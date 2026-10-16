@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `44cf9e9`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 86, `BasePlane_ResetDetailState` 0x79cb8), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `6973df7`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 87, `BaseFac_BuildStatusMsg` 0x6a4bc), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -207,10 +207,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 924 / 1103 (83.8%)
-                                             bytes cited:     504200 / 598792 (84.2%)
-python docs/parity/audit_credits.py       -> credited functions: 924, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 446 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 925 / 1103 (83.9%)
+                                             bytes cited:     505720 / 598792 (84.5%)
+python docs/parity/audit_credits.py       -> credited functions: 925, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 452 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
@@ -231,8 +231,35 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **14241**. Coverage as of the latest commit: **924 / 1103
-functions (83.8%)**, **504200 / 598792 bytes (84.2%)**. This unit ported `BasePlane_ResetDetailState`
+Test checks run across the 60 suites: **14295**. Coverage as of the latest commit: **925 / 1103
+functions (83.9%)**, **505720 / 598792 bytes (84.5%)**. This unit ported `BaseFac_BuildStatusMsg`
+(0x6a4bc, 1,520 B), the geoscape's two-line base-facility status string. **Thirteen arms on a character
+code**, 0x20..0x2C (`SUB #0x20 / CMP #0xC / ADDLS PC` at 0x6A4E0, the char sign-extended), and
+**`GameTime_Pause` runs at 0x6A4D4, ahead of the switch** -- so it happens on all thirteen arms and on the
+default. **Every argument comes out of line 0 of the root message list** @ 0x158890 at the only call site
+(0x8C82C): the case byte is that line's flag (0x8C818), the base index is its colour dword slot 2
+(0x8C7C4), the row index slot 0 (0x8C7EC) and the column index slot 1 (0x8C7D8); a1 is abFacilityGrid
+(0x8C790). The dispatcher switches on the same flag again at 0x8C83C and draws the two lines. `'!'` and
+`'"'` are the same arm twice; `'$'`, `')'` and `'*'` all jump to one tail. **The six label prefixes are
+TEXTS records** 1334/1339/1340/1341/1342/1343: "Base: ", the same word with a space before the colon,
+"Production: ", "Research: ", "Module: ", "Craft: ". **The record-0 offset mattered and is now recorded.**
+The two candidates in lang.dat are 0x102 and 0x1CA -- exactly one record apart -- and the wrong one still
+produces a plausible string at every index, so nothing looks wrong. It was settled against the shipped
+facility names: 106 Access Lift, 107 Living Quarters, 117 Hangar, 118 Gravity shield, 463 Missile
+Defences, 122 Fusion Ball Defence, which is precisely the `g_anFacNameRec` order `Geoscape_InitUI` copies
+into `aBaseFacFlags`. **`'&'` reads the facility grid** at `abFacilityGrid[480 + 6*(24*base + row) + col]`
+and names the kind from `aBaseFacFlags[kind]`: +480 is row 18 of the eight 144-byte 24x6 blocks that start
+at +372, a different window from the hangar arm's rows 12..17. **`'%'` reads the topic byte one record
+in** -- `LDRB [R7,#0x22]` on a 34-byte record is `aTopics[nBaseIdx + 1].abUnk0[0]`, the same
+off-by-one-record pairing `ResearchScreen_RebuildTopicList` uses. **`szScratch186488` carries a name
+between calls**: `'\''` and `'('` write it, `','` appends whatever it finds there. 0x10DA38, the source the
+255 sentinel copies from, is inside `.data`'s zero-filled span, so it copies one NUL -- a clear, not a
+message. **1 deviation recorded:** unbounded copies into fixed scratch buffers and untested indices; the
+port bounds both. 54 new checks; three mutations -- prefix indices shifted by one record (the exact mistake
+made while writing this unit) turns 31 red, the hangar grid offset turns 4 red, reading the topic byte in
+place turns 1 red. 6 IDB renames, the five arguments named, 1 function comment, 7 line comments, and a
+comment at `aTextRecs` recording the record-0 offset with its proof. `strat` moves to 200/204 functions and
+126,716 of 160,496 bytes (79.0%). Unit 86 ported `BasePlane_ResetDetailState`
 (0x79cb8, 328 B), the plane screen's six craft-weapon stat rows. **The row count starts at 1, not 0**
 (0x79D20): the panel always has its column-header row, and `BasePlaneScreen_DrawStatLabel` sizes its three
 nested rects from it -- 230 x 20*(n+1), then 228 x 20*n+18 and 226 x 20*n+16 -- so a base holding nothing
@@ -1119,13 +1146,13 @@ This is the shortest chain that produces a real game session, in dependency orde
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 125,196 of 160,496 (78.0%), and `Geoscape_Draw` alone is
-33,744 of the 35,300 left. Both geoscape pointer handlers, the map select test they call, both map click
+`strat` is still the weakest subsystem by bytes: 126,716 of 160,496 (79.0%), and `Geoscape_Draw` alone is
+33,744 of the 33,780 left. Both geoscape pointer handlers, the map select test they call, both map click
 handlers they install, the per-tick strateg event pass, the strateg icon pass, the clock strip, the whole
-`Geoscape_DrawScreen` frame, the pulse tick, the map-target arm, the globe hover frame and the plane
-screen's stat rows are in now — what is left in the geoscape is `Geoscape_Draw` itself (33,744 B) plus
-`BaseFac_BuildStatusMsg` (1,520 B) and the three 12-byte atexit registrars -- 35,300 bytes, which is
-exactly the subsystem's remaining gap.
+`Geoscape_DrawScreen` frame, the pulse tick, the map-target arm, the globe hover frame, the plane screen's
+stat rows and the base-facility status line are in now — what is left in the geoscape is `Geoscape_Draw`
+itself (33,744 B) and the three 12-byte atexit registrars, which is exactly the subsystem's remaining gap.
+`Geoscape_Draw` is now the single largest unported function in the binary.
 `strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 
@@ -1792,7 +1819,7 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 446 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/renames.tsv` | 452 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
 | `docs/parity/bugs.tsv` | 221-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |

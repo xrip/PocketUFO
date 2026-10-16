@@ -466,3 +466,9 @@ unk_161EF0	nPlaneStatLaserCannon	slot 28, Laser cannon. Written at 0x79DC4, gate
 unk_161ABC	nPlaneStatPlasmaCannon	slot 29, Plasma cannon. Written at 0x79DBC, gate at 0x88704 / 0x8a41c
 unk_161ED4	nPlaneStatFusionBall	slot 30, Fusion ball launcher. Written at 0x79D90, gate at 0x88728 / 0x8a440
 nPlaneStatRowCount	nPlaneStatRowCount	0x161A38. Already named in the IDB; recorded here because the port names the same global g_nPlaneStatRowCount in src/pufo/app/pufo_app.c. One global, two uses: the plane stat-panel row count (0x79D24 / 0x79DE4) and the start-menu flicker scratch (0xA0AEC)
+unk_F650E	aTextRec1334	aTextRecs + 205*1334, read at 0x6A534. lang.dat: "Base: " (the Cyrillic "Base: "), the first line of the base-facility status string
+unk_F690F	aTextRec1339	aTextRecs + 205*1339, read at 0x6A5B4. lang.dat: the same word with a space before the colon
+unk_F69DC	aTextRec1340	aTextRecs + 205*1340, read at 0x6A5F0. lang.dat: "Production: "
+unk_F6AA9	aTextRec1341	aTextRecs + 205*1341, read at 0x6A730. lang.dat: "Research: ", the '%' arm's label
+unk_F6B76	aTextRec1342	aTextRecs + 205*1342, read at 0x6A81C. lang.dat: "Module: ", the '&' arm's label
+unk_F6C43	aTextRec1343	aTextRecs + 205*1343, read at 0x6A888. lang.dat: "Craft: ", the '\'' / '+' / ',' label

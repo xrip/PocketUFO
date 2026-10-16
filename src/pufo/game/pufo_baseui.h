@@ -5163,4 +5163,104 @@ typedef struct BasePlaneDetailEnv {
 /* Returns the row count, which is also the original's return value (1 with nothing matched). */
 i32 BasePlane_ResetDetailState(const BasePlaneDetailEnv *pEnv);
 
+/* ------------------------------------------------- the base-facility status line
+ *
+ * Evidence: BaseFac_BuildStatusMsg @ 0x6a4bc (1,520 B), reached only from 0x8C82C inside the
+ * geoscape dispatcher (still unported, so it is named by address only). That call site supplies every
+ * argument out of line 0 of the root message list @ 0x158890: nCase is UiLineList_GetFlag(line 0)
+ * sign-extended from a byte (0x8C818), nBaseIdx is that line's colour dword slot 2 (0x8C7C4),
+ * nFacRow is slot 0 (0x8C7EC) and nFacCol is slot 1 (0x8C7D8); a1 is abFacilityGrid (0x8C790 loads it
+ * into R7). The dispatcher then switches on the SAME flag byte again at 0x8C83C and draws the two
+ * lines this function leaves behind.
+ *
+ * The switch is on the case byte itself, 0x20..0x2C -- thirteen arms, `SUB R0, R3, #0x20 /
+ * CMP R0, #0xC / ADDLS PC, PC, R0, LSL #2` at 0x6A4E0, with R3 sign-extended from the char. Anything
+ * else leaves both buffers untouched. GameTime_Pause runs on EVERY arm including the default (0x6A4D4,
+ * before the switch).
+ *
+ * Two output buffers, both fixed global scratch:
+ *   pszMsg    -- szRadarMsg @ 0x186B10 (dword_186B08 + 8), the first line
+ *   pszExtra  -- unk_186420, the second line
+ * and a third, szScratch186488 @ 0x186488, which two arms fill and one arm reads back: the original
+ * uses it to carry a name from one status line to the next, so ',' depends on what a previous call
+ * left there.
+ *
+ * Six of the label prefixes are TEXTS records, not literals -- 0xF650E / 0xF690F / 0xF69DC / 0xF6AA9 /
+ * 0xF6B76 / 0xF6C43 all sit past .data's initialised span (929,136 virtual bytes, 26,624 raw, so
+ * everything from 0xAC800 up is zero-filled at load) and each is an exact multiple of 205 past
+ * aTextRecs: records 1334, 1339, 1340, 1341, 1342 and 1343. Out of lang.dat they read "База: " (Base: ),
+ * "База : " (the same word with the space before the colon), "Производство: " (Production: ),
+ * "Исследование: " (Research: ), "Модуль: " (Module: ) and "Корабль: " (Craft: ).
+ *
+ * The arms, in case order:
+ *   ' '  pszMsg = 1334 + base name;      pszExtra = "Product: " + apObjects[nFacCol]->szName
+ *   '!'  pszMsg = 1339 + base name;      pszExtra = 1340 + apObjects[nFacCol]->szName
+ *   '"'  identical to '!'
+ *   '#'  pszMsg = 1334 + base name;      pszExtra = 1340 + apObjects[nFacCol]->szName
+ *   '$'  pszMsg = 1334 + base name;      pszExtra untouched
+ *   '%'  pszMsg = 1341 + TEXTS[aTopics[nBaseIdx].wGate4]; pszExtra only when nFacCol == 1000, and then
+ *        it is 1341 + TEXTS[aTopics[nFacRow + aTopics[nBaseIdx + 1].abUnk0[0]].wGate4] -- the topic
+ *        index is read one RECORD in, at +0x22, the same off-by-one-record pairing
+ *        ResearchScreen_RebuildTopicList uses.
+ *   '&'  pszMsg = 1334 + base name;      pszExtra = 1342 + aBaseFacFlags[kind].szName, where kind is
+ *        abFacilityGrid[480 + 6 * (24 * nBaseIdx + nFacRow) + nFacCol]. The grid is eight 144-byte
+ *        24x6 blocks starting at abFacilityGrid + 372, so +480 is row 18 and nFacRow 0..5 selects the
+ *        grid's last six rows.
+ *   '\'' pszExtra = 1343 + Ship_FormatDisplayName(nFacRow); szScratch = nFacCol == 255 ? "" :
+ *        apObjects[nFacCol]->szName. The empty case copies from 0x10DA38, which is inside .data's
+ *        zero-filled span -- the same all-zero source the three screen openers use to clear these
+ *        buffers, so it is a clear and not a message.
+ *   '('  pszMsg = 1334 + base name;      szScratch = apObjects[nFacRow]->szName
+ *   ')'  identical to '*' and to '$': pszMsg = 1334 + base name, pszExtra untouched
+ *   '*'  as ')'
+ *   '+'  pszExtra = 1343 + Ship_FormatDisplayName(nFacRow); pszMsg = 1334 + base name
+ *   ','  pszExtra = 1343 + szScratch186488
+ *
+ * Deviation: every copy here is an unbounded strcpy/strcat loop into fixed scratch buffers, and the
+ * index arithmetic is untested -- apObjects[nFacCol] and apObjects[nFacRow] are dereferenced with no
+ * bound, abFacilityGrid's facility byte is read with no bound, and aBaseFacFlags[kind] is indexed by a
+ * byte that can exceed the 17 records. The port bounds every copy by the buffer sizes the env carries
+ * and skips a dereference whose index is out of range, reaching the same observable text for the values
+ * the shipped game actually produces. */
+#define PUFO_FAC_STATUS_CASE_FIRST   0x20 /* ' ', the lowest case the jumptable covers */
+#define PUFO_FAC_STATUS_CASE_LAST    0x2C /* ',', the highest */
+#define PUFO_FAC_STATUS_TEXT_BASE 1334 /* "База: " Base: */
+#define PUFO_FAC_STATUS_TEXT_BASE_SPACED 1339 /* "База : " the same word, space before the colon */
+#define PUFO_FAC_STATUS_TEXT_PROD 1340 /* "Производство: " Production: */
+#define PUFO_FAC_STATUS_TEXT_RESEARCH 1341 /* "Исследование: " Research: */
+#define PUFO_FAC_STATUS_TEXT_MODULE 1342 /* "Модуль: " Module: */
+#define PUFO_FAC_STATUS_TEXT_CRAFT 1343 /* "Корабль: " Craft: */
+#define PUFO_FAC_STATUS_RESEARCH_TAG 1000 /* the '%' arm's second line only runs for this nFacCol */
+#define PUFO_FAC_STATUS_NO_OBJECT    255  /* the '\'' arm's "no object" sentinel */
+/* The base name the original reaches as byte_186C24 + 64 * i + 54 is the port's BaseSiteRec.abName:
+ * 0x186C24 + 54 == 0x186C40 + 26, the same byte of the same 64-byte record. */
+#define PUFO_FAC_GRID_ROW_STRIDE     6    /* the 24x6 facility grid's row stride */
+#define PUFO_FAC_GRID_BASE_STRIDE    144  /* 24 rows of 6 */
+#define PUFO_FAC_GRID_FACILITY_BASE  480  /* abFacilityGrid + 480 is row 18 of the grid */
+#define PUFO_FAC_GRID_FACILITY_ROWS  6    /* rows 18..23; a row past 5 would leave the base's block */
+
+typedef struct BaseFacStatusEnv {
+    GameTime             *pTime;        /* GameTime_Pause @ 0x5d6ac, on every arm including the default */
+    const u8             *abFacilityGrid; /* abFacilityGrid @ 0x159768, the '&' arm's facility-kind bytes */
+    const BaseSiteRec    *apSiteRecs;   /* 0x186C40, eight 64-byte records; the name is abName at +26 */
+    ObjectRecFull *const *apObjects;    /* the Map-block array at 0x113AC0 = 0x1139B8 + 66 dwords */
+    i32                   nObjectCount; /* Map_nObjectCount @ 0x114A60, the port's bound on those indices */
+    const BaseFacFlag    *paFac;        /* aBaseFacFlags @ 0x186E48, PUFO_BASEFAC_COUNT records */
+    const ResearchTopicLive *aTopics;   /* aResearchTopics @ 0x15EF08, 144 records of 34 bytes */
+    Ship *const          *apCraft;      /* Ship_FormatDisplayName's craft array */
+    const u8             *pTextRecs;    /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE */
+    char                 *pszMsg;       /* szRadarMsg @ 0x186B10 */
+    size_t                cchMsg;
+    char                 *pszExtra;     /* unk_186420 */
+    size_t                cchExtra;
+    char                 *pszScratch;   /* szScratch186488 @ 0x186488 */
+    size_t                cchScratch;
+} BaseFacStatusEnv;
+
+/* Returns the line the arm last wrote, or NULL when the case is outside 0x20..0x2C. The original
+ * returns strcat's destination for most arms and a stray one-past-the-source pointer for '\'' and '(',
+ * and the only caller drops it. */
+char *BaseFac_BuildStatusMsg(const BaseFacStatusEnv *pEnv, i32 nCase, i32 nBaseIdx,
+                             i32 nFacRow, i32 nFacCol);
+
 #endif /* PUFO_BASEUI_H */

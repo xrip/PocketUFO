@@ -15756,3 +15756,98 @@ checks red, and dropping the non-zero filter turns 4 red. The out-of-range guard
 distinguishable value exactly where the unchecked read would land -- 0x1234 in bTwoHanded/bUnk41 for
 auPerBaseVal[-1] and 0x5678 in aItemQty[0] for auPerBaseVal[8] -- and the last case re-runs the same
 object with a valid index to prove those zeroes came from the guard and not from an empty fixture.
+## Unit 87 -- BaseFac_BuildStatusMsg @ 0x6a4bc (1,520 B)
+
+The geoscape's two-line base-facility status string, thirteen arms keyed on a character code.
+
+### Where the arguments come from
+
+The only call site is 0x8C82C, inside the geoscape dispatcher (still unported, so it is named by
+address only), and it builds every argument out of line 0 of the root message list @ 0x158890: the case
+byte is UiLineList_GetFlag(line 0) sign-extended from a byte (0x8C818), the base index is that line's
+colour dword slot 2 (0x8C7C4), the row index is slot 0 (0x8C7EC), the column index is slot 1 (0x8C7D8),
+and the first argument is abFacilityGrid, loaded into R7 at 0x8C790. The dispatcher then switches on the
+SAME flag byte again at 0x8C83C and draws the two lines this function leaves behind. The return value is
+dropped.
+
+### The pause is ahead of the switch
+
+0x6A4D4 calls GameTime_Pause before any case dispatch, so it runs on all thirteen arms AND on the
+default. The tests assert that separately from the text, because it is the one thing every arm does.
+
+### Thirteen arms on a character code
+
+`SUB R0, R3, #0x20 / CMP R0, #0xC / ADDLS PC, PC, R0, LSL #2` at 0x6A4E0, with R3 sign-extended from the
+char: cases 0x20..0x2C, i.e. ' ' ! " # $ % & ' ( ) * + ,. Anything else leaves both buffers untouched.
+Two pairs are the same arm written twice: '!' (0x6A5A0) and '"' (0x6A610) are the same eleven
+operations, and '$' (0x6A700), ')' (0x6A998) and '*' (0x6A9C8) all jump to the same LABEL_60 tail.
+
+### The six label prefixes are TEXTS records -- and the record-0 offset matters
+
+0xF650E / 0xF690F / 0xF69DC / 0xF6AA9 / 0xF6B76 / 0xF6C43 sit past .data's initialised span (929,136
+virtual bytes, 26,624 raw) and each is an exact multiple of 205 past aTextRecs: records 1334, 1339,
+1340, 1341, 1342 and 1343. Out of lang.dat they read "Base: ", the same word with a space before the
+colon, "Production: ", "Research: ", "Module: " and "Craft: ".
+
+Getting those numbers right needed the blob's record-0 offset, and the two candidates differ by exactly
+one record -- 0x102 and 0x1CA in lang.dat -- which is the worst kind of mistake here because the wrong
+offset still produces a plausible string at every index. It was settled against the shipped facility
+names: with record 0 at 0x102, records 106..118 read Access Lift, Living Quarters, Laboratory, Workshop,
+Short Range Radar, Long Range Radar, General stores, Alien Containment, Psi Laboratory, Hyper Wave
+Decoder, Mind Shield, Hangar, Gravity shield, and 463 / 120 / 121 / 122 read Missile Defences, Laser
+Defence, Plasma Defence and Fusion Ball Defence -- exactly the g_anFacNameRec order Geoscape_InitUI
+@ 0x86A58 copies into aBaseFacFlags. With record 0 at 0x1CA the same indices are shifted by one and the
+sequence starts at Living Quarters. The offset is now written down as a comment at aTextRecs.
+
+### The '&' arm reads the facility grid
+
+The facility kind is `abFacilityGrid[480 + 6 * (24 * nBaseIdx + nFacRow) + nFacCol]`, and the name comes
+from aBaseFacFlags[kind]. The grid is eight 144-byte 24x6 blocks starting at abFacilityGrid + 372, so
++480 is row 18 and nFacRow 0..5 selects the grid's last six rows -- a different window from the hangar
+arm's rows 12..17, which reaches the same grid through +372 with `6 * (24 * base + row + 12) + col`. The
+tests pin the arithmetic by planting four different kinds at the cell under test and its three
+neighbours, so an error in the 144 / 6 / 1 split names the wrong facility.
+
+### The '%' arm reads the topic byte one record in
+
+0x6A7B4 is `LDRB [R7,#0x22]` on aTopics[nBaseIdx] -- offset 34 on a 34-byte record, so it reads
+aTopics[nBaseIdx + 1].abUnk0[0]. That is the same off-by-one-record pairing
+ResearchScreen_RebuildTopicList reads the topic ranges through, and the test distinguishes it by giving
+record nBaseIdx its own decoy byte: reading in place would name a different topic, and the two candidate
+topic names are asserted to differ so the check cannot pass by accident.
+
+### szScratch186488 is a channel between calls
+
+''' and '(' write an object name into szScratch186488 and ',' appends whatever it finds there. The
+status line therefore has state that survives from one call to the next, and the test sets the scratch
+explicitly before checking ','.
+
+0x10DA38, the source the ''' arm copies from when the object index is the 255 sentinel, is inside
+.data's zero-filled span, so it copies a single NUL: a clear, not a message. It is the same all-zero
+source the three screen openers use at 0x10DA38 / 0x10DA39.
+
+### Deviation
+
+Every copy here is an unbounded strcpy/strcat loop into fixed scratch buffers, and none of the index
+arithmetic is tested: apObjects[] is dereferenced raw, the grid byte and the topic index are computed
+with no bound, and aBaseFacFlags is indexed by a byte that can exceed its 17 records. The port bounds
+each copy by the buffer sizes the env carries and skips a dereference whose index is out of range,
+reaching the same observable text for the values the shipped game produces.
+
+### IDB corrections this unit
+
+- unk_F650E / unk_F690F / unk_F69DC / unk_F6AA9 / unk_F6B76 / unk_F6C43 renamed to aTextRec1334 /
+  aTextRec1339 / aTextRec1340 / aTextRec1341 / aTextRec1342 / aTextRec1343 (446 -> 452 on record).
+- BaseFac_BuildStatusMsg's arguments named abFacilityGrid / nCase / nBaseIdx / nRowOrIdx / nColOrIdx --
+  the last two are genuinely overloaded: nRowOrIdx is the grid row in '&', the craft index in '\'' and
+  '+', and the object index in '('.
+- A function comment at 0x6a4bc and line comments at 0x6A4D4 (the pause ahead of the switch), 0x6A78C
+  (the 1000 gate), 0x6A7B4 (the one-record-in topic byte), 0x6A858 (the grid cell), 0x6A8D0 (the
+  all-zero clear source) and 0x8C82C (what the call site feeds each argument).
+- A comment at aTextRecs @ 0xB38D0 recording the lang.dat record-0 offset and the facility-name proof
+  that pins it.
+
+54 new checks in tests/test_baseui.c, against the real lang.dat TEXTS table. Three mutations confirm
+they are not self-satisfying: shifting every prefix index by one record -- the exact mistake made while
+writing this unit -- turns 31 checks red, moving the '&' cell read to the hangar offset turns 4 red, and
+reading the '%' topic byte in place instead of one record in turns 1 red.

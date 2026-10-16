@@ -10176,3 +10176,196 @@ i32 BasePlane_ResetDetailState(const BasePlaneDetailEnv *pEnv)
 
     return nRows;                                          /* 0x79DFC */
 }
+
+/* ---------------------------------------------------- the base-facility status line */
+
+static const char *FacStatus_Text(const BaseFacStatusEnv *pEnv, i32 nRec)
+{
+    return (const char *)(pEnv->pTextRecs) + PUFO_TEXT_REC_STRIDE * (size_t)nRec;
+}
+
+/* The original tests none of these indices -- apObjects[] is dereferenced raw, the grid byte and the
+ * topic index are computed with no bound, and aBaseFacFlags is indexed by a byte. The port returns
+ * NULL for an index it cannot justify and the caller skips that one append. */
+static const char *FacStatus_BaseName(const BaseFacStatusEnv *pEnv, i32 nBaseIdx)
+{
+    if (pEnv->apSiteRecs == NULL || nBaseIdx < 0 || nBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        return NULL;
+    }
+    return pEnv->apSiteRecs[nBaseIdx].abName;   /* 0x186C24 + 64*i + 54 == 0x186C40 + 64*i + 26 */
+}
+
+static const char *FacStatus_ObjectName(const BaseFacStatusEnv *pEnv, i32 nSlot)
+{
+    if (pEnv->apObjects == NULL
+        || nSlot < 0 || nSlot >= pEnv->nObjectCount
+        || pEnv->apObjects[nSlot] == NULL) {
+        return NULL;
+    }
+    return pEnv->apObjects[nSlot]->szName;      /* 0x6A6E8: LDR [R3,#0x108], then its first field */
+}
+
+static const char *FacStatus_TopicName(const BaseFacStatusEnv *pEnv, i32 nTopic)
+{
+    if (pEnv->aTopics == NULL || nTopic < 0 || nTopic >= PUFO_RESEARCH_TOPIC_COUNT) {
+        return NULL;
+    }
+    /* 0x6A764 LDRH [R7,#4] then 0x6A770 MUL #0xCD against 0xB38D0: the topic's name record. */
+    return FacStatus_Text(pEnv, pEnv->aTopics[nTopic].wGate4);
+}
+
+char *BaseFac_BuildStatusMsg(const BaseFacStatusEnv *pEnv, i32 nCase, i32 nBaseIdx,
+                             i32 nFacRow, i32 nFacCol)
+{
+    char *pszMsg = pEnv->pszMsg;
+    char *pszExtra = pEnv->pszExtra;
+    const char *pszApp;
+    i32 nKind;
+
+    pEnv->pTime->bPaused = 1;                    /* 0x6A4D4: GameTime_Pause, ahead of the switch */
+
+    if (nCase < PUFO_FAC_STATUS_CASE_FIRST || nCase > PUFO_FAC_STATUS_CASE_LAST) {
+        return NULL;                             /* 0x6A4E0: SUB #0x20 / CMP #0xC / ADDLS PC */
+    }
+
+    switch (nCase) {
+    case ' ':
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_BASE), pEnv->cchMsg);
+        pszApp = FacStatus_BaseName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);
+        }
+        pufo_strncpy(pszExtra, "Product: ", pEnv->cchExtra); /* aProduct_0 @ 0xAB73C, a real literal */
+        pszApp = FacStatus_ObjectName(pEnv, nFacCol);
+        if (pszApp != NULL) {
+            pufo_strcat(pszExtra, pszApp, pEnv->cchExtra);   /* LABEL_21 + LABEL_64 at 0x6AAA4 */
+        }
+        return pszExtra;
+
+    case '!':
+    case '"':                                    /* 0x6A5A0 and 0x6A610 are the same eleven operations */
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_BASE_SPACED), pEnv->cchMsg);
+        pszApp = FacStatus_BaseName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);
+        }
+        pufo_strncpy(pszExtra, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_PROD), pEnv->cchExtra);
+        pszApp = FacStatus_ObjectName(pEnv, nFacCol);
+        if (pszApp != NULL) {
+            pufo_strcat(pszExtra, pszApp, pEnv->cchExtra);
+        }
+        return pszExtra;
+
+    case '#':
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_BASE), pEnv->cchMsg);
+        pszApp = FacStatus_BaseName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);
+        }
+        pufo_strncpy(pszExtra, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_PROD), pEnv->cchExtra);
+        pszApp = FacStatus_ObjectName(pEnv, nFacCol);
+        if (pszApp != NULL) {
+            pufo_strcat(pszExtra, pszApp, pEnv->cchExtra);
+        }
+        return pszExtra;
+
+    case '$':
+    case ')':
+    case '*':                                    /* 0x6A700, 0x6A998 and 0x6A9C8 all land on LABEL_60 */
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_BASE), pEnv->cchMsg);
+        pszApp = FacStatus_BaseName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);
+        }
+        return pszMsg;
+
+    case '%':
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_RESEARCH), pEnv->cchMsg);
+        pszApp = FacStatus_TopicName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);       /* 0x6A77C */
+        }
+        if (nFacCol != PUFO_FAC_STATUS_RESEARCH_TAG) {
+            return pszMsg;                                   /* 0x6A78C: CMP #0x3E8 / BNE default */
+        }
+        pufo_strncpy(pszExtra, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_RESEARCH), pEnv->cchExtra);
+        /* 0x6A7B4 LDRB [R7,#0x22]: the byte one RECORD in -- aTopics[nBaseIdx + 1].abUnk0[0], the same
+         * off-by-one-record pairing ResearchScreen_RebuildTopicList reads the topic ranges through. */
+        if (pEnv->aTopics != NULL && nBaseIdx >= 0 && nBaseIdx + 1 < PUFO_RESEARCH_TOPIC_COUNT) {
+            pszApp = FacStatus_TopicName(pEnv,
+                                         nFacRow + pEnv->aTopics[nBaseIdx + 1].abUnk0[0]);
+            if (pszApp != NULL) {
+                pufo_strcat(pszExtra, pszApp, pEnv->cchExtra);
+            }
+        }
+        return pszExtra;
+
+    case '&':
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_BASE), pEnv->cchMsg);
+        pszApp = FacStatus_BaseName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);
+        }
+        pufo_strncpy(pszExtra, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_MODULE), pEnv->cchExtra);
+        nKind = -1;
+        if (pEnv->abFacilityGrid != NULL
+            && nBaseIdx >= 0 && nBaseIdx < PUFO_FAC_BASE_COUNT
+            && nFacRow >= 0 && nFacRow < PUFO_FAC_GRID_FACILITY_ROWS
+            && nFacCol >= 0 && nFacCol < PUFO_FAC_GRID_ROW_STRIDE) {
+            /* 0x6A858 LDRB [R3,#0x1E0] over a1 = abFacilityGrid: 480 + 6 * (24 * base + row) + col.
+             * The grid is eight 144-byte 24x6 blocks from abFacilityGrid + 372, so +480 is row 18 and
+             * these are the grid's last six rows. */
+            nKind = pEnv->abFacilityGrid[PUFO_FAC_GRID_FACILITY_BASE
+                                         + PUFO_FAC_GRID_BASE_STRIDE * (size_t)nBaseIdx
+                                         + PUFO_FAC_GRID_ROW_STRIDE * (size_t)nFacRow
+                                         + (size_t)nFacCol];
+        }
+        if (pEnv->paFac != NULL && nKind >= 0 && nKind < PUFO_BASEFAC_COUNT) {
+            pufo_strcat(pszExtra, pEnv->paFac[nKind].szName, pEnv->cchExtra); /* 0x6A86C + LABEL_64 */
+        }
+        return pszExtra;
+
+    case '\'':
+        pufo_strncpy(pszExtra, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_CRAFT), pEnv->cchExtra);
+        /* The original's Ship_FormatDisplayName builds into szRadarMsg @ 0x186B10 and returns it, so
+         * the craft name passes through pszMsg before it lands on pszExtra. */
+        (void)Ship_FormatDisplayName(pEnv->apCraft, nFacRow, pEnv->pTextRecs, pszMsg, pEnv->cchMsg);
+        pufo_strcat(pszExtra, pszMsg, pEnv->cchExtra);
+        if (nFacCol == PUFO_FAC_STATUS_NO_OBJECT) {
+            pEnv->pszScratch[0] = '\0';        /* 0x6A8D0: copies from 0x10DA38, all zero -- a clear */
+        } else {
+            pszApp = FacStatus_ObjectName(pEnv, nFacCol);
+            pufo_strncpy(pEnv->pszScratch, pszApp != NULL ? pszApp : "", pEnv->cchScratch);
+        }
+        return pszExtra;
+
+    case '(':
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_BASE), pEnv->cchMsg);
+        pszApp = FacStatus_BaseName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);
+        }
+        pszApp = FacStatus_ObjectName(pEnv, nFacRow);   /* '(' indexes the object with nFacRow, not nFacCol */
+        pufo_strncpy(pEnv->pszScratch, pszApp != NULL ? pszApp : "", pEnv->cchScratch);
+        return pszMsg;
+
+    case '+':
+        pufo_strncpy(pszExtra, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_CRAFT), pEnv->cchExtra);
+        (void)Ship_FormatDisplayName(pEnv->apCraft, nFacRow, pEnv->pTextRecs, pszMsg, pEnv->cchMsg);
+        pufo_strcat(pszExtra, pszMsg, pEnv->cchExtra);
+        pufo_strncpy(pszMsg, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_BASE), pEnv->cchMsg);
+        pszApp = FacStatus_BaseName(pEnv, nBaseIdx);
+        if (pszApp != NULL) {
+            pufo_strcat(pszMsg, pszApp, pEnv->cchMsg);
+        }
+        return pszMsg;
+
+    case ',':
+        pufo_strncpy(pszExtra, FacStatus_Text(pEnv, PUFO_FAC_STATUS_TEXT_CRAFT), pEnv->cchExtra);
+        pufo_strcat(pszExtra, pEnv->pszScratch, pEnv->cchExtra); /* 0x6AAA0: whatever a previous call left */
+        return pszExtra;
+
+    default:
+        return NULL;
+    }
+}

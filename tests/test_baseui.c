@@ -12520,6 +12520,331 @@ static void TestFundingReport(void)
     Asset_CloseArchives();
 }
 
+/* ------------------------------------------------- BaseFac_BuildStatusMsg @ 0x6a4bc
+ *
+ * The geoscape status line, thirteen arms on a character case. The six label prefixes are shipped
+ * lang.dat TEXTS records 1334, 1339, 1340, 1341, 1342 and 1343, so the fixture loads the real table:
+ * a wrong record index still produces a string, it just produces the wrong one. */
+
+static u8                g_fsGrid[1524];
+static BaseSiteRec       g_fsSites[PUFO_FAC_BASE_COUNT];
+static ObjectRecFull     g_fsObj[149];
+static ObjectRecFull    *g_fsApObj[149];
+static BaseFacFlag       g_fsFac[PUFO_BASEFAC_COUNT];
+static ResearchTopicLive g_fsTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static Ship              g_fsCraft[4];
+static Ship             *g_fsApCraft[4];
+static GameTime          g_fsTime;
+static char              g_fsMsg[108];
+static char              g_fsExtra[104];
+static char              g_fsScratch[112];
+static u8               *g_fsTexts;
+static BaseFacStatusEnv  g_fsEnv;
+
+static const char *FsRec(i32 nRec)
+{
+    return (const char *)(g_fsTexts + PUFO_TEXT_REC_STRIDE * (size_t)nRec);
+}
+
+static void CheckStr(const char *pszGot, const char *pszWant, const char *pszWhat)
+{
+    if (strcmp(pszGot, pszWant) == 0) {
+        printf("  ok   %s (%s)\n", pszWhat, pszWant);
+    } else {
+        printf("  FAIL %s: got [%s], want [%s]\n", pszWhat, pszGot, pszWant);
+        ++g_nFailures;
+    }
+}
+
+static bool FsLoadTexts(void)
+{
+    AssetReader rdr;
+    u8 aHdr[PUFO_TEXT_HDR_SIZE];
+    u32 cb, n, i;
+
+    AssetReader_Clear(&rdr);
+    if (!AssetReader_Find(&rdr, "texts.dat")) {
+        return false;
+    }
+    cb = AssetReader_Size(&rdr);
+    n = (cb >= PUFO_TEXT_HDR_SIZE)
+      ? (cb - PUFO_TEXT_HDR_SIZE) / PUFO_TEXT_REC_SIZE_DISK : 0u;
+    if (n <= (u32)PUFO_FAC_STATUS_TEXT_CRAFT) {
+        return false;
+    }
+    if (!AssetReader_Read(&rdr, aHdr, PUFO_TEXT_HDR_SIZE)) {
+        return false;
+    }
+    g_fsTexts = malloc((size_t)n * PUFO_TEXT_REC_STRIDE);
+    if (g_fsTexts == NULL) {
+        return false;
+    }
+    memset(g_fsTexts, 0, (size_t)n * PUFO_TEXT_REC_STRIDE);
+    for (i = 0; i < n; ++i) {
+        if (!AssetReader_Read(&rdr, g_fsTexts + (size_t)i * PUFO_TEXT_REC_STRIDE,
+                              PUFO_TEXT_REC_SIZE_DISK)) {
+            break;
+        }
+    }
+    return true;
+}
+
+/* The facility-kind cell the '&' arm reads: abFacilityGrid + 480 + 144 * base + 6 * row + col. */
+static u8 *FsCell(i32 nBase, i32 nRow, i32 nCol)
+{
+    return g_fsGrid + PUFO_FAC_GRID_FACILITY_BASE
+                   + PUFO_FAC_GRID_BASE_STRIDE * (size_t)nBase
+                   + PUFO_FAC_GRID_ROW_STRIDE * (size_t)nRow
+                   + (size_t)nCol;
+}
+
+static void FsFixture(void)
+{
+    i32 i;
+
+    memset(g_fsGrid, 0, sizeof(g_fsGrid));
+    memset(g_fsObj, 0, sizeof(g_fsObj));
+    memset(g_fsFac, 0, sizeof(g_fsFac));
+    memset(g_fsTopics, 0, sizeof(g_fsTopics));
+    memset(g_fsCraft, 0, sizeof(g_fsCraft));
+
+    for (i = 0; i < 149; ++i) {
+        g_fsApObj[i] = &g_fsObj[i];
+    }
+    PutStr(g_fsObj[1].szName, "Pistol");
+    PutStr(g_fsObj[25].szName, "Craft cannon");
+    PutStr(g_fsObj[105].szName, "Elerium-115");
+
+    for (i = 0; i < PUFO_FAC_BASE_COUNT; ++i) {
+        snprintf(g_fsSites[i].abName, sizeof(g_fsSites[i].abName), "Base%c", (int)('A' + i));
+    }
+
+    PutStr(g_fsFac[FAC_LIVING_QUARTERS].szName, "Living Quarters");
+    PutStr(g_fsFac[FAC_LABORATORY].szName, "Laboratory");
+    PutStr(g_fsFac[FAC_WORKSHOP].szName, "Workshop");
+    PutStr(g_fsFac[FAC_HANGAR].szName, "Hangar");
+
+    /* The '&' cell under test is base 2, row 1, col 3. Its three neighbours hold different kinds, so
+     * an off-by-one in the 144 / 6 / 1 arithmetic shows up as a different facility name. */
+    *FsCell(2, 1, 3) = FAC_HANGAR;
+    *FsCell(2, 0, 3) = FAC_LABORATORY;
+    *FsCell(2, 1, 4) = FAC_LIVING_QUARTERS;
+    *FsCell(3, 1, 3) = FAC_WORKSHOP;
+
+    /* '%' names each line from a topic's wGate4 record. Record 3's abUnk0[0] is the index the second
+     * line adds to; record 2's own abUnk0[0] is a decoy that must NOT be the one used. */
+    g_fsTopics[2].wGate4    = 1446;
+    g_fsTopics[2].abUnk0[0] = 7;    /* decoy: 5 + 7 = 12 -> record 1449 */
+    g_fsTopics[3].abUnk0[0] = 99;   /* real: 5 + 99 = 104 -> record 1448 */
+    g_fsTopics[12].wGate4   = 1449;
+    g_fsTopics[104].wGate4  = 1448;
+    PutTextRec(g_fsTexts, 1446, "TOPIC-1446");
+    PutTextRec(g_fsTexts, 1448, "TOPIC-1448");
+    PutTextRec(g_fsTexts, 1449, "TOPIC-1449");
+
+    g_fsCraft[0].bType = 3;
+    g_fsCraft[0].bCraftType = 0;   /* TEXTS[137] plus itoa(bType) */
+    for (i = 0; i < 4; ++i) {
+        g_fsApCraft[i] = &g_fsCraft[i];
+    }
+
+    memset(&g_fsEnv, 0, sizeof(g_fsEnv));
+    g_fsEnv.abFacilityGrid = g_fsGrid;
+    g_fsEnv.apSiteRecs     = g_fsSites;
+    g_fsEnv.apObjects      = g_fsApObj;
+    g_fsEnv.nObjectCount   = 149;
+    g_fsEnv.paFac          = g_fsFac;
+    g_fsEnv.aTopics        = g_fsTopics;
+    g_fsEnv.apCraft        = g_fsApCraft;
+    g_fsEnv.pTextRecs      = g_fsTexts;
+    g_fsEnv.pTime          = &g_fsTime;
+    g_fsEnv.pszMsg         = g_fsMsg;
+    g_fsEnv.cchMsg         = sizeof(g_fsMsg);
+    g_fsEnv.pszExtra       = g_fsExtra;
+    g_fsEnv.cchExtra       = sizeof(g_fsExtra);
+    g_fsEnv.pszScratch     = g_fsScratch;
+    g_fsEnv.cchScratch     = sizeof(g_fsScratch);
+}
+
+/* Sentinels on purpose: an arm that does not write a line has to leave the sentinel in place. */
+static char *FsRun(i32 nCase, i32 nBaseIdx, i32 nFacRow, i32 nFacCol)
+{
+    PutStr(g_fsMsg, "<msg>");
+    PutStr(g_fsExtra, "<extra>");
+    g_fsTime.bPaused = 0;
+    return BaseFac_BuildStatusMsg(&g_fsEnv, nCase, nBaseIdx, nFacRow, nFacCol);
+}
+
+static void TestFacStatusLine(void)
+{
+    static const i32 aAll[13] = { ' ', '!', '"', '#', '$', '%', '&',
+                                  '\'', '(', ')', '*', '+', ',' };
+    static const i32 aOneLine[3] = { '$', ')', '*' };
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+    char szWant[256];
+    char *pRet;
+    i32 i;
+
+    printf("the base-facility status line\n");
+
+    if (!Asset_OpenArchives(apszArch)) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+    if (!FsLoadTexts()) {
+        printf("  FAIL lang.dat texts.dat did not load\n");
+        ++g_nFailures;
+        return;
+    }
+    FsFixture();
+
+    /* The six prefixes, checked against the shipped file. Every arm below compares against these
+     * records, so a wrong index would have to be caught here. */
+    CheckStr(FsRec(PUFO_FAC_STATUS_TEXT_BASE),
+             "\xC1\xE0\xE7\xE0\x3A\x20", "record 1334 is the shipped \"Base: \"");
+    CheckStr(FsRec(PUFO_FAC_STATUS_TEXT_BASE_SPACED),
+             "\xC1\xE0\xE7\xE0\x20\x3A\x20", "record 1339 is the same word with the space before the colon");
+    CheckStr(FsRec(PUFO_FAC_STATUS_TEXT_PROD),
+             "\xCF\xF0\xEE\xE8\xE7\xE2\xEE\xE4\xF1\xF2\xE2\xEE\x3A\x20", "record 1340 is Production:");
+    CheckStr(FsRec(PUFO_FAC_STATUS_TEXT_RESEARCH),
+             "\xC8\xF1\xF1\xEB\xE5\xE4\xEE\xE2\xE0\xED\xE8\xE5\x3A\x20", "record 1341 is Research:");
+    CheckStr(FsRec(PUFO_FAC_STATUS_TEXT_MODULE),
+             "\xCC\xEE\xE4\xF3\xEB\xFC\x3A\x20", "record 1342 is Module:");
+    CheckStr(FsRec(PUFO_FAC_STATUS_TEXT_CRAFT),
+             "\xCA\xEE\xF0\xE0\xE1\xEB\xFC\x3A\x20", "record 1343 is Craft:");
+    Check(strcmp(FsRec(1334), FsRec(1339)) != 0
+          && strcmp(FsRec(1340), FsRec(1341)) != 0
+          && strcmp(FsRec(1342), FsRec(1343)) != 0,
+          "the prefixes are distinct, so a wrong index cannot pass by accident");
+
+    /* The clock is paused before the switch, so it happens on every arm including the default. */
+    pRet = FsRun(0x2D, 2, 1, 25);
+    Check(pRet == NULL, "case 0x2D is past the jumptable's thirteen arms");
+    CheckStr(g_fsMsg, "<msg>", "and it leaves the first line alone");
+    CheckStr(g_fsExtra, "<extra>", "and the second line alone");
+    CheckEqI32(g_fsTime.bPaused, 1, "GameTime_Pause still runs, it sits ahead of the switch at 0x6A4D4");
+    pRet = FsRun(0x1F, 2, 1, 25);
+    CheckStr(g_fsMsg, "<msg>", "a case below 0x20 is untouched too");
+    for (i = 0; i < 13; ++i) {
+        (void)FsRun(aAll[i], 2, 1, 25);
+        if (g_fsTime.bPaused != 1) {
+            break;
+        }
+    }
+    CheckEqI32(i, 13, "all thirteen arms pause the clock");
+
+    /* ' ' */
+    pRet = FsRun(' ', 2, 1, 25);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1334), g_fsSites[2].abName);
+    CheckStr(g_fsMsg, szWant, "' ' puts the damage label and the base name on the first line");
+    CheckStr(g_fsExtra, "Product: Craft cannon",
+             "' ' names the object on the second, from a real literal at 0xAB73C");
+    Check(pRet == g_fsExtra, "' ' returns the line it last wrote");
+
+    /* '!' and '"' are the same arm twice. */
+    pRet = FsRun('!', 2, 1, 25);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1339), g_fsSites[2].abName);
+    CheckStr(g_fsMsg, szWant, "'!' uses the production prefix on the first line");
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1340), "Craft cannon");
+    CheckStr(g_fsExtra, szWant, "and the research prefix on the second");
+    pRet = FsRun('"', 2, 1, 25);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1339), g_fsSites[2].abName);
+    CheckStr(g_fsMsg, szWant, "'\"' is 0x6A5A0 and 0x6A610 written out twice");
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1340), "Craft cannon");
+    CheckStr(g_fsExtra, szWant, "with the same result");
+
+    /* '#' shares the first line with ' ' and the second with '!'. */
+    pRet = FsRun('#', 2, 1, 25);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1334), g_fsSites[2].abName);
+    CheckStr(g_fsMsg, szWant, "'#' keeps the damage label on the first line");
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1340), "Craft cannon");
+    CheckStr(g_fsExtra, szWant, "where ' ' had Product: on the second");
+
+    /* '$', ')' and '*' all land on the same LABEL_60 tail. */
+    for (i = 0; i < 3; ++i) {
+        pRet = FsRun(aOneLine[i], 2, 1, 25);
+        snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1334), g_fsSites[2].abName);
+        CheckStr(g_fsMsg, szWant, "the one-line arms all reach the same tail");
+        CheckStr(g_fsExtra, "<extra>", "and none of them touches the second line");
+        Check(pRet == g_fsMsg, "and they return the first line");
+    }
+
+    /* '%' */
+    Check(strcmp(FsRec(1448), FsRec(1449)) != 0,
+          "the two candidate topic names differ, so the off-by-one check below is not vacuous");
+    pRet = FsRun('%', 2, 5, 999);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1341), "TOPIC-1446");
+    CheckStr(g_fsMsg, szWant, "'%' names the module from the topic's own wGate4 record");
+    CheckStr(g_fsExtra, "<extra>", "and with nFacCol not 1000 it stops at the first line");
+    Check(pRet == g_fsMsg, "returning that line");
+    pRet = FsRun('%', 2, 5, PUFO_FAC_STATUS_RESEARCH_TAG);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1341), "TOPIC-1448");
+    CheckStr(g_fsExtra, szWant,
+             "the 1000 tag opens the second line, named from topic 5 + record 3's abUnk0[0]");
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1341), "TOPIC-1446");
+    CheckStr(g_fsMsg, szWant, "and the first line still names topic 2");
+
+    /* '&' */
+    pRet = FsRun('&', 2, 1, 3);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1342), "Hangar");
+    CheckStr(g_fsExtra, szWant, "'&' names the facility the grid cell holds");
+    pRet = FsRun('&', 2, 0, 3);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1342), "Laboratory");
+    CheckStr(g_fsExtra, szWant, "one row earlier in the same base is a different facility");
+    pRet = FsRun('&', 2, 1, 4);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1342), "Living Quarters");
+    CheckStr(g_fsExtra, szWant, "one column later too");
+    pRet = FsRun('&', 3, 1, 3);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1342), "Workshop");
+    CheckStr(g_fsExtra, szWant, "and the 144-byte per-base stride is right");
+    pRet = FsRun('&', 2, 6, 3);
+    snprintf(szWant, sizeof(szWant), "%s", FsRec(1342));
+    CheckStr(g_fsExtra, szWant, "a row past the grid's last six appends nothing");
+
+    /* '\'' */
+    pRet = FsRun('\'', 2, 0, 25);
+    snprintf(szWant, sizeof(szWant), "%s%s%s", FsRec(1343), FsRec(137), "3");
+    CheckStr(g_fsExtra, szWant, "'\\'' appends the craft label plus Ship.bType");
+    CheckStr(g_fsScratch, "Craft cannon", "and leaves the object name in the scratch for the next call");
+    pRet = FsRun('\'', 2, 0, PUFO_FAC_STATUS_NO_OBJECT);
+    CheckStr(g_fsScratch, "", "the 255 sentinel clears the scratch instead");
+
+    /* '(' uses nFacRow for the object, not nFacCol. */
+    pRet = FsRun('(', 2, 105, 25);
+    CheckStr(g_fsScratch, "Elerium-115", "'(' indexes the object with nFacRow, not nFacCol");
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1334), g_fsSites[2].abName);
+    CheckStr(g_fsMsg, szWant, "and still writes the first line");
+
+    /* '+' writes the second line first, then overwrites the first. */
+    pRet = FsRun('+', 2, 0, 25);
+    snprintf(szWant, sizeof(szWant), "%s%s%s", FsRec(1343), FsRec(137), "3");
+    CheckStr(g_fsExtra, szWant, "'+' puts the craft name on the second line");
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1334), g_fsSites[2].abName);
+    CheckStr(g_fsMsg, szWant,
+             "and the craft name that passed through the first line is overwritten");
+
+    /* ',' reads back what a previous call left in the scratch. */
+    PutStr(g_fsScratch, "carried name");
+    pRet = FsRun(',', 2, 0, 25);
+    snprintf(szWant, sizeof(szWant), "%s%s", FsRec(1343), "carried name");
+    CheckStr(g_fsExtra, szWant, "',' appends whatever the scratch holds");
+
+    /* The port's bounds on the original's untested indices. */
+    pRet = FsRun(' ', -1, 1, 25);
+    snprintf(szWant, sizeof(szWant), "%s", FsRec(1334));
+    CheckStr(g_fsMsg, szWant, "a negative base index appends no base name");
+    CheckStr(g_fsExtra, "Product: Craft cannon", "and the object line is unaffected");
+    pRet = FsRun(' ', 2, 1, 9999);
+    CheckStr(g_fsExtra, "Product: ", "an object index past the array appends no name");
+    pRet = FsRun('&', 99, 1, 3);
+    snprintf(szWant, sizeof(szWant), "%s", FsRec(1342));
+    CheckStr(g_fsExtra, szWant, "a base index past the eight grid blocks reads no cell");
+
+    free(g_fsTexts);
+    g_fsTexts = NULL;
+}
+
 /* ------------------------------------------------- BasePlane_ResetDetailState @ 0x79cb8
  *
  * The six craft-weapon rows of the plane screen's stat panel. The fixture uses the shipped
@@ -12817,6 +13142,7 @@ int main(void)
     TestFundingPanels();
     TestFundingReport();
     TestPlaneStatRows();
+    TestFacStatusLine();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

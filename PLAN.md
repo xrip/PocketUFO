@@ -2584,6 +2584,33 @@ Order is by what unblocks what. Each item ends with gates + commit.
   125,196 of 160,496 bytes (78.0%), leaving `Geoscape_Draw`, `BaseFac_BuildStatusMsg` and three 12-byte
   atexit registrars.
 
+- [x] **part 87, the geoscape status line: `BaseFac_BuildStatusMsg (0x6a4bc, 1,520 B)`** — **Thirteen arms
+  on a character code, 0x20..0x2C.** `GameTime_Pause` runs at 0x6A4D4, *ahead of* the switch, so it
+  happens on all thirteen arms and on the default. The only call site (0x8C82C, inside the unported
+  geoscape dispatcher) builds every argument out of **line 0 of the root message list**: the case byte is
+  that line's flag, the base index is its colour dword slot 2, the row index slot 0 and the column index
+  slot 1; the dispatcher switches on the same flag again at 0x8C83C and draws the two lines. `'!'`
+  (0x6A5A0) and `'"'` (0x6A610) are the same arm twice, and `'$'`/`')'`/`'*'` all jump to one tail.
+  **The six label prefixes are TEXTS records** 1334/1339/1340/1341/1342/1343 — "Base: ", the same word
+  with a space before the colon, "Production: ", "Research: ", "Module: ", "Craft: ". **Getting the
+  record-0 offset right mattered:** the two candidates in lang.dat are 0x102 and 0x1CA, exactly one
+  record apart, and the wrong one still yields a plausible string at every index. Settled against the
+  shipped facility names — 106 Access Lift … 117 Hangar, 118 Gravity shield, 463 Missile Defences, 122
+  Fusion Ball Defence, the exact `g_anFacNameRec` order `Geoscape_InitUI` copies into `aBaseFacFlags`.
+  **`'&'` reads the facility grid** at `abFacilityGrid[480 + 6*(24*base + row) + col]` — +480 is row 18 of
+  the eight 144-byte 24×6 blocks that start at +372, a different window from the hangar arm's rows
+  12..17. **`'%'` reads the topic byte one record in** (`LDRB [R7,#0x22]` on a 34-byte record), the same
+  off-by-one-record pairing `ResearchScreen_RebuildTopicList` uses. `szScratch186488` carries a name
+  between calls (`'\'`/`'('` write it, `','` reads it), and 0x10DA38 is inside `.data`'s zero-filled span,
+  so the 255 sentinel copies a single NUL — a clear, not a message. **1 deviation recorded:** unbounded
+  copies and untested indices; the port bounds both. 54 new checks; three mutations — prefix indices
+  shifted by one record (the exact mistake made while writing this unit) turns 31 red, the hangar grid
+  offset turns 4 red, reading the topic byte in place turns 1 red. 6 IDB renames (452 on record), the
+  function's five arguments named, 1 function comment, 7 line comments, plus a comment at `aTextRecs`
+  recording the record-0 offset and its proof. 14295 checks (60 suites), coverage 925/1103 (83.9%) and
+  505720/598792 (84.5%); `strat` moves to 200/204 functions and 126,716 of 160,496 bytes (79.0%), leaving
+  `Geoscape_Draw` and three 12-byte atexit registrars.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
