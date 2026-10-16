@@ -6,7 +6,7 @@
  * to get subtly wrong.
  *
  * Note on the facings used below: the seed's facing becomes the current cell's
- * bUnk24, and every step pays Map_FacingDelta(stepDir, curCell->bUnk24). Tests
+ * bPathDir, and every step pays Map_FacingDelta(stepDir, curCell->bPathDir). Tests
  * that want clean arithmetic set the seed facing equal to the travel direction,
  * so the turn cost is 0; the turning test deliberately does not.
  */
@@ -179,11 +179,11 @@ static void TestReachableStraight(void)
     Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  target reachable");
-    Check(grid.aCells[0][1][4].nUnk20 != 0, "  target cost set");
-    CheckEqI32(grid.aCells[0][1][1].nUnk20, 1, "  seed cost is 1");
-    CheckEqI32(grid.aCells[0][1][2].nUnk20, 5, "  one step costs seed + 4");
-    CheckEqI32(grid.aCells[0][1][3].nUnk20, 9, "  two steps");
-    CheckEqI32(grid.aCells[0][1][4].nUnk20, 13, "  three steps");
+    Check(grid.aCells[0][1][4].nPathCost != 0, "  target cost set");
+    CheckEqI32(grid.aCells[0][1][1].nPathCost, 1, "  seed cost is 1");
+    CheckEqI32(grid.aCells[0][1][2].nPathCost, 5, "  one step costs seed + 4");
+    CheckEqI32(grid.aCells[0][1][3].nPathCost, 9, "  two steps");
+    CheckEqI32(grid.aCells[0][1][4].nPathCost, 13, "  three steps");
 }
 
 static void TestUnreachable(void)
@@ -199,7 +199,7 @@ static void TestUnreachable(void)
     Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 6, 1, 0,
                                  Grid_Lookup, Grid_Probe, &grid),
           "  target unreachable behind a wall");
-    CheckEqI32(grid.aCells[0][1][6].nUnk20, 0, "  target cost left 0");
+    CheckEqI32(grid.aCells[0][1][6].nPathCost, 0, "  target cost left 0");
 }
 
 static void TestBlankTarget(void)
@@ -229,14 +229,14 @@ static void TestDiagonalCost(void)
     Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_S, 1, 2, 0,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  orthogonal step reachable");
-    CheckEqI32(grid.aCells[0][2][1].nUnk20, 5, "  orthogonal costs base only");
+    CheckEqI32(grid.aCells[0][2][1].nPathCost, 5, "  orthogonal costs base only");
 
     /* Diagonal: (1,1) -> (2,2) is southeast, an odd direction, so +2. */
     Grid_Init(&grid);
     Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_SE, 2, 2, 0,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  diagonal step reachable");
-    CheckEqI32(grid.aCells[0][2][2].nUnk20, 7, "  diagonal costs base + 2");
+    CheckEqI32(grid.aCells[0][2][2].nPathCost, 7, "  diagonal costs base + 2");
 }
 
 static void TestTurningCost(void)
@@ -250,10 +250,10 @@ static void TestTurningCost(void)
                                 Grid_Lookup, Grid_Probe, &grid),
           "  reachable behind the unit");
     /* Step 1 (dir 4 = south): delta(4, 0) == 4, so cost 1 + 4 + 4 = 9.
-     * Step 2 (dir 4, from a cell whose bUnk24 is now 4): delta(4, 4) == 0,
+     * Step 2 (dir 4, from a cell whose bPathDir is now 4): delta(4, 4) == 0,
      * so cost 9 + 0 + 4 = 13. */
-    CheckEqI32(grid.aCells[0][2][1].nUnk20, 9, "  first step pays the turn");
-    CheckEqI32(grid.aCells[0][3][1].nUnk20, 13, "  then continues straight");
+    CheckEqI32(grid.aCells[0][2][1].nPathCost, 9, "  first step pays the turn");
+    CheckEqI32(grid.aCells[0][3][1].nPathCost, 13, "  then continues straight");
 }
 
 static void TestLayerCost(void)
@@ -267,7 +267,7 @@ static void TestLayerCost(void)
                                 Grid_Lookup, Grid_Probe, &grid),
           "  vertical move reachable");
     /* 1 (seed) + delta(8,8)==0 + 4 base + 4 layer = 9. */
-    CheckEqI32(grid.aCells[1][2][2].nUnk20, 9, "  layer change costs base + 4");
+    CheckEqI32(grid.aCells[1][2][2].nPathCost, 9, "  layer change costs base + 4");
 }
 
 static void TestCostAccumulationLimit(void)
@@ -281,9 +281,9 @@ static void TestCostAccumulationLimit(void)
                                 Grid_Lookup, Grid_Probe, &grid),
           "  far corner reachable");
     /* 7 steps of base cost 4, plus the seed of 1 == 29, under the limit. */
-    CheckEqI32(grid.aCells[0][0][nFar].nUnk20, 1 + nFar * 4,
+    CheckEqI32(grid.aCells[0][0][nFar].nPathCost, 1 + nFar * 4,
                "  accumulated cost is seed + 4 per step");
-    Check(grid.aCells[0][0][nFar].nUnk20 < PUFO_PATH_COST_LIMIT,
+    Check(grid.aCells[0][0][nFar].nPathCost < PUFO_PATH_COST_LIMIT,
           "  cost under the documented limit");
 
     /* The enqueue gate is `cost < 140`. Build a straight run long enough that

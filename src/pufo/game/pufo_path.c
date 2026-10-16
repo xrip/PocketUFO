@@ -100,7 +100,7 @@ bool Path_EnqueueCell(PathScratch *pScratch, MapCell *pCell)
 /* Path_ExpandCell @ 0x2b604.
  *
  * Two gates precede the direction loop, both from the disassembly:
- *     LDR   R3, [R2,#0x14]   ; pCur->nUnk20 (accumulated cost)
+ *     LDR   R3, [R2,#0x14]   ; pCur->nPathCost (accumulated cost)
  *     CMP   R3, #0 / BEQ    ; cost 0 means unvisited -> do not expand
  *     LDR   R3, [R2,#0x14]  ... followed by
  *     LDR   R3, [R2,#0x0]   ; pCur->pFloorSpr
@@ -122,7 +122,7 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
         return false;
     }
     /* Cost 0 is the "unvisited" marker. */
-    if (pCur->nUnk20 == 0) {
+    if (pCur->nPathCost == 0) {
         return false;
     }
     /* No floor sprite and no flag: nothing to expand across. */
@@ -148,10 +148,10 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
             }
 
             /* Cost, exactly as the original composes it:
-             *   cur->nUnk20 (u16) + facing delta + 4
+             *   cur->nPathCost (u16) + facing delta + 4
              *   + 2 when the direction is diagonal (odd, and below 8)
              *   + 4 when changing layer and the flag is not set */
-            nCost = (u16)pCur->nUnk20;
+            nCost = (u16)pCur->nPathCost;
             nNew  = (i32)nCost
                   + (i32)Map_FacingDelta(nDir, nInFacing)
                   + PUFO_PATH_BASE_COST;
@@ -163,15 +163,15 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
             }
 
             /* Relax only when unset or strictly cheaper. */
-            if (pNext->nUnk20 != 0 && pNext->nUnk20 <= nNew) {
+            if (pNext->nPathCost != 0 && pNext->nPathCost <= nNew) {
                 continue;
             }
-            pNext->nUnk20   = nNew;
+            pNext->nPathCost   = nNew;
             pNext->bFlags29 = (u8)((pNext->bFlags29 & 0xF7) | (8 * (bFlag ? 0 : 1)));
-            pNext->bUnk24   = nDir;
+            pNext->bPathDir   = nDir;
             bAny = true;
 
-            if (pNext->nUnk20 < PUFO_PATH_COST_LIMIT) {
+            if (pNext->nPathCost < PUFO_PATH_COST_LIMIT) {
                 (void)Path_EnqueueCell(pScratch, pNext);
             }
         }
@@ -205,7 +205,7 @@ bool Path_ComputeReachable(PathScratch *pScratch,
                 if (pCell == NULL) {
                     continue;
                 }
-                pCell->nUnk20   = 0;
+                pCell->nPathCost   = 0;
                 pCell->bFlags29 = (u8)(pCell->bFlags29 & ~8u);
                 pCell->bFlags44 = (u8)(pCell->bFlags44 & ~2u);
             }
@@ -227,9 +227,9 @@ bool Path_ComputeReachable(PathScratch *pScratch,
     if (pSeed == NULL) {
         return false;
     }
-    pSeed->bUnk24   = nSeedFacing;
-    pSeed->bUnk25   = 0;
-    pSeed->nUnk20   = 1;
+    pSeed->bPathDir   = nSeedFacing;
+    pSeed->bPathFlag   = 0;
+    pSeed->nPathCost   = 1;
     (void)Path_EnqueueCell(pScratch, pSeed);
 
     /* Step 4: alternate the two frontier lists.
@@ -250,11 +250,11 @@ bool Path_ComputeReachable(PathScratch *pScratch,
             MapCell *pCell = pScratch->apListA[i];
 
             (void)Path_ExpandCell(pCell->nX, pCell->nY, pCell->nZ,
-                                  nSeedLayer, false, pCell->bUnk24,
+                                  nSeedLayer, false, pCell->bPathDir,
                                   pScratch, pfnLookup, pfnProbe, pUser);
         }
         pScratch->nCountA = 0;
-        if (pTarget->nUnk20 != 0) {
+        if (pTarget->nPathCost != 0) {
             return true;
         }
         if (pScratch->nCountB == 0) {
@@ -267,11 +267,11 @@ bool Path_ComputeReachable(PathScratch *pScratch,
             MapCell *pCell = pScratch->apListB[i];
 
             (void)Path_ExpandCell(pCell->nX, pCell->nY, pCell->nZ,
-                                  nSeedLayer, false, pCell->bUnk24,
+                                  nSeedLayer, false, pCell->bPathDir,
                                   pScratch, pfnLookup, pfnProbe, pUser);
         }
         pScratch->nCountB = 0;
-        if (pTarget->nUnk20 != 0) {
+        if (pTarget->nPathCost != 0) {
             return true;
         }
         if (pScratch->nCountA == 0) {

@@ -1952,6 +1952,44 @@ Order is by what unblocks what. Each item ends with gates + commit.
   passed to a shared role-based predicate instead of through the original's `Soldier *` cast, which would read
   the wrong byte once `Soldier` shifts on Win64.
 
+- [x] **part 67, the enemy-turn bracket: `BeforeEnemyStep (0x4b9b8, 2792 B)`, `Tact_UpdateUnitControl
+  (0x4a444, 788 B)`, `AfterEnemyStep (0x4c4a0, 1368 B)`** — the bracket around the enemy turn, both halves
+  calling `Tact_UpdateUnitControl` once per unit.
+  **The face loop makes six passes over four counters, not six counters.** The two neighbour passes rewrite
+  the slot index (`0x4C09C MOV R1, #1`, `0x4C0EC MOV R1, #2`), so the west-neighbour pass charges the cell's
+  own `abFaceDamage[wall A]` through `pWallSprA` and the north pass likewise for wall B: a wall between two
+  burning cells takes double damage, and nothing in the loop reaches `nPathCost` at +0x14. My first draft
+  modelled slots 4 and 5 as separate counters aliasing `nPathCost` and wrote that into `MapCell`'s comment —
+  `TestBeforeEnemyStepFaceHeat` caught it, and the IDB comment is corrected.
+  **The heat term is `counter + step`, and the store adds it twice.** 0x4C10C/0x4C110 build `R2 = counter +
+  20` (or +5), 0x4C15C compares *that* against `Mc1Rec.bStrength`, 0x4C160 zeroes it when the sprite covers
+  it, 0x4C1F0 stores `counter + R2`. So a sprite absorbs the hit whenever `bStrength >= counter + step` (255
+  always does) and the only counters that ever grow are faces with no sprite at all, growing to
+  `2 * counter + step`.
+  **The burn run probes against its own axis.** 0x4BC78 multiplies the axis delta by a counter running
+  0, -1, -2, so with the west axis it probes EAST and the forward pass starts two cells east of the burning
+  cell and walks back over it. `TestBeforeEnemyStepBurnRun` pins the geometry with three layouts that differ
+  only in where the wall gap is.
+  **`MapCell.abFaceDamage` cannot be reached through the original's byte offset on Win64.** `MapCell`'s four
+  pointers widen, so `pCell + 0x10` lands on `pWallSprB`; the first `Cell_FaceDamage` wrote heat into a
+  sprite pointer and then dereferenced it. The port now indexes the field, the same widened-offset problem
+  `PUFO_SOLDIER_BSTATUS_OFF` already solves for `Soldier`.
+  **The countdowns are gated by the burning state**, not just by their own values: state 0 takes neither
+  countdown (0x4C038), state 2 skips the face loop but still counts down (0x4C040), and the `0x78` field
+  holds at 0xF (0x4C014) — a guard `GameTick_Step` (0x27324) does not have.
+  **The recovery arm and the side transfers want opposite polarities** of `bFlags` bit 0x20 (0x4A500 needs it
+  set, 0x4A5C8 and 0x4A66C need it clear), so no unit takes both arms in one call.
+  **`SideLists` carries its counts by value**, so `Tact_UpdateUnitControl` had to write the removal back
+  before the append read the target count — the `Fall_SyncCounts` pattern. Without it the source roster keeps
+  a unit it no longer holds.
+  109 new checks (12513 total), 12 ledger rows (164), coverage 903/1103 (81.9%), 445204/598792 (74.4%) — the
+  delta is exactly the three functions' 4948 bytes.
+  **Deviation:** the nine callees the bracket drives (`MapCell_TickProximityItems`, `Map_RefreshCellMeta`,
+  `UnitList_ForEachRefresh`, `Unit_UpdateVisibility`, `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`,
+  `EnemyAi_TryFireOrWander`, `Rmp_PickSpawnForUnit`) are seams on `EnemyStepCtx`, and nothing in the app
+  layer builds one yet. The port bounds-checks the burn walk's neighbour cell reads, truncates the 52-byte
+  status buffer, and skips both burden terms when the divisor is zero.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1969,6 +2007,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
    3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
+
+- [ ] **`Tact_KillUnit` removes a dead unit from the side lists without writing the counts back.**
+  `src/pufo/game/pufo_unit.c` builds `SideLists lists = Kill_SideLists(pCtx->pRosters)` twice (the chryssalid
+  transform at ~1758 and the death path at ~1795) and calls `SideLists_RemoveUnit(&lists, pUnit)`, but
+  `SideLists` carries `nXcom` / `nEnemy` **by value** and nothing writes them back to the canonical
+  `nXcomUnitCount` / `nEnemyUnitCount`. The array is compacted while the count stays put, so the roster keeps
+  a duplicated pointer in its last slot and the count is one too high. `Tact_ProcessFallAction` gets this
+  right through `Fall_SyncCounts`, and `Tact_UpdateUnitControl` now does the same through
+  `Turn_SyncSideCounts`; the kill path does not. Fixing it means deciding whether `KillCtx.pRosters` should
+  own the counts or whether `Tact_KillUnit` should sync them, so it is its own step.
 
 - [x] **The object name field is at record+0x00, not +0x04, and `Geoscape_InitUI`'s name loop is
   one slot short — fixed in part 18.** Found while verifying the alien race ids (part 17); it also explains the older
@@ -2234,6 +2282,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the queue walker (`Tact_TickActiveUnit`; the `bFlag0` fire-or-move choice, the per-command camera rules and their adopt-before/after ordering, the 60-voxel recentre stride, the AI-action pair named, the kill-credit bound, 6 original bugs found; coverage unchanged — the walker was already credited by comment citations) | 56/56 (Release) | 12226 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
 | the low-morale AI (`EnemyAi_TryFireOrWander`; the large-unit early exit, the AI-action pair raised before the path choice, the same-column redraw Hex-Rays gets wrong, the two floor walks of different depth, 7 original bugs found) | 56/56 (Release) | 12305 | 899/1103 (81.5%) | 436816/598792 (72.9%) | 40 checked, 0 mismatched |
 | the enemy AI driver (`Tact_EnemyAiTick`; the byte-not-pointer at `TactCtx272+0x100`, the skip-without-advancing tick gate, `g_aUnitTypeFlag3` found, the neighbour-melee hand-off, the `cost * 2/3 + 8.0` fire gate, the RMP walk that never uses its drawn index, 3 original bugs found) | 56/56 (Release) | 12404 | 900/1103 (81.6%) | 440256/598792 (73.5%) | 40 checked, 0 mismatched |
+| the enemy-turn bracket (`BeforeEnemyStep`, `Tact_UpdateUnitControl`, `AfterEnemyStep`; six passes over four face counters, the `counter + step` term added twice, the burn run probing against its axis, the Win64 `abFaceDamage` offset fixed, 12 original findings recorded) | 56/56 (Release) | 12513 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

@@ -14262,3 +14262,120 @@ at 3.
   `TactItem_156910` / `TactItem_156A58` / `TactItem_156A88`: each has a `TactItem_ctor` thunk
   (0x37124, 0x37134, 0x37088) and `Tact_InitMission` stores an `apObjects` entry into its
   `pObj` at +0. The port previously modelled them as `ObjectRec **` pointer variables.
+
+## The enemy-turn bracket: BeforeEnemyStep (0x4b9b8), Tact_UpdateUnitControl (0x4a444), AfterEnemyStep (0x4c4a0)
+
+`BeforeEnemyStep` and `AfterEnemyStep` bracket the enemy turn, and both call
+`Tact_UpdateUnitControl` once per unit - which is why the enemy pass runs before the XCom one:
+BeforeEnemyStep clears the idempotence guard byte `Soldier.bControlRecovered` (+0x1B2) for the
+enemy roster at 0x4BB80, AfterEnemyStep for the civilians (0x4C8B0) and the XCom roster
+(0x4C720). Ported as `BeforeEnemyStep`, `Tact_UpdateUnitControl` and `AfterEnemyStep` in
+`src/pufo/game/pufo_turn.c`, driven from `tests/test_turn.c`.
+
+### Tact_UpdateUnitControl (0x4a444..0x4a714)
+
+Guard first (0x4a450): `bControlRecovered` non-zero returns at once, and the function sets it,
+so each unit is processed once per turn. The unit arithmetic - `uHp -= bKneelOrPrimed` (floored
+at 0), `bUnk1037 = 0`, the TU rule (+3 when the cell's `nFlags32` low 3 bits are non-zero, else
+-10 when `uTuSpent >= 10`, else 0, and left alone entirely for a large unit), morale +5 or 100
+from 95 up - is the already-ported `Unit_ApplyControlRecovery`. The original applies morale
+last, at 0x4A714; the port applies it with the rest because nothing in between reads it.
+
+The recovery arm (0x4A4E0..0x4A5A4) needs all of: `uTuSpent < uHp`, `bFlags` bit 0x20 SET, the
+cell unoccupied, `uHp != 0`, not large. It enqueues RECOVER, and for `nUnitType <= 3` pushes
+`szName` + aTextRecs record 39 (male) or 40 (female) as a FORCED status message, then
+`TactState_KickQueue` and `pLinked1040 = 0`.
+
+Both side transfers (0x4A5A8, 0x4A64C) need bit 0x20 CLEAR - the opposite polarity. An
+XCom-side unit of an enemy type becomes an enemy (`bStatus = 1`, `uTu = 0`, appended to
+`apEnemyUnits`, and `Tact_SelectUnit(apXcomUnits[0])` if it was `Map.pSelUnit`); a controlled
+unit of an XCom type returns to `apXcomUnits` and pushes name + record 52 / 53 unprompted.
+`Tact_RemoveUnitFromSideLists` runs first and updates the canonical counts, which the port has
+to do explicitly because `SideLists` carries its counts by value - the same `Fall_SyncCounts`
+pattern.
+
+### BeforeEnemyStep (0x4b9b8..0x4c49c)
+
+Eight steps: clear `pTrackUnit` and the XCom `bUnk1037`; the XCom-base reserve spawn; the enemy
+pass (`bControlRecovered = 0`, `Tact_UpdateUnitControl`, `nAiTick = 0`, with the count re-read
+each iteration); the fire tick over all four layers; clear the flag for civilians then XCom; the
+enemy refill (`uTu = auStat[0]`, `uStunOrArmor = auStat[9]`); clear `bFlags44` bit 0 everywhere;
+`UnitList_ForEachRefresh`.
+
+**The burn run probes against its own axis.** 0x4BC78 multiplies the axis delta by a counter
+running 0, -1, -2, so with the west axis the probe steps EAST over three cells and the forward
+pass then starts at `cell + axisDelta * (nBack + 1)` - two cells east of the burning cell - and
+walks back west across at most 7 cells. `tests/test_turn.c::TestBeforeEnemyStepBurnRun` pins
+this with three layouts that differ only in where the wall gap is.
+
+**The face loop makes six passes over four counters.** Passes 4 and 5 are the west and north
+neighbour cells, gated on that neighbour burning, and both rewrite the slot index (0x4C09C
+`MOV R1, #1`, 0x4C0EC `MOV R1, #2`). They therefore charge the cell's own wall A / wall B
+counter through the same wall sprite - a wall between two burning cells takes double damage -
+and nothing in the loop ever reaches `nPathCost` at +0x14.
+
+**The heat term is `counter + step`, and it is added twice.** 0x4C10C / 0x4C110 build
+`R2 = counter + 20` (or +5), 0x4C15C compares that against `Mc1Rec.bStrength`, 0x4C160 zeroes
+it when the sprite covers it, and 0x4C1F0 stores `counter + R2`. So a sprite absorbs the hit
+whenever `bStrength >= counter + step` - a `bStrength` of 255 always does - and the only
+counters that ever grow belong to faces with no sprite, growing to `2 * counter + step`.
+
+**The countdowns are gated by the burning state.** The `nFlags40` bits 3..6 decrement unless
+zero or already 0xF (0x4C014). If `nFlags32`'s low 3 bits are 0 the cell takes no further
+countdown at all (0x4C038); if they are non-zero but not 4 the face loop is skipped while the
+low 3-bit countdown still runs (0x4C040); at 0 the burning state steps down and the countdown
+re-arms to `rand(2) + 2`.
+
+### AfterEnemyStep (0x4c4a0..0x4c9f8)
+
+`nEnemyUnitCount / 3` random enemies are topped up to `auStat[0] * 0.4` - the constant pair at
+0x4C520 / 0x4C528 is `0x3FD99999` / `0x9999999A`, i.e. 0.4, which Hex-Rays prints as two raw
+halves and reads easily as 0.2. The comparison is `uTu < cap` and the store is `(u16)cap`, so
+the top-up never lowers uTu. Then the proximity tick plus `bFlags44` bit 0 over every cell; the
+right-hand action item of every enemy with `nUnitType > 3` back to `apBelt[0]` with its `bUnk8`
+cleared; `bUnk148 = 0` for every enemy; the XCom refill
+`q = (4 * uInvBurden - 4) / auStat[8]`, `d = (2 * q * auStat[0]) / 10`, `uTu = auStat[0] - d`,
+then `uStunOrArmor += auStat[9] * auStat[8] / (10 * uInvBurden)` capped at `auStat[9]`;
+`Tact_UpdateUnitControl` for XCom then the civilians; the panic AI for every XCom unit under 20
+morale; `Unit_UpdateVisibility` for every enemy; `TactState_KickQueue` and the two refreshes;
+and finally `bUnk1037 = 0` for the XCom roster.
+
+`auStat[8]` is the mean-stun stat. Hex-Rays prints it as `auStat[offsetof(Soldier,
+uStunOrArmor)]`, which reads like `auStat[9]` and is not - the penalty divisor and the stun
+numerator's second factor are different fields.
+
+### Original bugs found (12 ledger rows)
+
+- 0x4C1F0 - the heat term is added to the counter twice, so a face with no sprite grows to
+  `2 * counter + step`.
+- 0x4C09C / 0x4C0EC - the neighbour passes reuse the wall A / wall B counter and sprite.
+- 0x4C158 - a sprite absorbs the hit when `bStrength >= counter + step`, so 255 always absorbs
+  and only sprite-less faces accumulate.
+- 0x4BC78 - the burn-run probe steps against the run direction.
+- 0x4BCD4 / 0x4BE40 - the burn walk dereferences neighbour cell pointers with no null test.
+- 0x4BC88 - `Map_IsValidCell` is called with layer 0 while the index uses the cell's own `nZ`.
+- 0x4BF84 - a negative fire-damage base gets +3 before the shift, so the roll range can exceed
+  the base.
+- 0x4A4FC vs 0x4A5C8 / 0x4A66C - the recovery arm needs `bFlags` bit 0x20 SET, both transfers
+  need it CLEAR.
+- 0x4A604 / 0x4A6A4 - both transfers append at the current roster count with no bound.
+- 0x4A544 - the status message is built in a 52-byte buffer from a 40-byte name plus a
+  200-byte TEXTS record.
+- 0x4C77C - the XCom refill divides by `auStat[8]` and `uInvBurden` with no zero guard, and
+  `4 * uInvBurden - 4` is negative at burden 0.
+- 0x4C014 - BeforeEnemyStep guards the 0x78 countdown against its maximum; GameTick_Step
+  (0x27324) shares the arithmetic with no such guard.
+
+### Deviations
+
+- `MapCell_TickProximityItems`, `Map_RefreshCellMeta`, `UnitList_ForEachRefresh`,
+  `Unit_UpdateVisibility`, `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`,
+  `EnemyAi_TryFireOrWander` and `Rmp_PickSpawnForUnit` are seams on `EnemyStepCtx`; the app
+  layer owns no `TactTickCtx` yet, so nothing in the app builds the context.
+- The port bounds-checks the burn walk's neighbour cell reads and the countdown's grid slot
+  reads, where the original dereferences them.
+- `Turn_PushUnitNameMsg` truncates instead of overflowing the 52-byte buffer.
+- `AfterEnemyStep` skips both burden terms when the divisor is zero.
+- `MapCell.abFaceDamage` is indexed through the field, not through the original's
+  `pCell + 0x10 + slot`: on Win64 `MapCell`'s widened pointers move that field and a raw offset
+  lands on `pWallSprB`. `Cell_FaceDamage` was removed for the same reason.

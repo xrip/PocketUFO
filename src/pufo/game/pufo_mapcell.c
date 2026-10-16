@@ -13,10 +13,8 @@
 
 MapCell *MapCell_Init(MapCell *pCell, i32 nX, i32 nY, i32 nZ)
 {
-    pCell->bUnk16 = 0;
-    pCell->bUnk17 = 0;
-    pCell->bUnk18 = 0;
-    pCell->bUnk19 = 0;
+    memset(pCell->abFaceDamage, 0, sizeof(pCell->abFaceDamage));
+    pCell->nPathCost = 0;
     pCell->nZ     = (u8)nZ;
 
     pCell->pFloorSpr = NULL;
@@ -27,9 +25,8 @@ MapCell *MapCell_Init(MapCell *pCell, i32 nX, i32 nY, i32 nZ)
     pCell->bFlags36  = (u8)(pCell->bFlags36 & 0xFE);
 
     pCell->nX       = (u8)nX;
-    pCell->bUnk24   = 0;
+    pCell->bPathDir   = 0;
     pCell->nFlags40 = pCell->nFlags40 & 0xFFFFFF80u;
-    pCell->nUnk20   = 0;
     pCell->nY       = (u8)nY;
     pCell->nFlags32 = pCell->nFlags32 & 0xFFFFFF80u;
     pCell->bUnk56   = 0;
@@ -41,8 +38,7 @@ MapCell *MapCell_Init(MapCell *pCell, i32 nX, i32 nY, i32 nZ)
 
 MapCell *MapCell_Reset(MapCell *pCell)
 {
-    pCell->bUnk24    = 0;
-    pCell->nUnk20    = 0;
+    pCell->bPathDir    = 0;
     pCell->bFlags44  = (u8)(pCell->bFlags44 & 0xFE);
     pCell->pItemList = NULL;
     pCell->pUnit     = NULL;
@@ -50,11 +46,10 @@ MapCell *MapCell_Reset(MapCell *pCell)
     pCell->bUnk56    = 0;
     pCell->bFlags57[1] = 0;
     pCell->bFlags29  = (u8)(pCell->bFlags29 & 0xAF);
-    pCell->bUnk16    = 0;
-    pCell->bUnk17    = 0;
-    pCell->bUnk18    = 0;
-    pCell->bUnk19    = 0;
-    pCell->nFlags32  = pCell->nFlags32 & 0xFFFFFFF8u;
+    memset(pCell->abFaceDamage, 0, sizeof(pCell->abFaceDamage));
+    pCell->nPathCost   = 0;   /* the original clears 0x14..0x17 as one dword earlier in the
+                               * sequence; nothing between the two writes reads the field */
+    pCell->nFlags32    = pCell->nFlags32 & 0xFFFFFFF8u;
     pCell->bFlags36  = (u8)(pCell->bFlags36 & ~1u);
     pCell->nFlags40  = pCell->nFlags40 & 0xFFFFFFF8u;
     pCell->bFlags29  = (u8)(pCell->bFlags29 & ~0x20u);
@@ -79,9 +74,12 @@ MapCell *MapCell_SetTileSprites(MapCell *pCell, Mc1Rec *pFloor, Mc1Rec *pWallA,
     }
     pCell->pUnit    = NULL;
     pCell->bFlags36 = (u8)(pCell->bFlags36 & 0xFE);
-    pCell->bUnk24   = 0;
-    pCell->nUnk20   = 0;
-    pCell->nFlags40 = pCell->nFlags40 & 0xFFFFFF80u;
+    pCell->bPathDir   = 0;
+    /* Only 0x14..0x17 is cleared here. That is the pathfinder's cost dword, which the fire
+     * tick also uses as its WEST and NORTH face counters -- so a tile change wipes those two
+     * counters while the floor/wall/ceiling counters at 0x10..0x13 survive. */
+    pCell->nPathCost  = 0;
+    pCell->nFlags40   = pCell->nFlags40 & 0xFFFFFF80u;
     pCell->bFlags29 = (u8)(pCell->bFlags29 & ~0x20u);
     pCell->bFlags44 = (u8)(pCell->bFlags44 & ~1u);
     return pCell;

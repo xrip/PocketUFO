@@ -87,7 +87,8 @@ typedef struct Mc1Rec {
     u8   bWallRangeCost;  /* 0x17, range a ray loses passing this sprite.
                            * Read as pSpr[23] by Map_ComputeFov @ 0x2deac for wall A,
                            * wall B and ceiling alike. The paired byte pSpr[22] is
-                           * bStrength, compared against the cell's bUnk17 / bUnk18. */
+                           * bStrength, compared against the cell's abFaceDamage[wall A] /
+                           * abFaceDamage[wall B]. */
     u8   bCeilBreakable;  /* 0x18, non-zero when a ceiling sprite can give way at
                            * all. Read by the ceiling-break sweep of
                            * Combat_ResolveShot @ 0x2f12c (LDRB R3, [R0,#0x18]),
@@ -164,22 +165,34 @@ typedef struct MapCell {
     Mc1Rec    *pWallSprA;   /* 0x04 */
     Mc1Rec    *pWallSprB;   /* 0x08 */
     Mc1Rec    *pCeilSpr;    /* 0x0c */
-    u8         bUnk16;      /* 0x10 */
-    u8         bUnk17;      /* 0x11 */
-    u8         bUnk18;      /* 0x12 */
-    u8         bUnk19;      /* 0x13 */
-    i32        nUnk20;      /* 0x14 */
-    u8         bUnk24;      /* 0x18 */
-    u8         bUnk25;      /* 0x19 */
-    u8         nX;          /* 0x1a */
-    u8         nY;          /* 0x1b */
-    u8         nZ;          /* 0x1c */
-    u8         bFlags29;    /* 0x1d; bit4 set by SetBFlags29_4, bit5 cleared by Reset */
-    u8         gap_30[2];   /* 0x1e */
-    u32        nFlags32;    /* 0x20; low 7 bits cleared by Init/Reset/SetTileSprites */
-    u8         bFlags36;    /* 0x24; bit0 cleared */
-    u8         gap_37[3];   /* 0x25 */
-    u32        nFlags40;    /* 0x28; low 7 bits cleared */
+    /* Per-face accumulated damage, 0x10..0x13: floor, wall A, wall B, ceiling. The splash
+     * walk (Combat_DamageSprite) indexes them as `pCell + 0x10 + slot` and so does the fire
+     * tick, which reaches all four plus two neighbour passes that reuse wall A and wall B --
+     * see PUFO_CELL_FACE_* / PUFO_CELL_PASS_* below. The fire tick compares the sprite's
+     * bStrength (Mc1Rec+0x16) against counter + step, not against the step alone. */
+    u8         abFaceDamage[4]; /* 0x10 */
+    /* The pathfinder's accumulated cost, 0 meaning "unvisited" -- Path_ExpandCell @ 0x2b604
+     * reads it as a dword (`LDR R3,[pCell,#0x14]`, 0x2B6A0) and composes new costs from it.
+     * It is adjacent to abFaceDamage but the fire tick never reaches it: its slot index is
+     * rewritten to 1 or 2 for the two neighbour passes (0x4C09C, 0x4C0EC). */
+    i32        nPathCost;       /* 0x14 */
+    u8         bPathDir;        /* 0x18, the direction this cell was reached from; the turn
+                                 * cost Map_FacingDelta reads for the next expansion */
+    u8         bPathFlag;       /* 0x19 */
+    u8         nX;              /* 0x1a */
+    u8         nY;              /* 0x1b */
+    u8         nZ;              /* 0x1c */
+    u8         bFlags29;        /* 0x1d; bit4 set by SetBFlags29_4, bit5 cleared by Reset;
+                                 * bit1 selects the fire axis and bit2 marks the cell as
+                                 * burning -- see the PUFO_CELL_FIRE_* constants. */
+    u8         gap_30[2];       /* 0x1e */
+    u32        nFlags32;        /* 0x20; low 7 bits cleared by Init/Reset/SetTileSprites */
+    u8         bFlags36;        /* 0x24; bit0 cleared. In the fire tick bit0 picks the heat
+                                 * step: set adds 20 to abFaceDamage, clear adds 5. */
+    u8         gap_37[3];       /* 0x25 */
+    u32        nFlags40;        /* 0x28; low 7 bits cleared. Low 3 bits count down to the
+                                 * next advance of the burning state; bits 3..6 (0x78) are a
+                                 * second countdown. Both decrement once per enemy turn. */
     u8         bFlags44;    /* 0x2c; bit0 cleared */
     u8         gap_45[3];   /* 0x2d */
     Soldier   *pUnit;       /* 0x30 */
@@ -201,6 +214,45 @@ _Static_assert(sizeof(TactItem) == 24, "TactItem is 24 bytes on ILP32");
 _Static_assert(offsetof(MapCell, pUnit) == 0x30, "MapCell.pUnit is at 0x30 on ILP32");
 _Static_assert(sizeof(MapCell) == 60, "MapCell is 60 bytes on ILP32");
 #endif
+
+/* The four face counters and the six passes the fire tick makes over them
+ * (BeforeEnemyStep @ 0x4b9b8, 0x4C048..0x4C210). Wall A is the wall on the WEST side of the
+ * cell and wall B the one on the NORTH side.
+ *
+ * The loop counter runs 0..5, but passes 4 and 5 have no counter and no sprite of their own:
+ * after gating on the neighbour cell being in bounds and burning, 0x4C09C writes `MOV R1, #1`
+ * and 0x4C0EC `MOV R1, #2`, and R1 is what indexes both `pCell + 0x10 + R1` (0x4C0FC) and the
+ * sprite switch (0x4C114). So the WEST neighbour pass charges abFaceDamage[wall A] through
+ * pWallSprA and the NORTH neighbour pass charges abFaceDamage[wall B] through pWallSprB -- the
+ * same counter and the same sprite the cell's own wall pass uses. A wall therefore takes its
+ * own hit plus the neighbour's, and nothing in this loop touches nPathCost. */
+#define PUFO_CELL_FACE_FLOOR   0  /* abFaceDamage[0], MapCell+0x10 */
+#define PUFO_CELL_FACE_WALL_A  1  /* abFaceDamage[1], MapCell+0x11, the west wall */
+#define PUFO_CELL_FACE_WALL_B  2  /* abFaceDamage[2], MapCell+0x12, the north wall */
+#define PUFO_CELL_FACE_CEILING 3  /* abFaceDamage[3], MapCell+0x13 */
+#define PUFO_CELL_PASS_WEST    4  /* the neighbour at nX - 1, charged through wall A */
+#define PUFO_CELL_PASS_NORTH   5  /* the neighbour at nY - 1, charged through wall B */
+#define PUFO_CELL_FACE_PASSES  6
+
+/* MapCell.bFlags29 bits 1 and 2, from the fire tick in BeforeEnemyStep @ 0x4b9b8. Bit 2
+ * marks the cell as burning: tested at 0x4BC34, cleared on the cells a burn walk gives up
+ * on at 0x4BF1C, and it is the same bit the iso layer tests to pick the burning tile art
+ * (pufo_isodraw.c:72). Bit 1 selects the burn axis -- set runs the walk WEST (dir 6) and
+ * checks the NORTH side (dir 0) through wall B, clear runs it NORTH (dir 0) and checks the
+ * WEST side (dir 6) through wall A. */
+#define PUFO_CELL_FLAG_FIRE_AXIS 0x02u
+#define PUFO_CELL_FLAG_BURNING   0x04u
+
+/* MapCell.nFlags32 low 3 bits: the burning state. 4 is what an incendiary hit writes
+ * (Combat_ThrowFlags 0x2e... and Combat_SecondaryFlags both `| 4`), and 4 is the only value
+ * any reader tests for equality with -- the fire tick at 0x4BF3C, 0x4BFF0 and 0x4C040, and
+ * Combat_ThrowFlags at 0x2e... Tact_UpdateUnitControl @ 0x4a444 only tests the field for
+ * non-zero. The field is decremented by one per enemy turn when the nFlags40 countdown
+ * reaches 0 (0x4C228..0x4C240), and Combat_ThrowFlags randomises it with rand(3), so 1, 2,
+ * 3 and 5..7 are reachable; nothing distinguishes them from 0, so they are not named. */
+#define PUFO_CELL_FIRE_STATE_MASK 7u
+#define PUFO_CELL_FIRE_STATE_NONE 0u
+#define PUFO_CELL_FIRE_STATE_ON   4u
 
 /* Tile-flag selectors for MapCell_TestFlag. Names come from the call sites:
  * 0 and 5 gate floor/ceiling visibility, 1 and 2 gate the wall sprites, and

@@ -230,7 +230,8 @@ void Map_ComputeFov(FovField *pFov, u32 *paWindow,
                  * flag 1 the wall of the cell being entered. */
                 if ((i8)pStep[2] == 2) {
                     pCell->bFlags57[0] = (char)((u8)pCell->bFlags57[0] | 2u);
-                    if (Fov_WallCosts(pCell, pCell->pWallSprA, pCell->bUnk17)) {
+                    if (Fov_WallCosts(pCell, pCell->pWallSprA,
+                                      pCell->abFaceDamage[PUFO_CELL_FACE_WALL_A])) {
                         if (pEntry[1] < (u16)nCost) {
                             pEntry[1] = (u16)nCost;
                         }
@@ -240,7 +241,8 @@ void Map_ComputeFov(FovField *pFov, u32 *paWindow,
                         }
                     }
                 } else if ((i8)pStep[2] == 1) {
-                    if (Fov_WallCosts(pNext, pNext->pWallSprA, pNext->bUnk17)) {
+                    if (Fov_WallCosts(pNext, pNext->pWallSprA,
+                                      pNext->abFaceDamage[PUFO_CELL_FACE_WALL_A])) {
                         nCost -= pNext->pWallSprA->bWallRangeCost;
                         if (pEntryNext[1] < (u16)nCost) {
                             pEntryNext[1] = (u16)nCost;
@@ -253,7 +255,8 @@ void Map_ComputeFov(FovField *pFov, u32 *paWindow,
 
                 /* byte 3: wall B, same asymmetry. */
                 if ((i8)pStep[3] == 2) {
-                    if (Fov_WallCosts(pCell, pCell->pWallSprB, pCell->bUnk18)) {
+                    if (Fov_WallCosts(pCell, pCell->pWallSprB,
+                                      pCell->abFaceDamage[PUFO_CELL_FACE_WALL_B])) {
                         if (pEntry[2] < (u16)nCost) {
                             pEntry[2] = (u16)nCost;
                         }
@@ -263,7 +266,8 @@ void Map_ComputeFov(FovField *pFov, u32 *paWindow,
                         }
                     }
                 } else if ((i8)pStep[3] == 1) {
-                    if (Fov_WallCosts(pNext, pNext->pWallSprB, pNext->bUnk18)) {
+                    if (Fov_WallCosts(pNext, pNext->pWallSprB,
+                                      pNext->abFaceDamage[PUFO_CELL_FACE_WALL_B])) {
                         nCost -= pNext->pWallSprB->bWallRangeCost;
                         if (pEntryNext[2] < (u16)nCost) {
                             pEntryNext[2] = (u16)nCost;

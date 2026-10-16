@@ -205,16 +205,16 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 900 / 1103 (81.6%)
-                                             bytes cited:     440256 / 598792 (73.5%)
-python docs/parity/audit_credits.py       -> credited functions: 900, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 903 / 1103 (81.9%)
+                                             bytes cited:     445204 / 598792 (74.4%)
+python docs/parity/audit_credits.py       -> credited functions: 903, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 380 (explain 212 citations)
                                              credited addresses whose original name is not defined: 2
                                              (0x1512c Tact_HandleMapClick 1104 B,
                                               0x17bb8 TactAction_ConfirmMeleeMode6 412 B - cited by port
                                               names the IDB does not carry yet; 0x54130 left the list when
                                               the walker itself was ported)
-python docs/parity/audit_bugs.py          -> ledger rows: 152, ORIGINAL BUG markers in src/pufo: 59
+python docs/parity/audit_bugs.py          -> ledger rows: 164, ORIGINAL BUG markers in src/pufo: 62
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -231,9 +231,17 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **12404**. Coverage as of the latest commit: **900 / 1103
-functions (81.6%)**, **440256 / 598792 bytes (73.5%)**. This unit ported `Tact_EnemyAiTick` (0x4cbe0,
-3,440 B) — the enemy AI driver: the byte-not-pointer at `TactCtx272+0x100`, the unit gates, the
+Test checks run across the 56 suites: **12513**. Coverage as of the latest commit: **903 / 1103
+functions (81.9%)**, **445204 / 598792 bytes (74.4%)**. This unit ported the enemy-turn bracket —
+`BeforeEnemyStep` (0x4b9b8, 2,792 B), `Tact_UpdateUnitControl` (0x4a444, 788 B) and `AfterEnemyStep`
+(0x4c4a0, 1,368 B): the six-pass face loop that charges wall A twice when the west neighbour burns, the
+`counter + step` term the store adds a second time, the burn run that probes against its own axis, the
+burning-state gates on both countdowns, the reserve spawn's swap-remove, and the `SideLists` count
+write-back. 109 new checks, 12 original findings recorded, and the coverage delta is exactly the three
+functions' 4,948 bytes. Two of the port's own first-draft errors surfaced only because the tests asserted
+values: the face loop had been modelled as six counters aliasing `nPathCost`, and `abFaceDamage` was reached
+through the original's ILP32 byte offset, which on Win64 lands on `pWallSprB`. The unit before it ported
+`Tact_EnemyAiTick` (0x4cbe0, 3,440 B) — the enemy AI driver: the byte-not-pointer at `TactCtx272+0x100`, the unit gates, the
 `g_aUnitTypeFlag3` split between the melee and throw/fire branches, the neighbour-melee hand-off, the
 `cost * 2/3 + 8.0` affordability gate, the RMP node walk and its tail. 99 new checks, 3 original bugs recorded,
 and the coverage delta is exactly the function's 3,440 bytes. The gates caught a second inflation of mine on the
@@ -605,7 +613,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 152 rows, 59 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 164 rows, 62 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -930,7 +938,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-59 markers in the source, 152 ledger rows. Examples:
+62 markers in the source, 164 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
@@ -1211,8 +1219,12 @@ does.
      walker's `pAiActionUnit` both depend on. It needs `Unit_CanStepTo` (0x27bb8, 14,716 B) plus its
      `Map_ProbeStepOccupants` (0x2778c, 1,068 B) — 18 KB that is now the largest single blocker in the tact
      subsystem.
-   The rest of the enemy-turn group is still open: `BeforeEnemyStep (0x4b9b8, 2,792 B)` and
-   `AfterEnemyStep (0x4c4a0, 1,368 B)` — both are hooks on `EnemyAiTickCtx` and `TurnHooks` today.
+   The enemy-turn group is now ported too: `BeforeEnemyStep` (0x4b9b8, 2,792 B) and `AfterEnemyStep`
+   (0x4c4a0, 1,368 B) live in `src/pufo/game/pufo_turn.c` behind `EnemyStepCtx`, driven from
+   `tests/test_turn.c`. What is still missing is the app layer building an `EnemyStepCtx` — its nine seams
+   (`MapCell_TickProximityItems`, `Map_RefreshCellMeta`, `UnitList_ForEachRefresh`, `Unit_UpdateVisibility`,
+   `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`, `EnemyAi_TryFireOrWander`, `Rmp_PickSpawnForUnit`)
+   are all ported functions, but nothing in the app wires them into one context yet.
 
 ### Priority 2 — finish the tactical renderer
 
@@ -1318,7 +1330,7 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
 | `docs/parity/renames.tsv` | 380 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 152-row bug ledger, with a `qol` column |
+| `docs/parity/bugs.tsv` | 164-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

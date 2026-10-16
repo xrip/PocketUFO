@@ -283,7 +283,7 @@ static void Combat_DamageSprite(MapCell *pCell, i32 nSlot, u16 nPower,
                                 Mc1Rec *pSpr)
 {
     i32 d = (i32)((double)nPower - 1.5 * (double)pSpr->bStrength);
-    u8 *pCounter = &pCell->bUnk16 + nSlot;
+    u8 *pCounter = pCell->abFaceDamage + nSlot;
 
     if ((i32)pSpr->bStrength >= (i32)*pCounter + d) {
         if (d < 0) {
@@ -326,10 +326,12 @@ static void Combat_DamageSprite(MapCell *pCell, i32 nSlot, u16 nPower,
         }
         return;
     }
-    pCell->bUnk16 = (pCell->nZ != 0) ? (u8)(d - (i32)pSpr->bStrength) : 0;
+    pCell->abFaceDamage[PUFO_CELL_FACE_FLOOR] =
+        (pCell->nZ != 0) ? (u8)(d - (i32)pSpr->bStrength) : 0;
     pCell->pFloorSpr = Rec_GetExtraSpr(pSpr->nSlot, pSpr->bExtraSprFacing);
     if (pCell->nZ != 0 && pCell->pFloorSpr != NULL
-        && (i32)pCell->pFloorSpr->bStrength <= pCell->bUnk16) {
+        && (i32)pCell->pFloorSpr->bStrength
+        <= pCell->abFaceDamage[PUFO_CELL_FACE_FLOOR]) {
         pCell->pFloorSpr = NULL;
     }
 }
@@ -569,7 +571,7 @@ static i32 Combat_DirectUnitDamage(const CombatCtx *pCtx, MapCell *pCell,
 
 /* 0x2f328..0x2f734: walk the hit window looking for ceiling tiles the shot
  * broke. Each cell's unit power (the low half of hit dword 3) plus the cell's
- * own bUnk19 is compared against the ceiling sprite's strength. The last cell
+ * own abFaceDamage[ceiling] is compared against the ceiling sprite's strength. The last cell
  * that gave way becomes the impact point of the splash walk, and the walk mode
  * is promoted to SPLASH_MODE_THROW. */
 static void Combat_CeilingBreakSweep(const CombatCtx *pCtx,
@@ -595,7 +597,8 @@ static void Combat_CeilingBreakSweep(const CombatCtx *pCtx,
             if (pCeil == NULL || pCeil->bCeilBreakable == 0) {
                 continue;
             }
-            if ((i32)nUnitPower + (i32)pCell->bUnk19 <= (i32)pCeil->bStrength) {
+            if ((i32)nUnitPower + (i32)pCell->abFaceDamage[PUFO_CELL_FACE_CEILING]
+                <= (i32)pCeil->bStrength) {
                 continue;
             }
             if (*peMode == SPLASH_MODE_NORMAL) {

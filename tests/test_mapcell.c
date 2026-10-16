@@ -98,8 +98,8 @@ static void TestInit(void)
     CheckEqI32(cell.bFlags44, 0xFE, "  bFlags44 bit0 cleared");
     CheckEqI32((i32)cell.nFlags32, (i32)0xFFFFFF80u, "  nFlags32 low 7 bits cleared");
     CheckEqI32((i32)cell.nFlags40, (i32)0xFFFFFF80u, "  nFlags40 low 7 bits cleared");
-    CheckEqI32(cell.bUnk16, 0, "  bUnk16 cleared");
-    CheckEqI32(cell.nUnk20, 0, "  nUnk20 cleared");
+    CheckEqI32(cell.abFaceDamage[0], 0, "  abFaceDamage[0] cleared");
+    CheckEqI32(cell.nPathCost, 0, "  nPathCost cleared");
     (void)pBytes;
 }
 

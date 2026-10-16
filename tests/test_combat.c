@@ -108,7 +108,7 @@ static void TestEmptyWindow(void)
     g_spr.bStrength = 100;
     Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
                              g_aHits, SPLASH_MODE_NORMAL);
-    CheckEqI32("no counter written", pCell->bUnk16, 0);
+    CheckEqI32("no counter written", pCell->abFaceDamage[0], 0);
     CheckEqI32("no flags written", (i32)(pCell->nFlags32 & 7u), 0);
 }
 
@@ -124,10 +124,10 @@ static void TestSpriteDamage(void)
     Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
                              g_aHits, SPLASH_MODE_NORMAL);
     /* d = 200 - 1.5 * 100 = 50, and 100 >= 0 + 50, so the tile only records it. */
-    CheckEqI32("first hit counter", pCell->bUnk16, 50);
+    CheckEqI32("first hit counter", pCell->abFaceDamage[0], 50);
     Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
                              g_aHits, SPLASH_MODE_NORMAL);
-    CheckEqI32("second hit counter", pCell->bUnk16, 100);
+    CheckEqI32("second hit counter", pCell->abFaceDamage[0], 100);
     Check("sprite survives while the counter is under the hardness",
           pCell->pFloorSpr == &g_spr);
 
@@ -155,7 +155,7 @@ static void TestSpriteDamage(void)
     SetHit(0, 4000);
     Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
                              g_aHits, SPLASH_MODE_NORMAL);
-    CheckEqI32("no counter on an unbreakable sprite", pCell->bUnk16, 0);
+    CheckEqI32("no counter on an unbreakable sprite", pCell->abFaceDamage[0], 0);
     Check("unbreakable sprite stays", pCell->pFloorSpr == &g_spr);
 }
 
@@ -634,7 +634,7 @@ static void TestResolveShot(void)
     CheckEqI32("the impact record holds the fire power",
                (i32)g_aHits[Combat_HitIndex(20, 20, 0)], 60);
     CheckEqI32("the floor slot damage counter grows by power - 1.5 * strength",
-               g_aCells[IMPACT_LAYER][IMPACT_Y][IMPACT_X].bUnk16, 15);
+               g_aCells[IMPACT_LAYER][IMPACT_Y][IMPACT_X].abFaceDamage[0], 15);
     CheckEqI32("mode stays normal", g_out.eMode, SPLASH_MODE_NORMAL);
     CheckEqI32("no field-of-view refresh without a ceiling break", g_out.nFovCalls, 0);
     CheckEqI32("no area fire reported", g_nArea, 0);
@@ -647,7 +647,7 @@ static void TestResolveShot(void)
     g_ceil.bCeilBreakable = 1;
     g_ceil.bStrength = 5;
     Impact()->pCeilSpr = &g_ceil;
-    Impact()->bUnk19 = 0;
+    Impact()->abFaceDamage[3] = 0;
     g_shot.uFirePower = 30;
     /* Slot 3 is the ceiling: the impact record lands in hit dword 3, which is
      * exactly the half the ceiling-break sweep reads. */

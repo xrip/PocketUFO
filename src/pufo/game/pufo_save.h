@@ -516,7 +516,7 @@ bool Save_ReadFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
  * dimY = 6 covers the whole 60 x 60 x 4 grid and a smaller map only its corner.
  *
  * Per cell, in the original's write order:
- *   4 bytes at cell+0x10 (bUnk16..bUnk19 as one block),
+ *   4 bytes at cell+0x10 (MapCell.abFaceDamage as one block),
  *   bFlags29 bits 0,1,2,3,4 each as their own byte,
  *   nFlags32 & 7, then (nFlags32 >> 3) & 0xF,
  *   bFlags36 & 1,
@@ -531,7 +531,7 @@ bool Save_ReadFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
  *
  * Three things only the reader shows:
  *   - it writes nX, nY and nZ from the loop counters instead of reading them, and
- *     clears nUnk20, bUnk24 and gap_25. Coordinates are derived, not stored.
+ *     clears nPathCost, bPathDir and bPathFlag. Coordinates are derived, not stored.
  *   - restoring bFlags29 bit 4 uses the mask 0x8F, which also CLEARS bits 5 and 6.
  *     Bit 5 is the shot-trace flag Map_ClearShotTraceFlags sweeps, so a load wipes
  *     it for every cell as a side effect of restoring bit 4.
@@ -546,7 +546,7 @@ bool Save_ReadFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
  *   - bFlags57[0] stores only bits 2 and 3. Bits 0 and 1 keep their in-memory value.
  *   - bFlags29 stores bits 0..4 and clears bits 5 and 6; bit 7 survives.
  *   - bUnk17, bUnk18 and bUnk19 are stored as part of the 4-byte block at cell+0x10,
- *     but nUnk20, bUnk24 and gap_25 are cleared rather than read.
+ *     but nPathCost, bPathDir and bPathFlag are cleared rather than read.
  *
  * Deviation: the original dereferences the grid slot unconditionally and indexes
  * apSoldiers / the item array with no bound check. The port skips a NULL slot and

@@ -1468,7 +1468,7 @@ bool Save_WriteMap(DatFile *pDat, const MapGeom *pMap,
                     continue;
                 }
 
-                if (!W(pDat, &pCell->bUnk16, 4)) { /* 0x43998: bUnk16..bUnk19 as a block */
+                if (!W(pDat, pCell->abFaceDamage, 4)) { /* 0x43998: the four face counters as a block */
                     return false;
                 }
                 for (u32 nBit = 0; nBit < 5; ++nBit) { /* 0x439B0..0x43A34 */
@@ -1565,12 +1565,12 @@ bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *p
                     continue;
                 }
 
-                if (!DatFile_Read(pDat, &pCell->bUnk16, 4)) { /* 0x434C0 */
+                if (!DatFile_Read(pDat, pCell->abFaceDamage, 4)) { /* 0x434C0 */
                     return false;
                 }
-                pCell->nUnk20 = 0;  /* 0x434D0 */
-                pCell->bUnk24 = 0;
-                pCell->bUnk25 = 0;
+                pCell->nPathCost = 0;  /* 0x434D0 */
+                pCell->bPathDir = 0;
+                pCell->bPathFlag = 0;
                 pCell->nX = (u8)nCol; /* 0x434DC: coordinates are derived, not stored */
                 pCell->nY = (u8)nRow;
                 pCell->nZ = (u8)nLayer;

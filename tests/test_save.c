@@ -1166,10 +1166,10 @@ static void TestMapChunk(void)
     font.nMc1IndexCount = 3;
 
     pCell = &g_aMapCells[2][3][4];
-    pCell->bUnk16 = 0x11;
-    pCell->bUnk17 = 0x22;
-    pCell->bUnk18 = 0x33;
-    pCell->bUnk19 = 0x44;
+    pCell->abFaceDamage[0] = 0x11;
+    pCell->abFaceDamage[1] = 0x22;
+    pCell->abFaceDamage[2] = 0x33;
+    pCell->abFaceDamage[3] = 0x44;
     pCell->bFlags29 = 0x35; /* bits 0, 2, 4 set; bit 5 is the shot-trace flag */
     pCell->nFlags32 = 0x1A9;
     pCell->bFlags36 = 1;
@@ -1204,13 +1204,13 @@ static void TestMapChunk(void)
     DatFile_Close(&dat);
 
     pCell = &g_aMapCells[2][3][4];
-    CheckEqI32(pCell->bUnk16, 0x11, "the 0x10 block round-trips");
-    CheckEqI32(pCell->bUnk19, 0x44, "as four bytes, not one");
+    CheckEqI32(pCell->abFaceDamage[0], 0x11, "the 0x10 block round-trips");
+    CheckEqI32(pCell->abFaceDamage[3], 0x44, "as four bytes, not one");
     CheckEqI32(pCell->nX, 4, "nX comes from the column counter");
     CheckEqI32(pCell->nY, 3, "nY from the row counter");
     CheckEqI32(pCell->nZ, 2, "nZ from the layer counter");
-    CheckEqI32(pCell->nUnk20, 0, "nUnk20 is cleared, not read");
-    CheckEqI32(pCell->bUnk24, 0, "and so are bUnk24 and bUnk25");
+    CheckEqI32(pCell->nPathCost, 0, "nPathCost is cleared, not read");
+    CheckEqI32(pCell->bPathDir, 0, "and so are bPathDir and bPathFlag");
     CheckEqI32(pCell->bFlags29, 0x15, "bFlags29 bit 5 is cleared by the 0x8F mask");
     CheckEqI32(pCell->nFlags32, 0x29, "nFlags32 keeps only its low 7 bits");
     CheckEqI32(pCell->bFlags36, 1, "bFlags36 round-trips");

@@ -11,7 +11,7 @@
  *   list B: dword_10DBC0 @ 0x10dbc0, count dword_11398C @ 0x11398c
  *
  * Map_ComputeReachable @ 0x2b820:
- *   1. clear every cell's accumulated cost (nUnk20) and two flag bits
+ *   1. clear every cell's accumulated cost (nPathCost) and two flag bits
  *   2. bail out if the TARGET cell tests as blank (MapCell_TestFlag selector 0)
  *   3. seed the selected unit's own cell with cost 1
  *   4. expand list A, then list B, then A again, ... until either both lists are
@@ -20,8 +20,8 @@
  * Path_ExpandCell @ 0x2b604, for one frontier cell, tries ten directions and
  * relaxes the neighbour's cost:
  *
- *   cost = curCell->nUnk20                (truncated to u16)
- *        + Map_FacingDelta(dir, curCell->bUnk24)   (turn cost, 0..4)
+ *   cost = curCell->nPathCost                (truncated to u16)
+ *        + Map_FacingDelta(dir, curCell->bPathDir)   (turn cost, 0..4)
  *        + 4
  *        + (dir < 8 && dir odd) ? 2 : 0    (diagonal surcharge)
  *        + (layer != seedLayer && !bFlag) ? 4 : 0
