@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 906 / 1103 (82.1%)
-                                             bytes cited:     462040 / 598792 (77.2%)
-python docs/parity/audit_credits.py       -> credited functions: 906, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 382 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 907 / 1103 (82.2%)
+                                             bytes cited:     470616 / 598792 (78.6%)
+python docs/parity/audit_credits.py       -> credited functions: 907, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 383 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 186, ORIGINAL BUG markers in src/pufo: 72
+python docs/parity/audit_bugs.py          -> ledger rows: 194, ORIGINAL BUG markers in src/pufo: 77
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,8 +229,27 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 57 suites: **12787**. Coverage as of the latest commit: **906 / 1103
-functions (82.1%)**, **462040 / 598792 bytes (77.2%)**. This unit ported the step legality —
+Test checks run across the 58 suites: **13022**. Coverage as of the latest commit: **907 / 1103
+functions (82.2%)**, **470616 / 598792 bytes (78.6%)**. This unit ported the geoscape pointer dispatcher —
+`Geoscape_OnPointer` (0x872d0, 8,576 B), the largest UI function in the binary and the only reader of the 13-slot
+`GeoscapeScreenBlock` control array. It stores the cursor into the 16-bit globals `nSmapCursorX` / `nSmapCursorY`
+(0x186BD0 / 0x186BD4, STRH — every arm then reads the stored halfwords, not its own arguments), runs the screen-0
+main-menu band (a status-line flag with 30 < flag < 50, flag 37 adding the confirm pair), and dispatches over screen
+ids 0..12 and 15..20, with 13 and 14 falling to the default arm that hands back the pointer x. The world arm is an
+eleven-test chain over the status-line flag (values 10..23 and 60) with the target-select, radar-panel and
+multi-select-panel gates interleaved, then the drag block: the globe area is `320 - <zoom overlay pad uHeight>`, a
+press with `nRadarCooldownR @ 0xAC218 < 6` inside it resolves the tile under the pointer and sets the cooldown to
+255, otherwise the drag starts, and a message on the status line stops the globe from scrolling. Two facts only the
+ARM gave: the base-strip tap cell is `(v + 31) >> 5` for a negative v, not floor division, and `nRadarCooldownR`
+doubles as the globe tap gate. Five original defects recorded — `Smap_HitTestStrategSelect` called twice with the
+same arguments on one press (0x87C94), the world tail returning the drag flag or the screen id itself (0x87D84), a
+`<<16 / >>16` sign-extend on a value that is already a halfword (0x88F4C), the options page-2 arm being byte-for-byte
+the page-1 arm (0x89210 / 0x89270) and a `CMP #0 / BLS` on a u8 (0x88524) — plus three deviations: only the ten
+base-strip slots are null-checked in the original (0x87E38), `Smap_HitTestStrategSelect` (0x82be8, 3,088 B) is
+injected as a hook, and screen 10 tracks and clicks the buy/sell panel its own site-info controls do not belong to
+(0x889F0). 235 new checks in `tests/test_geopointer.c`, 8 new ledger rows. IDB: `byte_187074` →
+`bGeoscapeDragActive`, comments on the entry, the drag gate, the tap division and the five defects.
+Unit 71 ported the step legality —
 `Unit_CanStepTo` (0x27bb8, 14,716 B), the last blocker in the tact subsystem and the largest single function
 ported so far. It seeds the candidate from `aDirDeltaXY[3 * g_nStepDir]` itself, runs a head every direction
 shares (in range, not blank, and an occupant that is the swap partner, the mover, or a foreign unit that is not
@@ -795,7 +814,6 @@ This is the shortest chain that produces a real game session, in dependency orde
 |---|---|---|---|
 | 0x8c180 | `Geoscape_Draw` | 33,744 | the geoscape renderer |
 | 0x9b5f4 | `Ui_DrawBaseInfo` | 10,196 | |
-| 0x872d0 | `Geoscape_OnPointer` | 8,576 | needs a fresh context window |
 | 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
 | 0x632cc | `Ui_TextInputDialog` | 6,096 | |
 | 0x557f4 | `BaseInfoScreen_BuildPanels` | 6,084 | |
@@ -805,14 +823,14 @@ This is the shortest chain that produces a real game session, in dependency orde
 (Regenerated from `PARITY.md`'s per-subsystem "remaining" tables, so the ported `ManufScreen_DrawFrame`,
 `BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `Geoscape_InitUI`, `Game_StartNew`,
 `Tact_InitMission`, `Tact_DrawCommandPads`, `Tact_CheckBattleEnd`, `Unit_ApplyFallDamage`,
-`Tact_ProcessFallAction` and `Tact_ProcessFireAction` are no longer listed here.)
+`Tact_ProcessFallAction`, `Tact_ProcessFireAction` and `Geoscape_OnPointer` are no longer listed here.)
 
 `tact` is now down to 3 functions and 1,308 bytes: `Map_InitAndLoadRegistry` (1,284 B) plus the two 12-byte
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is the weakest subsystem by bytes: 86,792 of 160,496 (54.1%), because `Geoscape_Draw` and the
-pointer handlers alone are 49 KB of it. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
+`strat` is still the weakest subsystem by bytes: 95,368 of 160,496 (59.4%), because `Geoscape_Draw` and
+`Geoscape_OnPointerUp` alone are 41 KB of what is left. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
 (66.4%) — the small screen handlers are in, the big screens and their bring-up are not.
 
 ### Decoded but deliberately not ported
@@ -986,9 +1004,21 @@ unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
 - Win64 launch prints an asset-load line. The original `InitInstance` (0x9fd48) prints nothing. This
   is a recorded deviation, added deliberately so a good launch is distinguishable without a screen.
 
+### Two ownership problems found while porting the pointer dispatcher (open, not fixed here)
+
+- **`PufoWorldState` has two fields for one byte.** `app/pufo_world.h` carries `bFacDone` (commented
+  `bBaseFacDone @ 0x187078`) and `bNewBaseMode` (commented `byte_187074[4]`), and `Geoscape_OnPointer`
+  proves 0x187078 is a single byte written with `MOV R2, #1` at 0x874E4 while 0x187074 is a different
+  byte (the drag flag, now `bGeoscapeDragActive`). One of the two fields is wrong; the fix touches every
+  reader of `bFacDone`, so it is a separate change, not a drive-by edit.
+- **`bBasePlaceFail @ 0x1870B8` is declared 16 bytes wide in the IDB** and so overlaps
+  `bBasePlaceActive @ 0x1870BC`, which the same function writes separately (cleared at 0x87320 / 0x87EA0,
+  set at 0x87ED4). The pair should be two 1-byte globals; resizing needs a check of every other reader of
+  the 16-byte object before the type is changed.
+
 ### Deliberate deviations from the original
 
-Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (122 rows, 47 of them matching
+Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (194 rows, 77 of them matching
 an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 - `UiModal_DrawDialog` uses a 205-byte record buffer where the original copies into a 92-byte stack
@@ -1009,7 +1039,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-72 markers in the source, 186 ledger rows. Examples:
+77 markers in the source, 194 ledger rows. Examples:
 
 - `0x2b75c` — the +4 layer surcharge and `bFlags29` bit 3 both come from the probe's `g_bStepReanchored`
   report, not from the search flag. The port used the flag for both until unit 71.
@@ -1369,8 +1399,11 @@ does.
 ### Priority 3 — the geoscape
 
 `Geoscape_InitUI` (0x857f4), `Game_StartNew` (0x94554) and the shell wiring (`app/pufo_world.c`) are done; `Geoscape_Draw` is the remaining link. `Geoscape_Draw` (0x8c180, 33,744 B) is the largest
-function in the binary. `Geoscape_OnPointer` (0x872d0) and `Geoscape_OnPointerUp` (0x89450) are each
-large enough to need a fresh context window on their own. The radar (intercept) screen is **done**:
+function in the binary. `Geoscape_OnPointer` (0x872d0, 8,576 B) is ported in `game/pufo_geopointer.{c,h}` behind
+`GeoscapePointerEnv` — 235 checks in `tests/test_geopointer.c` — but nothing in the app builds that env yet, so
+`TactInputHooks.pfnGeoscapePointer` stays an unfilled seam; the env needs the plane panels, the options controls and
+the screen-16 panels that `PufoWorldState` does not own. `Geoscape_OnPointerUp` (0x89450, 6,992 B) is large enough to
+need a fresh context window on its own. The radar (intercept) screen is **done**:
 `RadarScreen_BlitMapBackdrop` (0x5eb10), `RadarScreen_DrawFuelGauge` (0x5d918),
 `RadarScreen_DrawRangeBar` (0x5d6e4), `RadarScreen_Init` (0x5f490), `RadarScreen_SetActive` (0x6144c),
 `RadarScreen_RollDetection` (0x602a0), `RadarScreen_DrawCraftArmament` (0x5edf4),
@@ -1420,7 +1453,7 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 380 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/renames.tsv` | 383 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
 | `docs/parity/bugs.tsv` | 164-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |

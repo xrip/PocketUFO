@@ -32,6 +32,7 @@ add_library(pufo_game STATIC
     game/pufo_options.c
     game/pufo_mapcell.c
     game/pufo_step.c
+    game/pufo_geopointer.c
     game/pufo_font.c
     game/pufo_unit.c
     game/pufo_tactstate.c
@@ -280,6 +281,18 @@ set_target_properties(test_step PROPERTIES
 )
 add_test(NAME test_step
     COMMAND test_step
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# Geoscape pointer dispatch: which control set each screen id answers to, the globe
+# drag gate and its cooldown, the tap-cell division, the base-tab selection.
+add_executable(test_geopointer ${CMAKE_SOURCE_DIR}/tests/test_geopointer.c)
+target_link_libraries(test_geopointer PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat pufo_util)
+set_target_properties(test_geopointer PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_geopointer
+    COMMAND test_geopointer
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 

@@ -14743,3 +14743,70 @@ The original indexes its fixed 60x60x4 grid with no bounds test inside the arms,
 coordinate reads a different cell of the same array; the port's injected lookup returns NULL there
 and every helper reads that as "no flag, no occupant". The one cell the port still dereferences
 blindly is `Map_ProbeStepOccupants`' candidate, because the original does.
+
+## Geoscape_OnPointer (0x872d0) - ported
+
+8,576 B, the geoscape pointer dispatcher and the only reader of the 13-slot GeoscapeScreenBlock
+control array (apObj[13] @ 0x1864F8). Ported as Geoscape_OnPointer in src/pufo/game/pufo_geopointer.c
+with the evidence header src/pufo/game/pufo_geopointer.h.
+
+Entry (0x872F8 / 0x8731C): the pointer position is stored into nSmapCursorX @ 0x186BD0 and
+nSmapCursorY @ 0x186BD4 with STRH, so the caller's int is truncated to a halfword before any arm
+reads it back. Every arm then reads the stored pair, not its own arguments - the hit tests use the
+arguments, the panel tracking and the map arithmetic use the stored halfwords. 0x87320 clears
+bBasePlaceFail @ 0x1870B8.
+
+Screen 0 with a main-menu message (0x87324): a message-list flag with 30 < flag < 50 hands the
+pointer to the menu controls 18704C and 187024; flag 37 adds the confirm pair 186BA4 / 186BAC and
+returns the second hit. Outside that band the dispatcher falls into the switch.
+
+The switch covers ids 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 20. Ids 13 and
+14 and anything else fall to the default arm, which hands back the pointer x unchanged.
+
+World arm (screens 0 and 2, LABEL_13 @ 0x87530): a chain over the status-line flag - values 10, 11,
+12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 and 60 - with the target-select, radar-panel and
+multi-select-panel gates interleaved. The radar gate hits the five aRadarSelectCtl slots and returns
+5; the multi-select gate hands the pointer to UiPanel_TrackHoldRow over the status panel.
+
+Drag block (0x87C48..0x87D84): the strip height is the current zoom overlay pad's uHeight
+(PadImage+0x0A), so the globe area is 320 - that height. A press with nRadarCooldownR @ 0xAC218 < 6
+inside the globe area resolves the tile under the pointer through Smap_GetTileAtScreen, sets the
+cooldown to 255 and returns 255. Otherwise the drag starts: bGeoscapeDragActive @ 0x187074 set, the
+cooldown cleared, SmapView.nLastDx / nLastDy parked at the cursor. A message on the status line
+(nLineCount != 0) stops the globe from scrolling (0x87CF8). The same cooldown byte is the radar
+pulse timer elsewhere; here it is the tap gate.
+
+Tap division (0x87E94..0x87EAC): the base-strip tap cell is (v + 31) >> 5 for a negative v, not
+floor division - the ARM adds 31 before the arithmetic shift, so -31 gives 0, not -1. Outside the
+map area (y >= 232, x >= 192 or y <= 36) the stored tap pair is left alone and the stored tap flag
+decides; inside it the cell is recomputed and the flag is raised.
+
+Five original defects, each with a marker at its port site and a ledger row:
+- 0x87C94: Smap_HitTestStrategSelect is called twice with the same arguments on one press - once to
+  decide the drag flag and once again inside the cooldown gate.
+- 0x87D84: the world tail hands back the drag flag, or the screen id itself when the flag is clear,
+  so screen 0 returns 0 and screen 2 returns 2 from the same code path. No caller reads it -
+  Input_OnPointer branches away at 0x13CE8.
+- 0x88F4C: the cursor x is sign-extended with <<16 / >>16 although nSmapCursorX is already a
+  halfword, so the round trip changes nothing.
+- 0x89210 / 0x89270: the options page-2 arm is byte-for-byte the page-1 arm - the same seven
+  aOptionsListCtl slots over the same bounds.
+- 0x88524: the crew-slot gate compares an unsigned byte with CMP #0 / BLS, i.e. <= 0.
+
+Two port deviations, both in the ledger:
+- Only the ten base-strip slots are null-checked in the original (0x87E38); every other slot is
+  dereferenced blind. The port skips a NULL slot everywhere.
+- Smap_HitTestStrategSelect @ 0x82be8 (3,088 B) is not ported, so the select test is injected
+  through GeoscapePointerEnv.pfnHitTestStrategSelect (0x87C2C). With no hook installed the port
+  reads "nothing selectable under the pointer", which is the arm's common case.
+
+Screen 10 tracks and clicks pBuySellPanelA - the same panel object screens 11 and 12 use - while its
+own site-info controls sit in a separate array (0x889F0). Recorded as a deviation, not fixed.
+
+Craft arm (screen 6): the weapon-slot range runs over apPlaneCtl[0 .. Ship.bCrewSlots - 1]
+(bCrewSlots @ +0x14), the dogfight pair over slots 2 and 3, gated on Ship.bCanDogfight @ +0x21, and
+the six status controls only while no other plane panel is open.
+
+test_geopointer.c: 235 checks over the flag chain, the menu band, the drag gate and its cooldown,
+the tap division and its area gate, the transfer-row comparison (28 * nBaseCount, read signed), the
+plane control ranges, the research/manuf row arms, the options pages and the default arms.

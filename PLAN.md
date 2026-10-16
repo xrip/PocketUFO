@@ -2138,6 +2138,44 @@ Order is by what unblocks what. Each item ends with gates + commit.
   tact subsystem is at 211 of 214 functions and 1308 bytes, all three of them the atexit registry glue and
   `Map_InitAndLoadRegistry`.
 
+- [x] **part 72, the geoscape pointer dispatcher: `Geoscape_OnPointer (0x872d0, 8,576 B)`** — the largest UI
+  function in the binary and the only reader of the 13-slot `GeoscapeScreenBlock` control array
+  (`apObj[13] @ 0x1864F8`). Ported in `game/pufo_geopointer.{c,h}` behind `GeoscapePointerEnv`.
+  **The entry (0x872F8 / 0x8731C)** stores the cursor through `nSmapCursorX @ 0x186BD0` / `nSmapCursorY @ 0x186BD4`,
+  which are **16-bit** globals (STRH), so the caller's int is truncated before any arm reads it back. The hit tests
+  use the arguments; the panel tracking, the map arithmetic and the area gates all use the stored halfwords.
+  **The screen-0 menu band (0x87324):** a status-line flag with `30 < flag < 50` hands the pointer to the menu
+  controls `18704C` / `187024`, and flag 37 adds the confirm pair `186BA4` / `186BAC`. **The switch** covers ids
+  0..12 and 15..20; ids 13 and 14 and anything else fall to the default arm, which hands back the pointer x
+  unchanged. **The world arm** (screens 0 and 2, `LABEL_13 @ 0x87530`) is an eleven-test chain over the status-line
+  flag — values 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 and 60 — with the target-select, radar-panel
+  and multi-select-panel gates interleaved.
+  **The drag block (0x87C48..0x87D84)** is the part that was not obvious from the decompilation. The strip height is
+  the current zoom overlay pad's `uHeight` (`PadImage+0x0A`), so the globe area is `320 - nStripH`. A press with
+  `nRadarCooldownR @ 0xAC218 < 6` inside that area resolves the tile under the pointer through `Smap_GetTileAtScreen`
+  and sets the cooldown to 255 — the same byte the radar screen uses as its pulse timer is the globe tap gate here.
+  Otherwise the drag starts: `bGeoscapeDragActive @ 0x187074` set, cooldown cleared, `SmapView.nLastDx / nLastDy`
+  parked at the cursor. A message on the status line (`nLineCount != 0`) stops the globe from scrolling (0x87CF8).
+  **The tap division (0x87E94..0x87EAC)** is `(v + 31) >> 5` for a negative v, not floor division — the ARM adds 31
+  before the arithmetic shift, so −31 gives 0, not −1. Outside the map area (y ≥ 232, x ≥ 192 or y ≤ 36) the stored
+  tap pair is left alone and the stored tap flag decides.
+  **Five original defects**, each with a marker at its port site: `Smap_HitTestStrategSelect` called twice with the
+  same arguments on one press (0x87C94); the world tail returning the drag flag or the screen id itself, so screen 0
+  returns 0 and screen 2 returns 2 from the same path and no caller reads it (0x87D84); a `<<16 / >>16` sign-extend on
+  a value that is already a halfword (0x88F4C); the options page-2 arm being byte-for-byte the page-1 arm
+  (0x89210 / 0x89270); a `CMP #0 / BLS` on a u8 (0x88524).
+  **Three deviations, recorded not fixed:** only the ten base-strip slots are null-checked in the original (0x87E38),
+  every other slot is dereferenced blind; `Smap_HitTestStrategSelect @ 0x82be8` (3,088 B) is unported, so the select
+  test is injected through `GeoscapePointerEnv.pfnHitTestStrategSelect` (0x87C2C); screen 10 tracks and clicks
+  `pBuySellPanelA` — the panel screens 11 and 12 use — while its own site-info controls sit in a separate array
+  (0x889F0).
+  **Two ownership problems found, reported as separate issues** (see HANDOFF §7): `PufoWorldState` carries two fields
+  for the single byte at 0x187078, and the IDB declares `bBasePlaceFail @ 0x1870B8` 16 bytes wide, overlapping
+  `bBasePlaceActive @ 0x1870BC`.
+  235 new checks (13022 total), 8 ledger rows (194), coverage 907/1103 (82.2%) and 470616/598792 (78.6%); `strat`
+  moves from 86,792 to 95,368 of 160,496 bytes (59.4%). IDB: `byte_187074` → `bGeoscapeDragActive`, comments on the
+  entry, the drag gate, the tap division and the five defects.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2463,6 +2501,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the path replay (`Unit_PathToCell`; the dropped `Map_ComputeReachable` flag that hid half its effect, the layer re-check on `bFlags29` bit 3 with its two disagreeing ceiling thresholds, the 27-byte facing table, the layer delta that lives in the `nFacing` slot, 6 original findings recorded) | 56/56 (Release) | 12701 | 904/1103 (82.0%) | 446256/598792 (74.5%) | 40 checked, 0 mismatched |
 | the step probe (`Map_ProbeStepOccupants`; the two vertical re-anchors and their asymmetric layer bookkeeping, the large unit's second column, the up anchor that cannot fire for a large unit going east, three unguarded reads of layer-gated state, 7 original findings recorded) | 57/57 (Release) | 12739 | 905/1103 (82.0%) | 447324/598792 (74.7%) | 40 checked, 0 mismatched |
 | the step legality (`Unit_CanStepTo`; the head and twenty direction arms, the seam carrying the settled cell instead of the candidate, the surcharge and `bFlags29` bit 3 corrected to the probe's re-anchor report, 4 original findings recorded) | 57/57 (Release) | 12787 | 906/1103 (82.1%) | 462040/598792 (77.2%) | 40 checked, 0 mismatched |
+| the geoscape pointer dispatcher (`Geoscape_OnPointer`; the 16-bit cursor globals, the screen-0 menu band, the 19-arm screen switch, the drag gate and its tap cooldown, the `(v + 31) >> 5` tap division, 5 original findings and 3 deviations recorded) | 58/58 (Release) | 13022 | 907/1103 (82.2%) | 470616/598792 (78.6%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

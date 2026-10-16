@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 906 / 1103 (82.1%) |
-| Bytes of original code cited | 462040 / 598792 (77.2%) |
+| Functions cited as evidence | 907 / 1103 (82.2%) |
+| Bytes of original code cited | 470616 / 598792 (78.6%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 57 |
-| Test checks run | 12787 |
+| Test suites | 58 |
+| Test checks run | 13022 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 211 | 214 | 177036 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 185 | 204 | 95368 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 221 | 245 | 80516 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -148,7 +148,7 @@ is the module that answers to it.
 | `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
-| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+7) |
+| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+8) |
 
 ### `util` (18 functions)
 
@@ -411,7 +411,7 @@ is the module that answers to it.
 | `0x4a758` | `TactState_EnqueueClearAim` | 88 | `src/pufo/game/pufo_tactstate.h` |
 | `0x1b45c` | `MapView_DrawCellOccupantGlyph` | 84 | `src/pufo/game/pufo_isodraw.h` |
 | `0x1c904` | `MapView_DrawCellFloorGlyph` | 84 | `src/pufo/game/pufo_isodraw.h` |
-| `0x63138` | `Map_BackspaceSelectedName` | 84 | `src/pufo/game/pufo_soldiername.h` |
+| `0x63138` | `Map_BackspaceSelectedName` | 84 | `src/pufo/game/pufo_geopointer.h`, `src/pufo/game/pufo_soldiername.h` |
 | `0x276a0` | `Map_FacingDelta` | 80 | `src/pufo/game/pufo_path.h` |
 | `0x22b54` | `UnitList_ForEachRefresh` | 76 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_turn.h` (+2) |
 | `0x54b58` | `MapCell_ListRemove` | 76 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_mapcell.c` (+1) |
@@ -461,7 +461,7 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.c` (+2) |
 | `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/game/pufo_isodraw.h` |
-| `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.c` (+2) |
+| `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geopointer.h` (+3) |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_mainmenu.h` |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
 | `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.c` (+1) |
@@ -593,10 +593,11 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_plane.c` (+2) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (184 functions)
+### `strat` (185 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x872d0` | `Geoscape_OnPointer` | 8576 | `src/pufo/game/pufo_geopointer.c`, `src/pufo/game/pufo_geopointer.h` |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_strateg.h` |
 | `0x94554` | `Game_StartNew` | 3976 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+6) |
@@ -860,7 +861,7 @@ is the module that answers to it.
 | `0x72c8c` | `Research_TopicNeedsItem` | 136 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6152c` | `NewBaseScreen_TryConfirm` | 132 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x6192c` | `SoldierScreen_FindNextAtBase` | 124 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x6318c` | `SoldierScreen_CopyNameToEdit` | 124 | `src/pufo/game/pufo_soldiername.h` |
+| `0x6318c` | `SoldierScreen_CopyNameToEdit` | 124 | `src/pufo/game/pufo_geopointer.h`, `src/pufo/game/pufo_soldiername.h` |
 | `0x6e914` | `ManufScreen_SelectListed` | 120 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x73380` | `ResearchScreen_CancelSelectedAndClose` | 116 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7cbc8` | `BasePlaneScreen_SelectCraft` | 116 | `src/pufo/game/pufo_plane.h` |
@@ -1215,12 +1216,11 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 20 functions, 73704 bytes remaining
+### `strat` — 19 functions, 65128 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x8c180` | `Geoscape_Draw` | 33744 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x872d0` | `Geoscape_OnPointer` | 8576 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6c16c` | `Geoscape_DrawScreen` | 3476 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1298,6 +1298,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_font` | PASS | 38 |
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
+| `test_geopointer` | PASS | 235 |
 | `test_geoscape` | PASS | 1142 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 337 |
@@ -1341,7 +1342,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**57 / 57 suites passing.**
+**58 / 58 suites passing.**
 
 ## Per-subsystem parity notes
 
@@ -1360,7 +1361,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 581 citations.
+parity report. Total: 607 citations.
 
 ### Offsets below the image base (40)
 
@@ -1369,7 +1370,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (541)
+### At or above the image base (567)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1559,10 +1560,13 @@ against the IDB when the final report is assembled.
 - `0x15880c`
 - `0x158810`
 - `0x15881c`
+- `0x15882c`
 - `0x158848`
 - `0x158849`
+- `0x158854`
 - `0x158868`
 - `0x15886c`
+- `0x158874`
 - `0x158884`
 - `0x158888`
 - `0x15888c`
@@ -1609,7 +1613,10 @@ against the IDB when the final report is assembled.
 - `0x159758`
 - `0x15975c`
 - `0x159768`
+- `0x159888`
 - `0x1598d8`
+- `0x159928`
+- `0x159948`
 - `0x159d5c`
 - `0x159d80`
 - `0x159d81`
@@ -1619,6 +1626,12 @@ against the IDB when the final report is assembled.
 - `0x159df4`
 - `0x159e08`
 - `0x159e10`
+- `0x159e18`
+- `0x159e20`
+- `0x159e3c`
+- `0x159e40`
+- `0x159e44`
+- `0x159e5c`
 - `0x159e84`
 - `0x159e8c`
 - `0x159e98`
@@ -1626,6 +1639,7 @@ against the IDB when the final report is assembled.
 - `0x15b79c`
 - `0x15d09c`
 - `0x15e19c`
+- `0x15ee1c`
 - `0x15ee34`
 - `0x15ee38`
 - `0x15ee3c`
@@ -1633,6 +1647,7 @@ against the IDB when the final report is assembled.
 - `0x15ee44`
 - `0x15ee48`
 - `0x15ee50`
+- `0x15ee7c`
 - `0x15eef8`
 - `0x15eefc`
 - `0x15ef00`
@@ -1642,10 +1657,12 @@ against the IDB when the final report is assembled.
 - `0x16070`
 - `0x160b2c`
 - `0x160c4c`
+- `0x160c50`
 - `0x160c58`
 - `0x160c60`
 - `0x160c68`
 - `0x160c74`
+- `0x160c80`
 - `0x160c88`
 - `0x160c90`
 - `0x161460`
@@ -1661,6 +1678,7 @@ against the IDB when the final report is assembled.
 - `0x161a38`
 - `0x161a3c`
 - `0x161a40`
+- `0x161a48`
 - `0x161ac4`
 - `0x161ac8`
 - `0x161ad0`
@@ -1673,6 +1691,8 @@ against the IDB when the final report is assembled.
 - `0x161f00`
 - `0x161f04`
 - `0x161f08`
+- `0x161f18`
+- `0x161f1c`
 - `0x161f20`
 - `0x161f24`
 - `0x161f28`
@@ -1688,6 +1708,7 @@ against the IDB when the final report is assembled.
 - `0x186488`
 - `0x1864f8`
 - `0x186500`
+- `0x18652c`
 - `0x18652d`
 - `0x186534`
 - `0x186544`
@@ -1718,14 +1739,19 @@ against the IDB when the final report is assembled.
 - `0x186e48`
 - `0x187028`
 - `0x187054`
+- `0x187074`
 - `0x187078`
 - `0x187080`
+- `0x18709c`
+- `0x1870a0`
 - `0x1870a8`
 - `0x1870ac`
 - `0x1870b8`
 - `0x1870bc`
+- `0x1870dc`
 - `0x1870ec`
 - `0x1870f8`
+- `0x1872e8`
 - `0x187320`
 - `0x187324`
 - `0x187328`
@@ -1797,6 +1823,7 @@ against the IDB when the final report is assembled.
 - `0x86a14`
 - `0x86a58`
 - `0x86c34`
+- `0x87530`
 - `0x8b550`
 - `0x8b654`
 - `0x8bbf8`
