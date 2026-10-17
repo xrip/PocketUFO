@@ -1548,8 +1548,18 @@ typedef struct GeoscapeStatusPanelEnv {
     char              *pszRadarMsg;       /* szRadarMsg @ 0x186B10, the original's dword_186B08+8 */
     char              *pszHyper;          /* unk_186420, the hyperwave panel's own line buffer */
     UiControl         *pCtlA;             /* *pGeoscapeCtlA @ 0x186BB4 */
+    UiControl         *pCtlB;             /* *pGeoscapeCtlB @ 0x186BB0, the 0x0C arm's second control */
     void             (*pfnSelectTarget)(void);  /* Smap_OnPointerUp @ 0x89450 */
     void             (*pfnClearSelection)(void);/* Smap_ClearSelection @ 0x84648 */
+    /* The order questions, 0x8F250..0x8F9E0. */
+    Ship *const       *apCraft;           /* Map.apCraft @ root + 0x10AC */
+    BaseSiteRec       *apSiteRecs;        /* aSiteRecs @ 0x186C40, 64-byte records, name at +0x1A */
+    const i32         *pnSelectedShipIdx; /* 0x187054, what the 0x0F arm names the craft by */
+    void             (*pfnResolveInterceptUI)(void);  /* Smap_ResolveInterceptUI @ 0x84964 */
+    void             (*pfnDismissSelected)(void);     /* Smap_DismissSelected @ 0x84428 */
+    void             (*pfnConfirmCraftTarget)(void);  /* Smap_ConfirmCraftTarget @ 0x842ec */
+    void             (*pfnConfirmSelectedAlt)(void);  /* Smap_ConfirmSelectedAlt @ 0x853e4 */
+    void             (*pfnSetWaypoint)(void);         /* Smap_SetWaypoint @ 0x85440 */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -1633,6 +1643,66 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_Y_SEL_CANCEL_STD     0xA1 /* 0x8EDF4 */
 #define PUFO_STATUS_Y_SEL_CANCEL_HYP     0xCD /* 0x8F230 */
 #define PUFO_STATUS_SELFLAG              0x0A /* the flag this panel answers */
+
+/* ---- the default arm's order questions, 0x8F250..0x8F9E0 ------------------------------
+ *
+ * The flag chain at 0x8E6E0 continues past the contact panel with four tests on line 0's flag, each
+ * re-read through UiLineList_GetFlag: 0x11 at 0x8F270, 0x0F at 0x8F41C, 0x0C at 0x8F5B4, 0x0E at
+ * 0x8F768. They are independent tests, not a switch -- an arm's body falls straight into the next
+ * test -- so exactly one of them runs for any one flag value. None of them packs a colour: they draw
+ * in the status pair the default arm packed at 0x8E5CC.
+ *
+ * All four start with Ui_AnimExpandBlit at (0xE, 0x3C) size (0xD0, nH) with src (0x28, 0x32), key
+ * 0xB4, nIdx 0 and nMode 0, nH being 0x5A for 0x11, 0x0F and 0x0C and 0x78 for 0x0E. All four end
+ * with a centred TEXTS[1127] "ОК" under the control they arm -- aTextOk @ 0xEBF4B, CYRILLIC О and К,
+ * not the Latin TEXTS[1193] "OK" the 13-arm footer uses -- and 0x0C adds a centred TEXTS[1144]
+ * "Отмена" under its second control.
+ *
+ * 0x11, 0x8F270: TEXTS[1214] "База: " with the base name at aSiteRecs[slot 0] + 0x1A appended
+ * (0x8F2E8, the colour value IS the 64-byte record index, unbounded) centred at y=70, TEXTS[1215]
+ * "База потеряна" centred at y=90, and pGeoscapeCtlA centred at y=115 with Smap_ResolveInterceptUI,
+ * "OK" at y=116.
+ * 0x0F, 0x8F41C: TEXTS[1216] "Корабль: " with Ship_FormatDisplayName(0x187054) appended centred at
+ * y=70, TEXTS[1217] "Мало топлива, иду на базу" at y=90, pGeoscapeCtlA at y=115 with
+ * Smap_DismissSelected, "OK" at y=116.
+ * 0x0C, 0x8F5B4: TEXTS[1218] "Лететь к выбранной точке" centred at y=70; pGeoscapeCtlA centred at
+ * y=100 with Smap_ConfirmCraftTarget and pGeoscapeCtlB centred at y=124 with Smap_ResolveInterceptUI,
+ * both blitted, "OK" centred at y=101 and TEXTS[1144] centred at y=125.
+ * 0x0E, 0x8F768: TEXTS[1216] with Ship_FormatDisplayName(colour slot 0 -- the colour value IS the
+ * ship index here, 0x8F7E0, and NOT 0x187054 as in the 0x0F arm) centred at y=70, TEXTS[1219]
+ * "Выбранная точка достигнута" at y=86, TEXTS[1220] "Новое патрулирование?" at y=102, pGeoscapeCtlA
+ * centred at y=124 and pGeoscapeCtlConfirm centred at y=150 blitted BEFORE their handlers are set
+ * (0x8F91C/0x8F924 then 0x8F934/0x8F940): Smap_ConfirmSelectedAlt and Smap_SetWaypoint; "OK" centred
+ * at y=125 and TEXTS[1221] "Перенапр. корабль" centred at y=150.
+ */
+#define PUFO_STATUS_FLAG_BASE_LOST    0x11 /* 0x8F270: the base the message names is gone */
+#define PUFO_STATUS_FLAG_FUEL_LOW     0x0F /* 0x8F41C: a craft is short of range and heading home */
+#define PUFO_STATUS_FLAG_FLY_TO_POINT 0x0C /* 0x8F5B4: "fly to the chosen point?" */
+#define PUFO_STATUS_FLAG_POINT_REACHED 0x0E /* 0x8F768: point reached, patrol again? */
+#define PUFO_STATUS_TEXT_BASE_LABEL     1214 /* "База: " */
+#define PUFO_STATUS_TEXT_BASE_LOST      1215 /* "База потеряна" */
+#define PUFO_STATUS_TEXT_SHIP_LABEL     1216 /* "Корабль: " */
+#define PUFO_STATUS_TEXT_FUEL_LOW       1217 /* "Мало топлива, иду на базу" */
+#define PUFO_STATUS_TEXT_FLY_TO_POINT   1218 /* "Лететь к выбранной точке" */
+#define PUFO_STATUS_TEXT_POINT_REACHED  1219 /* "Выбранная точка достигнута" */
+#define PUFO_STATUS_TEXT_NEW_PATROL     1220 /* "Новое патрулирование?" */
+#define PUFO_STATUS_TEXT_RETARGET       1221 /* "Перенапр. корабль" */
+#define PUFO_STATUS_TEXT_ORDER_OK       1127 /* aTextOk @ 0xEBF4B "ОК", Cyrillic -- not TEXTS[1193] */
+#define PUFO_STATUS_RADAR_MSG_BYTES     108  /* szRadarMsg @ 0x186B10, 108 bytes up to nSmapTapX @ 0x186B7C */
+#define PUFO_STATUS_ORDER_NH_SHORT       0x5A /* 0x8F264 MOV R8, #0x5A: the anim height of 0x11/0x0F/0x0C */
+#define PUFO_STATUS_ORDER_NH_TALL        0x78 /* 0x8F78C MOV R3, #0x78: the 0x0E anim height */
+#define PUFO_STATUS_Y_ORDER_LINE1        0x46 /* 0x8F318 MOV R2, #0x46: the "База:/Корабль:" line, y 70 */
+#define PUFO_STATUS_Y_ORDER_LINE2        0x5A /* 0x8F370 MOV R2, #0x5A: the question line, y 90 */
+#define PUFO_STATUS_Y_ORDER_0E_LINE2     0x56 /* 0x8F86C: "Выбранная точка достигнута", y 86 */
+#define PUFO_STATUS_Y_ORDER_0E_LINE3     0x66 /* 0x8F8C4: "Новое патрулирование?", y 102 */
+#define PUFO_STATUS_ORDERCTL_Y_ONE       0x73 /* 0x8F26C MOV R6, #0x73: the single control of 0x11/0x0F */
+#define PUFO_STATUS_Y_ORDER_OK_ONE       0x74 /* 0x8F3F4 MOV R2, #0x74: its "OK" */
+#define PUFO_STATUS_ORDERCTL_Y_TOP       0x64 /* 0x8F678 MOV R3, #0x64: the 0x0C upper control */
+#define PUFO_STATUS_Y_ORDER_OK_TOP       0x65 /* 0x8F6F4 MOV R2, #0x65: its "OK" */
+#define PUFO_STATUS_ORDERCTL_Y_BOTTOM    0x7C /* 0x8F5B0 MOV R6, #0x7C: the 0x0C lower control and 0x0E's */
+#define PUFO_STATUS_Y_ORDER_CANCEL       0x7D /* 0x8F74C / 0x8F980 MOV R2, #0x7D: "Отмена" and 0x0E's "OK" */
+#define PUFO_STATUS_ORDERCTL_Y_0E_CONF   0x96 /* 0x8F904 MOV R3, #0x96: the 0x0E confirm control */
+#define PUFO_STATUS_Y_ORDER_RETARGET     0x96 /* 0x8F9D4 MOV R2, #0x96: its label */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

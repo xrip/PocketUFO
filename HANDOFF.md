@@ -1,15 +1,19 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `2485d25`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its third part -- the action-fail line
-and the selected contact at 0x8E658..0x8F24C, the tail of `Geoscape_DrawStatusPanel`, with 106 new
-checks and 13/13 mutations caught (the first sweep survived six, again the macro-tautology shape, so
-33 more `_Static_assert` pins now hold the record offsets and the ten row y values to the ARM
-immediates). Parts 1 and 2 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body at
-0x8C760..0x8E658 in `2485d25` -- are behind this. The finding of this part is that the size line and
-the hyperwave type line both read `StrategItem.bCraftClass` at +0x02 while the port had them on
-`nType` at +0x00, and that the size switch's default case lands past its own strcat. Still unported
-here: 0x8F250..0x91CEC and the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and
+Date: 2026-10-17. HEAD before this edit: `79b7979`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its fourth part -- the order questions at
+0x8F250..0x8F9E0, flags 0x11, 0x0F, 0x0C and 0x0E, with 109 new checks and 12/12 mutations caught.
+Parts 1..3 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body at 0x8C760..0x8E658
+in `2485d25`, the action-fail line and the selected contact at 0x8E658..0x8F24C in `79b7979` -- are
+behind this. What this part corrected: the label under every order control is `aTextOk` @ 0xEBF4B =
+TEXTS[1127] "ОК" with CYRILLIC letters, not the Latin TEXTS[1193] "OK" the 13-arm footer uses; the
+record-offset register R9 is loaded in the prologue of the arm test that follows rather than by the arm
+that uses it; and the chain names a craft three different ways (0x187054 for 0x0F, the colour value for
+0x0E, and 0x0B writing the colour value into 0x187054 at 0x8FA90 before reading it back). One mutation
+survived the first sweep for a fixture reason, not a code reason -- slot 0 and 0x187054 both pointed at
+the same craft, which made swapping the two index sources invisible -- so the fixture now uses two
+crafts with different name records. Still unported here: 0x8F9E4..0x91CEC (the 0x0B craft-detail panel
+and what follows) and the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and
 596752/598792 (99.7%) with 16737 checks -- that byte figure credits all 33,744 bytes of
 `Geoscape_Draw` because `coverage.py` counts a function once its start address is cited, which the
 previous unit's row understated (965/1103 and 563008 from memory) and this figure overstates for the

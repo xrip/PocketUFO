@@ -8596,6 +8596,35 @@ _Static_assert(PUFO_STATUS_Y_SEL_LABEL_HYP == 0xB4, "0x8F1E8 MOV R2, #0xB4");
 _Static_assert(PUFO_STATUS_Y_SEL_CANCEL_STD == 0xA1, "0x8EDF4 MOV R2, #0xA1");
 _Static_assert(PUFO_STATUS_Y_SEL_CANCEL_HYP == 0xCD, "0x8F230 MOV R2, #0xCD");
 _Static_assert(PUFO_STATUS_SELFLAG == 0x0A, "the flag gate before 0x8E708");
+
+/* The order questions, 0x8F250..0x8F9E0. */
+_Static_assert(PUFO_STATUS_FLAG_BASE_LOST == 0x11, "0x8F270 CMP R0, #0x11");
+_Static_assert(PUFO_STATUS_FLAG_FUEL_LOW == 0x0F, "0x8F41C CMP R0, #0xF");
+_Static_assert(PUFO_STATUS_FLAG_FLY_TO_POINT == 0x0C, "0x8F5B4 CMP R0, #0xC");
+_Static_assert(PUFO_STATUS_FLAG_POINT_REACHED == 0x0E, "0x8F768 CMP R0, #0xE");
+_Static_assert(PUFO_STATUS_TEXT_ORDER_OK == 1127, "aTextOk @ 0xEBF4B; (0xEBF4B - 0xB38D0) / 205 == 1127");
+_Static_assert(PUFO_STATUS_TEXT_BASE_LABEL == 1214, "0x8F268 ORR R9,R9,#0x26 -> 0x3CC26 / 205 == 1214");
+_Static_assert(PUFO_STATUS_TEXT_BASE_LOST == 1215, "0x8F328 (unk_F05C3 - 0xB38D0) / 205 == 1215");
+_Static_assert(PUFO_STATUS_TEXT_SHIP_LABEL == 1216, "0x8F418 ORR R9,R9,#0x1C0 -> 0x3CDC0 / 205 == 1216");
+_Static_assert(PUFO_STATUS_TEXT_FUEL_LOW == 1217, "0x8F4CC (unk_F075D - 0xB38D0) / 205 == 1217");
+_Static_assert(PUFO_STATUS_TEXT_FLY_TO_POINT == 1218, "0x8F5F4 (unk_F082A - 0xB38D0) / 205 == 1218");
+_Static_assert(PUFO_STATUS_TEXT_POINT_REACHED == 1219, "0x8F824 (unk_F08F7 - 0xB38D0) / 205 == 1219");
+_Static_assert(PUFO_STATUS_TEXT_NEW_PATROL == 1220, "0x8F87C (unk_F09C4 - 0xB38D0) / 205 == 1220");
+_Static_assert(PUFO_STATUS_TEXT_RETARGET == 1221, "0x8F990 (unk_F0A91 - 0xB38D0) / 205 == 1221");
+_Static_assert(PUFO_STATUS_ORDER_NH_SHORT == 0x5A, "0x8F264 MOV R8, #0x5A");
+_Static_assert(PUFO_STATUS_ORDER_NH_TALL == 0x78, "0x8F78C MOV R3, #0x78");
+_Static_assert(PUFO_STATUS_Y_ORDER_LINE1 == 0x46, "0x8F318 MOV R2, #0x46");
+_Static_assert(PUFO_STATUS_Y_ORDER_LINE2 == 0x5A, "0x8F370 MOV R2, #0x5A");
+_Static_assert(PUFO_STATUS_Y_ORDER_0E_LINE2 == 0x56, "0x8F86C MOV R2, #0x56");
+_Static_assert(PUFO_STATUS_Y_ORDER_0E_LINE3 == 0x66, "0x8F8C4 MOV R2, #0x66");
+_Static_assert(PUFO_STATUS_ORDERCTL_Y_ONE == 0x73, "0x8F26C MOV R6, #0x73");
+_Static_assert(PUFO_STATUS_Y_ORDER_OK_ONE == 0x74, "0x8F3F4 MOV R2, #0x74");
+_Static_assert(PUFO_STATUS_ORDERCTL_Y_TOP == 0x64, "0x8F678 MOV R3, #0x64");
+_Static_assert(PUFO_STATUS_Y_ORDER_OK_TOP == 0x65, "0x8F6F4 MOV R2, #0x65");
+_Static_assert(PUFO_STATUS_ORDERCTL_Y_BOTTOM == 0x7C, "0x8F5B0 MOV R6, #0x7C");
+_Static_assert(PUFO_STATUS_Y_ORDER_CANCEL == 0x7D, "0x8F74C / 0x8F980 MOV R2, #0x7D");
+_Static_assert(PUFO_STATUS_ORDERCTL_Y_0E_CONF == 0x96, "0x8F904 MOV R3, #0x96");
+_Static_assert(PUFO_STATUS_RADAR_MSG_BYTES == 108, "szRadarMsg 0x186B10 up to nSmapTapX 0x186B7C");
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -8603,7 +8632,7 @@ static char   g_abPnText[PN_TEXT_MAX * PUFO_TEXT_REC_STRIDE];
 static u16    g_aPnBase[BD_SURF_W * BD_SURF_H];
 static char   g_szPnMsg[108], g_szPnExtra[108], g_szPnScratch[108];
 static UiLineList g_pnLines;
-static UiControl g_pnCtlSfx, g_pnCtlOpen, g_pnCtlConfirm, g_pnCtlApply, g_pnCtlA;
+static UiControl g_pnCtlSfx, g_pnCtlOpen, g_pnCtlConfirm, g_pnCtlApply, g_pnCtlA, g_pnCtlB;
 static UiPanel  g_pnPanel;
 static char     g_szPnPanelLine[64];
 static SmapView g_pnView;
@@ -8626,15 +8655,18 @@ static i32      g_nPnShown;
 static BaseFacStatusEnv g_pnFac;
 static GeoscapeStatusPanelEnv g_pnEnv;
 static i32      g_nPnBlits;
-static PadImage g_aPnPads[5];
+static PadImage g_aPnPads[6];
 static i32      g_nPnSfxClicks, g_nPnOpenClicks, g_nPnReportClicks, g_nPnApplyClicks;
+static i32      g_nPnResolveClicks, g_nPnDismissClicks, g_nPnTargetClicks;
+static i32      g_nPnConfirmAltClicks, g_nPnWaypointClicks;
 static bool     g_bPnReady;
 static BaseSiteRec g_pnSites[8];
 static ObjectRecFull g_pnObj;
 static ObjectRecFull *g_apPnObj[1];
 static BaseFacFlag g_pnFlags[PUFO_BASEFAC_COUNT];
-static Ship     g_pnCraft;
-static Ship    *g_apPnCraft[1];
+static Ship     g_pnCraft, g_pnCraft1;
+static Ship    *g_apPnCraft[2];
+static i32      g_nPnShipIdx;
 static u8       g_abPnGrid[PUFO_GRID_SIZE];
 static GameTime g_pnTime;
 static u16      g_uPnInkHead, g_uPnInkStatus;
@@ -8655,6 +8687,10 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1373, "Y2" }, { 1374, "Z2" }, { 1375, "a3" }, { 1376, "b3" }, { 1377, "c3" }, { 1378, "d3" },
     { 1379, "e3" }, { 1380, "f3" }, { 1381, "g3" }, { 1382, "h3" }, { 1383, "i3" }, { 1384, "j3" },
     { 1385, "k3" }, { 1386, "l3" },
+    /* The order questions and the two craft-name records their ship lines build from. */
+    { 1127, "m4" }, { 1214, "n4" }, { 1215, "o4" }, { 1216, "p4" }, { 1217, "q4" },
+    { 1218, "r4" }, { 1219, "s4" }, { 1220, "t4" }, { 1221, "u4" },
+    { 137, "v4" }, { 418, "w4x" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -8667,6 +8703,11 @@ static void PnClickReport(void) { ++g_nPnReportClicks; }
 static void PnClickApply(void)  { ++g_nPnApplyClicks; }
 static void PnSelectTarget(void){ ++g_nPnSelectClicks; }
 static void PnClearSel(void)    { ++g_nPnClearClicks; }
+static void PnResolve(void)     { ++g_nPnResolveClicks; }
+static void PnDismiss(void)     { ++g_nPnDismissClicks; }
+static void PnConfirmTarget(void){ ++g_nPnTargetClicks; }
+static void PnConfirmAlt(void)  { ++g_nPnConfirmAltClicks; }
+static void PnWaypoint(void)    { ++g_nPnWaypointClicks; }
 
 static void PnSetText(i32 nRec, const char *psz)
 {
@@ -8708,6 +8749,11 @@ static void PnRun(void)
     g_szPnHyper[0] = 0;
     g_nPnSelectClicks = 0;
     g_nPnClearClicks = 0;
+    g_nPnResolveClicks = 0;
+    g_nPnDismissClicks = 0;
+    g_nPnTargetClicks = 0;
+    g_nPnConfirmAltClicks = 0;
+    g_nPnWaypointClicks = 0;
     memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
     Geoscape_DrawStatusPanel(&g_pnEnv);
 }
@@ -8731,6 +8777,18 @@ static void PnCaptureMissing(i32 nRec)
     memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
     PnFillSources();
     g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec] = 0;
+    PnRun();
+}
+
+/* The same pair with the base NAME taken away instead of a text record: aSiteRecs[0].abName @
+ * 0x186C40 + 0x1A is the only non-TEXTS string the order arms append. */
+static void PnCaptureMissingBaseName(void)
+{
+    PnEmptySources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    PnFillSources();
+    g_pnSites[0].abName[0] = 0;
     PnRun();
 }
 
@@ -8863,9 +8921,12 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     memset(&g_pnObj, 0, sizeof(g_pnObj));
     memset(g_pnFlags, 0, sizeof(g_pnFlags));
     memset(&g_pnCraft, 0, sizeof(g_pnCraft));
+    memset(&g_pnCraft1, 0, sizeof(g_pnCraft1));
     g_pnCraft.bCraftType = (u8)PUFO_CRAFT_TYPE_COUNT; /* out of range: the name comes back empty */
     g_apPnObj[0]   = &g_pnObj;
     g_apPnCraft[0] = &g_pnCraft;
+    g_apPnCraft[1] = &g_pnCraft1;
+    g_nPnShipIdx   = 0;
     g_abPnGrid[480] = 0; /* the '&' arm's facility kind for row 18, column 0 */
 
     memset(g_pnTopics, 0, sizeof(g_pnTopics));
@@ -8893,16 +8954,19 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     memset(&g_pnCtlConfirm, 0, sizeof(g_pnCtlConfirm));
     memset(&g_pnCtlApply, 0, sizeof(g_pnCtlApply));
     memset(&g_pnCtlA, 0, sizeof(g_pnCtlA));
+    memset(&g_pnCtlB, 0, sizeof(g_pnCtlB));
     g_pnCtlSfx.uWidth     = 20;
     g_pnCtlOpen.uWidth    = 20;
     g_pnCtlConfirm.uWidth = 40;
     g_pnCtlApply.uWidth   = 40;
     g_pnCtlA.uWidth       = 40;
+    g_pnCtlB.uWidth       = 40;
     /* UiControl_BlitActivePad paints nothing for a disabled control or one with no pad for its
-     * state, so all five get both. The blit callbacks only count calls; they paint nothing. */
-    for (i32 i = 0; i < 5; ++i) {
+     * state, so all six get both. The blit callbacks only count calls; they paint nothing. */
+    for (i32 i = 0; i < 6; ++i) {
         UiControl *const pCtl = i == 0 ? &g_pnCtlSfx : i == 1 ? &g_pnCtlOpen
-                        : i == 2 ? &g_pnCtlConfirm : i == 3 ? &g_pnCtlApply : &g_pnCtlA;
+                        : i == 2 ? &g_pnCtlConfirm : i == 3 ? &g_pnCtlApply
+                        : i == 4 ? &g_pnCtlA : &g_pnCtlB;
         pCtl->bEnabled  = 1;
         pCtl->nMode     = 0;
         pCtl->nState    = 0;
@@ -8977,8 +9041,17 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.pszRadarMsg        = g_szPnRadar;
     g_pnEnv.pszHyper           = g_szPnHyper;
     g_pnEnv.pCtlA              = &g_pnCtlA;
+    g_pnEnv.pCtlB              = &g_pnCtlB;
     g_pnEnv.pfnSelectTarget    = PnSelectTarget;
     g_pnEnv.pfnClearSelection  = PnClearSel;
+    g_pnEnv.apCraft            = g_apPnCraft;
+    g_pnEnv.apSiteRecs         = g_pnSites;
+    g_pnEnv.pnSelectedShipIdx  = &g_nPnShipIdx;
+    g_pnEnv.pfnResolveInterceptUI  = PnResolve;
+    g_pnEnv.pfnDismissSelected     = PnDismiss;
+    g_pnEnv.pfnConfirmCraftTarget  = PnConfirmTarget;
+    g_pnEnv.pfnConfirmSelectedAlt  = PnConfirmAlt;
+    g_pnEnv.pfnSetWaypoint         = PnWaypoint;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -9490,6 +9563,188 @@ static void TestStatusPanelContact(void)
                "and it is not part of the hyperwave row");
 }
 
+/* The arm drawn in full as the baseline, then the SAME arm with one record emptied: a zero diff
+ * proves the arm never reads that record at all. */
+static void PnCaptureDropped(i32 nRec)
+{
+    PnEmptySources();
+    PnFillSources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec] = 0;
+    PnRun();
+}
+
+/* The animated frame on its own: the sources are emptied so only the frame is drawn, and the
+ * baseline is the zeroed surface rather than a first run. */
+static void PnCaptureFrameOnly(void)
+{
+    PnEmptySources();
+    memset(g_aPnBase, 0, sizeof(g_aPnBase));
+    PnRun();
+}
+
+/* Two crafts that build different names, so a wrong index shows up as a different row. PnFixture
+ * zeroes both, so this runs after every fixture call in the test below. */
+static void PnSetCrafts(void)
+{
+    g_pnCraft.bCraftType  = 0;   /* TEXTS[137] + itoa(bType), no separator */
+    g_pnCraft.bType       = 3;
+    g_pnCraft1.bCraftType = 3;   /* TEXTS[418] + '-' + itoa(bType) */
+    g_pnCraft1.bType      = 5;
+}
+
+static void TestStatusPanelOrder(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the order questions @ 0x8f250\n");
+    PnFixture(0x11, 0, 1, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetCrafts();
+    g_nPnShipIdx = 0;
+
+    /* ---- 0x11 @ 0x8F270: the base the message names is gone ---- */
+    PnCapture();
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE1, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1214] plus the base name centred at y=70");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE2, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1215] alone centred at y=90");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_OK_ONE, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "the control label centred at y=116");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_ORDERCTL_Y_ONE, "pGeoscapeCtlA sits at y=115");
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "centred from its own 40-wide pad");
+    Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI installed");
+    CheckEqI32(g_nPnBlits, 1, "and exactly one control blitted");
+    CheckEqI32(g_szPnRadar[0], 0, "the base arm never calls Ship_FormatDisplayName");
+
+    const i32 nBaseWide = PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1);
+    PnCaptureMissingBaseName();
+    Check(PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1) < nBaseWide,
+          "the rest of the 70 row is aSiteRecs[0].abName @ 0x186C40 + 0x1A");
+    PnCaptureMissing(PUFO_STATUS_TEXT_BASE_LABEL);
+    Check(PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1) < nBaseWide,
+          "and TEXTS[1214] is the front half of it -- the colour value IS the record index");
+    const i32 nOkWide = PnRowWidth(PUFO_STATUS_Y_ORDER_OK_ONE);
+    PnCaptureMissing(PUFO_STATUS_TEXT_ORDER_OK);
+    PnCheckRow(PUFO_STATUS_Y_ORDER_OK_ONE, 0, BD_SURF_W - 1, 0, 0, false,
+               "the 116 row is TEXTS[1127] aTextOk and nothing else");
+    PnCaptureMissing(PUFO_STATUS_TEXT_OK);
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_ORDER_OK_ONE), nOkWide,
+               "and it is NOT the Latin TEXTS[1193] the 13-arm footer uses");
+    PnCaptureDropped(PUFO_STATUS_TEXT_SHIP_LABEL);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "the 0x11 arm never reads the 0x0F/0x0E ship label TEXTS[1216]");
+    PnCaptureMissing(PUFO_STATUS_TEXT_BASE_LOST);
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE2, 0, BD_SURF_W - 1, 0, 0, false,
+               "the 90 row is TEXTS[1215] alone");
+
+    PnCaptureFrameOnly();
+    PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(dFrame.nMinX, 0xE, "the frame starts at x=14 (0x8F2A4)");
+    CheckEqI32(dFrame.nMinY, 0x3C, "and y=60 (0x8F29C)");
+    CheckEqI32(dFrame.nMaxX, 0xE + 0xD0 + 3, "with nW 0xD0 it ends at x=225");
+    CheckEqI32(dFrame.nMaxY, 0x3C + PUFO_STATUS_ORDER_NH_SHORT + 5,
+               "and nH 0x5A (0x8F264) makes it end at y=155");
+
+    /* ---- 0x0F @ 0x8F41C: a craft is short of range and heading home ---- */
+    PnFixture(0x0F, 0, 1, 0);       /* slot 0 points at the FIRST craft; the arm must use 0x187054 */
+    PnSetCrafts();
+    g_nPnShipIdx = 1;               /* the second craft: TEXTS[418] + '-' + itoa(5) */
+    PnCapture();
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE1, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1216] plus the craft name centred at y=70");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE2, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1217] centered at y=90");
+    Check(g_pnCtlA.pfnClick == PnDismiss, "pGeoscapeCtlA gets Smap_DismissSelected");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_ORDERCTL_Y_ONE, "at the same y=115 as the 0x11 arm");
+    CheckEqI32(g_nPnBlits, 1, "and it is the only control this arm has");
+    PnCheckStr(g_szPnRadar, "w4x-5",
+               "szRadarMsg is left holding TEXTS[418] + the dash + itoa(5), the 0x187054 craft");
+    PnCaptureFrameOnly();
+    dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(dFrame.nMaxY, 0x3C + PUFO_STATUS_ORDER_NH_SHORT + 5,
+               "the 0x0F frame is the same 0x5A tall as 0x11's");
+
+    const i32 nShipWide = PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1);
+    PnCaptureMissing(418);
+    Check(PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1) < nShipWide,
+          "the name on the 70 row is the second craft's TEXTS[418]");
+    PnCaptureDropped(137);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and the first craft's TEXTS[137] is nowhere on it -- the index is 0x187054, not slot 0");
+    PnCaptureDropped(PUFO_STATUS_TEXT_BASE_LOST);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and the 0x11 arm's TEXTS[1215] is nowhere here either");
+
+    /* ---- 0x0C @ 0x8F5B4: fly to the chosen point? the only arm with two controls ---- */
+    PnFixture(0x0C, 0, 0, 0);
+    PnSetCrafts();
+    PnCapture();
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE1, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1218] alone centred at y=70");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_OK_TOP, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "the ОК label centred at y=101");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_CANCEL, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "and TEXTS[1144] Отмена centred at y=125");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_ORDERCTL_Y_TOP, "pGeoscapeCtlA at y=100 (0x8F678)");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_ORDERCTL_Y_BOTTOM, "pGeoscapeCtlB at y=124 (0x8F68C, R6)");
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "both centred from a 40-wide pad");
+    Check(g_pnCtlA.pfnClick == PnConfirmTarget, "CtlA gets Smap_ConfirmCraftTarget");
+    Check(g_pnCtlB.pfnClick == PnResolve, "and CtlB gets Smap_ResolveInterceptUI");
+    CheckEqI32(g_nPnBlits, 2, "and both are blitted");
+    CheckEqI32(g_szPnRadar[0], 0, "no ship name on this arm either");
+
+    PnCaptureMissing(PUFO_STATUS_TEXT_CANCEL);
+    PnCheckRow(PUFO_STATUS_Y_ORDER_CANCEL, 0, BD_SURF_W - 1, 0, 0, false,
+               "the 125 row is TEXTS[1144]");
+    PnCaptureMissing(PUFO_STATUS_TEXT_ORDER_OK);
+    PnCheckRow(PUFO_STATUS_Y_ORDER_OK_TOP, 0, BD_SURF_W - 1, 0, 0, false,
+               "and the 101 row is TEXTS[1127], under its own control");
+    PnCaptureMissing(PUFO_STATUS_TEXT_FLY_TO_POINT);
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE1, 0, BD_SURF_W - 1, 0, 0, false,
+               "and the 70 row is TEXTS[1218] alone");
+
+    /* ---- 0x0E @ 0x8F768: the point was reached, a new patrol is offered ---- */
+    PnFixture(0x0E, 0, 0, 0);
+    PnSetCrafts();
+    g_nPnShipIdx = 1;               /* 0x187054 points at the second craft... */
+    PnCapture();                    /* ... but this arm names the craft by colour slot 0 */
+    PnCheckRow(PUFO_STATUS_Y_ORDER_LINE1, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1216] plus the craft name centred at y=70");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_0E_LINE2, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1219] centred at y=86");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_0E_LINE3, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1220] centred at y=102");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_CANCEL, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "the ОК label centred at y=125");
+    PnCheckRow(PUFO_STATUS_Y_ORDER_RETARGET, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1221] centred at y=150");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_ORDERCTL_Y_BOTTOM, "CtlA sits at y=124 (0x8F90C, R6)");
+    CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_ORDERCTL_Y_0E_CONF, "the confirm control at y=150");
+    Check(g_pnCtlA.pfnClick == PnConfirmAlt, "CtlA gets Smap_ConfirmSelectedAlt");
+    Check(g_pnCtlConfirm.pfnClick == PnWaypoint, "and confirm gets Smap_SetWaypoint");
+    CheckEqI32(g_nPnBlits, 2, "both blitted, before the handlers were installed");
+    PnCheckStr(g_szPnRadar, "v43",
+               "the name is TEXTS[137] + itoa(3): colour slot 0 picks the craft here, not 0x187054");
+
+    const i32 n0EWide = PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1);
+    PnCaptureMissing(137);
+    Check(PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1) < n0EWide, "the 70 row carries TEXTS[137]");
+    PnCaptureMissing(418);
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1), n0EWide, "and not TEXTS[418]");
+    PnCaptureMissing(PUFO_STATUS_TEXT_RETARGET);
+    PnCheckRow(PUFO_STATUS_Y_ORDER_RETARGET, 0, BD_SURF_W - 1, 0, 0, false,
+               "the 150 row is TEXTS[1221], under the confirm control");
+
+    PnCaptureFrameOnly();
+    dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(dFrame.nMinY, 0x3C, "same frame origin as the other three arms");
+    CheckEqI32(dFrame.nMaxY, 0x3C + PUFO_STATUS_ORDER_NH_TALL + 5,
+               "but nH 0x78 (0x8F78C) makes this one end at y=185, not 155");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -9555,6 +9810,7 @@ int main(void)
     TestStatusPanelDefault();
     TestStatusPanelActionFail();
     TestStatusPanelContact();
+    TestStatusPanelOrder();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

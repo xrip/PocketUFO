@@ -4456,10 +4456,17 @@ static const i32 g_anStatusSizeRec[8]  = { 1359, 1360, 1360, 1361, 1361, 1362, 1
  * 1384/1385, so the mapping is not monotonic. */
 static const i32 g_anStatusMissionRec[8] = { 1379, 1380, 1381, 1382, 1383, 1386, 1384, 1385 };
 
+/* The x the original gives every bottom control: centred on 120 from the control's own width.
+ * 0x8ECC0 and the six repeats at 0x8F38C, 0x8F528, 0x8F650, 0x8F664, 0x8F8DC and 0x8F8F0. */
+static void StatusPanel_CentredCtlX(UiControl *pCtl)
+{
+    pCtl->x = (i16)(PUFO_STATUS_TEXT_X_CENTRE - (pCtl->uWidth >> 1));
+}
+
 /* One of the panel's two bottom controls: centred on 120 at the arm's y, then blitted. */
 static void StatusPanel_BlitSelControl(const GeoscapeStatusPanelEnv *pEnv, UiControl *pCtl, i32 nY)
 {
-    pCtl->x = (i16)(PUFO_STATUS_TEXT_X_CENTRE - (pCtl->uWidth >> 1));  /* 0x8ECC0 */
+    StatusPanel_CentredCtlX(pCtl);                                     /* 0x8ECC0 */
     pCtl->y = (i16)nY;                                                 /* 0x8ECCC / 0x8ECF4 */
     (void)UiControl_BlitActivePad(pCtl, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                /* 0x8ED04 */
@@ -4584,6 +4591,121 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, nCancelY, psz);     /* 0x8F234, the shared tail */
 }
 
+/* 0x8F270: flag 0x11, the base the message names is gone. The line-0 colour value IS the base
+ * record index (0x8F2E8 `ADD R3, R1, R0,LSL#6` on aSiteRecs @ 0x186C40), unbounded as everywhere
+ * else in the binary. */
+static void StatusPanel_DrawBaseLost(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->apSiteRecs == NULL || pEnv->pCtlA == NULL || pEnv->pfnResolveInterceptUI == NULL) {
+        return;
+    }
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F278..0x8F2B0 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_BASE_LABEL);         /* 0x8F2B4 record 1214 */
+    (void)pufo_strcat(psz, pEnv->apSiteRecs[(i32)UiLineList_GetColor(pEnv->pLines, 0, 0)].abName,
+                      PUFO_TEXT_REC_STRIDE);                             /* 0x8F2E4..0x8F2F8 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_LINE1, psz); /* 0x8F324 y 70 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_BASE_LOST);          /* 0x8F328 record 1215 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_LINE2, psz); /* 0x8F37C y 90 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x8F39C / 0x8F3A8 */
+    StatusPanel_BlitSelControl(pEnv, pEnv->pCtlA, PUFO_STATUS_ORDERCTL_Y_ONE); /* 0x8F380..0x8F3B0 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);           /* 0x8F3B8 aTextOk, 1127 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_OK_ONE, psz); /* 0x8F400 y 116 */
+}
+
+/* The ship-name line the 0x0F and 0x0E arms share. Ship_FormatDisplayName returns szRadarMsg @
+ * 0x186B10, so calling it also leaves the craft name in that buffer -- the same 108 bytes the
+ * original has before nSmapTapX @ 0x186B7C. */
+static void StatusPanel_AppendShipName(const GeoscapeStatusPanelEnv *pEnv, char *psz, i32 nShipIdx)
+{
+    (void)Ship_FormatDisplayName(pEnv->apCraft, nShipIdx, (const u8 *)pEnv->pTextRecs,
+                                 pEnv->pszRadarMsg, PUFO_STATUS_RADAR_MSG_BYTES);
+    (void)pufo_strcat(psz, pEnv->pszRadarMsg, PUFO_TEXT_REC_STRIDE);     /* 0x8F49C / 0x8F7F4 */
+}
+
+/* 0x8F41C: flag 0x0F, a craft is short of range and heading home. The craft comes from the global
+ * selected index at 0x187054, NOT from the colour slot. */
+static void StatusPanel_DrawFuelLow(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->apCraft == NULL || pEnv->pszRadarMsg == NULL || pEnv->pnSelectedShipIdx == NULL
+        || pEnv->pCtlA == NULL || pEnv->pfnDismissSelected == NULL) {
+        return;
+    }
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F428..0x8F45C */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);         /* 0x8F460 record 1216 */
+    StatusPanel_AppendShipName(pEnv, psz, *pEnv->pnSelectedShipIdx);     /* 0x8F484..0x8F49C */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_LINE1, psz); /* 0x8F4C8 y 70 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_FUEL_LOW);           /* 0x8F4CC record 1217 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_LINE2, psz); /* 0x8F51C y 90 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnDismissSelected;                    /* 0x8F53C / 0x8F548 */
+    StatusPanel_BlitSelControl(pEnv, pEnv->pCtlA, PUFO_STATUS_ORDERCTL_Y_ONE); /* 0x8F520..0x8F550 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);           /* 0x8F554 aTextOk */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_OK_ONE, psz); /* 0x8F5A0 y 116 */
+}
+
+/* 0x8F5B4: flag 0x0C, "fly to the chosen point?" -- the only one of the four with two controls. */
+static void StatusPanel_DrawFlyToPoint(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pCtlA == NULL || pEnv->pCtlB == NULL || pEnv->pfnConfirmCraftTarget == NULL
+        || pEnv->pfnResolveInterceptUI == NULL) {
+        return;
+    }
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F5BC..0x8F5F0 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_FLY_TO_POINT);       /* 0x8F5F4 record 1218 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_LINE1, psz); /* 0x8F644 y 70 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnConfirmCraftTarget;                 /* 0x8F688 / 0x8F694 */
+    pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x8F69C / 0x8F6A0 */
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                                /* 0x8F650..0x8F660 */
+    StatusPanel_CentredCtlX(pEnv->pCtlB);                                /* 0x8F664..0x8F674 */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_ORDERCTL_Y_TOP;                    /* 0x8F678/0x8F680: 100 */
+    pEnv->pCtlB->y = (i16)PUFO_STATUS_ORDERCTL_Y_BOTTOM;                 /* 0x8F68C: 124, R6 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x8F6A8 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x8F6B0 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);           /* 0x8F6B4 aTextOk */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_OK_TOP, psz); /* 0x8F700 y 101 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);             /* 0x8F704 record 1144 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_CANCEL, psz); /* 0x8F758 y 125 */
+}
+
+/* 0x8F768: flag 0x0E, the point was reached and a new patrol is offered. Here the line-0 colour
+ * value IS the ship index (0x8F7E0), where the 0x0F arm read 0x187054; and the two controls are
+ * blitted before their handlers are installed (0x8F91C/0x8F924, then 0x8F934/0x8F940). */
+static void StatusPanel_DrawPointReached(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->apCraft == NULL || pEnv->pszRadarMsg == NULL || pEnv->pCtlA == NULL
+        || pEnv->pCtlConfirm == NULL || pEnv->pfnConfirmSelectedAlt == NULL
+        || pEnv->pfnSetWaypoint == NULL) {
+        return;
+    }
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_TALL,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F770..0x8F7A8 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);         /* 0x8F7AC record 1216 */
+    StatusPanel_AppendShipName(pEnv, psz, (i32)UiLineList_GetColor(pEnv->pLines, 0, 0)); /* 0x8F7DC */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_LINE1, psz); /* 0x8F820 y 70 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_POINT_REACHED);      /* 0x8F824 record 1219 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_0E_LINE2, psz); /* 0x8F878 y 86 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_NEW_PATROL);         /* 0x8F87C record 1220 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_0E_LINE3, psz); /* 0x8F8D0 y 102 */
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                                /* 0x8F8DC..0x8F8EC */
+    StatusPanel_CentredCtlX(pEnv->pCtlConfirm);                          /* 0x8F8F0..0x8F900 */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_ORDERCTL_Y_BOTTOM;                 /* 0x8F90C: 124, R6 */
+    pEnv->pCtlConfirm->y = (i16)PUFO_STATUS_ORDERCTL_Y_0E_CONF;          /* 0x8F914: 150 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x8F91C */
+    (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x8F924 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnConfirmSelectedAlt;                 /* 0x8F930 / 0x8F934 */
+    pEnv->pCtlConfirm->pfnClick = pEnv->pfnSetWaypoint;                  /* 0x8F938 / 0x8F940 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);           /* 0x8F944 aTextOk */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_CANCEL, psz); /* 0x8F98C y 125 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_RETARGET);           /* 0x8F990 record 1221 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_RETARGET, psz); /* 0x8F9E0 y 150 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -4598,11 +4720,24 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
         UiPanel_DrawText(pEnv->pStatusPanel);                          /* 0x8E654 */
     }
     StatusPanel_DrawActionFail(pEnv, psz);                             /* 0x8E658 */
+    /* The chain re-reads line 0's flag at every test, so these are independent tests and not a
+     * switch: an arm's body falls straight into the next test at 0x8F404, 0x8F5A4, 0x8F75C. */
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_SELFLAG) {
         StatusPanel_DrawSelectedContact(pEnv, psz);                    /* 0x8E708..0x8F24C */
     }
-    /* 0x8F250..0x91CEC: the rest of the default chain (flags 0x11, 0x0F, 0x0C, 0x0E, 0x0B and
-     * what follows) is not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_BASE_LOST) {
+        StatusPanel_DrawBaseLost(pEnv, psz);                           /* 0x8F250..0x8F400 */
+    }
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_FUEL_LOW) {
+        StatusPanel_DrawFuelLow(pEnv, psz);                            /* 0x8F404..0x8F5A0 */
+    }
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_FLY_TO_POINT) {
+        StatusPanel_DrawFlyToPoint(pEnv, psz);                         /* 0x8F5A4..0x8F758 */
+    }
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_POINT_REACHED) {
+        StatusPanel_DrawPointReached(pEnv, psz);                       /* 0x8F75C..0x8F9E0 */
+    }
+    /* 0x8F9E4..0x91CEC: the 0x0B craft-detail panel and what follows is not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

@@ -17611,3 +17611,63 @@ six mutations, all of them the same macro-tautology shape as unit 107.
 IDB: 9 comments written (0x8E8C0, 0x8E8DC, 0x8EBB8, 0x8EC84, 0x8ECAC, 0x8EE98, 0x8EF90, 0x8F05C and
 the scratch buffer itself) and unk_186420 renamed to szUiScratchStr -- six screens strcpy a TEXTS
 record into it, so it is the shared UI scratch, not a hyperwave-only buffer.
+### Unit 107, part 4: the order questions (0x8F250..0x8F9E0)
+
+The default arm's flag chain continues after the contact panel. Line 0's flag is re-read at 0x8F250,
+0x8F404, 0x8F5A4, 0x8F75C and 0x8F9E4, and every arm's body falls straight into the next test (the
+0x11 arm's last Text_DrawString at 0x8F400 is followed by the 0x0F test at 0x8F404). So this is a
+sequence of independent CMP/BNE pairs, not a switch: 0x11, 0x0F, 0x0C, 0x0E and 0x0B in that order,
+and one flag value can only ever match one of them. None of the arms packs a colour -- all of them
+draw in the status pair the default arm packed at 0x8E5CC.
+
+All four opened here start with Ui_AnimExpandBlit at (0xE, 0x3C) size (0xD0, nH) from src (0x28, 0x32)
+with key 0xB4, nIdx 0 and nMode 0: nH is 0x5A (90) for 0x11, 0x0F and 0x0C and 0x78 (120) for 0x0E,
+so the drawn frame box is (14, 60) to (225, 155) or (225, 185). All four end with a centred label
+under the control they arm.
+
+- 0x11, the base is gone: TEXTS[1214] "База: " with the base name appended, centred at y=70; TEXTS[1215]
+  "База потеряна" at y=90; pGeoscapeCtlA centred at y=115 with Smap_ResolveInterceptUI; the label at
+  y=116.
+- 0x0F, out of range and heading home: TEXTS[1216] "Корабль: " with the craft name at y=70, TEXTS[1217]
+  "Мало топлива, иду на базу" at y=90, pGeoscapeCtlA at y=115 with Smap_DismissSelected, label at 116.
+- 0x0C, fly to the chosen point: TEXTS[1218] "Лететь к выбранной точке" at y=70; the only arm with two
+  controls -- pGeoscapeCtlA at y=100 with Smap_ConfirmCraftTarget and pGeoscapeCtlB at y=124 with
+  Smap_ResolveInterceptUI -- with TEXTS[1127] centred at y=101 and TEXTS[1144] "Отмена" at y=125.
+- 0x0E, point reached: TEXTS[1216] with the craft name at y=70, TEXTS[1219] "Выбранная точка
+  достигнута" at y=86, TEXTS[1220] "Новое патрулирование?" at y=102, pGeoscapeCtlA at y=124 with
+  Smap_ConfirmSelectedAlt and pGeoscapeCtlConfirm at y=150 with Smap_SetWaypoint, TEXTS[1127] at y=125
+  and TEXTS[1221] "Перенапр. корабль" at y=150.
+
+What the read turned up:
+- aTextOk @ 0xEBF4B is TEXTS record **1127 "ОК"**, CYRILLIC О and К -- not the Latin TEXTS[1193] "OK"
+  at 0xEF425 that the 13-arm footer at 0x8E3C4 uses. The test pins the difference: emptying 1127 empties
+  the row under the control, emptying 1193 leaves it pixel-identical.
+- The record offset register R9 is loaded in the prologue of the arm test that FOLLOWS: 0x8F268 loads
+  1214 for the 0x11 arm, 0x8F418 loads 1216 for the 0x0F arm, and the 0x0E arm copies from the 1216
+  offset at 0x8F7AC whether or not the 0x0F arm ran. A port that set the offset per arm would look the
+  same here only because 0x0E really does use 1216; the shape is worth knowing before the next arm.
+- Three different ways to name a craft inside five arms: 0x0F reads the global selected index 0x187054
+  (0x8F488), 0x0E uses the line-0 colour value as the index (0x8F7E0), and the 0x0B arm WRITES the
+  colour value into 0x187054 at 0x8FA90 and then reads the global back.
+- The base name is aSiteRecs[colour value] + 0x1A -- the colour value IS the 64-byte record index
+  (0x8F2E8 `ADD R3, R1, R0,LSL#6`), with no bounds test, the same records Save_WriteBases @ 0x3F1FC
+  writes to the save file.
+- 0x0E is the only arm that blits its controls before installing their handlers (0x8F91C/0x8F924, then
+  0x8F934/0x8F940); 0x11, 0x0F and 0x0C set pfnClick first.
+- Ship_FormatDisplayName returns szRadarMsg @ 0x186B10, so the 0x0F and 0x0E arms leave the craft name
+  in that 108-byte buffer as a side effect; the 0x11 and 0x0C arms never touch it.
+
+Tests: 109 new checks (16846 across 60 suites, 0 failures). Each arm's rows are identified by emptying
+one record and reading the row that changes, and each arm is also checked against a NEIGHBOURING arm's
+record with the full run as the baseline -- a zero diff proves the arm never reads it. 27 more
+`_Static_assert` pins hold the record offsets 1127/1214..1221 and the eleven geometry values to the
+ARM immediates.
+
+Mutations: 12 patterns, 12 caught. One survived the first run for a fixture reason rather than a code
+reason: the 0x0F case had colour slot 0 and 0x187054 both pointing at the second craft, so swapping the
+two index sources was invisible. The fixture now points them at two different crafts with different name
+records (TEXTS[137] for craft 0, TEXTS[418] + the dash for craft 1) and the swap fails the content check.
+
+IDB: 7 comments written (0x8F270 the chain shape, 0x8F260 the ОК record, 0x8F268 where R9 is loaded,
+0x8F2E8 the colour value as a base index, 0x8F7E0 the three index sources, 0x8F688 the two-control arm,
+0x8F91C the blit-before-handler order).
