@@ -6183,6 +6183,265 @@ void Geoscape_DrawPlaneArm(const GeoscapePlaneArmEnv *pArmEnv)
     (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_RAIL_X2, PUFO_PLANE_RAIL_Y, 1, nRailH, 4, 70, 75);  /* 0x93D70 */
 }
 
+/* 0x91DC8..0x92ADC: screen 1, the placement screen -- Base_EnterBuildMode @ 0x84E60 sets the id. Rails,
+ * separator, the ten nav controls, the close control, the ten action captions, the two grid callees, the
+ * base name and money line, then EITHER the cursor block (the only arm in the switch that moves the map
+ * cursor) or the demolish panel. */
+void Geoscape_DrawPlacementArm(const GeoscapePlacementArmEnv *pArmEnv,
+                               const GeoscapeScreenArmEnv *pCtlEnv,
+                               const FacNameGridEnv *pGridEnv,
+                               const BaseStripDrawEnv *pStripEnv)
+{
+    if (pArmEnv->pPad != NULL) {
+        PadImage_Blit(pArmEnv->pPad);                          /* 0x91DCC LDR [R0] / 0x91DD0 */
+    }
+
+    /* 0x91DD4..0x91EEC: 24 steps of 7, 1x7 rects at x 2, 237 AND 210 -- case 7's rail idiom with a third
+     * rail, the divider between the map area and the action captions. */
+    for (i32 k = 0; k < PUFO_PLA_RAIL_STEPS; ++k) {            /* CMP #0xA8 at 0x91EE0 */
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));   /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_SIDE - PUFO_SOL_RAMP_STEP * k);     /* 230..115 */
+        const i32 nYUp = PUFO_PLA_SIDE_Y0 + PUFO_PLA_SIDE_STEP * k;             /* 1..162 */
+        const i32 nYDn = PUFO_PLA_SIDE_Y1 + PUFO_PLA_SIDE_STEP * k;             /* 151..312 */
+
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_SIDE_X0, nYUp, 1, PUFO_PLA_SIDE_H, nRise, nRise, nRise);  /* 0x91E18 */
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_SIDE_X0, nYDn, 1, PUFO_PLA_SIDE_H, nFall, nFall, nFall);  /* 0x91E44 */
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_SIDE_X1, nYUp, 1, PUFO_PLA_SIDE_H, nRise, nRise, nRise);  /* 0x91E68 */
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_SIDE_X1, nYDn, 1, PUFO_PLA_SIDE_H, nFall, nFall, nFall);  /* 0x91E8C */
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_SIDE_X2, nYUp, 1, PUFO_PLA_SIDE_H, nRise, nRise, nRise);  /* 0x91EB0 */
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_SIDE_X2, nYDn, 1, PUFO_PLA_SIDE_H, nFall, nFall, nFall);  /* 0x91ED4 */
+    }
+
+    /* 0x91EF0..0x91FB4: 24 steps of 5, 5x1 rects at y 315 and y 2. The LEFT half of both rows is the flat
+     * colour 7, and 7 is not a colour decision -- it is the side rails' height constant (0x91DE4 MOV R5,#7)
+     * stored into the three colour slots at 0x91F14. Only the right half ramps, and its two immediates
+     * differ per row: #0x80 on top, #0x78 on the bottom. */
+    for (i32 k = 0; k < PUFO_PLA_RAIL_STEPS; ++k) {            /* CMP #0x78 at 0x91FB0 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_EDGE - PUFO_SOL_RAMP_STEP * k);     /* 250..135 */
+        const i32 nXLo = PUFO_PLA_EDGE_X_RISE + PUFO_PLA_EDGE_STEP * k;         /* 1..116 */
+
+        SoftSurf_BlitRectProxy(0, nXLo, PUFO_PLA_EDGE_Y_TOP, PUFO_PLA_EDGE_W, 1,
+                               PUFO_PLA_SIDE_H, PUFO_PLA_SIDE_H, PUFO_PLA_SIDE_H);               /* 0x91F2C */
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_EDGE_X_TOP + PUFO_PLA_EDGE_STEP * k, PUFO_PLA_EDGE_Y_TOP,
+                               PUFO_PLA_EDGE_W, 1, nFall, nFall, nFall);                         /* 0x91F5C */
+        SoftSurf_BlitRectProxy(0, nXLo, PUFO_PLA_EDGE_Y_BOT, PUFO_PLA_EDGE_W, 1,
+                               PUFO_PLA_SIDE_H, PUFO_PLA_SIDE_H, PUFO_PLA_SIDE_H);               /* 0x91F80 */
+        SoftSurf_BlitRectProxy(0, PUFO_PLA_EDGE_X_BOT + PUFO_PLA_EDGE_STEP * k, PUFO_PLA_EDGE_Y_BOT,
+                               PUFO_PLA_EDGE_W, 1, nFall, nFall, nFall);                         /* 0x91FA4 */
+    }
+
+    /* 0x91FB8..0x91FDC: the same 208x1 separator bar case 7 draws, in flat colour 160. */
+    SoftSurf_BlitRectProxy(0, PUFO_BFA_SEP_X, PUFO_BFA_SEP_Y, PUFO_BFA_SEP_W, 1,
+                           PUFO_BFA_SEP_COLOR, PUFO_BFA_SEP_COLOR, PUFO_BFA_SEP_COLOR);
+
+    /* 0x91FE0..0x92014: the ten nav controls at 0x159888..0x1598AC, which the arm reaches through the grid
+     * block at +0x120. The original runs the loop with its index in the scratch counter dword_186B08 and
+     * re-reads it after each blit (0x92004); a local counter is the same loop. The null test is the
+     * original's own (0x91FF8 CMP #0), so a null slot is skipped, not a fault. */
+    if (pArmEnv->apNavCtl != NULL) {
+        for (i32 i = 0; i < PUFO_PLA_NAV_CTLS; ++i) {          /* CMP #0xA at 0x92010 */
+            UiControl *const pCtl = pArmEnv->apNavCtl[i];
+            if (pCtl == NULL) {
+                continue;                                      /* 0x91FFC BEQ */
+            }
+            (void)UiControl_BlitActivePad(pCtl, pCtlEnv->pfnCtlBlit,
+                                          pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);
+        }
+    }
+
+    /* 0x92018..0x92044: the close control to (194, 4), the close thunk installed at +0xC, then blitted. */
+    if (pArmEnv->pCloseCtl != NULL) {
+        pArmEnv->pCloseCtl->x = (i16)PUFO_PLA_CLOSE_X;         /* 0x92028 STRH [R1] */
+        pArmEnv->pCloseCtl->y = (i16)PUFO_PLA_CLOSE_Y;         /* 0x92034 STRH [R1,#2] */
+        pArmEnv->pCloseCtl->pfnClick = pArmEnv->pfnCloseClick; /* 0x9203C STR [R1,#0xC] */
+        (void)UiControl_BlitActivePad(pArmEnv->pCloseCtl, pCtlEnv->pfnCtlBlit,
+                                      pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);
+    }
+
+    (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 68, 244, 252, 4, 70, 75);   /* 0x92048..0x9206C */
+
+    /* 0x92070..0x92290: the ten action captions -- records 69..73 centred on 60, then 74..78 centred on
+     * 180, on rows 229, 247, 265, 283 and 301. Each is measured from the record in place and drawn with the
+     * house centring; nothing here truncates the width the way the hangar arm's stat panel does. */
+    for (i32 i = 0; i < 5; ++i) {
+        const char *const psz = pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * (PUFO_PLA_TEXT_ACTION_0 + i);
+        (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(psz), PUFO_PLA_CAP_L),
+                              PUFO_PLA_CAP_Y0 + PUFO_PLA_CAP_STEP * i, psz);
+    }
+    for (i32 i = 0; i < 5; ++i) {
+        const char *const psz = pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * (PUFO_PLA_TEXT_ACTION_5 + i);
+        (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(psz), PUFO_PLA_CAP_R),
+                              PUFO_PLA_CAP_Y0 + PUFO_PLA_CAP_STEP * i, psz);
+    }
+
+    g_nGlyphPalSlotBase = PUFO_PLA_GLYPH_PAL;                  /* 0x92294 MOV R0,#3 / 0x922AC STR: the arm
+                                                                * leaves it at 3, exactly as case 7 does */
+    BaseFacScreen_DrawNameGrid(pGridEnv);                      /* 0x922B0 MOV R0,R5 / 0x922B4 */
+    if (pStripEnv != NULL) {
+        BaseStripDrawEnv strip = *pStripEnv;                   /* 0x922B8 MOV R1,#0xFFFFFFFF: the mark is this
+                                                                * arm's argument, as case 7's is */
+        strip.nHighlightRow = PUFO_PLA_STRIP_MARK;
+        Base_DrawFacilityIconStrip(&strip);                    /* 0x922C0 */
+    }
+
+    (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 68, 244, 252, 4, 70, 75);   /* 0x922C4..0x922E4, packed again */
+
+    const i32 nBase = (pArmEnv->pnSelBaseIdx != NULL) ? (i32)*pArmEnv->pnSelBaseIdx : 0;   /* LDRSB, always */
+
+    if (pArmEnv->pbPlaceActive == NULL || *pArmEnv->pbPlaceActive == 0) {
+        /* 0x922E8..0x923D4, reached only with the placement flag CLEAR (0x922F4 BNE jumps the whole block):
+         * the base name centred on 120 at y 1, then the money line. */
+        if (pArmEnv->apSiteRecs != NULL && nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT) {
+            const char *const pszName = pArmEnv->apSiteRecs[nBase].abName;   /* 0x9230C ADD R7,R3,LSL#6 and
+                                                                              * 0x92310 ADD #0x1A */
+            (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszName), PUFO_PLA_NAME_CENTRE),
+                                  PUFO_PLA_NAME_Y, pszName);                 /* 0x92314 measure, 0x92344 draw */
+        }
+        (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 130, 130, 250, 20, 20, 20);  /* 0x92348..0x92368 */
+
+        /* 0x92370..0x923D4: TEXTS[156] copied into the frame's psz, then itoa(nFunds), then "$". The copy
+         * loop is unbounded in the original and so are the two strcats; the port builds the same string in
+         * one bounded snprintf. The draw is at a FIXED (5, 20) -- the one string in this arm that is not
+         * centred. */
+        char szMoney[64];
+        (void)snprintf(szMoney, sizeof(szMoney), "%s%d$",
+                       pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_PLA_TEXT_MONEY,
+                       (pArmEnv->pnFunds != NULL) ? *pArmEnv->pnFunds : 0);
+        (void)Text_DrawString(PUFO_PLA_MONEY_X, PUFO_PLA_MONEY_Y, szMoney);   /* 0x923CC / 0x923D0 */
+    } else {
+        /* 0x923D8..0x92848: the cursor block, reached only with the placement flag SET. */
+        i32 nTapX = (pArmEnv->pnTapX != NULL) ? *pArmEnv->pnTapX : 0;   /* 0x92404 LDR [=nSmapTapX] */
+        i32 nTapY = (pArmEnv->pnTapY != NULL) ? *pArmEnv->pnTapY : 0;   /* 0x92400 LDR [=nSmapTapY] */
+        i32 nCell = 0;
+        if (pArmEnv->abFacilityGrid != NULL) {
+            /* 0x923F0 MOV R2,#0x18 / 0x923F8 MUL / 0x9240C ADD #0x3E / 0x92414 MUL #6 / 0x92418 ADD
+             * [=nSmapTapX] / 0x9241C LDRB [R3,R5]: the byte is fac[nBase].tileA[tapY][tapX], and the
+             * arm's three immediates (24, 6, 62) are PUFO_GRID_FAC_STRIDE, the 6-wide layer and a bias
+             * whose 24*62 = 372 is PUFO_GRID_FAC_OFF. Deviation: the original's address is unbounded, so a
+             * negative or oversized tap reads outside the block; the port keeps the index inside it. */
+            i32 nIdx = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase
+                     + PUFO_PLA_TAP_CELL_STRIDE * nTapY + nTapX;
+            if (nIdx < 0) {
+                nIdx = 0;
+            } else if (nIdx >= PUFO_GRID_SIZE) {
+                nIdx = PUFO_GRID_SIZE - 1;
+            }
+            nCell = pArmEnv->abFacilityGrid[nIdx];
+        }
+
+        if (nCell == 0) {
+            if (pArmEnv->pbPlaceActive != NULL) {
+                *pArmEnv->pbPlaceActive = 0;                   /* 0x92424 BEQ loc_92844 / 0x92844 STRB R11,[R10]
+                                                                * with R11 = 0: an empty cell ends the placement */
+            }
+        } else {
+            const i32 nOriginX = (pArmEnv->pnSmapOriginX != NULL) ? *pArmEnv->pnSmapOriginX : 0;
+            const i32 nOriginY = (pArmEnv->pnSmapOriginY != NULL) ? *pArmEnv->pnSmapOriginY : 0;
+            const u8 nPhase = (u8)(PUFO_PLA_TAP_COLOR_STEP
+                                   * (((pArmEnv->pnMapPhase != NULL) ? (i32)*pArmEnv->pnMapPhase : 0)
+                                      + PUFO_PLA_TAP_COLOR_BASE));            /* 0x92478 MUL R2,R3,R7 */
+            const i32 nX = nOriginX + PUFO_PLA_TAP_CELL * nTapX;              /* ADD R1,R0,R1,LSL#5 */
+            const i32 nY = nOriginY + PUFO_PLA_TAP_CELL * nTapY + PUFO_PLA_TAP_Y0;   /* ADD #0x24 */
+
+            if (nCell >= PUFO_PLA_TAP_KIND_FIRST && nCell <= PUFO_PLA_TAP_KIND_LAST) {
+                /* 0x92428..0x9245C, 0x925A0: kinds 9..12 (Hyper Wave Decoder, Mind Shield, Hangar, Gravity
+                 * shield) take the two-cell cursor AND move the tap first -- code 12 steps tapY then falls
+                 * into the tapX step, 11 only tapY, 10 only tapX, 9 neither. The rects are then positioned
+                 * from the MOVED tap. ORIGINAL behaviour, reproduced: a draw that moves the map cursor. */
+                if (nCell == 12 || nCell == 11) {
+                    nTapY -= 1;                                /* 0x92450/0x92454 and 0x925A0/0x925A4 */
+                }
+                if (nCell == 12 || nCell == 10) {
+                    nTapX -= 1;                                /* 0x92458/0x9245C */
+                }
+                if (pArmEnv->pnTapX != NULL) {
+                    *pArmEnv->pnTapX = nTapX;
+                }
+                if (pArmEnv->pnTapY != NULL) {
+                    *pArmEnv->pnTapY = nTapY;
+                }
+                const i32 nBigX = nOriginX + PUFO_PLA_TAP_CELL * nTapX;
+                const i32 nBigY = nOriginY + PUFO_PLA_TAP_CELL * nTapY + PUFO_PLA_TAP_Y0;
+
+                SoftSurf_BlitRectProxy(0, nBigX, nBigY, PUFO_PLA_TAP_BIG_W, 2, 0, nPhase, 0);   /* 0x924A0 */
+                SoftSurf_BlitRectProxy(0, nBigX, nBigY, 2, PUFO_PLA_TAP_BIG_W, 0, nPhase, 0);   /* 0x924E8 */
+                SoftSurf_BlitRectProxy(0, nBigX + PUFO_PLA_TAP_BIG_X, nBigY, 2,
+                                       PUFO_PLA_TAP_BIG_W, 0, nPhase, 0);                       /* 0x92534 */
+                SoftSurf_BlitRectProxy(0, nBigX, nOriginY + PUFO_PLA_TAP_CELL * nTapY
+                                       + PUFO_PLA_TAP_BIG_Y, PUFO_PLA_TAP_BIG_W, 2, 0, nPhase, 0); /* 0x92578 */
+            } else {
+                /* 0x925AC..0x926CC: every other cell byte -- one-cell cursor, same corner, same colours. */
+                SoftSurf_BlitRectProxy(0, nX, nY, PUFO_PLA_TAP_SMALL_W, 2, 0, nPhase, 0);        /* 0x925F0 */
+                SoftSurf_BlitRectProxy(0, nX, nY, 2, PUFO_PLA_TAP_SMALL_W, 0, nPhase, 0);        /* 0x92638 */
+                SoftSurf_BlitRectProxy(0, nX + PUFO_PLA_TAP_SMALL_X, nY, 2,
+                                       PUFO_PLA_TAP_SMALL_W, 0, nPhase, 0);                      /* 0x92684 */
+                SoftSurf_BlitRectProxy(0, nX, nOriginY + PUFO_PLA_TAP_CELL * nTapY
+                                       + PUFO_PLA_TAP_SMALL_Y, PUFO_PLA_TAP_SMALL_W, 2, 0, nPhase, 0); /* 0x926CC */
+            }
+
+            /* 0x926D0..0x92ADC: the tail both cursor styles share. */
+            (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 68, 244, 252, 4, 70, 75);   /* 0x926D0..0x926F8 */
+
+            const BaseFacFlag *pFlag = NULL;
+            if (pArmEnv->paFacFlags != NULL && nCell < PUFO_BASEFAC_COUNT) {
+                pFlag = &pArmEnv->paFacFlags[nCell];           /* 0x92710 MOV R11,#0x1C / 0x92740 MUL /
+                                                                * 0x92744 ADD [=0x186E48]. Deviation: the
+                                                                * original indexes the 17 records with the
+                                                                * cell byte whatever it says, so a 0xFF cell
+                                                                * reads 2,380 bytes past the table. */
+                (void)Text_DrawString(PUFO_PLA_FAC_NAME_X, PUFO_PLA_FAC_NAME_Y, pFlag->szName);  /* 0x92748 */
+            }
+            if (pArmEnv->pMapCtl != NULL) {
+                pArmEnv->pMapCtl->pfnClick = pArmEnv->pfnMapClick;             /* 0x92764 STR [R0,#0xC] */
+                const i32 nLabelW = (pFlag != NULL)
+                                        ? (i32)(i16)(u16)Text_MeasureWidth(pFlag->szName) : 0;   /* 0x927A4
+                                                                                                   * LSL#16 /
+                                                                                                   * ASR#16 */
+                pArmEnv->pMapCtl->x = (i16)(nLabelW + PUFO_PLA_MAPCTL_X_ADD);  /* 0x927B0 ADD #0xA / 0x927B4 STRH */
+                pArmEnv->pMapCtl->y = (i16)PUFO_PLA_MAPCTL_Y;                  /* 0x927BC MOV R3,#0xF / STRH */
+                (void)UiControl_BlitActivePad(pArmEnv->pMapCtl, pCtlEnv->pfnCtlBlit,
+                                              pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);      /* 0x927C8 */
+
+                /* 0x927CC..0x92834: TEXTS[1240] "Демонтаж", centred ON the control -- its own width read
+                 * back as an unsigned half, the label's half subtracted, one pixel below its y. */
+                const char *const pszHint =
+                    pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_PLA_TEXT_DEMOLISH;
+                (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszHint),
+                                                        (i32)pArmEnv->pMapCtl->x
+                                                        + ((i32)pArmEnv->pMapCtl->uWidth >> 1)),
+                                      (i32)pArmEnv->pMapCtl->y + 1, pszHint);
+            }
+        }
+    }
+
+    if (pArmEnv->pbPlaceFail != NULL && *pArmEnv->pbPlaceFail != 0) {
+        /* 0x92848..0x92ADC: the demolish-failure panel. */
+        (void)Ui_AnimExpandBlit(pArmEnv->pAnim, PUFO_PLA_ANIM_X, PUFO_PLA_ANIM_Y, PUFO_PLA_ANIM_W,
+                                PUFO_PLA_ANIM_H, PUFO_PLA_ANIM_IDX, PUFO_PLA_ANIM_SRCX,
+                                PUFO_PLA_ANIM_SRCY, PUFO_PLA_ANIM_KEY, PUFO_PLA_ANIM_MODE);     /* 0x92898 */
+        (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 0xDC, 0x50, 0x50, 0x32, 0x1E, 0x1E);          /* 0x928A0..0x928BC */
+        for (i32 i = 0; i < 3; ++i) {
+            const char *const psz = pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * (PUFO_PLA_TEXT_FAIL_0 + i);
+            (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(psz), PUFO_PLA_PANEL_CENTRE),
+                                  PUFO_PLA_FAIL_Y0 + PUFO_PLA_FAIL_STEP * i, psz);              /* 0x928C0..0x929B8 */
+        }
+        /* 0x929BC..0x929D8: white over (104,104,104) -- the low channel is the grid-block pointer's own low
+         * byte (0x929C0 STR R5,[g2] stores 0x159768 into a colour slot), not a chosen colour. */
+        (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 0xFF, 0xFF, 0xFF,
+                                 PUFO_PLA_WHITE_LOW, PUFO_PLA_WHITE_LOW, PUFO_PLA_WHITE_LOW);
+        for (i32 i = 0; i < 3; ++i) {
+            const char *const psz = pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * (PUFO_PLA_TEXT_EMPTY_0 + i);
+            (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(psz), PUFO_PLA_PANEL_CENTRE),
+                                  PUFO_PLA_EMPTY_Y0 + PUFO_PLA_EMPTY_STEP * i, psz);            /* 0x929DC..0x92ADC:
+                                                                                                 * records 80, 81
+                                                                                                 * and 82 are empty
+                                                                                                 * in the shipped
+                                                                                                 * lang.dat */
+        }
+    }
+    /* 0x92ADC B loc_90974 and 0x9097C B def_8C1B0: case 1 ends in the shared frame end, as every arm does. */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)

@@ -13429,6 +13429,617 @@ static void TestGeoscapePlaneArm(void)
     PnSetText(PUFO_PLANE_TEXT_STAT_HDR, szOld99);
 }
 
+/* ---- fixtures for Geoscape_DrawPlacementArm (Geoscape_Draw case 1, 0x91DC8) ------------------ */
+#define PC_PAD_X     100   /* clear of the rails (x 2, 210, 237), the separator (y 35) and both caption columns */
+#define PC_PAD_Y      60
+#define PC_CAPDY      14   /* one text row's ink band: the font paints its glyph 3 rows below the y it is given */
+#define PC_MONEY_X0    4   /* the money line's probe window -- the left rail is x 2, the strip starts at x 211 */
+#define PC_MONEY_Y0   18
+#define PC_MONEY_X1   60
+#define PC_MONEY_Y1   33
+#define PC_NAME_X0    80   /* the base name's probe window, centred on 120 */
+#define PC_NAME_Y0     0
+#define PC_NAME_X1   160
+#define PC_NAME_Y1    15
+
+/* The colour Blit_CopyToXY actually writes: the index supplies the 5-bit top field and the two
+ * colour operands the middle and low ones (pufo_render.c:242). Every rail, separator and cursor
+ * claim below is an exact pixel value, so a wrong colour index is caught, not just missing ink. */
+#define PC_PACK(nIdx, nMid, nLow)                                                  \
+    ((u16)(((u32)(nIdx) >> 3) << 11) + 32u * ((u32)(nMid) >> 2) + ((u32)(nLow) >> 3))
+
+static PadImage                g_pcPad;
+static u8                      g_abPcPadGlyph[8];
+static UiControl               g_pcNavCtl[PUFO_PLA_NAV_CTLS];
+static PadImage                g_pcNavPad[PUFO_PLA_NAV_CTLS];
+static UiControl              *g_apPcNav[PUFO_PLA_NAV_CTLS];
+static UiControl               g_pcCloseCtl;
+static PadImage                g_pcClosePad;
+static UiControl               g_pcMapCtl;
+static PadImage                g_pcMapPad;
+static GeoscapePlacementArmEnv g_pcArm;
+static GeoscapeScreenArmEnv    g_pcCtlEnv;
+static FacNameGridEnv          g_pcGrid;
+static BaseStripDrawEnv        g_pcStrip;
+static GfxColorEnv             g_pcColor;
+static UiAnimBlitEnv           g_pcAnim;
+static u8                      g_bPcAnimStarted;
+static i8                      g_nPcAnimProgress;
+static u8                      g_abPcGrid[PUFO_GRID_SIZE];
+static u8                      g_bPcPlaceActive, g_bPcPlaceFail;
+static u8                      g_nPcBaseCount, g_nPcSelBaseByte, g_nPcCraftCount, g_nPcMapPhase;
+static i8                      g_nPcSelBase;
+static i32                     g_nPcTapX, g_nPcTapY, g_nPcOriginX, g_nPcOriginY, g_nPcFunds;
+static BaseSiteRec             g_aPcSites[PUFO_FAC_BASE_COUNT];
+static BaseFacFlag             g_aPcFlags[PUFO_BASEFAC_COUNT];
+
+static void PcCloseClick(void) { /* installed at 0x9203C; identity is what is asserted */ }
+static void PcMapClick(void)   { /* installed at 0x92764 */ }
+
+static void PcSetFlag(i32 nKind, const char *psz)
+{
+    snprintf(g_aPcFlags[nKind].szName, sizeof(g_aPcFlags[nKind].szName), "%s", psz);
+}
+
+static void PcSetName(i32 nBase, const char *psz)
+{
+    snprintf(g_aPcSites[nBase].abName, sizeof(g_aPcSites[nBase].abName), "%s", psz);
+}
+
+/* The byte the cursor block reads: fac[nSelBase].tileA[tapY][tapX], the same 24/6/62 arithmetic
+ * the arm uses at 0x923F0..0x9241C. */
+static u8 *PcCell(i32 nTapX, i32 nTapY)
+{
+    return &g_abPcGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * (i32)g_nPcSelBase
+                       + PUFO_PLA_TAP_CELL_STRIDE * nTapY + nTapX];
+}
+
+static void PcRun(void)
+{
+    ArReset();
+    Geoscape_DrawPlacementArm(&g_pcArm, &g_pcCtlEnv, &g_pcGrid, &g_pcStrip);
+}
+
+/* The arm as it stands now, parked in the diff baseline the PnDiffRect probes read against. */
+static void PcBaseline(void)
+{
+    PcRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+}
+
+/* Where a centred draw of psz ACTUALLY inks, measured from a reference draw on a clean surface at
+ * centre - width/2. Glyph bearings make the first inked column differ from the call's x by a pixel or
+ * two, so the arm's ink is compared against a reference span and not against an arithmetic one. */
+static void PcRefSpan(i32 nCentre, i32 nY, const char *psz, i32 *pnMinX, i32 *pnMaxX)
+{
+    ArReset();
+    (void)Text_DrawString(nCentre - (Text_MeasureWidth(psz) >> 1), nY, psz);
+    *pnMinX = BD_SURF_W;
+    *pnMaxX = -1;
+    for (i32 y = nY; y <= nY + PC_CAPDY; ++y) {
+        for (i32 x = 0; x < BD_SURF_W; ++x) {
+            if ((u16)BdPix(x, y) != 0) {
+                if (x < *pnMinX) {
+                    *pnMinX = x;
+                }
+                if (x > *pnMaxX) {
+                    *pnMaxX = x;
+                }
+            }
+        }
+    }
+}
+
+/* How many pixels of the window differ from its own top-left pixel: 0 means one flat fill. */
+static i32 PcNotUniform(i32 nX0, i32 nY0, i32 nX1, i32 nY1)
+{
+    const u16 uWant = (u16)BdPix(nX0, nY0);
+    i32 n = 0;
+    for (i32 y = nY0; y <= nY1; ++y) {
+        for (i32 x = nX0; x <= nX1; ++x) {
+            if ((u16)BdPix(x, y) != uWant) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
+static void TestGeoscapePlacementArm(void)
+{
+    printf("\nGeoscape_Draw's placement arm @ 0x91dc8\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_aPalette[PN_TEST_PAL_SLOT][21] = (u32)AR_CAL_INK;
+
+    /* The two pairs the arm ends with, packed here as the reference values. */
+    const u32 uPairArm  = Gfx_PackRgb565Pair(&g_pcColor, 68, 244, 252, 4, 70, 75);
+    const u32 uPairFail = Gfx_PackRgb565Pair(&g_pcColor, 0xFF, 0xFF, 0xFF, 104, 104, 104);
+
+    ArMakeGlyph(&g_pcPad, g_abPcPadGlyph, PC_PAD_X, PC_PAD_Y);
+    for (i32 i = 0; i < PUFO_PLA_NAV_CTLS; ++i) {
+        memset(&g_pcNavCtl[i], 0, sizeof(g_pcNavCtl[i]));
+        memset(&g_pcNavPad[i], 0, sizeof(g_pcNavPad[i]));
+        g_pcNavPad[i].uWidth  = 2;
+        g_pcNavPad[i].uHeight = 2;
+        g_pcNavCtl[i].apPads[0] = &g_pcNavPad[i];
+        g_pcNavCtl[i].bEnabled  = 1;
+        g_apPcNav[i]            = &g_pcNavCtl[i];
+    }
+    memset(&g_pcCloseCtl, 0, sizeof(g_pcCloseCtl));
+    memset(&g_pcClosePad, 0, sizeof(g_pcClosePad));
+    g_pcClosePad.uWidth = 2;
+    g_pcClosePad.uHeight = 2;
+    g_pcCloseCtl.apPads[0] = &g_pcClosePad;
+    g_pcCloseCtl.bEnabled  = 1;
+    memset(&g_pcMapCtl, 0, sizeof(g_pcMapCtl));
+    memset(&g_pcMapPad, 0, sizeof(g_pcMapPad));
+    g_pcMapPad.uWidth  = 2;
+    g_pcMapPad.uHeight = 2;
+    g_pcMapCtl.apPads[0] = &g_pcMapPad;    /* pGeoscapeCtlA @ 0x186BB4 */
+    g_pcMapCtl.bEnabled  = 1;
+    g_pcMapCtl.uWidth    = 60;
+
+    memset(g_abPcGrid, 0, sizeof(g_abPcGrid));
+    /* The marked cell the two callees need, exactly as the base-fac arm's fixture has it: tileA 1 is
+     * the stamp NameGrid_BuildSprite maps to a build icon, tileB 5 carries the name sprite, 7 days
+     * makes the days label draw. Cleared again before the cursor runs below. */
+    g_abPcGrid[6 * 2 + 2]                                             = 7;
+    g_abPcGrid[PUFO_GRID_FAC_OFF + 6 * 2 + 2]                         = 1;
+    g_abPcGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_TILEB_OFF + 6 * 2 + 2]  = 5;
+    g_nPcBaseCount = 1;
+    g_nPcSelBaseByte = 1;                 /* selection == count: the strip draws no erase rect */
+    g_nPcCraftCount = 0;                  /* and the name grid skips its craft pass whole */
+    g_nPcOriginX   = BFA_GRID_X0;         /* nSmapOriginX -- the same two globals the callee and the
+                                           * cursor block use in the original */
+    g_nPcOriginY   = BFA_GRID_Y0 - 36;    /* the name grid's first row is 36 below the origin */
+    g_nPcFunds     = 1234567;
+    g_nPcMapPhase  = 5;                   /* so the cursor colour is 10 * (5 + 15) = 200 */
+    g_nPcSelBase   = 0;
+    g_bPcAnimStarted  = 1;                /* the panel sees the progress byte only */
+    g_nPcAnimProgress = 100;              /* complete, so mode 0 draws the full rect */
+    g_pcAnim.pbStarted   = &g_bPcAnimStarted;
+    g_pcAnim.pnProgress  = &g_nPcAnimProgress;
+    g_pcAnim.nFrameStyle = 0;
+
+    memset(&g_pcGrid, 0, sizeof(g_pcGrid));
+    g_pcGrid.abFacilityGrid = g_abPcGrid;
+    g_pcGrid.pnCraftCount   = &g_nPcCraftCount;
+    g_pcGrid.pnOriginX      = &g_nPcOriginX;
+    g_pcGrid.pnOriginY      = &g_nPcOriginY;
+    g_pcGrid.pColor         = &g_pcColor;
+    g_pcGrid.nBaseIdx       = 0;
+
+    memset(&g_pcStrip, 0, sizeof(g_pcStrip));
+    g_pcStrip.abFacilityGrid = g_abPcGrid;
+    g_pcStrip.pbBaseCount    = &g_nPcBaseCount;
+    g_pcStrip.pbSelectedBase = &g_nPcSelBaseByte;
+    g_pcStrip.nHighlightRow  = 0;         /* deliberately wrong: 0x922B8 makes the arm overwrite it */
+
+    memset(&g_pcArm, 0, sizeof(g_pcArm));
+    g_pcArm.pPad          = &g_pcPad;
+    g_pcArm.apNavCtl      = g_apPcNav;
+    g_pcArm.pCloseCtl     = &g_pcCloseCtl;
+    g_pcArm.pMapCtl       = &g_pcMapCtl;
+    g_pcArm.pbPlaceActive = &g_bPcPlaceActive;
+    g_pcArm.pbPlaceFail   = &g_bPcPlaceFail;
+    g_pcArm.pnTapX        = &g_nPcTapX;
+    g_pcArm.pnTapY        = &g_nPcTapY;
+    g_pcArm.pnSmapOriginX = &g_nPcOriginX;
+    g_pcArm.pnSmapOriginY = &g_nPcOriginY;
+    g_pcArm.abFacilityGrid = g_abPcGrid;
+    g_pcArm.pnSelBaseIdx  = &g_nPcSelBase;
+    g_pcArm.pnMapPhase    = &g_nPcMapPhase;
+    g_pcArm.pnFunds       = &g_nPcFunds;
+    g_pcArm.apSiteRecs    = g_aPcSites;
+    g_pcArm.paFacFlags    = g_aPcFlags;
+    g_pcArm.pTextRecs     = g_abPnText;
+    g_pcArm.pColor        = &g_pcColor;
+    g_pcArm.pAnim         = &g_pcAnim;
+    g_pcArm.pfnCloseClick = PcCloseClick;
+    g_pcArm.pfnMapClick   = PcMapClick;
+
+    memset(&g_pcCtlEnv, 0, sizeof(g_pcCtlEnv));
+    g_pcCtlEnv.apCtl         = NULL;      /* this arm takes its controls from its own env */
+    g_pcCtlEnv.pfnCtlBlit    = PnBlit;
+    g_pcCtlEnv.pfnCtlBlitEx  = PnBlitEx;
+
+    g_bPcPlaceActive = 0;
+    g_bPcPlaceFail   = 0;
+    g_nPcTapX = 0;
+    g_nPcTapY = 0;
+
+    /* ---- 1. the pad, the THREE side rails, the two edge rows, the separator ---- */
+    g_nGlyphPalSlotBase = 7;              /* a value the arm must overwrite (0x92294 / 0x922AC) */
+    PcRun();
+    Check((u16)BdPix(PC_PAD_X, PC_PAD_Y) == AR_CAL_INK,
+          "the arm blits pBaseFacScreenPad @ 0x186BA0, the same pad word case 7 uses (0x91DCC / 0x91DD0)");
+    Check((u16)BdPix(PC_PAD_X + 2, PC_PAD_Y) == 0, "and the pad glyph is 2 wide, no further");
+
+    const u16 uRise0 = PC_PACK(100, 100, 100);
+    Check((u16)BdPix(2, 1) == uRise0 && (u16)BdPix(2, 7) == uRise0,
+          "the left rail's first step: 1x7 at y 1, colour 100 (0x91DE4 MOV R5,#7, 0x91E18)");
+    Check((u16)BdPix(2, 8) == PC_PACK(105, 105, 105),
+          "the next step is colour 105 -- 24 steps of 7, the ramp gaining 5 (0x91EDC ADD R9,R9,#7)");
+    Check((u16)BdPix(2, 168) == PC_PACK(215, 215, 215),
+          "the climbing half ends at y 168 with colour 215 (CMP #0xA8 at 0x91EE0)");
+    Check((u16)BdPix(2, 169) == PC_PACK(220, 220, 220),
+          "y 169 is the first row the DESCENDING half shows: 230-10 = 220. The two halves overlap (1..168 "
+          "crossing 151..318) and each k paints climbing-then-descending, so the higher k wins the overlap");
+    Check((u16)BdPix(2, 151) == PC_PACK(205, 205, 205) && (u16)BdPix(2, 155) == PC_PACK(210, 210, 210),
+          "the descending half's own first rects (y 151, colour 230 at 0x91E44) are painted over by the "
+          "climbing pass's k=21 and k=22 (148..154 in 205, 155..161 in 210) -- visible here as 205 and 210");
+    Check((u16)BdPix(2, 312) == PC_PACK(115, 115, 115) && (u16)BdPix(2, 318) == PC_PACK(115, 115, 115)
+              && (u16)BdPix(2, 319) == 0,
+          "and it does run to y 318 with its last colour 115 (0x91E20 ADD R2,R9,#0x97), with nothing past it");
+    Check((u16)BdPix(1, 1) == 0 && (u16)BdPix(3, 1) == 0 && (u16)BdPix(2, 0) == 0,
+          "one pixel wide and the first rect really starts at y 1");
+    Check((u16)BdPix(237, 1) == uRise0 && (u16)BdPix(236, 1) == 0 && (u16)BdPix(238, 1) == 0,
+          "the right rail at x 237 (0x91E58 MOV R1,#0xED)");
+    Check((u16)BdPix(210, 1) == uRise0 && (u16)BdPix(209, 1) == 0 && (u16)BdPix(211, 1) == 0,
+          "and a THIRD rail at x 210 (0x91EA0 MOV R1,#0xD2) -- the divider case 7 does not have");
+
+    const u16 uFlat = PC_PACK(7, 7, 7);
+    Check((u16)BdPix(1, 315) == uFlat && (u16)BdPix(6, 315) == uFlat && (u16)BdPix(120, 315) == uFlat,
+          "the top row's climbing half is the FLAT colour 7 for every step x 1..120 -- 7 is the side "
+          "rails' rect height, stored into the colour slots at 0x91F14, not a chosen colour");
+    Check((u16)BdPix(121, 315) == 0 && (u16)BdPix(127, 315) == 0,
+          "then the gap x 121..127, because the ramping half starts at 128 (0x91F50 ADD R1,R9,#0x80)");
+    Check((u16)BdPix(128, 315) == PC_PACK(250, 250, 250) && (u16)BdPix(133, 315) == PC_PACK(245, 245, 245),
+          "and that half runs 250, 245, ... in steps of 5 (0x91F5C)");
+    Check((u16)BdPix(1, 314) == 0 && (u16)BdPix(1, 316) == 0, "the row is 1 pixel tall (0x91F1C MOV R3? h=1)");
+    Check((u16)BdPix(1, 2) == uFlat && (u16)BdPix(115, 2) == uFlat,
+          "the bottom row shares the flat climbing half (0x91F80)");
+    Check((u16)BdPix(121, 2) == PC_PACK(250, 250, 250) && (u16)BdPix(124, 2) == PC_PACK(250, 250, 250)
+              && (u16)BdPix(125, 2) == PC_PACK(245, 245, 245),
+          "but its ramp lands at x 120..124 -- eight pixels left of the top row's, so this row has NO gap; "
+          "x 120 itself shows the flat colour because the climbing pass's last step (116..120) runs later (0x91F94 ADD R1,R9,#0x78)");
+    Check((u16)BdPix(120, 2) == uFlat && (u16)BdPix(120, 315) == uFlat,
+          "x 120 is flat on BOTH rows, which is what separates 0x91F94's #0x78 from 0x91F50's #0x80");
+    Check((u16)BdPix(128, 2) == PC_PACK(245, 245, 245) && (u16)BdPix(128, 315) == PC_PACK(250, 250, 250),
+          "so x 128 is 245 on the bottom row and 250 on the top one: the two immediates differ");
+    Check((u16)BdPix(0, 2) == 0 && (u16)BdPix(0, 315) == 0, "and neither row reaches x 0 (0x91F10 ADD R1,R9,#1)");
+
+    const u16 uSep = PC_PACK(160, 160, 160);
+    Check((u16)BdPix(2, 35) == uSep && (u16)BdPix(209, 35) == uSep,
+          "the separator is 208 pixels of flat 160 at y 35 (0x91FB8..0x91FDC), the same bar case 7 draws");
+    Check((u16)BdPix(2, 35) == uSep && (u16)BdPix(2, 34) == PC_PACK(120, 120, 120),
+          "1 pixel tall: the rail colour 120 survives on the row above it, and the separator painted "
+          "OVER the rail at x 2 -- the bar runs after the rails");
+    Check((u16)BdPix(210, 35) == PC_PACK(120, 120, 120),
+          "and stops at x 209: the third rail keeps its own colour 120 on that row");
+
+    /* ---- 2. the ten nav controls, the close control, the two callees ---- */
+    CheckEqI32(g_nGlyphPalSlotBase, PUFO_PLA_GLYPH_PAL,
+               "the arm leaves Map_nGlyphPalBase at 3 (0x92294 MOV R0,#3 / 0x922AC STR) and never restores it");
+    CheckEqI32(g_nPnBlits, PUFO_PLA_NAV_CTLS + 1,
+               "ten nav controls then the close control (CMP #0xA at 0x92010, 0x92040)");
+    bool bNavOrder = true;
+    for (i32 i = 0; i < PUFO_PLA_NAV_CTLS; ++i) {
+        if (g_apnPnBlitPad[i] != &g_pcNavPad[i]) {
+            bNavOrder = false;
+        }
+    }
+    Check(bNavOrder, "the nav controls go in slot order, 0x159888 + 4*i read through the grid block at +0x120 (0x91FF0)");
+    Check(g_apnPnBlitPad[PUFO_PLA_NAV_CTLS] == &g_pcClosePad, "and the eleventh blit is the close control");
+    CheckEqI32((i32)g_pcCloseCtl.x, PUFO_PLA_CLOSE_X, "the close control is moved to x 194 BEFORE the blit (0x9201C / 0x92028)");
+    CheckEqI32((i32)g_pcCloseCtl.y, PUFO_PLA_CLOSE_Y, "and y 4 (0x92020 / 0x92034)");
+    Check(g_pcCloseCtl.pfnClick == PcCloseClick, "with Geoscape_CloseUI_ThunkA stored into +0xC (0x9203C)");
+    Check(BfaInk(BFA_MARK_X0, BFA_MARK_Y0, BFA_MARK_X1, BFA_MARK_Y1) > 0,
+          "BaseFacScreen_DrawNameGrid ran: the marked cell at (70,160) draws its name sprite, build icon and days label");
+    Check(BfaInk(BFA_STRIP_X0, BFA_STRIP_Y0, BFA_STRIP_X1, BFA_STRIP_Y1) > 0, "and Base_DrawFacilityIconStrip ran (0x922C0)");
+
+    ArReset();
+    UiControl *apNullNav[PUFO_PLA_NAV_CTLS];       /* a copy: apNavCtl is a pointer array, not a field */
+    for (i32 i = 0; i < PUFO_PLA_NAV_CTLS; ++i) {
+        apNullNav[i] = g_apPcNav[i];
+    }
+    apNullNav[3] = NULL;                            /* the original's own null test at 0x91FF8 */
+    GeoscapePlacementArmEnv noNav = g_pcArm;
+    noNav.apNavCtl = apNullNav;
+    Geoscape_DrawPlacementArm(&noNav, &g_pcCtlEnv, &g_pcGrid, &g_pcStrip);
+    CheckEqI32(g_nPnBlits, PUFO_PLA_NAV_CTLS, "a null nav slot is skipped, not a fault: nine nav plus close");
+    Check(g_apnPnBlitPad[3] == &g_pcNavPad[4] && g_apnPnBlitPad[8] == &g_pcNavPad[9],
+          "and the run closes up the gap -- the loop counts controls, not slots");
+
+    ArReset();
+    GeoscapePlacementArmEnv noPad = g_pcArm;
+    noPad.pPad = NULL;
+    Geoscape_DrawPlacementArm(&noPad, &g_pcCtlEnv, &g_pcGrid, &g_pcStrip);
+    Check((u16)BdPix(PC_PAD_X, PC_PAD_Y) == 0, "with no pad word there is no pad blit");
+    Check((u16)BdPix(2, 1) == uRise0 && (u16)BdPix(210, 1) == uRise0,
+          "while the rails are still drawn -- they need no env at all");
+
+    /* The strip mark, measured directionally. The chevron is the strip's own 2x2 step in colour
+     * index 0xFF/0/0 (0x62720), and a DIRECT call with highlight 0 is the control that shows where it
+     * lands; the arm's run has to leave those same pixels as ordinary cell blocks (0x922B8 MOV R1,#0xFFFFFFFF
+     * overwrites the env's argument before the call). */
+    const u16 uChevron = PC_PACK(0xFF, 0, 0);
+    ArReset();
+    BaseStripDrawEnv ctlMark = g_pcStrip;
+    ctlMark.nHighlightRow = 0;
+    Base_DrawFacilityIconStrip(&ctlMark);
+    Check((u16)BdPix(234, 26) == uChevron && (u16)BdPix(212, 4) == uChevron
+              && (u16)BdPix(212, 26) == uChevron,
+          "control: Base_DrawFacilityIconStrip with highlight 0 paints its chevron steps at (212+k, 4+k) and "
+          "(212+k, 26-k), 23 of them, over the cell blocks (0x62720..0x627C4)");
+    ArReset();
+    Geoscape_DrawPlacementArm(&g_pcArm, &g_pcCtlEnv, &g_pcGrid, &g_pcStrip);   /* the env says highlight 0 */
+    Check((u16)BdPix(234, 26) != uChevron && (u16)BdPix(212, 4) != uChevron
+              && (u16)BdPix(212, 26) != uChevron,
+          "the arm overwrites that argument with -1 before calling, so not one chevron step appears even "
+          "though the env asked for base 0 (0x922B8, the same dead mark case 7 passes)");
+    Check(BfaInk(BFA_STRIP_X0, BFA_STRIP_Y0, BFA_STRIP_X1, BFA_STRIP_Y1) > 0,
+          "while the strip itself still drew its 6x6 cell blocks -- the mark is the only thing suppressed");
+
+    /* ---- 3. the ten action captions: five centred on 60, five on 180, 18 rows apart ----
+     *
+     * The captions run at 0x92070..0x92290, BEFORE the two callees -- and BaseFacScreen_DrawNameGrid's
+     * 6x6 blank backdrop (0x61CA4..0x61CC8: 36 basebits glyphs at the scroll origin, each cell 32x32,
+     * every pixel index 0, so palette slot 3 entry 0 is what lands there) paints over whatever it
+     * covers. With the fixture's origin at (6,60) its cells reach y 287, which is exactly why the rows
+     * 229, 247 and 265 of BOTH columns vanish from the surface while 283 and 301 survive -- the same
+     * order the original has. Measuring the captions needs the backdrop parked above them, so the
+     * origin moves to (0,0) for this block: its cells then cover y 36..227 and every caption row is
+     * visible again. */
+    g_abPcGrid[6 * 2 + 2] = 0;
+    g_abPcGrid[PUFO_GRID_FAC_OFF + 6 * 2 + 2] = 0;
+    g_abPcGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_TILEB_OFF + 6 * 2 + 2] = 0;
+    g_nPcOriginX = 0;
+    g_nPcOriginY = 0;
+    PcBaseline();
+    PnSetText(69, "A");      PnSetText(74, "F");
+    PnSetText(70, "BB");     PnSetText(75, "GG");
+    PnSetText(71, "CCC");    PnSetText(76, "HHH");
+    PnSetText(72, "DDDD");   PnSetText(77, "IIII");
+    PnSetText(73, "EEEEE");  PnSetText(78, "JJJJJ");
+    PcRun();
+    static const i32 g_anPcCapRec[10] = { 69, 70, 71, 72, 73, 74, 75, 76, 77, 78 };
+    i32 aMinX[10], aMaxX[10];
+    for (i32 i = 0; i < 10; ++i) {
+        const i32 nRow = i % 5;                      /* both columns use the same five rows (0x92098 and 0x9223C) */
+        const i32 nY = PUFO_PLA_CAP_Y0 + PUFO_PLA_CAP_STEP * nRow;
+        const PnDiff d = (nRow == i) ? PnDiffRect(20, nY, 110, nY + PC_CAPDY)
+                                     : PnDiffRect(130, nY, 230, nY + PC_CAPDY);
+        aMinX[i] = d.nMinX;
+        aMaxX[i] = d.nMaxX;
+    }
+    for (i32 i = 0; i < 10; ++i) {
+        const i32 nRow = i % 5;
+        const i32 nY = PUFO_PLA_CAP_Y0 + PUFO_PLA_CAP_STEP * nRow;
+        const i32 nCentre = (nRow == i) ? PUFO_PLA_CAP_L : PUFO_PLA_CAP_R;
+        const char *const psz = &g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * g_anPcCapRec[i]];
+        i32 nRefMin, nRefMax;
+        PcRefSpan(nCentre, nY, psz, &nRefMin, &nRefMax);
+        char szWhat[192];
+        snprintf(szWhat, sizeof(szWhat),
+                 "TEXTS[%d] (\"%s\") lands exactly where a centred draw on %d puts it, on row y %d "
+                 "(span %d..%d; 0x92070..0x92290 measures, then RSB #%02X)",
+                 g_anPcCapRec[i], psz, nCentre, nY, nRefMin, nRefMax, (nRow == i) ? 0x3C : 0xB4);
+        Check(aMinX[i] == nRefMin && aMaxX[i] == nRefMax, szWhat);
+    }
+    for (i32 i = 0; i < 10; ++i) {
+        PnSetText(g_anPcCapRec[i], "");
+    }
+    g_nPcOriginX = BFA_GRID_X0;         /* back to the origin the cursor block's pixel probes below assume */
+    g_nPcOriginY = BFA_GRID_Y0 - 36;
+
+    /* ---- 4. the base name and the money line: reached only with bBasePlaceActive CLEAR ---- */
+    PcSetName(0, "");
+    PcBaseline();                        /* the money number alone, at a fixed (5, 20) */
+    Check(BfaInk(PC_MONEY_X0, PC_MONEY_Y0, PC_MONEY_X1, PC_MONEY_Y1) > 0,
+          "TEXTS[156] with itoa(nFunds) and \"$\" is drawn at (5,20) (0x923CC / 0x923D0)");
+    PnSetText(156, "MONEY:");
+    PcRun();
+    PnDiff dMoney = PnDiffRect(0, PC_MONEY_Y0, BD_SURF_W - 1, PC_MONEY_Y1);
+    CheckEqI32(dMoney.nMinX, PUFO_PLA_MONEY_X,
+               "the money line starts at a FIXED x 5 -- the one string in this arm that is not centred");
+    PnSetText(156, "");
+
+    PcSetName(0, "ZZZ");
+    PcRun();
+    PnDiff dName = PnDiffRect(PC_NAME_X0, PC_NAME_Y0, PC_NAME_X1, PC_NAME_Y1);
+    Check(dName.nCount > 0 && dName.nMinX == PUFO_PLA_NAME_CENTRE - (Text_MeasureWidth("ZZZ") >> 1),
+          "the base name is centred on 120 at y 1 (0x92314 measure, 0x9233C RSB #0x78, 0x92344 draw)");
+    PcSetName(0, "");
+    g_nPcSelBase = 5;
+    PcSetName(5, "QQQQQQ");
+    PcRun();
+    dName = PnDiffRect(PC_NAME_X0, PC_NAME_Y0, PC_NAME_X1, PC_NAME_Y1);
+    Check(dName.nCount > 0 && dName.nMinX == PUFO_PLA_NAME_CENTRE - (Text_MeasureWidth("QQQQQQ") >> 1),
+          "and it is apSiteRecs[nSelectedBaseIdx].abName -- base 5's name, at +0x1A of the 64-byte record "
+          "(0x9230C ADD R7,R3,LSL#6 / 0x92310 ADD #0x1A)");
+    PcSetName(5, "");
+    g_nPcSelBase = 0;
+    Check((i32)g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND]
+              == (i32)Gfx_PackRgb565Pair(&g_pcColor, 130, 130, 250, 20, 20, 20),
+          "the money half repacks (130,130,250) over (20,20,20) before drawing it (0x92348..0x92368)");
+
+    /* ---- 5. the cursor block, reached only with bBasePlaceActive SET ---- */
+    g_abPcGrid[6 * 2 + 2] = 0;                       /* the callees draw nothing for the cursor runs */
+    g_abPcGrid[PUFO_GRID_FAC_OFF + 6 * 2 + 2] = 0;
+    g_abPcGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_TILEB_OFF + 6 * 2 + 2] = 0;
+
+    g_bPcPlaceActive = 1;
+    g_nPcTapX = 2;
+    g_nPcTapY = 1;
+    *PcCell(2, 1) = 0;
+    PcRun();
+    CheckEqI32(g_bPcPlaceActive, 0,
+               "an empty cell under the cursor CLEARS bBasePlaceActive -- 0x92424 BEQ / 0x92844 STRB R11,[R10]: "
+               "a draw call changes map state");
+    CheckEqI32(BfaInk(70, 128, 102, 196), 0, "and an empty cell draws no cursor box at all");
+    CheckEqI32(BfaInk(PC_MONEY_X0, PC_MONEY_Y0, PC_MONEY_X1, PC_MONEY_Y1), 0,
+               "while the name/money half is skipped whole (0x922F4 BNE)");
+    CheckEqI32(g_nPnBlits, PUFO_PLA_NAV_CTLS + 1, "and the map control is not blitted: its tail is inside the non-empty branch");
+
+    g_bPcPlaceActive = 1;
+    *PcCell(2, 1) = FAC_LONG_RANGE_RADAR;            /* 5: below 9, so the one-cell cursor */
+    PcBaseline();
+    PcRun();
+    const u16 uPhase = PC_PACK(0, 10 * (5 + PUFO_PLA_TAP_COLOR_BASE), 0);
+    Check((u16)BdPix(70, 128) == uPhase && (u16)BdPix(101, 128) == uPhase && (u16)BdPix(102, 128) == uPhase,
+          "cell 5 draws the 32-wide cursor: the top bar x 70..101 at y 128 and the right bar at x 101,102 "
+          "(0x925D0 MOV R3,#0x20, 0x9267C ADD #0x1F)");
+    Check((u16)BdPix(70, 129) == uPhase && (u16)BdPix(102, 129) == uPhase && (u16)BdPix(103, 129) == 0
+              && (u16)BdPix(71, 140) == uPhase && (u16)BdPix(72, 140) == 0,
+          "x = origin + 32*tap and y = origin + 32*tap + 36 (0x924D0 ADD #0x24): the top bar is 2 rows, the side "
+          "bars 2 columns, and the frame's inside column x 72 stays empty");
+    Check((u16)BdPix(70, 159) == uPhase && (u16)BdPix(101, 160) == uPhase && (u16)BdPix(102, 160) == 0
+              && (u16)BdPix(70, 161) == 0,
+          "the bottom bar lands 31 rows under the top one (0x926BC ADD R2,R2,#0x43, and 0x43 = 0x24 + 0x1F): "
+          "y 159..160, 32 wide, closing a 32x32 frame -- the side bars' own 32 rows reach the same line");
+    Check((u16)BdPix(85, 145) == 0, "the box is a FRAME: its interior stays empty");
+    CheckEqI32(g_nPcTapX, 2, "a cell below 9 leaves the tap alone (tapX)");
+    CheckEqI32(g_nPcTapY, 1, "and leaves the tap alone (tapY)");
+    g_nPcMapPhase = 3;
+    PcRun();
+    Check((u16)BdPix(70, 128) == PC_PACK(0, 10 * (3 + PUFO_PLA_TAP_COLOR_BASE), 0)
+              && (u16)BdPix(70, 128) != uPhase,
+          "the cursor colour is 10 * (nMapPhase + 15): phase 3 gives 180 where phase 5 gave 200 (0x92464/0x92470/0x92478)");
+    g_nPcMapPhase = 5;
+
+    /* The two ends of the 9..12 band: just below and just above it, the cursor is the 32-wide one and
+     * the tap is left where it was. */
+    *PcCell(2, 1) = FAC_PSI_LABORATORY;        /* 8 */
+    PcRun();
+    Check((u16)BdPix(102, 128) == uPhase && (u16)BdPix(110, 128) == 0
+              && (u16)BdPix(70, 128) == uPhase,
+          "kind 8 takes the ONE-cell cursor: the top bar reaches x 102 and stops, x 110 is empty "
+          "(0x92428 CMP #9 / BLT 0x925AC)");
+    Check(g_nPcTapX == 2 && g_nPcTapY == 1, "and kind 8 does not move the tap");
+    *PcCell(2, 1) = FAC_MISSILE_DEFENCES;      /* 13 */
+    PcRun();
+    Check((u16)BdPix(102, 128) == uPhase && (u16)BdPix(110, 128) == 0,
+          "kind 13 takes it too -- 9..12 is the whole two-cell band (0x92428/0x925AC)");
+    *PcCell(2, 1) = FAC_LONG_RANGE_RADAR;
+    const i32 nFlagW = Text_MeasureWidth("FLAGFIVE");
+    PcSetFlag(FAC_LONG_RANGE_RADAR, "FLAGFIVE");
+    PcRun();
+    const PnDiff dLabel = PnDiffRect(0, 16, 30, 30);
+    Check(dLabel.nCount > 0 && dLabel.nMinX == PUFO_PLA_FAC_NAME_X,
+          "the cell's name is drawn at a FIXED (6,16) from aBaseFacFlags[cell].szName -- no centring at all "
+          "(0x92718 MOV R1,#6 / 0x92748 MOV R2,#0x10)");
+    CheckEqI32((i32)g_pcMapCtl.x, nFlagW + PUFO_PLA_MAPCTL_X_ADD,
+               "pGeoscapeCtlA's x is the truncated label width + 0xA (0x927A4 LSL#16/ASR#16, 0x927B0 ADD #0xA)");
+    CheckEqI32((i32)g_pcMapCtl.y, PUFO_PLA_MAPCTL_Y, "and its y is 15 (0x927B8 MOV R3,#0xF / 0x927BC)");
+    Check(g_pcMapCtl.pfnClick == PcMapClick, "with Geoscape_OnMapClick_Thunk installed at +0xC first (0x92764)");
+    CheckEqI32(g_nPnBlits, PUFO_PLA_NAV_CTLS + 2, "and the map control is the twelfth blit (0x927C8)");
+    Check(g_apnPnBlitPad[PUFO_PLA_NAV_CTLS + 1] == &g_pcMapPad, "after the close control, before nothing else");
+
+    /* The same tail with the label empty: the control lands at x 10, so the hint has to move with it --
+     * that is what makes the centring claim observable instead of just "there is ink". */
+    PcSetFlag(FAC_LONG_RANGE_RADAR, "");
+    PnSetText(PUFO_PLA_TEXT_DEMOLISH, "X");
+    PcRun();
+    const PnDiff dHint = PnDiffRect(20, 16, 68, 30);
+    Check(dHint.nCount > 0
+              && dHint.nMinX == (i32)g_pcMapCtl.x + ((i32)g_pcMapCtl.uWidth >> 1)
+                                 - (Text_MeasureWidth("X") >> 1),
+          "TEXTS[1240] \"Демонтаж\" is centred ON the control: its x + uWidth/2, read back after the write, and "
+          "it follows the control when the label changes its x (0x927CC..0x92834)");
+    Check(dHint.nMinY == dLabel.nMinY,
+          "and one row below the control's y 15 -- the same text row the facility label uses (0x92830 ADD #1)");
+    PnSetText(PUFO_PLA_TEXT_DEMOLISH, "");
+
+    CheckEqI32((i32)g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND], (i32)uPairArm,
+               "in the cursor path the arm's own (68,244,252) over (4,70,75) pack is the last one (0x926D0..0x926F8) "
+               "-- the tail draws its text with it");
+    *PcCell(2, 1) = 200;                             /* above every FacilityKind the table has */
+    PcRun();
+    CheckEqI32(BfaInk(4, 16, 60, 30), 0,
+               "a cell byte of 200 draws NO name: the port bounds aBaseFacFlags to its 17 records "
+               "(the original indexes 0x186E48 with the byte whatever it says)");
+    CheckEqI32((i32)g_pcMapCtl.x, PUFO_PLA_MAPCTL_X_ADD, "and the control still gets x = 0 + 0xA from the empty label");
+    *PcCell(2, 1) = 0;
+
+    /* kinds 9..12: the two-cell cursor AND the tap moved first -- a draw that moves the map cursor */
+    static const i32 g_anPcBig[4] = { FAC_HYPER_WAVE_DECODER, FAC_MIND_SHIELD, FAC_HANGAR, FAC_GRAVITY_SHIELD };
+    for (i32 i = 0; i < 4; ++i) {
+        g_bPcPlaceActive = 1;
+        g_nPcTapX = 3;
+        g_nPcTapY = 3;
+        *PcCell(3, 3) = (u8)g_anPcBig[i];
+        PcRun();
+        const i32 nWantX = 3 - ((g_anPcBig[i] == FAC_MIND_SHIELD || g_anPcBig[i] == FAC_GRAVITY_SHIELD) ? 1 : 0);
+        const i32 nWantY = 3 - ((g_anPcBig[i] == FAC_HANGAR || g_anPcBig[i] == FAC_GRAVITY_SHIELD) ? 1 : 0);
+        const i32 nX = g_nPcOriginX + PUFO_PLA_TAP_CELL * nWantX;
+        const i32 nY = g_nPcOriginY + PUFO_PLA_TAP_CELL * nWantY + PUFO_PLA_TAP_Y0;
+        char szWhat[192];
+        snprintf(szWhat, sizeof(szWhat),
+                 "kind %d: the tap becomes (%d,%d) and the box is drawn from the MOVED tap at (%d,%d) "
+                 "(0x92450/0x92458, 0x925A0)", g_anPcBig[i], nWantX, nWantY, nX, nY);
+        Check(g_nPcTapX == nWantX && g_nPcTapY == nWantY, szWhat);
+        snprintf(szWhat, sizeof(szWhat), "kind %d: the 64-wide box -- the top bar reaches x %d and stops at x %d "
+                                         "(0x92480 MOV R3,#0x40, 0x9252C ADD #0x3F)",
+                 g_anPcBig[i], nX + 64, nX + 65);
+        Check((u16)BdPix(nX + 40, nY) == uPhase && (u16)BdPix(nX + 64, nY) == uPhase
+                  && (u16)BdPix(nX + 65, nY) == 0, szWhat);
+        snprintf(szWhat, sizeof(szWhat), "kind %d: and its bottom bar at +63, closing a 64x64 frame "
+                                         "(0x92564 ADD R2,R2,#0x63, and 0x63 = 0x24 + 0x3F)", g_anPcBig[i]);
+        Check((u16)BdPix(nX, nY + 63) == uPhase && (u16)BdPix(nX, nY + 64) == uPhase
+                  && (u16)BdPix(nX, nY + 65) == 0, szWhat);
+        *PcCell(nWantX, nWantY) = 0;
+        if (nWantX != 3 || nWantY != 3) {
+            *PcCell(3, 3) = 0;
+        }
+    }
+    Check(g_nPcTapX == 2 && g_nPcTapY == 2,
+          "the moved tap survives the run: after kind 12 the arm left nSmapTapX/nSmapTapY at (2,2), the "
+          "values it stored at 0x925A4 -- the next screen reader sees the cursor one cell away");
+    *PcCell(2, 2) = 0;
+    g_bPcPlaceActive = 0;
+    g_nPcTapX = 0;
+    g_nPcTapY = 0;
+
+    /* ---- 6. the demolish-failure panel, gated on bBasePlaceFail @ 0x1870B8 ---- */
+    PcBaseline();                                       /* fail clear, every panel record empty */
+    CheckEqI32(BfaInk(100, 100, 200, 150), 0,
+               "with bBasePlaceFail clear nothing of the panel is drawn -- no frame, no body, no lines (0x92848)");
+    g_bPcPlaceFail = 1;
+    PcBaseline();                                       /* the shipped lang.dat state: all six records empty */
+    Check(BfaInk(100, 100, 200, 150) > 0,
+          "set, Ui_AnimExpandBlit paints the 236x50 panel at (0,100) with its bevelled frame (0x92854..0x92898)");
+    Check(PcNotUniform(20, 112, 200, 140) == 0,
+          "with every panel record empty the panel is ONE flat fill -- 181x29 interior pixels all equal, so "
+          "Ui_AnimExpandBlit alone is what the gate runs and no text row is painted");
+    CheckEqI32((i32)g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND], (i32)uPairFail,
+               "the arm still ends with (255,255,255) over (104,104,104) -- 104 is (u8)abFacilityGrid, the "
+               "grid-block pointer reused as a colour byte (0x929C0 STR R5,[g2])");
+
+    PnSetText(1241, "AAA");
+    PnSetText(1242, "BBBBB");
+    PnSetText(1243, "CC");
+    PcRun();
+    Check(PnDiffRect(0, 107, BD_SURF_W - 1, 107).nCount > 0, "TEXTS[1241] is on the y 104 line (0x928C0..0x9291C)");
+    Check(PnDiffRect(0, 121, BD_SURF_W - 1, 121).nCount > 0, "TEXTS[1242] on the y 118 line (0x9291C..0x92970)");
+    Check(PnDiffRect(0, 135, BD_SURF_W - 1, 135).nCount > 0, "TEXTS[1243] on the y 132 line (0x92970..0x929B8)");
+    CheckEqI32(PnDiffRect(0, 117, BD_SURF_W - 1, 120).nCount, 0,
+               "with 14 pixels between the lines: rows 117..120 stay as the panel body drew them (0x92924 ADD #0xE)");
+    CheckEqI32(PnDiffRect(0, 131, BD_SURF_W - 1, 134).nCount, 0, "and again at rows 131..134");
+    CheckEqI32(PnDiffRect(0, 145, BD_SURF_W - 1, 155).nCount, 0, "and nothing below row 144: the second triple is empty");
+    PnSetText(1241, "");
+    PnSetText(1242, "");
+    PnSetText(1243, "");
+
+    PnSetText(80, "WWW");
+    PnSetText(81, "WWW");
+    PnSetText(82, "WWW");
+    PcRun();
+    Check(PnDiffRect(0, 111, BD_SURF_W - 1, 111).nCount > 0
+              && PnDiffRect(0, 128, BD_SURF_W - 1, 128).nCount > 0
+              && PnDiffRect(0, 145, BD_SURF_W - 1, 145).nCount > 0,
+          "records 80, 81, 82 really are read, at y 108, 125, 142 -- 17 apart (0x929DC..0x92ADC): filling them "
+          "paints all three rows, so the shipped panel half is empty by content, not by code");
+    PnSetText(80, "");
+    PnSetText(81, "");
+    PnSetText(82, "");
+    g_bPcPlaceFail = 0;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -13515,6 +14126,7 @@ int main(void)
     TestGeoscapeBaseInfoArm();
     TestGeoscapeFundingArm();
     TestGeoscapePlaneArm();
+    TestGeoscapePlacementArm();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

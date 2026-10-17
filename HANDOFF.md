@@ -1,217 +1,68 @@
 # HANDOFF — PocketUFO Win64 recreation
-Date: 2026-10-17. HEAD before this edit: `51267b6`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its twenty-second part -- the hangar arm
-(screen 6, `Geoscape_Draw` 0x9309C..0x93DD4, 3,384 B, ported as `Geoscape_DrawPlaneArm`): 53 new
-checks, 37/38 mutations caught (the one survivor is a proven equivalence, not a gap), 25 IDB comments,
-4 globals named and typed, the 108-byte `BasePlaneScreen` type applied at 0x161A48, 3 ledger rows, and 4
-stale "not ported" claims fixed in this port's own headers. Parts 1..21 are behind this: the map-view
+Date: 2026-10-18. HEAD before this edit: `2b030eb`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its twenty-third part -- the placement arm
+(screen 1, `Geoscape_Draw` 0x91DC8..0x92ADC, 3,324 B, ported as `Geoscape_DrawPlacementArm`): 103 new
+checks, 14/15 mutations caught (the survivor is a proven equivalence, not a gap), 34 IDB items -- 29
+comments plus 5 globals named or retyped --, 7 ledger rows and 2 new rename records. **With case 1 every
+one of the 21 jumptable bodies at 0x8C1B0 now has a port function; only the dispatcher head (the jump
+table, the screen-id load, the shared frame end at 0x90974) is still unwired**, and wiring it into
+`RenderFrameEnv.pfnGeoscapeDraw` is the next step of this unit. Parts 1..22 are behind this: the map-view
 chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
 `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel
 `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels
 `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16
 clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`, the frame end
 `84cdb03`, the thin screen arms `7623894`, the ufopaedia and psi arms `219899e`, the soldier arms
-`5eedf75`, the base-facility arm `ca4c9bc` and the base-info and funding arms `51267b6`.
+`5eedf75`, the base-facility arm `ca4c9bc`, the base-info and funding arms `51267b6` and the hangar arm `2b030eb`.
+What this part found:
 What this part found:
 
-- **The hangar's pad pointer IS its 108-byte control block.** `pPlaneBackdropPad` @ 0x161A48 is blitted
-  as a pad and then indexed as an array of fifteen control words from the same address (0x9312C
-  `ADD R3,R10,R0,LSL#2` / 0x93130 `LDR R0,[R3,#0x64]`). The IDB's `BasePlaneScreen` type is 108 bytes and
-  is now applied at 0x161A48, so those reads render as named members; this port's copy of the type was
-  92 bytes and is extended with the two nav pairs (0x161AA4..0x161AB0, already named
-  `pPlaneNavUpCtl` / `pPlaneNavDownCtl` / `pPlaneStoreNavPrevCtl` / `pPlaneStoreNavNextCtl`).
-- **An original bug in the stat panel, reproduced.** Every row with a count advances the shared scratch
-  counter `dword_186B08` TWICE (0x93498/0x9349C unconditionally, 0x93600/0x93604/0x93608 again), so the
-  six rows sit at y 112, 152, 192, 232, 272, 312 with a 20-pixel hole above each, and 0x93CE8 sizes the
-  three column rails from the same counter -- 20*(6+matched) tall, 40..140 pixels past the panel they
-  border. Pinned by the six control y values and by the rails' exact bottom pixel with the band below it
-  dark.
-- **The stock column is the resupply mapping, already known from another function.** The six rows read
-  `apObjects`[52], [53], [54], --, [105], [55] (0x93594, 0x93708, 0x9387C, none, 0x93AFC, 0x93C70) and
-  take `auPerBaseVal[(char)nSelectedBaseIdx]` @ +0x2A -- the same pairing the resupply code at
-  0x68FA0..0x69174 uses, which is why weapon 28, the laser cannon, has no ammo object and its row draws
-  a plain "-" at x 205, neither measured nor centred. Four of those slots were unnamed 1-byte dwords;
-  they are `Map_apObjects52`..`Map_apObjects55`, typed `ObjectRec *`.
-- **Widths are truncated before centring, everywhere in this arm.** 0x9345C STRB / 0x93468 LDRSB keep the
-  header width in the scratch byte at 0x186C24, and every row label and value uses the same shape written
-  as `MOV R3,R0,LSL#24 / MOV R0,R3,ASR#24` (0x934E0) -- a label wider than 127 pixels centres on a
-  negative half-width. And the control is blitted BETWEEN the measure and the draw, not before the pair.
-- **Two unbounded indexes, kept as bounded deviations:** the crew-slot control index runs +0x30 + 4*i with
-  `Ship.bCrewSlots` as its only bound (5 slots blit the stat controls, 16 walk past the block), and
-  `apCraft[nSelectedCraftIdx]` / `auPerBaseVal[(char)base]` are dereferenced with no test at all.
-- **Three test-harness truths this part exposed:** a fixture array exactly the size of the block hides a
-  past-the-block walk because a NULL read is guarded, so the control array now has a real sentinel control
-  at +0x6C; `BasePlaneScreen_Draw` paints the hangar chrome in the same run (rails at x 5/234, frame rows
-  at y 5/315), so probe windows must avoid them; and the arm and that callee read the SAME byte 0x161F20,
-  so the suite gives the callee its own always-clear byte to keep the 3,824-byte detail drawer off the
-  probes.
-- **Four stale claims in this port's own headers, fixed rather than left to mislead:** `BasePlaneScreen_Draw`
-  (0x7d374) and `BasePlaneScreen_DrawCraftDetail` (0x7baf8) were both called "not ported" in `pufo_plane.h`
-  and `pufo_baseui.h:5471` although they have been ported for several parts, and `pufo_geoscape.c:6259`
-  said the arms from 0x91DC8 were unported when only case 1 is.
-
-The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
-checks run across the 60 suites" below,
-and the per-unit chain
-there runs back through every unit since. The block that follows is the
-older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
-to anyone touching that code:
-
-- **`pTactCtx272+0x100` is a byte, not a pointer.** Hex-Rays types it `Soldier *pSavedFocus` because every read
-  is `LOBYTE(pCtx->pSavedFocus)`, but all seven accesses in the binary are 0/1 byte stores and tests (0x4CC00,
-  0x4D688, 0x4D84C, 0x4D86C, 0x4D878, 0x4D888, 0x4D920) and nothing ever loads it as an address. The unit the
-  enemy turn restores is at +0x104, which is what `Tact_EndEnemyTurn` reads. Now `bAiFocusSaved` (u8 + 3 pad)
-  in the IDB struct and in `TactCtx272`, with a layout check that it is one byte and `pSavedSelUnit` sits four
-  bytes after it.
-- **`g_aUnitTypeRecord` column +3 had no name and exactly one reader** (`LDRB R3,[R3,#3]` at 0x4CDBC — the only
-  `+3` read among all 26 xrefs to the table). Its six set rows are Chryssalid, Celacid, both civilians, Silacoid
-  and Riper: the units with no weapon to fire and only a melee action, and they are what selects the command-13
-  melee branch. Added as `g_aUnitTypeFlag3`. Re-dumping the table also found a wrong row in **this port's own
-  documentation**: `pufo_enemyai.h` had copied flag0's 1s at types 11 and 13 into the `large` row; the binary
-  says 0 there.
-- **The neighbour-melee hand-off is an original bug** (0x4d660). A usable multi-target sends the tick down a
-  path that builds the whole action around a *different* enemy — `Tact_SelectUnit(neighbour)`, the command-18
-  enqueue and `Map_pSelUnit->uTu >>= 1` (0x4d728..0x4d730) all address the neighbour — while the unit this tick
-  was picked for spends no TU, is not marked done, and is picked again next tick. Reproduced, with a test that
-  asserts the queue entry's `pUnit` is the neighbour and the actor's TU is untouched.
-- **The fire gate charges less than it tests.** `uTu >= anActionCost[mode] * 2/3 + 8.0` (0x4d448
-  `0x3FE5555555555555`, 0x4d458 `0x4020000000000000`), but the queue entry carries `(int)(cost * 2/3)`: a
-  26-cost mode needs 26 TU and charges 17. Pinned on both sides of the boundary.
-
-The rest of the shape: `nAiTick > 15` skips a unit **without** advancing the counter, so such a unit stays
-skipped forever, while `bAiDone` is skipped *after* `++nAiTick`. The melee branch's eight-direction scan and a
-large unit's three footprint cells index `apCells` with no `Map_IsValidCell` call at all — unlike the
-facing-delta lookup at 0x4ce8c, which does call it — so both are unguarded reads (0x4d09c, 0x4ce50); the port
-bounds-checks. The RMP walk increments its index **before** using it (0x4D8F8), so the drawn starting index is
-never itself a candidate, and its distance test uses the *untruncated* sqrt (`_led` against 19.875) where every
-reach test in the same function truncates with `_dtoi`. `TestRmpWalkOrder` asserts the visit order rather than
-just the count. And `unk_156910` / `unk_156A58` / `unk_156A88` turned out to be **`TactItem` records, not pointer
-variables**: each has a `TactItem_ctor` thunk (0x37124, 0x37134, 0x37088) and `Tact_InitMission` stores an
-`apObjects` entry into the record's `pObj` at +0. They are now `TactItem_156910` etc. in the IDB, and the port's
-`ObjectRec **ppObj…` fields became `TactItem *pItem…` — which is what let the AI hand them to the queue as
-weapons. 99 new checks, 3 original bugs recorded. Written up in `docs/parity/game-core.md` under
-`## Tact_EnemyAiTick (0x4cbe0): the enemy AI driver`.
-
-The unit before it (`5e8b0d7`) ported the low-morale enemy AI: **`EnemyAi_TryFireOrWander` (0x4abc8, 1,208 B)**
-— the function that writes the `pAiActionUnit` / `bAiActionActive` pair the unit before that named. Three things
-about it are worth knowing before you touch it:
-
-- **Hex-Rays actively misleads on the burst's target rule.** When the drawn column is the shooter's own, the
-  drawn row is replaced by the shooter's row and then 0x4ada4 `BNE loc_4ACE0` jumps back to the *draw*, not to
-  the shot decrement at 0x4ae0c — so a same-column draw spends no shot, and a shooter on row 0 fires a burst at
-  its own cell. The pseudocode's fall-through-to-decrement would fire zero shots where the ARM fires one.
-  Recorded as an IDB comment at 0x4ada4 and pinned by `TestSameColumnRedraw`.
-- **Two floor walks in one function, different depths.** The weapon-drop descent (`SUB R7,#1; CMP R7,#0; BGT`,
-  0x4ae84-0x4ae90) tests layers nZ..1 and reaches layer 0 untested; the wander descent (`SUBS / BPL`,
-  0x4afcc-0x4afd0) tests nZ..0 inclusive. Kept as the asymmetry, recorded at 0x4ae8c.
-- **The gates caught my own citation error.** The first draft cited `Unit_PathToCell @ 0x2c2a8` and
-  `Unit_CanStepTo @ 0x27bb8` in a comment, which credited 16,976 bytes of unported code and produced a NEGATED
-  citation. `audit_credits` and `audit_names` both flagged it; both citations are now the
-  `Name (0xADDR, unported)` form the metric ignores. This is the trap §8 already records, caught by the gate
-  rather than by reading.
-
-A large unit does nothing at all (0x4abdc jumps to the epilogue, skipping the RNG, the `Map.pSelWeapon` clear,
-the queue and the status message). The AI-action pair is raised at 0x4AC04/0x4AC1C **before** 0x4ac94 chooses
-between the random fire burst and the weapon-drop-and-wander, which is the direct proof that the flag means "an
-AI action is in progress". The burst reads the two action tables `Ui_FillActionCosts` writes —
-`nTuCost = Map.anActionCost[mode]` (Map+0x4E4C) and `nArg = Map.anActionEnabled[mode]` (Map+0x4E7C) — and
-ignores the enqueue's result, so an unaffordable burst queues nothing while the latch clear, the queue kick and
-the name push still happen. `unk_104078`, which the status message strcat's onto the unit's name, is all zeros
-and has no writer anywhere in the binary. 79 new checks, 7 original bugs recorded. Written up in
-`docs/parity/game-core.md` under `## EnemyAi_TryFireOrWander (0x4abc8): the low-morale AI`.
-
-The unit two before it (`08450e3`) ported the queue walker: **`Tact_TickActiveUnit` (0x54130, 1,868 B)** — the loop
-`GameTick_OnTimer` runs over the action queue, and the link that connected the three phase processors to the
-game tick. Three things about it are worth knowing before you touch it:
-
-- **`bFlag0` picks the processor; it is not a gate on one of them.** Set runs `Tact_ProcessFireAction`, clear
-  runs `Tact_ProcessMoveAction` — alternatives. The move processor's prologue raising `bFlag0` is what hands
-  the next tick to the fire phase.
-- **`TactState+0x111C8` and `+0x111E2` are one pair and neither had a name.** `+0x111E2` was `bUnk70114`;
-  `+0x111C8` was the head of `gap_70088`. `EnemyAi_TryFireOrWander @ 0x4abc8` stores the acting unit at
-  +0x111C8 (0x4AC04) and raises +0x111E2 (0x4AC1C) together, **unconditionally — before** the branch at 0x4ACA0
-  that picks its fire-burst path or its weapon-drop-and-wander path. So the flag means "an AI action is in
-  progress": the move processor suppresses the "not enough time" record while it is set and the fire processor
-  skips the enemy-spotted reaction while it is set. The walker clears it at 0x544D8 and zeroes the acting unit's
-  `uTu` through the pointer at 0x544E0. Found by searching the disassembly for the `#0x1C8` offset — the field has
-  no xref, exactly the blind spot §8 describes. Now `pAiActionUnit` / `bAiActionActive` in the IDB struct and in
-  the port; the first draft's `pAiWanderUnit` / `bAiWanderActive` was too narrow and is corrected.
-- **Hex-Rays double-counts the queue index.** ARM computes `R0 = pState + 56*nQueueCursor` and then reads
-  `[R0,#0x18]`; Hex-Rays renders it as `v5->aQueue[offsetof(TactState,bFlag0)]`, adding the 0x18 twice. Recorded
-  as an IDB comment at 0x54258.
-
-The camera follow is per command and the two halves are ordered differently: commands 0/1/8 follow
-`pUnit->pCell` and adopt the tracked unit *before* the focus, command 0xE follows the cell the last aim sample
-fell into and adopts `Map_apXcomUnits[0]` *after*, command 0x12 is gated on `pTarget->pCell`'s `bFlags44` and
-adopts `pTarget` *after*. With a unit already tracked, a shot re-centres only when `(int)Map_dTravel % 60 == 0`
-(0x54750). The kill credit at `TactState+0x111D0` (u16) is paid to the first shooter with `nUnitType <= 8` that
-is operative, over `aQueue[0 .. nQueueCursor-1]` measured *after* `Fall_Tail` advanced the cursor — so the range
-is every entry that already ran. 96 new checks, 6 original bugs recorded (five unguarded dereferences and one
-missing bounds test on the move path's camera follow). Written up in `docs/parity/game-core.md` under
-`## Tact_TickActiveUnit (0x54130): the queue walker`.
-
-The unit before it (`b43a42c`) ported the fire phase: **`Tact_ProcessFireAction` (0x50adc, 8,192 B)** — the
-largest single function ported so far, and the half of every tactical action that runs while a unit is
-shooting. Three things about it are worth knowing before you touch it:
-
-- **The phase keeps no state; the Map block is its register file.** `Map_dTravel @ 0x14020` is the FSM's own
-  counter (the aim setup zeroes it), `Map_dTravelSave @ 0x14038` is the distance the aim's arc walk took
-  (0x302D0, 0x323BC), and a shot lands when travel passes travelSave. Neither Map field had a producer in the
-  port, so `AimState` and `Tact_TraceProjectileArc` had to be extended first.
-- **The ten flight samples are measured from the muzzle**, at `dTravel - i * 1.41` from `Map_nAimOriginX/Y/Z`;
-  a sample behind the muzzle is parked at -1000.0. At travel 10 the first eight samples are still in the
-  muzzle cell.
-- **`Map_bFireHitResult @ 0x1406C` is the arc walk's verdict**: `Tact_TraceProjectileArc` clears it at 0x2FC54
-  and sets it at 0x3010C when the walked sample leaves the map, and the fire phase reads it at five places.
-  Both writes are register-built, so `xrefs_to` finds neither — and this unit's first draft fell for exactly
-  that and recorded the field as never written (see §8).
-
-The command switch covers 0, 1, 3, 4, 5, 8, 0xE, 0xF, 0x10, 0x11 and 0x12; the shared exits are LABEL_157
-(0x52AC8), LABEL_155/156 (0x52AC0, `CMP R3,#0xB`) and LABEL_70 (0x51170). 150 new checks, 17 Map globals
-named, 7 original bugs recorded, and three stale offsets plus two wrong names in the rename ledger corrected
-(`Map_dThrowX/Y/Layer` are at 0x13EF0/0x13F40/0x13F90, not 0x140F0/0x14140/0x14190 — they are sample slot 1
-of `Map_adMtX/Y/Z @ 0x13EE8/0x13F38/0x13F88`). Written up in `docs/parity/game-core.md` under
-`## Tact_ProcessFireAction (0x50adc): the fire-phase processor`.
-
-The unit before it (`4ba666b`) ported the fall processor: `Unit_ApplyFallDamage` (0x4a7b0, 1,000 B) +
-`Tact_ProcessFallAction` (0x52adc, 5,716 B). Fall damage is soft-float, not fixed point:
-`damage = (int)((float)(nZ - nLayer - 1) * (float)auStat[1] * 0.4f)`, where 1053609165 is `0x3ECCCCCD` = the
-single 0.4f and `_itos`/`_muls`/`_stoi` are coredll's soft-float helpers; `nZ - nLayer - 1` counts floors, so
-a one-layer step costs nothing. Its label graph is not a straight line — the message-only exit LABEL_101 and
-the two "morale survived" exits jump past LABEL_111's `Unit_UpdateVisibility(pActor)` straight to the tail.
-The psi gate is `max(1600, victimProduct) / actorProduct`, so a weaker attacker cannot fail. Eleven Map
-globals named and seven original bugs recorded.
-
-The unit before it (`386b8c2`) ported `Tact_CheckBattleEnd` (0x34fbc, 5,748 B): the debrief emitter. Its
-head stores the caller's abort request into `Map_bAltOutcomePath` — the same flag the four post-battle
-tallies gate on — then tries four exits (already-ended, the victory-tile scan, the abort, and the two
-count tests), emits up to 19 TEXTS lines under three meta colour shapes, pays the score into
-`g_nFundPending`, commits the loot into `aSmapSites[nSmapSiteCount].auItemQty` and
-`ObjectRec.uRecovCount`, and ends with the Mars-to-alien-base restart tail. Its failed-base-defence exit
-reads a facility byte with `LDRSB`, which is recorded as a trap in §8.
-
-The unit before it (`519f9d3`) ported `Tact_ClearSoldierBattleFlags` (0x346e0, 2268 B) with its callee
-`Soldier_PromoteByTypeScores` (0x47280, 1096 B): the five-rung rank ladder, the per-class stat refresh
-and the promotion report. **Testing the refresh found a real port bug.** The growth rule's auStatBase
-index is not its auStat index — the ARM reads `auStatBase+0x10` (index 8) to grow `auStat+0x12`
-(index 9), and reads `0xF2` (index 7) to grow `0xB2` (index 8) — and the port used the stat index for
-both, so the class-8 rule read `auStatBase[9]`, past the end of a nine-entry array into the bytes
-before `uKills`. `g_aClassStatGrowth @ 0xAA930` (was `byte_AA930`), six classes x nine weights of
-1..3, is now byte-checked against the image by audit_tables.py.
-
-The unit before that (`cd1d2f0`) settled that **`unk_128A8C` @ Map+0x150D4 is the victory flag**, not
-an abort flag, and the port had it backwards: `Tact_CheckBattleEnd` writes it — set at 0x350F0 when no
-enemy is left, cleared at 0x35070 when no Xcom unit is left and at 0x351CC when a `MissionType_XcomBase`
-mission is called off — and the debrief reads it as the win/lose switch (TEXTS[160] "Victory" at
-0x353C4, TEXTS[161] "Defeat" at 0x35400, green/red caption in `TactHud_DrawStatusBanner` at 0x1E968).
-The reason no writer looked to exist is recorded as a general trap: ARM cannot encode a 6684-byte
-displacement, so every far Map access is register-built and IDA records no data xref for it.
-
-This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
-build, a full test run, and five audit scripts run in the same session. Every number below comes
-from a command run while this file was written.
-
----
+- **The arm's fill colours are pure arithmetic, so every colour claim is an exact pixel.**
+  `Blit_CopyToXY` writes `((idx >> 3) << 11) + 32 * (mid >> 2) + (low >> 3)` (src/pufo/render/pufo_render.c:242),
+  so a rail is not "some ink" but a value: PC_PACK(100,...) at (2,1), PC_PACK(215,...) at (2,168),
+  PC_PACK(115,...) at (2,318), PC_PACK(7,7,7) = 32 along both edge rails' climbing halves. A wrong colour
+  index now fails a check instead of hiding under "there is ink", and the mutant that ramps the climbing
+  half instead of painting the flat 7 is caught.
+- **The flat colour 7 is a leftover register, not a colour.** 0x91DE4 `MOV R5,#7` is the side rails' rect
+  HEIGHT, and R5 still holds it when 0x91F14 stores the three colour slots -- which is why the top and
+  bottom edge rails' climbing halves (x 1..120 at y 315 and x 1..120 at y 2) are flat 7 while only the
+  ramping halves ramp (250, 245, ...). Recorded in the IDB comment and the ledger.
+- **The two rail halves overlap and the CLIMBING pass wins the crossing.** 24 steps of 7 give y 1..168 and
+  y 151..318, crossing at 151..168; each k paints climbing-then-descending, so at x 2 the row 151 reads
+  205 (climbing k=21) not 230, and y 169 is the first row where the descending ramp shows (220). The
+  mutation sweep proved the corresponding equivalence too: swapping the two calls *inside* one k changes
+  nothing, because a k's climbing rect (1+7k..7+7k) and descending rect (151+7k..157+7k) never overlap.
+- **Case 1 is the only arm that changes map state while drawing.** Two ways. (1) Kinds 9..12 take the
+  64x64 two-cell cursor and MOVE THE TAP first -- 0x92450/0x92454 step `nSmapTapY`, 0x92458/0x9245C step
+  `nSmapTapX`, 9 moves neither, 12 moves both -- then 0x925A0/0x925A4 store the pair back into
+  `nSmapTapX` @ 0x186B7C and `nSmapTapY` @ 0x186B80 and the box is drawn from the moved pair. (2) An empty
+  cell under the tap clears `bBasePlaceActive` @ 0x1870BC at 0x92844 (`STRB R11,[R10]`, R11 = 0), which
+  moves the arm itself back to its name/money half. Both reproduced, both in the ledger.
+- **The captions are drawn before the callees, and a callee paints over three of their five rows.**
+  0x92070..0x92290 draws TEXTS 69..78; 0x922B4 then calls `BaseFacScreen_DrawNameGrid`, whose 36-glyph
+  blank backdrop (0x61CA4..0x61CC8, every glyph pixel index 0, so palette slot 3 entry 0 lands there) is a
+  solid 32x32 cell at the scroll origin. With the origin at (6,60) the cells reach y 287 and erase caption
+  rows 229, 247 and 265 of both columns -- only 283 and 301 survive. The caption centring is therefore
+  measured with the origin parked at (0,0), against a reference centred draw's inked span (glyph bearings
+  shift the first inked column by a pixel or two, so arithmetic centring alone would have failed).
+- **A panel whose colour comes from a pointer and half of whose text does not exist.** 0x929C0
+  `STR R5,[g2]` stores the abFacilityGrid pointer into a colour slot, so the pair is (255,255,255) over
+  (104,104,104) with 104 = (u8)0x159768. And its second triple reads TEXTS 80, 81, 82 (y 108, 125, 142,
+  17 apart) which are EMPTY in the shipped lang.dat -- filling them in the test proves the path is live and
+  pins its three rows.
+- **Two test-harness lessons, both fixed in the suite.** (1) An invariance check cannot see a changed
+  constant: the old strip-mark check compared env-0 against env--1 and both runs came out identical under
+  the mutant `STRIP_MARK = 0`, so it is now directional -- a direct `Base_DrawFacilityIconStrip` call with
+  highlight 0 pins the chevron pixels (212,4), (212,26), (234,26) at PC_PACK(0xFF,0,0) and the arm's run has
+  to leave exactly those pixels as ordinary cell blocks. The same weakness is still in
+  `TestGeoscapeBaseFacArm`'s mark check -- recorded here, not repaired here. (2) `Ui_AnimExpandBlit` with
+  progress 100 fills the panel BODY, so "the shipped panel draws no text" is stated as one uniform interior
+  fill (`PcNotUniform`) plus the rows that filled records do add.
+- **IDB corrections in this pass** (the standing instruction): `nSmapTapX` @ 0x186B7C and `nSmapTapY` @
+  0x186B80 were typed `char[4]` / `char[8]` although every access is a word LDR/STR -- both are `int` now,
+  and they are *written* by 0x92450..0x925A4; `aBaseFacFlags` @ 0x186E48 was typed `BaseFacFlag[32]` while
+  its own comment and the 28-byte stride say 17 records -- retyped `BaseFacFlag[17]`; 0x1870B8 and 0x1870BC
+  had no names at all -- they are `bBasePlaceFail` and `bBasePlaceActive`.
 
 ## 1. What this project is
 
@@ -244,7 +95,7 @@ Build and test, run for this document:
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
 ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 60
-                                             Total Test time (real) = 4.35 sec
+                                             Total Test time (real) = 4.26 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -261,11 +112,11 @@ Parity and audit scripts, same session:
 python docs/parity/coverage.py            -> functions cited: 966 / 1103 (87.6%)
                                              bytes cited:     596752 / 598792 (99.7%)
 python docs/parity/audit_credits.py       -> credited functions: 966, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 576 (explain 211 citations)
+python docs/parity/audit_names.py         -> renames on record: 578 (explain 211 citations)
                                              credited addresses whose original name is not defined: 1
                                              (0x8c180 Geoscape_Draw, 33,744 bytes -- the dispatcher head is
                                               cited by its arms and is not itself a ported function yet)
-python docs/parity/audit_bugs.py          -> ledger rows: 307, ORIGINAL BUG markers in src/pufo: 93
+python docs/parity/audit_bugs.py          -> ledger rows: 314, ORIGINAL BUG markers in src/pufo: 93
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 43 tables checked, 0 mismatched
 ```

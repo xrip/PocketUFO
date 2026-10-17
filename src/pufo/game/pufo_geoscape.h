@@ -2602,6 +2602,208 @@ typedef struct GeoscapePlaneArmEnv {
  * six rows and three column rails. */
 void Geoscape_DrawPlaneArm(const GeoscapePlaneArmEnv *pArmEnv);
 
+/* ---- the placement arm, 0x91DC8..0x92ADC (Geoscape_Draw case 1) ------------------------------------
+ *
+ * Screen 1 is Base_EnterBuildMode (0x84E60) -- the base/hangar placement screen. It shares its pad with
+ * case 7 (0x91DCC and 0x92AF4 both blit *pBaseFacScreenPad @ 0x186BA0) and it shares its rails with case
+ * 7's idiom, but not with case 7's numbers, and it is the only screen arm that MUTATES the map cursor.
+ *
+ * Side rails (0x91DD4..0x91EEC). 24 steps of 7 (0x91EDC ADD R9,R9,#7 / 0x91EE0 CMP #0xA8), 1x7 rects, and
+ * THREE x positions where case 7 has two: x 2 (0x91E04), x 237 (0x91E58) and x 210 (0x91EA0) -- the extra
+ * rail is the divider between the map area and the ten action captions. Each x gets the climbing rect at
+ * y 7k+1 in colour 5*(k+20) and the falling rect at y 7k+151 in colour 0xE6-5*k, so six blits per step.
+ * The step counter is read back as a BYTE (0x91DE8 LDRB R8,[var_1A8]) exactly as case 7 reads it.
+ *
+ * Top and bottom rails (0x91EF0..0x91FB4). 24 steps of 5 (0x91FAC / 0x91FB0 CMP #0x78), 5x1 rects at
+ * y 315 (0x91F0C MOV R2,#0x138 / 0x91F20 ORR #3) and y 2 (0x91F68). The LEFT half of both rows uses the
+ * flat colour 7 -- and 7 is not a colour choice, it is the leftover side-rail HEIGHT constant: 0x91DE4
+ * MOV R5,#7 is `MOV R5,#7` for the 1x7 side rects and 0x91F14 / 0x91F64 / 0x91F6C STRB R5 put that same 7
+ * into all three colour slots. The RIGHT half uses the falling ramp 0xFA-5*k (0x91F30 MUL / 0x91F3C RSB
+ * #0xFA), starting at x k+128 on the top row (0x91F50 ADD R1,R9,#0x80) and x k+120 on the bottom one
+ * (0x91F94 ADD R1,R9,#0x78) -- the same eight-pixel asymmetry case 7 has, here with the rising half
+ * ending at x 120 and the falling half starting at 128 (top) so the top row gaps at x 121..127.
+ *
+ * Separator (0x91FB8..0x91FDC): 208x1 at (2,35) in flat colour 160, identical to case 7's.
+ *
+ * The ten nav controls (0x91FE0..0x92014). The arm stores 0 into the shared scratch counter dword_186B08,
+ * then for i = 0..9 (0x92010 CMP #0xA) reads the pointer at abFacilityGrid + 0x120 + 4*i -- the ten nav
+ * controls at 0x159888..0x1598AC, the same array Geoscape_BuildNavControls fills and Geoscape_CloseUI
+ * case 1 frees -- tests it for null (0x91FF8 CMP #0 / 0x91FFC BEQ, so a null entry is skipped, not a
+ * fault) and blits it. The counter is re-read after each blit (0x92004) and left at 10.
+ *
+ * Close control (0x92018..0x92044): g_pUiCloseCtl to (194, 4) (0x9201C MOV R3,#0xC2 / 0x92020 MOV R9,#4)
+ * with click = Geoscape_CloseUI_ThunkA @ 0x838d0 (0x92030 LDR / 0x9203C STR [R1,#0xC]), then blitted.
+ *
+ * The ten action captions (0x92048..0x92290), each measured and drawn with the house centring
+ * (MOVS / ADDMI #1 / ASR #1 / RSB). Colour pair (68,244,252) over (4,70,75). Two columns, centre 60 and
+ * 180, rows y 229, 247, 265, 283, 301 -- records 69 "Новая база", 70 "Инфо базы", 71 "Солдаты",
+ * 72 "Оборуд. корабля", 73 "Строить модули" on the left, 74 "Исследования", 75 "Производство",
+ * 76 "Перевозка", 77 "Купить/Нанять", 78 "Продать/Уволить" on the right. The y values come from split
+ * immediates again (0x920F0 MOV R2,#0x108 / 0x92104 ORR #1 -> 265, 0x92238 #0x118 / 0x9224C ORR #3 -> 283,
+ * 0x92270 #0x12C / 0x92284 ORR #1 -> 301).
+ *
+ * Map_nGlyphPalBase = 3 (0x92294 MOV R0,#3 / 0x922AC STR, never restored here, exactly as case 7), then
+ * BaseFacScreen_DrawNameGrid with the grid base and nSelectedBaseIdx read SIGNED (0x922A0 LDRSB / 0x922B4),
+ * then Base_DrawFacilityIconStrip with the mark -1 (0x922B8 MOV R1,#0xFFFFFFFF / 0x922C0) -- the same dead
+ * argument the case-7 arm has, recorded once in the ledger for that call.
+ *
+ * Base name (0x922E8..0x92344), only while bBasePlaceActive @ 0x1870BC is CLEAR (0x922EC LDRB / 0x922F4
+ * BNE): apSiteRecs[nSelectedBaseIdx]'s name at +26 (0x92308 LDR R7,=0x186C40 / 0x9230C ADD R7,R3,LSL#6 /
+ * 0x92310 ADD #0x1A -- eight 64-byte records), centred on 120 at y 1. Colour pair (130,130,250) over
+ * (20,20,20) (0x92348..0x92368).
+ *
+ * Money line (0x92370..0x923D4): TEXTS[156] "Деньги: " copied into the frame's psz, strcat itoa(nFunds),
+ * strcat "$" (aDollarSign), drawn at a FIXED (5, 20) -- not centred, unlike everything else in this arm.
+ *
+ * The cursor block (0x923D8..0x92ADC), only with bBasePlaceActive SET (0x923DC ANDS / 0x923E0 BEQ). The
+ * cell byte is `abFacilityGrid[372 + 144*base + 6*tapY + tapX]`, i.e. fac[base].tileA[tapY][tapX]: 0x923EC
+ * LDRSB nSelectedBaseIdx, 0x923F0 MOV R2,#0x18, 0x923F8 MUL R2,R3,R2, 0x92400 LDR R1,[=nSmapTapY],
+ * 0x9240C ADD #0x3E, 0x92414 MUL R2,R3,#6, 0x92418 ADD R3,R2,[=nSmapTapX], 0x9241C LDRB R3,[R3,=grid] --
+ * the three immediates 24, 6 and 62 are exactly PUFO_GRID_FAC_STRIDE, the 6-wide layer and
+ * PUFO_GRID_FAC_OFF (24*62 = 372 = 0x174). What the byte says decides everything below it:
+ *
+ *   - 0      -> 0x92844 STRB R11,[R10] clears bBasePlaceActive and the whole block stops there.
+ *   - <= 8, or >= 13 -> loc_925AC draws the ONE-CELL cursor: 32x2 at (originX+32*tapX, originY+32*tapY+36),
+ *     2x32 at the same x, 2x32 at x+31 (0x9267C ADD #0x1F), 32x2 at y+67 (0x926BC ADD #0x43).
+ *   - 9..12  -> loc_92460 draws the TWO-CELL cursor -- 64x2 at y+36, 2x64 at x, 2x64 at x+63 (0x9252C ADD
+ *     #0x3F), 64x2 at y+99 (0x92564 ADD #0x63) -- and FIRST moves the tap: code 10 does tapX -= 1
+ *     (0x92458/0x9245C), code 11 does tapY -= 1 (0x925A0/0x925A4), code 12 does BOTH (0x92450/0x92454 then
+ *     falling into 0x92458), code 9 does neither. The nudge lands BEFORE the rects are positioned, so the
+ *     box is drawn at the moved tap. Codes 9..12 are FacilityKind 9..12 -- Hyper Wave Decoder, Mind
+ *     Shield, Hangar, Gravity shield -- the kinds whose footprint is two cells across.
+ *   Colour of all eight rects: index 0, mid and low 10*(nMapPhase+15) on one slot only -- 0x92478 MUL R2,R3,R7
+ *   with R7 = 0xA and R3 = nMapPhase+0xF, written to nColorMid while nIdx and nColorLow stay 0 -- so the
+ *   cursor pulses with the map phase.
+ *
+ * Shared tail (0x926D0..0x92ADC), run by both cursor styles and the reason this block is a draw at all:
+ * colour pair (68,244,252) over (4,70,75); aBaseFacFlags[cellByte].szName drawn at (6,16) (0x92710 MOV
+ * R11,#0x1C is the 28-byte record stride, 0x92740 MUL R2,R3,R11, 0x92744 ADD R3,R2,=0x186E48); pGeoscapeCtlA
+ * @ 0x186BB4 gets click = Geoscape_OnMapClick_Thunk @ 0x857e8 (0x92764 STR [R0,#0xC]), x = the label
+ * width truncated to a signed 16-bit value plus 10 (0x927A4 MOV R3,R0,LSL#16 / 0x927AC ASR#16 / 0x927B0 ADD
+ * #0xA / 0x927B4 STRH), y = 15 (0x927B8), then blitted; then TEXTS[1240] "Демонтаж" measured and drawn
+ * centred ON THE CONTROL: x = ctl.x + ctl.w/2 - width/2, y = ctl.y + 1 (0x92810 LDRH [R1,#4] / 0x92820
+ * LSR #1 / 0x92824 SUB R0,LR,R0,ASR#1).
+ *
+ * Demolish-failure panel (0x92848..0x92ADC), gated on bBasePlaceFail @ 0x1870B8 (0x9284C LDRB / 0x92854
+ * BEQ -- clear means the arm goes straight to the frame end). Ui_AnimExpandBlit with x 0, y 100, nW 236,
+ * nH 50, index 0x82, source 200/70, key 100, mode 0 (the full rect); then the colour pair (220,80,80)
+ * over (50,30,30) and three centred lines: TEXTS[1241] at y 104, 1242 at 118, 1243 at 132 -- "Невозможно
+ * демонтировать" / "Модуль используется или" / "служит для связи другого с лифтом". Then a second pair
+ * (255,255,255) over (104,104,104) -- the low colour is `(u8)0x159768`, the arm reuses the grid-block
+ * pointer as a colour byte (0x929C0 STR R5,[g2]) -- and three more lines from TEXTS records 80, 81, 82 at
+ * y 108, 125, 142, all centred on 120. Those three records are EMPTY in the shipped lang.dat, so the
+ * second panel half draws nothing while the first half draws the message; recorded in the ledger.
+ * Finally the last line is drawn through the shared centring tail at 0x90974 and 0x92ADC jumps to the
+ * frame end (def_8C1B0), which is where case 1 -- and every other arm -- ends.
+ *
+ * Deviations: the counter of the ten-control run is a local (the original runs it in dword_186B08 and
+ * re-reads it after each blit); the base index and the cell byte's aBaseFacFlags index are bounds-checked
+ * (the original indexes both blindly, so a 0xFF cell byte reads past the 17 records); the money line's
+ * three-step copy/itoa/strcat chain becomes one bounded snprintf over the same buffer size. */
+
+#define PUFO_PLA_RAIL_STEPS    24   /* 0x91EE0 CMP #0xA8 over steps of 7, 0x91FB0 CMP #0x78 over steps of 5 */
+#define PUFO_PLA_SIDE_STEP      7   /* 0x91EDC ADD R9,R9,#7 */
+#define PUFO_PLA_SIDE_H         7   /* 0x91DE4 MOV R5,#7, also the edge rails' flat colour -- see above */
+#define PUFO_PLA_SIDE_X0        2   /* 0x91E04 MOV R1,#2 */
+#define PUFO_PLA_SIDE_X1      237   /* 0x91E58 MOV R1,#0xED */
+#define PUFO_PLA_SIDE_X2      210   /* 0x91EA0 MOV R1,#0xD2: case 7 has no third rail */
+#define PUFO_PLA_SIDE_Y0        1   /* 0x91DEC ADD R10,R9,#1 */
+#define PUFO_PLA_SIDE_Y1      151   /* 0x91E20 ADD R2,R9,#0x97 */
+#define PUFO_PLA_EDGE_STEP      5   /* 0x91FA8 ADD R9,R9,#5 */
+#define PUFO_PLA_EDGE_W         5   /* 0x91F18 MOV R3,#5 */
+#define PUFO_PLA_EDGE_Y_TOP   315   /* 0x91F0C MOV R2,#0x138 / 0x91F20 ORR R2,R2,#3 */
+#define PUFO_PLA_EDGE_Y_BOT     2   /* 0x91F68 MOV R2,#2 */
+#define PUFO_PLA_EDGE_X_RISE    1   /* 0x91F10 ADD R1,R9,#1 and 0x91F70, both rows */
+#define PUFO_PLA_EDGE_X_TOP   128   /* 0x91F50 ADD R1,R9,#0x80 */
+#define PUFO_PLA_EDGE_X_BOT   120   /* 0x91F94 ADD R1,R9,#0x78 */
+#define PUFO_PLA_NAV_CTLS      10   /* 0x92010 CMP #0xA over the ten controls at 0x159888..0x1598AC */
+#define PUFO_PLA_GLYPH_PAL      3   /* 0x92294 MOV R0,#3 -> Map_nGlyphPalBase, never restored here */
+#define PUFO_PLA_STRIP_MARK    (-1) /* 0x922B8 MOV R1,#0xFFFFFFFF, the same dead mark case 7 passes */
+#define PUFO_PLA_CLOSE_X      194   /* 0x9201C MOV R3,#0xC2 */
+#define PUFO_PLA_CLOSE_Y        4   /* 0x92020 MOV R9,#4 */
+#define PUFO_PLA_CAP_L          60   /* 0x9209C/0x920D0/0x92108/0x92140/0x92178 RSB #0x3C */
+#define PUFO_PLA_CAP_R         180   /* 0x921AC/0x921E0/0x92218/0x92250/0x92288 RSB #0xB4 */
+#define PUFO_PLA_CAP_Y0        229   /* 0x92098 MOV R2,#0xE5, the first row of both columns */
+#define PUFO_PLA_CAP_STEP       18   /* 229, 247, 265, 283, 301 */
+#define PUFO_PLA_TEXT_ACTION_0  69   /* "Новая база",   centred 60,  y 229 */
+#define PUFO_PLA_TEXT_ACTION_5  74   /* "Исследования", centred 180, y 229 */
+#define PUFO_PLA_TEXT_MONEY    156   /* aTextRec156 "Деньги: ", the prefix of the money line */
+#define PUFO_PLA_MONEY_X         5   /* 0x923CC MOV R1,#5 */
+#define PUFO_PLA_MONEY_Y        20   /* 0x923C8 MOV R2,#0x14 */
+#define PUFO_PLA_NAME_OFF       26   /* 0x92310 ADD R3,R7,#0x1A, BaseSiteRec's name field */
+#define PUFO_PLA_NAME_CENTRE   120   /* 0x9233C RSB #0x78 */
+#define PUFO_PLA_NAME_Y          1   /* 0x92324 MOV R2,#1 */
+#define PUFO_PLA_TAP_CELL_STRIDE  6  /* 0x92414 MUL R2,R3,#6: the 6-wide tileA layer */
+#define PUFO_PLA_TAP_BASE_STRIDE 24  /* 0x923F0 MOV R2,#0x18 before the first multiply */
+#define PUFO_PLA_TAP_ROW_BIAS   62   /* 0x9240C ADD R3,R3,#0x3E; 24*62 = 372 = PUFO_GRID_FAC_OFF */
+#define PUFO_PLA_TAP_CELL       32   /* every tap step is 32 pixels: ADD R1,R0,R1,LSL#5 */
+#define PUFO_PLA_TAP_Y0         36   /* 0x924D0/0x92518/0x92564... ADD #0x24, both cursor sizes */
+#define PUFO_PLA_TAP_BIG_W      64   /* 0x92480 MOV R3,#0x40 and 0x924BC: the two-cell box */
+#define PUFO_PLA_TAP_BIG_X      63   /* 0x9252C ADD R1,R1,#0x3F */
+#define PUFO_PLA_TAP_BIG_Y      99   /* 0x92564 ADD R2,R2,#0x63 */
+#define PUFO_PLA_TAP_SMALL_W    32   /* 0x925D0 MOV R3,#0x20 and 0x92610: the one-cell box */
+#define PUFO_PLA_TAP_SMALL_X    31   /* 0x9267C ADD R1,R1,#0x1F */
+#define PUFO_PLA_TAP_SMALL_Y    67   /* 0x926BC ADD R2,R2,#0x43 */
+#define PUFO_PLA_TAP_KIND_FIRST  9   /* FacilityKind 9..12 take the two-cell cursor and the tap nudge */
+#define PUFO_PLA_TAP_KIND_LAST  12
+#define PUFO_PLA_TAP_COLOR_STEP 10   /* 0x92464 MOV R7,#0xA */
+#define PUFO_PLA_TAP_COLOR_BASE 15   /* 0x92470 ADD R3,R2,#0xF on nMapPhase */
+#define PUFO_PLA_FAC_NAME_X      6   /* 0x92718 MOV R1,#6 */
+#define PUFO_PLA_FAC_NAME_Y     16   /* 0x92748 MOV R2,#0x10 */
+#define PUFO_PLA_MAPCTL_X_ADD   10   /* 0x927B0 ADD R3,R3,#0xA on the truncated label width */
+#define PUFO_PLA_MAPCTL_Y       15   /* 0x927B8 MOV R3,#0xF */
+#define PUFO_PLA_TEXT_DEMOLISH 1240  /* unk_F19C8 "Демонтаж", centred over pGeoscapeCtlA */
+#define PUFO_PLA_ANIM_X          0   /* 0x92894 MOV R1,#0 */
+#define PUFO_PLA_ANIM_Y        100   /* 0x92890 MOV R2,#0x64 */
+#define PUFO_PLA_ANIM_W        236   /* 0x92888 MOV R3,#0xEC */
+#define PUFO_PLA_ANIM_H         50   /* 0x92880 MOV R7,#0x32 / 0x9288C STR R7,[nKey] */
+#define PUFO_PLA_ANIM_IDX      130   /* 0x92878 STRB R3,[nIdx] with R3 = 0x82 */
+#define PUFO_PLA_ANIM_SRCX     200   /* 0x92870 STRB R3,[srcX] with R3 = 0xC8 */
+#define PUFO_PLA_ANIM_SRCY      70   /* 0x92868 STRB R3,[srcY] with R3 = 0x46 */
+#define PUFO_PLA_ANIM_KEY      100   /* 0x92860 STRB R3,[var_1B0] with R3 = 0x64 */
+#define PUFO_PLA_ANIM_MODE       0   /* 0x92884 STRB R5,[nMode]: the full rect */
+#define PUFO_PLA_TEXT_FAIL_0  1241   /* unk_F1A95, y 104; 1242 (0xF1B62) at 118, 1243 (0xF1C2F) at 132 */
+#define PUFO_PLA_FAIL_Y0        104
+#define PUFO_PLA_FAIL_STEP       14
+#define PUFO_PLA_TEXT_EMPTY_0     80 /* unk_B78E0, y 108; 81 (0xB79AD) at 125, 82 (0xB7A7A) at 142 -- all three
+                                      * records are empty in the shipped lang.dat */
+#define PUFO_PLA_EMPTY_Y0        108  /* 0x92A24 MOV R2,#0x6C; 125 (0x92A7C) and 142 (0x92AC8) after it */
+#define PUFO_PLA_EMPTY_STEP       17
+#define PUFO_PLA_PANEL_CENTRE    120 /* 0x92908/0x9295C/0x929B0/0x92A28/0x92A80/0x92AD8 RSB #0x78 */
+#define PUFO_PLA_WHITE_LOW       104 /* 0x929C0 STR R5,[g2]: (u8)abFacilityGrid, the grid pointer reused as colour */
+
+typedef struct GeoscapePlacementArmEnv {
+    PadImage          *pPad;             /* pBaseFacScreenPad @ 0x186BA0, shared with case 7 */
+    UiControl *const  *apNavCtl;         /* 0x159888..0x1598AC: NavControls.apNav, read at grid+0x120 + 4*i */
+    UiControl         *pCloseCtl;        /* g_pUiCloseCtl, positioned then blitted */
+    UiControl         *pMapCtl;          /* pGeoscapeCtlA @ 0x186BB4 */
+    u8                *pbPlaceActive;    /* bBasePlaceActive @ 0x1870BC: the gate AND the byte 0x92844 clears */
+    const u8          *pbPlaceFail;      /* bBasePlaceFail @ 0x1870B8: gates the demolish panel */
+    i32               *pnTapX;           /* nSmapTapX @ 0x186B7C, mutable -- the cursor block moves it */
+    i32               *pnTapY;           /* nSmapTapY @ 0x186B80, same */
+    const i32         *pnSmapOriginX;    /* nSmapOriginX @ 0x159DC4 */
+    const i32         *pnSmapOriginY;    /* nSmapOriginY @ 0x159DC8 */
+    const u8          *abFacilityGrid;   /* abFacilityGrid @ 0x159768: the cursor cell and the nav slots */
+    const i8          *pnSelBaseIdx;     /* nSelectedBaseIdx @ 0x159D81, always read SIGNED here */
+    const u8          *pnMapPhase;       /* nMapPhase @ 0x1139EF, drives the cursor colour */
+    const i32         *pnFunds;          /* nFunds @ 0x1598D8 */
+    BaseSiteRec       *apSiteRecs;       /* 0x186C40, eight 64-byte records, name at +26 */
+    const BaseFacFlag *paFacFlags;       /* aBaseFacFlags @ 0x186E48, 28-byte records */
+    const char        *pTextRecs;        /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+    GfxColorEnv       *pColor;           /* pGX @ 0x1139B8 */
+    const UiAnimBlitEnv *pAnim;          /* the demolish panel's frame state */
+    void             (*pfnCloseClick)(void);  /* Geoscape_CloseUI_ThunkA @ 0x838d0 */
+    void             (*pfnMapClick)(void);    /* Geoscape_OnMapClick_Thunk @ 0x857e8 */
+} GeoscapePlacementArmEnv;
+
+/* 0x91DC8..0x92ADC: screen 1, the placement screen. Rails, separator, the ten nav controls, the close
+ * control, the ten action captions, the two grid callees, the base name and money line, then the cursor
+ * block (which moves the tap) or the demolish panel, and the frame end. */
+void Geoscape_DrawPlacementArm(const GeoscapePlacementArmEnv *pArmEnv,
+                               const GeoscapeScreenArmEnv *pCtlEnv,
+                               const struct FacNameGridEnv *pGridEnv,
+                               const struct BaseStripDrawEnv *pStripEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *
