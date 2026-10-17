@@ -8732,12 +8732,14 @@ _Static_assert(PUFO_STATUS_FLAG_DESCENT_PANEL == 0x17, "0x91498 CMP R0, #0x17");
 _Static_assert(PUFO_STATUS_TEXT_DESCENT == 1239, "unk_F18FB @ 0xF18FB = 0xB38D0 + 1239 * 205");
 _Static_assert(PUFO_STATUS_FLAG_DESCENT_TARGET == 0x15, "0x91698 CMP R0, #0x15");
 _Static_assert(0xB38D0 + 1239 * PUFO_TEXT_REC_STRIDE == 0xF18FB, "R6 = (unk_F18FB - 0xB38D0) at 0x91490");
+_Static_assert(PUFO_STATUS_FLAG_DESCENT_ALT == 0x16, "0x91930 CMP R0, #0x16");
 
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
 static char   g_abPnText[PN_TEXT_MAX * PUFO_TEXT_REC_STRIDE];
 static u16    g_aPnBase[BD_SURF_W * BD_SURF_H];
+static u16    g_aPnFrame[BD_SURF_W * BD_SURF_H];   /* a whole saved frame, for arm-vs-arm comparison */
 static char   g_szPnMsg[108], g_szPnExtra[108], g_szPnScratch[108];
 static UiLineList g_pnLines;
 static UiControl g_pnCtlSfx, g_pnCtlOpen, g_pnCtlConfirm, g_pnCtlApply, g_pnCtlA, g_pnCtlB;
@@ -9871,6 +9873,25 @@ static void PnCaptureFrameOnly(void)
     PnRun();
 }
 
+/* Whole-frame compare, for "these two flag values draw the same panel". The fixture, the run order and the
+ * anim reset are the same on both sides, so a difference can only come from the arm that drew. */
+static void PnSaveFrame(void)
+{
+    memcpy(g_aPnFrame, g_bdSurf.pPixels, sizeof(g_aPnFrame));
+}
+static i32 PnFrameDiff(void)
+{
+    i32 n = 0;
+    for (i32 y = 0; y < BD_SURF_H; ++y) {
+        for (i32 x = 0; x < BD_SURF_W; ++x) {
+            if ((u16)BdPix(x, y) != g_aPnFrame[y * BD_SURF_W + x]) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
 /* Two crafts that build different names, so a wrong index shows up as a different row. PnFixture
  * zeroes both, so this runs after every fixture call in the test below. */
 static void PnSetCrafts(void)
@@ -10999,6 +11020,79 @@ static void TestStatusPanelDescentTarget(void)
     g_bPnMapSel = 0;
 }
 
+/* Flag 0x16 (0x91930 CMP, body 0x91938..0x91B1C) is a second full copy of the flag-0x17 body. The checks below
+ * run it on its own -- anim, records, controls, gate -- and the last pair compares WHOLE frames: 0x16 against
+ * 0x17 must match, and 0x15 against the same saved frame must not, so the match carries information. */
+static void TestStatusPanelDescentPanelAlt(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the descent panel's second copy @ 0x91938 (flag 0x16)\n");
+    PnFixture(0x16, 4, 1, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetPanelRows();
+    PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+
+    /* ---- 1. the anim frame, from this arm's own call ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x91968 MOV R1,#0xE)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x9195C MOV R2,#0x3C)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x91960) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_TARGET_ANIM_Y + PUFO_STATUS_TARGET_NH + 5, "nH 0x5A (0x91954 then 0x91958) puts the bottom at 155");
+
+    /* ---- 2. line 1: TEXTS[1239] + the SELECTED row; no city line ---- */
+    PnFixture(0x16, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6k6",
+            "y=70 is TEXTS[1239] (inline copy 0x91974..0x91994, R6 sticky from 0x91490) + apLines[nUnk3032] (BL strcat at 0x919B0)");
+    g_pnPanel.nUnk3032 = 4;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6kk6", "and the SELECTED row, not the colour-slot row (0x91998..0x919A8, R11 = 0xBD8 from 0x90D88)");
+    g_pnPanel.nUnk3032 = 25;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6", "row 25 is past the panel's 20 rows: guarded, 0x919B0 would strcat a NULL");
+    PnFixture(0x16, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "", "y=86 stays empty: 0x91938..0x91B1C never reads TEXTS[1232]");
+
+    /* ---- 3. controls, labels, handler order ---- */
+    PnFixture(0x16, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    g_pnCtlB.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlB centres on 120 from ITS OWN 30-wide pad (0x919E8 LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_TARGETCTL_Y_CANCEL, "at y=102 (0x919F8 MOV R3,#0x66) -- the 0x17 rows, not the 0x15 arm's 105");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "CtlA at y=125, the 0x17 row");
+    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91A14 and 0x91ACC)");
+    Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0], "CtlB first, then CtlA");
+    g_pnCtlA.pfnClick = NULL;
+    g_pnCtlB.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == PnBeginCraftSelect, "CtlB is blitted with Smap_BeginCraftSelect @ 0x838dc installed (0x91A0C before 0x91A14)");
+    Check(g_apnPnBlitHandler[1] == PnResolve, "CtlA gets Smap_ResolveInterceptUI before its 0x91ACC blit (0x91AC4)");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCEL_LBL, "m4", "TEXTS[1127] centred at y=103 (copy 0x91A18..0x91A38 with R8, then 0x91A64)");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCELLED_LBL, "B2", "TEXTS[1144] centred at y=126 (copy 0x91AD0..0x91AF0 with R9, then 0x91B1C)");
+
+    /* ---- 4. the soldiers-aboard gate ---- */
+    PnFixture(0x16, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnBeginCraftSelect, "a soldier aboard craft 4 (colour SLOT 0, 0x91A68..0x91A80) keeps Smap_BeginCraftSelect");
+    PnFixture(0x16, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(3); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnResolve, "an empty craft replaces it with Smap_ResolveInterceptUI (0x91A8C..0x91A98)");
+    Check(g_apnPnBlitHandler[0] == PnBeginCraftSelect, "and the replacement is after the blit, as in 0x17");
+
+    /* ---- 5. whole-frame equality with the other descent arms ---- */
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    PnSaveFrame();
+    PnFixture(0x16, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    CheckEqI32(PnFrameDiff(), 0, "0x16 draws EXACTLY what 0x17 draws: 117 of the clone's 121 instructions are identical and the other 4 are equivalent");
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 5); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(PnFrameDiff() > 0, "and the compare is not blind: the 0x15 arm changes the frame (city line at 86, labels at 106 and 129)");
+}
+
 static void TestStatusPanelMissionSite(void)
 {
     printf("\nGeoscape_DrawStatusPanel, the intercept-mission panel @ 0x90d78\n");
@@ -11274,6 +11368,7 @@ int main(void)
     TestStatusPanelTravel();
     TestStatusPanelDescentPanel();
     TestStatusPanelDescentTarget();
+    TestStatusPanelDescentPanelAlt();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

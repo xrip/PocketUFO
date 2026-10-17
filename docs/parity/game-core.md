@@ -18106,3 +18106,43 @@ IDB: 6 line comments at 0x91698, 0x91718, 0x91798, 0x9180C, 0x91878 and 0x9191C,
 
 Not ported yet in this chain: 0x91920..0x91CEC (the flag tests after 0x15 and the screen-id tail) and the screen
 arms 0x91DC8..0x944B0.
+
+### Unit 107, part 13: the flag-0x16 clone (0x91938..0x91B1C)
+
+The status-panel chain has the descent panel TWICE. Flag 0x17 tests at 0x91498 and runs 0x914A4..0x91688;
+flag 0x16 tests at 0x91930 (0x91920 `MOV R7,#0`, `BL UiPanel_GetLineFlag` at 0x9192C, `CMP R0,#0x16` at
+0x91930, `BNE loc_91B20` at 0x91934) and runs a second copy of the same body at 0x91938..0x91B1C.
+
+- The clone proof is instruction-by-instruction, not byte-by-byte: both bodies are 484 bytes and 121
+  instructions, in the same order, writing the same frame slots and calling the same callees. 117 of the 121
+  pairs disassemble identically. The 4 that do not are all equivalent: three copy-loop tails naming their own
+  arm's loop head (0x91500 / 0x91994, 0x915A4 / 0x91A38, 0x9165C / 0x91AF0) and 0x91AE4 `STRB R2,[R0,R1]`
+  against 0x91650 `STRB R2,[R1,R0]` -- additive [Rn,Rm] addressing over the same pair (R1 = psz - rec from
+  0x91ADC, R0 = rec + i), so both store at psz + i. The compiler picked the other operand order.
+- A first attempt at this comparison used raw bytes and was WRONG: the byte fetch came back short (395 of
+  484 bytes), the chunks were concatenated anyway, and the misaligned windows produced a list of 24
+  "differences" whose pairs disassembled identically. Check the returned length before comparing bytes;
+  compare disassembly when the length is not exact.
+- The clone reads six sticky registers set by other arms' prologues and sets none itself: R5 (TEXTS base),
+  R6 = TEXTS[1239] (0x91490), R7 = 0 (0x9149C, the anim's two zero stack stores at 0x91964 / 0x9196C),
+  R8 = TEXTS[1127], R9 = 1144 * 205, R10 = 0xBE4, R11 = 0xBD8 (0x90D88). Its rows are the 0x17 rows: text
+  line 70, CtlB 102 (0x919F8 #0x66) with `Smap_BeginCraftSelect` at 0x91A0C before the 0x91A14 blit,
+  TEXTS[1127] 103, the soldiers-aboard gate at 0x91A68..0x91A80 with the zero-count handler swap at
+  0x91A8C..0x91A98, CtlA 125 with the resolve handler at 0x91AC4 before 0x91ACC, TEXTS[1144] 126.
+- The clone carries the same two dead things as the first copy: `abFacilityGrid` as
+  `Craft_CountSoldiersAboard`'s unread first argument (0x91A7C, against 0x664A0) and `AND R1,R0,#0xFF` at
+  0x91A78 after `UiPanel_GetLineColor` (0x91A74).
+- Port shape: one arm, `PUFO_STATUS_FLAG_DESCENT_ALT` (0x16) next to
+  `PUFO_STATUS_FLAG_DESCENT_PANEL` (0x17), both through `StatusPanel_DrawDescentPanel`. The port does NOT
+  duplicate the body.
+
+Tests: 22 checks (17203 across 60 suites, 0 failures), one `_Static_assert` pin on 0x16, and 6/6 mutations
+caught -- five at run time, and the sixth (the constant changed to 0x1B) caught by the pin at compile time.
+The new whole-frame compare is paired with its control: 0x16 against the saved 0x17 frame must give 0
+changed pixels, and 0x15 against the same frame must change some, so the match carries information.
+
+IDB: 7 line comments at 0x91930, 0x91938, 0x91994, 0x91A0C, 0x91A7C, 0x91AE4 and 0x91B1C, IDB saved.
+bugs.tsv: 1 row for the duplicated body.
+
+Not ported yet in this chain: 0x91B20..0x91CEC (the flag-0x3C test at 0x91B2C, its body from 0x91B34, and the
+screen-id tail) and the screen arms 0x91DC8..0x944B0.

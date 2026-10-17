@@ -2009,6 +2009,12 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
  * the already-blitted CtlB handler at 0x915F8..0x91604. */
 #define PUFO_STATUS_FLAG_DESCENT_PANEL        0x17 /* 0x91498 CMP R0, #0x17 */
 
+/* 0x91934: flag 0x16 runs a second copy of the flag-0x17 body (0x91938..0x91B1C). Both bodies are 484 bytes /
+ * 121 instructions, same order, same frame slots, same callees; 117 of the 121 disassembled pairs are
+ * identical and the other 4 are equivalent -- three BNEs naming their own arm's loop head and one
+ * `STRB R2,[R0,R1]` (0x91AE4) against `STRB R2,[R1,R0]` (0x91650), the same additive address. */
+#define PUFO_STATUS_FLAG_DESCENT_ALT          0x16 /* 0x91930 CMP R0, #0x16 */
+
 /* 0x916A0..0x9191C: flag 0x15, the descent-target panel: flag 0x17's shape (TEXTS[1239] + the selected row,
  * CtlB centred with Smap_BeginCraftSelect and the same soldiers-aboard overwrite) on the 0x13 arm's control
  * rows 105 / 106 / 128 / 129, plus the city line -- but indexed by StrategItem.nTargetIdx (+0x84, read at

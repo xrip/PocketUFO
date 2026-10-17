@@ -1,42 +1,35 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `4a8e181`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its twelfth part -- the descent-target panel
-at 0x916A0..0x9191C (flag 0x15): 27 checks, 18/18 mutations caught, 6 IDB comments, 2 ledger rows.
-Parts 1..11 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
-`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`,
-the attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the
-mission-site / travel panels `e9145c0` + `2c3c1cd` and the descent panel `4a8e181`. What this part found:
+Date: 2026-10-17. HEAD before this edit: `bbf9c53`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its thirteenth part -- the flag-0x16 clone at
+0x91938..0x91B1C: 22 checks, 6/6 mutations caught, 7 IDB comments, 1 ledger row. Parts 1..12 are behind this:
+the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
+`a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel `ac13d77`,
+the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels `e9145c0` +
+`2c3c1cd`, the descent panel `4a8e181` and the descent-target panel `bbf9c53`. What this part found:
 
-- **The mission-site table has two index fields.** The 0x13 arm indexes it with the signed byte at
-  `StrategItem` +0x02 (0x90E94); the 0x15 arm indexes the SAME table with the dword at +0x84, which the port
-  already knows as `nTargetIdx` (0x91798 `LDR R3,[R0,#0x84]`, MUL by 0x18 at 0x917A0, off root+0xC8 =
-  0x1865C0). Both are unbounded. The port now has one `StatusPanel_DrawCityLineIdx` serving both shapes.
-- **Two faults in that line.** `PtrArray_Get` @ 0xA1130 returns 0 for a negative index AND for an index at or
-  above the count, and 0x91798 dereferences the result with no null test -- any colour-slot byte outside the
-  strateg list reads from address 0x84. And a negative `nTargetIdx` reads before 0x1865C0. Both recorded
-  (282 rows), both guarded in the port.
-- **A guard that no test could see.** Dropping the `nSite >= 0` half of the bound survived the sweep because
-  the fixture's table is a plain global whose neighbours are zero: an unguarded `paMissionSites[-1]` read
-  nothing and looked identical to the guard. The fixture now points the env's table one slot into a longer
-  buffer with a named record ("bb6") in front, and the mutant fails. Worth remembering for every bounds test:
-  an out-of-range read is only visible if something non-zero is there.
-- 0x15 is flag 0x17's body on the 0x13 arm's rows, one path, same `Smap_BeginCraftSelect` then
-  zero-soldiers-overwrite sequence (0x9180C before 0x91814, 0x9188C..0x91898 after it), same dead
-  `abFacilityGrid` argument and the same redundant `AND #0xFF`. The port factors both into shared helpers
-  (`StatusPanel_CraftSelectGate`, `StatusPanel_DrawCityLineIdx`).
-- Sticky-register chain, still the thing that makes this function hard to read: at 0x916A0 the arm's TEXTS
-  record (R6 = 1239), its anim zeros (R7 = 0) and its row offset (R11 = 0xBD8) all come from the FLAG-0x17
-  test prologue at 0x91490 / 0x9149C and the FLAG-0x13 test prologue at 0x90D88, none of which belong to
-  this arm's own code.
+- **The descent panel exists twice in the original.** Flag 0x17 (test 0x91498) and flag 0x16 (test 0x91930)
+  each run their own 484-byte copy of the same body. Compared instruction by instruction: 121 against 121,
+  same order, same frame slots, same callees, 117 identical, 4 equivalent (three copy-loop BNEs naming their
+  own loop head, and `STRB R2,[R0,R1]` at 0x91AE4 against `STRB R2,[R1,R0]` at 0x91650 -- additive addressing
+  over the same two registers, so the same address). One port arm with two flag constants serves both.
+- **A method mistake worth remembering.** The first comparison used raw bytes fetched in chunks, and the fetch
+  returned 395 of 484 bytes; the chunks were concatenated anyway, the windows were misaligned, and the result
+  was a list of 24 "differences" whose pairs disassemble identically. Always check the length a byte fetch
+  returned, and prefer the disassembly stream when it is short.
+- **A test that can fail.** The new frame-equality check (0x16 against the saved 0x17 frame, 0 changed pixels)
+  is shipped with its control: the same compare against the 0x15 arm must change pixels. Equality checks with
+  no control are how vacuous tests get written.
+- Sticky registers again: the clone sets none of its own values -- R6 (TEXTS[1239], 0x91490), R7 = 0 (0x9149C),
+  R8, R9, R10 and R11 (0xBD8, from the flag-0x13 prologue at 0x90D88) all come from other arms' prologues.
 
 IDA note: the MCP tools are still unreachable from this session (the handshake failed at startup and did not
 re-cover after the server came back), so IDB work goes through the JSON-RPC client
 `C:/Windows/Temp/pufo_scripts/idac.py` against the same server (127.0.0.1:13337). Worth running `/mcp` and
 reconnecting ida-pro-mcp before the next session.
 
-Next: 0x91920 (the flag-0x16 test, body from 0x91938) through 0x91CEC, then the screen arms
-0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 17181 checks across 60
+Next: 0x91B20 (the flag-0x3C test at 0x91B2C, body from 0x91B34) through 0x91CEC, then the screen arms
+0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 17203 checks across 60
 suites -- the byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py` counts a function
 once its start address is cited, so it says nothing about how much of that function is ported. The read map
 and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported

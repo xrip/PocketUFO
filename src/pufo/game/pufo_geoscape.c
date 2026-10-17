@@ -5515,13 +5515,20 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_TRAVEL_PANEL) {
         StatusPanel_DrawTravel(pEnv, psz);                               /* 0x91190..0x91480 */
     }
-    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_DESCENT_PANEL) {
-        StatusPanel_DrawDescentPanel(pEnv, psz);                         /* 0x9148C..0x91688 */
+    /* Flags 0x17 and 0x16 run the same body twice in the original: 0x91938..0x91B1C is a clone of
+     * 0x914A4..0x91688 -- 121 instructions each, in the same order, with the same frame slots and the same
+     * callees. 117 of the 121 pairs disassemble identically; the 4 that do not are three BNEs naming their
+     * own arm's copy-loop head (0x91500/0x91994, 0x915A4/0x91A38, 0x9165C/0x91AF0) and one `STRB R2,[R0,R1]`
+     * (0x91AE4) where the first copy writes `STRB R2,[R1,R0]` (0x91650) -- the same additive address.
+     * One port function serves both flags. */
+    const i32 nDescentFlag = (i32)UiLineList_GetFlag(pEnv->pLines, 0);
+    if (nDescentFlag == PUFO_STATUS_FLAG_DESCENT_PANEL || nDescentFlag == PUFO_STATUS_FLAG_DESCENT_ALT) {
+        StatusPanel_DrawDescentPanel(pEnv, psz);                         /* 0x914A4..0x91688, cloned at 0x91938..0x91B1C */
     }
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_DESCENT_TARGET) {
         StatusPanel_DrawDescentTarget(pEnv, psz);                        /* 0x916A0..0x9191C */
     }
-    /* 0x91920..0x91CEC: the flag tests after 0x15 and the screen-id tail are not ported yet. */
+    /* 0x91B20..0x91CEC: the flag-0x3C test at 0x91B2C, what follows it, and the screen-id tail are not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */
