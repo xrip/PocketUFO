@@ -18146,3 +18146,58 @@ bugs.tsv: 1 row for the duplicated body.
 
 Not ported yet in this chain: 0x91B20..0x91CEC (the flag-0x3C test at 0x91B2C, its body from 0x91B34, and the
 screen-id tail) and the screen arms 0x91DC8..0x944B0.
+
+### Unit 107, part 14: the alien-base panel (0x91B34..0x91CE8, flag 0x3C)
+
+The last arm of the status-panel chain that the flag tests reach. 0x3C is outside the 0x1F..0x31 range the
+jumptable at 0x8C844 covers (0x8C798 `CMP #0x1E` BLE, 0x8C7AC `CMP #0x32` BGE), so it enters through the
+default case, the same route 0x12..0x17 take. Test: 0x91B20 `MOV R7,#0`, `BL UiPanel_GetLineFlag` at 0x91B28,
+`CMP R0,#0x3C` at 0x91B2C, `BNE loc_91CEC` at 0x91B30.
+
+- Anim (0x91B34..0x91B70): x 2 (0x91B64) and nW 0xE8 (0x91B6C) -- the widest panel in the chain, against the
+  0xE / 0xD0 every other arm passes. y 0x3C, nH 0x5A, srcX 0x28, srcY 0x32, nKey 0xB4 as usual, but nIdx and
+  nMode are zeroed LOCALLY (0x91B48 `MOV R0,#0` stored at 0x91B54 and 0x91B58) instead of reusing R7.
+- Three records, all by inline copy loops, none appended to: TEXTS[1445] (0x91B74 `=(unk_FBDF1 - 0xB38D0)`,
+  loop 0x91B88..0x91B98) centred at y 70; TEXTS[1446] (0x91BF4 `=(unk_FBEBE - 0xB38D0)`, loop 0x91C08..0x91C18)
+  centred at y 100; TEXTS[1144] (0x91C74 `MOV R1,#0x39418` = 1144 * 205, loop 0x91C8C..0x91C9C) centred at
+  y 126. lang.dat gives them: "Внимание! Обнаружена база пришельцев", "Центр на базу", "Отмена".
+- Two controls: CtlConfirm centred from its own pad at y 100 (0x91BE0) and CtlA centred at y 125 (0x91C60),
+  blitted at 0x91BF0 and 0x91C70. The 1446 label is drawn at y 100 AFTER that blit, so it lands on the
+  control's own row.
+- Handlers come LAST: `Smap_OnPointerUp` @ 0x84688 at CtlConfirm+0xC (0x91CD0/0x91CD8) and
+  `Smap_ClearSelection` @ 0x84648 at CtlA+0xC (0x91CE0/0x91CE8) -- after both blits, which is the opposite of
+  the 0x17 / 0x16 / 0x15 arms that install before blitting.
+- Nothing else is read: no colour slot, no strateg entry, no panel row, no mission site, no gate, no
+  bMapSelectionFlag. That is asserted by a whole-frame compare against a fixture with different colour slots,
+  a different selected row, a different strateg entry and bMapSelectionFlag set -- 0 pixels differ.
+- The arm FALLS THROUGH into the chain's shared tail at 0x91CEC (the other arms reach it by BNE). That tail is
+  not ported: `*0x186BC4 == 2` test; otherwise blit `*0x186BBC`, `Geoscape_DrawClockPads` (0x91D0C) and blit the
+  thirteen root widgets at 0x1864F8 + 4*i for i in 0..12 (0x91D1C..0x91D38); the == 2 branch at 0x91D78 reads
+  the two signed cursor shorts, calls `Geoscape_DrawGlobeHover`, stores the result into bPendingRegionId and
+  continues to 0x93058 only when byte_1870AC is zero.
+
+Two things the port-side reading needed, both worth remembering:
+
+- TEXTS records 1445 and 1446 read as 0xFF in the IDB: the whole 0xB38D0 TEXTS block is uninitialised in the
+  shipped .data and only carries text after TEXTS.DAT loads (lang.dat holds 1650 records of 200 bytes each,
+  main.dat 1721; the in-memory stride is 205). So record identity is checked against lang.dat, not the binary.
+- The arm is only reachable because 0x3C is OUTSIDE the jumptable range. The port's equivalent test is
+  `nFlag < PUFO_STATUS_FLAG_MIN || nFlag > PUFO_STATUS_FLAG_MAX` at the top of `Geoscape_DrawStatusPanel`,
+  which routes such flags into `StatusPanel_DrawDefault` -- and the arm chain lives in that default arm's
+  continuation.
+
+A wrong citation was fixed on the way: `GeoscapeStatusPanelEnv.pfnSelectTarget` was commented "Smap_OnPointerUp
+@ 0x89450", but 0x89450 is `Geoscape_OnPointerUp`; `Smap_OnPointerUp` is @ 0x84688, which is what 0x91CD0 and
+0x90640 load. The IDB names were already right; the port comment had the wrong address.
+
+Tests: 22 checks (17225 across 60 suites, 0 failures), 6 new `_Static_assert` pins, 8/8 mutations caught. Two
+checks failed on the first run and both were test-side mistakes, now recorded as method notes: an emptiness
+check on the row below a drawn row is confounded by the drawn row's ink (rows must be >= 14 apart for
+`PnRowIs`), and a handler-at-blit-time check cannot use `PnCapture`, which runs the arm twice and so sees the
+first run's installed handler.
+
+IDB: 6 line comments at 0x91B2C, 0x91B64, 0x91B74, 0x91BE0, 0x91CD8 and 0x91CE8, plus the flag-0x16 end-of-arm
+comment at 0x91B1C rewritten (it claimed 0x91B34..0x91CEC was unported); IDB saved. bugs.tsv: 1 row for the
+after-the-blits handler order.
+
+Not ported yet in this chain: 0x91CEC..0x91DB0 (the shared tail above) and the screen arms 0x91DC8..0x944B0.

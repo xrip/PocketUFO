@@ -1563,7 +1563,7 @@ typedef struct GeoscapeStatusPanelEnv {
     char              *pszHyper;          /* unk_186420, the hyperwave panel's own line buffer */
     UiControl         *pCtlA;             /* *pGeoscapeCtlA @ 0x186BB4 */
     UiControl         *pCtlB;             /* *pGeoscapeCtlB @ 0x186BB0, the 0x0C arm's second control */
-    void             (*pfnSelectTarget)(void);  /* Smap_OnPointerUp @ 0x89450 */
+    void             (*pfnSelectTarget)(void);  /* Smap_OnPointerUp @ 0x84688 (0x89450 is Geoscape_OnPointerUp) */
     void             (*pfnClearSelection)(void);/* Smap_ClearSelection @ 0x84648 */
     /* The order questions, 0x8F250..0x8F9E0. */
     Ship *const       *apCraft;           /* Map.apCraft @ root + 0x10AC */
@@ -2021,6 +2021,17 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
  * 0x91798) instead of the +0x02 byte. */
 #define PUFO_STATUS_FLAG_DESCENT_TARGET       0x15 /* 0x91698 CMP R0, #0x15 */
 #define PUFO_STATUS_TEXT_DESCENT              1239 /* unk_F18FB @ 0xF18FB, loaded into R6 at 0x91490 */
+
+/* 0x91B34..0x91CE8: flag 0x3C, the alien-base panel. 0x3C is outside the 0x1F..0x31 range the jumptable at
+ * 0x8C844 covers (0x8C798 CMP #0x1E BLE, 0x8C7AC CMP #0x32 BGE), so it reaches the default-case chain like
+ * 0x12..0x17 do. Its anim is the widest in the chain (x 2 at 0x91B64, nW 0xE8 at 0x91B6C) and its handlers are
+ * installed after both blits, unlike the descent arms'. Records 1445 and 1446 are uninitialised in the shipped
+ * .data (the whole 0xB38D0 block is) and only carry text once TEXTS.DAT loads from lang.dat. */
+#define PUFO_STATUS_FLAG_ALIEN_BASE_PANEL     0x3C /* 0x91B2C CMP R0, #0x3C */
+#define PUFO_STATUS_TEXT_ALIEN_BASE           1445 /* unk_FBDF1: "Внимание! Обнаружена база пришельцев" */
+#define PUFO_STATUS_TEXT_CENTRE_BASE          1446 /* unk_FBEBE: "Центр на базу" */
+#define PUFO_STATUS_BASECTL_Y_CONFIRM         100  /* 0x91BE0 MOV R3, #0x64 */
+#define PUFO_STATUS_BASE_Y_CONFIRM_LBL        100  /* 0x91C38 MOV R2, #0x64 -- the label row IS the control row */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

@@ -8525,7 +8525,7 @@ static void TestGlobeHover(void)
  * centring anchors and their colour are read straight off the surface. The expected rows and
  * anchors are the ARM's, listed in pufo_geoscape.h.
  */
-#define PN_TEXT_MAX 1387 /* the highest record the panel or BuildStatusMsg reaches */
+#define PN_TEXT_MAX 1447 /* the highest record the panel or BuildStatusMsg reaches (1446, the alien-base label) */
 #define PN_BAND     12   /* a row's search window below its y; rows are at least 14 apart */
 #define PN_GLYPH_DY  2   /* Text_DrawString puts the ink PN_GLYPH_DY + 1 below the y it is given */
 
@@ -8733,6 +8733,12 @@ _Static_assert(PUFO_STATUS_TEXT_DESCENT == 1239, "unk_F18FB @ 0xF18FB = 0xB38D0 
 _Static_assert(PUFO_STATUS_FLAG_DESCENT_TARGET == 0x15, "0x91698 CMP R0, #0x15");
 _Static_assert(0xB38D0 + 1239 * PUFO_TEXT_REC_STRIDE == 0xF18FB, "R6 = (unk_F18FB - 0xB38D0) at 0x91490");
 _Static_assert(PUFO_STATUS_FLAG_DESCENT_ALT == 0x16, "0x91930 CMP R0, #0x16");
+_Static_assert(PUFO_STATUS_FLAG_ALIEN_BASE_PANEL == 0x3C, "0x91B2C CMP R0, #0x3C");
+_Static_assert(0xB38D0 + 1445 * PUFO_TEXT_REC_STRIDE == 0xFBDF1, "0x91B74 LDR R0,=(unk_FBDF1 - 0xB38D0)");
+_Static_assert(0xB38D0 + 1446 * PUFO_TEXT_REC_STRIDE == 0xFBEBE, "0x91BF4 LDR R0,=(unk_FBEBE - 0xB38D0)");
+_Static_assert(1144 * PUFO_TEXT_REC_STRIDE == 0x39418, "0x91C74 MOV R1,#0x39418");
+_Static_assert(PUFO_STATUS_BASECTL_Y_CONFIRM == 100, "0x91BE0 MOV R3, #0x64");
+_Static_assert(PUFO_STATUS_BASE_Y_CONFIRM_LBL == 100, "0x91C38 MOV R2, #0x64");
 
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
@@ -8849,6 +8855,9 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1235, "t6" }, { 1236, "uu6" },
     /* The 0x14 map-target panel: the two records bMapSelectionFlag chooses between. */
     { 1237, "w6" }, { 1238, "aaa6" }, { 1239, "d6" },
+    /* The 0x3C alien-base panel. 1445 is the message, 1446 the label under the confirm control; the lengths
+     * differ so a mix-up shows up as a row width, and neither is a substring of another label here. */
+    { 1445, "gggg6" }, { 1446, "h6" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -11093,6 +11102,84 @@ static void TestStatusPanelDescentPanelAlt(void)
     Check(PnFrameDiff() > 0, "and the compare is not blind: the 0x15 arm changes the frame (city line at 86, labels at 106 and 129)");
 }
 
+/* Flag 0x3C (test 0x91B20..0x91B30, body 0x91B34..0x91CE8): the alien-base panel. Three records, two controls,
+ * no colour slot, no strateg entry, no panel row and no gate -- and both handlers stored AFTER both blits. */
+static void TestStatusPanelAlienBase(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the alien-base panel @ 0x91b34 (flag 0x3C)\n");
+    PnFixture(0x3C, 4, 1, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+
+    /* ---- 1. the widest anim in the chain: x 2, nW 0xE8 ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 2, "the anim body starts at x=2 (0x91B64 MOV R1,#2), not the usual 14");
+    CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x91B5C MOV R2,#0x3C)");
+    CheckEqI32(d.nMaxX, 2 + 0xE8 + 3, "nW 0xE8 (0x91B6C MOV R3,#0xE8) puts the right border at 237");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_TARGET_ANIM_Y + PUFO_STATUS_TARGET_NH + 5, "nH 0x5A (0x91B50/0x91B60) puts the bottom at 155");
+
+    /* ---- 2. the three records ---- */
+    PnFixture(0x3C, 4, 1, 0);
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "gggg6", "y=70 is TEXTS[1445] alone (copy 0x91B88..0x91B98, 0x91B74 = unk_FBDF1); no row is appended");
+    PnRowIs(PUFO_STATUS_BASE_Y_CONFIRM_LBL, "h6", "y=100 is TEXTS[1446] \"Центр на базу\" (copy 0x91C08..0x91C18, 0x91BF4 = unk_FBEBE)");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCELLED_LBL, "B2", "y=126 is TEXTS[1144] \"Отмена\" (0x91C74 MOV R1,#0x39418 = 1144*205, copy 0x91C8C..0x91C9C)");
+    /* 1127 and 1239 are the descent arms' records; here they must not be read at all. Dropping one and
+     * comparing the whole frame is the check -- a row-band emptiness test would be confounded by the ink of
+     * the y=100 row, which reaches down into it. */
+    PnFixture(0x3C, 4, 1, 0);
+    PnCaptureDropped(1127);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0, "TEXTS[1127] is not drawn by this arm at all");
+    PnFixture(0x3C, 4, 1, 0);
+    PnCaptureDropped(1239);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0, "nor is TEXTS[1239]");
+    PnFixture(0x3C, 4, 1, 0);
+    PnCaptureDropped(1445);
+    Check(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount > 0, "while dropping TEXTS[1445] does change the frame, so the two checks above are not blind");
+    PnFixture(0x3C, 4, 1, 0);
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "", "and y=86 stays empty: no city line here");
+
+    /* ---- 3. the two controls ---- */
+    PnFixture(0x3C, 4, 1, 0);
+    PnCapture();
+    CheckEqI32(g_pnCtlConfirm.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "CtlConfirm centres on 120 from its own 40-wide pad (0x91BD0 LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_BASECTL_Y_CONFIRM, "at y=100 (0x91BE0 MOV R3,#0x64), the same row its label is drawn on");
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "CtlA centres from its own 40-wide pad (0x91C50)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "at y=125 (0x91C60 MOV R3,#0x7D)");
+    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91BF0 and 0x91C70)");
+    Check(g_apnPnBlitPad[0] == g_pnCtlConfirm.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0], "CtlConfirm first, then CtlA");
+
+    /* ---- 4. handlers are stored AFTER both blits ---- */
+    /* ONE run with both handlers cleared: PnCapture would run the arm twice and the second blit would see the
+     * first run's handler already installed. */
+    PnFixture(0x3C, 4, 1, 0);
+    g_pnCtlConfirm.pfnClick = NULL;
+    g_pnCtlA.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == NULL && g_apnPnBlitHandler[1] == NULL,
+          "neither control has a handler at the moment it is blitted (0x91BF0 and 0x91C70 come before 0x91CD4 / 0x91CE8)");
+    Check(g_pnCtlConfirm.pfnClick == PnSelectTarget, "CtlConfirm then gets Smap_OnPointerUp @ 0x84688 (0x91CD0/0x91CD8)");
+    Check(g_pnCtlA.pfnClick == PnClearSel, "and CtlA gets Smap_ClearSelection @ 0x84648 (0x91CE0/0x91CE8)");
+    CheckEqI32(g_nPnSelectClicks + g_nPnClearClicks, 0, "the arm installs handlers, it never calls one");
+
+    /* ---- 5. it reads none of the things the other arms read ---- */
+    PnFixture(0x3C, 4, 1, 0);
+    g_pnPanel.nUnk3032 = 3;
+    g_bPnMapSel = 0;
+    PnCapture();
+    PnSaveFrame();
+    PnFixture(0x3C, 255, 7, 9);
+    g_pnPanel.nUnk3032 = 12;
+    g_pnStrat[0].bCraftClass = 3;
+    g_pnStrat[1].nTargetIdx = 4;
+    g_bPnMapSel = 1;
+    PnCapture();
+    CheckEqI32(PnFrameDiff(), 0,
+               "colour slots, the selected row, the strateg entry and bMapSelectionFlag change nothing here");
+}
+
 static void TestStatusPanelMissionSite(void)
 {
     printf("\nGeoscape_DrawStatusPanel, the intercept-mission panel @ 0x90d78\n");
@@ -11369,6 +11456,7 @@ int main(void)
     TestStatusPanelDescentPanel();
     TestStatusPanelDescentTarget();
     TestStatusPanelDescentPanelAlt();
+    TestStatusPanelAlienBase();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

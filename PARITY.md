@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 17203 |
+| Test checks run | 17225 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -616,7 +616,7 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x8c180` | `Geoscape_Draw` | 33744 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x872d0` | `Geoscape_OnPointer` | 8576 | `src/pufo/game/pufo_geopointer.c`, `src/pufo/game/pufo_geopointer.h` |
-| `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/game/pufo_geopointer.c`, `src/pufo/game/pufo_geopointer.h` (+1) |
+| `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/game/pufo_geopointer.c`, `src/pufo/game/pufo_geopointer.h` |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_strateg.h` |
@@ -655,7 +655,7 @@ is the module that answers to it.
 | `0x6250c` | `Base_DrawFacilityIconStrip` | 792 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e074` | `Smap_CraftRangeExhausted` | 768 | `src/pufo/game/pufo_strateg.h` |
 | `0x790e8` | `BasePlane_UnloadWeaponStores` | 760 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
-| `0x84688` | `Smap_OnPointerUp` | 732 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x84688` | `Smap_OnPointerUp` | 732 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x602a0` | `RadarScreen_RollDetection` | 720 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
 | `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_strateg.h` |
@@ -786,7 +786,7 @@ is the module that answers to it.
 | `0x668e8` | `Base_RemoveAllSoldiers` | 72 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x6acec` | `BaseGrid_SubByte0x654` | 68 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e374` | `StrategList_AddUfoAt` | 64 | `src/pufo/game/pufo_strateg.h` |
-| `0x84648` | `Smap_ClearSelection` | 64 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` (+2) |
+| `0x84648` | `Smap_ClearSelection` | 64 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.c` (+3) |
 | `0x5b560` | `FundingScreen_Open` | 60 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x556e4` | `BaseRec_AddItemQty` | 56 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
@@ -1275,7 +1275,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 2743 |
+| `test_geoscape` | PASS | 2765 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

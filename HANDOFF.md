@@ -1,39 +1,44 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `bbf9c53`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its thirteenth part -- the flag-0x16 clone at
-0x91938..0x91B1C: 22 checks, 6/6 mutations caught, 7 IDB comments, 1 ledger row. Parts 1..12 are behind this:
-the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
-`a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel `ac13d77`,
-the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels `e9145c0` +
-`2c3c1cd`, the descent panel `4a8e181` and the descent-target panel `bbf9c53`. What this part found:
+Date: 2026-10-17. HEAD before this edit: `f3bbc75`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its fourteenth part -- the alien-base panel at
+0x91B34..0x91CE8 (flag 0x3C): 22 checks, 8/8 mutations caught, 6 IDB comments plus one rewritten, 1 ledger row.
+Parts 1..13 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
+`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the
+attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site /
+travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53` and the
+flag-0x16 clone `f3bbc75`. What this part found:
 
-- **The descent panel exists twice in the original.** Flag 0x17 (test 0x91498) and flag 0x16 (test 0x91930)
-  each run their own 484-byte copy of the same body. Compared instruction by instruction: 121 against 121,
-  same order, same frame slots, same callees, 117 identical, 4 equivalent (three copy-loop BNEs naming their
-  own loop head, and `STRB R2,[R0,R1]` at 0x91AE4 against `STRB R2,[R1,R0]` at 0x91650 -- additive addressing
-  over the same two registers, so the same address). One port arm with two flag constants serves both.
-- **A method mistake worth remembering.** The first comparison used raw bytes fetched in chunks, and the fetch
-  returned 395 of 484 bytes; the chunks were concatenated anyway, the windows were misaligned, and the result
-  was a list of 24 "differences" whose pairs disassemble identically. Always check the length a byte fetch
-  returned, and prefer the disassembly stream when it is short.
-- **A test that can fail.** The new frame-equality check (0x16 against the saved 0x17 frame, 0 changed pixels)
-  is shipped with its control: the same compare against the 0x15 arm must change pixels. Equality checks with
-  no control are how vacuous tests get written.
-- Sticky registers again: the clone sets none of its own values -- R6 (TEXTS[1239], 0x91490), R7 = 0 (0x9149C),
-  R8, R9, R10 and R11 (0xBD8, from the flag-0x13 prologue at 0x90D88) all come from other arms' prologues.
+- **0x3C reaches the chain because it is outside the jumptable range.** 0x8C798 `CMP #0x1E` BLE and 0x8C7AC
+  `CMP #0x32` BGE send everything else to the default case, which is where the arm chain lives (the port's
+  `nFlag < MIN || nFlag > MAX` test routes to `StatusPanel_DrawDefault`, and the chain is its continuation).
+- **The panel is simple and its order is not.** Three records (1445, 1446, 1144) with nothing appended, two
+  controls (100, 125), the widest anim in the chain (x 2, nW 0xE8), and handlers installed AFTER both blits --
+  the reverse of the descent arms. Recorded in bugs.tsv as a stale-handler ordering finding.
+- **TEXTS 1445/1446 are not in the binary.** The whole 0xB38D0 TEXTS block reads as uninitialised in the IDB;
+  the strings are in lang.dat (1650 records of 200 bytes on disk, 205-byte records in memory). Record identity
+  has to be checked against lang.dat. "Внимание! Обнаружена база пришельцев" / "Центр на базу" / "Отмена".
+- **Two test-side mistakes, caught by running them.** An emptiness check on the row below a drawn row is
+  confounded by the drawn row's ink (PnRowIs needs rows >= 14 apart), and a handler-at-blit-time check must run
+  the arm once -- `PnCapture` runs it twice and the second blit sees the first run's handler. Both were FAIL
+  before they were fixed, which is the point of running them.
+- **One wrong citation fixed.** `GeoscapeStatusPanelEnv.pfnSelectTarget` was commented "Smap_OnPointerUp @
+  0x89450"; 0x89450 is `Geoscape_OnPointerUp`, and `Smap_OnPointerUp` is @ 0x84688 (what 0x91CD0 and 0x90640
+  load). IDA's names were right; the port comment had the address wrong.
 
-IDA note: the MCP tools are still unreachable from this session (the handshake failed at startup and did not
-re-cover after the server came back), so IDB work goes through the JSON-RPC client
-`C:/Windows/Temp/pufo_scripts/idac.py` against the same server (127.0.0.1:13337). Worth running `/mcp` and
-reconnecting ida-pro-mcp before the next session.
+IDA note: the MCP tools are still unreachable from this session (the handshake failed at startup), so IDB work
+goes through the JSON-RPC client `C:/Windows/Temp/pufo_scripts/idac.py` against the same server
+(127.0.0.1:13337). It also exposes `py_eval`, which is the reliable way to read data bytes -- `get_bytes`
+through that client came back short twice (395 of 484 bytes, and 0 bytes for a 40-byte request), and a short
+fetch silently misaligns any address-paired comparison. Worth running `/mcp` and reconnecting ida-pro-mcp.
 
-Next: 0x91B20 (the flag-0x3C test at 0x91B2C, body from 0x91B34) through 0x91CEC, then the screen arms
-0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 17203 checks across 60
-suites -- the byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py` counts a function
-once its start address is cited, so it says nothing about how much of that function is ported. The read map
-and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported
-in parts".
+Next: 0x91CEC..0x91DB0, the chain's shared tail (the `*0x186BC4 == 2` test, the 0x186BBC pad blit,
+`Geoscape_DrawClockPads`, thirteen root-control blits, and the `Geoscape_DrawGlobeHover` branch at 0x91D78 that
+writes bPendingRegionId), then the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and
+596752/598792 (99.7%) with 17225 checks across 60 suites -- the byte figure credits all 33,744 bytes of
+`Geoscape_Draw` because `coverage.py` counts a function once its start address is cited, so it says nothing
+about how much of that function is ported. The read map and the arm table are in
+`docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

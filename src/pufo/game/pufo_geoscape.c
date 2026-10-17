@@ -5459,6 +5459,52 @@ static void StatusPanel_DrawDescentTarget(const GeoscapeStatusPanelEnv *pEnv, ch
                                                                          /* 0x91910, 0x9191C, y 129 */
 }
 
+/* 0x91B34..0x91CE8: the alien-base panel, flag 0x3C (test 0x91B20..0x91B30). The widest panel of the chain:
+ * x 2 and nW 0xE8 instead of the 0xE / 0xD0 every other arm uses. It reads no colour slot, no strateg entry,
+ * no panel row and no gate -- three records and two controls. Both handlers are stored AFTER both blits, the
+ * opposite order from the 0x17 / 0x16 / 0x15 arms. */
+static void StatusPanel_DrawAlienBasePanel(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pCtlConfirm == NULL || pEnv->pCtlA == NULL
+        || pEnv->pfnSelectTarget == NULL || pEnv->pfnClearSelection == NULL) {
+        return;
+    }
+
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 2, PUFO_STATUS_TARGET_ANIM_Y, 0xE8, PUFO_STATUS_TARGET_NH,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x91B34..0x91B70: x 2 (0x91B64),
+                                                                          * nW 0xE8 (0x91B6C), nIdx and nMode
+                                                                          * zeroed locally at 0x91B48 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ALIEN_BASE);         /* 0x91B74..0x91B98, record 1445 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_LINE, psz);
+                                                                         /* 0x91BA4, 0x91BC4, y 70 */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlConfirm);                           /* 0x91BD0..0x91BDC */
+    pEnv->pCtlConfirm->y = (i16)PUFO_STATUS_BASECTL_Y_CONFIRM;           /* 0x91BE0: y 100 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x91BF0 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CENTRE_BASE);        /* 0x91BF4..0x91C18, record 1446 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_BASE_Y_CONFIRM_LBL, psz);
+                                                                         /* 0x91C24, 0x91C44, y 100: the label
+                                                                          * sits on the control's own row */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x91C50..0x91C5C */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;                   /* 0x91C60: y 125 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x91C70 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);             /* 0x91C74..0x91C9C, 0x39418 = 1144 * 205 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_CANCELLED_LBL, psz);
+                                                                         /* 0x91CA8, 0x91CC8, y 126 */
+
+    pEnv->pCtlConfirm->pfnClick = pEnv->pfnSelectTarget;                 /* 0x91CD0..0x91CD8, Smap_OnPointerUp @
+                                                                          * 0x84688 -- stored after the 0x91BF0
+                                                                          * blit */
+    pEnv->pCtlA->pfnClick = pEnv->pfnClearSelection;                     /* 0x91CE0..0x91CE8, Smap_ClearSelection
+                                                                          * @ 0x84648 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -5528,7 +5574,15 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_DESCENT_TARGET) {
         StatusPanel_DrawDescentTarget(pEnv, psz);                        /* 0x916A0..0x9191C */
     }
-    /* 0x91B20..0x91CEC: the flag-0x3C test at 0x91B2C, what follows it, and the screen-id tail are not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_ALIEN_BASE_PANEL) {
+        StatusPanel_DrawAlienBasePanel(pEnv, psz);                       /* 0x91B34..0x91CE8 */
+    }
+    /* The chain's shared tail, 0x91CEC..0x91DB0, is not ported yet: every arm above lands on it (the 0x3C arm
+     * by falling through, the others by BNE). It tests *0x186BC4 == 2 -- the else branch at 0x91D78 reads the
+     * two signed cursor shorts and calls Geoscape_DrawGlobeHover, stores the result into bPendingRegionId, and
+     * only continues to 0x93058 when byte_1870AC is zero -- otherwise it blits the *0x186BBC pad, runs
+     * Geoscape_DrawClockPads and blits the thirteen root widgets at 0x1864F8 + 4*i for i in 0..12. The screen
+     * arms from 0x91DC8 are not ported either. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */
