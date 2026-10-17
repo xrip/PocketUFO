@@ -4865,6 +4865,59 @@ static void StatusPanel_DrawCraftDetail(const GeoscapeStatusPanelEnv *pEnv, char
     }
 }
 
+/* 0x90220: flag 0x0D, the trace-lost panel. It is the only arm of this chain that touches the clock:
+ * 0x90234 loads 0x159618 and 0x90238 calls GameTime_Pause @ 0x5d6ac, which stores 1 into 0x15961C. */
+static void StatusPanel_DrawInterceptPause(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    char szNum[16], szName[PUFO_TEXT_REC_STRIDE];
+
+    if (pEnv->pTime == NULL || pEnv->pStripPad == NULL || pEnv->pCtlB == NULL
+        || pEnv->pStrategList == NULL || pEnv->pszRadarMsg == NULL) {
+        return;
+    }
+
+    pEnv->pTime->bPaused = 1;                                          /* 0x90234..0x90238 */
+
+    const PadImage *const pStrip = pEnv->pStripPad;                    /* 0x9023C..0x90274: the same
+                                                                        * pad reads and the same four
+                                                                        * constants as the 0x0B card */
+    SoftSurf_BlitSrcRect(pStrip->nOriginX, pStrip->nOriginY, pStrip->uWidth, pStrip->uHeight,
+                         0x3C, 0x78, 0x82, 0x96);
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_PAUSE_ANIM_Y, 0xD0, PUFO_STATUS_PAUSE_NH,
+                            0, 0x28, 0x32, 0xB4, 0);                   /* 0x90278..0x902B0, box
+                                                                        * x 14..225, y 70..195 */
+
+    const i32 nSlot0 = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0);   /* 0x902C0 */
+    if (nSlot0 == PUFO_STATUS_COLOUR_NO_TARGET) {                       /* 0x902C8 CMP R0, #0xFF */
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_TARGET_LOST);   /* 0x902D0 record 1231 */
+    } else {
+        const StrategItem *const pEntry = StatusPanel_ListEntry(pEnv, 0);
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_UFO);           /* 0x9031C record 1210 */
+        if (pEntry != NULL) {                                           /* the original null-checks
+                                                                         * nothing */
+            snprintf(szNum, sizeof(szNum), "%d", pEntry->nDisplayId);   /* 0x90368 LDR [R0,#0x10] */
+            (void)pufo_strcat(psz, szNum, PUFO_TEXT_REC_STRIDE);
+        }
+        StatusPanel_CopyRec(pEnv, szName, PUFO_STATUS_TEXT_TRACE_LOST); /* 0x90380 record 1356, with its
+                                                                         * own leading space */
+        (void)pufo_strcat(psz, szName, PUFO_TEXT_REC_STRIDE);
+    }
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_PAUSE_Y_LINE1, psz); /* 0x90390 y 90 */
+
+    /* 0x903F4: the craft here is colour SLOT 1, not the 0x187054 global the 0x0F arm used. */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);        /* 0x903BC record 1216 */
+    StatusPanel_AppendShipName(pEnv, psz, (i32)UiLineList_GetColor(pEnv->pLines, 0, 1));
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_PAUSE_Y_LINE2, psz); /* 0x90410 y 118 */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlB);                               /* 0x90440..0x90450 */
+    pEnv->pCtlB->y = (i16)PUFO_STATUS_PAUSECTL_Y;                      /* 0x90454: 155 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                 /* 0x90464, BEFORE the handler */
+    pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;               /* 0x90468 / 0x9047C */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);           /* 0x90478, record 1144 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_PAUSE_Y_LABEL, psz); /* 0x904A0 y 156 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -4899,7 +4952,10 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_CRAFT_DETAIL) {
         StatusPanel_DrawCraftDetail(pEnv, psz);                        /* 0x8F9E4..0x9021C */
     }
-    /* 0x90220..0x91CEC: the 0x0D pause arm and what follows is not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_INTERCEPT_PAUSE) {
+        StatusPanel_DrawInterceptPause(pEnv, psz);                     /* 0x90220..0x904CC */
+    }
+    /* 0x904D8..0x91CEC: the 0x10 city panel and what follows is not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

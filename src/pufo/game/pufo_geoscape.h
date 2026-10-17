@@ -1569,6 +1569,8 @@ typedef struct GeoscapeStatusPanelEnv {
     UiControl         *pCtlPatrol;        /* *unk_186B98, made in Geoscape_InitUI, labelled "Патруль" */
     void             (*pfnSelectMapTarget)(void);     /* Smap_SelectMapTarget @ 0x84484 */
     void             (*pfnConfirmSelected)(void);     /* Smap_ConfirmSelected @ 0x845d8 */
+    /* The 0x0D trace-lost panel. */
+    struct GameTime   *pTime;             /* 0x159618: GameTime_Pause writes bPaused here */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -1784,6 +1786,37 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_DETAILCTL_Y_PATROL     0xB4 /* 0x90074 MOV R3, #0xB4 */
 #define PUFO_STATUS_DETAILCTL_Y_CANCEL     0xC8 /* 0x90080 MOV R3, #0xC8 */
 #define PUFO_STATUS_Y_DETAIL_CANCEL_LBL    0xC9 /* 0x90210 MOV R2, #0xC9: "Отмена", only when not done */
+
+/* 0x90220: flag 0x0D, the panel that says the trace was lost. This is the only arm in the chain that
+ * touches the clock: 0x90234 loads 0x159618 and 0x90238 calls GameTime_Pause @ 0x5d6ac, which is a
+ * store of 1 into 0x15961C, i.e. GameTime.bPaused.
+ *
+ * Then it re-blits the same strip pad rectangle as the 0x0B card (0x9023C..0x90274, the same four
+ * reads out of the pad at 0x186BBC and the same 0x3C / 0x78 / 0x82 / 0x96), and animates its body at
+ * (0xE, 0x46) size (0xD0, 0x78) from src (0x28, 0x32), key 0xB4, nIdx 0, nMode 0 -- box x 14..225,
+ * y 70..195.
+ *
+ * Line 1 at y 90 depends on line 0's colour slot 0 compared against 0xFF (0x902C8). Equal to 0xFF it is
+ * TEXTS[1231] "Цель потеряна" alone. Otherwise it is TEXTS[1210] "НЛО " + itoa(strategList[slot 0]
+ * ->nDisplayId, the +0x10 dword read at 0x90368) + TEXTS[1356] " след потерян" -- the third part
+ * carries its own leading space. The colour value is read twice here (0x902C0 for the test, 0x90350 for
+ * the index) and never written.
+ *
+ * Line 2 at y 118 is TEXTS[1216] "Корабль: " + Ship_FormatDisplayName(colour slot 1) -- the second
+ * colour slot, not the 0x187054 global. One control: *pGeoscapeCtlB @ 0x186BB0 centred on 120 from its
+ * own uWidth (0x90444 LDRH [R0,#4], LSR #1, RSB #0x78) at y 155, blitted at 0x90464 BEFORE its handler
+ * is installed at 0x9047C (Smap_ResolveInterceptUI), with TEXTS[1144] "Отмена" centred at y 156. */
+#define PUFO_STATUS_FLAG_INTERCEPT_PAUSE   0x0D /* 0x9022C CMP R0, #0xD */
+#define PUFO_STATUS_COLOUR_NO_TARGET       0xFF /* 0x902C8 CMP R0, #0xFF: slot 0 means "no target" */
+#define PUFO_STATUS_TEXT_TARGET_LOST       1231 /* 0xF1293 "Цель потеряна" */
+#define PUFO_STATUS_TEXT_TRACE_LOST        1356 /* 0xF76AC " след потерян", with its leading space */
+#define PUFO_STATUS_STRATEG_DISPLAY_ID     0x10 /* 0x90368 LDR [R0,#0x10], StrategItem.nDisplayId */
+#define PUFO_STATUS_PAUSE_ANIM_Y           0x46 /* 0x9029C MOV R2, #0x46 */
+#define PUFO_STATUS_PAUSE_NH               0x78 /* 0x90278 MOV R7, #0x78 */
+#define PUFO_STATUS_PAUSE_Y_LINE1          0x5A /* 0x903AC MOV R2, #0x5A */
+#define PUFO_STATUS_PAUSE_Y_LINE2          0x76 /* 0x9042C MOV R2, #0x76 */
+#define PUFO_STATUS_PAUSECTL_Y             0x9B /* 0x90454 MOV R3, #0x9B */
+#define PUFO_STATUS_PAUSE_Y_LABEL          0x9C /* 0x904BC MOV R2, #0x9C */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

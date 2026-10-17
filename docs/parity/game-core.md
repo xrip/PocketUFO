@@ -17741,3 +17741,53 @@ both guarded in the port and listed as deviations.
 
 Not ported yet in this chain: 0x90220..0x91CEC (the 0x0D arm, which calls GameTime_Pause and blits the
 strip pad rectangle, and what follows), and the screen arms at 0x91DC8..0x944B0.
+### Unit 107, part 6: the trace-lost panel (0x90220..0x904CC)
+
+The sixth arm of the default chain, flag 0x0D. It is the only arm in this chain that changes game
+state: 0x90234 loads 0x159618 and 0x90238 calls GameTime_Pause @ 0x5d6ac, which is just a store of 1
+into 0x15961C -- GameTime.bPaused. Everything after it is the usual shape: the strip pad at 0x186BBC
+re-blitted as a whole rectangle with the same four reads and the same 0x3C / 0x78 / 0x82 / 0x96 as the
+0x0B card, then the animated body at (0xE, 0x46) size (0xD0, 0x78) from src (0x28, 0x32), key 0xB4,
+nIdx 0, mode 0, so the box is x 14..225, y 70..195.
+
+Findings:
+- Line 1 (y 90) turns on line 0's colour slot 0 compared against 0xFF (0x902C8). At 0xFF it is
+  TEXTS[1231] "Цель потеряна" alone. Otherwise it is TEXTS[1210] "НЛО " + itoa of the strateg entry's
+  +0x10 dword (0x90368, StrategItem.nDisplayId -- the same field the flag-0x0A contact panel prints at
+  0x8E818) + TEXTS[1356] " след потерян", a record whose shipped text carries its own leading space.
+- The colour value is read twice (0x902C0 for the test, 0x90350 for the index) and never written. The
+  0xFF sentinel guards only the first read: the second goes straight into PtrArray_Get with no bounds
+  test (bugs.tsv).
+- Line 2 (y 118) is TEXTS[1216] "Корабль: " + Ship_FormatDisplayName of colour SLOT 1. This arm neither
+  reads nor writes 0x187054 -- across the six arms the craft is named from the global (0x0F), from the
+  colour value (0x0E), by writing the colour value into the global (0x0B) and from a different colour
+  slot altogether (0x0D).
+- One control: *pGeoscapeCtlB @ 0x186BB0, centred from LDRH [R0,#4] uWidth (0x90444) at y 155, blitted
+  at 0x90464 BEFORE its handler is installed at 0x9047C -- the reverse of the 0x0B card, which installs
+  its handlers at 0x8FFC0..0x90008 and blits at 0x9008C..0x900A4. The order itself is not observable
+  through the port's blit callbacks, so no test pins it; the y, the count and the handler are pinned.
+- The label under it (y 156) is TEXTS[1144] "Отмена": 0x90478 builds R9 = 0x39400 | 0x18 = 0x39418 =
+  1144 * 205. The card's own cancel label is the separate record 1230 and this arm never reads it.
+
+Tests: 22 new checks (16,930 across 60 suites, 0 failures). The pause is checked as a side effect and
+in contrast -- the 0x0B card is run right after to prove it leaves the clock alone. The body is measured
+at (14,70)..(225,195) against the card's (14,5)..(225,230), the strip rectangle re-blit is re-measured
+here (2400 pixels of value 8745), and both lines are pinned by exact ink pixels against a reference
+draw. The no-target case runs the arm with colour slot 0 = 0xFF and checks the whole row is TEXTS[1231].
+11 more _Static_assert pins hold records 1231 and 1356 and the seven geometry values to the ARM
+immediates.
+
+Mutations: 14 patterns, 14 caught -- dropping the pause, naming the craft from 0x187054 instead of
+colour slot 1, inverting the 0xFF test, swapping records 1231/1356/1144/1216, printing nSiteId instead
+of nDisplayId, swapping the anim y and height, swapping the pad's uWidth and uHeight, changing the strip
+key, blitting the control twice, moving the control or the label by one row, and drawing line 1 at line
+2's y. One earlier attempt to remove the strip blit outright failed to compile (the pad pointer became
+unused) and was rewritten as a width/height swap.
+
+IDB: 5 comments written (0x90220 the arm's shape and the clock store, 0x902C8 the 0xFF sentinel and the
+two record paths, 0x90368 nDisplayId, 0x903F4 the colour slot 1 craft, 0x90464 the blit-before-handler
+order and the label record). bugs.tsv: 2 new rows -- the panel draw pausing the clock as a side effect
+(reproduced) and the unbounded strateg index at 0x90350 (guarded in the port).
+
+Not ported yet in this chain: 0x904D8..0x91CEC (the flag-0x10 city panel and what follows) and the
+screen arms 0x91DC8..0x944B0.

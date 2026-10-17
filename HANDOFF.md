@@ -1,30 +1,26 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `a2d454b`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its fifth part -- the craft-detail card at
-0x8F9E4..0x9021C, flag 0x0B, with 62 new checks and 23/23 mutations caught.
-Parts 1..4 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body at 0x8C760..0x8E658
-in `2485d25`, the action-fail line and the selected contact at 0x8E658..0x8F24C in `79b7979`, the order
-questions at 0x8F250..0x8F9E0 in `a2d454b` -- are behind this. What this part found: the card is the only
-arm in the chain that WRITES the selected-craft index 0x187054 (0x8FA90) and then reads it back four
-times; the pad at 0x186BBC supplies x, y, width and height to a `SoftSurf_BlitSrcRect` that runs before
-the body, and the body is painted solid and not as an outline -- a fact the row tests had to learn the
-hard way; the fuel percent multiplies by 100 before `_rt_sdiv` (0x8FC50) and has no zero test on the
-divisor; the shared weapon pool has three arms and not two -- unequal mounts skip the halving entirely,
-slot 1 always floors, slot 0 rounds up only when `ammo / 2 == 1`; ids 25..30 each read their own ammo
-byte 0x3D..0x41 with id 28 as the "N.A." sentinel and a zero id skipping both rows of its slot;
-`Ship.bContactMsg` (+0x3C) chooses the four handlers and the new-target control's `Smap_DismissSelected`
-store is overwritten by `Smap_SelectMapTarget` at 0x8FFEC; `bInterceptDone` byte 0 @ 0x18709C gates both
-the cancel control's second pad blit and the TEXTS[1230] cancel label, a second record carrying 1144's
-shipped text. The tests now pin a value row by its exact ink pixels against a reference draw, which is
-what separates "b51" from "b52". Two fixture gaps and one provably equivalent mutant came out of the
-mutation sweep, and one crashed harness run left its first mutation in the source -- every later pattern
-in that run was measured against a mutated baseline, until the swap was reverted and the sweep re-run
-against a clean source. Still unported here: 0x90220..0x91CEC (the 0x0D pause arm and what follows) and
-the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with
-16908 checks -- that byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py`
-counts a function once its start address is cited, so it says nothing about how much of that function is
-ported. The read map and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180
+Date: 2026-10-17. HEAD before this edit: `c5f90b5`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its sixth part -- the trace-lost panel at
+0x90220..0x904CC, flag 0x0D, with 22 new checks and 14/14 mutations caught.
+Parts 1..5 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body in `2485d25`, the
+action-fail line and the selected contact in `79b7979`, the order questions in `a2d454b` and the
+craft-detail card in `c5f90b5` -- are behind this. What this part found: flag 0x0D is the only arm of the
+chain that changes game state -- 0x90238 calls `GameTime_Pause` @ 0x5d6ac, a store of 1 into 0x15961C
+(`GameTime.bPaused`), on every redraw of that line; its body is (14,70)..(225,195), not the card's
+(14,5)..(225,230); line 1 depends on colour slot 0 compared against `0xFF` -- TEXTS[1231] "Цель потеряна"
+alone, or TEXTS[1210] + `StrategItem.nDisplayId` (+0x10, read at 0x90368) + TEXTS[1356] " след потерян",
+whose shipped text keeps its own leading space; the craft on line 2 comes from colour SLOT 1 while
+`0x187054` is neither read nor written, which makes six arms naming a craft four different ways; the one
+control is blitted at 0x90464 BEFORE its handler is installed at 0x9047C, the reverse of the card, and
+that order is not observable through the port's blit callbacks so no test claims to pin it; the label
+record is built as `0x39400 | 0x18` = 1144 * 205, i.e. TEXTS[1144] and not the card's 1230. The 0xFF
+sentinel guards only the first colour read -- the second is used as a list index with no bounds test
+(bugs.tsv). Still unported here: 0x904D8..0x91CEC (the flag-0x10 city panel and what follows) and the
+screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 16930
+checks -- that byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py` counts a
+function once its start address is cited, so it says nothing about how much of that function is ported.
+The read map and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180
 (33,744 B) - read, ported in parts".
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

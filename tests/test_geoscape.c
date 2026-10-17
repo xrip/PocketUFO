@@ -8656,6 +8656,19 @@ _Static_assert(PUFO_STATUS_TEXT_RETURN_BASE == 1227, "0x900B8 record");
 _Static_assert(PUFO_STATUS_TEXT_NEW_TARGET == 1228, "0x9010C record");
 _Static_assert(PUFO_STATUS_TEXT_PATROL == 1229, "0x90164 record");
 _Static_assert(PUFO_STATUS_TEXT_CANCEL_ORDER == 1230, "0x901BC record");
+
+/* The 0x0D trace-lost panel @ 0x90220. */
+_Static_assert(PUFO_STATUS_FLAG_INTERCEPT_PAUSE == 0x0D, "0x9022C CMP R0, #0xD");
+_Static_assert(PUFO_STATUS_COLOUR_NO_TARGET == 0xFF, "0x902C8 CMP R0, #0xFF");
+_Static_assert(PUFO_STATUS_TEXT_TARGET_LOST == 1231, "0x902D0, unk_F1293 - 0xB38D0 = 1231 * 205");
+_Static_assert(PUFO_STATUS_TEXT_TRACE_LOST == 1356, "0x90380, unk_F76AC - 0xB38D0 = 1356 * 205");
+_Static_assert(PUFO_STATUS_STRATEG_DISPLAY_ID == 0x10, "0x90368 LDR R0, [R0,#0x10]");
+_Static_assert(PUFO_STATUS_PAUSE_ANIM_Y == 0x46, "0x9029C MOV R2, #0x46");
+_Static_assert(PUFO_STATUS_PAUSE_NH == 0x78, "0x90278 MOV R7, #0x78");
+_Static_assert(PUFO_STATUS_PAUSE_Y_LINE1 == 0x5A, "0x903AC MOV R2, #0x5A");
+_Static_assert(PUFO_STATUS_PAUSE_Y_LINE2 == 0x76, "0x9042C MOV R2, #0x76");
+_Static_assert(PUFO_STATUS_PAUSECTL_Y == 0x9B, "0x90454 MOV R3, #0x9B");
+_Static_assert(PUFO_STATUS_PAUSE_Y_LABEL == 0x9C, "0x904BC MOV R2, #0x9C");
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -8732,6 +8745,8 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1227, "c5" }, { 1228, "d5" }, { 1229, "e5" }, { 1230, "fff5" },
     { 1350, "g5" }, { 1351, "hh5" }, { 1352, "iii5" }, { 1353, "j5" }, { 1354, "kkk5" },
     { 1355, "ll5" },
+    /* The 0x0D trace-lost panel. Record 1356 keeps the leading space the shipped record has. */
+    { 1231, "n5" }, { 1356, " o5" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -9120,6 +9135,7 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.pCtlPatrol             = &g_pnCtlPatrol;
     g_pnEnv.pfnSelectMapTarget     = PnMapTarget;
     g_pnEnv.pfnConfirmSelected     = PnConfirmSel;
+    g_pnEnv.pTime                  = &g_pnTime;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -10040,6 +10056,74 @@ static void TestStatusPanelDetail(void)
     CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0, "nor any of the order-question lines");
 }
 
+static void TestStatusPanelPause(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the trace-lost panel @ 0x90220\n");
+    PnFixture(0x0D, 0, 1, 0); /* colour slot 0 -> strateg entry 0, slot 1 -> craft 1 */
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetCrafts();
+    g_pnStrat[0].nDisplayId = 41;     /* the +0x10 dword the arm prints (0x90368) */
+    g_nPnShipIdx            = 0;      /* the global points at the FIRST craft; the arm must not use it */
+
+    /* ---- 1. the pause, and that this arm is the only one in the chain that does it ---- */
+    CheckEqI32(g_pnTime.bPaused, 0, "the fixture starts with the clock running");
+    PnRun();
+    CheckEqI32(g_pnTime.bPaused, 1, "0x90234..0x90238 GameTime_Pause stops the clock");
+    PnFixture(0x0B, 1, 0, 0);
+    PnRun();
+    CheckEqI32(g_pnTime.bPaused, 0, "the 0x0B card leaves the clock alone, so the pause is 0x0D's own");
+    PnFixture(0x0D, 0, 1, 0);
+    PnSetCrafts();
+    g_pnStrat[0].nDisplayId = 41;
+    g_nPnShipIdx            = 0;
+
+    /* ---- 2. the strip rectangle and the panel body ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, 240);
+    CheckEqI32(d.nMinX, 0xE, "the body starts at x=14 (0x902A4)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_PAUSE_ANIM_Y, "and y=70 (0x9029C)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x902AC) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_PAUSE_ANIM_Y + PUFO_STATUS_PAUSE_NH + 5,
+               "nH 0x78 (0x90278) puts the bottom at 195, not 230 like the card");
+    d = PnDiffRect(0, 241, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nCount, 100 * 24, "the same whole strip-pad rectangle as the 0x0B card (0x90260..0x90274)");
+    CheckEqI32(d.uInk, PN_STRIP_INK, "blended with the same nIdx 0x3C, mid 0x78, low 0x82, key 0x96");
+
+    /* ---- 3. both lines with a target selected ---- */
+    PnCapture();
+    PnRowIs(PUFO_STATUS_PAUSE_Y_LINE1, "C241 o5",
+            "y=90 is TEXTS[1210] + itoa(nDisplayId) + TEXTS[1356] with its own leading space");
+    PnRowIs(PUFO_STATUS_PAUSE_Y_LINE2, "p4w4x-5", "y=118 is TEXTS[1216] + the craft named by colour SLOT 1");
+    PnCheckStr(g_szPnRadar, "w4x-5", "and the name it built is the second craft's");
+    CheckEqI32(g_nPnShipIdx, 0, "0x187054 is not read here -- 0x903F4 takes slot 1 instead");
+
+    /* ---- 4. colour slot 0 as the "no target" sentinel ---- */
+    PnFixture(0x0D, 0xFF, 1, 0);
+    PnSetCrafts();
+    PnCapture();
+    PnRowIs(PUFO_STATUS_PAUSE_Y_LINE1, "n5", "slot 0 == 0xFF draws TEXTS[1231] alone (0x902C8 / 0x902D0)");
+    PnRowIs(PUFO_STATUS_PAUSE_Y_LINE2, "p4w4x-5", "and leaves the ship line as it was");
+
+    /* ---- 5. the one control and its label ---- */
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 20,
+               "pGeoscapeCtlB centres on 120 from its own 40-wide pad (0x90444 LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_PAUSECTL_Y, "and sits at y=155 (0x90454)");
+    CheckEqI32(g_nPnBlits, 1, "it is the only control this arm has");
+    Check(g_pnCtlB.pfnClick == PnResolve, "with Smap_ResolveInterceptUI installed at 0x9047C");
+    PnRowIs(PUFO_STATUS_PAUSE_Y_LABEL, "B2", "TEXTS[1144] centred one pixel under it at y=156");
+
+    /* ---- 6. records this arm never reads ---- */
+    PnCaptureDropped(PUFO_STATUS_TEXT_CANCEL_ORDER);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0,
+               "its cancel label is TEXTS[1144] and not the card's TEXTS[1230]");
+    PnCaptureDropped(PUFO_STATUS_TEXT_WEAPON1);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0, "and it reads none of the card's weapon records");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -10107,6 +10191,7 @@ int main(void)
     TestStatusPanelContact();
     TestStatusPanelOrder();
     TestStatusPanelDetail();
+    TestStatusPanelPause();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
