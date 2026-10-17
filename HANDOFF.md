@@ -1,34 +1,41 @@
 # HANDOFF — PocketUFO Win64 recreation
-Date: 2026-10-17. HEAD before this edit: `5eedf75`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its twentieth part -- the base-facility arm
-(screen 7, 0x92AF0..0x92DAC): 28 new checks, 22/22 mutations caught, 14 IDB comments, 5 wrong IDB item
-sizes fixed, 3 globals named, 3 ledger rows. Parts 1..19 are behind this: the map-view chrome `5917656`,
-the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions `a2d454b`, the craft-detail
-card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel `ac13d77`, the intercept list
-`c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels `e9145c0` + `2c3c1cd`, the
-descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base
-panel `3f98d17`, the chain's shared tail `d445057`, the frame end `84cdb03`, the thin screen arms
-`7623894`, the ufopaedia and psi arms `219899e` and the soldier arms `5eedf75`.
+Date: 2026-10-17. HEAD before this edit: `ca4c9bc`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its twenty-first part -- the base-info arm
+(screen 3, 0x93F08..0x94104) and the funding arm (screen 19, 0x94314..0x9449C): 40 new checks, 34/34
+mutations caught, 21 IDB comments, 4 wrong IDB item sizes fixed, 2 globals named, 4 ledger rows and one
+earlier row extended. Parts 1..20 are behind this: the map-view chrome `5917656`, the 13-arm body
+`2485d25`, the action-fail line `79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`,
+the trace-lost panel `4a02d1a`, the attacked-city panel `ac13d77`, the intercept list `c612882`, the
+map-target panel `7c14ff8`, the mission-site / travel panels `e9145c0` + `2c3c1cd`, the descent panel
+`4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base panel
+`3f98d17`, the chain's shared tail `d445057`, the frame end `84cdb03`, the thin screen arms `7623894`, the
+ufopaedia and psi arms `219899e`, the soldier arms `5eedf75` and the base-facility arm `ca4c9bc`.
 What this part found:
 
-- **The arm's frame is asymmetric in the original itself.** Both edge rows run 24 rects of 5 from x 1, but
-  the falling ramp starts at `k+128` on top (0x92C80 `ADD R1,R9,#0x80`) and at `k+120` on the bottom
-  (0x92CC4 `ADD R1,R9,#0x78`), so the top row has a 7-pixel hole at x 121..127 and its last rects run past
-  the 240-pixel surface while the bottom row meets at 120 and ends exactly at 239. Reproduced, and pinned by
-  the x 121/127 dark and x 239 lit probes rather than by a band count.
-- **The armed-placement gate cancels the whole control run** (0x92D68 `BNE def_8C1B0`): with
-  `bBaseFacPlaceArmed` @ 0x158888 set the arm blits NO control, while its pad, both rails and the separator
-  are already drawn. The pad it blits, `pBaseFacScreenPad` @ 0x186BA0, is the same word case 1 blits at
-  0x91DCC -- the two screens share one PadImage.
-- **Two arguments are the arm's, not the caller's.** 0x92D38 hands `Base_DrawFacilityIconStrip` the constant
-  -1 (so no base gets the chevron on this screen), and 0x92D18 / 0x92D20 leave `Map_nGlyphPalBase` at 3 for
-  the rest of the frame without restoring it. Both are asserted: the strip claim as a 132-pixel difference
-  against a reference draw that uses the env's own highlight.
-- **The original loops its controls through a shared global.** The index lives in `dword_186B08`, left at 2
-  by this arm; the port counts locally. Recorded as a ledger deviation row rather than silently fixed.
-- **Recorded as unknown instead of guessed:** 0x158890 typed `UiPanel` with a 1-byte item and
-  0x158894..0x15889C still 1-byte items -- no xref reaches them, so retyping is a guess; and 0x158870's own
-  +0 word, which is only ever loaded as the block base, keeps a plain `_DWORD`.
+- **One dword is a pad pointer AND a control-array base.** `pBaseInfoPad` @ 0x158828 is blitted as
+  `*pBaseInfoPad` (0x93F0C) and then walked as an array by the arm's own control loop (0x940B8
+  `ADD R3,R1,R0,LSL#2` / 0x940C0 `LDR R0,[R3,#4]`), reading 0x15882C / 0x158830 -- the two controls
+  `BaseInfoScreen_Init` allocates at 0x576DC..0x57708. They were 1-byte items in the IDB; they are now
+  `struct UiControl *` named `pBaseInfoCtl0` / `pBaseInfoCtl1`. `BaseInfoScreen_Draw` (0x94100, its only
+  call site) gets the block base too, with R1 = `byte_1870F4` read SIGNED.
+- **Case 3's frame is case 7's inset by three, and its ramps overlap instead of gapping.** Side rails at
+  x 5 / 234 (not 2 / 237), the lower edge row at y 5 (not y 2), and the falling ramp from ONE immediate
+  5k+119 used by both rows (0x9404C) -- so it overlaps the climbing ramp at x 119..120 where case 7's two
+  immediates leave a 7-pixel hole. x 121 is the probe that tells them apart.
+- **The close control's load AND its call are predicated** on byte 0x1870F8 being clear (0x940E4 ANDS,
+  LDREQ 0x940EC, BLEQ 0x940F0). That byte is shared with the psi screen (written at 0x557D0 / 0x57614 /
+  0x57794 and at 0x716B0 / 0x72A2C), so one flag gates two screens.
+- **The funding panel is a bankruptcy panel.** Its gate is `CMP R3,#0xFFD23940 / BGE` (0x943AC) where
+  0xFFD23940 is -3,000,000 signed, and the value compared is nFunds minus every base's upkeep plus the five
+  `g_nFundBar` slots summed in the order 2,1,3,0,4 (0x9437C..0x943A0). The upkeep loop re-reads the SIGNED
+  base count every step, exactly like `Geoscape_CloseUI` case 19 at 0x8BB90.
+- **The panel's three captions are records 1712 / 1713 / 1714, and the shipped lang.dat has no words there.**
+  The readable text ends near record 1640; from ~1660 the records hold control bytes. Recorded in the IDB and
+  in `bugs.tsv`; no text content is assumed in the port or the tests.
+- **Three test-harness truths this part exposed:** an unfilled facility cell must be 255, because
+  `Base_CalcMonthlyUpkeep` counts every cell that is NOT 255 as built; RGB565 cannot distinguish
+  (150,50,50) from (150,50,51), so a colour claim has to be checked on `g_aPalette` (the surface carries
+  palette INDICES); and a mutant that deletes a variable's only use does not build under -Werror.
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

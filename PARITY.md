@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 17403 |
+| Test checks run | 17443 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -584,7 +584,7 @@ is the module that answers to it.
 | `0x1a28c` | `UiControl_ctor` | 60 | `src/pufo/ui/pufo_control.h` |
 | `0x2dca8` | `Text_MeasureWidth` | 60 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x11110` | `PadImage_BlitEx` | 56 | `src/pufo/render/pufo_render.c` |
-| `0x110dc` | `PadImage_Blit` | 52 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` (+1) |
+| `0x110dc` | `PadImage_Blit` | 52 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/render/pufo_render.c` (+2) |
 | `0x46630` | `Font_DrawGlyph_IndexedOffset` | 52 | `src/pufo/game/pufo_font.h` |
 | `0x5a450` | `UiPanel_SetLineColors` | 52 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_linelist.c` (+1) |
 | `0x84ecc` | `Ui_CloseScreen18` | 52 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -787,7 +787,7 @@ is the module that answers to it.
 | `0x6acec` | `BaseGrid_SubByte0x654` | 68 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e374` | `StrategList_AddUfoAt` | 64 | `src/pufo/game/pufo_strateg.h` |
 | `0x84648` | `Smap_ClearSelection` | 64 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.c` (+3) |
-| `0x5b560` | `FundingScreen_Open` | 60 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x5b560` | `FundingScreen_Open` | 60 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x556e4` | `BaseRec_AddItemQty` | 56 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
 | `0x415cc` | `StrategItem_AllocAdd` | 52 | `src/pufo/game/pufo_strateg.h` |
@@ -842,7 +842,7 @@ is the module that answers to it.
 | `0x64af0` | `SoldierScreen_Toggle` | 1952 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x61c8c` | `BaseFacScreen_DrawNameGrid` | 1840 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7cc8c` | `BasePlaneScreen_BuildPanels` | 1768 | `src/pufo/game/pufo_plane.h` |
-| `0x56fb8` | `BaseInfoScreen_Draw` | 1744 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x56fb8` | `BaseInfoScreen_Draw` | 1744 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7d374` | `BasePlaneScreen_Draw` | 1648 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -888,7 +888,7 @@ is the module that answers to it.
 | `0x72b40` | `PsiScreen_Init` | 332 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x72250` | `PsiScreen_ApplyAssignments` | 328 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x9a60c` | `Ufopaedia_PrevEntry` | 328 | `src/pufo/game/pufo_baseui.h` |
-| `0x57688` | `BaseInfoScreen_Init` | 312 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x57688` | `BaseInfoScreen_Init` | 312 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x6df6c` | `ManufScreen_UpdateProgress` | 304 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x217e0` | `Menu_DrawLabeledPads` | 296 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x6ad30` | `BuySell_ItemIdToAlienRaceId` | 292 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -1027,7 +1027,7 @@ is the module that answers to it.
 | `0x1a034` | `MenuCtl1_OnClick` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x614cc` | `ManufScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
 | `0x614fc` | `TransferScreen_Open` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x6167c` | `BaseInfoScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
+| `0x6167c` | `BaseInfoScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.c` (+1) |
 | `0x61794` | `BuySellScreen_OpenBuy` | 48 | `src/pufo/game/pufo_baseui.h` |
 | `0x617c4` | `BuySellScreen_OpenSell` | 48 | `src/pufo/game/pufo_baseui.h` |
 | `0x61844` | `BaseFacScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
@@ -1275,7 +1275,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 2943 |
+| `test_geoscape` | PASS | 2983 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |
@@ -1338,7 +1338,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 760 citations.
+parity report. Total: 763 citations.
 
 ### Offsets below the image base (43)
 
@@ -1347,7 +1347,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (717)
+### At or above the image base (720)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1355,6 +1355,9 @@ global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
 offsets that happen to be numerically large (`Map+0x14004`). Triage them
 against the IDB when the final report is assembled.
 
+- `0x1093c0`
+- `0x10948d`
+- `0x10955a`
 - `0x10db84`
 - `0x10dba8`
 - `0x10dbac`

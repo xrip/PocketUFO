@@ -5870,6 +5870,117 @@ void Geoscape_DrawBaseFacArm(const GeoscapeBaseFacArmEnv *pArmEnv, const FacName
     }
 }
 
+/* 0x93F08..0x94104: screen 3, the base-info screen (BaseInfoScreen_Open @ 0x6167C stores 3 at 0x6169C).
+ * Case 7's rails inset by three, one control run over the two slots that follow the pad pointer in its own
+ * block, a close control the shared byte 0x1870F8 can suppress, then BaseInfoScreen_Draw -- its only call
+ * site in the binary. */
+void Geoscape_DrawBaseInfoArm(const GeoscapeBaseInfoArmEnv *pArmEnv, const GeoscapeScreenArmEnv *pCtlEnv,
+                              const BaseInfoDrawEnv *pBaseInfoEnv)
+{
+    if (pArmEnv->ppPad != NULL && *pArmEnv->ppPad != NULL) {
+        PadImage_Blit(*pArmEnv->ppPad);                     /* 0x93F08 LDR / 0x93F0C LDR [R0] / 0x93F10.
+                                                             * Deviation: PadImage_Blit @ 0x110DC dereferences
+                                                             * +0x10 with no test, so the original faults on a
+                                                             * null pad word rather than skipping the blit. */
+    }
+
+    for (i32 k = 0; k < PUFO_BI_RAIL_STEPS; ++k) {           /* 0x93F24..0x93FD8, CMP #0xA8 at 0x93FD4 */
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));   /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_SIDE - PUFO_SOL_RAMP_STEP * k);     /* 230..115 */
+        const i32 nYUp = PUFO_BI_SIDE_Y0 + PUFO_BI_SIDE_STEP * k;               /* 1..162 */
+        const i32 nYDn = PUFO_BI_SIDE_Y1 + PUFO_BI_SIDE_STEP * k;               /* 151..312 */
+
+        SoftSurf_BlitRectProxy(0, PUFO_BI_SIDE_X0, nYUp, 1, PUFO_BI_SIDE_H, nRise, nRise, nRise);   /* 0x93F54 */
+        SoftSurf_BlitRectProxy(0, PUFO_BI_SIDE_X0, nYDn, 1, PUFO_BI_SIDE_H, nFall, nFall, nFall);   /* 0x93F80 */
+        SoftSurf_BlitRectProxy(0, PUFO_BI_SIDE_X1, nYUp, 1, PUFO_BI_SIDE_H, nRise, nRise, nRise);   /* 0x93FA4, x 0xED */
+        SoftSurf_BlitRectProxy(0, PUFO_BI_SIDE_X1, nYDn, 1, PUFO_BI_SIDE_H, nFall, nFall, nFall);   /* 0x93FC8 */
+    }
+
+    /* 0x93FE8..0x940A8, CMP #0x78 at 0x940A4. The arm draws both climbing rects first and both falling ones
+     * after, and the falling x comes from ONE immediate (0x9404C ADD R9,R8,#0x77) used by both rows -- so the
+     * ramps overlap at x 119..120 instead of leaving case 7's gap. */
+    for (i32 k = 0; k < PUFO_BI_RAIL_STEPS; ++k) {
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));   /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_EDGE - PUFO_SOL_RAMP_STEP * k);     /* 250..135 */
+        const i32 nXLo = PUFO_BI_EDGE_X_RISE + PUFO_BI_EDGE_STEP * k;           /* 1..116 */
+        const i32 nXHi = PUFO_BI_EDGE_X_FALL + PUFO_BI_EDGE_STEP * k;           /* 119..234 */
+
+        SoftSurf_BlitRectProxy(0, nXLo, PUFO_BI_EDGE_Y_LO, PUFO_BI_EDGE_W, 1, nRise, nRise, nRise); /* 0x94018, y 5 */
+        SoftSurf_BlitRectProxy(0, nXLo, PUFO_BI_EDGE_Y_HI, PUFO_BI_EDGE_W, 1, nRise, nRise, nRise); /* 0x94040, y 315 */
+        SoftSurf_BlitRectProxy(0, nXHi, PUFO_BI_EDGE_Y_LO, PUFO_BI_EDGE_W, 1, nFall, nFall, nFall); /* 0x94070 */
+        SoftSurf_BlitRectProxy(0, nXHi, PUFO_BI_EDGE_Y_HI, PUFO_BI_EDGE_W, 1, nFall, nFall, nFall); /* 0x94098 */
+    }
+
+    Geoscape_BlitCtlRun(pCtlEnv, 0, PUFO_BI_CTLS_2);         /* 0x940B8..0x940D4: the block's +4 / +8 slots,
+                                                              * CMP #2 at 0x940D4, index in dword_186B08 */
+
+    if (pArmEnv->pbOverlayShown != NULL && *pArmEnv->pbOverlayShown == 0) {
+        /* 0x940DC LDRB the gate byte, 0x940E4 ANDS #0xFF, then the predicated LDREQ at 0x940EC and BLEQ at
+         * 0x940F0 make the whole blit conditional -- not just the call, also the load of the control. */
+        (void)UiControl_BlitActivePad(pArmEnv->pCloseCtl, pCtlEnv->pfnCtlBlit,
+                                      pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);
+    }
+    (void)BaseInfoScreen_Draw(pBaseInfoEnv);                  /* 0x940F4 LDRSB byte_1870F4 / 0x94100 */
+}
+
+/* 0x94314..0x9449C: screen 19, the funding screen. The monthly report first -- the callee reads pFundPad
+ * itself, so the address the arm hands it is dead -- then the upkeep sum, the -3,000,000 gate, and the
+ * panel plus three centred captions that only appear once the frame animation reports itself complete. */
+void Geoscape_DrawFundingArm(FundingDrawEnv *pFundingEnv, const GeoscapeFundingArmEnv *pArmEnv)
+{
+    (void)FundingScreen_DrawExtended(pFundingEnv);            /* 0x94314 LDR R0,=pFundPad / 0x94318 BL, no LDR
+                                                              * [R0]: FundingScreen_DrawExtended loads the global
+                                                              * itself at 0x5B5CC / 0x5B5D0 */
+
+    i32 nBalance = (pArmEnv->pnFunds != NULL) ? *pArmEnv->pnFunds : 0;   /* 0x94334, read ONCE */
+    i32 nBaseCount = (pArmEnv->pbBaseCount != NULL)
+                         ? (i32)(signed char)*pArmEnv->pbBaseCount : 0;   /* 0x94330 LDRSB */
+    for (i32 n = 0; nBaseCount > 0 && n < nBaseCount; ++n) {  /* 0x94340 BLE past the loop */
+        /* 0x94344/0x94348 MOV R3,R0,LSL#24 then MOV R1,R3,ASR#24 truncates the counter to a signed byte for
+         * R1, 0x9434C MOV R0,R5 hands the block base, and 0x94360 SUB R6,R6,R0 subtracts what the callee returns. */
+        nBalance -= Base_CalcMonthlyUpkeep(pArmEnv->apCraft, pArmEnv->nCraftCount,
+                                           pArmEnv->apSoldiers, pArmEnv->nSoldierCount,
+                                           pArmEnv->apSites, pArmEnv->nSiteCount,
+                                           pArmEnv->apObjects, pArmEnv->abFacilityGrid, n);
+        nBaseCount = (pArmEnv->pbBaseCount != NULL)
+                         ? (i32)(signed char)*pArmEnv->pbBaseCount : 0;   /* 0x9435C: the count is re-read on
+                                                              * every step, exactly as Geoscape_CloseUI case 19
+                                                              * re-reads it at 0x8BB90 */
+    }
+
+    if (pArmEnv->anFundBar != NULL) {
+        nBalance += pArmEnv->anFundBar[2] + pArmEnv->anFundBar[1] + pArmEnv->anFundBar[3]
+                  + pArmEnv->anFundBar[0] + pArmEnv->anFundBar[4];          /* 0x9437C..0x943A0, that order */
+    }
+    if (nBalance >= PUFO_FUNDS_BANKRUPT_LIMIT) {
+        return;                                                             /* 0x943AC BGE def_8C1B0 against
+                                                                              * 0xFFD23940 = -3,000,000 */
+    }
+
+    if (!Ui_AnimExpandBlit(pArmEnv->pAnim, PUFO_FUND_PANEL_X, PUFO_FUND_PANEL_Y,   /* 0x943B0..0x943EC */
+                           PUFO_FUND_PANEL_W, PUFO_FUND_PANEL_H, PUFO_FUND_PANEL_IDX,
+                           PUFO_FUND_PANEL_SRC_X, PUFO_FUND_PANEL_SRC_Y, PUFO_FUND_PANEL_KEY,
+                           PUFO_FUND_PANEL_MODE)) {
+        return;                                                             /* 0x943F0 ANDS R3,R0,#0xFF / BEQ:
+                                                                             * progress != 100, no captions */
+    }
+
+    (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 150, 50, 50, 50, 1, 1);   /* 0x943F8..0x94418, packed ONCE for all
+                                                              * three lines */
+    const char *const pszText = pArmEnv->pTextRecs;
+    const char *const pszCap0 = pszText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_CAP0;
+    (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszCap0), PUFO_FUND_CAP_CENTRE),  /* 0x9441C..0x94450 */
+                          PUFO_FUND_CAP_Y0, pszCap0);
+    const char *const pszCap1 = pszText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_CAP1;
+    (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszCap1), PUFO_FUND_CAP_CENTRE),  /* 0x94454..0x94480 */
+                          PUFO_FUND_CAP_Y1, pszCap1);
+    const char *const pszCap2 = pszText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_CAP2;
+    /* 0x94484..0x9449C measures the third record, sets y 140 and then B loc_92ACC -- the shared centring tail
+     * at 0x92ACC centres R0 and falls through to MOV R0,R4 / BL Text_DrawString at 0x90974. Same call. */
+    (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszCap2), PUFO_FUND_CAP_CENTRE),
+                          PUFO_FUND_CAP_Y2, pszCap2);
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)

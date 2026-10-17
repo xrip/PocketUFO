@@ -2336,6 +2336,8 @@ void Geoscape_DrawSoldierEditArm(const struct SoldierDrawEnv *pSoldierEnv, const
 
 struct FacNameGridEnv;
 struct BuildDialogEnv;
+struct BaseInfoDrawEnv;   /* pufo_baseui.h: BaseInfoScreen_Draw's env */
+struct FundingDrawEnv;    /* pufo_baseui.h: FundingScreen_DrawExtended's env */
 
 typedef struct GeoscapeBaseFacArmEnv {
     PadImage          *pPad;         /* pBaseFacScreenPad @ 0x186BA0: allocated in Geoscape_InitUI (0x859EC..0x85A00)
@@ -2351,6 +2353,135 @@ typedef struct GeoscapeBaseFacArmEnv {
  * two page controls unless a placement is armed. */
 void Geoscape_DrawBaseFacArm(const GeoscapeBaseFacArmEnv *pArmEnv, const struct FacNameGridEnv *pGridEnv,
                              const struct BaseStripDrawEnv *pStripEnv, const struct BuildDialogEnv *pDialogEnv);
+
+/* ---- the base-info arm, 0x93F08..0x94104 (Geoscape_Draw case 3) ---------------------------------
+ *
+ * Screen 3 is the base-info screen: BaseInfoScreen_Open @ 0x6167C stores 3 into nGeoscapeScreen at
+ * 0x6169C and runs BaseInfoScreen_Init @ 0x57688. The frame is case 7's rail idiom inset by three:
+ * 1x7 rects at x 5 and 234 (0x93F48 MOV R1,#5 / 0x93F94 MOV R1,#0xED) instead of 2 / 237, and 5x1 rects
+ * at y 5 and 315 (0x94004 MOV R2,#5, then 0x9401C MOV R2,#0x138 / 0x9402C ORR R2,R2,#3) instead of
+ * 315 / 2. Same 24 steps (CMP #0xA8 at 0x93FD4 over steps of 7, CMP #0x78 at 0x940A4 over steps of 5) and
+ * the same colours (climbing 5*(k+20), side falling 0xE6-5*k, edge falling 0xFA-5*k). Unlike case 7 the
+ * two edge ramps come from ONE immediate: 0x9404C ADD R9,R8,#0x77 gives x = 5k+119 and is used at 0x94064
+ * for the y 5 row and again at 0x9408C for the y 315 row, so the climbing ramp (x 1..120) and the falling
+ * one (x 119..238) OVERLAP by two columns instead of leaving case 7's 7-pixel hole.
+ *
+ * The pad is *pBaseInfoPad @ 0x158828 (0x93F08 LDR / 0x93F0C LDR [R0] / 0x93F10 BL PadImage_Blit) and the
+ * control run walks the two words AFTER it in the same block: 0x940B8..0x940D4 is ADD R3, R1, R0,LSL#2
+ * with R1 = the ADDRESS of pBaseInfoPad, then LDR R0,[R3,#4] -- 0x15882C then 0x158830, the two controls
+ * BaseInfoScreen_Init allocates at 0x576DC..0x57708 (BaseInfoScreen_OnOk, and the panel-mode toggle).
+ * One global is therefore both a pad pointer and a control-array base; IDA names only 0x158828 and types
+ * it PadImage *. The loop counter is the shared scratch dword_186B08 again (0x940B0 STR 0, re-read and
+ * incremented per step at 0x940C8..0x940D0, left at 2) -- the port counts locally.
+ *
+ * Then the close control, but only while byte 0x1870F8 is 0: 0x940DC LDRB / 0x940E4 ANDS #0xFF sets the
+ * flags and the predicated LDREQ / BLEQ at 0x940EC / 0x940F0 make the whole blit conditional. That byte is
+ * shared by the base-info and psi screens (written at 0x557D0 in BaseInfoScreen_OnOk, 0x57614 in
+ * BaseInfoScreen_Draw, 0x57794 in BaseInfoScreen_Init, and at 0x716B0 / 0x72A2C in the psi pair).
+ *
+ * Last, BaseInfoScreen_Draw @ 0x56FB8 (0x940F4..0x94100), and 0x94100 is its ONLY call site in the binary:
+ * R0 = pBaseInfoPad (the block base again) and R1 = byte_1870F4 read SIGNED, the selected-base index the
+ * psi screen and Geoscape_CloseUI share. */
+
+#define PUFO_BI_RAIL_STEPS   24   /* 0x93FD4 CMP #0xA8 over steps of 7, 0x940A4 CMP #0x78 over steps of 5 */
+#define PUFO_BI_SIDE_STEP      7   /* 0x93FCC ADD R9,R9,#7 */
+#define PUFO_BI_SIDE_H         7   /* 0x93F20 MOV R5,#7 stored as nRectH at 0x93F28 */
+#define PUFO_BI_SIDE_X0        5   /* 0x93F48 MOV R1,#5 */
+#define PUFO_BI_SIDE_X1      234   /* 0x93F94 MOV R1,#0xED */
+#define PUFO_BI_SIDE_Y0        1   /* 0x93F34 ADD R11,R9,#1 */
+#define PUFO_BI_SIDE_Y1      151   /* 0x93F60 ADD R2,R9,#0x97 */
+#define PUFO_BI_EDGE_STEP      5   /* 0x9409C ADD R8,R8,#5 */
+#define PUFO_BI_EDGE_W         5   /* 0x93FFC MOV R3,#5 */
+#define PUFO_BI_EDGE_Y_LO      5   /* 0x94004 MOV R2,#5 -- case 7 uses y 2 here */
+#define PUFO_BI_EDGE_Y_HI    315   /* 0x9401C MOV R2,#0x138 / 0x9402C ORR R2,R2,#3 */
+#define PUFO_BI_EDGE_X_RISE    1   /* 0x93FF8 ADD R11,R8,#1 */
+#define PUFO_BI_EDGE_X_FALL  119   /* 0x9404C ADD R9,R8,#0x77 -- one immediate used by BOTH rows */
+#define PUFO_BI_CTLS_2         2   /* 0x940D4 CMP #2 */
+
+typedef struct GeoscapeBaseInfoArmEnv {
+    PadImage **ppPad;          /* pBaseInfoPad @ 0x158828 -- also the block base the callee receives */
+    const u8  *pbOverlayShown; /* unk_1870F8 @ 0x1870F8: non-zero suppresses the close-control blit */
+    UiControl *pCloseCtl;      /* g_pUiCloseCtl */
+} GeoscapeBaseInfoArmEnv;
+
+/* 0x93F08..0x94104: screen 3. Pad, rails, two control slots of the pad's own block, the close control
+ * while 0x1870F8 is clear, then BaseInfoScreen_Draw with the selected base index read signed. */
+void Geoscape_DrawBaseInfoArm(const GeoscapeBaseInfoArmEnv *pArmEnv, const GeoscapeScreenArmEnv *pCtlEnv,
+                              const struct BaseInfoDrawEnv *pBaseInfoEnv);
+
+/* ---- the funding arm, 0x94314..0x9449C (Geoscape_Draw case 19) ----------------------------------
+ *
+ * Screen 19 is the funding screen (FundingScreen_Open @ 0x5B560). The arm is the monthly report, then a
+ * bankruptcy panel that only appears when the projected balance is far enough in the red.
+ *
+ * 0x94314 loads the ADDRESS of pFundPad @ 0x1595DC and calls FundingScreen_DrawExtended without
+ * dereferencing it: the callee reads the global itself (0x5B5CC LDR / 0x5B5D0 LDR [R0]), so R0 is a
+ * discarded argument.
+ *
+ * 0x9431C..0x94374 sums Base_CalcMonthlyUpkeep over the bases and subtracts it from nFunds:
+ * R6 = nFunds @ 0x1598D8 (read once, 0x94334), the loop counter lives in the shared scratch dword_186B08
+ * (0x94338 STR 0, 0x94364..0x9436C per step), the base count is abFacilityGrid + 0x618 @ 0x159D80 read
+ * SIGNED and re-read on every iteration (0x94330 and 0x9435C), and the bound test compares the counter
+ * against that re-read count (0x94370 CMP / BLT). The callee is handed R0 = abFacilityGrid (0x9434C) and
+ * R1 = the counter truncated to a signed byte (0x94344 MOV R3,R0,LSL#24 / 0x94348 MOV R1,R3,ASR#24).
+ * The same loop, with the same re-read quirk, is what Geoscape_CloseUI case 19 runs at 0x8BB74..0x8BB90.
+ *
+ * 0x94378..0x943AC builds the projected balance: nFunds-minus-upkeep plus g_nFundBar2 + [1] + [3] + [0] +
+ * [4] @ 0x186594..0x1865A4, in THAT order, then CMP against 0xFFD23940 and BGE past the whole panel. The
+ * constant is -3,000,000 signed -- the same limit Geoscape_CloseUI uses at 0x8BBE8 (PUFO_FUNDS_BANKRUPT_LIMIT)
+ * -- and BGE is unsigned, which for this constant is the same test as signed >= -3,000,000. So the panel is
+ * drawn only when the balance is worse than -3,000,000.
+ *
+ * 0x943B0..0x943EC is the panel frame: Ui_AnimExpandBlit over the geoscape anim root (0x1864F8) at (2, 80)
+ * size (232, 90), mode 4 (the centred 50*progress square), index 0, source origin 0x28/0x32, key 0xDC.
+ * 0x943F0 ANDS R3,R0,#0xFF / BEQ skips everything after it unless the blit reports the animation complete.
+ * Then one colour pair (150,50,50) over (50,1,1) at 0x943F8..0x94418 -- packed once for all three lines --
+ * and three centred captions on x 120: TEXTS[1712] @ 0x1093C0 at y 100, TEXTS[1713] @ 0x10948D at y 120 and
+ * TEXTS[1714] @ 0x10955A at y 140, the last one printed by jumping into the shared centring tail at
+ * 0x92ACC (which centres R0 and falls through to MOV R0,R4 / BL Text_DrawString / B def_8C1B0 at 0x90974).
+ * The centring is the floor form again: MOVS R1,R0 / ADDMI R1,R1,#1 / ASR #1 / RSB R1,R1,#0x78.
+ *
+ * In the shipped lang.dat the region around records 1712..1714 holds control bytes (0x1B, 0x01, '!', 0x05)
+ * rather than words -- the readable part of the table ends near record 1640 -- so the panel's three lines
+ * are what the loader left there, not a sentence. Recorded rather than invented. */
+
+#define PUFO_FUND_PANEL_X        2   /* 0x943E8 MOV R1,#2 */
+#define PUFO_FUND_PANEL_Y       80   /* 0x943E4 MOV R2,#0x50 */
+#define PUFO_FUND_PANEL_W      232   /* 0x943DC MOV R3,#0xE8 */
+#define PUFO_FUND_PANEL_H       90   /* 0x943D0 MOV R3,#0x5A stored as nH */
+#define PUFO_FUND_PANEL_IDX      0   /* 0x943C8 MOV R3,#0 */
+#define PUFO_FUND_PANEL_SRC_X   0x28 /* 0x943C0 MOV R3,#0x28 */
+#define PUFO_FUND_PANEL_SRC_Y   0x32 /* 0x943E0 MOV R5,#0x32 */
+#define PUFO_FUND_PANEL_KEY     0xDC /* 0x943B8 MOV R3,#0xDC */
+#define PUFO_FUND_PANEL_MODE     4   /* 0x943B0 MOV R3,#4 */
+#define PUFO_FUND_CAP_Y0      100    /* 0x94444 MOV R2,#0x64 */
+#define PUFO_FUND_CAP_Y1      120    /* 0x94474 MOV R2,#0x78 */
+#define PUFO_FUND_CAP_Y2      140    /* 0x94498 MOV R2,#0x8C */
+#define PUFO_FUND_CAP_CENTRE  120    /* RSB R1,R1,#0x78 in all three */
+#define PUFO_FUND_TEXT_CAP0  1712    /* unk_1093C0 */
+#define PUFO_FUND_TEXT_CAP1  1713    /* unk_10948D */
+#define PUFO_FUND_TEXT_CAP2  1714    /* unk_10955A */
+
+typedef struct GeoscapeFundingArmEnv {
+    const u8              *pbBaseCount;   /* abFacilityGrid + 0x618 @ 0x159D80, read SIGNED (0x94330) */
+    const i32             *pnFunds;       /* nFunds @ 0x1598D8, read once (0x94334) */
+    const i32             *anFundBar;     /* g_nFundBar0..4 @ 0x186594, summed in the original's order */
+    const u8              *abFacilityGrid;/* abFacilityGrid @ 0x159768, the hand the upkeep callee gets */
+    Ship *const           *apCraft;
+    i32                    nCraftCount;
+    Soldier *const        *apSoldiers;
+    i32                    nSoldierCount;
+    const SmapSite        *apSites;
+    i32                    nSiteCount;
+    ObjectRecFull *const  *apObjects;
+    const UiAnimBlitEnv   *pAnim;         /* the started flag 0x187080 and the progress byte 0x187058 */
+    const GfxColorEnv     *pColor;        /* pGX @ 0x1139B8 */
+    const char            *pTextRecs;     /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart, for the three captions */
+} GeoscapeFundingArmEnv;
+
+/* 0x94314..0x9449C: screen 19. The monthly report, the upkeep sum, the -3,000,000 gate, the animated
+ * panel frame, and three centred captions when the animation reports itself complete. */
+void Geoscape_DrawFundingArm(struct FundingDrawEnv *pFundingEnv, const GeoscapeFundingArmEnv *pArmEnv);
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

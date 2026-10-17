@@ -8526,7 +8526,8 @@ static void TestGlobeHover(void)
  * centring anchors and their colour are read straight off the surface. The expected rows and
  * anchors are the ARM's, listed in pufo_geoscape.h.
  */
-#define PN_TEXT_MAX 1447 /* the highest record the panel or BuildStatusMsg reaches (1446, the alien-base label) */
+#define PN_TEXT_MAX 1715 /* the highest record any suite here reaches: 1712..1714, the funding arm's captions
+                          * (the panel and BuildStatusMsg only reach 1446, the alien-base label) */
 #define PN_BAND     12   /* a row's search window below its y; rows are at least 14 apart */
 #define PN_GLYPH_DY  2   /* Text_DrawString puts the ink PN_GLYPH_DY + 1 below the y it is given */
 /* Every arm of the chain ends on the shared tail at 0x91CEC, which blits the strip pad at its own origin
@@ -12726,6 +12727,348 @@ static void TestGeoscapeBaseFacArm(void)
     Check((u16)BdPix(2, 1) != 0, "and the rails are still drawn -- they need no env at all");
 }
 
+/* ---- fixtures for Geoscape_DrawBaseInfoArm (Geoscape_Draw case 3, 0x93F08) -------------------- */
+#define BI_PAD_X  218   /* the pad's glyph, away from every rail (the right rail is x 234) */
+#define BI_PAD_Y  140
+
+static PadImage                g_biPad;
+static u8                      g_abBiPadGlyph[8];
+static PadImage               *g_pBiPadWord;      /* the word at 0x158828, which the arm also uses as a block base */
+static UiControl               g_biCtl[2];
+static PadImage                g_biCtlPad[2];
+static UiControl              *g_apBiCtl[2];
+static UiControl               g_biCloseCtl;
+static PadImage                g_biClosePad;
+static u8                      g_bBiOverlay;      /* 0x1870F8 */
+static u8                      g_bBiBuilt;        /* bBaseInfoPanelsBuilt @ 0x15883C */
+static i8                      g_nBiWorkBase;     /* byte_1870F4 */
+static GeoscapeBaseInfoArmEnv  g_biArm;
+static GeoscapeScreenArmEnv    g_biCtlEnv;
+static BaseInfoDrawEnv         g_biInfo;
+static GfxColorEnv             g_biColor;
+
+static void TestGeoscapeBaseInfoArm(void)
+{
+    printf("\nGeoscape_Draw's base-info arm @ 0x93f08\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_aPalette[PN_TEST_PAL_SLOT][21] = (u32)AR_CAL_INK;
+    ArMakeGlyph(&g_biPad, g_abBiPadGlyph, BI_PAD_X, BI_PAD_Y);
+    g_pBiPadWord = &g_biPad;
+    for (i32 i = 0; i < 2; ++i) {
+        memset(&g_biCtl[i], 0, sizeof(g_biCtl[i]));
+        memset(&g_biCtlPad[i], 0, sizeof(g_biCtlPad[i]));
+        g_biCtlPad[i].uWidth  = 2;
+        g_biCtlPad[i].uHeight = 2;
+        g_biCtl[i].apPads[0]  = &g_biCtlPad[i];
+        g_biCtl[i].bEnabled   = 1;
+        g_biCtl[i].nMode      = 0;
+        g_biCtl[i].nState     = 0;
+        g_apBiCtl[i]          = &g_biCtl[i];
+    }
+    memset(&g_biClosePad, 0, sizeof(g_biClosePad));
+    g_biClosePad.uWidth = 2;
+    g_biClosePad.uHeight = 2;
+    memset(&g_biCloseCtl, 0, sizeof(g_biCloseCtl));
+    g_biCloseCtl.apPads[0] = &g_biClosePad;
+    g_biCloseCtl.bEnabled   = 1;
+
+    memset(&g_biArm, 0, sizeof(g_biArm));
+    g_biArm.ppPad          = &g_pBiPadWord;
+    g_biArm.pbOverlayShown = &g_bBiOverlay;
+    g_biArm.pCloseCtl      = &g_biCloseCtl;
+    memset(&g_biCtlEnv, 0, sizeof(g_biCtlEnv));
+    g_biCtlEnv.apCtl         = g_apBiCtl;
+    g_biCtlEnv.pfnCtlBlit    = PnBlit;
+    g_biCtlEnv.pfnCtlBlitEx  = PnBlitEx;
+    memset(&g_biInfo, 0, sizeof(g_biInfo));
+    g_biInfo.pbBuilt       = &g_bBiBuilt;
+    g_biInfo.pnWorkBaseIdx = &g_nBiWorkBase;
+    g_biInfo.pbOverlayOpen = &g_bBiOverlay;
+    g_biInfo.pColor        = &g_biColor;
+    g_bBiOverlay = 0;
+    g_bBiBuilt   = 0;
+    g_nBiWorkBase = 0;
+
+    /* ---- the plain run: pad, rails, the two control slots, the close control, callee off ---- */
+    ArReset();
+    Geoscape_DrawBaseInfoArm(&g_biArm, &g_biCtlEnv, &g_biInfo);
+    Check((u16)BdPix(BI_PAD_X, BI_PAD_Y) == AR_CAL_INK,
+          "the arm blits *pBaseInfoPad @ 0x158828 (0x93F08 LDR / 0x93F0C LDR [R0] / 0x93F10)");
+    Check((u16)BdPix(5, 1) != 0 && (u16)BdPix(5, 168) != 0 && (u16)BdPix(5, 318) != 0,
+          "the left rail is at x 5 (0x93F48 MOV R1,#5) -- case 7 has it at x 2");
+    Check((u16)BdPix(5, 0) == 0 && (u16)BdPix(5, 319) == 0,
+          "and 24 steps of 7 run y 1..168 climbing, 151..318 falling, no further (CMP #0xA8 at 0x93FD4)");
+    Check((u16)BdPix(6, 1) == 0, "the rail is one pixel wide (0x93F38 MOV R3,#1)");
+    Check((u16)BdPix(234, 1) != 0 && (u16)BdPix(234, 318) != 0 && (u16)BdPix(233, 1) == 0
+              && (u16)BdPix(235, 1) == 0,
+          "the right rail at x 234 (0x93F94 MOV R1,#0xED), one pixel wide");
+    Check((u16)BdPix(1, 5) != 0 && (u16)BdPix(120, 5) != 0 && (u16)BdPix(119, 5) != 0
+              && (u16)BdPix(238, 5) != 0 && (u16)BdPix(239, 5) == 0,
+          "the lower edge row is y 5 (0x94004 MOV R2,#5), NOT case 7's y 2: climbing x 1..120, falling from 119 (0x9404C ADD R9,R8,#0x77) to 238");
+    Check((u16)BdPix(1, 315) != 0 && (u16)BdPix(238, 315) != 0 && (u16)BdPix(239, 315) == 0,
+          "the upper edge row (y 315) uses the SAME two ramps -- one immediate for both rows here");
+    Check((u16)BdPix(121, 315) != 0 && (u16)BdPix(121, 5) != 0,
+          "x 121 is lit on both rows -- it is covered only by the falling ramp, and it is exactly where case 7 leaves a gap");
+    Check((u16)BdPix(1, 4) == 0 && (u16)BdPix(1, 6) == 0, "the edge rows are one pixel tall (0x93FEC STR nRectH=1)");
+    Check((u16)BdPix(0, 315) == 0 && (u16)BdPix(0, 5) == 0, "neither row starts before x 1 (0x93FF8 ADD R11,R8,#1)");
+    CheckEqI32(g_nPnBlits, 3, "two controls then the close control -- 0x940B8..0x940D4 (CMP #2) and the BLEQ at 0x940F0");
+    Check(g_apnPnBlitPad[0] == &g_biCtlPad[0] && g_apnPnBlitPad[1] == &g_biCtlPad[1],
+          "the two controls are the words AFTER the pad pointer, 0x15882C then 0x158830 (ADD R3,R1,R0,LSL#2 / LDR [R3,#4])");
+    Check(g_apnPnBlitPad[2] == &g_biClosePad, "and the third blit is g_pUiCloseCtl");
+    Check((u16)BdPix(20, 35) == 0 && (u16)BdPix(130, 35) == 0,
+          "BaseInfoScreen_Draw draws nothing while bBaseInfoPanelsBuilt is clear (0x56FCC), so y 35 is empty");
+
+    /* ---- the same run with the callee's gate open ---- */
+    g_bBiBuilt = 1;
+    ArReset();
+    Geoscape_DrawBaseInfoArm(&g_biArm, &g_biCtlEnv, &g_biInfo);
+    Check((u16)BdPix(20, 35) != 0 && (u16)BdPix(130, 35) != 0,
+          "with the flag set its own 24-step ramp lands on y 35 at x+1 and x+119 (0x56FE8..0x57210) -- the arm really calls BaseInfoScreen_Draw (0x94100)");
+    g_bBiBuilt = 0;
+
+    /* ---- 0x1870F8 set: the close control is not blitted, everything else is ---- */
+    g_bBiOverlay = 1;
+    ArReset();
+    Geoscape_DrawBaseInfoArm(&g_biArm, &g_biCtlEnv, &g_biInfo);
+    CheckEqI32(g_nPnBlits, 2, "with byte 0x1870F8 set the close control blit is skipped (0x940E4 ANDS, LDREQ at 0x940EC, BLEQ at 0x940F0)");
+    Check(g_apnPnBlitPad[0] == &g_biCtlPad[0] && g_apnPnBlitPad[1] == &g_biCtlPad[1],
+          "the two block controls still blit -- the gate is only the predicated close-control load and call");
+    Check((u16)BdPix(5, 1) != 0 && (u16)BdPix(1, 5) != 0 && (u16)BdPix(BI_PAD_X, BI_PAD_Y) == AR_CAL_INK,
+          "while the pad and both rails are drawn as before");
+    g_bBiOverlay = 0;
+
+    /* ---- a null pad word: the port skips the blit, the rails do not care ---- */
+    g_pBiPadWord = NULL;
+    ArReset();
+    Geoscape_DrawBaseInfoArm(&g_biArm, &g_biCtlEnv, &g_biInfo);
+    Check((u16)BdPix(BI_PAD_X, BI_PAD_Y) == 0,
+          "with a null pad word nothing is painted (deviation: PadImage_Blit @ 0x110DC dereferences +0x10 with no test)");
+    CheckEqI32(g_nPnBlits, 3, "the controls and the close control still blit");
+    Check((u16)BdPix(1, 5) != 0 && (u16)BdPix(234, 318) != 0, "and the rails are drawn -- they need no env at all");
+    g_pBiPadWord = &g_biPad;
+}
+
+/* ---- fixtures for Geoscape_DrawFundingArm (Geoscape_Draw case 19, 0x94314) --------------------- */
+#define FN_PAD_X   214   /* the report pad's glyph; the panel frame spans x 2..238 at y 80..170 */
+#define FN_PAD_Y   200
+#define FN_BAR_X   200   /* a column the FULL frame's outer bar reaches (x .. x+w+4) and a 1%-grown one does not */
+#define FN_BAR_Y    80
+
+static PadImage                g_fnPad;
+static u8                      g_abFnPadGlyph[8];
+static UiControl               g_fnCloseCtl;
+static PadImage                g_fnClosePad;
+static FundingDrawEnv          g_fnDraw;
+static GeoscapeFundingArmEnv   g_fnArm;
+static GfxColorEnv             g_fnColor;
+static UiAnimBlitEnv           g_fnAnim;
+static u8                      g_bFnAnimStarted;
+static i8                      g_nFnAnimProgress;
+static i32                     g_anFnShare[5], g_anFnBase[5], g_anFnBar[5];
+static i32                     g_nFnFunds, g_nFnTotal, g_nFnMonth;
+static u8                      g_nFnBaseCount;
+static u8                      g_abFnGrid[1600];
+
+/* Fill one base's 36 facility-type cells (Base_CalcMonthlyUpkeep reads abFacilityGrid + 480 + 144*idx). */
+static void FnFillFacilities(i32 nBase, i32 nCells)
+{
+    const i32 nOff = 480 + 144 * nBase;
+    for (i32 i = 0; i < 36; ++i) {
+        g_abFnGrid[nOff + i] = (u8)((i < nCells) ? 12 : 255);
+    }
+}
+
+/* One projected-balance run: everything fixed except the funds and the five bars. */
+static void FnGateRun(i32 nFunds, const i32 *aBars)
+{
+    g_nFnFunds = nFunds;
+    for (i32 i = 0; i < 5; ++i) {
+        g_anFnBar[i] = (aBars != NULL) ? aBars[i] : 0;
+    }
+    ArReset();
+    Geoscape_DrawFundingArm(&g_fnDraw, &g_fnArm);
+}
+
+static void TestGeoscapeFundingArm(void)
+{
+    printf("\nGeoscape_Draw's funding arm @ 0x94314\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_aPalette[PN_TEST_PAL_SLOT][21] = (u32)AR_CAL_INK;
+    ArMakeGlyph(&g_fnPad, g_abFnPadGlyph, FN_PAD_X, FN_PAD_Y);
+    memset(&g_fnClosePad, 0, sizeof(g_fnClosePad));
+    g_fnClosePad.uWidth = 2;
+    g_fnClosePad.uHeight = 2;
+    memset(&g_fnCloseCtl, 0, sizeof(g_fnCloseCtl));
+    g_fnCloseCtl.apPads[0] = &g_fnClosePad;
+    g_fnCloseCtl.bEnabled   = 1;
+
+    g_bFnAnimStarted = 1;              /* the animation is already running: the arm sees the progress byte only */
+    g_nFnAnimProgress = 100;           /* complete */
+    memset(&g_fnAnim, 0, sizeof(g_fnAnim));
+    g_fnAnim.pbStarted   = &g_bFnAnimStarted;
+    g_fnAnim.pnProgress  = &g_nFnAnimProgress;
+    g_fnAnim.nFrameStyle = 0;          /* the ordinary frame colours */
+
+    memset(&g_fnDraw, 0, sizeof(g_fnDraw));
+    g_fnDraw.pPad         = &g_fnPad;
+    g_fnDraw.pCloseCtl    = &g_fnCloseCtl;
+    g_fnDraw.pfnCtlBlit   = PnBlit;
+    g_fnDraw.pfnCtlBlitEx = PnBlitEx;
+    g_fnDraw.pColor       = &g_fnColor;
+    g_fnDraw.pTextRecs    = (const u8 *)g_abPnText;
+    g_fnDraw.pnTotal      = &g_nFnTotal;
+    g_fnDraw.anShare      = g_anFnShare;
+    g_fnDraw.anBaseline   = g_anFnBase;
+    g_fnDraw.anBar        = g_anFnBar;
+    g_fnDraw.nMonthCounter = 5;        /* >= 3: the arrows are shown as they are */
+
+    memset(g_anFnShare, 0, sizeof(g_anFnShare));
+    memset(g_anFnBase, 0, sizeof(g_anFnBase));
+    memset(g_abFnGrid, 255, sizeof(g_abFnGrid));   /* 255 is an EMPTY facility cell (Base_CalcMonthlyUpkeep) */
+    memset(&g_fnArm, 0, sizeof(g_fnArm));
+    g_fnArm.pbBaseCount   = &g_nFnBaseCount;
+    g_fnArm.pnFunds       = &g_nFnFunds;
+    g_fnArm.anFundBar     = g_anFnBar;
+    g_fnArm.abFacilityGrid = g_abFnGrid;
+    g_fnArm.pAnim         = &g_fnAnim;
+    g_fnArm.pColor        = &g_fnColor;
+    g_fnArm.pTextRecs     = g_abPnText;
+    g_nFnBaseCount = 0;
+    g_nFnMonth     = 5;
+
+    /* ---- the report runs first, whatever the balance says ---- */
+    FnGateRun(-3000000, NULL);
+    Check((u16)BdPix(FN_PAD_X, FN_PAD_Y) == AR_CAL_INK,
+          "FundingScreen_DrawExtended blits pFundPad (0x5B5D4) -- the arm calls it at 0x94318 with the ADDRESS of the global, which the callee never uses (0x5B5CC loads it itself)");
+    CheckEqI32(g_nPnBlits, 1, "and its close control (0x5B77C) is the only CONTROL blit -- the pad is painted by PadImage_Blit itself, which is not in the injected log");
+    Check(g_apnPnBlitPad[0] == &g_fnClosePad, "that one blit is g_pUiCloseCtl, and nothing of the ARM's own runs on this path");
+    Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) == 0,
+          "at EXACTLY -3,000,000 the panel is not drawn: 0x943AC CMP #0xFFD23940 / BGE def_8C1B0, and 0xFFD23940 is -3,000,000 signed");
+
+    /* ---- one credit deeper and the whole panel appears ---- */
+    FnGateRun(-3000001, NULL);
+    Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) != 0,
+          "one credit deeper the animated frame is drawn, mode 4 at (2,80) 232x90 (0x943B0..0x943EC) -- x 200 is inside its outer bar");
+
+    /* ---- the animation gate at 0x943F0 ---- */
+    g_nFnAnimProgress = 1;             /* 50*1 = 50 px square: clamped, but still short of 232x90 */
+    FnGateRun(-3000001, NULL);
+    Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) == 0,
+          "with the progress byte at 1 the blit reports the animation incomplete and the arm stops at 0x943F0 BEQ -- the frame is only 50 wide, so x 200 stays dark");
+    g_nFnAnimProgress = 100;
+
+    /* ---- the five bars are all in the projected balance (0x9437C..0x943A0) ---- */
+    static const char *const aazBarSlot[5] = {
+        "slot 0 alone crosses the limit -- g_nFundBar0 @ 0x186594 is in the sum (0x94394)",
+        "slot 1 alone crosses it -- g_nFundBar1 @ 0x186598 (0x94380)",
+        "slot 2 alone crosses it -- g_nFundBar2 @ 0x18659C (0x9437C)",
+        "slot 3 alone crosses it -- g_nFundBar3 @ 0x1865A0 (0x94388)",
+        "slot 4 alone crosses it -- g_nFundBar4 @ 0x1865A4 (0x943A0)",
+    };
+    for (i32 i = 0; i < 5; ++i) {
+        i32 aBars[5] = { 0, 0, 0, 0, 0 };
+        aBars[i] = -3000001;
+        FnGateRun(0, aBars);
+        Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) != 0, aazBarSlot[i]);
+    }
+    {
+        const i32 aSplit[5] = { 0, -1000000, 0, -2000001, 0 };
+        FnGateRun(0, aSplit);
+        Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) != 0,
+              "two bars split across slots still cross the limit -- it is one sum, not one term");
+    }
+    {
+        const i32 aNear[5] = { 0, -1000000, 0, -1999999, 0 };
+        FnGateRun(0, aNear);
+        Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) == 0, "and the same pair one credit short of -3,000,000 is not enough");
+    }
+
+    /* ---- the upkeep loop: every base in range, read from its own 144-byte facility slice ---- */
+    memset(g_abFnGrid, 255, sizeof(g_abFnGrid));   /* 255 is an EMPTY facility cell (Base_CalcMonthlyUpkeep) */
+    FnFillFacilities(0, 36);
+    FnFillFacilities(1, 36);           /* 2 * 36 * 50,000 = 3,600,000 */
+    g_nFnBaseCount = 3;
+    FnGateRun(0, NULL);
+    Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) != 0,
+          "36 filled facility cells at base 0 AND base 1 cross the limit (3,600,000 of upkeep), 0x9435C SUB R6,R6,R0 per base");
+    memset(g_abFnGrid, 255, sizeof(g_abFnGrid));   /* 255 is an EMPTY facility cell (Base_CalcMonthlyUpkeep) */
+    FnFillFacilities(1, 36);
+    FnFillFacilities(2, 36);           /* the same total, shifted one base right */
+    FnGateRun(0, NULL);
+    Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) != 0,
+          "and the same total one base further right still crosses -- the slice follows the index (Base_CalcMonthlyUpkeep reads +480+144*base)");
+    memset(g_abFnGrid, 255, sizeof(g_abFnGrid));   /* 255 is an EMPTY facility cell (Base_CalcMonthlyUpkeep) */
+    FnFillFacilities(0, 36);
+    FnFillFacilities(1, 36);
+    g_nFnBaseCount = 1;                /* only base 0 is inside the loop now */
+    FnGateRun(0, NULL);
+    Check((u16)BdPix(FN_BAR_X, FN_BAR_Y) == 0,
+          "with the base count at 1 only base 0 is summed (0x94330 LDRSB, 0x94370 CMP / BLT) -- 1,800,000 is not enough");
+    g_nFnBaseCount = 0;
+    memset(g_abFnGrid, 255, sizeof(g_abFnGrid));   /* 255 is an EMPTY facility cell (Base_CalcMonthlyUpkeep) */
+
+    /* ---- the three captions: centred on 120 at y 100 / 120 / 140, in the arm's own colour pair ---- */
+    PnSetText(PUFO_FUND_TEXT_CAP0, "");
+    PnSetText(PUFO_FUND_TEXT_CAP1, "");
+    PnSetText(PUFO_FUND_TEXT_CAP2, "");
+    FnGateRun(-3000001, NULL);
+    /* The reference is the same arm run with empty records, plus the three captions drawn by hand with the
+     * original's own literals -- a wrong centre, y, record, colour pair or rounding shows up as a pixel. */
+    (void)Gfx_PackRgb565Pair(&g_fnColor, 150, 50, 50, 50, 1, 1);            /* 0x943F8..0x94418 */
+    PnSetText(PUFO_FUND_TEXT_CAP0, "MMMWW");
+    PnSetText(PUFO_FUND_TEXT_CAP1, "WWQQQ");
+    PnSetText(PUFO_FUND_TEXT_CAP2, "Q1A7");
+    {
+        const char *const psz0 = &g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_CAP0];
+        const char *const psz1 = &g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_CAP1];
+        const char *const psz2 = &g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_CAP2];
+        Text_DrawString(120 - Text_MeasureWidth(psz0) / 2, 100, psz0);      /* 0x94444 MOV R2,#0x64 */
+        Text_DrawString(120 - Text_MeasureWidth(psz1) / 2, 120, psz1);      /* 0x94474 MOV R2,#0x78 */
+        Text_DrawString(120 - Text_MeasureWidth(psz2) / 2, 140, psz2);      /* 0x9449C B loc_92ACC */
+        SolSaveInk();
+    }
+    FnGateRun(-3000001, NULL);
+    SolInkIs("the three captions land centred on x 120 at y 100 / 120 / 140, from records 1712 / 1713 / 1714, "
+             "drawn with the single (150,50,50) over (50,1,1) pair the arm packs at 0x943F8..0x94418");
+    {
+        /* The surface carries palette INDICES, so the pair itself has to be read where it lands. */
+        const u32 uPair1 = g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_FIRST];
+        const u32 uPair2 = g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND];
+        (void)Gfx_PackRgb565Pair(&g_fnColor, 150, 50, 50, 50, 1, 1);   /* 0x94410 #0x96 / #0x32 / #0x32 and 0x32/1/1 */
+        Check(g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_FIRST] == uPair1
+              && g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND] == uPair2,
+              "the pair in the text palette is what 0x943F8..0x94418 packs -- (150,50,50) over (50,1,1), not what the report left there");
+    }
+
+    /* Each record on its own pins the record-to-row pairing, not just "some text appeared". */
+    PnSetText(PUFO_FUND_TEXT_CAP0, "");
+    PnSetText(PUFO_FUND_TEXT_CAP1, "WWQQQ");
+    PnSetText(PUFO_FUND_TEXT_CAP2, "");
+    FnGateRun(-3000001, NULL);
+    SolSaveInk();
+    PnSetText(PUFO_FUND_TEXT_CAP0, "");
+    PnSetText(PUFO_FUND_TEXT_CAP1, "");
+    PnSetText(PUFO_FUND_TEXT_CAP2, "");
+    FnGateRun(-3000001, NULL);
+    (void)Gfx_PackRgb565Pair(&g_fnColor, 150, 50, 50, 50, 1, 1);
+    {
+        const char *const psz1 = &g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_CAP1];
+        PnSetText(PUFO_FUND_TEXT_CAP1, "WWQQQ");
+        Text_DrawString(120 - Text_MeasureWidth("WWQQQ") / 2, 120, "WWQQQ");
+        (void)psz1;
+    }
+    SolInkIs("record 1713 alone appears at the y 120 row (0x94454..0x94480)");
+    PnSetText(PUFO_FUND_TEXT_CAP1, "");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -12809,6 +13152,8 @@ int main(void)
     TestGeoscapeUfoPsiArms();
     TestGeoscapeSoldierArms();
     TestGeoscapeBaseFacArm();
+    TestGeoscapeBaseInfoArm();
+    TestGeoscapeFundingArm();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
