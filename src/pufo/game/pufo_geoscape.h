@@ -1595,6 +1595,8 @@ typedef struct GeoscapeStatusPanelEnv {
     u8                *pbAlienBasePanel;  /* bSmapAlienBasePanel @ 0x187098 */
     UiControl         *pFinalMissionCtl;  /* pFinalMissionCtl @ 0x186B8C */
     u8                *pbFinalMissionCtl; /* bFinalMissionCtlArmed @ 0x187068 */
+    /* The 0x14 map-target panel. */
+    void             (*pfnCancelTarget)(void);      /* Smap_CancelTarget @ 0x84254 */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -1915,6 +1917,42 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_LIST_CANCEL_ANCHOR      0xAD  /* 0x908EC RSB R1,R1,#0xAD: centred on 173 */
 #define PUFO_STATUS_LIST_Y_LABEL            0x113 /* 0x908E8 ORR R2,R2,#3: the label shares the line's y */
 #define PUFO_STATUS_FINAL_MISSION_Y         0x01  /* 0x90960 MOV R2, #1 */
+
+/* 0x909A8: flag 0x14, the map-target panel. Its test prologue is what carries R7 = TEXTS[1238]
+ * (0x909B0) and R10 = 0xBE4 (0x909AC/0x909B4, the MOV #0xBE0 then ORR #4 pair) into the arm.
+ *
+ * bMapSelectionFlag @ 0x159E84 branches at 0x909DC, and the two blocks it selects build the SAME
+ * Ui_AnimExpandBlit call — 0x909E0..0x90A04 and 0x90BAC..0x90BD0 store the same nine values. The flag
+ * only picks the text record: TEXTS[1237] "Крушение " when clear, TEXTS[1238] "Миссия: " when set. The
+ * anim's nKey 0xB4, src 0x28/0x32, nIdx 0 and nMode 0 all come from registers the flag-0x10 test
+ * prologue left behind (0x904DC R7=0x78, 0x904EC R11=0xB4, 0x904F0 R8=0, 0x904F4 R10=0x28), which is
+ * why the values are not literals at this call site.
+ *
+ * Both arms then append `pStatusPanel->apLines[colour slot 0]` — the status panel's own row buffer,
+ * apLines at panel + 0xBE4 — with no bounds test against nLineCount (20 in the shipped build) and no
+ * null check. Only the CLEAR arm adds anything after it: a space (0x90A58), then the size word of
+ * `strategList[colour slot 1]` by its bCraftClass byte at +0x02 (0x90A84 LDRSB, 8-case jumptable at
+ * 0x90A8C: 0→1359, 1/2→1360, 3/4→1361, 5/6→1362, 7→1363, outside 0..7 no append).
+ *
+ * Clear arm: the line at y 0x46 (70); *pGeoscapeCtlA @ 0x186BB4 centred at y 0x73 (115) with
+ * Smap_ResolveInterceptUI installed at 0x90B60 BEFORE the 0x90B68 blit (the reverse of the 0x0B/0x0D/
+ * 0x10/0x1B order); TEXTS[1127] "ОК" centred at y 0x74 (116).
+ * Set arm: the line at y 70; *pGeoscapeCtlB @ 0x186BB0 centred at y 0x66 (102) with Smap_CancelTarget
+ * at 0x90C78 before the 0x90C80 blit; TEXTS[1127] centred at y 0x67 (103); *pGeoscapeCtlA centred at
+ * y 0x7D (125) with Smap_ResolveInterceptUI; TEXTS[1144] "Отмена" centred at y 0x7E (126). The last
+ * centring is shared: both arms run the same 0x90D44..0x90D5C tail with y in R2. */
+#define PUFO_STATUS_FLAG_TARGET_PANEL       0x14 /* 0x909B8 CMP R0, #0x14 */
+#define PUFO_STATUS_TEXT_CRASH              1237 /* 0xF1761 "Крушение ", trailing space */
+#define PUFO_STATUS_TEXT_MISSION_PREFIX     1238 /* 0xF182E "Миссия: ", trailing space */
+#define PUFO_STATUS_TARGET_ANIM_Y           0x3C /* 0x909C8 MOV R2, #0x3C: y 60 */
+#define PUFO_STATUS_TARGET_NH               0x5A /* 0x909EC / 0x90BB8 MOV R3,#0x5A then STR */
+#define PUFO_STATUS_TARGET_Y_LINE           0x46 /* 0x90B24 / 0x90C3C MOV R2,#0x46: y 70 */
+#define PUFO_STATUS_TARGETCTL_Y_OK          0x73 /* 0x90B4C MOV R3,#0x73: CtlA, clear arm, y 115 */
+#define PUFO_STATUS_TARGET_Y_OK_LBL         0x74 /* 0x90BA0 MOV R2,#0x74: y 116 */
+#define PUFO_STATUS_TARGETCTL_Y_CANCEL      0x66 /* 0x90C64 MOV R3,#0x66: CtlB, set arm, y 102 */
+#define PUFO_STATUS_TARGET_Y_CANCEL_LBL     0x67 /* 0x90CC8 MOV R2,#0x67: y 103 */
+#define PUFO_STATUS_TARGETCTL_Y_OK2         0x7D /* 0x90CF0 MOV R3,#0x7D: CtlA, set arm, y 125 */
+#define PUFO_STATUS_TARGET_Y_CANCELLED_LBL  0x7E /* 0x90D40 MOV R2,#0x7E: the TEXTS[1144] row, y 126 */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

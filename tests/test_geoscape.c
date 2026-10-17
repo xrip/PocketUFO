@@ -8699,6 +8699,21 @@ _Static_assert(PUFO_STATUS_LIST_Y_LABEL == 0x113, "0x908E8 ORR R2,R2,#3");
 _Static_assert(PUFO_STATUS_FINAL_MISSION_Y == 0x01, "0x90960 MOV R2, #1");
 _Static_assert(PUFO_GEOUI_ROOT_CTLS == 13, "0x907F0 CMP R0, #0xD, the root-control blit loop");
 
+/* The 0x14 map-target panel @ 0x909A8. */
+_Static_assert(PUFO_STATUS_FLAG_TARGET_PANEL == 0x14, "0x909B8 CMP R0, #0x14");
+_Static_assert(PUFO_STATUS_TEXT_CRASH == 1237, "0x90A0C, unk_F1761 - 0xB38D0 = 1237 * 205");
+_Static_assert(PUFO_STATUS_TEXT_MISSION_PREFIX == 1238, "0x909B0, unk_F182E - 0xB38D0 = 1238 * 205");
+_Static_assert(PUFO_STATUS_TARGET_ANIM_Y == 0x3C, "0x909C8 MOV R2, #0x3C");
+_Static_assert(PUFO_STATUS_TARGET_NH == 0x5A, "0x909EC MOV R3, #0x5A, stored at 0x909F0");
+_Static_assert(PUFO_STATUS_TARGET_Y_LINE == 0x46, "0x90B24 / 0x90C3C MOV R2, #0x46");
+_Static_assert(PUFO_STATUS_TARGETCTL_Y_OK == 0x73, "0x90B4C MOV R3, #0x73");
+_Static_assert(PUFO_STATUS_TARGET_Y_OK_LBL == 0x74, "0x90BA0 MOV R2, #0x74");
+_Static_assert(PUFO_STATUS_TARGETCTL_Y_CANCEL == 0x66, "0x90C64 MOV R3, #0x66");
+_Static_assert(PUFO_STATUS_TARGET_Y_CANCEL_LBL == 0x67, "0x90CC8 MOV R2, #0x67");
+_Static_assert(PUFO_STATUS_TARGETCTL_Y_OK2 == 0x7D, "0x90CF0 MOV R3, #0x7D");
+_Static_assert(PUFO_STATUS_TARGET_Y_CANCELLED_LBL == 0x7E, "0x90D40 MOV R2, #0x7E");
+_Static_assert(PUFO_PANEL_LINES == 500, "the apLines array the arm indexes at panel + 0xBE4 (0x909AC/0x909B4)");
+
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -8737,6 +8752,12 @@ static i32      g_nPnSfxClicks, g_nPnOpenClicks, g_nPnReportClicks, g_nPnApplyCl
 static i32      g_nPnResolveClicks, g_nPnDismissClicks, g_nPnTargetClicks;
 static i32      g_nPnConfirmAltClicks, g_nPnWaypointClicks;
 static i32      g_nPnMapTargetClicks, g_nPnConfirmSelClicks;
+static i32      g_nPnCancelClicks;
+/* The status panel's own row buffers. Geoscape_InitUI builds this panel with 20 rows
+ * (0x86AC0..0x86C30, UiPanel_ctor(pPanel, 20)) and the ctor allocates exactly nLineCount of them,
+ * so apLines[20..499] stay NULL -- which is what the 0x14 arm's unbounded index walks into. */
+#define PN_PANEL_ROWS 20
+static char     g_aPnPanelRow[PN_PANEL_ROWS][PUFO_PANEL_LINE_BYTES];
 static bool     g_bPnReady;
 static BaseSiteRec g_pnSites[8];
 static ObjectRecFull g_pnObj;
@@ -8798,6 +8819,8 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1232, "q6" }, { 1233, "rr6" }, { 1234, "sss6" },
     /* The 0x1B intercept list. */
     { 1235, "t6" }, { 1236, "uu6" },
+    /* The 0x14 map-target panel: the two records bMapSelectionFlag chooses between. */
+    { 1237, "w6" }, { 1238, "aaa6" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -8805,11 +8828,29 @@ static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
 /* The blit callback also records WHICH pad was offered, so an arm that blits the right number of
  * controls but the wrong ones is still caught (the 0x1B arm's thirteen root widgets). */
 static const PadImage *g_apnPnBlitPad[32];
+/* UiControl_BlitActivePad offers the PAD, not the control, so the pad identifies the control (each of
+ * the nine fixture controls has its own). Reading the control's pfnClick at the moment of the blit
+ * makes the handler/blit ORDER observable: the 0x14 arm installs its handler first (0x90B60 then
+ * 0x90B68) while the 0x0B, 0x0D, 0x10 and 0x1B arms do it the other way round. */
+static void (*g_apnPnBlitHandler[32])(void);
+static void (*PnHandlerAtBlit(const PadImage *pPad))(void)
+{
+    const UiControl *const apMap[9] = { &g_pnCtlSfx, &g_pnCtlOpen, &g_pnCtlConfirm, &g_pnCtlApply,
+                                        &g_pnCtlA, &g_pnCtlB, &g_pnCtlRet, &g_pnCtlTarg,
+                                        &g_pnCtlPatrol };
+    for (i32 i = 0; i < 9; ++i) {
+        if (apMap[i]->apPads[0] == pPad) {
+            return apMap[i]->pfnClick;
+        }
+    }
+    return NULL;
+}
 static void PnBlit(const PadImage *pPad, void *pUser)
 {
     (void)pUser;
     if (g_nPnBlits < (i32)(sizeof(g_apnPnBlitPad) / sizeof(g_apnPnBlitPad[0]))) {
         g_apnPnBlitPad[g_nPnBlits] = pPad;
+        g_apnPnBlitHandler[g_nPnBlits] = PnHandlerAtBlit(pPad);
     }
     ++g_nPnBlits;
 }
@@ -8827,6 +8868,7 @@ static void PnConfirmAlt(void)  { ++g_nPnConfirmAltClicks; }
 static void PnWaypoint(void)    { ++g_nPnWaypointClicks; }
 static void PnMapTarget(void)   { ++g_nPnMapTargetClicks; }
 static void PnConfirmSel(void)  { ++g_nPnConfirmSelClicks; }
+static void PnCancelTarget(void){ ++g_nPnCancelClicks; }
 
 static void PnSetText(i32 nRec, const char *psz)
 {
@@ -8875,6 +8917,7 @@ static void PnRun(void)
     g_nPnWaypointClicks = 0;
     g_nPnMapTargetClicks = 0;
     g_nPnConfirmSelClicks = 0;
+    g_nPnCancelClicks = 0;
     memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
     Geoscape_DrawStatusPanel(&g_pnEnv);
 }
@@ -9259,6 +9302,7 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.pbAlienBasePanel       = &g_bPnAlienBase;
     g_pnEnv.pFinalMissionCtl       = &g_pnCtlFinal;
     g_pnEnv.pbFinalMissionCtl      = &g_bPnFinalArmed;
+    g_pnEnv.pfnCancelTarget        = PnCancelTarget;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -10475,6 +10519,181 @@ static void TestStatusPanelInterceptList(void)
                "and this arm reads none of the 0x10 panel's records");
 }
 
+/* The status panel's rows as Geoscape_InitUI's UiPanel_ctor(pPanel, 20) would have them: 20 buffers,
+ * two of them carrying text, the rest empty. apLines[20..499] stay NULL exactly as the ctor leaves
+ * them, which is what the 0x14 arm's unbounded colour-slot index walks into. */
+static void PnSetPanelRows(void)
+{
+    memset(g_aPnPanelRow, 0, sizeof(g_aPnPanelRow));
+    pufo_strncpy(g_aPnPanelRow[3], "k6", PUFO_PANEL_LINE_BYTES);
+    pufo_strncpy(g_aPnPanelRow[4], "kk6", PUFO_PANEL_LINE_BYTES);
+    g_pnPanel.nLineCount = PN_PANEL_ROWS;
+    for (i32 i = 0; i < PN_PANEL_ROWS; ++i) {
+        g_pnPanel.apLines[i] = (u8 *)g_aPnPanelRow[i];
+    }
+}
+
+static void TestStatusPanelTargetPanel(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the map-target panel @ 0x909a8\n");
+    PnFixture(0x14, 3, 1, 0); /* apLines row 3; strateg entry 1 -> bCraftClass 2 -> TEXTS[1360] */
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetPanelRows();
+
+    /* ---- 1. the body ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x909C4 MOV R1, #0xE)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x909C8 MOV R2, #0x3C)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x909F4) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_TARGET_ANIM_Y + PUFO_STATUS_TARGET_NH + 5,
+               "nH 0x5A (0x909EC then 0x909F0) puts the bottom at 155");
+    CheckEqI32(g_pnTime.bPaused, 0, "and the clock keeps running: only the 0x0D panel pauses it");
+
+    /* ---- 2. the anim is the 0x0F panel's anim, value for value ----
+     * 0x8F428..0x8F45C and 0x909C4..0x90A04 hand Ui_AnimExpandBlit the same nine arguments, so the
+     * body ink has to match pixel for pixel. That is what pins nIdx 0, src 0x28/0x32, key 0xB4 and
+     * mode 0 here -- the geometry alone cannot see them. */
+    PnFixture(0x0F, 3, 1, 0);
+    PnEmptySources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase)); /* the baseline is now the 0x0F frame */
+    PnFixture(0x14, 3, 1, 0);
+    PnSetPanelRows();
+    PnEmptySources();
+    PnRun();
+    CheckEqI32(PnDiffRect(20, 120, 219, 145).nCount, 0,
+               "the body ink equals the 0x0F panel's: same nIdx 0, src 0x28/0x32, key 0xB4, mode 0");
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, PUFO_STATUS_TARGET_ANIM_Y - 1).nCount, 0,
+               "and the same box: nothing painted above y=60 in either arm");
+
+    /* ---- 3. the clear arm's line: TEXTS[1237] + apLines[slot 0] + " " + the size word ---- */
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6k6 L2",
+            "y=70 is TEXTS[1237] + apLines[3] + \" \" + TEXTS[1360] (0x90A54, 0x90A60, 0x90B04)");
+    PnFixture(0x14, 4, 1, 0); PnSetPanelRows();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6kk6 L2",
+            "colour SLOT 0 IS the apLines index (0x90A34 MOV R1,#0, 0x90A48 LDR [R3,R10])");
+    PnFixture(0x14, 3, 0, 0); PnSetPanelRows();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6k6 N2",
+            "colour SLOT 1 picks the strateg entry and its +0x02 byte the word (0x90A68, 0x90A84)");
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_pnStrat[1].bCraftClass = 0;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6k6 K2", "class 0 -> TEXTS[1359] (0x90AC8)");
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_pnStrat[1].bCraftClass = 7;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6k6 O2", "class 7 -> TEXTS[1363] (0x90AF8)");
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_pnStrat[1].bCraftClass = 8;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6k6 ", "class 8 is outside the jumptable: ADDLS does not fire and the default appends nothing (0x90A8C/0x90A90)");
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_pnStrat[1].bCraftClass = 0xFF;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6k6 ", "and LDRSB makes 0xFF a NEGATIVE class, which also takes the default");
+    PnFixture(0x14, 3, 5, 0); PnSetPanelRows();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6k6 ", "an entry index past the strateg list yields no entry, so no word (0x90A80)");
+    PnFixture(0x14, 20, 1, 0); PnSetPanelRows();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6 L2",
+            "row 20 is past the panel's 20 rows: the port skips the NULL, the original hands it to strcat (bugs.tsv)");
+    PnFixture(0x14, 255, 1, 0); PnSetPanelRows();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "w6 L2", "the same at the top of the byte: 255 is inside apLines[500] but never allocated");
+
+    /* ---- 4. the clear arm's control and label ---- */
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows();
+    g_pnCtlA.uWidth = 30; /* different from the other controls' 40, so a wrong control shows as a wrong x */
+    PnCapture();
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 15,
+               "CtlA centres on 120 from ITS OWN 30-wide pad (0x90B3C LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK, "at y=115 (0x90B4C)");
+    CheckEqI32(g_pnCtlB.y, 0, "this arm does not touch CtlB at all");
+    CheckEqI32(g_pnCtlConfirm.y, 0, "nor the confirm control");
+    CheckEqI32(g_nPnBlits, 1, "one control blit (0x90B68)");
+    Check(g_pnCtlA.pfnClick == PnResolve, "CtlA gets Smap_ResolveInterceptUI (0x90B5C / 0x90B60)");
+    Check(g_pnCtlB.pfnClick == NULL, "and CtlB keeps no handler from this arm");
+
+    /* One fresh run, with the handler slot emptied first: PnCapture runs the arm twice, so without
+     * this the handler the FIRST run installed would still be there when the second one blits. */
+    g_pnCtlA.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == PnResolve,
+          "the handler is installed BEFORE the blit -- the reverse of the 0x0B, 0x0D, 0x10 and 0x1B arms");
+    PnRowIs(PUFO_STATUS_TARGET_Y_OK_LBL, "m4", "TEXTS[1127] centred on 120 at y=116 (0x90BA0 then 0x90D5C)");
+
+    /* ---- 5. the set arm: TEXTS[1238] + apLines[slot 0], no space and no size word ---- */
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_bPnMapSel = 1;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "aaa6k6",
+            "y=70 is TEXTS[1238] + apLines[3] with NO space and NO size word (0x90BD4, 0x90C1C)");
+    PnFixture(0x14, 4, 1, 0); PnSetPanelRows(); g_bPnMapSel = 1;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "aaa6kk6", "colour SLOT 0 indexes the row here too (0x90C00 then 0x90C14)");
+    PnFixture(0x14, 3, 5, 0); PnSetPanelRows(); g_bPnMapSel = 1;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "aaa6k6",
+            "colour SLOT 1 is not read in this arm: an unusable entry changes nothing");
+
+    /* ---- 6. the set arm's two controls ---- */
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_bPnMapSel = 1;
+    g_pnCtlB.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 15,
+               "CtlB centres on 120 from ITS OWN 30-wide pad (0x90C54)");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_TARGETCTL_Y_CANCEL, "at y=102 (0x90C64)");
+    Check(g_pnCtlB.pfnClick == PnCancelTarget, "CtlB gets Smap_CancelTarget (0x90C74 / 0x90C78)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "CtlA is this arm's SECOND control, at y=125 (0x90CF0)");
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "centred from its own 40-wide pad (0x90CE0)");
+    Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI (0x90D00 / 0x90D04)");
+    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0],
+          "CtlB first (0x90C80), CtlA second (0x90D0C)");
+    g_pnCtlB.pfnClick = NULL;
+    g_pnCtlA.pfnClick = NULL;
+    PnRun();                                                        /* one fresh run, handlers clear */
+    Check(g_apnPnBlitHandler[0] == PnCancelTarget, "CtlB's handler is installed before its 0x90C80 blit");
+    Check(g_apnPnBlitHandler[1] == PnResolve, "and CtlA's before its 0x90D0C blit");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCEL_LBL, "m4", "TEXTS[1127] centred at y=103 (0x90CC8)");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCELLED_LBL, "B2",
+            "TEXTS[1144] centred at y=126 (0x90D14, R9 built at 0x904D8/0x904E0)");
+
+    /* ---- 7. the records, one at a time ---- */
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_bPnMapSel = 0;
+    PnCaptureDropped(PUFO_STATUS_TEXT_CRASH);
+    d = PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_TARGET_Y_LINE + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1237] is the clear arm's line");
+    CheckEqI32(PnDiffRect(0, PUFO_STATUS_TARGET_Y_OK_LBL + PN_GLYPH_DY, BD_SURF_W - 1,
+                          PUFO_STATUS_TARGET_Y_OK_LBL + PN_BAND).nCount, 0,
+               "and dropping it moves nothing else");
+    PnCaptureDropped(PUFO_STATUS_TEXT_MISSION_PREFIX);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "the clear arm never reads TEXTS[1238]");
+    PnCaptureDropped(1360);
+    d = PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_TARGET_Y_LINE + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1360] feeds the size word of the clear arm's line");
+    PnCaptureDropped(1361);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and not TEXTS[1361], which is the selected-contact panel's word");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CANCEL);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "the clear arm has no TEXTS[1144] label -- that one is the set arm's");
+
+    PnFixture(0x14, 3, 1, 0); PnSetPanelRows(); g_bPnMapSel = 1;
+    PnCaptureDropped(PUFO_STATUS_TEXT_MISSION_PREFIX);
+    d = PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_TARGET_Y_LINE + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1238] is the set arm's line");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CRASH);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and the set arm never reads TEXTS[1237]");
+    PnCaptureDropped(1360);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "nor any size record: the switch is only in the clear arm");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CANCEL);
+    d = PnDiffRect(0, PUFO_STATUS_TARGET_Y_CANCELLED_LBL + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_TARGET_Y_CANCELLED_LBL + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1144] is the set arm's second label");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CITY);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and none of the 0x10 panel's records feed this arm");
+    g_bPnMapSel = 0;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -10545,6 +10764,7 @@ int main(void)
     TestStatusPanelPause();
     TestStatusPanelCity();
     TestStatusPanelInterceptList();
+    TestStatusPanelTargetPanel();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

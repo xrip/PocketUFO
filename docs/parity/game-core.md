@@ -17891,3 +17891,70 @@ and 0x944B4, now documented as the shared tail every one of those exits jumps to
 
 Not ported yet in this chain: 0x909A8..0x91CEC (the flag-0x14 target panel, the flag-0x19/0x1C arms and
 the screen-id tail at 0x91CEC) and the screen arms 0x91DC8..0x944B0.
+### Unit 107, part 9: the map-target panel (0x909A8..0x90D60)
+
+The ninth arm of the default chain, flag 0x14. Read with the ABI made explicit, because this arm is
+where that ABI was finally nailed down: Ui_AnimExpandBlit takes FOUR register arguments (pObj, x, y,
+nW) and SIX stack arguments (nH, nIdx, srcX, srcY, nKey, nMode) at SP+0..SP+0x14, which in
+Geoscape_Draw's frame are the slots IDA names nKey@0, g2@4, b2@8, srcY@0xC, var_1B0@0x10,
+nMode@0x14. SoftSurf_BlitSrcRect is the same shape (x, y, nRectW, nRectH in registers; nIdx,
+nColorMid, nColorLow, nKey on the stack). Reading the stores through those slots is what confirms
+every anim argument in this chain -- and it confirmed the 0x1B arm's arguments, which the compiler
+loaded from registers rather than immediates.
+
+The registers those immediates come from: the flag-0x10 TEST prologue (0x904DC..0x904F4) sets
+R7 = 0x78, R11 = 0xB4, R8 = 0, R10 = 0x28 and R9 = 1144 * 205, and all five are callee-saved. That
+prologue runs whenever the chain reaches it, whether or not flag 0x10 was taken -- so the 0x1B anim's
+nH and srcY are R10, its nIdx and nMode are R8, the 0x14 anim's nKey is R11, and the 0x14 arm's
+TEXTS[1144] label uses R9. The values are sticky, not reloaded.
+
+bMapSelectionFlag @ 0x159E84 branches at 0x909DC, and the two blocks it selects -- 0x909E0..0x90A04
+and 0x90BAC..0x90BD0 -- store the SAME six stack values: nH 0x5A, nIdx 0 (R8), srcX 0x28, srcY 0x32,
+nKey 0xB4 (R11) and nMode 0 (R8), and reload nW 0xD0 into R3. The anim call is identical in both
+arms; the flag only picks the text record. R0..R2 (the pad, x 0xE, y 0x3C) are set once at
+0x909C4..0x909D4, before the branch.
+
+Clear arm (0x90A08..0x90BA4):
+- psz = TEXTS[1237] "Крушение "; then strcat the status panel's OWN row buffer,
+  `pStatusPanel->apLines[colour slot 0]` (0x90A30 reads slot 0, 0x90A48 `LDR R1,[R3,R10]` with
+  R10 = 0xBE4 = the apLines offset); then strcat " " (asc_AADB8 at 0x90A58); then strcat the size
+  word of `strategList[colour slot 1]` -- SLOT 1, not slot 0 (0x90A68) -- by its bCraftClass byte at
+  +0x02 (0x90A84 LDRSB), jumptable at 0x90A8C: 0 -> 1359, 1/2 -> 1360, 3/4 -> 1361, 5/6 -> 1362,
+  7 -> 1363. ADDLS only fires for 0..7 unsigned, so a negative class falls to the default at 0x90A90
+  and appends nothing.
+- the line centred at y 70; *pCtlA centred on 120 from its own uWidth at y 0x73 (115);
+  Smap_ResolveInterceptUI installed at 0x90B60 BEFORE the 0x90B68 blit -- the reverse of the 0x0B,
+  0x0D, 0x10 and 0x1B arms; TEXTS[1127] "ОК" centred at y 0x74 (116).
+
+Set arm (0x90BAC..0x90D40): psz = TEXTS[1238] "Миссия: " (via R7, loaded in the test prologue at
+0x909B0) + the same apLines row, with no space and no size word; the line at y 70; *pCtlB centred at
+y 0x66 (102) with Smap_CancelTarget @ 0x84254 installed at 0x90C78 before the 0x90C80 blit; TEXTS[1127]
+centred at y 0x67 (103); *pCtlA centred at y 0x7D (125) with Smap_ResolveInterceptUI; TEXTS[1144]
+centred at y 0x7E (126). Both arms end in the same centring tail at 0x90D44..0x90D5C, with y already
+in R2, and then B 0x90D7C -- the next flag test.
+
+ORIGINAL BUG, in bugs.tsv: 0x90A48 indexes the status panel's apLines by the raw colour byte with no
+bounds test and no null check. That panel is built with 20 rows (Geoscape_InitUI 0x86AC0,
+UiPanel_ctor(pPanel, 20)) and UiPanel_ctor allocates exactly nLineCount buffers, so apLines[20..499]
+is NULL and a slot value of 20..255 hands a NULL to the strcat at 0x90A54. The colour byte is a
+strateg-list index in the arms before this one, so the two roles do not share a bound. The port skips
+a row it cannot read.
+
+Tests: 52 new checks (17,054 across 60 suites, 0 failures) and 13 new _Static_assert pins. Two new
+fixture pieces carry the weight: (1) the panel gets 20 row buffers with text in rows 3 and 4, so the
+apLines index is visible in the drawn line and rows 20 and 255 exercise the guard; (2) the blit
+callback now also snapshots the control's pfnClick AT BLIT TIME (the pad identifies the control), so
+the handler-before-blit order is observable -- on a single fresh run, because PnCapture runs the arm
+twice and the first run would otherwise leave its handler installed. The anim arguments are pinned by
+an equivalence the ARM itself gives: the 0x0F arm's anim at 0x8F428..0x8F45C takes the same nine
+values, so the two arms' body ink must match pixel for pixel -- that is what proves nIdx 0,
+src 0x28/0x32, key 0xB4 and mode 0, which no geometry check can see. 15 mutations, 15 caught (the
+order mutation survived its first version for the double-run reason above and was caught after the
+test was fixed, not after the source was).
+
+IDB: 12 comments, including the Ui_AnimExpandBlit / SoftSurf_BlitSrcRect register-plus-stack argument
+layout at 0x909C4, the sticky flag-0x10 prologue registers at 0x904EC, the identical duplicate anim
+blocks at 0x909DC, and the apLines index bug at 0x90A48. bugs.tsv: 1 new row.
+
+Not ported yet in this chain: 0x90D78..0x91CEC (the flag tests after 0x14 and the screen-id tail) and
+the screen arms 0x91DC8..0x944B0.
