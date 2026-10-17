@@ -11,6 +11,7 @@
 #include "game/pufo_save.h"    /* SmapSite, for the monthly upkeep of a base */
 #include "ui/pufo_geouimanage.h" /* PUFO_GEOUI_CLOCK_DIGIT_PADS, the ten pads at 0x186BF0 */
 #include "ui/pufo_modal.h"       /* UiModalAnim, UiModalLayout, the frame-end dialog */
+#include "ui/pufo_panel.h"       /* UiPanel_TrackHoldRow, the buy/sell tail of screens 10, 11 and 12 */
 #include "util/pufo_rand.h"
 #include "util/pufo_str.h"     /* pufo_strncpy/pufo_strcat, the cost label */
 
@@ -5583,6 +5584,86 @@ i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv)
         return 0;
     }
     return pEnv->pfnPresent(pEnv->pPresentUser);                      /* 0x94538 MOV R0,R4 / 0x9453C */
+}
+
+/* 0x94120..0x94150 and the four copies of the same loop (0x94168..0x94198 for screen 9, 0x93DE0..0x93E08
+ * and 0x93E2C..0x93E54 for 11 and 12, 0x93E68..0x93E90 for 10): blit the active pad of a run of control
+ * pointers read out of the screen's own block. The original spills the loop counter into the shared scratch
+ * dword_186B08 -- the same global the UI open paths and the flag chain's tail use -- and re-reads the
+ * counter from that global on every iteration. The port keeps it local. */
+static void Geoscape_BlitCtlRun(const GeoscapeScreenArmEnv *pEnv, i32 nCtl)
+{
+    if (pEnv->apCtl == NULL) {
+        return;
+    }
+    for (i32 n = 0; n < nCtl; ++n) {
+        (void)UiControl_BlitActivePad(pEnv->apCtl[n], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);
+    }
+}
+
+/* 0x93EB4..0x93F04: the tail screens 10, 11 and 12 all fall into. The gate is the geoscape UI root block's
+ * own byte at +0x35, read through R7 -- Geoscape_Draw's argument (0x8C190 MOV R7,R0), which Render_Frame
+ * sets to 0x1864F8 at 0x2232C. Both panel pointers are re-read from their globals at 0x93ED4 / 0x93EE8, and
+ * both calls get the SAME cursor position (R5/R6 hold nSmapCursorY / nSmapCursorX from 0x93EC0 / 0x93EC4). */
+static void Geoscape_TrackBuySellRows(const GeoscapeBuySellTrackEnv *pEnv)
+{
+    if (pEnv->pbPreviewOk == NULL || *pEnv->pbPreviewOk == 0) {
+        return;                                                     /* 0x93EB8 BEQ def_8C1B0 */
+    }
+    const i32 nX = pEnv->pnCursorX != NULL ? (i32)*pEnv->pnCursorX : 0;
+    const i32 nY = pEnv->pnCursorY != NULL ? (i32)*pEnv->pnCursorY : 0;
+    (void)UiPanel_TrackHoldRow(pEnv->ppPanelB != NULL ? *pEnv->ppPanelB : NULL, nX, nY); /* 0x93ED8 */
+    (void)UiPanel_TrackHoldRow(pEnv->ppPanelC != NULL ? *pEnv->ppPanelC : NULL, nX, nY); /* 0x93EEC */
+}
+
+/* 0x94114..0x94154: screen 8, the research screen. The draw comes FIRST here -- the other arms blit their
+ * pad before calling -- and the callee blits the pad itself (0x73A40), so this arm has no pad blit. The two
+ * controls are the words at aResearchTopics + 0x1D48 / + 0x1D4C (0x160C50, 0x160C54). */
+void Geoscape_DrawResearchArm(const ResearchDrawEnv *pResearchEnv, const GeoscapeScreenArmEnv *pArmEnv)
+{
+    ResearchScreen_Draw(pResearchEnv);                                /* 0x9411C, R0 = &aResearchTopics */
+    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_2);                /* 0x94120..0x94150, CMP #2 at 0x9414C */
+}
+
+/* 0x9415C..0x941A4: screen 9, the manufacturing screen. The pad is the first word of the product block at
+ * 0x159E98; the two controls sit at 0x15EE1C / 0x15EE20 (R6 + 0x4F84, 0x4F88 built as 0x4F00|0x84 at
+ * 0x94174 / 0x9417C); the frame draw comes last and gets the block base in R0 (0x9419C). */
+void Geoscape_DrawManufArm(PadImage *pPad, const ManufFrameEnv *pManufEnv,
+                           const GeoscapeScreenArmEnv *pArmEnv)
+{
+    PadImage_Blit(pPad);                                              /* 0x94160 LDR R0,[R6] / 0x94164 */
+    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_2);                /* 0x94168..0x94198, CMP #2 at 0x94194 */
+    ManufScreen_DrawFrame(pManufEnv);                                 /* 0x941A0 MOV R0,R6 */
+}
+
+/* 0x93E5C..0x93EB4: screen 10, the transfer screen. Four controls here (CMP #4 at 0x93E8C), the transfer
+ * root array's own slots 0x1870DC..0x1870E8. TransferScreen_Draw takes the array in R0, nSelectedBaseIdx
+ * read SIGNED in R1 (0x93EA0..0x93EA8) and byte_1870F4 read SIGNED in R2 (0x93E94..0x93E98) -- the base the
+ * psi screen selected -- and its value is dropped. Then the buy/sell tail. */
+void Geoscape_DrawTransferArm(PadImage *pPad, const TransferDrawEnv *pTransferEnv,
+                              const GeoscapeScreenArmEnv *pArmEnv,
+                              const GeoscapeBuySellTrackEnv *pTrackEnv)
+{
+    PadImage_Blit(pPad);                                              /* 0x93E60 LDR R0,[R5] / 0x93E64 */
+    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_4);                /* 0x93E68..0x93E90, CMP #4 at 0x93E8C */
+    (void)TransferScreen_Draw(pTransferEnv);                          /* 0x93EB0 */
+    Geoscape_TrackBuySellRows(pTrackEnv);                             /* 0x93EB4..0x93F04 */
+}
+
+/* 0x93DD4..0x93E14 (screen 11) and 0x93E20..0x93E58 (screen 12): two instruction-for-instruction identical
+ * prefixes -- *pBuySellScreenPad, then g_aBuySellCtl[0] and [1] -- and ONE shared BuySellScreen_Draw call at
+ * 0x93E10, which screen 11 reaches by falling through and screen 12 by the B at 0x93E58. So the two screens
+ * draw the same frame, and one function covers both. The pad is 0x161A08; the controls are 0x161A0C and
+ * 0x161A10. Both then fall into the same buy/sell tail. */
+void Geoscape_DrawBuySellArm(PadImage *pPad, const BuySellDrawEnv *pDrawEnv,
+                             const GeoscapeScreenArmEnv *pArmEnv,
+                             const GeoscapeBuySellTrackEnv *pTrackEnv)
+{
+    PadImage_Blit(pPad);                                              /* 0x93DD8 / 0x93E24 */
+    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_2);                /* 0x93DE0 / 0x93E2C, CMP #2 */
+    BuySellScreen_Draw(pDrawEnv);                                     /* 0x93E10, the shared call site */
+    Geoscape_TrackBuySellRows(pTrackEnv);                             /* 0x93EB4..0x93F04 */
 }
 
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear

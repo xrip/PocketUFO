@@ -1,39 +1,39 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `d445057`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its sixteenth part -- the frame end of the draw at
-0x944B4..0x94550, ported as `Geoscape_DrawFrameEnd`: 32 new checks, 8/8 mutations caught, 12 line comments plus
-the 21-case screen map as the function comment, four globals named, two wrong IDB item sizes fixed, one ledger
-row. Parts 1..15 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
-`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the
-attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site /
-travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the
-flag-0x16 clone `f3bbc75`, the alien-base panel `3f98d17` and the chain's shared tail `d445057`. What this part
-found:
+Date: 2026-10-17. HEAD before this edit: `84cdb03`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its seventeenth part -- the four thin screen
+arms (screens 8, 9, 10, 11/12) and the tail they share at 0x93EB4..0x93F04: 27 new checks, 17/17 mutations
+caught, 13 arm-site comments, seven wrong IDB item sizes fixed, two ledger rows. Parts 1..16 are behind
+this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order
+questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel
+`ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels
+`e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone
+`f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057` and the frame end `84cdb03`.
+What this part found:
 
-- **The frame end is one block, not an epilogue.** Every arm lands on 0x944B4 -- the jumptable default, the
-  twelve arms that end in `B def_8C1B0`, the flag chain's tail (0x91D3C, 0x91DA4) and the five exits of the 0x1B
-  arm -- except case 19, whose funding block ends with `B loc_92ACC` (0x9449C), and case 20, the only arm that
-  falls through. One port function covers them all.
-- **`BaseAtScreen_Draw` (0x58728) has no argument.** It takes its gate byte, its pad and its panel from the
-  globals 0x158864 / 0x15884C / 0x15885C. That is what makes the `LDR R0,=0x158840` case 20 leaves in R0 at
-  0x944B0 dead -- a ledger row, and the reason the port's env has no field for it.
-- **The mode is read twice.** 0x944C0 tests `MainMenu_nListMode == 4`, 0x944FC re-reads the same global before
-  the `== 3` test at 0x94500, because the first dialog's callee may change it. The port keeps both reads
-  (`nModeA`, `nModeB`). A mutant that cached the mode was left out of the sweep on purpose: nothing between the
-  two tests writes that global, so no check could see the difference.
-- **The dialogs are pinned by geometry, not by counts.** nWidth 0x96 and nLines 1 put the box at x 45, y 148
-  with its last row at 170 and the right border at x 195 -- one column outside the body, the 0x265D4 off-by-one
-  the port keeps. Each record is checked by blanking it with the other mode as a control, so a record swap
-  cannot pass.
-- **`GX_Present` runs inside the draw** (0x9453C, the 0x27788 thunk for `GX_PresentFrame` 0x9ea7c), which is why
-  `Render_Frame`'s geoscape branch (0x22328 / 0x22330) has no present of its own.
-- **IDB hygiene, and one tooling trap.** Four globals named to match the port's `BaseAtUpdateEnv` (0x158840
-  `nBaseAtClass`, 0x15884C `pBaseAtPad`, 0x15885C `pBaseAtPanel`, 0x158864 `bBaseAtActive`); 0x15884C and
-  0x15885C were 1-byte items typed `PadImage *` / `UiPanel *` -- a pointer type on a byte, now 4-byte items in
-  line with the `[R5,#0xC]` and `[R4]` loads. The trap: `ida_name.set_name` with `SN_FORCE` returns True and
-  installs nothing when the name is also a member of a local type, which is exactly the case for the port's
-  struct field names; `SN_NOCHECK` installs it. Worth remembering for every later rename.
+- **The arms are one loop written five times.** Screens 8, 9, 10, 11 and 12 all end the same way: a run of
+  `UiControl_BlitActivePad` calls whose pointers come out of the screen's own block, the loop counter spilled
+  into the shared scratch `dword_186B08` and re-read on every iteration. The counts differ (2, 2, 4, 2, 2) and
+  so do the offsets -- 0x1D48/0x1D4C in the research record, 0x4F84/0x4F88 in the manufacturing block,
+  +4..+0x10 in the transfer array, `g_aBuySellCtl[0..1]`. The port writes the loop once.
+- **Order inside an arm is testable only when the callee blits a control.** Screen 8 draws first and its frame
+  blits nothing on the ungated path; screen 10's frame blits nothing either. So the port pins the
+  pad-before-frame order of screens 9, 10, 11 and 12 with a 2x2 pad placed exactly on the transfer frame's
+  separator column (the separator overwrites the pad's left column -- if the frame ran first, the pad colour
+  would still be there) and the controls-before-frame order of 9 and 11/12 with the frame's own control blit
+  recorded last. Screens 8 and 10 arm/callee order is stated in the citations, not claimed by a check.
+- **Screens 11 and 12 draw the same frame.** Their prefixes are instruction-for-instruction identical and they
+  share one `BuySellScreen_Draw` call at 0x93E10 -- case 11 falls into it, case 12 branches to it (a ledger
+  row). Only their `Geoscape_CloseUI` cases differ.
+- **The transfer arm falls through into the buy/sell list tail.** 0x93EB4 gates on the geoscape root block's
+  byte at +0x35 (0x18652D, read as `[R7,#0x35]` because R7 is the argument Render_Frame sets to 0x1864F8 at
+  0x2232C) and then feeds the map cursor into the two buy/sell scroll lists -- a base-facility preview flag
+  driving transfer-screen tracking (a ledger row; the port keeps it).
+- **IDB hygiene.** The transfer root array 0x1870D8..0x1870E8 and the two manufacturing arm controls
+  0x15EE1C / 0x15EE20 were 1-byte items even though every access is a 4-byte `LDR` -- all seven are 4-byte
+  pointer items now. 0x160C50 / 0x160C54 are commented rather than retyped: that range already belongs to the
+  `aResearchTopics` record layout, and the next two words (0x160C58 / 0x160C5C) are a different pair -- the
+  quantity controls the research frame blits.
 
 IDA note: the MCP tools are still unreachable from this session (the handshake failed at startup), so IDB work
 goes through the JSON-RPC client `C:/Windows/Temp/pufo_scripts/idac.py` against the same server
@@ -41,15 +41,13 @@ goes through the JSON-RPC client `C:/Windows/Temp/pufo_scripts/idac.py` against 
 the prints when the code raises -- a probe needs a try/except per statement. Worth running `/mcp` and
 reconnecting ida-pro-mcp.
 
-Next: 0x91DC8..0x944B0 -- the sixteen screen arms of the switch at 0x8C1B0 (case 1 at 0x91DC8, 3 at 0x93F08, 4
-at 0x92DAC, 5 at 0x92EE4, 6 at 0x9309C, 7 at 0x92AF0, 8..12 at 0x94114 / 0x9415C / 0x93E5C / 0x93DD4 / 0x93E20,
-15 at 0x94304, 16 at 0x941AC, 17 at 0x94288, 18 at 0x942F4, 19 at 0x94314..0x9449C with the shared centring tail
-at 0x92ACC). Every callee they call is already ported, so what is left is the arms themselves and the dispatcher
-wired into `RenderFrameEnv.pfnGeoscapeDraw`. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with
-17286 checks across 60 suites -- the byte figure credits all 33,744 bytes of `Geoscape_Draw` because
-`coverage.py` counts a function once its start address is cited, so it says nothing about how much of that
-function is ported. The read map and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw
-@ 0x8c180 (33,744 B) - read, ported in parts".
+Next: the arms that are not thin -- case 1 (0x91DC8..0x92AC0, the biggest), 3 (0x93F08), 4 (0x92DAC), 5
+(0x92EE4), 6 (0x9309C), 7 (0x92AF0), 16 (0x941AC), 17 (0x94288), 19 (0x94314..0x9449C with the shared centring
+tail at 0x92ACC) -- then the dispatcher into `RenderFrameEnv.pfnGeoscapeDraw`. The gate measures 966/1103
+(87.6%) and 596752/598792 (99.7%) with 17313 checks across 60 suites -- the byte figure credits all 33,744
+bytes of `Geoscape_Draw` because `coverage.py` counts a function once its start address is cited, so it says
+nothing about how much of that function is ported. The read map and the arm table are in
+`docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

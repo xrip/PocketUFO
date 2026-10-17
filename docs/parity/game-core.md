@@ -18332,3 +18332,69 @@ UI open/init paths use it as a temp (0x84B60, 0x84C54, 0x851FC, 0x85838..0x86CCD
 root-blit counter there (reset 0x91D18, CMP #0xD at 0x91D34). Tooling note: ida_name.set_name with SN_FORCE
 returns True and installs nothing when the name is also a member of a local type (the port's struct fields),
 which is exactly this case; SN_NOCHECK installs it.
+
+
+Part 17 -- the thin screen arms 0x93DD4..0x93F04 and 0x94114..0x941A4, ported as Geoscape_DrawResearchArm,
+Geoscape_DrawManufArm, Geoscape_DrawTransferArm and Geoscape_DrawBuySellArm.
+
+Five arms are thin: a pad blit, a run of the screen's own control pads, the screen frame (every frame function
+is ported already), then the frame end of part 16. The run is the same loop five times over -- the counter
+spilled into the shared scratch dword_186B08 and re-read from it every iteration, the control pointer read out
+of the screen's own block -- so the port writes it once (Geoscape_BlitCtlRun).
+
+Case 8 (0x94114..0x94154): ResearchScreen_Draw FIRST (0x9411C, R0 = &aResearchTopics) and the callee blits the
+pad itself at 0x73A40, so this arm has no pad blit at all. Two controls: aResearchTopics + 0x1D48 / + 0x1D4C
+(0x160C50, 0x160C54), the offset built as 0x1D40|8 at 0x9412C / 0x94134, CMP #2 at 0x9414C. The next two words
+(0x160C58 / 0x160C5C) are a different pair -- the quantity controls the frame blits.
+
+Case 9 (0x9415C..0x941A4): [0x159E98] blitted first (0x94160 / 0x94164), then 0x159E98 + 0x4F84 / + 0x4F88
+(0x15EE1C, 0x15EE20; offset built as 0x4F00|0x84 at 0x94174 / 0x9417C, CMP #2 at 0x94194), then
+ManufScreen_DrawFrame with the block base in R0 (0x9419C / 0x941A0).
+
+Case 10 (0x93E5C..0x93EB4): [0x1870D8] (the transfer root array's pad), then FOUR controls -- the array's own
+slots 0x1870DC..0x1870E8 (LDR [R3,#4] at 0x93E78, CMP #4 at 0x93E8C) -- then TransferScreen_Draw(R0 = the
+array, R1 = nSelectedBaseIdx read SIGNED at 0x93EA8, R2 = byte_1870F4 read SIGNED at 0x93E98: the base the psi
+screen selected), value dropped.
+
+Cases 11 and 12 (0x93DD4..0x93E14, 0x93E20..0x93E58): instruction-for-instruction identical prefixes --
+*pBuySellScreenPad (0x161A08), then g_aBuySellCtl[0] and [1] (0x161A0C, 0x161A10) -- and ONE shared
+BuySellScreen_Draw call at 0x93E10: case 11 falls into it, case 12 reaches it with the B at 0x93E58. The two
+screens draw the same frame (a ledger row); only their Geoscape_CloseUI cases differ (0x8C0BC rebuilds the
+controls, 0x8C108 rebuilds the panels and then calls Base_RemoveAllShips and Base_RemoveAllSoldiers).
+
+The tail 0x93EB4..0x93F04, shared by cases 10, 11 and 12: LDRB R3,[R7,#0x35] -- R7 is Geoscape_Draw's argument
+(0x8C190 MOV R7,R0) and Render_Frame passes 0x1864F8 (0x2232C), so the gate is the root block's byte at
+0x18652D (bBaseFacPreviewOk, the base-facility preview flag: the transfer screen drives the buy/sell lists --
+a ledger row). Then UiScrollList_TrackHold on *pBuySellPanelB (0x161A00, re-read at 0x93ED4) and on
+*pBuySellPanelC (0x161A20, re-read at 0x93EE8), both with the SAME cursor position: R5 = nSmapCursorY and
+R6 = nSmapCursorX, loaded at 0x93EC0 / 0x93EC4 and read LDRSH for both lists.
+
+Cases 15 (0x94304) and 18 (0x942F4) are one call each -- FundingScreen_Draw(&pFundPad @ 0x1595DC) and
+Geoscape_DrawScreen(aOptionsListCtl) -- so there is no arm code to port; the dispatcher will call them.
+
+Tests (TestGeoscapeScreenArms, 27 checks; 17313 across 60 suites). Calibrated first: the transfer frame's first
+separator really paints at (130,69) and BaseUi_DrawFrameRails really paints the left rail at x 5. Control blits
+are counted by UiControl_BlitActivePad offering the control's pad to the recorder, so the run is checked by pad
+IDENTITY and by ORDER, not by counts alone: two pads for 8, 9, 11/12 and four for 10, each in slot order. The
+arm pad is a 2x2 glyph of a private colour (0x3A00, palette index 20, slot 20) placed exactly on the transfer
+separator column, which is what makes the pad-before-frame order observable: after the transfer arm the colour
+survives at (131,69) and is gone at (130,69), while the buy/sell arm keeps both -- that frame draws no
+separator on the ungated path. The controls-before-frame order of 9 and 11/12 is pinned by the frame's own
+control (ManufFrameEnv.pCtlReset at 0x70D84, BuySellDrawEnv.pCtlClose at 0x78028 -- unconditional, unlike the
+research frame) being recorded LAST. Screen 8 has no pad of its own: the colour is absent at both columns. The
+tail is checked through the row UiPanel_TrackHoldRow stores at panel+0xC: cursor Y 150 with panel B at nPosY
+100 / nFont 10 gives 5 and panel C at 200 gives -5, and with 0x18652D clear neither panel is touched while the
+four control blits still happen. Screens 8 and 10 have no arm/callee-order marker (neither frame blits a
+control on this path), so those two orders rest on the citations -- stated rather than tested.
+
+Mutations: 17 mutants, all caught (16 by a check, 1 by a crash: the control run with its null guard removed).
+Counts 2->4 and 4->2 in each arm, the loop index shifted by one, each of the three pad blits dropped, the frame
+moved before the pad and the controls in 9, 10 and 11/12, each tail call dropped, the 0x18652D gate removed,
+nSmapCursorX fed instead of nSmapCursorY, and panel C fed twice. Two of them had to be re-authored: MSVC /W4
+fails the build on an unreferenced formal parameter (C4100), so a dropped pad blit needs a (void)pPad.
+
+IDB: 13 comments on the arm sites and the shared tail (0x94114, 0x94120, 0x9415C, 0x94168, 0x9419C, 0x93DD4,
+0x93E0C, 0x93E20, 0x93E5C, 0x93E68, 0x93EB4, 0x93EC0, 0x93EDC). Seven wrong item sizes fixed: 0x1870D8
+(PadImage *) and 0x1870DC..0x1870E8 (UiControl *) and the two manufacturing arm controls 0x15EE1C / 0x15EE20
+were 1-byte items although every access is a 4-byte LDR. Comments (not retypes) at 0x160C50, which sits inside
+the aResearchTopics record layout, and at 0x18652D for its second job as this gate. Saved.

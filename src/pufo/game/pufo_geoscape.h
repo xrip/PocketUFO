@@ -2098,6 +2098,73 @@ typedef struct GeoscapeFrameEndEnv {
 /* Returns the present thunk's value, which is what Render_Frame returns on the geoscape branch. */
 i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv);
 
+/* ---- the short screen arms, 0x93DD4..0x93F04 and 0x94114..0x941A4 ---------------------
+ *
+ * Six arms of the screen switch are thin: blit a pad, blit a run of the screen's own control pads,
+ * call the screen draw (all of them ported already), then the frame end above. The run is the same
+ * loop five times over -- counter spilled into the shared scratch dword_186B08, the control pointer
+ * read out of the screen's own block on every iteration -- so the port writes it once.
+ *
+ * Which controls, in the original's order:
+ *   8  0x94114..0x94154  ResearchScreen_Draw FIRST, then aResearchTopics + 0x1D48 / + 0x1D4C
+ *                        (0x160C50, 0x160C54).
+ *   9  0x9415C..0x941A4  *unk_159E98 blitted first, then 0x15EE1C / 0x15EE20, then ManufScreen_DrawFrame.
+ *  10  0x93E5C..0x93EB4  *0x1870D8 (the transfer root array's pad), then the four controls at
+ *                        0x1870DC..0x1870E8, then TransferScreen_Draw(R0 = the array, R1 = nSelectedBaseIdx
+ *                        read SIGNED at 0x93EA8, R2 = byte_1870F4 read SIGNED at 0x93E98).
+ *  11  0x93DD4..0x93E14  *pBuySellScreenPad @ 0x161A08, then g_aBuySellCtl[0] / [1] (0x161A0C / 0x161A10),
+ *                        then BuySellScreen_Draw at 0x93E10, reached by falling through.
+ *  12  0x93E20..0x93E58  the same three steps, then B 0x93E0C -- the SHARED BuySellScreen_Draw call. The
+ *                        two prefixes are instruction-for-instruction identical, so screens 11 and 12 draw
+ *                        the same frame; only their Geoscape_CloseUI cases differ (controls vs panels).
+ *  15  0x94304           FundingScreen_Draw(&pFundPad @ 0x1595DC) and nothing else: no arm code to port.
+ *  18  0x942F4           Geoscape_DrawScreen(aOptionsListCtl) and nothing else: no arm code to port.
+ *
+ * Screens 10, 11 and 12 then fall into 0x93EB4..0x93F04: while the geoscape UI root block's own byte at
+ * +0x35 (0x18652D, bBaseFacPreviewOk) is set, the map cursor position is fed to the two buy/sell scroll
+ * lists. R7 is Geoscape_Draw's argument (0x8C190 MOV R7,R0) and Render_Frame sets it to 0x1864F8 at
+ * 0x2232C, so the gate is that block's flag byte -- the same one BaseFacScreen_DrawPlacementOverlay
+ * reads. The transfer arm reaches a buy/sell tail: that is the original's shape, not a port choice.
+ *
+ * Deviation: the original spills the loop counter into dword_186B08, a scratch dword every UI open path
+ * reuses; the port keeps it local, as every other user of that global does here. */
+#define PUFO_GEOARM_CTLS_2   2   /* 0x9414C / 0x94194 / 0x93E04 / 0x93E50 CMP R0, #2 */
+#define PUFO_GEOARM_CTLS_4   4   /* 0x93E8C CMP R0, #4 */
+
+typedef struct GeoscapeScreenArmEnv {
+    UiControl *const   *apCtl;          /* the control pointers, in the original's order */
+    UiControlBlitFn     pfnCtlBlit;
+    UiControlBlitFn     pfnCtlBlitEx;
+    void               *pCtlBlitUser;
+} GeoscapeScreenArmEnv;
+
+typedef struct GeoscapeBuySellTrackEnv {
+    const u8   *pbPreviewOk;            /* bBaseFacPreviewOk @ 0x18652D, the root block's +0x35 byte */
+    UiPanel   **ppPanelB;               /* pBuySellPanelB @ 0x161A00, the "<" column (0x93EC8, re-read 0x93ED4) */
+    UiPanel   **ppPanelC;               /* pBuySellPanelC @ 0x161A20 (0x93EDC, re-read 0x93EE8) */
+    const i16  *pnCursorX;              /* nSmapCursorX, LDRSH at 0x93ED0 / 0x93EE4 */
+    const i16  *pnCursorY;              /* nSmapCursorY, LDRSH at 0x93ECC / 0x93EE0 */
+} GeoscapeBuySellTrackEnv;
+
+/* Tags the arm prototypes name. pufo_baseui.h owns the definitions and includes THIS header, so the
+ * port cannot include it back -- the tags are enough for a pointer parameter. */
+struct ResearchDrawEnv;
+struct ManufFrameEnv;
+struct TransferDrawEnv;
+struct BuySellDrawEnv;
+
+void Geoscape_DrawResearchArm(const struct ResearchDrawEnv *pResearchEnv,
+                              const GeoscapeScreenArmEnv *pArmEnv);
+void Geoscape_DrawManufArm(PadImage *pPad, const struct ManufFrameEnv *pManufEnv,
+                           const GeoscapeScreenArmEnv *pArmEnv);
+void Geoscape_DrawTransferArm(PadImage *pPad, const struct TransferDrawEnv *pTransferEnv,
+                              const GeoscapeScreenArmEnv *pArmEnv,
+                              const GeoscapeBuySellTrackEnv *pTrackEnv);
+/* Screens 11 and 12: one function for the two identical prefixes. */
+void Geoscape_DrawBuySellArm(PadImage *pPad, const struct BuySellDrawEnv *pDrawEnv,
+                             const GeoscapeScreenArmEnv *pArmEnv,
+                             const GeoscapeBuySellTrackEnv *pTrackEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

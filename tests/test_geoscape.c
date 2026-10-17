@@ -11721,6 +11721,240 @@ static void TestGeoscapeFrameEnd(void)
     g_feEnv.pfnPresent = FePresent;
 }
 
+/* ---- Geoscape_Draw's short screen arms, 0x93DD4..0x93F04 and 0x94114..0x941A4 --------------------
+ *
+ * The four thin arms: a pad blit, a run of the screen's own control pads, the screen frame, and for
+ * screens 10, 11 and 12 the buy/sell list tail. Every callee env here is zeroed except the fields its
+ * first, ungated block needs, so what is measured is the ARM's own work. UiControl_BlitActivePad offers
+ * the control's PAD to PnBlit, which records it without painting -- so the control run is checked by pad
+ * identity and by ORDER, while the pad and frame ink is checked on the surface.
+ *
+ * The arm pad is a 2x2 glyph of one private colour placed exactly on the transfer frame's first
+ * separator column: that is what makes the pad-before-frame order of screens 9, 10, 11 and 12 observable
+ * (the separator overwrites the pad's left column). For screens 8 and 10 the arm/callee order has no
+ * such marker -- the research frame blits no control on this path and the transfer frame blits none
+ * either -- so those two orders rest on the citations, which is stated rather than tested. */
+
+static UiControl               g_arCtl[4];              /* the arm's control run */
+static PadImage                g_arCtlPad[4];
+static UiControl              *g_apArCtl[4];
+static PadImage                g_arArmPad;              /* the arm's own pad */
+static u8                      g_abArArmGlyph[8];       /* 2x2, every pixel index 20 */
+static GeoscapeScreenArmEnv    g_arArm;
+static GeoscapeBuySellTrackEnv g_arTrack;
+static ResearchDrawEnv         g_arResearch;
+static ManufFrameEnv           g_arManuf;
+static TransferDrawEnv         g_arTransfer;
+static BuySellDrawEnv          g_arBuySell;
+static GfxColorEnv             g_arColor;
+static u8                      g_bArPreviewOk;
+static i16                     g_nArCurX, g_nArCurY;
+static UiPanel                 g_arPanelB, g_arPanelC;  /* the two lists the tail feeds */
+static UiPanel                *g_pArPanelB;             /* the globals the tail re-reads (0x93ED4, 0x93EE8) */
+static UiPanel                *g_pArPanelC;
+static UiControl               g_arCtlFrame;            /* a control the CALLEE blits */
+static PadImage                g_arFramePad;
+
+#define AR_ARM_X      130   /* the transfer frame's first separator column (0x981A8) */
+#define AR_ARM_Y      69
+#define AR_ARM_INK  0x3A00  /* g_aPalette[PN_TEST_PAL_SLOT][20], clear of every other fixture glyph */
+
+/* The row UiPanel_TrackHoldRow stores at panel+0xC (its own write is gap_0 + 12). */
+static i32 *ArPanelRowSlot(UiPanel *pPanel)
+{
+    return (i32 *)(void *)(pPanel->gap_0 + 12);
+}
+
+static void ArReset(void)
+{
+    g_nPnBlits = 0;
+    memset(g_apnPnBlitPad, 0, sizeof(g_apnPnBlitPad));
+    memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
+}
+
+static void TestGeoscapeScreenArms(void)
+{
+    printf("\nGeoscape_Draw's short screen arms @ 0x93dd4 / 0x93e20 / 0x93e5c / 0x94114 / 0x9415c\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+
+    for (i32 i = 0; i < 4; ++i) {
+        memset(&g_arCtl[i], 0, sizeof(g_arCtl[i]));
+        memset(&g_arCtlPad[i], 0, sizeof(g_arCtlPad[i]));
+        g_arCtlPad[i].uWidth  = 2;
+        g_arCtlPad[i].uHeight = 2;
+        g_arCtl[i].apPads[0]  = &g_arCtlPad[i];        /* a pad must exist or nothing is offered */
+        g_arCtl[i].bEnabled   = 1;
+        g_arCtl[i].nMode      = 0;
+        g_arCtl[i].nState     = 0;
+        g_arCtl[i].x          = (i16)(200 + 10 * i);   /* clear of the rails and of the arm pad */
+        g_arCtl[i].y          = 200;
+        g_apArCtl[i]          = &g_arCtl[i];
+    }
+    memset(&g_arArmPad, 0, sizeof(g_arArmPad));
+    g_abArArmGlyph[0] = 2;  g_abArArmGlyph[1] = 0;     /* u16 width 2 */
+    g_abArArmGlyph[2] = 2;  g_abArArmGlyph[3] = 0;     /* u16 height 2 */
+    for (i32 i = 0; i < 4; ++i) {
+        g_abArArmGlyph[4 + i] = 20;
+    }
+    g_arArmPad.pData    = g_abArArmGlyph;
+    g_arArmPad.uWidth   = 2;
+    g_arArmPad.uHeight  = 2;
+    g_arArmPad.nOriginX = AR_ARM_X;
+    g_arArmPad.nOriginY = AR_ARM_Y;
+    g_arArmPad.nMode    = PN_TEST_PAL_SLOT;
+    g_aPalette[PN_TEST_PAL_SLOT][20] = (u32)AR_ARM_INK;
+
+    memset(&g_arCtlFrame, 0, sizeof(g_arCtlFrame));
+    memset(&g_arFramePad, 0, sizeof(g_arFramePad));
+    g_arFramePad.uWidth  = 2;
+    g_arFramePad.uHeight = 2;
+    g_arCtlFrame.apPads[0] = &g_arFramePad;
+    g_arCtlFrame.bEnabled  = 1;
+    g_arCtlFrame.nMode     = 0;
+    g_arCtlFrame.nState    = 0;
+    g_arCtlFrame.x         = 210;
+    g_arCtlFrame.y         = 200;
+
+    memset(&g_arArm, 0, sizeof(g_arArm));
+    g_arArm.apCtl        = g_apArCtl;
+    g_arArm.pfnCtlBlit   = PnBlit;
+    g_arArm.pfnCtlBlitEx = PnBlitEx;
+
+    /* The tail's two lists: nFont 10 so the row is (nY - nPosY) / 10, and bFlag7073 clear so the
+     * callee stores the row and returns -- no hover repeat, no click. */
+    memset(&g_arPanelB, 0, sizeof(g_arPanelB));
+    memset(&g_arPanelC, 0, sizeof(g_arPanelC));
+    g_arPanelB.nPosY = 100;
+    g_arPanelB.nFont = 10;
+    g_arPanelC.nPosY = 200;
+    g_arPanelC.nFont = 10;
+    g_nArCurX     = 50;
+    g_nArCurY     = 150;                              /* row 5 in panel B, -5 in panel C */
+    g_bArPreviewOk = 1;
+    memset(&g_arTrack, 0, sizeof(g_arTrack));
+    g_pArPanelB = &g_arPanelB;
+    g_pArPanelC = &g_arPanelC;
+    g_arTrack.pbPreviewOk = &g_bArPreviewOk;
+    g_arTrack.ppPanelB    = &g_pArPanelB;             /* the callee re-reads the pointer (0x93ED4) */
+    g_arTrack.ppPanelC    = &g_pArPanelC;
+    g_arTrack.pnCursorX   = &g_nArCurX;
+    g_arTrack.pnCursorY   = &g_nArCurY;
+
+    /* Every callee env is zeroed but for the fields the first ungated block touches. */
+    memset(&g_arResearch, 0, sizeof(g_arResearch));
+    g_arResearch.pColor    = &g_arColor;
+    g_arResearch.pTextRecs = (const char *)g_abPnText;
+    g_arResearch.apSiteRecs = g_pnSites;
+    memset(&g_arManuf, 0, sizeof(g_arManuf));
+    g_arManuf.pColor       = &g_arColor;
+    g_arManuf.pTextRecs    = (const char *)g_abPnText;
+    g_arManuf.apSiteRecs   = g_pnSites;
+    g_arManuf.pCtlReset    = &g_arCtlFrame;           /* 0x70D84: blitted when no product is selected */
+    g_arManuf.pfnCtlBlit   = PnBlit;
+    g_arManuf.pfnCtlBlitEx = PnBlitEx;
+    memset(&g_arTransfer, 0, sizeof(g_arTransfer));
+    g_arTransfer.pColor    = &g_arColor;
+    g_arTransfer.pTextRecs = (const char *)g_abPnText;
+    g_arTransfer.apSiteRecs = g_pnSites;
+    memset(&g_arBuySell, 0, sizeof(g_arBuySell));
+    g_arBuySell.pColor     = &g_arColor;
+    g_arBuySell.pTextRecs  = (const char *)g_abPnText;
+    g_arBuySell.apSiteRecs = g_pnSites;
+    g_arBuySell.pCtlClose  = &g_arCtlFrame;           /* 0x78028: unconditional, unlike the research frame */
+    g_arBuySell.pfnCtlBlit = PnBlit;
+    g_arBuySell.pfnCtlBlitEx = PnBlitEx;
+
+    /* ---- calibration: the two markers the checks below rely on ---- */
+    ArReset();
+    (void)TransferScreen_Draw(&g_arTransfer);
+    Check((u16)BdPix(AR_ARM_X, AR_ARM_Y) != 0,
+          "the transfer frame's first separator paints at (130,69), so the order check has something "
+          "to overwrite (0x981A8, height nBand + 2 = 2 with no panel)");
+    Check((u16)BdPix(5, 3) != 0,
+          "BaseUi_DrawFrameRails paints the left rail at x 5 -- the marker that a screen frame ran");
+
+    /* ---- screen 8, 0x94114..0x94154: draw first, then two controls, and NO pad of its own ---- */
+    ArReset();
+    Geoscape_DrawResearchArm(&g_arResearch, &g_arArm);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2,
+               "the research arm blits two controls (0x94120..0x94150, CMP R0,#2 at 0x9414C)");
+    Check(g_apnPnBlitPad[0] == &g_arCtlPad[0] && g_apnPnBlitPad[1] == &g_arCtlPad[1],
+          "and they are aResearchTopics + 0x1D48 then + 0x1D4C (0x160C50, 0x160C54), in that order");
+    Check((u16)BdPix(AR_ARM_X, AR_ARM_Y) == 0 && (u16)BdPix(AR_ARM_X + 1, AR_ARM_Y) == 0,
+          "the research arm blits no pad of its own -- the frame blits *ppScreen at 0x73A40 instead");
+    Check((u16)BdPix(5, 3) != 0, "and ResearchScreen_Draw ran (0x9411C): its rails are on the surface");
+
+    /* ---- screen 9, 0x9415C..0x941A4: pad, two controls, then the frame ---- */
+    ArReset();
+    Geoscape_DrawManufArm(&g_arArmPad, &g_arManuf, &g_arArm);
+    Check((u16)BdPix(AR_ARM_X + 1, AR_ARM_Y) == AR_ARM_INK,
+          "the arm blits *unk_159E98 (0x94160 / 0x94164): its glyph is on the surface");
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2 + 1,
+               "two arm controls plus the frame's own reset control -- the frame ran (0x941A0)");
+    Check(g_apnPnBlitPad[0] == &g_arCtlPad[0] && g_apnPnBlitPad[1] == &g_arCtlPad[1],
+          "the arm's run is 0x15EE1C then 0x15EE20 (R6 + 0x4F84, 0x4F88 built at 0x94174 / 0x9417C)");
+    Check(g_apnPnBlitPad[2] == &g_arFramePad,
+          "and it comes BEFORE ManufScreen_DrawFrame: the frame's reset control is the LAST blit");
+    Check((u16)BdPix(5, 3) != 0, "and the manuf rails are on the surface too");
+
+    /* ---- screen 10, 0x93E5C..0x93F04: pad, four controls, frame, then the buy/sell tail ---- */
+    ArReset();
+    *ArPanelRowSlot(&g_arPanelB) = -999;
+    *ArPanelRowSlot(&g_arPanelC) = -999;
+    Geoscape_DrawTransferArm(&g_arArmPad, &g_arTransfer, &g_arArm, &g_arTrack);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_4,
+               "the transfer arm blits FOUR controls (0x93E68..0x93E90, CMP R0,#4 at 0x93E8C)");
+    Check(g_apnPnBlitPad[0] == &g_arCtlPad[0] && g_apnPnBlitPad[1] == &g_arCtlPad[1]
+          && g_apnPnBlitPad[2] == &g_arCtlPad[2] && g_apnPnBlitPad[3] == &g_arCtlPad[3],
+          "in slot order -- the transfer root array's own controls 0x1870DC..0x1870E8");
+    Check((u16)BdPix(AR_ARM_X + 1, AR_ARM_Y) == AR_ARM_INK,
+          "the arm pad (the array's [0], blitted at 0x93E64) painted its right column");
+    Check((u16)BdPix(AR_ARM_X, AR_ARM_Y) != AR_ARM_INK,
+          "and the frame's separator overwrote its left column: the pad blit precedes TransferScreen_Draw");
+    CheckEqI32(*ArPanelRowSlot(&g_arPanelB), 5,
+               "the tail feeds nSmapCursorY 150 into panel B: (150 - 100) / 10 = 5 (0x93ED8)");
+    CheckEqI32(*ArPanelRowSlot(&g_arPanelC), -5,
+               "and into panel C with the SAME cursor: (150 - 200) / 10 = -5 (0x93EEC)");
+    g_bArPreviewOk = 0;
+    ArReset();
+    *ArPanelRowSlot(&g_arPanelB) = -999;
+    *ArPanelRowSlot(&g_arPanelC) = -999;
+    Geoscape_DrawTransferArm(&g_arArmPad, &g_arTransfer, &g_arArm, &g_arTrack);
+    CheckEqI32(*ArPanelRowSlot(&g_arPanelB), -999,
+               "with bBaseFacPreviewOk clear (0x18652D, the root block's +0x35 byte read at 0x93EB4) "
+               "neither list is touched");
+    CheckEqI32(*ArPanelRowSlot(&g_arPanelC), -999, "and neither is the second one");
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_4, "while the four control blits still happen");
+    g_bArPreviewOk = 1;
+
+    /* ---- screens 11 and 12, 0x93DD4..0x93E14 and 0x93E20..0x93E58: one function for both ---- */
+    ArReset();
+    *ArPanelRowSlot(&g_arPanelB) = -999;
+    Geoscape_DrawBuySellArm(&g_arArmPad, &g_arBuySell, &g_arArm, &g_arTrack);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2 + 1,
+               "the buy/sell arm blits two controls plus the frame's unconditional close control");
+    Check(g_apnPnBlitPad[0] == &g_arCtlPad[0] && g_apnPnBlitPad[1] == &g_arCtlPad[1],
+          "g_aBuySellCtl[0] then [1] (0x161A0C, 0x161A10) -- 0x93DF0 / 0x93DFC reading [R3,#4]");
+    Check(g_apnPnBlitPad[2] == &g_arFramePad,
+          "and BuySellScreen_Draw comes after them (0x93E10, the call site screens 11 and 12 share)");
+    Check((u16)BdPix(AR_ARM_X, AR_ARM_Y) == AR_ARM_INK
+          && (u16)BdPix(AR_ARM_X + 1, AR_ARM_Y) == AR_ARM_INK,
+          "the arm pad survives whole here: this frame draws no separator on the ungated path");
+    CheckEqI32(*ArPanelRowSlot(&g_arPanelB), 5, "and the same tail runs for the buy/sell arm (0x93EB4)");
+
+    /* ---- the arm guard: no controls, but the frame still draws ---- */
+    ArReset();
+    GeoscapeScreenArmEnv noCtl = g_arArm;
+    noCtl.apCtl = NULL;
+    Geoscape_DrawBuySellArm(&g_arArmPad, &g_arBuySell, &noCtl, &g_arTrack);
+    CheckEqI32(g_nPnBlits, 1, "a fixture with no control run blits only the frame's own control");
+    CheckEqI32(*ArPanelRowSlot(&g_arPanelB), 5, "and its tail still runs");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -11800,6 +12034,7 @@ int main(void)
     TestStatusPanelAlienBase();
     TestStatusPanelChainTail();
     TestGeoscapeFrameEnd();
+    TestGeoscapeScreenArms();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
