@@ -1554,12 +1554,21 @@ typedef struct GeoscapeStatusPanelEnv {
     /* The order questions, 0x8F250..0x8F9E0. */
     Ship *const       *apCraft;           /* Map.apCraft @ root + 0x10AC */
     BaseSiteRec       *apSiteRecs;        /* aSiteRecs @ 0x186C40, 64-byte records, name at +0x1A */
-    const i32         *pnSelectedShipIdx; /* 0x187054, what the 0x0F arm names the craft by */
+    i32              *pnSelectedShipIdx;  /* 0x187054: read by 0x0F and 0x0E, WRITTEN by 0x0B at 0x8FA90 */
     void             (*pfnResolveInterceptUI)(void);  /* Smap_ResolveInterceptUI @ 0x84964 */
     void             (*pfnDismissSelected)(void);     /* Smap_DismissSelected @ 0x84428 */
     void             (*pfnConfirmCraftTarget)(void);  /* Smap_ConfirmCraftTarget @ 0x842ec */
     void             (*pfnConfirmSelectedAlt)(void);  /* Smap_ConfirmSelectedAlt @ 0x853e4 */
     void             (*pfnSetWaypoint)(void);         /* Smap_SetWaypoint @ 0x85440 */
+    /* The 0x0B craft-detail card. */
+    const PadImage    *pStripPad;         /* the pad pointer at 0x186BBC, re-blitted behind the card */
+    u8                *pbInterceptDone;   /* bInterceptDone @ 0x18709C, byte 0 of the block the default
+                                           * arm reads at +4 */
+    UiControl         *pCtlReturnBase;    /* *pCtlNameEditBackspace @ 0x186BA8, labelled "Вернуться на базу" */
+    UiControl         *pCtlNewTarget;     /* *pCtlNameEditAccept @ 0x186B9C, labelled "Выбрать нов. цель" */
+    UiControl         *pCtlPatrol;        /* *unk_186B98, made in Geoscape_InitUI, labelled "Патруль" */
+    void             (*pfnSelectMapTarget)(void);     /* Smap_SelectMapTarget @ 0x84484 */
+    void             (*pfnConfirmSelected)(void);     /* Smap_ConfirmSelected @ 0x845d8 */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -1703,6 +1712,78 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_Y_ORDER_CANCEL       0x7D /* 0x8F74C / 0x8F980 MOV R2, #0x7D: "Отмена" and 0x0E's "OK" */
 #define PUFO_STATUS_ORDERCTL_Y_0E_CONF   0x96 /* 0x8F904 MOV R3, #0x96: the 0x0E confirm control */
 #define PUFO_STATUS_Y_ORDER_RETARGET     0x96 /* 0x8F9D4 MOV R2, #0x96: its label */
+
+/* ---- the selected craft's detail card, 0x8F9E4..0x9021C -------------------------------
+ *
+ * Flag 0x0B draws the card of the craft the message names. It is the only arm that WRITES the
+ * selected-ship global: 0x8FA90 stores line 0's colour slot 0 into 0x187054 and every read after
+ * that goes through the global, so the card's own craft is the colour value, not whatever the click
+ * left there. Before anything else it re-blits the zoom-strip pad @ 0x186BBC at its own origin with
+ * `SoftSurf_BlitSrcRect(pad.x, pad.y, pad.w, pad.h, 0x3C, 0x78, 0x82, 0x96)` (0x8F9F8..0x8FA30) and
+ * then opens the anim frame at (0xE, 5) size (0xD0, 0xDC) (0x8FA34..0x8FA70).
+ *
+ * Four centred lines, then the weapon loop:
+ *   TEXTS[1216] "Корабль: " + Ship_FormatDisplayName(0x187054) at y=15
+ *   TEXTS[1214] "База: "    + aSiteRecs[Ship.bHomeBase @ +3].abName at y=30
+ *   TEXTS[1222] "Скорость: " + itoa(Ship.uFuelCap @ +0x10 as u16) at y=45 -- this is the field the
+ *       radar also calls the craft's speed (uFuelCap / 60), printed raw here
+ *   TEXTS[1223] "Топливо: "  + itoa(100 * uRangeRemain @ +8 / uRangeMax @ +0xA) + "%" at y=60, the
+ *       same _rt_sdiv shape as BasePlaneScreen_DrawCraftDetail's fuel line: the divisor is in R0,
+ *       there is no zero test, and the RANGE pair is labelled as fuel
+ *   for slot 0 and 1: TEXTS[1224] "Оружие 1: " / TEXTS[1225] "Оружие 2: " with the weapon name, and
+ *   TEXTS[1226] "Боезапас: " with the count under it. Rows are 30 apart: the weapon row is
+ *   y = 75 + 30*slot (0x8FE6C/0x8FE74) and the ammo row y = 90 + 30*slot (0x8FF70/0x8FF74). A weapon
+ *   id of 0 draws NEITHER row (0x8FE50 CMP #0 / BEQ).
+ *
+ * The weapon names are only known for ids 25..30: they append TEXTS[1350..1355] and read the ammo
+ * count out of Ship.bAmmo25/26/27 @ +0x3D..+0x3F and bAmmo29/30 @ +0x40..+0x41. Id 28 is the odd one
+ * out -- it still appends TEXTS[1353] but sets the count to -1, which the tail prints as the literal
+ * aNA "N.A." (0x8FF3C). An id outside 25..30 that is not zero appends NO name at all (the line stays
+ * the "Оружие N: " label) and its count is the 0 that 0x8FCBC left in R11.
+ *
+ * The count is then halved. If the two weapon ids are equal and this is slot 0 and ammo/2 == 1 the
+ * original rounds up (0x8FF0C..0x8FF18), otherwise it rounds down (0x8FF28..0x8FF30); both arms add 1
+ * first when the value is negative, which only matters for the -1 sentinel that took the "N.A." exit
+ * already.
+ *
+ * Four controls, all centred on 120, y 140 / 160 / 180 / 200, from *pCtlNameEditBackspace @ 0x186BA8,
+ * *pCtlNameEditAccept @ 0x186B9C, *unk_186B98 and *pGeoscapeCtlB @ 0x186BB0, with TEXTS[1227]
+ * "Вернуться на базу" at 140, TEXTS[1228] "Выбрать нов. цель" at 160, TEXTS[1229] "Патруль" at 180 and
+ * TEXTS[1230] "Отмена" at 201 -- the last one only while bInterceptDone @ 0x18709C is zero, which is
+ * also the condition that makes pGeoscapeCtlB blit a SECOND time (0x900AC..0x900B4). Their handlers
+ * depend on Ship.bContactMsg @ +0x3C: with it set all four get Smap_ResolveInterceptUI; with it clear
+ * they get Smap_DismissSelected, Smap_SelectMapTarget (which OVERWRITES the Smap_DismissSelected
+ * store on the same control at 0x8FFE0/0x8FFEC), Smap_ConfirmSelected and Smap_ResolveInterceptUI.
+ * The store through 0x186B98 at 0x8FFF8 is unconditional while its value is loaded conditionally, so
+ * that control gets ResolveInterceptUI or ConfirmSelected depending on bContactMsg.
+ */
+#define PUFO_STATUS_FLAG_CRAFT_DETAIL   0x0B /* 0x8F9F0 CMP R0, #0xB: the selected craft's card */
+#define PUFO_STATUS_TEXT_WEAPON1        1224 /* "Оружие 1: " */
+#define PUFO_STATUS_TEXT_WEAPON2        1225 /* "Оружие 2: " */
+#define PUFO_STATUS_TEXT_AMMO           1226 /* "Боезапас: " */
+#define PUFO_STATUS_TEXT_RETURN_BASE    1227 /* "Вернуться на базу" */
+#define PUFO_STATUS_TEXT_NEW_TARGET     1228 /* "Выбрать нов. цель" */
+#define PUFO_STATUS_TEXT_PATROL         1229 /* "Патруль" */
+#define PUFO_STATUS_TEXT_CANCEL_ORDER   1230 /* "Отмена", a second record with the 1144 text */
+#define PUFO_STATUS_TEXT_SPEED_VALUE    1222 /* "Скорость: " */
+#define PUFO_STATUS_TEXT_FUEL_VALUE     1223 /* "Топливо: " */
+#define PUFO_STATUS_TEXT_WEAPON_NAME_FIRST 1350 /* 1350..1355, weapon ids 25..30 (0x8FE3C..0x8FDB0) */
+#define PUFO_STATUS_WEAPON_ID_FIRST        0x19 /* 0x8FD80 CMP R8, #0x19 */
+#define PUFO_STATUS_WEAPON_ID_LAST         0x1E /* 0x8FDAC CMP R8, #0x1E */
+#define PUFO_STATUS_WEAPON_ID_NO_AMMO      0x1C /* 0x8FDF8 MOV R11, #-1: id 28 prints "N.A." */
+#define PUFO_STATUS_DETAIL_NH              0xDC /* 0x8FA50 MOV R3, #0xDC: the card's anim height */
+#define PUFO_STATUS_Y_DETAIL_SHIP          0x0F /* 0x8FAEC MOV R2, #0xF: "Корабль:" */
+#define PUFO_STATUS_Y_DETAIL_BASE          0x1E /* 0x8FB74 MOV R2, #0x1E: "База:" */
+#define PUFO_STATUS_Y_DETAIL_SPEED         0x2D /* 0x8FBF4 MOV R2, #0x2D: "Скорость:" */
+#define PUFO_STATUS_Y_DETAIL_FUEL          0x3C /* 0x8FCA4 MOV R2, #0x3C: "Топливо:" */
+#define PUFO_STATUS_DETAIL_ROW_STEP        0x1E /* 0x8FE64 MOV R8, #0x1E: the weapon rows are 30 apart */
+#define PUFO_STATUS_DETAIL_Y_WEAPON0       0x4B /* 0x8FE74 ADD R2, R1, #0x4B: the first weapon row */
+#define PUFO_STATUS_DETAIL_Y_AMMO0         0x5A /* 0x8FF70 ADD R1, R10, #3 then MUL by 0x1E: 90, 120 */
+#define PUFO_STATUS_DETAILCTL_Y_RETURN     0x8C /* 0x9005C MOV R3, #0x8C */
+#define PUFO_STATUS_DETAILCTL_Y_TARGET     0xA0 /* 0x90068 MOV R3, #0xA0 */
+#define PUFO_STATUS_DETAILCTL_Y_PATROL     0xB4 /* 0x90074 MOV R3, #0xB4 */
+#define PUFO_STATUS_DETAILCTL_Y_CANCEL     0xC8 /* 0x90080 MOV R3, #0xC8 */
+#define PUFO_STATUS_Y_DETAIL_CANCEL_LBL    0xC9 /* 0x90210 MOV R2, #0xC9: "Отмена", only when not done */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

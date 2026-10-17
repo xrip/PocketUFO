@@ -8625,6 +8625,37 @@ _Static_assert(PUFO_STATUS_ORDERCTL_Y_BOTTOM == 0x7C, "0x8F5B0 MOV R6, #0x7C");
 _Static_assert(PUFO_STATUS_Y_ORDER_CANCEL == 0x7D, "0x8F74C / 0x8F980 MOV R2, #0x7D");
 _Static_assert(PUFO_STATUS_ORDERCTL_Y_0E_CONF == 0x96, "0x8F904 MOV R3, #0x96");
 _Static_assert(PUFO_STATUS_RADAR_MSG_BYTES == 108, "szRadarMsg 0x186B10 up to nSmapTapX 0x186B7C");
+
+/* The craft-detail card @ 0x8f9e4, pinned the same way: the record constants are the byte offsets
+ * the ARM literals carry (0xF0B5E, 0xF0C2B, 0xF0CF8, 0xF0DC5, 0xF71DE, ... minus 0xB38D0), and the
+ * geometry constants are the MOV immediates next to each Text_DrawString. */
+_Static_assert(PUFO_STATUS_FLAG_CRAFT_DETAIL == 0x0B, "0x8F9F0 CMP R0, #0xB");
+_Static_assert(PUFO_STATUS_DETAIL_NH == 0xDC, "0x8FA50 MOV R3, #0xDC");
+_Static_assert(PUFO_STATUS_Y_DETAIL_SHIP == 0x0F, "0x8FAEC MOV R2, #0xF");
+_Static_assert(PUFO_STATUS_Y_DETAIL_BASE == 0x1E, "0x8FB74 MOV R2, #0x1E");
+_Static_assert(PUFO_STATUS_Y_DETAIL_SPEED == 0x2D, "0x8FBF4 MOV R2, #0x2D");
+_Static_assert(PUFO_STATUS_Y_DETAIL_FUEL == 0x3C, "0x8FCA4 MOV R2, #0x3C");
+_Static_assert(PUFO_STATUS_DETAIL_Y_WEAPON0 == 0x4B, "0x8FE74 ADD R2, R1, #0x4B");
+_Static_assert(PUFO_STATUS_DETAIL_Y_AMMO0 == 0x5A, "0x8FF70, the ammo row 9 bytes under the weapon row");
+_Static_assert(PUFO_STATUS_DETAIL_ROW_STEP == 0x1E, "0x8FE64 MOV R8, #0x1E");
+_Static_assert(PUFO_STATUS_DETAILCTL_Y_RETURN == 0x8C, "0x9005C MOV R3, #0x8C");
+_Static_assert(PUFO_STATUS_DETAILCTL_Y_TARGET == 0xA0, "0x90068 MOV R3, #0xA0");
+_Static_assert(PUFO_STATUS_DETAILCTL_Y_PATROL == 0xB4, "0x90074 MOV R3, #0xB4");
+_Static_assert(PUFO_STATUS_DETAILCTL_Y_CANCEL == 0xC8, "0x90080 MOV R3, #0xC8");
+_Static_assert(PUFO_STATUS_Y_DETAIL_CANCEL_LBL == 0xC9, "0x90210 MOV R2, #0xC9");
+_Static_assert(PUFO_STATUS_WEAPON_ID_FIRST == 0x19, "0x8FD80 CMP R8, #0x19");
+_Static_assert(PUFO_STATUS_WEAPON_ID_LAST == 0x1E, "0x8FDAC CMP R8, #0x1E");
+_Static_assert(PUFO_STATUS_WEAPON_ID_NO_AMMO == 0x1C, "0x8FDF8 MOV R11, #-1 for id 28");
+_Static_assert(PUFO_STATUS_TEXT_WEAPON_NAME_FIRST == 1350, "0x8FE3C, unk_F71DE - 0xB38D0 = 1350 * 205");
+_Static_assert(PUFO_STATUS_TEXT_SPEED_VALUE == 1222, "0x8FB84, unk_F0B5E - 0xB38D0 = 1222 * 205");
+_Static_assert(PUFO_STATUS_TEXT_FUEL_VALUE == 1223, "0x8FC04, unk_F0C2B - 0xB38D0 = 1223 * 205");
+_Static_assert(PUFO_STATUS_TEXT_WEAPON1 == 1224, "0x8FCD0, unk_F0CF8 - 0xB38D0 = 1224 * 205");
+_Static_assert(PUFO_STATUS_TEXT_WEAPON2 == 1225, "0x8FD50, unk_F0DC5 - 0xB38D0 = 1225 * 205");
+_Static_assert(PUFO_STATUS_TEXT_AMMO == 1226, "0x8FE90, unk_F0E92 - 0xB38D0 = 1226 * 205");
+_Static_assert(PUFO_STATUS_TEXT_RETURN_BASE == 1227, "0x900B8 record");
+_Static_assert(PUFO_STATUS_TEXT_NEW_TARGET == 1228, "0x9010C record");
+_Static_assert(PUFO_STATUS_TEXT_PATROL == 1229, "0x90164 record");
+_Static_assert(PUFO_STATUS_TEXT_CANCEL_ORDER == 1230, "0x901BC record");
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -8655,10 +8686,14 @@ static i32      g_nPnShown;
 static BaseFacStatusEnv g_pnFac;
 static GeoscapeStatusPanelEnv g_pnEnv;
 static i32      g_nPnBlits;
-static PadImage g_aPnPads[6];
+static PadImage g_aPnPads[9];
+static UiControl g_pnCtlRet, g_pnCtlTarg, g_pnCtlPatrol; /* the card's three own controls */
+static PadImage  g_pnStripPad;                /* the pad at 0x186BBC: origin and size feed the rect blit */
+static u8        g_bPnInterceptDone;          /* bInterceptDone @ 0x18709C byte 0 */
 static i32      g_nPnSfxClicks, g_nPnOpenClicks, g_nPnReportClicks, g_nPnApplyClicks;
 static i32      g_nPnResolveClicks, g_nPnDismissClicks, g_nPnTargetClicks;
 static i32      g_nPnConfirmAltClicks, g_nPnWaypointClicks;
+static i32      g_nPnMapTargetClicks, g_nPnConfirmSelClicks;
 static bool     g_bPnReady;
 static BaseSiteRec g_pnSites[8];
 static ObjectRecFull g_pnObj;
@@ -8691,6 +8726,12 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1127, "m4" }, { 1214, "n4" }, { 1215, "o4" }, { 1216, "p4" }, { 1217, "q4" },
     { 1218, "r4" }, { 1219, "s4" }, { 1220, "t4" }, { 1221, "u4" },
     { 137, "v4" }, { 418, "w4x" },
+    /* The craft-detail card. The six weapon names get DIFFERENT lengths so a wrong name index shows
+     * up as a row width, and 1230 differs from 1144 although the original ships both as "Отмена". */
+    { 1222, "x4" }, { 1223, "y4" }, { 1224, "z4" }, { 1225, "a5" }, { 1226, "b5" },
+    { 1227, "c5" }, { 1228, "d5" }, { 1229, "e5" }, { 1230, "fff5" },
+    { 1350, "g5" }, { 1351, "hh5" }, { 1352, "iii5" }, { 1353, "j5" }, { 1354, "kkk5" },
+    { 1355, "ll5" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -8708,6 +8749,8 @@ static void PnDismiss(void)     { ++g_nPnDismissClicks; }
 static void PnConfirmTarget(void){ ++g_nPnTargetClicks; }
 static void PnConfirmAlt(void)  { ++g_nPnConfirmAltClicks; }
 static void PnWaypoint(void)    { ++g_nPnWaypointClicks; }
+static void PnMapTarget(void)   { ++g_nPnMapTargetClicks; }
+static void PnConfirmSel(void)  { ++g_nPnConfirmSelClicks; }
 
 static void PnSetText(i32 nRec, const char *psz)
 {
@@ -8754,6 +8797,8 @@ static void PnRun(void)
     g_nPnTargetClicks = 0;
     g_nPnConfirmAltClicks = 0;
     g_nPnWaypointClicks = 0;
+    g_nPnMapTargetClicks = 0;
+    g_nPnConfirmSelClicks = 0;
     memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
     Geoscape_DrawStatusPanel(&g_pnEnv);
 }
@@ -8955,23 +9000,39 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     memset(&g_pnCtlApply, 0, sizeof(g_pnCtlApply));
     memset(&g_pnCtlA, 0, sizeof(g_pnCtlA));
     memset(&g_pnCtlB, 0, sizeof(g_pnCtlB));
+    memset(&g_pnCtlRet, 0, sizeof(g_pnCtlRet));
+    memset(&g_pnCtlTarg, 0, sizeof(g_pnCtlTarg));
+    memset(&g_pnCtlPatrol, 0, sizeof(g_pnCtlPatrol));
     g_pnCtlSfx.uWidth     = 20;
     g_pnCtlOpen.uWidth    = 20;
     g_pnCtlConfirm.uWidth = 40;
     g_pnCtlApply.uWidth   = 40;
     g_pnCtlA.uWidth       = 40;
     g_pnCtlB.uWidth       = 40;
+    g_pnCtlRet.uWidth     = 40;
+    g_pnCtlTarg.uWidth    = 40;
+    g_pnCtlPatrol.uWidth  = 40;
     /* UiControl_BlitActivePad paints nothing for a disabled control or one with no pad for its
-     * state, so all six get both. The blit callbacks only count calls; they paint nothing. */
-    for (i32 i = 0; i < 6; ++i) {
-        UiControl *const pCtl = i == 0 ? &g_pnCtlSfx : i == 1 ? &g_pnCtlOpen
-                        : i == 2 ? &g_pnCtlConfirm : i == 3 ? &g_pnCtlApply
-                        : i == 4 ? &g_pnCtlA : &g_pnCtlB;
+     * state, so all nine get both. The blit callbacks only count calls; they paint nothing. */
+    UiControl *const apPnCtrls[9] = { &g_pnCtlSfx, &g_pnCtlOpen, &g_pnCtlConfirm, &g_pnCtlApply,
+                                      &g_pnCtlA, &g_pnCtlB, &g_pnCtlRet, &g_pnCtlTarg,
+                                      &g_pnCtlPatrol };
+    for (i32 i = 0; i < 9; ++i) {
+        UiControl *const pCtl = apPnCtrls[i];
         pCtl->bEnabled  = 1;
         pCtl->nMode     = 0;
         pCtl->nState    = 0;
         pCtl->apPads[0] = &g_aPnPads[i];
     }
+
+    /* The card's rect blit takes x/y/width/height from THIS pad (0x8FA20..0x8FA2C reads +0x0A,
+     * +8, +4, +0). The two sizes and the two coordinates are all different so a swapped read shows
+     * up as a different painted rectangle. */
+    g_pnStripPad.nOriginX = 30;
+    g_pnStripPad.nOriginY = 250;
+    g_pnStripPad.uWidth   = 100;
+    g_pnStripPad.uHeight  = 24;
+    g_bPnInterceptDone    = 0;
 
     memset(&g_pnPanel, 0, sizeof(g_pnPanel));
     g_bPnMulti = 0;
@@ -9052,6 +9113,13 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.pfnConfirmCraftTarget  = PnConfirmTarget;
     g_pnEnv.pfnConfirmSelectedAlt  = PnConfirmAlt;
     g_pnEnv.pfnSetWaypoint         = PnWaypoint;
+    g_pnEnv.pStripPad              = &g_pnStripPad;
+    g_pnEnv.pbInterceptDone        = &g_bPnInterceptDone;
+    g_pnEnv.pCtlReturnBase         = &g_pnCtlRet;
+    g_pnEnv.pCtlNewTarget          = &g_pnCtlTarg;
+    g_pnEnv.pCtlPatrol             = &g_pnCtlPatrol;
+    g_pnEnv.pfnSelectMapTarget     = PnMapTarget;
+    g_pnEnv.pfnConfirmSelected     = PnConfirmSel;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -9745,6 +9813,233 @@ static void TestStatusPanelOrder(void)
                "but nH 0x78 (0x8F78C) makes this one end at y=185, not 155");
 }
 
+/* The blend SoftSurf_BlitSrcRect @ 0xa4450 writes for the card's strip rect over a cleared surface:
+ * the colour is (0x3C >> 3) << 11 | (0x78 >> 2) << 5 | (0x82 >> 3) = 0x3BD0, blended at key 0x96 with
+ * 255 - 0x96 against zero, field by field: 9 + 32 * 17 + (4 << 11). */
+#define PN_STRIP_INK 8745
+
+/* The card's craft: the numbers and mounts its lines print. PnFixture zeroes both crafts, so this
+ * runs after every fixture call below. The card indexes CRAFT 1 because slot 0 is 1 in every case. */
+static void PnSetCardCrafts(void)
+{
+    PnSetCrafts();                          /* craft 1 -> TEXTS[418] + '-' + "5" */
+    g_pnCraft1.bHomeBase    = 3;            /* site 3, so the record index is the field and not a 0 */
+    pufo_strncpy(g_pnSites[3].abName, "3", sizeof(g_pnSites[3].abName));
+    g_pnCraft1.uFuelCap     = 90;
+    g_pnCraft1.uRangeRemain = 30;
+    g_pnCraft1.uRangeMax    = 40;           /* 100 * 30 / 40 = 75 */
+    g_pnCraft1.bWeaponL     = PUFO_STATUS_WEAPON_ID_FIRST;
+    g_pnCraft1.bWeaponR     = PUFO_STATUS_WEAPON_ID_FIRST; /* equal mounts: one shared pool */
+    g_pnCraft1.bAmmo25      = 12;
+    g_pnCraft1.bAmmo26      = 12;
+    g_pnCraft1.bContactMsg  = 0;
+}
+
+/* PN_ROW_PIX pixels: one row band, x from 20 to 219. The window keeps the frame's two border columns
+ * at 14 and 225 out -- Ui_AnimExpandBlit fills the whole panel body, not just its outline (the BLT at
+ * pufo_panel.c:567), so the body colour has to come from a run that draws the body with no text. */
+#define PN_ROW_W   200
+#define PN_ROW_PIX ((PN_BAND - PN_GLYPH_DY + 1) * PN_ROW_W)
+
+/* The card's row at y, compared as INK against a reference draw of the string the card should have
+ * composed there. Ui_AnimExpandBlit fills the whole panel body (pufo_panel.c:567), so ink is decided
+ * against that body colour -- read at x=20, far left of any row centred on 120 -- and not against a
+ * second run of the card: the card's numbers come from the craft fields, not from TEXTS, so a run with
+ * every record emptied still draws them. The centring is the original's own (0x90204..0x90218: the
+ * measured width halved and subtracted from 120), so a wrong digit also moves the whole row. The
+ * expected string comes from the test, never from the port. */
+static void PnRowIs(i32 nY, const char *pszWant, const char *pszWhat)
+{
+    static u16 aCard[PN_ROW_PIX];
+    const i32 nY0 = nY + PN_GLYPH_DY, nY1 = nY + PN_BAND;
+    i32 nDiff = 0;
+
+    PnCapture();
+    const u16 uBody = (u16)BdPix(20, nY + 8);
+    for (i32 y = nY0; y <= nY1; ++y) {
+        for (i32 x = 20; x < 20 + PN_ROW_W; ++x) {
+            aCard[(y - nY0) * PN_ROW_W + (x - 20)] = (u16)BdPix(x, y);
+        }
+    }
+    memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
+    Text_DrawString(PUFO_STATUS_TEXT_X_CENTRE - Text_MeasureWidth(pszWant) / 2, nY, pszWant);
+
+    for (i32 i = 0; i < PN_ROW_PIX; ++i) {
+        const u16 uRef = (u16)BdPix(20 + i % PN_ROW_W, nY0 + i / PN_ROW_W);
+        if ((aCard[i] != uBody) != (uRef != 0)) {
+            ++nDiff;
+        }
+    }
+    if (nDiff == 0) {
+        printf("  ok   %s\n", pszWhat);
+        return;
+    }
+    printf("  FAIL %s: %d ink pixels differ from a reference draw of [%s]\n", pszWhat, nDiff, pszWant);
+    g_nFailures += 1;
+}
+
+static void TestStatusPanelDetail(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the craft-detail card @ 0x8f9e4\n");
+    PnFixture(0x0B, 1, 0, 0); /* slot 0 is 1 while 0x187054 still holds 0 */
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetCardCrafts();
+
+    /* ---- 1. the strip pad re-blit and the card's own frame ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, 240);
+    CheckEqI32(d.nMinX, 0xE, "the frame starts at x=14 (0x8FA6C)");
+    CheckEqI32(d.nMinY, 5, "and y=5 (0x8FA64)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x8FA5C) puts the right border at 225");
+    CheckEqI32(d.nMaxY, 5 + PUFO_STATUS_DETAIL_NH + 5, "nH 0xDC (0x8FA50) puts the bottom at 230");
+    d = PnDiffRect(0, 241, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nCount, 100 * 24, "the pad at 0x186BBC is re-blitted whole, 100x24 (0x8FA20..0x8FA30)");
+    CheckEqI32(d.nMinX, 30, "at its nOriginX");
+    CheckEqI32(d.nMinY, 250, "its nOriginY");
+    CheckEqI32(d.nMaxX, 129, "uWidth from LDRH [R0,#8]");
+    CheckEqI32(d.nMaxY, 273, "uHeight from LDRH [R0,#0xA], the two reads are not swapped");
+    CheckEqI32(d.uInk, PN_STRIP_INK, "blended from nIdx 0x3C, mid 0x78, low 0x82 at key 0x96 (0x8F9F8..0x8FA1C)");
+
+    /* ---- 2. the four value lines ---- */
+    PnCapture();
+    CheckEqI32(g_nPnShipIdx, 1, "0x8FA90 stores line 0's colour slot 0 into 0x187054");
+    PnCheckStr(g_szPnRadar, "w4x-5", "and the craft it then names is the SECOND one");
+    PnRowIs(PUFO_STATUS_Y_DETAIL_SHIP, "p4w4x-5", "y=15 is TEXTS[1216] + Ship_FormatDisplayName");
+    PnRowIs(PUFO_STATUS_Y_DETAIL_BASE, "n43", "y=30 is TEXTS[1214] + aSiteRecs[Ship.bHomeBase] + 0x1A, the home base is 3");
+    PnRowIs(PUFO_STATUS_Y_DETAIL_SPEED, "x490", "y=45 is TEXTS[1222] + itoa(LDRH [Ship,#0x10])");
+    PnRowIs(PUFO_STATUS_Y_DETAIL_FUEL, "y475%", "y=60 is TEXTS[1223] + 100*uRangeRemain/uRangeMax + a percent sign");
+
+    /* The multiply comes first in the original (0x8FC50 MUL R1, R3, R2 with R2 = 0x64). With
+     * uRangeRemain 1 of 40 the original would divide by zero; the port's guard draws 0 and this is
+     * the recorded deviation. */
+    g_pnCraft1.uRangeRemain = 1;
+    PnCapture();
+    PnRowIs(PUFO_STATUS_Y_DETAIL_FUEL, "y42%", "the 100 is applied before the divide: 1 of 40 is 2%");
+    g_pnCraft1.uRangeRemain = 0;
+    PnCapture();
+    PnRowIs(PUFO_STATUS_Y_DETAIL_FUEL, "y40%", "and an empty tank reads 0%, where the original divides by zero");
+    g_pnCraft1.uRangeRemain = 30;
+
+    /* ---- 3. the two weapon slots and the shared pool ---- */
+    PnCapture();
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0, "z4g5", "y=75 is TEXTS[1224] + TEXTS[1350], the LDRSB [Ship,#0x22] id");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0, "b56", "y=90 rounds the shared 12 UP for slot 0 (0x8FEE4, 0x8FF04, 0x8FF0C)");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0 + PUFO_STATUS_DETAIL_ROW_STEP, "a5g5",
+            "y=105 is TEXTS[1225] + record 1350 again: the LDRSB [Ship,#0x23] id is the same 25");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0 + PUFO_STATUS_DETAIL_ROW_STEP, "b56",
+            "y=120 rounds it DOWN for slot 1 (0x8FEE8 BNE loc_8FF28)");
+
+    /* The very same craft with UNEQUAL mounts: 0x8FEDC BNE loc_8FF34 skips the halving altogether,
+     * so both rows keep the full 12. */
+    g_pnCraft1.bWeaponR = PUFO_STATUS_WEAPON_ID_FIRST + 1;
+    g_pnCraft1.bAmmo26  = 14;               /* id 26 reads +0x3E, id 25 reads +0x3D */
+    PnCapture();
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0, "b512", "unequal mounts keep the left count whole (0x8FEDC BNE)");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0 + PUFO_STATUS_DETAIL_ROW_STEP, "b514",
+            "and the right one whole, read from its own ammo byte 0x3E");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0 + PUFO_STATUS_DETAIL_ROW_STEP, "a5hh5",
+            "id 26 reads record 1351, not 1350");
+
+    /* 3 of 12 is not the interesting case; 2 and 3 are the ones that take the round-up arm. */
+    g_pnCraft1.bWeaponR = PUFO_STATUS_WEAPON_ID_FIRST;
+    g_pnCraft1.bAmmo25  = 3;
+    PnCapture();
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0, "b52", "a pool of 3 gives slot 0 the round-up half, 2");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0 + PUFO_STATUS_DETAIL_ROW_STEP, "b51", "and slot 1 the round-down half, 1");
+
+    /* id 28 is the no-ammo id: -1 exits at 0x8FEBE BEFORE the shared-pool test is even reached. */
+    g_pnCraft1.bWeaponL = PUFO_STATUS_WEAPON_ID_NO_AMMO;
+    g_pnCraft1.bWeaponR = PUFO_STATUS_WEAPON_ID_NO_AMMO;
+    PnCapture();
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0, "z4j5", "id 28 still names itself from record 1353");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0, "b5N.A.", "and prints the aNA literal, not a halved -1");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0 + PUFO_STATUS_DETAIL_ROW_STEP, "a5j5", "on both slots");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0 + PUFO_STATUS_DETAIL_ROW_STEP, "b5N.A.", "on both slots");
+
+    /* An id outside 25..30 that is not zero: no name is appended and the count stays the 0 the arm
+     * starts with at 0x8FCBC. */
+    g_pnCraft1.bWeaponL = 7;
+    g_pnCraft1.bWeaponR = 8;
+    PnCapture();
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0, "z4", "an id outside 25..30 gets no name (0x8FD80..0x8FDAC)");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0, "b50", "and its count is the 0 set at 0x8FCBC");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0 + PUFO_STATUS_DETAIL_ROW_STEP, "a5", "same on the right slot");
+
+    /* Ids 29 and 30 name themselves from records 1354 and 1355 and read the ammo bytes 0x40 and 0x41
+     * (0x8FDDC and 0x8FDC0). */
+    g_pnCraft1.bWeaponL = PUFO_STATUS_WEAPON_ID_FIRST + 4;  /* 29 */
+    g_pnCraft1.bWeaponR = PUFO_STATUS_WEAPON_ID_LAST;       /* 30 */
+    g_pnCraft1.bAmmo29  = 8;
+    g_pnCraft1.bAmmo30  = 5;
+    PnCapture();
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0, "z4kkk5", "id 29 takes the name from record 1354");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0, "b58", "and the count from the ammo byte 0x40");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0 + PUFO_STATUS_DETAIL_ROW_STEP, "a5ll5", "id 30 from record 1355");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0 + PUFO_STATUS_DETAIL_ROW_STEP, "b55", "and the count from 0x41");
+
+    /* A zero id skips the whole slot. */
+    g_pnCraft1.bWeaponL = PUFO_STATUS_WEAPON_ID_FIRST;
+    g_pnCraft1.bWeaponR = 0;
+    g_pnCraft1.bAmmo25  = 12;
+    PnCapture();
+    PnRowIs(PUFO_STATUS_DETAIL_Y_WEAPON0, "z4g5", "the left mount still draws its weapon row");
+    PnRowIs(PUFO_STATUS_DETAIL_Y_AMMO0, "b512", "and its ammo row, unhalved because the mounts differ");
+    PnCapture();                          /* PnRowIs leaves a reference draw on the surface */
+    PnCheckRow(PUFO_STATUS_DETAIL_Y_WEAPON0 + PUFO_STATUS_DETAIL_ROW_STEP, 20, 219, 0, 0, false,
+               "a zero id draws no weapon row at all (0x8FE50 BEQ loc_8FF9C)");
+    PnCheckRow(PUFO_STATUS_DETAIL_Y_AMMO0 + PUFO_STATUS_DETAIL_ROW_STEP, 20, 219, 0, 0, false,
+               "and no ammo row for that slot either");
+
+    /* ---- 4. the four controls, their labels and their handlers ---- */
+    PnCapture();
+    Check(g_pnCtlRet.x == PUFO_STATUS_TEXT_X_CENTRE - 20 && g_pnCtlTarg.x == g_pnCtlRet.x
+          && g_pnCtlPatrol.x == g_pnCtlRet.x && g_pnCtlB.x == g_pnCtlRet.x,
+          "all four controls centre on 120 from their own 40-wide pads (0x9000C..0x90058)");
+    CheckEqI32(g_pnCtlRet.y, PUFO_STATUS_DETAILCTL_Y_RETURN, "the return control sits at y=140");
+    CheckEqI32(g_pnCtlTarg.y, PUFO_STATUS_DETAILCTL_Y_TARGET, "the new-target control at 160");
+    CheckEqI32(g_pnCtlPatrol.y, PUFO_STATUS_DETAILCTL_Y_PATROL, "the patrol control at 180");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_DETAILCTL_Y_CANCEL, "and the cancel control at 200");
+    CheckEqI32(g_nPnBlits, 5, "five pad blits: four controls plus the cancel control's extra one at 0x900B4");
+    PnRowIs(PUFO_STATUS_DETAILCTL_Y_RETURN, "c5", "TEXTS[1227] centred under the return control at y=140");
+    PnRowIs(PUFO_STATUS_DETAILCTL_Y_TARGET, "d5", "TEXTS[1228] at 160");
+    PnRowIs(PUFO_STATUS_DETAILCTL_Y_PATROL, "e5", "TEXTS[1229] at 180");
+    PnRowIs(PUFO_STATUS_Y_DETAIL_CANCEL_LBL, "fff5", "TEXTS[1230] at 201, only while no intercept is done");
+
+    Check(g_pnCtlRet.pfnClick == PnDismiss, "no contact message: Smap_DismissSelected on the return control");
+    Check(g_pnCtlTarg.pfnClick == PnMapTarget,
+          "the new-target control ends on Smap_SelectMapTarget, which overwrites the Dismiss store (0x8FFE8..0x8FFEC)");
+    Check(g_pnCtlPatrol.pfnClick == PnConfirmSel, "the patrol control gets Smap_ConfirmSelected");
+    Check(g_pnCtlB.pfnClick == PnResolve, "the cancel control gets Smap_ResolveInterceptUI either way (0x8FFFC)");
+
+    g_pnCraft1.bContactMsg = 1;
+    PnRun();
+    Check(g_pnCtlRet.pfnClick == PnResolve && g_pnCtlTarg.pfnClick == PnResolve
+          && g_pnCtlPatrol.pfnClick == PnResolve && g_pnCtlB.pfnClick == PnResolve,
+          "with Ship.bContactMsg @ +0x3C set all four take Smap_ResolveInterceptUI (0x8FFB8)");
+    g_pnCraft1.bContactMsg = 0;
+
+    /* ---- 5. bInterceptDone @ 0x18709C byte 0 ---- */
+    g_bPnInterceptDone = 1;
+    PnCapture();
+    CheckEqI32(g_nPnBlits, 4, "with the byte set the cancel control is blitted once (0x900AC..0x900B4)");
+    PnCheckRow(PUFO_STATUS_Y_DETAIL_CANCEL_LBL, 20, 219, 0, 0, false,
+               "and the 'Отмена' label under it is not drawn either (0x901E8 BNE loc_90220)");
+    g_bPnInterceptDone = 0;
+
+    /* ---- 6. records the card never reads ---- */
+    PnCaptureDropped(PUFO_STATUS_TEXT_ORDER_OK);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0,
+               "the card never reads TEXTS[1127] 'ОК' that the order questions use");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CANCEL);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0,
+               "nor TEXTS[1144] 'Отмена' -- its own cancel label is the separate record 1230");
+    PnCaptureDropped(PUFO_STATUS_TEXT_BASE_LOST);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0, "nor any of the order-question lines");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -9811,6 +10106,7 @@ int main(void)
     TestStatusPanelActionFail();
     TestStatusPanelContact();
     TestStatusPanelOrder();
+    TestStatusPanelDetail();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

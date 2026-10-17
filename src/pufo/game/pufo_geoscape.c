@@ -4706,6 +4706,165 @@ static void StatusPanel_DrawPointReached(const GeoscapeStatusPanelEnv *pEnv, cha
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_RETARGET, psz); /* 0x8F9E0 y 150 */
 }
 
+/* The two halves the card applies to a shared weapon pool. Both add 1 first when the count is
+ * negative (0x8FF0C/0x8FF28 MOVS + ADDMI), which only the -1 "N.A." sentinel could reach and that one
+ * takes the other exit, so in practice these are the round-up and round-down halves. */
+static i32 StatusPanel_HalveAmmo(i32 nAmmo, bool bRoundUp)
+{
+    const i32 nAdj = nAmmo < 0 ? nAmmo + 1 : nAmmo;
+    return bRoundUp ? (nAdj >> 1) + 1 : (nAdj >> 1);
+}
+
+/* The count byte the card reads for one of the six weapon ids it knows; id 28 has none and shows
+ * "N.A." (0x8FDF8 MOV R11, #-1). */
+static i32 StatusPanel_WeaponAmmo(const Ship *pShip, i32 nWeapon)
+{
+    switch (nWeapon) {
+        case 0x19: return (i32)pShip->bAmmo25;        /* 0x8FE4C LDRB [R7,#0x3D] */
+        case 0x1A: return (i32)pShip->bAmmo26;        /* 0x8FE30 LDRB [R7,#0x3E] */
+        case 0x1B: return (i32)pShip->bAmmo27;        /* 0x8FE14 LDRB [R7,#0x3F] */
+        case PUFO_STATUS_WEAPON_ID_NO_AMMO: return -1;                /* 0x8FDF8 */
+        case 0x1D: return (i32)pShip->bAmmo29;        /* 0x8FDDC LDRB [R7,#0x40] */
+        default:   return (i32)pShip->bAmmo30;        /* 0x8FDC0 LDRB [R7,#0x41] */
+    }
+}
+
+/* 0x8F9E4: flag 0x0B, the selected craft's detail card. This is the one arm of the chain that WRITES
+ * 0x187054: 0x8FA90 stores line 0's colour slot 0 there and every read after it uses the global. */
+static void StatusPanel_DrawCraftDetail(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    char szNum[16], szName[PUFO_TEXT_REC_STRIDE];
+
+    if (pEnv->pStripPad == NULL || pEnv->apCraft == NULL || pEnv->apSiteRecs == NULL
+        || pEnv->pszRadarMsg == NULL || pEnv->pnSelectedShipIdx == NULL || pEnv->pbInterceptDone == NULL
+        || pEnv->pCtlReturnBase == NULL || pEnv->pCtlNewTarget == NULL || pEnv->pCtlPatrol == NULL
+        || pEnv->pCtlB == NULL) {
+        return;
+    }
+
+    const PadImage *const pStrip = pEnv->pStripPad;                      /* 0x8F9FC..0x8FA2C */
+    SoftSurf_BlitSrcRect(pStrip->nOriginX, pStrip->nOriginY, pStrip->uWidth, pStrip->uHeight,
+                         0x3C, 0x78, 0x82, 0x96);                        /* 0x8FA30 */
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 5, 0xD0, PUFO_STATUS_DETAIL_NH,
+                            0, 0x28, 0x32, 0xB4, 0);                     /* 0x8FA34..0x8FA70 */
+
+    *pEnv->pnSelectedShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x8FA80 / 0x8FA90 */
+    const i32 nShipIdx = *pEnv->pnSelectedShipIdx;
+    Ship *const pShip = nShipIdx < 0 ? NULL : pEnv->apCraft[nShipIdx];
+    if (pShip == NULL) {
+        return;
+    }
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);         /* 0x8FA94 record 1216 */
+    StatusPanel_AppendShipName(pEnv, psz, nShipIdx);                     /* 0x8FAC0..0x8FACC */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_DETAIL_SHIP, psz); /* 0x8FAF8 y 15 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_BASE_LABEL);         /* 0x8FAFC record 1214 */
+    (void)pufo_strcat(psz, pEnv->apSiteRecs[(i32)pShip->bHomeBase].abName,
+                      PUFO_TEXT_REC_STRIDE);                             /* 0x8FB40..0x8FB54, home base */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_DETAIL_BASE, psz); /* 0x8FB80 y 30 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SPEED_VALUE);        /* 0x8FB84 record 1222 */
+    snprintf(szNum, sizeof(szNum), "%d", (i32)pShip->uFuelCap);          /* 0x8FBC4 LDRH [R3,#0x10] */
+    (void)pufo_strcat(psz, szNum, PUFO_TEXT_REC_STRIDE);
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_DETAIL_SPEED, psz); /* 0x8FC00 y 45 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_FUEL_VALUE);         /* 0x8FC04 record 1223 */
+    const i32 nPct = pShip->uRangeMax != 0u
+                   ? (100 * (i32)pShip->uRangeRemain) / (i32)pShip->uRangeMax /* 0x8FC50..0x8FC60, no
+                                                                               * zero test in the
+                                                                               * original */
+                   : 0;
+    snprintf(szNum, sizeof(szNum), "%d", nPct);                          /* 0x8FC6C */
+    (void)pufo_strcat(psz, szNum, PUFO_TEXT_REC_STRIDE);
+    (void)pufo_strcat(psz, "%", PUFO_TEXT_REC_STRIDE);                   /* 0x8FC7C asc_ABAB8 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_DETAIL_FUEL, psz); /* 0x8FCB0 y 60 */
+
+    /* 0x8FA54 MOV R8, #0 ... 0x8FFA4 BLT loc_8FCBC: the two weapon slots, left then right. */
+    for (i32 nSlot = 0; nSlot < 2; ++nSlot) {
+        const i32 nWeapon = nSlot == 0 ? (i32)pShip->bWeaponL : (i32)pShip->bWeaponR; /* 0x8FCFC /
+                                                                                        * 0x8FD7C */
+        StatusPanel_CopyRec(pEnv, psz, nSlot == 0 ? PUFO_STATUS_TEXT_WEAPON1
+                                                   : PUFO_STATUS_TEXT_WEAPON2);        /* 0x8FCD0 /
+                                                                                         * 0x8FD50 */
+        i32 nAmmo = 0;                                                    /* 0x8FCBC MOV R11, #0 */
+        if (nWeapon >= PUFO_STATUS_WEAPON_ID_FIRST && nWeapon <= PUFO_STATUS_WEAPON_ID_LAST) {
+            StatusPanel_CopyRec(pEnv, szName, PUFO_STATUS_TEXT_WEAPON_NAME_FIRST
+                                  + (nWeapon - PUFO_STATUS_WEAPON_ID_FIRST));           /* 1350..1355 */
+            (void)pufo_strcat(psz, szName, PUFO_TEXT_REC_STRIDE);
+            nAmmo = StatusPanel_WeaponAmmo(pShip, nWeapon);
+        } else if (nWeapon == 0) {
+            continue;                                                     /* 0x8FE50 BEQ loc_8FF9C */
+        }
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE,
+                           PUFO_STATUS_DETAIL_Y_WEAPON0 + PUFO_STATUS_DETAIL_ROW_STEP * nSlot, psz);
+                                                                           /* 0x8FE8C, y 75 / 105 */
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_AMMO);            /* 0x8FE90 record 1226 */
+        if (nAmmo != -1) {                                                /* 0x8FEBE BEQ loc_8FF3C */
+            bool bRoundUp = false;
+            if ((i32)pShip->bWeaponL == (i32)pShip->bWeaponR) {           /* 0x8FED8 CMP R3, R2 */
+                bRoundUp = nSlot == 0 && nAmmo / 2 == 1;                 /* 0x8FEE4, 0x8FF04 */
+                if (!bRoundUp) {
+                    nAmmo = StatusPanel_HalveAmmo(nAmmo, false);          /* 0x8FF28 */
+                } else {
+                    nAmmo = StatusPanel_HalveAmmo(nAmmo, true);           /* 0x8FF0C */
+                }
+            }
+        }
+        if (nAmmo == -1) {                                                /* 0x8FF34 CMP R11, R7 */
+            (void)pufo_strcat(psz, "N.A.", PUFO_TEXT_REC_STRIDE);         /* 0x8FF3C aNA */
+        } else {
+            snprintf(szNum, sizeof(szNum), "%d", nAmmo);                  /* 0x8FF54 */
+            (void)pufo_strcat(psz, szNum, PUFO_TEXT_REC_STRIDE);
+        }
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE,
+                           PUFO_STATUS_DETAIL_Y_AMMO0 + PUFO_STATUS_DETAIL_ROW_STEP * nSlot, psz);
+                                                                           /* 0x8FF90, y 90 / 120 */
+    }
+
+    /* 0x8FFB8: the craft's "contact message already posted" byte decides the four handlers. */
+    const bool bContact = pShip->bContactMsg != 0;
+    if (bContact) {
+        pEnv->pCtlReturnBase->pfnClick = pEnv->pfnResolveInterceptUI;     /* 0x8FFC8 / 0x8FFD0 */
+        pEnv->pCtlNewTarget->pfnClick  = pEnv->pfnResolveInterceptUI;     /* 0x8FFD4 / 0x8FFD8 */
+        pEnv->pCtlPatrol->pfnClick     = pEnv->pfnResolveInterceptUI;     /* 0x8FFF8, unconditional STR */
+    } else {
+        pEnv->pCtlReturnBase->pfnClick = pEnv->pfnDismissSelected;        /* 0x8FFDC / 0x8FFE0 */
+        pEnv->pCtlNewTarget->pfnClick  = pEnv->pfnSelectMapTarget;        /* 0x8FFE8 / 0x8FFEC, which
+                                                                           * overwrites the Dismiss
+                                                                           * store two instructions
+                                                                           * earlier */
+        pEnv->pCtlPatrol->pfnClick     = pEnv->pfnConfirmSelected;        /* 0x8FFF4 / 0x8FFF8 */
+    }
+    pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;                  /* 0x8FFFC..0x90008 */
+
+    UiControl *const apCtrls[4] = { pEnv->pCtlReturnBase, pEnv->pCtlNewTarget,
+                                    pEnv->pCtlPatrol, pEnv->pCtlB };
+    static const i16 anCtrlY[4] = { PUFO_STATUS_DETAILCTL_Y_RETURN, PUFO_STATUS_DETAILCTL_Y_TARGET,
+                                    PUFO_STATUS_DETAILCTL_Y_PATROL, PUFO_STATUS_DETAILCTL_Y_CANCEL };
+    for (i32 i = 0; i < 4; ++i) {
+        StatusPanel_CentredCtlX(apCtrls[i]);                              /* 0x9000C..0x90058 */
+        apCtrls[i]->y = anCtrlY[i];                                       /* 0x9005C..0x90088 */
+        (void)UiControl_BlitActivePad(apCtrls[i], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);                /* 0x9008C..0x900A4 */
+    }
+    if (*pEnv->pbInterceptDone == 0) {                                    /* 0x900A8..0x900B0 */
+        (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);                /* 0x900B4: the second blit */
+    }
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_RETURN_BASE);         /* 0x900B8 record 1227 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_DETAILCTL_Y_RETURN, psz);
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_NEW_TARGET);          /* 0x9010C record 1228 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_DETAILCTL_Y_TARGET, psz);
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_PATROL);              /* 0x90164 record 1229 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_DETAILCTL_Y_PATROL, psz);
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL_ORDER);        /* 0x901BC record 1230 */
+    if (*pEnv->pbInterceptDone == 0) {                                    /* 0x901EC BNE loc_90220 */
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_DETAIL_CANCEL_LBL, psz);
+    }
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -4737,7 +4896,10 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_POINT_REACHED) {
         StatusPanel_DrawPointReached(pEnv, psz);                       /* 0x8F75C..0x8F9E0 */
     }
-    /* 0x8F9E4..0x91CEC: the 0x0B craft-detail panel and what follows is not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_CRAFT_DETAIL) {
+        StatusPanel_DrawCraftDetail(pEnv, psz);                        /* 0x8F9E4..0x9021C */
+    }
+    /* 0x90220..0x91CEC: the 0x0D pause arm and what follows is not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

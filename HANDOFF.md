@@ -1,24 +1,31 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `79b7979`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its fourth part -- the order questions at
-0x8F250..0x8F9E0, flags 0x11, 0x0F, 0x0C and 0x0E, with 109 new checks and 12/12 mutations caught.
-Parts 1..3 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body at 0x8C760..0x8E658
-in `2485d25`, the action-fail line and the selected contact at 0x8E658..0x8F24C in `79b7979` -- are
-behind this. What this part corrected: the label under every order control is `aTextOk` @ 0xEBF4B =
-TEXTS[1127] "ОК" with CYRILLIC letters, not the Latin TEXTS[1193] "OK" the 13-arm footer uses; the
-record-offset register R9 is loaded in the prologue of the arm test that follows rather than by the arm
-that uses it; and the chain names a craft three different ways (0x187054 for 0x0F, the colour value for
-0x0E, and 0x0B writing the colour value into 0x187054 at 0x8FA90 before reading it back). One mutation
-survived the first sweep for a fixture reason, not a code reason -- slot 0 and 0x187054 both pointed at
-the same craft, which made swapping the two index sources invisible -- so the fixture now uses two
-crafts with different name records. Still unported here: 0x8F9E4..0x91CEC (the 0x0B craft-detail panel
-and what follows) and the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and
-596752/598792 (99.7%) with 16737 checks -- that byte figure credits all 33,744 bytes of
-`Geoscape_Draw` because `coverage.py` counts a function once its start address is cited, which the
-previous unit's row understated (965/1103 and 563008 from memory) and this figure overstates for the
-same reason. The read map and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @
-0x8c180 (33,744 B) - read, ported in parts".
+Date: 2026-10-17. HEAD before this edit: `a2d454b`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its fifth part -- the craft-detail card at
+0x8F9E4..0x9021C, flag 0x0B, with 62 new checks and 23/23 mutations caught.
+Parts 1..4 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body at 0x8C760..0x8E658
+in `2485d25`, the action-fail line and the selected contact at 0x8E658..0x8F24C in `79b7979`, the order
+questions at 0x8F250..0x8F9E0 in `a2d454b` -- are behind this. What this part found: the card is the only
+arm in the chain that WRITES the selected-craft index 0x187054 (0x8FA90) and then reads it back four
+times; the pad at 0x186BBC supplies x, y, width and height to a `SoftSurf_BlitSrcRect` that runs before
+the body, and the body is painted solid and not as an outline -- a fact the row tests had to learn the
+hard way; the fuel percent multiplies by 100 before `_rt_sdiv` (0x8FC50) and has no zero test on the
+divisor; the shared weapon pool has three arms and not two -- unequal mounts skip the halving entirely,
+slot 1 always floors, slot 0 rounds up only when `ammo / 2 == 1`; ids 25..30 each read their own ammo
+byte 0x3D..0x41 with id 28 as the "N.A." sentinel and a zero id skipping both rows of its slot;
+`Ship.bContactMsg` (+0x3C) chooses the four handlers and the new-target control's `Smap_DismissSelected`
+store is overwritten by `Smap_SelectMapTarget` at 0x8FFEC; `bInterceptDone` byte 0 @ 0x18709C gates both
+the cancel control's second pad blit and the TEXTS[1230] cancel label, a second record carrying 1144's
+shipped text. The tests now pin a value row by its exact ink pixels against a reference draw, which is
+what separates "b51" from "b52". Two fixture gaps and one provably equivalent mutant came out of the
+mutation sweep, and one crashed harness run left its first mutation in the source -- every later pattern
+in that run was measured against a mutated baseline, until the swap was reverted and the sweep re-run
+against a clean source. Still unported here: 0x90220..0x91CEC (the 0x0D pause arm and what follows) and
+the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with
+16908 checks -- that byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py`
+counts a function once its start address is cited, so it says nothing about how much of that function is
+ported. The read map and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180
+(33,744 B) - read, ported in parts".
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,
 and the per-unit chain

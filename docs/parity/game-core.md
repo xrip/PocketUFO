@@ -17671,3 +17671,73 @@ records (TEXTS[137] for craft 0, TEXTS[418] + the dash for craft 1) and the swap
 IDB: 7 comments written (0x8F270 the chain shape, 0x8F260 the ОК record, 0x8F268 where R9 is loaded,
 0x8F2E8 the colour value as a base index, 0x8F7E0 the three index sources, 0x8F688 the two-control arm,
 0x8F91C the blit-before-handler order).
+### Unit 107, part 5: the craft-detail card (0x8F9E4..0x9021C)
+
+The fifth arm of the default chain, flag 0x0B, is the selected craft's detail card. It sits where no
+other arm of the chain sits: the pad object at 0x186BBC is re-blitted as a rectangle first
+(0x8F9FC..0x8FA30), then Ui_AnimExpandBlit puts the body at (0xE, 5) with size (0xD0, 0xDC) from src
+(0x28, 0x32), key 0xB4, nIdx 0, nMode 0. The box is therefore x 14..225, y 5..230, and it is a filled
+body, not an outline -- SoftSurf_BlitSrcRect_Inner @ 0xa4450 paints the whole rect (pufo_panel.c:567),
+which is what a row comparison has to take into account.
+
+Findings:
+- 0x8FA90 `STR R0, [0x187054]`: this arm is the only one in the chain that WRITES the selected-craft
+  index. It stores line 0's colour slot 0 there and every read after it (0x8FBB0, 0x8FC38, 0x8FCF4,
+  0x8FEC4) goes through the global. 0x0F reads the global (0x8F488) and 0x0E uses the colour value
+  directly (0x8F7E0) -- three different ways to reach the same craft in five arms.
+- The rect blit takes all four operands out of the pad object: x from [pad], y from [pad + 4], width
+  from LDRH [pad + 8], height from LDRH [pad + 0xA], with nIdx 0x3C, colour mid 0x78, low 0x82 and
+  key 0x96. Over a cleared surface that paints 565 value 8745 in the pad's own rectangle.
+- Four value lines centred on 120: TEXTS[1216] + Ship_FormatDisplayName at y 15, TEXTS[1214] +
+  aSiteRecs[Ship.bHomeBase].abName (+0x1A) at 30, TEXTS[1222] + itoa(LDRH [Ship,#0x10], uFuelCap) at
+  45, TEXTS[1223] + the fuel percent + '%' at 60. The percent multiplies by 100 BEFORE the divide
+  (0x8FC50 `MUL R1, R3, R2` with R2 = 0x64) and then uses _rt_sdiv with the divisor uRangeMax in R0
+  and the dividend in R1 (0x8FC54..0x8FC60). `MOV R11, #0xA` at 0x8FC34 is the itoa base, not a value.
+- Two weapon slots (0x8FA54 `MOV R8, #0` to 0x8FFA4 `BLT loc_8FCBC`) reading LDRSB [Ship,#0x22] and
+  LDRSB [Ship,#0x23]. Ids 25..30 append the name record 1350 + (id - 25) and take the count from
+  Ship + 0x3D/0x3E/0x3F/none/0x40/0x41; id 28 has no byte and sets -1 at 0x8FDF8, which prints the
+  aNA literal. Any other non-zero id appends no name and keeps the 0 stored at 0x8FCBC. A zero id
+  skips BOTH rows of its slot (0x8FE50 `BEQ loc_8FF9C`). The rows are 30 apart: 75/90 and 105/120.
+- The shared-pool halving (0x8FED8..0x8FF30) has three arms and not two. UNEQUAL mounts skip the
+  halving ENTIRELY (`BNE loc_8FF34` jumps past both halves); equal mounts on slot 1 always floor;
+  equal mounts on slot 0 round up only when ammo / 2 == 1, i.e. only for a pool of 2 or 3. The -1
+  sentinel exits at 0x8FEBE before any of this is reached.
+- 0x8FFB8 tests Ship.bContactMsg (+0x3C) and picks the four handlers. Set: all four take
+  Smap_ResolveInterceptUI. Clear: Smap_DismissSelected on *0x186BA8, Smap_DismissSelected stored on
+  *0x186B9C at 0x8FFE8 and then OVERWRITTEN by Smap_SelectMapTarget at 0x8FFEC, Smap_ConfirmSelected
+  on *unk_186B98, and *pGeoscapeCtlB @ 0x186BB0 takes Smap_ResolveInterceptUI in both cases.
+- bInterceptDone byte 0 @ 0x18709C gates two things at once: the cancel control's second pad blit at
+  0x900B4 and the 'Отмена' label at 0x90210. That label is TEXTS[1230], a second record carrying the
+  same shipped text as 1144 -- the card never reads 1144.
+- Four controls centred on 120 from their own pad widths at y 140/160/180/200, labels TEXTS[1227],
+  [1228], [1229] at 140/160/180 and [1230] at 201.
+
+Tests: 62 new checks (16,908 across 60 suites, 0 failures). Every value row is now pinned by pixels
+rather than by row presence: the row's ink mask, taken against the panel body colour because the anim
+paints a filled body, is compared with a reference draw of the string the test expects, centred with
+the original's own formula (0x90204..0x90218). That is what makes 'b51' and 'b52' different answers.
+The fixture points colour slot 0 at craft 1 while 0x187054 still holds 0, so the write at 0x8FA90 is
+visible; the home base is site 3 so the base row shows the index is Ship.bHomeBase; ids 29 and 30 read
+different ammo bytes (0x40, 0x41) and different name records, so a field mix-up shows up as a row.
+27 more _Static_assert pins hold records 1222..1230 and 1350 plus the fourteen geometry values to the
+ARM immediates.
+
+Mutations: 23 patterns, 23 caught. The first sweep ran 21 patterns and two survived: reading ammo
+0x41 for id 29 (the fixture had no ids 29/30 at all -- coverage added, then it was caught) and
+changing the strip blit's key 0x96 to 0x95, which is provably EQUIVALENT: 16*149>>8, 30*149>>8 and
+7*149>>8 give the same 9/17/4 fields as at 150, so the packed pixel is identical. It was replaced by
+0x96 -> 0x60, which the pixel check catches (4454 against 8745). One run of the harness crashed
+mid-sweep and left its first mutation (the weapon-mount swap) in the source, so every later pattern in
+that run was measured against a mutated baseline and reported wrong rows; the swap was reverted, the
+sweep re-run, and the harness now restores the source in a finally block.
+
+IDB: 11 comments written (0x8F9E4 the pad reads and the body box, 0x8FA90 the only writer of 0x187054,
+0x8FBC4 uFuelCap as the speed value, 0x8FC50 the multiply before the divide, 0x8FCBC the ammo bytes,
+0x8FE50 the zero-id skip, 0x8FEBE the -1 exit, 0x8FEDC the three-arm halving rule, 0x8FFB8 the handler
+choice and the SelectMapTarget overwrite, 0x900A8 the intercept byte's two effects, and 0x186B98 the
+third control's role -- named unk_* still, because its dialog role outside this card is not settled).
+bugs.tsv: 2 new rows (0x8FA90 unchecked apCraft index, 0x8FC50 divide by a possibly zero uRangeMax),
+both guarded in the port and listed as deviations.
+
+Not ported yet in this chain: 0x90220..0x91CEC (the 0x0D arm, which calls GameTime_Pause and blits the
+strip pad rectangle, and what follows), and the screen arms at 0x91DC8..0x944B0.
