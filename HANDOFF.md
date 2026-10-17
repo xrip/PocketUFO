@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `552d533`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 105, the small CRT and app wrappers),
+Date: 2026-10-17. HEAD before this edit: `4403e60`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 106, the ufopaedia entry draw),
 and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
@@ -232,8 +232,33 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15871**. Coverage as of the latest commit: **964 / 1103
-functions (87.4%)**, **552812 / 598792 bytes (92.3%)**. This unit ported the last small wrappers
+Test checks run across the 60 suites: **15979**. Coverage as of the latest commit: **965 / 1103
+functions (87.5%)**, **563008 / 598792 bytes (94.0%)**. This unit ported **`Ui_DrawBaseInfo` (0x9b5f4,
+10,196 B)** -- the ufopaedia entry draw, and the last large gap in the binary apart from `Geoscape_Draw`.
+Four layers in the ARM's order: the screen pad, then the dashed waiting frame when the entry is not dirty,
+then the close control and three gates (not built / not open / not dirty-with-a-category-panel), then the
+dirty path that fills the screen, draws the solid 5 px frame, normalises the entry number and dispatches on
+the category. **The dashed frame ramps on the loop iteration, not on the coordinate**: 0x9B660 computes
+`((i + 20) * 5)` and 0x9B754 computes `230 - 5*i` / `250 - 5*i` for a `y += 7` / `x += 5` walk, and the first
+draft used the coordinate instead -- it agrees for the first dash and diverges after it. **The normalisation
+is five boundaries** (0x9B8C8..0x9B964): 54..75 -> category 3, `> 0xBB7` -> category 2 with `sub = n - 3000`,
+1001..1999 -> category 1 with `sub = n - 1000`, 2001..2999 -> category 26, 76..84 -> category 4; `0xBB7` is
+2999, so entry 3000 is category 2 with sub 0. **The fire-row chains REPLACE the label rather than appending
+to it** -- each mode arm ends in an inline strcpy loop over its topic chain, and only the four `BL strcat`
+sites append ("$", "%", " %", " s"). The two scratch copies at 0x187100 and 0x187208 tile the block exactly
+(0x187100 + 208 = 0x187208, + 208 = `g_nUfopaediaEntryNum` @ 0x1872D8) and have only this function's xrefs,
+so the port keeps them as locals and the IDB now carries both as `unsigned char[208]`. IDB: the prototype set
+to `void __fastcall Ui_DrawBaseInfo(PadImage **ppScreenPad)` with an evidence comment, `dword_1872DC` ->
+`g_nUfopaediaEntrySub`, `unk_187208` -> `g_abUfopaediaAmmoScratch`, and `unk_186B00` -> **`g_pUiCloseCtl`** --
+a correction of an earlier guess, because the xref list shows the same control slot re-armed by
+BaseInfoScreen_Init, BaseFacScreen_*, FundingScreen_*, NewBaseScreen_Open, BasePlaneScreen_Open, the Transfer
+screens and the ufopaedia. The 37 port comments and 13 parity citations that named the old globals were
+updated in the same unit. 108 new checks (test_baseui at 4138), 27 mutations all caught; two first-run
+survivors were test weaknesses (an overlap probe on a row the other pair already painted, an item-strip
+probe sitting on the divider's own column) and two mutants were dropped as equivalent before the run.
+
+Test checks before this unit: **15871**, coverage **964 / 1103 functions (87.4%)**, **552812 / 598792 bytes
+(92.3%)**. That unit ported the last small wrappers
 between the CRT init-term table and the ported subsystems: `Font_Init_ReturnArg` (0x46130),
 `Font_RegisterAtexit` (0x460d0) with its thunk `j_Font_Free` (0x460dc), `Bank_RegisterAtexit` (0x11164)
 with `Bank_AtexitThunk` (0x11170), `DatFile_RegisterAtexit` (0x3f0d0), `Render_Frame_DecRef` (0x36818),

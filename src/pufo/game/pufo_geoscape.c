@@ -302,15 +302,8 @@ void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
     pBase->nStoresTotal += nDelta; /* 0x55714 */
 }
 
-/* aFacBuildSpec @ 0xAA8F8, 18 records of three bytes: the tileA byte, the tileB byte and the
- * build days. The days byte is read with LDRSB at 0x623EC, so it is signed. Record 11 is 0xFF,
- * 0xFF, 19 and is never used as tiles: type 11 is the hangar and takes the 2 by 2 path instead. */
-typedef struct FacBuildSpec {
-    u8 bTileA;
-    u8 bTileB;
-    i8 nBuildDays;
-} FacBuildSpec;
-
+/* aFacBuildSpec @ 0xAA8F8. The FacBuildSpec type now lives in pufo_geoscape.h because
+ * Ui_DrawBaseInfo @ 0x9B5F4 reads the two tile bytes as basebits glyph indices. */
 static const FacBuildSpec g_aFacBuildSpec[PUFO_FAC_SPEC_COUNT] = {
     { 0x02, 0x11, 0x00 }, { 0x01, 0x12, 0x10 }, { 0x01, 0x13, 0x1A }, { 0x01, 0x14, 0x20 },
     { 0x02, 0x15, 0x0C }, { 0x01, 0x16, 0x19 }, { 0x01, 0x18, 0x0A }, { 0x01, 0x19, 0x12 },

@@ -812,6 +812,19 @@ void BaseRec_SubItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
 i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
                               i32 nX, i8 nY, u8 bClear);
 
+/* aFacBuildSpec @ 0xAA8F8, 18 records of three bytes: the tileA byte, the tileB byte and the
+ * build days. The days byte is read with LDRSB at 0x623EC, so it is signed. Record 11 is 0xFF,
+ * 0xFF, 19 and is never used as tiles: type 11 is the hangar and takes the 2 by 2 path instead.
+ * Ui_DrawBaseInfo @ 0x9B5F4 reads the two tile bytes as basebits glyph indices, which is why the
+ * type lives in the header and not beside the table. */
+typedef struct FacBuildSpec {
+    u8 bTileA;
+    u8 bTileB;
+    i8 nBuildDays;
+} FacBuildSpec;
+
+#define PUFO_FACBUILDSPEC_COUNT 18 /* the aFacBuildSpec record count @ 0xAA8F8 */
+
 /* aFacBuildSpec @ 0xAA8F8: the build days of one facility kind, the third byte of the three-byte
  * record. The original indexes the 18-record table unguarded (0x59E14, 0x623EC); the port returns 0
  * for a kind outside 0..17. */

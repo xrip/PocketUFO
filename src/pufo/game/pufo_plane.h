@@ -598,7 +598,7 @@ i32 BasePlaneScreen_SelectListed(const PlaneCraftSelectEnv *pEnv);
  *   5. six PadImages at +0x18..+0x2C, loaded baseb049, baseb050, baseb051, baseb053, baseb054,
  *      baseb052 at mode 3 — note the last two are swapped relative to their numbers — and all six get
  *      nOriginY 95 from the offset loop at 0x7DD88..0x7DD9C.
- *   6. unk_186B00 goes to x 224, y 1 with BasePlaneScreen_Close (0x7c9e8) as its click, and unk_186BA4
+ *   6. g_pUiCloseCtl goes to x 224, y 1 with BasePlaneScreen_Close (0x7c9e8) as its click, and unk_186BA4
  *      gets BuySellScreen_ApplyQtyChanges (0x78d90) — the same confirm slot the buy/sell screen uses.
  *   7. it tail calls BasePlaneScreen_BuildPanels.
  *
@@ -614,7 +614,7 @@ i32 BasePlaneScreen_SelectListed(const PlaneCraftSelectEnv *pEnv);
 
 typedef struct BasePlaneScreenInitEnv {
     BasePlaneScreen *pScreen;             /* the block at 0x161A48 */
-    UiControl *pCloseCtl;                 /* unk_186B00 */
+    UiControl *pCloseCtl;                 /* g_pUiCloseCtl */
     UiControl *pBuySellCtl;               /* unk_186BA4 */
     void (*apfnMainClick[PUFO_PLANE_MAIN_CTLS])(void);   /* DrawStatLabel, BuildListPanels, BuildControls */
     void (*apfnWeaponClick[PUFO_PLANE_WEAPON_CTLS])(void); /* RearmFromStores, SelectWeapon25..30 */

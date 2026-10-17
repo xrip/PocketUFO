@@ -10424,7 +10424,7 @@ void ResearchScreen_Draw(const ResearchDrawEnv *pEnv)
 
     if (pEnv->pbTopicSelected == NULL || *pEnv->pbTopicSelected == 0) {
         /* 0x73D64: no topic row selected -- the close control, and nothing else. This is the only
-         * path in the function that blits unk_186B00. */
+         * path in the function that blits g_pUiCloseCtl. */
         (void)UiControl_BlitActivePad(pEnv->pCtlClose, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlUser);
         return;
@@ -13080,4 +13080,730 @@ void BaseAtScreen_CloseThunk(const BaseAtCloseEnv *pEnv)
         }
     }
     Geoscape_CloseUI(pEnv->pClose);                                                /* 0x577F4, the tail call */
+}
+
+/* ==========================================================================
+ * Ui_DrawBaseInfo @ 0x9b5f4 -- the ufopaedia screen draw. See the header for the
+ * four layers and the normalisation table. Every constant below is read straight
+ * out of the ARM.
+ * ========================================================================== */
+
+/* The solid frame colour the entry path uses everywhere: index 0, mid 0x64, low 0x50. */
+#define PUFO_UDB_FRAME_MID 0x64
+#define PUFO_UDB_FRAME_LOW 0x50
+
+/* The normalised entry categories the dispatch knows. */
+#define PUFO_UDB_CAT_ITEM      1   /* entryNum 1001..1999, sub = n - 1000 */
+#define PUFO_UDB_CAT_CRAFT     2   /* entryNum > 3000, sub = n - 3000 */
+#define PUFO_UDB_CAT_FACILITY  3   /* entryNum 54..75 */
+#define PUFO_UDB_CAT_ALIEN     4   /* entryNum 76..84 */
+#define PUFO_UDB_CAT_WEAPON    26  /* entryNum 2001..2999 */
+
+static const char *UdbRec(const char *pTextRecs, i32 nRec)
+{
+    return pTextRecs + (size_t)nRec * PUFO_TEXT_REC_STRIDE;
+}
+
+static void Udb_Rect(i32 x, i32 y, i32 nRectW, i32 nRectH, u8 nIdx, u8 nMid, u8 nLow)
+{
+    SoftSurf_BlitRectProxy(0, x, y, nRectW, nRectH, nIdx, nMid, nLow);
+}
+
+static void Udb_FrameRects(void)
+{
+    Udb_Rect(0, 0, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);
+    Udb_Rect(0, 0x13B, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);
+    Udb_Rect(0, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);
+    Udb_Rect(0xEB, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);
+}
+
+/* 0x9B61C..0x9B7BC: the dashed frame, drawn only when the entry is NOT dirty.
+ * Vertical: 24 dashes of 1x7 at x 5 and 234, y 1,8,..,162 (near pair) and 152,..,313 (far pair).
+ * Horizontal: 24 dashes of 5x1 at y 5 and 315, x 1,6,..,116 (near pair) and 120,..,235 (far pair).
+ * The colour byte is used as index, mid AND low; it ramps (i+20)*5 along the near pair and
+ * 230-5*i / 250-5*i along the far pair (i is the ITERATION, 0x9B660 / 0x9B754 multiply the
+ * counter, not the coordinate), so the dashes fade toward the far corners. */
+static void Udb_DrawDashedFrame(void)
+{
+    for (i32 y = 0, i = 0; y < 0xA8; y += 7, ++i) {
+        u8 nNear = (u8)(((i + 0x14) * 5) & 0xFF);
+        u8 nFar  = (u8)((0xE6 - i * 5) & 0xFF);
+        Udb_Rect(5, y + 1, 1, 7, nNear, nNear, nNear);
+        Udb_Rect(5, y + 0x97, 1, 7, nFar, nFar, nFar);
+        Udb_Rect(0xEA, y + 1, 1, 7, nNear, nNear, nNear);
+        Udb_Rect(0xEA, y + 0x97, 1, 7, nFar, nFar, nFar);
+    }
+    for (i32 x = 0, i = 0; x < 0x78; x += 5, ++i) {
+        u8 nNear = (u8)(((i + 0x14) * 5) & 0xFF);
+        u8 nFar  = (u8)((0xFA - i * 5) & 0xFF);
+        Udb_Rect(x + 1, 5, 5, 1, nNear, nNear, nNear);
+        Udb_Rect(x + 1, 0x13B, 5, 1, nNear, nNear, nNear);
+        Udb_Rect(x + 0x77, 5, 5, 1, nFar, nFar, nFar);
+        Udb_Rect(x + 0x77, 0x13B, 5, 1, nFar, nFar, nFar);
+    }
+}
+
+/* 0x9B8C8..0x9B964: normalise the raw entry number into (category, sub), writing both back.
+ * 54..75 -> 3 (facility, sub untouched); > 0xBB7 i.e. 3000 and up -> 2 (craft, sub = n-3000);
+ * 1001..1999 -> 1 (item, sub = n-1000); 2001..2999 -> 26 (weapon); 76..84 -> 4 (alien).
+ * 2000 itself and 85..103 keep their number; anything else falls to the default case. */
+static void Udb_NormaliseEntry(i32 *pnEntryNum, i32 *pnSub)
+{
+    i32 n = *pnEntryNum;
+
+    if (n > 0x35 && n < 0x4C) {                                /* 0x9B8D0..0x9B8E0 */
+        n = PUFO_UDB_CAT_FACILITY;
+        *pnEntryNum = n;
+    }
+    if (n > 0xBB7) {                                           /* 0x9B8E4..0x9B914 */
+        *pnSub = n - 0xBB8;
+        n = PUFO_UDB_CAT_CRAFT;
+        *pnEntryNum = n;
+    }
+    if (n > 0x3E8) {
+        if (n < 0x7D0) {                                       /* 0x9B92C..0x9B93C */
+            *pnSub = n - 0x3E8;
+            n = PUFO_UDB_CAT_ITEM;
+            *pnEntryNum = n;
+        } else if (n > 0x7D0 && n < 0xBB8) {                   /* 0x9B948..0x9B950 */
+            n = PUFO_UDB_CAT_WEAPON;
+            *pnEntryNum = n;
+        }
+    }
+    if (n > 0x4B && n < 0x55) {                                /* 0x9B954..0x9B964 */
+        n = PUFO_UDB_CAT_ALIEN;
+        *pnEntryNum = n;
+    }
+}
+
+/* The lang.dat TEXTS records this draw reads, as indices into pTextRecs (stride 205). Each was
+ * read back from the original's literal address: (literal - 0xB38D0) / 205, every one exact. */
+enum {
+    PUFO_UDB_REC_HEADING_98  = 1270, /* unk_F31CE, entry 98's heading at (10,120) */
+    PUFO_UDB_REC_HEADING_99  = 1271, /* unk_F329B */
+    PUFO_UDB_REC_HEADING_100 = 1272, /* unk_F3368 */
+    PUFO_UDB_REC_HEADING_101 = 1273, /* unk_F3435 */
+    PUFO_UDB_REC_HEADING_102 = 1274, /* unk_F3502 */
+    PUFO_UDB_REC_HEADING_103 = 1275, /* unk_F35CF */
+    PUFO_UDB_REC_AMMO_LABEL  = 1276, /* unk_F369C, centred at (160,24) on every ammo row */
+    PUFO_UDB_REC_AMMO_RIGHT  = 1277, /* unk_F3769, at (200,24) when the item has an ammo cap */
+    PUFO_UDB_REC_AMMO_LEFT   = 1278, /* unk_F3836, at (8,100) when the item has an ammo cap */
+    PUFO_UDB_REC_FIRE_0      = 1279, /* unk_F3903, fire type 0 */
+    PUFO_UDB_REC_FIRE_1      = 1280, /* unk_F39D0, fire type 1, and the topic rows that replace it */
+    PUFO_UDB_REC_FIRE_2      = 1281, /* unk_F3A9D, fire type 2, and fire type 1's topic rows */
+    PUFO_UDB_REC_FIRE_5      = 1282, /* unk_F3B6A, fire type 5, and the topic-13 row */
+    PUFO_UDB_REC_FIRE_3      = 1283, /* unk_F3C37, fire type 3 */
+    PUFO_UDB_REC_FIRE_4      = 1284, /* unk_F3D04, fire type 4 */
+    PUFO_UDB_REC_STAT_M0     = 1285, /* unk_F3DD1, the abCostPct[0] row label */
+    PUFO_UDB_REC_STAT_M1     = 1286, /* unk_F3E9E, the abCostPct[1] row label */
+    PUFO_UDB_REC_STAT_M2     = 1287, /* unk_F3F6B, the abCostPct[2] row label */
+    PUFO_UDB_REC_CRAFT_R1    = 1288, /* unk_F4038, the craft row label at (85,46) */
+    PUFO_UDB_REC_CRAFT_R2    = 1289, /* unk_F4105, at (85,58) */
+    PUFO_UDB_REC_CRAFT_R3    = 1290, /* unk_F41D2, at (85,70) */
+    PUFO_UDB_REC_CRAFT_R4    = 1291, /* unk_F429F, at (85,82) */
+    PUFO_UDB_REC_RACE_55     = 1292, /* unk_F436C, the topic-55 title override */
+    PUFO_UDB_REC_RACE_56     = 1293, /* unk_F4439, topic 56 */
+    PUFO_UDB_REC_RACE_57     = 1294, /* unk_F4506, topic 57 */
+    PUFO_UDB_REC_RACE_58     = 1295, /* unk_F45D3, topic 58 */
+    PUFO_UDB_REC_RACE_59     = 1296, /* unk_F46A0, topic 59 */
+    PUFO_UDB_REC_STAT4_1     = 1297, /* unk_F476D, the 85..92 line at (40,100) */
+    PUFO_UDB_REC_STAT4_2     = 1298, /* unk_F483A, at (40,120) */
+    PUFO_UDB_REC_STAT4_3     = 1299, /* unk_F4907, at (40,140) */
+    PUFO_UDB_REC_STAT4_4     = 1300, /* unk_F49D4, at (40,160) */
+    PUFO_UDB_REC_STAT5_1     = 1335, /* unk_F65DB, the 98..103 line at (10,144) */
+    PUFO_UDB_REC_STAT5_2     = 1336, /* unk_F66A8, at (10,158) */
+    PUFO_UDB_REC_STAT5_3     = 1337, /* unk_F6775, at (10,172) */
+    PUFO_UDB_REC_STAT5_4     = 1338, /* unk_F6842, at (10,186) */
+    PUFO_UDB_REC_DAYS_TAIL   = 1357, /* unk_F7779, appended after the craft build days */
+    PUFO_UDB_REC_STAT5_2TAIL = 1358, /* unk_F7846, appended after the (10,158) line's number */
+    PUFO_UDB_REC_PANEL_1     = 1715, /* unk_109627, the 93..97 text-panel row 0 */
+    PUFO_UDB_REC_PANEL_2     = 1716, /* unk_1096F4, row 1 */
+    PUFO_UDB_REC_PANEL_3     = 1717, /* unk_1097C1, row 2 */
+    PUFO_UDB_REC_PANEL_4     = 1718, /* unk_10988E, row 3 */
+    PUFO_UDB_REC_PANEL_5     = 1719, /* unk_10995B, row 4 */
+    PUFO_UDB_REC_PANEL_6     = 1720  /* unk_109A28, row 5 */
+};
+
+/* The topic's name record: aResearchTopics[topic].wGate4 indexes the TEXTS block. */
+static const char *UdbTopicName(const UiBaseInfoDrawEnv *pEnv)
+{
+    return UdbRec(pEnv->pTextRecs, pEnv->aTopics[*pEnv->pnTopic].wGate4);
+}
+
+/* 0x9DD50..0x9DD58: the jumptable default case, where every entry path lands. Draw the text
+ * panel (0x9D438), then the close control. */
+static void Udb_FinishEntry(UiBaseInfoDrawEnv *pEnv)
+{
+    if (pEnv->pTextPanel != NULL) {
+        UiPanel_DrawText(pEnv->pTextPanel);                                        /* 0x9D438 */
+    }
+    (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);             /* 0x9DD50 */
+}
+
+/* 0x9D404..0x9D43C: centre the working string on x = 120 at y = 5, draw it, then the tail.
+ * The alien, facility and 85..92 blocks B into this. */
+static void Udb_DrawTitleAndFinish(UiBaseInfoDrawEnv *pEnv, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz);                                     /* 0x9D40C */
+    Text_DrawString(0x78 - nWidth / 2, 5, psz);                                    /* 0x9D420..0x9D42C */
+    Udb_FinishEntry(pEnv);
+}
+
+/* The entry pad (ppScreenPad[1]) centred on x = 120, with the border rect and the blit the
+ * alien, facility, 85..92 and 98..103 blocks share. nOriginY < 0 means the block leaves the
+ * pad's own Y in place (the facility block, 0x9BC98). */
+static void Udb_CentrePadBlit(UiBaseInfoDrawEnv *pEnv, i32 nOriginY)
+{
+    PadImage *pPad = pEnv->ppScreenPad[1];                                         /* g_pUfopaediaPad */
+    if (pPad == NULL) {
+        return;
+    }
+    pPad->nOriginX = 0x78 - (i32)pPad->uWidth / 2;
+    if (nOriginY >= 0) {
+        pPad->nOriginY = nOriginY;
+    }
+    Udb_Rect(pPad->nOriginX - 2, pPad->nOriginY - 2, (i32)pPad->uWidth + 4,
+             (i32)pPad->uHeight + 4, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);
+    PadImage_Blit(pPad);
+}
+
+/* ---- category 26, 0x9B9E4: the weapon page. A 200 x 225 panel at (0,20), the topic title
+ * centred on x = 105 at y = 30, then the text panel. */
+static void Udb_DrawWeaponEntry(UiBaseInfoDrawEnv *pEnv)
+{
+    Udb_Rect(0, 0x14, 0xC8, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);        /* 0x9B9E4 */
+    Udb_Rect(0, 0xF0, 0xC8, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);        /* 0x9BA0C */
+    Udb_Rect(0xC8, 0x14, 5, 0xE1, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);     /* 0x9BA30 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xBE, 0x78, 0xF0, 0x14, 0x14, 0x14);   /* 0x9BA78 */
+
+    const char *pszName = UdbTopicName(pEnv);
+    const i32 nWidth = Text_MeasureWidth(pszName);                                 /* 0x9BAAC */
+    Text_DrawString(0x69 - nWidth / 2, 0x1E, pszName);                            /* 0x9BAD0, loc_9D428 */
+    Udb_FinishEntry(pEnv);
+}
+
+/* ---- category 4, 0x9BAEC: the alien page. The entry pad centred at (120,100), the solid
+ * frame, the white title pair, then the topic name centred at (120,5). */
+static void Udb_DrawAlienEntry(UiBaseInfoDrawEnv *pEnv)
+{
+    const PadImage *pPad = pEnv->ppScreenPad[1];
+    Udb_CentrePadBlit(pEnv, pPad != NULL ? 100 - (i32)pPad->uHeight / 2 : -1);    /* 0x9BB1C: 100 - h/2 */
+    Udb_Rect(0, 0xC8, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);        /* 0x9BB5C */
+    Udb_Rect(0, 0, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);           /* 0x9BB84 */
+    Udb_Rect(0, 0x13B, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9BBA8 */
+    Udb_Rect(0, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);          /* 0x9BBD0 */
+    Udb_Rect(0xEB, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9BBF4 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);   /* 0x9BC38 */
+    Udb_DrawTitleAndFinish(pEnv, UdbTopicName(pEnv));                             /* 0x9BC7C -> loc_9D404 */
+}
+
+/* ---- category 3, 0x9BC98: the facility page. The entry pad centred on x only (its own y),
+ * the solid frame, then the topic name -- except for the five race topics 55..59, whose title
+ * is a fixed record. */
+static void Udb_DrawFacilityEntry(UiBaseInfoDrawEnv *pEnv)
+{
+    Udb_CentrePadBlit(pEnv, -1);                                                  /* 0x9BC98: originY untouched */
+    Udb_Rect(0, 0xC8, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);        /* 0x9BCF4 */
+    Udb_Rect(0, 0, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);           /* 0x9BD1C */
+    Udb_Rect(0, 0x13B, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9BD40 */
+    Udb_Rect(0, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);          /* 0x9BD68 */
+    Udb_Rect(0xEB, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9BD8C */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);   /* 0x9BDD0 */
+
+    const i32 nTopic = *pEnv->pnTopic;
+    const char *pszTitle = UdbTopicName(pEnv);                                    /* 0x9BE18 */
+    switch (nTopic) {                                                             /* 0x9BE2C..0x9BE50 */
+    case 55: pszTitle = UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_RACE_55); break;
+    case 56: pszTitle = UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_RACE_56); break;
+    case 57: pszTitle = UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_RACE_57); break;
+    case 58: pszTitle = UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_RACE_58); break;
+    case 59: pszTitle = UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_RACE_59); break;
+    default: break;
+    }
+    Udb_DrawTitleAndFinish(pEnv, pszTitle);                                       /* loc_9D404 */
+}
+
+/* ---- category 2, 0x9BF44: the craft page. Map_nGlyphPalBase = 3 for the whole block; the
+ * build tiles are basebits glyphs (kind 11, the hangar, draws the fixed 2x2 instead of the
+ * aFacBuildSpec pair), then the topic title, the build days, the cost, and for subs 13..16 the
+ * two hard-coded price/percent rows. */
+static void Udb_DrawCraftEntry(UiBaseInfoDrawEnv *pEnv)
+{
+    const i32 nSub = *pEnv->pnSub;
+    *pEnv->pnGlyphPalBase = 3;                                                    /* 0x9BF60 */
+    const u16 nBase = pEnv->pFont->nBaseBitsBase;                                 /* fontSys_nBaseBitsSprBase */
+
+    if (nSub == 11) {                                                             /* 0x9BF50, the hangar */
+        Font_DrawGlyph(0xA, 0x1E, (u16)(nBase + 9), 0);                           /* 0x9BF68 */
+        Font_DrawGlyph(0x2A, 0x1E, (u16)(nBase + 10), 0);                         /* 0x9BF80 */
+        Font_DrawGlyph(0xA, 0x3E, (u16)(nBase + 11), 0);                          /* 0x9BF9C */
+        Font_DrawGlyph(0x2A, 0x3E, (u16)(nBase + 12), 0);                         /* 0x9BFB8 */
+    } else if (nSub >= 0 && nSub < PUFO_FACBUILDSPEC_COUNT) {
+        Font_DrawGlyph(0x1A, 0x2E, (u16)(nBase + pEnv->paBuildSpec[nSub].bTileA), 0); /* 0x9BFE0 */
+        Font_DrawGlyph(0x1A, 0x2E, (u16)(nBase + pEnv->paBuildSpec[nSub].bTileB), 0); /* 0x9C000, same spot */
+    }
+
+    Udb_Rect(0, 0x14, 0xDC, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9C030 */
+    Udb_Rect(0, 0xF0, 0xDC, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9C058 */
+    Udb_Rect(0, 0x64, 0xDC, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9C07C */
+    Udb_Rect(0x50, 0x14, 5, 0x54, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);    /* 0x9C0A0 */
+    Udb_Rect(0xDC, 0x14, 5, 0xE1, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);    /* 0x9C0C8 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0x32, 0xFF, 0x32, 0x32, 0x14, 0x14);  /* 0x9C110 */
+
+    const char *pszName = UdbTopicName(pEnv);
+    i32 nWidth = Text_MeasureWidth(pszName);                                      /* 0x9C144 */
+    Text_DrawString(0x98 - nWidth / 2, 0x1E, pszName);                            /* 0x9C168 */
+
+    char szWork[PUFO_TEXT_REC_STRIDE + 16];
+    char szNum[16];
+
+    pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_CRAFT_R1), sizeof szWork); /* 0x9C17C */
+    Text_DrawString(0x55, 0x2E, szWork);                                          /* 0x9C1B4 */
+
+    const i32 nDays = (nSub >= 0 && nSub < PUFO_FACBUILDSPEC_COUNT)
+                          ? pEnv->paBuildSpec[nSub].nBuildDays : 0;
+    (void)snprintf(szNum, sizeof szNum, "%d", nDays);                            /* 0x9C1D4, j_itoa */
+    pufo_strncpy(szWork, szNum, sizeof szWork);                                    /* 0x9C1DC */
+    (void)pufo_strcat(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_DAYS_TAIL), sizeof szWork); /* 0x9C200 */
+    nWidth = Text_MeasureWidth(szWork);                                           /* 0x9C20C */
+    Text_DrawString(0xD7 - nWidth, 0x2E, szWork);                                 /* 0x9C214: right-aligned, not centred */
+
+    pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_CRAFT_R2), sizeof szWork); /* 0x9C224 */
+    Text_DrawString(0x55, 0x3A, szWork);                                          /* 0x9C25C */
+
+    const u32 uCost = (nSub >= 0 && nSub < PUFO_BASEFAC_COUNT) ? pEnv->paFac[nSub].uCost : 0u;
+    (void)snprintf(szNum, sizeof szNum, "%u", uCost);                             /* 0x9C284 */
+    pufo_strncpy(szWork, szNum, sizeof szWork);                                    /* 0x9C28C */
+    (void)pufo_strcat(szWork, "$", sizeof szWork);                                /* 0x9C2AC, aDollarSign */
+    nWidth = Text_MeasureWidth(szWork);                                           /* 0x9C2B8 */
+    Text_DrawString(0xD7 - nWidth, 0x3A, szWork);                                 /* 0x9C2C0 */
+
+    if (nSub > 0xC && nSub < 0x11) {                                              /* 0x9C2D8..0x9C2E4 */
+        static const char *const apszPrice[4] = { "500", "600", "900", "1500" };  /* 0x9C2F0..0x9C368 */
+        static const char *const apszPct[4]   = { "50", "60", "70", "80" };       /* 0x9C3F0..0x9C46C */
+        pufo_strncpy(szNum, apszPrice[nSub - 13], sizeof szNum);
+        pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_CRAFT_R3), sizeof szWork); /* 0x9C388 */
+        Text_DrawString(0x55, 0x46, szWork);                                      /* 0x9C3C0 */
+        nWidth = Text_MeasureWidth(szNum);                                        /* 0x9C3CC */
+        Text_DrawString(0xD7 - nWidth, 0x46, szNum);                              /* 0x9C3D4 */
+
+        pufo_strncpy(szNum, apszPct[nSub - 13], sizeof szNum);
+        pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_CRAFT_R4), sizeof szWork); /* 0x9C48C */
+        Text_DrawString(0x55, 0x52, szWork);                                      /* 0x9C4C4 */
+        (void)pufo_strcat(szNum, "%", sizeof szNum);                              /* 0x9C4D0, asc_ABAB8 */
+        nWidth = Text_MeasureWidth(szNum);                                        /* 0x9C4DC */
+        Text_DrawString(0xD7 - nWidth, 0x52, szNum);                              /* 0x9C4E4, loc_9D428 */
+    }
+    Udb_FinishEntry(pEnv);                                                        /* 0x9D430 */
+}
+
+/* The fire-type row text for one ammo slot, 0x9C9D0..0x9CBC8. The original's "appends" are
+ * inline strcpy loops -- they REPLACE the working string, they do not concatenate; only the
+ * BL strcat calls (the "%" and " s" suffixes elsewhere) append. The test chain has early exits,
+ * transcribed with the same shape. */
+static void Udb_FireRow(UiBaseInfoDrawEnv *pEnv, char *pszWork, u8 nMode, i32 nSlot)
+{
+    const i32 nTopic = *pEnv->pnTopic;
+
+    if (nMode == 0) { pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_0), PUFO_TEXT_REC_STRIDE + 16); return; } /* 0x9CCA0 */
+    if (nMode == 3) { pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_3), PUFO_TEXT_REC_STRIDE + 16); return; } /* 0x9CA60 */
+    if (nMode == 4) { pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_4), PUFO_TEXT_REC_STRIDE + 16); return; } /* 0x9CA30 */
+    if (nMode == 5) { pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_5), PUFO_TEXT_REC_STRIDE + 16); return; } /* 0x9CA00 */
+
+    if (nMode == 1) {                                                             /* 0x9CBD0 */
+        pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_1), PUFO_TEXT_REC_STRIDE + 16);
+        if (nTopic == 5) {                                                        /* 0x9CC00 */
+            if (nSlot != 1) { return; }                                           /* 0x9CC0C -> 0x9CCCC */
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_2), PUFO_TEXT_REC_STRIDE + 16);
+        }
+        if (nTopic == 3) {                                                        /* 0x9CC34 */
+            if (nSlot != 1) { return; }
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_2), PUFO_TEXT_REC_STRIDE + 16);
+        }
+        if (nTopic == 4) {                                                        /* 0x9CC68 */
+            if (nSlot != 1) { return; }
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_2), PUFO_TEXT_REC_STRIDE + 16);
+        }
+        return;
+    }
+    if (nMode == 2) {                                                             /* 0x9CA90 */
+        pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_2), PUFO_TEXT_REC_STRIDE + 16);
+        if (nTopic == 5) {                                                        /* 0x9CAC0 */
+            if (nSlot == 2) {
+                pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_1), PUFO_TEXT_REC_STRIDE + 16); /* 0x9CAD0 */
+            }
+            if (nSlot != 0) { return; }                                           /* 0x9CB04 -> 0x9CCCC */
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_1), PUFO_TEXT_REC_STRIDE + 16);     /* 0x9CB0C */
+        } else if (nTopic == 0xC) {                                               /* 0x9CAF4 */
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_1), PUFO_TEXT_REC_STRIDE + 16);
+        }
+        if (nTopic == 0xD) {                                                      /* 0x9CB30 */
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_5), PUFO_TEXT_REC_STRIDE + 16);
+        }
+        if (nTopic == 3) {                                                        /* 0x9CB60 */
+            if (nSlot != 2) { return; }
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_1), PUFO_TEXT_REC_STRIDE + 16);
+        }
+        if (nTopic == 4) {                                                        /* 0x9CB94 */
+            if (nSlot != 2) { return; }
+            pufo_strncpy(pszWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_FIRE_1), PUFO_TEXT_REC_STRIDE + 16);
+        }
+        return;
+    }
+    /* Any other fire type: 0x9C9F8 BNE 0x9CCCC -- the working string keeps the previous row's. */
+}
+
+/* ---- category 1, 0x9C530: the item page. Map_nGlyphPalBase = 34; the item glyph; the frame;
+ * the topic title; then one row per ammo type. An item with no ammo types but non-zero fire
+ * power gets a SYNTHESISED ammo entry (bAmmoCap 0xFF, ammoTypeId[0] = sub), except subs 14/15
+ * which clear it again. The scratch copy is mutated, never the record. */
+static void Udb_DrawItemEntry(UiBaseInfoDrawEnv *pEnv)
+{
+    const i32 nSub = *pEnv->pnSub;
+    *pEnv->pnGlyphPalBase = 0x22;                                                 /* 0x9C54C */
+
+    const ObjectRecFull *pObj = (nSub >= 0 && nSub < pEnv->nObjectCount)
+                                    ? pEnv->apObjects[nSub] : NULL;
+    if (pObj == NULL) {
+        Udb_FinishEntry(pEnv);
+        return;
+    }
+
+    const u16 nIdx = (u16)(pEnv->pFont->nBigObsBase - 1 + pObj->uIconId);        /* 0x9C560..0x9C598 */
+    if (*pEnv->pnTopic == 0x13) {                                                 /* 0x9C550 */
+        Font_DrawGlyph(0x12, 0x2E, nIdx, 0);                                      /* 0x9C57C */
+    } else {
+        Font_DrawGlyph(0x1A - 8 * (i32)pObj->nFootW, 0x36 - 8 * (i32)pObj->nFootH, nIdx, 0); /* 0x9C5AC */
+    }
+
+    Udb_Rect(0, 0x14, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9C5BC */
+    Udb_Rect(0, 0xC8, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9C5E4 */
+    Udb_Rect(0, 0x53, 0x34, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9C608 */
+    Udb_Rect(0x2F, 0x14, 5, 0x44, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);    /* 0x9C62C */
+    Udb_Rect(0x84, 0x14, 5, 0xB9, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);    /* 0x9C654 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0x32, 0xFF, 0x32, 0x32, 0x14, 0x14);  /* 0x9C69C */
+
+    const char *pszName = UdbTopicName(pEnv);
+    i32 nWidth = Text_MeasureWidth(pszName);                                      /* 0x9C6CC */
+    Text_DrawString(0x78 - nWidth / 2, 5, pszName);                               /* 0x9C6F0 */
+
+    /* 0x9C704..0x9C730: the 0xD0-byte scratch copy (g_abUfopaediaItemScratch @ 0x187100). */
+    ObjectRecFull item;
+    memcpy(&item, pObj, sizeof item);
+
+    i32 nAmmoCount = item.anAmmoTypeId[0] + item.anAmmoTypeId[1] + item.anAmmoTypeId[2]; /* 0x9C734..0x9C754 */
+    if (nAmmoCount == 0 && (i16)item.uFirePower != 0) {                           /* 0x9C758..0x9C770 */
+        item.bAmmoCap = 0xFF;                                                     /* 0x9C774 */
+        item.anAmmoTypeId[0] = (u16)nSub;                                         /* 0x9C77C */
+        if (nSub == 0xE || nSub == 0xF) {                                         /* 0x9C778..0x9C788 */
+            item.bAmmoCap = 0;                                                    /* 0x9C78C */
+            item.anAmmoTypeId[0] = 0;
+            item.anAmmoTypeId[1] = 0;
+            item.anAmmoTypeId[2] = 0;
+        }
+    }
+
+    char szWork[PUFO_TEXT_REC_STRIDE + 16];
+    char szNum[16];
+    i32 nRow = 0;                                                                 /* var_114 */
+
+    for (i32 nSlot = 0; nSlot < 3; ++nSlot) {                                     /* var_11C, 0x9D018..0x9D024 */
+        const u16 nAmmoId = item.anAmmoTypeId[nSlot];                             /* 0x9C7B4 */
+        if (nAmmoId == 0) {
+            continue;                                                             /* 0x9C7BC -> 0x9D018 */
+        }
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xBE, 0x78, 0xF0, 0x32, 0x14, 0x14); /* 0x9C7DC */
+
+        pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_AMMO_LABEL), sizeof szWork); /* 0x9C7E0 */
+        nWidth = Text_MeasureWidth(szWork);                                       /* 0x9C814 */
+        Text_DrawString(0xA0 - nWidth / 2, 0x18, szWork);                         /* 0x9C82C */
+
+        if (item.bAmmoCap != 0xFF) {                                              /* 0x9C838 */
+            pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_AMMO_RIGHT), sizeof szWork);
+            Text_DrawString(0xC8, 0x18, szWork);                                  /* 0x9C878 */
+        }
+        if (item.bAmmoCap != 0xFF) {                                              /* 0x9C884 */
+            pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_AMMO_LEFT), sizeof szWork);
+            Text_DrawString(8, 0x64, szWork);                                     /* 0x9C8C4 */
+        }
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 0x32, 0xFF, 0x32, 0x32, 0x14, 0x14); /* 0x9C8EC */
+
+        /* The second scratch block (g_abUfopaediaAmmoScratch @ 0x187208): the AMMO record, or --
+         * when the entry has a
+         * synthesised ammo -- a copy of the ITEM with its fire type replaced by the sub table. */
+        ObjectRecFull ammo;
+        if (item.bAmmoCap == 0xFF) {                                              /* 0x9C8FC..0x9C918 */
+            memcpy(&ammo, &item, sizeof ammo);
+            ammo.bFireType = 1;                                                   /* 0x9C924 */
+            if (nSub > 0x25) {                                                    /* 0x9C92C..0x9C990 */
+                if (nSub == 0x27 || nSub == 0x31 || nSub == 0x32) { ammo.bFireType = 4; }
+            } else if (nSub == 0x25) {
+                ammo.bFireType = 4;
+            } else if (nSub == 2 || nSub == 5 || nSub == 9) {
+                ammo.bFireType = 3;                                               /* 0x9C970 */
+            } else if (nSub == 0x16) {
+                ammo.bFireType = 5;                                               /* 0x9C994 */
+            }
+        } else {
+            const ObjectRecFull *pAmmo = (nAmmoId < (u16)pEnv->nObjectCount)
+                                             ? pEnv->apObjects[nAmmoId] : NULL;   /* 0x9C9A4..0x9C9B4 */
+            if (pAmmo != NULL) {
+                memcpy(&ammo, pAmmo, sizeof ammo);
+            } else {
+                memset(&ammo, 0, sizeof ammo);
+            }
+        }
+
+        Udb_FireRow(pEnv, szWork, ammo.bFireType, nSlot);                         /* 0x9C9D0 */
+
+        nWidth = Text_MeasureWidth(szWork);                                       /* 0x9CCD4 */
+        Text_DrawString(0xA0 - nWidth / 2, 0x37 + 50 * nRow, szWork);             /* 0x9CCF4..0x9CD00 */
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xBE, 0x78, 0xF0, 0x32, 0x14, 0x14); /* 0x9CD20 */
+        (void)snprintf(szNum, sizeof szNum, "%d", (i32)(i16)ammo.uFirePower);     /* 0x9CD34 */
+        pufo_strncpy(szWork, szNum, sizeof szWork);                                /* 0x9CD3C */
+        nWidth = Text_MeasureWidth(szWork);                                       /* 0x9CD5C */
+        Text_DrawString(0xA0 - nWidth / 2, 0x45 + 50 * nRow, szWork);             /* 0x9CD70 */
+
+        if (item.bAmmoCap != 0xFF) {                                              /* 0x9CD80 */
+            Font_DrawGlyph((27 - (i32)ammo.nFootW) * 8,
+                           0x45 + 50 * nRow - 8 * (i32)ammo.nFootH,
+                           (u16)(pEnv->pFont->nBigObsBase - 1 + ammo.uIconId), 0); /* 0x9CDC4 */
+        }
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 0x32, 0xFF, 0x32, 0x32, 0x14, 0x14); /* 0x9CDE4 */
+
+        /* 0x9CDF4..0x9CE10: the per-mode stat rows are skipped for a synthesised-ammo entry
+         * whose sub is not 2, 5 or 9. They read the ORIGINAL record, not the copy. */
+        if (!(item.bAmmoCap == 0xFF && nSub != 2 && nSub != 5 && nSub != 9)) {
+            for (i32 nMode = 0; nMode < 3; ++nMode) {                             /* R6, 0x9CFF0 */
+                if (pObj->abCostPct[nMode] == 0) {
+                    continue;                                                     /* 0x9CE2C */
+                }
+                static const i32 anStatRecs[3] = { PUFO_UDB_REC_STAT_M0, PUFO_UDB_REC_STAT_M1,
+                                                   PUFO_UDB_REC_STAT_M2 };
+                pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, anStatRecs[nMode]), sizeof szWork); /* 0x9CE3C..0x9CE9C */
+                nWidth = Text_MeasureWidth(szWork);                               /* 0x9CECC */
+                Text_DrawString(0x23 - nWidth / 2, 0x7E + 20 * nMode, szWork);    /* 0x9CEE4 */
+
+                (void)snprintf(szNum, sizeof szNum, "%d", pObj->abCostPct[nMode]); /* 0x9CF14 */
+                pufo_strncpy(szWork, szNum, sizeof szWork);                        /* 0x9CF1C */
+                (void)pufo_strcat(szWork, "%", sizeof szWork);                    /* 0x9CF3C */
+                nWidth = Text_MeasureWidth(szWork);                               /* 0x9CF48 */
+                Text_DrawString(0x54 - nWidth / 2, 0x7E + 20 * nMode, szWork);    /* 0x9CF60 */
+
+                (void)snprintf(szNum, sizeof szNum, "%d", pObj->abArmorTu[nMode]); /* 0x9CF8C */
+                pufo_strncpy(szWork, szNum, sizeof szWork);                        /* 0x9CF94 */
+                (void)pufo_strcat(szWork, "%", sizeof szWork);                    /* 0x9CFB4 */
+                nWidth = Text_MeasureWidth(szWork);                               /* 0x9CFC0 */
+                Text_DrawString(0x76 - nWidth / 2, 0x7E + 20 * nMode, szWork);    /* 0x9CFD8 */
+            }
+        }
+        ++nRow;                                                                   /* 0x9CFFC */
+    }
+
+    Udb_FinishEntry(pEnv);                                                        /* 0x9D028 -> loc_9D430 */
+}
+
+/* ---- entries 85..92, 0x9D040..0x9D100: the four hard-coded stat lines at (40,100/120/140/160),
+ * the frame, the entry pad at y = 25, the white title pair, the topic name at (120,5). The arms
+ * only set the four numbers; the drawer is shared (loc_9D0FC). */
+static void Udb_DrawStatEntry(UiBaseInfoDrawEnv *pEnv, i32 nLine1, i32 nLine2,
+                              i32 nLine3, i32 nLine4)
+{
+    char szWork[PUFO_TEXT_REC_STRIDE + 16];
+    char szNum[16];
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0x32, 0xFF, 0x32, 0x32, 0x14, 0x14);  /* 0x9D120 */
+
+    static const i32 anStat4[4] = { PUFO_UDB_REC_STAT4_1, PUFO_UDB_REC_STAT4_2,
+                                    PUFO_UDB_REC_STAT4_3, PUFO_UDB_REC_STAT4_4 };
+    const i32 anVals[4] = { nLine1, nLine2, nLine3, nLine4 };
+    for (i32 n = 0; n < 4; ++n) {                                                 /* 0x9D12C..0x9D28C */
+        pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, anStat4[n]), sizeof szWork);
+        (void)snprintf(szNum, sizeof szNum, "%d", anVals[n]);
+        (void)pufo_strcat(szWork, szNum, sizeof szWork);
+        Text_DrawString(0x28, 100 + 20 * n, szWork);
+    }
+
+    Udb_Rect(0, 0xC8, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9D290 */
+    Udb_Rect(0, 0, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);          /* 0x9D2B8 */
+    Udb_Rect(0, 0x13B, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);      /* 0x9D2DC */
+    Udb_Rect(0, 0x14, 0x140, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);      /* 0x9D304: 320 wide, as the ARM has it */
+
+    Udb_CentrePadBlit(pEnv, 0x19);                                                /* 0x9D34C: originY = 25 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);  /* 0x9D3B0 */
+    Udb_DrawTitleAndFinish(pEnv, UdbTopicName(pEnv));                             /* 0x9D3F0 -> loc_9D404 */
+}
+
+/* ---- entries 93..97, 0x9D494..0x9D564: six numbers, then the shared panel fill (loc_9D568):
+ * the text panel's six line buffers get records 1715..1720 with the numbers appended, the pad
+ * keeps its own originY, the frame, the white title pair, the topic name at (120,15). */
+static void Udb_DrawPanelEntry(UiBaseInfoDrawEnv *pEnv, i32 nV108, i32 nV10C, i32 nV110,
+                               i32 nV114, i32 nV118, i32 nV11C)
+{
+    Udb_Rect(0, 0xC8, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9D568 */
+    if (pEnv->pTextPanel != NULL) {
+        UiPanel_SetBytes6to11(pEnv->pTextPanel, 0xBE, 0x78, 0xF0, 0x14, 0x14, 0x14); /* 0x9D5B4 */
+        static const i32 anPanelRecs[6] = { PUFO_UDB_REC_PANEL_1, PUFO_UDB_REC_PANEL_2,
+                                            PUFO_UDB_REC_PANEL_3, PUFO_UDB_REC_PANEL_4,
+                                            PUFO_UDB_REC_PANEL_5, PUFO_UDB_REC_PANEL_6 };
+        const i32 anVals[6] = { nV11C, nV118, nV108, nV10C, nV110, nV114 };      /* 0x9D5EC..0x9D798 */
+        char szNum[16];
+        for (i32 n = 0; n < 6; ++n) {
+            if (pEnv->pTextPanel->apLines[n] == NULL) {
+                continue;
+            }
+            pufo_strncpy((char *)pEnv->pTextPanel->apLines[n],
+                         UdbRec(pEnv->pTextRecs, anPanelRecs[n]), PUFO_PANEL_LINE_BYTES);
+            (void)snprintf(szNum, sizeof szNum, "%d", anVals[n]);
+            (void)pufo_strcat((char *)pEnv->pTextPanel->apLines[n], szNum, PUFO_PANEL_LINE_BYTES);
+        }
+    }
+
+    Udb_CentrePadBlit(pEnv, -1);                                                  /* 0x9D79C: originY untouched */
+    Udb_Rect(0, 0, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);          /* 0x9D7E4 */
+    Udb_Rect(0, 0x13B, 0xF0, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);      /* 0x9D80C */
+    Udb_Rect(0, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);         /* 0x9D834 */
+    Udb_Rect(0xEB, 0, 5, 0x140, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);      /* 0x9D858 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);  /* 0x9D89C */
+
+    const char *pszName = UdbTopicName(pEnv);
+    const i32 nWidth = Text_MeasureWidth(pszName);                                /* 0x9D8CC */
+    Text_DrawString(0x78 - nWidth / 2, 0xF, pszName);                             /* 0x9D8F0 */
+    Udb_FinishEntry(pEnv);                                                        /* 0x9D904 -> loc_9D438 */
+}
+
+/* ---- entries 98..103, 0x9D91C..0x9DA70: a heading record plus four numbers, then the shared
+ * drawer (loc_9DAB4): the heading at (10,120), the four lines at (10,144/158/172/186), the pad
+ * at y = 50, the 200-wide panel rects, then the close control (no text panel draw). */
+static void Udb_DrawNumberEntry(UiBaseInfoDrawEnv *pEnv, const char *pszHeading,
+                                i32 nR9, i32 nR10, i32 nR11, i32 nV11C)
+{
+    char szWork[PUFO_TEXT_REC_STRIDE + 16];
+    char szNum[16];
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xBE, 0x78, 0xF0, 0x14, 0x14, 0x14);  /* 0x9DAD4 */
+    Text_DrawString(0xA, 0x78, pszHeading);                                       /* 0x9DAE8 */
+
+    static const i32 anStat5[4] = { PUFO_UDB_REC_STAT5_1, PUFO_UDB_REC_STAT5_2,
+                                    PUFO_UDB_REC_STAT5_3, PUFO_UDB_REC_STAT5_4 };
+    const i32 anVals[4] = { nR9, nR10, nR11, nV11C };
+
+    pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, anStat5[0]), sizeof szWork);     /* 0x9DAEC */
+    (void)snprintf(szNum, sizeof szNum, "%d", anVals[0]);
+    (void)pufo_strcat(szWork, szNum, sizeof szWork);
+    Text_DrawString(0xA, 0x90, szWork);                                           /* 0x9DB30 */
+
+    pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, anStat5[1]), sizeof szWork);     /* 0x9DB44 */
+    (void)snprintf(szNum, sizeof szNum, "%d", anVals[1]);
+    (void)pufo_strcat(szWork, szNum, sizeof szWork);
+    (void)pufo_strcat(szWork, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_STAT5_2TAIL), sizeof szWork); /* 0x9DB94, unk_F7846 */
+    Text_DrawString(0xA, 0x9E, szWork);                                           /* 0x9DB98 */
+
+    pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, anStat5[2]), sizeof szWork);     /* 0x9DBAC */
+    (void)snprintf(szNum, sizeof szNum, "%d", anVals[2]);
+    (void)pufo_strcat(szWork, szNum, sizeof szWork);
+    (void)pufo_strcat(szWork, " %", sizeof szWork);                               /* 0x9DBF8, asc_AC644 */
+    Text_DrawString(0xA, 0xAC, szWork);                                           /* 0x9DBFC */
+
+    pufo_strncpy(szWork, UdbRec(pEnv->pTextRecs, anStat5[3]), sizeof szWork);     /* 0x9DC10 */
+    (void)snprintf(szNum, sizeof szNum, "%d", anVals[3]);
+    (void)pufo_strcat(szWork, szNum, sizeof szWork);
+    (void)pufo_strcat(szWork, " s", sizeof szWork);                               /* 0x9DC5C, aS_0 */
+    Text_DrawString(0xA, 0xBA, szWork);                                           /* 0x9DC60 */
+
+    Udb_CentrePadBlit(pEnv, 0x32);                                                /* 0x9DC98: originY = 50 */
+    Udb_Rect(0, 0x14, 0xC8, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9DCE4 */
+    Udb_Rect(0, 0xF0, 0xC8, 5, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);       /* 0x9DD04 */
+    Udb_Rect(0xC8, 0x14, 5, 0xE1, 0, PUFO_UDB_FRAME_MID, PUFO_UDB_FRAME_LOW);    /* 0x9DD28 */
+
+    (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);            /* 0x9DD50, falls through */
+}
+
+void Ui_DrawBaseInfo(UiBaseInfoDrawEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    const PadImage *pScreenPad = pEnv->ppScreenPad[0];                            /* 0x9B5FC */
+    if (pScreenPad != NULL) {
+        PadImage_Blit(pScreenPad);                                                /* 0x9B600 */
+    }
+
+    if (*pEnv->pbEntryDirty == 0) {                                               /* 0x9B604..0x9B618 */
+        Udb_DrawDashedFrame();
+    }
+
+    (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);            /* 0x9B7C0..0x9B7C8 */
+
+    if (*pEnv->pbScreenBuilt == 0) {                                              /* 0x9B7CC..0x9B7D8 */
+        return;
+    }
+    if (*pEnv->pbUfopaediaOpen == 0) {                                            /* 0x9B7DC -> loc_9DDB0 */
+        if (pEnv->pSelPanel != NULL) {
+            UiPanel_DrawText(pEnv->pSelPanel);                                    /* 0x9DDB8 */
+        }
+        return;
+    }
+    if (*pEnv->pbEntryDirty == 0) {                                               /* 0x9B7EC -> loc_9DD80 */
+        const i32 nCat = *pEnv->pnCategory;                                       /* LDRSB: signed byte index */
+        const UiPanel *pCatPanel = (nCat >= 0 && nCat < PUFO_UFOPAEDIA_CATEGORIES)
+                                       ? pEnv->apCatPanels[nCat] : NULL;
+        if (pCatPanel != NULL && pCatPanel->nLineCount != 0) {                   /* 0x9DD90..0x9DDA0 */
+            if (pEnv->pSelPanel != NULL) {
+                UiPanel_DrawText(pEnv->pSelPanel);                                /* 0x9DDB8 */
+            }
+        }
+        return;
+    }
+
+    SoftSurf_BlitSrcRect(0, 0, 0xF0, 0x140, 0x64, 0x64, 0xC8, 0x50);             /* 0x9B7FC..0x9B828 */
+    Udb_FrameRects();                                                             /* 0x9B82C..0x9B8C4 */
+
+    Udb_NormaliseEntry(pEnv->pnEntryNum, pEnv->pnSub);
+    const i32 n = *pEnv->pnEntryNum;
+
+    switch (n) {                                                                  /* 0x9B968..0x9B9AC */
+    case PUFO_UDB_CAT_ITEM:      Udb_DrawItemEntry(pEnv); break;                 /* 0x9C530 */
+    case PUFO_UDB_CAT_CRAFT:     Udb_DrawCraftEntry(pEnv); break;                /* 0x9BF44 */
+    case PUFO_UDB_CAT_FACILITY:  Udb_DrawFacilityEntry(pEnv); break;             /* 0x9BC98 */
+    case PUFO_UDB_CAT_ALIEN:     Udb_DrawAlienEntry(pEnv); break;                /* 0x9BAEC */
+    case PUFO_UDB_CAT_WEAPON:    Udb_DrawWeaponEntry(pEnv); break;               /* 0x9B9E4 */
+    case 85: Udb_DrawStatEntry(pEnv, 50, 0, 0, 2200); break;                     /* 0x9B9B0: 0x890|8 */
+    case 86: Udb_DrawStatEntry(pEnv, 200, 20, 120, 2400); break;                 /* 0x9D040 */
+    case 87: Udb_DrawStatEntry(pEnv, 250, 20, 272, 2700); break;                 /* 0x9D0D0, 0xA80|0xC */
+    case 88: Udb_DrawStatEntry(pEnv, 500, 40, 176, 4000); break;                 /* 0x9D0BC */
+    case 89: Udb_DrawStatEntry(pEnv, 500, 40, 160, 4300); break;                 /* 0x9D0A8, 0x10C0|0xC */
+    case 90: Udb_DrawStatEntry(pEnv, 1200, 120, 336, 4800); break;               /* 0x9D094 */
+    case 91: Udb_DrawStatEntry(pEnv, 3000, 140, 520, 5008); break;               /* 0x9D07C: R8 = R10 = 0xBB8, 0x1380|8 */
+    case 92: Udb_DrawStatEntry(pEnv, 2200, 60, 288, 3200); break;                /* 0x9D0E8 */
+    case 93: Udb_DrawPanelEntry(pEnv, 1500, 0, 14, 3, 2, 760); break;            /* 0x9D494 */
+    case 94: Udb_DrawPanelEntry(pEnv, 30, 1, 12, 0, 8, 3100); break;             /* 0x9D4C4 */
+    case 95: Udb_DrawPanelEntry(pEnv, 60, 2, 26, 4, 10, 5400); break;            /* 0x9D4F4 */
+    case 96: Udb_DrawPanelEntry(pEnv, 5, 2, 0, 0, 3, 2100); break;               /* 0x9D528: v108 = R8 = 5 */
+    case 97: Udb_DrawPanelEntry(pEnv, 20, 2, 0, 0, 9, 4200); break;              /* 0x9D540 */
+    case 98: Udb_DrawNumberEntry(pEnv, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_HEADING_98),
+                                 70, 30, 70, 15); break;                          /* 0x9D91C */
+    case 99: Udb_DrawNumberEntry(pEnv, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_HEADING_99),
+                                 100, 60, 100, 20); break;                        /* 0x9D964: R9/R11 = R5 = 0x64 */
+    case 100: Udb_DrawNumberEntry(pEnv, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_HEADING_100),
+                                  10, 10, 10, 2); break;                          /* 0x9D9A8: v11C = LR = 2 */
+    case 101: Udb_DrawNumberEntry(pEnv, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_HEADING_101),
+                                  230, 65, 230, 25); break;                       /* 0x9D9EC */
+    case 102: Udb_DrawNumberEntry(pEnv, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_HEADING_102),
+                                  70, 21, 70, 4); break;                          /* 0x9DA34 -> 0x9D954 */
+    case 103: Udb_DrawNumberEntry(pEnv, UdbRec(pEnv->pTextRecs, PUFO_UDB_REC_HEADING_103),
+                                  140, 52, 140, 6); break;                        /* 0x9DA70 */
+    default:                                                                     /* def_9D460 */
+        (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit,
+                                      pEnv->pfnCtlBlitEx, pEnv->pCtlUser);        /* 0x9DD50 */
+        break;
+    }
 }

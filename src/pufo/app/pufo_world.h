@@ -135,7 +135,7 @@ typedef struct PufoWorldState {
     i32          nPlaceX;               /* 0x159D94 */
     i32          nPlaceY;               /* 0x159D98 */
     char         szLabelScratch[108];   /* szRadarMsg @ 0x186B10 */
-    UiControl    ctlFacClose;           /* unk_186B00 */
+    UiControl    ctlFacClose;           /* g_pUiCloseCtl @ 0x186B00, the shared close control */
     UiControl    ctlFacUp;              /* the control the original allocates at 0x158874 */
     UiControl    ctlFacDown;            /* ... and 0x158878 */
     i32          nUnk15887C;            /* 0x15887C */

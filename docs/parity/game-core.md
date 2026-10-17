@@ -8908,7 +8908,7 @@ Five click handlers came with it:
   reads the count at all.
 - `Ui_SetTransferFlag`: Sound_Play(17, 4), then `bTransferFlag` (0x159E10) = 1.
 - `NewBaseScreen_Open`: sample 17; return if the signed base count (0x159D80) is 8; frame
-  control (unk_186B00) to (224, 1) as two STRH stores; screen id 2; confirm control
+  control (g_pUiCloseCtl) to (224, 1) as two STRH stores; screen id 2; confirm control
   (unk_186BA4) gets `TryConfirm`; `Smap_ZoomOut` twice (2 -> 1 -> 0); `unk_187080` cleared;
   frame control gets the close thunk.
 - `NewBaseScreen_TryConfirm`: sample 17; if the placement-pending byte (0x1870AC) is non-zero
@@ -9141,7 +9141,7 @@ grid pointer) is never read â€” R0 becomes the label buffer at 0x6A458 â€” so th
 
 Five steps, in the original's order:
 
-1. **The close handler first** (0x5A1C4): it is installed on the control slot at `unk_186B00`, which
+1. **The close handler first** (0x5A1C4): it is installed on the control slot at `g_pUiCloseCtl`, which
    is then moved to x 224 / y 229. The SAME install runs again at 0x5A254, after the panel buttons
    exist, so the port installs it twice.
 2. `0x15887C` and `0x158880` are cleared before anything is allocated.
@@ -9269,7 +9269,7 @@ at `Soldier+0xBA` into the names panel line (0x65058), `anLineAux[row] = ` the *
 `Soldier_FormatDisplayName` result into the craft panel line (0x65090), and the line colours:
 `Soldier+0xB7 == 254` gives (250,150,150,20,20,20) on both panels (0x65148, 0x6516C), `255` gives
 (150,150,250,20,20,20) (0x650F4, 0x65118), anything else sets nothing. Finally
-`unk_186B00->pfnClick = SoldierScreen_CloseThunk` (0x651AC).
+`g_pUiCloseCtl->pfnClick = SoldierScreen_CloseThunk` (0x651AC).
 
 Close branch: `nGeoscapeScreen = 1` (0x651C4), clear the byte (0x651CC), `nLineCount = 4` on the
 equip and stores panels (0x651E4, 0x651EC), then `UiPanel_FreeLines` + `operator delete` on equip,
@@ -9426,7 +9426,7 @@ Armed (0x59B84..0x59EF8): the funds line `aTextRec156 + nFunds + "$"` at (5, 20)
 `aTextRec83`, `aTextRec84` and `aTextRec85` at (6, 257), (6, 275) and (6, 293); then in 50,150,255 /
 0,0,20 the record's `uCost` at (185, 257), the literal "50000" (`a50000 @ 0xAB260`) at (185, 293) and
 `<days> <aFacDaysSuffix>` at (185, 275), days being `aFacBuildSpec[record + 0x15].nBuildDays`; then
-the title `aTextRec86` at (6, 4) in 68,244,252 / 4,70,75, the `*unk_186B00` pad blit, the red pair
+the title `aTextRec86` at (6, 4) in 68,244,252 / 4,70,75, the `*g_pUiCloseCtl` pad blit, the red pair
 220,80,80 / 50,30,30 and `BaseFacScreen_DrawPlacementOverlay`.
 
 Unarmed (0x59F98..0x5A118): `bBaseFacOverlayShown @ 0x15888C` is cleared (0x59FAC), the same panel
@@ -9885,7 +9885,7 @@ What it wires:
 - six weapon icon pads at mode 3, loaded `baseb049, 050, 051, 053, 054, 052` -- the last two swapped
   relative to their numbers, which is what the six `PadImage_Load` calls at 0x7DD30..0x7DD80 actually do
   -- and all six given `nOriginY` 95;
-- `unk_186B00` moved to 224,1 with `BasePlaneScreen_Close` as its click, and `unk_186BA4` given
+- `g_pUiCloseCtl` moved to 224,1 with `BasePlaneScreen_Close` as its click, and `unk_186BA4` given
   `BuySellScreen_ApplyQtyChanges` (0x78d90, not ported) -- the same confirm slot the build dialog uses;
 - a tail call into `BasePlaneScreen_BuildPanels`.
 
@@ -11222,7 +11222,7 @@ In the original's order:
    the third function that proves 0x159D90 belongs to the buy/sell screen: Init clears it,
    ValidateCapacity increments it per soldier bought, UpdatePrices decrements it per soldier sold, and
    Save_WriteBases writes it as a 4-byte field of the bases chunk at 0x3F28C.
-5. 0x78CBC..0x78CD4: the close control unk_186B00 goes to x 224, y 1 -- two `STRH`, so 16-bit stores
+5. 0x78CBC..0x78CD4: the close control g_pUiCloseCtl goes to x 224, y 1 -- two `STRH`, so 16-bit stores
    into a 32-byte UiControl -- with BuySellScreen_CloseThunk @ 0x75154 as its click.
 6. 0x78CE8..0x78CF8: the confirm control unk_186BA4 goes to `x = 120 - (uWidth >> 1)` (`LDRH`,
    `LSR #1`, `RSB #0x78`) and y 297 (`0x128` built as `ORR #1`). The same centring
@@ -11347,7 +11347,7 @@ Ui_InitTransfer, in the original's order:
    `Transfer_ScrollNextAll @ 0x9683c`, both already merged into BuySellScreen_PanelPrev /
    BuySellScreen_PanelNext, then Transfer_ResetSite and TransferScreen_CommitTransfer (0x97aa4, not
    ported).
-7. 0x9963C..0x99654: the close control unk_186B00 goes to x 224, y 1 with
+7. 0x9963C..0x99654: the close control g_pUiCloseCtl goes to x 224, y 1 with
    `Geoscape_CloseUI_ThunkB @ 0x96020`. Same slot as the buy/sell screen, but a different handler:
    BuySellScreen_Init installs BuySellScreen_CloseThunk @ 0x75154 there.
 8. 0x9965C: the confirm control unk_186BA4 gets that same close thunk, and it gets it *before*
@@ -12010,7 +12010,7 @@ in `pufo_baseui.h`. It is the tail call of `ManufScreen_Open @ 0x614cc`, which r
    0x7110C `STR R8,[R3,#4]`, one dword each at PadImage +0 and +4. Hex-Rays renders both as `->x`
    and `->uWidth` because it types the slot as `UiControl*`; the object is a PadImage (new(0x14),
    PadImage_ctor), so this is the wrong struct, not a Hex-Rays error.
-2. 0x710F0..0x71130: the close control `unk_186B00` gets x 224 (0x71118), y 1 (0x71124) and
+2. 0x710F0..0x71130: the close control `g_pUiCloseCtl` gets x 224 (0x71118), y 1 (0x71124) and
    `ManufScreen_CloseThunk` (0x71130). Same control and same position the transfer bring-up uses.
 3. 0x71134..0x7116C: six `operator new(0x20)` + `UiControl_ctor`, stored into the six slots the ARM
    computes as `ppScreen + (0x4F00 | 0x84) + 4*i` -- byte offsets 0x4F84..0x4F98, array indices
@@ -12522,7 +12522,7 @@ centred at (120 - w/2, 13). 0x73D00..0x73D60: two 1-pixel column separators at x
 index 0xB4, height 16 * min(nLineCount, nStyle) + 2 of the TOPIC panel -- note it is nStyle that caps
 the band, not the row cursor.
 
-0x73D64: bUiRowSelected (was unk_160C80) == 0 blits the shared close control unk_186B00 and returns.
+0x73D64: bUiRowSelected (was unk_160C80) == 0 blits the shared close control g_pUiCloseCtl and returns.
 That is the only path in the function that blits the close control: with a topic row selected the close
 pad is never redrawn here. The flag is set by panel A's click handler PlaySample7_SetFlags_Cache0xBD8
 (0x73328) and cleared by ResearchScreen_StartSelected (0x73244). 0x73DA0: Ui_AnimExpandBlit over the
@@ -12572,7 +12572,7 @@ TEXTS[157] "Èòîãî" in the 255,120,120 pair on the not-built half and TEXTS[411] 
 TEXTS[158] "Öåíà" on 155, against 145 and 212); the separators move from x 130/176/191/206 to
 130/160/175/190; and the shortfall panel exists only on the not-built half.
 
-Common head, 0x77E80..0x78150: the shared rails, then UiControl_BlitActivePad(unk_186B00)
+Common head, 0x77E80..0x78150: the shared rails, then UiControl_BlitActivePad(g_pUiCloseCtl)
 unconditionally -- the opposite of ResearchScreen_Draw, which blits the close control only when no row
 is selected. Then TEXTS[156] "Äåíüãè: " + itoa(nFunds) + " $" at (10, 28), where Text_MeasureWidth runs
 at 0x780B4 and its result is thrown away, and the selected site's name centred at (120 - w/2, 10).
@@ -13119,7 +13119,7 @@ Four functions carry the screen itself, on top of the recompute ported earlier:
 - FundingScreen_Toggle @ 0x5abe4 (1560 B): open/close. Open sets bFundScreenOpen, zeroes
   nFundDisplayTotal, loads its own "funding" pad at origin (0,0), and builds three 5-line panels
   (nStyle 5, nFont 16, y 70, x 10 / 100 / 170). Close frees exactly those four objects.
-- FundingScreen_Open @ 0x5b560 (60 B): the toggle, then the shared close control unk_186B00 to
+- FundingScreen_Open @ 0x5b560 (60 B): the toggle, then the shared close control g_pUiCloseCtl to
   (224, 1) with FundingScreen_CloseThunk @ 0x5abd8.
 - FundingScreen_Draw @ 0x5b1fc (868 B): gated on the flag. Pad, the 96 shared frame rails, the close
   control's pad, TEXTS[1149] centred at y 20, TEXTS[1150] at (10, 50), the three panels, then
@@ -16271,7 +16271,7 @@ Init @ 0x57688 takes the address of the three-slot block at 0x158828. Slot 0 is 
 new(0x14), PadImage_ctor, PadImage_Load("baseinfo", 14) (aBaseinfo @ 0xAB20C), then both origins are set to 0.
 Slots 1 and 2 are controls: two rounds of operator new(0x20) plus UiControl_ctor, then slot 1 gets
 BaseInfoScreen_OnOk @ 0x557c8 and slot 2 gets BaseInfoScreen_TogglePanelMode @ 0x55754 through +0x0C. The shared
-close control unk_186B00 is moved to (224, 1) and given BaseInfoScreen_CloseThunk @ 0x557bc. Both controls then
+close control g_pUiCloseCtl is moved to (224, 1) and given BaseInfoScreen_CloseThunk @ 0x557bc. Both controls then
 run UiControl_Setup(ctl, 0, 0, stru_AB198[i]) - the descriptors are {1, 300, "emptyb", "cemptyb", "", 0} and
 {120, 300, ...}, so the OK button lands at (1, 300) and the toggle at (120, 300), both in mode 0. The tail is
 byte_1870F4 = nSelectedBaseIdx, byte_1870F8 = 0, then BaseInfoScreen_BuildPanels() as a tail call.
@@ -17188,7 +17188,7 @@ g_nUfopaediaCategory. Then UiControl_Setup(slot 2+i, 0, 0, aUiBaseInfoCtlDesc[i]
 the slots with ADD R4,R4,#4 and the descriptors with ADD R5,R5,#0x20, so each control gets its own
 record, and the six records at 0xAC548 put them at (142,210), (172,210), (10,210), (40,210),
 (200,18) and (200,38), all mode 0 with the third pad name empty. Then the shared close control
-unk_186B00 to (224,1) with Geoscape_CloseUI_ThunkC, and Ufopaedia_Open builds the nine category
+g_pUiCloseCtl to (224,1) with Geoscape_CloseUI_ThunkC, and Ufopaedia_Open builds the nine category
 panels, the selector and the text panel.
 
 The reselect half is what byte_18706C is for, and it runs only when that flag is set -- which is
@@ -17325,3 +17325,83 @@ Coverage after unit 105: 964 / 1103 functions (87.4%), 552,812 / 598,792 bytes (
 remaining non-platform gaps are Geoscape_Draw @ 0x8c180 (33,744 B), Ui_DrawBaseInfo @ 0x9b5f4
 (10,196 B), App_ResizeMainWindow @ 0x9ecb8 (84 B) and the five no-op atexit registrars (60 B),
 all with dispositions recorded here or in the headers.
+## Unit 106 - the ufopaedia entry draw (Ui_DrawBaseInfo @ 0x9b5f4, 10,196 B)
+
+Unit 106 ports the screen that shows one ufopaedia entry: the entry pad, the dashed
+waiting frame, the five category layouts and the four numeric layouts. Every arm was read
+from the ARM listing (the Hex-Rays output for a function this size is not trustworthy), and
+the port carries an address comment on every instruction it reproduces.
+
+Four layers, in the order the ARM has them. (1) The screen pad ppScreenPad[0] is blitted
+first, always. (2) When the entry is NOT dirty a dashed frame is drawn instead of the entry:
+24 vertical 1x7 dashes at x 5 and 234 and 24 horizontal 5x1 dashes at y 5 and 315. (3) The
+close control is blitted, then three gates in order: screen not built -> return; ufopaedia
+not open -> draw the selector panel and return; entry not dirty -> the category-panel gate
+(draw the selector panel when the current category panel has lines, else return). (4) Entry
+dirty: BlitSrcRect(0,0,240,320, idx 0x64, mid 0x64, low 0xC8, key 0x50) fills the screen, a
+solid 5 px frame is drawn, the entry number is normalised, and a dispatch draws the entry.
+
+The dashed frame ramps on the ITERATION, not on the coordinate. 0x9B660 computes
+((i + 20) * 5) for the near pair and 0x9B754 computes (230 - 5*i) / (250 - 5*i) for the far
+pair, with i the loop counter of a y += 7 / x += 5 walk. The first draft used the coordinate
+(0xE6 - y*5, 0xFA - x*5), which agrees for the first dash and diverges after it; the test
+pins the ramp values and the overlap point where the falling pair first survives the
+climbing pair (row 172 of 215).
+
+Normalisation (0x9B8C8..0x9B964) rewrites *pnEntryNum and writes *pnSub: 54..75 -> category
+3; > 0xBB7 -> category 2 with sub = n - 3000; 1001..1999 -> category 1 with sub = n - 1000;
+2001..2999 -> category 26; 76..84 -> category 4. 0xBB7 is 2999 and 0xBB8 is 3000, so entry
+3000 itself is category 2 with sub 0, and 2000 / 1000 / 76 / 85 / 53 / 76 are the boundary
+cases the test walks (15 inputs).
+
+Record indices. The entry blocks read TEXTS records by their literal address; the index is
+(literal - 0xB38D0) / 205. The port names them: 1270..1275 headings, 1276/1277/1278 the ammo
+row labels, 1279..1284 the six fire-mode labels, 1285..1287 the three stat-row labels,
+1288..1291 craft labels, 1292..1296 race names, 1297..1300 and 1335..1338 the stat/number
+line labels, 1357 the build-days tail, 1358 the recovery tail, 1715..1720 the six panel rows.
+
+The fire-row chain REPLACES the string. Each mode arm ends in an inline strcpy loop over a
+REPLACE chain (topic 5, 3, 4 for mode 1; topic 5, 0xC, 0xD, 3, 4 for mode 2), so a later arm
+overwrites the earlier label instead of appending to it. Only the BL strcat sites append, and
+they are exactly the four suffixes the port writes: "$", "%", " %" and " s" plus the itoa
+result. Modes outside 0..5 keep whatever the previous arm left.
+
+Scratch copies. 0x9C704 copies 0xD0 bytes of the object record into 0x187100 and 0x9C8FC
+copies into 0x187208; the two blocks tile 0x187100..0x1872D8 exactly (the next symbol is
+g_nUfopaediaEntryNum @ 0x1872D8) and both have only this function's xrefs (2 and 5). The port
+keeps them as locals named item and ammo. Deviation recorded: locals instead of globals.
+Deviation recorded: the original indexes apObjects[sub] / aBaseFacFlags[sub] / aFacBuildSpec
+without a bound test; the port checks nObjectCount and the array sizes first.
+
+IDB updates. Prototype set to void __fastcall Ui_DrawBaseInfo(PadImage **ppScreenPad) and the
+evidence comment appended. Renames: dword_1872DC -> g_nUfopaediaEntrySub; unk_187208 ->
+g_abUfopaediaAmmoScratch; unk_186B00 -> g_pUiCloseCtl. The last one is a correction of an
+earlier guess: the xref list shows the same control slot re-armed by BaseInfoScreen_Init,
+BaseFacScreen_*, FundingScreen_*, NewBaseScreen_Open, BasePlaneScreen_Open, the Transfer
+screens and the ufopaedia, so it is the shared close control, not a ufopaedia one. New data
+symbols g_abUfopaediaItemScratch @ 0x187100 and g_abUfopaediaAmmoScratch @ 0x187208, both
+unsigned char[208]. The 37 comments in the port that cited the old names were updated in the
+same unit (pufo_baseui.h, pufo_baseui.c, pufo_world.h, pufo_plane.h) and the 13 citations in
+this file.
+
+Tests. TestUiDrawBaseInfo drives the real draw into a 240x320 PIXMODE_16BPP surface and
+asserts pixels, not call counts: the fill value 6375, the frame rails at their middle
+(120,319)/(120,314) and (239,160)/(234,160), the dash ramp values, the gate behaviour (fill
+absent before the dirty gate, close control blitted once before the gates and twice after),
+the pad originY each category pins (facility untouched, alien 96, craft 77, stat 25, number
+50), the glyph palette bases 3 and 0x22, the six panel row strings, and the item strip pinned
+at x 46 (51 is the divider's own column). test_baseui is at 4,138 checks.
+
+Mutation sweep, reduced to the values that carry behaviour: 27 patterns (the seven
+normalisation boundaries and both sub bases, the dashed loop bound and both ramps, the fill
+mid/low swap, the frame 0x13B and 0xEB edges, the built gate reading the wrong byte, the
+facility/stat/number/alien pad Y pins, both glyph palette bases, the panel row value swap,
+PANEL_1's record index, the three rail widths) - 27 caught, 0 survived. Two first-run
+survivors were test weaknesses, not port bugs: a falling-pair overlap assertion that sat on a
+row the climbing pair already covered, and an item-strip assertion at x 51 behind the
+divider. Two mutants were dropped as equivalent before the run: 0x34 -> 0x33 (the divider
+covers columns 47..51 either way) and a weapon/alien swap that makes a static function unused
+under -Werror.
+
+Coverage after unit 106: 965 / 1103 functions (87.5%), 563,008 / 598,792 bytes (94.0%). The
+only remaining non-platform gap is Geoscape_Draw @ 0x8c180 (33,744 B).

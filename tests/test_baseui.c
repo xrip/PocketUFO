@@ -19280,6 +19280,404 @@ static void TestPlaneCraftDetail(void)
     FrameRestoreFont();
 }
 
+/* ------------------------------------------------- the ufopaedia screen draw
+ *
+ * Evidence: Ui_DrawBaseInfo @ 0x9b5f4. The draw's observable layers are the screen pad, the
+ * dashed frame (entry not dirty), the close control, the three gates, the screen fill and the
+ * solid frame (entry dirty), the normalisation of the entry number, and the per-category rect
+ * signatures. The fill colour is predictable: Blit_PackedColor(0x64) with mid 0x64 and low 0xC8
+ * blended into a zeroed surface with key 0x50, field by field. */
+
+static SoftSurf g_udSurf;
+static PadImage g_udScreenPad, g_udEntryPad, g_udClosePad;
+static u8 g_aUdScreenPad[8];
+static u8 g_aUdEntryPad[4 + 10 * 8];
+static u8 g_aUdClosePad[8];
+static UiControl g_udCloseCtl;
+static UiPanel g_udSelPanel, g_udTextPanel, g_udCatPanel;
+static UiPanel *g_apUdCatPanels[PUFO_UFOPAEDIA_CATEGORIES];
+static ResearchTopicLive g_aUdTopics[64];
+static u8 g_aUdText[PUFO_TEXT_REC_STRIDE * 1721];
+static BaseFacFlag g_aUdFac[PUFO_BASEFAC_COUNT];
+static FacBuildSpec g_aUdBuild[PUFO_FACBUILDSPEC_COUNT];
+static ObjectRecFull g_aUdObj[8];
+static ObjectRecFull *g_apUdObj[8];
+static PufoFont g_udFont;
+static GfxColorEnv g_udColor;
+static UiBaseInfoDrawEnv g_udEnv;
+static i32 g_nUdEntryNum, g_nUdSub, g_nUdTopic, g_nUdCategory, g_nUdPalBase;
+static u8 g_bUdDirty, g_bUdBuilt, g_bUdOpen;
+static i32 g_nUdCtlBlits;
+
+static void UdCtlBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+    ++g_nUdCtlBlits;
+}
+
+/* Blit_PackedColor: the index supplies the 5-bit top field, the operands the middle and low. */
+static u16 UdPix(u32 nIdx, u32 nMid, u32 nLow)
+{
+    return (u16)(((nIdx >> 3) << 11) + 32u * (nMid >> 2) + (nLow >> 3));
+}
+
+#define UD_FRAME UdPix(0, 0x64, 0x50) /* the solid frame colour every block shares (810) */
+#define UD_FILL  6375u                /* the screen fill over a zeroed surface: top 3, mid 7, low 7 */
+
+static void UdPutRec(i32 nRec, const char *psz)
+{
+    PutTextRec(g_aUdText, nRec, psz);
+}
+
+static void UdReset(i32 nEntryNum)
+{
+    g_nUdEntryNum = nEntryNum;
+    g_nUdSub = 0;
+    g_nUdTopic = 20;
+    g_nUdCategory = 0;
+    g_nUdPalBase = 0;
+    g_bUdDirty = 1;
+    g_bUdBuilt = 1;
+    g_bUdOpen = 1;
+    g_nUdCtlBlits = 0;
+
+    memset(&g_udScreenPad, 0, sizeof(g_udScreenPad));
+    memset(g_aUdScreenPad, 0, sizeof(g_aUdScreenPad));
+    g_aUdScreenPad[0] = 1; /* uWidth 1 */
+    g_aUdScreenPad[2] = 1; /* uHeight 1 */
+    g_aUdScreenPad[4] = 1; /* one indexed pixel */
+    PadImage_ctor(&g_udScreenPad);
+    g_udScreenPad.pData = g_aUdScreenPad;
+    g_udScreenPad.uWidth = 1;
+    g_udScreenPad.uHeight = 1;
+    g_udScreenPad.nMode = 8;
+
+    memset(&g_udEntryPad, 0, sizeof(g_udEntryPad));
+    memset(g_aUdEntryPad, 1, sizeof(g_aUdEntryPad));
+    g_aUdEntryPad[0] = 10; g_aUdEntryPad[1] = 0; /* uWidth 10 */
+    g_aUdEntryPad[2] = 8;  g_aUdEntryPad[3] = 0; /* uHeight 8 */
+    PadImage_ctor(&g_udEntryPad);
+    g_udEntryPad.pData = g_aUdEntryPad + 4;
+    g_udEntryPad.uWidth = 10;
+    g_udEntryPad.uHeight = 8;
+    g_udEntryPad.nMode = 8;
+    g_udEntryPad.nOriginX = 33;   /* the blocks that do not centre the pad must leave these */
+    g_udEntryPad.nOriginY = 77;
+
+    memset(&g_udClosePad, 0, sizeof(g_udClosePad));
+    memset(g_aUdClosePad, 0, sizeof(g_aUdClosePad));
+    g_aUdClosePad[4] = 1;
+    PadImage_ctor(&g_udClosePad);
+    g_udClosePad.pData = g_aUdClosePad;
+    g_udClosePad.uWidth = 1;
+    g_udClosePad.uHeight = 1;
+    g_udClosePad.nMode = 8;
+
+    memset(&g_udCloseCtl, 0, sizeof(g_udCloseCtl));
+    g_udCloseCtl.bEnabled = 1;
+    g_udCloseCtl.nMode = 0;
+    g_udCloseCtl.nState = 0;
+    g_udCloseCtl.apPads[0] = &g_udClosePad;
+
+    memset(g_aUdTopics, 0, sizeof(g_aUdTopics));
+    for (i32 n = 0; n < 64; ++n) {
+        g_aUdTopics[n].wGate4 = (u16)(1500 + n); /* the name record, 0x9BA94..0x9BAA4 */
+    }
+    UdPutRec(1500 + 20, "Topic");
+
+    memset(g_aUdFac, 0, sizeof(g_aUdFac));
+    for (i32 n = 0; n < PUFO_BASEFAC_COUNT; ++n) {
+        g_aUdFac[n].uCost = (u32)(100 * (n + 1));
+    }
+    memset(g_aUdBuild, 0, sizeof(g_aUdBuild));
+    for (i32 n = 0; n < PUFO_FACBUILDSPEC_COUNT; ++n) {
+        g_aUdBuild[n].bTileA = (u8)n;
+        g_aUdBuild[n].bTileB = (u8)(n + 1);
+        g_aUdBuild[n].nBuildDays = (i8)(n + 2);
+    }
+
+    memset(g_aUdObj, 0, sizeof(g_aUdObj));
+    for (i32 n = 0; n < 8; ++n) {
+        g_apUdObj[n] = &g_aUdObj[n];
+        g_aUdObj[n].uIconId = (u16)(n + 1);
+        g_aUdObj[n].nFootW = 2;
+        g_aUdObj[n].nFootH = 3;
+    }
+
+    memset(&g_udFont, 0, sizeof(g_udFont));
+    g_udFont.nBigObsBase = 100;
+    g_udFont.nBaseBitsBase = 200; /* no sprite index is loaded, so the glyphs no-op */
+
+    memset(&g_udColor, 0, sizeof(g_udColor));
+
+}
+
+static void UdResetEnv(void)
+{
+    static PadImage *apPads[2];
+    apPads[0] = &g_udScreenPad;
+    apPads[1] = &g_udEntryPad;
+    g_udEnv.ppScreenPad = apPads;
+    g_udEnv.pCloseCtl = &g_udCloseCtl;
+    g_udEnv.pfnCtlBlit = UdCtlBlit;
+    g_udEnv.pfnCtlBlitEx = UdCtlBlit;
+    g_udEnv.pCtlUser = NULL;
+    g_udEnv.pbEntryDirty = &g_bUdDirty;
+    g_udEnv.pbScreenBuilt = &g_bUdBuilt;
+    g_udEnv.pbUfopaediaOpen = &g_bUdOpen;
+    g_udEnv.pnEntryNum = &g_nUdEntryNum;
+    g_udEnv.pnSub = &g_nUdSub;
+    g_udEnv.pnTopic = &g_nUdTopic;
+    g_udEnv.pnCategory = &g_nUdCategory;
+    g_apUdCatPanels[0] = &g_udCatPanel; /* category 0 only; the guard covers the rest */
+    g_udEnv.apCatPanels = g_apUdCatPanels;
+    g_udEnv.pSelPanel = &g_udSelPanel;
+    g_udEnv.pTextPanel = &g_udTextPanel;
+    g_udEnv.aTopics = g_aUdTopics;
+    g_udEnv.pTextRecs = (const char *)g_aUdText;
+    g_udEnv.paFac = g_aUdFac;
+    g_udEnv.apObjects = (const ObjectRecFull *const *)g_apUdObj;
+    g_udEnv.nObjectCount = 8;
+    g_udEnv.paBuildSpec = g_aUdBuild;
+    g_udEnv.pFont = &g_udFont;
+    g_udEnv.pnGlyphPalBase = &g_nUdPalBase;
+    g_udEnv.pColor = &g_udColor;
+}
+
+static const u16 *g_pUdPix;
+
+static void UdSurface(void)
+{
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_udSurf);
+    (void)SoftSurf_AllocPixels(&g_udSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_udSurf;
+    g_pUdPix = (const u16 *)g_udSurf.pPixels;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    memset(g_aPalette[8], 0, sizeof(g_aPalette[8]));
+    g_aPalette[8][1] = 0xABCDu;
+}
+
+static void TestUiDrawBaseInfo(void)
+{
+    printf("Ui_DrawBaseInfo @ 0x9b5f4\n");
+
+    UdSurface();
+    UdReset(2500);
+    UdResetEnv();
+    (void)UiPanel_ctor(&g_udSelPanel, 9);
+    (void)UiPanel_ctor(&g_udTextPanel, 50);
+    memset(&g_udCatPanel, 0, sizeof(g_udCatPanel));
+    g_udCatPanel.nLineCount = 0;
+
+    /* The screen pad runs first, whatever the gates (0x9B5FC). */
+    g_bUdBuilt = 0;
+    g_bUdDirty = 0;
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[0], 0xABCD, "the screen pad is blitted before anything else (0x9B600)");
+    CheckEqI32((i32)g_pUdPix[1 * 240 + 5], UdPix(100, 100, 100),
+               "the dashed frame's first vertical dash at 5,1 is (0+20)*5 = 100 (0x9B638)");
+    CheckEqI32((i32)g_pUdPix[166 * 240 + 5], UdPix(215, 215, 215),
+               "  and the 24th climbing dash owns 166 as (23+20)*5 = 215");
+    /* The climbing dashes own rows 1..168 with no gaps (7 tall on a 7 step), so the falling
+     * pair's first rows (151..168) are overdrawn by later climbing iterations; the first row the
+     * falling pair keeps is 172, iteration 3, colour 0xE6 - 3*5 = 215. */
+    CheckEqI32((i32)g_pUdPix[152 * 240 + 5], UdPix(205, 205, 205),
+               "152 is the falling pair's first row, but climbing iteration 21 (148..154) owns it (0x9B66C)");
+    CheckEqI32((i32)g_pUdPix[172 * 240 + 5], UdPix(215, 215, 215),
+               "the falling pair's first surviving row 172 is iteration 3 with 0xE6 - 15 = 215 (0x9B670)");
+    CheckEqI32((i32)g_pUdPix[317 * 240 + 5], UdPix(115, 115, 115),
+               "  and the last one ends at 317 as 230 - 115 = 115");
+    CheckEqI32((i32)g_pUdPix[5 * 240 + 1], UdPix(100, 100, 100), "the top rail starts at x 1 with 100");
+    CheckEqI32((i32)g_pUdPix[5 * 240 + 119], UdPix(215, 215, 215),
+               "the climbing half (116..120) overdraws the falling half (119..123) at 119, as drawn");
+    CheckEqI32((i32)g_pUdPix[5 * 240 + 121], UdPix(250, 250, 250),
+               "  while 121 keeps the falling half's 0xFA - 0*5 = 250");
+    CheckEqI32((i32)g_pUdPix[5 * 240 + 234], UdPix(135, 135, 135),
+               "the falling half ends at 119 + 115 = 234 with 135");
+    CheckEqI32(g_nUdCtlBlits, 1, "the close control is blitted once before the gates (0x9B7C0)");
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 120], 0, "and an unbuilt screen never reaches the fill (0x9B7D8)");
+
+    /* The dirty byte decides the frame style, not the gates (0x9B618). */
+    g_bUdDirty = 1;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[1 * 240 + 5], 0, "a dirty entry draws no dashed frame (0x9B618)");
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 120], 0, "  and the unbuilt gate still stops the fill");
+    g_bUdBuilt = 1;
+
+    /* Not open: the selector panel is drawn with no line-count gate (loc_9DDB0). */
+    g_bUdOpen = 0;
+    g_nUdCtlBlits = 0;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 120], 0, "the closed ufopaedia never fills the screen (0x9B7E8)");
+    CheckEqI32(g_nUdCtlBlits, 1, "  and only the pre-gate close blit runs");
+
+    /* Open but not dirty: the category-panel gate (loc_9DD80). A signed category index out of
+     * the nine panels is the port's guard, not the original's. */
+    g_bUdOpen = 1;
+    g_bUdDirty = 0;
+    g_nUdCategory = 0;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 120], 0, "a clean entry stops at the category gate (0x9B7F8)");
+    g_nUdCategory = 9;
+    Ui_DrawBaseInfo(&g_udEnv);
+    Check(true, "a category index outside the nine panels is guarded, not dereferenced (0x9DD84 LDRSB)");
+    g_nUdCategory = 0;
+
+    /* Entry dirty: the fill and the solid frame. The fill colour pins the BlitSrcRect operands
+     * (idx 0x64, mid 0x64, low 0xC8, key 0x50) against a zeroed surface. */
+    g_bUdDirty = 1;
+    g_nUdCtlBlits = 0;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 120], (i32)UD_FILL,
+               "the screen fill blends 0x64/0x64/0xC8 with key 0x50 (0x9B828)");
+    CheckEqI32((i32)g_pUdPix[0], (i32)UD_FRAME, "the frame's top-left rect overwrites the pad pixel (0x9B82C)");
+    CheckEqI32((i32)g_pUdPix[4 * 240 + 239], (i32)UD_FRAME, "  240 wide, 5 tall");
+    CheckEqI32((i32)g_pUdPix[5 * 240 + 5], (i32)UD_FILL, "  and exactly 5 rows (5,5 is past both rails)");
+    CheckEqI32((i32)g_pUdPix[319 * 240 + 120], (i32)UD_FRAME, "the bottom rail spans the middle at 120,319 (0x9B854)");
+    CheckEqI32((i32)g_pUdPix[314 * 240 + 120], (i32)UD_FILL, "  and starts at 315, not 314");
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 239], (i32)UD_FRAME, "the right rail covers 239 at mid height (0x9B8A4)");
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 234], (i32)UD_FILL, "  and starts at 235, not 234");
+    CheckEqI32(g_nUdCtlBlits, 2, "the entry path blits the close control again at its tail (0x9DD50)");
+
+    /* The normalisation table, read back from the two globals it writes. */
+    /* 0xBB7 = 2999, so the craft rule fires AT 3000 (sub 0), and 2999 is the last weapon number
+     * (the >= 2000 branch tests n < 0xBB8). 2000 itself is not a category and stays 2000. */
+    static const i32 anIn[]  = { 53, 54, 75, 76, 84, 85, 1000, 1001, 1999, 2000, 2001, 2999, 3000, 3001, 50 };
+    static const i32 anCat[] = { 53, 3,  3,  4,  4,  85, 1000, 1,    1,    2000, 26,   26,   2,    2,    50 };
+    static const i32 anSub[] = { 0,  0,  0,  0,  0,  0,  0,    1,    999,  0,    0,    0,    0,    1,    0 };
+    for (i32 n = 0; n < 15; ++n) {
+        g_nUdEntryNum = anIn[n];
+        g_nUdSub = 0;
+        memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+        Ui_DrawBaseInfo(&g_udEnv);
+        CheckEqI32(g_nUdEntryNum, anCat[n], "normalised entry number");
+        CheckEqI32(g_nUdSub, anSub[n], "  and its sub");
+    }
+
+    /* Category 26 (weapon): the 200 x 225 panel at (0,20), the pad untouched. */
+    g_nUdEntryNum = 2500;
+    g_udEntryPad.nOriginX = 33; /* the normalisation loop's entry 85 centred the pad; reset it */
+    g_udEntryPad.nOriginY = 77;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 0], (i32)UD_FRAME, "the weapon panel's top rail at 0,20 (0x9B9E4)");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 199], (i32)UD_FRAME, "  200 wide");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 200], (i32)UD_FRAME, "the weapon panel's side rail at 200,20 (0x9BA30)");
+    CheckEqI32((i32)g_pUdPix[244 * 240 + 200], (i32)UD_FRAME, "  225 tall to 244");
+    CheckEqI32((i32)g_pUdPix[245 * 240 + 200], (i32)UD_FILL, "  and no further");
+    CheckEqI32(g_udEntryPad.nOriginX, 33, "the weapon block never centres the pad (0x9B9E4 has no pad code)");
+    CheckEqI32(g_udEntryPad.nOriginY, 77, "  or moves it");
+
+    /* Category 2 (craft): glyph pal base 3, the 220-wide rails, the hangar divider at 80. */
+    g_nUdEntryNum = 3005; /* sub 5 */
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32(g_nUdPalBase, 3, "the craft block forces Map_nGlyphPalBase to 3 (0x9BF60)");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 219], (i32)UD_FRAME, "the craft rail runs 220 wide to 219 (0x9C030)");
+    CheckEqI32((i32)g_pUdPix[100 * 240 + 0], (i32)UD_FRAME, "the middle rail at 0,100 (0x9C07C)");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 80], (i32)UD_FRAME, "the inner divider at 80,20 (0x9C0A0)");
+    CheckEqI32((i32)g_pUdPix[103 * 240 + 80], (i32)UD_FRAME, "  84 tall to 103");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 220], (i32)UD_FRAME, "the outer divider at 220,20 (0x9C0C8)");
+
+    /* Category 1 (item): glyph pal base 34, the 52-wide strip at y 83, the dividers at 47 and 132. */
+    g_nUdEntryNum = 1003; /* sub 3 */
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32(g_nUdPalBase, 0x22, "the item block forces Map_nGlyphPalBase to 34 (0x9C54C)");
+    CheckEqI32((i32)g_pUdPix[83 * 240 + 0], (i32)UD_FRAME, "the item strip at 0,83 (0x9C608)");
+    /* The strip's own right edge (51) sits inside the left divider's column (47..51), so the
+     * strip is pinned at 46 -- the last column the divider does not cover. */
+    CheckEqI32((i32)g_pUdPix[83 * 240 + 46], (i32)UD_FRAME, "  the strip reaches 46 (51 is the divider's column)");
+    CheckEqI32((i32)g_pUdPix[83 * 240 + 52], (i32)UD_FILL, "  and nothing draws at 52");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 47], (i32)UD_FRAME, "the left divider at 47,20 (0x9C62C)");
+    CheckEqI32((i32)g_pUdPix[87 * 240 + 47], (i32)UD_FRAME, "  68 tall to 87");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 132], (i32)UD_FRAME, "the right divider at 132,20 (0x9C654)");
+    CheckEqI32((i32)g_pUdPix[204 * 240 + 132], (i32)UD_FRAME, "  185 tall to 204");
+
+    /* Category 4 (alien): the pad centred on x AND y = 100 - h/2. */
+    g_nUdEntryNum = 80;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32(g_udEntryPad.nOriginX, 115, "the alien pad is centred on x: 120 - 10/2 (0x9BB08)");
+    CheckEqI32(g_udEntryPad.nOriginY, 96, "  and on y: 100 - 8/2 (0x9BB1C)");
+    CheckEqI32((i32)g_pUdPix[94 * 240 + 113], (i32)UD_FRAME, "the border rect starts 2px out (0x9BB24)");
+    CheckEqI32((i32)g_pUdPix[96 * 240 + 115], 0xABCD, "the entry pad is blitted over it (0x9BB58)");
+    CheckEqI32((i32)g_pUdPix[200 * 240 + 0], (i32)UD_FRAME, "the alien frame rail at 0,200 (0x9BB5C)");
+
+    /* Category 3 (facility): the pad centred on x only -- its own originY survives. */
+    g_nUdEntryNum = 60;
+    g_udEntryPad.nOriginX = 33;
+    g_udEntryPad.nOriginY = 77;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32(g_udEntryPad.nOriginX, 115, "the facility pad is centred on x (0x9BCB4)");
+    CheckEqI32(g_udEntryPad.nOriginY, 77, "  but its originY is left alone (0x9BC98 writes no +4)");
+    CheckEqI32((i32)g_pUdPix[75 * 240 + 113], (i32)UD_FRAME, "the border rect follows the kept originY");
+
+    /* Entries 85..92: the pad pinned to originY 25 and the 320-wide rail clipped to the surface. */
+    g_nUdEntryNum = 86;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32(g_udEntryPad.nOriginY, 25, "the stat drawer pins originY to 25 (0x9D34C)");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 0], (i32)UD_FRAME, "its fourth rail is 320 wide (0x9D304)");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 239], (i32)UD_FRAME, "  clipped to the 240 columns");
+    CheckEqI32((i32)g_pUdPix[200 * 240 + 0], (i32)UD_FRAME, "and the usual bottom rail at 0,200 (0x9D290)");
+
+    /* Entries 93..97: the six text-panel rows, record plus number, in the ARM's row order. */
+    UdPutRec(1715, "P0"); UdPutRec(1716, "P1"); UdPutRec(1717, "P2");
+    UdPutRec(1718, "P3"); UdPutRec(1719, "P4"); UdPutRec(1720, "P5");
+    g_nUdEntryNum = 93;
+    g_udEntryPad.nOriginY = 77;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32(g_udEntryPad.nOriginY, 77, "the panel drawer leaves the pad's originY alone (0x9D79C)");
+    CheckEqI32((i32)g_pUdPix[200 * 240 + 0], (i32)UD_FRAME, "its bottom rail at 0,200 (0x9D568)");
+    Check(strcmp((char *)g_udTextPanel.apLines[0], "P0760") == 0, "row 0 is record 1715 + var_11C (0x9D5D4)");
+    Check(strcmp((char *)g_udTextPanel.apLines[1], "P12") == 0,   "row 1 is record 1716 + var_118 (0x9D624)");
+    Check(strcmp((char *)g_udTextPanel.apLines[2], "P21500") == 0,"row 2 is record 1717 + var_108 (0x9D674)");
+    Check(strcmp((char *)g_udTextPanel.apLines[3], "P30") == 0,   "row 3 is record 1718 + var_10C (0x9D6BC)");
+    Check(strcmp((char *)g_udTextPanel.apLines[4], "P414") == 0,  "row 4 is record 1719 + var_110 (0x9D710)");
+    Check(strcmp((char *)g_udTextPanel.apLines[5], "P53") == 0,   "row 5 is record 1720 + var_114 (0x9D764)");
+
+    /* Entries 98..103: the pad pinned to 50 and the 200-wide panel, no text-panel draw. */
+    g_nUdEntryNum = 98;
+    g_nUdCtlBlits = 0;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32(g_udEntryPad.nOriginY, 50, "the number drawer pins originY to 50 (0x9DC98)");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 199], (i32)UD_FRAME, "its panel rail is 200 wide (0x9DCE4)");
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 200], (i32)UD_FRAME, "with the side rail at 200,20 (0x9DD28)");
+    CheckEqI32(g_nUdCtlBlits, 2, "and it ends on the close control like every other entry path");
+
+    /* A number the dispatch does not know: fill and frame only, then the default tail. */
+    g_nUdEntryNum = 50;
+    g_nUdCtlBlits = 0;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[20 * 240 + 20], (i32)UD_FILL, "an unknown entry draws no category panel (def_9D460)");
+    CheckEqI32((i32)g_pUdPix[0], (i32)UD_FRAME, "  while the entry frame still draws");
+    CheckEqI32(g_nUdCtlBlits, 2, "  and the default case blits the close control (0x9DD50)");
+
+    /* Guards the original does not have. */
+    g_nUdEntryNum = 1003; /* item, sub 3 -- out of the object table */
+    g_udEnv.nObjectCount = 2;
+    memset(g_udSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    Ui_DrawBaseInfo(&g_udEnv);
+    CheckEqI32((i32)g_pUdPix[160 * 240 + 120], (i32)UD_FILL,
+               "an item sub past the object table is skipped, not dereferenced (Map+0x108 guard)");
+    CheckEqI32((i32)g_pUdPix[83 * 240 + 52], (i32)UD_FILL, "  and none of its frame rects draw (52 is past the strip)");
+    g_udEnv.nObjectCount = 8;
+
+    Ui_DrawBaseInfo(NULL);
+    Check(true, "a null env does nothing");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -19387,6 +19785,7 @@ int main(void)
     TestPlaneScreenDraw();
     TestBaseFacNameGrid();
     TestPlaneCraftDetail();
+    TestUiDrawBaseInfo();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

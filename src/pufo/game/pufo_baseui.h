@@ -642,7 +642,7 @@ i32 BuySellScreen_UpdatePrices(const BuySellCapacityEnv *pEnv);     /* the "<" c
  *   3. 0x78C7C, 0x78C8C: Palette_Load("buy_sell.pal", 5), then PadImage_Load(pad, "buy_sell", 5);
  *      the pad's nOriginX and nOriginY are cleared at 0x78C98 and 0x78CA4.
  *   4. 0x78CAC..0x78CB4: BuySell_nTransTotal and nSoldierHireCount (0x159D90) are cleared.
- *   5. 0x78CBC..0x78CD4: the close control unk_186B00 goes to x 224, y 1 (two STRH) with
+ *   5. 0x78CBC..0x78CD4: the close control g_pUiCloseCtl goes to x 224, y 1 (two STRH) with
  *      BuySellScreen_CloseThunk @ 0x75154 as its click.
  *   6. 0x78CE8..0x78CF8: the confirm control unk_186BA4 goes to `x = 120 - (uWidth >> 1)`, y 297 --
  *      the same centring BaseAtScreen_Open @ 0x588cc does.
@@ -663,7 +663,7 @@ i32 BuySellScreen_UpdatePrices(const BuySellCapacityEnv *pEnv);     /* the "<" c
 
 typedef struct BuySellInitEnv {
     PadImage **ppScreen;             /* unk_161A08, the slot both openers pass */
-    UiControl *pCloseCtl;            /* unk_186B00 */
+    UiControl *pCloseCtl;            /* g_pUiCloseCtl */
     UiControl *pConfirmCtl;          /* unk_186BA4, the same confirm slot the hangar screen uses */
     void (*pfnCloseClick)(void);     /* BuySellScreen_CloseThunk @ 0x75154 */
     void (*pfnConfirmBuy)(void);     /* BuySellScreen_ConfirmSiteAndClose @ 0x75090 */
@@ -793,7 +793,7 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv);
  *      Transfer_ScrollNextAll @ 0x9683c -- both byte-identical to BuySellScreen_PanelPrev and
  *      BuySellScreen_PanelNext over the same five panel globals, see docs/parity/renames.tsv --
  *      then Transfer_ResetSite and TransferScreen_CommitTransfer (0x97aa4, not ported).
- *   7. 0x9963C..0x99654: the close control unk_186B00 goes to x 224, y 1 with
+ *   7. 0x9963C..0x99654: the close control g_pUiCloseCtl goes to x 224, y 1 with
  *      Geoscape_CloseUI_ThunkB @ 0x96020. Same slot and same thunk as the buy/sell screen, but the
  *      buy/sell Init installs BuySellScreen_CloseThunk @ 0x75154 there instead.
  *   8. 0x9965C: the confirm control unk_186BA4 gets that same close thunk -- before UiControl_Setup,
@@ -839,7 +839,7 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv);
 typedef struct TransferInitEnv {
     void **ppRoot;                  /* 0x1870D8; [0] receives the PadImage, [1..4] the four UiControl* */
     UiControl *apCtl[4];            /* caller-owned, stored into ppRoot[1..4] */
-    UiControl *pCloseCtl;           /* unk_186B00 */
+    UiControl *pCloseCtl;           /* g_pUiCloseCtl */
     UiControl *pConfirmCtl;         /* unk_186BA4 */
     void (*pfnCloseClick)(void);    /* Geoscape_CloseUI_ThunkB @ 0x96020 */
     void (*pfnPanelPrev)(void);     /* Transfer_ScrollPrevAll @ 0x967e4 */
@@ -1260,7 +1260,7 @@ typedef struct TransferDrawEnv {
     BaseSiteRec *apSiteRecs;           /* 0x186C40, eight 64-byte records, name at +26 */
     UiControl *pCtlPrev;               /* *(slot + 12), the prev-base control */
     UiControl *pCtlNext;               /* *(slot + 16), the next-base control */
-    UiControl *pCtlReset;              /* unk_186B00 @ 0x186B00 */
+    UiControl *pCtlReset;              /* g_pUiCloseCtl @ 0x186B00 */
     UiControl *pCtlConfirm;            /* unk_186BA4 @ 0x186BA4 */
     UiControlBlitFn pfnCtlBlit;
     UiControlBlitFn pfnCtlBlitEx;
@@ -2136,7 +2136,7 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseE
  *      two stores are one dword each at PadImage +0 and +4 (0x710F8 STR R8,[R3] and 0x7110C
  *      STR R8,[R3,#4]); Hex-Rays renders them as ->x and ->uWidth because it types the slot as
  *      UiControl*, which is the wrong struct, not a Hex-Rays bug.
- *   2. 0x710F0..0x71130: the close control (unk_186B00) at x 224, y 1, handler CloseThunk.
+ *   2. 0x710F0..0x71130: the close control (g_pUiCloseCtl) at x 224, y 1, handler CloseThunk.
  *   3. 0x71134..0x7116C: six operator new(0x20) + UiControl_ctor into the six slots the ARM builds
  *      as ppScreen + (0x4F00 | 0x84) + 4*i, i.e. byte offsets 0x4F84..0x4F98 -- array indices
  *      5089..5094, which is what Hex-Rays shows.
@@ -2167,7 +2167,7 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseE
 typedef struct ManufInitEnv {
     void **ppRoot;                  /* the screen block; [0] the PadImage, [1..6] the six controls */
     UiControl *apCtl[6];            /* caller-owned, stored into ppRoot[1..6] */
-    UiControl *pCloseCtl;           /* unk_186B00 */
+    UiControl *pCloseCtl;           /* g_pUiCloseCtl */
     UiControl *pDrawCtl;            /* pGeoscapeCtlA */
     UiControl *pConfirmCtl;         /* pGeoscapeCtlB */
     void (*pfnCloseClick)(void);    /* ManufScreen_CloseThunk @ 0x6e3d4 */
@@ -2390,7 +2390,7 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv);
  * The band is 16 * min(nLineCount, nStyle) of panel A (0x6FC78..0x6FC98), and the three column
  * separators at x 130, 152 and 187 are 1 wide and band + 2 tall in index 0xB4 (0x6FD40..).
  *
- * No product selected (0x6FDB4..0x6FDC0): the reset control unk_186B00 blits and the frame ends in the
+ * No product selected (0x6FDB4..0x6FDC0): the reset control g_pUiCloseCtl blits and the frame ends in the
  * teal pair.
  *
  * Product selected (0x6FDC4..): the detail panel opens through Ui_AnimExpandBlit(0, 30, 236, 284,
@@ -2496,7 +2496,7 @@ typedef struct ManufFrameEnv {
     const ObjectRecFull *pEngineerRec;  /* apObjects[112] @ 0x113C80 */
     const u8 *abFacilityGrid;           /* abFacilityGrid @ 0x159768, for Base_CalcWorkshopCap */
     UiControl *apCtl[6];                /* the six arrow controls; the last four blit at 0x70AF8 */
-    UiControl *pCtlReset;               /* unk_186B00, blitted when no product is selected */
+    UiControl *pCtlReset;               /* g_pUiCloseCtl, blitted when no product is selected */
     UiControl *pCtlAllocAll;            /* unk_186B94, moved to (94, 251) and re-pointed every frame */
     UiControl *pCtlClampOne;            /* unk_186B90, moved to (94, 271) and re-pointed every frame */
     UiControl *pCtlDraw;                /* pGeoscapeCtlA, the "ОК" control */
@@ -2755,7 +2755,7 @@ extern const i32 g_anFundingRowSlot[PUFO_FUND_ROW_COUNT]; /* {0, 2, 3, 1, 4} */
  *
  * 1. The pad and the close control. operator new(0x14) + PadImage_ctor into unk_1595DC (the ctor's
  *    result, not the raw allocation), PadImage_Load("funding", 28), origin (0, 0); then the shared
- *    close control unk_186B00 to x 224, y 1 with FundingScreen_ExitThunk.
+ *    close control g_pUiCloseCtl to x 224, y 1 with FundingScreen_ExitThunk.
  *
  * 2. The money. With P the pending total at unk_1865BC and S the sum of the five country scores:
  *    bonus = (P / (S + 1)) * g_nFundMult, P becomes P + bonus, and the per-score share is
@@ -2787,7 +2787,7 @@ extern const i32 g_anFundingRowSlot[PUFO_FUND_ROW_COUNT]; /* {0, 2, 3, 1, 4} */
  * port stops at the count it is given and skips a NULL entry. */
 typedef struct FundingInitEnv {
     PadImage         **ppPadSlot;      /* unk_1595DC, the "funding" pad */
-    UiControl         *pCloseCtl;      /* unk_186B00 */
+    UiControl         *pCloseCtl;      /* g_pUiCloseCtl */
     void (*pfnCloseClick)(void);       /* FundingScreen_ExitThunk @ 0x5c078 */
     i32               anCountryScore[6];  /* g_nFundScore0..4 @ 0x186568..0x186578, [5] g_nFundMult */
     i32              *pnPendingTotal;  /* unk_1865BC */
@@ -2862,12 +2862,12 @@ typedef struct FundingToggleEnv {
 void FundingScreen_Toggle(FundingToggleEnv *pEnv);
 
 /* FundingScreen_Open @ 0x5b560 (60 B): the funding screen's opener. FundingScreen_Toggle first,
- * then the shared close control unk_186B00 to (224, 1) with FundingScreen_CloseThunk @ 0x5abd8 --
+ * then the shared close control g_pUiCloseCtl to (224, 1) with FundingScreen_CloseThunk @ 0x5abd8 --
  * one of twelve identical Geoscape_CloseUI thunks, so the port takes it as a hook. The control is
  * what the function returns. Note FundingScreen_Init wires the SAME control to
  * FundingScreen_ExitThunk @ 0x5c078; whichever of the two runs last owns the button. */
 typedef struct FundingOpenEnv {
-    UiControl *pCloseCtl;        /* unk_186B00 */
+    UiControl *pCloseCtl;        /* g_pUiCloseCtl */
     void (*pfnCloseClick)(void); /* FundingScreen_CloseThunk @ 0x5abd8 */
 } FundingOpenEnv;
 
@@ -2895,7 +2895,7 @@ typedef struct FundingDrawEnv {
     UiPanel           *pPanelNames; /* pFundPanelNames @ 0x1595E4 */
     UiPanel           *pPanelBars;  /* pFundPanelBars @ 0x1595E0 */
     UiPanel           *pPanelArrows;/* pFundPanelArrows @ 0x1595E8 */
-    UiControl         *pCloseCtl;   /* unk_186B00 */
+    UiControl         *pCloseCtl;   /* g_pUiCloseCtl */
     UiControlBlitFn    pfnCtlBlit;  /* the control's pad blit, injected as everywhere else */
     UiControlBlitFn    pfnCtlBlitEx;
     void              *pCtlUser;
@@ -2991,7 +2991,7 @@ void Ui_SetTransferFlag(u8 *pbTransferFlag, void (*pfnPlaySample)(u32 nSample, u
  *
  * Open (ARM 0x615D0..0x61658): Sound_Play(17, 4); if the SIGNED base count (0x159D80, LDRSB
  * at 0x615F0) is already 8 it returns without touching anything. Otherwise it positions the
- * frame control (unk_186B00) at x=224, y=1 (both STRH, so 16-bit stores), sets the geoscape
+ * frame control (g_pUiCloseCtl) at x=224, y=1 (both STRH, so 16-bit stores), sets the geoscape
  * screen id (0x186BC4) to 2, installs TryConfirm as the confirm control's (unk_186BA4) click
  * handler, calls Smap_ZoomOut twice on the viewport at 0x1863E8 (2 -> 1 -> 0), clears
  * byte_187080 (STRB at 0x6164C), and installs the close thunk on the frame control.
@@ -3019,7 +3019,7 @@ extern const i32 g_anNewBaseCostByRegion[PUFO_NEW_BASE_COST_COUNT]; /* aNewBaseC
 
 typedef struct NewBaseOpenEnv {
     void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
-    UiControl *pCtlFrame;          /* unk_186B00 (GEOUI_CTL_186B00) */
+    UiControl *pCtlFrame;          /* g_pUiCloseCtl (GEOUI_CTL_186B00) */
     UiControl *pCtlConfirm;        /* unk_186BA4 (GEOUI_CTL_186BA4) */
     SmapView *pView;               /* gSmapCam @ 0x1863E8 */
     const SmapZoomSet *pZoomSets;  /* the three zoom layer sets */
@@ -3649,7 +3649,7 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
  *
  * In the original's order:
  *
- *   1. the close control (unk_186B00) gets BaseFacScreen_CloseThunkA as its click handler FIRST
+ *   1. the close control (g_pUiCloseCtl) gets BaseFacScreen_CloseThunkA as its click handler FIRST
  *      (0x5A1C4) and BaseFacScreen_CloseThunk at the END (0x5A254). In the IDB both are separate
  *      functions and both are one tail call to Geoscape_CloseUI, so the same handler is installed
  *      twice with the whole allocation between them. Then x = 224 and y = 229 (0x5A260, 0x5A26C).
@@ -3671,7 +3671,7 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
 #define PUFO_BASEFAC_PANEL_DESC_COUNT 2
 
 typedef struct BaseFacInitEnv {
-    UiControl *pCloseCtl;        /* unk_186B00, the control that closes the screen */
+    UiControl *pCloseCtl;        /* g_pUiCloseCtl, the control that closes the screen */
     UiControl *pUpCtl;           /* the control the original allocates into 0x158874 */
     UiControl *pDownCtl;         /* ... and 0x158878 */
     i32  *pnUnk15887C;           /* 0x15887C, cleared before the allocation */
@@ -3863,7 +3863,7 @@ i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv);
  *      Soldier_FormatDisplayName's string, and the row colours come from the craft byte at +0xB7:
  *      254 gives (250,150,150 / 20,20,20) and 255 gives (150,150,250 / 20,20,20) on both panels.
  *      Any other value leaves the row colours at the ctor defaults.
- *   8. unk_186B00's +12 handler becomes SoldierScreen_CloseThunk -- the same control slot
+ *   8. g_pUiCloseCtl's +12 handler becomes SoldierScreen_CloseThunk -- the same control slot
  *      BaseFacScreen_Init uses for the build dialog.
  *
  * Deviations: the port owns only the five heap objects; the controls stay caller-owned. The panel
@@ -3880,7 +3880,7 @@ typedef struct SoldierScreenEnv {
     UiPanel **ppPanelCraft;       /* 0x159DEC, panel D */
     PadImage **ppPad;             /* unk_1598D4 */
     const char *pszPadName;       /* the pad loaded at mode 8 ("soldier"); NULL skips the load */
-    UiControl *pCloseCtl;         /* unk_186B00 */
+    UiControl *pCloseCtl;         /* g_pUiCloseCtl */
     void (*pfnCloseSoldierThunk)(void); /* SoldierScreen_CloseThunk @ 0x64ae4, stored at +12 */
     void (*pfnEquipThunk)(void);  /* SoldierScreen_EquipSelected @ 0x619cc */
     void (*pfnSelectThunk)(void); /* SoldierScreen_SelectListed @ 0x64a9c */
@@ -4336,7 +4336,7 @@ i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv);
  * uCost goes at (185, 257), the literal "50000" (a50000 @ 0xAB260) at (185, 293), and
  * "<days> <unk_BB422>" — days being aFacBuildSpec[record.bFlag21].nBuildDays — at (185, 275)
  * (0x59D8C..0x59E78). The title unk_B7DAE is drawn at (6, 4) in 68,244,252 / 4,70,75 (0x59EA4), the
- * dialog's pad control (*unk_186B00) blits (0x59ECC), the red pair 220,80,80 / 50,30,30 is set up
+ * dialog's pad control (*g_pUiCloseCtl) blits (0x59ECC), the red pair 220,80,80 / 50,30,30 is set up
  * (0x59EF4) and BaseFacScreen_DrawPlacementOverlay runs (0x59EF8).
  *
  * Not armed (0x59F98..0x5A118). bBaseFacOverlayShown (0x15888C) is cleared (0x59FAC), the same panel
@@ -4371,7 +4371,7 @@ typedef struct BuildDialogEnv {
     i32 nPanelSel;                  /* nBaseFacPanelSel @ 0x158868 */
     const BaseFacFlag *paFac;       /* aBaseFacFlags @ 0x186E48 */
     i32 *pnFunds;                   /* nFunds @ 0x1598D8 */
-    UiControl *pCtl;                /* *unk_186B00, the dialog's pad control */
+    UiControl *pCtl;                /* *g_pUiCloseCtl, the dialog's pad control */
     UiControlBlitFn pfnCtlBlit;     /* PadImage_Blit */
     UiControlBlitFn pfnCtlBlitEx;   /* PadImage_BlitEx(pPad, 0) */
     void *pCtlUser;
@@ -5011,7 +5011,7 @@ void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv);
  *      has no engineers pair.
  *   3. 0x74A4C..0x74A94: their handlers in slot order -- ResearchScreen_PanelPrev (0x72e30),
  *      PanelNext (0x72e68), IncSelectedQty (0x72ea0), DecSelectedQty (0x72f70).
- *   4. 0x74AA0..0x74AB8: the shared close control unk_186B00 moved to (224, 1) and pointed at
+ *   4. 0x74AA0..0x74AB8: the shared close control g_pUiCloseCtl moved to (224, 1) and pointed at
  *      ResearchScreen_CloseThunk (0x72ffc). Same position the manufacturing bring-up gives it.
  *   5. 0x74AC4 / 0x74AD0: the two shared bottom controls get their research handlers --
  *      pGeoscapeCtlA -> ResearchScreen_CancelSelectedAndClose (0x73380), pGeoscapeCtlB ->
@@ -5049,7 +5049,7 @@ void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv);
 typedef struct ResearchInitEnv {
     void **ppRoot;                  /* the screen block; [0] the PadImage, [1..4] the four controls */
     UiControl *apCtl[4];            /* caller-owned, stored into ppRoot[1..4] */
-    UiControl *pCloseCtl;           /* unk_186B00 */
+    UiControl *pCloseCtl;           /* g_pUiCloseCtl */
     UiControl *pCancelCtl;          /* pGeoscapeCtlA, handler CancelSelectedAndClose, moved to (165,188) */
     UiControl *pStartCtl;           /* pGeoscapeCtlB, handler StartSelected, moved to (165,166) */
     void (*pfnCloseClick)(void);    /* ResearchScreen_CloseThunk @ 0x72ffc */
@@ -5267,7 +5267,7 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv);
  *   6. 0x73D00..0x73D60: the two column separators, height 16 * min(nLineCount, nStyle) + 2 of the
  *      TOPIC panel, at x 170 and x 200, y 69, width 1, index 0xB4.
  *   7. 0x73D64: unk_160C80 == 0 -- no topic row selected -- blits the shared close control
- *      unk_186B00 and returns. With a row selected this function never blits the close control;
+ *      g_pUiCloseCtl and returns. With a row selected this function never blits the close control;
  *      that is the original's shape, not an omission. unk_160C80 is set by panel A's click handler
  *      PlaySample7_SetFlags_Cache0xBD8 (0x73328) and cleared by ResearchScreen_StartSelected.
  *   8. 0x73DA0: Ui_AnimExpandBlit over the geoscape anim root 0x1864F8 at (0, 110) 236x100, index
@@ -5343,7 +5343,7 @@ typedef struct ResearchDrawEnv {
     UiControl         *pCtlCancel;        /* pGeoscapeCtlA, parked at (165, 188) by Init */
     UiControl         *pCtlStart;         /* pGeoscapeCtlB, parked at (165, 166) by Init */
     UiControl         *pCtlAllocAll;      /* unk_186B94, moved to (100, 164) and re-pointed here */
-    UiControl         *pCtlClose;         /* unk_186B00, blitted only when no row is selected */
+    UiControl         *pCtlClose;         /* g_pUiCloseCtl, blitted only when no row is selected */
     void (*pfnAllocAllClick)(void);       /* ResearchScreen_UpdateProgress @ 0x72d14 */
     UiControlBlitFn    pfnCtlBlit;
     UiControlBlitFn    pfnCtlBlitEx;
@@ -5362,7 +5362,7 @@ void ResearchScreen_Draw(const ResearchDrawEnv *pEnv);
  * but they differ in the two column captions' x, in the separators' x, in which total line is used and
  * in its colour, in whether the shortfall panel exists, and in how much of the cursor block runs.
  *
- * Common head, 0x77E80..0x78150. The shared rails. Then UiControl_BlitActivePad(unk_186B00) -- the
+ * Common head, 0x77E80..0x78150. The shared rails. Then UiControl_BlitActivePad(g_pUiCloseCtl) -- the
  * close control, unconditionally, which is the opposite of the research frame. Then the pair
  * 120,255,120 / 10,10,10 and TEXTS[156] + itoa(nFunds) + " $" at (10, 28); Text_MeasureWidth runs at
  * 0x780B4 and its result is thrown away. Then the pair 180,180,180 / 10,10,10 and the selected site's
@@ -5457,7 +5457,7 @@ typedef struct BuySellDrawEnv {
     const u32 *pdwShortfall;            /* byte_1870C8, read as a dword */
     const i32 *pnShortfallReason;       /* dword_1870B4[0] */
     UiAnimBlitEnv *pAnim;               /* Ui_AnimExpandBlit_IfEnabled's progress pair */
-    UiControl *pCtlClose;               /* unk_186B00, blitted unconditionally */
+    UiControl *pCtlClose;               /* g_pUiCloseCtl, blitted unconditionally */
     UiControl *pCtlOk;                  /* unk_186BA4, blitted when the cursor is not on a row */
     UiControlBlitFn pfnCtlBlit;
     UiControlBlitFn pfnCtlBlitEx;
@@ -5720,6 +5720,72 @@ void Ufopaedia_RefreshEntry(UfopaediaEnv *pEnv);
 void Ufopaedia_PrevEntry(UfopaediaEnv *pEnv);
 void Ufopaedia_NextEntry(UfopaediaEnv *pEnv);
 
+/* ---- Ui_DrawBaseInfo @ 0x9b5f4 (10,196 B): the ufopaedia screen draw -------------
+ *
+ * Reached from the geoscape draw dispatch (code xref 0x941B4, screen table entry at
+ * 0x18AC80) while the ufopaedia screen is up. The draw has four layers:
+ *
+ *  1. The screen pad (ppScreenPad[0]) is always blitted first.
+ *  2. When the entry is NOT dirty, a dashed frame is drawn instead of the entry: 24 vertical
+ *     1x7 dashes at x 5 and 234 (y 1,8,..,162 and 152,..,313) and 24 horizontal 5x1 dashes at
+ *     y 5 and 315 (x 1,6,..,116 and 120,..,235). The dash colour ramps with the ITERATION i:
+ *     ((i + 20) * 5) on the near pair and (230 - 5*i) vertically / (250 - 5*i) horizontally on
+ *     the far pair, and the same byte is used as index, mid and low -- the dashes fade along
+ *     the frame.
+ *  3. The close control (pCloseCtl) is always blitted. Then three gates: screen not built ->
+ *     return; ufopaedia not open -> draw the selector panel and return; entry not dirty -> the
+ *     category-panel gate (if the current category panel has lines, draw the selector panel,
+ *     else return).
+ *  4. Entry dirty: the screen is filled (BlitSrcRect 0,0,240,320 idx 0x64 mid 0x64 low 0xC8
+ *     key 0x50), a solid 5px frame is drawn, the entry number is NORMALISED into a category
+ *     plus a sub-index, and a dispatch draws that entry kind. The normalisation writes both
+ *     *pnEntryNum and *pnSub:
+ *      - 54..75  -> category 3 (sub untouched)
+ *      - > 0xBB7 (3000 and up) -> category 2, sub = n - 3000
+ *      - 1001..1999 -> category 1, sub = n - 1000
+ *      - 2001..2999 -> category 26
+ *      - 76..84 -> category 4
+ *     Categories 1,2,3,4,26,85..91,92 and 93..103 each have their own drawing block; anything
+ *     else falls through to the close-control tail.
+ *
+ * The entry blocks read the object record apObjects[sub] (the ufopaedia "entry data" IS the
+ * object record; the original copies its first 0xD0 bytes into two scratch blocks and mutates
+ * the copies -- the port keeps the copies as locals and names the fields it reads). The
+ * category-3 block reads aBaseFacFlags[sub].uCost and aFacBuildSpec; the 93..103 block fills
+ * the text panel rows through UiPanel_SetBytes6to11.
+ *
+ * Deviations recorded in the parity notes: the scratch copies are locals (nothing else in the
+ * binary reads 0x187100 / 0x187208 -- both have only this function's xrefs); the original's
+ * unguarded apObjects[sub] / aBaseFacFlags[sub] indexing is bounds-checked by the port. */
+typedef struct UiBaseInfoDrawEnv {
+    PadImage  **ppScreenPad;     /* g_pUfopaediaScreenPad @ 0x1872E0: [0] the screen pad, [1] g_pUfopaediaPad @ 0x1872E4 */
+    UiControl *pCloseCtl;        /* g_pUiCloseCtl */
+    UiControlBlitFn pfnCtlBlit;  /* the close control's pad blit, injected as everywhere else */
+    UiControlBlitFn pfnCtlBlitEx;
+    void           *pCtlUser;
+    u8        *pbEntryDirty;     /* bUfopaediaEntryDirty @ 0x187310 */
+    u8        *pbScreenBuilt;    /* g_bUfopaediaScreenBuilt @ 0x187308 */
+    u8        *pbUfopaediaOpen;  /* bUfopaediaOpen @ 0x18730C */
+    i32       *pnEntryNum;       /* g_nUfopaediaEntryNum @ 0x1872D8, normalised in place */
+    i32       *pnSub;            /* g_nUfopaediaEntrySub @ 0x1872DC, derived by the normalisation */
+    i32       *pnTopic;          /* g_nUfopaediaTopic @ 0x187300 */
+    i32       *pnCategory;       /* g_nUfopaediaCategory @ 0x1871F8 */
+    UiPanel   **apCatPanels;     /* g_apUfopaediaCatPanels @ 0x1871D0 */
+    UiPanel   *pSelPanel;        /* g_pUfopaediaSelPanel @ 0x187204 */
+    UiPanel   *pTextPanel;       /* g_pUfopaediaTextPanel @ 0x187200 */
+    const ResearchTopicLive *aTopics;  /* aResearchTopics @ 0x15EF08; wGate4 is the name record */
+    const char *pTextRecs;       /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+    const BaseFacFlag *paFac;    /* aBaseFacFlags @ 0x186E48, 28-byte records */
+    const ObjectRecFull *const *apObjects; /* apObjects @ Map+0x108: the entry data */
+    i32        nObjectCount;   /* Map_nObjectCount @ 0x114A60, the apObjects bound */
+    const FacBuildSpec *paBuildSpec;       /* aFacBuildSpec, 18 records */
+    PufoFont  *pFont;            /* fontSys: nBigObsSprBase / fontSys_nBaseBitsSprBase */
+    i32       *pnGlyphPalBase;   /* Map_nGlyphPalBase @ Map+0x4A3C */
+    const GfxColorEnv *pColor;   /* the pairs Gfx_PackRgb565Pair writes */
+} UiBaseInfoDrawEnv;
+
+void Ui_DrawBaseInfo(UiBaseInfoDrawEnv *pEnv);
+
 /* ---- Ufopaedia_Open @ 0x9a8cc: the builder and the teardown ----------------------
  *
  * One function does both, on a toggle. unk_187308 clear builds the screen and LEAVES THE FLAG SET;
@@ -5786,7 +5852,7 @@ extern const i32 g_anUfopaediaEntryNum[PUFO_RESEARCH_TOPIC_COUNT];
  * 4. 0x9DE9C..0x9DEC0: UiControl_Setup(slot 2+i, 0, 0, &g_aUiBaseInfoCtlDesc[i]). The loop walks the
  *    slots with ADD R4,R4,#4 and the descriptors with ADD R5,R5,#0x20, so each control gets its own
  *    record; both bases are zero (MOV R1,#0 / MOV R2,#0).
- * 5. 0x9DED0..0x9DEE8: the shared close control unk_186B00 to (224, 1) with Geoscape_CloseUI_ThunkC
+ * 5. 0x9DED0..0x9DEE8: the shared close control g_pUiCloseCtl to (224, 1) with Geoscape_CloseUI_ThunkC
  *    -- the same corner the research and manufacturing bring-ups give it.
  * 6. 0x9DEEC: Ufopaedia_Open, which builds the nine category panels, the selector and the text panel.
  * 7. 0x9DEF4..0x9E084: the reselect. When Ufopaedia_bReselectPending (0x18706C) is set --
@@ -5833,7 +5899,7 @@ extern const i32 g_anUfopaediaEntryNum[PUFO_RESEARCH_TOPIC_COUNT];
 typedef struct UiBaseInfoInitEnv {
     void      **ppRoot;             /* g_pUfopaediaScreenPad @ 0x1872E0: [0] the pad, [2..7] the controls */
     UiControl *apCtl[PUFO_UFOPAEDIA_CTL_COUNT]; /* caller-owned, stored into ppRoot[2..7] */
-    UiControl *pCloseCtl;           /* unk_186B00 */
+    UiControl *pCloseCtl;           /* g_pUiCloseCtl */
     UfopaediaEnv *pUfopaedia;       /* the state step 6 builds and step 7 re-points */
     i32 *pnShownTopic;              /* nResearchTopicShown @ 0x160C60 */
     u8  *pbUfopaediaOpen;           /* bUfopaediaOpen @ 0x18730C, the "a page is up" flag */
@@ -6056,7 +6122,7 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
  *   - two UiControls at 0x15882C and 0x158830 (0x576DC..0x57708). Their clicks are BaseInfoScreen_OnOk
  *     (0x557C8) on the FIRST and BaseInfoScreen_TogglePanelMode (0x55754) on the second (0x5771C /
  *     0x5772C) -- the order the release arm of BuildPanels then frees them in.
- *   - the shared geoscape close control unk_186B00 moved to (224, 1) with BaseInfoScreen_CloseThunk
+ *   - the shared geoscape close control g_pUiCloseCtl moved to (224, 1) with BaseInfoScreen_CloseThunk
  *     (0x57738..0x57750).
  *   - UiControl_Setup over the two 32-byte descriptors at 0xAB198: (1, 300) and (120, 300), both with
  *     the pad names "emptyb" and "cemptyb" and an empty third (0x57754..0x57774).
@@ -6147,7 +6213,7 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
 typedef struct BaseInfoInitEnv {
     PadImage  **ppPad;              /* pBaseInfoPad @ 0x158828 */
     UiControl **papCtl;             /* 0x15882C (OnOk) then 0x158830 (the panel-mode toggle) */
-    UiControl *pCtlClose;           /* unk_186B00, the shared geoscape close control */
+    UiControl *pCtlClose;           /* g_pUiCloseCtl, the shared geoscape close control */
     void (*pfnOkClick)(void);       /* BaseInfoScreen_OnOk @ 0x557c8 */
     void (*pfnToggleClick)(void);   /* BaseInfoScreen_TogglePanelMode @ 0x55754 */
     void (*pfnCloseClick)(void);    /* BaseInfoScreen_CloseThunk @ 0x557bc */

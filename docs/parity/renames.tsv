@@ -592,3 +592,6 @@ Options_SetTab4	BaseUi_SetScratch4	0x6b6b0. The IDB name after the rename; the p
 stru_AC548	aUiBaseInfoCtlDesc	IDB rename: the six UiControlDesc records Ui_InitBaseInfo installs at 0xAC548; the port's copy is g_aUiBaseInfoCtlDesc
 ??1CDialogTemplate@@QAA@XZ	MapTemplate_Free	0x54c48 dtor: operator delete on the template; the port's struct is caller-owned so it releases the blob
 j_Font_Free	Font_AtexitThunk	0x460dc thunk: Font_Free(&fontSys) as a tail jump; the port names the same global (g_fontSys)
+unk_186B00	g_pUiCloseCtl	0x186B00 UiControl: the shared close control -- BaseInfoScreen_Init, BaseFacScreen_*, FundingScreen_*, NewBaseScreen_Open, BasePlaneScreen_Open, the Transfer screens and the ufopaedia all move it to (224,1) with their own click
+dword_1872DC	g_nUfopaediaEntrySub	0x1872DC: the ufopaedia sub-index Ui_DrawBaseInfo derives from the entry number (entry number lives at 0x1872D8)
+unk_187208	g_abUfopaediaAmmoScratch	0x187208, 208 bytes: the ammo-record scratch copy; Ui_DrawBaseInfo is its only referencer, so the port keeps it as a local
