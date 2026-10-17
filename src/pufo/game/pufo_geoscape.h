@@ -1539,9 +1539,100 @@ typedef struct GeoscapeStatusPanelEnv {
     u8                *abResearchActive;  /* byte_160BBC, 144 bytes, read AND written by '%' */
     const u8          *pbFinishedTopic;   /* nResearchFinishedTopic @ 0x15EEF8 */
     const i32         *pnShownTopic;      /* nResearchTopicShown @ 0x160C60 */
+    /* The default arm's continuation, 0x8E658..0x8F24C. */
+    const SmapView    *pView;             /* gSmapCam @ 0x1863E8; its nMapW / 2 - 120 is R8 */
+    PtrArray          *pStrategList;      /* the 0x1864F8 root's PtrArray at +0x3C */
+    const i32         *pnActionFail;      /* dwActionFail @ 0x1870C8 */
+    const i32         *pnActionFailReason;/* dwActionFailReason @ 0x1870B4 */
+    const u8          *pbMapSelectionFlag;/* bMapSelectionFlag @ 0x159E84 */
+    char              *pszRadarMsg;       /* szRadarMsg @ 0x186B10, the original's dword_186B08+8 */
+    char              *pszHyper;          /* unk_186420, the hyperwave panel's own line buffer */
+    UiControl         *pCtlA;             /* *pGeoscapeCtlA @ 0x186BB4 */
+    void             (*pfnSelectTarget)(void);  /* Smap_OnPointerUp @ 0x89450 */
+    void             (*pfnClearSelection)(void);/* Smap_ClearSelection @ 0x84648 */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
+
+/* ---- the default arm's continuation, 0x8E658..0x8F24C ------------------------------------
+ *
+ * The default arm does not end at UiPanelMsg_Draw. 0x8E5E0's BEQ and the 0x8E654 call both land
+ * at 0x8E658, so this runs for every flag that reaches the default arm -- including 0x1E, 0x1F and
+ * 0x31, and including the case where the panel-draw gate was closed.
+ *
+ * 0x8E658, the action-fail line. Read as an int, dwActionFail == 1 AND line 0's flag < 0x1E AND
+ * dwActionFailReason == 0, then Ui_AnimExpandBlit_IfEnabled(x 0x14, y 0x82, 0xC8 x nMapW/2 - 120,
+ * bEnabled = the SIGNED BYTE of dwActionFail -- 1, because the outer test just proved it) and
+ * TEXTS[406] "Нет денег" centred at y=158.
+ *
+ * 0x8E6E0 re-reads line 0's flag a third time. Only 0x0A is ported here; 0x11, 0x0F, 0x0C, 0x0E,
+ * 0x0B and the rest of the chain at 0x8F250..0x91CEC are the next unit.
+ *
+ * 0x8E708, the selected contact panel. Line 0's colour slot 0 indexes the 0x1864F8+0x3C PtrArray
+ * (the strateg list) and the entry is a StrategItem. Line 0's colour slot 1 indexes the SAME list
+ * again for the size line's kind byte -- the two slots are read separately and each call
+ * re-resolves the entry.
+ *
+ *   bHyperDetect (+0x64) == 0: anim (0xE, 0x46) 0xD0 x nMapW/2 - 120, else anim (0, 0x32) 0xEC x 0xB4.
+ *   psz = TEXTS[1210] "НЛО" + itoa(nDisplayId @ +0x10), centred at y=80.
+ *   szRadarMsg = TEXTS[1211] "Размер..................", then strcat one of the five size labels
+ *   picked by the SECOND entry's bCraftClass (+0x02, 0x8E8DC LDRSB [R0,#2] -- NOT nType), each
+ *   prefixed by itoa(abs(base - 61 * bRandA)) where bRandA (+0x14) comes from the FIRST entry.
+ *   bases 0..7: 2200, 2400, 2700, 4000, 4300, 4800, 3200, 5000; labels 1359, 1360, 1360, 1361,
+ *   1361, 1362, 1362, 1363. Outside 0..7 the switch jumps to 0x8EBB8, past the strcat, so psz keeps
+ *   TEXTS[1211] and szRadarMsg keeps the label alone; the speed line then prints that label. Drawn
+ *   left-aligned at (40, 96).
+ *   szRadarMsg = TEXTS[1364] "Скорость..............", then "0" only when nTimer (+0x2C) > 0, then
+ *   TEXTS[1365] " узлов". Drawn at (40, 112).
+ *   Controls: confirm gets Smap_OnPointerUp and pGeoscapeCtlA gets Smap_ClearSelection before the
+ *   branch; with bHyperDetect clear they sit centred on 120 at y 136 and 160, otherwise at 180 and
+ *   204. The label under the confirm control is TEXTS[1212] "Атака НЛО!" when bMapSelectionFlag is
+ *   set and TEXTS[1213] "Центр на НЛО" when it is not, centred at 136 or 180; TEXTS[1144] "Отмена"
+ *   is centred at 161 or 205.
+ *   With bHyperDetect set (0x8ECAC LDRB [R0,#0x64]) three more lines are built in unk_186420
+ *   instead, all three from the FIRST entry: TEXTS[1345] alone at (120, 60); TEXTS[1346] +
+ *   TEXTS[1366..1373] picked by bCraftClass (0x8EE98 LDRSB [R0,#2]) at (40, 128); TEXTS[1347] +
+ *   TEXTS[1374..1378] picked by bRace (+0x70), with NO label for a race outside 0..4, at (40, 144);
+ *   and TEXTS[1348] + TEXTS[1379..1386] picked by nMissionSub (+0x39) through the non-monotonic
+ *   map 0->1379, 1->1380, 2->1381, 3->1382, 4->1383, 5->1386, 6->1384, 7->1385, again with no label
+ *   outside 0..7, at (40, 160).
+ */
+#define PUFO_STATUS_TEXT_NO_MONEY      406 /* "Нет денег" */
+#define PUFO_STATUS_TEXT_CANCEL        1144 /* "Отмена" */
+#define PUFO_STATUS_TEXT_UFO           1210 /* "НЛО" */
+#define PUFO_STATUS_TEXT_SIZE_LABEL    1211 /* "Размер.................." */
+#define PUFO_STATUS_TEXT_ATTACK        1212 /* "Атака НЛО!" */
+#define PUFO_STATUS_TEXT_CENTRE        1213 /* "Центр на НЛО" */
+#define PUFO_STATUS_TEXT_HYPERWAVE     1345 /* "Получена гиперволновая рассылка" */
+#define PUFO_STATUS_TEXT_TYPE_LABEL    1346 /* "Тип НЛО.............." */
+#define PUFO_STATUS_TEXT_RACE_LABEL    1347 /* "Раса......................." */
+#define PUFO_STATUS_TEXT_MISSION_LABEL 1348 /* "Миссия.................." */
+#define PUFO_STATUS_TEXT_SIZE_FIRST    1359 /* 1359..1363 size labels */
+#define PUFO_STATUS_TEXT_SPEED_LABEL   1364 /* "Скорость.............." */
+#define PUFO_STATUS_TEXT_KNOTS         1365 /* " узлов" */
+#define PUFO_STATUS_TEXT_TYPE_FIRST    1366 /* 1366..1373 craft-type labels */
+#define PUFO_STATUS_TEXT_RACE_FIRST    1374 /* 1374..1378 race labels */
+#define PUFO_STATUS_TEXT_MISSION_FIRST 1379 /* 1379..1386 mission labels */
+#define PUFO_STATUS_SIZE_BASE_STEP        61 /* 0x8E920 MOV R2, #0x3D */
+#define PUFO_STATUS_TEXT_X_LEFT_PANEL   0x28 /* 40: the three left-aligned info lines */
+#define PUFO_STATUS_Y_FAIL_TEXT         0x9E /* 0x8E6D0: TEXTS[406] */
+#define PUFO_STATUS_Y_SEL_TITLE          0x50 /* 0x8E6E4-side: "НЛО" + id */
+#define PUFO_STATUS_Y_SEL_SIZE           0x60 /* 0x8EBC0 */
+#define PUFO_STATUS_Y_SEL_SPEED          0x70 /* 0x8EC5C */
+#define PUFO_STATUS_Y_SEL_HYPER          0x3C /* 0x8EE44 */
+#define PUFO_STATUS_Y_SEL_TYPE           0x80 /* 0x8EF3C */
+#define PUFO_STATUS_Y_SEL_RACE           0x90 /* 0x8F008 */
+#define PUFO_STATUS_Y_SEL_MISSION        0xA0 /* 0x8F0FC */
+#define PUFO_STATUS_SELCTL_X              0x28 /* 40, the left-aligned control anchor */
+#define PUFO_STATUS_SELCTL_Y_STD_CONF   0x88 /* 0x8ECCC: confirm, bHyperDetect clear */
+#define PUFO_STATUS_SELCTL_Y_STD_CLEAR  0xA0 /* 0x8ECF4: pGeoscapeCtlA */
+#define PUFO_STATUS_SELCTL_Y_HYP_CONF   0xB4 /* 0x8F124 */
+#define PUFO_STATUS_SELCTL_Y_HYP_CLEAR  0xCC /* 0x8F150 */
+#define PUFO_STATUS_Y_SEL_LABEL_STD      0x88 /* 0x8EDAC: the attack/centre label */
+#define PUFO_STATUS_Y_SEL_LABEL_HYP      0xB4 /* 0x8F1E8 */
+#define PUFO_STATUS_Y_SEL_CANCEL_STD     0xA1 /* 0x8EDF4 */
+#define PUFO_STATUS_Y_SEL_CANCEL_HYP     0xCD /* 0x8F230 */
+#define PUFO_STATUS_SELFLAG              0x0A /* the flag this panel answers */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

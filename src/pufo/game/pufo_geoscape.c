@@ -4409,20 +4409,200 @@ static void StatusPanel_DrawFooter(const GeoscapeStatusPanelEnv *pEnv, char *psz
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_RIGHT, nFootY, psz);
 }
 
-/* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
- * byte_18709C[4] draws nothing at all -- the frame and the panel text go together. */
-static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv)
+/* R8 for the whole status panel: the map half-extent the map chrome leaves behind at 0x8C2D0
+ * (`SUB R8, R3, #0x78` on nMapW / 2). Three anim frames use it as their height. */
+static i32 StatusPanel_MapHalfW(const GeoscapeStatusPanelEnv *pEnv)
 {
-    StatusPanel_PackColour(pEnv);                                      /* 0x8E5CC */
-    if (pEnv->pbMultiSelectPanel == NULL || *pEnv->pbMultiSelectPanel == 0
-        || pEnv->pStatusPanel == NULL) {
+    return pEnv->pView->nMapW / 2 - 120;
+}
+
+/* The list entry behind one colour slot of message line 0. The original re-reads the slot and
+ * re-resolves the entry at every use and never null-checks it; the port checks once per call. */
+static StrategItem *StatusPanel_ListEntry(const GeoscapeStatusPanelEnv *pEnv, i32 nSlot)
+{
+    return (StrategItem *)PtrArray_Get(pEnv->pStrategList,
+                                       UiLineList_GetColor(pEnv->pLines, 0, nSlot));
+}
+
+/* 0x8E658: the action-fail line. Both the closed and the open panel-draw gate reach it --
+ * 0x8E5E0's BEQ lands at 0x8E658 -- so it runs for flag 0x1E too. */
+static void StatusPanel_DrawActionFail(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pnActionFail == NULL || *pEnv->pnActionFail != 1) {
+        return;                                                        /* 0x8E664 */
+    }
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) >= 0x1E) {
+        return;                                                        /* 0x8E67C BGE */
+    }
+    if (pEnv->pnActionFailReason == NULL || *pEnv->pnActionFailReason != 0
+        || pEnv->pView == NULL) {
+        return;                                                        /* 0x8E68C BNE */
+    }
+    /* bEnabled is LDRSB of dwActionFail: 1, which the gate above has just proved. */
+    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 0x14, 0x82, 0xC8, StatusPanel_MapHalfW(pEnv),
+                                      (i8)(u8)*pEnv->pnActionFail);    /* 0x8E6A8 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_NO_MONEY);         /* 0x8E6B0 record 406 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_FAIL_TEXT, psz);
+}
+
+/* bases and labels of the size line, by the SECOND entry's bCraftClass (+0x02, 0x8E8DC LDRSB
+ * [R0,#2] -- not nType). The five labels come from three
+ * different registers (1360 via R10, 1361 via R11, 1362 via the 0x8EB4C pair), which is why the
+ * table repeats rather than running. */
+static const i32 g_anStatusSizeBase[8] = { 2200, 2400, 2700, 4000, 4300, 4800, 3200, 5000 };
+static const i32 g_anStatusSizeRec[8]  = { 1359, 1360, 1360, 1361, 1361, 1362, 1362, 1363 };
+
+/* nMissionSub -> record, in the jumptable's own order: sub 5 takes 1386 and subs 6/7 take
+ * 1384/1385, so the mapping is not monotonic. */
+static const i32 g_anStatusMissionRec[8] = { 1379, 1380, 1381, 1382, 1383, 1386, 1384, 1385 };
+
+/* One of the panel's two bottom controls: centred on 120 at the arm's y, then blitted. */
+static void StatusPanel_BlitSelControl(const GeoscapeStatusPanelEnv *pEnv, UiControl *pCtl, i32 nY)
+{
+    pCtl->x = (i16)(PUFO_STATUS_TEXT_X_CENTRE - (pCtl->uWidth >> 1));  /* 0x8ECC0 */
+    pCtl->y = (i16)nY;                                                 /* 0x8ECCC / 0x8ECF4 */
+    (void)UiControl_BlitActivePad(pCtl, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                /* 0x8ED04 */
+}
+
+/* 0x8E708..0x8F24C: the contact the cursor is on. Line 0's colour slot 0 picks the entry; slot 1
+ * picks the one whose nType sizes the size line. pszRadarMsg is the original's dword_186B08 + 8
+ * (szRadarMsg @ 0x186B10) and pszHyper is unk_186420. */
+static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    char szNum[16], szLabel[PUFO_TEXT_REC_STRIDE];
+
+    if (pEnv->pView == NULL || pEnv->pStrategList == NULL || pEnv->pszRadarMsg == NULL
+        || pEnv->pszHyper == NULL || pEnv->pCtlA == NULL || pEnv->pCtlConfirm == NULL
+        || pEnv->pbMapSelectionFlag == NULL) {
         return;
     }
-    const UiPanel *const pPanel = pEnv->pStatusPanel;
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, pPanel->nPosY - 6,       /* 0x8E62C: panel[0x1B88] - 6 */
-                            0xD0, pPanel->nFont * pPanel->nLineCount + 6, /* 0x8E628: panel[0x1B9C] * panel[0xBDC] */
-                            0, 0x28, 0x32, 0xB4, 0);                   /* 0x8E5E4..0x8E608 */
-    UiPanel_DrawText(pEnv->pStatusPanel);                              /* 0x8E654 */
+    StrategItem *const pEntry = StatusPanel_ListEntry(pEnv, 0);
+    const bool bHyper = pEntry != NULL && pEntry->bHyperDetect != 0;
+    const i32 nCtlYConfirm = bHyper ? PUFO_STATUS_SELCTL_Y_HYP_CONF : PUFO_STATUS_SELCTL_Y_STD_CONF;
+    const i32 nCtlYClear   = bHyper ? PUFO_STATUS_SELCTL_Y_HYP_CLEAR : PUFO_STATUS_SELCTL_Y_STD_CLEAR;
+    const i32 nLabelY      = bHyper ? PUFO_STATUS_Y_SEL_LABEL_HYP : PUFO_STATUS_Y_SEL_LABEL_STD;
+    const i32 nCancelY     = bHyper ? PUFO_STATUS_Y_SEL_CANCEL_HYP : PUFO_STATUS_Y_SEL_CANCEL_STD;
+
+    if (bHyper) {
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, 0, 0x32, 0xEC, 0xB4, 0, 0x28, 0x32, 0xB4, 0);
+    } else {                                                          /* 0x8E728 BNE */
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x46, 0xD0, StatusPanel_MapHalfW(pEnv),
+                                0, 0x28, 0x32, 0xB4, 0);
+    }
+    if (pEntry == NULL) {
+        return;
+    }
+
+    /* "НЛО" + the display id, centred at 80. j_itoa writes straight into psz in the original. */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_UFO);             /* 0x8E7C8 record 1210 */
+    snprintf(szNum, sizeof(szNum), "%d", pEntry->nDisplayId);         /* 0x8E818 */
+    (void)pufo_strcat(psz, szNum, PUFO_TEXT_REC_STRIDE);               /* 0x8E824 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_SEL_TITLE, psz);
+
+    /* The size line, built in szRadarMsg: the label, then itoa(abs(base - 61 * bRandA)) is left in
+     * psz and only the label is appended here. bCraftClass comes from the SLOT 1 entry, bRandA from
+     * slot 0. Outside 0..7 the switch jumps straight to 0x8EBB8, past the strcat: psz keeps the
+     * size LABEL and szRadarMsg keeps the label alone. */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SIZE_LABEL);       /* 0x8E854 record 1211 */
+    DrawScreen_CopyTextRec(pEnv->pszRadarMsg, PUFO_TEXT_REC_STRIDE, psz); /* 0x8E87C..0x8E898 */
+    const StrategItem *const pKindEntry = StatusPanel_ListEntry(pEnv, 1);
+    const i32 nKind = pKindEntry != NULL ? (i32)(i8)pKindEntry->bCraftClass : -1;
+    if (nKind >= 0 && nKind < 8) {
+        const i32 nRaw = g_anStatusSizeBase[nKind]
+                       - PUFO_STATUS_SIZE_BASE_STEP * (i32)(i8)pEntry->bRandA;
+        snprintf(psz, PUFO_TEXT_REC_STRIDE, "%d", nRaw < 0 ? -nRaw : nRaw);
+        StatusPanel_CopyRec(pEnv, szLabel, g_anStatusSizeRec[nKind]);
+        (void)pufo_strcat(pEnv->pszRadarMsg, szLabel, PUFO_TEXT_REC_STRIDE); /* 0x8EBB4 */
+    }
+    Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_SIZE,
+                    pEnv->pszRadarMsg);                               /* 0x8EBBC..0x8EBC8, x 40 */
+
+    /* The speed line. psz keeps the size number unless nTimer > 0 replaces it with "0", so a
+     * contact with no accumulated timer shows its SIZE number as its speed -- recorded as a
+     * deviation, faithful to 0x8EBF4's BLE. */
+    if (pEntry->nTimer > 0) {
+        pufo_strncpy(psz, "0", PUFO_TEXT_REC_STRIDE);                 /* 0x8EBF8 pszValue */
+    }
+    StatusPanel_CopyRec(pEnv, pEnv->pszRadarMsg, PUFO_STATUS_TEXT_SPEED_LABEL); /* 0x8EC18 record 1364 */
+    (void)pufo_strcat(pEnv->pszRadarMsg, psz, PUFO_TEXT_REC_STRIDE);                              /* 0x8EC44 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_KNOTS);            /* 0x8EC48 record 1365 */
+    (void)pufo_strcat(pEnv->pszRadarMsg, psz, PUFO_TEXT_REC_STRIDE);                              /* 0x8EC54 */
+    Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_SPEED,
+                    pEnv->pszRadarMsg);                                /* 0x8EC58..0x8EC68, x 40 */
+
+    pEnv->pCtlConfirm->pfnClick = pEnv->pfnSelectTarget;              /* 0x8EC84 Smap_OnPointerUp */
+    pEnv->pCtlA->pfnClick = pEnv->pfnClearSelection;                  /* 0x8EC90 Smap_ClearSelection */
+    if (!bHyper) {
+        StatusPanel_BlitSelControl(pEnv, pEnv->pCtlConfirm, nCtlYConfirm);
+        StatusPanel_BlitSelControl(pEnv, pEnv->pCtlA, nCtlYClear);    /* 0x8ECB8..0x8ED04 */
+    } else {
+        /* 0x8EE00: the hyperwave contact's four lines, built in unk_186420. The type line reads the
+         * SLOT 0 entry's bCraftClass (0x8EE98 LDRSB [R0,#2]) where the size line above used the
+         * SLOT 1 entry's. Race is [R0,#0x70] and mission is [R0,#0x39], both from SLOT 0 too. */
+        StatusPanel_CopyRec(pEnv, pEnv->pszHyper, PUFO_STATUS_TEXT_HYPERWAVE); /* 0x8EE00 record 1345 */
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_SEL_HYPER, pEnv->pszHyper);
+
+        StatusPanel_CopyRec(pEnv, pEnv->pszHyper, PUFO_STATUS_TEXT_TYPE_LABEL); /* 0x8EE54 record 1346 */
+        const i32 nSelfKind = (i32)(i8)pEntry->bCraftClass;           /* 0x8EE9C CMP #7, 8 cases */
+        if (nSelfKind >= 0 && nSelfKind < 8) {
+            StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_TYPE_FIRST + nSelfKind);
+            (void)pufo_strcat(pEnv->pszHyper, psz, PUFO_TEXT_REC_STRIDE); /* 0x8EF34 */
+        }
+        Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_TYPE, pEnv->pszHyper);
+
+        StatusPanel_CopyRec(pEnv, pEnv->pszHyper, PUFO_STATUS_TEXT_RACE_LABEL); /* 0x8EF4C record 1347 */
+        const i32 nRace = (i32)(i8)pEntry->bRace;                     /* 0x8EF90, a CMP chain: race 0
+                                                                       * has its own BEQ at 0x8EF98 and
+                                                                       * still appends (record 1374);
+                                                                       * anything above 4 falls out at
+                                                                       * 0x8EFB8 and appends nothing */
+        if (nRace >= 0 && nRace <= 4) {
+            StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_RACE_FIRST + nRace);
+            (void)pufo_strcat(pEnv->pszHyper, psz, PUFO_TEXT_REC_STRIDE); /* 0x8F000 */
+        }
+        Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_RACE, pEnv->pszHyper);
+
+        StatusPanel_CopyRec(pEnv, pEnv->pszHyper, PUFO_STATUS_TEXT_MISSION_LABEL); /* 0x8F018 record 1348 */
+        const i32 nMission = (i32)(i8)pEntry->nMissionSub;            /* 0x8F05C LDRSB [R0,#0x39] */
+        if (nMission >= 0 && nMission < 8) {
+            StatusPanel_CopyRec(pEnv, psz, g_anStatusMissionRec[nMission]);
+            (void)pufo_strcat(pEnv->pszHyper, psz, PUFO_TEXT_REC_STRIDE); /* 0x8F0F4 */
+        }
+        Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_MISSION, pEnv->pszHyper);
+
+        /* The controls come after the lines on this path (0x8F10C..0x8F160). */
+        StatusPanel_BlitSelControl(pEnv, pEnv->pCtlConfirm, nCtlYConfirm);
+        StatusPanel_BlitSelControl(pEnv, pEnv->pCtlA, nCtlYClear);
+    }
+
+    /* 0x8ED08..0x8EDF8 and 0x8F164..0x8F24C: the same two labels on both paths, only lower. */
+    StatusPanel_CopyRec(pEnv, psz, *pEnv->pbMapSelectionFlag != 0 ? PUFO_STATUS_TEXT_ATTACK
+                                                                  : PUFO_STATUS_TEXT_CENTRE);
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, nLabelY, psz);      /* 0x8EDAC / 0x8F1F4 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);          /* 0x8EDBC / 0x8F1F8, record 1144 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, nCancelY, psz);     /* 0x8F234, the shared tail */
+}
+
+/* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
+ * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
+static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    StatusPanel_PackColour(pEnv);                                      /* 0x8E5CC */
+    if (pEnv->pbMultiSelectPanel != NULL && *pEnv->pbMultiSelectPanel != 0
+        && pEnv->pStatusPanel != NULL) {
+        const UiPanel *const pPanel = pEnv->pStatusPanel;
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, pPanel->nPosY - 6,   /* 0x8E62C: panel[0x1B88] - 6 */
+                                0xD0, pPanel->nFont * pPanel->nLineCount + 6, /* 0x8E628: panel[0x1B9C] * panel[0xBDC] */
+                                0, 0x28, 0x32, 0xB4, 0);               /* 0x8E5E4..0x8E608 */
+        UiPanel_DrawText(pEnv->pStatusPanel);                          /* 0x8E654 */
+    }
+    StatusPanel_DrawActionFail(pEnv, psz);                             /* 0x8E658 */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_SELFLAG) {
+        StatusPanel_DrawSelectedContact(pEnv, psz);                    /* 0x8E708..0x8F24C */
+    }
+    /* 0x8F250..0x91CEC: the rest of the default chain (flags 0x11, 0x0F, 0x0C, 0x0E, 0x0B and
+     * what follows) is not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */
@@ -4504,7 +4684,7 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv)
 
     const u8 nFlag = UiLineList_GetFlag(pEnv->pLines, 0);             /* 0x8C78C, read 4x */
     if (nFlag < PUFO_STATUS_FLAG_MIN || nFlag > PUFO_STATUS_FLAG_MAX) {
-        StatusPanel_DrawDefault(pEnv);
+        StatusPanel_DrawDefault(pEnv, szText);
         return;
     }
 
@@ -4647,7 +4827,7 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv)
         break;
 
     default:
-        StatusPanel_DrawDefault(pEnv);
+        StatusPanel_DrawDefault(pEnv, szText);
         break;
     }
 }

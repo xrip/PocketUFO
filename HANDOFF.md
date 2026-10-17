@@ -1,17 +1,20 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `5917656`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its second part -- the 13-arm status
-panel at 0x8C760..0x8E658, ported as `Geoscape_DrawStatusPanel` with 593 new checks and 12/12
-mutations caught, eight of them now failing the build through the `_Static_assert` pins that hold
-the panel geometry to the ARM immediates (a mutation sweep that only runs the tests cannot see a
-constant change that moves the code and its expectation together). Part 1 -- the cases 0/2 map-view
-chrome and the crosshair tail as `Geoscape_BlitMapView` and `Geoscape_BlitCrosshair`, 59 checks,
-13/13 mutations -- is in `5917656`. Still unported here: the block 0x8E658..0x91CEC and the screen
-arms 0x91DC8..0x944B0. `Geoscape_Draw @ 0x8c180` is not cited until the whole function is ported,
-so coverage stays 965/1103 (87.5%) and 563008/598792 (94.0%) with 16631 checks. The read map and
-the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read,
-ported in parts".
+Date: 2026-10-17. HEAD before this edit: `2485d25`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its third part -- the action-fail line
+and the selected contact at 0x8E658..0x8F24C, the tail of `Geoscape_DrawStatusPanel`, with 106 new
+checks and 13/13 mutations caught (the first sweep survived six, again the macro-tautology shape, so
+33 more `_Static_assert` pins now hold the record offsets and the ten row y values to the ARM
+immediates). Parts 1 and 2 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body at
+0x8C760..0x8E658 in `2485d25` -- are behind this. The finding of this part is that the size line and
+the hyperwave type line both read `StrategItem.bCraftClass` at +0x02 while the port had them on
+`nType` at +0x00, and that the size switch's default case lands past its own strcat. Still unported
+here: 0x8F250..0x91CEC and the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and
+596752/598792 (99.7%) with 16737 checks -- that byte figure credits all 33,744 bytes of
+`Geoscape_Draw` because `coverage.py` counts a function once its start address is cited, which the
+previous unit's row understated (965/1103 and 563008 from memory) and this figure overstates for the
+same reason. The read map and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @
+0x8c180 (33,744 B) - read, ported in parts".
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,
 and the per-unit chain

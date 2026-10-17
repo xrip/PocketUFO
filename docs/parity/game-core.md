@@ -17550,3 +17550,64 @@ no test notices, which is exactly how the first sweep survived six.
 
 IDB: 3 comments written -- 0x8C82C (the argument mapping, correcting the old text), 0x8E5E0 (the
 default arm skips both calls) and 0x8D400 (the confirm gate is the ufopaedia entry, not the walk).
+### Unit 108, part 3: the action-fail line and the selected contact (0x8E658..0x8F24C)
+
+Two blocks sit at the tail of the default arm, both reached through the BEQ at 0x8E5E0 that skipped
+the panel draw itself.
+
+**0x8E658, the action-fail line.** Three gates in this order: dwActionFail @ 0x1870C8 has to be
+exactly 1 (0x8E664 `CMP #1 / BNE`, so 0 and 2 both fail), the line-0 flag has to be below 0x1E
+(0x8E67C `CMP #0x1E / BGE`, so 0x1E itself is not below it), and dwActionFailReason @ 0x1870B4 has
+to be 0 (0x8E68C BNE). Then `Ui_AnimExpandBlit_IfEnabled` at (0x14, 0x82) with size (0xC8, R8) --
+`LDRSB R0, =dwActionFail` hands the blit its index, and the value is 1 because the first gate has
+just proved it -- and TEXTS[406] "Нет денег" centred at y = 0x9E. R8 is the map half-extent the map
+chrome left behind at 0x8C2D0 (`nMapW / 2 - 120`), zero for the shipped 240-wide grid pad, so the
+frame degenerates to its own top edge.
+
+**0x8E708, the contact the cursor is on**, gated on the line-0 flag being 0x0A. The entry is
+`PtrArray_Get(strateg PtrArray @ 0x1864F8 + 0x3C, UiLineList_GetColor(line 0, slot n))`, and the
+block re-reads that colour slot at every use: slot 0 five times and slot 1 once. Both scratch
+buffers are globals -- szRadarMsg @ 0x186B10 for the size and speed lines, unk_186420 for the four
+hyperwave lines (now named szUiScratchStr, see renames.tsv).
+
+Field corrections this read produced, all against the struct layout the IDB already had:
+- 0x8E8DC and 0x8EE98 load `LDRSB [R0,#2]`, which is **StrategItem.bCraftClass (+0x02), not nType
+  (+0x00)**. The size switch and the hyperwave type line are both keyed on the craft class; the port
+  had both on nType.
+- 0x8E8C0 loads `[R0,#0x14]` = bRandA of the SLOT 0 entry as the factor of 61, while the switch
+  value comes from the SLOT 1 entry: two different entries in one line.
+- 0x8ECAC loads `[R0,#0x64]` = bHyperDetect, and it is the third re-read of slot 0 in the same block.
+- The hyperwave lines load `[R0,#0x70]` = bRace (0x8EF90) and `[R0,#0x39]` = nMissionSub (0x8F05C),
+  both from the SLOT 0 entry -- while the size line two lines above used the SLOT 1 entry's class.
+- UiControl+0x0C is pfnClick: confirm gets Smap_OnPointerUp (0x8EC74) and pGeoscapeCtlA gets
+  Smap_ClearSelection (0x8EC8C).
+
+Record offsets, each one read as (record address - 0xB38D0) / 205: 1210 "НЛО", 1211 the size label,
+1212 "Атака НЛО!" and 1213 "Центр на НЛО", 1345 "Получена гиперволновая рассылка", 1346/1347/1348 the
+type/race/mission labels, the size names 1359..1363 through 0x44043 + 205*i, 1364 the speed label,
+1365 " узлов", the craft-class names 1366..1373 through 0x445DE + 205*i, the race names 1374..1378
+through 0x44C46 + 205*i, the mission names 1379..1386 through 0x45047 + 205*i. The mission jumptable
+is not ordered: sub 5 takes 1386 and subs 6/7 take 1384/1385. Race 0 has its own BEQ at 0x8EF98 and
+still appends 1374, so the race map really is 1374 + race for 0..4.
+
+Two original defects, both now in bugs.tsv: the size switch's default case lands at 0x8EBB8, past the
+strcat at 0x8EBB4, so psz keeps TEXTS[1211] and the speed line then prints that label as the
+contact's speed; and the speed line never reads dSpeed (+0x48) at all -- it appends psz, which is the
+size number itoa(|base - 61 * bRandA|) unless nTimer > 0 replaces it with the literal "0".
+
+The hyper path draws its four lines BEFORE the two controls (0x8F10C..0x8F160, y 180 and 204), the
+plain path draws the controls first (0x8ECB8..0x8ECDC, y 136 and 160). Both then draw the same attack
+/ centre label and TEXTS[1144] "Отмена", at 136/161 on the plain path and 180/205 on the hyper path;
+the original carries the two label blocks twice (0x8ED08..0x8EDF8 and 0x8F164..0x8F24C) and the port
+shares them.
+
+Tests: 106 new checks (16737 across 60 suites, 0 failures). The hyperwave block writes four lines into ONE buffer, so only the last line
+is still in the buffer when the panel returns; the type and race lines are identified by removing one
+record from the second run and reading the row that changes, and every out-of-range case is compared
+against the label-only row rather than against a looser width. 33 new `_Static_assert` pins tie the
+record offsets and the ten y coordinates to the ARM immediates; without them the first sweep survived
+six mutations, all of them the same macro-tautology shape as unit 107.
+
+IDB: 9 comments written (0x8E8C0, 0x8E8DC, 0x8EBB8, 0x8EC84, 0x8ECAC, 0x8EE98, 0x8EF90, 0x8F05C and
+the scratch buffer itself) and unk_186420 renamed to szUiScratchStr -- six screens strcpy a TEXTS
+record into it, so it is the shared UI scratch, not a hyperwave-only buffer.

@@ -8525,7 +8525,7 @@ static void TestGlobeHover(void)
  * centring anchors and their colour are read straight off the surface. The expected rows and
  * anchors are the ARM's, listed in pufo_geoscape.h.
  */
-#define PN_TEXT_MAX 1344 /* the highest record the panel or BuildStatusMsg reaches */
+#define PN_TEXT_MAX 1387 /* the highest record the panel or BuildStatusMsg reaches */
 #define PN_BAND     12   /* a row's search window below its y; rows are at least 14 apart */
 #define PN_GLYPH_DY  2   /* Text_DrawString puts the ink PN_GLYPH_DY + 1 below the y it is given */
 
@@ -8561,6 +8561,41 @@ _Static_assert(PUFO_STATUS_CTL_Y_TALL == 0xBD, "the ' ' and '$' control row");
 _Static_assert(PUFO_STATUS_CTL_Y_STD == 0xAF, "0x8E4A8 MOV R0, #0xAF");
 _Static_assert(PUFO_STATUS_CTL_Y_RESEARCH == 0xB9, "0x8D6F8 MOV R2, #0xB9");
 _Static_assert(PUFO_STATUS_CTL_PARKED == 1000, "0x8D3D0 MOV R11, #0x3E8");
+
+/* The selected-contact block: the record offsets read off the ARM as (addr - 0xB38D0) / 205. */
+_Static_assert(PUFO_STATUS_TEXT_NO_MONEY == 406, "0x8E6B0 record 406");
+_Static_assert(PUFO_STATUS_TEXT_CANCEL == 1144, "0x8F1F8 MOV R1, #0x39418; 0x39418 / 205 == 1144");
+_Static_assert(PUFO_STATUS_TEXT_UFO == 1210, "0x8E7C8-side title line");
+_Static_assert(PUFO_STATUS_TEXT_SIZE_LABEL == 1211, "0x8E854 (unk_F028F - 0xB38D0) / 205 == 1211");
+_Static_assert(PUFO_STATUS_TEXT_ATTACK == 1212, "0x8F178 (unk_F035C - 0xB38D0) / 205 == 1212");
+_Static_assert(PUFO_STATUS_TEXT_CENTRE == 1213, "0x8F1A8 (unk_F0429 - 0xB38D0) / 205 == 1213");
+_Static_assert(PUFO_STATUS_TEXT_HYPERWAVE == 1345, "0x8EE00 (unk_F6DDD - 0xB38D0) / 205 == 1345");
+_Static_assert(PUFO_STATUS_TEXT_TYPE_LABEL == 1346, "0x8EE54 (unk_F6EAA - 0xB38D0) / 205 == 1346");
+_Static_assert(PUFO_STATUS_TEXT_RACE_LABEL == 1347, "0x8EF4C (unk_F6F77 - 0xB38D0) / 205 == 1347");
+_Static_assert(PUFO_STATUS_TEXT_MISSION_LABEL == 1348, "0x8F018 (unk_F7044 - 0xB38D0) / 205 == 1348");
+_Static_assert(PUFO_STATUS_TEXT_SIZE_FIRST == 1359, "0x8E964 MOV R3, #0x44043; 0x44043 / 205 == 1359");
+_Static_assert(PUFO_STATUS_TEXT_SPEED_LABEL == 1364, "0x8EC18 (unk_F7D14 - 0xB38D0) / 205 == 1364");
+_Static_assert(PUFO_STATUS_TEXT_KNOTS == 1365, "0x8EC48 (unk_F7DE1 - 0xB38D0) / 205 == 1365");
+_Static_assert(PUFO_STATUS_TEXT_TYPE_FIRST == 1366, "0x8EED4 LDR R3, =0x445DE; 0x445DE / 205 == 1366");
+_Static_assert(PUFO_STATUS_TEXT_RACE_FIRST == 1374, "0x8EFF4 LDR R3, =0x44C46; 0x44C46 / 205 == 1374");
+_Static_assert(PUFO_STATUS_TEXT_MISSION_FIRST == 1379, "0x8F094 MOV R3, #0x45047; 0x45047 / 205 == 1379");
+_Static_assert(PUFO_STATUS_SIZE_BASE_STEP == 61, "0x8E920 MOV R2, #0x3D");
+_Static_assert(PUFO_STATUS_TEXT_X_LEFT_PANEL == 0x28, "0x8EF40 MOV R1, #0x28");
+_Static_assert(PUFO_STATUS_Y_FAIL_TEXT == 0x9E, "0x8E6D0 MOV R2, #0x9E");
+_Static_assert(PUFO_STATUS_Y_SEL_SIZE == 0x60, "0x8EBBC MOV R2, #0x60");
+_Static_assert(PUFO_STATUS_Y_SEL_SPEED == 0x70, "0x8EC5C MOV R2, #0x70");
+_Static_assert(PUFO_STATUS_Y_SEL_HYPER == 0x3C, "0x8EE44 MOV R2, #0x3C");
+_Static_assert(PUFO_STATUS_Y_SEL_TYPE == 0x80, "0x8EF3C MOV R2, #0x80");
+_Static_assert(PUFO_STATUS_Y_SEL_RACE == 0x90, "0x8F008 MOV R2, #0x90");
+_Static_assert(PUFO_STATUS_Y_SEL_MISSION == 0xA0, "0x8F0FC MOV R2, #0xA0");
+_Static_assert(PUFO_STATUS_SELCTL_Y_STD_CONF == 0x88, "0x8ECCC MOV R3, #0x88");
+_Static_assert(PUFO_STATUS_SELCTL_Y_STD_CLEAR == 0xA0, "0x8ECF4 MOV R3, #0xA0");
+_Static_assert(PUFO_STATUS_SELCTL_Y_HYP_CONF == 0xB4, "0x8F124 MOV R3, #0xB4");
+_Static_assert(PUFO_STATUS_SELCTL_Y_HYP_CLEAR == 0xCC, "0x8F150 MOV R3, #0xCC");
+_Static_assert(PUFO_STATUS_Y_SEL_LABEL_HYP == 0xB4, "0x8F1E8 MOV R2, #0xB4");
+_Static_assert(PUFO_STATUS_Y_SEL_CANCEL_STD == 0xA1, "0x8EDF4 MOV R2, #0xA1");
+_Static_assert(PUFO_STATUS_Y_SEL_CANCEL_HYP == 0xCD, "0x8F230 MOV R2, #0xCD");
+_Static_assert(PUFO_STATUS_SELFLAG == 0x0A, "the flag gate before 0x8E708");
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -8568,9 +8603,17 @@ static char   g_abPnText[PN_TEXT_MAX * PUFO_TEXT_REC_STRIDE];
 static u16    g_aPnBase[BD_SURF_W * BD_SURF_H];
 static char   g_szPnMsg[108], g_szPnExtra[108], g_szPnScratch[108];
 static UiLineList g_pnLines;
-static UiControl g_pnCtlSfx, g_pnCtlOpen, g_pnCtlConfirm, g_pnCtlApply;
+static UiControl g_pnCtlSfx, g_pnCtlOpen, g_pnCtlConfirm, g_pnCtlApply, g_pnCtlA;
 static UiPanel  g_pnPanel;
 static char     g_szPnPanelLine[64];
+static SmapView g_pnView;
+static StrategItem g_pnStrat[2];
+static void    *g_apPnStrat[2];
+static PtrArray g_pnArr;
+static i32      g_nPnActionFail, g_nPnActionReason;
+static u8       g_bPnMapSel;
+static char     g_szPnRadar[PUFO_TEXT_REC_STRIDE], g_szPnHyper[PUFO_TEXT_REC_STRIDE];
+static i32      g_nPnSelectClicks, g_nPnClearClicks;
 static u8       g_bPnMulti;
 static u8       g_bPnAnimStarted;
 static i8       g_nPnAnimProgress;
@@ -8583,7 +8626,7 @@ static i32      g_nPnShown;
 static BaseFacStatusEnv g_pnFac;
 static GeoscapeStatusPanelEnv g_pnEnv;
 static i32      g_nPnBlits;
-static PadImage g_aPnPads[4];
+static PadImage g_aPnPads[5];
 static i32      g_nPnSfxClicks, g_nPnOpenClicks, g_nPnReportClicks, g_nPnApplyClicks;
 static bool     g_bPnReady;
 static BaseSiteRec g_pnSites[8];
@@ -8603,6 +8646,15 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1206, "P" }, { 1207, "Q" }, { 1208, "R" }, { 1209, "S" },
     { 1334, "a" }, { 1339, "b" }, { 1340, "c" }, { 1341, "d" }, { 1342, "e" }, { 1343, "f" },
     { 1300, "T" }, { 1301, "U" },
+    /* The default arm's continuation: every record it copies. Two-character labels so the
+    * strstr-based composition checks cannot match by accident. */
+    { 406, "A2" }, { 1144, "B2" }, { 1210, "C2" }, { 1211, "D2" }, { 1212, "E2" }, { 1213, "F2" },
+    { 1345, "G2" }, { 1346, "H2" }, { 1347, "I2" }, { 1348, "J2" }, { 1359, "K2" }, { 1360, "L2" },
+    { 1361, "M2" }, { 1362, "N2" }, { 1363, "O2" }, { 1364, "P2" }, { 1365, "Q2" }, { 1366, "R2" },
+    { 1367, "S2" }, { 1368, "T2" }, { 1369, "U2" }, { 1370, "V2" }, { 1371, "W2" }, { 1372, "X2" },
+    { 1373, "Y2" }, { 1374, "Z2" }, { 1375, "a3" }, { 1376, "b3" }, { 1377, "c3" }, { 1378, "d3" },
+    { 1379, "e3" }, { 1380, "f3" }, { 1381, "g3" }, { 1382, "h3" }, { 1383, "i3" }, { 1384, "j3" },
+    { 1385, "k3" }, { 1386, "l3" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -8613,6 +8665,8 @@ static void PnClickSfx(void)    { ++g_nPnSfxClicks; }
 static void PnClickOpen(void)   { ++g_nPnOpenClicks; }
 static void PnClickReport(void) { ++g_nPnReportClicks; }
 static void PnClickApply(void)  { ++g_nPnApplyClicks; }
+static void PnSelectTarget(void){ ++g_nPnSelectClicks; }
+static void PnClearSel(void)    { ++g_nPnClearClicks; }
 
 static void PnSetText(i32 nRec, const char *psz)
 {
@@ -8650,6 +8704,10 @@ static void PnRun(void)
     g_bPnAnimStarted = 0;   /* both runs of a pair must paint the same panel frame */
     g_nPnAnimProgress = 0;
     g_nPnBlits = 0;
+    g_szPnRadar[0] = 0;
+    g_szPnHyper[0] = 0;
+    g_nPnSelectClicks = 0;
+    g_nPnClearClicks = 0;
     memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
     Geoscape_DrawStatusPanel(&g_pnEnv);
 }
@@ -8834,15 +8892,17 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     memset(&g_pnCtlOpen, 0, sizeof(g_pnCtlOpen));
     memset(&g_pnCtlConfirm, 0, sizeof(g_pnCtlConfirm));
     memset(&g_pnCtlApply, 0, sizeof(g_pnCtlApply));
+    memset(&g_pnCtlA, 0, sizeof(g_pnCtlA));
     g_pnCtlSfx.uWidth     = 20;
     g_pnCtlOpen.uWidth    = 20;
     g_pnCtlConfirm.uWidth = 40;
     g_pnCtlApply.uWidth   = 40;
+    g_pnCtlA.uWidth       = 40;
     /* UiControl_BlitActivePad paints nothing for a disabled control or one with no pad for its
-     * state, so all four get both. The blit callbacks only count calls; they paint nothing. */
-    for (i32 i = 0; i < 4; ++i) {
+     * state, so all five get both. The blit callbacks only count calls; they paint nothing. */
+    for (i32 i = 0; i < 5; ++i) {
         UiControl *const pCtl = i == 0 ? &g_pnCtlSfx : i == 1 ? &g_pnCtlOpen
-                        : i == 2 ? &g_pnCtlConfirm : &g_pnCtlApply;
+                        : i == 2 ? &g_pnCtlConfirm : i == 3 ? &g_pnCtlApply : &g_pnCtlA;
         pCtl->bEnabled  = 1;
         pCtl->nMode     = 0;
         pCtl->nState    = 0;
@@ -8856,6 +8916,29 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
         if (g_anUfopaediaEntryNum[i] != 0) { g_nPnShown = i; break; }
     }
+
+    /* The default arm's continuation: the map half-extent, the strateg list and its two entries,
+     * the two action-fail dwords and the two line buffers they are built in. nMapW 240 is the
+     * shipped grid pad's width, which makes nMapW / 2 - 120 exactly zero. */
+    memset(&g_pnView, 0, sizeof(g_pnView));
+    g_pnView.nMapW = 240;
+    g_pnView.nMapH = 240;
+    memset(g_pnStrat, 0, sizeof(g_pnStrat));
+    g_pnStrat[0].nDisplayId   = 7;
+    g_pnStrat[0].bRandA       = 10;   /* 61 * 10 = 610 */
+    g_pnStrat[0].bCraftClass  = 6;    /* +0x02: the hyperwave type line reads the SLOT 0 entry */
+    g_pnStrat[0].bRace        = 0;    /* +0x70 -> TEXTS[1374] */
+    g_pnStrat[0].nMissionSub  = 5;    /* +0x39 -> TEXTS[1386], the non-monotonic arm */
+    g_pnStrat[1].bCraftClass  = 2;    /* the size line reads the SLOT 1 entry: base 2700, 1361 */
+    g_apPnStrat[0] = &g_pnStrat[0];
+    g_apPnStrat[1] = &g_pnStrat[1];
+    g_pnArr.nCount  = 2;
+    g_pnArr.apItems = g_apPnStrat;
+    g_nPnActionFail   = 0;
+    g_nPnActionReason = 0;
+    g_bPnMapSel       = 0;
+    g_szPnRadar[0]    = 0;
+    g_szPnHyper[0]    = 0;
 
     g_pnAnim.pbStarted   = &g_bPnAnimStarted;
     g_pnAnim.pnProgress  = &g_nPnAnimProgress;
@@ -8886,6 +8969,38 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.abResearchActive = g_abPnActive;
     g_pnEnv.pbFinishedTopic  = &g_nPnFinished;
     g_pnEnv.pnShownTopic     = &g_nPnShown;
+    g_pnEnv.pView              = &g_pnView;
+    g_pnEnv.pStrategList       = &g_pnArr;
+    g_pnEnv.pnActionFail       = &g_nPnActionFail;
+    g_pnEnv.pnActionFailReason = &g_nPnActionReason;
+    g_pnEnv.pbMapSelectionFlag = &g_bPnMapSel;
+    g_pnEnv.pszRadarMsg        = g_szPnRadar;
+    g_pnEnv.pszHyper           = g_szPnHyper;
+    g_pnEnv.pCtlA              = &g_pnCtlA;
+    g_pnEnv.pfnSelectTarget    = PnSelectTarget;
+    g_pnEnv.pfnClearSelection  = PnClearSel;
+}
+
+/* A record as the panel sees it, and the string the panel should have built from two of them. */
+static const char *PnRec(i32 nRec)
+{
+    return &g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec];
+}
+
+static void PnWantTwo(char *pszDst, i32 nFirst, i32 nSecond)
+{
+    pufo_strncpy(pszDst, PnRec(nFirst), PUFO_TEXT_REC_STRIDE);
+    (void)pufo_strcat(pszDst, PnRec(nSecond), PUFO_TEXT_REC_STRIDE);
+}
+
+static void PnCheckStr(const char *pszGot, const char *pszWant, const char *pszWhat)
+{
+    if (strcmp(pszGot, pszWant) == 0) {
+        printf("  ok   %s\n", pszWhat);
+        return;
+    }
+    printf("  FAIL %s: got [%s], want [%s]\n", pszWhat, pszGot, pszWant);
+    g_nFailures += 1;
 }
 
 static void TestStatusPanelArms(void)
@@ -9145,6 +9260,236 @@ static void TestStatusPanelDefault(void)
                "the default arm leaves the status pair packed, not the head pair");
 }
 
+/* A left-aligned panel row: presence, its own y, x = 40 and the colour the arm packed. */
+static void PnCheckLeftRow(i32 nY, const char *pszWhat)
+{
+    const PnDiff d = PnDiffRect(0, nY + PN_GLYPH_DY, BD_SURF_W - 1, nY + PN_BAND);
+
+    Check(d.nCount > 0, pszWhat);
+    CheckEqI32(d.nMinX, PUFO_STATUS_TEXT_X_LEFT_PANEL, "and it is left-aligned at x = 40");
+    CheckEqI32(d.uInk, (i32)g_uPnInkStatus, "and drawn in the status pair the default arm packed");
+}
+
+static i32 PnRowWidth(i32 nY)
+{
+    const PnDiff d = PnDiffRect(0, nY + PN_GLYPH_DY, BD_SURF_W - 1, nY + PN_BAND);
+
+    return d.nMaxX - d.nMinX;
+}
+
+static void TestStatusPanelActionFail(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the action-fail line @ 0x8e658\n");
+    PnFixture(0x1D, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_nPnActionFail   = 1;
+    g_nPnActionReason = 0;
+    PnCapture();
+    PnCheckRow(PUFO_STATUS_Y_FAIL_TEXT, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "flag 0x1D with dwActionFail 1 and reason 0 draws TEXTS[406] at y=158");
+
+    g_nPnActionReason = 1;
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "a non-zero dwActionFailReason draws nothing");
+
+    g_nPnActionReason = 0;
+    g_nPnActionFail   = 0;
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "dwActionFail 0 draws nothing");
+
+    g_nPnActionFail = 2;
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and so does dwActionFail 2 -- 0x8E664 tests CMP #1 / BNE, not non-zero");
+
+    /* The gate at 0x8E678 is CMP #0x1E / BGE, so 0x1E itself is NOT below the bound. */
+    PnFixture(0x1E, 0, 0, 0);
+    g_nPnActionFail   = 1;
+    g_nPnActionReason = 0;
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "flag 0x1E is not below 0x1E, so the line is skipped");
+
+    /* The anim's height is R8, the map half-extent the map chrome left at 0x8C2D0. The shipped
+     * 240-wide grid makes it zero, so the frame degenerates to its own top border at y = 0x82. */
+    PnFixture(0x1D, 0, 0, 0);
+    g_nPnActionFail   = 1;
+    g_nPnActionReason = 0;
+    PnEmptySources();                  /* the frame alone: the text row would otherwise join it */
+    memset(g_aPnBase, 0, sizeof(g_aPnBase));
+    PnRun();
+    const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(dFrame.nMinY, 0x82, "its frame's top edge is y = 0x82 (0x8E694)");
+    CheckEqI32(dFrame.nMaxY, 0x82 + 5, "and with nMapW / 2 - 120 == 0 the frame is only 6 tall");
+    CheckEqI32(dFrame.nMinX, 0x14, "and it starts at x = 0x14 (0x8E698)");
+}
+
+static void TestStatusPanelContact(void)
+{
+    char szWant[PUFO_TEXT_REC_STRIDE];
+    char szWhat[96];
+
+    printf("\nGeoscape_DrawStatusPanel, the selected contact @ 0x8e708\n");
+    PnFixture(0x0A, 0, 1, 0); /* colour slot 0 -> entry 0, colour slot 1 -> entry 1 */
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_pnStrat[0].bHyperDetect = 0;
+    g_bPnMapSel               = 1;
+    PnCapture();
+
+    PnCheckRow(PUFO_STATUS_Y_SEL_TITLE, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1210] + itoa(nDisplayId) centred at y=80");
+    PnCheckLeftRow(PUFO_STATUS_Y_SEL_SIZE, "the size line draws at y=96");
+    PnCheckLeftRow(PUFO_STATUS_Y_SEL_SPEED, "the speed line draws at y=112");
+    PnCheckRow(PUFO_STATUS_Y_SEL_LABEL_STD, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "the confirm label draws centred at y=136");
+    PnCheckRow(PUFO_STATUS_Y_SEL_CANCEL_STD, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1144] Отмена draws centred at y=161");
+
+    CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_SELCTL_Y_STD_CONF, "confirm sits at y=136");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SELCTL_Y_STD_CLEAR, "pGeoscapeCtlA sits at y=160");
+    Check(g_pnCtlConfirm.pfnClick == PnSelectTarget, "confirm gets Smap_OnPointerUp");
+    Check(g_pnCtlA.pfnClick == PnClearSel, "and pGeoscapeCtlA gets Smap_ClearSelection");
+    CheckEqI32(g_nPnBlits, 2, "and exactly the two controls are blitted");
+
+    /* szRadarMsg after the panel is the SPEED line: the size number is left in psz and the speed
+     * line appends it whenever nTimer is not positive (0x8EBF4's BLE). */
+    pufo_strncpy(szWant, PnRec(PUFO_STATUS_TEXT_SPEED_LABEL), sizeof(szWant));
+    (void)pufo_strcat(szWant, "2090", sizeof(szWant)); /* |2700 - 61 * 10| */
+    (void)pufo_strcat(szWant, PnRec(PUFO_STATUS_TEXT_KNOTS), sizeof(szWant));
+    PnCheckStr(g_szPnRadar, szWant, "the speed buffer is TEXTS[1364] + the size number + TEXTS[1365]");
+
+    g_pnStrat[0].nTimer = 5;
+    PnCapture();
+    pufo_strncpy(szWant, PnRec(PUFO_STATUS_TEXT_SPEED_LABEL), sizeof(szWant));
+    (void)pufo_strcat(szWant, "0", sizeof(szWant));
+    (void)pufo_strcat(szWant, PnRec(PUFO_STATUS_TEXT_KNOTS), sizeof(szWant));
+    PnCheckStr(g_szPnRadar, szWant, "with nTimer > 0 pszValue replaces it with 0");
+    g_pnStrat[0].nTimer = 0;
+
+    /* The size label comes from the SLOT 1 entry's bCraftClass; outside 0..7 the switch jumps past
+     * the strcat at 0x8EBAC, so nothing is appended and psz still holds TEXTS[1211], which the
+     * speed line then appends. */
+    const i32 nWideSize = PnRowWidth(PUFO_STATUS_Y_SEL_SIZE);
+    PnCaptureMissing(PUFO_STATUS_TEXT_SIZE_FIRST + 1); /* 1360, what class 2 appends */
+    const i32 nSizeLabelOnly = PnRowWidth(PUFO_STATUS_Y_SEL_SIZE);
+    Check(nSizeLabelOnly < nWideSize, "TEXTS[1360] is the size label class 2 appends");
+    g_pnStrat[1].bCraftClass = 8;
+    PnCapture();
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_SEL_SIZE), nSizeLabelOnly,
+               "an out-of-range bCraftClass jumps past the strcat: only TEXTS[1211] is on the row");
+    pufo_strncpy(szWant, PnRec(PUFO_STATUS_TEXT_SPEED_LABEL), sizeof(szWant));
+    (void)pufo_strcat(szWant, PnRec(PUFO_STATUS_TEXT_SIZE_LABEL), sizeof(szWant));
+    (void)pufo_strcat(szWant, PnRec(PUFO_STATUS_TEXT_KNOTS), sizeof(szWant));
+    PnCheckStr(g_szPnRadar, szWant, "and the speed line then carries the unoverwritten TEXTS[1211]");
+    g_pnStrat[1].bCraftClass = 2;
+
+    /* Which record the confirm label uses follows bMapSelectionFlag. */
+    PnCaptureMissing(PUFO_STATUS_TEXT_ATTACK);
+    PnCheckRow(PUFO_STATUS_Y_SEL_LABEL_STD, 0, BD_SURF_W - 1, 0, 0, false,
+               "with the selection flag set the 136 row IS TEXTS[1212]");
+    PnCaptureMissing(PUFO_STATUS_TEXT_CENTRE);
+    PnCheckRow(PUFO_STATUS_Y_SEL_LABEL_STD, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "and TEXTS[1213] is not it");
+    g_bPnMapSel = 0;
+    PnCaptureMissing(PUFO_STATUS_TEXT_CENTRE);
+    snprintf(szWhat, sizeof(szWhat), "with the flag clear it IS TEXTS[1213]");
+    PnCheckRow(PUFO_STATUS_Y_SEL_LABEL_STD, 0, BD_SURF_W - 1, 0, 0, false, szWhat);
+    PnCaptureMissing(PUFO_STATUS_TEXT_ATTACK);
+    PnCheckRow(PUFO_STATUS_Y_SEL_LABEL_STD, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "and TEXTS[1212] is not it");
+    g_bPnMapSel = 1;
+
+    PnCaptureMissing(PUFO_STATUS_TEXT_CANCEL);
+    PnCheckRow(PUFO_STATUS_Y_SEL_CANCEL_STD, 0, BD_SURF_W - 1, 0, 0, false,
+               "the 161 row is TEXTS[1144]");
+    PnCheckRow(PUFO_STATUS_Y_SEL_LABEL_STD, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "and TEXTS[1144] is not the confirm label");
+
+    /* ---- the hyperwave contact ---- */
+    g_pnStrat[0].bHyperDetect = 1;
+    PnCapture();
+    PnCheckRow(PUFO_STATUS_Y_SEL_HYPER, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "TEXTS[1345] alone centred at y=60");
+    PnCheckLeftRow(PUFO_STATUS_Y_SEL_TYPE, "the type line draws at y=128");
+    PnCheckLeftRow(PUFO_STATUS_Y_SEL_RACE, "the race line draws at y=144");
+    PnCheckLeftRow(PUFO_STATUS_Y_SEL_MISSION, "the mission line draws at y=160");
+    PnCheckRow(PUFO_STATUS_Y_SEL_LABEL_HYP, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "the confirm label moves to y=180");
+    PnCheckRow(PUFO_STATUS_Y_SEL_CANCEL_HYP, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "and Отмена to y=205");
+    CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_SELCTL_Y_HYP_CONF, "confirm sits at y=180");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SELCTL_Y_HYP_CLEAR, "and pGeoscapeCtlA at y=204");
+
+    /* szHyper after the panel is the mission line: nMissionSub 5 takes record 1386, not 1386-5. */
+    PnWantTwo(szWant, PUFO_STATUS_TEXT_MISSION_LABEL, PUFO_STATUS_TEXT_MISSION_FIRST + 7);
+    PnCheckStr(g_szPnHyper, szWant, "nMissionSub 5 takes the LAST mission record (1386)");
+    g_pnStrat[0].nMissionSub = 6;
+    PnCapture();
+    PnWantTwo(szWant, PUFO_STATUS_TEXT_MISSION_LABEL, PUFO_STATUS_TEXT_MISSION_FIRST + 5);
+    PnCheckStr(g_szPnHyper, szWant, "while nMissionSub 6 takes 1384 -- the jumptable is not ordered");
+    g_pnStrat[0].nMissionSub = 8;
+    PnCapture();
+    PnCheckStr(g_szPnHyper, PnRec(PUFO_STATUS_TEXT_MISSION_LABEL),
+               "and a mission sub outside 0..7 appends no label");
+    g_pnStrat[0].nMissionSub = 5;
+
+    /* szHyper is overwritten by every line, so after the call it holds ONLY the mission line. The
+     * type and race lines are identified through the record that is missing from the second run:
+     * the row shrinks exactly when the missing record is the one that arm appends. */
+    const i32 nWideRace = PnRowWidth(PUFO_STATUS_Y_SEL_RACE);
+    PnCaptureMissing(PUFO_STATUS_TEXT_RACE_FIRST);
+    const i32 nRaceLabelOnly = PnRowWidth(PUFO_STATUS_Y_SEL_RACE);
+    Check(nRaceLabelOnly < nWideRace,
+          "bRace 0 appends TEXTS[1374] -- the BEQ at 0x8EF98 has its own record");
+    PnCaptureMissing(PUFO_STATUS_TEXT_RACE_FIRST + 1);
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_SEL_RACE), nWideRace,
+               "and TEXTS[1375] is not in that row");
+    g_pnStrat[0].bRace = 5;
+    PnCapture();
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_SEL_RACE), nRaceLabelOnly,
+               "a race above 4 appends no race label -- 0x8EFB8's BNE skips the strcat");
+    PnCheckLeftRow(PUFO_STATUS_Y_SEL_RACE, "but the race label itself is still drawn");
+    g_pnStrat[0].bRace = 0;
+
+    const i32 nWideType = PnRowWidth(PUFO_STATUS_Y_SEL_TYPE);
+    PnCaptureMissing(PUFO_STATUS_TEXT_TYPE_FIRST + 6);
+    const i32 nTypeLabelOnly = PnRowWidth(PUFO_STATUS_Y_SEL_TYPE);
+    Check(nTypeLabelOnly < nWideType,
+          "the type line carries TEXTS[1372] for bCraftClass 6");
+    PnCaptureMissing(PUFO_STATUS_TEXT_TYPE_FIRST + 5);
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_SEL_TYPE), nWideType,
+               "and not TEXTS[1371]");
+    g_pnStrat[0].bCraftClass = 8;
+    PnCapture();
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_SEL_TYPE), nTypeLabelOnly,
+               "the type line reads the SLOT 0 entry's bCraftClass, and 8 appends nothing");
+    PnCheckLeftRow(PUFO_STATUS_Y_SEL_TYPE, "with the type label still drawn on its own");
+    g_pnStrat[0].bCraftClass = 6;
+
+    /* The hyperwave line is the one record on its row, so removing it empties the row. The type row
+     * has TWO records, so removing either one only shortens it -- which is also how the two rows are
+     * told apart. */
+    const i32 nWideHyper = PnRowWidth(PUFO_STATUS_Y_SEL_HYPER);
+    PnCaptureMissing(PUFO_STATUS_TEXT_HYPERWAVE);
+    PnCheckRow(PUFO_STATUS_Y_SEL_HYPER, 0, BD_SURF_W - 1, 0, 0, false,
+               "the y=60 row is TEXTS[1345] and nothing else");
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_SEL_TYPE), nWideType,
+               "and TEXTS[1345] is not part of the type row");
+    PnCaptureMissing(PUFO_STATUS_TEXT_TYPE_LABEL);
+    Check(PnRowWidth(PUFO_STATUS_Y_SEL_TYPE) < nWideType,
+          "TEXTS[1346] is the type line's label: the row keeps only its class name");
+    CheckEqI32(PnRowWidth(PUFO_STATUS_Y_SEL_HYPER), nWideHyper,
+               "and it is not part of the hyperwave row");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -9208,6 +9553,8 @@ int main(void)
     TestStatusPanelArms();
     TestStatusPanelResearch();
     TestStatusPanelDefault();
+    TestStatusPanelActionFail();
+    TestStatusPanelContact();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
