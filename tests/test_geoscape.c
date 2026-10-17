@@ -8728,6 +8728,9 @@ _Static_assert(PUFO_STATUS_MISSION_SITE_STRIDE == 0x18, "0x90E90 / 0x91034 MOV R
 _Static_assert(sizeof(MissionSiteRec) == PUFO_STATUS_MISSION_SITE_STRIDE,
                "the ARM's 0x18 scale is the mission-site record size");
 _Static_assert(PUFO_STATUS_FLAG_TRAVEL_PANEL == 0x12, "0x9119C CMP R0, #0x12");
+_Static_assert(PUFO_STATUS_FLAG_DESCENT_PANEL == 0x17, "0x91498 CMP R0, #0x17");
+_Static_assert(PUFO_STATUS_TEXT_DESCENT == 1239, "unk_F18FB @ 0xF18FB = 0xB38D0 + 1239 * 205");
+_Static_assert(0xB38D0 + 1239 * PUFO_TEXT_REC_STRIDE == 0xF18FB, "R6 = (unk_F18FB - 0xB38D0) at 0x91490");
 
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
@@ -8768,6 +8771,13 @@ static i32      g_nPnResolveClicks, g_nPnDismissClicks, g_nPnTargetClicks;
 static i32      g_nPnConfirmAltClicks, g_nPnWaypointClicks;
 static i32      g_nPnMapTargetClicks, g_nPnConfirmSelClicks;
 static i32      g_nPnCancelClicks;
+/* The 0x17 arm's roster: two soldiers whose bUnk183 (the craft they are assigned to) the count test
+ * reads. 254 is the sentinel Ship_RemoveWithCargo leaves alone, so the default fixture has nobody
+ * aboard any craft. */
+static Soldier  g_aPnSoldiers[2];
+static Soldier *g_apPnSoldiers[2] = { &g_aPnSoldiers[0], &g_aPnSoldiers[1] };
+static u16      g_nPnSoldierCount;
+static i32      g_nPnBeginCraftClicks;
 /* The status panel's own row buffers. Geoscape_InitUI builds this panel with 20 rows
  * (0x86AC0..0x86C30, UiPanel_ctor(pPanel, 20)) and the ctor allocates exactly nLineCount of them,
  * so apLines[20..499] stay NULL -- which is what the 0x14 arm's unbounded index walks into. */
@@ -8835,7 +8845,7 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     /* The 0x1B intercept list. */
     { 1235, "t6" }, { 1236, "uu6" },
     /* The 0x14 map-target panel: the two records bMapSelectionFlag chooses between. */
-    { 1237, "w6" }, { 1238, "aaa6" },
+    { 1237, "w6" }, { 1238, "aaa6" }, { 1239, "d6" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -8884,6 +8894,7 @@ static void PnWaypoint(void)    { ++g_nPnWaypointClicks; }
 static void PnMapTarget(void)   { ++g_nPnMapTargetClicks; }
 static void PnConfirmSel(void)  { ++g_nPnConfirmSelClicks; }
 static void PnCancelTarget(void){ ++g_nPnCancelClicks; }
+static void PnBeginCraftSelect(void){ ++g_nPnBeginCraftClicks; }
 
 static void PnSetText(i32 nRec, const char *psz)
 {
@@ -9108,6 +9119,12 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_apPnCraft[1] = &g_pnCraft1;
     g_nPnShipIdx   = 0;
     g_abPnGrid[480] = 0; /* the '&' arm's facility kind for row 18, column 0 */
+    memset(g_aPnSoldiers, 0, sizeof(g_aPnSoldiers));
+    for (i32 i = 0; i < 2; ++i) {
+        g_aPnSoldiers[i].bUnk183 = 254; /* nobody aboard anything until a test says so */
+    }
+    g_nPnSoldierCount = 2;
+    g_nPnBeginCraftClicks = 0;
 
     memset(g_pnTopics, 0, sizeof(g_pnTopics));
     for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
@@ -9318,6 +9335,9 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.pFinalMissionCtl       = &g_pnCtlFinal;
     g_pnEnv.pbFinalMissionCtl      = &g_bPnFinalArmed;
     g_pnEnv.pfnCancelTarget        = PnCancelTarget;
+    g_pnEnv.apSoldiers             = g_apPnSoldiers;
+    g_pnEnv.pnSoldierCount         = &g_nPnSoldierCount;
+    g_pnEnv.pfnBeginCraftSelect    = PnBeginCraftSelect;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -10723,6 +10743,135 @@ static void PnSetSiteFixture(void)
     g_pnStrat[1].bCraftClass = 6;  /* -> aMissionSites[6] = "nn6" */
 }
 
+/* The 0x17 arm counts soldiers aboard the craft colour SLOT 0 names (0x915D4..0x915EC), and the count
+ * decides CtlB's handler. One soldier on nCraft, the other on the 254 sentinel, makes it exactly 1. */
+static void PnSetSoldierAboard(i32 nCraft)
+{
+    g_aPnSoldiers[0].bUnk183 = (u8)nCraft;
+    g_aPnSoldiers[1].bUnk183 = 254;
+}
+
+static void TestStatusPanelDescentPanel(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the descent panel @ 0x9148c\n");
+    PnFixture(0x17, 4, 1, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetPanelRows();
+    PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;   /* row 3 "k6"; colour slot 0 is 4 -> row 4 "kk6" */
+
+    /* ---- 1. the body ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x914D4 MOV R1,#0xE)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x914C8 MOV R2,#0x3C)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x914CC) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_TARGET_ANIM_Y + PUFO_STATUS_TARGET_NH + 5,
+               "nH 0x5A (0x914C4 STR R3,[SP+nKey]) puts the bottom at 155");
+
+    PnFixture(0x0F, 4, 1, 0);
+    PnEmptySources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    PnFixture(0x17, 4, 1, 0);
+    PnEmptySources();
+    PnRun();
+    CheckEqI32(PnDiffRect(20, 120, 219, 145).nCount, 0,
+               "body ink equals the 0x0F panel's: nKey 0xB4 (0x914A4/0x914AC), src 0x28/0x32, nIdx and nMode 0 (R7, 0x9149C)");
+
+    /* ---- 2. the line: TEXTS[1239] plus the panel's SELECTED row ---- */
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6k6",
+           "y=70 is TEXTS[1239] \"Снижение: \" (0x914E0..0x91500, R6 from 0x91490) + apLines[nUnk3032] (0x9151C)");
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 4;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6kk6",
+           "and the row is the SELECTED one, not the colour slot: the slot says 3 here, the panel says 4");
+    PnFixture(0x17, 3, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 25;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6",
+           "row 25 is past the panel's 20 rows: the port appends nothing, 0x9151C would hand the NULL to strcat");
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnCaptureDropped(1239);
+    Check(PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                     PUFO_STATUS_TARGET_Y_LINE + PN_BAND).nCount > 0,
+          "and dropping TEXTS[1239] changes that row, so 1239 is the record and not a neighbour");
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "",
+            "no \"Город: \" line here (0x90E44's city line belongs to 0x13 only) -- y=86 stays empty");
+
+    /* ---- 3. the two controls ---- */
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    g_pnCtlB.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlB centres on 120 from ITS OWN 30-wide pad (0x91554 LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_TARGETCTL_Y_CANCEL, "at y=102 (0x9156C MOV R3,#0x66) -- the 0x14 arm's set-arm row");
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "CtlA centres from its own 40-wide pad (0x9160C)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "at y=125 (0x91624 MOV R3,#0x7D)");
+    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91580 and 0x91638)");
+    Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0],
+          "CtlB first, then CtlA");
+    /* One fresh run with both handlers cleared: PnCapture runs the arm twice, and the second run would
+     * otherwise see the first run's handler already installed. */
+    g_pnCtlA.pfnClick = NULL;
+    g_pnCtlB.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == PnBeginCraftSelect,
+          "CtlB is blitted with Smap_BeginCraftSelect @ 0x838dc already installed (0x91578 before 0x91580)");
+    Check(g_apnPnBlitHandler[1] == PnResolve, "CtlA gets Smap_ResolveInterceptUI before its 0x91638 blit (0x91630)");
+    CheckEqI32(g_nPnBeginCraftClicks, 0, "and the arm installs handlers, it never calls one");
+    CheckEqI32(g_nPnCancelClicks, 0, "including no Smap_CancelTarget call -- this arm has no cancel control");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCEL_LBL, "m4", "TEXTS[1127] centred at y=103 (0x91584..0x915A0, R8 = aTextOk, then 0x915D0)");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCELLED_LBL, "B2", "TEXTS[1144] centred at y=126 (0x9163C..0x9165C, R9, then 0x91688)");
+
+    /* ---- 4. the soldiers-aboard gate ---- */
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnBeginCraftSelect,
+          "one soldier aboard craft 4 (colour SLOT 0, 0x915D4..0x915E4 AND #0xFF) keeps CtlB on Smap_BeginCraftSelect");
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(5); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnResolve,
+          "nobody aboard craft 4 -- 0x915F4 MOVS then 0x915F8..0x91604 REPLACE the handler, after its blit");
+    Check(g_apnPnBlitHandler[0] == PnBeginCraftSelect,
+          "and the replacement is AFTER the 0x91580 blit: the pad still went out with BeginCraftSelect");
+    PnFixture(0x17, 5, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(5); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnBeginCraftSelect,
+          "the craft is the one colour SLOT 0 names: slot 0 = 5 with a soldier aboard 5 counts");
+    PnFixture(0x17, 5, 4, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnResolve,
+          "and NOT colour SLOT 1: slot 1 = 4 with the soldier aboard 4 still counts zero here (0x915D8 MOV R2,#0)");
+    /* The craft index is a whole byte, not the 0..7 class the 0x14 arm reads the same field as. The
+     * AND at 0x915E4 is a formality: every writer of a colour slot stores the LOW BYTE only
+     * (0x5A314 LDRB then STR into the dword), so the value is 0..255 before the mask. */
+    PnFixture(0x17, 255, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(255); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnBeginCraftSelect, "craft 255 counts: the index is a full byte, not the 0..7 size class");
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(255); g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnResolve, "and a soldier aboard 255 is nobody aboard craft 4");
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    g_nPnSoldierCount = 0;
+    PnCapture();
+    g_nPnSoldierCount = 2;
+    Check(g_pnCtlB.pfnClick == PnResolve, "an empty roster counts zero, so the resolve handler wins (0x664B4 CMP R3,#0)");
+
+    /* ---- 5. bMapSelectionFlag is not read here ---- */
+    PnFixture(0x17, 4, 1, 0); PnSetPanelRows(); PnSetSoldierAboard(4); g_pnPanel.nUnk3032 = 3;
+    g_bPnMapSel = 0;
+    PnFillSources();
+    PnRun();                                        /* the baseline IS the flag-clear filled run */
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    g_bPnMapSel = 1;
+    PnRun();
+    CheckEqI32(PnDiffRect(0, PUFO_STATUS_TARGET_ANIM_Y, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "the arm has ONE path: bMapSelectionFlag @ 0x159E84 is never read in 0x9148C..0x91688");
+    g_bPnMapSel = 0;
+}
+
 static void TestStatusPanelMissionSite(void)
 {
     printf("\nGeoscape_DrawStatusPanel, the intercept-mission panel @ 0x90d78\n");
@@ -10996,6 +11145,7 @@ int main(void)
     TestStatusPanelTargetPanel();
     TestStatusPanelMissionSite();
     TestStatusPanelTravel();
+    TestStatusPanelDescentPanel();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

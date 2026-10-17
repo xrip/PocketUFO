@@ -18015,3 +18015,49 @@ in bugs.tsv but not yet in the IDB.
 
 Not ported yet in this chain: 0x91484..0x91CEC (the flag tests after 0x12 and the screen-id tail) and
 the screen arms 0x91DC8..0x944B0.
+
+### Unit 107, part 11: the descent panel (0x9148C..0x91688, flag 0x17)
+
+The arm after 0x12, and the third copy of the flag-0x14 set-arm body in this chain.
+
+- The test is `BL UiPanel_GetLineFlag` at 0x9148C then `CMP R0,#0x17`. Its prologue 0x91490 loads
+  R6 = TEXTS[1239] (unk_F18FB = 0xB38D0 + 1239 * 205, "Снижение: ") and 0x9149C sets R7 = 0, which is
+  what the two zero anim stack stores use at 0x914D0 / 0x914D8 -- in the 0x12/0x13/0x14 arms those zeros
+  came from R8.
+- The anim (0x914A4..0x914DC) is the same nine values: x 14, nW 0xD0, y 0x3C, nH 0x5A, nIdx 0, srcX 0x28,
+  srcY 0x32, nKey 0xB4, nMode 0.
+- The line is TEXTS[1239] copied in by an inline loop (0x914E0..0x91500) with the panel's SELECTED row
+  appended by `BL strcat` at 0x9151C. The row read is the 0x13 arm's three-instruction shape again
+  (0x9150C `LDR R3,[R0,R11]` with R11 = 0xBD8, sticky from 0x90D88) and it is just as unguarded. Width
+  comes from `Text_MeasureWidth` at 0x91528, then centred at y 70 (0x91548).
+- CtlB: centred from its own pad (0x91554 `LDRH R3,[R0,#4]`), y 102 (0x9156C), Smap_BeginCraftSelect @
+  0x838dc stored at 0x91578 BEFORE the `UiControl_BlitActivePad` at 0x91580. TEXTS[1127] (R8 = aTextOk,
+  inline copy 0x91584..0x915A0) centred at y 103 (0x915D0).
+- 0x915D4..0x915EC: `UiPanel_GetLineColor(pPanel, nLine 0, nSlot 0)`, `AND R1,R0,#0xFF` (0x915E4), then
+  `Craft_CountSoldiersAboard`. The first argument is abFacilityGrid (0x915E8) and the callee never reads
+  it -- 0x664A0 loads its own roster base at 0x1139B8 and 0x664B0 the count from nSoldierCount, so only
+  the colour byte matters. The craft index here is a FULL byte, not the 0..7 size class the 0x14 arm reads
+  from the same slot.
+- If that count is zero, `MOVS R3,R0` at 0x915F4 conditions four LDREQ / STREQ stores at 0x915F8..0x91604
+  that REPLACE CtlB's handler with Smap_ResolveInterceptUI -- after its pad has already been blitted. An
+  empty craft therefore draws a "select craft" row whose click resolves the intercept.
+- CtlA: centred (0x9160C), y 125 (0x91624), resolve handler stored at 0x91630 before the 0x91638 blit;
+  TEXTS[1144] (R9, inline copy 0x9163C..0x9165C, tail `BNE loc_9164C`) centred at y 126 (0x91688). The
+  arm ends there: 0x9168C is the flag-0x15 test.
+- There is no `bMapSelectionFlag` read anywhere in 0x9148C..0x91688 -- one path only, which the test
+  proves by running the arm with the flag clear and set and comparing the frames.
+- The `AND R1,R0,#0xFF` is provably a formality: UiPanel_InsertLine writes a colour slot with `LDRB` of a
+  byte argument into the record's dword slot (0x5A314 / 0x5A318), so a slot value is 0..255 before any
+  reader masks it. That is why dropping the mask is not a behaviour change and why the first version of
+  the byte test here was vacuous -- it was replaced by a real one (craft 255 counts, craft 4 does not).
+
+IDB: 7 line comments at 0x91490, 0x9151C, 0x91578, 0x915E4, 0x915E8, 0x915F8 and 0x91688, IDB saved.
+bugs.tsv: 2 new rows (a dead first argument at 0x915E8, the third copy of the 0x14 body at 0x9148C).
+Tests: 31 checks, 3 new `_Static_assert` pins, 18 mutation patterns -- 17 caught, 1 retired as
+provably non-behaviour-bearing (the mask). Two of the first-run checks were weak and were rewritten:
+the mask test could not fail because the port's own line-list setter bounds the slot, and the CtlA
+handler-order test passed on a mutant because `PnCapture` runs the arm twice and the second run saw the
+first run's installed handler; it now nulls both handlers and runs once.
+
+Not ported yet in this chain: 0x9168C..0x91CEC (the flag tests after 0x17 and the screen-id tail) and
+the screen arms 0x91DC8..0x944B0.

@@ -1597,6 +1597,12 @@ typedef struct GeoscapeStatusPanelEnv {
     u8                *pbFinalMissionCtl; /* bFinalMissionCtlArmed @ 0x187068 */
     /* The 0x14 map-target panel. */
     void             (*pfnCancelTarget)(void);      /* Smap_CancelTarget @ 0x84254 */
+    /* The 0x17 descent panel. */
+    Soldier *const   *apSoldiers;         /* the roster the original counts at 0x1139B8 -- Craft_CountSoldiersAboard
+                                           * loads it itself, so the caller's first argument (abFacilityGrid at
+                                           * 0x915E8) is dead */
+    const u16        *pnSoldierCount;     /* nSoldierCount @ 0x115350, read as a u16 at 0x664B0 */
+    void             (*pfnBeginCraftSelect)(void);  /* Smap_BeginCraftSelect @ 0x838dc */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -1995,6 +2001,14 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
  * rows are the same immediates at 0x911C4..0x91464 as at 0x909E0..0x90D40, so the arm reuses the
  * PUFO_STATUS_TARGET_* constants; the duplication is recorded in bugs.tsv. */
 #define PUFO_STATUS_FLAG_TRAVEL_PANEL         0x12 /* 0x9119C CMP R0, #0x12 */
+
+/* 0x9148C..0x91688: flag 0x17, the descent panel. One path, and its rows are the 0x14 arm's SET-arm
+ * rows again (70, 102, 103, 125, 126), so PUFO_STATUS_TARGET_* is reused a third time. Its record is
+ * unk_F18FB = 0xB38D0 + 1239 * 205 = "Снижение: ". The read that decides CtlB's handler is
+ * Craft_CountSoldiersAboard on the colour-slot-0 byte (0x915D4..0x915EC), and a zero count replaces
+ * the already-blitted CtlB handler at 0x915F8..0x91604. */
+#define PUFO_STATUS_FLAG_DESCENT_PANEL        0x17 /* 0x91498 CMP R0, #0x17 */
+#define PUFO_STATUS_TEXT_DESCENT              1239 /* unk_F18FB @ 0xF18FB, loaded into R6 at 0x91490 */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

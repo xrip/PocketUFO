@@ -5323,6 +5323,78 @@ static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz
                                                                           /* 0x91480 via 0x912C8, y 116 */
 }
 
+/* 0x9148C..0x91688: the descent panel, flag 0x17. ONE path -- there is no bMapSelectionFlag branch
+ * here. The line is TEXTS[1239] "Снижение: " (R6, loaded by the test prologue at 0x91490) with the
+ * panel's SELECTED row appended by the BL strcat at 0x9151C; the row read is the 0x13 arm's
+ * three-instruction shape again (0x9150C LDR R3,[R0,R11] with R11 = 0xBD8, sticky from that arm's test
+ * prologue at 0x90D88) and the width comes from Text_MeasureWidth at 0x91528 before the centring.
+ *
+ * The anim is the same nine values as 0x14/0x13 (0x914A4..0x914DC) except that the two zero stack
+ * args come from R7 (`MOV R7,#0` at 0x9149C) instead of R8. CtlB is centred from its own pad and put
+ * at y 102 with Smap_BeginCraftSelect @ 0x838dc stored at 0x91578 BEFORE the 0x91580 blit, TEXTS[1127]
+ * (R8 = aTextOk) centred at y 103.
+ *
+ * 0x915D4..0x915EC then asks how many soldiers are aboard the craft that colour SLOT 0 names:
+ * UiPanel_GetLineColor(pPanel, nLine 0, nSlot 0), AND #0xFF, then Craft_CountSoldiersAboard. The
+ * original hands abFacilityGrid as the first argument and the callee never reads it -- 0x664A0 loads
+ * its own roster base and 0x664B0 the count. If the count is ZERO the 0x915F4 MOVS feeds four LDREQ /
+ * STREQ instructions at 0x915F8..0x91604 that OVERWRITE CtlB's handler with Smap_ResolveInterceptUI,
+ * after its blit has already happened. CtlA then follows at y 125 with the resolve handler stored at
+ * 0x91630 before the 0x91638 blit, and TEXTS[1144] (R9) centres at y 126 (0x91688). Every row here is
+ * the 0x14 arm's set-arm row -- the third copy of this body in the chain. */
+static void StatusPanel_DrawDescentPanel(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pStrategList == NULL || pEnv->pCtlA == NULL || pEnv->pCtlB == NULL
+        || pEnv->pfnResolveInterceptUI == NULL || pEnv->pfnBeginCraftSelect == NULL) {
+        return;
+    }
+
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x914A4..0x914DC */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_DESCENT);            /* 0x914E0..0x91500, R6 = TEXTS[1239] */
+    const char *const pszRow = StatusPanel_SelectedRowText(pEnv);        /* 0x91504..0x91514 */
+    if (pszRow != NULL) {
+        (void)pufo_strcat(psz, pszRow, PUFO_TEXT_REC_STRIDE);            /* 0x9151C */
+    }
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_LINE, psz);
+                                                                         /* 0x91528, 0x91548, y 70 */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlB);                                 /* 0x91554..0x91560 */
+    pEnv->pCtlB->y = (i16)PUFO_STATUS_TARGETCTL_Y_CANCEL;                /* 0x9156C: y 102 */
+    pEnv->pCtlB->pfnClick = pEnv->pfnBeginCraftSelect;                   /* 0x91578 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x91580 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);           /* 0x91584..0x915A0, R8 = aTextOk */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_CANCEL_LBL, psz);
+                                                                         /* 0x915D0, y 103 */
+
+    /* 0x915D4..0x91604: the craft is the one colour SLOT 0 names -- a full byte, not the 0..7 class the
+     * 0x14 arm reads the same slot as -- and an empty one makes CtlB resolve the intercept instead of
+     * starting the craft-select. The AND R1,R0,#0xFF at 0x915E4 changes nothing observable: the insert
+     * path stores the colour as a BYTE into the 16-byte record's dword slot (0x5A314 LDRB then STR, in
+     * UiPanel_InsertLine @ 0x5A294), so the slot value is already 0..255. The count's zero flag decides
+     * the four LDREQ / STREQ stores. */
+    const i32 nCraft = (i32)(u8)UiLineList_GetColor(pEnv->pLines, 0, 0);
+    const i32 nAboard = (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL)
+                        ? Craft_CountSoldiersAboard(pEnv->apSoldiers, (i32)*pEnv->pnSoldierCount, nCraft)
+                        : 0;
+    if (nAboard == 0) {
+        pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;             /* 0x915F8..0x91604, AFTER the blit */
+    }
+
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x9160C..0x91618 */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;                   /* 0x91624: y 125 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x91630 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x91638 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);             /* 0x9163C..0x9165C, R9 = 1144 * 205 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_CANCELLED_LBL, psz);
+                                                                         /* 0x91688, y 126 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -5379,7 +5451,10 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_TRAVEL_PANEL) {
         StatusPanel_DrawTravel(pEnv, psz);                               /* 0x91190..0x91480 */
     }
-    /* 0x91484..0x91CEC: the flag tests after 0x12 and the screen-id tail are not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_DESCENT_PANEL) {
+        StatusPanel_DrawDescentPanel(pEnv, psz);                         /* 0x9148C..0x91688 */
+    }
+    /* 0x9168C..0x91CEC: the flag tests after 0x17 and the screen-id tail are not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */
