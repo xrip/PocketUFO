@@ -2483,6 +2483,125 @@ typedef struct GeoscapeFundingArmEnv {
  * panel frame, and three centred captions when the animation reports itself complete. */
 void Geoscape_DrawFundingArm(struct FundingDrawEnv *pFundingEnv, const GeoscapeFundingArmEnv *pArmEnv);
 
+/* ---- the hangar arm, 0x9309C..0x93DD4 (Geoscape_Draw case 6) ------------------------------------
+ *
+ * Screen 6 is the hangar (BasePlaneScreen_Open @ 0x7a514 stores 6 into nGeoscapeScreen). R10 is the
+ * ADDRESS of pPlaneBackdropPad @ 0x161A48 for the whole arm, so the pad word is also the block base the
+ * controls are read out of: +0x30..+0x3C are the four crew/row controls, +0x40..+0x58 the header plus the
+ * six stat controls, +0x5C / +0x60 pPlaneNavUpCtl / pPlaneNavDownCtl and +0x64 / +0x68
+ * pPlaneStoreNavPrevCtl / pPlaneStoreNavNextCtl. R4 is the Map context 0x1139B8 (0x8C19C) and R7 the
+ * geoscape UI root block 0x1864F8 whose +0x35 byte is bBaseFacPreviewOk @ 0x18652D.
+ *
+ * 0x930A0 blits *pPlaneBackdropPad. 0x930A8..0x930F0 then feeds the map cursor to the two store-list
+ * scroll panels -- only with bPlaneStoresCommitted @ 0x161F28 SET and the root block's +0x35 byte
+ * non-zero (0x930B8 LDRB [R7,#0x35] / CMP #0 / BEQ), both cursors read LDRSH. Then
+ * BasePlaneScreen_Draw @ 0x7d374 at 0x930F8, again with R0 = the block base.
+ *
+ * 0x930FC..0x93184 is the control prefix, gated on bPlaneShowCraftDetail @ 0x161F20 (0x93114 BEQ jumps
+ * past ALL of it): the store pair at +0x64 while bPlaneStoresCommitted is set (0x93120, CMP #2 at
+ * 0x93144), then the nav pair at +0x5C while bPlaneListPanelsBuilt @ 0x161F24 is set (0x93158, CMP #2 at
+ * 0x9317C). The craft hand is apCraft @ 0x114A64 = the Map context's +0x10AC (0x9318C MOV R6,#0x1080 /
+ * 0x93194 ORR #0x2C), indexed by nSelectedCraftIdx @ 0x161AC4.
+ *
+ * 0x93198..0x93290, the crew slots: with ALL FOUR flags clear (bStatPanelAOpen @ 0x161F18,
+ * bStatPanelBOpen @ 0x161F1C, bPlaneListPanelsBuilt, bPlaneStoresCommitted) and Ship.bCrewSlots @ +0x14
+ * above zero, one crew control per slot at +0x30 + 4*i, each followed by the colour pair (68,244,252)
+ * over (4,70,75) and the two slot markers -- "1" at (28,103) whenever the slot count is above 0, "2" at
+ * (205,103) when it is above 1, both predicated HI on the SAME re-read byte, so a 2-slot craft paints
+ * both markers twice, at the very same pixels.
+ *
+ * 0x93294..0x9337C, the two captions: with Ship.bCanDogfight @ +0x21 non-zero AND both panel flags clear,
+ * the last two crew controls (+0x30 + 4*i for i 2..3) each blit, then TEXTS[97] "Экипаж" centred on x 53
+ * at y 201 and TEXTS[98] "Оборуд." centred on 53 at y 241 -- measured and drawn INSIDE the two-step loop,
+ * so both captions are drawn twice.
+ *
+ * 0x93380..0x93D74, the stat panel, reached from four different jumps and gated on either stat panel byte
+ * being set (0x9338C BNE / 0x9339C BEQ to the arm's end): 226x1 row bars at x 7, y 92 + 20*i and
+ * 108 + 20*i for i 0..nPlaneStatRowCount-1 (0x933EC, 0x93420), then the header column TEXTS[99] "Нет"
+ * centred on x 73 at y 92 with the header control at +0x40 blitted BETWEEN the measure and the draw
+ * (0x93454..0x93488). Six rows follow in weapon order, each gated on its own count being above zero, and
+ * each writing the control's y (STRH at +2) to 92 + 20*n before it blits. Every centring uses the width
+ * TRUNCATED TO A SIGNED BYTE (0x934E0 MOV R3,R0,LSL#24 / 0x934E4 MOV R0,R3,ASR#24, then STRB into the
+ * scratch byte at 0x186C24 and LDRSB back out at the header): the three columns are the weapon name on 73,
+ * the count on 163 and the per-base stock of the weapon's own ammo object on 207 -- apObjects[52] for the
+ * craft cannon, [53] Stingray, [54] Avalanche, [105] (Elerium-115) for the plasma cannon and [55] for the
+ * fusion ball, exactly the resupply mapping Ship_ResupplyCraft documents at pufo_ship.h:488. The laser
+ * cannon has no ammo object and draws the single "-" at (205, y) with no measure at all (0x93D98).
+ *
+ * The rows share the scratch counter with everything above, and a row advances it TWICE when its count is
+ * above zero (the unconditional STR at 0x9349C and the second one at 0x93600..0x93608) -- so the three
+ * column rails at the arm's end are 20 * (6 + matched-rows) tall, not 20 * nPlaneStatRowCount. ORIGINAL
+ * BUG, reproduced; see the ledger row for 0x93604. */
+
+#define PUFO_PLANE_ARM_MAIN_FIRST     0   /* block +0x30 (0x161A78): the four crew/row controls */
+#define PUFO_PLANE_ARM_MAIN_LAST     4   /* 0x93378 CMP R0,#4 */
+#define PUFO_PLANE_ARM_WEAPON_FIRST  4   /* block +0x40 (0x161A88): the header plus six stat controls */
+#define PUFO_PLANE_ARM_LIST_FIRST   11   /* block +0x5C: pPlaneNavUpCtl / pPlaneNavDownCtl */
+#define PUFO_PLANE_ARM_STORE_FIRST  13   /* block +0x64: pPlaneStoreNavPrevCtl / pPlaneStoreNavNextCtl */
+#define PUFO_PLANE_ARM_CTLS         15   /* the block's control words, +0x30..+0x68 (0x161A78..0x161AB0) */
+#define PUFO_PLANE_STAT_ROWS         6   /* the six weapon rows, in slot order 25..30 */
+#define PUFO_PLANE_ROW_STEP         20   /* 0x933AC MOV R7,#0x14 */
+#define PUFO_PLANE_STAT_Y0          92   /* 0x933DC ADD R2,R2,#0x5C: the row bars and the header line */
+#define PUFO_PLANE_STAT_Y1         108   /* 0x93410 ADD R2,R2,#0x6C: the second bar of each row */
+#define PUFO_PLANE_STAT_W         226   /* 0x933E0 MOV R3,#0xE2 */
+#define PUFO_PLANE_STAT_X           7   /* 0x933E4 MOV R1,#7 */
+#define PUFO_PLANE_COL_NAME        73   /* RSB R1,R1,#0x49: the weapon-name column */
+#define PUFO_PLANE_COL_COUNT      163   /* RSB R1,R1,#0xA3: the count column */
+#define PUFO_PLANE_COL_STOCK      207   /* RSB R1,R1,#0xCF: the per-base stock column */
+#define PUFO_PLANE_COL_DASH       205   /* 0x939DC MOV R1,#0xCD: the laser cannon's "-" */
+#define PUFO_PLANE_CREW_ONE_X      28   /* 0x9323C MOVHI R1,#0x1C */
+#define PUFO_PLANE_CREW_TWO_X     205   /* 0x93264 MOVHI R1,#0xCD */
+#define PUFO_PLANE_CREW_Y         103   /* 0x93238 MOVHI R2,#0x67 */
+#define PUFO_PLANE_CAP_CREW_Y     201   /* 0x93330 MOV R2,#0xC9 */
+#define PUFO_PLANE_CAP_EQUIP_Y    241   /* 0x9335C MOV R2,#0xF1 */
+#define PUFO_PLANE_CAP_CENTRE      53   /* RSB R1,R1,#0x35 in both captions */
+#define PUFO_PLANE_RAIL_Y          93   /* 0x93D08 MOV R2,#0x5D */
+#define PUFO_PLANE_RAIL_X0        186   /* 0x93D10 MOV R1,#0xBA */
+#define PUFO_PLANE_RAIL_X1        141   /* 0x93D24 MOV R1,#0x8D */
+#define PUFO_PLANE_RAIL_X2        228   /* 0x93D50 MOV R1,#0xE4 */
+#define PUFO_PLANE_ARM_TEXT_CREW      97   /* lang.dat "Экипаж" */
+#define PUFO_PLANE_TEXT_EQUIP      98   /* "Оборуд." */
+#define PUFO_PLANE_TEXT_STAT_HDR   99   /* "Нет", the stat panel's header column */
+#define PUFO_PLANE_TEXT_STAT0     100   /* "Кораб. пушки", then 101..105 in row order */
+#define PUFO_PLANE_AMMO_SLOT_NONE  (-1) /* the laser cannon: no ammo object, so a dash */
+
+struct PlaneDrawEnv; /* pufo_plane.h owns the definition; the tag is enough for the pointer */
+
+typedef struct GeoscapePlaneArmEnv {
+    PadImage          **ppBackdropPad;   /* pPlaneBackdropPad @ 0x161A48, also the control block's base */
+    UiControl *const   *apCtl;           /* the block's control words from +0x30, PUFO_PLANE_ARM_* indices */
+    const u8           *pbStoresCommitted;   /* bPlaneStoresCommitted @ 0x161F28 */
+    const u8           *pbListPanelsBuilt;   /* bPlaneListPanelsBuilt @ 0x161F24 */
+    const u8           *pbShowCraftDetail;   /* bPlaneShowCraftDetail @ 0x161F20 */
+    const u8           *pbStatPanelAOpen;    /* bStatPanelAOpen @ 0x161F18 */
+    const u8           *pbStatPanelBOpen;    /* bStatPanelBOpen @ 0x161F1C */
+    const u8           *pbPreviewOk;         /* bBaseFacPreviewOk @ 0x18652D, the root block's +0x35 byte */
+    UiPanel           **ppSelRowPanel;       /* pPlaneSelRowPanel @ 0x161F00 */
+    UiPanel           **ppCommitRowPanel;    /* pPlaneCommitRowPanel @ 0x161EEC */
+    const i16          *pnCursorX;           /* nSmapCursorX, LDRSH at 0x930D4 */
+    const i16          *pnCursorY;           /* nSmapCursorY, LDRSH at 0x930D0 */
+    const i32          *pnSelCraftIdx;       /* nSelectedCraftIdx @ 0x161AC4 */
+    const i8           *pnSelBaseIdx;        /* nSelectedBaseIdx @ 0x159D81, read SIGNED (0x93590) */
+    Ship *const        *apCraft;             /* apCraft @ 0x114A64 = the Map context's +0x10AC */
+    i32                 nCraftCount;         /* Map_nCraftCount @ 0x114B4C. The original indexes apCraft with the
+                                              * raw nSelectedCraftIdx dword (0x931D8) with no test; the port bounds
+                                              * it the way BasePlaneScreen_Draw bounds the same array. */
+    ObjectRecFull *const *apObjects;         /* apObjects @ 0x113AC0 = the Map context's +0x108 */
+    i32                 nObjectCount;        /* Map_nObjectCount @ 0x114A60, the ammo slots' array bound */
+    GfxColorEnv        *pColor;              /* pGX @ 0x1139B8, the pair every row packs */
+    const i32          *pnRowCount;          /* nPlaneStatRowCount @ 0x161A38 */
+    const i32          *pnStats;             /* the six counts, row order: CraftCannon, Stingray, Avalanche,
+                                              * LaserCannon, PlasmaCannon, FusionBall */
+    const char         *pTextRecs;           /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+    const struct PlaneDrawEnv *pPlaneEnv;    /* BasePlaneScreen_Draw @ 0x7d374, called with the block base */
+    const GeoscapeScreenArmEnv *pCtlEnv;     /* the blit seam every control here goes through */
+} GeoscapePlaneArmEnv;
+
+/* 0x9309C..0x93DD4: screen 6. Pad, the two store-list tracking calls, the hangar draw, the two paired
+ * control runs, the crew slots and their markers, the two captions, then the stat panel's bars, header,
+ * six rows and three column rails. */
+void Geoscape_DrawPlaneArm(const GeoscapePlaneArmEnv *pArmEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

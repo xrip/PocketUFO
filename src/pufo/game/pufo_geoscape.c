@@ -7,6 +7,7 @@
 #include "game/pufo_baseui.h"  /* Funding_AddRegionBonus and PUFO_REGION_ID_NONE, the radar contact bonus */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the TEXTS record stride */
 #include "game/pufo_font.h"    /* Font_DrawGlyph, g_fontSys.nBaseBitsBase, Text_DrawString */
+#include "game/pufo_plane.h"   /* BasePlaneScreen_Draw, the hangar arm's callee @ 0x7d374 */
 #include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
 #include "game/pufo_save.h"    /* SmapSite, for the monthly upkeep of a base */
 #include "ui/pufo_geouimanage.h" /* PUFO_GEOUI_CLOCK_DIGIT_PADS, the ten pads at 0x186BF0 */
@@ -5981,6 +5982,207 @@ void Geoscape_DrawFundingArm(FundingDrawEnv *pFundingEnv, const GeoscapeFundingA
                           PUFO_FUND_CAP_Y2, pszCap2);
 }
 
+/* ---- Geoscape_Draw case 6, 0x9309C..0x93DD4: the hangar ---------------------------------------- */
+
+/* Every centring in this arm runs on the measured width TRUNCATED TO A SIGNED BYTE: 0x9345C STRB into the
+ * scratch byte at 0x186C24 then 0x93468 LDRSB back out for the header, 0x934E0 MOV R3,R0,LSL#24 / 0x934E4
+ * MOV R0,R3,ASR#24 for every row label and value. A label wider than 127 pixels therefore centres on a
+ * negative half-width. */
+static i32 PlaneCentredX(i32 nWidth, i32 nCentre)
+{
+    return Geoscape_CentredX((i32)(i8)(u8)nWidth, nCentre);
+}
+
+/* The craft the arm indexes, apCraft[nSelectedCraftIdx] @ Map + 0x10AC. 0x931DC reads the raw dword index
+ * with no test; the port bounds it and resolves anything else to "no craft". */
+static const Ship *PlaneArmCraft(const GeoscapePlaneArmEnv *pArmEnv)
+{
+    if (pArmEnv->apCraft == NULL || pArmEnv->pnSelCraftIdx == NULL) {
+        return NULL;
+    }
+    const i32 nIdx = *pArmEnv->pnSelCraftIdx;
+    if (nIdx < 0 || nIdx >= pArmEnv->nCraftCount) {
+        return NULL;
+    }
+    return pArmEnv->apCraft[nIdx];
+}
+
+/* The stock column: apObjects[slot]->auPerBaseVal[(char)nSelectedBaseIdx], the LDRH at +0x2A (0x9359C). The
+ * slot is the weapon's own ammo object -- 52, 53, 54, none, 105 (Elerium-115) and 55 -- the same mapping
+ * Ship_ResupplyCraft arms (pufo_ship.h:488). 0x93598 indexes auPerBaseVal with 2 * (char)base with no test
+ * at all; the port skips anything out of range. */
+static i32 PlaneArmStock(const GeoscapePlaneArmEnv *pArmEnv, i32 nSlot)
+{
+    if (pArmEnv->apObjects == NULL || nSlot < 0 || nSlot >= pArmEnv->nObjectCount
+        || pArmEnv->apObjects[nSlot] == NULL) {
+        return 0;
+    }
+    const i32 nBase = (pArmEnv->pnSelBaseIdx != NULL) ? (i32)*pArmEnv->pnSelBaseIdx : 0;
+    if (nBase < 0 || nBase >= PUFO_FAC_BASE_COUNT) {
+        return 0;
+    }
+    return pArmEnv->apObjects[nSlot]->auPerBaseVal[nBase];
+}
+
+/* The six stat rows, in the original's order: the control slot (block +0x44..+0x58), the TEXTS record
+ * (100..105) and the ammo object whose per-base count fills the third column. */
+static const i16 g_anPlaneStatSlot[PUFO_PLANE_STAT_ROWS] = { 1, 2, 3, 4, 5, 6 };
+static const i16 g_anPlaneAmmoSlot[PUFO_PLANE_STAT_ROWS] = { 52, 53, 54, PUFO_PLANE_AMMO_SLOT_NONE, 105, 55 };
+
+void Geoscape_DrawPlaneArm(const GeoscapePlaneArmEnv *pArmEnv)
+{
+    const GeoscapeScreenArmEnv *const pCtlEnv = pArmEnv->pCtlEnv;
+    const i32 nStores = (pArmEnv->pbStoresCommitted   != NULL) ? *pArmEnv->pbStoresCommitted   : 0;
+    const i32 nList   = (pArmEnv->pbListPanelsBuilt   != NULL) ? *pArmEnv->pbListPanelsBuilt   : 0;
+    const i32 nDetail = (pArmEnv->pbShowCraftDetail   != NULL) ? *pArmEnv->pbShowCraftDetail   : 0;
+    const i32 nStatA  = (pArmEnv->pbStatPanelAOpen    != NULL) ? *pArmEnv->pbStatPanelAOpen    : 0;
+    const i32 nStatB  = (pArmEnv->pbStatPanelBOpen    != NULL) ? *pArmEnv->pbStatPanelBOpen    : 0;
+
+    if (pArmEnv->ppBackdropPad != NULL && *pArmEnv->ppBackdropPad != NULL) {
+        (void)PadImage_Blit(*pArmEnv->ppBackdropPad);   /* 0x930A0 LDR [R10] / 0x930A4 */
+    }
+
+    /* 0x930A8..0x930F0: the two store-list panels follow the map cursor, but only with the stores committed
+     * AND the root block's +0x35 byte set (0x930B8 LDRB [R7,#0x35] / CMP #0 / BEQ). Both cursors LDRSH. */
+    if (nStores != 0 && pArmEnv->pbPreviewOk != NULL && *pArmEnv->pbPreviewOk != 0) {
+        const i32 nX = (pArmEnv->pnCursorX != NULL) ? (i32)*pArmEnv->pnCursorX : 0;
+        const i32 nY = (pArmEnv->pnCursorY != NULL) ? (i32)*pArmEnv->pnCursorY : 0;
+        if (pArmEnv->ppSelRowPanel != NULL && *pArmEnv->ppSelRowPanel != NULL) {
+            (void)UiPanel_TrackHoldRow(*pArmEnv->ppSelRowPanel, nX, nY);   /* 0x930DC */
+        }
+        if (pArmEnv->ppCommitRowPanel != NULL && *pArmEnv->ppCommitRowPanel != NULL) {
+            (void)UiPanel_TrackHoldRow(*pArmEnv->ppCommitRowPanel, nX, nY); /* 0x930F0 */
+        }
+    }
+
+    (void)BasePlaneScreen_Draw(pArmEnv->pPlaneEnv);      /* 0x930F8, R0 = the block base itself */
+
+    if (nDetail != 0) {                                  /* 0x93110 LDRB / 0x93114 BEQ loc_93380: with the detail
+                                                         * view on screen this whole prefix is skipped */
+        if (nStores != 0) {                              /* 0x93118 LDRB [R9] / 0x93120 BEQ loc_9314C */
+            for (i32 i = 0; i < 2; ++i) {                /* 0x93124..0x93148, CMP #2 */
+                (void)UiControl_BlitActivePad(pArmEnv->apCtl[PUFO_PLANE_ARM_STORE_FIRST + i],
+                                              pCtlEnv->pfnCtlBlit, pCtlEnv->pfnCtlBlitEx,
+                                              pCtlEnv->pCtlBlitUser);
+            }
+        }
+        if (nList != 0) {                                /* 0x9314C..0x93180, CMP #2 */
+            for (i32 i = 0; i < 2; ++i) {
+                (void)UiControl_BlitActivePad(pArmEnv->apCtl[PUFO_PLANE_ARM_LIST_FIRST + i],
+                                              pCtlEnv->pfnCtlBlit, pCtlEnv->pfnCtlBlitEx,
+                                              pCtlEnv->pCtlBlitUser);
+            }
+        }
+
+        const Ship *const pCraft = PlaneArmCraft(pArmEnv);
+        const u8 nCrewSlots = (pCraft != NULL) ? pCraft->bCrewSlots : 0;    /* +0x14, 0x931E0 LDRB */
+
+        /* 0x93198..0x93290: one crew control per slot, with all four flags clear. Deviation: the control
+         * index is +0x30 + 4*i with the UNBOUNDED byte count, so a craft claiming more slots than the block
+         * has walks into the weapon controls and past them; the port stops at the block's own words. */
+        if (nStatA == 0 && nStatB == 0 && nList == 0 && nStores == 0 && nCrewSlots > 0) {
+            for (i32 i = 0; i < nCrewSlots && i < PUFO_PLANE_ARM_CTLS; ++i) {
+                (void)UiControl_BlitActivePad(pArmEnv->apCtl[PUFO_PLANE_ARM_MAIN_FIRST + i],  /* 0x931F0 */
+                                              pCtlEnv->pfnCtlBlit, pCtlEnv->pfnCtlBlitEx,
+                                              pCtlEnv->pCtlBlitUser);
+                (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 68, 244, 252, 4, 70, 75);           /* 0x931F8..0x9321C */
+                /* Both markers are predicated HI on a FRESH read of the same byte (0x93220..0x9326C), so a
+                 * 2-slot craft paints "1" and "2" on every iteration -- the same pixels twice. */
+                if (nCrewSlots > 0) {
+                    (void)Text_DrawString(PUFO_PLANE_CREW_ONE_X, PUFO_PLANE_CREW_Y, "1");     /* 0x93234..0x93244 */
+                }
+                if (nCrewSlots > 1) {
+                    (void)Text_DrawString(PUFO_PLANE_CREW_TWO_X, PUFO_PLANE_CREW_Y, "2");     /* 0x9325C..0x9326C */
+                }
+            }
+        }
+
+        /* 0x93294..0x9337C: the two captions, gated on Ship.bCanDogfight @ +0x21 and on both panel flags
+         * being clear. The captions are measured and drawn INSIDE the two-step loop (0x932E0..0x9337C), so
+         * both are drawn twice. */
+        if ((pCraft != NULL ? pCraft->bCanDogfight : 0) != 0 && nList == 0 && nStores == 0) {
+            const char *const pszCrew = pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_PLANE_ARM_TEXT_CREW;
+            const char *const pszEquip = pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_PLANE_TEXT_EQUIP;
+            for (i32 i = PUFO_PLANE_ARM_MAIN_FIRST + 2; i < PUFO_PLANE_ARM_MAIN_LAST; ++i) {  /* 0x932C8 MOV #2, CMP #4 */
+                (void)UiControl_BlitActivePad(pArmEnv->apCtl[i], pCtlEnv->pfnCtlBlit,
+                                              pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);
+                (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 68, 244, 252, 4, 70, 75);           /* 0x932EC..0x93310 */
+                (void)Text_DrawString(PlaneCentredX(Text_MeasureWidth(pszCrew), PUFO_PLANE_CAP_CENTRE),
+                                      PUFO_PLANE_CAP_CREW_Y, pszCrew);                        /* 0x93314..0x9333C */
+                (void)Text_DrawString(PlaneCentredX(Text_MeasureWidth(pszEquip), PUFO_PLANE_CAP_CENTRE),
+                                      PUFO_PLANE_CAP_EQUIP_Y, pszEquip);                      /* 0x93340..0x93368 */
+            }
+        }
+    }
+
+    /* 0x93380: the gate every path above falls into. Neither stat panel open -- the arm ends here. */
+    if (nStatA == 0 && nStatB == 0) {
+        return;                                                             /* 0x9339C BEQ loc_91DA8 */
+    }
+
+    /* 0x933A0..0x93438: 226x1 bars at x 7, two per row of the row count. */
+    i32 nCounter = 0;
+    const i32 nRowCount = (pArmEnv->pnRowCount != NULL) ? *pArmEnv->pnRowCount : 0;
+    for (nCounter = 0; nCounter < nRowCount; ++nCounter) {
+        (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_STAT_X,
+                                     PUFO_PLANE_STAT_Y0 + PUFO_PLANE_ROW_STEP * nCounter,
+                                     PUFO_PLANE_STAT_W, 1, 4, 70, 75);      /* 0x933EC */
+        (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_STAT_X,
+                                     PUFO_PLANE_STAT_Y1 + PUFO_PLANE_ROW_STEP * nCounter,
+                                     PUFO_PLANE_STAT_W, 1, 4, 70, 75);      /* 0x93420 */
+    }
+
+    /* 0x9343C..0x93488: the header. The control at block +0x40 blits BETWEEN the measure and the draw. */
+    nCounter = 0;                                                           /* 0x93448 STR 0 */
+    const char *const pszHeader = pArmEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_PLANE_TEXT_STAT_HDR;
+    const i32 nHeaderWidth = Text_MeasureWidth(pszHeader);                  /* 0x93454 */
+    (void)UiControl_BlitActivePad(pArmEnv->apCtl[PUFO_PLANE_ARM_WEAPON_FIRST], pCtlEnv->pfnCtlBlit,
+                                  pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);  /* 0x93460 */
+    (void)Text_DrawString(PlaneCentredX(nHeaderWidth, PUFO_PLANE_COL_NAME),
+                          PUFO_PLANE_STAT_Y0, pszHeader);                   /* 0x93468..0x93488 */
+
+    char szValue[16];
+    for (i32 nRow = 0; nRow < PUFO_PLANE_STAT_ROWS; ++nRow) {
+        ++nCounter;                                /* 0x93490..0x9349C: once per row, whatever its count says */
+        const i32 nCount = (pArmEnv->pnStats != NULL) ? pArmEnv->pnStats[nRow] : 0;
+        if (nCount <= 0) {
+            continue;                              /* 0x934A4 BLE: the row's tail increment is skipped as well */
+        }
+        const i32 nY = PUFO_PLANE_STAT_Y0 + PUFO_PLANE_ROW_STEP * nCounter;
+        UiControl *const pRowCtl = pArmEnv->apCtl[PUFO_PLANE_ARM_WEAPON_FIRST + g_anPlaneStatSlot[nRow]];
+        pRowCtl->y = (i16)(PUFO_PLANE_STAT_Y0 + PUFO_PLANE_ROW_STEP * (i16)nCounter);  /* 0x934A8 LSL#16/ASR#16,
+                                                                             * 0x934BC STRH [R0,#2] */
+        (void)UiControl_BlitActivePad(pRowCtl, pCtlEnv->pfnCtlBlit,
+                                      pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);    /* 0x934C4 */
+        const char *const pszLabel = pArmEnv->pTextRecs
+                                   + PUFO_TEXT_REC_STRIDE * (PUFO_PLANE_TEXT_STAT0 + nRow);
+        (void)Text_DrawString(PlaneCentredX(Text_MeasureWidth(pszLabel), PUFO_PLANE_COL_NAME),
+                              nY, pszLabel);                                                    /* 0x934D0..0x9350C */
+        (void)snprintf(szValue, sizeof(szValue), "%d", nCount);             /* j_itoa at 0x9351C, copied to psz */
+        (void)Text_DrawString(PlaneCentredX(Text_MeasureWidth(szValue), PUFO_PLANE_COL_COUNT),
+                              nY, szValue);                                                     /* 0x9353C..0x93578 */
+        const i16 nAmmoSlot = g_anPlaneAmmoSlot[nRow];
+        if (nAmmoSlot == PUFO_PLANE_AMMO_SLOT_NONE) {
+            (void)Text_DrawString(PUFO_PLANE_COL_DASH, nY, "-");            /* 0x939D8..0x939F0: no measure,
+                                                                              * the laser never runs out */
+        } else {
+            (void)snprintf(szValue, sizeof(szValue), "%d",
+                           PlaneArmStock(pArmEnv, (i32)nAmmoSlot));          /* 0x93AE4..0x93B08 */
+            (void)Text_DrawString(PlaneCentredX(Text_MeasureWidth(szValue), PUFO_PLANE_COL_STOCK),
+                                  nY, szValue);                                                  /* 0x93B28..0x93B64 */
+        }
+        ++nCounter;                                /* 0x93600 / 0x93604 / 0x93608: ORIGINAL BUG, reproduced -- the row
+                                                    * advances the shared scratch counter a SECOND time, so the
+                                                    * three rails below are 20*(6+matched) tall */
+    }
+
+    /* 0x93CE8..0x93D74: the three column rails, 1 wide and 20*counter tall at y 93. */
+    const i32 nRailH = PUFO_PLANE_ROW_STEP * nCounter;
+    (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_RAIL_X0, PUFO_PLANE_RAIL_Y, 1, nRailH, 4, 70, 75);  /* 0x93D18 */
+    (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_RAIL_X1, PUFO_PLANE_RAIL_Y, 1, nRailH, 4, 70, 75);  /* 0x93D44 */
+    (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_RAIL_X2, PUFO_PLANE_RAIL_Y, 1, nRailH, 4, 70, 75);  /* 0x93D70 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -6054,7 +6256,8 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
         StatusPanel_DrawAlienBasePanel(pEnv, psz);                       /* 0x91B34..0x91CE8 */
     }
     StatusPanel_DrawChainTail(pEnv);                                     /* 0x91CEC..0x91DB0 */
-    /* The screen arms from 0x91DC8 are not ported yet. */
+    /* Geoscape_Draw's screen arms from 0x91DC8 are ported as separate Geoscape_Draw*Arm
+     * functions, not from here; case 1 (0x91DC8..0x92AC0) is the last one still missing. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

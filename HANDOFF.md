@@ -1,41 +1,54 @@
 # HANDOFF — PocketUFO Win64 recreation
-Date: 2026-10-17. HEAD before this edit: `ca4c9bc`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its twenty-first part -- the base-info arm
-(screen 3, 0x93F08..0x94104) and the funding arm (screen 19, 0x94314..0x9449C): 40 new checks, 34/34
-mutations caught, 21 IDB comments, 4 wrong IDB item sizes fixed, 2 globals named, 4 ledger rows and one
-earlier row extended. Parts 1..20 are behind this: the map-view chrome `5917656`, the 13-arm body
-`2485d25`, the action-fail line `79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`,
-the trace-lost panel `4a02d1a`, the attacked-city panel `ac13d77`, the intercept list `c612882`, the
-map-target panel `7c14ff8`, the mission-site / travel panels `e9145c0` + `2c3c1cd`, the descent panel
-`4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base panel
-`3f98d17`, the chain's shared tail `d445057`, the frame end `84cdb03`, the thin screen arms `7623894`, the
-ufopaedia and psi arms `219899e`, the soldier arms `5eedf75` and the base-facility arm `ca4c9bc`.
+Date: 2026-10-17. HEAD before this edit: `51267b6`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its twenty-second part -- the hangar arm
+(screen 6, `Geoscape_Draw` 0x9309C..0x93DD4, 3,384 B, ported as `Geoscape_DrawPlaneArm`): 53 new
+checks, 37/38 mutations caught (the one survivor is a proven equivalence, not a gap), 25 IDB comments,
+4 globals named and typed, the 108-byte `BasePlaneScreen` type applied at 0x161A48, 3 ledger rows, and 4
+stale "not ported" claims fixed in this port's own headers. Parts 1..21 are behind this: the map-view
+chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
+`a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel
+`ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels
+`e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16
+clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`, the frame end
+`84cdb03`, the thin screen arms `7623894`, the ufopaedia and psi arms `219899e`, the soldier arms
+`5eedf75`, the base-facility arm `ca4c9bc` and the base-info and funding arms `51267b6`.
 What this part found:
 
-- **One dword is a pad pointer AND a control-array base.** `pBaseInfoPad` @ 0x158828 is blitted as
-  `*pBaseInfoPad` (0x93F0C) and then walked as an array by the arm's own control loop (0x940B8
-  `ADD R3,R1,R0,LSL#2` / 0x940C0 `LDR R0,[R3,#4]`), reading 0x15882C / 0x158830 -- the two controls
-  `BaseInfoScreen_Init` allocates at 0x576DC..0x57708. They were 1-byte items in the IDB; they are now
-  `struct UiControl *` named `pBaseInfoCtl0` / `pBaseInfoCtl1`. `BaseInfoScreen_Draw` (0x94100, its only
-  call site) gets the block base too, with R1 = `byte_1870F4` read SIGNED.
-- **Case 3's frame is case 7's inset by three, and its ramps overlap instead of gapping.** Side rails at
-  x 5 / 234 (not 2 / 237), the lower edge row at y 5 (not y 2), and the falling ramp from ONE immediate
-  5k+119 used by both rows (0x9404C) -- so it overlaps the climbing ramp at x 119..120 where case 7's two
-  immediates leave a 7-pixel hole. x 121 is the probe that tells them apart.
-- **The close control's load AND its call are predicated** on byte 0x1870F8 being clear (0x940E4 ANDS,
-  LDREQ 0x940EC, BLEQ 0x940F0). That byte is shared with the psi screen (written at 0x557D0 / 0x57614 /
-  0x57794 and at 0x716B0 / 0x72A2C), so one flag gates two screens.
-- **The funding panel is a bankruptcy panel.** Its gate is `CMP R3,#0xFFD23940 / BGE` (0x943AC) where
-  0xFFD23940 is -3,000,000 signed, and the value compared is nFunds minus every base's upkeep plus the five
-  `g_nFundBar` slots summed in the order 2,1,3,0,4 (0x9437C..0x943A0). The upkeep loop re-reads the SIGNED
-  base count every step, exactly like `Geoscape_CloseUI` case 19 at 0x8BB90.
-- **The panel's three captions are records 1712 / 1713 / 1714, and the shipped lang.dat has no words there.**
-  The readable text ends near record 1640; from ~1660 the records hold control bytes. Recorded in the IDB and
-  in `bugs.tsv`; no text content is assumed in the port or the tests.
-- **Three test-harness truths this part exposed:** an unfilled facility cell must be 255, because
-  `Base_CalcMonthlyUpkeep` counts every cell that is NOT 255 as built; RGB565 cannot distinguish
-  (150,50,50) from (150,50,51), so a colour claim has to be checked on `g_aPalette` (the surface carries
-  palette INDICES); and a mutant that deletes a variable's only use does not build under -Werror.
+- **The hangar's pad pointer IS its 108-byte control block.** `pPlaneBackdropPad` @ 0x161A48 is blitted
+  as a pad and then indexed as an array of fifteen control words from the same address (0x9312C
+  `ADD R3,R10,R0,LSL#2` / 0x93130 `LDR R0,[R3,#0x64]`). The IDB's `BasePlaneScreen` type is 108 bytes and
+  is now applied at 0x161A48, so those reads render as named members; this port's copy of the type was
+  92 bytes and is extended with the two nav pairs (0x161AA4..0x161AB0, already named
+  `pPlaneNavUpCtl` / `pPlaneNavDownCtl` / `pPlaneStoreNavPrevCtl` / `pPlaneStoreNavNextCtl`).
+- **An original bug in the stat panel, reproduced.** Every row with a count advances the shared scratch
+  counter `dword_186B08` TWICE (0x93498/0x9349C unconditionally, 0x93600/0x93604/0x93608 again), so the
+  six rows sit at y 112, 152, 192, 232, 272, 312 with a 20-pixel hole above each, and 0x93CE8 sizes the
+  three column rails from the same counter -- 20*(6+matched) tall, 40..140 pixels past the panel they
+  border. Pinned by the six control y values and by the rails' exact bottom pixel with the band below it
+  dark.
+- **The stock column is the resupply mapping, already known from another function.** The six rows read
+  `apObjects`[52], [53], [54], --, [105], [55] (0x93594, 0x93708, 0x9387C, none, 0x93AFC, 0x93C70) and
+  take `auPerBaseVal[(char)nSelectedBaseIdx]` @ +0x2A -- the same pairing the resupply code at
+  0x68FA0..0x69174 uses, which is why weapon 28, the laser cannon, has no ammo object and its row draws
+  a plain "-" at x 205, neither measured nor centred. Four of those slots were unnamed 1-byte dwords;
+  they are `Map_apObjects52`..`Map_apObjects55`, typed `ObjectRec *`.
+- **Widths are truncated before centring, everywhere in this arm.** 0x9345C STRB / 0x93468 LDRSB keep the
+  header width in the scratch byte at 0x186C24, and every row label and value uses the same shape written
+  as `MOV R3,R0,LSL#24 / MOV R0,R3,ASR#24` (0x934E0) -- a label wider than 127 pixels centres on a
+  negative half-width. And the control is blitted BETWEEN the measure and the draw, not before the pair.
+- **Two unbounded indexes, kept as bounded deviations:** the crew-slot control index runs +0x30 + 4*i with
+  `Ship.bCrewSlots` as its only bound (5 slots blit the stat controls, 16 walk past the block), and
+  `apCraft[nSelectedCraftIdx]` / `auPerBaseVal[(char)base]` are dereferenced with no test at all.
+- **Three test-harness truths this part exposed:** a fixture array exactly the size of the block hides a
+  past-the-block walk because a NULL read is guarded, so the control array now has a real sentinel control
+  at +0x6C; `BasePlaneScreen_Draw` paints the hangar chrome in the same run (rails at x 5/234, frame rows
+  at y 5/315), so probe windows must avoid them; and the arm and that callee read the SAME byte 0x161F20,
+  so the suite gives the callee its own always-clear byte to keep the 3,824-byte detail drawer off the
+  probes.
+- **Four stale claims in this port's own headers, fixed rather than left to mislead:** `BasePlaneScreen_Draw`
+  (0x7d374) and `BasePlaneScreen_DrawCraftDetail` (0x7baf8) were both called "not ported" in `pufo_plane.h`
+  and `pufo_baseui.h:5471` although they have been ported for several parts, and `pufo_geoscape.c:6259`
+  said the arms from 0x91DC8 were unported when only case 1 is.
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,
@@ -231,7 +244,7 @@ Build and test, run for this document:
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
 ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 60
-                                             Total Test time (real) = 4.14 sec
+                                             Total Test time (real) = 4.35 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -245,14 +258,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 952 / 1103 (86.3%)
-                                             bytes cited:     550628 / 598792 (92.0%)
-python docs/parity/audit_credits.py       -> credited functions: 952, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 560 (explain 213 citations)
-                                             credited addresses whose original name is not defined: 0
-                                             (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
-                                              and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 266, ORIGINAL BUG markers in src/pufo: 90
+python docs/parity/coverage.py            -> functions cited: 966 / 1103 (87.6%)
+                                             bytes cited:     596752 / 598792 (99.7%)
+python docs/parity/audit_credits.py       -> credited functions: 966, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 576 (explain 211 citations)
+                                             credited addresses whose original name is not defined: 1
+                                             (0x8c180 Geoscape_Draw, 33,744 bytes -- the dispatcher head is
+                                              cited by its arms and is not itself a ported function yet)
+python docs/parity/audit_bugs.py          -> ledger rows: 307, ORIGINAL BUG markers in src/pufo: 93
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 43 tables checked, 0 mismatched
 ```

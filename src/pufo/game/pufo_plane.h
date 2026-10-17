@@ -518,13 +518,17 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
 #define PUFO_PLANE_STATUS_FULL      151 /* "На миссии", at base, not refuelling, range at max */
 #define PUFO_PLANE_STATUS_OUT       152 /* "Статус", not at base */
 
-/* The IDB's own BasePlaneScreen type (size 92), laid over the block at 0x161A48. */
+/* The IDB's own BasePlaneScreen type (size 108, applied at 0x161A48), laid over the block.
+ * Geoscape_Draw case 6 (0x9309C) indexes every word of it from the block base, including the
+ * four nav words the earlier parts of the port never touched. */
 typedef struct BasePlaneScreen {
     PadImage  *pBackdropPad;   /* 0x161A48, the "plane" backdrop */
     PadImage  *apCraftPads[5]; /* 0x161A4C..0x161A5C, the baseb001..005 craft art */
     PadImage  *apWeaponPads[6];/* 0x161A60..0x161A74, the baseb049..054 weapon icons */
-    UiControl *apMainCtl[4];   /* 0x161A78..0x161A84 */
-    UiControl *apWeaponCtl[7]; /* 0x161A88..0x161AA0 */
+    UiControl *apMainCtl[4];   /* 0x161A78..0x161A84, the crew/row controls */
+    UiControl *apWeaponCtl[7]; /* 0x161A88..0x161AA0, the stat header plus the six stat controls */
+    UiControl *apNavCtl[2];    /* 0x161AA4/0x161AA8 pPlaneNavUpCtl / pPlaneNavDownCtl, blitted at 0x93168/0x93170 */
+    UiControl *apStoreNavCtl[2];/* 0x161AAC/0x161AB0 pPlaneStoreNavPrevCtl / NextCtl, blitted at 0x93130/0x93134 */
 } BasePlaneScreen;
 
 typedef struct PlaneCraftPanels {
@@ -561,8 +565,8 @@ void BasePlaneScreen_BuildPanels(PlaneCraftPanels *pOut, const PlaneBuildEnv *pE
  *     simplification the port is free to make.
  *   - SelectCraft then tests apCraft[index]->bAtBase (LDRB [R3,#Ship.bAtBase] at 0x7CC14 - the IDB
  *     comment said bBusy and that was wrong) and, when the craft is at base, sets
- *     bPlaneShowCraftDetail @ 0x161F20 with a STRB. BasePlaneScreen_Draw (0x7d374, not ported) reads
- *     that byte
+ *     bPlaneShowCraftDetail @ 0x161F20 with a STRB. BasePlaneScreen_Draw (0x7d374, ported at
+ *     pufo_plane.c:1570) reads that byte
  *     first: set, it draws BasePlaneScreen_DrawCraftDetail and returns; clear, it draws the two list
  *     panels. So selecting a craft that is at base switches the hangar to the detail view.
  *     SelectListed touches neither.
@@ -745,7 +749,8 @@ void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuild
  *   1. bPlaneShowCraftDetail @ 0x161F20 (0x7D37C LDRB, `ANDS R3,R0,#0xFF`): set, the function calls
  *      BasePlaneScreen_DrawCraftDetail and returns its value straight from 0x7D394 -- nothing
  *      else here runs. SelectCraft raises that byte when the picked craft is at base, so the detail view
- *      owns the screen. It is not ported yet and enters as a hook.
+ *      owns the screen. It is ported (pufo_plane.c:1833) and BasePlaneScreen_Draw calls it directly
+ *      (pufo_plane.c:1690), not through a hook.
  *   2. bPlanePanelsBuilt @ 0x161F08 (0x7D398): clear, the two list panels and the whole craft readout are
  *      skipped -- but the two captions and all four rail loops still run, because this `BEQ` and the
  *      preview gate's `BEQ` both land on loc_7D640, the second colour pair, and the rails follow it.
@@ -805,8 +810,8 @@ void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuild
  * (0x7D590, unbounded), strcat with the backslash and strcat with the second itoa; the port builds the same
  * string in one bounded snprintf over the same 52 / 56-byte sizes. The preview gate reads the status panel's
  * two fields through the global with no null test; the port treats a missing panel as "not armed".
- * BasePlaneScreen_DrawCraftDetail is not ported and enters as a hook, so the detail arm returns the hook's
- * value. */
+ * BasePlaneScreen_DrawCraftDetail is ported (pufo_plane.c:1833), so BasePlaneScreen_Draw calls it
+ * directly and returns its value, as 0x7D394 does. */
 #define PUFO_PLANE_TEXT_ARMAMENT       146 /* lang.dat "Вооружение" at (25,23), value at (190,23) */
 #define PUFO_PLANE_TEXT_CREW           147 /* "Экипаж" at (25,43), value at (195,43) */
 #define PUFO_PLANE_TEXT_CREW_QTY       148 /* "ТОП кол-во" at (25,63), value at (195,63) */

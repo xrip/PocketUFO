@@ -5468,8 +5468,8 @@ void BuySellScreen_Draw(const BuySellDrawEnv *pEnv);
 
 /* ------------------------------------------------- the plane screen's stat rows
  *
- * Evidence: BasePlane_ResetDetailState @ 0x79cb8 (328 B), reached from 0x7baf8 -- the plane screen's
- * craft-detail drawer, which is still unported, so it is named by address only here. It rebuilds the six
+ * Evidence: BasePlane_ResetDetailState @ 0x79cb8 (328 B), reached from 0x7baf8 --
+ * BasePlaneScreen_DrawCraftDetail, ported at pufo_plane.c:1833. It rebuilds the six
  * craft-weapon rows of the plane screen's stat panel for the currently selected base.
  *
  * 1. 0x79CC0..0x79D1C: the six per-weapon counts and nPlaneStatRowCount are cleared, and the row count

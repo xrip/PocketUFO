@@ -11,6 +11,7 @@
 #include "game/pufo_baseui.h"  /* PufoRegionId, the strategy-map regions */
 #include "game/pufo_boot.h"  /* PUFO_TEXT_REC_STRIDE, for the cost label fixture */
 #include "game/pufo_save.h"  /* SmapSite, for the monthly upkeep fixture */
+#include "game/pufo_plane.h" /* PlaneDrawEnv, the hangar arm's callee */
 #include "game/pufo_ship.h"
 #include "game/pufo_unit.h"
 #include "util/pufo_ptrarray.h"
@@ -13069,6 +13070,365 @@ static void TestGeoscapeFundingArm(void)
     PnSetText(PUFO_FUND_TEXT_CAP1, "");
 }
 
+/* ---- fixtures for Geoscape_DrawPlaneArm (Geoscape_Draw case 6, 0x9309C) ---------------------- */
+#define PL_PAD_X     118   /* the backdrop pad's glyph: clear of every rail and probe window */
+#define PL_PAD_Y     290
+#define PL_BAR_X     100   /* a column the 226-wide row bars reach, and nothing else here reaches */
+
+static PadImage              g_plBackPad;
+static PadImage             *g_pPlBackPad = &g_plBackPad;
+static u8                    g_abPlBackGlyph[8];
+/* One slot past the block (+0x6C) is a real control here, so any walk past +0x68 shows up in the log. */
+static UiControl             g_plCtl[PUFO_PLANE_ARM_CTLS + 1];
+static PadImage              g_plCtlPad[PUFO_PLANE_ARM_CTLS + 1];
+static UiControl            *g_apPlCtl[PUFO_PLANE_ARM_CTLS + 1];
+static Ship                  g_plCraft[2];
+static Ship                 *g_apPlCraft[2];
+static ObjectRecFull         g_plObj[5];
+static ObjectRecFull        *g_apPlObj[106];
+static GfxColorEnv           g_plColor;
+static PlaneDrawEnv          g_plDraw;
+static GeoscapePlaneArmEnv   g_plArm;
+static GeoscapeScreenArmEnv  g_plCtlEnv;
+static UiPanel               g_plPanelSel, g_plPanelCommit;
+static UiPanel              *g_pPlPanelSel, *g_pPlPanelCommit;
+static i32                   g_anPlStats[6];
+static i32                   g_nPlRowCount, g_nPlCraftIdx, g_nPlDrawCraftIdx, g_nPlDrawCurY;
+static i8                    g_nPlBase;
+static i16                   g_nPlCurX, g_nPlCurY;
+static u8                    g_bPlStores, g_bPlList, g_bPlDetail, g_bPlStatA, g_bPlStatB, g_bPlPreview;
+static u8                    g_bPlDrawDetail, g_bPlDrawPanels, g_bPlDrawPreview;
+
+static void PlSetStats(const i32 *aStats)
+{
+    for (i32 i = 0; i < PUFO_PLANE_STAT_ROWS; ++i) {
+        g_anPlStats[i] = aStats[i];
+    }
+}
+
+/* Replace one TEXTS record for the suite and keep the original so the run does not damage it. */
+static void PlSetText(i32 nRec, const char *psz, char *pszSave)
+{
+    snprintf(pszSave, PUFO_TEXT_REC_STRIDE, "%s", &g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * nRec]);
+    PnSetText(nRec, psz);
+}
+
+/* One arm run, with the two scroll panels' row slots parked so a TrackHold call is visible. */
+static void PlRun(void)
+{
+    ArReset();
+    *ArPanelRowSlot(&g_plPanelSel) = -999;
+    *ArPanelRowSlot(&g_plPanelCommit) = -999;
+    Geoscape_DrawPlaneArm(&g_plArm);
+}
+
+/* True when none of the first nWant blits is one of the pads listed after it. */
+static bool PlNoBlitsOf(i32 nWant, i32 nFirstPad, i32 nPadCount)
+{
+    for (i32 i = 0; i < nWant; ++i) {
+        for (i32 p = nFirstPad; p < nFirstPad + nPadCount; ++p) {
+            if (g_apnPnBlitPad[i] == &g_plCtlPad[p]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static void TestGeoscapePlaneArm(void)
+{
+    printf("\nGeoscape_Draw's hangar arm @ 0x9309c\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_aPalette[PN_TEST_PAL_SLOT][21] = (u32)AR_CAL_INK;
+    ArMakeGlyph(&g_plBackPad, g_abPlBackGlyph, PL_PAD_X, PL_PAD_Y);
+
+    /* The block at 0x161A48: its pad word, then the fifteen control words from +0x30 to +0x68. Every
+     * control carries its own pad so a blit says which slot it came from. y = -1 is the parked value:
+     * the arm writes y only for the six stat rows. */
+    for (i32 i = 0; i < PUFO_PLANE_ARM_CTLS + 1; ++i) {
+        memset(&g_plCtl[i], 0, sizeof(g_plCtl[i]));
+        memset(&g_plCtlPad[i], 0, sizeof(g_plCtlPad[i]));
+        g_plCtlPad[i].uWidth = 2;
+        g_plCtlPad[i].uHeight = 2;
+        g_plCtl[i].apPads[0] = &g_plCtlPad[i];
+        g_plCtl[i].bEnabled  = 1;
+        g_plCtl[i].x         = (i16)(10 + i);
+        g_plCtl[i].y         = -1;
+        g_apPlCtl[i]         = &g_plCtl[i];
+    }
+
+    memset(g_plCraft, 0, sizeof(g_plCraft));
+    g_plCraft[0].bCrewSlots   = 2;
+    g_plCraft[0].bCanDogfight = 1;
+    g_apPlCraft[0] = &g_plCraft[0];
+    g_apPlCraft[1] = &g_plCraft[1];
+
+    /* apObjects @ 0x113AC0: only the five ammo slots the stat panel reads are non-null. */
+    memset(g_apPlObj, 0, sizeof(g_apPlObj));
+    memset(g_plObj, 0, sizeof(g_plObj));
+    g_apPlObj[52] = &g_plObj[0];   /* Craft cannon rounds */
+    g_apPlObj[53] = &g_plObj[1];   /* Stingray rocket */
+    g_apPlObj[54] = &g_plObj[2];   /* Avalanche rocket */
+    g_apPlObj[55] = &g_plObj[3];   /* Fusion ball */
+    g_apPlObj[105] = &g_plObj[4];  /* Elerium-115, Map_apObjects105 */
+    for (i32 i = 0; i < 5; ++i) {
+        g_plObj[i].auPerBaseVal[1] = 1;
+    }
+
+    /* The callee's env. In the binary BasePlaneScreen_Draw gates its own detail branch on the SAME byte
+     * 0x161F20 the arm gates its prefix on (0x7D37C), and with that byte set it hands the whole screen to
+     * BasePlaneScreen_DrawCraftDetail @ 0x7baf8 -- 3,824 B that would paint over every probe here. This
+     * suite tests the ARM's gate, so the callee's copy stays clear; the coupling itself is recorded in
+     * pufo_plane.h:745 and exercised by test_plane.c. */
+    memset(&g_plDraw, 0, sizeof(g_plDraw));
+    g_plDraw.pColor           = &g_plColor;
+    g_plDraw.pbShowCraftDetail = &g_bPlDrawDetail;
+    g_plDraw.pbPanelsBuilt    = &g_bPlDrawPanels;
+    g_plDraw.pbPreviewActive  = &g_bPlDrawPreview;
+    g_plDraw.pnCursorY        = &g_nPlDrawCurY;
+    g_plDraw.apCraft          = g_apPlCraft;
+    g_plDraw.nCraftCount      = 2;
+    g_plDraw.pnSelCraftIdx    = &g_nPlDrawCraftIdx;   /* nPlaneSelCraftIdx @ 0x161F04, a DIFFERENT global */
+    g_plDraw.apObjects        = g_apPlObj;
+    g_plDraw.nObjectCount     = 106;
+    g_plDraw.pTextRecs        = g_abPnText;
+
+    memset(&g_plCtlEnv, 0, sizeof(g_plCtlEnv));
+    g_plCtlEnv.apCtl          = g_apPlCtl;
+    g_plCtlEnv.pfnCtlBlit     = PnBlit;
+    g_plCtlEnv.pfnCtlBlitEx   = PnBlitEx;
+
+    memset(&g_plArm, 0, sizeof(g_plArm));
+    g_plArm.ppBackdropPad     = &g_pPlBackPad;
+    g_plArm.apCtl             = g_apPlCtl;
+    g_plArm.pbStoresCommitted = &g_bPlStores;
+    g_plArm.pbListPanelsBuilt = &g_bPlList;
+    g_plArm.pbShowCraftDetail = &g_bPlDetail;
+    g_plArm.pbStatPanelAOpen  = &g_bPlStatA;
+    g_plArm.pbStatPanelBOpen  = &g_bPlStatB;
+    g_plArm.pbPreviewOk       = &g_bPlPreview;
+    memset(&g_plPanelSel, 0, sizeof(g_plPanelSel));
+    memset(&g_plPanelCommit, 0, sizeof(g_plPanelCommit));
+    g_plPanelSel.nPosY        = 100;   /* the row is (cursorY - nPosY) / nFont */
+    g_plPanelSel.nFont        = 10;
+    g_plPanelCommit.nPosY     = 200;
+    g_plPanelCommit.nFont     = 10;
+    g_pPlPanelSel             = &g_plPanelSel;
+    g_pPlPanelCommit          = &g_plPanelCommit;
+    g_plArm.ppSelRowPanel     = &g_pPlPanelSel;
+    g_plArm.ppCommitRowPanel  = &g_pPlPanelCommit;
+    g_plArm.pnCursorX         = &g_nPlCurX;
+    g_plArm.pnCursorY         = &g_nPlCurY;
+    g_plArm.pnSelCraftIdx     = &g_nPlCraftIdx;
+    g_plArm.pnSelBaseIdx      = &g_nPlBase;
+    g_plArm.apCraft           = g_apPlCraft;
+    g_plArm.nCraftCount       = 2;
+    g_plArm.apObjects         = g_apPlObj;
+    g_plArm.nObjectCount      = 106;
+    g_plArm.pColor            = &g_plColor;
+    g_plArm.pnRowCount        = &g_nPlRowCount;
+    g_plArm.pnStats           = g_anPlStats;
+    g_plArm.pTextRecs         = g_abPnText;
+    g_plArm.pPlaneEnv         = &g_plDraw;
+    g_plArm.pCtlEnv           = &g_plCtlEnv;
+
+    g_nPlCraftIdx = 0;
+    g_nPlDrawCraftIdx = 0;
+    g_nPlBase = 1;
+    g_nPlCurX = 50;
+    g_nPlCurY = 150;
+    g_nPlDrawCurY = 150;
+    g_bPlPreview = 1;
+
+    /* Records 97/98/99 carry real lang.dat words ("Экипаж", "Оборуд.", "Нет"), but earlier suites in this
+     * process blank records they probe, so the three this suite measures are set explicitly and put back. */
+    char szOld97[PUFO_TEXT_REC_STRIDE], szOld98[PUFO_TEXT_REC_STRIDE], szOld99[PUFO_TEXT_REC_STRIDE];
+    PlSetText(PUFO_PLANE_ARM_TEXT_CREW, "WWQQQ", szOld97);
+    PlSetText(PUFO_PLANE_TEXT_EQUIP, "WWQQQ", szOld98);
+    PlSetText(PUFO_PLANE_TEXT_STAT_HDR, "WWQ", szOld99);
+
+    /* ---- the prefix: the two paired control runs, the crew slots and the two captions ---------- */
+    const i32 aAllOne[6] = { 1, 1, 1, 1, 1, 1 };
+    PlSetStats(aAllOne);
+    g_nPlRowCount = 2;
+    g_bPlDetail = 1; g_bPlStores = 1; g_bPlList = 1; g_bPlStatA = 1; g_bPlStatB = 0;
+    g_plCraft[0].bCrewSlots = 2;
+    g_plCraft[0].bCanDogfight = 1;
+    PlRun();
+    Check((u16)BdPix(PL_PAD_X, PL_PAD_Y) == AR_CAL_INK,
+          "the arm blits *pPlaneBackdropPad @ 0x161A48 before anything else (0x930A0 / 0x930A4)");
+    CheckEqI32(g_nPnBlits, 11,
+               "two store controls, two nav controls, the stat header and the six stat rows -- the crew and caption "
+               "loops need all four flags CLEAR (0x931A0..0x931C8), so neither runs here");
+    Check(g_apnPnBlitPad[0] == &g_plCtlPad[13] && g_apnPnBlitPad[1] == &g_plCtlPad[14],
+          "the store pair first: block +0x64 / +0x68, pPlaneStoreNavPrevCtl then NextCtl (0x9312C..0x93148)");
+    Check(g_apnPnBlitPad[2] == &g_plCtlPad[11] && g_apnPnBlitPad[3] == &g_plCtlPad[12],
+          "then the nav pair at block +0x5C / +0x60 (0x93164..0x93180) -- bPlaneListPanelsBuilt is the gate");
+    Check(g_apnPnBlitPad[4] == &g_plCtlPad[4] && g_apnPnBlitPad[5] == &g_plCtlPad[5],
+          "then the stat header control at +0x40 and the first row's at +0x44 (0x93460, 0x934C4)");
+    Check(PlNoBlitsOf(11, 0, 4), "and none of the four crew/caption controls at +0x30..+0x3C appears on this path");
+    Check(BfaInk(PL_BAR_X, 92, PL_BAR_X, 92) > 0 && BfaInk(PL_BAR_X, 108, PL_BAR_X, 108) > 0
+          && BfaInk(PL_BAR_X, 112, PL_BAR_X, 112) > 0 && BfaInk(PL_BAR_X, 128, PL_BAR_X, 128) > 0,
+          "nPlaneStatRowCount 2 draws both bars at y 92/108 and 112/128 -- 226 wide at x 7, 1 tall (0x933EC, 0x93420)");
+    Check(BfaInk(PL_BAR_X, 132, PL_BAR_X, 148) == 0, "and no bars past the row count");
+    Check(BfaInk(50, 94, 96, 100) > 0 && BfaInk(20, 94, 44, 100) == 0,
+          "TEXTS[99] is centred on x 73 at y 92 (0x9344C..0x93488) -- the measure runs at 0x93454, the header "
+          "control blits between it and the draw at 0x93460, and nothing reaches x 44");
+    Check(g_plCtl[5].y == 112 && g_plCtl[6].y == 152 && g_plCtl[7].y == 192
+          && g_plCtl[8].y == 232 && g_plCtl[9].y == 272 && g_plCtl[10].y == 312,
+          "the six rows land at 112,152,192,232,272,312 -- NOT 112,132,...,212: each row advances the shared scratch counter twice (0x9349C and 0x93600..0x93608), the ORIGINAL BUG this port reproduces");
+
+    /* ---- bPlaneShowCraftDetail clear: 0x93114 BEQ skips the whole prefix ---- */
+    g_bPlDetail = 0;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 7,
+               "with the detail view off the arm blits only the stat header and the six rows -- no store, nav, crew or caption control");
+    Check(PlNoBlitsOf(7, 0, 4) && PlNoBlitsOf(7, 11, 4),
+          "none of the four crew controls or the four paired controls appears (0x93114 BEQ loc_93380)");
+    Check(g_apnPnBlitPad[0] == &g_plCtlPad[4], "and the run starts at the header control at block +0x40");
+
+    /* ---- the doubled counter, measured on the rails ---- */
+    const i32 aTwo[6] = { 1, 0, 1, 0, 0, 0 };
+    PlSetStats(aTwo);
+    g_nPlRowCount = 1;
+    for (i32 i = 0; i < PUFO_PLANE_ARM_CTLS + 1; ++i) {
+        g_plCtl[i].y = -1;
+    }
+    PlRun();
+    CheckEqI32(g_nPnBlits, 3, "only the header and the two rows with a count blit (0x934A4 BLE skips the rest)");
+    Check(g_plCtl[5].y == 112 && g_plCtl[7].y == 172,
+          "row 1 writes 92+20*1 and row 3 writes 92+20*4 -- the empty rows in between advanced the counter too");
+    Check(g_plCtl[6].y == -1 && g_plCtl[8].y == -1 && g_plCtl[9].y == -1 && g_plCtl[10].y == -1,
+          "an empty row never touches its control: the BLE lands past the STRH [R0,#2] at 0x934BC");
+    Check(BfaInk(141, 252, 141, 252) > 0 && BfaInk(186, 252, 186, 252) > 0 && BfaInk(228, 252, 228, 252) > 0,
+          "the three column rails at x 141 / 186 / 228 end EXACTLY at y 252 -- 20 * 8 from y 93 (0x93CE8 MUL R3,R0,R7 "
+          "with the doubled counter, 0x93D08 MOV R2,#0x5D)");
+    Check(BfaInk(141, 253, 141, 255) == 0 && BfaInk(186, 253, 228, 255) == 0,
+          "and stop there -- a panel listing its 1+2 rows would need 60 pixels, not 160");
+
+    /* ---- the crew markers, and the unbounded crew index ---- */
+    g_bPlDetail = 1; g_bPlStores = 0; g_bPlList = 0; g_bPlStatA = 0; g_bPlStatB = 0;
+    g_plCraft[0].bCrewSlots = 1;
+    g_plCraft[0].bCanDogfight = 0;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 1, "one slot, one control (0x931EC..0x93290) -- and with neither stat panel open the arm ends at 0x9339C");
+    Check(BfaInk(28, 103, 34, 107) > 0, "the \"1\" marker is drawn at (28,103) (0x93234..0x93244, predicated HI on the slot count)");
+    Check(BfaInk(205, 103, 211, 107) == 0, "and \"2\" is not: 0x93258 CMP R3,#1 / BLHI needs more than one slot");
+    Check(BfaInk(PL_BAR_X, 92, PL_BAR_X, 108) == 0, "no stat bars either -- both stat panel bytes are clear");
+    g_plCraft[0].bCrewSlots = 2;
+    PlRun();
+    Check(BfaInk(205, 103, 211, 107) > 0, "with two slots the second marker appears at (205,103) (0x9325C..0x9326C)");
+    CheckEqI32(g_nPnBlits, 2, "and both crew controls blit");
+    g_plCraft[0].bCrewSlots = 6;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 6, "six slots walk the block's control words in order -- 0x931EC indexes +0x30 + 4*i with no bound at all");
+    Check(g_apnPnBlitPad[4] == &g_plCtlPad[4] && g_apnPnBlitPad[5] == &g_plCtlPad[5],
+          "so iterations five and six land on the STAT controls at +0x40 and +0x44: the block layout is what the arm reads");
+
+    /* ---- the crew and caption loops need all four panel flags CLEAR ---- */
+    PlSetStats(aAllOne);
+    g_bPlDetail = 1; g_bPlStores = 1; g_bPlList = 0; g_bPlStatA = 1; g_bPlStatB = 0;
+    g_plCraft[0].bCrewSlots = 2;
+    g_plCraft[0].bCanDogfight = 1;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 9,
+               "with bPlaneStoresCommitted set, the crew controls do NOT blit (0x931C8 BNE loc_93298) and neither do "
+               "the caption controls (0x932C4 BNE loc_93380): the store pair, the header and six rows");
+    Check(PlNoBlitsOf(9, 0, 4), "none of the four controls at +0x30..+0x3C appears on this path");
+    g_bPlStores = 0;
+    g_bPlList = 1;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 9, "and the same with bPlaneListPanelsBuilt set instead (0x931B8 and 0x932B4 BNE)");
+    Check(PlNoBlitsOf(9, 0, 4), "again no crew or caption control blits");
+    g_bPlStatA = 0;
+    g_bPlStatB = 0;
+    g_bPlStores = 1;
+    g_bPlList = 0;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 2,
+               "with ONLY bPlaneStoresCommitted set the crew loop is gated off on that byte alone (0x931BC..0x931C8 "
+               "BNE loc_93298) -- the stat panel is closed too, so only the store pair blits");
+    Check(PlNoBlitsOf(2, 0, 4), "no control at +0x30..+0x3C appears");
+    g_bPlStores = 0;
+    g_bPlList = 1;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 2, "and bPlaneListPanelsBuilt gates it just as hard on its own (0x931B4 ANDS / 0x931B8 BNE)");
+    Check(PlNoBlitsOf(2, 0, 4), "again none of the four crew/caption controls");
+
+    /* ---- the two captions, gated on Ship.bCanDogfight @ +0x21 ---- */
+    g_bPlStores = 0;
+    g_bPlList = 0;
+    g_bPlStatA = 0;
+    g_bPlStatB = 0;
+    g_plCraft[0].bCrewSlots = 4;
+    g_plCraft[0].bCanDogfight = 1;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 6, "four crew controls plus the caption pair");
+    Check(g_apnPnBlitPad[4] == &g_plCtlPad[2] && g_apnPnBlitPad[5] == &g_plCtlPad[3],
+          "the caption pair is the block's last two crew controls, +0x38 and +0x3C");
+    Check(BfaInk(20, 201, 90, 207) > 0, "TEXTS[97] \"Экипаж\" is centred on x 53 at y 201 (0x93314..0x9333C)");
+    Check(BfaInk(20, 241, 90, 247) > 0, "TEXTS[98] \"Оборуд.\" on the same centre at y 241 (0x93340..0x93368)");
+    g_plCraft[0].bCanDogfight = 0;
+    PlRun();
+    CheckEqI32(g_nPnBlits, 4, "with bCanDogfight clear the caption pair is skipped (0x932A8 BEQ loc_93380)");
+    Check(BfaInk(20, 201, 90, 207) == 0 && BfaInk(20, 241, 90, 247) == 0, "and neither caption is drawn");
+
+    /* ---- the two store lists track the map cursor, on two gates ---- */
+    g_bPlDetail = 0;
+    g_bPlStores = 1;
+    g_bPlPreview = 1;
+    PlRun();
+    CheckEqI32(*ArPanelRowSlot(&g_plPanelSel), 5,
+               "stores committed AND the root block's +0x35 byte set: pPlaneSelRowPanel gets (150 - 100) / 10 (0x930DC)");
+    CheckEqI32(*ArPanelRowSlot(&g_plPanelCommit), -5,
+               "and pPlaneCommitRowPanel gets the SAME cursor: (150 - 200) / 10 (0x930F0)");
+    g_bPlPreview = 0;
+    PlRun();
+    CheckEqI32(*ArPanelRowSlot(&g_plPanelSel), -999,
+               "with bBaseFacPreviewOk @ 0x18652D clear (0x930B8 LDRB [R7,#0x35]) neither list is touched");
+    CheckEqI32(*ArPanelRowSlot(&g_plPanelCommit), -999, "not the commit list either");
+    g_bPlPreview = 1;
+    g_bPlStores = 0;
+    PlRun();
+    CheckEqI32(*ArPanelRowSlot(&g_plPanelSel), -999, "and bPlaneStoresCommitted @ 0x161F28 clear gates it just as hard (0x930B4 BEQ)");
+
+    /* ---- the stock column reads each weapon's own ammo object ---- */
+    PlSetStats(aAllOne);
+    g_nPlRowCount = 1;
+    g_bPlStores = 1;
+    g_bPlStatA = 1;                /* the stat panel has to be open for any of this to draw */
+    g_plObj[0].auPerBaseVal[1] = 65535;  /* apObjects[52], Craft cannon rounds */
+    g_plObj[4].auPerBaseVal[1] = 65535;  /* apObjects[105], Elerium-115 */
+    PlRun();
+    Check(BfaInk(188, 114, 196, 120) > 0,
+          "row 1's stock column runs out to x 193: apObjects[52]->auPerBaseVal[(char)nSelectedBaseIdx], the LDRH at +0x2A (0x93594..0x935FC)");
+    Check(BfaInk(188, 154, 196, 160) == 0, "row 2's does not -- apObjects[53] holds 1 and \"1\" centres on 207");
+    Check(BfaInk(188, 274, 196, 280) > 0, "row 5 reads apObjects[105]: Map_apObjects105, Elerium-115, the plasma cannon's ammo (0x93AE4..0x93B64)");
+    /* Row 6 sits at y 312, and the hangar frame's own bottom rail runs along y 315 -- the probe skips that
+     * line and reads the two bands around it. */
+    Check(BfaInk(188, 313, 196, 314) == 0 && BfaInk(188, 316, 196, 318) == 0,
+          "and row 6 reads apObjects[55] (Fusion ball), still 1 here (0x93C70)");
+    Check(BfaInk(204, 234, 210, 240) > 0, "row 4, the laser cannon, draws the single \"-\" at x 205 with no measure at all (0x939D8..0x939F0)");
+    Check(BfaInk(194, 234, 202, 240) == 0, "and nothing where its stock number would be: weapon 28 has no ammo object");
+    g_plObj[4].auPerBaseVal[1] = 1;
+    g_plObj[3].auPerBaseVal[1] = 65535;  /* apObjects[55], Fusion ball */
+    PlRun();
+    Check(BfaInk(188, 313, 196, 314) > 0 || BfaInk(188, 316, 196, 318) > 0,
+          "with apObjects[55] the only big count, row 6's stock column runs out to x 193 (0x93C70..0x93CD8)");
+    Check(BfaInk(188, 234, 196, 240) == 0,
+          "while row 4 stays empty even though slot 55 is right there -- 0x939D8 loads asc_AB340 and draws it at x 205");
+    g_plObj[3].auPerBaseVal[1] = 1;
+    g_plObj[0].auPerBaseVal[1] = 1;
+    g_plObj[4].auPerBaseVal[1] = 1;
+    PnSetText(PUFO_PLANE_ARM_TEXT_CREW, szOld97);
+    PnSetText(PUFO_PLANE_TEXT_EQUIP, szOld98);
+    PnSetText(PUFO_PLANE_TEXT_STAT_HDR, szOld99);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -13154,6 +13514,7 @@ int main(void)
     TestGeoscapeBaseFacArm();
     TestGeoscapeBaseInfoArm();
     TestGeoscapeFundingArm();
+    TestGeoscapePlaneArm();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
