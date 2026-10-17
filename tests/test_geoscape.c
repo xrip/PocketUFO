@@ -14040,6 +14040,460 @@ static void TestGeoscapePlacementArm(void)
     g_bPcPlaceFail = 0;
 }
 
+/* ---- Geoscape_Draw @ 0x8c180's own head (0x8C180..0x8C1B0) and its cases 0/2 radar branch
+ *      (0x8C214..0x8C29C) ---------------------------------------------------------------------
+ *
+ * Every block of the geoscape frame was tested on its own already; the head that routes a screen id
+ * to a block was not. Each run below hands Geoscape_Draw one screen id and looks only for the mark
+ * the routed block leaves: the chrome's overlay origin, the crosshair's cooldown park, the status
+ * panel's two control positions, an arm's rail columns, its control-run blit records, the BaseAt
+ * confirm byte, the radar session's signal scroll. The frame end runs for every id, so every id also
+ * hands back the present hook's value. */
+
+#define DP_PAD_W       8
+#define DP_PAD_H       8
+#define DP_PAD_SLOT    5    /* a palette slot no other fixture uses */
+#define DP_PAD_INK 0x2A00u
+#define DP_RADAR_X    40    /* the radar arm's strip pad, clear of every other fixture's ink */
+#define DP_RADAR_Y   200
+#define DP_SENTINEL 0x7F7F  /* "this global was not touched" */
+
+static PadImage   g_dpStripPad;
+static u8         g_abDpStrip[4 + DP_PAD_W * DP_PAD_H];
+static UiControl  g_dpRootCtl[13];
+static PadImage   g_dpRootPad[13];
+static UiControl *g_apDpRootCtl[13];
+static u8         g_bDpRadar;
+static GeoscapeRadarArmEnv g_dpRadar;
+static GeoscapeFrameEndEnv g_dpFrame;
+static GeoscapeDrawEnv     g_dpEnv;
+static u8         g_bDpFnOpen;                /* bFundScreenOpen @ 0x1595EC, FundingScreen_Draw's gate */
+static i32        g_nDpScreen, g_nDpPresents, g_nDpMode, g_nDpPhase;
+
+static i32 DpPresent(void *pUser)
+{
+    (void)pUser;
+    ++g_nDpPresents;
+    return 3;
+}
+
+/* The radar arm's own fixtures: one strip pad whose rectangle the arm also fills, and the thirteen
+ * root widgets the arm blits. */
+static void DpRadarFixture(void)
+{
+    memset(g_abDpStrip, 0, sizeof(g_abDpStrip));
+    g_abDpStrip[0] = (u8)DP_PAD_W;
+    g_abDpStrip[2] = (u8)DP_PAD_H;
+    for (i32 i = 0; i < DP_PAD_W * DP_PAD_H; ++i) {
+        g_abDpStrip[4 + i] = 21;
+    }
+    memset(&g_dpStripPad, 0, sizeof(g_dpStripPad));
+    g_dpStripPad.pData    = g_abDpStrip;
+    g_dpStripPad.uWidth   = (u16)DP_PAD_W;
+    g_dpStripPad.uHeight  = (u16)DP_PAD_H;
+    g_dpStripPad.nOriginX = DP_RADAR_X;
+    g_dpStripPad.nOriginY = DP_RADAR_Y;
+    g_dpStripPad.nMode    = (u8)DP_PAD_SLOT;
+    g_aPalette[DP_PAD_SLOT][21] = DP_PAD_INK;
+
+    for (i32 i = 0; i < 13; ++i) {
+        memset(&g_dpRootCtl[i], 0, sizeof(g_dpRootCtl[i]));
+        memset(&g_dpRootPad[i], 0, sizeof(g_dpRootPad[i]));
+        g_dpRootPad[i].uWidth  = 2;
+        g_dpRootPad[i].uHeight = 2;
+        g_dpRootCtl[i].apPads[0] = &g_dpRootPad[i];
+        g_dpRootCtl[i].bEnabled  = 1;
+        g_dpRootCtl[i].x = (i16)(10 + 10 * i);   /* the blits are recorded, not painted */
+        g_dpRootCtl[i].y = 310;
+        g_apDpRootCtl[i] = &g_dpRootCtl[i];
+    }
+
+    memset(&g_dpRadar, 0, sizeof(g_dpRadar));
+    g_dpRadar.pbRadarActive = &g_bDpRadar;
+    g_dpRadar.pStripPad     = &g_dpStripPad;
+    g_dpRadar.apRootCtl     = g_apDpRootCtl;
+    g_dpRadar.pfnCtlBlit    = PnBlit;
+    g_dpRadar.pfnCtlBlitEx  = PnBlitEx;
+    g_dpRadar.pRadarEnv     = &g_updEnv;         /* the session the radar suite already built */
+}
+
+/* The chrome's and the crosshair's starting state, re-applied per run. Every env pointer is written
+ * again because the chrome and crosshair suites end on their "a missing part draws nothing" guards
+ * (0x8C498 check sets g_mvEnv.pMapPad NULL at 4194, the crosshair's sets pChromePad NULL at 4239), and
+ * nScreenId is what decides the Y half of the wrap (0x8C3F0). */
+static void DpMvState(i32 nScrollX, i32 nScrollY, i32 bPending)
+{
+    memset(&g_mvView, 0, sizeof(g_mvView));
+    g_mvView.nScrollX = nScrollX;
+    g_mvView.nScrollY = nScrollY;
+    g_mvView.nMapW    = MV_MAP_SIZE;
+    g_mvView.nMapH    = MV_MAP_SIZE;
+    memset(&g_mvTime, 0, sizeof(g_mvTime));
+    g_mvTime.nHour   = 3;
+    g_mvTime.nMinute = 30;
+    g_nMvOverlay        = DP_SENTINEL;
+    g_mvMapPad.nOriginX   = -1;
+    g_mvMapPad.nOriginY   = -1;
+    g_mvLayerPad.nOriginX = -1;
+    g_mvLayerPad.nOriginY = -1;
+    g_aPalette[MV_MAP_SLOT][1] = MV_INK;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][1] = 0xFFFFu;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][2] = 0x001Fu;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][3] = 0xF800u;
+    g_mvEnv.pView            = &g_mvView;
+    g_mvEnv.pMapPad          = &g_mvMapPad;
+    g_mvEnv.pLayerPad        = &g_mvLayerPad;
+    g_mvEnv.pWorldBits       = g_abMvWorld;
+    g_mvEnv.pMapPal          = g_aPalette[PUFO_RADAR_MAP_PAL_SLOT];
+    g_mvEnv.pTime            = &g_mvTime;
+    g_mvEnv.pnOverlayOriginX = &g_nMvOverlay;
+    g_mvChromePad.uHeight    = 20;                  /* the crosshair's vertical line is 320 - 20 tall */
+    g_mvXh.pChromePad        = &g_mvChromePad;
+    g_mvXh.nCrosshairX       = 100;
+    g_mvXh.nCrosshairY       = 50;
+    g_mvXh.pbPending         = &g_bMvPending;
+    g_mvXh.pnCooldownR       = &g_nMvCooldown;
+    g_bMvPending  = (u8)bPending;
+    g_nMvCooldown = 0;
+}
+
+/* Non-zero pixels in a rectangle of the frame buffer -- the "was anything drawn here" measure. The
+ * suite's PnDiffRect compares against a captured text baseline, which is not what a dispatch check
+ * needs: here the surface is cleared before every run. */
+static i32 DpInkRect(i32 nX0, i32 nY0, i32 nX1, i32 nY1)
+{
+    i32 n = 0;
+    for (i32 y = nY0; y <= nY1; ++y) {
+        for (i32 x = nX0; x <= nX1; ++x) {
+            if ((u16)BdPix(x, y) != 0) { ++n; }
+        }
+    }
+    return n;
+}
+
+/* What SoftSurf_BlitSrcRect @ 0xa4450 leaves behind: every 5-6-5 field of the destination blended with
+ * the colour's field at nKey, (dst * (255 - nKey) + colour * nKey) >> 8, the colour being
+ * (nIdx >> 3) << 11 | (nColorMid >> 2) << 5 | (nColorLow >> 3) (bugs.tsv 0xA4590, 0xA460C). */
+static u16 DpBlend(u16 nDst, i32 nIdx, i32 nMid, i32 nLow, i32 nKey)
+{
+    const i32 nInv = 255 - nKey;
+    /* The two scalings are shifted SEPARATELY and then added (0xA460C / 0xA4590): summing before the
+     * shift gives a different rounding, which is what the first run of this test caught. */
+    const i32 nDstR = ((i32)nDst >> 11) & 0x1F;
+    const i32 nDstG = ((i32)nDst >> 5) & 0x3F;
+    const i32 nDstB = (i32)nDst & 0x1F;
+    const i32 nR = ((nDstR * nInv) >> 8) + (((nIdx >> 3) * nKey) >> 8);
+    const i32 nG = ((nDstG * nInv) >> 8) + (((nMid >> 2) * nKey) >> 8);
+    const i32 nB = ((nDstB * nInv) >> 8) + (((nLow >> 3) * nKey) >> 8);
+    return (u16)((nR << 11) + (nG << 5) + nB);
+}
+
+static void DpCtlSentinels(void)
+{
+    g_pnCtlSfx.x = -1;  g_pnCtlSfx.y  = -1;
+    g_pnCtlOpen.x = -1; g_pnCtlOpen.y = -1;
+}
+
+static i32 DpRun(i32 nScreenId)
+{
+    g_nDpScreen = nScreenId;
+    g_mvEnv.nScreenId = nScreenId;   /* the chrome reads the same id (0x8C3F0) */
+    ArReset();
+    g_nDpPresents = 0;
+    g_nDpPhase = -1;
+    return Geoscape_Draw(&g_dpEnv);
+}
+
+static void TestGeoscapeDispatch(void)
+{
+    printf("\nGeoscape_Draw @ 0x8c180's dispatcher head and its cases 0/2 radar branch\n");
+    PnFixture(' ', 0, 0, 0);                     /* line 0's flag ' ' is the panel arm we look for */
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_pMainSurface = &g_bdSurf;
+    DpRadarFixture();
+
+    memset(&g_dpFrame, 0, sizeof(g_dpFrame));
+    g_dpFrame.pnListMode           = &g_nDpMode;
+    g_dpFrame.pnActionPhaseSave112 = &g_nDpPhase;
+    g_dpFrame.pModalAnim           = &g_feModal;
+    g_dpFrame.pModalLayout         = &g_feLayout;
+    g_dpFrame.pTextRecs            = (const u8 *)g_abPnText;
+    g_dpFrame.pfnPresent           = DpPresent;
+
+    memset(&g_dpEnv, 0, sizeof(g_dpEnv));
+    g_dpEnv.pnScreenId       = &g_nDpScreen;
+    g_dpEnv.pRadarArm        = &g_dpRadar;
+    g_dpEnv.pMapView         = &g_mvEnv;
+    g_dpEnv.pCrosshair       = &g_mvXh;
+    g_dpEnv.pStatusPanel     = &g_pnEnv;
+    g_dpEnv.pPlacementArm    = &g_pcArm;
+    g_dpEnv.pPlacementCtl    = &g_pcCtlEnv;
+    g_dpEnv.pPlacementGrid   = &g_pcGrid;
+    g_dpEnv.pPlacementStrip  = &g_pcStrip;
+    g_dpEnv.pBaseInfoArm     = &g_biArm;
+    g_dpEnv.pBaseInfoCtl     = &g_biCtlEnv;
+    g_dpEnv.pBaseInfoDraw    = &g_biInfo;
+    g_dpEnv.pSoldierDraw     = &g_solEnv;
+    g_dpEnv.pSoldierArm      = &g_solArm;
+    g_dpEnv.pSoldierPanelCtl = &g_solCtlEnv;
+    g_dpEnv.pSoldierFindCtl  = &g_solCtlEnv;
+    g_dpEnv.pPlaneArm        = &g_plArm;
+    g_dpEnv.pBaseFacArm      = &g_bfArm;
+    g_dpEnv.pBaseFacGrid     = &g_bfGrid;
+    g_dpEnv.pBaseFacStrip    = &g_bfStrip;
+    g_dpEnv.pBaseFacDialog   = &g_bfDialog;
+    g_dpEnv.pResearchDraw    = &g_arResearch;
+    g_dpEnv.pResearchCtl     = &g_arArm;
+    g_dpEnv.pManufPad        = &g_arArmPad;
+    g_dpEnv.pManufDraw       = &g_arManuf;
+    g_dpEnv.pManufCtl        = &g_arArm;
+    g_dpEnv.pTransferPad     = &g_arArmPad;
+    g_dpEnv.pTransferDraw    = &g_arTransfer;
+    g_dpEnv.pTransferCtl     = &g_arArm;
+    g_dpEnv.pBuySellTrack    = &g_arTrack;
+    g_dpEnv.pBuySellPad      = &g_arArmPad;
+    g_dpEnv.pBuySellDraw     = &g_arBuySell;
+    g_dpEnv.pBuySellCtl      = &g_arArm;
+    g_dpEnv.pFundEnv         = &g_fnDraw;
+    g_dpEnv.pFundingArm      = &g_fnArm;
+    g_dpEnv.pUfopaediaDraw   = &g_ufoBaseInfo;
+    g_dpEnv.pUfopaediaGates  = &g_ufoGate;
+    g_dpEnv.pUfopaediaCtl    = &g_ufoArm;
+    g_dpEnv.pPsiDraw         = &g_psEnv;
+    g_dpEnv.pPsiCtl          = &g_psArm;
+    g_dpEnv.pOptionsScreen   = &g_dsEnv;
+    g_dpEnv.pBaseAtEnv       = &g_feBaseAt;
+    g_dpEnv.pFrameEnd        = &g_dpFrame;
+    g_nDpMode = 0;
+
+    /* ---- 1. an id with no arm: only the frame end runs ---- */
+    DpMvState(MV_SCROLL_X, MV_SCROLL_Y, 1);
+    DpCtlSentinels();
+    const i32 nRet = DpRun(13);
+    CheckEqI32(nRet, 3, "id 13 hands back the present hook's value (0x94538 MOV R0,R4 / 0x9453C)");
+    CheckEqI32(g_nDpPresents, 1, "and it presents exactly once -- Render_Frame's geoscape branch skips its own");
+    CheckEqI32(g_nMvOverlay, DP_SENTINEL, "the chrome never ran: nSmapOverlayOriginX keeps its sentinel (0x8C2B0)");
+    CheckEqI32(g_pnCtlSfx.y, -1, "the status panel never ran: its control positions keep their sentinels (0x8C760)");
+    CheckEqI32(g_nPnBlits, 0, "and no control pad was offered");
+    CheckEqI32(DpInkRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1), 0, "the default frame is bare");
+    PnSaveFrame();
+    CheckEqI32(DpRun(14), 3, "id 14 has its own table word (0x8C1EC) and the same target");
+    CheckEqI32(PnFrameDiff(), 0, "and its frame is identical: both words land on 0x944B8");
+    CheckEqI32(DpRun(99), 3, "an id above the CMP #0x14 bound takes the default word at 0x8C1B4");
+    CheckEqI32(PnFrameDiff(), 0, "again the same bare frame");
+    CheckEqI32(g_nDpPhase, -1, "mode 0 writes no Map.anActionPhaseSave0[112]");
+
+    /* ---- 2. id 20 is the only id whose fall-through runs BaseAtScreen_Draw ---- */
+    g_bFeShown = 0;
+    g_bFeActive = 1;
+    g_nFeLimit = 0;
+    CheckEqI32(DpRun(20), 3, "id 20 reaches the frame end too");
+    CheckEqI32(g_bFeShown, 1, "and only id 20 runs BaseAtScreen_Draw, by falling into 0x944B4");
+    Check(DpInkRect(0, 286, BD_SURF_W - 1, 305) > 0, "with its own confirm row drawn");
+    g_bFeShown = 0;
+    (void)DpRun(19);
+    CheckEqI32(g_bFeShown, 0, "id 19 branches to 0x944B8 and never reaches 0x944B4");
+
+    /* ---- 3. cases 0 and 2 with the radar screen closed: chrome, crosshair, panel ---- */
+    g_bDpRadar = 0;
+    DpMvState(MV_SCROLL_X, MV_SCROLL_Y, 1);
+    DpCtlSentinels();
+    (void)DpRun(0);
+    CheckEqI32(g_nMvOverlay, -35, "id 0 runs the chrome: 240 / -24 is -10, so hour 3 and minute 30 give -35 (0x8C2F4)");
+    Check(g_mvMapPad.nOriginX != -1 && g_mvMapPad.nOriginY != -1,
+          "the map pad's origins were written, which is what the blits do (0x8C498)");
+    Check((u16)BdPix(103, 40) == (u16)MV_XHAIR_INK && (u16)BdPix(120, 53) == (u16)MV_XHAIR_INK,
+          "the crosshair runs AFTER the chrome: its 1-wide vertical line at x 103 and its 240-wide "
+          "horizontal line at y 53 both carry the crosshair's own colour, at rows above the panel the "
+          "panel tail does not cover (0x8C6CC..0x8C72C)");
+    CheckEqI32(g_nMvCooldown, 0, "with the pending flag set the cooldown is left alone (0x8C69C)");
+    CheckEqI32(g_pnCtlSfx.y, PUFO_STATUS_CTL_Y_TALL, "the panel's ' ' arm set both control rows (0x8D2B8)");
+    CheckEqI32(g_pnCtlOpen.x, PUFO_STATUS_CTL_X_OPEN, "including the right control's x (0x8D2E4)");
+    Check(DpInkRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1) > 0, "and the map is painted");
+
+    /* The crosshair's other half, which the original reaches by falling through from 0x8C75C. */
+    DpMvState(MV_SCROLL_X, MV_SCROLL_Y, 0);
+    DpCtlSentinels();
+    (void)DpRun(0);
+    CheckEqI32(g_bMvPending, 0, "a clear pending flag stays clear (0x8C750)");
+    CheckEqI32(g_nMvCooldown, PUFO_RADAR_COOLDOWN_READY,
+               "and the cooldown is parked at 0xFF, the value the radar arms read back (0x8C758)");
+    Check((u16)BdPix(103, 40) != (u16)MV_XHAIR_INK && (u16)BdPix(120, 53) != (u16)MV_XHAIR_INK,
+          "and on that path neither line position carries the crosshair's colour -- it parked instead of drawing");
+    CheckEqI32(g_pnCtlSfx.y, PUFO_STATUS_CTL_Y_TALL,
+               "while the status panel still runs -- both the drawn path (0x8C730 B) and this fall-through "
+               "land on 0x8C760");
+
+    /* The wrap half: nScrollX for both ids, nScrollY only for id 2. Out-of-band values, so the wrap
+     * itself is the mark (200 + (-70) is 130 > 0, and 200 + (-110) is 90 > 0). */
+    DpMvState(200, 200, 0);
+    (void)DpRun(0);
+    CheckEqI32(g_mvView.nScrollX, 100, "id 0 takes one map width off nScrollX (0x8C40C..0x8C414)");
+    CheckEqI32(g_mvView.nScrollY, 200, "and 0x8C3F0's BNE leaves nScrollY exactly where it was");
+    DpMvState(200, 200, 0);
+    (void)DpRun(2);
+    CheckEqI32(g_mvView.nScrollX, 100, "id 2 wraps nScrollX the same way");
+    CheckEqI32(g_mvView.nScrollY, 100,
+               "and wraps nScrollY too -- the only difference the two ids make in this arm (0x8C478)");
+    DpMvState(-40, 10, 0);
+    (void)DpRun(0);
+    CheckEqI32(g_mvView.nScrollX, 60, "-40 + halfW is -110, under -nMapW, so one map width is ADDED (0x8C3DC)");
+    CheckEqI32(g_mvView.nScrollY, 10, "id 0's Y half is skipped whatever the value (0x8C3F0)");
+
+    /* ---- 4. cases 0 and 2 with the radar screen open: the strip arm, no map at all ---- */
+    g_bDpRadar = 1;
+    DpMvState(MV_SCROLL_X, MV_SCROLL_Y, 1);
+    DpCtlSentinels();
+    UpdFixture(0);
+    UpdNoFire();
+    g_nRadarScan = 0;
+    g_aPalette[DP_PAD_SLOT][21] = DP_PAD_INK;   /* re-set: the radar suite has its own palette work */
+    (void)DpRun(0);
+    Check((u16)BdPix(DP_RADAR_X, DP_RADAR_Y) != (u16)DP_PAD_INK,
+          "the strip pad's own ink is GONE at its top-left pixel: 0x8C290's rect covers exactly the "
+          "pad's x/y/uWidth/uHeight (LDR R0,[R0] / LDRH R3,[R0,#0xA]) and ran after the pad blit");
+    CheckEqI32((u16)BdPix(DP_RADAR_X, DP_RADAR_Y),
+               (u16)DpBlend((u16)DP_PAD_INK, PUFO_GEO_RADAR_IDX, PUFO_GEO_RADAR_MID, PUFO_GEO_RADAR_LOW,
+                            PUFO_GEO_RADAR_KEY),
+               "and what survives is the pad's colour blended with index 60 / mid 120 / low 130 at key 150 "
+               "-- the two operands, in this order (0x8C22C, then 0x8C264..0x8C290)");
+    CheckEqI32(g_nPnBlits, PUFO_GEO_RADAR_CTLS,
+               "thirteen root widgets blitted, the counter run 0..0xD out of the block 0x8C238 reloads (0x8C240)");
+    Check(g_apnPnBlitPad[0] == &g_dpRootPad[0] && g_apnPnBlitPad[12] == &g_dpRootPad[12],
+          "in block order: 0x1864F8 + 4*i, first widget then thirteenth");
+    CheckEqI32(g_nRadarScan, 10, "RadarScreen_Update ran at 0x8C298: the signal-bar scroll advanced by 10 (0x61084)");
+    CheckEqI32(g_nMvOverlay, DP_SENTINEL, "the radar branch draws NO map: the chrome is skipped whole (0x8C220 / 0x8C29C)");
+    CheckEqI32(g_pnCtlSfx.y, -1, "and neither is the status panel");
+    CheckEqI32(g_mvMapPad.nOriginX, -1, "not even the map pad's origins");
+    g_bDpRadar = 0;
+    UpdFixture(0);
+    UpdNoFire();
+    g_nRadarScan = 0;
+    DpMvState(MV_SCROLL_X, MV_SCROLL_Y, 1);
+    DpCtlSentinels();
+    (void)DpRun(0);
+    CheckEqI32(g_nRadarScan, 0, "with bRadarScreenActive clear the arm is not entered and the scroll does not move (0x8C218)");
+    bool bRootPad = false;
+    for (i32 i = 0; i < g_nPnBlits; ++i) {
+        for (i32 k = 0; k < PUFO_GEO_RADAR_CTLS; ++k) {
+            if (g_apnPnBlitPad[i] == &g_dpRootPad[k]) { bRootPad = true; }
+        }
+    }
+    Check(!bRootPad, "and none of the thirteen root widgets was blitted");
+    Check(g_nMvOverlay != DP_SENTINEL, "while the map arm runs instead -- the gate is the branch, not the id");
+    g_bDpRadar = 1;
+
+    /* ---- 5. ids 1, 3 and 7: three rail frames, three different rail columns ---- */
+    PcRun();                                      /* the arm direct, as the reference frame */
+    PnSaveFrame();
+    (void)DpRun(1);
+    CheckEqI32(PnFrameDiff(), 0, "id 1 reaches Geoscape_DrawPlacementArm: the frame is the arm's own");
+    Check((u16)BdPix(210, 8) != 0, "id 1's third rail at x 210 is the mark no other arm paints (0x91EA0 MOV R1,#0xD2)");
+
+    ArReset();
+    (void)DpRun(7);
+    Check((u16)BdPix(2, 8) != 0, "id 7's side rails are at x 2 and 237 (0x92B08)");
+    Check((u16)BdPix(210, 8) == 0, "and case 7 has no x 210 rail -- the placement arm's third rail is its own");
+    CheckEqI32(g_nGlyphPalSlotBase, 3, "case 7 forces Map_nGlyphPalBase to 3 and never restores it (0x92D20)");
+
+    ArReset();
+    (void)DpRun(3);
+    Check((u16)BdPix(5, 8) != 0 && (u16)BdPix(2, 8) == 0,
+          "id 3's rails are inset by three: x 5, not x 2 (0x93F48 MOV R1,#5)");
+
+    /* ---- 6. the short arms: 8, 9, 10, 11, 12 ---- */
+    ArReset();
+    (void)DpRun(8);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2, "id 8 blits its two research controls (0x94120..0x94150)");
+    Check((u16)BdPix(AR_ARM_X, AR_ARM_Y) == 0, "and blits no arm pad of its own -- the callee draws the frame (0x9411C)");
+
+    ArReset();
+    Geoscape_DrawManufArm(&g_arArmPad, &g_arManuf, &g_arArm);   /* the arm direct, as the reference frame */
+    PnSaveFrame();
+    (void)DpRun(9);
+    CheckEqI32(PnFrameDiff(), 0, "id 9 reaches Geoscape_DrawManufArm: its pad and the manuf frame together");
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2 + 1,
+               "its two controls, then ManufScreen_Draw's own reset control -- the CALLEE blits too, "
+               "so the arm's count is not the frame's count (0x94174..0x941A0)");
+    Check(g_apnPnBlitPad[0] == &g_arCtlPad[0] && g_apnPnBlitPad[2] == &g_arFramePad,
+          "in that order: the arm's own controls, the callee's reset control last (0x94174 / 0x941A0)");
+
+    ArReset();
+    (void)DpRun(10);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_4, "id 10 has four controls (0x93E8C CMP #4)");
+
+    ArReset();
+    (void)DpRun(11);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2 + 1,
+               "id 11: two from g_aBuySellCtl (0x93DE0) plus the buy/sell frame's unconditional close control");
+    PnSaveFrame();
+    (void)DpRun(12);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2 + 1, "id 12 the same three");
+    CheckEqI32(PnFrameDiff(), 0,
+               "and screens 11 and 12 really do draw the same frame: the prefixes are identical and they share "
+               "the one BuySellScreen_Draw call at 0x93E10");
+
+    /* ---- 7. ids 15 and 18: a callee call and nothing else ---- */
+    g_bDpFnOpen = 1;                /* 0x5B210: FundingScreen_Draw draws NOTHING while bFundScreenOpen is 0 */
+    g_fnDraw.pbOpen = &g_bDpFnOpen;
+    ArReset();
+    (void)DpRun(15);
+    Check(DpInkRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1) > 0,
+          "id 15 runs FundingScreen_Draw, with its open gate satisfied: pad and rails on the surface (0x94308)");
+    CheckEqI32(g_nPnBlits, 1, "and the callee's close control is the only control blit -- the arm offers none (0x94304)");
+    g_bDpFnOpen = 0;
+    PnSaveFrame();
+    ArReset();
+    FnGateRun(g_nFnFunds, NULL);
+    Check(PnFrameDiff() > 0, "while id 19's arm draws a DIFFERENT frame -- the two funding ids are not aliases");
+
+    ArReset();
+    DsFixture();
+    (void)DpRun(18);
+    Check(DpInkRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1) > 0, "id 18 runs Geoscape_DrawScreen (0x942F8)");
+
+    /* ---- 8. the arms that position the shared close control: 4 and 5 ---- */
+    g_bSolTransfer = 0;
+    ArReset();
+    (void)DpRun(4);
+    CheckEqI32(g_solArm.pCloseCtl->x, PUFO_SOLARM_CLOSE_X, "id 4 parks g_pUiCloseCtl at (224,1) before drawing (0x92DB0)");
+    CheckEqI32(g_solArm.pCloseCtl->y, PUFO_SOLARM_CLOSE_Y, "including the y (0x92DC8)");
+    CheckEqI32(g_nPnBlits, PUFO_SOLARM_CTLS_2 + 1, "the two panel controls and then the close control (0x92DE0 / 0x92E04)");
+    Check((u16)BdPix(2, 8) == 0, "and the soldier screen draws no rails at all");
+
+    ArReset();
+    (void)DpRun(5);
+    CheckEqI32(g_solArm.pCloseCtl->x, PUFO_SOLARM_CLOSE_X, "id 5 parks it the same way while no transfer is armed");
+    CheckEqI32(g_nPnBlits, PUFO_SOLARM_CTLS_3 + 1, "and blits its three find controls plus the close control (0x93070)");
+
+    /* ---- 9. ids 6, 16, 17 ---- */
+    PlRun();
+    PnSaveFrame();
+    (void)DpRun(6);
+    CheckEqI32(PnFrameDiff(), 0, "id 6 reaches Geoscape_DrawPlaneArm: the hangar frame is the arm's own");
+
+    g_bUfoOpen = 1;
+    g_bUfoDirty = 0;
+    ArReset();
+    (void)DpRun(16);
+    CheckEqI32(g_nPnBlits, 1 + (PUFO_GEOARM_CTLS_6 - PUFO_GEOARM_UFO_CAT_FIRST),
+               "an open ufopaedia with no entry drawn blits slots 4 and 5 of its own block (0x941DC) plus the "
+               "callee's close control (0x9B7C0)");
+
+    g_bPsOverlay = 0;
+    g_bPsOpen = 1;
+    ArReset();
+    (void)DpRun(17);
+    CheckEqI32(g_nPnBlits, PUFO_GEOARM_CTLS_2 + 2,
+               "id 17: its two scroll controls (0x942C0) plus the psi frame's own confirm and apply buttons, "
+               "which the frame blits even with no scroll controls");
+
+    CheckEqI32(g_nDpPresents, 1, "and the frame end ran for this id as it does for every id");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -14127,6 +14581,7 @@ int main(void)
     TestGeoscapeFundingArm();
     TestGeoscapePlaneArm();
     TestGeoscapePlacementArm();
+    TestGeoscapeDispatch();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

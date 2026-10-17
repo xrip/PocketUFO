@@ -2804,6 +2804,178 @@ void Geoscape_DrawPlacementArm(const GeoscapePlacementArmEnv *pArmEnv,
                                const struct FacNameGridEnv *pGridEnv,
                                const struct BaseStripDrawEnv *pStripEnv);
 
+/* ---- Geoscape_Draw's own head, 0x8C180..0x8C1B0, and its cases 0/2 radar branch,
+ *      0x8C214..0x8C29C ---------------------------------------------------------------------
+ *
+ * Geoscape_Draw @ 0x8c180 (33,744 B) IS the geoscape frame. Every block inside it was ported
+ * before this one: the map chrome 0x8C2B0..0x8C690 (Geoscape_BlitMapView), the crosshair
+ * 0x8C69C..0x8C760 (Geoscape_BlitCrosshair), the status panel and its flag chain
+ * 0x8C760..0x91DB0 (Geoscape_DrawStatusPanel), the twenty screen arms (the Geoscape_Draw*Arm
+ * functions above), and the frame end 0x944B4..0x94550 (Geoscape_DrawFrameEnd). What was missing
+ * is the head that chooses between them: the 12-instruction prologue at 0x8C180 and the 21-entry
+ * jump table at 0x8C1B0. That head is Geoscape_Draw below.
+ *
+ * 1. The head (0x8C180..0x8C1B0). 0x8C190 MOV R7,R0 keeps the caller's block pointer and 0x8C1A4
+ *    stores it at [SP,#0x1C0+pObj]; twenty-three instructions read it back (0x8E644, 0x8F414,
+ *    0x8FA38, 0x90DE0, 0x9193C, ...), and Render_Frame supplies 0x1864F8 at 0x2232C. 0x8C1A8
+ *    stores zero into the stack byte var_1A4: 0x8D4DC is the only writer anywhere in the function
+ *    (it stores 1 inside the '%' research walk) and 0x8D628 the only read, so every port block
+ *    that needs the flag keeps it as a local. 0x8C194/0x8C1A0 load nGeoscapeScreen @ 0x186BC4,
+ *    0x8C19C parks the Map context 0x1139B8 in R4 (the callee base everywhere below), and
+ *    0x8C1AC `CMP R0,#0x14` / 0x8C1B0 `ADDLS PC,PC,R0,LSL#2` jump through the twenty-one branch
+ *    words at 0x8C1B4..0x8C20C, which the two literal words 0x1139B8 (0x8C20C) and nGeoscapeScreen
+ *    (0x8C210) follow.
+ *
+ *      id        target   the port function it reaches
+ *      0, 2      0x8C214  Geoscape_Draw itself: the radar branch, or the map chrome + crosshair +
+ *                         status panel (0x8C2B0 / 0x8C69C / 0x8C760, in that order -- the crosshair
+ *                         reaches 0x8C760 both by the B at 0x8C730 and by 0x8C75C falling into it)
+ *      1         0x91DC8  Geoscape_DrawPlacementArm
+ *      3         0x93F08  Geoscape_DrawBaseInfoArm
+ *      4         0x92DAC  Geoscape_DrawSoldierArm
+ *      5         0x92EE4  Geoscape_DrawSoldierEditArm
+ *      6         0x9309C  Geoscape_DrawPlaneArm
+ *      7         0x92AF0  Geoscape_DrawBaseFacArm
+ *      8         0x94114  Geoscape_DrawResearchArm
+ *      9         0x9415C  Geoscape_DrawManufArm
+ *      10        0x93E5C  Geoscape_DrawTransferArm
+ *      11        0x93DD4  Geoscape_DrawBuySellArm
+ *      12        0x93E20  Geoscape_DrawBuySellArm (the two prefixes are instruction-for-instruction
+ *                         identical and share the call at 0x93E10)
+ *      13, 14    0x944B8  no arm at all -- straight to the frame end
+ *      15        0x94304  FundingScreen_Draw(*pFundPad @ 0x1595DC) and nothing else
+ *      16        0x941AC  Geoscape_DrawUfopaediaArm
+ *      17        0x94288  Geoscape_DrawPsiArm
+ *      18        0x942F4  Geoscape_DrawScreen(aOptionsListCtl @ 0x159E20) and nothing else
+ *      19        0x94314  Geoscape_DrawFundingArm
+ *      20        0x944B0  BaseAtScreen_Draw, which the case reaches by FALLING into it at 0x944B4
+ *      > 20      0x8C1B4  the default word, the same target as 13 and 14
+ *
+ *    Every arm's last instruction is a `B def_8C1B0` (0x8C29C, 0x92ADC, 0x9305C, 0x93F04, 0x94158,
+ *    0x942FC, 0x9430C, ...) or a fall-through into it, so the frame end runs exactly once per frame
+ *    for every id, and its GX_Present at 0x94538 is the frame's present -- which is why
+ *    Render_Frame's geoscape branch (0x22328 / 0x22330) skips its own. BaseAtScreen_Draw at 0x944B4
+ *    is inside case 20's fall-through ONLY: every other id lands on 0x944B8 past it, so the port
+ *    gives the frame end a BaseAt env for id 20 and none for any other id.
+ *
+ * 2. Cases 0 and 2 (0x8C214..0x8C29C): the radar branch, taken when bRadarScreenActive @ 0x159678
+ *    is set (0x8C214 loads its address into R8, 0x8C218 LDRB, 0x8C220 BEQ to the map chrome). It
+ *    does NOT draw the map: no chrome, no crosshair, no status panel -- 0x8C29C goes straight to
+ *    the frame end. Four steps:
+ *      - 0x8C22C blits *pGeoscapeStripPad @ 0x186BBC (the radar session's own strip).
+ *      - 0x8C240..0x8C258 blits the thirteen widgets of the root block. 0x8C238 `LDR R7,=0x1864F8`
+ *        REPLACES the caller's R7 here, so this loop ignores Geoscape_Draw's own argument, and the
+ *        loop counter is the shared scratch dword_186B08, stored zero at 0x8C23C and re-read every
+ *        iteration -- the same counter the UI open paths and the flag chain's tail use.
+ *      - 0x8C25C..0x8C290 blits the strip pad's OWN rectangle out of the logical surface:
+ *        x = pad+0, y = pad+4, nRectW = pad+8, nRectH = pad+0xA, with the four stack words at
+ *        [SP+0]=nIdx 60, [SP+4]=nColorMid 120, [SP+8]=nColorLow 130, [SP+0xC]=nKey 150 (the frame
+ *        names are nKey/b2/g2/srcY and SoftSurf_BlitSrcRect @ 0x9ebf8 copies them back at 0x9EC14
+ *        ..0x9EC34, which is what pins which is which). 0x8C260 re-loads the pad pointer after the
+ *        control loop rather than reusing the one it blitted at 0x8C228.
+ *      - 0x8C294 `MOV R0,R8` / 0x8C298 calls RadarScreen_Update with the ADDRESS of
+ *        bRadarScreenActive -- the same byte whose value chose this branch, and whose value the
+ *        callee tests again at 0x6059C before drawing anything.
+ *
+ * Deviations. (a) The original reaches every screen block through globals that are always live
+ * here; the port takes them through the env and skips that arm when the env is missing -- which
+ * only happens in a partial fixture, and every skip is the arm not drawing at all. (b) The radar
+ * branch's thirteen-widget loop reads the block out of the literal 0x1864F8 (0x8C238), not out of
+ * the caller's pointer; the port hands it the env's array, which is that same block on every call
+ * path mapped so far. (c) The loop counters the original spills into dword_186B08 stay local, as
+ * everywhere else in this port. */
+#define PUFO_GEO_SWITCH_MAX      0x14 /* 0x8C1AC CMP R0,#0x14: ids 0..20 have a table word */
+#define PUFO_GEO_RADAR_CTLS         13 /* 0x8C254 CMP R0,#0xD: the root block's thirteen widgets */
+#define PUFO_GEO_RADAR_IDX        0x3C /* 0x8C27C MOV R3,#0x3C, stored at [SP+0] */
+#define PUFO_GEO_RADAR_MID        0x78 /* 0x8C270/0x8C274: 120 at [SP+4] */
+#define PUFO_GEO_RADAR_LOW        0x82 /* 0x8C268/0x8C26C: 130 at [SP+8] */
+#define PUFO_GEO_RADAR_KEY        0x96 /* 0x8C25C/0x8C264: 150 at [SP+0xC] */
+
+typedef struct GeoscapeRadarArmEnv {
+    const u8 *pbRadarActive;      /* bRadarScreenActive @ 0x159678: the gate at 0x8C218 and the value
+                                   * RadarScreen_Update tests again at 0x6059C (its own env carries
+                                   * the same byte at pSession->pbActive) */
+    PadImage *pStripPad;          /* *pGeoscapeStripPad @ 0x186BBC (0x8C224): blitted, then its own
+                                   * rectangle blitted out of the surface */
+    UiControl *const *apRootCtl;  /* the root block's thirteen widgets, 0x1864F8 + 4*i (0x8C238) */
+    const struct RadarUpdateEnv *pRadarEnv; /* 0x8C298 */
+    UiControlBlitFn  pfnCtlBlit;
+    UiControlBlitFn  pfnCtlBlitEx;
+    void            *pCtlBlitUser;
+} GeoscapeRadarArmEnv;
+
+/* 0x8C214..0x8C29C: the cases 0/2 arm taken while the radar screen is open. */
+void Geoscape_DrawRadarArm(const GeoscapeRadarArmEnv *pEnv);
+
+/* Everything the switch dispatches to. One field per arm argument, in the ARM's order, each named
+ * for the block the original loads into R0/R5/R6 at that call site. */
+typedef struct GeoscapeDrawEnv {
+    const i32 *pnScreenId;        /* nGeoscapeScreen @ 0x186BC4, read at 0x8C194/0x8C1A0 */
+
+    /* Cases 0 and 2, 0x8C214..0x8C760. */
+    const GeoscapeRadarArmEnv    *pRadarArm;    /* the radar branch, 0x8C214..0x8C29C */
+    GeoscapeMapViewEnv           *pMapView;     /* 0x8C2B0..0x8C690 */
+    const GeoscapeCrosshairEnv   *pCrosshair;   /* 0x8C69C..0x8C760 */
+    const GeoscapeStatusPanelEnv *pStatusPanel; /* 0x8C760..0x91DB0, chain tail included */
+
+    const GeoscapePlacementArmEnv *pPlacementArm;   /* case 1, 0x91DC8 */
+    const GeoscapeScreenArmEnv    *pPlacementCtl;
+    const struct FacNameGridEnv   *pPlacementGrid;
+    const struct BaseStripDrawEnv *pPlacementStrip;
+
+    const GeoscapeBaseInfoArmEnv  *pBaseInfoArm;    /* case 3, 0x93F08 */
+    const GeoscapeScreenArmEnv    *pBaseInfoCtl;
+    const struct BaseInfoDrawEnv  *pBaseInfoDraw;
+
+    const struct SoldierDrawEnv   *pSoldierDraw;    /* cases 4 and 5 */
+    const GeoscapeSoldierArmEnv   *pSoldierArm;
+    const GeoscapeScreenArmEnv    *pSoldierPanelCtl; /* case 4's two: apSoldierPanelCtl @ 0x1598B0 */
+    const GeoscapeScreenArmEnv    *pSoldierFindCtl;  /* case 5's three: apSoldierFindCtl @ 0x1598B8 */
+
+    const GeoscapePlaneArmEnv     *pPlaneArm;       /* case 6, 0x9309C */
+
+    const GeoscapeBaseFacArmEnv   *pBaseFacArm;     /* case 7, 0x92AF0 */
+    const struct FacNameGridEnv   *pBaseFacGrid;
+    const struct BaseStripDrawEnv *pBaseFacStrip;
+    const struct BuildDialogEnv   *pBaseFacDialog;
+
+    const struct ResearchDrawEnv  *pResearchDraw;   /* case 8, 0x94114 */
+    const GeoscapeScreenArmEnv    *pResearchCtl;
+
+    PadImage                      *pManufPad;       /* case 9, 0x94160: *unk_159E98 */
+    const struct ManufFrameEnv    *pManufDraw;
+    const GeoscapeScreenArmEnv    *pManufCtl;
+
+    PadImage                      *pTransferPad;    /* case 10, 0x93E60: the transfer root array's pad */
+    const struct TransferDrawEnv  *pTransferDraw;
+    const GeoscapeScreenArmEnv    *pTransferCtl;
+    const GeoscapeBuySellTrackEnv *pBuySellTrack;   /* the tail cases 10, 11 and 12 share, 0x93EB4 */
+
+    PadImage                      *pBuySellPad;     /* cases 11 and 12, 0x93DD8: *pBuySellScreenPad */
+    const struct BuySellDrawEnv   *pBuySellDraw;
+    const GeoscapeScreenArmEnv    *pBuySellCtl;     /* the two of g_aBuySellCtl @ 0x161A0C */
+
+    struct FundingDrawEnv         *pFundEnv;        /* case 15's FundingScreen_Draw AND case 19's arm */
+    const GeoscapeFundingArmEnv   *pFundingArm;
+
+    struct UiBaseInfoDrawEnv      *pUfopaediaDraw;  /* case 16, 0x941B4 */
+    const GeoscapeUfopaediaArmEnv *pUfopaediaGates;
+    const GeoscapeScreenArmEnv    *pUfopaediaCtl;
+
+    const struct PsiScreenDrawEnv *pPsiDraw;        /* case 17, 0x94294 */
+    const GeoscapeScreenArmEnv    *pPsiCtl;
+
+    const struct GeoscapeScreenDrawEnv *pOptionsScreen; /* case 18, 0x942F8: Geoscape_DrawScreen, whose
+                                                         * typedef is below this struct */
+
+    const struct BaseAtDrawEnv    *pBaseAtEnv;      /* case 20 ONLY -- 0x944B4, inside its fall-through */
+    const GeoscapeFrameEndEnv     *pFrameEnd;       /* 0x944B8..0x94544, the frame's own end */
+} GeoscapeDrawEnv;
+
+/* Geoscape_Draw @ 0x8c180. Returns the frame end's present value (0x94538), which is what
+ * Render_Frame returns on its geoscape branch. */
+i32 Geoscape_Draw(const GeoscapeDrawEnv *pEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

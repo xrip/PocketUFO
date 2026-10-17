@@ -2949,11 +2949,12 @@ Order is by what unblocks what. Each item ends with gates + commit.
   like the transfer screen today is a unit-test harness that paints that one function's own
   primitives onto a blank surface with synthetic panels. That picture is a transcription check, not
   the game UI, and it was dropped from `test_baseui` for exactly that reason. Real visual checks
-  need the geoscape frame in the app: `Geoscape_Draw` is 33744 bytes, a jump-table dispatcher over
-  screen ids, and it is the largest single uncovered function in the binary (5.6% of it). Its
-  branches call the screens still queued below, so the screens come first and the dispatcher after
-  them; the shared frame block (`0x8C214..0x8C760`) is the part that would make the main screen
-  visible and is the natural first slice.
+  need the geoscape frame in the app. `Geoscape_Draw` is 33,744 bytes and a jump-table dispatcher over
+  screen ids, and Part 24 ported the last of it: the head at 0x8C180..0x8C1B0 with its 21 table words and
+  the cases 0/2 radar branch at 0x8C214..0x8C29C. The whole frame now exists as
+  `Geoscape_Draw(const GeoscapeDrawEnv *)` (`pufo_geoscape.h`). What still blocks the app view is wiring,
+  not code: `pfnGeoscapeDraw` needs a shell-owned `nGeoscapeScreen`, the 0x186BC0 world-glyph record the
+  map arm reads as `pWorldBits`, and the per-screen UI blocks every arm indexes.
   - **Part 42 found the middle path, and it is worth reusing.** `TestManufDrawFrame` draws
     `ManufScreen_DrawFrame` onto a real 240 x 320 16 bpp surface with the real `FONT.SPR` and the real
     TEXTS layout, and asserts exact 565 values at the coordinates the original names — including a
@@ -3208,17 +3209,18 @@ Refresh after each commit. A coverage delta must match the function size in
 | the base-info and funding arms (`Geoscape_Draw` 0x93F08..0x94104 and 0x94314..0x9449C: the pad global that is also a control-array base, the rails inset by three from case 7 and the ramp overlap that replaces case 7's 7-pixel hole, the gate byte 0x1870F8 that suppresses the close control, BaseInfoScreen_Draw's only call site with the selected base read signed, the funding upkeep loop with its re-read signed base count, the -3,000,000 balance gate and the animation-completeness gate, one colour pair for three captions on records 1712..1714 that the shipped lang.dat does not fill with text; 40 new checks, 34/34 mutations caught, 21 IDB comments, 4 wrong item sizes fixed, 2 globals named, 4 bugs.tsv rows and one earlier row extended) | 60/60 (Release) | 17443 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the hangar arm (`Geoscape_Draw` 0x9309C..0x93DD4, screen 6: the pad word that is also a 108-byte control block, the store and nav pairs at +0x64/+0x68 and +0x5C/+0x60, the cursor-tracking gate on the root block's +0x35 byte, the crew-slot loop with its unbounded control index and its twice-drawn "1"/"2" markers, the caption pair gated on Ship.bCanDogfight, the stat panel with widths truncated to a signed byte, the stock column reading apObjects[52], [53], [54], --, [105], [55] through auPerBaseVal, the laser cannon's unmeasured "-", and the doubled row counter that puts the rows at y 112,152,192,232,272,312 and makes the three rails 20*(6+matched) tall; 53 new checks, 37/38 mutations caught with one proven equivalence, 25 IDB comments, 4 globals named and typed, the 108-byte BasePlaneScreen type applied at 0x161A48, 3 bugs.tsv rows and 4 stale "not ported" header claims fixed) | 60/60 (Release) | 17496 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the placement arm (`Geoscape_Draw` 0x91DC8..0x92ADC, screen 1: the THREE side rails with x 210 as the divider case 7 has no equivalent, the rail halves overlapping at y 151..168 with the climbing pass winning the crossing, the edge rails' flat colour 7 being the side rails' rect height left in R5, the #0x80 vs #0x78 immediates that give the top row a 7-pixel gap and the bottom row none, the ten nav controls at 0x159888 with the original's own null test, the close control moved to (194,4) before its blit, ten captions centred on 60 and 180 drawn BEFORE the callees (whose 36-glyph blank backdrop erases three of their five rows), the cursor block that MOVES nSmapTapX/nSmapTapY for cell kinds 9..12 and stores them back, the 64x64 vs 32x32 cursor with their 0x63 and 0x43 bottom bars, the 10*(nMapPhase+15) colour, the flag-clearing empty cell, the fixed (6,16) facility label, the map control positioned from the truncated label width with TEXTS[1240] centred on it, and the failure panel whose low colour is (u8)0x159768 and whose second triple reads three lang.dat records that are empty; 103 new checks, 14/15 mutations caught with one proven equivalence, 34 IDB items (29 comments, 5 globals named or retyped), 7 bugs.tsv rows) | 60/60 (Release) | 17599 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the dispatcher head and the cases 0/2 radar branch (`Geoscape_Draw` 0x8C180..0x8C1B0 and 0x8C214..0x8C29C, the frame's last 208 bytes: the id -> arm table as `CMP #0x14` / `ADDLS PC,PC,R0,LSL#2` over the 21 words at 0x8C1B4..0x8C20C, the caller's root block stored as pObj at 0x8C1A4 while 0x8C238 RELOADS R7 with the literal 0x1864F8, var_1A4 written only at 0x8D4DC and read only at 0x8D628, case 20 as the only id that falls into 0x944B4 `BaseAtScreen_Draw`, and the radar half -- strip-pad blit, thirteen root widgets counted through dword_186B08, a rect whose x/y/uWidth/uHeight come straight out of the pad header and whose 0x3C/0x78/0x82/0x96 blend lands on top of that pad, then `RadarScreen_Update` (which drops its argument), then straight to the frame end with no chrome, no crosshair and no status panel); 72 new checks, 16/16 mutations caught, 15 IDB comments, 1 global named, 3 bugs.tsv rows) | 60/60 (Release) | 17671 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
 
 cited from `5917656` on, so the gate has measured 966/1103 (87.6%) and 596752/598792 (99.7%) since
 then; one older row carried 965/1103 and 563008 written from memory. Note what the byte figure means:
 `coverage.py` credits a whole function once its start address is cited, so those 99.7% count all
-33,744 bytes of `Geoscape_Draw`. After Part 23 all 21 case bodies of the 0x8C1B0 jumptable have a port
-function of their own (the last one being case 1, 0x91DC8..0x92ADC, 3,324 B), while the dispatcher head
-itself -- the jump table, the screen-id load and the shared frame end at 0x90974 -- is still not wired into
-`RenderFrameEnv.pfnGeoscapeDraw`, which is why the coverage figures above did not move: `coverage.py`
-credits the whole function once, and it was already credited.
+33,744 bytes of `Geoscape_Draw`. Part 24 ported the dispatcher head itself -- the prologue at
+0x8C180..0x8C1B0, the 21 table words at 0x8C1B4..0x8C20C and the cases 0/2 radar branch at
+0x8C214..0x8C29C, which were the function's last 208 uncited bytes -- so all 21 case bodies, the head
+and the frame end at 0x944B8..0x94550 now have port code. The coverage figures did not move: `coverage.py`
+credits a whole function once its start address is cited, and `Geoscape_Draw` was credited long before this.
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

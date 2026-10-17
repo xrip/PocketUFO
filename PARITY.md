@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 17599 |
+| Test checks run | 17671 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -109,7 +109,7 @@ is the module that answers to it.
 | `0x9f9a4` | `SoftSurf_AllocPixels` | 216 | `src/pufo/render/pufo_render.h` |
 | `0xa2000` | `SoftSurf_BlurPixels` | 116 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa39ac` | `Blit_SetTargetParams` | 104 | `src/pufo/app/pufo_app.c`, `src/pufo/render/pufo_render.h` |
-| `0x9ebf8` | `SoftSurf_BlitSrcRect` | 80 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
+| `0x9ebf8` | `SoftSurf_BlitSrcRect` | 80 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` (+2) |
 | `0x9ea34` | `SoftSurf_BlitIndexedKeyed` | 72 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9ebb0` | `SoftSurf_BlitRect` | 72 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3964` | `Blit_LoadSurface` | 72 | `src/pufo/render/pufo_render.h` |
@@ -1275,7 +1275,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 3139 |
+| `test_geoscape` | PASS | 3211 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

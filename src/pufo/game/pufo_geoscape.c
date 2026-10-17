@@ -6751,3 +6751,150 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv)
         break;
     }
 }
+
+/* ------------------------------------------------- Geoscape_Draw @ 0x8c180's own head ------------- */
+
+/* 0x8C214..0x8C29C: the cases 0/2 arm taken while the radar screen is open. The strip pad, the root
+ * block's thirteen widgets, the strip pad's own rectangle, then the radar session -- and no map at
+ * all: 0x8C29C goes straight to the frame end, so the chrome, the crosshair and the status panel are
+ * skipped whole. */
+void Geoscape_DrawRadarArm(const GeoscapeRadarArmEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pbRadarActive == NULL || *pEnv->pbRadarActive == 0) {
+        return;                                                       /* 0x8C218 / 0x8C220 BEQ loc_8C2B0 */
+    }
+
+    PadImage_Blit(pEnv->pStripPad);                                   /* 0x8C224 LDR R6,=pGeoscapeStripPad */
+
+    /* 0x8C240..0x8C258: thirteen blits, `LDR R0,[R7,R0,LSL#2]` with R7 re-loaded from the literal
+     * 0x1864F8 at 0x8C238, and the counter spilled into dword_186B08 (0x8C23C, re-read every pass). */
+    if (pEnv->apRootCtl != NULL) {
+        for (i32 n = 0; n < PUFO_GEO_RADAR_CTLS; ++n) {
+            (void)UiControl_BlitActivePad(pEnv->apRootCtl[n], pEnv->pfnCtlBlit,
+                                          pEnv->pfnCtlBlitEx, pEnv->pCtlBlitUser);
+        }
+    }
+
+    /* 0x8C25C..0x8C290: the pad's own rectangle, out of the loaded surface. 0x8C260 re-reads the pad
+     * pointer instead of reusing the one it blitted at 0x8C228, and the four immediates land in the
+     * stack words SoftSurf_BlitSrcRect @ 0x9ebf8 copies back as nIdx/nColorMid/nColorLow/nKey. */
+    const PadImage *const pPad = pEnv->pStripPad;
+    SoftSurf_BlitSrcRect(pPad->nOriginX, pPad->nOriginY, (i32)pPad->uWidth, (i32)pPad->uHeight,
+                         PUFO_GEO_RADAR_IDX, PUFO_GEO_RADAR_MID, PUFO_GEO_RADAR_LOW,
+                         PUFO_GEO_RADAR_KEY);
+
+    RadarScreen_Update(pEnv->pRadarEnv);                              /* 0x8C294 MOV R0,R8 / 0x8C298 */
+}
+
+/* 0x8C180..0x8C1B0 plus the twenty-one table words at 0x8C1B4..0x8C20C: the geoscape frame
+ * dispatcher. The prologue's [SP,#0x1C0+pObj] is the env's arm wiring, and its var_1A4 byte -- set
+ * only at 0x8D4DC and read only at 0x8D628 -- is a local in the blocks that need it. */
+i32 Geoscape_Draw(const GeoscapeDrawEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return 0;
+    }
+    const i32 nScreenId = (pEnv->pnScreenId != NULL) ? *pEnv->pnScreenId : -1;
+
+    switch (nScreenId) {
+    case 0:
+    case 2: {                                                          /* 0x8C1B8 / 0x8C1C0 -> 0x8C214 */
+        const bool bRadar = (pEnv->pRadarArm != NULL && pEnv->pRadarArm->pbRadarActive != NULL
+                             && *pEnv->pRadarArm->pbRadarActive != 0);
+        if (bRadar) {
+            Geoscape_DrawRadarArm(pEnv->pRadarArm);                   /* 0x8C224..0x8C29C */
+        } else {
+            Geoscape_BlitMapView(pEnv->pMapView);                     /* 0x8C2B0..0x8C690 */
+            Geoscape_BlitCrosshair(pEnv->pCrosshair);                 /* 0x8C69C..0x8C760 */
+            Geoscape_DrawStatusPanel(pEnv->pStatusPanel);             /* 0x8C760..0x91DB0, tail included */
+        }
+        break;
+    }
+
+    case 1:                                                           /* 0x91DC8 */
+        Geoscape_DrawPlacementArm(pEnv->pPlacementArm, pEnv->pPlacementCtl,
+                                  pEnv->pPlacementGrid, pEnv->pPlacementStrip);
+        break;
+
+    case 3:                                                           /* 0x93F08 */
+        Geoscape_DrawBaseInfoArm(pEnv->pBaseInfoArm, pEnv->pBaseInfoCtl, pEnv->pBaseInfoDraw);
+        break;
+
+    case 4:                                                           /* 0x92DAC */
+        Geoscape_DrawSoldierArm(pEnv->pSoldierDraw, pEnv->pSoldierArm, pEnv->pSoldierPanelCtl);
+        break;
+
+    case 5:                                                           /* 0x92EE4 */
+        Geoscape_DrawSoldierEditArm(pEnv->pSoldierDraw, pEnv->pSoldierArm, pEnv->pSoldierFindCtl);
+        break;
+
+    case 6:                                                           /* 0x9309C */
+        Geoscape_DrawPlaneArm(pEnv->pPlaneArm);
+        break;
+
+    case 7:                                                           /* 0x92AF0 */
+        Geoscape_DrawBaseFacArm(pEnv->pBaseFacArm, pEnv->pBaseFacGrid,
+                                pEnv->pBaseFacStrip, pEnv->pBaseFacDialog);
+        break;
+
+    case 8:                                                           /* 0x94114 */
+        Geoscape_DrawResearchArm(pEnv->pResearchDraw, pEnv->pResearchCtl);
+        break;
+
+    case 9:                                                           /* 0x9415C */
+        Geoscape_DrawManufArm(pEnv->pManufPad, pEnv->pManufDraw, pEnv->pManufCtl);
+        break;
+
+    case 10:                                                          /* 0x93E5C */
+        Geoscape_DrawTransferArm(pEnv->pTransferPad, pEnv->pTransferDraw,
+                                 pEnv->pTransferCtl, pEnv->pBuySellTrack);
+        break;
+
+    case 11:                                                          /* 0x93DD4, falling into 0x93E10 */
+    case 12:                                                          /* 0x93E20, the B at 0x93E58 */
+        Geoscape_DrawBuySellArm(pEnv->pBuySellPad, pEnv->pBuySellDraw,
+                                pEnv->pBuySellCtl, pEnv->pBuySellTrack);
+        break;
+
+    case 13:
+    case 14:                                                          /* 0x8C1EC / 0x8C1F0 */
+        break;
+
+    case 15:                                                          /* 0x94304 LDR R0,=pFundPad */
+        FundingScreen_Draw(pEnv->pFundEnv);
+        break;
+
+    case 16:                                                          /* 0x941AC */
+        Geoscape_DrawUfopaediaArm(pEnv->pUfopaediaDraw, pEnv->pUfopaediaGates, pEnv->pUfopaediaCtl);
+        break;
+
+    case 17:                                                          /* 0x94288 */
+        Geoscape_DrawPsiArm(pEnv->pPsiDraw, pEnv->pPsiCtl);
+        break;
+
+    case 18:                                                          /* 0x942F4 LDR R0,=aOptionsListCtl */
+        Geoscape_DrawScreen(pEnv->pOptionsScreen);
+        break;
+
+    case 19:                                                          /* 0x94314 */
+        Geoscape_DrawFundingArm(pEnv->pFundEnv, pEnv->pFundingArm);
+        break;
+
+    case 20:                                                          /* 0x944B0: the callee call is the
+                                                                       * frame end's own 0x944B4 */
+        break;
+
+    default:                                                          /* 0x8C1B4, every id over 20 */
+        break;
+    }
+
+    /* Every arm ends here -- 0x944B8, the block case 20 falls into at 0x944B4. BaseAtScreen_Draw is
+     * inside that fall-through, so only id 20 gets the BaseAt env; the ids that branch to 0x944B8
+     * skip it, exactly as the ARM does. */
+    GeoscapeFrameEndEnv fe = {0};
+    if (pEnv->pFrameEnd != NULL) {
+        fe = *pEnv->pFrameEnd;
+    }
+    fe.pBaseAtEnv = (nScreenId == 20) ? pEnv->pBaseAtEnv : NULL;
+    return Geoscape_DrawFrameEnd(&fe);                                 /* 0x944B8..0x94550 */
+}

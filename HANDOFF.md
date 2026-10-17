@@ -1,20 +1,22 @@
 # HANDOFF — PocketUFO Win64 recreation
-Date: 2026-10-18. HEAD before this edit: `2b030eb`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its twenty-third part -- the placement arm
-(screen 1, `Geoscape_Draw` 0x91DC8..0x92ADC, 3,324 B, ported as `Geoscape_DrawPlacementArm`): 103 new
-checks, 14/15 mutations caught (the survivor is a proven equivalence, not a gap), 34 IDB items -- 29
-comments plus 5 globals named or retyped --, 7 ledger rows and 2 new rename records. **With case 1 every
-one of the 21 jumptable bodies at 0x8C1B0 now has a port function; only the dispatcher head (the jump
-table, the screen-id load, the shared frame end at 0x90974) is still unwired**, and wiring it into
-`RenderFrameEnv.pfnGeoscapeDraw` is the next step of this unit. Parts 1..22 are behind this: the map-view
-chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
-`a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel
-`ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels
-`e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16
-clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`, the frame end
-`84cdb03`, the thin screen arms `7623894`, the ufopaedia and psi arms `219899e`, the soldier arms
-`5eedf75`, the base-facility arm `ca4c9bc`, the base-info and funding arms `51267b6` and the hangar arm `2b030eb`.
-What this part found:
+Date: 2026-10-18. HEAD before this edit: `27aff71`. Unit 107 continues: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B). This commit carries its twenty-fourth part -- the dispatcher head
+0x8C180..0x8C1B0 with its 21 table words, and the cases 0/2 radar branch 0x8C214..0x8C29C: the frame's
+last 208 unported bytes, ported as `Geoscape_Draw(const GeoscapeDrawEnv *)` plus
+`Geoscape_DrawRadarArm`. 72 new checks, 16/16 mutations caught, 15 IDB comments, 1 global named
+(0x1864F8 -> `sGeoscapeScreenBlock`), 3 ledger rows. **The frame is now complete as code -- head, all 21
+arms, the shared frame end. What is left of unit 107 is wiring, not code:** `RenderFrameEnv.pfnGeoscapeDraw`
+has no implementation because the shell owns no `nGeoscapeScreen`, no 0x186BC0 world-glyph record and no
+per-screen UI block. After that the platform glue (137 uncited functions, 2,040 B of Win32/CRT/FMOD thunks
+and CRT exit tables) is the last gap before a full recompilation.
+Parts 1..23 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
+`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`,
+the attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the
+mission-site / travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel
+`bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`,
+the frame end `84cdb03`, the thin screen arms `7623894`, the ufopaedia and psi arms `219899e`, the soldier
+arms `5eedf75`, the base-facility arm `ca4c9bc`, the base-info and funding arms `51267b6`, the hangar arm
+`2b030eb` and the placement arm `27aff71`.
 What this part found:
 
 - **The arm's fill colours are pure arithmetic, so every colour claim is an exact pixel.**
