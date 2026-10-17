@@ -1954,6 +1954,48 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_TARGETCTL_Y_OK2         0x7D /* 0x90CF0 MOV R3,#0x7D: CtlA, set arm, y 125 */
 #define PUFO_STATUS_TARGET_Y_CANCELLED_LBL  0x7E /* 0x90D40 MOV R2,#0x7E: the TEXTS[1144] row, y 126 */
 
+/* 0x90D78: flag 0x13, the intercept-mission panel. Its test prologue loads R11 = 0xBD8 (0x90D88), the
+ * UiPanel nUnk3032 offset -- this arm reads the panel's own SELECTED ROW instead of a colour slot.
+ *
+ * Both bMapSelectionFlag branches build the same anim call as the 0x14 arm (0x90DB8..0x90DE4 and
+ * 0x90F4C..0x90F78 store nKey 0xB4, srcY 0x32, srcX 0x28, nH 0x5A, nMode 0, nIdx 0 and nW 0xD0; here
+ * the two zeros come from `MOV R0,#0` at 0x90DB0 rather than from R8).
+ *
+ * Line 1: the clear arm STRCOPYs apLines[*pStatusPanel + 0xBD8] alone (0x90DE8..0x90E14); the set arm
+ * starts from TEXTS[1238] "Миссия: " and strcats the same row on (0x90F7C..0x90FB8). Drawn centred at
+ * y 0x46 (70). The index is the panel's selected-row dword, written by UiPanel_TrackHoldRow as
+ * cursor + row, and the original applies no bounds test and no null check to it -- recorded in bugs.tsv.
+ *
+ * Line 2, in BOTH branches: psz is RESET to TEXTS[1232] "Город: " (0x90E44 / 0x90FE8) and then
+ * `aMissionSites[(i8)strategList[colour slot 1].bCraftClass].szName` is strcat on: 0x90E94 / 0x91038
+ * LDRSB [R0,#2], ×0x18 (0x90E9C MUL with MOV R2,#0x18), + 0x1864F8 + 0xC8 = 0x1865C0, +4 (the name).
+ * That byte carries two roles -- a size class 0..7 for spawned contacts and the mission-site index for
+ * an intercept item, because BasePlaneScreen_AddInterceptMission @ 0x7DE14 indexes this very table with
+ * the value it stores at +0x02. Drawn centred at y 0x56 (86).
+ *
+ * Clear arm controls: *pCtlA centred at y 0x73 (115), Smap_ResolveInterceptUI installed at 0x90F08
+ * before the 0x90F10 blit; TEXTS[1127] centred at y 0x74 (116). Set arm: *pCtlB centred at y 0x69 (105)
+ * with Smap_CancelTarget at 0x910AC before the 0x910B4 blit; TEXTS[1127] centred at y 0x6A (106);
+ * *pCtlA centred at y 0x80 (128) with Smap_ResolveInterceptUI; TEXTS[1144] centred at y 0x81 (129).
+ * Both arms end in the shared centring tail at 0x91174..0x9118C and fall through into the next test. */
+#define PUFO_STATUS_FLAG_MISSION_SITE         0x13 /* 0x90D90 CMP R0, #0x13 */
+#define PUFO_STATUS_PANEL_SEL_ROW            0xBD8 /* 0x90D88 MOV R11,#0xBD8: UiPanel nUnk3032, the row the pointer last selected */
+#define PUFO_STATUS_SITE_Y_LINE2             0x56  /* 0x90ECC / 0x91070 MOV R2,#0x56: the "Город: " row, y 86 */
+#define PUFO_STATUS_SITECTL_Y_OK             0x73  /* 0x90EF4 MOV R3,#0x73: CtlA, clear arm, y 115 */
+#define PUFO_STATUS_SITE_Y_OK_LBL            0x74  /* 0x90F44 MOV R2,#0x74: y 116 */
+#define PUFO_STATUS_SITECTL_Y_CANCEL         0x69  /* 0x91098 MOV R3,#0x69: CtlB, set arm, y 105 */
+#define PUFO_STATUS_SITE_Y_CANCEL_LBL        0x6A  /* 0x910F8 MOV R2,#0x6A: y 106 */
+#define PUFO_STATUS_SITECTL_Y_OK2            0x80  /* 0x91120 MOV R3,#0x80: CtlA, set arm, y 128 */
+#define PUFO_STATUS_SITE_Y_CANCELLED_LBL     0x81  /* 0x91170 MOV R2,#0x81: the TEXTS[1144] row, y 129 */
+#define PUFO_STATUS_MISSION_SITE_STRIDE      0x18  /* 0x90E90 / 0x91034 MOV R2, #0x18: sizeof MissionSiteRec */
+
+/* 0x91190: flag 0x12, the travel panel. This arm is the flag-0x14 arm with ONE thing taken away: its
+ * clear arm appends neither the space nor the size word (0x911F4..0x9122C copies apLines[colour slot 0]
+ * and draws straight away). The anim arguments, both line rows, all four control rows and the two label
+ * rows are the same immediates at 0x911C4..0x91464 as at 0x909E0..0x90D40, so the arm reuses the
+ * PUFO_STATUS_TARGET_* constants; the duplication is recorded in bugs.tsv. */
+#define PUFO_STATUS_FLAG_TRAVEL_PANEL         0x12 /* 0x9119C CMP R0, #0x12 */
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

@@ -8714,6 +8714,21 @@ _Static_assert(PUFO_STATUS_TARGETCTL_Y_OK2 == 0x7D, "0x90CF0 MOV R3, #0x7D");
 _Static_assert(PUFO_STATUS_TARGET_Y_CANCELLED_LBL == 0x7E, "0x90D40 MOV R2, #0x7E");
 _Static_assert(PUFO_PANEL_LINES == 500, "the apLines array the arm indexes at panel + 0xBE4 (0x909AC/0x909B4)");
 
+/* The 0x13 intercept-mission panel @ 0x90D78 and the 0x12 travel panel @ 0x91190. */
+_Static_assert(PUFO_STATUS_FLAG_MISSION_SITE == 0x13, "0x90D90 CMP R0, #0x13");
+_Static_assert(PUFO_STATUS_PANEL_SEL_ROW == 0xBD8, "0x90D88 MOV R11, #0xBD8: the UiPanel nUnk3032 offset");
+_Static_assert(PUFO_STATUS_SITE_Y_LINE2 == 0x56, "0x90ECC / 0x91070 MOV R2, #0x56");
+_Static_assert(PUFO_STATUS_SITECTL_Y_OK == 0x73, "0x90EF4 MOV R3, #0x73");
+_Static_assert(PUFO_STATUS_SITE_Y_OK_LBL == 0x74, "0x90F44 MOV R2, #0x74");
+_Static_assert(PUFO_STATUS_SITECTL_Y_CANCEL == 0x69, "0x91098 MOV R3, #0x69");
+_Static_assert(PUFO_STATUS_SITE_Y_CANCEL_LBL == 0x6A, "0x910F8 MOV R2, #0x6A");
+_Static_assert(PUFO_STATUS_SITECTL_Y_OK2 == 0x80, "0x91120 MOV R3, #0x80");
+_Static_assert(PUFO_STATUS_SITE_Y_CANCELLED_LBL == 0x81, "0x91170 MOV R2, #0x81");
+_Static_assert(PUFO_STATUS_MISSION_SITE_STRIDE == 0x18, "0x90E90 / 0x91034 MOV R2, #0x18");
+_Static_assert(sizeof(MissionSiteRec) == PUFO_STATUS_MISSION_SITE_STRIDE,
+               "the ARM's 0x18 scale is the mission-site record size");
+_Static_assert(PUFO_STATUS_FLAG_TRAVEL_PANEL == 0x12, "0x9119C CMP R0, #0x12");
+
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -10694,6 +10709,220 @@ static void TestStatusPanelTargetPanel(void)
     g_bPnMapSel = 0;
 }
 
+/* The 0x13 / 0x12 arms @ 0x90d78. Flag 0x13 reads the status panel's own selected row (nUnk3032) and a
+ * second "Город: " line built from the SLOT 1 strateg entry's +0x02 byte used as a MISSION-SITE index;
+ * flag 0x12 is the 0x14 arm with the space and the size word taken away. The two fixtures therefore set
+ * the panel's selected row, colour slot 0 and nUnk3032 to DIFFERENT rows, so an arm that reads the
+ * wrong one shows up as a different line. */
+static void PnSetSiteFixture(void)
+{
+    PnSetPanelRows();
+    PnSetMissionSites();
+    g_pnPanel.nUnk3032 = 3;        /* "k6"; colour slot 0 in these runs is 4 -> "kk6" */
+    g_pnStrat[0].bCraftClass = 4;  /* -> aMissionSites[4] = "p6" */
+    g_pnStrat[1].bCraftClass = 6;  /* -> aMissionSites[6] = "nn6" */
+}
+
+static void TestStatusPanelMissionSite(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the intercept-mission panel @ 0x90d78\n");
+    PnFixture(0x13, 4, 1, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetSiteFixture();
+
+    /* ---- 1. the body ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x914D4-side MOV R1,#0xE at 0x90D9C)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x90DA0 MOV R2,#0x3C)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x90DDC) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_TARGET_ANIM_Y + PUFO_STATUS_TARGET_NH + 5,
+               "nH 0x5A (0x90DCC then 0x90DD8) puts the bottom at 155");
+
+    /* ---- 2. the anim arguments, against the 0x0F arm's identical call ---- */
+    PnFixture(0x0F, 4, 1, 0);
+    PnEmptySources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    PnFixture(0x13, 4, 1, 0);
+    PnSetSiteFixture();
+    PnEmptySources();
+    PnRun();
+    CheckEqI32(PnDiffRect(20, 120, 219, 145).nCount, 0,
+               "body ink equals the 0x0F panel's: nKey 0xB4 (0x90DAC), src 0x28/0x32, nMode and nIdx 0 (0x90DB0)");
+
+    /* ---- 3. line 1 is the panel's SELECTED row, not the colour slot ---- */
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "k6", "y=70 is apLines[panel->nUnk3032] ALONE (0x90DF4 LDR [R0,R11], 0x90DFC LDR [R3,R10])");
+    PnFixture(0x13, 3, 1, 0); PnSetSiteFixture(); g_pnPanel.nUnk3032 = 4;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "kk6", "and the colour slot is never read here: slot 0 says 3, the panel says 4");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_pnPanel.nUnk3032 = 25;
+    PnCapture();
+    d = PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_TARGET_Y_LINE + PN_BAND);
+    CheckEqI32(d.nCount, 0, "row 25 is past the panel's 20 rows: the port draws nothing, the original hands the NULL to strcpy (bugs.tsv)");
+    Check(PnDiffRect(0, PUFO_STATUS_SITE_Y_LINE2 + PN_GLYPH_DY, BD_SURF_W - 1,
+                     PUFO_STATUS_SITE_Y_LINE2 + PN_BAND).nCount > 0,
+          "while the second line still draws, so the missing first row is the guard and not a dead arm");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_pnPanel.nUnk3032 = -1;
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                          PUFO_STATUS_TARGET_Y_LINE + PN_BAND).nCount, 0,
+               "and a negative selected row is guarded too -- UiPanel_TrackHoldRow's cursor + row is a dword");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture();
+
+    /* ---- 4. line 2: TEXTS[1232] + the mission-site name at the SLOT 1 entry's +0x02 ---- */
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6nn6",
+            "y=86 is TEXTS[1232] + aMissionSites[6] (0x90E94 LDRSB [R0,#2], 0x90E9C MUL #0x18, 0x90EA0 ADD #0xC8, 0x90EA8 ADD #4)");
+    PnFixture(0x13, 4, 0, 0); PnSetSiteFixture();
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6p6", "colour SLOT 0 picks the entry, so the neighbour's class reads the neighbour's site (0x90E74 MOV R2,#1 -> 0 here)");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_pnStrat[1].bCraftClass = 5;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6m6", "the byte at +0x02 IS the site index for an intercept item (BasePlaneScreen_AddInterceptMission @ 0x7de14 indexes 0x1865C0 with the same value it stores at +0x02)");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_pnStrat[1].bCraftClass = PUFO_MISSION_SITE_COUNT;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6", "index 56 is past the 56 records: guarded here, untested in the original (0x90E9C MUL, 0x90EA4 ADD)");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_pnStrat[1].bCraftClass = 0xFF;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6", "and LDRSB makes 0xFF negative -- the original would read BEFORE 0x1865C0");
+    PnFixture(0x13, 4, 5, 0); PnSetSiteFixture();
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6", "an entry index past the strateg list yields no entry, so no name (0x90E8C)");
+
+    /* ---- 5. the clear arm's control and labels ---- */
+    g_pnCtlA.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlA centres on 120 from ITS OWN 30-wide pad (0x90EE4 LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SITECTL_Y_OK, "at y=115 (0x90EF4)");
+    CheckEqI32(g_pnCtlB.y, 0, "CtlB is not touched when the flag is clear");
+    CheckEqI32(g_nPnBlits, 1, "one control blit (0x90F10)");
+    Check(g_pnCtlA.pfnClick == PnResolve, "CtlA gets Smap_ResolveInterceptUI (0x90F04 / 0x90F08)");
+    g_pnCtlA.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == PnResolve, "installed before the blit (0x90F08 then 0x90F10)");
+    PnRowIs(PUFO_STATUS_SITE_Y_OK_LBL, "m4", "TEXTS[1127] centred at y=116 (0x90F44 then 0x9118C)");
+
+    /* ---- 6. the set arm ---- */
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "aaa6k6", "the set arm starts from TEXTS[1238] and APPENDS the row (0x90F7C, 0x90FB8)");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6nn6", "and it builds the same \"Город: \" line as the clear arm (0x90FE8, 0x91050)");
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
+    g_pnCtlB.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlB centres from ITS OWN 30-wide pad (0x91088)");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_SITECTL_Y_CANCEL, "at y=105 (0x91098) -- not the 102 the 0x14 arm uses");
+    Check(g_pnCtlB.pfnClick == PnCancelTarget, "CtlB gets Smap_CancelTarget (0x910A8 / 0x910AC)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SITECTL_Y_OK2, "CtlA sits at y=128 (0x91120) -- not the 0x14 arm's 125");
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "centred from its own 40-wide pad (0x91110)");
+    Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI (0x91130 / 0x91134)");
+    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0],
+          "CtlB first (0x910B4), CtlA second (0x9113C)");
+    g_pnCtlB.pfnClick = NULL;
+    g_pnCtlA.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == PnCancelTarget, "CtlB's handler precedes its blit");
+    Check(g_apnPnBlitHandler[1] == PnResolve, "and CtlA's precedes its 0x9113C blit");
+    PnRowIs(PUFO_STATUS_SITE_Y_CANCEL_LBL, "m4", "TEXTS[1127] centred at y=106 (0x910F8)");
+    PnRowIs(PUFO_STATUS_SITE_Y_CANCELLED_LBL, "B2", "TEXTS[1144] centred at y=129 (0x91170 then 0x9118C)");
+
+    /* ---- 7. the records, one at a time ---- */
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture();
+    PnCaptureDropped(PUFO_STATUS_TEXT_CITY);
+    d = PnDiffRect(0, PUFO_STATUS_SITE_Y_LINE2 + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_SITE_Y_LINE2 + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1232] is the second line's only record source");
+    CheckEqI32(PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                          PUFO_STATUS_TARGET_Y_LINE + PN_BAND).nCount, 0,
+               "and it does not touch the first line, which is the panel row");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CRASH);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "this arm never reads TEXTS[1237]: its first line comes from the panel, not a record");
+    PnCaptureDropped(1360);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and no size record: the +0x02 byte names a mission site here");
+
+    PnFixture(0x13, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
+    PnCaptureDropped(PUFO_STATUS_TEXT_MISSION_PREFIX);
+    d = PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_TARGET_Y_LINE + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1238] feeds the set arm's first line");
+    g_bPnMapSel = 0;
+}
+
+static void TestStatusPanelTravel(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the travel panel @ 0x91190\n");
+    PnFixture(0x12, 4, 1, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetSiteFixture();
+
+    /* ---- 1. the body, and the one thing this arm has less than 0x14 ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x911A8 MOV R1,#0xE)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x911AC)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x911E8) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_TARGET_ANIM_Y + PUFO_STATUS_TARGET_NH + 5,
+               "nH 0x5A (0x911D8 then 0x911E4) puts the bottom at 155");
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "kk6",
+            "y=70 is apLines[colour slot 0] ALONE -- no TEXTS record, no space, no size word (0x91218..0x9122C, 0x91258)");
+    PnCaptureDropped(1360);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "no size word here, which is the ONLY line this arm differs from 0x14 on");
+    PnFixture(0x12, 3, 1, 0); PnSetSiteFixture();
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "k6", "colour SLOT 0 is the row index, exactly as in the 0x14 arm (0x911F8 MOV R2,#0)");
+    PnFixture(0x12, 3, 1, 0); PnSetSiteFixture(); g_pnPanel.nUnk3032 = 4;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "k6", "and NOT the panel's selected row -- that is the 0x13 arm's read");
+    PnFixture(0x12, 25, 1, 0); PnSetSiteFixture();
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                          PUFO_STATUS_TARGET_Y_LINE + PN_BAND).nCount, 0,
+               "row 25 is past the panel's 20 rows: guarded, unguarded in the original (0x91210)");
+
+    /* ---- 2. the clear arm's control and label ---- */
+    PnFixture(0x12, 4, 1, 0); PnSetSiteFixture();
+    g_pnCtlA.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlA centres from ITS OWN 30-wide pad (0x91264)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK, "at y=115 (0x91274), the same row 0x14 uses");
+    CheckEqI32(g_pnCtlB.y, 0, "CtlB untouched while the flag is clear");
+    CheckEqI32(g_nPnBlits, 1, "one control blit (0x91290)");
+    Check(g_pnCtlA.pfnClick == PnResolve, "CtlA gets Smap_ResolveInterceptUI (0x91284 / 0x91288)");
+    g_pnCtlA.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == PnResolve, "installed before the blit, as in 0x14");
+    PnRowIs(PUFO_STATUS_TARGET_Y_OK_LBL, "m4", "TEXTS[1127] centred at y=116 (0x912C4 then 0x91480)");
+
+    /* ---- 3. the set arm ---- */
+    PnFixture(0x12, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "aaa6kk6",
+            "TEXTS[1238] + apLines[slot 0] (0x912FC, 0x91344), no space and no size word");
+    PnFixture(0x12, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
+    g_pnCtlB.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlB centres from ITS OWN 30-wide pad (0x9137C)");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_TARGETCTL_Y_CANCEL, "at y=102 (0x9138C) -- the 0x14 arm's row, not the 0x13 arm's 105");
+    Check(g_pnCtlB.pfnClick == PnCancelTarget, "CtlB gets Smap_CancelTarget (0x9139C / 0x913A0)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "CtlA at y=125 (0x91414)");
+    Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI (0x91424 / 0x91428)");
+    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCEL_LBL, "m4", "TEXTS[1127] centred at y=103 (0x913EC)");
+    PnRowIs(PUFO_STATUS_TARGET_Y_CANCELLED_LBL, "B2", "TEXTS[1144] centred at y=126 (0x91464)");
+    PnFixture(0x12, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
+    PnCaptureDropped(PUFO_STATUS_TEXT_MISSION_PREFIX);
+    d = PnDiffRect(0, PUFO_STATUS_TARGET_Y_LINE + PN_GLYPH_DY, BD_SURF_W - 1,
+                   PUFO_STATUS_TARGET_Y_LINE + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1238] feeds the set arm's line");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CRASH);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and TEXTS[1237] belongs to 0x14 only");
+    g_bPnMapSel = 0;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -10765,6 +10994,8 @@ int main(void)
     TestStatusPanelCity();
     TestStatusPanelInterceptList();
     TestStatusPanelTargetPanel();
+    TestStatusPanelMissionSite();
+    TestStatusPanelTravel();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

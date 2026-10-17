@@ -5044,6 +5044,22 @@ static bool StatusPanel_DrawInterceptList(const GeoscapeStatusPanelEnv *pEnv, ch
     return true;                                                           /* 0x9097C B def_8C1B0 */
 }
 
+/* 0x90A30..0x90A4C, 0x90BF8..0x90C14, 0x911F4..0x91210 and 0x91320..0x9133C: the same read four times
+ * over -- colour SLOT 0 of message line 0 indexes the status panel's own row buffer, apLines at panel +
+ * 0xBE4 (R10 = 0xBE0|0x4, built at 0x909AC/0x909B4). Unbounded in the original: this panel has 20 rows,
+ * the slot is a byte and apLines[20..499] is NULL, so 20..255 hands a NULL pointer to the strcat or
+ * strcpy. The port skips a row it cannot read (recorded in bugs.tsv). */
+static const char *StatusPanel_ColourRowText(const GeoscapeStatusPanelEnv *pEnv)
+{
+    const UiPanel *const pPanel = pEnv->pStatusPanel;
+    const i32 nRow = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0);
+
+    if (pPanel == NULL || nRow < 0 || nRow >= PUFO_PANEL_LINES || pPanel->apLines[nRow] == NULL) {
+        return NULL;
+    }
+    return (const char *)pPanel->apLines[nRow];
+}
+
 /* 0x909A8..0x90D60: the map-target panel. bMapSelectionFlag branches at 0x909DC between two blocks
  * that build the SAME Ui_AnimExpandBlit call and differ only in the record they start from, the
  * controls they install and the rows they use. */
@@ -5055,25 +5071,21 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
     }
     const bool bSelecting = *pEnv->pbMapSelectionFlag != 0;
 
-    /* 0x909E0..0x90A04 and 0x90BAC..0x90BD0 store the same nine values. nIdx and nMode are R8, srcX is
-     * R10 and nKey is R11 -- all three left behind by the flag-0x10 TEST prologue (0x904EC, 0x904F0,
-     * 0x904F4), which runs before this arm's test whether or not flag 0x10 was taken. Box x 14..225,
-     * y 60..155. */
+    /* 0x909E0..0x90A04 and 0x90BAC..0x90BD0 store the same six stack values and the same nW. nIdx and
+     * nMode come from R8 and nKey from R11 (0xB4), all left behind by the flag-0x10 TEST prologue
+     * (0x904EC, 0x904F0, 0x904F4), which runs before this arm's test whether or not flag 0x10 was
+     * taken; srcY 0x32, srcX 0x28 and nH 0x5A are immediates. Box x 14..225, y 60..155. */
     (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);
 
     StatusPanel_CopyRec(pEnv, psz, bSelecting ? PUFO_STATUS_TEXT_MISSION_PREFIX
                                               : PUFO_STATUS_TEXT_CRASH);   /* 0x90BD4 via R7 / 0x90A08 */
 
-    /* 0x90A30..0x90A54 and 0x90BF8..0x90C1C: colour SLOT 0 indexes the status panel's OWN row buffer,
-     * apLines at panel + 0xBE4 (R10 = 0xBE0|0x4, built at 0x909AC/0x909B4). The original bounds
-     * nothing: this panel has 20 rows and the slot is a byte, so 20..255 reads a NULL pointer and
-     * hands it to strcat. The port skips a row it cannot read -- recorded in bugs.tsv. */
-    const i32 nRow = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0);
-    if (pEnv->pStatusPanel != NULL && nRow >= 0 && nRow < PUFO_PANEL_LINES
-        && pEnv->pStatusPanel->apLines[nRow] != NULL) {
-        (void)pufo_strcat(psz, (const char *)pEnv->pStatusPanel->apLines[nRow],
-                          PUFO_TEXT_REC_STRIDE);
+    /* 0x90A30..0x90A54 and 0x90BF8..0x90C1C: the status panel's own row, by colour SLOT 0 -- see
+     * StatusPanel_ColourRowText for the read and its guard. */
+    const char *const pszRow = StatusPanel_ColourRowText(pEnv);
+    if (pszRow != NULL) {
+        (void)pufo_strcat(psz, pszRow, PUFO_TEXT_REC_STRIDE);
     }
 
     if (!bSelecting) {
@@ -5134,6 +5146,176 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
                                                                           /* 0x90D5C via 0x90BA4, y 116 */
 }
 
+/* 0x90DE8..0x90E14 / 0x90FA0..0x90FB8 / 0x91504..0x9151C: the status panel's own SELECTED row, reached
+ * as apLines[ *pStatusPanel + 0xBD8 ] -- the nUnk3032 dword UiPanel_TrackHoldRow writes as
+ * cursor + row. The original bounds nothing and never null-checks the pointer it hands to strcpy or
+ * strcat; the port skips a row it cannot read (recorded in bugs.tsv). */
+static const char *StatusPanel_SelectedRowText(const GeoscapeStatusPanelEnv *pEnv)
+{
+    const UiPanel *const pPanel = pEnv->pStatusPanel;
+    const i32 nRow = (pPanel != NULL) ? pPanel->nUnk3032 : -1;
+
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES || pPanel->apLines[nRow] == NULL) {
+        return NULL;
+    }
+    return (const char *)pPanel->apLines[nRow];
+}
+
+/* 0x90E44..0x90ED8 and 0x90FE8..0x9107C, run identically in both branches of the 0x13 arm: psz is RESET
+ * to TEXTS[1232] "Город: " and then the mission-site name is strcat on -- the index being the SLOT 1
+ * strateg entry's byte at +0x02 (0x90E94 LDRSB), scaled by 0x18 (the MissionSiteRec stride) off
+ * 0x1864F8 + 0xC8 = 0x1865C0 and then +4 for the name. That byte carries two roles: a size class 0..7
+ * on a spawned contact, and the mission-site index on an intercept item, because
+ * BasePlaneScreen_AddInterceptMission @ 0x7DE14 indexes this very table with the value it stores at
+ * +0x02. The original bounds neither the byte nor the resulting address. */
+static void StatusPanel_DrawCityLine(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CITY);               /* 0x90E44 unk_F1360, record 1232 */
+    const StrategItem *const pEntry = StatusPanel_ListEntry(pEnv, 1);
+    const i32 nSite = (pEntry != NULL) ? (i32)(i8)pEntry->bCraftClass : -1;
+    if (nSite >= 0 && nSite < PUFO_MISSION_SITE_COUNT) {
+        (void)pufo_strcat(psz, pEnv->paMissionSites[nSite].szName, PUFO_TEXT_REC_STRIDE);
+    }
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_SITE_Y_LINE2, psz);
+                                                                         /* 0x90ED8 / 0x9107C, y 86 */
+}
+
+/* 0x90D78..0x9118C: the intercept-mission panel, flag 0x13. Its test prologue (0x90D88) loads
+ * R11 = 0xBD8 because this arm reads the panel's own selected row rather than a colour slot. */
+static void StatusPanel_DrawMissionSite(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pbMapSelectionFlag == NULL || pEnv->pStrategList == NULL || pEnv->paMissionSites == NULL
+        || pEnv->pCtlA == NULL || pEnv->pCtlB == NULL || pEnv->pfnResolveInterceptUI == NULL) {
+        return;
+    }
+    const bool bSelecting = *pEnv->pbMapSelectionFlag != 0;
+
+    /* 0x90DB8..0x90DE4 and 0x90F4C..0x90F78 store the same values as the 0x14 arm. The two zeros are
+     * `MOV R0,#0` at 0x90DB0 and the key is the literal 0xB4 at 0x90DAC -- both before the 0x90DB4
+     * branch -- because R11 is holding 0xBD8 here and cannot carry the key. Box x 14..225, y 60..155. */
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+                            0, 0x28, 0x32, 0xB4, 0);
+
+    const char *const pszRow = StatusPanel_SelectedRowText(pEnv);
+    if (!bSelecting) {
+        if (pszRow != NULL) {
+            pufo_strcpy(psz, pszRow);                                    /* 0x90DFC..0x90E14: a COPY of the row */
+        } else {
+            psz[0] = 0;
+        }
+    } else {
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_MISSION_PREFIX); /* 0x90F7C, R7 = TEXTS[1238] */
+        if (pszRow != NULL) {
+            (void)pufo_strcat(psz, pszRow, PUFO_TEXT_REC_STRIDE);        /* 0x90FB8: the row APPENDED */
+        }
+    }
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_LINE, psz);
+                                                                         /* 0x90E40 / 0x90FE4, y 70 */
+
+    StatusPanel_DrawCityLine(pEnv, psz);
+
+    if (bSelecting) {
+        StatusPanel_CentredCtlX(pEnv->pCtlB);                             /* 0x91088..0x91094 */
+        pEnv->pCtlB->y = (i16)PUFO_STATUS_SITECTL_Y_CANCEL;              /* 0x91098 / 0x910A0: y 105 */
+        pEnv->pCtlB->pfnClick = pEnv->pfnCancelTarget;                   /* 0x910A8 / 0x910AC */
+        (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);               /* 0x910B4 */
+
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);       /* 0x910B8, record 1127 */
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_SITE_Y_CANCEL_LBL, psz);
+                                                                         /* 0x91104, y 106 */
+
+        StatusPanel_CentredCtlX(pEnv->pCtlA);                             /* 0x91110..0x9111C */
+        pEnv->pCtlA->y = (i16)PUFO_STATUS_SITECTL_Y_OK2;                 /* 0x91120 / 0x91128: y 128 */
+        pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;             /* 0x91130 / 0x91134 */
+        (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);               /* 0x9113C */
+
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);         /* 0x91140, R9 = 1144 * 205 */
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_SITE_Y_CANCELLED_LBL, psz);
+                                                                         /* 0x9118C, y 129 */
+        return;
+    }
+
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x90EE0..0x90EF0 */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_SITECTL_Y_OK;                      /* 0x90EF4 / 0x90EFC: y 115 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x90F04 / 0x90F08 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x90F10 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);           /* 0x90F14, record 1127 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_SITE_Y_OK_LBL, psz);
+                                                                         /* 0x9118C via 0x90F48, y 116 */
+}
+
+/* 0x91190..0x91480: the travel panel, flag 0x12. The flag-0x14 arm with one thing taken away: this
+ * clear arm appends neither the space nor the size word, and its copy of the panel row is a COPY
+ * (0x91218..0x9122C) rather than an append. Every anim argument, every row and both control pairs are
+ * the same immediates as 0x909E0..0x90D40 -- the duplication is recorded in bugs.tsv. */
+static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pbMapSelectionFlag == NULL || pEnv->pStrategList == NULL || pEnv->pCtlA == NULL
+        || pEnv->pCtlB == NULL || pEnv->pfnResolveInterceptUI == NULL) {
+        return;
+    }
+    const bool bSelecting = *pEnv->pbMapSelectionFlag != 0;
+
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x911C4..0x911F0 / 0x912CC..0x912F8 */
+
+    /* 0x911F4..0x9122C clears the flag: colour SLOT 0's row is COPIED, alone. 0x912FC..0x91344 sets it:
+     * TEXTS[1238] first, then the same row strcats on. One draw follows either way -- 0x91258 and
+     * 0x91370 are the same centring. */
+    const char *const pszRow = StatusPanel_ColourRowText(pEnv);
+    if (!bSelecting) {
+        if (pszRow != NULL) {
+            pufo_strcpy(psz, pszRow);
+        } else {
+            psz[0] = 0;
+        }
+    } else {
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_MISSION_PREFIX); /* 0x912FC, R7 = TEXTS[1238] */
+        if (pszRow != NULL) {
+            (void)pufo_strcat(psz, pszRow, PUFO_TEXT_REC_STRIDE);        /* 0x91344 */
+        }
+    }
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_LINE, psz);
+                                                                         /* 0x91258 / 0x91370, y 70 */
+
+    if (bSelecting) {
+        StatusPanel_CentredCtlX(pEnv->pCtlB);                             /* 0x9137C..0x91388 */
+        pEnv->pCtlB->y = (i16)PUFO_STATUS_TARGETCTL_Y_CANCEL;            /* 0x9138C / 0x91394: y 102 */
+        pEnv->pCtlB->pfnClick = pEnv->pfnCancelTarget;                   /* 0x9139C / 0x913A0 */
+        (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);               /* 0x913A8 */
+
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);       /* 0x913AC, record 1127 */
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_CANCEL_LBL, psz);
+                                                                         /* 0x913F8, y 103 */
+
+        StatusPanel_CentredCtlX(pEnv->pCtlA);                             /* 0x91404..0x91410 */
+        pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;               /* 0x91414 / 0x9141C: y 125 */
+        pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;             /* 0x91424 / 0x91428 */
+        (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);               /* 0x91430 */
+
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);         /* 0x91434, R9 = 1144 * 205 */
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_CANCELLED_LBL, psz);
+                                                                         /* 0x91480, y 126 */
+        return;
+    }
+
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x91260..0x91270 */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK;                     /* 0x91274 / 0x9127C: y 115 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                  /* 0x91284 / 0x91288 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                    /* 0x91290 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);            /* 0x91294, record 1127 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_OK_LBL, psz);
+                                                                          /* 0x91480 via 0x912C8, y 116 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -5184,7 +5366,13 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_TARGET_PANEL) {
         StatusPanel_DrawTargetPanel(pEnv, psz);                          /* 0x909A8..0x90D60 */
     }
-    /* 0x90D78..0x91CEC: the flag tests after 0x14 and the screen-id tail are not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_MISSION_SITE) {
+        StatusPanel_DrawMissionSite(pEnv, psz);                          /* 0x90D78..0x9118C */
+    }
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_TRAVEL_PANEL) {
+        StatusPanel_DrawTravel(pEnv, psz);                               /* 0x91190..0x91480 */
+    }
+    /* 0x91484..0x91CEC: the flag tests after 0x12 and the screen-id tail are not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

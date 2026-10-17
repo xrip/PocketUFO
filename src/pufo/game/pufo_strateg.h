@@ -23,7 +23,10 @@
 typedef struct StrategItem {
     u8   nType;          /* +0x00 0 base, 1 craft */
     u8   bActive;        /* +0x01 */
-    u8   bCraftClass;    /* +0x02 */
+    u8   bCraftClass;    /* +0x02 two roles: 0..7 size class on a spawned contact (the 0x90A8C
+                             jumptable maps it to TEXTS 1359..1363) and a mission-site index on an
+                             intercept item -- BasePlaneScreen_AddInterceptMission @ 0x7DE14 stores
+                             the index here and 0x90E94 reads it back as one */
     u8   bUnk3;          /* +0x03 */
     i32  nX;             /* +0x04 map x, wrapped at +/-800 */
     i32  nY;             /* +0x08 */

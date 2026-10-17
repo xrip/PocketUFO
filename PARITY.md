@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 17054 |
+| Test checks run | 17123 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -909,7 +909,7 @@ is the module that answers to it.
 | `0x58910` | `BaseFacScreen_TryBuySelected` | 176 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+4) |
 | `0x615d0` | `NewBaseScreen_Open` | 172 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6dec0` | `ManufScreen_ReduceSelectedQtyToOne` | 172 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7de14` | `BasePlaneScreen_AddInterceptMission` | 168 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` (+1) |
+| `0x7de14` | `BasePlaneScreen_AddInterceptMission` | 168 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
 | `0x6e330` | `ManufScreen_DecEngineers` | 164 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6e09c` | `ManufScreen_DecSelectedQty` | 160 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6b8fc` | `OptionsScreen_RefreshVolumeHighlight` | 152 | `src/pufo/game/pufo_baseui.h` |
@@ -1275,7 +1275,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 2594 |
+| `test_geoscape` | PASS | 2663 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

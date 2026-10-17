@@ -17958,3 +17958,60 @@ blocks at 0x909DC, and the apLines index bug at 0x90A48. bugs.tsv: 1 new row.
 
 Not ported yet in this chain: 0x90D78..0x91CEC (the flag tests after 0x14 and the screen-id tail) and
 the screen arms 0x91DC8..0x944B0.
+
+### Unit 107, part 10: the intercept-mission panel (0x90D78..0x9118C) and the travel panel (0x91190..0x91480)
+
+Two more arms of the status-panel default chain, read after the argument ABI was known.
+
+Flag 0x13, the intercept-mission panel.
+- The test prologue 0x90D88 loads R11 = 0xBD8, the status panel's SELECTED-row offset, because both
+  branches read `pStatusPanel->apLines[*pStatusPanel + 0xBD8]` (0x90DF4 then 0x90DFC, 0x90FA0 then
+  0x90FB0). This is the only arm in the chain that reads the panel's own row instead of a colour slot.
+  `nUnk3032` is what `UiPanel_TrackHoldRow` writes as cursor + row, a dword.
+- The anim is the 0x14 arm's call again: 0x90DB8..0x90DE4 and 0x90F4C..0x90F78 store nH 0x5A, nIdx 0,
+  srcX 0x28, srcY 0x32, nMode 0 with nW 0xD0 and x 14. The key 0xB4 is a literal here (0x90DAC)
+  because R11 is holding 0xBD8 and cannot carry it; the two zeros come from `MOV R0,#0` at 0x90DB0,
+  before the 0x90DB4 branch.
+- Clear arm 0x90DE8..0x90E40: psz becomes the row ALONE, a copy rather than an append, centred at y 70.
+  Set arm 0x90F7C..0x90FE4: TEXTS[1238] "Миссия: " (R7, loaded in the test prologue) and then the row
+  strcat on, same centring, same y 70.
+- Both arms then build the same city line: psz is RESET to TEXTS[1232] "Город: " (0x90E44, 0x90FE8) and
+  the mission-site name is strcat on -- index from the signed byte at +0x02 of `strategList[colour
+  SLOT 1]` (0x90E94, 0x91038 `LDRSB`), times 0x18 (0x90E90 / 0x91034 `MOV R2,#0x18`, the MissionSiteRec
+  stride), off 0x1864F8 + 0xC8 = 0x1865C0, plus 4 for the name. Drawn centred at y 86 (0x90ED8,
+  0x9107C).
+- That byte has two roles: a 0..7 size class on a spawned contact (the 0x90A8C jumptable of the 0x14
+  arm) and a mission-site index on an intercept item, because `BasePlaneScreen_AddInterceptMission
+  @ 0x7DE14` indexes this very table with the value it stores at +0x02. The original bounds neither
+  the byte nor the resulting address, and it never null-checks the row pointer either.
+- Set-arm controls: *pCtlB centred from its own pad at y 105 with `Smap_CancelTarget @ 0x84254`
+  installed at 0x910AC BEFORE the 0x910B4 blit, TEXTS[1127] centred at y 106, *pCtlA centred at y 128
+  with `Smap_ResolveInterceptUI` before the 0x9113C blit, TEXTS[1144] at y 129 (0x91170, shared tail
+  0x9118C). Clear arm: *pCtlA centred at y 115 with the resolve handler before the 0x90F10 blit,
+  TEXTS[1127] at y 116 (0x90F44, 0x9118C via 0x90F48).
+
+Flag 0x12, the travel panel.
+- 0x91190..0x91480 is the flag-0x14 body with one thing taken away. Same anim (0x911C4..0x911F0,
+  0x912CC..0x912F8), same row source (colour SLOT 0, 0x911F8 `MOV R2,#0`), same control rows and label
+  rows: CtlB centred at y 102 with the cancel handler installed at 0x913A0 before the 0x913A8 blit,
+  TEXTS[1127] at y 103, CtlA centred at y 125 with the resolve handler before the 0x91430 blit,
+  TEXTS[1144] at y 126; the clear arm has CtlA at y 115 (handler at 0x91288 before the 0x91290 blit)
+  and its label at y 116.
+- The one difference is the clear arm's first line: 0x91218..0x9122C COPIES the panel row and draws it
+  straight away -- no TEXTS[1237], no space, no size word. Its set arm (0x912FC, 0x91344) is the 0x14
+  set arm verbatim. Recorded as a duplicate row in bugs.tsv, because the port reuses the
+  PUFO_STATUS_TARGET_* constants and any change to the target panel must be made twice.
+
+Tests: 69 new checks across `TestStatusPanelMissionSite` and `TestStatusPanelTravel`, 12 new
+`_Static_assert` pins (`PUFO_PANEL_LINES`, `sizeof(MissionSiteRec) == PUFO_STATUS_MISSION_SITE_STRIDE`,
+the two selected-row and mission-site offsets), 18 mutation patterns -- 17 caught by a failing check and
+1 by the access violation the port's guard prevents (the unguarded read is the original's own shape).
+The panel row source and the mission-site index are both observable as drawn ink: rows 3 and 4 carry
+different text and `nUnk3032` is set apart from colour slot 0, so a mix-up shows as a different word.
+
+IDB comments for this range are still pending: the IDA MCP connection dropped during this part, so
+0x90D88, 0x90DFC, 0x90FB0, 0x90E94, 0x910AC and 0x911F4 have their findings in the port comments and
+in bugs.tsv but not yet in the IDB.
+
+Not ported yet in this chain: 0x91484..0x91CEC (the flag tests after 0x12 and the screen-id tail) and
+the screen arms 0x91DC8..0x944B0.

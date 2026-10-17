@@ -1,55 +1,52 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `c612882`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its ninth part -- the map-target panel at
-0x909A8..0x90D60, flag 0x14, with 52 new checks and 15/15 mutations caught.
-Parts 1..8 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body in `2485d25`, the
+Date: 2026-10-17. HEAD before this edit: `7c14ff8`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its tenth part -- the intercept-mission
+panel at 0x90D78..0x9118C (flag 0x13) and the travel panel at 0x91190..0x91480 (flag 0x12), with 69
+new checks and 18/18 mutations caught.
+Parts 1..9 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body in `2485d25`, the
 action-fail line and the selected contact in `79b7979`, the order questions in `a2d454b`, the
 craft-detail card in `c5f90b5`, the trace-lost panel in `4a02d1a`, the attacked-city panel in
-`ac13d77` and the intercept list in `c612882` -- are behind this. What this part found:
+`ac13d77`, the intercept list in `c612882` and the map-target panel in `7c14ff8` -- are behind this.
+What this part found:
 
-- **The argument ABI, finally.** `Ui_AnimExpandBlit` takes FOUR register arguments (pObj, x, y, nW) and
-  SIX stack arguments (nH, nIdx, srcX, srcY, nKey, nMode) at SP+0..SP+0x14; `SoftSurf_BlitSrcRect`
-  takes 4 and 4. In Geoscape_Draw's frame those outgoing slots are IDA's nKey@0, g2@4, b2@8, srcY@0xC,
-  var_1B0@0x10, nMode@0x14 -- so the frame's odd slot names are just the arg area seen through
-  different calls. Reading the stores through the slots is what confirms every anim argument in this
-  chain, including the 0x1B arm's (its nH and srcY are R10, its nIdx and nMode are R8).
-- **The flag-0x10 TEST prologue is sticky.** 0x904DC..0x904F4 set R7 = 0x78, R11 = 0xB4, R8 = 0,
-  R10 = 0x28 and 0x904D8/0x904E0 set R9 = 1144 * 205. They are callee-saved and they run whenever the
-  chain reaches that test, so they are the 0x1B anim's height/src/mode/idx, the 0x14 anim's key, and
-  the 0x14 arm's TEXTS[1144] label. This is why those call sites use registers instead of immediates.
-- `bMapSelectionFlag` branches at 0x909DC between 0x909E0..0x90A04 and 0x90BAC..0x90BD0, and **the two
-  blocks store the same six values** (nH 0x5A, nIdx 0, srcX 0x28, srcY 0x32, nKey 0xB4, nMode 0). The
-  flag only picks the record -- TEXTS[1237] "Крушение " against TEXTS[1238] "Миссия: " -- and the
-  controls and rows.
-- **An original bug, in bugs.tsv:** the arm appends `pStatusPanel->apLines[colour slot 0]` (apLines at
-  panel + 0xBE4, from `MOV R10,#0xBE0 / ORR R10,R10,#4`) with no bounds test and no null check.
-  Geoscape_InitUI 0x86AC0 builds that panel with 20 rows and `UiPanel_ctor` allocates exactly
-  nLineCount buffers, so apLines[20..499] is NULL and a slot value of 20..255 hands a NULL to the
-  strcat at 0x90A54. The port skips a row it cannot read. The size word then comes from colour
-  **SLOT 1**'s strateg entry, by its `bCraftClass` byte at +0x02 (`LDRSB` at 0x90A84, records
-  1359/1360/1361/1362/1363 over the eight classes, negative classes taking the default).
-- Both arms install the click handler BEFORE blitting the control (0x90B60 then 0x90B68; 0x90C78 then
-  0x90C80) -- the reverse of the 0x0B, 0x0D, 0x10 and 0x1B arms. `Smap_CancelTarget` @ 0x84254 is the
-  set arm's handler, `Smap_ResolveInterceptUI` the other. Both arms end in the same centring tail at
-  0x90D44..0x90D5C with y in R2 (0x74 clear, 0x7E set), then B 0x90D7C.
-- Fixed on the way: Geoscape_Draw's `psz` frame slot is `char[200]` (IDA), not 205 -- the port's
-  `szText[205]` is a deliberate over-allocation because the original's strcat is unbounded.
+- **Flag 0x13 is the only arm that reads the status panel's OWN row.** Its test prologue 0x90D88
+  `MOV R11, #0xBD8` loads the offset of `nUnk3032` (the row the pointer last selected, which
+  `UiPanel_TrackHoldRow` writes as cursor + row) and both branches read `apLines[panel + 0xBD8]`
+  (0x90DF4 / 0x90DFC, 0x90FA0 / 0x90FB0). Every earlier arm indexed apLines by a colour slot. The
+  consequence is visible in the anim call: the key 0xB4 is a literal at 0x90DAC here, and the two
+  zeros come from `MOV R0,#0` at 0x90DB0, because R11 is busy carrying 0xBD8 -- the same nine values
+  as the 0x14 arm, reached a different way.
+- **The byte at StrategItem +0x02 has two roles.** The city line (0x90E44 / 0x90FE8 reset psz to
+  TEXTS[1232] "Город: ", then the name at 0x1865C0 + 0x18*idx + 4, drawn centred at y 86) indexes the
+  56-record mission-site table with it, read as a SIGNED byte (0x90E94, 0x91038), while the 0x14 arm
+  uses the same byte as a 0..7 size class. `BasePlaneScreen_AddInterceptMission @ 0x7DE14` is the
+  proof: it stores the site index at +0x02 and indexes this table with it. Documented in
+  `pufo_strateg.h` and as a bugs.tsv naming row.
+- **Two unchecked reads, recorded.** `apLines[nUnk3032]` (0x90DFC, 0x90FB0, 0x91210) and
+  `aMissionSites[(i8)+0x02]` (0x90E94) are both unbounded and never null-checked; the port guards both
+  and the difference is a test: the unguarded form is the original's exact shape and it faults.
+- **Flag 0x12 is flag 0x14 with one thing removed.** Same anim, same colour-slot row, same control and
+  label rows (102/103/125/126 and 115/116); its clear arm copies the panel row alone where 0x14 appends
+  TEXTS[1237] + row + space + size word. Recorded as a duplicate row; the port shares the
+  PUFO_STATUS_TARGET_* constants, so both arms read from one table of rows.
 
-Two new test pieces carry the weight. (1) The status panel now gets its 20 ctor row buffers with text
-in rows 3 and 4, so the apLines index is visible in the drawn line and rows 20 and 255 exercise the
-guard. (2) The blit callback snapshots the control's `pfnClick` at blit time (the pad identifies the
-control), which makes the handler/blit order observable -- on a single fresh run, because `PnCapture`
-runs the arm twice and the first run leaves its handler installed; that is exactly why the order
-mutation survived its first version. The anim arguments are pinned by an equivalence the ARM itself
-gives: the 0x0F arm's anim at 0x8F428..0x8F45C takes the same nine values, so the two arms' body ink
-must match pixel for pixel -- that proves nIdx 0, src 0x28/0x32, key 0xB4 and mode 0, which no geometry
-check can see. Still unported here: 0x90D78..0x91CEC (the flag tests after 0x14 and the screen-id tail)
-and the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with
-17054 checks -- that byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py`
-counts a function once its start address is cited, so it says nothing about how much of that function is
-ported. The read map and the arm table are in `docs/parity/game-core.md` under
+Two cheap correctness fixes rode along: three guard checks in the new tests compared against a stale
+surface (`PnRowIs` leaves its reference draw behind) and were re-run with a capture first, and the
+first sweep run had four patterns that were either duplicate matches or unused-function build errors,
+so they were rewritten and re-run -- 18 patterns, 0 survivors.
+
+IDB comments for 0x90D88, 0x90DFC, 0x90FB0, 0x90E94, 0x910AC and 0x911F4 are PENDING: the IDA MCP
+connection dropped mid-part, so the findings are in the port comments and bugs.tsv only. Add them and
+save the IDB as soon as the connection is back.
+
+Still unported here: 0x91484..0x91CEC (the flag tests after 0x12 and the screen-id tail) and the screen
+arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 17123 checks
+across 60 suites -- that byte figure credits all 33,744 bytes of `Geoscape_Draw` because
+`coverage.py` counts a function once its start address is cited, so it says nothing about how much of
+that function is ported. The read map and the arm table are in `docs/parity/game-core.md` under
 "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
+
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,
 and the per-unit chain
