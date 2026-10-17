@@ -1400,6 +1400,149 @@ typedef struct GeoscapeCrosshairEnv {
 void Geoscape_BlitMapView(GeoscapeMapViewEnv *pEnv);
 void Geoscape_BlitCrosshair(const GeoscapeCrosshairEnv *pEnv);
 
+/* ---- Geoscape_Draw @ 0x8c180 status panel (0x8C760..0x8E658) -------------------------
+ *
+ * The panel the map view draws under the crosshair. Line 0 of the root message list @ 0x158890
+ * decides everything: its flag byte is the case, its colour dwords are the arguments.
+ *
+ * 1. The head (0x8C760..0x8C82C). Gfx_PackRgb565Pair(0xDC,0x50,0x50 / 50,0x1E,0x1E): the second
+ *    triple's red is R5, which still holds the crosshair's 50 loaded at 0x8C6A0. The flag is read
+ *    three times and `<= 0x1E` (0x8C79C) and `>= 0x32` (0x8C7B0) both fall to the default arm.
+ *    The four colour dwords of line 0 are read in slot order 3,2,1,0 (0x8C7C0..0x8C804) and
+ *    BaseFac_BuildStatusMsg @ 0x6a4bc runs with a3 = slot 0, a4 = slot 1, a5 = slot 2; slot 3 is
+ *    pushed at 0x8C814 and the callee never reads it. The callee's prologue (0x6A4C0..0x6A4D0 maps
+ *    only R0..R3) and its use of a3 as the 64-byte base-record index at 0x6A558 fix that mapping;
+ *    the IDB call-site comment had it shifted one slot right.
+ *
+ * 2. The thirteen arms (0x8C844, `SUB R0,#0x20 / CMP #0xC` on the same flag byte). Every arm runs
+ *    Ui_AnimExpandBlit_IfEnabled(0, 0x6E, 0xEC, nH, 1) -- nH 0x68 for ' ' and '$', 0x5A for the
+ *    rest, and 0x14/0xBE for '%' -- copies one TEXTS record into the original's stack buffer,
+ *    draws the strings it wants centred on x=120, sets the two bottom controls, then runs the
+ *    shared footer: TEXTS[1193] "OK" centred on x=28 and TEXTS[1194] centred on x=209, both at the
+ *    arm's footer y (0xC0 for ' ' and '$', 0xB2 for the rest, 0xBC for '%'), with
+ *    Gfx_PackRgb565Pair(0x44,0xF4,0xFC / 4,0x46,0x4B) packed before the first of the two.
+ *
+ *    Which strings an arm draws, and in what order:
+ *      ' '  TEXTS[1191]@152, TEXTS[1192]@166, pszMsg@124, pszExtra@138   controls y 0xBD, foot 0xC0
+ *      '!'  pszMsg@124, pszExtra@138, TEXTS[1195]@152
+ *      '"'  TEXTS[1196], colour packed FIRST, then pszMsg@124, pszExtra@138, TEXTS[1196]@152
+ *      '#'  pszMsg@124, pszExtra@138, TEXTS[1197]@152
+ *      '$'  TEXTS[1198]@152, TEXTS[1199]@166, pszMsg@124                 controls y 0xBD, foot 0xC0
+ *      '%'  see 3.
+ *      '&'  identical to '"' (the same TEXTS record 1196)
+ *      '\'' pszExtra@124, pszScratch@138, TEXTS[1204]@152
+ *      '('  pszMsg@124, pszScratch@138, TEXTS[1205]@152
+ *      ')'  TEXTS[1206], colour packed FIRST, then pszMsg@124, TEXTS[1206]@152 -- no 138 line
+ *      '*'  pszMsg@124, TEXTS[1207]@152                                  -- no 138 line
+ *      '+'  pszMsg@124, pszExtra@138, TEXTS[1208]@152
+ *      ','  pszExtra@124, TEXTS[1209]@152                                -- no 124 line from pszMsg
+ *
+ *    The colour order is observable: an arm that packs before drawing renders its main lines in
+ *    0x44,0xF4,0xFC, and every other arm renders them in the head pair 0xDC,0x50,0x50. Only '"',
+ *    '&', ')' and '%' pack early; '"', '&' and ')' pack a second time after the controls.
+ *
+ * 3. The '%' arm (0x8D2F4..0x8D838), the research panel. TEXTS[1200] at y=26 and pszMsg at y=44.
+ *    Then the confirm control (pGeoscapeCtlConfirm @ 0x186BA4) is parked at (1000,1000); when
+ *    anUfopaediaEntryNum[nResearchTopicShown] is non-zero it is centred on 120 at y=75, gets
+ *    Ui_OpenBaseInfoAlt @ 0x84d18 as its handler, is blitted, and TEXTS[1201] "Отчет" is drawn at
+ *    y=75. Then the finished-topic walk over aResearchTopics[nResearchFinishedTopic]
+ *    .abActivateTopics[k], k = 0.. while the byte is non-zero: a topic whose byte_160BBC entry is
+ *    below 2 gets TEXTS[1202] at y=111 and TEXTS[aTopics[id].wGate4] at y = 127 + 14k, and its
+ *    byte_160BBC entry is set to 1. If at least one topic was drawn, the apply control
+ *    (pGeoscapeCtlApply @ 0x186BAC) is centred at y = 142 + 14k with Ui_OpenResearch @ 0x84bf8,
+ *    blitted, and TEXTS[1203] drawn at the same y. Controls at y=0xB9, footer at 0xBC.
+ *
+ * 4. The default arm (0x8E5A4). Pack the status pair; if byte_18709C[4] @ 0x1870A0 is zero skip
+ *    EVERYTHING -- 0x8E5E0's BEQ lands at 0x8E658, past both calls. Otherwise
+ *    Ui_AnimExpandBlit(x 0xE, nW 0xD0, nH = nFont * nLineCount + 6, y = nPosY - 6, idx 0,
+ *    src 0x28/0x32, key 0xB4, mode 0) and then UiPanelMsg_Draw on pStatusPanel @ 0x18641C.
+ *
+ * Deviations. (a) The original's walk counter is the spilled global dword_186B08 and its
+ * "something was drawn" flag is an uninitialised stack byte (var_1A4 is written only in the drawn
+ * branch); the port uses a local counter and starts the flag at zero. (b) byte_160BBC and
+ * aTopics[] are indexed by the walk's topic byte with no bound; the port stops at
+ * PUFO_RESEARCH_TOPIC_COUNT. (c) The original reaches pStatusPanel and the two controls through
+ * globals that are always live here; the port returns without drawing when one is missing. */
+#define PUFO_STATUS_TEXT_X_CENTRE   120 /* 0x78: the centred column for every main line */
+#define PUFO_STATUS_TEXT_X_LEFT      28 /* 0x1C: the footer's left label */
+#define PUFO_STATUS_TEXT_X_RIGHT    0xD1 /* 0x8E3D8: the footer's right label */
+#define PUFO_STATUS_ANIM_Y           0x6E /* 0x8C894: every arm but '%' */
+#define PUFO_STATUS_ANIM_W           0xEC /* 0x8C898 */
+#define PUFO_STATUS_ANIM_H_TALL      0x68 /* 0x8C888: ' ' and '$' */
+#define PUFO_STATUS_ANIM_H_STD       0x5A /* 0x8CAEC: the ten plain arms */
+#define PUFO_STATUS_ANIM_Y_RESEARCH  0x14 /* 0x8D300 */
+#define PUFO_STATUS_ANIM_H_RESEARCH  0xBE /* 0x8D2F4 */
+#define PUFO_STATUS_Y_MSG            0x7C /* 0x8C978: pszMsg, szRadarMsg @ 0x186B10 */
+#define PUFO_STATUS_Y_EXTRA          0x8A /* 0x8C9A8: pszExtra, unk_186420 */
+#define PUFO_STATUS_Y_TEXT           0x98 /* 0x8C8F0: the arm's own TEXTS record */
+#define PUFO_STATUS_Y_TEXT2          0xA6 /* 0x8C948: the second record, ' ' and '$' only */
+#define PUFO_STATUS_Y_FOOT_STD       0xB2 /* 0x8E3C4: the shared tail's own y */
+#define PUFO_STATUS_Y_FOOT_TALL      0xC0 /* 0x8D2E8: ' ' and '$' */
+#define PUFO_STATUS_Y_FOOT_RESEARCH  0xBC /* 0x8d6e0-ish: '%' */
+#define PUFO_STATUS_Y_RESEARCH_TITLE  0x1A /* 0x8D38C */
+#define PUFO_STATUS_Y_RESEARCH_MSG    0x2C /* 0x8D3BC */
+#define PUFO_STATUS_Y_RESEARCH_REPORT 0x4B /* 0x8D478 */
+#define PUFO_STATUS_Y_RESEARCH_HEAD   0x6F /* 0x8D51C: TEXTS[1202] */
+#define PUFO_STATUS_Y_RESEARCH_ROW    0x7F /* 0x8D5D0: + 14 * k */
+#define PUFO_STATUS_Y_RESEARCH_APPLY  0x8E /* 0x8D670 / 0x8D6E0: + 14 * k */
+#define PUFO_STATUS_RESEARCH_ROW_STEP  14 /* 0x8D5B4 / 0x8D648: MOV R2,#0xE */
+#define PUFO_STATUS_CTL_X_SFX           9 /* 0x8C9BC: *unk_18704C */
+#define PUFO_STATUS_CTL_X_OPEN        0xBE /* 0x8C9E4: *unk_187024 */
+#define PUFO_STATUS_CTL_Y_TALL       0xBD /* 0x8C9CC: ' ' and '$' */
+#define PUFO_STATUS_CTL_Y_STD        0xAF /* 0x8CBDC: the ten plain arms */
+#define PUFO_STATUS_CTL_Y_RESEARCH   0xB9 /* 0x8d7xx: '%' */
+#define PUFO_STATUS_CTL_PARKED       1000 /* 0x8D3D0: the confirm/apply park value */
+#define PUFO_STATUS_FLAG_MIN         0x1F /* 0x8C798: CMP #0x1E / BLE sends 0x1E and below away */
+#define PUFO_STATUS_FLAG_MAX         0x31 /* 0x8C7AC: CMP #0x32 / BGE sends 0x32 and above away */
+#define PUFO_STATUS_TEXT_OK          1193 /* 0xEF425 "OK", the footer's left label */
+#define PUFO_STATUS_TEXT_OK_RIGHT    1194 /* 0xEF4F2 "OKмдл", the footer's right label */
+#define PUFO_STATUS_TEXT_STORAGE     1191 /* 0xEF28B "Нет места в хранилищах" No room in storage */
+#define PUFO_STATUS_TEXT_PRODUCTION  1192 /* 0xEF358 "Ост. производство" Remaining production */
+#define PUFO_STATUS_TEXT_MATERIALS   1195 /* 0xEF5BF "Нет специальных материалов" */
+#define PUFO_STATUS_TEXT_DONE        1196 /* 0xEF68C "Выполнено" Completed, shared by '"' and '&' */
+#define PUFO_STATUS_TEXT_MONEY       1197 /* 0xEF759 "Нет денег для производства" */
+#define PUFO_STATUS_TEXT_NOWHERE     1198 /* 0xEF826 "Некуда поместить пришельца" */
+#define PUFO_STATUS_TEXT_DIED        1199 /* 0xEF8F3 "Несколько пришельцев погибло" */
+#define PUFO_STATUS_TEXT_RESEARCH_DONE 1200 /* 0xEF9C0 "Исследование завершено" */
+#define PUFO_STATUS_TEXT_REPORT      1201 /* 0xEFA8D "Отчет" Report */
+#define PUFO_STATUS_TEXT_RESEARCH_NEW 1202 /* 0xEFB5A "Доступны ноые исследования: " (sic) */
+#define PUFO_STATUS_TEXT_RESEARCH    1203 /* 0xEFC27 "Исследование" */
+#define PUFO_STATUS_TEXT_EQUIP_CREW  1204 /* 0xEFCF4 "Нет оборуд. для снаряж. команды" */
+#define PUFO_STATUS_TEXT_EQUIP_CRAFT 1205 /* 0xEFDC1 "Нет оборуд. для снаряж. корабля" */
+#define PUFO_STATUS_TEXT_ARRIVED     1206 /* 0xEFE8E "Прибыли новые вещи или персонал" */
+#define PUFO_STATUS_TEXT_STORAGE2    1207 /* 0xEFF5B "Нет места в хранилищах", as 1191 */
+#define PUFO_STATUS_TEXT_ELERIUM     1208 /* 0xF0028 "Нет элериума для заправки" */
+#define PUFO_STATUS_TEXT_DESTROYED   1209 /* 0xF00F5 "Корабль уничтожен" */
+
+/* BaseFacStatusEnv and ResearchTopicLive live in game/pufo_baseui.h, which includes this header,
+ * so they stay incomplete here and are only dereferenced in the .c. */
+typedef struct GeoscapeStatusPanelEnv {
+    struct BaseFacStatusEnv *pFac;            /* the BuildStatusMsg call at 0x8C82C, wired by the caller */
+    UiLineList        *pLines;            /* the root message list @ 0x158890 */
+    const char        *pTextRecs;         /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE */
+    UiAnimBlitEnv     *pAnim;             /* the geoscape anim root @ 0x1864F8 */
+    GfxColorEnv       *pColor;            /* Gfx_PackRgb565Pair's gamma and fade pair */
+    UiControl         *pCtlSfx;           /* *unk_18704C, the left bottom control */
+    UiControl         *pCtlOpen;          /* *unk_187024, the right bottom control */
+    UiControl         *pCtlConfirm;       /* *pGeoscapeCtlConfirm @ 0x186BA4, '%' only */
+    UiControl         *pCtlApply;         /* *pGeoscapeCtlApply @ 0x186BAC, '%' only */
+    UiPanel           *pStatusPanel;      /* pStatusPanel @ 0x18641C, the default arm's panel */
+    const u8          *pbMultiSelectPanel;/* byte_18709C[4] @ 0x1870A0, the default arm's gate */
+    void             (*pfnCtlSfx)(void);        /* Geoscape_PrepScreenOpenSfx @ 0x852b8 */
+    void             (*pfnCtlOpen)(void);       /* Geoscape_PrepScreenOpen @ 0x85194 */
+    void             (*pfnConfirmReport)(void); /* Ui_OpenBaseInfoAlt @ 0x84d18 */
+    void             (*pfnApplyResearch)(void); /* Ui_OpenResearch @ 0x84bf8 */
+    UiControlBlitFn    pfnCtlBlit;
+    UiControlBlitFn    pfnCtlBlitEx;
+    void              *pCtlBlitUser;
+    struct ResearchTopicLive *aTopics;    /* aResearchTopics @ 0x15EF08, '%' walk */
+    u8                *abResearchActive;  /* byte_160BBC, 144 bytes, read AND written by '%' */
+    const u8          *pbFinishedTopic;   /* nResearchFinishedTopic @ 0x15EEF8 */
+    const i32         *pnShownTopic;      /* nResearchTopicShown @ 0x160C60 */
+} GeoscapeStatusPanelEnv;
+
+void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

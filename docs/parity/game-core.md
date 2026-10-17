@@ -17452,3 +17452,101 @@ BaseFacScreen_DrawBuildDialog, SoldierScreen_Draw, BasePlaneScreen_Draw, BuySell
 TransferScreen_Draw, BaseInfoScreen_Draw, ResearchScreen_Draw, ManufScreen_DrawFrame,
 Ui_DrawBaseInfo, PsiScreen_Draw, Geoscape_DrawScreen, FundingScreen_Draw,
 FundingScreen_DrawExtended, BaseAtScreen_Draw).
+
+Unit 107 part 2 -- the 13-arm status panel, Geoscape_DrawStatusPanel @ 0x8C760..0x8E658
+
+Ported in src/pufo/game/pufo_geoscape.c as Geoscape_DrawStatusPanel with the helpers
+StatusPanel_DrawAt, StatusPanel_CopyRec, StatusPanel_PackColour, StatusPanel_Anim,
+StatusPanel_SetControls, StatusPanel_DrawFooter, StatusPanel_DrawDefault and
+StatusPanel_DrawResearch. The contract, the env and every constant are in pufo_geoscape.h.
+
+Head, 0x8C760..0x8C780: Gfx_PackRgb565Pair(0xDC, 0x50, 0x50 | R5, 0x1E, 0x1E). The second red is
+R5, still the crosshair index 50 left over from 0x8C6A0 -- the panel never re-sets it.
+
+Gates, 0x8C78C..0x8C7B0 and 0x8C838: UiLineList_GetFlag on line 0 of the root message list
+@ 0x158890 is read TWICE -- once for the range test (CMP #0x1E / BLE at 0x8C798 and CMP #0x32 /
+BGE at 0x8C7AC, both to the default arm at 0x8E5A4) and once again at 0x8C838 for the switch
+(SUB R0, #0x20 / CMP #0xC / ADDLS PC at 0x8C844). So 0x1F..0x31 reach the switch and 0x1F and 0x31
+fall off its far side into the same default arm.
+
+BuildStatusMsg argument mapping, CORRECTED in the IDB comment at 0x8C82C. The callee
+(BaseFac_BuildStatusMsg @ 0x6A4BC, 1,520 B) has exactly ONE stack argument, a5 at its entry SP+0:
+a1 = R7 = abFacilityGrid (0x8C790); a2 = R1 = the flag byte sign-extended from a byte (0x8C818,
+0x8C824); a3 = R2 = R5 = line 0 colour SLOT 0 (read at 0x8C7FC, kept at 0x8C804); a4 = R3 = R8 =
+SLOT 1 (read at 0x8C7E8, kept at 0x8C7F0); a5 = R10 = SLOT 2 (read at 0x8C7D4, stored at 0x8C81C
+into the caller's SP+0, which is the callee's a5). SLOT 3 (read at 0x8C7C0 into R11) is stored at
+0x8C814 into SP+4 and is never read. The old comment had a4/a5 on slots 0/1 and called slot 2 the
+facility index; the callee's own prototype names agree with the corrected mapping (nBaseIdx,
+nRowOrIdx, nColOrIdx).
+
+The arm table. Every arm: Ui_AnimExpandBlit_IfEnabled(0, 0x6E, 0xEC, nH, 1), the 124 line, the
+138 line where listed, its own TEXTS record at 152, the footer pair at 1193 on x=28 and 1194 on
+x=209, and the two controls at x 9 / 0xBE. "early" marks the four arms that pack the status pair
+(0x44,0xF4,0xFC | 4,0x46,0x4B) before their main lines; the rest draw their main lines in the
+head pair and pack the status pair only for the footer.
+
+  flag  nH    124 line        138 line   own rec  early  ctl y  foot y
+  ' '   0x68  pszMsg          yes        1191 + 1192 at 166   no   0xBD   0xC0
+  '!'   0x5A  pszMsg          yes        1195     no    0xAF   0xB2
+  '"'   0x5A  pszMsg          yes        1196     yes   0xAF   0xB2
+  '#'   0x5A  pszMsg          yes        1197     no    0xAF   0xB2
+  '$'   0x68  pszMsg          no         1198 + 1199 at 166   no   0xBD   0xC0
+  '&'   0x5A  pszMsg          yes        1196     yes   0xAF   0xB2
+  '\''  0x5A  unk_186420      yes (szScratch186488) 1204  no  0xAF  0xB2
+  '('   0x5A  szScratch186488 no         1205     no    0xAF   0xB2
+  ')'   0x5A  pszMsg          no         1206     yes   0xAF   0xB2
+  '*'   0x5A  pszMsg          no         1207     no    0xAF   0xB2
+  '+'   0x5A  pszMsg          yes        1208     no    0xAF   0xB2
+  ','   0x5A  unk_186420      no         1209     no    0xAF   0xB2
+
+The '%' arm (0x8D2F4..0x8D758) is the research arm and is laid out differently: anim at
+(0, 0x14) 0xEC x 0xBE, TEXTS[1200] at 26, pszMsg at 44, then the confirm control -- parked to
+(1000, 1000) at 0x8D3DC/0x8D3E4 and armed on the report row 75 only when
+anUfopaediaEntryNum[nResearchTopicShown] != 0 (0x8D400's BEQ skips the arming, its
+UiControl_BlitActivePad at 0x8D430 AND the TEXTS[1201] label at 75 together). The gate is the
+ufopaedia entry of the SHOWN topic, not the walk below: with nothing to research the report
+control and label are still there. Then the walk over aResearchTopics[nResearchFinishedTopic]
+.abActivateTopics: for each non-zero id below 144 whose byte_160BBC[id] < 2 it draws TEXTS[1202]
+at 111, the topic's own name (wGate4) at 127 + 14*k, and sets byte_160BBC[id] = 1. The apply
+control is parked to 1000 at 0x8D634/0x8D63C and armed at 142 + 14*k only when the walk drew
+something, where k is the counter the walk left (dword_186B08 read as a signed halfword at
+0x8D664). Controls at 0xB9, footer at 0xBC.
+
+The default arm (0x8E5A4): packs the status pair at 0x8E5CC, then 0x8E5E0's BEQ on
+byte_18709C[4] (LDRB of bInterceptDone+4) clear skips BOTH Ui_AnimExpandBlit at 0x8E64C AND
+UiPanelMsg_Draw at 0x8E654 -- it paints nothing at all but still leaves the status pair in
+palette slot 2. With the byte set: Ui_AnimExpandBlit(x 0xE, y nPosY - 6, 0xD0 x
+nFont * nLineCount + 6, idx 0, src 0x28/0x32, key 0xB4, mode 0) and UiPanelMsg_Draw.
+
+The labels, dumped from lang.dat (TEXTS.DAT off=256 size=330002, 1650 records of 200 bytes after
+a 2-byte header; in-memory address 0xB38D0 + 205 * i):
+
+  1191 0xEF28B Нет места в хранилищах        1201 0xEFA8D Отчет
+  1192 0xEF358 Ост. производство             1202 0xEFB5A Доступны ноые исследования:  (sic)
+  1193 0xEF425 OK                            1203 0xEFC27 Исследование
+  1194 0xEF4F2 OKмдл                         1204 0xEFCF4 Нет оборуд. для снаряж. команды
+  1195 0xEF5BF Нет специальных материалов    1205 0xEFDC1 Нет оборуд. для снаряж. корабля
+  1196 0xEF68C Выполнено                     1206 0xEFE8E Прибыли новые вещи или персонал
+  1197 0xEF759 Нет денег для производства    1207 0xEFF5B Нет места в хранилищах (as 1191)
+  1198 0xEF826 Некуда поместить пришельца    1208 0xF0028 Нет элериума для заправки
+  1199 0xEF8F3 Несколько пришельцев погибло  1209 0xF00F5 Корабль уничтожен
+  1200 0xEF9C0 Исследование завершено
+
+1191 and 1207 are the same text reached through two records; 1196 is shared by '"' and '&'.
+
+Deviations recorded: the port keeps the walk counter in a local instead of the spilled
+dword_186B08 (the convention already noted for the other dword_186B08 users); the original's
+var_1A4 draw flag is read before any arm writes it on the no-walk path and the port treats it as
+false; the topic walk is bounded by the array size and by PUFO_RESEARCH_TOPIC_COUNT where the
+original reads on; and every global the panel touches is passed through GeoscapeStatusPanelEnv.
+
+Tests: 593 new checks in test_geoscape -- the panel runs twice per case with every text source
+emptied and then filled, so the differing pixels are exactly the glyphs and their rows, centring
+anchors and ink are read off the surface; the anim frame is identical in both runs and is measured
+against the zeroed surface instead. 12 mutations, 12 caught. Eight of them now fail the build
+through the _Static_assert pins in the test that hold the geometry constants to the ARM
+immediates -- without those pins a constant change moves the code and the expectation together and
+no test notices, which is exactly how the first sweep survived six.
+
+IDB: 3 comments written -- 0x8C82C (the argument mapping, correcting the old text), 0x8E5E0 (the
+default arm skips both calls) and 0x8D400 (the confirm gate is the ufopaedia entry, not the walk).

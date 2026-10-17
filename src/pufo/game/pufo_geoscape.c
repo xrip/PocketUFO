@@ -4350,3 +4350,304 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
     Text_DrawString(120 - nWidth / 2, nLabelY, szText);                 /* 0x67B08, both arms land here */
     return nTile;                                                        /* 0x67B0C, the caller's bPendingRegionId */
 }
+
+/* --- Geoscape_Draw @ 0x8c180 status panel (0x8C760..0x8E658) ------------------------ */
+
+/* The panel's own centring: the main column anchors on 120, the footer's two labels on 28 and
+ * 209 (0x8CA8C `RSB R1,R1,#0x1C`, 0x8E3D8 `RSB R1,R1,#0xD1`). */
+static void StatusPanel_DrawAt(i32 nCentreX, i32 nY, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz);
+
+    Text_DrawString(nCentreX - nWidth / 2, nY, psz);
+}
+
+static void StatusPanel_CopyRec(const GeoscapeStatusPanelEnv *pEnv, char *pszDst, i32 nRec)
+{
+    DrawScreen_CopyTextRec(pszDst, PUFO_TEXT_REC_STRIDE,
+                           pEnv->pTextRecs + (size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec);
+}
+
+/* 0x44,0xF4,0xFC / 4,0x46,0x4B: the status pair every arm packs at least once. */
+static void StatusPanel_PackColour(const GeoscapeStatusPanelEnv *pEnv)
+{
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0x44, 0xF4, 0xFC, 4, 0x46, 0x4B);
+}
+
+static void StatusPanel_Anim(const GeoscapeStatusPanelEnv *pEnv, i32 nY, i32 nH)
+{
+    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 0, nY, PUFO_STATUS_ANIM_W, nH, 1);
+}
+
+/* The two bottom controls: x is fixed per control, y per arm, then both are blitted. */
+static void StatusPanel_SetControls(const GeoscapeStatusPanelEnv *pEnv, i32 nCtlY)
+{
+    UiControl *const pSfx = pEnv->pCtlSfx;
+    UiControl *const pOpen = pEnv->pCtlOpen;
+
+    pSfx->x = (i16)PUFO_STATUS_CTL_X_SFX;                              /* 0x8C9C8 */
+    pSfx->y = (i16)nCtlY;                                              /* 0x8C9D8 */
+    pSfx->pfnClick = pEnv->pfnCtlSfx;                                  /* 0x8C9E0 */
+    pOpen->x = (i16)PUFO_STATUS_CTL_X_OPEN;                            /* 0x8C9EC */
+    pOpen->y = (i16)nCtlY;                                             /* 0x8C9F8 */
+    pOpen->pfnClick = pEnv->pfnCtlOpen;                                /* 0x8CA04 */
+    (void)UiControl_BlitActivePad(pSfx, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                /* 0x8CA0C */
+    (void)UiControl_BlitActivePad(pOpen, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                /* 0x8CA14 */
+}
+
+/* The shared footer: TEXTS[1193] "OK" centred on 28, TEXTS[1194] centred on 209, both at the
+ * arm's footer y. The colour pack is NOT here -- every arm runs one before this point, and
+ * '"', '&', ')' and '%' run an extra one before their main lines. Arms '\'' and '(' copy 1193
+ * before that pack, which is not observable. */
+static void StatusPanel_DrawFooter(const GeoscapeStatusPanelEnv *pEnv, char *psz, i32 nFootY)
+{
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_OK);
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_LEFT, nFootY, psz);
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_OK_RIGHT);
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_RIGHT, nFootY, psz);
+}
+
+/* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
+ * byte_18709C[4] draws nothing at all -- the frame and the panel text go together. */
+static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv)
+{
+    StatusPanel_PackColour(pEnv);                                      /* 0x8E5CC */
+    if (pEnv->pbMultiSelectPanel == NULL || *pEnv->pbMultiSelectPanel == 0
+        || pEnv->pStatusPanel == NULL) {
+        return;
+    }
+    const UiPanel *const pPanel = pEnv->pStatusPanel;
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, pPanel->nPosY - 6,       /* 0x8E62C: panel[0x1B88] - 6 */
+                            0xD0, pPanel->nFont * pPanel->nLineCount + 6, /* 0x8E628: panel[0x1B9C] * panel[0xBDC] */
+                            0, 0x28, 0x32, 0xB4, 0);                   /* 0x8E5E4..0x8E608 */
+    UiPanel_DrawText(pEnv->pStatusPanel);                              /* 0x8E654 */
+}
+
+/* 0x8D2F4..0x8D838: the '%' arm, the research panel. */
+static void StatusPanel_DrawResearch(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y_RESEARCH, PUFO_STATUS_ANIM_H_RESEARCH);
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_RESEARCH_DONE);
+    StatusPanel_PackColour(pEnv);                                      /* 0x8D36C: before the lines */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_RESEARCH_TITLE, psz);
+    DrawScreen_DrawCentered(PUFO_STATUS_Y_RESEARCH_MSG, pEnv->pFac->pszMsg);
+
+    UiControl *const pConfirm = pEnv->pCtlConfirm;
+    pConfirm->x = (i16)PUFO_STATUS_CTL_PARKED;                         /* 0x8D3DC */
+    pConfirm->y = (i16)PUFO_STATUS_CTL_PARKED;                         /* 0x8D3E4 */
+    if (g_anUfopaediaEntryNum[*pEnv->pnShownTopic] != 0) {            /* 0x8D3F8 */
+        pConfirm->x = (i16)(PUFO_STATUS_TEXT_X_CENTRE - (pConfirm->uWidth >> 1)); /* 0x8D40C */
+        pConfirm->y = (i16)PUFO_STATUS_Y_RESEARCH_REPORT;             /* 0x8D420 */
+        pConfirm->pfnClick = pEnv->pfnConfirmReport;                  /* 0x8D428 */
+        (void)UiControl_BlitActivePad(pConfirm, pEnv->pfnCtlBlit,
+                                      pEnv->pfnCtlBlitEx, pEnv->pCtlBlitUser); /* 0x8D430 */
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_REPORT);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_RESEARCH_REPORT, psz);  /* 0x8D484 */
+    }
+
+    /* 0x8D488..0x8D620: the finished-topic walk. The counter is the spilled global dword_186B08
+     * in the original; the port keeps it local, like every other dword_186B08 user. */
+    const struct ResearchTopicLive *const pTopic = &pEnv->aTopics[*pEnv->pbFinishedTopic];
+    i32 nRow = 0;
+    bool bDrawn = false;
+    while (nRow < (i32)(sizeof(pTopic->abActivateTopics) / sizeof(pTopic->abActivateTopics[0]))
+           && pTopic->abActivateTopics[nRow] != 0) {
+        const u8 nTopicId = pTopic->abActivateTopics[nRow];
+        if (nTopicId < PUFO_RESEARCH_TOPIC_COUNT && pEnv->abResearchActive[nTopicId] < 2) {
+            StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_RESEARCH_NEW);
+            bDrawn = true;                                            /* var_1A4, 0x8D4DC */
+            DrawScreen_DrawCentered(PUFO_STATUS_Y_RESEARCH_HEAD, psz); /* 0x8D528 */
+            StatusPanel_CopyRec(pEnv, psz, pEnv->aTopics[nTopicId].wGate4);
+            StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE,
+                               PUFO_STATUS_Y_RESEARCH_ROW
+                                   + PUFO_STATUS_RESEARCH_ROW_STEP * nRow, psz); /* 0x8D5DC */
+            pEnv->abResearchActive[nTopicId] = 1;                     /* 0x8D600 */
+        }
+        ++nRow;
+    }
+
+    UiControl *const pApply = pEnv->pCtlApply;
+    pApply->x = (i16)PUFO_STATUS_CTL_PARKED;                          /* 0x8D634 */
+    pApply->y = (i16)PUFO_STATUS_CTL_PARKED;                          /* 0x8D63C */
+    if (bDrawn) {
+        const i32 nApplyY = PUFO_STATUS_Y_RESEARCH_APPLY
+                            + PUFO_STATUS_RESEARCH_ROW_STEP * nRow;
+        pConfirm->x = (i16)(PUFO_STATUS_TEXT_X_CENTRE - (pConfirm->uWidth >> 1)); /* 0x8D654 */
+        pApply->y = (i16)nApplyY;                                     /* 0x8D674 */
+        pApply->pfnClick = pEnv->pfnApplyResearch;                    /* 0x8D680 */
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_RESEARCH);
+        (void)UiControl_BlitActivePad(pApply, pEnv->pfnCtlBlit,
+                                      pEnv->pfnCtlBlitEx, pEnv->pCtlBlitUser); /* 0x8D6B0 */
+        StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, nApplyY, psz);  /* 0x8D6EC */
+    }
+
+    StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_RESEARCH);        /* 0x8D6F0..0x8D758 */
+    StatusPanel_PackColour(pEnv);
+    StatusPanel_DrawFooter(pEnv, psz, PUFO_STATUS_Y_FOOT_RESEARCH);
+}
+
+void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv)
+{
+    char szText[PUFO_TEXT_REC_STRIDE];                                /* the original's psz */
+
+    if (pEnv == NULL || pEnv->pFac == NULL || pEnv->pLines == NULL || pEnv->pTextRecs == NULL
+        || pEnv->pAnim == NULL || pEnv->pColor == NULL || pEnv->pCtlSfx == NULL
+        || pEnv->pCtlOpen == NULL) {
+        return;
+    }
+
+    /* 0x8C760: the head pair. Its second red is R5, still the crosshair's 50 from 0x8C6A0. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 0xDC, 0x50, 0x50,
+                             PUFO_SMAP_CROSSHAIR_INDEX, 0x1E, 0x1E);
+
+    const u8 nFlag = UiLineList_GetFlag(pEnv->pLines, 0);             /* 0x8C78C, read 4x */
+    if (nFlag < PUFO_STATUS_FLAG_MIN || nFlag > PUFO_STATUS_FLAG_MAX) {
+        StatusPanel_DrawDefault(pEnv);
+        return;
+    }
+
+    /* 0x8C7C0..0x8C804: line 0's colour dwords, read slot 3,2,1,0. Slot 3 is pushed at 0x8C814
+     * and BaseFac_BuildStatusMsg never reads it. */
+    (void)UiLineList_GetColor(pEnv->pLines, 0, 3);
+    const u32 uCol2 = UiLineList_GetColor(pEnv->pLines, 0, 2);
+    const u32 uCol1 = UiLineList_GetColor(pEnv->pLines, 0, 1);
+    const u32 uCol0 = UiLineList_GetColor(pEnv->pLines, 0, 0);
+
+    (void)BaseFac_BuildStatusMsg(pEnv->pFac, (i32)nFlag, (i32)uCol0, (i32)uCol1, (i32)uCol2);
+
+    switch (nFlag) {
+    case ' ':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_TALL);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_STORAGE);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8C8FC */
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_PRODUCTION);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT2, szText);         /* 0x8C954 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8C984 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_EXTRA, pEnv->pFac->pszExtra); /* 0x8C9B4 */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_TALL);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8CA40 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_TALL);
+        break;
+
+    case '!':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_MATERIALS);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8CB68 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_EXTRA, pEnv->pFac->pszExtra); /* 0x8CB98 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8CBC4 */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8CC50 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case '"':
+    case '&':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_DONE);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8CD50 / 0x8D8B0 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_EXTRA, pEnv->pFac->pszExtra);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8CE5C / 0x8D9BC */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case '#':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_MONEY);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8CF5C */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_EXTRA, pEnv->pFac->pszExtra); /* 0x8CF8C */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8CFB8 */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8D044 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case '$':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_TALL);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_NOWHERE);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8D144 */
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_DIED);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT2, szText);         /* 0x8D19C */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8D1CC -- no 138 line */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_TALL);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8D258 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_TALL);
+        break;
+
+    case '%':
+        StatusPanel_DrawResearch(pEnv, szText);
+        break;
+
+    case '\'':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_EQUIP_CREW);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszExtra);   /* 0x8DAC0 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_EXTRA, pEnv->pFac->pszScratch); /* 0x8DAEC */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8DB18 */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8DBCC */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case '(':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_EQUIP_CRAFT);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8DCC8 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_EXTRA, pEnv->pFac->pszScratch); /* 0x8DCF4 */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8DD20 */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8DDD4 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case ')':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_ARRIVED);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8DEAC */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8DEDC */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8DF08 -- no 138 line */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8DF88 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case '*':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_STORAGE2);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8E08C */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8E0B8 -- no 138 line */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8E144 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case '+':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_ELERIUM);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszMsg);   /* 0x8E24C */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_EXTRA, pEnv->pFac->pszExtra); /* 0x8E27C */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8E2A8 */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8E334 */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    case ',':
+        StatusPanel_Anim(pEnv, PUFO_STATUS_ANIM_Y, PUFO_STATUS_ANIM_H_STD);
+        StatusPanel_CopyRec(pEnv, szText, PUFO_STATUS_TEXT_DESTROYED);
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_MSG, pEnv->pFac->pszExtra); /* 0x8E464 -- pszExtra, not pszMsg */
+        DrawScreen_DrawCentered(PUFO_STATUS_Y_TEXT, szText);          /* 0x8E490 */
+        StatusPanel_SetControls(pEnv, PUFO_STATUS_CTL_Y_STD);
+        StatusPanel_PackColour(pEnv);                                 /* 0x8E51C */
+        StatusPanel_DrawFooter(pEnv, szText, PUFO_STATUS_Y_FOOT_STD);
+        break;
+
+    default:
+        StatusPanel_DrawDefault(pEnv);
+        break;
+    }
+}

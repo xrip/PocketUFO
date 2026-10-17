@@ -23,6 +23,7 @@
 #include "ui/pufo_geouimanage.h" /* PUFO_GEOUI_CLOCK_DIGIT_PADS, the ten clock pads at 0x186BF0 */
 #include "ui/pufo_linelist.h"
 #include "util/pufo_rand.h"
+#include "util/pufo_str.h"    /* pufo_strncpy, the fixture's bounded copies */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8517,6 +8518,633 @@ static void TestGlobeHover(void)
     g_dsTexts = NULL;
 }
 
+/* ---- Geoscape_DrawStatusPanel @ 0x8c760..0x8e658 ------------------------------------
+ *
+ * The panel is tested as a frame. The fixture runs it once with every text source emptied and
+ * once with them filled; the pixels that differ are exactly the glyphs, so their rows, their
+ * centring anchors and their colour are read straight off the surface. The expected rows and
+ * anchors are the ARM's, listed in pufo_geoscape.h.
+ */
+#define PN_TEXT_MAX 1344 /* the highest record the panel or BuildStatusMsg reaches */
+#define PN_BAND     12   /* a row's search window below its y; rows are at least 14 apart */
+#define PN_GLYPH_DY  2   /* Text_DrawString puts the ink PN_GLYPH_DY + 1 below the y it is given */
+
+/* The panel geometry constants, pinned to the immediates read off the ARM. The frame tests below
+ * compare against the same names the implementation uses, so without these pins a change to a
+ * constant would move the expectation and the code together and no test would notice. */
+_Static_assert(PUFO_STATUS_TEXT_X_CENTRE == 120, "0x8C8F0 RSB R1, R1, #0x78");
+_Static_assert(PUFO_STATUS_TEXT_X_LEFT == 28, "0x8E3C4-side footer label");
+_Static_assert(PUFO_STATUS_TEXT_X_RIGHT == 0xD1, "0x8E3D8 RSB R1, R1, #0xD1");
+_Static_assert(PUFO_STATUS_ANIM_Y == 0x6E, "0x8C894 MOV R2, #0x6E");
+_Static_assert(PUFO_STATUS_ANIM_W == 0xEC, "0x8C898 MOV R3, #0xEC");
+_Static_assert(PUFO_STATUS_ANIM_H_TALL == 0x68, "0x8C888 MOV R3, #0x68");
+_Static_assert(PUFO_STATUS_ANIM_H_STD == 0x5A, "0x8E3E8 MOV R3, #0x5A");
+_Static_assert(PUFO_STATUS_ANIM_Y_RESEARCH == 0x14, "the '%' arm's anim y");
+_Static_assert(PUFO_STATUS_ANIM_H_RESEARCH == 0xBE, "the '%' arm's anim height");
+_Static_assert(PUFO_STATUS_Y_MSG == 0x7C, "0x8E458 MOV R2, #0x7C");
+_Static_assert(PUFO_STATUS_Y_EXTRA == 0x8A, "0x8C9A8-side extra line");
+_Static_assert(PUFO_STATUS_Y_TEXT == 0x98, "0x8E484 MOV R2, #0x98");
+_Static_assert(PUFO_STATUS_Y_TEXT2 == 0xA6, "the second record, ' ' and '$' only");
+_Static_assert(PUFO_STATUS_Y_FOOT_STD == 0xB2, "0x8E3C4 MOV R2, #0xB2");
+_Static_assert(PUFO_STATUS_Y_FOOT_TALL == 0xC0, "the ' ' and '$' footer");
+_Static_assert(PUFO_STATUS_Y_FOOT_RESEARCH == 0xBC, "the '%' footer");
+_Static_assert(PUFO_STATUS_Y_RESEARCH_TITLE == 0x1A, "the '%' title line");
+_Static_assert(PUFO_STATUS_Y_RESEARCH_MSG == 0x2C, "the '%' pszMsg line");
+_Static_assert(PUFO_STATUS_Y_RESEARCH_REPORT == 0x4B, "0x8D478-side report line, R8 = 0x4B");
+_Static_assert(PUFO_STATUS_Y_RESEARCH_HEAD == 0x6F, "0x8D51C TEXTS[1202]");
+_Static_assert(PUFO_STATUS_Y_RESEARCH_ROW == 0x7F, "0x8D5D0 ADD R2, R2, #0x7F");
+_Static_assert(PUFO_STATUS_Y_RESEARCH_APPLY == 0x8E, "0x8D670 / 0x8D6E0 ADD R3, R2, #0x8E");
+_Static_assert(PUFO_STATUS_RESEARCH_ROW_STEP == 14, "0x8D6C4 MOV R2, #0xE");
+_Static_assert(PUFO_STATUS_CTL_X_SFX == 9, "0x8D6F4 MOV R3, #9");
+_Static_assert(PUFO_STATUS_CTL_X_OPEN == 0xBE, "0x8D71C MOV R3, #0xBE");
+_Static_assert(PUFO_STATUS_CTL_Y_TALL == 0xBD, "the ' ' and '$' control row");
+_Static_assert(PUFO_STATUS_CTL_Y_STD == 0xAF, "0x8E4A8 MOV R0, #0xAF");
+_Static_assert(PUFO_STATUS_CTL_Y_RESEARCH == 0xB9, "0x8D6F8 MOV R2, #0xB9");
+_Static_assert(PUFO_STATUS_CTL_PARKED == 1000, "0x8D3D0 MOV R11, #0x3E8");
+_Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
+_Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
+
+static char   g_abPnText[PN_TEXT_MAX * PUFO_TEXT_REC_STRIDE];
+static u16    g_aPnBase[BD_SURF_W * BD_SURF_H];
+static char   g_szPnMsg[108], g_szPnExtra[108], g_szPnScratch[108];
+static UiLineList g_pnLines;
+static UiControl g_pnCtlSfx, g_pnCtlOpen, g_pnCtlConfirm, g_pnCtlApply;
+static UiPanel  g_pnPanel;
+static char     g_szPnPanelLine[64];
+static u8       g_bPnMulti;
+static u8       g_bPnAnimStarted;
+static i8       g_nPnAnimProgress;
+static UiAnimBlitEnv g_pnAnim;
+static GfxColorEnv g_pnColor;
+static ResearchTopicLive g_pnTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static u8       g_abPnActive[PUFO_RESEARCH_TOPIC_COUNT];
+static u8       g_nPnFinished;
+static i32      g_nPnShown;
+static BaseFacStatusEnv g_pnFac;
+static GeoscapeStatusPanelEnv g_pnEnv;
+static i32      g_nPnBlits;
+static PadImage g_aPnPads[4];
+static i32      g_nPnSfxClicks, g_nPnOpenClicks, g_nPnReportClicks, g_nPnApplyClicks;
+static bool     g_bPnReady;
+static BaseSiteRec g_pnSites[8];
+static ObjectRecFull g_pnObj;
+static ObjectRecFull *g_apPnObj[1];
+static BaseFacFlag g_pnFlags[PUFO_BASEFAC_COUNT];
+static Ship     g_pnCraft;
+static Ship    *g_apPnCraft[1];
+static u8       g_abPnGrid[PUFO_GRID_SIZE];
+static GameTime g_pnTime;
+static u16      g_uPnInkHead, g_uPnInkStatus;
+
+static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
+    { 1191, "A" }, { 1192, "B" }, { 1193, "C" }, { 1194, "D" }, { 1195, "E" },
+    { 1196, "F" }, { 1197, "G" }, { 1198, "H" }, { 1199, "I" }, { 1200, "J" },
+    { 1201, "K" }, { 1202, "L" }, { 1203, "M" }, { 1204, "N" }, { 1205, "O" },
+    { 1206, "P" }, { 1207, "Q" }, { 1208, "R" }, { 1209, "S" },
+    { 1334, "a" }, { 1339, "b" }, { 1340, "c" }, { 1341, "d" }, { 1342, "e" }, { 1343, "f" },
+    { 1300, "T" }, { 1301, "U" },
+};
+
+static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
+
+static void PnBlit(const PadImage *pPad, void *pUser) { (void)pPad; (void)pUser; ++g_nPnBlits; }
+static void PnBlitEx(const PadImage *pPad, void *pUser) { (void)pPad; (void)pUser; }
+static void PnClickSfx(void)    { ++g_nPnSfxClicks; }
+static void PnClickOpen(void)   { ++g_nPnOpenClicks; }
+static void PnClickReport(void) { ++g_nPnReportClicks; }
+static void PnClickApply(void)  { ++g_nPnApplyClicks; }
+
+static void PnSetText(i32 nRec, const char *psz)
+{
+    pufo_strncpy(&g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec], psz,
+                 PUFO_TEXT_REC_STRIDE);
+}
+
+/* Every string the panel can draw, emptied. */
+static void PnEmptySources(void)
+{
+    memset(g_abPnText, 0, sizeof(g_abPnText));
+    g_pnSites[0].abName[0] = 0;
+    g_pnObj.szName[0] = 0;
+    for (i32 i = 0; i < PUFO_BASEFAC_COUNT; ++i) {
+        g_pnFlags[i].szName[0] = 0;
+    }
+    g_szPnMsg[0] = g_szPnExtra[0] = g_szPnScratch[0] = 0;
+}
+
+static void PnFillSources(void)
+{
+    for (size_t i = 0; i < sizeof(g_aPnRecs) / sizeof(g_aPnRecs[0]); ++i) {
+        PnSetText(g_aPnRecs[i].nRec, g_aPnRecs[i].psz);
+    }
+    pufo_strncpy(g_pnSites[0].abName, "1", sizeof(g_pnSites[0].abName));
+    pufo_strncpy(g_pnObj.szName, "2", sizeof(g_pnObj.szName));
+    for (i32 i = 0; i < PUFO_BASEFAC_COUNT; ++i) {
+        pufo_strncpy(g_pnFlags[i].szName, "3", sizeof(g_pnFlags[i].szName));
+    }
+    pufo_strncpy(g_szPnScratch, "4", sizeof(g_szPnScratch));
+}
+
+static void PnRun(void)
+{
+    g_bPnAnimStarted = 0;   /* both runs of a pair must paint the same panel frame */
+    g_nPnAnimProgress = 0;
+    g_nPnBlits = 0;
+    memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
+    Geoscape_DrawStatusPanel(&g_pnEnv);
+}
+
+/* The baseline (every source empty) then the real frame. */
+static void PnCapture(void)
+{
+    PnEmptySources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    PnFillSources();
+    PnRun();
+}
+
+/* The same baseline, but the second run has ONE text record missing: the rows that vanish are
+ * exactly the rows that record feeds. */
+static void PnCaptureMissing(i32 nRec)
+{
+    PnEmptySources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    PnFillSources();
+    g_abPnText[(size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec] = 0;
+    PnRun();
+}
+
+typedef struct PnDiff {
+    i32 nCount;
+    i32 nMinX, nMaxX;
+    i32 nMinY, nMaxY;
+    u16 uInk;
+} PnDiff;
+
+static PnDiff PnDiffRect(i32 x0, i32 y0, i32 x1, i32 y1)
+{
+    PnDiff d;
+    u16 aSeen[8];
+    i32 aCnt[8];
+    i32 nCols = 0;
+
+    d.nCount = 0;
+    d.nMinX = BD_SURF_W; d.nMaxX = -1;
+    d.nMinY = BD_SURF_H; d.nMaxY = -1;
+    d.uInk = 0;
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            const u16 uNow  = (u16)BdPix(x, y);
+            const u16 uBase = g_aPnBase[y * BD_SURF_W + x];
+            if (uNow == uBase) {
+                continue;
+            }
+            ++d.nCount;
+            if (x < d.nMinX) d.nMinX = x;
+            if (x > d.nMaxX) d.nMaxX = x;
+            if (y < d.nMinY) d.nMinY = y;
+            if (y > d.nMaxY) d.nMaxY = y;
+            i32 k;
+            for (k = 0; k < nCols; ++k) {
+                if (aSeen[k] == uNow) { ++aCnt[k]; break; }
+            }
+            if (k == nCols && nCols < 8) { aSeen[k] = uNow; aCnt[k] = 1; ++nCols; }
+        }
+    }
+    i32 nBest = 0;
+    for (i32 k = 0; k < nCols; ++k) {
+        if (aCnt[k] > nBest) { nBest = aCnt[k]; d.uInk = aSeen[k]; }
+    }
+    return d;
+}
+
+/* One expected row. nCentreX is the arm's anchor; bWant says whether the row must be there. */
+static void PnCheckRow(i32 nY, i32 x0, i32 x1, i32 nCentreX, u16 uWantInk, bool bWant,
+                       const char *pszWhat)
+{
+    const PnDiff d = PnDiffRect(x0, nY + PN_GLYPH_DY, x1, nY + PN_BAND);
+
+    if (!bWant) {
+        CheckEqI32(d.nCount, 0, pszWhat);
+        return;
+    }
+    Check(d.nCount > 0, pszWhat);
+    Check(d.nMinY >= nY + PN_GLYPH_DY && d.nMinY <= nY + PN_GLYPH_DY + 4,
+          "the row starts at its own y");
+    Check(d.nMinY >= 0 && d.nMaxY < BD_SURF_H, "and stays on the surface");
+    if (x1 - x0 + 1 > 60) { /* a whole-width band: the anchor is the cluster's own centre */
+        Check(PnAbs((d.nMinX + d.nMaxX) / 2 - nCentreX) <= 3, "the row is centred on its anchor");
+    }
+    CheckEqI32(d.uInk, (i32)uWantInk, "the row is drawn in the colour the arm packed for it");
+}
+
+/* The ink a glyph gets after one colour pack, so the two candidate colours are measurable. */
+static u16 PnReferenceInk(i32 r1, i32 g1, i32 b1, i32 r2, i32 g2, i32 b2)
+{
+    memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
+    (void)Gfx_PackRgb565Pair(&g_pnColor, r1, g1, b1, r2, g2, b2);
+    Text_DrawString(20, 20, "A");
+    u16 aSeen[8];
+    i32 aCnt[8];
+    i32 nCols = 0;
+    for (i32 y = 20; y < 40; ++y) {
+        for (i32 x = 20; x < 60; ++x) {
+            const u16 u = (u16)BdPix(x, y);
+            if (u == 0) {
+                continue;
+            }
+            i32 k;
+            for (k = 0; k < nCols; ++k) {
+                if (aSeen[k] == u) { ++aCnt[k]; break; }
+            }
+            if (k == nCols && nCols < 8) { aSeen[k] = u; aCnt[k] = 1; ++nCols; }
+        }
+    }
+    u16 uBest = 0;
+    i32 nBest = 0;
+    for (i32 k = 0; k < nCols; ++k) {
+        if (aCnt[k] > nBest) { nBest = aCnt[k]; uBest = aSeen[k]; }
+    }
+    return uBest;
+}
+
+static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
+{
+    static const char *const apszArchive[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+
+    if (g_bdSurf.pPixels == NULL) {
+        SoftSurf_ctor(&g_bdSurf);
+        SoftSurf_AllocPixels(&g_bdSurf, BD_SURF_W, BD_SURF_H, PIXMODE_16BPP);
+        g_pMainSurface = &g_bdSurf;
+        Render_SetTarget(BD_SURF_W, BD_SURF_H, 2, 2, BD_SURF_W * 2, g_bdSurf.pPixels);
+    }
+    if (!g_bPnReady) {
+        g_bPnReady = Asset_OpenArchives(apszArchive) != 0;
+        if (g_bPnReady) {
+            FontMetrics_Load();
+            PufoFont_Init(&g_fontSys);
+            g_fontSys.nGlyphBase    = g_fontSys.nTotalSprFrames;
+            (void)Font_LoadSpr(&g_fontSys, "font");
+            g_fontSys.nBaseBitsBase = g_fontSys.nTotalSprFrames;
+            (void)Font_LoadSpr(&g_fontSys, "basebits");
+            Font_BuildIndex(&g_fontSys);
+            g_bPnReady = g_fontMetrics.bLoaded && g_fontSys.apSprIndex != NULL;
+        }
+    }
+
+    memset(g_abPnText, 0, sizeof(g_abPnText));
+    PnFillSources();
+    memset(&g_pnLines, 0, sizeof(g_pnLines));
+    UiLineList_SetLine(&g_pnLines, 0, nFlag, nSlot0, nSlot1, nSlot2, 0x77);
+
+    memset(&g_pnTime, 0, sizeof(g_pnTime));
+    memset(g_abPnGrid, 0, sizeof(g_abPnGrid));
+    memset(g_pnSites, 0, sizeof(g_pnSites));
+    memset(&g_pnObj, 0, sizeof(g_pnObj));
+    memset(g_pnFlags, 0, sizeof(g_pnFlags));
+    memset(&g_pnCraft, 0, sizeof(g_pnCraft));
+    g_pnCraft.bCraftType = (u8)PUFO_CRAFT_TYPE_COUNT; /* out of range: the name comes back empty */
+    g_apPnObj[0]   = &g_pnObj;
+    g_apPnCraft[0] = &g_pnCraft;
+    g_abPnGrid[480] = 0; /* the '&' arm's facility kind for row 18, column 0 */
+
+    memset(g_pnTopics, 0, sizeof(g_pnTopics));
+    for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        g_pnTopics[i].wGate4 = (u16)(1300 + (i % 2)); /* TEXTS 1300 "T" or 1301 "U" */
+    }
+    memset(g_abPnActive, 0, sizeof(g_abPnActive));
+
+    memset(&g_pnFac, 0, sizeof(g_pnFac));
+    g_pnFac.pTime          = &g_pnTime;
+    g_pnFac.abFacilityGrid = g_abPnGrid;
+    g_pnFac.apSiteRecs     = g_pnSites;
+    g_pnFac.apObjects      = g_apPnObj;
+    g_pnFac.nObjectCount   = 1;
+    g_pnFac.paFac          = g_pnFlags;
+    g_pnFac.aTopics        = g_pnTopics;
+    g_pnFac.apCraft        = g_apPnCraft;
+    g_pnFac.pTextRecs      = (const u8 *)g_abPnText;
+    g_pnFac.pszMsg         = g_szPnMsg;   g_pnFac.cchMsg    = sizeof(g_szPnMsg);
+    g_pnFac.pszExtra       = g_szPnExtra; g_pnFac.cchExtra  = sizeof(g_szPnExtra);
+    g_pnFac.pszScratch     = g_szPnScratch; g_pnFac.cchScratch = sizeof(g_szPnScratch);
+
+    memset(&g_pnCtlSfx, 0, sizeof(g_pnCtlSfx));
+    memset(&g_pnCtlOpen, 0, sizeof(g_pnCtlOpen));
+    memset(&g_pnCtlConfirm, 0, sizeof(g_pnCtlConfirm));
+    memset(&g_pnCtlApply, 0, sizeof(g_pnCtlApply));
+    g_pnCtlSfx.uWidth     = 20;
+    g_pnCtlOpen.uWidth    = 20;
+    g_pnCtlConfirm.uWidth = 40;
+    g_pnCtlApply.uWidth   = 40;
+    /* UiControl_BlitActivePad paints nothing for a disabled control or one with no pad for its
+     * state, so all four get both. The blit callbacks only count calls; they paint nothing. */
+    for (i32 i = 0; i < 4; ++i) {
+        UiControl *const pCtl = i == 0 ? &g_pnCtlSfx : i == 1 ? &g_pnCtlOpen
+                        : i == 2 ? &g_pnCtlConfirm : &g_pnCtlApply;
+        pCtl->bEnabled  = 1;
+        pCtl->nMode     = 0;
+        pCtl->nState    = 0;
+        pCtl->apPads[0] = &g_aPnPads[i];
+    }
+
+    memset(&g_pnPanel, 0, sizeof(g_pnPanel));
+    g_bPnMulti = 0;
+    g_nPnFinished = 0;
+    g_nPnShown = 0;
+    for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        if (g_anUfopaediaEntryNum[i] != 0) { g_nPnShown = i; break; }
+    }
+
+    g_pnAnim.pbStarted   = &g_bPnAnimStarted;
+    g_pnAnim.pnProgress  = &g_nPnAnimProgress;
+    g_pnAnim.nFrameStyle = 0;
+    g_pnColor.nScaleSource = 1;
+    g_pnColor.nFadeCount   = 0;
+
+    memset(&g_pnEnv, 0, sizeof(g_pnEnv));
+    g_pnEnv.pFac             = &g_pnFac;
+    g_pnEnv.pLines           = &g_pnLines;
+    g_pnEnv.pTextRecs        = g_abPnText;
+    g_pnEnv.pAnim            = &g_pnAnim;
+    g_pnEnv.pColor           = &g_pnColor;
+    g_pnEnv.pCtlSfx          = &g_pnCtlSfx;
+    g_pnEnv.pCtlOpen         = &g_pnCtlOpen;
+    g_pnEnv.pCtlConfirm      = &g_pnCtlConfirm;
+    g_pnEnv.pCtlApply        = &g_pnCtlApply;
+    g_pnEnv.pStatusPanel     = &g_pnPanel;
+    g_pnEnv.pbMultiSelectPanel = &g_bPnMulti;
+    g_pnEnv.pfnCtlSfx        = PnClickSfx;
+    g_pnEnv.pfnCtlOpen       = PnClickOpen;
+    g_pnEnv.pfnConfirmReport = PnClickReport;
+    g_pnEnv.pfnApplyResearch = PnClickApply;
+    g_pnEnv.pfnCtlBlit       = PnBlit;
+    g_pnEnv.pfnCtlBlitEx     = PnBlitEx;
+    g_pnEnv.pCtlBlitUser     = NULL;
+    g_pnEnv.aTopics          = g_pnTopics;
+    g_pnEnv.abResearchActive = g_abPnActive;
+    g_pnEnv.pbFinishedTopic  = &g_nPnFinished;
+    g_pnEnv.pnShownTopic     = &g_nPnShown;
+}
+
+static void TestStatusPanelArms(void)
+{
+    printf("\nGeoscape_DrawStatusPanel @ 0x8c760..0x8e658, the thirteen arms\n");
+    PnFixture(' ', 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the shipped font.dat loaded, so the panel labels are real glyphs");
+        return;
+    }
+    g_uPnInkHead   = PnReferenceInk(0xDC, 0x50, 0x50, PUFO_SMAP_CROSSHAIR_INDEX, 0x1E, 0x1E);
+    g_uPnInkStatus = PnReferenceInk(0x44, 0xF4, 0xFC, 4, 0x46, 0x4B);
+    Check(g_uPnInkHead != g_uPnInkStatus,
+          "the head pair and the status pair are different inks, so the pack order is observable");
+
+    /* flag, slot0 (base), slot1 (row), slot2 (column), own record, own y, own ink, foot y */
+    static const struct {
+        u8 nFlag; i32 nRec; i32 nOwnY; bool bOwnEarly; i32 nFootY; bool bExtra; bool bScratch;
+    } aArms[] = {
+        { ' ',  1191, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_TALL, true,  false },
+        { '!',  1195, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_STD,  true,  false },
+        { '"',  1196, PUFO_STATUS_Y_TEXT,  true,  PUFO_STATUS_Y_FOOT_STD,  true,  false },
+        { '#',  1197, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_STD,  true,  false },
+        { '$',  1198, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_TALL, false, false },
+        { '&',  1196, PUFO_STATUS_Y_TEXT,  true,  PUFO_STATUS_Y_FOOT_STD,  true,  false },
+        { '\'', 1204, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_STD,  true,  true  },
+        { '(',  1205, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_STD,  false, true  },
+        { ')',  1206, PUFO_STATUS_Y_TEXT,  true,  PUFO_STATUS_Y_FOOT_STD,  false, false },
+        { '*',  1207, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_STD,  false, false },
+        { '+',  1208, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_STD,  true,  false },
+        { ',',  1209, PUFO_STATUS_Y_TEXT,  false, PUFO_STATUS_Y_FOOT_STD,  false, false },
+    };
+
+    for (size_t i = 0; i < sizeof(aArms) / sizeof(aArms[0]); ++i) {
+        const i32 nRec    = aArms[i].nRec;
+        const i32 nFootY  = aArms[i].nFootY;
+        const bool bExtra = aArms[i].bExtra;
+        const bool bScratch = aArms[i].bScratch;
+        const u16 uOwnInk = aArms[i].bOwnEarly ? g_uPnInkStatus : g_uPnInkHead;
+        char szWhat[96];
+
+        PnFixture(aArms[i].nFlag, 0, 0, 0);
+        PnCapture();
+
+        snprintf(szWhat, sizeof(szWhat), "'%c' draws its own TEXTS record at y=%d",
+                 aArms[i].nFlag, PUFO_STATUS_Y_TEXT);
+        PnCheckRow(PUFO_STATUS_Y_TEXT, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE, uOwnInk,
+                   true, szWhat);
+
+        snprintf(szWhat, sizeof(szWhat), "'%c' draws the second record at y=166 only for ' ' and '$'",
+                 aArms[i].nFlag);
+        PnCheckRow(PUFO_STATUS_Y_TEXT2, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE, uOwnInk,
+                   aArms[i].nFlag == ' ' || aArms[i].nFlag == '$', szWhat);
+
+        /* The 124 row: pszMsg, except ',' which puts pszExtra there and '\'' too. */
+        snprintf(szWhat, sizeof(szWhat), "'%c' draws a line at y=124", aArms[i].nFlag);
+        PnCheckRow(PUFO_STATUS_Y_MSG, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE, uOwnInk,
+                   true, szWhat);
+
+        snprintf(szWhat, sizeof(szWhat),
+                 "'%c' draws the 138 line only where the ARM does", aArms[i].nFlag);
+        PnCheckRow(PUFO_STATUS_Y_EXTRA, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE, uOwnInk,
+                   bExtra || bScratch, szWhat);
+
+        snprintf(szWhat, sizeof(szWhat), "'%c' draws the left footer \"OK\" at y=%d on x=28",
+                 aArms[i].nFlag, nFootY);
+        PnCheckRow(nFootY, 0, 119, PUFO_STATUS_TEXT_X_LEFT, g_uPnInkStatus, true, szWhat);
+        snprintf(szWhat, sizeof(szWhat), "'%c' draws the right footer at y=%d on x=209",
+                 aArms[i].nFlag, nFootY);
+        PnCheckRow(nFootY, 120, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_RIGHT, g_uPnInkStatus,
+                   true, szWhat);
+
+        snprintf(szWhat, sizeof(szWhat), "'%c' draws nothing below its footer", aArms[i].nFlag);
+        PnCheckRow(nFootY + PN_BAND + 4, 0, BD_SURF_W - 1, 0, 0, false, szWhat);
+
+        /* The anim frame is painted identically in both runs of a pair, so the diff cannot see it.
+         * Measure it against the zeroed surface: nH is 0x68 for ' ' and '$', 0x5A for the rest. */
+        const i32 nAnimH = aArms[i].nFlag == ' ' || aArms[i].nFlag == '$'
+                         ? PUFO_STATUS_ANIM_H_TALL : PUFO_STATUS_ANIM_H_STD;
+        memset(g_aPnBase, 0, sizeof(g_aPnBase));
+        PnRun();
+        const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+        snprintf(szWhat, sizeof(szWhat), "'%c' frames the panel from x=0 (Ui_AnimExpandBlit_IfEnabled)",
+                 aArms[i].nFlag);
+        CheckEqI32(dFrame.nMinX, 0, szWhat);
+        CheckEqI32(dFrame.nMinY, PUFO_STATUS_ANIM_Y, "and the frame's top edge is 0x6E");
+        snprintf(szWhat, sizeof(szWhat), "its bottom edge is 0x6E + 0x%X + 5", nAnimH);
+        CheckEqI32(dFrame.nMaxY, PUFO_STATUS_ANIM_Y + nAnimH + 5, szWhat);
+
+        /* Which record feeds which row: drop one record and see only its row disappear. */
+        PnCaptureMissing(nRec);
+        snprintf(szWhat, sizeof(szWhat), "'%c' loses its y=152 line when TEXTS[%d] is missing",
+                 aArms[i].nFlag, nRec);
+        PnCheckRow(PUFO_STATUS_Y_TEXT, 0, BD_SURF_W - 1, 0, 0, false, szWhat);
+        snprintf(szWhat, sizeof(szWhat), "while TEXTS[%d] is not the footer: y=%d still draws",
+                 nRec, nFootY);
+        PnCheckRow(nFootY, 0, 119, PUFO_STATUS_TEXT_X_LEFT, g_uPnInkStatus, true, szWhat);
+
+        if (aArms[i].nFlag == ' ' || aArms[i].nFlag == '$') {
+            const i32 nRec2 = aArms[i].nFlag == ' ' ? PUFO_STATUS_TEXT_PRODUCTION
+                                                    : PUFO_STATUS_TEXT_DIED;
+            PnCaptureMissing(nRec2);
+            snprintf(szWhat, sizeof(szWhat),
+                     "'%c' loses its y=166 line when TEXTS[%d] is missing", aArms[i].nFlag, nRec2);
+            PnCheckRow(PUFO_STATUS_Y_TEXT2, 0, BD_SURF_W - 1, 0, 0, false, szWhat);
+            snprintf(szWhat, sizeof(szWhat), "and TEXTS[%d] is not its y=152 line", nRec2);
+            PnCheckRow(PUFO_STATUS_Y_TEXT, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+                       uOwnInk, true, szWhat);
+        }
+
+        CheckEqI32(g_pnCtlSfx.x, PUFO_STATUS_CTL_X_SFX, "the left control's x is 9");
+        CheckEqI32(g_pnCtlOpen.x, PUFO_STATUS_CTL_X_OPEN, "the right control's x is 0xBE");
+        CheckEqI32(g_pnCtlSfx.y, aArms[i].nFlag == ' ' || aArms[i].nFlag == '$'
+                     ? PUFO_STATUS_CTL_Y_TALL : PUFO_STATUS_CTL_Y_STD,
+                     "both controls sit at the arm's y");
+        CheckEqI32(g_pnCtlOpen.y, g_pnCtlSfx.y, "the same y on both");
+        Check(g_pnCtlSfx.pfnClick == PnClickSfx, "the left control gets the sfx opener");
+        Check(g_pnCtlOpen.pfnClick == PnClickOpen, "the right control gets the plain opener");
+        CheckEqI32(g_nPnBlits, 2, "and exactly the two controls are blitted");
+    }
+}
+
+static void TestStatusPanelResearch(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the '%%' arm @ 0x8d2f4\n");
+
+    PnFixture('%', 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    /* Topic 0 finished and hands over topics 3 and 7; 7 is already past the gate (>= 2) so only
+     * 3 is listed, and the counter still advances to 2 -- which is what sizes the apply row. */
+    g_pnTopics[0].abActivateTopics[0] = 3;
+    g_pnTopics[0].abActivateTopics[1] = 7;
+    g_abPnActive[3] = 0;
+    g_abPnActive[7] = 2;
+    PnCapture();
+
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_TITLE, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "'%' draws TEXTS[1200] at y=26 in the status colour");
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_MSG, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "'%' draws pszMsg at y=44");
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_REPORT, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "'%' draws the report label TEXTS[1201] at y=75");
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_HEAD, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "'%' draws TEXTS[1202] at y=111");
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_ROW, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "'%' draws the new topic's own name at y=127 + 14*0");
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_ROW + 14, 0, BD_SURF_W - 1, 0, 0, false,
+               "the topic already past the gate gets no row at 141");
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_APPLY + 28, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "'%' draws TEXTS[1203] at y=142 + 14*2, the walked count");
+    PnCheckRow(PUFO_STATUS_Y_EXTRA, 0, BD_SURF_W - 1, 0, 0, false,
+               "'%' draws no 138 line: pszExtra is only written when nFacCol is 1000");
+    PnCheckRow(PUFO_STATUS_Y_FOOT_RESEARCH, 0, 119, PUFO_STATUS_TEXT_X_LEFT, g_uPnInkStatus,
+               true, "'%' footers at y=188");
+
+    CheckEqI32(g_abPnActive[3], 1, "the listed topic is marked done in byte_160BBC");
+    CheckEqI32(g_abPnActive[7], 2, "and the skipped one is left at 2");
+    CheckEqI32(g_pnCtlConfirm.x, 120 - (i32)(g_pnCtlConfirm.uWidth >> 1),
+               "the confirm control is centred on 120 because the topic has a ufopaedia entry");
+    CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_Y_RESEARCH_REPORT, "and sits at the report row, 75");
+    Check(g_pnCtlConfirm.pfnClick == PnClickReport, "with Ui_OpenBaseInfoAlt as its handler");
+    CheckEqI32(g_pnCtlApply.x, PUFO_STATUS_CTL_PARKED,
+               "the apply control's x stays parked at 1000 -- only its y is set");
+    CheckEqI32(g_pnCtlApply.y, PUFO_STATUS_Y_RESEARCH_APPLY + 28, "and its y is the walked row");
+    Check(g_pnCtlApply.pfnClick == PnClickApply, "with Ui_OpenResearch as its handler");
+    CheckEqI32(g_pnCtlSfx.y, PUFO_STATUS_CTL_Y_RESEARCH, "the bottom controls sit at 0xB9");
+    CheckEqI32(g_nPnBlits, 4, "confirm, apply and the two bottom controls are blitted");
+
+    /* No topic listed: the walk draws nothing and the apply control is never armed. */
+    PnFixture('%', 0, 0, 0);
+    PnCapture();
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_HEAD, 0, BD_SURF_W - 1, 0, 0, false,
+               "with no finished topic there is no 111 row");
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_APPLY, 0, BD_SURF_W - 1, 0, 0, false,
+               "and no apply label either");
+    CheckEqI32(g_pnCtlApply.y, PUFO_STATUS_CTL_PARKED, "the apply control stays parked");
+    Check(g_pnCtlApply.pfnClick == NULL, "and gets no handler");
+    /* 0x8D400's BEQ gates CONFIRM on anUfopaediaEntryNum[nResearchTopicShown], not on the walk,
+     * so the report control and its label are still there with nothing to research. */
+    PnCheckRow(PUFO_STATUS_Y_RESEARCH_REPORT, 0, BD_SURF_W - 1, PUFO_STATUS_TEXT_X_CENTRE,
+               g_uPnInkStatus, true, "the report label at y=75 is gated by the ufopaedia entry");
+    CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_Y_RESEARCH_REPORT,
+               "and confirm is still armed at 75");
+    CheckEqI32(g_nPnBlits, 3, "confirm and the two bottom controls are blitted, apply is not");
+}
+
+static void TestStatusPanelDefault(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the default arm @ 0x8e5a4\n");
+
+    PnFixture((u8)0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    /* Absolute measurement here: the baseline is the zeroed surface, so every painted pixel shows. */
+    memset(g_aPnBase, 0, sizeof(g_aPnBase));
+    PnRun();
+    const PnDiff dOff = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(dOff.nCount, 0,
+               "flag 0x1E with byte_18709C[4] clear draws NOTHING: 0x8E5E0's BEQ skips both calls");
+
+    g_bPnMulti = 1;
+    g_pnPanel.nFont      = 17;
+    g_pnPanel.nLineCount = 3;
+    g_pnPanel.nStyle     = 1;
+    g_pnPanel.nPosX      = 120;
+    g_pnPanel.nUnk7076   = 1;
+    g_pnPanel.nPosY      = 100;
+    g_pnPanel.apLines[0] = (u8 *)g_szPnPanelLine;
+    g_szPnPanelLine[0]   = 0;
+    memset(g_aPnBase, 0, sizeof(g_aPnBase));
+    PnRun();
+    const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    Check(dFrame.nCount > 0, "with the flag set Ui_AnimExpandBlit paints the frame");
+    CheckEqI32(dFrame.nMinX, 0xE, "the frame's left edge is x = 0xE (0x8E620)");
+    CheckEqI32(dFrame.nMinY, 100 - 6, "its top edge is nPosY - 6 (0x8E648)");
+    CheckEqI32(dFrame.nMaxX, 0xE + 0xD0 + 3, "its right edge is x + nW + 3 with nW = 0xD0 (0x8E640)");
+    CheckEqI32(dFrame.nMaxY, 100 - 6 + (17 * 3 + 6) + 5,
+               "its bottom edge is y + nH + 5 with nH = nFont * nLineCount + 6 (0x8E62C)");
+
+    /* 0x8E654's UiPanelMsg_Draw: the frame is the same in both runs, so the only differing
+     * pixels are the panel's own first row, at UiPanel_DrawText's y formula. */
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    pufo_strncpy(g_szPnPanelLine, "X", sizeof(g_szPnPanelLine));
+    PnRun();
+    PnCheckRow(100 + (17 - 16) / 2, 0, BD_SURF_W - 1, 120, g_uPnInkStatus, true,
+               "0x8E654's UiPanelMsg_Draw draws the panel's first row at nPosY");
+
+    /* 0x1F and 0x31 pass the two gates but fall off the jumptable's far side. */
+    g_bPnMulti = 0;
+    PnFixture((u8)0x1F, 0, 0, 0);
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "flag 0x1F takes the default arm too (SUB #0x20 wraps it below the table)");
+    PnFixture((u8)0x31, 0, 0, 0);
+    PnCapture();
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and so does 0x31");
+
+    /* The status pair is packed before the gate, so the empty default arm still leaves it in the
+     * palette: a glyph drawn right after it takes the status ink, not the head ink. */
+    PnFixture((u8)0x1E, 0, 0, 0);
+    PnRun();
+    memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
+    Text_DrawString(20, 20, "A");
+    u16 uAfter = 0;
+    for (i32 y = 20; y < 40 && uAfter == 0; ++y) {
+        for (i32 x = 20; x < 60; ++x) {
+            if ((u16)BdPix(x, y) != 0) { uAfter = (u16)BdPix(x, y); break; }
+        }
+    }
+    CheckEqI32(uAfter, (i32)g_uPnInkStatus,
+               "the default arm leaves the status pair packed, not the head pair");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -8577,6 +9205,9 @@ int main(void)
     TestSelectMapTarget();
     TestPulseUpdate();
     TestGlobeHover();
+    TestStatusPanelArms();
+    TestStatusPanelResearch();
+    TestStatusPanelDefault();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
