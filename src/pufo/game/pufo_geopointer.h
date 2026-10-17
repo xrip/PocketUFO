@@ -206,7 +206,8 @@ typedef struct GeoscapePointerEnv {
     UiPanel *pSolPanelNames;      /* pSolPanelNames @ 0x15975C */
     UiPanel *pSolPanelEquip;      /* 0x159DF0 */
     UiControl *const *apSolPanelCtl; /* gBaseFacGrid + 0x148 @ 0x1598B0 (apSoldierPanelCtl), two */
-    UiControl *const *apSolNameCtl;  /* gBaseFacGrid + 0x150 @ 0x1598B8 (apSoldierFindCtl), three */
+    UiControl *const *apSolFindCtl;  /* gBaseFacGrid + 0x150 @ 0x1598B8 (apSoldierFindCtl), three:
+                                      * FindNextAtBase, FindPrevAtBase and Ui_SetTransferFlag (0x67D00..0x67D24) */
     u8  *pbNameEditActive;        /* unk_186B88 */
     u8  *pbUiAnimStarted;         /* bUiAnimStarted @ 0x187080 */
     const u8 *pbTransferFlag;     /* bTransferFlag @ 0x159E10 */

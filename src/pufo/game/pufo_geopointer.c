@@ -296,7 +296,7 @@ static i32 PointerSoldierNames(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY, b
         return UiPanel_TrackHoldRow(pEnv->pSolPanelEquip,
                                     *pEnv->pnCursorX, *pEnv->pnCursorY);
     }
-    Ptr_HitRange(pEnv->apSolNameCtl, 0, 2, nX, nY, pEnv->pHit);              /* 0x882C4 */
+    Ptr_HitRange(pEnv->apSolFindCtl, 0, 2, nX, nY, pEnv->pHit);              /* 0x882C4 */
     return 3;
 }
 
@@ -958,7 +958,7 @@ i32 Geoscape_OnPointerUp(const GeoscapePointerEnv *pEnv)
         if (*pEnv->pbTransferFlag != 0) {                                         /* 0x8A058 */
             return UiPanel_ClickRow(pEnv->pSolPanelEquip, *pEnv->pnCursorX, *pEnv->pnCursorY);
         }
-        PtrUp_HitRange(pEnv, pEnv->apSolNameCtl, 0, 2);                           /* 0x8A094 */
+        PtrUp_HitRange(pEnv, pEnv->apSolFindCtl, 0, 2);                           /* 0x8A094 */
         return 0;
 
     case 6:

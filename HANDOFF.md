@@ -1,38 +1,39 @@
 # HANDOFF — PocketUFO Win64 recreation
-
-Date: 2026-10-17. HEAD before this edit: `7623894`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its eighteenth part -- the ufopaedia and psi
-screen arms (screens 16 and 17, 0x941AC..0x942E8): 29 new checks, 17/17 mutations caught, 16 IDB comments,
-ten wrong IDB item sizes fixed, two globals named, one name of my own putting repaired, 2 ledger rows.
-Parts 1..17 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
-`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`,
-the attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the
-mission-site / travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel
-`bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`,
-the frame end `84cdb03` and the thin screen arms `7623894`.
+Date: 2026-10-17. HEAD before this edit: `219899e`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its nineteenth part -- the soldier arms
+(screens 4 and 5, 0x92DAC..0x9309C): 33 new checks, 19/19 mutations caught, 11 IDB comments, 17 wrong IDB
+item sizes fixed, one global named, one port name corrected, 4 ledger rows. Parts 1..18 are behind this: the
+map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
+`a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel
+`ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels
+`e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone
+`f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`, the frame end `84cdb03`, the
+thin screen arms `7623894` and the ufopaedia and psi arms `219899e`.
 What this part found:
 
-- **Screen 16 hands the callee a BLOCK, not a pad.** 0x941AC loads `g_pUfopaediaScreenPad` (0x1872E0) into R6
-  and 0x941B0 passes that base to `Ui_DrawBaseInfo`, so the callee blits the screen pad (0x9B600) and the close
-  control (0x9B7C0) and the arm blits no pad at all. What the arm chooses is one of three ranges of the block's
-  six control slots: open and entry-not-dirty gets slots 4..5 (0x941DC MOV R0,#4, CMP #6), dirty and wide gets
-  0..3 (0x94220, CMP #4), dirty and not wide gets 2..3 (0x9425C MOV R0,#2, CMP #4). The slot order is the
-  descriptor order at 0xAC548: [0]/[1] the text-panel scroll pair (x 142/172 y 210), [2]/[3] the entry
-  prev/next pair (x 10/40), [4]/[5] the category-scroll pair (x 200 y 18/38) -- so each gate picks the controls
-  the view it draws actually needs.
-- **The three ranges are the same in the click handler and smaller in the auto-repeat.** Geoscape_OnPointer
-  (0x88E28..0x88E54, 0x88E94..) drives 4..5, 0..3 and 2..3 exactly as the draw arm blits them. The pulse
-  handler runs only 4..5 (0x9576C) and 0..1 (0x957BC), and with the wide byte clear it pulses NOTHING (0x957B4
-  BEQ) -- the entry pair is blitted by the draw but never auto-repeats.
-- **The two gate halves do not share the open byte.** 0x941CC BEQ (not open) and 0x941D8 BNE (dirty) both land
-  on the dirty test at 0x94204, so a CLOSED ufopaedia with a dirty entry still blits its entry controls, and an
-  open one with a dirty entry blits no category control. That is a ledger row, not a port choice.
-- **One byte had three names.** The wide-panel flag at 0x1871FC was `unk_1871FC` in the IDB, `pbWidePanel` in
-  `UfopaediaEnv` and `pb16ListFull` in `GeoscapePointerEnv`. The IDB now has `g_bUfopaediaWidePanel` (writer
-  bands 0x9A154..0x9A244, cleared with the layout defaults at 0x9A0B8) and the port uses `pbWidePanel`
-  everywhere, ten sites. While naming it I put that name on 0x15EEF0 by mistake -- `get_name_ea_simple` resolved
-  the old `unk_` name to the psi flag -- and `g_bPsiPanelOpen` was restored there, with its comment's stale
-  callee name fixed too.
+- **Case 5 is the only arm whose draw/control ORDER depends on a gate.** With `bTransferFlag` @ 0x159E10 set
+  it draws first (0x92F38) and blits its three controls after (0x92F48..0x92F64); with the flag clear it
+  blits the three controls first (0x93070..0x9308C) and draws after them (0x93094), with no text call on that
+  path at all. Both paths end on the same close-control blit at 0x93054. The flag is armed by the third of the
+  very controls this arm blits (`Ui_SetTransferFlag`, installed at 0x67D24), which is why the order flips.
+- **These two arms are the only ones that POSITION a control.** Both write `g_pUiCloseCtl` to (224,1)
+  (0x92DB0/0x92DC8 and 0x92EF4/0x92F00) before anything is drawn; armed case 5 moves it again to (198,77)
+  (0x92F20/0x92F28). Both hand `SoldierScreen_Draw` the block base 0x159768 (0x92DCC / 0x92F34 / 0x93090).
+- **The centring rounds down, not up.** The caption arithmetic at 0x92E48, 0x92FB0 and the shared tail 0x92ACC
+  is MOVS R1,R0 / ADDMI R1,R1,#1 / MOV R1,R1,ASR#1 -- the +1 applies only to a NEGATIVE width, so the ARM's
+  half-width is floor(w/2) and x = centre - (w >> 1). A mutant that rounded up changed 694 surface pixels, so
+  the tests hold the rounding, not just the centres (120 / 104 / 90 / 170 and the y's 26 / 38 / 80).
+- **17 wrong IDB item sizes, all in one block.** Every control word of the abFacilityGrid block was a 1-byte
+  item although every access is a 4-byte LDR: 0x159888 now `struct UiControl *[10]` (apNavCtl, 40 B), 0x1598B0
+  `*[2]` (apSoldierPanelCtl) and 0x1598B8 `*[3]` (apSoldierFindCtl) -- 15 slots. `nFunds` @ 0x1598D8 went 1 -> 4
+  bytes, the TEXTS[89] record 0xB8015 went from `char[64]` to the 205-byte record extent its siblings have, and
+  0x159DE0 got its name `bSoldierScreenOpen`. In the port the same triple was called `apSolNameCtl`; it is the
+  SOLDIER-FIND pair of buttons plus the transfer armer, so it is `apSolFindCtl` now (10 sites).
+- **Recorded as unknown instead of guessed:** 0x1598C4..0x1598D0 -- four words of the block between the find
+  triple and `pSoldierPad`, unexplored, no xrefs; `nSoldierCursor` @ 0x159E08 typed `_DWORD[2]` and
+  `bTransferFlag` @ 0x159E10 typed `_BYTE[8]`, whose second word and last seven bytes nothing references.
+  Shrinking those two would be a guess, so they stay as they are.
+
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

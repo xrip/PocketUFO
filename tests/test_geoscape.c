@@ -12248,6 +12248,263 @@ static void TestGeoscapeUfoPsiArms(void)
     Check((u16)BdPix(5, 3) != 0, "and the psi rails are on the surface");
 }
 
+/* ---------------------------------------------------------------------------------------------
+ * Geoscape_Draw's soldier arms: case 4 @ 0x92DAC..0x92EE4 and case 5 @ 0x92EE4..0x9309C.
+ *
+ * Case 4 writes the close control's position (0x92DB0 STRH #0xE0 / 0x92DC8 STRH #1), calls
+ * SoldierScreen_Draw (0x92DD0), blits the block's +0x148 control pair, blits the close control (0x92E04) and
+ * paints three captions. Case 5 blits the block's soldier pad (0x92EEC), writes the same (224,1) position,
+ * and splits on bTransferFlag @ 0x159E10 (0x92F18): armed re-positions the close control to (198,77), draws
+ * FIRST (0x92F38), runs its three controls after (0x92F48..0x92F64) and paints three centred captions;
+ * unarmed runs the three controls FIRST (0x93070..0x9308C), draws after them (0x93094) and paints nothing.
+ * Both paths end on the same close-control blit at 0x93054.
+ *
+ * The callee is observed through its two documented seams. With nGeoscapeScreen at 5 the callee IS the
+ * caller's pfnTextInput (0x652A4..0x652B0), and the hook records how many control blits had already been
+ * offered -- the only way the arm's own draw/control ORDER becomes visible, because SoldierScreen_Draw blits
+ * no control of its own. With the screen closed the callee draws nothing (0x652CC), which is what makes the
+ * caption comparison clean. Controls and the callee's pads go through PnBlit, which records the pad offered
+ * without painting, so every blit list below is exact; the arm's own pad blit in case 5 is a real
+ * PadImage_Blit. Ink comparisons are pixel-value comparisons against a reference draw the test builds itself
+ * at the coordinates read off the ARM, so a wrong centre, a wrong y or a wrong colour pair all show up. */
+
+static UiControl            g_solCtl[3];             /* the block's +0x148 pair and +0x150 triple */
+static PadImage             g_solCtlPad[3];
+static UiControl           *g_apSolCtl[3];
+static GeoscapeScreenArmEnv g_solCtlEnv;
+static GeoscapeSoldierArmEnv g_solArm;
+static SoldierDrawEnv       g_solEnv;
+static UiControl            g_solCloseCtl;
+static PadImage             g_solClosePad;
+static PadImage             g_solPad;                /* the block's soldier pad word @ 0x1598D4 */
+static u8                   g_abSolPadGlyph[8];
+static i32                  g_nSolScreenId, g_nSolCursor;
+static u8                   g_bSolOpen, g_bSolTransfer;
+static GfxColorEnv          g_solColor;
+static i32                  g_nSolHookCalls, g_nSolHookCursor, g_nSolHookBlits;
+static u16                  g_aSolRef[BD_SURF_W * BD_SURF_H];
+
+static i32 SolHookTextInput(i32 nCursor, void *pUser)
+{
+    (void)pUser;
+    ++g_nSolHookCalls;
+    g_nSolHookCursor = nCursor;                      /* nSoldierCursor @ 0x159E08, what 0x652B0 passes on */
+    g_nSolHookBlits  = g_nPnBlits;                   /* how many controls the arm had blitted by now */
+    return 0;
+}
+
+/* The ARM's centring, written straight from the instructions: MOV R1,R0 / ADDMI R1,R1,#1 /
+ * MOV R1,R1,ASR#1 / RSB R1,R1,#centre, i.e. centre - (nWidth >> 1) for a positive width. */
+static i32 SolCentredX(i32 nCentre, const char *psz)
+{
+    const i32 nW = Text_MeasureWidth(psz);
+    return nCentre - (nW >= 0 ? nW / 2 : (nW + 1) / 2);
+}
+
+static void SolSaveInk(void)
+{
+    memcpy(g_aSolRef, g_bdSurf.pPixels, sizeof(g_aSolRef));
+}
+
+/* Compare the saved arm result against the reference the surface holds now, pixel by pixel. */
+static void SolInkIs(const char *pszWhat)
+{
+    const u16 *const pwNow = (const u16 *)g_bdSurf.pPixels;
+    i32 nDiff = 0;
+    for (i32 i = 0; i < BD_SURF_W * BD_SURF_H; ++i) {
+        if (g_aSolRef[i] != pwNow[i]) {
+            ++nDiff;
+        }
+    }
+    if (nDiff == 0) {
+        printf("  ok   %s\n", pszWhat);
+        return;
+    }
+    printf("  FAIL %s: %d pixels differ from the reference draw\n", pszWhat, nDiff);
+    ++g_nFailures;
+}
+
+static void TestGeoscapeSoldierArms(void)
+{
+    printf("\nGeoscape_Draw's soldier arms @ 0x92dac / 0x92ee4\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_aPalette[PN_TEST_PAL_SLOT][21] = (u32)AR_CAL_INK;
+
+    PnSetText(PUFO_SOLARM_TEXT_TITLE, "SOLDIERS");   /* TEXTS[71] @ 0xB71AB */
+    PnSetText(PUFO_SOLARM_TEXT_COL1,  "NAME1");      /* TEXTS[88] @ 0xB7F48 */
+    PnSetText(PUFO_SOLARM_TEXT_COL2,  "SHIP2");      /* TEXTS[89] @ 0x4745 */
+    PnSetText(PUFO_SOLTR_TEXT_HEAD,   "ARMOUR");     /* TEXTS[90] @ 0xB80E2 */
+    PnSetText(PUFO_SOLTR_TEXT_ROW1,   "RANK1");      /* TEXTS[91] @ 0xB81AF */
+    PnSetText(PUFO_SOLTR_TEXT_ROW2,   "MIN2");       /* TEXTS[92] @ 0xB827C */
+
+    for (i32 i = 0; i < 3; ++i) {
+        memset(&g_solCtl[i], 0, sizeof(g_solCtl[i]));
+        memset(&g_solCtlPad[i], 0, sizeof(g_solCtlPad[i]));
+        g_solCtlPad[i].uWidth  = 2;
+        g_solCtlPad[i].uHeight = 2;
+        g_solCtl[i].apPads[0]  = &g_solCtlPad[i];
+        g_solCtl[i].bEnabled   = 1;
+        g_solCtl[i].nMode      = 0;
+        g_solCtl[i].nState     = 0;
+        g_solCtl[i].x          = (i16)(12 + 12 * i); /* the row is recorded, never painted */
+        g_solCtl[i].y          = 205;
+        g_apSolCtl[i]          = &g_solCtl[i];
+    }
+    memset(&g_solCloseCtl, 0, sizeof(g_solCloseCtl));
+    memset(&g_solClosePad, 0, sizeof(g_solClosePad));
+    g_solClosePad.uWidth  = 2;
+    g_solClosePad.uHeight = 2;
+    g_solCloseCtl.apPads[0] = &g_solClosePad;
+    g_solCloseCtl.bEnabled  = 1;
+    g_solCloseCtl.nMode     = 0;
+    g_solCloseCtl.nState    = 0;
+    g_solCloseCtl.x         = 0;                     /* the arm must write the position itself */
+    g_solCloseCtl.y         = 0;
+
+    ArMakeGlyph(&g_solPad, g_abSolPadGlyph, AR_CAL_X, AR_CAL_Y);
+
+    memset(&g_solCtlEnv, 0, sizeof(g_solCtlEnv));
+    g_solCtlEnv.apCtl        = g_apSolCtl;
+    g_solCtlEnv.pfnCtlBlit   = PnBlit;
+    g_solCtlEnv.pfnCtlBlitEx = PnBlitEx;
+
+    memset(&g_solArm, 0, sizeof(g_solArm));
+    g_solArm.pColor         = &g_solColor;
+    g_solArm.pTextRecs      = (const char *)g_abPnText;
+    g_solArm.pCloseCtl      = &g_solCloseCtl;
+    g_solArm.pbTransferFlag = &g_bSolTransfer;
+    g_solArm.pPad           = &g_solPad;
+
+    memset(&g_solEnv, 0, sizeof(g_solEnv));
+    g_solEnv.pnScreenId     = &g_nSolScreenId;       /* nGeoscapeScreen @ 0x186BC4 */
+    g_solEnv.pbOpen         = &g_bSolOpen;           /* 0x159DE0 */
+    g_solEnv.pnCursor       = &g_nSolCursor;         /* nSoldierCursor @ 0x159E08 */
+    g_solEnv.pPad           = &g_solPad;             /* 0x652D4's pad, the same word the arm blits */
+    g_solEnv.pfnTextInput   = SolHookTextInput;
+    g_nSolCursor = 7;
+
+    /* ---- case 4, order: the callee runs before the arm's controls (0x92DD0 precedes 0x92DE0) ---- */
+    g_nSolScreenId = 5;  g_bSolOpen = 1;  g_bSolTransfer = 0;
+    g_nSolHookCalls = 0;  g_nSolHookBlits = -1;
+    ArReset();
+    Geoscape_DrawSoldierArm(&g_solEnv, &g_solArm, &g_solCtlEnv);
+    CheckEqI32(g_nSolHookCalls, 1, "case 4 calls SoldierScreen_Draw once (0x92DD0)");
+    CheckEqI32(g_nSolHookBlits, 0, "and the arm has blitted NOTHING yet, so the callee comes first");
+    CheckEqI32(g_nSolHookCursor, 7, "the callee gets nSoldierCursor as its argument (0x652B0)");
+    CheckEqI32(g_nPnBlits, PUFO_SOLARM_CTLS_2 + 1, "two block controls plus the close control (CMP #2 at 0x92DF8)");
+    Check(g_apnPnBlitPad[0] == &g_solCtlPad[0] && g_apnPnBlitPad[1] == &g_solCtlPad[1],
+          "the +0x148 pair at 0x1598B0 / 0x1598B4, in order");
+    CheckEqI32(ArFindPad(&g_solCtlPad[2]), -1, "and no third control: case 4 stops at 2");
+    Check(g_apnPnBlitPad[PUFO_SOLARM_CTLS_2] == &g_solClosePad,
+          "g_pUiCloseCtl is blitted last, at 0x92E04");
+    CheckEqI32(g_solCloseCtl.x, PUFO_SOLARM_CLOSE_X, "the arm writes the close control's x = 224 (0x92DB0)");
+    CheckEqI32(g_solCloseCtl.y, PUFO_SOLARM_CLOSE_Y, "and its y = 1 (0x92DC8)");
+
+    /* ---- case 4, ink: the three captions, and nothing else (the closed callee draws nothing, 0x652CC) ---- */
+    g_nSolScreenId = 4;  g_bSolOpen = 0;
+    ArReset();
+    Geoscape_DrawSoldierArm(&g_solEnv, &g_solArm, &g_solCtlEnv);
+    SolSaveInk();
+    const u32 uPalLeft1 = g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_FIRST];
+    const u32 uPalLeft2 = g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND];
+    ArReset();
+    (void)Gfx_PackRgb565Pair(&g_solColor, 0xFF, 0xFF, 0xFF, 10, 10, 10);           /* 0x92E08..0x92E28 */
+    Text_DrawString(SolCentredX(PUFO_SOLARM_CAP_CENTRE, PnRec(PUFO_SOLARM_TEXT_TITLE)), 26,
+                    PnRec(PUFO_SOLARM_TEXT_TITLE));                                /* 0x92E40..0x92E60 */
+    (void)Gfx_PackRgb565Pair(&g_solColor, 0xFF, 0xFF, 0xFF, 10, 10, 10);           /* 0x92E64..0x92E80 */
+    Text_DrawString(38, 50, PnRec(PUFO_SOLARM_TEXT_COL1));                         /* 0x92E9C */
+    Text_DrawString(170, 50, PnRec(PUFO_SOLARM_TEXT_COL2));                        /* 0x92EB8 */
+    (void)Gfx_PackRgb565Pair(&g_solColor, 0xFF, 0xC8, 0x14, 10, 10, 10);           /* 0x92EBC..0x92ED8 */
+    SolInkIs("case 4 draws TEXTS[71] centred on 120 at y 26, TEXTS[88] at (38,50) and TEXTS[89] at (170,50) "
+             "under the (255,255,255)/(10,10,10) pair -- and paints nothing else");
+    (void)Gfx_PackRgb565Pair(&g_solColor, 0xFF, 0xC8, 0x14, 10, 10, 10);
+    Check(g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_FIRST] == uPalLeft1
+          && g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND] == uPalLeft2,
+          "and its last act packs (255,200,20) over (10,10,10), a pair no text in the arm draws with "
+          "(0x92EBC..0x92ED8)");
+
+    /* ---- case 4 with the soldier screen open: the callee's own frame and pad (0x652D4..0x65538) ---- */
+    g_nSolScreenId = 4;  g_bSolOpen = 1;
+    g_nSolHookCalls = 0;
+    ArReset();
+    Geoscape_DrawSoldierArm(&g_solEnv, &g_solArm, &g_solCtlEnv);
+    Check((u16)BdPix(2, 60) != 0 && (u16)BdPix(235, 60) != 0,
+          "the open callee paints its two side rails (0x653D8, 0x65430)");
+    Check((u16)BdPix(AR_CAL_X, AR_CAL_Y) == AR_CAL_INK,
+          "and the soldier pad it blits at 0x652D4 is the same word the arm hands it");
+    CheckEqI32(g_nSolHookCalls, 0, "with the screen id at 4 the callee takes the draw path, not the seam");
+    CheckEqI32(g_nPnBlits, PUFO_SOLARM_CTLS_2 + 1, "and the arm's control row is unchanged");
+
+    /* ---- case 5, transfer path: draw FIRST, controls after (0x92F38 before 0x92F48) ---- */
+    g_nSolScreenId = 5;  g_bSolOpen = 1;  g_bSolTransfer = 1;
+    g_nSolHookCalls = 0;  g_nSolHookBlits = -1;
+    ArReset();
+    Geoscape_DrawSoldierEditArm(&g_solEnv, &g_solArm, &g_solCtlEnv);
+    CheckEqI32(g_nSolHookCalls, 1, "the armed arm calls SoldierScreen_Draw once (0x92F38)");
+    CheckEqI32(g_nSolHookBlits, 0, "and it calls it BEFORE any of its three controls");
+    CheckEqI32(g_nPnBlits, PUFO_SOLARM_CTLS_3 + 1, "three controls plus the close control (CMP #3 at 0x92F60)");
+    Check(g_apnPnBlitPad[0] == &g_solCtlPad[0] && g_apnPnBlitPad[1] == &g_solCtlPad[1]
+          && g_apnPnBlitPad[2] == &g_solCtlPad[2], "the +0x150 triple at 0x1598B8..0x1598C0, in order");
+    Check(g_apnPnBlitPad[PUFO_SOLARM_CTLS_3] == &g_solClosePad, "and the close control last, at 0x93054");
+    CheckEqI32(g_solCloseCtl.x, PUFO_SOLTR_CLOSE_X,
+               "armed, the close control's final x is 198 -- 0x92EF4's 224 is overwritten by 0x92F20");
+    CheckEqI32(g_solCloseCtl.y, PUFO_SOLTR_CLOSE_Y, "and its final y is 77 (0x92F28)");
+    Check((u16)BdPix(AR_CAL_X, AR_CAL_Y) == AR_CAL_INK, "the arm blits the soldier pad itself, at 0x92EEC");
+
+    /* ---- case 5, transfer ink: pad plus three centred captions under the cyan pair ---- */
+    g_bSolOpen = 0;
+    ArReset();
+    Geoscape_DrawSoldierEditArm(&g_solEnv, &g_solArm, &g_solCtlEnv);
+    SolSaveInk();
+    ArReset();
+    PadImage_Blit(&g_solPad);                                                      /* 0x92EEC */
+    (void)Gfx_PackRgb565Pair(&g_solColor, 0x44, 0xF4, 0xFC, 4, 70, 75);            /* 0x92F68..0x92F90 */
+    Text_DrawString(SolCentredX(PUFO_SOLTR_HEAD_CENTRE, PnRec(PUFO_SOLTR_TEXT_HEAD)), 38,
+                    PnRec(PUFO_SOLTR_TEXT_HEAD));                                  /* 0x92FA8..0x92FC8 */
+    (void)Gfx_PackRgb565Pair(&g_solColor, 0x44, 0xF4, 0xFC, 4, 70, 75);            /* 0x92FCC..0x92FE8 */
+    Text_DrawString(SolCentredX(PUFO_SOLTR_ROW1_CENTRE, PnRec(PUFO_SOLTR_TEXT_ROW1)), 80,
+                    PnRec(PUFO_SOLTR_TEXT_ROW1));                                  /* 0x92FFC..0x9301C */
+    Text_DrawString(SolCentredX(PUFO_SOLTR_ROW2_CENTRE, PnRec(PUFO_SOLTR_TEXT_ROW2)), 80,
+                    PnRec(PUFO_SOLTR_TEXT_ROW2));                                  /* 0x93030..0x93050 */
+    SolInkIs("armed, the arm draws TEXTS[90] centred on 104 at y 38, TEXTS[91] on 90 and TEXTS[92] on 170, "
+             "both at y 80, all under the (68,244,252)/(4,70,75) pair, over its pad blit and nothing else");
+
+    /* ---- case 5, unarmed path: controls FIRST, draw after them, no captions (0x93064..0x93094) ---- */
+    g_bSolTransfer = 0;
+    g_nSolHookCalls = 0;  g_nSolHookBlits = -1;
+    ArReset();
+    Geoscape_DrawSoldierEditArm(&g_solEnv, &g_solArm, &g_solCtlEnv);
+    CheckEqI32(g_nSolHookBlits, PUFO_SOLARM_CTLS_3,
+               "unarmed, the three controls are already blitted when SoldierScreen_Draw runs (0x93094 after "
+               "0x93070..0x9308C) -- the only arm whose order flips with a flag");
+    CheckEqI32(g_nPnBlits, PUFO_SOLARM_CTLS_3 + 1, "the same three controls plus the close control (CMP #3 at 0x93088)");
+    Check(g_apnPnBlitPad[PUFO_SOLARM_CTLS_3] == &g_solClosePad, "the shared 0x93054 blit both paths end on");
+    CheckEqI32(g_solCloseCtl.x, PUFO_SOLARM_CLOSE_X,
+               "unarmed, the close control keeps 224: 0x92F20 is behind the gate at 0x92F18");
+    CheckEqI32(g_solCloseCtl.y, PUFO_SOLARM_CLOSE_Y, "and 1");
+    SolSaveInk();
+    ArReset();
+    PadImage_Blit(&g_solPad);
+    SolInkIs("and the unarmed path paints its pad only -- no caption at all (0x93064..0x9309C has no text call)");
+
+    /* ---- the port's null guards: the original derefs the globals, the port does not crash ---- */
+    g_nSolHookCalls = 0;
+    ArReset();
+    GeoscapeSoldierArmEnv noCtl = g_solArm;
+    noCtl.pCloseCtl = NULL;
+    noCtl.pPad = NULL;
+    GeoscapeScreenArmEnv noRun = g_solCtlEnv;
+    noRun.apCtl = NULL;
+    Geoscape_DrawSoldierEditArm(&g_solEnv, &noCtl, &noRun);
+    CheckEqI32(g_nPnBlits, 0, "with no controls and no close control the arm blits nothing");
+    CheckEqI32(g_nSolHookCalls, 1, "and the callee still runs");
+    Check((u16)BdPix(AR_CAL_X, AR_CAL_Y) == 0, "with no pad word there is no pad blit (0x92EE8 LDR would fault)");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -12329,6 +12586,7 @@ int main(void)
     TestGeoscapeFrameEnd();
     TestGeoscapeScreenArms();
     TestGeoscapeUfoPsiArms();
+    TestGeoscapeSoldierArms();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

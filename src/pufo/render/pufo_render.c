@@ -41,15 +41,6 @@ static i32 s_nRectH;      /* blitRectH @ 0xa3038: fill height, and its clip boun
 static i32 s_nMaskPtr;    /* dword_A303C, mask pointer for the Flip blend */
 static i32 s_nBlendAlpha; /* dword_A3040 */
 
-/* unk_147B54 and unk_147B3C @ 0x147b54 / 0x147b3c are not scratch: they are palette slot 2
- * entries 33 and 27 (0x1472D0 + 2*1024 + 4*33 / + 4*27). Gfx_PackRgb565Pair writes the packed
- * pair there, and Text_DrawString @ 0x2d798 forces the glyph palette base to 2 while it draws,
- * so the font's two glyph indices (27 main, 33 secondary - measured over FONT.SPR) pick up
- * exactly the pair the caller just packed. That is how all game text gets its colour. */
-#define PUFO_TEXT_PAL_SLOT 2
-#define PUFO_TEXT_PAL_IDX_FIRST 33  /* unk_147B54 = the (r1,g1,b1) pack */
-#define PUFO_TEXT_PAL_IDX_SECOND 27 /* unk_147B3C = the (r2,g2,b2) pack, the returned value */
-
 void SoftSurf_ctor(SoftSurf *pSurf)
 {
     pSurf->pPixels = NULL;

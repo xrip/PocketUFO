@@ -52,7 +52,7 @@ typedef struct Fix {
     UiControl aStrip[PUFO_GEO_STRIP_CTLS];
     UiControl aBaseAt[2];
     UiControl aSolPanel[2];
-    UiControl aSolName[3];
+    UiControl aSolFind[3];
     UiControl aPlane[PUFO_GEO_PLANE_CTLS];
     UiControl aRadar[PUFO_RADAR_CONTROLS];
     UiControl aPsi[2];
@@ -73,7 +73,7 @@ typedef struct Fix {
     UiControl *apStrip[PUFO_GEO_STRIP_CTLS];
     UiControl *apBaseAt[2];
     UiControl *apSolPanel[2];
-    UiControl *apSolName[3];
+    UiControl *apSolFind[3];
     UiControl *apPlane[PUFO_GEO_PLANE_CTLS];
     UiControl *apRadar[PUFO_RADAR_CONTROLS];
     UiControl *apPsiCtl[2];
@@ -216,7 +216,7 @@ static void Fix_Reset(void)
     Fix_CtlArray(g.aStrip, g.apStrip, PUFO_GEO_STRIP_CTLS);
     Fix_CtlArray(g.aBaseAt, g.apBaseAt, 2);
     Fix_CtlArray(g.aSolPanel, g.apSolPanel, 2);
-    Fix_CtlArray(g.aSolName, g.apSolName, 3);
+    Fix_CtlArray(g.aSolFind, g.apSolFind, 3);
     Fix_CtlArray(g.aPlane, g.apPlane, PUFO_GEO_PLANE_CTLS);
     Fix_CtlArray(g.aRadar, g.apRadar, PUFO_RADAR_CONTROLS);
     Fix_CtlArray(g.aPsi, g.apPsiCtl, 2);
@@ -330,7 +330,7 @@ static void Fix_Reset(void)
     p->pSolPanelNames = &g.pSolNames;
     p->pSolPanelEquip = &g.pSolEquip;
     p->apSolPanelCtl = g.apSolPanel;
-    p->apSolNameCtl = g.apSolName;
+    p->apSolFindCtl = g.apSolFind;
     p->pbNameEditActive = &g.bNameEdit;
     p->pbUiAnimStarted = &g.bAnimStarted;
     p->pbTransferFlag = &g.bTransferFlag;
@@ -424,7 +424,7 @@ static void Fix_ArmAll(void)
     Fix_Arm(g.aStrip, PUFO_GEO_STRIP_CTLS);
     Fix_Arm(g.aBaseAt, 2);
     Fix_Arm(g.aSolPanel, 2);
-    Fix_Arm(g.aSolName, 3);
+    Fix_Arm(g.aSolFind, 3);
     Fix_Arm(g.aPlane, PUFO_GEO_PLANE_CTLS);
     Fix_Arm(g.aRadar, PUFO_RADAR_CONTROLS);
     Fix_Arm(g.aPsi, 2);
@@ -857,7 +857,7 @@ static void TestSoldierScreen(void)
 
     Fix_Reset();
     g.nScreenId = 5;
-    CheckEqI32(Call(50, 10, true), 3, "a press in the name band ends on the three name controls");
+    CheckEqI32(Call(50, 10, true), 3, "a press in the name band ends on the three soldier-find controls");
     CheckEqI32(g.bNameEdit, 1, "and opens the edit");
     CheckEqI32(g.aCtl[GEOUI_CTL_186BA8].x, 1, "the backspace control moves to x 1");
     CheckEqI32(g.aCtl[GEOUI_CTL_186BA8].y, 300, "and y 300");
@@ -865,7 +865,7 @@ static void TestSoldierScreen(void)
     CheckEqI32(g.aCtl[GEOUI_CTL_186B9C].y, 300, "and y 300");
     Check(g.aCtl[GEOUI_CTL_186BA8].pfnClick == HookBackspace, "the backspace handler is installed");
     CheckEqI32(g.bAnimStarted, 0, "and the animation flag is cleared");
-    Check(CtlHit(&g.aSolName[0]) && CtlHit(&g.aSolName[2]), "all three name controls are hit");
+    Check(CtlHit(&g.aSolFind[0]) && CtlHit(&g.aSolFind[2]), "all three soldier-find controls are hit");
 
     Fix_Reset();
     g.nScreenId = 5;
@@ -877,7 +877,7 @@ static void TestSoldierScreen(void)
     g.bTransferFlag = 1;
     Call(100, 100, true);
     CheckEqI32(g.pSolEquip.bUnk3024, 1, "with the transfer flag the equipment panel is tracked");
-    Check(!CtlHit(&g.aSolName[0]), "and the name controls are skipped");
+    Check(!CtlHit(&g.aSolFind[0]), "and the soldier-find controls are skipped");
 }
 
 /* ------------------------------------------------- screen 6: the craft loadout */
@@ -1745,14 +1745,14 @@ static void TestUpSoldier(void)
     CheckEqI32(CallUp(), 100, "with the transfer flag the arm returns the equip row clicked");
     Check(Up(GEOUI_CTL_186B00), "the close control is released first");
     Check(Clicked(&g.pSolEquip), "the equip list is clicked (0x8A074)");
-    Check(ArmedCtl(&g.aSolName[0]), "and the three find controls are not reached");
+    Check(ArmedCtl(&g.aSolFind[0]), "and the three find controls are not reached");
 
     Fix_Reset();
     Fix_ArmAll();
     Fix_UpCursor();
     g.nScreenId = 5;
     CheckEqI32(CallUp(), 0, "without the transfer flag the arm returns 0");
-    Check(UpCtl(&g.aSolName[0]) && UpCtl(&g.aSolName[2]), "all three find controls are released");
+    Check(UpCtl(&g.aSolFind[0]) && UpCtl(&g.aSolFind[2]), "all three find controls are released");
     Check(NotClicked(&g.pSolEquip), "and the equip list is not clicked");
 }
 
@@ -2193,7 +2193,7 @@ static void TestUpScreen20AndDefault(void)
     Fix_UpCursor();
     g.nScreenId = 13;
     CheckEqI32(CallUp(), 0, "screen 13 takes the default arm (deviation 5: the original returns an address)");
-    Check(ArmedCtl(&g.aSolName[0]), "and no control is released");
+    Check(ArmedCtl(&g.aSolFind[0]), "and no control is released");
 
     Fix_Reset();
     Fix_ArmAll();

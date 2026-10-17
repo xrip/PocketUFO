@@ -2173,6 +2173,7 @@ struct TransferDrawEnv;
 struct BuySellDrawEnv;
 struct UiBaseInfoDrawEnv;
 struct PsiScreenDrawEnv;
+struct SoldierDrawEnv;
 
 void Geoscape_DrawResearchArm(const struct ResearchDrawEnv *pResearchEnv,
                               const GeoscapeScreenArmEnv *pArmEnv);
@@ -2211,6 +2212,70 @@ void Geoscape_DrawUfopaediaArm(struct UiBaseInfoDrawEnv *pBaseInfoEnv,
  * they run only with the base-picker overlay byte_1870F8 CLEAR (0x942A8 BNE) AND g_bPsiPanelOpen set (0x942B8
  * BEQ) -- both gates are fields of the callee's own env, the same globals. */
 void Geoscape_DrawPsiArm(const struct PsiScreenDrawEnv *pPsiEnv, const GeoscapeScreenArmEnv *pArmEnv);
+
+/* ---- the soldier-screen arms, 0x92DAC..0x92EE4 and 0x92EE4..0x9309C ---------------------------
+ *
+ * These are the only arms that POSITION a control before drawing: both write g_pUiCloseCtl's x/y (0x92DB0
+ * STRH #0xE0 / 0x92DC8 STRH #1) and case 5 moves it again to (198,77) when a transfer is armed (0x92F20 /
+ * 0x92F28). Both blit the close control LAST, after their own control run (0x92E04, 0x93058), and both hand
+ * SoldierScreen_Draw the block base abFacilityGrid (0x92DCC / 0x92F34 / 0x93090 MOV R0,R5). Case 4 has no pad
+ * blit; case 5 blits the block's pad word first (0x92EE8 / 0x92EEC) -- the same pad SoldierScreen_Draw blits
+ * again while the screen is open (0x652D4).
+ *
+ * The control runs read the block again: case 4 takes slots at +0x148 (0x1598B0, 0x1598B4 -- CMP #2 at
+ * 0x92DF8), case 5 the three at +0x150 (0x1598B8..0x1598C0 -- CMP #3 at 0x92F60 and again at 0x93088). Both
+ * groups are Geoscape_BuildNavControls' own installs (0x67C70..0x67D24): the pair is SoldierScreen_PanelPrev /
+ * PanelNext at (210,20) and (210,40), the triple is SoldierScreen_FindNextAtBase, SoldierScreen_FindPrevAtBase
+ * and Ui_SetTransferFlag -- the third one arms the very byte case 5 branches on.
+ *
+ * Case 5 is the one arm whose ORDER depends on a gate. With bTransferFlag @ 0x159E10 set, the draw runs FIRST
+ * (0x92F38), then the three controls, then the three captions; with it clear the three controls run first
+ * (0x93070..0x9308C) and SoldierScreen_Draw runs AFTER them (0x93094), with no captions at all (the BEQ at
+ * 0x92F18 jumps straight to 0x93064).
+ *
+ * The captions use the centring the original writes inline -- MOVS R1,R0 / ADDMI R1,R1,#1 / MOV R1,R1,ASR#1 /
+ * RSB R1,R1,#centre, i.e. "if (w < 0) ++w; x = centre - (w >> 1)", the same shape as the shared tail at
+ * 0x92ACC..0x92ADC. Record numbers come from the addresses: 0xB71AB/205 = 71 and so on.
+ *   case 4  TEXTS[71] centred on 120 at y 26 (0x92E2C..0x92E60), TEXTS[88] at (38,50) (0x92E9C),
+ *           TEXTS[89] at (170,50) (0x92EB8)
+ *   case 5  TEXTS[90] centred on 104 at y 38 (0x92FA8..0x92FC8) -- the "Armour" caption SoldierScreen_DrawDetail
+ *           draws at the same place, TEXTS[91] centred on 90 at y 80, TEXTS[92] centred on 170 at y 80
+ * Every caption follows a Gfx_PackRgb565Pair call, and that call is NOT inert: it writes the two TEXT palette
+ * entries Text_DrawString then draws with. Case 4 ends with a third pair (255,200,20 / 10,10,10) that nothing
+ * in the arm uses -- the arm leaves it for the next drawing user. */
+#define PUFO_SOLARM_CTLS_2      2   /* 0x92DF8 CMP #2: the block at +0x148 = 0x1598B0, 0x1598B4 */
+#define PUFO_SOLARM_CTLS_3      3   /* 0x92F60 / 0x93088 CMP #3: +0x150 = 0x1598B8..0x1598C0 */
+#define PUFO_SOLARM_CLOSE_X     224 /* 0x92DB0 / 0x92EF4 STRH #0xE0 */
+#define PUFO_SOLARM_CLOSE_Y     1   /* 0x92DC8 / 0x92F00 STRH #1 */
+#define PUFO_SOLTR_CLOSE_X      198 /* 0x92F20 STRH #0xC6 -- the transfer dialog's close button */
+#define PUFO_SOLTR_CLOSE_Y      77  /* 0x92F28 STRH #0x4D */
+#define PUFO_SOLARM_TEXT_TITLE   71 /* 0xB71AB: centred on 120, y 26 */
+#define PUFO_SOLARM_TEXT_COL1    88 /* 0xB7F48: (38, 50) */
+#define PUFO_SOLARM_TEXT_COL2    89 /* 0x4745:  (170, 50) -- the same record the plane screen labels with */
+#define PUFO_SOLTR_TEXT_HEAD     90 /* 0xB80E2: centred on 104, y 38 */
+#define PUFO_SOLTR_TEXT_ROW1     91 /* 0xB81AF: centred on 90, y 80 */
+#define PUFO_SOLTR_TEXT_ROW2     92 /* 0xB827C: centred on 170, y 80 */
+#define PUFO_SOLARM_CAP_CENTRE  120 /* 0x92E58 RSB #0x78 */
+#define PUFO_SOLTR_HEAD_CENTRE  104 /* 0x92FC0 RSB #0x68 */
+#define PUFO_SOLTR_ROW1_CENTRE   90 /* 0x93014 RSB #0x5A */
+#define PUFO_SOLTR_ROW2_CENTRE  170 /* 0x93048 RSB #0xAA */
+
+typedef struct GeoscapeSoldierArmEnv {
+    GfxColorEnv *pColor;          /* pGX @ 0x1139B8, the pair the caption colours come from */
+    const char  *pTextRecs;       /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+    UiControl   *pCloseCtl;       /* g_pUiCloseCtl: positioned, then blitted last */
+    const u8    *pbTransferFlag;  /* bTransferFlag @ 0x159E10 -- case 5's gate and nothing else */
+    PadImage    *pPad;            /* the block's soldier pad word @ 0x1598D4 -- case 5 only */
+} GeoscapeSoldierArmEnv;
+
+/* 0x92DAC..0x92EE4: screen 4, the soldier list. Position the close control, draw the screen, blit the two
+ * panel controls, blit the close control, then the title and the two column captions. */
+void Geoscape_DrawSoldierArm(const struct SoldierDrawEnv *pSoldierEnv, const GeoscapeSoldierArmEnv *pArmEnv,
+                             const GeoscapeScreenArmEnv *pCtlEnv);
+
+/* 0x92EE4..0x9309C: screen 5, the soldier name editor. The pad first, then the two orders described above. */
+void Geoscape_DrawSoldierEditArm(const struct SoldierDrawEnv *pSoldierEnv, const GeoscapeSoldierArmEnv *pArmEnv,
+                                 const GeoscapeScreenArmEnv *pCtlEnv);
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

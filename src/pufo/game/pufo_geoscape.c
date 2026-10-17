@@ -5709,6 +5709,89 @@ void Geoscape_DrawPsiArm(const PsiScreenDrawEnv *pPsiEnv, const GeoscapeScreenAr
     Geoscape_BlitCtlRun(pArmEnv, 0, PUFO_GEOARM_CTLS_2);             /* 0x942C0..0x942E4, CMP #2 at 0x942E0 */
 }
 
+/* 0x92E48..0x92E58, 0x92FB0..0x92FC0 and the shared tail 0x92ACC..0x92ADC: the centring the original writes
+ * inline. MOVS R1,R0 / ADDMI R1,R1,#1 / MOV R1,R1,ASR#1 is "if (n < 0) ++n; then n >> 1", so the x the ARM
+ * draws at is RSB #centre, i.e. nCentre - ((nWidth + (nWidth < 0)) >> 1). */
+static i32 Geoscape_CentredX(i32 nWidth, i32 nCentre)
+{
+    if (nWidth < 0) {
+        ++nWidth;
+    }
+    return nCentre - (nWidth >> 1);
+}
+
+/* 0x92DAC..0x92EE4: screen 4, the soldier list. The close control is positioned BEFORE the draw (the original
+ * writes through the g_pUiCloseCtl global at 0x92DB8 / 0x92DC4; the port takes the control and null-guards it,
+ * as everywhere else in this port). SoldierScreen_Draw gets the block base abFacilityGrid in R0 (0x92DCC). */
+void Geoscape_DrawSoldierArm(const SoldierDrawEnv *pSoldierEnv, const GeoscapeSoldierArmEnv *pArmEnv,
+                             const GeoscapeScreenArmEnv *pCtlEnv)
+{
+    if (pArmEnv->pCloseCtl != NULL) {
+        pArmEnv->pCloseCtl->x = PUFO_SOLARM_CLOSE_X;                  /* 0x92DB0 STRH #0xE0 */
+        pArmEnv->pCloseCtl->y = PUFO_SOLARM_CLOSE_Y;                  /* 0x92DC8 STRH #1 */
+    }
+    (void)SoldierScreen_Draw(pSoldierEnv);                            /* 0x92DD0 */
+    Geoscape_BlitCtlRun(pCtlEnv, 0, PUFO_SOLARM_CTLS_2);              /* 0x92DE0..0x92DFC, CMP #2 at 0x92DF8 */
+    (void)UiControl_BlitActivePad(pArmEnv->pCloseCtl, pCtlEnv->pfnCtlBlit,
+                                  pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser); /* 0x92E00 / 0x92E04 */
+
+    const char *const pszText = pArmEnv->pTextRecs;                   /* aTextRecs @ 0xB38D0 */
+    (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 0xFF, 0xFF, 0xFF, 10, 10, 10);  /* 0x92E08..0x92E28 */
+    const char *const pszTitle = pszText + PUFO_TEXT_REC_STRIDE * PUFO_SOLARM_TEXT_TITLE;
+    (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszTitle), PUFO_SOLARM_CAP_CENTRE), 26,
+                          pszTitle);                                  /* 0x92E40..0x92E60, y 0x1A */
+    (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 0xFF, 0xFF, 0xFF, 10, 10, 10);  /* 0x92E64..0x92E80 */
+    (void)Text_DrawString(38, 50, pszText + PUFO_TEXT_REC_STRIDE * PUFO_SOLARM_TEXT_COL1);  /* 0x92E9C */
+    (void)Text_DrawString(170, 50, pszText + PUFO_TEXT_REC_STRIDE * PUFO_SOLARM_TEXT_COL2); /* 0x92EB8 */
+    (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 0xFF, 0xC8, 0x14, 10, 10, 10);  /* 0x92EBC..0x92ED8: the arm's
+                                                                               * last act sets a pair no text in
+                                                                               * the arm draws with */
+}
+
+/* 0x92EE4..0x9309C: screen 5, the soldier name editor. The only arm whose control/draw ORDER depends on a
+ * gate: armed (bTransferFlag set) draws first (0x92F38) and runs its controls after; unarmed runs the controls
+ * first (0x93070..0x9308C) and draws after them (0x93094), skipping the captions entirely. Both paths end at
+ * 0x93054, the close-control blit. */
+void Geoscape_DrawSoldierEditArm(const SoldierDrawEnv *pSoldierEnv, const GeoscapeSoldierArmEnv *pArmEnv,
+                                 const GeoscapeScreenArmEnv *pCtlEnv)
+{
+    if (pArmEnv->pPad != NULL) {
+        PadImage_Blit(pArmEnv->pPad);                                 /* 0x92EE8 / 0x92EEC */
+    }
+    if (pArmEnv->pCloseCtl != NULL) {
+        pArmEnv->pCloseCtl->x = PUFO_SOLARM_CLOSE_X;                  /* 0x92EF4 STRH #0xE0 */
+        pArmEnv->pCloseCtl->y = PUFO_SOLARM_CLOSE_Y;                  /* 0x92F00 STRH #1 */
+    }
+
+    if (pArmEnv->pbTransferFlag != NULL && *pArmEnv->pbTransferFlag != 0) {  /* 0x92F18 BEQ loc_93064 */
+        if (pArmEnv->pCloseCtl != NULL) {
+            pArmEnv->pCloseCtl->x = PUFO_SOLTR_CLOSE_X;               /* 0x92F20 STRH #0xC6 */
+            pArmEnv->pCloseCtl->y = PUFO_SOLTR_CLOSE_Y;               /* 0x92F28 STRH #0x4D */
+        }
+        (void)SoldierScreen_Draw(pSoldierEnv);                        /* 0x92F38: BEFORE the controls */
+        Geoscape_BlitCtlRun(pCtlEnv, 0, PUFO_SOLARM_CTLS_3);          /* 0x92F48..0x92F64, CMP #3 */
+
+        const char *const pszText = pArmEnv->pTextRecs;
+        (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 0x44, 0xF4, 0xFC, 4, 70, 75);  /* 0x92F68..0x92F90 */
+        const char *const pszHead = pszText + PUFO_TEXT_REC_STRIDE * PUFO_SOLTR_TEXT_HEAD;
+        (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszHead), PUFO_SOLTR_HEAD_CENTRE), 38,
+                              pszHead);                               /* 0x92FA8..0x92FC8, y 0x26 */
+        (void)Gfx_PackRgb565Pair(pArmEnv->pColor, 0x44, 0xF4, 0xFC, 4, 70, 75);  /* 0x92FCC..0x92FE8: the same
+                                                                                  * pair packed twice */
+        const char *const pszRow1 = pszText + PUFO_TEXT_REC_STRIDE * PUFO_SOLTR_TEXT_ROW1;
+        (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszRow1), PUFO_SOLTR_ROW1_CENTRE), 80,
+                              pszRow1);                               /* 0x92FFC..0x9301C, y 0x50 */
+        const char *const pszRow2 = pszText + PUFO_TEXT_REC_STRIDE * PUFO_SOLTR_TEXT_ROW2;
+        (void)Text_DrawString(Geoscape_CentredX(Text_MeasureWidth(pszRow2), PUFO_SOLTR_ROW2_CENTRE), 80,
+                              pszRow2);                               /* 0x93030..0x93050, y 0x50 */
+    } else {
+        Geoscape_BlitCtlRun(pCtlEnv, 0, PUFO_SOLARM_CTLS_3);          /* 0x93070..0x9308C, CMP #3 */
+        (void)SoldierScreen_Draw(pSoldierEnv);                        /* 0x93094: AFTER the controls */
+    }
+    (void)UiControl_BlitActivePad(pArmEnv->pCloseCtl, pCtlEnv->pfnCtlBlit,
+                                  pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser); /* 0x93054 / 0x93058 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
