@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 17154 |
+| Test checks run | 17181 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -556,7 +556,7 @@ is the module that answers to it.
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/game/pufo_input.h` |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` (+1) |
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
-| `0x5a294` | `UiPanel_InsertLine` | 160 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/ui/pufo_linelist.c` (+2) |
+| `0x5a294` | `UiPanel_InsertLine` | 160 | `src/pufo/ui/pufo_linelist.c`, `src/pufo/ui/pufo_linelist.h` (+1) |
 | `0x1a340` | `UiControl_BlitActivePad` | 152 | `src/pufo/ui/pufo_control.h` |
 | `0x2d798` | `Text_DrawString` | 148 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+1) |
 | `0x46144` | `Font_Free` | 148 | `src/pufo/game/pufo_font.h` |
@@ -1275,7 +1275,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 2694 |
+| `test_geoscape` | PASS | 2721 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

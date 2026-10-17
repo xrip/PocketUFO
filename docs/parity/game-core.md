@@ -18061,3 +18061,48 @@ first run's installed handler; it now nulls both handlers and runs once.
 
 Not ported yet in this chain: 0x9168C..0x91CEC (the flag tests after 0x17 and the screen-id tail) and
 the screen arms 0x91DC8..0x944B0.
+
+### Unit 107, part 12: the descent-target panel (0x916A0..0x9191C, flag 0x15)
+
+Flag 0x17's shape on the 0x13 arm's control rows, with the city line put back -- and the city line indexed
+by a field nobody had read here before.
+
+- The test is 0x91920's neighbour: `BL UiPanel_GetLineFlag` at 0x91694 then `CMP R0,#0x15` at 0x91698. Three
+  values in the body are sticky from the flag-0x17 test prologue: R6 = TEXTS[1239] (0x91490), R7 = 0 (0x9149C,
+  used by the anim's two zero stack stores at 0x916CC / 0x916D4) and R11 = 0xBD8 (0x90D88, used by the row read
+  at 0x91708). The anim (0x916A0..0x916D8) is again x 14, nW 0xD0, y 0x3C, nH 0x5A, nIdx 0, srcX 0x28, srcY 0x32,
+  nKey 0xB4, nMode 0.
+- Line 1: TEXTS[1239] by an inline loop (0x916DC..0x916FC) plus the panel's SELECTED row via `BL strcat` at
+  0x91718; `Text_MeasureWidth` at 0x91724, centred at y 70 (0x91744).
+- Line 2: TEXTS[1232] "Город: " (0x91748, inline copy 0x91750..0x91770) + a mission-site name, where the index
+  is the strateg entry's DWORD at +0x84 -- StrategItem.nTargetIdx -- read at 0x91798, scaled by 0x18 (0x917A0)
+  off the root + 0xC8 = 0x1865C0 (0x917A4) and +4 for the name (0x917AC). The 0x13 arm uses the signed byte at
+  +0x02 (0x90E94) for the same table; these are different fields with different meanings, and the port's
+  StatusPanel_DrawCityLineIdx now serves both.
+- The entry is colour SLOT 1's (0x91778 `MOV R2,#1` then `BL PtrArray_Get` at 0x91790, R7 = 0x1864F8 root and
+  R0 = root + 0x3C). PtrArray_Get @ 0xA1130 returns 0 for a negative index (0xA1134 BMI) and 0 for an index at
+  or above the count (0xA1148's BLT is only taken when the LDRLT at 0xA1144 fired), and 0x91798 dereferences the
+  result with no null test -- a fault whenever the colour byte is outside the list. The index is then multiplied
+  by 0x18 with no bound either, so a negative nTargetIdx reads before 0x1865C0. Both are recorded; the port
+  guards both.
+- Controls: CtlB centred from its own pad (0x917E8 `LDRH R3,[R0,#4]`) at y 105 (0x917F8 #0x69) with
+  Smap_BeginCraftSelect at 0x9180C before the 0x91814 blit; TEXTS[1127] (R8, 0x91818..0x91838) centred at y 106
+  (0x91864). Then the same soldiers-aboard gate as 0x17 (0x91868..0x91880, the AND at 0x91878 and the dead
+  abFacilityGrid argument at 0x9187C) and the same post-blit overwrite of CtlB's handler on a zero count
+  (0x9188C..0x91898). CtlA centred at y 128 (0x918B0 #0x80) with Smap_ResolveInterceptUI at 0x918C4 before the
+  0x918CC blit; TEXTS[1144] (R9, 0x918D0..0x918F8) centred at y 129 (0x91910, 0x9191C).
+- Like 0x17 there is no bMapSelectionFlag read anywhere in the arm -- one path.
+- Port shape: the gate is one helper (`StatusPanel_CraftSelectGate`, used by 0x17 and 0x15) and the city line is
+  one helper (`StatusPanel_DrawCityLineIdx`, used by 0x13 with the +0x02 byte and by 0x15 with nTargetIdx).
+
+Test note worth keeping: the mission-site bound's NEGATIVE half was invisible to the mutation sweep at first,
+because a fixture array whose neighbours are all zero makes an unguarded `paMissionSites[-1]` read nothing and
+look exactly like the guard. The fixture now points the env's table one slot into a longer buffer whose slot 0
+carries a known name ("bb6"), so an unguarded read draws it and the guard is observable.
+
+IDB: 6 line comments at 0x91698, 0x91718, 0x91798, 0x9180C, 0x91878 and 0x9191C, IDB saved. bugs.tsv: 2 new rows
+(an unguarded PtrArray_Get dereference at 0x91798 and an unbounded nTargetIdx at 0x917A0). Tests: 27 checks, 1 new
+`_Static_assert` pin, 18/18 mutations caught.
+
+Not ported yet in this chain: 0x91920..0x91CEC (the flag tests after 0x15 and the screen-id tail) and the screen
+arms 0x91DC8..0x944B0.

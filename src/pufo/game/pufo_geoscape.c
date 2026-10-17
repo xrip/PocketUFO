@@ -5172,16 +5172,38 @@ static const char *StatusPanel_SelectedRowText(const GeoscapeStatusPanelEnv *pEn
  * on a spawned contact, and the mission-site index on an intercept item, because
  * BasePlaneScreen_AddInterceptMission @ 0x7DE14 indexes this very table with the value it stores at
  * +0x02. The original bounds neither the byte nor the resulting address. */
-static void StatusPanel_DrawCityLine(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+static void StatusPanel_DrawCityLineIdx(const GeoscapeStatusPanelEnv *pEnv, char *psz, i32 nSite)
 {
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CITY);               /* 0x90E44 unk_F1360, record 1232 */
-    const StrategItem *const pEntry = StatusPanel_ListEntry(pEnv, 1);
-    const i32 nSite = (pEntry != NULL) ? (i32)(i8)pEntry->bCraftClass : -1;
     if (nSite >= 0 && nSite < PUFO_MISSION_SITE_COUNT) {
         (void)pufo_strcat(psz, pEnv->paMissionSites[nSite].szName, PUFO_TEXT_REC_STRIDE);
     }
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_SITE_Y_LINE2, psz);
-                                                                         /* 0x90ED8 / 0x9107C, y 86 */
+                                                                         /* 0x90ED8 / 0x9107C / 0x917DC, y 86 */
+}
+
+static void StatusPanel_DrawCityLine(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    const StrategItem *const pEntry = StatusPanel_ListEntry(pEnv, 1);
+    StatusPanel_DrawCityLineIdx(pEnv, psz, (pEntry != NULL) ? (i32)(i8)pEntry->bCraftClass : -1);
+}
+
+/* 0x915D4..0x91604 and 0x91868..0x91898, the 0x17 and 0x15 arms' shared tail: the craft is the one colour
+ * SLOT 0 names -- a full byte, not the 0..7 class the 0x14 arm reads the same slot as -- and an empty one
+ * makes CtlB resolve the intercept instead of starting the craft-select. AND R1,R0,#0xFF (0x915E4, 0x91878)
+ * changes nothing observable: UiPanel_InsertLine writes a colour slot with LDRB of a byte argument into the
+ * record's dword slot (0x5A314 / 0x5A318), so the value is already 0..255. The first argument of the count
+ * call is abFacilityGrid (0x915E8, 0x9187C) and Craft_CountSoldiersAboard never reads it -- 0x664A0 loads its
+ * own roster base and 0x664B0 the count. The overwrite lands AFTER the control's blit (0x91580, 0x91814). */
+static void StatusPanel_CraftSelectGate(const GeoscapeStatusPanelEnv *pEnv)
+{
+    const i32 nCraft = (i32)(u8)UiLineList_GetColor(pEnv->pLines, 0, 0);
+    const i32 nAboard = (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL)
+                        ? Craft_CountSoldiersAboard(pEnv->apSoldiers, (i32)*pEnv->pnSoldierCount, nCraft)
+                        : 0;
+    if (nAboard == 0) {
+        pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;
+    }
 }
 
 /* 0x90D78..0x9118C: the intercept-mission panel, flag 0x13. Its test prologue (0x90D88) loads
@@ -5370,19 +5392,7 @@ static void StatusPanel_DrawDescentPanel(const GeoscapeStatusPanelEnv *pEnv, cha
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_CANCEL_LBL, psz);
                                                                          /* 0x915D0, y 103 */
 
-    /* 0x915D4..0x91604: the craft is the one colour SLOT 0 names -- a full byte, not the 0..7 class the
-     * 0x14 arm reads the same slot as -- and an empty one makes CtlB resolve the intercept instead of
-     * starting the craft-select. The AND R1,R0,#0xFF at 0x915E4 changes nothing observable: the insert
-     * path stores the colour as a BYTE into the 16-byte record's dword slot (0x5A314 LDRB then STR, in
-     * UiPanel_InsertLine @ 0x5A294), so the slot value is already 0..255. The count's zero flag decides
-     * the four LDREQ / STREQ stores. */
-    const i32 nCraft = (i32)(u8)UiLineList_GetColor(pEnv->pLines, 0, 0);
-    const i32 nAboard = (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL)
-                        ? Craft_CountSoldiersAboard(pEnv->apSoldiers, (i32)*pEnv->pnSoldierCount, nCraft)
-                        : 0;
-    if (nAboard == 0) {
-        pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;             /* 0x915F8..0x91604, AFTER the blit */
-    }
+    StatusPanel_CraftSelectGate(pEnv);                                   /* 0x915D4..0x91604 */
 
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x9160C..0x91618 */
     pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;                   /* 0x91624: y 125 */
@@ -5393,6 +5403,60 @@ static void StatusPanel_DrawDescentPanel(const GeoscapeStatusPanelEnv *pEnv, cha
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);             /* 0x9163C..0x9165C, R9 = 1144 * 205 */
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_CANCELLED_LBL, psz);
                                                                          /* 0x91688, y 126 */
+}
+
+/* 0x916A0..0x9191C: the descent-target panel, flag 0x15. Flag 0x17's shape with the 0x13 arm's control rows
+ * (105, 106, 128, 129) and one extra line. Three values here are sticky registers left by the flag-0x17 test
+ * prologue: R6 = TEXTS[1239] (0x91490) for the first line, R7 = 0 (0x9149C) for the anim's two zero stack
+ * args, and R11 = 0xBD8 (0x90D88) for the selected-row read.
+ *
+ * The second line is the 0x13 arm's city line with a DIFFERENT index source: the entry still comes from
+ * colour SLOT 1 (0x91778 MOV R2,#1) but the site index is the entry's nTargetIdx dword at +0x84 (0x91798
+ * LDR R3,[R0,#0x84]), not the byte at +0x02. Neither the list lookup nor the index is checked -- 0x91798
+ * dereferences whatever PtrArray_Get returns and 0x917A0 MULs the index by 0x18 with no bound. */
+static void StatusPanel_DrawDescentTarget(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pStrategList == NULL || pEnv->paMissionSites == NULL || pEnv->pCtlA == NULL
+        || pEnv->pCtlB == NULL || pEnv->pfnResolveInterceptUI == NULL || pEnv->pfnBeginCraftSelect == NULL) {
+        return;
+    }
+
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+                            0, 0x28, 0x32, 0xB4, 0);                      /* 0x916A0..0x916D8 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_DESCENT);            /* 0x916DC..0x916FC, R6 sticky */
+    const char *const pszRow = StatusPanel_SelectedRowText(pEnv);        /* 0x91700..0x91710 */
+    if (pszRow != NULL) {
+        (void)pufo_strcat(psz, pszRow, PUFO_TEXT_REC_STRIDE);            /* 0x91718 */
+    }
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_TARGET_Y_LINE, psz);
+                                                                         /* 0x91724, 0x91744, y 70 */
+
+    const StrategItem *const pEntry = StatusPanel_ListEntry(pEnv, 1);    /* 0x91774..0x91790 */
+    StatusPanel_DrawCityLineIdx(pEnv, psz, (pEntry != NULL) ? pEntry->nTargetIdx : -1);
+                                                                         /* 0x91794..0x917DC */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlB);                                 /* 0x917E8..0x917F4 */
+    pEnv->pCtlB->y = (i16)PUFO_STATUS_SITECTL_Y_CANCEL;                  /* 0x917F8: y 105 */
+    pEnv->pCtlB->pfnClick = pEnv->pfnBeginCraftSelect;                   /* 0x9180C */
+    (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x91814 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_ORDER_OK);           /* 0x91818..0x91838, R8 = aTextOk */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_SITE_Y_CANCEL_LBL, psz);
+                                                                         /* 0x91864, y 106 */
+
+    StatusPanel_CraftSelectGate(pEnv);                                   /* 0x91868..0x91898 */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x918A0..0x918AC */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_SITECTL_Y_OK2;                     /* 0x918B0: y 128 */
+    pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x918C4 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x918CC */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);             /* 0x918D0..0x918F8, R9 = 1144 * 205 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_SITE_Y_CANCELLED_LBL, psz);
+                                                                         /* 0x91910, 0x9191C, y 129 */
 }
 
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
@@ -5454,7 +5518,10 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_DESCENT_PANEL) {
         StatusPanel_DrawDescentPanel(pEnv, psz);                         /* 0x9148C..0x91688 */
     }
-    /* 0x9168C..0x91CEC: the flag tests after 0x17 and the screen-id tail are not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_DESCENT_TARGET) {
+        StatusPanel_DrawDescentTarget(pEnv, psz);                        /* 0x916A0..0x9191C */
+    }
+    /* 0x91920..0x91CEC: the flag tests after 0x15 and the screen-id tail are not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

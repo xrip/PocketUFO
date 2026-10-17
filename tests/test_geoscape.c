@@ -8730,6 +8730,7 @@ _Static_assert(sizeof(MissionSiteRec) == PUFO_STATUS_MISSION_SITE_STRIDE,
 _Static_assert(PUFO_STATUS_FLAG_TRAVEL_PANEL == 0x12, "0x9119C CMP R0, #0x12");
 _Static_assert(PUFO_STATUS_FLAG_DESCENT_PANEL == 0x17, "0x91498 CMP R0, #0x17");
 _Static_assert(PUFO_STATUS_TEXT_DESCENT == 1239, "unk_F18FB @ 0xF18FB = 0xB38D0 + 1239 * 205");
+_Static_assert(PUFO_STATUS_FLAG_DESCENT_TARGET == 0x15, "0x91698 CMP R0, #0x15");
 _Static_assert(0xB38D0 + 1239 * PUFO_TEXT_REC_STRIDE == 0xF18FB, "R6 = (unk_F18FB - 0xB38D0) at 0x91490");
 
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
@@ -10071,6 +10072,19 @@ static void PnSetMissionSites(void)
     pufo_strncpy(g_pnMission[6].szName, "nn6", sizeof(g_pnMission[6].szName));
 }
 
+/* The negative half of the mission-site bound needs a NON-ZERO record in front of the table: with the
+ * plain global array an unguarded paMissionSites[-1] reads zeros and looks exactly like the guard, so the
+ * env's table is pointed one slot into a longer buffer whose slot 0 carries a known name. */
+static MissionSiteRec g_aPnSiteBuf[PUFO_MISSION_SITE_COUNT + 1];
+
+static void PnShiftSiteTableRight(void)
+{
+    memcpy(g_aPnSiteBuf + 1, g_pnMission, sizeof(g_pnMission));
+    memset(&g_aPnSiteBuf[0], 0, sizeof(g_aPnSiteBuf[0]));
+    pufo_strncpy(g_aPnSiteBuf[0].szName, "bb6", sizeof(g_aPnSiteBuf[0].szName));
+    g_pnEnv.paMissionSites = &g_aPnSiteBuf[1];
+}
+
 /* PN_ROW_PIX pixels: one row band, x from 20 to 219. The window keeps the frame's two border columns
  * at 14 and 225 out -- Ui_AnimExpandBlit fills the whole panel body, not just its outline (the BLT at
  * pufo_panel.c:567), so the body colour has to come from a run that draws the body with no text. */
@@ -10872,6 +10886,119 @@ static void TestStatusPanelDescentPanel(void)
     g_bPnMapSel = 0;
 }
 
+/* StrategItem.nTargetIdx @ +0x84 -- the index the 0x15 arm reads at 0x91798, where the 0x13 arm reads the
+ * byte at +0x02. Sites 0 / 4 / 5 / 6 are "z6" / "p6" / "m6" / "nn6". */
+static void PnSetTargetIdx(i32 nEntry1, i32 nEntry0)
+{
+    g_pnStrat[1].nTargetIdx = nEntry1;
+    g_pnStrat[0].nTargetIdx = nEntry0;
+}
+
+static void TestStatusPanelDescentTarget(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the descent-target panel @ 0x916a0\n");
+    PnFixture(0x15, 4, 1, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetPanelRows();
+    PnSetMissionSites();
+    PnSetTargetIdx(6, 5);
+    PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+
+    /* ---- 1. the body ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x916D0 MOV R1,#0xE)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x916C4 MOV R2,#0x3C)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x916C8) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_TARGET_ANIM_Y + PUFO_STATUS_TARGET_NH + 5, "nH 0x5A puts the bottom at 155");
+
+    PnFixture(0x0F, 4, 1, 0);
+    PnEmptySources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    PnFixture(0x15, 4, 1, 0);
+    PnEmptySources();
+    PnRun();
+    CheckEqI32(PnDiffRect(20, 120, 219, 145).nCount, 0,
+               "body ink equals the 0x0F panel's -- the same nine anim values, zeros from R7 (0x916CC / 0x916D4)");
+
+    /* ---- 2. line 1: TEXTS[1239] (R6, sticky from the 0x17 prologue at 0x91490) + the selected row ---- */
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 5); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6k6", "y=70 is TEXTS[1239] + apLines[nUnk3032] (0x91700..0x91710, then BL strcat at 0x91718)");
+    g_pnPanel.nUnk3032 = 4;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6kk6", "the SELECTED row and not the colour-slot row (R11 = 0xBD8, sticky from 0x90D88)");
+    g_pnPanel.nUnk3032 = 25;
+    PnRowIs(PUFO_STATUS_TARGET_Y_LINE, "d6", "row 25 is past the panel's 20 rows: guarded here, 0x91718 would strcat a NULL");
+
+    /* ---- 3. line 2: TEXTS[1232] + aMissionSites[ entry->nTargetIdx ], entry from colour SLOT 1 ---- */
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 5); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6nn6", "y=86 is TEXTS[1232] (0x91748) + aMissionSites[nTargetIdx] (0x91798 LDR R3,[R0,#0x84], 0x917A0 MUL #0x18, 0x917AC ADD #4)");
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(4, 6); PnSetSoldierAboard(4);
+    g_pnStrat[1].bCraftClass = 6;   /* the +0x02 byte the 0x13 arm would use, deliberately different */
+    g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6p6", "and the index IS +0x84: nTargetIdx 4 while bCraftClass is 6 (0x13 would say nn6)");
+    PnFixture(0x15, 0, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 4); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6nn6", "the ENTRY comes from colour SLOT 1 (0x91778 MOV R2,#1): entry 0's index 4 is not used");
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(56, 5); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6", "index 56 is past the 56 records: 0x917A0 MULs and 0x917A8 ADDs with no bound (bugs.tsv)");
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(-1, 5); PnSetSoldierAboard(4);
+    PnShiftSiteTableRight();   /* paMissionSites[-1] is "bb6" in this run */
+    g_pnPanel.nUnk3032 = 3;
+    PnRowIs(PUFO_STATUS_SITE_Y_LINE2, "q6",
+           "and a negative nTargetIdx is guarded -- the table here has \"bb6\" in the slot before it, which is what 0x917A0 / 0x917A8 would read");
+
+    /* ---- 4. controls and labels (the 0x13 arm's rows) ---- */
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 5); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    g_pnCtlB.uWidth = 30;
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlB centres on 120 from ITS OWN 30-wide pad (0x917E8 LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_SITECTL_Y_CANCEL, "at y=105 (0x917F8 MOV R3,#0x69)");
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "CtlA centres from its own 40-wide pad (0x918A4)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SITECTL_Y_OK2, "at y=128 (0x918B0 MOV R3,#0x80)");
+    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91814 and 0x918CC)");
+    Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0], "CtlB first, then CtlA");
+    g_pnCtlA.pfnClick = NULL;
+    g_pnCtlB.pfnClick = NULL;
+    PnRun();
+    Check(g_apnPnBlitHandler[0] == PnBeginCraftSelect, "CtlB is blitted with Smap_BeginCraftSelect installed (0x9180C before 0x91814)");
+    Check(g_apnPnBlitHandler[1] == PnResolve, "CtlA gets Smap_ResolveInterceptUI before its 0x918CC blit (0x918C4)");
+    PnRowIs(PUFO_STATUS_SITE_Y_CANCEL_LBL, "m4", "TEXTS[1127] centred at y=106 (0x91818..0x91838 then 0x91864)");
+    PnRowIs(PUFO_STATUS_SITE_Y_CANCELLED_LBL, "B2", "TEXTS[1144] centred at y=129 (0x918D0..0x918F8, R9, then 0x9191C)");
+
+    /* ---- 5. the same soldiers-aboard gate as 0x17, at 0x91868..0x91898 ---- */
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 5); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnBeginCraftSelect, "a soldier aboard craft 4 keeps CtlB on Smap_BeginCraftSelect");
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 5); PnSetSoldierAboard(3);
+    g_pnPanel.nUnk3032 = 3;
+    PnCapture();
+    Check(g_pnCtlB.pfnClick == PnResolve, "and an empty craft overwrites it with Smap_ResolveInterceptUI (0x9188C..0x91898)");
+    Check(g_apnPnBlitHandler[0] == PnBeginCraftSelect, "the overwrite is after the 0x91814 blit, exactly as in 0x17");
+
+    /* ---- 6. one path, like 0x17 ---- */
+    PnFixture(0x15, 4, 1, 0); PnSetPanelRows(); PnSetMissionSites(); PnSetTargetIdx(6, 5); PnSetSoldierAboard(4);
+    g_pnPanel.nUnk3032 = 3;
+    g_bPnMapSel = 0;
+    PnFillSources();
+    PnRun();
+    memcpy(g_aPnBase, g_bdSurf.pPixels, sizeof(g_aPnBase));
+    g_bPnMapSel = 1;
+    PnRun();
+    CheckEqI32(PnDiffRect(0, PUFO_STATUS_TARGET_ANIM_Y, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "no bMapSelectionFlag read in 0x916A0..0x9191C either");
+    g_bPnMapSel = 0;
+}
+
 static void TestStatusPanelMissionSite(void)
 {
     printf("\nGeoscape_DrawStatusPanel, the intercept-mission panel @ 0x90d78\n");
@@ -11146,6 +11273,7 @@ int main(void)
     TestStatusPanelMissionSite();
     TestStatusPanelTravel();
     TestStatusPanelDescentPanel();
+    TestStatusPanelDescentTarget();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

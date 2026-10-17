@@ -1,47 +1,46 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `2c3c1cd`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its eleventh part -- the descent panel at
-0x9148C..0x91688 (flag 0x17), with 31 new checks, 17/17 mutations caught and 7 IDB comments.
-Parts 1..10 -- the map-view chrome in `5917656`, the 13-arm panel body in `2485d25`, the action-fail line
-in `79b7979`, the order questions in `a2d454b`, the craft-detail card in `c5f90b5`, the trace-lost panel
-in `4a02d1a`, the attacked-city panel in `ac13d77`, the intercept list in `c612882`, the map-target panel
-in `7c14ff8` and the mission-site / travel panels in `e9145c0` + `2c3c1cd` -- are behind this.
-What this part found:
+Date: 2026-10-17. HEAD before this edit: `4a8e181`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its twelfth part -- the descent-target panel
+at 0x916A0..0x9191C (flag 0x15): 27 checks, 18/18 mutations caught, 6 IDB comments, 2 ledger rows.
+Parts 1..11 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
+`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`,
+the attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the
+mission-site / travel panels `e9145c0` + `2c3c1cd` and the descent panel `4a8e181`. What this part found:
 
-- **The IDA MCP client was down, the server was not.** The session cached a failed connection at startup;
-  the server on 127.0.0.1:13337 answers JSON-RPC, so the IDB work now goes through a small client script
-  (`C:/Windows/Temp/pufo_scripts/idac.py`) that speaks the MCP wire protocol directly. Everything written
-  into the IDB was re-read from the ARM first. If Claude Code's own ida-pro-mcp tools come back, prefer
-  them; the script is a workaround, not the intended path.
-- **Flag 0x17 has ONE path.** No `bMapSelectionFlag` read anywhere in 0x9148C..0x91688. Line = TEXTS[1239]
-  "Снижение: " (R6 from the test prologue at 0x91490) + the panel's SELECTED row (0x9151C strcat, row read
-  at 0x9150C with R11 = 0xBD8 still sticky from the 0x13 test prologue at 0x90D88), centred at y 70.
-- **An empty craft turns a select button into a resolve.** CtlB gets Smap_BeginCraftSelect @ 0x838dc at
-  0x91578 before its 0x91580 blit; `Craft_CountSoldiersAboard` on the colour-slot byte then decides, and
-  a zero count lets four LDREQ / STREQ at 0x915F8..0x91604 overwrite CtlB+0xC with
-  Smap_ResolveInterceptUI -- after the pad is already painted. That order is observable through the blit
-  callback (handler at blit time vs handler after the run), which is what the mutation sweep checked.
-- **Two dead things in that call.** `abFacilityGrid` at 0x915E8 is the first argument and the callee never
-  reads it (0x664A0 loads its own roster at 0x1139B8, 0x664B0 the count from nSoldierCount) -- bugs.tsv
-  residue row. And `AND R1,R0,#0xFF` at 0x915E4 changes nothing: UiPanel_InsertLine writes a colour slot
-  with `LDRB` of a byte argument into the record's dword slot (0x5A314 / 0x5A318), so slots are 0..255
-  before any reader masks them. The first byte test for this was vacuous because of exactly that.
-- **This is the third copy of the 0x14 set-arm body** (same nine anim values at 0x914A4..0x914DC, same
-  rows 70/102/103/125/126) -- recorded as a duplicate row. The port reuses PUFO_STATUS_TARGET_* for all
-  three.
+- **The mission-site table has two index fields.** The 0x13 arm indexes it with the signed byte at
+  `StrategItem` +0x02 (0x90E94); the 0x15 arm indexes the SAME table with the dword at +0x84, which the port
+  already knows as `nTargetIdx` (0x91798 `LDR R3,[R0,#0x84]`, MUL by 0x18 at 0x917A0, off root+0xC8 =
+  0x1865C0). Both are unbounded. The port now has one `StatusPanel_DrawCityLineIdx` serving both shapes.
+- **Two faults in that line.** `PtrArray_Get` @ 0xA1130 returns 0 for a negative index AND for an index at or
+  above the count, and 0x91798 dereferences the result with no null test -- any colour-slot byte outside the
+  strateg list reads from address 0x84. And a negative `nTargetIdx` reads before 0x1865C0. Both recorded
+  (282 rows), both guarded in the port.
+- **A guard that no test could see.** Dropping the `nSite >= 0` half of the bound survived the sweep because
+  the fixture's table is a plain global whose neighbours are zero: an unguarded `paMissionSites[-1]` read
+  nothing and looked identical to the guard. The fixture now points the env's table one slot into a longer
+  buffer with a named record ("bb6") in front, and the mutant fails. Worth remembering for every bounds test:
+  an out-of-range read is only visible if something non-zero is there.
+- 0x15 is flag 0x17's body on the 0x13 arm's rows, one path, same `Smap_BeginCraftSelect` then
+  zero-soldiers-overwrite sequence (0x9180C before 0x91814, 0x9188C..0x91898 after it), same dead
+  `abFacilityGrid` argument and the same redundant `AND #0xFF`. The port factors both into shared helpers
+  (`StatusPanel_CraftSelectGate`, `StatusPanel_DrawCityLineIdx`).
+- Sticky-register chain, still the thing that makes this function hard to read: at 0x916A0 the arm's TEXTS
+  record (R6 = 1239), its anim zeros (R7 = 0) and its row offset (R11 = 0xBD8) all come from the FLAG-0x17
+  test prologue at 0x91490 / 0x9149C and the FLAG-0x13 test prologue at 0x90D88, none of which belong to
+  this arm's own code.
 
-Test hygiene fixes this part needed: the CtlA handler-order check passed on a mutant because `PnCapture`
-runs the arm twice and the second run saw the first run's installed handler -- it now nulls both
-handlers and runs once; and the mask test was replaced by a real one (a soldier aboard craft 255 counts
-for slot 255 and not for slot 4).
+IDA note: the MCP tools are still unreachable from this session (the handshake failed at startup and did not
+re-cover after the server came back), so IDB work goes through the JSON-RPC client
+`C:/Windows/Temp/pufo_scripts/idac.py` against the same server (127.0.0.1:13337). Worth running `/mcp` and
+reconnecting ida-pro-mcp before the next session.
 
-Next: 0x9168C (the flag-0x15 test) through 0x91CEC, then the screen arms 0x91DC8..0x944B0. The gate
-measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 17154 checks across 60 suites -- that byte
-figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py` counts a function once its start
-address is cited, so it says nothing about how much of that function is ported. The read map and the arm
-table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in
-parts".
+Next: 0x91920 (the flag-0x16 test, body from 0x91938) through 0x91CEC, then the screen arms
+0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 17181 checks across 60
+suites -- the byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py` counts a function
+once its start address is cited, so it says nothing about how much of that function is ported. The read map
+and the arm table are in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported
+in parts".
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

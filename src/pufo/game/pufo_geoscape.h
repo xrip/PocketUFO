@@ -2008,6 +2008,12 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
  * Craft_CountSoldiersAboard on the colour-slot-0 byte (0x915D4..0x915EC), and a zero count replaces
  * the already-blitted CtlB handler at 0x915F8..0x91604. */
 #define PUFO_STATUS_FLAG_DESCENT_PANEL        0x17 /* 0x91498 CMP R0, #0x17 */
+
+/* 0x916A0..0x9191C: flag 0x15, the descent-target panel: flag 0x17's shape (TEXTS[1239] + the selected row,
+ * CtlB centred with Smap_BeginCraftSelect and the same soldiers-aboard overwrite) on the 0x13 arm's control
+ * rows 105 / 106 / 128 / 129, plus the city line -- but indexed by StrategItem.nTargetIdx (+0x84, read at
+ * 0x91798) instead of the +0x02 byte. */
+#define PUFO_STATUS_FLAG_DESCENT_TARGET       0x15 /* 0x91698 CMP R0, #0x15 */
 #define PUFO_STATUS_TEXT_DESCENT              1239 /* unk_F18FB @ 0xF18FB, loaded into R6 at 0x91490 */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
