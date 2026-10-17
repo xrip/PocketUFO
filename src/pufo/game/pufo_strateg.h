@@ -77,7 +77,8 @@ typedef struct StrategList {
 
 /* The pieces of the geoscape world the contact updates reach into. The ship
  * array is pCtxBase.apCraft (count byte at pCtxBase+0x1194). */
-/* The mission-site table at 0x1865C8: 24-byte records, indexed by craft class in
+/* The mission-site table at 0x1865C0 (the 0x1864F8 root's +0xC8; IDA names it aMissionSites):
+ * 24-byte records, indexed by craft class in
  * BasePlaneScreen_AddInterceptMission @ 0x7de14 and by a random roll of 56 in
  * Geoscape_SpawnMissionSite @ 0x7e49c. x and y are SIGNED 16-bit; both loads are LDRSH. The
  * remaining 20 bytes of each record are not touched by either caller. */
@@ -1023,7 +1024,7 @@ typedef struct SpawnMissionCtx {
     const PadImage *pTilemap;           /* the land test, 255 is ocean */
     BaseRec *const *apBases;            /* subtype 6's targets */
     i32 nBaseCount;                     /* the SIGNED byte at anLineAux[79] */
-    const MissionSiteRecord *apSites;   /* the table at 0x1865C8 */
+    const MissionSiteRecord *apSites;   /* aMissionSites @ 0x1865C0 (root + 0xC8) */
     i32 nSiteCount;
     const u8 *abFacilityGrid;           /* subtype 6 asks for a free cell of kind 10 */
     i32 *pnRadarPulseTimer;             /* nRadarPulseTimer @ 0xAC224, subtype 5 sets 250 */

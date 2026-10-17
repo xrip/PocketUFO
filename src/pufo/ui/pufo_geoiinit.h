@@ -102,14 +102,8 @@
  * lives in game/pufo_geoscape.h, which this header includes: the map click and the build dialog
  * index it too. */
 
-/* The 24-byte mission-site record at unk_1865C0 (the root block's +0xC8). The u32 comes
- * from the "<i>.cts" file; the name is copied from text record 1655+i over +4. */
-#define PUFO_MISSION_SITE_COUNT 56
-typedef struct MissionSiteRec {
-    u32  uField0;    /* +0, from the .cts file */
-    char szName[20]; /* +4 */
-} MissionSiteRec;
-_Static_assert(sizeof(MissionSiteRec) == 24, "the mission-site record is 24 bytes");
+/* MissionSiteRec and PUFO_MISSION_SITE_COUNT moved to game/pufo_geoscape.h: the flag-0x10 status
+ * panel (0x90574) indexes the same 0x1865C0 table, and this header already includes that one. */
 
 /* Everything Geoscape_InitUI reaches outside its own allocations. */
 typedef struct GeoscapeInitEnv {

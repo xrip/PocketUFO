@@ -79,6 +79,19 @@ typedef struct BaseFacFlag {
 } BaseFacFlag;
 _Static_assert(sizeof(BaseFacFlag) == 28, "aBaseFacFlags records are 28 bytes");
 
+/* The 24-byte mission-site record at aMissionSites @ 0x1865C0 -- the 0x1864F8 root's +0xC8, which
+ * InitUI reaches as `LDR R7, =0x1864F8 / ADD R1, R7, #0xC8` (0x86C6C, 0x86CA4). InitUI reads 24 bytes
+ * from "<i>.cts" for 56 records (0x86C40..0x86CDC, the loop test is CMP R0, #0x38) and copies text
+ * record 1655+i into +4; with lang.dat loaded only 1650 text records exist, so every name is empty in
+ * the original too. The flag-0x10 status panel indexes the same table at 0x90574, which is why the
+ * record lives here and not in ui/pufo_geoiinit.h. */
+#define PUFO_MISSION_SITE_COUNT 56
+typedef struct MissionSiteRec {
+    u32  uField0;    /* +0, from the .cts file */
+    char szName[20]; /* +4, 0x90584 ADD R1, R3, #4 */
+} MissionSiteRec;
+_Static_assert(sizeof(MissionSiteRec) == 24, "the mission-site record is 24 bytes");
+
 typedef struct GeoscapeState {
     GameTime     time;
     GeoscapeWorld world;
@@ -1571,6 +1584,8 @@ typedef struct GeoscapeStatusPanelEnv {
     void             (*pfnConfirmSelected)(void);     /* Smap_ConfirmSelected @ 0x845d8 */
     /* The 0x0D trace-lost panel. */
     struct GameTime   *pTime;             /* 0x159618: GameTime_Pause writes bPaused here */
+    /* The 0x10 attacked-city panel. */
+    MissionSiteRec    *paMissionSites;    /* aMissionSites @ 0x1865C0 (root + 0xC8), 56 records */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -1817,6 +1832,36 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_PAUSE_Y_LINE2          0x76 /* 0x9042C MOV R2, #0x76 */
 #define PUFO_STATUS_PAUSECTL_Y             0x9B /* 0x90454 MOV R3, #0x9B */
 #define PUFO_STATUS_PAUSE_Y_LABEL          0x9C /* 0x904BC MOV R2, #0x9C */
+
+/* 0x904D8: flag 0x10, the attacked-city panel. It is the only arm of this chain that names a mission
+ * site, and the only one of the three big panels that does NOT re-blit the strip pad first: the flag
+ * read at 0x904F8 goes straight to the animated body at (0xE, 0x46) size (0xD0, 0x78) from src
+ * (0x28, 0x32), key 0xB4, nIdx 0, nMode 0 (0x9050C..0x90538) -- the same box as the 0x0D panel, x 14..225,
+ * y 70..195. R9 = 0x39400 | 0x18 = 1144 * 205 and R7 = 0x78 are built at 0x904D8/0x904DC before the
+ * test: R9 is this arm's second label record and R7 is the 0x1B arm's strip colour.
+ *
+ * Line 1 at y 86 is TEXTS[1232] "Город: " + aMissionSites[colour slot 1].szName. 0x9056C reads slot 1,
+ * 0x90574 MULs it by 0x18 (the 24-byte record), 0x90578/0x9057C add it to 0x1864F8 + 0xC8 = 0x1865C0 and
+ * 0x90584 takes the name at +4. The index is not bounds-checked against the 56 records (bugs.tsv).
+ * Line 2 at y 104 is TEXTS[1233] "Город атакован пришельцами", whose shipped text ends in a space.
+ *
+ * Two controls, each blitted BEFORE its handler is installed: *pGeoscapeCtlConfirm @ 0x186BA4 centred on
+ * 120 from its own uWidth at y 136 (0x90634 blit, 0x90648 handler = Smap_OnPointerUp), labelled TEXTS
+ * [1234] "На зону террора" centred at the SAME y 136 (0x906D4); then *pGeoscapeCtlA @ 0x186BB4 centred at
+ * y 160 (0x90670 blit, 0x9067C handler = Smap_ResolveInterceptUI), labelled TEXTS[1144] "Отмена" centred
+ * at y 161 (0x90724). */
+#define PUFO_STATUS_FLAG_CITY_ATTACKED     0x10 /* 0x90504 CMP R0, #0x10 */
+#define PUFO_STATUS_TEXT_CITY              1232 /* 0xF1360 "Город: " */
+#define PUFO_STATUS_TEXT_CITY_ATTACKED     1233 /* 0xF142D "Город атакован пришельцами ", with its trailing space */
+#define PUFO_STATUS_TEXT_GO_TO_ZONE        1234 /* 0xF14FA "На зону террора", the confirm control's label */
+#define PUFO_STATUS_CITY_ANIM_Y            0x46 /* 0x90518 MOV R2, #0x46: equal to PAUSE_ANIM_Y */
+#define PUFO_STATUS_CITY_NH                0x78 /* 0x90534 STR R7: equal to PAUSE_NH */
+#define PUFO_STATUS_CITY_Y_LINE1           0x56 /* 0x905AC MOV R2, #0x56: y 86 */
+#define PUFO_STATUS_CITY_Y_LINE2           0x68 /* 0x90600 MOV R2, #0x68: y 104 */
+#define PUFO_STATUS_CITYCTL_Y_CONFIRM      0x88 /* 0x9062C MOV R3, #0x88: y 136 */
+#define PUFO_STATUS_CITY_Y_CONFIRM_LBL     0x88 /* 0x906C8 MOV R2, #0x88: the label shares its control's row */
+#define PUFO_STATUS_CITYCTL_Y_ACTION       0xA0 /* 0x90664 MOV R3, #0xA0: y 160 */
+#define PUFO_STATUS_CITY_Y_ACTION_LBL      0xA1 /* 0x90718 MOV R2, #0xA1: y 161 */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.

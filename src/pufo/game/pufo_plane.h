@@ -138,7 +138,7 @@ i32 BasePlaneScreen_ApplyWeaponSwap(PlaneWeaponPanels *pPanels, const PlaneWeapo
  * and R1 is then used twice: as the index into the mission-site table and as the bCraftClass
  * argument to StrategList_AddItem. So it takes one signed-char argument.
  *
- * The coordinates come from a table of 24-byte records at 0x1864F8 + 200, that is 0x1865C8,
+ * The coordinates come from a table of 24-byte records at 0x1864F8 + 0xC8, that is 0x1865C0,
  * indexed by that craft class. x is the SIGNED 16-bit value at record +0 and y at record +2;
  * the loads are LDRSH, so both are signed. The remaining 20 bytes of each record are not
  * touched here.
@@ -158,7 +158,7 @@ typedef struct InterceptMissionCtx {
     PtrArray *pList;                  /* the strateg list, 0x186534 */
     i32 *pnZoomMode;                  /* the viewport's nMode, read live by AddItem */
     i32 *pnSeed;                      /* the per-item seed counter, 0x18640C */
-    const MissionSiteRecord *apSites; /* the table at 0x1865C8 */
+    const MissionSiteRecord *apSites; /* aMissionSites @ 0x1865C0 (root + 0xC8) */
     i32 nSiteCount;
     i32 *pnMissionId;                 /* unk_18654C */
     i32 *pnLastIndex;                 /* 0x186BE4, set to the index of the new item */

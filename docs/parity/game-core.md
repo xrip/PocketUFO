@@ -2550,7 +2550,7 @@ stride) and again unchanged as the `bCraftClass` argument. Applying
 `int __fastcall BasePlaneScreen_AddInterceptMission(char bCraftClass)` to the IDB made the
 argument appear in the pseudocode, which is the proof.
 
-The table is 24-byte records at `0x1865C8`, indexed by craft class. `x` is the **signed** 16-bit
+The table is 24-byte records at `0x1865C0`, indexed by craft class. `x` is the **signed** 16-bit
 value at record +0 and `y` at +2; both loads are `LDRSH`. The remaining 20 bytes are untouched
 here. The table lives in `.bss`, so it is filled at run time and carries no static data.
 
@@ -2594,7 +2594,7 @@ skipping the `nTimer` test the shared tail applies.
 What actually differs between subtypes is **where the target comes from**:
 
 - **1, 2, 4** re-roll until `Tilemap_GetAt` is not 255, so they always land on dry ground.
-- **3, 5** take a random entry from the 56-record mission-site table at `0x1865C8`. Subtype 5 also
+- **3, 5** take a random entry from the 56-record mission-site table at `0x1865C0`. Subtype 5 also
   remembers which entry, because its landing effect reports that index to the radar message.
 - **6** picks a random base and wants one with **no** free cell of facility kind 10. It retries up
   to 20 times and on the twentieth gives up on bases entirely, travelling to a random point and
@@ -17791,3 +17791,45 @@ order and the label record). bugs.tsv: 2 new rows -- the panel draw pausing the 
 
 Not ported yet in this chain: 0x904D8..0x91CEC (the flag-0x10 city panel and what follows) and the
 screen arms 0x91DC8..0x944B0.
+### Unit 107, part 7: the attacked-city panel (0x904D8..0x90724)
+
+The seventh arm of the default chain, flag 0x10. It is the only one of the three big panels that does
+NOT re-blit the strip pad. 0x904D8 and 0x904DC build R9 = 0x39400 | 0x18 = 1144 * 205 and R7 = 0x78
+before the flag test -- R9 is this arm's second label record and also the 0x14 arm's at 0x90D14, and R7
+is this arm's anim height and the 0x1B arm's strip nColorMid at 0x90784. The flag is read at 0x904F8,
+compared at 0x90504, and the body anim follows at 0x9050C..0x90538: (0xE, 0x46) size (0xD0, 0x78) from
+src (0x28, 0x32), key 0xB4, nIdx 0, nMode 0 -- the box x 14..225, y 70..195, the same box as 0x0D.
+
+Findings:
+- Line 1 (y 86) is TEXTS[1232] "Город: " + a mission-site name. 0x9056C reads colour slot 1, 0x90574
+  MULs it by 0x18, 0x90578/0x9057C add that to 0x1864F8 + 0xC8 and 0x90584 strcat()s the string at +4.
+  That base is 0x1865C0: the "0x1865C8" the older comments said is 0x1864F8 + 200 mis-added, and the
+  plane spawner 0x7DE34/0x7DE48/0x7DE3C reaches the same records as [R0,#0xC8] and [R0,#0xCA] (the
+  SIGNED x and y, both LDRSH). IDA now holds it as aMissionSites, MissionSiteRec[56]: 1344 bytes
+  ending exactly at 0x186B00, where g_pUiCloseCtl begins.
+- The index is unbounded -- 56 records and no test anywhere between 0x9056C and 0x9058C (bugs.tsv).
+  The port draws the label alone for an index outside 0..55.
+- Line 2 (y 104) is TEXTS[1233] "Город атакован пришельцами ": the shipped record really does end in
+  a space (its bytes run ...e8 20 00).
+- Two controls, each blitted BEFORE its handler store: *pGeoscapeCtlConfirm @ 0x186BA4 centred from
+  its own LDRH [R0,#4] at y 136 (blit 0x90638, handler 0x90648 = Smap_OnPointerUp), then *pGeoscapeCtlA
+  @ 0x186BB4 centred at y 160 (blit 0x90670, handler 0x9067C = Smap_ResolveInterceptUI).
+- Both labels come after both controls. TEXTS[1234] "На зону террора" is centred at y 136 -- the SAME
+  row as its own control -- while TEXTS[1144] "Отмена" sits one row below CtlA at y 161 (0x90718). The
+  0x0B card does the same: three labels on their controls' rows, the cancel one offset by one.
+- Like 0x0D, this arm neither reads nor writes 0x187054 and does not touch the clock.
+
+Tests: 27 new checks (16,957 across 60 suites, 0 failures) and 13 new _Static_assert pins. The
+mission-site read runs with four named records -- 0, 4, 5 and 6, three different lengths -- so a wrong
+stride (the ARM's MUL #0x18) or a wrong field offset inside the record reads a neighbour name; the
+index-0 case and the index-56 case are both run. CtlA gets a 30-wide pad against the confirm
+control's 40 so a width read from the wrong control shows as a different x. 15 mutations, 15 caught;
+one pattern had to be re-anchored because the centring helper is used by three arms.
+
+IDB: aMissionSites created at 0x1865C0 with type MissionSiteRec[56]; 7 comments written (0x904D8 the
+R9/R7 prologue, 0x9050C the anim with no strip rect, 0x90570 the table index, 0x90638 the
+blit-before-handler order, 0x906C8 the label on its control's own row, and 0x7DE14/0x7DE34 correcting
+the same wrong 0x1865C8 in the plane spawner's comment). bugs.tsv: 1 new row.
+
+Not ported yet in this chain: 0x90728..0x91CEC (the flag-0x1B intercept-list panel, the flag-0x14
+target panel and what follows) and the screen arms 0x91DC8..0x944B0.

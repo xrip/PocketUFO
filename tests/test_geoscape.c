@@ -8669,6 +8669,21 @@ _Static_assert(PUFO_STATUS_PAUSE_Y_LINE1 == 0x5A, "0x903AC MOV R2, #0x5A");
 _Static_assert(PUFO_STATUS_PAUSE_Y_LINE2 == 0x76, "0x9042C MOV R2, #0x76");
 _Static_assert(PUFO_STATUS_PAUSECTL_Y == 0x9B, "0x90454 MOV R3, #0x9B");
 _Static_assert(PUFO_STATUS_PAUSE_Y_LABEL == 0x9C, "0x904BC MOV R2, #0x9C");
+/* The 0x10 attacked-city panel @ 0x904d8. */
+_Static_assert(PUFO_STATUS_FLAG_CITY_ATTACKED == 0x10, "0x90504 CMP R0, #0x10");
+_Static_assert(PUFO_STATUS_TEXT_CITY == 1232, "0x904FC, unk_F1360 - 0xB38D0 = 1232 * 205");
+_Static_assert(PUFO_STATUS_TEXT_CITY_ATTACKED == 1233, "0x905BC, unk_F142D - 0xB38D0 = 1233 * 205");
+_Static_assert(PUFO_STATUS_TEXT_GO_TO_ZONE == 1234, "0x90680, unk_F14FA - 0xB38D0 = 1234 * 205");
+_Static_assert(PUFO_STATUS_CITY_ANIM_Y == 0x46, "0x90518 MOV R2, #0x46");
+_Static_assert(PUFO_STATUS_CITY_NH == 0x78, "0x90534 STR R7, the R7 built at 0x904DC MOV R7, #0x78");
+_Static_assert(PUFO_STATUS_CITY_Y_LINE1 == 0x56, "0x905AC MOV R2, #0x56");
+_Static_assert(PUFO_STATUS_CITY_Y_LINE2 == 0x68, "0x90600 MOV R2, #0x68");
+_Static_assert(PUFO_STATUS_CITYCTL_Y_CONFIRM == 0x88, "0x9062C MOV R3, #0x88");
+_Static_assert(PUFO_STATUS_CITY_Y_CONFIRM_LBL == 0x88, "0x906C8 MOV R2, #0x88: the label shares its control's row");
+_Static_assert(PUFO_STATUS_CITYCTL_Y_ACTION == 0xA0, "0x90664 MOV R3, #0xA0");
+_Static_assert(PUFO_STATUS_CITY_Y_ACTION_LBL == 0xA1, "0x90718 MOV R2, #0xA1");
+_Static_assert(PUFO_MISSION_SITE_COUNT == 56, "0x86CD8 CMP R0, #0x38, the InitUI mission-site loop");
+
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -8717,6 +8732,7 @@ static Ship    *g_apPnCraft[2];
 static i32      g_nPnShipIdx;
 static u8       g_abPnGrid[PUFO_GRID_SIZE];
 static GameTime g_pnTime;
+static MissionSiteRec g_pnMission[PUFO_MISSION_SITE_COUNT]; /* aMissionSites @ 0x1865C0 */
 static u16      g_uPnInkHead, g_uPnInkStatus;
 
 static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
@@ -8747,6 +8763,8 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1355, "ll5" },
     /* The 0x0D trace-lost panel. Record 1356 keeps the leading space the shipped record has. */
     { 1231, "n5" }, { 1356, " o5" },
+    /* The 0x10 attacked-city panel. Three different lengths so a record mix-up shows as a row. */
+    { 1232, "q6" }, { 1233, "rr6" }, { 1234, "sss6" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -8978,6 +8996,7 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     memset(&g_pnTime, 0, sizeof(g_pnTime));
     memset(g_abPnGrid, 0, sizeof(g_abPnGrid));
     memset(g_pnSites, 0, sizeof(g_pnSites));
+    memset(g_pnMission, 0, sizeof(g_pnMission));
     memset(&g_pnObj, 0, sizeof(g_pnObj));
     memset(g_pnFlags, 0, sizeof(g_pnFlags));
     memset(&g_pnCraft, 0, sizeof(g_pnCraft));
@@ -9136,6 +9155,7 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.pfnSelectMapTarget     = PnMapTarget;
     g_pnEnv.pfnConfirmSelected     = PnConfirmSel;
     g_pnEnv.pTime                  = &g_pnTime;
+    g_pnEnv.paMissionSites         = g_pnMission;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -9851,6 +9871,24 @@ static void PnSetCardCrafts(void)
     g_pnCraft1.bContactMsg  = 0;
 }
 
+/* Mission sites 0, 4, 5 and 6 with four different names (a fixture choice -- a real InitUI leaves
+ * every name empty, because records 1655..1710 do not exist in lang.dat): the ARM indexes the table as
+ * index * 0x18 (0x90574) and takes the name at +4 (0x90584), so a wrong stride or a wrong field
+ * offset reads one of the neighbours instead of the wanted name. The names are constant across a
+ * PnCapture pair -- they are not text records -- which is why the city row is checked with PnRowIs
+ * and not with a dropped-source diff. */
+static void PnSetMissionSites(void)
+{
+    g_pnMission[0].uField0 = 0x0000;
+    g_pnMission[4].uField0 = 0x1111;
+    g_pnMission[5].uField0 = 0x2222;
+    g_pnMission[6].uField0 = 0x3333;
+    pufo_strncpy(g_pnMission[0].szName, "z6",  sizeof(g_pnMission[0].szName));
+    pufo_strncpy(g_pnMission[4].szName, "p6",  sizeof(g_pnMission[4].szName));
+    pufo_strncpy(g_pnMission[5].szName, "m6",  sizeof(g_pnMission[5].szName));
+    pufo_strncpy(g_pnMission[6].szName, "nn6", sizeof(g_pnMission[6].szName));
+}
+
 /* PN_ROW_PIX pixels: one row band, x from 20 to 219. The window keeps the frame's two border columns
  * at 14 and 225 out -- Ui_AnimExpandBlit fills the whole panel body, not just its outline (the BLT at
  * pufo_panel.c:567), so the body colour has to come from a run that draws the body with no text. */
@@ -10124,6 +10162,79 @@ static void TestStatusPanelPause(void)
     CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0, "and it reads none of the card's weapon records");
 }
 
+static void TestStatusPanelCity(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the attacked-city panel @ 0x904d8\n");
+    PnFixture(0x10, 0, 5, 0); /* colour slot 1 -> mission-site record 5 */
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetMissionSites();
+
+    /* ---- 1. the body, and the strip re-blit this arm does NOT do ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, 240);
+    CheckEqI32(d.nMinX, 0xE, "the body starts at x=14 (0x90524)");
+    CheckEqI32(d.nMinY, PUFO_STATUS_CITY_ANIM_Y, "and y=70 (0x90518)");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x9051C) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_CITY_ANIM_Y + PUFO_STATUS_CITY_NH + 5,
+               "nH 0x78 puts the bottom at 195 (0x90534 STR R7)");
+    d = PnDiffRect(0, 241, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nCount, 0, "no strip-pad rectangle: the 0x0B card and the 0x0D panel blit one, 0x10 goes straight to the anim");
+    CheckEqI32(g_pnTime.bPaused, 0, "the clock keeps running -- only the 0x0D panel pauses it");
+
+    /* ---- 2. the city line, TEXTS[1232] plus the mission-site name at +4 ---- */
+    PnRowIs(PUFO_STATUS_CITY_Y_LINE1, "q6m6", "y=86 is TEXTS[1232] + aMissionSites[5].szName (0x90584 ADD R1,R3,#4)");
+    PnFixture(0x10, 0, 6, 0); PnSetMissionSites();
+    PnRowIs(PUFO_STATUS_CITY_Y_LINE1, "q6nn6", "colour slot 1 picks the record (0x9056C), index * 0x18 (0x90574)");
+    PnFixture(0x10, 0, 4, 0); PnSetMissionSites();
+    PnRowIs(PUFO_STATUS_CITY_Y_LINE1, "q6p6", "a neighbour index reads the neighbour name, so the stride is 24 and not 20");
+    PnFixture(0x10, 0, PUFO_MISSION_SITE_COUNT, 0); PnSetMissionSites();
+    PnRowIs(PUFO_STATUS_CITY_Y_LINE1, "q6", "an index past the 56 records is guarded here and unchecked in the original (bugs.tsv)");
+    PnFixture(0x10, 0, 0, 0); PnSetMissionSites();
+    PnRowIs(PUFO_STATUS_CITY_Y_LINE1, "q6z6", "index 0 is a real record and reads the table's first name");
+    PnFixture(0x10, 0, 5, 0); PnSetMissionSites();
+
+    /* ---- 3. the second line ---- */
+    PnRowIs(PUFO_STATUS_CITY_Y_LINE2, "rr6", "y=104 is TEXTS[1233] alone (0x9060C)");
+
+    /* ---- 4. the two controls, both blitted before their handler ---- */
+    g_nPnShipIdx = 1;         /* the 0x187054 global: this arm neither reads nor writes it */
+    g_pnCtlA.uWidth  = 30;    /* deliberately different from the confirm control's 40, so a width read
+                               * from the wrong control shows as a different x */
+    PnCapture();
+    CheckEqI32(g_pnCtlConfirm.x, PUFO_STATUS_TEXT_X_CENTRE - 20,
+               "pGeoscapeCtlConfirm centres on 120 from its own 40-wide pad (0x90618 LDRH [R0,#4])");
+    CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_CITYCTL_Y_CONFIRM, "and sits at y=136 (0x9062C)");
+    CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "pGeoscapeCtlA centres from ITS OWN 30-wide pad (0x90650)");
+    CheckEqI32(g_pnCtlA.y, PUFO_STATUS_CITYCTL_Y_ACTION, "at y=160 (0x90664)");
+    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    Check(g_pnCtlConfirm.pfnClick == PnSelectTarget, "the confirm control gets Smap_OnPointerUp (0x90648)");
+    Check(g_pnCtlA.pfnClick == PnResolve, "the other gets Smap_ResolveInterceptUI (0x9067C)");
+    CheckEqI32(g_nPnShipIdx, 1, "0x187054 keeps the value the fixture put in it: this arm neither reads nor writes it");
+
+    /* ---- 5. the two labels, drawn after both controls ---- */
+    PnRowIs(PUFO_STATUS_CITY_Y_CONFIRM_LBL, "sss6",
+            "TEXTS[1234] centred on the confirm control's OWN row, y=136 (0x906C8)");
+    PnRowIs(PUFO_STATUS_CITY_Y_ACTION_LBL, "B2",
+            "and TEXTS[1144] (R9 = 0x39400 | 0x18) one row under CtlA at y=161 (0x90718)");
+
+    /* ---- 6. what this arm does not read ---- */
+    PnCaptureDropped(PUFO_STATUS_TEXT_CANCEL_ORDER);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0,
+               "its cancel label is TEXTS[1144] and not the card's TEXTS[1230]");
+    PnCaptureDropped(PUFO_STATUS_TEXT_SHIP_LABEL);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 240).nCount, 0, "and this arm has no ship line at all");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CITY_ATTACKED);
+    d = PnDiffRect(20, PUFO_STATUS_CITY_Y_LINE2 + PN_GLYPH_DY, 219, PUFO_STATUS_CITY_Y_LINE2 + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1233] is the only source of the second row");
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, PUFO_STATUS_CITY_Y_LINE2 + 1).nCount, 0,
+               "dropping it moves nothing above that row");
+    CheckEqI32(PnDiffRect(0, PUFO_STATUS_CITY_Y_LINE2 + PN_BAND + 1, BD_SURF_W - 1, 240).nCount, 0,
+               "and nothing below it");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -10192,6 +10303,7 @@ int main(void)
     TestStatusPanelOrder();
     TestStatusPanelDetail();
     TestStatusPanelPause();
+    TestStatusPanelCity();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

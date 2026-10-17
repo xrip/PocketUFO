@@ -12,7 +12,7 @@
  *   1. KillTimers_D, clear Map.bGeoscapeUi, Font_Free(fontSys @ 0x158268).
  *   2. Thirteen widget pointers held at 0x1864F8 + 4*i, i = 0..12. 0x1864F8 is the
  *      geoscape UI root: the same block Geoscape_CloseUI is called with, the same block
- *      whose +0xC8 (0x1865C8) is the 24-byte mission-site table, and the same block whose
+ *      whose +0xC8 (0x1865C0, IDA's aMissionSites) is the 24-byte mission-site table, and the same block whose
  *      +0x3C (0x186534) is the strateg PtrArray. ARM at 0x87204 proves the last one:
  *      `ADD R0, R9, #0x3C` with R9 = 0x1864F8.
  *   3. Thirteen pad singletons, then the world-size block, then one more pad. The

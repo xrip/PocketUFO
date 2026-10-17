@@ -3016,6 +3016,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   reference with all six values; `TestManufDrawFrame` and `TestTransferDraw` still pass a bare triple, so
   their colour claims are weaker than they look. Worth its own pass over those two older real-surface
   tests rather than a fix folded into a porting step.
+- [ ] **The mission-site table at `0x1865C0` is modelled twice.** `MissionSiteRec` (moved to
+  `game/pufo_geoscape.h` in this step: `u32 uField0` + `char szName[20]`) is the InitUI/panel view —
+  0x86C6C reads 24 raw bytes per record and 0x86CA4 writes the name at +4, and the flag-0x10 panel
+  reads that name at 0x90584. `MissionSiteRecord` (`game/pufo_strateg.h`: `i16 x` + `i16 y` + 20 gap
+  bytes) is the spawner view — 0x7DE48 and 0x7DE3C load +0 and +2 with `LDRSH`. Both are 24 bytes over
+  the same table, so one definition (`i16 x; i16 y; char szName[20];`) would do. Nothing in the app
+  wires the spawner's `apSites` to `World.aMissionSites` yet, so the two types never meet: this is a
+  cleanup, not a live defect.
 
 ## Measured state
 
@@ -3173,12 +3181,13 @@ Refresh after each commit. A coverage delta must match the function size in
 | the order questions (`Geoscape_DrawStatusPanel`'s flag chain 0x8F250..0x8F9E0: 0x11, 0x0F, 0x0C and 0x0E; the chain is five re-read tests and not a switch, `aTextOk` corrected to TEXTS[1127] "ОК" with Cyrillic letters against the Latin TEXTS[1193] the footer uses, the R9 record offset loaded in the NEXT test's prologue, three different ways to name a craft — 0x187054, the colour value, and the 0x0B arm writing the colour value into 0x187054, the colour value doubling as the aSiteRecs record index with no bounds test, the 0x0E arm blitting its controls before installing their handlers, 7 IDB comments, 27 `_Static_assert` pins and 12/12 mutations caught) | 60/60 (Release) | 16846 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the craft detail card (`Geoscape_DrawStatusPanel`'s flag-0x0B arm 0x8F9E4..0x9021C: the pad at `0x186BBC` re-blitted as a rect with x/y from +0x0/+0x4 and width/height from the two `LDRH`s at +0x8/+0xA, the body painted solid at (14,5)..(225,230), the only arm in the chain that WRITES `0x187054`, the fuel percent multiplying by 100 before `_rt_sdiv`, the shared weapon pool with three arms — unequal mounts skip the halving entirely, slot 1 floors, slot 0 rounds up only for a pool of 2 or 3 — the six weapon ids 25..30 each with its own ammo byte 0x3D..0x41 and id 28 as the "N.A." sentinel, a zero id skipping both rows, `Ship.bContactMsg` choosing the four handlers with `Smap_SelectMapTarget` overwriting the `Smap_DismissSelected` store, `bInterceptDone` gating the cancel control's second pad blit and the TEXTS[1230] cancel label, rows pinned by exact ink pixels against a reference draw, 11 IDB comments, 27 `_Static_assert` pins, 23/23 mutations caught after two fixture gaps and one provably equivalent mutant were sorted out, 2 bugs.tsv rows) | 60/60 (Release) | 16908 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the trace-lost panel (`Geoscape_DrawStatusPanel`'s flag-0x0D arm 0x90220..0x904CC: the arm pauses the game clock through `GameTime_Pause` @ 0x5d6ac as a draw side effect, the same strip-pad rect re-blit as the 0x0B card, the body at (14,70)..(225,195), the `0xFF` sentinel on colour slot 0 choosing TEXTS[1231] "Цель потеряна" against TEXTS[1210] + `StrategItem.nDisplayId` + TEXTS[1356] " след потерян" with its shipped leading space, the craft named from colour SLOT 1 rather than `0x187054`, the control blitted before its handler is installed, the label record built as `0x39400 | 0x18` = 1144*205, 5 IDB comments, 11 `_Static_assert` pins, 14/14 mutations caught, 2 bugs.tsv rows) | 60/60 (Release) | 16930 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the attacked-city panel (`Geoscape_DrawStatusPanel`'s flag-0x10 arm 0x904D8..0x90724: the only one of the three big panels with no strip-pad rect re-blit, the body at (14,70)..(225,195), TEXTS[1232] + `aMissionSites[colour slot 1].szName` built as index × 0x18 off `0x1864F8 + 0xC8` with no bounds test, TEXTS[1233] with its shipped trailing space, the confirm control taking `Smap_OnPointerUp` and the other `Smap_ResolveInterceptUI`, both blitted before the handler store, TEXTS[1234] on the control's own row and TEXTS[1144] one row under the second control, `MissionSiteRec` moved from `ui/pufo_geoiinit.h` to `game/pufo_geoscape.h`, the wrong `0x1865C8` corrected to `0x1865C0` in five source comments, three doc comments and the IDB, `0x1865C0` typed `MissionSiteRec[56]` and named `aMissionSites`; 7 IDB comments, 13 `_Static_assert` pins, 15/15 mutations caught, 1 bugs.tsv row) | 60/60 (Release) | 16957 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
 cited from `5917656` on, so the gate has measured 966/1103 (87.6%) and 596752/598792 (99.7%) since
 then; one older row carried 965/1103 and 563008 written from memory. Note what the byte figure means:
 `coverage.py` credits a whole function once its start address is cited, so those 99.7% count all
-33,744 bytes of `Geoscape_Draw` although 0x904D8..0x91CEC and 0x91DC8..0x944B0 of it are unported.
+33,744 bytes of `Geoscape_Draw` although 0x90728..0x91CEC and 0x91DC8..0x944B0 of it are unported.
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

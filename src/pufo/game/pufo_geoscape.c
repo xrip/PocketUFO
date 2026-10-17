@@ -4918,6 +4918,54 @@ static void StatusPanel_DrawInterceptPause(const GeoscapeStatusPanelEnv *pEnv, c
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_PAUSE_Y_LABEL, psz); /* 0x904A0 y 156 */
 }
 
+/* 0x904D8: flag 0x10, the attacked-city panel. The only arm of the three big panels that does not
+ * re-blit the strip pad: the body anim comes first (0x9050C..0x90538). Both controls are blitted
+ * before their handler is installed, and both labels come after both controls. */
+static void StatusPanel_DrawCityAttacked(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pCtlConfirm == NULL || pEnv->pCtlA == NULL || pEnv->paMissionSites == NULL) {
+        return;
+    }
+
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_CITY_ANIM_Y, 0xD0, PUFO_STATUS_CITY_NH,
+                            0, 0x28, 0x32, 0xB4, 0);                   /* 0x9050C..0x90538, box
+                                                                        * x 14..225, y 70..195 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CITY);             /* 0x90540, record 1232 */
+    const i32 nSite = (i32)UiLineList_GetColor(pEnv->pLines, 0, 1);    /* 0x9056C: colour slot 1 */
+    if (nSite >= 0 && nSite < PUFO_MISSION_SITE_COUNT) {               /* the original bounds-checks
+                                                                        * nothing (bugs.tsv) */
+        (void)pufo_strcat(psz, pEnv->paMissionSites[nSite].szName, PUFO_TEXT_REC_STRIDE);
+    }                                                                  /* 0x90574 MUL by 0x18, 0x9057C
+                                                                        * base 0x1864F8 + 0xC8, the name
+                                                                        * at +4 (0x90584) */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_CITY_Y_LINE1, psz); /* 0x905B8, y 86 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CITY_ATTACKED);    /* 0x905BC, record 1233, whose
+                                                                        * shipped text ends in a space */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_CITY_Y_LINE2, psz); /* 0x9060C, y 104 */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlConfirm);                        /* 0x90614..0x90624 */
+    pEnv->pCtlConfirm->y = (i16)PUFO_STATUS_CITYCTL_Y_CONFIRM;         /* 0x9062C: 136 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                /* 0x90638, BEFORE the handler */
+    pEnv->pCtlConfirm->pfnClick = pEnv->pfnSelectTarget;              /* 0x90640 / 0x90648, Smap_OnPointerUp */
+
+    StatusPanel_CentredCtlX(pEnv->pCtlA);                              /* 0x9064C..0x9065C */
+    pEnv->pCtlA->y = (i16)PUFO_STATUS_CITYCTL_Y_ACTION;                /* 0x90664: 160 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                /* 0x90670, BEFORE the handler */
+    pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;              /* 0x90674 / 0x9067C */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_GO_TO_ZONE);       /* 0x90680, record 1234 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_CITY_Y_CONFIRM_LBL, psz);
+                                                                       /* 0x906D4, y 136 -- the same row
+                                                                        * as its control */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);           /* 0x906D8, R9 = 1144 * 205 */
+    StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_CITY_Y_ACTION_LBL, psz);
+                                                                       /* 0x90724, y 161 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -4955,7 +5003,11 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_INTERCEPT_PAUSE) {
         StatusPanel_DrawInterceptPause(pEnv, psz);                     /* 0x90220..0x904CC */
     }
-    /* 0x904D8..0x91CEC: the 0x10 city panel and what follows is not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_CITY_ATTACKED) {
+        StatusPanel_DrawCityAttacked(pEnv, psz);                       /* 0x904D8..0x90724 */
+    }
+    /* 0x90728..0x91CEC: the 0x1B intercept-list panel, the 0x14 target panel and what follows are
+     * not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

@@ -1366,7 +1366,7 @@ would stay non-NULL.
 **0x1864F8 is one struct, not a loose global.** ARM at 0x87204 does `ADD R0, R9, #0x3C` with
 `R9 = 0x1864F8` before `PtrArray_DeleteAll`, so the strateg list at 0x186534 is a **field** of
 the geoscape UI root at +0x3C. The same block holds thirteen widget pointers at +0..+30, is the
-argument `Geoscape_CloseUI` is called with, and its +0xC8 (0x1865C8) is the 24-byte mission-site
+argument `Geoscape_CloseUI` is called with, and its +0xC8 (0x1865C0) is the 24-byte mission-site
 table. Three things previously recorded as separate globals are one object.
 
 **0x186BC0 holds a pointer, not the pair.** `Smap_ZoomOut` at 0x81D90 does `LDR R1,[R1]` then
