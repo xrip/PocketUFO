@@ -2277,6 +2277,81 @@ void Geoscape_DrawSoldierArm(const struct SoldierDrawEnv *pSoldierEnv, const Geo
 void Geoscape_DrawSoldierEditArm(const struct SoldierDrawEnv *pSoldierEnv, const GeoscapeSoldierArmEnv *pArmEnv,
                                  const GeoscapeScreenArmEnv *pCtlEnv);
 
+/* ---- the base-facility arm, 0x92AF0..0x92DAC (it sits BEFORE case 4 in the function) ----------------
+ *
+ * Screen 7 is BaseFacScreen_Open (0x61858 sets nGeoscapeScreen = 7 and tail-calls BaseFacScreen_Init);
+ * screen 1 is Base_EnterBuildMode (0x84E60), and the two share this arm's pad: the same global 0x186BA0 is
+ * blitted at 0x91DCC (case 1) and at 0x92AF4 (case 7). The arm is rails, one separator, three callees, and
+ * a control run that a flag can cancel.
+ *
+ * Rails (0x92B08..0x92CE4). Both loops run 24 times with the same colour idiom the soldier screen uses --
+ * climbing 5*(k+20), falling 0xE6-5*k on the sides and 0xFA-5*k on the top and bottom edges. The side rails
+ * are 1x7 rects at x 2 and 237, y 7k+1 and 7k+151 (0x92C08 ADD R9,R9,#7 with CMP #0xA8). The top and bottom
+ * rails are 5x1 rects at y 315 and y 2, stepping x by 5 (0x92CD8 ADD R9,R9,#5, CMP #0x78): the climbing one
+ * starts at x k+1 in both rows, but the falling row starts at x k+128 on top (0x92C80 ADD R1,R9,#0x80) and
+ * at x k+120 on the bottom (0x92CC4 ADD R1,R9,#0x78) -- eight pixels further left, an asymmetry the original
+ * has and the port keeps.
+ *
+ * Separator (0x92CE8..0x92D0C): one 208x1 bar at (2, 35) in the flat colour 160.
+ *
+ * Map_nGlyphPalBase is forced to 3 (0x92D14 LDR R12,=Map_nGlyphPalBase / 0x92D20 STR) and the arm never
+ * restores it -- Text_DrawString saves and restores around itself, so 3 is what any other glyph user of the
+ * frame sees after this arm. Then the three callees, in this order: BaseFacScreen_DrawNameGrid with the block
+ * base and nSelectedBaseIdx read SIGNED (0x92D2C LDRSB / 0x92D34), Base_DrawFacilityIconStrip with the mark
+ * -1 (0x92D38 MOV R1,#0xFFFFFFFF / 0x92D40), and BaseFacScreen_DrawBuildDialog with the build block
+ * gBaseFacBuildBlock @ 0x158870 and nSelectedBaseIdx read again (0x92D44..0x92D58) -- the callee may have
+ * changed it in between, so it is a second read, not a reuse.
+ *
+ * Control run (0x92D5C..0x92D94), the only one a flag can cancel: with bBaseFacPlaceArmed @ 0x158888 SET the
+ * arm blits nothing (0x92D68 BNE def_8C1B0) -- the placement overlay owns the screen then. Otherwise the two
+ * panel page controls gBaseFacBuildBlock[+4] / [+8] @ 0x158874 / 0x158878 blit, installed by BaseFacScreen_Init
+ * with BaseFacScreen_PanelPrev and BaseFacScreen_PanelNext as handlers (0x5A20C, 0x5A21C). The original runs
+ * the loop with its index in the shared scratch counter dword_186B08 -- it stores 0 at 0x92D74, uses and
+ * re-reads it each step and leaves it at 2; every other user of that global initialises it first
+ * (Ui_OpenBaseInfo 0x84B60, Geoscape_PrepScreenOpen 0x851FC, Geoscape_InitUI's pad loop 0x866B4), so the port
+ * keeps a local counter. */
+
+#define PUFO_BFA_RAIL_STEPS    24   /* 0x92C0C CMP #0xA8 over steps of 7, and 0x92CE0 CMP #0x78 over steps of 5 */
+#define PUFO_BFA_SIDE_STEP      7   /* 0x92C08 ADD R9,R9,#7 */
+#define PUFO_BFA_SIDE_H         7   /* 0x92B0C MOV R5,#7 */
+#define PUFO_BFA_SIDE_X0        2   /* 0x92B2C MOV R1,#2 */
+#define PUFO_BFA_SIDE_X1      237   /* 0x92B84 MOV R1,#0xED */
+#define PUFO_BFA_SIDE_Y0        1   /* 0x92B14 ADD R10,R9,#1 */
+#define PUFO_BFA_SIDE_Y1      151   /* 0x92B48 ADD R11,R9,#0x97 */
+#define PUFO_BFA_EDGE_STEP      5   /* 0x92CD8 ADD R9,R9,#5 */
+#define PUFO_BFA_EDGE_W         5   /* 0x92C44 MOV R3,#5 */
+#define PUFO_BFA_EDGE_Y_TOP   315   /* 0x92C3C MOV R2,#0x138 / 0x92C4C ORR R2,R2,#3 */
+#define PUFO_BFA_EDGE_Y_BOT     2   /* 0x92C98 MOV R2,#2 */
+#define PUFO_BFA_EDGE_X_RISE    1   /* 0x92C38 ADD R11,R9,#1, used by both rows */
+#define PUFO_BFA_EDGE_X_FALL  128   /* 0x92C80 ADD R1,R9,#0x80 -- the top row's falling ramp */
+#define PUFO_BFA_EDGE_X_BOT   120   /* 0x92CC4 ADD R1,R9,#0x78 -- the bottom row's, 8 pixels left of it */
+#define PUFO_BFA_SEP_X          2   /* 0x92D04 MOV R1,#2 */
+#define PUFO_BFA_SEP_Y         35   /* 0x92CFC MOV R2,#0x23 */
+#define PUFO_BFA_SEP_W        208   /* 0x92CF4 MOV R3,#0xD0 */
+#define PUFO_BFA_SEP_COLOR    160   /* 0x92CE8 MOV R0,#0xA0, the same index in all three colour slots */
+#define PUFO_BFA_CTLS_2         2   /* 0x92D90 CMP #2 */
+#define PUFO_BFA_GLYPH_PAL      3   /* 0x92D18 MOV R0,#3 -> Map_nGlyphPalBase, never restored here */
+#define PUFO_BFA_STRIP_MARK   (-1)  /* 0x92D38 MOV R1,#0xFFFFFFFF: no base is marked for the chevron, so the
+                                     * arm overwrites whatever the env's nHighlightRow held */
+
+struct FacNameGridEnv;
+struct BuildDialogEnv;
+
+typedef struct GeoscapeBaseFacArmEnv {
+    PadImage          *pPad;         /* pBaseFacScreenPad @ 0x186BA0: allocated in Geoscape_InitUI (0x859EC..0x85A00)
+                                      * and loaded from the "research" member (0x860C8..0x860D4, mode 6) */
+    UiControl *const  *apPanelCtl;   /* gBaseFacBuildBlock[+4] / [+8] @ 0x158874 / 0x158878 */
+    const u8          *pbPlaceArmed; /* bBaseFacPlaceArmed @ 0x158888 -- set means NO control blit at all */
+    UiControlBlitFn    pfnCtlBlit;
+    UiControlBlitFn    pfnCtlBlitEx;
+    void              *pCtlBlitUser;
+} GeoscapeBaseFacArmEnv;
+
+/* 0x92AF0..0x92DAC: screen 7 (and screen 1's pad). Rails, separator, glyph base 3, the three callees, then the
+ * two page controls unless a placement is armed. */
+void Geoscape_DrawBaseFacArm(const GeoscapeBaseFacArmEnv *pArmEnv, const struct FacNameGridEnv *pGridEnv,
+                             const struct BaseStripDrawEnv *pStripEnv, const struct BuildDialogEnv *pDialogEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

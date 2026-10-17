@@ -5792,6 +5792,84 @@ void Geoscape_DrawSoldierEditArm(const SoldierDrawEnv *pSoldierEnv, const Geosca
                                   pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser); /* 0x93054 / 0x93058 */
 }
 
+/* 0x92AF0..0x92DAC: screen 7, the base-facility panel (BaseFacScreen_Open @ 0x61858 puts 7 in
+ * nGeoscapeScreen), and the same pad screen 1 blits at 0x91DCC. Rails, one separator, the glyph palette
+ * base, three callees, then two page controls that an armed placement cancels. The ramp colours are the
+ * shared idiom the soldier screen uses too -- climbing 5*(k+20), falling 0xE6-5*k and 0xFA-5*k -- so the
+ * PUFO_SOL_RAMP_* constants of pufo_baseui.h are reused rather than restated. */
+void Geoscape_DrawBaseFacArm(const GeoscapeBaseFacArmEnv *pArmEnv, const FacNameGridEnv *pGridEnv,
+                             const BaseStripDrawEnv *pStripEnv, const BuildDialogEnv *pDialogEnv)
+{
+    if (pArmEnv->pPad != NULL) {
+        PadImage_Blit(pArmEnv->pPad);                     /* 0x92AF0 LDR / 0x92AF4 LDR / 0x92AF8 */
+    }
+
+    /* The side rails (0x92B08..0x92C18): 24 steps of 7, 1x7 rects at x 2 and 237 -- climbing at y 7k+1,
+     * falling at y 7k+151. */
+    for (i32 k = 0; k < PUFO_BFA_RAIL_STEPS; ++k) {
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));   /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_SIDE - PUFO_SOL_RAMP_STEP * k);     /* 230..115 */
+        const i32 nYUp = PUFO_BFA_SIDE_Y0 + PUFO_BFA_SIDE_STEP * k;             /* 1..162 */
+        const i32 nYDn = PUFO_BFA_SIDE_Y1 + PUFO_BFA_SIDE_STEP * k;             /* 151..312 */
+
+        SoftSurf_BlitRectProxy(0, PUFO_BFA_SIDE_X0, nYUp, 1, PUFO_BFA_SIDE_H, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_BFA_SIDE_X0, nYDn, 1, PUFO_BFA_SIDE_H, nFall, nFall, nFall);
+        SoftSurf_BlitRectProxy(0, PUFO_BFA_SIDE_X1, nYUp, 1, PUFO_BFA_SIDE_H, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_BFA_SIDE_X1, nYDn, 1, PUFO_BFA_SIDE_H, nFall, nFall, nFall);
+    }
+
+    /* The top and bottom rails (0x92C1C..0x92CE4): 24 steps of 5, 5x1 rects at y 315 and y 2. Both rows
+     * start their climbing ramp at x k+1, but the falling one starts at k+128 on top and k+120 on the
+     * bottom. ORIGINAL BUG (0x92C80 / 0x92CC4), reproduced: the two immediates are #0x80 and #0x78 where
+     * the climbing pair are both #1, so the top row leaves a 7-pixel gap at x 121..127 and its last two
+     * rects (k 22 / 23, x 238..247) fall past the 240-pixel edge, while the bottom row's ramps meet at
+     * x 120 and end exactly at x 239. */
+    for (i32 k = 0; k < PUFO_BFA_RAIL_STEPS; ++k) {
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));   /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_EDGE - PUFO_SOL_RAMP_STEP * k);     /* 250..135 */
+        const i32 nXLo = PUFO_BFA_EDGE_X_RISE + PUFO_BFA_EDGE_STEP * k;         /* 1..116 */
+
+        SoftSurf_BlitRectProxy(0, nXLo, PUFO_BFA_EDGE_Y_TOP, PUFO_BFA_EDGE_W, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_BFA_EDGE_X_FALL + PUFO_BFA_EDGE_STEP * k, PUFO_BFA_EDGE_Y_TOP,
+                               PUFO_BFA_EDGE_W, 1, nFall, nFall, nFall);
+        SoftSurf_BlitRectProxy(0, nXLo, PUFO_BFA_EDGE_Y_BOT, PUFO_BFA_EDGE_W, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_BFA_EDGE_X_BOT + PUFO_BFA_EDGE_STEP * k, PUFO_BFA_EDGE_Y_BOT,
+                               PUFO_BFA_EDGE_W, 1, nFall, nFall, nFall);
+    }
+
+    SoftSurf_BlitRectProxy(0, PUFO_BFA_SEP_X, PUFO_BFA_SEP_Y, PUFO_BFA_SEP_W, 1,         /* 0x92CE8..0x92D0C */
+                           PUFO_BFA_SEP_COLOR, PUFO_BFA_SEP_COLOR, PUFO_BFA_SEP_COLOR);
+
+    g_nGlyphPalSlotBase = PUFO_BFA_GLYPH_PAL;             /* 0x92D18 MOV R0,#3 / 0x92D20 STR: the arm leaves
+                                                           * it at 3 for whatever the frame draws next */
+
+    BaseFacScreen_DrawNameGrid(pGridEnv);                 /* 0x92D2C LDRSB nSelectedBaseIdx, 0x92D34 */
+    if (pStripEnv != NULL) {
+        BaseStripDrawEnv strip = *pStripEnv;              /* 0x92D38 MOV R1,#0xFFFFFFFF: the strip's mark is
+                                                           * THIS arm's argument, so it overwrites whatever the
+                                                           * env carried */
+        strip.nHighlightRow = PUFO_BFA_STRIP_MARK;
+        Base_DrawFacilityIconStrip(&strip);               /* 0x92D40 */
+    }
+    (void)BaseFacScreen_DrawBuildDialog(pDialogEnv);      /* 0x92D44 LDRSB the same byte a second time */
+
+    if (pArmEnv->pbPlaceArmed != NULL && *pArmEnv->pbPlaceArmed != 0) {
+        return;                                           /* 0x92D64 ANDS / 0x92D68 BNE def_8C1B0: the
+                                                           * placement overlay is up, nothing is blitted */
+    }
+    if (pArmEnv->apPanelCtl == NULL) {
+        return;                                           /* deviation: the original indexes the block blindly */
+    }
+    for (i32 n = 0; n < PUFO_BFA_CTLS_2; ++n) {           /* 0x92D78..0x92D94, CMP #2 at 0x92D90. The original
+                                                           * runs this with its index in the scratch counter
+                                                           * dword_186B08 and leaves it at 2; every user of that
+                                                           * global initialises it first, so a local counter is
+                                                           * the same loop. */
+        (void)UiControl_BlitActivePad(pArmEnv->apPanelCtl[n], pArmEnv->pfnCtlBlit,
+                                      pArmEnv->pfnCtlBlitEx, pArmEnv->pCtlBlitUser);
+    }
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)

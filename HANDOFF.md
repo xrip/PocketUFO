@@ -1,39 +1,34 @@
 # HANDOFF — PocketUFO Win64 recreation
-Date: 2026-10-17. HEAD before this edit: `219899e`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its nineteenth part -- the soldier arms
-(screens 4 and 5, 0x92DAC..0x9309C): 33 new checks, 19/19 mutations caught, 11 IDB comments, 17 wrong IDB
-item sizes fixed, one global named, one port name corrected, 4 ledger rows. Parts 1..18 are behind this: the
-map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
-`a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel
-`ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels
-`e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone
-`f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`, the frame end `84cdb03`, the
-thin screen arms `7623894` and the ufopaedia and psi arms `219899e`.
+Date: 2026-10-17. HEAD before this edit: `5eedf75`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its twentieth part -- the base-facility arm
+(screen 7, 0x92AF0..0x92DAC): 28 new checks, 22/22 mutations caught, 14 IDB comments, 5 wrong IDB item
+sizes fixed, 3 globals named, 3 ledger rows. Parts 1..19 are behind this: the map-view chrome `5917656`,
+the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions `a2d454b`, the craft-detail
+card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel `ac13d77`, the intercept list
+`c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels `e9145c0` + `2c3c1cd`, the
+descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base
+panel `3f98d17`, the chain's shared tail `d445057`, the frame end `84cdb03`, the thin screen arms
+`7623894`, the ufopaedia and psi arms `219899e` and the soldier arms `5eedf75`.
 What this part found:
 
-- **Case 5 is the only arm whose draw/control ORDER depends on a gate.** With `bTransferFlag` @ 0x159E10 set
-  it draws first (0x92F38) and blits its three controls after (0x92F48..0x92F64); with the flag clear it
-  blits the three controls first (0x93070..0x9308C) and draws after them (0x93094), with no text call on that
-  path at all. Both paths end on the same close-control blit at 0x93054. The flag is armed by the third of the
-  very controls this arm blits (`Ui_SetTransferFlag`, installed at 0x67D24), which is why the order flips.
-- **These two arms are the only ones that POSITION a control.** Both write `g_pUiCloseCtl` to (224,1)
-  (0x92DB0/0x92DC8 and 0x92EF4/0x92F00) before anything is drawn; armed case 5 moves it again to (198,77)
-  (0x92F20/0x92F28). Both hand `SoldierScreen_Draw` the block base 0x159768 (0x92DCC / 0x92F34 / 0x93090).
-- **The centring rounds down, not up.** The caption arithmetic at 0x92E48, 0x92FB0 and the shared tail 0x92ACC
-  is MOVS R1,R0 / ADDMI R1,R1,#1 / MOV R1,R1,ASR#1 -- the +1 applies only to a NEGATIVE width, so the ARM's
-  half-width is floor(w/2) and x = centre - (w >> 1). A mutant that rounded up changed 694 surface pixels, so
-  the tests hold the rounding, not just the centres (120 / 104 / 90 / 170 and the y's 26 / 38 / 80).
-- **17 wrong IDB item sizes, all in one block.** Every control word of the abFacilityGrid block was a 1-byte
-  item although every access is a 4-byte LDR: 0x159888 now `struct UiControl *[10]` (apNavCtl, 40 B), 0x1598B0
-  `*[2]` (apSoldierPanelCtl) and 0x1598B8 `*[3]` (apSoldierFindCtl) -- 15 slots. `nFunds` @ 0x1598D8 went 1 -> 4
-  bytes, the TEXTS[89] record 0xB8015 went from `char[64]` to the 205-byte record extent its siblings have, and
-  0x159DE0 got its name `bSoldierScreenOpen`. In the port the same triple was called `apSolNameCtl`; it is the
-  SOLDIER-FIND pair of buttons plus the transfer armer, so it is `apSolFindCtl` now (10 sites).
-- **Recorded as unknown instead of guessed:** 0x1598C4..0x1598D0 -- four words of the block between the find
-  triple and `pSoldierPad`, unexplored, no xrefs; `nSoldierCursor` @ 0x159E08 typed `_DWORD[2]` and
-  `bTransferFlag` @ 0x159E10 typed `_BYTE[8]`, whose second word and last seven bytes nothing references.
-  Shrinking those two would be a guess, so they stay as they are.
-
+- **The arm's frame is asymmetric in the original itself.** Both edge rows run 24 rects of 5 from x 1, but
+  the falling ramp starts at `k+128` on top (0x92C80 `ADD R1,R9,#0x80`) and at `k+120` on the bottom
+  (0x92CC4 `ADD R1,R9,#0x78`), so the top row has a 7-pixel hole at x 121..127 and its last rects run past
+  the 240-pixel surface while the bottom row meets at 120 and ends exactly at 239. Reproduced, and pinned by
+  the x 121/127 dark and x 239 lit probes rather than by a band count.
+- **The armed-placement gate cancels the whole control run** (0x92D68 `BNE def_8C1B0`): with
+  `bBaseFacPlaceArmed` @ 0x158888 set the arm blits NO control, while its pad, both rails and the separator
+  are already drawn. The pad it blits, `pBaseFacScreenPad` @ 0x186BA0, is the same word case 1 blits at
+  0x91DCC -- the two screens share one PadImage.
+- **Two arguments are the arm's, not the caller's.** 0x92D38 hands `Base_DrawFacilityIconStrip` the constant
+  -1 (so no base gets the chevron on this screen), and 0x92D18 / 0x92D20 leave `Map_nGlyphPalBase` at 3 for
+  the rest of the frame without restoring it. Both are asserted: the strip claim as a 132-pixel difference
+  against a reference draw that uses the env's own highlight.
+- **The original loops its controls through a shared global.** The index lives in `dword_186B08`, left at 2
+  by this arm; the port counts locally. Recorded as a ledger deviation row rather than silently fixed.
+- **Recorded as unknown instead of guessed:** 0x158890 typed `UiPanel` with a 1-byte item and
+  0x158894..0x15889C still 1-byte items -- no xref reaches them, so retyping is a guess; and 0x158870's own
+  +0 word, which is only ever loaded as the block base, keeps a plain `_DWORD`.
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

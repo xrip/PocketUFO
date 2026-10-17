@@ -12505,6 +12505,227 @@ static void TestGeoscapeSoldierArms(void)
     Check((u16)BdPix(AR_CAL_X, AR_CAL_Y) == 0, "with no pad word there is no pad blit (0x92EE8 LDR would fault)");
 }
 
+/* ---------------------------------------------------------------------------------------------
+ * Geoscape_Draw's base-facility arm, 0x92AF0..0x92DAC (screen 7, BaseFacScreen_Open).
+ *
+ * Rails, one separator, the glyph palette base, three callees, then two page controls that an armed
+ * placement cancels. The fixture puts the three callees' own ink into bands the arm's rails and separator
+ * cannot reach: the rails are 1 pixel wide at x 2 and 237 and 1 pixel tall at y 2 and 315, the separator is
+ * the single row y 35 from x 2 to 209, the name grid sits at x 6..197 / y 96..287 (its own origin 6,60 plus
+ * the 36-pixel top row and 32-pixel cells), the icon strip at x 211..236 / y 3..28 (PUFO_BASE_STRIP_*), and
+ * the funds line the open dialog draws lands at (5,20). So ink in a band can only come from the callee that
+ * owns it. Controls go through PnBlit, which records the pad without painting.
+ *
+ * The grid fixture is empty and the base count is 1 with the selection equal to it, so the strip paints its
+ * 36 cells and nothing else, and the grid paints its 36 backdrop glyphs and nothing else (no days, no
+ * stamps, no craft). The dialog is closed for every run except one, which is what makes the funds-line
+ * difference a proof that the arm really called BaseFacScreen_DrawBuildDialog. */
+
+#define BFA_PAD_X   220
+#define BFA_PAD_Y   140
+#define BFA_GRID_X0    6   /* the env's own origin, plus the 36-pixel name-grid top row */
+#define BFA_GRID_Y0   96
+#define BFA_GRID_X1  197
+#define BFA_GRID_Y1  287
+#define BFA_STRIP_X0 211   /* PUFO_BASE_STRIP_X_FIRST, and the strip's cells at 212 + 4*col */
+#define BFA_STRIP_Y0   3   /* PUFO_BASE_STRIP_Y_FIRST */
+#define BFA_STRIP_X1 236
+#define BFA_STRIP_Y1  28
+#define BFA_FUNDS_X0   4   /* the open dialog's funds line is at (5,20); x 2 is the left rail */
+#define BFA_FUNDS_Y0  18
+#define BFA_FUNDS_X1  60
+#define BFA_FUNDS_Y1  33
+#define BFA_MARK_X0   70   /* the fixture's marked cell: row 2, column 2 -> x 32*2+6, y 36+32*2+60 */
+#define BFA_MARK_Y0  160
+#define BFA_MARK_X1  101
+#define BFA_MARK_Y1  191
+
+static PadImage               g_bfPad;
+static u8                     g_abBfPadGlyph[8];
+static UiControl              g_bfCtl[2];
+static PadImage               g_bfCtlPad[2];
+static UiControl             *g_apBfCtl[2];
+static GeoscapeBaseFacArmEnv  g_bfArm;
+static FacNameGridEnv         g_bfGrid;
+static BaseStripDrawEnv       g_bfStrip;
+static BuildDialogEnv         g_bfDialog;
+static GfxColorEnv            g_bfColor;
+static u8                     g_abBfGrid[1524];
+static u8                     g_nBfBaseCount, g_nBfSelBase;   /* the strip reads them signed (0x62520, 0x62590) */
+static u8                     g_nBfCraftCount;
+static i32                    g_nBfOriginX, g_nBfOriginY, g_nBfFunds;
+static u8                     g_bBfArmed, g_bBfDialogOpen;
+
+static i32 BfaInk(i32 nX0, i32 nY0, i32 nX1, i32 nY1)
+{
+    i32 n = 0;
+    for (i32 y = nY0; y <= nY1; ++y) {
+        for (i32 x = nX0; x <= nX1; ++x) {
+            if ((u16)BdPix(x, y) != 0) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
+static void TestGeoscapeBaseFacArm(void)
+{
+    printf("\nGeoscape_Draw's base-facility arm @ 0x92af0\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_aPalette[PN_TEST_PAL_SLOT][21] = (u32)AR_CAL_INK;
+
+    ArMakeGlyph(&g_bfPad, g_abBfPadGlyph, BFA_PAD_X, BFA_PAD_Y);
+    for (i32 i = 0; i < 2; ++i) {
+        memset(&g_bfCtl[i], 0, sizeof(g_bfCtl[i]));
+        memset(&g_bfCtlPad[i], 0, sizeof(g_bfCtlPad[i]));
+        g_bfCtlPad[i].uWidth  = 2;
+        g_bfCtlPad[i].uHeight = 2;
+        g_bfCtl[i].apPads[0]  = &g_bfCtlPad[i];
+        g_bfCtl[i].bEnabled   = 1;
+        g_bfCtl[i].nMode      = 0;
+        g_bfCtl[i].nState     = 0;
+        g_bfCtl[i].x          = (i16)(30 + 12 * i);   /* BaseFacScreen_Init puts them at (35,37) and (3,37) */
+        g_bfCtl[i].y          = 37;
+        g_apBfCtl[i]          = &g_bfCtl[i];
+    }
+
+    memset(g_abBfGrid, 0, sizeof(g_abBfGrid));
+    /* One marked cell, row 2 column 2: tileA 1 is the stamp NameGrid_BuildSprite maps to build icon 4,
+     * tileB 5 is the layer the name sprite is picked from, and 7 days is what makes the days label draw. */
+    g_abBfGrid[6 * 2 + 2]                                          = 7;   /* buildDays[0][2][2] */
+    g_abBfGrid[PUFO_GRID_FAC_OFF + 6 * 2 + 2]                      = 1;   /* fac[0].tileA */
+    g_abBfGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_TILEB_OFF + 6 * 2 + 2] = 5;  /* fac[0].tileB */
+    g_nBfBaseCount  = 1;
+    g_nBfSelBase    = 1;                    /* selection == count: no erase rect (0x62520) */
+    g_nBfCraftCount = 0;                    /* the craft pass is skipped whole (0x62154) */
+    g_nBfOriginX    = BFA_GRID_X0;
+    g_nBfOriginY    = BFA_GRID_Y0 - 36;     /* the grid's first row is 36 below the origin */
+    g_nBfFunds      = 4147000;
+
+    memset(&g_bfGrid, 0, sizeof(g_bfGrid));
+    g_bfGrid.abFacilityGrid = g_abBfGrid;
+    g_bfGrid.pnCraftCount   = &g_nBfCraftCount;
+    g_bfGrid.pnOriginX      = &g_nBfOriginX;
+    g_bfGrid.pnOriginY      = &g_nBfOriginY;
+    g_bfGrid.pColor         = &g_bfColor;
+    g_bfGrid.nBaseIdx       = 0;
+
+    memset(&g_bfStrip, 0, sizeof(g_bfStrip));
+    g_bfStrip.abFacilityGrid = g_abBfGrid;
+    g_bfStrip.pbBaseCount    = &g_nBfBaseCount;
+    g_bfStrip.pbSelectedBase = &g_nBfSelBase;
+    g_bfStrip.nHighlightRow  = 0;           /* deliberately wrong: 0x92D38 makes the arm overwrite it */
+
+    memset(&g_bfDialog, 0, sizeof(g_bfDialog));
+    g_bfDialog.pColor       = &g_bfColor;
+    g_bfDialog.pnFunds      = &g_nBfFunds;
+    g_bfDialog.pbDialogOpen = &g_bBfDialogOpen;
+    g_bfDialog.pbPlaceArmed = &g_bBfArmed;  /* the same byte the arm gates its controls on */
+
+    memset(&g_bfArm, 0, sizeof(g_bfArm));
+    g_bfArm.pPad          = &g_bfPad;
+    g_bfArm.apPanelCtl    = g_apBfCtl;
+    g_bfArm.pbPlaceArmed  = &g_bBfArmed;
+    g_bfArm.pfnCtlBlit    = PnBlit;
+    g_bfArm.pfnCtlBlitEx  = PnBlitEx;
+    g_bBfArmed     = 0;
+    g_bBfDialogOpen = 0;
+
+    /* ---- the plain run: rails, separator, the three callees, then the two controls ---- */
+    g_nGlyphPalSlotBase = 7;                /* a value the arm must overwrite (0x92D20) */
+    ArReset();
+    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &g_bfStrip, &g_bfDialog);
+    Check((u16)BdPix(BFA_PAD_X, BFA_PAD_Y) == AR_CAL_INK, "the arm blits pBaseFacScreenPad @ 0x186BA0 (0x92AF8)");
+    Check((u16)BdPix(2, 1) != 0 && (u16)BdPix(2, 168) != 0 && (u16)BdPix(2, 318) != 0,
+          "the left rail covers y 1..168 climbing and 151..318 falling, 1 pixel wide at x 2");
+    Check((u16)BdPix(2, 0) == 0 && (u16)BdPix(2, 319) == 0, "and no further: the 24 steps of 7 start at 1 and 151");
+    Check((u16)BdPix(237, 1) != 0 && (u16)BdPix(237, 318) != 0 && (u16)BdPix(238, 1) == 0,
+          "the right rail at x 237 (0x92B84 MOV R1,#0xED), one pixel wide");
+    Check((u16)BdPix(3, 1) == 0, "and the left rail is one pixel wide too (0x92B28 MOV R3,#1)");
+    Check((u16)BdPix(1, 315) != 0 && (u16)BdPix(120, 315) != 0 && (u16)BdPix(128, 315) != 0,
+          "the top rail: climbing x 1..120 and falling from 128, both 5x1 at y 315");
+    Check((u16)BdPix(121, 315) == 0 && (u16)BdPix(127, 315) == 0,
+          "and the gap is exactly x 121..127 -- 24 rects of 5 from x 1 (0x92C44 MOV R3,#5), and the falling "
+          "one really starts at 128");
+    Check((u16)BdPix(1, 2) != 0 && (u16)BdPix(124, 2) != 0 && (u16)BdPix(239, 2) != 0,
+          "the bottom rail has NO gap: its falling ramp starts at x 120 (0x92CC4 ADD R1,R9,#0x78), eight pixels "
+          "left of the top one -- the original's own asymmetry");
+    Check((u16)BdPix(0, 315) == 0 && (u16)BdPix(0, 2) == 0, "and neither row starts before x 1 (0x92C38 ADD R11,R9,#1)");
+    Check((u16)BdPix(4, 35) != 0 && (u16)BdPix(209, 35) != 0 && (u16)BdPix(210, 35) == 0,
+          "the separator is the row y 35 from x 2 for 208 pixels (0x92CE8..0x92D0C)");
+    Check(BfaInk(BFA_MARK_X0, BFA_MARK_Y0, BFA_MARK_X1, BFA_MARK_Y1) > 0,
+          "BaseFacScreen_DrawNameGrid ran: the marked cell at (70,160) draws its name sprite, its build icon "
+          "and its days label, in a band no rail or separator reaches");
+    Check(BfaInk(BFA_STRIP_X0, BFA_STRIP_Y0, BFA_STRIP_X1, BFA_STRIP_Y1) > 0,
+          "Base_DrawFacilityIconStrip ran: the 6x6 cell blocks of its one base");
+    CheckEqI32(g_nGlyphPalSlotBase, PUFO_BFA_GLYPH_PAL,
+               "the arm leaves Map_nGlyphPalBase at 3 (0x92D18 / 0x92D20) and never restores it");
+    CheckEqI32(g_nPnBlits, PUFO_BFA_CTLS_2, "then the two page controls (CMP #2 at 0x92D90)");
+    Check(g_apnPnBlitPad[0] == &g_bfCtlPad[0] && g_apnPnBlitPad[1] == &g_bfCtlPad[1],
+          "gBaseFacBuildBlock[+4] then [+8] @ 0x158874 / 0x158878, BaseFacScreen_PanelPrev then PanelNext "
+          "(handlers stored at 0x5A20C / 0x5A21C)");
+    Check(BfaInk(BFA_FUNDS_X0, BFA_FUNDS_Y0, BFA_FUNDS_X1, BFA_FUNDS_Y1) == 0,
+          "with the dialog closed BaseFacScreen_DrawBuildDialog draws nothing at all (0x59B6C)");
+
+    /* ---- an armed placement cancels the whole control run ---- */
+    g_bBfArmed = 1;
+    ArReset();
+    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &g_bfStrip, &g_bfDialog);
+    CheckEqI32(g_nPnBlits, 0, "with bBaseFacPlaceArmed @ 0x158888 set the arm blits NO control (0x92D68 BNE)");
+    Check((u16)BdPix(BFA_PAD_X, BFA_PAD_Y) == AR_CAL_INK && (u16)BdPix(2, 1) != 0,
+          "while its own pad, rails and separator still draw -- the gate is only on the control loop");
+    const i32 nFundsClosed = BfaInk(BFA_FUNDS_X0, BFA_FUNDS_Y0, BFA_FUNDS_X1, BFA_FUNDS_Y1);
+    CheckEqI32(nFundsClosed, 0, "the dialog is still closed here");
+    g_bBfDialogOpen = 1;
+    ArReset();
+    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &g_bfStrip, &g_bfDialog);
+    Check(BfaInk(BFA_FUNDS_X0, BFA_FUNDS_Y0, BFA_FUNDS_X1, BFA_FUNDS_Y1) > 0,
+          "open, the dialog's funds line (5,20) appears -- so the arm really calls BaseFacScreen_DrawBuildDialog "
+          "with the env it was given (0x92D50 LDR R5,=gBaseFacBuildBlock / 0x92D58)");
+    CheckEqI32(g_nPnBlits, 0, "and the armed gate still blits no control");
+    Check(BfaInk(BFA_MARK_X0, BFA_MARK_Y0, BFA_MARK_X1, BFA_MARK_Y1) > 0,
+          "and the name grid is still drawn, before the dialog as 0x92D34 / 0x92D58 order them");
+    g_bBfDialogOpen = 0;
+    g_bBfArmed = 0;
+
+    /* ---- the strip mark is the arm's own argument ---- */
+    ArReset();
+    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &g_bfStrip, &g_bfDialog);   /* env says highlight 0 */
+    SolSaveInk();
+    ArReset();
+    BaseStripDrawEnv noMark = g_bfStrip;
+    noMark.nHighlightRow = PUFO_BFA_STRIP_MARK;
+    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &noMark, &g_bfDialog);
+    SolInkIs("the arm overwrites the strip's highlight with -1 (0x92D38 MOV R1,#0xFFFFFFFF), so the chevron "
+             "never appears whichever way the env had it");
+
+    /* ---- the mark band belongs to the callee: clear the cell and the same band is empty ---- */
+    g_abBfGrid[6 * 2 + 2] = 0;
+    g_abBfGrid[PUFO_GRID_FAC_OFF + 6 * 2 + 2] = 0;
+    g_abBfGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_TILEB_OFF + 6 * 2 + 2] = 0;
+    ArReset();
+    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &g_bfStrip, &g_bfDialog);
+    CheckEqI32(BfaInk(BFA_MARK_X0, BFA_MARK_Y0, BFA_MARK_X1, BFA_MARK_Y1), 0,
+               "the 36 blank backdrop glyphs draw nothing (0x61CA4..0x61CC8), so that band's ink was the marked cell");
+    Check((u16)BdPix(2, 1) != 0 && BfaInk(BFA_STRIP_X0, BFA_STRIP_Y0, BFA_STRIP_X1, BFA_STRIP_Y1) > 0,
+          "while the arm's rails and the strip's 6x6 cells are still there");
+
+    /* ---- the port's null guards ---- */
+    ArReset();
+    GeoscapeBaseFacArmEnv noPad = g_bfArm;
+    noPad.pPad = NULL;
+    noPad.apPanelCtl = NULL;
+    Geoscape_DrawBaseFacArm(&noPad, &g_bfGrid, &g_bfStrip, &g_bfDialog);
+    Check((u16)BdPix(BFA_PAD_X, BFA_PAD_Y) == 0, "with no pad word there is no pad blit");
+    CheckEqI32(g_nPnBlits, 0, "with no control array the arm blits nothing (the original indexes the block blindly)");
+    Check((u16)BdPix(2, 1) != 0, "and the rails are still drawn -- they need no env at all");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -12587,6 +12808,7 @@ int main(void)
     TestGeoscapeScreenArms();
     TestGeoscapeUfoPsiArms();
     TestGeoscapeSoldierArms();
+    TestGeoscapeBaseFacArm();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
