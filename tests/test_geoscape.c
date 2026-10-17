@@ -22,6 +22,7 @@
 #include "asset/pufo_asset.h"   /* Asset_OpenArchives, the radar session runs on real pads */
 #include "ui/pufo_geouimanage.h" /* PUFO_GEOUI_CLOCK_DIGIT_PADS, the ten clock pads at 0x186BF0 */
 #include "ui/pufo_linelist.h"
+#include "ui/pufo_modal.h"   /* UiModalAnim / UiModalLayout, the frame end's dialog */
 #include "util/pufo_rand.h"
 #include "util/pufo_str.h"    /* pufo_strncpy, the fixture's bounded copies */
 
@@ -8748,6 +8749,13 @@ _Static_assert(PUFO_STATUS_BASE_Y_CONFIRM_LBL == 100, "0x91C38 MOV R2, #0x64");
  * the 0x1B arm (0x907F0 there, 0x91D34 here). */
 _Static_assert(PUFO_STATUS_SCREEN_ID_GLOBE_HOVER == 2, "0x91CF4 CMP R0, #2");
 _Static_assert(PUFO_GEOUI_ROOT_CTLS == 13, "0x91D34 CMP R0, #0xD, the tail's own root loop");
+/* The frame end's own numbers (0x944B4..0x94534). */
+_Static_assert(PUFO_GEOFRAME_LIST_MODE_SAVING == 4, "0x944C4 CMP R0, #4");
+_Static_assert(PUFO_GEOFRAME_LIST_MODE_LOADING == 3, "0x94500 CMP R0, #3");
+_Static_assert(PUFO_GEOFRAME_MODAL_WIDTH == 150, "0x944F0 / 0x9452C MOV R1, #0x96");
+_Static_assert(PUFO_GEOFRAME_PHASE_SAVE == 0x28, "0x944CC / 0x94508 MOV R0, #0x28");
+_Static_assert(PUFO_GEOFRAME_TEXT_SAVING == 1103, "0x944D4 MOV R2,#0x440 then 0x944EC ORR R2,R2,#0xF");
+_Static_assert(PUFO_GEOFRAME_TEXT_LOADING == 1102, "0x94510 MOV R2,#0x440 then 0x94528 ORR R2,R2,#0xE");
 
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
@@ -8872,6 +8880,9 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     /* The 0x3C alien-base panel. 1445 is the message, 1446 the label under the confirm control; the lengths
      * differ so a mix-up shows up as a row width, and neither is a substring of another label here. */
     { 1445, "gggg6" }, { 1446, "h6" },
+    /* The frame end's modal dialog: mode 4 draws 1103, mode 3 draws 1102. Different lengths, so a
+     * record mix-up is a different frame. */
+    { 1102, "t2t2" }, { 1103, "u5u5u5" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
@@ -11549,6 +11560,167 @@ static void TestStatusPanelChainTail(void)
     g_pnEnv.pGlobeEnv = NULL;          /* no other suite supplies a hover env */
 }
 
+/* 0x944B4..0x94550: the frame end every arm of the screen switch at 0x8C1B0 lands on (and the block case 20
+ * falls through into at 0x944B0). Driven directly -- the dispatcher itself is not ported yet. */
+static i32        g_nFePresents;
+static i32        g_nFeListMode, g_nFePhaseSave, g_nFeLimit, g_nFeCooldown;
+static u8         g_bFeActive, g_bFeShown;
+static UiPanel    g_fePanel;
+static UiPanel   *p_fePanel = &g_fePanel;
+static PadImage  *p_fePad = NULL;
+static GfxColorEnv g_feColor;
+static UiModalAnim   g_feModal;
+static UiModalLayout g_feLayout;
+static BaseAtDrawEnv   g_feBaseAt;
+static GeoscapeFrameEndEnv g_feEnv;
+
+static i32 FePresent(void *pUser)
+{
+    (void)pUser;
+    ++g_nFePresents;
+    return 7;
+}
+
+/* One frame end, from a known start state: the modal's own state is re-applied per run, exactly as the
+ * original takes it fresh out of the Map block each frame. */
+static i32 FeRun(i32 nMode)
+{
+    g_nFeListMode = nMode;
+    /* A completed typewriter pass: at 40 the callee wraps the cursor to 1 and clears the progressive flag
+     * (the block the port notes at 0x26744), which is the state where WHOLE lines are drawn. A cursor of 0
+     * would set bProgressive and draw a zero-length prefix instead -- no text at all. */
+    g_feModal.nCursor      = 40;
+    g_feModal.bProgressive = 0;
+    g_feModal.nAnimPhase  = 0;
+    g_feModal.nBand       = 0;
+    g_feModal.nSelButton  = 0;
+    memset(g_bdSurf.pPixels, 0, (size_t)BD_SURF_W * (size_t)BD_SURF_H * 2u);
+    g_nFePresents = 0;
+    return Geoscape_DrawFrameEnd(&g_feEnv);
+}
+
+static void TestGeoscapeFrameEnd(void)
+{
+    printf("\nGeoscape_Draw's frame end @ 0x944b4\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+
+    memset(&g_fePanel, 0, sizeof(g_fePanel));
+    g_fePanel.nLineCount = 0;                 /* equal to nLimit: BaseAt's confirm-shown path runs (0x587D8) */
+    g_feColor.nScaleSource = 1;
+    memset(&g_feModal, 0, sizeof(g_feModal));
+    g_feModal.pColor = &g_feColor;
+    memset(&g_feLayout, 0, sizeof(g_feLayout));
+    memset(&g_feBaseAt, 0, sizeof(g_feBaseAt));
+    g_feBaseAt.pColor           = &g_feColor;
+    g_feBaseAt.pbActive         = &g_bFeActive;
+    g_feBaseAt.ppPad            = &p_fePad;   /* NULL pad: the pad blit is skipped, the rest still runs */
+    g_feBaseAt.ppPanel          = &p_fePanel;
+    g_feBaseAt.pnLineLimit      = &g_nFeLimit;
+    g_feBaseAt.pnRadarCooldownR = &g_nFeCooldown;
+    g_feBaseAt.pbConfirmShown   = &g_bFeShown;
+    g_feBaseAt.pTextRecs        = g_abPnText;
+    memset(&g_feEnv, 0, sizeof(g_feEnv));
+    g_feEnv.pBaseAtEnv           = &g_feBaseAt;
+    g_feEnv.pnListMode           = &g_nFeListMode;
+    g_feEnv.pnActionPhaseSave112 = &g_nFePhaseSave;
+    g_feEnv.pModalAnim           = &g_feModal;
+    g_feEnv.pModalLayout         = &g_feLayout;
+    g_feEnv.pTextRecs            = (const u8 *)g_abPnText;
+    g_feEnv.pfnPresent           = FePresent;
+    g_bFeActive = 1;
+    g_nFeLimit = 0;
+    g_nFeCooldown = 0;
+
+    /* ---- 1. mode 0: BaseAt draws, no dialog, present once ---- */
+    g_nFePhaseSave = -1;
+    g_bFeShown = 0;
+    const i32 nRet = FeRun(0);
+    CheckEqI32(nRet, 7, "the frame end hands back the present thunk's value (0x94538 MOV R0,R4 / 0x9453C)");
+    CheckEqI32(g_nFePresents, 1, "GX_Present runs exactly once -- which is why Render_Frame's geoscape branch skips its own");
+    CheckEqI32(g_bFeShown, 1, "BaseAtScreen_Draw runs first (0x944B4): its confirm-shown byte is set");
+    CheckEqI32(g_nFePhaseSave, -1, "mode 0 takes neither dialog arm, so Map.anActionPhaseSave0[112] is untouched");
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 285).nCount, 0, "nothing above BaseAt's confirm row");
+    Check(PnDiffRect(0, 286, BD_SURF_W - 1, 305).nCount > 0,
+          "BaseAt's own label at PUFO_BASEAT_CONFIRM_Y 290 is the only ink here");
+    PnSaveFrame();                            /* the no-dialog frame: every later compare is against it */
+
+    /* ---- 2. mode 4: 40 into the phase save, then the TEXTS[1103] line ---- */
+    FeRun(4);
+    CheckEqI32(g_nFePhaseSave, PUFO_GEOFRAME_PHASE_SAVE,
+               "mode 4 writes 40 (0x944CC MOV R0,#0x28 stored at 0x944E0, Map+0x112)");
+    Check(g_feModal.nCursor != 0, "the modal renderer ran: its typewriter cursor advanced");
+    Check(PnFrameDiff() > 0, "mode 4 adds ink over the mode-0 frame");
+    /* The dialog's own box, pinned from the formulas the renderer uses: nWidth 150 gives nX = (240-150)/2 = 45,
+     * and nLines 1 gives nHeight = 13 + 10 = 23 with nY = (320-23)/2 = 148. */
+    CheckEqI32(PnDiffRect(0, 120, BD_SURF_W - 1, 147).nCount, 0, "nothing above the dialog: its top border is y=148");
+    CheckEqI32(PnDiffRect(0, 171, BD_SURF_W - 1, 240).nCount, 0, "and nothing below it: 148 + 23 - 1 = 170 is the last row");
+    CheckEqI32(PnDiffRect(0, 148, 44, 170).nCount, 0, "nothing left of x=45 either ((240 - 150) / 2)");
+    Check((u16)BdPix(45, 148) != 0, "the body's top-left corner is drawn (0x26530, x = (240 - 150) / 2)");
+    Check((u16)BdPix(195, 148) != 0, "the right border is at nX + nWidth = 195, one column outside the body -- the 0x265D4 quirk");
+    Check((u16)BdPix(197, 148) == 0, "and it is two columns wide, no further");
+    PnSaveFrame();                            /* the mode-4 frame */
+    FeRun(4);
+    CheckEqI32(PnFrameDiff(), 0, "the same mode drawn twice is the same frame");
+    PnSetText(1103, "");
+    FeRun(4);
+    Check(PnFrameDiff() > 0, "TEXTS[1103] is the record mode 4 draws (0x440 ORR #0xF at 0x944D4 / 0x944EC)");
+    PnSetText(1103, "u5u5u5");
+    PnSetText(1102, "");
+    FeRun(4);
+    CheckEqI32(PnFrameDiff(), 0, "and mode 4 does NOT draw TEXTS[1102]: blanking it changes nothing");
+    PnSetText(1102, "t2t2");
+
+    /* ---- 3. mode 3: the same shape, the other record ---- */
+    FeRun(3);
+    CheckEqI32(g_nFePhaseSave, PUFO_GEOFRAME_PHASE_SAVE, "mode 3 writes the same 40 (0x94508 / 0x9451C)");
+    PnSaveFrame();                            /* the mode-3 frame */
+    FeRun(3);
+    CheckEqI32(PnFrameDiff(), 0, "mode 3 twice is the same frame");
+    PnSetText(1102, "");
+    FeRun(3);
+    Check(PnFrameDiff() > 0, "TEXTS[1102] is the record mode 3 draws (0x440 ORR #0xE at 0x94510 / 0x94528)");
+    PnSetText(1102, "t2t2");
+    PnSetText(1103, "");
+    FeRun(3);
+    CheckEqI32(PnFrameDiff(), 0, "and mode 3 does NOT draw TEXTS[1103]");
+    PnSetText(1103, "u5u5u5");
+    FeRun(4);
+    Check(PnFrameDiff() > 0, "mode 4 and mode 3 are different frames -- the two arms are not the same dialog");
+
+    /* ---- 4. every other mode takes no dialog ---- */
+    FeRun(1);
+    PnSaveFrame();
+    g_nFePhaseSave = -1;
+    FeRun(0xC);                               /* 12: a screen id the switch has an arm for, but no dialog */
+    CheckEqI32(g_nFePhaseSave, -1, "mode 12 writes no phase save");
+    CheckEqI32(PnFrameDiff(), 0, "and its frame is the mode-1 frame: neither dialog arm ran");
+    g_nFePhaseSave = -1;
+    FeRun(13);                                /* the default case's own id */
+    CheckEqI32(g_nFePhaseSave, -1, "screen 13, which arrives straight from the jumptable, takes no dialog either");
+    CheckEqI32(g_nFePresents, 1, "and it still presents");
+
+    /* ---- 5. the two guards the original has no need of ---- */
+    g_bFeActive = 0;                          /* BaseAt's own gate at 0x5873C */
+    g_bFeShown = 0;
+    FeRun(0);
+    CheckEqI32(g_bFeShown, 0, "with the BaseAt gate clear nothing is drawn under it");
+    CheckEqI32(g_nFePresents, 1, "while the frame end keeps running to the present");
+    g_bFeActive = 1;
+    g_feEnv.pBaseAtEnv = NULL;
+    g_nFePhaseSave = -1;
+    FeRun(3);
+    CheckEqI32(g_nFePresents, 1, "a fixture with no BaseAt env still presents");
+    CheckEqI32(g_nFePhaseSave, PUFO_GEOFRAME_PHASE_SAVE, "and the dialog arm still runs");
+    g_feEnv.pBaseAtEnv = &g_feBaseAt;
+    g_feEnv.pfnPresent = NULL;
+    CheckEqI32(FeRun(0), 0, "and with no present hook installed the frame end returns 0");
+    g_feEnv.pfnPresent = FePresent;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -11627,6 +11799,7 @@ int main(void)
     TestStatusPanelDescentPanelAlt();
     TestStatusPanelAlienBase();
     TestStatusPanelChainTail();
+    TestGeoscapeFrameEnd();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

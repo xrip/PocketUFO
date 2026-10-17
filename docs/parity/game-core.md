@@ -18267,3 +18267,68 @@ names the IDB does not have: `pSmapChromePad` for 0x186BBC (twice) and for 0x186
 
 Not ported yet in this chain: 0x91DC8..0x944B0 (the screen arms, the frame-end block at 0x944B4 and its modal
 dialogs).
+
+
+Part 16 -- the frame end 0x944B4..0x94550, ported as Geoscape_DrawFrameEnd (src/pufo/game/pufo_geoscape.c).
+
+Who reaches it. Case 20 (0x944B0) falls through. The jumptable default (0x8C1B4: screens 13, 14 and any id
+outside 0..20), the twelve screen arms that end in B def_8C1B0, the flag chain (0x91D3C after its thirteen root
+blits, 0x91DA4 on the globe-hover branch) and the five exits of the 0x1B arm (0x90798, 0x907A8, 0x907B8,
+0x90904, 0x9097C) branch to it. Case 19 is the only arm that does not: its funding block ends at 0x9449C with
+B loc_92ACC, the centring/printing tail shared with the earlier arms. So BaseAtScreen_Draw, the two modal
+dialogs and GX_Present are the tail of the WHOLE function and one port function covers every arm.
+
+The registers the block relies on. R4 = the Map/context base 0x1139B8, loaded at 0x8C19C before the switch and
+kept by every arm: it is the first argument of both modal calls (0x944F4, 0x94530 MOV R0,R4) and of GX_Present
+(0x94538). R5 = 0 (0x944BC) is written into the two button-string slots (0x944D0 psz2, 0x944E8 psz): the dialog
+has no buttons. R6 = &MainMenu_nListMode (0x944B8, 0x157188).
+
+BaseAtScreen_Draw (0x58728) has no argument. It reads its state from globals: the gate byte bBaseAtActive
+(0x158864, LDRB at 0x58734), the pad pointer pBaseAtPad (0x15884C, the +0xC field of the 0x158840 record,
+LDR [R0,#0xC] at 0x58744) and the panel pBaseAtPanel (0x15885C, LDR R5,=0x15885C at 0x58754). The
+LDR R0,=0x158840 that case 20 leaves in R0 at 0x944B0 is therefore dead -- a ledger row, and the reason the
+port's env has no field for it.
+
+The mode tests. 0x944C0 LDR R0,[R6] / 0x944C4 CMP #4 / 0x944C8 BNE 0x94500: mode 4 is the save-in-progress
+dialog. 0x944FC re-reads the same global before the mode-3 test at 0x94500 -- the first dialog's callee is free
+to change it -- so the port reads it twice (nModeA, nModeB). Both arms write 0x28 (40) into
+Map.anActionPhaseSave0[112] @ 0x128AA0 (MOV R0,#0x28 at 0x944CC / 0x94508, R12 offset 0x944D8 / 0x94514, STR
+0x944E0 / 0x9451C) and call UiModal_DrawDialog with nWidth 0x96 (150), nLines 1 and the record built in two
+steps: 0x440 at 0x944D4 / 0x94510, then ORR #0xF (1103) at 0x944EC or ORR #0xE (1102) at 0x94528. Any other mode
+value draws no dialog here (modes 1, 12 and 13 tested).
+
+GX_Present at 0x9453C is the 0x27788 thunk for GX_PresentFrame (0x9ea7c): the frame is on screen before
+Geoscape_Draw returns, which is why Render_Frame's geoscape branch (0x22328 / 0x22330) has no present of its
+own. The port hands the thunk's value back like 0x9453C leaves it in R0.
+
+0x94550 RET is padding behind the epilogue's LDM (0x94544) and the literal pool (0x94548 DCD
+MainMenu_nListMode, 0x9454C DCD 0x158840), not a second return path.
+
+Tests (TestGeoscapeFrameEnd, 32 checks; 17286 across 60 suites). Both dialogs are pinned by their box, not by a
+count: nWidth 150 gives nX = (240-150)/2 = 45 and nLines 1 gives nHeight = 13+10 = 23 with nY = (320-23)/2 =
+148, so the checks are "nothing above y 147", "nothing below row 171", "nothing left of x 45", the corner at
+(45,148) drawn, the right border at x 195 -- one column outside the body, the 0x265D4 off-by-one the port keeps
+-- and nothing at x 197. Record identity is checked both ways with a positive control per mode: mode 4 loses
+its text when 1103 is blanked and keeps the same frame when 1102 is blanked, mode 3 the other way round, and a
+mode-4 frame differs from a mode-3 frame. BaseAtScreen_Draw runs first: its confirm-shown byte is set and its
+label at PUFO_BASEAT_CONFIRM_Y 290 is the only ink in a mode-0 frame (rows 286..305, nothing above 285), and
+with its gate cleared the frame stays empty while GX_Present still runs once. The phase save is untouched for
+modes 0, 12 and 13 and is 40 for both dialog arms. Same mode drawn twice gives a diff of 0. The present hook's
+value is handed back (7) and a missing hook returns 0.
+
+Mutations: 8 behaviour-bearing mutants, 8 caught, none survived -- each mode test flipped, the two records
+swapped, the width 150 -> 120, nLines 1 -> 2, the 0x28 -> 41, dropping BaseAtScreen_Draw, dropping the present.
+One candidate was left out on purpose: caching the mode instead of re-reading it at 0x944FC cannot be observed
+here, because nothing between the two tests writes MainMenu_nListMode.
+
+IDB: 12 line comments on the frame end (0x942F4, 0x94304, 0x94314, 0x9449C, 0x944B0, 0x944B8, 0x944C4, 0x944CC,
+0x944D4, 0x944FC, 0x94510, 0x9453C) and the 21-case screen-switch map as the function comment of Geoscape_Draw.
+Four globals named to match the port's BaseAtUpdateEnv: nBaseAtClass (0x158840), pBaseAtPad (0x15884C),
+pBaseAtPanel (0x15885C), bBaseAtActive (0x158864), each with a data comment giving the record layout at
+0x158840..0x158867. Two wrong item sizes fixed: 0x15884C and 0x15885C were 1-byte items typed PadImage * and
+UiPanel * -- a pointer type on a byte -- while every access is 4-byte (LDR/STR [R5,#0xC] at 0x578E0..0x57900,
+LDR [R4] at 0x57AEC..0x586D4); they are 4-byte items now. A scratch note on dword_186B08: no single owner, the
+UI open/init paths use it as a temp (0x84B60, 0x84C54, 0x851FC, 0x85838..0x86CCD) and Geoscape_Draw spills its
+root-blit counter there (reset 0x91D18, CMP #0xD at 0x91D34). Tooling note: ida_name.set_name with SN_FORCE
+returns True and installs nothing when the name is also a member of a local type (the port's struct fields),
+which is exactly this case; SN_NOCHECK installs it.

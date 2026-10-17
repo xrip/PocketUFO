@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 17254 |
+| Test checks run | 17286 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -139,7 +139,7 @@ is the module that answers to it.
 | `0x9f99c` | `SoftSurf_GetHeight` | 8 | `src/pufo/render/pufo_render.h` |
 | `0x9fcb4` | `SoftSurf_GetPixels` | 8 | `src/pufo/render/pufo_render.h` |
 | `0x9fcbc` | `SoftSurf_GetAlloc` | 8 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0x27788` | `GX_Present` | 4 | `src/pufo/app/pufo_app.c` |
+| `0x27788` | `GX_Present` | 4 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geoscape.h` |
 
 ### `audio` (6 functions)
 
@@ -474,7 +474,7 @@ is the module that answers to it.
 | `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.c` (+2) |
 | `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/game/pufo_isodraw.h` |
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geopointer.h` (+3) |
-| `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_mainmenu.h` |
+| `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_mainmenu.h` |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
 | `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geopointer.h` (+2) |
 | `0x2cdac` | `TactHud_DrawItemStrip` | 2004 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -879,7 +879,7 @@ is the module that answers to it.
 | `0x79e00` | `BasePlaneScreen_DrawStatLabelA` | 452 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
 | `0x79fc4` | `BasePlaneScreen_DrawStatLabelB` | 452 | `src/pufo/game/pufo_plane.h` |
 | `0x619cc` | `SoldierScreen_EquipSelected` | 448 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
-| `0x58728` | `BaseAtScreen_Draw` | 420 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x58728` | `BaseAtScreen_Draw` | 420 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x9690c` | `Transfer_ResetSite` | 420 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x9a754` | `Ufopaedia_NextEntry` | 364 | `src/pufo/game/pufo_baseui.h` |
 | `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h`, `src/pufo/render/pufo_render.h` |
@@ -1275,7 +1275,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 2794 |
+| `test_geoscape` | PASS | 2826 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

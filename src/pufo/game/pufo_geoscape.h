@@ -2051,6 +2051,53 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
  * @ 0x1870AC is clear -- blit *g_pUiCloseCtl. The screen id is set to 2 by the new-base confirm at 0x61620. */
 #define PUFO_STATUS_SCREEN_ID_GLOBE_HOVER       2  /* 0x91CF4 CMP R0, #2 */
 
+/* ---- the screen switch's shared frame end, 0x944B4..0x94550 -------------------------
+ *
+ * The body of the default case of the jumptable at 0x8C1B0 (`CMP R0, #0x14 / ADDLS`, 21 cases on
+ * nGeoscapeScreen @ 0x186BC4). Every screen arm ends with `B def_8C1B0` and lands here, and so does
+ * case 20, which falls through from 0x944B0. Screens 13 and 14 -- and any id outside 0..20 -- come
+ * straight from the jumptable.
+ *
+ * Case 20 (0x944B0) loads 0x158840 into R0 and falls through to the BaseAtScreen_Draw call, and the
+ * load is DEAD: BaseAtScreen_Draw @ 0x58728 takes no argument at all -- it reaches its own gate
+ * (0x158864), pad pointer (0x158840) and cooldown (0x15885C) through globals. The default path gets
+ * here with R0 = the screen id, which is just as dead.
+ *
+ * Then MainMenu_nListMode @ 0x157188 decides whether a one-line modal dialog goes over the frame:
+ * mode 4 draws TEXTS[1103] and mode 3 draws TEXTS[1102], both 150 wide, both with no button labels,
+ * and each writes 40 into Map.anActionPhaseSave0[112] @ 0x128AA0 first. The two record numbers are
+ * built in registers as 0x440|0xF (0x944D4 / 0x944EC) and 0x440|0xE (0x94510 / 0x94528), and the mode
+ * is re-read from memory at 0x944FC between the two tests. The values, the width and record 1102 are
+ * the same ones MainMenu_Draw @ 0x1DBB8 uses for its own mode 3. Finally GX_Present @ 0x27788 --
+ * which is why Render_Frame's geoscape branch never reaches its own present call (0x22328 / 0x22330).
+ *
+ * Deviation: the original reaches the modal renderer's anim state, the text table and the button
+ * layout slots through the Map context (R4 = 0x1139B8); the port passes the sub-envs
+ * UiModal_DrawDialog already takes. Neither call site passes a layout argument at all -- the callee
+ * computes the button layout into apUiSlotsA[20..23] that this caller never reads back -- so the
+ * port hands it the env's layout object, which the callers that DO read it share. */
+#define PUFO_GEOFRAME_LIST_MODE_SAVING    4   /* 0x944C4 CMP R0, #4 */
+#define PUFO_GEOFRAME_LIST_MODE_LOADING   3   /* 0x94500 CMP R0, #3 */
+#define PUFO_GEOFRAME_MODAL_WIDTH       150   /* 0x944F0 / 0x9452C MOV R1, #0x96 */
+#define PUFO_GEOFRAME_MODAL_LINES         1   /* 0x944E4 / 0x94520 MOV R3, #1 */
+#define PUFO_GEOFRAME_PHASE_SAVE         40   /* 0x944CC / 0x94508 MOV R0, #0x28 -> Map+0x112 */
+#define PUFO_GEOFRAME_TEXT_SAVING      1103   /* 0x440 | 0xF at 0x944D4 + 0x944EC */
+#define PUFO_GEOFRAME_TEXT_LOADING     1102   /* 0x440 | 0xE at 0x94510 + 0x94528 */
+
+typedef struct GeoscapeFrameEndEnv {
+    const struct BaseAtDrawEnv *pBaseAtEnv;   /* BaseAtScreen_Draw's own env -- the callee takes no argument */
+    const i32            *pnListMode;         /* MainMenu_nListMode @ 0x157188, read twice (0x944C0, 0x944FC) */
+    i32                  *pnActionPhaseSave112; /* Map.anActionPhaseSave0[112] @ 0x128AA0 */
+    struct UiModalAnim   *pModalAnim;         /* the Map-block anim cells the modal renderer works through */
+    struct UiModalLayout *pModalLayout;       /* apUiSlotsA[20..23]: written here, never read back here */
+    const u8             *pTextRecs;          /* aTextRecs @ 0xB38D0 */
+    i32                (*pfnPresent)(void *pUser); /* GX_Present @ 0x27788, the thunk to GX_PresentFrame */
+    void                  *pPresentUser;
+} GeoscapeFrameEndEnv;
+
+/* Returns the present thunk's value, which is what Render_Frame returns on the geoscape branch. */
+i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

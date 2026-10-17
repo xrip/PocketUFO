@@ -10,6 +10,7 @@
 #include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
 #include "game/pufo_save.h"    /* SmapSite, for the monthly upkeep of a base */
 #include "ui/pufo_geouimanage.h" /* PUFO_GEOUI_CLOCK_DIGIT_PADS, the ten pads at 0x186BF0 */
+#include "ui/pufo_modal.h"       /* UiModalAnim, UiModalLayout, the frame-end dialog */
 #include "util/pufo_rand.h"
 #include "util/pufo_str.h"     /* pufo_strncpy/pufo_strcat, the cost label */
 
@@ -5545,6 +5546,43 @@ static void StatusPanel_DrawChainTail(const GeoscapeStatusPanelEnv *pEnv)
         (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);               /* 0x91DA8..0x91DB0, then B loc_93058 */
     }
+}
+
+/* 0x944B4..0x94550: the frame end every arm of the screen switch at 0x8C1B0 lands on. Case 20 falls
+ * through into it from 0x944B0 with a dead R0 (BaseAtScreen_Draw takes no argument), and the default
+ * case -- screens 13, 14 and any id outside 0..20 -- arrives from the jumptable. */
+i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv)
+{
+    if (pEnv->pBaseAtEnv != NULL) {
+        BaseAtScreen_Draw(pEnv->pBaseAtEnv);                           /* 0x944B4 */
+    }
+
+    /* 0x944C0 / 0x944C4: the mode is read from memory here, and read AGAIN at 0x944FC before the
+     * second test, so the port re-reads it rather than caching it. */
+    const i32 nModeA = pEnv->pnListMode != NULL ? *pEnv->pnListMode : -1;
+    if (nModeA == PUFO_GEOFRAME_LIST_MODE_SAVING) {
+        if (pEnv->pnActionPhaseSave112 != NULL) {
+            *pEnv->pnActionPhaseSave112 = PUFO_GEOFRAME_PHASE_SAVE;   /* 0x944E0 */
+        }
+        (void)UiModal_DrawDialog(pEnv->pModalAnim, pEnv->pTextRecs, PUFO_GEOFRAME_MODAL_WIDTH,
+                                 PUFO_GEOFRAME_TEXT_SAVING, PUFO_GEOFRAME_MODAL_LINES,
+                                 NULL, NULL, pEnv->pModalLayout);     /* 0x944F8, no buttons */
+    }
+
+    const i32 nModeB = pEnv->pnListMode != NULL ? *pEnv->pnListMode : -1; /* 0x944FC LDR R0,[R6] */
+    if (nModeB == PUFO_GEOFRAME_LIST_MODE_LOADING) {
+        if (pEnv->pnActionPhaseSave112 != NULL) {
+            *pEnv->pnActionPhaseSave112 = PUFO_GEOFRAME_PHASE_SAVE;   /* 0x9451C */
+        }
+        (void)UiModal_DrawDialog(pEnv->pModalAnim, pEnv->pTextRecs, PUFO_GEOFRAME_MODAL_WIDTH,
+                                 PUFO_GEOFRAME_TEXT_LOADING, PUFO_GEOFRAME_MODAL_LINES,
+                                 NULL, NULL, pEnv->pModalLayout);     /* 0x94534, no buttons */
+    }
+
+    if (pEnv->pfnPresent == NULL) {
+        return 0;
+    }
+    return pEnv->pfnPresent(pEnv->pPresentUser);                      /* 0x94538 MOV R0,R4 / 0x9453C */
 }
 
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
