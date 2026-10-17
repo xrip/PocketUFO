@@ -1401,10 +1401,10 @@ typedef struct GeoscapeMapViewEnv {
 
 /* The crosshair tail, 0x8C69C..0x8C760. While bSmapCrosshairPending is set and nRadarCooldownR
  * is below 5 it blits a 1-pixel vertical line at x = nSmapCrosshairX + 3 whose height is
- * 320 - pSmapChromePad->uHeight, and a 240 x 1 horizontal line at y = nSmapCrosshairY + 3, both
+ * 320 - pGeoscapeStripPad->uHeight, and a 240 x 1 horizontal line at y = nSmapCrosshairY + 3, both
  * in the 50/200 pair. Otherwise it clears the flag and parks the cooldown at 0xFF. */
 typedef struct GeoscapeCrosshairEnv {
-    const PadImage *pChromePad;     /* *pSmapChromePad @ 0x186BBC, its uHeight bounds the line */
+    const PadImage *pChromePad;     /* *pGeoscapeStripPad @ 0x186BBC, its uHeight bounds the line */
     i32             nCrosshairX;    /* nSmapCrosshairX @ 0x186BC8 */
     i32             nCrosshairY;    /* nSmapCrosshairY @ 0x186BCC */
     u8             *pbPending;      /* bSmapCrosshairPending @ 0x1870B0 */
@@ -1575,7 +1575,7 @@ typedef struct GeoscapeStatusPanelEnv {
     void             (*pfnConfirmSelectedAlt)(void);  /* Smap_ConfirmSelectedAlt @ 0x853e4 */
     void             (*pfnSetWaypoint)(void);         /* Smap_SetWaypoint @ 0x85440 */
     /* The 0x0B craft-detail card. */
-    const PadImage    *pStripPad;         /* the pad pointer at 0x186BBC, re-blitted behind the card */
+    const PadImage    *pStripPad;         /* *pGeoscapeStripPad @ 0x186BBC, re-blitted behind the card */
     u8                *pbInterceptDone;   /* bInterceptDone @ 0x18709C, byte 0 of the block the default
                                            * arm reads at +4 */
     UiControl         *pCtlReturnBase;    /* *pCtlNameEditBackspace @ 0x186BA8, labelled "Вернуться на базу" */
@@ -1603,6 +1603,18 @@ typedef struct GeoscapeStatusPanelEnv {
                                            * 0x915E8) is dead */
     const u16        *pnSoldierCount;     /* nSoldierCount @ 0x115350, read as a u16 at 0x664B0 */
     void             (*pfnBeginCraftSelect)(void);  /* Smap_BeginCraftSelect @ 0x838dc */
+    /* The chain's shared tail, 0x91CEC..0x91DB0. Its second branch needs the globe-hover env, whose owners
+     * (the zoom tile grid at [0x186B04] and the three sweep counters at 0x159DF8 / 0x159DFC / 0x159E00) are
+     * not owned by the shell yet -- Geoscape_DrawStatusPanel itself has no caller in the port. */
+    const i32                    *pnScreenId;        /* nGeoscapeScreen @ 0x186BC4: 2 picks the hover branch */
+    const struct GeoscapeGlobeHoverEnv *pGlobeEnv;   /* the env the 0x91D8C call gets: the caller sets R0 =
+                                                      * abFacilityGrid @ 0x159768 (the callee keeps it and reads
+                                                      * it at 0x67860), R1 = nSmapCursorX, R2 = nSmapCursorY, and
+                                                      * the last two are dead -- see StatusPanel_DrawChainTail */
+    u8                           *pbPendingRegionId; /* bPendingRegionId @ 0x159DF4, written with STRB at 0x91D94 */
+    const u8                     *pbPlacementPending;/* bPlacementPending @ 0x1870AC: non-zero skips the close blit,
+                                                      * and the globe hover reads the same byte at 0x679A8 */
+    UiControl                    *pCloseCtl;         /* *g_pUiCloseCtl @ 0x186B00 */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -2032,6 +2044,12 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_TEXT_CENTRE_BASE          1446 /* unk_FBEBE: "Центр на базу" */
 #define PUFO_STATUS_BASECTL_Y_CONFIRM         100  /* 0x91BE0 MOV R3, #0x64 */
 #define PUFO_STATUS_BASE_Y_CONFIRM_LBL        100  /* 0x91C38 MOV R2, #0x64 -- the label row IS the control row */
+
+/* 0x91CEC..0x91DB0: the tail every arm of the chain lands on. Not 2 means: blit *pGeoscapeStripPad, draw the clock
+ * pads, then blit the thirteen root widgets at 0x1864F8 + 4*i for i in 0..12. == 2 means: run the new-base
+ * globe hover, store its tile into bPendingRegionId @ 0x159DF4 as a BYTE, and -- only while bPlacementPending
+ * @ 0x1870AC is clear -- blit *g_pUiCloseCtl. The screen id is set to 2 by the new-base confirm at 0x61620. */
+#define PUFO_STATUS_SCREEN_ID_GLOBE_HOVER       2  /* 0x91CF4 CMP R0, #2 */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
@@ -2930,7 +2948,7 @@ void RadarScreen_Update(const RadarUpdateEnv *pEnv);
 typedef struct GeoscapeScreenDrawEnv {
     SmapView       *pView;          /* gSmapCam @ 0x1863E8 */
     PadImage       *pMapPad;        /* pSmapPadCur @ 0x186E40 */
-    PadImage       *pLayerPad;      /* pSmapChromePad @ 0x186BE0 */
+    PadImage       *pLayerPad;      /* pSmapLayerPad @ 0x186BE0 */
     PadImage       *pStripPad;      /* [0x186BBC], the zoom-strip pad */
     const u8       *pWorldBits;     /* pSmapWorldBits @ 0x186BC0 */
     i32             nOverlayOriginX;/* nSmapOverlayOriginX @ 0x186C20 */
@@ -3045,7 +3063,7 @@ typedef struct GeoscapePulseEnv {
     const i32          *pnActionFail;   /* dwActionFail @ 0x1870C8 */
     i32                 nScreenId;      /* nGeoscapeScreen @ 0x186BC4 */
     SmapView           *pView;          /* gSmapCam @ 0x1863E8 */
-    i32                 nStripHeight;   /* pSmapStripPad @ 0x186BBC uHeight, Smap_ScrollBy's clamp */
+    i32                 nStripHeight;   /* pGeoscapeStripPad @ 0x186BBC uHeight, Smap_ScrollBy's clamp */
     u8                 *pabDragFlags;   /* unk_1864F4..F7 */
     Ship *const        *apCraft;        /* Map.apCraft @ Map+0x10AC */
     const u8           *pnCraftCount;   /* Map_nCraftCount @ 0x114B4C, read LDRB at 0x95524 / 0x955F4 */

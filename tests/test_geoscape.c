@@ -8528,6 +8528,11 @@ static void TestGlobeHover(void)
 #define PN_TEXT_MAX 1447 /* the highest record the panel or BuildStatusMsg reaches (1446, the alien-base label) */
 #define PN_BAND     12   /* a row's search window below its y; rows are at least 14 apart */
 #define PN_GLYPH_DY  2   /* Text_DrawString puts the ink PN_GLYPH_DY + 1 below the y it is given */
+/* Every arm of the chain ends on the shared tail at 0x91CEC, which blits the strip pad at its own origin
+ * (30,250), draws the clock down to y 305 and blits the root block's thirteen widgets. So an arm's OWN ink
+ * is measured above PN_TAIL_INK_Y, and its own control blits above the tail's thirteen. The 0x1B arm is the
+ * exception: every exit of it jumps to 0x944B4, so it never reaches the tail. */
+#define PN_TAIL_INK_Y     250
 
 /* The panel geometry constants, pinned to the immediates read off the ARM. The frame tests below
  * compare against the same names the implementation uses, so without these pins a change to a
@@ -8739,6 +8744,10 @@ _Static_assert(0xB38D0 + 1446 * PUFO_TEXT_REC_STRIDE == 0xFBEBE, "0x91BF4 LDR R0
 _Static_assert(1144 * PUFO_TEXT_REC_STRIDE == 0x39418, "0x91C74 MOV R1,#0x39418");
 _Static_assert(PUFO_STATUS_BASECTL_Y_CONFIRM == 100, "0x91BE0 MOV R3, #0x64");
 _Static_assert(PUFO_STATUS_BASE_Y_CONFIRM_LBL == 100, "0x91C38 MOV R2, #0x64");
+/* The chain tail's own numbers: the branch test, and the loop bound of the root-widget blits it shares with
+ * the 0x1B arm (0x907F0 there, 0x91D34 here). */
+_Static_assert(PUFO_STATUS_SCREEN_ID_GLOBE_HOVER == 2, "0x91CF4 CMP R0, #2");
+_Static_assert(PUFO_GEOUI_ROOT_CTLS == 13, "0x91D34 CMP R0, #0xD, the tail's own root loop");
 
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
@@ -8816,6 +8825,11 @@ static u8         g_abPnClockGlyph[PUFO_GEOUI_CLOCK_DIGIT_PADS][6];
 static PadImage  *apPnClockPad[PUFO_GEOUI_CLOCK_DIGIT_PADS];
 static u8         g_abPnStripGlyph[4 + 8];
 static UiControl  g_pnCtlFinal;              /* pFinalMissionCtl @ 0x186B8C */
+static UiControl  g_pnCtlClose;              /* g_pUiCloseCtl @ 0x186B00, the chain tail's control */
+static PadImage   g_pnClosePad;
+static i32        g_nPnScreenId;             /* nGeoscapeScreen @ 0x186BC4, the tail's branch */
+static u8         g_bPnPlacePending;         /* bPlacementPending @ 0x1870AC, the tail's gate */
+static u8         g_bPnPendRegion;           /* bPendingRegionId @ 0x159DF4 */
 static PadImage   g_pnFinalPad;
 static u8         g_bPnUfoCrash, g_bPnSite, g_bPnAlienBase; /* 0x18708C, 0x187090, 0x187098 */
 static u8         g_bPnFinalArmed;           /* bFinalMissionCtlArmed @ 0x187068 */
@@ -8870,12 +8884,14 @@ static const PadImage *g_apnPnBlitPad[32];
  * makes the handler/blit ORDER observable: the 0x14 arm installs its handler first (0x90B60 then
  * 0x90B68) while the 0x0B, 0x0D, 0x10 and 0x1B arms do it the other way round. */
 static void (*g_apnPnBlitHandler[32])(void);
+/* The ten fixture controls, so a recorded pad can be named. g_pnCtlClose is here because the chain tail's
+ * second branch blits *g_pUiCloseCtl (0x91DA8 -> the blit at 0x93058). */
 static void (*PnHandlerAtBlit(const PadImage *pPad))(void)
 {
-    const UiControl *const apMap[9] = { &g_pnCtlSfx, &g_pnCtlOpen, &g_pnCtlConfirm, &g_pnCtlApply,
-                                        &g_pnCtlA, &g_pnCtlB, &g_pnCtlRet, &g_pnCtlTarg,
-                                        &g_pnCtlPatrol };
-    for (i32 i = 0; i < 9; ++i) {
+    const UiControl *const apMap[10] = { &g_pnCtlSfx, &g_pnCtlOpen, &g_pnCtlConfirm, &g_pnCtlApply,
+                                         &g_pnCtlA, &g_pnCtlB, &g_pnCtlRet, &g_pnCtlTarg,
+                                         &g_pnCtlPatrol, &g_pnCtlClose };
+    for (i32 i = 0; i < 10; ++i) {
         if (apMap[i]->apPads[0] == pPad) {
             return apMap[i]->pfnClick;
         }
@@ -9246,6 +9262,17 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnCtlFinal.uWidth   = 40;
     g_pnCtlFinal.bEnabled = 1;
     g_pnCtlFinal.apPads[0] = &g_pnFinalPad;
+
+    /* The chain tail's own state: the screen id picks its branch, bPlacementPending gates the close blit,
+     * and bPendingRegionId is where the globe hover's tile lands. The hover env is the globe suite's own
+     * (built by GhFixture) and stays NULL until a test asks for the == 2 branch. */
+    memset(&g_pnCtlClose, 0, sizeof(g_pnCtlClose));
+    g_pnCtlClose.uWidth    = 20;
+    g_pnCtlClose.bEnabled  = 1;
+    g_pnCtlClose.apPads[0] = &g_pnClosePad;
+    g_nPnScreenId       = 0;
+    g_bPnPlacePending   = 0;
+    g_bPnPendRegion     = 0;
     g_bPnUfoCrash   = 0;
     g_bPnSite       = 0;
     g_bPnAlienBase  = 0;
@@ -9350,6 +9377,11 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.apSoldiers             = g_apPnSoldiers;
     g_pnEnv.pnSoldierCount         = &g_nPnSoldierCount;
     g_pnEnv.pfnBeginCraftSelect    = PnBeginCraftSelect;
+    g_pnEnv.pnScreenId             = &g_nPnScreenId;
+    g_pnEnv.pbPendingRegionId      = &g_bPnPendRegion;
+    g_pnEnv.pbPlacementPending     = &g_bPnPlacePending;
+    g_pnEnv.pCloseCtl              = &g_pnCtlClose;
+    g_pnEnv.pGlobeEnv              = NULL;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -9453,7 +9485,7 @@ static void TestStatusPanelArms(void)
                          ? PUFO_STATUS_ANIM_H_TALL : PUFO_STATUS_ANIM_H_STD;
         memset(g_aPnBase, 0, sizeof(g_aPnBase));
         PnRun();
-        const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+        const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
         snprintf(szWhat, sizeof(szWhat), "'%c' frames the panel from x=0 (Ui_AnimExpandBlit_IfEnabled)",
                  aArms[i].nFlag);
         CheckEqI32(dFrame.nMinX, 0, szWhat);
@@ -9490,7 +9522,14 @@ static void TestStatusPanelArms(void)
         CheckEqI32(g_pnCtlOpen.y, g_pnCtlSfx.y, "the same y on both");
         Check(g_pnCtlSfx.pfnClick == PnClickSfx, "the left control gets the sfx opener");
         Check(g_pnCtlOpen.pfnClick == PnClickOpen, "the right control gets the plain opener");
-        CheckEqI32(g_nPnBlits, 2, "and exactly the two controls are blitted");
+        /* 0x8E3E4 is the ONE jumptable case that jumps to the chain's tail at 0x91CEC instead of the function's
+         * default label: flag 0x2B '+' therefore blits the thirteen root widgets too. The other twelve end at
+         * def_8C1B0 and never see them. */
+        const i32 nWantBlits = aArms[i].nFlag == '+' ? PUFO_GEOUI_ROOT_CTLS + 2 : 2;
+        snprintf(szWhat, sizeof(szWhat), "'%c' blits %d pads: %s", aArms[i].nFlag, nWantBlits,
+                 aArms[i].nFlag == '+' ? "its two controls plus the tail's thirteen root widgets"
+                                       : "its two controls, and no tail");
+        CheckEqI32(g_nPnBlits, nWantBlits, szWhat);
     }
 }
 
@@ -9570,12 +9609,17 @@ static void TestStatusPanelDefault(void)
         Check(false, "the font is loaded");
         return;
     }
-    /* Absolute measurement here: the baseline is the zeroed surface, so every painted pixel shows. */
+    /* Absolute measurement here: the baseline is the zeroed surface, so every painted pixel shows. The arm
+     * is the whole default arm with both calls skipped, so the ONLY ink left is the chain tail's own. */
     memset(g_aPnBase, 0, sizeof(g_aPnBase));
     PnRun();
     const PnDiff dOff = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
-    CheckEqI32(dOff.nCount, 0,
-               "flag 0x1E with byte_18709C[4] clear draws NOTHING: 0x8E5E0's BEQ skips both calls");
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1).nCount, 0,
+               "flag 0x1E with byte_18709C[4] clear draws NOTHING above row 250: 0x8E5E0's BEQ skips both calls");
+    const i32 nTailInk = dOff.nCount;
+    Check(nTailInk > 0,
+          "and the frame is not empty: the arm still falls through into the shared tail at 0x91CEC, whose "
+          "strip-pad blit and clock pads are the only ink left");
 
     g_bPnMulti = 1;
     g_pnPanel.nFont      = 17;
@@ -9588,7 +9632,7 @@ static void TestStatusPanelDefault(void)
     g_szPnPanelLine[0]   = 0;
     memset(g_aPnBase, 0, sizeof(g_aPnBase));
     PnRun();
-    const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     Check(dFrame.nCount > 0, "with the flag set Ui_AnimExpandBlit paints the frame");
     CheckEqI32(dFrame.nMinX, 0xE, "the frame's left edge is x = 0xE (0x8E620)");
     CheckEqI32(dFrame.nMinY, 100 - 6, "its top edge is nPosY - 6 (0x8E648)");
@@ -9683,8 +9727,8 @@ static void TestStatusPanelActionFail(void)
     g_nPnActionFail   = 1;
     g_nPnActionReason = 0;
     PnCapture();
-    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
-               "flag 0x1E is not below 0x1E, so the line is skipped");
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1).nCount, 0,
+               "flag 0x1E is not below 0x1E, so the line is skipped (only the tail's own ink is left)");
 
     /* The anim's height is R8, the map half-extent the map chrome left at 0x8C2D0. The shipped
      * 240-wide grid makes it zero, so the frame degenerates to its own top border at y = 0x82. */
@@ -9694,7 +9738,7 @@ static void TestStatusPanelActionFail(void)
     PnEmptySources();                  /* the frame alone: the text row would otherwise join it */
     memset(g_aPnBase, 0, sizeof(g_aPnBase));
     PnRun();
-    const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(dFrame.nMinY, 0x82, "its frame's top edge is y = 0x82 (0x8E694)");
     CheckEqI32(dFrame.nMaxY, 0x82 + 5, "and with nMapW / 2 - 120 == 0 the frame is only 6 tall");
     CheckEqI32(dFrame.nMinX, 0x14, "and it starts at x = 0x14 (0x8E698)");
@@ -9728,7 +9772,8 @@ static void TestStatusPanelContact(void)
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SELCTL_Y_STD_CLEAR, "pGeoscapeCtlA sits at y=160");
     Check(g_pnCtlConfirm.pfnClick == PnSelectTarget, "confirm gets Smap_OnPointerUp");
     Check(g_pnCtlA.pfnClick == PnClearSel, "and pGeoscapeCtlA gets Smap_ClearSelection");
-    CheckEqI32(g_nPnBlits, 2, "and exactly the two controls are blitted");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "and the blits are the tail's thirteen root widgets plus the two controls");
 
     /* szRadarMsg after the panel is the SPEED line: the size number is left in psz and the speed
      * line appends it whenever nTimer is not positive (0x8EBF4's BLE). */
@@ -9933,7 +9978,8 @@ static void TestStatusPanelOrder(void)
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_ORDERCTL_Y_ONE, "pGeoscapeCtlA sits at y=115");
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "centred from its own 40-wide pad");
     Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI installed");
-    CheckEqI32(g_nPnBlits, 1, "and exactly one control blitted");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 1,
+               "and the blits are the tail's thirteen root widgets plus this arm's one control");
     CheckEqI32(g_szPnRadar[0], 0, "the base arm never calls Ship_FormatDisplayName");
 
     const i32 nBaseWide = PnRowWidth(PUFO_STATUS_Y_ORDER_LINE1);
@@ -9958,7 +10004,7 @@ static void TestStatusPanelOrder(void)
                "the 90 row is TEXTS[1215] alone");
 
     PnCaptureFrameOnly();
-    PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(dFrame.nMinX, 0xE, "the frame starts at x=14 (0x8F2A4)");
     CheckEqI32(dFrame.nMinY, 0x3C, "and y=60 (0x8F29C)");
     CheckEqI32(dFrame.nMaxX, 0xE + 0xD0 + 3, "with nW 0xD0 it ends at x=225");
@@ -9976,11 +10022,12 @@ static void TestStatusPanelOrder(void)
                g_uPnInkStatus, true, "TEXTS[1217] centered at y=90");
     Check(g_pnCtlA.pfnClick == PnDismiss, "pGeoscapeCtlA gets Smap_DismissSelected");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_ORDERCTL_Y_ONE, "at the same y=115 as the 0x11 arm");
-    CheckEqI32(g_nPnBlits, 1, "and it is the only control this arm has");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 1,
+               "and the tail's thirteen root widgets plus CtlA are all this arm blits");
     PnCheckStr(g_szPnRadar, "w4x-5",
                "szRadarMsg is left holding TEXTS[418] + the dash + itoa(5), the 0x187054 craft");
     PnCaptureFrameOnly();
-    dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(dFrame.nMaxY, 0x3C + PUFO_STATUS_ORDER_NH_SHORT + 5,
                "the 0x0F frame is the same 0x5A tall as 0x11's");
 
@@ -10010,7 +10057,8 @@ static void TestStatusPanelOrder(void)
     CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "both centred from a 40-wide pad");
     Check(g_pnCtlA.pfnClick == PnConfirmTarget, "CtlA gets Smap_ConfirmCraftTarget");
     Check(g_pnCtlB.pfnClick == PnResolve, "and CtlB gets Smap_ResolveInterceptUI");
-    CheckEqI32(g_nPnBlits, 2, "and both are blitted");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "and the blits are the tail's thirteen root widgets plus CtlA and CtlB");
     CheckEqI32(g_szPnRadar[0], 0, "no ship name on this arm either");
 
     PnCaptureMissing(PUFO_STATUS_TEXT_CANCEL);
@@ -10042,7 +10090,8 @@ static void TestStatusPanelOrder(void)
     CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_ORDERCTL_Y_0E_CONF, "the confirm control at y=150");
     Check(g_pnCtlA.pfnClick == PnConfirmAlt, "CtlA gets Smap_ConfirmSelectedAlt");
     Check(g_pnCtlConfirm.pfnClick == PnWaypoint, "and confirm gets Smap_SetWaypoint");
-    CheckEqI32(g_nPnBlits, 2, "both blitted, before the handlers were installed");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "both blitted, before the handlers were installed, then the tail's thirteen root widgets");
     PnCheckStr(g_szPnRadar, "v43",
                "the name is TEXTS[137] + itoa(3): colour slot 0 picks the craft here, not 0x187054");
 
@@ -10056,7 +10105,7 @@ static void TestStatusPanelOrder(void)
                "the 150 row is TEXTS[1221], under the confirm control");
 
     PnCaptureFrameOnly();
-    dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(dFrame.nMinY, 0x3C, "same frame origin as the other three arms");
     CheckEqI32(dFrame.nMaxY, 0x3C + PUFO_STATUS_ORDER_NH_TALL + 5,
                "but nH 0x78 (0x8F78C) makes this one end at y=185, not 155");
@@ -10175,13 +10224,18 @@ static void TestStatusPanelDetail(void)
     CheckEqI32(d.nMinY, 5, "and y=5 (0x8FA64)");
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x8FA5C) puts the right border at 225");
     CheckEqI32(d.nMaxY, 5 + PUFO_STATUS_DETAIL_NH + 5, "nH 0xDC (0x8FA50) puts the bottom at 230");
-    d = PnDiffRect(0, 241, BD_SURF_W - 1, BD_SURF_H - 1);
+    /* The measured rect is the pad's own 100x24 exactly: the chain tail that follows this arm paints the
+     * clock rows down to y 305 and those sit outside this window, while its pad blit lands INSIDE the rect
+     * (the same 0x186BBC pad, at its own origin) and so cannot change a pixel count that is already full. */
+    d = PnDiffRect(30, 250, 129, 273);
     CheckEqI32(d.nCount, 100 * 24, "the pad at 0x186BBC is re-blitted whole, 100x24 (0x8FA20..0x8FA30)");
     CheckEqI32(d.nMinX, 30, "at its nOriginX");
     CheckEqI32(d.nMinY, 250, "its nOriginY");
     CheckEqI32(d.nMaxX, 129, "uWidth from LDRH [R0,#8]");
     CheckEqI32(d.nMaxY, 273, "uHeight from LDRH [R0,#0xA], the two reads are not swapped");
     CheckEqI32(d.uInk, PN_STRIP_INK, "blended from nIdx 0x3C, mid 0x78, low 0x82 at key 0x96 (0x8F9F8..0x8FA1C)");
+    CheckEqI32(BdPix(30, 250), 0x2F00,
+               "and the tail's own PadImage_Blit (0x91CFC / 0x91D04) leaves the pad's glyph over the rect's corner");
 
     /* ---- 2. the four value lines ---- */
     PnCapture();
@@ -10282,7 +10336,9 @@ static void TestStatusPanelDetail(void)
     CheckEqI32(g_pnCtlTarg.y, PUFO_STATUS_DETAILCTL_Y_TARGET, "the new-target control at 160");
     CheckEqI32(g_pnCtlPatrol.y, PUFO_STATUS_DETAILCTL_Y_PATROL, "the patrol control at 180");
     CheckEqI32(g_pnCtlB.y, PUFO_STATUS_DETAILCTL_Y_CANCEL, "and the cancel control at 200");
-    CheckEqI32(g_nPnBlits, 5, "five pad blits: four controls plus the cancel control's extra one at 0x900B4");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 5,
+               "eighteen pad blits: the tail's thirteen root widgets, then this arm's four controls plus the "
+               "cancel control's extra one at 0x900B4");
     PnRowIs(PUFO_STATUS_DETAILCTL_Y_RETURN, "c5", "TEXTS[1227] centred under the return control at y=140");
     PnRowIs(PUFO_STATUS_DETAILCTL_Y_TARGET, "d5", "TEXTS[1228] at 160");
     PnRowIs(PUFO_STATUS_DETAILCTL_Y_PATROL, "e5", "TEXTS[1229] at 180");
@@ -10304,7 +10360,8 @@ static void TestStatusPanelDetail(void)
     /* ---- 5. bInterceptDone @ 0x18709C byte 0 ---- */
     g_bPnInterceptDone = 1;
     PnCapture();
-    CheckEqI32(g_nPnBlits, 4, "with the byte set the cancel control is blitted once (0x900AC..0x900B4)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 4,
+               "with the byte set the cancel control is blitted once (0x900AC..0x900B4), thirteen root blits after");
     PnCheckRow(PUFO_STATUS_Y_DETAIL_CANCEL_LBL, 20, 219, 0, 0, false,
                "and the 'Отмена' label under it is not drawn either (0x901E8 BNE loc_90220)");
     g_bPnInterceptDone = 0;
@@ -10352,7 +10409,7 @@ static void TestStatusPanelPause(void)
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x902AC) puts the right border at 225");
     CheckEqI32(d.nMaxY, PUFO_STATUS_PAUSE_ANIM_Y + PUFO_STATUS_PAUSE_NH + 5,
                "nH 0x78 (0x90278) puts the bottom at 195, not 230 like the card");
-    d = PnDiffRect(0, 241, BD_SURF_W - 1, BD_SURF_H - 1);
+    d = PnDiffRect(30, 250, 129, 273);
     CheckEqI32(d.nCount, 100 * 24, "the same whole strip-pad rectangle as the 0x0B card (0x90260..0x90274)");
     CheckEqI32(d.uInk, PN_STRIP_INK, "blended with the same nIdx 0x3C, mid 0x78, low 0x82, key 0x96");
 
@@ -10376,7 +10433,8 @@ static void TestStatusPanelPause(void)
     CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 20,
                "pGeoscapeCtlB centres on 120 from its own 40-wide pad (0x90444 LDRH [R0,#4])");
     CheckEqI32(g_pnCtlB.y, PUFO_STATUS_PAUSECTL_Y, "and sits at y=155 (0x90454)");
-    CheckEqI32(g_nPnBlits, 1, "it is the only control this arm has");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 1,
+               "CtlB is the only control this arm blits; the other thirteen are the tail's root widgets");
     Check(g_pnCtlB.pfnClick == PnResolve, "with Smap_ResolveInterceptUI installed at 0x9047C");
     PnRowIs(PUFO_STATUS_PAUSE_Y_LABEL, "B2", "TEXTS[1144] centred one pixel under it at y=156");
 
@@ -10406,8 +10464,13 @@ static void TestStatusPanelCity(void)
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x9051C) puts the right border at 225");
     CheckEqI32(d.nMaxY, PUFO_STATUS_CITY_ANIM_Y + PUFO_STATUS_CITY_NH + 5,
                "nH 0x78 puts the bottom at 195 (0x90534 STR R7)");
+    /* The 0x10 arm blits no strip rectangle -- 0x9050C goes straight to the anim. What IS in this band is the
+     * chain tail's own ink: the pad glyph at its origin (30,250) and the clock rows. The card's rectangle
+     * colour (PN_STRIP_INK) appears nowhere here, which is the difference between the three arms. */
     d = PnDiffRect(0, 241, BD_SURF_W - 1, BD_SURF_H - 1);
-    CheckEqI32(d.nCount, 0, "no strip-pad rectangle: the 0x0B card and the 0x0D panel blit one, 0x10 goes straight to the anim");
+    Check(d.uInk != PN_STRIP_INK, "no strip-pad rectangle: the 0x0B card and the 0x0D panel blit one, 0x10 goes straight to the anim");
+    CheckEqI32(BdPix(60, 255), 0, "the 100x24 the other two arms paint over is empty here (only the tail's glyph at 30,250 is not)");
+    CheckEqI32(BdPix(30, 250), 0x2F00, "and the tail's own strip-pad blit is what is left in the band");
     CheckEqI32(g_pnTime.bPaused, 0, "the clock keeps running -- only the 0x0D panel pauses it");
 
     /* ---- 2. the city line, TEXTS[1232] plus the mission-site name at +4 ---- */
@@ -10435,7 +10498,8 @@ static void TestStatusPanelCity(void)
     CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_CITYCTL_Y_CONFIRM, "and sits at y=136 (0x9062C)");
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "pGeoscapeCtlA centres from ITS OWN 30-wide pad (0x90650)");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_CITYCTL_Y_ACTION, "at y=160 (0x90664)");
-    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two controls, one blit each, then the tail's thirteen root widgets");
     Check(g_pnCtlConfirm.pfnClick == PnSelectTarget, "the confirm control gets Smap_OnPointerUp (0x90648)");
     Check(g_pnCtlA.pfnClick == PnResolve, "the other gets Smap_ResolveInterceptUI (0x9067C)");
     CheckEqI32(g_nPnShipIdx, 1, "0x187054 keeps the value the fixture put in it: this arm neither reads nor writes it");
@@ -10624,7 +10688,7 @@ static void TestStatusPanelTargetPanel(void)
 
     /* ---- 1. the body ---- */
     PnCaptureFrameOnly();
-    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x909C4 MOV R1, #0xE)");
     CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x909C8 MOV R2, #0x3C)");
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x909F4) puts the right border at 225");
@@ -10684,7 +10748,7 @@ static void TestStatusPanelTargetPanel(void)
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK, "at y=115 (0x90B4C)");
     CheckEqI32(g_pnCtlB.y, 0, "this arm does not touch CtlB at all");
     CheckEqI32(g_pnCtlConfirm.y, 0, "nor the confirm control");
-    CheckEqI32(g_nPnBlits, 1, "one control blit (0x90B68)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 1, "one control blit (0x90B68) plus the tail's thirteen");
     Check(g_pnCtlA.pfnClick == PnResolve, "CtlA gets Smap_ResolveInterceptUI (0x90B5C / 0x90B60)");
     Check(g_pnCtlB.pfnClick == NULL, "and CtlB keeps no handler from this arm");
 
@@ -10717,7 +10781,8 @@ static void TestStatusPanelTargetPanel(void)
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "CtlA is this arm's SECOND control, at y=125 (0x90CF0)");
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "centred from its own 40-wide pad (0x90CE0)");
     Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI (0x90D00 / 0x90D04)");
-    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two controls, one blit each, then the tail's thirteen root widgets");
     Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0],
           "CtlB first (0x90C80), CtlA second (0x90D0C)");
     g_pnCtlB.pfnClick = NULL;
@@ -10809,7 +10874,7 @@ static void TestStatusPanelDescentPanel(void)
 
     /* ---- 1. the body ---- */
     PnCaptureFrameOnly();
-    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x914D4 MOV R1,#0xE)");
     CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x914C8 MOV R2,#0x3C)");
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x914CC) puts the right border at 225");
@@ -10853,7 +10918,8 @@ static void TestStatusPanelDescentPanel(void)
     CheckEqI32(g_pnCtlB.y, PUFO_STATUS_TARGETCTL_Y_CANCEL, "at y=102 (0x9156C MOV R3,#0x66) -- the 0x14 arm's set-arm row");
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "CtlA centres from its own 40-wide pad (0x9160C)");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "at y=125 (0x91624 MOV R3,#0x7D)");
-    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91580 and 0x91638)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two control blits (0x91580 and 0x91638), then the tail's thirteen root widgets");
     Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0],
           "CtlB first, then CtlA");
     /* One fresh run with both handlers cleared: PnCapture runs the arm twice, and the second run would
@@ -10940,7 +11006,7 @@ static void TestStatusPanelDescentTarget(void)
 
     /* ---- 1. the body ---- */
     PnCaptureFrameOnly();
-    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x916D0 MOV R1,#0xE)");
     CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x916C4 MOV R2,#0x3C)");
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x916C8) puts the right border at 225");
@@ -10994,7 +11060,8 @@ static void TestStatusPanelDescentTarget(void)
     CheckEqI32(g_pnCtlB.y, PUFO_STATUS_SITECTL_Y_CANCEL, "at y=105 (0x917F8 MOV R3,#0x69)");
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "CtlA centres from its own 40-wide pad (0x918A4)");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SITECTL_Y_OK2, "at y=128 (0x918B0 MOV R3,#0x80)");
-    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91814 and 0x918CC)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two control blits (0x91814 and 0x918CC), then the tail's thirteen root widgets");
     Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0], "CtlB first, then CtlA");
     g_pnCtlA.pfnClick = NULL;
     g_pnCtlB.pfnClick = NULL;
@@ -11046,7 +11113,7 @@ static void TestStatusPanelDescentPanelAlt(void)
 
     /* ---- 1. the anim frame, from this arm's own call ---- */
     PnCaptureFrameOnly();
-    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x91968 MOV R1,#0xE)");
     CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x9195C MOV R2,#0x3C)");
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x91960) puts the right border at 225");
@@ -11070,7 +11137,8 @@ static void TestStatusPanelDescentPanelAlt(void)
     CheckEqI32(g_pnCtlB.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlB centres on 120 from ITS OWN 30-wide pad (0x919E8 LDRH [R0,#4])");
     CheckEqI32(g_pnCtlB.y, PUFO_STATUS_TARGETCTL_Y_CANCEL, "at y=102 (0x919F8 MOV R3,#0x66) -- the 0x17 rows, not the 0x15 arm's 105");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "CtlA at y=125, the 0x17 row");
-    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91A14 and 0x91ACC)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two control blits (0x91A14 and 0x91ACC), then the tail's thirteen root widgets");
     Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0], "CtlB first, then CtlA");
     g_pnCtlA.pfnClick = NULL;
     g_pnCtlB.pfnClick = NULL;
@@ -11115,7 +11183,7 @@ static void TestStatusPanelAlienBase(void)
 
     /* ---- 1. the widest anim in the chain: x 2, nW 0xE8 ---- */
     PnCaptureFrameOnly();
-    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(d.nMinX, 2, "the anim body starts at x=2 (0x91B64 MOV R1,#2), not the usual 14");
     CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x91B5C MOV R2,#0x3C)");
     CheckEqI32(d.nMaxX, 2 + 0xE8 + 3, "nW 0xE8 (0x91B6C MOV R3,#0xE8) puts the right border at 237");
@@ -11148,7 +11216,8 @@ static void TestStatusPanelAlienBase(void)
     CheckEqI32(g_pnCtlConfirm.y, PUFO_STATUS_BASECTL_Y_CONFIRM, "at y=100 (0x91BE0 MOV R3,#0x64), the same row its label is drawn on");
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "CtlA centres from its own 40-wide pad (0x91C50)");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "at y=125 (0x91C60 MOV R3,#0x7D)");
-    CheckEqI32(g_nPnBlits, 2, "two control blits (0x91BF0 and 0x91C70)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two control blits (0x91BF0 and 0x91C70), then the tail's thirteen root widgets");
     Check(g_apnPnBlitPad[0] == g_pnCtlConfirm.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0], "CtlConfirm first, then CtlA");
 
     /* ---- 4. handlers are stored AFTER both blits ---- */
@@ -11192,7 +11261,7 @@ static void TestStatusPanelMissionSite(void)
 
     /* ---- 1. the body ---- */
     PnCaptureFrameOnly();
-    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x914D4-side MOV R1,#0xE at 0x90D9C)");
     CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x90DA0 MOV R2,#0x3C)");
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x90DDC) puts the right border at 225");
@@ -11251,7 +11320,7 @@ static void TestStatusPanelMissionSite(void)
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlA centres on 120 from ITS OWN 30-wide pad (0x90EE4 LDRH [R0,#4])");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SITECTL_Y_OK, "at y=115 (0x90EF4)");
     CheckEqI32(g_pnCtlB.y, 0, "CtlB is not touched when the flag is clear");
-    CheckEqI32(g_nPnBlits, 1, "one control blit (0x90F10)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 1, "one control blit (0x90F10) plus the tail's thirteen");
     Check(g_pnCtlA.pfnClick == PnResolve, "CtlA gets Smap_ResolveInterceptUI (0x90F04 / 0x90F08)");
     g_pnCtlA.pfnClick = NULL;
     PnRun();
@@ -11272,7 +11341,8 @@ static void TestStatusPanelMissionSite(void)
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_SITECTL_Y_OK2, "CtlA sits at y=128 (0x91120) -- not the 0x14 arm's 125");
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 20, "centred from its own 40-wide pad (0x91110)");
     Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI (0x91130 / 0x91134)");
-    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two controls, one blit each, then the tail's thirteen root widgets");
     Check(g_apnPnBlitPad[0] == g_pnCtlB.apPads[0] && g_apnPnBlitPad[1] == g_pnCtlA.apPads[0],
           "CtlB first (0x910B4), CtlA second (0x9113C)");
     g_pnCtlB.pfnClick = NULL;
@@ -11319,7 +11389,7 @@ static void TestStatusPanelTravel(void)
 
     /* ---- 1. the body, and the one thing this arm has less than 0x14 ---- */
     PnCaptureFrameOnly();
-    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
     CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x911A8 MOV R1,#0xE)");
     CheckEqI32(d.nMinY, PUFO_STATUS_TARGET_ANIM_Y, "and y=60 (0x911AC)");
     CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x911E8) puts the right border at 225");
@@ -11347,7 +11417,7 @@ static void TestStatusPanelTravel(void)
     CheckEqI32(g_pnCtlA.x, PUFO_STATUS_TEXT_X_CENTRE - 15, "CtlA centres from ITS OWN 30-wide pad (0x91264)");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK, "at y=115 (0x91274), the same row 0x14 uses");
     CheckEqI32(g_pnCtlB.y, 0, "CtlB untouched while the flag is clear");
-    CheckEqI32(g_nPnBlits, 1, "one control blit (0x91290)");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 1, "one control blit (0x91290) plus the tail's thirteen");
     Check(g_pnCtlA.pfnClick == PnResolve, "CtlA gets Smap_ResolveInterceptUI (0x91284 / 0x91288)");
     g_pnCtlA.pfnClick = NULL;
     PnRun();
@@ -11366,7 +11436,8 @@ static void TestStatusPanelTravel(void)
     Check(g_pnCtlB.pfnClick == PnCancelTarget, "CtlB gets Smap_CancelTarget (0x9139C / 0x913A0)");
     CheckEqI32(g_pnCtlA.y, PUFO_STATUS_TARGETCTL_Y_OK2, "CtlA at y=125 (0x91414)");
     Check(g_pnCtlA.pfnClick == PnResolve, "with Smap_ResolveInterceptUI (0x91424 / 0x91428)");
-    CheckEqI32(g_nPnBlits, 2, "two controls, one blit each");
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS + 2,
+               "two controls, one blit each, then the tail's thirteen root widgets");
     PnRowIs(PUFO_STATUS_TARGET_Y_CANCEL_LBL, "m4", "TEXTS[1127] centred at y=103 (0x913EC)");
     PnRowIs(PUFO_STATUS_TARGET_Y_CANCELLED_LBL, "B2", "TEXTS[1144] centred at y=126 (0x91464)");
     PnFixture(0x12, 4, 1, 0); PnSetSiteFixture(); g_bPnMapSel = 1;
@@ -11378,6 +11449,104 @@ static void TestStatusPanelTravel(void)
     CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
                "and TEXTS[1237] belongs to 0x14 only");
     g_bPnMapSel = 0;
+}
+
+/* 0x91CEC..0x91DB0: the tail every arm of the chain lands on. Flag 0x1E with the multi-select panel flag clear
+ * reaches it with NO arm body at all -- 0x8E5E0's BEQ skips the panel anim and the panel text, dwActionFail 0
+ * skips the action-fail line at 0x8E658, and no flag test in 0x8E708..0x91B30 matches 0x1E -- so everything on
+ * the surface is the tail's own work. */
+static void TestStatusPanelChainTail(void)
+{
+    printf("\nGeoscape_Draw's chain tail @ 0x91ceC\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetClockTime();
+
+    /* ---- 1. the not-2 branch: the strip pad, the clock, then the thirteen root widgets ---- */
+    PnCaptureFrameOnly();
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS,
+               "the tail blits exactly the root block's thirteen widgets and nothing else (0x91D1C..0x91D38)");
+    bool bRootOrder = true;
+    for (i32 i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
+        if (g_apnPnBlitPad[i] != &g_aPnRootPad[i]) {
+            bRootOrder = false;
+        }
+    }
+    Check(bRootOrder, "in slot order over 0x1864F8 + 4*i, the loop whose counter the original keeps in dword_186B08");
+    Check(g_apnPnBlitPad[0] != g_pnCtlClose.apPads[0], "the close control is NOT blitted on this branch (0x91D3C ends the frame)");
+    CheckEqI32(BdPix(30, 250), 0x2F00,
+               "*0x186BBC is blitted as a PAD at its own origin (0x91CFC / 0x91D04), glyph index 11");
+    /* The pad's 8 glyph indices are 11..18 in row-major order for a 4x2 pad, and palette slot 20 maps index
+     * 11 + i to 0x2F00 + i, so the far corner of the glyph is 0x2F07. */
+    CheckEqI32(BdPix(33, 251), 0x2F07, "and it is the pad's own 4x2 glyph row-major (11..14, 15..18), not a blended rectangle");
+    CheckEqI32(g_pnClockPad[0].nOriginX, 140, "Geoscape_DrawClockPads ran at 0x91D0C: the seconds-tens pad went to x=140");
+    CheckEqI32(g_pnClockPad[0].nOriginY, 260, "on the time row 260");
+    CheckEqI32(g_pnClockPad[9].nOriginX, 135, "and the last 9 of 1999 ends the run at x=135");
+    CheckEqI32(g_pnClockPad[9].nOriginY, 304, "on the year row 304, the lowest ink in the frame");
+    Check(g_pnCtlA.y == 0 && g_pnCtlB.y == 0 && g_pnCtlConfirm.y == 0,
+          "the tail moves no panel control -- it has none of its own");
+    CheckEqI32(g_bPnPendRegion, 0, "and bPendingRegionId @ 0x159DF4 is untouched on this branch");
+
+    PnFixture(0x1E, 0, 0, 0); PnSetClockTime();
+    g_nPnScreenId = 3;                 /* what LoadGame leaves there (0x6B1AC..0x6B1B0 stores 3) */
+    PnCaptureFrameOnly();
+    CheckEqI32(g_nPnBlits, PUFO_GEOUI_ROOT_CTLS,
+               "screen id 3 takes the same branch: 0x91CF4 is CMP #2 / BEQ, not a range test");
+    CheckEqI32(BdPix(30, 250), 0x2F00, "with the strip pad blitted here too");
+
+    /* ---- 2. the == 2 branch: the new-base globe hover, then the close control ---- */
+    PnFixture(0x1E, 0, 0, 0);
+    GhFixture(PUFO_REGION_EUROPE);
+    /* The byte at 0x1870AC is one global in the original: 0x679A8 reads it for the hover's cost line and
+     * 0x91D98 for the close blit, so the test points both env fields at the same variable. */
+    g_ghEnv.pbPlacementPending = &g_bPnPlacePending;
+    g_pnEnv.pGlobeEnv   = &g_ghEnv;
+    g_nPnScreenId       = PUFO_STATUS_SCREEN_ID_GLOBE_HOVER;
+    g_ghScanX  = g_ghSetScanX;
+    g_ghSweepV = g_ghSetSweepV;
+    g_ghSweepH = g_ghSetSweepH;
+    g_ghAnimStarted  = 1;
+    g_ghAnimProgress = 100;            /* the panel frame is complete, so 0x67490 does not return early */
+    g_ghView.nPickX  = 111;            /* the PREVIOUS pick, which the pending copy must see */
+    g_ghView.nPickY  = 222;
+    g_ghCtlBlits     = 0;
+    for (i32 i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i) {
+        g_pnClockPad[i].nOriginX = -1; /* sentinels: a clock run is then visible */
+        g_pnClockPad[i].nOriginY = -1;
+    }
+    PnRun();
+    CheckEqI32(g_nPnBlits, 1, "the only control blit is *g_pUiCloseCtl's (0x91DA8 / 0x91DAC, the blit at 0x93058)");
+    Check(g_apnPnBlitPad[0] == g_pnCtlClose.apPads[0], "and it is the close control's own pad");
+    CheckEqI32(g_bPnPendRegion, PUFO_REGION_EUROPE,
+               "the hovered tile is stored with STRB at 0x91D94 into bPendingRegionId @ 0x159DF4");
+    CheckEqI32(g_ghPendX, 111, "the hover's pending copy ran through the tail: it stores the pick from BEFORE its own lookup (0x6786C)");
+    CheckEqI32(g_ghPendY, 222, "for both axes");
+    CheckEqI32(g_ghView.nPickX, 50, "and the lookup itself landed on tile (50, 0), what (120, 110) resolves to");
+    Check(g_pnClockPad[0].nOriginX == -1 && g_pnClockPad[9].nOriginY == -1,
+          "no clock on this branch -- 0x91CF8's BEQ jumps over the strip blit and the clock call");
+    /* The hover paints its own wash over 0x0,0 + 0xF0x0x140 first (0x672C8..0x672D8), so this pixel is not
+     * zero here; what must be absent is the strip pad's glyph colour, which only PadImage_Blit writes. */
+    Check((u16)BdPix(30, 250) != 0x2F00, "and the strip pad is not blitted on this branch (the pixel holds the hover's wash instead)");
+    Check(g_ghCtlBlits > 0, "the hover itself blitted its Build base control");
+
+    g_bPnPlacePending  = 1;            /* 0x1870AC set: the same byte the hover's cost line reads */
+    g_ghScanX  = g_ghSetScanX;
+    g_ghSweepV = g_ghSetSweepV;
+    g_ghSweepH = g_ghSetSweepH;
+    g_ghAnimStarted  = 1;
+    g_ghAnimProgress = 100;
+    g_ghView.nPickX  = 111;            /* re-applied, exactly as GhRun re-applies them per frame */
+    g_ghView.nPickY  = 222;
+    PnRun();
+    CheckEqI32(g_nPnBlits, 0, "with the byte set, 0x91DA4's BNE skips the close blit and the frame ends");
+    CheckEqI32(g_bPnPendRegion, PUFO_REGION_EUROPE, "but the tile is stored first: the gate sits AFTER 0x91D94");
+    CheckEqI32(g_ghPendX, 111, "and the hover ran again, gate or no gate");
+
+    g_bPnPlacePending = 0;
+    g_pnEnv.pGlobeEnv = NULL;          /* no other suite supplies a hover env */
 }
 
 int main(void)
@@ -11457,6 +11626,7 @@ int main(void)
     TestStatusPanelDescentTarget();
     TestStatusPanelDescentPanelAlt();
     TestStatusPanelAlienBase();
+    TestStatusPanelChainTail();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

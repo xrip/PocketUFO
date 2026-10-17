@@ -1,43 +1,50 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `f3bbc75`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its fourteenth part -- the alien-base panel at
-0x91B34..0x91CE8 (flag 0x3C): 22 checks, 8/8 mutations caught, 6 IDB comments plus one rewritten, 1 ledger row.
-Parts 1..13 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
-`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the
-attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site /
-travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53` and the
-flag-0x16 clone `f3bbc75`. What this part found:
+Date: 2026-10-17. HEAD before this edit: `3f98d17`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its fifteenth part -- the chain's shared tail at
+0x91CEC..0x91DB0: 25 new checks, 11/11 mutations caught, 14 IDB comments, one wrong IDB comment corrected,
+three IDB globals named, 2 ledger rows, and a live port bug found and fixed. Parts 1..14 are behind this: the
+map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order questions
+`a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel `ac13d77`,
+the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels `e9145c0` +
+`2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone `f3bbc75` and
+the alien-base panel `3f98d17`. What this part found:
 
-- **0x3C reaches the chain because it is outside the jumptable range.** 0x8C798 `CMP #0x1E` BLE and 0x8C7AC
-  `CMP #0x32` BGE send everything else to the default case, which is where the arm chain lives (the port's
-  `nFlag < MIN || nFlag > MAX` test routes to `StatusPanel_DrawDefault`, and the chain is its continuation).
-- **The panel is simple and its order is not.** Three records (1445, 1446, 1144) with nothing appended, two
-  controls (100, 125), the widest anim in the chain (x 2, nW 0xE8), and handlers installed AFTER both blits --
-  the reverse of the descent arms. Recorded in bugs.tsv as a stale-handler ordering finding.
-- **TEXTS 1445/1446 are not in the binary.** The whole 0xB38D0 TEXTS block reads as uninitialised in the IDB;
-  the strings are in lang.dat (1650 records of 200 bytes on disk, 205-byte records in memory). Record identity
-  has to be checked against lang.dat. "Внимание! Обнаружена база пришельцев" / "Центр на базу" / "Отмена".
-- **Two test-side mistakes, caught by running them.** An emptiness check on the row below a drawn row is
-  confounded by the drawn row's ink (PnRowIs needs rows >= 14 apart), and a handler-at-blit-time check must run
-  the arm once -- `PnCapture` runs it twice and the second blit sees the first run's handler. Both were FAIL
-  before they were fixed, which is the point of running them.
-- **One wrong citation fixed.** `GeoscapeStatusPanelEnv.pfnSelectTarget` was commented "Smap_OnPointerUp @
-  0x89450"; 0x89450 is `Geoscape_OnPointerUp`, and `Smap_OnPointerUp` is @ 0x84688 (what 0x91CD0 and 0x90640
-  load). IDA's names were right; the port comment had the address wrong.
+- **A live port bug, found by porting the block after it.** All five exits of the 0x1B arm (0x90798, 0x907A8,
+  0x907B8, 0x90904, 0x9097C) jump to `def_8C1B0`, the frame-end block at 0x944B4 -- the arm never continues
+  the flag chain. The port modelled only the three gates as frame-enders (the bool return), so a normal 0x1B
+  frame continued through every remaining test. Invisible while the tail was unported; the tail turned it into
+  27 control blits instead of 14. `StatusPanel_DrawInterceptList` is now void and the caller returns after it,
+  and the mutation sweep has that mutant (caught).
+- **Only jumptable case 0x2B reaches the tail** (the `B 0x8E3E4` at the end of the '+' case). The other twelve
+  cases end at `def_8C1B0`. That is now a per-flag expectation in the 13-arm table: 15 blits for '+', 2 for the
+  rest.
+- **The tail is a ripple through the panel tests.** It adds thirteen blits and its own ink (strip pad at
+  30,250, clock down to 305) to every chain-path arm: 40 checks had to be re-measured. Counts became
+  `PUFO_GEOUI_ROOT_CTLS + n`; frame measurements became `PnDiffRect(0, 0, W-1, 249)`; the two 100x24 strip
+  counts became `PnDiffRect(30, 250, 129, 273)`, because the tail's clock falls partly outside that rect while
+  its own pad blit falls inside it and cannot change a full count.
+- **IDB hygiene, cheap and worth it.** 0x91D88 was commented "abFacilityGrid … unused" -- wrong: the callee
+  keeps it in var_s28 and reads it at 0x67860 for the +0x62C / +0x630 pending-pick stores. Three hot globals
+  were unnamed and are now named from their xrefs: `nGeoscapeScreen` (0x186BC4), `pGeoscapeStripPad` (0x186BBC)
+  and `bPlacementPending` (0x1870AC). Four citation comments in the port header used names the IDB does not
+  have (`pSmapChromePad` for 0x186BBC and for 0x186BE0, `pSmapStripPad` for 0x186BBC), and the port itself had
+  two fields naming the same global (`pbBaseFacConfirm` against `pbPlacementPending`) -- all one name now.
+- **Three test-side mistakes, caught by running them.** The strip pad's glyph is eight indices 11..18 in
+  row-major order (far corner 0x2F07); on the hover branch the strip-pad origin is not empty because the hover
+  paints a full-surface wash first, so the assertion must be about the glyph colour; and the globe hover's
+  `nPickX` sentinel must be re-applied per frame or the second run reads the first run's pick.
 
 IDA note: the MCP tools are still unreachable from this session (the handshake failed at startup), so IDB work
 goes through the JSON-RPC client `C:/Windows/Temp/pufo_scripts/idac.py` against the same server
-(127.0.0.1:13337). It also exposes `py_eval`, which is the reliable way to read data bytes -- `get_bytes`
-through that client came back short twice (395 of 484 bytes, and 0 bytes for a 40-byte request), and a short
-fetch silently misaligns any address-paired comparison. Worth running `/mcp` and reconnecting ida-pro-mcp.
+(127.0.0.1:13337). `py_eval` through that client is the reliable way to read bytes and names. Worth running
+`/mcp` and reconnecting ida-pro-mcp.
 
-Next: 0x91CEC..0x91DB0, the chain's shared tail (the `*0x186BC4 == 2` test, the 0x186BBC pad blit,
-`Geoscape_DrawClockPads`, thirteen root-control blits, and the `Geoscape_DrawGlobeHover` branch at 0x91D78 that
-writes bPendingRegionId), then the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and
-596752/598792 (99.7%) with 17225 checks across 60 suites -- the byte figure credits all 33,744 bytes of
-`Geoscape_Draw` because `coverage.py` counts a function once its start address is cited, so it says nothing
-about how much of that function is ported. The read map and the arm table are in
+Next: 0x91DC8..0x944B0 -- the screen arms of the same switch, the frame-end block at 0x944B4
+(`BaseAtScreen_Draw`, the `MainMenu_nListMode` 4/3 modal dialogs, `GX_Present`) and the epilogue. The gate
+measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 17254 checks across 60 suites -- the byte figure
+credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py` counts a function once its start address is
+cited, so it says nothing about how much of that function is ported. The read map and the arm table are in
 `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test

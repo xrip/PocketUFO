@@ -18201,3 +18201,69 @@ comment at 0x91B1C rewritten (it claimed 0x91B34..0x91CEC was unported); IDB sav
 after-the-blits handler order.
 
 Not ported yet in this chain: 0x91CEC..0x91DB0 (the shared tail above) and the screen arms 0x91DC8..0x944B0.
+
+### Unit 107, part 15: the chain's shared tail (0x91CEC..0x91DB0)
+
+The block every arm of the flag chain lands on. Reached three ways: the flag tests reach it by `BNE`
+(0x91B30 is the last one), the 0x3C body by falling through from 0x91CE8, and the jumptable case for flag 0x2B
+by the `B 0x8E3E4`. Ported as `StatusPanel_DrawChainTail`, called at the end of `StatusPanel_DrawDefault` and
+in `case '+'`.
+
+- Branch test (0x91CF4 `CMP R0, #2` on *0x186BC4): an equality test, not a range test. Screen id 3 -- what
+  `LoadGame_Slot*_InitOptions` leaves at 0x6B1B0 -- takes the ordinary branch too. The port writes it as
+  `*pEnv->pnScreenId != PUFO_STATUS_SCREEN_ID_GLOBE_HOVER`.
+- Not 2 (0x91CFC..0x91D3C): `PadImage_Blit` of the pad *pGeoscapeStripPad points at (its own glyph at its own
+  origin, not a rectangle), `Geoscape_DrawClockPads` (0x91D0C, with the block at 0x159618 as its only
+  argument), then a thirteen-iteration loop blitting the geoscape UI root's own widgets at 0x1864F8 + 4*i, with
+  the loop counter spilled into dword_186B08 (reset at 0x91D18, compared against #0xD at 0x91D34). Ends with
+  `B def_8C1B0`, i.e. the frame-end block at 0x944B4: BaseAtScreen_Draw, the MainMenu_nListMode 4/3 modal
+  dialogs, GX_Present, the epilogue.
+- == 2 (0x91D78..0x91DB0): the new-base globe hover. Three arguments are set -- R0 = abFacilityGrid,
+  R1 = nSmapCursorX, R2 = nSmapCursorY -- but only R0 is read by the callee: it saves it (0x67280 PUSH {R0},
+  0x6728C STR to var_s28) and reads it back once at 0x67860 as the base for the +0x62C / +0x630 pending-pick
+  stores, while its first call at 0x67294 overwrites R1 / R2 first. The hovered tile comes back in R0 and is
+  stored with `STRB` at 0x91D94 into bPendingRegionId @ 0x159DF4 (a byte store of a 32-bit value). Then
+  `ANDS R3, R0, #0xFF` / `BNE` at 0x91D98..0x91DA4: while the byte at 0x1870AC is non-zero the close control
+  is NOT blitted. Otherwise `LDR R0, =g_pUiCloseCtl; LDR R0,[R0]` and `B loc_93058` -- the blit itself is a
+  site shared with the other screen arms, not code in this block.
+- **0x1B is the one chain arm that never reaches the tail.** Every exit of it -- the three panel gates
+  0x90798 / 0x907A8 / 0x907B8, the final-mission gate 0x90904 and its normal end 0x9097C -- jumps to
+  def_8C1B0. That was a live port bug: `StatusPanel_DrawInterceptList` returned a bool and only the `false`
+  paths stopped the chain, so a normal 0x1B frame continued through the remaining flag tests. It was harmless
+  while the tail was unported and became visible the moment the tail was added (the 0x1B frame would have
+  blitted 27 pads instead of 14). Now the arm returns void and the caller returns after it. The mutation
+  sweep has this exact mutant: 14 -> 27 blits, caught.
+- Among the jumptable cases only 0x2B '+' reaches the tail (0x8E3E4); the other twelve end at def_8C1B0.
+  Test-wise that is the difference between 15 blits and 2 for the 13-arm table.
+
+What the tail changed in the existing tests. It adds thirteen control blits and its own ink (the strip pad at
+30,250 and the clock down to y 305) to every chain-path arm, so 40 checks needed fixing:
+
+- Blit counts became `PUFO_GEOUI_ROOT_CTLS + n` with the message naming both parts.
+- Whole-surface frame measurements became `PnDiffRect(0, 0, W-1, PN_TAIL_INK_Y - 1)` (row 250 is the tail's
+  first ink row), and the two 100x24 strip-rectangle counts became rect-limited `PnDiffRect(30, 250, 129, 273)`
+  -- the tail's clock rows fall partly outside that rect and would otherwise join the count, while its own pad
+  blit falls INSIDE the rect and cannot change a count that is already full.
+- The "draws NOTHING" checks for flag 0x1E are now two checks: nothing above row 250, and a positive check
+  that the frame is NOT empty, because the tail is what is left.
+
+Three of the new tail's own checks failed on the first run, all test-side: the pad glyph's far corner is
+0x2F07 (eight indices 11..18 row-major over a 4x2 pad, not 11/12/13/14 in a column); on the hover branch
+BdPix(30,250) is not 0 because the hover paints a full-surface wash first (0x672C8..0x672D8), so the honest
+assertion is that the pad's glyph colour 0x2F00 is absent; and the hover's `nPickX` sentinel must be re-applied
+per frame (as GhRun does) or the second run sees the first run's pick.
+
+IDB: 14 line comments (0x91CEC, 0x91CF4, 0x91CFC, 0x91D10, 0x91D34, 0x91D3C, 0x91D78, 0x91D84, 0x91D88,
+0x91D94, 0x91DA4, 0x91DA8, 0x9097C, 0x8E3E4) and one wrong comment corrected -- 0x91D88 said
+"abFacilityGrid ... unused", but the callee keeps it in var_s28 and reads it at 0x67860 for the +0x62C /
++0x630 stores. Three globals named from their xrefs: 0x186BC4 `nGeoscapeScreen` (written by every
+`*Screen_Open`, by Ui_CloseScreen18 with -1, by LoadGame_Slot*_InitOptions with 3), 0x186BBC
+`pGeoscapeStripPad` (allocated in Geoscape_InitUI, read by the globe hover, blitted whole at 0x907C0 and
+0x91D04) and 0x1870AC `bPlacementPending` (set by Geoscape_OnMapClick 0x8B608, cleared by Game_StartNew
+0x945E0, read at 0x679A8 and 0x91D9C). Four citation comments in the port header were wrong because they used
+names the IDB does not have: `pSmapChromePad` for 0x186BBC (twice) and for 0x186BE0 (which the IDB names
+`pSmapLayerPad`), and `pSmapStripPad` for 0x186BBC. The same global also had two names inside the port env
+(`pbBaseFacConfirm` against `pbPlacementPending`), now one.
+
+Not ported yet in this chain: 0x91DC8..0x944B0 (the screen arms, the frame-end block at 0x944B4 and its modal
+dialogs).
