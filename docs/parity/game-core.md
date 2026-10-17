@@ -17405,3 +17405,50 @@ under -Werror.
 
 Coverage after unit 106: 965 / 1103 functions (87.5%), 563,008 / 598,792 bytes (94.0%). The
 only remaining non-platform gap is Geoscape_Draw @ 0x8c180 (33,744 B).
+## Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts
+
+Unit 107 works through the last large gap in pieces. The head, the cases 0/2 arm and the
+13-arm panel switch have been read from the ARM; the parts ported so far are named below and
+the rest is listed by target so the next unit does not have to re-derive the map.
+
+The shape. A 21-case switch on nGeoscapeScreen @ 0x186BC4 (`CMP R0, #0x14 / ADDLS PC, PC,
+R0, LSL #2` at 0x8C1AC..0x8C1B0, table 0x8C1B4..0x8C20C): cases 0 and 2 share one arm,
+1 -> 0x91DC8, 3 -> 0x93F08, 4 -> 0x92DAC, 5 -> 0x92EE4, 6 -> 0x9309C, 7 -> 0x92AF0,
+8 -> 0x94114, 9 -> 0x9415C, 10 -> 0x93E5C, 11 -> 0x93DD4, 12 -> 0x93E20, 15 -> 0x94304,
+16 -> 0x941AC, 17 -> 0x94288, 18 -> 0x942F4, 19 -> 0x94314, 20 -> 0x944B0, and 13/14 plus
+the default go straight to the tail at 0x944B8. Every arm ends there. The tail reads
+MainMenu_nListMode: 4 draws UiModal_DrawDialog with a3 0x44F, 3 draws it with a3 0x44E, and
+then GX_Present(pGX) at 0x9453C. Case 20 calls BaseAtScreen_Draw and falls in.
+
+Cases 0 and 2 (0x8C214). bRadarScreenActive @ 0x159678 picks between the radar screen (its
+pad, a 13-control blit loop on dword_186B08, one SoftSurf_BlitSrcRect at 150/130/120/60 with
+the 150/130/120/60 colour quad, then RadarScreen_Update) and the world map chrome.
+
+The map chrome, 0x8C2B0..0x8C760, PORTED as Geoscape_BlitMapView and Geoscape_BlitCrosshair
+in game/pufo_geoscape.c. Three findings from the read:
+
+- The overlay drift is `_rt_sdiv` with the DIVISOR in R0: 0x8C2F4 loads -24 as R0 and the map
+  pad's uWidth as R1, so nDiv = uWidth / -24, and 0x8C30C..0x8C3C8 is
+  (nHour * nDiv) - (uWidth * nMinute) * (1/1440) with the literal double
+  0x3F46C16C16C16C17 at 0x8C38C, truncated by _dtoi. With the shipped 240-wide pad that is
+  -10 * nHour - nMinute / 6: the day/night overlay slides one map width per game day.
+- The scroll wrap is asymmetric. 0x8C3F0 `BNE loc_8C478` sends every screen id except 2 to a
+  copy (0x8C478..0x8C494) that clamps nScrollX and then FALLS INTO the blit block without
+  clamping nScrollY; only id 2 runs the Y clamp at 0x8C418..0x8C444. Each axis moves by at
+  most one map width per step, and the band test is strict: scroll + half exactly equal to
+  -nMapSize is NOT wrapped.
+- The map pad is blitted twice for every id except 2 and four times for id 2 (0x8C498 base,
+  0x8C4D0 and 0x8C4D0's pair at y + nMapH, 0x8C548 the x + nMapW copy). The layer pad's three
+  world flips are the same three offsets the radar backdrop uses and are skipped for id 2 --
+  the opposite polarity from the map pad's extra copies, which is why id 2 is the vertically
+  wrapped view.
+
+Not ported yet. The 13-arm status panel switch at 0x8C844 (SUB R0, #0x20 / CMP #0xC on line
+0's flag byte from the root message list @ 0x158890, with BaseFac_BuildStatusMsg called at
+0x8C82C on every arm that gets there, and the flag <= 0x1E or >= 0x32 falling to the default
+arm at 0x8E5A4); the block 0x8E658..0x91CEC; and the screen arms 0x91DC8..0x944B0, which are
+thin wrappers over the already-ported drawers (Geoscape_DrawGlobeHover, BaseFacScreen_DrawNameGrid,
+BaseFacScreen_DrawBuildDialog, SoldierScreen_Draw, BasePlaneScreen_Draw, BuySellScreen_Draw,
+TransferScreen_Draw, BaseInfoScreen_Draw, ResearchScreen_Draw, ManufScreen_DrawFrame,
+Ui_DrawBaseInfo, PsiScreen_Draw, Geoscape_DrawScreen, FundingScreen_Draw,
+FundingScreen_DrawExtended, BaseAtScreen_Draw).

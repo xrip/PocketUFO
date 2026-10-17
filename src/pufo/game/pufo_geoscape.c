@@ -2123,6 +2123,134 @@ bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv)
     return true;
 }
 
+/* Pull one scroll axis into (-nMapSize - nHalf, -nHalf] by at most one map width per step.
+ * The ARM does it as two conditional stores that re-read the value between them: CMP the
+ * (value + half) sum against -nMapSize and ADDMI-free `ADDLT` it up by one map width, then CMP
+ * the SAME sum against 0 and `SUBGT` it back down. */
+static void Smap_WrapScrollAxis(i32 *pnScroll, i32 nMapSize, i32 nHalf)
+{
+    i32 nValue = *pnScroll;
+
+    if (nValue + nHalf < -nMapSize) { /* 0x8C3F4..0x8C408, 0x8C478..0x8C488 */
+        nValue += nMapSize;
+        *pnScroll = nValue;
+    }
+    if (nValue + nHalf > 0) { /* 0x8C40C..0x8C414, 0x8C48C..0x8C494 */
+        nValue -= nMapSize;
+        *pnScroll = nValue;
+    }
+}
+
+/* Geoscape_Draw @ 0x8c180's map-view chrome, 0x8C2B0..0x8C690. See the header for the
+ * evidence map. */
+void Geoscape_BlitMapView(GeoscapeMapViewEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pView == NULL || pEnv->pMapPad == NULL || pEnv->pLayerPad == NULL
+        || pEnv->pWorldBits == NULL || pEnv->pMapPal == NULL || pEnv->pTime == NULL
+        || pEnv->pnOverlayOriginX == NULL) {
+        return;
+    }
+
+    SmapView *pView = pEnv->pView;
+    PadImage *pMapPad = pEnv->pMapPad;
+    PadImage *pLayerPad = pEnv->pLayerPad;
+    const bool bWrapY = (pEnv->nScreenId == PUFO_RADAR_SCREEN_NO_WRAP);
+
+    /* 0x8C2B8..0x8C2EC: map half-extent minus screen half-extent. MOVS / ADDMI #1 / ASR #1 is
+     * C's division by two, so a negative extent rounds the C way. */
+    const i32 nHalfW = pView->nMapW / 2 - PUFO_RADAR_HALF_SCREEN_X;
+    const i32 nHalfH = pView->nMapH / 2 - PUFO_RADAR_HALF_SCREEN_Y;
+
+    /* 0x8C2F4..0x8C3D4: the overlay drift. _rt_sdiv takes the DIVISOR in R0 (-24) and the
+     * dividend in R1 (the map pad's width), so nDiv = uWidth / -24; the double chain is
+     * (nHour * nDiv) - ((double)uWidth * (double)nMinute) * (1/1440), truncated by _dtoi. */
+    const i32 nWidth = (i32)pMapPad->uWidth;
+    const i32 nDiv = nWidth / PUFO_SMAP_OVERLAY_DIVISOR;
+    const double fHour = (double)(pEnv->pTime->nHour * nDiv);
+    const double fDrift = ((double)nWidth * (double)pEnv->pTime->nMinute)
+                          * (1.0 / (double)PUFO_SMAP_OVERLAY_MINUTES_PER_DAY);
+    *pEnv->pnOverlayOriginX = (i32)(fHour - fDrift);
+
+    /* 0x8C3D8..0x8C494: the wrap. X for every screen id; Y only for id 2, because 0x8C3F0's
+     * BNE sends every other id to a copy that clamps X and falls into the blit block. */
+    Smap_WrapScrollAxis(&pView->nScrollX, pView->nMapW, nHalfW);
+    if (bWrapY) {
+        Smap_WrapScrollAxis(&pView->nScrollY, pEnv->pView->nMapH, nHalfH);
+    }
+
+    /* 0x8C498..0x8C548: the map pad. Screen 2 gets the two vertical wrap copies as well; every
+     * id ends with the x + nMapW copy at the original y. */
+    pMapPad->nOriginX = -(pView->nScrollX + nHalfW);
+    pMapPad->nOriginY = -(pView->nScrollY + nHalfH);
+    PadImage_Blit(pMapPad);
+
+    if (bWrapY) {
+        pMapPad->nOriginX = -(pView->nScrollX + nHalfW);
+        pMapPad->nOriginY = -(pView->nScrollY + pView->nMapH + nHalfH);
+        PadImage_Blit(pMapPad);
+
+        pMapPad->nOriginX = -(pView->nScrollX + pView->nMapW + nHalfW);
+        pMapPad->nOriginY = -(pView->nScrollY + pView->nMapH + nHalfH);
+        PadImage_Blit(pMapPad);
+    }
+
+    pMapPad->nOriginX = -(pView->nScrollX + pView->nMapW + nHalfW);
+    pMapPad->nOriginY = -(pView->nScrollY + nHalfH);
+    PadImage_Blit(pMapPad);
+
+    /* 0x8C548..0x8C690: the layer pad's three world flips, one map width apart, each skipped
+     * for screen 2. Its y is copied out of the map pad after the last map blit, as the ARM
+     * copies it. */
+    const i32 nOverlay = *pEnv->pnOverlayOriginX;
+
+    pLayerPad->nOriginX = nOverlay - pView->nScrollX - nHalfW;
+    pLayerPad->nOriginY = pMapPad->nOriginY;
+    if (!bWrapY) {
+        SoftSurf_BlitFlip(pLayerPad->nOriginX, pLayerPad->nOriginY, pEnv->pWorldBits,
+                          pEnv->pMapPal, pLayerPad->pData);
+    }
+
+    pLayerPad->nOriginX = nOverlay - pView->nScrollX - pView->nMapW - nHalfW;
+    pLayerPad->nOriginY = pMapPad->nOriginY;
+    if (!bWrapY) {
+        SoftSurf_BlitFlip(pLayerPad->nOriginX, pLayerPad->nOriginY, pEnv->pWorldBits,
+                          pEnv->pMapPal, pLayerPad->pData);
+    }
+
+    pLayerPad->nOriginX = nOverlay - pView->nScrollX - nHalfW + pView->nMapW;
+    pLayerPad->nOriginY = pMapPad->nOriginY;
+    if (!bWrapY) {
+        SoftSurf_BlitFlip(pLayerPad->nOriginX, pLayerPad->nOriginY, pEnv->pWorldBits,
+                          pEnv->pMapPal, pLayerPad->pData);
+    }
+}
+
+/* Geoscape_Draw @ 0x8c180's crosshair tail, 0x8C69C..0x8C760. */
+void Geoscape_BlitCrosshair(const GeoscapeCrosshairEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pChromePad == NULL || pEnv->pbPending == NULL
+        || pEnv->pnCooldownR == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbPending != 0 && *pEnv->pnCooldownR < PUFO_SMAP_CROSSHAIR_COOLDOWN) {
+        /* 0x8C6CC..0x8C700: the vertical line, 1 wide and 320 - chrome-pad-height tall. */
+        SoftSurf_BlitRectProxy(0, pEnv->nCrosshairX + PUFO_SMAP_CROSSHAIR_SHIFT, 0, 1,
+                               320 - (i32)pEnv->pChromePad->uHeight,
+                               PUFO_SMAP_CROSSHAIR_INDEX, PUFO_SMAP_CROSSHAIR_MID,
+                               PUFO_SMAP_CROSSHAIR_INDEX);
+        /* 0x8C704..0x8C72C: the horizontal line, 240 wide and 1 tall. */
+        SoftSurf_BlitRectProxy(0, 0, pEnv->nCrosshairY + PUFO_SMAP_CROSSHAIR_SHIFT, 240, 1,
+                               PUFO_SMAP_CROSSHAIR_INDEX, PUFO_SMAP_CROSSHAIR_MID,
+                               PUFO_SMAP_CROSSHAIR_INDEX);
+        return;
+    }
+
+    /* 0x8C750..0x8C75C: the pending flag is cleared and the cooldown parked. */
+    *pEnv->pbPending = 0;
+    *pEnv->pnCooldownR = PUFO_RADAR_COOLDOWN_READY;
+}
+
 /* 0x822EC..0x82304 and 0x8230C..0x8231C: MOVS R3,Rn / ADDMI R3,R3,#1 / MOV R3,R3,ASR#1, bytes
  * 01 30 83 42 for the middle instruction. ADDMI fires only when the tested value is NEGATIVE, so a
  * non-negative extent is halved by plain `n >> 1` and the +1 exists only to give a negative extent

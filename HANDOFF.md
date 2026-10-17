@@ -1,7 +1,12 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `4403e60`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 106, the ufopaedia entry draw),
+Date: 2026-10-17. HEAD before this edit: `6976a96`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap, and this commit carries its first part -- the cases 0/2
+map-view chrome and the crosshair tail, ported as `Geoscape_BlitMapView` and `Geoscape_BlitCrosshair`
+with 59 new checks and 13/13 mutations caught. The read map and what is still unported are written
+up in `docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
+The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
+checks run across the 60 suites" below,
 and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply

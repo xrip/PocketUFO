@@ -1332,6 +1332,74 @@ typedef struct RadarBackdropEnv {
  * the +0x0C control slot. */
 bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv);
 
+/* ---- Geoscape_Draw @ 0x8c180 map-view chrome (0x8C2B0..0x8C760) ---------------------
+ *
+ * The cases 0 and 2 arm of the geoscape dispatcher, taken when bRadarScreenActive @ 0x159678
+ * is zero: the world map itself. Three parts, in the ARM's order.
+ *
+ * 1. The overlay drift (0x8C2B0..0x8C3D4). _rt_sdiv takes the DIVISOR in R0, so 0x8C2F4's
+ *    `MOV R0, #0xFFFFFFE8` / `MOV R1, R7` with R7 = pSmapPadCur->uWidth is
+ *
+ *        nDiv = (i32)uWidth / -24
+ *
+ *    and the double chain at 0x8C30C..0x8C3C8 is
+ *
+ *        nSmapOverlayOriginX = (int)((double)(nGameHour * nDiv)
+ *                                    - ((double)uWidth * (double)nGameMinute) * (1.0 / 1440.0))
+ *
+ *    The 1/1440 is the literal double 0x3F46C16C16C16C17 at 0x8C38C (minutes in a day), and
+ *    _dtoi truncates toward zero like the C cast. With the shipped 240-wide map pad this is
+ *    -10 * nHour - nMinute / 6: the day/night overlay slides one map width per game day.
+ *
+ * 2. The scroll wrap (0x8C3D8..0x8C494). nScrollX is pulled into (-nHalfW - nMapW, -nHalfW]
+ *    by at most one map width in each direction, and nScrollY the same way -- but the Y half
+ *    runs ONLY when nGeoscapeScreen is 2. The X half runs for both ids. That asymmetry is the
+ *    ARM's: 0x8C3F0 `BNE loc_8C478` sends every other screen id to a copy that clamps X and
+ *    then falls straight into the blit block at 0x8C498 without touching Y.
+ *
+ * 3. The blits (0x8C498..0x8C690). The map pad is blitted at x = -(nScrollX + nHalfW),
+ *    y = -(nScrollY + nHalfH); screen 2 adds two more at y + nMapH (one at x, one at
+ *    x + nMapW); and every id ends with the x + nMapW copy at the original y. The layer pad
+ *    then gets its three world-bitmap flips at the same three x offsets the radar backdrop
+ *    uses, each skipped for screen 2 -- the same SoftSurf_BlitFlip triple as
+ *    Smap_BlitWrappedBackdrop, with the layer pad's y copied from the map pad's last
+ *    nOriginY. Unlike the radar copy, this one blits the map pad up to four times.
+ *
+ * Deviation: the original reaches every object through globals that are always live here; the
+ * port takes them through the env and returns without drawing when one is missing. */
+#define PUFO_SMAP_OVERLAY_DIVISOR       (-24) /* 0x8C2F4: MOV R0, #0xFFFFFFE8, _rt_sdiv's divisor */
+#define PUFO_SMAP_OVERLAY_MINUTES_PER_DAY 1440 /* 0x8C38C: the double 0x3F46C16C16C16C17 */
+#define PUFO_SMAP_CROSSHAIR_COOLDOWN       5 /* 0x8C6C4: CMP R2, #5 */
+#define PUFO_SMAP_CROSSHAIR_INDEX         50 /* 0x8C6A0 / 0x8C6F8: the index and low byte */
+#define PUFO_SMAP_CROSSHAIR_MID          200 /* 0x8C6A4 / 0x8C6E4: the mid byte */
+#define PUFO_SMAP_CROSSHAIR_SHIFT          3 /* 0x8C6F4 / 0x8C71C: ADD Rn, R0, #3 on both axes */
+
+typedef struct GeoscapeMapViewEnv {
+    SmapView       *pView;          /* gSmapCam @ 0x1863E8, wrapped in place */
+    PadImage       *pMapPad;        /* *pSmapPadCur @ 0x186E40 */
+    PadImage       *pLayerPad;      /* *pSmapLayerPad @ 0x186BE0 */
+    const u8       *pWorldBits;     /* *pSmapWorldBits @ 0x186BC0, the glyph record */
+    const u32      *pMapPal;        /* aPalette slot 29, reached as aPalette + 0x7400 */
+    const GameTime *pTime;          /* the clock block @ 0x159608: nGameHour @ 0x159630, nGameMinute @ 0x159634 */
+    i32             nScreenId;      /* nGeoscapeScreen @ 0x186BC4 */
+    i32            *pnOverlayOriginX;/* nSmapOverlayOriginX @ 0x186C20 */
+} GeoscapeMapViewEnv;
+
+/* The crosshair tail, 0x8C69C..0x8C760. While bSmapCrosshairPending is set and nRadarCooldownR
+ * is below 5 it blits a 1-pixel vertical line at x = nSmapCrosshairX + 3 whose height is
+ * 320 - pSmapChromePad->uHeight, and a 240 x 1 horizontal line at y = nSmapCrosshairY + 3, both
+ * in the 50/200 pair. Otherwise it clears the flag and parks the cooldown at 0xFF. */
+typedef struct GeoscapeCrosshairEnv {
+    const PadImage *pChromePad;     /* *pSmapChromePad @ 0x186BBC, its uHeight bounds the line */
+    i32             nCrosshairX;    /* nSmapCrosshairX @ 0x186BC8 */
+    i32             nCrosshairY;    /* nSmapCrosshairY @ 0x186BCC */
+    u8             *pbPending;      /* bSmapCrosshairPending @ 0x1870B0 */
+    i32            *pnCooldownR;    /* nRadarCooldownR @ 0xAC218 */
+} GeoscapeCrosshairEnv;
+
+void Geoscape_BlitMapView(GeoscapeMapViewEnv *pEnv);
+void Geoscape_BlitCrosshair(const GeoscapeCrosshairEnv *pEnv);
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

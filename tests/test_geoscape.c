@@ -3975,6 +3975,270 @@ static void BdFixture(void)
     g_bdLayerPad.nOriginY = -1;
 }
 
+/* ---- Geoscape_Draw @ 0x8c180 map-view chrome --------------------------------------- */
+#define MV_PAD_W        240 /* the map pad glyph the shipped game carries */
+#define MV_PAD_H          1
+#define MV_MAP_SLOT       7
+#define MV_W              8 /* the world bitmap, as the backdrop test's */
+#define MV_H              3
+#define MV_SCROLL_X     -30 /* puts scroll + halfW exactly on the wrap boundary */
+#define MV_SCROLL_Y      10
+#define MV_MAP_SIZE     100
+#define MV_INK       0x0123 /* palette slot 7 entry 1, what the map pad paints */
+#define MV_XHAIR_INK  13894 /* Blit_PackedColor(50) with mid 200: (6<<11) + 32*50 + 6 */
+
+static SoftSurf g_mvSurf;
+static SmapView g_mvView;
+static PadImage g_mvMapPad;
+static PadImage g_mvLayerPad;
+static PadImage g_mvChromePad;
+static u8 g_abMvWorld[4 + MV_W * MV_H];
+static u8 g_abMvMask[4 + MV_W * MV_H];
+static u8 g_abMvGlyph[4 + MV_PAD_W * MV_PAD_H];
+static GameTime g_mvTime;
+static i32 g_nMvOverlay;
+static u8 g_bMvPending;
+static i32 g_nMvCooldown;
+static GeoscapeMapViewEnv g_mvEnv;
+static GeoscapeCrosshairEnv g_mvXh;
+
+static i32 MvPix(i32 x, i32 y)
+{
+    return (i32)((const u16 *)g_mvSurf.pPixels)[y * g_mvSurf.nWidth + x];
+}
+
+static void MvFixture(void)
+{
+    memset(g_mvSurf.pPixels, 0, (size_t)g_mvSurf.nWidth * (size_t)g_mvSurf.nHeight * 2u);
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+
+    /* The world bitmap: row 0 index 1, row 1 index 2, row 2 index 3. */
+    g_abMvWorld[0] = (u8)MV_W; g_abMvWorld[1] = 0;
+    g_abMvWorld[2] = (u8)MV_H; g_abMvWorld[3] = 0;
+    for (i32 y = 0; y < MV_H; ++y) {
+        for (i32 x = 0; x < MV_W; ++x) {
+            g_abMvWorld[4 + y * MV_W + x] = (u8)(y + 1);
+        }
+    }
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][1] = 0xFFFFu;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][2] = 0x001Fu;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][3] = 0xF800u;
+
+    /* A fully opaque alpha plane, so each flip lands as the palette colour exactly. */
+    g_mvLayerPad.pData   = g_abMvMask;
+    g_mvLayerPad.nMode   = (u8)PUFO_RADAR_MAP_PAL_SLOT;
+    g_mvLayerPad.uWidth  = (u16)MV_W;
+    g_mvLayerPad.uHeight = (u16)MV_H;
+    g_abMvMask[0] = (u8)MV_W; g_abMvMask[1] = 0;
+    g_abMvMask[2] = (u8)MV_H; g_abMvMask[3] = 0;
+    memset(g_abMvMask + 4, 0xFF, (size_t)MV_W * (size_t)MV_H);
+
+    /* The map pad is the shipped 240 x 1 strip, which is also what the drift divides by. */
+    g_abMvGlyph[0] = (u8)MV_PAD_W; g_abMvGlyph[1] = 0;
+    g_abMvGlyph[2] = (u8)MV_PAD_H; g_abMvGlyph[3] = 0;
+    memset(g_abMvGlyph + 4, 1, (size_t)MV_PAD_W * (size_t)MV_PAD_H);
+    g_aPalette[MV_MAP_SLOT][1] = MV_INK;
+    g_mvMapPad.pData   = g_abMvGlyph;
+    g_mvMapPad.nMode   = (u8)MV_MAP_SLOT;
+    g_mvMapPad.uWidth  = (u16)MV_PAD_W;
+    g_mvMapPad.uHeight = (u16)MV_PAD_H;
+
+    memset(&g_mvView, 0, sizeof(g_mvView));
+    g_mvView.nScrollX = MV_SCROLL_X;
+    g_mvView.nScrollY = MV_SCROLL_Y;
+    g_mvView.nMapW    = MV_MAP_SIZE;
+    g_mvView.nMapH    = MV_MAP_SIZE;
+
+    memset(&g_mvTime, 0, sizeof(g_mvTime));
+    g_mvTime.nHour   = 3;
+    g_mvTime.nMinute = 30;
+
+    g_mvEnv.pView           = &g_mvView;
+    g_mvEnv.pMapPad         = &g_mvMapPad;
+    g_mvEnv.pLayerPad       = &g_mvLayerPad;
+    g_mvEnv.pWorldBits      = g_abMvWorld;
+    g_mvEnv.pMapPal         = g_aPalette[PUFO_RADAR_MAP_PAL_SLOT];
+    g_mvEnv.pTime           = &g_mvTime;
+    g_mvEnv.nScreenId       = 1;
+    g_mvEnv.pnOverlayOriginX = &g_nMvOverlay;
+
+    g_mvChromePad.uHeight = 20; /* the crosshair line is 320 - 20 tall */
+    g_bMvPending   = 1;
+    g_nMvCooldown  = 0;
+    g_mvXh.pChromePad  = &g_mvChromePad;
+    g_mvXh.nCrosshairX = 100;
+    g_mvXh.nCrosshairY = 50;
+    g_mvXh.pbPending   = &g_bMvPending;
+    g_mvXh.pnCooldownR = &g_nMvCooldown;
+
+    /* Sentinels: a guard that draws nothing has to leave them in place. */
+    g_mvMapPad.nOriginX   = -1;
+    g_mvMapPad.nOriginY   = -1;
+    g_mvLayerPad.nOriginX = -1;
+    g_mvLayerPad.nOriginY = -1;
+    g_nMvOverlay          = 0x7F7F;
+}
+
+static void TestGeoscapeMapView(void)
+{
+    printf("\nGeoscape_Draw @ 0x8c180 map-view chrome (0x8C2B0..0x8C690)\n");
+
+    SoftSurf_ctor(&g_mvSurf);
+    SoftSurf_AllocPixels(&g_mvSurf, BD_SURF_W, BD_SURF_H, PIXMODE_16BPP);
+    g_pMainSurface = &g_mvSurf;
+    Render_SetTarget(BD_SURF_W, BD_SURF_H, 2, 2, BD_SURF_W * 2, g_mvSurf.pPixels);
+
+    /* --- the overlay drift: (nHour * (uWidth / -24)) - uWidth * nMinute / 1440 --- */
+    MvFixture();
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_nMvOverlay, -35, "240 / -24 is -10, so hour 3 gives -30 and 240*30/1440 gives 5");
+
+    MvFixture();
+    g_mvTime.nHour = 0; g_mvTime.nMinute = 1;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_nMvOverlay, 0, "0 - 0.1667 truncates toward zero, not down to -1");
+
+    MvFixture();
+    g_mvTime.nHour = 1; g_mvTime.nMinute = 1;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_nMvOverlay, -10, "-10 - 0.1667 truncates to -10");
+
+    MvFixture();
+    g_mvTime.nHour = 0; g_mvTime.nMinute = 30;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_nMvOverlay, -5, "the hour term alone is zero, so only the minute term counts");
+
+    /* 240 * 6 / 1440 is exactly 1, so the minute term crosses a whole pixel at six minutes:
+     * this is what pins 1440 rather than any nearby divisor. */
+    MvFixture();
+    g_mvTime.nHour = 0; g_mvTime.nMinute = 5;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_nMvOverlay, 0, "five minutes is 0.833 of a pixel, truncated to 0");
+
+    MvFixture();
+    g_mvTime.nHour = 0; g_mvTime.nMinute = 6;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_nMvOverlay, -1, "six minutes is exactly one pixel");
+
+    /* --- the blits, screen id 1: halfW = 100/2 - 120 = -70, halfH = -110, overlay 0,
+     * so the three world offsets land at 100, 0 and 200 --- */
+    MvFixture();
+    g_mvTime.nHour = 0;
+    g_mvTime.nMinute = 0;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_nMvOverlay, 0, "hour 0 and minute 0 put the overlay origin at 0");
+    CheckEqI32(g_mvMapPad.nOriginX, 0, "the last map blit is at -(scroll + nMapW + halfW)");
+    CheckEqI32(g_mvMapPad.nOriginY, 100, "and at -(scroll + halfH)");
+    CheckEqI32(g_mvLayerPad.nOriginX, 200, "the last world flip is overlay - scroll - halfW + nMapW");
+    CheckEqI32(g_mvLayerPad.nOriginY, 100, "at the y copied out of the map pad");
+
+    CheckEqI32(MvPix(100, 100), 0xF7DE, "the first world flip paints at overlay - scroll - halfW");
+    CheckEqI32(MvPix(100, 101), 0x001E, "world row 1");
+    CheckEqI32(MvPix(100, 102), 0xF000, "world row 2");
+    CheckEqI32(MvPix(107, 102), 0xF000, "eight columns wide");
+    CheckEqI32(MvPix(108, 100), (i32)MV_INK, "and no further, so the map pad shows through");
+    CheckEqI32(MvPix(0, 100), 0xF7DE, "the -nMapW flip paints at 0");
+    CheckEqI32(MvPix(7, 102), 0xF000, "eight columns wide");
+    CheckEqI32(MvPix(8, 100), (i32)MV_INK, "with the map pad past it");
+    CheckEqI32(MvPix(200, 100), 0xF7DE, "the +nMapW flip paints at 200");
+    CheckEqI32(MvPix(207, 102), 0xF000, "again eight wide");
+    CheckEqI32(MvPix(199, 100), (i32)MV_INK, "with the map pad before it");
+    CheckEqI32(MvPix(50, 100), (i32)MV_INK, "the map pad covers the gap between the flips");
+    CheckEqI32(MvPix(100, 103), 0, "the map pad is one row tall and the flips are three");
+    CheckEqI32(MvPix(60, 0), 0, "screen 1 gets no vertical wrap copy");
+    CheckEqI32(g_mvView.nScrollX, MV_SCROLL_X, "scroll + halfW exactly on -nMapW is NOT wrapped");
+    CheckEqI32(g_mvView.nScrollY, MV_SCROLL_Y, "and screen 1 leaves y alone");
+
+    /* --- screen id 2: the two vertical wrap copies, and no world flips --- */
+    MvFixture();
+    g_mvTime.nHour = 0;
+    g_mvTime.nMinute = 0;
+    g_mvEnv.nScreenId = PUFO_RADAR_SCREEN_NO_WRAP;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(MvPix(60, 0), (i32)MV_INK, "screen 2 adds the y + nMapH copy at row 0");
+    CheckEqI32(MvPix(230, 0), (i32)MV_INK, "and its x + nMapW partner covers the row too");
+    CheckEqI32(MvPix(100, 100), (i32)MV_INK, "screen 2 paints no world bitmap at the first offset");
+    CheckEqI32(MvPix(0, 100), (i32)MV_INK, "nor at the -nMapW offset");
+    CheckEqI32(MvPix(200, 100), (i32)MV_INK, "nor at the +nMapW offset");
+    CheckEqI32(g_mvLayerPad.nOriginX, 200, "but the layer origins are still rewritten");
+    CheckEqI32(g_mvLayerPad.nOriginY, 100, "to the same values");
+
+    /* --- the wrap: X for every id, Y only for id 2 --- */
+    MvFixture();
+    g_mvView.nScrollX = 200;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_mvView.nScrollX, 100, "200 + halfW is 130 > 0, so one map width comes off");
+    CheckEqI32(g_mvView.nScrollY, MV_SCROLL_Y, "and screen 1 never touches y");
+
+    MvFixture();
+    g_mvView.nScrollY = 200;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_mvView.nScrollY, 200, "screen 1 leaves an out-of-band y exactly where it was");
+
+    MvFixture();
+    g_mvView.nScrollY = 200;
+    g_mvEnv.nScreenId = PUFO_RADAR_SCREEN_NO_WRAP;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_mvView.nScrollY, 100, "screen 2 wraps it by one map width");
+
+    MvFixture();
+    g_mvView.nScrollX = -40;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_mvView.nScrollX, 60, "-40 + halfW is -110 < -nMapW, so one map width is added");
+
+    /* --- a broken env draws nothing and touches nothing --- */
+    MvFixture();
+    g_mvEnv.pMapPad = NULL;
+    Geoscape_BlitMapView(&g_mvEnv);
+    CheckEqI32(g_mvLayerPad.nOriginX, -1, "a missing map pad leaves the sentinels alone");
+    CheckEqI32(g_nMvOverlay, 0x7F7F, "and leaves the overlay alone");
+}
+
+static void TestGeoscapeCrosshair(void)
+{
+    printf("\nGeoscape_Draw @ 0x8c180 crosshair tail (0x8C69C..0x8C760)\n");
+
+    /* The surface is the map-view test's; it is already allocated and MvFixture clears it. */
+    Render_SetTarget(BD_SURF_W, BD_SURF_H, 2, 2, BD_SURF_W * 2, g_mvSurf.pPixels);
+
+    MvFixture();
+    Geoscape_BlitCrosshair(&g_mvXh);
+    CheckEqI32(MvPix(103, 0), MV_XHAIR_INK, "the vertical line starts at nSmapCrosshairX + 3");
+    CheckEqI32(MvPix(103, 299), MV_XHAIR_INK, "and runs 320 - 20 rows tall");
+    CheckEqI32(MvPix(103, 300), 0, "one row past the chrome pad's height is empty");
+    CheckEqI32(MvPix(104, 100), 0, "one pixel wide");
+    CheckEqI32(MvPix(0, 53), MV_XHAIR_INK, "the horizontal line at nSmapCrosshairY + 3");
+    CheckEqI32(MvPix(239, 53), MV_XHAIR_INK, "the full 240 wide");
+    CheckEqI32(MvPix(0, 54), 0, "one pixel tall");
+    CheckEqI32(g_bMvPending, 1, "the pending flag stays set while it draws");
+    CheckEqI32(g_nMvCooldown, 0, "and the cooldown is untouched");
+
+    MvFixture();
+    g_nMvCooldown = 4;
+    Geoscape_BlitCrosshair(&g_mvXh);
+    CheckEqI32(MvPix(103, 100), MV_XHAIR_INK, "cooldown 4 still draws");
+
+    MvFixture();
+    g_nMvCooldown = 5;
+    Geoscape_BlitCrosshair(&g_mvXh);
+    CheckEqI32(MvPix(103, 100), 0, "cooldown 5 draws nothing");
+    CheckEqI32(MvPix(0, 53), 0, "on either axis");
+    CheckEqI32(g_bMvPending, 0, "and clears the pending flag");
+    CheckEqI32(g_nMvCooldown, PUFO_RADAR_COOLDOWN_READY, "and parks the cooldown at 0xFF");
+
+    MvFixture();
+    g_bMvPending = 0;
+    Geoscape_BlitCrosshair(&g_mvXh);
+    CheckEqI32(MvPix(103, 100), 0, "a clear flag draws nothing even with the cooldown ready");
+    CheckEqI32(g_nMvCooldown, PUFO_RADAR_COOLDOWN_READY, "and still parks the cooldown");
+
+    MvFixture();
+    g_mvXh.pChromePad = NULL;
+    Geoscape_BlitCrosshair(&g_mvXh);
+    CheckEqI32(MvPix(103, 100), 0, "a missing chrome pad draws nothing");
+    CheckEqI32(g_bMvPending, 1, "and leaves the pending flag as it was");
+}
+
 static void TestRadarBackdrop(void)
 {
     printf("\nRadarScreen_BlitMapBackdrop @ 0x5eb10\n");
@@ -8297,6 +8561,8 @@ int main(void)
     TestCountInbound();
     TestBaseStripHit();
     TestTickFacilityConstruction();
+    TestGeoscapeMapView();
+    TestGeoscapeCrosshair();
     TestRadarBackdrop();
     TestRadarFuelGauge();
     TestRadarRangeBar();
