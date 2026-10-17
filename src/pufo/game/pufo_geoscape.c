@@ -5146,10 +5146,14 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
                                                                           /* 0x90D5C via 0x90BA4, y 116 */
 }
 
-/* 0x90DE8..0x90E14 / 0x90FA0..0x90FB8 / 0x91504..0x9151C: the status panel's own SELECTED row, reached
- * as apLines[ *pStatusPanel + 0xBD8 ] -- the nUnk3032 dword UiPanel_TrackHoldRow writes as
- * cursor + row. The original bounds nothing and never null-checks the pointer it hands to strcpy or
- * strcat; the port skips a row it cannot read (recorded in bugs.tsv). */
+/* 0x90DE8..0x90DFC / 0x90FA0..0x90FB0 / 0x91504..0x91514: the status panel's own SELECTED row, reached as
+ * apLines[ *pStatusPanel + 0xBD8 ] -- the nUnk3032 dword UiPanel_TrackHoldRow writes as cursor + row. The
+ * read is always the same three instructions: LDR R3,[R0,R11] for the row index (0x90DF4, 0x90FA8,
+ * 0x9150C), ADD R3,R0,R3,LSL#2 to step the apLines table, and LDR [R3,R10] (R10 = 0xBE4) for the buffer
+ * (0x90DFC, 0x90FB0, 0x91514). The original bounds nothing and never null-checks what it gets: the clear
+ * arms feed it to an INLINE copy loop (LDRSB/STRB/MOVS/BNE at 0x90E00..0x90E14 and 0x91218..0x9122C -- not
+ * a strcpy call) and the set arms to the strcat at 0x90FB8 / 0x91344. The port skips a row it cannot read
+ * (recorded in bugs.tsv). */
 static const char *StatusPanel_SelectedRowText(const GeoscapeStatusPanelEnv *pEnv)
 {
     const UiPanel *const pPanel = pEnv->pStatusPanel;
@@ -5199,12 +5203,14 @@ static void StatusPanel_DrawMissionSite(const GeoscapeStatusPanelEnv *pEnv, char
     const char *const pszRow = StatusPanel_SelectedRowText(pEnv);
     if (!bSelecting) {
         if (pszRow != NULL) {
-            pufo_strcpy(psz, pszRow);                                    /* 0x90DFC..0x90E14: a COPY of the row */
+            pufo_strcpy(psz, pszRow);                                    /* 0x90E00..0x90E14: an inline LDRSB/STRB copy loop, not a call */
         } else {
             psz[0] = 0;
         }
     } else {
-        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_MISSION_PREFIX); /* 0x90F7C, R7 = TEXTS[1238] */
+        /* 0x90F7C..0x90F98: the record itself goes in through an inline LDRSB/STRB loop off R5+R7,
+         * with R7 = TEXTS[1238]. */
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_MISSION_PREFIX);
         if (pszRow != NULL) {
             (void)pufo_strcat(psz, pszRow, PUFO_TEXT_REC_STRIDE);        /* 0x90FB8: the row APPENDED */
         }
@@ -5263,18 +5269,19 @@ static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz
     (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x911C4..0x911F0 / 0x912CC..0x912F8 */
 
-    /* 0x911F4..0x9122C clears the flag: colour SLOT 0's row is COPIED, alone. 0x912FC..0x91344 sets it:
+    /* 0x911F4..0x9122C clears the flag: colour SLOT 0 (UiPanel_GetLineColor at 0x91200) gives the row index
+     * and that row is COPIED, alone. 0x912FC..0x91344 sets it:
      * TEXTS[1238] first, then the same row strcats on. One draw follows either way -- 0x91258 and
      * 0x91370 are the same centring. */
     const char *const pszRow = StatusPanel_ColourRowText(pEnv);
     if (!bSelecting) {
         if (pszRow != NULL) {
-            pufo_strcpy(psz, pszRow);
+            pufo_strcpy(psz, pszRow);                                    /* 0x91218..0x9122C: the same inline copy loop (tail BNE loc_91218) */
         } else {
             psz[0] = 0;
         }
     } else {
-        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_MISSION_PREFIX); /* 0x912FC, R7 = TEXTS[1238] */
+        StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_MISSION_PREFIX); /* 0x912FC..0x91314: same inline record copy */
         if (pszRow != NULL) {
             (void)pufo_strcat(psz, pszRow, PUFO_TEXT_REC_STRIDE);        /* 0x91344 */
         }
