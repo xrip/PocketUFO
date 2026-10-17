@@ -17833,3 +17833,61 @@ the same wrong 0x1865C8 in the plane spawner's comment). bugs.tsv: 1 new row.
 
 Not ported yet in this chain: 0x90728..0x91CEC (the flag-0x1B intercept-list panel, the flag-0x14
 target panel and what follows) and the screen arms 0x91DC8..0x944B0.
+### Unit 107, part 8: the intercept list (0x90728..0x9097C)
+
+The eighth arm of the default chain, flag 0x1B. It is unlike every other arm in three ways: it is the
+only one whose early exits leave the WHOLE default arm, the only one that draws the clock strip and the
+root block's own thirteen controls, and the only one with a label at a non-120 centring anchor and
+another with no centring at all.
+
+The exits. 0x90798, 0x907A8, 0x907B8 and 0x90904 all branch to IDA's `def_8C1B0` -- the body of the
+jumptable at 0x8C1B0's default case, which lives at **0x944B4** and is the shared tail of the whole
+geoscape draw. They are not "skip this arm" jumps; they end the frame, and the flag tests after them
+(0x14 at 0x909B8 and the rest) never run. The port says this with a bool return.
+
+Shape:
+- 0x90748 reads colour slot 0 and 0x90760 STORES it into 0x187054. It is a dword store, but the value
+  cannot exceed 0xFF anyway: every write into a colour slot masks it (UiPanel_InsertLine @ 0x5A2F4 and
+  UiPanel_SetLineColors @ 0x5A454 both `AND R3,R3,#0xFF`), which is also how Smap_HitTestStrategSelect's
+  -1 arrives as 255 -- the same value the 0x0D panel uses as its "no target" sentinel.
+- 0x9076C..0x90788 re-blits the strip pad rectangle with the same four reads and 0x3C / 0x78 / 0x82,
+  nKey 0x96 built at 0x9074C.
+- 0x9078C..0x907B8: the gates -- bSmapUfoCrashPanel @ 0x18708C, bSmapSitePanel @ 0x187090,
+  bSmapAlienBasePanel @ 0x187098, the three bytes RadarScreen's click arms for an active type-4,
+  type-3 and type-0 intercept. All three come AFTER the rectangle is already painted.
+- 0x907C0 PadImage_Blit of the strip pad ITSELF, at its own origin, on top of that rectangle.
+- 0x907C8 Geoscape_DrawClockPads with no GameTime_Decode in front of it. The decode belongs to
+  LoadGame, SaveSlot_FormatList, GameTime_Reset, Geoscape_AdvanceTime, Geoscape_InitUI and
+  Geoscape_PulseUpdate; the only draw-time call is 0x6C35C in Geoscape_DrawScreen.
+- 0x907D0..0x907F4 blits the geoscape UI root's own thirteen widgets (0x1864F8 + 4*i, the loop test is
+  CMP R0, #0xD), the counter kept in dword_186B08. The same thirteen-widget tail runs again at
+  0x91D1C for every screen id except 2.
+- 0x907F8..0x90828 the body anim (0xE, 0x104) size (0xD0, 0x28) from src (0x1E, 0x28), key 0xFF: box
+  x 14..225, y 260..305 -- painted OVER the clock strip it just drew.
+- 0x90858..0x9086C TEXTS[1235] "Выберете цель" at x fixed 0x28, y 0x110|3 = 275. There is no
+  Text_MeasureWidth call in front of this line at all.
+- 0x90874..0x908A4 *pCtlB @ 0x186BB0 at x 0x8C = 140 fixed (the only control in the chain not centred
+  from LDRH [R0,#4]), y 0x110|2 = 274, blitted at 0x90894 before Smap_ResolveInterceptUI at 0x908A4.
+- 0x908D4..0x908F4 TEXTS[1144] centred on **173** (`RSB R1,R1,#0xAD`) at the same y 275.
+- 0x908F8..0x90978 bFinalMissionCtlArmed @ 0x187068: clear ends the frame; set blits
+  pFinalMissionCtl @ 0x186B8C and draws TEXTS[1236] "Финальная миссия!" at y = 1 with
+  x = (pGeoscapeCtlConfirm->uWidth >> 1) - (w >> 1) + 1. Recorded in bugs.tsv: the caption lands at the
+  top edge of the screen, centred on a control's WIDTH whose x is never read, while its button is in the
+  bottom strip at y 274.
+
+Tests: 45 new checks (17,002 across 60 suites, 0 failures) and 14 new _Static_assert pins. The clock
+call is pinned through the origins its ten digit pads end with (the anim paints over the digits, so
+pixels cannot show it): 07:05:09 on 23 January 1999 leaves pad 0 at (140,260), pad 7 at (100,260), pad 5
+at (125,260), pad 9 at (135,304), pad 2 at (90,287) and pad 3 at (100,287). The blit callback now
+records WHICH pad it was offered, so the thirteen root controls are pinned in slot order and not merely
+counted. The strip pad's own glyph got palette indices 11..18 so its colour at the pad's origin is
+distinguishable from the rectangle's 8745 blend -- that also proves the pad blit follows the rectangle.
+Each gate byte gets its own run. 15 mutations, 15 caught.
+
+IDB: 10 comments written (0x90760 the masked colour store, 0x9078C the three gates and where they end
+up, 0x907C0 the pad's own blit, 0x907C8 the missing decode, 0x907D8 the thirteen-widget loop, 0x90864
+the un-centred label, 0x90874 the un-centred control, 0x908EC the 173 anchor, 0x90960 the y = 1 caption)
+and 0x944B4, now documented as the shared tail every one of those exits jumps to. bugs.tsv: 1 new row.
+
+Not ported yet in this chain: 0x909A8..0x91CEC (the flag-0x14 target panel, the flag-0x19/0x1C arms and
+the screen-id tail at 0x91CEC) and the screen arms 0x91DC8..0x944B0.

@@ -1,30 +1,34 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `4a02d1a`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its seventh part -- the attacked-city
-panel at 0x904D8..0x90724, flag 0x10, with 27 new checks and 15/15 mutations caught.
-Parts 1..6 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body in `2485d25`, the
+Date: 2026-10-17. HEAD before this edit: `ac13d77`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its eighth part -- the intercept list at
+0x90728..0x9097C, flag 0x1B, with 45 new checks and 15/15 mutations caught.
+Parts 1..7 -- the map-view chrome and crosshair in `5917656`, the 13-arm panel body in `2485d25`, the
 action-fail line and the selected contact in `79b7979`, the order questions in `a2d454b`, the
-craft-detail card in `c5f90b5` and the trace-lost panel in `4a02d1a` -- are behind this. What this part
-found: it is the only arm of the chain that names a mission site, and the only one of the three big
-panels with NO strip-pad rect re-blit -- the flag test at 0x90504 goes straight to the anim, so the body
-is (14,70)..(225,195) like 0x0D and the two line rows are 86 and 104; the city name is
-`aMissionSites[colour slot 1].szName`, built as index × 0x18 off `0x1864F8 + 0xC8` with no bounds test
-against the 56 records; that base is **0x1865C0** -- the `0x1865C8` that five source comments, three doc
-comments and the IDB carried is `0x1864F8 + 200` mis-added, and the plane spawner's own
-`[R0,#0xC8]` / `[R0,#0xCA]` loads at 0x7DE48/0x7DE3C are what settled it; TEXTS[1233] ships with a
-trailing space; both controls are blitted before their handler stores (`Smap_OnPointerUp` on the confirm
-one at 0x90648, `Smap_ResolveInterceptUI` on the other at 0x9067C); and TEXTS[1234] is centred on its
-control's OWN row (y 136) while TEXTS[1144] sits one row under the other (y 161). `MissionSiteRec` moved
-from `ui/pufo_geoiinit.h` to `game/pufo_geoscape.h` because both modules index this table, and the IDB
-now holds it as `aMissionSites`, `MissionSiteRec[56]`, 1344 bytes ending exactly where `g_pUiCloseCtl`
-begins; the duplicate `MissionSiteRecord` in `game/pufo_strateg.h` is filed under PLAN.md "Separate
-issues" rather than folded into this step. Still unported here: 0x90728..0x91CEC (the flag-0x1B
-intercept-list panel and the flag-0x14 target panel) and the screen arms 0x91DC8..0x944B0. The gate
-measures 966/1103 (87.6%) and 596752/598792 (99.7%) with 16957 checks -- that byte figure credits all
-33,744 bytes of `Geoscape_Draw` because `coverage.py` counts a function once its start address is cited,
-so it says nothing about how much of that function is ported. The read map and the arm table are in
-`docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
+craft-detail card in `c5f90b5`, the trace-lost panel in `4a02d1a` and the attacked-city panel in
+`ac13d77` -- are behind this. What this part found: **IDA's `def_8C1B0` has a body at 0x944B4 and it is
+the shared tail of the whole geoscape draw** -- the four gate exits in this arm (0x90798, 0x907A8,
+0x907B8, 0x90904) jump there, so they END the frame and the flag tests after them (0x14 at 0x909B8 and
+the rest) never run; the port says that with a bool return. The three panel gate bytes
+(`bSmapUfoCrashPanel` @ 0x18708C, `bSmapSitePanel` @ 0x187090, `bSmapAlienBasePanel` @ 0x187098) are
+read only AFTER the strip rectangle is already painted. The strip pad is blitted twice -- the
+(0x3C,0x78,0x82) rect with key 0x96 at 0x90788, then the pad's own glyph at its own origin at 0x907C0.
+`Geoscape_DrawClockPads` is called with NO `GameTime_Decode` in front of it (the decode lives in
+LoadGame, SaveSlot_FormatList, GameTime_Reset, Geoscape_AdvanceTime, Geoscape_InitUI, Geoscape_PulseUpdate
+and 0x6C35C in Geoscape_DrawScreen), then the geoscape root's own thirteen widgets (0x1864F8 + 4*i,
+`CMP R0,#0xD`), then the body anim at (14,260)..(225,305) paints over the clock it just drew. This arm
+also breaks the chain's two habits: TEXTS[1235] has no centring call at all (x fixed 0x28), `*pCtlB`
+@ 0x186BB0 is the only control in the chain not centred from `LDRH [R0,#4]` (x fixed 0x8C), TEXTS[1144]
+centres on **173** and not 120, and TEXTS[1236] is drawn at y **1** centred on `pGeoscapeCtlConfirm`'s
+WIDTH with no control's x read -- recorded in bugs.tsv. 0x90760 stores colour slot 0 into 0x187054 as a
+dword, which is safe because every colour-slot write masks to a byte (`AND R3,R3,#0xFF` in
+UiPanel_InsertLine @ 0x5A2F4 and UiPanel_SetLineColors @ 0x5A454). Still unported here:
+0x909A8..0x91CEC (the flag-0x14 target panel, the flag-0x19/0x1C arms and the screen-id tail at 0x91CEC)
+and the screen arms 0x91DC8..0x944B0. The gate measures 966/1103 (87.6%) and 596752/598792 (99.7%) with
+17002 checks -- that byte figure credits all 33,744 bytes of `Geoscape_Draw` because `coverage.py`
+counts a function once its start address is cited, so it says nothing about how much of that function is
+ported. The read map and the arm table are in `docs/parity/game-core.md` under
+"Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,
 and the per-unit chain

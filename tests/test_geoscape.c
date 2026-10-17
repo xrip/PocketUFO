@@ -8684,6 +8684,21 @@ _Static_assert(PUFO_STATUS_CITYCTL_Y_ACTION == 0xA0, "0x90664 MOV R3, #0xA0");
 _Static_assert(PUFO_STATUS_CITY_Y_ACTION_LBL == 0xA1, "0x90718 MOV R2, #0xA1");
 _Static_assert(PUFO_MISSION_SITE_COUNT == 56, "0x86CD8 CMP R0, #0x38, the InitUI mission-site loop");
 
+/* The 0x1B intercept list @ 0x90728. */
+_Static_assert(PUFO_STATUS_FLAG_INTERCEPT_LIST == 0x1B, "0x90738 CMP R0, #0x1B");
+_Static_assert(PUFO_STATUS_TEXT_CHOOSE_TARGET == 1235, "0x9082C, unk_F15C7 - 0xB38D0 = 1235 * 205");
+_Static_assert(PUFO_STATUS_TEXT_FINAL_MISSION == 1236, "0x90914, aTextRec1236 @ 0xF1694 - 0xB38D0 = 1236 * 205");
+_Static_assert(PUFO_STATUS_LIST_ANIM_Y == 0x104, "0x9080C MOV R2, #0x104");
+_Static_assert(PUFO_STATUS_LIST_NH == 0x28, "0x90824 STR R10, the R10 built at 0x904F4 MOV R10, #0x28");
+_Static_assert(PUFO_STATUS_LIST_X_LABEL == 0x28, "0x90864 MOV R1, #0x28: a fixed x with no measure");
+_Static_assert(PUFO_STATUS_LIST_Y_LINE == 0x113, "0x90858 / 0x90860 MOV R2,#0x110 then ORR R2,R2,#3");
+_Static_assert(PUFO_STATUS_LISTCTL_X == 0x8C, "0x90874 MOV R3, #0x8C");
+_Static_assert(PUFO_STATUS_LISTCTL_Y == 0x112, "0x90880 / 0x90888 MOV R3,#0x110 then ORR R3,R3,#2");
+_Static_assert(PUFO_STATUS_LIST_CANCEL_ANCHOR == 0xAD, "0x908EC RSB R1,R1,#0xAD");
+_Static_assert(PUFO_STATUS_LIST_Y_LABEL == 0x113, "0x908E8 ORR R2,R2,#3");
+_Static_assert(PUFO_STATUS_FINAL_MISSION_Y == 0x01, "0x90960 MOV R2, #1");
+_Static_assert(PUFO_GEOUI_ROOT_CTLS == 13, "0x907F0 CMP R0, #0xD, the root-control blit loop");
+
 _Static_assert(PUFO_STATUS_FLAG_MIN == 0x1F, "0x8C798 CMP #0x1E, BLE away");
 _Static_assert(PUFO_STATUS_FLAG_MAX == 0x31, "0x8C7AC CMP #0x32, BGE away");
 
@@ -8733,6 +8748,22 @@ static i32      g_nPnShipIdx;
 static u8       g_abPnGrid[PUFO_GRID_SIZE];
 static GameTime g_pnTime;
 static MissionSiteRec g_pnMission[PUFO_MISSION_SITE_COUNT]; /* aMissionSites @ 0x1865C0 */
+/* The 0x1B intercept list reaches further than the other arms: the root block's thirteen widgets,
+ * the clock strip's ten digit pads, the strip pad's OWN glyph (PadImage_Blit at 0x907C0) and the
+ * final-mission control. The pads carry a 2-byte-wide, 1-byte-high glyph each so a real blit is
+ * visible; the palette slot is one no other part of this fixture touches. */
+#define PN_TEST_PAL_SLOT 20
+static UiControl  g_pnRootCtl[PUFO_GEOUI_ROOT_CTLS];
+static UiControl *apPnRootCtl[PUFO_GEOUI_ROOT_CTLS];
+static PadImage   g_aPnRootPad[PUFO_GEOUI_ROOT_CTLS];
+static PadImage   g_pnClockPad[PUFO_GEOUI_CLOCK_DIGIT_PADS];
+static u8         g_abPnClockGlyph[PUFO_GEOUI_CLOCK_DIGIT_PADS][6];
+static PadImage  *apPnClockPad[PUFO_GEOUI_CLOCK_DIGIT_PADS];
+static u8         g_abPnStripGlyph[4 + 8];
+static UiControl  g_pnCtlFinal;              /* pFinalMissionCtl @ 0x186B8C */
+static PadImage   g_pnFinalPad;
+static u8         g_bPnUfoCrash, g_bPnSite, g_bPnAlienBase; /* 0x18708C, 0x187090, 0x187098 */
+static u8         g_bPnFinalArmed;           /* bFinalMissionCtlArmed @ 0x187068 */
 static u16      g_uPnInkHead, g_uPnInkStatus;
 
 static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
@@ -8765,11 +8796,23 @@ static const struct { i32 nRec; const char *psz; } g_aPnRecs[] = {
     { 1231, "n5" }, { 1356, " o5" },
     /* The 0x10 attacked-city panel. Three different lengths so a record mix-up shows as a row. */
     { 1232, "q6" }, { 1233, "rr6" }, { 1234, "sss6" },
+    /* The 0x1B intercept list. */
+    { 1235, "t6" }, { 1236, "uu6" },
 };
 
 static i32 PnAbs(i32 n) { return n < 0 ? -n : n; }
 
-static void PnBlit(const PadImage *pPad, void *pUser) { (void)pPad; (void)pUser; ++g_nPnBlits; }
+/* The blit callback also records WHICH pad was offered, so an arm that blits the right number of
+ * controls but the wrong ones is still caught (the 0x1B arm's thirteen root widgets). */
+static const PadImage *g_apnPnBlitPad[32];
+static void PnBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    if (g_nPnBlits < (i32)(sizeof(g_apnPnBlitPad) / sizeof(g_apnPnBlitPad[0]))) {
+        g_apnPnBlitPad[g_nPnBlits] = pPad;
+    }
+    ++g_nPnBlits;
+}
 static void PnBlitEx(const PadImage *pPad, void *pUser) { (void)pPad; (void)pUser; }
 static void PnClickSfx(void)    { ++g_nPnSfxClicks; }
 static void PnClickOpen(void)   { ++g_nPnOpenClicks; }
@@ -9068,6 +9111,59 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnStripPad.uHeight  = 24;
     g_bPnInterceptDone    = 0;
 
+    /* The 0x1B arm blits the strip pad ITSELF (0x907C0), so the pad needs a real glyph: 4x2 with
+     * eight distinct indices 11..18, index 11 being the one at the pad's origin. BdPix(30, 250) then
+     * reads the pad's own colour and not the rectangle's 8745 blend -- proof of the blit AND of its
+     * order. The indices stay clear of the digit pads' 1..10 in the same palette slot. */
+    memset(g_aPalette[PN_TEST_PAL_SLOT], 0, sizeof(g_aPalette[PN_TEST_PAL_SLOT]));
+    g_abPnStripGlyph[0] = 4;  g_abPnStripGlyph[1] = 0;   /* u16 width 4 */
+    g_abPnStripGlyph[2] = 2;  g_abPnStripGlyph[3] = 0;   /* u16 height 2 */
+    for (i32 i = 0; i < 8; ++i) {
+        g_abPnStripGlyph[4 + i] = (u8)(11 + i);  /* 11..18, clear of the digit pads' 1..10 */
+    }
+    g_pnStripPad.pData = g_abPnStripGlyph;
+    g_pnStripPad.nMode = PN_TEST_PAL_SLOT;
+    for (i32 i = 0; i < 8; ++i) {
+        g_aPalette[PN_TEST_PAL_SLOT][11 + i] = (u32)(0x2F00 + i);
+    }
+
+    /* The clock strip's ten digit pads, built like the clock suite's own: 2x1, index 1 the colour,
+     * index 0 the key. The arm's anim later paints over them, so the clock is pinned through the
+     * origins the pads end with, not through pixels. */
+    for (i32 i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i) {
+        g_abPnClockGlyph[i][0] = 2;  g_abPnClockGlyph[i][1] = 0;
+        g_abPnClockGlyph[i][2] = 1;  g_abPnClockGlyph[i][3] = 0;
+        g_abPnClockGlyph[i][4] = (u8)(1 + i);
+        g_abPnClockGlyph[i][5] = 0;
+        g_aPalette[PN_TEST_PAL_SLOT][1 + i] = (u32)(0x2000 + i);
+        memset(&g_pnClockPad[i], 0, sizeof(g_pnClockPad[i]));
+        g_pnClockPad[i].pData    = g_abPnClockGlyph[i];
+        g_pnClockPad[i].nMode    = PN_TEST_PAL_SLOT;
+        g_pnClockPad[i].uWidth   = 2;
+        g_pnClockPad[i].uHeight  = 1;
+        g_pnClockPad[i].nOriginX = -1;
+        g_pnClockPad[i].nOriginY = -1;
+        apPnClockPad[i] = &g_pnClockPad[i];
+    }
+
+    /* The root block's thirteen widgets, all enabled with a pad for state 0. */
+    for (i32 i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
+        memset(&g_pnRootCtl[i], 0, sizeof(g_pnRootCtl[i]));
+        g_pnRootCtl[i].uWidth   = 40;
+        g_pnRootCtl[i].bEnabled = 1;
+        g_pnRootCtl[i].apPads[0] = &g_aPnRootPad[i];
+        apPnRootCtl[i] = &g_pnRootCtl[i];
+    }
+
+    memset(&g_pnCtlFinal, 0, sizeof(g_pnCtlFinal));
+    g_pnCtlFinal.uWidth   = 40;
+    g_pnCtlFinal.bEnabled = 1;
+    g_pnCtlFinal.apPads[0] = &g_pnFinalPad;
+    g_bPnUfoCrash   = 0;
+    g_bPnSite       = 0;
+    g_bPnAlienBase  = 0;
+    g_bPnFinalArmed = 0;
+
     memset(&g_pnPanel, 0, sizeof(g_pnPanel));
     g_bPnMulti = 0;
     g_nPnFinished = 0;
@@ -9156,6 +9252,13 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnEnv.pfnConfirmSelected     = PnConfirmSel;
     g_pnEnv.pTime                  = &g_pnTime;
     g_pnEnv.paMissionSites         = g_pnMission;
+    g_pnEnv.apRootCtl              = apPnRootCtl;
+    g_pnEnv.apClockDigitPads       = apPnClockPad;
+    g_pnEnv.pbUfoCrashPanel        = &g_bPnUfoCrash;
+    g_pnEnv.pbSitePanel            = &g_bPnSite;
+    g_pnEnv.pbAlienBasePanel       = &g_bPnAlienBase;
+    g_pnEnv.pFinalMissionCtl       = &g_pnCtlFinal;
+    g_pnEnv.pbFinalMissionCtl      = &g_bPnFinalArmed;
 }
 
 /* A record as the panel sees it, and the string the panel should have built from two of them. */
@@ -10235,6 +10338,143 @@ static void TestStatusPanelCity(void)
                "and nothing below it");
 }
 
+/* The clock fields the intercept-list suite runs with: 07:05:09 on 23 January 1999. Every digit the
+ * clock draws is non-zero except the three tens of HH:MM:SS, so pad 0 ends at the seconds tens while
+ * pads 7, 5, 9, 1, 2 and 3 each end at a different position -- a wrong digit-to-pad mapping or a
+ * wrong row shows up as a wrong origin. */
+static void PnSetClockTime(void)
+{
+    g_pnTime.nYear    = 1999;
+    g_pnTime.nMonth   = 1;
+    g_pnTime.nDay     = 23;
+    g_pnTime.nWeekday = 1;
+    g_pnTime.nHour    = 7;
+    g_pnTime.nMinute  = 5;
+    g_pnTime.nSecond  = 9;
+}
+
+static void TestStatusPanelInterceptList(void)
+{
+    printf("\nGeoscape_DrawStatusPanel, the intercept list @ 0x90728\n");
+    PnFixture(0x1B, 7, 0, 0); /* colour slot 0 is the value this arm stores into 0x187054 */
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    PnSetClockTime();
+
+    /* ---- 1. the frame, with bFinalMissionCtlArmed clear ---- */
+    PnCaptureFrameOnly();
+    PnDiff d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+    CheckEqI32(d.nMinX, 0xE, "the anim body starts at x=14 (0x90818)");
+    CheckEqI32(d.nMinY, 250, "and the strip rect's y=250 is the first row this arm paints");
+    CheckEqI32(d.nMaxX, 0xE + 0xD0 + 3, "nW 0xD0 (0x907F8) puts the right border at 225");
+    CheckEqI32(d.nMaxY, PUFO_STATUS_LIST_ANIM_Y + PUFO_STATUS_LIST_NH + 5,
+               "nH 0x28 (0x90824, R10 from 0x904F4) puts the bottom at 305 -- over the clock it drew");
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, 249).nCount, 0,
+               "nothing above the strip: 0x1B has no panel body of its own");
+    CheckEqI32(g_nPnBlits, 14, "thirteen root controls plus CtlB, one blit each");
+
+    /* ---- 2. the strip rectangle, then the pad's own glyph painted over it ---- */
+    CheckEqI32(BdPix(60, 255), PN_STRIP_INK, "the rect uses nIdx 0x3C, mid 0x78, low 0x82, key 0x96 (0x9074C..0x90788)");
+    CheckEqI32(BdPix(129, 255), PN_STRIP_INK, "and it covers the pad's full 100x24");
+    CheckEqI32(BdPix(130, 255), 0, "no further (the +8/+0xA LDRH reads)");
+    CheckEqI32(BdPix(30, 250), 0x2F00, "0x907C0 then blits the strip PAD at its own origin, over the rect");
+
+    /* ---- 3. the clock call, read through the origins its pads end with ---- */
+    CheckEqI32(g_pnClockPad[0].nOriginX, 140, "the seconds tens left pad 0 at x=140 (the 0x5C720 pair)");
+    CheckEqI32(g_pnClockPad[0].nOriginY, 260, "on the time row 260");
+    CheckEqI32(g_pnClockPad[7].nOriginX, 100, "the hour ones 7 took pad 7 to x=100");
+    CheckEqI32(g_pnClockPad[5].nOriginX, 125, "the minute ones 5 took pad 5 to x=125");
+    CheckEqI32(g_pnClockPad[9].nOriginX, 135, "the year 1999 runs LAST and left its last 9 at x=135");
+    CheckEqI32(g_pnClockPad[9].nOriginY, 304, "on the year row 304");
+    CheckEqI32(g_pnClockPad[2].nOriginX, 90, "the day 23 tens moved pad 2 to x=90, row 287");
+    CheckEqI32(g_pnClockPad[3].nOriginX, 100, "and its ones moved pad 3 to x=100");
+
+    /* ---- 4. which controls got those blits, in order ---- */
+    bool bRootOrder = true;
+    for (i32 i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
+        if (g_apnPnBlitPad[i] != &g_aPnRootPad[i]) {
+            bRootOrder = false;
+        }
+    }
+    Check(bRootOrder, "the first thirteen blits are the root block's own widgets in slot order (0x1864F8 + 4*i)");
+    Check(g_apnPnBlitPad[13] == g_pnCtlB.apPads[0], "and the fourteenth is CtlB's pad (0x90894)");
+
+    /* ---- 5. the write into 0x187054 ---- */
+    CheckEqI32(g_nPnShipIdx, 7, "0x90760 stores colour slot 0 into 0x187054, as the 0x0B card does");
+    /* 255 is the largest value a colour slot can hold: UiLineList_SetLine masks slot 0 with
+     * AND #0xFF, so a value above 0xFF cannot reach the store at all (pufo_linelist.h). 255 is also
+     * the "no target" sentinel the 0x0D panel tests, and Smap_HitTestStrategSelect's -1 arrives as it. */
+    PnFixture(0x1B, PUFO_LINE_COLOR_MAX, 0, 0);
+    PnSetClockTime();
+    PnRun();
+    CheckEqI32(g_nPnShipIdx, 255, "the whole masked byte travels into 0x187054, sentinel value included");
+    PnFixture(0x1B, 7, 0, 0);
+    PnSetClockTime();
+
+    /* ---- 6. the one control and its two labels ---- */
+    PnCapture();
+    CheckEqI32(g_pnCtlB.x, PUFO_STATUS_LISTCTL_X,
+               "CtlB is FIXED at x=140 (0x90874) -- the only control in this chain that is not centred");
+    CheckEqI32(g_pnCtlB.y, PUFO_STATUS_LISTCTL_Y, "at y=274 (0x90880 MOV R3,#0x110 then ORR R3,R3,#2)");
+    Check(g_pnCtlB.pfnClick == PnResolve, "with Smap_ResolveInterceptUI installed at 0x908A4");
+    d = PnDiffRect(0, PUFO_STATUS_LIST_Y_LINE + PN_GLYPH_DY, 100, PUFO_STATUS_LIST_Y_LINE + PN_BAND);
+    Check(d.nCount > 0 && d.nMinX == PUFO_STATUS_LIST_X_LABEL,
+          "TEXTS[1235] starts at x=40: no Text_MeasureWidth call at all on this line (0x90858..0x9086C)");
+    d = PnDiffRect(140, PUFO_STATUS_LIST_Y_LINE + PN_GLYPH_DY, 215, PUFO_STATUS_LIST_Y_LINE + PN_BAND);
+    Check(d.nCount > 0, "TEXTS[1144] shares that row");
+    Check(PnAbs((d.nMinX + d.nMaxX) / 2 - PUFO_STATUS_LIST_CANCEL_ANCHOR) <= 2,
+          "and it is centred on 173, not on 120 (0x908EC RSB R1,R1,#0xAD)");
+
+    /* ---- 7. the three gates: each AFTER the strip rect, each BEFORE everything else ---- */
+    static u8 *const apnPnGate[3] = { &g_bPnUfoCrash, &g_bPnSite, &g_bPnAlienBase };
+    static const char *const apszPnGate[3] = {
+        "bSmapUfoCrashPanel @ 0x18708C (0x9078C)", "bSmapSitePanel @ 0x187090 (0x907A0)",
+        "bSmapAlienBasePanel @ 0x187098 (0x907B4)"
+    };
+    for (i32 i = 0; i < 3; ++i) {
+        char szWhat[160];
+        PnFixture(0x1B, 7, 0, 0);
+        PnSetClockTime();
+        *apnPnGate[i] = 1;
+        PnCaptureFrameOnly();
+        d = PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1);
+        snprintf(szWhat, sizeof(szWhat),
+                 "%s ends the frame with only the strip rect (30,250)..(129,273) painted", apszPnGate[i]);
+        Check(d.nMinX == 30 && d.nMaxX == 129 && d.nMinY == 250 && d.nMaxY == 273, szWhat);
+        CheckEqI32(g_nPnBlits, 0, "  no control blit, no anim, no labels past it");
+        CheckEqI32(BdPix(30, 250), PN_STRIP_INK, "  and the pad's own blit at 0x907C0 is past it too");
+        *apnPnGate[i] = 0;
+    }
+
+    /* ---- 8. the final-mission block ---- */
+    g_bPnFinalArmed = 1;
+    PnCapture();
+    CheckEqI32(g_nPnBlits, 15, "0x187068 set adds pFinalMissionCtl's blit (0x90910)");
+    d = PnDiffRect(0, 0, BD_SURF_W - 1, 30);
+    Check(d.nCount > 0, "TEXTS[1236] is drawn at y=1 -- the top edge of the screen (0x90960 MOV R2,#1)");
+    const i32 nW = Text_MeasureWidth(PnRec(PUFO_STATUS_TEXT_FINAL_MISSION));
+    const i32 nX = (i32)(g_pnCtlConfirm.uWidth >> 1) - (nW >> 1) + 1;
+    Check(PnAbs((d.nMinX + d.nMaxX) / 2 - (nX + nW / 2)) <= 2,
+          "centred on the CONFIRM CONTROL'S WIDTH and not on 120: x = uWidth/2 - w/2 + 1 (0x90964..0x90970)");
+
+    /* ---- 9. the records this arm reads, one at a time ---- */
+    PnCaptureDropped(PUFO_STATUS_TEXT_CHOOSE_TARGET);
+    Check(PnDiffRect(0, PUFO_STATUS_LIST_Y_LINE + PN_GLYPH_DY, 100,
+                     PUFO_STATUS_LIST_Y_LINE + PN_BAND).nCount > 0, "TEXTS[1235] feeds the left row");
+    CheckEqI32(PnDiffRect(140, PUFO_STATUS_LIST_Y_LINE + PN_GLYPH_DY, 215,
+                          PUFO_STATUS_LIST_Y_LINE + PN_BAND).nCount, 0, "and nothing on the right one");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CANCEL);
+    Check(PnDiffRect(140, PUFO_STATUS_LIST_Y_LINE + PN_GLYPH_DY, 215,
+                     PUFO_STATUS_LIST_Y_LINE + PN_BAND).nCount > 0, "TEXTS[1144] feeds the right row");
+    PnCaptureDropped(PUFO_STATUS_TEXT_FINAL_MISSION);
+    Check(PnDiffRect(0, 0, BD_SURF_W - 1, 30).nCount > 0, "TEXTS[1236] is the top row's only source");
+    PnCaptureDropped(PUFO_STATUS_TEXT_CITY);
+    CheckEqI32(PnDiffRect(0, 0, BD_SURF_W - 1, BD_SURF_H - 1).nCount, 0,
+               "and this arm reads none of the 0x10 panel's records");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -10304,6 +10544,7 @@ int main(void)
     TestStatusPanelDetail();
     TestStatusPanelPause();
     TestStatusPanelCity();
+    TestStatusPanelInterceptList();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

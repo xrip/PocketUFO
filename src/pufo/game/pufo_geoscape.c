@@ -4966,6 +4966,84 @@ static void StatusPanel_DrawCityAttacked(const GeoscapeStatusPanelEnv *pEnv, cha
                                                                        /* 0x90724, y 161 */
 }
 
+/* 0x90728: flag 0x1B, the intercept list. The only arm of the chain with exits that end the WHOLE
+ * default arm -- 0x90798, 0x907A8, 0x907B8 and 0x90904 all branch to the jumptable's default label,
+ * whose body is the shared tail at 0x944B4, and not to the next flag test. The port says so with the
+ * bool: false means "the frame ends here". */
+static bool StatusPanel_DrawInterceptList(const GeoscapeStatusPanelEnv *pEnv, char *psz)
+{
+    if (pEnv->pStripPad == NULL || pEnv->apRootCtl == NULL || pEnv->apClockDigitPads == NULL
+        || pEnv->pbUfoCrashPanel == NULL || pEnv->pbSitePanel == NULL
+        || pEnv->pbAlienBasePanel == NULL || pEnv->pCtlB == NULL || pEnv->pCtlConfirm == NULL
+        || pEnv->pFinalMissionCtl == NULL || pEnv->pbFinalMissionCtl == NULL
+        || pEnv->pTime == NULL) {
+        return false;
+    }
+
+    *pEnv->pnSelectedShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x90748 / 0x90760 */
+
+    const PadImage *const pStrip = pEnv->pStripPad;                        /* 0x9076C..0x90788 */
+    SoftSurf_BlitSrcRect(pStrip->nOriginX, pStrip->nOriginY, pStrip->uWidth, pStrip->uHeight,
+                         0x3C, 0x78, 0x82, 0x96);                          /* nKey built at 0x9074C */
+
+    /* 0x9078C..0x907B8: three gates, all AFTER the strip rect is already painted. */
+    if (*pEnv->pbUfoCrashPanel != 0 || *pEnv->pbSitePanel != 0
+        || *pEnv->pbAlienBasePanel != 0) {
+        return false;
+    }
+
+    PadImage_Blit(pStrip);                                                 /* 0x907BC / 0x907C0 */
+
+    /* 0x907C4 / 0x907C8. No GameTime_Decode here: the original decodes in Geoscape_AdvanceTime,
+     * Geoscape_PulseUpdate, LoadGame and Geoscape_InitUI, and the only draw-time decode is
+     * 0x6C35C in Geoscape_DrawScreen. */
+    const GeoscapeClockDrawEnv clockEnv = { pEnv->apClockDigitPads, pEnv->pTextRecs,
+                                            pEnv->pTime, pEnv->pColor };
+    Geoscape_DrawClockPads(&clockEnv);
+
+    /* 0x907D0..0x907F4: the root block's own thirteen widgets. The original keeps the loop counter in
+     * dword_186B08; the port keeps it local, like every other dword_186B08 user. */
+    for (i32 i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
+        (void)UiControl_BlitActivePad(pEnv->apRootCtl[i], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);
+    }
+
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_LIST_ANIM_Y, 0xD0, PUFO_STATUS_LIST_NH,
+                            0, 0x1E, 0x28, 0xFF, 0);                       /* 0x907F8..0x90828, box
+                                                                            * x 14..225, y 260..305:
+                                                                            * over the clock it drew */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CHOOSE_TARGET);        /* 0x9082C, record 1235 */
+    Text_DrawString(PUFO_STATUS_LIST_X_LABEL, PUFO_STATUS_LIST_Y_LINE, psz);
+                                                                           /* 0x90858..0x9086C: no
+                                                                            * Text_MeasureWidth here at
+                                                                            * all -- x is fixed at 0x28 */
+
+    pEnv->pCtlB->x = (i16)PUFO_STATUS_LISTCTL_X;                           /* 0x90874 / 0x9087C: 140,
+                                                                            * the un-centred control */
+    pEnv->pCtlB->y = (i16)PUFO_STATUS_LISTCTL_Y;                           /* 0x90888: 274 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                    /* 0x90894, BEFORE the handler */
+    pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;                  /* 0x90898 / 0x908A4 */
+
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CANCEL);              /* 0x9089C / 0x908AC, R9 = 1144 * 205 */
+    StatusPanel_DrawAt(PUFO_STATUS_LIST_CANCEL_ANCHOR, PUFO_STATUS_LIST_Y_LABEL, psz);
+                                                                           /* 0x908EC centred on 173 */
+
+    if (*pEnv->pbFinalMissionCtl == 0) {                                   /* 0x908F8..0x90904 */
+        return false;
+    }
+    (void)UiControl_BlitActivePad(pEnv->pFinalMissionCtl, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                    /* 0x9090C / 0x90910 */
+    StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_FINAL_MISSION);        /* 0x90914, record 1236 */
+    const i32 nWidth = Text_MeasureWidth(psz);                             /* 0x90948 */
+    Text_DrawString((i32)(pEnv->pCtlConfirm->uWidth >> 1) - (nWidth >> 1) + 1,
+                    PUFO_STATUS_FINAL_MISSION_Y, psz);                     /* 0x90964..0x90970: the
+                                                                            * control's x is never read,
+                                                                            * and y is 1 */
+    return true;                                                           /* 0x9097C B def_8C1B0 */
+}
+
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear
  * byte_18709C[4] draws no panel -- but it still falls through into the block at 0x8E658. */
 static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *psz)
@@ -5006,8 +5084,14 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
     if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_CITY_ATTACKED) {
         StatusPanel_DrawCityAttacked(pEnv, psz);                       /* 0x904D8..0x90724 */
     }
-    /* 0x90728..0x91CEC: the 0x1B intercept-list panel, the 0x14 target panel and what follows are
-     * not ported yet. */
+    if ((i32)UiLineList_GetFlag(pEnv->pLines, 0) == PUFO_STATUS_FLAG_INTERCEPT_LIST) {
+        if (!StatusPanel_DrawInterceptList(pEnv, psz)) {
+            return;                       /* 0x90798 / 0x907A8 / 0x907B8 / 0x90904 branch to the
+                                           * jumptable default label, whose body is the shared tail at
+                                           * 0x944B4 -- the frame ends, later tests never run */
+        }
+    }
+    /* 0x909A8..0x91CEC: the 0x14 target panel and what follows are not ported yet. */
 }
 
 /* 0x8D2F4..0x8D838: the '%' arm, the research panel. */

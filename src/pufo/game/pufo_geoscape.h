@@ -22,6 +22,7 @@
 #include "ui/pufo_control.h"   /* UiControl, for the nav speed controls */
 #include "ui/pufo_linelist.h"  /* UiLineList, the message list the build-complete report posts */
 #include "ui/pufo_panel.h"     /* UiAnimBlitEnv, the radar panel's animation progress */
+#include "ui/pufo_geouimanage.h" /* GeoscapeUiState and PUFO_GEOUI_ROOT_CTLS, the 0x1B arm's thirteen controls */
 
 /* ------------------------------------------------- the facility grid layout
  *
@@ -1586,6 +1587,14 @@ typedef struct GeoscapeStatusPanelEnv {
     struct GameTime   *pTime;             /* 0x159618: GameTime_Pause writes bPaused here */
     /* The 0x10 attacked-city panel. */
     MissionSiteRec    *paMissionSites;    /* aMissionSites @ 0x1865C0 (root + 0xC8), 56 records */
+    /* The 0x1B intercept list. */
+    UiControl   *const *apRootCtl;        /* the root block's thirteen widgets @ 0x1864F8 + 4*i */
+    PadImage    *const *apClockDigitPads; /* apClockDigitPads @ 0x186BF0, the ten "b0".."b9" pads */
+    u8                *pbUfoCrashPanel;   /* bSmapUfoCrashPanel @ 0x18708C */
+    u8                *pbSitePanel;       /* bSmapSitePanel @ 0x187090 */
+    u8                *pbAlienBasePanel;  /* bSmapAlienBasePanel @ 0x187098 */
+    UiControl         *pFinalMissionCtl;  /* pFinalMissionCtl @ 0x186B8C */
+    u8                *pbFinalMissionCtl; /* bFinalMissionCtlArmed @ 0x187068 */
 } GeoscapeStatusPanelEnv;
 
 void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
@@ -1862,6 +1871,50 @@ void Geoscape_DrawStatusPanel(const GeoscapeStatusPanelEnv *pEnv);
 #define PUFO_STATUS_CITY_Y_CONFIRM_LBL     0x88 /* 0x906C8 MOV R2, #0x88: the label shares its control's row */
 #define PUFO_STATUS_CITYCTL_Y_ACTION       0xA0 /* 0x90664 MOV R3, #0xA0: y 160 */
 #define PUFO_STATUS_CITY_Y_ACTION_LBL      0xA1 /* 0x90718 MOV R2, #0xA1: y 161 */
+
+/* 0x90728: flag 0x1B, the intercept list. This is the only arm of the chain with early exits that end
+ * the WHOLE default arm: 0x90798, 0x907A8, 0x907B8 and 0x90904 all branch to the jumptable's default
+ * label, whose body is the shared tail at 0x944B4 — not to the next flag test. It is also the only arm
+ * that draws the clock strip and the thirteen root controls.
+ *
+ * 0x90748 reads colour slot 0 and 0x90760 STORES it into 0x187054, so this arm writes the selected-craft
+ * global just as the 0x0B card does. The strip pad is then re-blitted as a rect (0x9076C..0x90788, the
+ * same four pad reads, nIdx 0x3C, mid R7 = 0x78, low 0x82) but with nKey 0x96 read at 0x9074C — the same
+ * value the 0x0B card uses, built here instead of as an immediate next to the call.
+ *
+ * Only then the three gates: bSmapUfoCrashPanel @ 0x18708C, bSmapSitePanel @ 0x187090 and
+ * bSmapAlienBasePanel @ 0x187098 (the flags RadarScreen's click arms for an active type-4, type-3 and
+ * type-0 intercept). Any one of them ends the frame, AFTER the strip rect is already painted.
+ *
+ * With all three clear: PadImage_Blit of the strip pad itself (0x907C0), Geoscape_DrawClockPads (0x907C8,
+ * with NO GameTime_Decode here — the decode belongs to Geoscape_AdvanceTime, Geoscape_PulseUpdate,
+ * LoadGame and InitUI, and 0x6C35C in Geoscape_DrawScreen is the only draw-time one), then thirteen
+ * UiControl_BlitActivePad calls over the root block's own widget array (0x907D8..0x907F4, the counter
+ * living in dword_186B08 in the original).
+ *
+ * Then the body anim at (0xE, 0x104) size (0xD0, 0x28) from src (0x1E, 0x28) with key 0xFF, nIdx 0 and
+ * nMode 0 — box x 14..225, y 260..305, i.e. it paints OVER the clock strip it just drew. TEXTS[1235]
+ * "Выберете цель" is NOT centred: 0x90864 fixes x at 0x28 (40), 0x90860 gives y 0x113 (275). *pCtlB
+ * @ 0x186BB0 is fixed at x 0x8C (140) — the only control in this chain that is not centred — at y 0x112
+ * (274), blitted at 0x90894 before Smap_ResolveInterceptUI is installed at 0x908A4. Its TEXTS[1144]
+ * label is centred on 173 and not on 120 (0x908EC RSB R1,R1,#0xAD), at the same y 275.
+ *
+ * Finally 0x908F8 tests bFinalMissionCtlArmed @ 0x187068: clear, the frame ends. Set, pFinalMissionCtl
+ * @ 0x186B8C is blitted and TEXTS[1236] "Финальная миссия!" is drawn at y 1 with
+ * x = (pGeoscapeCtlConfirm->uWidth >> 1) - (width >> 1) + 1 (0x90958..0x90970): the control's own x is
+ * never read, so this centring is against the control's WIDTH at the top edge of the screen. */
+#define PUFO_STATUS_FLAG_INTERCEPT_LIST     0x1B /* 0x90738 CMP R0, #0x1B */
+#define PUFO_STATUS_TEXT_CHOOSE_TARGET      1235 /* 0xF15C7 "Выберете цель" */
+#define PUFO_STATUS_TEXT_FINAL_MISSION      1236 /* 0xF1694 "Финальная миссия!" */
+#define PUFO_STATUS_LIST_ANIM_Y             0x104 /* 0x9080C MOV R2, #0x104: y 260 */
+#define PUFO_STATUS_LIST_NH                 0x28  /* 0x90824 STR R10, the R10 built at 0x904F4 */
+#define PUFO_STATUS_LIST_X_LABEL            0x28  /* 0x90864 MOV R1, #0x28: fixed, not centred */
+#define PUFO_STATUS_LIST_Y_LINE             0x113 /* 0x90858 / 0x90860 MOV R2,#0x110 then ORR R2,R2,#3 */
+#define PUFO_STATUS_LISTCTL_X               0x8C  /* 0x90874 MOV R3, #0x8C: x 140 */
+#define PUFO_STATUS_LISTCTL_Y               0x112 /* 0x90880 / 0x90888 MOV R3,#0x110 then ORR R3,R3,#2 */
+#define PUFO_STATUS_LIST_CANCEL_ANCHOR      0xAD  /* 0x908EC RSB R1,R1,#0xAD: centred on 173 */
+#define PUFO_STATUS_LIST_Y_LABEL            0x113 /* 0x908E8 ORR R2,R2,#3: the label shares the line's y */
+#define PUFO_STATUS_FINAL_MISSION_Y         0x01  /* 0x90960 MOV R2, #1 */
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
