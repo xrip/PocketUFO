@@ -235,7 +235,7 @@ typedef struct GeoscapePointerEnv {
     /* Screen 16 (the startup / load list). */
     const u8 *pb16ModeA;          /* byte_18730C[0] */
     const u8 *pb16ModeB;          /* unk_187310 */
-    const u8 *pb16ListFull;       /* unk_1871FC */
+    const u8 *pbWidePanel;        /* g_bUfopaediaWidePanel @ 0x1871FC -- the byte UfopaediaEnv.pbWidePanel names */
     UiControl *const *ap16Ctl;    /* unk_1872E0 + 8 @ 0x1872E8, six */
     UiPanel *const *ap16PanelSet; /* dword_1871D0 */
     const i32 *pn16PanelIndex;    /* unk_1871F8 */

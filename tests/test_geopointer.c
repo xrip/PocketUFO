@@ -113,7 +113,7 @@ typedef struct Fix {
     u8 bMapSelect, bRadarActive, bGateTransfer, bGateBaseInfo;
     u8 bPsiOpen, bPsiRow, bTransferRow, bSolOpen, bNameEdit, bAnimStarted, bTransferFlag;
     u8 bFacArmed, bRowSelected, bProductSelected;
-    u8 b16ModeA, b16ModeB, b16Full;
+    u8 b16ModeA, b16ModeB, bWidePanel;
     u8 bOptConfirm, bOptPageActive, bBaseAtDone;
     u8 bPlaneBuilt, bPlaneDetail, bPlaneStores, bPlaneListBuilt, bStatAOpen, bStatBOpen;
     i8 nOptPage;
@@ -349,7 +349,7 @@ static void Fix_Reset(void)
     p->pBuySellPanelA = &g.pBuySell;
     p->pb16ModeA = &g.b16ModeA;
     p->pb16ModeB = &g.b16ModeB;
-    p->pb16ListFull = &g.b16Full;
+    p->pbWidePanel = &g.bWidePanel;
     p->ap16Ctl = g.ap16;
     p->ap16PanelSet = g.ap16Set;
     p->pn16PanelIndex = &g.nPanelIndex;
@@ -1119,7 +1119,7 @@ static void TestScreen16(void)
     Fix_Reset();
     g.nScreenId = 16;
     g.b16ModeB = 1;
-    g.b16Full = 1;
+    g.bWidePanel = 1;
     Call(100, 100, true);
     Check(CtlHit(&g.a16[0]) && CtlHit(&g.a16[3]), "mode B with a full list hit-tests 0..3");
     Check(!CtlHit(&g.a16[4]), "and stops at 3");
@@ -2020,7 +2020,7 @@ static void TestUpScreen16(void)
     g.nScreenId = 16;
     g.b16ModeA = 0;
     g.b16ModeB = 1;
-    g.b16Full = 1;
+    g.bWidePanel = 1;
     (void)CallUp();
     Check(UpCtl(&g.a16[0]) && UpCtl(&g.a16[3]), "mode B with a full list releases slots 0..3");
     Check(ArmedCtl(&g.a16[4]), "and not the side controls");
@@ -2031,7 +2031,7 @@ static void TestUpScreen16(void)
     Fix_UpCursor();
     g.nScreenId = 16;
     g.b16ModeB = 1;
-    g.b16Full = 0;
+    g.bWidePanel = 0;
     (void)CallUp();
     Check(ArmedCtl(&g.a16[0]) && UpCtl(&g.a16[2]) && UpCtl(&g.a16[3]),
           "mode B with a short list releases only slots 2 and 3");

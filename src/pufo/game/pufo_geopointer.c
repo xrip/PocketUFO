@@ -536,7 +536,7 @@ i32 Geoscape_OnPointer(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY, bool bDow
             nListY = *pEnv->pnCursorY;
         }
         if (*pEnv->pb16ModeB != 0) {                                         /* 0x88E70 */
-            if (*pEnv->pb16ListFull != 0) {
+            if (*pEnv->pbWidePanel != 0) {
                 Ptr_HitRange(pEnv->ap16Ctl, 0, 3, nX, nY, pEnv->pHit);
             } else {
                 Ptr_HitRange(pEnv->ap16Ctl, 2, 3, nX, nY, pEnv->pHit);
@@ -1023,7 +1023,7 @@ i32 Geoscape_OnPointerUp(const GeoscapePointerEnv *pEnv)
             PtrUp_HitRange(pEnv, pEnv->ap16Ctl, 4, 5);
         }
         if (*pEnv->pb16ModeB != 0) {                                              /* 0x8AA90 */
-            if (*pEnv->pb16ListFull != 0) {
+            if (*pEnv->pbWidePanel != 0) {
                 PtrUp_HitRange(pEnv, pEnv->ap16Ctl, 0, 3);
             } else {
                 PtrUp_HitRange(pEnv, pEnv->ap16Ctl, 2, 3);

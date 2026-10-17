@@ -5586,17 +5586,19 @@ i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv)
     return pEnv->pfnPresent(pEnv->pPresentUser);                      /* 0x94538 MOV R0,R4 / 0x9453C */
 }
 
-/* 0x94120..0x94150 and the four copies of the same loop (0x94168..0x94198 for screen 9, 0x93DE0..0x93E08
- * and 0x93E2C..0x93E54 for 11 and 12, 0x93E68..0x93E90 for 10): blit the active pad of a run of control
- * pointers read out of the screen's own block. The original spills the loop counter into the shared scratch
- * dword_186B08 -- the same global the UI open paths and the flag chain's tail use -- and re-reads the
- * counter from that global on every iteration. The port keeps it local. */
-static void Geoscape_BlitCtlRun(const GeoscapeScreenArmEnv *pEnv, i32 nCtl)
+/* 0x94120..0x94150 and the eight copies of the same loop (0x94168..0x94198 for screen 9, 0x93DE0..0x93E08 and
+ * 0x93E2C..0x93E54 for 11 and 12, 0x93E68..0x93E90 for 10, 0x941E4..0x94200 / 0x94228..0x94244 /
+ * 0x94264..0x94280 for 16, 0x942C8..0x942E4 for 17): blit the active pad of a run of control pointers read out
+ * of the screen's own block -- `ADD R3, R6, R0, LSL#2` then `LDR R0, [R3, #off]`. The original spills the loop
+ * counter into the shared scratch dword_186B08 (the same global the UI open paths and the flag chain's tail
+ * use) and re-reads it from that global on every iteration. The port keeps it local. The bounds are half-open,
+ * [nFirst, nEnd), because that is the shape the ARM writes: MOV R0, #first, body, CMP R0, #end, BLT back. */
+static void Geoscape_BlitCtlRun(const GeoscapeScreenArmEnv *pEnv, i32 nFirst, i32 nEnd)
 {
     if (pEnv->apCtl == NULL) {
         return;
     }
-    for (i32 n = 0; n < nCtl; ++n) {
+    for (i32 n = nFirst; n < nEnd; ++n) {
         (void)UiControl_BlitActivePad(pEnv->apCtl[n], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);
     }
@@ -5623,7 +5625,7 @@ static void Geoscape_TrackBuySellRows(const GeoscapeBuySellTrackEnv *pEnv)
 void Geoscape_DrawResearchArm(const ResearchDrawEnv *pResearchEnv, const GeoscapeScreenArmEnv *pArmEnv)
 {
     ResearchScreen_Draw(pResearchEnv);                                /* 0x9411C, R0 = &aResearchTopics */
-    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_2);                /* 0x94120..0x94150, CMP #2 at 0x9414C */
+    Geoscape_BlitCtlRun(pArmEnv, 0, PUFO_GEOARM_CTLS_2);             /* 0x94120..0x94150, CMP #2 at 0x9414C */
 }
 
 /* 0x9415C..0x941A4: screen 9, the manufacturing screen. The pad is the first word of the product block at
@@ -5633,7 +5635,7 @@ void Geoscape_DrawManufArm(PadImage *pPad, const ManufFrameEnv *pManufEnv,
                            const GeoscapeScreenArmEnv *pArmEnv)
 {
     PadImage_Blit(pPad);                                              /* 0x94160 LDR R0,[R6] / 0x94164 */
-    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_2);                /* 0x94168..0x94198, CMP #2 at 0x94194 */
+    Geoscape_BlitCtlRun(pArmEnv, 0, PUFO_GEOARM_CTLS_2);             /* 0x94168..0x94198, CMP #2 at 0x94194 */
     ManufScreen_DrawFrame(pManufEnv);                                 /* 0x941A0 MOV R0,R6 */
 }
 
@@ -5646,7 +5648,7 @@ void Geoscape_DrawTransferArm(PadImage *pPad, const TransferDrawEnv *pTransferEn
                               const GeoscapeBuySellTrackEnv *pTrackEnv)
 {
     PadImage_Blit(pPad);                                              /* 0x93E60 LDR R0,[R5] / 0x93E64 */
-    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_4);                /* 0x93E68..0x93E90, CMP #4 at 0x93E8C */
+    Geoscape_BlitCtlRun(pArmEnv, 0, PUFO_GEOARM_CTLS_4);             /* 0x93E68..0x93E90, CMP #4 at 0x93E8C */
     (void)TransferScreen_Draw(pTransferEnv);                          /* 0x93EB0 */
     Geoscape_TrackBuySellRows(pTrackEnv);                             /* 0x93EB4..0x93F04 */
 }
@@ -5661,9 +5663,50 @@ void Geoscape_DrawBuySellArm(PadImage *pPad, const BuySellDrawEnv *pDrawEnv,
                              const GeoscapeBuySellTrackEnv *pTrackEnv)
 {
     PadImage_Blit(pPad);                                              /* 0x93DD8 / 0x93E24 */
-    Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_CTLS_2);                /* 0x93DE0 / 0x93E2C, CMP #2 */
+    Geoscape_BlitCtlRun(pArmEnv, 0, PUFO_GEOARM_CTLS_2);             /* 0x93DE0 / 0x93E2C, CMP #2 */
     BuySellScreen_Draw(pDrawEnv);                                     /* 0x93E10, the shared call site */
     Geoscape_TrackBuySellRows(pTrackEnv);                             /* 0x93EB4..0x93F04 */
+}
+
+/* 0x941AC..0x94288: screen 16, the ufopaedia. The callee gets the BLOCK BASE (0x941AC LDR R6,
+ * =g_pUfopaediaScreenPad / 0x941B0 MOV R0,R6), so Ui_DrawBaseInfo is the one that blits the screen's own pad
+ * (0x9B600) and its close control (0x9B7C0); this arm blits no pad of its own. The ranges are three copies of
+ * the same loop over the block's six control slots, apCtl[i] == the word at the base + 8 + 4*i. */
+void Geoscape_DrawUfopaediaArm(UiBaseInfoDrawEnv *pBaseInfoEnv, const GeoscapeUfopaediaArmEnv *pGateEnv,
+                               const GeoscapeScreenArmEnv *pArmEnv)
+{
+    Ui_DrawBaseInfo(pBaseInfoEnv);                                    /* 0x941B4 */
+
+    const bool bOpen  = (pGateEnv->pbOpen != NULL) && *pGateEnv->pbOpen != 0;
+    const bool bDirty = (pGateEnv->pbEntryDirty != NULL) && *pGateEnv->pbEntryDirty != 0;
+
+    if (bOpen && !bDirty) {                                           /* 0x941C8 BEQ / 0x941D8 BNE */
+        Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_UFO_CAT_FIRST, PUFO_GEOARM_CTLS_6);   /* 0x941DC..0x94200 */
+    }
+    if (bDirty)                                                       /* 0x94204 BEQ def_8C1B0 */
+    {
+        const bool bWide = (pGateEnv->pbWidePanel != NULL) && *pGateEnv->pbWidePanel != 0;  /* 0x94218 */
+        if (bWide) {
+            Geoscape_BlitCtlRun(pArmEnv, 0, PUFO_GEOARM_CTLS_4);     /* 0x94220..0x94244, CMP #4 */
+        } else {
+            Geoscape_BlitCtlRun(pArmEnv, PUFO_GEOARM_UFO_ENTRY_FIRST, PUFO_GEOARM_CTLS_4); /* 0x9425C..0x94280 */
+        }
+    }
+}
+
+/* 0x94288..0x942E8: screen 17, the psi screen. R1 is byte_1870F4 read SIGNED (LDRSB at 0x94290), which the
+ * port carries as PsiScreenDrawEnv.nBaseIdx, so the callee needs no extra argument. The two gates are the same
+ * globals the callee itself reads, and the two controls are the psi block's own slots +4 / +8. */
+void Geoscape_DrawPsiArm(const PsiScreenDrawEnv *pPsiEnv, const GeoscapeScreenArmEnv *pArmEnv)
+{
+    PsiScreen_Draw(pPsiEnv);                                          /* 0x94294 MOV R0,R6 / 0x94298 */
+    if (pPsiEnv->pbOverlayOpen != NULL && *pPsiEnv->pbOverlayOpen != 0) {
+        return;                                                       /* 0x942A8 BNE def_8C1B0 */
+    }
+    if (pPsiEnv->pbPanelOpen == NULL || *pPsiEnv->pbPanelOpen == 0) {
+        return;                                                       /* 0x942B8 BEQ def_8C1B0 */
+    }
+    Geoscape_BlitCtlRun(pArmEnv, 0, PUFO_GEOARM_CTLS_2);             /* 0x942C0..0x942E4, CMP #2 at 0x942E0 */
 }
 
 /* 0x8E5A4: the default arm. 0x8E5E0's BEQ lands at 0x8E658, PAST both calls, so a clear

@@ -2098,11 +2098,11 @@ typedef struct GeoscapeFrameEndEnv {
 /* Returns the present thunk's value, which is what Render_Frame returns on the geoscape branch. */
 i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv);
 
-/* ---- the short screen arms, 0x93DD4..0x93F04 and 0x94114..0x941A4 ---------------------
+/* ---- the short screen arms, 0x93DD4..0x93F04, 0x94114..0x941A4, 0x941AC..0x942E8 -----------
  *
- * Six arms of the screen switch are thin: blit a pad, blit a run of the screen's own control pads,
+ * Seven arms of the screen switch are thin: blit a pad, blit a run of the screen's own control pads,
  * call the screen draw (all of them ported already), then the frame end above. The run is the same
- * loop five times over -- counter spilled into the shared scratch dword_186B08, the control pointer
+ * loop nine times over -- counter spilled into the shared scratch dword_186B08, the control pointer
  * read out of the screen's own block on every iteration -- so the port writes it once.
  *
  * Which controls, in the original's order:
@@ -2118,6 +2118,11 @@ i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv);
  *                        two prefixes are instruction-for-instruction identical, so screens 11 and 12 draw
  *                        the same frame; only their Geoscape_CloseUI cases differ (controls vs panels).
  *  15  0x94304           FundingScreen_Draw(&pFundPad @ 0x1595DC) and nothing else: no arm code to port.
+ *  16  0x941AC..0x94288  Ui_DrawBaseInfo FIRST (R0 = the block base 0x1872E0), then ONE of three control
+ *                        ranges of the same six-slot block -- see Geoscape_DrawUfopaediaArm.
+ *  17  0x94288..0x942E8  PsiScreen_Draw(R0 = the block base 0x15EE78, R1 = byte_1870F4 read SIGNED at
+ *                        0x94290), then the two scroll controls at 0x15EE7C / 0x15EE80 -- only with
+ *                        byte_1870F8 clear AND g_bPsiPanelOpen set.
  *  18  0x942F4           Geoscape_DrawScreen(aOptionsListCtl) and nothing else: no arm code to port.
  *
  * Screens 10, 11 and 12 then fall into 0x93EB4..0x93F04: while the geoscape UI root block's own byte at
@@ -2129,14 +2134,28 @@ i32 Geoscape_DrawFrameEnd(const GeoscapeFrameEndEnv *pEnv);
  * Deviation: the original spills the loop counter into dword_186B08, a scratch dword every UI open path
  * reuses; the port keeps it local, as every other user of that global does here. */
 #define PUFO_GEOARM_CTLS_2   2   /* 0x9414C / 0x94194 / 0x93E04 / 0x93E50 CMP R0, #2 */
-#define PUFO_GEOARM_CTLS_4   4   /* 0x93E8C CMP R0, #4 */
+#define PUFO_GEOARM_CTLS_4   4   /* 0x93E8C / 0x94240 / 0x9427C CMP R0, #4 */
+#define PUFO_GEOARM_CTLS_6   6   /* 0x941FC CMP R0, #6: the end of the ufopaedia block's six slots */
+#define PUFO_GEOARM_UFO_CAT_FIRST    4  /* 0x941DC MOV R0, #4 -- the category-scroll pair */
+#define PUFO_GEOARM_UFO_ENTRY_FIRST  2  /* 0x9425C MOV R0, #2 -- the entry prev/next pair alone */
 
+/* The control run is half-open -- [nFirst, nEnd) -- because that is exactly what the ARM writes:
+ * MOV R0, #first, the body, then CMP R0, #end / BLT back to the body. */
 typedef struct GeoscapeScreenArmEnv {
     UiControl *const   *apCtl;          /* the control pointers, in the original's order */
     UiControlBlitFn     pfnCtlBlit;
     UiControlBlitFn     pfnCtlBlitEx;
     void               *pCtlBlitUser;
 } GeoscapeScreenArmEnv;
+
+/* Screen 16's three gates, read straight out of the block the ufopaedia owns. */
+typedef struct GeoscapeUfopaediaArmEnv {
+    const u8 *pbOpen;        /* bUfopaediaOpen @ 0x18730C, LDRB at 0x941C0 */
+    const u8 *pbEntryDirty;  /* bUfopaediaEntryDirty @ 0x187310, read at 0x941D0 and again at 0x94204 */
+    const u8 *pbWidePanel;   /* g_bUfopaediaWidePanel @ 0x1871FC, LDRB at 0x94210 -- the wide text-panel layout
+                              * flag that Ufopaedia_RefreshEntry sets from the entry-number band
+                              * (0x9A154..0x9A244) and Geoscape_OnPointer reads as the same byte at 0x88E74 */
+} GeoscapeUfopaediaArmEnv;
 
 typedef struct GeoscapeBuySellTrackEnv {
     const u8   *pbPreviewOk;            /* bBaseFacPreviewOk @ 0x18652D, the root block's +0x35 byte */
@@ -2152,6 +2171,8 @@ struct ResearchDrawEnv;
 struct ManufFrameEnv;
 struct TransferDrawEnv;
 struct BuySellDrawEnv;
+struct UiBaseInfoDrawEnv;
+struct PsiScreenDrawEnv;
 
 void Geoscape_DrawResearchArm(const struct ResearchDrawEnv *pResearchEnv,
                               const GeoscapeScreenArmEnv *pArmEnv);
@@ -2164,6 +2185,32 @@ void Geoscape_DrawTransferArm(PadImage *pPad, const struct TransferDrawEnv *pTra
 void Geoscape_DrawBuySellArm(PadImage *pPad, const struct BuySellDrawEnv *pDrawEnv,
                              const GeoscapeScreenArmEnv *pArmEnv,
                              const GeoscapeBuySellTrackEnv *pTrackEnv);
+
+/* 0x941AC..0x94288: screen 16, the ufopaedia. Ui_DrawBaseInfo is called with the block base itself in R0
+ * (0x941AC LDR R6,=g_pUfopaediaScreenPad / 0x941B0 MOV R0,R6), so it is the callee that blits the screen's
+ * own pad (0x9B600) and its close control (0x9B7C0) -- this arm blits no pad. Then three ranges of the same
+ * six-slot block, apCtl[i] being the word at the base + 8 + 4*i (0x1872E8..0x1872FC):
+ *
+ *   open && !dirty   4..6   0x941DC..0x94200  the category-scroll pair (aUiBaseInfoCtlDesc[4] / [5], the
+ *                        "up"/"down" pair at x 200 y 18 / 38) -- the view with no entry drawn
+ *   dirty  && wide   0..4   0x94220..0x94244  the text-panel scroll pair [0] / [1] (x 142 / 172 y 210) plus
+ *                        the entry pair [2] / [3] ("leftp"/"rightp" at x 10 / 40 y 210)
+ *   dirty  && !wide  2..4   0x9425C..0x94280  the entry pair only
+ *
+ * The two halves are independent on the dirty byte: 0x941C8 BEQ and 0x941D8 BNE both land on the dirty test
+ * at 0x94204, so an open screen with a dirty entry blits NO category control, and a closed screen with a
+ * dirty entry still blits the entry pair. Geoscape_OnPointer (0x88E28..0x88E54, 0x88E94..) drives exactly the
+ * same three ranges on click, which is the cross-check for the bounds. */
+void Geoscape_DrawUfopaediaArm(struct UiBaseInfoDrawEnv *pBaseInfoEnv,
+                               const GeoscapeUfopaediaArmEnv *pGateEnv,
+                               const GeoscapeScreenArmEnv *pArmEnv);
+
+/* 0x94288..0x942E8: screen 17, the psi screen. The callee gets the block base 0x15EE78 in R0 and byte_1870F4
+ * read SIGNED in R1 (LDRSB at 0x94290) -- the port carries that byte as PsiScreenDrawEnv.nBaseIdx. The two
+ * controls are the block's own slots +4 / +8 (g_pPsiScrollPrevCtl 0x15EE7C, g_pPsiScrollNextCtl 0x15EE80), and
+ * they run only with the base-picker overlay byte_1870F8 CLEAR (0x942A8 BNE) AND g_bPsiPanelOpen set (0x942B8
+ * BEQ) -- both gates are fields of the callee's own env, the same globals. */
+void Geoscape_DrawPsiArm(const struct PsiScreenDrawEnv *pPsiEnv, const GeoscapeScreenArmEnv *pArmEnv);
 
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
@@ -3142,8 +3189,10 @@ void Geoscape_DrawScreen(const GeoscapeScreenDrawEnv *pEnv);
  *   11  two consecutive controls reached from pBuySellScreenPad @ 0x161A08
  *   12  the same two again, reached from pBuySellScreenPad a second time
  *   16  two reached from 0x1872F0 while bUfopaediaOpen @ 0x18730C is set and bUfopaediaEntryDirty
- *       @ 0x187310 is CLEAR, plus two reached from 0x1872E0 when the dirty byte is set and 0x1871FC is
- *       set -- the halves are mutually exclusive on the dirty byte
+ *       @ 0x187310 is CLEAR (0x9576C ADD R5,R4,#0x10 / 0x95790 ADD R5,#4 / 2 steps), plus two reached
+ *       from 0x1872E8 when the dirty byte is SET and g_bUfopaediaWidePanel @ 0x1871FC is set
+ *       (0x957BC..0x957E0) -- and nothing at all when the wide byte is clear (0x957B4 BEQ), so the
+ *       entry pair 2 / 3 never auto-repeats even though the draw arm blits it
  *   17  two reached from 0x15EE78 while byte_1870F8 is CLEAR
  *   18  aOptionsListCtl[7] and aOptionsListCtl[8] while bOptionsScreenOpen @ 0x159E80 is set */
 

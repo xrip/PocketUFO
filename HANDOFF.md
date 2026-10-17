@@ -1,53 +1,38 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `84cdb03`. Unit 107 is in progress: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B), the last large gap. This commit carries its seventeenth part -- the four thin screen
-arms (screens 8, 9, 10, 11/12) and the tail they share at 0x93EB4..0x93F04: 27 new checks, 17/17 mutations
-caught, 13 arm-site comments, seven wrong IDB item sizes fixed, two ledger rows. Parts 1..16 are behind
-this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line `79b7979`, the order
-questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`, the attacked-city panel
-`ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the mission-site / travel panels
-`e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel `bbf9c53`, the flag-0x16 clone
-`f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057` and the frame end `84cdb03`.
+Date: 2026-10-17. HEAD before this edit: `7623894`. Unit 107 is in progress: it is `Geoscape_Draw`
+@ 0x8c180 (33,744 B), the last large gap. This commit carries its eighteenth part -- the ufopaedia and psi
+screen arms (screens 16 and 17, 0x941AC..0x942E8): 29 new checks, 17/17 mutations caught, 16 IDB comments,
+ten wrong IDB item sizes fixed, two globals named, one name of my own putting repaired, 2 ledger rows.
+Parts 1..17 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
+`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`,
+the attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the
+mission-site / travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel
+`bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`,
+the frame end `84cdb03` and the thin screen arms `7623894`.
 What this part found:
 
-- **The arms are one loop written five times.** Screens 8, 9, 10, 11 and 12 all end the same way: a run of
-  `UiControl_BlitActivePad` calls whose pointers come out of the screen's own block, the loop counter spilled
-  into the shared scratch `dword_186B08` and re-read on every iteration. The counts differ (2, 2, 4, 2, 2) and
-  so do the offsets -- 0x1D48/0x1D4C in the research record, 0x4F84/0x4F88 in the manufacturing block,
-  +4..+0x10 in the transfer array, `g_aBuySellCtl[0..1]`. The port writes the loop once.
-- **Order inside an arm is testable only when the callee blits a control.** Screen 8 draws first and its frame
-  blits nothing on the ungated path; screen 10's frame blits nothing either. So the port pins the
-  pad-before-frame order of screens 9, 10, 11 and 12 with a 2x2 pad placed exactly on the transfer frame's
-  separator column (the separator overwrites the pad's left column -- if the frame ran first, the pad colour
-  would still be there) and the controls-before-frame order of 9 and 11/12 with the frame's own control blit
-  recorded last. Screens 8 and 10 arm/callee order is stated in the citations, not claimed by a check.
-- **Screens 11 and 12 draw the same frame.** Their prefixes are instruction-for-instruction identical and they
-  share one `BuySellScreen_Draw` call at 0x93E10 -- case 11 falls into it, case 12 branches to it (a ledger
-  row). Only their `Geoscape_CloseUI` cases differ.
-- **The transfer arm falls through into the buy/sell list tail.** 0x93EB4 gates on the geoscape root block's
-  byte at +0x35 (0x18652D, read as `[R7,#0x35]` because R7 is the argument Render_Frame sets to 0x1864F8 at
-  0x2232C) and then feeds the map cursor into the two buy/sell scroll lists -- a base-facility preview flag
-  driving transfer-screen tracking (a ledger row; the port keeps it).
-- **IDB hygiene.** The transfer root array 0x1870D8..0x1870E8 and the two manufacturing arm controls
-  0x15EE1C / 0x15EE20 were 1-byte items even though every access is a 4-byte `LDR` -- all seven are 4-byte
-  pointer items now. 0x160C50 / 0x160C54 are commented rather than retyped: that range already belongs to the
-  `aResearchTopics` record layout, and the next two words (0x160C58 / 0x160C5C) are a different pair -- the
-  quantity controls the research frame blits.
-
-IDA note: the MCP tools are still unreachable from this session (the handshake failed at startup), so IDB work
-goes through the JSON-RPC client `C:/Windows/Temp/pufo_scripts/idac.py` against the same server
-(127.0.0.1:13337). `py_eval` through that client is the reliable way to read bytes and names, but it swallows
-the prints when the code raises -- a probe needs a try/except per statement. Worth running `/mcp` and
-reconnecting ida-pro-mcp.
-
-Next: the arms that are not thin -- case 1 (0x91DC8..0x92AC0, the biggest), 3 (0x93F08), 4 (0x92DAC), 5
-(0x92EE4), 6 (0x9309C), 7 (0x92AF0), 16 (0x941AC), 17 (0x94288), 19 (0x94314..0x9449C with the shared centring
-tail at 0x92ACC) -- then the dispatcher into `RenderFrameEnv.pfnGeoscapeDraw`. The gate measures 966/1103
-(87.6%) and 596752/598792 (99.7%) with 17313 checks across 60 suites -- the byte figure credits all 33,744
-bytes of `Geoscape_Draw` because `coverage.py` counts a function once its start address is cited, so it says
-nothing about how much of that function is ported. The read map and the arm table are in
-`docs/parity/game-core.md` under "Geoscape_Draw @ 0x8c180 (33,744 B) - read, ported in parts".
+- **Screen 16 hands the callee a BLOCK, not a pad.** 0x941AC loads `g_pUfopaediaScreenPad` (0x1872E0) into R6
+  and 0x941B0 passes that base to `Ui_DrawBaseInfo`, so the callee blits the screen pad (0x9B600) and the close
+  control (0x9B7C0) and the arm blits no pad at all. What the arm chooses is one of three ranges of the block's
+  six control slots: open and entry-not-dirty gets slots 4..5 (0x941DC MOV R0,#4, CMP #6), dirty and wide gets
+  0..3 (0x94220, CMP #4), dirty and not wide gets 2..3 (0x9425C MOV R0,#2, CMP #4). The slot order is the
+  descriptor order at 0xAC548: [0]/[1] the text-panel scroll pair (x 142/172 y 210), [2]/[3] the entry
+  prev/next pair (x 10/40), [4]/[5] the category-scroll pair (x 200 y 18/38) -- so each gate picks the controls
+  the view it draws actually needs.
+- **The three ranges are the same in the click handler and smaller in the auto-repeat.** Geoscape_OnPointer
+  (0x88E28..0x88E54, 0x88E94..) drives 4..5, 0..3 and 2..3 exactly as the draw arm blits them. The pulse
+  handler runs only 4..5 (0x9576C) and 0..1 (0x957BC), and with the wide byte clear it pulses NOTHING (0x957B4
+  BEQ) -- the entry pair is blitted by the draw but never auto-repeats.
+- **The two gate halves do not share the open byte.** 0x941CC BEQ (not open) and 0x941D8 BNE (dirty) both land
+  on the dirty test at 0x94204, so a CLOSED ufopaedia with a dirty entry still blits its entry controls, and an
+  open one with a dirty entry blits no category control. That is a ledger row, not a port choice.
+- **One byte had three names.** The wide-panel flag at 0x1871FC was `unk_1871FC` in the IDB, `pbWidePanel` in
+  `UfopaediaEnv` and `pb16ListFull` in `GeoscapePointerEnv`. The IDB now has `g_bUfopaediaWidePanel` (writer
+  bands 0x9A154..0x9A244, cleared with the layout defaults at 0x9A0B8) and the port uses `pbWidePanel`
+  everywhere, ten sites. While naming it I put that name on 0x15EEF0 by mistake -- `get_name_ea_simple` resolved
+  the old `unk_` name to the psi flag -- and `g_bPsiPanelOpen` was restored there, with its comment's stale
+  callee name fixed too.
 
 The unit before it (unit 106, the ufopaedia entry draw) is described under "Test
 checks run across the 60 suites" below,

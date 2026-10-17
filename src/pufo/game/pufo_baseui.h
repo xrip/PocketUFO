@@ -5684,7 +5684,7 @@ typedef struct UfopaediaEnv {
     i32       *pnCategory;      /* g_nUfopaediaCategory @ 0x1871F8, 0..8 */
     i32       *pnTopic;         /* g_nUfopaediaTopic @ 0x187300 */
     i32       *pnEntryNum;      /* g_nUfopaediaEntryNum @ 0x1872D8 */
-    u8        *pbWidePanel;     /* unk_1871FC, shared with the geoscape pointer's 16-mode panel set */
+    u8        *pbWidePanel;     /* g_bUfopaediaWidePanel @ 0x1871FC, shared with the geoscape pointer's 16-mode panel set */
     u8        *pbPadDirty;      /* g_bUfopaediaPadDirty @ 0x187304 */
     u8        *pbEntryDirty;    /* bUfopaediaEntryDirty @ 0x187310 */
     u8        *pbReselect;      /* Ufopaedia_bReselectPending @ 0x18706C */

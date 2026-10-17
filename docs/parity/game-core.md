@@ -18398,3 +18398,68 @@ IDB: 13 comments on the arm sites and the shared tail (0x94114, 0x94120, 0x9415C
 (PadImage *) and 0x1870DC..0x1870E8 (UiControl *) and the two manufacturing arm controls 0x15EE1C / 0x15EE20
 were 1-byte items although every access is a 4-byte LDR. Comments (not retypes) at 0x160C50, which sits inside
 the aResearchTopics record layout, and at 0x18652D for its second job as this gate. Saved.
+
+
+Part 18 -- the ufopaedia and psi screen arms 0x941AC..0x94288 and 0x94288..0x942E8, ported as
+Geoscape_DrawUfopaediaArm and Geoscape_DrawPsiArm.
+
+Case 16 (0x941AC..0x94288). 0x941AC LDR R6,=g_pUfopaediaScreenPad and 0x941B0 MOV R0,R6 -- the callee receives
+the BLOCK BASE (0x1872E0), not a pad, so Ui_DrawBaseInfo blits the screen pad itself (0x9B600) and the close
+control (0x9B7C0) and this arm blits no pad. What follows is three copies of the control loop over the block's
+six slots, the pointer being LDR [R6 + 4*i + 8] = 0x1872E8..0x1872FC:
+  open && !dirty -> i 4..5 (0x941DC MOV R0,#4, CMP #6 at 0x941FC);
+  dirty && wide  -> i 0..3 (0x94220 MOV R0,#0, CMP #4 at 0x94240);
+  dirty && !wide -> i 2..3 (0x9425C MOV R0,#2, CMP #4 at 0x9427C).
+0x941CC BEQ (not open) and 0x941D8 BNE (dirty) both land on the dirty test at 0x94204, so the open byte gates
+only the first range: a closed screen with a dirty entry still blits the entry controls, and an open screen
+with a dirty entry blits no category control (a ledger row).
+
+Which control is which comes from aUiBaseInfoCtlDesc @ 0xAC548, the table Ui_InitBaseInfo hands to
+UiControl_Setup(slot 2+i) at 0x9DE9C..0x9DEC0: [0] (142,210) and [1] (172,210) are the text-panel scroll pair,
+[2] (10,210) and [3] (40,210) the entry prev/next pair, [4] (200,18) and [5] (200,38) the category selector
+scroll pair. Each gate therefore picks the pair the view it draws needs: no entry drawn -> the category
+scroll pair; the wide text panel -> the scroll pair plus the entry pair; a plain entry -> the entry pair only.
+Geoscape_OnPointer (0x88E28..0x88E54 with MOV R0,#4 / CMP #6, then 0x88E94.. with the same wide test at
+0x88E74) drives exactly 4..5, 0..3 and 2..3 on click -- the cross-check for the bounds. Geoscape_PulseButtons
+case 16 (0x95748..0x957E0) pulses only 4..5 (ADD R5,R4,#0x10 then LDR [R5,#8]) and 0..1, and pulses nothing
+when the wide byte is clear (0x957B4 BEQ): the entry pair is blitted but never auto-repeats.
+
+The flag that selects the wide layout, 0x1871FC, was unk_1871FC. Ufopaedia_RefreshEntry clears it with the
+other layout defaults (0x9A0B8) and sets it from the entry-number band (0x9A154, 0x9A19C, 0x9A1C0, 0x9A208,
+0x9A21C, 0x9A230, 0x9A244). The IDB now names it g_bUfopaediaWidePanel; the port had two names for it
+(pbWidePanel in UfopaediaEnv, pb16ListFull in GeoscapePointerEnv) and now has one.
+
+Case 17 (0x94288..0x942E8). R0 = the block base 0x15EE78 (0x94294 MOV R0,R6) and R1 = byte_1870F4 read SIGNED
+(LDRSB at 0x94290), which the port already carries as PsiScreenDrawEnv.nBaseIdx, so the arm needs no extra
+argument. Two gates, both on bytes the callee reads itself: the scroll controls run only with byte_1870F8 CLEAR
+(0x9429C..0x942A8 BNE) AND g_bPsiPanelOpen set (0x942AC..0x942B8 BEQ -- the same flag PsiScreen_Draw gates on
+at 0x723B8). The controls are the block's own slots +4 / +8 (LDR [R6 + 4*i + 4] at 0x942CC): g_pPsiScrollPrevCtl
+0x15EE7C then g_pPsiScrollNextCtl 0x15EE80, CMP #2 at 0x942E0.
+
+Tests (TestGeoscapeUfoPsiArms, 29 checks; 17342 across 60 suites, 0 failures). Ui_DrawBaseInfo runs on the one
+path that needs no panels -- bUfopaediaScreenBuilt clear gives screen pad, close control, return
+(0x9B7CC..0x9B7D8) -- so the callee-first order is pinned by its close control being the FIRST recorded blit,
+and the ranges by pad identity: slots 4,5 in the open-and-clean case, 0..3 with the entry dirty and wide, 2,3
+with the entry dirty and not wide, and the category pair proven ABSENT in the dirty case (0x941D8 BNE). The
+independence of the two halves is tested directly (open=0, dirty=1 still blits four). PsiScreen_Draw runs with
+the four panels NULL and dwActionFail clear, so its rails, its pad and its two geoscape buttons run while the
+shortfall panel does not (0x72A94..0x72AD4); the arm's controls are the third and fourth recorded blits. Both
+arms are also run with apCtl NULL, which leaves only the callee's blits.
+
+Mutations: 17 mutants, all caught (16 by a check, 1 by a crash -- the control run with its null guard removed).
+Each gate byte swapped or dropped, each range start and end changed, the wide gate reading the wrong global,
+either callee moved to the end, the loop bound read as inclusive, the start bound dropped, and the loop blitting
+the same slot every iteration. Two mutants needed a (void) cast: MSVC /W4 fails the build on an unreferenced
+formal or local (C4100 / C4189).
+
+IDB: 16 comments -- nine on the case-16 and case-17 sites (0x941AC, 0x941DC, 0x94204, 0x94210, 0x9425C,
+0x94288, 0x9429C, 0x942AC, 0x942BC), three on the pulse groups (0x95748, 0x957A8, 0x957BC), three repeatable
+data comments (0x1871FC, 0x1872E0, 0x1872E8) and the psi panel flag's comment at 0x15EEF0, whose callee name was
+still the old Geoscape_DrawBaseStatsPanel. Ten wrong item sizes fixed: 0x1872E0 (1 -> 4, and retyped from
+UiControl * to PadImage *, which is what Ui_InitBaseInfo's PadImage_ctor and the 0x9B600 blit make it),
+0x1872E4, the six slots 0x1872E8..0x1872FC (all 1-byte items although every access is a 4-byte LDR) and
+0x187300 g_nUfopaediaTopic. 0x1871FC got its type (unsigned __int8, it was untyped) and 0x1872E8 its array type
+UiControl *[6]. Two globals named: g_bUfopaediaWidePanel @ 0x1871FC and g_aUfopaediaCtl @ 0x1872E8. One repair:
+naming the flag by its old name resolved to 0x15EEF0 and wrote the new name over g_bPsiPanelOpen; that name was
+restored and verified. Still done through C:/Windows/Temp/pufo_scripts/idac.py -- ida-pro-mcp unreachable in
+this session.

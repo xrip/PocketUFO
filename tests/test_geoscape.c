@@ -11955,6 +11955,299 @@ static void TestGeoscapeScreenArms(void)
     CheckEqI32(*ArPanelRowSlot(&g_arPanelB), 5, "and its tail still runs");
 }
 
+/* ---- Geoscape_Draw's ufopaedia and psi arms, 0x941AC..0x94288 and 0x94288..0x942E8 --------------------
+ *
+ * Screen 16 calls Ui_DrawBaseInfo with the BLOCK BASE (0x941AC LDR R6,=g_pUfopaediaScreenPad / 0x941B0
+ * MOV R0,R6), so the callee blits the screen pad (0x9B600) and the close control (0x9B7C0) and the arm blits
+ * no pad at all: what the arm chooses is one of three ranges of the block's six control slots. Screen 17 calls
+ * PsiScreen_Draw and then blits the block's two scroll controls, gated on two bytes the callee reads too.
+ * UiControl_BlitActivePad offers the control's pad to PnBlit, which records it without painting, so every claim
+ * here is about WHICH pads and in WHICH order. Ui_DrawBaseInfo runs with bUfopaediaScreenBuilt clear -- the one
+ * path of it that needs no panels: screen pad, close control, return (0x9B7CC..0x9B7D8). PsiScreen_Draw runs
+ * with the four panels NULL and dwActionFail clear, so the rails, the two geoscape buttons and the captions run
+ * while the shortfall panel does not (0x72A94..0x72AD4). */
+
+static UiControl              g_ufoCtl[6];              /* the ufopaedia block's six slots, 0x1872E8.. */
+static PadImage               g_ufoCtlPad[6];
+static UiControl             *g_apUfoCtl[6];
+static GeoscapeScreenArmEnv   g_ufoArm;
+static GeoscapeUfopaediaArmEnv g_ufoGate;
+static UiBaseInfoDrawEnv      g_ufoBaseInfo;
+static PadImage              *g_apUfoScreenPad[1];      /* the block's [0], as Ui_DrawBaseInfo receives it */
+static PadImage               g_ufoScreenPad;
+static u8                     g_abUfoScreenGlyph[8];    /* 2x2, every pixel index 21 */
+static UiControl              g_ufoCloseCtl;            /* the close control the callee blits */
+static PadImage               g_ufoClosePad;
+static u8                     g_bUfoOpen, g_bUfoDirty, g_bUfoWide, g_bUfoBuilt;
+
+static UiControl              g_psCtl[2];               /* g_pPsiScrollPrevCtl / NextCtl, 0x15EE7C / 80 */
+static PadImage               g_psCtlPad[2];
+static UiControl             *g_apPsCtl[2];
+static GeoscapeScreenArmEnv   g_psArm;
+static PsiScreenDrawEnv       g_psEnv;
+static UiControl              g_psCtlConfirm, g_psCtlApply;
+static PadImage               g_psConfirmPad, g_psApplyPad;
+static PadImage               g_psScreenPad;
+static u8                     g_abPsScreenGlyph[8];
+static u8                     g_bPsOpen, g_bPsOverlay;
+static i8                     g_nPsPsiBase;
+static i8                     g_nPsBaseCount;           /* nBaseCount @ 0x159D80, read SIGNED */
+static i32                    g_nPsActionFail, g_nPsResidue;
+static GfxColorEnv            g_psColor;
+
+#define AR_CAL_INK   0x4C00  /* g_aPalette[PN_TEST_PAL_SLOT][21], clear of AR_ARM_INK and the fixture glyphs */
+#define AR_CAL_X     60
+#define AR_CAL_Y     250     /* clear of the rails, the separators and every other glyph */
+
+/* Where a pad appears in the recorded blit run, or -1. */
+static i32 ArFindPad(const PadImage *pPad)
+{
+    const i32 nMax = (i32)(sizeof(g_apnPnBlitPad) / sizeof(g_apnPnBlitPad[0]));
+    for (i32 i = 0; i < g_nPnBlits && i < nMax; ++i) {
+        if (g_apnPnBlitPad[i] == pPad) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void ArMakeGlyph(PadImage *pPad, u8 *abGlyph, i32 nX, i32 nY)
+{
+    abGlyph[0] = 2;  abGlyph[1] = 0;                   /* u16 width 2, little endian */
+    abGlyph[2] = 2;  abGlyph[3] = 0;                   /* u16 height 2 */
+    for (i32 i = 0; i < 4; ++i) {
+        abGlyph[4 + i] = 21;
+    }
+    memset(pPad, 0, sizeof(*pPad));
+    pPad->pData    = abGlyph;
+    pPad->uWidth   = 2;
+    pPad->uHeight  = 2;
+    pPad->nOriginX = nX;
+    pPad->nOriginY = nY;
+    pPad->nMode    = PN_TEST_PAL_SLOT;
+}
+
+static void TestGeoscapeUfoPsiArms(void)
+{
+    printf("\nGeoscape_Draw's ufopaedia and psi arms @ 0x941ac / 0x94288\n");
+    PnFixture(0x1E, 0, 0, 0);
+    if (!g_bPnReady) {
+        Check(false, "the font is loaded");
+        return;
+    }
+    g_aPalette[PN_TEST_PAL_SLOT][21] = (u32)AR_CAL_INK;
+
+    for (i32 i = 0; i < 6; ++i) {
+        memset(&g_ufoCtl[i], 0, sizeof(g_ufoCtl[i]));
+        memset(&g_ufoCtlPad[i], 0, sizeof(g_ufoCtlPad[i]));
+        g_ufoCtlPad[i].uWidth  = 2;
+        g_ufoCtlPad[i].uHeight = 2;
+        g_ufoCtl[i].apPads[0]  = &g_ufoCtlPad[i];
+        g_ufoCtl[i].bEnabled   = 1;
+        g_ufoCtl[i].nMode      = 0;
+        g_ufoCtl[i].nState     = 0;
+        g_ufoCtl[i].x          = (i16)(10 + 12 * i);   /* the row is recorded, never painted */
+        g_ufoCtl[i].y          = 205;
+        g_apUfoCtl[i]          = &g_ufoCtl[i];
+    }
+    for (i32 i = 0; i < 2; ++i) {
+        memset(&g_psCtl[i], 0, sizeof(g_psCtl[i]));
+        memset(&g_psCtlPad[i], 0, sizeof(g_psCtlPad[i]));
+        g_psCtlPad[i].uWidth  = 2;
+        g_psCtlPad[i].uHeight = 2;
+        g_psCtl[i].apPads[0]  = &g_psCtlPad[i];
+        g_psCtl[i].bEnabled   = 1;
+        g_psCtl[i].nMode      = 0;
+        g_psCtl[i].nState     = 0;
+        g_psCtl[i].x          = (i16)(212 + 12 * i);
+        g_psCtl[i].y          = 205;
+        g_apPsCtl[i]          = &g_psCtl[i];
+    }
+    ArMakeGlyph(&g_ufoScreenPad, g_abUfoScreenGlyph, AR_CAL_X, AR_CAL_Y);
+    ArMakeGlyph(&g_psScreenPad, g_abPsScreenGlyph, AR_CAL_X, AR_CAL_Y + 4);
+    g_apUfoScreenPad[0] = &g_ufoScreenPad;
+
+    memset(&g_ufoCloseCtl, 0, sizeof(g_ufoCloseCtl));
+    memset(&g_ufoClosePad, 0, sizeof(g_ufoClosePad));
+    g_ufoClosePad.uWidth  = 2;
+    g_ufoClosePad.uHeight = 2;
+    g_ufoCloseCtl.apPads[0] = &g_ufoClosePad;
+    g_ufoCloseCtl.bEnabled  = 1;
+    g_ufoCloseCtl.nMode     = 0;
+    g_ufoCloseCtl.nState    = 0;
+    g_ufoCloseCtl.x         = 224;
+    g_ufoCloseCtl.y         = 205;
+
+    for (i32 i = 0; i < 2; ++i) {
+        UiControl *pCtl = (i == 0) ? &g_psCtlConfirm : &g_psCtlApply;
+        PadImage  *pPad = (i == 0) ? &g_psConfirmPad : &g_psApplyPad;
+        memset(pCtl, 0, sizeof(*pCtl));
+        memset(pPad, 0, sizeof(*pPad));
+        pPad->uWidth  = 2;
+        pPad->uHeight = 2;
+        pCtl->apPads[0] = pPad;
+        pCtl->bEnabled  = 1;
+        pCtl->nMode     = 0;
+        pCtl->nState    = 0;
+        pCtl->x         = (i16)(20 + 12 * i);
+        pCtl->y         = 218;                          /* the two buttons are recorded, never painted */
+    }
+
+    memset(&g_ufoArm, 0, sizeof(g_ufoArm));
+    g_ufoArm.apCtl        = g_apUfoCtl;
+    g_ufoArm.pfnCtlBlit   = PnBlit;
+    g_ufoArm.pfnCtlBlitEx = PnBlitEx;
+    memset(&g_psArm, 0, sizeof(g_psArm));
+    g_psArm.apCtl         = g_apPsCtl;
+    g_psArm.pfnCtlBlit    = PnBlit;
+    g_psArm.pfnCtlBlitEx  = PnBlitEx;
+
+    /* The callee's own gate bytes are the arm's gate bytes: one instance each, as in the original. */
+    memset(&g_ufoBaseInfo, 0, sizeof(g_ufoBaseInfo));
+    g_ufoBaseInfo.ppScreenPad     = g_apUfoScreenPad;   /* [0] is what 0x9B5FC reads */
+    g_ufoBaseInfo.pCloseCtl       = &g_ufoCloseCtl;
+    g_ufoBaseInfo.pfnCtlBlit      = PnBlit;
+    g_ufoBaseInfo.pfnCtlBlitEx    = PnBlitEx;
+    g_ufoBaseInfo.pbEntryDirty    = &g_bUfoDirty;       /* bUfopaediaEntryDirty @ 0x187310 */
+    g_ufoBaseInfo.pbScreenBuilt   = &g_bUfoBuilt;       /* 0x187308: clear, so the draw stops at 0x9B7D8 */
+    g_ufoBaseInfo.pbUfopaediaOpen = &g_bUfoOpen;        /* 0x18730C */
+    memset(&g_ufoGate, 0, sizeof(g_ufoGate));
+    g_ufoGate.pbOpen       = &g_bUfoOpen;
+    g_ufoGate.pbEntryDirty = &g_bUfoDirty;
+    g_ufoGate.pbWidePanel  = &g_bUfoWide;               /* g_bUfopaediaWidePanel */
+    g_bUfoBuilt = 0;
+
+    memset(&g_psEnv, 0, sizeof(g_psEnv));
+    g_psEnv.pColor          = &g_psColor;
+    g_psEnv.pbPanelOpen     = &g_bPsOpen;              /* g_bPsiPanelOpen @ 0x15EEF0 */
+    g_psEnv.pbOverlayOpen   = &g_bPsOverlay;           /* byte_1870F8 */
+    g_psEnv.pScreenPad      = &g_psScreenPad;          /* 0x15EE78 */
+    g_psEnv.nBaseIdx        = 0;                       /* byte_1870F4, read SIGNED at 0x94290 */
+    g_psEnv.nWorkBaseIdx    = 0;                       /* byte_158834 */
+    g_psEnv.pnPsiBaseIdx    = &g_nPsPsiBase;
+    g_psEnv.pCtlConfirm     = &g_psCtlConfirm;         /* pGeoscapeCtlConfirm @ 0x186BA4 */
+    g_psEnv.pCtlApply       = &g_psCtlApply;           /* pGeoscapeCtlApply @ 0x186BAC */
+    g_psEnv.pfnCtlBlit      = PnBlit;
+    g_psEnv.pfnCtlBlitEx    = PnBlitEx;
+    g_psEnv.pTextRecs       = (const char *)g_abPnText;
+    g_psEnv.apSiteRecs      = g_pnSites;
+    g_psEnv.pnBaseCount     = &g_nPsBaseCount;         /* 0: the overlay list draws no rows */
+    g_psEnv.pnActionFail    = &g_nPsActionFail;        /* 0: the shortfall panel does not run */
+    g_psEnv.pnResidue       = &g_nPsResidue;
+    g_nPsPsiBase = 0;
+    g_nPsBaseCount = 0;
+    g_nPsActionFail = 0;
+    g_nPsResidue = 0;
+
+    /* ---- calibration: what the two callees leave behind on this fixture ---- */
+    g_bUfoOpen = 1;  g_bUfoDirty = 1;  g_bUfoWide = 1;
+    ArReset();
+    Ui_DrawBaseInfo(&g_ufoBaseInfo);
+    Check((u16)BdPix(AR_CAL_X, AR_CAL_Y) == AR_CAL_INK
+          && (u16)BdPix(AR_CAL_X + 1, AR_CAL_Y + 1) == AR_CAL_INK,
+          "Ui_DrawBaseInfo blits the block's [0] itself (0x9B600): the fixture's screen glyph is on the surface");
+    CheckEqI32(g_nPnBlits, 1, "and with bUfopaediaScreenBuilt clear it stops after its close control (0x9B7C0, 0x9B7D8)");
+    Check(g_apnPnBlitPad[0] == &g_ufoClosePad, "and that control is g_pUiCloseCtl's pad");
+
+    g_bPsOpen = 1;  g_bPsOverlay = 0;
+    ArReset();
+    PsiScreen_Draw(&g_psEnv);
+    Check((u16)BdPix(AR_CAL_X, AR_CAL_Y + 4) == AR_CAL_INK,
+          "PsiScreen_Draw blits 0x15EE78 (0x723C0) and draws its rails (0x723C8..0x72558)");
+    Check((u16)BdPix(5, 3) != 0, "the left rail at x 5 is the marker that the psi frame ran");
+    CheckEqI32(g_nPnBlits, 2, "and its own two geoscape controls are the only blits it records (0x72630, 0x7263C)");
+
+    /* ---- screen 16, gate 1: open, entry NOT dirty -> the category pair 4..5 (0x941DC..0x94200) ---- */
+    g_bUfoOpen = 1;  g_bUfoDirty = 0;  g_bUfoWide = 1;
+    ArReset();
+    Geoscape_DrawUfopaediaArm(&g_ufoBaseInfo, &g_ufoGate, &g_ufoArm);
+    CheckEqI32(g_nPnBlits, 1 + (PUFO_GEOARM_CTLS_6 - PUFO_GEOARM_UFO_CAT_FIRST),
+               "the open, entry-not-dirty arm blits two controls (CMP R0,#6 at 0x941FC)");
+    Check(g_apnPnBlitPad[0] == &g_ufoClosePad, "the callee's close control comes FIRST (0x941B4 precedes 0x941DC)");
+    Check(g_apnPnBlitPad[1] == &g_ufoCtlPad[4] && g_apnPnBlitPad[2] == &g_ufoCtlPad[5],
+          "and they are slots 4 and 5 -- aUiBaseInfoCtlDesc[4] / [5], the category pair at x 200 y 18 / 38");
+
+    /* ---- gate 2: entry dirty and the wide layout -> slots 0..3 (0x94220..0x94244) ---- */
+    g_bUfoDirty = 1;  g_bUfoWide = 1;
+    ArReset();
+    Geoscape_DrawUfopaediaArm(&g_ufoBaseInfo, &g_ufoGate, &g_ufoArm);
+    CheckEqI32(g_nPnBlits, 1 + PUFO_GEOARM_CTLS_4,
+               "with the entry dirty and g_bUfopaediaWidePanel set, FOUR controls (CMP R0,#4 at 0x94240)");
+    Check(g_apnPnBlitPad[1] == &g_ufoCtlPad[0] && g_apnPnBlitPad[2] == &g_ufoCtlPad[1]
+          && g_apnPnBlitPad[3] == &g_ufoCtlPad[2] && g_apnPnBlitPad[4] == &g_ufoCtlPad[3],
+          "slots 0..3: the text-panel pair at x 142 / 172 then the entry pair at x 10 / 40");
+    CheckEqI32(ArFindPad(&g_ufoCtlPad[4]), -1,
+               "and the category pair is NOT blitted: 0x941D8 BNE skips the first loop on the dirty byte");
+
+    /* ---- gate 3: entry dirty, not wide -> the entry pair 2..3 only (0x9425C..0x94280) ---- */
+    g_bUfoWide = 0;
+    ArReset();
+    Geoscape_DrawUfopaediaArm(&g_ufoBaseInfo, &g_ufoGate, &g_ufoArm);
+    CheckEqI32(g_nPnBlits, 1 + (PUFO_GEOARM_CTLS_4 - PUFO_GEOARM_UFO_ENTRY_FIRST),
+               "with g_bUfopaediaWidePanel clear the arm blits two controls starting at slot 2 (0x9425C MOV R0,#2)");
+    Check(g_apnPnBlitPad[1] == &g_ufoCtlPad[2] && g_apnPnBlitPad[2] == &g_ufoCtlPad[3],
+          "the entry prev/next pair only (0x94264..0x94280)");
+    CheckEqI32(ArFindPad(&g_ufoCtlPad[1]), -1, "and nothing from slots 0 or 1");
+
+    /* ---- the two halves are independent on the dirty byte, not on the open byte ---- */
+    g_bUfoOpen = 0;  g_bUfoDirty = 1;  g_bUfoWide = 1;
+    ArReset();
+    Geoscape_DrawUfopaediaArm(&g_ufoBaseInfo, &g_ufoGate, &g_ufoArm);
+    CheckEqI32(g_nPnBlits, 1 + PUFO_GEOARM_CTLS_4,
+               "a CLOSED screen with a dirty entry still blits the four entry controls (0x941C8 BEQ lands on 0x94204)");
+    g_bUfoDirty = 0;  g_bUfoWide = 0;
+    ArReset();
+    Geoscape_DrawUfopaediaArm(&g_ufoBaseInfo, &g_ufoGate, &g_ufoArm);
+    CheckEqI32(g_nPnBlits, 1,
+               "closed and not dirty: neither half runs, only the callee's control (0x9420C BEQ def_8C1B0)");
+
+    /* ---- the arm guard: no control block, the callee still draws ---- */
+    ArReset();
+    GeoscapeScreenArmEnv noCtl = g_ufoArm;
+    noCtl.apCtl = NULL;
+    g_bUfoOpen = 1;  g_bUfoDirty = 1;  g_bUfoWide = 1;
+    Geoscape_DrawUfopaediaArm(&g_ufoBaseInfo, &g_ufoGate, &noCtl);
+    CheckEqI32(g_nPnBlits, 1, "a fixture with no control run blits only the callee's close control");
+    Check((u16)BdPix(AR_CAL_X, AR_CAL_Y) == AR_CAL_INK, "and Ui_DrawBaseInfo still ran");
+
+    /* ---- screen 17: overlay clear AND panel open -> the two scroll controls (0x942C0..0x942E4) ---- */
+    g_bPsOpen = 1;  g_bPsOverlay = 0;
+    ArReset();
+    Geoscape_DrawPsiArm(&g_psEnv, &g_psArm);
+    CheckEqI32(g_nPnBlits, 2 + PUFO_GEOARM_CTLS_2,
+               "the psi arm adds two controls to the callee's two (CMP R0,#2 at 0x942E0)");
+    Check(g_apnPnBlitPad[0] == &g_psConfirmPad && g_apnPnBlitPad[1] == &g_psApplyPad,
+          "the callee's own buttons come FIRST (0x94298 precedes 0x942BC)");
+    Check(g_apnPnBlitPad[2] == &g_psCtlPad[0] && g_apnPnBlitPad[3] == &g_psCtlPad[1],
+          "then g_pPsiScrollPrevCtl @ 0x15EE7C and g_pPsiScrollNextCtl @ 0x15EE80 ([R3,#4], [R3,#8])");
+    Check((u16)BdPix(AR_CAL_X, AR_CAL_Y + 4) == AR_CAL_INK, "and the psi screen's pad is on the surface");
+
+    /* ---- gate 1: the base-picker overlay open stops the arm (0x9429C..0x942A8) ---- */
+    g_bPsOverlay = 1;
+    ArReset();
+    Geoscape_DrawPsiArm(&g_psEnv, &g_psArm);
+    CheckEqI32(g_nPnBlits, 2, "with byte_1870F8 set the arm takes the BNE and blits nothing of its own");
+    Check(g_apnPnBlitPad[0] == &g_psConfirmPad, "while the callee still ran");
+    g_bPsOverlay = 0;
+
+    /* ---- gate 2: the panel closed (0x942AC..0x942B8) ---- */
+    g_bPsOpen = 0;
+    ArReset();
+    Geoscape_DrawPsiArm(&g_psEnv, &g_psArm);
+    CheckEqI32(g_nPnBlits, 0, "with g_bPsiPanelOpen clear the arm blits no control (0x942B8 BEQ)");
+    Check((u16)BdPix(5, 3) == 0 && (u16)BdPix(AR_CAL_X, AR_CAL_Y + 4) == 0,
+          "and the callee drew nothing either -- both read the same flag (0x723B8)");
+    g_bPsOpen = 1;
+
+    /* ---- the arm guard: no controls, the callee still draws ---- */
+    ArReset();
+    GeoscapeScreenArmEnv noPsCtl = g_psArm;
+    noPsCtl.apCtl = NULL;
+    Geoscape_DrawPsiArm(&g_psEnv, &noPsCtl);
+    CheckEqI32(g_nPnBlits, 2, "a fixture with no scroll controls still gets the callee's two buttons");
+    Check((u16)BdPix(5, 3) != 0, "and the psi rails are on the surface");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -12035,6 +12328,7 @@ int main(void)
     TestStatusPanelChainTail();
     TestGeoscapeFrameEnd();
     TestGeoscapeScreenArms();
+    TestGeoscapeUfoPsiArms();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
