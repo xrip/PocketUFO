@@ -168,6 +168,7 @@ int main(void)
     i32       nHalfW, nHalfH;
     i32       nTick, nSec0, i;
     i32       nNavCnt, nPhase, nCurX, nCurY, nIdx;
+    i32       nOpen0, nSamples0;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
         printf("FAIL: Boot_LoadStartup\n");
@@ -445,9 +446,23 @@ int main(void)
 
     /* 9. The arms the wiring does not serve stay NULL, which is the arm not drawing at all. */
     Check(pF->draw.pPlaneArm == NULL
-              && pF->draw.pResearchDraw == NULL && pF->draw.pBaseFacArm == NULL
+              && pF->draw.pResearchDraw == NULL && pF->draw.pBaseInfoArm == NULL
+              && pF->draw.pManufPad == NULL && pF->draw.pTransferPad == NULL
               && pF->draw.pBuySellPad == NULL && pF->draw.pBaseAtEnv == NULL,
-          "the arms the shell has no state for stay NULL (see pufo_geoscape.h)");
+          "the arms whose screen the shell cannot open stay NULL (see pufo_geoscape.h)");
+    Check(pF->draw.pSoldierDraw == &pF->solDraw && pF->draw.pSoldierArm == &pF->solArm
+              && pF->draw.pSoldierPanelCtl == &pF->solPanelCtl
+              && pF->draw.pSoldierFindCtl == &pF->solFindCtl
+              && pF->draw.pBaseFacArm == &pF->baseFac && pF->draw.pBaseFacGrid == &pF->facNameGrid
+              && pF->draw.pBaseFacStrip == &pF->facStrip && pF->draw.pBaseFacDialog == &pF->facDialog
+              && pF->baseFac.apPanelCtl == g_world.apFacPanelCtl
+              && g_world.ptrEnv.apFacCtl == g_world.apFacPanelCtl
+              && pF->baseFac.pPad == g_world.ui.apPad[GEOUI_PAD_186BA0]
+              && pF->solArm.pbTransferFlag == &g_world.bTransferFlag
+              && pF->solDraw.pnCursor == &g_world.nSoldierCursor
+              && pF->solPanelCtl.apCtl == g_world.nav.apPanel
+              && pF->solFindCtl.apCtl == g_world.nav.apFind,
+          "cases 4, 5 and 7 run on the shell's own soldier panels, block controls and dialog state");
     Check(pF->draw.pPlacementArm == &pF->placement && pF->draw.pPlacementCtl == &pF->placementCtl
               && pF->draw.pPlacementGrid == &pF->facNameGrid
               && pF->draw.pPlacementStrip == &pF->facStrip
@@ -631,6 +646,74 @@ int main(void)
     CheckEqI32(g_world.bPlaceActive, 0,
                "an empty cell ends the placement: the arm clears bBasePlaceActive (0x92424 -> 0x92844)");
 
+    /* 12d. The other three screens the shell can serve, opened the way the game opens them: through the
+     * handler the control carries. */
+    Check(g_world.nav.apNav[0]->pfnClick != NULL && g_world.nav.apNav[4]->pfnClick != NULL
+              && g_world.nav.apPanel[0]->pfnClick != NULL && g_world.nav.apFind[2]->pfnClick != NULL,
+          "the fifteen nav handlers are installed on the controls (Geoscape_BuildNavControls 0x67B74..0x67D28)");
+
+    nSamples0 = g_nSamples;
+    g_world.nav.apNav[4]->pfnClick(); /* BaseFacScreen_Open @ 0x61844 */
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 7, "nav slot 4 writes the id 7 BEFORE its Init (0x6185C)");
+    CheckEqI32(g_nSamples, nSamples0 + 1, "and plays sample 17 first, with its second argument 4 (0x61850)");
+    Check(g_world.ctlFacUp.pfnClick != NULL && g_world.ctlFacDown.pfnClick != NULL,
+          "BaseFacScreen_Init @ 0x5a198 put the prev/next handlers on the two block controls");
+
+    CheckEqI32(g_world.bFacDialogOpen, 1,
+               "the build dialog is open at this point (0x158884, 1 while the panel exists)");
+    ClearSurface();
+    g_world.bArmedPlacement = 0;
+    (void)DrawFrame();
+    /* The arm's own pad blit (0x92AF4) is a direct PadImage_Blit, not the control seam, so the arm is checked
+     * through its rails: 24 steps of 7 at x 2, 1x7 rects climbing from y 1 in colour 100 + 5k. */
+    CheckEqI32(SurfPix(2, 1), PackInk(100, 100, 100),
+               "case 7's first climbing rail rect is at (2,1) in colour 100 (0x92B08..0x92B2C)");
+    CheckEqI32(g_nBlits, 3, "the two block controls (0x92D78..0x92D94) plus the open dialog's own control, blitted "
+                            "inside BaseFacScreen_DrawBuildDialog @ 0x59b60, which the arm calls at 0x92D44");
+    ClearSurface();
+    g_world.bArmedPlacement = 1;
+    (void)DrawFrame();
+    CheckEqI32(g_nBlits, 1, "with bBaseFacPlaceArmed @ 0x158888 set the arm blits NO control of its own (0x92D64); "
+                            "the dialog call at 0x92D44 sits before that gate");
+    g_world.bArmedPlacement = 0;
+
+    nOpen0 = g_world.bSolScreenOpen;
+    g_world.nav.apNav[2]->pfnClick(); /* SoldierScreen_Toggle @ 0x64af0 */
+    CheckEqI32(g_world.bSolScreenOpen, (nOpen0 != 0) ? 0 : 1, "nav slot 2 flips 0x159DE0 in either direction");
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 4, "and writes the id 4 either way (0x651C4)");
+    g_world.bSolScreenOpen = 1;
+    ClearSurface();
+    (void)DrawFrame();
+    Check(g_world.ui.apCtl[GEOUI_CTL_186B00]->x == 224 && g_world.ui.apCtl[GEOUI_CTL_186B00]->y == 1,
+          "case 4 seats the close control at (224,1) (0x92DB0 MOV #0xE0, 0x92DC8 MOV #1)");
+    CheckEqI32(g_nBlits, 3, "the two page buttons then the close control, in that order (0x92DE0..0x92E04)");
+
+    nSamples0 = g_nSamples;
+    g_world.nav.apFind[2]->pfnClick(); /* Ui_SetTransferFlag @ 0x619a8 */
+    CheckEqI32(g_world.bTransferFlag, 1, "the third find button sets bTransferFlag @ 0x159E10 (0x619C0)");
+    CheckEqI32(g_nSamples, nSamples0 + 1, "after Sound_Play(17, 4) (0x619B4)");
+
+    g_world.nSoldierCursor = -1;
+    g_world.nav.apFind[0]->pfnClick(); /* SoldierScreen_FindNextAtBase @ 0x6192c */
+    CheckEqI32(g_world.nSoldierCursor, 0, "the next-at-base walk starts at cursor + 1 and stops on the base");
+    g_world.nav.apFind[1]->pfnClick(); /* SoldierScreen_FindPrevAtBase @ 0x618c4 */
+    CheckEqI32(g_world.nSoldierCursor, 0,
+               "and Prev from index 0 walks off the bottom but leaves the cursor where it was (0x618D4)");
+
+    if (g_world.pSolPanelNames != NULL && g_world.pSolPanelCraft != NULL) {
+        g_world.pSolPanelNames->nUnk3028 = 3;
+        g_world.pSolPanelCraft->nUnk3028 = 3;
+        g_world.nav.apPanel[0]->pfnClick(); /* SoldierScreen_PanelPrev @ 0x61874 */
+        CheckEqI32(g_world.pSolPanelNames->nUnk3028, 2, "PanelPrev moves the names panel first");
+        CheckEqI32(g_world.pSolPanelCraft->nUnk3028, 2, "then the craft panel, the pair at 0x61880/0x61890");
+        g_world.nav.apPanel[1]->pfnClick(); /* SoldierScreen_PanelNext @ 0x6189c */
+        CheckEqI32(g_world.pSolPanelCraft->nUnk3028, 2,
+                   "and Next cannot move either: both are nStyle 13 over 8 lines, so the bound is negative");
+    } else {
+        Check(false, "the soldier screen's two list panels exist");
+    }
+
+    g_world.screen.nGeoscapeScreen = 1; /* back to the placement screen for the close chain below */
     g_world.bPlaceActive = 1;
     g_world.bPlaceFail   = 1; /* the demolish-failure panel's gate, 0x92848 */
     World_CloseGeoscape(&g_world);

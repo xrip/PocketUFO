@@ -2838,17 +2838,48 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `BaseFacScreen_CloseThunkA` is **0x589c0** (0x5a2c0 is inside `UiPanel_InsertLine`) and 0x615b0 is
   **`NewBaseScreen_CloseThunk`**, not `BaseInfoScreen_CloseThunk` (that is 0x557bc).
 
-- [ ] **Next unit: the ten nav buttons, the other half of `Geoscape_BuildNavControls`.** The nav controls are
-  built (`Game_StartNew 0x9542C`) and drawn (the placement arm blits all ten at 0x91FE0), but `navEnv.apfnNavClick`
-  is `World_NoopClick` in all ten slots while the original installs `NewBaseScreen_Open 0x615d0` (id 2),
-  `BaseInfoScreen_Open 0x6167c` (3), `SoldierScreen_Toggle 0x64af0` (4), `BasePlaneScreen_Open 0x617f4` (6),
-  `BaseFacScreen_Open 0x61844` (7), `ResearchScreen_Open 0x616ac` (8), `ManufScreen_Open 0x614cc` (9),
-  `TransferScreen_Open 0x614fc` (10), `BuySellScreen_OpenBuy 0x61794` (11), `BuySellScreen_OpenSell 0x617c4` (12),
-  plus the five soldier panel/find handlers (0x67C84..0x67D28, the last being `Ui_SetTransferFlag`). Each plays
-  `Sound_Play(17, 4)` before its Init and writes the screen id **before** the tail call — the shell already ports
-  the Init/env half of most of them, so the work is the env plumbing per screen plus the `apSoldierPanelCtl` /
-  `apSoldierFindCtl` pair. `Geoscape_CloseUI` case 1 frees all fifteen controls (0x8BEA8..0x8BF0C) and
-  `Game_StartNew` rebuilds them, so the wiring must be re-installed after a close, not once at startup.
+- [x] **Part 28, the soldier screens and the build screen drawn, and the nav buttons that open them.**
+  `GeoscapeFrameState` gained `solDraw`/`solArm`/`solPanelCtl`/`solFindCtl` (case 4 @ 0x92DAC, case 5 @ 0x92EE4 —
+  both end in `SoldierScreen_Draw @ 0x65290`) and `baseFac`/`facDialog` (case 7 @ 0x92AF0, whose two grid callees
+  are the same `facNameGrid`/`facStrip` envs case 1 uses, with the same -1 strip mark at 0x92D38). The dialog's
+  eight labels are TEXTS records resolved from the IDB names at their absolute addresses (156, 83, 84, 85, 154,
+  86, 1148, 406). `World_RefreshGeoscapeFrame` re-reads the pointers their own open handler allocates — the
+  soldier pad 0x1598D4 and panels 0x15975C/0x159DEC (`SoldierScreen_Toggle @ 0x64af0`) and the dialog panel
+  0x158868/0x15886C (`BaseFacScreen_Toggle @ 0x589ec`) — because the original re-reads those globals per draw
+  (0x92DD0, 0x92D44, 0x59B6C). Eight of the fifteen `Geoscape_BuildNavControls` handlers are now installed:
+  nav 0 `NewBaseScreen_Open @ 0x615d0`, nav 2 `SoldierScreen_Toggle` (already), nav 4 `BaseFacScreen_Open @
+  0x61844`, the two soldier page buttons (`PanelPrev/Next @ 0x61874/0x6189c`, the names panel then the craft
+  panel) and the three find buttons (`0x6192c`, `0x618c4`, `Ui_SetTransferFlag @ 0x619a8`); the build dialog's
+  own prev/next pair (`0x589cc/0x589dc`) is wired too. The remaining seven nav slots stay `World_NoopClick`:
+  their Init envs and their `Geoscape_Draw` arms do not exist in the shell, and the arms dereference their envs
+  with no test. `ptrEnv.apFacCtl` is now the same `apFacPanelCtl` array the arm uses (0x87F88, 0x89E40). A new
+  field `bFacOverlayShown @ 0x15888C` joins the state (its only two writers are 0x591F0 and 0x59FAC), and
+  `pWorld->apFacPanelCtl` is `{ &ctlFacUp, &ctlFacDown }`, the two controls Init allocates into 0x158874/0x158878.
+  20 new checks in `test_geoscapeframe`, most of them firing the handlers **through the control's own +0xC slot**
+  the way a click does: nav 4 writes id 7 before its Init and plays 17; case 7's climbing rail lands at (2,1) in
+  colour 100; the arm blits 3 controls with the dialog open and 1 when `bBaseFacPlaceArmed` is set (the dialog
+  call at 0x92D44 is upstream of the 0x92D64 gate); nav 2 flips 0x159DE0 either way and case 4 seats the close
+  control at (224,1) and blits 2 page buttons then it; `Ui_SetTransferFlag` sets 0x159E10 after the sample; the
+  find pair moves `nSoldierCursor` to the next soldier of the selected base and leaves it **untouched** when
+  nothing matches (0x618D4); `PanelPrev` moves the names panel then the craft panel while `PanelNext` cannot move
+  either (nStyle 13 over 8 lines makes the bound negative). Release 61/61, 17784 checks, zero warnings; Debug
+  keeps its three red suites. Coverage unchanged — no new original function is cited.
+  **IDB:** `aFacDaysSuffix @ 0xBB422` comment corrected — it is record 154 exactly (0xB38D0 + 205*154), and the
+  old text's "record 154 + 4 / 0xB38D0 + 205*154 + 4" gives 0xBB426, which no code reads; the single reader is
+  `BaseFacScreen_DrawBuildDialog` 0x59E30/0x59E38 (`MOV R3,#(aFacDaysSuffix-0xB38D0)` / `ADD R1,R6,R3`).
+  `bBaseFacOverlayShown @ 0x15888C` got its first comment (2 writers, 6 reads, survives a close).
+
+- [ ] **Next unit: the placement overlay, so the build screen shows what it is about to build.** Case 7 draws
+  the dialog through `BuildDialogEnv`, whose `pOverlayEnv` the shell leaves NULL, so `0x59EF8` draws nothing:
+  `FacOverlayEnv @ pufo_baseui.h:4291` is buildable from state the shell already holds (the grid, panel 0x15886C,
+  `nPanelSel`, `aFac`, funds, `nSelectedBase`, the taps, the pending pair 0x15887C/0x158880, the origins
+  0x159DC4/0x159DC8, the cursor pair 0x186BD0/0x186BD4, `bRoot34`/`bRoot35`, the new `bFacOverlayShown`,
+  `bFacDone`, `bPendingRegionId`, `g_anNewBaseCostByRegion`, the map-phase byte, 0x1870C8/0x1870B4, the screen id,
+  TEXTS, `szLabelScratch`, `aRegionBuildCount`, `nPlaceX/Y`), except `pCreateEnv` — `Base_CreateNamedEntry`'s env,
+  which `World_NewGame` builds as a local today. That is the decision to make first: move it onto the state, or
+  keep the commit path out and record it. `BaseFacScreen_DrawPlacementOverlay @ 0x58e10` NULL-guards its env, so a
+  partial env draws nothing rather than faulting. It also runs the closing `BaseFacScreen_Toggle @ 0x589ec`
+  through `pToggleEnv`, which the shell already fills.
 
 ## Separate issues, not folded into the porting steps
 
@@ -3338,6 +3369,7 @@ Refresh after each commit. A coverage delta must match the function size in
   retyped, 9 IDB comments, 2 port comments corrected | 61/61 (Release) | 17755 | 966/1103 (87.6%) | 596752/598792
   (99.7%) | 43 checked, 0 mismatched |
 | the placement screen drawn and the close seams installed (Part 27: no new original block — the four `Geoscape_Draw` case-1 envs wired over the shell's own pad 0x186BA0, nav set 0x159888, close/demolish controls, grid, `nSelectedBase` read signed (0x922B0), the taps the arm writes back, 0x159DC4/0x159DC8, `aFac` 0x186E48 and `nMapPhase` 0x1139EF (whose `pW->pnMapPhase` assignment had to move to `World_WireGeoscapeFrame`'s head because `World_WireGeoscapeClock` runs at its tail); `facNameGrid.nBaseIdx` re-read every frame, `facStrip.nHighlightRow` fixed at the arm's -1 (0x922B8); `World_CloseGeoscapeThunk` installed at the arm's close control and at the soldier, build-dialog and funding seams (twelve 12-byte tail-call thunks, all the same call); `World_TryConfirmClick` split into `World_MapClick(pW)` + a no-argument wrapper so the app can drive the game's own 2 → 1 writer; the `--new-game` dump now runs 2 → 1 → 0 and the clock advances 300 s where a new game used to stand paused; IDB: `nMapPhase` its first comment (62 reads / 3 writers, wraps at 7), `nSmapOriginY` recorded as having no writer in the image, `Geoscape_CloseUI` a 33-xref caller census, `Geoscape_BuildNavControls` its fifteen `pfnClick` installs with the screen id each writes; two wrong names in port comments corrected (`BaseFacScreen_CloseThunkA` = 0x589c0, 0x615b0 = `NewBaseScreen_CloseThunk` not `BaseInfoScreen_CloseThunk` = 0x557bc)) | 61/61 (Release) | 17764 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the soldier screens and the build screen drawn, plus eight nav handlers (Part 28: no new original block — `solDraw`/`solArm`/`solPanelCtl`/`solFindCtl` for case 4 (0x92DAC) and case 5 (0x92EE4), both ending in `SoldierScreen_Draw @ 0x65290`, and `baseFac`/`facDialog` for case 7 (0x92AF0) sharing case 1's grid and strip envs with the same -1 mark at 0x92D38; the dialog's eight TEXTS labels resolved from the IDB names at 156/83/84/85/154/86/1148/406; the per-frame re-read of the objects the open handlers allocate — the 0x1598D4 pad, the 0x15975C/0x159DEC panels, the 0x158868/0x15886C dialog panel — because the original re-reads them at 0x92DD0/0x92D44/0x59B6C; handlers installed for nav 0 (`NewBaseScreen_Open @ 0x615d0`), nav 4 (`BaseFacScreen_Open @ 0x61844`), the two soldier page buttons (0x61874/0x6189c) and the three find buttons (0x6192c/0x618c4/0x619a8) plus the dialog's own pair (0x589cc/0x589dc), with the other seven nav slots left no-ops and the reason recorded; `ptrEnv.apFacCtl` wired to the arm's `apFacPanelCtl`; the new shell byte `bFacOverlayShown @ 0x15888C`; IDB: `aFacDaysSuffix` corrected to record 154 exactly (its old "+4" address 0xBB426 is read by nothing) and `bBaseFacOverlayShown` given its first comment) | 61/61 (Release) | 17784 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
@@ -3358,9 +3390,9 @@ hover's rules at x 120 / y 118 -- and the `Blit_ClipGlyph` defect it exposed was
 surface pixels that every earlier coverage figure counted as covered.
 
 Release is the documented configuration and it is green: 61/61 with the wiring in. In **Debug** the
-picture moves from run to run -- this run failed `test_titles`, `test_template` and `test_plane` (3/61)
-while `test_geoscape` and `test_save` passed, and `test_template` also failed when run on its own, which is
-new: the Part 26 run saw it pass alone; earlier runs recorded
+picture moves from run to run -- the Part 27 and Part 28 runs both failed `test_titles`, `test_template` and
+`test_plane` (3/61) while `test_geoscape` and `test_save` passed, and `test_template` fails when run on its own
+too, which is new: the Part 26 run saw it pass alone; earlier runs recorded
 the opposite mix, and `test_titles`/`test_save` were shown to fail already at `04f1155` (verified by
 building that commit in a clean worktree with the same ClangCL toolset). `test_geoscape`'s single Debug
 failure was checked directly against this step: with the step's `src/pufo` edits stashed and the same

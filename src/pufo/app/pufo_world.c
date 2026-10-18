@@ -256,6 +256,127 @@ static void World_TryConfirmClick(void)
     World_MapClick(g_pActiveWorld);
 }
 
+/* NewBaseScreen_CloseThunk @ 0x615b0: Sound_Play(17) at 0x615bc first, then the dispatcher. The only
+ * close thunk in the image that plays a sample. */
+static void World_NewBaseCloseThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    if (pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample(17, pW->pSoundUser);
+    }
+    World_CloseGeoscape(pW);
+}
+
+/* The screen openers call Sound_Play with a SECOND argument (MOV R1,#4 at 0x614D4, 0x61504, 0x615B4, ...),
+ * which the shell's own two-argument message-list seam does not carry. This adapter is what the opener and
+ * flag hooks get; its pUser is the world, so it can reach that seam. */
+static void World_PlaySampleWithArg(u32 nSample, u32 nArg, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)nArg;
+    if (pW != NULL && pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample((i32)nSample, pW->pSoundUser);
+    }
+}
+
+/* NewBaseScreen_Open @ 0x615d0 -- nav control slot 0's handler (installed at 0x67B74). Sample 17, the
+ * close control to (224,1), the id 2 written at 0x61620, the confirm handler, two Smap_ZoomOut on the
+ * camera, 0x187080 cleared, then the close handler at 0x61654. The gate is the signed base count
+ * (0x159D80) against 8: with eight bases the opener does nothing at all. */
+static void World_NewBaseOpenThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)NewBaseScreen_Open(&g_pActiveWorld->screen, &g_pActiveWorld->newBaseOpen);
+    }
+}
+
+/* BaseFacScreen_Init @ 0x5a198, reached through the opener's Init hook. */
+static void World_BaseFacInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot; /* the original passes its own slot global; the port takes the env instead */
+    if (pW != NULL) {
+        (void)BaseFacScreen_Init(&pW->facInitEnv);
+    }
+}
+
+/* BaseFacScreen_Open @ 0x61844 -- nav control slot 4's handler (installed at 0x67BA4): sample 17, the id 7
+ * BEFORE the Init (0x6185C), then the tail call into BaseFacScreen_Init. */
+static void World_BaseFacOpenThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseFacScreen_Open(&g_pActiveWorld->screen, &g_pActiveWorld->facOpenHooks);
+    }
+}
+
+/* BaseFacScreen_PanelPrev @ 0x589cc / PanelNext @ 0x589dc: the dialog's one panel at 0x15886C. */
+static void World_FacPanelPrevThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseFacScreen_PanelPrev(g_pActiveWorld->pFacPanel);
+    }
+}
+
+static void World_FacPanelNextThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseFacScreen_PanelNext(g_pActiveWorld->pFacPanel);
+    }
+}
+
+/* SoldierScreen_PanelPrev @ 0x61874 / PanelNext @ 0x6189c -- the two page buttons (0x67C84, 0x67C90). The
+ * pair is the names panel then the craft panel, and the second call is the one the original returns. */
+static void World_SolPanelPrevThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        SoldierScreen_PanelPrev(g_pActiveWorld->pSolPanelNames, g_pActiveWorld->pSolPanelCraft);
+    }
+}
+
+static void World_SolPanelNextThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        SoldierScreen_PanelNext(g_pActiveWorld->pSolPanelNames, g_pActiveWorld->pSolPanelCraft);
+    }
+}
+
+/* SoldierScreen_FindNextAtBase @ 0x6192c / FindPrevAtBase @ 0x618c4 -- the two find buttons (0x67D10,
+ * 0x67D1C). They move nSoldierCursor @ 0x159E08 to the next/previous soldier of the SELECTED base; Prev
+ * never reads the count (the original's walk is bounded by zero), which the port keeps. */
+static void World_SolFindNextThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        (void)SoldierScreen_FindNextAtBase(&pW->nSoldierCursor, pW->apSoldiers, (u16)pW->nSoldierCount,
+                                           pW->nSelectedBase);
+    }
+}
+
+static void World_SolFindPrevThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        (void)SoldierScreen_FindPrevAtBase(&pW->nSoldierCursor, pW->apSoldiers, pW->nSelectedBase);
+    }
+}
+
+/* Ui_SetTransferFlag @ 0x619a8 -- the third find button (0x67D28): Sound_Play(17, 4) then
+ * bTransferFlag @ 0x159E10 = 1. */
+static void World_TransferFlagThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        Ui_SetTransferFlag(&g_pActiveWorld->bTransferFlag, World_PlaySampleWithArg, g_pActiveWorld);
+    }
+}
+
 /* The options screen is not ported yet; the radar click's type-0 branch reaches it through
  * these stubs (the sample still plays). */
 static void World_OptionsPlaySampleStub(u32 nSample, u32 nArg, void *pUser)
@@ -433,16 +554,23 @@ static void World_StartNewHook(void *pUser)
     pW->spawnCtx.pfnProcessEvents = World_ProcessEvents;
     pW->spawnCtx.pUser = pW;
 
+    /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28). Three of the ten nav
+     * slots are filled: the shell can draw the screen each one opens. The other seven -- BaseInfoScreen_Open
+     * (id 3), BasePlaneScreen_Open (6), ResearchScreen_Open (8), ManufScreen_Open (9), TransferScreen_Open (10),
+     * BuySellScreen_OpenBuy (11) and BuySellScreen_OpenSell (12) -- stay no-ops: their Init envs and their
+     * Geoscape_Draw arms (pBaseInfoArm, pPlaneArm, pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are
+     * not built here, so opening them would land on a screen the shell cannot draw. */
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
     }
-    pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk; /* SoldierScreen_Toggle, 0x67B88 */
-    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
-        pW->navEnv.apfnPanelClick[i] = World_NoopClick;
-    }
-    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {
-        pW->navEnv.apfnFindClick[i] = World_NoopClick;
-    }
+    pW->navEnv.apfnNavClick[0] = World_NewBaseOpenThunk;   /* NewBaseScreen_Open @ 0x615d0, id 2 (0x67B74) */
+    pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk; /* SoldierScreen_Toggle @ 0x64af0, id 4 (0x67B8C) */
+    pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;   /* BaseFacScreen_Open @ 0x61844, id 7 (0x67BA4) */
+    pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk; /* SoldierScreen_PanelPrev @ 0x61874 (0x67C84) */
+    pW->navEnv.apfnPanelClick[1] = World_SolPanelNextThunk; /* SoldierScreen_PanelNext @ 0x6189c (0x67C90) */
+    pW->navEnv.apfnFindClick[0] = World_SolFindNextThunk;   /* SoldierScreen_FindNextAtBase @ 0x6192c (0x67D10) */
+    pW->navEnv.apfnFindClick[1] = World_SolFindPrevThunk;   /* SoldierScreen_FindPrevAtBase @ 0x618c4 (0x67D1C) */
+    pW->navEnv.apfnFindClick[2] = World_TransferFlagThunk;  /* Ui_SetTransferFlag @ 0x619a8 (0x67D28) */
     pW->navEnv.pfnLoadPads = pW->pfnLoadPads;
     pW->navEnv.pLoadPadsUser = pW->pLoadPadsUser;
 
@@ -506,8 +634,8 @@ static void World_StartNewHook(void *pUser)
     pW->facInitEnv.pnUnk15887C = &pW->nUnk15887C;
     pW->facInitEnv.pnUnk158880 = &pW->nUnk158880;
     pW->facInitEnv.pbArmed = &pW->bArmedPlacement;
-    pW->facInitEnv.pfnPanelPrev = World_NoopClick; /* BaseFacScreen_PanelPrev/Next, panel not wired */
-    pW->facInitEnv.pfnPanelNext = World_NoopClick;
+    pW->facInitEnv.pfnPanelPrev = World_FacPanelPrevThunk; /* BaseFacScreen_PanelPrev @ 0x589cc */
+    pW->facInitEnv.pfnPanelNext = World_FacPanelNextThunk; /* BaseFacScreen_PanelNext @ 0x589dc */
     pW->facInitEnv.pfnCloseThunk = World_CloseGeoscapeThunk; /* BaseFacScreen_CloseThunkA @ 0x589c0 (0x5A1C4)
                                                                * and BaseFacScreen_CloseThunk @ 0x59b54 (0x5A254):
                                                                * both tail-call Geoscape_CloseUI @ 0x8b94c */
@@ -1192,15 +1320,20 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *     pointer, so the two bottom controls draw and simply do nothing on a click.
  *   - The same for the panel's strateg-list handlers (Smap_* @ 0x84254..0x84964) and the craft-select
  *     pair: they take their own Smap envs, which need the strateg item the line refers to.
- *   - The other nineteen arms of the screen switch, and with them the screen ids they draw. The shell's
- *     nav controls carry World_NoopClick handlers, so nGeoscapeScreen never leaves 0/2 here, and
- *     Geoscape_Draw dereferences several unwired arm envs with no test.
+ *   - The screen ids the shell can now reach are 0, 1, 2 (the map and the placement screen), 4 and 5
+ *     (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 7 (nav slot 4, and the map click's own
+ *     0x8B64C), 15 and 19 (the funding screen the monthly close sets). Seven nav slots stay
+ *     World_NoopClick -- BaseInfoScreen_Open (3), BasePlaneScreen_Open (6), ResearchScreen_Open (8),
+ *     ManufScreen_Open (9), TransferScreen_Open (10) and BuySellScreen_OpenBuy/Sell (11, 12) -- because
+ *     their Init envs and their arms (pBaseInfoArm, pPlaneArm, pResearchDraw, pManufPad, pTransferPad,
+ *     pBuySellPad) are not built here, and Geoscape_Draw dereferences several unwired arm envs with no
+ *     test of their own.
  *   - GeoscapePointerEnv's per-screen fields for those same screens (the strip, transfer, soldier-name,
- *     craft, build-dialog, research, manufacturing, site-info, buy/sell, screen-16, options and
- *     base-at blocks) stay NULL. The dispatcher reaches them only from those screen ids. Two of the
- *     shell-owned ones cannot be expressed yet: apFacCtl wants an array of the two build-dialog
- *     controls, which the shell holds as two embedded UiControls, and apRadarCtl wants 0x159684's
- *     control set, which the shell does not build.
+ *     craft, research, manufacturing, site-info, buy/sell, screen-16, options and base-at blocks) stay
+ *     NULL. The dispatcher reaches them only from those screen ids. One shell-owned block that could not
+ *     be expressed before -- apFacCtl, the two build-dialog controls the shell holds as two embedded
+ *     UiControls -- is now the arm's own array, pW->apFacPanelCtl. apRadarCtl wants 0x159684's control
+ *     set, which the shell does not build.
  */
 void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
 {
@@ -1210,6 +1343,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     GeoscapePointerEnv *pPtr = &pW->ptrEnv;
     const UiControlHitCtx *pHit = (pHooks != NULL) ? pHooks->pHit : NULL;
     GfxColorEnv        *pColor = (pHooks != NULL) ? pHooks->pColor : NULL;
+    const char         *pszText = (pAssets != NULL) ? (const char *)pAssets->pTextRecs : NULL; /* aTextRecs @ 0xB38D0 */
 
     memset(pF, 0, sizeof(*pF));
     memset(pPtr, 0, sizeof(*pPtr));
@@ -1371,6 +1505,80 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->draw.pPlacementGrid  = &pF->facNameGrid;
     pF->draw.pPlacementStrip = &pF->facStrip;
 
+    /* Case 4 (0x92DAC) and case 5 (0x92EE4), the soldier screens. Both end in SoldierScreen_Draw @ 0x65290,
+     * which draws nothing while 0x159DE0 is clear (0x652CC) -- the byte nav slot 2's handler sets. */
+    pF->solDraw.pnScreenId   = &pW->screen.nGeoscapeScreen;
+    pF->solDraw.pbOpen       = &pW->bSolScreenOpen;              /* 0x159DE0 */
+    pF->solDraw.pnCursor     = &pW->nSoldierCursor;              /* 0x159E08, the find buttons move it */
+    pF->solDraw.pPad         = pW->pSolPad;                      /* unk_1598D4, the "soldier" pad */
+    pF->solDraw.pPanelNames  = pW->pSolPanelNames;               /* 0x15975C */
+    pF->solDraw.pPanelCraft  = pW->pSolPanelCraft;               /* 0x159DEC */
+    pF->solDraw.pfnTextInput = NULL;                             /* the case-5 readout: SoldierScreen_DrawDetail
+                                                                  * @ 0x632cc needs the keyboard controls and the
+                                                                  * pad block that screen owns, which the shell
+                                                                  * does not build, so 0x652A4 returns 0 */
+
+    pF->solArm.pColor         = pColor;
+    pF->solArm.pCloseCtl      = pUi->apCtl[GEOUI_CTL_186B00];    /* moved to (224,1) at 0x92DB0/0x92DC8 */
+    pF->solArm.pbTransferFlag = &pW->bTransferFlag;              /* 0x159E10: case 5's order gate */
+    pF->solArm.pPad           = pW->pSolPad;                     /* the arm's own 0x1598D4 read, case 5 */
+
+    pF->solPanelCtl.apCtl = pW->nav.apPanel;                     /* apSoldierPanelCtl @ 0x1598B0/B4, case 4 */
+    pF->solFindCtl.apCtl  = pW->nav.apFind;                      /* apSoldierFindCtl @ 0x1598B8..C0, case 5 */
+
+    pF->draw.pSoldierDraw     = &pF->solDraw;
+    pF->draw.pSoldierArm      = &pF->solArm;
+    pF->draw.pSoldierPanelCtl = &pF->solPanelCtl;
+    pF->draw.pSoldierFindCtl  = &pF->solFindCtl;
+
+    /* Case 7 (0x92AF0), the build screen. It calls the same two grid callees as case 1 -- with the same -1
+     * strip mark (0x92D38) -- then the build dialog, and it blits its two block controls ONLY while
+     * bBaseFacPlaceArmed @ 0x158888 is clear (0x92D64). */
+    pW->apFacPanelCtl[0] = &pW->ctlFacUp;                        /* the controls InitUI's callees allocate into
+                                                                  * 0x158874 and 0x158878 */
+    pW->apFacPanelCtl[1] = &pW->ctlFacDown;
+    pF->baseFac.pPad         = pUi->apPad[GEOUI_PAD_186BA0];     /* 0x92AF0, the pad case 1 shares */
+    pF->baseFac.apPanelCtl   = pW->apFacPanelCtl;
+    pF->baseFac.pbPlaceArmed = &pW->bArmedPlacement;
+
+    pF->facDialog.pColor         = pColor;
+    pF->facDialog.pAnim          = &pF->anim;                    /* the panel frame, 0x59C60 */
+    pF->facDialog.pPanel         = pW->pFacPanel;                /* 0x15886C */
+    pF->facDialog.nPanelSel      = pW->nPanelSel;                /* by value: re-read every frame */
+    pF->facDialog.paFac          = pW->aFac;                     /* 0x186E48 */
+    pF->facDialog.pnFunds        = &pW->nFunds;
+    pF->facDialog.pCtl           = pUi->apCtl[GEOUI_CTL_186B00];
+    pF->facDialog.pbDialogOpen   = &pW->bFacDialogOpen;          /* 0x158884: a closed dialog draws nothing */
+    pF->facDialog.pbPlaceArmed   = &pW->bArmedPlacement;         /* 0x158888 */
+    pF->facDialog.pbOverlayShown = &pW->bFacOverlayShown;        /* 0x15888C, written at 0x59FAC */
+    pF->facDialog.pdwShortfall   = &pW->nShortfall1870C8;        /* read as a dword at 0x1870C8 */
+    pF->facDialog.pnResidue      = &pW->nResidue1870B4;
+    pF->facDialog.pOverlayEnv    = NULL;                         /* the placement overlay's env is not built
+                                                                  * here, so 0x59EF8 draws nothing: see PLAN.md */
+
+    pF->draw.pBaseFacArm    = &pF->baseFac;
+    pF->draw.pBaseFacGrid   = &pF->facNameGrid;
+    pF->draw.pBaseFacStrip  = &pF->facStrip;
+    pF->draw.pBaseFacDialog = &pF->facDialog;
+
+    /* The two nav openers the shell can serve, held on the state because a click runs them. */
+    pW->newBaseOpen.pfnPlaySample  = World_PlaySampleWithArg;         /* Sound_Play(17, 4) at 0x615dc */
+    pW->newBaseOpen.pCtlFrame      = pUi->apCtl[GEOUI_CTL_186B00];    /* to (224,1) at 0x61608/0x61614 */
+    pW->newBaseOpen.pCtlConfirm    = pUi->apCtl[GEOUI_CTL_186BA4];    /* 0x6162C installs the confirm handler */
+    pW->newBaseOpen.pView          = &pW->view;                       /* the two Smap_ZoomOut at 0x61634/0x6163C */
+    pW->newBaseOpen.pZoomSets      = pW->sets;
+    pW->newBaseOpen.pWorldOut      = pUi->pWorldSize;
+    pW->newBaseOpen.pbBaseCount    = &pW->nBaseCount;                 /* the != 8 gate at 0x615F4 */
+    pW->newBaseOpen.pbFlag187080   = &pW->bUiAnimStarted;             /* cleared at 0x6164C */
+    pW->newBaseOpen.pfnTryConfirm  = World_TryConfirmClick;
+    pW->newBaseOpen.pfnCloseThunk  = World_NewBaseCloseThunk;         /* 0x61654 */
+    pW->newBaseOpen.pUser          = pW;                              /* the sample adapter's world pointer */
+
+    pW->facOpenHooks.pfnPlaySample = World_PlaySampleWithArg;         /* Sound_Play(17, 4) at 0x61850 */
+    pW->facOpenHooks.pfnInit       = World_BaseFacInitThunk;          /* the tail call to 0x5a198 */
+    pW->facOpenHooks.pSlot         = NULL;
+    pW->facOpenHooks.pUser         = pW;
+
     /* The frame end, 0x944B8..0x94544. Its modal arm runs only for MainMenu_nListMode 1103/1102, the
      * start menu's own modal pair, so the modal anim and layout stay NULL on the geoscape path; and
      * case 20's BaseAtScreen_Draw env belongs to the base-at screen, which is not wired. */
@@ -1394,11 +1602,37 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
         pF->placementCtl.pfnCtlBlit   = pHit->pfnBlit;
         pF->placementCtl.pfnCtlBlitEx = pHit->pfnBlitEx;
         pF->placementCtl.pCtlBlitUser = pHit->pUser;
+        pF->solPanelCtl.pfnCtlBlit    = pHit->pfnBlit;
+        pF->solPanelCtl.pfnCtlBlitEx  = pHit->pfnBlitEx;
+        pF->solPanelCtl.pCtlBlitUser  = pHit->pUser;
+        pF->solFindCtl.pfnCtlBlit     = pHit->pfnBlit;
+        pF->solFindCtl.pfnCtlBlitEx   = pHit->pfnBlitEx;
+        pF->solFindCtl.pCtlBlitUser   = pHit->pUser;
+        pF->baseFac.pfnCtlBlit        = pHit->pfnBlit;
+        pF->baseFac.pfnCtlBlitEx      = pHit->pfnBlitEx;
+        pF->baseFac.pCtlBlitUser      = pHit->pUser;
+        pF->facDialog.pfnCtlBlit      = pHit->pfnBlit;
+        pF->facDialog.pfnCtlBlitEx    = pHit->pfnBlitEx;
+        pF->facDialog.pCtlUser        = pHit->pUser;
     }
     if (pAssets != NULL) {
-        pF->panel.pTextRecs = (const char *)pAssets->pTextRecs; /* aTextRecs @ 0xB38D0 */
-        pF->hover.pTextRecs = (const char *)pAssets->pTextRecs;
-        pF->placement.pTextRecs = (const char *)pAssets->pTextRecs; /* the ten captions, 0x92070..0x92290 */
+        pF->panel.pTextRecs = pszText;
+        pF->hover.pTextRecs = pszText;
+        pF->placement.pTextRecs = pszText; /* the ten captions, 0x92070..0x92290 */
+        pF->solArm.pTextRecs    = pszText; /* the soldier captions, 0x92E40..0x92EB8 */
+
+        /* The build dialog's eight labels are absolute TEXTS addresses in the original; the record each
+         * one is was read off the IDB name at that address (aTextRec156 = 0xB38D0 + 205*156 = 0xBB5BC, ...). */
+        pF->facDialog.pszFundsPrefix = pszText + PUFO_TEXT_REC_STRIDE * 156;  /* unk_BB5BC, "Деньги: " */
+        pF->facDialog.pszRowCost     = pszText + PUFO_TEXT_REC_STRIDE * 83;   /* unk_B7B47 */
+        pF->facDialog.pszRowBuild    = pszText + PUFO_TEXT_REC_STRIDE * 84;   /* unk_B7C14 */
+        pF->facDialog.pszRowNewBase  = pszText + PUFO_TEXT_REC_STRIDE * 85;   /* unk_B7CE1 */
+        pF->facDialog.pszDaysSuffix  = pszText + PUFO_TEXT_REC_STRIDE * 154;  /* aFacDaysSuffix @ 0xBB422:
+                                                                               * 0x59E30 adds 0x7B52 = 205*154,
+                                                                               * the record start itself */
+        pF->facDialog.pszTitleArmed  = pszText + PUFO_TEXT_REC_STRIDE * 86;   /* unk_B7DAE */
+        pF->facDialog.pszTitleList   = pszText + PUFO_TEXT_REC_STRIDE * 1148; /* unk_ED01C */
+        pF->facDialog.pszShortfall   = pszText + PUFO_TEXT_REC_STRIDE * 406;  /* unk_C7DEE */
     }
 
     /* The pointer dispatcher, Geoscape_OnPointer @ 0x872d0 and Geoscape_OnPointerUp @ 0x89450. Its
@@ -1440,6 +1674,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->pbUiAnimStarted = &pW->bUiAnimStarted;         /* 0x187080 */
     pPtr->pbTransferFlag = &pW->bTransferFlag;           /* 0x159E10 */
     pPtr->pFacPanel      = pW->pFacPanel;                /* 0x15886C */
+    pPtr->apFacCtl       = pW->apFacPanelCtl;            /* 0x158874/0x158878, hit-tested at 0x87F88 and 0x89E40 */
     pPtr->pbFacPlaceArmed = &pW->bArmedPlacement;        /* 0x158888 */
     pPtr->pdwShortfall   = &pW->nShortfall1870C8;        /* 0x1870C8, read and written as a dword */
     pPtr->pnPendingPlaceX = &pW->nUnk15887C;             /* nPendingPlaceX @ 0x15887C */
@@ -1547,6 +1782,17 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
      * block at every call (0x922B0 LDRSB R1,[R5,#(nSelectedBaseIdx-0x159768)]), so the copy follows the
      * selection each frame. The strip's highlight row is NOT refreshed: 0x922B8 makes it -1 for this arm. */
     pF->facNameGrid.nBaseIdx = pW->nSelectedBase;
+
+    /* The two screens whose objects their own open handler allocates: SoldierScreen_Toggle @ 0x64af0 builds
+     * the "soldier" pad (0x1598D4) and the four panels, BaseFacScreen_Toggle @ 0x589ec builds the dialog panel
+     * (0x15886C). The original re-reads those globals per draw (0x92DD0, 0x92D44, 0x59B6C), so the env copies
+     * are re-read here with the frame. */
+    pF->solDraw.pPad        = pW->pSolPad;
+    pF->solDraw.pPanelNames = pW->pSolPanelNames;
+    pF->solDraw.pPanelCraft = pW->pSolPanelCraft;
+    pF->solArm.pPad         = pW->pSolPad;                  /* the same 0x1598D4, read a second time at 0x92F14 */
+    pF->facDialog.pPanel    = pW->pFacPanel;
+    pF->facDialog.nPanelSel = pW->nPanelSel;                /* 0x158868, by value in both callers */
     pF->anim.nFrameStyle  = (i8)pW->aRegionBuildCount[9]; /* bUiFrameStyle @ 0x186566 */
     pW->ptrEnv.pTiles     = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL;
 

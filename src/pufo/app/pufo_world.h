@@ -44,7 +44,19 @@ typedef struct GeoscapeFrameState {
     GeoscapePlacementArmEnv placement;    /* the arm itself */
     GeoscapeScreenArmEnv    placementCtl; /* its control blits */
     FacNameGridEnv          facNameGrid;  /* BaseFacScreen_DrawNameGrid @ 0x61c80 */
-    BaseStripDrawEnv        facStrip;     /* Base_DrawFacilityIconStrip @ 0x626dc */
+    BaseStripDrawEnv        facStrip;     /* Base_DrawFacilityIconStrip @ 0x626dc, cases 1 and 7 */
+    /* Case 4 and 5, the soldier screens (0x92DAC, 0x92EE4). Case 4 is where nav control slot 2
+     * (SoldierScreen_Toggle @ 0x64af0, installed at 0x67B8C) puts the geoscape; case 5 is where
+     * SoldierScreen_SelectListed @ 0x64a9c puts it (0x64AA8 writes 5). Both arms end in the same
+     * SoldierScreen_Draw @ 0x65290. */
+    SoldierDrawEnv           solDraw;     /* 0x65290, the draw both soldier arms call */
+    GeoscapeSoldierArmEnv    solArm;      /* the caption colours, the close control, the transfer gate */
+    GeoscapeScreenArmEnv     solPanelCtl; /* apSoldierPanelCtl @ 0x1598B0/B4, the two page buttons, case 4 */
+    GeoscapeScreenArmEnv     solFindCtl;  /* apSoldierFindCtl @ 0x1598B8..C0, the three find buttons, case 5 */
+    /* Case 7, the build screen (0x92AF0), opened by BaseFacScreen_Open @ 0x61844 (nav slot 4, 0x67BA4).
+     * It calls the same two grid callees as case 1, then the build dialog. */
+    GeoscapeBaseFacArmEnv    baseFac;     /* its pad, the two block controls, the armed gate */
+    BuildDialogEnv           facDialog;   /* BaseFacScreen_DrawBuildDialog @ 0x59b60 */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -200,6 +212,9 @@ typedef struct PufoWorldState {
     i32          nUnk158880;            /* 0x158880 */
     u8           bArmedPlacement;       /* bBaseFacPlaceArmed @ 0x158888, a byte */
     u8           bFacDialogOpen;        /* unk_158884: 1 while the build dialog exists */
+    u8           bFacOverlayShown;      /* bBaseFacOverlayShown @ 0x15888C, written by the dialog (0x59FAC)
+                                         * and by the placement overlay (0x591F0) */
+    UiControl   *apFacPanelCtl[2];      /* the two block controls, 0x158874 / 0x158878, as the arm's array */
     UiPanel     *pFacPanel;             /* unk_15886C, the dialog's UiPanel */
     i32          nPanelSel;             /* unk_158868 */
     u8           abLastRowName[4];      /* the 0x187024 slot the dialog's 17th row reads */
@@ -218,6 +233,8 @@ typedef struct PufoWorldState {
     BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
     BaseFacToggleEnv facToggleEnv;      /* the build dialog's open/close switch */
     SoldierScreenEnv solEnv;            /* the soldier screen's open/close switch */
+    NewBaseOpenEnv newBaseOpen;         /* NewBaseScreen_Open @ 0x615d0, nav slot 0's handler */
+    ScreenInitHooks facOpenHooks;       /* BaseFacScreen_Open @ 0x61844's hooks, nav slot 4's handler */
 
     /* The geoscape frame (Geoscape_Draw @ 0x8C180) and its pointer dispatcher (0x872d0 / 0x89450),
      * wired over this state by World_WireGeoscapeFrame. See pufo_geoscape.h for which screens the
