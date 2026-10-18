@@ -493,18 +493,87 @@ static i32 World_MissionAddIntercept(i32 bCraftClass, void *pUser)
     return BasePlaneScreen_AddInterceptMission(bCraftClass, &ctx);
 }
 
+/* The base-attack screen's three callees, reached from two seams: the assault branch of
+ * Geoscape_SpawnMissionSite (0x7EF38..0x7EF80) opens it, Geoscape_CloseUI case 20 (0x8BAF4) runs the same
+ * opener with -1 as the teardown, and the frame's case 20 calls the draw (0x944B4). BaseAtScreen_Open
+ * installs a click handler and a tail-called update, and BOTH take no arguments -- the original reaches
+ * every cell through globals -- so the envs the last open built live in file scope, the way g_pActiveWorld
+ * does for UiControl.pfnClick. */
+static BaseAtUpdateEnv g_BaseAtUpd;
+static BaseAtCloseEnv  g_BaseAtClose;
+
+static void World_BaseAtUpdateThunk(i32 nMode) { BaseAtScreen_Update(nMode, &g_BaseAtUpd); }
+static void World_BaseAtClickThunk(void) { BaseAtScreen_CloseThunk(&g_BaseAtClose); }
+
+static void World_BuildBaseAtEnvs(PufoWorldState *pW)
+{
+    memset(&g_BaseAtUpd, 0, sizeof(g_BaseAtUpd));
+    g_BaseAtUpd.pbActive           = &pW->bBaseAtActive;          /* 0x158864 */
+    g_BaseAtUpd.pbConfirmShown     = &pW->bBaseAtConfirmShown;    /* 0x158854 */
+    g_BaseAtUpd.pbMissionFollows   = &pW->bBaseAtMissionFollows;  /* 0x158850 */
+    g_BaseAtUpd.ppPad              = &pW->pBaseAtPad;             /* 0x15884C */
+    g_BaseAtUpd.ppPanel            = &pW->pBaseAtPanel;           /* 0x15885C */
+    g_BaseAtUpd.pnLineLimit        = &pW->nBaseAtLineLimit;       /* 0x158858 */
+    g_BaseAtUpd.pnLineCap          = &pW->nBaseAtLineCap;         /* 0x158860 */
+    g_BaseAtUpd.pbCraftClass       = (const u8 *)&pW->nBaseAtClass; /* 0x158840, read SIGNED at 0x5784C */
+    g_BaseAtUpd.abFacilityGrid     = pW->abFacilityGrid;          /* gBaseFacGrid @ 0x159768 */
+    g_BaseAtUpd.pTextRecs          = (pW->pAssets != NULL) ? (const char *)pW->pAssets->pTextRecs : NULL;
+    g_BaseAtUpd.pbSpawnReplacement = &pW->bSpawnOnce;             /* 0x162028, set by the release arm */
+    g_BaseAtUpd.pnRadarCooldownR   = &pW->frame.g.nTapCooldown;   /* nRadarCooldownR @ 0xAC218 */
+
+    memset(&g_BaseAtClose, 0, sizeof(g_BaseAtClose));
+    g_BaseAtClose.pbMissionFollows   = &pW->bBaseAtMissionFollows;
+    g_BaseAtClose.pStrategList       = &pW->strategList;          /* 0x1864F8 + 0x3C */
+    g_BaseAtClose.pWorld             = &pW->geo.world;
+    g_BaseAtClose.pnStrategIdx       = &pW->nBaseAtStrategIdx;    /* 0x158844 */
+    g_BaseAtClose.pbSpawnReplacement = &pW->bSpawnOnce;
+    g_BaseAtClose.pSpawnCtx          = &pW->spawnCtx;
+    g_BaseAtClose.pTime              = &pW->geo.time;             /* its bPaused is 0x15961C */
+    g_BaseAtClose.pClose             = &pW->closeEnv;             /* the tail call at 0x577FC */
+}
+
+/* The opener, both seams through one body: 0x7EF80 hands it the base index, 0x8BB00 hands it -1. The
+ * control is the shared confirm control at 0x186BA4, the one the draw centres on (120, 290). */
+static void World_BaseAtOpen(PufoWorldState *pW, i32 nBaseIdx)
+{
+    BaseAtScreenOpenHooks hooks;
+
+    World_BuildBaseAtEnvs(pW);
+    hooks.pfnClick  = World_BaseAtClickThunk;
+    hooks.pfnUpdate = World_BaseAtUpdateThunk;
+    BaseAtScreen_Open(pW->ui.apCtl[GEOUI_CTL_186BA4], nBaseIdx, &hooks);
+}
+
+/* 0x8BB00, Geoscape_CloseUI case 20. It runs Update's release arm, and this dispatcher passes -1 the way
+ * the original does; the mission-follows test right after it reads bBaseAtMissionFollows @ 0x158850. */
+static void World_BaseAtOpenHook(void *pUser)
+{
+    World_BaseAtOpen((PufoWorldState *)pUser, -1);
+}
+
+/* The assault branch's side effects, in the original's order: pause the clock (0x7EF4C), fill the record
+ * (0x7EF58..0x7EF70), write the screen id 20 (0x7EF78), open the screen with the base index (0x7EF80).
+ * The callee reaches none of them itself -- the port's MissionLanding only calls this hook. */
+static void World_ContactScreen(StrategItem *pUfo, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    pW->geo.world.pTime->bPaused = 1;                       /* bGameClockPaused @ 0x15961C */
+    pW->nBaseAtClass        = (i8)pUfo->bCraftClass;        /* 0x7EF58 */
+    pW->nBaseAtStrategIdx   = pUfo->nSeed;                  /* 0x7EF60: the seed at +0x34, not the index */
+    pW->nAssaultBaseRace    = (i8)pUfo->bRace;              /* 0x7EF68 */
+    pW->nCraftHomeBase      = (i8)pUfo->nTargetIdx;         /* 0x7EF70 */
+    pW->screen.nGeoscapeScreen = 20;                        /* 0x7EF78 */
+    World_BaseAtOpen(pW, pUfo->nTargetIdx);                 /* 0x7EF80, the tail call */
+}
+
 /* The context Geoscape_SpawnMissionSite @ 0x7e49c builds out of globals in the original. The tile grid
  * is pW->sets[0].pTiles because that is the object Geoscape_InitUI stores into unk_186B74 (STR at
  * 0x85910 and 0x85920, the only two writers in the binary), and unk_186B74 is what
  * Tilemap_GetAt @ 0x8217c reads -- its own first argument is unused, so the grid does not travel with
  * the viewport. nGameTotalSec is GameTime.nTotalSec, the clock's apLines[105], which
- * StrategEntry_InitTravel stores as nTravelEpochSec (0x7FB6C).
- *
- * One hook stays NULL: the assault branch (0x7EF38..0x7EF80, nPhase 2 with subtype 6) pauses the clock,
- * fills the record at 0x158840..0x158849, writes screen id 20 to 0x186BC4 and opens BaseAtScreen_Open.
- * The shell owns no such record yet, so pfnContactScreen is left unset rather than filled with a call
- * that would draw the screen off the wrong block. Recorded as its own issue. */
-static void World_BuildMissionCtx(PufoWorldState *pW, SpawnMissionCtx *pCtx)
+ * StrategEntry_InitTravel stores as nTravelEpochSec (0x7FB6C). */
+void World_FillMissionCtx(PufoWorldState *pW, SpawnMissionCtx *pCtx)
 {
     memset(pCtx, 0, sizeof(*pCtx));
     pCtx->pList             = &pW->strategList;          /* 0x186534 */
@@ -519,9 +588,10 @@ static void World_BuildMissionCtx(PufoWorldState *pW, SpawnMissionCtx *pCtx)
     pCtx->pnRadarPulseTimer = &pW->nRadarPulseTimer;     /* 0xAC224, subtype 5 sets 250 */
     pCtx->pWorld            = &pW->geo.world;
     pCtx->nGameTotalSec     = pW->geo.time.nTotalSec;
-    pCtx->hooks.pfnAppendLine   = World_MissionAppendLine;
-    pCtx->hooks.pfnAddIntercept = World_MissionAddIntercept;
-    pCtx->hooks.pUser           = pW;
+    pCtx->hooks.pfnAppendLine     = World_MissionAppendLine;
+    pCtx->hooks.pfnAddIntercept   = World_MissionAddIntercept;
+    pCtx->hooks.pfnContactScreen  = World_ContactScreen;   /* 0x7EF80's side effects, see above */
+    pCtx->hooks.pUser             = pW;
 }
 
 /* 0x81BEC: StrategList_RollCraftStats hands the mission subtype it just rolled straight to the spawner,
@@ -531,7 +601,7 @@ static int World_SpawnMission(StrategItem *pUfo, i32 nMissionSub, void *pUser)
     PufoWorldState *pW = (PufoWorldState *)pUser;
     SpawnMissionCtx ctx;
 
-    World_BuildMissionCtx(pW, &ctx);
+    World_FillMissionCtx(pW, &ctx);
     return (int)Geoscape_SpawnMissionSite(pUfo, nMissionSub, &ctx);
 }
 
@@ -568,7 +638,7 @@ static int World_ProcessEvents(void *pUser)
     env.apSoldiers = pW->apSoldiers;
     env.nSoldierCount = pW->nSoldierCount;
     env.pSpawnCtx = &pW->spawnCtx;
-    World_BuildMissionCtx(pW, &missionCtx);
+    World_FillMissionCtx(pW, &missionCtx);
     env.pMissionCtx = &missionCtx;
     env.pfnPlaySample = pW->pfnPlaySample;
     env.pSoundUser = pW->pSoundUser;
@@ -961,7 +1031,7 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
      * ctx is built from the cells this function already owns, including the level-0 tile grid, which is
      * why it must be built after the UI objects: pW->sets[0].pTiles is NULL until InitUI has run, and
      * the callee's own guard turns that into the same no-op the missing state was. */
-    World_BuildMissionCtx(pW, &missionCtx);
+    World_FillMissionCtx(pW, &missionCtx);
     pW->pAssets = pAssets;
     pW->pfnLoadPads = pHooks->pfnLoadPads;
     pW->pLoadPadsUser = pHooks->pLoadPadsUser;
@@ -1044,7 +1114,7 @@ static void World_HookSpawnMissionSite(StrategItem *pUfo, i32 nMissionSub, void 
     PufoWorldState *pW = (PufoWorldState *)pUser;
     SpawnMissionCtx ctx;
 
-    World_BuildMissionCtx(pW, &ctx);
+    World_FillMissionCtx(pW, &ctx);
     (void)Geoscape_SpawnMissionSite(pUfo, nMissionSub, &ctx);
 }
 
@@ -1317,7 +1387,9 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->pnAnimPhase = (pHooks != NULL) ? pHooks->pnAnimPhase : NULL;
 
     /* Geoscape_CloseUI @ 0x8b94c's env, on the same instances. The head, the five needed-flag passes and
-     * the screens the shell can reach (1, 2, 4, 19) are wired. What is NOT: the base-info, hangar,
+     * the screens the shell can reach (1, 2, 4, 19, and 20's opener) are wired. Case 20 (0x8BAF4) is the
+     * base-attack teardown: the same opener World_ContactScreen used, with -1; its mission-follows branch
+     * stays gated off, for the reason recorded below. What is NOT: the base-info, hangar,
      * research, manufacturing, transfer, buy/sell and ufopaedia blocks (their cases keep NULL gates, which
      * the dispatcher tests), the three Map bytes the bankruptcy path writes (Map_bTickHold @ 0x113A12,
      * Map_bBattleEnded @ 0x113A14, Map_bMissionMode @ 0x128AD5 -- the tactical Map is not the shell's),
@@ -1369,6 +1441,13 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pFacToggle       = &pW->facToggleEnv;
     pC->pSoldierScreen   = &pW->solEnv;
     pC->pOptionsHooks    = &pW->optionsHooks;
+    pC->pfnBaseAtOpen    = World_BaseAtOpenHook;          /* case 20's Open(&0x158840, -1) at 0x8BB00 */
+    /* pbBaseAtAssault stays NULL, and that gates the whole branch at 0x8BB10, not just one write. A
+     * contact whose budget survived ends in Map_bMissionMode = 1 (0x8BB20) and Smap_BeginCraftSelect
+     * (0x8BB24), and that callee reads twelve Map-block cells (Map_nMissionType, Map_abSpriteSet,
+     * Map_nMissionTierRaw, ...) plus abTactTileTypes @ 0x159D5C through an env it dereferences with no
+     * guard at all (0x838E0). The shell owns none of them -- it is the same Map block the bankruptcy
+     * branch above cannot write -- so the branch is unwired rather than half-wired into a fault. */
     /* pfnFreeGeoscapeUi stays NULL on purpose. The only path that calls it is the bankruptcy branch
      * (0x8BBF0 then EndScreen_Init @ 0x8BBF8), and GeoscapeUi_FreeAll's FreeWorld releases the soldiers,
      * bases, craft and strateg items the shell's own World_Free also releases -- the original does not
@@ -1732,6 +1811,24 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->draw.pBaseFacStrip  = &pF->facStrip;
     pF->draw.pBaseFacDialog = &pF->facDialog;
 
+    /* Case 20 (0x944B0), the base-attack report. The callee takes no argument: it reads the class byte
+     * 0x158840, the pad 0x15884C and the panel 0x15885C -- so the arm is wired to the shell's own record,
+     * and the `LDR R0, =nBaseAtClass` at 0x944B0 is the dead argument the IDB comment names. The env is
+     * rebuilt by World_WireGeoscapeFrame, but the panel and pad pointers are read through the slots, so a
+     * screen opened between two wirings still draws what Update built. */
+    pF->baseAtDraw.pColor            = pColor;
+    pF->baseAtDraw.pbActive          = &pW->bBaseAtActive;             /* 0x158864, the gate at 0x58730 */
+    pF->baseAtDraw.ppPad             = &pW->pBaseAtPad;                /* 0x15884C */
+    pF->baseAtDraw.ppPanel           = &pW->pBaseAtPanel;              /* 0x15885C */
+    pF->baseAtDraw.pnLineLimit       = &pW->nBaseAtLineLimit;          /* 0x158858 */
+    pF->baseAtDraw.pnRadarCooldownR  = &pW->frame.g.nTapCooldown;      /* nRadarCooldownR @ 0xAC218 */
+    pF->baseAtDraw.pbConfirmShown    = &pW->bBaseAtConfirmShown;       /* 0x158854, set at 0x588B0 */
+    pF->baseAtDraw.pCtlConfirm       = pUi->apCtl[GEOUI_CTL_186BA4];   /* 0x186BA4, centred at (120,290) */
+    pF->draw.pBaseAtEnv              = &pF->baseAtDraw;                /* 0x944B4, inside the fall-through */
+    if (pAssets != NULL) {
+        pF->baseAtDraw.pTextRecs = (const char *)pAssets->pTextRecs;   /* TEXTS[1127] "ОК" at 0x588C4 */
+    }
+
     /* The two nav openers the shell can serve, held on the state because a click runs them. */
     pW->newBaseOpen.pfnPlaySample  = World_PlaySampleWithArg;         /* Sound_Play(17, 4) at 0x615dc */
     pW->newBaseOpen.pCtlFrame      = pUi->apCtl[GEOUI_CTL_186B00];    /* to (224,1) at 0x61608/0x61614 */
@@ -1751,8 +1848,9 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->facOpenHooks.pUser         = pW;
 
     /* The frame end, 0x944B8..0x94544. Its modal arm runs only for MainMenu_nListMode 1103/1102, the
-     * start menu's own modal pair, so the modal anim and layout stay NULL on the geoscape path; and
-     * case 20's BaseAtScreen_Draw env belongs to the base-at screen, which is not wired. */
+     * start menu's own modal pair, so the modal anim and layout stay NULL on the geoscape path. The
+     * dispatcher copies this env into its own and sets pBaseAtEnv only for id 20 (0x944B4), so the draw
+     * env lives on GeoscapeDrawEnv above rather than here. */
     pF->frameEnd.pnListMode         = &pW->nListMode;              /* MainMenu_nListMode @ 0x157188 */
     pF->frameEnd.pnActionPhaseSave112 = &pW->nActionPhaseSave112;  /* Map.anActionPhaseSave0[112] */
     if (pAssets != NULL) {
@@ -1782,6 +1880,9 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
         pF->baseFac.pfnCtlBlit        = pHit->pfnBlit;
         pF->baseFac.pfnCtlBlitEx      = pHit->pfnBlitEx;
         pF->baseFac.pCtlBlitUser      = pHit->pUser;
+        pF->baseAtDraw.pfnCtlBlit     = pHit->pfnBlit;
+        pF->baseAtDraw.pfnCtlBlitEx   = pHit->pfnBlitEx;
+        pF->baseAtDraw.pCtlUser       = pHit->pUser;
         pF->facDialog.pfnCtlBlit      = pHit->pfnBlit;
         pF->facDialog.pfnCtlBlitEx    = pHit->pfnBlitEx;
         pF->facDialog.pCtlUser        = pHit->pUser;

@@ -3254,11 +3254,35 @@ Order is by what unblocks what. Each item ends with gates + commit.
   reader consumes 105. 31 new checks, 2/2 mutations caught (10 red, then 6 red). IDB: `MissionSiteRec` retyped,
   comments at 0x1865C0, 0x7DE3C, 0x7DE48 and a function comment on 0x7e49c naming all four call sites.
 
-- [ ] **Next unit: the base-attack record the shell does not own.** Nothing in `src/pufo` models
-  0x158840..0x158867, so `SpawnMissionHooks.pfnContactScreen` is NULL, the assault branch (nPhase 2 with subtype
-  6, 0x7EF38..0x7EF80) can neither pause the clock nor open the screen, and case 20's `BaseAtScreen_Draw` env
-  stays unwired (pufo_world.c:1675). The block is exactly what `BaseAtUpdateEnv` / `BaseAtDrawEnv` /
-  `BaseAtCloseEnv` already ask for.
+- [x] **The shell owns the base-attack record (Part 44).** `PufoWorldState` now models 0x158840..0x158864
+  (class, strateg index, home base, race, pad, mission-follows, confirm-shown, line limit, panel, line cap,
+  active gate) and four seams run over it: `World_ContactScreen` (the assault branch's own side effects at
+  0x7EF4C..0x7EF80 -- the callee reaches none of them), `GeoscapeCloseEnv.pfnBaseAtOpen` (the teardown's
+  Open(&0x158840, -1) at 0x8BB00), `GeoscapeDrawEnv.pBaseAtEnv` (0x944B4) and the click thunk stored at control
+  offset 0x0C (0x58900). `World_FillMissionCtx` is public because the branch is only testable through the hook
+  it fills. Four facts came out of running it: `BaseAtScreen_Update` picks its arm by `bBaseAtActive` and not
+  by the mode (the -1 at 0x8BB00 is a placeholder index -- mutating it to 0 changed nothing); the budget test
+  is inside the defence-pair loop, so a base with nothing to fire takes the landing tail even on a zero budget;
+  a defence counts only when its days byte is 0 and its kind is 12..16; and `nBaseAtStrategIdx` is the item's
+  +0x34 creation serial handed to `StrategList_RemoveAt` as an index, which after any earlier removal empties
+  the neighbour's slot -- now pinned by a test rather than assumed. 37 new checks, 2/2 mutations caught
+  (14 red, then 7 red). Remaining gate: `pbBaseAtAssault` stays NULL, because the mission-follow branch reaches
+  `Smap_BeginCraftSelect`, whose env wants twelve Map-block cells plus abTactTileTypes and is dereferenced
+  with no guard at 0x838E0.
+
+- [ ] **Next unit: the Map block the mission-follow branch needs.** `SmapCraftSelectEnv` (0x838dc) reads
+  Map_nMissionType, Map_abSpriteSet, Map_nMissionTierRaw, Map_nCraftIndex, Map_bSpawnAlt, Map_nTerrainVariant,
+  Map_nMapLayers, unk_128AD6, Map_bTickHold, Map_bBattleEnded, nCraftHomeBase, nAssaultBaseRace and
+  abTactTileTypes @ 0x159D5C. The shell owns the last three and none of the rest -- the same owner gap that
+  blocks the CloseUI bankruptcy writes (Map_bTickHold @ 0x113A12, Map_bBattleEnded @ 0x113A14,
+  Map_bMissionMode @ 0x128AD5) and the 0xC350 tactical arm. One owner would open all three.
+
+- [ ] **Reported, not folded in: the starting base's empty cells are 0, not 255.** A block built by the
+  new-base path holds 255 in its unused cells; the starting base's untouched cells hold 0 (measured in the frame
+  test's world). `Base_CalcMonthlyUpkeep @ 0x6a230` charges 50000 for every one of the 36 cells whose type byte
+  is *not* 255, and `BaseAtScreen_Update`'s defence scan reads the same layer -- so the sentinel's origin
+  changes what both charge and what counts as a defence. Worth checking against the original's new-game grid
+  before anything here is "fixed".
 
 - [ ] **Next unit: the tactical runtime seam the 0xC350 callee is waiting for.** `GameTick_OnTimer` is ported and now
   measured, but its call site is a documented no-op because the shell owns none of what the tactical branch reads:
@@ -3396,18 +3420,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   where identity is asserted against empty stubs. **Worth a sweep: every seam-handler identity check should
   either give the stubs distinct bodies or call what was installed.**
 
-- [ ] **`Geoscape_SpawnMissionSite` has not reproduced the assault branch, so nothing in the port opens the
-  base-attack screen.** The original's type-2 branch (0x7EF38..0x7EF80) pauses the game, fills the block at
-  0x158840..0x158849 from the strateg item — `nBaseAtClass` = `bCraftClass` (+2, read SIGNED),
-  `nBaseAtStrategIdx` = the creation serial at +0x34, `nAssaultBaseRace` = `bRace` (+0x70), byte_158848 =
-  `nTargetIdx` (+0x84) — writes the screen id 20 to 0x186BC4, and tail-calls `BaseAtScreen_Open` with the base
-  index read SIGNED from +0x84. The port routes the screen through `SpawnMissionHooks.pfnContactScreen` and
-  leaves the block fill to the caller, which no caller does yet. The screen itself is ported (unit 94), so
-  this is the wiring that makes it reachable, and it is where `nBaseAtStrategIdx`'s index-vs-serial question
-  gets settled. Part 43 changed the shape of this blocker: `SpawnMissionCtx` now exists and is live at all four
-  call sites, so the callee runs and reaches the branch -- what is still missing is a shell cell that owns
-  0x158840..0x158867 plus `nGeoscapeScreen`. One such owner serves this hook and case 20's draw env
-  (pufo_world.c:1675); no new `SpawnMissionCtx` field is needed.
+- [x] **Closed in Part 44: the assault branch now has an owner, and the base-attack screen runs.**
+  `World_ContactScreen` performs the branch's own side effects in the original's order — pause the clock
+  (0x7EF4C), `nBaseAtClass` = `bCraftClass` (+2), `nBaseAtStrategIdx` = the +0x34 serial (0x7EF60),
+  `nAssaultBaseRace` = `bRace` (+0x70), `nCraftHomeBase` = `nTargetIdx` (+0x84), screen id 20 (0x7EF78), then
+  `BaseAtScreen_Open` with the base index (0x7EF80) — into the shell's own record. The index-vs-serial question
+  this issue was opened for is answered, and the answer is a defect: 0x158844 carries a **creation serial**
+  (the 0x18640C counter) and `BaseAtScreen_CloseThunk @ 0x577D4` hands it to `StrategList_RemoveAt` as an
+  **index**. They agree only while nothing has ever been removed; the new test removes an earlier contact first
+  and the teardown then empties the neighbour's slot, leaving the attacker in the list. Reproduced as-is, with
+  the IDB comments at 0x577D4, 0x7EF60 and the global 0x158844 saying so. Still gated: the mission-follows
+  branch (`pbBaseAtAssault` NULL) for the Map-block reason above.
 
 - [ ] **The dormant `sizeof(MapCell)` assert is wrong, and the original's cell is 62 bytes.**
   `src/pufo/game/pufo_mapcell.h` asserts `sizeof(MapCell) == 60` inside
@@ -3793,6 +3816,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the out-of-TU message the refusing callee pushes (Part 41: `Ui_ConfirmFireBurst @ 0x18774` now pushes record 1 when `TactState_EnqueueFireBurst` refuses at 0x4B0D8 and still runs `TactState_KickQueue`, because 0x1884C tests nothing the enqueue returned — the kick is made observable by a pre-filled queue, since KickQueue only touches `nQueueCursor`/`bQueueActive` when the queue is non-empty; 5 new checks, 2/2 mutations caught (4 checks went red); IDB comments at 0x4B0D8, 0x4B318, 0x4B42C and 0x1884C, recording the callee-side push and that the original's three enqueue callees write `aQueue[nQueueLen]` with no capacity check while the port guards it; 1 issue closed, 1 recorded (the three enemy-AI enqueue sites have no status sink), 3 stale PLAN bullets corrected) | 61/61 (Release) and 61/61 (Debug) | 17936 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
 | the record-1 push the enemy AI was missing (Part 42: the panic AI's burst at 0x4AE08 and `Tact_EnemyAiTick`'s throw at 0x4D844 now push it through a new `pfnPushTextRecord`/`pPushTextUser` seam on `EnemyAiActCtx`/`EnemyAiTickCtx`, because 0x4B0D8 and 0x4B318 do that push in the original while the AI call sites ignore the return; the other four AI enqueue sites are proven unable to refuse — the tick's three command-18 calls get nTuCost 0 (`MOV R3, #0` at 0x4D77C, 0x4D7B4), the tick's burst at 0x4D910 is gated at 0x4d448 by `(double)uTu >= cost*(2/3) + 8.0` while charging `(int)(cost*(2/3))`, and the medikit enqueue at 0x18060 is gated by its own pad at 0x17d54; 15 new checks, 2/2 mutations caught (4 checks red, then 1 red); IDB comments at 0x4AE08, 0x4D844, 0x4D910, 0x18060, 0x4D718; 1 issue closed, 1 recorded (no src/ owner builds either AI ctx yet)) | 61/61 (Release) and 61/61 (Debug) | 17951 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
 | the mission-spawn seam is wired and the mission-site table has one model (Part 43: `Geoscape_SpawnMissionSite @ 0x7e49c` was ported long ago but its own guard no-oped all four call sites — 0x44F64 LoadGame, 0x5D28C `Geoscape_TickHourly`, 0x809B8 `StrategList_ProcessEvents`, 0x81BEC `StrategList_RollCraftStats` — because the shell passed no context; `World_BuildMissionCtx` now fills one from cells the shell already owns (strateg list 0x186534, seed counter 0x18640C, viewport, `pW->sets[0].pTiles` as the tile grid for unk_186B74, base table, `aMissionSites`, facility grid, `nRadarPulseTimer`, world, `GameTime.nTotalSec`) and the two stubs are gone; the load path also passes `pSpawnCtx` and `pbSpawnOnceFlag`; the message-append and intercept-item hooks are real and `pfnContactScreen` stays NULL with its reason recorded (no shell cell owns 0x158840..0x158867); the mission-site table is one type now — `MissionSiteRec` = `i16 x; i16 y; char szName[20]`, settled by `LDRSH` at 0x7DE48 / 0x7DE3C and the name read at 0x90584 — the duplicate `MissionSiteRecord` is removed and the IDB type was retyped to match; four comments that called a ported function unported were corrected (`Geoscape_InitUI`, `Titles_Init`, `Tact_Shutdown` + `Tact_InitMission`, `BaseAtScreen_Update` + `BaseAtScreen_CloseThunk`) and replaced by the real reason each is not reached on its path; new `TestLoadGameOldVersionMissionSeam` pins 0x44E8C..0x44F64 on a version-2 slot — purge, teleport to (150,250), subtype-0 start with nPhase 3 and cleared targets, `nTravelEpochSec` from the ctx clock, no refill with the 0x162028 byte at 0; 31 new checks, 2/2 mutations caught (10 red, then 6 red); IDB: 1 type retyped, 1 function comment on 0x7e49c naming all four call sites, comments at 0x1865C0, 0x7DE3C, 0x7DE48; 2 issues closed, 1 recorded (the base-attack record the shell does not own)) | 61/61 (Release) and 61/61 (Debug) | 17982 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
+| the base-attack record has an owner and the screen runs end to end (Part 44: `PufoWorldState` now models 0x158840..0x158864 and four seams run over it — `World_ContactScreen` performs the assault branch's own side effects (pause 0x7EF4C, class 0x7EF58, strateg serial 0x7EF60, race 0x7EF68, base index 0x7EF70, screen id 20 0x7EF78, open 0x7EF80) because `MissionLanding` only calls the hook; `GeoscapeCloseEnv.pfnBaseAtOpen` runs the teardown's Open(&0x158840, -1) at 0x8BB00; `GeoscapeDrawEnv.pBaseAtEnv` reaches `BaseAtScreen_Draw @ 0x58728` at 0x944B4; and the click thunk is installed at control offset 0x0C (0x58900), with both no-argument hooks reading file-scope envs like `g_pActiveWorld`; `World_BuildMissionCtx` became the public `World_FillMissionCtx`; four facts from running it — Update's arm is gated by `bBaseAtActive @ 0x158864` not by the mode, so the -1 at 0x8BB00 is a placeholder index and mutating it to 0 turned nothing red; the budget test is inside the defence-pair loop (0x57D7C and twins), so a base with nothing to fire takes the landing tail even on a zero budget; a defence counts only with days byte 0 and kind 12..16; `nBaseAtStrategIdx @ 0x158844` is the item's +0x34 creation serial handed to `StrategList_RemoveAt` as an index and after an earlier removal it empties the neighbour's slot — pinned, not assumed; two IDB comments corrected about who leaves screen id 20 (only 0x7EF78; the CloseUI switch tests id-1 at 0x8BA8C..0x8BA90, so its 'case 19' arm at 0x8BAF4 is screen 20 and leaves 0 at 0x8BB08); `pbBaseAtAssault` deliberately NULL because `Smap_BeginCraftSelect` dereferences its env at 0x838E0 and wants twelve Map cells the shell does not own; 37 new checks, 2/2 mutations caught (14 red, then 7 red); IDB: 6 line comments, 2 function comments (0x57808, 0x577c0), 1 global comment (0x158844); 2 issues closed, 2 recorded (the Map block for the mission-follow branch; the starting base's 0-vs-255 empty-cell sentinel)) | 61/61 (Release) and 61/61 (Debug) | 18019 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 What the loop costs, measured on this tree (Part 34): a full Release build after touching a widely-included

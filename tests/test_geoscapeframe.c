@@ -59,6 +59,17 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
     }
 }
 
+static i32 FindStrategById(const PtrArray *pList, i32 nId)
+{
+    for (int i = 0; i < PtrArray_GetCount(pList); ++i) {
+        const StrategItem *pItem = (const StrategItem *)PtrArray_Get(pList, i);
+        if (pItem != NULL && pItem->nDisplayId == nId) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static BootAssets     g_assets;
 static PufoWorldState g_world;
 /* The font is the port's one fontSys global (game/pufo_font.h), which InitUI fills at 0x860D4..0x86728. */
@@ -634,12 +645,15 @@ int main(void)
     CheckEqI32(pF->g.nCursorY, (i32)(i16)33000, "0x872F8 stores the pen with STRH (0x872F8)");
     pF->g.nCursorY = 0;
 
-    /* 9. The arms the wiring does not serve stay NULL, which is the arm not drawing at all. */
+    /* 9. The arms the wiring does not serve stay NULL, which is the arm not drawing at all. Case 20 is no
+     * longer in that list: the shell owns the base-attack record, so the arm points at its own draw env. */
     Check(pF->draw.pPlaneArm == NULL
               && pF->draw.pResearchDraw == NULL && pF->draw.pBaseInfoArm == NULL
               && pF->draw.pManufPad == NULL && pF->draw.pTransferPad == NULL
-              && pF->draw.pBuySellPad == NULL && pF->draw.pBaseAtEnv == NULL,
+              && pF->draw.pBuySellPad == NULL,
           "the arms whose screen the shell cannot open stay NULL (see pufo_geoscape.h)");
+    Check(pF->draw.pBaseAtEnv == &pF->baseAtDraw,
+          "case 20's arm reaches BaseAtScreen_Draw through the shell's own draw env (0x944B4)");
     Check(pF->draw.pSoldierDraw == &pF->solDraw && pF->draw.pSoldierArm == &pF->solArm
               && pF->draw.pSoldierPanelCtl == &pF->solPanelCtl
               && pF->draw.pSoldierFindCtl == &pF->solFindCtl
@@ -1244,6 +1258,163 @@ int main(void)
     }
     CheckEqI32(g_world.geo.time.nTotalSec, nSec0 + 3 * (nTick + 1),
                "so at screen 0 the pulse advances the clock again (0x95510, 0x9562C)");
+
+    /* 13. The base-attack seam, end to end: the assault branch fills the shell's record, the opener builds
+     * the panel, the frame reveals it, and the OK click runs the close thunk and the teardown the dispatcher
+     * runs after it. The mission advance is the same call 0x809B8 makes once an item's travel time is up. */
+    {
+        SpawnMissionCtx missionCtx;
+        StrategItem *pUfo;
+        UiControl *pConfirm = g_world.ui.apCtl[GEOUI_CTL_186BA4];
+        i32 nListCount0 = PtrArray_GetCount(&g_world.strategList);
+        i32 nBase0 = -1;
+
+        /* A base with no defence facility (kind 12..16) at all: the report then fires nothing, which is
+         * what makes the two tails below decide the same way every run. */
+        for (i32 b = 0; b < (i32)g_world.nBaseCount; ++b) {
+            i32 nDef = 0;
+            for (i32 c = 0; c < 36; ++c) {
+                const i32 nKind = g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * b
+                                                         + PUFO_GRID_FAC_TYPE_OFF + c];
+                if (nKind >= 12 && nKind <= 16) { nDef += 1; }
+            }
+            if (nDef == 0) { nBase0 = b; break; }
+        }
+        Check(nBase0 >= 0, "at least one base has no defence facility, so the report's rolls are not needed");
+
+        /* A class-8 attacker: g_anBaseAtBudget covers 0..7 only, so the budget is 0 -- but the budget test
+         * sits INSIDE the defence-pair loop (0x57D7C and its three twins), so a base with nothing to fire
+         * never reaches it and the landing tail runs anyway. Run B gives the same attacker one defence cell
+         * to take the other arm. */
+        pUfo = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                   1, 1, 8, 120, 160, 4242, 1);
+        Check(pUfo != NULL, "the attacking contact is in the strateg list");
+        if (pUfo != NULL && nBase0 >= 0) {
+            pUfo->nMissionSub = 6;         /* the assault subtype */
+            pUfo->nPhase      = 2;         /* arrived, timer spent -- the gate at 0x7EF34 */
+            pUfo->nTimer      = 0;
+            pUfo->nTargetIdx  = nBase0;    /* +0x84: the base, and the mode handed to the opener */
+            pUfo->bRace       = 2;
+
+            World_FillMissionCtx(&g_world, &missionCtx);
+            Check(missionCtx.hooks.pfnContactScreen != NULL, "the shell fills the assault hook");
+            (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx);
+
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 20, "the branch writes the screen id 20 (0x7EF78)");
+            CheckEqI32(g_world.geo.time.bPaused, 1, "and pauses the clock before it (0x7EF4C)");
+            CheckEqI32(g_world.nBaseAtClass, 8, "the class byte comes from the item's +2 (0x7EF58)");
+            CheckEqI32(g_world.nBaseAtStrategIdx, pUfo->nSeed,
+                       "the strateg slot is the item's +0x34 seed, not its list index (0x7EF60)");
+            CheckEqI32(g_world.nAssaultBaseRace, 2, "the race byte from +0x70 (0x7EF68)");
+            CheckEqI32(g_world.nCraftHomeBase, nBase0, "and the base index into 0x158848 (0x7EF70)");
+            CheckEqI32(g_world.bBaseAtActive, 1, "Update ran on the build arm (0x57838)");
+            Check(g_world.pBaseAtPanel != NULL && g_world.pBaseAtPad != NULL,
+                  "and allocated both the panel and the pad it reads back through globals (0x578E0, 0x57A38)");
+            Check(g_world.nBaseAtLineLimit > 0 && g_world.pBaseAtPanel->nLineCount == 0,
+                  "the row count is set and the reveal starts from the first row");
+            CheckEqI32(g_world.bBaseAtMissionFollows, 1,
+                       "and a zero budget still lands: with no defence firing, bBudgetGone is never set");
+            Check(pConfirm != NULL && pConfirm->pfnClick != NULL,
+                  "Open installed the close thunk on the shared confirm control (0x58900)");
+            Check(pConfirm != NULL && pConfirm->y == 290 && pConfirm->x == 120 - ((i32)pConfirm->uWidth / 2),
+                  "centred on x 120 at y 290 (0x588E4, 0x588F4)");
+
+            /* The frame reveals one row per cooldown step, pacing through the shared radar counter. */
+            ClearSurface();
+            (void)DrawFrame();
+            CheckEqI32(g_world.pBaseAtPanel != NULL ? g_world.pBaseAtPanel->nLineCount : -1, 1,
+                       "case 20's fall-through shows the first row (0x58760..0x587CC)");
+            CheckEqI32(pF->g.nTapCooldown, 255,
+                       "and parks the cooldown for that row's aux 0 -- 255 - 0 (0x587A8)");
+            CheckEqI32(g_world.bBaseAtConfirmShown, 0, "with the OK control still waiting");
+
+            /* The OK click: the thunk the opener installed, not a hand-built call. */
+            if (pConfirm != NULL && pConfirm->pfnClick != NULL) {
+                pConfirm->pfnClick();
+            }
+            CheckEqI32(PtrArray_GetCount(&g_world.strategList), nListCount0 + 1,
+                       "a contact with a mission behind it KEEPS its item (the 0x577C8 test fails)");
+            CheckEqI32(g_world.geo.time.bPaused, 1, "and keeps the clock stopped (no 0x577EC)");
+            CheckEqI32(g_world.bBaseAtActive, 0, "while the tail call's Open(-1) still runs the release arm (0x586B4)");
+            Check(g_world.pBaseAtPanel == NULL && g_world.pBaseAtPad == NULL,
+                  "which frees both and nulls the slots (0x586EC, 0x5870C)");
+            CheckEqI32(g_world.bSpawnOnce, 1, "and arms the replacement-craft byte (0x58718)");
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "the dispatcher leaves the geoscape map (0x8BB08)");
+
+            /* The other tail: give the same class-8 attacker one defence to fire, and the budget test is
+             * reached -- 0 < 1, so the craft is destroyed whatever the roll says. */
+            /* Update counts a defence as a cell that is FINISHED (its buildDays byte is 0) and of kind
+             * 12..16, so an empty cell of the starting base -- kind 0, days 0, the sentinel the starting
+             * base uses before any facility goes in -- is the one to arm. */
+            i32 nDefCell = -1;
+            for (i32 c = 0; c < 36; ++c) {
+                if (g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
+                                           + PUFO_GRID_FAC_TYPE_OFF + c] == 0
+                    && g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nBase0 + c] == 0) {
+                    nDefCell = c;
+                    break;
+                }
+            }
+            if (nDefCell >= 0) {
+                g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
+                                       + PUFO_GRID_FAC_TYPE_OFF + nDefCell] = 16; /* fusion ball */
+            }
+            Check(nDefCell >= 0, "one empty cell of that base is armed with a fusion ball");
+
+            /* The list positions are made to differ from the creation serials on purpose. The teardown hands
+             * 0x158844 -- the item's +0x34 serial, taken from the counter at 0x18640C -- to
+             * StrategList_RemoveAt as its nIndex (the IDB labels the load `nIndex`). The two agree only while
+             * nothing has ever been removed, so one contact is removed first and the run then asks which slot
+             * the teardown actually empties. */
+            StrategItem *pFirst = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed,
+                                                      g_world.view.nMode, 1, 1, 8, 120, 160, 4240, 1);
+            pUfo = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                       1, 1, 8, 120, 160, 4243, 1);
+            (void)StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                      1, 1, 8, 120, 160, 4244, 1);
+            Check(pFirst != NULL && pUfo != NULL && FindStrategById(&g_world.strategList, 4244) >= 0,
+                  "the fixture is three contacts: one to lose, the attacker, and its neighbour");
+            g_world.bSpawnOnce = 0; /* no replacement roll out of this removal */
+            (void)StrategList_RemoveAt(&g_world.strategList, &g_world.geo.world,
+                                       FindStrategById(&g_world.strategList, 4240), &g_world.bSpawnOnce,
+                                       &g_world.spawnCtx);
+            CheckEqI32(FindStrategById(&g_world.strategList, 4243) + 1, pUfo->nSeed,
+                       "after a removal the +0x34 serial is one past the attacker's index (0x82704, 0x82A84)");
+
+            nListCount0 = PtrArray_GetCount(&g_world.strategList);
+            if (pUfo != NULL) {
+                pUfo->nMissionSub = 6;
+                pUfo->nPhase      = 2;
+                pUfo->nTimer      = 0;
+                pUfo->nTargetIdx  = nBase0;
+                pUfo->bRace       = 3;
+                World_FillMissionCtx(&g_world, &missionCtx);
+                (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx);
+                CheckEqI32(g_world.bBaseAtMissionFollows, 0,
+                           "with a defence firing, the spent budget takes the destroyed tail (0x58618 arm)");
+                CheckEqI32(g_world.bBaseAtActive, 1, "and the report is built again");
+                CheckEqI32(g_world.nBaseAtStrategIdx, pUfo->nSeed,
+                           "the teardown's slot is the serial, not the index (0x7EF60, 0x158844)");
+
+                if (pConfirm != NULL && pConfirm->pfnClick != NULL) {
+                    pConfirm->pfnClick();
+                }
+                CheckEqI32(PtrArray_GetCount(&g_world.strategList), nListCount0 - 1,
+                           "the click runs StrategList_RemoveAt once (0x577D4)");
+                Check(FindStrategById(&g_world.strategList, 4244) == -1
+                          && FindStrategById(&g_world.strategList, 4243) >= 0,
+                      "and it empties the slot the serial names -- the neighbour, not the contact. 0x158844 "
+                      "carries a creation serial and RemoveAt wants an index; the original never reconciles them");
+                CheckEqI32(g_world.geo.time.bPaused, 0, "and unpauses (0x577EC)");
+                CheckEqI32(g_world.bBaseAtActive, 0, "and the teardown arm releases the panel");
+                Check(g_world.pBaseAtPanel == NULL && g_world.pBaseAtPad == NULL,
+                      "and both pointers with it");
+            }
+            Check(g_world.closeEnv.pbBaseAtAssault == NULL,
+                  "the mission-follow branch stays gated: Smap_BeginCraftSelect's Map env is not the shell's "
+                  "(0x8BB10, 0x8BB24)");
+        }
+    }
 
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);

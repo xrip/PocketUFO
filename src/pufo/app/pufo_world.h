@@ -58,6 +58,9 @@ typedef struct GeoscapeFrameState {
     GeoscapeBaseFacArmEnv    baseFac;     /* its pad, the two block controls, the armed gate */
     BuildDialogEnv           facDialog;   /* BaseFacScreen_DrawBuildDialog @ 0x59b60 */
     FacOverlayEnv            facOverlay;  /* its call at 0x59EF8: BaseFacScreen_DrawPlacementOverlay @ 0x58e10 */
+    /* Case 20 (0x944B0..0x944B4), the base-attack report. It is the only screen id that falls into the
+     * frame end instead of branching to it, and BaseAtScreen_Draw is inside that fall-through. */
+    BaseAtDrawEnv            baseAtDraw;  /* BaseAtScreen_Draw @ 0x58728, over the shell's base-at record */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -225,6 +228,27 @@ typedef struct PufoWorldState {
     u8           abLastRowName[4];      /* the 0x187024 slot the dialog's 17th row reads */
     u32          nShortfall1870C8;      /* byte_1870C8, written as a dword */
     i32          nResidue1870B4;        /* dword_1870B4[0] */
+    /* The base-attack record, the run at 0x158840..0x158864. Its one writer is the assault branch of
+     * Geoscape_SpawnMissionSite (nPhase 2 with subtype 6, 0x7EF4C..0x7EF80): the class byte from the
+     * attacking item's +2, the strateg index from its +0x34 seed, the base index and the race from +0x84
+     * and +0x70. Its readers are the three screen callees -- BaseAtScreen_Update @ 0x57808 builds the
+     * panel and the pad into the two pointer slots, BaseAtScreen_Draw @ 0x58728 reveals the rows through
+     * the shared radar cooldown, BaseAtScreen_CloseThunk @ 0x577c0 hands nBaseAtStrategIdx to
+     * StrategList_RemoveAt. Geoscape_CloseUI case 20 (0x8BAF4) is the teardown that calls the same opener
+     * with -1, which runs Update's release arm and frees both. */
+    i8           nBaseAtClass;          /* 0x158840, the attacking craft's size class, read SIGNED */
+    i32          nBaseAtStrategIdx;     /* 0x158844 = the item's nSeed (+0x34), not its list index */
+    i8           nCraftHomeBase;        /* 0x158848 = the item's nTargetIdx, the base index, read SIGNED
+                                         * (LDRSB) by the defence and teardown paths that follow */
+    i8           nAssaultBaseRace;      /* 0x158849 = the item's bRace (+0x70): the sprite set the
+                                         * landing craft selects through */
+    PadImage    *pBaseAtPad;            /* 0x15884C, allocated and released by Update */
+    u8           bBaseAtMissionFollows; /* 0x158850: the budget survived, so a tactical mission follows */
+    u8           bBaseAtConfirmShown;   /* 0x158854: every row is revealed and the OK control is drawn */
+    i32          nBaseAtLineLimit;      /* 0x158858, the row count the draw has to reveal */
+    UiPanel     *pBaseAtPanel;          /* 0x15885C, allocated and released by Update */
+    i32          nBaseAtLineCap;        /* 0x158860, the built line count, restored before the lines go */
+    u8           bBaseAtActive;         /* 0x158864, the build/release gate */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */
@@ -345,6 +369,14 @@ typedef struct WorldHooks {
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
     void *pHitTestUser;
 } WorldHooks;
+
+/* The context Geoscape_SpawnMissionSite @ 0x7e49c needs: the strateg list, the seed counter, the viewport,
+ * the level-0 tile grid, the base table, the mission-site table, the facility grid, the radar-pulse timer,
+ * the world and the clock total -- all cells the shell owns -- plus the three hooks the mission subtypes
+ * reach for (the root message append, the hangar's intercept item, the base-attack screen's opener). The
+ * shell calls it at its three mission seams (the load tail, the event pass, the craft roll); it is public
+ * because the assault branch is only testable through the hook this fills in. */
+void World_FillMissionCtx(PufoWorldState *pW, SpawnMissionCtx *pCtx);
 
 /* Fill every geoscape frame env over this state. Run it after the UI objects exist (Geoscape_InitUI
  * on the new-game path, before LoadGame on the load path, because LoadGame renders through the

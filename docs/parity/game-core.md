@@ -17498,6 +17498,55 @@ back to NULL turns 6 red. Checks 17951 -> 17982, gate 61/61 in both configs, cov
 Left open by this pass, recorded rather than folded in: no shell cell models 0x158840..0x158867, so
 the base-attack screen stays unreachable and case 20's draw env stays unwired (pufo_world.c:1675).
 That is the next seam, and it is the same block `BaseAtUpdateEnv` / `BaseAtDrawEnv` already ask for.
+Part 44 gives the shell that record, and the base-attack screen runs end to end. `PufoWorldState` now owns
+the run at 0x158840..0x158864 -- class byte, strateg index, home base, race, pad, mission-follows,
+confirm-shown, line limit, panel, line cap and the active gate -- and four seams are wired to it: the
+assault hook `World_ContactScreen` (the side effects at 0x7EF4C..0x7EF80, which the callee does not reach
+itself), `GeoscapeCloseEnv.pfnBaseAtOpen` (the teardown's Open(&0x158840, -1) at 0x8BB00), the frame's
+case-20 draw env (0x944B4, `pF->draw.pBaseAtEnv`), and the click thunk `BaseAtScreen_Open` stores at
+control offset 0x0C (0x58900). Because those two hooks take no arguments -- the original reaches
+everything through globals -- their envs live in file scope next to `g_pActiveWorld`.
+`World_BuildMissionCtx` became `World_FillMissionCtx` and is public, because the assault branch is only
+testable through the hook it fills in.
+
+Four facts the wiring only showed once it was live. (1) `BaseAtScreen_Update @ 0x57808` chooses its arm
+by `bBaseAtActive @ 0x158864` (tested 0x57814, set 0x57838, cleared 0x586B4), not by its mode argument:
+while a report exists the release arm runs whatever the mode says, so the -1 at 0x8BB00 is a placeholder
+index and the mode only matters as the base index on the build arm. Mutating -1 to 0 changed nothing
+observable -- the first mutation in this part that produced no red at all, and the reason is this gate.
+(2) The budget test is INSIDE the defence-pair loop (0x57D7C and its twins at 0x57F28, 0x580D0, 0x58280).
+A base with nothing to fire never reaches it, so a class byte outside 0..7 -- budget 0 from the table --
+still takes the landing tail with bBaseAtMissionFollows set. The destroyed arm needs at least one
+defence cell to fire. (3) A defence cell counts only when it is FINISHED: the days byte (36*base) must be
+0 and the type byte (372+144*base+108) must be 12..16. (4) `nBaseAtStrategIdx @ 0x158844` is the item's
++0x34 creation serial -- the 0x18640C counter, stamped by StrategItem_ctor @ 0x82BD4 -- and 0x577D4
+hands it to StrategList_RemoveAt as an INDEX. The original never reconciles the two. The new test removes
+an earlier contact first, and the teardown then empties the neighbour's slot while the attacker stays:
+a faithful reproduction of a real defect, now pinned rather than guessed.
+
+Two older comments were wrong and are corrected in the IDB. The switch in `Geoscape_CloseUI` tests
+nGeoscapeScreen - 1 (`SUB R0,R0,#1` / `CMP R0,#0x13` at 0x8BA8C..0x8BA90), so IDA's `case 19` label at
+0x8BAF4 is screen 20 -- and that arm leaves the id 0 at 0x8BB08, so the comment on 0x944B0 claiming
+screen 20 is what `Geoscape_CloseUI case 19 leaves` was wrong twice over: the only writer of 20 is
+0x7EF78. Comments now sit at 0x577D4, 0x7EF60, 0x944B0, 0x8BAF4, 0x57814 and 0x57D7C, with function
+comments on 0x57808 and 0x577c0 and a global comment on 0x158844.
+
+Left gated rather than half-wired: `GeoscapeCloseEnv.pbBaseAtAssault` stays NULL, which switches off the
+whole branch at 0x8BB10. A contact whose budget survived ends with Map_bMissionMode = 1 (0x8BB20) and
+Smap_BeginCraftSelect (0x8BB24), and that callee reads twelve Map-block cells plus abTactTileTypes
+@ 0x159D5C through an env it dereferences with no guard at 0x838E0. The shell owns none of that Map block
+-- the same blocker as the bankruptcy branch above. Also recorded, not folded in: an empty facility cell
+is 255 in a block made by the new-base path but 0 in the starting base's untouched cells, and
+`Base_CalcMonthlyUpkeep @ 0x6a230` charges 50000 for every cell that is not 255, which deserves its own
+check of the starting base's grid.
+
+Tests: `tests/test_geoscapeframe.c` gained the whole flow -- the mission advance 0x809B8 runs, the record
+is filled, the panel and pad are allocated, one frame reveals the first row through the shared radar
+cooldown, the installed click runs the close thunk, and the dispatcher's teardown releases everything;
+then the destroyed tail, the wrong-slot removal, and the gated branch. 37 new checks; mutations: the
+assault branch emptied turns 14 checks red, the teardown opener emptied turns 7. Gate 61/61 in both
+configs, 18019 checks, coverage unchanged -- every callee here was already ported and only waiting.
+
 
 Dispositions, not ported, with reasons. Map_RegisterAtexit (0x22620) and its thunk
 Map_Atexit_nullsub2 (0x2262c) register a

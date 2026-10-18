@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596840 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 17982 |
+| Test checks run | 18019 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -621,7 +621,7 @@ is the module that answers to it.
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
-| `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_strateg.h` |
+| `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x94554` | `Game_StartNew` | 3976 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+6) |
 | `0x60570` | `RadarScreen_Update` | 3804 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5f490` | `RadarScreen_Init` | 3600 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -827,7 +827,7 @@ is the module that answers to it.
 | `0x6f9a4` | `ManufScreen_DrawFrame` | 5400 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x76de0` | `BuySellScreen_BuildPanels` | 4236 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x96b30` | `TransferScreen_BuildPanels` | 3956 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x57808` | `BaseAtScreen_Update` | 3872 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x57808` | `BaseAtScreen_Update` | 3872 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x7baf8` | `BasePlaneScreen_DrawCraftDetail` | 3824 | `src/pufo/game/pufo_plane.h` |
 | `0x77e6c` | `BuySellScreen_Draw` | 3524 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x58e10` | `BaseFacScreen_DrawPlacementOverlay` | 3396 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
@@ -881,7 +881,7 @@ is the module that answers to it.
 | `0x79e00` | `BasePlaneScreen_DrawStatLabelA` | 452 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
 | `0x79fc4` | `BasePlaneScreen_DrawStatLabelB` | 452 | `src/pufo/game/pufo_plane.h` |
 | `0x619cc` | `SoldierScreen_EquipSelected` | 448 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
-| `0x58728` | `BaseAtScreen_Draw` | 420 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x58728` | `BaseAtScreen_Draw` | 420 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x9690c` | `Transfer_ResetSite` | 420 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x9a754` | `Ufopaedia_NextEntry` | 364 | `src/pufo/game/pufo_baseui.h` |
 | `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h`, `src/pufo/render/pufo_render.h` |
@@ -994,7 +994,7 @@ is the module that answers to it.
 | `0x6b148` | `SaveGame_Slot6_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6ba70` | `OptionsScreen_SetMusicVol1` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6bbd0` | `OptionsScreen_SetMusicVol5` | 76 | `src/pufo/game/pufo_baseui.h` |
-| `0x577c0` | `BaseAtScreen_CloseThunk` | 72 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x577c0` | `BaseAtScreen_CloseThunk` | 72 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x64a9c` | `SoldierScreen_SelectListed` | 72 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x6d01c` | `OptionsScreen_PanelPrev` | 72 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6d064` | `OptionsScreen_PanelNext` | 72 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -1271,7 +1271,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 237 |
+| `test_geoscapeframe` | PASS | 274 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |
