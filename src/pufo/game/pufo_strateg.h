@@ -812,12 +812,30 @@ typedef struct SmapZoomSet {
     u16  uWorldH;       /* the u16 at 0x186BC0 + 2 */
 } SmapZoomSet;
 
-/* The world size pair the zoom steps publish at 0x186BC0. It is not part of the
- * 36-byte view block, so it travels separately. */
+/* The u16 header pair of the world glyph record at *(u32*)0x186BC0. It is not part of the
+ * 36-byte view block, so it travels separately.
+ *
+ * 0x186BC0 holds a POINTER to one allocation, and that allocation is a glyph record, not a
+ * pair: 0x85A18 asks the allocator for 0x4E204 = 4 + 800*400 bytes, 0x85A38 memsets the whole
+ * thing, and 0x85A44/0x85A50 store 0x320 and 0x190 into the first two u16s. The record is then
+ * the glyph argument of SoftSurf_BlitFlip in three places -- Geoscape_Draw @ 0x8C590/0x8C5C0,
+ * RadarScreen_BlitMapBackdrop @ 0x5EBF0 and Geoscape_DrawScreen @ 0x6C250 -- and BlitFlip reads
+ * the width and height out of pGlyph[0..3], which is exactly this pair, and walks
+ * pGlyph[4 + w*y + x] as the index bytes. The zoom steps republish only the pair: level 0's
+ * 800x400, level 1's 600x300 and level 2's 472x236 all go through this same header, so the
+ * record's dimensions follow the zoom while its 320000 index bytes stay where they are.
+ *
+ * Nothing in the binary ever writes those index bytes. InitUI memsets them, no save chunk
+ * carries them (Save_ReadSmap reads the camera and the site records only), and no other
+ * function takes the record pointer. On every path the geoscape world layer therefore blits
+ * index 0 of the map palette through the layer pad's mask. */
 typedef struct SmapWorldSize {
     u16 uW;
     u16 uH;
 } SmapWorldSize;
+
+#define PUFO_SMAP_WORLD_INDEX_BYTES  (800 * 400)  /* the record's index bytes, 0x4E204 - 4 */
+#define PUFO_SMAP_WORLD_RECORD_BYTES (4 + PUFO_SMAP_WORLD_INDEX_BYTES) /* 0x85A18 MOV R0,#0x4E204 */
 
 /* The scroll rescale factors, read out of the muld immediates. Zooming in from
  * level 0 to 1 is NOT the reciprocal of zooming out from 1 to 0: 0.7501875468867217

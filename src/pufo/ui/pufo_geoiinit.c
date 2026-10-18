@@ -239,13 +239,17 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
         pUi->apPad[i] = InitUI_NewPad();
     }
 
-    /* 0x85A34: the world-size block. The original allocates 0x4E204 bytes (the 800x400
-     * pair plus a 320000-byte tail nothing reads) and stores the pair with STRH; the port
-     * allocates just the pair (deviation). 0x160C4C gets its 144 here (STRB R1, #0x90). */
-    pWorld = (SmapWorldSize *)malloc(sizeof(SmapWorldSize));
+    /* 0x85A18..0x85A50: the world glyph record. The allocation is 0x4E204 = 4 + 800*400 and
+     * 0x85A38 memsets ALL of it, so the record is a SoftSurf_BlitFlip glyph whose 320000 index
+     * bytes are zero from birth and stay zero -- nothing in the binary writes them. The two STRH
+     * store the header pair 800 x 400, which is also what Smap_ApplyZoomSet republishes on every
+     * zoom step. See the SmapWorldSize comment in game/pufo_strateg.h.
+     * 0x160C4C gets its 144 here (STRB R1, #0x90). */
+    pWorld = (SmapWorldSize *)malloc(PUFO_SMAP_WORLD_RECORD_BYTES);
     if (pWorld != NULL) {
-        pWorld->uW = 800;
-        pWorld->uH = 400;
+        memset(pWorld, 0, PUFO_SMAP_WORLD_RECORD_BYTES); /* 0x85A38 BL memset, size R2 = 0x4E204 */
+        pWorld->uW = 800;   /* 0x85A44 STRH R3,#0x320 */
+        pWorld->uH = 400;   /* 0x85A50 STRH R3,#0x190 */
     }
     pUi->pWorldSize = pWorld;
     *pEnv->puResearchEntries = PUFO_RESEARCH_TOPIC_COUNT;

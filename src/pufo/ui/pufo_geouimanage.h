@@ -104,7 +104,8 @@ typedef struct GeoscapeUiState {
     PadImage  *apPad[PUFO_GEOUI_PAD_SLOTS];
     PadImage  *apClockDigitPads[PUFO_GEOUI_CLOCK_DIGIT_PADS]; /* 0x186BF0 + 4*i */
 
-    /* 0x186BC0 holds a pointer to the pair, not the pair itself. Freed with no null
+    /* 0x186BC0 holds a pointer to the world glyph record (4 + 800*400 bytes, allocated and
+     * memset by Geoscape_InitUI); pWorldSize points at its header pair. Freed with no null
      * check and no PadImage_FreeData, because it is not a PadImage. */
     SmapWorldSize *pWorldSize;
 

@@ -185,6 +185,17 @@ static void TestNewGame(void)
     }
     Check(g_ui.pWorldSize != NULL && g_ui.pWorldSize->uW == 800 && g_ui.pWorldSize->uH == 400,
           "world size pair is 800 x 400");
+    {
+        /* 0x85A18 allocates 0x4E204 = 4 + 800*400 and 0x85A38 memsets ALL of it, so the pair is the
+         * header of a SoftSurf_BlitFlip glyph record whose 320000 index bytes are zero. Nothing in
+         * the binary writes them, so they must still be zero right after InitUI. */
+        const u8 *pRec = (const u8 *)g_ui.pWorldSize;
+        bool bZero = true;
+        for (i32 k = 0; k < PUFO_SMAP_WORLD_INDEX_BYTES; ++k) {
+            if (pRec[4 + k] != 0) { bZero = false; break; }
+        }
+        Check(bZero, "the world record's 320000 index bytes are all zero (0x4E204 allocation, memset at 0x85A38)");
+    }
 
     printf("pads loaded from main.dat\n");
     Check(g_ui.apPad[GEOUI_PAD_186B78]->pData != NULL, "earth100 pad loaded");

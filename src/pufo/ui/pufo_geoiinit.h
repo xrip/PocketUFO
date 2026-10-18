@@ -111,8 +111,8 @@ typedef struct GeoscapeInitEnv {
     GeoscapeUiState *pUi;
     SmapView        *pView;      /* gSmapCam @ 0x1863E8 */
     SmapZoomSet     *pSetsOut;   /* three sets: the layer globals the zoom code swaps */
-    /* The world-size pair (0x186BC0) is allocated here and published as pUi->pWorldSize;
-     * GeoscapeUi_FreeAll releases it. */
+    /* The world glyph record behind 0x186BC0 (0x4E204 = 4 + 800*400 bytes) is allocated here and
+     * published as pUi->pWorldSize, pointing at its header pair; GeoscapeUi_FreeAll releases it. */
     i32             *pnScreenMode;   /* nGeoscapeScreen @ 0x186BC4 */
     u8              *pbGeoscapeUi;   /* unk_1139FC @ Map+0x44 */
     u8              *pbRoot34;       /* unk_18652C */
