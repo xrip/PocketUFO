@@ -3277,12 +3277,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   blocks the CloseUI bankruptcy writes (Map_bTickHold @ 0x113A12, Map_bBattleEnded @ 0x113A14,
   Map_bMissionMode @ 0x128AD5) and the 0xC350 tactical arm. One owner would open all three.
 
-- [ ] **Reported, not folded in: the starting base's empty cells are 0, not 255.** A block built by the
-  new-base path holds 255 in its unused cells; the starting base's untouched cells hold 0 (measured in the frame
-  test's world). `Base_CalcMonthlyUpkeep @ 0x6a230` charges 50000 for every one of the 36 cells whose type byte
-  is *not* 255, and `BaseAtScreen_Update`'s defence scan reads the same layer -- so the sentinel's origin
-  changes what both charge and what counts as a defence. Worth checking against the original's new-game grid
-  before anything here is "fixed".
+- [x] **Closed: the empty-cell sentinel is one value, not two.** `Game_StartNew` stamps 0xFF over the TYPE
+  layer of all eight base blocks (`ADD LR,R5,#0x174` 0x948EC, `MOV R7,#8` 0x948F4, `MOV R11,#0xFF` 0x94908,
+  the store `STRB R11,[R0,#0x48]` 0x9491C at block+108, `ADD LR,LR,#0x90` 0x94940) and 0 into the block's
+  other three sub-layers (0x94904, 0x94914, 0x94920); `R2 = R5` is anchored once at 0x948F0 and advances 6 per
+  row through all eight iterations, so the days layer of every block is cleared too. The port matches the
+  stamp at `pufo_geoiinit.c:604..612` and `tests/test_startnew.c:526` and `:540` assert it. The reading that
+  looked like a divergence was the frame test's own `memset(g_world.abFacilityGrid, 0, ...)` at
+  `tests/test_geoscapeframe.c:900`, an empty-base fixture for an upkeep-score check seen later in the same world.
 
 - [ ] **Next unit: the tactical runtime seam the 0xC350 callee is waiting for.** `GameTick_OnTimer` is ported and now
   measured, but its call site is a documented no-op because the shell owns none of what the tactical branch reads:

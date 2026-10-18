@@ -17535,10 +17535,17 @@ Left gated rather than half-wired: `GeoscapeCloseEnv.pbBaseAtAssault` stays NULL
 whole branch at 0x8BB10. A contact whose budget survived ends with Map_bMissionMode = 1 (0x8BB20) and
 Smap_BeginCraftSelect (0x8BB24), and that callee reads twelve Map-block cells plus abTactTileTypes
 @ 0x159D5C through an env it dereferences with no guard at 0x838E0. The shell owns none of that Map block
--- the same blocker as the bankruptcy branch above. Also recorded, not folded in: an empty facility cell
-is 255 in a block made by the new-base path but 0 in the starting base's untouched cells, and
-`Base_CalcMonthlyUpkeep @ 0x6a230` charges 50000 for every cell that is not 255, which deserves its own
-check of the starting base's grid.
+-- the same blocker as the bankruptcy branch above. The second item opened in this pass is closed by the
+disassembly rather than by a measurement: `Game_StartNew` stamps 0xFF over the TYPE layer of all eight
+base blocks (`ADD LR,R5,#0x174` 0x948EC, `MOV R7,#8` 0x948F4, `MOV R11,#0xFF` 0x94908, the store
+`STRB R11,[R0,#0x48]` 0x9491C over block+108, `ADD LR,LR,#0x90` 0x94940), and writes 0 into the block's
+other three sub-layers (0x94904, 0x94914, 0x94920) and the days layer (0x9490C). There is one empty-cell
+sentinel, not two: `R2 = R5` is anchored once at 0x948F0 and advances 6 per row through all eight
+iterations, so the days layer of every block is cleared too. The port stamps the same 0xFF at
+`pufo_geoiinit.c:611` and `tests/test_startnew.c:526` and `:540` assert it. The reading that made this look
+like a divergence was the frame test's own
+`memset(g_world.abFacilityGrid, 0, ...)` at `tests/test_geoscapeframe.c:900`, an empty-base fixture for an
+upkeep score check, seen later in the same world.
 
 Tests: `tests/test_geoscapeframe.c` gained the whole flow -- the mission advance 0x809B8 runs, the record
 is filled, the panel and pad are allocated, one frame reveals the first row through the shared radar
