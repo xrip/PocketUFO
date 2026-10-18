@@ -3818,7 +3818,7 @@ void BaseFacScreen_Toggle(const BaseFacToggleEnv *pEnv);
  * nFunds - cost < 0 (0x58958, SUBS then the MI stores): byte_1870C8 = 1 as a DWORD (every reader
  * loads a byte) and dword_1870B4[0] = 0, and the original returns &dword_1870B4. Otherwise
  * unk_158888 = 1 (0x5897C, arming the placement) and, when byte_187074[4] == 0, unk_158868 takes
- * panel->nUnk3032 (0x58994). Neither index is bounds-checked: an out-of-range sel reads anLineAux
+ * panel->nUnk3032 (the store at 0x58998, gated by 0x5898C). Neither index is bounds-checked: an out-of-range sel reads anLineAux
  * past the array and an out-of-range kind reads aBaseFacFlags past the table (bugs.tsv).
  *
  * Deviation: the port returns 1 when the purchase is affordable and 0 on the shortfall, where the

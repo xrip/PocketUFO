@@ -9235,7 +9235,7 @@ released but the objects are not freed; a failed allocation returns instead of s
 `cost = aBaseFacFlags[kind].uCost` (0x58944, record + 0x18). `nFunds - cost < 0` (0x5894C):
 `byte_1870C8 = 1` as a **dword** (0x58960 -- every reader loads a byte) and `dword_1870B4[0] = 0`.
 Otherwise `bBaseFacPlaceArmed = 1` (0x5897C) arms the placement, and with `byte_187074[4] == 0`
-`nBaseFacPanelSel` takes `panel->nUnk3032` (0x58994).
+`nBaseFacPanelSel` takes `panel->nUnk3032` (the store at 0x58998, gated by the ANDS on 0x187078 at 0x5898C).
 
 Deviation: the port returns 1/0 where the original returns the panel pointer or `&dword_1870B4`, and
 it refuses an out-of-range kind instead of reading the table out of bounds (0x58944, bugs.tsv).

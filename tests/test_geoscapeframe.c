@@ -158,6 +158,56 @@ static bool SawPadBlit(const PadImage *pPad)
     return false;
 }
 
+/* The tile the globe hover samples. Geoscape_DrawGlobeHover @ 0x67894 calls Smap_GetTileAtScreen @ 0x82244 at
+ * the fixed screen point (120, nMidY) with nMidY = (320 - strip height) / 2 (0x67328, 0x6734C), so the region
+ * it reports follows the view scroll, exactly as Smap_GetTileAtScreen resolves it. */
+static i32 HoverSampleTile(i32 nMidY, i32 *pnTileX, i32 *pnTileY)
+{
+    const SmapView *pView = &g_world.view;
+    const u8       *pTiles = g_world.frame.hover.pTiles;
+    i32             nX = pView->nScrollX + pView->nMapW / 2;
+    i32             nY = pView->nScrollY + pView->nMapH / 2 + nMidY - 160;
+
+    if (nX < 0) { nX += pView->nMapW; }
+    if (nY < 0) { nY += pView->nMapH; }
+    *pnTileX = nX;
+    *pnTileY = nY;
+    if (pTiles == NULL || nX >= pView->nMapW || nY >= pView->nMapH) {
+        return 0xFF;
+    }
+    return pTiles[nY * pView->nMapW + nX];
+}
+
+/* The buildable tile (0x80..0x89) nearest to (nFromX, nFromY), or -1 / -1 when the grid holds none. */
+static void NearestRegionTile(i32 nFromX, i32 nFromY, i32 *pnX, i32 *pnY)
+{
+    const SmapView *pView = &g_world.view;
+    const u8       *pTiles = g_world.frame.hover.pTiles;
+    i32             nBest = 0x7FFFFFFF;
+    i32             nX, nY;
+
+    *pnX = -1;
+    *pnY = -1;
+    if (pTiles == NULL) {
+        return;
+    }
+    for (nY = 0; nY < pView->nMapH; ++nY) {
+        for (nX = 0; nX < pView->nMapW; ++nX) {
+            const u8 nTile = pTiles[nY * pView->nMapW + nX];
+            i32      nDist;
+            if (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+                continue;
+            }
+            nDist = (nX - nFromX) * (nX - nFromX) + (nY - nFromY) * (nY - nFromY);
+            if (nDist < nBest) {
+                nBest = nDist;
+                *pnX = nX;
+                *pnY = nY;
+            }
+        }
+    }
+}
+
 int main(void)
 {
     const char *const apsz[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -171,6 +221,8 @@ int main(void)
     i32       nOpen0, nSamples0;
     i32       nKind, nSpan, nCellW, nCost0, nFunds0, nBase0, nSiteId0, nRegionCnt0;
     i32       nRowX, nRowY, nAimX, nAimY, nFunds1;
+    i32       nMidY, nTile, nTileX, nTileY, nRegX, nRegY, nRegion, nRegionIdx, nNewCost;
+    i32       nBase1, nSiteId1, nMode0, nCost1, nCnt1, nRow2Y, nRowSel, nSel0;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
         printf("FAIL: Boot_LoadStartup\n");
@@ -763,6 +815,196 @@ int main(void)
     g_world.nUnk15887C = 0;
     g_world.nUnk158880 = 0;
 
+    /* 12g. A whole new base, reached only through the seams the game uses. Nav slot 0 is NewBaseScreen_Open
+     * @ 0x615d0 (installed at 0x67B74); the globe hover seats its "Build base" control at (120 - width/2, 290)
+     * (0x679F0 / 0x67A00); that control's handler is NewBaseScreen_TryConfirm @ 0x6152c -- Sound_Play(17, 4),
+     * then the funds gate at 0x6156C, skipped while a pick is pending -- and its tail call is Geoscape_OnMapClick
+     * @ 0x8b4a8. OnMapClick's no-pick arm (0x8B634) seats the build screen on the base COUNT (0x8B638 / 0x8B644),
+     * which is the slot the new base takes, writes the id 7 (0x8B64C) and NEVER clears the new-base byte the
+     * press set at 0x874E4; the clear lives in the other arm, at 0x8B60C. That is what lets the overlay's gate at
+     * 0x59ACC take 12f's pen build through Base_CreateNamedEntry @ 0x66930 instead of a facility on an old base.
+     *
+     * The hovered region is not written by hand. The hover samples one fixed screen point -- (120, nMidY) with
+     * nMidY = (320 - strip height) / 2, 0x67328 / 0x6734C -- through Smap_GetTileAtScreen @ 0x82244, so the region
+     * follows the view scroll. The scroll is the one thing set directly here, and only when the point the
+     * new-game camera already samples is not a buildable region; the pen drag that moves it in the game is not
+     * part of this section's flow. Funds are data too: three purchases have to be affordable. */
+    nBase1    = g_world.nBaseCount;                    /* 12e's commit made this two */
+    nSiteId1  = g_world.nCreateNextSiteId;             /* dword_186558 */
+    nMode0    = g_world.view.nMode;
+    nMidY     = (320 - (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight) / 2;
+    g_world.nFunds = 3000000;
+    nFunds1 = g_world.nFunds;
+
+    nSamples0 = g_nSamples;
+    g_world.nav.apNav[0]->pfnClick();                  /* NewBaseScreen_Open @ 0x615d0 */
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 2, "nav slot 0 writes the new-base screen id (0x61620)");
+    CheckEqI32(g_nSamples, nSamples0 + 1, "after its Sound_Play(17, 4) (0x615dc)");
+    Check(g_world.ui.apCtl[GEOUI_CTL_186B00]->x == 224 && g_world.ui.apCtl[GEOUI_CTL_186B00]->y == 1,
+          "with the close control at (224,1) (0x61608 / 0x61614)");
+    CheckEqI32(g_world.view.nMode, nMode0,
+               "and its two Smap_ZoomOut change nothing at zoom 0: level 0 has no outward step (0x81E5C)");
+
+    Check(pF->hover.pTiles != NULL, "the frame carries the tile grid the hover samples (0x186B04 -> pData)");
+    CheckEqI32(g_world.bUiAnimStarted, 0, "and the opener re-arms the bottom panel's expansion (0x187080, 0x6164C)");
+
+    /* The hover is the screen's own second gate: while that panel is still expanding it stops at 0x67490 and
+     * returns 0, so the scan animation, the readouts, the region byte and the confirm-control seat all wait for
+     * the panel to finish. The pen waits it out the way the render timer does -- frames, not flags. */
+    nTile = HoverSampleTile(nMidY, &nTileX, &nTileY);
+    if (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+        NearestRegionTile(nTileX, nTileY, &nRegX, &nRegY);
+        Check(nRegX >= 0, "the shipped tile grid holds a buildable region to bring the camera over");
+        g_world.view.nScrollX = nRegX - g_world.view.nMapW / 2;
+        g_world.view.nScrollY = nRegY - g_world.view.nMapH / 2 - nMidY + 160;
+    }
+    /* cUiAnimProgress @ 0x187058 is stepped by the app's WM_TIMER branch (0xA0C88..0xA0C90), and mode 3 of
+     * Ui_AnimExpandBlit lands on progress 100 once 50 * progress reaches the panel width (0x95D60). This test
+     * runs no timer, so it steps that byte the way the timer does and draws between the steps. */
+    nRegion = 0;
+    for (i = 0; i < 12; ++i) {
+        if (g_world.cUiAnimProgress < 101) {
+            ++g_world.cUiAnimProgress;
+        }
+        (void)DrawFrame();
+        nRegion = g_world.bPendingRegionId;
+        if (nRegion >= PUFO_REGION_ID_FIRST && nRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+            break;
+        }
+    }
+    Check(nRegion >= PUFO_REGION_ID_FIRST && nRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT,
+          "the globe hover resolves a buildable region from its own sample (0x67894, returned at 0x67B0C)");
+    /* 0x6786C / 0x67874 store the pick of the PREVIOUS sample: the hover writes the view's nPickX/nPickY first
+     * and only then calls Smap_GetTileAtScreen @ 0x82244, which overwrites them. Over a still camera the two
+     * coincide, so one more frame makes the pair comparable. */
+    ClearSurface();
+    (void)DrawFrame();
+    Check(g_world.nPlaceX == g_world.view.nPickX && g_world.nPlaceY == g_world.view.nPickY,
+          "nPendingPickX/Y @ 0x159D94/0x159D98 carry the pick the hover resolved a frame earlier (0x67860..0x67874)");
+    Check(g_world.ui.apCtl[GEOUI_CTL_186BA4]->y == PUFO_GLOBE_LABEL_Y_BUILD
+              && g_world.ui.apCtl[GEOUI_CTL_186BA4]->x == 120
+                 - (i32)(g_world.ui.apCtl[GEOUI_CTL_186BA4]->uWidth >> 1),
+          "the region arm seats the confirm control centred on 120 at y 290 (0x679F0 / 0x67A00)");
+
+    nRowX = g_world.ui.apCtl[GEOUI_CTL_186BA4]->x + 2;
+    nRowY = g_world.ui.apCtl[GEOUI_CTL_186BA4]->y + 2;
+    nRegionIdx = (nRegion >= PUFO_REGION_ID_FIRST && nRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT)
+                 ? nRegion - PUFO_REGION_ID_FIRST : 0;
+    nNewCost   = (i32)g_anNewBaseCostByRegion[nRegionIdx];
+    Check(g_world.bPlacementPending == 0, "the starting pick was committed earlier in this run, so the gate is live (0x6153C)");
+
+    g_world.nFunds   = nNewCost - 1;                   /* the gate's own price, one short */
+    nSamples0        = g_nSamples;
+    World_GeoscapePointer(&g_world, nRowX, nRowY, true);
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_nSamples, nSamples0 + 1, "TryConfirm plays its sample before the gate (0x61538)");
+    CheckEqI32(g_world.nShortfall1870C8, 1, "short of the region's price it fails: dwActionFail @ 0x1870C8 (0x61574)");
+    CheckEqI32(g_world.nResidue1870B4, 0, "with dwActionFailReason 0 (0x61580)");
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 2, "so the tail call never runs and the screen stays on the pick");
+    Check(g_world.nBaseCount == nBase1 && g_world.nFunds == nNewCost - 1, "with no base and no spend");
+
+    /* The failed price leaves dwActionFail @ 0x1870C8 set, and 0x89578..0x89600 is the low-supply report: the
+     * next geoscape release clears the flag and hands back without reaching any control -- screen 2 is not one
+     * of the six screens that keep the shortfall (6, 9, 10, 11, 12). The pen pays for that: the press stays
+     * down, its release is swallowed, and only the pair after it reaches the confirm control. */
+    nSamples0 = g_nSamples;
+    World_GeoscapePointer(&g_world, nRowX, nRowY, true);
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_world.nShortfall1870C8, 0, "the next release clears the shortfall (0x895C4)");
+    CheckEqI32(g_nSamples, nSamples0, "and reaches no control at all: no sample (0x89578..0x89600)");
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 2, "with the screen left on the pick");
+    CheckEqI32(g_world.ui.apCtl[GEOUI_CTL_186BA4]->nState, 1, "the control keeps the state its swallowed press set (0x1A42C)");
+
+    g_world.nFunds = nFunds1;                          /* the gate opens with the funds back */
+    nSamples0 = g_nSamples;
+    World_GeoscapePointer(&g_world, nRowX, nRowY, true);
+    CheckEqI32(g_world.bFacDone, 1, "the press arms new-base mode again (0x874E4)");
+    (void)DrawFrame();                                 /* the pen stays down while the globe redraws */
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_nSamples, nSamples0 + 1, "and the affordable click plays the same sample (0x61538)");
+    CheckEqI32(g_world.nShortfall1870C8, 0, "the gate lets it through (0x6156C)");
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 7, "the no-pick arm writes the build-screen id (0x8B64C)");
+    CheckEqI32(g_world.nSelectedBase, g_world.nBaseCount,
+               "and seats the selected base on the base COUNT (0x8B638 / 0x8B644) -- the slot the new base takes");
+    CheckEqI32(g_world.bFacDone, 1, "leaving the byte the press set: this arm does not clear it, and 0x59ACC reads it");
+    CheckEqI32(g_world.bFacDialogOpen, 1, "BaseFacScreen_Init's tail call opens the dialog (0x5A27C)");
+    Check(g_world.pFacPanel != NULL, "with a fresh panel for the overlay's row aux (0x58A44)");
+    Check(g_world.nUnk15887C == 0 && g_world.nUnk158880 == 0, "Init clearing the pending pair (0x5A1AC / 0x5A1B4)");
+    Check(g_world.ui.apCtl[GEOUI_CTL_186B00]->x == 224 && g_world.ui.apCtl[GEOUI_CTL_186B00]->y == 229,
+          "with the close control at (224,229) (0x5A260 / 0x5A26C)");
+    CheckEqI32(g_world.nFunds, nFunds1, "and reaching the build screen spends nothing");
+
+    /* The open's new-base branch (0x58C18..0x58D74): Init cleared the arm a moment earlier (0x5A274) and the
+     * Toggle then arms it again, stores the ROW COUNT into unk_158868 (0x58C88 -- one past the last line after
+     * 0x58C68, i.e. the 17th row, whose aux the open wrote as 0 at 0x58C50), and wipes the whole 6 by 6 grid of
+     * the slot the new base takes. The facility a new base starts with is therefore decided by the dialog's own
+     * table, not by a row the pen picked. */
+    CheckEqI32(g_world.bArmedPlacement, 1, "the open re-arms the placement in new-base mode (0x58C94, after 0x5A274)");
+    CheckEqI32(g_world.nPanelSel, g_world.pFacPanel->nLineCount,
+               "and stores the row count into unk_158868 (0x58C88): the 17th row the open wrote at 0x58C50, which "
+               "the 0x58C68 cut just dropped from the count");
+    CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase1
+                                      + PUFO_GRID_FAC_TYPE_OFF + 10], PUFO_FAC_TYPE_NONE,
+               "wiping the cell the pen is about to aim at, before anything is aimed (0x58C9C..0x58D74)");
+
+    nKind  = UiPanel_GetLineAux(g_world.pFacPanel, g_world.nPanelSel);
+    CheckEqI32(nKind, 0, "and that stored row's aux is 0, the 17th row the open writes (0x58C50)");
+    nPhase = PUFO_PLA_TAP_COLOR_STEP * ((i32)g_nMapPhase + PUFO_PLA_TAP_COLOR_BASE);
+    nCost1 = (i32)g_world.aFac[nKind].uCost;
+    nCnt1  = (i32)g_world.aRegionBuildCount[nRegionIdx];
+
+    /* Row 1, not the stored row: the click moves the panel's own selection, but the buy stores it into
+     * unk_158868 only while the new-base byte is clear, so the overlay keeps the row the open stored. */
+    nSel0   = g_world.nPanelSel;
+    nRowSel = (g_world.pFacPanel->nLineCount > 1 && g_world.pFacPanel->nStyle > 1) ? 1 : 0;
+    nRow2Y  = g_world.pFacPanel->nPosY + g_world.pFacPanel->nFont * nRowSel + g_world.pFacPanel->nFont / 2;
+    World_GeoscapePointer(&g_world, g_world.pFacPanel->nPosX, nRow2Y, true);
+    (void)DrawFrame();
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_world.bArmedPlacement, 1, "the row click runs the panel's handler and the buy arms the placement (0x5897C)");
+    CheckEqI32(g_world.nPanelSel, nSel0, "while the new-base byte is set the buy does NOT store the row (the ANDS at 0x5898C gates the store at 0x58998)");
+
+    nAimX = pF->facOverlay.nOriginX + 4 * PUFO_PLA_TAP_CELL;
+    nAimY = pF->facOverlay.nOriginY + PUFO_PLA_TAP_Y0 + PUFO_PLA_TAP_CELL;
+    World_GeoscapePointer(&g_world, nAimX, nAimY, true);
+    (void)DrawFrame();
+    CheckEqI32(g_world.nSmapTapX, 4, "the held press aims the cell under the cursor (0x58EC0)");
+    CheckEqI32(g_world.nSmapTapY, 1, "on the row axis too (0x58EC8)");
+    CheckEqI32(g_world.nFunds, nFunds1, "and with the pending pair empty it aims without committing");
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_world.nUnk15887C, 4, "the release copies the tap into the pending pair (0x89E8C / 0x89E98)");
+
+    nBase0 = g_world.nBaseCount;
+    ClearSurface();
+    World_GeoscapePointer(&g_world, nAimX, nAimY, true);
+    (void)DrawFrame();
+    CheckEqI32(SurfPix(nAimX, nAimY), PackInk(0, 0, nPhase), "the new-base preview scores non-zero on an empty "
+                                                             "footprint: 0x5957C / 0x59588 force it, so the phase "
+                                                             "colour sits in the low byte");
+    CheckEqI32(g_world.nFunds, nFunds1 - nCost1 - nNewCost,
+               "and the commit pays the record's cost (0x59AC8) plus the region's new-base cost (0x59B18)");
+    Check(g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase1
+                                 + PUFO_GRID_FAC_TYPE_OFF + 6 * 1 + 4] != PUFO_FAC_TYPE_NONE,
+          "the aimed cell is no longer the NONE the open wiped there");
+    CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase1
+                                      + PUFO_GRID_FAC_TYPE_OFF + 6 * 1 + 4], (i32)g_world.aFac[nKind].bFlag21,
+               "and takes the kind of the row the open stored (0x59A9C)");
+    Check(g_world.nBaseCount == nBase0 + 1, "Base_CreateNamedEntry (0x59AFC) raises the base count 0x159D80");
+    CheckEqI32(g_world.nCreateNextSiteId, nSiteId1 + 1, "and the next site id dword_186558");
+    CheckEqI32((i32)g_world.aSiteRecs[nBase1].bType, nRegionIdx, "the new site record's bType is region - 0x80");
+    Check(g_world.aSiteRecs[nBase1].abName[0] != 0, "with the label BaseFac_FormatCostLabel built (0x59AE4) as its name");
+    CheckEqI32((i32)g_world.aRegionBuildCount[nRegionIdx], nCnt1 + 1, "and that label's region counter up by one (0x6A49C)");
+    Check(g_world.apBases[nBase1] != NULL && g_world.apBases[nBase1]->bRegionId == nRegion
+              && g_world.apBases[nBase1]->nUnk8 == g_world.nPlaceX
+              && g_world.apBases[nBase1]->nUnk12 == g_world.nPlaceY,
+          "the new base record carries the region and the hover's pick coordinates (0x66A38 / 0x66A50)");
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "and the commit lands the geoscape on the placement screen (0x59B2C)");
+    Check(g_world.bFacDone == 0 && g_world.bRoot34 == 0 && g_world.bRoot35 == 0,
+          "clearing the new-base byte (0x59B30) and the two preview bytes (0x59B28, 0x59B34)");
+    CheckEqI32(g_world.bFacDialogOpen, 0, "BaseFacScreen_Toggle closes the dialog (the call at 0x59B1C)");
+    Check(g_world.pFacPanel == NULL, "and frees its panel");
+    CheckEqI32(g_world.nShortfall1870C8, 0, "with no shortfall left behind (0x1870C8)");
+
     /* 12f. The same purchase reached the way a pen reaches it: press, frame, release. No flow byte is written
      * by hand here -- only the two coordinates the WM_LBUTTONDOWN / WM_LBUTTONUP paths carry, and the funds the
      * purchase has to be affordable against. World_GeoscapePointer @ 0x872d0 and World_GeoscapePointerUp @ 0x89450
@@ -773,7 +1015,6 @@ int main(void)
     CheckEqI32(g_world.bFacDialogOpen, 1, "the dialog re-opens, and its toggle allocates a fresh panel (0x58A44)");
     Check(g_world.pFacPanel != NULL && g_world.ptrEnv.pFacPanel == g_world.pFacPanel,
           "the pointer dispatcher's panel copy follows it, because both its arms dereference it blind (0x87F60, 0x89F10)");
-    nKind = UiPanel_GetLineAux(g_world.pFacPanel, pF->facOverlay.nPanelSel);
 
     nRowX = g_world.pFacPanel->nPosX;                /* the dialog panel's own geometry: row 0 is nPosY..+16 */
     nRowY = g_world.pFacPanel->nPosY + 8;
@@ -785,8 +1026,9 @@ int main(void)
     World_GeoscapePointerUp(&g_world);
     CheckEqI32(g_world.bArmedPlacement, 1, "the release's row click runs the panel's own handler and the buy arms "
                                            "the placement: unk_158888 at 0x5897C");
-    CheckEqI32(g_world.nPanelSel, 0, "and stores the selected row while the new-base byte is clear (0x58994)");
+    CheckEqI32(g_world.nPanelSel, 0, "and stores the selected row while the new-base byte is clear (the store at 0x58998)");
     CheckEqI32(g_world.nFunds, nFunds1, "the arm spends nothing either: only the commit pays");
+    nKind = UiPanel_GetLineAux(g_world.pFacPanel, g_world.nPanelSel); /* the overlay reads unk_158868, now row 0 */
 
     nAimX = pF->facOverlay.nOriginX + 3 * PUFO_PLA_TAP_CELL;     /* tap column 3 */
     nAimY = pF->facOverlay.nOriginY + PUFO_PLA_TAP_Y0 + PUFO_PLA_TAP_CELL; /* tap row 1, next to the neighbour 12e seeded */
@@ -841,6 +1083,8 @@ int main(void)
     CheckEqI32(g_world.bTransferFlag, 1, "the third find button sets bTransferFlag @ 0x159E10 (0x619C0)");
     CheckEqI32(g_nSamples, nSamples0 + 1, "after Sound_Play(17, 4) (0x619B4)");
 
+    /* 12g left the NEW base selected and it holds no soldiers, so the walk here runs against the starting base. */
+    g_world.nSelectedBase = 0;
     g_world.nSoldierCursor = -1;
     g_world.nav.apFind[0]->pfnClick(); /* SoldierScreen_FindNextAtBase @ 0x6192c */
     CheckEqI32(g_world.nSoldierCursor, 0, "the next-at-base walk starts at cursor + 1 and stops on the base");

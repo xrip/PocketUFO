@@ -7482,7 +7482,7 @@ i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv)
         *pEnv->pbArmed = 1;                        /* 0x5897C, arms the placement */
     }
     if (pEnv->pbNewBaseMode != NULL && *pEnv->pbNewBaseMode == 0 && pEnv->pnPanelSel != NULL) {
-        *pEnv->pnPanelSel = nSel;                  /* 0x58994 */
+        *pEnv->pnPanelSel = nSel;                  /* 0x58998 STREQ, gated by the ANDS at 0x5898C on 0x187078 */
     }
     return 1;
 }

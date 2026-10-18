@@ -2920,8 +2920,8 @@ Order is by what unblocks what. Each item ends with gates + commit.
   does nothing to the money; the release clears the aimed byte (0x89E14), sets `bBaseFacPreviewOk` (0x89E84),
   copies `nSmapTapX/Y` into the pending pair `nPendingPlaceX/Y` @ 0x15887C/0x158880 (0x89E8C, 0x89E98) and clicks
   the dialog row through `UiPanel_ClickRow` (0x89F10), whose panel handler `BaseFacScreen_TryBuySelected @ 0x58910`
-  arms `bBaseFacPlaceArmed` 0x158888 (0x5897C) and stores the row into `nPanelSel` (0x58994, only while the
-  new-base byte is clear). A press on a map cell then resolves the tap from the cursor and writes it back
+  arms `bBaseFacPlaceArmed` 0x158888 (0x5897C) and stores the row into `nPanelSel` (the store at 0x58998, gated
+  by the ANDS at 0x5898C — Part 31 corrected the address this row first cited as 0x58994, which is the load). A press on a map cell then resolves the tap from the cursor and writes it back
   (0x58EC0, 0x58EC8) without committing, because the pending pair is still the row click's cell; the release moves
   the pending pair onto that cell; the **second** press at the same cell has taps == pending == previewOk and
   commits — the record's cost off `nFunds` (0x59AC8) and the aimed cell's kind written (0x59A9C) — with no base
@@ -2945,15 +2945,69 @@ Order is by what unblocks what. Each item ends with gates + commit.
   produces **no xref** in this IDB, so a "who writes this byte?" census taken from xrefs alone misses the two
   pointer-dispatch stores.
 
-- [ ] **Next unit: the new-base chain end to end.** The seam commit Part 30 runs is the *facility* half; the new-base
-  half (the one that reaches `Base_CreateNamedEntry` @ 0x66930) is proven only with hand-set state (Part 29's
-  12e). The chain the game uses is: screen 2, where `Geoscape_OnPointer` case 2 stores 1 into the new-base byte
-  0x187078 on every press (0x874E4) and hit-tests the confirm control only while `bPendingRegionId != 0xFF`
-  (0x874EC/0x874F0); the confirm control's handler `World_MapClick`, whose 0x8B600 branch writes screen id 1 and
-  clears 0x187078 at 0x8B60C while its 0x8B64C branch writes id 7 and tail-calls `BaseFacScreen_Init`; then the
-  build screen in new-base mode, where the overlay's own gate at 0x59ACC takes the commit into
-  `Base_CreateNamedEntry` 0x59AFC. The unit is to run that with presses only, and to settle what keeps the
-  new-base byte set across the 0x8B60C clear — which decides whether a real new base can be placed at all today.
+- [x] **The new base built through the game's own seams (Part 31).** No new original block: the chain
+  `NewBaseScreen_Open @ 0x615d0` → the globe hover → `NewBaseScreen_TryConfirm @ 0x6152c` → `Geoscape_OnMapClick
+  @ 0x8b4a8` → `BaseFacScreen_Init @ 0x5a198` → the placement overlay → `Base_CreateNamedEntry @ 0x66930`, run in
+  `test_geoscapeframe` section 12g by a nav click, presses and frames, with no flow byte written by hand.
+  **One real parity gap closed on the way:** the confirm control's installed handler was `World_TryConfirmClick`,
+  a bare `World_MapClick`, so the click skipped `NewBaseScreen_TryConfirm`'s `Sound_Play(17, 4)` (0x61538) and its
+  funds gate (0x6156C) entirely, even though the game layer had that function ported and covered. `World_ConfirmClick`
+  now builds the `NewBaseConfirmEnv` at the click — the region byte 0x159DF4, `nFunds` 0x1598D8, the low byte of
+  0x1870C8 and 0x1870B4 — and calls it, installed where the original installs it (InitUI's 0x95418 block and
+  0x6162C). `World_MapClick` returns the callee's value now (2 on the pick arm, 3 on the build-screen arm); the
+  placement seam keeps the bare `World_MapClickThunk`, which is the 0x857e8 thunk.
+  **The open question settled:** the 0x8B60C clear lives only in the pick-pending arm. The no-pick arm
+  (0x8B634) stores the base **count** into `nSelectedBaseIdx` (0x8B638/0x8B644 — the slot the new base is about to
+  take), writes the id 7 (0x8B64C), tail-calls `BaseFacScreen_Init`, and never touches 0x187078 — so the byte the
+  screen-2 press set at 0x874E4 is exactly what the overlay's gate at 0x59ACC reads, and a new base can be placed
+  end to end today.
+  What the run showed, in order: `NewBaseScreen_Open` writes the id 2 (0x61620), seats the close control at
+  (224,1) (0x61608/0x61614), clears `bUiAnimStarted` 0x187080 (0x6164C) and its two `Smap_ZoomOut` do nothing at
+  zoom 0 (level 0 has no outward step, 0x81E5C). The hover is a second gate: while the panel wipe is expanding
+  `Geoscape_DrawGlobeHover` stops at 0x67490 and returns 0, so there is no region, no cost line and no
+  confirm-control seat, and the progress byte `cUiAnimProgress` 0x187058 is stepped only by the app's WM_TIMER
+  branch (0xA0C88..0xA0C90) — five frames of it here. The hover then resolves the region from one fixed point,
+  (120, `nMidY` = (320 - strip height)/2, 0x67328/0x6734C) through `Smap_GetTileAtScreen @ 0x82244`, and stores
+  into 0x159D94/0x159D98 the pick of the **previous** sample (0x6786C runs before the call at 0x67894); the region
+  arm seats the confirm control centred on 120 at y 290 (0x679F0/0x67A00). Press and release on it play the sample
+  and, one credit short of the region's price, fail with `dwActionFail` 0x1870C8 = 1 (0x61574) and
+  `dwActionFailReason` 0 (0x61580), id left at 2 — **and the next release is then swallowed**: 0x89578..0x89600 is
+  the low-supply report, which clears 0x1870C8 and hands back without reaching a single control on every screen
+  but 6, 9, 10, 11 and 12, leaving the press's control state set; only the pair after it fires. With the funds
+  back: press (0x874E4) → frame → release → the no-pick arm, with `nSelectedBase == nBaseCount`, the byte still 1,
+  the dialog opened by Init's tail call with a fresh panel, the pending pair cleared (0x5A1AC/0x5A1B4), the arm
+  cleared (0x5A274) and the close control at (224,229) (0x5A260/0x5A26C). The Toggle's new-base branch then arms
+  the placement itself (0x58C94) and stores the row **count** into `nBaseFacPanelSel` (0x58C88: the 17th row it
+  wrote at 0x58C50 with aux 0, which 0x58C68 has just dropped from `nLineCount`), so the facility a new base
+  starts with is the dialog's own choice, not a pen row, and it wipes that base slot's whole 6 by 6 grid to 0xFF
+  (0x58C9C..0x58D74). A row click still arms (0x5897C) but the ANDS at 0x5898C keeps the store at 0x58998 out. The
+  aimed press draws a preview scored non-zero on an empty footprint because 0x5957C/0x59588 force it in new-base
+  mode — measured as the phase colour in the LOW byte, the mirror of 12f's index byte at score 0 — the release
+  copies the taps (0x89E8C/0x89E98), and the next press commits through 0x59ACC into `Base_CreateNamedEntry`
+  (0x59AFC): count and dword_186558 both +1, the site record's `bType` = region - 0x80 with its name from 0x59AE4
+  and the region counter bumped (0x6A49C), the base record's region and coordinates equal to the hover's own pick
+  (0x66A38/0x66A50), `nFunds` down by the record's cost (0x59AC8) and the region's new-base cost (0x59B18), the id
+  1 (0x59B2C), the three clears (0x59B30, 0x59B28, 0x59B34), the dialog closed and its panel freed (0x59B1C).
+  56 new checks, Release 61/61 (17888 checks), zero warnings; the Debug run keeps its two steady failures.
+  Two things the section sets directly, recorded because they are not flow: the view scroll (the pen drag that
+  moves it in the game is not wired as a seam yet) and `cUiAnimProgress`, which the test steps the way the shell's
+  WM_TIMER branch does. The app's `--new-game` dump also still calls `World_MapClick` straight (it models the
+  0x857e8 thunk), so it does not play TryConfirm's sample.
+  **IDB:** `bUiAnimStarted` 0x187080 and `cUiAnimProgress` 0x187058 had no comment at all and got one each (who
+  clears them, who steps the progress, and the 0x67490 bail they cause); comments added at 0x5898C (the ANDS that
+  gates the `nBaseFacPanelSel` store), 0x58C88 and 0x58C94 (the open's new-base branch: the row count and the arm,
+  with the 0x58C9C..0x58D74 grid wipe). Citation fixed in six places — `pufo_baseui.c`, `pufo_baseui.h`,
+  `test_baseui.c`, `test_geoscapeframe.c`, `docs/parity/game-core.md` and this plan — from 0x58994 (the load) to
+  0x58998 (the store).
+
+- [ ] **Next unit: the pen drag that moves the camera.** `test_geoscapeframe` 12g had to set `nScrollX`/`nScrollY`
+  by hand to bring a region under the hover's fixed sample point, because the drag is not wired: the press arm
+  stores the pen (0x87D74/0x87D7C) and hands it to `Smap_ScrollBy @ 0x82124..0x82160` at 0x87D14, which clamps with
+  the same triple `Smap_ZoomIn` uses (`Smap_ClampScrollY`'s 0x82164 pair) and wraps, while `Geoscape_Draw`
+  normalises the X once per frame (0x8C40C..0x8C414) and Part 25 measured that a press on its own moves the camera
+  nothing. The unit is the drag seam itself — `bGeoscapeDragActive` 0x187074 byte 0's role, what a release leaves
+  behind, and a geoscape test that reaches a region by dragging instead of by assignment — after which 12g's one
+  hand-set value goes away.
 
 ## Separate issues, not folded into the porting steps
 
@@ -2969,6 +3023,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   red run alone with its single check "pointer changed to the new blob", while Release is green. So it is a
   Debug-only assertion, not a test-order artefact — the same uninitialized-memory shape as the other two, and it
   needs the same IDB-side decision. Release is 61/61 both times, zero warnings in either config.
+
+- [ ] **`Geoscape_OnMapClick`'s site-record write is stated in the wrong direction.** The original subtracts:
+  0x8B540/0x8B544/0x8B548 are `LDRB R1,[bPendingRegionId]`, `SUB R0,R1,#0x80`, `STRB R0,[R5]`, while
+  `pufo_baseui.c`'s screen-2 arm writes `apSiteRecs[0].bType = (u8)(bPendingRegionId + 0x80)`. The two agree for
+  every tile in 0x80..0x89 because the byte store wraps (`0x80 + 0x80` and `0x80 - 0x80` both land on 0), and Hex-Rays
+  renders the same pair as `+ 0x80` elsewhere (0x669B4, where the port does subtract), so nothing observable is
+  wrong today. It is still the wrong expression to leave in a port whose citations are meant to be readable: change
+  it to `- PUFO_REGION_ID_FIRST` in a separate pass, together with the two other `+ 0x80` sites the same decompiler
+  habit produced.
 
 - [ ] **`TestGeoscapeBaseFacArm`'s strip-highlight check is an invariance check and cannot see a changed
   constant.** It compares the arm's output with the env's highlight 0 against the arm's output with the env's
@@ -3445,7 +3508,8 @@ Refresh after each commit. A coverage delta must match the function size in
 | the placement screen drawn and the close seams installed (Part 27: no new original block — the four `Geoscape_Draw` case-1 envs wired over the shell's own pad 0x186BA0, nav set 0x159888, close/demolish controls, grid, `nSelectedBase` read signed (0x922B0), the taps the arm writes back, 0x159DC4/0x159DC8, `aFac` 0x186E48 and `nMapPhase` 0x1139EF (whose `pW->pnMapPhase` assignment had to move to `World_WireGeoscapeFrame`'s head because `World_WireGeoscapeClock` runs at its tail); `facNameGrid.nBaseIdx` re-read every frame, `facStrip.nHighlightRow` fixed at the arm's -1 (0x922B8); `World_CloseGeoscapeThunk` installed at the arm's close control and at the soldier, build-dialog and funding seams (twelve 12-byte tail-call thunks, all the same call); `World_TryConfirmClick` split into `World_MapClick(pW)` + a no-argument wrapper so the app can drive the game's own 2 → 1 writer; the `--new-game` dump now runs 2 → 1 → 0 and the clock advances 300 s where a new game used to stand paused; IDB: `nMapPhase` its first comment (62 reads / 3 writers, wraps at 7), `nSmapOriginY` recorded as having no writer in the image, `Geoscape_CloseUI` a 33-xref caller census, `Geoscape_BuildNavControls` its fifteen `pfnClick` installs with the screen id each writes; two wrong names in port comments corrected (`BaseFacScreen_CloseThunkA` = 0x589c0, 0x615b0 = `NewBaseScreen_CloseThunk` not `BaseInfoScreen_CloseThunk` = 0x557bc)) | 61/61 (Release) | 17764 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the soldier screens and the build screen drawn, plus eight nav handlers (Part 28: no new original block — `solDraw`/`solArm`/`solPanelCtl`/`solFindCtl` for case 4 (0x92DAC) and case 5 (0x92EE4), both ending in `SoldierScreen_Draw @ 0x65290`, and `baseFac`/`facDialog` for case 7 (0x92AF0) sharing case 1's grid and strip envs with the same -1 mark at 0x92D38; the dialog's eight TEXTS labels resolved from the IDB names at 156/83/84/85/154/86/1148/406; the per-frame re-read of the objects the open handlers allocate — the 0x1598D4 pad, the 0x15975C/0x159DEC panels, the 0x158868/0x15886C dialog panel — because the original re-reads them at 0x92DD0/0x92D44/0x59B6C; handlers installed for nav 0 (`NewBaseScreen_Open @ 0x615d0`), nav 4 (`BaseFacScreen_Open @ 0x61844`), the two soldier page buttons (0x61874/0x6189c) and the three find buttons (0x6192c/0x618c4/0x619a8) plus the dialog's own pair (0x589cc/0x589dc), with the other seven nav slots left no-ops and the reason recorded; `ptrEnv.apFacCtl` wired to the arm's `apFacPanelCtl`; the new shell byte `bFacOverlayShown @ 0x15888C`; IDB: `aFacDaysSuffix` corrected to record 154 exactly (its old "+4" address 0xBB426 is read by nothing) and `bBaseFacOverlayShown` given its first comment) | 61/61 (Release) | 17784 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the placement overlay drawn and committed over the shell's state (Part 29: no new original block — `createEnv` moved onto `PufoWorldState` with a `World_WireCreateEnv` helper re-run every frame, because `Base_CreateNamedEntry`'s three economy columns are offset to the base it is about to create (0x159E9C + 800n, 0x15D09C + 400n, 0x16022C + 288n — 200/200/144 per base) and an env built once for base 0 is wrong for the commit's base; the frame's new `facOverlay` env, `facDialog.pOverlayEnv` pointed at it, and the by-value cells the callee re-reads re-read with the frame (panel row aux 0x58E20, `nPanelSel`, `nSelectedBase` signed at 0x59A90, the pending pair 0x15887C/0x158880, the cursor halfwords 0x186BD0/0x186BD4, 0x159D94/0x159D98, 0x159DF4, Map + 0x37) with the two origins left out on the evidence that InitUI writes 0x159DC4 once and nothing writes 0x159DC8; the aimed tap written back (0x58EC0/0x58EC8), the overlay flag (0x59234), a zero score clearing 0x18652D (0x599AC), the outline measured as ink 51200 at (74,100) with the phase colour in the index byte at score 0 and ink 25 with it in the low byte at a non-zero score, the cost store at 0x59AC8, the cell-kind write at 0x59A9C, `Base_CreateNamedEntry` at 0x59AFC with its label built at 0x59AE4 (which bumps `g_anRegionBuildCount` at 0x6A49C), the region cost at 0x59B18, the closing `BaseFacScreen_Toggle` at 0x59B1C and the tail clears 0x59B28/0x59B2C/0x59B30/0x59B34; 24 new checks; IDB: 0x187078 given its own comment (23 xrefs, the new-base byte, not the drag flag) and 0x187074 narrowed to byte 0; three port citation comments corrected (0x59AB4 → 0x59AC8, 0x59A1C → 0x59A28, 0x59A24 → 0x59A2C)) | 61/61 (Release) | 17808 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
-| the build reached through the pen's seams (Part 30: no new original block — the purchase driven by `World_GeoscapePointer @ 0x872d0` / `World_GeoscapePointerUp @ 0x89450` with no flow byte written by hand: the press sets the aimed byte (0x87F44) and re-arms the panel (0x87F60), the release clears the aimed byte (0x89E14), sets previewOk (0x89E84), copies the taps into the pending pair (0x89E8C/0x89E98) and clicks the dialog row (0x89F10) into `BaseFacScreen_TryBuySelected @ 0x58910` (arm at 0x5897C, `nPanelSel` at 0x58994), the second press on the same cell commits (cost 0x59AC8, cell kind 0x59A9C, no base, dialog left open, id left at 7); a live wiring gap fixed — `ptrEnv.pFacPanel` was never refreshed although both case-7 arms dereference it blind and the new-base commit frees it; 0x18652C/0x18652D renamed in the port comments to the IDB's `bBaseFacPreviewActive`/`bBaseFacPreviewOk`; IDB: four globals with no comment at all given one (0x18652C, 0x18652D, `nPendingPlaceX/Y` 0x15887C/0x158880) and the plain-immediate-store rule recorded — `STRB R,[Rn,#0x34]` leaves no xref, so an xref census misses the two pointer stores) | 61/61 (Release) | 17832 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the build reached through the pen's seams (Part 30: no new original block — the purchase driven by `World_GeoscapePointer @ 0x872d0` / `World_GeoscapePointerUp @ 0x89450` with no flow byte written by hand: the press sets the aimed byte (0x87F44) and re-arms the panel (0x87F60), the release clears the aimed byte (0x89E14), sets previewOk (0x89E84), copies the taps into the pending pair (0x89E8C/0x89E98) and clicks the dialog row (0x89F10) into `BaseFacScreen_TryBuySelected @ 0x58910` (arm at 0x5897C, `nPanelSel` at the store 0x58998), the second press on the same cell commits (cost 0x59AC8, cell kind 0x59A9C, no base, dialog left open, id left at 7); a live wiring gap fixed — `ptrEnv.pFacPanel` was never refreshed although both case-7 arms dereference it blind and the new-base commit frees it; 0x18652C/0x18652D renamed in the port comments to the IDB's `bBaseFacPreviewActive`/`bBaseFacPreviewOk`; IDB: four globals with no comment at all given one (0x18652C, 0x18652D, `nPendingPlaceX/Y` 0x15887C/0x158880) and the plain-immediate-store rule recorded — `STRB R,[Rn,#0x34]` leaves no xref, so an xref census misses the two pointer stores) | 61/61 (Release) | 17832 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the new base built through the game's own seams (Part 31: no new original block — the confirm control's installed handler was a bare `World_MapClick`, so `NewBaseScreen_TryConfirm @ 0x6152c`'s `Sound_Play(17, 4)` (0x61538) and its funds gate (0x6156C) never ran although the game layer had the function ported; `World_ConfirmClick` now builds `NewBaseConfirmEnv` at the click (0x159DF4, `nFunds` 0x1598D8, the low byte of 0x1870C8, 0x1870B4) and is installed where the original installs it (InitUI's 0x95418 block, 0x6162C), `World_MapClick` returns the callee's value (2 on the pick arm, 3 on the build-screen arm) and the placement seam keeps the bare `World_MapClickThunk` (0x857e8); the open question settled — the 0x8B60C clear lives only in the pick-pending arm while the no-pick arm (0x8B634) stores the base COUNT into `nSelectedBaseIdx` (0x8B638/0x8B644, the slot the new base takes), writes id 7 (0x8B64C) and leaves 0x187078 for the overlay's gate at 0x59ACC, so a new base is placeable end to end today; proven in `test_geoscapeframe` 12g by a nav click, presses and frames — `NewBaseScreen_Open`'s two `Smap_ZoomOut` are no-ops at zoom 0 (0x81E5C) and it clears 0x187080 (0x6164C), the hover bails at 0x67490 while the panel wipe runs and 0x187058 is stepped only by WM_TIMER 0xA0C90, the hover stores the PREVIOUS sample's pick at 0x6786C before sampling at 0x67894 from the fixed point (120, (320 - strip)/2), the region arm seats the confirm control at (120 - w/2, 290) (0x679F0/0x67A00), a one-credit-short click fails at 0x61574/0x61580 and the NEXT release is swallowed by the low-supply report 0x89578..0x89600 (cleared on every screen but 6, 9, 10, 11, 12), Init's Toggle tail then arms the placement (0x58C94), stores the row COUNT into 0x158868 (0x58C88: the aux-0 17th row of 0x58C50, dropped from `nLineCount` at 0x58C68) and wipes the new slot's 6x6 grid (0x58C9C..0x58D74), the new-base preview scores non-zero on an empty footprint because 0x5957C/0x59588 force it (phase colour in the LOW byte, the mirror of Part 30's index byte), and `Base_CreateNamedEntry` (0x59AFC) writes the hover's own pick into the new base record (0x66A38/0x66A50) with the region cost at 0x59B18; 56 new checks; IDB: 0x187080 and 0x187058 given their first comments, comments at 0x5898C / 0x58C88 / 0x58C94, and the row-store citation corrected from 0x58994 to 0x58998 in six files) | 61/61 (Release) | 17888 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is

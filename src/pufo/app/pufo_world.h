@@ -369,10 +369,12 @@ void World_PulseGeoscape(PufoWorldState *pW);
  * while the base pick is pending (0x8BE58). */
 void World_CloseGeoscape(PufoWorldState *pW);
 
-/* Geoscape_OnMapClick @ 0x8b4a8 over the shell's own grid, rosters and base records. This is the in-game
- * way out of the new-base pick: 0x8B600 writes the screen id 1, 0x8B608 clears the pending byte
- * Game_StartNew set at 0x945E0. */
-void World_MapClick(PufoWorldState *pW);
+/* Geoscape_OnMapClick @ 0x8b4a8 over the shell's own grid, rosters and base records. On the new-base screen
+ * it has two arms: while the pick is pending it commits the pick and writes the screen id 1 (0x8B600),
+ * clearing the pending byte Game_StartNew set at 0x945E0 (0x8B608) and the new-base byte (0x8B60C); with no
+ * pick pending it seats the selected base on the base COUNT (0x8B644) and writes the id 7 (0x8B64C) without
+ * touching the new-base byte. Returns the callee's value. */
+i32 World_MapClick(PufoWorldState *pW);
 
 /* Refresh the per-frame fields -- the zoom set's map / layer / tile pads for the mode the view
  * selected, the screen id, the anim frame-style byte -- and run Geoscape_Draw @ 0x8C180. Returns its

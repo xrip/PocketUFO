@@ -5505,7 +5505,7 @@ static void TestBaseFacBuy(void)
 
     bNewBase = 0;
     CheckEqI32(BaseFacScreen_TryBuySelected(&env), 1, "the same call without the new-base byte");
-    CheckEqI32(nSel, 1, "unk_158868 takes panel->nUnk3032 (0x58994)");
+    CheckEqI32(nSel, 1, "unk_158868 takes panel->nUnk3032 (the store at 0x58998)");
 
     nFunds = 1000;
     bArmed = 0;

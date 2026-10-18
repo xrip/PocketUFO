@@ -210,12 +210,12 @@ static void World_SoldierToggleThunk(void)
 /* Geoscape_OnMapClick @ 0x8b4a8, reached from NewBaseScreen_TryConfirm @ 0x6152c and from
  * Geoscape_OnMapClick_Thunk @ 0x857e8. Its screen-2 branch is the game's own way out of the new-base
  * pick: 0x8B600 writes the screen id 1 and 0x8B608 clears the pending byte Game_StartNew set at 0x945E0. */
-void World_MapClick(PufoWorldState *pW)
+i32 World_MapClick(PufoWorldState *pW)
 {
     MapClickEnv env;
 
     if (pW == NULL) {
-        return;
+        return 0;
     }
 
     /* The rosters and the selected base can change between clicks; the env holds them by value. */
@@ -247,13 +247,14 @@ void World_MapClick(PufoWorldState *pW)
     env.pnSelectedBaseIdx = &pW->nSelectedBase;
     env.pFacInit = &pW->facInitEnv;
 
-    (void)Geoscape_OnMapClick(&env);
+    return Geoscape_OnMapClick(&env);
 }
 
-/* UiControl.pfnClick takes no arguments, so the installed handler is this wrapper. */
-static void World_TryConfirmClick(void)
+/* UiControl.pfnClick takes no arguments, so the installed handler is this wrapper. This one is
+ * Geoscape_OnMapClick_Thunk @ 0x857e8: the placement screen's map click, no sample and no gate. */
+static void World_MapClickThunk(void)
 {
-    World_MapClick(g_pActiveWorld);
+    (void)World_MapClick(g_pActiveWorld);
 }
 
 /* NewBaseScreen_CloseThunk @ 0x615b0: Sound_Play(17) at 0x615bc first, then the dispatcher. The only
@@ -282,6 +283,37 @@ static void World_PlaySampleWithArg(u32 nSample, u32 nArg, void *pUser)
     if (pW != NULL && pW->pfnPlaySample != NULL) {
         pW->pfnPlaySample((i32)nSample, pW->pSoundUser);
     }
+}
+
+/* The tail call NewBaseScreen_TryConfirm makes at 0x61588 (LDR R0,=0x1864F8; BL Geoscape_OnMapClick), in the
+ * argument shape NewBaseConfirmEnv wants. */
+static i32 World_MapClickForConfirm(void *pUser)
+{
+    return World_MapClick((PufoWorldState *)pUser);
+}
+
+/* NewBaseScreen_TryConfirm @ 0x6152c is what the confirm control's pfnClick has to run -- Sound_Play(17, 4)
+ * at 0x61538, then the funds gate at 0x6156C (skipped while the pick is pending), then OnMapClick. Both
+ * installs (InitUI's 0x95418 block and NewBaseScreen_Open at 0x6162C) point at this. The env is built here
+ * because the gate reads the region byte, nFunds and the two fail dwords at the call. */
+static void World_ConfirmClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    NewBaseConfirmEnv env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pfnPlaySample    = World_PlaySampleWithArg;                /* Sound_Play(17, 4) at 0x61538 */
+    env.bPendingRegionId = pW->bPendingRegionId;                   /* bPendingBaseKind @ 0x159DF4 */
+    env.pnFunds          = &pW->nFunds;                            /* unk_1598D8 */
+    env.pbFlag1870C8     = (u8 *)&pW->nShortfall1870C8;           /* 0x1870C8: the original stores a dword, every reader
+                                                                   * takes the byte, so the low byte of the shell's dword */
+    env.pnFlag1870B4     = &pW->nResidue1870B4;                   /* dword_1870B4 */
+    env.pfnMapClick      = World_MapClickForConfirm;              /* 0x61588 */
+    env.pUser            = pW;
+    (void)NewBaseScreen_TryConfirm(pW->bPlacementPending, &env);   /* 0x1870AC */
 }
 
 /* NewBaseScreen_Open @ 0x615d0 -- nav control slot 0's handler (installed at 0x67B74). Sample 17, the
@@ -658,7 +690,7 @@ static void World_StartNewHook(void *pUser)
     pW->facInitEnv.pfnToggle = World_FacToggleThunk; /* BaseFacScreen_Toggle @ 0x589ec */
     pW->facInitEnv.pToggleUser = pW;
 
-    env.pfnTryConfirmClick = World_TryConfirmClick; /* NewBaseScreen_TryConfirm's tail call */
+    env.pfnTryConfirmClick = World_ConfirmClick; /* NewBaseScreen_TryConfirm @ 0x6152c, installed at 0x95418's block */
     env.pNav = &pW->nav;
     env.pNavEnv = &pW->navEnv;
     env.pUnitEnv = &unitEnv;
@@ -1499,7 +1531,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->placement.pColor         = pColor;
     pF->placement.pAnim          = &pF->anim;                      /* the demolish panel's frame state, 0x92898 */
     pF->placement.pfnCloseClick  = World_CloseGeoscapeThunk;       /* Geoscape_CloseUI_ThunkA @ 0x838d0 */
-    pF->placement.pfnMapClick    = World_TryConfirmClick;          /* Geoscape_OnMapClick_Thunk @ 0x857e8 */
+    pF->placement.pfnMapClick    = World_MapClickThunk;            /* Geoscape_OnMapClick_Thunk @ 0x857e8 */
 
     pF->facNameGrid.abFacilityGrid = pW->abFacilityGrid;
     pF->facNameGrid.apCraft        = pW->apCraft;                  /* apCraft @ 0x114A64 */
@@ -1625,7 +1657,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->newBaseOpen.pWorldOut      = pUi->pWorldSize;
     pW->newBaseOpen.pbBaseCount    = &pW->nBaseCount;                 /* the != 8 gate at 0x615F4 */
     pW->newBaseOpen.pbFlag187080   = &pW->bUiAnimStarted;             /* cleared at 0x6164C */
-    pW->newBaseOpen.pfnTryConfirm  = World_TryConfirmClick;
+    pW->newBaseOpen.pfnTryConfirm  = World_ConfirmClick;           /* 0x6162C installs TryConfirm, not the bare click */
     pW->newBaseOpen.pfnCloseThunk  = World_NewBaseCloseThunk;         /* 0x61654 */
     pW->newBaseOpen.pUser          = pW;                              /* the sample adapter's world pointer */
 
