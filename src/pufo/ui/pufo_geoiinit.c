@@ -415,7 +415,7 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
     if (pEnv->nObjectCount > 1) {
         pEnv->apObjects[1]->uFirePower = 110;
     }
-    *pEnv->pnUnk159DC4 = 10;
+    *pEnv->pnSmapOriginX = 10; /* nSmapOriginX @ 0x159DC4 */
 
     /* 0x86AB0: the speed default and the geoscape timers. */
     for (i = 0; i < PUFO_GEOSCAPE_SPEED_COUNT; ++i) {

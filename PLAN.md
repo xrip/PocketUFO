@@ -2801,21 +2801,54 @@ Order is by what unblocks what. Each item ends with gates + commit.
   four flags cleared, and the 2 → 1 → 0 close chain). Release 61/61, zero warnings; Debug keeps its three known
   red suites. Coverage does not move — no new original function is cited.
 
-- [ ] **Next unit: the screen-close seams, so a click can run the clock after a new game.**
-  `Geoscape_CloseUI @ 0x8b94c..0x8c180` (the function the last unit's `World_CloseGeoscape` now calls) is what
-  moves `nGeoscapeScreen`: case 2 writes 1 (0x8BE68), case 1 writes 0 (0x8BE94), and its register stores sit at
-  0x8BB08, 0x8BCB4, 0x8BCE8, 0x8BD14 (`STRNE`), 0x8BD5C and 0x8BE94; `Geoscape_InitUI @ 0x85850` writes 0
-  outright. What blocks the click wiring is the drawing side: the id the dispatcher leaves behind is an arm the
-  shell has not wired yet — `Geoscape_Draw` case 1 (the placement arm, 0x91DC8..0x92ADC) has four envs
-  (`pPlacementArm`, `pPlacementCtl`, `pPlacementGrid`, `pPlacementStrip`) that `World_WireGeoscapeFrame` leaves
-  NULL, and `test_geoscapeframe` pins that NULL today. So: wire the placement arm envs over the state the shell
-  already owns (`pW->nav`, `ctlFacClose`, `nSmapTapX/Y`, `nPlaceX/Y`, the zoom set's pads), then put
-  `World_CloseGeoscapeThunk` into `pW->facInitEnv.pfnCloseThunk`, `pW->solEnv.pfnCloseSoldierThunk` and the
-  `FundingScreen_ExitThunk @ 0x5c078` seam, and the `--new-game` dump can close 2 → 1 → 0 and show the clock
-  advancing. `Geoscape_CloseUI`'s own gaps are recorded in the wiring comment in `pufo_world.c`: the bankruptcy
-  teardown (`pfnFreeGeoscapeUi` + `EndScreen_Init` + the three Map bytes) is unwired because `World_Free` already
-  owns those releases, and the base-info / hangar / research / manuf / transfer / buy-sell / ufopaedia blocks keep
-  NULL gates.
+- [x] **Part 27, the placement screen drawn and the close seams installed: a new game now reaches the clock.**
+  `GeoscapeFrameState` gained the four `Geoscape_Draw` case-1 envs and `World_WireGeoscapeFrame` fills them over
+  state the shell already owns: `pPad = apPad[GEOUI_PAD_186BA0]` (0x186BA0, 0x91DCC), `apNavCtl = pW->nav.apNav`
+  (0x159888..0x1598AC, 0x91FE0), the two control singletons `apCtl[GEOUI_CTL_186B00]`/`[GEOUI_CTL_186BB4]`
+  (0x92018, 0x92764), the grid `abFacilityGrid`, `nSelectedBase` read **signed** (0x922B0 `LDRSB`), the taps
+  0x186B7C/0x186B80 the arm writes back, `nSmapOriginX` 0x159DC4 and `nSmapOriginY` 0x159DC8, `pTextRecs`,
+  `aFac` 0x186E48, `pColor`, `pAnim`, and the two handlers `Geoscape_CloseUI_ThunkA @ 0x838d0` /
+  `Geoscape_OnMapClick_Thunk @ 0x857e8`. The two callees take the arm's own arguments: `facNameGrid.nBaseIdx` is
+  re-read from 0x159D81 in `World_RefreshGeoscapeFrame` because 0x922B0 reads the block every call, and
+  `facStrip.nHighlightRow` stays `PUFO_PLA_STRIP_MARK` (-1, 0x922B8) — it is not state. `nMapPhase @ 0x1139EF`
+  reaches the arm through `WorldHooks.pnMapPhase = &g_nAnimPhase` in both app hook builders, and its
+  `pW->pnMapPhase` assignment moved to `World_WireGeoscapeFrame`'s head: it sat in `World_WireGeoscapeClock`,
+  which only runs at that function's tail, so the arm read NULL (the cursor drew at phase 0 — the test caught it).
+  Four seams now call the dispatcher: the arm's close control, `facInitEnv.pfnCloseThunk`
+  (`BaseFacScreen_CloseThunkA @ 0x589c0` and `BaseFacScreen_CloseThunk @ 0x59b54`), `solEnv.pfnCloseSoldierThunk`
+  (@ 0x64ae4) and `fundingInit.pfnCloseClick` (@ 0x5c078) — one `World_CloseGeoscapeThunk` for all of them, since
+  twelve of the thunks are the same 12-byte tail call. `World_TryConfirmClick` became `World_MapClick(pW)` plus a
+  no-argument wrapper, so the app can drive the click the game itself uses. The `--new-game` dump now runs that
+  real path: `pocketufo --new-game --dump-frame` prints screen 2 → map click → **1** (with 0x1870AC cleared, the
+  game's own way out of the pending pick) → close → **0**, then 50 pulses advance the clock 300 s where before a
+  new game stood paused forever. 9 new checks in `test_geoscapeframe` (the case-1 wiring identity, the close
+  control at (194,4) with its handler installed, the 12 control blits, the cursor pixel at origin + 32·tap in the
+  `10 * (nMapPhase + 15)` colour, the empty cell clearing `bBasePlaceActive`, the name-grid index and the strip's
+  -1). Release 61/61, zero warnings in both configs; Debug keeps three red suites (see "Separate issues").
+  Coverage does not move — no new original function is cited.
+  **What the IDB gained:** `nMapPhase @ 0x1139EF` its first comment (62 reads across 17 functions, 8 of them in
+  `Geoscape_Draw`'s placement arm from 0x92460; exactly 3 writers — `Save_ReadTGameData 0x444E0` and the 0xC352
+  pair `PocketUFO_WndProc 0xA0988/0xA098C`, so outside a save the byte wraps at 7 and never leaves 0..6);
+  `nSmapOriginY @ 0x159DC8` recorded as read-only with **no writer anywhere in the image** while its pair gets 10
+  from `Geoscape_InitUI 0x86AAC`; `Geoscape_CloseUI` a caller census (33 xrefs: twelve 12-byte tail-call thunks
+  named, `NewBaseScreen_CloseThunk 0x615b0` as the only one that plays a sample first, `BaseAtScreen_CloseThunk
+  0x577c0` and the seven `SaveGame_Slot0..6_CloseUI` doing their own work, ten compound callers);
+  `Geoscape_BuildNavControls` a function comment with its fifteen `pfnClick` installs and the screen id each nav
+  handler writes (0x67B74..0x67BE0 → 2,3,4,6,7,8,9,10,11,12). Two wrong names in port comments were corrected:
+  `BaseFacScreen_CloseThunkA` is **0x589c0** (0x5a2c0 is inside `UiPanel_InsertLine`) and 0x615b0 is
+  **`NewBaseScreen_CloseThunk`**, not `BaseInfoScreen_CloseThunk` (that is 0x557bc).
+
+- [ ] **Next unit: the ten nav buttons, the other half of `Geoscape_BuildNavControls`.** The nav controls are
+  built (`Game_StartNew 0x9542C`) and drawn (the placement arm blits all ten at 0x91FE0), but `navEnv.apfnNavClick`
+  is `World_NoopClick` in all ten slots while the original installs `NewBaseScreen_Open 0x615d0` (id 2),
+  `BaseInfoScreen_Open 0x6167c` (3), `SoldierScreen_Toggle 0x64af0` (4), `BasePlaneScreen_Open 0x617f4` (6),
+  `BaseFacScreen_Open 0x61844` (7), `ResearchScreen_Open 0x616ac` (8), `ManufScreen_Open 0x614cc` (9),
+  `TransferScreen_Open 0x614fc` (10), `BuySellScreen_OpenBuy 0x61794` (11), `BuySellScreen_OpenSell 0x617c4` (12),
+  plus the five soldier panel/find handlers (0x67C84..0x67D28, the last being `Ui_SetTransferFlag`). Each plays
+  `Sound_Play(17, 4)` before its Init and writes the screen id **before** the tail call — the shell already ports
+  the Init/env half of most of them, so the work is the env plumbing per screen plus the `apSoldierPanelCtl` /
+  `apSoldierFindCtl` pair. `Geoscape_CloseUI` case 1 frees all fifteen controls (0x8BEA8..0x8BF0C) and
+  `Game_StartNew` rebuilds them, so the wiring must be re-installed after a close, not once at startup.
 
 ## Separate issues, not folded into the porting steps
 
@@ -2826,9 +2859,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
   one failure of that kind -- a display name compared against a roster that `Ship_RemoveWithCargo @ 0x613A0`
   had already compacted -- was found the same way and fixed in the clock commit; these two need the same
   treatment: decide from the IDB whether the port or the check is wrong, then fix that one side.
-  A third suite, `test_template`, passed on its own and under a re-run, so its single ctest failure looks
-  order-dependent and is worth one `--rerun-failed` look: in the Part 26 runs it failed in one Debug ctest and
-  passed in the next, while Release was 61/61 both times with zero warnings in either config.
+  A third suite, `test_template`, moved the other way: it looked order-dependent in the Part 26 runs (red in one
+  Debug ctest, green in the next, green when run alone), and in the Part 27 runs it is red in the Debug ctest **and**
+  red run alone with its single check "pointer changed to the new blob", while Release is green. So it is a
+  Debug-only assertion, not a test-order artefact — the same uninitialized-memory shape as the other two, and it
+  needs the same IDB-side decision. Release is 61/61 both times, zero warnings in either config.
 
 - [ ] **`TestGeoscapeBaseFacArm`'s strip-highlight check is an invariance check and cannot see a changed
   constant.** It compares the arm's output with the env's highlight 0 against the arm's output with the env's
@@ -3302,6 +3337,7 @@ Refresh after each commit. A coverage delta must match the function size in
   and 0x8147C as `StrategList_UpdateDetect` (it is in `Strateg_CalcDetect`)): 26 new checks, 6 globals named or
   retyped, 9 IDB comments, 2 port comments corrected | 61/61 (Release) | 17755 | 966/1103 (87.6%) | 596752/598792
   (99.7%) | 43 checked, 0 mismatched |
+| the placement screen drawn and the close seams installed (Part 27: no new original block — the four `Geoscape_Draw` case-1 envs wired over the shell's own pad 0x186BA0, nav set 0x159888, close/demolish controls, grid, `nSelectedBase` read signed (0x922B0), the taps the arm writes back, 0x159DC4/0x159DC8, `aFac` 0x186E48 and `nMapPhase` 0x1139EF (whose `pW->pnMapPhase` assignment had to move to `World_WireGeoscapeFrame`'s head because `World_WireGeoscapeClock` runs at its tail); `facNameGrid.nBaseIdx` re-read every frame, `facStrip.nHighlightRow` fixed at the arm's -1 (0x922B8); `World_CloseGeoscapeThunk` installed at the arm's close control and at the soldier, build-dialog and funding seams (twelve 12-byte tail-call thunks, all the same call); `World_TryConfirmClick` split into `World_MapClick(pW)` + a no-argument wrapper so the app can drive the game's own 2 → 1 writer; the `--new-game` dump now runs 2 → 1 → 0 and the clock advances 300 s where a new game used to stand paused; IDB: `nMapPhase` its first comment (62 reads / 3 writers, wraps at 7), `nSmapOriginY` recorded as having no writer in the image, `Geoscape_CloseUI` a 33-xref caller census, `Geoscape_BuildNavControls` its fifteen `pfnClick` installs with the screen id each writes; two wrong names in port comments corrected (`BaseFacScreen_CloseThunkA` = 0x589c0, 0x615b0 = `NewBaseScreen_CloseThunk` not `BaseInfoScreen_CloseThunk` = 0x557bc)) | 61/61 (Release) | 17764 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
@@ -3322,8 +3358,9 @@ hover's rules at x 120 / y 118 -- and the `Blit_ClipGlyph` defect it exposed was
 surface pixels that every earlier coverage figure counted as covered.
 
 Release is the documented configuration and it is green: 61/61 with the wiring in. In **Debug** the
-picture moves from run to run -- this run failed `test_geoscape`, `test_plane` and `test_titles` (3/61)
-while `test_save` and `test_template`, the two the last step called flaky, passed; earlier runs recorded
+picture moves from run to run -- this run failed `test_titles`, `test_template` and `test_plane` (3/61)
+while `test_geoscape` and `test_save` passed, and `test_template` also failed when run on its own, which is
+new: the Part 26 run saw it pass alone; earlier runs recorded
 the opposite mix, and `test_titles`/`test_save` were shown to fail already at `04f1155` (verified by
 building that commit in a clean worktree with the same ClangCL toolset). `test_geoscape`'s single Debug
 failure was checked directly against this step: with the step's `src/pufo` edits stashed and the same

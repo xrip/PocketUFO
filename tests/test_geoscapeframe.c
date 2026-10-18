@@ -65,6 +65,8 @@ static PufoWorldState g_world;
 static PufoOptions    g_options;
 static GfxColorEnv    g_color;
 static u32            g_nUiSlot0;   /* UiControlHitCtx.pnUiSlot0, the Map+0x60 word */
+static u8             g_nMapPhase;  /* nMapPhase @ 0x1139EF (Map + 0x37): the arm's cursor colour, and the
+                                     * byte the original's 0xC352 handler wraps (PocketUFO_WndProc 0xA0988) */
 static UiControlHitCtx g_hit;
 
 /* The shell's blit seam, recorded so the frame's control blits are checkable. */
@@ -165,6 +167,7 @@ int main(void)
     PadImage *pMapPad;
     i32       nHalfW, nHalfH;
     i32       nTick, nSec0, i;
+    i32       nNavCnt, nPhase, nCurX, nCurY, nIdx;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
         printf("FAIL: Boot_LoadStartup\n");
@@ -190,6 +193,7 @@ int main(void)
     hooks.pHit          = &g_hit;
     hooks.pColor        = &g_color;
     hooks.pnAnimPhase   = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18, the cell the pulse's phase gate counts */
+    hooks.pnMapPhase    = &g_nMapPhase;       /* Map + 0x37 @ 0x1139EF, the placement arm's cursor phase */
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
 
     pF   = &g_world.frame;
@@ -440,10 +444,20 @@ int main(void)
     pF->g.nCursorY = 0;
 
     /* 9. The arms the wiring does not serve stay NULL, which is the arm not drawing at all. */
-    Check(pF->draw.pPlacementArm == NULL && pF->draw.pPlaneArm == NULL
+    Check(pF->draw.pPlaneArm == NULL
               && pF->draw.pResearchDraw == NULL && pF->draw.pBaseFacArm == NULL
               && pF->draw.pBuySellPad == NULL && pF->draw.pBaseAtEnv == NULL,
           "the arms the shell has no state for stay NULL (see pufo_geoscape.h)");
+    Check(pF->draw.pPlacementArm == &pF->placement && pF->draw.pPlacementCtl == &pF->placementCtl
+              && pF->draw.pPlacementGrid == &pF->facNameGrid
+              && pF->draw.pPlacementStrip == &pF->facStrip
+              && pF->placement.pPad == g_world.ui.apPad[GEOUI_PAD_186BA0]
+              && pF->placement.apNavCtl == g_world.nav.apNav
+              && pF->placement.pCloseCtl == g_world.ui.apCtl[GEOUI_CTL_186B00]
+              && pF->placement.pMapCtl == g_world.ui.apCtl[GEOUI_CTL_186BB4]
+              && pF->placement.pnMapPhase == &g_nMapPhase
+              && pF->placement.pnSmapOriginX == &g_world.nSmapOriginX,
+          "Geoscape_Draw case 1 (0x91DC8) runs on the shell's own pad, nav set, controls and map phase");
     Check(pF->radar.pRadarEnv == NULL && g_world.ptrEnv.apRadarCtl == NULL,
           "the radar arm's own env and aRadarControls @ 0x159684 stay unwired");
     Check(pF->panel.pfnCtlOpen == NULL && pF->panel.pfnCtlSfx == NULL,
@@ -564,8 +578,61 @@ int main(void)
     Check(g_world.bFacDone == 0 && g_world.bArmedPlacement == 0,
           "and clears bBaseFacDone @ 0x187078 and bBaseFacPlaceArmed @ 0x158888 (0x8BE70, 0x8BE74)");
 
+    /* 12b. The screen that close lands on: Geoscape_Draw case 1 (0x91DC8..0x92ADC), the placement arm,
+     * drawn over the shell's own state. The cursor colour comes from nMapPhase (0x92464 MOV R7,#0xA,
+     * 0x92470 ADD R3,R2,#0xF), so the phase byte is fixed here to make the ink checkable. */
+    g_nMapPhase = 5;
+    g_world.nSelectedBase = 0;
+    g_world.nSmapTapX = 2;
+    g_world.nSmapTapY = 1;
     g_world.bPlaceActive = 1; /* bBasePlaceActive @ 0x1870BC */
-    g_world.bPlaceFail   = 1; /* bBasePlaceFail @ 0x1870B8 */
+    g_world.bPlaceFail   = 0;
+    nIdx = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * g_world.nSelectedBase
+         + PUFO_PLA_TAP_CELL_STRIDE * g_world.nSmapTapY + g_world.nSmapTapX; /* 0x923F0..0x92418 */
+    g_world.abFacilityGrid[nIdx] = 3; /* not a 9..12 kind, so the one-cell cursor branch at 0x925AC */
+
+    nNavCnt = 0;
+    for (i = 0; i < PUFO_PLA_NAV_CTLS; ++i) {
+        if (g_world.nav.apNav[i] != NULL) {
+            ++nNavCnt;
+        }
+    }
+    ClearSurface();
+    (void)DrawFrame();
+
+    Check(g_world.ui.apCtl[GEOUI_CTL_186B00]->x == PUFO_PLA_CLOSE_X
+              && g_world.ui.apCtl[GEOUI_CTL_186B00]->y == PUFO_PLA_CLOSE_Y
+              && g_world.ui.apCtl[GEOUI_CTL_186B00]->pfnClick != NULL,
+          "the arm moves the close control to (194,4) and installs its close thunk (0x9201C..0x9203C)");
+    CheckEqI32(g_nBlits, nNavCnt + 2,
+               "the nav set, the close control and the demolish control are the frame's control blits "
+               "(0x92010, 0x92040, 0x927C8)");
+    Check(g_world.ui.apCtl[GEOUI_CTL_186BB4]->pfnClick != NULL
+              && g_world.ui.apCtl[GEOUI_CTL_186BB4]->y == PUFO_PLA_MAPCTL_Y,
+          "a non-empty cell installs the map-click handler and seats the control at y 15 (0x92764, 0x927B8)");
+
+    nPhase = PUFO_PLA_TAP_COLOR_STEP * ((i32)g_nMapPhase + PUFO_PLA_TAP_COLOR_BASE);
+    nCurX  = g_world.nSmapOriginX + PUFO_PLA_TAP_CELL * g_world.nSmapTapX;   /* ADD R1,R0,R1,LSL#5 */
+    nCurY  = g_world.nSmapOriginY + PUFO_PLA_TAP_CELL * g_world.nSmapTapY + PUFO_PLA_TAP_Y0;
+    CheckEqI32(SurfPix(nCurX, nCurY), PackInk(0, nPhase, 0),
+               "the cursor's top edge sits at origin + 32 * tap, in the nMapPhase colour (0x925F0)");
+    CheckEqI32(g_world.bPlaceActive, 1,
+               "a non-empty cell keeps the placement flag set (0x92424 takes the empty branch instead)");
+
+    /* 12c. The arm's two grid callees and their arguments: the base index is re-read from 0x159D81 with
+     * every call, and the strip's highlight row is the arm's own immediate, not a state value. */
+    CheckEqI32(pF->facNameGrid.nBaseIdx, (i32)g_world.nSelectedBase,
+               "the name grid's base index follows nSelectedBaseIdx every frame (0x922B0 LDRSB [R5,#0x619])");
+    CheckEqI32(pF->facStrip.nHighlightRow, PUFO_PLA_STRIP_MARK,
+               "the wiring's own strip row is the arm's -1 (0x922B8 MOV R1,#0xFFFFFFFF)");
+
+    g_world.abFacilityGrid[nIdx] = 0;
+    (void)DrawFrame();
+    CheckEqI32(g_world.bPlaceActive, 0,
+               "an empty cell ends the placement: the arm clears bBasePlaceActive (0x92424 -> 0x92844)");
+
+    g_world.bPlaceActive = 1;
+    g_world.bPlaceFail   = 1; /* the demolish-failure panel's gate, 0x92848 */
     World_CloseGeoscape(&g_world);
     CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "the placement close reaches the map (0x8BE94)");
     Check(g_world.bPlaceActive == 0 && g_world.bPlaceFail == 0,

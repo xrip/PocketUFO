@@ -136,7 +136,7 @@ typedef struct GeoscapeInitEnv {
     u8            *abFacilityGrid;   /* gBaseFacGrid @ 0x159768 */
     GeoscapeWorld *pWorld;           /* apSiteState is the byte_161F38 array */
     i8            *pbBaseCount;      /* nBaseCount @ 0x159D80, signed */
-    i32           *pnUnk159DC4;      /* 10 */
+    i32           *pnSmapOriginX;    /* nSmapOriginX @ 0x159DC4, set to 10 at 0x86AAC */
 
     MissionSiteRec *paMissionSites;  /* unk_1865C0, 56 records */
 

@@ -197,6 +197,8 @@ static void App_HookNewGame(void *pUser)
     hooks.pColor = &g_color;
     hooks.pnAnimPhase = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18: the one cell the hit-test clear
                                              * and the geoscape pulse's phase gate share */
+    hooks.pnMapPhase = &g_nAnimPhase;       /* nMapPhase @ 0x1139EF (Map + 0x37), the byte the 0xC352
+                                             * handler wraps: the placement arm's cursor colour */
 
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
     printf("pocketufo: new game: %d funds, %d bases, %d soldiers, %d craft, screen %d, zoom %d\n",
@@ -306,6 +308,8 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pHit  = &g_pointerWorld.hit;
     hooks.pColor = &g_color;
     hooks.pnAnimPhase = (i32 *)&g_nUiSlot0; /* the same Map + 0x60 cell, as in App_HookNewGame */
+    hooks.pnMapPhase = &g_nAnimPhase;       /* nMapPhase @ 0x1139EF; Save_ReadTGameData 0x444E0 is its
+                                             * other writer, the save reader's own copy */
 
     {
         i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_options, &hooks);
@@ -1122,6 +1126,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         }
         App_DrawFrame();
         if (pszDumpPath != NULL) {
+            /* Debug path, only with --new-game: the game's own way out of the new-base pick, so the frame
+             * dump lands on the screen the clock runs on. Game_StartNew leaves the id 2 (0x95450) with the
+             * pick pending (0x945E0); the map click runs Geoscape_OnMapClick, which writes 1 (0x8B600) and
+             * clears the pending byte (0x8B608); the placement screen's close control carries
+             * Geoscape_CloseUI_ThunkA @ 0x838d0, whose case 1 writes 0 (0x8BE94). */
+            if (g_bNewGameFlag) {
+                World_MapClick(&g_world);
+                printf("pocketufo: after the map click: screen %d, pick pending %d, place active %d, bases %d\n",
+                       (int)g_world.screen.nGeoscapeScreen, (int)g_world.bPlacementPending,
+                       (int)g_world.bPlaceActive, (int)g_world.nBaseCount);
+                World_CloseGeoscape(&g_world);
+                printf("pocketufo: after the close: screen %d\n", (int)g_world.screen.nGeoscapeScreen);
+                fflush(stdout);
+            }
             if (g_bClickAt) {
                 /* Debug path: one press+release at logical coordinates. Input_OnPointer marks the
                  * row under the pointer, Input_OnPointerUp fires that row's handler (a MenuCtl

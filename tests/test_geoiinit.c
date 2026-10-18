@@ -59,7 +59,7 @@ static PufoOptions     g_options;
 static GeoscapeWorld   g_world;
 static AssetReader     g_rdr;
 static i32             g_nGlyphPalBase;
-static i32             g_nUnk159DC4;
+static i32             g_nSmapOriginX;
 static i32             g_nStartNewCalls;
 
 static void NoopClick(void) { }
@@ -98,7 +98,7 @@ static void TestNewGame(void)
     g_bRoot34 = 9;
     g_bRoot35 = 9;
     g_nGlyphPalBase = 9;
-    g_nUnk159DC4 = 9;
+    g_nSmapOriginX = 9;
     g_nSaveVersion = 0;
     g_nResearchEntries = 0;
     g_nBaseCount = 1;
@@ -140,7 +140,7 @@ static void TestNewGame(void)
     env.abFacilityGrid  = g_aFacilityGrid;
     env.pWorld          = &g_world;
     env.pbBaseCount     = &g_nBaseCount;
-    env.pnUnk159DC4     = &g_nUnk159DC4;
+    env.pnSmapOriginX     = &g_nSmapOriginX;
     env.paMissionSites  = g_aSites;
     env.aRegionBuildCount     = g_aRegionBuildCount;
     env.pbSaveVersion   = &g_nSaveVersion;
@@ -306,7 +306,7 @@ static void TestNewGame(void)
     }
     CheckEqI32(nNameOk, 148, "every slot 1..148 carries text record 1446+slot");
     CheckEqI32(pObj1->uFirePower, 110, "apObjects[1].uFirePower = 110");
-    CheckEqI32(g_nUnk159DC4, 10, "0x159DC4 = 10");
+    CheckEqI32(g_nSmapOriginX, 10, "0x159DC4 = 10");
 
     printf("speed and panel\n");
     CheckEqI32(g_world.nTickSeconds, 5, "GameTime_Set5Sec ran (tick seconds 5)");
@@ -355,7 +355,7 @@ static void TestModeOne(void)
     env.abFacilityGrid  = g_aFacilityGrid;
     env.pWorld          = &g_world;
     env.pbBaseCount     = &g_nBaseCount;
-    env.pnUnk159DC4     = &g_nUnk159DC4;
+    env.pnSmapOriginX     = &g_nSmapOriginX;
     env.paMissionSites  = g_aSites;
     env.aRegionBuildCount     = g_aRegionBuildCount;
     env.pbSaveVersion   = &g_nSaveVersion;

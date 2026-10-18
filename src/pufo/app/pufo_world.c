@@ -53,11 +53,19 @@ static void World_NoopClick(void) { }
 
 static PufoWorldState *g_pActiveWorld; /* UiControl.pfnClick takes no arguments */
 
-/* The thirteen screen-close thunks (BaseInfoScreen_CloseThunk @ 0x615b0, BaseFacScreen_CloseThunkA
- * @ 0x5a2c0, ... ) are all `LDR R0, =0x1864F8 / B Geoscape_CloseUI`: one tail call into the dispatcher
- * over the root block. The shell has the dispatcher (World_CloseGeoscape) but NOT yet the arms the ids it
- * sets draw -- Geoscape_Draw case 1 (the placement arm) has no shell env, so the seams keep their no-op
- * handlers until that arm is wired. See PLAN.md's "next unit". */
+/* Twelve 12-byte close thunks tail-call Geoscape_CloseUI @ 0x8b94c over the root block: BaseInfoScreen
+ * @ 0x557bc, BaseFacScreen_CloseThunkA @ 0x589c0, BaseFacScreen_CloseThunk @ 0x59b54, FundingScreen
+ * @ 0x5abd8, FundingScreen_ExitThunk @ 0x5c078, SoldierScreen @ 0x64ae4, ManufScreen @ 0x6e3d4,
+ * ResearchScreen @ 0x72ffc, BuySellScreen @ 0x75154, and Geoscape_CloseUI_ThunkA/B/C @ 0x838d0, 0x96020,
+ * 0x9a8c0. UiControl.pfnClick takes no arguments, so the shell reaches the same dispatcher through the
+ * active pointer and the env World_WireGeoscapeClock built -- one handler is enough for all twelve.
+ * NewBaseScreen_CloseThunk @ 0x615b0 is the odd one: it plays sample 17 (0x615bc) first. */
+static void World_CloseGeoscapeThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        World_CloseGeoscape(g_pActiveWorld);
+    }
+}
 
 /* The build dialog's OK (BaseFacScreen_TryBuySelected @ 0x58910), installed by BaseFacScreen_Toggle
  * as the panel's +3020 handler. UiControl.pfnClick takes no arguments, so it reaches the world
@@ -188,10 +196,10 @@ static void World_SoldierToggleThunk(void)
     pW->solEnv.ppPanelCraft = &pW->pSolPanelCraft;
     pW->solEnv.ppPad = &pW->pSolPad;
     pW->solEnv.pszPadName = "soldier";
-    pW->solEnv.pCloseCtl = &pW->ctlFacClose;
-    /* The original installs SoldierScreen_CloseThunk (0x64ae4), which only tail-calls
-     * Geoscape_CloseUI (0x8b94c); until that dispatcher is ported the seam stays a no-op. */
-    pW->solEnv.pfnCloseSoldierThunk = World_NoopClick;
+    pW->solEnv.pCloseCtl = pW->ui.apCtl[GEOUI_CTL_186B00]; /* *g_pUiCloseCtl @ 0x186B00, the one instance */
+    /* SoldierScreen_CloseThunk @ 0x64ae4 is a 12-byte tail call into Geoscape_CloseUI @ 0x8b94c, stored at
+     * +12 by SoldierScreen_Toggle (0x651AC). */
+    pW->solEnv.pfnCloseSoldierThunk = World_CloseGeoscapeThunk;
     pW->solEnv.pfnEquipThunk = World_SoldierEquipThunk;
     pW->solEnv.pfnSelectThunk = World_SoldierSelectThunk;
     pW->solEnv.pfnFormatName = World_SoldierName;   /* Soldier_FormatDisplayName @ 0x6654c */
@@ -199,10 +207,11 @@ static void World_SoldierToggleThunk(void)
     SoldierScreen_Toggle(&pW->solEnv);
 }
 
-/* NewBaseScreen_TryConfirm @ 0x6152c tail-calls Geoscape_OnMapClick @ 0x8b4a8; this is the seam. */
-static void World_TryConfirmClick(void)
+/* Geoscape_OnMapClick @ 0x8b4a8, reached from NewBaseScreen_TryConfirm @ 0x6152c and from
+ * Geoscape_OnMapClick_Thunk @ 0x857e8. Its screen-2 branch is the game's own way out of the new-base
+ * pick: 0x8B600 writes the screen id 1 and 0x8B608 clears the pending byte Game_StartNew set at 0x945E0. */
+void World_MapClick(PufoWorldState *pW)
 {
-    PufoWorldState *pW = g_pActiveWorld;
     MapClickEnv env;
 
     if (pW == NULL) {
@@ -239,6 +248,12 @@ static void World_TryConfirmClick(void)
     env.pFacInit = &pW->facInitEnv;
 
     (void)Geoscape_OnMapClick(&env);
+}
+
+/* UiControl.pfnClick takes no arguments, so the installed handler is this wrapper. */
+static void World_TryConfirmClick(void)
+{
+    World_MapClick(g_pActiveWorld);
 }
 
 /* The options screen is not ported yet; the radar click's type-0 branch reaches it through
@@ -351,7 +366,7 @@ bool World_Init(PufoWorldState *pW)
 
     pW->nNextSoldierId = 1;
     pW->nCreateNextSiteId = 1;
-    pW->nUnk159DC4 = 10; /* the original's 0x159DC4 starts at 10 */
+    pW->nSmapOriginX = 10; /* nSmapOriginX @ 0x159DC4 starts at 10; 0x159DC8 has no writer at all */
     /* bPendingBaseKind @ 0x159DF4 keeps the image's .data value 0. Nothing in the new-game path
      * writes it: Game_StartNew ends on geoscape screen 2 (NewBaseScreen_Open 0x61620) with the
      * pending kind 0 and the pending cell 0,0 (0x159D94/0x159D98 are only written by
@@ -485,7 +500,7 @@ static void World_StartNewHook(void *pUser)
     pW->hangarEnv.apBases = pW->apBases;
 
     memset(&pW->facInitEnv, 0, sizeof(pW->facInitEnv));
-    pW->facInitEnv.pCloseCtl = &pW->ctlFacClose;
+    pW->facInitEnv.pCloseCtl = pW->ui.apCtl[GEOUI_CTL_186B00]; /* *g_pUiCloseCtl, not a second instance */
     pW->facInitEnv.pUpCtl = &pW->ctlFacUp;
     pW->facInitEnv.pDownCtl = &pW->ctlFacDown;
     pW->facInitEnv.pnUnk15887C = &pW->nUnk15887C;
@@ -493,7 +508,9 @@ static void World_StartNewHook(void *pUser)
     pW->facInitEnv.pbArmed = &pW->bArmedPlacement;
     pW->facInitEnv.pfnPanelPrev = World_NoopClick; /* BaseFacScreen_PanelPrev/Next, panel not wired */
     pW->facInitEnv.pfnPanelNext = World_NoopClick;
-    pW->facInitEnv.pfnCloseThunk = World_NoopClick; /* Geoscape_CloseUI is not wired yet */
+    pW->facInitEnv.pfnCloseThunk = World_CloseGeoscapeThunk; /* BaseFacScreen_CloseThunkA @ 0x589c0 (0x5A1C4)
+                                                               * and BaseFacScreen_CloseThunk @ 0x59b54 (0x5A254):
+                                                               * both tail-call Geoscape_CloseUI @ 0x8b94c */
     pW->facInitEnv.pfnLoadPads = pW->pfnLoadPads;
     pW->facInitEnv.pPadUser = pW->pLoadPadsUser;
     pW->facInitEnv.pfnToggle = World_FacToggleThunk; /* BaseFacScreen_Toggle @ 0x589ec */
@@ -570,7 +587,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     env.abFacilityGrid = pW->abFacilityGrid;
     env.pWorld = &pW->geo.world;
     env.pbBaseCount = &pW->nBaseCount;
-    env.pnUnk159DC4 = &pW->nUnk159DC4;
+    env.pnSmapOriginX = &pW->nSmapOriginX;
     env.paMissionSites = pW->aMissionSites;
     env.aRegionBuildCount = pW->aRegionBuildCount;
     env.pbSaveVersion = &pW->nSaveVersion;
@@ -1197,6 +1214,10 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     memset(pF, 0, sizeof(*pF));
     memset(pPtr, 0, sizeof(*pPtr));
 
+    /* Set here, not in World_WireGeoscapeClock: the placement arm below reads it, and that clock wiring
+     * only runs at the end of this function. */
+    pW->pnMapPhase = (pHooks != NULL) ? pHooks->pnMapPhase : NULL; /* nMapPhase @ 0x1139EF (Map + 0x37) */
+
     /* The 0x1864F8 anim root's three bytes: 0x187080, 0x187058 and the frame style at 0x186566, which
      * the shell keeps as the tenth byte of its region-counter run. */
     pF->anim.pbStarted   = &pW->bUiAnimStarted;
@@ -1304,6 +1325,52 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->hover.paRegionCost = (const u32 *)g_anNewBaseCostByRegion;  /* aNewBaseCostByRegion @ 0xAB488 */
     pF->hover.pColor     = pColor;
 
+    /* The placement screen, Geoscape_Draw case 1 (0x91DC8..0x92ADC). Geoscape_CloseUI case 2 puts the id
+     * here (0x8BE68) and case 1 takes it away again (0x8BE94), so this is what a new game draws once its
+     * close control is clicked. The two grid callees get their own envs because the arm builds them by
+     * value: 0x922AC hands the grid block to BaseFacScreen_DrawNameGrid with the base index from
+     * LDRSB R1,[R5,#(nSelectedBaseIdx-0x159768] at 0x922B0, and 0x922B8 MOV R1,#0xFFFFFFFF makes the
+     * strip's highlight row this arm's argument -- -1, which marks no row. */
+    pF->placement.pPad           = pUi->apPad[GEOUI_PAD_186BA0];   /* pBaseFacScreenPad @ 0x186BA0, 0x91DCC */
+    pF->placement.apNavCtl       = pW->nav.apNav;                  /* 0x159888..0x1598AC, grid + 0x120 */
+    pF->placement.pCloseCtl      = pUi->apCtl[GEOUI_CTL_186B00];   /* *g_pUiCloseCtl @ 0x186B00, moved to (194,4) */
+    pF->placement.pMapCtl        = pUi->apCtl[GEOUI_CTL_186BB4];   /* *pGeoscapeCtlA @ 0x186BB4, the demolish key */
+    pF->placement.pbPlaceActive  = &pW->bPlaceActive;              /* bBasePlaceActive @ 0x1870BC: gate and the
+                                                                     * byte 0x92844 clears on an empty cell */
+    pF->placement.pbPlaceFail    = &pW->bPlaceFail;                /* bBasePlaceFail @ 0x1870B8 */
+    pF->placement.pnTapX         = &pW->nSmapTapX;                 /* 0x186B7C: the cursor block writes back */
+    pF->placement.pnTapY         = &pW->nSmapTapY;                 /* 0x186B80 */
+    pF->placement.pnSmapOriginX  = &pW->nSmapOriginX;              /* 0x159DC4 */
+    pF->placement.pnSmapOriginY  = &pW->nSmapOriginY;              /* 0x159DC8 */
+    pF->placement.abFacilityGrid = pW->abFacilityGrid;             /* gBaseFacGrid @ 0x159768 */
+    pF->placement.pnSelBaseIdx   = &pW->nSelectedBase;             /* 0x159D81, read signed in every call here */
+    pF->placement.pnMapPhase     = pW->pnMapPhase;                 /* nMapPhase @ 0x1139EF: the cursor colour */
+    pF->placement.pnFunds        = &pW->nFunds;                    /* 0x923C4 */
+    pF->placement.apSiteRecs     = pW->aSiteRecs;                  /* 0x186C40, 64-byte records, name at +26 */
+    pF->placement.paFacFlags     = pW->aFac;                       /* aBaseFacFlags @ 0x186E48, 28-byte records */
+    pF->placement.pColor         = pColor;
+    pF->placement.pAnim          = &pF->anim;                      /* the demolish panel's frame state, 0x92898 */
+    pF->placement.pfnCloseClick  = World_CloseGeoscapeThunk;       /* Geoscape_CloseUI_ThunkA @ 0x838d0 */
+    pF->placement.pfnMapClick    = World_TryConfirmClick;          /* Geoscape_OnMapClick_Thunk @ 0x857e8 */
+
+    pF->facNameGrid.abFacilityGrid = pW->abFacilityGrid;
+    pF->facNameGrid.apCraft        = pW->apCraft;                  /* apCraft @ 0x114A64 */
+    pF->facNameGrid.pnCraftCount   = &pW->bCraftCount;             /* Map_nCraftCount @ 0x114B4C, as a byte */
+    pF->facNameGrid.pnOriginX      = &pW->nSmapOriginX;
+    pF->facNameGrid.pnOriginY      = &pW->nSmapOriginY;
+    pF->facNameGrid.pColor         = pColor;
+    pF->facNameGrid.nBaseIdx       = pW->nSelectedBase;            /* by value: re-read every frame */
+
+    pF->facStrip.abFacilityGrid = pW->abFacilityGrid;
+    pF->facStrip.pbBaseCount    = (const u8 *)&pW->nBaseCount;     /* 0x159D80 = grid + 0x618, read signed */
+    pF->facStrip.pbSelectedBase = (const u8 *)&pW->nSelectedBase;  /* 0x159D81 = grid + 0x619 */
+    pF->facStrip.nHighlightRow  = PUFO_PLA_STRIP_MARK;             /* the arm overwrites the copy at 0x922B8 */
+
+    pF->draw.pPlacementArm   = &pF->placement;
+    pF->draw.pPlacementCtl   = &pF->placementCtl;
+    pF->draw.pPlacementGrid  = &pF->facNameGrid;
+    pF->draw.pPlacementStrip = &pF->facStrip;
+
     /* The frame end, 0x944B8..0x94544. Its modal arm runs only for MainMenu_nListMode 1103/1102, the
      * start menu's own modal pair, so the modal anim and layout stay NULL on the geoscape path; and
      * case 20's BaseAtScreen_Draw env belongs to the base-at screen, which is not wired. */
@@ -1324,10 +1391,14 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
         pF->hover.pfnCtlBlit     = pHit->pfnBlit;
         pF->hover.pfnCtlBlitEx   = pHit->pfnBlitEx;
         pF->hover.pCtlBlitUser   = pHit->pUser;
+        pF->placementCtl.pfnCtlBlit   = pHit->pfnBlit;
+        pF->placementCtl.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->placementCtl.pCtlBlitUser = pHit->pUser;
     }
     if (pAssets != NULL) {
         pF->panel.pTextRecs = (const char *)pAssets->pTextRecs; /* aTextRecs @ 0xB38D0 */
         pF->hover.pTextRecs = (const char *)pAssets->pTextRecs;
+        pF->placement.pTextRecs = (const char *)pAssets->pTextRecs; /* the ten captions, 0x92070..0x92290 */
     }
 
     /* The pointer dispatcher, Geoscape_OnPointer @ 0x872d0 and Geoscape_OnPointerUp @ 0x89450. Its
@@ -1393,11 +1464,11 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
      * shell needs both envs the moment the clock can run a month -- Geoscape_DrawFundingArm
      * dereferences its arm env with no test at 0x94334. The three funding panels (pFundPanelBars
      * 0x1595E0, pFundPanelNames 0x1595E4, pFundPanelArrows 0x1595E8) belong to FundingScreen_Toggle,
-     * which nothing here runs, so they stay NULL and FundingScreen_Draw's panel rows are skipped;
-     * FundingScreen_ExitThunk @ 0x5c078 needs the Geoscape_CloseUI dispatcher, also not wired yet. */
+     * which nothing here runs, so they stay NULL and FundingScreen_Draw's panel rows are skipped. */
     pW->fundingInit.ppPadSlot      = &pW->pFundPad;                    /* unk_1595DC */
     pW->fundingInit.pCloseCtl      = pUi->apCtl[GEOUI_CTL_186B00];     /* *g_pUiCloseCtl @ 0x186B00 */
-    pW->fundingInit.pfnCloseClick  = NULL;
+    pW->fundingInit.pfnCloseClick  = World_CloseGeoscapeThunk;         /* FundingScreen_ExitThunk @ 0x5c078,
+                                                                        * installed at 0x5C0F8 */
     pW->fundingInit.anCountryScore = pW->economy.anFundingBlock;       /* 0x186568..0x18657C, 6 slots */
     pW->fundingInit.anShare        = pW->economy.anFundingBlock + PUFO_ECON_RACE_SHARE_FIRST; /* 0x186580 */
     pW->fundingInit.anBaseline     = pW->anFundBaseline;               /* 0x1595F0 */
@@ -1472,6 +1543,10 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->hover.pTiles  = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL; /* [0x186B04]->pData */
     pF->cross.nCrosshairX = pF->g.nCrosshairX;   /* nSmapCrosshairX @ 0x186BC8 */
     pF->cross.nCrosshairY = pF->g.nCrosshairY;   /* nSmapCrosshairY @ 0x186BCC */
+    /* BaseFacScreen_DrawNameGrid takes the base index by value, and the original reads it from the grid
+     * block at every call (0x922B0 LDRSB R1,[R5,#(nSelectedBaseIdx-0x159768)]), so the copy follows the
+     * selection each frame. The strip's highlight row is NOT refreshed: 0x922B8 makes it -1 for this arm. */
+    pF->facNameGrid.nBaseIdx = pW->nSelectedBase;
     pF->anim.nFrameStyle  = (i8)pW->aRegionBuildCount[9]; /* bUiFrameStyle @ 0x186566 */
     pW->ptrEnv.pTiles     = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL;
 

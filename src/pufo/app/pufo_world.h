@@ -39,6 +39,12 @@ typedef struct GeoscapeFrameState {
     GeoscapeStatusPanelEnv panel;     /* 0x8C760..0x91DB0, chain tail included */
     GeoscapeGlobeHoverEnv  hover;     /* the call at 0x91D8C, inside the chain tail */
     GeoscapeFrameEndEnv    frameEnd;  /* 0x944B8..0x94544 */
+    /* Case 1, the placement screen (0x91DC8..0x92ADC) and its two grid callees. The id lands here from
+     * Geoscape_CloseUI case 2 (0x8BE68) and leaves through case 1 (0x8BE94). */
+    GeoscapePlacementArmEnv placement;    /* the arm itself */
+    GeoscapeScreenArmEnv    placementCtl; /* its control blits */
+    FacNameGridEnv          facNameGrid;  /* BaseFacScreen_DrawNameGrid @ 0x61c80 */
+    BaseStripDrawEnv        facStrip;     /* Base_DrawFacilityIconStrip @ 0x626dc */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -123,7 +129,12 @@ typedef struct PufoWorldState {
     u8                bGeoscapeUi;              /* unk_1139FC @ Map + 0x44 */
     u8                bRoot34;                  /* unk_18652C */
     u8                bRoot35;                  /* unk_18652D */
-    i32               nUnk159DC4;
+    i32               nSmapOriginX;               /* nSmapOriginX @ 0x159DC4, written 10 by Geoscape_InitUI
+                                     * (0x86AAC) and read by the placement overlay, the name grid and the
+                                     * placement arm */
+    i32               nSmapOriginY;               /* nSmapOriginY @ 0x159DC8: read in the same three places,
+                                     * and NOTHING in the image writes it -- the .data value 0 it starts
+                                     * with is the value it keeps */
     /* Map_nGlyphPalBase @ 0x1183F4 is ONE global, and the font reads it directly
      * (Font_DrawGlyph picks palette slot (Map_nGlyphPalBase + nPal), Text_DrawString temporarily
      * forces it to 2). The shell therefore does not keep its own copy: every env that the original
@@ -183,7 +194,6 @@ typedef struct PufoWorldState {
     i32          nPlaceX;               /* 0x159D94 */
     i32          nPlaceY;               /* 0x159D98 */
     char         szLabelScratch[108];   /* szRadarMsg @ 0x186B10 */
-    UiControl    ctlFacClose;           /* g_pUiCloseCtl @ 0x186B00, the shared close control */
     UiControl    ctlFacUp;              /* the control the original allocates at 0x158874 */
     UiControl    ctlFacDown;            /* ... and 0x158878 */
     i32          nUnk15887C;            /* 0x15887C */
@@ -250,6 +260,10 @@ typedef struct PufoWorldState {
      * new game on) goes to 1, case 1 to 0, and only at 0 does the pulse advance the clock. */
     GeoscapeCloseEnv  closeEnv;
     const UiControlHitCtx *pHitCtx;  /* the WorldHooks' hit context, wired for the pulse's forced clicks */
+    const u8    *pnMapPhase;         /* nMapPhase @ 0x1139EF (Map + 0x37): the 0xC352 anim counter the
+                                      * WndProc wraps at 7 (0xA0988/0xA098C) and Save_ReadTGameData
+                                      * restores (0x444E0). The caller owns it; the placement arm's cursor
+                                      * colour 10*(nMapPhase+15) reads it (0x92470). */
     i32         *pnAnimPhase;        /* nUiSlot0AnimPhase @ 0x113A18 (Map + 0x60), the shell's ONE cell
                                       * for the slot UiControl_HitTest clears and Geoscape_PulseUpdate's
                                       * animation-phase gate counts (0x95644..0x95654, cleared at 0x95B78) */
@@ -296,6 +310,9 @@ typedef struct WorldHooks {
      * counter and the geoscape pulse's animation-phase gate to be the SAME cell, so the caller owns it
      * and World_WireGeoscapeClock stores the pointer. */
     i32                   *pnAnimPhase;
+    /* Map + 0x37 (nMapPhase @ 0x1139EF), the 0xC352 anim counter. The caller owns it here too, because
+     * the tactical Map block is the caller's, and the placement arm's cursor colour reads it. */
+    const u8              *pnMapPhase;
     /* Smap_HitTestStrategSelect @ 0x82be8 needs the caller's SmapHitEnv, which the shell does not
      * build; the frame hands the dispatcher this seam instead (NULL means "nothing selectable"). */
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
@@ -321,9 +338,15 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks);
 void World_PulseGeoscape(PufoWorldState *pW);
 
 /* Geoscape_CloseUI @ 0x8b94c over the wired close env: the sound sample, the dwActionFail clear, the five
- * per-base needed-flag passes and the per-screen switch. Called from the screens' close controls, which is
- * how a new game gets from the globe (2) to the placement screen (1) to the map (0). */
+ * per-base needed-flag passes and the per-screen switch. Called from the twelve 12-byte close thunks the
+ * screens install. Case 2 (0x8BE68) and case 1 (0x8BE94) are the 2 -> 1 -> 0 run; case 2 returns early
+ * while the base pick is pending (0x8BE58). */
 void World_CloseGeoscape(PufoWorldState *pW);
+
+/* Geoscape_OnMapClick @ 0x8b4a8 over the shell's own grid, rosters and base records. This is the in-game
+ * way out of the new-base pick: 0x8B600 writes the screen id 1, 0x8B608 clears the pending byte
+ * Game_StartNew set at 0x945E0. */
+void World_MapClick(PufoWorldState *pW);
 
 /* Refresh the per-frame fields -- the zoom set's map / layer / tile pads for the mode the view
  * selected, the screen id, the anim frame-style byte -- and run Geoscape_Draw @ 0x8C180. Returns its
