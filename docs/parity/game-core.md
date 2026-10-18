@@ -19188,3 +19188,64 @@ the modal, and the cancel arm on screens 8 and 9 ends the modal then writes scre
 dropping the cancel-arm End turns 2 checks red; storing NULL instead of the end thunk turns 2 red.
 
 Gate: 61/61 tests in both configs, 18103 checks, golden `--new-game` frame identical.
+
+## Unit 113: the shell runs the enemy phase -- the AI tick dispatches over the live frame (Part 52)
+
+Unit 113 hands the enemy turn to the shell. `TurnHooks.pfnEnemyAiTick` was NULL since Part 44;
+`Tact_ProcessActionPhase`'s phase-3 busy arm (0x4D914) now dispatches `World_TactEnemyAiTickThunk`,
+which refreshes the per-tick geometry value copy and `pFirstXcom` (`Map_apXcomUnits[0]`
+@ Map+0x15154) from the live map and runs `Tact_EnemyAiTick @ 0x4cbe0` with a shell-owned
+`EnemyAiTickCtx` (world.c, InitTactical). The same wiring builds the `EnemyAiActCtx` the tick's
+act gate hands to `Tact_EnemyAiAct` (panic-AI shape: no sidearm preference), and the
+`PathToCellCtx` `Unit_PathToCell @ 0x2c2a8` runs through.
+
+Selection gates, mirrored by the frame test: `nEnemyCount == 0` tails straight out (0x4CC0C);
+`nAiTick > 15` skips WITHOUT incrementing (0x4CC34) -- the Part 50 counter deviation closed;
+`bAiDone` skips after the counter; `uTu >= 15` acts (0x4CC58); low-TU units get `bAiDone = 1`
+(0x4CC5C) and so act exactly once per mission. The tail (0x4D920) sets
+`nPhase = PUFO_PHASE_ENEMY_AI` and, with `bAiFocusSaved == 0`, runs `Tact_EndEnemyTurn @ 0x4CB74`:
+AfterEnemyStep hook skipped (NULL), `bBusy = 0` (0x4CB94), phase back to none, `SetPlayerInput(true)`,
+the invalid `pSavedSelUnit` replaced by `pFirstXcom`, then `pfnSelectUnit` + `pfnFocusSelected`;
+`TactState_KickQueue` follows at 0x4D934.
+
+The cost seam: `EnemyAiTickCtx.anActionCost/anActionEnabled` point at the shell's
+`TactUiState` arrays, and `World_TactFillActionCostsThunk` fills them from the selected unit and
+weapon exactly like `Ui_FillActionCosts` does for the player turn -- the fill-then-read pair stays
+inside one tick, matching the original's single bank. IDB comments now record the bank identity at
+0x118804/0x118834: `Map_anActionCost[11]` IS `Map_nThrowTuCost` (0x118830) and
+`Map_anActionEnabled[11]` IS `Map_nThrowArg` (0x118860) -- the throw's quantity, filled per unit.
+
+Closed Part 50 deviation: `FireBurstSpec.nArg` is `Map_nBurstShots` @ Map+0x28 (0x1139E0, the cell
+`Ui_SetFireMode` writes 1/1/3 into), read at request-fire time -- not a value from the 0x4E7C bank.
+Part 50's "burst nArg 0 because the 0x4E7C bank is unowned" misattributed the bank: its slot 11 is
+the throw's arg. The port now carries `spec.nArg = pMap->nBurstShots` (world.c RequestFireThunk).
+
+New GameMap owners (pufo_mapctx.h): `apPathCells[202]` @ Map+0x4A48 (0x118400
+`Map_apPathCells`; the pufo_path.h comment's earlier Map+0x4A44 base was 4 bytes off -- the store
+at 0x2C39C `[R4,LR]` plus the IDB name fix it), `nPathCount` @ Map+0x4E44 (0x1187FC),
+`pPathDestUnit` @ Map+0x150F4 (0x128AB0, the bFlag=0 bookkeeping slot). The 0x0004..0x0024 block
+became an explicit union: the move FSM's muzzle-origin read `apShotCells[9]` (0x50008) and the AI's
+`nMultiTargetCount` + `apMultiTargets[8]` reading of the same bytes, so the AI pick randoms range
+over the count the IDB names `Map_nMultiTargetCount`.
+
+Recorded deviations (not folded): `PathToCellCtx.pfnProbe` is NULL -- `Unit_CanStepTo @ 0x27bb8`
+is still unported and the path port treats a NULL probe as permissive (pufo_path.c:139), so step
+refusals do not yet bite a walked path; `EnemyAiTickCtx.pfnAfterEnemyStep` is NULL (AfterEnemyStep
+@ 0x4c4a0 unported); the clip-cap thunk bounds-checks the ammo-type id where the original does not;
+the panic `EnemyAiActCtx` is wired but not exercised -- the fixture enemies only take skip gates.
+The three-views of the action bank (Map cells, TactUiState arrays, `ActionCostTable
+sTactActionCosts`) stay a recorded multi-view family.
+
+Test evidence (test_geoscapeframe, after the modal block, before the mission end): two planted
+enemies -- uTu 5 and nAiTick 16 -- with zero rand draws consumed. Tick 1: the low-TU unit's
+counter 0x4CC4C and its done mark; the over-cap unit's counter untouched (skip without ++).
+Tick 2: the done unit still gets its counter before the bAiDone skip; the tail's EndEnemyTurn
+brings `bBusy` down, phase to none, player input back on, `pSavedSelUnit` and `pSelUnit` to
+`apXcomUnits[0]`, and the focus seam recomputes the same centered scroll the walker's focus
+produced for that cell; the empty queue proves KickQueue touches nothing. Then the roster and tact
+state are restored so the Part 49 mission-end block runs unchanged. Mutations 2/2: neutering the
+tick body (keeping the thunk referenced) turns 11 checks red; pointing `pnEnemyCount` at a zero
+cell turns exactly the 4 roster-loop checks red. (Part 51's trap reconfirmed: NULLing the hook
+instead fails the build on the now-unused thunk.)
+
+Gate: 61/61 tests in both configs, 18120 checks, golden `--new-game` frame identical.

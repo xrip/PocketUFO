@@ -12,11 +12,13 @@
 #include "game/pufo_boot.h"     /* BootAssets */
 #include "game/pufo_combat.h"   /* UnitRosters, the VisCtx roster view */
 #include "game/pufo_clock.h"    /* GameTime */
+#include "game/pufo_enemyai.h"  /* EnemyAiTickCtx/EnemyAiActCtx, the phase-3 driver wired in Part 52 */
 #include "game/pufo_font.h"
 #include "game/pufo_geopointer.h" /* GeoscapePointerEnv, the geoscape pointer dispatcher's env */
 #include "game/pufo_geoscape.h"
 #include "game/pufo_objectrec.h"
 #include "game/pufo_options.h"
+#include "game/pufo_path.h"     /* PathToCellCtx/PathScratch, the walk Unit_PathToCell @ 0x2c2a8 runs */
 #include "game/pufo_save.h"
 #include "game/pufo_ship.h"
 #include "game/pufo_tactinit.h" /* TactInitEnv/TactInitHooks/TactWeaponSel + the callee envs the block below fills */
@@ -433,6 +435,17 @@ typedef struct PufoWorldState {
                                          * pfnComputeFov stays NULL (its argument list is still open,
                                          * pufo_combat.h) */
     ShotOutcome      sTactShotOut;      /* scratch Combat_ResolveShot writes its result into */
+
+    /* --- the enemy phase (Tact_EnemyAiTick @ 0x4cbe0) and its path walk (Part 52) ---
+     * pfnEnemyAiTick (TurnHooks, 0x4D950's phase-3 arm) dispatches Tact_EnemyAiTick over
+     * sTactEnemyAi; the tick handles ONE enemy unit per call and ends the enemy turn at its
+     * tail (0x4D920: EndEnemyTurn + KickQueue) when nothing acted. The walked-path cells live
+     * in GameMap (Map_apPathCells / Map_nPathCount / Map_pPathDestUnit); the flood frontier
+     * lists are the shell's. */
+    PathToCellCtx   sTactPath;          /* Unit_PathToCell's ctx */
+    PathScratch     sTactPathScratch;   /* the flood fill's two frontier lists (the unk_10DB80 block) */
+    EnemyAiTickCtx  sTactEnemyAi;       /* the phase-3 tick's ctx, refreshed by World_TactEnemyAiTickThunk */
+    EnemyAiActCtx   sTactEnemyAiAct;    /* the panic AI's ctx (EnemyAi_TryFireOrWander @ 0x4abc8) */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */

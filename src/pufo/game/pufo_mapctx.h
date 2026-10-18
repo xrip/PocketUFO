@@ -24,6 +24,7 @@
 #include "game/pufo_combat.h"   /* PUFO_SPLASH_DWORDS, the hit-window size the Map block holds */
 #include "game/pufo_los.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_path.h"    /* PUFO_PATH_MAX_CELLS, the walked-path array the Map block holds */
 #include "game/pufo_statusmsg.h"
 #include "game/pufo_tactstate.h"
 #include "game/pufo_turn.h"
@@ -83,7 +84,13 @@ typedef struct GameMap {
     u8      nMissionType;      /* 0x1511A */
     Soldier *pThrowTarget;     /* 0x150F0 */
     i32     nFireTickProgress; /* 0x1405C */
-    MapCell *apShotCells[PUFO_MAP_SHOT_MAX]; /* 0x0004..0x0024, see above */
+    union {                                   /* 0x0004..0x0024, the block above, one storage two readings */
+        MapCell *apShotCells[PUFO_MAP_SHOT_MAX];   /* the move FSM's muzzle-origin read at 0x50008 */
+        struct {
+            i32      nMultiTargetCount;      /* 0x0004 Map_nMultiTargetCount: what the AI's pick randoms range over */
+            MapCell *apMultiTargets[8];      /* 0x0008..0x0024 Map_apMultiTargets */
+        };
+    };
 
     /* --- shot plumbing --- */
     AimState        aim;      /* 0x13FD8..0x14088 */
@@ -121,6 +128,13 @@ typedef struct GameMap {
     char aTransformName[32];      /* Map+0x230: the name the chryssalid transform copies into
                                    * Soldier.szName. The shell owns the block empty; nothing in the
                                    * ported code fills it yet (recorded gap). */
+
+    /* --- pathfinding scratch (Unit_PathToCell @ 0x2c2a8, wired from the shell in Part 52) --- */
+    MapCell *apPathCells[PUFO_PATH_MAX_CELLS]; /* Map_apPathCells @ Map+0x4A48 (0x118400): the walked path,
+                                                * destination-first (the store at 0x2C39C), replayed as queue entries */
+    i32      nPathCount;                       /* Map+0x4E44 (0x1187FC Map_nPathCount): the walked length */
+    Soldier *pPathDestUnit;                    /* Map+0x150F4 (0x128AB0 Map_pPathDestUnit): the bFlag=0
+                                                * bookkeeping slot, cleared when bFlag is set */
 
     /* --- the status message stack: nStatusMsgCount @ 0x0054,
      *     anStatusMsgTTL @ 0x1408C, aszStatusMsg @ 0x140B4 --- */

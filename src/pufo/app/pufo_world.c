@@ -17,6 +17,7 @@
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission */
 #include "game/pufo_timer.h"   /* GameTickCtx / GameTickHooks / GameTick_OnTimer @ 0x274f0 */
 #include "game/pufo_tactend.h" /* Tact_CheckBattleEnd @ 0x34fbc, the mission-end check the shell runs on the live frame */
+#include "util/pufo_rand.h"    /* Game_RandU16 @ 0x3e59c, the enemy AI's draw seam */
 
 #include <stdlib.h>
 #include <string.h>
@@ -1563,6 +1564,15 @@ static void World_TactTickActiveUnit(void *pUser);
 static void World_ModalEndThunk(void);
 static void World_TactDropModalThunk(i32 nWidth, i32 nTextRec, i32 nLines, const char *szLabel,
                                      void *pUser);
+static void World_TactEnemyAiTickThunk(TactCtx272 *pTact, void *pUser);
+static void World_TactFaceTowardThunk(Soldier *pUnit, i32 nX, i32 nY, void *pUser);
+static u32 World_TactRandU16Thunk(u32 nMax, void *pUser);
+static bool World_TactPathToCellThunk(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser);
+static void World_TactFillActionCostsThunk(void *pUser);
+static void World_TactEnqueueTurnKickThunk(Soldier *pUnit, u8 nFacing, void *pUser);
+static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser);
+static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser);
+static void World_TactEnemyAiPushTextThunk(i32 nRecIndex, void *pUser);
 
 bool World_InitTactical(PufoWorldState *pW, i32 nMode)
 {
@@ -1825,10 +1835,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactTurnHooks.pfnSelectUnit          = World_TactSelectThunk;
     pW->sTactTurnHooks.pfnFocusSelected       = World_TactFocusSelectedThunk;
     pW->sTactTurnHooks.pfnRequestFire         = World_TactRequestFireThunk;
-    /* Deviation: Tact_EnemyAiTick @ 0x4cbe0 (EnemyAiTickCtx, pufo_enemyai.h) is not wired from the
-     * shell yet. A NULL hook leaves phase 3 a no-op, and the walker's empty-queue early return at
-     * 0x54198 keeps that from livelocking the tick. */
-    pW->sTactTurnHooks.pfnEnemyAiTick         = NULL;
+    pW->sTactTurnHooks.pfnEnemyAiTick         = World_TactEnemyAiTickThunk;
     pW->sTactTurnHooks.pfnEnqueueEndOfOppFire = World_TactEndOfOppFireThunk;
     pW->sTactTurnHooks.pUser                  = pW;
     memset(&pW->sTactPhaseSave, 0, sizeof(pW->sTactPhaseSave));
@@ -1844,6 +1851,81 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactFireGate.pUser             = pW;
     memset(&pW->sTactActionCosts, 0, sizeof(pW->sTactActionCosts));
     pW->nMapActionMode = 0;
+
+    /* --- the enemy phase and its path walk (Part 52). The cost/enabled pointers go to
+     * sTactUi's banks: Ui_FillActionCosts fills exactly those cells (Map_anActionCost @
+     * 0x118804 / Map_anActionEnabled @ 0x118834, the enemy AI refills then reads within one
+     * tick, so reader and writer share the object). */
+    memset(&pW->sTactPathScratch, 0, sizeof(pW->sTactPathScratch));
+    memset(&pW->sTactPath, 0, sizeof(pW->sTactPath));
+    pW->sTactPath.pState         = pW->pTactState;
+    pW->sTactPath.ppSelUnit      = &pMap->pSelUnit;         /* Map_pSelUnit @ Map+0x15334 */
+    pW->sTactPath.ppPathDestUnit = &pMap->pPathDestUnit;    /* Map_pPathDestUnit @ Map+0x150F4 */
+    pW->sTactPath.apPathCells    = pMap->apPathCells;       /* Map_apPathCells @ Map+0x4A48 */
+    pW->sTactPath.pnPathCount    = &pMap->nPathCount;       /* Map_nPathCount @ Map+0x4E44 */
+    pW->sTactPath.pScratch       = &pW->sTactPathScratch;
+    pW->sTactPath.pfnLookup      = World_TactLookupCell;
+    /* Deviation: pfnProbe stands for Unit_CanStepTo @ 0x27bb8, still unported; the path port
+     * treats a NULL probe as permissive (pufo_path.c:139), so door/step refusals are not
+     * applied on a walked path yet. */
+    pW->sTactPath.pfnProbe       = NULL;
+    pW->sTactPath.pProbeUser     = NULL;
+    pW->sTactPath.pLookupUser    = pW;
+    pW->sTactPath.pGeom          = &pMap->geom;
+
+    memset(&pW->sTactEnemyAi, 0, sizeof(pW->sTactEnemyAi));
+    pW->sTactEnemyAi.pfnRandU16            = World_TactRandU16Thunk;
+    pW->sTactEnemyAi.pfnPathToCell         = World_TactPathToCellThunk;
+    pW->sTactEnemyAi.pfnFillActionCosts    = World_TactFillActionCostsThunk;
+    pW->sTactEnemyAi.pfnUpdateVisibility   = World_TactEnemyAiVisThunk;
+    pW->sTactEnemyAi.pfnEnqueueTurnAndKick = World_TactEnqueueTurnKickThunk;
+    /* Deviation: AfterEnemyStep @ 0x4c4a0 is not ported; Tact_EndEnemyTurn skips a NULL hook. */
+    pW->sTactEnemyAi.pfnAfterEnemyStep     = NULL;
+    pW->sTactEnemyAi.pfnClipAmmoCap        = World_TactClipAmmoCapThunk;
+    pW->sTactEnemyAi.pfnLookup             = World_TactLookupCell;
+    pW->sTactEnemyAi.geom                  = pMap->geom;      /* value copy, refreshed per tick */
+    pW->sTactEnemyAi.pQueue                = pW->pTactState;  /* pMapTactical @ 0x157198 */
+    pW->sTactEnemyAi.pSelect               = &pE->select;     /* Tact_SelectUnit @ 0x2c6c4 */
+    pW->sTactEnemyAi.pTurnHooks            = &pW->sTactTurnHooks;
+    pW->sTactEnemyAi.apEnemyUnits          = pMap->apEnemyUnits;   /* Map_apEnemyUnits @ Map+0x151CC */
+    pW->sTactEnemyAi.pnEnemyCount          = &pMap->nEnemyCount;   /* Map+0x15124 */
+    pW->sTactEnemyAi.ppSelUnit             = &pMap->pSelUnit;      /* Map+0x15334 */
+    pW->sTactEnemyAi.pFirstXcom            = pMap->apXcomUnits[0]; /* Map_apXcomUnits[0] @ Map+0x15154, refreshed per tick */
+    pW->sTactEnemyAi.ppSelWeapon           = &pMap->pSelWeapon;    /* Map.pSelWeapon @ Map+0x48 */
+    pW->sTactEnemyAi.pnActionMode          = &pW->nMapActionMode;  /* Map.nActionMode @ Map+0x4C */
+    pW->sTactEnemyAi.pnMultiTargetCount    = &pMap->nMultiTargetCount;
+    pW->sTactEnemyAi.apMultiTargets        = pMap->apMultiTargets;
+    pW->sTactEnemyAi.pnBurstShots          = &pMap->nBurstShots;   /* Map_nBurstShots @ Map+0x28 */
+    pW->sTactEnemyAi.pnMeleeCellX          = &pMap->nMeleeCellX;
+    pW->sTactEnemyAi.pnMeleeCellY          = &pMap->nMeleeCellY;
+    pW->sTactEnemyAi.pnMeleeCellLayer      = &pMap->nMeleeCellLayer;
+    pW->sTactEnemyAi.anActionCost          = pW->sTactUi.anActionCost;
+    pW->sTactEnemyAi.anActionEnabled       = pW->sTactUi.anActionEnabled;
+    pW->sTactEnemyAi.pItemMelee            = &pW->sTactItem156910; /* TactItem_156910 @ 0x156910 */
+    pW->sTactEnemyAi.pItemAction13         = &pW->sTactItem156A58; /* TactItem_156A58 @ 0x156A58 */
+    pW->sTactEnemyAi.pRmp                  = &pW->sTactRmp;        /* pRmpMissionData @ 0x15881C */
+    pW->sTactEnemyAi.pActCtx               = &pW->sTactEnemyAiAct;
+    pW->sTactEnemyAi.pfnPushTextRecord     = World_TactEnemyAiPushTextThunk;
+    pW->sTactEnemyAi.pPushTextUser         = pW;
+    pW->sTactEnemyAi.pUser                 = pW;
+
+    memset(&pW->sTactEnemyAiAct, 0, sizeof(pW->sTactEnemyAiAct));
+    pW->sTactEnemyAiAct.pfnRandU16         = World_TactRandU16Thunk;
+    pW->sTactEnemyAiAct.pfnPathToCell      = World_TactPathToCellThunk;
+    pW->sTactEnemyAiAct.pfnFillActionCosts = World_TactFillActionCostsThunk;
+    pW->sTactEnemyAiAct.pfnPushStatus      = World_TactPushForcedThunk;
+    pW->sTactEnemyAiAct.pfnPushTextRecord  = World_TactEnemyAiPushTextThunk;
+    pW->sTactEnemyAiAct.pPushTextUser      = pW;
+    pW->sTactEnemyAiAct.pfnFaceToward      = World_TactFaceTowardThunk;
+    pW->sTactEnemyAiAct.pfnLookupCell      = World_TactLookupCell;
+    pW->sTactEnemyAiAct.pState             = pW->pTactState;
+    pW->sTactEnemyAiAct.pGeom              = &pMap->geom;
+    pW->sTactEnemyAiAct.ppSelWeapon        = &pMap->pSelWeapon;
+    pW->sTactEnemyAiAct.pnActionMode       = &pW->nMapActionMode;
+    pW->sTactEnemyAiAct.anActionCost       = pW->sTactUi.anActionCost;
+    pW->sTactEnemyAiAct.anActionEnabled    = pW->sTactUi.anActionEnabled;
+    pW->sTactEnemyAiAct.pbActionLatch      = &pMap->bActionLatch;  /* Map+0x02 */
+    pW->sTactEnemyAiAct.pUser              = pW;
 
     pW->sTactShotHooks.pfnComputeFov = NULL; /* the argument list is still open (pufo_combat.h:93) */
     pW->sTactShotHooks.pfnAreaFire   = World_TactAreaFireThunk;
@@ -2046,6 +2128,11 @@ static void World_TactRequestFireThunk(Soldier *pUnit, i32 nX, i32 nY, i32 nZ, v
     spec.nY            = nY;
     spec.nZ            = (u8)nZ;
     spec.nTuCost       = pW->sTactActionCosts.nTuCost[pW->nMapActionMode];
+    /* FireBurstSpec.nArg is pCtxBase.nUnk40 @ Map+0x28 (0x1139E0, the cell the IDB names
+     * Map_nBurstShots) at call time -- Ui_SetFireMode writes 1/1/3 into it (pufo_tactui.h).
+     * The Part 50 note that this needed the anActionEnabled bank was a misattribution:
+     * anActionEnabled[11] is the THROW's argument (enemyai.h:270), not the burst's. */
+    spec.nArg          = pMap->nBurstShots;
     spec.uAmmoInWeapon = pItem->nAmmo;
     spec.bAmmoCap      = pItem->pObj->bAmmoCap;
     (void)TactState_EnqueueFireBurst(pW->pTactState, &spec, World_TactFaceTowardThunk,
@@ -2156,6 +2243,116 @@ static void World_TactDropModalThunk(i32 nWidth, i32 nTextRec, i32 nLines, const
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
     UiModal_Begin(&pW->sModal, nWidth, nTextRec, nLines, (void *)szLabel, World_ModalEndThunk, NULL, NULL);
+}
+
+/* Part 52 enemy-phase thunks.
+
+ * TurnHooks.pfnEnemyAiTick is the phase-3 arm of Tact_ProcessActionPhase @ 0x4d950. The tick
+ * handles one enemy unit per call (selection gates at 0x4CC1C..0x4CC5C) and ends the enemy
+ * turn at its tail (0x4D920) when nothing acted. The value-held parts of the ctx (the geometry
+ * copy, the first-Xcom pointer the tail hands to Tact_EndEnemyTurn) are refreshed from the
+ * live frame on every call. */
+static void World_TactEnemyAiTickThunk(TactCtx272 *pTact, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactMap == NULL) {
+        return;
+    }
+    pW->sTactEnemyAi.geom       = pW->pTactMap->geom;
+    pW->sTactEnemyAi.pFirstXcom = pW->pTactMap->apXcomUnits[0];
+    Tact_EnemyAiTick(pTact, &pW->sTactEnemyAi);
+}
+
+/* Game_RandU16 @ 0x3e59c (pufo_rand.h), the draw seam every AI roll runs through. */
+static u32 World_TactRandU16Thunk(u32 nMax, void *pUser)
+{
+    (void)pUser;
+    return (u32)Game_RandU16((u16)nMax);
+}
+
+/* Unit_PathToCell @ 0x2c2a8 over the shell's ctx. */
+static bool World_TactPathToCellThunk(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    return Unit_PathToCell(nX, nY, nLayer, bFlag, &pW->sTactPath);
+}
+
+/* Ui_FillActionCosts @ 0x26104 (the enemy AI calls it before reading the cost table).
+ * The input is read the way the original's call site reads it: the selected weapon's object
+ * record bytes 0xB0..0xB5 plus the unit's stats. */
+static void World_TactFillActionCostsThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+    Soldier *pUnit;
+    TactItem *pItem;
+    ActionCostInput in;
+
+    if (pMap == NULL) {
+        return;
+    }
+    pUnit = pMap->pSelUnit;
+    pItem = pMap->pSelWeapon;
+    if (pUnit == NULL || pItem == NULL || pItem->pObj == NULL) {
+        return;
+    }
+    memset(&in, 0, sizeof(in));
+    in.uSortKey  = pItem->pObj->uSortKey;
+    in.nCategory = pItem->pObj->nCategory;
+    memcpy(in.abCostPctPacked, pItem->pObj->abCostPct, sizeof(in.abCostPctPacked));
+    memcpy(in.abFlagByMode, pItem->pObj->abArmorTu, sizeof(in.abFlagByMode));
+    in.auStat0     = pUnit->auStat[0];
+    in.auStat4     = pUnit->auStat[4];
+    in.auStat5     = pUnit->auStat[5];
+    in.bFlags      = pUnit->bFlags;
+    in.nUnitType   = pUnit->nUnitType;
+    in.bOperative  = Unit_bIsOperative(pUnit);
+    in.bWeaponUnk8 = pItem->bUnk8;
+    Ui_FillActionCosts(&in, &pW->sTactUi);
+}
+
+/* EnemyAi_EnqueueRandomTurn's pair (pufo_enemyai.h:69): enqueue the turn command, then kick. */
+static void World_TactEnqueueTurnKickThunk(Soldier *pUnit, u8 nFacing, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactState == NULL) {
+        return;
+    }
+    TactState_EnqueueTurn(pW->pTactState, pUnit, nFacing);
+    TactState_KickQueue(pW->pTactState);
+}
+
+/* Stands for the clip lookup inside TactItem_TryReloadClip (pufo_tactui.h:292):
+ * pCtxBase.apObjects[id]->bAmmoCap. The port bounds-checks, the original does not. */
+static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pAssets == NULL || nAmmoTypeId >= (u16)pW->pAssets->nObjectCount) {
+        return 0;
+    }
+    return pW->pAssets->apObjects[nAmmoTypeId]->bAmmoCap;
+}
+
+/* Unit_UpdateVisibility @ 0x48580 over the move wiring's vis ctx -- the same ctx the move
+ * FSM's seam uses. */
+static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    Map_UpdateVisibilityCb(pUnit, &pW->sTactMoveWiring);
+}
+
+/* The TEXTS-record status push (record index, not a string): the same text the move wiring
+ * pushes by index, Map_PushStatusCb @ pufo_mapctx.h. */
+static void World_TactEnemyAiPushTextThunk(i32 nRecIndex, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    Map_PushStatusCb(nRecIndex, &pW->sTactMoveWiring);
 }
 
 /* FireGate: aResearchTopics[g_abSlotTopicGate[uSortKey]].wGate4 != 0 (pufo_combat.h:218).

@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 969 / 969 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18103 |
+| Test checks run | 18120 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -160,7 +160,7 @@ is the module that answers to it.
 |---|---|---|---|
 | `0xa1054` | `PtrArray_Remove` | 204 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa0f94` | `PtrArray_Insert` | 176 | `src/pufo/util/pufo_ptrarray.h` |
-| `0x3e59c` | `Game_RandU16` | 132 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_save.h` (+3) |
+| `0x3e59c` | `Game_RandU16` | 132 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+4) |
 | `0x73328` | `PlaySample7_SetFlags_Cache0xBD8` | 88 | `src/pufo/game/pufo_baseui.h` |
 | `0x37098` | `Math_StoreSqrtConst` | 76 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x3e434` | `PtrArray_DeleteAll` | 72 | `src/pufo/util/pufo_ptrarray.h` |
@@ -257,7 +257,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/game/pufo_step.c`, `src/pufo/game/pufo_step.h` |
+| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_step.c` (+1) |
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | `src/pufo/game/pufo_tactinit.h`, `src/pufo/game/pufo_terrain.c` (+1) |
 | `0x50adc` | `Tact_ProcessFireAction` | 8192 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
@@ -266,9 +266,9 @@ is the module that answers to it.
 | `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
 | `0x3d568` | `Tact_Shutdown` | 3788 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_unit.c` (+1) |
-| `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_invdrag.h` (+7) |
+| `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+8) |
 | `0x3a2ac` | `Tact_SpawnAliens` | 3516 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.h` (+1) |
-| `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.c` (+4) |
+| `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_enemyai.c` (+4) |
 | `0x1c958` | `MapView_DrawUnit` | 3220 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x2f12c` | `Combat_ResolveShot` | 2828 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_combat.c` (+5) |
 | `0x4b9b8` | `BeforeEnemyStep` | 2792 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_turn.c` (+1) |
@@ -290,12 +290,12 @@ is the module that answers to it.
 | `0x37ae4` | `Tact_BuildVisRayTable` | 1524 | `src/pufo/game/pufo_vistry.h` |
 | `0x2bd00` | `Map_QueueDoorAction` | 1448 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4dcf4` | `Unit_bFacingAngleDuel` | 1376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
-| `0x4c4a0` | `AfterEnemyStep` | 1368 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
+| `0x4c4a0` | `AfterEnemyStep` | 1368 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x30368` | `Tact_ComputeAimVector` | 1320 | `src/pufo/game/pufo_ballist.h` |
 | `0x22648` | `Map_InitAndLoadRegistry` | 1284 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x1aadc` | `MapView_DrawViewportGuide` | 1256 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x21e2c` | `MapView_DrawIsoLayer` | 1252 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
-| `0x4abc8` | `EnemyAi_TryFireOrWander` | 1208 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` (+1) |
+| `0x4abc8` | `EnemyAi_TryFireOrWander` | 1208 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_enemyai.c` (+2) |
 | `0x3734c` | `Tact_BuildPaletteLuts` | 1184 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` (+2) |
 | `0x33780` | `Tact_TallyUnitResults` | 1136 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactend.c` (+2) |
@@ -303,7 +303,7 @@ is the module that answers to it.
 | `0x1512c` | `Tact_HandleMapClick` | 1104 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+3) |
 | `0x47280` | `Soldier_PromoteByTypeScores` | 1096 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x2778c` | `Map_ProbeStepOccupants` | 1068 | `src/pufo/game/pufo_step.h` |
-| `0x2c2a8` | `Unit_PathToCell` | 1052 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_input.h` (+4) |
+| `0x2c2a8` | `Unit_PathToCell` | 1052 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+7) |
 | `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_turn.h` (+2) |
 | `0x4a7b0` | `Unit_ApplyFallDamage` | 1000 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x25ab4` | `Map_PatchCraftSprites` | 952 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+2) |
@@ -382,7 +382,7 @@ is the module that answers to it.
 | `0x54ba4` | `Map_LoadMa1` | 152 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x1c7dc` | `MapView_SetWallPalFromSlotA` | 148 | `src/pufo/game/pufo_isodraw.h` |
 | `0x1c870` | `MapView_SetWallPalFromSlotB` | 148 | `src/pufo/game/pufo_isodraw.h` |
-| `0x2c6c4` | `Tact_SelectUnit` | 148 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` (+4) |
+| `0x2c6c4` | `Tact_SelectUnit` | 148 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.c` (+5) |
 | `0x47164` | `Soldier_FindNextSmallByType` | 148 | `src/pufo/game/pufo_roster.h` |
 | `0x33bf0` | `Tact_MarkAllSoldiersSeen` | 144 | `src/pufo/game/pufo_roster.h` |
 | `0x4b928` | `EnemyAi_bMultiTargetTypeMatch` | 144 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 358 |
+| `test_geoscapeframe` | PASS | 375 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

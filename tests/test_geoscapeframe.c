@@ -1728,6 +1728,71 @@ int main(void)
             g_world.sModal.bOpen = false;
             g_world.nUiScreen = nScreenSave;
 
+            /* Enemy phase (Part 52): phase 3 now dispatches Tact_EnemyAiTick on the live frame.
+             * Plant two fake enemies: one under the TU floor (marked done and skipped, 0x4CC58),
+             * one past the tick cap (skipped WITHOUT the counter advancing, 0x4CC34). Nothing
+             * acts, so the tick runs its tail at 0x4D920: Tact_EndEnemyTurn (busy down, phase to
+             * none, player input re-enabled, the invalid saved selection replaced by the first
+             * Xcom unit and re-focused) and TactState_KickQueue on the empty queue. */
+            {
+                GameMap *pMapE = g_world.pTactMap;
+                TactCtx272 *pT = &pMapE->tact;
+                static Soldier aEnemyFix[2];
+
+                memset(aEnemyFix, 0, sizeof(aEnemyFix));
+                aEnemyFix[0].uTu     = 5;  /* under PUFO_ENEMYAI_TU_MIN (15) */
+                aEnemyFix[1].nAiTick = PUFO_ENEMYAI_TICK_MAX + 1;
+                pMapE->apEnemyUnits[0] = &aEnemyFix[0];
+                pMapE->apEnemyUnits[1] = &aEnemyFix[1];
+                pMapE->nEnemyCount = 2;
+
+                pT->bBusy          = 1;
+                pT->nPhase         = PUFO_PHASE_ENEMY_AI;
+                pT->pSavedSelUnit  = NULL;
+                pMapE->pSelUnit    = pMapE->apXcomUnits[1]; /* the re-select must land on unit 0 */
+                g_world.bMapPlayerInput = 0;
+                i32 nScrollX0 = g_world.tactEnv.focus.nCamScrollX;
+                i32 nScrollY0 = g_world.tactEnv.focus.nCamScrollY;
+                g_world.tactEnv.focus.nCamScrollX += 9999; /* sentinel: the focus must recompute */
+                g_world.tactEnv.focus.nCamScrollY += 9999;
+
+                Check(World_GameTickOnce(&g_world),
+                      "the 0xC350 firing reaches the phase-3 arm (0x4D950 busy && phase 3 -> TurnHooks.pfnEnemyAiTick)");
+                CheckEqI32(aEnemyFix[0].nAiTick, 1, "the low-TU enemy got its counter (0x4CC4C ++nAiTick)");
+                CheckEqI32(aEnemyFix[0].bAiDone, 1, "and it is marked done for the rest of the mission (0x4CC58)");
+                CheckEqI32(aEnemyFix[1].nAiTick, PUFO_ENEMYAI_TICK_MAX + 1,
+                           "the over-cap enemy is skipped WITHOUT advancing (0x4CC34)");
+                CheckEqI32(aEnemyFix[1].bAiDone, 0, "the over-cap enemy stays not-done");
+                CheckEqI32(pT->bBusy, 0, "nothing acted, so the tail's EndEnemyTurn ran: bBusy down (0x4CB94)");
+                CheckEqI32(pT->nPhase, PUFO_PHASE_NONE, "and the phase returns to none");
+                CheckEqI32(g_world.bMapPlayerInput, 1, "EndEnemyTurn re-enables player input");
+                Check(pT->pSavedSelUnit == pMapE->apXcomUnits[0],
+                      "the invalid saved selection is replaced by Map_apXcomUnits[0]");
+                Check(pMapE->pSelUnit == pMapE->apXcomUnits[0],
+                      "and the select hook lands on it (Map_pSelUnit 0x128CEC)");
+                Check(g_world.tactEnv.focus.nCamScrollX == nScrollX0
+                          && g_world.tactEnv.focus.nCamScrollY == nScrollY0,
+                      "the focus seam recomputed the same centered scroll the walker's focus produced for this unit's cell");
+                Check(g_world.pTactState->nQueueLen == 0 && g_world.pTactState->bQueueActive == 0,
+                      "KickQueue on the empty queue touches nothing (Part 41 gate)");
+
+                /* Second tick: the done/over-cap units are skipped and the enemy turn ends again. */
+                pT->bBusy  = 1;
+                pT->nPhase = PUFO_PHASE_ENEMY_AI;
+                Check(World_GameTickOnce(&g_world), "tick 2: the same dispatch runs again with both enemies skipped");
+                CheckEqI32(aEnemyFix[0].nAiTick, 2, "the done enemy still gets its counter before the bAiDone skip");
+                CheckEqI32(aEnemyFix[0].bAiDone, 1, "and stays done");
+                CheckEqI32(aEnemyFix[1].nAiTick, PUFO_ENEMYAI_TICK_MAX + 1, "the over-cap counter never moves");
+                CheckEqI32(pT->bBusy, 0, "the tail closed the enemy turn again");
+
+                /* Restore the empty-roster idle frame the mission-end asserts expect. */
+                pMapE->nEnemyCount   = 0;
+                pMapE->apEnemyUnits[0] = NULL;
+                pMapE->apEnemyUnits[1] = NULL;
+                pT->bBusy  = 0;
+                pT->nPhase = PUFO_PHASE_NONE;
+            }
+
             /* Mission end (Part 49). Empty the hidden park and the field so the CheckBattleEnd head
              * finds no enemy side and takes the win arm (0x350F0); the enemy-turn byte is pre-set so
              * its clear at 0x3523C is a transition. No abort, so the lost-mark pass (0x3535C) marks

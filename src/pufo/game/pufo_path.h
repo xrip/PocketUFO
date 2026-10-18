@@ -184,7 +184,7 @@ typedef struct PathToCellCtx {
     TactState    *pState;          /* pMapTactical @ 0x157198 */
     Soldier     **ppSelUnit;       /* Map.pSelUnit @ Map+0x15334 (0x128cec) */
     Soldier     **ppPathDestUnit;  /* Map+0x150f4 (0x128ab0), see below */
-    MapCell     **apPathCells;     /* Map+0x4A44, PUFO_PATH_MAX_CELLS slots */
+    MapCell     **apPathCells;     /* Map_apPathCells @ Map+0x4A48 (0x118400), PUFO_PATH_MAX_CELLS slots */
     i32          *pnPathCount;     /* Map+0x4E44 */
     PathScratch  *pScratch;        /* the flood fill's frontier lists */
     MapCellLookup pfnLookup;
