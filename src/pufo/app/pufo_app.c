@@ -712,6 +712,125 @@ static void App_OnPointerUp(void)
     Input_OnPointerUp(&g_tactState, &g_tactHooks, &g_pointerWorld);
 }
 
+/* ---- shell-side scaffolding for the --new-game dump. Nothing below is ported behaviour: no function in the image
+ * drags the camera to a region, a player does. Game_StartNew leaves the pick pending (0x945E0) and the globe hover
+ * samples ONE fixed screen point -- (120, (320 - strip height) / 2), 0x67328 / 0x6734C -- through
+ * Smap_GetTileAtScreen @ 0x82244, so what it reports follows the view scroll, and the pick cannot be committed
+ * until a buildable tile sits under that point. The steps, in the game's own order:
+ *
+ *   1. the bottom panel's wipe, stepped by the 0xC354 branch (0xA0C88..0xA0C90) App_TickAnimProgress reproduces:
+ *      Geoscape_DrawGlobeHover stops at 0x67490 and hands back 0xFF while it is still running;
+ *   2. the drag: a press inside the strip band arms bGeoscapeDragActive @ 0x187074 (0x87D60) and records the pen at
+ *      0x87D74/0x87D7C while moving nothing (0x82104/0x82114 add it straight back), and it is the event after it
+ *      with bDown clear that reaches Smap_ScrollBy @ 0x820d0 at 0x87D14. A stroke carries at most 100 tiles so the
+ *      pen never leaves the pen screen, and the short way round is taken because the map wraps in x.
+ *   3. one press and one release on the control the hover seats at (120 - uWidth/2, 290) (0x679F0 / 0x67A00): the
+ *      press leaves it in its pressed state (0x874EC) and the release's own preamble (0x89694) releases it wherever
+ *      the pen lifted. Its handler is NewBaseScreen_TryConfirm @ 0x6152c -- Sound_Play(17, 4) at 0x61538, funds gate
+ *      at 0x6156C skipped while a pick is pending (0x6153C), tail call Geoscape_OnMapClick @ 0x8b4a8.
+ *
+ * The pointer events go through App_PointerLogical / App_OnPointerUp, i.e. Input_OnPointer @ 0x13c6c and
+ * Input_OnPointerUp @ 0x148d0 -- the same wrappers WndProc uses. test_geoscapeframe carries the same two steps as
+ * RunFramesUntilHoverRegion and DragCameraOntoRegion and they are deliberately not shared: those drive
+ * World_GeoscapePointer directly, this one drives the shell's message-order wrappers. */
+
+static bool App_HoverOnRegion(void)
+{
+    return g_world.bPendingRegionId >= PUFO_REGION_ID_FIRST
+        && g_world.bPendingRegionId < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT;
+}
+
+/* The tile under the hover's fixed sample point, resolved the way 0x82244 resolves it (one wrap per axis). A mirror
+ * rather than a call on purpose: Smap_GetTileAtScreen also writes view.nPickX/nPickY, and the draw owns that pair. */
+static u8 App_HoverSampleTile(i32 nMidY, i32 *pnTileX, i32 *pnTileY)
+{
+    const SmapView *pView  = &g_world.view;
+    const u8       *pTiles = g_world.frame.hover.pTiles;
+    i32 nX = pView->nScrollX + pView->nMapW / 2;
+    i32 nY = pView->nScrollY + pView->nMapH / 2 + nMidY - 160;
+
+    if (nX < 0) { nX += pView->nMapW; }
+    if (nY < 0) { nY += pView->nMapH; }
+    *pnTileX = nX;
+    *pnTileY = nY;
+    if (pTiles == NULL || nX >= pView->nMapW || nY >= pView->nMapH) {
+        return 0xFF;
+    }
+    return pTiles[nY * pView->nMapW + nX];
+}
+
+static void App_DragCameraOntoRegion(i32 nMidY)
+{
+    const SmapView *pView  = &g_world.view;
+    const u8       *pTiles = g_world.frame.hover.pTiles;
+    i32 nTileX, nTileY, nRegX = -1, nRegY = -1, nBest = 0x7FFFFFFF;
+    i32 nTile = App_HoverSampleTile(nMidY, &nTileX, &nTileY);
+    i32 nX, nY, nDx, nDy;
+
+    if (nTile >= PUFO_REGION_ID_FIRST && nTile < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+        return;
+    }
+    if (pTiles == NULL) {
+        return;
+    }
+    for (nY = 0; nY < pView->nMapH; ++nY) {
+        for (nX = 0; nX < pView->nMapW; ++nX) {
+            const u8 nCand = pTiles[nY * pView->nMapW + nX];
+            i32 nDist;
+            if (nCand < PUFO_REGION_ID_FIRST || nCand >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+                continue;
+            }
+            nDist = (nX - nTileX) * (nX - nTileX) + (nY - nTileY) * (nY - nTileY);
+            if (nDist < nBest) {
+                nBest = nDist;
+                nRegX = nX;
+                nRegY = nY;
+            }
+        }
+    }
+    if (nRegX < 0) {
+        return;
+    }
+    for (int i = 0; i < 12 && (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT);
+         ++i) {
+        nDx = nRegX - nTileX;
+        nDy = nRegY - nTileY;
+        if (nDx >  pView->nMapW / 2) { nDx -= pView->nMapW; }
+        if (nDx < -pView->nMapW / 2) { nDx += pView->nMapW; }
+        if (nDx >  100) { nDx =  100; } else if (nDx < -100) { nDx = -100; }
+        if (nDy >  100) { nDy =  100; } else if (nDy < -100) { nDy = -100; }
+        App_PointerLogical(120, nMidY, true);                          /* the press arm moves nothing */
+        App_PointerLogical(120 - nDx, nMidY - nDy, false);            /* this one scrolls */
+        App_OnPointerUp();                                            /* 0x896BC */
+        App_DrawFrame();
+        nTile = App_HoverSampleTile(nMidY, &nTileX, &nTileY);
+    }
+}
+
+static void App_NewGamePickThroughPen(void)
+{
+    UiControl      *pConfirm = g_world.ui.apCtl[GEOUI_CTL_186BA4];
+    const PadImage *pStrip   = g_world.ui.apPad[GEOUI_PAD_186BBC];
+    i32 nMidY;
+
+    if (pConfirm == NULL || pStrip == NULL) {
+        return;
+    }
+    nMidY = (320 - (i32)pStrip->uHeight) / 2; /* 0x67328 / 0x6734C */
+
+    for (int i = 0; i < 12 && !App_HoverOnRegion(); ++i) {
+        App_TickAnimProgress();
+        App_DrawFrame();
+    }
+    App_DragCameraOntoRegion(nMidY);
+    (void)App_DrawFrame(); /* 0x91D94 stores the hovered tile and 0x679F0 seats the control on the same draw */
+    if (!App_HoverOnRegion()) {
+        return;
+    }
+    App_PointerLogical(pConfirm->x + 2, pConfirm->y + 2, true);
+    App_OnPointerUp();
+}
+
 /* Builds the exe-directory-relative asset paths, as InitInstance @ 0x9fd48 does:
  * GetModuleFileNameW, strip to the last backslash, then append lang.dat and
  * main.dat. The originals are szAppDir @ 0x1883b0 and szPathBuf @ 0x188538. */
@@ -1126,16 +1245,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         }
         App_DrawFrame();
         if (pszDumpPath != NULL) {
-            /* Debug path, only with --new-game: the game's own way out of the new-base pick, so the frame
-             * dump lands on the screen the clock runs on. Game_StartNew leaves the id 2 (0x95450) with the
-             * pick pending (0x945E0); the map click runs Geoscape_OnMapClick, which writes 1 (0x8B600) and
-             * clears the pending byte (0x8B608); the placement screen's close control carries
-             * Geoscape_CloseUI_ThunkA @ 0x838d0, whose case 1 writes 0 (0x8BE94). */
+            /* Debug path, only with --new-game: the game's own way out of the new-base pick, so the frame dump lands
+             * on the screen the clock runs on. Game_StartNew leaves the id 2 (0x95450) with the pick pending
+             * (0x945E0); App_NewGamePickThroughPen commits it through the pointer -- try-confirm's tail call reaches
+             * Geoscape_OnMapClick @ 0x8b4a8, whose pick arm writes 1 (0x8B600) and clears 0x1870AC (0x8B608) -- and
+             * the placement screen's close control carries Geoscape_CloseUI_ThunkA @ 0x838d0, whose case 1 writes 0
+             * (0x8BE94). It used to call World_MapClick straight, which is the 0x857e8 shim's shape and skipped
+             * NewBaseScreen_TryConfirm's sample (0x61538) and its funds gate (0x6156C) entirely. */
             if (g_bNewGameFlag) {
-                World_MapClick(&g_world);
-                printf("pocketufo: after the map click: screen %d, pick pending %d, place active %d, bases %d\n",
-                       (int)g_world.screen.nGeoscapeScreen, (int)g_world.bPlacementPending,
-                       (int)g_world.bPlaceActive, (int)g_world.nBaseCount);
+                App_NewGamePickThroughPen();
+                printf("pocketufo: after the pick: region %02X, screen %d, pick pending %d, place active %d, "
+                       "bases %d, base 0 region %02X at %d/%d\n",
+                       (int)g_world.bPendingRegionId, (int)g_world.screen.nGeoscapeScreen,
+                       (int)g_world.bPlacementPending, (int)g_world.bPlaceActive, (int)g_world.nBaseCount,
+                       (int)g_world.apBases[0]->bRegionId, g_world.apBases[0]->nUnk8, g_world.apBases[0]->nUnk12);
                 World_CloseGeoscape(&g_world);
                 printf("pocketufo: after the close: screen %d\n", (int)g_world.screen.nGeoscapeScreen);
                 fflush(stdout);

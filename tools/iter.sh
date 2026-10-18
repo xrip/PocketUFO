@@ -19,10 +19,18 @@ if ! cmake --build build --config Release --target "$target" > "$log" 2>&1; then
 fi
 grep -iE "error|warning" "$log" | head -10
 
-if [ -x "build/tests/Release/$target.exe" ]; then
-    "./build/tests/Release/$target.exe"
-elif [ -x "build/src/pufo/Release/$target.exe" ]; then
-    "./build/src/pufo/Release/$target.exe"
-else
-    echo "no test executable for $target (built the target only)"
-fi
+case "$target" in
+    test_*)
+        if [ -x "build/tests/Release/$target.exe" ]; then
+            "./build/tests/Release/$target.exe"
+        else
+            echo "no executable for $target (built the target only)"
+        fi
+        ;;
+    *)
+        # The app target opens a window and waits for the window message loop, so it is never run here.
+        # Run it by hand with its debug switches, e.g.
+        #   ./build/src/pufo/Release/pocketufo.exe --new-game --dump-frame run_newgame.ppm
+        echo "built $target (not run -- only test_* targets are run)"
+        ;;
+esac

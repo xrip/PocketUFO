@@ -645,7 +645,7 @@ is the module that answers to it.
 | `0x7f60c` | `StrategEntry_InitTravel` | 1420 | `src/pufo/game/pufo_strateg.h` |
 | `0x5c084` | `FundingScreen_Init` | 1256 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
-| `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
+| `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x822c4` | `Smap_DrawStrategIcons` | 1060 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x629b0` | `Base_CanPlaceHangarAt` | 968 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
@@ -715,7 +715,7 @@ is the module that answers to it.
 | `0x6a404` | `BaseFac_FormatCostLabel` | 184 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x655f8` | `Base_CalcOccupiedSpace` | 180 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5a9b4` | `StrategList_FindByShipId` | 172 | `src/pufo/game/pufo_strateg.h` |
-| `0x820d0` | `Smap_ScrollBy` | 172 | `src/pufo/game/pufo_strateg.h` |
+| `0x820d0` | `Smap_ScrollBy` | 172 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x5ab34` | `Funding_DeltaToArrow` | 164 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x5a830` | `Ship_ClearWaypointIntercept` | 160 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x5e768` | `RadarScreen_SetCursorNW` | 160 | `src/pufo/game/pufo_geoscape.h` |
@@ -736,7 +736,7 @@ is the module that answers to it.
 | `0x85440` | `Smap_SetWaypoint` | 132 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x6641c` | `Base_CraftWeaponItemId` | 128 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x821c4` | `Smap_GetTileAtMode` | 128 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
-| `0x82244` | `Smap_GetTileAtScreen` | 128 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_strateg.h` |
+| `0x82244` | `Smap_GetTileAtScreen` | 128 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x45f04` | `Ship_TickRefuelAtBase` | 124 | `src/pufo/game/pufo_ship.h` |
 | `0x65720` | `Base_CalcStoresCapacity` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6579c` | `Base_CalcLivingQuartersCap` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -916,7 +916,7 @@ is the module that answers to it.
 | `0x74914` | `ResearchScreen_AccumulateAllocated` | 148 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x72f70` | `ResearchScreen_DecSelectedQty` | 140 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x72c8c` | `Research_TopicNeedsItem` | 136 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x6152c` | `NewBaseScreen_TryConfirm` | 132 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
+| `0x6152c` | `NewBaseScreen_TryConfirm` | 132 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
 | `0x6192c` | `SoldierScreen_FindNextAtBase` | 124 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x6318c` | `SoldierScreen_CopyNameToEdit` | 124 | `src/pufo/game/pufo_geopointer.h`, `src/pufo/game/pufo_soldiername.h` |
 | `0x6e914` | `ManufScreen_SelectListed` | 120 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
