@@ -427,6 +427,9 @@ void TactHud_UseSpecialItem(const TactHudSpecialCtx *pCtx)
     pUi->nFireTgtX = tgt.nX;
     pUi->nFireTgtY = tgt.nY;
     pUi->nFireTgtZ = tgt.nZ;
+    /* The return is not tested and that is right for this site: 0x17d54 gates the whole special pad
+     * on `uTu >= anActionCost[8]` (dword_118824) above and pushes record 1 there, so the callee's own
+     * gate at 0x4B42C sees the same cost against the same uTu and cannot fail. Nothing to push here. */
     TactState_EnqueueAction18(pCtx->pQueue, pUnit, tgt.pUnit, pMap->pSelWeapon,
                               nCost, pUi->nActionMode);
     TactState_KickQueue(pCtx->pQueue);

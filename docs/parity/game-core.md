@@ -17402,6 +17402,43 @@ Left open by this pass, recorded rather than folded in: the three enemy-AI enque
 its action cost is silent where the original shows the same record. It needs a `pfnPushTextRecord`-style
 hook on that ctx (the shape `pufo_input.c`'s `MapClickHooks` already uses) and its own tests.
 
+Part 42 closes the gap Part 41 left open: the enemy AI's silent refusal. In the original the refused
+callee does its own status work -- `TactState_EnqueueFireBurst @ 0x4B080` (gate 0x4B0D8),
+`TactState_EnqueueThrow @ 0x4B2F4` (0x4B318) and `Tact_EnqueueActionOrStatus205 @ 0x4B420` (0x4B42C)
+each return `StatusMsg_Push(Map, aTextRec1_OutOfTime, bForce 0)` -- and the call sites never read the
+value. Two AI sites are reachable through that gate and the port had them as `(void)` calls with no
+sink at all: the panic AI's burst at 0x4AE08, whose cost is `anActionCost[Map_nActionMode]` handed
+straight over with no test of its own, and `Tact_EnemyAiTick`'s throw at 0x4D844, whose branch is
+chosen on the roll, the range, the belt object category and the unit type while the only TU test on
+the way there is the unit gate `uTu >= 15` at 0x4cc1c -- which says nothing about slot 11's cost. Both
+now push record 1 through a new `pfnPushTextRecord`/`pPushTextUser` seam on `EnemyAiActCtx` and
+`EnemyAiTickCtx`, in the shape `pufo_input.c`'s `MapClickHooks` already uses.
+
+The other four AI enqueue sites cannot refuse, and that is now written in the IDB beside each call
+instead of being assumed. The tick's three `Tact_EnqueueActionOrStatus205` calls (0x4D718, 0x4D790,
+0x4D7BC) are given nTuCost 0 -- `MOV R3, #0` at 0x4D77C and 0x4D7B4 -- so `uTu < 0` is never true. The
+tick's burst at 0x4D910 sits behind the site gate at 0x4d448..0x4d458, which passes only when
+`(double)uTu >= anActionCost[mode]*(2/3) + 8.0`, while the cost it charges is `(int)(cost*(2/3))`, a
+value always below that uTu, so 0x4B0D8 cannot fail on that path. `TactHud_UseSpecialItem20 @ 0x18060`
+is the same shape from the other side: the special pad at 0x17d54 gates the whole medikit branch on
+`uTu >= anActionCost[8]` (dword_118824) and pushes record 1 there, so its ignored enqueue return is
+not a gap. Four comments record all of this at 0x4AE08, 0x4D844, 0x4D910 and 0x18060, plus one at
+0x4D718 for the zero-cost trio.
+
+Checks went 17936 -> 17951. `TestTuRefusalStillRunsTheTail` and a new `TestThrowRefusalKeepsTheTail`
+assert the push on the two reachable refusals; `TestShotCount`, `TestThrowPath`,
+`TestFireAffordabilityGate` and `TestMeleeNeighbourHandoff` assert the opposite direction -- an
+affordable action, a site-gate refusal and a zero-cost command 18 each push nothing. Both directions
+are mutation-tested: swallowing the record in the helper turns 4 checks red, pushing it unconditionally
+turns 1 red. The new throw test also asserts what the refusal does NOT skip -- the belt-to-hand swap,
+pCtx+0x100 and `Soldier.bAiDone` all still happen, because the original's caller never reads the
+return value (0x4D848..0x4D854).
+
+Left open by this pass, recorded rather than folded in: nothing in src/ builds an `EnemyAiActCtx` or
+an `EnemyAiTickCtx` yet -- only the two test harnesses fill them, and `pufo_turn.c:960` merely hands
+the act ctx on. So these two sinks reach a real status stack when the tactical runtime bank lands,
+the same blocker as the 0xC350 tick callee in Part 40.
+
 Dispositions, not ported, with reasons. Map_RegisterAtexit (0x22620) and its thunk
 Map_Atexit_nullsub2 (0x2262c) register a
 wrapper over nullsub_2, an empty stub, so they carry no behaviour -- the same disposition as the

@@ -275,6 +275,9 @@ static bool       g_bPathOk;
 static i32        g_nFillCalls;
 static i32        g_nPushCalls;
 static char       g_szPushed[256];
+/* The TEXTS-record sink: the record-1 push the refused enqueue callees do in the original. */
+static i32        g_aRecordPushes[8];
+static i32        g_nRecordPushes;
 static i32        g_nFaceCalls;
 static EnemyAiActCtx g_Ctx;
 
@@ -339,6 +342,15 @@ static void Ai_Push(const char *pszMsg, void *pUser)
     (void)pUser;
     g_nPushCalls += 1;
     snprintf(g_szPushed, sizeof(g_szPushed), "%s", pszMsg);
+}
+
+static void Ai_PushRecord(i32 nRecordIndex, void *pUser)
+{
+    (void)pUser;
+    if (g_nRecordPushes < (i32)(sizeof(g_aRecordPushes) / sizeof(g_aRecordPushes[0]))) {
+        g_aRecordPushes[g_nRecordPushes] = nRecordIndex;
+    }
+    g_nRecordPushes++;
 }
 
 static void Ai_Face(Soldier *pUnit, i32 nX, i32 nY, void *pUser)
@@ -416,12 +428,16 @@ static void AiReset(const u32 *pScript, i32 nLen)
     g_nPushCalls     = 0;
     g_nFaceCalls     = 0;
     g_szPushed[0]    = 0;
+    g_nRecordPushes  = 0;
+    memset(g_aRecordPushes, 0, sizeof(g_aRecordPushes));
 
     memset(&g_Ctx, 0, sizeof(g_Ctx));
     g_Ctx.pfnRandU16        = Ai_Rand;
     g_Ctx.pfnPathToCell     = Ai_Path;
     g_Ctx.pfnFillActionCosts = Ai_FillCosts;
     g_Ctx.pfnPushStatus     = Ai_Push;
+    g_Ctx.pfnPushTextRecord = Ai_PushRecord;
+    g_Ctx.pPushTextUser     = NULL;
     g_Ctx.pfnFaceToward     = Ai_Face;
     g_Ctx.pfnLookupCell     = Ai_Lookup;
     g_Ctx.pState            = &g_State;
@@ -565,6 +581,9 @@ static void TestShotCount(void)
     g_ItemL.nAmmo = 10;
     EnemyAi_TryFireOrWander(&g_Unit, &g_Ctx);
     CheckEqI32(AiBurstCount(), 3, "  a 10-round magazine is capped at 3");
+    /* 100 TU against slot 1's 26: the same enqueue that refuses in TestTuRefusalStillRunsTheTail
+     * takes the burst here and the call sites push nothing. */
+    CheckEqI32(g_nRecordPushes, 0, "  an affordable burst pushes no TEXTS record");
 }
 
 static void TestSameColumnRedraw(void)
@@ -789,6 +808,11 @@ static void TestTuRefusalStillRunsTheTail(void)
     CheckEqI32(g_State.bQueueActive, 0, "  kicking an empty queue leaves it inactive");
     CheckEqI32(g_nPushCalls, 1, "  and the name is still pushed");
     CheckEqI32(g_nFaceCalls, 0, "  the enqueue refused before facing the target");
+    /* 0x4AE08 hands the cost table's slot 1 straight to the callee and has no gate of its own, so
+     * the refusal lands on 0x4B0D8, which pushes aTextRec1_OutOfTime (record 1) with bForce 0.
+     * The callee does that push in the original; the port does it at the call site. */
+    CheckEqI32(g_nRecordPushes, 1, "  the refused burst pushes exactly one TEXTS record");
+    CheckEqI32(g_aRecordPushes[0], PUFO_TXT_OUT_OF_TU, "  and it is record 1, the out-of-TU record");
 }
 
 /* --- Tact_EnemyAiTick @ 0x4cbe0 ---------------------------------------------------- */
@@ -1028,6 +1052,8 @@ static void TickReset(const u32 *pScript, i32 nLen)
     g_Tick.pItemAction13          = &g_ItemAction13;
     g_Tick.pRmp                   = &g_Rmp;
     g_Tick.pActCtx                = &g_Ctx;
+    g_Tick.pfnPushTextRecord      = Ai_PushRecord;
+    g_Tick.pPushTextUser          = NULL;
     g_Tick.pUser                  = NULL;
 }
 
@@ -1171,6 +1197,9 @@ static void TestFireAffordabilityGate(void)
     Tact_EnemyAiTick(&g_Tact, &g_Tick);
     CheckEqI32(AiBurstCount(), 0, "  25 TU does not clear a 26-cost mode");
     CheckEqI32(g_nTurnCalls, 1, "  and the unit falls back to the fallback move");
+    /* The site gate at 0x4d448 stops it here, so the callee at 0x4B0D8 never runs: this refusal is
+     * silent in the original too, unlike the panic AI's 0x4AE08 or this tick's 0x4D844. */
+    CheckEqI32(g_nRecordPushes, 0, "  a gate refusal at the fire site pushes no TEXTS record");
 
     TickReset(aPaid, 4);
     g_aEnemy[0].uTu = 26;
@@ -1218,6 +1247,8 @@ static void TestThrowPath(void)
     }
     CheckEqI32(g_aEnemy[0].bAiDone, 1, "  the thrower is marked done");
 
+    CheckEqI32(g_nRecordPushes, 0, "  an affordable throw pushes no TEXTS record");
+
     /* The same roll, but the belt object is not category 3: no throw, and the unit fires. */
     TickReset(aScript, 4);
     g_ObjBelt.nCategory = 2;
@@ -1225,6 +1256,32 @@ static void TestThrowPath(void)
     Tact_EnemyAiTick(&g_Tact, &g_Tick);
     Check(AiFirstThrow() == NULL, "  a category-2 belt item is not throwable");
     CheckEqI32(AiBurstCount(), 1, "  so the unit shoots instead");
+    CheckEqI32(g_nRecordPushes, 0, "  and the fire path pushes none either -- its gate is upstream");
+}
+
+/* 0x4D844 is the tick's reachable refusal. The throw branch is chosen on the roll, the range, the
+ * belt item and the unit type; the only TU test on the way is the unit gate `uTu >= 15` at 0x4cc1c,
+ * which says nothing about slot 11's 36 TU. So a 20 TU thrower reaches 0x4B318, which pushes
+ * record 1 and queues nothing -- while the hand swap, bAiFocusSaved and bAiDone still run, because
+ * the caller never looks at the return value (0x4D848..0x4D858). */
+static void TestThrowRefusalKeepsTheTail(void)
+{
+    static const u32 aScript[] = { 0, 1, 0, 0 };
+
+    printf("A throw the unit cannot pay still swaps the hand and marks the unit done\n");
+
+    TickReset(aScript, 4);
+    g_aEnemy[0].uTu = 20;   /* enough to act, not enough for anActionCost[11] = 36 */
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    Check(AiFirstThrow() == NULL, "  no command-17 entry was queued");
+    CheckEqI32(g_State.nQueueLen, 0, "  the queue stays empty");
+    Check(g_aEnemy[0].apBelt[0] == NULL, "  the belt slot was still emptied");
+    Check(g_aEnemy[0].pHandR == &g_ItemBelt, "  the item is still in the right hand");
+    Check(g_pSelWeapon == &g_ItemBelt, "  and still in Map.pSelWeapon");
+    CheckEqI32(g_aEnemy[0].bAiDone, 1, "  the thrower is still marked done");
+    CheckEqI32(g_nRecordPushes, 1, "  the refusal pushes exactly one TEXTS record");
+    CheckEqI32(g_aRecordPushes[0], PUFO_TXT_OUT_OF_TU, "  and it is record 1, the out-of-TU record");
 }
 
 static void TestMultiTargetMode7(void)
@@ -1290,6 +1347,9 @@ static void TestMeleeNeighbourHandoff(void)
     CheckEqI32(g_aEnemy[1].uTu, 10, "  the neighbour pays half its TU");
     CheckEqI32(g_aEnemy[0].uTu, 20, "  the picked unit pays nothing");
     CheckEqI32(g_aEnemy[0].bAiDone, 0, "  and is not marked done, so it is picked again");
+    /* Every Tact_EnqueueActionOrStatus205 call in this tick is handed nTuCost 0 (`MOV R3, #0` at
+     * 0x4D77C and 0x4D7B4), so its gate at 0x4B42C cannot fire and no refusal record exists here. */
+    CheckEqI32(g_nRecordPushes, 0, "  a zero-cost command-18 cannot be refused");
 }
 
 static void TestMeleeWalkCommit(void)
@@ -1479,6 +1539,7 @@ int main(void)
     TestLowMoraleRunsThePanicAi();
     TestFireAffordabilityGate();
     TestThrowPath();
+    TestThrowRefusalKeepsTheTail();
     TestMultiTargetMode7();
     TestMeleeNeighbourHandoff();
     TestMeleeWalkCommit();

@@ -149,6 +149,12 @@ typedef struct EnemyAiActCtx {
     bool    (*pfnPathToCell)(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser);
     void    (*pfnFillActionCosts)(void *pUser);          /* Ui_FillActionCosts @ 0x26104 */
     void    (*pfnPushStatus)(const char *pszMsg, void *pUser); /* StatusMsg_Push @ 0x2dda4 */
+    /* The TEXTS-record form of the same sink. The enqueue callees push record 1 themselves when the
+     * unit cannot pay (TactState_EnqueueFireBurst 0x4B0D8, TactState_EnqueueThrow 0x4B318), and the
+     * port's helpers only report the failure, so the AI call sites push through here. An index rather
+     * than a string because the port has no raw text-record accessor. */
+    void    (*pfnPushTextRecord)(i32 nTextRecordIndex, void *pUser);
+    void     *pPushTextUser;
     void    (*pfnFaceToward)(Soldier *pUnit, i32 nX, i32 nY, void *pUser);
     MapCell *(*pfnLookupCell)(i32 nX, i32 nY, i32 nLayer, void *pUser);
 
@@ -311,6 +317,14 @@ typedef struct EnemyAiTickCtx {
     TactItem        *pItemAction13;    /* TactItem_156A58 @ 0x156A58, the command-13 item */
     const RmpData   *pRmp;             /* pRmpMissionData @ 0x15881C */
     const EnemyAiActCtx *pActCtx;      /* the panic AI's own context, for the low-morale path */
+    /* Same sink as EnemyAiActCtx's. Of this tick's four enqueues only the throw can refuse: the
+     * three Tact_EnqueueActionOrStatus205 calls at 0x4D718, 0x4D790 and 0x4D7BC are given nTuCost 0
+     * (`MOV R3, #0` at 0x4D77C and 0x4D7B4) so their gate at 0x4B42C cannot fire, and the fire burst
+     * at 0x4D910 sits behind the site gate at 0x4d448 (uTu >= cost*(2/3) + 8.0) while charging only
+     * (int)(cost*(2/3)), so 0x4B0D8 cannot fail there either. The throw at 0x4D844 is handed slot 11
+     * of the cost table with no TU test on the way to it. */
+    void (*pfnPushTextRecord)(i32 nTextRecordIndex, void *pUser);
+    void  *pPushTextUser;
     void             *pUser;
 } EnemyAiTickCtx;
 

@@ -126,6 +126,18 @@ static i32 EnemyAi_FloorLayerBelow(const EnemyAiActCtx *pCtx, const MapCell *pCe
     return nLayer;
 }
 
+/* The shared "no free time" record, record 1. In the original the refused enqueue callee pushes
+ * it itself (TactState_EnqueueFireBurst 0x4B0D8, TactState_EnqueueThrow 0x4B318,
+ * Tact_EnqueueActionOrStatus205 0x4B42C) and the call sites never mention it; the port's helpers
+ * only report the failure, so every AI call site that can be refused pushes it here. */
+static void EnemyAi_PushOutOfTu(void (*pfnPushTextRecord)(i32 nTextRecordIndex, void *pUser),
+                                void *pUser)
+{
+    if (pfnPushTextRecord != NULL) {
+        pfnPushTextRecord(PUFO_TXT_OUT_OF_TU, pUser);
+    }
+}
+
 /* 0x4adc4..0x4ae08: one burst at the drawn target. The cost and the argument come from
  * the two action tables Ui_FillActionCosts just refilled: Map+0x4E4C and Map+0x4E7C. */
 static void EnemyAi_EnqueueBurst(Soldier *pUnit, TactItem *pWeapon, i32 nMode,
@@ -145,9 +157,13 @@ static void EnemyAi_EnqueueBurst(Soldier *pUnit, TactItem *pWeapon, i32 nMode,
     spec.uAmmoInWeapon = pWeapon->nAmmo;
     spec.bAmmoCap      = pWeapon->pObj->bAmmoCap;
 
-    /* The original ignores the result: a unit with too little TU simply gets the
-     * out-of-TU message from inside the enqueue and the burst is dropped. */
-    (void)TactState_EnqueueFireBurst(pCtx->pState, &spec, pCtx->pfnFaceToward, pCtx->pUser);
+    /* This is the one enqueue in the panic AI that can actually be refused: the site passes
+     * Map_anActionCost[Map_nActionMode] straight to the callee with no gate of its own (0x4AE08),
+     * so a unit with too little TU lands on 0x4B0D8, which pushes record 1 and drops the burst.
+     * The original gets that push from the callee; the port's helper only reports the failure. */
+    if (!TactState_EnqueueFireBurst(pCtx->pState, &spec, pCtx->pfnFaceToward, pCtx->pUser)) {
+        EnemyAi_PushOutOfTu(pCtx->pfnPushTextRecord, pCtx->pPushTextUser);
+    }
 }
 
 /* 0x4aca4..0x4ae28. */
@@ -566,12 +582,19 @@ static AiActPath EnemyAi_ThrowOrFire(Soldier *pUnit, TactCtx272 *pTact, const En
         *pCtx->pnActionMode = PUFO_ACTION_MODE_MENU;
 
         /* Map_nThrowTuCost @ 0x118830 and Map_nThrowArg @ 0x118860 are loaded by literal at
-         * 0x4D82C and 0x4D80C; both are just slot 11 of the two action tables. */
-        (void)TactState_EnqueueThrow(pCtx->pQueue, pUnit, pUnit->pHandR,
-                                     pTargetCell->nX, pTargetCell->nY, pTargetCell->nZ,
-                                     pCtx->anActionCost[PUFO_ACTION_MODE_MENU],
-                                     pCtx->anActionEnabled[PUFO_ACTION_MODE_MENU],
-                                     EnemyAi_FaceTowardQueue, pCtx->pQueue);
+         * 0x4D82C and 0x4D80C; both are just slot 11 of the two action tables.
+         * 0x4D844 is the reachable refusal of this tick: the branch is chosen on the roll, the
+         * distance, the belt item and the unit type, and the only TU test on the way here is the
+         * unit gate `uTu >= 15` at 0x4cc1c, which says nothing about slot 11's cost. So the throw
+         * lands on 0x4B318 for a short of time unit; the callee pushes record 1 there, and the
+         * push belongs here for the port. The tail (bAiFocusSaved, bAiDone) runs either way. */
+        if (!TactState_EnqueueThrow(pCtx->pQueue, pUnit, pUnit->pHandR,
+                                    pTargetCell->nX, pTargetCell->nY, pTargetCell->nZ,
+                                    pCtx->anActionCost[PUFO_ACTION_MODE_MENU],
+                                    pCtx->anActionEnabled[PUFO_ACTION_MODE_MENU],
+                                    EnemyAi_FaceTowardQueue, pCtx->pQueue)) {
+            EnemyAi_PushOutOfTu(pCtx->pfnPushTextRecord, pCtx->pPushTextUser);
+        }
         pTact->bAiFocusSaved = 1;
         pUnit->bAiDone = 1;
         return AI_PATH_TAIL;
@@ -637,6 +660,10 @@ static AiActPath EnemyAi_ThrowOrFire(Soldier *pUnit, TactCtx272 *pTact, const En
     spec.apMultiTargets    = pCtx->apMultiTargets;
     spec.nMultiTargetCount = *pCtx->pnMultiTargetCount;
 
+    /* 0x4D910: no push here, because this call can never be refused. The gate at 0x4d448..0x4d458
+     * let us through only when uTu >= cost*(2/3) + 8.0, and the cost handed to the callee is
+     * (int)(cost*(2/3)) -- strictly below that uTu. The callee's own test at 0x4B0D8 therefore
+     * cannot fail on this path, unlike the panic AI's 0x4AE08 and this tick's 0x4D844. */
     (void)TactState_EnqueueFireBurst(pCtx->pQueue, &spec, EnemyAi_FaceTowardQueue, pCtx->pQueue);
     pTact->bAiFocusSaved = 1;
     return AI_PATH_TAIL;

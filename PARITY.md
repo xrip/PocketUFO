@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596840 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 17936 |
+| Test checks run | 17951 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1265,7 +1265,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_control` | PASS | 253 |
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 62 |
-| `test_enemyai` | PASS | 198 |
+| `test_enemyai` | PASS | 213 |
 | `test_font` | PASS | 85 |
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 69 |
