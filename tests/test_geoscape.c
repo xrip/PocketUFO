@@ -10167,10 +10167,10 @@ static void PnSetCardCrafts(void)
  * and not with a dropped-source diff. */
 static void PnSetMissionSites(void)
 {
-    g_pnMission[0].uField0 = 0x0000;
-    g_pnMission[4].uField0 = 0x1111;
-    g_pnMission[5].uField0 = 0x2222;
-    g_pnMission[6].uField0 = 0x3333;
+    g_pnMission[0].x = 0;      /* the four x values are the fixture's way of telling the slots apart */
+    g_pnMission[4].x = 0x1111;
+    g_pnMission[5].x = 0x2222;
+    g_pnMission[6].x = 0x3333;
     pufo_strncpy(g_pnMission[0].szName, "z6",  sizeof(g_pnMission[0].szName));
     pufo_strncpy(g_pnMission[4].szName, "p6",  sizeof(g_pnMission[4].szName));
     pufo_strncpy(g_pnMission[5].szName, "m6",  sizeof(g_pnMission[5].szName));

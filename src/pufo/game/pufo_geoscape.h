@@ -80,18 +80,9 @@ typedef struct BaseFacFlag {
 } BaseFacFlag;
 _Static_assert(sizeof(BaseFacFlag) == 28, "aBaseFacFlags records are 28 bytes");
 
-/* The 24-byte mission-site record at aMissionSites @ 0x1865C0 -- the 0x1864F8 root's +0xC8, which
- * InitUI reaches as `LDR R7, =0x1864F8 / ADD R1, R7, #0xC8` (0x86C6C, 0x86CA4). InitUI reads 24 bytes
- * from "<i>.cts" for 56 records (0x86C40..0x86CDC, the loop test is CMP R0, #0x38) and copies text
- * record 1655+i into +4; with lang.dat loaded only 1650 text records exist, so every name is empty in
- * the original too. The flag-0x10 status panel indexes the same table at 0x90574, which is why the
- * record lives here and not in ui/pufo_geoiinit.h. */
-#define PUFO_MISSION_SITE_COUNT 56
-typedef struct MissionSiteRec {
-    u32  uField0;    /* +0, from the .cts file */
-    char szName[20]; /* +4, 0x90584 ADD R1, R3, #4 */
-} MissionSiteRec;
-_Static_assert(sizeof(MissionSiteRec) == 24, "the mission-site record is 24 bytes");
+/* The mission-site record is one type for every reader: MissionSiteRec in game/pufo_strateg.h
+ * (this header includes it). The InitUI fill -- 56 x 24 bytes out of "<i>.cts" at 0x86C40..0x86CDC,
+ * with text record 1655+i copied into +4 -- is recorded there too. */
 
 typedef struct GeoscapeState {
     GameTime     time;

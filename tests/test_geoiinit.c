@@ -107,7 +107,8 @@ static void TestNewGame(void)
     memset(g_aSiteState, 0xFF, sizeof(g_aSiteState));
     memset(g_aSites, 0, sizeof(g_aSites));
     for (i = 0; i < PUFO_MISSION_SITE_COUNT; ++i) {
-        g_aSites[i].uField0 = 0xAAAAAAAAu;
+        g_aSites[i].x = (i16)0xAAAA;   /* both coordinate halves garbage */
+        g_aSites[i].y = (i16)0xAAAA;
     }
     pObj0   = g_assets.apObjects[0];
     pObj1   = g_assets.apObjects[1];
@@ -319,7 +320,8 @@ static void TestNewGame(void)
           "status panel built (20 lines, style 13, font 16, radar click wired)");
 
     printf("mission sites\n");
-    Check(g_aSites[0].uField0 != 0xAAAAAAAAu, "0.cts read replaced the sentinel");
+    Check(g_aSites[0].x != (i16)0xAAAA && g_aSites[0].y != (i16)0xAAAA,
+          "0.cts read replaced the sentinel in both coordinate halves");
     Check(AllSiteNamesEmpty(),
           "all 56 names empty: lang.dat loads 1650 text records, so 1655..1710 are zero");
 

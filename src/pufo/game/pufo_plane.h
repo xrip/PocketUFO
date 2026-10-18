@@ -158,7 +158,7 @@ typedef struct InterceptMissionCtx {
     PtrArray *pList;                  /* the strateg list, 0x186534 */
     i32 *pnZoomMode;                  /* the viewport's nMode, read live by AddItem */
     i32 *pnSeed;                      /* the per-item seed counter, 0x18640C */
-    const MissionSiteRecord *apSites; /* aMissionSites @ 0x1865C0 (root + 0xC8) */
+    const MissionSiteRec *apSites;    /* aMissionSites @ 0x1865C0 (root + 0xC8) */
     i32 nSiteCount;
     i32 *pnMissionId;                 /* unk_18654C */
     i32 *pnLastIndex;                 /* 0x186BE4, set to the index of the new item */

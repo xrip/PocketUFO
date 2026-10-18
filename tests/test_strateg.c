@@ -1099,7 +1099,7 @@ static void TestSpawnMissionSite(void)
     static i32 g_Seed;
     static BaseRec g_aBases[2];
     static BaseRec *g_apBases[2];
-    static MissionSiteRecord g_aSites[4];
+    static MissionSiteRec g_aSites[4];
     static u8 g_aGrid[700];
     static GameTime g_Time;
     static GeoscapeWorld g_World;
@@ -1546,7 +1546,7 @@ static SpawnMissionCtx g_EvMission;
 static SmapView g_EvView;
 static PadImage g_EvMap;
 static u8 g_aEvTiles[400];
-static MissionSiteRecord g_aEvSites[2];
+static MissionSiteRec g_aEvSites[2];
 static i32 g_EvSeed, g_EvRadarPulse;
 static GeoscapeWorld g_EvMissionWorld;
 static StrategEventsEnv g_EvEnv;

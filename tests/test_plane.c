@@ -381,7 +381,7 @@ static void TestApplyWeaponSwap(void)
 
 static void TestAddInterceptMission(void)
 {
-    static MissionSiteRecord g_aSites[3];
+    static MissionSiteRec g_aSites[3];
     PtrArray list;
     i32 seed = 0;
     i32 zoom = 0;

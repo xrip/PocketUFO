@@ -13,6 +13,7 @@
 #include "audio/pufo_audio.h" /* Sound_Play, the message-list sample the radar click plays */
 #include "render/pufo_render.h" /* g_nGlyphPalSlotBase, the shell's one Map_nGlyphPalBase */
 #include "ui/pufo_linelist.h" /* UiLineList_AppendWithSound, the tick's contact message seam */
+#include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -460,22 +461,90 @@ static void World_RadarClickThunk(void)
     (void)Geoscape_OnRadarListClick(&env);
 }
 
-static int World_SpawnMissionStub(StrategItem *pUfo, i32 nMissionSub, void *pUser)
+/* UiPanel_AppendLineWithSound @ 0x5a394 on the root message list @ 0x158890. The flag selects the
+ * text record and the second argument is the value it carries: the new item's index for subtype 4,
+ * `pUfo->nTargetIdx` for subtype 5. Same call the clock's contact seam uses at World_HookContactMsg. */
+static void World_MissionAppendLine(i32 nFlag, i32 nArg2, i32 nArg3, void *pUser)
 {
-    (void)pUfo;
-    (void)nMissionSub;
-    (void)pUser;
-    return 0; /* the mission-spawn leaf is not ported */
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    UiLineList_AppendWithSound(&pW->msgLines, (u8)nFlag, (u32)nArg2, (u32)nArg3, 0u, 0u,
+                               pW->pfnPlaySample, pW->pSoundUser);
+}
+
+/* BasePlaneScreen_AddInterceptMission @ 0x7de14, the hangar's intercept item: the mission-site record
+ * picked by craft class (LDRSH +0 / +2 at 0x7DE48 / 0x7DE3C) becomes a type-3 entry, its nTimer is set
+ * to 2880 (0x7DE80), and the new index lands in 0x186BE4 (0x7DE98) -- the cell the shell calls
+ * nSelectedStrategIdx. */
+static i32 World_MissionAddIntercept(i32 bCraftClass, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    InterceptMissionCtx ctx;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pList        = &pW->strategList;                    /* 0x186534 */
+    ctx.pnZoomMode   = &pW->view.nMode;                     /* read live by StrategList_AddItem */
+    ctx.pnSeed       = &pW->nStrategSeed;                   /* 0x18640C */
+    ctx.apSites      = pW->aMissionSites;                   /* 0x1865C0 */
+    ctx.nSiteCount   = PUFO_MISSION_SITE_COUNT;
+    ctx.pnMissionId  = &pW->nMissionId;                     /* 0x18654C */
+    ctx.pnLastIndex  = &pW->nSelectedStrategIdx;            /* 0x186BE4 */
+
+    return BasePlaneScreen_AddInterceptMission(bCraftClass, &ctx);
+}
+
+/* The context Geoscape_SpawnMissionSite @ 0x7e49c builds out of globals in the original. The tile grid
+ * is pW->sets[0].pTiles because that is the object Geoscape_InitUI stores into unk_186B74 (STR at
+ * 0x85910 and 0x85920, the only two writers in the binary), and unk_186B74 is what
+ * Tilemap_GetAt @ 0x8217c reads -- its own first argument is unused, so the grid does not travel with
+ * the viewport. nGameTotalSec is GameTime.nTotalSec, the clock's apLines[105], which
+ * StrategEntry_InitTravel stores as nTravelEpochSec (0x7FB6C).
+ *
+ * One hook stays NULL: the assault branch (0x7EF38..0x7EF80, nPhase 2 with subtype 6) pauses the clock,
+ * fills the record at 0x158840..0x158849, writes screen id 20 to 0x186BC4 and opens BaseAtScreen_Open.
+ * The shell owns no such record yet, so pfnContactScreen is left unset rather than filled with a call
+ * that would draw the screen off the wrong block. Recorded as its own issue. */
+static void World_BuildMissionCtx(PufoWorldState *pW, SpawnMissionCtx *pCtx)
+{
+    memset(pCtx, 0, sizeof(*pCtx));
+    pCtx->pList             = &pW->strategList;          /* 0x186534 */
+    pCtx->pnSeed            = &pW->nStrategSeed;         /* 0x18640C */
+    pCtx->pView             = &pW->view;                 /* gSmapCam @ 0x1863E8 */
+    pCtx->pTilemap          = pW->sets[0].pTiles;        /* unk_186B74, the level-0 "m100" grid */
+    pCtx->apBases           = pW->apBases;
+    pCtx->nBaseCount        = (i32)pW->nBaseCount;       /* 0x159D80, signed byte */
+    pCtx->apSites           = pW->aMissionSites;         /* 0x1865C0 */
+    pCtx->nSiteCount        = PUFO_MISSION_SITE_COUNT;
+    pCtx->abFacilityGrid    = pW->abFacilityGrid;        /* gBaseFacGrid @ 0x159768 */
+    pCtx->pnRadarPulseTimer = &pW->nRadarPulseTimer;     /* 0xAC224, subtype 5 sets 250 */
+    pCtx->pWorld            = &pW->geo.world;
+    pCtx->nGameTotalSec     = pW->geo.time.nTotalSec;
+    pCtx->hooks.pfnAppendLine   = World_MissionAppendLine;
+    pCtx->hooks.pfnAddIntercept = World_MissionAddIntercept;
+    pCtx->hooks.pUser           = pW;
+}
+
+/* 0x81BEC: StrategList_RollCraftStats hands the mission subtype it just rolled straight to the spawner,
+ * which starts it -- nPhase 3 for subtype 0, 4 for every other subtype, with the target cleared. */
+static int World_SpawnMission(StrategItem *pUfo, i32 nMissionSub, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    SpawnMissionCtx ctx;
+
+    World_BuildMissionCtx(pW, &ctx);
+    return (int)Geoscape_SpawnMissionSite(pUfo, nMissionSub, &ctx);
 }
 
 /* StrategList_ProcessEvents @ 0x7fcb0, the geoscape event pass StrategList_MaybeSpawnCraft_Process
- * tail-calls. The four sub-envs the shell does not own yet (the radar session, the tactical-loot
- * env, the mission-spawn ctx and the ship-removal env) are NULL, which skips those side effects;
- * the guards are in the ported function. */
+ * tail-calls. Two sub-envs the shell does not own yet (the radar session and the tactical-loot env)
+ * stay NULL, which skips those side effects; the guards are in the ported function. The mission ctx is
+ * filled: 0x809B8 is the per-item mission advance (`Geoscape_SpawnMissionSite(pItem, -1, ...)`) that
+ * runs once an item's travel time is up. */
 static int World_ProcessEvents(void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
     StrategEventsEnv env;
+    SpawnMissionCtx missionCtx;
 
     if (pW == NULL) {
         return 0;
@@ -499,6 +568,8 @@ static int World_ProcessEvents(void *pUser)
     env.apSoldiers = pW->apSoldiers;
     env.nSoldierCount = pW->nSoldierCount;
     env.pSpawnCtx = &pW->spawnCtx;
+    World_BuildMissionCtx(pW, &missionCtx);
+    env.pMissionCtx = &missionCtx;
     env.pfnPlaySample = pW->pfnPlaySample;
     env.pSoundUser = pW->pSoundUser;
 
@@ -596,7 +667,7 @@ static void World_StartNewHook(void *pUser)
     pW->spawnCtx.nEarlyGate = 99;
     pW->spawnCtx.nZoomMode = pW->view.nMode;
     pW->spawnCtx.pnSeed = &pW->nStrategSeed;
-    pW->spawnCtx.pfnSpawnMission = World_SpawnMissionStub;
+    pW->spawnCtx.pfnSpawnMission = World_SpawnMission;
     pW->spawnCtx.pfnProcessEvents = World_ProcessEvents;
     pW->spawnCtx.pUser = pW;
 
@@ -828,10 +899,12 @@ void World_Free(PufoWorldState *pW)
     pW->apSites = NULL;
 }
 
-/* The LoadGame teardown hooks. Tact_Shutdown (0x3d568) and Tact_InitMission (0x3c550) are not
- * ported, and the start-menu re-entry (Geoscape_InitUI from the load path) is not mapped yet, so
- * those three are stubs. The sav7 path tests/test_save.c pins (a geoscape save with no tactical
- * state) reaches none of them. */
+/* The LoadGame teardown hooks. All three callees ARE ported -- Tact_Shutdown @ 0x3d568 in
+ * pufo_tactend.c, Tact_InitMission @ 0x3c550 in pufo_tactinit.c, Geoscape_InitUI @ 0x857f4 in
+ * pufo_geoiinit.c -- and stay stubs here for a different reason: each needs an env the shell does not
+ * own on this path (a TactShutdownEnv / TactInitEnv for the tactical half, and the InitUI env whose
+ * allocations World_NewGame owns). The sav7 path tests/test_save.c pins (a geoscape save with no
+ * tactical state) reaches none of them, so the missing envs are untested rather than harmless. */
 static void Load_HookInitUi(i32 nMode, void *pUser)
 {
     (void)nMode;
@@ -860,6 +933,7 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
 {
     LoadGameEnv env;
     LoadGameHooks hooks;
+    SpawnMissionCtx missionCtx;
     DatFile dat;
     i32 nRet;
 
@@ -883,7 +957,11 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
 
     /* LoadGame renders through the frame (its teardown calls pfnRenderFrame), so the frame envs are
      * wired before the readers run. On this path Geoscape_InitUI is a stub (Load_HookInitUi), so the
-     * 0x1864F8 pad and control singletons are whatever a previous new game left, or NULL. */
+     * 0x1864F8 pad and control singletons are whatever a previous new game left, or NULL. The mission
+     * ctx is built from the cells this function already owns, including the level-0 tile grid, which is
+     * why it must be built after the UI objects: pW->sets[0].pTiles is NULL until InitUI has run, and
+     * the callee's own guard turns that into the same no-op the missing state was. */
+    World_BuildMissionCtx(pW, &missionCtx);
     pW->pAssets = pAssets;
     pW->pfnLoadPads = pHooks->pfnLoadPads;
     pW->pLoadPadsUser = pHooks->pLoadPadsUser;
@@ -930,11 +1008,13 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     env.puShotObjectWords = (u16 *)pAssets->apObjects[0]; /* 0x45764: the shot object's aItemQty words */
     env.pTimeRec = &pW->saveTime;
     env.pTime = &pW->geo.time;
-    env.pSpawnCtx = NULL;   /* StrategList_PurgeType5 and Geoscape_SpawnMissionSite need the
-                             * mission-spawn leaf, which is not ported; the load path runs with
-                             * them absent, as tests/test_save.c does. */
-    env.pMissionCtx = NULL;
-    env.pbSpawnOnceFlag = NULL;
+    /* 0x44E8C..0x44F64, the version-<3 tail: StrategList_PurgeType5 drops every type-5 item no craft
+     * claims (and StrategList_RemoveAt @ 0x82B50 then refills the craft quota through the spawn seam),
+     * and any active craft item off the map is teleported to (150, 250) and given a subtype-0 mission.
+     * Both need the spawn ctx and the 0x162028 one-shot byte, which the shell owns. */
+    env.pSpawnCtx = &pW->spawnCtx;
+    env.pMissionCtx = &missionCtx;
+    env.pbSpawnOnceFlag = &pW->bSpawnOnce;
     env.pHooks = &hooks;
 
     DatFile_ctor(&dat);
@@ -952,20 +1032,20 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
  * and the monthly funding report. Every callee behind GeoscapeHooks is ported; the thunks below build
  * each callee's env over the shell's state the way World_ProcessEvents does for the event pass.
  *
- * One gap, stated plainly: Geoscape_SpawnMissionSite @ 0x7e49c (4,464 B) is NOT ported, so
- * pfnSpawnMissionSite keeps the same documented stub the spawn pass already uses. TickHourly calls it
- * only for a mission entry that drifted past |1000| on x or y (0x5d1dc..0x5d1f8), where it re-seeds the
- * mission at 150/250 and then builds its site record; without it the entry is re-seeded and its site
- * record is missing. Recorded in PLAN.md.
+ * The one hook that still does nothing is pfnContactScreen inside the mission ctx: the assault branch
+ * needs the record at 0x158840..0x158849, which no shell cell models yet. Recorded as its own issue.
  */
 
-/* Geoscape_SpawnMissionSite @ 0x7e49c is not ported; see the block comment above. Same documented gap
- * World_SpawnMissionStub records for the spawn pass, in the void form GeoscapeHooks asks for. */
-static void World_HookSpawnMissionSiteStub(StrategItem *pUfo, i32 nMissionSub, void *pUser)
+/* 0x5d1dc..0x5d28c in Geoscape_TickHourly: an entry that drifted past |1000| on x or y is re-seeded at
+ * (150, 250) and then gets a fresh subtype-0 mission. GeoscapeHooks asks for the void form, so the
+ * spawner's return value is dropped exactly as the original's tail does. */
+static void World_HookSpawnMissionSite(StrategItem *pUfo, i32 nMissionSub, void *pUser)
 {
-    (void)pUfo;
-    (void)nMissionSub;
-    (void)pUser;
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    SpawnMissionCtx ctx;
+
+    World_BuildMissionCtx(pW, &ctx);
+    (void)Geoscape_SpawnMissionSite(pUfo, nMissionSub, &ctx);
 }
 
 static void World_HookContactMsg(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser)
@@ -1218,7 +1298,7 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
 
     pW->geoHooks.pfnProcessEvents           = World_HookProcessEvents;
     pW->geoHooks.pfnContactMsg              = World_HookContactMsg;
-    pW->geoHooks.pfnSpawnMissionSite        = World_HookSpawnMissionSiteStub; /* 0x7e49c, NOT ported */
+    pW->geoHooks.pfnSpawnMissionSite        = World_HookSpawnMissionSite;     /* 0x5d28c in Geoscape_TickHourly */
     pW->geoHooks.pfnGrantSiteRecovery       = World_HookGrantSiteRecovery;
     pW->geoHooks.pfnRefreshBaseTabs         = World_HookRefreshBaseTabs;
     pW->geoHooks.pfnAccumulateResearch      = World_HookAccumulateResearch;

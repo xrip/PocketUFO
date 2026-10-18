@@ -151,9 +151,9 @@ static void App_BlitPadEx(const PadImage *pPad, void *pUser)
 /* --- the menu-button hook blocks -------------------------------------------------------
  *
  * MenuCtl0..3 (0x1a09c/0x1a034/0x1a064/0x1a080) play sample 16, run StartUi_Shutdown, then
- * branch: new game (Geoscape_InitUI 0x857f4, not ported), load list (SaveSlot_FormatList,
- * ported), credits (Titles_Init 0x380d8, not ported), quit (App_QuitDisplay). The hooks the
- * ported functions already take are filled here; the two unported callees print a notice. */
+ * branch: new game (Geoscape_InitUI @ 0x857f4 mode 0, which App_HookNewGame runs through
+ * World_NewGame), load list (SaveSlot_FormatList), credits (Titles_Init @ 0x380d8), quit
+ * (App_QuitDisplay). All four are ported; the hooks the ported functions take are filled here. */
 static void App_HookPlaySample(u32 nSample, void *pUser)
 {
     (void)pUser;

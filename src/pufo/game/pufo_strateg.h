@@ -80,16 +80,26 @@ typedef struct StrategList {
 
 /* The pieces of the geoscape world the contact updates reach into. The ship
  * array is pCtxBase.apCraft (count byte at pCtxBase+0x1194). */
-/* The mission-site table at 0x1865C0 (the 0x1864F8 root's +0xC8; IDA names it aMissionSites):
- * 24-byte records, indexed by craft class in
- * BasePlaneScreen_AddInterceptMission @ 0x7de14 and by a random roll of 56 in
- * Geoscape_SpawnMissionSite @ 0x7e49c. x and y are SIGNED 16-bit; both loads are LDRSH. The
- * remaining 20 bytes of each record are not touched by either caller. */
-typedef struct MissionSiteRecord {
-    i16 x;      /* +0x00 */
-    i16 y;      /* +0x02 */
-    i16 agap[10];
-} MissionSiteRecord;   /* 24 bytes, the stride the original multiplies by 0x18 */
+/* The mission-site table at 0x1865C0 (the 0x1864F8 root's +0xC8; IDA names it aMissionSites),
+ * 56 records of 24 bytes -- the stride the original multiplies by (#MOV R2, #0x18 at 0x90E90 /
+ * 0x91034). One model for both readers:
+ *   +0 / +2 are read SIGNED 16-bit by BasePlaneScreen_AddInterceptMission (0x7DE48, 0x7DE3C,
+ *     LDRSH [R0,#0xC8] and LDRSH [R0,#0xCA]) and by Geoscape_SpawnMissionSite's target pick;
+ *   +4 is the name the panel draws (0x90584 ADD R1, R3, #4).
+ * The flag-0x10 status list reaches the same table by a different route: 0x90E94 reads SIGNED BYTE
+ * from +2 of the STRATEG ITEM (its two-role byte), multiplies it by 0x18 (0x90E90 MOV R2, #0x18) and
+ * adds it to root+0xC8 (0x90EA0). The index is the item's byte, not a width the record itself has.
+ * InitUI is the only writer: it reaches the table as `LDR R7, =0x1864F8 / ADD R1, R7, #0xC8`
+ * (0x86C6C, 0x86CA4), reads 24 bytes per record out of "<i>.cts" for 56 records (0x86C40..0x86CDC,
+ * the loop test is CMP R0, #0x38), and copies text record 1655+i into +4 -- with lang.dat loaded
+ * only 1650 text records exist, so every name stays empty in the original too. */
+#define PUFO_MISSION_SITE_COUNT 56
+typedef struct MissionSiteRec {
+    i16  x;      /* +0x00, LDRSH at 0x7DE48 */
+    i16  y;      /* +0x02, LDRSH at 0x7DE3C */
+    char szName[20]; /* +0x04, 0x90584 */
+} MissionSiteRec;
+_Static_assert(sizeof(MissionSiteRec) == 24, "the mission-site record is 24 bytes");
 
 typedef struct GeoscapeWorld {
     Ship *const *apCraft;
@@ -1044,7 +1054,7 @@ typedef struct SpawnMissionCtx {
     const PadImage *pTilemap;           /* the land test, 255 is ocean */
     BaseRec *const *apBases;            /* subtype 6's targets */
     i32 nBaseCount;                     /* the SIGNED byte at anLineAux[79] */
-    const MissionSiteRecord *apSites;   /* aMissionSites @ 0x1865C0 (root + 0xC8) */
+    const MissionSiteRec *apSites;      /* aMissionSites @ 0x1865C0 (root + 0xC8) */
     i32 nSiteCount;
     const u8 *abFacilityGrid;           /* subtype 6 asks for a free cell of kind 10 */
     i32 *pnRadarPulseTimer;             /* nRadarPulseTimer @ 0xAC224, subtype 5 sets 250 */

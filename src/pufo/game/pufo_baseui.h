@@ -1380,9 +1380,10 @@ void BasePlaneScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pH
  *     the mode is the second argument, a char.
  *
  * The control pointer is held at 0x186BA4 (LDR R3, [R2]), so the port takes the control as
- * an argument. Both callees are unported and are named without a citation: the click handler
- * is BaseAtScreen_CloseThunk (0x577c0), a tail call to Geoscape_CloseUI (0x8b94c), and the
- * update is BaseAtScreen_Update (0x57808). */
+ * an argument. Both callees are ported -- the click handler is BaseAtScreen_CloseThunk @ 0x577c0,
+ * a tail call to Geoscape_CloseUI @ 0x8b94c, and the update is BaseAtScreen_Update @ 0x57808 -- but
+ * each needs its own env (BaseAtCloseEnv / BaseAtUpdateEnv) over the record at 0x158840..0x158867,
+ * so the hooks here are thin wrappers the caller supplies. */
 typedef struct BaseAtScreenOpenHooks {
     void (*pfnClick)(void);   /* stored into pCtl->pfnClick */
     void (*pfnUpdate)(i32 nMode);

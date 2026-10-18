@@ -3232,6 +3232,34 @@ Order is by what unblocks what. Each item ends with gates + commit.
   builds either ctx yet — `pufo_turn.c:960` only hands the act ctx on — so the sinks reach a real status stack with
   the tactical runtime bank, the same blocker as the 0xC350 callee below.
 
+- [x] **The mission-spawn seam is wired, and the mission-site table has one model (Part 43).**
+  `aMissionSites @ 0x1865C0` had two port types over its 24-byte records; the ARM's `LDRSH [R0,#0xC8]` /
+  `LDRSH [R0,#0xCA]` (0x7DE48, 0x7DE3C) and `ADD R1, R3, #4` (0x90584) settle it as
+  `i16 x; i16 y; char szName[20]`, so one `MissionSiteRec` in `game/pufo_strateg.h` now serves the spawner,
+  the panel and the .cts reader, and the IDB type was retyped to match. `Geoscape_SpawnMissionSite @ 0x7e49c`
+  was ported but unreachable: its own guard returned 0 at all four call sites (0x44F64 LoadGame, 0x5D28C
+  `Geoscape_TickHourly`, 0x809B8 `StrategList_ProcessEvents`, 0x81BEC `StrategList_RollCraftStats`) because the
+  shell passed no ctx. `World_BuildMissionCtx` now fills one from cells the shell owns — strateg list, seed
+  counter, viewport, `pW->sets[0].pTiles` (unk_186B74: `Tilemap_GetAt`'s first argument is unused and only
+  InitUI writes that global), bases, `aMissionSites`, facility grid, `nRadarPulseTimer`, world and
+  `GameTime.nTotalSec` — and the two stubs `World_SpawnMissionStub` / `World_HookSpawnMissionSiteStub` are gone;
+  the load path passes `pSpawnCtx`, `pMissionCtx` and `pbSpawnOnceFlag`. The message-append and intercept-item
+  hooks are real; `pfnContactScreen` stays NULL because the assault branch fills the record at 0x158840..0x158849
+  and the shell models no such block — that is the next unit, with case 20's draw env on the same block. Also
+  corrected four claims that a ported function was unported (`Geoscape_InitUI`, `Titles_Init`, `Tact_Shutdown` +
+  `Tact_InitMission`, `BaseAtScreen_Update` + `BaseAtScreen_CloseThunk`), each replaced by the real reason it is
+  not reached on its path. New `TestLoadGameOldVersionMissionSeam` pins 0x44E8C..0x44F64 on a version-2 slot —
+  purge, teleport to (150,250), subtype-0 start with nPhase 3 and cleared targets, `nTravelEpochSec` from the
+  ctx clock — one strateg item per run, because the writer has no version gate (113-byte records) while a v2
+  reader consumes 105. 31 new checks, 2/2 mutations caught (10 red, then 6 red). IDB: `MissionSiteRec` retyped,
+  comments at 0x1865C0, 0x7DE3C, 0x7DE48 and a function comment on 0x7e49c naming all four call sites.
+
+- [ ] **Next unit: the base-attack record the shell does not own.** Nothing in `src/pufo` models
+  0x158840..0x158867, so `SpawnMissionHooks.pfnContactScreen` is NULL, the assault branch (nPhase 2 with subtype
+  6, 0x7EF38..0x7EF80) can neither pause the clock nor open the screen, and case 20's `BaseAtScreen_Draw` env
+  stays unwired (pufo_world.c:1675). The block is exactly what `BaseAtUpdateEnv` / `BaseAtDrawEnv` /
+  `BaseAtCloseEnv` already ask for.
+
 - [ ] **Next unit: the tactical runtime seam the 0xC350 callee is waiting for.** `GameTick_OnTimer` is ported and now
   measured, but its call site is a documented no-op because the shell owns none of what the tactical branch reads:
   the `TactState`, `TactCtx272.bBusy`, the `apUiSlotsA[10]` word and `Map.status` as the TTL array's owner. That is
@@ -3375,8 +3403,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `nTargetIdx` (+0x84) — writes the screen id 20 to 0x186BC4, and tail-calls `BaseAtScreen_Open` with the base
   index read SIGNED from +0x84. The port routes the screen through `SpawnMissionHooks.pfnContactScreen` and
   leaves the block fill to the caller, which no caller does yet. The screen itself is ported (unit 94), so
-  this is the wiring that makes it reachable: it needs a `SpawnMissionCtx` that carries the five slots plus
-  `GeoscapeCloseEnv`'s screen id, and it is where `nBaseAtStrategIdx`'s index-vs-serial question gets settled.
+  this is the wiring that makes it reachable, and it is where `nBaseAtStrategIdx`'s index-vs-serial question
+  gets settled. Part 43 changed the shape of this blocker: `SpawnMissionCtx` now exists and is live at all four
+  call sites, so the callee runs and reaches the branch -- what is still missing is a shell cell that owns
+  0x158840..0x158867 plus `nGeoscapeScreen`. One such owner serves this hook and case 20's draw env
+  (pufo_world.c:1675); no new `SpawnMissionCtx` field is needed.
 
 - [ ] **The dormant `sizeof(MapCell)` assert is wrong, and the original's cell is 62 bytes.**
   `src/pufo/game/pufo_mapcell.h` asserts `sizeof(MapCell) == 60` inside
@@ -3555,14 +3586,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   reference with all six values; `TestManufDrawFrame` and `TestTransferDraw` still pass a bare triple, so
   their colour claims are weaker than they look. Worth its own pass over those two older real-surface
   tests rather than a fix folded into a porting step.
-- [ ] **The mission-site table at `0x1865C0` is modelled twice.** `MissionSiteRec` (moved to
-  `game/pufo_geoscape.h` in this step: `u32 uField0` + `char szName[20]`) is the InitUI/panel view —
-  0x86C6C reads 24 raw bytes per record and 0x86CA4 writes the name at +4, and the flag-0x10 panel
-  reads that name at 0x90584. `MissionSiteRecord` (`game/pufo_strateg.h`: `i16 x` + `i16 y` + 20 gap
-  bytes) is the spawner view — 0x7DE48 and 0x7DE3C load +0 and +2 with `LDRSH`. Both are 24 bytes over
-  the same table, so one definition (`i16 x; i16 y; char szName[20];`) would do. Nothing in the app
-  wires the spawner's `apSites` to `World.aMissionSites` yet, so the two types never meet: this is a
-  cleanup, not a live defect.
+- [x] **Closed in Part 43: the mission-site table at `0x1865C0` had two models, it has one now.**
+  `MissionSiteRec` in `game/pufo_strateg.h` is `i16 x; i16 y; char szName[20];` and serves the spawner
+  (0x7DE48 / 0x7DE3C `LDRSH` on +0 and +2), the InitUI fill (0x86C6C reads 24 raw bytes, 0x86CA4 writes the
+  name at +4) and the flag-0x10 panel (name at 0x90584). `MissionSiteRecord` and `PUFO_MISSION_SITE_COUNT`
+  are gone from `game/pufo_geoscape.h`, which now points at the single type; the IDB's `MissionSiteRec` was
+  retyped to the same three members and `aMissionSites` stays `MissionSiteRec[56]` (1344 B). The app wires the
+  spawner's `apSites` to `World.aMissionSites`, so the two views met before the merge — worth recording since
+  this note claimed they never would. The remaining question about the table is its content, not its layout:
+  every name is empty because lang.dat has 1650 records and InitUI asks for 1655+i.
 
 ## Measured state
 
@@ -3760,6 +3792,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the 0xC350 game-tick dispatch (Part 40: `Timer_TickBySpeed @ 0xA08C0..0xA0934` — the speed decides the ticks one firing runs (negative 0, 0..2 one, 3 one plus an extra on alternate firings, 4 three, above 4 zero) and `unk_18838C` became the named and typed byte `bGameTickExtraDue` (LDRB 0xA090C / STRB 0xA0930); the geoscape arm of `GameTick_OnTimer` had been ported as a hook that does work where the original's callee is the four-byte `BX LR` stub at 0x94550 (now `Geoscape_GameTickStub`), so the hook is gone and those checks were rewritten; `Map_nGameSpeed` is a signed dword (LDR 0x9E918 and 0xA08C0 with CMP #0 / BMI 0xA08C8), mirrored as `i32`; IDB: 1 global named + typed, 1 function comment on 0x274f0, 4 site comments, 1 global comment extended; 1 stale "Tact_TickActiveUnit NOT ported" claim fixed in the port header; 9 new checks, 2/2 mutations caught; 1 deviation recorded — the shell's callee `App_GameTickOnce` is empty because the shell is always on the original's geoscape stub path) | 61/61 (Release) and 61/61 (Debug) | 17931 | 968/1103 (87.8%) | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
 | the out-of-TU message the refusing callee pushes (Part 41: `Ui_ConfirmFireBurst @ 0x18774` now pushes record 1 when `TactState_EnqueueFireBurst` refuses at 0x4B0D8 and still runs `TactState_KickQueue`, because 0x1884C tests nothing the enqueue returned — the kick is made observable by a pre-filled queue, since KickQueue only touches `nQueueCursor`/`bQueueActive` when the queue is non-empty; 5 new checks, 2/2 mutations caught (4 checks went red); IDB comments at 0x4B0D8, 0x4B318, 0x4B42C and 0x1884C, recording the callee-side push and that the original's three enqueue callees write `aQueue[nQueueLen]` with no capacity check while the port guards it; 1 issue closed, 1 recorded (the three enemy-AI enqueue sites have no status sink), 3 stale PLAN bullets corrected) | 61/61 (Release) and 61/61 (Debug) | 17936 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
 | the record-1 push the enemy AI was missing (Part 42: the panic AI's burst at 0x4AE08 and `Tact_EnemyAiTick`'s throw at 0x4D844 now push it through a new `pfnPushTextRecord`/`pPushTextUser` seam on `EnemyAiActCtx`/`EnemyAiTickCtx`, because 0x4B0D8 and 0x4B318 do that push in the original while the AI call sites ignore the return; the other four AI enqueue sites are proven unable to refuse — the tick's three command-18 calls get nTuCost 0 (`MOV R3, #0` at 0x4D77C, 0x4D7B4), the tick's burst at 0x4D910 is gated at 0x4d448 by `(double)uTu >= cost*(2/3) + 8.0` while charging `(int)(cost*(2/3))`, and the medikit enqueue at 0x18060 is gated by its own pad at 0x17d54; 15 new checks, 2/2 mutations caught (4 checks red, then 1 red); IDB comments at 0x4AE08, 0x4D844, 0x4D910, 0x18060, 0x4D718; 1 issue closed, 1 recorded (no src/ owner builds either AI ctx yet)) | 61/61 (Release) and 61/61 (Debug) | 17951 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
+| the mission-spawn seam is wired and the mission-site table has one model (Part 43: `Geoscape_SpawnMissionSite @ 0x7e49c` was ported long ago but its own guard no-oped all four call sites — 0x44F64 LoadGame, 0x5D28C `Geoscape_TickHourly`, 0x809B8 `StrategList_ProcessEvents`, 0x81BEC `StrategList_RollCraftStats` — because the shell passed no context; `World_BuildMissionCtx` now fills one from cells the shell already owns (strateg list 0x186534, seed counter 0x18640C, viewport, `pW->sets[0].pTiles` as the tile grid for unk_186B74, base table, `aMissionSites`, facility grid, `nRadarPulseTimer`, world, `GameTime.nTotalSec`) and the two stubs are gone; the load path also passes `pSpawnCtx` and `pbSpawnOnceFlag`; the message-append and intercept-item hooks are real and `pfnContactScreen` stays NULL with its reason recorded (no shell cell owns 0x158840..0x158867); the mission-site table is one type now — `MissionSiteRec` = `i16 x; i16 y; char szName[20]`, settled by `LDRSH` at 0x7DE48 / 0x7DE3C and the name read at 0x90584 — the duplicate `MissionSiteRecord` is removed and the IDB type was retyped to match; four comments that called a ported function unported were corrected (`Geoscape_InitUI`, `Titles_Init`, `Tact_Shutdown` + `Tact_InitMission`, `BaseAtScreen_Update` + `BaseAtScreen_CloseThunk`) and replaced by the real reason each is not reached on its path; new `TestLoadGameOldVersionMissionSeam` pins 0x44E8C..0x44F64 on a version-2 slot — purge, teleport to (150,250), subtype-0 start with nPhase 3 and cleared targets, `nTravelEpochSec` from the ctx clock, no refill with the 0x162028 byte at 0; 31 new checks, 2/2 mutations caught (10 red, then 6 red); IDB: 1 type retyped, 1 function comment on 0x7e49c naming all four call sites, comments at 0x1865C0, 0x7DE3C, 0x7DE48; 2 issues closed, 1 recorded (the base-attack record the shell does not own)) | 61/61 (Release) and 61/61 (Debug) | 17982 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 What the loop costs, measured on this tree (Part 34): a full Release build after touching a widely-included

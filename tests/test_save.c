@@ -2588,6 +2588,385 @@ static void TestLoadGame(void)
     (void)DeleteFileW(L"sav7.sav");
 }
 
+/* 0x44E8C..0x44F64: the version-<3 tail of LoadGame. It purges every type-5 item no craft claims,
+ * then teleports any active craft item off the map to (150, 250) and starts a subtype-0 mission on it
+ * through Geoscape_SpawnMissionSite @ 0x44F64. Both halves need a spawn ctx and a mission ctx, and the
+ * load path passed neither until Part 43: the callee's own guard (pufo_strateg.c:1971) turns a missing
+ * ctx into a silent return 0, so the whole tail read as a no-op.
+ *
+ * The save carries version 2 and exactly ONE strateg item per run, because the writer has no version
+ * gate -- Save_WriteStrateg always writes nTargetX / nTargetY (113 bytes) while a version-2 reader
+ * consumes 105 per item, so a second item would start 8 bytes inside the first. That asymmetry is the
+ * original's own and TestStrategChunk pins it; here it is simply avoided. */
+static int g_nOldSpawnCalls;
+static int g_nOldEventCalls;
+
+static int OldSpawnProbe(StrategItem *pUfo, i32 nMissionSub, void *pUser)
+{
+    (void)pUfo; (void)nMissionSub; (void)pUser;
+    g_nOldSpawnCalls += 1;
+    return 0;
+}
+
+static int OldEventProbe(void *pUser)
+{
+    (void)pUser;
+    g_nOldEventCalls += 1;
+    return 1;
+}
+
+static void TestLoadGameOldVersionMissionSeam(void)
+{
+    static u8 aProduct[17152 + 3200];
+    static u8 aGrid[1524];
+    static u8 aTiles[4] = { 1, 1, 1, 1 };
+    static u8 aSiteState[8];
+    static i32 aRadarPct[8];
+    static u16 aManuf[200];
+    static u16 aResearchCols[144];
+    static u16 uResearchEntries;
+    static u16 aShotWords[128];
+    static Ship aShip;
+    static Ship *apShips[1];
+    static BaseRec aBase;
+    static BaseRec *apBases[1];
+    static ObjectRecFull aObj[5];
+    static ObjectRecFull *apObj[5];
+    static Soldier aSol[1];
+    static Soldier *apSol[1];
+    static SaveBasesState bases;
+    static SaveResearchState research;
+    static SaveSmapState smap;
+    static StrategSaveState strateg;
+    static SaveTimeRecord timeRec;
+    static GameTime clock;
+    static SmapView view;
+    static SmapWorldSize worldSize;
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static ShipCtorEnv shipEnv;
+    static PadImage tiles;
+    static MissionSiteRec aSites[2];
+    static StrategSpawnCtx spawnCtx;
+    static SpawnMissionCtx missionCtx;
+    static LoadGameHooks hooks;
+    static LoadGameEnv env;
+    static SaveGameInput in;
+    static TactSaveState tact;
+    static TeamUnitsState rosters;
+    static FlobjsState flobjs;
+    static MapGeom geom;
+    static TactItem aItem[1];
+    static TactItem *apItem[1];
+    static i32 nSeed, nPtrA, nPtrB, nListMode, nSoldierCount;
+    static u32 nTactVerOut;
+    static u8 bTactFlag, bGeoscapeUi, bGameState, bCraftCount, bMissionCount, bAssaultFlag, bSpawnOnce;
+    static u16 nUiScreen;
+    DatFile dat;
+
+    printf("LoadGame @ 0x44E8C..0x44F64: the version-2 purge, teleport and mission start\n");
+
+    memset(&tiles, 0, sizeof(tiles));
+    tiles.uWidth = 2;
+    tiles.uHeight = 2;
+    tiles.pData = aTiles;
+
+    memset(&spawnCtx, 0, sizeof(spawnCtx));
+    spawnCtx.nZoomMode = 0;
+    spawnCtx.nDifficulty = 0;
+    spawnCtx.nEarlyGate = 99;
+    spawnCtx.pnSeed = &nSeed;
+    spawnCtx.pfnSpawnMission = OldSpawnProbe;
+    spawnCtx.pfnProcessEvents = OldEventProbe;
+
+    memset(&missionCtx, 0, sizeof(missionCtx));
+    missionCtx.pList = &list;
+    missionCtx.pnSeed = &nSeed;
+    missionCtx.pView = &view;
+    missionCtx.pTilemap = &tiles;      /* the shell supplies pW->sets[0].pTiles, the unk_186B74 grid */
+    missionCtx.apBases = apBases;
+    missionCtx.nBaseCount = 1;
+    missionCtx.apSites = aSites;
+    missionCtx.nSiteCount = 2;
+    missionCtx.abFacilityGrid = aGrid;
+    missionCtx.pnRadarPulseTimer = &aRadarPct[7];
+    missionCtx.pWorld = &world;
+    missionCtx.nGameTotalSec = 31536000;
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnRenderFrame = LoadRenderProbe;
+    hooks.pfnStartUiShutdown = LoadShutdownProbe;
+    hooks.pfnGeoscapeInitUi = LoadInitUiProbe;
+    hooks.pfnTactShutdown = LoadTactShutProbe;
+    hooks.pfnGeoscapeUiFreeAll = LoadFreeAllProbe;
+    hooks.pfnTactInitMission = LoadTactInitProbe;
+    hooks.pUser = NULL;
+
+    memset(&aShip, 0, sizeof(aShip));
+    aShip.bId = 9;
+    aShip.bCraftType = 2;
+    aShip.bHomeBase = 0;
+    aShip.bIntercepting = 0;   /* nothing claims the type-5 item, so the purge is free to drop it */
+
+    memset(&aBase, 0, sizeof(aBase));
+    aBase.bUnk4 = 4;
+    aBase.bSlot = 0;
+    aBase.nUnk8 = 120;         /* the home base's coordinates, which a created item gets */
+    aBase.nUnk12 = 80;
+    apBases[0] = &aBase;
+
+    memset(aObj, 0, sizeof(aObj));
+    for (int i = 0; i < 5; ++i) {
+        apObj[i] = &aObj[i];
+    }
+
+    /* Run 0 drops an unclaimed type-5 item; run 1 teleports an off-map craft and starts its mission. */
+    for (int nRun = 0; nRun < 2; ++nRun) {
+        char szSlot[16];
+        StrategItem *pItem;
+
+        printf("  run %d: %s\n", nRun, (nRun == 0) ? "the purge" : "the teleport and the mission start");
+
+        snprintf(szSlot, sizeof(szSlot), "sav%d.sav", 8 + nRun);
+        (void)DeleteFileA(szSlot);
+
+        memset(&bases, 0, sizeof(bases));
+        memset(&research, 0, sizeof(research));
+        memset(&smap, 0, sizeof(smap));
+        memset(&timeRec, 0, sizeof(timeRec));
+        memset(&strateg, 0, sizeof(strateg));
+        memset(aProduct, 0, sizeof(aProduct));
+        bases.bBaseCount = 1;
+        strateg.bSaveVersion = 2;      /* the byte every version-<3 gate reads (0x18655C) */
+        strateg.nStrategCount = 1;
+        strateg.pnUnk1865A8 = &nPtrA;
+        strateg.pnUnk186594 = &nPtrB;
+        timeRec.nSlot105 = 31536000u;  /* one year, and the value the mission's epoch must carry */
+
+        apShips[0] = (Ship *)malloc(sizeof(Ship));
+        Check(apShips[0] != NULL, "    test ship allocated");
+        memcpy(apShips[0], &aShip, sizeof(Ship));
+
+        memset(&list, 0, sizeof(list));
+        pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+        Check(pItem != NULL, "    test item allocated");
+        pItem->bActive = 1;
+        pItem->nDisplayId = 9;         /* matches Ship.bId, so the craft pass finds it */
+        if (nRun == 0) {
+            pItem->nType = 5;
+            pItem->nX = 300;
+            pItem->nY = 300;
+        } else {
+            pItem->nType = 1;
+            pItem->nX = 1500;          /* beyond the 1000 bound at 0x44F28 */
+            pItem->nY = 40;
+            pItem->bVisible = 1;
+            pItem->nTargetX = 900;     /* must come out as 0: the mission start clears both targets */
+            pItem->nTargetY = 100;
+        }
+        PtrArray_Add(&list, pItem);
+
+        memset(&in, 0, sizeof(in));
+        memset(&tact, 0, sizeof(tact));
+        memset(&rosters, 0, sizeof(rosters));
+        memset(&flobjs, 0, sizeof(flobjs));
+        memset(&geom, 0, sizeof(geom));
+        memset(aItem, 0, sizeof(aItem));
+        memset(aSol, 0, sizeof(aSol));
+        apItem[0] = &aItem[0];
+        apSol[0] = &aSol[0];
+        geom.nDimX = 1;
+        geom.nDimY = 1;
+        in.pszAppDir = "";
+        in.nSlot = 8 + nRun;
+        in.bTactFlag = 0;
+        in.pBases = &bases;
+        in.apBases = (const BaseRec *const *)apBases;
+        in.pProductBlock = aProduct;
+        in.pResearch = &research;
+        in.apShips = (const Ship *const *)apShips;
+        in.nShipCount = 1;
+        in.pSmap = &smap;
+        in.pStrateg = &strateg;
+        in.pStrategList = &list;
+        in.pTime = &timeRec;
+        in.apSoldiers = apSol;
+        in.nSoldierCount = 1;
+        in.apTactItems = apItem;
+        in.nTactItemCount = 1;
+        in.apObjects = (ObjectRecFull *const *)apObj;
+        in.nObjectCount = 5;
+        in.pTact = &tact;
+        in.pRosters = &rosters;
+        in.pFlobjs = &flobjs;
+        in.pMap = &geom;
+        in.pfnLookup = MapTestLookup;
+        in.pfnRenderFrame = RenderFrameProbe;
+
+        DatFile_ctor(&dat);
+        Check(SaveGame(&dat, &in), "    slot written as a version-2 save");
+        DatFile_Close(&dat);
+
+        /* Fresh state again: the readers rebuild the list, the ship slot and the base slot. */
+        memset(aGrid, 0, sizeof(aGrid));
+        memset(aSiteState, 0, sizeof(aSiteState));
+        memset(aRadarPct, 0, sizeof(aRadarPct));
+        memset(aManuf, 0, sizeof(aManuf));
+        memset(aResearchCols, 0, sizeof(aResearchCols));
+        memset(aShotWords, 0xEE, sizeof(aShotWords));
+        memset(&world, 0, sizeof(world));
+        memset(&view, 0, sizeof(view));
+        memset(&clock, 0, sizeof(clock));
+        memset(&shipEnv, 0, sizeof(shipEnv));
+        memset(&bases, 0, sizeof(bases));
+        bases.bBaseCount = 0;
+        memset(&strateg, 0, sizeof(strateg));
+        strateg.bSaveVersion = 2;
+        strateg.nStrategCount = 1;
+        missionCtx.pList = &list;
+        world.apCraft = (Ship *const *)apShips;
+        world.nShipCount = 1;
+        world.apSiteState = aSiteState;
+        world.apRadarPct = aRadarPct;
+        world.pTime = &clock;
+        shipEnv.apObjects = apObj;
+        shipEnv.nObjectCount = 5;
+
+        bTactFlag = 0;
+        bGeoscapeUi = 1;
+        bGameState = 0;
+        bCraftCount = 1;
+        bMissionCount = 99;
+        bAssaultFlag = 0;
+        bSpawnOnce = 0;                /* 0x162028: 0 skips the refill RemoveAt would run */
+        nUiScreen = 3;
+        nListMode = 0;
+        nSoldierCount = 0;
+        nSeed = 5;
+        uResearchEntries = 0;
+
+        memset(&env, 0, sizeof(env));
+        env.pszAppDir = "";
+        env.nSlot = 8 + nRun;
+        env.pbTactFlag = &bTactFlag;
+        env.pbGeoscapeUi = &bGeoscapeUi;
+        env.pbGameState = &bGameState;
+        env.puUiScreen = &nUiScreen;
+        env.pnSoldierCount = &nSoldierCount;
+        env.pnListMode = &nListMode;
+        env.pbMissionCount = &bMissionCount;
+        env.pbCraftSelectAssaultFlag = &bAssaultFlag;
+        env.pBases = &bases;
+        env.apBases = apBases;
+        env.nOldBaseCount = 0;
+        env.pProductBlock = aProduct;
+        env.pResearch = &research;
+        env.apCraft = apShips;
+        env.pbCraftCount = &bCraftCount;
+        env.pShipEnv = &shipEnv;
+        env.pSmap = &smap;
+        env.pView = &view;
+        env.paZoomSets = NULL;
+        env.pWorldSize = &worldSize;
+        env.pStrateg = &strateg;
+        env.pStrategList = &list;
+        env.pnSeed = &nSeed;
+        env.apSoldiers = apSol;
+        env.nSoldierCapacity = 1;
+        env.apObjects = apObj;
+        env.nObjectCount = 5;
+        env.pnTactVerOut = &nTactVerOut;
+        env.pWorld = &world;
+        env.abFacilityGrid = aGrid;
+        env.apResearchCols = aResearchCols;
+        env.apManufCols = aManuf;
+        env.puResearchEntries = &uResearchEntries;
+        env.puShotObjectWords = (u16 *)aShotWords;
+        env.pTimeRec = &timeRec;
+        env.pTime = &clock;
+        env.pSpawnCtx = &spawnCtx;
+        env.pMissionCtx = &missionCtx;
+        env.pbSpawnOnceFlag = &bSpawnOnce;
+        env.pHooks = &hooks;
+
+        g_nOldSpawnCalls = 0;
+        g_nOldEventCalls = 0;
+
+        memset(&list, 0, sizeof(list));
+        {
+            StrategItem *pFill = (StrategItem *)calloc(1, sizeof(StrategItem));
+            pFill->nType = 1;
+            pFill->nDisplayId = 99;    /* a placeholder the read replaces */
+            PtrArray_Add(&list, pFill);
+        }
+
+        DatFile_ctor(&dat);
+        CheckEqI32(LoadGame(&dat, &env), 1, "    LoadGame == 1");
+        DatFile_Close(&dat);
+
+        if (nRun == 0) {
+            /* 0x44E8C: the purge dropped the unclaimed type-5 item. The one item left is the craft
+             * item the per-craft pass created at the home base (0x44FC0..0x45014), which proves the
+             * list was really shortened rather than left alone. */
+            CheckEqI32(list.nCount, 1, "    the type-5 item is gone and the craft pass added one");
+            {
+                StrategItem *pGot = (StrategItem *)list.apItems[0];
+                Check(pGot != NULL && pGot->nType == 1, "    and the survivor is the created craft");
+                if (pGot != NULL) {
+                    /* The id the craft pass handed StrategList_AddItem (0x45004) is the ship's own bId,
+                     * which lands in nDisplayId because nType is 1. The base coordinates are not checked
+                     * here: a version-2 base record re-lays-out its eight bytes, and Save_ReadBases' own
+                     * tests pin that. */
+                    CheckEqI32(pGot->nDisplayId, 9, "    the created item carries the ship's display id");
+                    CheckEqI32(pGot->bActive, 0, "    and the pass creates it inactive");
+                }
+            }
+        } else {
+            StrategItem *pGot = (StrategItem *)list.apItems[0];
+            Check(list.nCount == 1 && pGot != NULL && pGot->nType == 1,
+                  "    the craft item is the one the read rebuilt");
+            if (pGot == NULL) {
+                goto oldNext;
+            }
+            /* 0x44F3C / 0x44F50: off the map means (150, 250). */
+            CheckEqI32(pGot->nX, 150, "    the off-map craft was teleported to x 150");
+            CheckEqI32(pGot->nY, 250, "    and to y 250");
+
+            /* 0x44F64: the mission start. Subtype 0, and a subtype-0 start lands on nPhase 3. */
+            CheckEqI32(pGot->nMissionSub, 0, "    a subtype-0 mission was started on it");
+            CheckEqI32(pGot->nPhase, 3, "    a subtype-0 start sets nPhase 3, not 4");
+            CheckEqI32(pGot->nTargetX, 0, "    both travel targets were cleared (900 became 0)");
+            CheckEqI32(pGot->nTargetY, 0, "    including the y the save carried");
+
+            /* StrategEntry_InitTravel ran, with the teleport as its start and the ctx's clock total as
+             * its epoch. The destination comes from two draws, so only its range is pinned. */
+            CheckEqI32(pGot->nStartX, 150, "    the travel starts from the teleport, not from 1500");
+            CheckEqI32(pGot->nStartY, 250, "    on both axes");
+            Check(pGot->nDestX >= 20 && pGot->nDestX <= 779,
+                  "    rand(0x2F8)+20 put the destination inside the 800-wide map");
+            Check(pGot->nDestY >= 20 && pGot->nDestY <= 379,
+                  "    rand(0x168)+20 put it inside the 400-tall map");
+            CheckEqI32(pGot->nTravelEpochSec, 31536000,
+                       "    nTravelEpochSec is the ctx's clock total (apLines[105], 0x7FB6C)");
+            Check(pGot->dFracX == 0.0 && pGot->dFracY == 0.0, "    the travel fraction was reset");
+        }
+
+        /* 0x82B3C: the refill RemoveAt would run is gated on 0x162028, held at 0 here, so neither the
+         * spawn hook nor its event tail call ran. The refill itself is pinned by TestRemoveAtAndPurge. */
+        CheckEqI32(bSpawnOnce, 0, "    the one-shot replacement byte was read as 0 and stayed 0");
+        CheckEqI32(g_nOldSpawnCalls, 0, "    so no replacement craft was rolled");
+        CheckEqI32(g_nOldEventCalls, 0, "    and the refill's event tail call never ran");
+
+oldNext:
+        for (int i = 0; i < list.nCount; ++i) {
+            free(list.apItems[i]);
+        }
+        free(apShips[0]);   /* allocated by Save_ReadShips */
+        free(apBases[0]);   /* allocated by Save_ReadBases */
+        (void)DeleteFileA(szSlot);
+    }
+}
+
 /* Save_ReadTGameData @ 0x44248. */
 static int  g_nTactSpriteLoads;
 static int  g_nSprCalls;
@@ -2973,6 +3352,7 @@ int main(void)
     TestStrategChunk();
     TestSaveGame();
     TestLoadGame();
+    TestLoadGameOldVersionMissionSeam();
     TestReadTGameData();
     TestSoldiersReload();
 

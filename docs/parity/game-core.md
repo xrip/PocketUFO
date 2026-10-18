@@ -17439,6 +17439,66 @@ an `EnemyAiTickCtx` yet -- only the two test harnesses fill them, and `pufo_turn
 the act ctx on. So these two sinks reach a real status stack when the tactical runtime bank lands,
 the same blocker as the 0xC350 tick callee in Part 40.
 
+Part 43 wires the mission-spawn seam, and starts by removing a second model of the same table.
+`aMissionSites @ 0x1865C0` held 56 records of 24 bytes and the port had two types over it:
+`MissionSiteRec` (`u32 uField0; char szName[20]`) for the InitUI/panel view and `MissionSiteRecord`
+(`i16 x; i16 y; i16 agap[10]`) for the spawner. The ARM decides the layout: `LDRSH [R0,#0xC8]` and
+`LDRSH [R0,#0xCA]` at 0x7DE48 / 0x7DE3C read the coordinates SIGNED 16-bit, and 0x90584
+`ADD R1, R3, #4` reads the name. One type now, `MissionSiteRec` in `game/pufo_strateg.h`, and the
+IDB's own `MissionSiteRec` was retyped to match. The index the flag-0x10 status list uses
+(0x90E94 `LDRSB`, then `MUL R2, R3, #0x18` at 0x90E90 and `ADD R3, R6, #0xC8` at 0x90EA0) is
+the STRATEG ITEM's +2 byte -- the two-role byte Part 30 already described -- not a second width
+the record has; the first draft of this note claimed otherwise and was corrected in the header.
+
+`Geoscape_SpawnMissionSite @ 0x7e49c` had four callers and the port reached none of them with a
+context: 0x44F64 in LoadGame, 0x5D28C in Geoscape_TickHourly, 0x809B8 in StrategList_ProcessEvents
+and 0x81BEC in StrategList_RollCraftStats. The callee was ported long ago, so its guard
+(pufo_strateg.c:1971, `pCtx == NULL || pTilemap == NULL || apSites == NULL ... -> return 0`) was
+running the whole time and quietly turning four live side effects into nothing. `World_BuildMissionCtx`
+in `app/pufo_world.c` now fills the ctx from cells the shell already owns: the strateg list @ 0x186534,
+the seed counter @ 0x18640C, the viewport, `pW->sets[0].pTiles` as the tile grid, the base table,
+`aMissionSites`, the facility grid, `nRadarPulseTimer`, the world and `GameTime.nTotalSec` (apLines[105])
+for `nTravelEpochSec`. The tile grid is worth stating: `Tilemap_GetAt @ 0x8217c` reads the global
+unk_186B74 and its own first argument is unused, and only Geoscape_InitUI writes that global
+(STR at 0x85910 and 0x85920) -- Hex-Rays renders the call as `Tilemap_GetAt((int)&g_smapCamera, ...)`
+and that is the junk argument, not the grid's owner.
+
+`World_SpawnMissionStub` and `World_HookSpawnMissionSiteStub` are gone, the load path now passes
+`pSpawnCtx`, `pMissionCtx` and `pbSpawnOnceFlag`, and the event pass passes `pMissionCtx` so 0x809B8
+-- the per-item mission advance -- runs. Two hooks come with it for real: the root message append
+(subtype 4 posts flag 60 with the new item's index, subtype 5 flag 16 with `nTargetIdx`) and the
+hangar's intercept item (the mission-site record picked by craft class, `nTimer` 2880 at 0x7DE80, the
+new index into 0x186BE4). One hook stays NULL and says why: the assault branch (nPhase 2 with subtype
+6, 0x7EF38..0x7EF80) fills the record at 0x158840..0x158849, writes screen id 20 and opens
+`BaseAtScreen_Open`, and the shell models none of that block yet -- filling the hook against the wrong
+block would be worse than not filling it. `SpawnMissionHooks.pfnContactScreen` is now the only thing
+between the port and the base-attack screen.
+
+Three comments in the shell said functions were unported when they are ported and, in two cases,
+already called: `Geoscape_InitUI @ 0x857f4` (pufo_geoiinit.c, run by World_NewGame), `Titles_Init
+@ 0x380d8` (pufo_titles.c, called at pufo_app.c:253), and `Tact_Shutdown @ 0x3d568` /
+`Tact_InitMission @ 0x3c550` (pufo_tactend.c, pufo_tactinit.c) -- those two stay stubs on the load
+path, but because the shell owns no TactShutdownEnv or TactInitEnv there, not because the callees
+are missing. `pufo_baseui.h` claimed `BaseAtScreen_CloseThunk` and `BaseAtScreen_Update` were
+unported; both are ported and both need an env over the 0x158840 block. The comments now say the
+real reason.
+
+New tests in `tests/test_save.c`: `TestLoadGameOldVersionMissionSeam` writes a version-2 slot and
+pins the whole 0x44E8C..0x44F64 tail -- the unclaimed type-5 item is purged and the craft pass adds
+one at the ship's display id; the off-map craft is teleported to (150, 250); a subtype-0 mission
+starts with nPhase 3 (not 4) and both travel targets cleared; `nStartX/nStartY` are the teleport;
+`nTravelEpochSec` is the ctx's clock total; the two destination rolls stay inside 800 x 400; and with
+the 0x162028 byte at 0 the refill and its event tail call do not run. The save carries exactly one
+strateg item per run on purpose: `Save_WriteStrateg` has no version gate and always writes
+nTargetX/nTargetY (113 bytes) while a version-2 reader consumes 105 per item, so a second item would
+start 8 bytes inside the first -- the original's own asymmetry, already pinned by `TestStrategChunk`.
+Both mutations were caught: killing the version gate turns 10 checks red, and putting the mission ctx
+back to NULL turns 6 red. Checks 17951 -> 17982, gate 61/61 in both configs, coverage unchanged.
+
+Left open by this pass, recorded rather than folded in: no shell cell models 0x158840..0x158867, so
+the base-attack screen stays unreachable and case 20's draw env stays unwired (pufo_world.c:1675).
+That is the next seam, and it is the same block `BaseAtUpdateEnv` / `BaseAtDrawEnv` already ask for.
+
 Dispositions, not ported, with reasons. Map_RegisterAtexit (0x22620) and its thunk
 Map_Atexit_nullsub2 (0x2262c) register a
 wrapper over nullsub_2, an empty stub, so they carry no behaviour -- the same disposition as the
