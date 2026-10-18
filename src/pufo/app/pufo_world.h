@@ -350,6 +350,9 @@ typedef struct PufoWorldState {
     i32           nMapUiSlot1;          /* dword_113A1C @ Map+0x64 = apUiSlotsA[1] */
     u8            bMapSweepArmed;       /* Map_bSweepArmed @ Map+0x68 = LOBYTE(apUiSlotsA[2]). This byte also
                                          * backs MapInitEnv.pbSlot2Byte0 now: one cell, one owner */
+    u8            bMapSlot8Byte1;       /* unk_113A39 @ Map+0x81 = BYTE1(apUiSlotsA[8]): read by
+                                         * GameTick_Step 0x27364/0x274B4 and the TickActiveUnit gate
+                                         * at 0x275CC, cleared at the phase wrap 0x275CC */
     u8            bMapSlot8Byte2;       /* unk_113A3A @ Map+0x82 */
     u8            bMapSlot8Byte3;       /* unk_113A3B @ Map+0x83 */
     i32           nMapUiSlot9;          /* unk_113A3C @ Map+0x84 = apUiSlotsA[9] */
@@ -368,6 +371,8 @@ typedef struct PufoWorldState {
     u8            bMapLightEnabled;     /* gap_86301[1] @ Map+0x254B1, Map_RefreshCellMeta's gate */
     i32           nMapUnk138E6C;        /* unk_138E6C @ Map+0x254B4: rand(0x28) + 10 */
     i32           nMapUnk138E70;        /* unk_138E70 @ Map+0x254B8: rand(0x14) */
+    u8            bMapFrameScratch;     /* unk_138E74 @ Map+0x254BC: GameTick_OnTimer clears it at
+                                         * 0x275E8 at the end of every tactical tick */
     i32           nMapGamma;            /* Map_nGamma @ Map+0x15100: the live cell; PufoOptions.nGamma is
                                          * the registry-load model, copied in by World_NewGame /
                                          * World_LoadSlot (Map_InitAndLoadRegistry @ 0x22648 writes that cell) */
@@ -590,6 +595,13 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode);
  * owned by apSoldiers and World_Free. This is the shell's own teardown, NOT Tact_Shutdown @ 0x3d568:
  * the mission-end unit owns that (its outcome table demolishes or removes on the mission's result). */
 void World_FreeTactical(PufoWorldState *pW);
+
+/* One 0xC350 firing's handler (GameTick_OnTimer @ 0x274f0), built from the shell's own Map-scalar
+ * owners and the live tactical frame. Returns true when the handler took a branch of its own: the
+ * geoscape stub return (the original's 0x27518, a four-byte `BX LR`) or a full tactical tick.
+ * Without a live frame the tactical branch cannot run (the original's TactState/TactCtx272 exist
+ * only for a mission); the defensive false there stands in for the original's NULL deref. */
+bool World_GameTickOnce(PufoWorldState *pW);
 
 /* GeoscapeUi_FreeAll(bFreeWorld 1) plus the nav controls and the site records. */
 void World_Free(PufoWorldState *pW);

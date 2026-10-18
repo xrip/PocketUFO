@@ -668,12 +668,19 @@ static void App_TickAnimProgress(void)
  * sGeoscapeScreenBlock at 0x27514, calls Geoscape_GameTickStub @ 0x94550 at 0x27518 (four bytes, `BX LR`,
  * no body) and returns at 0x2751C. The geoscape clock is 0xC353's job and App_TickPulse runs it.
  *
- * The tactical path needs what the shell does not own: the TactState, TactCtx272.bBusy, the apUiSlotsA[10]
- * word and Map.status as the TTL array's owner. When the tactical bank exists this same call site builds
- * the GameTickCtx from those and calls GameTick_OnTimer; recorded with the other Priority 1 seams. */
+ *
+ * The tactical path is no longer blocked on ownership: World_InitTactical (Part 47) allocates the
+ * TactState, World owns the apUiSlotsA[10] word, the launch seam's GeoscapeUi_FreeAll clears
+ * Map_bGeoscapeUi at 0x86D34, and the TTL stack lives in the frame's GameMap.status.
+ * World_GameTickOnce builds the GameTickCtx from those and calls GameTick_OnTimer, so the
+ * geoscape case still lands on the 0x27518 stub return and a live mission takes the tactical
+ * arm (TTL decay, GameTick_Step, the 0x275E8 frame-scratch clear). The TickActiveUnit walker
+ * stays unhooked until the tactical runtime unit wires its TactTickCtx; on an empty queue the
+ * original's walker early-returns, so no launch-frame behavior is skipped. */
 static void App_GameTickOnce(void *pUser)
 {
     (void)pUser;
+    (void)World_GameTickOnce(&g_world);
 }
 
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);

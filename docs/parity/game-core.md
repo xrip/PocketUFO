@@ -18989,3 +18989,39 @@ cleared. Mutations: sentinel seed 0x7D00 -> 0x7D01 turns 1 red; the 0x39138 stor
 turns 2 red. test_tactctl's team trio now comes from the unit's own auStat (45/78/12 in the
 fixture); test_tactinit reads the typed sentinel fields. Gate 61/61 both configs; golden frame
 match unchanged.
+## Unit 109 - the hand-over frees the geoscape UI for real, and the 0xC350 tick reaches the live frame (Part 48)
+
+Unit 109 turns the mission hand-over's first call into the real one and lets the port's
+game tick see the live mission. At 0x83ABC the shell now runs GeoscapeUi_FreeAll with the
+roster view (soldiers, bases, craft, the strateg list) and bFreeWorld = 0: the pass kills the
+D timers at 0x86D28, clears Map_bGeoscapeUi @ 0x1139FC at 0x86D34 -- the write that opens
+GameTick_OnTimer's tactical branch at gate 0x27508 -- releases fontSys at 0x86D3C and the
+root/pad/layer/control singletons, and Tact_InitMission at 0x83AC4 re-inits the font right
+after, exactly as the original's sequence reads. The shell gained two Map scalars:
+bMapSlot8Byte1 (unk_113A39 @ Map+0x81) and bMapFrameScratch (unk_138E74 @ Map+0x254BC).
+
+World_GameTickOnce builds the GameTickCtx from the live frame's scalars -- the hold byte at
+Map+0x5A, the mode byte at Map+0x44 (cleared by the seam's FreeAll), slot 10 at Map+0x88, the
+tact flag at Map+0x00, slot 8 byte 1 at Map+0x81, and the busy bit through the frame's
+TactCtx272 -- and hands GameTick_OnTimer the frame's status stack and TactState. The NULL
+guard in GameTick_OnTimer moved after gate 4 so the geoscape branch (stub 0x94550, return at
+0x2751C) can be taken without a live frame, like the original. App_GameTickOnce now calls it.
+On the launched fixture a tick decays the status TTL by exactly one (0x27588), shifts nothing
+because the oldest message is still above 0 (gate 0x275A4), leaves GameTick_Step a no-op with
+no phase running, and ends at the frame-scratch clear at 0x275E8. Tact_TickActiveUnit stays
+unhooked: its TactTickCtx walker belongs to the tactical runtime unit.
+
+Two fixture rules the reorder earned: the geoscape-mode run (case 20 close dispatch, the
+teardown index semantics at 0x577D4/0x158844, the unpause at 0x577EC) now runs BEFORE the
+mission launch, because the launch's FreeAll frees the controls, pads, font tables and speed
+controls and only the unported mission-end rebuild would bring them back -- Geoscape_CloseUI's
+head dereferences the freed speed controls at 0x8B9FC. And the mission's pinned numbers ride
+the CRT rand stream: Tact_SpawnAliens builds the squad as (15 - RandU16(5)) + (3 - RandU16(3))
+at 0x3A3E0 and the 23 cargo records come off the same stream, so the test pins it with
+srand(1) at the section head and again before the launch -- Run B's defence pair rolls had
+shifted Run A's squad to 15 and its items to 25. Run B's cleanup removes the attacker contact
+the wrong-slot teardown leaves in the list.
+
+Mutations: neutering the seam's FreeAll turns 3 red (mode byte still 1, scratch not cleared,
+TTL not decayed); poisoning gate 3 (slot 10 = 99) turns 3 red. Gate 61/61 both configs, 18061
+checks, golden --new-game frame identical.

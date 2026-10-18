@@ -1269,6 +1269,13 @@ int main(void)
         i32 nListCount0 = PtrArray_GetCount(&g_world.strategList);
         i32 nBase0 = -1;
 
+        /* Pin the CRT stream for the two runs below. The game seeds rand() from the clock (InitInstance
+         * 0x9FD48), and the mission numbers the asserts read -- Tact_SpawnAliens 0x3A3E0 builds the squad as
+         * (15 - RandU16(5)) + (3 - RandU16(3)) -- come straight off that stream. Run B's defence pair rolls
+         * sit between the earlier fixture draws and Run A's mission pass, so without a pin the pinned
+         * numbers here would name Run B's draws, not Run A's squad. srand(1) is the same LCG in both builds. */
+        srand(1u);
+
         /* A base with no defence facility (kind 12..16) at all: the report then fires nothing, which is
          * what makes the two tails below decide the same way every run. */
         for (i32 b = 0; b < (i32)g_world.nBaseCount; ++b) {
@@ -1281,6 +1288,109 @@ int main(void)
             if (nDef == 0) { nBase0 = b; break; }
         }
         Check(nBase0 >= 0, "at least one base has no defence facility, so the report's rolls are not needed");
+
+        if (nBase0 >= 0) {
+            /* Run B FIRST, while the geoscape UI is intact: after Run A's hand-over the seam's
+             * GeoscapeUi_FreeAll (0x83ABC) frees the controls, the font tables and the speed
+             * controls, and only the unported mission-end unit would rebuild them -- Run B's close
+             * dispatch reads the freed speed controls and faults. This tail is geoscape-mode
+             * evidence, so it runs before the mission. Give the same class-8 attacker one defence
+             * to fire, and the budget test is reached -- 0 < 1, so the craft is destroyed whatever
+             * the roll says. */
+            /* Update counts a defence as a cell that is FINISHED (its buildDays byte is 0) and of kind
+             * 12..16, so an empty cell of the starting base -- kind 0, days 0, the sentinel the starting
+             * base uses before any facility goes in -- is the one to arm. */
+            i32 nDefCell = -1;
+            for (i32 c = 0; c < 36; ++c) {
+                if (g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
+                                           + PUFO_GRID_FAC_TYPE_OFF + c] == 0
+                    && g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nBase0 + c] == 0) {
+                    nDefCell = c;
+                    break;
+                }
+            }
+            if (nDefCell >= 0) {
+                g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
+                                       + PUFO_GRID_FAC_TYPE_OFF + nDefCell] = 16; /* fusion ball */
+            }
+            Check(nDefCell >= 0, "one empty cell of that base is armed with a fusion ball");
+
+            /* The list positions are made to differ from the creation serials on purpose. The teardown hands
+             * 0x158844 -- the item's +0x34 serial, taken from the counter at 0x18640C -- to
+             * StrategList_RemoveAt as its nIndex (the IDB labels the load `nIndex`). The two agree only while
+             * nothing has ever been removed, so one contact is removed first and the run then asks which slot
+             * the teardown actually empties. */
+            StrategItem *pFirst = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed,
+                                                      g_world.view.nMode, 1, 1, 8, 120, 160, 4240, 1);
+            pUfo = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                       1, 1, 8, 120, 160, 4243, 1);
+            (void)StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                      1, 1, 8, 120, 160, 4244, 1);
+            Check(pFirst != NULL && pUfo != NULL && FindStrategById(&g_world.strategList, 4244) >= 0,
+                  "the fixture is three contacts: one to lose, the attacker, and its neighbour");
+            g_world.bSpawnOnce = 0; /* no replacement roll out of this removal */
+            (void)StrategList_RemoveAt(&g_world.strategList, &g_world.geo.world,
+                                       FindStrategById(&g_world.strategList, 4240), &g_world.bSpawnOnce,
+                                       &g_world.spawnCtx);
+            CheckEqI32(FindStrategById(&g_world.strategList, 4243) + 1, pUfo->nSeed,
+                       "after a removal the +0x34 serial is one past the attacker's index (0x82704, 0x82A84)");
+
+            i32 nListCountB = PtrArray_GetCount(&g_world.strategList);
+            if (pUfo != NULL) {
+                pUfo->nMissionSub = 6;
+                pUfo->nPhase      = 2;
+                pUfo->nTimer      = 0;
+                pUfo->nTargetIdx  = nBase0;
+                pUfo->bRace       = 3;
+                World_FillMissionCtx(&g_world, &missionCtx);
+                (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx);
+                CheckEqI32(g_world.bBaseAtMissionFollows, 0,
+                           "with a defence firing, the spent budget takes the destroyed tail (0x58618 arm)");
+                CheckEqI32(g_world.bBaseAtActive, 1, "and the report is built again");
+                CheckEqI32(g_world.nBaseAtStrategIdx, pUfo->nSeed,
+                           "the teardown's slot is the serial, not the index (0x7EF60, 0x158844)");
+
+                if (pConfirm != NULL && pConfirm->pfnClick != NULL) {
+                    pConfirm->pfnClick();
+                }
+                CheckEqI32(PtrArray_GetCount(&g_world.strategList), nListCountB - 1,
+                           "the click runs StrategList_RemoveAt once (0x577D4)");
+                Check(FindStrategById(&g_world.strategList, 4244) == -1
+                          && FindStrategById(&g_world.strategList, 4243) >= 0,
+                      "and it empties the slot the serial names -- the neighbour, not the contact. 0x158844 "
+                      "carries a creation serial and RemoveAt wants an index; the original never reconciles them");
+                CheckEqI32(g_world.geo.time.bPaused, 0, "and unpauses (0x577EC)");
+                CheckEqI32(g_world.bBaseAtActive, 0, "and the teardown arm releases the panel");
+                Check(g_world.pBaseAtPanel == NULL && g_world.pBaseAtPad == NULL,
+                      "and both pointers with it");
+            }
+            /* The same gate tested the other way: Run B's destroyed tail leaves 0x158850 at 0, so
+             * this teardown runs the release arm and the screen write but does NOT re-enter
+             * Smap_BeginCraftSelect -- the Map header stands exactly as Run A left it. */
+            Check(g_world.closeEnv.pbBaseAtAssault == &g_world.bBaseAtMissionFollows
+                      && g_world.bBaseAtMissionFollows == 0,
+                  "Run B's destroyed tail leaves the 0x8BB10 gate byte at 0 (0x58618 arm)");
+            CheckEqI32(g_world.nMapMissionType, 0, "and no mission type is stamped: the 0x8BB10 gate closed, so the 0x8BB20 write and the 0x840FC stamp never ran");
+
+            /* Fixture cleanup: the teardown just asserted emptied the wrong slot (0x158844 names a serial,
+             * RemoveAt wants an index), so the attacker's own contact is still in the list. Run A's mission
+             * must start from the fixture list it was asserted against, so remove it by the index FindStrateg
+             * reports. */
+            (void)StrategList_RemoveAt(&g_world.strategList, &g_world.geo.world,
+                                       FindStrategById(&g_world.strategList, 4243), &g_world.bSpawnOnce,
+                                       &g_world.spawnCtx);
+
+            /* Put the armed cell back to the empty-cell sentinel: Run A's tile asserts read the
+             * facility grid the same way Smap_InitCraftSelectState does, and they expect the grid
+             * the fixture started with. */
+            if (nDefCell >= 0) {
+                g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
+                                       + PUFO_GRID_FAC_TYPE_OFF + nDefCell] = 0;
+            }
+        }
+
+        /* Run A's +1 assert below counts from the list as Run B's fixture left it. */
+        nListCount0 = PtrArray_GetCount(&g_world.strategList);
 
         /* A class-8 attacker: g_anBaseAtBudget covers 0..7 only, so the budget is 0 -- but the budget test
          * sits INSIDE the defence-pair loop (0x57D7C and its three twins), so a base with nothing to fire
@@ -1296,6 +1406,12 @@ int main(void)
             pUfo->nTargetIdx  = nBase0;    /* +0x84: the base, and the mode handed to the opener */
             pUfo->bRace       = 2;
 
+            /* Re-pin the stream for the mission pass. Run B's defence pair rolls sit between the top of this
+             * block and here, and the squad Tact_InitMission builds (0x3A3E0: (15 - RandU16(5)) +
+             * (3 - RandU16(3)), all of it into the hidden park for a base assault) and the cargo counts the
+             * asserts below read come straight off that stream. With the pin the pinned numbers name Run A's
+             * squad, not Run B's rolls. */
+            srand(1u);
             World_FillMissionCtx(&g_world, &missionCtx);
             Check(missionCtx.hooks.pfnContactScreen != NULL, "the shell fills the assault hook");
             (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx);
@@ -1449,9 +1565,12 @@ int main(void)
                   "the terrain pass filled the grid slots and the zero-layer cargo pass reads cell (0,0,0) (Init_LookupCell's index with every coordinate 0)");
             Check(g_world.pTactMap->nXcomCount == 8 && g_world.pTactMap->nEnemyCount == 0
                       && g_world.apTactHidden[0] != NULL && g_world.nMapEnemyReserveCount == 13,
-                  "the rosters after the mission pass: 8 soldiers selected, 0 aliens on the field, 13 held in the hidden park -- the kill seam (pfnKillUnit NULL) parks the stealth-flagged units instead of killing them");
+                  "the rosters after the mission pass: 8 soldiers selected, 0 aliens on the field, 13 held in "
+                  "the hidden park -- the kill seam (pfnKillUnit NULL) parks the stealth-flagged units instead "
+                  "of killing them; 13 is the squad 0x3A3E0 draws from the stream pinned above");
             Check(g_world.nTactItemCount == 23,
-                  "the cargo and belt passes built 23 TactItem records for this fixture's object table");
+                  "the cargo and belt passes built 23 TactItem records for this fixture's object table, "
+                  "the same stream pin");
             Check(g_world.nMapDeployedHwps == 0,
                   "no heavy weapon was deployed on this fixture: the deploy pass ran and the count stays 0");
             CheckEqI32(g_world.nMapObjectCountU16, (i32)g_world.pAssets->nObjectCount,
@@ -1463,82 +1582,30 @@ int main(void)
             CheckEqI32((i32)g_world.gameClock.nSpeed, (i32)g_world.pOptions->nGameSpeed,
                   "the speed cell the tail timer reads is the copy World_NewGame made from the options");
 
-            /* The other tail: give the same class-8 attacker one defence to fire, and the budget test is
-             * reached -- 0 < 1, so the craft is destroyed whatever the roll says. */
-            /* Update counts a defence as a cell that is FINISHED (its buildDays byte is 0) and of kind
-             * 12..16, so an empty cell of the starting base -- kind 0, days 0, the sentinel the starting
-             * base uses before any facility goes in -- is the one to arm. */
-            i32 nDefCell = -1;
-            for (i32 c = 0; c < 36; ++c) {
-                if (g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
-                                           + PUFO_GRID_FAC_TYPE_OFF + c] == 0
-                    && g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nBase0 + c] == 0) {
-                    nDefCell = c;
-                    break;
-                }
-            }
-            if (nDefCell >= 0) {
-                g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
-                                       + PUFO_GRID_FAC_TYPE_OFF + nDefCell] = 16; /* fusion ball */
-            }
-            Check(nDefCell >= 0, "one empty cell of that base is armed with a fusion ball");
+            /* The original's hand-over order is 0x83AB4 (clear the selection flag), 0x83ABC
+             * (GeoscapeUi_FreeAll with a1 = 0), 0x83AC4 (Tact_InitMission). The free clears the
+             * mode byte at 0x86D34 -- that is what opens the 0xC350 tactical arm for the mission. */
+            CheckEqI32(g_world.bGeoscapeUi, 0, "the seam's GeoscapeUi_FreeAll clears Map_bGeoscapeUi (0x86D34): the shell stands in tactical mode after the mission");
+            /* The launch left one status message: the Xcom branch's Tact_SelectUnit pushed the
+             * selected soldier's name onto the stack (Map+0x54 count, TTL at Map+0x1408C). */
+            i32 nStatusCount0 = g_world.pTactMap->status.nCount;
+            i32 nTtl0 = g_world.pTactMap->status.anTtl[0];
+            Check(nStatusCount0 == 1 && nTtl0 == PUFO_STATUS_TTL
+                      && g_world.pTactMap->status.aszMsg[0][0] != '\0',
+                  "one status message with TTL 90: Tact_SelectUnit (0x3D0B4 branch) pushed the selected soldier's name");
 
-            /* The list positions are made to differ from the creation serials on purpose. The teardown hands
-             * 0x158844 -- the item's +0x34 serial, taken from the counter at 0x18640C -- to
-             * StrategList_RemoveAt as its nIndex (the IDB labels the load `nIndex`). The two agree only while
-             * nothing has ever been removed, so one contact is removed first and the run then asks which slot
-             * the teardown actually empties. */
-            StrategItem *pFirst = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed,
-                                                      g_world.view.nMode, 1, 1, 8, 120, 160, 4240, 1);
-            pUfo = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
-                                       1, 1, 8, 120, 160, 4243, 1);
-            (void)StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
-                                      1, 1, 8, 120, 160, 4244, 1);
-            Check(pFirst != NULL && pUfo != NULL && FindStrategById(&g_world.strategList, 4244) >= 0,
-                  "the fixture is three contacts: one to lose, the attacker, and its neighbour");
-            g_world.bSpawnOnce = 0; /* no replacement roll out of this removal */
-            (void)StrategList_RemoveAt(&g_world.strategList, &g_world.geo.world,
-                                       FindStrategById(&g_world.strategList, 4240), &g_world.bSpawnOnce,
-                                       &g_world.spawnCtx);
-            CheckEqI32(FindStrategById(&g_world.strategList, 4243) + 1, pUfo->nSeed,
-                       "after a removal the +0x34 serial is one past the attacker's index (0x82704, 0x82A84)");
+            /* A 0xC350 firing on that live frame: gates 1..4 all pass (hold clear, mode clear
+             * from the seam, slot 10 written by the init, tact flag from the prologue). The body
+             * decays the TTL words (0x27588), finds nothing to shift (oldest 89 > 0 at 0x275A4),
+             * runs GameTick_Step (no phase active) and lands on the 0x275E8 clear. */
+            g_world.bMapFrameScratch = 1;
+            Check(World_GameTickOnce(&g_world), "the 0xC350 handler takes the tactical arm on the live frame (0x27508 sees the cleared mode byte the seam wrote)");
+            CheckEqI32(g_world.bMapFrameScratch, 0, "the tick ends at the 0x275E8 frame-scratch clear (unk_138E74 @ Map+0x254BC)");
+            Check(g_world.pTactMap->status.nCount == 1 && g_world.pTactMap->status.anTtl[0] == PUFO_STATUS_TTL - 1,
+                  "the tick decayed the TTL word by exactly one (0x27588) and shifted nothing: the oldest message is still above 0 (gate at 0x275A4)");
+            Check(g_world.pTactState->nPhaseCounter == 0 && g_world.pTactMap->tact.bBusy == 0,
+                  "nothing was queued or phased at the launch frame: the phase counter stands at 0, the context is not busy");
 
-            nListCount0 = PtrArray_GetCount(&g_world.strategList);
-            if (pUfo != NULL) {
-                pUfo->nMissionSub = 6;
-                pUfo->nPhase      = 2;
-                pUfo->nTimer      = 0;
-                pUfo->nTargetIdx  = nBase0;
-                pUfo->bRace       = 3;
-                World_FillMissionCtx(&g_world, &missionCtx);
-                (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx);
-                CheckEqI32(g_world.bBaseAtMissionFollows, 0,
-                           "with a defence firing, the spent budget takes the destroyed tail (0x58618 arm)");
-                CheckEqI32(g_world.bBaseAtActive, 1, "and the report is built again");
-                CheckEqI32(g_world.nBaseAtStrategIdx, pUfo->nSeed,
-                           "the teardown's slot is the serial, not the index (0x7EF60, 0x158844)");
-
-                if (pConfirm != NULL && pConfirm->pfnClick != NULL) {
-                    pConfirm->pfnClick();
-                }
-                CheckEqI32(PtrArray_GetCount(&g_world.strategList), nListCount0 - 1,
-                           "the click runs StrategList_RemoveAt once (0x577D4)");
-                Check(FindStrategById(&g_world.strategList, 4244) == -1
-                          && FindStrategById(&g_world.strategList, 4243) >= 0,
-                      "and it empties the slot the serial names -- the neighbour, not the contact. 0x158844 "
-                      "carries a creation serial and RemoveAt wants an index; the original never reconciles them");
-                CheckEqI32(g_world.geo.time.bPaused, 0, "and unpauses (0x577EC)");
-                CheckEqI32(g_world.bBaseAtActive, 0, "and the teardown arm releases the panel");
-                Check(g_world.pBaseAtPanel == NULL && g_world.pBaseAtPad == NULL,
-                      "and both pointers with it");
-            }
-            /* The same gate tested the other way: Run B's destroyed tail leaves 0x158850 at 0, so
-             * this teardown runs the release arm and the screen write but does NOT re-enter
-             * Smap_BeginCraftSelect -- the Map header stands exactly as Run A left it. */
-            Check(g_world.closeEnv.pbBaseAtAssault == &g_world.bBaseAtMissionFollows
-                      && g_world.bBaseAtMissionFollows == 0,
-                  "Run B's destroyed tail leaves the 0x8BB10 gate byte at 0 (0x58618 arm)");
-            CheckEqI32(g_world.nMapMissionType, 3, "and the mission type is still Run A's 3: the assault block did not run a second time");
         }
     }
 

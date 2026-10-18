@@ -15,8 +15,8 @@
 #include "ui/pufo_linelist.h" /* UiLineList_AppendWithSound, the tick's contact message seam */
 #include "ui/pufo_panel.h"    /* UiPanel_ctor / SetBytes6to11 / WrapText / FreeLines, the tact init hooks */
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission */
+#include "game/pufo_timer.h"   /* GameTickCtx / GameTickHooks / GameTick_OnTimer @ 0x274f0 */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1820,6 +1820,45 @@ void World_FreeTactical(PufoWorldState *pW)
     pW->bTactLive = false;
 }
 
+/* GameTick_OnTimer's hook for the 0x275E8 store (byte_138E74 = 0 at the end of every
+ * tactical tick). */
+static void World_TactClearFrameScratch(void *pUser)
+{
+    ((PufoWorldState *)pUser)->bMapFrameScratch = 0;
+}
+
+bool World_GameTickOnce(PufoWorldState *pW)
+{
+    GameTickCtx ctx;
+    GameTickHooks hooks;
+
+    memset(&ctx, 0, sizeof(ctx));
+    memset(&hooks, 0, sizeof(hooks));
+
+    ctx.bGameTickHold = pW->bMapTickHold != 0;     /* Map_bTickHold @ Map+0x5A, gate 1 (0x274FC) */
+    ctx.bGeoscapeUi   = pW->bGeoscapeUi != 0;      /* Map_bGeoscapeUi @ Map+0x44, gate 2 (0x27508):
+                                                    * cleared by the launch seam's FreeAll at 0x86D34 */
+    ctx.bTactFlag     = pW->bTactFlag != 0;        /* Map+0x00, gate 4 (0x27548) */
+    ctx.nUiSlot10     = pW->nMapUiSlot10;          /* apUiSlotsA[10] @ Map+0x88, gate 3 (0x2753C) */
+    ctx.bSlot8Byte1   = pW->bMapSlot8Byte1 != 0;   /* Map+0x81, the TickActiveUnit gate (0x275CC) */
+    ctx.bBusy         = pW->bTactLive && pW->pTactMap->tact.bBusy != 0;        /* TactCtx272.bBusy @ +0xF8 */
+    ctx.bPhaseActive  = pW->bTactLive && pW->pTactState->bPhaseActive != 0;    /* TactState @ +0x111E3 */
+
+    hooks.pfnClearFrameScratch = World_TactClearFrameScratch;
+    hooks.pUser                = pW;
+    /* Tact_TickActiveUnit @ 0x54130 needs the walker's whole TactTickCtx (the three phase
+     * processor envs, the aim state, the map geometry). Those belong to the tactical runtime
+     * unit; until they are wired the walker stays unhooked -- on an empty queue the original's
+     * walker early-returns anyway, so no mission behavior is skipped at the launch frame.
+     * Recorded deviation. */
+    hooks.pfnTickActiveUnit    = NULL;
+
+    return GameTick_OnTimer(&ctx,
+                            pW->bTactLive ? &pW->pTactMap->status : NULL,
+                            pW->bTactLive ? pW->pTactState : NULL,
+                            &hooks, World_TactLookupCell, pW);
+}
+
 /* The three hand-overs a mission launch ends with, and why the shell takes them as seams.
  *
  *   GeoscapeUi_FreeAll @ 0x86d20 (0x83ABC, 0x84228). Its FreeWorld half releases the soldiers,
@@ -1836,8 +1875,25 @@ void World_FreeTactical(PufoWorldState *pW)
  * (0x84238, 0x84240) are the original's own "this run is over" markers, and they are live here. */
 static void World_MissionSeamFreeUi(i32 bFreeWorld, void *pUser)
 {
-    (void)bFreeWorld;
-    (void)pUser;
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GeoscapeRoster roster;
+
+    memset(&roster, 0, sizeof(roster));
+    roster.apSoldiers     = pW->apSoldiers;
+    roster.nSoldierCount  = (u16)pW->nSoldierCount;
+    roster.apBases        = pW->apBases;
+    roster.nBaseCount     = pW->nBaseCount;
+    roster.apCraft        = pW->apCraft;
+    roster.nCraftCount    = pW->bCraftCount;
+    roster.pStrategList   = &pW->strategList;
+
+    /* 0x83ABC in the launch tail (a1 = 0: the UI only); the bankruptcy tails pass 1.
+     * GeoscapeUi_FreeAll kills the D timer (0x86D28), CLEARS Map_bGeoscapeUi at 0x86D34 -- the
+     * write that opens GameTick_OnTimer's tactical branch for the mission -- releases fontSys
+     * (0x86D3C) and the root/pad/layer/control singletons, and with a1 non-zero the soldier,
+     * base and craft records plus the site list. Tact_InitMission re-inits the font right after
+     * (PufoFont_Init inside the bring-up), exactly as the original's 0x83AC4 follows this call. */
+    GeoscapeUi_FreeAll(&pW->ui, &roster, (char)bFreeWorld);
 }
 
 static i32 World_MissionSeamInitMission(i32 nMode, void *pUser)

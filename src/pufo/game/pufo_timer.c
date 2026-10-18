@@ -181,7 +181,7 @@ bool GameTick_OnTimer(const GameTickCtx *pCtx, StatusStack *pStack, TactState *p
                       const GameTickHooks *pHooks,
                       MapCellLookup pfnLookup, void *pLookupUser)
 {
-    if (pCtx == NULL || pStack == NULL || pState == NULL) {
+    if (pCtx == NULL) {
         return false;
     }
 
@@ -207,6 +207,14 @@ bool GameTick_OnTimer(const GameTickCtx *pCtx, StatusStack *pStack, TactState *p
 
     /* Gate 4: no tactical map, no tactical tick. */
     if (!pCtx->bTactFlag) {
+        return false;
+    }
+
+    /* Everything past gate 4 touches the TTL stack (Map+0x54/0x140AC), TactCtx272 and
+     * pMapTactical -- the geoscape stub return touches none of them, so a caller without a
+     * live tactical frame can still take gates 1 and 2 exactly like the original. Past this
+     * point both records are required. */
+    if (pStack == NULL || pState == NULL) {
         return false;
     }
 
