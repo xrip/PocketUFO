@@ -3,10 +3,13 @@
  * Evidence: UiModal_Begin @ 0x26430, UiModal_End @ 0x2648c.
  *
  * The original keeps the modal in `pCtxBase.apUiSlotsA`: slot 19's low byte is
- * the open flag, slots 12..15 the four rect/label ints, slots 16 and 18 the two
- * callbacks and slot 17 the extra (label-string) argument. `UiModal_Begin` also
- * clears the dword at pCtx+48 and `anActionPhaseSave0[112]`, the two scratch cells
- * that a modal session uses.
+ * the open flag, slot 12 the dialog width, slot 13 the first text record, slot 14
+ * the line count, slots 15 and 17 the two button labels, slots 16 and 18 the two
+ * button callbacks. `UiModal_Begin` also clears slot 24 (Map+0xC0 @ 0x113A78, the
+ * hover/button cell the input dispatch reads at 0x14B68) and
+ * `anActionPhaseSave0[112]` @ 0x128AA0, the two scratch cells a modal session uses.
+ * The Render_Frame modal arm (0x224D4..0x22500) draws the dialogue straight from
+ * the bank: width slot 12, text record slot 13, nLines slot 14, labels slots 15/17.
  *
  * The original functions live in the big UI bank and take an implicit context;
  * the port takes a `UiModalState *` instead, so the state can be tested without
@@ -21,14 +24,14 @@
 #include "render/pufo_render.h"
 
 typedef struct UiModalState {
-    i32 nField48;             /* pCtx+48, cleared on begin */
-    i32 nActionPhaseSave112;  /* anActionPhaseSave0[112], cleared on begin */
+    i32 nField48;             /* apUiSlotsA[24] @ Map+0xC0, the hover/button cell, cleared on begin (0x26438) */
+    i32 nActionPhaseSave112;  /* anActionPhaseSave0[112] @ 0x128AA0, cleared on begin (0x2644C) */
     bool bOpen;               /* apUiSlotsA[19] low byte */
-    i32  anRect12_14[3];      /* apUiSlotsA[12..14] */
-    void *pLabel15;           /* apUiSlotsA[15], the first label ("YES") */
-    void (*pfn16)(void);      /* apUiSlotsA[16] */
-    void *p17;                /* apUiSlotsA[17], the second label ("NO") */
-    void (*pfn18)(void);      /* apUiSlotsA[18] */
+    i32  anRect12_14[3];      /* apUiSlotsA[12..14]: dialog width, first text record, line count */
+    void *pLabel15;           /* apUiSlotsA[15], the first button label ("YES"/"OK") */
+    void (*pfn16)(void);      /* apUiSlotsA[16], the first button callback */
+    void *p17;                /* apUiSlotsA[17], the second button label ("NO"), 0 for one-button modals */
+    void (*pfn18)(void);      /* apUiSlotsA[18], the second button callback */
 } UiModalState;
 
 /* UiModal_Begin @ 0x26430. Clears the two scratch cells, sets the open flag and

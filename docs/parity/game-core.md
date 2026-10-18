@@ -19140,3 +19140,51 @@ livelocking); the burst's per-entry nArg takes 0 because the shell does not own 
 `ShotHooks.pfnComputeFov` stays NULL (argument list open, pufo_combat.h); `SideLists` counts stay
 by-value copies (the recorded separate issue); the shell's tactical paint is still absent, so the walker's
 repaint arm reaches the caller's frame hook and is a no-op on a tactical screen.
+## Unit 112: the modal bank has one owner and the modal arms really end it (Part 51)
+
+The modal trio `UiModal_Begin @ 0x26430`, `UiModal_End @ 0x2648C`, `UiModal_DrawDialog @ 0x264A0`
+was ported long ago (`pufo_modal.c`); what was missing was the state. The bank lives in the Map
+block -- apUiSlotsA[12..19] @ Map+0x90..0xAC plus the two scratch cells `UiModal_Begin` clears --
+and nothing in the shell owned it, so Part 49's 8/9 cancel arm took only the screen write and the
+drop ctx's modal hook stayed NULL. Now `PufoWorldState.sModal` (a `UiModalState`) owns the bank,
+and the Part 25 frame-end owner `nActionPhaseSave112` moved into it: one field for 0x128AA0, which
+the frame tail writes (0x944E0/0x9451C) and `UiModal_Begin` clears (0x2644C).
+
+The bank roles, from the Render_Frame modal arm (the disassembly at 0x224D4..0x22508, the original's
+own reader of every cell): slot 12 = the dialog WIDTH (160/200 drop, 140 quit, 170 deploy), slot 13 =
+the FIRST TEXT RECORD (31 not-enough-time, 24 quit question, 45/43 weapon modals, 1069 deploy), slot
+14 = the LINE COUNT, slots 15/17 = the two button labels ("OK"/"YES", "NO"), slots 16/18 = the two
+button callbacks, slot 19's low byte = the open flag. Slot 17 doubles as DrawDialog's psz2. The IDB
+now names all eight cells (`Modal_nDialogWidth`, `Modal_nTextRecIndex`, `Modal_nTextLines`,
+`Modal_szBtn1`, `Modal_pfnBtn1`, `Modal_szBtn2`, `Modal_pfnBtn2`, `Modal_bOpen`) with writer/reader
+comments, plus a comment at the draw gate 0x224D4.
+
+Wiring at the seams the shell already mirrors:
+* `World_MissionCancelEnd`'s 8/9 arm runs `UiModal_End` before the screen write, exactly the arm at
+  0x162DC/0x162E0 -- the Part 49 deviation is closed. End clears only the open byte (0x26494); the
+  stored fields survive, as in the original.
+* `sTactDropHooks.pfnModal` = `World_TactDropModalThunk`, the Begin shape of the drop-modal call at
+  0x123E0 (width, record, lines, "OK", and slot 16 stores the modal-end thunk -- the `LDR R3,
+  =UiModal_EndThunk` at 0x123E4 into `STR R3,[pfn1]`). The shell's thunk stores `World_ModalEndThunk`,
+  the zero-argument counterpart of the original thunk 0x12254, resolving the bank through
+  `g_pActiveWorld` like the other stored callbacks.
+* The app's `g_tactHooks.pfnModalEnd` / `pfnModalEndCheckBattle` reach the same bank: the five
+  UiModal_End call sites (0x14B94/0x14BC0/0x156BC/0x15A38/0x161E8/0x163B0) and the screen-9 escape
+  arm at 0x156C8 (End + `Tact_CheckBattleEnd(abort=1)`; `World_MissionEndCheck` returns false without
+  a live frame, matching the original's need for a mission context). `g_pointerWorld.pfnSlot16/18`
+  dispatch the bank's stored callbacks for the 0x14B94/0x14BE4 calls, and both pointer dispatches
+  copy `sModal.bOpen` into `g_tactState.bSlot19Active` at the entry -- the live reads at 0x13E58 and
+  0x14B68.
+
+Recorded multi-view (not folded): bank slot 24 (Map+0xC0 @ 0x113A78, the hover/button cell
+`UiModal_Begin` clears at 0x26438) is the cell the input state models as `nSlot24Hit`; the live copy
+the hover path writes is the app's persistent `g_tactState` field, so Begin's clear lands on
+`sModal.nField48` while the hover cell lives there. Same class as the aCells two-views.
+
+Test evidence (test_geoscapeframe Run A, after the walker, before the mission end): the wired drop
+hook opens the bank (open byte 0x26454, width/record/lines per the 0x123E0 arguments, Begin clears
+the shared 0x128AA0 cell from a 77 sentinel, slot 16 holds the stored end), the stored callback ends
+the modal, and the cancel arm on screens 8 and 9 ends the modal then writes screen 0. Mutations 2/2:
+dropping the cancel-arm End turns 2 checks red; storing NULL instead of the end thunk turns 2 red.
+
+Gate: 61/61 tests in both configs, 18103 checks, golden `--new-game` frame identical.

@@ -298,6 +298,41 @@ static void App_HookShutdownQuit(void *pUser)
     App_QuitFromTact(App_ShutdownTactNoMission, App_QuitDisplayThunk, NULL);
 }
 
+/* Part 51 modal seams. The modal bank is the world's sModal (Map's apUiSlotsA[12..19] plus the two
+ * scratch cells UiModal_Begin clears). TactInputHooks.pfnModalEnd stands for the UiModal_End @
+ * 0x2648C at its five modal-ending call sites (Input_OnPointerUp 0x14B94/0x14BC0, UiScreen_OnBack
+ * 0x156BC, UiScreen_DismissHigh 0x15A38, Input_OnConfirm 0x161E8, Input_OnMenuEscape 0x163B0);
+ * pfnModalEndCheckBattle is the screen-9 arm at 0x156C8 (End + Tact_CheckBattleEnd(abort=1), and
+ * World_MissionEndCheck returns false without a live frame -- the original's CheckBattleEnd needs
+ * the mission context too). The slot 16/18 thunks run the bank's stored button callbacks, the
+ * calls at 0x14B94/0x14BE4 that follow the end. */
+static void App_TactModalEndThunk(void *pUser)
+{
+    (void)pUser;
+    UiModal_End(&g_world.sModal);
+}
+
+static void App_TactModalEndCheckBattleThunk(void *pUser)
+{
+    (void)pUser;
+    UiModal_End(&g_world.sModal);
+    (void)World_MissionEndCheck(&g_world, 1);
+}
+
+static void App_Slot16Thunk(void)
+{
+    if (g_world.sModal.pfn16 != NULL) {
+        g_world.sModal.pfn16();
+    }
+}
+
+static void App_Slot18Thunk(void)
+{
+    if (g_world.sModal.pfn18 != NULL) {
+        g_world.sModal.pfn18();
+    }
+}
+
 static void App_DrawFrameHook(void *pUser)
 {
     (void)pUser;
@@ -461,6 +496,10 @@ static void App_InitStartupUi(void)
     g_pointerWorld.pListCtl       = g_pStartCtl;
     g_pointerWorld.nListMode      = g_nListMode;
     g_pointerWorld.bListRowSticky = false; /* unk_188D4C */
+    /* Modal bank slots 16/18 (Map+0xA0/0xA8): the button callbacks Input_OnPointerUp runs after
+     * ending the modal (0x14B94 / 0x14BE4). The bank stores them, the thunks dispatch them. */
+    g_pointerWorld.pfnSlot16 = App_Slot16Thunk;
+    g_pointerWorld.pfnSlot18 = App_Slot18Thunk;
     g_pointerWorld.hit.pnUiSlot0  = &g_nUiSlot0;
     g_pointerWorld.hit.pfnBlit    = App_BlitPad;
     g_pointerWorld.hit.pfnBlitEx  = App_BlitPadEx;
@@ -475,6 +514,10 @@ static void App_InitStartupUi(void)
     /* Screen 8 (the quit confirmation) answers the back action with App_QuitFromTact @ 0x18e18. The shell
      * never opens the quit dialog, but the seam is wired so the port reproduces the original wiring. */
     g_tactHooks.pfnShutdownQuit = App_HookShutdownQuit;
+    /* Modal bank seams (Part 51): the input arms that end the bank's modal, and the screen-9
+     * escape arm that ends it and aborts the mission check. */
+    g_tactHooks.pfnModalEnd            = App_TactModalEndThunk;
+    g_tactHooks.pfnModalEndCheckBattle = App_TactModalEndCheckBattleThunk;
     /* Input_OnPointer / Input_OnPointerUp take the geoscape branch when Map.bGeoscapeUi is set
      * (0x13C98 gate at 0x13CE0, 0x148FC at 0x14908) and hand the pen over to these two seams; the
      * shell runs them over the world's wired GeoscapePointerEnv. */
@@ -727,6 +770,7 @@ static void App_PointerLogical(i32 nX, i32 nY, bool bDown)
     }
     g_tactState.nUiScreen  = (u16)g_nUiScreen;
     g_tactState.bGeoscapeUi = bGeoscape; /* Map.bGeoscapeUi @ Map+0x44, the gate at 0x13CE0 */
+    g_tactState.bSlot19Active = g_world.sModal.bOpen ? 1u : 0u; /* Modal_bOpen @ Map+0xAC, the live read at 0x13E58 */
     g_pointerWorld.nListMode = g_nListMode;
     Input_OnPointer(&g_tactState, &g_tactHooks, &g_pointerWorld, nX, nY, bDown);
 }
@@ -751,6 +795,7 @@ static void App_OnPointerUp(void)
     }
     g_tactState.nUiScreen   = (u16)g_nUiScreen;
     g_tactState.bGeoscapeUi = bGeoscape; /* the same gate at 0x14908 */
+    g_tactState.bSlot19Active = g_world.sModal.bOpen ? 1u : 0u; /* Modal_bOpen, the live read at 0x14B68 */
     g_pointerWorld.nListMode = g_nListMode;
     Input_OnPointerUp(&g_tactState, &g_tactHooks, &g_pointerWorld);
 }

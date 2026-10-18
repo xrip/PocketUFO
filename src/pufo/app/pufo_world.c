@@ -1560,6 +1560,9 @@ static void World_TactKillBattleEndThunk(void *pUser);
 static void World_TactFallTryOpportunityThunk(Soldier *pTarget, Soldier *pShooter, void *pUser);
 static void World_TactPushForcedThunk(const char *pszMsg, void *pUser);
 static void World_TactTickActiveUnit(void *pUser);
+static void World_ModalEndThunk(void);
+static void World_TactDropModalThunk(i32 nWidth, i32 nTextRec, i32 nLines, const char *szLabel,
+                                     void *pUser);
 
 bool World_InitTactical(PufoWorldState *pW, i32 nMode)
 {
@@ -1757,8 +1760,10 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactDropHooks.pLookupUser     = pW;
     pW->sTactDropHooks.pInvStat        = &pW->tactInvHooks;
     pW->sTactDropHooks.pUser           = pW;
-    /* pfnModal (UiModal_Begin @ 0x26430) stays NULL: it belongs to the tact UI the next unit brings
-     * up; Tact_EquipTeamFromCraft's parked-pointer path never reaches the modal arm. */
+    /* pfnModal = the drop-modal opener, the UiModal_Begin shape of the call at 0x123E0 (Part 51).
+     * Tact_EquipTeamFromCraft's parked-pointer path still never reaches the modal arm -- the opener
+     * is wired so the ctx matches the original's. */
+    pW->sTactDropHooks.pfnModal = World_TactDropModalThunk;
     pE->equip.pHit  = &pW->sTactHit;
     pE->equip.pDrop = &pW->sTactDrop;
 
@@ -2128,6 +2133,29 @@ static void World_TactAreaFireThunk(void *pUser)
         pW->pTactState->bPhaseActive = 1;
     }
     pW->pTactState->nUnk70024Slot4 = 0;
+}
+
+/* Part 51 modal bank seams. World_ModalEndThunk stands for the zero-argument
+ * UiModal_EndThunk @ 0x12254 that the original stores into modal bank slot 16 (the store at
+ * 0x123E0, UiModal_EndThunk loaded from 0x123E4): Input_OnPointerUp's hover-column arm calls
+ * the stored function after ending the modal (0x14B94). Zero-argument, so it reaches the bank
+ * through g_pActiveWorld, the pattern the other stored callbacks use. */
+static void World_ModalEndThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        UiModal_End(&g_pActiveWorld->sModal);
+    }
+}
+
+/* InvDropHooks.pfnModal = the UiModal_Begin shape the drop modals use at 0x123E0:
+ * Begin(width, text record, line count, "OK", UiModal_EndThunk, 0, 0) -- one button, and its
+ * stored callback is the modal-end thunk. The labels come from Drop_Modal (aOk @ 0xA62D8). */
+static void World_TactDropModalThunk(i32 nWidth, i32 nTextRec, i32 nLines, const char *szLabel,
+                                     void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    UiModal_Begin(&pW->sModal, nWidth, nTextRec, nLines, (void *)szLabel, World_ModalEndThunk, NULL, NULL);
 }
 
 /* FireGate: aResearchTopics[g_abSlotTopicGate[uSortKey]].wGate4 != 0 (pufo_combat.h:218).
@@ -2678,8 +2706,11 @@ bool World_MissionCancelEnd(PufoWorldState *pW)
         return false;                                    /* 0x1626C: below the mission screens */
     }
     if (pW->nUiScreen <= 9u) {
-        /* 0x162DC: UiModal_End then the screen write. UiModal_End @ 0x2648C belongs to the tact-modal
-         * unit; the shell takes the write only -- recorded deviation. */
+        /* 0x162DC / 0x162E0: UiModal_End then the screen write. The modal bank is the shell's
+         * sModal since Part 51, so the end runs for real -- the Part 49 write-only deviation is
+         * closed. End clears only the open byte (0x26494); the stored fields survive, as in the
+         * original. */
+        UiModal_End(&pW->sModal);
         pW->nUiScreen = 0;
         return true;
     }
@@ -3330,7 +3361,10 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
      * dispatcher copies this env into its own and sets pBaseAtEnv only for id 20 (0x944B4), so the draw
      * env lives on GeoscapeDrawEnv above rather than here. */
     pF->frameEnd.pnListMode         = &pW->nListMode;              /* MainMenu_nListMode @ 0x157188 */
-    pF->frameEnd.pnActionPhaseSave112 = &pW->nActionPhaseSave112;  /* Map.anActionPhaseSave0[112] */
+    pF->frameEnd.pnActionPhaseSave112 = &pW->sModal.nActionPhaseSave112;  /* Map.anActionPhaseSave0[112]
+                                                                            * @ 0x128AA0, one cell: the frame
+                                                                            * tail writes it (0x944E0/0x9451C) and
+                                                                            * UiModal_Begin clears it (0x2644C) */
     if (pAssets != NULL) {
         pF->frameEnd.pTextRecs = pAssets->pTextRecs;
     }

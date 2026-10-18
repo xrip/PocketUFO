@@ -590,16 +590,16 @@ int main(void)
 
     /* 6. The frame end's modal gate: the phase cell is written only for the saving and loading list
      * modes (0x944C4 / 0x94500), and 0x28 is the value (0x944CC). */
-    g_world.nActionPhaseSave112 = 0;
+    g_world.sModal.nActionPhaseSave112 = 0;
     g_world.nListMode = PUFO_GEOFRAME_LIST_MODE_SAVING;
     (void)DrawFrame();
-    CheckEqI32(g_world.nActionPhaseSave112, PUFO_GEOFRAME_PHASE_SAVE,
+    CheckEqI32(g_world.sModal.nActionPhaseSave112, PUFO_GEOFRAME_PHASE_SAVE,
                "list mode 4 writes Map.anActionPhaseSave0[112] = 0x28 (0x944E0)");
     CheckEqI32(g_nPresents, 1, "and the frame still presents once (0x94538)");
-    g_world.nActionPhaseSave112 = 0;
+    g_world.sModal.nActionPhaseSave112 = 0;
     g_world.nListMode = 0;
     (void)DrawFrame();
-    CheckEqI32(g_world.nActionPhaseSave112, 0, "any other list mode leaves the cell alone");
+    CheckEqI32(g_world.sModal.nActionPhaseSave112, 0, "any other list mode leaves the cell alone");
 
     /* 7. The pointer dispatcher over the same envs. */
     ClearSurface();
@@ -1690,6 +1690,43 @@ int main(void)
                 pMapW->tact.pTrackUnit = NULL;
                 pTurnCell->bFlags44 = (u8)nFlags0;
             }
+
+            /* Modal bank (Part 51): the drop hook opens the bank's modal, the stored slot-16
+             * callback ends it, and the 8/9 cancel arm runs UiModal_End before the screen write.
+             * Run A is inside the mission here (tact flag set, queue drained by the walker, no
+             * in-flight byte set), so the cancel gates 0x16208/0x16218/0x1626C all pass. */
+            Check(g_world.sTactDropHooks.pfnModal != NULL,
+                  "the drop ctx has the modal opener wired (the UiModal_Begin shape of the call at 0x123E0)");
+            g_world.sModal.nActionPhaseSave112 = 77; /* the frame-end cell @ 0x128AA0: Begin clears it at 0x2644C */
+            g_world.sTactDropHooks.pfnModal(160, 31, 1, "OK", &g_world);
+            Check(g_world.sModal.bOpen, "the drop modal set the open byte (0x26454)");
+            CheckEqI32(g_world.sModal.anRect12_14[0], 160, "bank slot 12 carries the dialog width (Begin a2 at 0x26458)");
+            CheckEqI32(g_world.sModal.anRect12_14[1], 31,
+                       "bank slot 13 carries the first text record, 31 = the not-enough-time line (Begin a3 at 0x26460)");
+            CheckEqI32(g_world.sModal.anRect12_14[2], 1, "bank slot 14 carries the line count (Begin a4 at 0x26464)");
+            Check(g_world.sModal.nActionPhaseSave112 == 0,
+                  "Begin cleared anActionPhaseSave0[112] @ 0x128AA0 (0x2644C) -- the same cell the frame tail writes (0x944E0/0x9451C), one owner now");
+            Check(g_world.sModal.pfn16 != NULL, "slot 16 stores the modal-end callback, the UiModal_EndThunk store at 0x123E0");
+            if (g_world.sModal.pfn16 != NULL) {
+                g_world.sModal.pfn16(); /* hover column 1 at 0x14B94: end, then the stored action -- here the stored action IS the end */
+            }
+            Check(!g_world.sModal.bOpen, "the stored modal-end clears the open byte (UiModal_End @ 0x2648C)");
+
+            u16 nScreenSave = g_world.nUiScreen;
+            g_world.sModal.bOpen = true;
+            g_world.nUiScreen = 8;
+            Check(World_MissionCancelEnd(&g_world),
+                  "the cancel dispatch runs on screen 8 inside the mission");
+            Check(!g_world.sModal.bOpen,
+                  "the 8/9 arm runs UiModal_End before the screen write (0x162DC) -- the Part 49 write-only deviation is closed");
+            CheckEqI32(g_world.nUiScreen, 0, "the 8/9 arm writes screen 0 (0x162E0)");
+            g_world.sModal.bOpen = true;
+            g_world.nUiScreen = 9;
+            (void)World_MissionCancelEnd(&g_world);
+            Check(!g_world.sModal.bOpen && g_world.nUiScreen == 0,
+                  "screen 9 takes the same arm; OnCancel does NOT run the abort check -- that is the OnBack arm at 0x156C8");
+            g_world.sModal.bOpen = false;
+            g_world.nUiScreen = nScreenSave;
 
             /* Mission end (Part 49). Empty the hidden park and the field so the CheckBattleEnd head
              * finds no enemy side and takes the win arm (0x350F0); the enemy-turn byte is pre-set so

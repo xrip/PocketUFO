@@ -25,6 +25,7 @@
 #include "game/pufo_unit.h"
 #include "ui/pufo_control.h"
 #include "ui/pufo_geoiinit.h"
+#include "ui/pufo_modal.h"    /* UiModalState, the modal bank the shell owns since Part 51 */
 #include "ui/pufo_geouimanage.h"
 #include "util/pufo_ptrarray.h"
 
@@ -369,6 +370,16 @@ typedef struct PufoWorldState {
     i32           nMapUiSlot9;          /* unk_113A3C @ Map+0x84 = apUiSlotsA[9] */
     i32           nMapUiSlot10;         /* unk_113A40 @ Map+0x88 = apUiSlotsA[10], init sets 10 */
     i32           nMapUiSlot11;         /* unk_113A44 @ Map+0x8C = apUiSlotsA[11] */
+    UiModalState  sModal;               /* the modal dialogue bank (Part 51): apUiSlotsA[12..19] @
+                                         * Map+0x90..0xAC (UiModal_Begin @ 0x26430 / UiModal_End @
+                                         * 0x2648C, the open flag at 0x26454/0x26494 read by
+                                         * Render_Frame 0x224D4 and Input_OnPointerUp 0x14B68), plus the
+                                         * two scratch cells Begin clears: apUiSlotsA[24] @ Map+0xC0 --
+                                         * the same cell the input state models as nSlot24Hit (the
+                                         * recorded multi-view issue; the app's hover copy is the live
+                                         * one) -- and anActionPhaseSave0[112] @ 0x128AA0, the frame
+                                         * tail's cell, which World_WireGeoscapeFrame now points at
+                                         * this field (the shell's own frameEnd owner moved here). */
     u8            bMapAltOutcomePath;   /* unk_1153D9 @ Map+0x1A21 */
     u8            bMapCraftMapX;        /* Map_nCraftMapX @ Map+0x15139 (0x128AF1): who reads it is listed
                                          * in the pufo_tactctl.h correction note */
@@ -467,7 +478,6 @@ typedef struct PufoWorldState {
     i8        cUiAnimProgress;          /* cUiAnimProgress @ 0x187058 */
     u8        bFinalMissionCtlArmed;    /* bFinalMissionCtlArmed @ 0x187068: arms the final-mission
                                          * control for one press (0x8759C), cleared on release (0x89CD4) */
-    i32       nActionPhaseSave112;      /* Map.anActionPhaseSave0[112] @ 0x128AA0, the frame end's cell */
     char      szUiScratchStr[104];      /* szUiScratchStr @ 0x186420: the status panel's pszExtra,
                                          * the second line of the panel arms */
     char      szScratch[85];            /* szScratch186488 @ 0x186488: BuildStatusMsg's scratch line */
