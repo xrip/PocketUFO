@@ -1213,8 +1213,8 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pfnPlaySample    = pW->pfnPlaySample;
     pC->pSoundUser       = pW->pSoundUser;
     pC->pnActionFail     = (i32 *)&pW->nShortfall1870C8;   /* dwActionFail @ 0x1870C8, cleared as a dword */
-    pC->pbPopupA         = &pW->bRoot34;                   /* bPopupVisibleA @ 0x18652C */
-    pC->pbPopupB         = &pW->bRoot35;                   /* bPopupVisibleB @ 0x18652D */
+    pC->pbPopupA         = &pW->bRoot34;                   /* bBaseFacPreviewActive @ 0x18652C */
+    pC->pbPopupB         = &pW->bRoot35;                   /* bBaseFacPreviewOk @ 0x18652D */
     pC->pWorld           = &pW->geo.world;                 /* nGeoscapeTickSeconds @ 0x187070 */
     pC->apSpeedCtl       = pW->ui.apRootCtl + 2;           /* apGeoscapeSpeedCtl @ 0x186500..0x186514 */
 
@@ -1694,8 +1694,8 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
      * env shares one pUser between pfnPlaySample and pfnHitTestStrategSelect, so the shell sets it to
      * the sound user and leaves the strateg seam NULL (its SmapHitEnv is not built yet). */
     pPtr->apRootCtl  = pUi->apRootCtl;
-    pPtr->pbPopupA   = &pW->bRoot34;                    /* bPopupVisibleA @ 0x18652C */
-    pPtr->pbPopupB   = &pW->bRoot35;                    /* bPopupVisibleB @ 0x18652D */
+    pPtr->pbPopupA   = &pW->bRoot34;                    /* bBaseFacPreviewActive @ 0x18652C */
+    pPtr->pbPopupB   = &pW->bRoot35;                    /* bBaseFacPreviewOk @ 0x18652D */
     pPtr->apCtl      = pUi->apCtl;
     pPtr->pnScreenId = &pW->screen.nGeoscapeScreen;
     pPtr->pLines     = &pW->msgLines;
@@ -1865,6 +1865,10 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->facOverlay.nPlaceY          = pW->nPlaceY;          /* 0x159D98 */
     pF->facOverlay.nPendingRegionId = pW->bPendingRegionId; /* 0x159DF4 */
     pF->facOverlay.nPhaseByte       = (pW->pnMapPhase != NULL) ? (u8)*pW->pnMapPhase : 0;
+    /* The pointer dispatcher dereferences the dialog panel with no test in both arms (0x87F60 on the press,
+     * 0x89F10 on the release), and the overlay's commit frees that panel through the closing Toggle, so the
+     * dispatcher's copy follows it exactly like the dialog's own. */
+    pW->ptrEnv.pFacPanel = pW->pFacPanel;
     World_WireCreateEnv(pW);
     pF->anim.nFrameStyle  = (i8)pW->aRegionBuildCount[9]; /* bUiFrameStyle @ 0x186566 */
     pW->ptrEnv.pTiles     = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL;

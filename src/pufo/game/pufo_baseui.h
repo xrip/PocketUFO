@@ -1540,8 +1540,9 @@ typedef struct GeoscapeCloseEnv {
     void (*pfnPlaySample)(i32 nSample, void *pUser);
     void *pSoundUser;
     i32   *pnActionFail;             /* 0x1870C8, IDA's byte_1870C8: stored as a dword */
-    u8    *pbPopupA;                 /* bPopupVisibleA @ 0x18652C */
-    u8    *pbPopupB;                 /* bPopupVisibleB @ 0x18652D */
+    u8    *pbPopupA;                 /* bBaseFacPreviewActive @ 0x18652C (the port's older name for it is
+                                      * bPopupVisibleA; the IDB names it after the placement preview) */
+    u8    *pbPopupB;                 /* bBaseFacPreviewOk @ 0x18652D (older port name bPopupVisibleB) */
     GeoscapeWorld *pWorld;           /* nTickSeconds @ 0x187070 */
     UiControl *const *apSpeedCtl;    /* the six nav speed controls */
 

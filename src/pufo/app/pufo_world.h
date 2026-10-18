@@ -140,8 +140,11 @@ typedef struct PufoWorldState {
     SmapView          view;                     /* gSmapCam @ 0x1863E8 */
     SmapZoomSet       sets[3];
     u8                bGeoscapeUi;              /* unk_1139FC @ Map + 0x44 */
-    u8                bRoot34;                  /* unk_18652C */
-    u8                bRoot35;                  /* unk_18652D */
+    u8                bRoot34;                  /* bBaseFacPreviewActive @ 0x18652C: the aimed placement byte. The
+                                     * pointer press sets it (0x87F44), the release clears it (0x89E14), the overlay
+                                     * commit clears it (0x59B30) and InitUI clears it (0x85860). */
+    u8                bRoot35;                  /* bBaseFacPreviewOk @ 0x18652D: set by the case-7 release (0x89E84),
+                                     * cleared by the overlay on a zero score (0x599B0) and at its commit (0x59B34). */
     i32               nSmapOriginX;               /* nSmapOriginX @ 0x159DC4, written 10 by Geoscape_InitUI
                                      * (0x86AAC) and read by the placement overlay, the name grid and the
                                      * placement arm */

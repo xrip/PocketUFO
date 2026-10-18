@@ -170,6 +170,7 @@ int main(void)
     i32       nNavCnt, nPhase, nCurX, nCurY, nIdx;
     i32       nOpen0, nSamples0;
     i32       nKind, nSpan, nCellW, nCost0, nFunds0, nBase0, nSiteId0, nRegionCnt0;
+    i32       nRowX, nRowY, nAimX, nAimY, nFunds1;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
         printf("FAIL: Boot_LoadStartup\n");
@@ -761,6 +762,68 @@ int main(void)
     g_world.bArmedPlacement = 0;
     g_world.nUnk15887C = 0;
     g_world.nUnk158880 = 0;
+
+    /* 12f. The same purchase reached the way a pen reaches it: press, frame, release. No flow byte is written
+     * by hand here -- only the two coordinates the WM_LBUTTONDOWN / WM_LBUTTONUP paths carry, and the funds the
+     * purchase has to be affordable against. World_GeoscapePointer @ 0x872d0 and World_GeoscapePointerUp @ 0x89450
+     * are the shell's own seams, and the frame between them is the render timer's call. */
+    g_world.nFunds = 2000000;
+    nFunds1 = g_world.nFunds;
+    g_world.nav.apNav[4]->pfnClick();                /* BaseFacScreen_Open @ 0x61844 again, after 12e closed it */
+    CheckEqI32(g_world.bFacDialogOpen, 1, "the dialog re-opens, and its toggle allocates a fresh panel (0x58A44)");
+    Check(g_world.pFacPanel != NULL && g_world.ptrEnv.pFacPanel == g_world.pFacPanel,
+          "the pointer dispatcher's panel copy follows it, because both its arms dereference it blind (0x87F60, 0x89F10)");
+    nKind = UiPanel_GetLineAux(g_world.pFacPanel, pF->facOverlay.nPanelSel);
+
+    nRowX = g_world.pFacPanel->nPosX;                /* the dialog panel's own geometry: row 0 is nPosY..+16 */
+    nRowY = g_world.pFacPanel->nPosY + 8;
+    World_GeoscapePointer(&g_world, nRowX, nRowY, true);
+    CheckEqI32(g_world.bRoot34, 1, "a press on the build screen sets bBaseFacPreviewActive @ 0x18652C (0x87F44)");
+    Check(g_world.pFacPanel->bFlag7073 == 1, "and re-arms the panel while the placement is unarmed (0x87F60)");
+    (void)DrawFrame();
+    CheckEqI32(g_world.nFunds, nFunds1, "the row press spends nothing");
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_world.bArmedPlacement, 1, "the release's row click runs the panel's own handler and the buy arms "
+                                           "the placement: unk_158888 at 0x5897C");
+    CheckEqI32(g_world.nPanelSel, 0, "and stores the selected row while the new-base byte is clear (0x58994)");
+    CheckEqI32(g_world.nFunds, nFunds1, "the arm spends nothing either: only the commit pays");
+
+    nAimX = pF->facOverlay.nOriginX + 3 * PUFO_PLA_TAP_CELL;     /* tap column 3 */
+    nAimY = pF->facOverlay.nOriginY + PUFO_PLA_TAP_Y0 + PUFO_PLA_TAP_CELL; /* tap row 1, next to the neighbour 12e seeded */
+    World_GeoscapePointer(&g_world, nAimX, nAimY, true);
+    (void)DrawFrame();
+    CheckEqI32(g_world.nSmapTapX, 3, "the held press aims at the cell under the cursor and writes the tap back (0x58EC0)");
+    CheckEqI32(g_world.nSmapTapY, 1, "on the row axis too (0x58EC8)");
+    CheckEqI32(g_world.nFunds, nFunds1, "with the pending pair elsewhere the draw aims but does not commit");
+
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_world.nUnk15887C, 3, "the release copies the tap into the pending pair (0x89E8C)");
+    CheckEqI32(g_world.nUnk158880, 1, "on both axes (0x89E98)");
+    CheckEqI32(g_world.bRoot35, 1, "and sets bBaseFacPreviewOk @ 0x18652D (0x89E84)");
+    CheckEqI32(g_world.bRoot34, 0, "while clearing the aimed byte (0x89E14)");
+    CheckEqI32(g_world.nPanelSel, 0, "and armed, so its row click is skipped and the selection stands (0x89F10)");
+
+    nBase0 = g_world.nBaseCount;
+    ClearSurface();
+    World_GeoscapePointer(&g_world, nAimX, nAimY, true);
+    (void)DrawFrame();
+    CheckEqI32(SurfPix(nAimX, nAimY), PackInk(0, 0, nPhase), "the second press draws the aimed outline in the phase "
+                                                             "colour at origin + 32 * tap, where the cursor is");
+    CheckEqI32(g_world.nFunds, nFunds1 - (i32)g_world.aFac[nKind].uCost,
+               "and commits: the record's own cost off nFunds (0x59AC8), with no new-base cost and no base");
+    CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * g_world.nSelectedBase
+                                      + PUFO_GRID_FAC_TYPE_OFF + 6 * 1 + 3], (i32)g_world.aFac[nKind].bFlag21,
+               "the aimed cell takes the record's kind (0x59A9C)");
+    Check(g_world.nBaseCount == nBase0 && g_world.bFacDone == 0,
+          "the non-new-base commit creates nothing: no Base_CreateNamedEntry, no new-base byte");
+    CheckEqI32(g_world.bFacDialogOpen, 1, "and leaves the dialog open for the next purchase");
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 7, "with the screen id left at 7 -- only the new-base path moves it (0x59B2C)");
+    CheckEqI32(g_world.nUnk15887C, 3, "the pending pair is left as the cell that was built");
+    CheckEqI32(g_world.nUnk158880, 1, "on both axes");
+
+    /* The purchase leaves the dialog open and the arm clear is only a fixture for the soldier and close-chain
+     * checks below; World_Free closes the dialog the way the shell closes any open one. */
+    g_world.bArmedPlacement = 0;
 
     nOpen0 = g_world.bSolScreenOpen;
     g_world.nav.apNav[2]->pfnClick(); /* SoldierScreen_Toggle @ 0x64af0 */

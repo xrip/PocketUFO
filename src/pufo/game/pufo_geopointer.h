@@ -150,8 +150,8 @@ typedef struct GeoscapePointerEnv {
     /* The 0x1864F8 geoscape UI root (GeoscapeScreenBlock): the thirteen control slots
      * and the two popup bytes at +0x34 / +0x35. */
     UiControl *const *apRootCtl;  /* apObj @ 0x1864F8 + 4*i */
-    u8  *pbPopupA;                /* bPopupVisibleA @ 0x18652C (unk_18652C) */
-    u8  *pbPopupB;                /* bPopupVisibleB @ 0x18652D (unk_18652D) */
+    u8  *pbPopupA;                /* bBaseFacPreviewActive @ 0x18652C, the aimed placement byte (root + 0x34) */
+    u8  *pbPopupB;                /* bBaseFacPreviewOk @ 0x18652D (root + 0x35) */
 
     /* The thirteen geoscape control singletons, indexed by GeoscapeUiCtlSlot. Each is
      * the object the original's global slot points at, so the env carries the object. */
