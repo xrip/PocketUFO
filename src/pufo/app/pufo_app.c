@@ -398,13 +398,17 @@ static void App_InitStartupUi(void)
 
     /* Map_InitAndLoadRegistry @ 0x22648, the Map subsystem's startup entry (the CRT
      * thunk at 0x22604 runs it before Map_RegisterAtexit): clear the tactical
-     * scratch, then load the option block. The shell owns the scratch it can own;
-     * the battle-ended byte and the throw-target slot belong to a Map block the
-     * shell never allocates, so those two arrive as NULL. */
+     * scratch, then load the option block. The shell owns the scratch it can own, and
+     * since the Map mission header moved onto PufoWorldState the battle-ended byte at
+     * 0x113A14 reaches 0x226A8's clear for real. The throw-target slot (0x150F0) is
+     * tactical state and still arrives as NULL. */
     memset(&g_tactState, 0, sizeof(g_tactState));
     memset(&initEnv, 0, sizeof(initEnv));
     initEnv.pOptions          = &g_options;
     initEnv.pbDeployPanelOpen = &g_tactState.bDeployPanelOpen; /* 0x15110 */
+    initEnv.pbBattleEnded     = &g_world.bMapBattleEnded;      /* 0x113A14: the world owns this Map byte
+                                                                 * now, so 0x226A8's startup clear reaches
+                                                                 * it instead of landing on a NULL */
     initEnv.pbMapPhase        = &g_nAnimPhase;                 /* 0x0037 */
     initEnv.pbSlot2Byte0      = &g_tactState.bSlot2Byte0;      /* 0x0068 */
     initEnv.pbSlot8Byte0      = &g_tactState.bUiSlot8Byte0;    /* 0x0080 */

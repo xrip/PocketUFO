@@ -1328,7 +1328,16 @@ int main(void)
                        "and parks the cooldown for that row's aux 0 -- 255 - 0 (0x587A8)");
             CheckEqI32(g_world.bBaseAtConfirmShown, 0, "with the OK control still waiting");
 
-            /* The OK click: the thunk the opener installed, not a hand-built call. */
+            /* The OK click: the thunk the opener installed, not a hand-built call. These four cells
+             * are the ones Smap_BeginCraftSelect's failure block (0x84158..0x841DC) would move, so
+             * capturing them makes the UNCHANGED state after the click an assertion. */
+            /* The new-game craft sit at base with cold weapons, so the visibility pass would only
+             * restate that. Arming the byte here makes the park's 1 -> 0 at 0x8393C a transition. */
+            g_world.apCraft[0]->bWeaponsHot = 1;
+            i32 nFunding0 = g_world.economy.aZero44_49[5];
+            i32 nRadar0   = g_world.nRadarPulseTimer;
+            i32 nLines0   = g_world.msgLines.nLineCount;
+            i32 nHot0     = (g_world.apCraft[0] != NULL) ? (i32)g_world.apCraft[0]->bWeaponsHot : -1;
             if (pConfirm != NULL && pConfirm->pfnClick != NULL) {
                 pConfirm->pfnClick();
             }
@@ -1340,6 +1349,52 @@ int main(void)
                   "which frees both and nulls the slots (0x586EC, 0x5870C)");
             CheckEqI32(g_world.bSpawnOnce, 1, "and arms the replacement-craft byte (0x58718)");
             CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "the dispatcher leaves the geoscape map (0x8BB08)");
+
+            /* The mission-follow branch is live now (0x8BB10): this click ran Smap_BeginCraftSelect
+             * on the shell's own craft-select env (World_WireMissionSeams) over the Map mission
+             * header the shell owns. The line list is empty, so GetFlag(0) reads 0 and no
+             * flag-21/22/23 arm ran (0x83C60); the mode already read 1 because case 20 wrote it at
+             * 0x8BB20, so the selection pass was skipped (0x83994) and the mode_gate fell into the
+             * Xcom assault block. All eight soldiers are stationed at base 0 and aboard craft 0,
+             * which the visibility pass just parked, so Base_CountSoldiersAssigned @ 0x66230 returns
+             * 8 and this run takes the launch tail at 0x8413C -- the failure tail, with its funding
+             * block, the flag-17 line and the demolish call, is covered by case 5 of the
+             * test_geoscape.c fixture against a hand-built env. */
+            Check(g_world.closeEnv.pbBaseAtAssault == &g_world.bBaseAtMissionFollows,
+                  "the 0x8BB10 test now reads the shell's mission-follow byte");
+            CheckEqI32(g_world.bMapMissionMode, 1, "Map_bMissionMode is written at 0x8BB20 and stays 1 through the assault arm (0x83AA0)");
+            CheckEqI32(g_world.nMapMissionType, 3, "the assault arm stamps the Xcom base mission type (0x840FC)");
+            Check(g_world.abMapSpriteSet[0] == 11 && g_world.abMapSpriteSet[1] == 20
+                      && g_world.abMapSpriteSet[2] == 23 && g_world.abMapSpriteSet[3] == 23,
+                  "the sprite set is the race-2 row of the 0x84054..0x840E4 table -- the assault base's race");
+            Check(g_world.bMapUnk1511E == 0 && g_world.nMapMapLayers == 0
+                      && g_world.nMapTerrainVariant == 0 && g_world.bMapUnk15115 == 0,
+                  "unk_128AD6 and the geometry trio are zeroed by the assault block (0x840EC..0x84108)");
+            CheckEqI32(g_world.nSelectedBase, nBase0, "nSelectedBaseIdx takes nCraftHomeBase (0x84130)");
+            /* The tactical tile grid @ 0x159D5C, built from the grid THIS test prepared: its own
+             * memset left base 0's TYPE lane at 0 -- the original new game stamps 0xFF there, settled
+             * in the Part 44 follow-up -- and Smap_InitCraftSelectState skips only 0xFF (0x61C20),
+             * so every finished cell takes the placement code of type 0, which is 0 (0x61C28); the
+             * one cell with buildDays 16 contributes nothing and keeps 0x61BB4's 20 (0x61BE8). */
+            {
+                i32 bTiles = 1;
+                for (i32 c = 0; c < 36; ++c) {
+                    if (g_world.abMapTileTypes[c] != (c == 14 ? 20 : 0)) { bTiles = 0; }
+                }
+                Check(bTiles, "all 36 tiles are the type-0 placement code except cell (2,2), under construction, which keeps 20");
+            }
+            Check(nHot0 == 1 && g_world.apCraft[0]->bWeaponsHot == 0 && g_world.apCraft[0]->bAtBase == 1
+                      && (i32)g_world.bCraftCount == 3 && g_world.apCraft[2]->bWeaponsHot == 0
+                      && g_world.apCraft[2]->bAtBase == 1,
+                  "the visibility pass parked every craft: weapons hot before (1), cold and at base after (0x8393C, 0x83950)");
+            CheckEqI32(g_world.geo.time.bPaused, 1, "the clock stays stopped: the tail never reaches 0x841F0, and DismissSelected is skipped (0x83AA0)");
+            Check(g_world.economy.aZero44_49[5] == nFunding0 && g_world.nRadarPulseTimer == nRadar0
+                      && g_world.msgLines.nLineCount == nLines0,
+                  "the failure block never ran: the funding dword, the radar timer and the line count stand (gate at 0x8413C, 8 assigned soldiers)");
+            CheckEqI32(g_world.bMapSelectionFlag, 0, "the selection flag is cleared at 0x83AB4");
+            CheckEqI32(g_world.bScratch187084, 0, "unk_187084 is untouched on this tail; its only writer is 0x841FC");
+            Check(g_world.bMapTickHold == 0 && g_world.bMapBattleEnded == 0,
+                  "the tick/battle pair stays clear: the zero-base tail (0x84214) is not reached with three bases standing");
 
             /* The other tail: give the same class-8 attacker one defence to fire, and the budget test is
              * reached -- 0 < 1, so the craft is destroyed whatever the roll says. */
@@ -1410,9 +1465,13 @@ int main(void)
                 Check(g_world.pBaseAtPanel == NULL && g_world.pBaseAtPad == NULL,
                       "and both pointers with it");
             }
-            Check(g_world.closeEnv.pbBaseAtAssault == NULL,
-                  "the mission-follow branch stays gated: Smap_BeginCraftSelect's Map env is not the shell's "
-                  "(0x8BB10, 0x8BB24)");
+            /* The same gate tested the other way: Run B's destroyed tail leaves 0x158850 at 0, so
+             * this teardown runs the release arm and the screen write but does NOT re-enter
+             * Smap_BeginCraftSelect -- the Map header stands exactly as Run A left it. */
+            Check(g_world.closeEnv.pbBaseAtAssault == &g_world.bBaseAtMissionFollows
+                      && g_world.bBaseAtMissionFollows == 0,
+                  "Run B's destroyed tail leaves the 0x8BB10 gate byte at 0 (0x58618 arm)");
+            CheckEqI32(g_world.nMapMissionType, 3, "and the mission type is still Run A's 3: the assault block did not run a second time");
         }
     }
 

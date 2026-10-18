@@ -1341,6 +1341,147 @@ static void World_HookOpenMonthly(void *pUser)
     FundingScreen_OpenMonthly(&pW->fundingInit, &pW->screen.nGeoscapeScreen, &pW->bUiAnimStarted);
 }
 
+/* The three hand-overs a mission launch ends with, and why the shell takes them as seams.
+ *
+ *   GeoscapeUi_FreeAll @ 0x86d20 (0x83ABC, 0x84228). Its FreeWorld half releases the soldiers,
+ *   bases, craft and strateg items World_Free releases too -- the original has ONE owner of them
+ *   -- and the rest of it frees the font and shuts the audio down. It is the game-over teardown,
+ *   not a screen close, so calling it from a mission launch would end the run.
+ *   EndScreen_Init @ 0x388b0 (0x84230). It writes unk_157194, unk_B35D8, unk_1571C0 and
+ *   unk_138E88, none of which the shell owns, and the shell has no ending flow to hand control to.
+ *   Tact_InitMission @ 0x3c550 (0x83AC4). The tactical runtime; the 0xC350 unit in PLAN.md is the
+ *   same blocker.
+ *
+ * What the shell DOES keep is the state those paths set: Map_bTickHold and Map_bBattleEnded
+ * (0x84238, 0x84240) are the original's own "this run is over" markers, and they are live here. */
+static void World_MissionSeamFreeUi(i32 bFreeWorld, void *pUser)
+{
+    (void)bFreeWorld;
+    (void)pUser;
+}
+
+static i32 World_MissionSeamInitMission(i32 nMode, void *pUser)
+{
+    (void)nMode;
+    (void)pUser;
+    return 0;
+}
+
+static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
+{
+    (void)bGoodEnd;
+    (void)pUser;
+}
+
+/* Smap_BeginCraftSelect @ 0x838dc, the mission-launch decision tree, and the two envs it reaches
+ * through: the ship-removal pair (its lookups at 0x83968, its removal at 0x83F7C and 0x84428) and
+ * the demolish call at 0x84208. They live on PufoWorldState because every cell they touch is
+ * already the shell's: the Map mission header above, the rosters, the facility grid, the site
+ * table, the economy dword at 0x1865BC and the three zoom overlay pads. */
+static void World_WireMissionSeams(PufoWorldState *pW)
+{
+    ShipRemovalEnv *pS = &pW->shipEnv;
+    BaseDemolishEnv *pD = &pW->demolishEnv;
+    SmapCraftSelectEnv *pE = &pW->craftEnv;
+
+    memset(pS, 0, sizeof(*pS));
+    pS->apCraft         = pW->apCraft;                     /* Map + 0x10AC */
+    pS->pnShipCount     = &pW->bCraftCount;                /* Map + 0x1194 */
+    pS->apSoldiers      = pW->apSoldiers;                  /* Map + 0x1198 */
+    pS->apObjects       = (pW->pAssets != NULL) ? pW->pAssets->apObjects : NULL; /* Map + 0x108 */
+    pS->nObjectCount    = (pW->pAssets != NULL) ? (u16)pW->pAssets->nObjectCount : 0;
+    pS->pStrategList    = &pW->strategList;                /* 0x1864F8 + 0x3C */
+    pS->pWorld          = &pW->geo.world;
+    pS->pnSpawnOnceFlag = &pW->bSpawnOnce;                 /* 0x162028 */
+    pS->pSpawnCtx       = &pW->spawnCtx;
+    pS->apBases         = pW->apBases;                     /* Map + 0x1174 */
+    pS->pnGameTotalSec  = &pW->geo.time.nTotalSec;         /* GameTime.nTotalSec (0x159610) */
+    /* Three fields stay NULL, and each is the callee's own guard, not a crash waiting to happen:
+     *   pnSoldierCount -- ShipRemovalEnv wants a u16* to Map+0x1998 while the shell's owner of
+     *     that count is an i32 (pufo_world.h:72, and pufo_save.h notes the original's u16 writes
+     *     hit its LOW half). Pointing a u16* at the i32 would be a strict-aliasing violation, so
+     *     the "soldiers aboard the craft that was removed" pass is skipped until the count has a
+     *     u16 owner. Recorded as a deviation, not hidden.
+     *   abHangarFlag @ 0x158CD8 -- the table's extent is nowhere in the IDB: no cross-reference
+     *     names the address (the writes reach it as a displacement from a register base), so the
+     *     shell does not invent a size for it.
+     *   anAssignedShip @ 0x16146C with its count at 0x161468 -- the same: Ship_RemoveWithCargo,
+     *     Base_RemoveAllShips and BuySellScreen_CommitTransaction maintain it, and the shell has
+     *     no owner of it yet. */
+
+    memset(pD, 0, sizeof(*pD));
+    pD->apCraft           = pW->apCraft;
+    pD->pnShipCount       = &pW->bCraftCount;
+    pD->apSoldiers        = pW->apSoldiers;
+    pD->apBases           = pW->apBases;
+    pD->apObjects         = pS->apObjects;
+    pD->abFacilityGrid    = pW->abFacilityGrid;            /* gBaseFacGrid @ 0x159768 */
+    pD->apSiteRecs        = pW->aSiteRecs;                 /* 0x186C40 */
+    pD->apManufCols       = pW->auManufCol;                /* 0x15E19C */
+    pD->apProductC        = pW->auProductU16;              /* 0x15D09C */
+    pD->apResearchCols    = pW->auResearchCol;             /* auResearchCol @ 0x16022C */
+    pD->pnResearchEntries = &pW->nResearchEntries;         /* 0x160C4C */
+    pD->apSites           = pW->apSites;                   /* 0x162030 */
+    pD->nSiteCount        = pW->nSiteCount;                /* 0x186410 */
+    pD->pbBaseCount       = (u8 *)&pW->nBaseCount;         /* 0x159D80, read SIGNED */
+    pD->pShipEnv          = pS;
+    /* apProductB @ 0x15B79C stays NULL for the reason World_BuildManufClearEnv already records:
+     * the manufacturing screen's set/get buttons are unwired, so nothing in the shell writes it. */
+
+    memset(pE, 0, sizeof(*pE));
+    pE->apCraft             = pW->apCraft;
+    pE->pnCraftCount        = &pW->bCraftCount;            /* Map + 0x1194 */
+    pE->pbMissionMode       = &pW->bMapMissionMode;        /* Map+0x1511D, set at 0x8BB20 */
+    pE->pbUnk1511E          = &pW->bMapUnk1511E;           /* 0x128AD6 */
+    pE->pnMissionType       = &pW->nMapMissionType;        /* Map+0x1511A */
+    pE->abSpriteSet         = pW->abMapSpriteSet;          /* Map+0x15116..19 */
+    pE->pbSpawnAlt          = &pW->bMapSpawnAlt;           /* Map+0x15148 */
+    pE->pbUnk15115          = &pW->bMapUnk15115;           /* Map+0x15115 */
+    pE->pnTerrainVariant    = &pW->nMapTerrainVariant;     /* Map+0x15111 */
+    pE->pnMapLayers         = &pW->nMapMapLayers;          /* Map+0x15114 */
+    pE->pnTierRaw           = &pW->nMapMissionTierRaw;     /* Map+0x1510C */
+    pE->pnCraftIndex        = &pW->nMapCraftIndex;         /* Map+0x15113 */
+    pE->pbTickHold          = &pW->bMapTickHold;           /* 0x113A12, set at 0x84238 */
+    pE->pbBattleEnded       = &pW->bMapBattleEnded;        /* 0x113A14, set at 0x84240 */
+    pE->apBases             = pW->apBases;
+    pE->pbHomeBase          = &pW->nCraftHomeBase;         /* 0x158848, read SIGNED */
+    pE->pbBaseRace          = &pW->nAssaultBaseRace;       /* 0x158849, read SIGNED */
+    pE->pStrategList        = &pW->strategList;            /* 0x186534 */
+    pE->pLines              = &pW->msgLines;               /* the root line list @ 0x158890 */
+    pE->pTime               = &pW->geo.time;
+    pE->pnSelectedShipIdx   = &pW->nSelectedShipIdx;       /* 0x187054 */
+    pE->pnMsgShipIdx        = &pW->nMsgShipIdx;            /* 0x159E74 */
+    pE->pnSelectedStrategIdx = &pW->nSelectedStrategIdx;   /* 0x186BE4 */
+    pE->pbAssaultFlag       = &pW->bCraftSelectAssaultFlag; /* 0x1870A8 */
+    pE->pbSelectionFlag     = &pW->bMapSelectionFlag;      /* 0x159E84 */
+    pE->pbFlag187084        = &pW->bScratch187084;         /* written at 0x841FC, never read */
+    pE->pbGeoscapeFlag      = &pW->geo.time.bPaused;       /* bGameClockPaused @ 0x15961C */
+    pE->pnRadarPulseTimer   = &pW->nRadarPulseTimer;       /* 0xAC224, set to 250 at 0x84164 */
+    pE->pnFunding           = &pW->economy.aZero44_49[5];  /* g_nFundPending @ 0x1865BC */
+    pE->pbBaseCount         = (u8 *)&pW->nBaseCount;       /* 0x159D80, read SIGNED at 0x84214 */
+    pE->pbSelectedBaseIdx   = (u8 *)&pW->nSelectedBase;    /* 0x159D81, written at 0x84130 */
+    pE->abFacilityGrid      = pW->abFacilityGrid;
+    pE->abTileTypes         = pW->abMapTileTypes;          /* 0x159D5C, filled at 0x84124 */
+    pE->apSoldiers          = pW->apSoldiers;
+    pE->nSoldierCount       = pW->nSoldierCount;
+    pE->apObjects           = pS->apObjects;
+    pE->nObjectCount        = (i32)pS->nObjectCount;
+    pE->pView               = &pW->view;                   /* gSmapCam @ 0x1863E8 */
+    pE->apOverlay[0]        = pW->ui.apPad[GEOUI_PAD_186C28]; /* the three zoom overlays */
+    pE->apOverlay[1]        = pW->ui.apPad[GEOUI_PAD_186C1C];
+    pE->apOverlay[2]        = pW->ui.apPad[GEOUI_PAD_186BB8];
+    pE->pTilemapAlt         = pW->ui.apPad[GEOUI_PAD_186C18]; /* unk_186C18 */
+    pE->nOverlayOriginX     = pW->frame.g.nOverlayOriginX;  /* 0x186C20 */
+    pE->pShipEnv            = pS;
+    pE->pbSpawnOnceFlag     = &pW->bSpawnOnce;             /* 0x162028 */
+    pE->pSpawnCtx           = &pW->spawnCtx;
+    pE->pDemolishEnv        = pD;                          /* 0x84208 */
+    pE->pfnFreeGeoscapeUi   = World_MissionSeamFreeUi;
+    pE->pfnInitMission      = World_MissionSeamInitMission;
+    pE->pfnInitEndScreen    = World_MissionSeamInitEnd;
+    pE->pHookUser           = pW;
+}
+
 void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
 {
     GeoscapeState *pG = &pW->geo;
@@ -1387,14 +1528,13 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->pnAnimPhase = (pHooks != NULL) ? pHooks->pnAnimPhase : NULL;
 
     /* Geoscape_CloseUI @ 0x8b94c's env, on the same instances. The head, the five needed-flag passes and
-     * the screens the shell can reach (1, 2, 4, 19, and 20's opener) are wired. Case 20 (0x8BAF4) is the
-     * base-attack teardown: the same opener World_ContactScreen used, with -1; its mission-follows branch
-     * stays gated off, for the reason recorded below. What is NOT: the base-info, hangar,
-     * research, manufacturing, transfer, buy/sell and ufopaedia blocks (their cases keep NULL gates, which
-     * the dispatcher tests), the three Map bytes the bankruptcy path writes (Map_bTickHold @ 0x113A12,
-     * Map_bBattleEnded @ 0x113A14, Map_bMissionMode @ 0x128AD5 -- the tactical Map is not the shell's),
-     * the EndScreen_Init env of that same path, and the byte_158834 / byte_1870F4 base-index pair case 19
-     * writes on its psi branch. */
+     * the screens the shell can reach (1, 2, 4, 19, and 20) are wired, and so is case 20's mission-follows
+     * branch: Map_bMissionMode (0x8BB20) writes into the shell's own Map cell and 0x8BB24 hands over to
+     * Smap_BeginCraftSelect through pW->craftEnv. What is NOT: the base-info, hangar, research,
+     * manufacturing, transfer, buy/sell and ufopaedia blocks (their cases keep NULL gates, which the
+     * dispatcher tests), case 19's bankruptcy tail (its two callees, listed with the wiring below -- the
+     * Map pair it sets IS written), and the byte_158834 / byte_1870F4 base-index pair case 19 writes on
+     * its psi branch. */
     GeoscapeCloseEnv *pC = &pW->closeEnv;
 
     memset(pC, 0, sizeof(*pC));
@@ -1442,17 +1582,20 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pSoldierScreen   = &pW->solEnv;
     pC->pOptionsHooks    = &pW->optionsHooks;
     pC->pfnBaseAtOpen    = World_BaseAtOpenHook;          /* case 20's Open(&0x158840, -1) at 0x8BB00 */
-    /* pbBaseAtAssault stays NULL, and that gates the whole branch at 0x8BB10, not just one write. A
-     * contact whose budget survived ends in Map_bMissionMode = 1 (0x8BB20) and Smap_BeginCraftSelect
-     * (0x8BB24), and that callee reads twelve Map-block cells (Map_nMissionType, Map_abSpriteSet,
-     * Map_nMissionTierRaw, ...) plus abTactTileTypes @ 0x159D5C through an env it dereferences with no
-     * guard at all (0x838E0). The shell owns none of them -- it is the same Map block the bankruptcy
-     * branch above cannot write -- so the branch is unwired rather than half-wired into a fault. */
-    /* pfnFreeGeoscapeUi stays NULL on purpose. The only path that calls it is the bankruptcy branch
-     * (0x8BBF0 then EndScreen_Init @ 0x8BBF8), and GeoscapeUi_FreeAll's FreeWorld releases the soldiers,
-     * bases, craft and strateg items the shell's own World_Free also releases -- the original does not
-     * have a second owner of them. Wiring it here would free the rosters twice. */
+    /* Case 20's mission-follow branch (0x8BB10) is live: the shell owns the Map cells the two
+     * branches write, and Smap_BeginCraftSelect gets a full env from World_WireMissionSeams. */
+    pC->pbBaseAtAssault  = &pW->bBaseAtMissionFollows;     /* 0x158850, tested at 0x8BB10 */
+    pC->pbMissionMode    = &pW->bMapMissionMode;           /* Map_bMissionMode @ 0x128AD5, set at 0x8BB20 */
+    pC->pbTickHold       = &pW->bMapTickHold;              /* 0x113A12, set by case 19 at 0x8BC04 */
+    pC->pbBattleEnded    = &pW->bMapBattleEnded;           /* 0x113A14, set by case 19 at 0x8BC0C */
+    pC->pCraftSelect     = &pW->craftEnv;                  /* 0x8BB24 */
+    /* pfnFreeGeoscapeUi and pEndScreen stay NULL here, and they gate case 19's bankruptcy tail
+     * (0x8BBF0, 0x8BBF8): GeoscapeUi_FreeAll's FreeWorld half releases the rosters World_Free
+     * releases, and EndScreen_Init wants four globals the shell has no owner of plus an ending
+     * flow to hand control to. The Map pair above IS written either way -- the bankruptcy
+     * markers land before the two hooks -- so the state the original records is there. */
     pC->pUser            = pW;
+    World_WireMissionSeams(pW);
 }
 
 void World_PulseGeoscape(PufoWorldState *pW)

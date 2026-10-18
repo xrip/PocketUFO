@@ -249,6 +249,35 @@ typedef struct PufoWorldState {
     UiPanel     *pBaseAtPanel;          /* 0x15885C, allocated and released by Update */
     i32          nBaseAtLineCap;        /* 0x158860, the built line count, restored before the lines go */
     u8           bBaseAtActive;         /* 0x158864, the build/release gate */
+    /* The Map block's mission header. Map is the context block at 0x1139B8, so Map+0x1511A is
+     * 0x128AD2, and these are the cells the GEOSCAPE side writes before a tactical mission
+     * starts: Geoscape_CloseUI case 20 sets Map_bMissionMode (0x8BB20) and hands over to
+     * Smap_BeginCraftSelect @ 0x838dc, whose Xcom-assault arm fills the type, the four sprite
+     * sets and the three geometry bytes; the two bankruptcy paths set the tick/battle pair
+     * (0x8BC04, 0x84238). The tactical half of the block -- the cell grid, the rosters' live
+     * fields, the TactState region -- is NOT here: see the craft-select env below for what is
+     * still a seam and why. A save game restores these through the tgamedata chunk, and
+     * Save_ReadTGameData @ 0x44248 is not ported yet, so a loaded game rebuilds them from the
+     * mission-follow call, not from the file. */
+    i32          nMapMissionTierRaw;    /* Map_nMissionTierRaw @ Map+0x1510C (0x128AC4), the tier budget */
+    u8           nMapTerrainVariant;    /* Map_nTerrainVariant @ Map+0x15111 */
+    u8           bMapUnk15112;          /* Map+0x15112, the third byte of the same dword */
+    u8           nMapCraftIndex;        /* Map_nCraftIndex @ Map+0x15113 */
+    u8           nMapMapLayers;         /* Map_nMapLayers @ Map+0x15114 */
+    u8           bMapUnk15115;          /* Map_bUnk15115 @ Map+0x15115, the stealth-budget scale */
+    u8           abMapSpriteSet[4];     /* Map_abSpriteSet @ Map+0x15116..19; 23 means "no set" */
+    u8           nMapMissionType;       /* Map_nMissionType @ Map+0x1511A (0x128AD2) */
+    u8           bMapMissionMode;       /* Map_bMissionMode @ 0x128AD5 = Map+0x1511D */
+    u8           bMapUnk1511E;          /* unk_128AD6 @ Map+0x1511E */
+    u8           bMapSpawnAlt;          /* Map_bSpawnAlt @ Map+0x15148 */
+    u8           bMapTickHold;          /* Map_bTickHold @ 0x113A12 = Map+0x5A */
+    u8           bMapBattleEnded;       /* Map_bBattleEnded @ 0x113A14 = Map+0x5C. Map_InitAndLoadRegistry
+                                         * (0x226A8) clears it at startup, which is why App_InitStartupUi
+                                         * now points its MapInitEnv at this byte instead of at NULL. */
+    u8           abMapTileTypes[36];    /* aMissionTileTypes @ 0x159D5C: the 6x6 tactical tile-type grid
+                                         * Smap_InitCraftSelectState @ 0x61b94 builds from the facility grid */
+    u8           bScratch187084;        /* unk_187084: the craft selector writes 0 here (0x841FC) and
+                                         * nothing in the whole image reads it */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */
@@ -335,6 +364,12 @@ typedef struct PufoWorldState {
     /* The callees' own environments, kept here so their by-value state survives a spawn. */
     ShipCtorEnv ctorEnv;
     StrategSpawnCtx spawnCtx;   /* the spawn hooks' wiring; the event pass reaches it back */
+    /* The removal pair and the mission-launch selector, built by World_WireMissionSeams over
+     * this state. Smap_BeginCraftSelect @ 0x838dc reaches the ship env through its lookup and
+     * removal calls (0x83968, 0x83F7C, 0x84428) and the demolish env at 0x84208. */
+    ShipRemovalEnv    shipEnv;
+    BaseDemolishEnv   demolishEnv;
+    SmapCraftSelectEnv craftEnv;
     BootAssets *pAssets; /* set by World_NewGame; the StartNew hook reaches it through here */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser); /* the nav controls reuse it */

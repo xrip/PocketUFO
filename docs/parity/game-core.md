@@ -17531,11 +17531,11 @@ screen 20 is what `Geoscape_CloseUI case 19 leaves` was wrong twice over: the on
 0x7EF78. Comments now sit at 0x577D4, 0x7EF60, 0x944B0, 0x8BAF4, 0x57814 and 0x57D7C, with function
 comments on 0x57808 and 0x577c0 and a global comment on 0x158844.
 
-Left gated rather than half-wired: `GeoscapeCloseEnv.pbBaseAtAssault` stays NULL, which switches off the
+Left gated rather than half-wired (superseded by Unit 107 below, which wires it): `GeoscapeCloseEnv.pbBaseAtAssault` stays NULL, which switches off the
 whole branch at 0x8BB10. A contact whose budget survived ends with Map_bMissionMode = 1 (0x8BB20) and
 Smap_BeginCraftSelect (0x8BB24), and that callee reads twelve Map-block cells plus abTactTileTypes
-@ 0x159D5C through an env it dereferences with no guard at 0x838E0. The shell owns none of that Map block
--- the same blocker as the bankruptcy branch above. The second item opened in this pass is closed by the
+@ 0x159D5C through an env it dereferences with no guard at 0x838E0. The shell owned none of that Map block
+-- the same blocker as the bankruptcy branch above; Unit 107 moves the mission-header half of it onto the state. The second item opened in this pass is closed by the
 disassembly rather than by a measurement: `Game_StartNew` stamps 0xFF over the TYPE layer of all eight
 base blocks (`ADD LR,R5,#0x174` 0x948EC, `MOV R7,#8` 0x948F4, `MOV R11,#0xFF` 0x94908, the store
 `STRB R11,[R0,#0x48]` 0x9491C over block+108, `ADD LR,LR,#0x90` 0x94940), and writes 0 into the block's
@@ -18867,3 +18867,53 @@ Visual check: `pocketufo --new-game --dump-frame` renders the earth100 world acr
 IDB: 5 type corrections on globals the wiring reads -- nSmapCrosshairX @ 0x186BC8 and nSmapCrosshairY @ 0x186BCC to int (both STR/LDR at 0x848A4/0x848AC and 0x8C6E8/0x8C714), bSmapCrosshairPending @ 0x1870B0 to unsigned __int8 (STRB 0x848B8 / 0x8C754, LDRB 0x8C6A8), nGlobeScanX @ 0x159E00 to int, bPlacementPending @ 0x1870AC to unsigned __int8 -- plus bPlacementPending's comment extended with the 0x945E0 store and the two gates it decides (0x91D98's close control, 0x679A8's cost readout).
 
 Still unwired, listed on purpose: the radar arm's own RadarUpdateEnv and aRadarControls @ 0x159684, the panel's four screen openers (0x85194 / 0x852b8 / 0x84d18 / 0x84bf8), the Smap_* pointer handlers, the other nineteen arms' screen state, and the geoscape clock tick that advances the panel animation (src/pufo/game/pufo_timer.c's bGeoscapeUi branch).
+
+## Unit 107 - the mission-follow branch runs through the shell's own craft-select env
+
+Part 44 left 0x8BB10 gated because the callee of 0x8BB24 needs a Map block the shell did not own. That
+block now has an owner: `PufoWorldState` (src/pufo/app/pufo_world.h) carries the mission-header cells
+Map_nMissionTierRaw @ Map+0x1510C, Map_nTerrainVariant +0x15111, Map+0x15112, Map_nCraftIndex +0x15113,
+Map_nMapLayers +0x15114, Map_bUnk15115 +0x15115, Map_abSpriteSet +0x15116..19, Map_nMissionType +0x1511A,
+Map_bMissionMode 0x128AD5, unk_128AD6 +0x1511E, Map_bSpawnAlt +0x15148, Map_bTickHold 0x113A12,
+Map_bBattleEnded 0x113A14, abTactTileTypes @ 0x159D5C and unk_187084, as plain fields. It is the header
+only: the cell grid, the rosters' live tactical fields and the TactState region stay out, because
+`SmapCraftSelectEnv` takes pointers and never touches the grid (KISS, recorded as a deviation from the
+one-block shape). `World_WireMissionSeams` (src/pufo/app/pufo_world.c) fills the env -- the twelve Map
+cells, the rosters, the facility grid, the economy dword g_nFundPending @ 0x1865BC, the three zoom
+overlay pads, the ship-removal env and the demolish env -- and CloseUI case 20 now points
+pbBaseAtAssault at 0x158850, pbMissionMode at 0x128AD5, pbTickHold / pbBattleEnded at their Map cells,
+and pCraftSelect at the env (0x8BB10 / 0x8BB20 / 0x8BB24). App_InitStartupUi's MapInitEnv reads its
+battle-ended pointer at 0x113A14 from the world, so 0x226A8's startup clear reaches the byte the game
+actually owns now.
+
+Three hooks of the launch tail are explicit seams (World_MissionSeamFreeUi / InitMission / InitEnd):
+GeoscapeUi_FreeAll's FreeWorld half releases rosters the shell releases in World_Free, Tact_InitMission
+needs the tactical runtime the port does not have yet, and EndScreen_Init wants four globals and an
+ending flow. Their Map writes are NOT seams: 0x84238 / 0x84240 land on the real cells.
+Base_CountSoldiersAssigned @ 0x66230 decides the sub-branch at 0x8413C: with every soldier stationed at
+the assault base and aboard a parked craft (8 in the frame fixture), the run launches; the funding block
+(0x84180 -800, 0x84198 -400 per craft homed there, 0x841DC -30 * Base_CalcOccupiedSpace @ 0x655f8), the
+flag-17 line (0x84158), the radar timer 250 (0x84164), 0x15961C=1, unk_187084=0 (0x841FC) and the
+demolish call (0x84208, BaseRec.bUnk4 picks the site record) stay covered by case 5 of the
+test_geoscape.c fixture -- reproducing them at frame level would demolish the frame fixture itself
+(base compaction, craft removal with the replacement roll) for no new evidence, and that is recorded
+rather than papered over. Env NULLs carried over unchanged and each is the callee's own guard:
+ShipRemovalEnv.pnSoldierCount (u16* wanted, the shell's owner is an i32 -- strict aliasing refused),
+abHangarFlag @ 0x158CD8 (no extent anywhere in the IDB), anAssignedShip @ 0x16146C (no shell owner),
+apProductB @ 0x15B79C (unwired manufacturing buttons). ShipRemovalEnv.pnSoldierCount stays the one
+deviation that skips a pass rather than a guard.
+
+IDB: 16 new line comments -- 0x84124 (InitCraftSelectState call rebuilds abTactTileTypes from the
+facility grid), 0x84130, 0x8413C (the CountSoldiersAssigned gate), 0x84164, 0x84180, 0x84198, 0x841DC,
+0x841F0, 0x841FC (write-only byte), 0x84214 (LDRSB base count gates the defeat tail), 0x84238, 0x84240,
+0x8BB10, 0x8BB20, 0x8BB24 -- and a global comment on g_nFundPending @ 0x1865BC listing its writers.
+
+Tests: tests/test_geoscapeframe.c section 13 gained the live branch -- Map_bMissionMode 1 at 0x8BB20,
+mission type 3 (0x840FC), the race-2 sprite row 11/20/23/23 (0x84054..0x840E4), the zeroed trio and
+unk_128AD6, nSelectedBase = nCraftHomeBase (0x84130), the full 36-tile grid against the prepared grid
+(type-0 code everywhere except the buildDays-16 cell, which keeps 20 -- 0x61BE8 / 0x61BB4), the
+visibility park of all three crafts with the 1 -> 0 made observable, the launch tail leaving funding,
+radar timer, lines, unk_187084 and the tick/battle pair untouched, and the selection flag cleared
+(0x83AB4); then Run B proves the gate the other way (0x158850 at 0, mission type not re-written). 15
+new checks, one replaced. Mutations: gating 0x8BB10 back off turns 6 red; dropping the 0x8393C store
+turns 1 red.
