@@ -1566,6 +1566,57 @@ int main(void)
                   "the tail sets the iso-layer byte (0x3D260) and the sweep-armed byte (0x3D268)");
             Check(g_world.bMapSpawnAlt == 0 && g_world.bMapAltOutcomePath == 0 && g_world.pTactBriefPad == NULL,
                   "the assault tail wrote bSpawnAlt 0 (0x83A6C), so the briefing gate (spawnAlt AND mode 0) takes its NULL branch and no pad is loaded");
+            {
+                /* Tact_LoadUiPads @ 0x3b068 ran through the shell hook (Part 53): 32 manual pads,
+                 * 11 named singletons, 11 buttons, every slot filled from main.dat. */
+                i32 nFilled = 0;
+                for (i32 c = 0; c < PUFO_UIPAD_SLOT_COUNT; ++c) {
+                    if (g_world.apTactPads[c] != NULL) { nFilled++; }
+                }
+                Check(nFilled == PUFO_UIPAD_SLOT_COUNT, "all 54 pad slots are filled: 32 manual, 11 named, 11 buttons (0x3b068)");
+                i32 nShape = 1;
+                for (i32 c = 0; c < PUFO_UIPAD_SLOT_COUNT; ++c) {
+                    const PadImage *pPad = g_world.apTactPads[c];
+                    if (pPad == NULL || pPad->pData == NULL || pPad->uWidth == 0 || pPad->uHeight == 0) { nShape = 0; }
+                }
+                Check(nShape, "every loaded pad carries its data block and non-zero LE dimensions (PadImage_Load 0x11020 reads u16 w/h first)");
+                static const struct { i32 nSlot; u8 nMode; } aNamedMode[11] = {
+                    { PUFO_UIPAD_HUD, 1 }, { PUFO_UIPAD_INV, 1 }, { PUFO_UIPAD_MARKER, 16 },
+                    { PUFO_UIPAD_SOLDIER, 8 }, { PUFO_UIPAD_SELSOLD, 34 }, { PUFO_UIPAD_SBSOLD, 16 },
+                    { PUFO_UIPAD_SOLD, 16 }, { PUFO_UIPAD_ENEMYSTEP, 9 }, { PUFO_UIPAD_ENDMISSION, 11 },
+                    { PUFO_UIPAD_TWONONE, 15 }, { PUFO_UIPAD_MINICURSOR, 16 },
+                };
+                static const i32 aZeroOrigin[5] = { PUFO_UIPAD_INV, PUFO_UIPAD_SOLDIER, PUFO_UIPAD_MARKER,
+                                                    PUFO_UIPAD_ENEMYSTEP, PUFO_UIPAD_ENDMISSION };
+                i32 nMan = 1;
+                for (i32 c = 0; c < 32; ++c) {
+                    const PadImage *pPad = g_world.apTactPads[c];
+                    if (pPad == NULL || pPad->nMode != 34 || pPad->nOriginX != 50 || pPad->nOriginY != 55) { nMan = 0; }   /* mode 34, origin forced 50,55 */
+                }
+                Check(nMan, "the 32 manual pads (Map+0x199C sprite set) have mode 34 and the forced origin 50,55");
+                i32 nBtn = 1;
+                for (i32 c = 32; c < 43; ++c) {
+                    const PadImage *pPad = g_world.apTactPads[c];
+                    if (pPad == NULL || pPad->nMode != 1 || pPad->nOriginX != 0 || pPad->nOriginY != 0) { nBtn = 0; }
+                }
+                Check(nBtn, "the eleven buttons b0..b10 (Map+0xCC) have mode 1 and origin zeroed");
+                i32 nMode = 1;
+                for (i32 c = 0; c < 11; ++c) {
+                    const PadImage *pPad = g_world.apTactPads[aNamedMode[c].nSlot];
+                    if (pPad == NULL || pPad->nMode != aNamedMode[c].nMode) { nMode = 0; }
+                }
+                Check(nMode, "the named pads keep their per-pad modes 1/1/16/8/34/16/16/9/11/15/16 in load order");
+                i32 nZero = 1;
+                for (i32 c = 0; c < 5; ++c) {
+                    const PadImage *pPad = g_world.apTactPads[aZeroOrigin[c]];
+                    if (pPad == NULL || pPad->nOriginX != 0 || pPad->nOriginY != 0) { nZero = 0; }
+                }
+                Check(nZero, "invv/soldier/mscanv/enemystp/endmiss take the ORIGIN_ZERO branch; the KEEP pads keep their ctor origins");
+                const PadImage *pMini = g_world.apTactPads[PUFO_UIPAD_MINICURSOR];
+                Check(pMini != NULL && pMini->nOriginX == (((i32)pMini->uWidth > 240 ? 241 - (i32)pMini->uWidth : 240 - (i32)pMini->uWidth) >> 1)
+                          && pMini->nOriginY == (((i32)pMini->uHeight > 320 ? 321 - (i32)pMini->uHeight : 320 - (i32)pMini->uHeight) >> 1),
+                      "minimcur takes the centring rule with the odd +1 branch (x = (240 - uWidth) >> 1, +1 only when the pad is wider than the field)");
+            }
             Check(g_world.apTactCells[0] != NULL && g_world.pTactDeployCell == g_world.apTactCells[0],
                   "the terrain pass filled the grid slots and the zero-layer cargo pass reads cell (0,0,0) (Init_LookupCell's index with every coordinate 0)");
             Check(g_world.pTactMap->nXcomCount == 8 && g_world.pTactMap->nEnemyCount == 0
@@ -1878,6 +1929,16 @@ int main(void)
               && g_world.sTactLoft.pLoftemps == NULL && g_world.apTactHidden[0] == NULL
               && g_world.nMapEnemyReserveCount == 0,
           "the item pool, the loft buffers and the hidden park are released and cleared; the soldier records stay owned by apSoldiers");
+    {
+        /* The pad table (Part 53): Tact_Shutdown frees the 32-slot sprite set (0x3E150), the eleven
+         * Map+0xCC buttons and the named singletons (0x3E17C..0x3E318); the shell mirror frees every
+         * slot the load thunk filled. */
+        i32 bPadsClear = 1;
+        for (i32 c = 0; c < PUFO_UIPAD_SLOT_COUNT; ++c) {
+            if (g_world.apTactPads[c] != NULL) { bPadsClear = 0; }
+        }
+        Check(bPadsClear, "every tact pad slot is freed and cleared at teardown, as Tact_Shutdown frees them (0x3E150, 0x3E17C..0x3E318)");
+    }
 
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);

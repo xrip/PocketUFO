@@ -29,6 +29,7 @@
 #include "ui/pufo_geoiinit.h"
 #include "ui/pufo_modal.h"    /* UiModalState, the modal bank the shell owns since Part 51 */
 #include "ui/pufo_geouimanage.h"
+#include "ui/pufo_uibank.h"   /* Tact_LoadUiPads + PUFO_UIPAD_* slots, the tact pad table the shell owns (Part 53) */
 #include "util/pufo_ptrarray.h"
 
 #define PUFO_SOLDIER_CAPACITY 512 /* Map + 0x1198 read by size (2048 bytes of pointers) */
@@ -316,6 +317,15 @@ typedef struct PufoWorldState {
     void         *pTactShowShip;        /* dword_156A78: the showship.dat blob, malloc'd to its header size */
     PadImage     *pTactBriefPad;        /* unk_15692C: the briefing pad Tact_InitMission drops without
                                          * freeing (deviation 3); the shell releases it at teardown */
+    PadImage     *apTactPads[PUFO_UIPAD_SLOT_COUNT];
+        /* The tact pad table Tact_LoadUiPads @ 0x3b068 fills (wired from the shell in Part 53).
+         * Slot map (pufo_uibank.h): 0..31 the 32 manual pads (Map+0x199C sprite set, mode 34,
+         * origin forced 50,55), 32..42 the eleven buttons "b0".."b10" (Map+0xCC, mode 1, origin 0),
+         * 43..53 the named singletons: dpanelv 0x113AB4, invv 0x113AB8, mscanv 0x113ABC, soldier
+         * 0x128AC0, selsold 0x156928, sbsold 0x138EB8, ssold 0x156A80, enemystp 0x156AA0, endmiss
+         * 0x156A74, twonone 0x156A70, minimcur 0x1571F0. Tact_Shutdown frees exactly these (the
+         * 32-slot set at 0x3E150, the 11 map pads, and the singleton frees 0x3E17C..0x3E318);
+         * World_FreeTactical mirrors that release. */
     u8            abTactLightmap[PUFO_TACTINIT_LIGHTMAP_LEN]; /* unk_156AB8 */
     TactWeaponSel sTactWeaponSel;       /* unk_10DB90: apObjects[1], the constant 10, anAmmoTypeId[0] */
     TactItem      sMapSentinel138EA0;   /* unk_138EA0 @ Map+0x254E8: 0x18 bytes, the same size as this

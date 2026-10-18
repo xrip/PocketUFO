@@ -1451,6 +1451,48 @@ static void World_TactSfxVolHook(void *pUser)
     }
 }
 
+/* Tact_LoadUiPads @ 0x3b068's three injected operations (Part 53). The original's pfnAlloc is
+ * operator new(0x14) followed by PadImage_ctor @ 0x11000 -- a zeroed record with pData NULL --
+ * pfnLoad is PadImage_Load @ 0x11020 (member "<name>.pad" uppercased through AssetReader_Find),
+ * and pfnStore is the Map slot write the port models as the shell's apTactPads table. */
+static PadImage *World_TactPadAllocThunk(void *pUser)
+{
+    (void)pUser;
+    PadImage *pPad = (PadImage *)malloc(sizeof(PadImage));
+
+    if (pPad != NULL) {
+        memset(pPad, 0, sizeof(*pPad));   /* operator new + PadImage_ctor: pData NULL, origins 0 */
+    }
+    return pPad;
+}
+
+static bool World_TactPadLoadThunk(PadImage *pPad, const char *pszName, u8 nMode, void *pUser)
+{
+    (void)pUser;
+    return PadImage_Load(pPad, pszName, nMode);          /* 0x11020 */
+}
+
+static void World_TactPadStoreThunk(i32 nSlot, PadImage *pPad, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (nSlot >= 0 && nSlot < PUFO_UIPAD_SLOT_COUNT) {   /* the original stores through the Map offsets unguarded */
+        pW->apTactPads[nSlot] = pPad;
+    }
+}
+
+static bool World_TactLoadUiPadsThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    UiPadHooks padHooks;
+
+    padHooks.pfnAlloc  = World_TactPadAllocThunk;
+    padHooks.pfnLoad   = World_TactPadLoadThunk;
+    padHooks.pfnStore  = World_TactPadStoreThunk;
+    padHooks.pUser     = pW;
+    return Tact_LoadUiPads(&padHooks);                   /* 0x3b068, all 54 slots */
+}
+
 /* The cell resolver the env's own Init_LookupCell is for everything Tact_InitMission wires; the
  * spawnAliens env and the drop hooks need the same lookup from outside that module. Same table,
  * same index, same bounds tests as Init_LookupCell (pufo_tactinit.c:54). */
@@ -1800,7 +1842,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->hooks.pfnSoundPlayMusic       = World_TactMusicHook;
     pE->hooks.pfnSoundApplyMusicVolume = World_TactMusicVolHook;
     pE->hooks.pfnSoundApplySfxVolume  = World_TactSfxVolHook;
-    pE->hooks.pfnLoadUiPads           = NULL; /* Tact_LoadUiPads (0x3b068): the tact UI bring-up unit */
+    pE->hooks.pfnLoadUiPads           = World_TactLoadUiPadsThunk; /* Tact_LoadUiPads (0x3b068), the 54-slot pad table (Part 53) */
     pE->hooks.pfnInitUiControls       = NULL; /* Tact_InitUiControls (0x3b498): ditto */
     pE->hooks.pfnOpenInventory        = NULL; /* Inv_OpenScreen (0x16ef4) at 0x3D0B8: ditto. The Xcom
                                                * branch reaches it whenever the mission has a team. */
@@ -1975,6 +2017,21 @@ void World_FreeTactical(PufoWorldState *pW)
         PadImage_FreeData(pW->pTactBriefPad);
         free(pW->pTactBriefPad);
         pW->pTactBriefPad = NULL;
+    }
+
+    /* The tact pad table (Part 53). Tact_Shutdown frees exactly these records in three families:
+     * the 32-slot sprite set walked 4x2x4 from Map+0x199C (0x3E150), the eleven button pads at
+     * Map+0xCC, and the named singletons (the twelve pPad frees at 0x3E17C..0x3E318 plus the early
+     * pair at 0x3D67C/0x3D6C8 -- 0x15692C is the briefing slot already freed above). Each free is
+     * PadImage's own data block plus the record. */
+    for (i = 0; i < PUFO_UIPAD_SLOT_COUNT; ++i) {
+        PadImage *pPad = pW->apTactPads[i];
+
+        if (pPad != NULL) {
+            PadImage_FreeData(pPad);
+            free(pPad);
+            pW->apTactPads[i] = NULL;
+        }
     }
 
     Rmp_FreeNodes(&pW->sTactRmp);        /* the rmp nodes; the record itself is inline */

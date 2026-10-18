@@ -19249,3 +19249,52 @@ cell turns exactly the 4 roster-loop checks red. (Part 51's trap reconfirmed: NU
 instead fails the build on the now-unused thunk.)
 
 Gate: 61/61 tests in both configs, 18120 checks, golden `--new-game` frame identical.
+
+## Unit 114: the tact pad table gets its loader -- Tact_LoadUiPads runs from the shell (Part 53)
+
+Unit 114 wires the first of the three tact UI bring-up hooks. `Tact_InitMission` calls
+`pfnLoadUiPads` where the original reaches `Tact_LoadUiPads @ 0x3b068` (pufo_tactinit.c:709);
+since Part 44 the hook was NULL. The game function is ported whole (`pufo_uibank.c`), so the
+shell side is the three injected operations the port expected: an alloc standing for
+`operator new(0x14)` + `PadImage_ctor @ 0x11000`, the load itself (`PadImage_Load @ 0x11020`,
+which appends ".pad" and reads the upper-cased member through AssetReader -- every one of the 54
+members is in main.dat), and the store into the shell's new `PufoWorldState.apTactPads` table
+(`PUFO_UIPAD_SLOT_COUNT` slots: 32 manual `MAN_0M0..MAN_3F3` = the Map+0x199C sprite set with mode
+34 and origin forced (50,55), eleven buttons "b0".."b10" = Map+0xCC with mode 1 and origin zeroed,
+eleven named singletons dpanelv 0x113AB4, invv 0x113AB8, mscanv 0x113ABC, soldier 0x128AC0,
+selsold 0x156928, sbsold 0x138EB8, ssold 0x156A80, enemystp 0x156AA0, endmiss 0x156A74, twonone
+0x156A70, minimcur 0x1571F0).
+
+The store-fail path is reproduced as the port already models it (deviation 2: the original
+stores the NULL and then loads through it -- the thunk can never return NULL in the shell, so
+the path stays modeled, not exercised). `minimcur` runs the centring rule with the odd +1 branch:
+x = (240 - uWidth) >> 1, becoming (241 - uWidth) only when the pad is wider than the field, and
+the same against 320. The KEEP-origin pads keep their ctor value, which for the shell's zeroed
+records means 0; the original's fresh `operator new` record is zero for the same fields.
+
+Teardown: `World_FreeTactical` now frees every slot the load filled -- data block plus record --
+mirroring `Tact_Shutdown`'s three release families: the 32-slot sprite set walked 4x2x4 from
+Map+0x199C (0x3E150), the eleven Map+0xCC buttons, and the named singletons (the early pair at
+0x3D67C/0x3D6C8 with `pPadCydonia`, and the tail frees 0x3E17C..0x3E318). The briefing pad at
+0x15692C was already shell-owned and stays freed where it was.
+
+IDB: the six unnamed singletons are now `pPadSelSold`, `pPadSbSold`, `pPadSsSold`,
+`pPadEnemyStep`, `pPadEndMission`, `pPadTwoNone` (the named `pPadSoldier` / `pPadCydonia` /
+`pMinimapCursorPad` slots already had good names), each with a loaded-by/read-by/freed-by comment,
+plus a function comment at `Tact_LoadUiPads @ 0x3b068` carrying the whole load order, the modes,
+the origin rules and the store-fail deviation.
+
+Consumers stay pending: the pads are read by the tact HUD draws (banner backdrop 0x1e944,
+item-strip empty-hand marker, unit markers, inventory backdrop, minimap cursor) and the fade block
+(0x2257c/0x225b8) -- all behind the RenderFrame tactical arm the shell does not dispatch yet.
+Wiring the table is what lets those arms read real pads the day the paint unit lands.
+
+Test evidence (test_geoscapeframe): after the mission bring-up, all 54 slots are non-NULL, each
+pad carries its data block and non-zero LE dimensions, the 32 manual slots have mode 34 and the
+forced origin 50,55, the eleven buttons mode 1 with origin zero, the named pads their per-pad
+modes in load order, the five ORIGIN_ZERO pads at 0,0, and `minimcur` exactly reproduces the
+centring rule from its own measured dimensions. After the Part 49 cancel teardown, every slot is
+NULL again. Mutations 2/2: neutering the store thunk turns 7 checks red (all slot-shape gates);
+neutering the teardown release turns exactly 1 red (the teardown gate).
+
+Gate: 61/61 tests in both configs, 18128 checks, golden `--new-game` frame identical.

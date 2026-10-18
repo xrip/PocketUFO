@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 969 / 969 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18120 |
+| Test checks run | 18128 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -486,7 +486,7 @@ is the module that answers to it.
 | `0x20ef8` | `TactHud_DrawTopBar` | 1336 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_invdrag.h` |
-| `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/game/pufo_isodraw.h`, `src/pufo/ui/pufo_uibank.h` |
+| `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x1674c` | `TactHud_ClimbUp` | 932 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x11f40` | `Inv_ClearHitSlot` | 788 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` |
 | `0x16af0` | `TactHud_ClimbDown` | 788 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -557,7 +557,7 @@ is the module that answers to it.
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_input.h` |
-| `0x11020` | `PadImage_Load` | 188 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` (+1) |
+| `0x11020` | `PadImage_Load` | 188 | `src/pufo/app/pufo_world.c`, `src/pufo/render/pufo_render.c` (+2) |
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x5a294` | `UiPanel_InsertLine` | 160 | `src/pufo/ui/pufo_linelist.c`, `src/pufo/ui/pufo_linelist.h` (+1) |
 | `0x1a340` | `UiControl_BlitActivePad` | 152 | `src/pufo/ui/pufo_control.h` |
@@ -608,7 +608,7 @@ is the module that answers to it.
 | `0x3f05c` | `UiPanel_SetBytes0to2` | 16 | `src/pufo/ui/pufo_panel.h` |
 | `0x99f78` | `UiPanel_ScrollNext` | 16 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x99f88` | `UiPanel_ScrollPrev` | 16 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_panel.h` |
-| `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_plane.c` (+2) |
+| `0x11000` | `PadImage_ctor` | 12 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+3) |
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_modal.c` (+1) |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | `src/pufo/game/pufo_font.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 375 |
+| `test_geoscapeframe` | PASS | 383 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |
