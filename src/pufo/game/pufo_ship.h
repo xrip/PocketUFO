@@ -126,7 +126,9 @@ void Ship_TickRefuelAtBase(Ship *pShip);
 typedef struct ShipSupplyHooks {
     BaseRec *const *apBases;      /* pCtxBase.apBases */
     ObjectRecFull  *pSupplyItem;  /* pCtxBase.apObjects[105] */
-    u8  *pbLowSupplyFlag;         /* dword_1870C8 */
+    i32 *pbLowSupplyFlag;         /* dwActionFail @ 0x1870C8, written with STR at 0x46064: a DWORD store,
+                                   * the same one RadarScreen_Update makes at 0x61340 and the same one
+                                   * BaseFacScreen_TryBuySelected makes with STRMI at 0x58960 */
     void (*pfnLowSupplyMsg)(i32 nHomeBase, i32 nSlotIdx, void *pUser);
     void *pUser;
 } ShipSupplyHooks;

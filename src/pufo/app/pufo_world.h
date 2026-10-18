@@ -62,6 +62,15 @@ typedef struct PufoWorldState {
     u16     nAlienPoolAddend;                   /* 0x1472c8 */
     GeoscapeEconomy economy;                    /* 0x186568..0x1865BC */
     i32     anFundTable[16];                    /* the 0x14B4C8 zero buffer */
+    /* The funding block outside the 0x1864F8 root, which the monthly report needs and nothing else
+     * in the shell held: the five per-country upkeep baselines FundingScreen_Init writes (0x1595F0..
+     * 0x159600), the display total (0x159604, zeroed by FundingScreen_Toggle at 0x5AC0C), the screen's
+     * open byte (0x1595EC, which FundingScreen_Init does NOT set) and the funding pad (0x1595DC, the
+     * pad FundingScreen_Init allocates and Geoscape_CloseUI case 19 frees). */
+    i32     anFundBaseline[PUFO_FUND_ROW_COUNT];
+    i32     nFundDisplayTotal;
+    u8      bFundScreenOpen;
+    PadImage *pFundPad;
     u8      bPlacementPending;                  /* 0x1870AC */
     u8      bStrategCount;                      /* 0x186530 */
     u8      abTypeCounters[PUFO_CRAFT_TYPE_COUNT]; /* 0x18653C..0x186540 */
@@ -85,6 +94,8 @@ typedef struct PufoWorldState {
 
     /* Grid and the per-base columns. */
     u8  abFacilityGrid[PUFO_GRID_SIZE];         /* gBaseFacGrid @ 0x159768 */
+    u8  abGridHangarBytes[PUFO_FAC_BASE_COUNT]; /* 0x159DBC = abFacilityGrid + 1620 in the image: the
+                                                 * eight base bytes the three hangar products clear */
     u16 auProductU16[4096];                     /* unk_15D09C, 200 per base + the +2176 spill */
     u32 auProductU32[3600];                     /* unk_159E9C, 200 per base + the +1600 spill */
     u16 auManufCol[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* 0x15E19C */
@@ -97,7 +108,8 @@ typedef struct PufoWorldState {
     /* Sites and the strateg list. */
     SmapSite *apSites;                          /* 0x162030, PUFO_SMAP_SITE_COUNT records */
     i32       nSiteCount;                       /* 0x186410 */
-    u8        abRadarPct[PUFO_FAC_BASE_COUNT];  /* unk_162008 */
+    i32       abRadarPct[PUFO_FAC_BASE_COUNT];  /* unk_162008, eight dwords: the radar percent and the
+                                   * hourly empty-cell counts in one block, as geo.apEmptyFacilityCells */
     u8        abSiteState[PUFO_FAC_BASE_COUNT]; /* byte_161F38, one byte per base */
     PtrArray  strategList;                      /* 0x186534 */
     i32       nStrategSeed;                     /* 0x18640C */
@@ -127,6 +139,16 @@ typedef struct PufoWorldState {
     i32               nSelectedShipIdx;         /* 0x187054 */
     i32               nMsgShipIdx;            /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
     i32               nRadarPulseTimer;         /* nRadarPulseTimer @ 0xAC224 */
+    /* The three radar counters Geoscape_PulseUpdate saturates on every screen (0x95B80..0x95BCC).
+     * nRadarCooldownR @ 0xAC218 is already the shell's frame cell pFrame.g.nTapCooldown -- one latch,
+     * two names -- so only the other three live here. */
+    i32               nRadarCooldownL;          /* nRadarCooldownL @ 0xAC21C */
+    i32               nRadarMsgTimer;           /* nRadarMsgTimer @ 0xAC220 */
+    /* The four held-direction bytes: bGeoscapeScrollUp / Right / Down / Left @ 0x1864F4..0x1864F7,
+     * written by Geoscape_UiFocusPrev/Next (0x8b00c / 0x8b260) and Geoscape_SetPanelFlagA/B
+     * (0x8b448 / 0x8b478), consumed and cleared by the pulse (0x95714..0x95880). The panel-scroll
+     * dispatcher's 0 / 2 arm writes them, so they are the map-scroll state. */
+    u8                abScrollFlags[4];
     /* The geoscape event pass (StrategList_ProcessEvents @ 0x7fcb0) and the intercept pair its
      * arrival dispatch writes. */
     u8                bSpawnOnce;               /* 0x162028, the one-shot replacement-craft byte */
@@ -192,6 +214,13 @@ typedef struct PufoWorldState {
      * wiring covers. */
     GeoscapeFrameState frame;           /* the draw envs and the frame's own globals */
     GeoscapePointerEnv ptrEnv;          /* the pointer dispatcher's env, on the same objects */
+    /* The funding screen's two draw arms (Geoscape_Draw case 15 at 0x94304 and case 19 at 0x94314) and
+     * the monthly opener the clock calls. Case 19 is the screen FundingScreen_OpenMonthly puts the
+     * geoscape into, and Geoscape_DrawFundingArm dereferences its arm env with no test, so the shell
+     * has to own it as soon as the clock can run a month. */
+    FundingInitEnv       fundingInit;
+    FundingDrawEnv       fundingDraw;
+    GeoscapeFundingArmEnv fundingArm;
     /* The frame's loose globals the shell owns: the radar screen gate, the two research walk
      * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
      * and the two scratch lines the status panel writes. */
@@ -208,8 +237,19 @@ typedef struct PufoWorldState {
     char      szUiScratchStr[104];      /* szUiScratchStr @ 0x186420: the status panel's pszExtra,
                                          * the second line of the panel arms */
     char      szScratch[85];            /* szScratch186488 @ 0x186488: BuildStatusMsg's scratch line */
-    GeoscapeWorld     world;
-    GameTime          time;
+    /* The tick chain's own state block (Geoscape_TickShips / TickHourly / TickBases @
+     * 0x5d4e4 / 0x5d1bc / 0x5d3bc, driven by Geoscape_AdvanceTime @ 0x5ce40). Its `time` and `world`
+     * members ARE the shell's clock and GeoscapeWorld, so nothing else in the shell keeps a copy, and
+     * its pointer members point back into this struct: World_WireGeoscapeClock does the wiring. */
+    GeoscapeState     geo;
+    GeoscapeHooks     geoHooks;      /* the eleven callees the ticks reach */
+    GeoscapeTickBundle geoBundle;    /* the user pointer Geoscape_AdvanceTime's hooks carry */
+    GeoscapeClockHooks geoClock;     /* the four hooks, built once by Geoscape_BuildClockHooks */
+    const UiControlHitCtx *pHitCtx;  /* the WorldHooks' hit context, wired for the pulse's forced clicks */
+    i32         *pnAnimPhase;        /* nUiSlot0AnimPhase @ 0x113A18 (Map + 0x60), the shell's ONE cell
+                                      * for the slot UiControl_HitTest clears and Geoscape_PulseUpdate's
+                                      * animation-phase gate counts (0x95644..0x95654, cleared at 0x95B78) */
+
     AssetReader       rdr;                      /* pRdr @ 0x187028 */
 
     /* Save-load state (LoadGame @ 0x44bbc). The chunk states the readers fill, plus the
@@ -248,6 +288,10 @@ typedef struct WorldHooks {
      * the Map+0x60 word UiControl_HitTest clears, and the colour pair Gfx_PackRgb565Pair packs. */
     const UiControlHitCtx *pHit;
     GfxColorEnv           *pColor;
+    /* Map + 0x60 (apUiSlotsA[0] / nUiSlot0AnimPhase @ 0x113A18). The shell needs the tact repeat
+     * counter and the geoscape pulse's animation-phase gate to be the SAME cell, so the caller owns it
+     * and World_WireGeoscapeClock stores the pointer. */
+    i32                   *pnAnimPhase;
     /* Smap_HitTestStrategSelect @ 0x82be8 needs the caller's SmapHitEnv, which the shell does not
      * build; the frame hands the dispatcher this seam instead (NULL means "nothing selectable"). */
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
@@ -258,6 +302,19 @@ typedef struct WorldHooks {
  * on the new-game path, before LoadGame on the load path, because LoadGame renders through the
  * frame). Idempotent: it rewrites the envs from the current state. */
 void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks);
+
+/* The geoscape clock, wired by World_WireGeoscapeFrame from the same state: GeoscapeState.geo's
+ * pointers into this struct, the eleven GeoscapeHooks callees, and the four GeoscapeClockHooks
+ * Geoscape_AdvanceTime calls. pHooks->pHit and pHooks->pColor are stored, not copied, so the caller's
+ * UiControlHitCtx / GfxColorEnv must outlive the world. */
+void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks);
+
+/* WM_TIMER 0xC353's geoscape half: UiPulse_OnTimer @ 0x36630 hands straight over to
+ * Geoscape_PulseUpdate @ 0x954dc, the tick that advances the clock -- only while nGeoscapeScreen is 0
+ * (0x95510, re-tested at 0x95608; a fresh game sits on screen 2, where no clock runs, until a screen close
+ * restores 0) -- scrolls the held-direction map drag, auto-repeats the held buttons and steps the four
+ * radar counters. */
+void World_PulseGeoscape(PufoWorldState *pW);
 
 /* Refresh the per-frame fields -- the zoom set's map / layer / tile pads for the mode the view
  * selected, the screen id, the anim frame-style byte -- and run Geoscape_Draw @ 0x8C180. Returns its

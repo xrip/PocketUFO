@@ -70,16 +70,18 @@ static StrategItem *g_apItems[4];
 static Ship g_aShips[2];
 static Ship *g_apShips[2];
 static u8 g_aSiteState[2];
-static u8 g_aRadarPct[2];
+static i32 g_aRadarPct[2];   /* the dword block @ 0x162008: the radar percent AND
+                           * the hourly empty-cell counts -- the original has ONE array here */
 static BaseRec g_aBases[2];
 static BaseRec *g_apBases[2] = { &g_aBases[0], &g_aBases[1] };
 static ObjectRecFull g_aObj105;
 static Soldier g_aSoldiers[2];
 static Soldier *g_apSoldiers[2] = { &g_aSoldiers[0], &g_aSoldiers[1] };
-static i32 g_aEmptyCells[2];
 static PtrArray g_List;              /* the block GeoscapeState.pList points at (0x186534) */
 static i32      g_nNextDisplayId;    /* and its two id counters, 0x186544 / 0x186548 */
 static i32      g_nNextSiteId;
+static u16      g_nDays;             /* the four shared cells GeoscapeState now points at */
+static i32      g_nSelShipIdx, g_nLowSupply, g_nSoldierCount;
 
 static int g_nProcess, g_nProcessSpawn, g_nMsg;
 static int g_nMsgId, g_nMsgArg3;
@@ -180,16 +182,20 @@ static void Setup(GeoscapeState *pState, GeoscapeHooks *pHooks)
     pState->pnNextDisplayId = &g_nNextDisplayId;
     pState->pnNextSiteId = &g_nNextSiteId;
     pState->world.pTime = &pState->time;
-    pState->nDaysSinceStart = 0;
-    pState->nSelectedShipIdx = -1;
+    g_nDays = 0;
+    g_nSelShipIdx = -1;
+    g_nLowSupply = 0;
+    g_nSoldierCount = 2;
+    pState->pnDaysSinceStart = &g_nDays;         /* word_1472C8 */
+    pState->pnSelectedShipIdx = &g_nSelShipIdx;  /* 0x187054 */
+    pState->pnLowSupplyFlag = &g_nLowSupply;     /* dwActionFail @ 0x1870C8 */
     pState->nSelectedShipAux = -1;
-    pState->bLowSupplyFlag = 0;
     pState->apBases = g_apBases;
     pState->pSupplyItem = &g_aObj105;
     pState->nBaseCount = 2;
-    pState->apEmptyFacilityCells = g_aEmptyCells;
+    pState->apEmptyFacilityCells = g_aRadarPct; /* 0x162008, the same array */
     pState->apSoldiers = g_apSoldiers;
-    pState->nSoldierCount = 2;
+    pState->pnSoldierCount = &g_nSoldierCount;   /* 0x115350 */
 
     pHooks->pfnProcessEvents = Hook_ProcessEvents;
     pHooks->pfnContactMsg = Hook_Msg;
@@ -255,7 +261,7 @@ static void TestTickShips(void)
     CheckEqI32(g_nMsgId, 15, "contact message 15 posted");
     CheckEqI32(g_nMsgArg3, 0, "contact message carries the ship index");
     CheckEqI32(g_aShips[0].bContactMsg, 1, "contact flag set");
-    CheckEqI32(st.nSelectedShipIdx, 0, "selected ship index set");
+    CheckEqI32(g_nSelShipIdx, 0, "selected ship index set (0x187054, the cell the state points at)");
     CheckEqI32(st.nSelectedShipAux, 0, "aux slot mirrors it");
     CheckEqI32(st.time.bPaused, 1, "contact 15 pauses the clock");
     st.time.bPaused = 0;
@@ -321,8 +327,8 @@ static void TestTickHourly(void)
     CheckEqI32(g_nResearch, 2, "research accumulated once per hourly tick");
 
     /* Empty-cell refresh fills one entry per base. */
-    CheckEqI32(g_aEmptyCells[0], 7, "empty cells for base 0");
-    CheckEqI32(g_aEmptyCells[1], 8, "empty cells for base 1");
+    CheckEqI32(g_aRadarPct[0], 7, "empty cells for base 0");
+    CheckEqI32(g_aRadarPct[1], 8, "empty cells for base 1");
 
     /* Fallback spawn: with fewer than 2 active contacts and a rand roll of
      * exactly 1, ProcessEvents is called with spawn=1. Find a seed whose
@@ -356,7 +362,7 @@ static void TestTickBases(void)
     Setup(&st, &hooks);
 
     Geoscape_TickBases(&st, &hooks);
-    CheckEqI32(st.nDaysSinceStart, 1, "day counter advances");
+    CheckEqI32(g_nDays, 1, "day counter advances (word_1472C8)");
     CheckEqI32(g_nConstruct, 1, "facility construction ticked");
     CheckEqI32(g_nClearRow, 2, "one grid row cleared per base");
     CheckEqI32(g_aSiteState[0], 1, "site state from row result (base 0)");
@@ -374,9 +380,9 @@ static void TestTickBases(void)
     CheckEqI32(g_aSoldiers[0].bUnk183, 255, "bUnk183 254 -> -1 when timer hits 0");
 
     /* Day counter caps at 200. */
-    st.nDaysSinceStart = 200;
+    g_nDays = 200;
     Geoscape_TickBases(&st, &hooks);
-    CheckEqI32(st.nDaysSinceStart, 200, "day counter caps at 200");
+    CheckEqI32(g_nDays, 200, "day counter caps at 200");
 }
 
 static void TestAdvance(void)

@@ -147,7 +147,7 @@ static void TestSupplyConsume(void)
     base.nStoresTotal = 500;
     item.auPerBaseVal[0] = 30;
 
-    u8 bLowFlag = 0;
+    i32 bLowFlag = 0; /* dwActionFail @ 0x1870C8 is written with STR: a dword */
     BaseRec *apBases[1] = { &base };
     ShipSupplyHooks hooks = { apBases, &item, &bLowFlag, Hook_LowSupply, 0 };
 

@@ -12,6 +12,7 @@
 #include "dat/pufo_dat.h"    /* DatFile, the slot file LoadGame opens */
 #include "audio/pufo_audio.h" /* Sound_Play, the message-list sample the radar click plays */
 #include "render/pufo_render.h" /* g_nGlyphPalSlotBase, the shell's one Map_nGlyphPalBase */
+#include "ui/pufo_linelist.h" /* UiLineList_AppendWithSound, the tick's contact message seam */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -268,8 +269,8 @@ static void World_RadarClickThunk(void)
     env.pStatusPanel = pW->ui.pStatusPanel;
     env.pStrategList = &pW->strategList;
     env.pnSelectedStrategIdx = &pW->nSelectedStrategIdx;
-    env.pTime = &pW->time;
-    env.pWorld = &pW->world;
+    env.pTime = &pW->geo.time;
+    env.pWorld = &pW->geo.world;
     env.pnSelectedShipIdx = &pW->nSelectedShipIdx;
     env.pnMsgShipIdx = &pW->nMsgShipIdx;
     env.pnScreenId = &pW->screen.nGeoscapeScreen;
@@ -308,8 +309,8 @@ static int World_ProcessEvents(void *pUser)
 
     memset(&env, 0, sizeof(env));
     env.pList = &pW->strategList;
-    env.pWorld = &pW->world;
-    env.pTime = &pW->time;
+    env.pWorld = &pW->geo.world;
+    env.pTime = &pW->geo.time;
     env.pLines = &pW->msgLines;
     env.pStatusPanel = pW->ui.pStatusPanel;
     env.pnFundPending = &pW->economy.aZero44_49[5];   /* g_nFundPending @ 0x1865BC */
@@ -437,7 +438,7 @@ static void World_StartNewHook(void *pUser)
     env.pnFunds = &pW->nFunds;
     env.pnMonthCounter = &pW->nMonthCounter;
     env.pnAlienPoolAddend = &pW->nAlienPoolAddend;
-    env.pTime = &pW->time;
+    env.pTime = &pW->geo.time;
     env.abFacilityGrid = pW->abFacilityGrid;
     env.pProductU16Col = pW->auProductU16;
     env.pProductU32Col = pW->auProductU32;
@@ -535,12 +536,12 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     pW->ui.pFont = pFont;
     pW->ui.pbGeoscapeUi = &pW->bGeoscapeUi;
 
-    memset(&pW->world, 0, sizeof(pW->world));
-    pW->world.apCraft = pW->apCraft;
-    pW->world.nShipCount = pW->bCraftCount;
-    pW->world.apSiteState = pW->abSiteState;
-    pW->world.apRadarPct = pW->abRadarPct;
-    pW->world.pTime = &pW->time;
+    memset(&pW->geo.world, 0, sizeof(pW->geo.world));
+    pW->geo.world.apCraft = pW->apCraft;
+    pW->geo.world.nShipCount = pW->bCraftCount;
+    pW->geo.world.apSiteState = pW->abSiteState;
+    pW->geo.world.apRadarPct = pW->abRadarPct;
+    pW->geo.world.pTime = &pW->geo.time;
 
     memset(&env, 0, sizeof(env));
     env.pUi = &pW->ui;
@@ -553,7 +554,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     env.pFont = pFont;
     env.pRdr = &pW->rdr;
     env.pTextRecs = pAssets->pTextRecs;
-    env.pTime = &pW->time;
+    env.pTime = &pW->geo.time;
     env.apTopics = pW->aTopics;
     env.puResearchEntries = &pW->nResearchEntries;
     env.paFacFlags = pW->aFac;
@@ -561,7 +562,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     env.nObjectCount = pAssets->nObjectCount;
     env.pnGlyphPalBase = &g_nGlyphPalSlotBase; /* the original's one global, Map_nGlyphPalBase */
     env.abFacilityGrid = pW->abFacilityGrid;
-    env.pWorld = &pW->world;
+    env.pWorld = &pW->geo.world;
     env.pbBaseCount = &pW->nBaseCount;
     env.pnUnk159DC4 = &pW->nUnk159DC4;
     env.paMissionSites = pW->aMissionSites;
@@ -673,11 +674,11 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     hooks.pUser = pW;
 
     /* The live world mirrors the roster the readers rebuild. */
-    pW->world.apCraft = pW->apCraft;
-    pW->world.nShipCount = pW->bCraftCount;
-    pW->world.apSiteState = pW->abSiteState;
-    pW->world.apRadarPct = pW->abRadarPct;
-    pW->world.pTime = &pW->time;
+    pW->geo.world.apCraft = pW->apCraft;
+    pW->geo.world.nShipCount = pW->bCraftCount;
+    pW->geo.world.apSiteState = pW->abSiteState;
+    pW->geo.world.apRadarPct = pW->abRadarPct;
+    pW->geo.world.pTime = &pW->geo.time;
 
     /* LoadGame renders through the frame (its teardown calls pfnRenderFrame), so the frame envs are
      * wired before the readers run. On this path Geoscape_InitUI is a stub (Load_HookInitUi), so the
@@ -720,14 +721,14 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     env.apObjects = pAssets->apObjects;
     env.nObjectCount = pAssets->nObjectCount;
     env.pnTactVerOut = &pW->nTactVerOut;
-    env.pWorld = &pW->world;
+    env.pWorld = &pW->geo.world;
     env.abFacilityGrid = pW->abFacilityGrid;
     env.apResearchCols = pW->auResearchCol;
     env.apManufCols = pW->auManufCol;
     env.puResearchEntries = &pW->nResearchEntries;
     env.puShotObjectWords = (u16 *)pAssets->apObjects[0]; /* 0x45764: the shot object's aItemQty words */
     env.pTimeRec = &pW->saveTime;
-    env.pTime = &pW->time;
+    env.pTime = &pW->geo.time;
     env.pSpawnCtx = NULL;   /* StrategList_PurgeType5 and Geoscape_SpawnMissionSite need the
                              * mission-spawn leaf, which is not ported; the load path runs with
                              * them absent, as tests/test_save.c does. */
@@ -739,6 +740,347 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     nRet = LoadGame(&dat, &env);
     DatFile_Close(&dat);
     return nRet;
+}
+
+/* ---- the geoscape clock ---------------------------------------------------------------------
+ *
+ * The shell's half of the geoscape clock. WM_TIMER 0xC353 runs UiPulse_OnTimer @ 0x36630, whose
+ * geoscape branch (0x36644) hands straight over to Geoscape_PulseUpdate @ 0x954dc. The pulse advances
+ * the clock through Geoscape_AdvanceTime @ 0x5ce40 -- only while nGeoscapeScreen is 0 (0x95618), which
+ * is why the clock halts while a geoscape screen is open -- and the clock calls the three tick chains
+ * and the monthly funding report. Every callee behind GeoscapeHooks is ported; the thunks below build
+ * each callee's env over the shell's state the way World_ProcessEvents does for the event pass.
+ *
+ * One gap, stated plainly: Geoscape_SpawnMissionSite @ 0x7e49c (4,464 B) is NOT ported, so
+ * pfnSpawnMissionSite keeps the same documented stub the spawn pass already uses. TickHourly calls it
+ * only for a mission entry that drifted past |1000| on x or y (0x5d1dc..0x5d1f8), where it re-seeds the
+ * mission at 150/250 and then builds its site record; without it the entry is re-seeded and its site
+ * record is missing. Recorded in PLAN.md.
+ */
+
+/* Geoscape_SpawnMissionSite @ 0x7e49c is not ported; see the block comment above. Same documented gap
+ * World_SpawnMissionStub records for the spawn pass, in the void form GeoscapeHooks asks for. */
+static void World_HookSpawnMissionSiteStub(StrategItem *pUfo, i32 nMissionSub, void *pUser)
+{
+    (void)pUfo;
+    (void)nMissionSub;
+    (void)pUser;
+}
+
+static void World_HookContactMsg(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    /* UiPanel_AppendLineWithSound @ 0x5a394 on the root message list @ 0x158890. The four ids the
+     * clock posts are 15 (a craft out of range, 0x5d658), 13 (intercept lost), 10 (radar contact) and
+     * 43 (low supply, 0x460ac). The GameTime_Pause that follows 15 / 13 / 10 is written by the tick
+     * itself through geo.world.pTime, not here. */
+    UiLineList_AppendWithSound(&pW->msgLines, (u8)nMsg, (u32)nArg3, (u32)nArg4, 0u, 0u,
+                               pW->pfnPlaySample, pW->pSoundUser);
+}
+
+static i32 World_HookFindBaseBySiteId(i32 nSiteId, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    /* Base_FindIndexBySiteId @ 0x5a8d0 is a copy of Base_FindIndexByTypeByte @ 0x6ac30 and the port
+     * keeps the one implementation. */
+    return Base_FindIndexByTypeByte(pW->apBases, (i32)pW->nBaseCount, (u8)nSiteId);
+}
+
+static i32 World_HookCountEmptyFacilityCells(i32 nBaseIdx, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    return Base_CountEmptyFacilityCells(pW->abFacilityGrid, nBaseIdx);
+}
+
+static i32 World_HookClearFacilityGridRow(i32 nBaseIdx, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    return Base_ClearFacilityGridRow(pW->abFacilityGrid, nBaseIdx, pW->abSiteState);
+}
+
+static void World_HookProcessEvents(u8 bSpawn, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    /* StrategList_MaybeSpawnCraft_Process @ 0x7e420: the gate is bSpawn == 1 exactly, and the tail is
+     * the event pass World_StartNewHook already wired into the spawn context. */
+    (void)StrategList_MaybeSpawnCraft_Process(&pW->strategList, pW->spawnCtx.pnSeed,
+                                             pW->spawnCtx.nZoomMode, pW->spawnCtx.pTables,
+                                             pW->spawnCtx.nDifficulty, pW->spawnCtx.nEarlyGate,
+                                             bSpawn, pW->spawnCtx.pfnSpawnMission,
+                                             pW->spawnCtx.pfnProcessEvents,
+                                             pW->spawnCtx.pUser);
+}
+
+static void World_HookTickFacilityConstruction(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    BaseTickConstructionEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.abFacilityGrid = pW->abFacilityGrid;
+    env.pbBaseCount = (const u8 *)&pW->nBaseCount; /* 0x159D80, read SIGNED */
+    env.apSoldiers = pW->apSoldiers;
+    env.pnSoldierCount = &pW->nSoldierCount;
+    env.apBases = pW->apBases;
+    if (pW->pAssets != NULL) {
+        env.apObjects = pW->pAssets->apObjects;
+        env.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
+    env.aSites = pW->apSites;
+    env.nSiteCount = pW->nSiteCount;
+    env.apResearchCols = pW->auResearchCol;
+    env.nResearchEntries = (i32)pW->nResearchEntries;
+    env.apManufCols = pW->auManufCol;
+    env.nManufEntries = PUFO_PRODUCT_ENTRIES_PER_BASE;
+    env.pdwShortfall = &pW->nShortfall1870C8;
+    env.pLines = &pW->msgLines;
+    env.pfnPlaySample = pW->pfnPlaySample;
+    env.pSoundUser = pW->pSoundUser;
+
+    Base_TickFacilityConstruction(&env); /* 0x62824 */
+}
+
+/* ManufScreen_ClearProductSlot's tables. apProductB @ 0x15B79C (the quantity the player asked for)
+ * is not shell state yet -- the manufacturing screen's own set/get buttons are unwired -- and the
+ * callee's own head test returns on it, so the clear pass is the documented gap here. */
+static void World_BuildManufClearEnv(PufoWorldState *pW, ManufClearEnv *pClear)
+{
+    memset(pClear, 0, sizeof(*pClear));
+    pClear->apProductA = pW->auProductU32;
+    pClear->apProductC = pW->auProductU16;
+    pClear->apManufCols = pW->auManufCol;
+    pClear->abGridBytes = pW->abGridHangarBytes; /* 0x159DBC = abFacilityGrid + 1620, the eight base
+                                                  * bytes the three hangar products clear */
+    pClear->apBases = pW->apBases;
+    pClear->nBaseCount = (i32)pW->nBaseCount;
+    pClear->pnSelectedBaseIdx = &pW->nSelectedBase;
+}
+
+static void World_HookRefreshBaseTabs(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    ManufRefreshEnv env;
+    ManufClearEnv clear;
+
+    World_BuildManufClearEnv(pW, &clear);
+
+    memset(&env, 0, sizeof(env));
+    env.apManufCols = pW->auManufCol;
+    env.apProductA = pW->auProductU32;
+    env.abFacilityGrid = pW->abFacilityGrid;
+    env.pbBaseCount = (const u8 *)&pW->nBaseCount; /* 0x159D80, read SIGNED */
+    env.apBases = pW->apBases;
+    env.aSites = pW->apSites;
+    env.nSiteCount = pW->nSiteCount;
+    env.pdwShortfall = &pW->nShortfall1870C8;
+    env.pLines = &pW->msgLines;
+    env.pClearEnv = &clear;
+    env.pfnPlaySample = pW->pfnPlaySample;
+    env.pSoundUser = pW->pSoundUser;
+    if (pW->pAssets != NULL) {
+        env.apObjects = pW->pAssets->apObjects;
+        env.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
+
+    ManufScreen_RefreshBaseTabs(&env); /* 0x70ebc */
+}
+
+static i32 World_HookRebuildResearchTopics(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    ResearchRebuildEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.aTopics = pW->aTopics;
+    env.pbEntryCount = (const u8 *)&pW->nResearchEntries;   /* 0x160C4C, read with LDRB */
+    env.apResearchCols = pW->auResearchCol;
+    env.abResearchZero = pW->abResearchZero;
+    env.paFac = pW->aFac;
+    env.pdwShortfall = &pW->nShortfall1870C8;
+    env.pLines = &pW->msgLines;
+    env.apBases = pW->apBases;
+    env.pnSelectedBaseIdx = &pW->nSelectedBase;
+    env.pbFinishedTopic = &pW->nFinishedTopic;
+    env.pnShownTopic = &pW->nShownTopic;
+    env.pfnPlaySample = pW->pfnPlaySample;
+    env.pUser = pW->pSoundUser;
+    if (pW->pAssets != NULL) {
+        env.apObjects = pW->pAssets->apObjects;
+        env.pnObjectCount = &pW->pAssets->nObjectCount; /* BootAssets keeps it as a u16, as the image does */
+    }
+
+    return ResearchScreen_RebuildTopicList(&env); /* 0x74270, AccumulateAllocated's tail call at 0x749A4 */
+}
+
+static void World_HookAccumulateResearch(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    ResearchAccumulateEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.aTopics = pW->aTopics;
+    env.apResearchCols = pW->auResearchCol;
+    env.puResearchEntries = &pW->nResearchEntries;
+    env.pfnRebuild = World_HookRebuildResearchTopics;
+    env.pRebuildUser = pW;
+
+    (void)ResearchScreen_AccumulateAllocated(&env); /* 0x74914 */
+}
+
+static void World_HookGrantSiteRecovery(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    SmapGrantRecoveryEnv env;
+    UnitCreateEnv unitEnv;
+    ShipSpawnEnv shipEnv;
+
+    memset(&unitEnv, 0, sizeof(unitEnv));
+    unitEnv.apSoldiers = pW->apSoldiers;
+    unitEnv.pnSoldierCount = &pW->nSoldierCount;
+    unitEnv.pnNextSoldierId = &pW->nNextSoldierId;
+
+    memset(&shipEnv, 0, sizeof(shipEnv));
+    shipEnv.apCraft = pW->apCraft;
+    shipEnv.pnCraftCount = &pW->bCraftCount;
+    shipEnv.pnNextCraftId = &pW->nNextCraftId;
+    shipEnv.apBases = pW->apBases;
+    shipEnv.abFacilityGrid = pW->abFacilityGrid;
+    shipEnv.pCtorEnv = &pW->ctorEnv;
+    shipEnv.pStrategList = &pW->strategList;
+    shipEnv.pnStrategSeed = &pW->nStrategSeed;
+    shipEnv.pnZoomMode = &pW->view.nMode;
+
+    memset(&env, 0, sizeof(env));
+    env.aSites = pW->apSites;
+    env.pnSiteCount = &pW->nSiteCount;
+    env.abFacilityGrid = pW->abFacilityGrid;
+    env.pbBaseCount = (const u8 *)&pW->nBaseCount; /* 0x159D80, read SIGNED */
+    env.apBases = pW->apBases;
+    env.apCraft = pW->apCraft;
+    env.pnCraftCount = &pW->bCraftCount;
+    env.apSoldiers = pW->apSoldiers;
+    env.pnSoldierCount = &pW->nSoldierCount;
+    env.pLines = &pW->msgLines;
+    env.pdwShortfall = &pW->nShortfall1870C8;
+    env.pUnitEnv = &unitEnv;
+    env.pShipEnv = &shipEnv;
+    env.pfnPlaySample = pW->pfnPlaySample;
+    env.pSoundUser = pW->pSoundUser;
+    if (pW->pAssets != NULL) {
+        env.apObjects = pW->pAssets->apObjects;
+        env.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
+    /* pszAppDir is the site dump's output directory (0x98E2C reaches it through the dump helper);
+     * the shell has no app-directory field on the geoscape path, and the callee tests the pointer. */
+
+    Smap_GrantSiteRecovery(&env); /* 0x98b50 */
+}
+
+static void World_HookOpenMonthly(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    /* FundingScreen_OpenMonthly @ 0x5d160: the month counter first, then the recompute, then screen id
+     * 19 so Geoscape_CloseUI's case 19 runs on the way out, then bUiAnimStarted cleared. */
+    FundingScreen_OpenMonthly(&pW->fundingInit, &pW->screen.nGeoscapeScreen, &pW->bUiAnimStarted);
+}
+
+void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
+{
+    GeoscapeState *pG = &pW->geo;
+
+    /* The state block's cells, each pointed at the shell's ONE instance of the original global it
+     * names. geo.world and geo.time are already filled by the bring-up / load paths (they are the
+     * shell's GeoscapeWorld and GameTime), and geo.world.pTime is the shared pause byte the ticks
+     * write (apLines[106]). */
+    pG->pList            = &pW->strategList;                    /* 0x186534 */
+    pG->pnNextDisplayId  = &pW->nNextDisplayId;                 /* 0x186544 */
+    pG->pnNextSiteId     = &pW->nNextSiteId;                    /* 0x186548 */
+    pG->pnDaysSinceStart = &pW->nAlienPoolAddend;               /* word_1472C8, the second name */
+    pG->pnSelectedShipIdx = &pW->nSelectedShipIdx;             /* 0x187054 */
+    pG->pnLowSupplyFlag  = (i32 *)&pW->nShortfall1870C8;        /* dwActionFail @ 0x1870C8, a dword */
+    pG->nSelectedShipAux = -1;
+    pG->apBases          = pW->apBases;
+    pG->nBaseCount       = (i32)pW->nBaseCount;
+    pG->apEmptyFacilityCells = pW->abRadarPct;                  /* 0x162008: the empty-cell counts ARE
+                                                                 * the radar percentages, one block */
+    pG->apSoldiers       = pW->apSoldiers;
+    pG->pnSoldierCount   = &pW->nSoldierCount;
+    pG->pSupplyItem      = (pW->pAssets != NULL)
+                               ? pW->pAssets->apObjects[105]    /* Elerium-115, the supply item */
+                               : NULL;
+
+    pW->geoHooks.pfnProcessEvents           = World_HookProcessEvents;
+    pW->geoHooks.pfnContactMsg              = World_HookContactMsg;
+    pW->geoHooks.pfnSpawnMissionSite        = World_HookSpawnMissionSiteStub; /* 0x7e49c, NOT ported */
+    pW->geoHooks.pfnGrantSiteRecovery       = World_HookGrantSiteRecovery;
+    pW->geoHooks.pfnRefreshBaseTabs         = World_HookRefreshBaseTabs;
+    pW->geoHooks.pfnAccumulateResearch      = World_HookAccumulateResearch;
+    pW->geoHooks.pfnTickFacilityConstruction = World_HookTickFacilityConstruction;
+    pW->geoHooks.pfnClearFacilityGridRow    = World_HookClearFacilityGridRow;
+    pW->geoHooks.pfnCountEmptyFacilityCells = World_HookCountEmptyFacilityCells;
+    pW->geoHooks.pfnOpenMonthly             = World_HookOpenMonthly;
+    pW->geoHooks.pfnFindBaseBySiteId        = World_HookFindBaseBySiteId;
+    pW->geoHooks.pUser                      = pW;
+
+    pW->geoBundle.pState = &pW->geo;
+    pW->geoBundle.pHooks = &pW->geoHooks;
+    Geoscape_BuildClockHooks(&pW->geoBundle, &pW->geoClock);
+
+    pW->pHitCtx    = (pHooks != NULL) ? pHooks->pHit : NULL;
+    pW->pnAnimPhase = (pHooks != NULL) ? pHooks->pnAnimPhase : NULL;
+}
+
+void World_PulseGeoscape(PufoWorldState *pW)
+{
+    GeoscapePulseEnv env;
+
+    /* Screen 7's auto-repeat pair: the two build-dialog scroll controls at 0x158874 / 0x158878, and
+     * only while bBaseFacPlaceArmed @ 0x158888 is CLEAR (0x95770 ANDS / BEQ). The other per-screen
+     * groups belong to the soldier, hangar, research, manufacturing, transfer, buy/sell, ufopaedia,
+     * start and options screens, whose controls the shell does not build yet -- see the group table in
+     * game/pufo_geoscape.h. */
+    UiControl *apFacCtl[2] = { &pW->ctlFacUp, &pW->ctlFacDown };
+    GeoscapePulseCtlGroup aGroups[1];
+    GeoscapePulseScreen   aScreens[1];
+
+    aGroups[0].apCtl = apFacCtl;
+    aGroups[0].nCount = 2;
+    aGroups[0].pbGate = NULL;
+    aGroups[0].pbNotGate = &pW->bArmedPlacement;
+    aScreens[0].nScreenId = 7;
+    aScreens[0].pGroups = aGroups;
+    aScreens[0].nGroupCount = 1;
+
+    memset(&env, 0, sizeof(env));
+    env.pnActionFail  = (i32 *)&pW->nShortfall1870C8;   /* 0x954EC: == 1 stops the whole tick */
+    env.nScreenId     = pW->screen.nGeoscapeScreen;
+    env.pView         = &pW->view;
+    env.pabDragFlags  = pW->abScrollFlags;              /* 0x1864F4..0x1864F7 */
+    env.apCraft       = pW->apCraft;
+    env.pnCraftCount  = &pW->bCraftCount;
+    env.pStrategList  = &pW->strategList;
+    env.pTime         = &pW->geo.time;
+    env.pClockHooks   = &pW->geoClock;
+    env.nTickSeconds  = pW->geo.world.nTickSeconds;     /* nGeoscapeTickSeconds @ 0x187070 */
+    env.pnAnimPhase   = pW->pnAnimPhase;                /* nUiSlot0AnimPhase @ 0x113A18, Map + 0x60 */
+    env.pnCooldownR   = &pW->frame.g.nTapCooldown;      /* nRadarCooldownR @ 0xAC218 */
+    env.pnCooldownL   = &pW->nRadarCooldownL;           /* 0xAC21C */
+    env.pnMsgTimer    = &pW->nRadarMsgTimer;            /* 0xAC220 */
+    env.pnPulseTimer  = &pW->nRadarPulseTimer;          /* 0xAC224 */
+    env.pScreens      = aScreens;
+    env.nScreenCount  = 1;
+    env.pHitCtx       = pW->pHitCtx;
+    if (pW->ui.apPad[GEOUI_PAD_186BBC] != NULL) {
+        env.nStripHeight = (i32)pW->ui.apPad[GEOUI_PAD_186BBC]->uHeight; /* Smap_ScrollBy's clamp */
+    }
+
+    Geoscape_PulseUpdate(&env);
 }
 
 /* ---- the geoscape frame wiring ------------------------------------------------------------
@@ -789,7 +1131,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->anim.nFrameStyle = (i8)pW->aRegionBuildCount[9];
 
     /* BaseFac_BuildStatusMsg @ 0x6a4bc, the panel head's call at 0x8C82C. */
-    pF->fac.pTime          = &pW->time;
+    pF->fac.pTime          = &pW->geo.time;
     pF->fac.abFacilityGrid = pW->abFacilityGrid;
     pF->fac.apSiteRecs     = pW->aSiteRecs;
     pF->fac.paFac          = pW->aFac;
@@ -813,7 +1155,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->map.pWorldBits = (const u8 *)pUi->pWorldSize; /* *pSmapWorldBits @ 0x186BC0: the 4 + 800*400
                                                        * glyph record InitUI allocated */
     pF->map.pMapPal    = g_aPalette[PUFO_RADAR_MAP_PAL_SLOT]; /* aPalette + 0x7400 */
-    pF->map.pTime      = &pW->time;
+    pF->map.pTime      = &pW->geo.time;
     pF->map.pnOverlayOriginX = &pF->g.nOverlayOriginX;
 
     /* The crosshair tail, 0x8C69C..0x8C760. */
@@ -858,7 +1200,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->panel.pCtlReturnBase  = pUi->apCtl[GEOUI_CTL_186BA8];
     pF->panel.pCtlNewTarget   = pUi->apCtl[GEOUI_CTL_186B9C];
     pF->panel.pCtlPatrol      = pUi->apCtl[GEOUI_CTL_186B98];
-    pF->panel.pTime           = &pW->time;                           /* 0x159618: GameTime_Pause's byte */
+    pF->panel.pTime           = &pW->geo.time;                           /* 0x159618: GameTime_Pause's byte */
     pF->panel.paMissionSites  = pW->aMissionSites;                   /* unk_1865C0 */
     pF->panel.apRootCtl       = pUi->apRootCtl;                      /* 0x1864F8 + 4*i */
     pF->panel.apClockDigitPads = pUi->apClockDigitPads;              /* apClockDigitPads @ 0x186BF0 */
@@ -972,6 +1314,64 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->draw.pCrosshair   = &pF->cross;
     pF->draw.pStatusPanel = &pF->panel;
     pF->draw.pFrameEnd    = &pF->frameEnd;
+
+    /* The funding screen: case 15 (0x94304) draws FundingScreen_Draw and case 19 (0x94314) draws the
+     * monthly arm. Case 19 is the screen FundingScreen_OpenMonthly puts the geoscape into, so the
+     * shell needs both envs the moment the clock can run a month -- Geoscape_DrawFundingArm
+     * dereferences its arm env with no test at 0x94334. The three funding panels (pFundPanelBars
+     * 0x1595E0, pFundPanelNames 0x1595E4, pFundPanelArrows 0x1595E8) belong to FundingScreen_Toggle,
+     * which nothing here runs, so they stay NULL and FundingScreen_Draw's panel rows are skipped;
+     * FundingScreen_ExitThunk @ 0x5c078 needs the Geoscape_CloseUI dispatcher, also not wired yet. */
+    pW->fundingInit.ppPadSlot      = &pW->pFundPad;                    /* unk_1595DC */
+    pW->fundingInit.pCloseCtl      = pUi->apCtl[GEOUI_CTL_186B00];     /* *g_pUiCloseCtl @ 0x186B00 */
+    pW->fundingInit.pfnCloseClick  = NULL;
+    pW->fundingInit.anCountryScore = pW->economy.anFundingBlock;       /* 0x186568..0x18657C, 6 slots */
+    pW->fundingInit.anShare        = pW->economy.anFundingBlock + PUFO_ECON_RACE_SHARE_FIRST; /* 0x186580 */
+    pW->fundingInit.anBaseline     = pW->anFundBaseline;               /* 0x1595F0 */
+    pW->fundingInit.anBarTotal     = pW->economy.anFundBar;            /* 0x186594 */
+    pW->fundingInit.anArrow        = pW->economy.aZero44_49;           /* 0x1865A8, slots 0..4 */
+    pW->fundingInit.pnPendingTotal = &pW->economy.aZero44_49[5];       /* g_nFundPending @ 0x1865BC */
+    pW->fundingInit.pnMonthCounter = &pW->nMonthCounter;               /* unk_159648 */
+    pW->fundingInit.apBases        = (const BaseRec *const *)pW->apBases;
+    pW->fundingInit.nBaseCount     = pW->nBaseCount;
+
+    pW->fundingDraw.pbOpen        = &pW->bFundScreenOpen;              /* 0x1595EC */
+    pW->fundingDraw.pnTotal       = &pW->nFundDisplayTotal;            /* 0x159604 */
+    pW->fundingDraw.pCloseCtl     = pUi->apCtl[GEOUI_CTL_186B00];
+    pW->fundingDraw.pColor        = pColor;
+    pW->fundingDraw.anShare       = pW->economy.anFundingBlock + PUFO_ECON_RACE_SHARE_FIRST;
+    pW->fundingDraw.anBaseline    = pW->anFundBaseline;
+    pW->fundingDraw.anBar         = pW->economy.anFundBar;
+    if (pAssets != NULL) {
+        pW->fundingDraw.pTextRecs = pAssets->pTextRecs;
+    }
+    if (pHit != NULL) {
+        pW->fundingDraw.pfnCtlBlit   = pHit->pfnBlit;
+        pW->fundingDraw.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pW->fundingDraw.pCtlUser     = pHit->pUser;
+    }
+
+    pW->fundingArm.pbBaseCount    = (const u8 *)&pW->nBaseCount;                   /* 0x94330 LDRSB */
+    pW->fundingArm.pnFunds        = &pW->nFunds;                       /* 0x94334 */
+    pW->fundingArm.anFundBar      = pW->economy.anFundBar;             /* 0x9437C..0x943A0, summed in that order */
+    pW->fundingArm.abFacilityGrid = pW->abFacilityGrid;
+    pW->fundingArm.apCraft        = pW->apCraft;
+    pW->fundingArm.nCraftCount    = (i32)pW->bCraftCount;
+    pW->fundingArm.apSoldiers     = pW->apSoldiers;
+    pW->fundingArm.nSoldierCount  = pW->nSoldierCount;
+    pW->fundingArm.apSites        = pW->apSites;
+    pW->fundingArm.nSiteCount     = pW->nSiteCount;
+    pW->fundingArm.pAnim          = &pF->anim;                         /* 0x943B0, the panel frame */
+    pW->fundingArm.pColor         = pColor;
+    if (pAssets != NULL) {
+        pW->fundingArm.apObjects = pAssets->apObjects;
+        pW->fundingArm.pTextRecs = (const char *)pAssets->pTextRecs;
+    }
+
+    pF->draw.pFundEnv    = &pW->fundingDraw;
+    pF->draw.pFundingArm = &pW->fundingArm;
+
+    World_WireGeoscapeClock(pW, pHooks);
 }
 
 /* The per-frame fields: the original keeps the map pad, the layer pad and the tile grid in the three
@@ -1001,6 +1401,12 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->cross.nCrosshairY = pF->g.nCrosshairY;   /* nSmapCrosshairY @ 0x186BCC */
     pF->anim.nFrameStyle  = (i8)pW->aRegionBuildCount[9]; /* bUiFrameStyle @ 0x186566 */
     pW->ptrEnv.pTiles     = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL;
+
+    /* The funding draw env carries two by-value cells: the pad pointer (FundingScreen_Init allocates
+     * it into unk_1595DC at 0x5C0B4) and the month counter FundingScreen_DrawExtended clamps arrows
+     * against (0x5B8CC). Both follow the clock, so they are re-read every frame. */
+    pW->fundingDraw.pPad          = pW->pFundPad;
+    pW->fundingDraw.nMonthCounter = pW->nMonthCounter;
 }
 
 i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), void *pUser)

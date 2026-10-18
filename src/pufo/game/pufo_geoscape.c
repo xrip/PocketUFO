@@ -93,7 +93,7 @@ void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks)
                 && Smap_CraftRangeExhausted(&rangeEnv, i)
                 && pShip->bContactMsg == 0) {
                 pShip->bContactMsg = 1;
-                pState->nSelectedShipIdx = i;
+                *pState->pnSelectedShipIdx = i; /* nSelectedShipIdx @ 0x187054 */
                 pState->nSelectedShipAux = i;
                 pHooks->pfnContactMsg(15, i, 0, pHooks->pUser);
                 pState->time.bPaused = 1; /* GameTime_Pause @ 0x5d6ac, 0x5d664 */
@@ -132,7 +132,7 @@ void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
     }
 
     ShipSupplyHooks supply = {
-        pState->apBases, pState->pSupplyItem, &pState->bLowSupplyFlag,
+        pState->apBases, pState->pSupplyItem, pState->pnLowSupplyFlag,
         Supply_LowMsg, &supplyUser
     };
     for (i32 i = 0; i < pWorld->nShipCount; ++i) {
@@ -156,8 +156,8 @@ void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
 
 void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks)
 {
-    if (pState->nDaysSinceStart < 200u)
-        ++pState->nDaysSinceStart;
+    if (*pState->pnDaysSinceStart < 200u)
+        ++*pState->pnDaysSinceStart; /* word_1472C8, the same cell the alien mission composition reads */
 
     pHooks->pfnTickFacilityConstruction(pHooks->pUser);
 
@@ -165,7 +165,7 @@ void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks)
         pState->world.apSiteState[b] =
             (u8)pHooks->pfnClearFacilityGridRow(b, pHooks->pUser);
 
-    for (i32 s = 0; s < pState->nSoldierCount; ++s) {
+    for (i32 s = 0; s < *pState->pnSoldierCount; ++s) {
         Soldier *pS = pState->apSoldiers[s];
         if ((i8)pS->nPsiTrainDays > 0) {
             ++pS->auStat[6];

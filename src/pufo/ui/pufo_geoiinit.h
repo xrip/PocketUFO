@@ -293,7 +293,8 @@ typedef struct StartNewEnv {
     /* Sites and the spawn pass. */
     SmapSite *apSites;                /* 0x162030, 200 records */
     i32   *pnSiteCount;               /* 0x186410; only its low byte is stored */
-    u8    *apRadarPct;                /* unk_162008, per base */
+    i32   *apRadarPct;                /* unk_162008: eight dwords, the same block Geoscape_TickHourly's
+                                   * empty-cell pass writes */
     PtrArray *pStrategList;           /* the list MaybeSpawnCraft works on */
     const StrategSpawnCtx *pSpawnCtx; /* its roll tables, difficulty and hooks */
 

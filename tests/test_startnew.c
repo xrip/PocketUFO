@@ -76,7 +76,7 @@ static ResearchTopicLive aTopics[PUFO_RESEARCH_TOPIC_COUNT];
 
 static SmapSite *apSites;           /* 0x162030, 200 records */
 static i32       nSiteCount;        /* 0x186410 */
-static u8        radarPct[8];       /* unk_162008 */
+static i32       radarPct[8];       /* unk_162008, eight dwords */
 static PtrArray  strategList;
 static i32       nStrategSeed;      /* 0x18640C, shared by the three callees */
 static i32       nZoomMode;         /* 0x1863E8 */
@@ -662,7 +662,7 @@ static void TestStartNew(void)
     }
 
     /* The radar byte pass runs over the base count as it stands (0 here), so it writes nothing. */
-    CheckEqI32(radarPct[0], 0xAA, "the radar pass skipped (base count was 0 at 0x94600)");
+    CheckEqI32(radarPct[0], (i32)0xAAAAAAAA, "the radar pass skipped (base count was 0 at 0x94600)");
 
     /* The UI tail. */
     CheckEqI32(screen.nGeoscapeScreen, 2, "screen id ends at 2");

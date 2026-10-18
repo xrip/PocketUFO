@@ -195,6 +195,8 @@ static void App_HookNewGame(void *pUser)
      * pointer path uses, plus the colour pair the menu draws with. */
     hooks.pHit  = &g_pointerWorld.hit;
     hooks.pColor = &g_color;
+    hooks.pnAnimPhase = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18: the one cell the hit-test clear
+                                             * and the geoscape pulse's phase gate share */
 
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
     printf("pocketufo: new game: %d funds, %d bases, %d soldiers, %d craft, screen %d, zoom %d\n",
@@ -303,6 +305,7 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pfnStartUiShutdown = App_ShutdownStartUi;
     hooks.pHit  = &g_pointerWorld.hit;
     hooks.pColor = &g_color;
+    hooks.pnAnimPhase = (i32 *)&g_nUiSlot0; /* the same Map + 0x60 cell, as in App_HookNewGame */
 
     {
         i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_options, &hooks);
@@ -590,6 +593,46 @@ static void App_TickAnim(void)
         if (++g_titlesAnim.nScroll > 20 * (g_nTitlesMaxRows + 48)) {
             g_titlesAnim.nScroll = 0;
         }
+    }
+}
+
+/* The WM_TIMER 0xC353 body (0xA0C64): UiPulse_OnTimer @ 0x36630 over the Map block. Its geoscape
+ * branch (0x36644) returns after one hook call, and that hook is Geoscape_PulseUpdate @ 0x954dc --
+ * the geoscape clock tick. The tact branch is the held-key repeat, and the shell has no tactical
+ * mission state yet, so bTactFlag keeps it at the `return` at 0x36660. */
+static void App_GeoscapePulseThunk(void *pUser)
+{
+    (void)pUser;
+    if (g_bWorldReady) {
+        World_PulseGeoscape(&g_world);
+    }
+}
+
+static void App_TickPulse(void)
+{
+    UiPulseHooks hooks;
+    UiPulseCtx   ctx;
+
+    /* The same gate Input_OnPointer / Input_OnPointerUp use at 0x13CE0 / 0x14908. */
+    g_tactState.bGeoscapeUi = (g_bWorldReady && g_world.bGeoscapeUi != 0) ? 1 : 0;
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnPulseUpdate = App_GeoscapePulseThunk;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pState  = &g_tactState;
+    ctx.pTimers = &hooks;
+
+    UiPulse_OnTimer(&ctx);
+}
+
+/* The WM_TIMER default branch (0xA0C88): `wParam == 50004 && cUiAnimProgress < 101` then the byte
+ * increment at 0xA0C90. This is the timer that finishes the panel animation the geoscape screens gate
+ * their captions on (Ui_AnimExpandBlit tests progress == 100), and only StartTimers_D arms it. */
+static void App_TickAnimProgress(void)
+{
+    if (g_world.cUiAnimProgress < 101) {
+        ++g_world.cUiAnimProgress;
     }
 }
 
@@ -1001,13 +1044,19 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         return 0;
     case WM_TIMER:
-        /* PocketUFO_WndProc @ 0xA0944's timer dispatch. 0xC351 is the render tick (the original
-         * calls Render_Frame); 0xC352 is the anim tick, which advances the phase counter
-         * (0xA0978..0xA098C: >=7 wraps to 0) and runs the screen-17 row-key flicker (0xA0AC8). */
+        /* PocketUFO_WndProc @ 0xA0944's timer dispatch, reached through the `wParam != 50000` gate at
+         * 0xA08B0 that keeps 0xC350 on the game-tick path. 0xC351 is the render tick (Render_Frame at
+         * 0xA094C); 0xC352 advances the anim phase (0xA0978..0xA098C) and the per-screen scroll
+         * (0xA0AC8); 0xC353 is UiPulse_OnTimer (0xA0C64); and the switch's default arm is 0xC354's
+         * anim-progress byte (0xA0C88..0xA0C90). */
         if (wParam == PUFO_TIMER_ANIM) {
             App_TickAnim();
         } else if (wParam == PUFO_TIMER_RENDER) {
             App_DrawFrame();
+        } else if (wParam == PUFO_TIMER_UIPULSE) {
+            App_TickPulse();
+        } else if (wParam == PUFO_TIMER_EXTRA) {
+            App_TickAnimProgress();
         }
         return 0;
     case WM_MOUSEMOVE:
@@ -1080,12 +1129,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                 App_PointerLogical(g_nClickX, g_nClickY, true);
                 App_OnPointerUp();
             }
-            /* Debug path: run the anim clock for about a second (40 x 25 ms ticks, the same
-             * body WM_TIMER 0xC352 runs) so the row keys reach their steady value, render one
-             * frame, write it out, and leave. */
+            /* Debug path: run the timer set for about a second -- 40 anim ticks (0xC352 at 25 ms) and
+             * 50 pulses (0xC353 at 20 ms, StartTimers_D's interval) plus the same number of 0xC354
+             * anim-progress ticks -- so the row keys reach their steady value and the geoscape clock
+             * shows its own advance, then render one frame, write it out, and leave. */
             for (int i = 0; i < 40; ++i) {
                 App_TickAnim();
             }
+            for (int i = 0; i < 50; ++i) {
+                App_TickPulse();
+                App_TickAnimProgress();
+            }
+            printf("pocketufo: clock after 50 pulses: geoscape screen %d, tick %d s, "
+                   "total %d s, %02d:%02d day %d month %d year %d, anim progress %d, funds %d\n",
+                   (int)g_world.screen.nGeoscapeScreen, (int)g_world.geo.world.nTickSeconds,
+                   (int)g_world.geo.time.nTotalSec, (int)g_world.geo.time.nHour,
+                   (int)g_world.geo.time.nMinute, (int)g_world.geo.time.nDay,
+                   (int)g_world.geo.time.nMonth, (int)g_world.geo.time.nYear,
+                   (int)g_world.cUiAnimProgress, (int)g_world.nFunds);
+            fflush(stdout);
             App_DrawFrame();
             App_DumpFramePpm(pszDumpPath);
             if (g_bWorldReady) {

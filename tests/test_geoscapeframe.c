@@ -164,6 +164,7 @@ int main(void)
     const SmapZoomSet *pSet;
     PadImage *pMapPad;
     i32       nHalfW, nHalfH;
+    i32       nTick, nSec0, i;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
         printf("FAIL: Boot_LoadStartup\n");
@@ -188,6 +189,7 @@ int main(void)
     hooks.pfnPlaySample = RecSample;
     hooks.pHit          = &g_hit;
     hooks.pColor        = &g_color;
+    hooks.pnAnimPhase   = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18, the cell the pulse's phase gate counts */
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
 
     pF   = &g_world.frame;
@@ -225,8 +227,8 @@ int main(void)
 
     /* 2. One whole frame at the new-game camera. */
     ClearSurface();
-    g_world.time.nHour   = 3;   /* the drift is a function of the clock, so the clock is fixed here */
-    g_world.time.nMinute = 30;
+    g_world.geo.time.nHour   = 3;   /* the drift is a function of the clock, so the clock is fixed here */
+    g_world.geo.time.nMinute = 30;
     g_world.view.nScrollX = 0;
     g_world.view.nScrollY = 0;
     pMapPad = pSet->pGrid;      /* earth100.pad, 800 x 400, palette slot 10 */
@@ -446,6 +448,100 @@ int main(void)
           "the radar arm's own env and aRadarControls @ 0x159684 stay unwired");
     Check(pF->panel.pfnCtlOpen == NULL && pF->panel.pfnCtlSfx == NULL,
           "the panel's four screen openers stay unwired (0x85194 / 0x852b8 / 0x84d18 / 0x84bf8)");
+
+    /* 10. The clock. Geoscape_PulseUpdate @ 0x954dc is WM_TIMER 0xC353's geoscape half (UiPulse_OnTimer
+     * 0x36630 returns at 0x36644 after one hook call), and it advances the clock only while the geoscape
+     * screen id is 0 (0x95618), so the id goes to 0 here the way the map screen has it. */
+    Check(g_world.geo.pList == &g_world.strategList
+              && g_world.geo.pnNextDisplayId == &g_world.nNextDisplayId
+              && g_world.geo.pnNextSiteId == &g_world.nNextSiteId
+              && g_world.geo.pnDaysSinceStart == &g_world.nAlienPoolAddend
+              && g_world.geo.pnSelectedShipIdx == &g_world.nSelectedShipIdx
+              && (const void *)g_world.geo.pnLowSupplyFlag == (const void *)&g_world.nShortfall1870C8
+              && g_world.geo.apEmptyFacilityCells == g_world.abRadarPct
+              && g_world.geo.pnSoldierCount == &g_world.nSoldierCount,
+          "the tick state points at the shell's own cells: one instance of each global (0x186534, "
+          "0x186544/48, 0x1472C8, 0x187054, 0x1870C8, 0x162008, 0x115350)");
+    Check(g_world.geoHooks.pfnContactMsg != NULL && g_world.geoHooks.pfnGrantSiteRecovery != NULL
+              && g_world.geoHooks.pfnRefreshBaseTabs != NULL
+              && g_world.geoHooks.pfnAccumulateResearch != NULL
+              && g_world.geoHooks.pfnTickFacilityConstruction != NULL
+              && g_world.geoHooks.pfnClearFacilityGridRow != NULL
+              && g_world.geoHooks.pfnCountEmptyFacilityCells != NULL
+              && g_world.geoHooks.pfnOpenMonthly != NULL
+              && g_world.geoHooks.pfnProcessEvents != NULL
+              && g_world.geoHooks.pUser == &g_world,
+          "the ten ported GeoscapeHooks callees are wired over the shell state");
+    Check(g_world.geoClock.pfnTickShips != NULL && g_world.geoClock.pfnTickHourly != NULL
+              && g_world.geoClock.pfnTickBases != NULL && g_world.geoClock.pfnOpenMonthly != NULL
+              && g_world.geoClock.pUser == &g_world.geoBundle,
+          "Geoscape_BuildClockHooks fills the four hooks Geoscape_AdvanceTime calls");
+
+    nTick = g_world.geo.world.nTickSeconds; /* nGeoscapeTickSeconds @ 0x187070 */
+    Check(nTick > 0, "the new game leaves a real tick length at 0x187070");
+
+    g_world.screen.nGeoscapeScreen = 0;
+    g_world.geo.time.bPaused = 0;
+    nSec0 = g_world.geo.time.nTotalSec;
+    for (i = 0; i < 4; ++i) {
+        World_PulseGeoscape(&g_world);
+    }
+    CheckEqI32(g_world.geo.time.nTotalSec, nSec0 + 4 * (nTick + 1),
+               "four pulses advance the clock by nTickSeconds + 1 each (0x95618 -> 0x5ce40)");
+    Check(g_world.geo.time.nMonth >= 1 && g_world.geo.time.nMonth <= 12
+              && g_world.geo.time.nDay >= 1 && g_world.geo.time.nDay <= 31
+              && g_world.geo.time.nHour >= 0 && g_world.geo.time.nHour <= 23,
+          "and GameTime_Decode @ 0x5cdbc ran on the way out (0x95628)");
+
+    /* The four radar counters step by one and stop at 255 on EVERY screen (0x95B80..0x95BCC). */
+    g_world.nRadarCooldownL = 254;
+    g_world.nRadarMsgTimer  = 255;
+    g_world.nRadarPulseTimer = 7;
+    pF->g.nTapCooldown      = 0;
+    g_world.nShortfall1870C8 = 0;
+    World_PulseGeoscape(&g_world);
+    CheckEqI32(g_world.nRadarCooldownL, 255, "nRadarCooldownL @ 0xAC21C steps to its cap");
+    CheckEqI32(g_world.nRadarMsgTimer, 255, "nRadarMsgTimer @ 0xAC220 never goes past it");
+    CheckEqI32(g_world.nRadarPulseTimer, 8, "nRadarPulseTimer @ 0xAC224 steps by one");
+    CheckEqI32(pF->g.nTapCooldown, 1, "and nRadarCooldownR @ 0xAC218 is the frame's tap-cooldown cell");
+
+    /* dwActionFail == 1 stops the whole tick before anything, cooldowns and clock included (0x954EC). */
+    g_world.nShortfall1870C8 = 1;
+    nSec0 = g_world.geo.time.nTotalSec;
+    World_PulseGeoscape(&g_world);
+    CheckEqI32(g_world.geo.time.nTotalSec, nSec0, "the latch stops the clock");
+    CheckEqI32(g_world.nRadarPulseTimer, 8, "and the four counters too");
+    g_world.nShortfall1870C8 = 0;
+
+    /* 11. The held-direction scroll. The switch arm runs only when nUiSlot0AnimPhase @ 0x113A18 ARRIVES
+     * as 1 (0x95644..0x95654) and the phase is cleared at 0x95B78 either way, so the test puts the 1 in
+     * by hand -- nothing else in the geoscape leaves it there. Map screen (id 0) scrolls by 25, and
+     * Smap_ScrollBy takes pos - delta + last_delta with nLastDx / nLastDy preset to 120 / 160, so the
+     * camera moves by exactly the step. */
+    /* The starting pair sits inside the screen-0 clamp window Smap_ClampScrollY keeps
+     * (-nHalfH .. stripHeight - nHalfH + mapH - 320, i.e. -40..124 for the 800x400 zoom-0 map with the
+     * 0x186BBC strip), so the two axis checks below see the plain step and not the clamp. */
+    g_world.view.nScrollX = 200;
+    g_world.view.nScrollY = 60;
+    g_world.view.nLastDx  = 0;
+    g_world.view.nLastDy  = 0;
+    g_world.abScrollFlags[PUFO_PULSE_FLAG_UP]    = 1; /* +y at 0x95718 */
+    g_world.abScrollFlags[PUFO_PULSE_FLAG_RIGHT] = 1; /* +x at 0x95724 */
+    g_world.abScrollFlags[PUFO_PULSE_FLAG_DOWN]  = 0;
+    g_world.abScrollFlags[PUFO_PULSE_FLAG_LEFT]  = 0;
+    *g_world.pnAnimPhase = 1;
+    World_PulseGeoscape(&g_world);
+    CheckEqI32(g_world.view.nScrollX, 200 - 25,
+               "the right flag scrolls by the map step: 200 - (120+25) + 120 (0x95864 -> 0x82104)");
+    CheckEqI32(g_world.view.nScrollY, 60 - 25, "and the up flag on y (0x82114)");
+    CheckEqI32(g_world.view.nLastDx, 120 + 25, "the pair is stored after the clamp (0x82164)");
+    CheckEqI32(g_world.view.nLastDy, 160 + 25, "on both axes");
+    Check(g_world.abScrollFlags[PUFO_PULSE_FLAG_UP] == 0
+              && g_world.abScrollFlags[PUFO_PULSE_FLAG_RIGHT] == 0
+              && g_world.abScrollFlags[PUFO_PULSE_FLAG_DOWN] == 0
+              && g_world.abScrollFlags[PUFO_PULSE_FLAG_LEFT] == 0,
+          "the pulse clears all four direction bytes (0x95874..0x95880)");
+    CheckEqI32(*g_world.pnAnimPhase, 0, "and the animation phase at 0x95B78");
 
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);

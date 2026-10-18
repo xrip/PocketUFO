@@ -532,7 +532,7 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     /* 0x94600..0x94648: the radar byte per base (dword stores in the original, the
      * port's u8 array as in LoadGame). */
     for (b = 0; b < (i32)*pEnv->pbBaseCount; ++b) {
-        pEnv->apRadarPct[b] = (u8)Base_CountEmptyFacilityCells(pEnv->abFacilityGrid, b);
+        pEnv->apRadarPct[b] = Base_CountEmptyFacilityCells(pEnv->abFacilityGrid, b); /* 0x9461C: a DWORD store */
     }
 
     /* 0x94650..0x94680: the nine region counters plus the byte at 0x186566 (IDA names it

@@ -2278,7 +2278,7 @@ static void TestLoadGame(void)
     static u8 aProduct[17152 + 3200];
     static u8 aGrid[1524];
     static u8 aSiteState[8];
-    static u8 aRadarPct[8];
+    static i32 aRadarPct[8]; /* unk_162008, eight dwords */
     static u16 aManuf[200];
     static u16 aResearchCols[144];
     static u16 uResearchEntries;

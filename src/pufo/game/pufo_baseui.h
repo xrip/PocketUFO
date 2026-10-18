@@ -262,7 +262,7 @@ typedef enum PufoBuySellRowMarker {
  *   0, 2   no panel at all: set one flag byte and return. Prev sets unk_1864F4, Next sets
  *          unk_1864F6, and BOTH return the address of unk_1864F4 -- the byte Next writes is
  *          not the byte it hands back. Geoscape_SetPanelFlagA/B @ 0x8b448 / 0x8b478 write the
- *          same two bytes. Geoscape_PulseUpdate (0x954dc, not ported) reads them. What the two
+ *          same two bytes. Geoscape_PulseUpdate @ 0x954dc (ported in pufo_geoscape.c) reads them. What the two
  *          bytes mean is not established here.
  *   4      pSolPanelNames @ 0x15975C then pSolPanelCraft @ 0x159DEC  (the soldier screen)
  *   6      the five hangar panels, but only while bPlaneStoresCommitted @ 0x161F28 is set;
@@ -1772,7 +1772,7 @@ i32 ResearchScreen_RefreshPanels(const ResearchTopicLive *aTopics, i32 nTopicCou
  * research screen's "+1 / -1" buttons, applied to the topic the topic panel is sitting on.
  *
  * Both reach the topic through the same pair of globals. The topic panel at 0x160C68 carries a
- * topic number per row in its anLineAux (ResearchScreen_RebuildTopicList (0x74270, not ported)
+ * topic number per row in its anLineAux (ResearchScreen_RebuildTopicList (0x74270, ported in this file behind ResearchRebuildEnv)
  * fills it),
  * and 0x160C74 caches that panel's nUnk3032 row cursor -- PlaySample7_SetFlags_Cache0xBD8
  * @ 0x73328 is the write, `unk_160C74 = unk_160C68->nUnk3032`, which is why IDA's own name for
@@ -1851,7 +1851,7 @@ void ResearchScreen_CancelSelectedAndClose(const ResearchCancelEnv *pEnv);
  * aResearchTopics[i].wProgress -- the topic index is the column index, so all eight bases
  * accumulate into the same 144 topic records. The add is an LDRH / ADD / STRH triple
  * (0x74964..0x7496C) with the result truncated to 16 bits, so it wraps. It ends with a tail call
- * into ResearchScreen_RebuildTopicList (0x74270, not ported), so the rebuild is a hook and this
+ * into ResearchScreen_RebuildTopicList (0x74270, ported in this file behind ResearchRebuildEnv), so the rebuild is a hook and this
  * returns what that hook returns.
  *
  * Two ARM quirks worth recording. The inner loop bound is re-read from nResearchEntryCount on
@@ -1862,7 +1862,7 @@ typedef struct ResearchAccumulateEnv {
     ResearchTopicLive *aTopics;           /* aResearchTopics @ 0x15EF08, 144 records of 34 bytes */
     const u16         *apResearchCols;    /* auResearchCol @ 0x16022C, 144 u16 per base */
     const u16         *puResearchEntries; /* nResearchEntryCount @ 0x160C4C */
-    i32 (*pfnRebuild)(void *pUser);       /* ResearchScreen_RebuildTopicList (0x74270), not ported */
+    i32 (*pfnRebuild)(void *pUser);       /* ResearchScreen_RebuildTopicList @ 0x74270, ported in this file behind ResearchRebuildEnv */
     void              *pRebuildUser;
 } ResearchAccumulateEnv;
 
@@ -2658,7 +2658,7 @@ void Funding_AddRegionBonus(i32 *anFundingSlots, i32 nRegionId);
  *
  * It then refreshes the three panels, re-runs both needed passes (workshops and labs, which is why
  * the manufacturing column has to be handed in too), and tail-calls ResearchScreen_RebuildTopicList
- * (0x74270, not ported), so the rebuild is a hook and this returns what that hook returns. */
+ * (0x74270, ported in this file behind ResearchRebuildEnv), so the rebuild is a hook and this returns what that hook returns. */
 typedef struct ResearchStartEnv {
     ResearchQtyEnv qty;                  /* panel, row cache, research column, count, scientists, grid, base */
     ResearchTopicLive *aTopics;          /* aResearchTopics @ 0x15EF08 */
@@ -2668,7 +2668,7 @@ typedef struct ResearchStartEnv {
     u8              *pbTopicSelected;    /* unk_160C80, cleared here */
     void (*pfnPlaySample)(u32 nSample, void *pUser);
     void *pSampleUser;
-    i32 (*pfnRebuild)(void *pUser);      /* ResearchScreen_RebuildTopicList (0x74270), not ported */
+    i32 (*pfnRebuild)(void *pUser);      /* ResearchScreen_RebuildTopicList @ 0x74270, ported in this file behind ResearchRebuildEnv */
     void *pRebuildUser;
 } ResearchStartEnv;
 
@@ -2785,17 +2785,21 @@ extern const i32 g_anFundingRowSlot[PUFO_FUND_ROW_COUNT]; /* {0, 2, 3, 1, 4} */
  *
  * Deviation: the original indexes apBases with an unchecked byte and dereferences every entry; the
  * port stops at the count it is given and skips a NULL entry. */
+/* Every array here is a POINTER into the caller's own copy of the original global it names: the
+ * function reads and writes them in place (0x5C168, 0x5C33C, 0x5C3A4, 0x5C3CC), and the same cells are
+ * read by FundingScreen_DrawExtended, Geoscape_DrawFundingArm and Geoscape_CloseUI case 19. A by-value
+ * copy in the env would give the shell two instances of one global. */
 typedef struct FundingInitEnv {
     PadImage         **ppPadSlot;      /* unk_1595DC, the "funding" pad */
     UiControl         *pCloseCtl;      /* g_pUiCloseCtl */
     void (*pfnCloseClick)(void);       /* FundingScreen_ExitThunk @ 0x5c078 */
-    i32               anCountryScore[6];  /* g_nFundScore0..4 @ 0x186568..0x186578, [5] g_nFundMult */
+    i32               *anCountryScore; /* g_nFundScore0..4 @ 0x186568..0x186578, [5] g_nFundMult @ 0x18657C */
     i32              *pnPendingTotal;  /* unk_1865BC */
-    i32               anShare[PUFO_FUND_ROW_COUNT];    /* 0x186580..0x186590, slot-indexed */
-    i32               anBaseline[PUFO_FUND_ROW_COUNT]; /* 0x1595F0..0x159600, row-indexed */
-    i32               anBarTotal[PUFO_FUND_ROW_COUNT]; /* 0x186594..0x1865A4, slot-indexed */
-    i32               anArrow[PUFO_FUND_ROW_COUNT];    /* 0x1865A8..0x1865B8, slot-indexed */
-    i32               nMonthCounter;   /* unk_159648 */
+    i32               *anShare;        /* 0x186580..0x186590, slot-indexed */
+    i32               *anBaseline;     /* 0x1595F0..0x159600, row-indexed */
+    i32               *anBarTotal;     /* 0x186594..0x1865A4, slot-indexed */
+    i32               *anArrow;        /* 0x1865A8..0x1865B8, slot-indexed */
+    i32               *pnMonthCounter; /* unk_159648 */
     const BaseRec    *const *apBases;  /* apBases @ 0x114B2C */
     i8                nBaseCount;      /* nBaseCount @ 0x159D80, signed */
 } FundingInitEnv;
@@ -5059,7 +5063,7 @@ typedef struct ResearchInitEnv {
     void (*pfnPanelNext)(void);     /* ResearchScreen_PanelNext @ 0x72e68 */
     void (*pfnIncQty)(void);        /* ResearchScreen_IncSelectedQty @ 0x72ea0 */
     void (*pfnDecQty)(void);        /* ResearchScreen_DecSelectedQty @ 0x72f70 */
-    void (*pfnRebuildTopicList)(void); /* ResearchScreen_RebuildTopicList (0x74270), not ported */
+    void (*pfnRebuildTopicList)(void); /* ResearchScreen_RebuildTopicList @ 0x74270, ported in this file behind ResearchRebuildEnv */
     void (*pfnBuildPanels)(void);   /* ResearchScreen_BuildPanels @ 0x733f4 */
     ResearchTopicLive *aTopics;     /* aResearchTopics @ 0x15EF08 */
     const u8 *pbEntryCount;         /* nResearchEntryCount @ 0x160C4C, read with LDRB */

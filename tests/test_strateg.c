@@ -46,7 +46,7 @@ static StrategItem *g_apItems[8];
 static Ship g_aShips[4];
 static Ship *g_apShips[4];
 static u8 g_aSiteState[4];
-static u8 g_aRadarPct[4];
+static i32 g_aRadarPct[4]; /* unk_162008 is a dword per base */
 static GameTime g_Time; /* stands for the apLines[101..115] block */
 static BaseRec g_aBases[PUFO_FAC_BASE_COUNT];
 static BaseRec *g_apBases[PUFO_FAC_BASE_COUNT];

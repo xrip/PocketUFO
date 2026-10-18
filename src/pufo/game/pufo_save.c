@@ -2799,7 +2799,7 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     /* 0x4580C..0x458B8: per base, the radar byte and the five needed-flag passes with the
      * budgets the original computes internally. */
     for (i32 b = 0; b < nBaseCount; ++b) {
-        pEnv->pWorld->apRadarPct[b] = (u8)Base_CountEmptyFacilityCells(pEnv->abFacilityGrid, b);
+        pEnv->pWorld->apRadarPct[b] = Base_CountEmptyFacilityCells(pEnv->abFacilityGrid, b); /* 0x4582C: a DWORD store */
     }
     for (i32 b = 0; b < nBaseCount; ++b) {
         i32 nSpace  = Base_CalcOccupiedSpace(pEnv->apSoldiers, *pEnv->pnSoldierCount,

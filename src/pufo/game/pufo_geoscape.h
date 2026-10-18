@@ -105,20 +105,28 @@ typedef struct GeoscapeState {
     i32         *pnNextDisplayId;   /* nNextStrategDisplayId @ 0x186544 */
     i32         *pnNextSiteId;      /* nNextStrategSiteId @ 0x186548 */
 
-    u16  nDaysSinceStart;   /* word_1472C8 @ 0x1472c8, capped at 200 */
-    i32  nSelectedShipIdx;  /* nSelectedShipIdx @ 0x187054 */
-    i32  nSelectedShipAux;  /* gUiRootPanel.anLineAux[140] */
-    u8   bLowSupplyFlag;    /* dwActionFail @ 0x1870C8 -- one latch, two names: the ship pass writes it
-                             * as the low-supply shortfall (a dword store at 0x61340), the status panel's
-                             * action-fail line 0x8E658 and Geoscape_PulseUpdate's gate 0x954EC read it. */
+    /* The four cells the tick chain shares with globals the rest of the port reaches directly, kept as
+     * pointers so the shell has ONE instance of each. Every one of them has a second name in the IDB: */
+    u16  *pnDaysSinceStart;   /* word_1472C8 @ 0x1472c8, capped at 200 here and handed to the alien
+                               * mission composition as nAlienPoolAddend (pufo_tactctl.h) there */
+    i32  *pnSelectedShipIdx;  /* nSelectedShipIdx @ 0x187054, the same cell StrategList_ProcessEvents
+                               * writes through its own env */
+    i32  *pnLowSupplyFlag;    /* dwActionFail @ 0x1870C8 -- one latch, two names: the ship pass writes it
+                               * with STR at 0x46064 and RadarScreen_Update with STR at 0x61340 (both DWORD
+                               * stores), and the status panel's action-fail line 0x8E658 and
+                               * Geoscape_PulseUpdate's gate 0x954EC read it. */
+    i32   nSelectedShipAux;   /* gUiRootPanel.anLineAux[140]: TickShips writes it beside nSelectedShipIdx
+                               * and nothing in the port reads it, so it stays a plain field. */
 
     BaseRec *const *apBases;      /* pCtxBase.apBases */
     ObjectRecFull  *pSupplyItem;  /* pCtxBase.apObjects[105] */
-    i32  nBaseCount;              /* SLOBYTE(gUiRootPanel.anLineAux[79]) */
+    i32  nBaseCount;              /* SLOBYTE(gUiRootPanel.anLineAux[79]): the shell mirrors its own signed
+                                   * byte 0x159D80 here when it wires the clock. */
     i32 *apEmptyFacilityCells;    /* pMap.gap_TrajRest[26644], one per base */
 
     Soldier *const *apSoldiers;   /* pCtxBase.apSoldiers */
-    u16  nSoldierCount;           /* pCtxBase.nSoldierCount (u16) */
+    const i32 *pnSoldierCount;    /* nSoldierCount @ 0x115350 (u16 semantics): a pointer because a site
+                                    * recovery adds soldiers while the clock is running */
 } GeoscapeState;
 
 typedef struct GeoscapeHooks {
@@ -892,8 +900,9 @@ void Base_GrantStarterItems(BaseRec *pBase, ObjectRecFull *const *apObjects, u8 
  * GameTime_SetSpeedIdx3 @ 0x8502c, GameTime_SetSpeedIdx4 @ 0x85094, GameTime_SetSpeedIdx5 @ 0x850fc.
  *
  * Six one-button handlers, all the same shape: play sample 17, store the tick interval into
- * GeoscapeWorld.nTickSeconds (dword_187070, read by StrategList_UpdateMotion and by the unported
- * Geoscape_PulseUpdate, cleared by Geoscape_CloseUI), and set the nState of the six nav speed
+ * GeoscapeWorld.nTickSeconds (nGeoscapeTickSeconds @ 0x187070 -- an interval in seconds, not a counter, read
+ * by StrategList_UpdateMotion and by Geoscape_PulseUpdate @ 0x95624, and never cleared by anything), and set
+ * the nState of the six nav speed
  * controls - the UiControl pointers Geoscape_InitUI keeps at 0x186500..0x186514 - so exactly the
  * button's own control is 1 and the other five are 0. The intervals are 5, 60, 300, 1380, 2460 and
  * 3600 seconds.

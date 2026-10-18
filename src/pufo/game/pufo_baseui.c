@@ -5192,7 +5192,9 @@ static i32 FundingUpkeepClass(i32 nMonth)
 void FundingScreen_Init(FundingInitEnv *pEnv)
 {
     if (pEnv == NULL || pEnv->ppPadSlot == NULL || pEnv->pnPendingTotal == NULL
-        || pEnv->apBases == NULL) {
+        || pEnv->apBases == NULL || pEnv->anCountryScore == NULL || pEnv->anShare == NULL
+        || pEnv->anBaseline == NULL || pEnv->anBarTotal == NULL || pEnv->anArrow == NULL
+        || pEnv->pnMonthCounter == NULL) {
         return;
     }
 
@@ -5242,7 +5244,7 @@ void FundingScreen_Init(FundingInitEnv *pEnv)
         }
     }
 
-    const i32 nUpkeepClass = FundingUpkeepClass(pEnv->nMonthCounter);
+    const i32 nUpkeepClass = FundingUpkeepClass(*pEnv->pnMonthCounter);
     for (i32 nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
         const i32 nUpkeep = g_anFundingUpkeep[nUpkeepClass][nRow];
         pEnv->anBaseline[nRow] = nUpkeep;                          /* 0x5C33C..0x5C388 */
@@ -5254,7 +5256,7 @@ void FundingScreen_Init(FundingInitEnv *pEnv)
         i32 nLevel = Funding_ScoreToBarLevel(nRow,
                          Funding_DeltaToArrow(pEnv->anShare[nSlot], pEnv->anBaseline[nRow]));
         pEnv->anArrow[nSlot] = nLevel;              /* 0x5C3A4, 0x5C3E8, 0x5C428, 0x5C468, 0x5C4A8 */
-        if (pEnv->nMonthCounter < 3 && nLevel < 0) {
+        if (*pEnv->pnMonthCounter < 3 && nLevel < 0) {
             nLevel = 0;                             /* 0x5C3AC..0x5C3BC and its four copies */
             pEnv->anArrow[nSlot] = 0;
         }
@@ -5280,7 +5282,7 @@ void FundingScreen_OpenMonthly(FundingInitEnv *pEnv, i32 *pnScreenId, u8 *pbAnim
     if (pEnv == NULL) {
         return;
     }
-    pEnv->nMonthCounter += 1;                       /* 0x5D170 */
+    *pEnv->pnMonthCounter += 1;                     /* 0x5D170 */
     if (pnScreenId != NULL) {
         *pnScreenId = 19;                           /* 0x5D18C: Geoscape_CloseUI's case 19 */
     }

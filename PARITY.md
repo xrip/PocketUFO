@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 17729 |
+| Test checks run | 17747 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -538,7 +538,7 @@ is the module that answers to it.
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_save.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+2) |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
-| `0x36630` | `UiPulse_OnTimer` | 488 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
+| `0x36630` | `UiPulse_OnTimer` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x11320` | `UiBank_CtorAll` | 440 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x1117c` | `UiBank_FreeAllPads` | 420 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.c` (+1) |
@@ -574,7 +574,7 @@ is the module that answers to it.
 | `0x3e8c8` | `UiPanel_FreeLines` | 76 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3f06c` | `UiPanel_SetLineMeta` | 72 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x460e8` | `Font_Init` | 72 | `src/pufo/game/pufo_font.h` |
-| `0x5a394` | `UiPanel_AppendLineWithSound` | 72 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_ship.h` (+2) |
+| `0x5a394` | `UiPanel_AppendLineWithSound` | 72 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
 | `0x1a5c0` | `UiControl_SetPosMode` | 68 | `src/pufo/ui/pufo_control.h` |
 | `0x1a75c` | `UiControl_Setup` | 68 | `src/pufo/ui/pufo_control.h`, `src/pufo/ui/pufo_uibank.c` (+1) |
 | `0x16e04` | `UiBank_SelectRadio0_Play11` | 60 | `src/pufo/game/pufo_tactui.h` |
@@ -619,7 +619,7 @@ is the module that answers to it.
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
-| `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_strateg.h` |
+| `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x94554` | `Game_StartNew` | 3976 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+6) |
 | `0x60570` | `RadarScreen_Update` | 3804 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5f490` | `RadarScreen_Init` | 3600 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -633,7 +633,7 @@ is the module that answers to it.
 | `0x6727c` | `Geoscape_DrawGlobeHover` | 2208 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5c5c8` | `Geoscape_DrawClockPads` | 2168 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/game/pufo_geoscape.h` |
+| `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x5edf4` | `RadarScreen_DrawCraftArmament` | 1692 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x693ec` | `Craft_LoadStoresFromBase` | 1612 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x66b70` | `Base_DemolishFacility` | 1600 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -675,7 +675,7 @@ is the module that answers to it.
 | `0x6a230` | `Base_CalcMonthlyUpkeep` | 468 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5d4e4` | `Geoscape_TickShips` | 456 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_strateg.h` |
 | `0x666cc` | `Ship_FormatDisplayName` | 424 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
-| `0x5ce40` | `Geoscape_AdvanceTime` | 404 | `src/pufo/game/pufo_clock.h`, `src/pufo/game/pufo_geoscape.h` |
+| `0x5ce40` | `Geoscape_AdvanceTime` | 404 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x5cfd4` | `GameTime_Decode` | 396 | `src/pufo/game/pufo_clock.h`, `src/pufo/game/pufo_geoscape.h` |
 | `0x62824` | `Base_TickFacilityConstruction` | 396 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x81a9c` | `StrategList_RollCraftStats` | 364 | `src/pufo/game/pufo_strateg.h` |
@@ -746,7 +746,7 @@ is the module that answers to it.
 | `0x6598c` | `Base_CalcPsiLabCap` | 124 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.c` (+1) |
 | `0x6611c` | `Base_CalcHangarCap` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x682c8` | `Base_CountBuiltFacilities` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
-| `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_strateg.h` |
+| `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x84e20` | `Base_EnterBuildMode` | 124 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x95fa4` | `Base_GrantStarterItems` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x837f8` | `Smap_ClampScrollY` | 120 | `src/pufo/game/pufo_strateg.h` |
@@ -767,10 +767,10 @@ is the module that answers to it.
 | `0x84f64` | `GameTime_Set1Min` | 100 | `src/pufo/game/pufo_geoscape.h` |
 | `0x84fc8` | `GameTime_Set5Min` | 100 | `src/pufo/game/pufo_geoscape.h` |
 | `0x69ffc` | `Ship_FindIndexById` | 96 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
-| `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_geoscape.h` (+1) |
-| `0x5a8d0` | `Base_FindIndexBySiteId` | 92 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` (+1) |
+| `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
+| `0x5a8d0` | `Base_FindIndexBySiteId` | 92 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+2) |
 | `0x5c56c` | `GameTime_Reset` | 92 | `src/pufo/game/pufo_clock.h` |
-| `0x5d160` | `FundingScreen_OpenMonthly` | 92 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x5d160` | `FundingScreen_OpenMonthly` | 92 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x664f0` | `Craft_CountWeaponSlotsCarried` | 92 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x68198` | `Base_CountActiveResearch` | 92 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x84428` | `Smap_DismissSelected` | 92 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` (+2) |
@@ -809,7 +809,7 @@ is the module that answers to it.
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
 | `0x5abd8` | `FundingScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
-| `0x5c078` | `FundingScreen_ExitThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x5c078` | `FundingScreen_ExitThunk` | 12 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x838a0` | `StrategList_RegisterAtexit` | 12 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x838d0` | `Geoscape_CloseUI_ThunkA` | 12 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
 | `0x857e8` | `Geoscape_OnMapClick_Thunk` | 12 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
@@ -872,7 +872,7 @@ is the module that answers to it.
 | `0x749a8` | `ResearchScreen_Init` | 592 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x73008` | `ResearchScreen_RefreshPanels` | 568 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6e13c` | `ManufScreen_IncEngineers` | 500 | `src/pufo/game/pufo_baseui.h` |
-| `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_options.c` (+2) |
 | `0x710b0` | `ManufScreen_Init` | 488 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7c9e8` | `BasePlaneScreen_Close` | 480 | `src/pufo/game/pufo_plane.h` |
@@ -1276,7 +1276,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 57 |
+| `test_geoscapeframe` | PASS | 75 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |
@@ -1339,7 +1339,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 771 citations.
+parity report. Total: 773 citations.
 
 ### Offsets below the image base (43)
 
@@ -1348,7 +1348,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (728)
+### At or above the image base (730)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1746,6 +1746,7 @@ against the IDB when the final report is assembled.
 - `0x18641c`
 - `0x186420`
 - `0x186488`
+- `0x1864f4`
 - `0x1864f8`
 - `0x186500`
 - `0x18652c`
@@ -1935,6 +1936,7 @@ against the IDB when the final report is assembled.
 - `0x941a0`
 - `0x94964`
 - `0x9542c`
+- `0x95624`
 - `0x9e27c`
 - `0x9e470`
 - `0x9e488`

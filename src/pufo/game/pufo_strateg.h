@@ -95,7 +95,12 @@ typedef struct GeoscapeWorld {
     Ship *const *apCraft;
     u8    nShipCount;
     u8   *apSiteState;   /* byte_161F38, one byte per base */
-    u8   *apRadarPct;    /* unk_162008, one byte per base */
+    i32   *apRadarPct;   /* unk_162008 @ 0x162008: eight DWORDS, stride 4. Game_StartNew (0x9461C),
+                          * LoadGame (0x4582C) and Geoscape_TickHourly (0x5D39C: `STR R0,[R6]` then
+                          * `ADD R6,R6,#4`) all store it as dwords, and Strateg_CalcDetect reads it at
+                          * 0x8147C with `LDR R3,[R1,R0,LSL#2]` truncated to a signed byte. It is the SAME
+                          * block GeoscapeState.apEmptyFacilityCells is -- one array, two names -- and the
+                          * dword 7 ends at 0x162027, one byte before bSpawnOnce @ 0x162028. */
     i32   nTickSeconds;  /* dword_187070: seconds per game tick (5/60/300/...) */
     i32   nRadarBoostOff;/* apLines[117]: zero adds +7 to every radar pct */
     i8    nMinuteTicks;  /* apLines[118], signed byte counter */

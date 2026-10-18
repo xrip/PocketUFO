@@ -12863,6 +12863,10 @@ static i32          g_nFundCloseClicks;
 static i32          g_nFundPending;
 static i32          g_nFundScreenId;
 static u8           g_bFundAnim;
+/* The env's array members are pointers into the caller's globals (0x186568..0x1865B8 and
+ * 0x1595F0..0x159600), so the fixture owns them here. */
+static i32          g_aFundScore[6], g_aFundShare[5], g_aFundBaseline[5];
+static i32          g_aFundBar[5], g_aFundArrow[5], g_nFundMonth;
 
 static void FundCloseClick(void) { ++g_nFundCloseClicks; }
 
@@ -12885,18 +12889,30 @@ static void FundFixture(FundingInitEnv *pEnv, i32 nMonth, i8 nBaseCount)
     g_nFundScreenId = -1;
     g_bFundAnim = 1;
 
+    memset(g_aFundScore, 0, sizeof(g_aFundScore));
+    memset(g_aFundShare, 0, sizeof(g_aFundShare));
+    memset(g_aFundBaseline, 0, sizeof(g_aFundBaseline));
+    memset(g_aFundBar, 0, sizeof(g_aFundBar));
+    memset(g_aFundArrow, 0, sizeof(g_aFundArrow));
+
     memset(pEnv, 0, sizeof(*pEnv));
     pEnv->ppPadSlot = &g_pFundPad;
     pEnv->pCloseCtl = &g_fundClose;
     pEnv->pfnCloseClick = FundCloseClick;
-    pEnv->anCountryScore[0] = 10;
-    pEnv->anCountryScore[1] = 20;
-    pEnv->anCountryScore[2] = 30;
-    pEnv->anCountryScore[3] = 40;
-    pEnv->anCountryScore[4] = 50;
-    pEnv->anCountryScore[PUFO_FUNDING_MULT_SLOT] = 3;
+    pEnv->anCountryScore = g_aFundScore;
+    pEnv->anShare = g_aFundShare;
+    pEnv->anBaseline = g_aFundBaseline;
+    pEnv->anBarTotal = g_aFundBar;
+    pEnv->anArrow = g_aFundArrow;
+    pEnv->pnMonthCounter = &g_nFundMonth;
+    g_aFundScore[0] = 10;
+    g_aFundScore[1] = 20;
+    g_aFundScore[2] = 30;
+    g_aFundScore[3] = 40;
+    g_aFundScore[4] = 50;
+    g_aFundScore[PUFO_FUNDING_MULT_SLOT] = 3;
     pEnv->pnPendingTotal = &g_nFundPending;
-    pEnv->nMonthCounter = nMonth;
+    g_nFundMonth = nMonth;
     pEnv->apBases = g_apFundBases;
     pEnv->nBaseCount = nBaseCount;
 }
@@ -13023,7 +13039,7 @@ static void TestFundingRecompute(void)
     /* F. The opener: the month goes up first, then the recompute runs. */
     FundFixture(&env, 3, 5);
     FundingScreen_OpenMonthly(&env, &g_nFundScreenId, &g_bFundAnim);
-    CheckEqI32(env.nMonthCounter, 4, "the month counter is incremented before the recompute (0x5D170)");
+    CheckEqI32(*env.pnMonthCounter, 4, "the month counter is incremented before the recompute (0x5D170)");
     CheckEqI32(env.anBaseline[PUFO_FUND_ROW_USA], -500, "so this report runs at month 4's upkeep");
     CheckEqI32(g_nFundScreenId, 19, "the geoscape screen id becomes 19 (0x5D18C)");
     CheckEqI32((i32)g_bFundAnim, 0, "and the shared animation flag is cleared (0x5D1A0)");

@@ -2750,7 +2750,63 @@ Order is by what unblocks what. Each item ends with gates + commit.
    Priority 3. This priority is closed.
    3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
+- [x] **Part 26, the geoscape clock wired into the shell: `WM_TIMER 0xC353/0xC354` and the eleven
+  `GeoscapeHooks` adapters.** `App_TickPulse` now runs `UiPulse_OnTimer @ 0x36630` with
+  `UiPulseHooks.pfnPulseUpdate = App_GeoscapePulseThunk → World_PulseGeoscape`, `App_TickAnimProgress`
+  mirrors 0xA0C88..0xA0C90 (`wParam == 50004 && cUiAnimProgress < 101`), and the `WM_TIMER` arm dispatches
+  0xC352/0xC351/0xC353/0xC354 exactly as 0xA0AC8/0xA0C64/the default arm do. `World_WireGeoscapeClock`
+  fills the eleven hooks (`Geoscape_SpawnMissionSite @ 0x7e49c` is NOT ported, so its hook is a recorded
+  stub), `Geoscape_BuildClockHooks` hands `TickShips`/`TickHourly`/`TickBases`/`FundingScreen_OpenMonthly`
+  to `Geoscape_AdvanceTime`, and the shell cells that the pulse owns are one instance each:
+  `abScrollFlags[4]` @ 0x1864F4..0x1864F7, `nRadarCooldownL @ 0xAC21C`, `nRadarMsgTimer @ 0xAC220`,
+  `abRadarPct[8]` @ 0x162008, `pnAnimPhase = &g_nUiSlot0` (Map+0x60 @ 0x113A18), the funding block
+  (`anFundBaseline` @ 0x1595F0, `nFundDisplayTotal` @ 0x159604, `bFundScreenOpen` @ 0x1595EC,
+  `pFundPad` @ 0x1595DC) for screen 19, and `dwActionFail @ 0x1870C8` shared with `Ship` as
+  `pbLowSupplyFlag`. `GeoscapeState` carries the strateg block as three pointers, so the tick chain
+  rebuilds the view after every add instead of holding a stale `apItems`. The dump path
+  (`--new-game`/`--load-slot`, 40 anim ticks + 50 pulses) prints the clock state.
+  **What the IDB corrected on the way:** `unk_162008` is a named `int[8]` (32 bytes, 0x162008..0x162027) —
+  the radar percentage and the per-base empty-facility-cell counts are ONE block, written stride-4 by
+  `Geoscape_TickHourly @ 0x5D39C` (TickHourly is 0x5D1BC..0x5D3BC) and by `Game_StartNew @ 0x9461C` through
+  `Base_CountEmptyFacilityCells`, whose stale "NOT ported" comment is fixed; `0x187054` is a DWORD cell
+  (retyped from `unsigned __int8[4]`, six dword stores, four byte reads) and named `nSelectedShipIdx`;
+  0x159618/0x15961C are named `nGameTotalSec`/`bGameClockPaused`; `nNextStrategDisplayId` @ 0x186544 and
+  `nNextStrategSiteId` @ 0x186548 are named; `nGeoscapeScreen` carries its full writer table; the
+  `0x13` writer is `FundingScreen_OpenMonthly @ 0x5D18C` (0x5D160..0x5D1BC), not `Geoscape_TickHourly`;
+  `nGeoscapeTickSeconds @ 0x187070` is an interval (5/60/300/1380/2460/3600 from the six nav buttons) that
+  nothing clears, so the port's "cleared by Geoscape_CloseUI" claim is removed.
+  **And the clock's real gate:** the pulse advances the clock only while `nGeoscapeScreen == 0` (0x95510,
+  re-tested at 0x95608) and `bGameClockPaused == 0` (0x9561C). `Game_StartNew` leaves a new game on
+  **screen 2** (0x95450, `MOV R0,#2` after `Geoscape_BuildNavControls`), so the shipped behaviour is that a
+  fresh game's clock stands still; the six `LoadGame_SlotN_InitOptions` (0x6B1B0..0x6B3B8),
+  `OptionsScreen_ReturnToTitle` 0x6B420, `OptionsScreen_OpenWithSound` 0x6DC38,
+  `PsiScreen_ApplyAssignments` 0x7212C and `GeoscapeUi_FreeAll` 0x85850 are what put it back to 0. The
+  shell's own screen-close path is still `World_NoopClick`, so only the load path reaches 0 today.
+  18 new checks in `test_geoscapeframe` (wiring identity, advance-and-decode bounds, the four saturating
+  counters, `dwActionFail == 1` halting clock and counters, the screen-0 drag scroll with its 25/5 step and
+  the four flags cleared). Release 61/61, zero warnings; Debug keeps its three known red suites. Coverage
+  does not move — no new original function is cited.
+
+- [ ] **Next unit: the screen-close path, so the clock can run after a new game.** `Geoscape_CloseUI @
+  0x8BB08..0x8C124` is the function that closes a geoscape screen and restores the previous
+  `nGeoscapeScreen` (its `STR R9` cases at 0x8BB08, 0x8BCB4, 0x8BCE8, 0x8BD14 (`STRNE`), 0x8BD5C and
+  0x8BE94), and `GeoscapeUi_FreeAll @ 0x85850` writes 0 outright. The shell wires neither as a click
+  handler (`pW->facInitEnv.pfnCloseThunk = World_NoopClick`), so screen 2 — where a new game ends and where
+  no clock runs — is never left. Wire the close controls and the `FundingScreen_ExitThunk @ 0x5c078` /
+  monthly-screen teardown, then the dump path can show the clock advancing from a new game.
+
 ## Separate issues, not folded into the porting steps
+
+- [ ] **Two suites are red at HEAD and are not touched by the geoscape clock work.** `test_titles` fails
+  "a scroll of 0 admits no credit rows" and `test_plane` fails "the field outside the panel is untouched:
+  got 52685 want 0". Both were verified red with `git stash` over `src` and `tests` (only the IDB,
+  `pufo_baseui.h` comments and the docs outstanding), so they predate the current work. `test_geoscape`'s
+  one failure of that kind -- a display name compared against a roster that `Ship_RemoveWithCargo @ 0x613A0`
+  had already compacted -- was found the same way and fixed in the clock commit; these two need the same
+  treatment: decide from the IDB whether the port or the check is wrong, then fix that one side.
+  A third suite, `test_template`, passed on its own and under a re-run, so its single ctest failure looks
+  order-dependent and is worth one `--rerun-failed` look. The Part 26 run reproduced exactly that Debug mix
+  (`test_titles`, `test_template`, `test_plane`) with Release at 61/61 and zero warnings in both configs.
 
 - [ ] **`TestGeoscapeBaseFacArm`'s strip-highlight check is an invariance check and cannot see a changed
   constant.** It compares the arm's output with the env's highlight 0 against the arm's output with the env's
@@ -3217,6 +3273,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the hangar arm (`Geoscape_Draw` 0x9309C..0x93DD4, screen 6: the pad word that is also a 108-byte control block, the store and nav pairs at +0x64/+0x68 and +0x5C/+0x60, the cursor-tracking gate on the root block's +0x35 byte, the crew-slot loop with its unbounded control index and its twice-drawn "1"/"2" markers, the caption pair gated on Ship.bCanDogfight, the stat panel with widths truncated to a signed byte, the stock column reading apObjects[52], [53], [54], --, [105], [55] through auPerBaseVal, the laser cannon's unmeasured "-", and the doubled row counter that puts the rows at y 112,152,192,232,272,312 and makes the three rails 20*(6+matched) tall; 53 new checks, 37/38 mutations caught with one proven equivalence, 25 IDB comments, 4 globals named and typed, the 108-byte BasePlaneScreen type applied at 0x161A48, 3 bugs.tsv rows and 4 stale "not ported" header claims fixed) | 60/60 (Release) | 17496 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the placement arm (`Geoscape_Draw` 0x91DC8..0x92ADC, screen 1: the THREE side rails with x 210 as the divider case 7 has no equivalent, the rail halves overlapping at y 151..168 with the climbing pass winning the crossing, the edge rails' flat colour 7 being the side rails' rect height left in R5, the #0x80 vs #0x78 immediates that give the top row a 7-pixel gap and the bottom row none, the ten nav controls at 0x159888 with the original's own null test, the close control moved to (194,4) before its blit, ten captions centred on 60 and 180 drawn BEFORE the callees (whose 36-glyph blank backdrop erases three of their five rows), the cursor block that MOVES nSmapTapX/nSmapTapY for cell kinds 9..12 and stores them back, the 64x64 vs 32x32 cursor with their 0x63 and 0x43 bottom bars, the 10*(nMapPhase+15) colour, the flag-clearing empty cell, the fixed (6,16) facility label, the map control positioned from the truncated label width with TEXTS[1240] centred on it, and the failure panel whose low colour is (u8)0x159768 and whose second triple reads three lang.dat records that are empty; 103 new checks, 14/15 mutations caught with one proven equivalence, 34 IDB items (29 comments, 5 globals named or retyped), 7 bugs.tsv rows) | 60/60 (Release) | 17599 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the dispatcher head and the cases 0/2 radar branch (`Geoscape_Draw` 0x8C180..0x8C1B0 and 0x8C214..0x8C29C, the frame's last 208 bytes: the id -> arm table as `CMP #0x14` / `ADDLS PC,PC,R0,LSL#2` over the 21 words at 0x8C1B4..0x8C20C, the caller's root block stored as pObj at 0x8C1A4 while 0x8C238 RELOADS R7 with the literal 0x1864F8, var_1A4 written only at 0x8D4DC and read only at 0x8D628, case 20 as the only id that falls into 0x944B4 `BaseAtScreen_Draw`, and the radar half -- strip-pad blit, thirteen root widgets counted through dword_186B08, a rect whose x/y/uWidth/uHeight come straight out of the pad header and whose 0x3C/0x78/0x82/0x96 blend lands on top of that pad, then `RadarScreen_Update` (which drops its argument), then straight to the frame end with no chrome, no crosshair and no status panel); 72 new checks, 16/16 mutations caught, 15 IDB comments, 1 global named, 3 bugs.tsv rows) | 60/60 (Release) | 17671 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the geoscape clock wired into the shell (Part 26: no new original block — `WM_TIMER 0xC353` as `UiPulse_OnTimer @ 0x36630` over `App_GeoscapePulseThunk → World_PulseGeoscape`, `0xC354` as the `cUiAnimProgress < 101` byte of 0xA0C88..0xA0C90, the eleven `GeoscapeHooks` adapters (`Geoscape_SpawnMissionSite @ 0x7e49c` left as a recorded stub), `Geoscape_BuildClockHooks` feeding `Geoscape_AdvanceTime`, the strateg block carried as three pointers so the tick chain rebuilds its view after every add, and the one-instance shell cells 0x1864F4..0x1864F7 / 0xAC21C / 0xAC220 / 0x162008 / 0x113A18 / the funding block / 0x1870C8; the IDB fixes are `unk_162008` named `anBaseRadarPct` and typed `int[8]` (radar percent == empty-cell counts, stride-4 writer is `Geoscape_TickHourly @ 0x5D39C`, its comment corrected to 0x5D1BC..0x5D3BC), `Base_CountEmptyFacilityCells`'s stale "NOT ported" comment replaced, `0x187054` retyped from `unsigned __int8[4]` to a DWORD and named `nSelectedShipIdx`, `nGameTotalSec` @ 0x159618 and `bGameClockPaused` @ 0x15961C named, `nNextStrategDisplayId`/`nNextStrategSiteId` @ 0x186544/0x186548 named, `nGeoscapeScreen` given its writer table with the `0x13` writer corrected to `FundingScreen_OpenMonthly @ 0x5D18C`, and `nGeoscapeTickSeconds` documented as an interval nothing clears; two port comments corrected (the "unported Geoscape_PulseUpdate" and "cleared by Geoscape_CloseUI" claims); the clock gate recorded as screen 0 + unpaused, and a new game faithfully standing at screen 2): 18 new checks, 6 globals named or retyped, 8 IDB comments, 2 port comments corrected | 61/61 (Release) | 17747 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
