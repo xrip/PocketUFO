@@ -158,16 +158,21 @@ typedef struct TactInitHooks {
                                u8 b10, u8 b11, void *pUser);                   /* UiPanel_SetBytes6to11 (0x3e914) */
     i32  (*pfnPanelWrapText)(UiPanel *pPanel, u8 nMaxW, u8 nLineStart,
                              const char *pszText, void *pUser);                /* UiPanel_WrapText (0x37144) */
-    bool (*pfnLoadUiPads)(void *pUser);                                        /* Tact_LoadUiPads (0x37bdc) */
-    void (*pfnInitUiControls)(void *pUser);                                    /* Tact_InitUiControls (0x37c8c) */
+    /* The five cites on the hooks below were corrected on 2026-10-18 against the ARM's own BL
+     * targets in this function: 0x3CB84 -> 0x3b068, 0x3CB88 -> 0x3b498, 0x3D0B8 -> 0x16ef4,
+     * 0x3D270 -> 0x9e268, 0x3D278 -> 0x9e130. The earlier addresses (0x37bdc, 0x37c8c, 0x1a1c8,
+     * 0x9e1f0, 0x9e2b8) were wrong: 0x1a1c8 is MenuCtl13_OnClick (the load-slot-3 handler),
+     * 0x9e1f0 is mid-Sound_SetPaused and 0x9e2b8 is an instruction label, neither a callee. */
+    bool (*pfnLoadUiPads)(void *pUser);                                        /* Tact_LoadUiPads (0x3b068) */
+    void (*pfnInitUiControls)(void *pUser);                                    /* Tact_InitUiControls (0x3b498) */
     /* Font_LoadTactSprites @ 0x257c4, ported in pufo_font.c: the same seam Map_BuildMissionTerrain
      * uses, forwarded into the terrain env. */
     void (*pfnLoadTactSprites)(void *pUser);
-    bool (*pfnSoundInit)(const char *pszPrefix, void *pUser);                  /* Sound_InitAndLoadSamples (0x9e1f0) */
-    void (*pfnSoundPlayMusic)(i32 nTrack, void *pUser);                        /* Sound_LoadAndPlayMusic (0x9e2b8) */
+    bool (*pfnSoundInit)(const char *pszPrefix, void *pUser);                  /* Sound_InitAndLoadSamples (0x9e268) */
+    void (*pfnSoundPlayMusic)(i32 nTrack, void *pUser);                        /* Sound_LoadAndPlayMusic (0x9e130) */
     void (*pfnSoundApplyMusicVolume)(void *pUser);                             /* Sound_ApplyMusicVolume (0x9e454) */
     void (*pfnSoundApplySfxVolume)(void *pUser);                               /* Sound_ApplySfxVolume (0x9e4dc) */
-    bool (*pfnOpenInventory)(void *pUser);                                     /* Inv_OpenScreen (0x1a1c8) */
+    bool (*pfnOpenInventory)(void *pUser);                                     /* Inv_OpenScreen (0x16ef4) */
     void *pUser;
 } TactInitHooks;
 

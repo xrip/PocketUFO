@@ -56,6 +56,12 @@ TABLES = [
     ("alien composition divisor", 0xAA030, "s_aAlienCompositionDivisor", "src/pufo/game/pufo_tactctl.c", 8, "H", 0),
     ("alien belt objects",       0xAA008, "s_aAlienBeltObjects",      "src/pufo/game/pufo_tactctl.c",   8, "h", 0),
     ("alien unit stats",         0xA8F38, "s_aAlienUnitStats",        "src/pufo/game/pufo_tactctl.c", 224, "h", 0),
+    # The deploy tables Tact_SelectTeamUnits / Tact_DeployTeamAndHwps / Tact_SetupCraftCargo read.
+    # aPlane ends at 0xA6687 and aHwpsDeployOffsets starts at 0xA6688; aDeployCellOffsets ends exactly
+    # at aDeployPointCounts @ 0xA67F0, whose real extent is the 3 counts -- the 4th byte is padding.
+    ("deploy cell offsets",      0xA66B8, "g_aDeployCellOffsets",     "src/pufo/game/pufo_tactctl.c", 312, "B", 0),
+    ("hwps deploy offsets",      0xA6688, "g_aHwpsDeployOffsets",     "src/pufo/game/pufo_tactctl.c",  48, "B", 0),
+    ("deploy point counts",      0xA67F0, "g_abDeployPointCounts",    "src/pufo/game/pufo_tactctl.c",   3, "B", 0),
     # The two shipped tables Map_BuildMissionTerrain reads. aTileSprIndex's real extent is 128 bytes:
     # IDA declares aTileSprIndex[128] (256 bytes) and runs past the end into the module-name strings
     # at 0xA6590, and the 40 bytes from 0xA6568 belong to Smap_InitCraftSelectState (0x61b94).

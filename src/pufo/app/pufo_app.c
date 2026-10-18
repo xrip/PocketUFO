@@ -62,12 +62,12 @@ static HWND       g_hWndMain = NULL;
 static i32        g_nScreenW;
 static i32        g_nScreenH;
 /* Map_nGameSpeed @ 0x128AB4 (Map + 0x150FC): the game speed, a SIGNED dword -- LDR at 0x9E918 (StartTimers_BySpeed)
- * and at 0xA08C0 (the 0xC350 dispatch, then CMP #0/#2/#3/#4 with BMI 0xA08C8), so the port keeps it signed. Its
- * registry default is 4 (IDB comment at 0x128AB4), which is the 10 ms interval AND three ticks per firing. Its
- * writers in the image are GameSpeed_Set @ 0x260c0 and the tactical options' speed buttons; the shell runs no
- * tactical mission (recorded with App_QuitFromTact), so nothing writes it here and it reads 0, which
- * StartTimers_BySpeed turns into the 100 ms game-rate interval and Timer_TickBySpeed into one tick per firing. */
-static i32        g_nGameSpeed;
+ * and at 0xA08C0 (the 0xC350 dispatch, then CMP #0/#2/#3/#4 with BMI 0xA08C8), so the value stays signed at the
+ * call sites. The registry default is 4, which is the 10 ms interval AND three ticks per firing; its writers in
+ * the image are GameSpeed_Set @ 0x260c0 and the tactical options' speed buttons. The live cell is now
+ * g_world.gameClock.nSpeed (Map+0x150FC's owner, see pufo_world.h): Map_InitAndLoadRegistry loads the registry
+ * value into g_options.nGameSpeed, and World_NewGame / World_LoadSlot copy it into the clock, so the shell's
+ * startup speed is the option value -- 4 by default -- exactly as the original's startup is. */
 static GxSurface  g_gx;
 static BootAssets g_assets;
 static bool       g_bAssetsLoaded;
@@ -410,7 +410,9 @@ static void App_InitStartupUi(void)
                                                                  * now, so 0x226A8's startup clear reaches
                                                                  * it instead of landing on a NULL */
     initEnv.pbMapPhase        = &g_nAnimPhase;                 /* 0x0037 */
-    initEnv.pbSlot2Byte0      = &g_tactState.bSlot2Byte0;      /* 0x0068 */
+    initEnv.pbSlot2Byte0      = &g_world.bMapSweepArmed;       /* 0x0068: the world owns this byte now --
+                                                                 * Tact_InitMission's tail arms it at 0x3D268,
+                                                                 * so one instance serves both */
     initEnv.pbSlot8Byte0      = &g_tactState.bUiSlot8Byte0;    /* 0x0080 */
     initEnv.pnUiSlot3         = &g_tactState.nUiSlot3;         /* 0x006C */
     initEnv.pnUiSlot4         = &g_tactState.nUiSlot4;         /* 0x0070 */
@@ -1227,7 +1229,7 @@ static void App_FocusGained(void)
     if (bTact) {
         Gx_Resume(&g_gx);                              /* 0xA0578 */
         App_FocusReposition(HWND_TOP, SWP_SHOWWINDOW); /* 0xA05B8, fuFlags 0x40 */
-        Timer_StartBySpeed((u32)g_nGameSpeed);         /* 0xA05BC; StartTimers_BySpeed reads 0x128AB4 itself */
+        Timer_StartBySpeed(g_world.gameClock.nSpeed);  /* 0xA05BC; StartTimers_BySpeed reads 0x128AB4 itself */
     } else if (bGeoscape) {
         Gx_Resume(&g_gx);                              /* 0xA05D4 */
         App_FocusReposition(HWND_TOP, 0);              /* 0xA0610, fuFlags = R9 = 0 */
@@ -1287,7 +1289,7 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         if (wParam == PUFO_TIMER_GAMETICK) {
             /* The original's gate at 0xA08B0 keeps 0xC350 out of that switch: the speed decides the tick
              * count (Timer_TickBySpeed, 0xA08C0..0xA0934) and App_GameTickOnce is this shell's callee. */
-            Timer_TickBySpeed(g_nGameSpeed, App_GameTickOnce, NULL);
+            Timer_TickBySpeed((i32)g_world.gameClock.nSpeed, App_GameTickOnce, NULL);
         } else if (wParam == PUFO_TIMER_ANIM) {
             App_TickAnim();
         } else if (wParam == PUFO_TIMER_RENDER) {

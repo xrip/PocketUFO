@@ -1383,10 +1383,23 @@ int main(void)
                 }
                 Check(bTiles, "all 36 tiles are the type-0 placement code except cell (2,2), under construction, which keeps 20");
             }
-            Check(nHot0 == 1 && g_world.apCraft[0]->bWeaponsHot == 0 && g_world.apCraft[0]->bAtBase == 1
-                      && (i32)g_world.bCraftCount == 3 && g_world.apCraft[2]->bWeaponsHot == 0
-                      && g_world.apCraft[2]->bAtBase == 1,
-                  "the visibility pass parked every craft: weapons hot before (1), cold and at base after (0x8393C, 0x83950)");
+            /* Two passes touch the weapons-hot byte inside one click. The visibility pass parks every
+             * craft cold and at base (0x8393C writes 0, 0x83950 writes 1). The launch hand-over then
+             * runs the cargo pass, whose step-5 loop (0x39108) walks the craft list and re-arms the
+             * weapons of every craft sitting at its own home base for this mission (0x39138 writes 1).
+             * The cold value is the middle of the chain, not the end of it. */
+            Check(nHot0 == 1 && g_world.apCraft[0]->bWeaponsHot == 1 && g_world.apCraft[0]->bAtBase == 1
+                      && (i32)g_world.bCraftCount == 3,
+                  "the mission craft was hot, got parked by the visibility pass (0x8393C), and was re-armed by the cargo pass's at-home store (0x39138)");
+            {
+                i32 bReArm = 1;
+                for (i32 c = 0; c < (i32)g_world.bCraftCount; ++c) {
+                    i32 bHome = ((i32)g_world.apCraft[c]->bHomeBase == (i32)g_world.nCraftHomeBase)
+                                    && g_world.apCraft[c]->bAtBase;
+                    if ((i32)g_world.apCraft[c]->bWeaponsHot != bHome) { bReArm = 0; }
+                }
+                Check(bReArm, "every craft's hot byte equals the cargo loop's own keep condition (bHomeBase == mission base AND bAtBase), the test the 0x39108 loop uses before its 0x39138 store");
+            }
             CheckEqI32(g_world.geo.time.bPaused, 1, "the clock stays stopped: the tail never reaches 0x841F0, and DismissSelected is skipped (0x83AA0)");
             Check(g_world.economy.aZero44_49[5] == nFunding0 && g_world.nRadarPulseTimer == nRadar0
                       && g_world.msgLines.nLineCount == nLines0,
@@ -1395,6 +1408,60 @@ int main(void)
             CheckEqI32(g_world.bScratch187084, 0, "unk_187084 is untouched on this tail; its only writer is 0x841FC");
             Check(g_world.bMapTickHold == 0 && g_world.bMapBattleEnded == 0,
                   "the tick/battle pair stays clear: the zero-base tail (0x84214) is not reached with three bases standing");
+
+            /* The hand-over is more than a flag write now: the shell ran Tact_InitMission
+             * @ 0x3c550 and owns a live tactical frame. What follows pins what that call
+             * leaves behind, pass by pass. */
+            Check(g_world.bTactLive == 1 && g_world.pTactMap != NULL
+                      && g_world.pTactMap->nMissionType == 3,
+                  "the 0x83AC4 hand-over ran the mission bring-up and the frame's own header says assault (3)");
+            Check(g_world.sMapSentinel138EA0.pObj == g_world.pAssets->apObjects[0]
+                      && g_world.sMapSentinel138EA0.nRefId == 0x7D00,
+                  "the 0x3CB40 sentinel seed: dword 0 takes apObjects[0] and the dword at ILP32 +0x14 takes 0x7D00");
+            Check(g_world.sTactWeaponSel.pObj == g_world.pAssets->apObjects[1]
+                      && g_world.sTactWeaponSel.bConst10 == 10
+                      && g_world.sTactWeaponSel.uAmmoTypeId
+                          == g_world.pAssets->apObjects[1]->anAmmoTypeId[0],
+                  "the weapon-select record: apObjects[1], the constant 10, and that object's first ammo type");
+            {
+                i32 bPanels = 1;
+                for (i32 c = 0; c < PUFO_TACTINIT_PANELS; ++c) {
+                    if (g_world.tactEnv.apPanel[c] == NULL) { bPanels = 0; }
+                }
+                Check(bPanels, "Init_AllocPanels mallocs all five UiPanels itself, before hooking the ctor");
+                Check(g_world.tactEnv.apPanel[0]->nLineCount == 14 && g_world.tactEnv.apPanel[1]->nLineCount == 14
+                          && g_world.tactEnv.apPanel[2]->nLineCount == 14 && g_world.tactEnv.apPanel[3]->nLineCount == 14
+                          && g_world.tactEnv.apPanel[4]->nLineCount == 28,
+                      "the ctor got 14 lines for each message panel and 28 for the briefing panel (table 0x1568E8..0x1571EC)");
+            }
+            Check(g_world.bTactFlag == 1 && g_world.bMapUnk1139B9 == 1 && g_world.bMapPlayerInput == 1
+                      && g_world.nMapUiSlot1 == 0 && g_world.bMapFire0 == 0 && g_world.bMapFire2 == 0
+                      && g_world.nMapUiSlot9 == 0 && g_world.nMapUiSlot10 == 10 && g_world.nUiScreen == 0,
+                  "the flag block: tactical flag and player input on, unk_1139B9 on because the Xcom roster branch ran (0x3D08C), screen 0, the fire pair clear");
+            Check(g_world.nMapUnk138E6C >= 10 && g_world.nMapUnk138E6C <= 50
+                      && g_world.nMapUnk138E70 >= 0 && g_world.nMapUnk138E70 <= 20,
+                  "the prologue random pair RandU16(0x28)+10 and RandU16(0x14): each inside its scaled range; the seed is the clock, so the exact pair is not pinned");
+            Check(g_world.bMapDrawIsoLayer == 1 && g_world.bMapSweepArmed == 1,
+                  "the tail sets the iso-layer byte (0x3D260) and the sweep-armed byte (0x3D268)");
+            Check(g_world.bMapSpawnAlt == 0 && g_world.bMapAltOutcomePath == 0 && g_world.pTactBriefPad == NULL,
+                  "the assault tail wrote bSpawnAlt 0 (0x83A6C), so the briefing gate (spawnAlt AND mode 0) takes its NULL branch and no pad is loaded");
+            Check(g_world.apTactCells[0] != NULL && g_world.pTactDeployCell == g_world.apTactCells[0],
+                  "the terrain pass filled the grid slots and the zero-layer cargo pass reads cell (0,0,0) (Init_LookupCell's index with every coordinate 0)");
+            Check(g_world.pTactMap->nXcomCount == 8 && g_world.pTactMap->nEnemyCount == 0
+                      && g_world.apTactHidden[0] != NULL && g_world.nMapEnemyReserveCount == 13,
+                  "the rosters after the mission pass: 8 soldiers selected, 0 aliens on the field, 13 held in the hidden park -- the kill seam (pfnKillUnit NULL) parks the stealth-flagged units instead of killing them");
+            Check(g_world.nTactItemCount == 23,
+                  "the cargo and belt passes built 23 TactItem records for this fixture's object table");
+            Check(g_world.nMapDeployedHwps == 0,
+                  "no heavy weapon was deployed on this fixture: the deploy pass ran and the count stays 0");
+            CheckEqI32(g_world.nMapObjectCountU16, (i32)g_world.pAssets->nObjectCount,
+                  "the object count cell mirrors the loaded table (149 objects in this main.dat)");
+            Check(g_world.pTactShowShip != NULL && g_world.sTactLoft.pLoftemps != NULL,
+                  "the showship record loaded from the open archive and the loft tables were built");
+            Check(g_world.pTactMap->pSelUnit == g_world.pTactMap->apXcomUnits[0],
+                  "the Xcom branch selected the first roster unit (0x3D0B4 SelectUnit; the inventory-open hook at 0x16ef4 is a NULL seam)");
+            CheckEqI32((i32)g_world.gameClock.nSpeed, (i32)g_world.pOptions->nGameSpeed,
+                  "the speed cell the tail timer reads is the copy World_NewGame made from the options");
 
             /* The other tail: give the same class-8 attacker one defence to fire, and the budget test is
              * reached -- 0 < 1, so the craft is destroyed whatever the roll says. */
@@ -1474,6 +1541,28 @@ int main(void)
             CheckEqI32(g_world.nMapMissionType, 3, "and the mission type is still Run A's 3: the assault block did not run a second time");
         }
     }
+
+    /* The teardown the shell owns: World_FreeTactical, not Tact_Shutdown -- the mission-outcome
+     * table belongs to the mission-end unit. */
+    Check(g_world.bTactLive == 1, "the tactical frame is still live before the teardown");
+    World_FreeTactical(&g_world);
+    Check(g_world.bTactLive == 0 && g_world.pTactMap == NULL && g_world.pTactState == NULL
+              && g_world.pTactShowShip == NULL,
+          "the teardown drops the live flag and frees the two heap records plus the showship block");
+    {
+        i32 bClear = 1;
+        for (i32 c = 0; c < (i32)(sizeof(g_world.apTactCells) / sizeof(g_world.apTactCells[0])); ++c) {
+            if (g_world.apTactCells[c] != NULL) { bClear = 0; }
+        }
+        for (i32 c = 0; c < PUFO_TACTINIT_PANELS; ++c) {
+            if (g_world.tactEnv.apPanel[c] != NULL) { bClear = 0; }
+        }
+        Check(bClear, "every grid slot and every panel pointer is cleared after the free");
+    }
+    Check(g_world.nTactItemCount == 0 && g_world.apTactItems[0] == NULL
+              && g_world.sTactLoft.pLoftemps == NULL && g_world.apTactHidden[0] == NULL
+              && g_world.nMapEnemyReserveCount == 0,
+          "the item pool, the loft buffers and the hidden park are released and cleared; the soldier records stay owned by apSoldiers");
 
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);

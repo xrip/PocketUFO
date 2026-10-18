@@ -13,6 +13,7 @@
 #include "audio/pufo_audio.h" /* Sound_Play, the message-list sample the radar click plays */
 #include "render/pufo_render.h" /* g_nGlyphPalSlotBase, the shell's one Map_nGlyphPalBase */
 #include "ui/pufo_linelist.h" /* UiLineList_AppendWithSound, the tick's contact message seam */
+#include "ui/pufo_panel.h"    /* UiPanel_ctor / SetBytes6to11 / WrapText / FreeLines, the tact init hooks */
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission */
 
 #include <stdio.h>
@@ -858,6 +859,12 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     i32 i;
 
     pW->pAssets = pAssets;
+    pW->pFont = pFont;       /* fontSys @ 0x158268: the tact env reads it, as does the alien sprite loader */
+    pW->pOptions = pOptions; /* its gamma cell is Map+0x15100; its volume steps feed the tact tail */
+    pW->gameClock.nSpeed = (u32)pOptions->nGameSpeed; /* unk_128AB4 @ Map+0x150FC, which the option load
+                                                       * (Map_InitAndLoadRegistry @ 0x22648) fills: the shell's
+                                                       * startup speed is the registry value, default 4 */
+    pW->nMapGamma = pOptions->nGamma;                 /* Map+0x15100, same model and same copy */
     pW->pfnLoadPads = pHooks->pfnLoadPads;
     pW->pLoadPadsUser = pHooks->pLoadPadsUser;
     pW->pfnPlaySample = pHooks->pfnPlaySample;
@@ -934,6 +941,10 @@ void World_Free(PufoWorldState *pW)
     GeoscapeRoster roster;
     i32 i;
 
+    /* A live tactical mission is released first: its item and cell records go, and the soldier
+     * records they reference go with GeoscapeUi_FreeAll right below (one owner, as in the original). */
+    World_FreeTactical(pW);
+
     memset(&roster, 0, sizeof(roster));
     roster.apSoldiers = pW->apSoldiers;
     roster.nSoldierCount = (u16)pW->nSoldierCount;
@@ -1007,7 +1018,10 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     DatFile dat;
     i32 nRet;
 
-    (void)pOptions;
+    pW->pOptions = pOptions; /* same ownership as World_NewGame; the load path has no font, so a
+                              * tactical bring-up on this path would refuse -- the load hooks stay stubs */
+    pW->gameClock.nSpeed = (u32)pOptions->nGameSpeed; /* the same Map+0x150FC mirror as World_NewGame */
+    pW->nMapGamma = pOptions->nGamma;                 /* Map+0x15100 */
 
     memset(&hooks, 0, sizeof(hooks));
     hooks.pfnRenderFrame = pHooks->pfnRenderFrame;
@@ -1341,6 +1355,471 @@ static void World_HookOpenMonthly(void *pUser)
     FundingScreen_OpenMonthly(&pW->fundingInit, &pW->screen.nGeoscapeScreen, &pW->bUiAnimStarted);
 }
 
+/* --- tactical mission bring-up -------------------------------------------------------------
+ *
+ * The launch hand-over at 0x83AC4 used to be a seam. It is real now: World_InitTactical fills
+ * TactInitEnv over the state's tactical block (see the block in pufo_world.h) and runs the ported
+ * Tact_InitMission @ 0x3c550 with it. Everything the mission builds belongs to the state, and
+ * World_FreeTactical releases exactly that -- the shell's own teardown, NOT Tact_Shutdown @ 0x3d568:
+ * that function's outcome table acts on the mission's result, and the mission-end unit (whose head
+ * is the unported Tact_CheckBattleEnd @ 0x34fbc) is what will call it. Docs/parity/game-core.md
+ * Unit 108 records the storage decisions and the three hook seams below.
+ */
+
+static bool World_TactPanelCtorHook(UiPanel *pPanel, i32 nLineCount, void *pUser)
+{
+    (void)pUser;
+    return UiPanel_ctor(pPanel, nLineCount);            /* 0x3e730 */
+}
+
+static void World_TactPanelStyleHook(UiPanel *pPanel, u8 b6, u8 b7, u8 b8, u8 b9, u8 b10, u8 b11,
+                                     void *pUser)
+{
+    (void)pUser;
+    UiPanel_SetBytes6to11(pPanel, b6, b7, b8, b9, b10, b11); /* 0x3e914 */
+}
+
+static i32 World_TactPanelWrapHook(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszText,
+                                   void *pUser)
+{
+    (void)pUser;
+    return UiPanel_WrapText(pPanel, nMaxW, nLineStart, pszText); /* 0x37144 */
+}
+
+/* Map_BuildMissionTerrain reaches Font_LoadTactSprites @ 0x257c4 through its hook because the loader
+ * ends with Font_BuildIndex, which rebuilds the index the builder's own passes then read. The env is
+ * built from the same Map scalars the original reads, exactly as tests/test_font.c's TacEnv does. */
+static void World_TactLoadTactSpritesHook(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    TactSpriteEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.nMissionType     = pW->pTactMap->nMissionType;  /* Map+0x1511A */
+    env.nMapLayers       = pW->pTactMap->nMapLayers;    /* Map+0x15114 */
+    env.nTerrainVariant  = pW->nMapTerrainVariant;      /* Map+0x15111 */
+    env.nTerrainParam    = pW->nMapMissionTierRaw;      /* Map+0x1510C */
+    env.paTerrainSets    = g_aTactTerrainSetName;       /* 0xA6858 */
+    env.paUfoSets        = g_aTactUfoSetName;           /* 0xA69C0 */
+    env.paPlaneNames     = g_aPlaneName;                /* 0xA6668 */
+    env.paUfoClass       = g_abTactUfoClassByVariant;   /* 0xA6AE0 */
+    env.nTerrainSetCount = 10;
+    env.nUfoClassCount   = 8;
+    env.nVariantCount    = 5;
+    Font_LoadTactSprites(pW->pFont, &env);
+}
+
+static bool World_TactSoundInitHook(const char *pszPrefix, void *pUser)
+{
+    (void)pUser;
+    return Sound_InitAndLoadSamples(pszPrefix);         /* 0x9e268, the tail's "tact" */
+}
+
+static void World_TactMusicHook(i32 nTrack, void *pUser)
+{
+    (void)pUser;
+    Sound_LoadAndPlayMusic(nTrack);                     /* 0x9e130, the tail's track 1 */
+}
+
+static void World_TactMusicVolHook(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pOptions != NULL) {
+        Sound_ApplyMusicVolume(Options_MusicLevel(pW->pOptions), pW->pOptions->bMusicOff); /* 0x9e454 */
+    }
+}
+
+static void World_TactSfxVolHook(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pOptions != NULL) {
+        Sound_ApplySfxVolume(Options_SfxLevel(pW->pOptions), pW->pOptions->bSoundOff);     /* 0x9e4dc */
+    }
+}
+
+/* The cell resolver the env's own Init_LookupCell is for everything Tact_InitMission wires; the
+ * spawnAliens env and the drop hooks need the same lookup from outside that module. Same table,
+ * same index, same bounds tests as Init_LookupCell (pufo_tactinit.c:54). */
+static MapCell *World_TactLookupCell(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+
+    if (nLayer < 0 || nLayer >= PUFO_MAP_LAYERS) {
+        return NULL;
+    }
+    if (nY < 0 || nY >= PUFO_MAP_CELL_DIM || nX < 0 || nX >= PUFO_MAP_CELL_DIM) {
+        return NULL;
+    }
+    return pW->apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer + PUFO_MAP_CELL_DIM * nY + nX];
+}
+
+static u8 World_TactObjWeightHook(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    return (pItem != NULL && pItem->pObj != NULL) ? pItem->pObj->bWeight : 0;
+}
+
+static u8 World_TactObjTwoHandedHook(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    return (pItem != NULL && pItem->pObj != NULL) ? pItem->pObj->bTwoHanded : 0;
+}
+
+static u8 World_TactObjAmmoCapHook(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    return (pItem != NULL && pItem->pObj != NULL) ? pItem->pObj->bAmmoCap : 0;
+}
+
+static u8 World_TactAmmoWeightHook(i32 nIndex, void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+
+    if (pW->pAssets == NULL || nIndex < 0 || nIndex >= (i32)pW->pAssets->nObjectCount) {
+        return 0;
+    }
+    return pW->pAssets->apObjects[nIndex]->bWeight;
+}
+
+static void World_TactDropPlaySampleHook(i32 nSample, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample(nSample, pW->pSoundUser);
+    }
+}
+
+static ObjectRec *World_TactFindObjectHook(i32 nIndex, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pAssets == NULL || nIndex < 0 || nIndex >= (i32)pW->pAssets->nObjectCount) {
+        return NULL;
+    }
+    return pW->pAssets->apObjects[nIndex];
+}
+
+static TactItem *World_TactAllocItemHook(void *pUser)
+{
+    (void)pUser;
+    TactItem *pItem = (TactItem *)malloc(sizeof(TactItem)); /* operator new(0x18) */
+
+    if (pItem != NULL) {
+        TactItem_ctor(pItem);                               /* 0x3e718 */
+    }
+    return pItem;
+}
+
+static void World_TactFreeItemHook(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    free(pItem);                                            /* operator delete @ 0xa115c */
+}
+
+/* 0x10DA38 is the image's standing empty string (the baseui reads it as "None", 0x6F000 and friends).
+ * Init_Briefing copies it into the briefing panel's line 1 / tail line. */
+static const char s_szBriefLineEmpty[1] = "";
+
+bool World_InitTactical(PufoWorldState *pW, i32 nMode)
+{
+    TactInitEnv *pE;
+    GameMap *pMap;
+
+    if (pW->bTactLive) {
+        return false;
+    }
+    /* The seam's 0x83AC4 call passes 0 (new mission). A save-load mode would need the slot file and
+     * the TactLoadHooks block this launch path does not have, so the seam refuses anything else. */
+    if (nMode != 0 || pW->pAssets == NULL || pW->pFont == NULL || pW->pOptions == NULL) {
+        return false;
+    }
+
+    pMap = (GameMap *)malloc(sizeof(GameMap));
+    if (pMap == NULL) {
+        return false;
+    }
+    memset(pMap, 0, sizeof(*pMap));
+    /* Map_nMissionType @ Map+0x1511A and Map_nMapLayers @ Map+0x15114 are single cells; the geoscape
+     * side (0x840FC, 0x840F0) wrote the world copies, and Tact_InitMission reads them through pMap,
+     * so the mirror happens here. (Two struct views of those cells are the recorded separate issue.) */
+    pMap->nMissionType = pW->nMapMissionType;
+    pMap->nMapLayers   = pW->nMapMapLayers;
+    pW->pTactMap = pMap;
+
+    if (pW->pTactState == NULL) {
+        pW->pTactState = (TactState *)malloc(sizeof(TactState)); /* pMapTactical @ 0x157198, 0x111E8 */
+        if (pW->pTactState == NULL) {
+            free(pMap);
+            pW->pTactMap = NULL;
+            return false;
+        }
+    }
+    memset(pW->apTactCells, 0, sizeof(pW->apTactCells)); /* Map_BuildMissionTerrain fills every slot */
+    memset(&pW->tactEnv, 0, sizeof(pW->tactEnv));
+    pE = &pW->tactEnv;
+
+    /* --- the Map-block scalars the original reaches through the context base --- */
+    pE->pMap             = pMap;
+    pE->pbTactFlag       = &pW->bTactFlag;            /* Map+0x00 */
+    pE->pbUnkMap01       = &pW->bMapUnk1139B9;        /* Map+0x01 */
+    pE->pbPlayerInput    = &pW->bMapPlayerInput;      /* Map+0x38 */
+    pE->puUiScreen       = &pW->nUiScreen;            /* unk_1139F2 @ Map+0x3A */
+    pE->pbFire0          = &pW->bMapFire0;            /* Map+0x50 (Map+0x51 is pMap->bFireStatus1) */
+    pE->pbFire2          = &pW->bMapFire2;            /* Map+0x52 */
+    pE->pbGameTickHold   = &pW->bMapTickHold;         /* Map+0x5A */
+    pE->pbBattleEnded    = &pW->bMapBattleEnded;      /* Map+0x5C */
+    pE->pnUiSlot1        = &pW->nMapUiSlot1;          /* Map+0x64 */
+    pE->pbSweepArmed     = &pW->bMapSweepArmed;       /* Map+0x68, LOBYTE(apUiSlotsA[2]) */
+    pE->pbSlot8Byte2     = &pW->bMapSlot8Byte2;       /* Map+0x82 */
+    pE->pbSlot8Byte3     = &pW->bMapSlot8Byte3;       /* Map+0x83 */
+    pE->pnUiSlot9        = &pW->nMapUiSlot9;          /* Map+0x84 */
+    pE->pnUiSlot10       = &pW->nMapUiSlot10;         /* Map+0x88 */
+    pE->pnUiSlot11       = &pW->nMapUiSlot11;         /* Map+0x8C */
+    pE->pbAltOutcomePath = &pW->bMapAltOutcomePath;   /* unk_1153D9 @ Map+0x1A21 */
+    pE->pnGamma          = &pW->nMapGamma;            /* Map_nGamma @ Map+0x15100, synced from options */
+    pE->pbUnkMap1511E    = &pW->bMapUnk1511E;         /* Map+0x1511E */
+    pE->pnCraftMapX      = &pW->bMapCraftMapX;        /* Map+0x15139 / 0x1513A (0x128AF1 / 0x128AF2) */
+    pE->pnCraftMapY      = &pW->bMapCraftMapY;
+    pE->pnTerrainVariant = &pW->nMapTerrainVariant;   /* Map+0x15111 */
+    pE->pnTier           = &pW->bMapUnk15112;         /* Map+0x15112 */
+    pE->pnTierSource     = &pW->nMapMissionTierRaw;   /* Map+0x1510C */
+    pE->pbUnk15115       = &pW->bMapUnk15115;         /* Map+0x15115 */
+    pE->pnShotX          = &pW->nMapShotOrigX;        /* Map+0x14054 */
+    pE->pnShotY          = &pW->nMapShotOrigY;        /* Map+0x14058 */
+    pE->pnSpawnTileX     = &pW->nMapSpawnTileX;       /* Map+0x1514C */
+    pE->pnSpawnTileY     = &pW->nMapSpawnTileY;       /* Map+0x15150 */
+    pE->pbSpawnAlt       = &pW->bMapSpawnAlt;         /* Map+0x15148, written at 0x83A6C */
+    pE->pbDrawIsoLayer   = &pW->bMapDrawIsoLayer;     /* Map+0x254B0 */
+    pE->pbLightEnabled   = &pW->bMapLightEnabled;     /* Map+0x254B1 */
+    pE->pnUnkMap254B4    = &pW->nMapUnk138E6C;        /* Map+0x254B4 */
+    pE->pnUnkMap254B8    = &pW->nMapUnk138E70;        /* Map+0x254B8 */
+    pE->pbUnkMap254D4    = &pW->bMissionCount;        /* unk_138E8C @ Map+0x254D4: the field the state
+                                                       * already had under the IDB's old name */
+    pE->pClock           = &pW->gameClock;            /* unk_128AB4 @ Map+0x150FC */
+
+    /* --- the storage the mission fills --- */
+    pE->pTactState     = pW->pTactState;
+    pE->pRmp           = &pW->sTactRmp;
+    pE->apCells        = pW->apTactCells;             /* Map.apCells @ Map+0x15338 */
+    pE->ppDeployCell   = &pW->pTactDeployCell;        /* 0x157204 */
+    pE->ppShowShip     = &pW->pTactShowShip;          /* dword_156A78 */
+    pE->pLightmap      = pW->abTactLightmap;          /* unk_156AB8 */
+    pE->ppBriefPad     = &pW->pTactBriefPad;          /* unk_15692C */
+    pE->pFont          = pW->pFont;                   /* fontSys @ 0x158268 */
+    pE->apObjects      = pW->pAssets->apObjects;      /* Map.apObjects @ Map+0x108 */
+    pE->pWeaponSel     = &pW->sTactWeaponSel;         /* unk_10DB90 */
+    pE->pUnk138EA0     = &pW->sMapSentinel138EA0;     /* Map+0x254E8 */
+    pE->pItem156A88    = &pW->sTactItem156A88;
+    pE->pItem156910    = &pW->sTactItem156910;
+    pE->pItem156A58    = &pW->sTactItem156A58;
+    pE->apVisRays      = pW->aTactVisRays;            /* unk_B2278 */
+    pE->paVisSteps     = pW->abTactVisSteps;          /* byte_AD720 */
+    pE->pTextRecs      = pW->pAssets->pTextRecs;      /* aTextRecs @ 0xB38D0 */
+    pE->nTextRecCount  = pW->pAssets->nTextRecCount;
+    pE->pszBriefLine   = s_szBriefLineEmpty;          /* 0x10DA38 */
+    pE->pDeployOffsets = g_aDeployCellOffsets;        /* aDeployCellOffsets @ 0xA66B8 */
+    pE->pDeployPointCounts = g_abDeployPointCounts;   /* aDeployPointCounts @ 0xA67F0 */
+    pE->pTileTypes     = pW->abMapTileTypes;          /* 0x159D5C, built at 0x84124 */
+    pE->pLoft          = &pW->sTactLoft;
+    pE->apSoldiers     = pW->apSoldiers;              /* Map.apSoldiers @ Map+0x1198 */
+    pE->pnSoldierCount = &pW->nSoldierCount;          /* Map+0x1998 */
+    pE->nSoldierCapacity = PUFO_SOLDIER_CAPACITY;
+    pE->apTactItems    = pW->apTactItems;             /* Map.apTactItems @ Map+0x23438 */
+    pE->pnTactItemCount = &pW->nTactItemCount;       /* Map+0x1513C */
+    pE->pnFlobjsWide   = &pW->nMapFlobjsWide;         /* Map+0x118 */
+    pW->nMapObjectCountU16 = (u16)pW->pAssets->nObjectCount; /* Map_nObjectCount @ Map+0x10A8 */
+    pE->nObjectCount   = (i32)pW->pAssets->nObjectCount;
+
+    /* --- callee envs. Init_FillCalleeEnvs fills the mission-dependent fields; these are the
+     *     world-dependent fields the original reaches through globals it reads at the call. --- */
+    pE->select.panRankLow   = (const char *)g_textTables.pE;  /* aszTextE @ 0xB2200, Xcom ranks */
+    pE->select.panRankOther = (const char *)g_textTables.pA;  /* aszTextA @ 0xB2148, alien ranks */
+
+    pE->teamSelect.apSoldiers    = pW->apSoldiers;
+    pE->teamSelect.nSoldierCount = pW->nSoldierCount;
+    pE->teamSelect.apCraft       = pW->apCraft;
+    pE->teamSelect.bMissionMode  = pW->bMapMissionMode;       /* 1 on the assault path @ 0x8BB20 */
+    pE->teamSelect.nCraftIndex   = pW->nMapCraftIndex;        /* Map+0x15113 */
+    pE->teamSelect.nSelectedBase = pW->nSelectedBase;         /* 0x159D81, written at 0x84130 */
+
+    pE->spawnAliens.create.apSoldiers      = pW->apSoldiers;
+    pE->spawnAliens.create.pnSoldierCount  = &pW->nSoldierCount;
+    pE->spawnAliens.create.pnNextSoldierId = &pW->nNextSoldierId;
+    pE->spawnAliens.apEnemyUnits       = pMap->apEnemyUnits;       /* unk_128B84 @ Map+0x151CC */
+    pE->spawnAliens.pnEnemyUnitCount   = &pMap->nEnemyCount;       /* Map+0x15124 */
+    pE->spawnAliens.apHiddenSoldiers   = pW->apTactHidden;         /* Map+0x25438 */
+    pE->spawnAliens.pnEnemyReserveCount = &pW->nMapEnemyReserveCount; /* Map+0x15144 */
+    pE->spawnAliens.apTactItems        = pW->apTactItems;
+    pE->spawnAliens.pnTactItemCount    = &pW->nTactItemCount;
+    pE->spawnAliens.apObjects          = pW->pAssets->apObjects;
+    pE->spawnAliens.pFont              = pW->pFont;
+    pE->spawnAliens.pRmp               = &pW->sTactRmp;
+    pE->spawnAliens.pfnLookupCell      = World_TactLookupCell;    /* for Rmp_PickSpawnForUnit */
+    pE->spawnAliens.pLookupUser        = pW;
+    pE->spawnAliens.pInvHooks          = &pW->tactInvHooks;
+    /* Tact_KillUnit (0x4e430) at the spawn tail stays a seam: the kill path needs the whole KillCtx,
+     * which belongs to the combat unit (a recorded deviation -- the original kills its stealth-flagged
+     * aliens, this path leaves them in the reserve). */
+    pE->spawnAliens.pfnKillUnit = NULL;
+    pE->spawnAliens.pKillUser   = NULL;
+    pE->spawnAliens.nMissionMode    = pW->bMapMissionMode;
+    pE->spawnAliens.nMissionType    = pW->nMapMissionType;
+    pE->spawnAliens.nTerrainVariant = pW->nMapTerrainVariant;
+    pE->spawnAliens.nAlienTier      = pW->bMapUnk15112;
+    pE->spawnAliens.nAlienPoolScale = pW->bMapUnk15115;
+    memcpy(pE->spawnAliens.abSpriteSet, pW->abMapSpriteSet, 4);    /* 0x84054..0x840E4 filled */
+    pE->spawnAliens.nAlienPoolAddend = pW->nAlienPoolAddend;       /* 0x1472c8, read LDRH */
+    pE->spawnAliens.panUnitName      = (const char *)g_textTables.pB; /* 0xB1140, 40-byte records */
+    pE->spawnAliens.nAlienSetIndex   = 0;   /* only used above mode 3; the port computes 0..3 */
+    pE->spawnAliens.nFourthRaceCount = 0;   /* the original's unwritten var_24 -- see bugs.tsv */
+
+    pE->cargo.apCraft        = pW->apCraft;            /* Map.apCraft @ Map+0x10AC */
+    pE->cargo.pnCraftCount   = &pW->bCraftCount;       /* Map+0x1194 */
+    pE->cargo.pnObjectCount  = &pW->nMapObjectCountU16;/* Map+0x10A8 as a u16* */
+    pE->cargo.panCargoSplit  = pW->aTactCargoSplit;    /* unk_156CD0 */
+    pE->cargo.panCargoWork   = pW->aTactCargoWork;     /* unk_157208 */
+    pE->cargo.nCraftIndex    = pW->nMapCraftIndex;     /* Map+0x15113 */
+    pE->cargo.nBaseIndex     = (i8)pW->nCraftHomeBase; /* 0x158848, read LDRSB */
+
+    pE->deploy.create.apSoldiers      = pW->apSoldiers;
+    pE->deploy.create.pnSoldierCount  = &pW->nSoldierCount;
+    pE->deploy.create.pnNextSoldierId = &pW->nNextSoldierId;
+    pE->deploy.pnDeployedHwps   = &pW->nMapDeployedHwps; /* unk_128AF8 @ Map+0x15140 */
+    pE->deploy.pHwpsOffsets     = g_aHwpsDeployOffsets;  /* aHwpsDeployOffsets @ 0xA6688 */
+    pE->deploy.panScatterMid    = pW->aMapScatterMid;    /* unk_1556D0 */
+    pE->deploy.panScatterLast   = pW->aMapScatterLast;   /* unk_155FD0 */
+    pE->deploy.pnScatterCount   = &pW->nMapScatterCount; /* unk_157200 */
+    pE->deploy.pTileTypes       = pW->abMapTileTypes;    /* 0x159D5C, phase-5 scatter filter */
+
+    /* Unit_RecalcInventoryStat's injected object reads (pufo_unit.h:452). */
+    pW->tactInvHooks.pfnObjWeight    = World_TactObjWeightHook;
+    pW->tactInvHooks.pfnObjTwoHanded = World_TactObjTwoHandedHook;
+    pW->tactInvHooks.pfnObjAmmoCap   = World_TactObjAmmoCapHook;
+    pW->tactInvHooks.pfnAmmoWeight   = World_TactAmmoWeightHook;
+    pW->tactInvHooks.pUser           = pW;
+
+    memset(&pW->sTactHit, 0, sizeof(pW->sTactHit));
+    memset(&pW->sTactUi, 0, sizeof(pW->sTactUi));
+    memset(&pW->sTactDrop, 0, sizeof(pW->sTactDrop));
+    memset(&pW->sTactDropHooks, 0, sizeof(pW->sTactDropHooks));
+    pW->sTactDrop.pHit      = &pW->sTactHit;
+    pW->sTactDrop.pUi       = &pW->sTactUi;
+    pW->sTactDrop.pSentinel = &pW->sMapSentinel138EA0;  /* unk_138EA0 @ Map+0x254E8 */
+    pW->sTactDrop.pHooks    = &pW->sTactDropHooks;
+    pW->sTactDropHooks.pfnPlaySample  = World_TactDropPlaySampleHook;  /* Sound_Play @ 0x9e0c0 */
+    pW->sTactDropHooks.pfnFindObject  = World_TactFindObjectHook;
+    pW->sTactDropHooks.pfnAllocItem    = World_TactAllocItemHook;
+    pW->sTactDropHooks.pfnFreeItem     = World_TactFreeItemHook;
+    pW->sTactDropHooks.apItemPool      = pW->apTactItems;             /* unk_136DF0 @ Map+0x23438 */
+    pW->sTactDropHooks.pnItemCount     = &pW->nTactItemCount;
+    pW->sTactDropHooks.pfnLookupCell   = World_TactLookupCell;
+    pW->sTactDropHooks.pLookupUser     = pW;
+    pW->sTactDropHooks.pInvStat        = &pW->tactInvHooks;
+    pW->sTactDropHooks.pUser           = pW;
+    /* pfnModal (UiModal_Begin @ 0x26430) stays NULL: it belongs to the tact UI the next unit brings
+     * up; Tact_EquipTeamFromCraft's parked-pointer path never reaches the modal arm. */
+    pE->equip.pHit  = &pW->sTactHit;
+    pE->equip.pDrop = &pW->sTactDrop;
+
+    /* The VisCtx trio Init_FillCalleeEnvs does not fill (pufo_unit.h:700): the shared spot state, the
+     * roster view and the action-scratch exclusion slot. */
+    memset(&pW->sTactSpot, 0, sizeof(pW->sTactSpot));
+    pW->sTactSpot.pnTrajFront1036 = &pW->nMapTrajFront1036;
+    pW->sTactRosters.apXcom = pMap->apXcomUnits;
+    pW->sTactRosters.nXcom  = (i32)pMap->nXcomCount;   /* 0 here; team select fills the array itself */
+    pW->sTactRosters.apEnemy = pMap->apEnemyUnits;
+    pW->sTactRosters.nEnemy  = (i32)pMap->nEnemyCount;
+    pW->sTactRosters.apCiv   = pMap->apCivilians;
+    pW->sTactRosters.nCiv    = pMap->nCivilianCount;
+    pE->vis.pSpot         = &pW->sTactSpot;
+    pE->vis.pRosters      = &pW->sTactRosters;
+    pE->vis.ppScratchUnit = &pW->pTactScratchUnit;
+
+    /* --- the hooks Tact_InitMission itself calls --- */
+    pE->hooks.pfnPanelCtor            = World_TactPanelCtorHook;
+    pE->hooks.pfnPanelStyle6to11      = World_TactPanelStyleHook;
+    pE->hooks.pfnPanelWrapText        = World_TactPanelWrapHook;
+    pE->hooks.pfnLoadTactSprites      = World_TactLoadTactSpritesHook;
+    pE->hooks.pfnSoundInit            = World_TactSoundInitHook;
+    pE->hooks.pfnSoundPlayMusic       = World_TactMusicHook;
+    pE->hooks.pfnSoundApplyMusicVolume = World_TactMusicVolHook;
+    pE->hooks.pfnSoundApplySfxVolume  = World_TactSfxVolHook;
+    pE->hooks.pfnLoadUiPads           = NULL; /* Tact_LoadUiPads (0x3b068): the tact UI bring-up unit */
+    pE->hooks.pfnInitUiControls       = NULL; /* Tact_InitUiControls (0x3b498): ditto */
+    pE->hooks.pfnOpenInventory        = NULL; /* Inv_OpenScreen (0x16ef4) at 0x3D0B8: ditto. The Xcom
+                                               * branch reaches it whenever the mission has a team. */
+    pE->hooks.pUser                   = pW;
+
+    /* Mode 0 needs none of the save blocks (pDat, pSaveHooks, pfnLoadRmp all stay NULL). */
+
+    if (!Tact_InitMission(pE, nMode)) {
+        World_FreeTactical(pW);
+        return false;
+    }
+    pW->bTactLive = true;
+    return true;
+}
+
+void World_FreeTactical(PufoWorldState *pW)
+{
+    i32 i;
+
+    /* The five panels: the line buffers UiPanel_ctor malloc'd, then the panel records Init malloc'd. */
+    for (i = 0; i < PUFO_TACTINIT_PANELS; ++i) {
+        UiPanel *pPanel = pW->tactEnv.apPanel[i];
+
+        if (pPanel != NULL) {
+            UiPanel_FreeLines(pPanel);   /* 0x3e8c8 */
+            free(pPanel);
+            pW->tactEnv.apPanel[i] = NULL;
+        }
+    }
+
+    for (i = 0; i < (i32)(sizeof(pW->apTactCells) / sizeof(pW->apTactCells[0])); ++i) {
+        free(pW->apTactCells[i]);        /* each Map_BuildMissionTerrain malloc, per slot */
+    }
+    memset(pW->apTactCells, 0, sizeof(pW->apTactCells));
+    pW->pTactDeployCell = NULL;          /* a cell of the table just freed */
+
+    for (i = 0; i < pW->nTactItemCount; ++i) {
+        free(pW->apTactItems[i]);
+    }
+    memset(pW->apTactItems, 0, sizeof(pW->apTactItems));
+    pW->nTactItemCount = 0;
+
+    free(pW->pTactShowShip);             /* dword_156A78 */
+    pW->pTactShowShip = NULL;
+
+    if (pW->pTactBriefPad != NULL) {     /* unk_15692C -- the slot the next mission drops without
+                                          * freeing; the shell releases what it owns */
+        PadImage_FreeData(pW->pTactBriefPad);
+        free(pW->pTactBriefPad);
+        pW->pTactBriefPad = NULL;
+    }
+
+    Rmp_FreeNodes(&pW->sTactRmp);        /* the rmp nodes; the record itself is inline */
+
+    free((void *)pW->sTactLoft.pLoftemps);
+    free((void *)pW->sTactLoft.pUnitloft);
+    memset(&pW->sTactLoft, 0, sizeof(pW->sTactLoft));
+
+    free(pW->pTactMap);
+    pW->pTactMap = NULL;
+    free(pW->pTactState);                /* the block whose slot Tact_Shutdown would free */
+    pW->pTactState = NULL;
+
+    /* The rosters' and the hidden park's SOLDIER RECORDS are apSoldiers entries: World_Free's
+     * GeoscapeUi_FreeAll frees them (the original has one owner of the soldier array). Here only the
+     * mission's views of them go. */
+    memset(pW->apTactHidden, 0, sizeof(pW->apTactHidden));
+    pW->nMapEnemyReserveCount = 0;
+
+    pW->bTactLive = false;
+}
+
 /* The three hand-overs a mission launch ends with, and why the shell takes them as seams.
  *
  *   GeoscapeUi_FreeAll @ 0x86d20 (0x83ABC, 0x84228). Its FreeWorld half releases the soldiers,
@@ -1349,8 +1828,9 @@ static void World_HookOpenMonthly(void *pUser)
  *   not a screen close, so calling it from a mission launch would end the run.
  *   EndScreen_Init @ 0x388b0 (0x84230). It writes unk_157194, unk_B35D8, unk_1571C0 and
  *   unk_138E88, none of which the shell owns, and the shell has no ending flow to hand control to.
- *   Tact_InitMission @ 0x3c550 (0x83AC4). The tactical runtime; the 0xC350 unit in PLAN.md is the
- *   same blocker.
+ *
+ * Tact_InitMission @ 0x3c550 (0x83AC4) is no longer on this list: World_InitTactical runs it over the
+ * state's tactical block, which is what the 0xC350 blocker in PLAN.md was waiting for.
  *
  * What the shell DOES keep is the state those paths set: Map_bTickHold and Map_bBattleEnded
  * (0x84238, 0x84240) are the original's own "this run is over" markers, and they are live here. */
@@ -1362,9 +1842,9 @@ static void World_MissionSeamFreeUi(i32 bFreeWorld, void *pUser)
 
 static i32 World_MissionSeamInitMission(i32 nMode, void *pUser)
 {
-    (void)nMode;
-    (void)pUser;
-    return 0;
+    /* 0x83AC4. The original's Tact_InitMission hands back 1; the Smap tail returns it (CloseUI's
+     * case 20 does not test it, so the value only matters to the caller chain). */
+    return World_InitTactical((PufoWorldState *)pUser, nMode) ? 1 : 0;
 }
 
 static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)

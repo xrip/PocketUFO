@@ -115,7 +115,7 @@ static void         *s_pShowShip;
 static PadImage     *s_pBriefPad;
 static MapCell      *s_pDeployCell;
 static TactWeaponSel s_WeaponSel;
-static u8            s_aSentinel[0x18];
+static TactItem      s_Sentinel;    /* the record behind unk_138EA0: a TactItem on both targets */
 
 
 /* The Map-block scalars the context struct does not model. */
@@ -265,7 +265,7 @@ static void Fixture_Reset(void)
     memset(s_aHwpsOffsets, 0, sizeof(s_aHwpsOffsets));
     memset(s_aScatterMid, 0, sizeof(s_aScatterMid));
     memset(s_aScatterLast, 0, sizeof(s_aScatterLast));
-    memset(s_aSentinel, 0, sizeof(s_aSentinel));
+    memset(&s_Sentinel, 0, sizeof(s_Sentinel));
     memset(s_aTextBlob, 0, sizeof(s_aTextBlob));
     memset(s_nPanelCtor, 0, sizeof(s_nPanelCtor));
     memset(s_nWrapStart, 0, sizeof(s_nWrapStart));
@@ -365,7 +365,7 @@ static void Fixture_Reset(void)
     s_Env.ppBriefPad       = &s_pBriefPad;
     s_Env.ppDeployCell     = &s_pDeployCell;
     s_Env.pWeaponSel       = &s_WeaponSel;
-    s_Env.pUnk138EA0       = s_aSentinel;
+    s_Env.pUnk138EA0       = &s_Sentinel;
     s_Env.pItem156A88      = &s_Item156A88;
     s_Env.pItem156910      = &s_Item156910;
     s_Env.pItem156A58      = &s_Item156A58;
@@ -559,9 +559,10 @@ static void TestWeaponSelAndObjectCopies(void)
     Check(s_WeaponSel.pObj == &s_aObjects[1], "unk_10DB90.pObj is apObjects[1]");
     CheckEqI32(s_WeaponSel.bConst10, 10, "unk_10DB96 is the constant 10");
     CheckEqI32(s_WeaponSel.uAmmoTypeId, 77, "unk_10DB94 is apObjects[1]->anAmmoTypeId[0]");
-    Check(memcmp(s_aSentinel, &s_apObjects[0], sizeof(void *)) == 0,
-          "unk_138EA0 dword 0 is apObjects[0]");
-    CheckEqI32(*(i32 *)(s_aSentinel + 0x14), 0x7D00, "unk_138EB4 is 0x7D00");
+    Check(s_Sentinel.pObj == s_apObjects[0], "unk_138EA0 dword 0 is apObjects[0]");
+    /* The original stores 0x7D00 at the ILP32 byte offset +0x14; that dword is the
+     * record's nRefId field, which the port writes by name. */
+    CheckEqI32(s_Sentinel.nRefId, 0x7D00, "unk_138EB4 is 0x7D00");
     /* Each record is a TactItem and only its pObj field is written -- the 0x5A fill
      * proves the store is 4 bytes at +0 and not a clear of the record. */
     Check(s_Item156A88.pObj == &s_aObjects[PUFO_SHOT_OBJ_VARIANT3],

@@ -388,8 +388,11 @@ void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit);
  * Builds the deploy anchor, then walks the soldier array and decides who joins the tactical roster.
  *
  * The anchor comes from aDeployCellOffsets @ 0xA66B8, records of 104 bytes indexed by the mission layer
- * count. Record byte 0 is added to 10 * Map_nCraftMapX @ 0x15199 and byte 1 to 10 * Map_nCraftMapY @
- * 0x1519A; byte 2 is the layer. The craft position is held in tiles and 10 is cells per tile, which is the
+ * count. Record byte 0 is added to 10 * Map_nCraftMapX @ 0x15139 and byte 1 to 10 * Map_nCraftMapY @
+ * 0x1513A; byte 2 is the layer. (An earlier version of this header said 0x15199/0x1519A; the IDB
+ * cross-references for Tact_SelectTeamUnits 0x39784, Tact_DeployTeamAndHwps 0x39CA4 and
+ * Tact_SetupCraftCargo 0x38F74 all land on 0x128AF1 = Map+0x15139, and 0x15199 has no reference
+ * anywhere in the image.) The craft position is held in tiles and 10 is cells per tile, which is the
  * same factor Tact_GetCameraBounds (0x3331c) applies to those same two bytes. A layer count of zero puts
  * the anchor at (0, 0, 0) without reading the table at all.
  *
@@ -420,6 +423,13 @@ void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit);
  * Deviation: the original returns the count through the loop's register chain. The port returns it as i32. */
 #define PUFO_DEPLOY_RECORD_SIZE 104
 
+/* The deploy tables, verbatim from the image (docs/parity/audit_tables.py checks every byte).
+ * The mission's layer count picks the group; the group's live record count comes from
+ * g_abDeployPointCounts. */
+extern const u8 g_aDeployCellOffsets[312];  /* aDeployCellOffsets @ 0xA66B8: 3 groups x 26 records */
+extern const u8 g_aHwpsDeployOffsets[48];   /* aHwpsDeployOffsets @ 0xA6688: 12 records */
+extern const u8 g_abDeployPointCounts[3];   /* aDeployPointCounts @ 0xA67F0: 14, 12, 26 */
+
 typedef struct TactTeamSelectEnv {
     Soldier **apSoldiers;          /* the soldier array */
     i32      nSoldierCount;        /* its length; the original reads the count as a u16 */
@@ -427,14 +437,12 @@ typedef struct TactTeamSelectEnv {
     i32      bMissionMode;         /* Map_bMissionMode @ 0x1511D */
     u8       nCraftIndex;          /* Map_nCraftIndex @ 0x15113 */
     u8       nMapLayers;           /* Map.nMapLayers @ 0x15114, the record index */
-    u8       nCraftMapX;           /* Map_nCraftMapX @ 0x15199, in tiles */
-    u8       nCraftMapY;           /* Map_nCraftMapY @ 0x1519A, in tiles */
+    u8       nCraftMapX;           /* Map_nCraftMapX @ 0x15139, in tiles */
+    u8       nCraftMapY;           /* Map_nCraftMapY @ 0x1513A, in tiles */
     i8       nSelectedBase;        /* unk_159D81, signed because the original loads it with LDRSB */
     const u8 *pDeployOffsets;      /* aDeployCellOffsets @ 0xA66B8 */
     Soldier **apXcomUnits;         /* Map.apXcomUnits @ 0x15154 */
     u8      *pnXcomCount;          /* nXcomUnitCount @ 0x1511F */
-    const u16 *auStat;             /* for Unit_ResetBattleState */
-    i32      nStatCount;
     MapCellLookup      pfnLookup;  /* for Unit_PlaceOnMap */
     void              *pLookupUser;
     TactSelectCtx     *pSelectCtx; /* for Tact_SelectUnit */
@@ -479,8 +487,8 @@ typedef struct TactDeployEnv {
     MapCellLookup   pfnLookupCell;
     void           *pLookupUser;
     i32             nMapLayers;          /* Map.nMapLayers @ Map+0x15114 */
-    u8              nCraftMapX;          /* Map_nCraftMapX @ Map+0x15199, in tiles */
-    u8              nCraftMapY;          /* Map_nCraftMapY @ Map+0x1519A, in tiles */
+    u8              nCraftMapX;          /* Map_nCraftMapX @ Map+0x15139, in tiles */
+    u8              nCraftMapY;          /* Map_nCraftMapY @ Map+0x1513A, in tiles */
     u8              nMissionType;        /* Map_nMissionType @ Map+0x1511A */
     const u8       *pDeployOffsets;      /* aDeployCellOffsets @ 0xA66B8, 104-byte records */
     const u8       *pDeployPointCounts;  /* aDeployPointCounts @ 0xA67F0: 14, 12, 26 */
@@ -671,8 +679,8 @@ typedef struct TactCargoEnv {
     u8   nMissionType;                 /* Map_nMissionType @ Map+0x1511A */
     u8   nCraftIndex;                  /* Map_nCraftIndex @ Map+0x15113, the launching craft */
     u8   nMapLayers;                   /* Map_nMapLayers @ Map+0x15114, the record index */
-    u8   nCraftMapX;                   /* Map_nCraftMapX @ Map+0x15199, in tiles */
-    u8   nCraftMapY;                   /* Map_nCraftMapY @ Map+0x1519A, in tiles */
+    u8   nCraftMapX;                   /* Map_nCraftMapX @ Map+0x15139, in tiles */
+    u8   nCraftMapY;                   /* Map_nCraftMapY @ Map+0x1513A, in tiles */
     i8   nBaseIndex;                   /* 0x158848, loaded with LDRSB */
 } TactCargoEnv;
 

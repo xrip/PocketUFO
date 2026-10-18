@@ -18917,3 +18917,75 @@ radar timer, lines, unk_187084 and the tick/battle pair untouched, and the selec
 (0x83AB4); then Run B proves the gate the other way (0x158850 at 0, mission type not re-written). 15
 new checks, one replaced. Mutations: gating 0x8BB10 back off turns 6 red; dropping the 0x8393C store
 turns 1 red.
+
+## Unit 108 - the mission bring-up runs for real: Tact_InitMission @ 0x3c550 through the shell (Part 47)
+
+The hand-over at 0x83AC4 no longer just writes flags: World_InitTactical fills the whole
+TactInitEnv and runs Tact_InitMission end to end for mode 0, and World_FreeTactical is the
+shell's own teardown (NOT Tact_Shutdown @ 0x3d568 -- the mission-outcome table belongs to the
+mission-end unit, whose head is the unported Tact_CheckBattleEnd @ 0x34fbc).
+
+Ownership. One owner per Map cell: nMapGamma (copied from the options at World_NewGame /
+World_LoadSlot), gameClock (the live speed cell the tail timer reads; was a static 0 in the app,
+now the registry default 4), bMapSweepArmed (shared with the app's TactInputState slot),
+bMapUnk1139B9, the iso-layer byte, the UI slot scalars. apTactCells[14400] mirrors Map+0x15338;
+pTactMap is the frame's own GameMap copy whose nMissionType / nMapLayers come from the geoscape
+cells at hand-over. The five UiPanels are malloc'd by Init_AllocPanels itself and freed by the
+teardown (UiPanel_FreeLines then free). RmpData is inline in the world (the original owns a heap
+block; Rmp_FreeNodes still runs). The soldier records stay owned by apSoldiers -- the teardown
+clears only the mission's views (apTactHidden, the reserve count).
+
+Fill vs supply. Init_FillCalleeEnvs fills terrain/select/teamSelect/cargo/equip/deploy/
+cursorPos/focus/vis/invOpen fields it can see, and does NOT fill spawnAliens at all, the cargo
+nCraftIndex/nBaseIndex/buffers/apCraft side, the teamSelect soldier/craft/base side, deploy
+create/pnDeployedHwps/pHwpsOffsets/scatter/pTileTypes, equip pHit/pDrop, or the vis pSpot/
+pRosters/ppScratchUnit trio. The shell supplies every one; that wiring is what made the frame
+test run the pass without dereferencing NULL (Unit_UpdateVisibility @ 0x48580 line 1242 reads
+pCtx->pSpot->pnTrajFront1036 for every operative unit).
+
+Three behavior findings this unit settled:
+1. Park then re-arm is ONE chain. The Smap visibility pass parks every craft cold and at base
+   (0x8393C writes 0, 0x83950 writes 1); the cargo pass's step-5 loop (0x39108) then sets
+   bWeaponsHot = 1 (0x39138) for every craft whose bHomeBase equals the mission base and that is
+   at base. The frame test's parked-craft assertion was written when the second half did not run;
+   it now pins the keep condition of the 0x39108 loop across all three crafts.
+2. Unit_ResetBattleState @ 0x498b0 takes (pUnit, bFacing) only and derives the trio from the
+   unit's own auStat. The team-select call had been passing an env.auStat the launch caller never
+   filled -- fixed to the unit's own stats with PUFO_UNIT_STAT_COUNT; the env field pair is gone.
+3. bSpawnAlt decides the brief pad: the assault tail writes 0 at 0x83A6C, so Tact_InitMission's
+   briefing gate (spawnAlt AND mode 0) takes its NULL branch and no pad is loaded (the original
+   drops a loaded pad without freeing; the shell frees what it owns).
+
+Port bug found by the wiring: the sentinel seed at 0x3CB40 stored 0x7D00 through the ILP32 byte
+offset +0x14. On Win64 TactItem's pointer fields slide and 0x14 is padding -- the store landed in
+the gap and nRefId stayed 0. The seed now writes pObj and nRefId by name; test_tactinit reads the
+fields instead of raw bytes and its s_aSentinel buffer is a typed TactItem.
+
+Tested deviations (listed, not silently fixed): caller-owned singletons; inline RmpData; shell
+teardown instead of Tact_Shutdown; pfnKillUnit NULL (stealth-flagged aliens are parked in the
+reserve, not killed -- 13 of them on this fixture); LoadUiPads / InitUiControls / OpenInventory /
+Modal hooks NULL (each a separate unit's head); UnitRosters and SpotCtx count copies are
+launch-time values (live rewiring belongs to the tactical runtime unit, same class as the aCells
+two-views issue); Unit_ResetBattleState port gaps (no slot clears, no apBackpack[5]/[6] sentinel,
+no internal Unit_RecalcInventoryStat).
+
+IDB: correction appended at 0x39744 (the function comment named 0x15199/0x1519A for the craft-map
+bytes; this function's own data xrefs land on 0x128AF1/0x128AF2 and 0x15199 is unreferenced
+anywhere); port-deviation note at 0x498b0; shape comments on the deploy tables 0xA66B8
+(g_aDeployCellOffsets, 312 B), 0xA6688 (g_aHwpsDeployOffsets, 48 B = 3 live + 5 zero + 4 live) and
+the counts at 0xA67F0; the park-then-re-arm chain noted at 0x39138; the Map_bSpawnAlt writer
+noted at 0x83A6C. Audit tables 46/46 with the three deploy arrays (0 mismatched).
+
+Tests: tests/test_geoscapeframe.c section 13 gained 16 checks -- live flag and frame header 3,
+the sentinel pair, the weapon-select trio (apObjects[1], 10, its first ammo type), five panels
+non-NULL with 14/14/14/14/28 lines, the flag block (tact flag, input, unk_1139B9 via the Xcom
+branch at 0x3D08C, screen 0, fire pair, slot scalars), the prologue random pair inside its scaled
+ranges (clock seed, exact pair not pinned), iso-layer and sweep-armed tail bytes, the brief-pad
+NULL via bSpawnAlt 0, the grid with deploy cell == slot 0 (Init_LookupCell at all-zero
+coordinates), 8/0/13 roster state, 23 item records, hwps 0, object count mirroring main.dat,
+showship and loft built, selected unit == apXcomUnits[0] (0x3D0B4), the speed copy -- then the
+teardown: live 0, frame records freed, every grid slot and panel cleared, items/loft/hidden
+cleared. Mutations: sentinel seed 0x7D00 -> 0x7D01 turns 1 red; the 0x39138 store flipped to 0
+turns 2 red. test_tactctl's team trio now comes from the unit's own auStat (45/78/12 in the
+fixture); test_tactinit reads the typed sentinel fields. Gate 61/61 both configs; golden frame
+match unchanged.

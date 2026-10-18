@@ -10,6 +10,7 @@
 
 #include "game/pufo_baseui.h"   /* GeoscapeScreenState, NavControls, ResearchTopicLive */
 #include "game/pufo_boot.h"     /* BootAssets */
+#include "game/pufo_combat.h"   /* UnitRosters, the VisCtx roster view */
 #include "game/pufo_clock.h"    /* GameTime */
 #include "game/pufo_font.h"
 #include "game/pufo_geopointer.h" /* GeoscapePointerEnv, the geoscape pointer dispatcher's env */
@@ -18,6 +19,8 @@
 #include "game/pufo_options.h"
 #include "game/pufo_save.h"
 #include "game/pufo_ship.h"
+#include "game/pufo_tactinit.h" /* TactInitEnv/TactInitHooks/TactWeaponSel + the callee envs the block below fills */
+#include "game/pufo_tactui.h"   /* TactUiState, the inventory drop state Tact_EquipTeamFromCraft drives */
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
 #include "ui/pufo_control.h"
@@ -278,6 +281,115 @@ typedef struct PufoWorldState {
                                          * Smap_InitCraftSelectState @ 0x61b94 builds from the facility grid */
     u8           bScratch187084;        /* unk_187084: the craft selector writes 0 here (0x841FC) and
                                          * nothing in the whole image reads it */
+    /* The tactical mission the launch hand-over builds (Tact_InitMission @ 0x3c550, run by
+     * World_InitTactical through the craft-select seam). These are the Map-block tactical cells
+     * the block above does not already own, plus the storage the mission brings up: the original
+     * keeps them in the Map block and in malloc'd blocks its globals point at (apCells slots,
+     * appMapTactical, appMapCtx, the showship blob), and the shell mirrors that ownership here.
+     * bTactFlag (Map+0x00), nUiScreen (Map+0x3A), bMapTickHold/bMapBattleEnded, bMapSpawnAlt,
+     * bMissionCount (unk_138E8C @ Map+0x254D4) and the mission-header bytes above are reused as-is.
+     * Docs/parity/game-core.md Unit 108 records the storage decisions and the deviations. */
+    bool          bTactLive;            /* not an original cell: the shell's own "the mission is up"
+                                         * flag, set by World_InitTactical, cleared by World_FreeTactical */
+    PufoFont     *pFont;                /* fontSys @ 0x158268: World_NewGame's font, kept for the tact
+                                         * env, the alien sprite loader and the terrain sprite hook */
+    const PufoOptions *pOptions;        /* the shell's option block: its volume steps feed the tact tail's
+                                         * two Sound_Apply*Volume calls, and its gamma / speed fields are
+                                         * the registry-load model of the two cells below */
+    GameMap      *pTactMap;             /* the mission's live map context, malloc'd like the original's
+                                         * heap block whose slot Tact_Shutdown frees. Its nMissionType/
+                                         * nMapLayers mirror the world fields above at launch -- same
+                                         * original cells, two struct views (the aCells duplicate is the
+                                         * recorded separate issue) */
+    MapCell      *apTactCells[14400];   /* the original pointer table Map+0x15338: Map_BuildMissionTerrain
+                                         * mallocs every cell, the teardown frees every slot (the shape
+                                         * Tact_Shutdown's Shutdown_FreeCells uses) */
+    MapCell      *pTactDeployCell;      /* Tact_pDeployCell @ 0x157204, written by Tact_SetupCraftCargo */
+    TactState    *pTactState;           /* pMapTactical @ 0x157198: malloc(0x111E8), the block whose slot
+                                         * Tact_Shutdown frees */
+    RmpData       sTactRmp;             /* pRmpMissionData @ 0x15881C. Inline: TactBuf11408_ctor fills it
+                                         * and Rmp_FreeNodes releases its nodes (the original frees the
+                                         * block itself -- deviation recorded in Unit 108) */
+    void         *pTactShowShip;        /* dword_156A78: the showship.dat blob, malloc'd to its header size */
+    PadImage     *pTactBriefPad;        /* unk_15692C: the briefing pad Tact_InitMission drops without
+                                         * freeing (deviation 3); the shell releases it at teardown */
+    u8            abTactLightmap[PUFO_TACTINIT_LIGHTMAP_LEN]; /* unk_156AB8 */
+    TactWeaponSel sTactWeaponSel;       /* unk_10DB90: apObjects[1], the constant 10, anAmmoTypeId[0] */
+    TactItem      sMapSentinel138EA0;   /* unk_138EA0 @ Map+0x254E8: 0x18 bytes, the same size as this
+                                         * record. Tact_InitMission stores an apObjects entry at +0 (its
+                                         * pObj) and 0x7D00 at +0x14 (the IDB's unk_138EB4 @ Map+0x254FC);
+                                         * Unit_ResetBattleState parks its address in two backpack slots,
+                                         * and InvDropCtx.pSentinel points at it */
+    TactItem      sTactItem156A88;      /* TactItem_156A88 @ 0x156A88: pObj = apObjects[PUFO_SHOT_OBJ_VARIANT3] */
+    TactItem      sTactItem156910;      /* TactItem_156910 @ 0x156910: pObj = apObjects[PUFO_SHOT_OBJ_VARIANT2] */
+    TactItem      sTactItem156A58;      /* TactItem_156A58 @ 0x156A58: pObj = apObjects[141] */
+    LosTables     sTactLoft;            /* lofttemps.dat + unitloft.dat, filled by Tact_LoadLoftData */
+    VisRay        aTactVisRays[PUFO_VIS_RAY_COUNT];      /* unk_B2278, 120 records */
+    u8            abTactVisSteps[PUFO_VIS_TABLE_BYTES];  /* byte_AD720 */
+    TactItem     *apTactItems[2048];    /* Map.apTactItems @ Map+0x23438: the block up to Map+0x25438
+                                         * is 2048 pointer slots in the original */
+    i32           nTactItemCount;       /* Map_nTactItemCount @ Map+0x1513C */
+    i32           nMapFlobjsWide;       /* the dword at Map+0x118, Save_AllocFlobjs's count-width flag */
+    Soldier      *apTactHidden[30];     /* apHiddenSoldiers @ Map+0x25438 (0x25438..0x254B0 = 30 slots) */
+    i32           nMapEnemyReserveCount;/* Map_nEnemyReserveCount @ Map+0x15144, the Xcom-base alien park */
+    i32           nMapDeployedHwps;     /* unk_128AF8 @ Map+0x15140, the running hardware-soldier count */
+    i32           aMapScatterMid[576];  /* unk_1556D0: the phase-5 scatter tables */
+    i32           aMapScatterLast[576]; /* unk_155FD0, its pair; the 6x6 tile scan bounds them at 36 x 16 */
+    i32           nMapScatterCount;     /* unk_157200 */
+    i32           aTactCargoSplit[160]; /* unk_156CD0, one entry per object: objects.dat ships 160 records */
+    i32           aTactCargoWork[480];  /* unk_157208, PUFO_CARGO_WORK_PER_OBJ per object */
+    u16           nMapObjectCountU16;   /* TactCargoEnv wants Map_nObjectCount @ Map+0x10A8 as a u16* */
+    GameClock     gameClock;            /* unk_128AB4 @ Map+0x150FC: the live speed cell Timer_StartBySpeed
+                                         * and StartTimers_BySpeed read. PufoOptions.nGameSpeed models the
+                                         * registry-loaded startup value; World_NewGame/World_LoadSlot copy it
+                                         * in, and GameSpeed_Set writes it during a mission */
+    u8            bMapUnk1139B9;        /* unk_1139B9 @ Map+0x01: 1 for a new mission, 0 with no deployed team */
+    u8            bMapPlayerInput;      /* unk_1139F0 @ Map+0x38 */
+    u8            bMapFire0;            /* unk_113A08 @ Map+0x50 (Map+0x51 is tactMap.bFireStatus1) */
+    u8            bMapFire2;            /* byte_113A0A @ Map+0x52 */
+    i32           nMapUiSlot1;          /* dword_113A1C @ Map+0x64 = apUiSlotsA[1] */
+    u8            bMapSweepArmed;       /* Map_bSweepArmed @ Map+0x68 = LOBYTE(apUiSlotsA[2]). This byte also
+                                         * backs MapInitEnv.pbSlot2Byte0 now: one cell, one owner */
+    u8            bMapSlot8Byte2;       /* unk_113A3A @ Map+0x82 */
+    u8            bMapSlot8Byte3;       /* unk_113A3B @ Map+0x83 */
+    i32           nMapUiSlot9;          /* unk_113A3C @ Map+0x84 = apUiSlotsA[9] */
+    i32           nMapUiSlot10;         /* unk_113A40 @ Map+0x88 = apUiSlotsA[10], init sets 10 */
+    i32           nMapUiSlot11;         /* unk_113A44 @ Map+0x8C = apUiSlotsA[11] */
+    u8            bMapAltOutcomePath;   /* unk_1153D9 @ Map+0x1A21 */
+    u8            bMapCraftMapX;        /* Map_nCraftMapX @ Map+0x15139 (0x128AF1): who reads it is listed
+                                         * in the pufo_tactctl.h correction note */
+    u8            bMapCraftMapY;        /* Map_nCraftMapY @ Map+0x1513A (0x128AF2) */
+    i32           nMapShotOrigX;        /* Map_nFireOrigX @ Map+0x14054: the ShotTrace nOrigX cell, the
+                                         * first sample tile of the last traced arc */
+    i32           nMapShotOrigY;        /* Map_nFireOrigY @ Map+0x14058 */
+    i32           nMapSpawnTileX;       /* Map_nSpawnTileX @ Map+0x1514C, the random module tile the */
+    i32           nMapSpawnTileY;       /* builder picks on the empty-layers path (Map+0x15150) */
+    u8            bMapDrawIsoLayer;     /* Map_bDrawIsoLayer @ Map+0x254B0: 0 through init, 1 at the tail */
+    u8            bMapLightEnabled;     /* gap_86301[1] @ Map+0x254B1, Map_RefreshCellMeta's gate */
+    i32           nMapUnk138E6C;        /* unk_138E6C @ Map+0x254B4: rand(0x28) + 10 */
+    i32           nMapUnk138E70;        /* unk_138E70 @ Map+0x254B8: rand(0x14) */
+    i32           nMapGamma;            /* Map_nGamma @ Map+0x15100: the live cell; PufoOptions.nGamma is
+                                         * the registry-load model, copied in by World_NewGame /
+                                         * World_LoadSlot (Map_InitAndLoadRegistry @ 0x22648 writes that cell) */
+    InvStatHooks  tactInvHooks;         /* Unit_RecalcInventoryStat's hooks, filled over pAssets->apObjects */
+    InvHitState   sTactHit;             /* the equip/drag hit state @ 0x0040/0x4A28.. */
+    InvDropCtx    sTactDrop;            /* the inventory drop Tact_EquipTeamFromCraft drives */
+    InvDropHooks  sTactDropHooks;       /* its hooks, filled by World_InitTactical */
+    TactUiState   sTactUi;              /* TactUiState @ the Map ui cells -- its nUiScreen/bActionLatch are
+                                         * the same cells world nUiScreen / tactMap.bActionLatch model (the
+                                         * recorded multi-view issue) */
+    SpotCtx       sTactSpot;            /* VisCtx's spotting state. bBusy/bQueueActive/pSelUnit are copies
+                                         * of the tact state (TactCtx272.bBusy, TactState.bQueueActive,
+                                         * pMap->pSelUnit) -- live rewiring is the tactical runtime unit's
+                                         * job, same class as the aCells duplicate. pfnFocusOnCell stays
+                                         * NULL: MapView_FocusOnUnit only fires on a selected-unit spot while
+                                         * the queue is active, which a mission bring-up never reaches */
+    i32           nMapTrajFront1036;    /* pCtxBase.nTrajFront0[1036]: the one dword Unit_SpotCellOccupant
+                                         * writes when it spots something */
+    Soldier      *pTactScratchUnit;     /* the anActionPhaseSave0[120] slot the visibility scan excludes */
+    UnitRosters   sTactRosters;         /* the three rosters as Unit_ScanVisibleUnits wants them. The counts
+                                         * are the launch values; live counts are the runtime unit's wiring */
+    TactInitEnv   tactEnv;              /* the persistent env World_InitTactical refills every launch */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */
@@ -466,6 +578,18 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
  * Returns LoadGame's result (0 when the file is absent). */
 i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
                    const PufoOptions *pOptions, const WorldHooks *pHooks);
+
+/* Tact_InitMission @ 0x3c550 over this state, wired by World_InitTactical's env fill. nMode 0 is the
+ * launch path (the craft-select seam's 0x83AC4 call); any other value would need the save-file blocks
+ * this path does not have, and the function then refuses. Brings up the mission's storage (the cell
+ * grid, TactState, the rosters' live fields) and sets bTactLive. Returns Tact_InitMission's result. */
+bool World_InitTactical(PufoWorldState *pW, i32 nMode);
+
+/* Release what World_InitTactical brought up: every apTactCells slot, the items, the five panels, the
+ * showship blob, the rmp nodes, the loft buffers, the map ctx and TactState. The soldier records stay
+ * owned by apSoldiers and World_Free. This is the shell's own teardown, NOT Tact_Shutdown @ 0x3d568:
+ * the mission-end unit owns that (its outcome table demolishes or removes on the mission's result). */
+void World_FreeTactical(PufoWorldState *pW);
 
 /* GeoscapeUi_FreeAll(bFreeWorld 1) plus the nav controls and the site records. */
 void World_Free(PufoWorldState *pW);

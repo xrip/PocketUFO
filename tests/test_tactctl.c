@@ -840,7 +840,6 @@ static Soldier s_aTeamUnit[4];
 static Soldier *s_apTeamUnit[4];
 static Soldier *s_aTeamXcom[30];
 static u8      s_aTeamDeploy[104 * 3];
-static u16     s_aTeamStat[10];
 static u8      g_nTeamCount;
 
 /* Four soldiers, ordered so that each mode stops at a different place.
@@ -863,6 +862,11 @@ static void TeamFixtureReset(void)
         s_aTeamUnit[i].bStatus    = 5;
         s_aTeamUnit[i].bFacing    = 3;
         s_aTeamUnit[i].nAnimPose  = 7;
+        /* Unit_ResetBattleState @ 0x498b0 takes its trio from the unit's own auStat,
+         * so the fixture puts 45/78/12 where the original's soldier records would have them. */
+        s_aTeamUnit[i].auStat[0]  = 45;
+        s_aTeamUnit[i].auStat[1]  = 78;
+        s_aTeamUnit[i].auStat[9]  = 12;
         s_apTeamUnit[i] = &s_aTeamUnit[i];
     }
     s_aTeamUnit[0].nKind = 1;   s_aTeamUnit[0].bUnk183 = 0;
@@ -879,9 +883,6 @@ static void TeamFixtureReset(void)
     s_aTeamDeploy[2 * 104 + 1] = 6;
     s_aTeamDeploy[2 * 104 + 2] = 1;
 
-    s_aTeamStat[0] = 45;
-    s_aTeamStat[1] = 78;
-    s_aTeamStat[9] = 12;
 
     s_apTeamShip[0] = &s_aTeamShip[0];
     s_apTeamShip[1] = &s_aTeamShip[1];
@@ -953,8 +954,6 @@ static void TestSelectTeamUnits(void)
     env.nSelectedBase = 1;
     env.pDeployOffsets = s_aTeamDeploy;
     env.apXcomUnits = s_aTeamXcom;
-    env.auStat = s_aTeamStat;
-    env.nStatCount = 10;
     env.pfnLookup = LookupCell;
     env.pSelectCtx = &selCtx;
     env.pInvHooks = &inv;

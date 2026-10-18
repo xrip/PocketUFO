@@ -687,9 +687,13 @@ bool Tact_InitMission(TactInitEnv *pEnv, i32 nMode)
     (void)Map_InitFacingScratch(&pEnv->facing, &pEnv->tileSize, 1,
                                 *pEnv->pbTactFlag != 0, (u8)pEnv->pMap->nLayerScratch);
 
-    /* 0x3CB40..0x3CB5C: the three static TactItem records seeded from Map.apObjects. */
-    *(ObjectRec **)pEnv->pUnk138EA0 = pEnv->apObjects[0];
-    *(i32 *)((char *)pEnv->pUnk138EA0 + 0x14) = 0x7D00;   /* unk_138EB4 @ Map+0x254FC */
+    /* 0x3CB40..0x3CB5C: the three static TactItem records seeded from Map.apObjects.
+     * The original stores through the ILP32 byte offsets 0x00 (unk_138EA0) and 0x14
+     * (unk_138EB4); those offsets name the pObj and nRefId fields of the record. On
+     * Win64 the pointer fields slide (pNext moves to 0x10), so the fields are written
+     * by name -- same record, same two dwords, no raw offset. */
+    ((TactItem *)pEnv->pUnk138EA0)->pObj   = pEnv->apObjects[0];
+    ((TactItem *)pEnv->pUnk138EA0)->nRefId = 0x7D00;
     /* 0x3CB40..0x3CB5C stores each object into the record's pObj field. */
     pEnv->pItem156A88->pObj = pEnv->apObjects[PUFO_SHOT_OBJ_VARIANT3];
     pEnv->pItem156910->pObj = pEnv->apObjects[PUFO_SHOT_OBJ_VARIANT2];
