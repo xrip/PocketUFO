@@ -41,6 +41,10 @@
 #define PUFO_AUDIO_INIT_GUARD     10
 #define PUFO_AUDIO_INIT_SLEEP_MS  100
 
+/* FSOUND_ALL, the channel argument FSOUND_SetPaused is called with everywhere in the image: R0 = 0xFFFFFFFD at
+ * 0x9E548, 0xA0534 and 0xA0620. It is the channel, not the pause flag -- the flag is the second argument. */
+#define PUFO_FSOUND_ALL  (-3)
+
 /* Backend seam. Every function returns true on success. */
 typedef struct PufoAudioBackend {
     /* FSOUND_Init(mixrate, maxchannels, flags) */
@@ -57,8 +61,11 @@ typedef struct PufoAudioBackend {
     i32 (*pfnPlaySound)(void *pSample);
     /* FSOUND_SetSFXMasterVolume(volume) */
     void (*pfnSetSfxVolume)(i32 nVolume);
-    /* FSOUND_SetPaused(paused) with paused -3 meaning "resume all" */
-    void (*pfnSetSfxPaused)(i32 nPaused);
+    /* FSOUND_SetPaused(nChannel, bPaused), two arguments, not one: the IDB carried the import as
+     * `void __stdcall FSOUND_SetPaused(signed __int8 paused)` and Hex-Rays therefore showed the flag coming from R0,
+     * which is the channel. The disassembly is `MOV R1, #1; MOV R0, #0xFFFFFFFD; BL FSOUND_SetPaused` at
+     * 0xA052C..0xA0534 and `MOV R1, #0; ...` at 0xA0618..0xA0620. */
+    void (*pfnSetSfxPaused)(i32 nChannel, i32 bPaused);
     /* FMUSIC_LoadSongEx(data, offset, length, mode, samplelist, count) */
     void *(*pfnMusicLoad)(const void *pData, u32 cbLength, u32 nMode);
     void (*pfnMusicSetLooping)(void *pMod, i32 bLoop);
@@ -104,6 +111,12 @@ void Sound_LoadAndPlayMusic(i32 nTrack);
 /* Applies the option block's volume levels. */
 void Sound_ApplyMusicVolume(i32 nLevel, u8 bMuted);
 void Sound_ApplySfxVolume(i32 nLevel, u8 bMuted);
+
+/* The audio half of PocketUFO_WndProc's focus arms: FSOUND_SetPaused(FSOUND_ALL, 1) on WM_KILLFOCUS
+ * (0xA052C..0xA0534) and (FSOUND_ALL, 0) on WM_SETFOCUS (0xA0618..0xA0620) -- unconditional, with no byte_187F24
+ * audio-ready test, unlike Sound_ApplySfxVolume -- and then FMUSIC_SetPaused(module, 1/0) only when byte_187F28 says
+ * a module is loaded (0xA0538 / 0xA0624). The module is the one this module owns, s_pMusicMod. */
+void Sound_SetPaused(bool bPaused);
 
 /* State, mirroring byte_187F24 (audio ready) and byte_187F28 (music playing). */
 bool Sound_IsInitialised(void);

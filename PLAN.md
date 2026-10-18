@@ -594,7 +594,7 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - [x] `Render_Frame (0x22310, 756 B)` — the frame dispatcher itself — ported as
   `src/pufo/game/pufo_renderframe.c` behind `RenderFrameEnv`, tested by `tests/test_renderframe.c`
   (18 new checks). Every callee except `Geoscape_Draw (0x8c180)` was already ported, so the env
-  carries the dispatch scalars (`unk_1139FC`, `Map_nUiScreen`, `unk_138E68`, the modal
+  carries the dispatch scalars (`Map_bGeoscapeUi`, `Map_nUiScreen`, `unk_138E68`, the modal
   `apUiSlotsA[12..19]` cells, the fade `apUiSlotsA[1]/[10]`) plus the per-branch sub-envs, and
   `Geoscape_Draw` / the `GX_Present (0x27788)` thunk are injected hooks. The geoscape branch
   returns `Geoscape_Draw`'s value and skips the present (0x22328/0x22330) — reproduced. The shell
@@ -3122,17 +3122,57 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `test_template` green in both. `tools/check.sh` also keeps the whole Debug ctest output in
   `/tmp/pufo_check_dbgtests.log` with `--output-on-failure`, which is what made the diagnosis possible at all.
 
-- [ ] **Next unit: the focus in/out arms of `PocketUFO_WndProc` (WM_SETFOCUS case 7, WM_KILLFOCUS case 8).** These are
-  the live shell users of the size pair: focus-out does `SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, nScreenW, nScreenH, 0)`
-  then `KillTimers_BySpeed @ 0x9E8B4` or `KillTimers_D @ 0x9E864` then `GXSuspend` (0xA04AC/0xA0514), and focus-in does
-  `GXResume` then `SetWindowPos(hwnd, HWND_TOP, 0, 0, nScreenW, nScreenH, 0x40 = SWP_SHOWWINDOW)` or with `fuFlags 0`
-  then `StartTimers_BySpeed @ 0x9E904` or `StartTimers_D @ 0x9E7F4` (0xA05B8/0xA0610); both then `FSOUND_SetPaused(-3)`
-  and `FMUSIC_SetPaused(0/1)` when `byte_187F28` is set, and focus-in also clears the four held-key flags. Each arm
-  splits on `MEMORY[0x1139B8]` (in a tactical mission) against `unk_1139FC`. `Gx_Suspend`/`Gx_Resume` are not in the
-  platform seam (`pufo_gx.h` has Open/Present/Close only) and the port's `PocketUFO_WndProc` has no WM_SETFOCUS or
-  WM_KILLFOCUS case at all. A decision is needed on the AYGSHELL trio -- `SHHandleWMActivate` (case 6),
-  `SHHandleWMSettingChange` (case 0x1A) and the 12-byte `SHACTIVATEINFO` at 0x188380 that WM_CREATE zeroes -- because
-  those are WinCE shell imports with no Win32 counterpart, and the boundary says the original DLLs are not re-linked.
+- [x] **The focus arms of `PocketUFO_WndProc`, and the pause call that had one argument instead of two (Part 38).**
+  `App_FocusLost` (WM_KILLFOCUS, 0xA046C..0xA0560) and `App_FocusGained` (WM_SETFOCUS, 0xA0564..0xA0674) in `pufo_app.c`,
+  dispatched from the two cases the port did not have. Each tests `Map.bTactFlag @ 0x1139B8` then `Map_bGeoscapeUi @
+  Map+0x44`: focus-out re-applies the size pair at `HWND_NOTOPMOST` with `fuFlags 0` (0xA04AC, 0xA0514), kills the timers
+  (`Timer_KillBySpeed` 0xA04B0 / `Timer_KillD` 0xA0518) and calls `Gx_Suspend`; focus-in calls `Gx_Resume` (0xA0578,
+  0xA05D4), re-applies the pair at `HWND_TOP` with `0x40 = SWP_SHOWWINDOW` in the mission arm (0xA05B8) or `fuFlags 0` in
+  the geoscape arm (0xA0610), and restarts the timers (`Timer_StartBySpeed` 0xA05BC / `Timer_StartD` 0xA0614). Both then
+  run the audio pair, and focus-in clears the four held-key flags (0xA064C..0xA0670). Checked against the disassembly,
+  not the pseudocode: **the audio half runs on every path** — with neither flag set the geometry, timers and display are
+  untouched and `FSOUND_SetPaused` / the conditional `FMUSIC_SetPaused` still run (0xA052C, 0xA0618).
+  **The IDB had `FSOUND_SetPaused` wrong and it had already spread into the port.** The import carried
+  `void __stdcall FSOUND_SetPaused(signed __int8 paused)`, one argument, so Hex-Rays took the flag from R0 and labelled
+  `0xFFFFFFFD` (FSOUND_ALL, the *channel*) "paused". The ARM is `MOV R1, flag; MOV R0, #0xFFFFFFFD; BL ...` — flag 1 at
+  0xA052C, flag 0 at 0xA0618, and at `Sound_ApplySfxVolume` 0x9E548 the flag is `Map_bSoundOff`, i.e. muting the effects
+  *pauses* them. Retyped at the import (0xA151C) with comments at it and at all three call sites; the port's backend hook
+  is now `pfnSetSfxPaused(nChannel, bPaused)`, `Sound_ApplySfxVolume` passes `(PUFO_FSOUND_ALL, bMuted)`, and
+  `Sound_SetPaused(bool)` is the new focus-arm pair. The port used to pass `-3` *as the flag* and drop the mute — and
+  `test_audio` asserted that as an "unpause-all sentinel", so a wrong shape was pinned by a green check. 9 new checks in
+  `test_audio` (17919 total), including a sentinel (`nMusicPaused = -1`) proving `FMUSIC_SetPaused` is not called at all
+  when no module is loaded.
+  **IDB naming:** `unk_1139FC` is `Map_bGeoscapeUi` now — written 1 by `Geoscape_InitUI` 0x85858 and 0 by
+  `GeoscapeUi_FreeAll` 0x86D34, read by all nine input handlers, `Render_Frame`, `LoadGame` and both focus arms; named
+  after the field the port already had (`PufoWorldState.bGeoscapeUi`), and all 14 citations across `src`, `tests`,
+  `docs/parity` and this plan updated in the same pass. Comments written at 0x1139FC, 0xA151C, 0xA046C and 0xA0564.
+  **Three deviations, recorded.** (1) `Gx_Suspend`/`Gx_Resume` are no-ops in the platform seam: GAPI hands the physical
+  framebuffer to another application, the Win64 seam owns its DIB and its window DC for the whole process, so there is
+  nothing to hand over; they exist so the arms read like the original and the pair has a counterpart in the parity map.
+  (2) The reposition calls move the window to (0, 0) at its created size on every focus change — a visible action on a
+  desktop, a no-op on a full-screen WinCE device. (3) `StartTimers_BySpeed` reads `Map_nGameSpeed @ 0x128AB4` itself
+  (0x9E918); the port models that byte as `GameClock`, which the shell does not own because it runs no tactical mission,
+  so `App_FocusGained` passes its own mirror `g_nGameSpeed`, which nothing writes and which reads 0 (the 100 ms rate).
+  `PocketUFO_WndProc`'s own 0xC350 dispatch (`GameTick_OnTimer` repeated by the speed, 0xA08BC..0xA0938) is still not
+  ported, and neither is the AYGSHELL trio — see the open decision below. Release 61/61, zero warnings, the
+  `--new-game` dump unchanged; coverage stays 967/1103 because the arms live inside an already-cited function.
+  **Tooling lesson:** a `sed -i` over `docs/parity/game-core.md` stripped the second CR from every `\r\r\n` line and
+  turned a 12-line change into an 18,600-line one. That file's edits go through the byte-level Python scripts in
+  `C:/Windows/Temp/pufo_scripts` and nothing else.
+
+- [ ] **Open decision for the user: the AYGSHELL trio.** `PocketUFO_WndProc` case 6 calls `SHHandleWMActivate`
+  (0xA068C) and case 0x1A calls `SHHandleWMSettingChange` (0xA145C), both AYGSHELL imports, over the 12-byte
+  `SHACTIVATEINFO` at 0x188380 that WM_CREATE (case 1) memsets and sets `cbSize = 12`. There is no Win32 counterpart and
+  the project boundary keeps the original DLLs out of the link. Either the platform seam stands in for them (a
+  documented no-op, like `Gx_Suspend`) or they are recorded as WinCE-only and left out. This needs the user's call
+  before a unit is built on it.
+
+- [ ] **Next unit: the two suites that are red in Debug at HEAD.** `test_titles` ("a scroll of 0 admits no credit rows")
+  and `test_plane` ("the field outside the panel is untouched: got 52685 want 0") pass in Release and fail in Debug, and
+  they have been carried as known-red for many parts. The verification contract does not really allow a permanent red:
+  either the port has an uninitialised-memory shape that Debug exposes and Release hides (the shape already named for
+  `test_geoscape` in the issues below), or the two checks assert something the port never promised. Worth finding out
+  which, because "99.7% of bytes recreated" is not the same claim as "the port runs the same way everywhere".
 
 ## Separate issues, not folded into the porting steps
 
@@ -3661,6 +3701,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the shell's own new-game pick (Part 35: no new original block — closes the Part 31 deviation, the `--new-game` dump calling `World_MapClick` straight and so skipping `NewBaseScreen_TryConfirm`'s 0x61538 sample and 0x6156C funds gate; four shell functions do the player's order instead — the wipe stepped as `WM_TIMER` steps it, a Part 32 drag onto the nearest buildable tile (press arms 0x187074 and moves nothing, the `bDown`-clear event scrolls, release clears 0x896BC), one draw for 0x91D94 and 0x679F0, then press + release through `App_PointerLogical`/`App_OnPointerUp` i.e. `Input_OnPointer @ 0x13c6c` / `Input_OnPointerUp @ 0x148d0`; the tile read is a deliberate mirror of 0x82244 because the real one also writes `view.nPickX/nPickY`, which the draw owns; measured 0x83 hover, 2 → 1 → 0, pending cleared, base 0 at 354/86 with region 0x83 and no spend, clock +300 s — where the old dump read region 0xFF and the click refusing at 0x8B4D0, its committed lines coming from a stale `bPendingRegionId`; IDB re-checked along the whole chain, nothing to correct — no-argument `pfnClick` at 0x1a414/0x1a570/0x1a5a8→0x1a5b0 and no argument register read at the head of `Geoscape_OnMapClick`) | 61/61 (Release) | 17909 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the window-size pair and the last function with behaviour (Part 36: `App_ResizeMainWindow @ 0x9ecb8` ported in `pufo_app.c` — `SetWindowPos(hWndMain, HWND_BOTTOM, 0, 0, nScreenW, nScreenH, SWP_HIDEWINDOW)` — with `g_nScreenW`/`g_nScreenH` written at InitInstance's 0x9FE44/0x9FE58 and InitInstance's own 0x9FE94 `SetWindowPos` (`fuFlags 2` = SWP_NOMOVE, after ShowWindow 0x9FE60 and UpdateWindow 0x9FE68) ported with it, which the shell never had; 2 adaptations — the port stores the created window size instead of the device's `GetSystemMetrics` pair, and the caller is tactical widget 58 (0x3B6AC, 0x3BC74) not the options screen the parity doc claimed, so the shell has the callee and no caller until the tactical bank is built; IDB: the block 0x188D40..0x188D58 carried names with no items under them — a 60-byte item to 0x188D4C and a 12-byte `unsigned __int8[12]` from it — so Hex-Rays read the width as `dword_1883AC[613]`, the height as `g_bListRowSticky[4]` and the HWND as `*(HWND*)&g_bListRowSticky[8]` everywhere; now five items (4/4/1/4/4, the row-sticky byte really is one: `LDRB` 0x14AD0, `STRB` 0xA03D4) with writer/reader comments at 0x188D40, 0x188D44, 0x188D4C, 0x188D50, 0x188D54 and 0x9ECB8, and `PocketUFO_WndProc`'s pseudocode names the pair for the first time) | 61/61 (Release) | 17909 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the reload check asserted the allocator, not the port (Part 37: `test_template`'s "pointer changed to the new blob" required a freed 2403-byte block not to be re-used by the next 403-byte allocation — a heap decision, which is why it was red three times in `check.sh`'s Debug stage and green in every standalone run of an unchanged binary; replaced by what the guarantee is actually visible in — load `avenger`, load `culta0`, then load `no_such_template` and require `pBlob == NULL`, since `MapTemplate_Load` frees at `pufo_template.c:22` before it allocates; teeth proven by removing that free, which turns exactly the new check red and leaves the old one green; `tools/check.sh` Debug stage moved to `-j 8` because the order coupling it was kept serial for no longer exists (2 failures both ways, four runs), `--output-on-failure` on both ctest stages with the full output kept in `/tmp/pufo_check_*tests.log`, and both stages' exit codes kept in variables because `ctest | tail` reports `tail`'s status) | 61/61 (Release) | 17910 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
+| the focus arms, and a pause call that had one argument where the original has two (Part 38: `App_FocusLost` / `App_FocusGained` in `pufo_app.c` for WM_KILLFOCUS 0xA046C..0xA0560 and WM_SETFOCUS 0xA0564..0xA0674 — both gated on `Map.bTactFlag @ 0x1139B8` then `Map_bGeoscapeUi @ Map+0x44`; reposition with the stored pair at HWND_NOTOPMOST/0 (0xA04AC, 0xA0514) or HWND_TOP/0x40 (0xA05B8) or HWND_TOP/0 (0xA0610); `Timer_KillBySpeed`/`Timer_KillD` then `Gx_Suspend`, `Gx_Resume` then `Timer_StartBySpeed`/`Timer_StartD`; audio on every path including the no-flag case (0xA052C, 0xA0618); the four held-key flags cleared at 0xA064C..0xA0670. IDB: `FSOUND_SetPaused` imported as one-arg `signed __int8 paused` — Hex-Rays read the channel 0xFFFFFFFD = FSOUND_ALL as the flag and the port inherited the mistake, passing `-3` as the flag and dropping `Map_bSoundOff` (which at 0x9E548 *pauses* muted effects), with `test_audio` pinning it as an "unpause-all sentinel"; retyped at 0xA151C, `pfnSetSfxPaused(nChannel, bPaused)`, new `Sound_SetPaused(bool)`, comments at 0xA151C/0xA046C/0xA0564; `unk_1139FC` named `Map_bGeoscapeUi` (set 1 at 0x85858, 0 at 0x86D34, read by nine input handlers + `Render_Frame` + `LoadGame` + both arms) with all 14 citations updated; 3 deviations — `Gx_Suspend`/`Gx_Resume` are seam no-ops (no GAPI display ownership on Win64), the reposition is a visible move on a desktop, and the shell has no `GameClock` so the mission arm's speed reads the unread mirror `g_nGameSpeed` = 0) | 61/61 (Release) | 17919 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 What the loop costs, measured on this tree (Part 34): a full Release build after touching a widely-included

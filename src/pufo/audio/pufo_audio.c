@@ -48,7 +48,7 @@ static void Stub_SampleSetMode(void *pSample, u32 nMode) { (void)pSample; (void)
 static void Stub_SampleFree(void *pSample) { (void)pSample; }
 static i32  Stub_PlaySound(void *pSample) { (void)pSample; return -1; }
 static void Stub_SetSfxVolume(i32 nVolume) { (void)nVolume; }
-static void Stub_SetSfxPaused(i32 nPaused) { (void)nPaused; }
+static void Stub_SetSfxPaused(i32 nChannel, i32 bPaused) { (void)nChannel; (void)bPaused; }
 static void *Stub_MusicLoad(const void *pData, u32 cbLength, u32 nMode)
 {
     (void)pData;
@@ -290,13 +290,26 @@ void Sound_ApplyMusicVolume(i32 nLevel, u8 bMuted)
     }
 }
 
-/* Sound_ApplySfxVolume @ 0x9e4dc. FSOUND_SetPaused(-3) means "unpause all
- * channels" in FMOD 3; the original calls it right after setting the volume. */
+/* Sound_ApplySfxVolume @ 0x9e4dc. FSOUND_SetSFXMasterVolume first (0x9E518), then
+ * `FSOUND_SetPaused(FSOUND_ALL, Map_bSoundOff != 0)` at 0x9E548 -- the mute flag is the pause argument, so muting the
+ * effects pauses them rather than only lowering them -- and that second call only while byte_187F24 says the audio is
+ * ready (0x9E528). */
 void Sound_ApplySfxVolume(i32 nLevel, u8 bMuted)
 {
-    (void)bMuted;
     s_pBackend->pfnSetSfxVolume(nLevel);
     if (s_bAudioReady) {
-        s_pBackend->pfnSetSfxPaused(-3);
+        s_pBackend->pfnSetSfxPaused(PUFO_FSOUND_ALL, bMuted != 0 ? 1 : 0);
+    }
+}
+
+/* The audio half of PocketUFO_WndProc's focus arms. Both arms call FSOUND_SetPaused(FSOUND_ALL, flag) with no
+ * byte_187F24 test -- 0xA052C..0xA0534 pauses on WM_KILLFOCUS, 0xA0618..0xA0620 unpauses on WM_SETFOCUS -- and then
+ * pause or resume the music module only when byte_187F28 is set (0xA0538, 0xA0624). The original reads the module out
+ * of MEMORY[0x187320] with no null test; this module owns the pointer, so it tests it. */
+void Sound_SetPaused(bool bPaused)
+{
+    s_pBackend->pfnSetSfxPaused(PUFO_FSOUND_ALL, bPaused ? 1 : 0);
+    if (s_bMusicLoaded && s_pMusicMod != NULL) {
+        s_pBackend->pfnMusicSetPaused(s_pMusicMod, bPaused ? 1 : 0);
     }
 }

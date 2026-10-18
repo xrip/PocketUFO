@@ -10,7 +10,7 @@
  *
  * Dispatch, exactly as the ARM has it:
  *
- *   Map.bGeoscapeMode (unk_1139FC @ Map+0x44) != 0
+ *   Map.bGeoscapeMode (Map_bGeoscapeUi @ Map+0x44) != 0
  *                  -> return Geoscape_Draw(&screen block). NOTE: this branch returns
  *                     Geoscape_Draw's value and never reaches GX_Present -- Geoscape_Draw
  *                     presents itself (0x22328 / 0x22330).
@@ -57,7 +57,7 @@
 
 typedef struct RenderFrameEnv {
     /* Dispatch scalars, the Map-block cells the switch reads. */
-    i32 bGeoscapeMode;    /* unk_1139FC @ Map+0x44 */
+    i32 bGeoscapeMode;    /* Map_bGeoscapeUi @ Map+0x44 */
     i32 nUiScreen;        /* Map_nUiScreen @ Map+0x3A */
     i32 bDrawIsoLayer;    /* unk_138E68 @ Map+0x254B0 */
 

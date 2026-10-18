@@ -51,6 +51,7 @@ typedef struct FakeState {
     i32  nPlayCalls;
     i32  nSetSfxVolume;
     i32  nSetSfxPaused;
+    i32  nSetSfxPausedChannel;
     i32  nMusicLoads;
     u32  nMusicMode;
     i32  nMusicLoopSet;
@@ -111,7 +112,11 @@ static i32 Fake_PlaySound(void *pSample)
 }
 
 static void Fake_SetSfxVolume(i32 nVolume) { g_fake.nSetSfxVolume = nVolume; }
-static void Fake_SetSfxPaused(i32 nPaused) { g_fake.nSetSfxPaused = nPaused; }
+static void Fake_SetSfxPaused(i32 nChannel, i32 bPaused)
+{
+    g_fake.nSetSfxPausedChannel = nChannel;
+    g_fake.nSetSfxPaused        = bPaused;
+}
 
 static void *Fake_MusicLoad(const void *pData, u32 cbLength, u32 nMode)
 {
@@ -359,7 +364,11 @@ static void TestVolumeApply(void)
 
     Sound_ApplySfxVolume(159, 0);
     CheckEqI32(g_fake.nSetSfxVolume, 159, "  sfx volume forwarded");
-    CheckEqI32(g_fake.nSetSfxPaused, -3, "  unpause-all sentinel -3");
+    CheckEqI32(g_fake.nSetSfxPausedChannel, PUFO_FSOUND_ALL, "  the pause call is on FSOUND_ALL (-3)");
+    CheckEqI32(g_fake.nSetSfxPaused, 0, "  unmuted: the effects keep playing");
+
+    Sound_ApplySfxVolume(159, 1);
+    CheckEqI32(g_fake.nSetSfxPaused, 1, "  muted: the same call pauses them (0x9E548 passes bSoundOff)");
 
     Sound_ApplyMusicVolume(159, 0);
     CheckEqI32(g_fake.nMusicVolume, 159, "  music volume forwarded");
@@ -367,6 +376,34 @@ static void TestVolumeApply(void)
 
     Sound_ApplyMusicVolume(0, 1);
     CheckEqI32(g_fake.nMusicPaused, 1, "  music paused when muted");
+    Sound_Shutdown();
+}
+
+static void TestFocusPause(void)
+{
+    printf("Sound_SetPaused (PocketUFO_WndProc's focus arms)\n");
+    Fake_Reset();
+    Sound_SetBackend(&g_fakeBackend);
+    (void)Sound_InitAndLoadSamples("tact");
+
+    /* No module loaded, so the music half must not fire: byte_187F28 is clear at 0xA0538 and 0xA0624. The -1 is a
+     * sentinel -- a call through the fake would overwrite it. */
+    g_fake.nMusicPaused = -1;
+    Sound_SetPaused(true);
+    CheckEqI32(g_fake.nSetSfxPausedChannel, PUFO_FSOUND_ALL, "  WM_KILLFOCUS pauses FSOUND_ALL (0xA0534)");
+    CheckEqI32(g_fake.nSetSfxPaused, 1, "  with the flag 1 (R1 = 1 at 0xA052C)");
+    CheckEqI32(g_fake.nMusicPaused, -1, "  and calls FMUSIC_SetPaused not at all");
+
+    Sound_SetPaused(false);
+    CheckEqI32(g_fake.nSetSfxPaused, 0, "  WM_SETFOCUS resumes (R1 = 0 at 0xA0618)");
+    CheckEqI32(g_fake.nMusicPaused, -1, "  still no module to resume");
+
+    Sound_LoadAndPlayMusic(0);
+    g_fake.nMusicPaused = -1;
+    Sound_SetPaused(true);
+    CheckEqI32(g_fake.nMusicPaused, 1, "  with a module loaded it is paused with the effects");
+    Sound_SetPaused(false);
+    CheckEqI32(g_fake.nMusicPaused, 0, "  and resumed with them");
     Sound_Shutdown();
 }
 
@@ -387,6 +424,7 @@ int main(void)
     TestVolumeMapping();
     TestOptionsDefaults();
     TestVolumeApply();
+    TestFocusPause();
 
     Asset_CloseArchives();
 

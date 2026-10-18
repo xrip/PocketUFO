@@ -34,6 +34,14 @@ bool Gx_Open(GxSurface *pGx, HWND hWnd, u32 cxWidth, u32 cyHeight);
 /* Copy the logical surface to the window, letterboxed at integer scale. */
 bool Gx_Present(GxSurface *pGx);
 
+/* GXSuspend @ 0xa61b4 and GXResume @ 0xa61b8, the display half of PocketUFO_WndProc's focus arms: 0xA04B4..0xA04C0
+ * and 0xA051C..0xA0528 release the display on WM_KILLFOCUS, 0xA0578..0xA0584 and 0xA05D4..0xA05E0 take it back on
+ * WM_SETFOCUS. GAPI hands the physical framebuffer to another application while the game is not focused; the Win64
+ * seam owns its DIB and its window DC for the whole life of the process, so there is nothing to hand over and nothing
+ * to take back. They are kept so the two arms read like the original and the pair has a counterpart in the parity map. */
+void Gx_Suspend(GxSurface *pGx);
+void Gx_Resume(GxSurface *pGx);
+
 /* Release all display resources. Safe to call twice. */
 void Gx_Close(GxSurface *pGx);
 

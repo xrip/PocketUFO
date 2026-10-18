@@ -7201,7 +7201,7 @@ already ported, so the env carries the dispatch scalars and the per-branch sub-e
 `Geoscape_Draw` and the `GX_Present (0x27788)` thunk (a 4-byte jump to `GX_PresentFrame`) are
 injected hooks.
 
-**The geoscape branch returns early** (0x22328 / 0x22330): when `unk_1139FC` (Map+0x44) is set,
+**The geoscape branch returns early** (0x22328 / 0x22330): when `Map_bGeoscapeUi` (Map+0x44) is set,
 `Render_Frame` returns `Geoscape_Draw`'s value and never reaches `GX_Present` — `Geoscape_Draw`
 presents itself. The three title/menu screens (0x10 animated titles, 0x11 `MainMenu_Draw`, 0x12
 credits backdrop) each end with the present.
@@ -17322,16 +17322,41 @@ the window with -- the display size plus its frame -- which is the size the wind
 (2) InitInstance's own use of the pair is ported with it: the SetWindowPos at 0x9FE94, HWND_TOP with
 fuFlags 2 (SWP_NOMOVE), after ShowWindow (0x9FE60) and UpdateWindow (0x9FE68).
 
-Found while doing this, not fixed. The four PocketUFO_WndProc sites on the same pair are unported:
-WM_SETFOCUS (case 7) resumes -- GXResume, SetWindowPos(HWND_TOP, 0, 0, w, h, 0x40 = SWP_SHOWWINDOW)
-in the mission arm or with fuFlags 0 in the other, StartTimers_BySpeed @ 0x9E904 or StartTimers_D
-@ 0x9E7F4, FSOUND_SetPaused(-3), FMUSIC_SetPaused(0) when byte_187F28 is set, and the four held-key
-flags cleared -- and WM_KILLFOCUS (case 8) suspends -- SetWindowPos(HWND_NOTOPMOST, 0, 0, w, h, 0),
-KillTimers_BySpeed @ 0x9E8B4 or KillTimers_D @ 0x9E864, GXSuspend, FMUSIC_SetPaused(1). Each arm splits
-on MEMORY[0x1139B8] (in a tactical mission) against unk_1139FC. Gx_Suspend and Gx_Resume are not in the
-platform seam at all (pufo_gx.h has Open/Present/Close), and neither is SHHandleWMActivate (case 6),
-SHHandleWMSettingChange (case 0x1A) or the SHACTIVATEINFO at 0x188380 that WM_CREATE (case 1) zeroes
-and sizes to 12. These four sites are the live shell users of the size pair.
+The focus arms are ported as of Part 38: App_FocusLost (0xA046C..0xA0560) and App_FocusGained
+(0xA0564..0xA0674) in pufo_app.c, dispatched from WM_KILLFOCUS and WM_SETFOCUS. Both arms test
+Map.bTactFlag @ 0x1139B8 first and Map_bGeoscapeUi @ Map+0x44 second -- the latter was unk_1139FC in the
+IDB until this part and is named after the port's own field now. Focus-out re-applies the size pair at
+HWND_NOTOPMOST with fuFlags 0 (0xA04AC, 0xA0514), kills the timers (KillTimers_BySpeed 0xA04B0 or
+KillTimers_D 0xA0518) and releases the display; focus-in takes the display back (0xA0578, 0xA05D4),
+re-applies the pair at HWND_TOP with 0x40 = SWP_SHOWWINDOW in the mission arm (0xA05B8) or with fuFlags 0
+in the geoscape arm (0xA0610), and restarts the timers (StartTimers_BySpeed 0xA05BC or StartTimers_D
+0xA0614). Both then pause or resume the audio, and focus-in clears the four held-key repeat flags
+(0xA064C..0xA0670), so a key held across a focus change does not keep repeating.
+
+Three things the arms make clear about the original. (1) The audio half runs on EVERY path: with neither
+flag set the geometry, the timers and the display are untouched but FSOUND_SetPaused and the conditional
+FMUSIC_SetPaused still run (0xA052C, 0xA0618). (2) FSOUND_SetPaused takes TWO arguments and the IDB had it
+with one -- `void __stdcall FSOUND_SetPaused(signed __int8 paused)` -- which made Hex-Rays read R0 (the
+channel, 0xFFFFFFFD = FSOUND_ALL) as the flag and comment it as 'paused'. The ARM is `MOV R1, flag;
+MOV R0, #0xFFFFFFFD; BL ...`: flag 1 at 0xA052C, flag 0 at 0xA0618, and in Sound_ApplySfxVolume at 0x9E548
+the flag is Map_bSoundOff, i.e. muting the effects PAUSES them, not just lowers them. Retyped at the import
+0xA151C, and the port's own backend hook, stub and Sound_ApplySfxVolume call now carry both arguments; the
+old port shape passed -3 as the flag and dropped the mute, which test_audio had even asserted as an
+"unpause-all sentinel". (3) StartTimers_BySpeed reads Map_nGameSpeed @ 0x128AB4 itself (0x9E918), which the
+port models through GameClock; the shell has no clock because it runs no tactical mission, so App_FocusGained
+passes its own mirror g_nGameSpeed, which nothing writes and which therefore reads 0 -- the 100 ms rate.
+
+Two deviations recorded, not hidden. Gx_Suspend / Gx_Resume are no-ops in the platform seam: GAPI hands the
+physical framebuffer to another application and the Win64 seam owns its DIB and window DC for the whole life
+of the process, so there is nothing to hand over; they exist so the arms read like the original. And the
+reposition calls move the window to (0, 0) with its created size on every focus change, which on a desktop is
+visible rather than the no-op it was on a full-screen WinCE device.
+
+Still not ported after this part: SHHandleWMActivate (case 6, 0xA068C), SHHandleWMSettingChange (case 0x1A) and
+the 12-byte SHACTIVATEINFO at 0x188380 that WM_CREATE (case 1) memsets and sets cbSize to 12. Those are
+AYGSHELL imports -- the Pocket PC shell's activation bookkeeping -- with no Win32 counterpart, and the project
+boundary keeps the original DLLs out of the link, so a decision is needed on whether the seam stands in for
+them or they are recorded as WinCE-only and left.
 
 Dispositions, not ported, with reasons. Map_RegisterAtexit (0x22620) and its thunk
 Map_Atexit_nullsub2 (0x2262c) register a
@@ -18626,7 +18651,7 @@ Part 25 -- wiring the frame into the shell: RenderFrameEnv -> Geoscape_Draw, the
 
 Geoscape_Draw @ 0x8c180 had every block it calls ported, but nothing in the shell built its argument or called it: the geoscape frame ran only in tests, and `pocketufo --new-game` drew the startup screens. This unit is the wiring -- no new original block, one real port bug found by it.
 
-The dispatch half was already right. `Render_Frame @ 0x22310` tests Map.bGeoscapeMode (unk_1139FC, Map + 0x44) BEFORE Map_nUiScreen, calls the frame with the literal 0x1864F8 block and returns its value without presenting (0x22328 / 0x22330), and Geoscape_Draw hands back the frame end's GX_Present value (0x94538). `App_DrawFrame` now takes that branch whenever the world is up and bGeoscapeUi is set, so the geoscape path no longer goes through the startup UI's Render_Frame arm.
+The dispatch half was already right. `Render_Frame @ 0x22310` tests Map.bGeoscapeMode (Map_bGeoscapeUi, Map + 0x44) BEFORE Map_nUiScreen, calls the frame with the literal 0x1864F8 block and returns its value without presenting (0x22328 / 0x22330), and Geoscape_Draw hands back the frame end's GX_Present value (0x94538). `App_DrawFrame` now takes that branch whenever the world is up and bGeoscapeUi is set, so the geoscape path no longer goes through the startup UI's Render_Frame arm.
 
 The env half is new: `GeoscapeFrameState` in pufo_world.h -- one each of the draw env, the map-view env, the crosshair tail env, the radar arm env, the status panel env, the globe hover env, the frame-end env, the BaseFacStatusEnv the panel reads, the UiAnimBlitEnv and the `GeoscapeFrameGlobals` block (nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4, bGeoscapeDragActive @ 0x187074). `World_WireGeoscapeFrame` fills them from the shell's own objects -- InitUI's pad and control singletons, the zoom set the view selected, g_aPalette[PUFO_RADAR_MAP_PAL_SLOT], the message list, the time block, the control blit hooks taken from `UiControlHitCtx` -- and `World_RefreshGeoscapeFrame` re-points the per-frame ones (map pad, layer pad, screen id, tiles, the crosshair pair, nFrameStyle) before every call. The pointer env goes with it, so `TactInputHooks.pfnGeoscapePointer/pfnGeoscapePointerUp` now drive the real Geoscape_OnPointer / Geoscape_OnPointerUp.
 

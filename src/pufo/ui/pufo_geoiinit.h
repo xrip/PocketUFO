@@ -13,7 +13,7 @@
  *
  *   1. Sets the nine region counters at 0x18655D to 1 (aRegionBuildCount in pufo_save.h),
  *      runs Font_Init, clears the screen id (nGeoscapeScreen @ 0x186BC4), sets the
- *      geoscape flag byte (unk_1139FC @ Map+0x44, a STRB), and clears the two root
+ *      geoscape flag byte (Map_bGeoscapeUi @ Map+0x44, a STRB), and clears the two root
  *      flags at 0x18652C / 0x18652D (byte gates read by BaseFacScreen_DrawPlacementOverlay
  *      @ 0x58E7C and BasePlaneScreen_Draw @ 0x7D3D0).
  *   2. Creates the thirteen pad singletons (GeoscapeUiState.apPad), the world-size block
@@ -114,7 +114,7 @@ typedef struct GeoscapeInitEnv {
     /* The world glyph record behind 0x186BC0 (0x4E204 = 4 + 800*400 bytes) is allocated here and
      * published as pUi->pWorldSize, pointing at its header pair; GeoscapeUi_FreeAll releases it. */
     i32             *pnScreenMode;   /* nGeoscapeScreen @ 0x186BC4 */
-    u8              *pbGeoscapeUi;   /* unk_1139FC @ Map+0x44 */
+    u8              *pbGeoscapeUi;   /* Map_bGeoscapeUi @ Map+0x44 */
     u8              *pbRoot34;       /* unk_18652C */
     u8              *pbRoot35;       /* unk_18652D */
 

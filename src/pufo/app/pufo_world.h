@@ -139,7 +139,7 @@ typedef struct PufoWorldState {
     GeoscapeScreenState screen;
     SmapView          view;                     /* gSmapCam @ 0x1863E8 */
     SmapZoomSet       sets[3];
-    u8                bGeoscapeUi;              /* unk_1139FC @ Map + 0x44 */
+    u8                bGeoscapeUi;              /* Map_bGeoscapeUi @ Map + 0x44 */
     u8                bRoot34;                  /* bBaseFacPreviewActive @ 0x18652C: the aimed placement byte. The
                                      * pointer press sets it (0x87F44), the release clears it (0x89E14), the overlay
                                      * commit clears it (0x59B30) and InitUI clears it (0x85860). */

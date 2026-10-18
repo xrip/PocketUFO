@@ -119,6 +119,18 @@ bool Gx_Present(GxSurface *pGx)
     return true;
 }
 
+/* See pufo_gx.h: no Win64 counterpart for GAPI's display hand-off. The DIB, the memory DC and the window DC stay
+   valid, so a present while unfocused still works and a present after resuming needs no re-acquisition. */
+void Gx_Suspend(GxSurface *pGx)
+{
+    (void)pGx;
+}
+
+void Gx_Resume(GxSurface *pGx)
+{
+    (void)pGx;
+}
+
 void Gx_Close(GxSurface *pGx)
 {
     if (pGx == NULL) {

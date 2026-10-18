@@ -311,7 +311,7 @@ int main(void)
     pSet = &g_world.sets[0];
 
     /* 1. Where the new game leaves the world, and what the wiring points at. */
-    CheckEqI32(g_world.bGeoscapeUi, 1, "InitUI sets Map.bGeoscapeUi (unk_1139FC @ Map+0x44)");
+    CheckEqI32(g_world.bGeoscapeUi, 1, "InitUI sets Map.bGeoscapeUi (Map_bGeoscapeUi @ Map+0x44)");
     CheckEqI32(g_world.screen.nGeoscapeScreen, 2,
                "StartNew ends on geoscape screen 2 (NewBaseScreen_Open 0x61620)");
     CheckEqI32(g_world.view.nMode, 0, "InitUI publishes the view at zoom level 0 (0x868D8..0x868E8)");

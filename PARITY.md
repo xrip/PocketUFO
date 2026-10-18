@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596836 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 17910 |
+| Test checks run | 17919 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -429,7 +429,7 @@ is the module that answers to it.
 | `0x22b54` | `UnitList_ForEachRefresh` | 76 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_turn.h` (+2) |
 | `0x54b58` | `MapCell_ListRemove` | 76 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_mapcell.c` (+1) |
 | `0x55018` | `Map_FreeRmpNodes` | 72 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
-| `0x260c0` | `GameSpeed_Set` | 68 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` (+1) |
+| `0x260c0` | `GameSpeed_Set` | 68 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_tactctl.c` (+2) |
 | `0x54b14` | `MapCell_ListInsertByPri` | 68 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` |
 | `0x164f0` | `MapView_LayerDown` | 64 | `src/pufo/game/pufo_tactui.h` |
 | `0x16530` | `MapView_LayerUp` | 64 | `src/pufo/game/pufo_tactui.h` |
@@ -1253,7 +1253,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 
 | Suite | Result | Checks |
 |---|---|---|
-| `test_audio` | PASS | 55 |
+| `test_audio` | PASS | 64 |
 | `test_ballist` | PASS | 105 |
 | `test_baseui` | PASS | 4138 |
 | `test_blast` | PASS | 14 |
@@ -1334,7 +1334,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 778 citations.
+parity report. Total: 788 citations.
 
 ### Offsets below the image base (43)
 
@@ -1343,7 +1343,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (735)
+### At or above the image base (745)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1414,6 +1414,7 @@ against the IDB when the final report is assembled.
 - `0x128a98`
 - `0x128aa0`
 - `0x128aa8`
+- `0x128ab4`
 - `0x128ad2`
 - `0x128ad3`
 - `0x128ad4`
@@ -1939,6 +1940,9 @@ against the IDB when the final report is assembled.
 - `0x9e27c`
 - `0x9e470`
 - `0x9e488`
+- `0x9e918`
+- `0xa046c`
+- `0xa0564`
 - `0xa0944`
 - `0xa09ac`
 - `0xa3028`
@@ -1952,6 +1956,8 @@ against the IDB when the final report is assembled.
 - `0xa6040`
 - `0xa607c`
 - `0xa60e4`
+- `0xa61b4`
+- `0xa61b8`
 - `0xa62a4`
 - `0xa62a8`
 - `0xa62d8`
@@ -2077,6 +2083,10 @@ against the IDB when the final report is assembled.
 - `0xac6d0`
 - `0xad1da`
 - `0xad711`
+- `0xad71c`
+- `0xad71d`
+- `0xad71e`
+- `0xad71f`
 - `0xad720`
 - `0xb2148`
 - `0xb2200`

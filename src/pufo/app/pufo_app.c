@@ -61,6 +61,11 @@ static HWND       g_hWndMain = NULL;
  * window already has. */
 static i32        g_nScreenW;
 static i32        g_nScreenH;
+/* Map_nGameSpeed @ 0x128AB4 (Map + 0x150FC): the byte StartTimers_BySpeed @ 0x9E918 reads and the byte the 0xC350
+ * dispatch scales GameTick by (0xA08BC..0xA0938). Its writers in the image are GameSpeed_Set @ 0x260c0 and the
+ * tactical options' speed buttons; the shell runs no tactical mission (recorded with App_QuitFromTact), so nothing
+ * writes it here and it reads 0, which StartTimers_BySpeed turns into the 100 ms game-rate interval. */
+static u32        g_nGameSpeed;
 static GxSurface  g_gx;
 static BootAssets g_assets;
 static bool       g_bAssetsLoaded;
@@ -519,7 +524,7 @@ static i32 App_PresentHook(void *pUser)
     return 0;
 }
 
-/* Render_Frame @ 0x22310 for the shell. The original tests Map.bGeoscapeMode (unk_1139FC @
+/* Render_Frame @ 0x22310 for the shell. The original tests Map.bGeoscapeMode (Map_bGeoscapeUi @
  * Map+0x44) at 0x2231c, BEFORE Map_nUiScreen, so a world in geoscape mode takes the geoscape branch
  * whatever the ui screen cell says; the rest is the start menu (17) and the credits (0x10). The
  * tactical branches need the subsystem envs the shell does not own yet. */
@@ -1161,6 +1166,60 @@ void App_ResizeMainWindow(void)
     (void)SetWindowPos(g_hWndMain, HWND_BOTTOM, 0, 0, g_nScreenW, g_nScreenH, SWP_HIDEWINDOW);
 }
 
+/* The window half of the two focus arms. All four sites pass x/y 0 and the stored pair and differ only in z-order and
+ * the show/hide flag: WM_KILLFOCUS uses HWND_NOTOPMOST (-2) with fuFlags 0 at 0xA04AC and 0xA0514, WM_SETFOCUS uses
+ * HWND_TOP with 0x40 (SWP_SHOWWINDOW) at 0xA05B8 and HWND_TOP with 0 at 0xA0610. */
+static void App_FocusReposition(HWND hwndInsertAfter, u32 fuFlags)
+{
+    (void)SetWindowPos(g_hWndMain, hwndInsertAfter, 0, 0, g_nScreenW, g_nScreenH, fuFlags);
+}
+
+/* WM_KILLFOCUS, PocketUFO_WndProc 0xA046C..0xA0560. Two arms, on the mission flag and on the geoscape-UI flag, and
+ * then the audio pause on every path (0xA052C: R1 = 1, R0 = FSOUND_ALL) plus the music pause while byte_187F28 is
+ * set (0xA0538). Note the shape when neither flag is set: geometry, timers and display are left alone but the audio
+ * is paused anyway -- that is the original's, not an oversight. */
+static void App_FocusLost(void)
+{
+    const bool bTact     = (g_bWorldReady && g_world.bTactFlag != 0);   /* Map.bTactFlag @ 0x1139B8, tested 0xA0470 */
+    const bool bGeoscape = (g_bWorldReady && g_world.bGeoscapeUi != 0); /* Map_bGeoscapeUi @ Map+0x44, tested 0xA04D8 */
+
+    if (bTact) {
+        App_FocusReposition(HWND_NOTOPMOST, 0); /* 0xA04AC */
+        Timer_KillBySpeed();                    /* 0xA04B0 */
+        Gx_Suspend(&g_gx);                      /* 0xA04B4..0xA04C0, the tail call into the gx import */
+    } else if (bGeoscape) {
+        App_FocusReposition(HWND_NOTOPMOST, 0); /* 0xA0514 */
+        Timer_KillD();                          /* 0xA0518 */
+        Gx_Suspend(&g_gx);                      /* 0xA051C..0xA0528 */
+    }
+    Sound_SetPaused(true);                      /* 0xA052C..0xA0560 */
+}
+
+/* WM_SETFOCUS, PocketUFO_WndProc 0xA0564..0xA0674, the mirror: take the display back, re-apply the geometry, restart
+ * the timers, resume the audio (0xA0618: R1 = 0), then clear the four held-key repeat flags. R9 is zeroed at 0xA0568
+ * before either arm runs and the four STRBs at 0xA064C..0xA0670 write it to UiBank_bHeldUp/Down/Left/Right, so a key
+ * held across a focus change does not keep repeating on the way back in. */
+static void App_FocusGained(void)
+{
+    const bool bTact     = (g_bWorldReady && g_world.bTactFlag != 0);   /* 0xA056C */
+    const bool bGeoscape = (g_bWorldReady && g_world.bGeoscapeUi != 0); /* 0xA05C8 */
+
+    if (bTact) {
+        Gx_Resume(&g_gx);                              /* 0xA0578 */
+        App_FocusReposition(HWND_TOP, SWP_SHOWWINDOW); /* 0xA05B8, fuFlags 0x40 */
+        Timer_StartBySpeed(g_nGameSpeed);              /* 0xA05BC; StartTimers_BySpeed reads 0x128AB4 itself */
+    } else if (bGeoscape) {
+        Gx_Resume(&g_gx);                              /* 0xA05D4 */
+        App_FocusReposition(HWND_TOP, 0);              /* 0xA0610, fuFlags = R9 = 0 */
+        Timer_StartD();                                /* 0xA0614 */
+    }
+    Sound_SetPaused(false);     /* 0xA0618..0xA063C */
+    g_bank.abHeldDir[0] = 0;    /* UiBank_bHeldUp   @ 0xAD71C, written 0xA064C */
+    g_bank.abHeldDir[1] = 0;    /* UiBank_bHeldDown @ 0xAD71D, written 0xA0658 */
+    g_bank.abHeldDir[2] = 0;    /* UiBank_bHeldLeft @ 0xAD71E, written 0xA0664 */
+    g_bank.abHeldDir[3] = 0;    /* UiBank_bHeldRight@ 0xAD71F, written 0xA0670 */
+}
+
 static void App_QuitDisplay(void)
 {
     if (g_bWorldReady) {
@@ -1192,6 +1251,12 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         if (g_gx.pBits != NULL) {
             (void)Gx_Present(&g_gx);
         }
+        return 0;
+    case WM_KILLFOCUS: /* case 8 @ 0xA046C */
+        App_FocusLost();
+        return 0;
+    case WM_SETFOCUS:  /* case 7 @ 0xA0564 */
+        App_FocusGained();
         return 0;
     case WM_TIMER:
         /* PocketUFO_WndProc @ 0xA0944's timer dispatch, reached through the `wParam != 50000` gate at

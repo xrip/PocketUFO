@@ -6328,7 +6328,7 @@ static void Fake_SampleSetMode(void *p, u32 m) { (void)p; (void)m; }
 static void Fake_SampleFree(void *p) { (void)p; }
 static i32 Fake_PlaySound(void *p) { (void)p; return 0; }
 static void Fake_SetSfxVolume(i32 n) { g_nSfxLevel = n; g_nSfxLevelCalls += 1; }
-static void Fake_SetSfxPaused(i32 n) { (void)n; }
+static void Fake_SetSfxPaused(i32 nChannel, i32 bPaused) { (void)nChannel; (void)bPaused; }
 static void *Fake_MusicLoad(const void *p, u32 cb, u32 m) { (void)p; (void)cb; (void)m; return NULL; }
 static void Fake_MusicLoop(void *p, i32 b) { (void)p; (void)b; }
 static void Fake_MusicOpt(void *p, i32 a, i32 b) { (void)p; (void)a; (void)b; }

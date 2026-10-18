@@ -1101,7 +1101,7 @@ typedef struct LoadGameEnv {
     i32         nSlot;
 
     u8   *pbTactFlag;                  /* Map.bTactFlag @ 0x1139B8 */
-    u8   *pbGeoscapeUi;                /* unk_1139FC */
+    u8   *pbGeoscapeUi;                /* Map_bGeoscapeUi */
     u8   *pbGameState;                 /* unk_15821C, written by Save_ReadGameState */
     u16  *puUiScreen;                  /* Map_nUiScreen */
     i32  *pnSoldierCount;              /* unk_115350 @ Map+0x1998; the start-menu clear hits its LOW half */
