@@ -332,6 +332,17 @@ typedef struct PufoWorldState {
     i32           nMapFlobjsWide;       /* the dword at Map+0x118, Save_AllocFlobjs's count-width flag */
     Soldier      *apTactHidden[30];     /* apHiddenSoldiers @ Map+0x25438 (0x25438..0x254B0 = 30 slots) */
     i32           nMapEnemyReserveCount;/* Map_nEnemyReserveCount @ Map+0x15144, the Xcom-base alien park */
+    u8            bMapEnemyTurnActive;  /* Map_bEnemyTurnActive @ 0x113A13 = Map+0x5B: set by GameTick_Step 0x27364 when the slot-8 byte is set,
+                                         * cleared at the phase wrap 0x274B4 and by Tact_CheckBattleEnd 0x3523C */
+    u8            bMapMissionVictory;   /* Map_bMissionVictory @ Map+0x150D4 (was unk_128A8C): Tact_CheckBattleEnd writes it at 0x350F0 (won),
+                                         * 0x35070 (lost) and 0x351CC (aborted base defence); the debrief caption and the tally gates read it */
+    i32           nMapMissionOutcome;   /* Map_nMissionOutcome @ Map+0x1A1C: 0 won / 1 lost / 2 aborted (0x350F4, 0x3507C, 0x3510C); the original
+                                         * has no reader anywhere -- the dead store is reproduced */
+    i32           nMapDebriefLine;      /* Map_nDebriefLine @ Map+0x150D0: the debrief's line cursor, shared by the label and value panels */
+    char          aMapMissionCaption[30]; /* Map_szMissionCaption @ Map+0x15094: the 0x1E-byte "Victory"/"Defeat" caption (0x353C4, 0x35400) */
+    char          aMapMissionScore[30];   /* Map_szMissionScore @ Map+0x150B2: the debrief score as text (0x3654C) */
+    u8            bMapPromotionReport;  /* Map_bPromotionReport @ 0x1153D8 = Map+0x1A20: set when the promotion report has rows; the debrief cancel
+                                         * sends the debrief to screen 19 when it is set (0x162B8) */
     i32           nMapDeployedHwps;     /* unk_128AF8 @ Map+0x15140, the running hardware-soldier count */
     i32           aMapScatterMid[576];  /* unk_1556D0: the phase-5 scatter tables */
     i32           aMapScatterLast[576]; /* unk_155FD0, its pair; the 6x6 tile scan bounds them at 36 x 16 */
@@ -493,6 +504,9 @@ typedef struct PufoWorldState {
     void *pLoadPadsUser;
     void (*pfnPlaySample)(i32 nSample, void *pUser);    /* the message-list sound seam */
     void *pSoundUser;
+    const struct WorldHooks *pFrameHooks; /* the WorldHooks World_NewGame was handed; the mission-end rebuild rewires the geoscape
+                                           * frame through the same object (WorldHooks lives in main() in both the app and the
+                                           * tests, i.e. for the whole run) */
     i32 nLastStartNewRet; /* what Game_StartNew handed back */
 } PufoWorldState;
 
@@ -602,6 +616,14 @@ void World_FreeTactical(PufoWorldState *pW);
  * Without a live frame the tactical branch cannot run (the original's TactState/TactCtx272 exist
  * only for a mission); the defensive false there stands in for the original's NULL deref. */
 bool World_GameTickOnce(PufoWorldState *pW);
+
+/* Mission end. World_MissionEndCheck runs Tact_CheckBattleEnd @ 0x34fbc over the live frame -- the
+ * shell's stand-in for the combat call sites (Tact_KillUnit 0x4efc8, Tact_ProcessFallAction
+ * 0x53318/0x53bd4) that belong to the tactical runtime unit. World_MissionCancelEnd mirrors the
+ * debrief arm of UiScreen_OnCancel @ 0x16200: the teardown (the shell's World_FreeTactical stands
+ * for Tact_Shutdown @ 0x3d568) and the geoscape rebuild Geoscape_InitUI mode 1 (0x162C8). */
+bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort);
+bool World_MissionCancelEnd(PufoWorldState *pW);
 
 /* GeoscapeUi_FreeAll(bFreeWorld 1) plus the nav controls and the site records. */
 void World_Free(PufoWorldState *pW);

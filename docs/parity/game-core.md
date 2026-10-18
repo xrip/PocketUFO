@@ -19025,3 +19025,48 @@ the wrong-slot teardown leaves in the list.
 Mutations: neutering the seam's FreeAll turns 3 red (mode byte still 1, scratch not cleared,
 TTL not decayed); poisoning gate 3 (slot 10 = 99) turns 3 red. Gate 61/61 both configs, 18061
 checks, golden --new-game frame identical.
+## Unit 110 - the shell runs the mission end: CheckBattleEnd over the live frame, cancel, rebuild (Part 49)
+
+Unit 110 closes the loop Unit 47-48 opened: the launched mission can now be won and left. The
+game side (Tact_CheckBattleEnd @ 0x34fbc, the four tallies, Tact_ClearSoldierBattleFlags,
+Tact_Shutdown) was already ported in pufo_tactend.c and unit-tested in test_tactend.c; what was
+missing was an owner to run it over a live frame. World_MissionEndCheck builds the whole
+TactBattleEndEnv from the shell's owners: the four tally envs (the cell grid, the three rosters,
+the object table, the craft list with the defended base at 0x158848 and the working site record at
+0x162030), the promotion-report env (the tactinit panel pair 0x1568E0/0x1568DC), the camera ctx
+whose anchor flag is Map+0x1A21 itself -- the abort byte CheckBattleEnd writes at its own head,
+so a won mission boxes the whole map and an aborted one boxes the craft. The hooks: shutdown is
+World_FreeTactical plus the Map+0x00 clear plus PufoFont_Free (Tact_Shutdown releases the font, so
+the rebuild starts from a cleared block), initMission is the launch seam mirror (the Mars restart
+tail only), EndScreen_Init stays the recorded seam stub, and the victory-tile probe stays NULL --
+the scan gates on the alien-base type with the alternate spawn (0x3328C) before it probes.
+
+World_MissionCancelEnd mirrors UiScreen_OnCancel @ 0x16200: the tact-flag gate, the in-flight gate
+(fall byte Map+0x52, Map_bTrajHitStop @ 0x127A25 which has no shell owner yet, bFireStatus1
+Map+0x51, the queue byte) that lets a held mission through, screen 13 with the promotion report
+re-routing to 19 (0x162B8), screens 0x14..0x15 restoring from word_113A44 @ Map+0x8C -- and for
+13/19: teardown keeping nothing, then Geoscape_InitUI mode 1 (0x162C8), the rebuild of everything
+the launch seam freed. The mode gate at 0x868EC keeps it a rebuild, not a restart. To make the
+same construction reachable a second time, World_NewGame's GeoscapeInitEnv block moved into
+World_FillInitUiEnv, and the state now keeps the caller's WorldHooks so the frame envs re-point at
+the new singletons after the rebuild. Map_nUiScreen deliberately stays 13 afterwards -- only the
+8/9 and 0x14/0x15 arms write it in the original.
+
+Seven Map scalars gained shell owners: Map_bEnemyTurnActive @ 0x113A13, Map_bMissionVictory @
+Map+0x150D4, Map_nMissionOutcome @ Map+0x1A1C (the dead store, reproduced), Map_nDebriefLine @
+Map+0x150D0, Map_szMissionCaption / Map_szMissionScore @ Map+0x15094 / 0x150B2, and
+Map_bPromotionReport @ 0x1153D8.
+
+Frame-test evidence, Run A tail: empty the hidden park and the field, and the head takes the win
+arm (0x350E8 gate, 0x350F0 write) -- victory 1, outcome 0, tick hold 1, battle ended 1, screen 13
+(0x351EC), fade counter 10 (0x351FC), context busy down (0x35228), enemy-turn byte cleared
+(0x3523C, pre-set so the clear is a transition). The caption equals main.dat's TEXTS[160] record
+byte-for-byte, the score text is "0", both debrief panels' nStyle take the zero line count
+(0x36514/0x36524), g_nFundPending is untouched, no site commit, the replacement-spawn gate lands at
+1 (0x36584), no soldier carries the lost mark (the 0x3535C pass marks nobody for a won mission),
+and the promotion report stays empty. The cancel then drops the tact flag (Tact_Shutdown's first
+store, 0x3D574), the live frame, and brings bGeoscapeUi back to 1 with brand-new control objects
+(different pointers from the ones Run B clicked). Mutations: a fake reserve of 13 turns 12 red;
+removing the rebuild turns 2 red. Gate 61/61 both configs, 18076 checks, golden --new-game frame
+identical. IDB notes at 0x162c8 (the rebuild), 0x16218 (the gate bytes), 0x156c8 (the abort
+button), 0x35228 (the Map_bEnemyTurnActive clear).

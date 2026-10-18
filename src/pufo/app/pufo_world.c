@@ -16,6 +16,7 @@
 #include "ui/pufo_panel.h"    /* UiPanel_ctor / SetBytes6to11 / WrapText / FreeLines, the tact init hooks */
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission */
 #include "game/pufo_timer.h"   /* GameTickCtx / GameTickHooks / GameTick_OnTimer @ 0x274f0 */
+#include "game/pufo_tactend.h" /* Tact_CheckBattleEnd @ 0x34fbc, the mission-end check the shell runs on the live frame */
 
 #include <stdlib.h>
 #include <string.h>
@@ -852,11 +853,59 @@ static void World_StartNewHook(void *pUser)
     }
 }
 
+/* The GeoscapeInitEnv Geoscape_InitUI is called with, built from the state's own owners. The
+ * mission-end rebuild (UiScreen_OnCancel 0x162C8, mode 1) hands the very same construction a second
+ * time, so the construction cannot stay inside World_NewGame. pAssets / pFont / pOptions and the
+ * pad and sound hooks are on the state before this runs. */
+static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
+{
+    i32 i;
+
+    AssetReader_Clear(&pW->rdr);
+    pW->ui.pFont = pW->pFont;       /* fontSys @ 0x158268: the tact env reads it, as does the alien sprite loader */
+    pW->ui.pbGeoscapeUi = &pW->bGeoscapeUi;
+
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->pUi = &pW->ui;
+    pEnv->pView = &pW->view;
+    pEnv->pSetsOut = pW->sets;
+    pEnv->pnScreenMode = &pW->screen.nGeoscapeScreen;
+    pEnv->pbGeoscapeUi = &pW->bGeoscapeUi;
+    pEnv->pbRoot34 = &pW->bRoot34;
+    pEnv->pbRoot35 = &pW->bRoot35;
+    pEnv->pFont = pW->pFont;
+    pEnv->pRdr = &pW->rdr;
+    pEnv->pTextRecs = pW->pAssets->pTextRecs;
+    pEnv->pTime = &pW->geo.time;
+    pEnv->apTopics = pW->aTopics;
+    pEnv->puResearchEntries = &pW->nResearchEntries;
+    pEnv->paFacFlags = pW->aFac;
+    pEnv->apObjects = pW->pAssets->apObjects;
+    pEnv->nObjectCount = pW->pAssets->nObjectCount;
+    pEnv->pnGlyphPalBase = &g_nGlyphPalSlotBase; /* the original's one global, Map_nGlyphPalBase */
+    pEnv->abFacilityGrid = pW->abFacilityGrid;
+    pEnv->pWorld = &pW->geo.world;
+    pEnv->pbBaseCount = &pW->nBaseCount;
+    pEnv->pnSmapOriginX = &pW->nSmapOriginX;
+    pEnv->paMissionSites = pW->aMissionSites;
+    pEnv->aRegionBuildCount = pW->aRegionBuildCount;
+    pEnv->pbSaveVersion = &pW->nSaveVersion;
+    pEnv->pOptions = pW->pOptions;
+    for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
+        pEnv->apfnRootClick[i] = World_NoopClick;
+    }
+    pEnv->pfnCraftSelectClick = World_NoopClick;
+    pEnv->pfnRadarClick = World_RadarClickThunk; /* Geoscape_OnRadarListClick @ 0x854c4 */
+    pEnv->pfnStartNew = World_StartNewHook;
+    pEnv->pHookUser = pW;
+    pEnv->pfnLoadPads = pW->pfnLoadPads;
+    pEnv->pLoadPadsUser = pW->pLoadPadsUser;
+}
+
 i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
                   const PufoOptions *pOptions, const WorldHooks *pHooks)
 {
     GeoscapeInitEnv env;
-    i32 i;
 
     pW->pAssets = pAssets;
     pW->pFont = pFont;       /* fontSys @ 0x158268: the tact env reads it, as does the alien sprite loader */
@@ -869,6 +918,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     pW->pLoadPadsUser = pHooks->pLoadPadsUser;
     pW->pfnPlaySample = pHooks->pfnPlaySample;
     pW->pSoundUser = pHooks->pSoundUser;
+    pW->pFrameHooks = pHooks;   /* the mission-end rebuild rewires the frame through this same object */
     g_pActiveWorld = pW;
 
     memset(&pW->optionsHooks, 0, sizeof(pW->optionsHooks));
@@ -880,11 +930,6 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     pW->ctorEnv.apObjects = pAssets->apObjects;
     pW->ctorEnv.nObjectCount = pAssets->nObjectCount;
 
-    AssetReader_Clear(&pW->rdr);
-
-    pW->ui.pFont = pFont;
-    pW->ui.pbGeoscapeUi = &pW->bGeoscapeUi;
-
     memset(&pW->geo.world, 0, sizeof(pW->geo.world));
     pW->geo.world.apCraft = pW->apCraft;
     pW->geo.world.nShipCount = pW->bCraftCount;
@@ -892,41 +937,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     pW->geo.world.apRadarPct = pW->abRadarPct;
     pW->geo.world.pTime = &pW->geo.time;
 
-    memset(&env, 0, sizeof(env));
-    env.pUi = &pW->ui;
-    env.pView = &pW->view;
-    env.pSetsOut = pW->sets;
-    env.pnScreenMode = &pW->screen.nGeoscapeScreen;
-    env.pbGeoscapeUi = &pW->bGeoscapeUi;
-    env.pbRoot34 = &pW->bRoot34;
-    env.pbRoot35 = &pW->bRoot35;
-    env.pFont = pFont;
-    env.pRdr = &pW->rdr;
-    env.pTextRecs = pAssets->pTextRecs;
-    env.pTime = &pW->geo.time;
-    env.apTopics = pW->aTopics;
-    env.puResearchEntries = &pW->nResearchEntries;
-    env.paFacFlags = pW->aFac;
-    env.apObjects = pAssets->apObjects;
-    env.nObjectCount = pAssets->nObjectCount;
-    env.pnGlyphPalBase = &g_nGlyphPalSlotBase; /* the original's one global, Map_nGlyphPalBase */
-    env.abFacilityGrid = pW->abFacilityGrid;
-    env.pWorld = &pW->geo.world;
-    env.pbBaseCount = &pW->nBaseCount;
-    env.pnSmapOriginX = &pW->nSmapOriginX;
-    env.paMissionSites = pW->aMissionSites;
-    env.aRegionBuildCount = pW->aRegionBuildCount;
-    env.pbSaveVersion = &pW->nSaveVersion;
-    env.pOptions = pOptions;
-    for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
-        env.apfnRootClick[i] = World_NoopClick;
-    }
-    env.pfnCraftSelectClick = World_NoopClick;
-    env.pfnRadarClick = World_RadarClickThunk; /* Geoscape_OnRadarListClick @ 0x854c4 */
-    env.pfnStartNew = World_StartNewHook;
-    env.pHookUser = pW;
-    env.pfnLoadPads = pHooks->pfnLoadPads;
-    env.pLoadPadsUser = pHooks->pLoadPadsUser;
+    World_FillInitUiEnv(pW, &env);
 
     Geoscape_InitUI(&env, 0); /* 0x857f4, mode 0: the new-game branch */
 
@@ -1907,6 +1918,257 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
 {
     (void)bGoodEnd;
     (void)pUser;
+}
+
+/* --------------------------------------------------------------- mission end (Part 49)
+ *
+ * Tact_CheckBattleEnd @ 0x34fbc is fully ported in pufo_tactend.c and unit-tested there; what was
+ * missing was an owner to run it over a live frame. The original calls it from the combat side
+ * (Tact_KillUnit 0x4efc8, Tact_ProcessFallAction 0x53318/0x53bd4) and from the abort back-button
+ * (UiScreen_OnBack case 9, 0x156c8); those call sites belong to the tactical runtime unit, and
+ * World_MissionEndCheck is the shell's stand-in until that unit lands. The debrief it writes is
+ * pure state -- caption, score, two panels, the pending-fund sum, the site commit -- so the state
+ * half is complete here; the banner and debrief DRAWS are the tact-HUD unit's. */
+
+static void World_EndHookShutdown(u8 bKeepSome, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    /* The shell's stand-in for Tact_Shutdown @ 0x3d568, the same choice Part 47 made for the
+     * teardown: Tact_Shutdown frees the ORIGINAL's global blocks, World_FreeTactical releases the
+     * shell-owned counterparts of the same frame. It also stands in for Tact_Shutdown's first
+     * store, the Map+0x00 action-latch clear: the tact flag goes down with the frame. bKeepSome
+     * does not split the shell's teardown -- both arms release the same shell blocks, and the
+     * geoscape rosters have one owner (World_Free), never the frame's. */
+    (void)bKeepSome;
+    pW->bTactFlag = 0;                                       /* 0x3D574 */
+    PufoFont_Free(pW->pFont);      /* Tact_Shutdown releases the font too (TactShutdownEnv.pFont): the
+                                     * tact sprites Tact_InitMission loaded go here, so the rebuild's
+                                     * PufoFont_Init starts from the cleared block, like the original's
+                                     * Geoscape_InitUI(1) at 0x162C8 after Tact_Shutdown(0). */
+    World_FreeTactical(pW);
+}
+
+static void World_EndHookInitMission(i32 nMode, void *pUser)
+{
+    /* Only the Mars restart tail reaches this (0x36594..0x365F8): shutdown(0), the mission-type
+     * rewrite, then Tact_InitMission in place. The seam mirror returns a value the hook discards. */
+    (void)World_MissionSeamInitMission(nMode, pUser);
+}
+
+bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort)
+{
+    TactBattleEndEnv  env;
+    TactTileTallyEnv  tiles;
+    TactUnitTallyEnv  units;
+    TactItemTallyEnv  items;
+    TactCraftTallyEnv craft;
+    GameMap          *pMap;
+    u16  nSoldiers;
+    i32  nCraftCount;
+    u8   nDimX, nDimY, nSpawnX, nSpawnY;
+
+    if (!pW->bTactLive || pW->pTactMap == NULL) {
+        return false;   /* without a mission there is no frame to check */
+    }
+    pMap = pW->pTactMap;
+
+    memset(&env, 0, sizeof(env));
+    memset(&tiles, 0, sizeof(tiles));
+    memset(&units, 0, sizeof(units));
+    memset(&items, 0, sizeof(items));
+    memset(&craft, 0, sizeof(craft));
+
+    /* Four scalars the envs want in a width the state does not store them in. The envs live only
+     * for this call, so the mirrors are stack cells, not new state owners. */
+    nSoldiers   = (u16)pW->nSoldierCount;   /* nSoldierCount @ 0x115350 is a u16 in the original */
+    nCraftCount = (i32)pW->bCraftCount;     /* Map_nCraftCount @ Map+0x1194 */
+    nDimX       = (u8)pMap->geom.nDimX;     /* Map_nMapDimX @ Map+0x1511B */
+    nDimY       = (u8)pMap->geom.nDimY;     /* Map_nMapDimY @ Map+0x1511C */
+    nSpawnX     = (u8)pW->nMapSpawnTileX;   /* Map_nSpawnTileX @ Map+0x1514C */
+    nSpawnY     = (u8)pW->nMapSpawnTileY;   /* Map_nSpawnTileY @ Map+0x15150 */
+
+    /* Tact_TallyBattleStats @ 0x3348c: the four-layer sprite walk and the two seeded rolls. */
+    tiles.apCells          = pW->apTactCells;            /* apCells0 @ Map+0x15338 */
+    tiles.pnMapDimX        = &nDimX;
+    tiles.pnMapDimY        = &nDimY;
+    tiles.pbAltOutcomePath = &pW->bMapAltOutcomePath;    /* Map+0x1A21, the gate at 0x334B4 */
+    tiles.pbMissionVictory = &pW->bMapMissionVictory;    /* Map+0x150D4 */
+    tiles.pnTerrainVariant = &pW->nMapTerrainVariant;    /* Map+0x15111 */
+    tiles.pnMissionType    = &pW->nMapMissionType;       /* Map+0x1511A */
+    tiles.pnEleriumRoll    = &pW->nMapUnk138E6C;         /* unk_138E6C @ Map+0x254B4 */
+    tiles.pnFoodRoll       = &pW->nMapUnk138E70;         /* unk_138E70 @ Map+0x254B8 */
+
+    /* Tact_TallyUnitResults @ 0x33780: the three rosters through the extraction box. */
+    units.apSoldiers       = pW->apSoldiers;             /* Map+0x1198 */
+    units.pnSoldierCount   = &nSoldiers;
+    units.apXcomUnits      = pMap->apXcomUnits;          /* Map+0x15154 */
+    units.pnXcomCount      = &pMap->nXcomCount;          /* Map+0x1511F */
+    units.apEnemyUnits     = pMap->apEnemyUnits;         /* Map+0x151CC */
+    units.pnEnemyCount     = &pMap->nEnemyCount;         /* Map+0x15124 */
+    units.apCivilianUnits  = pMap->apCivilians;          /* Map+0x15244 */
+    units.pnCivilianCount  = &pMap->nCivilianCount;      /* Map+0x15120 */
+    units.pbMissionVictory = &pW->bMapMissionVictory;
+    units.pbAltOutcomePath = &pW->bMapAltOutcomePath;
+
+    /* Tact_TallyItemRecovery @ 0x33c80: empties carried items onto cells and tallies the box. */
+    items.apCells          = pW->apTactCells;
+    items.apObjects        = pW->pAssets->apObjects;     /* apObjects @ Map+0x108 */
+    items.pnObjectCount    = &pW->tactEnv.nObjectCount;  /* the init-time copy of Map_nObjectCount @ Map+0x10A8 */
+    items.apCraft          = pW->apCraft;                /* Map+0x10AC */
+    items.pnCraftIndex     = &pW->nMapCraftIndex;        /* Map+0x15113 */
+    items.apEnemyUnits     = pMap->apEnemyUnits;
+    items.pnEnemyCount     = &pMap->nEnemyCount;
+    items.apXcomUnits      = pMap->apXcomUnits;
+    items.pnXcomCount      = &pMap->nXcomCount;
+    items.apCivilianUnits  = pMap->apCivilians;
+    items.pnCivilianCount  = &pMap->nCivilianCount;
+    items.pbMissionVictory = &pW->bMapMissionVictory;
+    items.pbAltOutcomePath = &pW->bMapAltOutcomePath;
+
+    /* Tact_TallyCraftRecovery @ 0x344b4: caps recovery against the craft cargo, parks the rest. */
+    craft.apObjects        = pW->pAssets->apObjects;
+    craft.pnObjectCount    = &pW->tactEnv.nObjectCount;
+    craft.apCraft          = pW->apCraft;
+    craft.pnCraftCount     = &nCraftCount;
+    craft.pnCraftIndex     = &pW->nMapCraftIndex;
+    craft.pnMissionType    = &pW->nMapMissionType;
+    craft.pnHomeBase       = &pW->nCraftHomeBase;        /* nCraftHomeBase @ 0x158848, the base being defended */
+    craft.aSites           = pW->apSites;                /* aSmapSites @ 0x162030 */
+    craft.pnSiteCount      = &pW->nSiteCount;            /* nSmapSiteCount @ 0x186410 */
+    craft.pbMissionVictory = &pW->bMapMissionVictory;
+    craft.pbAltOutcomePath = &pW->bMapAltOutcomePath;
+
+    env.pTiles = &tiles;                                  /* 0x35240 */
+    env.pUnits = &units;                                  /* 0x35284 */
+    env.pItems = &items;                                  /* 0x352BC */
+    env.pCraft = &craft;                                  /* 0x352E4 */
+
+    /* Tact_ClearSoldierBattleFlags @ 0x346e0's env: the soldier roster, the two promotion-report
+     * panels (apPanel[2]/[3] -- the 0x1568E0/0x1568DC pair in the tactinit allocation order) and
+     * the six Xcom rank names. */
+    env.flags.apSoldiers         = pW->apSoldiers;
+    env.flags.pnSoldierCount     = &nSoldiers;
+    env.flags.pPanelName         = pW->tactEnv.apPanel[2];
+    env.flags.pPanelRank         = pW->tactEnv.apPanel[3];
+    env.flags.panRankName        = (const char *)g_textTables.pE; /* aszTextE @ 0xB2200 */
+    env.flags.pbPromotionReport  = &pW->bMapPromotionReport;      /* 0x1153D8 = Map+0x1A20 */
+
+    /* Tact_GetCameraBounds @ 0x3519C reads its anchor flag off Map+0x1A21, which is the abort
+     * byte CheckBattleEnd stored at its own head: a normal mission boxes the whole map, an
+     * aborted one boxes the craft. */
+    env.camera.bUseCraft   = pW->bMapAltOutcomePath != 0;
+    env.camera.nMissionType = pW->nMapMissionType;
+    env.camera.nMapDimX    = nDimX;
+    env.camera.nMapDimY    = nDimY;
+    env.camera.nCraftMapX  = pW->bMapCraftMapX;          /* Map+0x15139 */
+    env.camera.nCraftMapY  = pW->bMapCraftMapY;          /* Map+0x1513A */
+    env.camera.bCraftType  = (pW->nMapCraftIndex < (u8)pW->bCraftCount
+                              && pW->apCraft[pW->nMapCraftIndex] != NULL)
+                             ? pW->apCraft[pW->nMapCraftIndex]->bCraftType : 0;
+
+    env.pbBattleEnded     = &pW->bMapBattleEnded;        /* Map+0x5C, the early exit at 0x34FEC */
+    env.pbTickHold        = &pW->bMapTickHold;           /* Map+0x5A */
+    env.pbAltOutcomePath  = &pW->bMapAltOutcomePath;     /* 0x34FE4: the caller's abort IS the alternate path */
+    env.pbMissionVictory  = &pW->bMapMissionVictory;     /* 0x35070 / 0x350F0 / 0x351CC */
+    env.pnMissionOutcome  = &pW->nMapMissionOutcome;     /* Map+0x1A1C: written 0/1/2, never read */
+    env.pnMissionType     = &pW->nMapMissionType;
+    env.pbSpawnAlt        = &pW->bMapSpawnAlt;           /* Map+0x15148 */
+    env.pnFacilityEndFlag = &pW->nBaseCount;             /* the signed byte at 0x159D80 = abFacilityGrid + 0x618 (0x35160) */
+    env.pnSpawnTileX      = &nSpawnX;
+    env.pnSpawnTileY      = &nSpawnY;
+
+    env.apEnemyUnits      = pMap->apEnemyUnits;
+    env.pnEnemyCount      = &pMap->nEnemyCount;
+    env.pnEnemyReserve    = &pW->nMapEnemyReserveCount;  /* Map+0x15144: the hidden park counts as live enemies at 0x350E8 */
+    env.pnXcomCount       = &pMap->nXcomCount;
+
+    env.puUiScreen        = &pW->nUiScreen;              /* Map+0x3A: 13 at 0x351EC */
+    env.pnBannerFadeTicks = &pW->nMapUiSlot1;            /* dword_113A1C @ Map+0x64, the same dword Tact_InitMission zeroes as apUiSlotsA[1] */
+    env.pbCtxBusy         = &pMap->tact.bBusy;           /* TactCtx272 -> bBusy @ +0xF8, cleared at 0x35228 */
+    env.pbEnemyTurnActive = &pW->bMapEnemyTurnActive;    /* Map+0x5B, cleared at 0x3523C */
+    env.pPanelLabel       = pW->tactEnv.apPanel[0];      /* pUiPanel0 @ 0x1568E8: the debrief labels */
+    env.pPanelValue       = pW->tactEnv.apPanel[1];      /* pUiPanel1 @ 0x1568E4: its value column */
+    env.pnDebriefLine     = &pW->nMapDebriefLine;        /* Map+0x150D0 */
+    env.pszCaption        = pW->aMapMissionCaption;      /* Map+0x15094 */
+    env.pszScore          = pW->aMapMissionScore;        /* Map+0x150B2 */
+    env.pTextRecs         = (const char *)pW->pAssets->pTextRecs; /* aTextRecs @ 0xB38D0 */
+
+    env.apBases           = pW->apBases;                 /* Map+0x1174: the site commit reads the home base's byte (0x36500) */
+    env.pnSiteCount       = &pW->nSiteCount;             /* 0x186410, the working site slot the commit fills */
+
+    env.pbSpawnOnceFlag   = &pW->bSpawnOnce;             /* 0x162028: set to 1 unconditionally at 0x36584 */
+    env.pnFundPending     = &pW->economy.aZero44_49[5];  /* g_nFundPending @ 0x1865BC */
+    env.pbMissionMode     = &pW->bMapMissionMode;        /* Map+0x1511D */
+    env.pnTerrainVariant  = &pW->nMapTerrainVariant;
+    env.pnMapLayers       = &pMap->nMapLayers;           /* Map+0x15114 */
+    env.pbUnk15115        = &pW->bMapUnk15115;           /* Map+0x15115 */
+    env.pbFrameScratch    = &pW->bMapFrameScratch;       /* unk_138E74 @ Map+0x254BC */
+
+    env.hooks.pfnShutdown      = World_EndHookShutdown;
+    /* EndScreen_Init writes unk_157194, unk_B35D8, unk_1571C0 and unk_138E88, none of which the
+     * shell owns, and there is no ending flow to hand control to -- the same seam deviation the
+     * launch already records (0x84230). It reaches only the victory-tile and cannot-complete arms. */
+    env.hooks.pfnEndScreenInit = World_MissionSeamInitEnd;
+    env.hooks.pfnInitMission   = World_EndHookInitMission; /* the Mars restart tail only */
+    /* Tact_ScanVictoryTiles gates on the alien-base type with the alternate spawn (0x3328C) before
+     * it ever calls the probe, so a base-assault frame never reaches it. NULL is also the callee's
+     * "no" answer. */
+    env.hooks.pfnCellHasNoItems = NULL;
+    env.hooks.pUser             = pW;
+
+    Tact_CheckBattleEnd(&env, bAbort);
+    return pW->bMapBattleEnded != 0;
+}
+
+bool World_MissionCancelEnd(PufoWorldState *pW)
+{
+    GeoscapeInitEnv env;
+
+    if (pW->bTactFlag == 0) {
+        return false;                                    /* 0x16208: outside a mission there is nothing to cancel */
+    }
+    /* The in-flight gate (0x16218..0x16260). Map_bTrajHitStop @ 0x127A25 has no shell owner yet
+     * (the shot-resolution unit will add one) and reads 0 here -- recorded deviation. */
+    if (pW->bMapFire2 != 0
+            || (pW->pTactMap != NULL && pW->pTactMap->bFireStatus1 != 0)
+            || (pW->pTactState != NULL && pW->pTactState->bQueueActive != 0)) {
+        if (pW->bMapTickHold == 0) {
+            return false;
+        }
+    }
+    if (pW->nUiScreen < 8u) {
+        return false;                                    /* 0x1626C: below the mission screens */
+    }
+    if (pW->nUiScreen <= 9u) {
+        /* 0x162DC: UiModal_End then the screen write. UiModal_End @ 0x2648C belongs to the tact-modal
+         * unit; the shell takes the write only -- recorded deviation. */
+        pW->nUiScreen = 0;
+        return true;
+    }
+    if (pW->nUiScreen > 0x13u && pW->nUiScreen <= 0x15u) {
+        pW->nUiScreen = (u16)pW->nMapUiSlot11;           /* 0x16294: word_113A44 @ Map+0x8C, the saved screen */
+        return true;
+    }
+    if (pW->nUiScreen == 13u && pW->bMapPromotionReport != 0) {
+        pW->nUiScreen = 19u;                             /* 0x162B8..0x162D4: the promotion report comes first */
+        return true;
+    }
+    if (pW->nUiScreen != 13u && pW->nUiScreen != 19u) {
+        return false;                                    /* the original returns the id unchanged */
+    }
+
+    /* 0x162BC / 0x162C8: shut the mission down keeping nothing, then rebuild the geoscape UI the
+     * launch seam freed. Mode 1 skips InitUI's new-game branch, so this is a rebuild of the
+     * singletons, not a restart of the run. The original leaves Map_nUiScreen at 13 here -- only
+     * the 8/9 and 0x14/0x15 arms write it -- and the port keeps that. */
+    World_EndHookShutdown(0, pW);
+    World_FillInitUiEnv(pW, &env);
+    Geoscape_InitUI(&env, 1);
+    if (pW->pFrameHooks != NULL) {
+        World_WireGeoscapeFrame(pW, pW->pFrameHooks);    /* the frame envs re-point at the new singletons */
+    }
+    return true;
 }
 
 /* Smap_BeginCraftSelect @ 0x838dc, the mission-launch decision tree, and the two envs it reaches

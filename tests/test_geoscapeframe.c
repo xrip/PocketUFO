@@ -30,6 +30,7 @@
 #include "game/pufo_clock.h"
 #include "game/pufo_font.h"
 #include "game/pufo_options.h"
+#include "game/pufo_tactend.h"
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"
 
@@ -1606,16 +1607,77 @@ int main(void)
             Check(g_world.pTactState->nPhaseCounter == 0 && g_world.pTactMap->tact.bBusy == 0,
                   "nothing was queued or phased at the launch frame: the phase counter stands at 0, the context is not busy");
 
+            /* Mission end (Part 49). Empty the hidden park and the field so the CheckBattleEnd head
+             * finds no enemy side and takes the win arm (0x350F0); the enemy-turn byte is pre-set so
+             * its clear at 0x3523C is a transition. No abort, so the lost-mark pass (0x3535C) marks
+             * nobody, and with an empty field there are no loss, kill or loot lines to draw. */
+            g_world.nMapEnemyReserveCount = 0;
+            g_world.pTactMap->nEnemyCount = 0;
+            g_world.bMapEnemyTurnActive = 1;
+            i32 nFundBeforeEnd = g_world.economy.aZero44_49[5]; /* g_nFundPending @ 0x1865BC */
+            i32 nSiteBeforeEnd = g_world.nSiteCount;            /* nSmapSiteCount @ 0x186410 */
+            Check(World_MissionEndCheck(&g_world, 0),
+                  "the battle-end check takes the win arm: reserve and field are empty for an Xcom-base mission (gate 0x350E8, write 0x350F0)");
+            Check(g_world.bMapMissionVictory == 1 && g_world.nMapMissionOutcome == 0
+                      && g_world.bMapTickHold == 1 && g_world.bMapBattleEnded == 1,
+                  "the head's four writes land: victory 1, outcome 0 (the dead store @ Map+0x1A1C), tick hold 1, battle ended 1");
+            Check(g_world.nUiScreen == 13 && g_world.nMapUiSlot1 == 10
+                      && g_world.pTactMap->tact.bBusy == 0 && g_world.bMapEnemyTurnActive == 0,
+                  "the debrief setup: screen 13 (0x351EC), banner fade counter 10 (0x351FC), the context busy flag down (0x35228), the enemy-turn byte cleared (0x3523C)");
+            Check(strcmp(g_world.aMapMissionCaption,
+                         (const char *)g_world.pAssets->pTextRecs
+                             + PUFO_TEXT_REC_STRIDE * PUFO_DEBRIEF_TEXT_VICTORY)
+                      == 0,
+                  "the caption is TEXTS[160] copied into Map_szMissionCaption (0x353C4): the victory text, straight from main.dat's record block");
+            Check(strcmp(g_world.aMapMissionScore, "0") == 0,
+                  "the score text is the itoa of a zero debrief sum (0x3657C): nothing to print for an empty field");
+            Check(g_world.nMapDebriefLine == 0 && g_world.tactEnv.apPanel[0] != NULL
+                      && g_world.tactEnv.apPanel[0]->nStyle == 0 && g_world.tactEnv.apPanel[1]->nStyle == 0,
+                  "zero debrief lines: the cursor stays 0 and both debrief panels' nStyle take it (0x36514, 0x36524)");
+            Check(g_world.economy.aZero44_49[5] == nFundBeforeEnd,
+                  "g_nFundPending is unchanged: the running score was 0 (0x365B0)");
+            Check(g_world.nSiteCount == nSiteBeforeEnd,
+                  "no site commit: the 0x364A0 arm needs a credited remainder and none exists");
+            Check(g_world.bSpawnOnce == 1,
+                  "the replacement-spawn gate is set to 1 unconditionally (0x36584)");
+            {
+                i32 bNoneMarked = 1;
+                for (i32 s = 0; s < g_world.nSoldierCount; ++s) {
+                    if (g_world.apSoldiers[s] != NULL
+                        && (g_world.apSoldiers[s]->bFlags & PUFO_SOLDIER_FLAG_LOST) != 0) {
+                        bNoneMarked = 0;
+                    }
+                }
+                Check(bNoneMarked,
+                      "no soldier carries the lost mark: a won mission with no alternate path marks nobody (0x3535C)");
+            }
+            Check(g_world.bMapPromotionReport == 0 && g_world.tactEnv.apPanel[2]->nLineCount == 0
+                      && g_world.tactEnv.apPanel[3]->nLineCount == 0,
+                  "the promotion report stays empty: flag 0, both promotion panels zero lines (0x352E0, 0x352F0)");
+
+            /* The cancel the debrief's cancel button reaches (UiScreen_OnCancel 0x162BC / 0x162C8):
+             * teardown keeping nothing, then Geoscape_InitUI mode 1 -- the rebuild of everything the
+             * launch seam freed. */
+            Check(World_MissionCancelEnd(&g_world),
+                  "the cancel arm runs for screen 13 with no promotion report (0x1627C, 0x162B8 not taken)");
+            Check(g_world.bTactFlag == 0 && g_world.bTactLive == 0,
+                  "the teardown mirror clears Map+0x00 (Tact_Shutdown's first store, 0x3D574) and drops the live frame");
+            Check(g_world.bGeoscapeUi == 1,
+                  "the rebuild writes the geoscape flag back to 1 (Geoscape_InitUI 0x85858) -- the mode-1 arm at 0x162C8, no new-game branch");
+            Check(g_world.ui.apCtl[GEOUI_CTL_186BA4] != NULL && g_world.ui.apCtl[GEOUI_CTL_186BA4] != pConfirm,
+                  "the control singletons are new objects: InitUI reallocated the very control Run B's click used");
+            CheckEqI32(g_world.nUiScreen, 13,
+                       "and Map_nUiScreen stays 13: only the 8/9 and 0x14/0x15 arms write it in UiScreen_OnCancel");
+
         }
     }
 
-    /* The teardown the shell owns: World_FreeTactical, not Tact_Shutdown -- the mission-outcome
-     * table belongs to the mission-end unit. */
-    Check(g_world.bTactLive == 1, "the tactical frame is still live before the teardown");
-    World_FreeTactical(&g_world);
+    /* The teardown the shell owns ran through the mission-end cancel: World_EndHookShutdown is the
+     * shell's stand-in for Tact_Shutdown @ 0x3d568 (Part 47's choice), and the cancel arm called it.
+     * What is asserted here is that its releases held. */
     Check(g_world.bTactLive == 0 && g_world.pTactMap == NULL && g_world.pTactState == NULL
               && g_world.pTactShowShip == NULL,
-          "the teardown drops the live flag and frees the two heap records plus the showship block");
+          "the cancel's teardown dropped the live flag and freed the two heap records plus the showship block");
     {
         i32 bClear = 1;
         for (i32 c = 0; c < (i32)(sizeof(g_world.apTactCells) / sizeof(g_world.apTactCells[0])); ++c) {
