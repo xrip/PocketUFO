@@ -77,7 +77,9 @@ static ObjectRecFull g_aObj105;
 static Soldier g_aSoldiers[2];
 static Soldier *g_apSoldiers[2] = { &g_aSoldiers[0], &g_aSoldiers[1] };
 static i32 g_aEmptyCells[2];
-static StrategList g_List;
+static PtrArray g_List;              /* the block GeoscapeState.pList points at (0x186534) */
+static i32      g_nNextDisplayId;    /* and its two id counters, 0x186544 / 0x186548 */
+static i32      g_nNextSiteId;
 
 static int g_nProcess, g_nProcessSpawn, g_nMsg;
 static int g_nMsgId, g_nMsgArg3;
@@ -170,11 +172,13 @@ static void Setup(GeoscapeState *pState, GeoscapeHooks *pHooks)
     pState->world.nTickSeconds = 60;
     pState->world.nRadarBoostOff = 1;
     pState->world.nMinuteTicks = 0;
-    g_List.apItems = g_apItems;
+    g_List.apItems = (void **)g_apItems;
     g_List.nCount = 0; /* each test sets the entries it wants live */
-    g_List.nNextDisplayId = 0;
-    g_List.nNextSiteId = 0;
+    g_nNextDisplayId = 0;
+    g_nNextSiteId = 0;
     pState->pList = &g_List;
+    pState->pnNextDisplayId = &g_nNextDisplayId;
+    pState->pnNextSiteId = &g_nNextSiteId;
     pState->world.pTime = &pState->time;
     pState->nDaysSinceStart = 0;
     pState->nSelectedShipIdx = -1;
@@ -6399,6 +6403,10 @@ static void TestRadarUpdate(void)
     g_apUpdCraft[1]->nFuel = 0; /* 100 percent consumed, so DrawFuelGauge sets the flag itself */
     g_nRadarMsgTimer = 31;
     g_bRadarDone = 0;
+    /* The reference name is built BEFORE the update: 0x61360 formats it out of the live roster and
+     * 0x613A0's Ship_RemoveWithCargo then compacts that roster, so index 1 is not the stranded craft
+     * any more once RadarScreen_Update returns. */
+    (void)Ship_FormatDisplayName(g_apUpdCraft, 1, g_pRadarTexts, szRef, sizeof(szRef));
     RadarScreen_Update(&g_updEnv);
     CheckEqI32(g_bRadarOutFuel, 1, "the fuel gauge set bRadarCraftOutOfFuel (0x5D9D8)");
     CheckEqI32(g_bRadarActive, 0, "and the tail closed the screen (0x6132C)");
@@ -6407,7 +6415,6 @@ static void TestRadarUpdate(void)
     CheckEqI32(g_updMsgList.abLineFlags[0], PUFO_RADAR_MSG_SHIP_LOST, "with the right message id");
     CheckEqI32((i32)g_updMsgList.anColor[0][0], 1, "and the ship index in colour slot 0");
     CheckEqI32(g_nUpdSampleId, 7, "UiLineList_AppendWithSound plays sample 7");
-    (void)Ship_FormatDisplayName(g_apUpdCraft, 1, g_pRadarTexts, szRef, sizeof(szRef));
     Check(strcmp(g_szUpdName, szRef) == 0,
           "the craft's display name lands in the 0x186488 caption scratch");
     CheckEqI32((i32)g_bUpdShipCount, 1, "Ship_RemoveWithCargo drops the craft (0x613A0)");

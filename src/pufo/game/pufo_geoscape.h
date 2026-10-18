@@ -96,12 +96,21 @@ _Static_assert(sizeof(MissionSiteRec) == 24, "the mission-site record is 24 byte
 typedef struct GeoscapeState {
     GameTime     time;
     GeoscapeWorld world;
-    StrategList *pList;
+    /* The strateg list block @ 0x186534: a {nCount, apItems} PtrArray with the two id counters at
+     * +0x10 / +0x14, which is the shape every other env in this port takes. StrategList (pufo_strateg.h)
+     * is a VIEW of that block, and its array pointer goes stale as soon as the list grows, so the
+     * ticks rebuild the view from these three words at every point the original re-reads the list and
+     * write the counters back (StrategList_UpdateDetect is the one callee that increments them). */
+    PtrArray    *pList;             /* strategList @ 0x186534 */
+    i32         *pnNextDisplayId;   /* nNextStrategDisplayId @ 0x186544 */
+    i32         *pnNextSiteId;      /* nNextStrategSiteId @ 0x186548 */
 
     u16  nDaysSinceStart;   /* word_1472C8 @ 0x1472c8, capped at 200 */
     i32  nSelectedShipIdx;  /* nSelectedShipIdx @ 0x187054 */
     i32  nSelectedShipAux;  /* gUiRootPanel.anLineAux[140] */
-    u8   bLowSupplyFlag;    /* dword_1870C8 */
+    u8   bLowSupplyFlag;    /* dwActionFail @ 0x1870C8 -- one latch, two names: the ship pass writes it
+                             * as the low-supply shortfall (a dword store at 0x61340), the status panel's
+                             * action-fail line 0x8E658 and Geoscape_PulseUpdate's gate 0x954EC read it. */
 
     BaseRec *const *apBases;      /* pCtxBase.apBases */
     ObjectRecFull  *pSupplyItem;  /* pCtxBase.apObjects[105] */
@@ -124,7 +133,7 @@ typedef struct GeoscapeHooks {
     void (*pfnSpawnMissionSite)(StrategItem *pUfo, i32 nMissionSub, void *pUser);
     /* Smap_GrantSiteRecovery @ 0x98b50, ported in pufo_baseui.c behind SmapGrantRecoveryEnv. */
     void (*pfnGrantSiteRecovery)(void *pUser);
-    /* ManufScreen_RefreshBaseTabs (0x70ebc), NOT ported. */
+    /* ManufScreen_RefreshBaseTabs @ 0x70ebc, ported in pufo_baseui.c behind ManufRefreshEnv. */
     void (*pfnRefreshBaseTabs)(void *pUser);
     /* ResearchScreen_AccumulateAllocated @ 0x74914, ported in pufo_baseui.c behind
      * ResearchAccumulateEnv; the shell wires this hook to it. */
@@ -136,7 +145,7 @@ typedef struct GeoscapeHooks {
     i32 (*pfnClearFacilityGridRow)(i32 nBaseIdx, void *pUser);
     /* Base_CountEmptyFacilityCells @ 0x6aee0. */
     i32 (*pfnCountEmptyFacilityCells)(i32 nBaseIdx, void *pUser);
-    /* FundingScreen_OpenMonthly (0x5d160), NOT ported. */
+    /* FundingScreen_OpenMonthly @ 0x5d160, ported in pufo_baseui.c behind FundingInitEnv. */
     void (*pfnOpenMonthly)(void *pUser);
     /* Base_FindIndexBySiteId (0x5a8d0) is a second copy of Base_FindIndexByTypeByte @ 0x6ac30 and
      * the port keeps one implementation; this hook stays because the detect pass is called from
@@ -158,6 +167,17 @@ void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks);
  * this module, plus the monthly funding hook. */
 void Geoscape_Advance(GeoscapeState *pState, const GeoscapeHooks *pHooks,
                       i32 nDeltaSec);
+
+/* The user pointer those four hooks carry. Geoscape_Advance builds it on the stack; a caller that
+ * drives the clock through Geoscape_PulseUpdate (0x95618 hands Geoscape_AdvanceTime the hooks
+ * directly, not a GeoscapeHooks) builds one here and keeps it with its env. */
+typedef struct GeoscapeTickBundle {
+    GeoscapeState       *pState;
+    const GeoscapeHooks *pHooks;
+} GeoscapeTickBundle;
+
+/* Fill pOut with the four tick hooks over pBundle. The bundle must outlive pOut. */
+void Geoscape_BuildClockHooks(GeoscapeTickBundle *pBundle, GeoscapeClockHooks *pOut);
 
 /* Base_GetItemQtyA @ 0x66198 and Base_GetItemQtyB @ 0x661b8. Both read a u16 out of an
  * object's per-base array and differ ONLY in which object slot they reach:

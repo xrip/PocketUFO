@@ -21,6 +21,38 @@ static i32 Abs32(i32 n)
     return n < 0 ? -n : n;
 }
 
+/* The StrategList view of the state's list block (0x186534 plus the counters at +0x10 / +0x14).
+ * StrategViewOf (pufo_strateg.h) is the search view, and it zeroes the two counters; the ticks need
+ * them carried because StrategList_UpdateDetect assigns new ids through them, so this is the same
+ * fresh-from-the-array view with the counters filled in from the state's cells. Every pass builds it
+ * fresh: an add anywhere in the pass reallocates PtrArray's array, and a view held across a callee
+ * that spawns would read freed memory. */
+static StrategList GeoscapeListView(const GeoscapeState *pState)
+{
+    static const PtrArray s_Empty = {0, NULL};
+    StrategList view = StrategViewOf((pState->pList != NULL) ? pState->pList : &s_Empty);
+
+    if (pState->pnNextDisplayId != NULL) {
+        view.nNextDisplayId = *pState->pnNextDisplayId;
+    }
+    if (pState->pnNextSiteId != NULL) {
+        view.nNextSiteId = *pState->pnNextSiteId;
+    }
+    return view;
+}
+
+/* The counters are the original's two globals, so a pass that let a callee increment them has to put
+ * them back (StrategList_UpdateDetect, 0x813d0's id assignment: pList->nNextDisplayId++). */
+static void StrategView_Store(GeoscapeState *pState, const StrategList *pView)
+{
+    if (pState->pnNextDisplayId != NULL) {
+        *pState->pnNextDisplayId = pView->nNextDisplayId;
+    }
+    if (pState->pnNextSiteId != NULL) {
+        *pState->pnNextSiteId = pView->nNextSiteId;
+    }
+}
+
 void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks)
 {
     GeoscapeWorld *pWorld = &pState->world;
@@ -32,26 +64,29 @@ void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks)
     for (i32 i = 0; i < pWorld->nShipCount; ++i)
         Ship_TickRangeRecover(pWorld->apCraft[i]);
 
-    StrategHooks detectHooks = { pHooks->pfnContactMsg,
-                                 pHooks->pfnFindBaseBySiteId, pHooks->pUser };
+    StrategHooks  detectHooks = { pHooks->pfnContactMsg,
+                                  pHooks->pfnFindBaseBySiteId, pHooks->pUser };
+    StrategList   list = GeoscapeListView(pState);
 
     /* SLOBYTE(apLines[118]) % 2 == 0 */
     if ((i8)pWorld->nMinuteTicks % 2 == 0)
-        StrategList_UpdateDetect(pState->pList, pWorld, &detectHooks);
+        StrategList_UpdateDetect(&list, pWorld, &detectHooks);
 
-    StrategList_UpdateMotion(pState->pList, pWorld);
+    StrategList_UpdateMotion(&list, pWorld);
+    StrategView_Store(pState, &list);
 
     if (pState->time.bPaused == 0) {
         pHooks->pfnProcessEvents(0, pHooks->pUser);
+        list = GeoscapeListView(pState); /* the event pass adds entries, and an add reallocates the array */
 
         /* LOBYTE increment on the byte at apLines[118]. */
         pWorld->nMinuteTicks = (i8)(u8)(pWorld->nMinuteTicks + 1);
         if ((i8)pWorld->nMinuteTicks % 5 == 0)
-            Ship_ClearExpiredIntercepts(pWorld, pState->pList, &detectHooks);
+            Ship_ClearExpiredIntercepts(pWorld, &list, &detectHooks);
 
         /* 0x5D5E4..0x5D680. The original's home-base filter is dead code: 0xFF falls through the
          * 0xFE test and 0xFE takes the BNE, so every craft away from base reaches the range gate. */
-        SmapCraftRangeEnv rangeEnv = { pWorld, pState->apBases, pState->pList };
+        SmapCraftRangeEnv rangeEnv = { pWorld, pState->apBases, &list };
         for (i32 i = 0; i < pWorld->nShipCount; ++i) {
             Ship *pShip = pWorld->apCraft[i];
             if (pShip->bAtBase == 0
@@ -80,14 +115,14 @@ static void Supply_LowMsg(i32 nHomeBase, i32 nSlotIdx, void *pUser)
 
 void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
 {
-    SupplyUser supplyUser = { pHooks };
-    StrategList *pList = pState->pList;
+    SupplyUser  supplyUser = { pHooks };
+    StrategList list = GeoscapeListView(pState);
     GeoscapeWorld *pWorld = &pState->world;
 
     /* Missions that drifted past the map edge are teleported back and
      * re-seeded: x/y = 150/250, then SpawnMissionSite(sub 0). */
-    for (i32 i = 0; i < pList->nCount; ++i) {
-        StrategItem *pItem = pList->apItems[i];
+    for (i32 i = 0; i < list.nCount; ++i) {
+        StrategItem *pItem = list.apItems[i];
         if (pItem->nType == 1 && pItem->bActive == 1
             && (Abs32(pItem->nX) > 1000 || Abs32(pItem->nY) > 1000)) {
             pItem->nX = 150;
@@ -109,7 +144,7 @@ void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
     pHooks->pfnRefreshBaseTabs(pHooks->pUser);
     pHooks->pfnAccumulateResearch(pHooks->pUser);
 
-    if (StrategList_CountActive(pList) < 2) {
+    if (StrategList_CountActive(&list) < 2) {
         if (Game_RandU16(4u) == 1u)
             pHooks->pfnProcessEvents(1, pHooks->pUser);
     }
@@ -144,42 +179,46 @@ void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks)
 }
 
 /* Adapter so Geoscape_AdvanceTime can call the three ticks. */
-typedef struct TickBundle {
-    GeoscapeState *pState;
-    const GeoscapeHooks *pHooks;
-} TickBundle;
-
 static void Tick_Ships(void *pUser)
 {
-    TickBundle *p = (TickBundle *)pUser;
+    GeoscapeTickBundle *p = (GeoscapeTickBundle *)pUser;
     Geoscape_TickShips(p->pState, p->pHooks);
 }
 
 static void Tick_Hourly(void *pUser)
 {
-    TickBundle *p = (TickBundle *)pUser;
+    GeoscapeTickBundle *p = (GeoscapeTickBundle *)pUser;
     Geoscape_TickHourly(p->pState, p->pHooks);
 }
 
 static void Tick_Bases(void *pUser)
 {
-    TickBundle *p = (TickBundle *)pUser;
+    GeoscapeTickBundle *p = (GeoscapeTickBundle *)pUser;
     Geoscape_TickBases(p->pState, p->pHooks);
 }
 
 static void Tick_Monthly(void *pUser)
 {
-    TickBundle *p = (TickBundle *)pUser;
+    GeoscapeTickBundle *p = (GeoscapeTickBundle *)pUser;
     p->pHooks->pfnOpenMonthly(p->pHooks->pUser);
+}
+
+void Geoscape_BuildClockHooks(GeoscapeTickBundle *pBundle, GeoscapeClockHooks *pOut)
+{
+    pOut->pfnTickShips  = Tick_Ships;
+    pOut->pfnTickHourly = Tick_Hourly;
+    pOut->pfnTickBases  = Tick_Bases;
+    pOut->pfnOpenMonthly = Tick_Monthly;
+    pOut->pUser         = pBundle;
 }
 
 void Geoscape_Advance(GeoscapeState *pState, const GeoscapeHooks *pHooks,
                       i32 nDeltaSec)
 {
-    TickBundle bundle = { pState, pHooks };
-    GeoscapeClockHooks clockHooks = {
-        Tick_Ships, Tick_Hourly, Tick_Bases, Tick_Monthly, &bundle
-    };
+    GeoscapeTickBundle bundle = { pState, pHooks };
+    GeoscapeClockHooks clockHooks;
+
+    Geoscape_BuildClockHooks(&bundle, &clockHooks);
     Geoscape_AdvanceTime(&pState->time, nDeltaSec, &clockHooks);
 }
 
