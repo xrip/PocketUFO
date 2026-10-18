@@ -52,6 +52,15 @@
 #define PUFO_WINDOW_NAME L"POCKET UFO" /* WindowName @ 0xa5000 */
 
 static HWND       g_hWndMain = NULL;
+/* nScreenW @ 0x188D40 and nScreenH @ 0x188D50: the size the app sizes its window to. InitInstance stores them
+ * (0x9FE44 from GetSystemMetrics(0) at 0x9FE3C, 0x9FE58 from GetSystemMetrics(1) at 0x9FE4C) and every SetWindowPos in
+ * the image passes the pair straight back -- InitInstance's own at 0x9FE94, PocketUFO_WndProc's four suspend/resume
+ * sites (0xA04AC, 0xA0514, 0xA05B8, 0xA0610) and App_ResizeMainWindow at 0x9ECFC. ADAPTATION: the original read the
+ * device's own metrics because the game ran full screen on it; GetSystemMetrics on Win64 is the desktop, so the port
+ * stores the size it actually created the window with -- the display size plus the frame -- which is the size the
+ * window already has. */
+static i32        g_nScreenW;
+static i32        g_nScreenH;
 static GxSurface  g_gx;
 static BootAssets g_assets;
 static bool       g_bAssetsLoaded;
@@ -1087,10 +1096,12 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
         RECT rc = { 0, 0, PUFO_SURF_W, PUFO_SURF_H };
         DWORD dwStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
         (void)AdjustWindowRectEx(&rc, dwStyle, FALSE, 0);
+        g_nScreenW = rc.right - rc.left; /* 0x9FE44, from GetSystemMetrics(0) there */
+        g_nScreenH = rc.bottom - rc.top; /* 0x9FE58, from GetSystemMetrics(1) there */
         hWnd = CreateWindowExW(0, PUFO_CLASS_NAME, PUFO_WINDOW_NAME,
                                dwStyle,
                                CW_USEDEFAULT, CW_USEDEFAULT,
-                               rc.right - rc.left, rc.bottom - rc.top,
+                               g_nScreenW, g_nScreenH,
                                NULL, NULL, hInstance, NULL);
     }
     if (hWnd == NULL) {
@@ -1129,9 +1140,25 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
         fflush(stdout);
     }
 
-    ShowWindow(hWnd, nCmdShow);
-    UpdateWindow(hWnd);
+    ShowWindow(hWnd, nCmdShow);   /* 0x9FE60 */
+    UpdateWindow(hWnd);           /* 0x9FE68 */
+
+    /* 0x9FE74..0x9FE94: the stored pair straight back through SetWindowPos -- HWND_TOP (hwndInsertAfter 0),
+     * x/y 0, fuFlags 2 = SWP_NOMOVE, so it only re-applies the size. */
+    (void)SetWindowPos(hWnd, HWND_TOP, 0, 0, g_nScreenW, g_nScreenH, SWP_NOMOVE);
     return true;
+}
+
+/* App_ResizeMainWindow @ 0x9ecb8, the other user of the same pair: HWND_BOTTOM (hwndInsertAfter 1), the origin, the
+ * stored size, and fuFlags 0x80 = SWP_HIDEWINDOW -- the window restored to the size it was created with, pushed to the
+ * bottom of the z-order and hidden. Its only caller in the image is MenuBtn_ResizeWindow @ 0x19930 (sample 16 first),
+ * which Tact_InitUiControls installs on tactical widget 58 (0x3B6AC, and again in the handler table at 0x3BC74); the
+ * port has that half as Menu_ResizeWindow(pHooks, pfnResizeWindow) in game/pufo_menu.c, so this is the callback that
+ * wiring passes. It is not static for that reason -- the shell does not run a tactical mission, as recorded with
+ * App_QuitFromTact above, so nothing calls it yet. */
+void App_ResizeMainWindow(void)
+{
+    (void)SetWindowPos(g_hWndMain, HWND_BOTTOM, 0, 0, g_nScreenW, g_nScreenH, SWP_HIDEWINDOW);
 }
 
 static void App_QuitDisplay(void)

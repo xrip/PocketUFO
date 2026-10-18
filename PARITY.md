@@ -17,8 +17,8 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 966 / 1103 (87.6%) |
-| Bytes of original code cited | 596752 / 598792 (99.7%) |
+| Functions cited as evidence | 967 / 1103 (87.7%) |
+| Bytes of original code cited | 596836 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
 | Test checks run | 17909 |
@@ -37,7 +37,7 @@ the per-subsystem notes and the tests listed at the end.
 | `render` | 52 | 52 | 11128 / 11128 | software surface, blitters, palette loading |
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 19 | 19 | 1140 / 1140 | growable pointer array, RNG, string helpers |
-| `app-shell` | 23 | 24 | 6292 / 6376 | WinMain, window class, display bring-up, registry options |
+| `app-shell` | 24 | 24 | 6376 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 1 | 132 | 12 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 212 | 214 | 178320 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
@@ -176,7 +176,7 @@ is the module that answers to it.
 | `0x11170` | `Bank_AtexitThunk` | 12 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0xa1154` | `PtrArray_GetCount` | 8 | `src/pufo/util/pufo_ptrarray.h` |
 
-### `app-shell` (23 functions)
+### `app-shell` (24 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -189,6 +189,7 @@ is the module that answers to it.
 | `0x54c80` | `CDialogTemplate_GetCellByte` | 116 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x9e7f4` | `StartTimers_D` | 112 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
 | `0xa0388` | `App_QuitDisplay` | 100 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x9ecb8` | `App_ResizeMainWindow` | 84 | `src/pufo/app/pufo_app.c` |
 | `0x9e864` | `KillTimers_D` | 80 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
 | `0x9e8b4` | `KillTimers_BySpeed` | 80 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_timer.c` (+1) |
 | `0x9e6d4` | `StartTimers_A` | 64 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
@@ -1056,7 +1057,7 @@ is the module that answers to it.
 | `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | `src/pufo/game/pufo_baseui.h` |
 | `0x1a064` | `MenuCtl2_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a080` | `MenuCtl3_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/game/pufo_menu.h` |
+| `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_menu.h` |
 | `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | `src/pufo/game/pufo_baseui.h` |
 | `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x6b6b0` | `Options_SetTab4` | 20 | `src/pufo/game/pufo_baseui.h` |
@@ -1094,12 +1095,6 @@ Every original function not yet cited, with its size and an explanation,
 so there are no unexplained omissions. Small thunks and atexit
 registrations are named as such; the rest are attributed to the subsystem
 whose port work they belong to.
-
-### `app-shell` — 1 functions, 84 bytes remaining
-
-| Address | Original | Size | Note |
-|---|---|---|---|
-| `0x9ecb8` | `App_ResizeMainWindow` | 84 | not yet ported; scheduled with the `app-shell` subsystem work |
 
 ### `platform` — 131 functions, 1896 bytes remaining
 
@@ -1339,7 +1334,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 776 citations.
+parity report. Total: 778 citations.
 
 ### Offsets below the image base (43)
 
@@ -1348,7 +1343,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (733)
+### At or above the image base (735)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1843,6 +1838,8 @@ against the IDB when the final report is assembled.
 - `0x188398`
 - `0x1883b0`
 - `0x188538`
+- `0x188d40`
+- `0x188d50`
 - `0x188d54`
 - `0x18e74`
 - `0x1a078`

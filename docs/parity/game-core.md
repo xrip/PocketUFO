@@ -17305,11 +17305,36 @@ operator delete(pTemplate)`, called four times from Map_BuildMissionTerrain. Map
 its port counterpart: the port's template struct is caller-owned, so the heap part the dtor
 releases is the blob, not the struct. renames.tsv records the pair.
 
-Dispositions, not ported, with reasons. App_ResizeMainWindow @ 0x9ecb8 is pure Win32 glue:
-`SetWindowPos(hWndMain, HWND_BOTTOM, 0, 0, w, h, SWP_HIDEWINDOW)` with the size read from the
-two globals only InitInstance writes; its only caller is MenuBtn_ResizeWindow, ported as
-Menu_ResizeWindow with the resize injected, and the shell never installs that options-screen
-button. Map_RegisterAtexit (0x22620) and its thunk Map_Atexit_nullsub2 (0x2262c) register a
+App_ResizeMainWindow @ 0x9ecb8 was a disposition here and is ported as of Part 36, in pufo_app.c,
+together with the pair it reads: nScreenW @ 0x188D40 and nScreenH @ 0x188D50, stored by InitInstance
+(0x9FE44 from GetSystemMetrics(0) at 0x9FE3C, 0x9FE58 from GetSystemMetrics(1) at 0x9FE4C) and held by the
+shell as g_nScreenW / g_nScreenH. The body is SetWindowPos(hWndMain, HWND_BOTTOM, 0, 0, w, h,
+SWP_HIDEWINDOW): the stored size, the origin, the bottom of the z-order, and the window hidden.
+The caller the IDB shows is MenuBtn_ResizeWindow @ 0x19930 (sample 16, then this), installed on
+tactical widget 58 -- 0x3B6AC in Tact_InitUiControls and again in the handler table at 0x3BC74 --
+not an options-screen button, which is what this paragraph used to say. The port's half of the pair
+is Menu_ResizeWindow(pHooks, pfnResizeWindow) in pufo_menu.c, so the shell has the callee and not yet
+the caller: it builds no tactical widget bank (recorded with App_QuitFromTact).
+
+Two recorded adaptations. (1) The original stores the device's own GetSystemMetrics pair because it ran
+full screen; GetSystemMetrics on Win64 is the desktop, so the port stores the size it actually created
+the window with -- the display size plus its frame -- which is the size the window already has.
+(2) InitInstance's own use of the pair is ported with it: the SetWindowPos at 0x9FE94, HWND_TOP with
+fuFlags 2 (SWP_NOMOVE), after ShowWindow (0x9FE60) and UpdateWindow (0x9FE68).
+
+Found while doing this, not fixed. The four PocketUFO_WndProc sites on the same pair are unported:
+WM_SETFOCUS (case 7) resumes -- GXResume, SetWindowPos(HWND_TOP, 0, 0, w, h, 0x40 = SWP_SHOWWINDOW)
+in the mission arm or with fuFlags 0 in the other, StartTimers_BySpeed @ 0x9E904 or StartTimers_D
+@ 0x9E7F4, FSOUND_SetPaused(-3), FMUSIC_SetPaused(0) when byte_187F28 is set, and the four held-key
+flags cleared -- and WM_KILLFOCUS (case 8) suspends -- SetWindowPos(HWND_NOTOPMOST, 0, 0, w, h, 0),
+KillTimers_BySpeed @ 0x9E8B4 or KillTimers_D @ 0x9E864, GXSuspend, FMUSIC_SetPaused(1). Each arm splits
+on MEMORY[0x1139B8] (in a tactical mission) against unk_1139FC. Gx_Suspend and Gx_Resume are not in the
+platform seam at all (pufo_gx.h has Open/Present/Close), and neither is SHHandleWMActivate (case 6),
+SHHandleWMSettingChange (case 0x1A) or the SHACTIVATEINFO at 0x188380 that WM_CREATE (case 1) zeroes
+and sizes to 12. These four sites are the live shell users of the size pair.
+
+Dispositions, not ported, with reasons. Map_RegisterAtexit (0x22620) and its thunk
+Map_Atexit_nullsub2 (0x2262c) register a
 wrapper over nullsub_2, an empty stub, so they carry no behaviour -- the same disposition as the
 BaseGrid atexit trio (0x614a8, 0x614b4, 0x614c0), already recorded in pufo_baseui.h.
 
