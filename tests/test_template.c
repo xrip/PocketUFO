@@ -123,13 +123,17 @@ static void TestLoad(void)
     Check(!MapTemplate_Load(&tpl, "no_such_template", 0), "  missing member fails");
     Check(tpl.pBlob == NULL, "  blob stays NULL");
 
-    /* Re-loading must free the previous blob, as the original does. */
+    /* Re-loading must free the previous blob, as the original does -- MapTemplate_Load calls MapTemplate_Free
+     * before it allocates (pufo_template.c:22). This used to assert that the new blob lands at a DIFFERENT address
+     * from the one just freed, and that is not the port's behaviour to guarantee: a heap may hand back the block it
+     * just released, which is why the check read red in Debug and green in Release over five runs of a binary that
+     * had not changed. What the free does guarantee is visible in a load that fails: the previous blob is gone. */
     printf("MapTemplate_Load (reload frees the previous blob)\n");
     Check(MapTemplate_Load(&tpl, "avenger", 0), "  first load");
-    u8 *pFirst = tpl.pBlob;
     Check(MapTemplate_Load(&tpl, "culta0", 0), "  second load");
-    Check(tpl.pBlob != pFirst, "  pointer changed to the new blob");
     CheckEqI32((i32)tpl.cbBlob, 403, "  new size in effect");
+    Check(!MapTemplate_Load(&tpl, "no_such_template", 0), "  a load of a missing member fails");
+    Check(tpl.pBlob == NULL, "  and that load left the previous blob freed");
     MapTemplate_Free(&tpl);
 }
 

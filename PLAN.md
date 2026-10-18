@@ -3108,6 +3108,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   windowed shell, which no test links), coverage 967/1103 (87.7%) and 596836/598792 bytes (99.7%), zero warnings,
   the `--new-game` dump unchanged.
 
+- [x] **The reload check asserted the allocator, not the port (Part 37).** `test_template`'s
+  "pointer changed to the new blob" is gone, and with it the flake. The check loaded `AVENGER.MA1` (2403 bytes), kept the
+  pointer, loaded `CULTA0.MA1` (403 bytes) and required the new blob to sit at a *different address*. A heap is free to
+  hand back the block it just released, so the check tested the allocator's mood: three reds inside `check.sh`'s Debug
+  stage, green everywhere else, across binaries that had not changed. The claim the test is named for -- re-loading
+  frees the previous blob, as the original does -- is guaranteed by `MapTemplate_Load` calling `MapTemplate_Free` at
+  `pufo_template.c:22`, and the observable form of that is a *failing* load leaving nothing behind: load `avenger`,
+  load `culta0`, then load `no_such_template` and require `pBlob == NULL`. 5 checks in that section, 17910 total.
+  Proven to have teeth: removing the `MapTemplate_Free(pTpl)` at line 22 turns exactly the new check red and nothing
+  else -- and the old pointer check stays green under that mutation, which is the other half of why it was worthless.
+  Two gate runs after the change: Release 61/61, Debug back to its two steady reds (`test_titles`, `test_plane`),
+  `test_template` green in both. `tools/check.sh` also keeps the whole Debug ctest output in
+  `/tmp/pufo_check_dbgtests.log` with `--output-on-failure`, which is what made the diagnosis possible at all.
+
 - [ ] **Next unit: the focus in/out arms of `PocketUFO_WndProc` (WM_SETFOCUS case 7, WM_KILLFOCUS case 8).** These are
   the live shell users of the size pair: focus-out does `SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, nScreenW, nScreenH, 0)`
   then `KillTimers_BySpeed @ 0x9E8B4` or `KillTimers_D @ 0x9E864` then `GXSuspend` (0xA04AC/0xA0514), and focus-in does
@@ -3129,21 +3143,19 @@ Order is by what unblocks what. Each item ends with gates + commit.
   or draws `pW->ctlResearchPanel`, so today it is a dead second object rather than a live bug; it becomes one the moment
   anything installs a handler on it. Decide which slot `pGeoscapeCtlA` is, point the env at `pW->ui.apCtl[that slot]`, and
   drop the field.
-- [ ] **The Debug suite is not independent of run order, and a failed build can hide behind a stale test binary.**
-  `ctest -C Debug` serial has `test_template` green; `ctest -C Debug -j 8` and running `test_template.exe` alone have it
-  red, on its "pointer changed to the new blob" check. Something one test leaves in the shared working directory is what
-  makes it green in the serial run, so `tools/check.sh` keeps Debug serial (Release is green both ways and keeps `-j 8`).
-  Related trap found the same day: `test_startnew.c` failed to compile after the `abSaveFlags` rename, and `ctest` still
-  reported 61/61 because the target's previous `.exe` was still in `build/tests/Release/`. Any run must check the build's
-  exit code before it trusts a test result -- `tools/iter.sh` and `tools/check.sh` both do.
-  Part 36 sharpens it rather than clearing it: `test_template` went red three times inside `check.sh`'s serial Debug
-  stage and stayed green when run by hand from the repo root, green alone under `ctest -R "^test_template$"`, and green
-  in a full serial Debug run started straight after a Debug build -- so "alone is red, serial is green" was too simple
-  a rule, the trigger so far is the check.sh sequence. `--output-on-failure` on that stage (added in Part 36; its whole
-  output now goes to `/tmp/pufo_check_dbgtests.log`) shows it is the same single check each time, `pointer changed to
-  the new blob` in "MapTemplate_Load (reload frees the previous blob)", and every check after it passes -- so this is a
-  check that depends on the allocator handing back a different address, not on the port's behaviour. Open question:
-  whether the test may assert that at all.
+- [x] **Resolved in Part 37: the Debug suite's "run order" problem was one bad check. The stale-binary trap remains a
+  rule.** The claim was that `test_template` was green in a serial Debug run and red under `-j 8` or run alone, which
+  read as one test depending on what another left in the shared working directory, and `tools/check.sh` kept Debug
+  serial for that reason. Part 36 caught it going red in a *serial* stage, which broke the story, and Part 37 killed
+  it: `--output-on-failure` showed the same single check failing each time -- "pointer changed to the new blob", which
+  asserted that a freshly freed block is not re-used, an allocator decision and not port behaviour. With that check
+  replaced Debug is 2-failures-both-ways (`test_titles`, `test_plane`) in serial and in `-j 8`, four runs each, so
+  `tools/check.sh` runs Debug `-j 8` now like Release. Still open, still a rule: a target that fails to compile leaves
+  its previous `.exe` behind and a test run on it passes -- `test_startnew.c` did exactly that after the `abSaveFlags`
+  rename while `ctest` reported 61/61 -- so every run here checks the build's exit code before trusting a test result.
+  Fixing the script while doing this found the same shape inside `tools/check.sh` itself: `ctest ... | tail -4` reports
+  `tail`'s status, so a Release test failure would not have failed the gate. Both ctest stages now keep the exit code
+  in a variable and print the log path.
 
 - [ ] **Two suites are red at HEAD and are not touched by the geoscape clock work.** `test_titles` fails
   "a scroll of 0 admits no credit rows" and `test_plane` fails "the field outside the panel is untouched:
@@ -3648,14 +3660,15 @@ Refresh after each commit. A coverage delta must match the function size in
 | the new game's pick committed by one press and one release (Part 34: no new original block — `Geoscape_OnMapClick`'s pick arm (0x8B4D4, taken while 0x1870AC is set) had only ever been driven by `test_baseui` against a hand-built env; `test_geoscapeframe` section 5 now reaches it from the state `Game_StartNew` leaves and loses its three hand-written values (the `bPlacementPending = 0` and the two panel-animation arms) to frames with 0x187058 stepped as the `WM_TIMER` branch (0xA0C88..0xA0C90) steps it, a Part 32 drag onto a buildable tile, then the confirm control the hover seats — press (0x874E4 arms 0x187078, 0x874EC presses the control), release (its own preamble 0x8966C/0x89694 releases it wherever the pen lifted); checked 0x61538, 0x8B600, 0x8B608, 0x8B60C, no base and no spend, 0x8B504/0x8B518, 0x8B52C, 0x8B53C, the site record's `tile - 0x80` at 0x8B544, the label copied at 0x8B550..0x8B56C, the region counter +1 with the label holding the pre-bump value (0x6A46C reads, 0x6A49C writes), and the contact scan 0x8B570..0x8B5B4 matching no entry so nothing moves; the unit found a wiring bug — `Game_StartNew` installs TryConfirm through the pointer `pGeoscapeCtlConfirm` (0x95454/0x95458/0x95464 `STR R3,[R0,#0xC]`) at the InitUI singleton the hover and both dispatchers reach, while `env.pCtlConfirm` pointed at the port's own second object `pW->ctlConfirm`, so the new-game pick could never be committed through the shell (12g only worked because 0x6162C installs on the slot control); `env.pCtlConfirm` is `ui.apCtl[GEOUI_CTL_186BA4]` and the duplicate is removed; shared helpers `RunFramesUntilHoverRegion` and `DragCameraOntoRegion` now serve section 5 and 12g; naming `abSaveFlags` → `paRegionBuildCount` to match `g_anRegionBuildCount`; two stale citations fixed (the TryConfirm install is 0x95454..0x95464, not 0x95418's block; `pufo_baseui.h` no longer calls `Geoscape_OnMapClick` unported); IDB: `pGeoscapeCtlConfirm` @ 0x186BA4 — 40 xrefs, no comment at all — and 0x95464 both commented) | 61/61 (Release) | 17909 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the shell's own new-game pick (Part 35: no new original block — closes the Part 31 deviation, the `--new-game` dump calling `World_MapClick` straight and so skipping `NewBaseScreen_TryConfirm`'s 0x61538 sample and 0x6156C funds gate; four shell functions do the player's order instead — the wipe stepped as `WM_TIMER` steps it, a Part 32 drag onto the nearest buildable tile (press arms 0x187074 and moves nothing, the `bDown`-clear event scrolls, release clears 0x896BC), one draw for 0x91D94 and 0x679F0, then press + release through `App_PointerLogical`/`App_OnPointerUp` i.e. `Input_OnPointer @ 0x13c6c` / `Input_OnPointerUp @ 0x148d0`; the tile read is a deliberate mirror of 0x82244 because the real one also writes `view.nPickX/nPickY`, which the draw owns; measured 0x83 hover, 2 → 1 → 0, pending cleared, base 0 at 354/86 with region 0x83 and no spend, clock +300 s — where the old dump read region 0xFF and the click refusing at 0x8B4D0, its committed lines coming from a stale `bPendingRegionId`; IDB re-checked along the whole chain, nothing to correct — no-argument `pfnClick` at 0x1a414/0x1a570/0x1a5a8→0x1a5b0 and no argument register read at the head of `Geoscape_OnMapClick`) | 61/61 (Release) | 17909 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the window-size pair and the last function with behaviour (Part 36: `App_ResizeMainWindow @ 0x9ecb8` ported in `pufo_app.c` — `SetWindowPos(hWndMain, HWND_BOTTOM, 0, 0, nScreenW, nScreenH, SWP_HIDEWINDOW)` — with `g_nScreenW`/`g_nScreenH` written at InitInstance's 0x9FE44/0x9FE58 and InitInstance's own 0x9FE94 `SetWindowPos` (`fuFlags 2` = SWP_NOMOVE, after ShowWindow 0x9FE60 and UpdateWindow 0x9FE68) ported with it, which the shell never had; 2 adaptations — the port stores the created window size instead of the device's `GetSystemMetrics` pair, and the caller is tactical widget 58 (0x3B6AC, 0x3BC74) not the options screen the parity doc claimed, so the shell has the callee and no caller until the tactical bank is built; IDB: the block 0x188D40..0x188D58 carried names with no items under them — a 60-byte item to 0x188D4C and a 12-byte `unsigned __int8[12]` from it — so Hex-Rays read the width as `dword_1883AC[613]`, the height as `g_bListRowSticky[4]` and the HWND as `*(HWND*)&g_bListRowSticky[8]` everywhere; now five items (4/4/1/4/4, the row-sticky byte really is one: `LDRB` 0x14AD0, `STRB` 0xA03D4) with writer/reader comments at 0x188D40, 0x188D44, 0x188D4C, 0x188D50, 0x188D54 and 0x9ECB8, and `PocketUFO_WndProc`'s pseudocode names the pair for the first time) | 61/61 (Release) | 17909 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
+| the reload check asserted the allocator, not the port (Part 37: `test_template`'s "pointer changed to the new blob" required a freed 2403-byte block not to be re-used by the next 403-byte allocation — a heap decision, which is why it was red three times in `check.sh`'s Debug stage and green in every standalone run of an unchanged binary; replaced by what the guarantee is actually visible in — load `avenger`, load `culta0`, then load `no_such_template` and require `pBlob == NULL`, since `MapTemplate_Load` frees at `pufo_template.c:22` before it allocates; teeth proven by removing that free, which turns exactly the new check red and leaves the old one green; `tools/check.sh` Debug stage moved to `-j 8` because the order coupling it was kept serial for no longer exists (2 failures both ways, four runs), `--output-on-failure` on both ctest stages with the full output kept in `/tmp/pufo_check_*tests.log`, and both stages' exit codes kept in variables because `ctest | tail` reports `tail`'s status) | 61/61 (Release) | 17910 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 What the loop costs, measured on this tree (Part 34): a full Release build after touching a widely-included
 header is 5 s, a full Release `ctest` is 6 s serial and 2 s with `-j 8`, and the whole gate -- Release build +
 Release tests + Debug build + Debug tests + the parity report -- is 20 s in `tools/check.sh`. The inner loop is
 `tools/iter.sh <target>`: build one target, check the build's exit code, run that one test. Nothing else is
-rebuilt or re-reported during an iteration. Debug is a second complete compile, so it runs once per part, and it
-stays serial for the reason in the separate issues below.
+rebuilt or re-reported during an iteration. Debug is a second complete compile, so it runs once per part, and it runs
+`-j 8` as well since Part 37 -- the whole gate measured 17 s on that setting, against 20 s with Debug serial.
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
 
