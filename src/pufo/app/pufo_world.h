@@ -245,6 +245,10 @@ typedef struct PufoWorldState {
     GeoscapeHooks     geoHooks;      /* the eleven callees the ticks reach */
     GeoscapeTickBundle geoBundle;    /* the user pointer Geoscape_AdvanceTime's hooks carry */
     GeoscapeClockHooks geoClock;     /* the four hooks, built once by Geoscape_BuildClockHooks */
+    /* Geoscape_CloseUI @ 0x8b94c, the dispatcher every screen close tail-calls, wired over this state by
+     * World_WireGeoscapeClock. It is what moves nGeoscapeScreen: case 2 (the screen Game_StartNew leaves a
+     * new game on) goes to 1, case 1 to 0, and only at 0 does the pulse advance the clock. */
+    GeoscapeCloseEnv  closeEnv;
     const UiControlHitCtx *pHitCtx;  /* the WorldHooks' hit context, wired for the pulse's forced clicks */
     i32         *pnAnimPhase;        /* nUiSlot0AnimPhase @ 0x113A18 (Map + 0x60), the shell's ONE cell
                                       * for the slot UiControl_HitTest clears and Geoscape_PulseUpdate's
@@ -315,6 +319,11 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks);
  * restores 0) -- scrolls the held-direction map drag, auto-repeats the held buttons and steps the four
  * radar counters. */
 void World_PulseGeoscape(PufoWorldState *pW);
+
+/* Geoscape_CloseUI @ 0x8b94c over the wired close env: the sound sample, the dwActionFail clear, the five
+ * per-base needed-flag passes and the per-screen switch. Called from the screens' close controls, which is
+ * how a new game gets from the globe (2) to the placement screen (1) to the map (0). */
+void World_CloseGeoscape(PufoWorldState *pW);
 
 /* Refresh the per-frame fields -- the zoom set's map / layer / tile pads for the mode the view
  * selected, the screen id, the anim frame-style byte -- and run Geoscape_Draw @ 0x8C180. Returns its

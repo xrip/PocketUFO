@@ -53,6 +53,12 @@ static void World_NoopClick(void) { }
 
 static PufoWorldState *g_pActiveWorld; /* UiControl.pfnClick takes no arguments */
 
+/* The thirteen screen-close thunks (BaseInfoScreen_CloseThunk @ 0x615b0, BaseFacScreen_CloseThunkA
+ * @ 0x5a2c0, ... ) are all `LDR R0, =0x1864F8 / B Geoscape_CloseUI`: one tail call into the dispatcher
+ * over the root block. The shell has the dispatcher (World_CloseGeoscape) but NOT yet the arms the ids it
+ * sets draw -- Geoscape_Draw case 1 (the placement arm) has no shell env, so the seams keep their no-op
+ * handlers until that arm is wired. See PLAN.md's "next unit". */
+
 /* The build dialog's OK (BaseFacScreen_TryBuySelected @ 0x58910), installed by BaseFacScreen_Toggle
  * as the panel's +3020 handler. UiControl.pfnClick takes no arguments, so it reaches the world
  * through the active pointer. */
@@ -1034,6 +1040,65 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
 
     pW->pHitCtx    = (pHooks != NULL) ? pHooks->pHit : NULL;
     pW->pnAnimPhase = (pHooks != NULL) ? pHooks->pnAnimPhase : NULL;
+
+    /* Geoscape_CloseUI @ 0x8b94c's env, on the same instances. The head, the five needed-flag passes and
+     * the screens the shell can reach (1, 2, 4, 19) are wired. What is NOT: the base-info, hangar,
+     * research, manufacturing, transfer, buy/sell and ufopaedia blocks (their cases keep NULL gates, which
+     * the dispatcher tests), the three Map bytes the bankruptcy path writes (Map_bTickHold @ 0x113A12,
+     * Map_bBattleEnded @ 0x113A14, Map_bMissionMode @ 0x128AD5 -- the tactical Map is not the shell's),
+     * the EndScreen_Init env of that same path, and the byte_158834 / byte_1870F4 base-index pair case 19
+     * writes on its psi branch. */
+    GeoscapeCloseEnv *pC = &pW->closeEnv;
+
+    memset(pC, 0, sizeof(*pC));
+    pC->pfnPlaySample    = pW->pfnPlaySample;
+    pC->pSoundUser       = pW->pSoundUser;
+    pC->pnActionFail     = (i32 *)&pW->nShortfall1870C8;   /* dwActionFail @ 0x1870C8, cleared as a dword */
+    pC->pbPopupA         = &pW->bRoot34;                   /* bPopupVisibleA @ 0x18652C */
+    pC->pbPopupB         = &pW->bRoot35;                   /* bPopupVisibleB @ 0x18652D */
+    pC->pWorld           = &pW->geo.world;                 /* nGeoscapeTickSeconds @ 0x187070 */
+    pC->apSpeedCtl       = pW->ui.apRootCtl + 2;           /* apGeoscapeSpeedCtl @ 0x186500..0x186514 */
+
+    pC->abFacilityGrid   = pW->abFacilityGrid;             /* 0x159768 */
+    pC->pnBaseCount      = &pW->nBaseCount;                /* 0x159D80, read SIGNED */
+    pC->pnSelectedBaseIdx = &pW->nSelectedBase;            /* 0x159D81, read SIGNED */
+    pC->apCraft          = pW->apCraft;
+    pC->pnCraftCount     = &pW->bCraftCount;
+    pC->apSoldiers       = pW->apSoldiers;
+    pC->nSoldierCount    = pW->nSoldierCount;
+    pC->apObjects        = (pW->pAssets != NULL) ? pW->pAssets->apObjects : NULL; /* Map + 0x108 */
+    pC->nObjectCount     = (pW->pAssets != NULL) ? (i32)pW->pAssets->nObjectCount : 0;
+    pC->apSites          = pW->apSites;                    /* 0x162030 */
+    pC->nSiteCount       = pW->nSiteCount;
+    pC->apBases          = pW->apBases;
+    pC->apManufCol       = pW->auManufCol;                 /* 0x15E19C */
+    pC->apResearchCol    = pW->auResearchCol;              /* auResearchCol @ 0x16022C */
+    pC->nResearchEntries = (i32)pW->nResearchEntries;
+
+    pC->pnScreenId       = &pW->screen.nGeoscapeScreen;    /* nGeoscapeScreen @ 0x186BC4 */
+    pC->pView            = &pW->view;                      /* gSmapCam @ 0x1863E8 */
+    pC->pStripPad        = pW->ui.apPad[GEOUI_PAD_186BBC]; /* the strip height Smap_ClampScrollY reads */
+    pC->pNav             = &pW->nav;                       /* case 1 frees these fifteen controls */
+    pC->pbPlaceActive    = &pW->bPlaceActive;              /* 0x1870BC */
+    pC->pbPlaceFail      = &pW->bPlaceFail;                /* 0x1870B8 */
+    pC->pbBaseFacConfirm = &pW->bPlacementPending;         /* 0x1870AC */
+    pC->pbBaseFacDone    = &pW->bFacDone;                  /* 0x187078 */
+    pC->pbBaseFacArmed   = &pW->bArmedPlacement;           /* 0x158888 */
+    pC->pbBaseFacDialog  = &pW->bFacDialogOpen;            /* 0x158884 */
+    pC->pbDragActive     = &pW->frame.g.bDragActive;       /* 0x187074 */
+    pC->pbSoldierOpen    = &pW->bSolScreenOpen;            /* 0x159DE0 */
+    pC->pbTransferFlag   = &pW->bTransferFlag;             /* 0x159E10 */
+    pC->pnFunds          = &pW->nFunds;
+    pC->anFundBar        = pW->economy.anFundBar;          /* 0x186594..0x1865A4 */
+    pC->ppFundPad        = &pW->pFundPad;                  /* 0x1595DC */
+    pC->pFacToggle       = &pW->facToggleEnv;
+    pC->pSoldierScreen   = &pW->solEnv;
+    pC->pOptionsHooks    = &pW->optionsHooks;
+    /* pfnFreeGeoscapeUi stays NULL on purpose. The only path that calls it is the bankruptcy branch
+     * (0x8BBF0 then EndScreen_Init @ 0x8BBF8), and GeoscapeUi_FreeAll's FreeWorld releases the soldiers,
+     * bases, craft and strateg items the shell's own World_Free also releases -- the original does not
+     * have a second owner of them. Wiring it here would free the rosters twice. */
+    pC->pUser            = pW;
 }
 
 void World_PulseGeoscape(PufoWorldState *pW)
@@ -1081,6 +1146,14 @@ void World_PulseGeoscape(PufoWorldState *pW)
     }
 
     Geoscape_PulseUpdate(&env);
+}
+
+/* Geoscape_CloseUI @ 0x8b94c over the env World_WireGeoscapeClock built. The screen id it leaves behind is
+ * what the next frame draws and what the pulse's clock gate reads: 2 -> 1 (0x8BE68), 1 -> 0 (0x8BE94), and
+ * the clock only runs at 0. */
+void World_CloseGeoscape(PufoWorldState *pW)
+{
+    Geoscape_CloseUI(&pW->closeEnv);
 }
 
 /* ---- the geoscape frame wiring ------------------------------------------------------------

@@ -543,6 +543,45 @@ int main(void)
           "the pulse clears all four direction bytes (0x95874..0x95880)");
     CheckEqI32(*g_world.pnAnimPhase, 0, "and the animation phase at 0x95B78");
 
+    /* 12. The screen close (Geoscape_CloseUI @ 0x8b94c) over the shell's own env. A new game ends on screen 2
+     * with bPlacementPending set (Game_StartNew 0x945D4/0x945E0), and case 2 returns at 0x8BE58 while that byte
+     * is set -- so the globe close does nothing until the base is confirmed. Case 1 then reaches the map, where
+     * the pulse's clock gate (section 10) is open again. */
+    g_world.nShortfall1870C8 = 1u;
+    g_world.screen.nGeoscapeScreen = 2;
+    g_world.bPlacementPending = 1;
+    g_world.bFacDone          = 1;
+    g_world.bArmedPlacement   = 1;
+    World_CloseGeoscape(&g_world);
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 2,
+               "case 2 returns before touching the id while bPlacementPending @ 0x1870AC is set (0x8BE58)");
+    CheckEqI32((i32)g_world.nShortfall1870C8, 0, "the head cleared dwActionFail @ 0x1870C8 (0x8B96C, a dword)");
+
+    g_world.bPlacementPending = 0;
+    World_CloseGeoscape(&g_world);
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 1,
+               "the confirmed globe close lands on the placement screen (0x8BE68)");
+    Check(g_world.bFacDone == 0 && g_world.bArmedPlacement == 0,
+          "and clears bBaseFacDone @ 0x187078 and bBaseFacPlaceArmed @ 0x158888 (0x8BE70, 0x8BE74)");
+
+    g_world.bPlaceActive = 1; /* bBasePlaceActive @ 0x1870BC */
+    g_world.bPlaceFail   = 1; /* bBasePlaceFail @ 0x1870B8 */
+    World_CloseGeoscape(&g_world);
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "the placement close reaches the map (0x8BE94)");
+    Check(g_world.bPlaceActive == 0 && g_world.bPlaceFail == 0,
+          "and its two placement bytes, [2] before [1] (0x8BE9C, 0x8BEA4)");
+    Check(g_world.nav.apNav[0] == NULL && g_world.nav.apNav[PUFO_NAV_CTLS - 1] == NULL
+              && g_world.nav.apPanel[0] == NULL && g_world.nav.apFind[PUFO_NAV_FIND_CTLS - 1] == NULL,
+          "case 1 frees the fifteen nav controls through the same leaf and nulls every slot "
+          "(0x8BEA8, 0x8BEDC, 0x8BF0C)");
+
+    nSec0 = g_world.geo.time.nTotalSec;
+    for (i = 0; i < 3; ++i) {
+        World_PulseGeoscape(&g_world);
+    }
+    CheckEqI32(g_world.geo.time.nTotalSec, nSec0 + 3 * (nTick + 1),
+               "so at screen 0 the pulse advances the clock again (0x95510, 0x9562C)");
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 
