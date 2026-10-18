@@ -499,6 +499,34 @@ bool World_Init(PufoWorldState *pW)
     return true;
 }
 
+/* Base_CreateNamedEntry @ 0x66930 reads every one of its inputs from a global at the call: the base count
+ * (0x159D80), the next site id (dword_186558), the zoom (0x1863E8) and the three economy columns already
+ * OFFSET to the base it is about to create -- 0x159E9C + 800*n (u32), 0x15D09C + 400*n (u16),
+ * 0x16022C + 288*n (u16), 200/200/144 entries per base. The port takes them through BaseCreateEnv, so the
+ * shell fills it from its own state and re-offsets the columns with the count: Game_StartNew creates base 0
+ * (0x94964) and the placement overlay's commit creates base *pbBaseCount (0x59AFC). */
+static void World_WireCreateEnv(PufoWorldState *pW)
+{
+    BaseCreateEnv *pC = &pW->createEnv;
+    BootAssets    *pAssets = pW->pAssets;
+    i32            nBase = (i32)pW->nBaseCount;
+
+    memset(pC, 0, sizeof(*pC));
+    pC->apBases = pW->apBases;
+    pC->apObjects = pAssets->apObjects;
+    pC->nObjectCount = pAssets->nObjectCount;
+    pC->pbBaseCount = &pW->nBaseCount;
+    pC->pStrategList = &pW->strategList;
+    pC->pnSeed = &pW->nStrategSeed;
+    pC->nZoomMode = pW->view.nMode;                    /* 0x1863E8, read at the call */
+    pC->pnNextSiteId = &pW->nCreateNextSiteId;         /* dword_186558 */
+    pC->apSiteRecs = pW->aSiteRecs;                    /* 0x186C40, 64-byte records */
+    pC->paRegionBuildCount = pW->aRegionBuildCount;    /* 0x18655D */
+    pC->pProductU32Col = pW->auProductU32 + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;
+    pC->pProductU16Col = pW->auProductU16 + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;
+    pC->pResearchCol   = pW->auResearchCol + PUFO_RESEARCH_TOPIC_COUNT * nBase;
+}
+
 /* The mode-0 hook: Game_StartNew over the same state. */
 static void World_StartNewHook(void *pUser)
 {
@@ -506,9 +534,10 @@ static void World_StartNewHook(void *pUser)
     BootAssets *pAssets = pW->pAssets;
     UnitCreateEnv unitEnv;
     ShipSpawnEnv shipEnv;
-    BaseCreateEnv createEnv;
     StartNewEnv env;
     i32 i;
+
+    World_WireCreateEnv(pW); /* the create env is on the state now: the overlay commit needs it too */
 
     memset(&unitEnv, 0, sizeof(unitEnv));
     unitEnv.apSoldiers = pW->apSoldiers;
@@ -525,21 +554,6 @@ static void World_StartNewHook(void *pUser)
     shipEnv.pStrategList = &pW->strategList;
     shipEnv.pnStrategSeed = &pW->nStrategSeed;
     shipEnv.pnZoomMode = &pW->view.nMode;
-
-    memset(&createEnv, 0, sizeof(createEnv));
-    createEnv.apBases = pW->apBases;
-    createEnv.apObjects = pAssets->apObjects;
-    createEnv.nObjectCount = pAssets->nObjectCount;
-    createEnv.pbBaseCount = &pW->nBaseCount;
-    createEnv.pStrategList = &pW->strategList;
-    createEnv.pnSeed = &pW->nStrategSeed;
-    createEnv.nZoomMode = pW->view.nMode;
-    createEnv.pnNextSiteId = &pW->nCreateNextSiteId;
-    createEnv.apSiteRecs = pW->aSiteRecs;
-    createEnv.paRegionBuildCount = pW->aRegionBuildCount;
-    createEnv.pProductU32Col = pW->auProductU32;
-    createEnv.pProductU16Col = pW->auProductU16;
-    createEnv.pResearchCol = pW->auResearchCol;
 
     /* The original reads the difficulty and the day gate from globals inside the callee; the
      * port lifted them into arguments. The shell has no difficulty setting yet, so it uses
@@ -649,7 +663,7 @@ static void World_StartNewHook(void *pUser)
     env.pNavEnv = &pW->navEnv;
     env.pUnitEnv = &unitEnv;
     env.pShipEnv = &shipEnv;
-    env.pCreateEnv = &createEnv;
+    env.pCreateEnv = &pW->createEnv;
 
     pW->nLastStartNewRet = Game_StartNew(&env);
 
@@ -1553,8 +1567,49 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->facDialog.pbOverlayShown = &pW->bFacOverlayShown;        /* 0x15888C, written at 0x59FAC */
     pF->facDialog.pdwShortfall   = &pW->nShortfall1870C8;        /* read as a dword at 0x1870C8 */
     pF->facDialog.pnResidue      = &pW->nResidue1870B4;
-    pF->facDialog.pOverlayEnv    = NULL;                         /* the placement overlay's env is not built
-                                                                  * here, so 0x59EF8 draws nothing: see PLAN.md */
+    pF->facDialog.pOverlayEnv    = &pF->facOverlay;               /* the armed branch calls the overlay at 0x59EF8 */
+
+    /* The placement overlay, BaseFacScreen_DrawPlacementOverlay @ 0x58e10: the aimed preview on the build
+     * screen and the commit that spends the money. Its kind comes out of the dialog panel's own row aux
+     * (0x58E20), the same panel the dialog draws, so the panel pointer is refreshed with the dialog's. */
+    pF->facOverlay.abFacilityGrid   = pW->abFacilityGrid;              /* gBaseFacGrid @ 0x159768 */
+    pF->facOverlay.pPanel           = pW->pFacPanel;                   /* 0x15886C */
+    pF->facOverlay.nPanelSel        = pW->nPanelSel;                   /* 0x158868, by value: 0x58E20 */
+    pF->facOverlay.paFac            = pW->aFac;                        /* 0x186E48: bFlag21 the 2x2 marker,
+                                                                        * uCost the commit's price */
+    pF->facOverlay.pnFunds          = &pW->nFunds;                     /* 0x1598D8 */
+    pF->facOverlay.nSelectedBaseIdx = pW->nSelectedBase;               /* 0x159D81, read signed */
+    pF->facOverlay.pnTapX           = &pW->nSmapTapX;                  /* 0x186B7C: the overlay writes the tap
+                                                                        * it resolved back here (0x58E58/0x58EC0) */
+    pF->facOverlay.pnTapY           = &pW->nSmapTapY;                  /* 0x186B80 */
+    pF->facOverlay.nPendingX        = pW->nUnk15887C;                  /* qword_15887C */
+    pF->facOverlay.nPendingY        = pW->nUnk158880;                  /* qword_15887C + 4 */
+    pF->facOverlay.nOriginX         = pW->nSmapOriginX;                /* 0x159DC4 */
+    pF->facOverlay.nOriginY         = pW->nSmapOriginY;                /* 0x159DC8 */
+    pF->facOverlay.nCursorX         = (i16)pF->g.nCursorX;             /* nSmapCursorX @ 0x186BD0, a halfword */
+    pF->facOverlay.nCursorY         = (i16)pF->g.nCursorY;             /* 0x186BD4 */
+    pF->facOverlay.pbPreviewActive  = &pW->bRoot34;                    /* unk_18652C: the aimed state */
+    pF->facOverlay.pbPreviewOk      = &pW->bRoot35;                    /* unk_18652D, cleared on a zero score */
+    pF->facOverlay.pbOverlayShown   = &pW->bFacOverlayShown;           /* 0x15888C, set at 0x59234 */
+    pF->facOverlay.pbNewBaseMode    = &pW->bFacDone;                   /* byte_187074[4] @ 0x187078 */
+    pF->facOverlay.nPendingRegionId = pW->bPendingRegionId;            /* byte_159DF4 */
+    pF->facOverlay.paNewBaseCost    = g_anNewBaseCostByRegion;         /* aNewBaseCostByRegion @ 0xAB488 */
+    pF->facOverlay.pdwShortfall     = &pW->nShortfall1870C8;           /* the unaffordable-purchase dword */
+    pF->facOverlay.pnResidue        = &pW->nResidue1870B4;
+    pF->facOverlay.pnScreenId       = &pW->screen.nGeoscapeScreen;     /* the commit writes 1 (0x59B0C) */
+    pF->facOverlay.pszLabel         = pW->szLabelScratch;              /* szRadarMsg @ 0x186B10: the label the
+                                                                        * commit formats and the new base is named */
+    pF->facOverlay.cchLabel         = sizeof(pW->szLabelScratch);
+    pF->facOverlay.paRegionBuildCount = (i8 *)pW->aRegionBuildCount;   /* g_anRegionBuildCount @ 0x18655D, read
+                                                                        * signed by BaseFac_FormatCostLabel */
+    pF->facOverlay.pCreateEnv       = &pW->createEnv;                  /* Base_CreateNamedEntry's env, 0x59AFC */
+    pF->facOverlay.pToggleEnv       = &pW->facToggleEnv;               /* the closing BaseFacScreen_Toggle, 0x59B28 */
+    pF->facOverlay.nPlaceX          = pW->nPlaceX;                     /* 0x159D94: the new base's coordinates */
+    pF->facOverlay.nPlaceY          = pW->nPlaceY;                     /* 0x159D98 */
+    pF->facOverlay.nPhaseByte       = (pW->pnMapPhase != NULL) ? (u8)*pW->pnMapPhase : 0; /* Map + 0x37 */
+    if (pAssets != NULL) {
+        pF->facOverlay.pTextRecs = pAssets->pTextRecs;                 /* the new-base label's TEXTS rows */
+    }
 
     pF->draw.pBaseFacArm    = &pF->baseFac;
     pF->draw.pBaseFacGrid   = &pF->facNameGrid;
@@ -1793,6 +1848,24 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->solArm.pPad         = pW->pSolPad;                  /* the same 0x1598D4, read a second time at 0x92F14 */
     pF->facDialog.pPanel    = pW->pFacPanel;
     pF->facDialog.nPanelSel = pW->nPanelSel;                /* 0x158868, by value in both callers */
+
+    /* The placement overlay reads its by-value inputs from the globals at the call (0x58E20 the panel row,
+     * 0x58E58 the pending pair, 0x58E8C the cursor, 0x592D0 the base index), and the commit reads the picked
+     * coordinates and the pending region with it. The create env goes too: Base_CreateNamedEntry offsets its
+     * economy columns to the base it is about to create, and the commit creates base *pbBaseCount. The two
+     * origins stay out: InitUI writes 0x159DC4 once and nothing writes 0x159DC8 at all. */
+    pF->facOverlay.pPanel           = pW->pFacPanel;
+    pF->facOverlay.nPanelSel        = pW->nPanelSel;
+    pF->facOverlay.nSelectedBaseIdx = pW->nSelectedBase;
+    pF->facOverlay.nPendingX        = pW->nUnk15887C;
+    pF->facOverlay.nPendingY        = pW->nUnk158880;
+    pF->facOverlay.nCursorX         = (i16)pF->g.nCursorX;  /* nSmapCursorX @ 0x186BD0 */
+    pF->facOverlay.nCursorY         = (i16)pF->g.nCursorY;  /* 0x186BD4 */
+    pF->facOverlay.nPlaceX          = pW->nPlaceX;          /* 0x159D94 */
+    pF->facOverlay.nPlaceY          = pW->nPlaceY;          /* 0x159D98 */
+    pF->facOverlay.nPendingRegionId = pW->bPendingRegionId; /* 0x159DF4 */
+    pF->facOverlay.nPhaseByte       = (pW->pnMapPhase != NULL) ? (u8)*pW->pnMapPhase : 0;
+    World_WireCreateEnv(pW);
     pF->anim.nFrameStyle  = (i8)pW->aRegionBuildCount[9]; /* bUiFrameStyle @ 0x186566 */
     pW->ptrEnv.pTiles     = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL;
 

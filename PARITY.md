@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 596752 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 17784 |
+| Test checks run | 17808 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -663,7 +663,7 @@ is the module that answers to it.
 | `0x8afa0` | `Geoscape_UiFocusPrev` | 596 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x8b1f4` | `Geoscape_UiFocusNext` | 596 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x67b1c` | `Geoscape_BuildNavControls` | 588 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x66930` | `Base_CreateNamedEntry` | 576 | `src/pufo/game/pufo_geoscape.h` |
+| `0x66930` | `Base_CreateNamedEntry` | 576 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x81c08` | `Smap_ZoomOut` | 572 | `src/pufo/game/pufo_strateg.h` |
 | `0x5d6e4` | `RadarScreen_DrawRangeBar` | 564 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x78ed0` | `BasePlane_RearmFromStores` | 536 | `src/pufo/game/pufo_plane.h` |
@@ -828,7 +828,7 @@ is the module that answers to it.
 | `0x57808` | `BaseAtScreen_Update` | 3872 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7baf8` | `BasePlaneScreen_DrawCraftDetail` | 3824 | `src/pufo/game/pufo_plane.h` |
 | `0x77e6c` | `BuySellScreen_Draw` | 3524 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x58e10` | `BaseFacScreen_DrawPlacementOverlay` | 3396 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x58e10` | `BaseFacScreen_DrawPlacementOverlay` | 3396 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x9a8cc` | `Ufopaedia_Open` | 3368 | `src/pufo/game/pufo_baseui.h` |
 | `0x6d0ac` | `OptionsScreen_Open` | 3160 | `src/pufo/game/pufo_baseui.h` |
 | `0x76160` | `BuySellScreen_BuildControls` | 3112 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -1276,7 +1276,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 112 |
+| `test_geoscapeframe` | PASS | 136 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

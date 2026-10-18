@@ -2869,17 +2869,56 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `BaseFacScreen_DrawBuildDialog` 0x59E30/0x59E38 (`MOV R3,#(aFacDaysSuffix-0xB38D0)` / `ADD R1,R6,R3`).
   `bBaseFacOverlayShown @ 0x15888C` got its first comment (2 writers, 6 reads, survives a close).
 
-- [ ] **Next unit: the placement overlay, so the build screen shows what it is about to build.** Case 7 draws
-  the dialog through `BuildDialogEnv`, whose `pOverlayEnv` the shell leaves NULL, so `0x59EF8` draws nothing:
-  `FacOverlayEnv @ pufo_baseui.h:4291` is buildable from state the shell already holds (the grid, panel 0x15886C,
-  `nPanelSel`, `aFac`, funds, `nSelectedBase`, the taps, the pending pair 0x15887C/0x158880, the origins
-  0x159DC4/0x159DC8, the cursor pair 0x186BD0/0x186BD4, `bRoot34`/`bRoot35`, the new `bFacOverlayShown`,
-  `bFacDone`, `bPendingRegionId`, `g_anNewBaseCostByRegion`, the map-phase byte, 0x1870C8/0x1870B4, the screen id,
-  TEXTS, `szLabelScratch`, `aRegionBuildCount`, `nPlaceX/Y`), except `pCreateEnv` — `Base_CreateNamedEntry`'s env,
-  which `World_NewGame` builds as a local today. That is the decision to make first: move it onto the state, or
-  keep the commit path out and record it. `BaseFacScreen_DrawPlacementOverlay @ 0x58e10` NULL-guards its env, so a
-  partial env draws nothing rather than faulting. It also runs the closing `BaseFacScreen_Toggle @ 0x589ec`
-  through `pToggleEnv`, which the shell already fills.
+- [x] **Part 29, the placement overlay drawn and committed over the shell's own state.** The decision the
+  previous bullet left open: `pCreateEnv` moved onto the state. `Base_CreateNamedEntry @ 0x66930` reads every
+  input at the call, and its three economy columns are **offset to the base it is about to create**
+  (0x159E9C + 800n u32, 0x15D09C + 400n u16, 0x16022C + 288n u16 — 200 / 200 / 144 entries per base, the
+  `PUFO_PRODUCT_ENTRIES_PER_BASE` and `PUFO_RESEARCH_TOPIC_COUNT` widths), so an env built once for base 0 is
+  wrong for the base the commit creates. `PufoWorldState` gained `createEnv`, a new `World_WireCreateEnv` fills
+  it (the hook calls it where its local fill used to be, `World_RefreshGeoscapeFrame` re-fills it every frame,
+  and `Game_StartNew` now gets `&pW->createEnv`). `GeoscapeFrameState` gained `facOverlay`
+  (`FacOverlayEnv @ pufo_baseui.h:4291`), `facDialog.pOverlayEnv` points at it, and the by-value cells the
+  original re-reads at the call are refreshed with the frame: the dialog panel pointer and its row aux
+  (0x58E20), `nPanelSel`, `nSelectedBase` read signed (0x59A90), the pending pair 0x15887C/0x158880, the cursor
+  halfwords 0x186BD0/0x186BD4, `nPlaceX/Y` — IDB `nPendingPickX/Y` @ 0x159D94/0x159D98, the two loads feeding
+  `Base_CreateNamedEntry` at 0x59AF4/0x59AF8 — `bPendingRegionId` 0x159DF4 and the phase byte Map + 0x37. The two
+  origins stay out of the refresh: InitUI writes 0x159DC4 once and nothing writes 0x159DC8. 24 new checks:
+  the aimed tap is recomputed from the cursor and written back to `nSmapTapX/Y` (0x58EC0, 0x58EC8); the in-bounds
+  test raises `bBaseFacOverlayShown` (0x59234); an empty footprint scores 0, clears 0x18652D (0x599AC) and commits
+  nothing; the four outline rects land on `origin + 32 * tap` with `10*(nMapPhase+15)` in the **index** byte at a
+  zero score (ink 51200 at (74,100) on the shipped origins 10/0) and in the **low** byte at a non-zero score (ink
+  25); a non-zero score with the pending pair elsewhere still commits nothing (the guard chain at
+  0x599D8..0x599EC); and with new-base mode set the commit runs — `aFac[kind].uCost` off nFunds (the store at
+  0x59AC8), `BaseFac_SetCellBuildState` writing the aimed cell's kind (0x59A9C), `Base_CreateNamedEntry` (0x59AFC)
+  raising 0x159D80 and dword_186558 and naming the new site record from the `BaseFac_FormatCostLabel` label
+  (0x59AE4, which also bumps `g_anRegionBuildCount[region-0x80]` at 0x6A49C), the region's new-base cost off
+  nFunds (0x59B18), `BaseFacScreen_Toggle` closing the dialog and freeing its panel (0x59B1C), then the tail in
+  the original's order: 0x18652C cleared (0x59B28), screen id 1 (0x59B2C), the new-base byte cleared (0x59B30),
+  0x18652D cleared (0x59B34), with `dwActionFail` left clear. Release 61/61, 17808 checks, zero warnings; the
+  `--new-game` dump is unchanged (2 → 1 → 0, clock advancing 300 s). Coverage unchanged — no new original
+  function is cited.
+  **IDB:** 0x187078 — the byte the port uses as `bFacDone` and as `GeoscapePointerEnv.pbNewBaseMode` — sat inside
+  the 12-byte item IDA lumped at 0x187074 (`bGeoscapeDragActive`, size 12) and so carried that item's drag-flag
+  comment, which does not describe it: all 23 of its xrefs are base-facility or pointer sites and none of them is
+  a drag site. It now has its own comment with the verified writers (`Geoscape_OnPointer` 0x874E4,
+  `Geoscape_OnMapClick` 0x8B60C, `Geoscape_CloseUI` case 2 0x8BE70, the commit's clear at 0x59B30) and readers
+  (`BaseFacScreen_TryBuySelected` 0x58984, `BaseFacScreen_Toggle` 0x58C70, the overlay's score force at 0x59588
+  and its commit gate at 0x59ACC, `Geoscape_CloseUI` case 6 0x8BF54), and 0x187074's comment now says "byte 0
+  only; byte 4 at 0x187078 is a different flag".
+  **Port comments corrected from the same read:** the funds store cited as 0x59AB4 is at **0x59AC8** (0x59AA0..
+  0x59AC8 rebuild the record pointer and reload uCost at +0x18); the cost read cited as 0x59A1C is the load at
+  **0x59A28** off the address built at 0x599F0..0x59A20; the affordability test cited as 0x59A24 is the `SUBS` at
+  **0x59A2C**, whose two MI stores are `dwActionFail = 1` at 0x59A38 and `dwActionFailReason = 0` at 0x59A40.
+  `pufo_baseui.c` and `test_baseui.c` updated.
+
+- [ ] **Next unit: drive the build flow through the seams instead of setting the bytes by hand.** Part 29 proves
+  the overlay and its commit work once the state is in the aimed, new-base state — but the test puts it there by
+  assignment. The game puts it there through the pointer pass: `Geoscape_OnPointer @ 0x874e4` is the only writer
+  of the aimed byte 0x187078, the same dispatcher stores the pending pair `pnPendingPlaceX/Y` @ 0x15887C/0x158880
+  (already on `ptrEnv`), and the dialog's own row click runs `pfnBuyThunk` → `BaseFacScreen_TryBuySelected @
+  0x58910`, which is what sets `bBaseFacPlaceArmed` 0x158888. So the unit is: aim with `World_GeoscapePointer`,
+  press with `World_GeoscapePointerUp`, click the dialog row through the control seam, and let the commit fire
+  with no test writing a flag.
 
 ## Separate issues, not folded into the porting steps
 
@@ -3370,6 +3409,7 @@ Refresh after each commit. A coverage delta must match the function size in
   (99.7%) | 43 checked, 0 mismatched |
 | the placement screen drawn and the close seams installed (Part 27: no new original block — the four `Geoscape_Draw` case-1 envs wired over the shell's own pad 0x186BA0, nav set 0x159888, close/demolish controls, grid, `nSelectedBase` read signed (0x922B0), the taps the arm writes back, 0x159DC4/0x159DC8, `aFac` 0x186E48 and `nMapPhase` 0x1139EF (whose `pW->pnMapPhase` assignment had to move to `World_WireGeoscapeFrame`'s head because `World_WireGeoscapeClock` runs at its tail); `facNameGrid.nBaseIdx` re-read every frame, `facStrip.nHighlightRow` fixed at the arm's -1 (0x922B8); `World_CloseGeoscapeThunk` installed at the arm's close control and at the soldier, build-dialog and funding seams (twelve 12-byte tail-call thunks, all the same call); `World_TryConfirmClick` split into `World_MapClick(pW)` + a no-argument wrapper so the app can drive the game's own 2 → 1 writer; the `--new-game` dump now runs 2 → 1 → 0 and the clock advances 300 s where a new game used to stand paused; IDB: `nMapPhase` its first comment (62 reads / 3 writers, wraps at 7), `nSmapOriginY` recorded as having no writer in the image, `Geoscape_CloseUI` a 33-xref caller census, `Geoscape_BuildNavControls` its fifteen `pfnClick` installs with the screen id each writes; two wrong names in port comments corrected (`BaseFacScreen_CloseThunkA` = 0x589c0, 0x615b0 = `NewBaseScreen_CloseThunk` not `BaseInfoScreen_CloseThunk` = 0x557bc)) | 61/61 (Release) | 17764 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the soldier screens and the build screen drawn, plus eight nav handlers (Part 28: no new original block — `solDraw`/`solArm`/`solPanelCtl`/`solFindCtl` for case 4 (0x92DAC) and case 5 (0x92EE4), both ending in `SoldierScreen_Draw @ 0x65290`, and `baseFac`/`facDialog` for case 7 (0x92AF0) sharing case 1's grid and strip envs with the same -1 mark at 0x92D38; the dialog's eight TEXTS labels resolved from the IDB names at 156/83/84/85/154/86/1148/406; the per-frame re-read of the objects the open handlers allocate — the 0x1598D4 pad, the 0x15975C/0x159DEC panels, the 0x158868/0x15886C dialog panel — because the original re-reads them at 0x92DD0/0x92D44/0x59B6C; handlers installed for nav 0 (`NewBaseScreen_Open @ 0x615d0`), nav 4 (`BaseFacScreen_Open @ 0x61844`), the two soldier page buttons (0x61874/0x6189c) and the three find buttons (0x6192c/0x618c4/0x619a8) plus the dialog's own pair (0x589cc/0x589dc), with the other seven nav slots left no-ops and the reason recorded; `ptrEnv.apFacCtl` wired to the arm's `apFacPanelCtl`; the new shell byte `bFacOverlayShown @ 0x15888C`; IDB: `aFacDaysSuffix` corrected to record 154 exactly (its old "+4" address 0xBB426 is read by nothing) and `bBaseFacOverlayShown` given its first comment) | 61/61 (Release) | 17784 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the placement overlay drawn and committed over the shell's state (Part 29: no new original block — `createEnv` moved onto `PufoWorldState` with a `World_WireCreateEnv` helper re-run every frame, because `Base_CreateNamedEntry`'s three economy columns are offset to the base it is about to create (0x159E9C + 800n, 0x15D09C + 400n, 0x16022C + 288n — 200/200/144 per base) and an env built once for base 0 is wrong for the commit's base; the frame's new `facOverlay` env, `facDialog.pOverlayEnv` pointed at it, and the by-value cells the callee re-reads re-read with the frame (panel row aux 0x58E20, `nPanelSel`, `nSelectedBase` signed at 0x59A90, the pending pair 0x15887C/0x158880, the cursor halfwords 0x186BD0/0x186BD4, 0x159D94/0x159D98, 0x159DF4, Map + 0x37) with the two origins left out on the evidence that InitUI writes 0x159DC4 once and nothing writes 0x159DC8; the aimed tap written back (0x58EC0/0x58EC8), the overlay flag (0x59234), a zero score clearing 0x18652D (0x599AC), the outline measured as ink 51200 at (74,100) with the phase colour in the index byte at score 0 and ink 25 with it in the low byte at a non-zero score, the cost store at 0x59AC8, the cell-kind write at 0x59A9C, `Base_CreateNamedEntry` at 0x59AFC with its label built at 0x59AE4 (which bumps `g_anRegionBuildCount` at 0x6A49C), the region cost at 0x59B18, the closing `BaseFacScreen_Toggle` at 0x59B1C and the tail clears 0x59B28/0x59B2C/0x59B30/0x59B34; 24 new checks; IDB: 0x187078 given its own comment (23 xrefs, the new-base byte, not the drag flag) and 0x187074 narrowed to byte 0; three port citation comments corrected (0x59AB4 → 0x59AC8, 0x59A1C → 0x59A28, 0x59A24 → 0x59A2C)) | 61/61 (Release) | 17808 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
@@ -3390,9 +3430,11 @@ hover's rules at x 120 / y 118 -- and the `Blit_ClipGlyph` defect it exposed was
 surface pixels that every earlier coverage figure counted as covered.
 
 Release is the documented configuration and it is green: 61/61 with the wiring in. In **Debug** the
-picture moves from run to run -- the Part 27 and Part 28 runs both failed `test_titles`, `test_template` and
-`test_plane` (3/61) while `test_geoscape` and `test_save` passed, and `test_template` fails when run on its own
-too, which is new: the Part 26 run saw it pass alone; earlier runs recorded
+picture moves from run to run. The Part 29 run failed `test_titles` and `test_plane` (2/61) in three full runs
+and added `test_template` in one of them, while `test_template` passed in four standalone Debug runs, passed next
+to `test_geoscapeframe`, and passed in two more full runs; the Part 27 and Part 28 runs both failed all three.
+So `test_titles` and `test_plane` are the steady Debug failures and `test_template` is intermittent in Debug.
+`test_geoscape` and `test_save` passed. Earlier runs recorded
 the opposite mix, and `test_titles`/`test_save` were shown to fail already at `04f1155` (verified by
 building that commit in a clean worktree with the same ClangCL toolset). `test_geoscape`'s single Debug
 failure was checked directly against this step: with the step's `src/pufo` edits stashed and the same

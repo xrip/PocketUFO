@@ -57,6 +57,7 @@ typedef struct GeoscapeFrameState {
      * It calls the same two grid callees as case 1, then the build dialog. */
     GeoscapeBaseFacArmEnv    baseFac;     /* its pad, the two block controls, the armed gate */
     BuildDialogEnv           facDialog;   /* BaseFacScreen_DrawBuildDialog @ 0x59b60 */
+    FacOverlayEnv            facOverlay;  /* its call at 0x59EF8: BaseFacScreen_DrawPlacementOverlay @ 0x58e10 */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -232,6 +233,11 @@ typedef struct PufoWorldState {
     HangarPlaceEnv hangarEnv;           /* the placement test's env */
     BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
     BaseFacToggleEnv facToggleEnv;      /* the build dialog's open/close switch */
+    /* Base_CreateNamedEntry @ 0x66930's env. Game_StartNew creates the starting base through it (0x94964)
+     * and the placement overlay's commit creates every later one (0x59AFC), so it lives on the state: the
+     * original reads its Map blocks at the call, and the three economy columns are offset to the base the
+     * call is about to create -- see World_WireCreateEnv. */
+    BaseCreateEnv createEnv;            /* the shell's copy of the blocks Base_CreateNamedEntry reads */
     SoldierScreenEnv solEnv;            /* the soldier screen's open/close switch */
     NewBaseOpenEnv newBaseOpen;         /* NewBaseScreen_Open @ 0x615d0, nav slot 0's handler */
     ScreenInitHooks facOpenHooks;       /* BaseFacScreen_Open @ 0x61844's hooks, nav slot 4's handler */

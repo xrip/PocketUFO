@@ -8426,9 +8426,11 @@ i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv)
         }
 
         {
-            i32 nCost = (i32)pEnv->paFac[nKind].uCost;                 /* 0x59A1C */
+            i32 nCost = (i32)pEnv->paFac[nKind].uCost;                 /* 0x59A28: LDR R3,[R3,#0x18] off the record
+                                                                        * address built at 0x599F0..0x59A20 */
 
-            if (*pEnv->pnFunds - nCost < 0) {                          /* 0x59A24 */
+            if (*pEnv->pnFunds - nCost < 0) {                          /* 0x59A2C SUBS: dwActionFail = 1 at 0x59A38,
+                                                                        * dwActionFailReason = 0 at 0x59A40 */
                 if (pEnv->pdwShortfall != NULL) {
                     *pEnv->pdwShortfall = 1;
                 }
@@ -8440,7 +8442,8 @@ i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv)
 
             (void)BaseFac_SetCellBuildState(pGrid, pEnv->nSelectedBaseIdx,
                                             pEnv->paFac[nKind].bFlag21, nTapX, (i8)nTapY, 0);
-            *pEnv->pnFunds -= nCost;                                   /* 0x59AB4 */
+            *pEnv->pnFunds -= nCost;                                   /* 0x59AC8: the uCost reload is 0x59AC0,
+                                                                        * and 0x59A28/0x59A2C only test the sign */
         }
 
         if (*pEnv->pbNewBaseMode == 0) {

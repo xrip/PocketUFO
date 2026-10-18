@@ -169,6 +169,7 @@ int main(void)
     i32       nTick, nSec0, i;
     i32       nNavCnt, nPhase, nCurX, nCurY, nIdx;
     i32       nOpen0, nSamples0;
+    i32       nKind, nSpan, nCellW, nCost0, nFunds0, nBase0, nSiteId0, nRegionCnt0;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
         printf("FAIL: Boot_LoadStartup\n");
@@ -675,7 +676,91 @@ int main(void)
     (void)DrawFrame();
     CheckEqI32(g_nBlits, 1, "with bBaseFacPlaceArmed @ 0x158888 set the arm blits NO control of its own (0x92D64); "
                             "the dialog call at 0x92D44 sits before that gate");
+
+    /* 12e. What that dialog call reaches once the overlay env is wired: BaseFacScreen_DrawPlacementOverlay
+     * @ 0x58e10, the call at 0x59EF8, drawn and committed over the shell's own state. The facility kind is the
+     * dialog panel's own row aux (0x58E20) and only the hangar makes the footprint 2x2 (0x58E34), so the
+     * geometry below follows the panel's record instead of a fixed kind. */
+    nKind = UiPanel_GetLineAux(g_world.pFacPanel, pF->facOverlay.nPanelSel);
+    Check(nKind >= 0 && nKind < PUFO_BASEFAC_COUNT,
+          "the dialog panel's selected row carries a facility kind (BaseFacScreen_Toggle stored it as the aux)");
+    nSpan  = (g_world.aFac[nKind].bFlag21 == PUFO_FAC_TYPE_HANGAR) ? PUFO_FAC_OVERLAY_SPAN : 0;
+    nCellW = (nSpan != 0) ? 2 * PUFO_PLA_TAP_CELL : PUFO_PLA_TAP_CELL;
+    nPhase = PUFO_PLA_TAP_COLOR_STEP * ((i32)g_nMapPhase + PUFO_PLA_TAP_COLOR_BASE); /* 0x5909C..0x590AC */
+
+    g_world.bArmedPlacement  = 1;      /* 0x59B84: only the armed branch reaches 0x59EF8 */
+    g_world.bRoot34          = 1;      /* bBaseFacPreviewActive @ 0x18652C: aimed, so 0x58E8C takes the cursor */
+    g_world.bRoot35          = 1;      /* bBaseFacPreviewOk @ 0x18652D */
+    g_world.bFacOverlayShown = 0;
+    g_world.nUnk15887C       = 0;      /* the pending pair, deliberately NOT the aimed tap */
+    g_world.nUnk158880       = 0;
+    memset(g_world.abFacilityGrid, 0, sizeof(g_world.abFacilityGrid)); /* an empty base: the score can only be 0 */
+    nCurX = pF->facOverlay.nOriginX + 2 * PUFO_PLA_TAP_CELL;
+    nCurY = pF->facOverlay.nOriginY + 2 * PUFO_PLA_TAP_CELL + PUFO_PLA_TAP_Y0;
+    pF->g.nCursorX = nCurX;            /* nSmapCursorX @ 0x186BD0, which the overlay reads as a halfword */
+    pF->g.nCursorY = nCurY;
+    nBase0  = g_world.nBaseCount;
+    nFunds0 = g_world.nFunds;
+
+    ClearSurface();
+    (void)DrawFrame();
+
+    CheckEqI32(g_world.nSmapTapX, 2, "the overlay resolves the tap from the cursor and writes it back (0x58EC0)");
+    CheckEqI32(g_world.nSmapTapY, 2, "on both axes (0x58EC8)");
+    CheckEqI32(g_world.bFacOverlayShown, 1, "a cursor inside 0 < dx < 192 - span and 36 < dy < 227 - span raises "
+                                            "bBaseFacOverlayShown @ 0x15888C (0x59234)");
+    CheckEqI32(g_world.bRoot35, 0, "an empty footprint scores 0 and clears bBaseFacPreviewOk (0x599AC)");
+    CheckEqI32(SurfPix(nCurX, nCurY), PackInk(nPhase, 0, 0), "the outline's top-left corner: a zero score puts the "
+                                                             "phase colour in the index byte");
+    CheckEqI32(SurfPix(nCurX + nCellW - 1, nCurY), PackInk(nPhase, 0, 0), "the right edge of the same rect");
+    CheckEqI32(SurfPix(nCurX, nCurY + nCellW - 1), PackInk(nPhase, 0, 0), "and its bottom edge");
+    Check(g_world.nBaseCount == nBase0 && g_world.nFunds == nFunds0, "and a zero score commits nothing");
+
+    g_world.bRoot35 = 1;
+    g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * g_world.nSelectedBase + 6 * 1 + 2] = 1;
+    ClearSurface();
+    (void)DrawFrame();
+    CheckEqI32(SurfPix(nCurX, nCurY), PackInk(0, 0, nPhase), "a neighbour above the tap scores non-zero and the same "
+                                                             "four rects swap the colour into the low byte");
+    CheckEqI32(g_world.bRoot35, 1, "and bBaseFacPreviewOk survives a non-zero score");
+    Check(g_world.nBaseCount == nBase0 && g_world.nFunds == nFunds0,
+          "the commit still does not run: the aimed tap is not the pending pair (the guards at 0x599D8..0x599EC)");
+
+    nSiteId0    = g_world.nCreateNextSiteId;      /* dword_186558 */
+    nCost0      = (i32)g_world.aFac[nKind].uCost; /* aBaseFacFlags[kind] + 0x18, read at 0x59AC0 */
+    nRegionCnt0 = (i32)g_world.aRegionBuildCount[0];
+    g_world.nFunds = 2000000;                     /* the purchase gate at 0x59A2C must be open */
+    nFunds0 = g_world.nFunds;
+    g_world.nUnk15887C = 2;                       /* now the pending pair IS the aimed tap */
+    g_world.nUnk158880 = 2;
+    g_world.bRoot34 = 1;
+    g_world.bRoot35 = 1;
+    g_world.bFacDone = 1;                         /* 0x187078, byte 4: new-base mode, read at 0x59588 */
+    g_world.bPendingRegionId = 0x80;              /* 0x159DF4, region 0x80 */
+    g_world.nPlaceX = -6000;                      /* nPendingPickX/Y @ 0x159D94/0x159D98, the two loads at 0x59AF4 */
+    g_world.nPlaceY = -6000;
+    (void)DrawFrame();
+
+    CheckEqI32(g_world.nFunds, nFunds0 - nCost0 - g_anNewBaseCostByRegion[0],
+               "the commit spends the record's own cost (the store at 0x59AC8) and the region's new-base cost (0x59B18)");
+    CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * g_world.nSelectedBase
+                                      + PUFO_GRID_FAC_TYPE_OFF + 6 * 2 + 2], (i32)g_world.aFac[nKind].bFlag21,
+               "BaseFac_SetCellBuildState writes the aimed cell's kind (0x59A9C)");
+    CheckEqI32(g_world.nBaseCount, nBase0 + 1, "Base_CreateNamedEntry (0x59AFC) raises the base count 0x159D80");
+    CheckEqI32(g_world.nCreateNextSiteId, nSiteId0 + 1, "and the next site id dword_186558");
+    CheckEqI32((i32)g_world.aSiteRecs[nBase0].bType, 0, "the new site record's bType is region - 0x80");
+    Check(g_world.aSiteRecs[nBase0].abName[0] != 0, "with the label BaseFac_FormatCostLabel built (0x59AE4) as its name");
+    CheckEqI32((i32)g_world.aRegionBuildCount[0], nRegionCnt0 + 1,
+               "and that label's counter goes up by one in g_anRegionBuildCount @ 0x18655D (0x6A49C)");
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "the commit lands the geoscape on the placement screen (0x59B2C)");
+    Check(g_world.bFacDone == 0 && g_world.bRoot34 == 0 && g_world.bRoot35 == 0,
+          "clearing the new-base byte (0x59B30), bBaseFacPreviewActive (0x59B28) and bBaseFacPreviewOk (0x59B34)");
+    CheckEqI32(g_world.bFacDialogOpen, 0, "BaseFacScreen_Toggle closes the dialog (the call at 0x59B1C)");
+    Check(g_world.pFacPanel == NULL, "and frees its panel, which the overlay read its kind from");
+    CheckEqI32(g_world.nShortfall1870C8, 0, "with no shortfall left behind: dwActionFail @ 0x1870C8 stays clear");
     g_world.bArmedPlacement = 0;
+    g_world.nUnk15887C = 0;
+    g_world.nUnk158880 = 0;
 
     nOpen0 = g_world.bSolScreenOpen;
     g_world.nav.apNav[2]->pfnClick(); /* SoldierScreen_Toggle @ 0x64af0 */

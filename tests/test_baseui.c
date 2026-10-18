@@ -5920,7 +5920,7 @@ static void TestFacOverlay(void)
     bPreviewOk = 1;
     bOverlayShown = 0;
     CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 1, "a neighbour to the left makes it legal");
-    CheckEqI32(nFunds, 1000, "the facility cost comes off nFunds (0x59AB4)");
+    CheckEqI32(nFunds, 1000, "the facility cost comes off nFunds (the store at 0x59AC8)");
     CheckEqI32(GridFacType(abGrid, 0, 2, 3), 3, "the cell kind is aBaseFacFlags[3].bFlag21");
     CheckEqI32(bOverlayShown, 1, "the preview block ran");
 
@@ -5931,7 +5931,7 @@ static void TestFacOverlay(void)
     nShortfall = 0;
     nResidue = 7;
     bPreviewOk = 1;
-    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 0, "an unaffordable facility stops (0x59A24)");
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 0, "an unaffordable facility stops (the SUBS at 0x59A2C)");
     CheckEqI32(nShortfall, 1, "the shortfall byte is written as a dword");
     CheckEqI32(nResidue, 0, "and the residue slot is cleared");
     CheckEqI32(nFunds, 100, "with nFunds untouched");
