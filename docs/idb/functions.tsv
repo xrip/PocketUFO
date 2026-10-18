@@ -4,7 +4,7 @@ addr	name	size
 11020	PadImage_Load	188
 110dc	PadImage_Blit	52
 11110	PadImage_BlitEx	56
-11148	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z	16
+11148	InitTerm_UiBankEntry	16
 11158	j_UiBank_CtorAll	12
 11164	Bank_RegisterAtexit	12
 11170	Bank_AtexitThunk	12
@@ -207,7 +207,7 @@ addr	name	size
 21cec	TactHud_DrawModalRight	320
 21e2c	MapView_DrawIsoLayer	1252
 22310	Render_Frame	756
-22604	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_0	16
+22604	InitTerm_MapEntry	16
 22614	j_Map_InitAndLoadRegistry	12
 22620	Map_RegisterAtexit	12
 2262c	Map_Atexit_nullsub2	12
@@ -343,7 +343,7 @@ addr	name	size
 3f040	DecDwordIfPos_AtPlus0xBD4	28
 3f05c	UiPanel_SetBytes0to2	16
 3f06c	UiPanel_SetLineMeta	72
-3f0b4	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_1	16
+3f0b4	InitTerm_DatFileEntry	16
 3f0c4	j_DatFile_ctor	12
 3f0d0	DatFile_RegisterAtexit	12
 3f0dc	j_DatFile_dtor	12
@@ -390,7 +390,7 @@ addr	name	size
 45f04	Ship_TickRefuelAtBase	124
 45f80	Ship_TickRangeRecover	72
 45fc8	Ship_TickRangeRecoverConsume	236
-460b4	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_2	16
+460b4	InitTerm_FontEntry	16
 460c4	j_Font_Init_ReturnArg	12
 460d0	Font_RegisterAtexit	12
 460dc	j_Font_Free	12
@@ -560,7 +560,7 @@ addr	name	size
 602a0	RadarScreen_RollDetection	720
 60570	RadarScreen_Update	3804
 6144c	RadarScreen_SetActive	76
-61498	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_3	16
+61498	InitTerm_BaseGridEntry	16
 614a8	BaseGrid_Atexit_nullsub5	12
 614b4	BaseGrid_RegisterAtexit	12
 614c0	BaseGrid_Atexit_nullsub6	12
@@ -682,7 +682,7 @@ addr	name	size
 6b46c	OptionsScreen_ReturnToTitle	48
 6b49c	OptionsScreen_BindSaveSlots	236
 6b588	OptionsScreen_BindLoadSlots	236
-6b674	Set_byte_159E88_3_SetUiY	60
+6b674	Options_SetTab3_AndUiY	60
 6b6b0	Options_SetTab4	20
 6b6c4	OptionsScreen_LayoutButtons	232
 6b7ac	Options_SaveAudioSettings	336
@@ -833,7 +833,7 @@ addr	name	size
 837f8	Smap_ClampScrollY	120
 83870	j_AssetReader_ClearGlobal	4
 83874	AssetReader_ClearGlobal	12
-83880	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_4	16
+83880	InitTerm_StrategListEntry	16
 83890	StrategList_ctor	16
 838a0	StrategList_RegisterAtexit	12
 838ac	StrategList_Clear	36
@@ -881,7 +881,7 @@ addr	name	size
 8b948	nullsub_8	4
 8b94c	Geoscape_CloseUI	2100
 8c180	Geoscape_Draw	33744
-94550	nullsub_9	4
+94550	Geoscape_GameTickStub	4
 94554	Game_StartNew	3976
 954dc	Geoscape_PulseUpdate	1812
 95bf0	Ui_AnimExpandBlit	948
@@ -913,7 +913,7 @@ addr	name	size
 9a8cc	Ufopaedia_Open	3368
 9b5f4	Ui_DrawBaseInfo	10196
 9ddc8	Ui_InitBaseInfo	744
-9e0b0	nullsub_GeoscapeStub	16
+9e0b0	Debug_TracePrint	16
 9e0c0	Sound_Play	112
 9e130	Sound_LoadAndPlayMusic	312
 9e268	Sound_InitAndLoadSamples	364

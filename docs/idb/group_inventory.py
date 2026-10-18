@@ -30,7 +30,9 @@ ROWS = [
     ("platform", [
         r"^j_", r"^nullsub_", r"^(start|_onexit|atexit|_cinit|Crt_)",
         r"^__imp_", r"^\?\?[0-9]@", r"^_rt_", r"^_[a-z]{3}$",  # _rt_sdiv, _itod, ...
-        r"^\?SelectGdiObject@CDC@@",  # MFC GDI thunks
+        # The six CRT init-term entries carried IDA's nearest-import guess
+        # (?SelectGdiObject@CDC@@...) until they were named in the IDB on 2026-10-18.
+        r"^InitTerm_", r"^Debug_TracePrint$",
     ]),
     ("app-shell", [
         r"^(WinMain|InitInstance|PocketUFO_WndProc)",

@@ -4,7 +4,7 @@ addr	name	size	subsystem
 11020	PadImage_Load	188	ui-core
 110dc	PadImage_Blit	52	ui-core
 11110	PadImage_BlitEx	56	ui-core
-11148	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z	16	platform
+11148	InitTerm_UiBankEntry	16	platform
 11158	j_UiBank_CtorAll	12	platform
 11164	Bank_RegisterAtexit	12	util
 11170	Bank_AtexitThunk	12	util
@@ -207,7 +207,7 @@ addr	name	size	subsystem
 21cec	TactHud_DrawModalRight	320	tact-ui
 21e2c	MapView_DrawIsoLayer	1252	tact
 22310	Render_Frame	756	render
-22604	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_0	16	platform
+22604	InitTerm_MapEntry	16	platform
 22614	j_Map_InitAndLoadRegistry	12	platform
 22620	Map_RegisterAtexit	12	tact
 2262c	Map_Atexit_nullsub2	12	tact
@@ -343,7 +343,7 @@ addr	name	size	subsystem
 3f040	DecDwordIfPos_AtPlus0xBD4	28	util
 3f05c	UiPanel_SetBytes0to2	16	ui-core
 3f06c	UiPanel_SetLineMeta	72	ui-core
-3f0b4	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_1	16	platform
+3f0b4	InitTerm_DatFileEntry	16	platform
 3f0c4	j_DatFile_ctor	12	platform
 3f0d0	DatFile_RegisterAtexit	12	dat
 3f0dc	j_DatFile_dtor	12	platform
@@ -390,7 +390,7 @@ addr	name	size	subsystem
 45f04	Ship_TickRefuelAtBase	124	strat
 45f80	Ship_TickRangeRecover	72	strat
 45fc8	Ship_TickRangeRecoverConsume	236	strat
-460b4	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_2	16	platform
+460b4	InitTerm_FontEntry	16	platform
 460c4	j_Font_Init_ReturnArg	12	platform
 460d0	Font_RegisterAtexit	12	ui-core
 460dc	j_Font_Free	12	platform
@@ -560,7 +560,7 @@ addr	name	size	subsystem
 602a0	RadarScreen_RollDetection	720	strat
 60570	RadarScreen_Update	3804	strat
 6144c	RadarScreen_SetActive	76	strat
-61498	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_3	16	platform
+61498	InitTerm_BaseGridEntry	16	platform
 614a8	BaseGrid_Atexit_nullsub5	12	strat
 614b4	BaseGrid_RegisterAtexit	12	strat
 614c0	BaseGrid_Atexit_nullsub6	12	strat
@@ -682,7 +682,7 @@ addr	name	size	subsystem
 6b46c	OptionsScreen_ReturnToTitle	48	strat-ui
 6b49c	OptionsScreen_BindSaveSlots	236	strat-ui
 6b588	OptionsScreen_BindLoadSlots	236	strat-ui
-6b674	Set_byte_159E88_3_SetUiY	60	util
+6b674	Options_SetTab3_AndUiY	60	strat-ui
 6b6b0	Options_SetTab4	20	strat-ui
 6b6c4	OptionsScreen_LayoutButtons	232	strat-ui
 6b7ac	Options_SaveAudioSettings	336	strat-ui
@@ -833,7 +833,7 @@ addr	name	size	subsystem
 837f8	Smap_ClampScrollY	120	strat
 83870	j_AssetReader_ClearGlobal	4	platform
 83874	AssetReader_ClearGlobal	12	dat
-83880	?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_4	16	platform
+83880	InitTerm_StrategListEntry	16	platform
 83890	StrategList_ctor	16	strat
 838a0	StrategList_RegisterAtexit	12	strat
 838ac	StrategList_Clear	36	strat
@@ -881,7 +881,7 @@ addr	name	size	subsystem
 8b948	nullsub_8	4	platform
 8b94c	Geoscape_CloseUI	2100	strat
 8c180	Geoscape_Draw	33744	strat
-94550	nullsub_9	4	platform
+94550	Geoscape_GameTickStub	4	strat
 94554	Game_StartNew	3976	strat
 954dc	Geoscape_PulseUpdate	1812	strat
 95bf0	Ui_AnimExpandBlit	948	ui-core
@@ -913,7 +913,7 @@ addr	name	size	subsystem
 9a8cc	Ufopaedia_Open	3368	strat-ui
 9b5f4	Ui_DrawBaseInfo	10196	ui-core
 9ddc8	Ui_InitBaseInfo	744	ui-core
-9e0b0	nullsub_GeoscapeStub	16	platform
+9e0b0	Debug_TracePrint	16	platform
 9e0c0	Sound_Play	112	audio
 9e130	Sound_LoadAndPlayMusic	312	audio
 9e268	Sound_InitAndLoadSamples	364	audio

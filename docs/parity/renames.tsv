@@ -4,6 +4,11 @@
 # Most flags are deliberate renames or merged families, and a flag that is never resolved is
 # noise that hides a real gap. Every line here is a pair someone checked in the source.
 #
+# The left column is the IDB's name AT THE TIME the pair was checked. The IDB gets renamed as
+# understanding improves, sometimes into the port's own name, and then the left column is stale --
+# audit_names.py reads the right column too for exactly that case (363 of these rows are keyed on
+# a name the IDB no longer uses).
+#
 # Format: <original name>\t<port name>\t<why>
 Assets_LoadStartup	Boot_LoadStartup	same load order, renamed to the module's verb
 Map_LoadRmp	Rmp_Load	rmp module owns the loader
@@ -599,3 +604,5 @@ unk_186420	szUiScratchStr	0x186420: the shared UI scratch string -- ResearchScre
 byte_1870B8	bBasePlaceFail	0x1870B8: the demolish-failure flag. Geoscape_Draw case 1 reads it at 0x92848 and, when set, runs Ui_AnimExpandBlit (0x92898) plus the two text triples 1241..1243 and 80..82 (0x928C0..0x92ADC). Written by the placement path in Base_EnterBuildMode @ 0x84E60 / Base_CancelBuildMode.
 byte_1870BC	bBasePlaceActive	0x1870BC: placement mode. Geoscape_Draw case 1: clear selects the base-name + money half (0x922E8..0x923D4), set selects the cursor block (0x923D8..0x92848), and 0x92844 STRB R11,[R10] with R11 = 0 CLEARS it from inside the draw when the cell under the tap is 0.
 dword_1864F8	sGeoscapeScreenBlock	0x1864F8 (unnamed in the IDB though already typed GeoscapeScreenBlock): the geoscape screen's root block, thirteen control pointers at +4*i. Render_Frame passes it to Geoscape_Draw at 0x2232C, Geoscape_Draw re-loads the literal at 0x8C238 for the radar loop, and RadarScreen_Update loads it at 0x605A4.
+Geoscape_GameTickStub	App_GameTickOnce	0x94550: four bytes, `BX LR`, sitting right after the shared frame end at 0x944B8..0x94550. GameTick_OnTimer's geoscape arm calls it at 0x27518 and it does nothing; the port's App_GameTickOnce (app/pufo_app.c:670) is the same documented no-op. Named Geoscape_GameTickStub in the IDB; the dump held the old `nullsub_9` until 2026-10-18.
+Options_SetTab3_AndUiY	BaseUi_SetScratch3AndUiY	0x6b674: stores 3 into gOptionsScratch[0] and drops pGeoscapeCtlB to y = 120 and pGeoscapeCtlA to y = 142 (0x6B680..0x6B69C). The IDB renamed this from `Set_byte_159E88_3_SetUiY` on 2026-10-18, so the inventory name is now the IDB's own and the row keyed on the old name no longer resolves.

@@ -65,9 +65,15 @@ def main():
     cited = load_citations()
     inventory = load_inventory()
     renamed = renames()
+    # The IDB is renamed as understanding improves, often into the name the port already
+    # uses. Then the ledger's left column holds the OLD IDB name and its right column is
+    # the name the inventory carries today, so a citation on that name is accounted for as
+    # well. Reading the ledger in only one direction flags 363 rows that can never resolve.
+    renamed_to = {v[0].lower() for v in renamed.values() if v[0]}
 
     flagged = []
     explained = 0
+    renamed_into = 0
     for addr, (orig_name, size, subsystem) in sorted(inventory.items()):
         if addr not in cited:
             continue
@@ -76,9 +82,13 @@ def main():
         if orig_name.lower() in renamed:
             explained += 1
             continue
+        if orig_name.lower() in renamed_to:
+            renamed_into += 1
+            continue
         flagged.append((addr, orig_name, subsystem, size))
 
-    print(f"renames on record: {len(renamed)}  (they explain {explained} citations)")
+    print(f"renames on record: {len(renamed)}  (they explain {explained} citations,"
+          f" {renamed_into} more resolve because the IDB later took the port's own name)")
 
     # Sorted by size: a flagged 4 KB citation distorts the report far more than a flagged
     # 100-byte one, and the big ones are worth checking by hand first.

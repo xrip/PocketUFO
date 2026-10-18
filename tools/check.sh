@@ -42,4 +42,11 @@ grep -E "Failed|tests passed" "$log_dbgtests"
 echo "debug ctest exit $rc_dbg (full output: $log_dbgtests)"
 
 python -I docs/parity/gen_report.py 2>&1 | tail -3
+# Every uncited original function must be either ported or explained by docs/idb/image-artifacts.tsv.
+# The status comes from python, not from the pipe -- same rule as the ctest calls above.
+log_art=/tmp/pufo_check_artifacts.log
+python -I docs/parity/coverage.py --check > "$log_art" 2>&1
+rc_art=$?
+tail -1 "$log_art"
+if [ "$rc_art" -ne 0 ]; then echo "ARTIFACT CHECK FAILED (see $log_art)"; exit 1; fi
 grep -n "Test checks run" PARITY.md

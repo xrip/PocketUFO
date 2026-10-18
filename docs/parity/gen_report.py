@@ -22,7 +22,8 @@ from collections import defaultdict
 # scripts cannot drift apart and PARITY.md quotes the same numbers the summary
 # prints. See docs/parity/coverage.py for the definition of "cited".
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from coverage import ADDR_RE, CITE_RE, INVENTORY, load_inventory  # noqa: E402
+from coverage import (ADDR_RE, ARTIFACT_CLASSES, CITE_RE, INVENTORY,  # noqa: E402
+                      load_artifacts, load_inventory)
 
 OUT = "PARITY.md"
 TESTS_DIR = os.path.join("build", "tests", "Release")
@@ -173,6 +174,14 @@ def main():
     covered = {a for a in cites if a in inv}
     unknown = sorted(a for a in cites if a not in inv)
 
+    # The artifact table (docs/idb/image-artifacts.tsv, read out of the IDB instruction
+    # by instruction) says which uncited functions carry no game behaviour at all, so
+    # the gap list can be read as "what is left to do" instead of a raw count.
+    art = load_artifacts()
+    art_gaps = sorted(a for a in inv if a not in covered and a in art)
+    real_gaps = sorted(a for a in inv if a not in covered and a not in art)
+    art_bytes = sum(inv[a][1] for a in art_gaps)
+
     by_sub = defaultdict(lambda: {"cov": [], "gap": []})
     for addr, (name, size, sub) in inv.items():
         rec = (addr, name, size, cites.get(addr, []))
@@ -209,6 +218,11 @@ def main():
       % (len(covered), len(inv), 100.0 * len(covered) / len(inv)))
     A("| Bytes of original code cited | %d / %d (%.1f%%) |"
       % (cov_bytes, total_bytes, 100.0 * cov_bytes / total_bytes))
+    A("| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | %d, %d bytes |"
+      % (len(art_gaps), art_bytes))
+    A("| Behaviour-bearing functions cited | %d / %d (%.1f%%) |"
+      % (len(covered), len(inv) - len(art_gaps),
+         100.0 * len(covered) / (len(inv) - len(art_gaps))))
     A("| Subsystems in the IDB map | %d |" % len(SUBSYSTEMS))
     A("| Test suites | %d |" % len(tests))
     A("| Test checks run | %d |" % sum(c for _n, _ok, c, _e in tests))
@@ -257,9 +271,19 @@ def main():
     A("## Remaining gaps")
     A("")
     A("Every original function not yet cited, with its size and an explanation,")
-    A("so there are no unexplained omissions. Small thunks and atexit")
-    A("registrations are named as such; the rest are attributed to the subsystem")
-    A("whose port work they belong to.")
+    A("so there are no unexplained omissions. `docs/idb/image-artifacts.tsv`")
+    A("classifies the ones that carry no game behaviour at all — import thunks")
+    A("(`LDR R12, =__imp_X; LDR PC, [R12]`), jump thunks, empty stubs, the six CRT")
+    A("init-term entries, the image's own C runtime, the compiled-out debug print —")
+    A("read instruction by instruction out of `pufobeta.exe.i64`. The rest are")
+    A("attributed to the subsystem whose port work they belong to.")
+    A("")
+    A("Uncited now: %d functions, %d bytes. Of those, %d carry no game behaviour."
+      % (len(art_gaps) + len(real_gaps),
+         art_bytes + sum(inv[a][1] for a in real_gaps), len(art_gaps)))
+    A("%d are real port work: %s"
+      % (len(real_gaps),
+         ", ".join("`%s`" % inv[a][0] for a in real_gaps) if real_gaps else "none"))
     A("")
     # Names the port already cites, so a `j_` thunk can be attributed to its target
     # instead of being called a thunk that carries no behaviour.
@@ -278,7 +302,10 @@ def main():
         A("|---|---|---|---|")
         for addr, name, size, _files in sorted(d["gap"], key=lambda r: -r[2]):
             target = thunk_target(name)
-            if name in UI_PANEL_CONFLICT:
+            if addr in art:
+                cls, ev = art[addr]
+                note = ("**no game behaviour** (`%s`): %s" % (cls, ev))
+            elif name in UI_PANEL_CONFLICT:
                 note = ("belongs to a **second struct** merged under the name "
                         "`UiPanel`; see docs/parity/ui-core.md")
             elif name in GAP_REASONS and GAP_REASONS[name]:
