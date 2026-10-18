@@ -227,6 +227,14 @@ typedef struct FireGate {
     void *pUser;
 } FireGate;
 
+/* byte_AA968 @ 0xAA968 as shipped, 156 bytes (it runs to g_aBuySellRowOrder @ 0xAAA04): the
+ * slot/sort-key to research-topic map the fire gate and the plane store row filter read.
+ * Slots 0..24 cover the small arms, 31..35 the heavy weapons (topics 97..101), 37/39/48..50 the
+ * specials; every byte from 52 to 155 is zero in the image. Read by BasePlaneScreen_BuildControls
+ * (0x7B1D4), Tact_OpenLeftHandMenu, Tact_OpenRightHandMenu and Unit_SelectBestFireMode. */
+#define PUFO_SLOT_TOPIC_GATE_COUNT 156
+extern const u8 g_abSlotTopicGate[PUFO_SLOT_TOPIC_GATE_COUNT];
+
 /* pCtxBase.nTrajFront0[1040..1135]: twelve action-mode slots, four bytes each.
  * [1040 + 4*mode] is the TU cost and [1088 + 4*mode] the accuracy term. Three of
  * the twelve are the fire modes; the rest belong to the other action modes. */

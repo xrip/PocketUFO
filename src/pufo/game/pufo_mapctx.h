@@ -21,6 +21,7 @@
 #include "pufo_common.h"
 
 #include "game/pufo_ballist.h"
+#include "game/pufo_combat.h"   /* PUFO_SPLASH_DWORDS, the hit-window size the Map block holds */
 #include "game/pufo_los.h"
 #include "game/pufo_mapcell.h"
 #include "game/pufo_statusmsg.h"
@@ -66,12 +67,19 @@ typedef struct GameMap {
     TactItem *pSelWeapon; /* 0x0048 */
 
     /* --- tactical scratch --- */
-    i8      nLayerScratch;     /* 0x15138, signed byte */
+    i8      nLayerScratch;     /* 0x15138, signed byte. NOTE: the live walker wiring points the
+                                * processor contexts at tactEnv.cursor.nFlags instead -- 0x15138 is
+                                * the SAME cell as TactCursor.nFlags (the recorded multi-view issue). */
     i32     nMaxLayerClamp;    /* 0x15074 */
     i32     nAnimPhase;        /* 0x00F8 */
     i32     nShotCount;        /* 0x002C, Hex-Rays' nStatusDrawY */
+    i32     nBurstShots;       /* 0x0028 Map_nBurstShots, the shots a mode-7 burst still owes */
     u8      bActionLatch;      /* 0x0002, unk_1139BA: 0 none, 3 multi-target, 4 fire mode */
     u8      bFireStatus1;      /* 0x0051 */
+    u8      bFireStatus9;      /* 0x0059 unk_113A11, written from bFireHitResult at 0x51F50 */
+    u8      bEnemySpotted;     /* 0x4E48 unk_118800, set by Unit_SpotCellOccupant @ 0x48344 */
+    Soldier *pLookCommitUnit;  /* 0x15088 unk_128A40, the look/psi action's committed target */
+    u8      bLookCommitFlag;   /* 0x1508C unk_128A44 */
     u8      nMissionType;      /* 0x1511A */
     Soldier *pThrowTarget;     /* 0x150F0 */
     i32     nFireTickProgress; /* 0x1405C */
@@ -88,11 +96,31 @@ typedef struct GameMap {
      * above, so there is no separate exclusion pair here. An earlier version of this
      * struct claimed a Soldier* pair at 0x1406C/0x14070; those two slots are
      * Map.bFireHitResult (a byte) and Map.pArrowThrownItem (a TactItem*), not units. */
-    bool            bTrajHitStop;      /* 0x1406D Map.bTrajHitStop, the byte the port
+    u8              bFireHitResult;    /* 0x1406C Map_bFireHitResult: cleared at 0x2FC54 by every
+                                        * Tact_TraceProjectileArc call, set at 0x3010C when the walked
+                                        * sample leaves the map (the port's ShotTrace.bLeftMap) */
+    u8              bTrajHitStop;      /* 0x1406D Map.bTrajHitStop, the byte the port
                                         * calls ThrowPending in the action contexts */
     ThrowArc        throwArc;
     ThrowLanding    throwLanding;
     ThrowBudget     throwBudget;
+
+    /* --- combat scratch: Map.gap_TrajRest @ 0x4EBC --- */
+    u32 aHitWindow[PUFO_SPLASH_DWORDS];      /* 0x4EBC, the 41 x 41 hit window (26896 bytes) */
+    u32 aHitWindowSave[PUFO_SPLASH_DWORDS];  /* gap_TrajRest + 26896, the snapshot copy */
+    i32  nKillCount;      /* gap_TrajRest + 4 * 49940: the Tact_KillUnit kill counter (KillCtx.pnKillCount) */
+
+    /* --- fire scratch --- */
+    i32 nFireArg5;                /* 0x1404C nFireArg5, the LOS outcome code */
+    const ObjectRecFull *pFireArg6; /* 0x14050 nFireArg6, the weapon record the shot resolves with */
+
+    /* --- action scratch: unk_1279F8 / F8 / 00 @ Map+0x14040 / 44 / 48 --- */
+    i32 nMeleeCellX;              /* the melee target cell, written by TactAction_ConfirmMeleeMode6 @ 0x17bb8 */
+    i32 nMeleeCellY;
+    i32 nMeleeCellLayer;
+    char aTransformName[32];      /* Map+0x230: the name the chryssalid transform copies into
+                                   * Soldier.szName. The shell owns the block empty; nothing in the
+                                   * ported code fills it yet (recorded gap). */
 
     /* --- the status message stack: nStatusMsgCount @ 0x0054,
      *     anStatusMsgTTL @ 0x1408C, aszStatusMsg @ 0x140B4 --- */

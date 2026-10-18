@@ -396,16 +396,32 @@ typedef struct PufoWorldState {
                                          * recorded multi-view issue) */
     SpotCtx       sTactSpot;            /* VisCtx's spotting state. bBusy/bQueueActive/pSelUnit are copies
                                          * of the tact state (TactCtx272.bBusy, TactState.bQueueActive,
-                                         * pMap->pSelUnit) -- live rewiring is the tactical runtime unit's
-                                         * job, same class as the aCells duplicate. pfnFocusOnCell stays
-                                         * NULL: MapView_FocusOnUnit only fires on a selected-unit spot while
-                                         * the queue is active, which a mission bring-up never reaches */
+                                         * pMap->pSelUnit); World_TactTickActiveUnit refreshes them every
+                                         * tick. pfnFocusOnCell is wired since Part 50: MapView_FocusOnCell
+                                         * over tactEnv.focus/cursor, the walker's own camera call */
     i32           nMapTrajFront1036;    /* pCtxBase.nTrajFront0[1036]: the one dword Unit_SpotCellOccupant
                                          * writes when it spots something */
     Soldier      *pTactScratchUnit;     /* the anActionPhaseSave0[120] slot the visibility scan excludes */
     UnitRosters   sTactRosters;         /* the three rosters as Unit_ScanVisibleUnits wants them. The counts
                                          * are the launch values; live counts are the runtime unit's wiring */
     TactInitEnv   tactEnv;              /* the persistent env World_InitTactical refills every launch */
+
+    /* --- the tactical walker (Tact_TickActiveUnit @ 0x54130), wired to the live frame ---
+     * The three queue processors take their contexts as arguments; World_TactTickActiveUnit rebuilds
+     * them from pTactMap/tactEnv on every tick, which mirrors the original re-reading the Map block
+     * inside each processor. These are the pieces that persist between ticks. */
+    StatusHooks      sTactStatusHooks;  /* the busy gate every tact StatusMsg_Push reads (TactCtx272.bBusy) */
+    MoveActionWiring sTactMoveWiring;   /* the move FSM's real callbacks over aTextRecs + the vis ctx */
+    TurnHooks        sTactTurnHooks;    /* Tact_ProcessActionPhase @ 0x4d950, driven from the walker */
+    ActionPhaseSave  sTactPhaseSave;    /* anActionPhaseSave0..2 @ Map+0x15078 */
+    TickHooks        sTactTickHooks;    /* the walker's five world calls */
+    FireGate         sTactFireGate;     /* aResearchTopics[g_abSlotTopicGate[uSortKey]].wGate4 @ 0x15EF08 + 4 */
+    ActionCostTable  sTactActionCosts;  /* pCtxBase.nTrajFront0[1040..1135], filled by Unit_SelectBestFireMode */
+    i32              nMapActionMode;    /* the action mode Unit_SelectBestFireMode writes */
+    ShotHooks        sTactShotHooks;    /* Combat_ResolveShot @ 0x2f12c: the area-fire arm on the world state;
+                                         * pfnComputeFov stays NULL (its argument list is still open,
+                                         * pufo_combat.h) */
+    ShotOutcome      sTactShotOut;      /* scratch Combat_ResolveShot writes its result into */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */

@@ -19070,3 +19070,73 @@ store, 0x3D574), the live frame, and brings bGeoscapeUi back to 1 with brand-new
 removing the rebuild turns 2 red. Gate 61/61 both configs, 18076 checks, golden --new-game frame
 identical. IDB notes at 0x162c8 (the rebuild), 0x16218 (the gate bytes), 0x156c8 (the abort
 button), 0x35228 (the Map_bEnemyTurnActive clear).
+## Unit 111: the tactical walker drives the live frame (Part 50)
+
+`Tact_TickActiveUnit @ 0x54130` was already ported and tested in `pufo_tactstate.c` (the queue gates, the
+camera-follow arms, the completion tail); what was missing was the shell side. `World_GameTickOnce` now wires
+`GameTickHooks.pfnTickActiveUnit` to `World_TactTickActiveUnit`, and that thunk rebuilds the three processor
+contexts from `pTactMap` / `tactEnv` on every tick -- the same live-read semantics the original gets by
+reaching its globals inside each processor (`pufo_world.c`, the Part 50 block).
+
+The rebuilt contexts and their owners:
+
+* `MoveActionCtx` through `Map_BuildMoveActionCtx` + `Map_WireMoveActionCtx` (the real armour-TU, status-push
+  and visibility callbacks). The layer scratch is pointed at `tactEnv.cursor.nFlags`: 0x15138
+  (`nLayerScratch` @ 0x128AF0) has one live owner, the TactCursor the launch owns, and the processor's `i8*`
+  re-views the same byte.
+* `FireActionCtx`: the aim/throw-arc blocks (`GameMap.aim/throwArc`), the new Map scratch cells the port had
+  never modelled -- `Map_nBurstShots` (Map+0x28, 0x1139E0), `bFireStatus9` (0x59), `Map_bEnemySpotted`
+  (0x4E48, 0x118800), `Map_nFireArg5` / `Map_pFireWeapon` (0x1404C/0x14050), `Map_bFireHitResult` (0x1406C),
+  the look-commit pair (0x15088/0x1508C) -- plus the combat pair of 41x41 hit windows (`Map.gap_TrajRest`
+  @ 0x4EBC, 26896 bytes each) and `pCtxBase`'s kill counter (`gap_TrajRest + 4*49940`).
+* `FallActionCtx`: the same scratch plus the melee triple (unk_1279F8/F8/00 = Map+0x14040/44/48) and the
+  throw-flight end, which is NOT a separate block -- unk_1278A8 is Map+0x13EF0, the second sample slot of
+  the multi-target array (`adMtX[1]`), and the same holds for Y and Z. Its seams land on shell functions:
+  `pfnCheckBattleEnd` on `World_MissionEndCheck` (the fall processor's own call sites at 0x53318/0x53bd4),
+  `KillHooks.pfnCheckBattleEnd` likewise for 0x4efc8, `pfnTryOpportunityFire` on `Unit_bTryOpportunityFire`
+  over the new research gate, and the forced-text push over the frame's status stack.
+* The research gate reads `aResearchTopics[g_abSlotTopicGate[uSortKey]].wGate4`; the 156-byte gate table
+  (byte_AA968 @ 0xAA968) was read out of the image and now lives in `pufo_combat.c` -- slots 0..51 as the
+  plane-store filter ships them, 52..155 zero.
+* `ProximityCtx` over the same combat ctx: step table `byte_AD720`, the blast-scan flag at
+  unk_157198+70112 (TactState + 0x111E0, modelled), the camera pair `tactEnv.focus`/`cursor`, and
+  `pbViewMoved` on `bMapSlot8Byte1` (BYTE1(apUiSlotsA[8]) @ Map+0x81).
+
+The walker's five world calls are the shell's own: `Tact_ProcessActionPhase @ 0x4d950` with the launch's
+`TactSelectCtx` / cursor triple / `MapView_FocusSelected @ 0x16710` (its gate byte is `bMapSweepArmed` =
+LOBYTE(apUiSlotsA[2]) @ Map+0x68); `MapView_FocusOnCell @ 0x2c758` for the camera-follow arms;
+`MapCursor_SetPos @ 0x27014` for the 0x547B4 park; `GameTick_Step @ 0x27324` for the re-run pass at
+0x54814; and the caller's Render_Frame thunk for the repaint arm at 0x5422C.
+
+Test evidence (test_geoscapeframe, Run A, before the mission end): a synthetic command-0 turn on the
+selected unit, walked by three `World_GameTickOnce` calls. Walk 1 proves the move arm dispatch (bFlag0
+raised, `nPhaseMax` the one-step facing delta, turn direction positive), the untracked-unit adoption at
+0x54574, and the focus arithmetic recomputed independently (SetCamOffset scratch, `Map_CenterOffsetX/Y`
+@ 0x26FCC/0x26FFC) plus the cursor layer = cell layer + 1 -- with sentinels (+9999 scroll, flag 0) so the
+focus call is observable rather than matched by the launch's own centring. Walk 2 proves the fire arm's
+1-TU spend (0x50F14) and the facing step. Walk 3 proves the phase-over path: `Fire_EndPhase` raising bFlag1
+(0x52AC8), the same walk running the fall processor, and the tail at 0x540E0..0x54128 clearing bFlag0,
+advancing the cursor and draining the queue. Mutations: removing the walker dispatch turns 6 checks red;
+removing the focus dispatch turns the 2 focus checks red.
+
+Gate: 61/61 tests in both configs, 18091 checks, golden frame identical.
+
+While wiring the cancel gate, `Map_bTrajHitStop` (0x1406D) gained its owner in `GameMap`, so Part 49's
+in-flight gate now reads all four cells live -- one recorded deviation closed.
+
+Test-fragility finding (reported, not papered over): the check at the 12f pen purchase asserted
+`ptrEnv.pFacPanel == pFacPanel` immediately after the dialog opened, with no dispatch between. The port's
+panel copies follow the cell at dispatch (`World_RefreshGeoscapeFrame` runs at the head of
+`World_GeoscapePointer`, matching the original's live read of 0x15886C at 0x87620 -> 0x87F60), but between
+the open and the first dispatch the copy is whatever the last refresh left. The old check passed only
+because the allocator reused the freed panel's address; a layout shift in this part made the debug build
+return a different address and the check went red. The assertion now sits after the press, where the
+follow is a property of the port rather than of the allocator.
+
+Deviations still open in this unit: `TurnHooks.pfnEnemyAiTick` stays NULL (Tact_EnemyAiTick @ 0x4cbe0 is not
+wired from the shell yet; the walker's empty-queue early return at 0x54198 keeps phase 3 idle from
+livelocking); the burst's per-entry nArg takes 0 because the shell does not own the second action bank
+(Map+0x4E7C) yet; the chryssalid transform-name buffer (`Map+0x230`) is owned but nothing fills it;
+`ShotHooks.pfnComputeFov` stays NULL (argument list open, pufo_combat.h); `SideLists` counts stay
+by-value copies (the recorded separate issue); the shell's tactical paint is still absent, so the walker's
+repaint arm reaches the caller's frame hook and is a no-op on a tactical screen.

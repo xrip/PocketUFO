@@ -1149,12 +1149,16 @@ int main(void)
     nFunds1 = g_world.nFunds;
     g_world.nav.apNav[4]->pfnClick();                /* BaseFacScreen_Open @ 0x61844 again, after 12e closed it */
     CheckEqI32(g_world.bFacDialogOpen, 1, "the dialog re-opens, and its toggle allocates a fresh panel (0x58A44)");
-    Check(g_world.pFacPanel != NULL && g_world.ptrEnv.pFacPanel == g_world.pFacPanel,
-          "the pointer dispatcher's panel copy follows it, because both its arms dereference it blind (0x87F60, 0x89F10)");
+    Check(g_world.pFacPanel != NULL, "the reopened dialog's panel is allocated (0x58A44)");
 
     nRowX = g_world.pFacPanel->nPosX;                /* the dialog panel's own geometry: row 0 is nPosY..+16 */
     nRowY = g_world.pFacPanel->nPosY + 8;
     World_GeoscapePointer(&g_world, nRowX, nRowY, true);
+    /* The follow is asserted at the dispatch, not before it: the original re-reads 0x15886C at the
+     * dereference itself (0x87F60), and the port's press seam re-reads it at entry. Checking between
+     * the open and the first dispatch only measured the allocator's reuse of the freed block. */
+    Check(g_world.ptrEnv.pFacPanel == g_world.pFacPanel,
+          "the press seam re-reads the panel pointer before dispatch, so the dispatcher's copy follows at the dereference, as the original's live read does (0x87620 -> 0x87F60)");
     CheckEqI32(g_world.bRoot34, 1, "a press on the build screen sets bBaseFacPreviewActive @ 0x18652C (0x87F44)");
     Check(g_world.pFacPanel->bFlag7073 == 1, "and re-arms the panel while the placement is unarmed (0x87F60)");
     (void)DrawFrame();
@@ -1606,6 +1610,86 @@ int main(void)
                   "the tick decayed the TTL word by exactly one (0x27588) and shifted nothing: the oldest message is still above 0 (gate at 0x275A4)");
             Check(g_world.pTactState->nPhaseCounter == 0 && g_world.pTactMap->tact.bBusy == 0,
                   "nothing was queued or phased at the launch frame: the phase counter stands at 0, the context is not busy");
+
+            /* The tactical walker (Part 50): pfnTickActiveUnit now drives the queue on the live
+             * frame. A synthetic command-0 turn on the first Xcom unit -- the unit MapSelectUnit
+             * already selected -- and three 0xC350 firings walk it: the move processor arms the
+             * turn and the camera adopts the unit, the fire processor spends the turn's time units
+             * one per tick, and the phase-over tick raises bFlag1 so the fall processor's tail
+             * drains the queue. All state the walk leaves is restored before the mission end. */
+            {
+                GameMap *pMapW = g_world.pTactMap;
+                TactState *pQW = g_world.pTactState;
+                Soldier *pTurnUnit = pMapW->apXcomUnits[0];
+                MapCell *pTurnCell = pTurnUnit->pCell;
+                u8 nFacing0 = pTurnUnit->bFacing;
+                u8 nFacing1 = (u8)((nFacing0 + 1u) & 7u);
+                u16 uTu0 = pTurnUnit->uTu;
+                i32 nFlags0 = pTurnCell->bFlags44;
+
+                Check(pTurnCell != NULL && pTurnUnit->uTu >= 4,
+                      "fixture: the walking unit stands on a cell and has at least 4 time units");
+                /* Sentinels so the focus call is observable: the launch already left a centred
+                 * scroll and a layer-1 cursor flag, which an unarmed assert would pass through. */
+                g_world.tactEnv.focus.nCamScrollX += 9999;
+                g_world.tactEnv.focus.nCamScrollY += 9999;
+                g_world.tactEnv.cursor.nFlags = 0;
+                pTurnCell->bFlags44 = (u8)(nFlags0 | 1u);   /* arm the camera-follow gate */
+                pMapW->tact.bBusy = 1;
+                memset(&pQW->aQueue[0], 0, sizeof pQW->aQueue[0]);
+                pQW->aQueue[0].nCmd    = TACTCMD_TURN;
+                pQW->aQueue[0].pUnit   = pTurnUnit;
+                pQW->aQueue[0].nFacing = nFacing1;
+                pQW->nQueueCursor = 0;
+                pQW->nQueueLen    = 1;
+                pQW->bQueueActive = 1;
+                pQW->bFlag0 = 0;
+                pQW->bFlag1 = 0;
+
+                Check(World_GameTickOnce(&g_world),
+                      "walk 1: the 0xC350 firing reaches the walker, which runs the move processor on the armed queue (0x541C4 takes the move arm because bFlag0 is clear)");
+                Check(pQW->bFlag0 == 1 && pQW->bFlag1 == 0 && pQW->nPhaseMax == 1
+                          && pQW->aQueue[0].nTurnDir == 1,
+                      "MoveTurn armed the turn: bFlag0 raised, nPhaseMax = the one-step facing delta (Map_FacingDelta @ 0x276A0), turn direction positive for a +1 facing (Map_bFacingTurnPositive @ 0x27668)");
+                Check(pMapW->tact.pTrackUnit == pTurnUnit,
+                      "0x54574: a busy walk with no tracked unit adopts the action's own unit before the focus");
+                {
+                    CamOffset co;
+                    MapView_SetCamOffset(&pMapW->geom, (i32)g_world.tactEnv.focus.nMapTileW >> 1,
+                                         (i32)g_world.tactEnv.focus.nMapTileH >> 1, false, 0, &co);
+                    i32 nA = pTurnCell->nX - (i32)(i8)co.bScratch40;
+                    i32 nB = pTurnCell->nY - (i32)(i8)co.bScratch41;
+                    Check(g_world.tactEnv.focus.nCamScrollX
+                                  == Map_CenterOffsetX((i32)g_world.tactEnv.focus.nDimX, nA, nB)
+                              && g_world.tactEnv.focus.nCamScrollY == Map_CenterOffsetY(nA, nB),
+                          "the focus call is MapView_FocusOnCell's own arithmetic (0x2C758): cell minus the SetCamOffset scratch, through Map_CenterOffsetX/Y (0x26FCC/0x26FFC)");
+                    Check(g_world.tactEnv.cursor.nFlags == (u8)(pTurnCell->nZ + 1),
+                          "the focus's tail sets the cursor layer to the cell layer + 1 (MapCursor_SetFlags @ 0x26F78, Map+0x15138)");
+                }
+                CheckEqI32(pTurnUnit->uTu, (i32)uTu0,
+                      "the move arm charges nothing: the TU spend belongs to the fire processor's turn arm");
+
+                Check(World_GameTickOnce(&g_world), "walk 2: bFlag0 now routes the entry to the fire processor (0x54588)");
+                Check(pTurnUnit->uTu == (u16)(uTu0 - 1) && pTurnUnit->bFacing == nFacing1,
+                      "the turn arm spends 1 TU (0x50F14) and steps the facing by the turn direction -- the unit now faces nFacing + 1");
+                Check(pMapW->tact.pTrackUnit == pTurnUnit,
+                      "the tracked unit stands: the walker's re-run gate at 0x54814 refuses a second pass for it");
+
+                Check(World_GameTickOnce(&g_world),
+                      "walk 3: the phase is over (nPhaseTick 2 > nPhaseMax 1), Fire_EndPhase raises bFlag1 (0x52AC8) and the same walk runs the fall processor");
+                Check(pQW->nQueueLen == 0 && pQW->bQueueActive == 0 && pQW->nQueueCursor == 1
+                          && pQW->bFlag0 == 0,
+                      "the fall tail (0x540E0..0x54128) cleared bFlag0, advanced the cursor past the only entry, and drained the queue");
+                CheckEqI32(pTurnUnit->uTu, (i32)uTu0 - 1,
+                      "the whole turn cost exactly nPhaseMax time units: one charged, the phase-over tick charges none");
+                Check(pQW->bPhaseActive == 0 && pQW->nPhaseCounter == 0 && pMapW->tact.nPhase == 0,
+                      "no phase machinery ran: the opportunity/phase pair never armed (GameTick_Step is gated on bPhaseActive, ProcessActionPhase had no phase to run)");
+
+                /* Restore the idle-frame state the mission-end asserts expect. */
+                pMapW->tact.bBusy = 0;
+                pMapW->tact.pTrackUnit = NULL;
+                pTurnCell->bFlags44 = (u8)nFlags0;
+            }
 
             /* Mission end (Part 49). Empty the hidden park and the field so the CheckBattleEnd head
              * finds no enemy side and takes the win arm (0x350F0); the enemy-turn byte is pre-set so

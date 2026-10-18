@@ -83,7 +83,7 @@ void Map_BuildMoveActionCtx(GameMap *pMap, const LosTables *pTables,
     pOut->pThrowArc       = &pMap->throwArc;
     pOut->pThrowLanding   = &pMap->throwLanding;
     pOut->pThrowBudget    = &pMap->throwBudget;
-    pOut->bThrowHitStop   = pMap->bTrajHitStop;
+    pOut->bThrowHitStop   = pMap->bTrajHitStop != 0;
     /* 0x3242C skips Map.pSelUnit and the unit at Map.pThrowTargetUnit; the arc trace
      * takes them as arguments because the port has no Map block. */
     pOut->pTraceExcludeSel   = pMap->pSelUnit;    /* 0x15334 */

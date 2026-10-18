@@ -99,7 +99,9 @@ typedef struct TactState {
     u8             gap_0014[4];      /* 0x0014 */
     i32            nUnk70024;        /* 0x11188 */
     i32            nPhaseCounter;    /* 0x1118C, IDA nPhaseCounter */
-    u8             gap_70032[12];    /* 0x11190 */
+    u8             gap_70032[8];     /* 0x11190 */
+    i32            nUnk70024Slot4;   /* 0x11198 = nUnk70024[4]: Combat_ResolveShot's area-fire arm
+                                      * clears it at 0x2FA94 */
     i32            nStepDrawOffX;    /* 0x1119C */
     i32            nStepDrawOffY;    /* 0x111A0 */
     MapCell       *pStepCellScratch; /* 0x111A4, the grid slot Tact_ProcessFireAction

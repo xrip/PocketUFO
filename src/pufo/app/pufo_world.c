@@ -1534,6 +1534,33 @@ static void World_TactFreeItemHook(TactItem *pItem, void *pUser)
  * Init_Briefing copies it into the briefing panel's line 1 / tail line. */
 static const char s_szBriefLineEmpty[1] = "";
 
+/* The tactical walker wiring (Part 50). The hooks and the dispatch live in the walker block further
+ * down this file; World_InitTactical wires them at the end of the launch, so they are declared here. */
+static void World_TactRenderFrame(PufoWorldState *pW);
+static bool World_TactStatusIsBusy(void *pUser);
+static bool World_TactStatusShouldRender(void *pUser);
+static void World_TactStatusRender(void *pUser);
+static void World_TactSetPlayerInput(bool bEnabled, void *pUser);
+static void World_TactReadCursor(i32 *pnX, i32 *pnY, i32 *pnLayer, void *pUser);
+static void World_TactSetCursor(i32 nX, i32 nY, i32 nLayer, void *pUser);
+static void World_TactSelectThunk(Soldier *pUnit, void *pUser);
+static void World_TactFocusSelectedThunk(void *pUser);
+static void World_TactRequestFireThunk(Soldier *pUnit, i32 nX, i32 nY, i32 nZ, void *pUser);
+static void World_TactEndOfOppFireThunk(void *pUser);
+static void World_TactProcessPhaseThunk(void *pUser);
+static void World_TactFocusCellThunk(const MapCell *pCell, void *pUser);
+static void World_TactSpotFocusThunk(MapCell *pCell, void *pUser);
+static void World_TactRenderThunk(void *pUser);
+static void World_TactSetCursorPosThunk(i32 nX, i32 nY, void *pUser);
+static void World_TactGameTickStepThunk(void *pUser);
+static void World_TactAreaFireThunk(void *pUser);
+static bool World_TactWeaponFireableThunk(i32 nSortKey, void *pUser);
+static void World_TactFallBattleEndThunk(u8 bAbort, void *pUser);
+static void World_TactKillBattleEndThunk(void *pUser);
+static void World_TactFallTryOpportunityThunk(Soldier *pTarget, Soldier *pShooter, void *pUser);
+static void World_TactPushForcedThunk(const char *pszMsg, void *pUser);
+static void World_TactTickActiveUnit(void *pUser);
+
 bool World_InitTactical(PufoWorldState *pW, i32 nMode)
 {
     TactInitEnv *pE;
@@ -1771,6 +1798,58 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
         return false;
     }
     pW->bTactLive = true;
+
+    /* --- the walker wiring (Part 50). After Tact_InitMission so the pieces taken from tactEnv
+     * here see the init's own filling (select's cursor/lookup/status, the vis ctx). --- */
+    pW->sTactStatusHooks.pfnIsBusy       = World_TactStatusIsBusy;
+    pW->sTactStatusHooks.pfnShouldRender = World_TactStatusShouldRender;
+    pW->sTactStatusHooks.pfnRender       = World_TactStatusRender;
+    pW->sTactStatusHooks.pUser           = pW;
+    pE->select.pStatusHooks = &pW->sTactStatusHooks;
+
+    memset(&pW->sTactMoveWiring, 0, sizeof(pW->sTactMoveWiring));
+    pW->sTactMoveWiring.pMap          = pMap;
+    pW->sTactMoveWiring.pTextRecs     = pW->pAssets->pTextRecs;
+    pW->sTactMoveWiring.nTextRecCount = pW->pAssets->nTextRecCount;
+    /* Deviation: the radio option bank (unk_AC81A / 83A / 85A) is registry-loaded state the shell
+     * does not own yet; zero means the default armour slot and no suppressed warning. */
+
+    pW->sTactTurnHooks.pfnSetPlayerInput      = World_TactSetPlayerInput;
+    pW->sTactTurnHooks.pfnSetCursor           = World_TactSetCursor;
+    pW->sTactTurnHooks.pfnReadCursor          = World_TactReadCursor;
+    pW->sTactTurnHooks.pfnSelectUnit          = World_TactSelectThunk;
+    pW->sTactTurnHooks.pfnFocusSelected       = World_TactFocusSelectedThunk;
+    pW->sTactTurnHooks.pfnRequestFire         = World_TactRequestFireThunk;
+    /* Deviation: Tact_EnemyAiTick @ 0x4cbe0 (EnemyAiTickCtx, pufo_enemyai.h) is not wired from the
+     * shell yet. A NULL hook leaves phase 3 a no-op, and the walker's empty-queue early return at
+     * 0x54198 keeps that from livelocking the tick. */
+    pW->sTactTurnHooks.pfnEnemyAiTick         = NULL;
+    pW->sTactTurnHooks.pfnEnqueueEndOfOppFire = World_TactEndOfOppFireThunk;
+    pW->sTactTurnHooks.pUser                  = pW;
+    memset(&pW->sTactPhaseSave, 0, sizeof(pW->sTactPhaseSave));
+
+    pW->sTactTickHooks.pfnProcessActionPhase = World_TactProcessPhaseThunk;
+    pW->sTactTickHooks.pfnRenderFrame        = World_TactRenderThunk;
+    pW->sTactTickHooks.pfnFocusOnCell        = World_TactFocusCellThunk;
+    pW->sTactTickHooks.pfnSetCursorPos       = World_TactSetCursorPosThunk;
+    pW->sTactTickHooks.pfnGameTickStep       = World_TactGameTickStepThunk;
+    pW->sTactTickHooks.pUser                 = pW;
+
+    pW->sTactFireGate.pfnWeaponFireable = World_TactWeaponFireableThunk;
+    pW->sTactFireGate.pUser             = pW;
+    memset(&pW->sTactActionCosts, 0, sizeof(pW->sTactActionCosts));
+    pW->nMapActionMode = 0;
+
+    pW->sTactShotHooks.pfnComputeFov = NULL; /* the argument list is still open (pufo_combat.h:93) */
+    pW->sTactShotHooks.pfnAreaFire   = World_TactAreaFireThunk;
+    pW->sTactShotHooks.pUser         = pW;
+    memset(&pW->sTactShotOut, 0, sizeof(pW->sTactShotOut));
+
+    /* With the walker live, the spot seam can follow a spotted unit too: Unit_SpotCellOccupant's
+     * MapView_FocusOnUnit is the same focus the walker's camera arms use. */
+    pW->sTactSpot.pfnFocusOnCell = World_TactSpotFocusThunk;
+    pW->sTactSpot.pUser          = pW;
+
     return true;
 }
 
@@ -1838,6 +1917,465 @@ static void World_TactClearFrameScratch(void *pUser)
     ((PufoWorldState *)pUser)->bMapFrameScratch = 0;
 }
 
+/* ==========================================================================
+ * The tactical walker over the live frame -- Tact_TickActiveUnit @ 0x54130.
+ *
+ * GameTick_OnTimer reaches the walker through pfnTickActiveUnit (its call at 0x275D8 is
+ * gated on !(bPhaseActive && slot8Byte1) at 0x275CC, which GameTick_OnTimer itself applies).
+ * The walker dispatches the queue to the three processors, and each processor reaches the
+ * world through the contexts the original reads out of the Map block. The port hands every
+ * one of those as a context argument, so the walker thunk rebuilds them from pTactMap and
+ * tactEnv on each tick -- the same live-read semantics the original gets from its globals.
+ * ========================================================================== */
+
+/* The caller's Render_Frame thunk. The shell calls it with pW, the same user it hands the
+ * LoadGame teardown's pfnRenderFrame. */
+static void World_TactRenderFrame(PufoWorldState *pW)
+{
+    if (pW->pFrameHooks != NULL && pW->pFrameHooks->pfnRenderFrame != NULL) {
+        pW->pFrameHooks->pfnRenderFrame(pW);
+    }
+}
+
+/* StatusMsg_Push @ 0x2dda4's busy gate: unk_157180->bBusy, i.e. TactCtx272.bBusy. The repaint
+ * flag is LOBYTE(apUiSlotsA[2]) = bMapSweepArmed (Map+0x68), and the repaint itself is the
+ * frame hook the caller handed the shell. */
+static bool World_TactStatusIsBusy(void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+
+    return pW->pTactMap != NULL && pW->pTactMap->tact.bBusy != 0;
+}
+
+static bool World_TactStatusShouldRender(void *pUser)
+{
+    return ((const PufoWorldState *)pUser)->bMapSweepArmed != 0;
+}
+
+static void World_TactStatusRender(void *pUser)
+{
+    World_TactRenderFrame((PufoWorldState *)pUser);
+}
+
+/* TurnHooks @ 0x4d950. The cursor triple is the TactCursor the launch owns: nX @ 0x15128,
+ * nY @ 0x1512C, and the LAYER stored in nFlags @ 0x15138 -- the byte MapView_FocusOnCell
+ * sets to the cell layer + 1 and ProcessActionPhase saves/restores around a fire. */
+static void World_TactSetPlayerInput(bool bEnabled, void *pUser)
+{
+    ((PufoWorldState *)pUser)->bMapPlayerInput = bEnabled ? 1 : 0;
+}
+
+static void World_TactReadCursor(i32 *pnX, i32 *pnY, i32 *pnLayer, void *pUser)
+{
+    const TactCursor *pCursor = &((PufoWorldState *)pUser)->tactEnv.cursor;
+
+    *pnX = pCursor->nX;
+    *pnY = pCursor->nY;
+    *pnLayer = pCursor->nFlags;
+}
+
+static void World_TactSetCursor(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    TactCursor *pCursor = &((PufoWorldState *)pUser)->tactEnv.cursor;
+
+    pCursor->nX = nX;
+    pCursor->nY = nY;
+    pCursor->nFlags = (u8)nLayer;
+}
+
+static void World_TactSelectThunk(Soldier *pUnit, void *pUser)
+{
+    Tact_SelectUnit(&((PufoWorldState *)pUser)->tactEnv.select, pUnit);
+}
+
+/* MapView_FocusSelected @ 0x16710: sample 17 when LOBYTE(apUiSlotsA[2]) is set, then centre
+ * on the selected unit's cell. */
+static void World_TactFocusSelectedThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+
+    if (pMap == NULL) {
+        return;
+    }
+    MapView_FocusSelected(&pW->tactEnv.focus,
+                          pMap->pSelUnit != NULL ? pMap->pSelUnit->pCell : NULL,
+                          pW->bMapSweepArmed, &pW->tactEnv.cursor);
+}
+
+/* Unit_FaceToward @ 0x49bf0 enqueues a command-0 turn, so the seam carries the queue. */
+static void World_TactFaceTowardThunk(Soldier *pUnit, i32 nX, i32 nY, void *pUser)
+{
+    Unit_FaceToward((TactState *)pUser, pUnit, nX, nY);
+}
+
+/* TurnHooks.pfnRequestFire stands for TactState_EnqueueFireBurst @ 0x4b080 plus the KickQueue
+ * @ 0x4f334 after it (turn.h). The weapon/mode pick the original does before the enqueue is
+ * Unit_SelectBestFireMode @ 0x478e4; the Turn boundary hands it to this hook.
+ * Deviation: the burst's per-entry nArg is the per-mode enable the original reads from the
+ * second action bank (Map+0x4E7C, Ui_FillActionCosts @ 0x26104); the shell does not own that
+ * bank yet, so the mode's TU-cost table stands in with the enable at 0. */
+static void World_TactRequestFireThunk(Soldier *pUnit, i32 nX, i32 nY, i32 nZ, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+    FireBurstSpec spec;
+
+    if (pMap == NULL || pW->pTactState == NULL) {
+        return;
+    }
+    if (!Unit_SelectBestFireMode(pUnit, &pW->sTactFireGate, &pMap->pSelWeapon,
+                                 &pW->nMapActionMode, &pW->sTactActionCosts)) {
+        return;
+    }
+    TactItem *pItem = pMap->pSelWeapon;
+    if (pItem == NULL || pItem->pObj == NULL) {
+        return;
+    }
+
+    memset(&spec, 0, sizeof(spec));
+    spec.pUnit         = pUnit;
+    spec.pWeapon       = pItem;
+    spec.nMode         = pW->nMapActionMode;
+    spec.nX            = nX;
+    spec.nY            = nY;
+    spec.nZ            = (u8)nZ;
+    spec.nTuCost       = pW->sTactActionCosts.nTuCost[pW->nMapActionMode];
+    spec.uAmmoInWeapon = pItem->nAmmo;
+    spec.bAmmoCap      = pItem->pObj->bAmmoCap;
+    (void)TactState_EnqueueFireBurst(pW->pTactState, &spec, World_TactFaceTowardThunk,
+                                     pW->pTactState);
+    TactState_KickQueue(pW->pTactState);
+}
+
+/* The opportunity-fire list ran out: bUnk70103 on the queue (TactState + 0x111D7). The walker's
+ * epilogue at 0x547B4 is what consumes it. */
+static void World_TactEndOfOppFireThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactState != NULL) {
+        pW->pTactState->bUnk70103 = 1;
+    }
+}
+
+static void World_TactProcessPhaseThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactMap == NULL) {
+        return;
+    }
+    Tact_ProcessActionPhase(&pW->pTactMap->tact, &pW->sTactTurnHooks, &pW->sTactPhaseSave);
+}
+
+/* TickHooks.pfnFocusOnCell = MapView_FocusOnCell @ 0x2c758 (the IDB names it
+ * MapView_FocusOnUnit): recentre the camera on the cell and put the cursor on its layer + 1. */
+static void World_TactFocusCellThunk(const MapCell *pCell, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pCell == NULL) {
+        return;
+    }
+    MapView_FocusOnCell(&pW->tactEnv.focus, pCell, &pW->tactEnv.cursor);
+}
+
+/* SpotCtx.pfnFocusOnCell takes the cell unqualified; same MapView_FocusOnCell @ 0x2c758. */
+static void World_TactSpotFocusThunk(MapCell *pCell, void *pUser)
+{
+    World_TactFocusCellThunk(pCell, pUser);
+}
+
+/* TickHooks.pfnRenderFrame = Render_Frame @ 0x22310. The walker reaches it from the busy
+ * multi-entry move arm at 0x5422C. The shell's tactical paint is still the recorded gap (the
+ * iso-draw env belongs to the banner unit), so the repaint goes to the caller's frame hook and
+ * is a no-op while the shell draws nothing on a tactical screen. */
+static void World_TactRenderThunk(void *pUser)
+{
+    World_TactRenderFrame((PufoWorldState *)pUser);
+}
+
+/* TickHooks.pfnSetCursorPos = MapCursor_SetPos @ 0x27014, over the launch's cursor triple. */
+static void World_TactSetCursorPosThunk(i32 nX, i32 nY, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    MapCursor_SetPos(&pW->tactEnv.cursorPos, nX, nY, World_TactLookupCell, pW);
+}
+
+/* TickHooks.pfnGameTickStep = GameTick_Step @ 0x27324, the walker's re-run pass at 0x54814. */
+static void World_TactGameTickStepThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactState == NULL) {
+        return;
+    }
+    (void)GameTick_Step(pW->pTactState, World_TactLookupCell, pW);
+}
+
+/* ShotHooks.pfnAreaFire stands for the two writes at 0x2FA80/0x2FA94. The bUnk70115 store is
+ * gated on pCtxBase.gap_2[0] == 0 (Map+0x02 = bActionLatch); the nUnk70024[4] clear is not. */
+static void World_TactAreaFireThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactMap == NULL || pW->pTactState == NULL) {
+        return;
+    }
+    if (pW->pTactMap->bActionLatch == 0) {
+        pW->pTactState->bPhaseActive = 1;
+    }
+    pW->pTactState->nUnk70024Slot4 = 0;
+}
+
+/* FireGate: aResearchTopics[g_abSlotTopicGate[uSortKey]].wGate4 != 0 (pufo_combat.h:218).
+ * Out of table the original reads past the 156 bytes; the port refuses to guess and allows
+ * the shot. */
+static bool World_TactWeaponFireableThunk(i32 nSortKey, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (nSortKey < 0 || nSortKey >= PUFO_SLOT_TOPIC_GATE_COUNT) {
+        return true;
+    }
+    return pW->aTopics[g_abSlotTopicGate[nSortKey]].wGate4 != 0;
+}
+
+/* FallActionCtx.pfnCheckBattleEnd = the Tact_CheckBattleEnd call sites inside the fall
+ * processor at 0x53318 and 0x53bd4; KillHooks.pfnCheckBattleEnd = the one inside Tact_KillUnit
+ * at 0x4EFc8. Both land on the shell's mission-end entry wired in Part 49. */
+static void World_TactFallBattleEndThunk(u8 bAbort, void *pUser)
+{
+    (void)World_MissionEndCheck((PufoWorldState *)pUser, bAbort);
+}
+
+static void World_TactKillBattleEndThunk(void *pUser)
+{
+    (void)World_MissionEndCheck((PufoWorldState *)pUser, 0);
+}
+
+/* FallActionCtx.pfnTryOpportunityFire = Unit_bTryOpportunityFire @ 0x47c38, over the shell's
+ * gate, selection cells and cost table. The result lands nowhere in the original. */
+static void World_TactFallTryOpportunityThunk(Soldier *pTarget, Soldier *pShooter, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactMap == NULL) {
+        return;
+    }
+    (void)Unit_bTryOpportunityFire(pTarget, pShooter, &pW->sTactFireGate, &pW->pTactMap->pSelWeapon,
+                                   &pW->nMapActionMode, &pW->sTactActionCosts, &pW->tactEnv.vis);
+}
+
+/* FallActionCtx.pfnPushForcedText: the one message the fall processor builds itself (the
+ * panicked unit's name + the alien-control record) pushed with bForce set. */
+static void World_TactPushForcedThunk(const char *pszMsg, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pTactMap == NULL) {
+        return;
+    }
+    (void)StatusMsg_Push(&pW->pTactMap->status, pszMsg, true, &pW->sTactStatusHooks);
+}
+
+/* The one live dispatch: rebuild the processor contexts from the Map block, then walk. */
+static void World_TactTickActiveUnit(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+    TactState *pQ = pW->pTactState;
+    MoveActionCtx move;
+    FireActionCtx fire;
+    FallActionCtx fall;
+    CombatCtx combat;
+    KillCtx kill;
+    KillHooks killHooks;
+    ProximityCtx prox;
+    SideLists sideLists;
+    TactTickCtx tick;
+
+    if (pMap == NULL || pQ == NULL) {
+        return;
+    }
+    /* The value-copied gates the contexts carry (the separate issue recorded for them): refresh
+     * them from the live state every tick so a context built here reads this frame's truth. */
+    pW->sTactRosters.nXcom  = pMap->nXcomCount;
+    pW->sTactRosters.nEnemy = pMap->nEnemyCount;
+    pW->sTactRosters.nCiv   = pMap->nCivilianCount;
+    pW->sTactSpot.bBusy        = pMap->tact.bBusy != 0;
+    pW->sTactSpot.bQueueActive = pQ->bQueueActive != 0;
+    pW->sTactSpot.pSelUnit     = pMap->pSelUnit;
+    pW->tactEnv.cursorPos.bBusy = pMap->tact.bBusy != 0;
+    pW->tactEnv.cursorPos.bSelUnitLarge = pMap->pSelUnit != NULL && Unit_bIsLarge(pMap->pSelUnit);
+    pW->sTactMoveWiring.visCtx  = pW->tactEnv.vis;
+
+    Map_BuildMoveActionCtx(pMap, &pW->sTactLoft, &move);
+    Map_WireMoveActionCtx(&move, &pW->sTactMoveWiring);
+    /* 0x15138 has one live owner, the TactCursor the launch owns. The cast re-views the same
+     * byte as the signed scratch the processors expect. */
+    move.pnLayerScratch = (i8 *)&pW->tactEnv.cursor.nFlags;
+
+    memset(&combat, 0, sizeof(combat));
+    combat.pfnLookup     = World_TactLookupCell;
+    combat.pUser         = pW;
+    combat.pGeom         = &pMap->geom;
+    combat.pState        = pQ;
+    combat.pSelUnit      = pMap->pSelUnit;
+    combat.pCtxWeapon    = (ObjectRecFull *)pMap->pFireArg6; /* 0x14050 nFireArg6 */
+    combat.nShotOriginX  = pW->nMapShotOrigX;                /* 0x14054/0x14058 */
+    combat.nShotOriginY  = pW->nMapShotOrigY;
+
+    memset(&kill, 0, sizeof(kill));
+    kill.pCombat          = &combat;
+    kill.pRosters         = &pW->sTactRosters;
+    kill.apTactItems      = pW->apTactItems;
+    kill.pnTactItem       = &pW->nTactItemCount;
+    kill.apObjects        = pW->pAssets->apObjects;
+    kill.ppSelUnit        = &pMap->pSelUnit;
+    kill.pnKillCount      = &pMap->nKillCount;  /* gap_TrajRest + 4 * 49940 */
+    kill.pszTransformName = pMap->aTransformName;
+    kill.bTickHold        = pW->bMapTickHold != 0;
+    kill.bFrameScratch    = pW->bMapFrameScratch != 0;
+    kill.bUiSlotArmed     = pW->bMapSweepArmed != 0;   /* LOBYTE(apUiSlotsA[2]) @ 0x68 */
+    kill.pStatus          = &pMap->status;
+    kill.pStatusHooks     = &pW->sTactStatusHooks;
+    kill.pVisCtx          = &pW->tactEnv.vis;
+
+    memset(&killHooks, 0, sizeof(killHooks));
+    killHooks.pfnCheckBattleEnd = World_TactKillBattleEndThunk;  /* 0x4EFc8 */
+    killHooks.pShotHooks        = &pW->sTactShotHooks;
+    killHooks.pUser             = pW;
+
+    memset(&prox, 0, sizeof(prox));
+    prox.pCombat        = &combat;
+    prox.pShotHooks     = &pW->sTactShotHooks;
+    prox.pRosters       = &pW->sTactRosters;
+    prox.pGeom          = &pMap->geom;
+    prox.pfnLookupCell  = World_TactLookupCell;
+    prox.pLookupUser    = pW;
+    prox.paSteps        = pW->abTactVisSteps;            /* byte_AD720 */
+    prox.pbBlastScanFlag = &pQ->gap_70112[0];            /* unk_157198 + 70112 */
+    prox.pFocus         = &pW->tactEnv.focus;
+    prox.pCursor        = &pW->tactEnv.cursor;
+    prox.pbViewMoved    = &pW->bMapSlot8Byte1;           /* BYTE1(apUiSlotsA[8]) */
+
+    sideLists.apXcom  = pMap->apXcomUnits;
+    sideLists.nXcom   = pMap->nXcomCount;
+    sideLists.apEnemy = pMap->apEnemyUnits;
+    sideLists.nEnemy  = pMap->nEnemyCount;
+
+    memset(&fire, 0, sizeof(fire));
+    fire.geom               = pMap->geom;
+    fire.pfnLookup          = World_TactLookupCell;
+    fire.pUser              = pW;
+    fire.pnLayerScratch     = (i8 *)&pW->tactEnv.cursor.nFlags;
+    fire.pnMaxLayerClamp    = &pMap->nMaxLayerClamp;
+    fire.pnAnimPhase        = &pMap->nAnimPhase;
+    fire.pnShotCount        = &pMap->nShotCount;
+    fire.pnBurstShots       = &pMap->nBurstShots;       /* 0x28 Map_nBurstShots */
+    fire.pbFireStatus1      = &pMap->bFireStatus1;      /* 0x51 */
+    fire.pbFireStatus9      = &pMap->bFireStatus9;      /* 0x59 */
+    fire.pbFallDamagePending = &pW->bMapFire2;          /* 0x52 byte_113A0A */
+    fire.pbThrowPending     = &pMap->bTrajHitStop;      /* 0x1406D */
+    fire.pbFireHitResult    = &pMap->bFireHitResult;    /* 0x1406C */
+    fire.pbEnemySpotted     = &pMap->bEnemySpotted;     /* 0x4E48 unk_118800 */
+    fire.pnFireTickProgress = &pMap->nFireTickProgress;
+    fire.pnFireSlot         = &pMap->nFireArg5;         /* 0x1404C nFireArg5 */
+    fire.ppFireObject       = &pMap->pFireArg6;         /* 0x14050 nFireArg6 */
+    fire.pAim               = &pMap->aim;
+    fire.pThrowArc          = &pMap->throwArc;
+    fire.pTactCtx           = &pMap->tact;
+    fire.pVisCtx            = &pW->tactEnv.vis;
+    fire.apXcomUnits        = pMap->apXcomUnits;
+    fire.pnXcomCount        = &pMap->nXcomCount;
+    fire.pCombat            = &combat;
+    fire.pShotHooks         = &pW->sTactShotHooks;
+    fire.pRosters           = &pW->sTactRosters;
+    fire.apHits             = pMap->aHitWindow;         /* Map.gap_TrajRest @ 0x4EBC */
+    fire.apHitsSave         = pMap->aHitWindowSave;
+    fire.pShotOut           = &pW->sTactShotOut;
+    fire.pFont              = pW->pFont;
+    fire.pfnArmorTuWarn     = Map_ArmorTuWarnCb;
+    fire.pfnPushStatus      = Map_PushStatusCb;
+    fire.pfnUpdateVisibility = Map_UpdateVisibilityCb;
+    fire.pCallbackUser      = &pW->sTactMoveWiring;
+
+    memset(&fall, 0, sizeof(fall));
+    fall.geom               = pMap->geom;
+    fall.pfnLookup          = World_TactLookupCell;
+    fall.pUser              = pW;
+    fall.pnLayerScratch     = (i8 *)&pW->tactEnv.cursor.nFlags;
+    fall.pnMaxLayerClamp    = &pMap->nMaxLayerClamp;
+    fall.pnAnimPhase        = &pMap->nAnimPhase;
+    fall.pnFireTickProgress = &pMap->nFireTickProgress;
+    fall.pbEnemySpotted     = &pMap->bEnemySpotted;
+    fall.pbFallDamagePending = &pW->bMapFire2;
+    fall.pbThrowPending     = &pMap->bTrajHitStop;
+    fall.pbTickHold         = &pW->bMapTickHold;
+    fall.pnUiScreen         = &pW->nUiScreen;
+    fall.ppSelWeapon        = &pMap->pSelWeapon;
+    fall.ppThrowTarget      = &pMap->pThrowTarget;
+    fall.ppLookCommitUnit   = &pMap->pLookCommitUnit;   /* 0x15088 unk_128A40 */
+    fall.pbLookCommitFlag   = &pMap->bLookCommitFlag;   /* 0x1508C unk_128A44 */
+    fall.pnCursorX          = &pW->tactEnv.cursor.nX;
+    fall.pnCursorY          = &pW->tactEnv.cursor.nY;
+    fall.pnMeleeCellX       = &pMap->nMeleeCellX;       /* unk_1279F8 @ 0x14040 */
+    fall.pnMeleeCellY       = &pMap->nMeleeCellY;
+    fall.pnMeleeCellLayer   = &pMap->nMeleeCellLayer;
+    /* The throw flight's end is the SECOND sample slot of the multi-target arrays: unk_1278A8
+     * = Map+0x13EF0 = adMtX[1], and the same pair offsets on Y and Z. */
+    fall.pdThrowX           = &pMap->adMtX[1];
+    fall.pdThrowY           = &pMap->adMtY[1];
+    fall.pdThrowLayer       = &pMap->adMtZ[1];
+    fall.apXcomUnits        = pMap->apXcomUnits;
+    fall.apEnemyUnits       = pMap->apEnemyUnits;
+    fall.pnXcomCount        = &pMap->nXcomCount;
+    fall.pnEnemyCount       = &pMap->nEnemyCount;
+    fall.pLists             = &sideLists;   /* counts by value: the recorded separate issue */
+    fall.pTactCtx           = &pMap->tact;
+    fall.pVisCtx            = &pW->tactEnv.vis;
+    fall.pKillCtx           = &kill;
+    fall.pKillHooks         = &killHooks;
+    fall.pProximity         = &prox;
+    fall.pRosters           = &pW->sTactRosters;
+    fall.pStatus            = &pMap->status;
+    fall.pStatusHooks       = &pW->sTactStatusHooks;
+    fall.pSelectCtx         = &pW->tactEnv.select;
+    fall.pCursorPos         = &pW->tactEnv.cursorPos;
+    fall.pszTransformName   = pMap->aTransformName;
+    fall.bLightEnabled      = pW->bMapLightEnabled != 0;
+    fall.pLightmap          = pW->abTactLightmap;
+    fall.pfnTryOpportunityFire = World_TactFallTryOpportunityThunk;
+    fall.pfnCheckBattleEnd  = World_TactFallBattleEndThunk;   /* 0x53318 / 0x53bd4 */
+    fall.pfnPushStatus      = Map_PushStatusCb;
+    fall.pfnPushForcedText  = World_TactPushForcedThunk;
+    fall.pszAlienControlSuffix = (const char *)pW->pAssets->pTextRecs
+                                 + PUFO_TEXT_REC_STRIDE * PUFO_TXTREC_ALIEN_CONTROL;
+    fall.pCallbackUser      = &pW->sTactMoveWiring;
+
+    memset(&tick, 0, sizeof(tick));
+    tick.pTactCtx      = &pMap->tact;
+    tick.pHooks        = &pW->sTactTickHooks;
+    tick.pMoveCtx      = &move;
+    tick.pFireCtx      = &fire;
+    tick.pFallCtx      = &fall;
+    tick.pfnLookup     = World_TactLookupCell;
+    tick.pLookupUser   = pW;
+    tick.pGeom         = &pMap->geom;
+    tick.pAim          = &pMap->aim;
+    tick.ppSelUnit     = &pMap->pSelUnit;
+    tick.apXcomUnits   = pMap->apXcomUnits;
+    tick.pMapTactical  = pQ;
+    tick.pbTickHold    = &pW->bMapTickHold;
+    tick.pbFrameScratch = &pW->bMapFrameScratch;
+    tick.pnUiSlot10    = &pW->nMapUiSlot10;
+
+    (void)Tact_TickActiveUnit(pQ, &tick);
+}
+
 bool World_GameTickOnce(PufoWorldState *pW)
 {
     GameTickCtx ctx;
@@ -1857,12 +2395,10 @@ bool World_GameTickOnce(PufoWorldState *pW)
 
     hooks.pfnClearFrameScratch = World_TactClearFrameScratch;
     hooks.pUser                = pW;
-    /* Tact_TickActiveUnit @ 0x54130 needs the walker's whole TactTickCtx (the three phase
-     * processor envs, the aim state, the map geometry). Those belong to the tactical runtime
-     * unit; until they are wired the walker stays unhooked -- on an empty queue the original's
-     * walker early-returns anyway, so no mission behavior is skipped at the launch frame.
-     * Recorded deviation. */
-    hooks.pfnTickActiveUnit    = NULL;
+    /* Tact_TickActiveUnit @ 0x54130 runs over the live frame (Part 50): the thunk rebuilds the
+     * three processor contexts from pTactMap/tactEnv and dispatches. The phase gate at 0x275CC
+     * (skip when bPhaseActive && slot8Byte1) is GameTick_OnTimer's own, applied before this call. */
+    hooks.pfnTickActiveUnit    = World_TactTickActiveUnit;
 
     return GameTick_OnTimer(&ctx,
                             pW->bTactLive ? &pW->pTactMap->status : NULL,
@@ -2128,10 +2664,11 @@ bool World_MissionCancelEnd(PufoWorldState *pW)
     if (pW->bTactFlag == 0) {
         return false;                                    /* 0x16208: outside a mission there is nothing to cancel */
     }
-    /* The in-flight gate (0x16218..0x16260). Map_bTrajHitStop @ 0x127A25 has no shell owner yet
-     * (the shot-resolution unit will add one) and reads 0 here -- recorded deviation. */
+    /* The in-flight gate (0x16218..0x16260). Map_bTrajHitStop @ 0x127A25 = Map+0x1406D is the
+     * GameMap byte since Part 50, so all four cells now read live. */
     if (pW->bMapFire2 != 0
             || (pW->pTactMap != NULL && pW->pTactMap->bFireStatus1 != 0)
+            || (pW->pTactMap != NULL && pW->pTactMap->bTrajHitStop != 0)
             || (pW->pTactState != NULL && pW->pTactState->bQueueActive != 0)) {
         if (pW->bMapTickHold == 0) {
             return false;

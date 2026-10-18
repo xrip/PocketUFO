@@ -6,6 +6,22 @@
 #include "game/pufo_vistry.h"   /* Map_ScanBlastFootprint, the second gate on every proximity device */
 #include "util/pufo_rand.h"
 
+/* byte_AA968 @ 0xAA968, the slot/sort-key to research-topic map, read out of the image.
+ * The bytes past 51 are all zero there; a weapon whose sort key lands on one of them
+ * is gated by topic 0, exactly as the original's unbounded LDRB does. */
+const u8 g_abSlotTopicGate[PUFO_SLOT_TOPIC_GATE_COUNT] = {
+    0, 1, 6, 9, 2, 7, 10, 4, 3, 8, 5, 11, 13, 12, 18, 23, 24, 22, 21, 25, 14, 15, 17, 20, 16,
+    0, 0, 0, 0, 0, 0,
+    97, 98, 99, 100, 101, 1, 113, 1, 114, 1, 1, 1, 1, 1, 1, 1, 1, 1, 115, 117, 116,
+    /* 52..155: zero in the image */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0
+};
+
 size_t Combat_HitIndex(i32 nRow, i32 nCol, i32 nSlot)
 {
     return (size_t)(4 * (PUFO_SPLASH_SPAN * nRow + nCol) + nSlot);
