@@ -1,23 +1,51 @@
 # HANDOFF — PocketUFO Win64 recreation
-Date: 2026-10-18. HEAD before this edit: `27aff71`. Unit 107 continues: it is `Geoscape_Draw`
-@ 0x8c180 (33,744 B). This commit carries its twenty-fourth part -- the dispatcher head
-0x8C180..0x8C1B0 with its 21 table words, and the cases 0/2 radar branch 0x8C214..0x8C29C: the frame's
-last 208 unported bytes, ported as `Geoscape_Draw(const GeoscapeDrawEnv *)` plus
-`Geoscape_DrawRadarArm`. 72 new checks, 16/16 mutations caught, 15 IDB comments, 1 global named
-(0x1864F8 -> `sGeoscapeScreenBlock`), 3 ledger rows. **The frame is now complete as code -- head, all 21
-arms, the shared frame end. What is left of unit 107 is wiring, not code:** `RenderFrameEnv.pfnGeoscapeDraw`
-has no implementation because the shell owns no `nGeoscapeScreen`, no 0x186BC0 world-glyph record and no
-per-screen UI block. After that the platform glue (137 uncited functions, 2,040 B of Win32/CRT/FMOD thunks
-and CRT exit tables) is the last gap before a full recompilation.
-Parts 1..23 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
+Date: 2026-10-18. HEAD before this edit: `dc4504c`. Unit 107 is `Geoscape_Draw` @ 0x8c180 (33,744 B);
+its code finished at part 24 and this commit is its twenty-fifth part -- **the wiring**, the shell side
+that makes the frame run. `RenderFrameEnv.pfnGeoscapeDraw` is `World_DrawGeoscapeFrame` over a new
+`GeoscapeFrameState` (one env per arm, the frame globals, the pointer env), `App_DrawFrame` takes the
+`Render_Frame @ 0x22310` geoscape branch, and `TactInputHooks.pfnGeoscapePointer/Up` drive the real
+`Geoscape_OnPointer @ 0x872d0` / `Geoscape_OnPointerUp @ 0x89450`. 57 new checks in
+tests/test_geoscapeframe.c, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, and one
+real port bug fixed: `Blit_ClipGlyph` measured its right/bottom cut from the already-clamped x/y, so the
+wrapped map copy (x = -280, an 800-wide glyph on a 240-wide surface) clipped to -40 columns and painted
+nothing -- the frame now paints 76800 of 76800 surface pixels with the exact palette lookup, and
+`pocketufo --new-game --dump-frame` shows the earth100 world with the globe hover's rules on it.
+**Unit 107 is now complete as code and as a running frame.** What is left of it: the radar arm's own
+`RadarUpdateEnv` and `aRadarControls @ 0x159684`, the panel's four screen openers, the `Smap_*` pointer
+handlers, the other nineteen arms' screen state, and the geoscape clock tick that advances the panel
+animation. After that the platform glue (137 uncited functions, 2,040 B of Win32/CRT/FMOD thunks and CRT
+exit tables) is the last gap before a full recompilation.
+Parts 1..24 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
 `79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`,
 the attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the
 mission-site / travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel
 `bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`,
 the frame end `84cdb03`, the thin screen arms `7623894`, the ufopaedia and psi arms `219899e`, the soldier
 arms `5eedf75`, the base-facility arm `ca4c9bc`, the base-info and funding arms `51267b6`, the hangar arm
-`2b030eb` and the placement arm `27aff71`.
-What this part found:
+`2b030eb`, the placement arm `27aff71` and the `0x186BC0` world-record correction `dc4504c`.
+
+What this unit found:
+
+- **A clip that re-derives its far edges from clamped input drops whole glyphs.** The fix is the
+  evidence: 0xA30B8/0xA30BC save `x + nGlyphW` / `y + nGlyphH` from the CALLER's coordinates and
+  0xA310C..0xA3120 subtract against those saved edges. Measuring from x = 0 instead gives
+  `800 - 280 - (800 - 240) = -40` and the copy is dropped -- and the dropped copy is the ONLY one of
+  the four that reaches the surface, so the geoscape map was invisible while every coverage figure
+  counted the function as ported. M1 in the mutation sweep is exactly that mutant.
+- **Two behaviours that look like bugs are the original's.** `Game_StartNew` 0x945D4/0x945E0 stores 1
+  into `bPlacementPending`, so a new game takes the chain tail's 0x91D98 BNE and blits NO close control;
+  and the press arm 0x87D74/0x87D7C stores the pen into the view's `+0x14/+0x18` before the call at
+  0x87D14 while `Smap_ScrollBy` 0x820F4..0x82114 adds that stored value straight back, so a press moves
+  the camera nothing. The camera moves on the event that reaches DragDone without re-storing.
+- **The globe hover is behind the panel animation.** 0x67490 stops it whenever `Ui_AnimExpandBlit`
+  (mode 3, `nW2 = 50 * progress`) has not reached full width, which is why the three sweep globals
+  (0x159DF8/0x159DFC/0x159E00) stay 0 on the first frames and why the animation needs the geoscape
+  clock tick -- still an open item.
+- **Coverage does not see this class of defect at all.** `coverage.py` credits a function once its start
+  address is cited; `Geoscape_Draw` has been credited since `5917656`, and the frame it credits drew
+  nothing. The pixel-exact test, not the coverage number, is what found it.
+
+Carried from part 24 -- what that part found:
 
 - **The arm's fill colours are pure arithmetic, so every colour claim is an exact pixel.**
   `Blit_CopyToXY` writes `((idx >> 3) << 11) + 32 * (mid >> 2) + (low >> 3)` (src/pufo/render/pufo_render.c:242),
@@ -96,13 +124,15 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 60
-                                             Total Test time (real) = 4.26 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 61
+                                             Total Test time (real) = 5.53 sec
 ```
 
-In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
-three already fail at `04f1155` (checked by building that commit in a clean worktree with the same
-ClangCL toolset), so they are not from the last step. They are Debug-CRT artefacts — `test_save` reads
+In **Debug** three suites failed on this run: `test_geoscape`, `test_plane` and `test_titles`, while
+`test_save` and `test_template` -- intermittent in earlier runs -- passed. `test_titles` and `test_save`
+already fail at `04f1155` (checked by building that commit in a clean worktree with the same ClangCL
+toolset) and `test_geoscape`'s one failure was checked against this step by stashing its `src/pufo`
+edits and rebuilding the same target in the same build directory. None came from the last step. They are Debug-CRT artefacts — `test_save` reads
 the `0xCDCDCDCD` uninitialised-heap marker, `test_template` asserts that a `malloc` after a `free`
 returns a different pointer, and `test_titles` disagrees with `Titles_DrawBackdrop @ 0x1e630` about
 whether a scroll of 0 draws a credit row. The first two are test bugs; the third needs a fresh ARM
@@ -1515,7 +1545,11 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 56 test suites, 11980 checks, all passing.
+- 61 test suites, 17729 checks, all passing (Release).
+- The geoscape frame renders in the built exe: `pocketufo --new-game --dump-frame` draws the 800 x 400
+  earth100 map through the clipped wrap with the new-base globe hover's rules and panel on it, and the
+  pen reaches `Geoscape_OnPointer @ 0x872d0` / `Geoscape_OnPointerUp @ 0x89450` through
+  `TactInputHooks`.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
@@ -1525,8 +1559,10 @@ It is a game convention, not a port bug. Do not "fix" it.
   titles animation cluster are ported and tested.
 
 What does **not** work yet: there is no end-to-end playable session. `Tact_InitMission` is ported and
-the tactical mission now runs end to end in the test fixture, but nothing in the built executable calls
-it — the geoscape UI that would start a mission is not ported.
+the tactical mission now runs end to end in the test fixture, and the geoscape frame now draws and takes
+the pen in the built exe, but the geoscape actions that would start a mission are still unwired in the
+shell: the panel's four screen openers (0x85194 / 0x852b8 / 0x84d18 / 0x84bf8), the `Smap_*` pointer
+handlers and the radar arm's own env.
 
 ---
 

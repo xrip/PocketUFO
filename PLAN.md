@@ -2970,10 +2970,13 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - And again with `MapView_DrawIsoLayer`: `pufo_isodraw.obj` now reaches
     `UiControl_BlitActivePad` through `pufo_tacthud.obj`, so `test_isodraw` links `pufo_ui` too —
     eighteen of the fifty-one test targets now have to.
-- [ ] Three test targets fail in the **Debug** configuration and pass in Release. All three already
-  fail at `04f1155` — verified by building that commit in a clean worktree with the same ClangCL
-  toolset — so none of them came from the `Tact_InitMission` step. They are Debug-CRT artefacts:
-  uninitialised memory and allocator block reuse, both of which the tests assume away.
+- [ ] Five test targets have been seen failing in the **Debug** configuration while passing in Release,
+  and which three of them fail moves from run to run. Three (titles, save, template) already fail at
+  `04f1155` — verified by building that commit in a clean worktree with the same ClangCL toolset — so
+  none of them came from the `Tact_InitMission` step; `test_geoscape`'s one failure was verified the
+  same way against the frame-wiring step (its `src/pufo` edits stashed, same build directory, same
+  check failing). They are Debug-CRT artefacts: uninitialised memory and allocator block reuse, both
+  of which the tests assume away.
   - `test_titles`: `Titles_DrawBackdrop @ 0x1e630` returns 3 at a scroll of 0 but still draws a
     credit row, while the test asserts it draws none. Either the row rule or the test is wrong;
     needs a fresh ARM read of `0x1e630`.
@@ -2982,6 +2985,10 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - `test_template`: asserts that `MapTemplate_Load` produced a *different* `pBlob` pointer than the
     one it freed. The allocator is free to reuse the block, so the check passes or fails with heap
     state; it passed on rerun. This is the pointer-identity trap already noted in `HANDOFF.md`.
+  - `test_geoscape`: "the craft's display name lands in the 0x186488 caption scratch" compares two
+    buffers that the Debug CRT has not filled the same way; it passes in Release. Pre-existing.
+  - `test_plane`: failed in the Debug run that also showed `test_geoscape`'s failure, passed in the
+    Debug run before it and in both Release runs. Not yet looked at; the same class.
   These are not folded into the porting steps. They need their own pass.
 - [ ] `Tact_LoadPalettes(i32 nGamma)` / `Tact_BuildPaletteLuts(i32 nGamma)` take an argument the
   original does not: in ARM both take none, and `Tact_BuildPaletteLuts` reads `Map_nGamma @ 0x128AB8`
@@ -3210,6 +3217,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the hangar arm (`Geoscape_Draw` 0x9309C..0x93DD4, screen 6: the pad word that is also a 108-byte control block, the store and nav pairs at +0x64/+0x68 and +0x5C/+0x60, the cursor-tracking gate on the root block's +0x35 byte, the crew-slot loop with its unbounded control index and its twice-drawn "1"/"2" markers, the caption pair gated on Ship.bCanDogfight, the stat panel with widths truncated to a signed byte, the stock column reading apObjects[52], [53], [54], --, [105], [55] through auPerBaseVal, the laser cannon's unmeasured "-", and the doubled row counter that puts the rows at y 112,152,192,232,272,312 and makes the three rails 20*(6+matched) tall; 53 new checks, 37/38 mutations caught with one proven equivalence, 25 IDB comments, 4 globals named and typed, the 108-byte BasePlaneScreen type applied at 0x161A48, 3 bugs.tsv rows and 4 stale "not ported" header claims fixed) | 60/60 (Release) | 17496 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the placement arm (`Geoscape_Draw` 0x91DC8..0x92ADC, screen 1: the THREE side rails with x 210 as the divider case 7 has no equivalent, the rail halves overlapping at y 151..168 with the climbing pass winning the crossing, the edge rails' flat colour 7 being the side rails' rect height left in R5, the #0x80 vs #0x78 immediates that give the top row a 7-pixel gap and the bottom row none, the ten nav controls at 0x159888 with the original's own null test, the close control moved to (194,4) before its blit, ten captions centred on 60 and 180 drawn BEFORE the callees (whose 36-glyph blank backdrop erases three of their five rows), the cursor block that MOVES nSmapTapX/nSmapTapY for cell kinds 9..12 and stores them back, the 64x64 vs 32x32 cursor with their 0x63 and 0x43 bottom bars, the 10*(nMapPhase+15) colour, the flag-clearing empty cell, the fixed (6,16) facility label, the map control positioned from the truncated label width with TEXTS[1240] centred on it, and the failure panel whose low colour is (u8)0x159768 and whose second triple reads three lang.dat records that are empty; 103 new checks, 14/15 mutations caught with one proven equivalence, 34 IDB items (29 comments, 5 globals named or retyped), 7 bugs.tsv rows) | 60/60 (Release) | 17599 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 | the dispatcher head and the cases 0/2 radar branch (`Geoscape_Draw` 0x8C180..0x8C1B0 and 0x8C214..0x8C29C, the frame's last 208 bytes: the id -> arm table as `CMP #0x14` / `ADDLS PC,PC,R0,LSL#2` over the 21 words at 0x8C1B4..0x8C20C, the caller's root block stored as pObj at 0x8C1A4 while 0x8C238 RELOADS R7 with the literal 0x1864F8, var_1A4 written only at 0x8D4DC and read only at 0x8D628, case 20 as the only id that falls into 0x944B4 `BaseAtScreen_Draw`, and the radar half -- strip-pad blit, thirteen root widgets counted through dword_186B08, a rect whose x/y/uWidth/uHeight come straight out of the pad header and whose 0x3C/0x78/0x82/0x96 blend lands on top of that pad, then `RadarScreen_Update` (which drops its argument), then straight to the frame end with no chrome, no crosshair and no status panel); 72 new checks, 16/16 mutations caught, 15 IDB comments, 1 global named, 3 bugs.tsv rows) | 60/60 (Release) | 17671 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
+| the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 Coverage columns of the geoscape-panel rows are re-measured here. `Geoscape_Draw @ 0x8c180` is
 
@@ -3222,7 +3230,18 @@ then; one older row carried 965/1103 and 563008 written from memory. Note what t
 and the frame end at 0x944B8..0x94550 now have port code. The coverage figures did not move: `coverage.py`
 credits a whole function once its start address is cited, and `Geoscape_Draw` was credited long before this.
 
-Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
-fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
-commit in a clean worktree with the same ClangCL toolset), so none came from this step. See "Separate
-issues".
+Part 25 (the frame wired into the shell) moves no coverage figure either, and that is the honest
+reading: it cites no new original function. What it changes is that the credited code now RUNS from the
+app -- `pocketufo --new-game --dump-frame` draws the earth100 map through the clipped wrap with the globe
+hover's rules at x 120 / y 118 -- and the `Blit_ClipGlyph` defect it exposed was worth 76800 unpainted
+surface pixels that every earlier coverage figure counted as covered.
+
+Release is the documented configuration and it is green: 61/61 with the wiring in. In **Debug** the
+picture moves from run to run -- this run failed `test_geoscape`, `test_plane` and `test_titles` (3/61)
+while `test_save` and `test_template`, the two the last step called flaky, passed; earlier runs recorded
+the opposite mix, and `test_titles`/`test_save` were shown to fail already at `04f1155` (verified by
+building that commit in a clean worktree with the same ClangCL toolset). `test_geoscape`'s single Debug
+failure was checked directly against this step: with the step's `src/pufo` edits stashed and the same
+build directory, the same check fails ("the craft's display name lands in the 0x186488 caption scratch"),
+so it is not from the wiring. Every failing Debug check seen so far is a string or counter compared
+against MSVC's uninitialised-memory pattern. See "Separate issues".

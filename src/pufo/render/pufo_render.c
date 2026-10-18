@@ -624,13 +624,21 @@ typedef struct GlyphClip {
 static const u8 *Blit_ClipGlyph(i32 *px, i32 *py, const u8 *pIdx,
                                 i32 nGlyphW, i32 nGlyphH, GlyphClip *pOut)
 {
+    /* 0xA30B8/0xA30BC compute the glyph's far edges from the CALLER's x and y, and the two
+     * clamps at 0xA310C..0xA3120 subtract against those saved edges. They are not re-derived
+     * from the clamped x/y, which is what makes a partially off-surface glyph keep exactly the
+     * columns that are on surface: with x = -280, nGlyphW = 800 and a 240-wide surface the
+     * original clips to 800 - 280 - (520 - 240) = 240 columns, while re-measuring from x = 0
+     * would give 800 - 280 - (800 - 240) = -40 and drop the whole blit. */
     i32 x = *px;
     i32 y = *py;
     i32 nW = nGlyphW;
     i32 nH = nGlyphH;
+    const i32 nFarX = x + nGlyphW; /* R8 at 0xA30B8 */
+    const i32 nFarY = y + nGlyphH; /* R9 at 0xA30BC */
 
     if (!(x <= g_blitState.nSurf0 && y <= g_blitState.nSurf1
-          && x + nGlyphW >= 0 && y + nGlyphH >= 0)) {
+          && nFarX >= 0 && nFarY >= 0)) {
         return NULL;
     }
     if (x < 0) {
@@ -643,11 +651,11 @@ static const u8 *Blit_ClipGlyph(i32 *px, i32 *py, const u8 *pIdx,
         nH   += y;
         y     = 0;
     }
-    if (x + nGlyphW > g_blitState.nSurf0) {
-        nW -= (x + nGlyphW) - g_blitState.nSurf0;
+    if (nFarX > g_blitState.nSurf0) {
+        nW -= nFarX - g_blitState.nSurf0;
     }
-    if (y + nGlyphH > g_blitState.nSurf1) {
-        nH -= (y + nGlyphH) - g_blitState.nSurf1;
+    if (nFarY > g_blitState.nSurf1) {
+        nH -= nFarY - g_blitState.nSurf1;
     }
     if (nW <= 0 || nH <= 0) {
         return NULL;

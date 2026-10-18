@@ -2976,6 +2976,39 @@ typedef struct GeoscapeDrawEnv {
  * Render_Frame returns on its geoscape branch. */
 i32 Geoscape_Draw(const GeoscapeDrawEnv *pEnv);
 
+/* ---- the geoscape frame's own globals ---------------------------------------------------
+ *
+ * Seven scalars live in .data, are written by one frame and read by the next, and belong to no
+ * screen: the map arm writes the first, the crosshair tail the next three, and Geoscape_OnPointer
+ * the last three. The original keeps them as loose globals; the frame state owns them so one owner
+ * survives from one frame to the next. */
+typedef struct GeoscapeFrameGlobals {
+    i32 nOverlayOriginX;      /* nSmapOverlayOriginX @ 0x186C20: written at 0x8C2F4..0x8C3C8, read
+                               * back by RadarScreen_BlitMapBackdrop (0x5EBF0) and Geoscape_DrawScreen
+                               * (0x6C250). */
+    i32 nCrosshairX;          /* nSmapCrosshairX @ 0x186BC8 */
+    i32 nCrosshairY;          /* nSmapCrosshairY @ 0x186BCC */
+    u8  bCrosshairPending;    /* bSmapCrosshairPending @ 0x1870B0: the tail's gate at 0x8C69C */
+    i32 nTapCooldown;         /* nRadarCooldownR @ 0xAC218: the tail parks it at 0xFF (0x8C754) and
+                               * Geoscape_OnPointer sets 255 on a strateg hit (0x87C84) or 0 on a drag. */
+    i32 nCursorX;             /* nSmapCursorX @ 0x186BD0, stored as a halfword at 0x8731C */
+    i32 nCursorY;             /* nSmapCursorY @ 0x186BD4, stored as a halfword at 0x872F8 */
+    u8  bDragActive;          /* bGeoscapeDragActive @ 0x187074, byte 0: 1 during a globe drag
+                               * (0x87D58), 0 when a press misses (0x87C2C) or on release (0x896BC). */
+} GeoscapeFrameGlobals;
+
+/* The owner of these globals also holds one of every env above -- PufoWorldState in the shell, a
+ * local set in the tests. The map arm's two pads and the screen id change per frame with the zoom
+ * set the view selected, so the owner refreshes them before every Geoscape_Draw call.
+ *
+ * What the shell wiring covers: screens 0 and 2 (the map view, the crosshair, the status panel with
+ * its chain tail and the globe hover) and the frame end. The other nineteen arms keep a NULL env:
+ * the shell owns none of the screen state they read -- the research, manufacturing, craft, transfer,
+ * buy/sell and ufopaedia blocks and their controls. Geoscape_Draw dereferences several of those arm
+ * env pointers without a test, so a screen id whose arm is unwired faults in the port while the
+ * original cannot reach it (its globals are always live); the shell keeps the screen id at the wired
+ * screens for that reason. */
+
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *

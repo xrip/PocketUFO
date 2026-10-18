@@ -191,6 +191,10 @@ static void App_HookNewGame(void *pUser)
     memset(&hooks, 0, sizeof(hooks));
     hooks.pfnLoadPads = App_LoadPads;
     hooks.pfnPlaySample = App_HookPlaySampleI; /* the message-list samples */
+    /* The geoscape frame's control plumbing: the same pad blits and the Map+0x60 word the start-menu
+     * pointer path uses, plus the colour pair the menu draws with. */
+    hooks.pHit  = &g_pointerWorld.hit;
+    hooks.pColor = &g_color;
 
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
     printf("pocketufo: new game: %d funds, %d bases, %d soldiers, %d craft, screen %d, zoom %d\n",
@@ -246,6 +250,9 @@ static void App_HookQuit(void *pUser)
 }
 
 static void App_DrawFrame(void);        /* defined below with the render path */
+static i32  App_GeoscapeDrawThunk(void *pUser); /* Geoscape_Draw, defined with the render path */
+static void App_GeoscapePointerThunk(i32 nX, i32 nY, bool bDown, void *pUser);
+static void App_GeoscapePointerUpThunk(void *pUser);
 static void App_ShutdownStartUi(void *pUser); /* defined below with the start-UI teardown */
 static void App_QuitDisplay(void);      /* defined below with the window teardown */
 
@@ -294,6 +301,8 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pfnPlaySample = App_HookPlaySampleI;
     hooks.pfnRenderFrame = App_DrawFrameHook;
     hooks.pfnStartUiShutdown = App_ShutdownStartUi;
+    hooks.pHit  = &g_pointerWorld.hit;
+    hooks.pColor = &g_color;
 
     {
         i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_options, &hooks);
@@ -437,6 +446,11 @@ static void App_InitStartupUi(void)
     /* Screen 8 (the quit confirmation) answers the back action with App_QuitFromTact @ 0x18e18. The shell
      * never opens the quit dialog, but the seam is wired so the port reproduces the original wiring. */
     g_tactHooks.pfnShutdownQuit = App_HookShutdownQuit;
+    /* Input_OnPointer / Input_OnPointerUp take the geoscape branch when Map.bGeoscapeUi is set
+     * (0x13C98 gate at 0x13CE0, 0x148FC at 0x14908) and hand the pen over to these two seams; the
+     * shell runs them over the world's wired GeoscapePointerEnv. */
+    g_tactHooks.pfnGeoscapePointer   = App_GeoscapePointerThunk;
+    g_tactHooks.pfnGeoscapePointerUp = App_GeoscapePointerUpThunk;
 
     /* The menu-button hooks. */
     memset(&g_startHooks, 0, sizeof(g_startHooks));
@@ -489,12 +503,24 @@ static i32 App_PresentHook(void *pUser)
     return 0;
 }
 
-/* Render_Frame @ 0x22310 for the shell. The shell only ever reaches the start-menu screen
- * (17); the tactical branches need the subsystem envs the shell does not own yet. */
+/* Render_Frame @ 0x22310 for the shell. The original tests Map.bGeoscapeMode (unk_1139FC @
+ * Map+0x44) at 0x2231c, BEFORE Map_nUiScreen, so a world in geoscape mode takes the geoscape branch
+ * whatever the ui screen cell says; the rest is the start menu (17) and the credits (0x10). The
+ * tactical branches need the subsystem envs the shell does not own yet. */
 static void App_DrawFrame(void)
 {
     MainMenuEnv    mm;
     RenderFrameEnv rf;
+
+    if (g_bWorldReady && g_world.bGeoscapeUi != 0) {
+        memset(&rf, 0, sizeof(rf));
+        rf.nUiScreen       = g_nUiScreen;
+        rf.bGeoscapeMode   = 1;
+        rf.pfnGeoscapeDraw = App_GeoscapeDrawThunk;
+        rf.pfnPresent      = App_PresentHook; /* the frame end's own thunk, not this one (0x22328) */
+        (void)Render_Frame(&rf);
+        return;
+    }
 
     /* Screen 17 is the start menu (GameUI_InitStartup); 0x10 is the credits (Titles_Init). No
      * other screen has a shell env yet. */
@@ -521,6 +547,31 @@ static void App_DrawFrame(void)
     rf.pTitlesAnim = &g_titlesAnim;
     rf.pfnPresent  = App_PresentHook;
     (void)Render_Frame(&rf);
+}
+
+/* Render_Frame's geoscape hook (0x2232C hands over the 0x1864F8 screen block; the port hands the
+ * shell's world instead). It runs Geoscape_Draw @ 0x8C180 over the wired frame envs, and the frame
+ * end presents through App_PresentHook -- which is why Render_Frame returns this value without
+ * presenting anything itself (0x22328 / 0x22330). */
+static i32 App_GeoscapeDrawThunk(void *pUser)
+{
+    (void)pUser;
+    return World_DrawGeoscapeFrame(&g_world, App_PresentHook, NULL);
+}
+
+/* The geoscape pointer path Input_OnPointer calls: Geoscape_OnPointer @ 0x872d0 with the pen in logical
+ * 240x320 coordinates (WM_LBUTTONDOWN feeds them straight through, 0xa03ec), and Geoscape_OnPointerUp @
+ * 0x89450, which re-reads the pair OnPointer stored rather than taking coordinates. */
+static void App_GeoscapePointerThunk(i32 nX, i32 nY, bool bDown, void *pUser)
+{
+    (void)pUser;
+    World_GeoscapePointer(&g_world, nX, nY, bDown);
+}
+
+static void App_GeoscapePointerUpThunk(void *pUser)
+{
+    (void)pUser;
+    World_GeoscapePointerUp(&g_world);
 }
 
 /* The WM_TIMER 0xC352 body (PocketUFO_WndProc @ 0xA0944): advance the anim phase counter
@@ -579,11 +630,13 @@ static void App_MapPointer(LPARAM lParam, i32 *pnX, i32 *pnY)
  * fires. */
 static void App_PointerLogical(i32 nX, i32 nY, bool bDown)
 {
-    if (!g_bStartupUi) {
+    const bool bGeoscape = (g_bWorldReady && g_world.bGeoscapeUi != 0);
+
+    if (!g_bStartupUi && !bGeoscape) {
         return;
     }
     g_tactState.nUiScreen  = (u16)g_nUiScreen;
-    g_tactState.bGeoscapeUi = false;
+    g_tactState.bGeoscapeUi = bGeoscape; /* Map.bGeoscapeUi @ Map+0x44, the gate at 0x13CE0 */
     g_pointerWorld.nListMode = g_nListMode;
     Input_OnPointer(&g_tactState, &g_tactHooks, &g_pointerWorld, nX, nY, bDown);
 }
@@ -601,11 +654,13 @@ static void App_OnPointer(LPARAM lParam, bool bDown)
  * row marked under the pointer by the hover path is the one whose handler runs. */
 static void App_OnPointerUp(void)
 {
-    if (!g_bStartupUi) {
+    const bool bGeoscape = (g_bWorldReady && g_world.bGeoscapeUi != 0);
+
+    if (!g_bStartupUi && !bGeoscape) {
         return;
     }
     g_tactState.nUiScreen   = (u16)g_nUiScreen;
-    g_tactState.bGeoscapeUi = false;
+    g_tactState.bGeoscapeUi = bGeoscape; /* the same gate at 0x14908 */
     g_pointerWorld.nListMode = g_nListMode;
     Input_OnPointerUp(&g_tactState, &g_tactHooks, &g_pointerWorld);
 }

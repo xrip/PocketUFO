@@ -69,7 +69,7 @@ static void World_FacBuyThunk(void)
     env.paFac = pW->aFac;
     env.pnFunds = &pW->nFunds;
     env.pbArmed = &pW->bArmedPlacement;
-    env.pbNewBaseMode = &pW->bNewBaseMode;
+    env.pbNewBaseMode = &pW->bFacDone; /* byte_187074[4] @ 0x187078 is bBaseFacDone, one byte */
     env.pnPanelSel = &pW->nPanelSel;
     env.pdwShortfall = &pW->nShortfall1870C8;
     env.pnResidue = &pW->nResidue1870B4;
@@ -92,7 +92,7 @@ static void World_FacToggleThunk(void *pUser)
     pW->facToggleEnv.ppPanel = &pW->pFacPanel;
     pW->facToggleEnv.pnPanelSel = &pW->nPanelSel;
     pW->facToggleEnv.pbArmed = &pW->bArmedPlacement;
-    pW->facToggleEnv.pbNewBaseMode = &pW->bNewBaseMode;
+    pW->facToggleEnv.pbNewBaseMode = &pW->bFacDone; /* the same 0x187078 byte */
     pW->facToggleEnv.abFacilityGrid = pW->abFacilityGrid;
     pW->facToggleEnv.pnSelectedBaseIdx = &pW->nSelectedBase;
     pW->facToggleEnv.paFac = pW->aFac;
@@ -468,7 +468,7 @@ static void World_StartNewHook(void *pUser)
     env.pView = &pW->view;
     env.pZoomSets = pW->sets;
     env.pWorldOut = pW->ui.pWorldSize; /* the pair InitUI allocated at 0x186BC0 */
-    env.pbFlag187080 = &pW->bFlag187080;
+    env.pbFlag187080 = &pW->bUiAnimStarted; /* bUiAnimStarted @ 0x187080 */
     /* The map click's own envs. The rosters and the selected base are refreshed on every click,
      * so only the pointers are wired here. */
     memset(&pW->hangarEnv, 0, sizeof(pW->hangarEnv));
@@ -580,6 +580,9 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
 
     Geoscape_InitUI(&env, 0); /* 0x857f4, mode 0: the new-game branch */
 
+    /* The pads and controls InitUI just created are what the geoscape frame reads. */
+    World_WireGeoscapeFrame(pW, pHooks);
+
     return pW->nLastStartNewRet;
 }
 
@@ -676,6 +679,16 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     pW->world.apRadarPct = pW->abRadarPct;
     pW->world.pTime = &pW->time;
 
+    /* LoadGame renders through the frame (its teardown calls pfnRenderFrame), so the frame envs are
+     * wired before the readers run. On this path Geoscape_InitUI is a stub (Load_HookInitUi), so the
+     * 0x1864F8 pad and control singletons are whatever a previous new game left, or NULL. */
+    pW->pAssets = pAssets;
+    pW->pfnLoadPads = pHooks->pfnLoadPads;
+    pW->pLoadPadsUser = pHooks->pLoadPadsUser;
+    pW->pfnPlaySample = pHooks->pfnPlaySample;
+    pW->pSoundUser = pHooks->pSoundUser;
+    World_WireGeoscapeFrame(pW, pHooks);
+
     memset(&env, 0, sizeof(env));
     env.pszAppDir = pszAppDir;
     env.nSlot = nSlot;
@@ -726,4 +739,287 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     nRet = LoadGame(&dat, &env);
     DatFile_Close(&dat);
     return nRet;
+}
+
+/* ---- the geoscape frame wiring ------------------------------------------------------------
+ *
+ * Geoscape_Draw @ 0x8C180 reaches everything through the 0x1864F8 root block and the loose map and
+ * panel globals; the port takes it all through the envs held in pW->frame. Every pointer here is the
+ * shell's own copy of the original global named in its comment.
+ *
+ * What is NOT wired, and what that means on screen.
+ *   - The radar arm's RadarUpdateEnv (the call at 0x8C298). Its eight sub-envs (the palette cycle, the
+ *     range bar, the fuel and armament readouts, the overlay, the detect line, the ship-removal exits,
+ *     the funding block) need the aRadarControls set at 0x159684 and the radar panel state, which the
+ *     shell does not own. The arm runs only while bRadarScreenActive @ 0x159678 is set, and nothing in
+ *     the shell sets that byte yet, so screens 0 and 2 draw the map arm.
+ *   - The status panel's four screen openers (Geoscape_PrepScreenOpenSfx 0x852b8, Geoscape_PrepScreenOpen
+ *     0x85194, Ui_OpenBaseInfoAlt 0x84d18, Ui_OpenResearch 0x84bf8). Each ends in a tail call into the
+ *     ufopaedia, research or base-info screen's Init over that screen's own block (0x1872E0, 0x160C68,
+ *     the 0x15EF08 panel pointers), none of which the shell owns. UiControl_HitTest tests the handler
+ *     pointer, so the two bottom controls draw and simply do nothing on a click.
+ *   - The same for the panel's strateg-list handlers (Smap_* @ 0x84254..0x84964) and the craft-select
+ *     pair: they take their own Smap envs, which need the strateg item the line refers to.
+ *   - The other nineteen arms of the screen switch, and with them the screen ids they draw. The shell's
+ *     nav controls carry World_NoopClick handlers, so nGeoscapeScreen never leaves 0/2 here, and
+ *     Geoscape_Draw dereferences several unwired arm envs with no test.
+ *   - GeoscapePointerEnv's per-screen fields for those same screens (the strip, transfer, soldier-name,
+ *     craft, build-dialog, research, manufacturing, site-info, buy/sell, screen-16, options and
+ *     base-at blocks) stay NULL. The dispatcher reaches them only from those screen ids. Two of the
+ *     shell-owned ones cannot be expressed yet: apFacCtl wants an array of the two build-dialog
+ *     controls, which the shell holds as two embedded UiControls, and apRadarCtl wants 0x159684's
+ *     control set, which the shell does not build.
+ */
+void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
+{
+    GeoscapeFrameState *pF = &pW->frame;
+    GeoscapeUiState    *pUi = &pW->ui;
+    BootAssets         *pAssets = pW->pAssets;
+    GeoscapePointerEnv *pPtr = &pW->ptrEnv;
+    const UiControlHitCtx *pHit = (pHooks != NULL) ? pHooks->pHit : NULL;
+    GfxColorEnv        *pColor = (pHooks != NULL) ? pHooks->pColor : NULL;
+
+    memset(pF, 0, sizeof(*pF));
+    memset(pPtr, 0, sizeof(*pPtr));
+
+    /* The 0x1864F8 anim root's three bytes: 0x187080, 0x187058 and the frame style at 0x186566, which
+     * the shell keeps as the tenth byte of its region-counter run. */
+    pF->anim.pbStarted   = &pW->bUiAnimStarted;
+    pF->anim.pnProgress  = &pW->cUiAnimProgress;
+    pF->anim.nFrameStyle = (i8)pW->aRegionBuildCount[9];
+
+    /* BaseFac_BuildStatusMsg @ 0x6a4bc, the panel head's call at 0x8C82C. */
+    pF->fac.pTime          = &pW->time;
+    pF->fac.abFacilityGrid = pW->abFacilityGrid;
+    pF->fac.apSiteRecs     = pW->aSiteRecs;
+    pF->fac.paFac          = pW->aFac;
+    pF->fac.aTopics        = pW->aTopics;
+    pF->fac.apCraft        = pW->apCraft;
+    pF->fac.pszMsg         = pW->szLabelScratch;
+    pF->fac.cchMsg         = sizeof(pW->szLabelScratch);
+    pF->fac.pszExtra       = pW->szUiScratchStr;
+    pF->fac.cchExtra       = sizeof(pW->szUiScratchStr);
+    pF->fac.pszScratch     = pW->szScratch;
+    pF->fac.cchScratch     = sizeof(pW->szScratch);
+    if (pAssets != NULL) {
+        pF->fac.apObjects   = pAssets->apObjects;
+        pF->fac.nObjectCount = pAssets->nObjectCount;
+        pF->fac.pTextRecs   = pAssets->pTextRecs;
+    }
+
+    /* The map arm, 0x8C2B0..0x8C690. The two pads and the screen id follow the zoom set, so they are
+     * refreshed every frame; see World_DrawGeoscapeFrame. */
+    pF->map.pView      = &pW->view;
+    pF->map.pWorldBits = (const u8 *)pUi->pWorldSize; /* *pSmapWorldBits @ 0x186BC0: the 4 + 800*400
+                                                       * glyph record InitUI allocated */
+    pF->map.pMapPal    = g_aPalette[PUFO_RADAR_MAP_PAL_SLOT]; /* aPalette + 0x7400 */
+    pF->map.pTime      = &pW->time;
+    pF->map.pnOverlayOriginX = &pF->g.nOverlayOriginX;
+
+    /* The crosshair tail, 0x8C69C..0x8C760. */
+    pF->cross.pChromePad  = pUi->apPad[GEOUI_PAD_186BBC]; /* *pGeoscapeStripPad @ 0x186BBC */
+    pF->cross.pbPending   = &pF->g.bCrosshairPending;     /* bSmapCrosshairPending @ 0x1870B0 */
+    pF->cross.pnCooldownR = &pF->g.nTapCooldown;          /* nRadarCooldownR @ 0xAC218 */
+
+    /* The radar arm, 0x8C214..0x8C29C: everything but RadarScreen_Update's own env. */
+    pF->radar.pbRadarActive = &pW->bRadarScreenActive;    /* bRadarScreenActive @ 0x159678 */
+    pF->radar.pStripPad     = pUi->apPad[GEOUI_PAD_186BBC];
+    pF->radar.apRootCtl     = pUi->apRootCtl;             /* 0x8C238 loads 0x1864F8 + 4*i */
+
+    /* The status panel, 0x8C760..0x91DB0 with its chain tail. */
+    pF->panel.pFac            = &pF->fac;
+    pF->panel.pLines          = &pW->msgLines;            /* the root message list @ 0x158890 */
+    pF->panel.pAnim           = &pF->anim;
+    pF->panel.pColor          = pColor;
+    pF->panel.pCtlSfx         = pUi->apCtl[GEOUI_CTL_18704C]; /* *unk_18704C, the left bottom control */
+    pF->panel.pCtlOpen        = pUi->apCtl[GEOUI_CTL_187024]; /* *unk_187024, the right one */
+    pF->panel.pCtlConfirm     = pUi->apCtl[GEOUI_CTL_186BA4]; /* *pGeoscapeCtlConfirm */
+    pF->panel.pCtlApply       = pUi->apCtl[GEOUI_CTL_186BAC]; /* *pGeoscapeCtlApply */
+    pF->panel.pStatusPanel    = pUi->pStatusPanel;            /* pStatusPanel @ 0x18641C */
+    pF->panel.pbMultiSelectPanel = &pW->bFlag1870A0;          /* byte_18709C[4] @ 0x1870A0 */
+    pF->panel.aTopics         = pW->aTopics;                  /* aResearchTopics @ 0x15EF08 */
+    pF->panel.abResearchActive = pW->abResearchActive;        /* byte_160BBC */
+    pF->panel.pbFinishedTopic = &pW->nFinishedTopic;          /* nResearchFinishedTopic @ 0x15EEF8 */
+    pF->panel.pnShownTopic    = &pW->nShownTopic;             /* nResearchTopicShown @ 0x160C60 */
+    pF->panel.pView           = &pW->view;                    /* nMapW / 2 - 120 is the arm's R8 */
+    pF->panel.pStrategList    = &pW->strategList;             /* the root block's PtrArray at +0x3C */
+    pF->panel.pnActionFail    = (const i32 *)&pW->nShortfall1870C8;   /* dwActionFail @ 0x1870C8 */
+    pF->panel.pnActionFailReason = &pW->nResidue1870B4;               /* dwActionFailReason @ 0x1870B4 */
+    pF->panel.pbMapSelectionFlag = &pW->bMapSelectionFlag;           /* 0x159E84 */
+    pF->panel.pszRadarMsg     = pW->szLabelScratch;                  /* szRadarMsg @ 0x186B10 */
+    pF->panel.pszHyper        = pW->szUiScratchStr;                  /* szUiScratchStr @ 0x186420 */
+    pF->panel.pCtlA           = pUi->apCtl[GEOUI_CTL_186BB4];        /* *pGeoscapeCtlA */
+    pF->panel.pCtlB           = pUi->apCtl[GEOUI_CTL_186BB0];        /* *pGeoscapeCtlB */
+    pF->panel.apCraft         = pW->apCraft;                         /* Map + 0x10AC */
+    pF->panel.apSiteRecs      = pW->aSiteRecs;                       /* aSiteRecs @ 0x186C40 */
+    pF->panel.pnSelectedShipIdx = &pW->nSelectedShipIdx;             /* 0x187054 */
+    pF->panel.pStripPad       = pUi->apPad[GEOUI_PAD_186BBC];       /* re-blitted behind the card */
+    pF->panel.pbInterceptDone = &pW->bInterceptDone;                /* bInterceptDone @ 0x18709C */
+    pF->panel.pCtlReturnBase  = pUi->apCtl[GEOUI_CTL_186BA8];
+    pF->panel.pCtlNewTarget   = pUi->apCtl[GEOUI_CTL_186B9C];
+    pF->panel.pCtlPatrol      = pUi->apCtl[GEOUI_CTL_186B98];
+    pF->panel.pTime           = &pW->time;                           /* 0x159618: GameTime_Pause's byte */
+    pF->panel.paMissionSites  = pW->aMissionSites;                   /* unk_1865C0 */
+    pF->panel.apRootCtl       = pUi->apRootCtl;                      /* 0x1864F8 + 4*i */
+    pF->panel.apClockDigitPads = pUi->apClockDigitPads;              /* apClockDigitPads @ 0x186BF0 */
+    pF->panel.pbUfoCrashPanel = &pW->bFlag18708C;
+    pF->panel.pbSitePanel     = &pW->bFlag187090;
+    pF->panel.pbAlienBasePanel = &pW->bFlag187098;
+    pF->panel.pFinalMissionCtl = pUi->apCtl[GEOUI_CTL_186B8C];      /* pFinalMissionCtl @ 0x186B8C */
+    pF->panel.pbFinalMissionCtl = &pW->bFinalMissionCtlArmed;       /* 0x187068 */
+    pF->panel.apSoldiers      = pW->apSoldiers;                     /* Map + 0x1198 */
+    pF->panel.pnSoldierCount  = (const u16 *)&pW->nSoldierCount;    /* Map + 0x1998, read as a halfword */
+    pF->panel.pnScreenId      = &pW->screen.nGeoscapeScreen;        /* 0x186BC4: 2 picks the hover arm */
+    pF->panel.pGlobeEnv       = &pF->hover;                         /* the call at 0x91D8C */
+    pF->panel.pbPendingRegionId = &pW->bPendingRegionId;            /* bPendingBaseKind @ 0x159DF4 */
+    pF->panel.pbPlacementPending = &pW->bPlacementPending;          /* 0x1870AC */
+    pF->panel.pCloseCtl       = pUi->apCtl[GEOUI_CTL_186B00];       /* *g_pUiCloseCtl @ 0x186B00 */
+
+    /* The new-base globe hover, 0x67264..0x67b10, reached from the chain tail at 0x91D8C. */
+    pF->hover.pStripPad  = pUi->apPad[GEOUI_PAD_186BBC];
+    pF->hover.pView      = &pW->view;
+    pF->hover.pAnim      = &pF->anim;
+    pF->hover.pnPendingPickX = &pW->nPlaceX;                        /* 0x159D94 */
+    pF->hover.pnPendingPickY = &pW->nPlaceY;                        /* 0x159D98 */
+    pF->hover.pnScanX    = &pW->nGlobeScanX;                        /* 0x159E00 */
+    pF->hover.pnSweepV   = &pW->nGlobeSweepV;                       /* 0x159DFC */
+    pF->hover.pnSweepH   = &pW->nGlobeSweepH;                       /* 0x159DF8 */
+    pF->hover.pbPlacementPending = &pW->bPlacementPending;
+    pF->hover.pCtlConfirm = pUi->apCtl[GEOUI_CTL_186BA4];           /* "Build base" */
+    pF->hover.paRegionCost = (const u32 *)g_anNewBaseCostByRegion;  /* aNewBaseCostByRegion @ 0xAB488 */
+    pF->hover.pColor     = pColor;
+
+    /* The frame end, 0x944B8..0x94544. Its modal arm runs only for MainMenu_nListMode 1103/1102, the
+     * start menu's own modal pair, so the modal anim and layout stay NULL on the geoscape path; and
+     * case 20's BaseAtScreen_Draw env belongs to the base-at screen, which is not wired. */
+    pF->frameEnd.pnListMode         = &pW->nListMode;              /* MainMenu_nListMode @ 0x157188 */
+    pF->frameEnd.pnActionPhaseSave112 = &pW->nActionPhaseSave112;  /* Map.anActionPhaseSave0[112] */
+    if (pAssets != NULL) {
+        pF->frameEnd.pTextRecs = pAssets->pTextRecs;
+    }
+
+    /* The control plumbing every blit above goes through. */
+    if (pHit != NULL) {
+        pF->radar.pfnCtlBlit     = pHit->pfnBlit;
+        pF->radar.pfnCtlBlitEx   = pHit->pfnBlitEx;
+        pF->radar.pCtlBlitUser   = pHit->pUser;
+        pF->panel.pfnCtlBlit     = pHit->pfnBlit;
+        pF->panel.pfnCtlBlitEx   = pHit->pfnBlitEx;
+        pF->panel.pCtlBlitUser   = pHit->pUser;
+        pF->hover.pfnCtlBlit     = pHit->pfnBlit;
+        pF->hover.pfnCtlBlitEx   = pHit->pfnBlitEx;
+        pF->hover.pCtlBlitUser   = pHit->pUser;
+    }
+    if (pAssets != NULL) {
+        pF->panel.pTextRecs = (const char *)pAssets->pTextRecs; /* aTextRecs @ 0xB38D0 */
+        pF->hover.pTextRecs = (const char *)pAssets->pTextRecs;
+    }
+
+    /* The pointer dispatcher, Geoscape_OnPointer @ 0x872d0 and Geoscape_OnPointerUp @ 0x89450. Its
+     * env shares one pUser between pfnPlaySample and pfnHitTestStrategSelect, so the shell sets it to
+     * the sound user and leaves the strateg seam NULL (its SmapHitEnv is not built yet). */
+    pPtr->apRootCtl  = pUi->apRootCtl;
+    pPtr->pbPopupA   = &pW->bRoot34;                    /* bPopupVisibleA @ 0x18652C */
+    pPtr->pbPopupB   = &pW->bRoot35;                    /* bPopupVisibleB @ 0x18652D */
+    pPtr->apCtl      = pUi->apCtl;
+    pPtr->pnScreenId = &pW->screen.nGeoscapeScreen;
+    pPtr->pLines     = &pW->msgLines;
+    pPtr->pnCursorX  = &pF->g.nCursorX;                 /* 0x186BD0, stored as a halfword */
+    pPtr->pnCursorY  = &pF->g.nCursorY;                 /* 0x186BD4 */
+    pPtr->pnTapX     = &pW->nSmapTapX;                  /* 0x186B7C */
+    pPtr->pnTapY     = &pW->nSmapTapY;                  /* 0x186B80 */
+    pPtr->pbDragActive = &pF->g.bDragActive;            /* 0x187074, byte 0 */
+    pPtr->pbNewBaseMode = &pW->bFacDone;                /* 0x187078 */
+    pPtr->pbPlaceFail   = &pW->bPlaceFail;              /* 0x1870B8 */
+    pPtr->pbPlaceActive = &pW->bPlaceActive;            /* 0x1870BC */
+    pPtr->pbFinalMissionCtlArmed = &pW->bFinalMissionCtlArmed;
+    pPtr->pbInterceptDone     = &pW->bInterceptDone;
+    pPtr->pbMultiSelectPanel  = &pW->bFlag1870A0;
+    pPtr->pbPlacementPending  = &pW->bPlacementPending;
+    pPtr->pbPendingRegionId   = &pW->bPendingRegionId;
+    pPtr->pbMapSelectionFlag  = &pW->bMapSelectionFlag;
+    pPtr->pView          = &pW->view;
+    pPtr->pZoomOverlay   = pUi->apPad[GEOUI_PAD_186BBC]; /* 0x87C48 reads its uHeight as the strip */
+    pPtr->pnTapCooldown  = &pF->g.nTapCooldown;
+    pPtr->pnRadarPulseTimer = &pW->nRadarPulseTimer;     /* 0xAC224 */
+    pPtr->pbRadarScreenActive = &pW->bRadarScreenActive;
+    pPtr->pStatusPanel   = pUi->pStatusPanel;
+    pPtr->pnSelectedBaseIdx = &pW->nSelectedBase;        /* 0x159D81 */
+    pPtr->pnBaseCount    = &pW->nBaseCount;              /* 0x159D80, signed */
+    pPtr->pbSolScreenOpen = &pW->bSolScreenOpen;         /* 0x159DE0 */
+    pPtr->pSolPanelNames = pW->pSolPanelNames;           /* 0x15975C */
+    pPtr->pSolPanelEquip = pW->pSolPanelEquip;           /* 0x159DF0 */
+    pPtr->apSolPanelCtl  = pW->nav.apPanel;              /* apSoldierPanelCtl @ 0x1598B0 */
+    pPtr->apSolFindCtl   = pW->nav.apFind;               /* apSoldierFindCtl @ 0x1598B8 */
+    pPtr->pbUiAnimStarted = &pW->bUiAnimStarted;         /* 0x187080 */
+    pPtr->pbTransferFlag = &pW->bTransferFlag;           /* 0x159E10 */
+    pPtr->pFacPanel      = pW->pFacPanel;                /* 0x15886C */
+    pPtr->pbFacPlaceArmed = &pW->bArmedPlacement;        /* 0x158888 */
+    pPtr->pdwShortfall   = &pW->nShortfall1870C8;        /* 0x1870C8, read and written as a dword */
+    pPtr->pnPendingPlaceX = &pW->nUnk15887C;             /* nPendingPlaceX @ 0x15887C */
+    pPtr->pnPendingPlaceY = &pW->nUnk158880;             /* nPendingPlaceY @ 0x158880 */
+    pPtr->apCraft        = pW->apCraft;
+    pPtr->pHit           = pHit;
+    pPtr->pfnPlaySample  = pW->pfnPlaySample;
+    pPtr->pUser          = pW->pSoundUser;
+    pPtr->pfnHitTestStrategSelect = (pHooks != NULL) ? pHooks->pfnHitTestStrategSelect : NULL;
+
+    /* The dispatcher's arm wiring, 0x8C1B4..0x8C20C: the four envs the two map screens need plus the
+     * frame end. Every other table word stays NULL, which is the arm not drawing at all. */
+    pF->draw.pnScreenId   = &pW->screen.nGeoscapeScreen;
+    pF->draw.pRadarArm    = &pF->radar;
+    pF->draw.pMapView     = &pF->map;
+    pF->draw.pCrosshair   = &pF->cross;
+    pF->draw.pStatusPanel = &pF->panel;
+    pF->draw.pFrameEnd    = &pF->frameEnd;
+}
+
+/* The per-frame fields: the original keeps the map pad, the layer pad and the tile grid in the three
+ * globals the zoom handler publishes (0x186E40, 0x186BE0, 0x186B04), and the port keeps them as the
+ * zoom set the view's mode selects. The save reader restores nMode without a bound (0x40C78), so the
+ * trio lookup is clamped to the three levels the shell holds. */
+static const SmapZoomSet *World_CurrentZoomSet(PufoWorldState *pW)
+{
+    i32 nMode = pW->view.nMode;
+
+    if (nMode < 0 || nMode > 2) {
+        nMode = 0;
+    }
+    return &pW->sets[nMode];
+}
+
+static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
+{
+    GeoscapeFrameState *pF = &pW->frame;
+    const SmapZoomSet  *pSet = World_CurrentZoomSet(pW);
+
+    pF->map.pMapPad   = pSet->pGrid;    /* *pSmapPadCur @ 0x186E40 */
+    pF->map.pLayerPad = pSet->pOverlay; /* *pSmapLayerPad @ 0x186BE0 */
+    pF->map.nScreenId = pW->screen.nGeoscapeScreen;
+    pF->hover.pTiles  = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL; /* [0x186B04]->pData */
+    pF->cross.nCrosshairX = pF->g.nCrosshairX;   /* nSmapCrosshairX @ 0x186BC8 */
+    pF->cross.nCrosshairY = pF->g.nCrosshairY;   /* nSmapCrosshairY @ 0x186BCC */
+    pF->anim.nFrameStyle  = (i8)pW->aRegionBuildCount[9]; /* bUiFrameStyle @ 0x186566 */
+    pW->ptrEnv.pTiles     = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL;
+}
+
+i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), void *pUser)
+{
+    World_RefreshGeoscapeFrame(pW);
+    pW->frame.frameEnd.pfnPresent   = pfnPresent;
+    pW->frame.frameEnd.pPresentUser = pUser;
+    return Geoscape_Draw(&pW->frame.draw);
+}
+
+void World_GeoscapePointer(PufoWorldState *pW, i32 nX, i32 nY, bool bDown)
+{
+    /* The dispatcher reads the strip height off the current overlay pad and the tile grid off the
+     * current zoom set, so both are refreshed with the view's mode first. */
+    World_RefreshGeoscapeFrame(pW);
+    (void)Geoscape_OnPointer(&pW->ptrEnv, nX, nY, bDown);
+}
+
+void World_GeoscapePointerUp(PufoWorldState *pW)
+{
+    (void)Geoscape_OnPointerUp(&pW->ptrEnv);
 }

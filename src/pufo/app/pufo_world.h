@@ -12,6 +12,7 @@
 #include "game/pufo_boot.h"     /* BootAssets */
 #include "game/pufo_clock.h"    /* GameTime */
 #include "game/pufo_font.h"
+#include "game/pufo_geopointer.h" /* GeoscapePointerEnv, the geoscape pointer dispatcher's env */
 #include "game/pufo_geoscape.h"
 #include "game/pufo_objectrec.h"
 #include "game/pufo_options.h"
@@ -25,6 +26,23 @@
 #include "util/pufo_ptrarray.h"
 
 #define PUFO_SOLDIER_CAPACITY 512 /* Map + 0x1198 read by size (2048 bytes of pointers) */
+
+/* One owner for every env the geoscape frame reaches, plus its globals. See the block above
+ * GeoscapeFrameGlobals in game/pufo_geoscape.h for the evidence and for what the wiring covers; this
+ * header holds the definition because BaseFacStatusEnv and GeoscapeGlobeHoverEnv are complete only
+ * here (pufo_geoscape.h is the one pufo_baseui.h includes). */
+typedef struct GeoscapeFrameState {
+    GeoscapeDrawEnv        draw;      /* the dispatcher's arm wiring, 0x8C1B4..0x8C20C */
+    GeoscapeMapViewEnv     map;       /* 0x8C2B0..0x8C690 */
+    GeoscapeCrosshairEnv   cross;     /* 0x8C69C..0x8C760 */
+    GeoscapeRadarArmEnv    radar;     /* 0x8C214..0x8C29C, only while the radar screen is open */
+    GeoscapeStatusPanelEnv panel;     /* 0x8C760..0x91DB0, chain tail included */
+    GeoscapeGlobeHoverEnv  hover;     /* the call at 0x91D8C, inside the chain tail */
+    GeoscapeFrameEndEnv    frameEnd;  /* 0x944B8..0x94544 */
+    BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
+    UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
+    GeoscapeFrameGlobals   g;
+} GeoscapeFrameState;
 
 typedef struct PufoWorldState {
     /* Rosters. */
@@ -102,7 +120,8 @@ typedef struct PufoWorldState {
     MissionSiteRec    aMissionSites[PUFO_MISSION_SITE_COUNT]; /* unk_1865C0 */
     UiControl         ctlResearchPanel;         /* pGeoscapeCtlA */
     UiControl         ctlConfirm;               /* unk_186BA4 */
-    u8                bFlag187080;
+    u8                bUiAnimStarted;           /* bUiAnimStarted @ 0x187080: the anim root's
+                                                 * "the panel animation already started" byte */
     UiLineList        msgLines;                 /* the root message list @ 0x158890 */
     i32               nSelectedStrategIdx;      /* 0x186BE4 */
     i32               nSelectedShipIdx;         /* 0x187054 */
@@ -114,10 +133,14 @@ typedef struct PufoWorldState {
     u8                bMapSelectionFlag;        /* bMapSelectionFlag @ 0x159E84 */
     i32               nInterceptShipIdx;        /* nInterceptShipIdx @ 0x15967C */
     i32               nInterceptStrategIdx;     /* nInterceptStrategIdx @ 0x159680 */
-    u8                bFlag1870A0;              /* byte_18709C[4] */
-    u8                bFlag18708C;
-    u8                bFlag187090;
-    u8                bFlag187098;
+    /* The four panel gates the original keeps in one twelve-byte run at 0x18709C: byte 0 is
+     * bInterceptDone, byte 4 (0x1870A0) is the status panel's multi-select gate, and 0x18708C /
+     * 0x187090 / 0x187098 are the crash / site / alien-base panel gates the radar click sets. */
+    u8                bInterceptDone;           /* bInterceptDone @ 0x18709C */
+    u8                bFlag1870A0;              /* byte_18709C[4] @ 0x1870A0 */
+    u8                bFlag18708C;              /* 0x18708C, bSmapUfoCrashPanel */
+    u8                bFlag187090;              /* 0x187090, bSmapSitePanel */
+    u8                bFlag187098;              /* 0x187098, bSmapAlienBasePanel */
     OptionsScreenHooks optionsHooks;            /* the radar click's options branch */
     NavControls       nav;
     NavCtlEnv         navEnv;
@@ -128,7 +151,10 @@ typedef struct PufoWorldState {
     i32          nSmapTapY;             /* nSmapTapY @ 0x186B80 */
     u8           bPlaceActive;          /* bBasePlaceActive @ 0x1870BC */
     u8           bPlaceFail;            /* bBasePlaceFail @ 0x1870B8 */
-    u8           bFacDone;              /* bBaseFacDone @ 0x187078 */
+    u8           bFacDone;              /* bBaseFacDone @ 0x187078, byte 4 of the twelve bytes IDA
+                                         * lumps at 0x187074. The geoscape pointer dispatcher's
+                                         * pbNewBaseMode is the same byte (0x874E4), so one field
+                                         * serves both. */
     u8           bPendingRegionId;  /* bPendingBaseKind @ 0x159DF4: 0xFF is the "nothing pending"
                                          * sentinel, but the image's .data value is 0 and the port
                                          * keeps it (see World_Init) */
@@ -144,7 +170,6 @@ typedef struct PufoWorldState {
     u8           bFacDialogOpen;        /* unk_158884: 1 while the build dialog exists */
     UiPanel     *pFacPanel;             /* unk_15886C, the dialog's UiPanel */
     i32          nPanelSel;             /* unk_158868 */
-    u8           bNewBaseMode;          /* byte_187074[4] */
     u8           abLastRowName[4];      /* the 0x187024 slot the dialog's 17th row reads */
     u32          nShortfall1870C8;      /* byte_1870C8, written as a dword */
     i32          nResidue1870B4;        /* dword_1870B4[0] */
@@ -161,6 +186,28 @@ typedef struct PufoWorldState {
     BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
     BaseFacToggleEnv facToggleEnv;      /* the build dialog's open/close switch */
     SoldierScreenEnv solEnv;            /* the soldier screen's open/close switch */
+
+    /* The geoscape frame (Geoscape_Draw @ 0x8C180) and its pointer dispatcher (0x872d0 / 0x89450),
+     * wired over this state by World_WireGeoscapeFrame. See pufo_geoscape.h for which screens the
+     * wiring covers. */
+    GeoscapeFrameState frame;           /* the draw envs and the frame's own globals */
+    GeoscapePointerEnv ptrEnv;          /* the pointer dispatcher's env, on the same objects */
+    /* The frame's loose globals the shell owns: the radar screen gate, the two research walk
+     * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
+     * and the two scratch lines the status panel writes. */
+    u8        bRadarScreenActive;       /* bRadarScreenActive @ 0x159678 */
+    u8        nFinishedTopic;           /* nResearchFinishedTopic @ 0x15EEF8 */
+    i32       nShownTopic;              /* nResearchTopicShown @ 0x160C60 */
+    i32       nGlobeScanX;              /* nGlobeScanX @ 0x159E00 */
+    i32       nGlobeSweepV;             /* nGlobeSweepV @ 0x159DFC */
+    i32       nGlobeSweepH;             /* nGlobeSweepH @ 0x159DF8 */
+    i8        cUiAnimProgress;          /* cUiAnimProgress @ 0x187058 */
+    u8        bFinalMissionCtlArmed;    /* bFinalMissionCtlArmed @ 0x187068: arms the final-mission
+                                         * control for one press (0x8759C), cleared on release (0x89CD4) */
+    i32       nActionPhaseSave112;      /* Map.anActionPhaseSave0[112] @ 0x128AA0, the frame end's cell */
+    char      szUiScratchStr[104];      /* szUiScratchStr @ 0x186420: the status panel's pszExtra,
+                                         * the second line of the panel arms */
+    char      szScratch[85];            /* szScratch186488 @ 0x186488: BuildStatusMsg's scratch line */
     GeoscapeWorld     world;
     GameTime          time;
     AssetReader       rdr;                      /* pRdr @ 0x187028 */
@@ -197,7 +244,30 @@ typedef struct WorldHooks {
     /* The LoadGame teardown/frame hooks (LoadGameHooks @ pufo_save.h). */
     void (*pfnRenderFrame)(void *pUser);
     void (*pfnStartUiShutdown)(void *pUser);
+    /* The geoscape frame's control plumbing: the pad blits every UiControl_BlitActivePad call makes,
+     * the Map+0x60 word UiControl_HitTest clears, and the colour pair Gfx_PackRgb565Pair packs. */
+    const UiControlHitCtx *pHit;
+    GfxColorEnv           *pColor;
+    /* Smap_HitTestStrategSelect @ 0x82be8 needs the caller's SmapHitEnv, which the shell does not
+     * build; the frame hands the dispatcher this seam instead (NULL means "nothing selectable"). */
+    u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
+    void *pHitTestUser;
 } WorldHooks;
+
+/* Fill every geoscape frame env over this state. Run it after the UI objects exist (Geoscape_InitUI
+ * on the new-game path, before LoadGame on the load path, because LoadGame renders through the
+ * frame). Idempotent: it rewrites the envs from the current state. */
+void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks);
+
+/* Refresh the per-frame fields -- the zoom set's map / layer / tile pads for the mode the view
+ * selected, the screen id, the anim frame-style byte -- and run Geoscape_Draw @ 0x8C180. Returns its
+ * value, which is the present thunk's. */
+i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), void *pUser);
+
+/* Geoscape_OnPointer @ 0x872d0 and Geoscape_OnPointerUp @ 0x89450 over the wired env. nX / nY are
+ * logical 240x320 coordinates, as Input_OnPointer hands them over. */
+void World_GeoscapePointer(PufoWorldState *pW, i32 nX, i32 nY, bool bDown);
+void World_GeoscapePointerUp(PufoWorldState *pW);
 
 /* Allocate the heap-held parts (the 200 site records) and set the defaults the original's
  * zero-filled .data has. */

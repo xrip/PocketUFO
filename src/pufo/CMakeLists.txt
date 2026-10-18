@@ -100,9 +100,18 @@ add_library(pufo_audio STATIC
 target_include_directories(pufo_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_audio PUBLIC pufo_options pufo_dat pufo_util)
 
+# The shell's geoscape bring-up. It is a library, not exe code, because its frame wiring is state a
+# test must drive: tests/test_geoscapeframe.c runs World_NewGame, Geoscape_Draw and the geoscape
+# pointer dispatcher over a real PufoWorldState.
+add_library(pufo_world STATIC
+    app/pufo_world.c
+)
+target_include_directories(pufo_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(pufo_world PUBLIC
+    pufo_options pufo_game pufo_ui pufo_render pufo_dat pufo_util pufo_audio)
+
 add_executable(pocketufo
     app/pufo_app.c
-    app/pufo_world.c
 )
 
 # Parity tests. These read the shipped main.dat / lang.dat and compare against
@@ -674,6 +683,17 @@ add_test(NAME test_geoiinit
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+add_executable(test_geoscapeframe ${CMAKE_SOURCE_DIR}/tests/test_geoscapeframe.c)
+target_link_libraries(test_geoscapeframe PRIVATE
+    pufo_world pufo_ui pufo_options pufo_game pufo_render pufo_dat pufo_util pufo_audio)
+set_target_properties(test_geoscapeframe PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_geoscapeframe
+    COMMAND test_geoscapeframe
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 add_executable(test_startnew ${CMAKE_SOURCE_DIR}/tests/test_startnew.c)
 target_link_libraries(test_startnew PRIVATE pufo_ui pufo_options pufo_game pufo_render pufo_dat pufo_util pufo_audio)
 set_target_properties(test_startnew PROPERTIES
@@ -800,4 +820,5 @@ target_link_libraries(pocketufo PRIVATE
     pufo_game
     pufo_audio
     pufo_ui
+    pufo_world
 )
