@@ -970,17 +970,30 @@ static void TestConfirmFireBurst(void)
     CheckEqI32(queue.nQueueLen, 0, "  nothing queued");
     CheckEqI32(g_nFaceBurst, 0, "  nothing faced");
 
-    /* Not enough TU for the mode's cost: the enqueue refuses and no kick happens. */
+    /* Not enough TU: the refusal is the CALLEE's own work in the original -- 0x4B0D8 returns
+     * StatusMsg_Push(aTextRec1_OutOfTime, 0) -- and 0x1884C kicks the queue anyway. The queue is
+     * pre-filled here so that "the kick ran" is observable: KickQueue only touches the cursor and the
+     * active flag when the queue is non-empty. */
     UiReset(&ui);
     ui.nActionMode = 1;
     ui.anActionCost[1] = 99;
     TactState_ctor(&queue);
+    queue.nQueueLen = 1;
+    queue.nQueueCursor = 7;
+    queue.bQueueActive = 0;
     unit.uTu = 5;
     nCount = 1;
+    g_nFaceBurst = 0;
+    LogReset();
     Check(!Ui_ConfirmFireBurst(&ui, &queue, &unit, &weapon, apTargets, &nCount,
                                10, 10, BurstFace, NULL, &g_hooks),
           "  insufficient TU refuses the enqueue");
-    CheckEqI32(queue.nQueueLen, 0, "  no entries on the TU failure");
+    CheckEqI32(queue.nQueueLen, 1, "  no entry was added by the refused burst");
+    CheckEqI32(g_nFaceBurst, 0, "  the unit was never faced -- the gate is before FaceToward (0x4B0D4)");
+    CheckEqI32(g_log.nStatus, 1, "  one status message pushed");
+    CheckEqI32(g_log.aStatus[0], PUFO_TXT_OUT_OF_TU, "  it is record 1, aTextRec1_OutOfTime");
+    CheckEqI32(queue.bQueueActive, 1, "  and the queue was still kicked (0x1884C)");
+    CheckEqI32(queue.nQueueCursor, 0, "  with the cursor reset");
 
     Check(!Ui_ConfirmFireBurst(NULL, &queue, &unit, &weapon, apTargets, &nCount,
                                10, 10, BurstFace, NULL, &g_hooks),

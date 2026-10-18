@@ -17382,6 +17382,26 @@ Map_bGeoscapeUi @ Map+0x44 at 0x27508 and takes the empty-stub path. The tactica
 TactCtx272.bBusy, the apUiSlotsA[10] word and Map.status as the TTL array's owner, and the shell builds none
 of them; that wiring belongs to the tactical bank and is recorded with the other Priority 1 seams.
 
+Part 41 closes the one enqueue refusal the port left silent. `Ui_ConfirmFireBurst @ 0x18774` calls
+`TactState_EnqueueFireBurst` and then, at 0x1884C, `TactState_KickQueue` -- unconditionally, with no test of
+what the enqueue returned. The refusal is the callee's own work: 0x4B0D8 reads `pUnit->uTu < nTuCost` and
+returns `StatusMsg_Push(Map, aTextRec1_OutOfTime, 0)`, the same shape as `TactState_EnqueueThrow @ 0x4B318`
+and `Tact_EnqueueActionOrStatus205 @ 0x4B42C`. The port's helper only reports the failure and the header
+already says the push belongs to the caller, yet this call site did neither: no message, and no kick. It now
+pushes record 1 and kicks regardless. The kick on a refusal is observable only when the queue already holds
+something -- KickQueue resets nQueueCursor/bQueueActive for a non-empty queue only -- so the test pre-fills
+one entry, and both halves are mutation-tested: deleting the push or deleting the kick turns four checks red.
+
+Two facts added to the IDB on the way. The original's three enqueue callees write `aQueue[nQueueLen]` with
+no capacity check at all, while the port guards `nQueueLen >= PUFO_TACT_QUEUE_MAX`; that deviation is now
+said at 0x4B0D8, 0x4B318 and 0x4B42C beside the push each of them does. And 0x1884C is commented as the
+unconditional kick, which is what the port had to learn to reproduce.
+
+Left open by this pass, recorded rather than folded in: the three enemy-AI enqueue calls in pufo_enemyai.c
+(150, 570, 640) are `(void)` calls and `EnemyAiTickCtx` carries no status seam, so an enemy that cannot pay
+its action cost is silent where the original shows the same record. It needs a `pfnPushTextRecord`-style
+hook on that ctx (the shape `pufo_input.c`'s `MapClickHooks` already uses) and its own tests.
+
 Dispositions, not ported, with reasons. Map_RegisterAtexit (0x22620) and its thunk
 Map_Atexit_nullsub2 (0x2262c) register a
 wrapper over nullsub_2, an empty stub, so they carry no behaviour -- the same disposition as the

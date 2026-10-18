@@ -769,6 +769,7 @@ bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
     FireBurstSpec spec;
     i32           nCount;
     i32           nMode;
+    bool          bEnqueued;
 
     if (pUi == NULL || pQueue == NULL || pUnit == NULL || pnMultiTargetCount == NULL) {
         return false;
@@ -812,11 +813,19 @@ bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
     spec.uAmmoInWeapon = uAmmoInWeapon;
     spec.bAmmoCap = bAmmoCap;
 
-    if (!TactState_EnqueueFireBurst(pQueue, &spec, pfnFaceToward, pUser)) {
-        return false;
+    /* 0x18844 then 0x1884C: the enqueue's refusal is the callee's own work -- 0x4B0D8 returns
+     * StatusMsg_Push(aTextRec1_OutOfTime, 0) when the unit cannot pay the mode's cost -- and the kick
+     * at 0x1884C runs whatever the enqueue did. The port's helper only reports the failure, so the
+     * push that the original does inside the callee is done here; the order is the same (message,
+     * then kick). */
+    if (TactState_EnqueueFireBurst(pQueue, &spec, pfnFaceToward, pUser)) {
+        bEnqueued = true;
+    } else {
+        Ui_Status(pHooks, PUFO_TXT_OUT_OF_TU); /* record 1; this file's PUFO_TXTREC_NO_TIME names it too */
+        bEnqueued = false;
     }
-    TactState_KickQueue(pQueue);
-    return true;
+    TactState_KickQueue(pQueue); /* 0x1884C, unconditional in the original */
+    return bEnqueued;
 }
 
 /* -------------------------------------------------- combat-menu item queries */

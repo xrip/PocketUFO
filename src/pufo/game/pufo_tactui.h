@@ -409,6 +409,10 @@ i32 Ui_ConfirmUseItem(TactUiState *pUi, Soldier *pUnit, TactItem *pWeapon,
  * The original dereferences `apMultiTargets[0]` unconditionally, so a zero count is
  * a NULL read there; the port refuses instead (documented deviation).
  *
+ * A TU refusal is not silent: 0x4B0D8 returns `StatusMsg_Push(aTextRec1_OutOfTime, 0)`, and the
+ * kick at 0x1884C runs regardless. The port's helper reports the failure, so this call site pushes
+ * record 1 and still kicks. Returns true only when the burst was enqueued.
+ *
  * `pnMultiTargetCount` is a pointer because the original zeroes the count as part of
  * the same sequence, after using it for nUnk40 and the mark-clearing loop. */
 bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,

@@ -3204,6 +3204,22 @@ Order is by what unblocks what. Each item ends with gates + commit.
   does not own. 9 new checks in `test_timer` (2 mutations caught: `> 2` -> `> 3`, and the alternation inverted),
   3 rewritten. Gate 61/61 in both configs, 17931 checks, coverage 968/1103 (87.8%) / 596840 B (+4: the stub is now cited).
 
+- [x] **The out-of-TU message belongs to the callee that refuses (Part 41).** `Ui_ConfirmFireBurst @ 0x18774` was
+  silent where the original is not. `TactState_EnqueueFireBurst @ 0x4B0D8` returns
+  `StatusMsg_Push(aTextRec1_OutOfTime, 0)` when the unit cannot pay the mode's cost — the same shape at
+  `TactState_EnqueueThrow @ 0x4B318` and `Tact_EnqueueActionOrStatus205 @ 0x4B42C` — and 0x1884C kicks the queue
+  whatever the enqueue did. The port's helper only reports the failure, and this call site did neither push nor kick.
+  It now pushes record 1 and calls `TactState_KickQueue` unconditionally; the kick is made observable by pre-filling
+  the queue, because KickQueue touches `nQueueCursor`/`bQueueActive` only when the queue is non-empty. 5 new checks,
+  2/2 mutations caught (deleting the push and deleting the kick turned 4 checks red). IDB comments at 0x4B0D8,
+  0x4B318, 0x4B42C and 0x1884C, the last one also recording that the original's three enqueue callees write
+  `aQueue[nQueueLen]` with no capacity check where the port guards it. The three enemy-AI call sites still have no
+  status sink at all — recorded as its own issue, not folded in.
+
+- [ ] **Next unit: the status sink the enemy AI is missing.** `pufo_enemyai.c:150/570/640` call the enqueue helpers
+  as `(void)` and `EnemyAiTickCtx` carries no status seam, so an enemy that cannot pay is silent where the original
+  pushes record 1. The shape to copy is `MapClickHooks.pfnPushTextRecord` from `pufo_input.c`.
+
 - [ ] **Next unit: the tactical runtime seam the 0xC350 callee is waiting for.** `GameTick_OnTimer` is ported and now
   measured, but its call site is a documented no-op because the shell owns none of what the tactical branch reads:
   the `TactState`, `TactCtx272.bBusy`, the `apUiSlotsA[10]` word and `Map.status` as the TTL array's owner. That is
@@ -3232,27 +3248,25 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `tail`'s status, so a Release test failure would not have failed the gate. Both ctest stages now keep the exit code
   in a variable and print the log path.
 
-- [ ] **Two suites are red at HEAD and are not touched by the geoscape clock work.** `test_titles` fails
-  "a scroll of 0 admits no credit rows" and `test_plane` fails "the field outside the panel is untouched:
-  got 52685 want 0". Both were verified red with `git stash` over `src` and `tests` (only the IDB,
-  `pufo_baseui.h` comments and the docs outstanding), so they predate the current work. `test_geoscape`'s
-  one failure of that kind -- a display name compared against a roster that `Ship_RemoveWithCargo @ 0x613A0`
-  had already compacted -- was found the same way and fixed in the clock commit; these two need the same
-  treatment: decide from the IDB whether the port or the check is wrong, then fix that one side.
-  A third suite, `test_template`, moved the other way: it looked order-dependent in the Part 26 runs (red in one
-  Debug ctest, green in the next, green when run alone), and in the Part 27 runs it is red in the Debug ctest **and**
-  red run alone with its single check "pointer changed to the new blob", while Release is green. So it is a
-  Debug-only assertion, not a test-order artefact — the same uninitialized-memory shape as the other two, and it
-  needs the same IDB-side decision. Release is 61/61 both times, zero warnings in either config.
+- [x] **Closed: the suites this bullet carried are all resolved.** `test_titles` and `test_plane` were fixed in
+  Part 39 (a blit target the suite never armed, plus two checks reading the Debug CRT's fill of memory the original
+  never initialises), `test_template`'s "pointer changed to the new blob" in Part 37, and `test_geoscape`'s
+  display-name comparison in the clock part. The history recorded here — that three of them were already red at
+  `04f1155`, verified in a clean worktree, so none came from the tactical step — turned out to be the right lead:
+  every one was a check-side artefact, not port behaviour. The rule the class leaves behind is written with the
+  Part 39 entry: never assert "untouched" about memory the original never initialised.
 
 - [ ] **`Geoscape_OnMapClick`'s site-record write is stated in the wrong direction.** The original subtracts:
   0x8B540/0x8B544/0x8B548 are `LDRB R1,[bPendingRegionId]`, `SUB R0,R1,#0x80`, `STRB R0,[R5]`, while
   `pufo_baseui.c`'s screen-2 arm writes `apSiteRecs[0].bType = (u8)(bPendingRegionId + 0x80)`. The two agree for
   every tile in 0x80..0x89 because the byte store wraps (`0x80 + 0x80` and `0x80 - 0x80` both land on 0), and Hex-Rays
   renders the same pair as `+ 0x80` elsewhere (0x669B4, where the port does subtract), so nothing observable is
-  wrong today. It is still the wrong expression to leave in a port whose citations are meant to be readable: change
-  it to `- PUFO_REGION_ID_FIRST` in a separate pass, together with the two other `+ 0x80` sites the same decompiler
-  habit produced.
+  wrong today. It is still the wrong expression to leave in a port whose citations are meant to be readable, and the
+  agreement is stronger than "for tiles 0x80..0x89": `0x80 ≡ -0x80 (mod 256)`, so a byte store makes the two
+  spellings identical for **every** value — no test can ever see the difference, which is why this is a readability
+  fix and not a behavioural one. The census as of Part 41: one `+ 0x80` site left (`pufo_baseui.c:7285`); the other
+  two the same decompiler habit produced (`pufo_geoscape.c:1535`, `:1560`) already subtract. Change it to
+  `- PUFO_REGION_ID_FIRST` in its own pass.
 
 - [ ] **`TestGeoscapeBaseFacArm`'s strip-highlight check is an invariance check and cannot see a changed
   constant.** It compares the arm's output with the env's highlight 0 against the arm's output with the env's
@@ -3372,15 +3386,24 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `Turn_SyncSideCounts`; the kill path does not. Fixing it means deciding whether `KillCtx.pRosters` should
   own the counts or whether `Tact_KillUnit` should sync them, so it is its own step.
 
-- [ ] **`Ui_ConfirmFireBurst` (0x18774) drops the out-of-TU message its callee pushes.** Found while wiring
-  the three new enqueue call sites in part 68. In the original the message is the callee's own work:
-  `TactState_EnqueueFireBurst @ 0x4B0D8`, `TactState_EnqueueThrow @ 0x4B318` and
-  `Tact_EnqueueActionOrStatus205 @ 0x4B420` each push `aTextRec1_OutOfTime` (record 1) when the unit cannot
-  pay. The port's three helpers return false instead and the header says the push belongs to the caller, so a
-  call site that ignores the return loses the message. `Tact_HandleMapClick`'s latch-1 and latch-2 arms and
-  `Ui_ConfirmMeleeMode6` / `Ui_ConfirmSpecial9` now push it; `Ui_ConfirmFireBurst` still returns false with no
-  push. Fixing it is a one-line change plus a test, but it changes what `test_tactui` asserts about the
-  refusal, so it is its own step.
+- [x] **Fixed in Part 41: `Ui_ConfirmFireBurst` (0x18774) now reports the refusal its callee reports.**
+  In the original the message is the callee's own work — `TactState_EnqueueFireBurst @ 0x4B0D8`,
+  `TactState_EnqueueThrow @ 0x4B318` and `Tact_EnqueueActionOrStatus205 @ 0x4B420` each return
+  `StatusMsg_Push(aTextRec1_OutOfTime, 0)` when the unit cannot pay — and 0x1884C kicks the queue
+  whatever the enqueue did. The port's helpers return false and the push belongs to the caller;
+  `Ui_ConfirmFireBurst` did neither push nor kick on that path. It now pushes record 1 and runs
+  `TactState_KickQueue` regardless (the queue is pre-filled in the test so the kick is observable:
+  KickQueue only touches the cursor and the active flag when the queue is non-empty). 5 new checks,
+  2/2 mutations caught (the push deleted, the kick deleted — 4 checks went red). IDB: comments at
+  0x4B0D8 / 0x4B318 / 0x4B42C / 0x1884C. The capacity guard the three port helpers add
+  (`nQueueLen >= PUFO_TACT_QUEUE_MAX`) has no counterpart in the original, which writes
+  `aQueue[nQueueLen]` unconditionally — already recorded, and now said at the IDB sites too.
+- [ ] **The three enemy-AI enqueue sites have no status sink.** `pufo_enemyai.c:150`, `:570` and `:640`
+  call `TactState_EnqueueFireBurst` / `TactState_EnqueueThrow` as `(void)` with `EnemyAiTickCtx` carrying
+  no status message seam, so an enemy that cannot pay its action cost is silent. The original's callee
+  pushes record 1 for them too (0x4B0D8, 0x4B318). Fixing it means a `pfnPushTextRecord`-style seam on
+  `EnemyAiTickCtx` (the shape `pufo_input.c`'s `MapClickHooks.pfnPushTextRecord` already uses) plus wiring
+  it in `test_enemyai`. Left as its own step rather than folded into Part 41.
 
 - [ ] **`PUFO_MAP_MULTI_TARGET_MAX` is 10 but `Map.apMultiTargets` is eight wide.** `src/pufo/game/pufo_mapctx.h:46`
   defines it as `PUFO_AIM_SAMPLE_COUNT` (10, from `pufo_ballist.h:77`), while the Map block gives the array
@@ -3444,19 +3467,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   its own — but it is wrong, and `ScreenResetOpenEnv.pbResearchCount` already models it correctly as
   `const u8 *`, so the two spellings disagree inside the same header. Fixing it is a type change across
   four envs, `pufo_world.h` and the tests that fill them; it is its own step, not part of a port.
-- [ ] **Screen-level visual verification is blocked on `Geoscape_Draw (0x8c180)`.** The app renders
-  the titles and the main menu for real (`--dump-frame` proves it), but the geoscape screen — the
-  screen every other screen sits on — is a hook the port does not implement
-  (`RenderFrameEnv.pfnGeoscapeDraw`, `pufo_renderframe.h:66`). So the only way to look at a screen
-  like the transfer screen today is a unit-test harness that paints that one function's own
-  primitives onto a blank surface with synthetic panels. That picture is a transcription check, not
-  the game UI, and it was dropped from `test_baseui` for exactly that reason. Real visual checks
-  need the geoscape frame in the app. `Geoscape_Draw` is 33,744 bytes and a jump-table dispatcher over
-  screen ids, and Part 24 ported the last of it: the head at 0x8C180..0x8C1B0 with its 21 table words and
-  the cases 0/2 radar branch at 0x8C214..0x8C29C. The whole frame now exists as
-  `Geoscape_Draw(const GeoscapeDrawEnv *)` (`pufo_geoscape.h`). What still blocks the app view is wiring,
-  not code: `pfnGeoscapeDraw` needs a shell-owned `nGeoscapeScreen`, the 0x186BC0 world-glyph record the
-  map arm reads as `pWorldBits`, and the per-screen UI blocks every arm indexes.
+- [x] **Lifted by the frame wiring: the app now runs the geoscape frame.** This bullet said the geoscape screen was
+  a hook the port did not implement (`RenderFrameEnv.pfnGeoscapeDraw`), which made per-screen visual checks
+  impossible. `App_GeoscapeDrawThunk` installs that hook (`pufo_app.c:542`) over the shell's own `nGeoscapeScreen`,
+  world bits and per-screen envs, and the `--new-game` dump proves the frame runs: screen 2 (placement) → 1
+  (new-base pick) → 0 (geoscape), with the clock advancing 300 s across 50 pulses. What remains of this bullet is
+  the habit it produced: a drawing function whose callees are ported should be tested against a real 240x320
+  surface with the real FONT.SPR and TEXTS layout, as `TestManufDrawFrame` does — exact 565 values at the
+  coordinates the original names, not a dump of synthetic primitives.
   - **Part 42 found the middle path, and it is worth reusing.** `TestManufDrawFrame` draws
     `ManufScreen_DrawFrame` onto a real 240 x 320 16 bpp surface with the real `FONT.SPR` and the real
     TEXTS layout, and asserts exact 565 values at the coordinates the original names — including a
@@ -3727,6 +3745,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the focus arms, and a pause call that had one argument where the original has two (Part 38: `App_FocusLost` / `App_FocusGained` in `pufo_app.c` for WM_KILLFOCUS 0xA046C..0xA0560 and WM_SETFOCUS 0xA0564..0xA0674 — both gated on `Map.bTactFlag @ 0x1139B8` then `Map_bGeoscapeUi @ Map+0x44`; reposition with the stored pair at HWND_NOTOPMOST/0 (0xA04AC, 0xA0514) or HWND_TOP/0x40 (0xA05B8) or HWND_TOP/0 (0xA0610); `Timer_KillBySpeed`/`Timer_KillD` then `Gx_Suspend`, `Gx_Resume` then `Timer_StartBySpeed`/`Timer_StartD`; audio on every path including the no-flag case (0xA052C, 0xA0618); the four held-key flags cleared at 0xA064C..0xA0670. IDB: `FSOUND_SetPaused` imported as one-arg `signed __int8 paused` — Hex-Rays read the channel 0xFFFFFFFD = FSOUND_ALL as the flag and the port inherited the mistake, passing `-3` as the flag and dropping `Map_bSoundOff` (which at 0x9E548 *pauses* muted effects), with `test_audio` pinning it as an "unpause-all sentinel"; retyped at 0xA151C, `pfnSetSfxPaused(nChannel, bPaused)`, new `Sound_SetPaused(bool)`, comments at 0xA151C/0xA046C/0xA0564; `unk_1139FC` named `Map_bGeoscapeUi` (set 1 at 0x85858, 0 at 0x86D34, read by nine input handlers + `Render_Frame` + `LoadGame` + both arms) with all 14 citations updated; 3 deviations — `Gx_Suspend`/`Gx_Resume` are seam no-ops (no GAPI display ownership on Win64), the reposition is a visible move on a desktop, and the shell has no `GameClock` so the mission arm's speed reads the unread mirror `g_nGameSpeed` = 0) | 61/61 (Release) | 17919 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the two Debug-red suites (Part 39: no new original block and no IDB change — both reds read the allocator. `SoftSurf_AllocPixels @ 0x9f9a4` is `operator new` (0x9FA1C) plus the 4-byte header with no zeroing pass, so the pixels are indeterminate in the original too (0 in Release, 0xCDCD in Debug); `test_plane` now sentinel-fills with 0x5A and asserts 0x5A5A. `test_titles` never armed the blit TARGET, and `Blit_CopyToXY @ 0xa42e4` gates on `blitState.nPixelMode` where the glyph and fade blits gate on `blitState.nSurf2`, so the scroll<50 fill at 0x1E6A0 drew nothing and the suite's `== 0` checks were measuring an untouched surface rather than the row rule; `BuildData` now calls `Render_SetTarget @ 0x9faa4` with the game's 240x320/2 descriptor (the arm `GX_PresentFrame @ 0x9ea7c` performs every present), every check starts from a cleared screen, slot 21 is primed to 0x5C so a glyph and the fill are separate observations, and 9 backdrop checks assert the packed colours the original's arithmetic gives (fill 0xFFFF, centred glyph 0x1111, backdrop 0x5C5C); 3 new checks; 0xa42e4 re-read, its gate comment already correct) | 61/61 (Release) and 61/61 (Debug) | 17922 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the 0xC350 game-tick dispatch (Part 40: `Timer_TickBySpeed @ 0xA08C0..0xA0934` — the speed decides the ticks one firing runs (negative 0, 0..2 one, 3 one plus an extra on alternate firings, 4 three, above 4 zero) and `unk_18838C` became the named and typed byte `bGameTickExtraDue` (LDRB 0xA090C / STRB 0xA0930); the geoscape arm of `GameTick_OnTimer` had been ported as a hook that does work where the original's callee is the four-byte `BX LR` stub at 0x94550 (now `Geoscape_GameTickStub`), so the hook is gone and those checks were rewritten; `Map_nGameSpeed` is a signed dword (LDR 0x9E918 and 0xA08C0 with CMP #0 / BMI 0xA08C8), mirrored as `i32`; IDB: 1 global named + typed, 1 function comment on 0x274f0, 4 site comments, 1 global comment extended; 1 stale "Tact_TickActiveUnit NOT ported" claim fixed in the port header; 9 new checks, 2/2 mutations caught; 1 deviation recorded — the shell's callee `App_GameTickOnce` is empty because the shell is always on the original's geoscape stub path) | 61/61 (Release) and 61/61 (Debug) | 17931 | 968/1103 (87.8%) | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
+| the out-of-TU message the refusing callee pushes (Part 41: `Ui_ConfirmFireBurst @ 0x18774` now pushes record 1 when `TactState_EnqueueFireBurst` refuses at 0x4B0D8 and still runs `TactState_KickQueue`, because 0x1884C tests nothing the enqueue returned — the kick is made observable by a pre-filled queue, since KickQueue only touches `nQueueCursor`/`bQueueActive` when the queue is non-empty; 5 new checks, 2/2 mutations caught (4 checks went red); IDB comments at 0x4B0D8, 0x4B318, 0x4B42C and 0x1884C, recording the callee-side push and that the original's three enqueue callees write `aQueue[nQueueLen]` with no capacity check while the port guards it; 1 issue closed, 1 recorded (the three enemy-AI enqueue sites have no status sink), 3 stale PLAN bullets corrected) | 61/61 (Release) and 61/61 (Debug) | 17936 | 968/1103 (87.8%), unchanged — no new function cited | 596840/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 What the loop costs, measured on this tree (Part 34): a full Release build after touching a widely-included
