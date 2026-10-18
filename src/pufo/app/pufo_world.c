@@ -654,13 +654,17 @@ static void World_StartNewHook(void *pUser)
     env.pnNextDisplayId = &pW->nNextDisplayId;
     env.pnNextSiteId = &pW->nNextSiteId;
     env.pnMissionId = &pW->nMissionId;
-    env.abSaveFlags = pW->aRegionBuildCount;
+    env.paRegionBuildCount = pW->aRegionBuildCount; /* g_anRegionBuildCount @ 0x18655D */
     env.pEconomy = &pW->economy;
     env.paFacFlags = pW->aFac;
     env.pTextRecs = pAssets->pTextRecs;
     env.pScreen = &pW->screen;
     env.pCtlResearchPanel = &pW->ctlResearchPanel;
-    env.pCtlConfirm = &pW->ctlConfirm;
+    /* The original installs TryConfirm through the global control POINTER *pGeoscapeCtlConfirm @ 0x186BA4
+     * (0x95454 LDR R0,=pGeoscapeCtlConfirm; 0x9545c LDR R0,[R0]; 0x95464 STR R3,[R0,#0xC]) -- the very control
+     * InitUI allocated at 0x86100..0x864DC, which is what the hover seats at 0x679F0 and what both pointer
+     * dispatchers hit-test. A second object here gets the handler but never the click. */
+    env.pCtlConfirm = pW->ui.apCtl[GEOUI_CTL_186BA4];
     env.pView = &pW->view;
     env.pZoomSets = pW->sets;
     env.pWorldOut = pW->ui.pWorldSize; /* the pair InitUI allocated at 0x186BC0 */
@@ -690,7 +694,7 @@ static void World_StartNewHook(void *pUser)
     pW->facInitEnv.pfnToggle = World_FacToggleThunk; /* BaseFacScreen_Toggle @ 0x589ec */
     pW->facInitEnv.pToggleUser = pW;
 
-    env.pfnTryConfirmClick = World_ConfirmClick; /* NewBaseScreen_TryConfirm @ 0x6152c, installed at 0x95418's block */
+    env.pfnTryConfirmClick = World_ConfirmClick; /* NewBaseScreen_TryConfirm @ 0x6152c, installed by 0x95454..0x95464 */
     env.pNav = &pW->nav;
     env.pNavEnv = &pW->navEnv;
     env.pUnitEnv = &unitEnv;

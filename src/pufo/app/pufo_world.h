@@ -157,8 +157,9 @@ typedef struct PufoWorldState {
      * writes it through is wired to g_nGlyphPalSlotBase, the port's single instance of it. */
     BaseFacFlag       aFac[PUFO_BASEFAC_COUNT]; /* aBaseFacFlags @ 0x186E48 */
     MissionSiteRec    aMissionSites[PUFO_MISSION_SITE_COUNT]; /* unk_1865C0 */
-    UiControl         ctlResearchPanel;         /* pGeoscapeCtlA */
-    UiControl         ctlConfirm;               /* unk_186BA4 */
+    UiControl         ctlResearchPanel;         /* pGeoscapeCtlA -- see the separate issue: this is a second
+                                                 * object, while the original reaches the control InitUI
+                                                 * allocated through the global pointer */
     u8                bUiAnimStarted;           /* bUiAnimStarted @ 0x187080: the anim root's
                                                  * "the panel animation already started" byte */
     UiLineList        msgLines;                 /* the root message list @ 0x158890 */

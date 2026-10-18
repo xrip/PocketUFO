@@ -1675,7 +1675,7 @@ void Geoscape_CloseUI_ThunkB(const GeoscapeCloseEnv *pEnv);
 void Geoscape_CloseUI_ThunkC(const GeoscapeCloseEnv *pEnv);
 
 /* Geoscape_OnMapClick_Thunk @ 0x857e8: a widget callback shim that drops its four
- * arguments and tail-calls Geoscape_OnMapClick (0x8b4a8), which is not ported. */
+ * arguments and tail-calls Geoscape_OnMapClick (0x8b4a8), which is ported below with its own env. */
 typedef struct MapClickHooks {
     i32 (*pfnMapClick)(void *pUser); /* Geoscape_OnMapClick (0x8b4a8) */
     void *pUser;

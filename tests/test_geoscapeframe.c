@@ -208,6 +208,62 @@ static void NearestRegionTile(i32 nFromX, i32 nFromY, i32 *pnX, i32 *pnY)
     }
 }
 
+/* Step cUiAnimProgress @ 0x187058 the way the app's WM_TIMER branch does (0xA0C88..0xA0C90) and draw between the
+ * steps, until the globe hover gets past its 0x67490 bail and reports a buildable region. The hover stops while the
+ * bottom panel is still expanding, and mode 3 of Ui_AnimExpandBlit lands on progress 100 once 50 * progress reaches
+ * the panel width (0x95D60) -- five frames in practice. This test runs no timer, so it steps the byte the way the
+ * timer does. */
+static void RunFramesUntilHoverRegion(void)
+{
+    for (i32 i = 0; i < 12; ++i) {
+        if (g_world.cUiAnimProgress < 101) {
+            ++g_world.cUiAnimProgress;
+        }
+        (void)DrawFrame();
+        if (g_world.bPendingRegionId >= PUFO_REGION_ID_FIRST
+            && g_world.bPendingRegionId < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+            return;
+        }
+    }
+}
+
+/* Bring a buildable tile under the hover's fixed sample point with pen strokes only. A press inside the drag band
+ * arms bGeoscapeDragActive @ 0x187074 (0x87D60), clears the tap cooldown (0x87D64) and records the pen into
+ * g_smapCamera.nLastDx/nLastDy (0x87D74 / 0x87D7C) with no motion of its own -- the store precedes the BLEQ
+ * Smap_ScrollBy at 0x87D14 and 0x82104 / 0x82114 add it straight back. The pointer events that follow (bDown clear)
+ * carry the camera by the pen's own travel, and the release clears the byte (0x896BC). One stroke carries at most
+ * 100 tiles so the pen never leaves the pen screen, and the short way round is taken because the map wraps in x
+ * (0x82244's own rule). Returns the tile the hover samples afterwards, so the caller can tell whether the shipped
+ * grid holds a buildable region at all. */
+static i32 DragCameraOntoRegion(i32 nMidY)
+{
+    i32 nTileX, nTileY, nRegX, nRegY;
+    i32 nDragX, nDragY;
+    i32 nTile = HoverSampleTile(nMidY, &nTileX, &nTileY);
+
+    if (nTile >= PUFO_REGION_ID_FIRST && nTile < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+        return nTile;
+    }
+    NearestRegionTile(nTileX, nTileY, &nRegX, &nRegY);
+    if (nRegX < 0) {
+        return nTile;
+    }
+    for (i32 i = 0; i < 12 && (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT);
+         ++i) {
+        nDragX = nRegX - nTileX;
+        nDragY = nRegY - nTileY;
+        if (nDragX >  g_world.view.nMapW / 2) { nDragX -= g_world.view.nMapW; }
+        if (nDragX < -g_world.view.nMapW / 2) { nDragX += g_world.view.nMapW; }
+        if (nDragX >  100) { nDragX =  100; } else if (nDragX < -100) { nDragX = -100; }
+        if (nDragY >  100) { nDragY =  100; } else if (nDragY < -100) { nDragY = -100; }
+        World_GeoscapePointer(&g_world, 120, nMidY, true);            /* the press arm moves nothing */
+        World_GeoscapePointer(&g_world, 120 - nDragX, nMidY - nDragY, false);
+        World_GeoscapePointerUp(&g_world);                            /* 0x896BC */
+        nTile = HoverSampleTile(nMidY, &nTileX, &nTileY);
+    }
+    return nTile;
+}
+
 int main(void)
 {
     const char *const apsz[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -221,8 +277,7 @@ int main(void)
     i32       nOpen0, nSamples0;
     i32       nKind, nSpan, nCellW, nCost0, nFunds0, nBase0, nSiteId0, nRegionCnt0;
     i32       nRowX, nRowY, nAimX, nAimY, nFunds1;
-    i32       nMidY, nTile, nTileX, nTileY, nRegX, nRegY, nRegion, nRegionIdx, nNewCost;
-    i32       nDragX, nDragY;                          /* 12g: one pen stroke's camera travel */
+    i32       nMidY, nTile, nRegion, nRegionIdx, nNewCost;
     i32       nBase1, nSiteId1, nMode0, nCost1, nCnt1, nRow2Y, nRowSel, nSel0;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
@@ -410,15 +465,22 @@ int main(void)
         pF->g.nTapCooldown      = 0;
     }
 
-    /* 5. The chain tail on screen 2, both arms of 0x91D98. Game_StartNew stores 1 into bPlacementPending
-     * (0x945D4 MOV R6,#1 / 0x945E0 STRB), so the new game takes the BNE and never blits the close control.
-     * With placement not pending the tail reaches 0x91DA8, and with the panel animation finished -- the
-     * geoscape timer tick is what advances that progress in the running game, the test arms it at 100 --
-     * the hover gets past 0x67490 into its scan stage. The panel is called on its own here so the map
-     * ink cannot hide the scan stage's two 75 x 30 blocks at (160,200) and (5,200) (0x674BC/0x674E0). */
+    /* 5. The chain tail on screen 2, both arms of 0x91D98, and the pick Game_StartNew armed. Game_StartNew stores 1
+     * into bPlacementPending (0x945D4 MOV R6,#1 / 0x945E0 STRB), so the new game takes the BNE and never blits the
+     * close control. Nothing below writes that byte by hand: the pick is committed the only way the game commits it,
+     * through the confirm control the hover seats -- one press and one release -- and the clear at 0x8B608, inside
+     * Geoscape_OnMapClick's pick arm, is what drops it. With placement no longer pending the tail reaches 0x91DA8;
+     * and with the panel animation finished -- the geoscape timer tick is what advances that progress in the running
+     * game, so the test steps it the same way -- the hover gets past 0x67490 into its scan stage. The panel is called
+     * on its own at the end here so the map ink cannot hide the scan stage's two 75 x 30 blocks at (160,200) and
+     * (5,200) (0x674BC/0x674E0). */
     {
-        UiControl *pClose = g_world.ui.apCtl[GEOUI_CTL_186B00];
+        UiControl    *pClose   = g_world.ui.apCtl[GEOUI_CTL_186B00];
+        UiControl    *pConfirm = g_world.ui.apCtl[GEOUI_CTL_186BA4];
         const PadImage *pClosePad = (pClose != NULL) ? pClose->apPads[pClose->nState] : NULL;
+        BaseRec      *pBase0   = g_world.apBases[0];
+        StrategItem  *pContact = NULL;
+        i32           nContactHits = 0;
 
         ClearSurface();
         g_nBlits = 0;
@@ -426,9 +488,79 @@ int main(void)
         Check(pClose != NULL && !SawPadBlit(pClosePad),
               "bPlacementPending set (0x945E0): 0x91D98's BNE skips the close-control blit");
 
-        g_world.bPlacementPending = 0;
-        *pF->anim.pbStarted  = 1;
-        *pF->anim.pnProgress = 100;
+        /* The hover is the screen's own gate: while the bottom panel is still expanding it stops at 0x67490 and
+         * returns 0, and cUiAnimProgress @ 0x187058 is stepped only by the app's WM_TIMER branch
+         * (0xA0C88..0xA0C90). The pen waits it out the way the timer does -- frames, not flags. */
+        nMidY = (320 - (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight) / 2;
+        RunFramesUntilHoverRegion();
+        nTile = DragCameraOntoRegion(nMidY);
+        Check(nTile >= PUFO_REGION_ID_FIRST && nTile < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT,
+              "a pen stroke brought a buildable region under the hover's sample (0x87D58..0x87D7C -> 0x82124)");
+        Check(pF->g.bDragActive == 0, "and that stroke's release left the drag byte clear (0x896BC)");
+        (void)DrawFrame(); /* the draw is what stores the hovered tile, and it lags its own pick by a frame */
+        nRegion = g_world.bPendingRegionId;
+        Check(nRegion >= PUFO_REGION_ID_FIRST && nRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT,
+              "Geoscape_Draw stores the hovered tile into bPendingRegionId @ 0x159DF4 (0x91D94)");
+        nRegionIdx = (nRegion >= PUFO_REGION_ID_FIRST && nRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT)
+                     ? nRegion - PUFO_REGION_ID_FIRST : 0;
+        printf("       pick armed: progress %d, pending region %02X, place %d/%d, lines %d\n",
+               (int)g_world.cUiAnimProgress, (int)g_world.bPendingRegionId, g_world.nPlaceX, g_world.nPlaceY,
+               g_world.msgLines.nLineCount);
+
+        Check(pConfirm != NULL && pConfirm->y == PUFO_GLOBE_LABEL_Y_BUILD
+                  && pConfirm->x == 120 - (i32)(pConfirm->uWidth >> 1),
+              "the region arm seated the confirm control centred on 120 at y 290 (0x679F0 / 0x67A00)");
+
+        nBase1  = g_world.nBaseCount;
+        nFunds1 = g_world.nFunds;
+        nCnt1   = (i32)g_world.aRegionBuildCount[nRegionIdx];
+        for (i = 0; i < PtrArray_GetCount(&g_world.strategList); ++i) {
+            StrategItem *pItem = (StrategItem *)PtrArray_Get(&g_world.strategList, i);
+            if (pItem != NULL && (i32)(i8)pBase0->bUnk4 == pItem->nSiteId) {
+                ++nContactHits;
+                if (pContact == NULL) {
+                    pContact = pItem;
+                }
+            }
+        }
+
+        nSamples0 = g_nSamples;
+        World_GeoscapePointer(&g_world, pConfirm->x + 2, pConfirm->y + 2, true);
+        CheckEqI32(g_world.bFacDone, 1, "the press arms the new-base byte on its way through (0x874E4)");
+        Check(pConfirm->nState == 1,
+              "and the case-2 preamble hit-tests 186BA4 because the region byte is not 0xFF, so the control is pressed (0x874EC)");
+        CheckEqI32(pConfirm->nState, 1, "the control is in its pressed state going into the release");
+        World_GeoscapePointerUp(&g_world);
+
+        CheckEqI32(g_nSamples, nSamples0 + 1,
+                   "the release's own preamble (0x89694) released it: TryConfirm's Sound_Play(17, 4) (0x61538)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "the pick arm writes the placement screen id (0x8B600)");
+        CheckEqI32(g_world.bPlacementPending, 0, "and clears the pick it committed (0x8B608)");
+        CheckEqI32(g_world.bFacDone, 0,
+                   "with the new-base byte the press had set -- only this arm has that clear (0x8B60C, cf. 0x8B64C)");
+        Check(g_world.nBaseCount == nBase1 && g_world.nFunds == nFunds1,
+              "committing a pick makes no base and spends nothing");
+        Check(pBase0 != NULL && pBase0->nUnk8 == g_world.nPlaceX && pBase0->nUnk12 == g_world.nPlaceY,
+              "the base takes the pick the hover resolved (0x8B504 / 0x8B518)");
+        CheckEqI32((i32)pBase0->bRegionId, nRegion, "its region byte is the hovered tile (0x8B52C)");
+        CheckEqI32((i32)pBase0->bUnk16, 1, "and its +0x10 byte is set (0x8B53C)");
+        CheckEqI32((i32)g_world.aSiteRecs[0].bType, nRegionIdx,
+                   "the site record's type is the tile less 0x80 (SUB R0,R1,#0x80 at 0x8B544)");
+        Check(g_world.aSiteRecs[0].abName[0] != 0, "the label built at 0x8B550 is copied into the record (0x8B56C)");
+        CheckEqI32((i32)g_world.aRegionBuildCount[nRegionIdx], nCnt1 + 1,
+                   "and building that label bumped the region's counter, the label holding the value from before it (0x6A46C, 0x6A49C)");
+        if (pContact != NULL) {
+            Check(pContact->nX == g_world.nPlaceX && pContact->nY == g_world.nPlaceY,
+                  "the contact whose site id is the base's was moved to the pick (0x8B5E4 / 0x8B5F8)");
+        } else {
+            CheckEqI32(nContactHits, 0,
+                       "no contact carries the starting base's site id, so the pick arm's scan (0x8B570..0x8B5B4) finds nothing to move");
+        }
+
+        g_world.nav.apNav[0]->pfnClick(); /* NewBaseScreen_Open @ 0x615d0, the same control the nav bar carries */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 2, "and the nav bar's own opener puts the camera back on screen 2 (0x61620)");
+        RunFramesUntilHoverRegion(); /* its 0x6164C clear re-arms the panel wipe the hover waits on */
+
         ClearSurface();
         g_nBlits = 0;
         Geoscape_DrawStatusPanel(&pF->panel);
@@ -490,9 +622,12 @@ int main(void)
     CheckEqI32(g_world.view.nScrollY, -400 - 140 + 120,
                "on both axes, with no Y clamp because the id is 2 (0x82120 BEQ loc_82164)");
 
+    /* The pick commit earlier in this run played its own samples, so the claim here is about THIS release. */
+    nSamples0 = g_nSamples;
     World_GeoscapePointerUp(&g_world);
     CheckEqI32(pF->g.bDragActive, 0, "the release clears the drag flag (0x896BC)");
-    CheckEqI32(g_nSamples, 0, "screen 2 with an empty message line plays no sample on release");
+    CheckEqI32(g_nSamples, nSamples0,
+               "screen 2 with an empty message line, no pressed control and no pending pick plays no sample on release");
 
     /* 8. The cursor pair really is 16-bit: a pen below the surface wraps the stored halfword. */
     World_GeoscapePointer(&g_world, 100, 33000, true);
@@ -852,44 +987,12 @@ int main(void)
     /* The hover is the screen's own second gate: while that panel is still expanding it stops at 0x67490 and
      * returns 0, so the scan animation, the readouts, the region byte and the confirm-control seat all wait for
      * the panel to finish. The pen waits it out the way the render timer does -- frames, not flags. */
-    nTile = HoverSampleTile(nMidY, &nTileX, &nTileY);
-    if (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
-        NearestRegionTile(nTileX, nTileY, &nRegX, &nRegY);
-        Check(nRegX >= 0, "the shipped tile grid holds a buildable region to bring the camera over");
-        /* The stroke is the game's own: a press inside the drag band arms bGeoscapeDragActive @ 0x187074 and
-         * records the pen into view+0x14/+0x18 (0x87D58..0x87D7C) with no motion of its own, and only the pointer
-         * event that follows (bDown == 0) reaches Smap_ScrollBy @ 0x82124 at 0x87D14, which moves the view by the
-         * pen's own travel. One stroke stays inside the pen area, so it carries at most 100 tiles; the map wraps
-         * in x, so the short way round is the one taken. */
-        for (i = 0; i < 12 && (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT);
-             ++i) {
-            nDragX = nRegX - nTileX;
-            nDragY = nRegY - nTileY;
-            if (nDragX >  g_world.view.nMapW / 2) { nDragX -= g_world.view.nMapW; }
-            if (nDragX < -g_world.view.nMapW / 2) { nDragX += g_world.view.nMapW; }
-            if (nDragX >  100) { nDragX =  100; } else if (nDragX < -100) { nDragX = -100; }
-            if (nDragY >  100) { nDragY =  100; } else if (nDragY < -100) { nDragY = -100; }
-            World_GeoscapePointer(&g_world, 120, nMidY, true);            /* the press arm moves nothing */
-            World_GeoscapePointer(&g_world, 120 - nDragX, nMidY - nDragY, false);
-            World_GeoscapePointerUp(&g_world);                            /* the release clears 0x187074 (0x896BC) */
-            nTile = HoverSampleTile(nMidY, &nTileX, &nTileY);
-        }
-        Check(pF->g.bDragActive == 0, "the nearest region was one stroke away, and its release leaves the drag byte clear (0x896BC)");
-    }
-    /* cUiAnimProgress @ 0x187058 is stepped by the app's WM_TIMER branch (0xA0C88..0xA0C90), and mode 3 of
-     * Ui_AnimExpandBlit lands on progress 100 once 50 * progress reaches the panel width (0x95D60). This test
-     * runs no timer, so it steps that byte the way the timer does and draws between the steps. */
-    nRegion = 0;
-    for (i = 0; i < 12; ++i) {
-        if (g_world.cUiAnimProgress < 101) {
-            ++g_world.cUiAnimProgress;
-        }
-        (void)DrawFrame();
-        nRegion = g_world.bPendingRegionId;
-        if (nRegion >= PUFO_REGION_ID_FIRST && nRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
-            break;
-        }
-    }
+    nTile = DragCameraOntoRegion(nMidY);
+    Check(nTile >= PUFO_REGION_ID_FIRST && nTile < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT,
+          "the shipped grid holds a buildable region and the pen strokes reached it (0x87D58..0x87D7C -> 0x82124)");
+    Check(pF->g.bDragActive == 0, "and the stroke's release leaves the drag byte clear (0x896BC)");
+    RunFramesUntilHoverRegion(); /* the wipe NewBaseScreen_Open re-armed at 0x6164C */
+    nRegion = g_world.bPendingRegionId;
     Check(nRegion >= PUFO_REGION_ID_FIRST && nRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT,
           "the globe hover resolves a buildable region from its own sample (0x67894, returned at 0x67B0C)");
     /* 0x6786C / 0x67874 store the pick of the PREVIOUS sample: the hover writes the view's nPickX/nPickY first

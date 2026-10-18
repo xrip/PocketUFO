@@ -538,7 +538,7 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     /* 0x94650..0x94680: the nine region counters plus the byte at 0x186566 (IDA names it
      * bUiFrameStyle), then the strateg count byte. */
     for (i = 0; i < 10; ++i) {
-        pEnv->abSaveFlags[i] = 1;
+        pEnv->paRegionBuildCount[i] = 1;
     }
     *pEnv->pbStrategCount = 0;
 

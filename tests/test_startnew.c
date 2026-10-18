@@ -88,7 +88,7 @@ static i32  nNextDisplayId;         /* 0x186544 */
 static i32  nNextSiteId;            /* 0x186548 */
 static i32  nMissionId;             /* 0x18654C */
 static i32  nCreateNextSiteId;      /* dword_186558, Base_CreateNamedEntry's own counter */
-static u8   abSaveFlags[10];        /* 0x18655D */
+static u8   aRegionBuildCount[10];        /* 0x18655D */
 static GeoscapeEconomy economy;
 static i32  anFundTable[8];         /* the 0x14B4C8 zero buffer */
 
@@ -211,7 +211,7 @@ static void TestStartNew(void)
     nMissionId = 9;
     nCreateNextSiteId = 1;
     memset(abTypeCounters, 9, sizeof(abTypeCounters));
-    memset(abSaveFlags, 0, sizeof(abSaveFlags));
+    memset(aRegionBuildCount, 0, sizeof(aRegionBuildCount));
     memset(radarPct, 0xAA, sizeof(radarPct));
     memset(grid, 0x5A, sizeof(grid));
     memset(prodU16, 0xAA, sizeof(prodU16));
@@ -377,7 +377,7 @@ static void TestStartNew(void)
     env.pnNextDisplayId = &nNextDisplayId;
     env.pnNextSiteId = &nNextSiteId;
     env.pnMissionId = &nMissionId;
-    env.abSaveFlags = abSaveFlags;
+    env.paRegionBuildCount = aRegionBuildCount;
     env.pEconomy = &economy;
     env.paFacFlags = aFac;
     env.pTextRecs = g_assets.pTextRecs;
@@ -415,7 +415,7 @@ static void TestStartNew(void)
     {
         bool bAll = true;
         for (i = 0; i < 10; ++i) {
-            if (abSaveFlags[i] != 1) {
+            if (aRegionBuildCount[i] != 1) {
                 bAll = false;
             }
         }

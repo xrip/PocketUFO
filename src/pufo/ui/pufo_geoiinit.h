@@ -305,7 +305,10 @@ typedef struct StartNewEnv {
     i32   *pnNextDisplayId;           /* 0x186544 */
     i32   *pnNextSiteId;              /* 0x186548 */
     i32   *pnMissionId;               /* 0x18654C */
-    u8    *abSaveFlags;               /* 0x18655D, ten bytes set to 1 (see 4.) */
+    u8    *paRegionBuildCount;        /* g_anRegionBuildCount @ 0x18655D: the nine region counters plus the
+                                       * tenth byte the IDB still names bUiFrameStyle (0x186566). Game_StartNew
+                                       * sets all ten to 1 (0x94650..0x94680), so the first label a region gets
+                                       * already reads 1 (BaseFac_FormatCostLabel 0x6A46C). */
     GeoscapeEconomy *pEconomy;
 
     /* Facility table. */
