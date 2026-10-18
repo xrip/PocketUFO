@@ -490,6 +490,13 @@ static void TestStatPanelLabels(void)
     SoftSurf_AllocPixels(&g_planeSurf, 240, 320, PIXMODE_16BPP);
     g_pMainSurface = &g_planeSurf;
 
+    /* SoftSurf_AllocPixels @ 0x9f9a4 fills in only the 4-byte header: `operator new` (0x9FA1C) with no zeroing pass,
+     * so the pixels start indeterminate in the original too. They read 0 in Release because they are fresh pages and
+     * non-zero in Debug because the debug heap fills them -- that difference is the only thing the "untouched" checks
+     * below were actually reading. A sentinel makes "untouched" mean "still the sentinel". */
+    memset(g_planeSurf.pPixels, 0x5A,
+           (size_t)g_planeSurf.nWidth * (size_t)g_planeSurf.nHeight * (size_t)g_planeSurf.nBytesPP);
+
     memset(g_aPlaneText, 0, sizeof(g_aPlaneText));
     PlanePutRec(141, "AAAAAAAAAA"); /* ten characters, drawn whole */
     PlanePutRec(142, "BBBBBBBBBB"); /* ten, cut to seven at 0x79F34 */
@@ -515,7 +522,7 @@ static void TestStatPanelLabels(void)
     TestEqI32("  and the inner rects repaint 6,76 with index 0x14", pPix[76 * 240 + 6], ((0x14 >> 3) << 11) + 32 * (0x50 >> 2) + (0x63 >> 3));
     TestEqI32("  down to 232,152 inclusive", pPix[152 * 240 + 232], ((0x14 >> 3) << 11) + 32 * (0x50 >> 2) + (0x63 >> 3));
     TestEqI32("  the outer rect's own corner 234,154 keeps the outer colour", pPix[154 * 240 + 234], ((0x44 >> 3) << 11) + 32 * (0xF4 >> 2) + (0xFC >> 3));
-    TestEqI32("  the field outside the panel is untouched", pPix[80 * 240 + 239], 0);
+    TestEqI32("  the field outside the panel keeps the sentinel", pPix[80 * 240 + 239], 0x5A5A);
 
     /* The truncation is idempotent, so a second visit shortens nothing further. */
     BasePlaneScreen_DrawStatLabel(&p, 1, g_aPlaneText, &g_planeColor, 3);

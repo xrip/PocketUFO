@@ -158,9 +158,15 @@ Palette ground truth was extracted independently from `main.dat`:
   screens. That dispatcher is **not** ported here: the screens it calls belong to
   the `tact-ui`, `strat-ui`, `titles`, and `strat` tasks. Only the render
   primitives it drives are done.
-- `SoftSurf_BlitSrcRect` / `SoftSurf_BlitRect` / `Blit_CopyToXY` are declared in
-  the IDB and used by `MapView_DrawViewportGuide` and `SoftSurf_BlitRectProxy`,
-  but are not ported yet; they belong to the UI/tact work.
+- `SoftSurf_BlitRect @ 0x9ebb0` / `SoftSurf_BlitSrcRect @ 0x9ebf8` /
+  `Blit_CopyToXY @ 0xa42e4` are ported (the two bound forms pin `g_pMainSurface`).
+  They gate on **different fields** and that is the original's own shape: the fill
+  reads `blitState.nPixelMode`, the TARGET mode, published only by
+  `Blit_SetTargetParams @ 0xa39ac` from `Render_SetTarget @ 0x9faa4`, which
+  `GX_PresentFrame @ 0x9ea7c` arms on every present, while the blend reads
+  `blitState.nSurf2`, the SURFACE mode. A caller that has a surface but no armed
+  target therefore fills nothing and blends normally — proven in `test_titles`,
+  which had exactly that shape and drew no scroll<50 fill (Part 39).
 - `PadImage_Blit` @ `0x110dc` is ported as a shim over `SoftSurf_BlitIndexed`,
   which is what the original does. It cannot be exercised until the global
   surface is created by `Assets_LoadStartup` (the `boot-assets` work).

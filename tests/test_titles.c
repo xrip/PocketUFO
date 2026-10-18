@@ -51,13 +51,25 @@ static void BuildData(void)
     SoftSurf_ctor(&g_surf);
     SoftSurf_AllocPixels(&g_surf, 240, 320, PIXMODE_16BPP);
     g_pMainSurface = &g_surf;
+
+    /* The scroll<50 fill goes BlitRectProxy -> SoftSurf_BlitRect -> Blit_CopyToXY @ 0xa42e4, and that one
+     * gates on the TARGET pixel mode (blitState+0x20), published only by Blit_SetTargetParams @ 0xa39ac.
+     * A real frame arms it every present, GX_PresentFrame @ 0x9ea7c -> Render_SetTarget @ 0x9faa4, with the
+     * original's own 240x320/2-byte constants; the suite has no window, so it arms the same descriptor
+     * here. Without it the fill silently draws nothing, which is what let this suite read an untouched
+     * surface as "no credit rows" -- 0 in Release, 0xCDCD in Debug. The rectangle and glyph paths write
+     * into the loaded surface and read only the mode out of the target, never into pBits. */
+    Render_SetTarget(240, 320, 2, 240 * 2, 320 * 2, g_surf.pPixels);
+
     g_fontSys.apSprIndex = NULL;
     memset(&g_color, 0, sizeof(g_color));
 
     /* The fills and the indexed glyph resolve their colours through g_aPalette, which is zero
-     * until the palettes are loaded. Give the two slots this function uses a non-zero colour so
-     * "something was drawn" is observable. */
-    memset(g_aPalette[21], 0xFF, sizeof(g_aPalette[21]));
+     * until the palettes are loaded. Give the two slots this function uses a colour that is not the
+     * scroll<50 fill's own value, so "the fill ran" and "a glyph ran" are separate observations:
+     * an indexed 16bpp blit writes the low half of the palette entry straight through
+     * (Blit_Indexed @ 0xa306c), so slot 21's glyph reads 0x5C5C and slot 1's reads 0x1111. */
+    memset(g_aPalette[21], 0x5C, sizeof(g_aPalette[21]));
     memset(g_aPalette[1], 0x11, sizeof(g_aPalette[1]));
     memset(g_aPalette[63], 0xFF, sizeof(g_aPalette[63]));
 
@@ -120,14 +132,18 @@ static void TestBackdrop(void)
     printf("Titles_DrawBackdrop @ 0x1e630\n");
     BuildData();
 
-    /* Under 50 the original fills the screen white. That fill resolves its colour through the
-     * palette layer and is not asserted here; what is asserted is the row rule, which at a scroll
-     * of 0 admits no rows at all. */
+    /* Under 50 the original fills the whole screen: SoftSurf_BlitRectProxy(0, 0, 0, 240, 320, 0xFF, 0xFF, 0xFF)
+     * at 0x1E6A0, and Blit_PackedColor turns those operands into ((0xFF>>3)<<11) + 32*(0xFF>>2) + (0xFF>>3)
+     * = 0xFFFF. A scroll of 0 has an empty row window -- nLast = 0 / 20 = 0 -- so no credit row paints over
+     * the fill, and the fill also covers the 4x2 backdrop glyph that 0x1E65C blits at (0, 0) on every path. */
+    ClearScreen();
     env = MakeEnv(0);
     CheckEqI32("returns the row count", Titles_DrawBackdrop(&env), 3);
-    Check(Sample() == 0, "a scroll of 0 admits no credit rows");
+    CheckEqI32("a scroll of 0 leaves the white fill at the sample point", Sample(), 0xFFFF);
+    CheckEqI32("  over the top of the backdrop glyph", SampleAt(1, 1), 0xFFFF);
 
-    /* 50..279 with 3 * (135 - scroll) still positive: a keyed full-screen blit. */
+    /* 50..279 with 3 * (135 - scroll) still positive: a keyed full-screen blit. The screen was cleared and
+     * the backdrop glyph is 4x2 at (0, 0), so the only thing that can reach the sample point is that blit. */
     ClearScreen();
     env = MakeEnv(100);
     (void)Titles_DrawBackdrop(&env);
@@ -135,31 +151,38 @@ static void TestBackdrop(void)
 
     /* Past 135 the fade key goes negative and the blit is skipped, but the row window is
      * 0 .. 200/20 - 1 clamped to 3, so the '@' record on row 1 still draws its glyph at
-     * y = 20 * (1 + 17) - 200 = 160. */
+     * y = 20 * (1 + 17) - 200 = 160. It is centred (4 wide at (240 - 4) / 2 = 118, 2 tall), and
+     * slot 1's colour is 0x1111, so the covered point reads that value exactly. */
     ClearScreen();
     env = MakeEnv(200);
     (void)Titles_DrawBackdrop(&env);
-    Check(SampleAt(120, 160) != 0, "a scroll of 200 draws the glyph row at y 160");
-    Check(SampleAt(120, 200) == 0, "and nothing below it");
+    CheckEqI32("a scroll of 200 draws the glyph row at y 160", SampleAt(120, 160), 0x1111);
+    CheckEqI32("and nothing below it", SampleAt(120, 200), 0);
 
-    /* The visible window below 320 is rows 0 .. scroll/20 - 1, clamped to the row count. */
+    /* The visible window below 320 is rows 0 .. scroll/20 - 1, clamped to the row count: at 20 that is
+     * row 0 alone, at y = 20 * 17 - 20 = 320, one row past the surface. 20 is also under 50, so the
+     * white fill runs and the sample point keeps the fill colour rather than a glyph's. */
     ClearScreen();
     env = MakeEnv(20);
     (void)Titles_DrawBackdrop(&env);
-    Check(Sample() == 0, "a scroll of 20 reaches only row 0, far from the sample point");
+    CheckEqI32("a scroll of 20 puts row 0 past the surface and keeps the fill", Sample(), 0xFFFF);
 
     /* At 340 the window starts at row 0 and spans 36 rows, clamped to 3, so the '@' record on
-     * row 1 draws its glyph at y = 20 * (1 + 17) - 340 = 20. */
+     * row 1 draws its glyph at y = 20 * (1 + 17) - 340 = 20. 340 is past both branches, so the
+     * field around it stays as cleared. */
     ClearScreen();
     env = MakeEnv(340);
     (void)Titles_DrawBackdrop(&env);
-    Check(SampleAt(119, 20) != 0, "a scroll of 340 draws the glyph row at y 20");
+    CheckEqI32("a scroll of 340 draws the glyph row at y 20", SampleAt(119, 20), 0x1111);
+    CheckEqI32("  and runs neither the fill nor the fade", Sample(), 0);
 
-    /* Past the data: first row 3 is not below the clamped last row 3, so nothing is drawn. */
+    /* Past the data: first row 3 is not below the clamped last row 3, so nothing is drawn. The
+     * backdrop blit at 0x1E65C is before every branch, so it still lands. */
     ClearScreen();
     env = MakeEnv(400);
     CheckEqI32("still returns the row count", Titles_DrawBackdrop(&env), 3);
-    Check(Sample() == 0, "a scroll of 400 draws no credit row");
+    CheckEqI32("a scroll of 400 draws no credit row", Sample(), 0);
+    CheckEqI32("  while the backdrop glyph still blits at (0, 0)", SampleAt(1, 1), 0x5C5C);
 
     g_pMainSurface = NULL;
 }

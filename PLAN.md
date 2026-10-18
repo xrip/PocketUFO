@@ -3167,12 +3167,27 @@ Order is by what unblocks what. Each item ends with gates + commit.
   documented no-op, like `Gx_Suspend`) or they are recorded as WinCE-only and left out. This needs the user's call
   before a unit is built on it.
 
-- [ ] **Next unit: the two suites that are red in Debug at HEAD.** `test_titles` ("a scroll of 0 admits no credit rows")
-  and `test_plane` ("the field outside the panel is untouched: got 52685 want 0") pass in Release and fail in Debug, and
-  they have been carried as known-red for many parts. The verification contract does not really allow a permanent red:
-  either the port has an uninitialised-memory shape that Debug exposes and Release hides (the shape already named for
-  `test_geoscape` in the issues below), or the two checks assert something the port never promised. Worth finding out
-  which, because "99.7% of bytes recreated" is not the same claim as "the port runs the same way everywhere".
+- [x] **The two Debug-red suites were one missing target publish and two bets on fresh pages (Part 39).** No new
+  original block, and no IDB change — the two gates the diagnosis rests on are already commented there. Both reds
+  read the allocator, not the port: `SoftSurf_AllocPixels @ 0x9f9a4` is `operator new` (0x9FA1C) plus the 4-byte header
+  with no zeroing pass, so the pixels start indeterminate in the original too — 0 on Release's fresh pages, 0xCDCD
+  (52685) on Debug's filled heap. `test_plane`'s "the field outside the panel is untouched" now fills the surface with a
+  0x5A sentinel and asserts 0x5A5A, so "untouched" means "still the sentinel".
+  `test_titles` had the deeper half: the scroll<50 white fill at 0x1E6A0 runs BlitRectProxy -> `SoftSurf_BlitRect @ 0x9ebb0`
+  -> `Blit_CopyToXY @ 0xa42e4`, and that one gates on `blitState.nPixelMode`, the TARGET mode, published only by
+  `Blit_SetTargetParams @ 0xa39ac` from `Render_SetTarget @ 0x9faa4` — which `GX_PresentFrame @ 0x9ea7c` calls on every
+  present — while the glyph blit and the fade blit gate on `blitState.nSurf2`, the SURFACE mode. The suite had a surface
+  and no target, so the fill drew nothing at all: the green Release check was measuring "nothing was drawn", not the row
+  rule, and Debug's fill made that visible. `BuildData` now arms the same 240x320/2-byte descriptor the game arms, every
+  check starts from a cleared screen, and the colours are the original's own arithmetic — the fill is
+  `Blit_PackedColor(0xFF, 0xFF, 0xFF) = 0xFFFF`, a centred '@' glyph is the low half of its palette entry, and the
+  0x1E65C backdrop blit runs before both branches. Palette slot 21 is primed to 0x5C rather than 0xFF so a glyph and the
+  fill are different observations, and 9 of the backdrop checks now assert exact values instead of `!= 0` / `== 0`.
+  **Debug is green end to end for the first time: 61/61 in both configs, 17922 checks.**
+
+- [ ] **Next unit: the `WM_TIMER` speed dispatch in `PocketUFO_WndProc` (0xA08BC..0xA0938).** The shell's 0xC350 timer
+  reaches `GameTick_OnTimer`, which splits on the game speed, and that arm is the last live behaviour of the window
+  procedure the focus part left unported; the AYGSHELL trio below still waits on the user's call.
 
 ## Separate issues, not folded into the porting steps
 
@@ -3437,26 +3452,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - And again with `MapView_DrawIsoLayer`: `pufo_isodraw.obj` now reaches
     `UiControl_BlitActivePad` through `pufo_tacthud.obj`, so `test_isodraw` links `pufo_ui` too —
     eighteen of the fifty-one test targets now have to.
-- [ ] Five test targets have been seen failing in the **Debug** configuration while passing in Release,
-  and which three of them fail moves from run to run. Three (titles, save, template) already fail at
-  `04f1155` — verified by building that commit in a clean worktree with the same ClangCL toolset — so
-  none of them came from the `Tact_InitMission` step; `test_geoscape`'s one failure was verified the
-  same way against the frame-wiring step (its `src/pufo` edits stashed, same build directory, same
-  check failing). They are Debug-CRT artefacts: uninitialised memory and allocator block reuse, both
-  of which the tests assume away.
-  - `test_titles`: `Titles_DrawBackdrop @ 0x1e630` returns 3 at a scroll of 0 but still draws a
-    credit row, while the test asserts it draws none. Either the row rule or the test is wrong;
-    needs a fresh ARM read of `0x1e630`.
-  - `test_save`: "the first item is unaffected" reads `0xCDCDCDCD` — the Debug CRT's uninitialised
-    heap marker. Something on that path is read before it is written.
-  - `test_template`: asserts that `MapTemplate_Load` produced a *different* `pBlob` pointer than the
-    one it freed. The allocator is free to reuse the block, so the check passes or fails with heap
-    state; it passed on rerun. This is the pointer-identity trap already noted in `HANDOFF.md`.
-  - `test_geoscape`: "the craft's display name lands in the 0x186488 caption scratch" compares two
-    buffers that the Debug CRT has not filled the same way; it passes in Release. Pre-existing.
-  - `test_plane`: failed in the Debug run that also showed `test_geoscape`'s failure, passed in the
-    Debug run before it and in both Release runs. Not yet looked at; the same class.
-  These are not folded into the porting steps. They need their own pass.
+- [x] **Closed at Part 39: Debug is green end to end, 61/61 in both configs.** Five targets used to fail in Debug
+  while passing in Release — titles, save, template, geoscape, plane — and which three of them failed moved from run
+  to run. All five were Debug-CRT artefacts in the checks rather than port behaviour: uninitialised memory and
+  allocator block reuse that the assertions assumed away. `test_template` was one pointer-identity check (Part 37),
+  `test_save` now compares against its own 0xEE sentinel, `test_geoscape`'s caption-scratch comparison was reworked
+  in the clock part, and `test_titles` plus `test_plane` are Part 39. The rule the class leaves behind: a check may
+  not assert "untouched" about memory the original never initialised — `SoftSurf_AllocPixels @ 0x9f9a4` zeroes
+  nothing, so a check fills the memory with a sentinel and asserts the sentinel.
 - [ ] `Tact_LoadPalettes(i32 nGamma)` / `Tact_BuildPaletteLuts(i32 nGamma)` take an argument the
   original does not: in ARM both take none, and `Tact_BuildPaletteLuts` reads `Map_nGamma @ 0x128AB8`
   itself. `Tact_InitMission` passes `*pEnv->pnGamma` to keep the existing signature. Harmless, but it
@@ -3702,6 +3705,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the window-size pair and the last function with behaviour (Part 36: `App_ResizeMainWindow @ 0x9ecb8` ported in `pufo_app.c` — `SetWindowPos(hWndMain, HWND_BOTTOM, 0, 0, nScreenW, nScreenH, SWP_HIDEWINDOW)` — with `g_nScreenW`/`g_nScreenH` written at InitInstance's 0x9FE44/0x9FE58 and InitInstance's own 0x9FE94 `SetWindowPos` (`fuFlags 2` = SWP_NOMOVE, after ShowWindow 0x9FE60 and UpdateWindow 0x9FE68) ported with it, which the shell never had; 2 adaptations — the port stores the created window size instead of the device's `GetSystemMetrics` pair, and the caller is tactical widget 58 (0x3B6AC, 0x3BC74) not the options screen the parity doc claimed, so the shell has the callee and no caller until the tactical bank is built; IDB: the block 0x188D40..0x188D58 carried names with no items under them — a 60-byte item to 0x188D4C and a 12-byte `unsigned __int8[12]` from it — so Hex-Rays read the width as `dword_1883AC[613]`, the height as `g_bListRowSticky[4]` and the HWND as `*(HWND*)&g_bListRowSticky[8]` everywhere; now five items (4/4/1/4/4, the row-sticky byte really is one: `LDRB` 0x14AD0, `STRB` 0xA03D4) with writer/reader comments at 0x188D40, 0x188D44, 0x188D4C, 0x188D50, 0x188D54 and 0x9ECB8, and `PocketUFO_WndProc`'s pseudocode names the pair for the first time) | 61/61 (Release) | 17909 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the reload check asserted the allocator, not the port (Part 37: `test_template`'s "pointer changed to the new blob" required a freed 2403-byte block not to be re-used by the next 403-byte allocation — a heap decision, which is why it was red three times in `check.sh`'s Debug stage and green in every standalone run of an unchanged binary; replaced by what the guarantee is actually visible in — load `avenger`, load `culta0`, then load `no_such_template` and require `pBlob == NULL`, since `MapTemplate_Load` frees at `pufo_template.c:22` before it allocates; teeth proven by removing that free, which turns exactly the new check red and leaves the old one green; `tools/check.sh` Debug stage moved to `-j 8` because the order coupling it was kept serial for no longer exists (2 failures both ways, four runs), `--output-on-failure` on both ctest stages with the full output kept in `/tmp/pufo_check_*tests.log`, and both stages' exit codes kept in variables because `ctest | tail` reports `tail`'s status) | 61/61 (Release) | 17910 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the focus arms, and a pause call that had one argument where the original has two (Part 38: `App_FocusLost` / `App_FocusGained` in `pufo_app.c` for WM_KILLFOCUS 0xA046C..0xA0560 and WM_SETFOCUS 0xA0564..0xA0674 — both gated on `Map.bTactFlag @ 0x1139B8` then `Map_bGeoscapeUi @ Map+0x44`; reposition with the stored pair at HWND_NOTOPMOST/0 (0xA04AC, 0xA0514) or HWND_TOP/0x40 (0xA05B8) or HWND_TOP/0 (0xA0610); `Timer_KillBySpeed`/`Timer_KillD` then `Gx_Suspend`, `Gx_Resume` then `Timer_StartBySpeed`/`Timer_StartD`; audio on every path including the no-flag case (0xA052C, 0xA0618); the four held-key flags cleared at 0xA064C..0xA0670. IDB: `FSOUND_SetPaused` imported as one-arg `signed __int8 paused` — Hex-Rays read the channel 0xFFFFFFFD = FSOUND_ALL as the flag and the port inherited the mistake, passing `-3` as the flag and dropping `Map_bSoundOff` (which at 0x9E548 *pauses* muted effects), with `test_audio` pinning it as an "unpause-all sentinel"; retyped at 0xA151C, `pfnSetSfxPaused(nChannel, bPaused)`, new `Sound_SetPaused(bool)`, comments at 0xA151C/0xA046C/0xA0564; `unk_1139FC` named `Map_bGeoscapeUi` (set 1 at 0x85858, 0 at 0x86D34, read by nine input handlers + `Render_Frame` + `LoadGame` + both arms) with all 14 citations updated; 3 deviations — `Gx_Suspend`/`Gx_Resume` are seam no-ops (no GAPI display ownership on Win64), the reposition is a visible move on a desktop, and the shell has no `GameClock` so the mission arm's speed reads the unread mirror `g_nGameSpeed` = 0) | 61/61 (Release) | 17919 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
+| the two Debug-red suites (Part 39: no new original block and no IDB change — both reds read the allocator. `SoftSurf_AllocPixels @ 0x9f9a4` is `operator new` (0x9FA1C) plus the 4-byte header with no zeroing pass, so the pixels are indeterminate in the original too (0 in Release, 0xCDCD in Debug); `test_plane` now sentinel-fills with 0x5A and asserts 0x5A5A. `test_titles` never armed the blit TARGET, and `Blit_CopyToXY @ 0xa42e4` gates on `blitState.nPixelMode` where the glyph and fade blits gate on `blitState.nSurf2`, so the scroll<50 fill at 0x1E6A0 drew nothing and the suite's `== 0` checks were measuring an untouched surface rather than the row rule; `BuildData` now calls `Render_SetTarget @ 0x9faa4` with the game's 240x320/2 descriptor (the arm `GX_PresentFrame @ 0x9ea7c` performs every present), every check starts from a cleared screen, slot 21 is primed to 0x5C so a glyph and the fill are separate observations, and 9 backdrop checks assert the packed colours the original's arithmetic gives (fill 0xFFFF, centred glyph 0x1111, backdrop 0x5C5C); 3 new checks; 0xa42e4 re-read, its gate comment already correct) | 61/61 (Release) and 61/61 (Debug) | 17922 | 967/1103 (87.7%) | 596836/598792 (99.7%) | 43 checked, 0 mismatched |
 | the frame wired into the shell (Part 25: no new original block — `RenderFrameEnv.pfnGeoscapeDraw` implemented as `World_DrawGeoscapeFrame`, `GeoscapeFrameState` with one env per arm plus `GeoscapeFrameGlobals` for nSmapOverlayOriginX @ 0x186C20, nSmapCrosshairX/Y @ 0x186BC8/0x186BCC, bSmapCrosshairPending @ 0x1870B0, nRadarCooldownR @ 0xAC218, nSmapCursorX/Y @ 0x186BD0/0x186BD4 and bGeoscapeDragActive @ 0x187074, the pointer env on the same state, 11 shell globals the original owns (0x159678, 0x159DF8/0x159DFC/0x159E00, 0x187058, 0x187068, 0x18709C, 0x186420, 0x186488, Map.anActionPhaseSave0[112] and the two research walk indexes), `bNewBaseMode` removed as the same byte as `bFacDone` @ 0x187078, and the map made to paint by a `Blit_ClipGlyph` fix — the clip measured its right/bottom cut from the already-clamped x/y, so the wrapped copy at x = -280 with an 800-wide glyph on a 240-wide surface clipped to -40 columns and drew nothing, while 0xA30B8/0xA30BC save the far edges and 0xA310C..0xA3120 subtract against THEM; two original behaviours that read as bugs: a new game blits NO close control because Game_StartNew 0x945D4/0x945E0 sets bPlacementPending and 0x91D98 BNEs past 0x91DA8, and a press on its own moves the camera nothing because 0x87D74/0x87D7C store the pen before the call at 0x87D14 and 0x820F4..0x82114 add it straight back); 57 new checks, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, 1 port bug fixed) | 61/61 (Release) | 17729 | 966/1103 (87.6%) | 596752/598792 (99.7%) | 43 checked, 0 mismatched |
 
 What the loop costs, measured on this tree (Part 34): a full Release build after touching a widely-included
