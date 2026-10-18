@@ -222,6 +222,7 @@ int main(void)
     i32       nKind, nSpan, nCellW, nCost0, nFunds0, nBase0, nSiteId0, nRegionCnt0;
     i32       nRowX, nRowY, nAimX, nAimY, nFunds1;
     i32       nMidY, nTile, nTileX, nTileY, nRegX, nRegY, nRegion, nRegionIdx, nNewCost;
+    i32       nDragX, nDragY;                          /* 12g: one pen stroke's camera travel */
     i32       nBase1, nSiteId1, nMode0, nCost1, nCnt1, nRow2Y, nRowSel, nSel0;
 
     if (!Boot_LoadStartup(&g_assets, apsz)) {
@@ -826,9 +827,9 @@ int main(void)
      *
      * The hovered region is not written by hand. The hover samples one fixed screen point -- (120, nMidY) with
      * nMidY = (320 - strip height) / 2, 0x67328 / 0x6734C -- through Smap_GetTileAtScreen @ 0x82244, so the region
-     * follows the view scroll. The scroll is the one thing set directly here, and only when the point the
-     * new-game camera already samples is not a buildable region; the pen drag that moves it in the game is not
-     * part of this section's flow. Funds are data too: three purchases have to be affordable. */
+     * follows the view scroll. When the point the new-game camera already samples is not a buildable region the
+     * scroll is moved here the way the game moves it -- pen strokes through World_GeoscapePointer, never an
+     * assignment. Funds are data too: three purchases have to be affordable. */
     nBase1    = g_world.nBaseCount;                    /* 12e's commit made this two */
     nSiteId1  = g_world.nCreateNextSiteId;             /* dword_186558 */
     nMode0    = g_world.view.nMode;
@@ -855,8 +856,25 @@ int main(void)
     if (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
         NearestRegionTile(nTileX, nTileY, &nRegX, &nRegY);
         Check(nRegX >= 0, "the shipped tile grid holds a buildable region to bring the camera over");
-        g_world.view.nScrollX = nRegX - g_world.view.nMapW / 2;
-        g_world.view.nScrollY = nRegY - g_world.view.nMapH / 2 - nMidY + 160;
+        /* The stroke is the game's own: a press inside the drag band arms bGeoscapeDragActive @ 0x187074 and
+         * records the pen into view+0x14/+0x18 (0x87D58..0x87D7C) with no motion of its own, and only the pointer
+         * event that follows (bDown == 0) reaches Smap_ScrollBy @ 0x82124 at 0x87D14, which moves the view by the
+         * pen's own travel. One stroke stays inside the pen area, so it carries at most 100 tiles; the map wraps
+         * in x, so the short way round is the one taken. */
+        for (i = 0; i < 12 && (nTile < PUFO_REGION_ID_FIRST || nTile >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT);
+             ++i) {
+            nDragX = nRegX - nTileX;
+            nDragY = nRegY - nTileY;
+            if (nDragX >  g_world.view.nMapW / 2) { nDragX -= g_world.view.nMapW; }
+            if (nDragX < -g_world.view.nMapW / 2) { nDragX += g_world.view.nMapW; }
+            if (nDragX >  100) { nDragX =  100; } else if (nDragX < -100) { nDragX = -100; }
+            if (nDragY >  100) { nDragY =  100; } else if (nDragY < -100) { nDragY = -100; }
+            World_GeoscapePointer(&g_world, 120, nMidY, true);            /* the press arm moves nothing */
+            World_GeoscapePointer(&g_world, 120 - nDragX, nMidY - nDragY, false);
+            World_GeoscapePointerUp(&g_world);                            /* the release clears 0x187074 (0x896BC) */
+            nTile = HoverSampleTile(nMidY, &nTileX, &nTileY);
+        }
+        Check(pF->g.bDragActive == 0, "the nearest region was one stroke away, and its release leaves the drag byte clear (0x896BC)");
     }
     /* cUiAnimProgress @ 0x187058 is stepped by the app's WM_TIMER branch (0xA0C88..0xA0C90), and mode 3 of
      * Ui_AnimExpandBlit lands on progress 100 once 50 * progress reaches the panel width (0x95D60). This test

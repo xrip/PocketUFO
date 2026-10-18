@@ -585,19 +585,13 @@ i32 StrategList_PurgeType5(PtrArray *pList, const GeoscapeWorld *pWorld,
 
 /* ------------------------------------------------------- the geoscape viewport
  *
- * One 36-byte block at 0x1863E8. IDA carries two names for it because different
- * functions use it for different jobs: `SmapCamera` (36 bytes: nMode, nScrollX,
- * nScrollY, nMapW, nMapH, nUnk14, nUnk18, nPickX, nPickY) for the zoom and pick
- * state, and `SmapView` (28 bytes: nUnk0, nPosX, nPosY, nStride, nUnk16, nLastDx,
- * nLastDy) for the drag. The two views agree offset by offset:
- *
- *     0x00 nMode   == nUnk0
- *     0x04 nScrollX == nPosX
- *     0x08 nScrollY == nPosY
- *     0x0C nMapW   == nStride
- *     0x10 nMapH   == nUnk16
- *     0x14 nUnk14  == nLastDx
- *     0x18 nUnk18  == nLastDy
+ * One 36-byte block at 0x1863E8, named `g_smapCamera` in the IDB and typed `SmapCamera`
+ * there (nMode, nScrollX, nScrollY, nMapW, nMapH, nLastDx, nLastDy, nPickX, nPickY). IDA
+ * used to carry a second, 28-byte name for the same bytes -- `SmapView` (nUnk0, nPosX,
+ * nPosY, nStride, nUnk16, nLastDx, nLastDy) -- which hid 0x1C/0x20 and misnamed
+ * 0x00/0x0C/0x10; the two agreed offset by offset (nMode == nUnk0, nScrollX == nPosX,
+ * nScrollY == nPosY, nMapW == nStride, nMapH == nUnk16) and the duplicate is gone from
+ * the IDB since Part 32.
  *
  * So the scroll position IS the view position, and the tile grid stride IS the map
  * width: Smap_GetTileAtScreen @ 0x82244 wraps x with nMapW and then indexes the tile
