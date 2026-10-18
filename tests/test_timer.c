@@ -219,18 +219,11 @@ static void TestWindowAndBackend(void)
 /* --- GameTick_OnTimer @ 0x274f0 ------------------------------------------- */
 
 typedef struct TickLog {
-    i32 nGeoscape;
     i32 nTickUnit;
     i32 nClearScratch;
 } TickLog;
 
 static TickLog g_tick;
-
-static void H_GeoscapeTick(void *pUser)
-{
-    (void)pUser;
-    g_tick.nGeoscape += 1;
-}
 
 static void H_TickActiveUnit(void *pUser)
 {
@@ -245,7 +238,7 @@ static void H_ClearScratch(void *pUser)
 }
 
 static const GameTickHooks g_tickHooks = {
-    H_GeoscapeTick, H_TickActiveUnit, H_ClearScratch, NULL
+    H_TickActiveUnit, H_ClearScratch, NULL
 };
 
 /* A grid lookup that reports no cells, so GameTick_Step sweeps nothing and the test
@@ -292,14 +285,16 @@ static void TestGameTickOnTimer(void)
           "  hold flag returns immediately");
     CheckEqI32(g_tick.nTickUnit, 0, "  nothing ran");
 
-    /* Gate 2: the geoscape substitutes its own tick and returns. */
+    /* Gate 2: the geoscape path runs the original's EMPTY stub and returns. 0x27514 loads the geoscape
+     * screen block, 0x27518 calls Geoscape_GameTickStub @ 0x94550 -- four bytes, `BX LR`, no body -- and
+     * 0x2751C returns. The geoscape clock is 0xC353's UiPulse_OnTimer, not this handler's job. */
     TickCtxClear(&ctx);
     ctx.bGeoscapeUi = true;
     TickLogReset();
     Check(GameTick_OnTimer(&ctx, &stack, &state, &g_tickHooks, Tick_NoCells, NULL),
-          "  geoscape path ran");
-    CheckEqI32(g_tick.nGeoscape, 1, "  geoscape tick called");
-    CheckEqI32(g_tick.nTickUnit, 0, "  tactical unit tick NOT called");
+          "  geoscape path took its own branch");
+    CheckEqI32(g_tick.nTickUnit, 0, "  no active-unit tick on it");
+    CheckEqI32(g_tick.nClearScratch, 0, "  and no frame-scratch clear -- the stub has no body");
 
     /* Gate 3: the UI slot must be 10 or 0. */
     TickCtxClear(&ctx);
@@ -391,6 +386,55 @@ static void TestGameTickOnTimer(void)
           "  NULL state -> false");
 }
 
+/* --- the 0xC350 dispatch rule (PocketUFO_WndProc 0xA08C0..0xA0934) ------------ */
+
+static i32 g_nDispatchTicks;
+
+static void Dispatch_Tick(void *pUser)
+{
+    (void)pUser;
+    g_nDispatchTicks += 1;
+}
+
+static void TestTickBySpeed(void)
+{
+    printf("Timer_TickBySpeed -- how many ticks one 0xC350 firing runs\n");
+
+    g_nDispatchTicks = 0;
+
+    Timer_TickBySpeed(-1, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 0, "  a negative speed ticks nothing (CMP #0 / BMI 0xA08C8)");
+
+    Timer_TickBySpeed(5, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 0, "  a speed above 4 ticks nothing (BNE 0xA08E0)");
+
+    Timer_TickBySpeed(0, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 1, "  speed 0 ticks once (BLE 0xA08D0 -> 0xA08F4/0xA08F8)");
+
+    Timer_TickBySpeed(1, Dispatch_Tick, NULL);
+    Timer_TickBySpeed(2, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 3, "  speeds 1 and 2 tick once each");
+
+    Timer_TickBySpeed(4, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 6, "  speed 4 ticks three times (0xA08E8, 0xA08F0, then 0xA08F8)");
+
+    /* Speed 3 alternates on bGameTickExtraDue @ 0x18838C, which starts 0: the firings run 1, 2, 1. */
+    Timer_TickBySpeed(3, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 7, "  speed 3, first firing: one tick, the extra becomes due (0xA092C)");
+
+    Timer_TickBySpeed(3, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 9, "  speed 3, second firing: the extra runs (0xA091C) and the flag clears");
+
+    Timer_TickBySpeed(3, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 10, "  speed 3, third firing: back to one tick");
+
+    /* Only speed 3 reads or writes the flag: an interleaved speed-2 firing leaves it set, so the next
+     * speed-3 firing still runs its extra (11 from the speed-2 tick, +2 from this one). */
+    Timer_TickBySpeed(2, Dispatch_Tick, NULL);
+    Timer_TickBySpeed(3, Dispatch_Tick, NULL);
+    CheckEqI32(g_nDispatchTicks, 13, "  the other speeds leave bGameTickExtraDue alone");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -403,6 +447,7 @@ int main(void)
     TestBySpeed();
     TestWindowAndBackend();
     TestGameTickOnTimer();
+    TestTickBySpeed();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

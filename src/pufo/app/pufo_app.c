@@ -61,11 +61,13 @@ static HWND       g_hWndMain = NULL;
  * window already has. */
 static i32        g_nScreenW;
 static i32        g_nScreenH;
-/* Map_nGameSpeed @ 0x128AB4 (Map + 0x150FC): the byte StartTimers_BySpeed @ 0x9E918 reads and the byte the 0xC350
- * dispatch scales GameTick by (0xA08BC..0xA0938). Its writers in the image are GameSpeed_Set @ 0x260c0 and the
- * tactical options' speed buttons; the shell runs no tactical mission (recorded with App_QuitFromTact), so nothing
- * writes it here and it reads 0, which StartTimers_BySpeed turns into the 100 ms game-rate interval. */
-static u32        g_nGameSpeed;
+/* Map_nGameSpeed @ 0x128AB4 (Map + 0x150FC): the game speed, a SIGNED dword -- LDR at 0x9E918 (StartTimers_BySpeed)
+ * and at 0xA08C0 (the 0xC350 dispatch, then CMP #0/#2/#3/#4 with BMI 0xA08C8), so the port keeps it signed. Its
+ * registry default is 4 (IDB comment at 0x128AB4), which is the 10 ms interval AND three ticks per firing. Its
+ * writers in the image are GameSpeed_Set @ 0x260c0 and the tactical options' speed buttons; the shell runs no
+ * tactical mission (recorded with App_QuitFromTact), so nothing writes it here and it reads 0, which
+ * StartTimers_BySpeed turns into the 100 ms game-rate interval and Timer_TickBySpeed into one tick per firing. */
+static i32        g_nGameSpeed;
 static GxSurface  g_gx;
 static BootAssets g_assets;
 static bool       g_bAssetsLoaded;
@@ -654,6 +656,20 @@ static void App_TickAnimProgress(void)
     }
 }
 
+/* One firing's tick, i.e. one GameTick_OnTimer @ 0x274f0 call. In this shell it is the original's own
+ * no-op, and that is not an omission: 0x27508 tests Map_bGeoscapeUi @ Map+0x44 first, and with it set --
+ * which is the state the shell is always in, the world standing at a geoscape screen -- the handler loads
+ * sGeoscapeScreenBlock at 0x27514, calls Geoscape_GameTickStub @ 0x94550 at 0x27518 (four bytes, `BX LR`,
+ * no body) and returns at 0x2751C. The geoscape clock is 0xC353's job and App_TickPulse runs it.
+ *
+ * The tactical path needs what the shell does not own: the TactState, TactCtx272.bBusy, the apUiSlotsA[10]
+ * word and Map.status as the TTL array's owner. When the tactical bank exists this same call site builds
+ * the GameTickCtx from those and calls GameTick_OnTimer; recorded with the other Priority 1 seams. */
+static void App_GameTickOnce(void *pUser)
+{
+    (void)pUser;
+}
+
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 static void App_PresentLoadedSurface(void);
 
@@ -1207,7 +1223,7 @@ static void App_FocusGained(void)
     if (bTact) {
         Gx_Resume(&g_gx);                              /* 0xA0578 */
         App_FocusReposition(HWND_TOP, SWP_SHOWWINDOW); /* 0xA05B8, fuFlags 0x40 */
-        Timer_StartBySpeed(g_nGameSpeed);              /* 0xA05BC; StartTimers_BySpeed reads 0x128AB4 itself */
+        Timer_StartBySpeed((u32)g_nGameSpeed);         /* 0xA05BC; StartTimers_BySpeed reads 0x128AB4 itself */
     } else if (bGeoscape) {
         Gx_Resume(&g_gx);                              /* 0xA05D4 */
         App_FocusReposition(HWND_TOP, 0);              /* 0xA0610, fuFlags = R9 = 0 */
@@ -1264,7 +1280,11 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
          * 0xA094C); 0xC352 advances the anim phase (0xA0978..0xA098C) and the per-screen scroll
          * (0xA0AC8); 0xC353 is UiPulse_OnTimer (0xA0C64); and the switch's default arm is 0xC354's
          * anim-progress byte (0xA0C88..0xA0C90). */
-        if (wParam == PUFO_TIMER_ANIM) {
+        if (wParam == PUFO_TIMER_GAMETICK) {
+            /* The original's gate at 0xA08B0 keeps 0xC350 out of that switch: the speed decides the tick
+             * count (Timer_TickBySpeed, 0xA08C0..0xA0934) and App_GameTickOnce is this shell's callee. */
+            Timer_TickBySpeed(g_nGameSpeed, App_GameTickOnce, NULL);
+        } else if (wParam == PUFO_TIMER_ANIM) {
             App_TickAnim();
         } else if (wParam == PUFO_TIMER_RENDER) {
             App_DrawFrame();

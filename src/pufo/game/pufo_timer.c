@@ -190,11 +190,12 @@ bool GameTick_OnTimer(const GameTickCtx *pCtx, StatusStack *pStack, TactState *p
         return false;
     }
 
-    /* Gate 2: in the geoscape the tactical tick is replaced, not merely skipped. */
+    /* Gate 2: the geoscape path does nothing. 0x27514 loads the geoscape screen block into R0 and
+     * 0x27518 calls Geoscape_GameTickStub @ 0x94550 (nullsub_9 in the IDB until this part), which is
+     * four bytes -- `BX LR`, no body -- and then 0x2751C returns. The 0xC350 tick is not the geoscape
+     * clock at all: that is 0xC353's UiPulse_OnTimer @ 0x36630. Reported as "ran" because the handler
+     * took its own branch rather than being gated out. */
     if (pCtx->bGeoscapeUi) {
-        if (pHooks != NULL && pHooks->pfnGeoscapeTick != NULL) {
-            pHooks->pfnGeoscapeTick(pHooks->pUser);
-        }
         return true;
     }
 
@@ -235,4 +236,38 @@ bool GameTick_OnTimer(const GameTickCtx *pCtx, StatusStack *pStack, TactState *p
         pHooks->pfnClearFrameScratch(pHooks->pUser);
     }
     return true;
+}
+
+/* ------------------------------------------------------- the 0xC350 dispatch rule */
+
+/* bGameTickExtraDue @ 0x18838C: read at 0xA0914, written at 0xA0920 and 0xA092C, by nothing else. */
+static i32 s_bTickExtraDue;
+
+/* PocketUFO_WndProc @ 0xA08C0..0xA0934. The speed is read signed (BMI at 0xA08C8), so a negative
+ * value ticks nothing rather than wrapping into the switch. */
+void Timer_TickBySpeed(i32 nGameSpeed, GameTickFn pfnTick, void *pUser)
+{
+    if (nGameSpeed < 0) {
+        return; /* 0xA08C8 */
+    }
+
+    if (nGameSpeed > 2) {
+        if (nGameSpeed == 3) { /* 0xA08D8 */
+            pfnTick(pUser);    /* 0xA0904 */
+            if (s_bTickExtraDue != 0) {
+                pfnTick(pUser);        /* 0xA091C */
+                s_bTickExtraDue = 0;   /* 0xA0920 */
+            } else {
+                s_bTickExtraDue = 1;   /* 0xA092C */
+            }
+            return;            /* 0xA0934 */
+        }
+        if (nGameSpeed != 4) {
+            return;            /* 0xA08E0: speeds above 4 tick nothing at all */
+        }
+        pfnTick(pUser);        /* 0xA08E8 */
+        pfnTick(pUser);        /* 0xA08F0 */
+    }
+
+    pfnTick(pUser);            /* 0xA08F8: the common tick every reachable speed shares */
 }

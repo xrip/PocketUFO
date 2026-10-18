@@ -17358,6 +17358,30 @@ AYGSHELL imports -- the Pocket PC shell's activation bookkeeping -- with no Win3
 boundary keeps the original DLLs out of the link, so a decision is needed on whether the seam stands in for
 them or they are recorded as WinCE-only and left.
 
+The 0xC350 dispatch arm is ported as of Part 40: Timer_TickBySpeed in pufo_timer.c for 0xA08C0..0xA0934, reached
+from WM_TIMER through the original's own gate at 0xA08B0 (`wParam != 50000` keeps 0xC350 out of the
+0xC351..0xC354 switch). The speed decides how many ticks ONE firing runs: a negative speed none (CMP #0 /
+BMI 0xA08C8), 0..2 one, 3 one plus an extra on alternate firings, 4 three, and above 4 none (BNE 0xA08E0).
+The alternation flag was unk_18838C, now named bGameTickExtraDue and typed a byte (LDRB 0xA090C, STRB
+0xA0930, read only at 0xA0914, written only at 0xA0920 and 0xA092C): 1 means the extra tick is due, so a
+speed of 3 averages 1.5 ticks per firing. 0xC350 is armed by StartTimers_BySpeed @ 0x9E904 only, whose code
+callers are GameSpeed_Set @ 0x260c0, Tact_InitMission @ 0x3c550 and the tactical focus arm at 0xA05BC.
+
+Two corrections. GameTick_OnTimer's geoscape arm had been ported as a hook call (pfnGeoscapeTick) standing
+in for a geoscape tick; the original's callee is 0x94550 -- four bytes, `BX LR`, no body -- reached at
+0x27518 with R0 = sGeoscapeScreenBlock, and 0x2751C returns straight after it. The 0xC350 timer therefore
+does nothing in the geoscape at all, which fits the timer sets: the geoscape clock is 0xC353's
+UiPulse_OnTimer @ 0x36630. 0x94550 is named Geoscape_GameTickStub in the IDB, the hook is gone from
+GameTickHooks, and test_timer now asserts that neither the active-unit tick nor the frame-scratch clear runs
+on that path. And Map_nGameSpeed is a signed dword, not a byte: LDR at 0x9E918 and at 0xA08C0 with CMP #0 /
+BMI 0xA08C8, so the port's mirror g_nGameSpeed became signed and the comment at 0x128AB4 now names the sites.
+
+One deviation recorded, not hidden. The dispatch's callee in the shell is App_GameTickOnce, an empty
+function, because that is what the original runs in the state the shell is in: GameTick_OnTimer tests
+Map_bGeoscapeUi @ Map+0x44 at 0x27508 and takes the empty-stub path. The tactical branch needs the TactState,
+TactCtx272.bBusy, the apUiSlotsA[10] word and Map.status as the TTL array's owner, and the shell builds none
+of them; that wiring belongs to the tactical bank and is recorded with the other Priority 1 seams.
+
 Dispositions, not ported, with reasons. Map_RegisterAtexit (0x22620) and its thunk
 Map_Atexit_nullsub2 (0x2262c) register a
 wrapper over nullsub_2, an empty stub, so they carry no behaviour -- the same disposition as the

@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 967 / 1103 (87.7%) |
-| Bytes of original code cited | 596836 / 598792 (99.7%) |
+| Functions cited as evidence | 968 / 1103 (87.8%) |
+| Bytes of original code cited | 596840 / 598792 (99.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 17922 |
+| Test checks run | 17931 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -38,7 +38,7 @@ the per-subsystem notes and the tests listed at the end.
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 19 | 19 | 1140 / 1140 | growable pointer array, RNG, string helpers |
 | `app-shell` | 24 | 24 | 6376 / 6376 | WinMain, window class, display bring-up, registry options |
-| `platform` | 1 | 132 | 12 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
+| `platform` | 2 | 132 | 16 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 212 | 214 | 178320 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 51 | 43684 / 43684 | tactical HUD, inventory, command pads, input dispatch |
@@ -205,11 +205,12 @@ is the module that answers to it.
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 
-### `platform` (1 functions)
+### `platform` (2 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x460dc` | `j_Font_Free` | 12 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
+| `0x94550` | `nullsub_9` | 4 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_timer.c` (+1) |
 
 ### `save` (35 functions)
 
@@ -281,7 +282,7 @@ is the module that answers to it.
 | `0x1ed4c` | `MapView_DrawMinimap` | 2112 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x33c80` | `Tact_TallyItemRecovery` | 2100 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` (+1) |
 | `0x30890` | `Map_TraceLos` | 1948 | `src/pufo/game/pufo_los.c`, `src/pufo/game/pufo_los.h` |
-| `0x54130` | `Tact_TickActiveUnit` | 1868 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
+| `0x54130` | `Tact_TickActiveUnit` | 1868 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x2fc38` | `Tact_TraceProjectileArc` | 1840 | `src/pufo/game/pufo_ballist.h` |
 | `0x3be24` | `Tact_EquipTeamFromCraft` | 1836 | `src/pufo/game/pufo_invdrag.c`, `src/pufo/game/pufo_invdrag.h` |
 | `0x2deac` | `Map_ComputeFov` | 1776 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_mapcell.h` (+2) |
@@ -355,7 +356,7 @@ is the module that answers to it.
 | `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
 | `0x17148` | `Tact_OpenRightHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
 | `0x48028` | `Unit_bScanOpportunityFire` | 272 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
-| `0x274f0` | `GameTick_OnTimer` | 268 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_timer.h` |
+| `0x274f0` | `GameTick_OnTimer` | 268 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x18774` | `TactAction_ConfirmFireBurst` | 240 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` (+1) |
 | `0x178d4` | `TactAction_ConfirmUseItem` | 236 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x430cc` | `Soldiers_Reload` | 224 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
@@ -539,7 +540,7 @@ is the module that answers to it.
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_save.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+2) |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
-| `0x36630` | `UiPulse_OnTimer` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
+| `0x36630` | `UiPulse_OnTimer` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x11320` | `UiBank_CtorAll` | 440 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x1117c` | `UiBank_FreeAllPads` | 420 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.c` (+1) |
@@ -1096,7 +1097,7 @@ so there are no unexplained omissions. Small thunks and atexit
 registrations are named as such; the rest are attributed to the subsystem
 whose port work they belong to.
 
-### `platform` — 131 functions, 1896 bytes remaining
+### `platform` — 130 functions, 1892 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1227,7 +1228,6 @@ whose port work they belong to.
 | `0x81a28` | `nullsub_7` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x83870` | `j_AssetReader_ClearGlobal` | 4 | jump thunk to `AssetReader_ClearGlobal`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0x8b948` | `nullsub_8` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
-| `0x94550` | `nullsub_9` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x9e9f0` | `j_itoa` | 4 | jump thunk to `itoa`; the thunk itself is a call-site wrapper and follows that function's port work |
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | jump thunk to `PtrArray_Clear`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0xa42e0` | `nullsub_10` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
@@ -1307,7 +1307,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactui` | PASS | 495 |
 | `test_template` | PASS | 49 |
 | `test_terrain` | PASS | 59 |
-| `test_timer` | PASS | 78 |
+| `test_timer` | PASS | 87 |
 | `test_titles` | PASS | 139 |
 | `test_turn` | PASS | 173 |
 | `test_uibank` | PASS | 394 |
@@ -1334,7 +1334,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 788 citations.
+parity report. Total: 789 citations.
 
 ### Offsets below the image base (43)
 
@@ -1343,7 +1343,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (745)
+### At or above the image base (746)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1836,6 +1836,7 @@ against the IDB when the final report is assembled.
 - `0x187f24`
 - `0x187f28`
 - `0x187f58`
+- `0x18838c`
 - `0x188398`
 - `0x1883b0`
 - `0x188538`
@@ -1940,9 +1941,9 @@ against the IDB when the final report is assembled.
 - `0x9e27c`
 - `0x9e470`
 - `0x9e488`
-- `0x9e918`
 - `0xa046c`
 - `0xa0564`
+- `0xa08c0`
 - `0xa0944`
 - `0xa09ac`
 - `0xa3028`

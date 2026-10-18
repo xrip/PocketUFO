@@ -125,8 +125,12 @@ void Timer_InstallAsGameTimers(GameClock *pClock);
  *
  * Verified control flow:
  *
- *     if (bGameTickHold) return;                    // 0x5A, the pause flag
- *     if (bGeoscapeUi)   { geoscapeTick(); return; } // 0x44
+ *     if (bGameTickHold) return;                     // 0x5A, the pause flag
+ *     if (bGeoscapeUi)   { return; }                 // 0x44: R0 = the geoscape screen block,
+ *                                                    // BL Geoscape_GameTickStub @ 0x94550, which is
+ *                                                    // 4 bytes -- `BX LR`, no body. The 0xC350 tick
+ *                                                    // does nothing in the geoscape; that clock is
+ *                                                    // 0xC353's (UiPulse_OnTimer @ 0x36630).
  *     if (uiSlot10 != 10 && uiSlot10 != NULL) return; // apUiSlotsA[10] @ 0x88
  *     if (!bTactFlag)     return;                    // 0x00
  *
@@ -162,8 +166,9 @@ typedef struct GameTickCtx {
 } GameTickCtx;
 
 typedef struct GameTickHooks {
-    void (*pfnGeoscapeTick)(void *pUser);      /* nullsub_9 (0x94550) */
-    void (*pfnTickActiveUnit)(void *pUser);    /* Tact_TickActiveUnit (0x54130), NOT ported */
+    void (*pfnTickActiveUnit)(void *pUser);    /* Tact_TickActiveUnit @ 0x54130, ported in
+                                                * pufo_tactstate.c; a hook because it takes the caller's
+                                                * TactTickCtx, not this handler's arguments */
     void (*pfnClearFrameScratch)(void *pUser); /* byte_138E74 = 0 */
     void *pUser;
 } GameTickHooks;
@@ -172,5 +177,27 @@ typedef struct GameTickHooks {
 bool GameTick_OnTimer(const GameTickCtx *pCtx, StatusStack *pStack, TactState *pState,
                       const GameTickHooks *pHooks,
                       MapCellLookup pfnLookup, void *pLookupUser);
+
+/* ---------------------------------------------------------- the 0xC350 dispatch rule
+ *
+ * PocketUFO_WndProc's WM_TIMER arm for 0xC350 (0xA08B0 gate, 0xA08C0..0xA0934) is not "tick once":
+ * the game speed decides how many ticks one firing of the timer runs.
+ *
+ *     nGameSpeed < 0   : 0 ticks (BMI 0xA08C8)
+ *     0, 1, 2          : 1 tick (BLE 0xA08D0 -> 0xA08F4 / 0xA08F8)
+ *     3                : 1 tick at 0xA0904 plus a second on ALTERNATE firings -- 0xA0908 reads
+ *                        bGameTickExtraDue @ 0x18838C, 0xA091C runs the extra and 0xA0920 clears the
+ *                        flag, 0xA092C sets it when the extra was skipped. The flag starts 0, so the
+ *                        firings run 1, 2, 1, 2 ... and the average rate is 1.5 ticks.
+ *     4                : 3 ticks (0xA08E8, 0xA08F0, then the common 0xA08F8)
+ *     nGameSpeed > 4   : 0 ticks (BNE 0xA08E0)
+ *
+ * `pfnTick` is the caller's GameTick_OnTimer call, because that handler needs the tactical state and
+ * the status stack, which belong to whoever owns them. The alternation flag lives here because the
+ * original keeps it in .bss (0x18838C, just past the 12-byte SHACTIVATEINFO at 0x188380) where nothing
+ * else touches it: read only at 0xA0914, written only at 0xA0920 and 0xA092C.
+ */
+typedef void (*GameTickFn)(void *pUser);
+void Timer_TickBySpeed(i32 nGameSpeed, GameTickFn pfnTick, void *pUser);
 
 #endif /* PUFO_TIMER_H */
