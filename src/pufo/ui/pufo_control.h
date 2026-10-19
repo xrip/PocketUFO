@@ -74,7 +74,9 @@ typedef struct UiControl {
 
 typedef struct UiWidgetBank {
     UiControl aCtl[PUFO_PBANK_WIDGET_COUNT];
-    u8        bEscapeFlag; /* +0x1042, byte_AD712 */
+    bool      bEscapeFlag; /* +0x1042, byte_AD712. bool (not u8) because the input handlers reach it
+                            * as the bool *pbEscapeFlag of UiButtonCtx/MapClickCtx -- see pufo_input.h:308
+                            * and 268. Same one-byte size. */
     i32       nPointerX;   /* +0x1044 */
     i32       nPointerY;   /* +0x1048 */
     /* The four held-key repeat flags the timer reads, in the order it applies them:

@@ -110,7 +110,11 @@ static char             g_aSlotLabels[7][40]; /* MainMenu_pSlotCtx @ 0x156938 */
 static GameTime         g_gameTime;
 static u8               g_bGameState;       /* bGameState @ 0x15821C */
 static char             g_szAppDir[MAX_PATH];
-static TactInputState   g_tactState;
+/* Part 54: the tact input state moved onto the world (PufoWorldState.sTactInput). The tact MenuBtn
+ * handlers Tact_InitUiControls installs call Input_OnConfirm @ 0x15f3c on it directly (pufo_menubtn.c),
+ * so the app's pointer/confirm paths and the world's bank clicks must share ONE object. The alias
+ * keeps every in-file reference (including the initEnv cell pointers in App_InitStartupUi) intact. */
+#define g_tactState (g_world.sTactInput)
 static TactInputHooks   g_tactHooks;
 static TactPointerWorld g_pointerWorld;
 static StartMenuHooks   g_startHooks;
@@ -127,6 +131,13 @@ static u8              *g_apTitlesGlyphs[5];   /* unk_1571A0..0x1571B0 */
 
 static void App_PresentLoadedSurface(void);
 static void App_TitlesToStartup(void *pUser);
+static i32 App_HookLoadGame(i32 nSlot, void *pUser);
+static void App_HookFormatSlots(void *pUser);
+
+/* SaveLoad_Slot0..6 @ 0x19de4's pair. Deviation, recorded: SaveGame @ 0x44988 has no ported save
+ * unit yet, so the save hook stays NULL and SaveLoad_Slot returns 0 on the save arm (pufo_menubtn.h
+ * documents the NULL-safe path); the load arm reaches the same loader the start menu uses. */
+static const SaveLoadSlotHooks g_saveLoadHooks = { NULL, App_HookLoadGame, NULL };
 
 static bool App_LoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
                          const char *psz2, void *pUser)
@@ -197,7 +208,7 @@ static void *App_HookFree(void *pBlock, void *pUser)
  * bring-up observable from a headless run. */
 static void App_HookNewGame(void *pUser)
 {
-    WorldHooks hooks;
+    static WorldHooks hooks; /* Part 54: the world keeps this pointer for the whole run, so it must not live on the hook's stack */
 
     (void)pUser;
     if (!g_bWorldReady) {
@@ -215,6 +226,16 @@ static void App_HookNewGame(void *pUser)
                                              * and the geoscape pulse's phase gate share */
     hooks.pnMapPhase = &g_nAnimPhase;       /* nMapPhase @ 0x1139EF (Map + 0x37), the byte the 0xC352
                                              * handler wraps: the placement arm's cursor colour */
+    /* The tact bank bring-up wiring Tact_InitUiControls and the installed handlers read back (Part 54). */
+    hooks.pBank               = &g_bank;    /* the 130-widget bank the world installs handlers/pads on */
+    hooks.pTactInputHooks     = &g_tactHooks;   /* MenuBtn_Confirm hands these to Input_OnConfirm */
+    hooks.pbBankActionFlag    = &g_pointerWorld.bActionFlag; /* UiBank_bActionFlag @ pBank+0x1042 */
+    hooks.pSaveLoadHooks      = &g_saveLoadHooks;
+    hooks.pfnFormatSlotList   = App_HookFormatSlots;         /* SaveSlot_FormatList @ 0x45904 */
+    hooks.pFormatSlotListUser = NULL;                        /* it reads the app's own g_slotCtx */
+    hooks.pnListMode          = &g_nListMode;                /* *0x157188 */
+    hooks.pTactOptions        = &g_options;                  /* writable alias: the menu handlers write
+                                                              * speed/gamma/volumes/toggles here */
 
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
     printf("pocketufo: new game: %d funds, %d bases, %d soldiers, %d craft, screen %d, zoom %d\n",
@@ -344,7 +365,7 @@ static void App_DrawFrameHook(void *pUser)
  * the exe path in InitInstance). The state line is the shell's own report, as in App_HookNewGame. */
 static i32 App_HookLoadGame(i32 nSlot, void *pUser)
 {
-    WorldHooks hooks;
+    static WorldHooks hooks; /* Part 54: the world keeps this pointer for the whole run, so it must not live on the hook's stack */
 
     (void)pUser;
     if (!g_bWorldReady) {
@@ -361,6 +382,15 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pnAnimPhase = (i32 *)&g_nUiSlot0; /* the same Map + 0x60 cell, as in App_HookNewGame */
     hooks.pnMapPhase = &g_nAnimPhase;       /* nMapPhase @ 0x1139EF; Save_ReadTGameData 0x444E0 is its
                                              * other writer, the save reader's own copy */
+    /* The tact bank bring-up wiring, the same fields App_HookNewGame fills (Part 54). */
+    hooks.pBank               = &g_bank;
+    hooks.pTactInputHooks     = &g_tactHooks;
+    hooks.pbBankActionFlag    = &g_pointerWorld.bActionFlag;
+    hooks.pSaveLoadHooks      = &g_saveLoadHooks;
+    hooks.pfnFormatSlotList   = App_HookFormatSlots;
+    hooks.pFormatSlotListUser = NULL;
+    hooks.pnListMode          = &g_nListMode;
+    hooks.pTactOptions        = &g_options;
 
     {
         i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_options, &hooks);
@@ -494,6 +524,11 @@ static void App_InitStartupUi(void)
     memset(&g_pointerWorld, 0, sizeof(g_pointerWorld));
     g_pointerWorld.pBank          = &g_bank;
     g_pointerWorld.pListCtl       = g_pStartCtl;
+    /* unk_1571E4, the screen-0 look control hit before the tact widgets: the original allocates it
+     * inside Tact_InitUiControls; the world embeds it (Part 54), so the pointer is stable from
+     * startup. It is only reached while a tactical mission owns the input (bTactFlag), which the
+     * tact pointer dispatch -- a separate open issue -- will route. */
+    g_pointerWorld.pLookCtl       = &g_world.sTactLookCtl;
     g_pointerWorld.nListMode      = g_nListMode;
     g_pointerWorld.bListRowSticky = false; /* unk_188D4C */
     /* Modal bank slots 16/18 (Map+0xA0/0xA8): the button callbacks Input_OnPointerUp runs after

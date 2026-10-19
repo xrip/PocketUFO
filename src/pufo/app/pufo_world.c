@@ -18,6 +18,7 @@
 #include "game/pufo_timer.h"   /* GameTickCtx / GameTickHooks / GameTick_OnTimer @ 0x274f0 */
 #include "game/pufo_tactend.h" /* Tact_CheckBattleEnd @ 0x34fbc, the mission-end check the shell runs on the live frame */
 #include "util/pufo_rand.h"    /* Game_RandU16 @ 0x3e59c, the enemy AI's draw seam */
+#include "game/pufo_roster.h"  /* Roster_CycleNext/Select*, the tact nav widgets (Part 54) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -1612,6 +1613,7 @@ static u32 World_TactRandU16Thunk(u32 nMax, void *pUser);
 static bool World_TactPathToCellThunk(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser);
 static void World_TactFillActionCostsThunk(void *pUser);
 static void World_TactEnqueueTurnKickThunk(Soldier *pUnit, u8 nFacing, void *pUser);
+static void World_TactInitUiControlsThunk(void *pUser); /* Tact_InitUiControls (0x3b498), Part 54 */
 static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser);
 static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser);
 static void World_TactEnemyAiPushTextThunk(i32 nRecIndex, void *pUser);
@@ -1833,6 +1835,12 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->vis.pRosters      = &pW->sTactRosters;
     pE->vis.ppScratchUnit = &pW->pTactScratchUnit;
 
+    /* Map+0x00 / Map+0x44: the input handlers branch on these two bytes (the gates at 0x13CE0 and
+     * 0x15F64). A tactical mission takes the tact branch; the rest of sTactInput is the shell's own
+     * startup state, which the original never clears at mission start either. */
+    pW->sTactInput.bTactFlag    = true;
+    pW->sTactInput.bGeoscapeUi  = false;
+
     /* --- the hooks Tact_InitMission itself calls --- */
     pE->hooks.pfnPanelCtor            = World_TactPanelCtorHook;
     pE->hooks.pfnPanelStyle6to11      = World_TactPanelStyleHook;
@@ -1843,7 +1851,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->hooks.pfnSoundApplyMusicVolume = World_TactMusicVolHook;
     pE->hooks.pfnSoundApplySfxVolume  = World_TactSfxVolHook;
     pE->hooks.pfnLoadUiPads           = World_TactLoadUiPadsThunk; /* Tact_LoadUiPads (0x3b068), the 54-slot pad table (Part 53) */
-    pE->hooks.pfnInitUiControls       = NULL; /* Tact_InitUiControls (0x3b498): ditto */
+    pE->hooks.pfnInitUiControls       = World_TactInitUiControlsThunk; /* Tact_InitUiControls (0x3b498): the bank's click handlers, the look control and the group placement (Part 54) */
     pE->hooks.pfnOpenInventory        = NULL; /* Inv_OpenScreen (0x16ef4) at 0x3D0B8: ditto. The Xcom
                                                * branch reaches it whenever the mission has a team. */
     pE->hooks.pUser                   = pW;
@@ -2033,6 +2041,24 @@ void World_FreeTactical(PufoWorldState *pW)
             pW->apTactPads[i] = NULL;
         }
     }
+
+    /* The tact widget pads (Part 54). Tact_Shutdown frees the pads of the thirteen tact families
+     * between 0x3D6D8 and 0x3DC44 -- bank widgets 0..112 plus 128 and 129 -- and the look control's
+     * pads at 0x3DC98; it never touches the start-menu widgets 113..127, which StartUi_Shutdown
+     * frees (pufo_menubtn.h:233). The bank record itself belongs to the caller (WorldHooks.pBank),
+     * so the shell releases only the pads UiControl_Setup loaded into it. */
+    if (pW->pFrameHooks != NULL && pW->pFrameHooks->pBank != NULL) {
+        UiWidgetBank *pBank = pW->pFrameHooks->pBank;
+
+        for (i = 0; i < 113; ++i) {
+            UiControl_FreePads(&pBank->aCtl[i]);
+        }
+        UiControl_FreePads(&pBank->aCtl[128]);
+        UiControl_FreePads(&pBank->aCtl[129]);
+    }
+    UiControl_FreePads(&pW->sTactLookCtl);
+    pW->sTactInput.bTactFlag = false;
+    pW->sTactInput.pbScratchFlag9 = NULL;
 
     Rmp_FreeNodes(&pW->sTactRmp);        /* the rmp nodes; the record itself is inline */
 
@@ -2736,6 +2762,1064 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
 {
     (void)bGoodEnd;
     (void)pUser;
+}
+
+/* ==========================================================================
+ * Tact UI control bring-up -- Tact_InitUiControls @ 0x3b498 from the shell (Part 54).
+ *
+ * Tact_InitMission reaches this right after the pad table is loaded (pufo_tactinit.c:712), and
+ * installs g_aUiClickName's handlers on the caller's widget bank. The installed thunks are zero-arg
+ * (UiControl.pfnClick takes nothing) and reach the live mission through g_pActiveWorld -- the same
+ * route the geoscape controls take (pufo_world.c:58).
+ *
+ * Ownership, recorded as this Part's assumption: the bank stays the caller's, because UiBank_CtorAll
+ * builds it at startup and StartUi_Shutdown frees its widgets 113..127 (pufo_menubtn.h:233); the
+ * look control (the original's heap allocation at unk_1571E4), the 29 option pad bytes and the
+ * input-side value model move onto the world. sTactUi is a STAGING copy: every installed handler
+ * runs between SyncIn and SyncOut, which move the Map cells sTactUi models to and from their live
+ * owners (the owners Parts 50..52 established). sTactInput is the live input state -- MenuBtn_Confirm
+ * hands it straight to Input_OnConfirm @ 0x15f3c -- so it is synced only where its fields mirror a
+ * cell owned elsewhere (the latch, the cursor triple, the multi-target block, pSelUnit/pSelWeapon).
+ * The multi-target cells 0x04..0x24 have two shell views: the GameMap union (the walker's view) and
+ * sTactInput (the input handlers' view); the bank handlers use the union and InputSync moves them.
+ *
+ * Handlers left NULL, each a recorded separate issue:
+ *   4    Inv_OpenScreen @ 0x16ef4      -- 0x3D0B8's composition: sweep gate, filter-all reset,
+ *                                        latch clear, MapCursor_SetPos re-stamp, RecalcInventoryStat,
+ *                                        iso byte 1; the pfnOpenInventory hook stays NULL too
+ *   5    MenuBtn_EndTurn @ 0x16494     -- Tact_BeginEnemyTurn's argument list is unchecked yet
+ *   17/18 Tact_OpenLeft/RightHandMenu  -- the research gate is ready (g_abSlotTopicGate), but the
+ *                                        cost input and the Soldier+0x1A6 gate byte are unmodeled
+ *   56   Map_BuildDeployConfirmYesNo   -- the deploy modal opener (the Part 51 modal bank is ready)
+ *   57   Menu_ConfirmQuitDialog        -- needs the screen-8 escape seam wired for tact
+ *   58   MenuBtn_ResizeWindow @ 0x19930 -- App_ResizeMainWindow is a caller-window call, not world state
+ * ========================================================================== */
+
+static PufoWorldState *World_TactLiveMission(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    return (pW != NULL && pW->pTactMap != NULL && pW->pTactState != NULL) ? pW : NULL;
+}
+
+/* Copy the Map cells sTactUi models in from their live owners, run the handler, copy them back.
+ * The action-cost/enabled banks stay put: World_TactFillActionCostsThunk fills exactly sTactUi's
+ * banks and the walker reads them back from there (Part 52, world.c:1898). */
+static void World_TactUiSyncIn(PufoWorldState *pW)
+{
+    TactUiState *pUi = &pW->sTactUi;
+    GameMap *pMap = pW->pTactMap;
+    const PufoOptions *pOpt = pW->pOptions;
+    i32 i;
+
+    pUi->nUiScreen        = pW->nUiScreen;                       /* Map+0x3A */
+    pUi->nActionMode      = pW->nMapActionMode;                  /* Map+0x4C */
+    pUi->nUnk40           = pMap->nBurstShots;                   /* Map+0x28 */
+    pUi->bActionLatch     = pMap->bActionLatch;                  /* gap_2[1] @ Map+0x02 */
+    pUi->bUnk1508C        = pMap->bLookCommitFlag;               /* 0x1508C unk_128A44 */
+    pUi->nLayerScratch    = pW->tactEnv.cursor.nFlags;           /* 0x15138 */
+    pUi->nFireTgtX        = pMap->nMeleeCellX;                   /* 0x1279F8 */
+    pUi->nFireTgtY        = pMap->nMeleeCellY;                   /* 0x1279FC */
+    pUi->nFireTgtZ        = pMap->nMeleeCellLayer;               /* 0x127A00 */
+    pUi->bDeployPanelOpen = pW->sTactInput.bDeployPanelOpen;     /* gap_86272[16] @ 0x15110 */
+    pUi->bSlot80Low       = pW->sTactInput.bUiSlot8Byte0;        /* LOBYTE(apUiSlotsA[8]) @ 0x80 */
+    pUi->bDrawIsoLayer    = pW->bMapDrawIsoLayer;                /* unk_138E68 @ 0x254B0 */
+    if (pOpt != NULL) {
+        pUi->bScrollByPen   = pOpt->bScrollByPen;                /* byte 93 @ 0x150D5 -- the option
+                                                                    * block models the same bytes */
+        pUi->bShowBorder    = pOpt->bShowBorder;
+        pUi->bRunByDblClick = pOpt->bRunByDblClick;
+        pUi->bTurnByPen     = pOpt->bTurnByPen;
+        pUi->bMenuByPen     = pOpt->bMenuByPen;
+    }
+    for (i = 0; i < PUFO_INV_FILTER_PADS; ++i) {
+        pUi->abTogglePad[i] = pW->sTactMenuPads.abPen[i];        /* 0xACF9A.. the same pad bytes the
+                                                                    * options screen writes */
+    }
+}
+
+static void World_TactUiSyncOut(PufoWorldState *pW)
+{
+    const TactUiState *pUi = &pW->sTactUi;
+    GameMap *pMap = pW->pTactMap;
+    PufoOptions *pOpt;
+    i32 i;
+
+    pW->nUiScreen          = pUi->nUiScreen;
+    pW->nMapActionMode     = pUi->nActionMode;
+    pMap->nBurstShots      = pUi->nUnk40;
+    pMap->bActionLatch     = pUi->bActionLatch;
+    pMap->bLookCommitFlag  = pUi->bUnk1508C;
+    pW->tactEnv.cursor.nFlags = pUi->nLayerScratch;
+    pMap->nMeleeCellX      = pUi->nFireTgtX;
+    pMap->nMeleeCellY      = pUi->nFireTgtY;
+    pMap->nMeleeCellLayer  = pUi->nFireTgtZ;
+    pW->sTactInput.bDeployPanelOpen = pUi->bDeployPanelOpen;
+    pW->sTactInput.bUiSlot8Byte0    = pUi->bSlot80Low;
+    pW->bMapDrawIsoLayer   = pUi->bDrawIsoLayer;
+    pOpt = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pTactOptions : NULL;
+    if (pOpt != NULL) {
+        pOpt->bScrollByPen   = pUi->bScrollByPen;
+        pOpt->bShowBorder    = pUi->bShowBorder;
+        pOpt->bRunByDblClick = pUi->bRunByDblClick;
+        pOpt->bTurnByPen     = pUi->bTurnByPen;
+        pOpt->bMenuByPen     = pUi->bMenuByPen;
+    }
+    for (i = 0; i < PUFO_INV_FILTER_PADS; ++i) {
+        pW->sTactMenuPads.abPen[i] = pUi->abTogglePad[i];
+    }
+}
+
+/* The input view of the shared cells: Input_OnConfirm works on sTactInput and its screen-0 arm
+ * commits/abandons the multi-target selection, so those Map cells round-trip through the union the
+ * walker also views. */
+static void World_TactInputSyncIn(PufoWorldState *pW)
+{
+    TactInputState *pS = &pW->sTactInput;
+    GameMap *pMap = pW->pTactMap;
+    i32 i;
+
+    pS->nUiScreen        = pW->nUiScreen;
+    pS->nActionLatch     = pMap->bActionLatch;
+    pS->nActionMode      = pW->nMapActionMode;      /* unk_113A04 @ Map+0x4C, the same cell the walker
+                                                     * reads; TactInput_CanScroll gates on it */
+    pS->nLayerScratch    = pW->tactEnv.cursor.nFlags;
+    pS->nCursorX         = pW->tactEnv.cursor.nX;
+    pS->nCursorY         = pW->tactEnv.cursor.nY;
+    pS->bLookCommitFlag  = pMap->bLookCommitFlag;
+    pS->pLookCommitUnit  = pMap->pLookCommitUnit;
+    pS->pSelUnit         = pMap->pSelUnit;
+    pS->pSelWeapon       = pMap->pSelWeapon;
+    pS->nMultiTargetCount = pMap->nMultiTargetCount;
+    for (i = 0; i < PUFO_MULTI_TARGET_MAX; ++i) {
+        pS->apMultiTargets[i] = pMap->apMultiTargets[i];
+    }
+}
+
+static void World_TactInputSyncOut(PufoWorldState *pW)
+{
+    const TactInputState *pS = &pW->sTactInput;
+    GameMap *pMap = pW->pTactMap;
+    i32 i;
+
+    pW->nUiScreen         = pS->nUiScreen;
+    pMap->bActionLatch    = pS->nActionLatch;
+    pW->nMapActionMode    = pS->nActionMode;
+    pW->tactEnv.cursor.nFlags = pS->nLayerScratch;
+    pW->tactEnv.cursor.nX = pS->nCursorX;
+    pW->tactEnv.cursor.nY = pS->nCursorY;
+    pMap->bLookCommitFlag = pS->bLookCommitFlag;
+    pMap->pLookCommitUnit = pS->pLookCommitUnit;
+    pMap->pSelUnit        = pS->pSelUnit;
+    pMap->pSelWeapon      = pS->pSelWeapon;
+    pMap->nMultiTargetCount = pS->nMultiTargetCount;
+    for (i = 0; i < PUFO_MULTI_TARGET_MAX; ++i) {
+        pMap->apMultiTargets[i] = pS->apMultiTargets[i];
+    }
+}
+
+/* ------------------------------------------------------------- shared hook plumbing */
+
+static void World_TactBankSampleThunk(i32 nSample, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    (void)pW;
+
+    if (g_pActiveWorld != NULL && g_pActiveWorld->pfnPlaySample != NULL) {
+        g_pActiveWorld->pfnPlaySample(nSample, g_pActiveWorld->pSoundUser);
+    }
+}
+
+static void World_TactBankSampleU32Thunk(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    World_TactBankSampleThunk((i32)nSample, g_pActiveWorld);
+}
+
+/* MapCursor_SetFlags @ 0x26f78 writes Map+0x15138; the staging byte mirrors it so SyncOut cannot
+ * write a stale layer back over a handler that moved the cursor through the hook. */
+static void World_TactSetCursorFlagsThunk(u8 nFlags, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    pW->tactEnv.cursor.nFlags = nFlags;
+    pW->sTactUi.nLayerScratch = nFlags;
+}
+
+static TactUiHooks World_TactUiHooksFor(PufoWorldState *pW)
+{
+    TactUiHooks h;
+
+    memset(&h, 0, sizeof(h));
+    h.pfnPlaySample      = World_TactBankSampleThunk;
+    h.pSelUnit           = pW->pTactMap->pSelUnit;              /* Map.pSelUnit @ 0x15334 */
+    h.pfnStatusMsg       = World_TactEnemyAiPushTextThunk;       /* StatusMsg_Push @ 0x2dda4 */
+    h.pfnSetCursorFlags  = World_TactSetCursorFlagsThunk;
+    h.pUser              = pW;
+    return h;
+}
+
+/* The original's gamma buttons tail-call Tact_LoadPalettes after writing the gamma dword; the hook
+ * reads the value the handler just wrote into the option block. */
+static void World_TactLoadPalettesThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    Tact_LoadPalettes((pW->pOptions != NULL) ? pW->pOptions->nGamma : pW->nMapGamma); /* 0x377ec */
+}
+
+static MenuHooks World_TactMenuHooksFor(PufoWorldState *pW)
+{
+    MenuHooks h;
+
+    memset(&h, 0, sizeof(h));
+    h.pfnPlaySample       = World_TactBankSampleThunk;
+    h.pfnApplyMusicVolume = World_TactMusicVolHook;              /* Sound_ApplyMusicVolume @ 0x9e454 */
+    h.pfnApplySfxVolume   = World_TactSfxVolHook;                /* Sound_ApplySfxVolume @ 0x9e4dc */
+    h.pfnLoadPalettes     = World_TactLoadPalettesThunk;
+    h.pUser               = pW;
+    return h;
+}
+
+/* Menu_OpenSlotList injects SaveSlot_FormatList because it reads the save files; the caller's
+   builder and its context come through WorldHooks. */
+static void World_TactFormatSlotListThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    const WorldHooks *pHooks = pW->pFrameHooks;
+
+    if (pHooks != NULL && pHooks->pfnFormatSlotList != NULL) {
+        pHooks->pfnFormatSlotList(pHooks->pFormatSlotListUser);   /* 0x45904 */
+    }
+}
+
+/* ------------------------------------------------------------- value-model wrappers */
+
+typedef void (*TactUiHandler)(TactUiState *, const TactUiHooks *);
+
+static void World_TactUiCall(TactUiHandler fn)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    fn(&pW->sTactUi, &h);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_TactUiArgCall(bool (*fn)(TactUiState *, i32, const TactUiHooks *), i32 nArg)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    fn(&pW->sTactUi, nArg, &h);
+    World_TactUiSyncOut(pW);
+}
+
+/* The seven filter buttons: 21 -> 5, 24 -> ALL, 25 -> 0, 26 -> 3, 27 -> 4, 28 -> 1, 29 -> 2, the
+ * original's own table order (pufo_uibank.c:210). */
+static void World_TactFilterCall(i32 nFilter) { (void)World_TactUiArgCall(Ui_SetInvFilter, nFilter); }
+static void World_TactRadioCall(i32 nRadio)   { (void)World_TactUiArgCall(Ui_SelectRadio, nRadio); }
+static void World_TactToggleCall(i32 nWhich)  { (void)World_TactUiArgCall(Ui_ToggleOption, nWhich); }
+
+static void World_ClickInvScrollUp(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    Ui_InvScrollUp(&pW->sTactUi);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_ClickInvScrollDown(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    Ui_InvScrollDown(&pW->sTactUi);
+    World_TactUiSyncOut(pW);
+}
+
+/* The weapon pair the fire-mode tests read, from the live selected weapon. */
+static bool World_TactFireWeapon(PufoWorldState *pW, FireModeWeapon *pOut)
+{
+    TactItem *pItem = pW->pTactMap->pSelWeapon;
+
+    if (pItem == NULL || pItem->pObj == NULL) {
+        return false;
+    }
+    pOut->nAmmo    = pItem->nAmmo;                    /* 0x06 */
+    pOut->bAmmoCap = pItem->pObj->bAmmoCap;           /* 0xAE; 255 means unlimited */
+    return true;
+}
+
+static void World_TactFireModeCall(i32 nMode)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+    FireModeWeapon w;
+
+    if (pW == NULL || !World_TactFireWeapon(pW, &w)) {
+        return;   /* the original would dereference the selected weapon */
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_SetFireMode(&pW->sTactUi, nMode, &w, &h);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_TactTryFireCall(i32 nMode)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+
+    if (pW == NULL || pW->pTactMap->pSelUnit == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_TryFireMode(&pW->sTactUi, nMode, pW->pTactMap->pSelUnit->uTu, &h);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_TactSubModeCall(i32 nSub)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_SetSubMode(&pW->sTactUi, pW->pTactMap->pSelWeapon, pW->pTactMap->pSelUnit, nSub, &h);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_ClickConfirmUseItem(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+    TactItem *pWeapon;
+
+    if (pW == NULL || pW->pTactMap->pSelUnit == NULL) {
+        return;
+    }
+    pWeapon = pW->pTactMap->pSelWeapon;
+    if (pWeapon == NULL || pWeapon->pObj == NULL) {
+        return;   /* the original dereferences pObj->uSortKey */
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_ConfirmUseItem(&pW->sTactUi, pW->pTactMap->pSelUnit, pWeapon,
+                            pWeapon->pObj->uSortKey, &h);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_ClickMelee6(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+
+    if (pW == NULL || pW->pTactMap->pSelUnit == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_ConfirmMeleeMode6(&pW->sTactUi, pW->pTactState, pW->pTactMap->pSelUnit,
+                               pW->pTactMap->pSelWeapon, &pW->pTactMap->geom,
+                               World_TactLookupCell, pW, &h);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_ClickConfirmSpecial9(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    Soldier *pUnit;
+    TactUiHooks h;
+
+    if (pW == NULL) {
+        return;
+    }
+    pUnit = pW->pTactMap->pSelUnit;
+    if (pUnit == NULL || pUnit->pCell == NULL) {
+        return;   /* the target is the unit's OWN cell @ 0x18364 */
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_ConfirmSpecial9(&pW->sTactUi, pW->pTactState, pUnit, pW->pTactMap->pSelWeapon,
+                             pUnit->pCell, &h);
+    World_TactUiSyncOut(pW);
+}
+
+static void World_ClickBeginMultiTarget(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactUiHooks h;
+    FireModeWeapon w;
+
+    if (pW == NULL || !World_TactFireWeapon(pW, &w)) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_BeginMultiTarget(&pW->sTactUi, &w, &pW->pTactMap->nMultiTargetCount,
+                              pW->tactEnv.cursor.nX, pW->tactEnv.cursor.nY,
+                              World_TactSetCursorPosThunk, pW, &h);
+    World_TactUiSyncOut(pW);
+}
+
+/* The look control's handler, TactAction_ConfirmFireBurst @ 0x18774: the burst aimed at the first
+ * parked multi-target cell. pUser feeds Unit_FaceToward @ 0x49bf0, which wants the queue. */
+static void World_TactLookClickThunk(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactItem *pWeapon;
+    TactUiHooks h;
+
+    if (pW == NULL) {
+        return;
+    }
+    pWeapon = pW->pTactMap->pSelWeapon;
+    if (pW->pTactMap->pSelUnit == NULL || pWeapon == NULL || pWeapon->pObj == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    h = World_TactUiHooksFor(pW);
+    (void)Ui_ConfirmFireBurst(&pW->sTactUi, pW->pTactState, pW->pTactMap->pSelUnit, pWeapon,
+                              pW->pTactMap->apMultiTargets, &pW->pTactMap->nMultiTargetCount,
+                              (u16)pWeapon->nAmmo, pWeapon->pObj->bAmmoCap,
+                              World_TactFaceTowardThunk, pW->pTactState, &h);
+    World_TactUiSyncOut(pW);
+}
+
+/* ------------------------------------------------------------ the HUD nav widgets */
+
+static TactHudCtx World_TactHudCtxFor(PufoWorldState *pW)
+{
+    TactHudCtx c;
+
+    memset(&c, 0, sizeof(c));
+    c.pSelUnit         = pW->pTactMap->pSelUnit;
+    c.pQueue           = pW->pTactState;                    /* unk_157198 */
+    c.geom             = pW->pTactMap->geom;                /* 0x1511B / 0x1511C */
+    c.pfnLookup        = World_TactLookupCell;
+    c.pLookupUser      = pW;
+    c.pfnArmorTuWarn   = Map_ArmorTuWarnCb;                 /* the walker's own out-of-TU warning */
+    c.pfnPushTextRecord = World_TactEnemyAiPushTextThunk;
+    c.pfnPlaySample    = World_TactBankSampleThunk;
+    c.pCallbackUser    = pW;
+    return c;
+}
+
+static void World_TactHudCall(void (*fn)(const TactHudCtx *))
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactHudCtx c;
+
+    if (pW == NULL || pW->pTactMap->pSelUnit == NULL) {
+        return;
+    }
+    c = World_TactHudCtxFor(pW);
+    fn(&c);
+}
+
+static void World_ClickUseSpecialItem(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    TactHudSpecialCtx c;
+
+    if (pW == NULL || pW->pTactMap->pSelUnit == NULL) {
+        return;
+    }
+    memset(&c, 0, sizeof(c));
+    c.pMap             = pW->pTactMap;
+    c.pUi              = &pW->sTactUi;
+    c.pQueue           = pW->pTactState;
+    c.pfnLookup        = World_TactLookupCell;
+    c.pLookupUser      = pW;
+    c.pfnPlaySample    = World_TactBankSampleThunk;
+    c.pfnPushTextRecord = World_TactEnemyAiPushTextThunk;
+    c.pCallbackUser    = pW;
+    World_TactUiSyncIn(pW);
+    TactHud_UseSpecialItem(&c);
+    World_TactUiSyncOut(pW);
+}
+
+/* --------------------------------------------------------------- the roster pair */
+
+static void World_TactRosterPrepare(PufoWorldState *pW, UnitRoster *pR, RosterHooks *pH)
+{
+    GameMap *pMap = pW->pTactMap;
+    i32 i;
+
+    for (i = 0; i < PUFO_ROSTER_MAX; ++i) {
+        pR->apUnits[i] = pMap->apXcomUnits[i];
+    }
+    pR->nCount        = (i32)pMap->nXcomCount;
+    pR->pSelected     = pMap->pSelUnit;
+    pR->bActionLatch  = pMap->bActionLatch;
+
+    memset(pH, 0, sizeof(*pH));
+    pH->pfnPlaySample     = World_TactBankSampleThunk;
+    pH->pfnSelectUnit     = World_TactSelectThunk;        /* Tact_SelectUnit @ 0x2c6c4: writes
+                                                           * tactEnv.select.ppSelUnit = &pMap->pSelUnit */
+    pH->pfnFocusSelected  = World_TactFocusSelectedThunk; /* MapView_FocusSelected @ 0x16710 */
+    pH->pUi               = &pW->sTactUi;                 /* prev/next end with Inv_BuildVisibleList */
+    pH->pUser             = pW;
+}
+
+static void World_TactRosterCall(i32 (*fn)(UnitRoster *, const RosterHooks *))
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    UnitRoster roster;
+    RosterHooks hooks;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    World_TactRosterPrepare(pW, &roster, &hooks);
+    (void)fn(&roster, &hooks);
+    pW->sTactUi.bActionLatch  = roster.bActionLatch;      /* the roster's latch write-back, before
+                                                           * SyncOut republishes it to Map+0x02 */
+    pW->sTactUi.nLayerScratch = pW->tactEnv.cursor.nFlags; /* the focus hook moved the cursor layer */
+    World_TactUiSyncOut(pW);
+}
+
+static bool World_TactSlot8FilterThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    return pW->sTactInput.bUiSlot8Byte0 != 0;             /* LOBYTE(apUiSlotsA[8]) @ 0x80 */
+}
+
+static void World_TactRosterFilteredCall(i32 (*fn)(UnitRoster *, const RosterFilterHooks *))
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    UnitRoster roster;
+    RosterFilterHooks hooks;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_TactUiSyncIn(pW);
+    memset(&hooks, 0, sizeof(hooks));
+    World_TactRosterPrepare(pW, &roster, &hooks.base);
+    hooks.pfnIsFilterActive = World_TactSlot8FilterThunk;
+    hooks.pFilterUser       = pW;
+    (void)fn(&roster, &hooks);
+    pW->sTactUi.bActionLatch  = roster.bActionLatch;
+    pW->sTactUi.nLayerScratch = pW->tactEnv.cursor.nFlags;
+    World_TactUiSyncOut(pW);
+}
+
+/* ---------------------------------------------------------------- the camera pair */
+
+static void World_ClickFocusSelected(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        World_TactFocusSelectedThunk(pW);
+    }
+}
+
+static void World_ClickEnterLookMode(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    FocusCtx *pFocus;
+    LookModeCtx c;
+
+    if (pW == NULL) {
+        return;
+    }
+    pFocus = &pW->tactEnv.focus;
+    memset(&c, 0, sizeof(c));
+    c.nUiScreen    = pW->nUiScreen;
+    c.nMapTileW    = pFocus->nMapTileW;                   /* Map+0x30/0x32, held by tactEnv.focus */
+    c.nMapTileH    = pFocus->nMapTileH;
+    c.nCamScrollX  = pFocus->nCamScrollX;                 /* 0x15130 / 0x15134 */
+    c.nCamScrollY  = pFocus->nCamScrollY;
+    c.nTrajFront4  = (i8)pFocus->camOffset.bScratch40;    /* 0x4A40/0x4A41 read SIGNED */
+    c.nTrajFront5  = (i8)pFocus->camOffset.bScratch41;
+    c.nCamWorldOff0 = pW->sTactInput.anCamWorldX;         /* 0x4EAC / 0x4EB0 */
+    c.nCamWorldOff1 = pW->sTactInput.anCamWorldY;
+    c.nDimX        = pW->pTactMap->geom.nDimX;
+    c.nDimY        = pW->pTactMap->geom.nDimY;
+    c.camOffset    = pFocus->camOffset;
+    MapView_EnterLookMode(&c, World_TactBankSampleU32Thunk, pW);
+    pFocus->nCamScrollX = c.nCamScrollX;
+    pFocus->nCamScrollY = c.nCamScrollY;
+    pFocus->camOffset   = c.camOffset;
+    pW->sTactInput.anCamWorldX = c.nCamWorldOff0;
+    pW->sTactInput.anCamWorldY = c.nCamWorldOff1;
+    pW->nUiScreen = c.nUiScreen;                           /* the callee writes screen 2 */
+}
+
+/* ---------------------------------------------------------------- the option screen */
+
+static PufoOptions *World_TactLiveOptions(PufoWorldState *pW)
+{
+    return (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pTactOptions : NULL;
+}
+
+static void World_TactSpeedCall(i32 nStep)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks h;
+    PufoOptions *pOpt;
+
+    if (pW == NULL || (pOpt = World_TactLiveOptions(pW)) == NULL) {
+        return;
+    }
+    h = World_TactMenuHooksFor(pW);
+    (void)Menu_SetSpeed(pOpt, &pW->gameClock, &pW->sTactMenuPads, nStep, &h);
+}
+
+static void World_TactGammaCall(i32 nStep)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks h;
+    PufoOptions *pOpt;
+
+    if (pW == NULL || (pOpt = World_TactLiveOptions(pW)) == NULL) {
+        return;
+    }
+    h = World_TactMenuHooksFor(pW);
+    (void)Menu_SetGamma(pOpt, &pW->sTactMenuPads, nStep, &h);
+    pW->nMapGamma = pOpt->nGamma;                          /* Map_nGamma @ 0x15100 follows the byte
+                                                            * the handler wrote @ 0x15100 */
+}
+
+static void World_TactMusicVolCall(i32 nStep)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks h;
+    PufoOptions *pOpt;
+
+    if (pW == NULL || (pOpt = World_TactLiveOptions(pW)) == NULL) {
+        return;
+    }
+    h = World_TactMenuHooksFor(pW);
+    (void)Menu_SetMusicVolume(pOpt, &pW->sTactMenuPads, nStep, &h);
+}
+
+static void World_TactSfxVolCall(i32 nStep)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks h;
+    PufoOptions *pOpt;
+
+    if (pW == NULL || (pOpt = World_TactLiveOptions(pW)) == NULL) {
+        return;
+    }
+    h = World_TactMenuHooksFor(pW);
+    (void)Menu_SetSfxVolume(pOpt, &pW->sTactMenuPads, nStep, &h);
+}
+
+static void World_ClickMusicMute(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks h;
+    PufoOptions *pOpt;
+
+    if (pW == NULL || (pOpt = World_TactLiveOptions(pW)) == NULL) {
+        return;
+    }
+    h = World_TactMenuHooksFor(pW);
+    (void)Menu_ToggleMusicMute(pOpt, &pW->sTactMenuPads.bMusicMute, &h);
+}
+
+static void World_ClickSfxMute(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks h;
+    PufoOptions *pOpt;
+
+    if (pW == NULL || (pOpt = World_TactLiveOptions(pW)) == NULL) {
+        return;
+    }
+    h = World_TactMenuHooksFor(pW);
+    (void)Menu_ToggleSfxMute(pOpt, &pW->sTactMenuPads.bSfxMute, &h);
+}
+
+static void World_ClickForceNoDrag(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    PufoOptions *pOpt;
+
+    if (pW == NULL || (pOpt = World_TactLiveOptions(pW)) == NULL) {
+        return;
+    }
+    (void)Menu_ToggleForceNoDrag(pOpt, &pW->sTactMenuPads.bForceNoDrag);
+}
+
+static void World_ClickOpenOptions(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks h;
+
+    if (pW == NULL) {
+        return;
+    }
+    h = World_TactMenuHooksFor(pW);
+    Menu_SyncOptionPads(&pW->sTactMenuPads, pW->pOptions, &pW->nUiScreen, &h); /* 0x188e4, screen 12 */
+}
+
+static void World_TactSlotListCall(bool bSaveMode)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    const WorldHooks *pHooks;
+    MenuHooks h;
+
+    if (pW == NULL || pW->pFrameHooks == NULL) {
+        return;
+    }
+    pHooks = pW->pFrameHooks;
+    if (pHooks->pnListMode == NULL) {
+        return;                                            /* no *0x157188 cell to drive */
+    }
+    h = World_TactMenuHooksFor(pW);
+    Menu_OpenSlotList(&pW->nUiScreen, pHooks->pnListMode, bSaveMode,
+                      World_TactFormatSlotListThunk, &h);  /* 0x18864 load / 0x188a4 save */
+}
+
+static void World_TactSaveLoadCall(i32 nSlot)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    const WorldHooks *pHooks;
+
+    if (pW == NULL || pW->pFrameHooks == NULL) {
+        return;
+    }
+    pHooks = pW->pFrameHooks;
+    if (pHooks->pSaveLoadHooks == NULL || pHooks->pnListMode == NULL) {
+        return;
+    }
+    (void)SaveLoad_Slot(nSlot, (i32)pW->nUiScreen, pHooks->pnListMode, pHooks->pSaveLoadHooks);
+}
+
+/* ---------------------------------------------------------------- the button family */
+
+static bool World_TactButtonPrep(PufoWorldState *pW, UiButtonCtx *pCtx, TactInputWorld *pWorld)
+{
+    const WorldHooks *pHooks = pW->pFrameHooks;
+
+    if (pHooks == NULL || pHooks->pTactInputHooks == NULL) {
+        return false;
+    }
+    pWorld->pQueue       = pW->pTactState;
+    pWorld->pfnLookup    = World_TactLookupCell;
+    pWorld->pLookupUser  = pW;
+    pCtx->pState         = &pW->sTactInput;                /* the live input state: MenuBtn_Confirm
+                                                            * hands it to Input_OnConfirm @ 0x15f3c */
+    pCtx->pHooks         = pHooks->pTactInputHooks;
+    pCtx->pWorld         = pWorld;                         /* only MenuBtn_Secondary needs it */
+    pCtx->pbActionFlag   = pHooks->pbBankActionFlag;       /* UiBank_bActionFlag */
+    pCtx->pbEscapeFlag   = (pHooks->pBank != NULL) ? &pHooks->pBank->bEscapeFlag : NULL; /* byte_AD712 */
+    return true;
+}
+
+static void World_TactButtonCall(void (*fn)(const UiButtonCtx *))
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    UiButtonCtx ctx;
+    TactInputWorld world;
+
+    if (pW == NULL || !World_TactButtonPrep(pW, &ctx, &world)) {
+        return;
+    }
+    World_TactInputSyncIn(pW);
+    fn(&ctx);
+    World_TactInputSyncOut(pW);
+}
+
+/* Confirm0..5 are byte-identical with sample 16; ConfirmSnd15 plays 15 (pufo_menubtn.h:96). */
+static void World_TactConfirmCall(i32 nSample)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    UiButtonCtx ctx;
+    TactInputWorld world;
+
+    if (pW == NULL || !World_TactButtonPrep(pW, &ctx, &world)) {
+        return;
+    }
+    World_TactInputSyncIn(pW);
+    MenuBtn_Confirm(&ctx, nSample);
+    World_TactInputSyncOut(pW);
+}
+
+static void World_TactDismissCall(i32 (*fn)(const UiButtonCtx *))
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    UiButtonCtx ctx;
+    TactInputWorld world;
+
+    if (pW == NULL || !World_TactButtonPrep(pW, &ctx, &world)) {
+        return;
+    }
+    World_TactInputSyncIn(pW);
+    (void)fn(&ctx);
+    World_TactInputSyncOut(pW);
+}
+
+/* ---------------------------------------------------- the one-line click bindings */
+
+static void World_ClickCycleNext(void)          { World_TactRosterCall(Roster_CycleNext); }
+static void World_ClickSelectPrev(void)         { World_TactRosterCall(Roster_SelectPrev); }
+static void World_ClickSelectNext(void)         { World_TactRosterCall(Roster_SelectNext); }
+static void World_ClickSelectPrevFiltered(void) { World_TactRosterFilteredCall(Roster_SelectPrevFiltered); }
+static void World_ClickSelectNextFiltered(void) { World_TactRosterFilteredCall(Roster_SelectNextFiltered); }
+
+static void World_TactHudClickUp(void)   { World_TactHudCall(TactHud_ClimbUp); }
+static void World_TactHudClickDown(void) { World_TactHudCall(TactHud_ClimbDown); }
+static void World_ClickToggleKneel(void) { World_TactHudCall(TactHud_ToggleKneel); }
+
+static void World_ClickLayerUp(void)   { World_TactUiCall(Ui_LayerUp); }
+static void World_ClickLayerDown(void) { World_TactUiCall(Ui_LayerDown); }
+static void World_ClickIncLayer(void)  { World_TactUiCall(Ui_IncLayer); }
+static void World_ClickDecLayer(void)  { World_TactUiCall(Ui_DecLayer); }
+
+static void World_ClickOpenScreen7(void)   { World_TactUiCall(Ui_OpenScreen7); }
+static void World_ClickOpenScreen15(void)  { World_TactUiCall(Ui_OpenScreen15); }
+static void World_ClickOpenCommand(void)   { World_TactUiCall(Ui_OpenCommandScreen); }
+static void World_ClickOpenCommandFlagged(void) { World_TactUiCall(Ui_OpenCommandScreenFlagged); }
+static void World_ClickMode11(void)        { World_TactUiCall(Ui_SetMode11); }
+static void World_ClickSamples1614Clear(void) { World_TactUiCall(Ui_Samples16_14_ClearScreen); }
+static void World_ClickScreen7Samples(void){ World_TactUiCall(Ui_Screen7_Samples16_14); }
+static void World_ClickDeployOpen(void)    { World_TactUiCall(Ui_Samples16_7_SetDeployFlag); }
+static void World_ClickDeployClose(void)   { World_TactUiCall(Ui_Samples16_7_ClearDeployFlag); }
+
+static void World_ClickFilter5(void)   { World_TactFilterCall(5); }
+static void World_ClickFilterAll(void) { World_TactFilterCall(PUFO_INV_FILTER_ALL); }
+static void World_ClickFilter0(void)   { World_TactFilterCall(0); }
+static void World_ClickFilter3(void)   { World_TactFilterCall(3); }
+static void World_ClickFilter4(void)   { World_TactFilterCall(4); }
+static void World_ClickFilter1(void)   { World_TactFilterCall(1); }
+static void World_ClickFilter2(void)   { World_TactFilterCall(2); }
+
+static void World_ClickRadio0(void) { World_TactRadioCall(0); }
+static void World_ClickRadio1(void) { World_TactRadioCall(1); }
+static void World_ClickRadio2(void) { World_TactRadioCall(2); }
+static void World_ClickRadio3(void) { World_TactRadioCall(3); }
+
+static void World_ClickFireAuto(void)  { World_TactFireModeCall(PUFO_ACTION_MODE_AUTO); }
+static void World_ClickFireSnap(void)  { World_TactFireModeCall(PUFO_ACTION_MODE_SNAP); }
+static void World_ClickFireAimed(void) { World_TactFireModeCall(PUFO_ACTION_MODE_AIMED); }
+
+static void World_ClickTryFire4(void)  { World_TactTryFireCall(4); }
+static void World_ClickTryFire5(void)  { World_TactTryFireCall(5); }
+static void World_ClickTryFire10(void) { World_TactTryFireCall(10); }
+
+static void World_ClickSubMode0(void) { World_TactSubModeCall(0); }
+static void World_ClickSubMode1(void) { World_TactSubModeCall(1); }
+static void World_ClickSubMode2(void) { World_TactSubModeCall(2); }
+static void World_ClickSubMode3(void) { World_TactSubModeCall(3); }
+static void World_ClickSubMode4(void) { World_TactSubModeCall(4); }
+static void World_ClickSubMode5(void) { World_TactSubModeCall(5); }
+static void World_ClickSubMode6(void) { World_TactSubModeCall(6); }
+static void World_ClickSubMode7(void) { World_TactSubModeCall(7); }
+static void World_ClickSubMode8(void) { World_TactSubModeCall(8); }
+
+static void World_ClickOpenLoadSlots(void) { World_TactSlotListCall(false); }
+static void World_ClickOpenSaveSlots(void) { World_TactSlotListCall(true); }
+
+static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }
+static void World_ClickSpeed1(void) { World_TactSpeedCall(1); }
+static void World_ClickSpeed2(void) { World_TactSpeedCall(2); }
+static void World_ClickSpeed3(void) { World_TactSpeedCall(3); }
+static void World_ClickSpeed4(void) { World_TactSpeedCall(4); }
+
+static void World_ClickGamma0(void) { World_TactGammaCall(0); }
+static void World_ClickGamma1(void) { World_TactGammaCall(1); }
+static void World_ClickGamma2(void) { World_TactGammaCall(2); }
+static void World_ClickGamma3(void) { World_TactGammaCall(3); }
+static void World_ClickGamma4(void) { World_TactGammaCall(4); }
+
+/* nStep is 0-based in the port; the stored volume is nStep+1, the original's 1..5 naming (menu.h:138). */
+static void World_ClickMusicVol1(void) { World_TactMusicVolCall(0); }
+static void World_ClickMusicVol2(void) { World_TactMusicVolCall(1); }
+static void World_ClickMusicVol3(void) { World_TactMusicVolCall(2); }
+static void World_ClickMusicVol4(void) { World_TactMusicVolCall(3); }
+static void World_ClickMusicVol5(void) { World_TactMusicVolCall(4); }
+
+static void World_ClickSfxVol1(void) { World_TactSfxVolCall(0); }
+static void World_ClickSfxVol2(void) { World_TactSfxVolCall(1); }
+static void World_ClickSfxVol3(void) { World_TactSfxVolCall(2); }
+static void World_ClickSfxVol4(void) { World_TactSfxVolCall(3); }
+static void World_ClickSfxVol5(void) { World_TactSfxVolCall(4); }
+
+static void World_ClickToggleScroll(void) { World_TactToggleCall(TACT_TOGGLE_SCROLL); }
+static void World_ClickToggleShow(void)   { World_TactToggleCall(TACT_TOGGLE_SHOW); }
+static void World_ClickToggleRun(void)    { World_TactToggleCall(TACT_TOGGLE_RUN); }
+static void World_ClickToggleTurn(void)   { World_TactToggleCall(TACT_TOGGLE_TURN); }
+static void World_ClickToggleMenu(void)   { World_TactToggleCall(TACT_TOGGLE_MENU); }
+
+static void World_ClickConfirm0(void) { World_TactConfirmCall(16); }
+static void World_ClickConfirm1(void) { World_TactConfirmCall(16); }
+static void World_ClickConfirm2(void) { World_TactConfirmCall(16); }
+static void World_ClickConfirm3(void) { World_TactConfirmCall(16); }
+static void World_ClickConfirm4(void) { World_TactConfirmCall(16); }
+static void World_ClickConfirm5(void) { World_TactConfirmCall(16); }
+static void World_ClickConfirmSnd15(void) { World_TactConfirmCall(15); }
+
+static void World_ClickConfirmClear(void)     { World_TactButtonCall(MenuBtn_ConfirmClear); }
+static void World_ClickSecondary(void)        { World_TactButtonCall(MenuBtn_Secondary); }
+static void World_ClickActionBack(void)       { World_TactButtonCall(MenuBtn_ActionBack); }
+static void World_ClickSecondaryDismiss(void) { World_TactDismissCall(MenuBtn_SecondaryDismiss); }
+static void World_ClickCancel(void)           { World_TactDismissCall(MenuBtn_Cancel); }
+
+static void World_ClickSaveLoad0(void) { World_TactSaveLoadCall(0); }
+static void World_ClickSaveLoad1(void) { World_TactSaveLoadCall(1); }
+static void World_ClickSaveLoad2(void) { World_TactSaveLoadCall(2); }
+static void World_ClickSaveLoad3(void) { World_TactSaveLoadCall(3); }
+static void World_ClickSaveLoad4(void) { World_TactSaveLoadCall(4); }
+static void World_ClickSaveLoad5(void) { World_TactSaveLoadCall(5); }
+static void World_ClickSaveLoad6(void) { World_TactSaveLoadCall(6); }
+
+/* ------------------------------------------------------------- the widget click table
+ *
+ * One entry per bank widget, in Tact_InitUiControls' install order; NULL where the original has no
+ * handler (113..127) or where this Part defers the composition (4, 5, 17, 18, 56, 57, 58). The
+ * names below match g_aUiClickName's own comments slot by slot. */
+static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {
+    World_ClickCycleNext,          /* 0   Tact_CycleNextUnit @ 0x16684 */
+    World_TactHudClickUp,          /* 1   TactHud_ClimbUp @ 0x1674c */
+    World_ClickLayerUp,            /* 2   MapView_LayerUp @ 0x16530 */
+    World_ClickEnterLookMode,      /* 3   MapView_EnterLookMode @ 0x163d4 */
+    NULL,                          /* 4   Inv_OpenScreen @ 0x16ef4 (deferred) */
+    NULL,                          /* 5   MenuBtn_EndTurn @ 0x16494 (deferred: BeginEnemyTurn args) */
+    World_TactHudClickDown,        /* 6   TactHud_ClimbDown @ 0x16af0 */
+    World_ClickLayerDown,          /* 7   MapView_LayerDown @ 0x164f0 */
+    World_ClickToggleKneel,        /* 8   TactHud_ToggleKneel @ 0x16570 */
+    World_ClickFocusSelected,      /* 9   MapView_FocusSelected @ 0x16710 */
+    World_ClickRadio0,             /* 10  UiBank_SelectRadio0 (starts selected: nState override 1) */
+    World_ClickRadio1,             /* 11 */
+    World_ClickRadio2,             /* 12 */
+    World_ClickRadio3,             /* 13 */
+    World_ClickOpenScreen7,        /* 14  Map_UiScreen7_PlaySample0E @ 0x164b8 */
+    World_ClickOpenScreen15,       /* 15  Map_UiScreen0F_PlaySample0F @ 0x164d4 */
+    World_ClickOpenCommand,        /* 16  Tact_OpenCommandScreen @ 0x16ffc */
+    NULL,                          /* 17  Tact_OpenLeftHandMenu @ 0x17030 (deferred) */
+    NULL,                          /* 18  Tact_OpenRightHandMenu @ 0x17148 (deferred) */
+    World_ClickSelectPrev,         /* 19  Tact_SelectPrevUnit @ 0x17260 */
+    World_ClickSelectNext,         /* 20  Tact_SelectNextUnit @ 0x17304 */
+    World_ClickFilter5,            /* 21  Inv_SetFilter5 @ 0x17710 */
+    World_ClickInvScrollDown,      /* 22  Inv_ScrollDown @ 0x173a8 */
+    World_ClickInvScrollUp,        /* 23  Inv_ScrollUp @ 0x173e4 */
+    World_ClickFilterAll,          /* 24  Inv_SetFilterAll @ 0x17410 */
+    World_ClickFilter0,            /* 25  Inv_SetFilter0 @ 0x17490 */
+    World_ClickFilter3,            /* 26  Inv_SetFilter3 @ 0x17510 */
+    World_ClickFilter4,            /* 27  Inv_SetFilter4 @ 0x17590 */
+    World_ClickFilter1,            /* 28  Inv_SetFilter1 @ 0x17610 */
+    World_ClickFilter2,            /* 29  Inv_SetFilter2 @ 0x17690 */
+    World_ClickConfirm2,           /* 30  MenuBtn_Confirm2 @ 0x19884 */
+    World_ClickOpenCommandFlagged, /* 31  Tact_OpenCommandScreenFlagged @ 0x198c4 */
+    World_ClickFireAuto,           /* 32  Tact_SetFireModeAuto @ 0x17868 */
+    World_ClickFireSnap,           /* 33  Tact_SetFireModeSnap @ 0x177fc */
+    World_ClickFireAimed,          /* 34  Tact_SetFireModeAimed @ 0x17790 */
+    World_ClickConfirmUseItem,     /* 35  TactAction_ConfirmUseItem @ 0x178d4 */
+    World_ClickTryFire4,           /* 36  Tact_TryFireMode4 @ 0x179e4 */
+    World_ClickTryFire5,           /* 37  Tact_TryFireMode5 @ 0x17b1c */
+    World_ClickMelee6,             /* 38  TactAction_ConfirmMeleeMode6 @ 0x17bb8 */
+    World_ClickBeginMultiTarget,   /* 39  Tact_BeginMultiTarget @ 0x18380 */
+    World_ClickUseSpecialItem,     /* 40  TactHud_UseSpecialItem20 @ 0x17d54 */
+    World_ClickConfirmSpecial9,    /* 41  TactAction_ConfirmSpecial9 @ 0x18260 */
+    World_ClickTryFire10,          /* 42  Tact_TryFireMode10 @ 0x17a80 */
+    World_ClickMode11,             /* 43  Map_PlaySample17_SetMode11 @ 0x179c0 */
+    World_ClickSubMode0,           /* 44  Map_SetSubMode0_Play11 @ 0x18418 */
+    World_ClickSubMode1, World_ClickSubMode2, World_ClickSubMode3,   /* 45..47 */
+    World_ClickSubMode4, World_ClickSubMode5, World_ClickSubMode6,   /* 48..50 */
+    World_ClickSubMode7, World_ClickSubMode8,                        /* 51, 52 */
+    World_ClickOpenLoadSlots,      /* 53  Menu_OpenLoadSlots @ 0x18864 */
+    World_ClickOpenSaveSlots,      /* 54  Menu_OpenSaveSlots @ 0x188a4 */
+    World_ClickOpenOptions,        /* 55  Options_SyncUiFromMap_GotoScreen12 @ 0x188e4 */
+    NULL,                          /* 56  Map_BuildDeployConfirmYesNo (deferred modal opener) */
+    NULL,                          /* 57  Menu_ConfirmQuitDialog @ 0x18e2c (deferred) */
+    NULL,                          /* 58  MenuBtn_ResizeWindow @ 0x19930 (caller window call) */
+    World_ClickSamples1614Clear,   /* 59  Map_PlaySamples16_14_ClearUiScreen @ 0x18e9c */
+    World_ClickSpeed0, World_ClickSpeed1, World_ClickSpeed2,         /* 60..62 MenuBtn_SetSpeed0..2 */
+    World_ClickSpeed3, World_ClickSpeed4,                            /* 63, 64 */
+    World_ClickGamma0, World_ClickGamma1, World_ClickGamma2,         /* 65..67 MenuBtn_SetGamma0..2 */
+    World_ClickGamma3, World_ClickGamma4,                            /* 68, 69 */
+    World_ClickToggleScroll,       /* 70  Map_ToggleFlag128A8D @ 0x19250 */
+    World_ClickToggleShow,         /* 71  Map_ToggleFlag128A8E @ 0x192d4 */
+    World_ClickToggleRun,          /* 72  Map_ToggleFlag128A8F @ 0x19348 */
+    World_ClickToggleTurn,         /* 73  Map_ToggleFlag128A90 @ 0x193a0 */
+    World_ClickToggleMenu,         /* 74  Map_ToggleFlag128A91 @ 0x1941c */
+    World_ClickConfirm4,           /* 75  MenuBtn_Confirm4 @ 0x19910 */
+    World_ClickMusicMute,          /* 76  Ui_ToggleMusicMute @ 0x19948 */
+    World_ClickSfxMute,            /* 77  Ui_ToggleSfxMute @ 0x199ac */
+    World_ClickMusicVol1, World_ClickMusicVol2, World_ClickMusicVol3, /* 78..80 Options_SetMusicVol1..3 */
+    World_ClickMusicVol4, World_ClickMusicVol5,                       /* 81, 82 */
+    World_ClickSfxVol1, World_ClickSfxVol2, World_ClickSfxVol3,       /* 83..85 MenuBtn_SetSfxVol1..3 */
+    World_ClickSfxVol4, World_ClickSfxVol5,                           /* 86, 87 */
+    World_ClickForceNoDrag,        /* 88  Menu_ToggleForceNoDrag @ 0x19d94 */
+    World_ClickSecondary,          /* 89  MenuBtn_Secondary @ 0x19498 */
+    World_ClickActionBack,         /* 90  MenuBtn_ActionBack1 @ 0x19618 */
+    World_ClickSecondaryDismiss,   /* 91  MenuBtn_SecondaryDismiss @ 0x195e0 */
+    World_ClickConfirmClear,       /* 92  MenuBtn_ConfirmClear @ 0x194c8 */
+    World_ClickActionBack,         /* 93  MenuBtn_ActionBack0 @ 0x195a8 (byte-identical to 90) */
+    World_ClickDeployOpen,         /* 94  Map_PlaySamples16_7_SetDeployFlag @ 0x19528 */
+    World_ClickDeployClose,        /* 95  Map_PlaySamples16_7_ClearDeployFlag @ 0x19568 */
+    World_ClickScreen7Samples,     /* 96  Map_UiScreen7_PlaySamples16_14 @ 0x194f8 */
+    World_ClickConfirmSnd15,       /* 97  MenuBtn_ConfirmSnd15 @ 0x198f0 */
+    World_ClickConfirm0,           /* 98  MenuBtn_Confirm0 @ 0x19650 */
+    World_ClickIncLayer,           /* 99  Map_IncByte128AF0_Play11 @ 0x19670 */
+    World_ClickDecLayer,           /* 100 Map_DecByte128AF0_Play11 @ 0x196ac */
+    World_ClickConfirm1,           /* 101 MenuBtn_Confirm1 @ 0x196e8 */
+    World_ClickSelectPrevFiltered, /* 102 Tact_SelectPrevUnitFiltered @ 0x19708 */
+    World_ClickSelectNextFiltered, /* 103 Tact_SelectNextUnitFiltered @ 0x197b8 */
+    World_ClickConfirm3,           /* 104 MenuBtn_Confirm3 @ 0x198a4 */
+    World_ClickSaveLoad0, World_ClickSaveLoad1, World_ClickSaveLoad2, /* 105..107 SaveLoad_Slot0..2 */
+    World_ClickSaveLoad3, World_ClickSaveLoad4, World_ClickSaveLoad5, /* 108..110 */
+    World_ClickSaveLoad6,          /* 111 */
+    World_ClickConfirm5,           /* 112 MenuBtn_Confirm5 @ 0x1a014 */
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,        /* 113..120, never installed */
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL,              /* 121..127 */
+    World_ClickCancel,             /* 128 MenuBtn_Cancel0 @ 0x1a24c */
+    World_ClickCancel,             /* 129 MenuBtn_Cancel1 @ 0x1a26c (identical) */
+};
+
+static void World_TactInitUiControlsThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    const WorldHooks *pHooks = pW->pFrameHooks;
+    UiBankInitCtx ctx;
+
+    if (pHooks == NULL || pHooks->pBank == NULL) {
+        return;                                            /* no caller bank to install onto */
+    }
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pHudPad     = pW->apTactPads[PUFO_UIPAD_HUD];      /* unk_113AB4, Map+0xFC: its size places
+                                                            * the tactical group (widgets 0..18) */
+    ctx.pLookCtl    = &pW->sTactLookCtl;                   /* the original allocates unk_1571E4 here */
+    ctx.apfnClick   = g_aTactBankClicks;
+    ctx.pfnLoadPads = pW->pfnLoadPads;                     /* the caller's seam for UiControl_LoadPads
+                                                            * @ 0x1a604 */
+    ctx.pUser       = pW->pLoadPadsUser;
+    ctx.pfnLookClick = World_TactLookClickThunk;           /* TactAction_ConfirmFireBurst @ 0x18774 */
+    Tact_InitUiControls(pHooks->pBank, &ctx);
+
+    /* Input_OnConfirm's armed multi-target commit clears *unk_1571E4+9 -- the look control's
+     * bEnabled byte is the scratch pointer's target. */
+    pW->sTactInput.pbScratchFlag9 = &pW->sTactLookCtl.bEnabled;
 }
 
 /* --------------------------------------------------------------- mission end (Part 49)

@@ -81,6 +81,46 @@ static u8             g_nMapPhase;  /* nMapPhase @ 0x1139EF (Map + 0x37): the ar
                                      * byte the original's 0xC352 handler wraps (PocketUFO_WndProc 0xA0988) */
 static UiControlHitCtx g_hit;
 
+/* --- the tact bank bring-up fixtures (Part 54) -------------------------------------
+ * The widget bank stands in for the app's g_bank (the WorldHooks field the world installs
+ * handlers and pads onto), the input hooks are the ones the installed MenuBtn handler hands to
+ * Input_OnConfirm @ 0x15f3c, and the slot hooks are the SaveLoad_Slot0..6 pair. Bank samples are
+ * kept apart from g_nSamples so a tact click cannot disturb the frame asserts that pin it. */
+static UiWidgetBank   g_bank;
+static TactInputHooks g_tactInHooks;
+static bool           g_bBankActionFlag;   /* UiBank_bActionFlag, WorldHooks.pbBankActionFlag */
+static i32            g_aBankSamples[64];
+static i32            g_nBankSamples;
+static i32            g_nSlotFormatCalls;  /* Menu_OpenSlotList's injected SaveSlot_FormatList */
+static i32            g_nLoadSlotCalls;    /* the load hook SaveLoad_Slot runs on a load screen */
+static i32            g_nLoadSlotId;
+static i32            g_nListModeCell;     /* *0x157188, the caller-owned list mode */
+
+static void RecBankSample(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    if (g_nBankSamples < (i32)(sizeof(g_aBankSamples) / sizeof(g_aBankSamples[0]))) {
+        g_aBankSamples[g_nBankSamples] = (i32)nSample;
+    }
+    ++g_nBankSamples;
+}
+
+static i32 RecLoadGame(i32 nSlot, void *pUser)
+{
+    (void)pUser;
+    ++g_nLoadSlotCalls;
+    g_nLoadSlotId = nSlot;
+    return 1;                                   /* "loaded": the list mode stays 1 (0x19E08 arm) */
+}
+
+static const SaveLoadSlotHooks g_slotHooks = { NULL, RecLoadGame, NULL };  /* no save unit yet */
+
+static void RecFormatSlots(void *pUser)
+{
+    (void)pUser;
+    ++g_nSlotFormatCalls;
+}
+
 /* The shell's blit seam, recorded so the frame's control blits are checkable. */
 static const PadImage *g_apBlitPad[64];
 static i32            g_nBlits;
@@ -107,10 +147,15 @@ static void RecBlitPadEx(const PadImage *pPad, void *pUser)
     PadImage_BlitEx(pPad, 255u);
 }
 
+static i32 g_aFrameSamples[512];   /* the WorldHooks sample seam, values as well as the count,
+                                    * so the tact bank clicks' samples are checkable (Part 54) */
+
 static void RecSample(i32 nSample, void *pUser)
 {
-    (void)nSample;
     (void)pUser;
+    if (g_nSamples < (i32)(sizeof(g_aFrameSamples) / sizeof(g_aFrameSamples[0]))) {
+        g_aFrameSamples[g_nSamples] = nSample;
+    }
     ++g_nSamples;
 }
 
@@ -317,6 +362,18 @@ int main(void)
     hooks.pColor        = &g_color;
     hooks.pnAnimPhase   = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18, the cell the pulse's phase gate counts */
     hooks.pnMapPhase    = &g_nMapPhase;       /* Map + 0x37 @ 0x1139EF, the placement arm's cursor phase */
+    /* The tact bank bring-up wiring (Part 54): the world installs InitUiControls' handlers and pads
+     * on this bank, and the installed MenuBtn handler reaches back through these fields. */
+    memset(&g_tactInHooks, 0, sizeof(g_tactInHooks));
+    g_tactInHooks.pfnPlaySample = RecBankSample;
+    hooks.pBank               = &g_bank;
+    hooks.pTactInputHooks     = &g_tactInHooks;
+    hooks.pbBankActionFlag    = &g_bBankActionFlag;
+    hooks.pSaveLoadHooks      = &g_slotHooks;
+    hooks.pfnFormatSlotList   = RecFormatSlots;
+    hooks.pFormatSlotListUser = NULL;
+    hooks.pnListMode          = &g_nListModeCell;
+    hooks.pTactOptions        = &g_options;   /* the menu handlers write options through this alias */
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
 
     pF   = &g_world.frame;
@@ -1617,6 +1674,155 @@ int main(void)
                           && pMini->nOriginY == (((i32)pMini->uHeight > 320 ? 321 - (i32)pMini->uHeight : 320 - (i32)pMini->uHeight) >> 1),
                       "minimcur takes the centring rule with the odd +1 branch (x = (240 - uWidth) >> 1, +1 only when the pad is wider than the field)");
             }
+            {
+                /* Tact_InitUiControls @ 0x3b498 ran through the shell hook (Part 54): the handlers are
+                 * installed on the shell's bank in the g_aUiClickName order, the look control is built,
+                 * the HUD origin is recomputed and the direct overrides land. */
+                static const i32 aDeferred[7] = { 4, 5, 17, 18, 56, 57, 58 };
+                i32 bInstalled = 1, bDeferred = 1, bStart = 1;
+                for (i32 c = 0; c < 113; ++c) {
+                    i32 bWant = 1;
+                    for (i32 d = 0; d < 7; ++d) {
+                        if (aDeferred[d] == c) { bWant = 0; }
+                    }
+                    if (bWant && g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
+                    if (!bWant && g_bank.aCtl[c].pfnClick != NULL) { bDeferred = 0; }
+                }
+                for (i32 c = 113; c < 128; ++c) {
+                    if (g_bank.aCtl[c].pfnClick != NULL) { bStart = 0; }
+                }
+                Check(bInstalled, "every handler the port models is installed on bank widgets 0..112");
+                Check(bDeferred, "the seven deferred families stay NULL: 4 inventory, 5 end-turn, 17/18 hand menus, 56 deploy confirm, 57 quit, 58 resize");
+                Check(bStart && g_bank.aCtl[128].pfnClick != NULL && g_bank.aCtl[129].pfnClick != NULL,
+                      "113..127 stay uninstalled (start-menu widgets) and 128/129 take MenuBtn_Cancel (0x1a24c / 0x1a26c)");
+                const UiControl *pLook = &g_world.sTactLookCtl;
+                Check(pLook->bEnabled == 0 && pLook->bUnk17 == 1 && pLook->pfnClick != NULL,
+                      "the look control is ctor'd, left disabled, gets the ConfirmFireBurst handler and bUnk17 (0x3B4C4..0x3B4F4)");
+                Check(pLook->apPads[0] != NULL && pLook->apPads[1] != NULL && pLook->apPads[2] == NULL,
+                      "the look control's pads come from g_uiLookDesc: launch + claunch loaded, the empty third name loads nothing (0xA8138)");
+                Check(g_world.sTactInput.pbScratchFlag9 == &g_world.sTactLookCtl.bEnabled,
+                      "Input_OnConfirm's *unk_1571E4+9 scratch flag now points at the look control's bEnabled byte");
+                const PadImage *pHudPad = g_world.apTactPads[PUFO_UIPAD_HUD];
+                Check(pHudPad != NULL
+                          && pHudPad->nOriginX == (((i32)pHudPad->uWidth > 240 ? 241 - (i32)pHudPad->uWidth : 240 - (i32)pHudPad->uWidth) >> 1)
+                          && pHudPad->nOriginY == 320 - (i32)pHudPad->uHeight,
+                      "the HUD pad origin is recomputed: x centred (odd +1 only past 240), y bottom-aligned with no +1 branch (0x3B500)");
+                Check(g_bank.aCtl[16].uWidth == 100 && g_bank.aCtl[16].uHeight == 30
+                          && g_bank.aCtl[17].uWidth == 34 && g_bank.aCtl[17].uHeight == 53
+                          && g_bank.aCtl[18].uWidth == 34 && g_bank.aCtl[18].uHeight == 53,
+                      "the mode-2 size overrides land: widget 16 at 100x30, the hand-menu widgets at 34x53");
+                Check(g_bank.aCtl[14].bUnk17 == 1 && g_bank.aCtl[15].bUnk17 == 1 && g_bank.aCtl[31].bUnk17 == 1
+                          && g_bank.aCtl[10].nState == 1,
+                      "widgets 14/15/31 get bUnk17 and radio 0 starts selected (nState 1 on widget 10)");
+            }
+            {
+                /* Live click dispatch on the installed bank (Part 54). Every fixture the dispatch
+                 * moves is restored, so the walker and mission-end asserts below run on the values
+                 * they expect. */
+                GameMap *pMapX = g_world.pTactMap;
+                StatusStack statusSave = pMapX->status;
+                Soldier *pSelSave = pMapX->pSelUnit;
+                u8 nLatchSave = pMapX->bActionLatch;
+                u16 nUiSave = g_world.nUiScreen;
+                i32 nCurXSave = g_world.tactEnv.cursor.nX;
+                i32 nCurYSave = g_world.tactEnv.cursor.nY;
+                u8  nFlagsSave = g_world.tactEnv.cursor.nFlags;
+                i32 nScrXSave = g_world.tactEnv.focus.nCamScrollX;
+                i32 nScrYSave = g_world.tactEnv.focus.nCamScrollY;
+                CamOffset camSave = g_world.tactEnv.focus.camOffset;
+                MenuPads padsSave = g_world.sTactMenuPads;
+                u8 bScrollSave = g_options.bScrollByPen, bShowSave = g_options.bShowBorder;
+                i32 nListSave = g_nListModeCell, nFmtSave = g_nSlotFormatCalls;
+                i32 nSamplesSave = g_nSamples;
+                i32 nSampleMark;
+                /* Click through the installed pointer; a missing installation (a mutation that
+                 * breaks InitUiControls' wiring) must turn the asserts red, not crash. */
+#define CLICK(i) do { if (g_bank.aCtl[i].pfnClick != NULL) { g_bank.aCtl[i].pfnClick(); } } while (0)
+
+                /* 59: samples 16 then 14, screen back to 0 (Map_PlaySamples16_14_ClearUiScreen 0x18e9c). */
+                g_world.nUiScreen = 7;
+                nSampleMark = g_nSamples;
+                CLICK(59);
+                Check(g_world.nUiScreen == 0 && g_nSamples >= nSampleMark + 2
+                          && g_aFrameSamples[nSampleMark] == 16 && g_aFrameSamples[nSampleMark + 1] == 14,
+                      "widget 59 plays 16, 14 and clears screen 7 back to 0 through the staging sync");
+
+                /* 70: the scroll toggle with its SHOW coupling (Map_ToggleFlag128A8D 0x19250). */
+                g_options.bScrollByPen = 0;
+                g_options.bShowBorder = 1;
+                CLICK(70);
+                Check(g_options.bScrollByPen == 1 && g_options.bShowBorder == 1, "turning SCROLL on leaves SHOW alone");
+                CLICK(70);
+                Check(g_options.bScrollByPen == 0 && g_options.bShowBorder == 0
+                          && g_world.sTactMenuPads.abPen[0] == 0 && g_world.sTactMenuPads.abPen[1] == 0,
+                      "turning SCROLL off clears SHOW, and both the option bytes and the MenuPads flag pads write back");
+
+                /* 99: the layer byte steps through the staging sync, with no MapCursor_SetFlags call (0x19670). */
+                g_world.tactEnv.cursor.nFlags = 2;
+                nSampleMark = g_nSamples;
+                CLICK(99);
+                Check(g_world.tactEnv.cursor.nFlags == 3 && g_aFrameSamples[nSampleMark] == 17,
+                      "widget 99 plays 17 and steps the cursor layer 2 -> 3");
+
+                /* 0: the roster cycle (Tact_CycleNextUnit 0x16684): select, focus, latch clear. */
+                pMapX->pSelUnit = pMapX->apXcomUnits[0];
+                pMapX->bActionLatch = 4;
+                nSampleMark = g_nSamples;
+                CLICK(0);
+                Check(pMapX->pSelUnit == pMapX->apXcomUnits[1] && pMapX->bActionLatch == 0
+                          && g_aFrameSamples[nSampleMark] == 17,
+                      "widget 0 advances the selection 0 -> 1 (Tact_SelectUnit writes the live slot), clears Map+0x02 and plays 17");
+
+                /* 9: focus recentres on the selected unit's cell (MapView_FocusSelected 0x16710). */
+                g_world.tactEnv.focus.nCamScrollX = 12345;
+                g_world.tactEnv.focus.nCamScrollY = 54321;
+                CLICK(9);
+                Check(g_world.tactEnv.focus.nCamScrollX != 12345 || g_world.tactEnv.focus.nCamScrollY != 54321,
+                      "widget 9 recentres the camera scroll off the sentinel onto the selected unit's cell");
+
+                /* 98: MenuBtn_Confirm(16) straight into Input_OnConfirm on the tact branch (0x19650). */
+                g_world.nUiScreen = 7;
+                g_nBankSamples = 0;
+                CLICK(98);
+                Check(g_world.nUiScreen == 0 && g_aBankSamples[0] == 16 && g_nBankSamples >= 2,
+                      "widget 98 plays 16, then Input_OnConfirm's screen-7 arm plays 14 and closes the live screen cell");
+
+                /* 53: the load-slot list opener (Menu_OpenLoadSlots 0x18864): the load list is screen 11,
+                 * the save list 10 (PUFO_UI_SCREEN_LOAD_SLOTS / _SAVE_SLOTS). */
+                g_nListModeCell = 2;
+                g_world.nUiScreen = 10;
+                nSampleMark = g_nSamples;
+                CLICK(53);
+                Check(g_nSlotFormatCalls == nFmtSave + 1 && g_world.nUiScreen == 11 && g_nListModeCell == 0
+                          && g_aFrameSamples[nSampleMark] == 16,
+                      "widget 53 rebuilds the slot list, plays 16, clears *0x157188 and opens screen 11");
+
+                /* 105: SaveLoad_Slot0 on the LOAD screen runs the load hook (0x19de4, 0x19E08). */
+                g_world.nUiScreen = 11;
+                CLICK(105);
+                Check(g_nLoadSlotCalls >= 1 && g_nLoadSlotId == 0 && g_nListModeCell == 1 && g_world.nUiScreen == 11,
+                      "widget 105 on screen 11 runs the load hook for slot 0 and sets the list mode to 1");
+
+                /* Restore everything the dispatch moved. */
+                pMapX->status = statusSave;
+                pMapX->pSelUnit = pSelSave;
+                pMapX->bActionLatch = nLatchSave;
+                g_world.nUiScreen = nUiSave;
+                g_world.tactEnv.cursor.nX = nCurXSave;
+                g_world.tactEnv.cursor.nY = nCurYSave;
+                g_world.tactEnv.cursor.nFlags = nFlagsSave;
+                g_world.tactEnv.focus.nCamScrollX = nScrXSave;
+                g_world.tactEnv.focus.nCamScrollY = nScrYSave;
+                g_world.tactEnv.focus.camOffset = camSave;
+                g_world.sTactMenuPads = padsSave;
+                g_options.bScrollByPen = bScrollSave;
+                g_options.bShowBorder = bShowSave;
+                g_nListModeCell = nListSave;
+                g_nSlotFormatCalls = nFmtSave;
+                g_nSamples = nSamplesSave;
+                g_nBankSamples = 0;
+#undef CLICK
+            }
             Check(g_world.apTactCells[0] != NULL && g_world.pTactDeployCell == g_world.apTactCells[0],
                   "the terrain pass filled the grid slots and the zero-layer cargo pass reads cell (0,0,0) (Init_LookupCell's index with every coordinate 0)");
             Check(g_world.pTactMap->nXcomCount == 8 && g_world.pTactMap->nEnemyCount == 0
@@ -1938,6 +2144,24 @@ int main(void)
             if (g_world.apTactPads[c] != NULL) { bPadsClear = 0; }
         }
         Check(bPadsClear, "every tact pad slot is freed and cleared at teardown, as Tact_Shutdown frees them (0x3E150, 0x3E17C..0x3E318)");
+    }
+    {
+        /* The tact widget pads (Part 54): Tact_Shutdown frees the pads of the thirteen tact families
+         * between 0x3D6D8 and 0x3DC44 (bank widgets 0..112 plus 128/129) and the look control's at
+         * 0x3DC98; the start-menu widgets 113..127 belong to StartUi_Shutdown, not to this teardown. */
+        i32 bCtlPads = 1;
+        for (i32 c = 0; c < 113; ++c) {
+            if (g_bank.aCtl[c].apPads[0] != NULL || g_bank.aCtl[c].apPads[1] != NULL
+                    || g_bank.aCtl[c].apPads[2] != NULL) { bCtlPads = 0; }
+        }
+        if (g_bank.aCtl[128].apPads[0] != NULL || g_bank.aCtl[128].apPads[1] != NULL
+                || g_bank.aCtl[129].apPads[0] != NULL || g_bank.aCtl[129].apPads[1] != NULL) { bCtlPads = 0; }
+        Check(bCtlPads, "every tact widget pad is freed and cleared at teardown (Tact_Shutdown 0x3D6D8..0x3DC44, and the port nulls what it frees)");
+        Check(g_world.sTactLookCtl.apPads[0] == NULL && g_world.sTactLookCtl.apPads[1] == NULL
+                  && g_world.sTactLookCtl.apPads[2] == NULL,
+              "the look control's launch/claunch pads are freed too (0x3DC98)");
+        Check(g_world.sTactInput.bTactFlag == false && g_world.sTactInput.pbScratchFlag9 == NULL,
+              "the input-side teardown clears Map+0x00 (Tact_Shutdown's first store, 0x3D574) and releases the scratch flag");
     }
 
     World_Free(&g_world);

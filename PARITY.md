@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 969 / 969 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18128 |
+| Test checks run | 18149 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -149,9 +149,9 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x9e268` | `Sound_InitAndLoadSamples` | 364 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` |
 | `0x9e130` | `Sound_LoadAndPlayMusic` | 312 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` |
-| `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
+| `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+4) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
-| `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
+| `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+4) |
 | `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+9) |
 
 ### `util` (18 functions)
@@ -228,12 +228,12 @@ is the module that answers to it.
 | `0x438e0` | `Save_WriteMap` | 932 | `src/pufo/game/pufo_save.h` |
 | `0x402c0` | `Save_ReadBases` | 876 | `src/pufo/game/pufo_save.h` |
 | `0x3f6dc` | `Save_WriteShips` | 844 | `src/pufo/game/pufo_save.h` |
-| `0x45904` | `SaveSlot_FormatList` | 796 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_mainmenu.h` (+1) |
+| `0x45904` | `SaveSlot_FormatList` | 796 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x40c4c` | `Save_ReadSmap` | 768 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+1) |
 | `0x3f1fc` | `Save_WriteBases` | 760 | `src/pufo/game/pufo_save.h` |
 | `0x446a8` | `Save_WriteTGameData` | 640 | `src/pufo/game/pufo_save.h` |
 | `0x43c84` | `Save_WriteTeamUnits` | 604 | `src/pufo/game/pufo_save.h` |
-| `0x44988` | `SaveGame` | 564 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
+| `0x44988` | `SaveGame` | 564 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_save.c` (+1) |
 | `0x44020` | `Save_ReadTeamUnits` | 552 | `src/pufo/game/pufo_save.h` |
 | `0x3fa28` | `Save_WriteSmap` | 396 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x3f558` | `Save_WriteResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
@@ -342,7 +342,7 @@ is the module that answers to it.
 | `0x1b0d4` | `MapView_bResolveIsoCell` | 428 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x4b4f8` | `Unit_DropAllItemsToCell` | 428 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x32fa8` | `Combat_DetonateNearbyItems` | 416 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
-| `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_mapctx.h` (+4) |
+| `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+5) |
 | `0x46fe0` | `Soldier_PickBestScoreAmong` | 388 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x6654c` | `Soldier_FormatDisplayName` | 384 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x49a0c` | `Unit_PlaceOnMap` | 376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -352,32 +352,32 @@ is the module that answers to it.
 | `0x4ca18` | `Tact_BeginEnemyTurn` | 348 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x4b2f4` | `TactState_EnqueueThrow` | 300 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_unit.c` (+1) |
-| `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_tactui.c` (+1) |
+| `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+2) |
 | `0x33148` | `Tact_RemoveUnitFromSideLists` | 284 | `src/pufo/game/pufo_roster.h` |
-| `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
-| `0x17148` | `Tact_OpenRightHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
+| `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17148` | `Tact_OpenRightHandMenu` | 280 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x48028` | `Unit_bScanOpportunityFire` | 272 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x274f0` | `GameTick_OnTimer` | 268 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
-| `0x18774` | `TactAction_ConfirmFireBurst` | 240 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` (+1) |
-| `0x178d4` | `TactAction_ConfirmUseItem` | 236 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x18774` | `TactAction_ConfirmFireBurst` | 240 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.c` (+2) |
+| `0x178d4` | `TactAction_ConfirmUseItem` | 236 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.c` (+1) |
 | `0x430cc` | `Soldiers_Reload` | 224 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x4a29c` | `TactState_EnqueueDeathFlash` | 224 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4b420` | `Tact_EnqueueActionOrStatus205` | 216 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x2b534` | `Path_EnqueueCell` | 208 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
-| `0x197b8` | `Tact_SelectNextUnitFiltered` | 204 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
+| `0x197b8` | `Tact_SelectNextUnitFiltered` | 204 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.c` (+1) |
 | `0x36b8c` | `Soldier_RemoveById` | 204 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x549c8` | `MapCell_TestFlag` | 200 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` (+1) |
-| `0x163d4` | `MapView_EnterLookMode` | 192 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
+| `0x163d4` | `MapView_EnterLookMode` | 192 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.c` (+1) |
 | `0x33264` | `Tact_ScanVictoryTiles` | 184 | `src/pufo/game/pufo_tactctl.h`, `src/pufo/game/pufo_tactend.h` |
 | `0x3bd6c` | `Tact_LoadLoftData` | 184 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_los.c` (+1) |
-| `0x19708` | `Tact_SelectPrevUnitFiltered` | 176 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
-| `0x17260` | `Tact_SelectPrevUnit` | 164 | `src/pufo/game/pufo_roster.h` |
-| `0x17304` | `Tact_SelectNextUnit` | 164 | `src/pufo/game/pufo_roster.h` |
-| `0x179e4` | `Tact_TryFireMode4` | 156 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_tactui.h` |
-| `0x17a80` | `Tact_TryFireMode10` | 156 | `src/pufo/game/pufo_tactui.h` |
-| `0x17b1c` | `Tact_TryFireMode5` | 156 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_tactui.h` |
+| `0x19708` | `Tact_SelectPrevUnitFiltered` | 176 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.c` (+1) |
+| `0x17260` | `Tact_SelectPrevUnit` | 164 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.h` |
+| `0x17304` | `Tact_SelectNextUnit` | 164 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.h` |
+| `0x179e4` | `Tact_TryFireMode4` | 156 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+1) |
+| `0x17a80` | `Tact_TryFireMode10` | 156 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17b1c` | `Tact_TryFireMode5` | 156 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+1) |
 | `0x2c758` | `MapView_FocusOnUnit` | 156 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.h` (+5) |
-| `0x18380` | `Tact_BeginMultiTarget` | 152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_tactui.c` (+1) |
+| `0x18380` | `Tact_BeginMultiTarget` | 152 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_input.h` (+2) |
 | `0x276f0` | `MapView_SetCamOffset` | 152 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x54ba4` | `Map_LoadMa1` | 152 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x1c7dc` | `MapView_SetWallPalFromSlotA` | 148 | `src/pufo/game/pufo_isodraw.h` |
@@ -386,32 +386,32 @@ is the module that answers to it.
 | `0x47164` | `Soldier_FindNextSmallByType` | 148 | `src/pufo/game/pufo_roster.h` |
 | `0x33bf0` | `Tact_MarkAllSoldiersSeen` | 144 | `src/pufo/game/pufo_roster.h` |
 | `0x4b928` | `EnemyAi_bMultiTargetTypeMatch` | 144 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` |
-| `0x16684` | `Tact_CycleNextUnit` | 140 | `src/pufo/game/pufo_roster.h` |
+| `0x16684` | `Tact_CycleNextUnit` | 140 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.h` |
 | `0x471f8` | `Soldier_CountSmallByType` | 136 | `src/pufo/game/pufo_roster.h` |
 | `0x4f368` | `Tact_RefreshTeamVisibility` | 136 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
-| `0x19250` | `Map_ToggleFlag128A8D_Play11` | 132 | `src/pufo/game/pufo_tactui.h` |
+| `0x19250` | `Map_ToggleFlag128A8D_Play11` | 132 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x49ddc` | `TactState_EnqueueVertStep` | 132 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_tactstate.c` (+1) |
 | `0x54944` | `MapCell_Init` | 132 | `src/pufo/game/pufo_mapcell.h` |
 | `0x54a90` | `MapCell_Reset` | 132 | `src/pufo/game/pufo_mapcell.h` |
 | `0x49d5c` | `TactState_EnqueueStep` | 128 | `src/pufo/game/pufo_tactstate.h` |
 | `0x4b6a4` | `TactItem_bTryReloadClip` | 128 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
-| `0x193a0` | `Map_ToggleFlag128A90_Play11` | 124 | `src/pufo/game/pufo_tactui.h` |
-| `0x1941c` | `Map_ToggleFlag128A91_Play11` | 124 | `src/pufo/game/pufo_tactui.h` |
+| `0x193a0` | `Map_ToggleFlag128A90_Play11` | 124 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x1941c` | `Map_ToggleFlag128A91_Play11` | 124 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x3e620` | `TactItem_GetHandSlot` | 124 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x3e69c` | `TactItem_GetEquipDelta` | 124 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x46664` | `Tact_MapTypeToGlyphIdx` | 120 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
-| `0x192d4` | `Map_ToggleFlag128A8E_Play11` | 116 | `src/pufo/game/pufo_tactui.h` |
+| `0x192d4` | `Map_ToggleFlag128A8E_Play11` | 116 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x548d0` | `MapCell_SetTileSprites` | 116 | `src/pufo/game/pufo_mapcell.h` |
 | `0x4a3d4` | `Unit_EnqueueIfApSpent` | 112 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
-| `0x17790` | `Tact_SetFireModeAimed` | 108 | `src/pufo/game/pufo_tactui.h` |
-| `0x177fc` | `Tact_SetFireModeSnap` | 108 | `src/pufo/game/pufo_tactui.h` |
-| `0x17868` | `Tact_SetFireModeAuto` | 108 | `src/pufo/game/pufo_tactui.h` |
+| `0x17790` | `Tact_SetFireModeAimed` | 108 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x177fc` | `Tact_SetFireModeSnap` | 108 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17868` | `Tact_SetFireModeAuto` | 108 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x275fc` | `MapCursor_IsValid` | 108 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_tactctl.c` (+1) |
 | `0x49b84` | `TactState_EnqueueTurn` | 108 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4cb74` | `Tact_EndEnemyTurn` | 108 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x26f14` | `Map_InitFacingScratch` | 100 | `src/pufo/game/pufo_tactctl.h` |
 | `0x2bc9c` | `Map_IsValidCell` | 100 | `src/pufo/game/pufo_mapcell.h` |
-| `0x18418` | `Map_SetSubMode0_Play11` | 96 | `src/pufo/game/pufo_tactui.h` |
+| `0x18418` | `Map_SetSubMode0_Play11` | 96 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x184d4` | `Map_SetSubMode2_Play11` | 96 | `src/pufo/game/pufo_tactui.h` |
 | `0x18534` | `Map_SetSubMode3_Play11` | 96 | `src/pufo/game/pufo_tactui.h` |
 | `0x18594` | `Map_SetSubMode4_Play11` | 96 | `src/pufo/game/pufo_tactui.h` |
@@ -420,7 +420,7 @@ is the module that answers to it.
 | `0x186b4` | `Map_SetSubMode7_Play11` | 96 | `src/pufo/game/pufo_tactui.h` |
 | `0x18714` | `Map_SetSubMode8_Play11` | 96 | `src/pufo/game/pufo_tactui.h` |
 | `0x18478` | `Map_SetSubMode1_Play11` | 92 | `src/pufo/game/pufo_tactui.h` |
-| `0x19348` | `Map_ToggleFlag128A8F_Play11` | 88 | `src/pufo/game/pufo_tactui.h` |
+| `0x19348` | `Map_ToggleFlag128A8F_Play11` | 88 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x49e60` | `TactState_EnqueueStandFromKneel` | 88 | `src/pufo/game/pufo_tactstate.h` |
 | `0x4a37c` | `TactState_EnqueueRecover` | 88 | `src/pufo/game/pufo_tactstate.h` |
 | `0x4a758` | `TactState_EnqueueClearAim` | 88 | `src/pufo/game/pufo_tactstate.h` |
@@ -433,39 +433,39 @@ is the module that answers to it.
 | `0x55018` | `Map_FreeRmpNodes` | 72 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
 | `0x260c0` | `GameSpeed_Set` | 68 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_tactctl.c` (+2) |
 | `0x54b14` | `MapCell_ListInsertByPri` | 68 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` |
-| `0x164f0` | `MapView_LayerDown` | 64 | `src/pufo/game/pufo_tactui.h` |
-| `0x16530` | `MapView_LayerUp` | 64 | `src/pufo/game/pufo_tactui.h` |
-| `0x19528` | `Map_PlaySamples16_7_SetDeployFlag` | 64 | `src/pufo/game/pufo_tactui.h` |
-| `0x19568` | `Map_PlaySamples16_7_ClearDeployFlag` | 64 | `src/pufo/game/pufo_tactui.h` |
+| `0x164f0` | `MapView_LayerDown` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x16530` | `MapView_LayerUp` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x19528` | `Map_PlaySamples16_7_SetDeployFlag` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x19568` | `Map_PlaySamples16_7_ClearDeployFlag` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x16710` | `MapView_FocusSelected` | 60 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_invdrag.c` (+4) |
-| `0x19670` | `Map_IncByte128AF0_Play11` | 60 | `src/pufo/game/pufo_tactui.h` |
-| `0x196ac` | `Map_DecByte128AF0_Play11` | 60 | `src/pufo/game/pufo_tactui.h` |
+| `0x19670` | `Map_IncByte128AF0_Play11` | 60 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x196ac` | `Map_DecByte128AF0_Play11` | 60 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x27668` | `Map_bFacingTurnPositive` | 56 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
-| `0x16ffc` | `Tact_OpenCommandScreen` | 52 | `src/pufo/game/pufo_tactui.h` |
+| `0x16ffc` | `Tact_OpenCommandScreen` | 52 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x2e59c` | `Unit_GetExtraSpr` | 52 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x4f300` | `TactState_EnqueueEndMark` | 52 | `src/pufo/game/pufo_tactstate.h` |
 | `0x4f334` | `TactState_KickQueue` | 52 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+3) |
-| `0x18e9c` | `Map_PlaySamples16_14_ClearUiScreen` | 48 | `src/pufo/game/pufo_tactui.h` |
-| `0x194f8` | `Map_UiScreen7_PlaySamples16_14` | 48 | `src/pufo/game/pufo_tactui.h` |
+| `0x18e9c` | `Map_PlaySamples16_14_ClearUiScreen` | 48 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x194f8` | `Map_UiScreen7_PlaySamples16_14` | 48 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x26fcc` | `Map_CenterOffsetX` | 48 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_tactctl.h` |
 | `0x4ab98` | `EnemyAi_EnqueueRandomTurn` | 48 | `src/pufo/game/pufo_enemyai.h` |
-| `0x198c4` | `Tact_OpenCommandScreenFlagged` | 44 | `src/pufo/game/pufo_tactui.h` |
+| `0x198c4` | `Tact_OpenCommandScreenFlagged` | 44 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x4f2d4` | `TactState_ctor` | 44 | `src/pufo/game/pufo_tactstate.h` |
-| `0x179c0` | `Map_PlaySample17_SetMode11` | 36 | `src/pufo/game/pufo_tactui.h` |
+| `0x179c0` | `Map_PlaySample17_SetMode11` | 36 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x26fa8` | `Map_IsoOffsetB` | 36 | `src/pufo/game/pufo_mapcell.h` |
 | `0x49ecc` | `Unit_bIsLarge` | 36 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_rmp.c` (+1) |
 | `0x5487c` | `MapCell_HasOccupant` | 36 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` (+2) |
 | `0x26f88` | `Map_IsoOffsetA` | 32 | `src/pufo/game/pufo_mapcell.h` |
 | `0x4c9f8` | `TactCtx272_ctor` | 32 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x54ff8` | `TactBuf11408_ctor` | 32 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
-| `0x164b8` | `Map_UiScreen7_PlaySample0E` | 28 | `src/pufo/game/pufo_tactui.h` |
-| `0x164d4` | `Map_UiScreen0F_PlaySample0F` | 28 | `src/pufo/game/pufo_tactui.h` |
+| `0x164b8` | `Map_UiScreen7_PlaySample0E` | 28 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x164d4` | `Map_UiScreen0F_PlaySample0F` | 28 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x26ffc` | `Map_CenterOffsetY` | 24 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_tactctl.h` |
 | `0x3e718` | `TactItem_ctor` | 24 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_mapcell.c` (+2) |
 | `0x548a0` | `MapCell_SetBFlags57_3` | 24 | `src/pufo/game/pufo_mapcell.h` |
 | `0x18a54` | `Map_ClearUiScreen` | 20 | `src/pufo/game/pufo_tactctl.h`, `src/pufo/game/pufo_tactui.h` |
 | `0x49eb8` | `Unit_bIsOperative` | 20 | `src/pufo/game/pufo_unit.h` |
-| `0x26f78` | `MapCursor_SetFlags` | 16 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` (+1) |
+| `0x26f78` | `MapCursor_SetFlags` | 16 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.c` (+2) |
 | `0x548c0` | `MapCell_SetBFlags29_4` | 16 | `src/pufo/game/pufo_mapcell.h` |
 | `0x476c8` | `Soldier_ctor` | 12 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x548b8` | `MapCell_SetOccupant` | 8 | `src/pufo/game/pufo_mapcell.h` |
@@ -478,20 +478,20 @@ is the module that answers to it.
 | `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/game/pufo_isodraw.h` |
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geopointer.h` (+3) |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_mainmenu.h` |
-| `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
+| `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+3) |
 | `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geopointer.h` (+2) |
 | `0x2cdac` | `TactHud_DrawItemStrip` | 2004 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | `src/pufo/game/pufo_tacthud.h` |
 | `0x20ef8` | `TactHud_DrawTopBar` | 1336 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_tacthud.c` (+1) |
+| `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+2) |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_invdrag.h` |
 | `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
-| `0x1674c` | `TactHud_ClimbUp` | 932 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x1674c` | `TactHud_ClimbUp` | 932 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x11f40` | `Inv_ClearHitSlot` | 788 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` |
-| `0x16af0` | `TactHud_ClimbDown` | 788 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x16af0` | `TactHud_ClimbDown` | 788 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x156e0` | `Input_OnSecondary` | 780 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
-| `0x15f3c` | `Input_OnConfirm` | 708 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
+| `0x15f3c` | `Input_OnConfirm` | 708 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x21908` | `TactHud_DrawUnitRoster` | 676 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x20c58` | `TactHud_DrawUnitMarkers` | 672 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x21430` | `TactHud_DrawActionButtons` | 600 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -501,9 +501,9 @@ is the module that answers to it.
 | `0x21688` | `TactHud_CopyStatusText` | 344 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x21bac` | `TactHud_DrawModalLeft` | 320 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x21cec` | `TactHud_DrawModalRight` | 320 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x16570` | `TactHud_ToggleKneel` | 276 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x16570` | `TactHud_ToggleKneel` | 276 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x119b0` | `Input_OnDown` | 272 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
-| `0x16ef4` | `Inv_OpenScreen` | 264 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x16ef4` | `Inv_OpenScreen` | 264 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x117b0` | `Input_OnRight` | 256 | `src/pufo/game/pufo_input.h` |
 | `0x118b0` | `Input_OnUp` | 256 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
 | `0x1557c` | `Input_OnAction` | 244 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_control.h` (+1) |
@@ -513,18 +513,18 @@ is the module that answers to it.
 | `0x1c6ac` | `TactUnit_DrawAnimGlyphs` | 168 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x1e888` | `TactHud_TickCursorDir` | 152 | `src/pufo/game/pufo_cursordir.h` |
 | `0x1c754` | `TactUnit_DrawFacingGlyph` | 136 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
-| `0x17410` | `Inv_SetFilterAll` | 128 | `src/pufo/game/pufo_tactui.h` |
-| `0x17490` | `Inv_SetFilter0` | 128 | `src/pufo/game/pufo_tactui.h` |
-| `0x17510` | `Inv_SetFilter3` | 128 | `src/pufo/game/pufo_tactui.h` |
-| `0x17590` | `Inv_SetFilter4` | 128 | `src/pufo/game/pufo_tactui.h` |
-| `0x17610` | `Inv_SetFilter1` | 128 | `src/pufo/game/pufo_tactui.h` |
-| `0x17690` | `Inv_SetFilter2` | 128 | `src/pufo/game/pufo_tactui.h` |
-| `0x17710` | `Inv_SetFilter5` | 128 | `src/pufo/game/pufo_tactui.h` |
+| `0x17410` | `Inv_SetFilterAll` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17490` | `Inv_SetFilter0` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17510` | `Inv_SetFilter3` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17590` | `Inv_SetFilter4` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17610` | `Inv_SetFilter1` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17690` | `Inv_SetFilter2` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x17710` | `Inv_SetFilter5` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x1a7c8` | `TactHud_ComputeCursorDirState` | 116 | `src/pufo/game/pufo_cursordir.h` |
-| `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/game/pufo_tactui.h` |
+| `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | `src/pufo/game/pufo_plane.h`, `src/pufo/game/pufo_ship.c` (+1) |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
-| `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
+| `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 
 ### `ui-core` (82 functions)
 
@@ -548,7 +548,7 @@ is the module that answers to it.
 | `0x3e730` | `UiPanel_ctor` | 408 | `src/pufo/ui/pufo_panel.h` |
 | `0x9955c` | `Ui_InitTransfer` | 392 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+1) |
-| `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_control.c` (+1) |
+| `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
 | `0x3eee0` | `UiScrollList_ClickRow` | 300 | `src/pufo/game/pufo_geopointer.h`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x84bf8` | `Ui_OpenResearch` | 288 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/game/pufo_statusmsg.h` |
@@ -568,8 +568,8 @@ is the module that answers to it.
 | `0x5a3dc` | `UiPanel_RemoveLine` | 116 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x15670` | `UiScreen_OnBack` | 112 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_control.h` (+1) |
 | `0x9ec48` | `Font_BlitGlyphToSoft` | 112 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+2) |
-| `0x19948` | `Ui_ToggleMusicMute` | 100 | `src/pufo/game/pufo_menu.h` |
-| `0x199ac` | `Ui_ToggleSfxMute` | 100 | `src/pufo/game/pufo_menu.h` |
+| `0x19948` | `Ui_ToggleMusicMute` | 100 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` |
+| `0x199ac` | `Ui_ToggleSfxMute` | 100 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` |
 | `0x159ec` | `UiScreen_DismissHigh` | 92 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x26430` | `UiModal_Begin` | 92 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_invdrag.h` (+2) |
 | `0x5a33c` | `UiPanel_GetLineColor` | 88 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
@@ -886,7 +886,7 @@ is the module that answers to it.
 | `0x58728` | `BaseAtScreen_Draw` | 420 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x9690c` | `Transfer_ResetSite` | 420 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x9a754` | `Ufopaedia_NextEntry` | 364 | `src/pufo/game/pufo_baseui.h` |
-| `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h`, `src/pufo/render/pufo_render.h` |
+| `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x78c30` | `BuySellScreen_Init` | 352 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6b7ac` | `Options_SaveAudioSettings` | 336 | `src/pufo/game/pufo_baseui.h` |
 | `0x72b40` | `PsiScreen_Init` | 332 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -926,7 +926,7 @@ is the module that answers to it.
 | `0x6e914` | `ManufScreen_SelectListed` | 120 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x73380` | `ResearchScreen_CancelSelectedAndClose` | 116 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7cbc8` | `BasePlaneScreen_SelectCraft` | 116 | `src/pufo/game/pufo_plane.h` |
-| `0x18e2c` | `Menu_ConfirmQuitDialog` | 112 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x18e2c` | `Menu_ConfirmQuitDialog` | 112 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x55754` | `BaseInfoScreen_TogglePanelMode` | 104 | `src/pufo/game/pufo_baseui.h` |
 | `0x618c4` | `SoldierScreen_FindPrevAtBase` | 104 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x6b194` | `LoadGame_Slot0_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
@@ -977,8 +977,8 @@ is the module that answers to it.
 | `0x19ab8` | `Options_SetMusicVol3` | 84 | `src/pufo/game/pufo_menu.h` |
 | `0x19b0c` | `Options_SetMusicVol4` | 84 | `src/pufo/game/pufo_menu.h` |
 | `0x19b60` | `Options_SetMusicVol5` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x19d94` | `Menu_ToggleForceNoDrag` | 80 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
-| `0x19de4` | `SaveLoad_Slot0` | 80 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x19d94` | `Menu_ToggleForceNoDrag` | 80 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.c` (+1) |
+| `0x19de4` | `SaveLoad_Slot0` | 80 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x19e34` | `SaveLoad_Slot1` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19e84` | `SaveLoad_Slot2` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19ed4` | `SaveLoad_Slot3` | 80 | `src/pufo/ui/pufo_menubtn.h` |
@@ -1010,14 +1010,14 @@ is the module that answers to it.
 | `0x79c30` | `BasePlaneScreen_SelectWeapon29` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x18864` | `Menu_OpenLoadSlots` | 64 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
-| `0x188a4` | `Menu_OpenSaveSlots` | 64 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x18864` | `Menu_OpenLoadSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
+| `0x188a4` | `Menu_OpenSaveSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x6b994` | `OptionsScreen_ClearMusicButtons` | 64 | `src/pufo/game/pufo_baseui.h` |
 | `0x6b9d4` | `OptionsScreen_ClearSfxButtons` | 64 | `src/pufo/game/pufo_baseui.h` |
 | `0x6b674` | `Options_SetTab3_AndUiY` | 60 | `src/pufo/game/pufo_baseui.h` |
-| `0x195a8` | `MenuBtn_ActionBack0` | 56 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x195e0` | `MenuBtn_SecondaryDismiss` | 56 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x195a8` | `MenuBtn_ActionBack0` | 56 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x195e0` | `MenuBtn_SecondaryDismiss` | 56 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x72e30` | `ResearchScreen_PanelPrev` | 56 | `src/pufo/game/pufo_baseui.h` |
 | `0x72e68` | `ResearchScreen_PanelNext` | 56 | `src/pufo/game/pufo_baseui.h` |
 | `0x1a0bc` | `MenuCtl8_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
@@ -1027,8 +1027,8 @@ is the module that answers to it.
 | `0x1a18c` | `MenuCtl12_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a1c0` | `MenuCtl13_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a1f4` | `MenuCtl14_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a034` | `MenuCtl1_OnClick` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x614cc` | `ManufScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
 | `0x614fc` | `TransferScreen_Open` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -1046,22 +1046,22 @@ is the module that answers to it.
 | `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
 | `0x79a48` | `BuySellScreen_ListPanelNext` | 40 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
 | `0x96ab0` | `Transfer_CacheSelIndex` | 40 | `src/pufo/game/pufo_baseui.h` |
-| `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/game/pufo_menu.h` |
-| `0x19650` | `MenuBtn_Confirm0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x196e8` | `MenuBtn_Confirm1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19884` | `MenuBtn_Confirm2` | 32 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x198a4` | `MenuBtn_Confirm3` | 32 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x198f0` | `MenuBtn_ConfirmSnd15` | 32 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19910` | `MenuBtn_Confirm4` | 32 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a014` | `MenuBtn_Confirm5` | 32 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19650` | `MenuBtn_Confirm0` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x196e8` | `MenuBtn_Confirm1` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19884` | `MenuBtn_Confirm2` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x198a4` | `MenuBtn_Confirm3` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x198f0` | `MenuBtn_ConfirmSnd15` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19910` | `MenuBtn_Confirm4` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a014` | `MenuBtn_Confirm5` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a09c` | `MenuCtl0_OnClick` | 32 | `src/pufo/ui/pufo_geoiinit.h`, `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a24c` | `MenuBtn_Cancel0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a26c` | `MenuBtn_Cancel1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a24c` | `MenuBtn_Cancel0` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a26c` | `MenuBtn_Cancel1` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | `src/pufo/game/pufo_baseui.h` |
 | `0x1a064` | `MenuCtl2_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a080` | `MenuCtl3_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+1) |
 | `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | `src/pufo/game/pufo_baseui.h` |
 | `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x6b6b0` | `Options_SetTab4` | 20 | `src/pufo/game/pufo_baseui.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 383 |
+| `test_geoscapeframe` | PASS | 404 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |
@@ -1342,7 +1342,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 797 citations.
+parity report. Total: 798 citations.
 
 ### Offsets below the image base (44)
 
@@ -1351,7 +1351,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (753)
+### At or above the image base (754)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1749,6 +1749,7 @@ against the IDB when the final report is assembled.
 - `0x17c90`
 - `0x18014`
 - `0x18310`
+- `0x18364`
 - `0x1863e8`
 - `0x186410`
 - `0x18641c`

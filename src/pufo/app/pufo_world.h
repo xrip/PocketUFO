@@ -27,6 +27,9 @@
 #include "game/pufo_unit.h"
 #include "ui/pufo_control.h"
 #include "ui/pufo_geoiinit.h"
+#include "ui/pufo_menubtn.h"   /* TactInputState/TactInputHooks (via pufo_input.h), MenuHooks/MenuPads
+                                * (via pufo_menu.h), UiButtonCtx and SaveLoadSlotHooks -- the tact bank
+                                * bring-up the shell wires since Part 54 */
 #include "ui/pufo_modal.h"    /* UiModalState, the modal bank the shell owns since Part 51 */
 #include "ui/pufo_geouimanage.h"
 #include "ui/pufo_uibank.h"   /* Tact_LoadUiPads + PUFO_UIPAD_* slots, the tact pad table the shell owns (Part 53) */
@@ -429,6 +432,21 @@ typedef struct PufoWorldState {
                                          * are the launch values; live counts are the runtime unit's wiring */
     TactInitEnv   tactEnv;              /* the persistent env World_InitTactical refills every launch */
 
+    /* --- the tact UI controls and the live input state (Part 54) ------------------
+     * Tact_InitUiControls @ 0x3b498 installs the widget click handlers and positions the groups on
+     * the caller's bank (WorldHooks.pBank); the original allocates the look control here and parks it
+     * at unk_1571E4, so the port embeds it here too. sTactInput MOVED here from the app's g_tactState:
+     * an installed MenuBtn handler calls Input_OnConfirm(pState, ...) on the live input state
+     * (pufo_menubtn.c), so the app's copy and the world's copy must be one object. sTactUi is the
+     * staging copy its handlers read and write: World_TactUiSyncIn/SyncOut (pufo_world.c) move its
+     * fields to and from the live owners around every bank click. */
+    TactInputState  sTactInput;
+    UiControl       sTactLookCtl;       /* unk_1571E4, the screen-0 look control. Input_OnConfirm @ 0x15f3c
+                                         * clears its bEnabled on the armed multi-target commit (the
+                                         * *unk_1571E4+9 scratch flag) */
+    MenuPads        sTactMenuPads;      /* the 29 option-pad bytes 0xACE5A..0xAD1DA: the one-hot group
+                                         * pads and flag pads the options handlers maintain (pufo_menu.h) */
+
     /* --- the tactical walker (Tact_TickActiveUnit @ 0x54130), wired to the live frame ---
      * The three queue processors take their contexts as arguments; World_TactTickActiveUnit rebuilds
      * them from pTactMap/tactEnv on every tick, which mirrors the original re-reading the Map block
@@ -583,6 +601,25 @@ typedef struct WorldHooks {
      * build; the frame hands the dispatcher this seam instead (NULL means "nothing selectable"). */
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
     void *pHitTestUser;
+
+    /* --- the tact bank bring-up (Tact_InitUiControls @ 0x3b498, Part 54) ---
+     * pBank is the caller's 130-widget bank: InitUiControls installs the click handlers, positions
+     * the groups and loads the widget pads through the pfnLoadPads seam above. The rest is what the
+     * installed handlers reach back into the caller for: the caller's TactInputHooks (MenuBtn_Confirm
+     * hands them to Input_OnConfirm @ 0x15f3c), the UiBank_bActionFlag scratch Input_OnAction sets,
+     * the SaveLoad_Slot0..6 pair (the save hook stays NULL until a SaveGame unit ports 0x44988 --
+     * SaveLoad_Slot returns 0 through a NULL save hook), the slot-list builder Menu_OpenSlotList
+     * injects, the list-mode cell *0x157188, and a WRITABLE alias of the same option block pOptions
+     * points at: Menu_SetSpeed/Gamma/MusicVolume/SfxVolume and the five toggles write options the way
+     * the original writes the Map option bytes. */
+    UiWidgetBank            *pBank;
+    const TactInputHooks    *pTactInputHooks;
+    bool                    *pbBankActionFlag;
+    const SaveLoadSlotHooks *pSaveLoadHooks;
+    void (*pfnFormatSlotList)(void *pUser); /* SaveSlot_FormatList @ 0x45904 */
+    void *pFormatSlotListUser;
+    i32                     *pnListMode;    /* *0x157188 */
+    PufoOptions             *pTactOptions;
 } WorldHooks;
 
 /* The context Geoscape_SpawnMissionSite @ 0x7e49c needs: the strateg list, the seed counter, the viewport,
