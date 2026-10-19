@@ -1302,6 +1302,23 @@ Skyranger Cyberdisk x10, Alien surgery x1 and Celatid corpse x3, none of them a 
 buy-and-load path (`Transfer_MoveOneItem @ 0x9602C` is ported) so a real mission can be gated on real
 cargo instead of a fixture weapon.
 
+`Ui_FillActionCosts @ 0x26104` writes three things per action mode, and the port had only two of them
+(Part 79). The third is the bank byte: the prologue's `LDR R10,=pBank` (pBank @ 0xAC6D0) with 0x26404
+`ADD R3,R10,#0x400`, 0x2640c `ADD R3,R3,R8,LSL#5` and 0x2641c `STRB R2,[R3,#9]` over the twelve-mode
+loop is `UiControl.bEnabled` of bank widgets 32..43, the screen-3 fire-mode span (0x400 over the 0x20
+stride = widget 32), and `R2` is the BOOLEAN of the enabled value — a mode that costs 30 TU enables its
+pad with 1 and keeps 30 only in Map+0x4E7C. Hex-Rays draws the base as `unk_ACAD0`, which has no xref of
+its own, and that is why the write was easy to miss: 0xACAD0 − 0xAC6D0 = 0x400, it is inside the bank.
+What it gates is the CLICK path: `UiControl_HitTest @ 0x1A3F0` returns false as its first act when
+`bEnabled` is 0, and `Input_OnPointer @ 0x13c6c` hit-tests 32..43 on screen 3, so before this unit the
+port accepted a click on a fire-mode row the weapon does not offer. The drawing was already faithful —
+`TactHud_DrawUnitRoster @ 0x21908` gates a row on the Map+0x4E7C entry and only then blits its pad, so a
+drawn row has an enabled pad either way — which is why Part 76's frame gate passed over the gap and why
+the eleven reference pictures did not move here. The port passes the bank row instead of reaching a
+global: `ActionCostInput.pActionPads`, written in the same loop, filled by `World_TactBuildCostInput`
+from the caller's `WorldHooks.pBank` at `PUFO_HUD_ROSTER_FIRST` = 32, so both original call sites — the
+hand-menu opener and the enemy AI's cost refill — carry it.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

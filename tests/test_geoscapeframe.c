@@ -3905,6 +3905,23 @@ int main(void)
             printf("  this weapon offers %d of the %d fire modes\n", nVisible, PUFO_HUD_ROSTER_PADS);
             Check(nVisible > 0 && nVisible <= PUFO_HUD_ROSTER_PADS,
                   "Ui_FillActionCosts offered at least one mode for this weapon");
+            /* Part 79: 0x26404/0x2641C. The same fill writes the enabled flag a second time, as
+             * bEnabled of bank widgets 32..43, and that byte is what UiControl_HitTest @ 0x1A3F0
+             * tests first -- Input_OnPointer hit-tests 32..43 on screen 3, so an unoffered row is
+             * unclickable in the original and was clickable here. */
+            {
+                i32  nPadsOn = 0;
+                bool bMirror = true;
+
+                for (i = 0; i < PUFO_HUD_ROSTER_PADS; ++i) {
+                    const u8 uPad = g_bank.aCtl[PUFO_HUD_ROSTER_FIRST + i].bEnabled;
+
+                    if ((uPad != 0) != (g_world.sTactUi.anActionEnabled[i] != 0)) { bMirror = false; }
+                    if (uPad != 0) { ++nPadsOn; }
+                }
+                Check(bMirror && nPadsOn == nVisible,
+                      "and the twelve pads of that span are enabled exactly where a mode is offered (0x2641C: pBank+0x400+32*m+9)");
+            }
             CheckEqI32(PaintFurnitureFrame("tact_hud_fire_modes"), nVisible,
                        "the roster blits one pad per offered mode over bank widgets 32..43 (0x21958)");
             {

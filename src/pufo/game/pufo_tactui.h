@@ -61,6 +61,7 @@
 #include "game/pufo_tactstate.h"
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
+#include "ui/pufo_control.h"   /* UiControl, for ActionCostInput.pActionPads */
 
 /* The invulnerable "action latch" byte gap_2[1]. CycleNext clears it; the fire
  * modes set it to 4 on success and 0 on failure. */
@@ -364,6 +365,11 @@ typedef struct ActionCostInput {
     u8  nUnitType;     /* pSelUnit->nUnitType */
     bool bOperative;   /* Unit_bIsOperative(pSelUnit) */
     u8  bWeaponUnk8;   /* pSelWeapon->bUnk8 @ 0x08 */
+    /* The original reaches its bank through the global, not through Map: `LDR R10, =pBank` in
+     * the prologue, then `pBank + 0x400 + 32*m + 9` per mode, i.e. UiControl.bEnabled of bank
+     * widgets 32..43, the screen-3 fire-mode span. The port passes that row instead, and NULL
+     * means "no bank to mirror into". */
+    UiControl *pActionPads;
 } ActionCostInput;
 
 /* Ui_FillActionCosts @ 0x26104.

@@ -564,6 +564,65 @@ static void TestActionCosts(void)
     CheckEqI32(PUFO_ACTION_MODE_NONE, 12, "  the failure mode is 12");
 }
 
+/* The bank mirror at the tail of Ui_FillActionCosts: 0x26404 `ADD R3,R10,#0x400` with
+ * `LDR R10,=pBank` (pBank @ 0xAC6D0), 0x2640c `ADD R3,R3,R8,LSL#5` (the 0x20 UiControl stride),
+ * 0x2641c `STRB R2,[R3,#9]` with R2 = 0/1 taken from the enabled value. Widget 32 + m, byte
+ * bEnabled @ UiControl+9 -- the twelve pads of the screen-3 roster span. It matters because
+ * UiControl_HitTest (0x1A3F0) returns false the moment bEnabled is 0. */
+static void TestActionCostBankMirror(void)
+{
+    static UiControl aPads[PUFO_ACTION_MODE_COUNT];
+    ActionCostInput  in;
+    TactUiState      ui;
+    bool             bMirror = true;
+    i32              nEnabled = 0;
+
+    printf("Ui_FillActionCosts bank mirror (0x2641C)\n");
+    memset(aPads, 0, sizeof(aPads));
+    memset(&in, 0, sizeof(in));
+    in.auStat0   = 100;
+    in.auStat5   = 30;          /* mode 11's enabled value, a number rather than 1 */
+    in.nCategory = 3;
+    in.uSortKey  = 1;           /* modes 0..2 need a percentage, and this object has none */
+    in.pActionPads = &aPads[0];
+    UiReset(&ui);
+    Ui_FillActionCosts(&in, &ui);
+
+    for (i32 m = 0; m < PUFO_ACTION_MODE_COUNT; ++m) {
+        if (aPads[m].bEnabled != (u8)(ui.anActionEnabled[m] != 0)) { bMirror = false; }
+        if (aPads[m].bEnabled != 0) { ++nEnabled; }
+    }
+    Check(bMirror, "  every pad's bEnabled byte matches its enabled entry, all twelve");
+    CheckEqI32(nEnabled, 2, "  the two offered modes (3 and 11) are the two enabled pads");
+    CheckEqI32(aPads[11].bEnabled, 1,
+               "  mode 11's pad gets 1, not its enabled value 30 (MOV R2,#0 / MOVNE R2,#1)");
+    CheckEqI32(ui.anActionEnabled[11], 30, "  the enabled entry itself keeps 30");
+
+    /* The mirror is a write, not an OR: a refill for a weapon that offers nothing clears
+     * pads the previous fill had enabled. */
+    memset(aPads, 0, sizeof(aPads));
+    for (i32 m = 0; m < PUFO_ACTION_MODE_COUNT; ++m) { aPads[m].bEnabled = 1; }
+    in.auStat4 = 30;            /* modes 0..2 stay at 0 because the percentage bytes are 0 */
+    in.nCategory = 0;
+    in.auStat5 = 0;             /* mode 11's enabled value, so 11 is off too */
+    UiReset(&ui);
+    Ui_FillActionCosts(&in, &ui);
+    nEnabled = 0;
+    for (i32 m = 0; m < PUFO_ACTION_MODE_COUNT; ++m) {
+        if (aPads[m].bEnabled != 0) { ++nEnabled; }
+    }
+    CheckEqI32(nEnabled, 0, "  a refill disables pads the earlier fill had enabled");
+
+    /* No bank to mirror into: the two tables still fill. The original always has the global. */
+    in.pActionPads = NULL;
+    in.uSortKey = 24;
+    UiReset(&ui);
+    Ui_FillActionCosts(&in, &ui);
+    CheckEqI32(ui.anActionEnabled[4], 1, "  the enabled table fills with no bank passed");
+    CheckEqI32(ui.anActionCost[4], 34,
+               "  and the cost table too (0x263F0/0x26400 precede the byte store)");
+}
+
 
 /* --- the hand action menus -------------------------------------------------
  *
@@ -1526,6 +1585,7 @@ int main(void)
     TestFireModes();
     TestTryFireMode();
     TestActionCosts();
+    TestActionCostBankMirror();
     TestHandMenu();
     TestSubModes();
     TestOptionToggles();

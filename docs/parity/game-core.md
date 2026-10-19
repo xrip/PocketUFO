@@ -20063,4 +20063,37 @@ of them one of the 13 hand-table objects, and `Base_GrantStarterItems @ 0x95FA4`
 its grant flag clear, which adds nothing. A squad launching from a craft that carries no weapon object
 arrives with empty hands in the original too. Buying and loading cargo -- `Transfer_MoveOneItem @ 0x9602C`
 is ported -- is what the shell's own flow still has to walk before the fire-mode panel and the item strip
-can be gated on the shell's cargo instead of a fixture weapon.
+can be gated on the shell's cargo instead of a fixture weapon.
+## Part 79 - the action-cost fill enables the twelve roster pads it describes
+
+`Ui_FillActionCosts @ 0x26104` ends with a third write, not two. The prologue loads the bank global
+(`LDR R10,=pBank`, `pBank @ 0xAC6D0`), and the loop tail 0x26404 `ADD R3,R10,#0x400` / 0x2640c
+`ADD R3,R3,R8,LSL#5` / 0x2641c `STRB R2,[R3,#9]` with `CMP R8,#0xC / BLT` builds
+`pBank + 0x400 + 32*m + 9`: 0x400 over the 0x20 UiControl stride is widget 32, and +9 is the
+`bEnabled` byte. Every call therefore rewrites the twelve fire-mode pads of the screen-3 span, and
+the byte stored is the BOOLEAN of the enabled value -- `CMP R5,#0 / MOV R2,#0 / MOVNE R2,#1` -- so a
+mode worth 30 TU enables its pad with 1 and keeps 30 only in Map+0x4E7C. Hex-Rays renders the base as
+`unk_ACAD0`, which has no cross-reference of its own: the write is always an offset from `pBank`, and
+0xACAD0 - 0xAC6D0 = 0x400, so the label sits inside the bank rather than naming a separate object.
+
+Why it matters: `UiControl_HitTest @ 0x1A3F0` returns false as its first act when `bEnabled` is 0, and
+`Input_OnPointer @ 0x13c6c` hit-tests 32..43 on screen 3. Without the mirror, the port let a click land
+on a fire-mode row the weapon does not offer. The panel's own drawing was already right, because
+`TactHud_DrawUnitRoster @ 0x21908` gates a row on the Map+0x4E7C entry and only then blits its pad
+through `UiControl_BlitActivePad` -- a drawn row has an enabled pad either way. That is why Part 76's
+frame gate passed over the gap, and why the eleven reference pictures are unchanged here.
+
+Port shape: the original reaches the bank through a global, the port keeps the bank with the caller,
+so `ActionCostInput` gained `UiControl *pActionPads` and `Ui_FillActionCosts` writes the byte in the
+same twelve-mode loop. `World_TactBuildCostInput` fills it from the caller's bank (`WorldHooks.pBank`,
+the same route `World_TactKeyCtxFill` takes for the held-key bytes) at `PUFO_HUD_ROSTER_FIRST` = 32, so
+both original call sites are wired: `Tact_OpenLeftHandMenu @ 0x17030` and the enemy AI's cost refill.
+NULL means "no bank to mirror into" and the two tables still fill. No deviation: the port writes 1/0
+exactly as the ARM does, and no bounds is needed because the row is twelve entries by contract.
+
+Gate: `TestActionCostBankMirror` in tests/test_tactui.c -- a weapon offering modes 3 and 11 enables
+exactly two pads, mode 11's pad gets 1 while its enabled entry keeps 30, a refill for a weapon that
+offers nothing clears the pads the first fill enabled (the mirror is a store, not an OR), and a NULL
+bank leaves both tables filled. In the shell's own flow, the screen-3 block of
+tests/test_geoscapeframe.c now requires the twelve bank bytes to match the twelve enabled entries on
+the reloaded mission: 2 modes offered, 2 pads enabled, and the roster still blits 2 pads.

@@ -456,6 +456,15 @@ void Ui_FillActionCosts(const ActionCostInput *pIn, TactUiState *pUi)
 
         pUi->anActionCost[m] = (i32)pIn->auStat0 * nPct / 100;
         pUi->anActionEnabled[m] = nEnabled;
+
+        /* 0x26404/0x2640c/0x2641c: the same flag again, as the bEnabled byte of the bank's
+         * twelve fire-mode widgets. The ARM takes the boolean of the enabled value --
+         * `CMP R5,#0 / MOV R2,#0 / MOVNE R2,#1` -- so a mode worth 30 TU enables its pad with
+         * 1, not with 30. UiControl_HitTest (0x1A3F0) refuses a widget whose bEnabled is 0,
+         * which is what keeps an unoffered row of the roster unclickable. */
+        if (pIn->pActionPads != NULL) {
+            pIn->pActionPads[m].bEnabled = (u8)(nEnabled != 0);
+        }
     }
 }
 

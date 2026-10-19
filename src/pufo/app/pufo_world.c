@@ -3430,9 +3430,15 @@ static bool World_TactPathToCellThunk(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void
 
 /* Ui_FillActionCosts @ 0x26104 (the enemy AI calls it before reading the cost table).
  * The input is read the way the original's call site reads it: the selected weapon's object
- * record bytes 0xB0..0xB5 plus the unit's stats. */
-static void World_TactBuildCostInput(Soldier *pUnit, TactItem *pItem, ActionCostInput *pIn)
+ * record bytes 0xB0..0xB5 plus the unit's stats. The bank row the fill mirrors its enabled
+ * flags into is the caller's own bank: the original reaches the global pBank @ 0xAC6D0, and
+ * +0x400 into it is widget 32 -- the first widget of the screen-3 fire-mode span. */
+static void World_TactBuildCostInput(PufoWorldState *pW, Soldier *pUnit, TactItem *pItem,
+                                     ActionCostInput *pIn)
 {
+    /* The bank is the caller's (WorldHooks.pBank); World_TactKeyCtxFill reaches it the same way. */
+    UiWidgetBank *pBank = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pBank : NULL;
+
     memset(pIn, 0, sizeof(*pIn));
     pIn->uSortKey  = pItem->pObj->uSortKey;
     pIn->nCategory = pItem->pObj->nCategory;
@@ -3445,6 +3451,7 @@ static void World_TactBuildCostInput(Soldier *pUnit, TactItem *pItem, ActionCost
     pIn->nUnitType   = pUnit->nUnitType;
     pIn->bOperative  = Unit_bIsOperative(pUnit);
     pIn->bWeaponUnk8 = pItem->bUnk8;
+    pIn->pActionPads = (pBank != NULL) ? &pBank->aCtl[PUFO_HUD_ROSTER_FIRST] : NULL;   /* 0x26404 */
 }
 
 static void World_TactFillActionCostsThunk(void *pUser)
@@ -3459,7 +3466,7 @@ static void World_TactFillActionCostsThunk(void *pUser)
     if (pMap->pSelUnit == NULL || pMap->pSelWeapon == NULL || pMap->pSelWeapon->pObj == NULL) {
         return;
     }
-    World_TactBuildCostInput(pMap->pSelUnit, pMap->pSelWeapon, &in);
+    World_TactBuildCostInput(pW, pMap->pSelUnit, pMap->pSelWeapon, &in);
     Ui_FillActionCosts(&in, &pW->sTactUi);
 }
 
@@ -5046,7 +5053,7 @@ static bool World_TactOpenHandMenuBody(PufoWorldState *pW, bool bRight)
     pMap->pSelWeapon = pItem;
 
     World_TactUiSyncIn(pW);
-    World_TactBuildCostInput(pUnit, pItem, &in);
+    World_TactBuildCostInput(pW, pUnit, pItem, &in);
     c.pCost         = &in;
     c.bActionLatch  = pMap->bActionLatch;
     c.uTu           = pUnit->uTu;
