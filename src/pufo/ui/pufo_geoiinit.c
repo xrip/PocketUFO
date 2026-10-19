@@ -729,11 +729,15 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     *pEnv->pbFlag187080 = 0;
 
     /* 0x9542C: the spawn pass. The original's a1..a3 are unused inside the callee; the
-     * port passes its own list and spawn context. */
+     * port passes its own list and spawn context. The roll pair comes from this env's own cells,
+     * read here the way 0x81AB4/0x81B7C read their globals -- and this is the one call site where
+     * the order matters: 0x946F8 wrote the month and 0x95414 wrote the addend just above, so the
+     * original's first spawn of a new game rolls month 0 with the gate open (class capped at 2),
+     * not the pair some earlier wiring remembered. */
     return StrategList_MaybeSpawnCraft_Process(pEnv->pStrategList, pEnv->pSpawnCtx->pnSeed,
                                                pEnv->pSpawnCtx->nZoomMode, pEnv->pSpawnCtx->pTables,
-                                               pEnv->pSpawnCtx->nDifficulty,
-                                               pEnv->pSpawnCtx->nEarlyGate, 1,
+                                               *pEnv->pnMonthCounter,
+                                               (i32)*pEnv->pnAlienPoolAddend, 1,
                                                pEnv->pSpawnCtx->pfnSpawnMission,
                                                pEnv->pSpawnCtx->pfnProcessEvents,
                                                pEnv->pSpawnCtx->pUser);

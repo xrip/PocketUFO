@@ -1276,7 +1276,13 @@ static void TestDismissSelected(void)
     nSeed = 0;
     world.apCraft = g_apShip;
     world.nShipCount = 1;
+    static i32 nMonthCounter;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 0;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &nSeed;
 
     env.apCraft = g_apShip;
@@ -1383,7 +1389,13 @@ static void TestResolveInterceptUI(void)
     nSeed = 0;
     world.apCraft = g_apShip;
     world.nShipCount = 2;
+    static i32 nMonthCounter;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 0;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &nSeed;
     for (int i = 0; i < 6; ++i) {
         apCtl[i] = &ctl[i];
@@ -1595,7 +1607,13 @@ static void TestSmapPointerUp(void)
     nSeed = 0;
     world.apCraft = g_apShip;
     world.nShipCount = 2;
+    static i32 nMonthCounter;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 0;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &nSeed;
     for (int i = 0; i < 6; ++i) {
         apCtl[i] = &ctl[i];
@@ -1932,8 +1950,14 @@ static void TestBeginCraftSelect(void)
 
     g_World.apCraft = g_apShip;
     g_World.nShipCount = 1;
+    static i32 g_nMonth;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 g_nAddend;   /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    g_nMonth = 0;
+    g_nAddend = 0;
     memset(&g_Ctx, 0, sizeof(g_Ctx));
     g_nSeed = 0;
+    g_Ctx.pnDifficulty = &g_nMonth;
+    g_Ctx.pnEarlyGate = &g_nAddend;
     g_Ctx.pnSeed = &g_nSeed;
 
     /* Each case rebuilds the mutable decision state and a fresh craft + strateg entry. */
@@ -2410,7 +2434,13 @@ static void TestDemolishBase(void)
     memset(&world, 0, sizeof(world));
     world.apCraft = apCraft;
     world.nShipCount = 2;
+    static i32 nMonthCounter;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 0;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &nSeed;
 
     memset(&shipEnv, 0, sizeof(shipEnv));
@@ -5863,6 +5893,8 @@ static RadarHitRollEnv  g_updHit;
 static RadarDetectEnv   g_updDetect;
 static ShipRemovalEnv   g_updShip;
 static StrategSpawnCtx  g_updSpawn;
+static i32              g_updMonth;  /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+static u16              g_updAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
 static GeoscapeWorld    g_updWorld;
 static PadImage         g_updTiles;
 static u8               g_abUpdTiles[UPD_TILE_W * UPD_TILE_H];
@@ -6044,6 +6076,10 @@ static void UpdFixture(i32 nStrategIdx)
     g_nUpdSeed = 99;
 
     memset(&g_updSpawn, 0, sizeof(g_updSpawn));
+    g_updMonth = 0;
+    g_updAddend = 0;
+    g_updSpawn.pnDifficulty = &g_updMonth;
+    g_updSpawn.pnEarlyGate = &g_updAddend;
     g_updSpawn.pnSeed = &g_nUpdSeed;
 
     /* Open the screen for real: every pad RadarScreen_Init loads comes from the shipped archives. */
@@ -7537,6 +7573,8 @@ static Ship             *g_stShips[2];
 static u8                g_stShipCount, g_stOnce;
 static GeoscapeWorld     g_stWorld;
 static StrategSpawnCtx   g_stSpawn;
+static i32               g_stMonth;  /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+static u16               g_stAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
 static ShipRemovalEnv    g_stRem;
 static ResearchTopicLive g_stTopics[PUFO_RESEARCH_TOPIC_COUNT];
 static SmapSelectTargetEnv g_stEnv;
@@ -7580,6 +7618,10 @@ static void StFixture(i32 nLineColour, i32 nType0)
     g_stWorld.apCraft = g_stShips;
     g_stWorld.nShipCount = 2;
     memset(&g_stSpawn, 0, sizeof(g_stSpawn));
+    g_stMonth = 0;
+    g_stAddend = 0;
+    g_stSpawn.pnDifficulty = &g_stMonth;
+    g_stSpawn.pnEarlyGate = &g_stAddend;
     g_stSpawn.pnSeed = &g_stSeed;
     g_stOnce = 0;
 

@@ -2670,6 +2670,8 @@ static void TestLoadGameOldVersionMissionSeam(void)
     static TactItem aItem[1];
     static TactItem *apItem[1];
     static i32 nSeed, nPtrA, nPtrB, nListMode, nSoldierCount;
+    static i32 nMonthCounter;    /* unk_159648, the roll's row index (0x81AB4) */
+    static u16 nAlienPoolAddend; /* 0x1472C8, the roll's early gate (0x81B7C) */
     static u32 nTactVerOut;
     static u8 bTactFlag, bGeoscapeUi, bGameState, bCraftCount, bMissionCount, bAssaultFlag, bSpawnOnce;
     static u16 nUiScreen;
@@ -2682,10 +2684,16 @@ static void TestLoadGameOldVersionMissionSeam(void)
     tiles.uHeight = 2;
     tiles.pData = aTiles;
 
+    /* The purge's replacement roll reads the two cells through the context (0x82B80 -> 0x7E484), so
+     * this fixture holds them as cells. Month 0 keeps the weight rows at row 0 and the gate at 99
+     * keeps 0x81B7C's class cap off, which is what the pinned picks below assume. */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 99;
+
     memset(&spawnCtx, 0, sizeof(spawnCtx));
     spawnCtx.nZoomMode = 0;
-    spawnCtx.nDifficulty = 0;
-    spawnCtx.nEarlyGate = 99;
+    spawnCtx.pnDifficulty = &nMonthCounter;
+    spawnCtx.pnEarlyGate = &nAlienPoolAddend;
     spawnCtx.pnSeed = &nSeed;
     spawnCtx.pfnSpawnMission = OldSpawnProbe;
     spawnCtx.pfnProcessEvents = OldEventProbe;

@@ -535,6 +535,8 @@ static void TestRemoveAtAndPurge(void)
     u8 once;
     i32 seed = 0;
     i32 i;
+    i32 nMonthCounter = 0;   /* unk_159648: the row index 0x81AB4 reads */
+    u16 nAlienPoolAddend = 0; /* 0x1472C8: the early gate 0x81B7C reads, below 15 so the class caps at 2 */
 
     apCraft[0] = &ship;
     memset(&world, 0, sizeof(world));
@@ -542,6 +544,8 @@ static void TestRemoveAtAndPurge(void)
     world.nShipCount = 1;
     memset(&ctx, 0, sizeof(ctx));
     ctx.pTables = &g_Roll;
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &seed;
     ctx.pfnSpawnMission = SpawnProbe;
     ctx.pfnProcessEvents = EventProbe;
@@ -1548,6 +1552,8 @@ static PadImage g_EvMap;
 static u8 g_aEvTiles[400];
 static MissionSiteRec g_aEvSites[2];
 static i32 g_EvSeed, g_EvRadarPulse;
+static i32 g_EvMonth;  /* unk_159648: the roll's row index, read at 0x81AB4 */
+static u16 g_EvAddend; /* 0x1472C8: the roll's early gate, read at 0x81B7C */
 static GeoscapeWorld g_EvMissionWorld;
 static StrategEventsEnv g_EvEnv;
 
@@ -1590,8 +1596,15 @@ static void EvReset(void)
     g_bSelFlag = 0;
     g_nSample = -1;
 
+    /* The two roll cells the fixture hands the spawn context. Month 0 is weight row 0 and an addend
+     * below 15 keeps 0x81B7C's class cap on, which is the state a new game is in (Game_StartNew
+     * writes both to 0 at 0x946F8 and 0x95414 before its own spawn pass at 0x9542C). */
+    g_EvMonth = 0;
+    g_EvAddend = 0;
     memset(&g_EvCtx, 0, sizeof(g_EvCtx));
     g_EvCtx.pTables = &g_Roll;
+    g_EvCtx.pnDifficulty = &g_EvMonth;
+    g_EvCtx.pnEarlyGate = &g_EvAddend;
     g_EvCtx.pnSeed = &g_EvSeed;
     g_EvCtx.pfnSpawnMission = SpawnProbe;
     g_EvCtx.pfnProcessEvents = EventProbe;

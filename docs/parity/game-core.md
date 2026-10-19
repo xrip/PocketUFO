@@ -17469,6 +17469,23 @@ IDB's own `MissionSiteRec` was retyped to match. The index the flag-0x10 status 
 the STRATEG ITEM's +2 byte -- the two-role byte Part 30 already described -- not a second width
 the record has; the first draft of this note claimed otherwise and was corrected in the header.
 
+**The mission roll reads its two scalars at roll time.** `StrategList_RollCraftStats @ 0x81A9C` takes no
+difficulty argument: the weight-row index is `nMonthCounter @ 0x159648` read as a SIGNED byte at 0x81AB4
+and clamped to 5 at 0x81AC0, and the craft-class cap at 0x81B7C is gated on `nAlienPoolAddend @ 0x1472C8`
+(LDRH, unsigned) being below 15. Both cells move while the game runs -- `FundingScreen_OpenMonthly` at
+0x5D170 raises the month, `Geoscape_TickBases` at 0x5D3C8/0x5D3D4 raises the addend once a day -- and
+`Game_StartNew` writes 0 to both (0x946F8, 0x95414) BEFORE its own spawn pass at 0x95490, so the first
+craft of a new game rolls on weight row 0 with the cap ON. The day pass at 0x5D344 runs after that day's
+increment and the hourly pass at 0x5D588 reads whatever the day ticks have already reached.
+
+The port lifted the pair into arguments of `StrategList_MaybeSpawnCraft_Process`, so a caller has to hand
+the live cells rather than remember them: the shell wires `StrategSpawnCtx.pnDifficulty` / `.pnEarlyGate`
+to `PufoWorldState.nMonthCounter` / `.nAlienPoolAddend` (pufo_world.c), the Game_StartNew port reads its
+own env's cells (pufo_geoiinit.c at the 0x9542C call), and the replacement roll in `StrategList_RemoveAt`
+derefs the same pointers. Deviation closed here (Part 73): the shell froze the pair at 0/99 at bring-up,
+which pinned every weight row at 0 whatever the month and kept 0x81B7C's early cap off from the first
+minute -- and the frozen 99 read as "the shell has no difficulty setting", which is wrong: the original
+has no difficulty setting either, it has the clock.
 `Geoscape_SpawnMissionSite @ 0x7e49c` had four callers and the port reached none of them with a
 context: 0x44F64 in LoadGame, 0x5D28C in Geoscape_TickHourly, 0x809B8 in StrategList_ProcessEvents
 and 0x81BEC in StrategList_RollCraftStats. The callee was ported long ago, so its guard

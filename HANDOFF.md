@@ -1198,6 +1198,14 @@ to. The funding screen's own names panel now confirms the same slots from the dr
 TEXTS[1302], TEXTS[1305], TEXTS[1303], TEXTS[1304], TEXTS[1306] — USA, Australia, Euro, Asia, Africa —
 i.e. in slot order, while the report rows use the permutation with titles TEXTS[1302 + row].
 
+The same two cells are the mission roll's only inputs, and the original reads them **at the roll**:
+`StrategList_RollCraftStats @ 0x81A9C` takes no difficulty argument — 0x81AB4 loads `nMonthCounter` as a
+signed byte for the weight-row index (clamped to 5 at 0x81AC0) and 0x81B7C caps the craft class at 2 while
+`nAlienPoolAddend` is under 15. `FundingScreen_OpenMonthly` (0x5D170) and `Geoscape_TickBases`
+(0x5D3C8/0x5D3D4) move them, and `Game_StartNew` zeroes both (0x946F8, 0x95414) before its own spawn pass at
+0x95490, so a new game's first craft rolls on row 0 with the cap ON. A shell that copies the pair once at
+bring-up freezes mission difficulty for the whole game, which is exactly what the port did until Part 73.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

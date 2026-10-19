@@ -805,13 +805,16 @@ static void World_StartNewHook(void *pUser)
     shipEnv.pnStrategSeed = &pW->nStrategSeed;
     shipEnv.pnZoomMode = &pW->view.nMode;
 
-    /* The original reads the difficulty and the day gate from globals inside the callee; the
-     * port lifted them into arguments. The shell has no difficulty setting yet, so it uses
-     * difficulty 0 and an open gate (99), the same pair tests/test_strateg.c pins. */
+    /* The original reads the roll's two scalars from globals inside the callee, and the port lifted
+     * them into arguments, so the shell hands pointers to its own live cells: the row index is
+     * nMonthCounter (0x81AB4) and the early gate is nAlienPoolAddend (0x81B7C). Neither is a
+     * difficulty setting -- the clock writes both (FundingScreen_OpenMonthly @ 0x5D170,
+     * Geoscape_TickBases @ 0x5D3BC) -- so a frozen pair would keep the alien class at 2 and every
+     * weight row at 0 for the whole game. */
     memset(&pW->spawnCtx, 0, sizeof(pW->spawnCtx));
     pW->spawnCtx.pTables = &g_WorldRoll;
-    pW->spawnCtx.nDifficulty = 0;
-    pW->spawnCtx.nEarlyGate = 99;
+    pW->spawnCtx.pnDifficulty = &pW->nMonthCounter;
+    pW->spawnCtx.pnEarlyGate = &pW->nAlienPoolAddend;
     pW->spawnCtx.nZoomMode = pW->view.nMode;
     pW->spawnCtx.pnSeed = &pW->nStrategSeed;
     pW->spawnCtx.pfnSpawnMission = World_SpawnMission;
@@ -1483,10 +1486,11 @@ static void World_HookProcessEvents(u8 bSpawn, void *pUser)
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
     /* StrategList_MaybeSpawnCraft_Process @ 0x7e420: the gate is bSpawn == 1 exactly, and the tail is
-     * the event pass World_StartNewHook already wired into the spawn context. */
+     * the event pass World_StartNewHook already wired into the spawn context. The roll pair is read
+     * from the cells here, at the roll, exactly as 0x81AB4 and 0x81B7C read their globals. */
     (void)StrategList_MaybeSpawnCraft_Process(&pW->strategList, pW->spawnCtx.pnSeed,
                                              pW->spawnCtx.nZoomMode, pW->spawnCtx.pTables,
-                                             pW->spawnCtx.nDifficulty, pW->spawnCtx.nEarlyGate,
+                                             pW->nMonthCounter, (i32)pW->nAlienPoolAddend,
                                              bSpawn, pW->spawnCtx.pfnSpawnMission,
                                              pW->spawnCtx.pfnProcessEvents,
                                              pW->spawnCtx.pUser);

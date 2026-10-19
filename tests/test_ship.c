@@ -357,7 +357,13 @@ static void TestShipRemoveWithCargo(void)
     memset(&world, 0, sizeof(world));
     world.apCraft = g_apCraft;
     world.nShipCount = 3;
+    static i32 nMonthCounter;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 0;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &nSeed;
     once = 0;
 
@@ -484,7 +490,13 @@ static void TestRemoveAllShips(void)
     memset(&world, 0, sizeof(world));
     world.apCraft = apCraft;
     world.nShipCount = 3;
+    static i32 nMonthCounter;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 0;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &nSeed;
 
     nShipCount = 3;
@@ -1259,7 +1271,13 @@ static void TestLaunchIntercept(void)
     once = 0;
     nTotalSecL = 0;
     nSeedL = 0;
+    static i32 nMonthCounterL;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddendL; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounterL = 0;
+    nAlienPoolAddendL = 0;
     memset(&ctxL, 0, sizeof(ctxL));
+    ctxL.pnDifficulty = &nMonthCounterL;
+    ctxL.pnEarlyGate = &nAlienPoolAddendL;
     ctxL.pnSeed = &nSeedL;
     worldL.apCraft = apCraftL;
     worldL.nShipCount = 1;

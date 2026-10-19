@@ -406,8 +406,17 @@ i32 StrategList_MaybeSpawnCraft_Process(PtrArray *pList, i32 *pnSeed, i32 nZoomM
  * and none of them belong to the removal itself. */
 typedef struct StrategSpawnCtx {
     const StrategRollTables *pTables;
-    i32 nDifficulty;
-    i32 nEarlyGate;
+    /* The two cells RollCraftStats @ 0x81a9c reads straight out of globals at roll time, so they
+     * are pointers to the live cells and not copies: 0x81AB4 takes the table row index from
+     * nMonthCounter (unk_159648) with LDRSB and clamps it at 5 (0x81AC0), and 0x81B7C caps the
+     * craft class at 2 while nAlienPoolAddend (word_1472C8) is below 15. Both cells move during
+     * play -- Geoscape_TickBases @ 0x5D3BC raises the addend once a day, FundingScreen_OpenMonthly
+     * @ 0x5D170 raises the month -- so a by-value copy here would freeze every roll at whatever
+     * the pair was at bring-up. */
+    const i32 *pnDifficulty; /* nMonthCounter @ unk_159648; the original reads it as a signed byte */
+    const u16 *pnEarlyGate;  /* nAlienPoolAddend @ 0x1472C8, read with LDRH and compared unsigned */
+    /* By value on purpose: the only callee this bundle reaches is AddUfoAt, which adds an nType 1
+     * item, and the zoom scaling at 0x8275C runs for nType 5 only. */
     i32 nZoomMode;
     i32 *pnSeed;
     StrategSpawnMissionFn pfnSpawnMission;

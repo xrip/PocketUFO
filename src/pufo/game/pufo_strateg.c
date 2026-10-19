@@ -623,7 +623,8 @@ i32 StrategList_RemoveAt(PtrArray *pList, const GeoscapeWorld *pWorld, i32 nInde
             if (Game_RandU16(3) == 1) { /* 0x82B70: exactly 1 */
                 (void)StrategList_MaybeSpawnCraft_Process(pList, pCtx->pnSeed,
                                                           pCtx->nZoomMode, pCtx->pTables,
-                                                          pCtx->nDifficulty, pCtx->nEarlyGate,
+                                                          *pCtx->pnDifficulty,
+                                                          (i32)*pCtx->pnEarlyGate,
                                                           1, pCtx->pfnSpawnMission,
                                                           pCtx->pfnProcessEvents, pCtx->pUser);
             }

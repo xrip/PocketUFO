@@ -319,8 +319,9 @@ static void TestStartNew(void)
 
     memset(&spawnCtx, 0, sizeof(spawnCtx));
     spawnCtx.pTables = &g_Roll;
-    spawnCtx.nDifficulty = 0;
-    spawnCtx.nEarlyGate = 99;
+    spawnCtx.pnDifficulty = &nMonthCounter;    /* the same two cells env.pnMonthCounter/pnAlienPoolAddend
+                                                * point at, so the roll reads what the clock writes */
+    spawnCtx.pnEarlyGate = &nAlienPoolAddend;
     spawnCtx.nZoomMode = nZoomMode;
     spawnCtx.pnSeed = &nStrategSeed;
     spawnCtx.pfnSpawnMission = SpawnProbe;

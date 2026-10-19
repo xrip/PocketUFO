@@ -1021,6 +1021,19 @@ int main(void)
               && g_world.geo.time.nHour >= 0 && g_world.geo.time.nHour <= 23,
           "and GameTime_Decode @ 0x5cdbc ran on the way out (0x95628)");
 
+    /* Part 73's gate. RollCraftStats @ 0x81A9C takes no difficulty argument: it reads the weight-row index
+     * from nMonthCounter at 0x81AB4 and the craft-class cap off nAlienPoolAddend at 0x81B7C, at the roll.
+     * In the shell each of those cells has exactly three users -- the monthly writer
+     * (FundingScreen_OpenMonthly @ 0x5D170), the day tick (Geoscape_TickBases @ 0x5D3C8) and the mission roll
+     * -- and the spawn context names them instead of holding a copy. This block fails the moment somebody
+     * puts a by-value pair back into the bring-up wiring, which is the bug it exists to catch. */
+    Check(g_world.spawnCtx.pnDifficulty == &g_world.nMonthCounter
+              && (const void *)g_world.spawnCtx.pnEarlyGate
+                     == (const void *)g_world.geo.pnDaysSinceStart,
+          "the roll's two inputs are the cells themselves: the monthly writer's handle and the day tick's");
+    Check(g_world.fundingInit.pnMonthCounter == &g_world.nMonthCounter,
+          "one month counter @ 0x159648, not one for the funding screen and a second one for the roll");
+
     /* The four radar counters step by one and stop at 255 on EVERY screen (0x95B80..0x95BCC). */
     g_world.nRadarCooldownL = 254;
     g_world.nRadarMsgTimer  = 255;

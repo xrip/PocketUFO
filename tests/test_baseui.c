@@ -8641,6 +8641,8 @@ static void *g_apSlotCancel[2];
 static PtrArray g_listCancel;
 static GeoscapeWorld g_worldCancel;
 static StrategSpawnCtx g_ctxCancel;
+static i32 g_nMonthCancel;  /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+static u16 g_nAddendCancel; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
 static ShipRemovalEnv g_shipEnvCancel;
 static Soldier *g_apSoldierCancel[1];
 static ObjectRecFull *g_apObjCancel[1];
@@ -8689,6 +8691,10 @@ static void CancelEnvReset(void)
     g_nTotalSecCancel = 0;
     g_nSeedCancel = 0;
     memset(&g_ctxCancel, 0, sizeof(g_ctxCancel));
+    g_nMonthCancel = 0;
+    g_nAddendCancel = 0;
+    g_ctxCancel.pnDifficulty = &g_nMonthCancel;
+    g_ctxCancel.pnEarlyGate = &g_nAddendCancel;
     g_ctxCancel.pnSeed = &g_nSeedCancel;
     memset(&g_worldCancel, 0, sizeof(g_worldCancel));
     g_worldCancel.apCraft = g_apShipCancel;
@@ -8913,7 +8919,13 @@ static void TestConfirmCraftTarget(void)
     bOnce = 0;
     nTotalSec = 0;
     nSeed = 0;
+    static i32 nMonthCounter;    /* unk_159648: the roll's weight-row index, LDRSB at 0x81AB4 */
+    static u16 nAlienPoolAddend; /* 0x1472C8: the roll's early gate, LDRH at 0x81B6C */
+    nMonthCounter = 0;
+    nAlienPoolAddend = 0;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.pnDifficulty = &nMonthCounter;
+    ctx.pnEarlyGate = &nAlienPoolAddend;
     ctx.pnSeed = &nSeed;
     memset(&rem, 0, sizeof(rem));
     rem.apCraft = apShip;
