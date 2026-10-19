@@ -2724,12 +2724,12 @@ static void World_TactStatusRender(void *pUser)
  * apTactPads[PUFO_UIPAD_ENEMYSTEP] for the fade pad. The Map+0x37 phase byte is the caller's
  * cell, handed to the shell through WorldHooks.pnMapPhase and kept in pW->pnMapPhase.
  *
- * Screens 0, 8 and 9 are the iso group's three that need NOTHING beyond the iso layer, the modal
- * dialog and the fade/status tail. Screens 3/5/7/0xA/0xB/0xC/0xF draw the iso layer plus their own
- * furniture (roster pads, status pads, labelled pads, modal panels, top bar, action buttons) whose
- * envs the shell does not build, and 1/2/4/6/0xD/0x13/0x14-15 replace the iso layer with a
- * different env; Render_Frame calls MapView_DrawIsoLayer with no null test (0x22414), so those
- * screens stay on the caller's own frame path and World_bTactFrameLive says no for them.
+ * The seam covers 0x2237C's jumptable group, "cases 0,3,5,7-12,15", plus 13, the status-banner arm
+ * at 0x223E8. Part 76 added the group's six furniture envs -- the fire-mode roster (3), the item
+ * sub-mode panel (5), the tactical menu (7), the modal slot lists (10/11), the options top bar (12)
+ * and the action buttons (15) -- so the whole iso group now paints here. What stays off the seam is
+ * the screens that REPLACE the iso layer with a different env: 1 inventory, 2 minimap, 4 command pads,
+ * 6 unit markers, 0x13 confirm dialog and 0x14/0x15 Cydonia.
  *
  * Two deviations, both recorded in docs/parity/game-core.md:
  *   1. The cursor-direction tick runs HERE, before Render_Frame, and RenderFrameEnv.pCursorDir is
@@ -2747,8 +2747,14 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
         || pW->pTactMap == NULL || pW->pTactState == NULL) {
         return false;
     }
-    return pW->nUiScreen == 0 || pW->nUiScreen == 8 || pW->nUiScreen == 9
-        || pW->nUiScreen == PUFO_DEBRIEF_UI_SCREEN;   /* 13: the status banner arm at 0x223E8 */
+    switch (pW->nUiScreen) {
+    case 0: case 3: case 5: case 7: case 8: case 9:      /* 0x2237C's jumptable group: */
+    case 10: case 11: case 12: case 15:                  /* "cases 0,3,5,7-12,15"        */
+    case PUFO_DEBRIEF_UI_SCREEN:                         /* 13: the status banner arm at 0x223E8 */
+        return true;
+    default:
+        return false;   /* 1/2/4/6, 0x13 and 0x14/0x15 replace the iso layer with another env */
+    }
 }
 
 /* StatusMsg_DrawStack @ 0x1afc4's three calls, straight through: the colour pair at 0x1AFF8,
@@ -2798,6 +2804,41 @@ static void World_TactDecimalBlit(PadImage *pPad, void *pUser)
     (void)PadImage_BlitEx(pPad, 0);
 }
 
+/* The options screen's lit pads. In the original there is one owner for these 29 bytes and it is the
+ * bank itself: unk_ACE50 + 32*i + 0x0A is UiControl.nState of widgets 60..88, which is what
+ * Options_SyncUiFromMap_GotoScreen12 @ 0x188e4 writes (clear all 29 at 0x188F4..0x18914, then light the
+ * chosen speed at 0x18938, gamma 0x1894C, music 0x1896C, sfx 0x1898C, the five pen flags 0x189AC..0x18A10,
+ * musicoff 0x189AC, soundoff 0x189C0, and the INVERTED forcenodrag at 0x18A2C). The port models the same
+ * 29 cells as MenuPads, whose fields are in widget order (pufo_menu.h:84-105), so handing them to the
+ * widgets is a straight copy in the same order. Done here, on the screen that reads them, because
+ * TactHud_DrawTopBar blits the widgets exactly as the original does. */
+static void World_TactPushOptionPads(const PufoWorldState *pW, UiControl *pBankCtl)
+{
+    const u8 *pPad = (const u8 *)&pW->sTactMenuPads;   /* 29 bytes, one per widget 60..88 */
+
+    if (pBankCtl == NULL) {
+        return;
+    }
+    for (i32 i = 0; i < PUFO_HUD_TOPBAR_PADS; ++i) {
+        pBankCtl[PUFO_HUD_TOPBAR_FIRST + i].nState = pPad[i];
+    }
+}
+
+/* Stand-in for MainMenu_pSlotCtx when the caller hands the frame no slot-label block: seven labels
+ * that draw as nothing. TactHud_DrawModalPanel reads seven rows of 40 unconditionally, so a short
+ * string is not an option here. */
+static const char g_aEmptySlotLabels[PUFO_HUD_MODAL_LABELS][PUFO_HUD_MODAL_LABEL_STRIDE];
+
+/* aTextRecs @ 0xB38D0, record n at the 205-byte stride. The three tact HUD arms take fixed records
+ * by number, and the shell's copy of the blob is the asset block's. "" stands for a blob that never
+ * loaded -- the original would read its zero-filled .data, which draws nothing. */
+static const char *World_TextRec(const PufoWorldState *pW, i32 nRec)
+{
+    return (pW->pAssets != NULL && pW->pAssets->pTextRecs != NULL)
+               ? (const char *)pW->pAssets->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec
+               : "";
+}
+
 static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
 {
     GameMap              *pMap;
@@ -2822,6 +2863,10 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     UiModalAnim           modalAnim;
     UiModalLayout         modalLayout;
     TactHudBannerState    banner;
+    TactHudRoster         roster;      /* screen 3, the fire-mode panel */
+    TactHudActionGate     actionGate;  /* screen 15, the nine action buttons */
+    char                  aModeNames[PUFO_HUD_ROSTER_PADS][PUFO_HUD_ROSTER_NAME_STRIDE]; /* 0xB3768 */
+    UiControl            *pBankCtl;    /* the caller's 130-widget bank, the pad source */
     RenderFrameEnv        rf;
     i32                   nStatusOutY;
     bool                  bModalOpen;
@@ -2993,6 +3038,60 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     pufo_strncpy(banner.szBanner, pW->aMapMissionCaption, sizeof(banner.szBanner));
     pufo_strncpy(banner.szTimer, pW->aMapMissionScore, sizeof(banner.szTimer));
 
+    /* --- the six iso-overlay arms (Part 76) ---------------------------------------------
+     *
+     * Render_Frame's second switch draws the iso layer and then the furniture of the screen it is
+     * on. Every pad of that furniture is a widget span of the caller's bank, and each span has two
+     * other identities in the image: it is a group of g_aUiBankSpans (pufo_control.c:291), and it is
+     * the range Tact_InitUiControls @ 0x3b498 installs handlers on -- the twelve fire-mode handlers
+     * land on 32..43, the nine sub-mode handlers on 44..52, the seven menu rows on 53..59, the option
+     * pads on 60..88, the nine action buttons on 89..97, and SaveLoad_Slot0..6 plus MenuBtn_Confirm5
+     * on 105..112. One span, three uses, so pointing the draw at the bank adds no state.
+     *
+     * Each of these screen ids has exactly one opener family in the image. Every writer of
+     * Map_nUiScreen @ 0x1139F2 and the value it stores: 3 = Tact_OpenLeftHandMenu 0x17140 /
+     * Tact_OpenRightHandMenu 0x17258; 5 = TactAction_ConfirmUseItem 0x179B8; 7 = Input_OnMenuEscape
+     * 0x16398 and the two rows 0x164C0 / 0x19504; 10 = Menu_OpenSaveSlots 0x188C4;
+     * 11 = Menu_OpenLoadSlots 0x18884; 12 = Options_SyncUiFromMap_GotoScreen12 0x18A34;
+     * 15 = Map_UiScreen0F_PlaySample0F 0x164DC. */
+    pBankCtl = (pHooks != NULL && pHooks->pBank != NULL) ? pHooks->pBank->aCtl : NULL;
+
+    /* Screen 3, TactHud_DrawUnitRoster @ 0x21908. The panel gate is Map.pSelWeapon (Map+0x48), which
+     * Ui_OpenHandMenu stores at 0x17060 before its own gates run. The twelve rows come from the two
+     * banks Ui_FillActionCosts writes -- Map+0x4E7C (offered) and Map+0x4E4C (TU cost), the row gate
+     * and the printed number being the SAME cell at 0x21A88 -- and the names from the twelve 30-byte
+     * rows at 0xB3768, which Assets_LoadStartup fills in three steps: a 10-step stride-30 copy out of
+     * text-blob record 181 (0x386BC), then one strcpy of blob 0x104145 into entry 10 (0x38704), then
+     * one strcpy of record 191 into entry 11 (0x3872C). That is aszTextF + szTextG + szTextH of
+     * pufo_boot.h laid end to end. The prefixes are TEXTS[389] and TEXTS[390] (unk_C7051, unk_C711E). */
+    memset(&roster, 0, sizeof(roster));
+    roster.pSelWeapon = pMap->pSelWeapon;                                         /* 0x21918 gate */
+    memcpy(roster.anModeFlag,  pW->sTactUi.anActionEnabled, sizeof(roster.anModeFlag));  /* Map+0x4E7C */
+    memcpy(roster.anModeValue, pW->sTactUi.anActionCost,    sizeof(roster.anModeValue));  /* Map+0x4E4C */
+    roster.pNameTable = (const u8 *)aModeNames;
+    if (g_textTables.bLoaded) {
+        for (i32 i = 0; i < PUFO_TXT_F_COUNT; ++i) {
+            pufo_strncpy(aModeNames[i], g_textTables.pF[i], sizeof(aModeNames[i]));
+        }
+        pufo_strncpy(aModeNames[PUFO_TXT_F_COUNT], g_textTables.pG,
+                     sizeof(aModeNames[PUFO_TXT_F_COUNT]));
+        pufo_strncpy(aModeNames[PUFO_TXT_F_COUNT + 1], g_textTables.pH,
+                     sizeof(aModeNames[PUFO_TXT_F_COUNT + 1]));
+    }
+    roster.szNumberPrefixA = World_TextRec(pW, PUFO_TEXT_REC_TU_LABEL);   /* TEXTS[389] unk_C7051 */
+    roster.szNumberPrefixB = World_TextRec(pW, PUFO_TEXT_REC_TIME_LABEL); /* TEXTS[390] unk_C711E */
+
+    /* Screen 15, TactHud_DrawActionButtons @ 0x21430: every button reads the latch byte
+     * Map_bActionLatch @ Map+0x02 (0x214D0..0x2152C), button 2 also reads Map.nMultiTargetCount
+     * @ 0x1139BC (0x21500) and buttons 5/6 read the deploy-panel byte 0x15110 (0x2154C/0x2156C). */
+    actionGate.nActionMode       = pMap->bActionLatch;
+    actionGate.nMultiTargetCount = pMap->nMultiTargetCount;
+    actionGate.bDeployPanelOpen  = pW->sTactInput.bDeployPanelOpen;
+
+    if (pW->nUiScreen == (i32)PUFO_MENU_SCREEN_OPTIONS) {
+        World_TactPushOptionPads(pW, pBankCtl);   /* screen 12 (0x18A34): the pads it blits */
+    }
+
     /* --- the dispatch env --- */
     memset(&rf, 0, sizeof(rf));
     rf.bGeoscapeMode   = pW->bGeoscapeUi;   /* 0x2231C tests it before the screen id */
@@ -3019,6 +3118,25 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     rf.pszModalBtn1      = (const char *)pW->sModal.pLabel15;
     rf.pszModalBtn2      = (const char *)pW->sModal.p17;
     rf.pModalLayout      = &modalLayout;
+
+    /* The six iso-overlay arms. Pads come from the bank spans; the scalars come from the cells the
+     * mission already owns. Screens 10/11 draw the seven MainMenu_pSlotCtx labels onto pads
+     * 105..112 (0x21d74 reads &MainMenu_pSlotCtx[40 * i]) and open the one-line modal dialog only
+     * when MainMenu_nListMode is exactly 1 (0x21DE4) -- both slot openers store 0, so the dialog
+     * stays closed on those two screens and the eight pads carry only their labels. */
+    rf.pRosterPads        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_ROSTER_FIRST] : NULL; /* 0x224A0 */
+    rf.pRoster            = &roster;
+    rf.pStatusPads        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_STATUS_FIRST] : NULL; /* 0x22494 */
+    rf.pszStatus          = World_TextRec(pW, PUFO_TEXT_REC_STATUS);
+    rf.pLabeledPads       = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_MENU_FIRST] : NULL;   /* 0x22488 */
+    rf.pModalPanelPads    = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_MODAL_FIRST] : NULL;  /* 0x2247C/0x22470 */
+    rf.pModalLabelTable   = (const u8 *)((pHooks != NULL && pHooks->pSlotLabels != NULL)
+                                             ? pHooks->pSlotLabels : &g_aEmptySlotLabels[0][0]);
+    rf.nModalPanelMode    = (pHooks != NULL && pHooks->pnListMode != NULL) ? *pHooks->pnListMode : 0;
+    rf.pTopBarPads        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_TOPBAR_FIRST] : NULL; /* 0x22464 */
+    rf.pActionPads        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_ACTION_FIRST] : NULL; /* 0x22458 */
+    rf.pActionGate        = &actionGate;
+
     rf.pBannerPad        = (pHooks != NULL && pHooks->pBank != NULL) ? &pHooks->pBank->aCtl[128] : NULL;
     rf.pBannerBackdrop   = pW->apTactPads[PUFO_UIPAD_ENDMISSION];   /* pPadEndMission @ 0x156A74 */
     rf.pBannerState      = &banner;

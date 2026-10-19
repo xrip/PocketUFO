@@ -212,6 +212,19 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
 #define PUFO_HUD_MODAL_LABEL_STRIDE 40
 #define PUFO_HUD_STATUS_PADS      9
 
+/* The first widget of each span. Each one is a second identity, not a new number: the same
+ * range is a group in g_aUiBankSpans (pufo_control.c:291 -- {32,12} {44,9} {53,7} {60,29} {89,9}
+ * {105,8}), the range Tact_InitUiControls @ 0x3b498 installs its click handlers on (the twelve
+ * fire-mode handlers on 32..43, the nine sub-mode handlers on 44..52, the seven menu rows on
+ * 53..59, the option pads on 60..88, the nine action buttons on 89..97, SaveLoad_Slot0..6 +
+ * MenuBtn_Confirm5 on 105..112), and the range the draw below blits. One span, three uses. */
+#define PUFO_HUD_ROSTER_FIRST 32  /* screen 3  */
+#define PUFO_HUD_STATUS_FIRST 44  /* screen 5  */
+#define PUFO_HUD_MENU_FIRST   53  /* screen 7  */
+#define PUFO_HUD_TOPBAR_FIRST 60  /* screen 12 */
+#define PUFO_HUD_ACTION_FIRST 89  /* screen 15 */
+#define PUFO_HUD_MODAL_FIRST  105 /* screens 10 and 11 (Menu_OpenSaveSlots 0x188a4 / Menu_OpenLoadSlots 0x18864) */
+
 /* Menu_DrawLabeledPads @ 0x217e0. Seven pads blitted and seven labels drawn, but the label
  * records are a sparse map, not the loop counter: index 5 reads record 402 and index 6 reads
  * record 23, while 0..4 read 18..22. */
@@ -299,12 +312,24 @@ i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
  * 23 * (drawn count so far) + 67, so the panel packs the visible modes. */
 #define PUFO_HUD_ROSTER_PADS 12
 #define PUFO_HUD_ROSTER_NAME_STRIDE 30
+/* The three fixed records this family reads by number. */
+#define PUFO_TEXT_REC_TU_LABEL   389 /* unk_C7051 "Тч: ", the number 0x21A88 strcat onto */
+#define PUFO_TEXT_REC_TIME_LABEL 390 /* unk_C711E "Вр.: ", the number 0x21B00 strcat onto */
+#define PUFO_TEXT_REC_STATUS       5 /* unk_B3CD1, the status line TactHud_CopyStatusText centres at y 100 */
 
 typedef struct TactHudRoster {
     const void *pSelWeapon;    /* Map.pSelWeapon: NULL skips the whole panel */
     i32 anModeFlag[12];        /* Map + 20092, the twelve per-mode values also drawn as a number */
     i32 anModeValue[12];       /* Map + 20044 */
-    const u8 *pNameTable;      /* 0xB3768, twelve 30-byte mode names, BELOW aTextRecs @ 0xB38D0 */
+    /* 0xB3768, twelve 30-byte mode names, BELOW aTextRecs @ 0xB38D0. Assets_LoadStartup fills it in
+     * three steps (0x386BC..0x3875C): a 10-iteration loop at stride 205 out of the text blob offset
+     * 0x90F1 (record 181) into 0xB3768 at stride 30, then one strcpy of blob 0x104145 into
+     * 0xB3768 + 0x12C (entry 10), then one strcpy of blob 0xBD1C3 (record 191) into 0xB3768 + 0x14A
+     * (entry 11). Those three destinations are exactly aszTextF (10 x 30), szTextG and szTextH of
+     * pufo_boot.h, so the twelve mode names ARE those three tables laid end to end -- and
+     * TactHud_DrawUnitRoster is the ONLY reader of 0xB3768 in the whole image, which is what makes
+     * the boot header's "craft/terrain names" guess for aszTextF wrong: they are fire-mode names. */
+    const u8 *pNameTable;
     /* unk_C7051 and unk_C711E are 0xB38D0 + 205 * 389 and 205 * 390, so they are TEXTS[389]
      * "Тч: " (the turn-cost label) and TEXTS[390] "Вр.: " (the time-cost label) -- the two
      * prefixes 0x21A88/0x21B00 strcat the number onto. Not scratch, despite having no write xref. */

@@ -1230,6 +1230,24 @@ only when the craft colour slot 0 names carries soldiers -- 0x915F4..0x91604 swa
 that opens the mission door.
 absent there in the original as well.
 
+The tactical HUD's six furniture screens paint now (Part 76). `Render_Frame @ 0x22310` dispatches on
+`Map_nUiScreen` at 0x2237C and its jumptable group "cases 0,3,5,7-12,15" is one bank span per screen: 3 →
+0x224A0 roster (widgets 32..43), 5 → 0x22494 status text (44..52), 7 → 0x22488 labelled pads (53..59),
+0xA/0xB → 0x2247C/0x22470 modal panels (105..112), 0xC → 0x22464 top bar (60..88), 0xF → 0x22458 action
+buttons (89..97). The shell's seam (`World_bTactFrameLive`) is that group plus 13, and `World_TactFrameDraw`
+builds the six envs from cells it already owned. Three facts worth keeping. (1) The name table at 0xB3768 is
+12 x 30 rows filled by `Assets_LoadStartup` from lang.dat TEXTS 181..190, then `unk_104145`, then TEXTS 191,
+and `TactHud_DrawUnitRoster` is its only reader: they are fire-mode names, not craft names. (2) The options
+screen keeps its 29 lit-pad bytes as bank `UiControl.nState` (0x188F4..0x18A2C), so a port that stores them in
+its own struct must mirror them into the bank on the screen that blits them (`World_TactPushOptionPads`);
+`Map_SetSubMode0_Play11 @ 0x18418` was checked for the same shape and writes no pad bytes at all. (3) A
+furniture arm's blit count has to be measured as two paints of the *same* state — one on its own screen, one
+with the screen id forced to 0 — because the iso layer's viewport-guide arm (`pufo_isodraw.c:398`) is gated on
+cells the opening handler changes, so a baseline taken before the click is not the same mission. Seven new
+pictures: `tests/ref/tact_hud_*.png`. Open gap it exposed: the soldiers chunk writes the tactical inventory
+block as zeros where the original writes seven `TactItem+0x14` ids (0x429dc, 0x429f8, 0x42a1c, 0x42a50,
+0x42a84), so a loaded roster is unarmed and the gate runs on a fixture weapon.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

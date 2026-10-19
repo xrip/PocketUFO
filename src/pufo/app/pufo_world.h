@@ -687,6 +687,11 @@ typedef struct WorldHooks {
     const SaveLoadSlotHooks *pSaveLoadHooks;
     void (*pfnFormatSlotList)(void *pUser); /* SaveSlot_FormatList @ 0x45904 */
     void *pFormatSlotListUser;
+    /* The block that hook writes: the caller's seven 40-byte slot labels, MainMenu_pSlotCtx @ 0x156938.
+     * Screens 10 and 11 draw those seven labels onto the modal-panel pads (TactHud_DrawModalRight
+     * 0x21cec reads &MainMenu_pSlotCtx[40 * i]), so the tact frame needs the same pointer the list
+     * builder writes into. */
+    const char              *pSlotLabels;   /* MainMenu_pSlotCtx @ 0x156938, 7 x 40 */
     i32                     *pnListMode;    /* *0x157188 */
     PufoOptions             *pTactOptions;
 } WorldHooks;

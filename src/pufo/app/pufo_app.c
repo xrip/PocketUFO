@@ -248,6 +248,8 @@ static void App_HookNewGame(void *pUser)
     hooks.pSaveLoadHooks      = &g_saveLoadHooks;
     hooks.pfnFormatSlotList   = App_HookFormatSlots;         /* SaveSlot_FormatList @ 0x45904 */
     hooks.pFormatSlotListUser = NULL;                        /* it reads the app's own g_slotCtx */
+    hooks.pSlotLabels         = &g_aSlotLabels[0][0];        /* MainMenu_pSlotCtx @ 0x156938, the block
+                                                              * that hook writes and screens 10/11 draw */
     hooks.pnListMode          = &g_nListMode;                /* *0x157188 */
     hooks.pTactOptions        = &g_options;                  /* writable alias: the menu handlers write
                                                               * speed/gamma/volumes/toggles here */
@@ -428,6 +430,7 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pSaveLoadHooks      = &g_saveLoadHooks;
     hooks.pfnFormatSlotList   = App_HookFormatSlots;
     hooks.pFormatSlotListUser = NULL;
+    hooks.pSlotLabels         = &g_aSlotLabels[0][0]; /* MainMenu_pSlotCtx @ 0x156938 */
     hooks.pnListMode          = &g_nListMode;
     hooks.pTactOptions        = &g_options;
 

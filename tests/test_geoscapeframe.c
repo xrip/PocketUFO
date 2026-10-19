@@ -100,6 +100,15 @@ static i32            g_nSaveRenders;      /* the save unit's frame seam (Part 6
 static i32            g_aBankSamples[64];
 static i32            g_nBankSamples;
 static i32            g_nSlotFormatCalls;  /* Menu_OpenSlotList's injected SaveSlot_FormatList */
+
+/* Fixture for MainMenu_pSlotCtx @ 0x156938: seven 40-byte slot labels. This test's SaveSlot_FormatList
+ * seam only counts calls, so screens 10 and 11 draw these rows; they prove the 40-byte stride and the
+ * pad placement, not the text a real save file would produce. */
+static char g_aSlotLabelRows[PUFO_HUD_MODAL_LABELS][PUFO_HUD_MODAL_LABEL_STRIDE] = {
+    "slot 0  01.03 12:00", "slot 1  02.03 12:00", "slot 2  03.03 12:00",
+    "slot 3  04.03 12:00", "slot 4  05.03 12:00", "slot 5  06.03 12:00",
+    "slot 6  07.03 12:00",
+};
 static i32            g_nLoadSlotCalls;    /* the load hook SaveLoad_Slot runs on a load screen */
 static i32            g_nLoadSlotId;
 static i32            g_nListModeCell;     /* *0x157188, the caller-owned list mode */
@@ -493,6 +502,34 @@ static i32 FrameCountOccupants(void)
     return n;
 }
 
+/* Part 76's counting rule for the furniture arms. Paint the mission as it stands on its furniture
+ * screen and keep that picture; then paint the SAME state with Map_nUiScreen forced to 0, which is the
+ * iso layer with no arm on top of it. The difference is that arm's own pad blits: the iso layer's only
+ * screen-sensitive step is the cover at pufo_isodraw.c:748, and that goes through
+ * SoftSurf_BlitSrcRectEx, never through the pad hook. Both paints see the same mission state, which a
+ * screen-0 baseline taken before the opening click would not -- the viewport-guide arm at
+ * pufo_isodraw.c:398 blits several pads and is gated on cells the opening handlers change. */
+static i32 PaintFurnitureFrame(const char *pszName)
+{
+    u16 nScreen = g_world.nUiScreen;
+    i32 nArm;
+    i32 nBase;
+
+    ClearSurface();
+    g_nBlits = 0;
+    World_TactFrame(&g_world);
+    nArm = g_nBlits;
+    DumpFrame(pszName);
+
+    g_world.nUiScreen = 0;
+    ClearSurface();
+    g_nBlits = 0;
+    World_TactFrame(&g_world);
+    nBase = g_nBlits;
+    g_world.nUiScreen = nScreen;
+    return nArm - nBase;
+}
+
 int main(void)
 {
     const char *const apsz[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -564,6 +601,7 @@ int main(void)
     hooks.pSaveLoadHooks      = &g_slotHooks;
     hooks.pfnFormatSlotList   = RecFormatSlots;
     hooks.pFormatSlotListUser = NULL;
+    hooks.pSlotLabels         = &g_aSlotLabelRows[0][0];  /* MainMenu_pSlotCtx @ 0x156938 (Part 76) */
     hooks.pnListMode          = &g_nListModeCell;
     hooks.pTactOptions        = &g_options;   /* the menu handlers write options through this alias */
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
@@ -3001,9 +3039,10 @@ int main(void)
                     pMapF->pSelUnit->bStatus = UNIT_STATUS_OPERATIVE;
                 }
 
-                /* The gate. Screens 0/8/9 need nothing beyond the iso layer + dialog + fade tail;
-                 * every other screen wants envs the shell does not own, and Render_Frame calls
-                 * MapView_DrawIsoLayer with no null test (0x22414), so the caller keeps those. */
+                /* The gate. Live on 0x2237C's jumptable group "cases 0,3,5,7-12,15" plus 13, the status
+                 * banner arm at 0x223E8; the screens outside it replace the iso layer with another env,
+                 * and Render_Frame calls MapView_DrawIsoLayer with no null test (0x22414). Part 76 built
+                 * the six furniture envs, so the group is live end to end. */
                 g_world.nUiScreen = 0;
                 Check(World_bTactFrameLive(&g_world), "the frame seam is live on screen 0 of a live mission");
                 g_world.nUiScreen = 8;
@@ -3011,9 +3050,9 @@ int main(void)
                 g_world.nUiScreen = 9;
                 Check(World_bTactFrameLive(&g_world), "and on 9, the screen the deploy confirm writes at 0x18DE0");
                 g_world.nUiScreen = 3;
-                Check(!World_bTactFrameLive(&g_world), "not on 3: its roster pads are not built yet (0x224A0)");
+                Check(World_bTactFrameLive(&g_world), "and on 3, the roster arm 0x224A0 draws on the iso layer");
                 g_world.nUiScreen = 0xC;
-                Check(!World_bTactFrameLive(&g_world), "not on 0xC: its top bar env is not built yet (0x22464)");
+                Check(World_bTactFrameLive(&g_world), "and on 0xC, the top bar arm 0x22464 draws on it");
                 g_world.nUiScreen = 2;
                 Check(!World_bTactFrameLive(&g_world), "not on 2: the minimap replaces the iso layer (0x224B8)");
                 g_world.nUiScreen = 0;
@@ -3732,6 +3771,218 @@ int main(void)
                 }
             }
         }
+    }
+
+    /* --- the six tactical HUD screens, painted through the frame (Part 76) -----------------
+     *
+     * Render_Frame's iso group is 0x2237C's jumptable "cases 0,3,5,7-12,15": the iso layer plus the
+     * furniture of the screen it is on. Part 76 gives the shell the six furniture envs, so every
+     * picture below is the live reloaded mission drawn through the handler the original itself
+     * installs on the bank widget that opens it (Tact_InitUiControls @ 0x3b498).
+     *
+     * Each count is the arm's own pad blits, measured by PaintFurnitureFrame over the state the opening
+     * handler just produced. */
+    {
+        GameMap *pMapH = g_world.pTactMap;
+        Soldier *pUnit = NULL;
+        i32      nArmed = 0;
+        i32      nVisible;
+        i32      nSampleMark;
+        i32      i;
+
+        Check(pMapH != NULL && pMapH->nXcomCount > 0, "the reloaded mission still has a roster");
+        pUnit = (pMapH != NULL && pMapH->nXcomCount > 0) ? pMapH->apXcomUnits[0] : NULL;
+
+        /* Weapon census. Tact_OpenLeftHandMenu @ 0x17030 needs a hand slot holding an item with an object
+         * record, and every row the fire-mode panel can draw comes from that item. A loaded roster has
+         * none: Save_WriteSoldier writes the soldiers chunk's 150-byte tactical inventory block as zeros
+         * (pufo_save.c:168) and Save_ReadSoldier discards it, while the original writes a slot's
+         * TactItem+0x14 id there -- left hand at 0x429DC, right hand at 0x429F8, then the belt pairs at
+         * 0x42A1C, 0x42A50 and 0x42A84. That is a real save-format gap, recorded as a separate issue; the
+         * fixture in the screen-3 block stands in for it, the same way Part 57's hand-menu block does. */
+        for (i = 0; i < pMapH->nXcomCount; ++i) {
+            Soldier *pTry = pMapH->apXcomUnits[i];
+
+            if (pTry != NULL && pTry->pHandL != NULL && pTry->pHandL->pObj != NULL) { ++nArmed; }
+        }
+        printf("  weapon census of the loaded roster: %d of %d carry a left-hand item with an object record\n",
+               nArmed, pMapH->nXcomCount);
+        Check(nArmed == 0, "the loaded roster arrives unarmed: the soldiers chunk's inventory block is written empty where 0x429DC..0x42A8C writes the slot item ids (separate issue)");
+
+        pMapH->pSelUnit = pUnit;
+        pMapH->bActionLatch = 0;              /* Map_bActionLatch @ Map+0x02: the unarmed case */
+        g_world.bMapDrawIsoLayer = 1;         /* unk_138E68 @ Map+0x254B0, the gate at 0x2240C */
+
+        /* Back onto the map through a real handler: widget 92 is MenuBtn_ConfirmClear @ 0x194c8, a tail
+         * call into Input_OnConfirm, whose screen-1 arm closes the inventory and whose tail stores 0 at
+         * 0x15F34. */
+        (void)g_bank.aCtl[92].pfnClick();
+        Check(g_world.nUiScreen == 0, "the confirm row closes the inventory back onto the map (0x15F34)");
+
+        ClearSurface();
+        g_nBlits = 0;
+        World_TactFrame(&g_world);
+        Check(g_nBlits > 0, "the reference paint: iso layer and the HUD panel, no furniture arm");
+
+        /* ---- screen 3: the fire-mode roster ----
+         * Tact_OpenLeftHandMenu @ 0x17030 stores the hand slot into Map.pSelWeapon at 0x17060 before any
+         * of its gates, refills the cost/enabled banks, and stores 3 at 0x17140 when a mode is both
+         * offered and affordable. TactHud_DrawUnitRoster @ 0x21908 then gates on that same weapon pointer
+         * (0x21918), draws only the modes whose Map+0x4E7C entry is non-zero, and rewrites each drawn
+         * pad's y to 23 * drawn-so-far + 67 (0x21968). */
+        if (pUnit != NULL) {
+            static TactItem aPanelItem;
+            static ObjectRecFull aPanelObj;
+            TactItem *pLSave = pUnit->pHandL;
+            TactItem *pWepSave = pMapH->pSelWeapon;
+            i32      nGate1 = g_abSlotTopicGate[1];
+            u8       bGateSave = g_world.aTopics[nGate1].bUnlocked;
+
+            /* A weapon for the panel: a sort-key-1, category-3 item with gate 1 unlocked is exactly the
+             * case Part 57 verified opens screen 3 (0x17140) -- 0x170D0's scan offers mode 3 and the cost
+             * auTu*20/100 is affordable, so the store at 0x17138 lands. Stands in for the missing save
+             * field recorded above; restored at the end of this block. */
+            memset(&aPanelItem, 0, sizeof(aPanelItem));
+            memset(&aPanelObj, 0, sizeof(aPanelObj));
+            aPanelItem.pObj = &aPanelObj;
+            aPanelObj.uSortKey = 1;
+            aPanelObj.nCategory = 3;
+            g_world.aTopics[nGate1].bUnlocked = 1;
+            pUnit->pHandL = &aPanelItem;
+
+            g_bank.aCtl[17].pfnClick();
+            Check(g_world.nUiScreen == 3, "widget 17 (Tact_OpenLeftHandMenu) opens screen 3 (0x17140)");
+            Check(pMapH->pSelWeapon == pUnit->pHandL,
+                  "Map.pSelWeapon is that hand slot -- the same pointer the roster's own gate reads at 0x21918");
+            Check(World_bTactFrameLive(&g_world), "screen 3 is on the frame seam now (0x2237C case 3)");
+
+            nVisible = 0;
+            for (i = 0; i < PUFO_HUD_ROSTER_PADS; ++i) {
+                if (g_world.sTactUi.anActionEnabled[i] != 0) { ++nVisible; }   /* Map+0x4E7C */
+            }
+            printf("  this weapon offers %d of the %d fire modes\n", nVisible, PUFO_HUD_ROSTER_PADS);
+            Check(nVisible > 0 && nVisible <= PUFO_HUD_ROSTER_PADS,
+                  "Ui_FillActionCosts offered at least one mode for this weapon");
+            CheckEqI32(PaintFurnitureFrame("tact_hud_fire_modes"), nVisible,
+                       "the roster blits one pad per offered mode over bank widgets 32..43 (0x21958)");
+            {
+                i32  nRow = 0;
+                bool bPacked = true;
+
+                for (i = 0; i < PUFO_HUD_ROSTER_PADS; ++i) {
+                    if (g_world.sTactUi.anActionEnabled[i] == 0) { continue; }
+                    if (g_bank.aCtl[PUFO_HUD_ROSTER_FIRST + i].y != (i16)(23 * nRow + 67)) { bPacked = false; }
+                    ++nRow;
+                }
+                Check(bPacked, "every drawn row's y became 23 * drawn-so-far + 67, so the panel packs its rows");
+            }
+
+            /* ---- screen 5: the item sub-mode panel ----
+             * TactAction_ConfirmUseItem @ 0x178d4: mode 3, the mode-3 cost from the same table, and for any
+             * sort key but 14 the store at 0x179B8 puts 5 in Map_nUiScreen. TactHud_CopyStatusText @ 0x21688
+             * centres text record 5 (unk_B3CD1) at y 100 and then prints each of the nine pads' own index. */
+            g_bank.aCtl[35].pfnClick();
+            Check(g_world.nUiScreen == 5, "the item-confirm pad (widget 35) opens screen 5 (0x179B8)");
+            CheckEqI32(PaintFurnitureFrame("tact_hud_sub_modes"), PUFO_HUD_STATUS_PADS,
+                       "the sub-mode panel blits its nine pads, bank widgets 44..52 (0x216CC)");
+
+            pUnit->pHandL = pLSave;
+            pMapH->pSelWeapon = pWepSave;
+            g_world.aTopics[nGate1].bUnlocked = bGateSave;
+        }
+
+        /* ---- screen 7: the tactical menu ----
+         * Widget 14 is Map_UiScreen7_PlaySample0E @ 0x164b8: stores 7, plays 14. Menu_DrawLabeledPads
+         * @ 0x217e0 blits bank widgets 53..59 and labels them with a sparse record map (18..22, 402, 23)
+         * -- the same seven widgets whose click handlers are the menu's seven rows. */
+        nSampleMark = g_nSamples;
+        g_bank.aCtl[14].pfnClick();
+        Check(g_world.nUiScreen == 7, "widget 14 opens the tactical menu screen 7 (0x164C0)");
+        Check(g_nSamples == nSampleMark + 1 && g_aFrameSamples[nSampleMark] == 14,
+              "and plays sample 14 on the way (0x164D4)");
+        CheckEqI32(PaintFurnitureFrame("tact_hud_menu"), PUFO_HUD_MENU_PADS,
+                   "the menu blits its seven pads, bank widgets 53..59 (0x21824)");
+
+        /* ---- screens 10 and 11: the save and load slot lists ----
+         * Menu_OpenSaveSlots @ 0x188a4 and Menu_OpenLoadSlots @ 0x18864: format the seven slot labels,
+         * play 16, store 10 / 11, and set MainMenu_nListMode to 0. TactHud_DrawModalPanel @ 0x21cec blits
+         * eight pads (105..112) but labels only seven, and opens the one-line modal dialog only when the
+         * list mode is exactly 1 -- so these two screens carry labels and no dialog. */
+        {
+            i32 nFmt = g_nSlotFormatCalls;
+
+            g_bank.aCtl[54].pfnClick();
+            Check(g_world.nUiScreen == 10 && g_nSlotFormatCalls == nFmt + 1 && g_nListModeCell == 0,
+                  "widget 54 formats the slot list, stores 10 and clears the list mode (0x188A4..0x188B0)");
+            CheckEqI32(PaintFurnitureFrame("tact_hud_save_slots"), PUFO_HUD_MODAL_PADS,
+                       "the save list blits its eight pads, bank widgets 105..112 (0x21D10)");
+
+            g_bank.aCtl[53].pfnClick();
+            Check(g_world.nUiScreen == 11 && g_nSlotFormatCalls == nFmt + 2,
+                  "widget 53 opens the load list on 11 (0x18884)");
+            CheckEqI32(PaintFurnitureFrame("tact_hud_load_slots"), PUFO_HUD_MODAL_PADS,
+                       "and the load list draws the same eight pads with record 1102 (0x21bac)");
+        }
+
+        /* ---- screen 12: the options screen ----
+         * Widget 55 is Options_SyncUiFromMap_GotoScreen12 @ 0x188e4: clear all 29 pad bytes, re-derive
+         * each one from the option block, store 12. TactHud_DrawTopBar @ 0x20ef8 draws four centred
+         * records, six left-aligned records at x 40, and blits the 29 pads. */
+        g_bank.aCtl[55].pfnClick();
+        Check(g_world.nUiScreen == 12, "widget 55 opens the options screen 12 (0x18A34)");
+        CheckEqI32(PaintFurnitureFrame("tact_hud_options"), PUFO_HUD_TOPBAR_PADS,
+                   "the options screen blits all 29 pads, bank widgets 60..88 (0x21254)");
+        {
+            i32 nLit = 0;
+            bool bSame = true;
+
+            /* The handler keeps the 29 bytes in the option block (0x188F4..0x18A2C); the bank copy is what
+             * the drawing arm reads, and World_TactPushOptionPads writes it during the paint just above. */
+            for (i = 0; i < 5; ++i) {            /* the speed group is widgets 60..64 */
+                if (g_bank.aCtl[PUFO_HUD_TOPBAR_FIRST + i].nState != 0) { ++nLit; }
+                if (g_bank.aCtl[PUFO_HUD_TOPBAR_FIRST + i].nState
+                    != g_world.sTactMenuPads.abSpeed[i]) { bSame = false; }
+            }
+            Check(bSame && nLit == 1,
+                  "the speed pads 60..64 carry the option block's one-hot byte in the bank now (0x18938)");
+        }
+
+        /* ---- screen 15: the nine action buttons ----
+         * Widget 15 is Map_UiScreen0F_PlaySample0F @ 0x164d4: store 15, play 15. TactHud_DrawActionButtons
+         * @ 0x21430 clears each button's bEnabled first, lets its own rule re-light it, and rewrites a
+         * visible button's y to 19 * visible-so-far + 87 -- the rules read the latch byte, the
+         * multi-target count and the deploy-panel byte. */
+        nSampleMark = g_nSamples;
+        g_bank.aCtl[15].pfnClick();
+        Check(g_world.nUiScreen == 15, "widget 15 opens the action-button screen 15 (0x164DC)");
+        Check(g_nSamples == nSampleMark + 1 && g_aFrameSamples[nSampleMark] == 15, "and plays sample 15 (0x164EC)");
+        {
+            TactHudActionGate gate;
+            i32 nRow = 0;
+            bool bPacked = true;
+
+            gate.nActionMode       = pMapH->bActionLatch;
+            gate.nMultiTargetCount = pMapH->nMultiTargetCount;
+            gate.bDeployPanelOpen  = g_world.sTactInput.bDeployPanelOpen;
+
+            nVisible = 0;
+            for (i = 0; i < PUFO_HUD_ACTION_PADS; ++i) {
+                if (TactHud_ActionButtonRecord(&gate, i) >= 0) { ++nVisible; }
+            }
+CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
+                       "the action row blits exactly the buttons its own rules kept (0x2158C)");
+            for (i = 0; i < PUFO_HUD_ACTION_PADS; ++i) {
+                if (TactHud_ActionButtonRecord(&gate, i) < 0) { continue; }
+                if (g_bank.aCtl[PUFO_HUD_ACTION_FIRST + i].y != (i16)(19 * nRow + 87)) { bPacked = false; }
+                ++nRow;
+            }
+            Check(bPacked, "every visible button's y became 19 * visible-so-far + 87 (0x215BC)");
+            Check(nVisible > 0 && nVisible < PUFO_HUD_ACTION_PADS,
+                  "with the latch at 0 some buttons hide and some show: the packed stack is neither empty nor full");
+        }
+
+        /* Fixture: the section is over, put the mission back on the map before the teardown. */
+        g_world.nUiScreen = 0;
     }
 
     World_Free(&g_world);

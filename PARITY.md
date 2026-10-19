@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 18473 |
+| Test checks run | 18500 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -495,9 +495,9 @@ is the module that answers to it.
 | `0x16af0` | `TactHud_ClimbDown` | 788 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x156e0` | `Input_OnSecondary` | 780 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x15f3c` | `Input_OnConfirm` | 708 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
-| `0x21908` | `TactHud_DrawUnitRoster` | 676 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x21908` | `TactHud_DrawUnitRoster` | 676 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x20c58` | `TactHud_DrawUnitMarkers` | 672 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x21430` | `TactHud_DrawActionButtons` | 600 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x21430` | `TactHud_DrawActionButtons` | 600 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x1e920` | `TactHud_DrawStatusBanner` | 584 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x2d580` | `Inv_BuildVisibleList` | 536 | `src/pufo/game/pufo_roster.h`, `src/pufo/game/pufo_tactui.h` |
 | `0x1eb68` | `TactHud_DrawConfirmDialog` | 484 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 605 |
+| `test_geoscapeframe` | PASS | 632 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
@@ -1343,7 +1343,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 844 citations.
+parity report. Total: 845 citations.
 
 ### Offsets below the image base (44)
 
@@ -1352,7 +1352,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (800)
+### At or above the image base (801)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1382,6 +1382,7 @@ against the IDB when the final report is assembled.
 - `0x1139a4`
 - `0x1139a8`
 - `0x1139b8`
+- `0x1139bc`
 - `0x1139ef`
 - `0x1139f2`
 - `0x113a00`
