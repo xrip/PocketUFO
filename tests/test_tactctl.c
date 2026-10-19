@@ -208,52 +208,60 @@ static void TestFacingScratch(void)
 {
     MapFacingScratch scratch;
     MapTileSize     size;
+    u8              nCountX, nCountY;   /* the caller's Map+0x34 / Map+0x35 cells */
 
     printf("Map_InitFacingScratch\n");
     memset(&scratch, 0, sizeof(scratch));
     memset(&size, 0, sizeof(size));
+    nCountX = 0; nCountY = 0;
 
     /* Tactical: a new facing resets the tile size and both scratch bytes. */
-    Check(Map_InitFacingScratch(&scratch, &size, 3, true, 4),
+    Check(Map_InitFacingScratch(&scratch, &size, 3, true, 4, &nCountX, &nCountY),
           "  a new facing updates the scratch");
     CheckEqI32(scratch.bStoredFacing, 3, "  the facing was stored");
     CheckEqI32(size.nTileW, 240, "  tile width reset to 240");
     CheckEqI32(size.nTileH, 320, "  tile height reset to 320");
-    CheckEqI32(scratch.bScratch34, 9, "  gap_52[0] = 9");
-    CheckEqI32(scratch.bScratch35, 24 * 4 / 16 + 47, "  gap_52[1] = 24*layer/16 + 47");
+    CheckEqI32(nCountX, 9, "  Map_nTileCountX @ 0x34 = 9 (0x26F48)");
+    CheckEqI32(nCountY, 24 * 4 / 16 + 47, "  Map_nTileCountY @ 0x35 = 24*layer/16 + 47 (0x26F70)");
 
     /* The SAME facing again is a no-op, so a poisoned tile size survives. */
     size.nTileW = 1;
     size.nTileH = 2;
-    scratch.bScratch35 = 0xEE;
-    Check(!Map_InitFacingScratch(&scratch, &size, 3, true, 4),
+    nCountY = 0xEE;
+    Check(!Map_InitFacingScratch(&scratch, &size, 3, true, 4, &nCountX, &nCountY),
           "  the same facing is a no-op");
     CheckEqI32(size.nTileW, 1, "  tile size untouched on the no-op");
-    CheckEqI32(scratch.bScratch35, 0xEE, "  scratch byte untouched on the no-op");
+    CheckEqI32(nCountY, 0xEE, "  the caller's count cell untouched on the no-op");
 
     /* A DIFFERENT facing updates again. */
-    Check(Map_InitFacingScratch(&scratch, &size, 5, true, 0),
+    Check(Map_InitFacingScratch(&scratch, &size, 5, true, 0, &nCountX, &nCountY),
           "  a different facing updates");
-    CheckEqI32(scratch.bScratch35, 24 * 0 / 16 + 47, "  layer 0 gives 47");
+    CheckEqI32(nCountY, 24 * 0 / 16 + 47, "  layer 0 gives 47");
 
     /* Non-tactical: the facing is recorded but the tile size is NOT reset. */
     memset(&scratch, 0, sizeof(scratch));
     size.nTileW = 77;
     size.nTileH = 88;
-    Check(Map_InitFacingScratch(&scratch, &size, 2, false, 4),
+    nCountX = 0;
+    Check(Map_InitFacingScratch(&scratch, &size, 2, false, 4, &nCountX, &nCountY),
           "  non-tactical still stores the facing");
     CheckEqI32(scratch.bStoredFacing, 2, "  facing stored");
     CheckEqI32(size.nTileW, 77, "  tile size NOT reset outside tactical");
     CheckEqI32(size.nTileH, 88, "  tile height NOT reset either");
-    CheckEqI32(scratch.bScratch34, 0, "  scratch byte not written");
+    CheckEqI32(nCountX, 0, "  the caller's count cell not written outside tactical");
 
     /* The 24*x/16 order matters: it is a truncating multiply-then-divide. */
     memset(&scratch, 0, sizeof(scratch));
-    (void)Map_InitFacingScratch(&scratch, &size, 1, true, 3);
-    CheckEqI32(scratch.bScratch35, 24 * 3 / 16 + 47,
+    (void)Map_InitFacingScratch(&scratch, &size, 1, true, 3, &nCountX, &nCountY);
+    CheckEqI32(nCountY, 24 * 3 / 16 + 47,
                "  the multiply-then-divide order is preserved");
 
-    Check(!Map_InitFacingScratch(NULL, &size, 0, true, 0), "  NULL scratch -> false");
+    Check(!Map_InitFacingScratch(NULL, &size, 0, true, 0, &nCountX, &nCountY), "  NULL scratch -> false");
+    /* A caller with no live map passes NULL cells and still gets the facing stored. */
+    memset(&scratch, 0, sizeof(scratch));
+    Check(Map_InitFacingScratch(&scratch, &size, 7, true, 1, NULL, NULL),
+          "  NULL count cells are accepted");
+    CheckEqI32(scratch.bStoredFacing, 7, "  facing stored with no count cells");
 }
 
 /* Tact_ScanVictoryTiles @ 0x33264. Both gates must hold, and the 2x2 probe stops at

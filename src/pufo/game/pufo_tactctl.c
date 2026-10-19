@@ -124,7 +124,8 @@ void MapView_SetCamOffset(const MapGeom *pMap, i32 nA, i32 nB, bool bAdjustForLa
 /* ------------------------------------------------------ facing scratch / tiles */
 
 bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nFacing,
-                          bool bTactFlag, u8 nLayerScratch)
+                          bool bTactFlag, u8 nLayerScratch,
+                          u8 *pnTileCountX, u8 *pnTileCountY)
 {
     if (pScratch == NULL) {
         return false;
@@ -145,9 +146,13 @@ bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nF
         pSize->nTileW = PUFO_TILE_W;
         pSize->nTileH = PUFO_TILE_H;
     }
-    pScratch->bScratch34 = 9;
+    if (pnTileCountX != NULL) {
+        *pnTileCountX = 9;                        /* 0x26F48: STRB R3,[R0,#0x34] */
+    }
     /* Keep the original's operation order: multiply, then divide, then add. */
-    pScratch->bScratch35 = (u8)(24 * (i32)nLayerScratch / 16 + 47);
+    if (pnTileCountY != NULL) {
+        *pnTileCountY = (u8)(24 * (i32)nLayerScratch / 16 + 47); /* 0x26F70: STRB R3,[R0,#0x35] */
+    }
     return true;
 }
 

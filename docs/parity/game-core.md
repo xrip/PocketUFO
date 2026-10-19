@@ -19811,3 +19811,44 @@ fourth array to the real auManufCol extent (3200 bytes), which is what the versi
 dim read does not, for the reason in deviation 6. tests/ref/tact_frame_iso.png is re-accepted: 1338 pixels of rows 0..31
 change, and with the fixture's cell-placement block guarded the dump is byte-identical to the old reference, so the cause is
 the more faithful fixture, not a draw change.
+
+## Unit 127 -- Map_InitFacingScratch owns the iso bounds (Part 65 follow-up)
+
+Original side, `Map_InitFacingScratch @ 0x26f14`, called once from `Tact_InitMission @ 0x3CB30` with
+`nFacing = 1`: guard `LDRB R3,[R0,#0x36]` / `AND R2,R1,#0xFF` / `CMP` / `BEQ` -- the body runs only when the
+facing CHANGES. Then `STRB R1,[R0,#0x36]` stores the new facing, and `LDRB R3,[R0]` / `CMP R3,#0` / `BEQ` stops
+there when `Map+0x00` (bTactFlag) is clear. In the tactical case it writes the iso scratch block:
+`STRH 240` at Map+0x30, `STRH 320` at Map+0x32, `STRB 9` at Map+0x34 (`Map_nTileCountX`, 0x26F48), and at
+Map+0x35 (`Map_nTileCountY`, 0x26F70) `((signed byte at Map+0x15138) * 24, +15 when negative, >>4) + 47`.
+`Tact_InitMission` reaches this call before anything sets Map+0x15138, so a mission runs on 9 x 47.
+
+Why it matters: `MapView_DrawIsoLayer` walks tileY 0..Map+0x35-1 and tileX 0..Map+0x34-1 in each of its two
+passes, so a zero pair means the tactical map draws nothing at all -- and that is exactly what the shell did on
+any mission whose fixture did not poke the bytes (Part 65's reloaded frame came out as an empty black map).
+
+Recreated side: `Map_InitFacingScratch` (game/pufo_tactctl.c) keeps its guard and its tile-size reset, and now
+writes the two counts through the caller's cells -- `TactInitEnv.pnTileCountX / pnTileCountY` (game/pufo_tactinit.h),
+wired in `World_InitTactical` to `PuWorldState.sTactInput.nTileShiftX / nTileShiftY`, which are the same cells the
+readers use (`MapView_DrawIsoLayer`'s loop bounds, `Input_OnLeft/Right/Up/Down`'s clamp margins).
+
+Deviation: none in behaviour. The shape change is that the port used to hold a SECOND copy of Map+0x34/0x35 inside
+`MapFacingScratch` (fields `bScratch34`/`bScratch35`) that no reader ever consulted; those fields are gone and the
+struct keeps only `bStoredFacing` (Map+0x36). One cell, one writer.
+
+Correction to the IDB, recorded here because it was this unit's own earlier claim: the comment written on 2026-10-19
+at 0x1139EC/0x1139ED said these two bytes "are read six times and written NEVER". That census was done from xrefs
+alone, and the two stores -- `STRB R3,[R0,#0x34]` at 0x26F48 and `STRB R3,[R0,#0x35]` at 0x26F70 -- are the
+plain-immediate displacement form that produces no xref in this database. Both comments are rewritten, and a function
+comment now sits on `Map_InitFacingScratch` with the full write list and the guard. Rule restated: an xref list is
+not a writer list for a Map-relative byte written through a base register.
+
+Evidence: tests/test_tactctl.c's `Map_InitFacingScratch` block now drives the two counts through caller-owned bytes
+(9, `24*layer/16 + 47`, untouched on the facing-change no-op and outside the tactical branch, and accepted as NULL
+for a caller with no live map). tests/test_geoscapeframe.c asserts the produced pair after the mission bring-up (9 and
+47, with the Map+0x15138-is-zero reason spelled out), asserts the iso context's own loop ended at 9/47, and asserts
+that the reloaded mission still holds 9/47 -- the facing guard makes the load's `Tact_InitMission` re-write nothing.
+Picture gate: `tests/ref/tact_loaded_mission.png` now paints the map area (all 240x240 map pixels lit, the floor
+pattern from the sprites the map chunk restored at 0x43790..0x4385C) where it previously painted nothing;
+`tests/ref/tact_frame_iso.png` is re-accepted for the real 9x47 bounds instead of the fixture's 6x7 poke. The loaded
+frame shows floor only, no units -- the reloaded roster is not stood on cells, which is Unit 126's deviation 2 and
+the separate-issues entry about the mission bring-up's placement.

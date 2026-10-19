@@ -208,7 +208,7 @@ void Tact_GetCameraBounds(const CameraBoundsCtx *pCtx, i32 *pnX0, i32 *pnY0,
  * offsets, resolved against `Map`:
  *
  *     nMapTileW  @ 0x30 (u16)     nMapTileH  @ 0x32 (u16)
- *     gap_52[0]  @ 0x34           gap_52[1]  @ 0x35
+ *     Map_nTileCountX @ 0x34      Map_nTileCountY @ 0x35   (written through the caller's cells)
  *     gap_52[2]  @ 0x36  <- the stored facing byte it compares against
  *     bTactFlag  @ 0x00
  *
@@ -216,8 +216,17 @@ void Tact_GetCameraBounds(const CameraBoundsCtx *pCtx, i32 *pnX0, i32 *pnY0,
  * same facing does nothing the second time. When the facing is new AND the map is
  * tactical, it resets the tile size to 240x320 and recomputes two scratch bytes:
  *
- *     gap_52[0] = 9
- *     gap_52[1] = 24 * nLayerScratch / 16 + 47
+ *     Map_nTileCountX = 9                    (0x26F48, `STRB R3,[R0,#0x34]`)
+ *     Map_nTileCountY = 24 * nLayerScratch / 16 + 47   (0x26F70, `STRB R3,[R0,#0x35]`)
+ *
+ * Those two bytes are the iso layer's loop bounds: MapView_DrawIsoLayer walks
+ * tileY 0..nTileCountY-1 and tileX 0..nTileCountX-1 in each of its two passes, so a zero pair
+ * means the map draws nothing at all. The port therefore keeps ONE owner for them -- the caller
+ * hands over the cells it owns and this function writes there -- instead of holding a second copy
+ * that the readers (the iso layer, Input_OnLeft/Right/Up/Down) never see. Worth knowing why the
+ * IDB once claimed these cells had no writer at all: 0x26F48 and 0x26F70 are plain-immediate
+ * `STRB Rn,[R0,#0x34]` stores, and those produce no xref here -- an xref-only census is not a
+ * writer census.
  *
  * Note `24*x/16` is NOT `1.5*x` in integer arithmetic for every x, because the
  * division truncates: 24*1/16 = 1 while 3*1/2 = 1 (equal here), but 24*3/16 = 4
@@ -226,8 +235,6 @@ void Tact_GetCameraBounds(const CameraBoundsCtx *pCtx, i32 *pnX0, i32 *pnY0,
  * operation order exactly rather than simplifying to a multiply. */
 typedef struct MapFacingScratch {
     u8 bStoredFacing;   /* gap_52[2] @ 0x36 */
-    u8 bScratch34;      /* gap_52[0] @ 0x34 */
-    u8 bScratch35;      /* gap_52[1] @ 0x35 */
 } MapFacingScratch;
 
 typedef struct MapTileSize {
@@ -239,9 +246,11 @@ typedef struct MapTileSize {
 #define PUFO_TILE_W 240u
 #define PUFO_TILE_H 320u
 
-/* Returns true when the scratch was updated (the facing changed). */
+/* Returns true when the scratch was updated (the facing changed). pnTileCountX/pnTileCountY are
+ * the caller's own Map+0x34/0x35 cells; they may be NULL when the caller has no map live. */
 bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nFacing,
-                          bool bTactFlag, u8 nLayerScratch);
+                          bool bTactFlag, u8 nLayerScratch,
+                          u8 *pnTileCountX, u8 *pnTileCountY);
 
 /* Tact_ScanVictoryTiles @ 0x33264.
  *

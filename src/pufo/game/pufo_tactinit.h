@@ -266,8 +266,11 @@ typedef struct TactInitEnv {
                             * the item the AI's command-13 melee action carries */
 
     /* --- the view scratch Map_InitFacingScratch and MapView_FocusSelected share --- */
-    MapFacingScratch facing;
+    MapFacingScratch facing;     /* 0x36, the stored facing the guard compares against */
     MapTileSize      tileSize;   /* 0x30 / 0x32 */
+    u8              *pnTileCountX; /* Map+0x34, the caller's cell: MapView_DrawIsoLayer's column
+                                    * bound and the Input_OnLeft/Right clamp margin */
+    u8              *pnTileCountY; /* Map+0x35, its row bound and the Input_OnUp/Down margin */
     i32              nCamScrollX; /* 0x15130 */
     i32              nCamScrollY; /* 0x15134 */
     CamOffset        camOffset;   /* 0x4A40 / 0x4A41 */

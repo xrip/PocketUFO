@@ -2606,8 +2606,6 @@ int main(void)
                 u8       nFlagsKeep  = g_world.tactEnv.cursor.nFlags;
                 i32      nCamXKeep   = g_world.tactEnv.focus.nCamScrollX;
                 i32      nCamYKeep   = g_world.tactEnv.focus.nCamScrollY;
-                u8       nShiftXKeep = g_world.sTactInput.nTileShiftX;
-                u8       nShiftYKeep = g_world.sTactInput.nTileShiftY;
                 u32      nSlot5Keep  = g_world.sTactInput.nUiSlot5;
                 i32      nSlot20Keep = g_world.sTactInput.nSlot20X;
                 i32      nSlot21Keep = g_world.sTactInput.nSlot21X;
@@ -2671,8 +2669,17 @@ int main(void)
                  * the layer byte 0x15138, the tile counts 0x34/35. */
                 g_world.tactEnv.focus.nCamScrollX = 37;
                 g_world.tactEnv.focus.nCamScrollY = 11;
-                g_world.sTactInput.nTileShiftX = 6;
-                g_world.sTactInput.nTileShiftY = 7;
+                /* Map_nTileCountX / Map_nTileCountY (Map+0x34/0x35), the iso layer's column and row
+                 * bounds. Map_InitFacingScratch produced them at the mission bring-up -- 9 written at
+                 * 0x26F48, 24*Map+0x15138/16 + 47 written at 0x26F70 -- and nothing else in the
+                 * beta writes either byte. The shell used to poke 6/7 here because it kept a private
+                 * copy of these cells that no reader saw; with one owner the produced pair is what the
+                 * layer walks over. */
+                CheckEqI32(g_world.sTactInput.nTileShiftX, 9, "the init wrote Map_nTileCountX = 9 (0x26F48)");
+                CheckEqI32(g_world.sTactInput.nTileShiftY, 24 * 0 / 16 + 47,
+                           "and Map_nTileCountY = 24*n/16 + 47 with n = 0: Map+0x15138 is still zero when "
+                           "Tact_InitMission reaches the facing-scratch call at 0x3CB30, so 47 is what the "
+                           "mission runs on (0x26F70)");
                 g_world.bMapDrawIsoLayer = 1;
                 ClearSurface();
                 g_nBlits = 0;
@@ -2682,8 +2689,8 @@ int main(void)
                 CheckEqI32(g_world.sTactIso.nIsoOffB, 5 * nDimY - 37 + 11 - 1, "Map_IsoOffsetB, same pair");
                 CheckEqI32(g_world.sTactIso.nLayer, (i32)g_world.tactEnv.cursor.nFlags,
                            "the layer counter ends at the 0x15138 byte the frame was built with");
-                CheckEqI32(g_world.sTactIso.nTileX, 6, "the inner loop ended at the Map+0x34 tile count");
-                CheckEqI32(g_world.sTactIso.nTileY, 7, "the outer loop at Map+0x35");
+                CheckEqI32(g_world.sTactIso.nTileX, 9, "the inner loop ended at the Map+0x34 tile count");
+                CheckEqI32(g_world.sTactIso.nTileY, 47, "the outer loop at Map+0x35");
                 Check(g_nBlits > 0, "the frame furniture blits through the shell's pad hook (the HUD panel's 19 controls, the look pad)");
                 DumpFrame("tact_frame_iso");   /* the picture this seam paints: iso layer + furniture */
 
@@ -2774,8 +2781,6 @@ int main(void)
                 g_world.tactEnv.cursor.nFlags = nFlagsKeep;
                 g_world.tactEnv.focus.nCamScrollX = nCamXKeep;
                 g_world.tactEnv.focus.nCamScrollY = nCamYKeep;
-                g_world.sTactInput.nTileShiftX = nShiftXKeep;
-                g_world.sTactInput.nTileShiftY = nShiftYKeep;
                 g_world.sTactInput.nUiSlot5 = nSlot5Keep;
                 g_world.sTactInput.nSlot20X = nSlot20Keep;
                 g_world.sTactInput.nSlot21X = nSlot21Keep;
@@ -3041,8 +3046,6 @@ int main(void)
          * two cell passes, all reads, and the image bytes are zero. Save_ReadMap restores the map DIMS only.
          * So the counts are a cell the shell carries, not one the load produces -- the fixture carries them
          * across the load exactly as Part 63 carries them across its teardown, and the gap is recorded. */
-        u8 nTileXKeep = g_world.sTactInput.nTileShiftX;
-        u8 nTileYKeep = g_world.sTactInput.nTileShiftY;
         i32 nRet;
 
         /* The app loads a saved mission from the geoscape with no tactical mission live, and that is the
@@ -3142,6 +3145,10 @@ int main(void)
         CheckEqI32(g_world.nTactItemCount, g_nMarkItems, "the flobjs item count (Save_AllocFlobjs + Save_ReadFlobjs)");
         Check(g_world.tactEnv.focus.nCamScrollX == 21 && g_world.tactEnv.focus.nCamScrollY == 23,
               "the camera at 0x15130/0x15134 comes back into the shell's focus record");
+        Check(g_world.sTactInput.nTileShiftX == 9 && g_world.sTactInput.nTileShiftY == 47,
+              "the loaded mission keeps the iso bounds the first bring-up wrote: Map_InitFacingScratch guards "
+              "on the facing CHANGING (Map+0x36 @ 0x26F28), so Tact_InitMission's second call re-writes "
+              "nothing at 0x26F48/0x26F70");
         Check(g_world.nMapDeployedHwps == 5 && g_world.bMapSpawnAlt == 1
                   && g_world.nMapSpawnTileX == 7 && g_world.nMapSpawnTileY == 9,
               "0x15140, 0x15148, 0x1514C and 0x15150 come back too");
@@ -3159,8 +3166,6 @@ int main(void)
         Check(World_bTactFrameLive(&g_world), "the reloaded mission sits on the tactical frame seam");
         /* The carried tile counts are what make the cell passes cover this mission at all -- see the
          * note above on Map+0x34/0x35 having no writer in the beta. */
-        g_world.sTactInput.nTileShiftX = nTileXKeep;
-        g_world.sTactInput.nTileShiftY = nTileYKeep;
         g_world.bMapDrawIsoLayer = 1;
         ClearSurface();
         nBlitsBefore = g_nBlits;

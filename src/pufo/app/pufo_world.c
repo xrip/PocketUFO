@@ -2022,6 +2022,13 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->pnSpawnTileX     = &pW->nMapSpawnTileX;       /* Map+0x1514C */
     pE->pnSpawnTileY     = &pW->nMapSpawnTileY;       /* Map+0x15150 */
     pE->pbSpawnAlt       = &pW->bMapSpawnAlt;         /* Map+0x15148, written at 0x83A6C */
+    pE->pnTileCountX     = &pW->sTactInput.nTileShiftX;   /* Map_nTileCountX @ Map+0x34: Map_InitFacingScratch
+                                                       * writes it (0x26F48) and MapView_DrawIsoLayer plus the
+                                                       * Input_OnLeft/Right clamps read it. The shell had a second
+                                                       * copy of these two bytes inside MapFacingScratch that no
+                                                       * reader used, which is why a mission that did not poke
+                                                       * sTactInput drew an empty map: the iso column bound was 0. */
+    pE->pnTileCountY     = &pW->sTactInput.nTileShiftY;   /* Map_nTileCountY @ Map+0x35 (0x26F70) */
     pE->pbDrawIsoLayer   = &pW->bMapDrawIsoLayer;     /* Map+0x254B0 */
     pE->pbLightEnabled   = &pW->bMapLightEnabled;     /* Map+0x254B1 */
     pE->pnUnkMap254B4    = &pW->nMapUnk138E6C;        /* Map+0x254B4 */
