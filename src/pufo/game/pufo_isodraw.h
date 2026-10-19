@@ -158,7 +158,11 @@ typedef struct IsoUnitDrawGate {
     const u16        *paGroupBase;  /* fontSys + 0x00, PUFO_ISO_GROUP_BASE_COUNT entries */
     u16               nCursorBase;  /* fontSys + 0x02 */
     u16               nHandobBase;  /* nHandobSprBase, fontSys + 0x20 */
-    ObjectRecFull   **apSelWeapon;  /* pSelWeapon @ 0x113A00, a pointer to the selected weapon */
+    TactItem        **apSelWeapon;  /* pSelWeapon @ 0x113A00: the selected weapon ITEM. Both reads go
+                                     * through its pObj -- 0x1CB60 is *(u8*)(pSelWeapon->pObj + 0xA4)
+                                     * (bListPri) and 0x1D308 is pSelWeapon->pObj->aItemQty[51]. The cell
+                                     * is a TactItem*, not an object pointer (Tact_SetFireModeAimed
+                                     * @ 0x17790 reads pSelWeapon's +6 ammo byte, then pObj's +0xAE cap). */
     PadImage         *pSelectFrame; /* unk_156928, the selection frame pad */
     const u8         *paTypeProbe;  /* Map+0x16..0x19, the four bytes Tact_MapTypeToGlyphIdx scans */
 } IsoUnitDrawGate;

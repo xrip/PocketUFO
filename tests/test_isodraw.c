@@ -1455,7 +1455,8 @@ static TactItem        g_handL;
 static TactItem        g_handR;
 static ObjectRecFull   g_objWeapon;
 static ObjectRecFull   g_objMisc;
-static ObjectRecFull  *g_pSelWeapon;
+static TactItem        g_selWeaponItem;  /* the selected weapon ITEM the iso gate reaches through */
+static TactItem       *g_pSelWeapon;     /* the Map+0x48 cell itself: a TactItem* */
 static PadImage        g_framePad;
 static u8              g_aFramePadBlob[8];
 static u16             g_aUnitGroupBase[PUFO_ISO_GROUP_BASE_COUNT];
@@ -1477,6 +1478,8 @@ static void UnitFixture_Reset(void)
     memset(&g_handR, 0, sizeof(g_handR));
     memset(&g_objWeapon, 0, sizeof(g_objWeapon));
     memset(&g_objMisc, 0, sizeof(g_objMisc));
+    memset(&g_selWeaponItem, 0, sizeof(g_selWeaponItem));
+    g_pSelWeapon = &g_selWeaponItem; /* the cell points at the item; the object lives in item.pObj */
     memset(g_aUnitGroupBase, 0, sizeof(g_aUnitGroupBase));
     memset(&g_uiso, 0, sizeof(g_uiso));
 
@@ -1523,7 +1526,7 @@ static void UnitFixture_Reset(void)
         g_aUnitTypeProbe[k] = 0xEE; /* matches no unit type */
     }
 
-    g_pSelWeapon = &g_objMisc;
+    g_selWeaponItem.pObj = &g_objMisc;
     g_ugate.apCells = g_apUnitCells;
     g_ugate.pSelUnit = NULL;
     g_ugate.bQueueActive = 0;
@@ -1863,7 +1866,7 @@ static void TestUnitWeaponPass(void)
     g_objWeapon.bListPri = 1;
     g_unit.pHandL = &g_handL;
     g_unit.bFlags = 4;
-    g_pSelWeapon = &g_objMisc;            /* bListPri 0 */
+    g_selWeaponItem.pObj = &g_objMisc;            /* bListPri 0 */
     MapView_DrawUnit(&g_uiso, &g_ugate);
     CheckEqI32(g_uiso.bTwoHandWeapon, 0, "an armed unit with a bListPri 0 selected weapon clears it");
 
@@ -1875,7 +1878,7 @@ static void TestUnitWeaponPass(void)
     g_unit.pHandL = &g_handL;
     g_unit.bFlags = 4;
     g_unit.bFacing = 3;
-    g_pSelWeapon = &g_objWeapon;
+    g_selWeaponItem.pObj = &g_objWeapon;
     MapView_DrawUnit(&g_uiso, &g_ugate);
     CheckEqI32(g_uiso.bTwoHandWeapon, 1, "a bListPri 1 selected weapon keeps the flag");
     CheckEqI32(g_uiso.nScratch2, 5, "facing 3 becomes 5 for the two-hand overlay");
@@ -1892,7 +1895,7 @@ static void TestUnitWeaponPass(void)
     g_unit.pHandL = &g_handL;
     g_unit.bFlags = 4;
     g_unit.bFacing = 7;
-    g_pSelWeapon = &g_objWeapon;
+    g_selWeaponItem.pObj = &g_objWeapon;
     MapView_DrawUnit(&g_uiso, &g_ugate);
     CheckEqI32(g_uiso.nScratch2, 1, "facing 7 wraps to 1");
 
@@ -1905,7 +1908,7 @@ static void TestUnitWeaponPass(void)
     g_unit.pHandL = &g_handL;
     g_unit.bFlags = 4;
     g_unit.bFacing = 3;
-    g_pSelWeapon = &g_objMisc;
+    g_selWeaponItem.pObj = &g_objMisc;
     g_objMisc.bListPri = 0;
     g_objMisc.aItemQty[51] = 9;
     MapView_DrawUnit(&g_uiso, &g_ugate);

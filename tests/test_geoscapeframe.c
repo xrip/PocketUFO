@@ -385,6 +385,8 @@ int main(void)
     hooks.pfnPlaySample = RecSample;
     hooks.pHit          = &g_hit;
     hooks.pColor        = &g_color;
+    hooks.pfnPresentFrame = PresentThunk;   /* WorldHooks.pfnPresentFrame, the tact frame's GX_Present (Part 63) */
+    hooks.pPresentUser    = NULL;
     hooks.pnAnimPhase   = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18, the cell the pulse's phase gate counts */
     hooks.pnMapPhase    = &g_nMapPhase;       /* Map + 0x37 @ 0x1139EF, the placement arm's cursor phase */
     /* The tact bank bring-up wiring (Part 54): the world installs InitUiControls' handlers and pads
@@ -2480,6 +2482,211 @@ int main(void)
                 pMapE->apEnemyUnits[1] = NULL;
                 pT->bBusy  = 0;
                 pT->nPhase = PUFO_PHASE_NONE;
+            }
+
+            /* --- the tactical frame (Part 63) -------------------------------------------------
+             * World_TactFrame builds Render_Frame @ 0x22310's default branch over the live mission:
+             * the cursor tick, MapView_DrawIsoLayer @ 0x21e2c with its frame furniture, the modal
+             * dialog, the fade block and the status stack, then GX_Present. The fixture is the real
+             * mission the earlier blocks built, so the iso layer walks the mission's own grid. */
+            {
+                GameMap *pMapF    = g_world.pTactMap;
+                i32      nScreenKeep = g_world.nUiScreen;
+                i32      nSlot1Keep  = g_world.nMapUiSlot1;
+                i32      nSlot9Keep  = g_world.nMapUiSlot9;
+                i32      nSlot10Keep = g_world.nMapUiSlot10;
+                u8       bByte2Keep  = g_world.bMapSlot8Byte2;
+                u8       bByte3Keep  = g_world.bMapSlot8Byte3;
+                u8       bInputKeep  = g_world.bMapPlayerInput;
+                u8       bIsoKeep    = g_world.bMapDrawIsoLayer;
+                u8       nFlagsKeep  = g_world.tactEnv.cursor.nFlags;
+                i32      nCamXKeep   = g_world.tactEnv.focus.nCamScrollX;
+                i32      nCamYKeep   = g_world.tactEnv.focus.nCamScrollY;
+                u8       nShiftXKeep = g_world.sTactInput.nTileShiftX;
+                u8       nShiftYKeep = g_world.sTactInput.nTileShiftY;
+                u32      nSlot5Keep  = g_world.sTactInput.nUiSlot5;
+                i32      nSlot20Keep = g_world.sTactInput.nSlot20X;
+                i32      nSlot21Keep = g_world.sTactInput.nSlot21X;
+                i32      nSlot22Keep = g_world.sTactInput.nSlot22Y;
+                i32      nSlot23Keep = g_world.sTactInput.nSlot23H;
+                i32      nCur112Keep = g_world.sModal.nActionPhaseSave112;
+                i32      nProg113Keep= g_world.sModal.nActionPhaseSave113;
+                bool     bModalKeep  = g_world.sModal.bOpen;
+                i32      nStatCntKeep= pMapF->status.nCount;
+                bool     bBusyKeep   = pMapF->tact.bBusy;
+                Soldier *pTrackKeep  = pMapF->tact.pTrackUnit;
+                u8       bPhaseKeep  = g_world.pTactState->bPhaseActive;
+                u8       bSelStatKeep= (pMapF->pSelUnit != NULL) ? pMapF->pSelUnit->bStatus : 0;
+                i32      nDimX = pMapF->geom.nDimX;   /* 0x1511B */
+                i32      nDimY = pMapF->geom.nDimY;   /* 0x1511C */
+                i32      nPadY = g_world.apTactPads[PUFO_UIPAD_HUD]->nOriginY;
+                i32      nInkNoMsg, nInkMsg, nInkPad, nInkDark;
+                char     szStatKeep[PUFO_STATUS_REC_BYTES];
+
+                memcpy(szStatKeep, pMapF->status.aszMsg[0], sizeof(szStatKeep));
+                pMapF->tact.pTrackUnit = NULL;
+                g_world.pTactState->bPhaseActive = 0;
+                g_world.bMapPlayerInput = 1;
+                if (pMapF->pSelUnit != NULL) {
+                    pMapF->pSelUnit->bStatus = UNIT_STATUS_OPERATIVE;
+                }
+
+                /* The gate. Screens 0/8/9 need nothing beyond the iso layer + dialog + fade tail;
+                 * every other screen wants envs the shell does not own, and Render_Frame calls
+                 * MapView_DrawIsoLayer with no null test (0x22414), so the caller keeps those. */
+                g_world.nUiScreen = 0;
+                Check(World_bTactFrameLive(&g_world), "the frame seam is live on screen 0 of a live mission");
+                g_world.nUiScreen = 8;
+                Check(World_bTactFrameLive(&g_world), "and on 8 (the quit-confirm map screen, 0x18E6C writes it)");
+                g_world.nUiScreen = 9;
+                Check(World_bTactFrameLive(&g_world), "and on 9, the screen the deploy confirm writes at 0x18DE0");
+                g_world.nUiScreen = 3;
+                Check(!World_bTactFrameLive(&g_world), "not on 3: its roster pads are not built yet (0x224A0)");
+                g_world.nUiScreen = 13;
+                Check(!World_bTactFrameLive(&g_world), "not on 13: the debrief banner env is not built yet (0x223E8)");
+                g_world.nUiScreen = 2;
+                Check(!World_bTactFrameLive(&g_world), "not on 2: the minimap replaces the iso layer (0x224B8)");
+                g_world.nUiScreen = 0;
+
+                /* The cursor tick (0x22360) with the busy arm taken: byte3 = old byte2, byte2 = 1, and
+                 * the (0,1) recompute overwrites the pair it just advanced with step -1 / countdown 9. */
+                pMapF->tact.bBusy = 1;
+                g_world.bMapSlot8Byte2 = 0;
+                g_world.bMapSlot8Byte3 = 0;
+                g_world.nMapUiSlot9  = 0;
+                g_world.nMapUiSlot10 = 5;
+                g_nPresents = 0;
+                World_TactFrame(&g_world);
+                CheckEqI32(g_nPresents, 1, "the frame tail reaches the present seam exactly once (GX_Present 0x27788)");
+                CheckEqI32(g_world.bMapSlot8Byte2, 1, "the tick rewrites apUiSlotsA[8] byte 2 as 1 for the busy arm (0x1E8DC)");
+                CheckEqI32(g_world.bMapSlot8Byte3, 0, "and byte 3 takes the old byte 2 (0x1E8D4)");
+                CheckEqI32(g_world.nMapUiSlot9, -1, "the (byte3 0, byte2 1) case writes step -1 into slot 9 (0x1A7C8)");
+                CheckEqI32(g_world.nMapUiSlot10, 9, "and countdown 9 into slot 10");
+
+                /* The iso layer ran over the shell's own camera and counts: the focus pair 0x15130/34,
+                 * the layer byte 0x15138, the tile counts 0x34/35. */
+                g_world.tactEnv.focus.nCamScrollX = 37;
+                g_world.tactEnv.focus.nCamScrollY = 11;
+                g_world.sTactInput.nTileShiftX = 6;
+                g_world.sTactInput.nTileShiftY = 7;
+                g_world.bMapDrawIsoLayer = 1;
+                ClearSurface();
+                g_nBlits = 0;
+                World_TactFrame(&g_world);
+                CheckEqI32(g_world.sTactIso.nIsoOffA, 37 - 5 * nDimX + 11,
+                           "Map_IsoOffsetA reads the focus camera: 37 - 5 * nMapDimX + 11");
+                CheckEqI32(g_world.sTactIso.nIsoOffB, 5 * nDimY - 37 + 11 - 1, "Map_IsoOffsetB, same pair");
+                CheckEqI32(g_world.sTactIso.nLayer, (i32)g_world.tactEnv.cursor.nFlags,
+                           "the layer counter ends at the 0x15138 byte the frame was built with");
+                CheckEqI32(g_world.sTactIso.nTileX, 6, "the inner loop ended at the Map+0x34 tile count");
+                CheckEqI32(g_world.sTactIso.nTileY, 7, "the outer loop at Map+0x35");
+                Check(g_nBlits > 0, "the frame furniture blits through the shell's pad hook (the HUD panel's 19 controls, the look pad)");
+
+                /* The modal arm: the bank's cells in, the pen's slots 20..23 out. Width 120, two
+                 * lines, two labels: nX 60, step 6, so 66 / 122 / 165 with the count 2. */
+                UiModal_Begin(&g_world.sModal, 120, 3, 2, (void *)"YES", NULL, (void *)"NO", NULL);
+                g_world.sModal.nActionPhaseSave113 = 1;   /* the progressive arm, so the cursor moves */
+                g_world.sTactInput.nSlot20X = -777;
+                g_world.sTactInput.nSlot21X = -777;
+                g_world.sTactInput.nSlot22Y = -777;
+                g_world.sTactInput.nSlot23H = -777;
+                World_TactFrame(&g_world);
+                CheckEqI32(g_world.sTactInput.nSlot20X, 66,
+                           "apUiSlotsA[20] = nX + (120-100)/3, written by the dialog at 0x266D4");
+                CheckEqI32(g_world.sTactInput.nSlot21X, 122, "apUiSlotsA[21] = nX + 2*(step+25) (0x268F0)");
+                CheckEqI32(g_world.sTactInput.nSlot22Y, 165, "apUiSlotsA[22] = 13*lines + nY + 10 (0x268E4)");
+                CheckEqI32(g_world.sTactInput.nSlot23H, 2, "apUiSlotsA[23] = 2, the two-button arm (0x26AE4)");
+                Check(g_world.sModal.nActionPhaseSave112 > 0 && g_world.sModal.nActionPhaseSave112 <= 40,
+                      "the typewriter cursor cell advanced inside its 40 wrap (0x26D1C..0x26D48)");
+                UiModal_End(&g_world.sModal);
+
+                /* The status stack, at the hud-pad base the four conditions select (0x1B00C..0x1B048)
+                 * and one 14-pixel step (0x1B054): the same state twice, only the message differs. */
+                pMapF->tact.bBusy = 0;              /* the pad-origin branch wants the idle context */
+                g_world.tactEnv.cursor.nFlags = 0;  /* no per-cell glyphs inside the band */
+                g_world.sTactInput.nUiSlot5 = 0;    /* no edge bars either */
+                g_world.nMapUiSlot1  = 0;
+                pMapF->status.nCount = 0;
+                ClearSurface();
+                World_TactFrame(&g_world);
+                nInkNoMsg = 0;
+                for (i32 y = nPadY - 14; y < nPadY - 4; ++y) {
+                    for (i32 x = 5; x < 100; ++x) {
+                        if (SurfPix(x, y) != 0) { ++nInkNoMsg; }
+                    }
+                }
+                pMapF->status.nCount = 1;
+                snprintf(pMapF->status.aszMsg[0], sizeof(pMapF->status.aszMsg[0]), "%s", "MMMMMMMMMM");
+                ClearSurface();
+                World_TactFrame(&g_world);
+                nInkMsg = 0;
+                for (i32 y = nPadY - 14; y < nPadY - 4; ++y) {
+                    for (i32 x = 5; x < 100; ++x) {
+                        if (SurfPix(x, y) != 0) { ++nInkMsg; }
+                    }
+                }
+                Check(nInkMsg > nInkNoMsg,
+                      "the stack's message is drawn at x 5 / pad origin - 14 (0x1B048, 0x1B0A8)");
+
+                /* The fade gate (0x2250c): with the countdown below 10 the "enemystp" pad goes
+                 * full-screen at alpha 24*(10-count) = 120 (0x225B8); with the banner counter up the
+                 * whole 240x320 is dark-blitted instead and the pad never runs (0x22538). */
+                pMapF->tact.bBusy = 1;              /* the busy arm leaves the countdown at 9 < 10 */
+                g_world.bMapSlot8Byte2 = 0;
+                g_world.nMapUiSlot1  = 0;
+                g_world.nMapUiSlot10 = 5;
+                ClearSurface();
+                World_TactFrame(&g_world);
+                nInkPad = 0;
+                for (i32 y = 0; y < 320; ++y) {
+                    for (i32 x = 0; x < 240; ++x) {
+                        if (SurfPix(x, y) != 0) { ++nInkPad; }
+                    }
+                }
+                g_world.bMapSlot8Byte2 = 0;
+                g_world.nMapUiSlot1  = 10;
+                g_world.nMapUiSlot10 = 5;
+                ClearSurface();
+                World_TactFrame(&g_world);
+                nInkDark = 0;
+                for (i32 y = 0; y < 320; ++y) {
+                    for (i32 x = 0; x < 240; ++x) {
+                        if (SurfPix(x, y) != 0) { ++nInkDark; }
+                    }
+                }
+                Check(nInkPad > nInkDark,
+                      "the no-fade arm blits the enemystp pad (0x225B8); the banner counter dark-blits the screen instead (0x22538)");
+
+                /* Back to the state the mission-end block below expects. */
+                g_world.nUiScreen = nScreenKeep;
+                g_world.nMapUiSlot1 = nSlot1Keep;
+                g_world.nMapUiSlot9 = nSlot9Keep;
+                g_world.nMapUiSlot10 = nSlot10Keep;
+                g_world.bMapSlot8Byte2 = bByte2Keep;
+                g_world.bMapSlot8Byte3 = bByte3Keep;
+                g_world.bMapPlayerInput = bInputKeep;
+                g_world.bMapDrawIsoLayer = bIsoKeep;
+                g_world.tactEnv.cursor.nFlags = nFlagsKeep;
+                g_world.tactEnv.focus.nCamScrollX = nCamXKeep;
+                g_world.tactEnv.focus.nCamScrollY = nCamYKeep;
+                g_world.sTactInput.nTileShiftX = nShiftXKeep;
+                g_world.sTactInput.nTileShiftY = nShiftYKeep;
+                g_world.sTactInput.nUiSlot5 = nSlot5Keep;
+                g_world.sTactInput.nSlot20X = nSlot20Keep;
+                g_world.sTactInput.nSlot21X = nSlot21Keep;
+                g_world.sTactInput.nSlot22Y = nSlot22Keep;
+                g_world.sTactInput.nSlot23H = nSlot23Keep;
+                g_world.sModal.nActionPhaseSave112 = nCur112Keep;
+                g_world.sModal.nActionPhaseSave113 = nProg113Keep;
+                g_world.sModal.bOpen = bModalKeep;
+                pMapF->status.nCount = nStatCntKeep;
+                memcpy(pMapF->status.aszMsg[0], szStatKeep, sizeof(szStatKeep));
+                pMapF->tact.bBusy = bBusyKeep;
+                pMapF->tact.pTrackUnit = pTrackKeep;
+                g_world.pTactState->bPhaseActive = bPhaseKeep;
+                if (pMapF->pSelUnit != NULL) {
+                    pMapF->pSelUnit->bStatus = bSelStatKeep;
+                }
             }
 
             /* Mission end (Part 49). Empty the hidden park and the field so the CheckBattleEnd head

@@ -2034,7 +2034,9 @@ static void Iso_DrawSmallUnitGlyphs(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGa
     i32 nStep;
 
     pIso->bTwoHandWeapon = (u8)(Iso_HandIsWeapon(pUnit->pHandL) || Iso_HandIsWeapon(pUnit->pHandR));
-    if ((pUnit->bFlags & 4) != 0 && (*pGate->apSelWeapon)->bListPri == 0) {
+    /* 0x1CB54/0x1CB60: the selected item's OBJECT record, not the item -- *apSelWeapon is the
+     * TactItem* the original keeps at Map+0x48, and the tested byte is pObj+0xA4 (bListPri). */
+    if ((pUnit->bFlags & 4) != 0 && (*pGate->apSelWeapon)->pObj->bListPri == 0) {
         pIso->bTwoHandWeapon = 0;
     }
 
@@ -2135,7 +2137,7 @@ static void Iso_DrawSmallUnitGlyphs(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGa
             i32 nFacingTerm;
 
             if ((pUnit->bFlags & 4) != 0) {
-                pObj = *pGate->apSelWeapon;
+                pObj = (*pGate->apSelWeapon)->pObj; /* 0x1D308: *(ObjectRec**)pSelWeapon */
             } else if (Iso_HandIsWeapon(pUnit->pHandL)) {
                 pObj = pUnit->pHandL->pObj;
             } else if (Iso_HandIsWeapon(pHandR)) {

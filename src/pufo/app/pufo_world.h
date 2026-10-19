@@ -16,6 +16,7 @@
 #include "game/pufo_font.h"
 #include "game/pufo_geopointer.h" /* GeoscapePointerEnv, the geoscape pointer dispatcher's env */
 #include "game/pufo_geoscape.h"
+#include "game/pufo_isodraw.h"   /* IsoDrawCtx + the iso layer envs, the tactical frame (Part 63) */
 #include "game/pufo_objectrec.h"
 #include "game/pufo_options.h"
 #include "game/pufo_path.h"     /* PathToCellCtx/PathScratch, the walk Unit_PathToCell @ 0x2c2a8 runs */
@@ -489,8 +490,14 @@ typedef struct PufoWorldState {
                                          * widget-56 opener (Map_BuildDeployConfirmYesNo 0x18a68, Part 58) */
     char            aszDeployMsg2[256]; /* unk_E9273, the matching "out" message */
     CamOffset       sTactCamOffset;     /* Map+0x4A40/0x4A41: the pointer drag's camera scratch
-                                         * (Part 60). The reader is the iso renderer, still the open
-                                         * seam; the FocusCtx callers keep per-call scratch today. */
+                                         * (Part 60). Read by the iso layer (IsoViewportGuide's
+                                         * frame and the walker's focus) since Part 63. */
+    /* The tactical frame the shell paints (Part 63): Render_Frame @ 0x22310's default branch over
+     * the live mission. sTactIso is the per-cell draw context the original keeps as one global and
+     * hands to every tactical draw; anTactGroupBase is the 28-entry u16 window (fontSys + 2 * idx)
+     * the iso chain indexes, which PufoFont models as separate group fields. */
+    IsoDrawCtx      sTactIso;
+    u16             anTactGroupBase[PUFO_ISO_GROUP_BASE_COUNT];
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */
@@ -603,6 +610,11 @@ typedef struct WorldHooks {
     /* The LoadGame teardown/frame hooks (LoadGameHooks @ pufo_save.h). */
     void (*pfnRenderFrame)(void *pUser);
     void (*pfnStartUiShutdown)(void *pUser);
+    /* GX_Present @ 0x27788, the tail Render_Frame reaches at 0x22600 (Part 63). The geoscape branch
+     * never gets here -- Geoscape_Draw presents itself (0x22328) -- so only the tactical seam uses
+     * this hook. */
+    i32 (*pfnPresentFrame)(void *pUser);
+    void *pPresentUser;
     /* The geoscape frame's control plumbing: the pad blits every UiControl_BlitActivePad call makes,
      * the Map+0x60 word UiControl_HitTest clears, and the colour pair Gfx_PackRgb565Pair packs. */
     const UiControlHitCtx *pHit;
@@ -746,6 +758,15 @@ bool World_MissionCancelEnd(PufoWorldState *pW);
 bool World_bTactPointerLive(const PufoWorldState *pW);
 void World_TactPointerMove(PufoWorldState *pW, TactPointerWorld *pPtr, i32 nX, i32 nY, bool bDown);
 void World_TactPointerUp(PufoWorldState *pW, TactPointerWorld *pPtr);
+
+/* Render_Frame @ 0x22310's tactical branch over the live mission (Part 63): the cursor tick, the
+ * iso layer (MapView_DrawIsoLayer @ 0x21e2c) and its frame furniture, the modal dialog
+ * (UiModal_DrawDialog @ 0x264a0, whose button boxes land in the input state's slots 20..23 that the
+ * pen's status-line arm reads), the fade block and the status stack, then the present hook.
+ * Screens 0, 8 and 9 are wired; every other screen -- and every non-mission state -- leaves
+ * World_bTactFrameLive false and the caller keeps its own frame path. */
+bool World_bTactFrameLive(const PufoWorldState *pW);
+void World_TactFrame(PufoWorldState *pW);
 
 /* GeoscapeUi_FreeAll(bFreeWorld 1) plus the nav controls and the site records. */
 void World_Free(PufoWorldState *pW);

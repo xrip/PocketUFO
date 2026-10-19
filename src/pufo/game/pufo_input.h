@@ -92,6 +92,9 @@ typedef struct TactInputState {
     i32  nSlot23H;         /* 0xbc unk_113A74: status row height, must be > 0 */
     i32  nSlot24Hit;       /* 0xc0 unk_113A78: 1 left column, 2 right, 0 none */
     u8   bEdgeTestOn;      /* 0x150D5 anPhaseSave0[93]: run the HUD edge tests */
+    u8   bActionReady;     /* 0x150D6 anPhaseSave0[94]: the viewport guide's ready byte
+                            * (IsoViewportGuide.bActionReady). Nothing ported writes it, so the
+                            * guide draws its not-ready frame (recorded gap). */
     u8   bClickCommits;    /* 0x150D7 anPhaseSave0[95]: a click on the same cell acts */
     u8   bDragScrollA;     /* 0x150D8 anPhaseSave0[96] */
     u8   bDragScrollB;     /* 0x150D9 anPhaseSave0[97] */

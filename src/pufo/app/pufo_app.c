@@ -130,6 +130,7 @@ static i32              g_aTitlesRowRec[44];   /* aTitlesRowRecs @ 0xB35D8 */
 static u8              *g_apTitlesGlyphs[5];   /* unk_1571A0..0x1571B0 */
 
 static void App_PresentLoadedSurface(void);
+static i32  App_PresentHook(void *pUser); /* GX_Present @ 0x27788; WorldHooks.pfnPresentFrame's copy */
 static void App_TitlesToStartup(void *pUser);
 static i32 App_HookLoadGame(i32 nSlot, void *pUser);
 static i32 App_HookSaveGame(i32 nSlot, void *pUser);
@@ -232,6 +233,8 @@ static void App_HookNewGame(void *pUser)
      * pointer path uses, plus the colour pair the menu draws with. */
     hooks.pHit  = &g_pointerWorld.hit;
     hooks.pColor = &g_color;
+    hooks.pfnPresentFrame = App_PresentHook; /* GX_Present @ 0x27788, the tail the tact frame reaches */
+    hooks.pPresentUser    = NULL;
     hooks.pnAnimPhase = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18: the one cell the hit-test clear
                                              * and the geoscape pulse's phase gate share */
     hooks.pnMapPhase = &g_nAnimPhase;       /* nMapPhase @ 0x1139EF (Map + 0x37), the byte the 0xC352
@@ -391,6 +394,8 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pfnStartUiShutdown = App_ShutdownStartUi;
     hooks.pHit  = &g_pointerWorld.hit;
     hooks.pColor = &g_color;
+    hooks.pfnPresentFrame = App_PresentHook; /* GX_Present @ 0x27788, the tail the tact frame reaches */
+    hooks.pPresentUser    = NULL;
     hooks.pnAnimPhase = (i32 *)&g_nUiSlot0; /* the same Map + 0x60 cell, as in App_HookNewGame */
     hooks.pnMapPhase = &g_nAnimPhase;       /* nMapPhase @ 0x1139EF; Save_ReadTGameData 0x444E0 is its
                                              * other writer, the save reader's own copy */
@@ -659,8 +664,11 @@ static i32 App_PresentHook(void *pUser)
 
 /* Render_Frame @ 0x22310 for the shell. The original tests Map.bGeoscapeMode (Map_bGeoscapeUi @
  * Map+0x44) at 0x2231c, BEFORE Map_nUiScreen, so a world in geoscape mode takes the geoscape branch
- * whatever the ui screen cell says; the rest is the start menu (17) and the credits (0x10). The
- * tactical branches need the subsystem envs the shell does not own yet. */
+ * whatever the ui screen cell says. A live mission on a screen the world's frame builder covers
+ * (0, 8, 9) draws through World_TactFrame (Part 63); the rest is the start menu (17) and the
+ * credits (0x10), because the remaining tactical branches need subsystem envs the shell does not
+ * own yet (the roster/status/labeled/modal-panel/top-bar/action pads, the minimap, the command
+ * pads, the markers, the debrief banner, the confirm dialog, Cydonia). */
 static void App_DrawFrame(void)
 {
     MainMenuEnv    mm;
@@ -673,6 +681,13 @@ static void App_DrawFrame(void)
         rf.pfnGeoscapeDraw = App_GeoscapeDrawThunk;
         rf.pfnPresent      = App_PresentHook; /* the frame end's own thunk, not this one (0x22328) */
         (void)Render_Frame(&rf);
+        return;
+    }
+
+    /* The tactical frame (Part 63): the world builds Render_Frame's env over its own live mission
+     * and presents through WorldHooks.pfnPresentFrame, the shell's copy of GX_Present @ 0x27788. */
+    if (g_bWorldReady && World_bTactFrameLive(&g_world)) {
+        World_TactFrame(&g_world);
         return;
     }
 

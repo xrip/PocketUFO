@@ -22,6 +22,7 @@
 #include "game/pufo_tacthud.h" /* TactHud_OpenInventory (0x16ef4), the inventory the mission opens (Part 55) */
 #include "game/pufo_tactctl.h" /* Map_BuildDeployConfirmYesNo @ 0x18a68, the deploy confirm the shell wires (Part 58) */
 #include "game/pufo_menu.h"    /* Menu_ResizeWindow @ 0x19930 (widget 58), the last deferred handler (Part 61) */
+#include "game/pufo_renderframe.h" /* Render_Frame @ 0x22310 + the frame envs, the tactical frame (Part 63) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -1526,6 +1527,50 @@ static i32 World_TactPanelWrapHook(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, con
     return UiPanel_WrapText(pPanel, nMaxW, nLineStart, pszText); /* 0x37144 */
 }
 
+/* The iso layer indexes the font block's sprite-group bases as `fontSys + 2 * idx` with no bound test
+ * (0x1CE70 is `AND R3,R0,#0xFF`, 0x1CE74 `ADD R3,R5,R3,LSL#1`, 0x1CE7C `LDRH R3,[R3]`), and
+ * Tact_MapTypeToGlyphIdx hands out 5..8 for unit types 0..3, 18 for types 5..8, 13 for type 16,
+ * 14 for type 17, 9..12 for a probe-table match at Map+0x16..0x19, and `nType + 5` otherwise --
+ * a type 22 unit reaches fontSys + 0x36. Hence 28 entries (PUFO_ISO_GROUP_BASE_COUNT). The shell
+ * keeps its own copy in world order because PufoFont spreads the same words over named fields.
+ * Index 15 (fontSys + 0x1E) has NO writer: 0x158286 has no cross-reference in the IDB at all, so a
+ * unit type 10 reads the zero the global was born with -- reproduced as 0, not invented. */
+static void World_FillTactGroupBases(PufoWorldState *pW)
+{
+    const PufoFont *pF = pW->pFont;
+    u16            *a  = pW->anTactGroupBase;
+    i32             i;
+
+    if (pF == NULL) {
+        return;
+    }
+    for (i = 0; i < 5; ++i) {
+        a[i] = pF->anFlagSprBase[i];        /* +0x00 blanks, +0x02 cursor, +0x04 terrain,
+                                             * +0x06 craft, +0x08 UFO modules */
+    }
+    for (i = 0; i < 4; ++i) {
+        a[5 + i] = pF->anXcomSprBase[i];    /* +0x0A..0x10 xcom_0..3 */
+    }
+    for (i = 0; i < 4; ++i) {
+        a[9 + i] = pF->anAlienSprBase[i];   /* +0x12..0x18 the four alien sets */
+    }
+    a[13] = pF->nCivmSprBase;               /* +0x1A */
+    a[14] = pF->nCivfSprBase;               /* +0x1C */
+    a[15] = 0;                              /* +0x1E: never written by the original */
+    a[16] = pF->nHandobBase;                /* +0x20 */
+    a[17] = pF->nFloorobBase;               /* +0x22 */
+    a[18] = pF->nTanksBase;                 /* +0x24 */
+    a[19] = pF->nBigObsBase;                /* +0x26 */
+    a[20] = pF->nGlyphBase;                 /* +0x28 */
+    a[21] = pF->nBulletsBase;               /* +0x2A */
+    a[22] = pF->nBaseBitsBase;              /* +0x2C */
+    a[23] = pF->nScangBase;                 /* +0x2E */
+    a[24] = pF->nSmokeBase;                 /* +0x30 */
+    a[25] = pF->nExplBase;                  /* +0x32 */
+    a[26] = pF->nMapBitsBase;               /* +0x34 */
+    a[27] = pF->nTotalSprFrames;            /* +0x36, the one word past the documented bases */
+}
+
 /* Map_BuildMissionTerrain reaches Font_LoadTactSprites @ 0x257c4 through its hook because the loader
  * ends with Font_BuildIndex, which rebuilds the index the builder's own passes then read. The env is
  * built from the same Map scalars the original reads, exactly as tests/test_font.c's TacEnv does. */
@@ -1547,6 +1592,8 @@ static void World_TactLoadTactSpritesHook(void *pUser)
     env.nUfoClassCount   = 8;
     env.nVariantCount    = 5;
     Font_LoadTactSprites(pW->pFont, &env);
+    World_FillTactGroupBases(pW); /* the iso layer's fontSys + 2*idx window, refreshed with the loaded
+                                   * group bases (Part 63) */
 }
 
 static bool World_TactSoundInitHook(const char *pszPrefix, void *pUser)
@@ -2226,10 +2273,15 @@ static void World_TactClearFrameScratch(void *pUser)
  * tactEnv on each tick -- the same live-read semantics the original gets from its globals.
  * ========================================================================== */
 
-/* The caller's Render_Frame thunk. The shell calls it with pW, the same user it hands the
- * LoadGame teardown's pfnRenderFrame. */
+/* The shell's repaint request. Screens the frame builder does not cover yet (every tact screen
+ * outside 0/8/9) fall back to the caller's Render_Frame thunk, the same user the LoadGame
+ * teardown's pfnRenderFrame gets; the covered screens draw through World_TactFrame (Part 63). */
 static void World_TactRenderFrame(PufoWorldState *pW)
 {
+    if (World_bTactFrameLive(pW)) {
+        World_TactFrame(pW);
+        return;
+    }
     if (pW->pFrameHooks != NULL && pW->pFrameHooks->pfnRenderFrame != NULL) {
         pW->pFrameHooks->pfnRenderFrame(pW);
     }
@@ -2253,6 +2305,318 @@ static bool World_TactStatusShouldRender(void *pUser)
 static void World_TactStatusRender(void *pUser)
 {
     World_TactRenderFrame((PufoWorldState *)pUser);
+}
+
+/* --- the tactical frame (Part 63) ---------------------------------------------------------
+ *
+ * Render_Frame @ 0x22310's default branch over the live mission. Every cell the dispatcher and
+ * its callees read has exactly one port owner, so the envs below are built from the state's own
+ * fields: tactEnv.focus for the camera scroll 0x15130/34, tactEnv.cursor.nFlags for the layer
+ * counter 0x15138, sTactInput for the tile shift 0x34/35 and the pen's slots 20..23, sModal for
+ * the modal bank 0x90..0xAC plus its two scratch cells, nMapUiSlot1/10 for the fade pair, and
+ * apTactPads[PUFO_UIPAD_ENEMYSTEP] for the fade pad. The Map+0x37 phase byte is the caller's
+ * cell, handed to the shell through WorldHooks.pnMapPhase and kept in pW->pnMapPhase.
+ *
+ * Screens 0, 8 and 9 are the iso group's three that need NOTHING beyond the iso layer, the modal
+ * dialog and the fade/status tail. Screens 3/5/7/0xA/0xB/0xC/0xF draw the iso layer plus their own
+ * furniture (roster pads, status pads, labelled pads, modal panels, top bar, action buttons) whose
+ * envs the shell does not build, and 1/2/4/6/0xD/0x13/0x14-15 replace the iso layer with a
+ * different env; Render_Frame calls MapView_DrawIsoLayer with no null test (0x22414), so those
+ * screens stay on the caller's own frame path and World_bTactFrameLive says no for them.
+ *
+ * Two deviations, both recorded in docs/parity/game-core.md:
+ *   1. The cursor-direction tick runs HERE, before Render_Frame, and RenderFrameEnv.pCursorDir is
+ *      left NULL. Render_Frame's env snapshots its scalars at call time, while the original reads
+ *      dword_113A40 twice: the tick at 0x22360 moves it and the fade test at 0x2250c reads the
+ *      moved value. Ticking first and handing the moved cell to nFadeIn keeps one cell for both.
+ *   2. pSelUnit goes to the iso layer as the live Map.pSelUnit, NULL included. The original's
+ *      multi-target bar gate at 0x22080 calls Unit_bIsOperative with no null test (the recorded
+ *      original bug); on Win64 a mission with no selected unit faults there exactly where the
+ *      original read its own memory. */
+
+bool World_bTactFrameLive(const PufoWorldState *pW)
+{
+    if (pW == NULL || !pW->bTactLive || pW->bTactFlag == 0
+        || pW->pTactMap == NULL || pW->pTactState == NULL) {
+        return false;
+    }
+    return pW->nUiScreen == 0 || pW->nUiScreen == 8 || pW->nUiScreen == 9;
+}
+
+/* StatusMsg_DrawStack @ 0x1afc4's three calls, straight through: the colour pair at 0x1AFF8,
+ * Text_DrawString at 0x1B0A8 (x 5, the stack's running y), and the four hud-pad conditions. */
+static void World_TactStatusSetColor(u8 r1, u8 g1, u8 b1, u8 r2, u8 g2, u8 b2, void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+    const GfxColorEnv    *pColor = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pColor : NULL;
+
+    if (pColor != NULL) {
+        (void)Gfx_PackRgb565Pair(pColor, r1, g1, b1, r2, g2, b2);
+    }
+}
+
+static void World_TactStatusDrawText(i32 x, i32 y, const char *pszMsg, void *pUser)
+{
+    (void)pUser;
+    Text_DrawString(x, y, pszMsg);
+}
+
+/* 0x1B00C, the stack's first condition: unk_1139F0 @ Map+0x38. */
+static bool World_TactStatusInputOn(void *pUser)
+{
+    return ((const PufoWorldState *)pUser)->bMapPlayerInput != 0;
+}
+
+static bool World_TactStatusSelOperative(void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+
+    return pW->pTactMap != NULL && pW->pTactMap->pSelUnit != NULL
+        && Unit_bIsOperative(pW->pTactMap->pSelUnit);
+}
+
+static i32 World_TactStatusHudPadY(void *pUser)
+{
+    const PadImage *pPad = ((const PufoWorldState *)pUser)->apTactPads[PUFO_UIPAD_HUD];
+
+    return (pPad != NULL) ? pPad->nOriginY : 0;   /* dword_113AB4->nOriginY, 0x1B048 */
+}
+
+/* PadImage_BlitDecimal @ 0x36c60 writes nOriginX/nOriginY and then calls PadImage_BlitEx(pad, 0)
+ * per digit (0x36CE0, 0x36D40); the port injects that call as a hook, so the shell makes it. */
+static void World_TactDecimalBlit(PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    (void)PadImage_BlitEx(pPad, 0);
+}
+
+void World_TactFrame(PufoWorldState *pW)
+{
+    GameMap              *pMap;
+    TactState            *pTS;
+    const PufoFont       *pFont;
+    const WorldHooks     *pHooks;
+    const UiControlHitCtx *pHit;
+    PadImage             *pHudPad;   /* non-const: TactHudPanelEnv.pHudPad is a PadImage* */
+    u8                    nPhase;
+    CursorDirState        dir;
+    IsoGrid               grid;
+    IsoAnimGlobals        anim;
+    IsoSelectGate         select;
+    IsoUnitDrawGate       unit;
+    IsoSpriteBases        bases;
+    IsoHeightGate         height;
+    IsoArrowGate          arrow;
+    IsoViewportGuide      guide;
+    TactHudPanelEnv       panel;
+    StatusDrawHooks       statusHooks;
+    IsoLayerEnv           layer;
+    UiModalAnim           modalAnim;
+    UiModalLayout         modalLayout;
+    RenderFrameEnv        rf;
+    i32                   nStatusOutY;
+    bool                  bModalOpen;
+
+    if (!World_bTactFrameLive(pW)) {
+        return;
+    }
+    pMap  = pW->pTactMap;
+    pTS   = pW->pTactState;
+    pFont = pW->pFont;
+    pHooks = pW->pFrameHooks;
+    pHit  = (pHooks != NULL) ? pHooks->pHit : NULL;
+    pHudPad = pW->apTactPads[PUFO_UIPAD_HUD];
+    nPhase = (pW->pnMapPhase != NULL) ? *pW->pnMapPhase : 0; /* nMapPhase @ 0x1139EF (Map+0x37) */
+    bModalOpen = pW->sModal.bOpen;
+
+    /* 0x22360, the tick every tactical screen runs (deviation 1: here, not inside Render_Frame). */
+    dir.bSlot8Byte2 = pW->bMapSlot8Byte2;
+    dir.bSlot8Byte3 = pW->bMapSlot8Byte3;
+    dir.nSlot9      = pW->nMapUiSlot9;
+    dir.nSlot10     = pW->nMapUiSlot10;
+    TactHud_TickCursorDir(&dir, pMap->tact.bBusy != 0, pMap->tact.pTrackUnit != NULL,
+                          pTS->bPhaseActive != 0);
+    pW->bMapSlot8Byte2 = dir.bSlot8Byte2;
+    pW->bMapSlot8Byte3 = dir.bSlot8Byte3;
+    pW->nMapUiSlot9    = dir.nSlot9;
+    pW->nMapUiSlot10   = dir.nSlot10;
+
+    /* --- the per-cell chain --- */
+    grid.apCells = pW->apTactCells;          /* the original's Map.apCells pointer table @ 0x15338 */
+    grid.nDimX   = pMap->geom.nDimX;
+    grid.nDimY   = pMap->geom.nDimY;
+
+    anim.nAnimPhase         = nPhase;
+    anim.nAnimPhaseScratch0 = (u8)pMap->nAnimPhase;   /* 0xF8 */
+    anim.bPhaseActive       = pTS->bPhaseActive;
+
+    select.bQueueActive   = pTS->bQueueActive;
+    select.nActionLatch   = pMap->bActionLatch;
+    select.nMapLayers     = pMap->nMapLayers;
+    select.nAnimPhase     = pMap->nAnimPhase;
+    memcpy(select.apMultiTargets, pMap->apMultiTargets, sizeof(select.apMultiTargets));
+
+    unit.apCells      = pW->apTactCells;
+    unit.pSelUnit     = pMap->pSelUnit;
+    unit.bQueueActive = pTS->bQueueActive;
+    unit.bSelectFlag  = pW->bMapUnk1511E;               /* unk_128AD6 @ 0x1511E */
+    unit.nAnimPhase   = (u8)pMap->nAnimPhase;
+    unit.nMapPhase    = nPhase;
+    unit.paGroupBase  = pW->anTactGroupBase;            /* fontSys + 2*idx, filled with the font load */
+    unit.nCursorBase  = (pFont != NULL) ? pFont->anFlagSprBase[1] : 0;   /* fontSys + 0x02 */
+    unit.nHandobBase  = (pFont != NULL) ? pFont->nHandobBase : 0;        /* fontSys + 0x20 */
+    unit.apSelWeapon  = &pMap->pSelWeapon;              /* 0x113A00, the selected weapon ITEM */
+    unit.pSelectFrame = pW->apTactPads[PUFO_UIPAD_SELSOLD];             /* pPadSelSold @ 0x156928 */
+    unit.paTypeProbe  = pMap->abTypeProbe;              /* 0x16..0x19 */
+
+    bases.nCursorBase  = (pFont != NULL) ? pFont->anFlagSprBase[1] : 0; /* fontSys + 0x02 */
+    bases.nFloorobBase = (pFont != NULL) ? pFont->nFloorobBase : 0;     /* +0x22 */
+    bases.nBulletsBase = (pFont != NULL) ? pFont->nBulletsBase : 0;     /* +0x2A */
+    bases.nScangBase   = (pFont != NULL) ? pFont->nScangBase : 0;       /* +0x2E */
+    bases.nSmokeBase   = (pFont != NULL) ? pFont->nSmokeBase : 0;       /* +0x30 */
+    bases.nExplBase    = (pFont != NULL) ? pFont->nExplBase : 0;        /* +0x32 */
+    bases.nGlyphBase   = (pFont != NULL) ? pFont->nGlyphBase : 0;       /* +0x28 */
+
+    height.bFireStatus2      = pW->bMapFire2;           /* byte_113A0A @ 0x52 */
+    height.bFireStatus9      = pMap->bFireStatus9;      /* unk_113A11 @ 0x59 */
+    height.nFireTgtX         = pMap->nMeleeCellX;       /* unk_1279F8 @ 0x14040 */
+    height.nFireTgtY         = pMap->nMeleeCellY;       /* 0x14044 */
+    height.nFireTgtZ         = pMap->nMeleeCellLayer;   /* 0x14048 */
+    height.nHeightGlyphWord  = (u32)pMap->aim.anAimRow[10]; /* 0x14000, the IDB's nHeightGlyphId */
+    height.nHeightSrcX       = pMap->nHeightSrcX;       /* 0x14060 */
+    height.nHeightSrcY       = pMap->nHeightSrcY;
+    height.nHeightSrcZ       = pMap->nHeightSrcZ;
+    height.nFireTickProgress = pMap->nFireTickProgress; /* 0x1405C */
+
+    arrow.bFireAnimActive = pTS->gap_70112[1];          /* TactState+0x111E1 */
+    arrow.nPhaseCounter   = pTS->nPhaseCounter;         /* 0x1118C */
+    arrow.bFireStatus1    = pMap->bFireStatus1;         /* unk_113A09 @ 0x51 */
+    arrow.adMtX           = pMap->adMtX;                /* 0x13EE8 */
+    arrow.adMtY           = pMap->adMtY;
+    arrow.adMtZ           = pMap->adMtZ;
+    arrow.anAimRow        = pMap->aim.anAimRow;         /* 0x13FD8 */
+    arrow.nRowId          = pMap->aim.nRowId;           /* 0x14088 */
+    arrow.bTrajHitStop    = pMap->bTrajHitStop;         /* 0x1406D */
+    arrow.pThrownItem     = pMap->pArrowThrownItem;     /* 0x14070: no writer yet (recorded gap) */
+
+    guide.bGameTickHold       = pW->bMapTickHold;        /* 0x5A */
+    guide.bActionReady        = pW->sTactInput.bActionReady;  /* anPhaseSave0[94] @ 0x150D6 */
+    guide.bPlayerInputEnabled = pW->bMapPlayerInput;     /* unk_1139F0 @ 0x38 */
+    guide.bCursorBusy         = pMap->tact.bBusy ? 1 : 0;
+    guide.bDeployPanelOpen    = pW->sTactInput.bDeployPanelOpen;   /* 0x15110 */
+    guide.nHudPadHeight       = (pHudPad != NULL) ? (i32)pHudPad->uHeight : 0;
+    guide.nUiSlot5            = pW->sTactInput.nUiSlot5;
+
+    panel.pHudPad             = pHudPad;
+    panel.apDigitPads         = &pW->apTactPads[PUFO_UIPAD_BTN(0)]; /* the eleven "b0".."b10" digits */
+    panel.pSelUnit            = pMap->pSelUnit;
+    panel.bDeployPanelOpen    = pW->sTactInput.bDeployPanelOpen;
+    panel.bPlayerInputEnabled = pW->bMapPlayerInput;
+    panel.bTuSuppressed       = pTS->bAiActionActive;    /* TactState+0x111E2 */
+    panel.nBigObsBase         = (pFont != NULL) ? pFont->nBigObsBase : 0;
+    panel.nAnimCounter        = pW->sTactInput.nUiSlot25;
+    panel.nAnimMode           = pW->sTactInput.nUiSlot26;
+
+    memset(&statusHooks, 0, sizeof(statusHooks));
+    statusHooks.pfnSetColor            = World_TactStatusSetColor;
+    statusHooks.pfnDraw                = World_TactStatusDrawText;
+    statusHooks.pfnPlayerInputEnabled  = World_TactStatusInputOn;  /* existing thunk, 0x1B00C */
+    statusHooks.pfnSelectedIsOperative = World_TactStatusSelOperative;
+    statusHooks.pfnIsBusy              = World_TactStatusIsBusy;
+    statusHooks.pfnHudPadOriginY       = World_TactStatusHudPadY;
+    statusHooks.pUser                  = pW;
+
+    /* --- the iso layer env --- */
+    memset(&layer, 0, sizeof(layer));
+    layer.nMapDimX        = pMap->geom.nDimX;
+    layer.nMapDimY        = pMap->geom.nDimY;
+    layer.nCamScrollX     = pW->tactEnv.focus.nCamScrollX;   /* 0x15130, tactEnv.focus owns it */
+    layer.nCamScrollY     = pW->tactEnv.focus.nCamScrollY;   /* 0x15134 */
+    layer.nLayerCount     = (i8)pW->tactEnv.cursor.nFlags;   /* 0x15138 */
+    layer.nTileCountX     = pW->sTactInput.nTileShiftX;      /* 0x34 */
+    layer.nTileCountY     = pW->sTactInput.nTileShiftY;      /* 0x35 */
+    layer.nMapPhase       = nPhase;                          /* 0x37 */
+    layer.pGrid           = &grid;
+    layer.pAnim           = &anim;
+    layer.pSelect         = &select;
+    layer.pUnit           = &unit;
+    layer.pBases          = &bases;
+    layer.pHeight         = &height;
+    layer.pArrow          = &arrow;
+    layer.pGuide          = &guide;
+    layer.pBank           = (pHooks != NULL && pHooks->pBank != NULL) ? pHooks->pBank->aCtl : NULL;
+    layer.pPanel          = &panel;
+    layer.pColor          = (pHooks != NULL) ? pHooks->pColor : NULL;
+    layer.pfnDecimalBlit  = World_TactDecimalBlit;
+    layer.pfnCtlBlit      = (pHit != NULL) ? pHit->pfnBlit : NULL;
+    layer.pfnCtlBlitEx    = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
+    layer.pCtlUser        = (pHit != NULL) ? pHit->pUser : NULL;
+    layer.pStatus         = &pMap->status;
+    layer.pStatusHooks    = &statusHooks;
+    layer.pSelUnit        = pMap->pSelUnit;
+    layer.bDeployPanelOpen = pW->sTactInput.bDeployPanelOpen;
+    layer.nHudPadHeight   = guide.nHudPadHeight;
+    layer.pLookCtl        = &pW->sTactLookCtl;               /* unk_1571E4 */
+    layer.pPadLabel       = (pW->pAssets != NULL && pW->pAssets->pTextRecs != NULL)
+                              ? (const char *)pW->pAssets->pTextRecs + 67 * PUFO_TEXT_REC_STRIDE
+                              : NULL;                        /* aTextRecs + 0x35A7 (205 * 67) */
+    layer.nUiScreen       = pW->nUiScreen;
+
+    /* --- the modal dialog: the bank's cells and its two scratch cells --- */
+    modalAnim.nCursor      = pW->sModal.nActionPhaseSave112;  /* 0x128AA0 = Map+0x150E8 */
+    modalAnim.bProgressive = pW->sModal.nActionPhaseSave113;  /* 0x128AA4 = Map+0x150EC */
+    modalAnim.nAnimPhase   = nPhase;                          /* 0x26814 reads Map+0x37 as a byte */
+    modalAnim.nBand        = nPhase;                          /* 0x26648 reads the same cell, mod 4 */
+    modalAnim.nSelButton   = pW->sModal.nField48;             /* apUiSlotsA[24] @ Map+0xC0 */
+    modalAnim.pColor       = (pHooks != NULL) ? pHooks->pColor : NULL;
+    memset(&modalLayout, 0, sizeof(modalLayout));
+
+    /* --- the dispatch env --- */
+    memset(&rf, 0, sizeof(rf));
+    rf.bGeoscapeMode   = pW->bGeoscapeUi;   /* 0x2231C tests it before the screen id */
+    rf.nUiScreen       = pW->nUiScreen;
+    rf.bDrawIsoLayer   = pW->bMapDrawIsoLayer;
+    rf.pfnPresent      = (pHooks != NULL) ? pHooks->pfnPresentFrame : NULL; /* GX_Present @ 0x27788 */
+    rf.pPresentUser    = (pHooks != NULL) ? pHooks->pPresentUser : NULL;
+    rf.bCursorBusy       = pMap->tact.bBusy != 0;
+    rf.bCursorTrackUnit  = pMap->tact.pTrackUnit != NULL;
+    rf.bCursorUnk70115   = pTS->bPhaseActive != 0;
+    rf.pIso              = &pW->sTactIso;   /* the original's one IsoDrawCtx global */
+    rf.pIsoLayer         = &layer;
+    rf.pTextRecs         = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL;
+    rf.pColor            = layer.pColor;
+    rf.pfnBlit           = (pHit != NULL) ? pHit->pfnBlit : NULL;
+    rf.pfnBlitEx         = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
+    rf.pBlitUser         = (pHit != NULL) ? pHit->pUser : NULL;
+    rf.pnActionPhaseSave112 = &pW->sModal.nActionPhaseSave112;
+    rf.pModalAnim        = &modalAnim;
+    rf.bModalActive      = bModalOpen ? 1 : 0;
+    rf.nModalWidth       = pW->sModal.anRect12_14[0];
+    rf.nModalRec         = pW->sModal.anRect12_14[1];
+    rf.nModalLines       = pW->sModal.anRect12_14[2];
+    rf.pszModalBtn1      = (const char *)pW->sModal.pLabel15;
+    rf.pszModalBtn2      = (const char *)pW->sModal.p17;
+    rf.pModalLayout      = &modalLayout;
+    rf.nFadeCount        = pW->nMapUiSlot1;                     /* Map_nBannerFadeTicks @ 0x64 */
+    rf.nFadeIn           = pW->nMapUiSlot10;                    /* dword_113A40 @ 0x88, post-tick */
+    rf.pFadePad          = pW->apTactPads[PUFO_UIPAD_ENEMYSTEP]; /* pPadEnemyStep @ 0x156AA0 */
+    rf.pStatusStack      = &pMap->status;
+    rf.pnStatusOutY      = &nStatusOutY;  /* Map.nStatusDrawY: the iso tail and the fade tail share it */
+    rf.pStatusHooks      = &statusHooks;
+
+    (void)Render_Frame(&rf);
+
+    /* What the frame moved stays in the cells that own it. Only the modal arm writes the layout,
+     * so the pen's status-line cells are touched only when the dialog was drawn (0x266D4,
+     * 0x268E4, 0x268F0, 0x26AE4). */
+    pW->sModal.nActionPhaseSave112 = modalAnim.nCursor;
+    pW->sModal.nActionPhaseSave113 = modalAnim.bProgressive;
+    if (bModalOpen) {
+        pW->sTactInput.nSlot20X = modalLayout.nButtonX[0];
+        pW->sTactInput.nSlot21X = modalLayout.nButtonX[1];
+        pW->sTactInput.nSlot22Y = modalLayout.nButtonY;
+        pW->sTactInput.nSlot23H = modalLayout.nButtonCount;
+    }
 }
 
 /* TurnHooks @ 0x4d950. The cursor triple is the TactCursor the launch owns: nX @ 0x15128,

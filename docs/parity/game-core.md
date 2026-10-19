@@ -19634,3 +19634,72 @@ spawn triple and v124 pair, the one-byte craft tiles, the two funding globals in
 and screen 0 closed by the tactical branch. Mutations 3/3: a wrong cursor value, a wrong spawn-tile
 value and a wrong funding slot each produce exactly one red. The chunk ORDER the driver writes stays
 pinned in tests/test_save.c.
+
+## Unit 124 - the shell's tactical frame (Part 63)
+
+Render_Frame @ 0x22310's default branch now runs over the live mission. World_TactFrame
+(src/pufo/app/pufo_world.c) builds the whole env chain and World_bTactFrameLive reports which screens it
+covers: 0 (the map), 8 (the quit-confirm map screen, 0x18E6C writes it) and 9 (the deploy confirm,
+0x18DE0) - the three iso-group screens that need nothing beyond MapView_DrawIsoLayer @ 0x21e2c, the modal
+dialog @ 0x264a0 and the fade/status tail. Every other screen leaves the seam off: 3/5/7/0xA/0xB/0xC/0xF
+draw the iso layer plus furniture envs (roster pads, status pads, labelled pads, modal panels, top bar,
+action buttons) the shell does not build, and 1/2/4/6/0xD/0x13/0x14/0x15 replace the iso layer with a
+different env; Render_Frame calls MapView_DrawIsoLayer with no null test (0x22414), so those screens keep
+the caller's own frame path.
+
+Cell owners the env reads - one owner each, every one already modelled: tactEnv.focus for the camera
+0x15130/34; tactEnv.cursor.nFlags for the layer counter 0x15138; sTactInput for the tile counts 0x34/35,
+the deploy flag 0x15110, the edge byte apUiSlotsA[5], anPhaseSave0[94] @ 0x150D6, the anim pair 25/26 and
+the pen's status cells 20..23 (written back only when the dialog ran: 0x266D4/0x268E4/0x268F0/0x26AE4);
+sModal for the bank 0x90..0xAC plus its scratch pair 112/113 (0x128AA0/0x128AA4 = Map+0x150E8/0x150EC);
+Map+0x37 through WorldHooks.pnMapPhase (pW->pnMapPhase); GameMap for 0xF8 nAnimPhase, bActionLatch,
+abTypeProbe 0x16..0x19, the aim block, the melee cell triple 0x14040/44/48, nHeightSrcX/Y/Z 0x14060/64/68,
+nFireTickProgress 0x1405C, adMtX/Y/Z, bFireStatus1/9, bTrajHitStop, status and tact; TactState for
+0x1118C, 0x111D6, 0x111E1, 0x111E2, 0x111E3; the pad table for the HUD pad 43, the eleven digits 32..42,
+selsold 47 (0x156928) and enemystp 50 (0x156AA0); anTactGroupBase for the 28-entry font window.
+
+anTactGroupBase is the window the iso layer indexes as fontSys + 2 * idx with no bound test (0x1CE70 ANDs
+the index to a byte, 0x1CE7C does the LDRH): indices 5..8 for unit types 0..3 (the xcom sets), 18 for
+types 5..8 (tanks), 13/14 for types 16/17 (civf/civm), 9..12 for a probe match, and nType + 5 otherwise -
+a type 22 unit reaches fontSys + 0x36, which is why the window is 28 entries. Index 15 (fontSys + 0x1E,
+unit type 10) has no writer at all: 0x158286 has zero cross-references in the IDB, so the window keeps 0
+there and a comment records it at that address. The window is refilled with every Font_LoadTactSprites
+call (World_TactLoadTactSpritesHook), because the group bases are the running frame counters.
+
+Deviations:
+1. The cursor tick runs in the shell BEFORE Render_Frame and RenderFrameEnv.pCursorDir stays NULL.
+   Render_Frame's env snapshots its scalars at call time; the original reads dword_113A40 twice - the tick
+   at 0x22360 moves it, the fade test at 0x2250c reads the moved value. Ticking first and handing the
+   moved cell to nFadeIn keeps one cell for both, which the env shape cannot do otherwise.
+2. pSelUnit goes to the iso layer as the live Map.pSelUnit, NULL included. The original's multi-target
+   gate at 0x22080 calls Unit_bIsOperative with no null test; on Win64 that read faults where the original
+   read its own memory. Recorded, not papered over.
+3. StatusMsg_DrawStack's colour pair and text calls (0x1AFF8, 0x1B0A8) and its four conditions are
+   injected as StatusDrawHooks: Gfx_PackRgb565Pair over the caller's GfxColorEnv, Text_DrawString,
+   bMapPlayerInput, Unit_bIsOperative(pSelUnit), tact.bBusy, and the HUD pad's nOriginY (dword_113AB4).
+4. PadImage_BlitDecimal's digit blit (0x36CE0, 0x36D40) is the port's hook, so the shell makes it as
+   PadImage_BlitEx(pad, 0).
+5. Map+0x14070 has no port writer, so the shell holds GameMap.pArrowThrownItem NULL; the arrow glyph's
+   unguarded dereference stays the original's.
+
+Type corrections made for this unit:
+- IsoUnitDrawGate.apSelWeapon was ObjectRecFull **. The original's Map+0x48 is a TactItem *: 0x1CB60
+  tests pObj+0xA4 (bListPri) and 0x1D308 reads pObj->aItemQty[51], and Tact_SetFireModeAimed @ 0x17790
+  reads the item's +6 ammo byte before pObj's +0xAE cap. The IDB global is retyped TactItem * (it was an
+  unnamed ordinal pointer), pufo_isodraw.h/.c go through pObj, and tests/test_isodraw's fixture now hands
+  a TactItem whose pObj points at the object record.
+- GameMap gained pArrowThrownItem @ 0x14070 so the arrow gate has exactly one owner.
+- IDB comments: UiModal_DrawDialog @ 0x264a0 corrected (it claimed Map+0x86248 / Map+0x86252A for the two
+  scratch cells; they are anActionPhaseSave0[112]/[113], and the anim phase byte and the band selector are
+  ONE cell unk_1139EF); 0x158286 records the unwritten group-base slot; wiring notes at 0x22310, 0x1e888,
+  0x1afc4 and 0x1c958.
+
+Gate (tests/test_geoscapeframe.c, on the real mission the earlier blocks built): the seam per screen
+(live 0/8/9, dead 3/13/2), the present hook exactly once, the tick's four cells (byte2 1, byte3 0, step
+-1, countdown 9), the iso offsets Map_IsoOffsetA/B over the focus camera 37/11, the layer counter ending
+at 0x15138 and the tile counters at 0x34/35, blits through the shell's pad hook, the modal layout cells
+66 / 122 / 165 / 2 with the typewriter cursor advanced, the status message ink at x 5 / pad origin - 14,
+and the two fade arms (the enemystp pad at alpha 120 versus the dark 240x320 blit).
+Mutations, each with its reds: camera cell -> cursor.nX (2), fade cells swapped (1), the status
+Text_DrawString removed (1), modal slot 21 <- nButtonX[0] (1). 18213 checks, 61/61 both configs, golden
+frame unchanged.

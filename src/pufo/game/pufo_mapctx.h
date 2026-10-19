@@ -73,6 +73,9 @@ typedef struct GameMap {
                                 * the SAME cell as TactCursor.nFlags (the recorded multi-view issue). */
     i32     nMaxLayerClamp;    /* 0x15074 */
     i32     nAnimPhase;        /* 0x00F8 */
+    u8      abTypeProbe[4];    /* 0x0016..0x0019: the four bytes Tact_MapTypeToGlyphIdx scans to pick a
+                                * unit's sprite row; IsoUnitDrawGate.paTypeProbe. Nothing ported writes
+                                * them, so a mission draws through the probe's fallback arm. */
     i32     nShotCount;        /* 0x002C, Hex-Rays' nStatusDrawY */
     i32     nBurstShots;       /* 0x0028 Map_nBurstShots, the shots a mode-7 burst still owes */
     u8      bActionLatch;      /* 0x0002, unk_1139BA: 0 none, 3 multi-target, 4 fire mode */
@@ -108,6 +111,10 @@ typedef struct GameMap {
                                         * sample leaves the map (the port's ShotTrace.bLeftMap) */
     u8              bTrajHitStop;      /* 0x1406D Map.bTrajHitStop, the byte the port
                                         * calls ThrowPending in the action contexts */
+    TactItem       *pArrowThrownItem;  /* 0x14070 Map_pArrowThrownItem: the thrown item Tact_SimulateThrowArc
+                                        * stores at 0x319FC, which MapView_DrawUnitFacingArrow dereferences
+                                        * (unguarded, like the original) whenever bTrajHitStop is set. No
+                                        * ported writer exists yet -- recorded gap; the shell holds it NULL. */
     ThrowArc        throwArc;
     ThrowLanding    throwLanding;
     ThrowBudget     throwBudget;
@@ -120,6 +127,13 @@ typedef struct GameMap {
     /* --- fire scratch --- */
     i32 nFireArg5;                /* 0x1404C nFireArg5, the LOS outcome code */
     const ObjectRecFull *pFireArg6; /* 0x14050 nFireArg6, the weapon record the shot resolves with */
+
+    /* --- the iso layer's height glyph (MapView_DrawUnitHeightGlyph @ 0x1c240) ---
+     * The gate dword the function tests whole is 0x14000, which is aim.anAimRow[10] -- one cell,
+     * one owner (the IDB names it nHeightGlyphId). No ported code writes it yet. */
+    i32 nHeightSrcX;              /* 0x14060 nHeightSrcX: the arc's source tile, used mod 16 */
+    i32 nHeightSrcY;              /* 0x14064 nHeightSrcY, mod 16 */
+    i32 nHeightSrcZ;              /* 0x14068 nHeightSrcZ, mod 12 */
 
     /* --- action scratch: unk_1279F8 / F8 / 00 @ Map+0x14040 / 44 / 48 --- */
     i32 nMeleeCellX;              /* the melee target cell, written by TactAction_ConfirmMeleeMode6 @ 0x17bb8 */

@@ -25,7 +25,11 @@
 
 typedef struct UiModalState {
     i32 nField48;             /* apUiSlotsA[24] @ Map+0xC0, the hover/button cell, cleared on begin (0x26438) */
-    i32 nActionPhaseSave112;  /* anActionPhaseSave0[112] @ 0x128AA0, cleared on begin (0x2644C) */
+    i32 nActionPhaseSave112;  /* anActionPhaseSave0[112] @ 0x128AA0, cleared on begin (0x2644C);
+                               * UiModal_DrawDialog uses it as the typewriter cursor (0x26D1C..) */
+    i32 nActionPhaseSave113;  /* anActionPhaseSave0[113] @ 0x128AA4, the progressive-draw flag the
+                               * dialog writes (0 sets whole lines at cursor 0, 0x26D34; the cursor
+                               * wrap clears it at 0x26D54). UiModal_Begin does NOT clear it. */
     bool bOpen;               /* apUiSlotsA[19] low byte */
     i32  anRect12_14[3];      /* apUiSlotsA[12..14]: dialog width, first text record, line count */
     void *pLabel15;           /* apUiSlotsA[15], the first button label ("YES"/"OK") */
@@ -58,16 +62,19 @@ void UiModal_EndThunk(UiModalState *pModal);
  * and the text lines copied out of the 205-byte text-record table.
  *
  * The original reaches everything through the game context: the typewriter cursor at
- * Map+0x86248, the progressive-draw flag at Map+0x86252A, the animation phase, the band
- * selector unk_1139EF (Map+0x37), the selected-button slot apUiSlotsA[24], and the output
- * slots apUiSlotsA[20..23]. The port passes those as UiModalAnim and UiModalLayout so the
- * whole renderer is testable without a context.
+ * anActionPhaseSave0[112] (0x128AA0 = Map+0x150E8, 0x265D8/0x265E0 build the address), the
+ * progressive-draw flag at anActionPhaseSave0[113] (0x128AA4 = Map+0x150EC), the animation phase
+ * and the band selector on ONE cell, unk_1139EF (Map+0x37 -- the byte read at 0x26814 and the
+ * dword mod 4 at 0x26648), the selected-button slot apUiSlotsA[24], and the output slots
+ * apUiSlotsA[20..23] (the writes at 0x266D4, 0x268E4, 0x268F0 and 0x26AE4). An earlier note here
+ * gave Map+0x86248 and Map+0x86252A for the two scratch cells; that was a wrong base. The port
+ * passes these as UiModalAnim and UiModalLayout so the whole renderer is testable without a context.
  */
 typedef struct UiModalAnim {
-    i32  nCursor;        /* Map+0x86248: the typewriter cursor, wraps at 40 */
-    i32  bProgressive;   /* Map+0x86252A: 0 draws whole lines, non-zero draws a prefix */
-    i32  nAnimPhase;     /* every key formula is centred on abs(nAnimPhase - 4) */
-    i32  nBand;          /* unk_1139EF (Map+0x37): nBand % 4 picks the horizontal band */
+    i32  nCursor;        /* anActionPhaseSave0[112]: the typewriter cursor, wraps at 40 (0x26D1C..0x26D48) */
+    i32  bProgressive;   /* anActionPhaseSave0[113]: 0 draws whole lines, non-zero draws a prefix */
+    i32  nAnimPhase;     /* Map+0x37 read as a byte: every key formula is centred on abs(nAnimPhase - 4) */
+    i32  nBand;          /* the same Map+0x37 cell: nBand % 4 picks the horizontal band (0x26648) */
     i32  nSelButton;     /* apUiSlotsA[24]: 1 highlights the left button, 2 the right */
     const GfxColorEnv *pColor;
 } UiModalAnim;
