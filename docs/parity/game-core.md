@@ -19756,3 +19756,58 @@ backdrop ink), bare pixels left of the caption start and past the footer record,
 twice (counter up: nothing; counter down: the banner), and World_TickBannerFade's counter, wrong-screen
 and zero arms. Six mutations all bite: the fade-count cell (3 reds), the footer record (1), the screen
 gate (4), the backdrop pad (2), the score copy (1), the caption copy (1).
+
+## Unit 126 -- loading a saved tactical mission (Part 65)
+
+Original side, in order: `LoadGame @ 0x44bbc` -> `Save_ReadGameState @ 0x44c98` -> the teardown decision
+0x44D08..0x44D80 (`GeoscapeUi_FreeAll(0)` alone when both the geoscape UI flag and the game state are set) -> the
+`Save_ReadSoldiers` gate at 0x44DA4..0x44DB4 (`LDRB` the saved game-state byte, `BNE` past the call, so the tactical
+load re-reads the soldiers only when the byte is 0; `MainMenu_nListMode = 1` written at 0x44DC8) -> the `mcnt` chunk
+0x44DD0..0x44E0C -> `Tact_InitMission(1)` called at 0x44E24 with the slot file still open (only 0x44E2C closes it).
+Inside mode 1: the grid allocation 0x3D138..0x3D1CC (rows 10*`Map_nMapDimY`, columns 10*`Map_nMapDimX`, 4 layers; a
+60-slot row base step, a `+0x3840` = 3600-slot layer step at 0x3D1C8, `new(0x3C)` at 0x3D190, `MapCell_Reset` only on
+success at 0x3D19C, NULL stored on failure at 0x3D1A4, `MapCell_Init(pCell, col, row, layer)` at 0x3D1C0, the store
+`STR R0,[R8,#0x15338]` at 0x3D1B0) -> `Tact_LoadLoftData` -> `Save_AllocFlobjs` -> `Save_ReadSoldiers` ->
+`Save_ReadTGameData @ 0x44248` -> `Save_ReadRmp`. `Save_ReadMap @ 0x433e8` reads its two dims as single bytes
+(0x43400 `Map_nMapDimX`, 0x43418 `Map_nMapDimY`), walks `var_4 += 0x3C` against `CMP #0xF0` for the four layers, reads the
+occupant as an INDEX (0x436C0) resolved against apSoldiers at Map+4504 (0x436D0..0x436E0) and stores the soldier pointer
+at MapCell+0x30 (0x436E8), storing 0 for the sentinel (0x436EC), then the item count (0x436F0) into MapCell+0x38 (0x436F4).
+`Save_ReadSoldiers @ 0x416bc` restores the soldier's own cell link at 0x419A8..0x419DC: three 1-byte reads build
+60*(60*z+y)+x, that indexes the inline table at Map+0x15338, and the pointer is stored to `Soldier+0x10`.
+
+Recreated side: `World_LoadSlot` (app/pufo_world.c) with `Load_HookTactInitMission` as the `pfnTactInitMission` hook,
+`Init_LoadMission` (game/pufo_tactinit.c) for the allocation, `Save_ReadMapDims` for the dim pair, `Save_ReadMap` for the
+record walk, `Save_ReadSoldiers` / `Save_ReadTGameData` / `Save_ReadRmp` unchanged from the save unit, and the version-<3
+product tail (0x45590..0x45734) with its fourth array routed through `TactInitEnv.apManufCols`.
+
+Deviations, all recorded:
+1. The cell pointer table is inline in the original's Map record (Map+0x15338..Map+0x23438, 14400 dwords). The shell keeps
+   a heap grid (`PuWorldState::apTactCells`) and must size it before the record walk, which is why `Save_ReadMapDims`
+   exists; the original needs no such step because the table and the dims are one allocation.
+2. `Soldier+0x10` (the unit's own cell link) is NOT restored by the shell: 0x419A8..0x419DC is unported, so a reloaded unit
+   stands in a cell whose `pUnit` points at it while its own `pCell` stays NULL. The gate asserts exactly that.
+3. `Save_ReadSoldiers`' tactical inventory read (the InvPocketPair linking loops 0x419E8..0x42300) is unported: a reloaded
+   unit has no items, while the original re-establishes the whole block.
+4. The shell clears the unit-side links at its teardown (`World_ClearUnitLinks`, app/pufo_world.c): the cell link and the
+   hand/pocket/backpack/belt item links. The original clears nothing -- `Soldier+0x10` has exactly two writers in the beta
+   (0x49B2C, 0x419DC), `MapCell_SetOccupant @ 0x548b8` writes MapCell+0x30 only, `Tact_Shutdown` frees the cells at 0x3E328
+   and the item pool at 0x3DCC0 and its removal arm at 0x3DD0C..0x3DE10 keeps the soldiers that are not civilians, enemies
+   or type-in-range XCOM. The original's next `Unit_PlaceOnMap` therefore runs its unplace arm through freed memory; the
+   shell's heap does not hand the same blocks back, so carrying the link would be a use-after-free.
+5. `Map+0x34`/`Map+0x35` (`nTileCountX`/`nTileCountY`, six reads each and no writer anywhere in the beta) stay carried
+   values in the shell, written by the test fixture only.
+6. The shell's built-in mission dims are hard-coded to 6 at `pufo_tactinit.c:669`, so the load's dim read is invisible on
+   this fixture (see the separate-issues list).
+
+Evidence: tests/test_geoscapeframe.c gains the save/load round trip -- the unit is stood on a live cell (the link pair
+`Unit_PlaceOnMap` writes, cell+0x30 and Soldier+0x10), saved, torn down, reloaded, and the walk is asserted to put it back
+into a cell with the same x/y/z; the grid is asserted to hold 4*3600 allocated slots; the previous mission's 14400 slots are
+asserted empty before the load; the tactical reset arms (battle bytes cleared, `bPlayerInputEnabled` SET to 1 at
+0x444C0..0x445CC, `Map_nUiScreen` cleared) and the camera/v124/reserve/item restores are re-checked; the teardown asserts
+that no surviving unit record keeps a pointer into the freed cells or the freed item pool; and `World_TactFrame` runs over
+the reloaded mission, dumped as tests/ref/tact_loaded_mission.png. test_save.c's two product-tail fixtures now size their
+fourth array to the real auManufCol extent (3200 bytes), which is what the version-<3 tail copies out (0x455F8) and clears
+(0x45638). Mutations: the auManufCol routing, the grid column term, the load teardown and the unit-link clear all bite; the
+dim read does not, for the reason in deviation 6. tests/ref/tact_frame_iso.png is re-accepted: 1338 pixels of rows 0..31
+change, and with the fixture's cell-placement block guarded the dump is byte-identical to the old reference, so the cause is
+the more faithful fixture, not a draw change.

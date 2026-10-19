@@ -412,7 +412,7 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pTactOptions        = &g_options;
 
     {
-        i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_options, &hooks);
+        i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_fontSys, &g_options, &hooks);
         printf("pocketufo: load slot %d: %s (%d funds, %d bases, %d soldiers, %d craft, ui screen %d)\n",
                (int)nSlot, nRet != 0 ? "loaded" : "no save", (int)g_world.nFunds,
                (int)g_world.saveBases.bBaseCount, (int)g_world.nSoldierCount,

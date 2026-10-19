@@ -998,37 +998,60 @@ void World_Free(PufoWorldState *pW)
     pW->apSites = NULL;
 }
 
-/* The LoadGame teardown hooks. All three callees ARE ported -- Tact_Shutdown @ 0x3d568 in
- * pufo_tactend.c, Tact_InitMission @ 0x3c550 in pufo_tactinit.c, Geoscape_InitUI @ 0x857f4 in
- * pufo_geoiinit.c -- and stay stubs here for a different reason: each needs an env the shell does not
- * own on this path (a TactShutdownEnv / TactInitEnv for the tactical half, and the InitUI env whose
- * allocations World_NewGame owns). The sav7 path tests/test_save.c pins (a geoscape save with no
- * tactical state) reaches none of them, so the missing envs are untested rather than harmless. */
+/* The LoadGame teardown and bring-up hooks, all real since Part 65. Each callee was already ported --
+ * Tact_Shutdown @ 0x3d568, Tact_InitMission @ 0x3c550, Geoscape_InitUI @ 0x857f4, GeoscapeUi_FreeAll @
+ * 0x86d20 -- and what was missing was the env: the shell owns every one of them on the new-game path
+ * (World_FillInitUiEnv builds the InitUI env, World_EndHookShutdown is the Tact_Shutdown mirror, and
+ * the TactInitEnv is pW->tactEnv), so the same constructions run here. */
+static void World_EndHookShutdown(u8 bKeepSome, void *pUser); /* forward: the mission-end seams define it */
+
 static void Load_HookInitUi(i32 nMode, void *pUser)
 {
-    (void)nMode;
-    (void)pUser;
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GeoscapeInitEnv env;
+
+    /* 0x44CBC / 0x44D18 both call Geoscape_InitUI(1) -- the rebuild arm, not a new run -- and the
+     * frame envs then re-point at the singletons InitUI just made, exactly as World_MissionCancelEnd
+     * does after its own rebuild. */
+    World_FillInitUiEnv(pW, &env);
+    Geoscape_InitUI(&env, nMode);
+    if (pW->pFrameHooks != NULL) {
+        World_WireGeoscapeFrame(pW, pW->pFrameHooks);
+    }
 }
 
 static void Load_HookTactShutdown(void *pUser)
 {
-    (void)pUser;
+    (void)World_EndHookShutdown(0, pUser); /* Tact_Shutdown(0) @ 0x3D568, the same mirror the debrief cancel runs */
 }
 
 static bool Load_HookTactInitMission(i32 nMode, void *pUser)
 {
-    (void)nMode;
-    (void)pUser;
-    return false;
+    return World_InitTactical((PufoWorldState *)pUser, nMode); /* 0x44E24, mode 1, over the open slot file */
 }
 
 static void Load_HookFreeAll(void *pUser)
 {
-    (void)pUser;
+    /* 0x44D74: GeoscapeUi_FreeAll(0). The shell's own copy of that call lives in World_Free and passes
+     * 1 (the roster half included); the load arm's argument 0 is the UI-only half. The port's
+     * GeoscapeUi_FreeAll takes the mode as its last argument, so the shell hands it 0 and keeps the
+     * roster records -- the chunk readers that follow rebuild the lists anyway. */
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GeoscapeRoster roster;
+
+    memset(&roster, 0, sizeof(roster));
+    roster.apSoldiers = pW->apSoldiers;
+    roster.nSoldierCount = (u16)pW->nSoldierCount;
+    roster.apBases = pW->apBases;
+    roster.nBaseCount = pW->nBaseCount;
+    roster.apCraft = pW->apCraft;
+    roster.nCraftCount = pW->bCraftCount;
+    roster.pStrategList = &pW->strategList;
+    GeoscapeUi_FreeAll(&pW->ui, &roster, 0);
 }
 
 i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
-                   const PufoOptions *pOptions, const WorldHooks *pHooks)
+                   PufoFont *pFont, const PufoOptions *pOptions, const WorldHooks *pHooks)
 {
     LoadGameEnv env;
     LoadGameHooks hooks;
@@ -1036,8 +1059,10 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     DatFile dat;
     i32 nRet;
 
-    pW->pOptions = pOptions; /* same ownership as World_NewGame; the load path has no font, so a
-                              * tactical bring-up on this path would refuse -- the load hooks stay stubs */
+    pW->pOptions = pOptions; /* same ownership as World_NewGame. pFont joins the load path in Part 65:
+                              * a save that carries a mission rebuilds it, and that reader needs fontSys
+                              * @ 0x158268 for Font_LoadTactSprites and the xcom_<n> sets (0x4444C..0x4449C) */
+    pW->pFont = pFont;
     pW->gameClock.nSpeed = (u32)pOptions->nGameSpeed; /* the same Map+0x150FC mirror as World_NewGame */
     pW->nMapGamma = pOptions->nGamma;                 /* Map+0x15100 */
 
@@ -1119,8 +1144,13 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     env.pbSpawnOnceFlag = &pW->bSpawnOnce;
     env.pHooks = &hooks;
 
+    /* The mission bring-up runs INSIDE LoadGame, at 0x44E24, before DatFile_Close at 0x44E2C -- so the
+     * open file is handed to the state for exactly that window, and Init_LoadMission's readers
+     * (tgamedata, teamunits, flobjs, map, rmp) consume it there. */
     DatFile_ctor(&dat);
+    pW->pLoadDat = &dat;
     nRet = LoadGame(&dat, &env);
+    pW->pLoadDat = NULL;
     DatFile_Close(&dat);
     return nRet;
 }
@@ -1794,6 +1824,132 @@ static void World_TactAfterEnemyStepThunk(TactCtx272 *pTact, void *pUser); /* Af
 static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser);
 static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser);
 static void World_TactEnemyAiPushTextThunk(i32 nRecIndex, void *pUser);
+static u32 World_TactRandU16Thunk(u32 nMax, void *pUser); /* forward: defined with the enemy AI's draw seam */
+
+/* --- the load path's callbacks (Part 65) -------------------------------------------------------
+ * Save_ReadTGameData stages what the original writes straight into the Map block. The two apply hooks
+ * put it back at the moment the original's own writes happen, because the calls that follow read it
+ * live: Font_LoadTactSprites reaches Map_nMapLayers @ 0x15114 (0x4444C) and Map_PatchCraftSprites
+ * reads nMapLayers and the two craft tiles (0x3D240). */
+static void World_TactApplySaveStateThunk(const TactSaveState *pSt, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+
+    pW->sTactInput.bDeployPanelOpen = pSt->bUnk15110;                    /* 0x15110 (0x128AC8) */
+    pW->nMapMissionTierRaw   = pSt->nUnk1510C;                           /* 0x1510C (0x128AC4) */
+    pW->nMapTerrainVariant   = pSt->abUnk15111[0];                       /* 0x15111 */
+    pW->bMapUnk15112         = pSt->abUnk15111[1];                       /* 0x15112 */
+    pW->nMapCraftIndex       = pSt->abUnk15111[2];                       /* 0x15113 */
+    pW->bMapUnk15115         = pSt->bUnk15115;                           /* 0x15115 */
+    memcpy(pW->abMapSpriteSet, pSt->abSpriteSet, sizeof(pSt->abSpriteSet)); /* 0x15116..0x15119 */
+    pW->bMapMissionMode      = pSt->bMissionMode;                        /* 0x1511D (0x128AD5) */
+    pW->bMapUnk1511E         = pSt->bUnk1511E;                           /* 0x1511E (0x128AD6) */
+    pW->tactEnv.cursor.nX         = pSt->anUnk15188[0];                  /* 0x15128 */
+    pW->tactEnv.cursor.nY         = pSt->anUnk15188[1];                  /* 0x1512C */
+    pW->tactEnv.focus.nCamScrollX = pSt->anUnk15188[2];                  /* 0x15130 */
+    pW->tactEnv.focus.nCamScrollY = pSt->anUnk15188[3];                  /* 0x15134 */
+    pW->tactEnv.cursor.nFlags     = pSt->abUnk15198[0];                  /* 0x15138 (0x128AF0) */
+    pW->bMapCraftMapX          = pSt->abUnk15198[1];                     /* 0x15139 (0x128AF1) */
+    pW->bMapCraftMapY          = pSt->abUnk15198[2];                     /* 0x1513A (0x128AF2) */
+    pW->nMapDeployedHwps       = pSt->nUnk151A0;                         /* 0x15140 (0x128AF8) */
+    pW->bMapSpawnAlt           = pSt->anCraftTile[0];                    /* 0x15148, one byte on disk */
+    pW->nMapSpawnTileX         = pSt->anCraftTile[1];                    /* 0x1514C */
+    pW->nMapSpawnTileY         = pSt->anCraftTile[2];                    /* 0x15150 */
+    if (pMap != NULL) {
+        pMap->nMapLayers   = pSt->nMapLayers;                            /* 0x15114 */
+        pMap->nMissionType = pSt->nMissionType;                          /* 0x1511A */
+    }
+    /* The two v124.dat dwords are NOT applied here: 0x445D4..0x446A0 fills them later in the same
+     * reader, and World_InitTactical copies them once it returns. */
+}
+
+/* The tactical reset at 0x444C0..0x445CC, in place and at the original's moment -- before
+ * Map_PatchCraftSprites and MapView_FocusSelected run. Four cells have no owner in the port and stay
+ * recorded gaps: Map+0x2C (the IDB names it nShotCount), Map+0x3C (byte_1139F4, four bytes),
+ * Map+0x58/0x59, and apUiSlotsA[3..7]; nothing ported reads any of them. */
+static void World_TactApplyResetThunk(const TactResetState *pR, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+
+    pW->bMapUnk1139B9         = pR->abGap01[0];                          /* Map+0x01 */
+    pW->bMapPlayerInput       = pR->bPlayerInputEnabled;                 /* Map+0x38: a SET, not a clear */
+    pW->bMapFire0             = pR->abFire[0];                           /* Map+0x50 */
+    pW->bMapFire2             = pR->abFire[2];                           /* Map+0x52 */
+    pW->bMapTickHold          = pR->bGameTickHold;                       /* Map+0x5A */
+    pW->bMapEnemyTurnActive   = pR->bEnemyTurnActive;                    /* Map+0x5B */
+    pW->bMapBattleEnded       = pR->bBattleEnded;                        /* Map+0x5C */
+    pW->bMapSlot8Byte1        = (u8)(pR->aUiSlot[8] & 0xFFu);            /* Map+0x81 */
+    pW->bMapSlot8Byte2        = (u8)((pR->aUiSlot[8] >> 8) & 0xFFu);     /* Map+0x82 */
+    pW->bMapSlot8Byte3        = (u8)((pR->aUiSlot[8] >> 16) & 0xFFu);    /* Map+0x83: slot 8, two half-writes */
+    pW->nMapUiSlot9           = pR->aUiSlot[9];                          /* Map+0x84 */
+    pW->nMapUiSlot10          = pR->aUiSlot[10];                         /* Map+0x88, the value 10 */
+    pW->nUiScreen             = pR->nUiScreen;                           /* Map+0x3A */
+    if (pW->pnMapPhase != NULL) {
+        *pW->pnMapPhase = pR->nAnimPhase;                                /* nMapPhase @ 0x1139EF, Map+0x37 */
+    }
+    if (pW->pnAnimPhase != NULL) {
+        *pW->pnAnimPhase = pR->aUiSlot[0];                               /* apUiSlotsA[0] @ Map+0x60 */
+    }
+    if (pMap != NULL) {
+        pMap->bActionLatch      = pR->abGap01[1];                       /* Map+0x02 */
+        pMap->nMultiTargetCount = pR->nMultiTargetCount;                /* Map+0x04 */
+        pMap->bFireStatus1      = pR->abFire[1];                        /* Map+0x51 */
+        pMap->status.nCount     = 0;                                    /* Map+0x54..0x57, cleared as one dword */
+    }
+}
+
+/* 0x44048/0x4409C/0x44100/0x4416C/0x441D8: Save_ReadTeamUnits puts the four counts and the selected
+ * unit straight into the live cells; the port stages them, so they land here. The four pointer arrays
+ * already ARE the shell's (pMap's two, apTactHidden for the reserve), which is why only the counts and
+ * pSelUnit need copying. */
+static void World_TactApplyRostersThunk(const TeamUnitsState *pSt, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+
+    if (pMap == NULL) {
+        return;
+    }
+    pMap->nXcomCount     = pSt->nXcomCount;                        /* 0x1511F */
+    pMap->nEnemyCount    = pSt->nEnemyCount;                       /* 0x15124 */
+    pMap->nCivilianCount = pSt->nCivilianCount;                    /* 0x15120 */
+    pMap->pSelUnit       = pSt->pSelUnit;                          /* 0x15334, 0x7FFF means NULL */
+    pW->nMapEnemyReserveCount = pSt->nHiddenCount;                 /* unk_138DF0's count */
+}
+
+/* 0x44488: Font_LoadSpr(fontSys, &aXcom0[9 * byte]) -- the table at 0xA7BE8 is the ten names
+ * xcom_0..xcom_9, so the byte indexes it by name the same way. */
+static bool World_TactLoadSprThunk(i32 nSpriteSet, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    char szName[8];
+
+    memcpy(szName, "xcom_", 5);                       /* aXcom0 @ 0xA7BE8: xcom_0..xcom_9, stride 9 */
+    szName[5] = (char)('0' + (nSpriteSet % 10));
+    szName[6] = 0;
+    return Font_LoadSpr(pW->pFont, szName);
+}
+
+static void World_TactBuildIndexThunk(void *pUser)
+{
+    Font_BuildIndex(((PufoWorldState *)pUser)->pFont);                  /* 0x444A4 */
+}
+
+/* Save_ReadRmp's per-module call: the original runs Map_LoadRmp(unk_15881C, ...) straight from the
+ * context; Rmp_Load needs the map's tile dimensions for its link edge tests (context +86299/+86300),
+ * and by now Save_ReadMap has put them in pMap->geom. */
+static i32 World_TactLoadRmpThunk(RmpData *pRmp, const char *pszBase, i32 nTileX, i32 nTileY,
+                                  i32 nSizeX, i32 nSizeY, i32 nLevel, void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+    const GameMap *pMap = pW->pTactMap;
+
+    return Rmp_Load(pRmp, pszBase, nTileX, nTileY, nSizeX, nSizeY, nLevel,
+                    (pMap != NULL) ? (i32)pMap->geom.nDimX : 0,
+                    (pMap != NULL) ? (i32)pMap->geom.nDimY : 0);
+}
 
 bool World_InitTactical(PufoWorldState *pW, i32 nMode)
 {
@@ -1803,9 +1959,11 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     if (pW->bTactLive) {
         return false;
     }
-    /* The seam's 0x83AC4 call passes 0 (new mission). A save-load mode would need the slot file and
-     * the TactLoadHooks block this launch path does not have, so the seam refuses anything else. */
-    if (nMode != 0 || pW->pAssets == NULL || pW->pFont == NULL || pW->pOptions == NULL) {
+    /* Mode 0 is the launch seam's 0x83AC4 call. Mode 1 is LoadGame's 0x44E24 call, which runs while
+     * the slot file is still open -- pLoadDat is that file, handed over by World_LoadSlot and borrowed
+     * only for the duration. Any other value is not a mode the original ever passes. */
+    if ((nMode != 0 && nMode != 1) || pW->pAssets == NULL || pW->pFont == NULL
+        || pW->pOptions == NULL || (nMode == 1 && pW->pLoadDat == NULL)) {
         return false;
     }
 
@@ -2032,13 +2190,66 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->hooks.pfnOpenInventory        = World_TactOpenInventoryThunk; /* TactHud_OpenInventory (0x16ef4) at the 0x3D0B8 site, the Xcom-team branch (Part 55) */
     pE->hooks.pUser                   = pW;
 
-    /* Mode 0 needs none of the save blocks (pDat, pSaveHooks, pfnLoadRmp all stay NULL). */
+    /* Mode 0 needs none of the save blocks. Mode 1 runs Init_LoadMission: the mission's map, rosters,
+     * items and rmp modules all come out of the open slot file. */
+    if (nMode == 1) {
+        pE->pDat        = pW->pLoadDat;               /* borrowed: 0x44E24 sits before DatFile_Close at 0x44E2C */
+        pE->pSaveState  = &pW->sTactSave;
+        pE->pSaveRosters = &pW->sTactSaveRosters;
+        pE->pSaveFlobjs  = &pW->sTactFlobjs;
+        pE->pSaveReset   = &pW->sTactReset;
+        pE->pSaveHooks   = &pW->sTactLoadHooks;
+        pE->pfnLoadRmp   = World_TactLoadRmpThunk;    /* 0x3D23C's Save_ReadRmp: Map_LoadRmp per module */
+        pE->pRmpUser     = pW;
+
+        memset(&pW->sTactLoadHooks, 0, sizeof(pW->sTactLoadHooks));
+        pW->sTactLoadHooks.pfnLoadTactSprites = World_TactLoadTactSpritesHook; /* 0x4444C, the same construction the build path installs */
+        pW->sTactLoadHooks.pfnLoadSpr         = World_TactLoadSprThunk;        /* 0x44488 */
+        pW->sTactLoadHooks.pfnBuildIndex      = World_TactBuildIndexThunk;     /* 0x444A4 */
+        pW->sTactLoadHooks.pfnRandU16         = World_TactRandU16Thunk;        /* 0x446A4/0x44694, the v124.dat rolls */
+        pW->sTactLoadHooks.pfnApplyState      = World_TactApplySaveStateThunk;
+        pW->sTactLoadHooks.pfnApplyReset      = World_TactApplyResetThunk;
+        pW->sTactLoadHooks.pfnApplyRosters    = World_TactApplyRostersThunk;
+        pW->sTactLoadHooks.pUser              = pW;
+        pW->sTactLoadHooks.pFont              = pW->pFont;                     /* fontSys @ 0x158268 */
+        pW->sTactLoadHooks.pbUnk157198Flag    = (pW->pTactState != NULL)
+                                              ? &pW->pTactState->bPhaseActive : NULL; /* 0x445AC: unk_157198's bUnk70115 */
+
+        /* The four roster arrays and the item/soldier pools are the same owners World_SaveSlot wrote
+         * from; the readers fill them in place. Map+0x118 (the flobjs count-width flag) is the shell's
+         * bMapFlobjsWideFlag... which the shell does not own, so the reader takes the wide form. */
+        memset(&pW->sTactSaveRosters, 0, sizeof(pW->sTactSaveRosters));
+        pW->sTactSaveRosters.apXcomUnits    = pMap->apXcomUnits;
+        pW->sTactSaveRosters.apEnemyUnits   = pMap->apEnemyUnits;
+        pW->sTactSaveRosters.apCivilians    = pMap->apCivilians;
+        pW->sTactSaveRosters.apHiddenUnits  = pW->apTactHidden;                /* unk_138DF0 */
+        pW->sTactSaveRosters.pSelUnit       = NULL;
+
+        memset(&pW->sTactFlobjs, 0, sizeof(pW->sTactFlobjs));
+        pW->sTactFlobjs.nWideCountFlag   = 1;              /* the 4-byte count form; no port cell owns Map+0x118 */
+        pW->sTactFlobjs.pnTactItemCount  = &pW->nTactItemCount;
+        pW->sTactFlobjs.apTactItems      = (TactItem *const *)pW->apTactItems;
+        pW->sTactFlobjs.apObjects        = (ObjectRecFull *const *)pW->pAssets->apObjects;
+        pW->sTactFlobjs.nObjectCount     = pW->pAssets->nObjectCount;
+        pW->sTactFlobjs.apSoldiers       = pW->apSoldiers;
+        pW->sTactFlobjs.nSoldierCount    = pW->nSoldierCount;
+
+        memset(&pW->sTactSave, 0, sizeof(pW->sTactSave));
+        memset(&pW->sTactReset, 0, sizeof(pW->sTactReset));
+    }
 
     if (!Tact_InitMission(pE, nMode)) {
         World_FreeTactical(pW);
         return false;
     }
     pW->bTactLive = true;
+
+    if (nMode == 1) {
+        /* 0x445D4..0x446A0: v124.dat, read inside the same reader but after both apply points, so the
+         * two dwords land here rather than in the state hook. */
+        pW->nMapUnk138E6C = pW->sTactSave.nUnk138E6C;
+        pW->nMapUnk138E70 = pW->sTactSave.nUnk138E70;
+    }
 
     /* --- the walker wiring (Part 50). After Tact_InitMission so the pieces taken from tactEnv
      * here see the init's own filling (select's cursor/lookup/status, the vis ctx). --- */
@@ -2166,6 +2377,43 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     return true;
 }
 
+/* World_FreeTactical is about to free the tactical cell grid and the tactical item pool, and every
+ * roster unit keeps pointers into both: the item links (hand, pockets, backpack, belt) and the cell
+ * link at Soldier+0x10. The original leaves them all dangling -- Soldier+0x10 has exactly two writers
+ * in the whole beta, Unit_PlaceOnMap @ 0x49B2C and Save_ReadSoldiers @ 0x419DC, and MapCell_SetOccupant
+ * @ 0x548b8 writes MapCell+0x30 only -- while Tact_Shutdown frees the cells at 0x3E328..0x3E3CC and the
+ * item pool at 0x3DCC0 without clearing the soldiers it keeps (the removal arm at 0x3DD0C..0x3DE10 takes
+ * out the civilians, every enemy and only some XCOM units). The next mission's Unit_PlaceOnMap then reads
+ * the stale link and its unplace arm writes MapCell_SetOccupant(cell, nullptr) into memory the previous
+ * mission freed. Dropping the links here is a recorded deviation: the shell's heap does not hand the same
+ * 60-byte blocks back the way the original's did, so a stale link here is a read of freed memory rather
+ * than a benign write into a reused cell. */
+static void World_ClearUnitLinks(Soldier **apUnits, i32 nCount)
+{
+    i32 i, j, k;
+
+    for (i = 0; i < nCount; ++i) {
+        Soldier *pUnit = apUnits[i];
+
+        if (pUnit == NULL) {
+            continue;
+        }
+        pUnit->pCell = NULL; /* Soldier+0x10 */
+        pUnit->pHandL = NULL;
+        pUnit->pHandR = NULL;
+        for (k = 0; k < 4; ++k) {
+            pUnit->aPockets[k].apItem[0] = NULL;
+            pUnit->aPockets[k].apItem[1] = NULL;
+        }
+        for (j = 0; j < 8; ++j) {
+            pUnit->apBackpack[j] = NULL;
+        }
+        for (j = 0; j < 9; ++j) {
+            pUnit->apBelt[j] = NULL;
+        }
+    }
+}
+
 void World_FreeTactical(PufoWorldState *pW)
 {
     i32 i;
@@ -2192,6 +2440,13 @@ void World_FreeTactical(PufoWorldState *pW)
     }
     memset(pW->apTactItems, 0, sizeof(pW->apTactItems));
     pW->nTactItemCount = 0;
+
+    if (pW->pTactMap != NULL) { /* the rosters and the hidden park live as long as the map record */
+        World_ClearUnitLinks(pW->pTactMap->apXcomUnits, pW->pTactMap->nXcomCount);
+        World_ClearUnitLinks(pW->pTactMap->apEnemyUnits, pW->pTactMap->nEnemyCount);
+        World_ClearUnitLinks(pW->pTactMap->apCivilians, pW->pTactMap->nCivilianCount);
+        World_ClearUnitLinks(pW->apTactHidden, pW->nMapEnemyReserveCount);
+    }
 
     free(pW->pTactShowShip);             /* dword_156A78 */
     pW->pTactShowShip = NULL;

@@ -30,9 +30,11 @@
 #include "game/pufo_boot.h"
 #include "game/pufo_clock.h"
 #include "game/pufo_font.h"
+#include "game/pufo_mapcell.h" /* MapCell_SetOccupant, the pair Unit_PlaceOnMap writes */
 #include "game/pufo_options.h"
 #include "game/pufo_save.h"
 #include "game/pufo_tactend.h"
+#include "game/pufo_terrain.h" /* PUFO_TERRAIN_CELLS_PER_LAYER, the shell's cell-table stride */
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"
 
@@ -144,6 +146,12 @@ static void RecFormatSlots(void *pUser)
 /* The shell's blit seam, recorded so the frame's control blits are checkable. */
 static const PadImage *g_apBlitPad[64];
 static i32            g_nBlits;
+
+/* The mission exactly as the Part 62 save unit wrote it; the Part 65 load-back compares against these. */
+static i32            g_nMarkXcom, g_nMarkEnemy, g_nMarkCiv, g_nMarkHidden, g_nMarkItems;
+static i32            g_nMarkDimX, g_nMarkDimY, g_nMarkLayers;
+static i32            g_nMarkCellX, g_nMarkCellY, g_nMarkCellZ;
+static Soldier       *g_pMarkUnit;
 static i32            g_nSamples;
 static i32            g_nPresents;
 
@@ -2215,6 +2223,40 @@ int main(void)
                     g_world.nMapUnk138E6C = 0x1234;             /* v124.dat, first dword */
                     g_world.nMapUnk138E70 = 0x5678;             /* v124.dat, second dword */
 
+                    /* Marks for the Part 65 load-back at the end of main: what the live mission looks
+                     * like right now, to be found again once the readers rebuild it from the file. */
+                    g_nMarkXcom   = g_world.pTactMap->nXcomCount;
+                    g_nMarkEnemy  = g_world.pTactMap->nEnemyCount;
+                    g_nMarkCiv    = g_world.pTactMap->nCivilianCount;
+                    g_nMarkHidden = g_world.nMapEnemyReserveCount;
+                    g_nMarkItems  = g_world.nTactItemCount;
+                    g_nMarkDimX   = (i32)g_world.pTactMap->geom.nDimX;
+                    g_nMarkDimY   = (i32)g_world.pTactMap->geom.nDimY;
+                    g_nMarkLayers = g_world.pTactMap->nMapLayers;
+                    g_pMarkUnit   = g_world.pTactMap->apXcomUnits[0];
+
+                    /* The save's map chunk stores the occupant id at cell+0x30 (written from the cell,
+                     * read back at 0x436C0), so the unit has to STAND on a real terrain cell here. The
+                     * original gets there through Unit_PlaceOnMap @ 0x49A0C -- eight MapCell_SetOccupant
+                     * @ 0x548B8 calls, one per sub-cell of a large unit -- which writes BOTH links. The
+                     * fixture writes the same pair; nothing else in this run placed the unit. */
+                    if (g_pMarkUnit != NULL) {
+                        MapCell *pStandCell = g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER
+                                                                  + PUFO_MAP_CELL_DIM * 12 + 10];
+
+                        Check(pStandCell != NULL, "the terrain table has the cell the fixture stands the unit on");
+                        if (pStandCell != NULL) {
+                            g_pMarkUnit->pCell = pStandCell;
+                            MapCell_SetOccupant(pStandCell, g_pMarkUnit);
+                        }
+                    }
+                    g_nMarkCellX  = (g_pMarkUnit != NULL && g_pMarkUnit->pCell != NULL) ? g_pMarkUnit->pCell->nX : -1;
+                    g_nMarkCellY  = (g_pMarkUnit != NULL && g_pMarkUnit->pCell != NULL) ? g_pMarkUnit->pCell->nY : -1;
+                    g_nMarkCellZ  = (g_pMarkUnit != NULL && g_pMarkUnit->pCell != NULL) ? g_pMarkUnit->pCell->nZ : -1;
+                    Check(g_pMarkUnit != NULL && g_pMarkUnit->pCell != NULL
+                              && g_pMarkUnit->pCell->pUnit == g_pMarkUnit,
+                          "the live cell owns the unit it stands on, so Save_WriteMap has an id to write (cell+0x30)");
+
                     memset(&saveHooks, 0, sizeof(saveHooks));
                     saveHooks.pfnRenderFrame = RecSaveRenderFrame;
                     g_nSaveRenders = 0;
@@ -2281,7 +2323,7 @@ int main(void)
                           "the tactical branch closed the ui screen (0x44B80), as the driver's port does");
 
                     DatFile_Close(&dat);
-                    (void)remove("sav62.sav");
+                    /* sav62.sav stays on disk: the Part 65 load-back at the end of main loads it. */
 
                     g_world.bMissionCount = bCount0;
                     g_world.sTactInput.bDeployPanelOpen = bPanel0;
@@ -2897,6 +2939,21 @@ int main(void)
                 g_world.nUiScreen = nScreenKeep;
             }
 
+            /* Arm one inventory link right here, after every frame of Parts 62-64 is already on disk:
+             * the link has to exist going into the teardown and must not come out of it. The original
+             * re-establishes the whole inventory block from the soldiers chunk on the next load
+             * (Save_ReadSoldiers 0x419e8..0x42300, the InvPocketPair linking loops -- a recorded gap),
+             * while the shell keeps the soldier records alive across the item pool's free (they stay
+             * owned by apSoldiers), so a stale pointer into the freed pool has to be cleared here. */
+            if (g_pMarkUnit != NULL && g_world.nTactItemCount > 0) {
+                TactItem *pArmItem = g_world.apTactItems[0];
+                g_pMarkUnit->pHandL = pArmItem;
+                g_pMarkUnit->pHandR = pArmItem;
+                g_pMarkUnit->apBackpack[0] = pArmItem;
+                g_pMarkUnit->apBelt[0] = pArmItem;
+                g_pMarkUnit->aPockets[0].apItem[0] = pArmItem;
+            }
+
             /* The cancel the debrief's cancel button reaches (UiScreen_OnCancel 0x162BC / 0x162C8):
              * teardown keeping nothing, then Geoscape_InitUI mode 1 -- the rebuild of everything the
              * launch seam freed. */
@@ -2934,6 +2991,14 @@ int main(void)
               && g_world.sTactLoft.pLoftemps == NULL && g_world.apTactHidden[0] == NULL
               && g_world.nMapEnemyReserveCount == 0,
           "the item pool, the loft buffers and the hidden park are released and cleared; the soldier records stay owned by apSoldiers");
+    Check(g_pMarkUnit == NULL || (g_pMarkUnit->pCell == NULL
+                                  && g_pMarkUnit->pHandL == NULL && g_pMarkUnit->pHandR == NULL
+                                  && g_pMarkUnit->apBackpack[0] == NULL
+                                  && g_pMarkUnit->apBelt[0] == NULL
+                                  && g_pMarkUnit->aPockets[0].apItem[0] == NULL),
+          "the unit records that outlive the freed cells and the freed item pool come out of the teardown "
+          "with no pointer into either (World_ClearUnitLinks; the original leaves Soldier+0x10 dangling -- "
+          "only 0x49B2C and 0x419DC write it -- and rebuilds the inventory from the soldiers chunk instead)");
     {
         /* The pad table (Part 53): Tact_Shutdown frees the 32-slot sprite set (0x3E150), the eleven
          * Map+0xCC buttons and the named singletons (0x3E17C..0x3E318); the shell mirror frees every
@@ -2961,6 +3026,149 @@ int main(void)
               "the look control's launch/claunch pads are freed too (0x3DC98)");
         Check(g_world.sTactInput.bTactFlag == false && g_world.sTactInput.pbScratchFlag9 == NULL,
               "the input-side teardown clears Map+0x00 (Tact_Shutdown's first store, 0x3D574) and releases the scratch flag");
+    }
+
+    /* --- the mission loads back (Part 65) ------------------------------------------------------
+     * The very slot the save unit wrote over the live mission. World_LoadSlot keeps the file open
+     * across the driver's Tact_InitMission(1) -- 0x44E24 sits before DatFile_Close at 0x44E2C -- and
+     * the mission is rebuilt out of it: tgamedata, teamunits, aliens, diedsolds, hiddensold, flobjs,
+     * map and rmp. Compare against the marks taken while it was live. */
+    {
+        GameMap *pMapL;
+        i32 nBlitsBefore;
+        /* Map+0x34/0x35 (IDA: nTileCountX 0x1139EC, nTileCountY 0x1139ED) have no writer anywhere in the
+         * beta: their only cross-references are the four Input_On* scroll clamps and MapView_DrawIsoLayer's
+         * two cell passes, all reads, and the image bytes are zero. Save_ReadMap restores the map DIMS only.
+         * So the counts are a cell the shell carries, not one the load produces -- the fixture carries them
+         * across the load exactly as Part 63 carries them across its teardown, and the gap is recorded. */
+        u8 nTileXKeep = g_world.sTactInput.nTileShiftX;
+        u8 nTileYKeep = g_world.sTactInput.nTileShiftY;
+        i32 nRet;
+
+        /* The app loads a saved mission from the geoscape with no tactical mission live, and that is the
+         * state this run is already in: Part 64's teardown dropped the map record, the tactical state and
+         * every cell. The load therefore has to rebuild the grid itself -- the checks below are the load's
+         * own work, not leftovers. */
+        Check(g_world.pTactMap == NULL, "no map record stands before the load (Part 64's teardown)");
+        {
+            i32 nBefore = 0, k;
+
+            for (k = 0; k < 14400; ++k) {
+                if (g_world.apTactCells[k] != NULL) {
+                    ++nBefore;
+                }
+            }
+            CheckEqI32(nBefore, 0, "no cell of the previous mission survives into the load");
+        }
+
+        nRet = World_LoadSlot(&g_world, "", 62, &g_assets, &g_fontSys, &g_options, &hooks);
+        Check(nRet != 0, "World_LoadSlot loaded the tactical slot (LoadGame 0x44bbc over sav62.sav)");
+        Check(g_world.bTactLive && g_world.bTactFlag == 1,
+              "the driver's Tact_InitMission(1) ran and the mission is live again (0x44E24)");
+        pMapL = g_world.pTactMap;
+        Check(pMapL != NULL && g_world.pTactState != NULL,
+              "the bring-up's two heap records are back (GameMap and pMapTactical)");
+        if (pMapL != NULL) {
+            CheckEqI32((i32)pMapL->geom.nDimX, g_nMarkDimX, "Save_ReadMap restored the map width (Map_nMapDimX)");
+            CheckEqI32((i32)pMapL->geom.nDimY, g_nMarkDimY, "and the height");
+            CheckEqI32(pMapL->nMapLayers, g_nMarkLayers,
+                      "Map_nMapLayers @ 0x15114 lands through the apply hook, before Font_LoadTactSprites reads it (0x4444C)");
+            CheckEqI32(pMapL->nXcomCount, g_nMarkXcom, "the Xcom roster count, from Save_ReadTeamUnits");
+            CheckEqI32(pMapL->nEnemyCount, g_nMarkEnemy, "the alien roster count");
+            CheckEqI32(pMapL->nCivilianCount, g_nMarkCiv, "the civilian count");
+            Check(g_pMarkUnit != NULL && pMapL->apXcomUnits[0] != NULL
+                      && pMapL->apXcomUnits[0] == g_pMarkUnit,
+                  "the same Soldier record stands in the roster again -- the readers re-link the saved ids into apSoldiers");
+            /* The link the map chunk really restores: Save_ReadMap reads a saved id and stores it at
+             * cell+0x30 (0x436C0), so the CELL side is the parity check, and the cell's own
+             * coordinates are derived from the walk, not stored (0x434DC).
+             * The SOLDIER's own link (Soldier+0x10) is restored in the original by Save_ReadSoldiers
+             * @ 0x419A8..0x419DC: three saved coordinates index apCells (Map+0x15338) as
+             * 60 * (60 * z + y) + x. That read is a recorded gap -- the shell's reader discards the
+             * three bytes -- and the chunk order matters: "soldiers" is read at 0x44DBC, BEFORE
+             * Tact_InitMission (0x44E24) brings the map chunk up, so the original resolves the link
+             * through a cell table that the map bring-up then rebuilds. The shell carries NULL here. */
+            {
+                MapCell *pFound = NULL;
+                i32 nZ, nY2, nX2;
+
+                for (nZ = 0; nZ < 4 && pFound == NULL; ++nZ) {
+                    for (nY2 = 0; nY2 < PUFO_MAP_CELL_DIM && pFound == NULL; ++nY2) {
+                        for (nX2 = 0; nX2 < PUFO_MAP_CELL_DIM; ++nX2) {
+                            MapCell *pCell = g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nZ
+                                                                 + PUFO_MAP_CELL_DIM * nY2 + nX2];
+
+                            if (pCell != NULL && pCell->pUnit == g_pMarkUnit) {
+                                pFound = pCell;
+                                break;
+                            }
+                        }
+                    }
+                }
+                {
+                    i32 nCells[4] = {0, 0, 0, 0};
+
+                    for (nZ = 0; nZ < PUFO_MAP_LAYERS; ++nZ) {
+                        for (nY2 = 0; nY2 < PUFO_MAP_CELL_DIM; ++nY2) {
+                            for (nX2 = 0; nX2 < PUFO_MAP_CELL_DIM; ++nX2) {
+                                if (g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nZ
+                                                        + PUFO_MAP_CELL_DIM * nY2 + nX2] != NULL) {
+                                    ++nCells[nZ];
+                                }
+                            }
+                        }
+                    }
+                    /* Init_LoadMission has to allocate every column: the original's 0x3D168 loops reset
+                     * the column register per row and step the table pointer +4 per column and +0x3840
+                     * (3600 dwords) per layer. The "map" chunk writes one record per slot, so a slot left
+                     * NULL makes Save_ReadMap read the records that belong to other slots. */
+                    Check(nCells[0] == 3600 && nCells[1] == 3600 && nCells[2] == 3600 && nCells[3] == 3600,
+                          "the loaded grid allocates 60x60 cells on all four layers (0x3D168..0x3D1C0)");
+                }
+                Check(pFound != NULL,
+                      "Save_ReadMap put the unit back into some terrain cell (cell+0x30, 0x436C0)");
+                if (pFound != NULL) {
+                    /* The coordinates the walk derived for that cell, against the coordinates the unit
+                     * was standing on when the slot was written. */
+                    CheckEqI32((i32)pFound->nX, g_nMarkCellX, "the cell's x, derived by the walk (0x434DC)");
+                    CheckEqI32((i32)pFound->nY, g_nMarkCellY, "and y");
+                    CheckEqI32((i32)pFound->nZ, g_nMarkCellZ, "and the layer");
+                }
+                Check(pMapL->apXcomUnits[0] == NULL || pMapL->apXcomUnits[0]->pCell == NULL,
+                      "recorded gap: the soldier's own cell link stays NULL (Save_ReadSoldiers 0x419DC is unported)");
+            }
+        }
+        CheckEqI32(g_world.nMapEnemyReserveCount, g_nMarkHidden, "the reserve roster (unk_138DF0) count");
+        CheckEqI32(g_world.nTactItemCount, g_nMarkItems, "the flobjs item count (Save_AllocFlobjs + Save_ReadFlobjs)");
+        Check(g_world.tactEnv.focus.nCamScrollX == 21 && g_world.tactEnv.focus.nCamScrollY == 23,
+              "the camera at 0x15130/0x15134 comes back into the shell's focus record");
+        Check(g_world.nMapDeployedHwps == 5 && g_world.bMapSpawnAlt == 1
+                  && g_world.nMapSpawnTileX == 7 && g_world.nMapSpawnTileY == 9,
+              "0x15140, 0x15148, 0x1514C and 0x15150 come back too");
+        Check(g_world.nMapUnk138E6C == 0x1234 && g_world.nMapUnk138E70 == 0x5678,
+              "v124.dat was present, so the stored dwords are used rather than rolled (0x445D4..0x446A0)");
+        /* Only the cells the reset block writes. bMapMissionVictory is tgamedata's own byte
+         * (anActionPhaseSave0[92]) and 0x444C0..0x445CC never touches it, so the check stays off it. */
+        Check(g_world.bMapBattleEnded == 0 && g_world.bMapEnemyTurnActive == 0
+                  && g_world.bMapPlayerInput == 1,
+              "the tactical reset ran on the live cells: the battle bytes clear and bPlayerInputEnabled is SET to 1 (0x444C0..0x445CC)");
+        CheckEqI32(g_world.nMapUiSlot10, 10, "apUiSlotsA[10] comes back holding the value 10");
+        Check(g_world.nUiScreen == 0, "Map_nUiScreen is cleared to 0 by the same reset");
+
+        /* The picture the rebuild paints: the frame seam over the mission the readers brought back. */
+        Check(World_bTactFrameLive(&g_world), "the reloaded mission sits on the tactical frame seam");
+        /* The carried tile counts are what make the cell passes cover this mission at all -- see the
+         * note above on Map+0x34/0x35 having no writer in the beta. */
+        g_world.sTactInput.nTileShiftX = nTileXKeep;
+        g_world.sTactInput.nTileShiftY = nTileYKeep;
+        g_world.bMapDrawIsoLayer = 1;
+        ClearSurface();
+        nBlitsBefore = g_nBlits;
+        World_TactFrame(&g_world);
+        Check(g_nBlits > nBlitsBefore,
+              "the iso chain runs over the reloaded mission: the cell passes and the unit glyphs blit");
+        DumpFrame("tact_loaded_mission");
+        (void)remove("sav62.sav");
     }
 
     World_Free(&g_world);

@@ -318,6 +318,19 @@ typedef struct PufoWorldState {
     RmpData       sTactRmp;             /* pRmpMissionData @ 0x15881C. Inline: TactBuf11408_ctor fills it
                                          * and Rmp_FreeNodes releases its nodes (the original frees the
                                          * block itself -- deviation recorded in Unit 108) */
+    /* --- the load path's mission bring-up (Part 65) ---
+     * LoadGame holds the slot file open across Tact_InitMission(1) (the call at 0x44E24 sits before
+     * DatFile_Close at 0x44E2C) and the mission's whole tactical half is read out of it there. These
+     * stage what the readers fill, and the hook block carries the callbacks the reader needs -- the
+     * original reaches all of them through the Map block directly. The rosters point at pMap's own
+     * arrays and at apTactHidden, exactly as World_SaveSlot's write side does. */
+    DatFile        *pLoadDat;           /* borrowed from World_LoadSlot, never owned */
+    TactSaveState   sTactSave;          /* the 23 tgamedata fields */
+    TeamUnitsState  sTactSaveRosters;   /* teamunits / aliens / diedsolds / hiddensold (not the sTactRosters
+                                         * UnitRosters view the vis ctx uses) */
+    FlobjsReadState sTactFlobjs;
+    TactResetState  sTactReset;         /* the ~30-field tactical reset at 0x444C0..0x445CC */
+    TactLoadHooks   sTactLoadHooks;
     void         *pTactShowShip;        /* dword_156A78: the showship.dat blob, malloc'd to its header size */
     PadImage     *pTactBriefPad;        /* unk_15692C: the briefing pad Tact_InitMission drops without
                                          * freeing (deviation 3); the shell releases it at teardown */
@@ -559,7 +572,7 @@ typedef struct PufoWorldState {
      * new game on) goes to 1, case 1 to 0, and only at 0 does the pulse advance the clock. */
     GeoscapeCloseEnv  closeEnv;
     const UiControlHitCtx *pHitCtx;  /* the WorldHooks' hit context, wired for the pulse's forced clicks */
-    const u8    *pnMapPhase;         /* nMapPhase @ 0x1139EF (Map + 0x37): the 0xC352 anim counter the
+    u8          *pnMapPhase;         /* nMapPhase @ 0x1139EF (Map + 0x37): the 0xC352 anim counter the
                                       * WndProc wraps at 7 (0xA0988/0xA098C) and Save_ReadTGameData
                                       * restores (0x444E0). The caller owns it; the placement arm's cursor
                                       * colour 10*(nMapPhase+15) reads it (0x92470). */
@@ -625,7 +638,7 @@ typedef struct WorldHooks {
     i32                   *pnAnimPhase;
     /* Map + 0x37 (nMapPhase @ 0x1139EF), the 0xC352 anim counter. The caller owns it here too, because
      * the tactical Map block is the caller's, and the placement arm's cursor colour reads it. */
-    const u8              *pnMapPhase;
+    u8                    *pnMapPhase;
     /* Smap_HitTestStrategSelect @ 0x82be8 needs the caller's SmapHitEnv, which the shell does not
      * build; the frame hands the dispatcher this seam instead (NULL means "nothing selectable"). */
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
@@ -713,9 +726,11 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
                   const PufoOptions *pOptions, const WorldHooks *pHooks);
 
 /* LoadGame @ 0x44bbc over this state: the slot file is szAppDir + "sav" + slot + ".sav".
- * Returns LoadGame's result (0 when the file is absent). */
+ * Returns LoadGame's result (0 when the file is absent). pFont is required since Part 65: a save that
+ * carries a mission rebuilds it through Tact_InitMission(1), and that path needs fontSys @ 0x158268
+ * for Font_LoadTactSprites and the four xcom_<n> sprite sets (Save_ReadTGameData 0x4444C..0x4449C). */
 i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
-                   const PufoOptions *pOptions, const WorldHooks *pHooks);
+                   PufoFont *pFont, const PufoOptions *pOptions, const WorldHooks *pHooks);
 
 /* SaveGame @ 0x44988 over this state (Part 62): the same slot path as World_LoadSlot. The tactical
  * chunks are built only while a mission is live; the mission counter byte is incremented through an

@@ -580,10 +580,18 @@ static void Init_NewMission(TactInitEnv *pEnv)
 /* 0x3D138..0x3D24C: the save-load path. The grid is allocated here rather than built. */
 static void Init_LoadMission(TactInitEnv *pEnv)
 {
+    /* The grid is sized from the dims the save carries, so the chunk's two header bytes are read
+     * before the allocation. Save_ReadMap re-finds the chunk, so nothing here consumes the stream. */
+    (void)Save_ReadMapDims(pEnv->pDat, &pEnv->pMap->geom);
+
     const i32 nDimX = (i32)pEnv->pMap->geom.nDimX;
     const i32 nDimY = (i32)pEnv->pMap->geom.nDimY;
-    i32 nBase = 0;
 
+    /* 0x3D168..0x3D1C0, the original's own loops: R7 (col) resets to 0 on every row, the table slot is
+     * (60*row + col) + 3600*layer -- R8 walks +4 per column and +0x3840 (=3600 dwords) per layer -- and
+     * MapCell_Init gets (col, row, layer). The slot MUST carry the column term: leaving it out stores one
+     * pointer per row instead of 60, so 59 slots in 60 stay NULL and the "map" chunk's records land on the
+     * wrong cells. */
     for (i32 y = 0; y < PUFO_CELLS_PER_TILE * nDimY; ++y) {
         for (i32 x = 0; x < PUFO_CELLS_PER_TILE * nDimX; ++x) {
             for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
@@ -592,12 +600,12 @@ static void Init_LoadMission(TactInitEnv *pEnv)
                 if (pCell != NULL) {
                     (void)MapCell_Reset(pCell);
                 }
-                pEnv->apCells[nBase + PUFO_TERRAIN_CELLS_PER_LAYER * nLayer] = pCell;
+                pEnv->apCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer
+                              + PUFO_MAP_CELL_DIM * y + x] = pCell;
                 /* The original calls Init with the null pointer too. Reproduced. */
                 (void)MapCell_Init(pCell, x, y, nLayer);
             }
         }
-        nBase += PUFO_MAP_CELL_DIM;
     }
 
     (void)Tact_LoadLoftData(pEnv->pLoft);

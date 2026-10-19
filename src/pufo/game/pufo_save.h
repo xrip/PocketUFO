@@ -557,6 +557,9 @@ bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *p
                   Soldier *const *apSoldiers, i32 nSoldierCount,
                   TactItem *const *apItems, i32 nItemCount,
                   const PufoFont *pFont);
+/* The chunk's two dim bytes (0x43400 / 0x43418) read ahead of the shell's grid allocation, so the
+ * walk in Save_ReadMap meets the same slots Save_WriteMap wrote. See the note in pufo_save.c. */
+bool Save_ReadMapDims(DatFile *pDat, MapGeom *pMap);
 
 /* ------------------------------------------------- the four roster chunks
  *
@@ -1003,10 +1006,20 @@ typedef struct TactLoadHooks {
     bool (*pfnLoadSpr)(i32 nSpriteSet, void *pUser); /* Font_LoadSpr(font, "xcom_<n>") */
     void (*pfnBuildIndex)(void *pUser);        /* Font_BuildIndex @ 0x46480 */
     u32  (*pfnRandU16)(u32 nMax, void *pUser); /* Game_RandU16 @ 0x3e59c */
+    /* The 23 tgamedata fields land live in the original's Map block (Map+0x15110..0x151A0), and
+     * 0x4444C's Font_LoadTactSprites reads them from there -- Map_nMapLayers @ 0x15114 among them.
+     * The port stages them in TactSaveState, so this hook is what makes them live at that point. */
+    void (*pfnApplyState)(const TactSaveState *pSt, void *pUser);
+    /* Same for the ~30-field tactical reset at 0x444C0..0x445CC: the original clears those cells in
+     * place, before Map_PatchCraftSprites and MapView_FocusSelected run. The staged copy needs the
+     * same moment. */
+    void (*pfnApplyReset)(const TactResetState *pReset, void *pUser);
+    /* Save_ReadTeamUnits writes its four counts and Map_pSelUnit straight into the live cells (0x44048,
+     * 0x4409C, 0x44100, 0x4416C, 0x441D8); the port stages them in TeamUnitsState, so the caller gets
+     * them back at the same moment. */
+    void (*pfnApplyRosters)(const TeamUnitsState *pSt, void *pUser);
     void            *pUser;
-    const PufoFont  *pFont;                    /* the font handle the original keeps at 0x158268 */
-    u16             *paSpriteFlags;            /* unk_15827A, four entries */
-    u16              nSpriteFlagValue;         /* unk_15829E */
+    PufoFont        *pFont;                    /* fontSys @ 0x158268: read at 0x44474 (nTotalSprFrames) and written at 0x4447C (anAlienSprBase) */
     u8              *pbUnk157198Flag;          /* unk_157198->bUnk70115, cleared through a pointer */
 } TactLoadHooks;
 
@@ -1137,7 +1150,13 @@ typedef struct LoadGameEnv {
     GeoscapeWorld    *pWorld;          /* apCraft / nShipCount / apSiteState / apRadarPct / pTime */
     u8              *abFacilityGrid;   /* the 1524-byte grid */
     const u16       *apResearchCols;   /* 0x16022C, 144 u16 per base */
-    const u16       *apManufCols;      /* 0x15E19C, 200 u16 per base */
+    u16             *apManufCols;      /* 0x15E19C, 200 u16 per base. NOT read-only: LoadGame's version-<3
+                                        * tail uses it as the fourth scratch array -- copy out @ 0x455F8
+                                        * (0xC80 bytes), clear @ 0x45638 (0xC80 bytes), re-spread writes @
+                                        * 0x45714 (STRH). In the original it sits at anchor+0x4304, right
+                                        * after the 17152-byte product block, which is why the block's own
+                                        * offsets reach it there; in the shell it is a separate array, so
+                                        * the writes MUST go through this pointer. */
     u16             *puResearchEntries;/* 0x160C4C, shared by every base */
     u16             *puShotObjectWords;/* the word array of the shot object = apObjects[0] */
     SaveTimeRecord  *pTimeRec;         /* the time chunk's wire record */

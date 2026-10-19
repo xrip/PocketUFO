@@ -2279,7 +2279,9 @@ static void TestLoadGame(void)
     static u8 aGrid[1524];
     static u8 aSiteState[8];
     static i32 aRadarPct[8]; /* unk_162008, eight dwords */
-    static u16 aManuf[200];
+    /* auManufCol @ 0x15E19C: 200 u16 per base over eight bases = 3200 bytes, which is exactly the
+     * block the version-<3 tail copies out (0x455F8) and clears (0x45638). */
+    static u16 aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
     static u16 aResearchCols[144];
     static u16 uResearchEntries;
     static u16 aShotWords[128];
@@ -2622,7 +2624,7 @@ static void TestLoadGameOldVersionMissionSeam(void)
     static u8 aTiles[4] = { 1, 1, 1, 1 };
     static u8 aSiteState[8];
     static i32 aRadarPct[8];
-    static u16 aManuf[200];
+    static u16 aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* 3200 bytes, auManufCol */
     static u16 aResearchCols[144];
     static u16 uResearchEntries;
     static u16 aShotWords[128];
@@ -2972,8 +2974,20 @@ static int  g_nTactSpriteLoads;
 static int  g_nSprCalls;
 static int  g_nTactBuildIndex;
 static int  g_nRandCalls;
+static int  g_nApplyCalls;
+static int  g_nSprCallsAtApply;
 static i32  g_aSpriteSets[8];
 static u32  g_aRandMax[8];
+
+/* The reader's 23 fields land live in the original's Map block before 0x4444C's Font_LoadTactSprites;
+ * recording g_nSprCalls here proves the port applies them at the same point. */
+static void ApplyStateProbe(const TactSaveState *pSt, void *pUser)
+{
+    (void)pSt;
+    (void)pUser;
+    ++g_nApplyCalls;
+    g_nSprCallsAtApply = g_nSprCalls;
+}
 
 static void LoadTactSpritesProbe(void *pUser)
 {
@@ -2981,13 +2995,15 @@ static void LoadTactSpritesProbe(void *pUser)
     g_nTactSpriteLoads++;
 }
 
+/* The real Font_LoadSpr @ 0x461d8 grows fontSys.nTotalSprFrames, and 0x44474 reads that counter fresh
+ * on every pass of the sprite-set loop -- so the probe has to move it, or the per-pass read is invisible. */
 static bool LoadSprProbe(i32 nSpriteSet, void *pUser)
 {
-    (void)pUser;
     if (g_nSprCalls < 8) {
         g_aSpriteSets[g_nSprCalls] = nSpriteSet;
     }
     g_nSprCalls++;
+    ((PufoFont *)pUser)->nTotalSprFrames = (u16)(((PufoFont *)pUser)->nTotalSprFrames + 0x10u);
     return true;
 }
 
@@ -3009,7 +3025,6 @@ static u32 RandProbe(u32 nMax, void *pUser)
 
 static void TestReadTGameData(void)
 {
-    static u16 aSpriteFlags[4];
     static u8 bBlobFlag;
     static TactLoadHooks hooks;
     DatFile dat;
@@ -3107,23 +3122,28 @@ static void TestReadTGameData(void)
 
     /* Everything the reset touches starts dirty, so a clear is observable. */
     memset(&reset, 0xEE, sizeof(reset));
-    aSpriteFlags[0] = 0x1111;
-    aSpriteFlags[1] = 0x2222;
-    aSpriteFlags[2] = 0x3333;
-    aSpriteFlags[3] = 0x4444;
+    /* fontSys @ 0x158268, dirty so a write is observable: the four alien bases and the running counter. */
+    font.anAlienSprBase[0] = 0x1111;
+    font.anAlienSprBase[1] = 0x2222;
+    font.anAlienSprBase[2] = 0x3333;
+    font.anAlienSprBase[3] = 0x4444;
+    font.nTotalSprFrames   = 0x0077;
     bBlobFlag = 1;
     memset(&hooks, 0, sizeof(hooks));
     hooks.pfnLoadTactSprites = LoadTactSpritesProbe;
     hooks.pfnLoadSpr = LoadSprProbe;
     hooks.pfnBuildIndex = BuildIndexProbe;
     hooks.pfnRandU16 = RandProbe;
-    hooks.paSpriteFlags = aSpriteFlags;
-    hooks.nSpriteFlagValue = 0x0077;
+    hooks.pfnApplyState = ApplyStateProbe;
+    hooks.pUser = &font;
+    hooks.pFont = &font;
     hooks.pbUnk157198Flag = &bBlobFlag;
     g_nTactSpriteLoads = 0;
     g_nSprCalls = 0;
     g_nTactBuildIndex = 0;
     g_nRandCalls = 0;
+    g_nApplyCalls = 0;
+    g_nSprCallsAtApply = -1;
 
     memset(&read, 0, sizeof(read));
     read.nWideCountFlag = 1;
@@ -3151,16 +3171,19 @@ static void TestReadTGameData(void)
     CheckEqI32(r.nUnk151A0, 0x11223344, "  0x151A0");
     CheckEqI32(r.anCraftTile[2], 9, "  the third craft tile, one byte on disk");
 
+    CheckEqI32(g_nApplyCalls, 1, "  the 23 fields are applied to the caller's cells once, right after the reads");
+    CheckEqI32(g_nSprCallsAtApply, 0, "  and applied before Font_LoadTactSprites or any sprite set runs (0x4444C follows the reads)");
     CheckEqI32(g_nTactSpriteLoads, 1, "  Font_LoadTactSprites runs once, first");
     CheckEqI32(g_nSprCalls, 3, "  three sprite sets loaded, the 23 slot is skipped");
     CheckEqI32(g_aSpriteSets[0], 0, "  xcom_0");
     CheckEqI32(g_aSpriteSets[1], 5, "  xcom_5");
     CheckEqI32(g_aSpriteSets[2], 7, "  xcom_7");
     CheckEqI32(g_nTactBuildIndex, 1, "  Font_BuildIndex runs once, after the sets");
-    CheckEqI32(aSpriteFlags[0], 0x0077, "  unk_15827A[0] set from unk_15829E");
-    CheckEqI32(aSpriteFlags[1], 0x0077, "  [1] set");
-    CheckEqI32(aSpriteFlags[2], 0x3333, "  [2] left alone, because its set is 23");
-    CheckEqI32(aSpriteFlags[3], 0x0077, "  [3] set");
+    CheckEqI32(font.anAlienSprBase[0], 0x0077, "  0x44474/0x4447C: anAlienSprBase[0] takes the counter as it stands before xcom_0 loads");
+    CheckEqI32(font.anAlienSprBase[1], 0x0087, "  [1] takes it AFTER xcom_0 moved it: 0x44474 re-reads fontSys_nTotalSprFrames every pass");
+    CheckEqI32(font.anAlienSprBase[2], 0x3333, "  [2] untouched: its set byte is 23 and 0x44470 skips the whole body");
+    CheckEqI32(font.anAlienSprBase[3], 0x0097, "  [3] one bump later again, after xcom_5");
+    CheckEqI32(font.nTotalSprFrames, 0x00A7, "  three loads moved the counter three times");
 
     CheckEqI32(rosters.nXcomCount, 1, "  Save_ReadTeamUnits ran");
     CheckEqI32(nItemCount, 1, "  Save_ReadFlobjs ran");

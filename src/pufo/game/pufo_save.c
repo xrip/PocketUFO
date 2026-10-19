@@ -1535,6 +1535,27 @@ bool Save_WriteMap(DatFile *pDat, const MapGeom *pMap,
     return true;
 }
 
+/* The map chunk's two dimension bytes (0x43400 / 0x43418), read ahead of the shell's grid
+ * allocation. The original needs no such step: its 14400-entry cell table is INLINE in Map
+ * (Map+0x15338..Map+0x23438) and survives the mission, so Save_ReadMap's walk over
+ * 4 layers x dimY*10 x dimX*10 always meets the cells its writer wrote. The shell mallocs the grid
+ * from the dims, so it has to know them first -- allocating from the previous (or zero) dims
+ * leaves fewer cells than the chunk holds records, and the two walks desynchronise.
+ * Save_ReadMap re-finds the chunk (its own 0x433E8), so the pre-read leaves no cursor debt. */
+bool Save_ReadMapDims(DatFile *pDat, MapGeom *pMap)
+{
+    if (pDat == NULL || pMap == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_MAP)) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pMap->nDimX, 1)) { /* 0x43400 */
+        return false;
+    }
+    return DatFile_Read(pDat, &pMap->nDimY, 1); /* 0x43418 */
+}
+
 bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *pUser,
                   Soldier *const *apSoldiers, i32 nSoldierCount,
                   TactItem *const *apItems, i32 nItemCount,
@@ -2416,17 +2437,28 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
         if (!DatFile_Read(pDat, &pSt->anCraftTile[i], 1)) { bOk = false; }
     }
 
+    /* The original writes these 23 fields straight into the Map block, and the very next call
+     * reads them back from there (Font_LoadTactSprites reaches Map_nMapLayers @ 0x15114). The port
+     * stages them in pSt, so the caller's apply hook is the point where they become live. */
+    if (pHooks->pfnApplyState != NULL) {
+        pHooks->pfnApplyState(pSt, pHooks->pUser);
+    }
+
     /* 0x4444C: Font_LoadTactSprites @ 0x257c4, ported in pufo_font.c and installed by the caller. */
     if (pHooks->pfnLoadTactSprites != NULL) {
         pHooks->pfnLoadTactSprites(pHooks->pUser);
     }
 
-    /* 0x44450..0x4449C: the four sprite-set bytes at Map+0x15116. A slot of 23 loads
-     * nothing and also leaves its flag word alone. */
+    /* 0x44450..0x4449C: the four sprite-set bytes at Map+0x15116. A slot of 23 skips the whole
+     * body (0x44468/0x44470), so it loads nothing and leaves its base word alone. On every other
+     * pass 0x44474 reads fontSys_nTotalSprFrames FRESH and 0x4447C stores it into
+     * fontSys_anAlienSprBase[i] before 0x44488's Font_LoadSpr moves that counter -- so each slot
+     * records the running counter the PREVIOUS set left, exactly like Tact_SpawnAliens does on the
+     * build path. */
     for (i32 i = 0; i < 4; ++i) {
         if (pSt->abSpriteSet[i] != PUFO_SPRITE_SET_NONE) {
-            if (pHooks->paSpriteFlags != NULL) {
-                pHooks->paSpriteFlags[i] = pHooks->nSpriteFlagValue;
+            if (pHooks->pFont != NULL) {
+                pHooks->pFont->anAlienSprBase[i] = pHooks->pFont->nTotalSprFrames;
             }
             if (pHooks->pfnLoadSpr != NULL) {
                 (void)pHooks->pfnLoadSpr(pSt->abSpriteSet[i], pHooks->pUser);
@@ -2439,6 +2471,9 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
 
     /* 0x444A8, 0x444B0, 0x444B4: the three chunk readers, in this order. */
     (void)Save_ReadTeamUnits(pDat, pRosters, pFlobjs->apSoldiers, pFlobjs->nSoldierCount);
+    if (pHooks->pfnApplyRosters != NULL) {
+        pHooks->pfnApplyRosters(pRosters, pHooks->pUser);
+    }
     (void)Save_ReadFlobjs(pDat, pFlobjs->nWideCountFlag, pFlobjs->pnTactItemCount,
                           pFlobjs->apTactItems, pFlobjs->apObjects, pFlobjs->nObjectCount,
                           pFlobjs->apSoldiers);
@@ -2479,6 +2514,9 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
     pReset->nUiScreen = 0;
     if (pHooks->pbUnk157198Flag != NULL) {   /* 0x445AC, through the object-blob pointer */
         *pHooks->pbUnk157198Flag = 0;
+    }
+    if (pHooks->pfnApplyReset != NULL) {
+        pHooks->pfnApplyReset(pReset, pHooks->pUser);
     }
 
     /* 0x445D4..0x446A0: v124.dat is optional, and when it is missing the two dwords
@@ -2749,7 +2787,12 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
         u8     *pB   = pEnv->pProductBlock + 6400;
         u8     *pC   = pEnv->pProductBlock + 12800;
         u8     *pMap = pEnv->pProductBlock + 16000;
-        u8     *pD   = pEnv->pProductBlock + 17152; /* apManufCols sits right after the block */
+        u16    *pD   = pEnv->apManufCols; /* auManufCol @ 0x15E19C. The original reaches it as anchor+0x4304,
+                                           * the array sitting right after the product block; the shell keeps
+                                           * the two apart, so the copy/clear/re-spread must go through the env
+                                           * pointer. Reaching it as block+17152 wrote 3200 bytes past the end of
+                                           * the block and cleared the world record's tail (its own frame-hook
+                                           * pointers included). */
         i32     nTopics = (i32)*pEnv->puResearchEntries;
 
         memcpy(aScratchA, pA, sizeof(aScratchA)); /* 0x455A4 */
@@ -2771,7 +2814,7 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
                 ((i32 *)pA)[nItem + nBaseOff] = ((const i32 *)aScratchA)[nBaseOff + col]; /* 0x456AC */
                 ((i32 *)pB)[nItem + nBaseOff] = ((const i32 *)aScratchB)[nBaseOff + col]; /* 0x456C8 */
                 ((u16 *)pC)[nItem + nBaseOff] = ((const u16 *)aScratchC)[nBaseOff + col]; /* 0x456F0 */
-                ((u16 *)pD)[nItem + nBaseOff] = ((const u16 *)aScratchD)[nBaseOff + col]; /* 0x45714 */
+                pD[nItem + nBaseOff] = ((const u16 *)aScratchD)[nBaseOff + col]; /* 0x45714, STRH */
             }
         }
     }

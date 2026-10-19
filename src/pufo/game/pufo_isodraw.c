@@ -639,6 +639,7 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
 
     /* The original calls the two iso helpers with the context base and lets them read nMapDimX/Y
      * out of it; the port passes the dimensions in (see pufo_mapcell.h). */
+
     pIso->nIsoOffA = Map_IsoOffsetA(pEnv->nMapDimX, pEnv->nCamScrollX, pEnv->nCamScrollY);
     pIso->nIsoOffB = Map_IsoOffsetB(pEnv->nMapDimY, pEnv->nCamScrollX, pEnv->nCamScrollY);
     pIso->nLayer = 0;
@@ -659,6 +660,7 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
                     }
                 }
             }
+
 
             /* Pass 2: the rest of the chain, in the original's order. */
             for (pIso->nTileY = 0; pIso->nTileY < (i32)pEnv->nTileCountY; ++pIso->nTileY) {
@@ -686,11 +688,13 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
         } while ((i32)pIso->nLayer < (i32)pEnv->nLayerCount);
     }
 
+
     MapView_DrawViewportGuide(pEnv->pGuide);
 
     (void)TactHud_DrawSelectedUnitPanel(pEnv->pBank, pEnv->pPanel, pEnv->pColor,
                                         pEnv->pfnDecimalBlit, pEnv->pDecimalUser,
                                         pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx, pEnv->pCtlUser);
+
 
     /* The multi-target bars. ORIGINAL BUG (0x22080): Unit_bIsOperative is called with Map.pSelUnit
      * with no null test, even though StatusMsg_DrawStack tests the same pointer. */
@@ -720,6 +724,7 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
 
     /* The original hands the draw context to StatusMsg_DrawStack where that function wants its
      * status scratch; the port gives it the real owner. */
+
     (void)StatusMsg_DrawStack(pEnv->pStatus, &nOutDrawY, pEnv->pStatusHooks);
     (void)Gfx_PackRgb565Pair(pEnv->pColor, 26, 244, 252, 13, 122, 126);
 
@@ -737,6 +742,7 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
         Text_DrawString(pEnv->pLookCtl->x + (51 - nWidth) / 2,
                         pEnv->pLookCtl->y + 3, pIso->szText);
     }
+
 
     /* The mission fade-out cover, skipped on the two screens that already own the frame. */
     if (pEnv->nUiScreen != 0 && pEnv->nUiScreen != 13) {
@@ -2034,9 +2040,15 @@ static void Iso_DrawSmallUnitGlyphs(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGa
     i32 nStep;
 
     pIso->bTwoHandWeapon = (u8)(Iso_HandIsWeapon(pUnit->pHandL) || Iso_HandIsWeapon(pUnit->pHandR));
-    /* 0x1CB54/0x1CB60: the selected item's OBJECT record, not the item -- *apSelWeapon is the
-     * TactItem* the original keeps at Map+0x48, and the tested byte is pObj+0xA4 (bListPri). */
-    if ((pUnit->bFlags & 4) != 0 && (*pGate->apSelWeapon)->pObj->bListPri == 0) {
+    /* 0x1CF2C..0x1CF48: an aiming unit (bFlags bit 4 -- "aiming", pufo_unit.h:374) takes the override
+     * from the selected item's OBJECT record, not the item: 0x1CF38 loads Map+0x48 (pSelWeapon, a
+     * TactItem*), 0x1CF3C derefs it, and 0x1CF40 tests the object's bListPri at +0xA4 against zero.
+     * Deviation: the original has no null test on either hop. A mission loaded from a save can hold an
+     * aiming unit while Map+0x48 is NULL (its only writers are the click and fire-mode handlers, and the
+     * roster chunk restores no weapon), where the original would fault; the shell tests and leaves the
+     * flag alone instead. */
+    if ((pUnit->bFlags & 4) != 0 && *pGate->apSelWeapon != NULL
+            && (*pGate->apSelWeapon)->pObj != NULL && (*pGate->apSelWeapon)->pObj->bListPri == 0) {
         pIso->bTwoHandWeapon = 0;
     }
 
@@ -2136,8 +2148,12 @@ static void Iso_DrawSmallUnitGlyphs(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGa
             const TactItem *pHandR = pUnit->pHandR;
             i32 nFacingTerm;
 
-            if ((pUnit->bFlags & 4) != 0) {
-                pObj = (*pGate->apSelWeapon)->pObj; /* 0x1D308: *(ObjectRec**)pSelWeapon */
+            if ((pUnit->bFlags & 4) != 0 && *pGate->apSelWeapon != NULL
+                    && (*pGate->apSelWeapon)->pObj != NULL) {
+                /* 0x1D300..0x1D30C: aiming wins over both hands -- the object the selected item points
+                 * at. Same deviation as above: the original loads Map+0x48 and derefs it twice with no
+                 * null test, so an aiming unit with no selected weapon faults there. */
+                pObj = (*pGate->apSelWeapon)->pObj;
             } else if (Iso_HandIsWeapon(pUnit->pHandL)) {
                 pObj = pUnit->pHandL->pObj;
             } else if (Iso_HandIsWeapon(pHandR)) {
@@ -2183,6 +2199,7 @@ int MapView_DrawUnit(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate)
         return 0;
     }
 
+
     nPalSaved = pIso->nPal;
     if (Unit_bIsOperative(pIso->pUnit)) {
         pIso->nPal = 0; /* 0x1C984 */
@@ -2195,13 +2212,16 @@ int MapView_DrawUnit(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate)
         return 0;
     }
 
+
     Iso_DrawCursorMarker(pIso, pGate, 18);
+
 
     if (Unit_bIsLarge(pIso->pUnit)) {
         Iso_DrawLargeUnitGlyphs(pIso, pGate);
     } else {
         Iso_DrawSmallUnitGlyphs(pIso, pGate);
     }
+
 
     Iso_DrawCursorMarker(pIso, pGate, 17);
 
