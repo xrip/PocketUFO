@@ -1688,11 +1688,11 @@ int main(void)
                 /* Tact_InitUiControls @ 0x3b498 ran through the shell hook (Part 54): the handlers are
                  * installed on the shell's bank in the g_aUiClickName order, the look control is built,
                  * the HUD origin is recomputed and the direct overrides land. */
-                static const i32 aDeferred[6] = { 5, 17, 18, 56, 57, 58 };
+                static const i32 aDeferred[5] = { 17, 18, 56, 57, 58 };
                 i32 bInstalled = 1, bDeferred = 1, bStart = 1;
                 for (i32 c = 0; c < 113; ++c) {
                     i32 bWant = 1;
-                    for (i32 d = 0; d < 6; ++d) {
+                    for (i32 d = 0; d < 5; ++d) {
                         if (aDeferred[d] == c) { bWant = 0; }
                     }
                     if (bWant && g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
@@ -1702,7 +1702,7 @@ int main(void)
                     if (g_bank.aCtl[c].pfnClick != NULL) { bStart = 0; }
                 }
                 Check(bInstalled, "every handler the port models is installed on bank widgets 0..112");
-                Check(bDeferred, "the six deferred families stay NULL: 5 end-turn, 17/18 hand menus, 56 deploy confirm, 57 quit, 58 resize (widget 4 is installed since Part 55)");
+                Check(bDeferred, "the five deferred families stay NULL: 17/18 hand menus, 56 deploy confirm, 57 quit, 58 resize (4 and 5 installed since Parts 55/56)");
                 Check(bStart && g_bank.aCtl[128].pfnClick != NULL && g_bank.aCtl[129].pfnClick != NULL,
                       "113..127 stay uninstalled (start-menu widgets) and 128/129 take MenuBtn_Cancel (0x1a24c / 0x1a26c)");
                 const UiControl *pLook = &g_world.sTactLookCtl;
@@ -1827,6 +1827,36 @@ int main(void)
                 CLICK(105);
                 Check(g_nLoadSlotCalls >= 1 && g_nLoadSlotId == 0 && g_nListModeCell == 1 && g_world.nUiScreen == 11,
                       "widget 105 on screen 11 runs the load hook for slot 0 and sets the list mode to 1");
+
+                /* 5: MenuBtn_EndTurn runs the whole enemy-turn bracket on the live frame (0x16494:
+                 * sample 17 + Tact_BeginEnemyTurn 0x4ca18, its only original caller). The field is
+                 * empty here: Begin sets busy / phase 3 / the enemy-turn byte and runs BeforeEnemyStep
+                 * (0x4b9b8); the phase-3 tick finds no unit and takes its tail (0x4D920), and
+                 * Tact_EndEnemyTurn (0x4cb74) clears the byte, busy and phase and re-enables input (Part 56). */
+                pMapX->apXcomUnits[0]->bUnk1037 = 1;
+                pMapX->apXcomUnits[0]->uTu = 1;      /* AfterEnemyStep's refill (0x4C74C) must lift it back to its stat block */
+                g_world.bMapPlayerInput = 0;
+                g_world.bMapEnemyTurnActive = 9;
+                i32 nEnemySave = pMapX->nEnemyCount;  /* the mission really fields units here; empty the field
+                                                       * AND the hidden park (BeforeEnemyStep 0x4BA3C would
+                                                       * pull reinforcements onto it on this mission type), so
+                                                       * the bracket takes its nothing-acted tail */
+                i32 nReserveSave = g_world.nMapEnemyReserveCount;
+                pMapX->nEnemyCount = 0;
+                g_world.nMapEnemyReserveCount = 0;
+                nSampleMark = g_nSamples;
+                CLICK(5);
+                pMapX->nEnemyCount = nEnemySave;
+                g_world.nMapEnemyReserveCount = nReserveSave;
+                Check(g_aFrameSamples[nSampleMark] == 17
+                          && pMapX->apXcomUnits[0]->bUnk1037 == 0
+                          && pMapX->apXcomUnits[0]->uTu > 1
+                          && g_world.bMapEnemyTurnActive == 0
+                          && pMapX->tact.bBusy == 0 && pMapX->tact.nPhase == 0
+                          && g_world.bMapPlayerInput == 1
+                          && pMapX->nEnemyCount == 0
+                          && pMapX->pSelUnit == pMapX->apXcomUnits[1],
+                      "widget 5 runs the bracket: 17 played, BeforeEnemyStep cleared the Xcom 0x40D byte (0x4B9E4), the tail cleared the enemy-turn byte (0x4CB88), busy, and phase, input came back, and the saved selection held");
 
                 /* Restore everything the dispatch moved. */
                 pMapX->status = statusSave;
@@ -2024,6 +2054,10 @@ int main(void)
                 memset(aEnemyFix, 0, sizeof(aEnemyFix));
                 aEnemyFix[0].uTu     = 5;  /* under PUFO_ENEMYAI_TU_MIN (15) */
                 aEnemyFix[1].nAiTick = PUFO_ENEMYAI_TICK_MAX + 1;
+                /* the tail's AfterEnemyStep now really runs (Part 56): its visibility scan
+                 * reads each enemy's cell, so the fakes need valid ones. */
+                aEnemyFix[0].pCell   = &pMapE->aCells[0][0][0];
+                aEnemyFix[1].pCell   = &pMapE->aCells[0][0][0];
                 pMapE->apEnemyUnits[0] = &aEnemyFix[0];
                 pMapE->apEnemyUnits[1] = &aEnemyFix[1];
                 pMapE->nEnemyCount = 2;

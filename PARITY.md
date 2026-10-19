@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 969 / 969 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18151 |
+| Test checks run | 18154 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -290,7 +290,7 @@ is the module that answers to it.
 | `0x37ae4` | `Tact_BuildVisRayTable` | 1524 | `src/pufo/game/pufo_vistry.h` |
 | `0x2bd00` | `Map_QueueDoorAction` | 1448 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4dcf4` | `Unit_bFacingAngleDuel` | 1376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
-| `0x4c4a0` | `AfterEnemyStep` | 1368 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_turn.c` (+1) |
+| `0x4c4a0` | `AfterEnemyStep` | 1368 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x30368` | `Tact_ComputeAimVector` | 1320 | `src/pufo/game/pufo_ballist.h` |
 | `0x22648` | `Map_InitAndLoadRegistry` | 1284 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x1aadc` | `MapView_DrawViewportGuide` | 1256 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
@@ -314,7 +314,7 @@ is the module that answers to it.
 | `0x49410` | `Soldier_Generate` | 892 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x36830` | `Ship_RemoveWithCargo` | 860 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x478e4` | `Unit_SelectBestFireMode` | 852 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+1) |
-| `0x2c7f4` | `Map_RefreshCellMeta` | 800 | `src/pufo/game/pufo_invdrag.c`, `src/pufo/game/pufo_invdrag.h` (+3) |
+| `0x2c7f4` | `Map_RefreshCellMeta` | 800 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_invdrag.c` (+4) |
 | `0x4a444` | `Tact_UpdateUnitControl` | 788 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x27014` | `MapCursor_SetPos` | 784 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_input.h` (+3) |
 | `0x36d68` | `Unit_CanStepExitDir` | 780 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/game/pufo_unit.c` (+1) |
@@ -335,7 +335,7 @@ is the module that answers to it.
 | `0x48138` | `Unit_SpotCellOccupant` | 532 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x476d4` | `Unit_FormatDisplayName` | 528 | `src/pufo/game/pufo_unit.h` |
 | `0x2e5d0` | `Unit_ApplyCellDamage` | 520 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
-| `0x4b724` | `MapCell_TickProximityItems` | 516 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
+| `0x4b724` | `MapCell_TickProximityItems` | 516 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+2) |
 | `0x1b280` | `MapView_DrawCellSelectMarker` | 476 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
 | `0x27324` | `GameTick_Step` | 460 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_step.h` (+4) |
@@ -349,7 +349,7 @@ is the module that answers to it.
 | `0x3331c` | `Tact_GetCameraBounds` | 368 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x49bf0` | `Unit_FaceToward` | 364 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactstate.c` (+3) |
 | `0x498b0` | `Unit_ResetBattleState` | 348 | `src/pufo/game/pufo_tactend.h`, `src/pufo/game/pufo_unit.c` (+1) |
-| `0x4ca18` | `Tact_BeginEnemyTurn` | 348 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
+| `0x4ca18` | `Tact_BeginEnemyTurn` | 348 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x4b2f4` | `TactState_EnqueueThrow` | 300 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+2) |
@@ -428,7 +428,7 @@ is the module that answers to it.
 | `0x1c904` | `MapView_DrawCellFloorGlyph` | 84 | `src/pufo/game/pufo_isodraw.h` |
 | `0x63138` | `Map_BackspaceSelectedName` | 84 | `src/pufo/game/pufo_geopointer.h`, `src/pufo/game/pufo_soldiername.h` |
 | `0x276a0` | `Map_FacingDelta` | 80 | `src/pufo/game/pufo_path.h` |
-| `0x22b54` | `UnitList_ForEachRefresh` | 76 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_turn.h` (+2) |
+| `0x22b54` | `UnitList_ForEachRefresh` | 76 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactstate.h` (+3) |
 | `0x54b58` | `MapCell_ListRemove` | 76 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_mapcell.c` (+1) |
 | `0x55018` | `Map_FreeRmpNodes` | 72 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
 | `0x260c0` | `GameSpeed_Set` | 68 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_tactctl.c` (+2) |
@@ -1046,7 +1046,7 @@ is the module that answers to it.
 | `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
 | `0x79a48` | `BuySellScreen_ListPanelNext` | 40 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
 | `0x96ab0` | `Transfer_CacheSelIndex` | 40 | `src/pufo/game/pufo_baseui.h` |
-| `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` |
+| `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x19650` | `MenuBtn_Confirm0` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x196e8` | `MenuBtn_Confirm1` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x19884` | `MenuBtn_Confirm2` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 406 |
+| `test_geoscapeframe` | PASS | 407 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |
@@ -1317,7 +1317,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_terrain` | PASS | 59 |
 | `test_timer` | PASS | 87 |
 | `test_titles` | PASS | 139 |
-| `test_turn` | PASS | 173 |
+| `test_turn` | PASS | 175 |
 | `test_uibank` | PASS | 394 |
 | `test_unit` | PASS | 289 |
 | `test_vis` | PASS | 77 |

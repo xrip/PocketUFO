@@ -1616,6 +1616,7 @@ static void World_TactFillActionCostsThunk(void *pUser);
 static void World_TactEnqueueTurnKickThunk(Soldier *pUnit, u8 nFacing, void *pUser);
 static void World_TactInitUiControlsThunk(void *pUser); /* Tact_InitUiControls (0x3b498), Part 54 */
 static bool World_TactOpenInventoryThunk(void *pUser);   /* TactHud_OpenInventory (0x16ef4), Part 55 */
+static void World_TactAfterEnemyStepThunk(TactCtx272 *pTact, void *pUser); /* AfterEnemyStep (0x4c4a0), Part 56 */
 static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser);
 static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser);
 static void World_TactEnemyAiPushTextThunk(i32 nRecIndex, void *pUser);
@@ -1930,8 +1931,8 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactEnemyAi.pfnFillActionCosts    = World_TactFillActionCostsThunk;
     pW->sTactEnemyAi.pfnUpdateVisibility   = World_TactEnemyAiVisThunk;
     pW->sTactEnemyAi.pfnEnqueueTurnAndKick = World_TactEnqueueTurnKickThunk;
-    /* Deviation: AfterEnemyStep @ 0x4c4a0 is not ported; Tact_EndEnemyTurn skips a NULL hook. */
-    pW->sTactEnemyAi.pfnAfterEnemyStep     = NULL;
+    pW->sTactEnemyAi.pfnAfterEnemyStep     = World_TactAfterEnemyStepThunk; /* AfterEnemyStep (0x4c4a0) over the shell-owned EnemyStepCtx (Part 56) */
+    pW->sTactEnemyAi.pbEnemyTurnActive     = &pW->bMapEnemyTurnActive;      /* 0x113A13; the EndEnemyTurn tail clears it (0x4CB88) */
     pW->sTactEnemyAi.pfnClipAmmoCap        = World_TactClipAmmoCapThunk;
     pW->sTactEnemyAi.pfnLookup             = World_TactLookupCell;
     pW->sTactEnemyAi.geom                  = pMap->geom;      /* value copy, refreshed per tick */
@@ -2785,7 +2786,6 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
  * sTactInput (the input handlers' view); the bank handlers use the union and InputSync moves them.
  *
  * Handlers left NULL, each a recorded separate issue:
- *   5    MenuBtn_EndTurn @ 0x16494     -- Tact_BeginEnemyTurn's argument list is unchecked yet
  *   17/18 Tact_OpenLeft/RightHandMenu  -- the research gate is ready (g_abSlotTopicGate), but the
  *                                        cost input and the Soldier+0x1A6 gate byte are unmodeled
  *   56   Map_BuildDeployConfirmYesNo   -- the deploy modal opener (the Part 51 modal bank is ready)
@@ -3684,6 +3684,168 @@ static void World_ClickOpenInventory(void)
     }
 }
 
+/* ==========================================================================
+ * Part 56: the EndTurn pad runs the whole enemy-turn bracket.
+ * MenuBtn_EndTurn @ 0x16494 plays 17 and calls Tact_BeginEnemyTurn @ 0x4ca18 --
+ * the only original caller (pTactCtx272 @ 0x157180 is the frame's TactCtx272, the
+ * port's pMap->tact). Begin sets the enemy-turn byte (0x4CA30) / busy / phase 3
+ * and disables input, runs BeforeEnemyStep (0x4b9b8) over the shell-owned
+ * EnemyStepCtx, and hands the phase to Tact_ProcessActionPhase, whose phase-3 arm
+ * is the Part 52 enemy AI tick; its tail (0x4D920) runs Tact_EndEnemyTurn ->
+ * AfterEnemyStep (0x4c4a0), clears the byte (0x4CB88) and restores the selection.
+ * Render_Frame's slot stays NULL: the iso renderer is a recorded separate issue.
+ * ========================================================================== */
+
+/* EnemyStepCtx reads the side counts through i32*; GameMap owns 0x128AD7/0x128ADC as
+ * byte cells. The step thunks copy in, let the callee bump the mirrors (the hidden-
+ * reserve spawns), and truncate back. */
+static void World_TactStepSyncIn(PufoWorldState *pW)
+{
+    pW->nStepXcomCount  = pW->pTactMap->nXcomCount;
+    pW->nStepEnemyCount = pW->pTactMap->nEnemyCount;
+}
+
+static void World_TactStepSyncOut(PufoWorldState *pW)
+{
+    pW->pTactMap->nXcomCount  = (u8)pW->nStepXcomCount;
+    pW->pTactMap->nEnemyCount = (u8)pW->nStepEnemyCount;
+}
+
+/* EnemyStepCtx.pfnTickProximity: MapCell_TickProximityItems @ 0x4b724 over the shell's
+ * proximity ctx -- the same build the walker tick assembles every frame. */
+static void World_TactStepProxThunk(MapCell *pCell, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    MapCell_TickProximityItems(&pW->sTactProx, pCell);
+}
+
+/* EnemyStepCtx.pfnRefreshCells: Map_RefreshCellMeta @ 0x2c7f4, the light rebuild the
+ * tactinit launch also runs (0x3C...). Gate byte 0x254B1, lightmap unk_156AB8. */
+static void World_TactStepRefreshCellsThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)Map_RefreshCellMeta(World_TactLookupCell, pW, &pW->pTactMap->geom,
+                              pW->bMapLightEnabled != 0, pW->abTactLightmap);
+}
+
+/* EnemyStepCtx.pfnRefreshVisibility: UnitList_ForEachRefresh @ 0x22b54 over the live
+ * roster view (counts copied fresh, as the struct stores them by value). */
+static void World_TactStepRefreshVisThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    pW->sTactRosters.nXcom  = pW->pTactMap->nXcomCount;
+    pW->sTactRosters.nEnemy = pW->pTactMap->nEnemyCount;
+    pW->sTactRosters.nCiv   = pW->pTactMap->nCivilianCount;
+    UnitList_ForEachRefresh(&pW->sTactRosters, &pW->tactEnv.vis);
+}
+
+static void World_TactFillStepCtx(PufoWorldState *pW)
+{
+    GameMap *pMap = pW->pTactMap;
+    EnemyStepCtx *c = &pW->sTactStep;
+
+    memset(c, 0, sizeof(*c));
+    c->pfnTickProximity     = World_TactStepProxThunk;
+    c->pfnRefreshCells      = World_TactStepRefreshCellsThunk;
+    c->pfnRefreshVisibility = World_TactStepRefreshVisThunk;
+    c->pfnUpdateVisibility  = World_TactEnemyAiVisThunk;
+    c->pfnRandU16           = World_TactRandU16Thunk;
+    c->pUser                = pW;
+    c->pfnLookup            = World_TactLookupCell;
+    c->pGeom                = &pMap->geom;
+    c->pQueue               = pW->pTactState;
+    c->pSelect              = &pW->tactEnv.select;
+    c->pStatus              = &pMap->status;
+    c->pStatusHooks         = &pW->sTactStatusHooks;
+    c->pTextRecs            = (const char *)pW->pAssets->pTextRecs; /* aTextRecs @ 0xB38D0 */
+    /* Deviation: the fire tick's weapon is the Map+0x1B0 slot-42 scratch (Map_apObjects42,
+     * read at 0x4BFF0). The slot has no port owner: zeroed BSS on a new game, and the save
+     * blob leaves it unmodeled, so the port runs with NULL. */
+    c->pFireWeapon          = NULL;
+    c->pActCtx              = &pW->sTactEnemyAiAct;
+    c->pRmp                 = &pW->sTactRmp;
+    c->apXcom               = pMap->apXcomUnits;
+    c->pnXcom               = &pW->nStepXcomCount;
+    c->apEnemy              = pMap->apEnemyUnits;
+    c->pnEnemy              = &pW->nStepEnemyCount;
+    c->apCiv                = pMap->apCivilians;
+    c->pnCiv                = &pMap->nCivilianCount;
+    c->ppHidden             = pW->apTactHidden;                   /* apHiddenSoldiers @ 0x138DF0 */
+    c->pnReserveCount       = &pW->nMapEnemyReserveCount;         /* 0x128AFC */
+    c->pbMissionType        = &pMap->nMissionType;                /* 0x128AD2 */
+    c->ppSelUnit            = &pMap->pSelUnit;
+
+    /* Combat + proximity ctxs for the proximity seam, mirroring World_TactTickActiveUnit. */
+    memset(&pW->sTactCombat, 0, sizeof(pW->sTactCombat));
+    pW->sTactCombat.pfnLookup    = World_TactLookupCell;
+    pW->sTactCombat.pUser        = pW;
+    pW->sTactCombat.pGeom        = &pMap->geom;
+    pW->sTactCombat.pState       = pW->pTactState;
+    pW->sTactCombat.pSelUnit     = pMap->pSelUnit;
+    pW->sTactCombat.pCtxWeapon   = (ObjectRecFull *)pMap->pFireArg6; /* 0x14050 nFireArg6 */
+    pW->sTactCombat.nShotOriginX = pW->nMapShotOrigX;                /* 0x14054/0x14058 */
+    pW->sTactCombat.nShotOriginY = pW->nMapShotOrigY;
+
+    memset(&pW->sTactProx, 0, sizeof(pW->sTactProx));
+    pW->sTactProx.pCombat         = &pW->sTactCombat;
+    pW->sTactProx.pShotHooks      = &pW->sTactShotHooks;
+    pW->sTactProx.pRosters        = &pW->sTactRosters;
+    pW->sTactProx.pGeom           = &pMap->geom;
+    pW->sTactProx.pfnLookupCell   = World_TactLookupCell;
+    pW->sTactProx.pLookupUser     = pW;
+    pW->sTactProx.paSteps         = pW->abTactVisSteps;             /* byte_AD720 */
+    pW->sTactProx.pbBlastScanFlag = &pW->pTactState->gap_70112[0];  /* unk_157198 + 70112 */
+    pW->sTactProx.pFocus          = &pW->tactEnv.focus;
+    pW->sTactProx.pCursor         = &pW->tactEnv.cursor;
+    pW->sTactProx.pbViewMoved     = &pW->bMapSlot8Byte1;            /* BYTE1(apUiSlotsA[8]) */
+}
+
+static void World_TactBeforeEnemyStepThunk(TactCtx272 *pTact, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    World_TactStepSyncIn(pW);
+    World_TactFillStepCtx(pW);
+    BeforeEnemyStep(pTact, &pW->sTactStep);
+    World_TactStepSyncOut(pW);
+}
+
+static void World_TactAfterEnemyStepThunk(TactCtx272 *pTact, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    World_TactStepSyncIn(pW);
+    World_TactFillStepCtx(pW);
+    AfterEnemyStep(pTact, &pW->sTactStep);
+    World_TactStepSyncOut(pW);
+}
+
+static void World_ClickEndTurn(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    GameMap *pMap;
+    TurnUnitLists lists;
+
+    if (pW == NULL) {
+        return;
+    }
+    pMap = pW->pTactMap;
+    World_TactBankSampleThunk(17, pW); /* MenuBtn_EndTurn 0x164A0 */
+    lists.apEnemy    = pMap->apEnemyUnits;
+    lists.nEnemy     = pMap->nEnemyCount;
+    lists.apCivilian = pMap->apCivilians;
+    lists.nCivilian  = pMap->nCivilianCount;
+    lists.apXcom     = pMap->apXcomUnits;
+    lists.nXcom      = pMap->nXcomCount;
+    Tact_BeginEnemyTurn(&pMap->tact, &pW->sTactTurnHooks, &lists, pMap->pSelUnit,
+                        &pW->bMapEnemyTurnActive,
+                        NULL, /* Render_Frame (0x22310) -- the iso renderer seam, a recorded separate issue */
+                        World_TactBeforeEnemyStepThunk);
+}
+
 static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }
 static void World_ClickSpeed1(void) { World_TactSpeedCall(1); }
 static void World_ClickSpeed2(void) { World_TactSpeedCall(2); }
@@ -3748,7 +3910,7 @@ static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {
     World_ClickLayerUp,            /* 2   MapView_LayerUp @ 0x16530 */
     World_ClickEnterLookMode,      /* 3   MapView_EnterLookMode @ 0x163d4 */
     World_ClickOpenInventory,      /* 4   Inv_OpenScreen @ 0x16ef4 (Part 55) */
-    NULL,                          /* 5   MenuBtn_EndTurn @ 0x16494 (deferred: BeginEnemyTurn args) */
+    World_ClickEndTurn,            /* 5   MenuBtn_EndTurn @ 0x16494 (Part 56) */
     World_TactHudClickDown,        /* 6   TactHud_ClimbDown @ 0x16af0 */
     World_ClickLayerDown,          /* 7   MapView_LayerDown @ 0x164f0 */
     World_ClickToggleKneel,        /* 8   TactHud_ToggleKneel @ 0x16570 */

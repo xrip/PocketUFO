@@ -116,16 +116,19 @@ void TactCtx_ctor(TactCtx272 *pCtx);
 void Tact_ProcessActionPhase(TactCtx272 *pCtx, const TurnHooks *pHooks,
                              ActionPhaseSave *pSave);
 
-/* Tact_BeginEnemyTurn @ 0x4ca18.
+/* Tact_BeginEnemyTurn @ 0x4ca18. The only original caller is MenuBtn_EndTurn @ 0x16494.
  *
- * Sets bEnemyTurnActive, marks the context busy, clears every side's per-unit AI
- * and spotting state, and starts the action phase at phase 3. The original also
- * calls Render_Frame (0x22310) and BeforeEnemyStep (0x4b9b8) first; those are
- * injected via `pfnFrameStart` and `pfnBeforeEnemyStep` because both need the
- * full world (BeforeEnemyStep is 2792 bytes).
+ * Clear the camera unit, set bEnemyTurnActive (0x4CA30, `pbEnemyTurnActive`), mark the
+ * context busy, run Render_Frame (0x22310, `pfnFrameStart`) and BeforeEnemyStep (0x4b9b8,
+ * `pfnBeforeEnemyStep`), set phase 3, then disable player input (0x4CA58 -- after the
+ * phase write, like the original), clear every side's per-unit AI and spotting state,
+ * and save `pSelUnit` as the context's saved selection (0x4CB4C: the CURRENT
+ * Map_pSelUnit, not a roster head -- the head substitution is the EndEnemyTurn tail's)
+ * before running the action phase. The two injections exist because both callees need
+ * the whole world.
  *
- * `apUnits` plus `nUnits` describe the unit lists to reset. The original resets
- * three lists in this order: enemy, civilian, then XCom. */
+ * `pLists` describes the unit lists to reset. The original resets three lists in
+ * this order: enemy, civilian, then XCom. */
 typedef struct TurnUnitLists {
     Soldier **apEnemy;
     i32       nEnemy;
@@ -136,18 +139,20 @@ typedef struct TurnUnitLists {
 } TurnUnitLists;
 
 void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
-                         const TurnUnitLists *pLists,
+                         const TurnUnitLists *pLists, Soldier *pSelUnit, u8 *pbEnemyTurnActive,
                          void (*pfnFrameStart)(void *pUser),
                          void (*pfnBeforeEnemyStep)(TactCtx272 *pCtx, void *pUser));
 
-/* Tact_EndEnemyTurn @ 0x4cb74.
+/* Tact_EndEnemyTurn @ 0x4cb74. The only original caller is the Tact_EnemyAiTick tail
+ * (0x4D934).
  *
- * Clears bEnemyTurnActive and busy, re-enables input, restores the selected unit
- * (falling back to the first XCom unit when the saved one is dead or flagged
- * 0x20), selects it, and re-focuses the view. `pfnAfterEnemyStep` stands in for
- * AfterEnemyStep (0x4c4a0). The first XCom unit is passed in because the port
- * does not yet own the side lists. */
+ * Runs AfterEnemyStep (0x4c4a0, `pfnAfterEnemyStep`), clears bEnemyTurnActive (0x4CB88,
+ * `pbEnemyTurnActive`) and busy, clears the phase, re-enables input, restores the saved
+ * selection (falling back to the first XCom unit when the saved one is dead or flagged
+ * 0x20), selects it, and re-focuses the view. The first XCom unit is passed in because
+ * the port does not yet own the side lists. */
 void Tact_EndEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks, Soldier *pFirstXcom,
+                       u8 *pbEnemyTurnActive,
                        void (*pfnAfterEnemyStep)(TactCtx272 *pCtx, void *pUser));
 
 /* Tact_RefreshTeamVisibility @ 0x4f368.

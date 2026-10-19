@@ -182,25 +182,28 @@ void Tact_ProcessActionPhase(TactCtx272 *pCtx, const TurnHooks *pHooks,
 }
 
 void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
-                         const TurnUnitLists *pLists,
+                         const TurnUnitLists *pLists, Soldier *pSelUnit, u8 *pbEnemyTurnActive,
                          void (*pfnFrameStart)(void *pUser),
                          void (*pfnBeforeEnemyStep)(TactCtx272 *pCtx, void *pUser))
 {
     i32 i;
 
     pCtx->pCameraUnit = NULL;
-    if (pHooks != NULL) {
-        pHooks->pfnSetPlayerInput(false, pHooks->pUser);
+    if (pbEnemyTurnActive != NULL) {
+        *pbEnemyTurnActive = 1;                                   /* 0x4CA30 */
     }
     pCtx->bBusy = 1;
 
     if (pfnFrameStart != NULL) {
-        pfnFrameStart(pHooks != NULL ? pHooks->pUser : NULL);
+        pfnFrameStart(pHooks != NULL ? pHooks->pUser : NULL);     /* Render_Frame (0x22310) stand-in */
     }
     if (pfnBeforeEnemyStep != NULL) {
         pfnBeforeEnemyStep(pCtx, pHooks != NULL ? pHooks->pUser : NULL);
     }
     pCtx->nPhase = PUFO_PHASE_ENEMY_AI;
+    if (pHooks != NULL) {
+        pHooks->pfnSetPlayerInput(false, pHooks->pUser);          /* 0x4CA58, after the phase write */
+    }
 
     /* Clear per-unit AI and spotting state, in the original's order: enemy,
      * then civilian, then XCom. */
@@ -223,22 +226,18 @@ void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
                 pLists->apXcom[i]->nSpottedCount = 0;
             }
         }
-        if (pLists->nXcom > 0 && pLists->apXcom != NULL) {
-            pCtx->pSavedSelUnit = pLists->apXcom[0];
-        }
     }
 
-    /* The original saves the selected unit and then runs the action phase. */
+    /* 0x4CB4C: the save is the CURRENT selection (Map_pSelUnit), not a roster head --
+     * the head substitution belongs to the EndEnemyTurn tail. */
+    pCtx->pSavedSelUnit = pSelUnit;
     if (pHooks != NULL) {
-        if (pHooks->pfnSelectUnit != NULL && pCtx->pSavedSelUnit != NULL) {
-            /* Selection is left to the phase machine; only the save is required
-             * here. */
-        }
         Tact_ProcessActionPhase(pCtx, pHooks, &(ActionPhaseSave){ 0, 0, 0 });
     }
 }
 
 void Tact_EndEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks, Soldier *pFirstXcom,
+                       u8 *pbEnemyTurnActive,
                        void (*pfnAfterEnemyStep)(TactCtx272 *pCtx, void *pUser))
 {
     Soldier *pSaved;
@@ -247,6 +246,9 @@ void Tact_EndEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks, Soldier *pFirs
         pfnAfterEnemyStep(pCtx, pHooks != NULL ? pHooks->pUser : NULL);
     }
 
+    if (pbEnemyTurnActive != NULL) {
+        *pbEnemyTurnActive = 0;                                   /* 0x4CB88 */
+    }
     pCtx->bBusy  = 0;
     pCtx->nPhase = PUFO_PHASE_NONE;
     if (pHooks != NULL) {

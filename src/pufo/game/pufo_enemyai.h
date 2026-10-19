@@ -283,7 +283,8 @@ void EnemyAi_TryFireOrWander(Soldier *pUnit, const EnemyAiActCtx *pCtx);
 typedef struct EnemyAiTickCtx {
     /* Seams. Unit_PathToCell @ 0x2c2a8 (ported in pufo_path.c, signature matches),
      * Ui_FillActionCosts @ 0x26104, Unit_UpdateVisibility @ 0x48580 (ported, but it needs a
-     * whole VisCtx), AfterEnemyStep (0x4c4a0, unported) and the clip lookup inside
+     * whole VisCtx), AfterEnemyStep (0x4c4a0, ported in pufo_turn.c; the shell wires its
+     * EnemyStepCtx) and the clip lookup inside
      * TactItem_bTryReloadClip are injected. pfnEnqueueTurnAndKick is the same pair
      * EnemyAi_EnqueueRandomTurn already uses. */
     u32   (*pfnRandU16)(u32 nMax, void *pUser);        /* Game_RandU16 @ 0x3e59c */
@@ -303,6 +304,7 @@ typedef struct EnemyAiTickCtx {
     const u8        *pnEnemyCount;     /* nEnemyUnitCount @ 0x128ADC */
     Soldier        **ppSelUnit;        /* Map_pSelUnit @ 0x128CEC (Map + 0x15334) */
     Soldier         *pFirstXcom;       /* Map_apXcomUnits[0] @ 0x128B0C */
+    u8              *pbEnemyTurnActive; /* Map_bEnemyTurnActive @ 0x113A13, handed to Tact_EndEnemyTurn (0x4CB88 clears it) */
     TactItem      **ppSelWeapon;       /* Map.pSelWeapon @ Map+0x48 (0x113A00) */
     i32            *pnActionMode;      /* Map.nActionMode @ Map+0x4C (0x113A04) */
     i32            *pnMultiTargetCount;/* Map.nMultiTargetCount @ Map+0x04 (0x1139BC) */

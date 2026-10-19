@@ -375,6 +375,7 @@ static void TestBeginEndTurn(void)
     Soldier       *apEnemy[2];
     Soldier       *apCiv[1];
     Soldier       *apXcom[2];
+    u8             bActive;
     i32            i;
 
     printf("Tact_BeginEnemyTurn\n");
@@ -404,8 +405,10 @@ static void TestBeginEndTurn(void)
     lists.nXcom = 2;
 
     ctx.pCameraUnit = &aXcom[0];
-    Tact_BeginEnemyTurn(&ctx, &hooks, &lists, NULL, NULL);
+    bActive = 7;
+    Tact_BeginEnemyTurn(&ctx, &hooks, &lists, &aXcom[1], &bActive, NULL, NULL);
     Check(ctx.pCameraUnit == NULL, "  camera unit cleared");
+    CheckEqI32(bActive, 1, "  enemy-turn byte set (0x4CA30)");
     CheckEqI32(ctx.bBusy, 1, "  marked busy");
     CheckEqI32(ctx.nPhase, 3, "  phase set to the enemy AI phase");
     CheckEqI32(rec.nInputCalls, 1, "  input disabled once");
@@ -427,12 +430,13 @@ static void TestBeginEndTurn(void)
         }
         Check(bAllCleared, "  every side's AI and spotting state cleared");
     }
-    Check(ctx.pSavedSelUnit == &aXcom[0], "  first XCom unit saved as the selection");
+    Check(ctx.pSavedSelUnit == &aXcom[1], "  the CURRENT selection is saved as-is (0x4CB4C, not the roster head)");
 
     printf("Tact_EndEnemyTurn\n");
     memset(&rec, 0, sizeof(rec));
     hooks = MakeHooks(&rec);
-    Tact_EndEnemyTurn(&ctx, &hooks, &aXcom[0], NULL);
+    Tact_EndEnemyTurn(&ctx, &hooks, &aXcom[0], &bActive, NULL);
+    CheckEqI32(bActive, 0, "  enemy-turn byte cleared (0x4CB88)");
     CheckEqI32(ctx.bBusy, 0, "  no longer busy");
     CheckEqI32(ctx.nPhase, 0, "  phase cleared");
     CheckEqI32(rec.nInputCalls, 1, "  input re-enabled once");
@@ -446,7 +450,7 @@ static void TestBeginEndTurn(void)
     aEnemy[0].bStatus = 3; /* not operative */
     memset(&rec, 0, sizeof(rec));
     hooks = MakeHooks(&rec);
-    Tact_EndEnemyTurn(&ctx, &hooks, &aXcom[0], NULL);
+    Tact_EndEnemyTurn(&ctx, &hooks, &aXcom[0], &bActive, NULL);
     Check(rec.pLastSelected == &aXcom[0], "  fell back to the first XCom unit");
 }
 

@@ -855,7 +855,8 @@ TAIL:
     /* 0x4D920. */
     pTact->nPhase = PUFO_PHASE_ENEMY_AI;
     if (pTact->bAiFocusSaved == 0) {
-        Tact_EndEnemyTurn(pTact, pCtx->pTurnHooks, pCtx->pFirstXcom, pCtx->pfnAfterEnemyStep);
+        Tact_EndEnemyTurn(pTact, pCtx->pTurnHooks, pCtx->pFirstXcom,
+                          pCtx->pbEnemyTurnActive, pCtx->pfnAfterEnemyStep);
     }
     TactState_KickQueue(pCtx->pQueue);
 }

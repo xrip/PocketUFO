@@ -19362,3 +19362,57 @@ the dump happens before any screen-dependent HUD blit.
 IDB: appended the port-wiring comment to `Inv_OpenScreen @ 0x16ef4` (both call
 sites, ctx-rebuild rationale). Coverage unchanged -- `Inv_OpenScreen` was
 already cited in ui-core.md.
+
+## Unit 117 -- the EndTurn pad runs the enemy-turn bracket (Part 56)
+
+Original: `MenuBtn_EndTurn @ 0x16494` plays sample 17 and calls
+`Tact_BeginEnemyTurn @ 0x4ca18` -- the only caller of the whole bracket. Begin
+clears the camera unit, sets `Map_bEnemyTurnActive` (0x4CA30), marks busy, runs
+`Render_Frame` and `BeforeEnemyStep @ 0x4b9b8`, sets phase 3, THEN disables player
+input (0x4CA58), clears every side's AI/spot flags, stores the current
+`Map_pSelUnit` as the saved selection (0x4CB4C -- not a roster head), and runs
+`Tact_ProcessActionPhase`; the phase-3 arm (Part 52's tick) finds nothing acting
+and takes its tail (0x4D920), whose `Tact_EndEnemyTurn @ 0x4cb74` runs
+`AfterEnemyStep @ 0x4c4a0`, clears the byte (0x4CB88), busy and phase, re-enables
+input, and restores the selection.
+
+Port: the bracket was already ported (`BeforeEnemyStep`, `AfterEnemyStep`, the
+Begin/End pair in pufo_turn.c, tested in test_turn.c) -- what was missing was the
+shell caller and two Begin/End gaps, fixed here:
+
+- `Tact_BeginEnemyTurn` gained `pSelUnit` and `pbEnemyTurnActive` parameters and
+  the input-disable slot moved after the phase write; its old `pSavedSelUnit =
+  apXcom[0]` was a deviation from 0x4CB4C and is gone (test_turn asserts the new
+  behavior).
+- `Tact_EndEnemyTurn` gained `pbEnemyTurnActive` (0x4CB88); `EnemyAiTickCtx` gained
+  the same pointer and the tick tail hands it over.
+- The shell owns the step ctx: `PufoWorldState.sTactStep` (plus `sTactCombat` /
+  `sTactProx` for the proximity seam and `nStepXcomCount` / `nStepEnemyCount`
+  i32 mirrors -- `EnemyStepCtx` reads the side counts through `i32*`, GameMap owns
+  0x128AD7/0x128ADC as bytes; the thunks sync in/out, letting the hidden-reserve
+  spawn bump them). `World_TactFillStepCtx` rebuilds the ctx per call;
+  `World_TactBeforeEnemyStepThunk` / `World_TactAfterEnemyStepThunk` wrap the
+  ported steps. This closes the Part 52 deviation "AfterEnemyStep is not ported;
+  the End hook is NULL": `pfnAfterEnemyStep` is now the real thunk.
+- Widget 5's click (`World_ClickEndTurn`) is installed; the deferred-handler list
+  is down to five (17/18, 56, 57, 58). `pfnFrameStart` stays NULL -- the
+  `Render_Frame` iso-renderer seam is a recorded separate issue.
+
+Deviation (new): the fire tick's weapon is `Map_apObjects42` (Map+0x1B0 slot 42,
+read at 0x4BFF0). The slot has no writer in the tact flow, is zeroed BSS on a new
+game, and is unmodeled in saves -- the shell passes NULL as `pFireWeapon`.
+
+Tests (test_geoscapeframe): the CLICK(5) bracket gate empties the field AND the
+hidden park (BeforeEnemyStep 0x4BA3C pulls reinforcements on this mission type,
+and the first run proved it: spawned units then acted), then asserts sample 17,
+the Xcom `bUnk1037` clear (0x4B9E4), the enemy-turn byte / busy / phase cleared by
+the tail, input re-enabled, the saved selection held, and After's Xcom `uTu`
+refill (0x4C74C). The Part 52 planted fakes gained valid `pCell`s because the now
+real `AfterEnemyStep` visibility scan reads each enemy's cell. Mutations 2/2:
+neutered click 2 reds, neutered After thunk 2 reds. Golden startup frame
+unchanged. Coverage unchanged -- every bracket function was already cited.
+
+IDB: port-wiring comments at 0x16494, 0x4ca18, 0x4cb74, 0x4b9b8, 0x4c4a0 and the
+0x4BFF0 scratch load. `gap_433[1]` (Soldier+0x1B2, the control-guard stores at
+0x4BB80/0x4C318/0x4C364) is the port's `Soldier.bControlRecovered` -- recorded in
+the 0x4b9b8 comment; the 76-member struct member was not renamed in-struct.

@@ -474,6 +474,13 @@ typedef struct PufoWorldState {
     PathScratch     sTactPathScratch;   /* the flood fill's two frontier lists (the unk_10DB80 block) */
     EnemyAiTickCtx  sTactEnemyAi;       /* the phase-3 tick's ctx, refreshed by World_TactEnemyAiTickThunk */
     EnemyAiActCtx   sTactEnemyAiAct;    /* the panic AI's ctx (EnemyAi_TryFireOrWander @ 0x4abc8) */
+    EnemyStepCtx    sTactStep;          /* the ctx BeforeEnemyStep (0x4b9b8) and AfterEnemyStep (0x4c4a0) run on,
+                                         * rebuilt fresh by World_TactFillStepCtx at each step call (Part 56) */
+    CombatCtx       sTactCombat;        /* the step ctx's proximity seam leans on this -- the same build
+                                         * World_TactTickActiveUnit assembles per tick */
+    ProximityCtx    sTactProx;          /* handed to MapCell_TickProximityItems (0x4b724) by the step ctx */
+    i32             nStepXcomCount;     /* i32 views of the byte counts 0x128AD7/0x128ADC: EnemyStepCtx */
+    i32             nStepEnemyCount;    /* reads them through i32*, the map owns them as bytes; step thunks sync */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */
