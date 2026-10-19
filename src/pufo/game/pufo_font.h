@@ -255,8 +255,9 @@ void Text_DrawString(i32 x, i32 y, const char *psz);
  * Font_DrawGlyph @ 0x4661c tail-calls Font_BlitGlyphToSoft @ 0x9ec48, which clamps nPal to 19
  * and picks the palette as slot (g_nGlyphPalSlotBase + nPal) -- unk_1183F4 is 0 at startup. */
 void Font_DrawGlyph(i32 x, i32 y, u16 nIdx, i32 nPal);
-/* nIdx is added to pFont->anSprBase[pTbl->nSlot]; see Font_DrawGlyph_IndexedOffset
- * @ 0x46630. */
+/* The glyph is `anSprBase[pTbl->nSlot] + pTbl[nIdx]`: the record's own byte at offset nIdx, read
+ * out of the record (0x46654 LDRB [R3,R4]). Mc1Rec bytes 0x00..0x07 are the per-phase sprite
+ * offsets inside the record's group; see Font_DrawGlyph_IndexedOffset @ 0x46630. */
 void Font_DrawGlyph_IndexedOffset(i32 x, i32 y, const Mc1Rec *pTbl, u8 nIdx, i32 nPal);
 
 /* Decode one RLE glyph record and blit it into the main surface.

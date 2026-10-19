@@ -5,4 +5,5 @@ Binary PPM frames the tests dump while they run (see `DumpFrame` in `tests/test_
 draws still paint exactly the pictures recorded here.
 
 - `tact_frame_iso.ppm` -- `World_TactFrame` over the live mission: the iso layer plus the frame furniture.
+- `tact_loaded_mission.ppm` -- the same frame over the mission a slot file brought back (`World_LoadSlot` + the driver's `Tact_InitMission`).
 - `debrief_banner.ppm` -- screen 13, `TactHud_DrawStatusBanner @ 0x1e920`: backdrop, caption, footer, score.

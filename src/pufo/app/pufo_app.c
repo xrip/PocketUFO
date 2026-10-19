@@ -309,6 +309,7 @@ static void App_DrawFrame(void);        /* defined below with the render path */
 static i32  App_GeoscapeDrawThunk(void *pUser); /* Geoscape_Draw, defined with the render path */
 static void App_GeoscapePointerThunk(i32 nX, i32 nY, bool bDown, void *pUser);
 static void App_GeoscapePointerUpThunk(void *pUser);
+static void App_HookInvCloseAndCommit(void *pUser); /* Inv_CloseAndCommit @ 0x15a48 (Part 66) */
 static void App_ShutdownStartUi(void *pUser); /* defined below with the start-UI teardown */
 static void App_QuitDisplay(void);      /* defined below with the window teardown */
 
@@ -610,6 +611,9 @@ static void App_InitStartupUi(void)
      * shell runs them over the world's wired GeoscapePointerEnv. */
     g_tactHooks.pfnGeoscapePointer   = App_GeoscapePointerThunk;
     g_tactHooks.pfnGeoscapePointerUp = App_GeoscapePointerUpThunk;
+    /* Input_OnConfirm's screen-1 arm (0x160FC plays sample 16, 0x16104 calls) closes the inventory
+     * with Inv_CloseAndCommit @ 0x15a48 -- the call that deploys the team (Part 66). */
+    g_tactHooks.pfnInvCloseAndCommit = App_HookInvCloseAndCommit;
 
     /* The menu-button hooks. */
     memset(&g_startHooks, 0, sizeof(g_startHooks));
@@ -741,6 +745,14 @@ static void App_GeoscapePointerUpThunk(void *pUser)
 {
     (void)pUser;
     World_GeoscapePointerUp(&g_world);
+}
+
+/* The seam Input_OnConfirm's screen-1 arm calls (0x16104). It runs on the live world, which owns
+ * every cell the callee reaches through the Map block. */
+static void App_HookInvCloseAndCommit(void *pUser)
+{
+    (void)pUser;
+    World_InvCloseAndCommit(&g_world);
 }
 
 /* The WM_TIMER 0xC352 body (PocketUFO_WndProc @ 0xA0944): advance the anim phase counter

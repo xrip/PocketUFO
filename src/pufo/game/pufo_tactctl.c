@@ -546,9 +546,14 @@ i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv)
     i32 nY = 0;
     i32 nLayer = 0;
 
-    /* 0x3975c: the record index is the mission layer count, and a zero count skips the table entirely. */
+    /* 0x3975c: a zero layer count skips the table. Otherwise the ARM builds R0 = table + 104 *
+     * nMapLayers (MOV #0x68 at 0x3977C, MUL at 0x39784) and then reads [R0,#-0x68], [R0,#-0x67] and
+     * [R0,#-0x66] -- the negative displacements put the group at 104 * (nMapLayers - 1), the SAME group
+     * Tact_DeployTeamAndHwps phase 3 walks (0x39F24 reads 4*nPoint + 104*(nMapLayers-1)), so the anchor
+     * here is that group's record 0. An earlier version of this function used group nMapLayers, which
+     * picked the next group's first record: a cell 104 records away in the table and a different layer. */
     if (pEnv->nMapLayers != 0) {
-        const u8 *pRec = pEnv->pDeployOffsets + PUFO_DEPLOY_RECORD_SIZE * (i32)pEnv->nMapLayers;
+        const u8 *pRec = pEnv->pDeployOffsets + PUFO_DEPLOY_RECORD_SIZE * ((i32)pEnv->nMapLayers - 1);
         nX     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapX + (i32)pRec[0];
         nY     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapY + (i32)pRec[1];
         nLayer = (i32)pRec[2];

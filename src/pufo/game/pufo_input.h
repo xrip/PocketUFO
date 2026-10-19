@@ -156,7 +156,7 @@ typedef struct TactInputHooks {
     void (*pfnOnCancel)(void *pUser);
     /* Geoscape_CloseUI (0x8b94c), on the &unk_1864F8 screen object. */
     void (*pfnGeoscapeCloseUi)(void *pUser);
-    /* Inv_CloseAndCommit (0x15a48), NOT ported. */
+    /* Inv_CloseAndCommit @ 0x15a48 (pufo_invdrag.c). The shell wires it since Part 66. */
     void (*pfnInvCloseAndCommit)(void *pUser);
     /* MapCursor_SetPos @ 0x27014, with the stored cursor position. */
     void (*pfnSetCursorPos)(i32 nX, i32 nY, void *pUser);

@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 971 / 971 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18267 |
+| Test checks run | 18283 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -278,7 +278,7 @@ is the module that answers to it.
 | `0x31a18` | `Tact_ResolveThrowLanding` | 2580 | `src/pufo/game/pufo_ballist.h` |
 | `0x3102c` | `Tact_SimulateThrowArc` | 2540 | `src/pufo/game/pufo_ballist.h` |
 | `0x2e7d8` | `Combat_SplashDamageCells` | 2388 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
-| `0x39980` | `Tact_DeployTeamAndHwps` | 2348 | `src/pufo/game/pufo_invdrag.c`, `src/pufo/game/pufo_invdrag.h` (+2) |
+| `0x39980` | `Tact_DeployTeamAndHwps` | 2348 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
 | `0x346e0` | `Tact_ClearSoldierBattleFlags` | 2268 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactend.c` (+1) |
 | `0x3242c` | `Map_TraceVoxelOccupancy` | 2140 | `src/pufo/game/pufo_los.c`, `src/pufo/game/pufo_los.h` (+2) |
 | `0x38f00` | `Tact_SetupCraftCargo` | 2116 | `src/pufo/game/pufo_tactctl.h` |
@@ -328,7 +328,7 @@ is the module that answers to it.
 | `0x4b080` | `TactState_EnqueueFireBurst` | 628 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactstate.c` (+3) |
 | `0x22ba0` | `Soldier_CreateAndClassify` | 624 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x25e6c` | `Unit_RollChance` | 596 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` |
-| `0x39744` | `Tact_SelectTeamUnits` | 572 | `src/pufo/game/pufo_tactctl.h` |
+| `0x39744` | `Tact_SelectTeamUnits` | 572 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x1b584` | `MapView_DrawCellSelectMarkerHi` | 568 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x55418` | `Map_PickRmpSpawnForUnit` | 568 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
 | `0x4834c` | `Unit_ScanVisibleUnits` | 564 | `src/pufo/game/pufo_unit.h` |
@@ -487,7 +487,7 @@ is the module that answers to it.
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | `src/pufo/game/pufo_tacthud.h` |
 | `0x20ef8` | `TactHud_DrawTopBar` | 1336 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+2) |
-| `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_invdrag.h` |
+| `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x1674c` | `TactHud_ClimbUp` | 932 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x11f40` | `Inv_ClearHitSlot` | 788 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 515 |
+| `test_geoscapeframe` | PASS | 531 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

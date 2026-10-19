@@ -24,6 +24,7 @@
 #include "game/pufo_tactctl.h" /* Map_BuildDeployConfirmYesNo @ 0x18a68, the deploy confirm the shell wires (Part 58) */
 #include "game/pufo_menu.h"    /* Menu_ResizeWindow @ 0x19930 (widget 58), the last deferred handler (Part 61) */
 #include "game/pufo_renderframe.h" /* Render_Frame @ 0x22310 + the frame envs, the tactical frame (Part 63) */
+#include "game/pufo_invdrag.h"     /* Inv_CloseAndCommit @ 0x15a48, the inventory close that deploys the team (Part 66) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -3225,13 +3226,17 @@ static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser)
     return pW->pAssets->apObjects[nAmmoTypeId]->bAmmoCap;
 }
 
-/* Unit_UpdateVisibility @ 0x48580 over the move wiring's vis ctx -- the same ctx the move
- * FSM's seam uses. */
+/* Unit_UpdateVisibility @ 0x48580 over the mission's own VisCtx (tactEnv.vis, filled for this
+ * mission at pufo_world.c:2177). The original reaches one shared vis state; sTactMoveWiring.visCtx
+ * is only a copy of it, refreshed inside the move tick (0x..3327), so a caller outside that tick --
+ * the inventory commit's per-unit pass (0x15C98) -- reads a stale wiring whose pSpot / pRosters /
+ * ppScratchUnit are still the memset zeros and faults on pCtx->pSpot->pnTrajFront1036 (pufo_unit.c:1238).
+ * The sibling refresh thunk already goes to tactEnv.vis the same way (World_TactStepRefreshVisThunk). */
 static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
-    Map_UpdateVisibilityCb(pUnit, &pW->sTactMoveWiring);
+    (void)Unit_UpdateVisibility(pUnit, &pW->tactEnv.vis);
 }
 
 /* The TEXTS-record status push (record index, not a string): the same text the move wiring
@@ -4785,6 +4790,96 @@ static void World_ClickOpenRightHand(void)
     if (pW != NULL) {
         (void)World_TactOpenHandMenuBody(pW, true);
     }
+}
+
+/* ------------------------------------------ inventory close commits the deploy (Part 66)
+ *
+ * The inventory screen's confirm runs Inv_CloseAndCommit @ 0x15a48, reached from Input_OnConfirm's
+ * screen-1 arm (0x160FC plays sample 16, 0x16104 calls). Its second part (0x15C68..0x15CB0) is the
+ * deployment itself: clear the commit flag at Map+0x01, then Tact_DeployTeamAndHwps @ 0x39980,
+ * MapView_FocusSelected @ 0x16710, Map_RefreshCellMeta @ 0x2c7f4 and Unit_UpdateVisibility @ 0x48580
+ * once per unit. This is where the team leaves the one cell it was parked on: Tact_SelectTeamUnits
+ * @ 0x39744 builds its anchor ONCE (0x3978C..0x3979C) and calls Unit_PlaceOnMap with the same three
+ * coordinates for every accepted soldier, so a bring-up roster of eight shares one cell by the
+ * original's own design. Only the deploy's phase 3 (0x39E9C) walks the mission's deploy points and
+ * re-places each pre-existing unit on the first cell with no occupant. Before this unit the shell
+ * never ran the commit, so a live mission kept eight soldiers stacked and the iso layer's occupant
+ * reads saw one. */
+
+static bool World_TactUnitIsLargeThunk(const Soldier *pUnit, void *pUser)
+{
+    (void)pUser;
+    return Unit_bIsLarge(pUnit);
+}
+
+/* Tact_DeployTeamAndHwps @ 0x39980 over the env Tact_InitMission filled for this mission
+ * (pufo_tactinit.c:472..486). The pointers aim live cells and the live lookup and stay valid for the
+ * whole mission; the four scalars are re-read because Map_BuildMissionTerrain re-rolls the craft pad
+ * after that fill, and the mission type is the frame's own cell. */
+static void World_TactDeployThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+    TactDeployEnv *pE = &pW->tactEnv.deploy;
+
+    if (pMap == NULL) {
+        return;
+    }
+    pE->nMapLayers   = (i32)pMap->nMapLayers;   /* Map_nMapLayers @ Map+0x15114 */
+    pE->nCraftMapX   = pW->bMapCraftMapX;       /* Map_nCraftMapX @ Map+0x15139 */
+    pE->nCraftMapY   = pW->bMapCraftMapY;       /* Map_nCraftMapY @ Map+0x1513A */
+    pE->nMissionType = pMap->nMissionType;      /* Map_nMissionType @ Map+0x1511A */
+    (void)Tact_DeployTeamAndHwps(pE);
+}
+
+/* Inv_CloseAndCommit @ 0x15a48 over the live mission. Everything it reads through the Map block has
+ * a live owner here, except Map_nUiScreen: the ctx wants an i32* and the cell is a u16, so the
+ * screen id runs on a stack mirror and is stored back after the call. The Input_OnConfirm staging
+ * compares its own snapshot, so that store is not written back over. */
+static bool World_TactInvCommitBody(PufoWorldState *pW)
+{
+    GameMap *pMap = pW->pTactMap;
+    InvCommitHooks hooks;
+    InvCommitCtx ctx;
+    i32 nUiScreen;
+    i32 nResult;
+
+    if (pMap == NULL || pW->pTactState == NULL || pW->pAssets == NULL) {
+        return false;
+    }
+    nUiScreen = pW->nUiScreen; /* Map_nUiScreen @ Map+0x3A is a u16; the ctx takes an i32* */
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnUnitIsLarge      = World_TactUnitIsLargeThunk;
+    hooks.pfnDeploy           = World_TactDeployThunk;
+    hooks.pfnFocusSelected    = World_TactFocusSelectedThunk;
+    hooks.pfnRefreshCells     = World_TactStepRefreshCellsThunk;
+    hooks.pfnUpdateVisibility = World_TactEnemyAiVisThunk;
+    hooks.pInvStat            = &pW->tactInvHooks;
+    hooks.pUser               = pW;
+    /* pfnFreeItem stays NULL: every pool entry is a malloc'd TactItem, so the fallback free() at
+     * pufo_invdrag.c:1153 is the original's operator delete. */
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.apXcomUnits     = pMap->apXcomUnits;        /* Map.apXcomUnits @ Map+0x15154 */
+    ctx.pnXcomUnitCount = &pMap->nXcomCount;        /* nXcomUnitCount @ Map+0x1511F */
+    ctx.apObjects       = pW->pAssets->apObjects;   /* Map.apObjects @ Map+0x108 */
+    ctx.pSelUnit        = pMap->pSelUnit;           /* Map_pSelUnit @ 0x128CEC */
+    ctx.apItemPool      = pW->apTactItems;          /* Map_apTactItems @ Map+0x23438 */
+    ctx.pnItemCount     = &pW->nTactItemCount;      /* Map_nTactItemCount @ Map+0x1513C */
+    ctx.pHit            = &pW->sTactHit;            /* the pHitItem scratch the merge uses */
+    ctx.pbCommitFlag    = &pW->bMapUnk1139B9;       /* unk_1139B9 @ Map+0x01 */
+    ctx.pnUiScreen      = &nUiScreen;               /* the screen-0 tail write (0x15F34) */
+    ctx.pHooks          = &hooks;
+
+    nResult = Inv_CloseAndCommit(&ctx);
+    pW->nUiScreen = (u16)nUiScreen;                 /* the live cell, as the original writes it */
+    return nResult != 0;
+}
+
+void World_InvCloseAndCommit(PufoWorldState *pW)
+{
+    (void)World_TactInvCommitBody(pW);
 }
 
 /* ------------------------------------------------- deploy confirm (Part 58)

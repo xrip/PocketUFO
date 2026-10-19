@@ -884,12 +884,16 @@ static void TeamFixtureReset(void)
 
     memset(s_aTeamXcom, 0, sizeof(s_aTeamXcom));
     memset(s_aTeamDeploy, 0, sizeof(s_aTeamDeploy));
-    s_aTeamDeploy[1 * 104 + 0] = 1;
-    s_aTeamDeploy[1 * 104 + 1] = 2;
-    s_aTeamDeploy[1 * 104 + 2] = 0;
-    s_aTeamDeploy[2 * 104 + 0] = 4;
-    s_aTeamDeploy[2 * 104 + 1] = 6;
-    s_aTeamDeploy[2 * 104 + 2] = 1;
+    /* Group (nMapLayers - 1) is the one the anchor reads (see Tact_SelectTeamUnits @ 0x39778..0x3979C),
+     * so a layer count of 1 uses group 0 and 2 uses group 1. Group 2 stays all zeros: an implementation
+     * that read group nMapLayers instead lands on (10, 20, 0) for layer 1 and on group 2's zeros for
+     * layer 2, and both checks go red. */
+    s_aTeamDeploy[0 * 104 + 0] = 1;
+    s_aTeamDeploy[0 * 104 + 1] = 2;
+    s_aTeamDeploy[0 * 104 + 2] = 0;
+    s_aTeamDeploy[1 * 104 + 0] = 4;
+    s_aTeamDeploy[1 * 104 + 1] = 6;
+    s_aTeamDeploy[1 * 104 + 2] = 1;
 
 
     s_apTeamShip[0] = &s_aTeamShip[0];

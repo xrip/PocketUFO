@@ -396,9 +396,12 @@ void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit);
  *
  * Builds the deploy anchor, then walks the soldier array and decides who joins the tactical roster.
  *
- * The anchor comes from aDeployCellOffsets @ 0xA66B8, records of 104 bytes indexed by the mission layer
- * count. Record byte 0 is added to 10 * Map_nCraftMapX @ 0x15139 and byte 1 to 10 * Map_nCraftMapY @
- * 0x1513A; byte 2 is the layer. (An earlier version of this header said 0x15199/0x1519A; the IDB
+ * The anchor comes from aDeployCellOffsets @ 0xA66B8, three groups of 104 bytes (26 four-byte records),
+ * and the group is the one the mission layer count MINUS one picks: ARM computes table + 104 *
+ * nMapLayers and then reads [R0,#-0x68/-0x67/-0x66], so the group is 104 * (nMapLayers - 1) -- the same
+ * group Tact_DeployTeamAndHwps phase 3 walks, whose record 0 is therefore the anchor cell itself. Record
+ * byte 0 is added to 10 * Map_nCraftMapX @ 0x15139 and byte 1 to 10 * Map_nCraftMapY @ 0x1513A; byte 2
+ * is the layer. (An earlier version of this header said 0x15199/0x1519A; the IDB
  * cross-references for Tact_SelectTeamUnits 0x39784, Tact_DeployTeamAndHwps 0x39CA4 and
  * Tact_SetupCraftCargo 0x38F74 all land on 0x128AF1 = Map+0x15139, and 0x15199 has no reference
  * anywhere in the image.) The craft position is held in tiles and 10 is cells per tile, which is the

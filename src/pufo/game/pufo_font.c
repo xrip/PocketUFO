@@ -634,7 +634,12 @@ void Font_DrawGlyph_IndexedOffset(i32 x, i32 y, const Mc1Rec *pTbl, u8 nIdx, i32
     if (pTbl == NULL) {
         return;
     }
-    nSprIdx = (u16)(g_fontSys.anSprBase[pTbl->nSlot] + nIdx);
+    /* 0x46654: `anSprBase[pTbl->nSlot] + pTbl[nIdx]` -- the second term is a BYTE READ OUT OF THE
+     * RECORD at offset nIdx (`LDRB [R3,R4]`), not the index itself. Mc1Rec bytes 0x00..0x07 are
+     * therefore the per-phase sprite offsets inside the record's group; adding the phase instead
+     * picks a sprite `nIdx - pTbl[nIdx]` places away in the table, which on the tactical map is a
+     * different sprite for every cell that has one. */
+    nSprIdx = (u16)(g_fontSys.anSprBase[pTbl->nSlot] + ((const u8 *)pTbl)[nIdx]);
     Font_DrawGlyph(x, y, nSprIdx, nPal);
 }
 

@@ -35,6 +35,8 @@
 #include "game/pufo_save.h"
 #include "game/pufo_tactend.h"
 #include "game/pufo_terrain.h" /* PUFO_TERRAIN_CELLS_PER_LAYER, the shell's cell-table stride */
+#include "game/pufo_tactctl.h"  /* g_aDeployCellOffsets / g_abDeployPointCounts, the deploy points (Part 66) */
+#include "game/pufo_isodraw.h"  /* MapView_bResolveIsoCell, for the temporary iso probe */
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"
 
@@ -109,6 +111,15 @@ static void RecBankSample(u32 nSample, void *pUser)
         g_aBankSamples[g_nBankSamples] = (i32)nSample;
     }
     ++g_nBankSamples;
+}
+
+/* Input_OnConfirm's screen-1 arm reaches Inv_CloseAndCommit @ 0x15a48 only through this hook; the
+ * app's twin is App_HookInvCloseAndCommit (pufo_app.c:616) and the callee is what deploys the team
+ * (Part 66), so the tact part of this test has to install it the same way. */
+static void Rec_InvCloseAndCommit(void *pUser)
+{
+    (void)pUser;
+    World_InvCloseAndCommit(&g_world);
 }
 
 static i32 RecLoadGame(i32 nSlot, void *pUser)
@@ -411,6 +422,30 @@ static i32 DragCameraOntoRegion(i32 nMidY)
     return nTile;
 }
 
+/* The cell table the shell owns, addressed the way the original does: 3600 dwords per layer,
+ * 60 per row (Map.apCells @ Map+0x15338). Used by the Part 66 deploy gate. */
+static MapCell *FrameCellAt(i32 nX, i32 nY, i32 nLayer)
+{
+    if (nX < 0 || nX >= PUFO_MAP_CELL_DIM || nY < 0 || nY >= PUFO_MAP_CELL_DIM
+            || nLayer < 0 || nLayer >= PUFO_MAP_LAYERS) {
+        return NULL;
+    }
+    return g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer + PUFO_MAP_CELL_DIM * nY + nX];
+}
+
+/* How many of the 14400 slots own a unit -- the census the iso layer's occupant tests read. */
+static i32 FrameCountOccupants(void)
+{
+    i32 n = 0;
+
+    for (i32 k = 0; k < PUFO_TERRAIN_CELL_SLOTS; ++k) {
+        if (g_world.apTactCells[k] != NULL && g_world.apTactCells[k]->pUnit != NULL) {
+            ++n;
+        }
+    }
+    return n;
+}
+
 int main(void)
 {
     const char *const apsz[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -462,7 +497,8 @@ int main(void)
     /* The tact bank bring-up wiring (Part 54): the world installs InitUiControls' handlers and pads
      * on this bank, and the installed MenuBtn handler reaches back through these fields. */
     memset(&g_tactInHooks, 0, sizeof(g_tactInHooks));
-    g_tactInHooks.pfnPlaySample = RecBankSample;
+    g_tactInHooks.pfnPlaySample        = RecBankSample;
+    g_tactInHooks.pfnInvCloseAndCommit = Rec_InvCloseAndCommit; /* the screen-1 arm's callee (Part 66) */
     hooks.pBank               = &g_bank;
     hooks.pTactInputHooks     = &g_tactInHooks;
     hooks.pfnResizeMainWindow = RecResizeMainWindow; /* widget 58's window seam (Part 61) */
@@ -2185,6 +2221,91 @@ int main(void)
                           "widget 58 plays 16 (Menu_Play) and tail-calls the window seam once (0x9ecb8 twin)");
                 }
 
+                /* --- the inventory close commits the deploy (Part 66) --------------------------
+                 * The block opens the inventory (widget 4) so the confirm's screen-1 arm
+                 * (0x160FC plays sample 16, 0x16104 calls) runs Inv_CloseAndCommit @ 0x15a48 over the
+                 * live mission through the hook the shell installs: snapshot every non-large unit's loadout into auUnk962 / abUnk1012,
+                 * clear the Map+0x01 commit flag, then Tact_DeployTeamAndHwps @ 0x39980,
+                 * MapView_FocusSelected @ 0x16710, Map_RefreshCellMeta @ 0x2c7f4 and
+                 * Unit_UpdateVisibility @ 0x48580 per unit, merge a loose clip into the hand that can
+                 * take it, and put Map_nUiScreen to 0. This is the step that spreads the team out:
+                 * Tact_SelectTeamUnits @ 0x39744 computes its anchor ONCE (0x3978C..0x3979C) and
+                 * 0x3986C places every accepted soldier on it, so the bring-up's eight units share
+                 * one cell by the original's own design; phase 3 (0x39E9C) is what re-places the
+                 * first (roster - deployed) units onto free cells. */
+                {
+                    i32 nOccBefore  = FrameCountOccupants();
+                    i32 nXcomBefore = pMapX->nXcomCount;
+                    i32 nHwpsBefore = g_world.nMapDeployedHwps;
+                    i32 i;
+                    bool bParked = true, bSpawned = true, bSnapshotted = true;
+                    MapCell *pPark = FrameCellAt(1, 1, 0);
+
+                    /* The widget block above moves Map_nUiScreen around, so this block opens the
+                     * inventory itself: widget 4 is the installed opener, and screen 1 is what makes
+                     * the confirm take the commit arm. */
+                    CLICK(4);
+                    Check(g_world.nUiScreen == 1, "screen 1 (the inventory this block opened) is the arm's gate");
+                    Check(g_world.bMapUnk1139B9 == 1,
+                          "Map+0x01 is up on a new mission (Tact_InitMission's Xcom branch, 0x3D08C) -- that byte is what makes the commit do its work");
+
+                    for (i = 0; i < nXcomBefore; ++i) {
+                        pMapX->apXcomUnits[i]->auUnk962[0] = 0xABCD;  /* the snapshot must overwrite it */
+                    }
+
+                    g_nBankSamples = 0;
+                    CLICK(98);   /* MenuBtn_Confirm(16) -> Input_OnConfirm screen-1 arm -> commit */
+
+                    /* The bank recorder sees both 16s: MenuBtn_Confirm's own and the arm's at 0x160FC. */
+                    Check(g_nBankSamples >= 2 && g_aBankSamples[0] == 16 && g_aBankSamples[1] == 16,
+                          "the button plays 16 and the screen-1 arm plays 16 (0x160FC)");
+                    Check(g_world.nUiScreen == 0, "the callee's tail clears Map_nUiScreen (0x15F34)");
+                    Check(g_world.bMapUnk1139B9 == 0, "the commit flag is cleared before the deploy runs (0x15C68)");
+
+                    for (i = 0; i < nXcomBefore; ++i) {
+                        if (pMapX->apXcomUnits[i]->auUnk962[0] == 0xABCD) { bSnapshotted = false; }
+                    }
+                    Check(bSnapshotted, "the loadout snapshot ran on the roster units: auUnk962[0] holds a slot's sort key or 0, not the sentinel (0x15BFC..0x15C40)");
+
+                    /* The shipped data spawns no hardware soldiers: every craft-store record 31..35
+                     * carries uRecovScore 0, which is the spawn count phase 2 reads at 0x39A24. */
+                    for (i = 31; i <= 35; ++i) {
+                        if (g_assets.apObjects[i]->uRecovScore != 0) { bSpawned = false; }
+                    }
+                    Check(bSpawned && pMapX->nXcomCount == nXcomBefore && g_world.nMapDeployedHwps == nHwpsBefore,
+                          "no hardware soldier spawns because apObjects[31..35].uRecovScore is 0 in the shipped main.dat (0x39A24 / 0x39F90)");
+
+                    /* Phase 3 (0x39E9C) takes the rmp arm -- Map_nMapLayers is 0 on a base defence
+                     * mission, the Xcom arm writes it at 0x84118 -- and on this mission's shipped data
+                     * the arm places nobody. Map_PickRmpSpawnForUnit @ 0x55470 sends every unit whose
+                     * type byte pUnit[0xA0] is <= 8 to the `node->bFlag20 == 1` test, and all eight
+                     * nodes the terrain build's .rmp loads produced carry record byte 20 == 2
+                     * (Map_LoadRmp @ 0x55270): eight units, eight rejections. So the roster keeps
+                     * exactly what phase 1 (0x3999C) wrote -- every unit parked on cell (1,1,0), the
+                     * ARM's unconditional MOV R1,#1 / R2,#1 / R3,#0 before Unit_PlaceOnMap. A MapCell
+                     * holds an occupant LIST (MapCell_ListInsertByPri @ 0x??, the list head in pUnit),
+                     * so the team stacked on one cell is one occupant, and this is the original's own
+                     * state for a base mission, not a port gap. */
+                    for (i = 0; i < nXcomBefore; ++i) {
+                        if (pMapX->apXcomUnits[i] == NULL || pMapX->apXcomUnits[i]->pCell != pPark) {
+                            bParked = false;
+                        }
+                    }
+                    Check(bParked,
+                          "every roster unit stands on the cell (1,1,0) phase 1 parked it on: the rmp arm rejects all eight nodes (byte 20 is 2, 0x55470 wants 1 for a type<=8 unit) and moves nobody");
+                    Check(FrameCountOccupants() == nOccBefore,
+                          "and the census the iso layer's occupant reads see does not move");
+
+                    /* Phase 5 (0x3A038): the arm runs -- layers 0 and mission type 3 -- and builds an
+                     * empty table. The grid it filters is abFacilityGrid + 0x5F4, which is
+                     * abTactTileTypes @ 0x159D5C, rebuilt from the home base by Smap_InitCraftSelectState
+                     * @ 0x61B94, and this new base has no tile of the scatter type 7 (0x3A08C CMP #7).
+                     * The item walk after it is bounded by nTactItemCount and stops at once: cell
+                     * (0,0,0) has no item list. */
+                    Check(g_world.nMapScatterCount == 0,
+                          "the scatter table is empty: the arm ran (layers 0, mission 3) but no facility-grid tile matches the type-7 test at 0x3A08C");
+                }
+
                 /* The shell save unit over the live mission (Part 62): World_SaveSlot builds the whole
                  * SaveGameInput from cells this state owns. Distinctive values go into the tact cells the
                  * tgamedata payload records, the slot file is read back, and every compared value comes
@@ -2626,6 +2747,7 @@ int main(void)
                 char     szStatKeep[PUFO_STATUS_REC_BYTES];
 
                 memcpy(szStatKeep, pMapF->status.aszMsg[0], sizeof(szStatKeep));
+
                 pMapF->tact.pTrackUnit = NULL;
                 g_world.pTactState->bPhaseActive = 0;
                 g_world.bMapPlayerInput = 1;
@@ -3174,6 +3296,34 @@ int main(void)
               "the iso chain runs over the reloaded mission: the cell passes and the unit glyphs blit");
         DumpFrame("tact_loaded_mission");
         (void)remove("sav62.sav");
+
+        /* --- and on a loaded mission the same close deploys nothing (Part 66) ------------------
+         * Inv_CloseAndCommit gates the loadout snapshot AND the whole map refresh on the Map+0x01
+         * commit flag (the test at 0x15A60), and a loaded mission restores that byte out of the slot
+         * file as 0. The confirm still plays 16, still merges a loose clip, still clears the screen --
+         * but no deploy runs, so the roster keeps what the "map" chunk restored and the cell census
+         * does not move. This is the other half of the same gate the bring-up runs through. */
+        {
+            i32 nOccBefore  = FrameCountOccupants();
+            i32 nXcomBefore = pMapL->nXcomCount;
+
+            Check(g_world.bMapUnk1139B9 == 0,
+                  "the reloaded mission has Map+0x01 clear, which gates off the commit's map half (0x15A60)");
+
+            pMapL->pSelUnit = pMapL->apXcomUnits[0];   /* fixture: a unit is selected */
+            g_bank.aCtl[4].pfnClick();                 /* the installed inventory opener */
+            Check(g_world.nUiScreen == 1, "the inventory pad (widget 4) opens screen 1 on the reloaded mission");
+
+            g_nBankSamples = 0;
+            g_bank.aCtl[98].pfnClick();
+
+            Check(g_nBankSamples >= 2 && g_aBankSamples[0] == 16 && g_aBankSamples[1] == 16,
+                  "the arm still plays 16 (0x160FC)");
+            Check(g_world.nUiScreen == 0, "and still clears Map_nUiScreen at the tail (0x15F34)");
+            Check(pMapL->nXcomCount == nXcomBefore, "no soldier spawns");
+            Check(FrameCountOccupants() == nOccBefore,
+                  "and no cell changes occupant: the census is exactly what it was before the close");
+        }
     }
 
     World_Free(&g_world);

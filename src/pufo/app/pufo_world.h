@@ -717,6 +717,12 @@ i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), 
 void World_GeoscapePointer(PufoWorldState *pW, i32 nX, i32 nY, bool bDown);
 void World_GeoscapePointerUp(PufoWorldState *pW);
 
+/* Inv_CloseAndCommit @ 0x15a48 over the live mission: the loadout snapshot, then the deploy
+ * (Tact_DeployTeamAndHwps @ 0x39980, MapView_FocusSelected, Map_RefreshCellMeta and the per-unit
+ * visibility pass), then the loose-clip merge and Map_nUiScreen = 0. The seam Input_OnConfirm's
+ * screen-1 arm calls (0x16104). */
+void World_InvCloseAndCommit(PufoWorldState *pW);
+
 /* Allocate the heap-held parts (the 200 site records) and set the defaults the original's
  * zero-filled .data has. */
 bool World_Init(PufoWorldState *pW);
