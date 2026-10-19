@@ -351,7 +351,14 @@ static const char *Init_BriefText(const TactInitEnv *pEnv, u32 nOff)
  * The pad is allocated, loaded at mode 0x21, and its origins cleared. Then the text is
  * assembled from aTextRecs slices into a 0x348-byte stack buffer, wrapped into the panel
  * from line 2 (mission type 9) or line 0 (everything else), and two more lines are
- * appended by hand: the fixed line at 0x10DA38 and the closing slice. */
+ * appended by hand: the fixed line at 0x10DA38 and the closing slice.
+ *
+ * The panel's line count matters here. UiPanel_ctor stores its argument in nLineCount, so panel 4 starts the
+ * mission at 28 with 28 empty lines; UiPanel_WrapText then REPLACES that count with lineStart + the lines it
+ * committed, and the two appends land at the replaced count. That is inside the panel as long as the wrap stays
+ * below 26. Past it the slot is unallocated and holds 0, and the original -- which treats the slot as a
+ * panel-relative word offset and follows the line record's +0xBE8 field as the buffer -- would write through
+ * whatever lives at panel+0xBE8. Recorded latent fault; the port's Init_CopyLine refuses the unallocated slot. */
 static void Init_Briefing(TactInitEnv *pEnv)
 {
     char aszText[PUFO_TACTINIT_TEXT_CAP];

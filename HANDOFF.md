@@ -1418,6 +1418,25 @@ shape that hid the Map+0x30/0x32 STRHs in Part 81 — so the debrief banner's OK
 machine's locale, and Python 3.14 returns `stdout=None` without raising when a text-mode decode fails, which
 recorded `test_geoscapeframe` as a FAIL it did not earn; the capture now decodes utf-8 with `errors="replace"`.
 
+Screens 0x14/0x15 — the Cydonia briefing pair — paint now (Part 85), and nothing of `Render_Frame`'s tactical jumptable is off
+the seam. The handler is three instructions: `Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0` blits the pad POINTER held at
+`unk_15692C` and draws the panel at `unk_1571EC`, and both are already shell cells (`pW->pTactBriefPad`, `tactEnv.apPanel[4]`),
+so this part is two env wires and the seam. The opener is `Tact_InitMission`'s own tail gate — `Map_bSpawnAlt` at 0x3D284 and the
+mode argument at 0x3D29C, either one failing out to 0x3D548 — and `Smap_BeginCraftSelect` raises that byte at 0x83A74 only on its
+assault arm (Map_nMissionType 9), so the briefing is the Cydonia launch's opening screen and not every mission's. Both closers
+only adopt `apUiSlotsA[11]` (0x14C50 for the pen, 0x16294 for the cancel), the screen 0x3D2A8 saved, and 21 is never stored into
+`Map_nUiScreen` by anything: the second case of the pair is dead in the beta.
+
+Two facts worth carrying. `UiPanel_ctor` stores its line-count argument IN `nLineCount`, so the briefing panel starts a mission at
+28 EMPTY lines and the arm paints the splash only; `UiPanel_WrapText @ 0x37144` then REPLACES that count with the lines it
+committed, which is what keeps `Init_Briefing`'s two appends inside the panel — past slot 27 the slot is unallocated and the
+original, which reads a slot as a panel-relative word offset and follows the line record's `+0xBE8` as the buffer, would write
+through whatever sits at `panel+0xBE8` (recorded latent fault). And "cydonia" is the full-screen soldier splash, whose last
+appended line is the blob slice at 0x38B49: «Удачи!», 39 px, centred at 101,30. Measured against the pad alone: 0 control blits
+(both calls go direct, not through the control hook), the iso loop bounds unmoved, and the whole briefing frame equal to the pad
+until a line is put in the panel. New reference `tests/ref/tact_briefing.png`, looked at. IDB: 7 comments (0x15692C, 0x1571EC,
+0x223DC, 0x3D2D0, 0x3D504, 0x14C50, 0x1a7a0) + `idb_save`.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

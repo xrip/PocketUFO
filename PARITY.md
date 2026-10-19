@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 18631 |
+| Test checks run | 18654 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -596,7 +596,7 @@ is the module that answers to it.
 | `0x84ecc` | `Ui_CloseScreen18` | 52 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x84e9c` | `Ui_OpenScreen18` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x85164` | `Ui_OpenFunding` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x1a7a0` | `Cydonia_Blit_Then_UiPanelMsg_Draw` | 40 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
+| `0x1a7a0` | `Cydonia_Blit_Then_UiPanelMsg_Draw` | 40 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x3e914` | `UiPanel_SetBytes6to11` | 40 | `src/pufo/ui/pufo_panel.h` |
 | `0x1a228` | `EmptyBtn_OnClick` | 36 | `src/pufo/ui/pufo_control.h` |
 | `0x619a8` | `Ui_SetTransferFlag` | 36 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 700 |
+| `test_geoscapeframe` | PASS | 723 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |

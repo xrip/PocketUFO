@@ -2727,11 +2727,11 @@ static void World_TactStatusRender(void *pUser)
  * The seam covers 0x2237C's jumptable group, "cases 0,3,5,7-12,15", plus 13, the status-banner arm
  * at 0x223E8. Part 76 added the group's six furniture envs -- the fire-mode roster (3), the item
  * sub-mode panel (5), the tactical menu (7), the modal slot lists (10/11), the options top bar (12)
- * and the action buttons (15) -- so the whole iso group now paints here. Part 80, Part 81, Part 82, Part 83 and
- * Part 84 added the five arms that REPLACE the iso layer with their own env and read only cells the bring-up already
- * owns: 1 inventory (0x224AC), 2 the look-mode minimap (0x224B8), 4 the selected unit's command panel
- * (0x224C4), 6 the marked-unit overlay (0x224D0) and 0x13 the promotion report (0x223F4). What stays off the seam
- * is the last two of that family: 0x14 and 0x15, the Cydonia screens (0x223DC).
+ * and the action buttons (15) -- so the whole iso group now paints here. Part 80, Part 81, Part 82, Part 83,
+ * Part 84 and Part 85 added the six arms that REPLACE the iso layer with their own env and read only cells the
+ * bring-up already owns: 1 inventory (0x224AC), 2 the look-mode minimap (0x224B8), 4 the selected unit's command
+ * panel (0x224C4), 6 the marked-unit overlay (0x224D0), 0x13 the promotion report (0x223F4) and 0x14/0x15 the
+ * Cydonia briefing pair (0x223DC). Nothing of 0x2237C's tactical jumptable is off the seam now.
  *
  * Two deviations, both recorded in docs/parity/game-core.md:
  *   1. The cursor-direction tick runs HERE, before Render_Frame, and RenderFrameEnv.pCursorDir is
@@ -2758,9 +2758,10 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
     case 4:                                              /* and 6 the 0x224D0 marker arm -- all outside */
     case 6:                                              /* that group, all drawing no iso layer at all */
     case PUFO_PROMOTION_UI_SCREEN:                       /* 0x13: 0x223F4, the promotion report */
-        return true;
+    case 20: case 21:                                    /* 0x14/0x15: 0x223DC, the Cydonia briefing pair -- */
+        return true;                                     /* 21 has no writer anywhere, see the env note  */
     default:
-        return false;   /* 0x14/0x15 replace the iso layer with another env */
+        return false;   /* 16..18 are the title and menu screens (the outer cases 0x10..0x12) */
     }
 }
 
@@ -3321,6 +3322,24 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     rf.szConfirmRight     = World_TextRec(pW, PUFO_TEXT_REC_PROMOTION_RANK);  /* unk_EAE7A = TEXTS[1106] */
     rf.pConfirmPanelA     = pW->tactEnv.apPanel[2];                  /* pUiPanel2 @ 0x1568E0, the name column */
     rf.pConfirmPanelB     = pW->tactEnv.apPanel[3];                  /* pUiPanel3 @ 0x1568DC, the rank column */
+
+    /* Screens 0x14 / 0x15, Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0: the Cydonia briefing pair, the sixth arm
+     * that REPLACES the iso layer (0x2237C cases 0x14/0x15 -> 0x223DC). The handler is three instructions --
+     * PadImage_Blit of the pad POINTER stored at unk_15692C (0x1A7AC), then UiPanelMsg_Draw of the panel at
+     * unk_1571EC (0x1A7B4) -- and both operands are cells the mission already owns: pW->pTactBriefPad is that
+     * pointer, and apPanel[4] is that panel, laid at 0x3C854..0x3CB00 as 28 line slots at (120,30), centre-aligned,
+     * 14 visible rows of 16. The opener is Tact_InitMission's own tail gate: 0x3D284 reads Map_bSpawnAlt, 0x3D29C
+     * tests the mode argument, either one fails out to 0x3D548, which drops unk_15692C to NULL (leaking the previous
+     * mission's pad -- recorded original bug); the taken branch saves Map_nUiScreen into apUiSlotsA[11] at
+     * 0x3D2A4/0x3D2A8 and stores 20 at 0x3D2B0 before allocating the pad (new(0x14), the 20-byte PadImage), running
+     * its ctor and loading "cydonia" at mode 0x21 (0x3D2C0..0x3D2E0), then clearing the pad's two origin fields at
+     * 0x3D2E8/0x3D2F0. Only 20 is ever stored: no writer of 21 exists in the binary, so case 0x15 is reachable only
+     * if slot 11 holds 21, which nothing writes. On a failed allocation the original stores NULL anyway and faults
+     * at 0x3D2E8 (recorded original bug); the port skips the ctor and the load, and its PadImage_Blit has no null
+     * test either (0x110dc reads the fields straight), so the fault just moves from 0x3D2E8 to here (recorded
+     * deviation). */
+    rf.pCydoniaPad        = pW->pTactBriefPad;                       /* unk_15692C */
+    rf.pCydoniaPanel      = pW->tactEnv.apPanel[PUFO_BRIEF_PANEL];   /* unk_1571EC */
     rf.nFadeCount        = pW->nMapUiSlot1;                     /* Map_nBannerFadeTicks @ 0x64 */
     rf.nFadeIn           = pW->nMapUiSlot10;                    /* dword_113A40 @ 0x88, post-tick */
     rf.pFadePad          = pW->apTactPads[PUFO_UIPAD_ENEMYSTEP]; /* pPadEnemyStep @ 0x156AA0 */

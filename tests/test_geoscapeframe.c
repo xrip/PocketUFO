@@ -3101,10 +3101,11 @@ int main(void)
                 }
 
                 /* The gate. Live on 0x2237C's jumptable group "cases 0,3,5,7-12,15" plus 13, the status
-                 * banner arm at 0x223E8, plus 1, 2, 4, 6 and 0x13 -- the arms outside that group whose envs
-                 * the shell already owns (0x224AC, 0x224B8, 0x224C4, 0x224D0, 0x223F4). Render_Frame calls
-                 * MapView_DrawIsoLayer with no null test (0x22414) for the group; Part 76 built the group's
-                 * six furniture envs, Parts 80/81/82/83/84 the five replace-arms. 0x14/0x15 stay off. */
+                 * banner arm at 0x223E8, plus 1, 2, 4, 6, 0x13 and 0x14/0x15 -- the arms outside that group
+                 * whose envs the shell already owns (0x224AC, 0x224B8, 0x224C4, 0x224D0, 0x223F4, 0x223DC).
+                 * Render_Frame calls MapView_DrawIsoLayer with no null test (0x22414) for the group; Part 76
+                 * built the group's six furniture envs, Parts 80/81/82/83/84/85 the six replace-arms. Only the
+                 * title and menu ids (16..18, the outer cases 0x10..0x12) stay off it. */
                 g_world.nUiScreen = 0;
                 Check(World_bTactFrameLive(&g_world), "the frame seam is live on screen 0 of a live mission");
                 g_world.nUiScreen = 8;
@@ -3123,8 +3124,13 @@ int main(void)
                 Check(World_bTactFrameLive(&g_world),
                       "and on 0x13, the promotion-report arm 0x223F4, which replaces it");
                 g_world.nUiScreen = 0x14;
+                Check(World_bTactFrameLive(&g_world),
+                      "and on 0x14, the Cydonia briefing arm 0x223DC, which replaces it (Part 85)");
+                g_world.nUiScreen = 0x15;
+                Check(World_bTactFrameLive(&g_world), "and on 0x15, the dead twin of the same jumptable entry");
+                g_world.nUiScreen = 18;
                 Check(!World_bTactFrameLive(&g_world),
-                      "not on 0x14: the Cydonia arm 0x223DC is still off the seam");
+                      "not on 18: the outer cases 0x10..0x12 are the title and menu screens, not the tactical frame");
                 g_world.nUiScreen = 0;
 
                 /* The cursor tick (0x22360) with the busy arm taken: byte3 = old byte2, byte2 = 1, and
@@ -4300,6 +4306,200 @@ int main(void)
             World_TactFrame(&g_world);
         }
         (void)remove("sav62.sav");
+
+        /* --- screens 0x14/0x15: the Cydonia briefing pair at 0x223DC (Part 85) ------------------
+         * The last two arms of 0x2237C's replace family, and the handler is three instructions:
+         * Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0 blits the pad POINTER held at unk_15692C (PadImage_Blit
+         * @ 0x110dc, called at 0x1A7AC) and then draws the panel at unk_1571EC (UiPanelMsg_Draw @ 0x3e94c,
+         * called at 0x1A7B4). Both operands are cells the mission already owns -- pW->pTactBriefPad and
+         * tactEnv.apPanel[4] -- so what this part adds is two env wires and the seam, nothing else.
+         *
+         * The opener is Tact_InitMission's own tail: 0x3D284 reads Map_bSpawnAlt, 0x3D29C tests the mode
+         * argument, either one fails out to 0x3D548, which drops unk_15692C to NULL and leaks what the previous
+         * mission left (recorded original bug). The taken branch saves Map_nUiScreen into apUiSlotsA[11]
+         * (0x3D2A4 LDRH, 0x3D2A8 STR), stores 20 (0x3D2AC/0x3D2B0), allocates the 20-byte pad, loads "cydonia"
+         * at mode 0x21 with its origins cleared, then appends the panel's two lines and += 2 (0x3D4EC..0x3D540):
+         * the image's standing empty string at 0x10DA38, then the text-blob slice at unk_EC419 = aTextRecs +
+         * 0x38B49. That branch -- the gate, the pad, the saved slot and the panel content -- is gated in
+         * test_tactinit.c (TestBriefing, TestBriefingSkipped) and both closers in test_input.c
+         * (Input_OnPointerUp's 20/21 arm, UiScreen_OnCancel's). Re-running a whole mission init for one paint is
+         * not a state the shell reaches, so this block lays the screen write, the saved slot and the pad exactly as
+         * the taken branch leaves them and gates the PAINT: the seam, the arm's own calls against the frame, the
+         * panel's row and centre arithmetic, the dead 0x15 case, and both closers through the shell. */
+        {
+            u16          nScreenKeep = g_world.nUiScreen;
+            i32          nSlot11Keep = g_world.nMapUiSlot11;
+            i32          nFadeKeep   = g_world.nMapUiSlot1;
+            i32          nFadeInKeep = g_world.nMapUiSlot10;
+            i32          nIsoXKeep   = g_world.sTactIso.nTileX;
+            i32          nIsoYKeep   = g_world.sTactIso.nTileY;
+            UiPanel     *pPanel      = g_world.tactEnv.apPanel[PUFO_BRIEF_PANEL];
+            PadImage    *pBrief      = (PadImage *)malloc(sizeof(PadImage));
+            const char  *pszTail     = (const char *)g_world.pAssets->pTextRecs + PUFO_BRIEF_TAIL;
+            static u16   aPadOnly[240 * 320];   /* 0x1A7AC's call alone: everything the panel is not */
+            static u16   aPaint20[240 * 320];   /* the frame paint on 20, for the 0x15 comparison */
+            i32          nFrameBlits;
+            i32          nTailW, nTailX;
+            i32          nTailInk, nLeftInk, nRightInk, nBelowInk, nOutsideInk;
+
+            Check(pBrief != NULL, "the briefing pad is a heap PadImage, the 20-byte new(0x14) of 0x3D2B4");
+            Check(pPanel != NULL, "the briefing panel is tactEnv.apPanel[4] = unk_1571EC, the one 0x1A7B4 draws");
+            Check(pPanel != NULL && pPanel->nPosX == 120 && pPanel->nPosY == 30
+                      && pPanel->nStyle == 14 && pPanel->nFont == 16 && pPanel->nUnk7076 == 1,
+                  "laid out at (120,30), centre-aligned, 14 visible rows of 16 (0x3C854..0x3CB00, align 1)");
+            Check(pPanel->nLineCount == 28 && g_world.pTactBriefPad == NULL,
+                  "this mission came in through the skipped gate: unk_15692C NULL as 0x3D548 leaves it, and the panel "
+                  "still holds the 28 lines its ctor was given -- UiPanel_ctor stores its line count in nLineCount and "
+                  "nothing on this path resets it (0x3C738..0x3C854)");
+            {
+                i32 nLinesEmpty = 0;
+
+                for (i32 r = 0; r < pPanel->nLineCount; ++r) {
+                    if (pPanel->apLines[r] != NULL && pPanel->apLines[r][0] == 0) { ++nLinesEmpty; }
+                }
+                Check(nLinesEmpty == 28 && pPanel->apLines[28] == NULL,
+                      "all 28 lines are empty and slot 28 was never allocated: UiPanelMsg_Draw walks its 14 visible rows "
+                      "and finds nothing, and Init_Briefing's two appends only land inside the panel while its wrap keeps "
+                      "them below 28 (past that the original writes through a zero slot offset -- recorded latent fault)");
+            }
+
+            /* What the taken branch leaves, laid in its order. */
+            g_world.nMapUiSlot11 = (i32)g_world.nUiScreen;   /* 0x3D2A4 LDRH Map_nUiScreen, 0x3D2A8 STR */
+            g_world.nUiScreen    = 20;                       /* 0x3D2AC MOV R0,#0x14, 0x3D2B0 STRH */
+            Check(g_world.nMapUiSlot11 == 0 && g_world.nUiScreen == 20,
+                  "the screen moves to 20 with its old value saved in apUiSlotsA[11] -- and the old value is 0, "
+                  "because the mission prologue cleared Map_nUiScreen at 0x3C64C");
+
+            PadImage_ctor(pBrief);
+            Check(PadImage_Load(pBrief, "cydonia", 0x21), "the pad is the archive member \"cydonia\", loaded at mode 0x21 (0x3D2D0)");
+            pBrief->nOriginX = 0;
+            pBrief->nOriginY = 0;
+            g_world.pTactBriefPad = pBrief;                  /* unk_15692C, the pointer 0x1A7AC blits */
+
+            Check(World_bTactFrameLive(&g_world), "the briefing is on the tactical frame seam (0x2237C case 0x14 -> 0x223DC)");
+
+            /* The arm's first call on its own: the pad at (0,0). Every census below compares a frame paint against
+             * this, so the panel's own ink is what shows up. */
+            ClearSurface();
+            PadImage_Blit(pBrief);
+            for (i32 y = 0; y < 320; ++y) {
+                for (i32 x = 0; x < 240; ++x) {
+                    aPadOnly[(size_t)y * 240u + (size_t)x] = (u16)SurfPix(x, y);
+                }
+            }
+
+            /* The fade block at 0x2250C belongs to every arm of Render_Frame and re-blits the whole screen while
+             * its counter is up (0x22538), so it is held down here exactly as in Part 64 and Part 84. Neither
+             * counter gates this arm; the briefing paints the same either way. */
+            g_world.nMapUiSlot1  = 0;
+            g_world.nMapUiSlot10 = 10;
+            g_world.sTactIso.nTileX = -1;                    /* the iso layer's own loop bounds */
+            g_world.sTactIso.nTileY = -1;
+            ClearSurface();
+            g_nBlits = 0;
+            World_TactFrame(&g_world);
+            nFrameBlits = g_nBlits;
+            for (i32 y = 0; y < 320; ++y) {
+                for (i32 x = 0; x < 240; ++x) {
+                    aPaint20[(size_t)y * 240u + (size_t)x] = (u16)SurfPix(x, y);
+                }
+            }
+
+            Check(g_world.sTactIso.nTileX == -1 && g_world.sTactIso.nTileY == -1,
+                  "and the arm runs with no iso layer at all: 0x2237C sends 0x14 straight to 0x223DC, never through 0x22414");
+            CheckEqI32(nFrameBlits, 0,
+                  "and nothing goes through the control-blit hook: the handler is PadImage_Blit plus UiPanelMsg_Draw, "
+                  "and these two screens carry no control");
+            CheckEqI32(DiffInBox(0, 0, 240, 320, aPadOnly), 0,
+                  "and with the panel as the mission leaves it -- 28 empty lines -- the briefing frame IS the pad: "
+                  "UiPanelMsg_Draw walks the 14 visible rows and puts nothing down");
+
+            /* One line, staged, to pin the arm's row and align arithmetic against the panel's own fields. The writer
+             * of this panel is Init_Briefing (0x3D2A8..0x3D540) and its content -- the branch select, the wrap from
+             * 0x37144, the two appends at 0x3D4EC..0x3D540 -- is gated in test_tactinit.c over its own fixture; what
+             * is gated here is where a line lands. The string is the real slice the writer appends last, the blob at
+             * unk_EC419, straight out of lang.dat. */
+            {
+                i32 i = 0;
+
+                for (;;) { pPanel->apLines[0][i] = (u8)pszTail[i]; if (pszTail[i] == 0) { break; } ++i; }
+            }
+            pPanel->nLineCount = 1;
+
+            ClearSurface();
+            World_TactFrame(&g_world);
+            for (i32 y = 0; y < 320; ++y) {
+                for (i32 x = 0; x < 240; ++x) {
+                    aPaint20[(size_t)y * 240u + (size_t)x] = (u16)SurfPix(x, y);
+                }
+            }
+
+            nTailW  = Text_MeasureWidth(pszTail);
+            nTailX  = 120 - nTailW / 2;                      /* UiPanelMsg_Draw's align 1: nPosX - w/2 */
+            nTailInk   = DiffInBox(nTailX, 30, nTailX + nTailW, 46, aPadOnly);
+            nLeftInk   = DiffInBox(0, 30, nTailX, 46, aPadOnly);
+            nRightInk  = DiffInBox(nTailX + nTailW, 30, 240, 46, aPadOnly);
+            nBelowInk  = DiffInBox(0, 46, 240, 320, aPadOnly);
+            nOutsideInk = DiffInBox(0, 0, 240, 320, aPadOnly) - nTailInk - nLeftInk - nRightInk - nBelowInk;
+
+            Check(nTailInk > 0,
+                  "the line draws on row 0 at the centred x: 120 - w/2, y 30 (nPosY 30 + row 0 * nFont 16)");
+            Check(nLeftInk == 0 && nRightInk == 0,
+                  "and the row is centred, not offset: nothing left of its start, nothing right of its measured width");
+            CheckEqI32(nBelowInk, 0, "and nothing below it: with one line the rows below draw nothing");
+            CheckEqI32(nOutsideInk, 0,
+                  "the frame paint against the pad alone is that one line: no iso layer, no furniture, no fade block");
+            printf("  briefing: pad \"cydonia\" at 0,0; line \"%s\" %d px centred at %d,30; %d px over the pad "
+                   "alone, %d control blits\n", pszTail, nTailW, nTailX, nTailInk, nFrameBlits);
+            DumpFrame("tact_briefing");
+
+            /* case 0x15 shares the handler. 21 is never stored into Map_nUiScreen anywhere in the binary, and
+             * apUiSlotsA[11] is written only with what Map_nUiScreen held, which on the briefing path is 0 -- so
+             * the case is dead in the original. Painting it shows both cases land on the same 0x223DC. */
+            g_world.nUiScreen = 21;
+            Check(World_bTactFrameLive(&g_world), "case 0x15 is on the seam too, off the same jumptable entry");
+            ClearSurface();
+            World_TactFrame(&g_world);
+            CheckEqI32(DiffInBox(0, 0, 240, 320, aPaint20), 0,
+                      "and paints the screen-20 frame byte for byte: 0x223DC is one handler for both cases");
+
+            /* Closer 1, the pen. Input_OnPointerUp's 20/21 arm adopts apUiSlotsA[11] (0x14C4C -> 0x14C50) with no
+             * hit-test and no teardown; test_input.c pins the arm, this runs it through the shell's dispatch. */
+            {
+                TactPointerWorld ptr;
+
+                memset(&ptr, 0, sizeof(ptr));
+                ptr.pBank = &g_bank;
+                ptr.hit = g_hit;
+                g_world.nUiScreen = 20;
+                World_TactPointerUp(&g_world, &ptr);
+                CheckEqI32((i32)g_world.nUiScreen, g_world.nMapUiSlot11,
+                      "the release brings the mission screen back through the shell's pen dispatch (0x14C4C, 0x14C50)");
+            }
+
+            /* Closer 2, the cancel. UiScreen_OnCancel's 0x14..0x15 arm writes slot 11 and returns; the teardown
+             * belongs to the other arms (0x1626C passes the range test, 0x16294 writes the saved screen). */
+            g_world.nUiScreen = 20;
+            Check(World_MissionCancelEnd(&g_world), "the cancel takes the 0x14..0x15 arm (0x1626C passed, 0x16294 taken)");
+            CheckEqI32((i32)g_world.nUiScreen, g_world.nMapUiSlot11,
+                  "and the screen comes back out of apUiSlotsA[11] -- 0, the value the gate saved at 0x3D2A8");
+            Check(g_world.bTactFlag != 0 && g_world.bTactLive && pMapL == g_world.pTactMap,
+                  "with no teardown and no geoscape rebuild: the briefing is a screen over the live mission");
+
+            pPanel->apLines[0][0] = 0;
+            pPanel->nLineCount = 28;         /* back to what the ctor gave this panel and the skipped gate left */
+            PadImage_FreeData(pBrief);
+            free(pBrief);
+            g_world.pTactBriefPad = NULL;   /* the port's teardown rule (Part 51's drop site); 0x3D548 only drops the pointer */
+            g_world.nUiScreen    = nScreenKeep;
+            g_world.nMapUiSlot11 = nSlot11Keep;
+            g_world.nMapUiSlot1  = nFadeKeep;
+            g_world.nMapUiSlot10 = nFadeInKeep;
+            g_world.sTactIso.nTileX = nIsoXKeep;
+            g_world.sTactIso.nTileY = nIsoYKeep;
+            ClearSurface();
+            World_TactFrame(&g_world);
+        }
 
         /* --- and on a loaded mission the same close deploys nothing (Part 66) ------------------
          * Inv_CloseAndCommit gates the loadout snapshot AND the whole map refresh on the Map+0x01
