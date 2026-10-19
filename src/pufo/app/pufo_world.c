@@ -21,6 +21,7 @@
 #include "game/pufo_roster.h"  /* Roster_CycleNext/Select*, the tact nav widgets (Part 54) */
 #include "game/pufo_tacthud.h" /* TactHud_OpenInventory (0x16ef4), the inventory the mission opens (Part 55) */
 #include "game/pufo_tactctl.h" /* Map_BuildDeployConfirmYesNo @ 0x18a68, the deploy confirm the shell wires (Part 58) */
+#include "game/pufo_menu.h"    /* Menu_ResizeWindow @ 0x19930 (widget 58), the last deferred handler (Part 61) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -2787,8 +2788,8 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
  * The multi-target cells 0x04..0x24 have two shell views: the GameMap union (the walker's view) and
  * sTactInput (the input handlers' view); the bank handlers use the union and InputSync moves them.
  *
- * Handlers left NULL, each a recorded separate issue:
- *   58   MenuBtn_ResizeWindow @ 0x19930 -- App_ResizeMainWindow is a caller-window call, not world state
+ * Every handler in the table is installed (Parts 54..61); widget 58 reaches the caller's window
+ * through the pfnResizeMainWindow seam.
  * ========================================================================== */
 
 static PufoWorldState *World_TactLiveMission(void)
@@ -4118,6 +4119,32 @@ static void World_ClickQuitConfirm(void)
                               World_QuitNoThunk, &mh);
 }
 
+/* Widget 58 -> MenuBtn_ResizeWindow @ 0x19930: sample 16 then App_ResizeMainWindow @ 0x9ecb8. Both
+ * halves were ported long ago (Menu_ResizeWindow in game/pufo_menu.c, the SetWindowPos body in
+ * pufo_app.c); the HWND and its stored size pair belong to the caller, so the world reaches them
+ * through the WorldHooks seam. This closes the last NULL in the tact bank table. */
+static void World_ResizeWindowSeamThunk(void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+    const WorldHooks *pHooks = pW->pFrameHooks;
+
+    if (pHooks != NULL && pHooks->pfnResizeMainWindow != NULL) {
+        pHooks->pfnResizeMainWindow(pHooks->pResizeUser);
+    }
+}
+
+static void World_ClickResizeWindow(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks mh;
+
+    if (pW == NULL) {
+        return;
+    }
+    mh = World_TactMenuHooksFor(pW);
+    Menu_ResizeWindow(&mh, World_ResizeWindowSeamThunk);
+}
+
 /* ------------------------------------------------ pointer dispatch (Part 60)
  *
  * Input_OnPointer @ 0x13c6c and Input_OnPointerUp @ 0x148d0 are fully ported in pufo_input.c;
@@ -4281,7 +4308,7 @@ static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {
     World_ClickOpenOptions,        /* 55  Options_SyncUiFromMap_GotoScreen12 @ 0x188e4 */
     World_ClickDeployConfirm,    /* 56  Map_BuildDeployConfirmYesNo @ 0x18a68 (Part 58) */
     World_ClickQuitConfirm,      /* 57  Menu_ConfirmQuitDialog @ 0x18e2c (Part 59) */
-    NULL,                          /* 58  MenuBtn_ResizeWindow @ 0x19930 (caller window call) */
+    World_ClickResizeWindow,     /* 58  MenuBtn_ResizeWindow @ 0x19930 (Part 61) */
     World_ClickSamples1614Clear,   /* 59  Map_PlaySamples16_14_ClearUiScreen @ 0x18e9c */
     World_ClickSpeed0, World_ClickSpeed1, World_ClickSpeed2,         /* 60..62 MenuBtn_SetSpeed0..2 */
     World_ClickSpeed3, World_ClickSpeed4,                            /* 63, 64 */

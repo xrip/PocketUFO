@@ -631,6 +631,10 @@ typedef struct WorldHooks {
      * the original writes the Map option bytes. */
     UiWidgetBank            *pBank;
     const TactInputHooks    *pTactInputHooks;
+    /* App_ResizeMainWindow @ 0x9ecb8 seam (Part 61): the HWND and its stored size pair belong to
+     * the caller; widget 58's handler reaches them only through this hook. */
+    void (*pfnResizeMainWindow)(void *pUser);
+    void *pResizeUser;
     bool                    *pbBankActionFlag;
     const SaveLoadSlotHooks *pSaveLoadHooks;
     void (*pfnFormatSlotList)(void *pUser); /* SaveSlot_FormatList @ 0x45904 */

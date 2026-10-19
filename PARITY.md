@@ -190,7 +190,7 @@ is the module that answers to it.
 | `0x54c80` | `CDialogTemplate_GetCellByte` | 116 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x9e7f4` | `StartTimers_D` | 112 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
 | `0xa0388` | `App_QuitDisplay` | 100 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.h` |
-| `0x9ecb8` | `App_ResizeMainWindow` | 84 | `src/pufo/app/pufo_app.c` |
+| `0x9ecb8` | `App_ResizeMainWindow` | 84 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+1) |
 | `0x9e864` | `KillTimers_D` | 80 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
 | `0x9e8b4` | `KillTimers_BySpeed` | 80 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_timer.c` (+1) |
 | `0x9e6d4` | `StartTimers_A` | 64 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |

@@ -89,6 +89,7 @@ static UiControlHitCtx g_hit;
 static UiWidgetBank   g_bank;
 static TactInputHooks g_tactInHooks;
 static bool           g_bBankActionFlag;   /* UiBank_bActionFlag, WorldHooks.pbBankActionFlag */
+static i32            g_nResizeCalls;      /* the WorldHooks.pfnResizeMainWindow seam (Part 61) */
 static i32            g_aBankSamples[64];
 static i32            g_nBankSamples;
 static i32            g_nSlotFormatCalls;  /* Menu_OpenSlotList's injected SaveSlot_FormatList */
@@ -114,6 +115,12 @@ static i32 RecLoadGame(i32 nSlot, void *pUser)
 }
 
 static const SaveLoadSlotHooks g_slotHooks = { NULL, RecLoadGame, NULL };  /* no save unit yet */
+
+static void RecResizeMainWindow(void *pUser)
+{
+    (void)pUser;
+    ++g_nResizeCalls;
+}
 
 static void RecFormatSlots(void *pUser)
 {
@@ -373,6 +380,8 @@ int main(void)
     g_tactInHooks.pfnPlaySample = RecBankSample;
     hooks.pBank               = &g_bank;
     hooks.pTactInputHooks     = &g_tactInHooks;
+    hooks.pfnResizeMainWindow = RecResizeMainWindow; /* widget 58's window seam (Part 61) */
+    hooks.pResizeUser         = NULL;
     hooks.pbBankActionFlag    = &g_bBankActionFlag;
     hooks.pSaveLoadHooks      = &g_slotHooks;
     hooks.pfnFormatSlotList   = RecFormatSlots;
@@ -1693,21 +1702,14 @@ int main(void)
                 /* Tact_InitUiControls @ 0x3b498 ran through the shell hook (Part 54): the handlers are
                  * installed on the shell's bank in the g_aUiClickName order, the look control is built,
                  * the HUD origin is recomputed and the direct overrides land. */
-                static const i32 aDeferred[1] = { 58 };
-                i32 bInstalled = 1, bDeferred = 1, bStart = 1;
+                i32 bInstalled = 1, bStart = 1;
                 for (i32 c = 0; c < 113; ++c) {
-                    i32 bWant = 1;
-                    for (i32 d = 0; d < 1; ++d) {
-                        if (aDeferred[d] == c) { bWant = 0; }
-                    }
-                    if (bWant && g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
-                    if (!bWant && g_bank.aCtl[c].pfnClick != NULL) { bDeferred = 0; }
+                    if (g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
                 }
                 for (i32 c = 113; c < 128; ++c) {
                     if (g_bank.aCtl[c].pfnClick != NULL) { bStart = 0; }
                 }
-                Check(bInstalled, "every handler the port models is installed on bank widgets 0..112");
-                Check(bDeferred, "the one deferred family stays NULL: 58 resize (4, 5, 17/18, 56 and 57 installed since Parts 55..59)");
+                Check(bInstalled, "every widget 0..112 handler is installed (Parts 54..61 -- the deferred families 56, 57 and 58 closed)");
                 Check(bStart && g_bank.aCtl[128].pfnClick != NULL && g_bank.aCtl[129].pfnClick != NULL,
                       "113..127 stay uninstalled (start-menu widgets) and 128/129 take MenuBtn_Cancel (0x1a24c / 0x1a26c)");
                 const UiControl *pLook = &g_world.sTactLookCtl;
@@ -2084,6 +2086,18 @@ int main(void)
                     g_world.bMapFire2 = bFire2Save;
                     pMapX->bTrajHitStop = bTrajSave;
                     g_world.bMapEnemyTurnActive = bTurnSave2;
+                }
+
+                /* 58: MenuBtn_ResizeWindow (0x19930) -- sample 16, then the caller's window seam
+                 * (App_ResizeMainWindow @ 0x9ecb8 is the app's own SetWindowPos body; the test
+                 * records the seam call instead of resizing a real window). (Part 61) */
+                {
+                    i32 nResizeSave = g_nResizeCalls;
+
+                    nSampleMark = g_nSamples;
+                    CLICK(58);
+                    Check(g_aFrameSamples[nSampleMark] == 16 && g_nResizeCalls == nResizeSave + 1,
+                          "widget 58 plays 16 (Menu_Play) and tail-calls the window seam once (0x9ecb8 twin)");
                 }
 
                 /* Restore everything the dispatch moved. */

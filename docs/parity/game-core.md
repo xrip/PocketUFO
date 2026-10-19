@@ -19577,3 +19577,25 @@ Coverage 971/1103 (+1: UiBank_CtorAll @ 0x11320 now cited through the shell wiri
 
 IDB: wiring comments at 0x11148, 0x13c6c, 0x148d0 (the 0x189028 slot note was re-verified
 against the table -- correct as written).
+
+## Unit 122 -- the resize pad closes the bank table (Part 61)
+
+`MenuBtn_ResizeWindow @ 0x19930` (widget 58, stored at 0x3B6A8/0x3BC74): sample 16, then
+a tail into `App_ResizeMainWindow @ 0x9ecb8` (SetWindowPos HWND_BOTTOM, origin, stored
+size, SWP_HIDEWINDOW). Both halves were ported in Part 36 (`Menu_ResizeWindow` in
+game/pufo_menu.c, `App_ResizeMainWindow` in pufo_app.c -- the non-static half existed
+exactly for this wiring); only the shell thunk was missing.
+
+Shell wiring: `World_ClickResizeWindow` runs `Menu_ResizeWindow(&mh,
+World_ResizeWindowSeamThunk)` with `World_TactMenuHooksFor` (sample 16); the seam thunk
+calls the new `WorldHooks.pfnResizeMainWindow`, which `App_InitStartupUi` wires to
+`App_ResizeMainWindowThunk -> App_ResizeMainWindow` -- the HWND and its stored size pair
+belong to the caller, so the world never touches them directly. The tact bank click table
+is now fully installed: widgets 0..112 all have handlers (Parts 54..61).
+
+Tests (test_geoscapeframe): the deferred-list check became an "all 113 installed" check;
+the widget-58 gate asserts sample 16 and exactly one seam call (the test records the seam
+instead of resizing a window). Mutations 2/2: seam passed as NULL 1 red; seam called twice
+1 red. Golden startup frame unchanged. Coverage unchanged (0x19930/0x9ecb8 already cited).
+
+IDB: wiring comments at 0x19930 and 0x9ecb8.

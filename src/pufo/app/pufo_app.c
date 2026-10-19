@@ -202,6 +202,16 @@ static void *App_HookFree(void *pBlock, void *pUser)
     return NULL;
 }
 
+/* The widget-58 seam (Part 61): MenuBtn_ResizeWindow @ 0x19930 tails into App_ResizeMainWindow
+ * @ 0x9ecb8, ported below; the world reaches it through WorldHooks.pfnResizeMainWindow. */
+void App_ResizeMainWindow(void);
+
+static void App_ResizeMainWindowThunk(void *pUser)
+{
+    (void)pUser;
+    App_ResizeMainWindow();
+}
+
 /* The new-game path: Geoscape_InitUI @ 0x857f4 mode 0, whose hook runs Game_StartNew
  * @ 0x94554 over the shell's PufoWorldState. The state line is the shell's own report (a
  * DEVIATION: the original shows the geoscape instead of printing); it is what makes the
@@ -229,6 +239,8 @@ static void App_HookNewGame(void *pUser)
     /* The tact bank bring-up wiring Tact_InitUiControls and the installed handlers read back (Part 54). */
     hooks.pBank               = &g_bank;    /* the 130-widget bank the world installs handlers/pads on */
     hooks.pTactInputHooks     = &g_tactHooks;   /* MenuBtn_Confirm hands these to Input_OnConfirm */
+    hooks.pfnResizeMainWindow = App_ResizeMainWindowThunk; /* widget 58, 0x19930 -> 0x9ecb8 (Part 61) */
+    hooks.pResizeUser         = NULL;
     hooks.pbBankActionFlag    = &g_pointerWorld.bActionFlag; /* UiBank_bActionFlag @ pBank+0x1042 */
     hooks.pSaveLoadHooks      = &g_saveLoadHooks;
     hooks.pfnFormatSlotList   = App_HookFormatSlots;         /* SaveSlot_FormatList @ 0x45904 */
@@ -385,6 +397,8 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     /* The tact bank bring-up wiring, the same fields App_HookNewGame fills (Part 54). */
     hooks.pBank               = &g_bank;
     hooks.pTactInputHooks     = &g_tactHooks;
+    hooks.pfnResizeMainWindow = App_ResizeMainWindowThunk; /* widget 58 (Part 61) */
+    hooks.pResizeUser         = NULL;
     hooks.pbBankActionFlag    = &g_pointerWorld.bActionFlag;
     hooks.pSaveLoadHooks      = &g_saveLoadHooks;
     hooks.pfnFormatSlotList   = App_HookFormatSlots;
@@ -1286,8 +1300,8 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
  * bottom of the z-order and hidden. Its only caller in the image is MenuBtn_ResizeWindow @ 0x19930 (sample 16 first),
  * which Tact_InitUiControls installs on tactical widget 58 (0x3B6AC, and again in the handler table at 0x3BC74); the
  * port has that half as Menu_ResizeWindow(pHooks, pfnResizeWindow) in game/pufo_menu.c, so this is the callback that
- * wiring passes. It is not static for that reason -- the shell does not run a tactical mission, as recorded with
- * App_QuitFromTact above, so nothing calls it yet. */
+ * wiring passes. Part 61 wired the last piece: widget 58's world thunk reaches it through
+ * WorldHooks.pfnResizeMainWindow via App_ResizeMainWindowThunk. */
 void App_ResizeMainWindow(void)
 {
     (void)SetWindowPos(g_hWndMain, HWND_BOTTOM, 0, 0, g_nScreenW, g_nScreenH, SWP_HIDEWINDOW);
