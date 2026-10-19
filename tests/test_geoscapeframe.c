@@ -3100,10 +3100,10 @@ int main(void)
                 }
 
                 /* The gate. Live on 0x2237C's jumptable group "cases 0,3,5,7-12,15" plus 13, the status
-                 * banner arm at 0x223E8, plus 1, 2 and 4 -- the arms outside that group whose envs the
-                 * shell already owns (0x224AC, 0x224B8, 0x224C4). Render_Frame calls MapView_DrawIsoLayer
-                 * with no null test (0x22414) for the group; Part 76 built the group's six furniture envs,
-                 * Parts 80/81/82 the three replace-arms. 6, 0x13 and 0x14/0x15 stay off. */
+                 * banner arm at 0x223E8, plus 1, 2, 4 and 6 -- the arms outside that group whose envs the
+                 * shell already owns (0x224AC, 0x224B8, 0x224C4, 0x224D0). Render_Frame calls
+                 * MapView_DrawIsoLayer with no null test (0x22414) for the group; Part 76 built the group's
+                 * six furniture envs, Parts 80/81/82/83 the four replace-arms. 0x13 and 0x14/0x15 stay off. */
                 g_world.nUiScreen = 0;
                 Check(World_bTactFrameLive(&g_world), "the frame seam is live on screen 0 of a live mission");
                 g_world.nUiScreen = 8;
@@ -3118,8 +3118,9 @@ int main(void)
                 Check(World_bTactFrameLive(&g_world), "and on 2, the minimap arm 0x224B8, which replaces the iso layer");
                 g_world.nUiScreen = 4;
                 Check(World_bTactFrameLive(&g_world), "and on 4, the command-pad arm 0x224C4, which replaces it");
-                g_world.nUiScreen = 6;
-                Check(!World_bTactFrameLive(&g_world), "not on 6: the unit-marker arm 0x224D0 is still off the seam");
+                g_world.nUiScreen = 0x13;
+                Check(!World_bTactFrameLive(&g_world),
+                      "not on 0x13: the confirm-dialog arm 0x223F4 is still off the seam");
                 g_world.nUiScreen = 0;
 
                 /* The cursor tick (0x22360) with the busy arm taken: byte3 = old byte2, byte2 = 1, and
@@ -3977,6 +3978,141 @@ int main(void)
                        "with unk_128A44 set the panel blits only widget 101 (0x20C04 test, 0x20C0C store)");
 
             g_world.pTactMap->bLookCommitFlag = nFlagSave;
+            g_world.nUiScreen = nScreenSave;
+            ClearSurface();
+            World_TactFrame(&g_world);
+        }
+
+        /* --- screen 6: the marked-unit overlay at 0x224D0 (Part 83) ----------------------------
+         * The fourth arm outside 0x2237C's iso group. Its opener is not a bank pad at all: the mark special
+         * pays its cost off the unit, runs Special_MarkRoster over both rosters and only then stores 6 into
+         * Map_nUiScreen (0x18078..0x18248), so what the arm reads is the units' own bSpecialMark bytes.
+         * The overlay pad ("mscanv", unk_113ABC @ Map+0x104) is re-originated to (0,0) at 0x20C6C, the marks
+         * are "sbsold" unk_138EB8 and "ssold" unk_156A80 placed 11 pixels per cell of difference from
+         * Map_pSelUnit->pCell -- read with no null test at 0x20CEC -- the XCOM band 11*(dy+14) and the enemy
+         * band 11*dy+155 (one pixel apart, not symmetric), large units offset 2 for XCOM and 8 for enemies,
+         * small ones offset 4 either way. */
+        {
+            u16     nScreenSave = g_world.nUiScreen;
+            Soldier *pSel6      = pMapL->pSelUnit;
+            i32      nMark;
+            i32      nMarkNone;
+            i32      nInk;
+            i32      nMarked;
+            PadImage *pBig  = g_world.apTactPads[PUFO_UIPAD_SBSOLD];   /* unk_138EB8 "sbsold" */
+            PadImage *pSmall = g_world.apTactPads[PUFO_UIPAD_SOLD];    /* unk_156A80 "ssold" */
+
+            Check(pSel6 != NULL && pSel6->pCell != NULL,
+                  "the arm reads Map_pSelUnit->pCell with no null test (0x20CEC); the reloaded mission has both");
+
+            /* Clear every mark first: the census is then the arm's own doing, not the mission's. */
+            nMarked = 0;
+            for (i32 i = 0; i < pMapL->nXcomCount; ++i) { nMarked += (pMapL->apXcomUnits[i]->bSpecialMark != 0); pMapL->apXcomUnits[i]->bSpecialMark = 0; }
+            for (i32 i = 0; i < pMapL->nEnemyCount; ++i) { nMarked += (pMapL->apEnemyUnits[i]->bSpecialMark != 0); pMapL->apEnemyUnits[i]->bSpecialMark = 0; }
+            printf("  markers: %d units carried bSpecialMark on the loaded mission, all cleared for the gate\n", nMarked);
+
+            /* Screen 6 has exactly one opener in the image: the mark branch of TactHud_UseSpecialItem20 @
+             * 0x17d54 (bank widget 40), which pays the cost off Soldier.uTu (0x18078..0x180A8), marks both
+             * rosters by radius (0x180A0..0x18184, the sqrt loop) and only then stores 6 at 0x18248. Driving
+             * that branch would first have to put a uSortKey-20 object in the selected unit's hand, and
+             * Special_MarkRoster is static inside pufo_tacthud.c, so the screen id and the mark bytes are
+             * staged here the way that branch leaves them; everything the arm then does is its own. */
+            g_world.nUiScreen = 6;
+            ClearSurface();
+            g_nBlits = 0;
+            World_TactFrame(&g_world);
+            nMarkNone = g_nBlits;
+            Check(World_bTactFrameLive(&g_world),
+                  "the marker screen is on the tactical frame seam (0x2237C case 6 -> 0x224D0)");
+
+            /* One XCOM mark: the arm's own arithmetic, pinned on the pad it wrote. The unit picked is the
+             * one furthest from the selected unit's cell, so the two offsets are not both zero. */
+            {
+                Soldier *pU = pMapL->apXcomUnits[0];
+                i32 nBest = -1;
+                i32 nX, nY;
+
+                for (i32 i = 0; i < pMapL->nXcomCount; ++i) {
+                    const Soldier *pC = pMapL->apXcomUnits[i];
+                    i32 nSpan = abs((i32)pC->pCell->nX - (i32)pSel6->pCell->nX)
+                              + abs((i32)pC->pCell->nY - (i32)pSel6->pCell->nY);
+
+                    if (nSpan > nBest) {
+                        nBest = nSpan;
+                        pU = (Soldier *)pC;
+                    }
+                }
+                Check(nBest > 0, "the unit marked for the arithmetic check sits on a DIFFERENT cell than the selection");
+
+                pU->bSpecialMark = 1;
+                ClearSurface();
+                g_nBlits = 0;
+                World_TactFrame(&g_world);
+                nMark = g_nBlits;
+
+                nX = 11 * ((i32)pU->pCell->nX - (i32)pSel6->pCell->nX) + 120;
+                nY = 11 * ((i32)pU->pCell->nY - (i32)pSel6->pCell->nY + 14);
+                if (Unit_bIsLarge(pU)) {
+                    Check(pBig->nOriginX == nX - 2 && pBig->nOriginY == nY - 2,
+                          "the XCOM band is 11*(dy+14) with the large mark offset 2 (0x20CEC..0x20D50)");
+                } else {
+                    Check(pSmall->nOriginX == nX - 4 && pSmall->nOriginY == nY - 4,
+                          "the XCOM band is 11*(dy+14) with the small mark offset 4 (0x20CEC..0x20D84)");
+                }
+                CheckEqI32(nMark, nMarkNone,
+                           "the seam count is the arm's one control either way: the marks go direct through "
+                           "PadImage_BlitEx (0x20D8C / 0x20EA0), never through the shell's blit hook");
+                printf("  markers: xcom unit at %d/%d against the selection at %d/%d -> mark at %d/%d; "
+                       "%d control blits, %d with no mark\n",
+                       pU->pCell->nX, pU->pCell->nY, pSel6->pCell->nX, pSel6->pCell->nY, nX, nY,
+                       nMark, nMarkNone);
+                pU->bSpecialMark = 0;
+            }
+
+            /* One enemy mark: the other band, 11*dy + 155. This mission has no enemy on the field (the 13
+             * hostiles sit in the reserve roster unk_138DF0, which the arm never walks), so the band is only
+             * checkable when a mission actually has one -- test_tacthud.c pins it over a fixture that does. */
+            if (pMapL->nEnemyCount > 0) {
+                Soldier *pE = pMapL->apEnemyUnits[0];
+                i32 nX, nY;
+
+                pE->bSpecialMark = 1;
+                ClearSurface();
+                World_TactFrame(&g_world);
+
+                nX = 11 * ((i32)pE->pCell->nX - (i32)pSel6->pCell->nX) + 120;
+                nY = 11 * ((i32)pE->pCell->nY - (i32)pSel6->pCell->nY) + 155;
+                if (Unit_bIsLarge(pE)) {
+                    Check(pBig->nOriginX == nX - 8 && pBig->nOriginY == nY - 8,
+                          "the enemy band is 11*dy+155 with the large mark offset 8 (0x20E10..0x20E74)");
+                } else {
+                    Check(pSmall->nOriginX == nX - 4 && pSmall->nOriginY == nY - 4,
+                          "the enemy band is 11*dy+155 with the small mark offset 4 (0x20E10..0x20E98)");
+                }
+                printf("  markers: enemy 0 at %d/%d -> mark at %d/%d (one pixel below the xcom band's 11*dy+154)\n",
+                       pE->pCell->nX, pE->pCell->nY, nX, nY);
+            } else {
+                printf("  markers: no enemy on this field, so the 11*dy+155 band is not reachable here\n");
+            }
+
+            /* The picture: the whole field marked, the way the mark device leaves it. */
+            for (i32 i = 0; i < pMapL->nXcomCount; ++i) { pMapL->apXcomUnits[i]->bSpecialMark = 1; }
+            for (i32 i = 0; i < pMapL->nEnemyCount; ++i) { pMapL->apEnemyUnits[i]->bSpecialMark = 1; }
+            ClearSurface();
+            World_TactFrame(&g_world);
+            nInk = 0;
+            for (i32 y = 0; y < 320; ++y) {
+                for (i32 x = 0; x < 240; ++x) {
+                    if (SurfPix(x, y) != 0) { ++nInk; }
+                }
+            }
+            Check(nInk > 0, "the overlay paints: the mscanv backdrop at (0,0) and one mark per marked unit");
+            printf("  markers: %d xcom + %d enemy marks inked %d pixels\n",
+                   pMapL->nXcomCount, pMapL->nEnemyCount, nInk);
+            DumpFrame("tact_hud_markers");
+            for (i32 i = 0; i < pMapL->nXcomCount; ++i) { pMapL->apXcomUnits[i]->bSpecialMark = 0; }
+            for (i32 i = 0; i < pMapL->nEnemyCount; ++i) { pMapL->apEnemyUnits[i]->bSpecialMark = 0; }
+
             g_world.nUiScreen = nScreenSave;
             ClearSurface();
             World_TactFrame(&g_world);

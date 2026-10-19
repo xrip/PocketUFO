@@ -2727,11 +2727,11 @@ static void World_TactStatusRender(void *pUser)
  * The seam covers 0x2237C's jumptable group, "cases 0,3,5,7-12,15", plus 13, the status-banner arm
  * at 0x223E8. Part 76 added the group's six furniture envs -- the fire-mode roster (3), the item
  * sub-mode panel (5), the tactical menu (7), the modal slot lists (10/11), the options top bar (12)
- * and the action buttons (15) -- so the whole iso group now paints here. Part 80, Part 81 and Part 82 added
- * the three arms that REPLACE the iso layer with their own env and read only cells the bring-up already
- * owns: 1 inventory (0x224AC), 2 the look-mode minimap (0x224B8) and 4 the selected unit's command panel
- * (0x224C4). What stays off the seam is the rest of that family: 6 unit markers, 0x13 confirm dialog and
- * 0x14/0x15 Cydonia.
+ * and the action buttons (15) -- so the whole iso group now paints here. Part 80, Part 81, Part 82 and Part 83
+ * added the four arms that REPLACE the iso layer with their own env and read only cells the bring-up already
+ * owns: 1 inventory (0x224AC), 2 the look-mode minimap (0x224B8), 4 the selected unit's command panel
+ * (0x224C4) and 6 the marked-unit overlay (0x224D0). What stays off the seam is the rest of that family:
+ * 0x13 confirm dialog and 0x14/0x15 Cydonia.
  *
  * Two deviations, both recorded in docs/parity/game-core.md:
  *   1. The cursor-direction tick runs HERE, before Render_Frame, and RenderFrameEnv.pCursorDir is
@@ -2754,11 +2754,12 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
     case 10: case 11: case 12: case 15:                  /* "cases 0,3,5,7-12,15"        */
     case PUFO_DEBRIEF_UI_SCREEN:                         /* 13: the status banner arm at 0x223E8 */
     case 1:                                              /* 0x224AC: the inventory arm, 2 the 0x224B8 */
-    case 2:                                              /* minimap arm and 4 the 0x224C4 command-pad */
-    case 4:                                              /* arm -- all outside that group, all drawing */
-        return true;                                     /* no iso layer at all */
+    case 2:                                              /* minimap arm, 4 the 0x224C4 command-pad arm */
+    case 4:                                              /* and 6 the 0x224D0 marker arm -- all outside */
+    case 6:                                              /* that group, all drawing no iso layer at all */
+        return true;
     default:
-        return false;   /* 6, 0x13 and 0x14/0x15 replace the iso layer with another env */
+        return false;   /* 0x13 and 0x14/0x15 replace the iso layer with another env */
     }
 }
 
@@ -2895,6 +2896,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     TactHudInventoryEnv   inv;         /* screen 1, the inventory */
     IsoMinimapEnv         mini;        /* screen 2, the look-mode minimap */
     TactCmdPadEnv         cmd;         /* screen 4, the selected unit's command panel */
+    TactHudMarkerEnv      mark;        /* screen 6, the marked-unit overlay */
     char                  aModeNames[PUFO_HUD_ROSTER_PADS][PUFO_HUD_ROSTER_NAME_STRIDE]; /* 0xB3768 */
     UiControl            *pBankCtl;    /* the caller's 130-widget bank, the pad source */
     UiWidgetBank         *pBank;       /* that bank's own block: its pointer pair is 0xAD714/0xAD718 */
@@ -3218,6 +3220,23 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     cmd.pfnCtlBlitEx    = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
     cmd.pCtlUser        = (pHit != NULL) ? pHit->pUser : NULL;
 
+    /* Screen 6, TactHud_DrawUnitMarkers @ 0x20c58: the marked-unit overlay, the fourth arm that REPLACES
+     * the iso layer (0x2237C case 6 -> 0x224D0). Its opener is the mark branch of
+     * TactHud_UseSpecialItem20 @ 0x17d54 (bank widget 40): it pays the cost off Soldier.uTu (0x18078), marks
+     * both rosters by radius (0x180A0..0x18184) and only then stores 6 at 0x18248, so the marks are the
+     * mission's own bSpecialMark bytes. The overlay
+     * is the "mscanv" pad at unk_113ABC (Map+0x104), re-originated to (0,0) by the arm at 0x20C6C; the two
+     * marks are "sbsold" unk_138EB8 and "ssold" unk_156A80, placed 11 pixels per cell of difference from
+     * Map_pSelUnit->pCell -- which the arm reads with no null test at 0x20CEC, like the command panel's
+     * selection read; the XCOM band is 11*(dy+14) and the enemy band 11*dy+155, one pixel apart, and large
+     * units offset 2 (XCOM) or 8 (enemy) while small ones offset 4. The control is bank widget 104
+     * (unk_AD3D0 = pBank + 0xD00). */
+    memset(&mark, 0, sizeof(mark));
+    mark.pOverlayPad = pW->apTactPads[PUFO_UIPAD_MARKER];     /* unk_113ABC @ Map+0x104 "mscanv" */
+    mark.pLargeMark  = pW->apTactPads[PUFO_UIPAD_SBSOLD];     /* unk_138EB8 "sbsold" */
+    mark.pSmallMark  = pW->apTactPads[PUFO_UIPAD_SOLD];       /* unk_156A80 "ssold" */
+    mark.pSelCell    = (pMap->pSelUnit != NULL) ? pMap->pSelUnit->pCell : NULL;
+
     /* --- the dispatch env --- */
     memset(&rf, 0, sizeof(rf));
     rf.bGeoscapeMode   = pW->bGeoscapeUi;   /* 0x2231C tests it before the screen id */
@@ -3265,6 +3284,12 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     rf.pInventory         = &inv;                          /* 0x224AC */
     rf.pMinimap           = &mini;                         /* 0x224B8 */
     rf.pCmdPads           = &cmd;                          /* 0x224C4 */
+    rf.pMarkerPad         = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_MARKER_FIRST] : NULL; /* 0x224D0, widget 104 */
+    rf.pMarkers           = &mark;
+    rf.apXcom             = pMap->apXcomUnits;             /* the rosters 0x20CB4 / 0x20DD8 walk */
+    rf.nXcomCount         = pMap->nXcomCount;
+    rf.apEnemy            = pMap->apEnemyUnits;
+    rf.nEnemyCount        = pMap->nEnemyCount;
 
     rf.pBannerPad        = (pHooks != NULL && pHooks->pBank != NULL) ? &pHooks->pBank->aCtl[128] : NULL;
     rf.pBannerBackdrop   = pW->apTactPads[PUFO_UIPAD_ENDMISSION];   /* pPadEndMission @ 0x156A74 */

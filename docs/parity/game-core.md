@@ -20247,4 +20247,47 @@ pins the three control blits, the ink census, the cs-pad origin alternative and 
 byte is set. The seam gate in the same file now reads "and on 4" with "not on 6" as the negative case. IDB: 5
 comments (0x224C4, 0xAD370, 0x1FCC4, 0x16ffc, 0x198c4) plus `idb_save`. Gates: all six ran, 62/62 Release and
 62/62 Debug, 18594 checks, coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 14 frame
-references (13 unchanged, 1 new), 9 e2e pictures unchanged.
+references (13 unchanged, 1 new), 9 e2e pictures unchanged.
+## Part 83 - the marked-unit overlay paints through the frame, and the mark device is the only thing that opens it
+
+`Render_Frame @ 0x22310` routes Map_nUiScreen 6 to 0x224D0 and, like cases 1, 2 and 4, never through 0x22414:
+the overlay REPLACES the iso layer. `TactHud_DrawUnitMarkers @ 0x20c58` was ported and gated long ago; the seam
+was the missing part -- the fourth arm in the same shape.
+
+The opener is worth recording because it is not a control. Screen 6 has exactly one writer in the image: the
+mark branch of `TactHud_UseSpecialItem20 @ 0x17d54` (the handler bank widget 40 carries). That branch keys on the
+selected weapon's `ObjectRec.uSortKey == 20`, pays the cost off `Soldier.uTu` DIRECTLY rather than through the
+action queue (the compare against `Map_anActionCost[nMode]` at 0x18078, the `SUB`/`STRH` at 0x180A8), radius-marks
+both rosters with the sqrt loop at 0x180A0..0x18184 (`Special_MarkRoster` in the port), and only then stores 6 at
+0x18248. So the screen always opens on marks the same call just made -- which is why the arm reads nothing but
+the units' own `bSpecialMark` bytes. A branch with too little TU pushes TEXTS record 1 and returns.
+
+The env needed no new state: the overlay pad is "mscanv" at unk_113ABC (Map+0x104), which the arm re-origins to
+(0,0) at 0x20C6C; the two marks are "sbsold" unk_138EB8 and "ssold" unk_156A80 from the pad table; the rosters are
+the mission's `apXcomUnits`/`nXcomCount` and `apEnemyUnits`/`nEnemyCount`; the origin cell is
+`Map_pSelUnit->pCell`, read with no null test at 0x20CEC exactly as the command panel reads the selection at
+0x1FCC4; and the control is bank widget 104 (unk_AD3D0 = pBank + 0xD00) -- the same widget the quit span uses.
+
+Measured on the reloaded mission (8 soldiers on the field, 13 hostiles sitting in the reserve roster unk_138DF0,
+which the arm never walks): the arm blits its one control, and it blits it exactly as often with a mark on the
+field as with none -- the marks themselves go direct through `PadImage_BlitEx` at 0x20D8C / 0x20EA0 and never
+reach the shell's blit hook. Marking the soldier furthest from the selected unit's cell (1/1 against 10/12) leaves
+the small mark pad's origin at 21/33: 11*(1-10)+120 and 11*(1-12+14), offset 4 for a small unit. The XCOM band is
+`11*(dy+14)` and the enemy band `11*dy+155` -- the IDB's own note that the two are one pixel apart rather than
+symmetric, large units offset 2 for XCOM and 8 for enemies. This mission has no enemy on the field, so the enemy
+band is not reachable from live data here; tests/test_tacthud.c pins it over a fixture that has one. Eight marks
+ink 74234 surface pixels.
+
+New reference tests/ref/tact_hud_markers.png, looked at: the "mscanv" radar backdrop -- the concentric rings, the
+N and S caps, the 8..1..8 column labels and the two frame rectangles -- with a yellow mark dot on the selected
+unit's own cell at the centre (120,154) and one at the far corner of the field, and the close control at the top
+right.
+
+Gate: a Part 83 block in tests/test_geoscapeframe.c that stages screen 6 and the mark bytes the way the mark
+branch leaves them (`Special_MarkRoster` is static inside pufo_tacthud.c), pins the seam, the control blit count
+with and without marks, the mark pad's origin against the arm's own arithmetic on the unit furthest from the
+selection, the no-enemy case stated rather than skipped silently, and the eight-mark ink census. The seam gate in
+the same file now reads "and on 6" with "not on 0x13" as the negative case. IDB: 5 comments (0x224D0, 0xAD3D0,
+0x18248, 0x180A8, and the function comment at 0x17d54) plus `idb_save`. Gates: all six ran, 62/62 Release and
+62/62 Debug, 18600 checks, coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 15 frame
+references (14 unchanged, 1 new), 9 e2e pictures unchanged.

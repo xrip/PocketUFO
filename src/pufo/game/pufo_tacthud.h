@@ -234,6 +234,7 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
 #define PUFO_HUD_MENU_FIRST   53  /* screen 7  */
 #define PUFO_HUD_TOPBAR_FIRST 60  /* screen 12 */
 #define PUFO_HUD_ACTION_FIRST 89  /* screen 15 */
+#define PUFO_HUD_MARKER_FIRST 104 /* screen 6  -- TactHud_DrawUnitMarkers's one control (pBank + 0xD00 = unk_AD3D0) */
 #define PUFO_HUD_MODAL_FIRST  105 /* screens 10 and 11 (Menu_OpenSaveSlots 0x188a4 / Menu_OpenLoadSlots 0x18864) */
 
 /* Menu_DrawLabeledPads @ 0x217e0. Seven pads blitted and seven labels drawn, but the label

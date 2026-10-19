@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 18594 |
+| Test checks run | 18600 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -496,7 +496,7 @@ is the module that answers to it.
 | `0x156e0` | `Input_OnSecondary` | 780 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x15f3c` | `Input_OnConfirm` | 708 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x21908` | `TactHud_DrawUnitRoster` | 676 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
-| `0x20c58` | `TactHud_DrawUnitMarkers` | 672 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x20c58` | `TactHud_DrawUnitMarkers` | 672 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x21430` | `TactHud_DrawActionButtons` | 600 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x1e920` | `TactHud_DrawStatusBanner` | 584 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x2d580` | `Inv_BuildVisibleList` | 536 | `src/pufo/game/pufo_roster.h`, `src/pufo/game/pufo_tactui.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 672 |
+| `test_geoscapeframe` | PASS | 678 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |

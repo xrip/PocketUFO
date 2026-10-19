@@ -1373,6 +1373,21 @@ with uMissions 0, so the empty-slot branch runs and the cs pads stay where the s
 the gate byte the way the look device does takes exactly two blits away. New reference:
 `tests/ref/tact_hud_cmdpads.png`.
 
+Screen 6 now paints (Part 83). `Render_Frame` routes Map_nUiScreen 6 to 0x224D0, again not through 0x22414, and
+`TactHud_DrawUnitMarkers @ 0x20c58` was ported and gated long ago — the seam was the missing part. Its opener is
+not a control: the only writer of screen 6 in the image is the mark branch of `TactHud_UseSpecialItem20 @ 0x17d54`
+(bank widget 40), which keys on `ObjectRec.uSortKey == 20`, pays the cost off `Soldier.uTu` directly instead of
+through the queue (0x18078 compare, 0x180A8 `STRH`), radius-marks both rosters (0x180A0..0x18184,
+`Special_MarkRoster`) and stores 6 only at 0x18248 — so the screen always opens on marks that call just made, and
+the arm reads nothing but `bSpecialMark`. Env cells all owned: "mscanv" unk_113ABC (Map+0x104, re-originated to
+(0,0) at 0x20C6C), "sbsold" unk_138EB8 and "ssold" unk_156A80 as the two marks, the mission's two rosters,
+`Map_pSelUnit->pCell` (read unguarded at 0x20CEC), and bank widget 104 (unk_AD3D0). Measured: one control blit,
+the same with or without marks (the marks go direct through `PadImage_BlitEx` at 0x20D8C/0x20EA0); marking the
+soldier furthest from the selection (1/1 against 10/12) leaves the small mark at 21/33 — `11*(dx)+120` and
+`11*(dy+14)`, offset 4; the enemy band is `11*dy+155`, one pixel below the XCOM band's `11*dy+154`, but this
+mission has no enemy on the field (the 13 hostiles sit in the reserve roster unk_138DF0), so that band is pinned
+in `tests/test_tacthud.c` instead. Eight marks ink 74234 pixels. New reference: `tests/ref/tact_hud_markers.png`.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give
