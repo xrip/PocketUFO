@@ -41,6 +41,20 @@ done
 
 mv "$(dirname "$exe")"/sav*.sav "$out"/ 2>/dev/null || true
 
+# Gate scaffolding: a --script run does NOTHING and still exits 0 while another pocketufo.exe owns the
+# POCKET_UFO window -- App_InitInstance's single-instance check (the original's FindWindowW @ 0x9FD64)
+# returns false and WinMain returns 0 before the script is read. Measured: one leftover hidden window from
+# a killed run made six later runs write no pictures at all. Count the pictures against the flow files
+# before believing the run.
+want=$(grep -h '^[[:space:]]*dump ' "$dir"/e2e_flow_new.txt "$dir"/e2e_flow_load.txt | wc -l)
+got=$(ls "$out"/*.ppm 2>/dev/null | wc -l)
+if [ "$got" -lt "$want" ]; then
+    echo "RUN FAILED: $got pictures, the flows ask for $want"
+    echo "(a pocketufo.exe that is still running holds the single-instance window; close it -- e.g."
+    echo " taskkill //F //IM pocketufo.exe -- and re-run)"
+    exit 1
+fi
+
 for ppm in "$out"/*.ppm; do
     if ! ffmpeg -y -loglevel error -i "$ppm" "${ppm%.ppm}.png"; then
         echo "PPM -> PNG FAILED for $ppm"

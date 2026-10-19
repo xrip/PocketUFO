@@ -21,6 +21,9 @@
 #define RAND_ORIGINAL_MODULUS 32768 /* original rand() range, 0..32767 */
 #define RAND_SCALE (1.0f / (float)RAND_ORIGINAL_MODULUS)
 
+/* Game_SeedRngFixed's seed: shell scaffolding, not a value the original uses. */
+#define PUFO_SHELL_RNG_SEED 1
+
 u16 Game_RandU16(u16 nMax)
 {
     int   nRand;
@@ -41,4 +44,9 @@ void Game_SeedRng(void)
 
     GetSystemTime(&st);
     srand((unsigned)(100 * st.wSecond + st.wMilliseconds));
+}
+
+void Game_SeedRngFixed(void)
+{
+    srand(PUFO_SHELL_RNG_SEED);
 }

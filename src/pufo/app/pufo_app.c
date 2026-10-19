@@ -1813,7 +1813,17 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
         return false;
     }
 
-    Game_SeedRng();
+    /* Game_SeedRng is the port's srand @ 0xA00F8, seeded from 100 * wSecond + wMilliseconds, so a real
+     * new game draws a different map every run (the region the pick lands on is a Game_RandU16 draw --
+     * measured: six scripted runs of the same flow gave two different 01_newgame.ppm pictures, and every
+     * one of the 240x320 pixels differed). The two debug paths compare their pictures against committed
+     * references, so they draw from a fixed seed instead. SHELL SCAFFOLDING: the interactive path keeps
+     * the original's clock seed. */
+    if (bHidden) {
+        Game_SeedRngFixed();
+    } else {
+        Game_SeedRng();
+    }
 
     /* Assets_LoadStartup @ 0x382d0. The original resolves the paths from the exe
      * directory in InitInstance and loads here; a failure is not fatal there
