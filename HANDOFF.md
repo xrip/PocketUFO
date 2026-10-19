@@ -2162,11 +2162,14 @@ does.
    (`Tact_TickActiveUnit`, 0x54130, 1,868 B), and both enemy-AI functions — the panic path
    (`EnemyAi_TryFireOrWander`, 0x4abc8, 1,208 B) and the driver that calls it
    (`Tact_EnemyAiTick`, 0x4cbe0, 3,440 B) — all driven from `tests/test_tactstate.c` and
-   `tests/test_enemyai.c`. Two things still stand between that and a playable mission:
-   - **App-layer wiring.** `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is unfilled because the app layer owns
-     no `TactTickCtx`, and nothing in the app builds a `Tact_EnemyAiTick` context (`EnemyAiTickCtx` needs a
-     `TactSelectCtx`, a `TurnHooks`, the RMP data and the two static melee `TactItem`s) or an `EnemyAiActCtx`
-     either.
+   `tests/test_enemyai.c`. The app-layer wiring this item used to list as missing is in since Parts 50-52:
+   the world builds the `TactTickCtx` the walker needs (`pufo_world.c:3316`, `World_TactTickActiveUnit`) and
+   installs it on `GameTickHooks.pfnTickActiveUnit` (`pufo_world.c:3519`), it owns `EnemyAiTickCtx sTactEnemyAi`
+   and `EnemyAiActCtx sTactEnemyAiAct` (`pufo_world.h:493-494`), and `World_TactFillStepCtx`
+   (`pufo_world.c:4609`) builds the `EnemyStepCtx`. What is still unfilled in the shell is the
+   **input side's own seams**: `TactInputHooks.pfnHandleMapClick` has no installer anywhere, and neither has
+   `TactInputHooks.pfnPlaySample`, so in the built app a tactical map click does nothing and a tact bank click
+   plays no sample -- `Input_OnAction`'s click path and the 16/14/7 plays are driven only from tests.
    - **`Unit_PathToCell` (0x2c2a8, 1,052 B) is ported** (unit 69, `src/pufo/game/pufo_path.c`) and its signature
      matches the `pfnPathToCell` seam in `MapClickCtx`, `EnemyAiActCtx` and `EnemyAiTickCtx`, so the real
      function drops into all three. So is the whole *step predicate* the flood fill runs:
@@ -2176,17 +2179,34 @@ does.
      real legality — and nothing in the app builds one yet.
    The enemy-turn group is now ported too: `BeforeEnemyStep` (0x4b9b8, 2,792 B) and `AfterEnemyStep`
    (0x4c4a0, 1,368 B) live in `src/pufo/game/pufo_turn.c` behind `EnemyStepCtx`, driven from
-   `tests/test_turn.c`. What is still missing is the app layer building an `EnemyStepCtx` — its nine seams
-   (`MapCell_TickProximityItems`, `Map_RefreshCellMeta`, `UnitList_ForEachRefresh`, `Unit_UpdateVisibility`,
-   `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`, `EnemyAi_TryFireOrWander`, `Rmp_PickSpawnForUnit`)
-   are all ported functions, but nothing in the app wires them into one context yet.
+   `tests/test_turn.c`. The `EnemyStepCtx` is built by the shell now (`World_TactFillStepCtx`,
+   `pufo_world.c:4609`): its nine seams (`MapCell_TickProximityItems`, `Map_RefreshCellMeta`,
+   `UnitList_ForEachRefresh`, `Unit_UpdateVisibility`, `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`,
+   `EnemyAi_TryFireOrWander`, `Rmp_PickSpawnForUnit`) are each wired to a live owner. Part 66 fixed the one
+   of them that was wired wrong: `Unit_UpdateVisibility` reached the callee through
+   `sTactMoveWiring.visCtx`, a copy refreshed only inside the move tick, so a caller outside that tick
+   (the inventory commit's per-unit pass, 0x15C98) got a zeroed spot/roster and faulted; it now reads the
+   mission's own `tactEnv.vis`.
    The tactical **input** side is ported too now: `Tact_HandleMapClick` (0x1512c, 1,104 B) in
    `src/pufo/game/pufo_input.c` behind `MapClickCtx` (driven from `tests/test_input.c`), and
    `TactAction_ConfirmMeleeMode6` (0x17bb8, 412 B) in `src/pufo/game/pufo_tactui.c` as
    `Ui_ConfirmMeleeMode6`, beside its siblings `Ui_ConfirmUseItem`, `Ui_TryFireMode`,
    `Ui_ConfirmFireBurst` and `Ui_BeginMultiTarget`. `Input_OnAction`'s `pfnHandleMapClick` seam is still
-   unfilled — the app populates no `TactInputHooks` at all yet — so the map click and its now-ported move tail
-   are driven only from the tests.
+   unfilled — so the map click and its now-ported move tail are driven only from the tests — while
+   `TactInputHooks` itself is populated by the shell since Part 60 (`g_tactHooks` in `pufo_app.c:597..617`,
+   carried to the input arms through `WorldHooks.pTactInputHooks` and `World_TactButtonPrep`).
+9. Done: **the inventory close commits the mission (Part 66).** `TactInputHooks.pfnInvCloseAndCommit` is
+   installed (`App_HookInvCloseAndCommit → World_InvCloseAndCommit`), so `Input_OnConfirm`'s screen-1 arm
+   (0x160FC plays 16, 0x16104 calls) runs `Inv_CloseAndCommit @ 0x15a48` over the live mission: the loadout
+   snapshot and the whole map half (deploy, focus, cell refresh, per-unit visibility) gated on the Map+0x01
+   commit flag, the tail (clip merge, item-count decrement, `Unit_RecalcInventoryStat`, `Map_nUiScreen = 0`)
+   ungated. What the ARM does with the team on a base mission, now recorded instead of assumed: phase 1
+   parks every Xcom unit on cell (1,1,0), phase 3 takes the rmp arm (a base mission has `Map_nMapLayers` 0,
+   written at 0x84118) and places nobody because `Map_PickRmpSpawnForUnit @ 0x55418` wants `bFlag20 == 1` for
+   a type-0..8 unit while all eight shipped `.rmp` nodes carry byte 20 == 2, and phase 5's scatter table is
+   empty because `abTactTileTypes @ 0x159D5C` holds no type-7 tile. Three port bugs fixed on the way (the
+   `anSprBase[nSlot] + *pTbl[nIdx]` glyph index, the `nMapLayers - 1` deploy anchor group, the stale
+   visibility copy); the two tactical frame references now show a real isometric base. See the Part 66 row.
 
 ### Priority 2 — finish the tactical renderer
 
