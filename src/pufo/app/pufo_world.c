@@ -358,6 +358,73 @@ static void World_BaseFacOpenThunk(void)
     }
 }
 
+/* BaseInfoScreen_Init @ 0x57688, the Init hook of BaseInfoScreen_Open (reached at 0x61690). It allocates
+ * the pad and the two controls into the shell's fields; its tail call is BuildPanels (0x5779C). */
+static void World_BaseInfoInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot; /* the original passes its own slot global; the port takes the env instead */
+    if (pW != NULL) {
+        BaseInfoScreen_Init(&pW->baseInfoInit);
+    }
+}
+
+/* BaseInfoScreen_BuildPanels @ 0x557f4: the build/release switch on bBaseInfoPanelsBuilt @ 0x15883C. */
+static void World_BaseInfoBuildThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseInfoScreen_BuildPanels(&g_pActiveWorld->baseInfoBuild);
+    }
+}
+
+/* The same switch through the close env's hook: Geoscape_CloseUI case 3 calls it at 0x8BDF8 when the
+ * screen closes with the panels still built. */
+static void World_BaseInfoBuildHook(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW != NULL) {
+        BaseInfoScreen_BuildPanels(&pW->baseInfoBuild);
+    }
+}
+
+/* BaseInfoScreen_OnOk @ 0x557c8, the (1,300) control's click: byte_1870F8 := 1, then byte_158834 :=
+ * byte_1870F4 read SIGNED (0x557DC) and stored as a byte (0x557E0). */
+static void World_BaseInfoOkThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    BaseInfoOkState st;
+
+    if (pW == NULL) {
+        return;
+    }
+    st.nPendingBase = pW->nBaseInfoWorkBase;   /* byte_1870F4 */
+    st.bPsiPending  = pW->bBaseInfoOverlayOpen; /* byte_1870F8 */
+    st.nCurrentBase = pW->nShownBaseIdx;       /* byte_158834 */
+    (void)BaseInfoScreen_OnOk(&st);
+    pW->bBaseInfoOverlayOpen = st.bPsiPending;
+    pW->nShownBaseIdx        = st.nCurrentBase;
+}
+
+/* BaseInfoScreen_TogglePanelMode @ 0x55754, the (120,300) control's click. */
+static void World_BaseInfoToggleThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseInfoScreen_TogglePanelMode(&g_pActiveWorld->baseInfoToggle);
+    }
+}
+
+/* BaseInfoScreen_Open @ 0x6167c -- nav control slot 1's handler (installed at 0x67B7C): sample 17, the
+ * Init at 0x61690, and only then nGeoscapeScreen := 3 (0x6169C), so the opener reuses the shared
+ * Geoscape_OpenScreen with bIdAfterInit true, exactly as Manuf and Transfer do. */
+static void World_BaseInfoOpenThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseInfoScreen_Open(&g_pActiveWorld->screen, &g_pActiveWorld->baseInfoOpenHooks);
+    }
+}
+
 /* BaseFacScreen_PanelPrev @ 0x589cc / PanelNext @ 0x589dc: the dialog's one panel at 0x15886C. */
 static void World_FacPanelPrevThunk(void)
 {
@@ -751,16 +818,19 @@ static void World_StartNewHook(void *pUser)
     pW->spawnCtx.pfnProcessEvents = World_ProcessEvents;
     pW->spawnCtx.pUser = pW;
 
-    /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28). Three of the ten nav
-     * slots are filled: the shell can draw the screen each one opens. The other seven -- BaseInfoScreen_Open
-     * (id 3), BasePlaneScreen_Open (6), ResearchScreen_Open (8), ManufScreen_Open (9), TransferScreen_Open (10),
-     * BuySellScreen_OpenBuy (11) and BuySellScreen_OpenSell (12) -- stay no-ops: their Init envs and their
-     * Geoscape_Draw arms (pBaseInfoArm, pPlaneArm, pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are
-     * not built here, so opening them would land on a screen the shell cannot draw. */
+    /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28), one unrolled
+     * `LDR R3,=fn / STR R3,[R0,#0xC]` per slot, in slot order 0..9 (0x67B74, 0x67B80, 0x67B8C, 0x67B98,
+     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Four of the ten nav slots are filled: the
+     * shell can draw the screen each one opens. The other six -- BasePlaneScreen_Open (6),
+     * ResearchScreen_Open (8), ManufScreen_Open (9), TransferScreen_Open (10), BuySellScreen_OpenBuy (11)
+     * and BuySellScreen_OpenSell (12) -- stay no-ops: their Init envs and their Geoscape_Draw arms
+     * (pPlaneArm, pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are not built here, so opening
+     * them would land on a screen the shell cannot draw. */
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
     }
     pW->navEnv.apfnNavClick[0] = World_NewBaseOpenThunk;   /* NewBaseScreen_Open @ 0x615d0, id 2 (0x67B74) */
+    pW->navEnv.apfnNavClick[1] = World_BaseInfoOpenThunk;  /* BaseInfoScreen_Open @ 0x6167c, id 3 (0x67B80) */
     pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk; /* SoldierScreen_Toggle @ 0x64af0, id 4 (0x67B8C) */
     pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;   /* BaseFacScreen_Open @ 0x61844, id 7 (0x67BA4) */
     pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk; /* SoldierScreen_PanelPrev @ 0x61874 (0x67C84) */
@@ -994,6 +1064,18 @@ void World_Free(PufoWorldState *pW)
     /* Same for the soldier screen's four panels and its pad. */
     if (pW->bSolScreenOpen != 0) {
         World_SoldierToggleThunk();
+    }
+
+    /* And for the base-info screen: the release arm (0x56F0C..0x56F90) frees the three panels and the two
+     * controls and nulls all five slots; the pad is Geoscape_CloseUI case 3's free (0x8BE10), which the
+     * shell owes when the game ends with the screen still open. */
+    if (pW->bBaseInfoPanelsBuilt != 0) {
+        World_BaseInfoBuildThunk();
+    }
+    if (pW->pBaseInfoPad != NULL) {
+        PadImage_FreeData(pW->pBaseInfoPad);
+        free(pW->pBaseInfoPad);
+        pW->pBaseInfoPad = NULL;
     }
 
     /* Geoscape_BuildNavControls' fifteen controls are not part of pUi (the original never
@@ -5966,9 +6048,10 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     /* Geoscape_CloseUI @ 0x8b94c's env, on the same instances. The head, the five needed-flag passes and
      * the screens the shell can reach (1, 2, 4, 19, and 20) are wired, and so is case 20's mission-follows
      * branch: Map_bMissionMode (0x8BB20) writes into the shell's own Map cell and 0x8BB24 hands over to
-     * Smap_BeginCraftSelect through pW->craftEnv. What is NOT: the base-info, hangar, research,
-     * manufacturing, transfer, buy/sell and ufopaedia blocks (their cases keep NULL gates, which the
-     * dispatcher tests), case 19's bankruptcy tail (its two callees, listed with the wiring below -- the
+     * Smap_BeginCraftSelect through pW->craftEnv. Case 3 (the base-info screen) IS wired: the built flag,
+     * the pad slot the case frees at 0x8BE10 and the rebuild hook at 0x8BDF8. What is NOT: the hangar,
+     * research, manufacturing, transfer, buy/sell and ufopaedia blocks (their cases keep NULL gates, which
+     * the dispatcher tests), case 19's bankruptcy tail (its two callees, listed with the wiring below -- the
      * Map pair it sets IS written), and the byte_158834 / byte_1870F4 base-index pair case 19 writes on
      * its psi branch. */
     GeoscapeCloseEnv *pC = &pW->closeEnv;
@@ -6014,6 +6097,11 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pnFunds          = &pW->nFunds;
     pC->anFundBar        = pW->economy.anFundBar;          /* 0x186594..0x1865A4 */
     pC->ppFundPad        = &pW->pFundPad;                  /* 0x1595DC */
+    /* Case 3 (0x8BDE8..0x8BE18): back to screen 1, the panels rebuilt if they are still built, then the
+     * pad freed. Live now that nav slot 1 opens the screen. */
+    pC->pbBaseInfoBuilt        = &pW->bBaseInfoPanelsBuilt;            /* 0x15883C */
+    pC->ppBaseInfoPad          = &pW->pBaseInfoPad;                    /* 0x158828, freed at 0x8BE10 */
+    pC->pfnBuildBaseInfoPanels = World_BaseInfoBuildHook;              /* 0x8BDF8 */
     pC->pFacToggle       = &pW->facToggleEnv;
     pC->pSoldierScreen   = &pW->solEnv;
     pC->pOptionsHooks    = &pW->optionsHooks;
@@ -6108,20 +6196,24 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *     pointer, so the two bottom controls draw and simply do nothing on a click.
  *   - The same for the panel's strateg-list handlers (Smap_* @ 0x84254..0x84964) and the craft-select
  *     pair: they take their own Smap envs, which need the strateg item the line refers to.
- *   - The screen ids the shell can now reach are 0, 1, 2 (the map and the placement screen), 4 and 5
- *     (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 7 (nav slot 4, and the map click's own
- *     0x8B64C), 15 and 19 (the funding screen the monthly close sets). Seven nav slots stay
- *     World_NoopClick -- BaseInfoScreen_Open (3), BasePlaneScreen_Open (6), ResearchScreen_Open (8),
- *     ManufScreen_Open (9), TransferScreen_Open (10) and BuySellScreen_OpenBuy/Sell (11, 12) -- because
- *     their Init envs and their arms (pBaseInfoArm, pPlaneArm, pResearchDraw, pManufPad, pTransferPad,
- *     pBuySellPad) are not built here, and Geoscape_Draw dereferences several unwired arm envs with no
- *     test of their own.
- *   - GeoscapePointerEnv's per-screen fields for those same screens (the strip, transfer, soldier-name,
- *     craft, research, manufacturing, site-info, buy/sell, screen-16, options and base-at blocks) stay
- *     NULL. The dispatcher reaches them only from those screen ids. One shell-owned block that could not
- *     be expressed before -- apFacCtl, the two build-dialog controls the shell holds as two embedded
- *     UiControls -- is now the arm's own array, pW->apFacPanelCtl. apRadarCtl wants 0x159684's control
- *     set, which the shell does not build.
+ *   - The screen ids the shell can now reach are 0, 1, 2 (the map and the placement screen), 3 (nav slot
+ *     1), 4 and 5 (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 7 (nav slot 4, and the map click's
+ *     own 0x8B64C), 15 and 19 (the funding screen the monthly close sets). Six nav slots stay
+ *     World_NoopClick -- BasePlaneScreen_Open (6), ResearchScreen_Open (8), ManufScreen_Open (9),
+ *     TransferScreen_Open (10) and BuySellScreen_OpenBuy/Sell (11, 12) -- because their Init envs and
+ *     their arms (pPlaneArm, pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are not built here, and
+ *     Geoscape_Draw dereferences several unwired arm envs with no test of their own.
+ *   - GeoscapePointerEnv's per-screen fields for those same screens (the transfer, soldier-name, craft,
+ *     research, manufacturing, site-info, buy/sell, screen-16 and options blocks) stay NULL. The
+ *     dispatcher reaches them only from those screen ids. The strip block IS wired now, and that also
+ *     makes the screen-1 arm live for the first time: `Geoscape_OnPointer` case 1 walks the ten slots at
+ *     [root + 0x120] (0x87E30), which are apNavCtl -- the very controls the nav handlers sit on -- so a
+ *     press on a nav row is a real handler call, and 0x87F34 makes the strip hit the base selection.
+ *     Before this the arm dereferenced a NULL apStripCtl and a click anywhere on the placement screen
+ *     faulted; the shell had never taken that path because its own scaffolding commands pressed the
+ *     controls directly. One shell-owned block that could not be expressed before -- apFacCtl, the two
+ *     build-dialog controls the shell holds as two embedded UiControls -- is now the arm's own array,
+ *     pW->apFacPanelCtl. apRadarCtl wants 0x159684's control set, which the shell does not build.
  */
 void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
 {
@@ -6518,6 +6610,28 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->pnRadarPulseTimer = &pW->nRadarPulseTimer;     /* 0xAC224 */
     pPtr->pbRadarScreenActive = &pW->bRadarScreenActive;
     pPtr->pStatusPanel   = pUi->pStatusPanel;
+    /* The base-tab strip the screen-1 pointer arm walks (0x87E30) and then hits (0x87F2C). Its ten
+     * controls ARE apNavCtl @ 0x159888 -- the same ten objects Geoscape_BuildNavControls installs the
+     * nav handlers on -- so a press on a nav row reaches that row's handler through this arm. The strip
+     * gate bytes: the two base indexes and the tap flag the hit clears, plus the base-info gate. */
+    pPtr->apStripCtl                = pW->nav.apNav;                  /* PUFO_GEO_STRIP_CTLS of 0x159888 */
+    pPtr->stripHit.pbBaseCount      = (const u8 *)&pW->nBaseCount;    /* 0x159D80, read SIGNED (0x67204) */
+    pPtr->stripHit.pbSelectedBase   = (const u8 *)&pW->nSelectedBase; /* 0x159D81 (0x67224) */
+    pPtr->stripHit.pbTapFlag        = &pW->bPlaceActive;              /* 0x1870BC, cleared at 0x67250 */
+    pPtr->stripHit.pbGateBaseInfo   = &pW->bBaseInfoPanelsBuilt;      /* unk_15883C */
+    /* The transfer gate (unk_1870EC) and the psi gate (byte_15EEF0) stay NULL: their only writers are
+     * the transfer and psi screens, which the shell does not run, and Base_HitTestFacilityStrip tests
+     * both before it reads them (0x6723C). */
+    /* Screen 3's own arm (0x88A08..0x88A24): the two controls it hit-tests are `unk_158828 + 4`, which
+     * is BaseInfoScreen_Init's control pair -- the field is named for the base-attack screen because that
+     * is where the earlier reading first saw the block, but 0x15882C / 0x158830 are the base-info
+     * controls (OnOk and the panel-mode toggle). The row-select byte is byte_1870F8, the same one the
+     * draw's overlay arm and Init use, and the two base indexes are byte_1870F4 (read SIGNED at 0x88AB0)
+     * and byte_158834. */
+    pPtr->apBaseAtCtl       = pW->apBaseInfoCtl;                  /* 0x15882C / 0x158830 */
+    pPtr->pbTransferRowSel  = &pW->bBaseInfoOverlayOpen;          /* byte_1870F8 */
+    pPtr->pnTransferBaseIdx = &pW->nBaseInfoWorkBase;             /* byte_1870F4 */
+    pPtr->pbStripHitBase    = &pW->nShownBaseIdx;                 /* byte_158834 */
     pPtr->pnSelectedBaseIdx = &pW->nSelectedBase;        /* 0x159D81 */
     pPtr->pnBaseCount    = &pW->nBaseCount;              /* 0x159D80, signed */
     pPtr->pbSolScreenOpen = &pW->bSolScreenOpen;         /* 0x159DE0 */
@@ -6603,6 +6717,99 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
 
     pF->draw.pFundEnv    = &pW->fundingDraw;
     pF->draw.pFundingArm = &pW->fundingArm;
+
+    /* The base-info screen, case 3 (0x93F08..0x94104). Nav slot 1 opens it (0x67B80). The arm's pad slot
+     * IS the slot BaseInfoScreen_Init allocates (0x158828), the two controls it blits are the ones Init
+     * allocates at 0x15882C (OnOk) and 0x158830 (the panel-mode toggle), and the close control is the
+     * shared one Init moves to (224, 1) at 0x57738/0x57744. The screen's own base-select overlay
+     * (byte_1870F8) stays closed: its writers are the psi screen and Smap_OnBaseSelect, which the shell
+     * does not run, so the draw's adopt arm -- byte_158834 != byte_1870F4 rebuilds the panels -- cannot
+     * fire here. Init stamps 1870F8 = 0 and 1870F4 = nSelectedBase every time the screen opens (0x5778C,
+     * 0x57794). */
+    pW->baseInfoOpenHooks.pfnPlaySample = World_PlaySampleWithArg;      /* Sound_Play(17, 4) at 0x61688 */
+    pW->baseInfoOpenHooks.pfnInit       = World_BaseInfoInitThunk;      /* 0x61690 */
+    pW->baseInfoOpenHooks.pSlot         = NULL;
+    pW->baseInfoOpenHooks.pUser         = pW;
+
+    memset(&pW->baseInfoInit, 0, sizeof(pW->baseInfoInit));
+    pW->baseInfoInit.ppPad             = &pW->pBaseInfoPad;             /* pBaseInfoPad @ 0x158828 */
+    pW->baseInfoInit.papCtl            = pW->apBaseInfoCtl;             /* 0x15882C then 0x158830 */
+    pW->baseInfoInit.pCtlClose         = pUi->apCtl[GEOUI_CTL_186B00];  /* *g_pUiCloseCtl, not a second one */
+    pW->baseInfoInit.pfnOkClick        = World_BaseInfoOkThunk;         /* BaseInfoScreen_OnOk @ 0x557c8 */
+    pW->baseInfoInit.pfnToggleClick    = World_BaseInfoToggleThunk;     /* BaseInfoScreen_TogglePanelMode @ 0x55754 */
+    pW->baseInfoInit.pfnCloseClick     = World_CloseGeoscapeThunk;      /* BaseInfoScreen_CloseThunk @ 0x557bc */
+    pW->baseInfoInit.pfnLoadPads       = pW->pfnLoadPads;               /* UiControl_Setup's pad triple */
+    pW->baseInfoInit.pPadUser          = pW->pLoadPadsUser;
+    pW->baseInfoInit.pnWorkBaseIdx     = &pW->nBaseInfoWorkBase;        /* byte_1870F4 */
+    pW->baseInfoInit.pnSelectedBaseIdx = &pW->nSelectedBase;            /* nSelectedBaseIdx @ 0x159D81 */
+    pW->baseInfoInit.pbOverlayOpen     = &pW->bBaseInfoOverlayOpen;     /* byte_1870F8 */
+    pW->baseInfoInit.pfnBuildPanels    = World_BaseInfoBuildThunk;      /* Init's tail call at 0x5779C */
+
+    memset(&pW->baseInfoBuild, 0, sizeof(pW->baseInfoBuild));
+    pW->baseInfoBuild.pbBuilt        = &pW->bBaseInfoPanelsBuilt;       /* 0x15883C */
+    pW->baseInfoBuild.pbModeFlag     = &pW->bBaseInfoPanelMode;         /* byte_AB190 @ 0xAB190 */
+    pW->baseInfoBuild.pppPanel       = pW->apBaseInfoPanel;             /* [0] 0x158824, [1] 0x158820, [2] 0x158838 */
+    pW->baseInfoBuild.papCtl         = pW->apBaseInfoCtl;               /* the release arm frees these two */
+    pW->baseInfoBuild.apCraft        = pW->apCraft;
+    pW->baseInfoBuild.pnCraftCount   = &pW->bCraftCount;                /* read UNSIGNED (0x55E38) */
+    pW->baseInfoBuild.pnWorkBaseIdx  = &pW->nBaseInfoWorkBase;          /* read SIGNED (0x55E6C) */
+    pW->baseInfoBuild.apSoldiers     = pW->apSoldiers;
+    pW->baseInfoBuild.nSoldierCount  = pW->nSoldierCount;
+    pW->baseInfoBuild.apManufCol     = pW->auManufCol;                  /* 0x15E19C */
+    pW->baseInfoBuild.apResearchCol  = pW->auResearchCol;               /* 0x16022C */
+    pW->baseInfoBuild.pbEntryCount   = (const u8 *)&pW->nResearchEntries; /* 0x160C4C */
+    pW->baseInfoBuild.apBases        = pW->apBases;
+    pW->baseInfoBuild.nBaseCount     = pW->nBaseCount;
+    pW->baseInfoBuild.aSites         = pW->apSites;                     /* aSmapSites @ 0x162030 */
+    pW->baseInfoBuild.nSiteCount     = pW->nSiteCount;
+    pW->baseInfoBuild.abFacilityGrid = pW->abFacilityGrid;
+    pW->baseInfoBuild.abGridBytes    = pW->abGridHangarBytes;           /* 0x159DBC */
+
+    /* The toggle's three panels, in the ORIGINAL's register order: 0x158820 first, 0x158824 second,
+     * 0x158838 last -- not the build order the two envs above use. Re-read every frame because the
+     * panels exist only between BuildPanels' build arm and its release arm. */
+    memset(&pW->baseInfoToggle, 0, sizeof(pW->baseInfoToggle));
+    pW->baseInfoToggle.pbModeFlag = &pW->bBaseInfoPanelMode;
+    pW->baseInfoToggle.pPanelA    = pW->apBaseInfoPanel[1];             /* unk_158820 */
+    pW->baseInfoToggle.pPanelB    = pW->apBaseInfoPanel[0];             /* unk_158824 */
+    pW->baseInfoToggle.pPanelC    = pW->apBaseInfoPanel[2];             /* unk_158838 */
+
+    memset(&pW->baseInfoDraw, 0, sizeof(pW->baseInfoDraw));
+    pW->baseInfoDraw.pColor         = pColor;
+    pW->baseInfoDraw.pbBuilt        = &pW->bBaseInfoPanelsBuilt;
+    pW->baseInfoDraw.pbModeFlag     = &pW->bBaseInfoPanelMode;
+    pW->baseInfoDraw.pppPanel       = pW->apBaseInfoPanel;
+    pW->baseInfoDraw.pnWorkBaseIdx  = &pW->nBaseInfoWorkBase;           /* byte_1870F4 */
+    pW->baseInfoDraw.pnAltBaseIdx   = &pW->nShownBaseIdx;               /* byte_158834 */
+    pW->baseInfoDraw.pbOverlayOpen  = &pW->bBaseInfoOverlayOpen;        /* byte_1870F8 */
+    pW->baseInfoDraw.apSiteRecs     = pW->aSiteRecs;                    /* byte_186C40, abName at +0x1A */
+    pW->baseInfoDraw.pnBaseCount    = &pW->nBaseCount;                  /* 0x159D80, read SIGNED */
+    pW->baseInfoDraw.apCraft        = pW->apCraft;                      /* the moving bands' ship count */
+    pW->baseInfoDraw.nCraftCount    = (i32)pW->bCraftCount;
+    pW->baseInfoDraw.apBases        = pW->apBases;
+    pW->baseInfoDraw.nBaseCount     = pW->nBaseCount;
+    pW->baseInfoDraw.abGridBytes    = pW->abGridHangarBytes;            /* 0x159DBC */
+    pW->baseInfoDraw.pfnBuildPanels = World_BaseInfoBuildThunk;         /* the adopt arm's rebuild */
+    if (pAssets != NULL) {
+        pW->baseInfoBuild.pTextRecs = pAssets->pTextRecs;               /* for Ship_FormatDisplayName */
+        pW->baseInfoDraw.pTextRecs  = (const char *)pAssets->pTextRecs; /* TEXTS 1112 / 1113 / 1114 */
+        pW->baseInfoBuild.apObjects    = pAssets->apObjects;            /* byte_113C80 / byte_113C84 slots */
+        pW->baseInfoBuild.nObjectCount = (i32)pAssets->nObjectCount;
+    }
+
+    pW->baseInfoArm.ppPad          = &pW->pBaseInfoPad;                 /* 0x93F08 / 0x93F0C / 0x93F10 */
+    pW->baseInfoArm.pbOverlayShown = &pW->bBaseInfoOverlayOpen;         /* 0x940DC, gates the close blit */
+    pW->baseInfoArm.pCloseCtl      = pUi->apCtl[GEOUI_CTL_186B00];
+    pW->baseInfoCtl.apCtl          = pW->apBaseInfoCtl;                 /* 0x940B8..0x940D4, the two slots */
+    if (pHit != NULL) {
+        pW->baseInfoCtl.pfnCtlBlit   = pHit->pfnBlit;
+        pW->baseInfoCtl.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pW->baseInfoCtl.pCtlBlitUser = pHit->pUser;
+    }
+
+    pF->draw.pBaseInfoArm  = &pW->baseInfoArm;
+    pF->draw.pBaseInfoCtl  = &pW->baseInfoCtl;
+    pF->draw.pBaseInfoDraw = &pW->baseInfoDraw;
 
     World_WireGeoscapeClock(pW, pHooks);
 }

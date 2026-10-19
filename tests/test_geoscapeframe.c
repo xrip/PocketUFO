@@ -896,12 +896,19 @@ int main(void)
     pF->g.nCursorY = 0;
 
     /* 9. The arms the wiring does not serve stay NULL, which is the arm not drawing at all. Case 20 is no
-     * longer in that list: the shell owns the base-attack record, so the arm points at its own draw env. */
+     * longer in that list: the shell owns the base-attack record, so the arm points at its own draw env.
+     * Case 3 left it too: BaseInfoScreen_Open @ 0x6167c is installed on nav slot 1 (the unrolled store at
+     * 0x67B80) and the shell now owns 0x158828 / 0x15882C / 0x158830 and the three panels, so the arm,
+     * its control run and its draw env all point at the shell's fields. */
     Check(pF->draw.pPlaneArm == NULL
-              && pF->draw.pResearchDraw == NULL && pF->draw.pBaseInfoArm == NULL
+              && pF->draw.pResearchDraw == NULL
               && pF->draw.pManufPad == NULL && pF->draw.pTransferPad == NULL
               && pF->draw.pBuySellPad == NULL,
           "the arms whose screen the shell cannot open stay NULL (see pufo_geoscape.h)");
+    Check(pF->draw.pBaseInfoArm == &g_world.baseInfoArm
+              && pF->draw.pBaseInfoCtl == &g_world.baseInfoCtl
+              && pF->draw.pBaseInfoDraw == &g_world.baseInfoDraw,
+          "case 3 is wired to the shell's own base-info envs, reachable from nav slot 1 (0x67B80, id 3 at 0x6169C)");
     Check(pF->draw.pBaseAtEnv == &pF->baseAtDraw,
           "case 20's arm reaches BaseAtScreen_Draw through the shell's own draw env (0x944B4)");
     Check(pF->draw.pSoldierDraw == &pF->solDraw && pF->draw.pSoldierArm == &pF->solArm
@@ -931,6 +938,44 @@ int main(void)
           "the radar arm's own env and aRadarControls @ 0x159684 stay unwired");
     Check(pF->panel.pfnCtlOpen == NULL && pF->panel.pfnCtlSfx == NULL,
           "the panel's four screen openers stay unwired (0x85194 / 0x852b8 / 0x84d18 / 0x84bf8)");
+
+    /* 9c. A nav row pressed THROUGH the dispatcher. The screen-1 arm walks the ten base-strip slots at
+     * [root + 0x120] (0x87E34) -- apNavCtl @ 0x159888, the same ten controls Geoscape_BuildNavControls
+     * installs the handlers on and lays out through stru_AB4B0 @ 0xAB4B0 -- so a press inside slot 1's box
+     * (descriptor offset (1,247)) is a call into BaseInfoScreen_Open @ 0x6167c: sample 17 (0x61688),
+     * BaseInfoScreen_Init (0x61690), and only then the id 3 (0x6169C). */
+    g_world.screen.nGeoscapeScreen = 1;
+    g_world.bPlaceActive = 0;
+    nSamples0 = g_nSamples;
+    World_GeoscapePointer(&g_world, 60, 252, true);
+    World_GeoscapePointerUp(&g_world);
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 3,
+               "the nav row press runs slot 1's handler and stores 3 (0x6169C)");
+    Check(g_nSamples > nSamples0, "and the opener played its sample (Sound_Play(17, 4) at 0x61688)");
+    Check(g_world.pBaseInfoPad != NULL && g_world.apBaseInfoCtl[0] != NULL
+              && g_world.apBaseInfoCtl[1] != NULL && g_world.apBaseInfoPanel[0] != NULL
+              && g_world.apBaseInfoPanel[1] != NULL && g_world.apBaseInfoPanel[2] != NULL
+              && g_world.bBaseInfoPanelsBuilt != 0 && g_world.bBaseInfoPanelMode != 0,
+          "BaseInfoScreen_Init @ 0x57688 allocated the pad (0x158828) and the two controls (0x15882C / "
+          "0x158830), and its tail call built the three 42-line panels and set byte_AB190 (0x5581C)");
+    Check(g_world.apBaseInfoCtl[0]->pfnClick != NULL && g_world.apBaseInfoCtl[1]->pfnClick != NULL
+              && g_world.ui.apCtl[GEOUI_CTL_186B00]->x == 224
+              && g_world.ui.apCtl[GEOUI_CTL_186B00]->y == 1,
+          "OnOk installed on the first control (0x5772C), the panel-mode toggle on the second (0x5771C), and "
+          "the shared close control moved to (224, 1) (0x57738 / 0x57744)");
+    CheckEqI32((i32)g_world.nBaseInfoWorkBase, (i32)g_world.nSelectedBase,
+               "Init stamps byte_1870F4 with the base the geoscape has selected (0x5778C)");
+    CheckEqI32(g_world.bBaseInfoOverlayOpen, 0, "and clears the base-select overlay byte (0x57794)");
+
+    /* Closing it is Geoscape_CloseUI case 3: the id goes to 1 (0x8BDE8), the panels are released because
+     * the built flag is set (0x8BDF8), and the pad is freed (0x8BE10 / 0x8BE18). */
+    World_CloseGeoscape(&g_world);
+    CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "case 3 hands the geoscape back to screen 1 (0x8BDE8)");
+    Check(g_world.pBaseInfoPad == NULL && g_world.apBaseInfoPanel[0] == NULL
+              && g_world.apBaseInfoPanel[1] == NULL && g_world.apBaseInfoPanel[2] == NULL
+              && g_world.apBaseInfoCtl[0] == NULL && g_world.apBaseInfoCtl[1] == NULL
+              && g_world.bBaseInfoPanelsBuilt == 0,
+          "the release arm freed the three panels and the two controls and CloseFreePad freed the pad");
 
     /* 10. The clock. Geoscape_PulseUpdate @ 0x954dc is WM_TIMER 0xC353's geoscape half (UiPulse_OnTimer
      * 0x36630 returns at 0x36644 after one hook call), and it advances the clock only while the geoscape

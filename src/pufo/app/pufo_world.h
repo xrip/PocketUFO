@@ -544,6 +544,29 @@ typedef struct PufoWorldState {
     FundingInitEnv       fundingInit;
     FundingDrawEnv       fundingDraw;
     GeoscapeFundingArmEnv fundingArm;
+    /* The base-info screen (Geoscape_Draw case 3, 0x93F08). BaseInfoScreen_Init @ 0x57688 owns six
+     * globals and BaseInfoScreen_BuildPanels @ 0x557f4 owns three more; the shell is their only holder,
+     * so they are fields here: the pad 0x158828, the two controls 0x15882C (OnOk) / 0x158830 (the
+     * panel-mode toggle), the three 42-line panels 0x158824 (names) / 0x158820 (free) / 0x158838
+     * (totals), the built flag 0x15883C, the mode byte byte_AB190 @ 0xAB190, the work base byte_1870F4,
+     * the base the geoscape acts on byte_158834 and the base-select overlay byte_1870F8. The pad is
+     * Init's allocation and Geoscape_CloseUI case 3 frees it (0x8BE10); the three panels and the two
+     * controls are BuildPanels' allocations and its release arm frees them (0x56F0C..0x56F90). */
+    PadImage         *pBaseInfoPad;
+    UiControl        *apBaseInfoCtl[2];
+    UiPanel          *apBaseInfoPanel[3];
+    u8                bBaseInfoPanelsBuilt;
+    u8                bBaseInfoPanelMode;      /* byte_AB190 @ 0xAB190 */
+    i8                nBaseInfoWorkBase;       /* byte_1870F4 */
+    i8                nShownBaseIdx;           /* byte_158834 */
+    u8                bBaseInfoOverlayOpen;    /* byte_1870F8 */
+    BaseInfoInitEnv   baseInfoInit;
+    BaseInfoBuildEnv  baseInfoBuild;
+    BaseInfoDrawEnv   baseInfoDraw;
+    BaseInfoToggleEnv baseInfoToggle;
+    ScreenInitHooks   baseInfoOpenHooks;       /* BaseInfoScreen_Open @ 0x6167c, nav slot 1's handler */
+    GeoscapeBaseInfoArmEnv baseInfoArm;
+    GeoscapeScreenArmEnv   baseInfoCtl;
     /* The frame's loose globals the shell owns: the radar screen gate, the two research walk
      * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
      * and the two scratch lines the status panel writes. */

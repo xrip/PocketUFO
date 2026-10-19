@@ -22,7 +22,19 @@ pick
 dump  02_base_placed.ppm
 state after the pick
 
-# The placement screen's close control (Geoscape_CloseUI_ThunkA @ 0x838d0, case 1 writes 0 at 0x8BE94).
+# The base screen. The press goes through the screen-1 pointer arm (0x87E30), which hit-tests the ten
+# base-tab strip slots -- and those ten ARE apNavCtl @ 0x159888, the controls Geoscape_BuildNavControls
+# put at stru_AB4B0 slot 1 = (1,247) with BaseInfoScreen_Open @ 0x6167c installed (0x67B80). The opener
+# plays sample 17, runs BaseInfoScreen_Init @ 0x57688 (the "baseinfo" pad, the two controls at
+# 0x15882C/0x158830, the three 42-line panels through BuildPanels @ 0x557f4) and only then stores 3
+# (0x6169C). Coordinates: anywhere inside the control's box, which starts at its descriptor offset.
+click 60 252
+tick 20
+dump  02b_base_screen.ppm
+state on the base-info screen
+
+# Two closes: Geoscape_CloseUI case 3 (0x8BDE8) puts the geoscape back on 1, case 1 (0x8BE94) on 0.
+close
 close
 tick 20
 dump  03_geoscape.ppm
