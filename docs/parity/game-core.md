@@ -19416,3 +19416,36 @@ IDB: port-wiring comments at 0x16494, 0x4ca18, 0x4cb74, 0x4b9b8, 0x4c4a0 and the
 0x4BFF0 scratch load. `gap_433[1]` (Soldier+0x1B2, the control-guard stores at
 0x4BB80/0x4C318/0x4C364) is the port's `Soldier.bControlRecovered` -- recorded in
 the 0x4b9b8 comment; the 76-member struct member was not renamed in-struct.
+
+## Unit 118 -- the hand-menu pads open from the bank (Part 57)
+
+Original: `Tact_OpenLeftHandMenu @ 0x17030` and `Tact_OpenRightHandMenu @ 0x17148`
+(same body, different hand slot) are bank widgets 17/18. Body: sample 17; bail
+when `Map_bActionLatch` is armed; store `pSelUnit->pHandL/R` into
+`pSelWeapon` (Map+0x48) at 0x17060 BEFORE any gate; bail on an empty slot; gate on
+`aResearchTopics[g_abSlotTopicGate[uSortKey]].bUnlocked`; sort key 24 additionally
+needs `Soldier.bPsiActive` (0x1A6); then `Ui_FillActionCosts` and a scan of the
+twelve modes for one that is offered AND affordable -> `Map_nActionMode = 12`
+(0x17138) and `Map_nUiScreen = 3` (0x17140); nothing found pushes text record 1.
+
+Port: `Ui_OpenHandMenu` was already ported and unit-tested in pufo_tactui.c; Part
+57 supplies its first live caller. `World_TactOpenHandMenuBody` (pufo_world.c) does
+the Map-side half: the sample on the bail paths, the pre-gate weapon store, the
+cost input via the extracted `World_TactBuildCostInput` (shared with the enemy
+phase's fill thunk), the research gate as the injected `World_TactWeaponHasMenuThunk`
+(`aTopics[gate].bUnlocked`), and SyncIn/SyncOut so mode 12 and screen 3 land on the
+live cells. Widgets 17/18 installed; the deferred list is now three (56, 57, 58).
+
+Deviation (recorded): at 0x1705C the original reads `Map_pSelUnit->pHandL` without
+a NULL guard; the port bails (after the sample) instead of reading through NULL.
+
+Tests (test_geoscapeframe): widget 18 gate -- planted category-agnostic item with
+sort key 24 and `bPsiActive` cleared: sample 17, `Map.pSelWeapon` written, screen
+11 held. Widget 17 gate -- category-3 item with the gate unlocked: mode 3 offered
+at `auStat[0]*20/100` (the fill table, Unit-tested earlier), so the scan writes
+live `nMapActionMode` 12 and screen 3. All fixture pointers (hand slots, weapon,
+psi byte, two topic gates, mode) saved and restored. Mutations 2/2: neutered gate
+1 red, dropped weapon store 2 reds. Golden startup frame unchanged. Coverage
+unchanged -- both handlers were already cited in the tactui unit.
+
+IDB: port-wiring comments at 0x17030 and 0x17148.

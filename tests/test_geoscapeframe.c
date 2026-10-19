@@ -1688,11 +1688,11 @@ int main(void)
                 /* Tact_InitUiControls @ 0x3b498 ran through the shell hook (Part 54): the handlers are
                  * installed on the shell's bank in the g_aUiClickName order, the look control is built,
                  * the HUD origin is recomputed and the direct overrides land. */
-                static const i32 aDeferred[5] = { 17, 18, 56, 57, 58 };
+                static const i32 aDeferred[3] = { 56, 57, 58 };
                 i32 bInstalled = 1, bDeferred = 1, bStart = 1;
                 for (i32 c = 0; c < 113; ++c) {
                     i32 bWant = 1;
-                    for (i32 d = 0; d < 5; ++d) {
+                    for (i32 d = 0; d < 3; ++d) {
                         if (aDeferred[d] == c) { bWant = 0; }
                     }
                     if (bWant && g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
@@ -1702,7 +1702,7 @@ int main(void)
                     if (g_bank.aCtl[c].pfnClick != NULL) { bStart = 0; }
                 }
                 Check(bInstalled, "every handler the port models is installed on bank widgets 0..112");
-                Check(bDeferred, "the five deferred families stay NULL: 17/18 hand menus, 56 deploy confirm, 57 quit, 58 resize (4 and 5 installed since Parts 55/56)");
+                Check(bDeferred, "the three deferred families stay NULL: 56 deploy confirm, 57 quit, 58 resize (4, 5 and 17/18 installed since Parts 55/56/57)");
                 Check(bStart && g_bank.aCtl[128].pfnClick != NULL && g_bank.aCtl[129].pfnClick != NULL,
                       "113..127 stay uninstalled (start-menu widgets) and 128/129 take MenuBtn_Cancel (0x1a24c / 0x1a26c)");
                 const UiControl *pLook = &g_world.sTactLookCtl;
@@ -1848,6 +1848,57 @@ int main(void)
                 CLICK(5);
                 pMapX->nEnemyCount = nEnemySave;
                 g_world.nMapEnemyReserveCount = nReserveSave;
+
+                /* 17/18: the hand menus (Tact_OpenLeftHandMenu 0x17030 / Right 0x17148).
+                 * 18 with sort key 24 and bPsiActive clear: the weapon IS stored into
+                 * Map.pSelWeapon (0x17060, before any gate) but the menu stays shut.
+                 * 17 with a category-3 item: mode 3 is offered (cost auStat[0]*20/100,
+                 * affordable), so mode 12 + screen 3 land on the live cells. (Part 57) */
+                {
+                    static TactItem aHandItem;
+                    static ObjectRecFull aHandObj;
+                    Soldier *pSelH = pMapX->pSelUnit;
+                    TactItem *pLSave = pSelH->pHandL, *pRSave = pSelH->pHandR;
+                    TactItem *pWepSave = pMapX->pSelWeapon;
+                    u8 bPsiSave = pSelH->bPsiActive;
+                    i32 nModeSave = g_world.nMapActionMode;
+                    i32 nTopic24 = g_abSlotTopicGate[24], nTopic1 = g_abSlotTopicGate[1];
+                    u8 bGate24Save = g_world.aTopics[nTopic24].bUnlocked;
+                    u8 bGate1Save = g_world.aTopics[nTopic1].bUnlocked;
+
+                    memset(&aHandItem, 0, sizeof(aHandItem));
+                    memset(&aHandObj, 0, sizeof(aHandObj));
+                    aHandItem.pObj = &aHandObj;
+                    pSelH->bPsiActive = 0;
+                    g_world.aTopics[nTopic24].bUnlocked = 1;
+                    aHandObj.uSortKey = 24;
+                    pSelH->pHandR = &aHandItem;
+                    nSampleMark = g_nSamples;
+                    CLICK(18);
+                    Check(g_aFrameSamples[nSampleMark] == 17
+                              && pMapX->pSelWeapon == &aHandItem
+                              && g_world.nUiScreen == 11 && g_world.nMapActionMode == nModeSave,
+                          "widget 18 stores the hand item as Map.pSelWeapon (0x17060) but the psi gate (sort 24, +0x1A6) keeps screen 11");
+
+                    aHandObj.uSortKey = 1;      /* gate 1 unlocked; category 3 arms mode 3 (0x170D0 scan) */
+                    aHandObj.nCategory = 3;
+                    g_world.aTopics[nTopic1].bUnlocked = 1;
+                    pSelH->pHandL = &aHandItem;
+                    nSampleMark = g_nSamples;
+                    CLICK(17);
+                    Check(g_aFrameSamples[nSampleMark] == 17
+                              && pMapX->pSelWeapon == &aHandItem
+                              && g_world.nUiScreen == 3 && g_world.nMapActionMode == 12,
+                          "widget 17 opens the left-hand menu: an offered affordable mode writes Map_nActionMode 12 (0x17138) and screen 3 (0x17140)");
+
+                    pSelH->pHandL = pLSave;
+                    pSelH->pHandR = pRSave;
+                    pMapX->pSelWeapon = pWepSave;
+                    pSelH->bPsiActive = bPsiSave;
+                    g_world.aTopics[nTopic24].bUnlocked = bGate24Save;
+                    g_world.aTopics[nTopic1].bUnlocked = bGate1Save;
+                    g_world.nMapActionMode = nModeSave;
+                }
                 Check(g_aFrameSamples[nSampleMark] == 17
                           && pMapX->apXcomUnits[0]->bUnk1037 == 0
                           && pMapX->apXcomUnits[0]->uTu > 1

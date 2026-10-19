@@ -2367,34 +2367,35 @@ static bool World_TactPathToCellThunk(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void
 /* Ui_FillActionCosts @ 0x26104 (the enemy AI calls it before reading the cost table).
  * The input is read the way the original's call site reads it: the selected weapon's object
  * record bytes 0xB0..0xB5 plus the unit's stats. */
+static void World_TactBuildCostInput(Soldier *pUnit, TactItem *pItem, ActionCostInput *pIn)
+{
+    memset(pIn, 0, sizeof(*pIn));
+    pIn->uSortKey  = pItem->pObj->uSortKey;
+    pIn->nCategory = pItem->pObj->nCategory;
+    memcpy(pIn->abCostPctPacked, pItem->pObj->abCostPct, sizeof(pIn->abCostPctPacked));
+    memcpy(pIn->abFlagByMode, pItem->pObj->abArmorTu, sizeof(pIn->abFlagByMode));
+    pIn->auStat0     = pUnit->auStat[0];
+    pIn->auStat4     = pUnit->auStat[4];
+    pIn->auStat5     = pUnit->auStat[5];
+    pIn->bFlags      = pUnit->bFlags;
+    pIn->nUnitType   = pUnit->nUnitType;
+    pIn->bOperative  = Unit_bIsOperative(pUnit);
+    pIn->bWeaponUnk8 = pItem->bUnk8;
+}
+
 static void World_TactFillActionCostsThunk(void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
     GameMap *pMap = pW->pTactMap;
-    Soldier *pUnit;
-    TactItem *pItem;
     ActionCostInput in;
 
     if (pMap == NULL) {
         return;
     }
-    pUnit = pMap->pSelUnit;
-    pItem = pMap->pSelWeapon;
-    if (pUnit == NULL || pItem == NULL || pItem->pObj == NULL) {
+    if (pMap->pSelUnit == NULL || pMap->pSelWeapon == NULL || pMap->pSelWeapon->pObj == NULL) {
         return;
     }
-    memset(&in, 0, sizeof(in));
-    in.uSortKey  = pItem->pObj->uSortKey;
-    in.nCategory = pItem->pObj->nCategory;
-    memcpy(in.abCostPctPacked, pItem->pObj->abCostPct, sizeof(in.abCostPctPacked));
-    memcpy(in.abFlagByMode, pItem->pObj->abArmorTu, sizeof(in.abFlagByMode));
-    in.auStat0     = pUnit->auStat[0];
-    in.auStat4     = pUnit->auStat[4];
-    in.auStat5     = pUnit->auStat[5];
-    in.bFlags      = pUnit->bFlags;
-    in.nUnitType   = pUnit->nUnitType;
-    in.bOperative  = Unit_bIsOperative(pUnit);
-    in.bWeaponUnk8 = pItem->bUnk8;
+    World_TactBuildCostInput(pMap->pSelUnit, pMap->pSelWeapon, &in);
     Ui_FillActionCosts(&in, &pW->sTactUi);
 }
 
@@ -2786,8 +2787,6 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
  * sTactInput (the input handlers' view); the bank handlers use the union and InputSync moves them.
  *
  * Handlers left NULL, each a recorded separate issue:
- *   17/18 Tact_OpenLeft/RightHandMenu  -- the research gate is ready (g_abSlotTopicGate), but the
- *                                        cost input and the Soldier+0x1A6 gate byte are unmodeled
  *   56   Map_BuildDeployConfirmYesNo   -- the deploy modal opener (the Part 51 modal bank is ready)
  *   57   Menu_ConfirmQuitDialog        -- needs the screen-8 escape seam wired for tact
  *   58   MenuBtn_ResizeWindow @ 0x19930 -- App_ResizeMainWindow is a caller-window call, not world state
@@ -3846,6 +3845,86 @@ static void World_ClickEndTurn(void)
                         World_TactBeforeEnemyStepThunk);
 }
 
+/* ---------------------------------------------------------------------------
+ * Part 57: the hand-menu pads (bank widgets 17/18 = Tact_OpenLeftHandMenu @ 0x17030
+ * and Tact_OpenRightHandMenu @ 0x17148 -- same body, left/right hand). The game
+ * half is ported as Ui_OpenHandMenu (pufo_tactui.c); this is its first live
+ * caller. Order per the ARM: sample 17, bail on an armed latch, STORE the hand
+ * slot into Map.pSelWeapon (Map+0x48) before any gate, bail on an empty slot,
+ * research gate aResearchTopics[g_abSlotTopicGate[uSortKey]].bUnlocked, the
+ * Soldier+0x1A6 (bPsiActive) gate for sort key 24, then fill costs and scan the
+ * twelve modes for one offered AND affordable -> mode 12, screen 3; none found
+ * pushes text record 1. Deviation: the original reads through a NULL
+ * Map_pSelUnit at 0x1705C; the port bails instead.
+ * --------------------------------------------------------------------------- */
+
+/* The research gate the game half injects. */
+static bool World_TactWeaponHasMenuThunk(u16 uSortKey, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    return pW->aTopics[g_abSlotTopicGate[uSortKey]].bUnlocked != 0;   /* aResearchTopics @ 0x15EF08 */
+}
+
+static bool World_TactOpenHandMenuBody(PufoWorldState *pW, bool bRight)
+{
+    GameMap *pMap = pW->pTactMap;
+    Soldier *pUnit;
+    TactItem *pItem;
+    ActionCostInput in;
+    HandMenuCtx c;
+    TactUiHooks h;
+    bool bOpen;
+
+    if (pMap == NULL) {
+        return false;
+    }
+    pUnit = pMap->pSelUnit;
+    pItem = (pUnit != NULL) ? (bRight ? pUnit->pHandR : pUnit->pHandL) : NULL;
+
+    if (pUnit == NULL || pItem == NULL || pItem->pObj == NULL) {
+        World_TactBankSampleThunk(17, pW); /* 0x1703C: the sample plays on every path */
+        return false;
+    }
+    if (pMap->bActionLatch != 0) {
+        World_TactBankSampleThunk(17, pW); /* the latch bail still played 17 first */
+        return false;
+    }
+
+    /* 0x17060: the hand slot becomes the selected weapon BEFORE the gates. */
+    pMap->pSelWeapon = pItem;
+
+    World_TactUiSyncIn(pW);
+    World_TactBuildCostInput(pUnit, pItem, &in);
+    c.pCost         = &in;
+    c.bActionLatch  = pMap->bActionLatch;
+    c.uTu           = pUnit->uTu;
+    c.uSortKey      = pItem->pObj->uSortKey;
+    c.bByte1A6      = pUnit->bPsiActive;            /* 0x1A6 @ 0x170A8/0x170B0 */
+    h = World_TactUiHooksFor(pW);
+    bOpen = Ui_OpenHandMenu(&pW->sTactUi, &c, World_TactWeaponHasMenuThunk, &h, pW);
+    World_TactUiSyncOut(pW);
+    return bOpen;
+}
+
+static void World_ClickOpenLeftHand(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        (void)World_TactOpenHandMenuBody(pW, false);
+    }
+}
+
+static void World_ClickOpenRightHand(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        (void)World_TactOpenHandMenuBody(pW, true);
+    }
+}
+
 static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }
 static void World_ClickSpeed1(void) { World_TactSpeedCall(1); }
 static void World_ClickSpeed2(void) { World_TactSpeedCall(2); }
@@ -3922,8 +4001,8 @@ static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {
     World_ClickOpenScreen7,        /* 14  Map_UiScreen7_PlaySample0E @ 0x164b8 */
     World_ClickOpenScreen15,       /* 15  Map_UiScreen0F_PlaySample0F @ 0x164d4 */
     World_ClickOpenCommand,        /* 16  Tact_OpenCommandScreen @ 0x16ffc */
-    NULL,                          /* 17  Tact_OpenLeftHandMenu @ 0x17030 (deferred) */
-    NULL,                          /* 18  Tact_OpenRightHandMenu @ 0x17148 (deferred) */
+    World_ClickOpenLeftHand,       /* 17  Tact_OpenLeftHandMenu @ 0x17030 (Part 57) */
+    World_ClickOpenRightHand,      /* 18  Tact_OpenRightHandMenu @ 0x17148 (Part 57) */
     World_ClickSelectPrev,         /* 19  Tact_SelectPrevUnit @ 0x17260 */
     World_ClickSelectNext,         /* 20  Tact_SelectNextUnit @ 0x17304 */
     World_ClickFilter5,            /* 21  Inv_SetFilter5 @ 0x17710 */
