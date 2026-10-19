@@ -1388,6 +1388,36 @@ soldier furthest from the selection (1/1 against 10/12) leaves the small mark at
 mission has no enemy on the field (the 13 hostiles sit in the reserve roster unk_138DF0), so that band is pinned
 in `tests/test_tacthud.c` instead. Eight marks ink 74234 pixels. New reference: `tests/ref/tact_hud_markers.png`.
 
+Screen 0x13 now paints (Part 84), and the eight string tables turn out to have been read at the wrong stride.
+`Render_Frame` routes Map_nUiScreen 0x13 to 0x223F4, the fifth arm that skips 0x22414, and its opener is a cancel:
+`UiScreen_OnCancel` tests screen 13 against `Map_bPromotionReport @ 0x1153D8` (0x162B8) and writes 19 (0x162D4)
+INSTEAD of shutting the mission down, so `World_MissionCancelEnd` returns with Map+0x00 and the live frame intact
+and the pad closes the report. Env cells all owned: the "endmiss" backdrop, bank widget 129 (unk_AD6F0, at 46,290,
+width 154), the four TEXTS labels (1104 "OK" centred on the pad, 1107 centred at y 10, 1105 at (10,30), 1106 at
+(170,30)), and the two report panels 0x1568E0 / 0x1568DC laid out at (10,55) and (230,55) as 14 rows of 16 pixels.
+Measured: one control blit; "OK" 17 px at 114,291; the title 80 px at 80,10; the headers 77 and 80 px at 10,30 and
+170,30; the row band bare with both panels at zero lines, and one left-aligned name plus one right-aligned rank per
+staged row. Hold the two debrief counters down while measuring — the fade block at 0x2250C belongs to every arm and
+re-blits the whole screen (0x22538) while the counter is up. New reference: `tests/ref/tact_hud_promotion.png`.
+
+Staging those rows found a class bug in the text-table load. `TextTables_CopyTable` advanced its SOURCE cursor by
+the table's destination stride, while `Assets_LoadStartup @ 0x382d0` keeps two cursors apart: source +205 (a whole
+TEXTS record), destination +20/+40/+30 — and every `PUFO_TXT_*_SRC` is an exact record start (A = 221, B = 198,
+C = 318, D = 230, E = 192, F = 181, G = 1609, H = 191). Reading 20 apart reads record 0's head and then the padding
+inside it, so the 88 first names and the 71 surnames were empty beyond index 0, five of the six rank names were
+empty, and every generated soldier's `szName` was a space plus one surname. The single-entry tables G and H were
+immune, which is how this survived 83 parts. `TestTextTables` in `tests/test_unit.c` re-derives every entry of all
+six multi-entry tables from the blob (0 mismatches; the empty counts are the data's own — A 3, B 3, none in
+C/D/E/F). Eleven committed pictures change and every changed pixel sits in a name line (iso frame y 296..319,
+actions and sub-modes y 201..224, the menu and both slot screens y 218..224, fire modes y 72..224): the command
+panel now reads "Новичок / Джейн Кузнецова" and the inventory header "Новичок: Джейн Кузнецова (55)". The same
+census trap closed `unk_EACE0`: Part 64 recorded it as a label with 8 reads and no writer, and it is TEXTS[1104]
+"OK", written by the record read loop at 0x38524..0x38564 — a computed store through an advancing pointer, the same
+shape that hid the Map+0x30/0x32 STRHs in Part 81 — so the debrief banner's OK button is labelled now. Only 0x14 and
+0x15 (Cydonia) stay off the seam. One gate defect closed on the way: `gen_report.py` captured suite output in the
+machine's locale, and Python 3.14 returns `stdout=None` without raising when a text-mode decode fails, which
+recorded `test_geoscapeframe` as a FAIL it did not earn; the capture now decodes utf-8 with `errors="replace"`.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

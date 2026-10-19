@@ -34,6 +34,7 @@
 #include "game/pufo_options.h"
 #include "game/pufo_save.h"
 #include "game/pufo_tactend.h"
+#include "game/pufo_tacthud.h"  /* PUFO_HUD_CONFIRM_FIRST and the promotion-report text records (Part 84) */
 #include "game/pufo_terrain.h" /* PUFO_TERRAIN_CELLS_PER_LAYER, the shell's cell-table stride */
 #include "game/pufo_tactctl.h"  /* g_aDeployCellOffsets / g_abDeployPointCounts, the deploy points (Part 66) */
 #include "game/pufo_isodraw.h"  /* MapView_bResolveIsoCell, for the temporary iso probe */
@@ -3100,10 +3101,10 @@ int main(void)
                 }
 
                 /* The gate. Live on 0x2237C's jumptable group "cases 0,3,5,7-12,15" plus 13, the status
-                 * banner arm at 0x223E8, plus 1, 2, 4 and 6 -- the arms outside that group whose envs the
-                 * shell already owns (0x224AC, 0x224B8, 0x224C4, 0x224D0). Render_Frame calls
+                 * banner arm at 0x223E8, plus 1, 2, 4, 6 and 0x13 -- the arms outside that group whose envs
+                 * the shell already owns (0x224AC, 0x224B8, 0x224C4, 0x224D0, 0x223F4). Render_Frame calls
                  * MapView_DrawIsoLayer with no null test (0x22414) for the group; Part 76 built the group's
-                 * six furniture envs, Parts 80/81/82/83 the four replace-arms. 0x13 and 0x14/0x15 stay off. */
+                 * six furniture envs, Parts 80/81/82/83/84 the five replace-arms. 0x14/0x15 stay off. */
                 g_world.nUiScreen = 0;
                 Check(World_bTactFrameLive(&g_world), "the frame seam is live on screen 0 of a live mission");
                 g_world.nUiScreen = 8;
@@ -3119,8 +3120,11 @@ int main(void)
                 g_world.nUiScreen = 4;
                 Check(World_bTactFrameLive(&g_world), "and on 4, the command-pad arm 0x224C4, which replaces it");
                 g_world.nUiScreen = 0x13;
+                Check(World_bTactFrameLive(&g_world),
+                      "and on 0x13, the promotion-report arm 0x223F4, which replaces it");
+                g_world.nUiScreen = 0x14;
                 Check(!World_bTactFrameLive(&g_world),
-                      "not on 0x13: the confirm-dialog arm 0x223F4 is still off the seam");
+                      "not on 0x14: the Cydonia arm 0x223DC is still off the seam");
                 g_world.nUiScreen = 0;
 
                 /* The cursor tick (0x22360) with the busy arm taken: byte3 = old byte2, byte2 = 1, and
@@ -3415,6 +3419,184 @@ int main(void)
                 g_world.nMapUiSlot1 = nFadeKeep;
                 g_world.nMapUiSlot10 = nS10Keep;
                 g_world.nUiScreen = nScreenKeep;
+            }
+
+            /* --- screen 0x13: the promotion report at 0x223F4 (Part 84) ------------------------
+             * The fifth arm outside 0x2237C's iso group, and the only one of the five whose opener is a
+             * cancel. UiScreen_OnCancel tests screen 13 against Map_bPromotionReport (0x162B8) and writes
+             * 19 (0x162D4) INSTEAD of shutting the mission down: the teardown waits for the pad. The
+             * backdrop is the same endmiss pad the banner blits (0x156A74); the one control is bank widget
+             * 129 (unk_AD6F0 = pBank + 4128, at 46,290 with the pushpu/pushpd pads); the four labels are
+             * TEXTS records that the boot record-copy loop mirrors into unk_EACE0 / 0xEAF47 / 0xEADAD /
+             * 0xEAE7A -- 1104 "OK" centred on the pad ((uWidth - w)/2 + x, y + 1 at 0x1EB98), 1107
+             * "Продвижение" centred at ((240 - w)/2, 10), 1105 "Имя солдата" at (10,30) and 1106
+             * "Новое звание" at (170,30). The two columns are the report's own panels, pUiPanel2 @ 0x1568E0
+             * (names, left-aligned at x 10) and pUiPanel3 @ 0x1568DC (ranks, right-aligned at x 230), laid
+             * out by Tact_InitMission at 0x3C854..0x3CB00 as 14 rows at y 55 + 16 * row, and filled by
+             * Tact_ClearSoldierBattleFlags at 0x34E34..0x34EC0 out of aszTextE @ 0xB2200. */
+            {
+                u16          nScreenKeep  = g_world.nUiScreen;
+                u8           nPromoteKeep = g_world.bMapPromotionReport;
+                UiPanel     *pName        = g_world.tactEnv.apPanel[2];
+                UiPanel     *pRank        = g_world.tactEnv.apPanel[3];
+                const PadImage *pEnd      = g_world.apTactPads[PUFO_UIPAD_ENDMISSION];
+                UiControl   *pPad         = &g_bank.aCtl[PUFO_HUD_CONFIRM_FIRST];
+                const char  *pszOk        = (const char *)g_world.pAssets->pTextRecs
+                                              + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OK;
+                const char  *pszTitle     = (const char *)g_world.pAssets->pTextRecs
+                                              + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_PROMOTION;
+                const char  *pszNameLbl   = (const char *)g_world.pAssets->pTextRecs
+                                              + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_PROMOTION_NAME;
+                const char  *pszRankLbl   = (const char *)g_world.pAssets->pTextRecs
+                                              + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_PROMOTION_RANK;
+                static u16   aRepInk[240 * 320];   /* backdrop + control pad: the arm's own two blits */
+                Soldier     *apRow[2];
+                i32          nRows = 0;
+                i32          nSnapBlits, nCtlBlits;
+                i32          nTitleW, nTitleX, nOkW, nOkX, nOkY;
+                i32          nLblW, nRankLblW;
+                i32          nEmptyName, nEmptyRank;
+                i32          nFadeKeep, nFadeInKeep;
+
+                /* The fade block at 0x2250C is common to every arm of Render_Frame, this one included, and
+                 * the debrief leaves its counter at 10 -- the counter-up branch would re-blit the whole
+                 * screen (0x22538) into every census below. The counters are held exactly as Part 64's
+                 * banner-drawn run holds them: counter down, fade-in at 10, so the inner test fails and the
+                 * block contributes nothing. Neither counter gates this arm; the report paints the same
+                 * either way. */
+                nFadeKeep   = g_world.nMapUiSlot1;
+                nFadeInKeep = g_world.nMapUiSlot10;
+                g_world.nMapUiSlot1  = 0;
+                g_world.nMapUiSlot10 = 10;
+
+                Check(pName != NULL && pRank != NULL,
+                      "the report's two panels are the tactinit pair 0x1568E0 / 0x1568DC (allocated at 0x3C738..0x3C854)");
+                Check(pName->nPosX == 10 && pName->nPosY == 55 && pName->nStyle == 14 && pName->nFont == 16,
+                      "the name column is laid out left-aligned at (10, 55), 14 rows at 16 pixels (0x3C854..0x3CB00)");
+                Check(pRank->nPosX == 230 && pRank->nPosY == 55,
+                      "the rank column sits right-aligned at x 230 on the same rows (the layout's align 2)");
+                Check(pName->nLineCount == 0 && pRank->nLineCount == 0 && nPromoteKeep == 0,
+                      "this debrief earned no rows: Tact_CheckBattleEnd zeroed both panels and left the flag down (0x352C4, 0x352D8)");
+
+                /* The arm's own first two calls, run on their own so the snapshot holds everything the
+                 * arm blits and nothing it draws: the endmiss backdrop (0x1EB78) and widget 129 through
+                 * the same control rules the arm goes through. Every label probe below excludes this ink. */
+                ClearSurface();
+                PadImage_Blit(pEnd);
+                g_nBlits = 0;
+                (void)UiControl_BlitActivePad(pPad, RecBlitPad, RecBlitPadEx, NULL);
+                nSnapBlits = g_nBlits;
+                for (i32 y = 0; y < 320; ++y) {
+                    for (i32 x = 0; x < 240; ++x) {
+                        aRepInk[(size_t)y * 240u + (size_t)x] = (u16)SurfPix(x, y);
+                    }
+                }
+
+                nTitleW = Text_MeasureWidth(pszTitle);
+                nTitleX = (240 - nTitleW) / 2;                                     /* 0x1EBB4..0x1EBD0 */
+                nOkW    = Text_MeasureWidth(pszOk);
+                nOkX    = (i32)pPad->x + ((i32)pPad->uWidth - nOkW) / 2;          /* 0x1EB98 */
+                nOkY    = (i32)pPad->y + 1;
+                nLblW   = Text_MeasureWidth(pszNameLbl);
+                nRankLblW = Text_MeasureWidth(pszRankLbl);
+
+                /* Open it the way the game does: the flag up, then the debrief's cancel. The arm writes 19
+                 * and returns -- the teardown is the arm AFTER this one. */
+                g_world.bMapPromotionReport = 1;
+                Check(World_MissionCancelEnd(&g_world),
+                      "the debrief cancel runs on screen 13 with the promotion flag up (0x1626C, 0x162B8 taken)");
+                CheckEqI32(g_world.nUiScreen, PUFO_PROMOTION_UI_SCREEN,
+                           "and sends the debrief to 19 (0x162D4) instead of shutting the mission down");
+                Check(g_world.bTactFlag != 0 && g_world.bTactLive != 0,
+                      "no teardown on that arm: Map+0x00 and the live frame survive, the pad has to close the report first");
+                Check(World_bTactFrameLive(&g_world),
+                      "the report is on the tactical frame seam (0x2237C case 0x13 -> 0x223F4)");
+
+                ClearSurface();
+                g_nBlits = 0;
+                World_TactFrame(&g_world);
+                nCtlBlits = g_nBlits;
+                CheckEqI32(nCtlBlits, nSnapBlits,
+                           "the report blits exactly its one control -- the pad is there when the control's own rules have a pad for its state");
+
+                /* The label lands on pad art that is already lit, so a lit-pixel count proves nothing
+                 * here -- the re-coloured pixels do, the same way the debrief score does at 0x1EA4C. */
+                Check(DiffInBox(nOkX, nOkY, nOkX + nOkW, nOkY + 14, aRepInk) > 0,
+                      "unk_EACE0 = TEXTS[1104] \"OK\" draws centred on widget 129's pad ((uWidth - w)/2 + x, y + 1)");
+                Check(DiffInBox((i32)pPad->x, nOkY, nOkX, nOkY + 14, aRepInk) == 0,
+                      "and its centred start leaves the left half of the pad untouched");
+                Check(InkInBox(nTitleX, 10, nTitleX + nTitleW, 24, aRepInk) > 0,
+                      "unk_EAF47 = TEXTS[1107] \"Продвижение\" draws centred at ((240 - w)/2, 10)");
+                Check(InkInBox(0, 10, nTitleX, 24, aRepInk) == 0,
+                      "with nothing left of that centre");
+                Check(InkInBox(10, 30, 10 + nLblW, 44, aRepInk) > 0,
+                      "unk_EADAD = TEXTS[1105] \"Имя солдата\" draws at (10, 30), over the name column's own x");
+                Check(InkInBox(170, 30, 170 + nRankLblW, 44, aRepInk) > 0,
+                      "unk_EAE7A = TEXTS[1106] \"Новое звание\" draws at (170, 30), over the right-aligned rank column");
+
+                nEmptyName = DiffInBox(10, 55, 240, 55 + 16, aRepInk);
+                nEmptyRank = DiffInBox(10, 55 + 16, 240, 55 + 32, aRepInk);
+                Check(nEmptyName == 0 && nEmptyRank == 0,
+                      "with both panels at zero lines the row band is the backdrop and nothing else (UiPanel_DrawText's nLineCount test)");
+                printf("  promotion report: widget 129 at %d,%d width %d; label \"OK\" %d px at %d,%d; title %d px at %d,10; "
+                       "headers %d px at 10,30 and %d px at 170,30; empty row band diff %d + %d\n",
+                       pPad->x, pPad->y, pPad->uWidth, nOkW, nOkX, nOkY,
+                       nTitleW, nTitleX, nLblW, nRankLblW, nEmptyName, nEmptyRank);
+
+                /* Two rows, staged the way 0x34E34..0x34EC0 leaves them: the soldier's own szName in the
+                 * name column and that soldier's rank name out of aszTextE, terminator-inclusive byte
+                 * copies into apLines[n]. The eligibility walk is the writer's (bInZone, operative); only
+                 * the bRankDirty test is missing, because a mission won with an empty field earns none. */
+                for (i32 s = 0; s < g_world.nSoldierCount && nRows < 2; ++s) {
+                    Soldier *pS = g_world.apSoldiers[s];
+
+                    if (pS == NULL || pS->bInZone == 0 || !Unit_bIsOperative(pS)) {
+                        continue;
+                    }
+                    apRow[nRows] = pS;
+                    ++nRows;
+                }
+                for (i32 r = 0; r < nRows; ++r) {
+                    const char *pszRank = g_textTables.pE[apRow[r]->bRankType];
+                    i32 i = 0;
+
+                    for (;;) { pName->apLines[r][i] = (u8)apRow[r]->szName[i]; if (apRow[r]->szName[i] == 0) { break; } ++i; }
+                    i = 0;
+                    for (;;) { pRank->apLines[r][i] = (u8)pszRank[i]; if (pszRank[i] == 0) { break; } ++i; }
+                }
+                pName->nLineCount = nRows;
+                pRank->nLineCount = nRows;
+                Check(nRows == 2, "the report is staged with two rows, one name and one rank each (0x34E34, 0x34E74)");
+
+                ClearSurface();
+                World_TactFrame(&g_world);
+                for (i32 r = 0; r < nRows; ++r) {
+                    i32 nNameW = Text_MeasureWidth((const char *)pName->apLines[r]);
+                    i32 nRankW = Text_MeasureWidth((const char *)pRank->apLines[r]);
+                    i32 nY0 = 55 + 16 * r;
+
+                    Check(DiffInBox(10, nY0, 10 + nNameW, nY0 + 14, aRepInk) > 0,
+                          "the name row draws left-aligned at the panel's x, 16 pixels per row");
+                    Check(DiffInBox(230 - nRankW, nY0, 230, nY0 + 14, aRepInk) > 0,
+                          "the rank row draws right-aligned at the panel's x");
+                    printf("  promotion report: row %d \"%s\" / \"%s\" (rank type %d) at y %d, %d control blits\n",
+                           r, (const char *)pName->apLines[r], (const char *)pRank->apLines[r],
+                           apRow[r]->bRankType, nY0, nCtlBlits);
+                }
+                DumpFrame("tact_hud_promotion");
+
+                for (i32 r = 0; r < nRows; ++r) {
+                    pName->apLines[r][0] = 0;
+                    pRank->apLines[r][0] = 0;
+                }
+                pName->nLineCount = 0;
+                pRank->nLineCount = 0;
+                g_world.bMapPromotionReport = nPromoteKeep;
+                g_world.nUiScreen = nScreenKeep;
+                g_world.nMapUiSlot1  = nFadeKeep;
+                g_world.nMapUiSlot10 = nFadeInKeep;
+                ClearSurface();
+                World_TactFrame(&g_world);
             }
 
             /* Arm one inventory link right here, after every frame of Parts 62-64 is already on disk:

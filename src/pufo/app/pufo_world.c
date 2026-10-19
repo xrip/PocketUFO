@@ -2727,11 +2727,11 @@ static void World_TactStatusRender(void *pUser)
  * The seam covers 0x2237C's jumptable group, "cases 0,3,5,7-12,15", plus 13, the status-banner arm
  * at 0x223E8. Part 76 added the group's six furniture envs -- the fire-mode roster (3), the item
  * sub-mode panel (5), the tactical menu (7), the modal slot lists (10/11), the options top bar (12)
- * and the action buttons (15) -- so the whole iso group now paints here. Part 80, Part 81, Part 82 and Part 83
- * added the four arms that REPLACE the iso layer with their own env and read only cells the bring-up already
+ * and the action buttons (15) -- so the whole iso group now paints here. Part 80, Part 81, Part 82, Part 83 and
+ * Part 84 added the five arms that REPLACE the iso layer with their own env and read only cells the bring-up already
  * owns: 1 inventory (0x224AC), 2 the look-mode minimap (0x224B8), 4 the selected unit's command panel
- * (0x224C4) and 6 the marked-unit overlay (0x224D0). What stays off the seam is the rest of that family:
- * 0x13 confirm dialog and 0x14/0x15 Cydonia.
+ * (0x224C4), 6 the marked-unit overlay (0x224D0) and 0x13 the promotion report (0x223F4). What stays off the seam
+ * is the last two of that family: 0x14 and 0x15, the Cydonia screens (0x223DC).
  *
  * Two deviations, both recorded in docs/parity/game-core.md:
  *   1. The cursor-direction tick runs HERE, before Render_Frame, and RenderFrameEnv.pCursorDir is
@@ -2757,9 +2757,10 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
     case 2:                                              /* minimap arm, 4 the 0x224C4 command-pad arm */
     case 4:                                              /* and 6 the 0x224D0 marker arm -- all outside */
     case 6:                                              /* that group, all drawing no iso layer at all */
+    case PUFO_PROMOTION_UI_SCREEN:                       /* 0x13: 0x223F4, the promotion report */
         return true;
     default:
-        return false;   /* 0x13 and 0x14/0x15 replace the iso layer with another env */
+        return false;   /* 0x14/0x15 replace the iso layer with another env */
     }
 }
 
@@ -3298,9 +3299,28 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
                              ? (const char *)pW->pAssets->pTextRecs
                                + PUFO_DEBRIEF_TEXT_BANNER_FOOTER * PUFO_TEXT_REC_STRIDE
                              : "";                                  /* unk_BC8F4 = aTextRecs + 205*180 */
-    rf.pszBannerPadLabel = "";                                     /* unk_EACE0: no writer, no owner */
+    rf.pszBannerPadLabel = World_TextRec(pW, PUFO_TEXT_REC_OK);      /* unk_EACE0 = TEXTS[1104] "OK" */
     rf.pBannerPanelA     = pW->tactEnv.apPanel[0];                  /* pUiPanel0 @ 0x1568E8 */
     rf.pBannerPanelB     = pW->tactEnv.apPanel[1];                  /* pUiPanel1 @ 0x1568E4 */
+
+    /* Screen 0x13, TactHud_DrawConfirmDialog @ 0x1eb68: the promotion report, the fifth arm that REPLACES
+     * the iso layer (0x2237C case 0x13 -> 0x223F4). Its opener is UiScreen_OnCancel's own branch: on screen
+     * 13 with Map_bPromotionReport @ 0x1153D8 set, World_MissionCancelEnd (0x162B8..0x162D4) sends the debrief
+     * to 19 instead of shutting the mission down. The backdrop is the same endmiss pad the banner uses; the
+     * four labels are TEXTS records, not scratch -- unk_EACE0 = 1104 "OK" centred on bank widget 129's pad,
+     * unk_EAF47 = 1107 "Продвижение" centred at y 10, unk_EADAD = 1105 "Имя солдата" at (10,30) and unk_EAE7A
+     * = 1106 "Новое звание" at (170,30). The boot record-copy loop writes all four, which is why no xref
+     * points at them. The two panels are the report's own columns: pUiPanel2 @ 0x1568E0 (names) and pUiPanel3
+     * @ 0x1568DC (ranks), filled by Tact_ClearSoldierBattleFlags at 0x34E34..0x34EC0. The control is bank
+     * widget 129 (unk_AD6F0 = pBank + 4128). */
+    rf.pConfirmPad        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_CONFIRM_FIRST] : NULL;
+    rf.pConfirmBackdrop   = pW->apTactPads[PUFO_UIPAD_ENDMISSION];   /* pPadEndMission @ 0x156A74 */
+    rf.szConfirmPadLabel  = World_TextRec(pW, PUFO_TEXT_REC_OK);              /* unk_EACE0 = TEXTS[1104] */
+    rf.szConfirmTitle     = World_TextRec(pW, PUFO_TEXT_REC_PROMOTION);       /* unk_EAF47 = TEXTS[1107] */
+    rf.szConfirmLeft      = World_TextRec(pW, PUFO_TEXT_REC_PROMOTION_NAME);  /* unk_EADAD = TEXTS[1105] */
+    rf.szConfirmRight     = World_TextRec(pW, PUFO_TEXT_REC_PROMOTION_RANK);  /* unk_EAE7A = TEXTS[1106] */
+    rf.pConfirmPanelA     = pW->tactEnv.apPanel[2];                  /* pUiPanel2 @ 0x1568E0, the name column */
+    rf.pConfirmPanelB     = pW->tactEnv.apPanel[3];                  /* pUiPanel3 @ 0x1568DC, the rank column */
     rf.nFadeCount        = pW->nMapUiSlot1;                     /* Map_nBannerFadeTicks @ 0x64 */
     rf.nFadeIn           = pW->nMapUiSlot10;                    /* dword_113A40 @ 0x88, post-tick */
     rf.pFadePad          = pW->apTactPads[PUFO_UIPAD_ENEMYSTEP]; /* pPadEnemyStep @ 0x156AA0 */

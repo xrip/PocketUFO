@@ -136,6 +136,16 @@ def count_checks(out):
 
 
 def run_tests():
+    # A suite prints the game's own strings, and those are lang.dat bytes in cp1251 -- the frame
+    # test prints soldier names straight out of the text tables. text=True with no explicit
+    # encoding decodes in the machine's locale, and on Python 3.14 a decode that fails leaves
+    # CompletedProcess.stdout as None with NO exception raised, so the regex below dies with
+    # "expected string or bytes-like object, got 'NoneType'" and the suite is recorded as a FAIL
+    # it did not earn (that is how test_geoscapeframe went red here, on the part that first
+    # printed Cyrillic names). utf-8 + errors="replace" makes the capture byte-safe and
+    # independent of the console codepage; everything this parser reads -- the summary line and
+    # the "ok" / "FAIL" prefixes -- is ASCII.
+    decode = dict(text=True, encoding="utf-8", errors="replace")
     results = []
     if not os.path.isdir(TESTS_DIR):
         return results
@@ -144,7 +154,7 @@ def run_tests():
             continue
         path = os.path.join(TESTS_DIR, fn)
         try:
-            p = subprocess.run([path], capture_output=True, text=True, timeout=120)
+            p = subprocess.run([path], capture_output=True, timeout=120, **decode)
             out = p.stdout
             checks = count_checks(out)
         except Exception as exc:  # noqa: BLE001
@@ -155,7 +165,7 @@ def run_tests():
         if p.returncode != 0:
             try:
                 p = subprocess.run([os.path.abspath(path)], capture_output=True,
-                                   text=True, timeout=120, cwd=".")
+                                   timeout=120, cwd=".", **decode)
                 out = p.stdout
                 checks = count_checks(out)
             except Exception:  # noqa: BLE001

@@ -209,8 +209,23 @@ void TextTables_Free(void)
     memset(&g_textTables, 0, sizeof(g_textTables));
 }
 
-/* Copies <nCount> records of <nStride> bytes from <nSrc> in the blob, always
- * NUL-terminating inside the destination slot. */
+/* Copies <nCount> table entries starting at blob offset <nSrc>, packing the destination at
+ * <nStride>, always NUL-terminating inside the destination slot.
+ *
+ * The two strides are different things and the original keeps them apart: each ENTRY is one
+ * text record, so the SOURCE cursor advances a whole record (PUFO_TEXT_REC_STRIDE, 205) while
+ * the DESTINATION cursor advances the table's own stride. Table A at 0x3856C..0x385A0 is the
+ * clearest of the six -- source at &unk_BE9C9, destination at 0xB2148, nine iterations, and the
+ * loop tail is the pair `v16 += 205; v15 += 20`. Tables B..F follow in the same shape with
+ * their own destination strides (0x385E0 `+205/+40`, 0x38624, 0x38668, 0x386AC, 0x386F4
+ * `+205/+30`), and every PUFO_TXT_*_SRC is an exact record start: 40590 = 198*205 (B, at
+ * &unk_BD75E), 47150 = 230*205 (D, at &unk_BF0FE), 65190 = 318*205 (C, at &unk_C3776), 37105
+ * = 181*205 (F, at &unk_BC9C1), 39155 = 191*205 (H), 39360 = 192*205 (E), 329845 = 1609*205 (G).
+ * Advancing the source by the destination stride instead -- which an earlier version of this
+ * helper did -- reads only record 0's head and then the padding inside it: the first name, the
+ * surname and the five upper Xcom ranks all came out empty, while the tables with one entry (G,
+ * H) survived. The deviation the other way is unchanged: the original walks the source string to
+ * its NUL with no bound on the destination slot, and the port clips at nStride - 1. */
 static bool TextTables_CopyTable(const u8 *pBlob, u32 cbBlob, u32 nSrc,
                                  u32 nCount, u32 nStride, u8 *pDst)
 {
@@ -224,13 +239,13 @@ static bool TextTables_CopyTable(const u8 *pBlob, u32 cbBlob, u32 nSrc,
      * a deviation that turns an overread into an empty table. The widening to
      * 64-bit avoids an overflow in the multiply for large counts. */
     if (nSrc >= cbBlob
-        || (unsigned long long)nSrc + (unsigned long long)nStride * nCount
+        || (unsigned long long)nSrc + (unsigned long long)PUFO_TEXT_REC_STRIDE * nCount
                > (unsigned long long)cbBlob) {
         return false;
     }
     memset(pDst, 0, (size_t)nCount * nStride);
     for (i = 0; i < nCount; ++i) {
-        const u8 *pRec = pBlob + nSrc + (size_t)i * nStride;
+        const u8 *pRec = pBlob + nSrc + (size_t)i * PUFO_TEXT_REC_STRIDE;
         u8       *pOut = pDst + (size_t)i * nStride;
         u32       j;
 

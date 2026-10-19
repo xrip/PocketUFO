@@ -235,6 +235,7 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
 #define PUFO_HUD_TOPBAR_FIRST 60  /* screen 12 */
 #define PUFO_HUD_ACTION_FIRST 89  /* screen 15 */
 #define PUFO_HUD_MARKER_FIRST 104 /* screen 6  -- TactHud_DrawUnitMarkers's one control (pBank + 0xD00 = unk_AD3D0) */
+#define PUFO_HUD_CONFIRM_FIRST 129 /* screen 0x13 -- TactHud_DrawConfirmDialog's one control (pBank + 4128 = unk_AD6F0) */
 #define PUFO_HUD_MODAL_FIRST  105 /* screens 10 and 11 (Menu_OpenSaveSlots 0x188a4 / Menu_OpenLoadSlots 0x18864) */
 
 /* Menu_DrawLabeledPads @ 0x217e0. Seven pads blitted and seven labels drawn, but the label
@@ -293,7 +294,16 @@ i32 TactHud_DrawActionButtons(UiControl *pPads, const TactHudActionGate *pGate,
 /* TactHud_DrawConfirmDialog @ 0x1eb68 (screen 0x13) and TactHud_DrawStatusBanner @ 0x1e920
  * (screen 0xD). Each owns one pad: bank widget 129 (unk_AD6F0 = pBank + 4128) and bank widget
  * 128 (unk_AD6D0 = pBank + 4096). The banner is skipped entirely when the fade counter
- * (apUiSlotsA[1]) is positive. */
+ * (apUiSlotsA[1]) is positive.
+ *
+ * The four labels the dialog draws are TEXTS records, not scratch: unk_EACE0 = TEXTS[1104] "OK",
+ * unk_EADAD = TEXTS[1105] "Имя солдата", unk_EAE7A = TEXTS[1106] "Новое звание" and unk_EAF47 =
+ * TEXTS[1107] "Продвижение". They read as zero-filled .bss because the boot record-copy loop that
+ * fills them stores through a computed address and leaves no xref -- the same census trap as the
+ * Map+0x30/0x32 STRHs in Part 81. The banner screen shares TEXTS[1104] for its own pad label. */
+#define PUFO_TEXT_REC_PROMOTION        1107 /* unk_EAF47 "Продвижение", centred at y 10 */
+#define PUFO_TEXT_REC_PROMOTION_NAME   1105 /* unk_EADAD "Имя солдата", at (10, 30) */
+#define PUFO_TEXT_REC_PROMOTION_RANK   1106 /* unk_EAE7A "Новое звание", at (170, 30) */
 typedef struct TactHudBannerState {
     i32 nFadeCount;        /* apUiSlotsA[1]: a positive value skips the whole banner */
     i32 nReadyFlag;        /* anActionPhaseSave0[92]: non-zero draws the banner green */

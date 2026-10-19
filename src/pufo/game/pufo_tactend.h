@@ -549,6 +549,8 @@ void Tact_ClearSoldierBattleFlags(const TactBattleFlagsEnv *pEnv);
                                                  * status banner draws at (10, 260) (0x1EB24) */
 
 #define PUFO_DEBRIEF_UI_SCREEN       13   /* Map_nUiScreen for the debrief screen (0x351EC) */
+#define PUFO_PROMOTION_UI_SCREEN     19   /* Map_nUiScreen for the promotion report, 0x13: 0x162D4 sends the
+                                           * debrief here when Map_bPromotionReport @ 0x1153D8 is set */
 #define PUFO_BANNER_FADE_TICKS       10   /* dword_113A1C @ Map+0x64 (0x351FC) */
 #define PUFO_SOLDIER_FLAG_LOST       0x20 /* Soldier.bFlags bit 5, the dead/lost mark (0x3535C) */
 #define PUFO_FACILITY_END_FLAG_SET   1    /* abFacilityGrid[0x618] @ 0x159D80, read signed */

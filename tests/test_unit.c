@@ -1591,6 +1591,77 @@ static void TestCreateSoldier(void)
     free(apSoldiers[1]);
 }
 
+/* TextTables_Extract's two cursors, read straight off the ARM: each ENTRY is one text record, so
+ * the source advances a whole record (205) while the destination packs at the table's own stride.
+ * Table A's loop tail at 0x3859C..0x385A0 is `v16 += 205; v15 += 20` with the source at &unk_BE9C9
+ * (blob record 221) and the destination at 0xB2148; B, C, D, E and F follow at 0x385E0, 0x38624,
+ * 0x38668, 0x386AC and 0x386F4 with their own destination strides. Every PUFO_TXT_*_SRC is an
+ * exact record start, so entry i has to be the string that BEGINS at SRC + 205*i. A version of the
+ * helper advanced the source by the destination stride instead, which read record 0's head and then
+ * the padding inside it: the first-name table (88 entries from record 230) and the surname table
+ * (71 from record 318) came out empty except at index 0, so a generated soldier was " " plus one
+ * surname out of 64, and five of the six rank names were empty. G and H have one entry each and
+ * were unaffected, which is why the bug hid. */
+static void TestTextTables(const u8 *pBlob, u32 nRecords)
+{
+    typedef struct {
+        const char  *pszName;
+        u32          nSrc;
+        u32          nCount;
+        u32          nStride;
+        const char  *pTable;
+    } TableCheck;
+
+    const TableCheck aTabs[] = {
+        { "A", PUFO_TXT_A_SRC, PUFO_TXT_A_COUNT, PUFO_TXT_A_STRIDE, (const char *)g_textTables.pA },
+        { "B", PUFO_TXT_B_SRC, PUFO_TXT_B_COUNT, PUFO_TXT_B_STRIDE, (const char *)g_textTables.pB },
+        { "C", PUFO_TXT_C_SRC, PUFO_TXT_C_COUNT, PUFO_TXT_C_STRIDE, (const char *)g_textTables.pC },
+        { "D", PUFO_TXT_D_SRC, PUFO_TXT_D_COUNT, PUFO_TXT_D_STRIDE, (const char *)g_textTables.pD },
+        { "E", PUFO_TXT_E_SRC, PUFO_TXT_E_COUNT, PUFO_TXT_E_STRIDE, (const char *)g_textTables.pE },
+        { "F", PUFO_TXT_F_SRC, PUFO_TXT_F_COUNT, PUFO_TXT_F_STRIDE, (const char *)g_textTables.pF },
+    };
+    i32 nBad = 0;
+
+    for (i32 t = 0; t < (i32)(sizeof(aTabs) / sizeof(aTabs[0])); ++t) {
+        const TableCheck *pT = &aTabs[t];
+        i32 nEmpty = 0;
+        i32 nMismatch = 0;
+
+        Check(pT->nSrc % PUFO_TEXT_REC_STRIDE == 0, "its source offset is a record start");
+
+        for (u32 i = 0; i < pT->nCount; ++i) {
+            const u8 *pRec = pBlob + pT->nSrc + (size_t)i * PUFO_TEXT_REC_STRIDE;
+            const char *pszGot = pT->pTable + (size_t)i * pT->nStride;
+            char  aWant[PUFO_TXT_B_STRIDE];   /* the widest destination slot */
+            u32   j = 0;
+
+            while (j + 1u < pT->nStride && pRec[j] != '\0') {
+                aWant[j] = (char)pRec[j];
+                ++j;
+            }
+            aWant[j] = '\0';
+
+            if (strcmp(aWant, pszGot) != 0) {
+                ++nMismatch;
+            }
+            if (pszGot[0] == '\0') {
+                ++nEmpty;
+            }
+        }
+        printf("  table %s: %u entries from blob record %u, %d mismatched against the record heads, %d empty\n",
+               pT->pszName, pT->nCount, pT->nSrc / PUFO_TEXT_REC_STRIDE, nMismatch, nEmpty);
+        nBad += nMismatch;
+    }
+
+    Check(nBad == 0, "every entry is the text record it starts at, read 205 bytes apart");
+    Check(g_textTables.pD[0][0] != '\0' && g_textTables.pD[1][0] != '\0'
+              && g_textTables.pD[87][0] != '\0',
+          "the first-name table is filled end to end, not just at index 0");
+    Check(g_textTables.pE[0][0] != '\0' && g_textTables.pE[5][0] != '\0',
+          "and so are the six Xcom rank names the promotion report draws from");
+    (void)nRecords;
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1633,6 +1704,7 @@ int main(void)
         if (pBlob != NULL) {
             Check(TextTables_Extract(pBlob, nRecords * PUFO_TEXT_REC_STRIDE),
                   "text tables extracted from the real texts.dat");
+            TestTextTables(pBlob, nRecords);
         } else {
             printf("  FAIL could not load texts.dat\n");
             g_nFailures += 1;
