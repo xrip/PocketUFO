@@ -481,6 +481,9 @@ typedef struct PufoWorldState {
     ProximityCtx    sTactProx;          /* handed to MapCell_TickProximityItems (0x4b724) by the step ctx */
     i32             nStepXcomCount;     /* i32 views of the byte counts 0x128AD7/0x128ADC: EnemyStepCtx */
     i32             nStepEnemyCount;    /* reads them through i32*, the map owns them as bytes; step thunks sync */
+    char            aszDeployMsg1[256]; /* unk_E90D9, the deploy confirm "in" message, formatted by the
+                                         * widget-56 opener (Map_BuildDeployConfirmYesNo 0x18a68, Part 58) */
+    char            aszDeployMsg2[256]; /* unk_E9273, the matching "out" message */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */

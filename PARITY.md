@@ -17,13 +17,13 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 969 / 1103 (87.9%) |
-| Bytes of original code cited | 596852 / 598792 (99.7%) |
-| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 134, 1940 bytes |
-| Behaviour-bearing functions cited | 969 / 969 (100.0%) |
+| Functions cited as evidence | 970 / 1103 (87.9%) |
+| Bytes of original code cited | 596868 / 598792 (99.7%) |
+| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 133, 1924 bytes |
+| Behaviour-bearing functions cited | 970 / 970 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18156 |
+| Test checks run | 18158 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 18 | 18 | 1080 / 1080 | growable pointer array, RNG, string helpers |
 | `app-shell` | 24 | 24 | 6376 / 6376 | WinMain, window class, display bring-up, registry options |
-| `platform` | 2 | 131 | 24 / 1904 | WinCE -> Win32 seams (GDI display, registry) |
+| `platform` | 3 | 131 | 40 / 1904 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 212 | 214 | 178320 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 51 | 43684 / 43684 | tactical HUD, inventory, command pads, input dispatch |
@@ -206,10 +206,11 @@ is the module that answers to it.
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 
-### `platform` (2 functions)
+### `platform` (3 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | `src/pufo/app/pufo_world.c` |
 | `0x460dc` | `j_Font_Free` | 12 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0xa115c` | `??3@YAXPAX@Z` | 12 | `src/pufo/app/pufo_world.c` |
 
@@ -310,7 +311,7 @@ is the module that answers to it.
 | `0x55060` | `Map_LoadRmp` | 952 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
 | `0x49ef0` | `Unit_RecalcInventoryStat` | 940 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_tacthud.h` (+2) |
 | `0x4d950` | `Tact_ProcessActionPhase` | 932 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
-| `0x18a68` | `Map_BuildDeployConfirmYesNo` | 924 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
+| `0x18a68` | `Map_BuildDeployConfirmYesNo` | 924 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.c` (+1) |
 | `0x49410` | `Soldier_Generate` | 892 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x36830` | `Ship_RemoveWithCargo` | 860 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x478e4` | `Unit_SelectBestFireMode` | 852 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+1) |
@@ -463,7 +464,7 @@ is the module that answers to it.
 | `0x26ffc` | `Map_CenterOffsetY` | 24 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_tactctl.h` |
 | `0x3e718` | `TactItem_ctor` | 24 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_mapcell.c` (+2) |
 | `0x548a0` | `MapCell_SetBFlags57_3` | 24 | `src/pufo/game/pufo_mapcell.h` |
-| `0x18a54` | `Map_ClearUiScreen` | 20 | `src/pufo/game/pufo_tactctl.h`, `src/pufo/game/pufo_tactui.h` |
+| `0x18a54` | `Map_ClearUiScreen` | 20 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.h` (+1) |
 | `0x49eb8` | `Unit_bIsOperative` | 20 | `src/pufo/game/pufo_unit.h` |
 | `0x26f78` | `MapCursor_SetFlags` | 16 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.c` (+2) |
 | `0x548c0` | `MapCell_SetBFlags29_4` | 16 | `src/pufo/game/pufo_mapcell.h` |
@@ -1103,10 +1104,10 @@ init-term entries, the image's own C runtime, the compiled-out debug print —
 read instruction by instruction out of `pufobeta.exe.i64`. The rest are
 attributed to the subsystem whose port work they belong to.
 
-Uncited now: 134 functions, 1940 bytes. Of those, 134 carry no game behaviour.
+Uncited now: 133 functions, 1924 bytes. Of those, 133 carry no game behaviour.
 0 are real port work: none
 
-### `platform` — 129 functions, 1880 bytes remaining
+### `platform` — 128 functions, 1864 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1117,7 +1118,6 @@ Uncited now: 134 functions, 1940 bytes. Of those, 134 carry no game behaviour.
 | `0xa1658` | `Crt_CallFnTable` | 48 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
 | `0xa1610` | `atexit` | 24 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
 | `0x11148` | `InitTerm_UiBankEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x11158 j_UiBank_CtorAll; B 0x11164 Bank_RegisterAtexit |
-| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | **no game behaviour** (`code-thunk`): B -> Tact_CheckBattleEnd @ 0x34fbc |
 | `0x22604` | `InitTerm_MapEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x22614 j_Map_InitAndLoadRegistry; B 0x22620 Map_RegisterAtexit |
 | `0x3f0b4` | `InitTerm_DatFileEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x3f0c4 j_DatFile_ctor; B 0x3f0d0 DatFile_RegisterAtexit |
 | `0x460b4` | `InitTerm_FontEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x460c4 j_Font_Init_ReturnArg; B 0x460d0 Font_RegisterAtexit |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 409 |
+| `test_geoscapeframe` | PASS | 411 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

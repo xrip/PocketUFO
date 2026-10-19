@@ -20,6 +20,7 @@
 #include "util/pufo_rand.h"    /* Game_RandU16 @ 0x3e59c, the enemy AI's draw seam */
 #include "game/pufo_roster.h"  /* Roster_CycleNext/Select*, the tact nav widgets (Part 54) */
 #include "game/pufo_tacthud.h" /* TactHud_OpenInventory (0x16ef4), the inventory the mission opens (Part 55) */
+#include "game/pufo_tactctl.h" /* Map_BuildDeployConfirmYesNo @ 0x18a68, the deploy confirm the shell wires (Part 58) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -2787,7 +2788,6 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
  * sTactInput (the input handlers' view); the bank handlers use the union and InputSync moves them.
  *
  * Handlers left NULL, each a recorded separate issue:
- *   56   Map_BuildDeployConfirmYesNo   -- the deploy modal opener (the Part 51 modal bank is ready)
  *   57   Menu_ConfirmQuitDialog        -- needs the screen-8 escape seam wired for tact
  *   58   MenuBtn_ResizeWindow @ 0x19930 -- App_ResizeMainWindow is a caller-window call, not world state
  * ========================================================================== */
@@ -3925,6 +3925,91 @@ static void World_ClickOpenRightHand(void)
     }
 }
 
+/* ------------------------------------------------- deploy confirm (Part 58)
+ *
+ * Widget 56 -> Map_BuildDeployConfirmYesNo @ 0x18a68, ported in pufo_tactctl.c. The shell owns the
+ * two message buffers the original keeps in the scratch pair unk_E90D9 / unk_E9273, the text-record
+ * reader for hook pfnTextRecord, and the modal bank the opener fills. UiModal_Begin stores the two
+ * button callbacks into sModal slots 16/18 (Part 51): the original stores j_Tact_CheckBattleEnd
+ * @ 0x18a44 -- Tact_CheckBattleEnd(map, 1), which World_MissionEndCheck runs on the live frame --
+ * and Map_ClearUiScreen @ 0x18a54, a direct Map_nUiScreen = 0 write. Running the stored callbacks
+ * is the tact pointer dispatch, still the recorded separate issue. */
+
+static const char *World_TactTextRecordThunk(i32 nRecord, void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+
+    if (pW->pAssets == NULL || pW->pAssets->pTextRecs == NULL) {
+        return NULL;                               /* Deploy_Text reads NULL as an empty fragment */
+    }
+    return (const char *)pW->pAssets->pTextRecs + (size_t)nRecord * PUFO_TEXT_REC_STRIDE;
+}
+
+static void World_DeployYesThunk(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        (void)World_MissionEndCheck(pW, 1);        /* j_Tact_CheckBattleEnd @ 0x18a44 */
+    }
+}
+
+static void World_DeployNoThunk(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        pW->nUiScreen = 0;                         /* Map_ClearUiScreen @ 0x18a54 */
+    }
+}
+
+static void World_DeployModalThunk(i32 nX, i32 nY, i32 nCount, const char *szYes, const char *szNo,
+                                   void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    UiModal_Begin(&pW->sModal, nX, nY, nCount, (void *)szYes, World_DeployYesThunk,
+                  (void *)szNo, World_DeployNoThunk);
+}
+
+static void World_ClickDeployConfirm(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    DeployConfirmHooks h;
+    DeployConfirmCtx c;
+
+    if (pW == NULL) {
+        return;
+    }
+    h.pfnPlaySample = World_TactBankSampleThunk;   /* Sound 16 (0x18D70) */
+    h.pfnModal      = World_DeployModalThunk;
+    h.pfnTextRecord = World_TactTextRecordThunk;
+    h.pUser         = pW;
+
+    c.Count.Bounds.bUseCraft    = true;            /* Tact_CountDeployUnits forces it (0x18A84) */
+    c.Count.Bounds.nMissionType = pW->pTactMap->nMissionType;
+    c.Count.Bounds.nMapDimX     = pW->pTactMap->geom.nDimX;
+    c.Count.Bounds.nMapDimY     = pW->pTactMap->geom.nDimY;
+    c.Count.Bounds.nCraftMapX   = pW->bMapCraftMapX;
+    c.Count.Bounds.nCraftMapY   = pW->bMapCraftMapY;
+    c.Count.Bounds.bCraftType   = (pW->nMapCraftIndex < PUFO_FAC_BASE_COUNT
+                                   && pW->apCraft[pW->nMapCraftIndex] != NULL)
+                                      ? pW->apCraft[pW->nMapCraftIndex]->bCraftType : 0;
+    c.Count.apXcom     = pW->pTactMap->apXcomUnits;
+    c.Count.nXcomCount = pW->pTactMap->nXcomCount;
+    c.Count.apCiv      = pW->pTactMap->apCivilians;
+    c.Count.nCivCount  = pW->pTactMap->nCivilianCount;
+    c.pUi     = &pW->sTactUi;
+    c.aszMsg1 = pW->aszDeployMsg1;
+    c.aszMsg2 = pW->aszDeployMsg2;
+    c.nMsgCap = (i32)sizeof pW->aszDeployMsg1;
+    c.pHooks  = &h;
+
+    World_TactUiSyncIn(pW);
+    (void)Map_BuildDeployConfirmYesNo(&c);
+    World_TactUiSyncOut(pW);
+}
+
 static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }
 static void World_ClickSpeed1(void) { World_TactSpeedCall(1); }
 static void World_ClickSpeed2(void) { World_TactSpeedCall(2); }
@@ -4035,7 +4120,7 @@ static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {
     World_ClickOpenLoadSlots,      /* 53  Menu_OpenLoadSlots @ 0x18864 */
     World_ClickOpenSaveSlots,      /* 54  Menu_OpenSaveSlots @ 0x188a4 */
     World_ClickOpenOptions,        /* 55  Options_SyncUiFromMap_GotoScreen12 @ 0x188e4 */
-    NULL,                          /* 56  Map_BuildDeployConfirmYesNo (deferred modal opener) */
+    World_ClickDeployConfirm,    /* 56  Map_BuildDeployConfirmYesNo @ 0x18a68 (Part 58) */
     NULL,                          /* 57  Menu_ConfirmQuitDialog @ 0x18e2c (deferred) */
     NULL,                          /* 58  MenuBtn_ResizeWindow @ 0x19930 (caller window call) */
     World_ClickSamples1614Clear,   /* 59  Map_PlaySamples16_14_ClearUiScreen @ 0x18e9c */

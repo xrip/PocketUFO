@@ -1688,11 +1688,11 @@ int main(void)
                 /* Tact_InitUiControls @ 0x3b498 ran through the shell hook (Part 54): the handlers are
                  * installed on the shell's bank in the g_aUiClickName order, the look control is built,
                  * the HUD origin is recomputed and the direct overrides land. */
-                static const i32 aDeferred[3] = { 56, 57, 58 };
+                static const i32 aDeferred[2] = { 57, 58 };
                 i32 bInstalled = 1, bDeferred = 1, bStart = 1;
                 for (i32 c = 0; c < 113; ++c) {
                     i32 bWant = 1;
-                    for (i32 d = 0; d < 3; ++d) {
+                    for (i32 d = 0; d < 2; ++d) {
                         if (aDeferred[d] == c) { bWant = 0; }
                     }
                     if (bWant && g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
@@ -1702,7 +1702,7 @@ int main(void)
                     if (g_bank.aCtl[c].pfnClick != NULL) { bStart = 0; }
                 }
                 Check(bInstalled, "every handler the port models is installed on bank widgets 0..112");
-                Check(bDeferred, "the three deferred families stay NULL: 56 deploy confirm, 57 quit, 58 resize (4, 5 and 17/18 installed since Parts 55/56/57)");
+                Check(bDeferred, "the two deferred families stay NULL: 57 quit, 58 resize (4, 5, 17/18 and 56 installed since Parts 55..58)");
                 Check(bStart && g_bank.aCtl[128].pfnClick != NULL && g_bank.aCtl[129].pfnClick != NULL,
                       "113..127 stay uninstalled (start-menu widgets) and 128/129 take MenuBtn_Cancel (0x1a24c / 0x1a26c)");
                 const UiControl *pLook = &g_world.sTactLookCtl;
@@ -1908,6 +1908,87 @@ int main(void)
                           && pMapX->nEnemyCount == 0
                           && pMapX->pSelUnit == pMapX->apXcomUnits[1],
                       "widget 5 runs the bracket: 17 played, BeforeEnemyStep cleared the Xcom 0x40D byte (0x4B9E4), the tail cleared the enemy-turn byte (0x4CB88), busy, and phase, input came back, and the saved selection held");
+
+                /* 56: the deploy confirm opener (Map_BuildDeployConfirmYesNo 0x18a68). The count pass
+                 * reads only pCell->nX/nY, nUnitType and a civilian's uHp, so static fixtures drive
+                 * the four buckets exactly: craft tile (3,4), craft type 1 -> the rect 30..50 x
+                 * 40..50 (the 0x3331C rule), one small Xcom inside, one big Xcom outside, one big
+                 * civilian inside, one zero-uHp civilian skipped (0x18C24). (Part 58) */
+                {
+                    static Soldier aDepX[2], aDepC[2];
+                    static MapCell aDepCell[2];
+                    static char aszWant1[256], aszWant2[256];
+                    const char *pRecs = (const char *)g_world.pAssets->pTextRecs;
+                    UiModalState modalSave = g_world.sModal;
+                    u8 bTypeSave = g_world.apCraft[g_world.nMapCraftIndex]->bCraftType;
+                    u8 bMissionSave = pMapX->nMissionType;
+                    u8 bXcomSave = pMapX->nXcomCount;
+                    i32 nCivSave = pMapX->nCivilianCount;
+                    u8 bCraftXSave = g_world.bMapCraftMapX, bCraftYSave = g_world.bMapCraftMapY;
+                    u16 nScreenSave = g_world.nUiScreen;
+                    Soldier *pX0Save = pMapX->apXcomUnits[0], *pX1Save = pMapX->apXcomUnits[1];
+                    Soldier *pC0Save = pMapX->apCivilians[0], *pC1Save = pMapX->apCivilians[1];
+
+                    memset(aDepCell, 0, sizeof(aDepCell));
+                    aDepCell[0].nX = 35; aDepCell[0].nY = 45;   /* inside 30..50 x 40..50 */
+                    aDepCell[1].nX = 80; aDepCell[1].nY = 80;   /* outside */
+                    memset(aDepX, 0, sizeof(aDepX));
+                    memset(aDepC, 0, sizeof(aDepC));
+                    aDepX[0].pCell = &aDepCell[0]; aDepX[0].nUnitType = 0;               /* small in  */
+                    aDepX[1].pCell = &aDepCell[1]; aDepX[1].nUnitType = 5;               /* big out   */
+                    aDepC[0].pCell = &aDepCell[0]; aDepC[0].nUnitType = 6; aDepC[0].uHp = 1; /* big in */
+                    aDepC[1].pCell = &aDepCell[0]; aDepC[1].nUnitType = 6; aDepC[1].uHp = 0; /* skipped */
+
+                    g_world.apCraft[g_world.nMapCraftIndex]->bCraftType = 1;
+                    pMapX->nMissionType = 0;          /* not the AlienBase(4) whole-map branch */
+                    g_world.bMapCraftMapX = 3;
+                    g_world.bMapCraftMapY = 4;
+                    pMapX->nXcomCount = 2;
+                    pMapX->apXcomUnits[0] = &aDepX[0];
+                    pMapX->apXcomUnits[1] = &aDepX[1];
+                    pMapX->nCivilianCount = 2;
+                    pMapX->apCivilians[0] = &aDepC[0];
+                    pMapX->apCivilians[1] = &aDepC[1];
+
+                    snprintf(aszWant1, sizeof(aszWant1), "%d%s%d%s%s", 1,
+                             pRecs + PUFO_TXTREC_DEPLOY_IN * PUFO_TEXT_REC_STRIDE, 1,
+                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE,
+                             pRecs + PUFO_TXTREC_DEPLOY_TAIL * PUFO_TEXT_REC_STRIDE);
+                    snprintf(aszWant2, sizeof(aszWant2), "%d%s%d%s", 0,
+                             pRecs + PUFO_TXTREC_DEPLOY_IN * PUFO_TEXT_REC_STRIDE, 1,
+                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE);
+
+                    nSampleMark = g_nSamples;
+                    CLICK(56);
+                    Check(g_aFrameSamples[nSampleMark] == 16
+                              && g_world.sModal.bOpen
+                              && g_world.sModal.anRect12_14[0] == 170
+                              && g_world.sModal.anRect12_14[1] == 1069
+                              && g_world.sModal.anRect12_14[2] == 5
+                              && strcmp((const char *)g_world.sModal.pLabel15, "YES") == 0
+                              && strcmp((const char *)g_world.sModal.p17, "NO") == 0
+                              && g_world.sModal.pfn16 != NULL && g_world.sModal.pfn18 != NULL
+                              && g_world.nUiScreen == 9
+                              && strcmp(g_world.aszDeployMsg1, aszWant1) == 0
+                              && strcmp(g_world.aszDeployMsg2, aszWant2) == 0,
+                          "widget 56 counts 1 small in / 1 big in / 0 small out / 1 big out (the zero-uHp civilian skipped, 0x18C24), formats both messages from records 28/29/30, plays 16, opens the YES/NO modal bank at 170/1069 five rows and writes screen 9 (0x18DE0)");
+
+                    g_world.sModal.pfn18();  /* the stored NO callback: Map_ClearUiScreen @ 0x18a54 */
+                    Check(g_world.nUiScreen == 0, "the stored NO callback writes Map_nUiScreen = 0 (0x18a54)");
+
+                    g_world.sModal = modalSave;
+                    g_world.nUiScreen = nScreenSave;
+                    g_world.apCraft[g_world.nMapCraftIndex]->bCraftType = bTypeSave;
+                    pMapX->nMissionType = bMissionSave;
+                    pMapX->nXcomCount = bXcomSave;
+                    pMapX->nCivilianCount = nCivSave;
+                    pMapX->apXcomUnits[0] = pX0Save;
+                    pMapX->apXcomUnits[1] = pX1Save;
+                    pMapX->apCivilians[0] = pC0Save;
+                    pMapX->apCivilians[1] = pC1Save;
+                    g_world.bMapCraftMapX = bCraftXSave;
+                    g_world.bMapCraftMapY = bCraftYSave;
+                }
 
                 /* Restore everything the dispatch moved. */
                 pMapX->status = statusSave;

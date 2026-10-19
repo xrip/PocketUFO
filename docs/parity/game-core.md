@@ -19449,3 +19449,46 @@ psi byte, two topic gates, mode) saved and restored. Mutations 2/2: neutered gat
 unchanged -- both handlers were already cited in the tactui unit.
 
 IDB: port-wiring comments at 0x17030 and 0x17148.
+
+## Unit 119 -- the deploy-confirm opener on widget 56 (Part 58)
+
+`Map_BuildDeployConfirmYesNo @ 0x18a68` (widget 56, stored at 0x3B698/0x3BC7C) counts
+units inside/outside the craft rectangle and opens the YES/NO modal. The game half was
+already ported in pufo_tactctl.c (Unit 86 area: bucket rule, inclusive rect, the zero-uHp
+civilian skip at 0x18C24, the itoa+records-28/29/30 messages, sample 16, the
+UiModal_Begin(170,1069,5,"YES",...,"NO",...) store and screen 9 at 0x18DE0); the shell
+owner was the gap.
+
+Shell wiring (pufo_world.c): `World_ClickDeployConfirm` fills `DeployConfirmCtx` from the
+live frame -- bounds from `nMissionType` / `geom.nDimX/Y` / `bMapCraftMapX/Y` /
+`apCraft[nMapCraftIndex]->bCraftType`, rosters `apXcomUnits`/`nXcomCount` and
+`apCivilians`/`nCivilianCount` -- then runs the ported body between SyncIn/SyncOut so
+screen 9 lands on the live `Map_nUiScreen`. The scratch pair unk_E90D9/unk_E9273 became
+shell-owned `aszDeployMsg1/2` (256 bytes each, a modeling choice -- the image gives only
+their addresses). Hook thunks: `World_TactTextRecordThunk` (records at
+`pTextRecs + 205*n`, PUFO_TEXT_REC_STRIDE), and `World_DeployModalThunk` ->
+`UiModal_Begin(&sModal, 170, 1069, 5, "YES", World_DeployYesThunk, "NO",
+World_DeployNoThunk)` -- the Part 51 bank slots 16/18. The stored callbacks mirror the
+original: YES = `j_Tact_CheckBattleEnd @ 0x18a44` (Tact_CheckBattleEnd(map,1); the shell
+runs it as `World_MissionEndCheck`), NO = `Map_ClearUiScreen @ 0x18a54`, a direct
+`Map_nUiScreen = 0` write -- faithful because the callback fires from the pointer
+dispatch, outside the sTactUi staging window (`Ui_ClearScreen` is the staging-state
+twin). Running the stored callbacks is the tact pointer dispatch, the recorded separate
+issue.
+
+Deviation (recorded): none in behavior; the 256-byte message buffers are a shell storage
+choice (the original's scratch sizes are unrecorded).
+
+Tests (test_geoscapeframe): widget 56 gate -- static Soldier/MapCell fixtures drive the
+buckets exactly (craft tile (3,4), type 1 -> rect 30..50 x 40..50): small in 1, big in 1
+(civilian), small out 0, big out 1, zero-uHp civilian skipped; both messages byte-compared
+against snprintf over the golden records 28/29/30; sample 16; modal bank bOpen + 170/1069/5
++ "YES"/"NO" labels + both callbacks stored; screen 9 (0x18DE0). The stored NO callback is
+then run and clears `Map_nUiScreen` (0x18a54). All fixtures save/restore; the deferred
+list shrank to {57, 58}. Mutations 2/2: modal row-count 4 -> 1 red; NO write 1 -> 1 red
+(an earlier mutation that dropped a parameter use produced BUILD FAILED, caught before the
+read). Golden startup frame unchanged. Coverage 970/1103 (+1: 0x18a68 now cited through
+the shell wiring).
+
+IDB: port-wiring comments at 0x18a68, 0x18a44 (slot 16, run after UiModal_End at
+0x14B94..0x14BE4) and 0x18a54 (slot 18).
