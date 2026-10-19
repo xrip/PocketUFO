@@ -1274,7 +1274,33 @@ save: the live mission is unarmed too — 0 of 8 soldiers hold a left-hand item 
 soldiers in the chunk are flagged in. `Tact_SetupCraftCargo @ 0x38F00` (only writer of `unk_156CD0` /
 `unk_157208`, the port's `g_world.aTactCargoSplit` / `aTactCargoWork`) and `Tact_EquipTeamFromCraft @ 0x3BE24`
 both run in the bring-up; what is missing is the DATA — nobody computes how much each craft actually carries
-from the base store, so the equip has nothing to hand out. That is the next unit.
+from the base store, so the equip has nothing to hand out. **Part 78 looked at that claim and it was
+wrong in its last clause** — the amounts are not computed, they are data: `aItemQty[Map_nCraftIndex]` for
+any mission that is not a base defence (0x39018) or `auPerBaseVal[base]` for a base defence (0x3906C, which
+then clears the store), and the squad is dressed off the cell those copies land on.
+
+The cargo -> equip chain is gated end to end now (`TestCargoArmsTheSquad` in tests/test_tactinit.c): 3
+copies of object 6 in craft 0's cargo column, a four-strong squad marked aboard that craft
+(`Soldier.bUnk183 @ +0x0B7 == Map_nCraftIndex`, the mode-0 rule of 0x39744), and the measured result is 3
+items built, the deploy cell empty again, 3 of 4 left hands holding object 6 (the fourth is empty because
+the cargo ran out), then a soldiers-chunk write and read returning those hands through the pool the cargo
+pass built. Two facts worth carrying. (1) `Tact_pDeployCell` is the loose-cargo pile: `Tact_SetupCraftCargo`
+inserts the copies there at 0x39480, the same anchor `Tact_SelectTeamUnits` deploys the team onto, and
+`Tact_EquipTeamFromCraft` reads `pItemList @ +0x34` off it at 0x3C244 — equipping REMOVES from that list,
+so a cell that looks empty after a bring-up is the normal end state, not a lost insert. (2) The candidate
+tables are plain data in the image: `aTactHandObjects @ 0xA62F0` is 13 dwords — 6, 11, 5, 9, 3, 2, 4, 7, 8,
+1, 12, 13, 10, the whole weapon block 1..13 in a fixed try order — and `aTactPackObjects @ 0xA6328` is
+18, 17, 15, 16, 19, 14 for the third pickup (backpack, because it aims at hit rect 10).
+
+The test defect that hid this: `tests/test_tactinit.c` never wired `vis.pSpot` / `pRosters` /
+`ppScratchUnit`, and `Unit_UpdateVisibility` dereferences `pCtx->pSpot->pnTrajFront1036` with no guard
+(pufo_unit.c:1242), so putting a squad into that fixture faulted the mission's visibility tail — the file
+had been running that tail against an empty roster all along. It is wired the way `pufo_world.c:2319-2321`
+wires it. And the shell's unarmed first mission is faithful, not a gap: `main.dat` gives the starting
+Skyranger Cyberdisk x10, Alien surgery x1 and Celatid corpse x3, none of them a hand-table object, and
+`Base_GrantStarterItems @ 0x95FA4` runs with its grant flag clear. The open item is the shell walking the
+buy-and-load path (`Transfer_MoveOneItem @ 0x9602C` is ported) so a real mission can be gated on real
+cargo instead of a fixture weapon.
 
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"

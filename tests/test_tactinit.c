@@ -29,7 +29,9 @@
  * parameters are asserted as ranges, not values.
  */
 #include "asset/pufo_asset.h"
+#include "game/pufo_combat.h"
 #include "game/pufo_mapctx.h"
+#include "game/pufo_save.h"
 #include "game/pufo_ship.h"
 #include "game/pufo_tactinit.h"
 #include "game/pufo_template.h"
@@ -94,6 +96,10 @@ static i32           s_nNextSoldierId;
 static Soldier      *s_apEnemyUnits[ENEMY_CAP];
 static u8            s_nEnemyCount;
 static Soldier      *s_apHidden[SOLDIER_CAP];
+static SpotCtx       s_Spot;
+static UnitRosters   s_Rosters;
+static Soldier      *s_pScratchUnit;
+static i32           s_nTrajFront;   /* the dword standing for pCtxBase.nTrajFront0[1036] */
 static i32           s_nReserve;
 static char          s_aszUnitName[23][40];
 
@@ -417,6 +423,29 @@ static void Fixture_Reset(void)
     for (i32 i = 0; i < PUFO_TACTINIT_PANELS; ++i) s_Env.apPanel[i] = NULL;
 
     /* --- callee contexts: the world-dependent half --- */
+
+    /* The visibility ctx the shared tail hands Unit_UpdateVisibility. The shell wires these three the
+     * same way (pufo_world.c:2319-2321); with them still NULL the walk faults on
+     * `pCtx->pSpot->pnTrajFront1036` (pufo_unit.c:1242) the moment a mission has a unit to refresh, so
+     * every other run here has been running the tail against an empty Xcom roster. */
+    s_Spot.pnTrajFront1036 = &s_nTrajFront;
+    s_Spot.pSelUnit        = NULL;
+    s_Spot.bBusy           = false;
+    s_Spot.bQueueActive    = false;
+    s_Spot.pCameraUnit     = NULL;
+    s_Spot.pfnFocusOnCell  = NULL;
+    s_Spot.pUser           = NULL;
+    s_Env.vis.pSpot         = &s_Spot;
+    s_Env.vis.pRosters      = &s_Rosters;
+    s_Env.vis.ppScratchUnit = &s_pScratchUnit;
+    s_pScratchUnit          = NULL;
+    s_Rosters.apXcom  = s_Map.apXcomUnits;
+    s_Rosters.apEnemy = s_Map.apEnemyUnits;
+    s_Rosters.apCiv   = s_Map.apCivilians;
+    s_Rosters.nXcom   = 0;   /* the counts live in the Map block; the shell re-copies them per tick */
+    s_Rosters.nEnemy  = 0;
+    s_Rosters.nCiv    = 0;
+
     s_Env.teamSelect.apSoldiers    = s_apSoldiers;
     s_Env.teamSelect.nSoldierCount = 0;
     s_Env.teamSelect.apCraft       = s_apCraft;
@@ -844,6 +873,123 @@ static void TestSaveModeClearsFlag(void)
     CheckEqI32(s_bSweepArmed, 1, "apUiSlotsA[2] still armed");
 }
 
+/* 0x39400 -> 0x3C2D8 -> 0x429DC: the cargo the launching craft carries is what arms the squad, and an
+ * armed hand is what the soldiers chunk then saves. Every other run in this file keeps every object's
+ * uRecovScore at 0 (see the fixture) exactly so that no item is ever built; this block carries three
+ * copies of one hand-table weapon and checks the chain end to end -- items built, items on the deploy
+ * cell, left hands filled, and those hands coming back through the item ids against the pool the cargo
+ * pass itself built. */
+static void TestCargoArmsTheSquad(void)
+{
+    /* The first id of the 13-entry hand table unk_A62F0, the copies carried, the squad aboard. */
+    enum { nGun = 6, nCarry = 3, nSquad = 4 };
+    static DatFile dat;
+    SoldierRecordEnv arms;
+    TeamUnitsState   rosters;
+    i32 nOnCell = 0;
+    i32 nHandWrite = 0;
+    i32 nHandRead = 0;
+    i32 nCount = 0;
+
+    printf("cargo -> equip -> soldiers chunk: the craft's cargo is what arms the squad\n");
+
+    Fixture_Reset();
+    srand(1);
+
+    /* The squad the mission launches with. Tact_SelectTeamUnits (mode 0) accepts a soldier when
+     * Soldier.bUnk183 == Map_nCraftIndex, i.e. the roster says "aboard craft 0", which is what a craft
+     * launch hands over; every other run here leaves the soldier array empty, so nobody is selected and
+     * the equip has no one to dress. auStat[8] is the strength the equip pass divides the carried weight
+     * by -- 0 makes every item too heavy, and the original divides by it without a guard. */
+    for (i32 i = 0; i < nSquad; ++i) {
+        (void)Unit_CreateAndClassify(&s_Env.deploy.create, 0);   /* 0x22BA0, nKind 0 = XCom */
+    }
+    for (i32 i = 0; i < s_nSoldierCount; ++i) {
+        s_apSoldiers[i]->bUnk183 = (u8)s_nCraftIndex;   /* 0x0B7: the craft the roster says they are aboard */
+    }
+    s_Env.teamSelect.nSoldierCount = s_nSoldierCount;
+
+    s_aObjects[nGun].aItemQty[s_nCraftIndex] = (u16)nCarry;
+    s_aObjects[nGun].bAmmoCap   = 255;   /* the ammo-split loop skips it at 0x3929C: no ammo bookkeeping */
+    s_aObjects[nGun].bTwoHanded = 0;     /* so the tally keeps it and the build loop sees the score */
+
+    RunMission(0);
+
+    for (TactItem *pItem = (s_pDeployCell != NULL) ? s_pDeployCell->pItemList : NULL;
+         pItem != NULL; pItem = pItem->pNext) {
+        if (pItem->pObj == &s_aObjects[nGun]) { ++nOnCell; }
+    }
+    CheckEqI32(s_nTactItems, nCarry, "the cargo pass built one item per carried copy (0x39414..0x39570)");
+    CheckEqI32(nOnCell, 0,
+               "and the deploy cell is empty again at the end: the cargo pass inserted the copies there (0x39480) and the equip pass took them off it (0x3C2D8)");
+
+    for (i32 i = 0; i < (i32)s_Map.nXcomCount; ++i) {
+        Soldier *pUnit = s_Map.apXcomUnits[i];
+
+        if (pUnit == NULL) {
+            continue;
+        }
+        printf("  unit %d: strength %d, hand object %d, equipped %d\n", i, (i32)pUnit->auStat[8],
+               (pUnit->pHandL != NULL && pUnit->pHandL->pObj != NULL)
+                   ? (i32)(pUnit->pHandL->pObj - s_aObjects) : -1,
+               (i32)pUnit->bUnk961);
+        if (pUnit->pHandL != NULL && pUnit->pHandL->pObj == &s_aObjects[nGun]) { ++nHandWrite; }
+    }
+    CheckEqI32((i32)s_Map.nXcomCount, nSquad, "the selection took the whole squad, because each one is aboard the launching craft (0x39744, mode 0)");
+    CheckEqI32(nHandWrite, nCarry, "and every carried copy ended in a left hand, never more hands than copies (0x3C2D8)");
+
+    Check(Save_AssignRosterIndices(true, s_apSoldiers, s_nSoldierCount, s_apTactItems, s_nTactItems),
+          "the save's own numbering pass ran over the roster and the pool the cargo built (0x42EA0)");
+
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.nXcomCount     = s_Map.nXcomCount;
+    rosters.nEnemyCount    = s_Map.nEnemyCount;
+    rosters.nCivilianCount = s_Map.nCivilianCount;
+    rosters.apXcomUnits    = s_Map.apXcomUnits;
+    rosters.apEnemyUnits   = s_Map.apEnemyUnits;
+    rosters.apCivilians    = s_Map.apCivilians;
+
+    remove("test_tactcargo.tmp");
+    DatFile_ctor(&dat);
+    Check(DatFile_Open(&dat, "test_tactcargo.tmp", PUFO_DAT_CREATE, 8)
+              && Save_WriteSoldiers(&dat, s_apSoldiers, s_nSoldierCount, 1, &rosters),
+          "  the soldiers chunk written over the mission's own roster");
+    DatFile_Close(&dat);
+
+    DatFile_ctor(&dat);
+    Check(DatFile_Open(&dat, "test_tactcargo.tmp", PUFO_DAT_READ, 0), "  reopened");
+    memset(&arms, 0, sizeof(arms));
+    arms.apSoldiers     = s_apSoldiers;
+    arms.nSoldierCount  = s_nSoldierCount;
+    arms.apTactItems    = s_apTactItems;
+    arms.nTactItemCount = s_nTactItems;
+    arms.pEmptyItem     = s_Env.pUnk138EA0;
+    Check(Save_ReadSoldiers(&dat, s_apSoldiers, &nCount, s_nSoldierCount, &arms, 0),
+          "  every record read back");
+    for (i32 i = 0; i < (i32)s_Map.nXcomCount; ++i) {
+        Soldier *pUnit = s_Map.apXcomUnits[i];
+
+        if (pUnit != NULL && pUnit->pHandL != NULL && pUnit->pHandL->pObj == &s_aObjects[nGun]) {
+            ++nHandRead;
+        }
+    }
+    Check(nHandRead == nHandWrite && nHandRead > 0,
+          "the armed hands come back as item ids resolved against the cargo pool (0x429DC -> 0x41E58)");
+    DatFile_Close(&dat);
+    remove("test_tactcargo.tmp");
+
+    for (i32 i = 0; i < s_nTactItems; ++i) {
+        free(s_apTactItems[i]);
+        s_apTactItems[i] = NULL;
+    }
+    s_nTactItems = 0;
+    for (i32 i = 0; i < s_nSoldierCount; ++i) {
+        free(s_apSoldiers[i]);
+        s_apSoldiers[i] = NULL;
+    }
+    s_nSoldierCount = 0;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -863,6 +1009,7 @@ int main(void)
     TestBriefing();
     TestBriefingSkipped();
     TestSaveModeClearsFlag();
+    TestCargoArmsTheSquad();
 
     Asset_CloseArchives();
 

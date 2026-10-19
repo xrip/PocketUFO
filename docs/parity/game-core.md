@@ -20020,4 +20020,47 @@ the Part 76 census read it that way. At save time 0 of 8 live soldiers hold a le
 slot ids are honestly 0x7FFF. `Tact_SetupCraftCargo @ 0x38F00` is the only writer of `unk_156CD0` and
 `unk_157208` (the port's `g_world.aTactCargoSplit` / `aTactCargoWork`, 160 and 480 entries), and it and
 `Tact_EquipTeamFromCraft @ 0x3BE24` both run in the bring-up (pufo_tactinit.c:536-538): the shell's
-mission fixture simply has no cargo to hand out. The cargo chain's DATA is a separate issue.
+mission fixture simply has no cargo to hand out. The cargo chain's DATA is a separate issue.
+## Part 78 - the cargo a craft carries is what arms the squad, gated end to end
+
+Part 77 left the loaded roster unarmed and two possible causes on the table. This unit settles it with a
+gate rather than an argument, and the gate runs on the real bring-up.
+
+The chain, read off the ARM. `Tact_SetupCraftCargo @ 0x38F00` decides what a mission has: for any mission
+that is not a base defence, every object's `uRecovScore` becomes `aItemQty[Map_nCraftIndex]` (0x39018),
+the launching craft's own cargo column -- the same column the ships chunk stores -- while a base defence
+moves `auPerBaseVal[base]` into the score and CLEARS the store column (0x3906C, 0x390B4/0x390C8). Nothing
+computes an amount: the mission carries what the craft's column or the base's store says. It then builds
+one `TactItem` per copy (0x39414..0x39570), sets each item's ammo from the split and work tables, and
+inserts every copy on `Tact_pDeployCell` (0x39480) -- the anchor cell `Tact_SelectTeamUnits @ 0x3975C`
+deploys the team onto. The deploy cell is the loose-cargo pile the mission starts with.
+
+`Tact_EquipTeamFromCraft @ 0x3BE24` dresses the squad from that pile: 0x3C244 reads the cell's
+`pItemList @ +0x34`. The left-hand candidates are `aTactHandObjects @ 0xA62F0`, 13 dwords in a fixed try
+order -- 6, 11, 5, 9, 3, 2, 4, 7, 8, 1, 12, 13, 10 -- which is exactly the object table's weapon block
+1..13. Then ammo for the weapon it took, then a third pickup from `aTactPackObjects @ 0xA6328` (18, 17,
+15, 16, 19, 14), which lands in the backpack because the rect it aims at is rect 10. An equipped item
+leaves the cell list, and `Soldier.bUnk961 @ +0x3C1` is set so a later pass takes the loadout arm instead
+of the craft arm.
+
+Gate: `TestCargoArmsTheSquad` in tests/test_tactinit.c. Three copies of object 6 in craft 0's cargo
+column; a squad of four made by `Unit_CreateAndClassify` and marked aboard craft 0 (`Soldier.bUnk183 @
++0x0B7 == Map_nCraftIndex`, the mode-0 acceptance rule of 0x39744). Measured: 3 items built; the deploy
+cell empty again at the end, because the equip took the copies off it; 3 of the 4 left hands holding
+object 6, the fourth empty because the cargo ran out; then `Save_AssignRosterIndices @ 0x42EA0` and a
+soldiers-chunk write and read returning those same hands, resolved through the pool the cargo pass built.
+
+Two fixture defects came out of the run, both in the test and neither in the port. (1) The tactinit fixture
+never wired `vis.pSpot`, `vis.pRosters` or `vis.ppScratchUnit`, and `Unit_UpdateVisibility` dereferences
+`pCtx->pSpot->pnTrajFront1036` with no test (pufo_unit.c:1242) -- so the mission's visibility tail had
+never once run against a unit in that file, and a squad in it faulted. Wired now as `pufo_world.c:2319-2321`
+wires it. (2) The fixture keeps every object's `uRecovScore` at 0, which is why no cargo item was ever
+built there and the cargo -> equip link had no gate at all.
+
+What this decides about the shell's own unarmed roster: it is faithful. `main.dat`'s cargo columns give the
+starting Skyranger Cyberdisk x10, Alien surgery x1 and Celatid corpse x3 (checked in test_startnew), none
+of them one of the 13 hand-table objects, and `Base_GrantStarterItems @ 0x95FA4` is called at 0x95408 with
+its grant flag clear, which adds nothing. A squad launching from a craft that carries no weapon object
+arrives with empty hands in the original too. Buying and loading cargo -- `Transfer_MoveOneItem @ 0x9602C`
+is ported -- is what the shell's own flow still has to walk before the fire-mode panel and the item strip
+can be gated on the shell's cargo instead of a fixture weapon.
