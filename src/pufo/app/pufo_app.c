@@ -394,8 +394,10 @@ static void App_DrawFrameHook(void *pUser)
 }
 
 /* LoadGame @ 0x44bbc over the shell's world state. The slot path is szAppDir + "sav" + slot +
- * ".sav"; the shell uses the working directory (DEVIATION: the original resolves szAppDir from
- * the exe path in InitInstance). The state line is the shell's own report, as in App_HookNewGame. */
+ * ".sav" and szAppDir @ 0x1883b0 is the exe directory App_BuildAssetPaths derived from
+ * GetModuleFileNameW -- the same string SaveSlot_FormatList @ 0x45904 builds its seven labels from, so
+ * the list and the loader look at one directory. The state line is the shell's own report, as in
+ * App_HookNewGame. */
 static i32 App_HookLoadGame(i32 nSlot, void *pUser)
 {
     static WorldHooks hooks; /* Part 54: the world keeps this pointer for the whole run, so it must not live on the hook's stack */
@@ -430,7 +432,7 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pTactOptions        = &g_options;
 
     {
-        i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_fontSys, &g_options, &hooks);
+        i32 nRet = World_LoadSlot(&g_world, g_szAppDir, nSlot, &g_assets, &g_fontSys, &g_options, &hooks);
         printf("pocketufo: load slot %d: %s (%d funds, %d bases, %d soldiers, %d craft, ui screen %d)\n",
                (int)nSlot, nRet != 0 ? "loaded" : "no save", (int)g_world.nFunds,
                (int)g_world.saveBases.bBaseCount, (int)g_world.nSoldierCount,
@@ -457,7 +459,7 @@ static i32 App_HookSaveGame(i32 nSlot, void *pUser)
     hooks.pfnRenderFrame = App_DrawFrameHook;
 
     {
-        i32 nRet = World_SaveSlot(&g_world, "", nSlot, &hooks);
+        i32 nRet = World_SaveSlot(&g_world, g_szAppDir, nSlot, &hooks);
         printf("pocketufo: save slot %d: %s (%d soldiers, %d craft, %d tact items, ui screen %d)\n",
                (int)nSlot, nRet != 0 ? "written" : "failed", (int)g_world.nSoldierCount,
                (int)g_world.bCraftCount, (int)g_world.nTactItemCount, (int)g_world.nUiScreen);
@@ -1436,6 +1438,34 @@ static void App_FindClickFlag(LPCWSTR pwszCmd)
     g_bClickAt = true;
 }
 
+static WCHAR g_awcScriptPath[MAX_PATH];
+
+/* `--script <path>` on the command line: run the step list at App_RunDebugScript and leave.
+ * Not part of the original. */
+static LPCWSTR App_FindScriptFlag(LPCWSTR pwszCmd)
+{
+    static const WCHAR awcFlag[] = L"--script";
+    LPCWSTR            pwszArg;
+    int                i = 0;
+
+    if (pwszCmd == NULL) {
+        return NULL;
+    }
+    pwszArg = wcsstr(pwszCmd, awcFlag);
+    if (pwszArg == NULL) {
+        return NULL;
+    }
+    pwszArg += (int)(sizeof(awcFlag) / sizeof(WCHAR)) - 1;
+    while (*pwszArg == L' ') {
+        ++pwszArg;
+    }
+    while (*pwszArg != L'\0' && *pwszArg != L' ' && i < MAX_PATH - 1) {
+        g_awcScriptPath[i++] = *pwszArg++;
+    }
+    g_awcScriptPath[i] = L'\0';
+    return (i == 0) ? NULL : g_awcScriptPath;
+}
+
 /* Writes the logical 240x320 RGB565 surface as a binary PPM (P6). A debug hook for
  * `pocketufo --dump-frame <path>`: the rendered frame can then be inspected or compared without
  * a screen grab. Not part of the original — the original presents through GX. */
@@ -1473,6 +1503,235 @@ static void App_DumpFramePpm(LPCWSTR pwszPath)
     (void)CloseHandle(hFile);
 }
 
+/* `--script <path>`: the end-to-end driver (the shell's own scaffolding, not the original).
+ *
+ * One step per line; `#` starts a comment. Every step calls the function the real UI reaches at
+ * that point, and `click` goes through the pen path -- Input_OnPointer for the press,
+ * Input_OnPointerUp for the release -- exactly as WM_LBUTTONDOWN/WM_LBUTTONUP do:
+ *
+ *   dump <path>   render one frame, write it as a PPM, print the step
+ *   click x y     press+release at logical 240x320 coordinates
+ *   tick n        n anim ticks (0xC352) plus n pulses (0xC353) and n anim-progress ticks (0xC354)
+ *   newgame       App_HookNewGame -- what the menu's new-game row runs
+ *   pick          App_NewGamePickThroughPen -- the placement screen's confirm, through the pen
+ *   close         World_CloseGeoscape -- the placement screen's close control
+ *   save n        App_HookSaveGame -- World_SaveSlot, what a save-slot row runs
+ *   load n        App_HookLoadGame -- LoadGame @ 0x44bbc, what a load-slot row runs
+ *   state         print the shell's own state line
+ *
+ * The point is one process walking the whole path -- menu, new game, placement, geoscape, save,
+ * load -- writing a picture at each step so each step is checkable as a picture. */
+static void App_ScriptDump(const char *pszName)
+{
+    WCHAR awcPath[MAX_PATH];
+
+    (void)MultiByteToWideChar(CP_ACP, 0, pszName, -1, awcPath, MAX_PATH - 1);
+    awcPath[MAX_PATH - 1] = L'\0';
+    App_DrawFrame();
+    App_DumpFramePpm(awcPath);
+    printf("pocketufo: step dump %s\n", pszName);
+    fflush(stdout);
+}
+
+static void App_ScriptState(const char *pszLabel)
+{
+    printf("pocketufo: state %s: start screen %d, list mode %d, geoscape screen %d, geo ui byte %d, tact flag %d, "
+           "bases %d, base 0 at %d/%d, soldiers %d, funds %d\n",
+           pszLabel, g_nUiScreen, g_nListMode, (int)g_world.screen.nGeoscapeScreen, (int)g_world.bGeoscapeUi,
+           (int)g_world.bTactFlag, (int)g_world.nBaseCount,
+           (g_world.nBaseCount > 0) ? g_world.apBases[0]->nUnk8 : 0,
+           (g_world.nBaseCount > 0) ? g_world.apBases[0]->nUnk12 : 0,
+           (int)g_world.nSoldierCount, (int)g_world.nFunds);
+    fflush(stdout);
+}
+
+/* DEVIATION (shell scaffolding, not part of the original): the base layout the placement screen draws,
+ * printed as numbers. tileA/tileB/layer2 are the three stamped layers, facTyp the facility each cell
+ * belongs to, days the build countdown. The craft rows are what BaseFacScreen_DrawNameGrid's hangar pass
+ * compares against (Ship.bHangarX/Y @ +0x12/+0x13 against the cell's column and row, with bAtBase and
+ * bHomeBase as the other two gates at 0x6216C..0x6219C). */
+static void App_ScriptGrid(i32 nBase)
+{
+    static const char *const azLayer[4] = { "tileA", "tileB", "layer2", "facTyp" };
+    static const i32 aOff[4] = { PUFO_GRID_TILEA_OFF, PUFO_GRID_TILEB_OFF,
+                                 PUFO_GRID_LAYER2_OFF, PUFO_GRID_FAC_TYPE_OFF };
+    const i32 nFac = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase;
+
+    printf("pocketufo: grid base %d\n", nBase);
+    for (i32 L = 0; L < 4; ++L) {
+        for (i32 r = 0; r < 6; ++r) {
+            printf("  %s row %d:", azLayer[L], r);
+            for (i32 c = 0; c < 6; ++c) {
+                printf(" %3u", (unsigned)g_world.abFacilityGrid[nFac + aOff[L] + 6 * r + c]);
+            }
+            printf("\n");
+        }
+    }
+    for (i32 r = 0; r < 6; ++r) {
+        printf("  days  row %d:", r);
+        for (i32 c = 0; c < 6; ++c) {
+            printf(" %3u", (unsigned)g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nBase + 6 * r + c]);
+        }
+        printf("\n");
+    }
+    for (i32 i = 0; i < (i32)g_world.bCraftCount; ++i) {
+        const Ship *pShip = g_world.apCraft[i];
+
+        if (pShip == NULL) {
+            continue;
+        }
+        printf("  craft %d: type %d home %d atBase %d hangar %d/%d\n", i,
+               (i32)pShip->bCraftType, (i32)pShip->bHomeBase, (i32)pShip->bAtBase,
+               (i32)pShip->bHangarX, (i32)pShip->bHangarY);
+    }
+    fflush(stdout);
+}
+
+/* DEVIATION (shell scaffolding, not part of the original): the geoscape frame's own wiring, printed.
+ * Geoscape_BlitMapView returns without drawing when any one of its seven inputs is missing, so this is
+ * the quickest way to see why a frame comes out as whatever the surface held before. */
+static void App_ScriptGeoFrame(void)
+{
+    const GeoscapeFrameState *pF = &g_world.frame;
+
+    printf("pocketufo: geo frame: ui byte %d, screen %d, zoom mode %d, scroll %d/%d, map %dx%d\n",
+           (int)g_world.bGeoscapeUi, (int)g_world.screen.nGeoscapeScreen, (int)g_world.view.nMode,
+           (int)g_world.view.nScrollX, (int)g_world.view.nScrollY,
+           (int)g_world.view.nMapW, (int)g_world.view.nMapH);
+    for (i32 z = 0; z < 3; ++z) {
+        printf("  set %d: grid %d overlay %d tiles %d\n", z,
+               g_world.sets[z].pGrid != NULL, g_world.sets[z].pOverlay != NULL,
+               g_world.sets[z].pTiles != NULL);
+    }
+    printf("  map env: view %d mapPad %d layerPad %d worldBits %d mapPal %d time %d overlayX %d\n",
+           pF->map.pView != NULL, pF->map.pMapPad != NULL, pF->map.pLayerPad != NULL,
+           pF->map.pWorldBits != NULL, pF->map.pMapPal != NULL, pF->map.pTime != NULL,
+           pF->map.pnOverlayOriginX != NULL);
+    printf("  draw env: mapView %d crosshair %d status %d radar %d worldSize %d\n",
+           pF->draw.pMapView != NULL, pF->draw.pCrosshair != NULL, pF->draw.pStatusPanel != NULL,
+           pF->draw.pRadarArm != NULL, g_world.ui.pWorldSize != NULL);
+    fflush(stdout);
+}
+
+/* n anim ticks, n pulses and n anim-progress ticks -- the same three timer bodies WndProc
+ * dispatch, run the way the --dump-frame path already runs them. */
+static void App_ScriptTicks(i32 nCount)
+{
+    for (i32 i = 0; i < nCount; ++i) {
+        App_TickPulse();
+        App_TickAnimProgress();
+    }
+    for (i32 i = 0; i < nCount; ++i) {
+        App_TickAnim();
+    }
+}
+
+static void App_RunDebugScript(LPCWSTR pwszPath)
+{
+    static char azBuf[8192];
+    HANDLE      hFile;
+    DWORD       cbRead = 0;
+    char       *pszLine;
+    char       *pszNext;
+    char        azArg[3][64];
+    i32         nArgs;
+
+    hFile = CreateFileW(pwszPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        printf("pocketufo: --script: cannot open the script\n");
+        fflush(stdout);
+        return;
+    }
+    if (!ReadFile(hFile, azBuf, (DWORD)sizeof(azBuf) - 1, &cbRead, NULL)) {
+        cbRead = 0;
+    }
+    (void)CloseHandle(hFile);
+    azBuf[cbRead] = '\0';
+
+    for (pszLine = azBuf; pszLine != NULL && *pszLine != '\0'; pszLine = pszNext) {
+        char *pszEnd = strchr(pszLine, '\n');
+
+        pszNext = (pszEnd != NULL) ? pszEnd + 1 : NULL; /* the next line, read before the newline
+                                                         * below is replaced */
+
+        if (pszEnd != NULL) {
+            *pszEnd = '\0';
+        }
+        if (strchr(pszLine, '\r') != NULL) {
+            *strchr(pszLine, '\r') = '\0';
+        }
+        if (*pszLine == '#' || *pszLine == ' ') {
+            continue;
+        }
+
+        nArgs = 0;
+        for (char *pszTok = pszLine; pszTok != NULL && nArgs < 3; ++nArgs) {
+            i32 i = 0;
+            while (*pszTok == ' ') {
+                ++pszTok;
+            }
+            while (*pszTok != '\0' && *pszTok != ' ' && i < 63) {
+                azArg[nArgs][i++] = *pszTok++;
+            }
+            azArg[nArgs][i] = '\0';
+            if (i == 0) {
+                break;
+            }
+        }
+        if (nArgs == 0) {
+            continue;
+        }
+
+        if (strcmp(azArg[0], "dump") == 0 && nArgs > 1) {
+            App_ScriptDump(azArg[1]);
+        } else if (strcmp(azArg[0], "click") == 0 && nArgs > 2) {
+            App_PointerLogical((i32)atoi(azArg[1]), (i32)atoi(azArg[2]), true);
+            App_OnPointerUp();
+            printf("pocketufo: step click %s %s\n", azArg[1], azArg[2]);
+        } else if (strcmp(azArg[0], "tick") == 0 && nArgs > 1) {
+            App_ScriptTicks((i32)atoi(azArg[1]));
+        } else if (strcmp(azArg[0], "newgame") == 0) {
+            App_HookNewGame(NULL);
+            printf("pocketufo: step newgame\n");
+        } else if (strcmp(azArg[0], "pick") == 0) {
+            App_NewGamePickThroughPen();
+            printf("pocketufo: step pick\n");
+        } else if (strcmp(azArg[0], "close") == 0) {
+            World_CloseGeoscape(&g_world);
+            printf("pocketufo: step close\n");
+        } else if (strcmp(azArg[0], "save") == 0 && nArgs > 1) {
+            (void)App_HookSaveGame((i32)atoi(azArg[1]), NULL);
+            printf("pocketufo: step save slot %s\n", azArg[1]);
+        } else if (strcmp(azArg[0], "load") == 0 && nArgs > 1) {
+            (void)App_HookLoadGame((i32)atoi(azArg[1]), NULL);
+            printf("pocketufo: step load slot %s\n", azArg[1]);
+        } else if (strcmp(azArg[0], "state") == 0) {
+            App_ScriptState((nArgs > 1) ? azArg[1] : "");
+        } else if (strcmp(azArg[0], "grid") == 0) {
+            App_ScriptGrid((nArgs > 1) ? atoi(azArg[1]) : 0);
+        } else if (strcmp(azArg[0], "geoframe") == 0) {
+            App_ScriptGeoFrame();
+        } else {
+            printf("pocketufo: step UNKNOWN '%s'\n", azArg[0]);
+        }
+        fflush(stdout);
+    }
+}
+
+/* The two debug paths (--dump-frame, --script) leave through the same teardown the window
+ * path runs at App_QuitDisplay, minus the message loop. */
+static void App_DebugTeardown(void)
+{
+    if (g_bWorldReady) {
+        World_Free(&g_world);
+        g_bWorldReady = false;
+    }
+    Boot_Shutdown(&g_assets);
+    g_bAssetsLoaded = false;
+    Gx_Close(&g_gx);
+}
+
 /* Fill the logical surface with a single RGB565 colour. Fallback when the assets
  * could not be loaded, so the window still proves the display path. */
 static void App_ClearSurface(u16 colour)
@@ -1489,7 +1748,7 @@ static void App_ClearSurface(u16 colour)
     }
 }
 
-static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
+static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
 {
     WNDCLASSW wc;
     HWND      hWnd;
@@ -1519,11 +1778,23 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
      * 240x320 surface is cropped by the title bar and borders. */
     {
         RECT rc = { 0, 0, PUFO_SURF_W, PUFO_SURF_H };
-        DWORD dwStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
-        (void)AdjustWindowRectEx(&rc, dwStyle, FALSE, 0);
+        DWORD dwStyle = WS_OVERLAPPEDWINDOW;
+        DWORD dwExStyle = 0;
+
+        /* DEVIATION (shell scaffolding): the two debug paths (--dump-frame, --script) never show the
+         * window. Nothing they do needs a picture on the desktop -- the frame they check is the logical
+         * surface App_DumpFramePpm writes -- and a window that pops up and grabs the foreground on every
+         * test run gets in the way of the person using the machine. The interactive path keeps the
+         * original's visible window. */
+        if (bHidden) {
+            dwExStyle |= WS_EX_NOACTIVATE;
+        } else {
+            dwStyle |= WS_VISIBLE;
+        }
+        (void)AdjustWindowRectEx(&rc, dwStyle, FALSE, dwExStyle);
         g_nScreenW = rc.right - rc.left; /* 0x9FE44, from GetSystemMetrics(0) there */
         g_nScreenH = rc.bottom - rc.top; /* 0x9FE58, from GetSystemMetrics(1) there */
-        hWnd = CreateWindowExW(0, PUFO_CLASS_NAME, PUFO_WINDOW_NAME,
+        hWnd = CreateWindowExW(dwExStyle, PUFO_CLASS_NAME, PUFO_WINDOW_NAME,
                                dwStyle,
                                CW_USEDEFAULT, CW_USEDEFAULT,
                                g_nScreenW, g_nScreenH,
@@ -1565,7 +1836,9 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
         fflush(stdout);
     }
 
-    ShowWindow(hWnd, nCmdShow);   /* 0x9FE60 */
+    if (!bHidden) {
+        ShowWindow(hWnd, nCmdShow);   /* 0x9FE60 */
+    }
     UpdateWindow(hWnd);           /* 0x9FE68 */
 
     /* 0x9FE74..0x9FE94: the stored pair straight back through SetWindowPos -- HWND_TOP (hwndInsertAfter 0),
@@ -1746,14 +2019,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     unsigned short colour = 0x0000u; /* black in RGB565 */
 
     LPCWSTR pszDumpPath;
+    LPCWSTR pszScript;
 
     (void)hPrevInstance;
     pszDumpPath = App_FindDumpFlag(lpCmdLine);
+    pszScript = App_FindScriptFlag(lpCmdLine);
     App_FindClickFlag(lpCmdLine);
     App_FindNewGameFlag(lpCmdLine);
     App_FindLoadSlotFlag(lpCmdLine);
 
-    if (!App_InitInstance(hInstance, nCmdShow)) {
+    if (!App_InitInstance(hInstance, nCmdShow, pszDumpPath != NULL || pszScript != NULL)) {
         return 0;
     }
 
@@ -1768,6 +2043,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (g_bAssetsLoaded) {
         App_InitStartupUi();
         g_bWorldReady = World_Init(&g_world);
+        /* Map_nUiScreen is ONE global in the original and the world's copy is the one LoadGame @ 0x44CB0
+         * tests (`== 17`) to decide that a load starts from the start menu -- that arm runs
+         * StartUi_Shutdown, then Geoscape_InitUI(1), and zeroes the soldier/base/craft/strateg counters
+         * (0x44CCC..0x44CEC). The shell reads its OWN copy on the draw path (a second home for the same
+         * byte, recorded as a design problem in PLAN.md), so the two are seeded equal while the menu is
+         * up, which is the state the original's single cell holds there (GameUI_InitStartup 0x38D40). */
+        g_world.nUiScreen = (u16)g_nUiScreen;
         if (g_bNewGameFlag) {
             App_HookNewGame(NULL); /* the menu's new-game row runs the same path on a click */
         }
@@ -1822,13 +2104,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             fflush(stdout);
             App_DrawFrame();
             App_DumpFramePpm(pszDumpPath);
-            if (g_bWorldReady) {
-                World_Free(&g_world);
-                g_bWorldReady = false;
-            }
-            Boot_Shutdown(&g_assets);
-            g_bAssetsLoaded = false;
-            Gx_Close(&g_gx);
+            App_DebugTeardown();
+            return 0;
+        }
+        if (pszScript != NULL) {
+            printf("pocketufo: script flag parsed: '%ls'\n", pszScript);
+            fflush(stdout);
+            /* Debug path: the step list drives menu -> new game -> placement -> geoscape ->
+             * save -> load and writes one picture per step. */
+            App_RunDebugScript(pszScript);
+            App_DebugTeardown();
             return 0;
         }
     } else {

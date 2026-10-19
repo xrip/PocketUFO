@@ -1467,8 +1467,12 @@ i32 Ship_SpawnAtSlot(ShipSpawnEnv *pEnv, u8 nCraftType, i32 nHomeBase)
             if (pFac[108 + 6 * v10 + result] != PUFO_FAC_TYPE_HANGAR) {
                 continue; /* 0x2CC14 */
             }
-            if (pFac[79 + result] != 0) {
-                continue; /* 0x2CC2C: layer2[1][result+1], pinned to row 1 */
+            if (pFac[79 + 6 * v10 + result] != 0) {
+                /* 0x2CC2C: LDRB R11,[R11,R10] with R10 = 0x1C3 = 451 = 0x174 + 72 + 6 + 1 over
+                 * R11 = grid + (144*nHomeBase + 6*v10) + result, and the 6 comes from the OUTER row
+                 * advance `ADD R6, R6, #6` at 0x2CCD0. So this is layer2[v10+1][result+1] -- the very
+                 * cell the stamp at 0x2CDA0 writes, i.e. a hangar that already holds a craft is skipped. */
+                continue;
             }
             if (pDays[6 * v10 + result] != 0) {
                 continue; /* 0x2CC44 */

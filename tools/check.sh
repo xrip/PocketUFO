@@ -52,3 +52,6 @@ if [ "$rc_art" -ne 0 ]; then echo "ARTIFACT CHECK FAILED (see $log_art)"; exit 1
 grep -n "Test checks run" PARITY.md
 # The picture gate: the frames the draw tests dump must still match the committed references in tests/ref.
 sh tools/frames.sh || exit 1
+# The whole-path gate: the real executable run through menu -> new game -> placement -> geoscape ->
+# save -> load, one picture per step, checked against tests/ref/e2e.
+sh tools/e2e.sh || exit 1

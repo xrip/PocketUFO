@@ -581,23 +581,29 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
  *
  * The second half searches the home base's facility grid for a hangar cell to attach the craft to:
  *
- *     fac[nBase].facType[v10][result] == 11
- *     fac[nBase].layer2[1][result+1]  == 0
- *     buildDays[nBase][v10][result]   == 0
+ *     fac[nBase].facType[v10][result]  == 11    (0x2CC0C: R9 = LR + 0x174, and LR takes `ADD LR,LR,#6`
+ *                                                at 0x2CCD4 on every row)
+ *     fac[nBase].layer2[v10+1][result+1] == 0   (0x2CC1C..0x2CC2C: grid + R6 + 0x1C3 + result, with R6
+ *                                                taking `ADD R6,R6,#6` at 0x2CCD0 on every row;
+ *                                                0x1C3 = 451 = 0x174 + 72 + 6 + 1)
+ *     buildDays[nBase][v10][result]    == 0
  *
  * with v10 and result each running 0..4 -- a 5 by 5 scan of a 6 by 6 grid, so the sixth row and the
- * sixth column are never considered. On the first match it writes Ship.bHangarX = result+1 (+0x12)
- * and Ship.bHangarY = v10+1 (+0x13), and stamps the craft-type glyph into the grid at
- * fac[nBase] + 6*(v10+1) + (result+1): 33 for type 0, 34 for 1, 35 for 2, 36 for 3, 37 for 4. Any
- * other type matches the cell and then falls through the switch without stamping, and the loop does
- * NOT continue -- it returns immediately with the hangar coordinates set and nothing stamped.
+ * sixth column are never considered. The layer2 test is the down-right neighbour of the hangar's
+ * facType cell, which is the same cell the stamp writes, so a hangar that already holds a craft is
+ * skipped and a new game's three craft land in three different hangars. (An earlier reading of this
+ * scan held the test pinned to row 1 -- that was the row advance `ADD R6,R6,#6` misread as a +1; the
+ * same misread sat in the recovered-craft scan at 0x99174.)
  *
- * Two asymmetries are the original's, not the port's:
+ * On the first match it writes Ship.bHangarX = result+1 (+0x12) and Ship.bHangarY = v10+1 (+0x13) --
+ * the BR cell's column and row, which is what BaseFacScreen_DrawNameGrid's hangar pass compares
+ * against -- and stamps the craft-type glyph into the grid at fac[nBase] + 6*(v10+1) + (result+1):
+ * 33 for type 0, 34 for 1, 35 for 2, 36 for 3, 37 for 4. Any other type matches the cell and then
+ * falls through the switch without stamping, and the loop does NOT continue -- it returns immediately
+ * with the hangar coordinates set and nothing stamped.
  *
- *   - The layer2 test is pinned to row 1 whatever v10 is, while the stamp goes to row v10+1. So for
- *     v10 > 0 the cell that was tested and the cell that is written are different cells.
- *   - The return value is the inner counter: the column index on a match, and 5 when nothing
- *     matched. It is loop residue, and no caller uses it.
+ * One asymmetry is the original's, not the port's: the return value is the inner counter, the column
+ * index on a match and 5 when nothing matched. It is loop residue, and no caller uses it.
  *
  * Deviations: the original stores the new pointer even when operator new returned NULL and then, if a
  * hangar cell matches, writes the two coordinates through that NULL. The port skips the coordinate

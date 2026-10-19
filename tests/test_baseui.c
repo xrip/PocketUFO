@@ -9324,8 +9324,10 @@ static void TestGrantSiteRecovery(void)
     CheckEqI32(g_aGrantCraft[0].bHangarY, 3, "bHangarY is the matched row + 1");
     CheckEqI32(GFAC(1, PUFO_GRID_LAYER2_OFF, 3, 4), 36, "the Interceptor glyph 36 is stamped into layer2");
 
-    /* The layer2 test here follows the row: the cell tested for (row 2, col 3) is layer2 offset
-     * 79 + 2 + 3, which is row 2 column 0 of the layer. Blocking THAT cell rejects the hangar. */
+    /* The layer2 test reads the cell the stamp writes, so it follows the row: 0x99164..0x9917C is
+     * `LDRB R3,[R3,#0x1C3]` (451 = 372 + 72 + 6 + 1) over the row advance `ADD R4,R4,#6` at 0x99210, and
+     * 0x99314 is `STRB R2,[R3,#0x4F]` on that same cell. A hangar that already holds a craft is
+     * therefore skipped: (2,0) is blocked by its OWN byte layer2[3][1], and the match becomes (2,3). */
     GRANT_RESET();
     g_nGrantCraftCount = 1;
     g_aGrantCraft[0].bId = 5;
@@ -9335,12 +9337,15 @@ static void TestGrantSiteRecovery(void)
     g_aGrantSites[0].bHasLoot = 1;
     g_aGrantSites[0].bRecoveredCraftCount = 1;
     g_aGrantSites[0].anCraftIds[0] = 5;
+    GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 2, 0) = FAC_HANGAR;
     GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 2, 3) = FAC_HANGAR;
-    GFAC(1, PUFO_GRID_LAYER2_OFF, 2, 0) = 1; /* layer2 offset 79 + 2 + 3 */
+    GFAC(1, PUFO_GRID_LAYER2_OFF, 3, 1) = 1; /* layer2[2+1][0+1]: (2,0)'s own cell, already held */
     GRANT_ENV(env);
     Smap_GrantSiteRecovery(&env);
-    CheckEqI32(g_aGrantCraft[0].bHangarX, 0, "the row-shifted layer2 test rejects the hangar cell");
-    CheckEqI32(GFAC(1, PUFO_GRID_LAYER2_OFF, 3, 4), 0, "and nothing is stamped");
+    CheckEqI32(g_aGrantCraft[0].bHangarX, 4, "the occupied hangar cell is skipped and the scan goes on");
+    CheckEqI32(g_aGrantCraft[0].bHangarY, 3, "the match is the next hangar of the row");
+    CheckEqI32(GFAC(1, PUFO_GRID_LAYER2_OFF, 3, 1), 1, "the occupant byte is left alone");
+    CheckEqI32(GFAC(1, PUFO_GRID_LAYER2_OFF, 3, 4), 36, "the glyph lands on the matched cell's own byte");
     CheckEqI32(g_aGrantCraft[0].bHomeBase, 1, "while the homing still happened");
 
     /* A craft type outside 0..4 CONTINUES the scan here (Ship_SpawnAtSlot returns unstamped):
@@ -18746,8 +18751,10 @@ static void NgPaintRef(i32 nBase, bool bCraft)
         }
     }
 
+    /* `while (v27 < 2)` with the layer byte at 372 + 144*base + 36*v27 + 6*row + col: pass 0 is tileA,
+     * pass 1 is tileB, and layer2 is left to the craft pass (0x61D14..0x61D50). */
     for (i32 nPass = 0; nPass < 2; ++nPass) {
-        const i32 nLayer = (nPass == 0) ? 36 : 72;
+        const i32 nLayer = (nPass == 0) ? 0 : 36;
 
         for (nRow = 0; nRow < 6; ++nRow) {
             for (nCol = 0; nCol < 6; ++nCol) {

@@ -1567,7 +1567,7 @@ static void TestSpawnAtSlot(void)
     CheckEqI32(((StrategItem *)PtrArray_Get(&list, 0))->nSiteId, -1,
                "a type 1 item sets nSiteId to -1");
 
-    /* A hangar at facType[2][3]. layer2[1][4] is the cell the test looks at and it is clear. */
+    /* A hangar at facType[2][3]. layer2[3][4] is the cell the occupancy test looks at and it is clear. */
     memset(grid, 0, sizeof(grid));
     FAC(108, 2, 3) = PUFO_FAC_TYPE_HANGAR;
     CheckEqI32(Ship_SpawnAtSlot(&env, 2, 0), 3, "the scan returns the column it matched");
@@ -1577,15 +1577,19 @@ static void TestSpawnAtSlot(void)
                "the stamp lands at layer2[v10+1][result+1], which is 35 for craft type 2");
     CheckEqI32(FAC(108, 2, 3), PUFO_FAC_TYPE_HANGAR, "the facType byte is left alone");
 
-    /* The layer2 test is pinned to row 1 whatever row the scan is on. Block row 1 and the
-     * facType match at row 3 must be refused even though layer2[4][1] is clear. */
+    /* The layer2 test reads the cell the stamp writes -- it follows the row. 0x2CC1C..0x2CC2C loads
+     * [grid + (144*base + 6*v10) + col + 0x1C3] with the row advance `ADD R6,R6,#6` at 0x2CCD0, i.e.
+     * layer2[v10+1][col+1], and 0x2CDA0 stores the glyph into the same byte. So (3,0), held by its own
+     * layer2[4][1], is skipped and the scan goes on to the hangar at (3,2). A test pinned to row 1
+     * would have matched (3,0) and returned 0. */
     memset(grid, 0, sizeof(grid));
     FAC(108, 3, 0) = PUFO_FAC_TYPE_HANGAR;
-    FAC(72, 1, 1) = 1;   /* the cell the test actually reads */
-    FAC(72, 4, 1) = 0;   /* the cell the stamp would use, and it is clear */
-    CheckEqI32(Ship_SpawnAtSlot(&env, 1, 0), 5,
-               "the layer2 test reads row 1, not row v10+1, so the match is refused");
-    CheckEqI32(FAC(72, 4, 1), 0, "and nothing is stamped");
+    FAC(108, 3, 2) = PUFO_FAC_TYPE_HANGAR;
+    FAC(72, 4, 1) = 1;   /* layer2[3+1][0+1]: (3,0)'s own cell, already held */
+    CheckEqI32(Ship_SpawnAtSlot(&env, 1, 0), 2,
+               "the occupied hangar cell is refused and the scan continues in the same row");
+    CheckEqI32(FAC(72, 4, 1), 1, "the occupant byte is left alone");
+    CheckEqI32(FAC(72, 4, 3), 34, "and the stamp is the type 1 glyph 34 at layer2[v10+1][result+1]");
 
     /* A craft type outside the table matches the cell, sets the coordinates, and then falls
      * through the switch without stamping -- and the loop keeps going. */

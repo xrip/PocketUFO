@@ -1,0 +1,35 @@
+# The new-game half of the path, run by `pocketufo --script <this file>`.
+#
+# Coordinates are the original's own hit boxes, not shell inventions: the screen-17 list rows are
+# x 50..190 at y = 115 + 22*row .. 133 + 22*row (Input_OnPointer's screen-17 arm, 0x13DBC / 0x13E04).
+# Every click goes through Input_OnPointer (press) + Input_OnPointerUp (release), the same pair
+# WM_LBUTTONDOWN / WM_LBUTTONUP feed.
+
+dump  00_mainmenu.ppm
+state at the main menu
+
+# Row 0 "Start a new game" -> MenuCtl1... the row's handler is MenuCtl0_OnClick -> App_HookNewGame,
+# i.e. Geoscape_InitUI @ 0x857f4 mode 0 plus Game_StartNew @ 0x94554.
+click 120 124
+tick 20
+dump  01_newgame.ppm
+state after the new-game row
+
+# The placement screen's confirm control (GEOUI_CTL_186BA4), pressed and released through the pen:
+# NewBaseScreen_TryConfirm @ 0x61534 with its sample (0x61538) and funds gate (0x6156C), tail-calling
+# Geoscape_OnMapClick @ 0x8b4a8, whose pick arm writes 1 (0x8B600).
+pick
+dump  02_base_placed.ppm
+state after the pick
+
+# The placement screen's close control (Geoscape_CloseUI_ThunkA @ 0x838d0, case 1 writes 0 at 0x8BE94).
+close
+tick 20
+dump  03_geoscape.ppm
+state on the geoscape map
+
+# World_SaveSlot @ 0x44988 -- the function a save-slot row runs. The options screen's own slot rows
+# are not wired yet (a recorded gap), so this is the only save path the shell has today.
+save 0
+dump  04_after_save.ppm
+state after the save

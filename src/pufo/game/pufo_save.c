@@ -1177,6 +1177,100 @@ bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
     return true;
 }
 
+/* One 64-byte site record (MEMORY[0x186C40], stride 0x40) joined with its 61-byte wire form. The nine
+ * offsets are the writer's own stores (0x3F31C abName +0x1A through 0x3F39C nUnkDemolishState +0x34) and
+ * the reader mirrors them (0x40440..0x404C0), so the same list runs in both directions. */
+static void BasesSiteRecordJoin(u8 *pRec, SaveBaseFacility *pFac, bool bToWire)
+{
+    if (bToWire) {
+        memcpy(pFac->szName, pRec + 0x1A, 20);
+        pFac->bType = pRec[0x00];
+        memcpy(&pFac->nBuildState, pRec + 0x38, 4);
+        memcpy(pFac->szUnk6, pRec + 0x06, 20);
+        memcpy(&pFac->nFacType, pRec + 0x3C, 4);
+        memcpy(&pFac->nUnk48, pRec + 0x30, 4);
+        memcpy(&pFac->uUnk2, pRec + 0x02, 2);
+        memcpy(&pFac->uUnk4, pRec + 0x04, 2);
+        memcpy(&pFac->nDemolishState, pRec + 0x34, 4);
+    } else {
+        memcpy(pRec + 0x1A, pFac->szName, 20);
+        pRec[0x00] = pFac->bType;
+        memcpy(pRec + 0x38, &pFac->nBuildState, 4);
+        memcpy(pRec + 0x06, pFac->szUnk6, 20);
+        memcpy(pRec + 0x3C, &pFac->nFacType, 4);
+        memcpy(pRec + 0x30, &pFac->nUnk48, 4);
+        memcpy(pRec + 0x02, &pFac->uUnk2, 2);
+        memcpy(pRec + 0x04, &pFac->uUnk4, 2);
+        memcpy(pRec + 0x34, &pFac->nDemolishState, 4);
+    }
+}
+
+/* SaveBasesState is the port's second home for values the original keeps in one place each, so the
+ * driver joins the two. The mapping IS the bases chunk's write list (0x3F21C..0x3F3A4), run the other
+ * way for the load (0x4032C..0x404C0):
+ *
+ *   0x159768, 288 B   grid[0..287]
+ *   0x1598DC, 1152 B  grid + 372 .. grid + 1523   (0x1598DC - 0x159768 = 372)
+ *   0x159D80          nBaseCount, signed byte
+ *   0x159D81          nSelectedBaseIdx
+ *   0x159DBC, 8 B     the eight hangar bytes
+ *   0x1598D8, 4 B     nFunds (the original's sits at grid + 368, inside the gap the two blocks skip)
+ *   0x158848          nCraftHomeBase
+ *   0x186E48, 17 x 1  aBaseFacFlags[i].bFlag20: record stride 0x1C, the flag at +0x14
+ *   0x18655D, 9 B     the region counters
+ *   0x186C40, 8 x 61  the eight site records
+ *
+ * unk_159D82 and nSoldierHireCount @ 0x159D90 are not here: the shell has no live cell for either, so
+ * the record is their only home and they round trip through it. */
+void Save_BasesLiveToRecord(const SaveBasesLive *pLive, SaveBasesState *pState)
+{
+    if (pLive == NULL || pState == NULL) {
+        return; /* the format test drives the chunk with a record of its own and no live world */
+    }
+
+    memcpy(pState->abBlock288, pLive->abFacilityGrid, sizeof(pState->abBlock288));            /* 0x3F21C */
+    memcpy(pState->abBlock1152, pLive->abFacilityGrid + 372, sizeof(pState->abBlock1152));    /* 0x3F22C */
+    pState->bBaseCount = (u8)*pLive->pnBaseCount;                       /* 0x3F244 */
+    pState->bUnk159D81 = (u8)*pLive->pnSelectedBase;                    /* 0x3F25C */
+    memcpy(pState->abUnk159DBC, pLive->abHangarBytes, sizeof(pState->abUnk159DBC)); /* 0x3F2A4 */
+    memcpy(pState->abUnk1598D8, pLive->pnFunds, sizeof(pState->abUnk1598D8));       /* 0x3F2B4 */
+    pState->bUnk158848 = (u8)*pLive->pnCraftHomeBase;                   /* 0x3F2C8 */
+    for (i32 i = 0; i < PUFO_BASE_FLAG_COUNT; ++i) {
+        pState->abFlag20[i] = pLive->abBaseFacRecords[i * 28 + 0x14];   /* 0x3F2E0, v0 += 0x1C */
+    }
+    memcpy(pState->aRegionBuildCount, pLive->aRegionBuildCount,
+           sizeof(pState->aRegionBuildCount));                          /* 0x3F304 */
+    for (i32 f = 0; f < PUFO_BASE_FAC_COUNT; ++f) {
+        BasesSiteRecordJoin(pLive->abSiteRecords + f * 64, &pState->aFac[f], true); /* 0x3F308..0x3F3A4 */
+    }
+}
+
+void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *pLive)
+{
+    if (pLive == NULL || pState == NULL) {
+        return;
+    }
+
+    memcpy(pLive->abFacilityGrid, pState->abBlock288, sizeof(pState->abBlock288));            /* 0x4032C */
+    memcpy(pLive->abFacilityGrid + 372, pState->abBlock1152, sizeof(pState->abBlock1152));    /* 0x4033C */
+    *pLive->pnBaseCount = (i8)pState->bBaseCount;                       /* 0x40354 */
+    *pLive->pnSelectedBase = (i8)pState->bUnk159D81;                    /* 0x4036C */
+    memcpy(pLive->abHangarBytes, pState->abUnk159DBC, sizeof(pState->abUnk159DBC)); /* 0x403C4 */
+    memcpy(pLive->pnFunds, pState->abUnk1598D8, sizeof(pState->abUnk1598D8));       /* 0x403D4 */
+    *pLive->pnCraftHomeBase = (i8)pState->bUnk158848;                   /* 0x403F0 */
+    for (i32 i = 0; i < PUFO_BASE_FLAG_COUNT; ++i) {
+        pLive->abBaseFacRecords[i * 28 + 0x14] = pState->abFlag20[i];   /* 0x40408, v3 += 0x1C */
+    }
+    memcpy(pLive->aRegionBuildCount, pState->aRegionBuildCount,
+           sizeof(pState->aRegionBuildCount));                          /* 0x40428 */
+    for (i32 f = 0; f < PUFO_BASE_FAC_COUNT; ++f) {
+        BasesSiteRecordJoin(pLive->abSiteRecords + f * 64, (SaveBaseFacility *)&pState->aFac[f], false);
+        /* 0x40430..0x404C0. The cast drops the const of the SOURCE field, not of pRec: the record is read
+         * here and written into the live record, and BasesSiteRecordJoin only ever reads pFac when
+         * bToWire is false. */
+    }
+}
+
 bool Save_WriteShips(DatFile *pDat, const Ship *const *apShips, i32 nShipCount,
                      ObjectRecFull *const *apObjects, i32 nObjectCount)
 {
@@ -2452,6 +2546,9 @@ bool SaveGame(DatFile *pDat, const SaveGameInput *pIn)
                                    pIn->nSoldierCount, pIn->apTactItems,
                                    pIn->nTactItemCount);
     if (bOk) {
+        /* The original's Save_WriteBases reaches its globals as it writes them. The port reads a record
+         * instead, so the live cells are staged into it right here (0x3F21C..0x3F3A4). */
+        Save_BasesLiveToRecord(pIn->pBasesLive, pIn->pBases);
         bOk = Save_WriteBases(pDat, pIn->pBases, pIn->apBases,          /* 0x44A34 */
                               pIn->apObjects, pIn->nObjectCount);
     }
@@ -2725,6 +2822,10 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
 
     if (!Save_ReadBases(pDat, nVer, pEnv->pBases, pEnv->apBases, pEnv->nOldBaseCount,
                         (u8)pEnv->pStrateg->nUnk186558, pEnv->apObjects, pEnv->nObjectCount)) { bOk = false; }
+    /* The original's Save_ReadBases writes its globals as it reads them, so everything downstream of this
+     * chunk sees the loaded values -- the per-base Base_ClearFacilityGridRow classification at
+     * 0x44E38..0x44E7C reads the grid itself. The port's reader fills the record, so the join runs here. */
+    Save_BasesRecordToLive(pEnv->pBases, pEnv->pBasesLive);
     if (!Save_ReadProduct(pDat, nVer, pEnv->pProductBlock)) { bOk = false; }
     if (!Save_ReadResearch(pDat, pEnv->pResearch)) { bOk = false; }
 

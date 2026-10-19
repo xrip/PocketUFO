@@ -1,0 +1,20 @@
+# The load half of the path, run after the save the new-game flow wrote (`sav0.sav`).
+#
+# The boot menu is the original's own way back into a save: row 1 "Загрузка игры" switches the
+# screen-17 list to the seven-slot list (Input_OnPointer's mode-2 arm at 0x13D08: x 24..216 at
+# y = 65 + 22*row .. 83 + 22*row), and a slot row's handler is Menu_LoadSlot -> LoadGame @ 0x44bbc.
+
+dump  10_menu_at_boot.ppm
+state at the main menu
+
+# Row 1 of the four-row box: y 137..155.
+click 120 146
+tick 20
+dump  11_slot_list.ppm
+state on the slot list
+
+# Slot 0 of the seven-row list: y 65..83.
+click 120 74
+tick 20
+dump  12_after_load.ppm
+state after loading slot 0

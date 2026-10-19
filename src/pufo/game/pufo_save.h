@@ -438,6 +438,37 @@ typedef struct SaveBasesState {
     SaveBaseFacility aFac[PUFO_BASE_FAC_COUNT];
 } SaveBasesState;
 
+/* The bases chunk's owners in the ORIGINAL are the globals themselves: Save_WriteBases reads
+ * 0x159768 (288 B), 0x1598DC (1152 B), 0x159D80, nSelectedBaseIdx @ 0x159D81, unk_159D82,
+ * nSoldierHireCount @ 0x159D90, byte_159DBC, nFunds @ 0x1598D8, 0x158848, aBaseFacFlags[i].bFlag20
+ * @ 0x186E48, g_anRegionBuildCount @ 0x18655D and MEMORY[0x186C40] straight off them
+ * (0x3F21C..0x3F3A4), and Save_ReadBases writes that same list back (0x4032C..0x404C0). The port
+ * keeps the same values a SECOND time in SaveBasesState, so the driver has to join the two at this
+ * seam: Save_BasesLiveToRecord fills the record from the live cells before the writer runs, and
+ * Save_BasesRecordToLive puts them back after the reader ran. Without the second join the readers
+ * that follow the bases chunk -- the per-base Base_ClearFacilityGridRow classification at
+ * 0x44E38..0x44E7C -- would read whatever the running game had instead of the loaded grid.
+ *
+ * The two byte blocks are one grid on both sides: 0x159768..0x159887 and 0x1598DC..0x159D5B are
+ * grid[0..287] and grid[372..1523] of the port's 1524-byte grid, and the 84 bytes between the two
+ * blocks is where the original's nFunds sits (0x1598D8 = grid + 368), which the port models as a
+ * separate i32. unk_159D82 and nSoldierHireCount have no live cell in the shell yet, so the record
+ * is their only home and they keep what the record already held.
+ *
+ * The pointers are byte pointers because BaseFacFlag and BaseSiteRec live in pufo_geoscape.h, which
+ * this header does not include; the offsets used below are the original's own addressing. */
+typedef struct SaveBasesLive {
+    u8  *abFacilityGrid;      /* abFacilityGrid @ 0x159768, 1524 bytes */
+    i8  *pnBaseCount;         /* 0x159D80, signed */
+    i8  *pnSelectedBase;      /* nSelectedBaseIdx @ 0x159D81 */
+    u8  *abHangarBytes;       /* byte_159DBC, 8 bytes */
+    i32 *pnFunds;             /* nFunds @ 0x1598D8 */
+    i8  *pnCraftHomeBase;     /* 0x158848 */
+    u8  *abBaseFacRecords;    /* aBaseFacFlags @ 0x186E48: 17 records of 28, bFlag20 at +0x14 */
+    u8  *aRegionBuildCount;   /* g_anRegionBuildCount @ 0x18655D, 9 bytes */
+    u8  *abSiteRecords;       /* MEMORY[0x186C40]: 8 records of 64, the port's BaseSiteRec */
+} SaveBasesLive;
+
 /* apBases and apObjects are the caller's pointer arrays; nObjectCount is the object
  * table size (pCtxBase.nObjectCount). The reader allocates BaseRec records into
  * apBases and frees nOldBaseCount of them first -- the original frees with the count
@@ -448,6 +479,14 @@ bool Save_WriteBases(DatFile *pDat, const SaveBasesState *pState,
 bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
                     BaseRec **apBases, i32 nOldBaseCount, u8 bUnk186558,
                     ObjectRecFull *const *apObjects, i32 nObjectCount);
+
+/* The two joins between SaveBasesState and the live cells, run by the drivers at the point where the
+ * original reaches the globals: Save_BasesLiveToRecord just before Save_WriteBases (the writer's own
+ * reads, 0x3F21C..0x3F3A4), Save_BasesRecordToLive just after Save_ReadBases (the reader's own writes,
+ * 0x4032C..0x404C0). Both do nothing when pLive is NULL -- that is how the format test drives the chunk
+ * with a record of its own and no live world. */
+void Save_BasesLiveToRecord(const SaveBasesLive *pLive, SaveBasesState *pState);
+void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *pLive);
 
 /* ---- ships chunk ----
  *
@@ -932,7 +971,10 @@ typedef struct SaveGameInput {
     i32        *pnMissionCount;   /* unk_138E8C, incremented in the tactical branch */
     u16        *pnUiScreen;       /* Map.nUiScreen, cleared in the tactical branch */
 
-    const SaveBasesState     *pBases;
+    /* Not const: Save_BasesLiveToRecord stages the live bases cells into this record right before
+     * Save_WriteBases reads it, which is the original reading its globals (0x3F21C..0x3F3A4). */
+    SaveBasesState           *pBases;
+    const SaveBasesLive      *pBasesLive;   /* the cells the original owns (NULL: no live world) */
     const BaseRec *const     *apBases;
     const u8                 *pProductBlock;
     const SaveResearchState  *pResearch;
@@ -1149,6 +1191,9 @@ typedef struct LoadGameEnv {
     u8   *pbCraftSelectAssaultFlag;    /* bCraftSelectAssaultFlag @ 0x1870A8 */
 
     SaveBasesState    *pBases;         /* includes the base count byte and the type-byte array */
+    const SaveBasesLive *pBasesLive;   /* the cells the original owns; Save_BasesRecordToLive writes the
+                                        * chunk back into them right after Save_ReadBases (0x4032C..0x404C0),
+                                        * so the readers that follow see the loaded grid (NULL: no live world) */
     BaseRec          **apBases;        /* Map+0x1174 */
     i32               nOldBaseCount;   /* the count BEFORE Save_ReadBases frees */
     u8               *pProductBlock;   /* 17152 bytes: A u32, B u32, C u16, facility->item map */

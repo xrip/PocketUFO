@@ -3437,11 +3437,12 @@ void Smap_OnPointerUp(const SmapPointerUpEnv *pEnv);
  *      Unit_CreateAndClassify) with the base index as nKind. Then per recovered craft: the craft
  *      whose Ship.bId matches site->anCraftIds[i] gets Ship.bHomeBase = the base index
  *      unconditionally, and a 5x5 scan of the base's facility grid looks for a hangar cell --
- *      facType cell == FAC_HANGAR, buildDays cell == 0, and layer2 tested at fac + 79 + row + col.
- *      On a match bHangarX = col + 1, bHangarY = row + 1, and the craft glyph (33 + bCraftType)
- *      is stamped into layer2 at fac + 79 + 6*row + col. Two differences from Ship_SpawnAtSlot's
- *      own scan: the layer2 test here follows the row (79 + row + col, not 79 + col), and a craft
- *      type outside 0..4 CONTINUES the scan instead of returning unstamped.
+ *      facType cell == FAC_HANGAR, buildDays cell == 0, and layer2 tested at fac + 79 + 6*row + col
+ *      (0x99164..0x99174, the 6*row from `ADD R4, R4, #6` at 0x99210). On a match bHangarX = col + 1,
+ *      bHangarY = row + 1, and the craft glyph (33 + bCraftType) is stamped into layer2 at
+ *      fac + 79 + 6*row + col -- the tested cell and the stamped cell are the same one. The one
+ *      difference from Ship_SpawnAtSlot's scan is the unknown craft type: here it CONTINUES the scan,
+ *      there it returns unstamped.
  *   5. 0x99340..0x993CC: for i in 0..4, site->auItemQty[117 + i] new craft of type
  *      {0, 3, 4, 1, 2} -- the five slots carry the shipped craft names and the map lands each
  *      name on its own CraftType. Ship_ProductSlotToType @ 0x65a6c answers that same map from the
@@ -4407,13 +4408,17 @@ i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv);
  * The backdrop (0x61CA4..0x61CC8). 36 blank sprites: for row 0..5 and column 0..5,
  * Font_DrawGlyph(32*column + nSmapOriginX, 36 + 32*row + nSmapOriginY, nBaseBitsSprBase).
  *
- * The name pass (0x61CEC..0x620E8), two passes over the same 6x6 cells. Pass 0 reads
- * fac[nBase].tileB (grid + 372 + 144*base + 36 + 6*row + column) and pass 1 reads
- * fac[nBase].layer2 (+72); a zero cell is skipped (0x61D58). buildDays[nBase][row][column]
- * (grid + 36*base + 6*row + column) then picks the sprite: a finished cell, or any cell in pass 1,
- * gets the NAME sprite nBaseBitsSprBase + <layer byte>, while an unfinished cell in pass 0 gets the
- * blank sprite instead (0x61D74 / 0x61D84). The layer byte is the aFacBuildSpec tileB stamp, 17..32
- * for the sixteen named facility kinds, so the sprite id is the facility's own name glyph.
+ * The name pass (0x61CEC..0x620E8) is a `do { } while (v27 < 2)` -- TWO passes over the same 6x6 cells,
+ * and the layer byte address is built from v27: 0x61D14 `ADD R3,R2,R3,LSL#2` (R2 = v27, R3 = base) then
+ * two `MUL R2,R3,#6` around `+ row` and `+ 0x3E`, giving grid + 372 + 144*base + 36*v27 + 6*row +
+ * column. So pass 0 reads fac[nBase].tileA (+0, the stamp layer) and pass 1 reads fac[nBase].tileB
+ * (+36); layer2 (+72) is NOT a name pass at all -- its only reader here is the craft pass (0x621B8).
+ * A zero layer byte skips the cell (0x61D58). buildDays[nBase][row][column] (grid + 36*base + 6*row +
+ * column) then picks the sprite: a finished cell, or any cell in pass 1, gets the NAME sprite
+ * nBaseBitsSprBase + <layer byte>, while an unfinished cell in pass 0 gets the blank sprite instead
+ * (0x61D74 / 0x61D84). The two layers name the two sprite families: the tileA stamp is 1/2/3 or
+ * 9..12, and the tileB byte is the aFacBuildSpec tileB stamp, 17..32 for the sixteen named facility
+ * kinds, so pass 1 is the pass that draws a facility's own name glyph.
  *
  * A cell with build days left then consults fac[nBase].tileA (0x61E00) -- the tile stamp, 1/2/3 for
  * the single-cell facilities of the three stamp groups and 9,10,11,12 for the hangar's four quadrants

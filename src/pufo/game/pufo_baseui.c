@@ -6221,8 +6221,12 @@ void Smap_GrantSiteRecovery(const SmapGrantRecoveryEnv *pEnv)
                     if (pFac[PUFO_GRID_FAC_TYPE_OFF + 6 * nRow + nCol] != (u8)FAC_HANGAR) {
                         continue; /* 0x99158 */
                     }
-                    if (pFac[PUFO_GRID_LAYER2_OFF + 7 + nRow + nCol] != 0) {
-                        continue; /* 0x99174: tested one column further along for every row */
+                    if (pFac[PUFO_GRID_LAYER2_OFF + 6 * (nRow + 1) + (nCol + 1)] != 0) {
+                        /* 0x99164..0x99174: LDRB R3,[R3,R7] with R7 = 0x1C3 = 451 = 0x174 + 72 + 6 + 1 over
+                         * R3 = grid + (144*nBase + 6*nRow) + nCol, the 6*nRow coming from the OUTER row
+                         * advance `ADD R4, R4, #6` at 0x99210. So layer2[nRow+1][nCol+1] -- the same cell the
+                         * stamp at 0x99314 writes, exactly as Ship_SpawnAtSlot's scan does. */
+                        continue;
                     }
                     if (pDays[6 * nRow + nCol] != 0) {
                         continue; /* 0x991A0 */
@@ -8690,10 +8694,16 @@ void BaseFacScreen_DrawNameGrid(const FacNameGridEnv *pEnv)
         }
     }
 
-    /* 0x61CEC..0x620E8: pass 0 over tileB, pass 1 over layer2. */
+    /* 0x61CEC..0x620E8: `while (v27 < 2)` -- two passes only, over tileA (+0) then tileB (+36). The
+     * cell byte is built at 0x61D14..0x61D2C: R2 = var_18 (the pass number, loaded at 0x61D00),
+     * `ADD R3,R2,R3,LSL#2` = pass + 4*base, `MUL R2,R3,#6` = 6*pass + 24*base, `+ row`, `+ 0x3E`,
+     * `MUL R2,R3,#6` = 36*pass + 144*base + 6*row + 372, then `LDRB R3,[R3,R11]` adds the column.
+     * So pass 0 is the block's FIRST layer. layer2 (+72) is never a name pass -- the only reader of
+     * layer2 in this function is the craft pass (0x621B8), and a port that names layer2 as a pass
+     * draws every parked craft a second time at its name position. */
     for (i32 nPass = 0; nPass < 2; ++nPass) {
         const i32 nLayerOff = nFacOff
-                            + ((nPass == 0) ? PUFO_GRID_TILEB_OFF : PUFO_GRID_LAYER2_OFF);
+                            + ((nPass == 0) ? PUFO_GRID_TILEA_OFF : PUFO_GRID_TILEB_OFF);
 
         for (nRow = 0; nRow < 6; ++nRow) {
             const i32 y = PUFO_NAMEGRID_TOP + nRow * PUFO_NAMEGRID_CELL + nOriginY;
@@ -8708,8 +8718,8 @@ void BaseFacScreen_DrawNameGrid(const FacNameGridEnv *pEnv)
                 if (uLayer == 0) {
                     continue; /* 0x61D58 */
                 }
-                /* A finished cell, or any cell in pass 1, gets the name sprite; an unfinished cell in
-                 * pass 0 gets the blank one and the build icon below instead (0x61D74, 0x61D84). */
+                /* A finished cell, or any cell in the tileB pass, gets the name sprite; an unfinished
+                 * cell in the tileA pass gets the blank one and the build icon below (0x61D74, 0x61D84). */
                 Font_DrawGlyph(x, y,
                                (u16)((uDays == 0 || nPass != 0)
                                      ? g_fontSys.nBaseBitsBase + uLayer
@@ -8717,7 +8727,9 @@ void BaseFacScreen_DrawNameGrid(const FacNameGridEnv *pEnv)
                 if (uDays == 0) {
                     continue; /* 0x61DDC */
                 }
-                nStamp = pGrid[nFacOff + PUFO_GRID_TILEA_OFF + 6 * nRow + nCol]; /* 0x61E00 */
+                /* 0x61E00: the stamp byte is tileA in BOTH passes -- 0x61DE0..0x61DFC builds the same
+                 * cell address WITHOUT the 6*pass term, so a tileB value (17..24) reaches `default`. */
+                nStamp = pGrid[nFacOff + PUFO_GRID_TILEA_OFF + 6 * nRow + nCol];
                 nSpr = NameGrid_BuildSprite(nStamp);
                 if (nSpr < 0) {
                     continue;

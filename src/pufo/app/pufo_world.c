@@ -824,7 +824,10 @@ static void World_StartNewHook(void *pUser)
      * so only the pointers are wired here. */
     memset(&pW->hangarEnv, 0, sizeof(pW->hangarEnv));
     pW->hangarEnv.abFacilityGrid = pW->abFacilityGrid;
-    pW->hangarEnv.abGridBytes = pW->saveBases.abUnk159DBC; /* the 0x159DBC byte table */
+    pW->hangarEnv.abGridBytes = pW->abGridHangarBytes; /* the 0x159DBC byte table. It used to point at
+                                                        * saveBases.abUnk159DBC, i.e. at the save record; the
+                                                        * save join writes that field from abGridHangarBytes,
+                                                        * so one array now holds the live table */
     pW->hangarEnv.apCraft = pW->apCraft;
     pW->hangarEnv.apBases = pW->apBases;
 
@@ -910,6 +913,17 @@ static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
     pEnv->pLoadPadsUser = pW->pLoadPadsUser;
 }
 
+/* ShipCtorEnv is the Map-block half of the craft create/destroy path, and Save_ReadShips reaches the
+ * per-ship object columns through it (0x40C24's loop runs pEnv->nObjectCount times, the writer's loop
+ * runs pIn->nObjectCount times). Both paths have to see the same object table, or the two counts drift
+ * apart and every ship record after the first is read from the wrong offset. */
+static void World_FillCtorEnv(PufoWorldState *pW, const BootAssets *pAssets)
+{
+    memset(&pW->ctorEnv, 0, sizeof(pW->ctorEnv));
+    pW->ctorEnv.apObjects = pAssets->apObjects;
+    pW->ctorEnv.nObjectCount = pAssets->nObjectCount;
+}
+
 i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
                   const PufoOptions *pOptions, const WorldHooks *pHooks)
 {
@@ -934,9 +948,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     pW->optionsHooks.pfnInit = World_OptionsInitStub;
     pW->optionsHooks.pfnOpen = World_OptionsOpenStub;
 
-    memset(&pW->ctorEnv, 0, sizeof(pW->ctorEnv));
-    pW->ctorEnv.apObjects = pAssets->apObjects;
-    pW->ctorEnv.nObjectCount = pAssets->nObjectCount;
+    World_FillCtorEnv(pW, pAssets);
 
     memset(&pW->geo.world, 0, sizeof(pW->geo.world));
     pW->geo.world.apCraft = pW->apCraft;
@@ -1051,12 +1063,34 @@ static void Load_HookFreeAll(void *pUser)
     GeoscapeUi_FreeAll(&pW->ui, &roster, 0);
 }
 
+/* The bases chunk's live owners, as one struct (see SaveBasesLive in game/pufo_save.h): the grid, the two
+ * base bytes, the eight hangar bytes, the funds, the defended-base byte, the 17 place flags, the nine
+ * region counters and the eight site records. Save_BasesLiveToRecord / Save_BasesRecordToLive are their
+ * only readers on this path -- they stand for the original's direct global reads and writes at
+ * 0x3F21C..0x3F3A4 and 0x4032C..0x404C0. The last two pointers are byte pointers because SaveBasesLive is
+ * declared in a header that does not see BaseFacFlag / BaseSiteRec; the field offsets those helpers use
+ * are the original's own addressing. */
+static void World_WireBasesLive(PufoWorldState *pW, SaveBasesLive *pLive)
+{
+    memset(pLive, 0, sizeof(*pLive));
+    pLive->abFacilityGrid    = pW->abFacilityGrid;                     /* 0x159768 */
+    pLive->pnBaseCount       = &pW->nBaseCount;                        /* 0x159D80 */
+    pLive->pnSelectedBase    = &pW->nSelectedBase;                     /* 0x159D81 */
+    pLive->abHangarBytes     = pW->abGridHangarBytes;                  /* 0x159DBC */
+    pLive->pnFunds           = &pW->nFunds;                            /* 0x1598D8 */
+    pLive->pnCraftHomeBase   = &pW->nCraftHomeBase;                    /* 0x158848 */
+    pLive->abBaseFacRecords  = (u8 *)&pW->aFac[0];                     /* 0x186E48, stride 0x1C */
+    pLive->aRegionBuildCount = pW->aRegionBuildCount;                  /* 0x18655D */
+    pLive->abSiteRecords     = (u8 *)&pW->aSiteRecs[0];                /* 0x186C40, stride 0x40 */
+}
+
 i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
                    PufoFont *pFont, const PufoOptions *pOptions, const WorldHooks *pHooks)
 {
     LoadGameEnv env;
     LoadGameHooks hooks;
     SpawnMissionCtx missionCtx;
+    SaveBasesLive live;      /* the bases chunk's owners, wired below */
     DatFile dat;
     i32 nRet;
 
@@ -1091,10 +1125,16 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
      * the callee's own guard turns that into the same no-op the missing state was. */
     World_FillMissionCtx(pW, &missionCtx);
     pW->pAssets = pAssets;
+    World_FillCtorEnv(pW, pAssets); /* the ships chunk's per-ship object loop counts through this env */
     pW->pfnLoadPads = pHooks->pfnLoadPads;
     pW->pLoadPadsUser = pHooks->pLoadPadsUser;
     pW->pfnPlaySample = pHooks->pfnPlaySample;
     pW->pSoundUser = pHooks->pSoundUser;
+    /* The same cell World_NewGame sets: LoadGame calls Geoscape_InitUI(1) from inside itself (0x44CBC),
+     * and the rebuild arm re-wires the frame through pFrameHooks. Without it the frame keeps the wiring
+     * this function did BEFORE the pads existed -- the map pad, the layer pad and the world bits are all
+     * NULL there, and Geoscape_BlitMapView returns without drawing on any one of them. */
+    pW->pFrameHooks = pHooks;
     World_WireGeoscapeFrame(pW, pHooks);
 
     memset(&env, 0, sizeof(env));
@@ -1109,6 +1149,9 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     env.pbMissionCount = &pW->bMissionCount;
     env.pbCraftSelectAssaultFlag = &pW->bCraftSelectAssaultFlag;
     env.pBases = &pW->saveBases;
+    World_WireBasesLive(pW, &live);
+    env.pBasesLive = &live; /* Save_BasesRecordToLive writes the chunk back into these cells right after
+                             * Save_ReadBases, the way Save_ReadBases writes 0x159768/0x159D80/0x1598D8 there */
     env.apBases = pW->apBases;
     env.nOldBaseCount = pW->nBaseCount;
     env.pProductBlock = pW->abProductBlock;
@@ -1153,6 +1196,9 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     nRet = LoadGame(&dat, &env);
     pW->pLoadDat = NULL;
     DatFile_Close(&dat);
+    /* 0x458E4 stamps the loaded world's format version current; the live 0x18655C byte follows the
+     * record back out of here, the same join Save_BasesRecordToLive does for the bases chunk. */
+    pW->nSaveVersion = pW->saveStrateg.bSaveVersion;
     return nRet;
 }
 
@@ -1172,6 +1218,7 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
     TactSaveState tact;       /* the driver reaches these through in, so they live at function scope */
     TeamUnitsState rosters;
     FlobjsState flobjs;
+    SaveBasesLive live;       /* the bases chunk's owners, wired below */
     DatFile dat;
     GameMap *pMap;
     i32 nMissionCount;
@@ -1190,6 +1237,9 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
     in.pnMissionCount = &nMissionCount;
     in.pnUiScreen = &pW->nUiScreen;
     in.pBases = &pW->saveBases;
+    World_WireBasesLive(pW, &live);
+    in.pBasesLive = &live; /* Save_BasesLiveToRecord stages these cells into the record right before
+                            * Save_WriteBases reads it -- 0x3F21C..0x3F3A4 read the globals directly */
     in.apBases = (const BaseRec *const *)pW->apBases;
     in.pProductBlock = pW->abProductBlock;
     in.pResearch = &pW->saveResearch;
@@ -1201,6 +1251,12 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
      * copies of those globals are the economy block's first slots: g_nFundArrow0 and g_nFundBar0. */
     pW->saveStrateg.pnUnk1865A8 = &pW->economy.aZero44_49[0];  /* 0x1865A8 */
     pW->saveStrateg.pnUnk186594 = &pW->economy.anFundBar[0];   /* 0x186594 */
+    /* nSaveFmtVer @ 0x18655C is one byte in the original and InitUI stamps it 3 (0x85864, the arm at
+     * geoiinit.c's *pbSaveVersion = 3). Save_WriteStrateg writes it (0x3F1EC) and Save_ReadStrategVersion
+     * reads it back, and Save_ReadBases/Save_ReadProduct branch on it -- so the record has to carry the
+     * live byte or the file records version 0 while its bodies are written in the version-3 layout, and
+     * every read after the version gate lands four bytes early. */
+    pW->saveStrateg.bSaveVersion = pW->nSaveVersion;
     in.pStrateg = &pW->saveStrateg;
     in.pStrategList = &pW->strategList;
     in.pTime = &pW->saveTime;
