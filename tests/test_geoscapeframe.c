@@ -1688,11 +1688,11 @@ int main(void)
                 /* Tact_InitUiControls @ 0x3b498 ran through the shell hook (Part 54): the handlers are
                  * installed on the shell's bank in the g_aUiClickName order, the look control is built,
                  * the HUD origin is recomputed and the direct overrides land. */
-                static const i32 aDeferred[2] = { 57, 58 };
+                static const i32 aDeferred[1] = { 58 };
                 i32 bInstalled = 1, bDeferred = 1, bStart = 1;
                 for (i32 c = 0; c < 113; ++c) {
                     i32 bWant = 1;
-                    for (i32 d = 0; d < 2; ++d) {
+                    for (i32 d = 0; d < 1; ++d) {
                         if (aDeferred[d] == c) { bWant = 0; }
                     }
                     if (bWant && g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
@@ -1702,7 +1702,7 @@ int main(void)
                     if (g_bank.aCtl[c].pfnClick != NULL) { bStart = 0; }
                 }
                 Check(bInstalled, "every handler the port models is installed on bank widgets 0..112");
-                Check(bDeferred, "the two deferred families stay NULL: 57 quit, 58 resize (4, 5, 17/18 and 56 installed since Parts 55..58)");
+                Check(bDeferred, "the one deferred family stays NULL: 58 resize (4, 5, 17/18, 56 and 57 installed since Parts 55..59)");
                 Check(bStart && g_bank.aCtl[128].pfnClick != NULL && g_bank.aCtl[129].pfnClick != NULL,
                       "113..127 stay uninstalled (start-menu widgets) and 128/129 take MenuBtn_Cancel (0x1a24c / 0x1a26c)");
                 const UiControl *pLook = &g_world.sTactLookCtl;
@@ -1988,6 +1988,35 @@ int main(void)
                     pMapX->apCivilians[1] = pC1Save;
                     g_world.bMapCraftMapX = bCraftXSave;
                     g_world.bMapCraftMapY = bCraftYSave;
+                }
+
+                /* 57: the quit confirm dialog (Menu_ConfirmQuitDialog 0x18e2c -> Menu_OpenQuitDialog):
+                 * sample 16, the modal bank at 140/24 four rows, YES/NO, and the DIRECT live screen-8
+                 * write (0x18E6C). The YES thunk reuses the app's screen-8 escape seam, so it is only
+                 * checked for being stored -- running it would quit the test process. The stored NO
+                 * callback (Menu_CancelQuitDialog 0x18e04) is safe and is run. (Part 59) */
+                {
+                    UiModalState modalSave = g_world.sModal;
+                    u16 nScreenSave = g_world.nUiScreen;
+
+                    nSampleMark = g_nSamples;
+                    CLICK(57);
+                    Check(g_aFrameSamples[nSampleMark] == 16
+                              && g_world.sModal.bOpen
+                              && g_world.sModal.anRect12_14[0] == 140
+                              && g_world.sModal.anRect12_14[1] == 24
+                              && g_world.sModal.anRect12_14[2] == 4
+                              && strcmp((const char *)g_world.sModal.pLabel15, "YES") == 0
+                              && strcmp((const char *)g_world.sModal.p17, "NO") == 0
+                              && g_world.sModal.pfn16 != NULL && g_world.sModal.pfn18 != NULL
+                              && g_world.nUiScreen == 8,
+                          "widget 57 plays 16, opens the modal bank at 140/24 four rows with YES/NO and both callbacks stored, and writes screen 8 direct (0x18E6C)");
+
+                    g_world.sModal.pfn18();  /* Menu_CancelQuitDialog @ 0x18e04: Map_nUiScreen = 0 */
+                    Check(g_world.nUiScreen == 0, "the stored NO callback clears the screen (0x18e04)");
+
+                    g_world.sModal = modalSave;
+                    g_world.nUiScreen = nScreenSave;
                 }
 
                 /* Restore everything the dispatch moved. */

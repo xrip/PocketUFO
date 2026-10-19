@@ -19492,3 +19492,35 @@ the shell wiring).
 
 IDB: port-wiring comments at 0x18a68, 0x18a44 (slot 16, run after UiModal_End at
 0x14B94..0x14BE4) and 0x18a54 (slot 18).
+
+## Unit 120 -- the quit confirm dialog on widget 57 (Part 59)
+
+`Menu_ConfirmQuitDialog @ 0x18e2c` (widget 57, stored at 0x3B6A0/0x3BC78): sample 16,
+`UiModal_Begin(140, 24, 4, "YES", App_QuitFromTact @ 0x18e18, "NO", Menu_CancelQuitDialog
+@ 0x18e04)`, then a direct live `Map_nUiScreen = 8` write (0x18E6C). The game half was
+already ported (`Menu_OpenQuitDialog` / `Menu_CancelQuitDialog` / `App_QuitFromTact` in
+pufo_menubtn.c, wired to the screen-8 escape seam by the app since Part 51); the shell
+caller was the gap.
+
+Shell wiring (pufo_world.c): `World_ClickQuitConfirm` takes `World_TactMenuHooksFor` (the
+Btn_Play sample seam) and runs `Menu_OpenQuitDialog(&sModal, &nUiScreen,
+World_QuitYesThunk, World_QuitNoThunk, &mh)` -- the screen 8 lands on the LIVE cell,
+matching the original's direct write (no staging round-trip). The YES thunk reuses the
+EXISTING screen-8 escape seam (`pFrameHooks->pTactInputHooks->pfnShutdownQuit`, the app's
+`App_HookShutdownQuit -> App_QuitFromTact`), so no new shutdown path is invented; it reads
+`g_pActiveWorld` directly because the seam must run while the teardown is dropping the
+frame. The NO thunk is `Menu_CancelQuitDialog(&nUiScreen)` (0x18e04). Running the stored
+slot 16/18 callbacks stays the tact pointer dispatch, the recorded separate issue.
+
+Deviation (recorded): the YES callback is checked for being stored but never run in the
+frame gate -- running it would quit the test process exactly as the original quits the
+game.
+
+Tests (test_geoscapeframe): widget 57 gate -- sample 16, modal bank bOpen + 140/24 four
+rows + "YES"/"NO" + both callbacks stored, live screen 8 (0x18E6C); the stored NO callback
+is run and clears the screen (0x18e04). sModal and the screen saved/restored; the deferred
+list shrank to {58}. Mutations 2/2: dropped pnUiScreen 1 red; NO write off-by-one 1 red.
+Golden startup frame unchanged. Coverage unchanged -- 0x18e2c/0x18e04/0x18e18 were already
+cited through the menubtn unit and the Part 51 seam.
+
+IDB: port-wiring comments at 0x18e2c, 0x18e04, 0x18e18.

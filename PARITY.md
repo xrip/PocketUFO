@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 970 / 970 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18158 |
+| Test checks run | 18160 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -199,7 +199,7 @@ is the module that answers to it.
 | `0x9e6a4` | `KillTimers_A` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
 | `0x9e754` | `KillTimers_B` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
 | `0x9e7c4` | `KillTimers_C` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
-| `0x18e18` | `App_QuitFromTact` | 20 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_menu.h` (+2) |
+| `0x18e18` | `App_QuitFromTact` | 20 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x54c48` | `??1CDialogTemplate@@QAA@XZ` | 20 | `src/pufo/game/pufo_template.c` |
 | `0x54c3c` | `??0CDialogTemplate@@QAA@XZ` | 12 | `src/pufo/game/pufo_template.h` |
 | `0x54c5c` | `CDialogTemplate_GetTemplateByte1` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
@@ -1064,7 +1064,7 @@ is the module that answers to it.
 | `0x1a080` | `MenuCtl3_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+1) |
 | `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | `src/pufo/game/pufo_baseui.h` |
-| `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x6b6b0` | `Options_SetTab4` | 20 | `src/pufo/game/pufo_baseui.h` |
 | `0x589cc` | `BaseFacScreen_PanelPrev` | 16 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x589dc` | `BaseFacScreen_PanelNext` | 16 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 411 |
+| `test_geoscapeframe` | PASS | 413 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

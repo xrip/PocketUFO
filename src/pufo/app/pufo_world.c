@@ -2788,7 +2788,6 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
  * sTactInput (the input handlers' view); the bank handlers use the union and InputSync moves them.
  *
  * Handlers left NULL, each a recorded separate issue:
- *   57   Menu_ConfirmQuitDialog        -- needs the screen-8 escape seam wired for tact
  *   58   MenuBtn_ResizeWindow @ 0x19930 -- App_ResizeMainWindow is a caller-window call, not world state
  * ========================================================================== */
 
@@ -4010,6 +4009,53 @@ static void World_ClickDeployConfirm(void)
     World_TactUiSyncOut(pW);
 }
 
+/* ---------------------------------------------------- quit confirm (Part 59)
+ *
+ * Widget 57 -> Menu_ConfirmQuitDialog @ 0x18e2c, ported as Menu_OpenQuitDialog (pufo_menubtn.c):
+ * sample 16, UiModal_Begin(140, 24, 4, "YES", App_QuitFromTact, "NO", Menu_CancelQuitDialog),
+ * then a DIRECT live Map_nUiScreen = 8 write (0x18E6C -- not through the staging copy, matching
+ * the original). The YES callback runs the same screen-8 escape seam the app already wires for
+ * TactInputHooks.pfnShutdownQuit (App_HookShutdownQuit -> App_QuitFromTact @ 0x18e18), so no new
+ * shutdown path is invented; the NO callback is Menu_CancelQuitDialog @ 0x18e04, screen 0.
+ * Running the stored callbacks stays the tact pointer dispatch, a recorded separate issue. */
+
+static void World_QuitYesThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;      /* not World_TactLiveMission: the seam must run even
+                                              * while the teardown is dropping the frame */
+    const TactInputHooks *pIn;
+
+    if (pW == NULL) {
+        return;
+    }
+    pIn = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pTactInputHooks : NULL;
+    if (pIn != NULL && pIn->pfnShutdownQuit != NULL) {
+        pIn->pfnShutdownQuit(pIn->pUser);     /* App_QuitFromTact @ 0x18e18 */
+    }
+}
+
+static void World_QuitNoThunk(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        Menu_CancelQuitDialog(&pW->nUiScreen); /* 0x18e04: Map_nUiScreen = 0 */
+    }
+}
+
+static void World_ClickQuitConfirm(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    MenuHooks mh;
+
+    if (pW == NULL) {
+        return;
+    }
+    mh = World_TactMenuHooksFor(pW);          /* the Btn_Play sample seam (16) */
+    (void)Menu_OpenQuitDialog(&pW->sModal, &pW->nUiScreen, World_QuitYesThunk,
+                              World_QuitNoThunk, &mh);
+}
+
 static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }
 static void World_ClickSpeed1(void) { World_TactSpeedCall(1); }
 static void World_ClickSpeed2(void) { World_TactSpeedCall(2); }
@@ -4121,7 +4167,7 @@ static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {
     World_ClickOpenSaveSlots,      /* 54  Menu_OpenSaveSlots @ 0x188a4 */
     World_ClickOpenOptions,        /* 55  Options_SyncUiFromMap_GotoScreen12 @ 0x188e4 */
     World_ClickDeployConfirm,    /* 56  Map_BuildDeployConfirmYesNo @ 0x18a68 (Part 58) */
-    NULL,                          /* 57  Menu_ConfirmQuitDialog @ 0x18e2c (deferred) */
+    World_ClickQuitConfirm,      /* 57  Menu_ConfirmQuitDialog @ 0x18e2c (Part 59) */
     NULL,                          /* 58  MenuBtn_ResizeWindow @ 0x19930 (caller window call) */
     World_ClickSamples1614Clear,   /* 59  Map_PlaySamples16_14_ClearUiScreen @ 0x18e9c */
     World_ClickSpeed0, World_ClickSpeed1, World_ClickSpeed2,         /* 60..62 MenuBtn_SetSpeed0..2 */
