@@ -158,6 +158,56 @@ static void TestLinks(void)
     Rmp_Init(&rmp);
 }
 
+/* Map_LoadRmp APPENDS. Nothing in the loader frees or resets: the nodes of every module a mission placed stay
+ * live in one running list. The count is zeroed once per mission by TactBuf11408_ctor @ 0x54ff8 -- its only
+ * code caller is Tact_InitMission at 0x3C630 -- and the only release in the whole beta is Map_FreeRmpNodes @
+ * 0x55018, called once from Tact_Shutdown @ 0x3d6a0. An earlier version of the port freed the list and zeroed
+ * the count at the top of Rmp_Load, so only the LAST module's nodes survived a mission. The link rebase
+ * belongs to the same reading: 0x552EC stores (pBuf[4] & 0xFF) - runIndex + nRmpCount - 1 with nRmpCount
+ * already posted for the node being filled, so the run index cancels and the stored target is the record's
+ * own index in this .rmp plus the node count the earlier modules left behind. */
+static void TestAppendAcrossModules(void)
+{
+    RmpData rmp;
+
+    printf("Rmp_Load across two modules, with no reset between them\n");
+    Rmp_Init(&rmp);
+    CheckEqI32(Rmp_Load(&rmp, "plane",   0, 0, 20, 10, 3, 40, 40), 10, "PLANE.RMP: ten records");
+    CheckEqI32(Rmp_Load(&rmp, "avenger", 5, 7, 20, 10, 3, 40, 40), 3,  "AVENGER.RMP: three records");
+    CheckEqI32(rmp.nNodeCount, 13, "the list holds both modules' nodes");
+    CheckEqI32(rmp.nModCount, 2, "and both module placements");
+
+    if (rmp.nNodeCount == 13 && rmp.apNodes[10] != NULL && rmp.apNodes[11] != NULL) {
+        CheckEqI32(rmp.apNodes[10]->nIndex, 10, "the second module's first node is numbered 10");
+        CheckEqI32(rmp.apNodes[10]->nX, 5 * 10 + 4, "its X carries that module's tile offset");
+        CheckEqI32(rmp.apNodes[10]->nY, 7 * 10 + 9, "and its Y");
+        CheckEqI32((i16)rmp.apNodes[10]->aLink[0], 11,
+                   "its first link: record 1 of this .rmp, rebased onto the 10 nodes already live (0x552EC)");
+        CheckEqI32((i16)rmp.apNodes[10]->aLink[1], 6, "with the payload pair in the next word");
+        for (u32 k = 1; k < PUFO_RMP_LINKS; ++k) {
+            CheckEqI32((i16)rmp.apNodes[10]->aLink[2 * k], PUFO_RMP_LINK_NONE,
+                       "a 255 direction byte stores no link");
+        }
+        /* AVENGER record 1: three sentinel directions whose edge guards do not trip for a module at tile
+         * (5,7) of size 20 x 10 in a 40 x 40 map, and two real record indices. */
+        CheckEqI32((i16)rmp.apNodes[11]->aLink[0], PUFO_RMP_LINK_EDGE_W,
+                   "254 -> west edge: its guard is nTileY == 0 and this module is at Y 7");
+        CheckEqI32((i16)rmp.apNodes[11]->aLink[2], PUFO_RMP_LINK_EDGE_E, "253 -> east edge: 5 + 20 != 40");
+        CheckEqI32((i16)rmp.apNodes[11]->aLink[4], PUFO_RMP_LINK_EDGE_N, "251 -> north edge");
+        CheckEqI32((i16)rmp.apNodes[11]->aLink[6], 12, "record 2 rebased: 2 + 10");
+        CheckEqI32((i16)rmp.apNodes[11]->aLink[8], 10, "record 0 rebased: 0 + 10");
+    }
+
+    /* The module record is gated on the member having at least one record (0x550FC). A member that is not in
+     * the archive at all returns before that gate; neither adds anything to what the two modules left. (The
+     * gate's other half -- a member present with no records -- is unreachable in the shipped set: every .rmp
+     * member is at least one record long.) */
+    CheckEqI32(Rmp_Load(&rmp, "no_such_module", 0, 0, 1, 1, 1, 40, 40), 0, "a missing member loads nothing");
+    CheckEqI32(rmp.nModCount, 2, "and records no module");
+    CheckEqI32(rmp.nNodeCount, 13, "leaving the accumulated list alone");
+    Rmp_Init(&rmp);
+}
+
 static void TestFree(void)
 {
     RmpData rmp;
@@ -415,6 +465,7 @@ int main(void)
     TestLoad();
     TestTruncatingDivision();
     TestLinks();
+    TestAppendAcrossModules();
     TestFree();
     TestAcceptsUnit();
     TestUnitInfoFromSoldier();

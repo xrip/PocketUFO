@@ -35,7 +35,10 @@
  *     253 -> -3   (east edge)
  *     254 -> -2   (west edge)
  *     255 -> -1   (no link)
- *     other    -> target - recordBase + nodeIndexInRun    (relative node index)
+ *     other    -> target - runRecordIndex + globalNodeIndex, i.e. the record's own index inside this .rmp
+ *                 rebased onto the list the earlier modules already filled: target + nodesBeforeThisModule
+ *                 (0x552EC: SUB R2,R2,LR with LR the run's record index, ADD R2,R2,R1 with R1 the ALREADY
+ *                 POSTED nRmpCount, then SUB R2,R2,#1 -- the run index cancels)
  *
  * The payload pair (offsets 5 and 6) is stored into the low and high bytes of the
  * next word, i.e. a little-endian u16 in aLink[linkIndex + 1].
@@ -67,7 +70,8 @@ typedef struct RmpNode {
 
 _Static_assert(sizeof(RmpNode) == 28, "RmpNode must stay 28 bytes");
 
-/* Link sentinels. */
+/* Link sentinels. A direction sentinel whose edge guard trips stores NONE: the load pre-writes -1 into the
+ * target word (0x55294) and the guard path jumps over every other write in that iteration. */
 #define PUFO_RMP_LINK_NONE  ((i16)-1)
 #define PUFO_RMP_LINK_EDGE_N ((i16)-5)
 #define PUFO_RMP_LINK_EDGE_S ((i16)-4)

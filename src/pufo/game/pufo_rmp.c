@@ -69,46 +69,48 @@ void Rmp_FreeNodes(RmpData *pRmp)
  * guard to value is the part reconstructed. Two of the four guards test the same
  * condition (nTileY == 0), which is suspicious but is what both views show. This
  * function isolates the mapping so it is the single place to re-check. */
-static bool Rmp_LinkSentinel(u8 nDir, i32 nTileX, i32 nTileY, i32 nSizeX, i32 nSizeY,
-                             i32 nMapDimX, i32 nMapDimY, i16 *pnOut)
+/* Not a link value: the direction byte is a real record index. Every real link value the loader can store is
+ * in -5..-1 or a node index, so this marker needs no counterpart in the node array. */
+#define PUFO_RMP_DIR_NOT_SENTINEL 0x100
+
+/* Returns the link word to store, or PUFO_RMP_DIR_NOT_SENTINEL when the direction byte is a real record
+ * index. A guard that trips returns PUFO_RMP_LINK_NONE, exactly what the original leaves behind: 0x55294
+ * pre-writes -1 into the target word and the guard path jumps to 0x553E8 without writing anything else, so
+ * a tripped guard and the "no link" byte 255 end in the same stored value. */
+static i32 Rmp_LinkSentinel(u8 nDir, i32 nTileX, i32 nTileY, i32 nSizeX, i32 nSizeY,
+                            i32 nMapDimX, i32 nMapDimY)
 {
     switch (nDir) {
     case 251:
-        if (nTileY == 0) {
-            return false;
-        }
-        *pnOut = PUFO_RMP_LINK_EDGE_N;
-        return true;
+        return (nTileY == 0) ? PUFO_RMP_LINK_NONE : PUFO_RMP_LINK_EDGE_N;
     case 252:
-        if (nTileY + nSizeY == nMapDimY) {
-            return false;
-        }
-        *pnOut = PUFO_RMP_LINK_EDGE_S;
-        return true;
+        return (nTileY + nSizeY == nMapDimY) ? PUFO_RMP_LINK_NONE : PUFO_RMP_LINK_EDGE_S;
     case 253:
-        if (nTileX + nSizeX == nMapDimX) {
-            return false;
-        }
-        *pnOut = PUFO_RMP_LINK_EDGE_E;
-        return true;
+        return (nTileX + nSizeX == nMapDimX) ? PUFO_RMP_LINK_NONE : PUFO_RMP_LINK_EDGE_E;
     case 254:
-        if (nTileY == 0) {
-            return false;
-        }
-        *pnOut = PUFO_RMP_LINK_EDGE_W;
-        return true;
+        return (nTileY == 0) ? PUFO_RMP_LINK_NONE : PUFO_RMP_LINK_EDGE_W;
     case 255:
-        *pnOut = PUFO_RMP_LINK_NONE;
-        return true;
+        return PUFO_RMP_LINK_NONE;
     default:
-        return false; /* a real relative index, not a sentinel */
+        return PUFO_RMP_DIR_NOT_SENTINEL; /* a real record index, not a sentinel */
     }
 }
 
 /* Map_LoadRmp @ 0x55060.
  *
  * Record geometry is verified against the shipped data; the link sentinel pairing
- * carries the confidence note above. */
+ * carries the confidence note above.
+ *
+ * This function APPENDS and never frees. The node list is filled a module at a time: every call writes at
+ * apRmpNodes[nRmpCount] and posts the count (0x5520C..0x5527C), so after a mission's terrain build the list
+ * holds the nodes of EVERY module that was placed. Nothing here resets or releases anything. The count is
+ * zeroed once per mission by TactBuf11408_ctor @ 0x54ff8 -- its only code caller is Tact_InitMission at
+ * 0x3C630 -- and the only free in the whole beta is Map_FreeRmpNodes @ 0x55018, called once from
+ * Tact_Shutdown at 0x3D6A0. An earlier version of the port freed the list and zeroed the count at the top of
+ * this function, which left only the LAST module's nodes live: on the shell's base-defence mission that was
+ * 8 nodes, all of them bFlag20 == 2, while a soldier (unit type 0) only accepts a bFlag20 == 1 node, so
+ * Rmp_PickSpawnForUnit found no spawn for 7 of the 8 deployed units and they stayed parked on cell (1,1,0),
+ * which is what the frame test's picture showed as a stacked squad. */
 i32 Rmp_Load(RmpData *pRmp, const char *pszBase,
              i32 nTileX, i32 nTileY, i32 nSizeX, i32 nSizeY, i32 nLevel,
              i32 nMapDimX, i32 nMapDimY)
@@ -118,10 +120,8 @@ i32 Rmp_Load(RmpData *pRmp, const char *pszBase,
     u8         *pBlob;
     u32         cb;
     u32         nRecs;
+    u32         nAppend;
     u32         nBase;
-
-    Rmp_FreeNodes(pRmp);
-    pRmp->nNodeCount = 0;
 
     pufo_strncpy(szName, pszBase, sizeof(szName));
     if (!pufo_strcat(szName, ".rmp", sizeof(szName))) {
@@ -145,13 +145,12 @@ i32 Rmp_Load(RmpData *pRmp, const char *pszBase,
     /* The original divides by 0x18, which TRUNCATES: two of the shipped members
      * are not exact multiples and lose their trailing bytes. Reproduced. */
     nRecs = cb / PUFO_RMP_REC_SIZE;
-    if (nRecs > PUFO_RMP_MAX_NODES) {
-        nRecs = PUFO_RMP_MAX_NODES;
-    }
     nBase = pRmp->nNodeCount;
 
-    /* Record the module placement, which the .rmp save chunk writes back out. */
-    if (pRmp->nModCount < PUFO_RMP_MAX_MODULES) {
+    /* The module placement is recorded only when the member has at least one record (0x550FC), and the
+     * record is made before any node is appended. The original has no bound on nModCount at all -- a latent
+     * fault -- so the port's capacity test here is a recorded deviation. */
+    if (nRecs > 0 && pRmp->nModCount < PUFO_RMP_MAX_MODULES) {
         i32 nMod = pRmp->nModCount;
 
         pRmp->anModTileX[nMod] = nTileX;
@@ -163,7 +162,16 @@ i32 Rmp_Load(RmpData *pRmp, const char *pszBase,
         pRmp->nModCount += 1;
     }
 
-    for (u32 i = 0; i < nRecs; ++i) {
+    /* Appends run against the ACCUMULATED list, not against a per-module list. The original bounds nothing
+     * here -- node 1500 would land on the count field itself at +0x1770 -- so capping at the array size is a
+     * recorded deviation. The returned count is the record count the original returns, cap or no cap. */
+    nAppend = nRecs;
+
+    if (nBase + nAppend > PUFO_RMP_MAX_NODES) {
+        nAppend = (nBase < PUFO_RMP_MAX_NODES) ? (PUFO_RMP_MAX_NODES - nBase) : 0u;
+    }
+
+    for (u32 i = 0; i < nAppend; ++i) {
         const u8 *pRec = pBlob + (size_t)i * PUFO_RMP_REC_SIZE;
         RmpNode  *pNode = malloc(sizeof(RmpNode));
 
@@ -186,18 +194,25 @@ i32 Rmp_Load(RmpData *pRmp, const char *pszBase,
          * and aLink[2k+1]. */
         for (u32 k = 0; k < PUFO_RMP_LINKS; ++k) {
             const u8 *pLink = pRec + 4 + 3 * k;
-            i16       nTarget;
+            i32       nLink = Rmp_LinkSentinel(pLink[0], nTileX, nTileY, nSizeX, nSizeY,
+                                               nMapDimX, nMapDimY);
 
-            pNode->aLink[2 * k] = (u16)PUFO_RMP_LINK_NONE;
-            if (Rmp_LinkSentinel(pLink[0], nTileX, nTileY, nSizeX, nSizeY,
-                                 nMapDimX, nMapDimY, &nTarget)) {
-                pNode->aLink[2 * k] = (u16)nTarget;
+            if (nLink == PUFO_RMP_DIR_NOT_SENTINEL) {
+                /* 0x552EC: (pBuf[4] & 0xFF) - runRecordIndex + nRmpCount - 1, with nRmpCount already posted
+                 * for this node, so the run index cancels and the stored word is the record's index inside
+                 * this .rmp plus the node count the earlier modules left behind. An earlier version wrote
+                 * pLink[0] + i, which agrees with the original only for a single-module load and only for the
+                 * first record. No code in the beta reads these target words, so the correction changes no
+                 * behaviour today; it is what a load of two or more modules has to get right. */
+                pNode->aLink[2 * k] = (u16)(i16)((i16)pLink[0] + (i16)nBase);
             } else {
-                /* A real relative index: target - runBase + nodeIndexInRun.
-                 * `runBase` is the node count before this call started, so the
-                 * value is relative to the module's own first node. */
-                pNode->aLink[2 * k] = (u16)(i16)((i16)pLink[0] - (i16)(u16)nBase
-                                                 + (i16)(nBase + i));
+                /* A sentinel, or a sentinel whose edge guard tripped and leaves NONE behind. The payload pair
+                 * is written on every one of those paths (0x553A4 sits at the join every store path falls
+                 * through); only the guard-trip path skips it, jumping to 0x553E8 -- there the original's
+                 * payload word keeps whatever operator new left. The port's node is memset, so its payload
+                 * is 0. Recorded deviation; nothing in the beta reads a payload word of a link that has no
+                 * target. */
+                pNode->aLink[2 * k] = (u16)(i16)nLink;
             }
             /* The payload pair is a little-endian u16 stored in the next word. */
             pNode->aLink[2 * k + 1] = (u16)(pLink[1] | ((u16)pLink[2] << 8));
@@ -349,11 +364,11 @@ i32 Rmp_PickSpawnForUnit(RmpData *pRmp, Soldier *pUnit,
 
 /* TactBuf11408_ctor @ 0x54ff8.
  *
- * Clears exactly two fields, not the whole buffer: the u16 at offset 3000 (0xBB8)
- * and the dword at offset 9004 (0x232C). Against the recovered TactBuf11408 layout
- * those are a word inside the node-count gap and `nModCount` -- the module count.
- * Everything else, including `nRmpCount` at 0x1770 and the node array, is left as
- * the caller had it, which is why this is not a memset. */
+ * Clears exactly two fields, not the whole buffer: `*((_WORD *)pBuf + 3000)` is the u16 at BYTE offset
+ * 6000 (0x1770), which is nNodeCount -- the field every Rmp_Load posts -- and `*((_DWORD *)pBuf + 2251)` is
+ * the dword at 9004 (0x232C), which is nModCount. Those are the two counters the append loop in Map_LoadRmp
+ * feeds, so this is the per-mission reset: the node array itself is left as the caller had it, which is why
+ * this is not a memset and why the only release in the beta is Map_FreeRmpNodes from Tact_Shutdown. */
 void TactBuf11408_ctor(RmpData *pBuf)
 {
     if (pBuf == NULL) {

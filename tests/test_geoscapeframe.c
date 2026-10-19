@@ -88,6 +88,28 @@ static u8             g_nMapPhase;  /* nMapPhase @ 0x1139EF (Map + 0x37): the ar
                                      * byte the original's 0xC352 handler wraps (PocketUFO_WndProc 0xA0988) */
 static UiControlHitCtx g_hit;
 
+/* The original's empty facility cell is NOT a zero cell. Game_StartNew's own stamp (0x9485C..0x948EC) clears
+ * the three tile layers and the whole buildDays lane but writes the 0xFF sentinel into the facType lane of all
+ * eight base blocks (0x94908: MOV R11,#0xFF with STRB R11,[R0,#0x48] at 0x9491C). Every reader keys on that
+ * sentinel: Base_CalcMonthlyUpkeep charges for a type byte that is not 0xFF, Smap_InitCraftSelectState skips
+ * it and leaves the tactical tile at 20, and Geoscape_OnMapClick's cell clear writes exactly this state. A
+ * plain memset leaves 0, which the tile builder reads as facility kind 0 -- placement code 0 -- and turns an
+ * empty base into 35 copies of the xbase_0 ROOM module in the tactical map a later block builds. */
+static void GeoFillEmptyGrid(void)
+{
+    for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+        const i32 nFac = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * b;
+
+        for (i32 c = 0; c < PUFO_GRID_CELL_COUNT; ++c) {
+            g_world.abFacilityGrid[nFac + PUFO_GRID_TILEA_OFF + c]    = 0;   /* 0x94904 */
+            g_world.abFacilityGrid[nFac + PUFO_GRID_TILEB_OFF + c]    = 0;   /* 0x94914 */
+            g_world.abFacilityGrid[nFac + PUFO_GRID_LAYER2_OFF + c]   = 0;   /* 0x94920 */
+            g_world.abFacilityGrid[nFac + PUFO_GRID_FAC_TYPE_OFF + c] = PUFO_FAC_TYPE_NONE; /* 0x9491C */
+            g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * b + c]     = 0;   /* the days lane, 0x948F0 */
+        }
+    }
+}
+
 /* --- the tact bank bring-up fixtures (Part 54) -------------------------------------
  * The widget bank stands in for the app's g_bank (the WorldHooks field the world installs
  * handlers and pads onto), the input hooks are the ones the installed MenuBtn handler hands to
@@ -488,6 +510,14 @@ static MapCell *FrameCellAt(i32 nX, i32 nY, i32 nLayer)
         return NULL;
     }
     return g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer + PUFO_MAP_CELL_DIM * nY + nX];
+}
+
+/* The same table as a lookup callback, for the fixtures that move a unit the way the original does. */
+static MapCell *FrameCellLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+
+    return FrameCellAt(nX, nY, nLayer);
 }
 
 /* How many of the 14400 slots own a unit -- the census the iso layer's occupant tests read. */
@@ -1324,7 +1354,7 @@ int main(void)
     g_world.bFacOverlayShown = 0;
     g_world.nUnk15887C       = 0;      /* the pending pair, deliberately NOT the aimed tap */
     g_world.nUnk158880       = 0;
-    memset(g_world.abFacilityGrid, 0, sizeof(g_world.abFacilityGrid)); /* an empty base: the score can only be 0 */
+    GeoFillEmptyGrid(); /* an empty base in the original's own sense: the score can only be 0 */
     nCurX = pF->facOverlay.nOriginX + 2 * PUFO_PLA_TAP_CELL;
     nCurY = pF->facOverlay.nOriginY + 2 * PUFO_PLA_TAP_CELL + PUFO_PLA_TAP_Y0;
     pF->g.nCursorX = nCurX;            /* nSmapCursorX @ 0x186BD0, which the overlay reads as a halfword */
@@ -1729,12 +1759,13 @@ int main(void)
              * to fire, and the budget test is reached -- 0 < 1, so the craft is destroyed whatever
              * the roll says. */
             /* Update counts a defence as a cell that is FINISHED (its buildDays byte is 0) and of kind
-             * 12..16, so an empty cell of the starting base -- kind 0, days 0, the sentinel the starting
-             * base uses before any facility goes in -- is the one to arm. */
+             * 12..16, so an empty cell of the starting base is the one to arm -- and the original's empty
+             * cell is the 0xFF sentinel with days 0 (Game_StartNew's stamp at 0x9491C), not kind 0: kind 0 is
+             * a facility the player can actually build, and Base_CalcMonthlyUpkeep charges for it. */
             i32 nDefCell = -1;
             for (i32 c = 0; c < 36; ++c) {
                 if (g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
-                                           + PUFO_GRID_FAC_TYPE_OFF + c] == 0
+                                           + PUFO_GRID_FAC_TYPE_OFF + c] == PUFO_FAC_TYPE_NONE
                     && g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nBase0 + c] == 0) {
                     nDefCell = c;
                     break;
@@ -1816,7 +1847,7 @@ int main(void)
              * the fixture started with. */
             if (nDefCell >= 0) {
                 g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase0
-                                       + PUFO_GRID_FAC_TYPE_OFF + nDefCell] = 0;
+                                       + PUFO_GRID_FAC_TYPE_OFF + nDefCell] = PUFO_FAC_TYPE_NONE;
             }
         }
 
@@ -1878,6 +1909,23 @@ int main(void)
             /* The OK click: the thunk the opener installed, not a hand-built call. These four cells
              * are the ones Smap_BeginCraftSelect's failure block (0x84158..0x841DC) would move, so
              * capturing them makes the UNCHANGED state after the click an assertion. */
+            /* The fixture's base has exactly one facility and it is 16 days from finished, so a mission
+             * launched here lands on a base with nothing built on it: Smap_InitCraftSelectState skips a cell
+             * whose buildDays byte is non-zero (0x61BE8) as well as the 0xFF sentinel (0x61C20), every tile
+             * keeps the 0x61BB4 empty value, and Map_BuildMissionTerrain's own guard skips the .rmp of a 0x14
+             * tile (0x24150) -- the mission would have no route nodes at all. Run the clock's base tick 16
+             * times, which is how the game finishes a facility (Geoscape_AdvanceTime's day loop 0x5CE40 calls
+             * Geoscape_TickBases 0x5D3BC, which calls Base_TickFacilityConstruction 0x62824, and that
+             * decrements every non-zero buildDays byte once per day). The call is the tick the clock would
+             * run, taken on its own so no month, funding or shipping tick rides along. */
+            for (i32 nDay = 0; nDay < 16; ++nDay) {
+                if (g_world.geoClock.pfnTickBases != NULL) {
+                    g_world.geoClock.pfnTickBases(g_world.geoClock.pUser);
+                }
+            }
+            CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nBase0 + 6 * 2 + 2], 0,
+                       "16 day ticks of 0x62824 finish the cell (2,2) facility: its buildDays reach 0");
+
             /* The new-game craft sit at base with cold weapons, so the visibility pass would only
              * restate that. Arming the byte here makes the park's 1 -> 0 at 0x8393C a transition. */
             g_world.apCraft[0]->bWeaponsHot = 1;
@@ -1918,17 +1966,19 @@ int main(void)
                       && g_world.nMapTerrainVariant == 0 && g_world.bMapUnk15115 == 0,
                   "unk_128AD6 and the geometry trio are zeroed by the assault block (0x840EC..0x84108)");
             CheckEqI32(g_world.nSelectedBase, nBase0, "nSelectedBaseIdx takes nCraftHomeBase (0x84130)");
-            /* The tactical tile grid @ 0x159D5C, built from the grid THIS test prepared: its own
-             * memset left base 0's TYPE lane at 0 -- the original new game stamps 0xFF there, settled
-             * in the Part 44 follow-up -- and Smap_InitCraftSelectState skips only 0xFF (0x61C20),
-             * so every finished cell takes the placement code of type 0, which is 0 (0x61C28); the
-             * one cell with buildDays 16 contributes nothing and keeps 0x61BB4's 20 (0x61BE8). */
+            /* The tactical tile grid @ 0x159D5C, built from the grid this test prepares the way Game_StartNew
+             * does (0x9485C..0x948EC) and then ages the way the geoscape clock does: base 0's TYPE lane is the
+             * 0xFF sentinel (0x9491C) and only cell (2,2) holds a facility, finished by 0x62824 above.
+             * Smap_InitCraftSelectState fills the grid with 20 first (0x61BB4), skips the sentinel cells
+             * (0x61C20) and stamps the built one with its placement code (0x61C28): kind 1 is code 1. The
+             * fixture used to memset the TYPE lane to 0, and 0 is facility kind 0 with placement code 0 --
+             * that is what put 35 phantom xbase_0 rooms on the map a later block builds. */
             {
                 i32 bTiles = 1;
                 for (i32 c = 0; c < 36; ++c) {
-                    if (g_world.abMapTileTypes[c] != (c == 14 ? 20 : 0)) { bTiles = 0; }
+                    if (g_world.abMapTileTypes[c] != (c == 14 ? 1 : 20)) { bTiles = 0; }
                 }
-                Check(bTiles, "all 36 tiles are the type-0 placement code except cell (2,2), under construction, which keeps 20");
+                Check(bTiles, "35 tiles stay 20 and cell (2,2) takes placement code 1: the sentinel skips an empty cell, a built cell stamps its room");
             }
             /* Two passes touch the weapons-hot byte inside one click. The visibility pass parks every
              * craft cold and at base (0x8393C writes 0, 0x83950 writes 1). The launch hand-over then
@@ -2493,7 +2543,7 @@ int main(void)
                     i32 nXcomBefore = pMapX->nXcomCount;
                     i32 nHwpsBefore = g_world.nMapDeployedHwps;
                     i32 i;
-                    bool bParked = true, bSpawned = true, bSnapshotted = true;
+                    bool bSpawned = true, bSnapshotted = true;
                     MapCell *pPark = FrameCellAt(1, 1, 0);
 
                     /* The widget block above moves Map_nUiScreen around, so this block opens the
@@ -2530,26 +2580,83 @@ int main(void)
                     Check(bSpawned && pMapX->nXcomCount == nXcomBefore && g_world.nMapDeployedHwps == nHwpsBefore,
                           "no hardware soldier spawns because apObjects[31..35].uRecovScore is 0 in the shipped main.dat (0x39A24 / 0x39F90)");
 
-                    /* Phase 3 (0x39E9C) takes the rmp arm -- Map_nMapLayers is 0 on a base defence
-                     * mission, the Xcom arm writes it at 0x84118 -- and on this mission's shipped data
-                     * the arm places nobody. Map_PickRmpSpawnForUnit @ 0x55470 sends every unit whose
-                     * type byte pUnit[0xA0] is <= 8 to the `node->bFlag20 == 1` test, and all eight
-                     * nodes the terrain build's .rmp loads produced carry record byte 20 == 2
-                     * (Map_LoadRmp @ 0x55270): eight units, eight rejections. So the roster keeps
-                     * exactly what phase 1 (0x3999C) wrote -- every unit parked on cell (1,1,0), the
-                     * ARM's unconditional MOV R1,#1 / R2,#1 / R3,#0 before Unit_PlaceOnMap. A MapCell
-                     * holds an occupant LIST (MapCell_ListInsertByPri @ 0x??, the list head in pUnit),
-                     * so the team stacked on one cell is one occupant, and this is the original's own
-                     * state for a base mission, not a port gap. */
-                    for (i = 0; i < nXcomBefore; ++i) {
-                        if (pMapX->apXcomUnits[i] == NULL || pMapX->apXcomUnits[i]->pCell != pPark) {
-                            bParked = false;
+                    /* Phase 3 (0x39E9C) re-places the first (nXcomUnitCount - Map_nDeployedHwpsCount) units, and
+                     * on a base defence mission that arm is Map_PickRmpSpawnForUnit @ 0x55418: a random start
+                     * (0x5543C), a forward walk that advances before it uses the index (0x55464), the type gate at
+                     * 0x55470 -- a unit whose type byte pUnit[0xA0] is <= 8 requires node byte bFlag20 == 1, which
+                     * 0x55524 tests -- and the first node whose cell has no occupant (0x55618) gets
+                     * Unit_PlaceOnMap (0x55648). The node list here is the room this base actually has:
+                     * Smap_InitCraftSelectState stamped cell (2,2) with placement code 1, Map_BuildMissionTerrain
+                     * loaded xbase_1 for that tile, and all eight records of XBASE_1.RMP carry record byte 20 == 1.
+                     * Eight soldiers, eight nodes, eight distinct cells: nothing stays on the (1,1,0) cell phase 1
+                     * (0x399BC) parked every one of them on, and the occupant census goes from the single park
+                     * cell to one per soldier. An earlier reading of this gate had the eight units stacked on the
+                     * park cell, and the cause was in the loader rather than here: Map_LoadRmp @ 0x55060 appends
+                     * (apRmpNodes[nRmpCount], nRmpCount++ at 0x55208..0x5527C) and the port's version freed the
+                     * node list and zeroed the count on every call. */
+                    {
+                        i32 nNodes  = (i32)g_world.sTactRmp.nNodeCount;
+                        i32 nOwn    = 0;
+                        i32 nDistinct = 0;
+                        bool bEachNode = (nNodes == nXcomBefore);
+
+                        for (i = 0; i < nXcomBefore; ++i) {
+                            const MapCell *pC = (pMapX->apXcomUnits[i] != NULL)
+                                                    ? pMapX->apXcomUnits[i]->pCell : NULL;
+                            bool bOnNode = false;
+                            bool bNew    = true;
+                            i32 k;
+
+                            if (pC == NULL) { bEachNode = false; continue; }
+                            for (k = 0; k < nNodes; ++k) {
+                                const RmpNode *pN = g_world.sTactRmp.apNodes[k];
+
+                                if (pN != NULL && pN->nX == pC->nX && pN->nY == pC->nY && pN->nZ == pC->nZ) {
+                                    bOnNode = true;
+                                    break;
+                                }
+                            }
+                            if (!bOnNode) { bEachNode = false; }
+                            for (k = 0; k < i; ++k) {
+                                const MapCell *pOther = (pMapX->apXcomUnits[k] != NULL)
+                                                            ? pMapX->apXcomUnits[k]->pCell : NULL;
+
+                                if (pOther == pC) { bNew = false; }
+                            }
+                            if (bNew) { nDistinct += 1; }
+                            nOwn += 1;
+                        }
+                        Check(bEachNode && nOwn == nXcomBefore,
+                              "each of the eight soldiers stands on one of the mission's eight route nodes: 0x55524 wants byte 20 == 1 and XBASE_1.RMP gives it to all eight");
+                        Check(nDistinct == nXcomBefore,
+                              "and each on a cell of its own -- phase 1's park at 0x399BC is emptied, cell by cell, by the re-place walk");
+                        Check(!MapCell_HasOccupant(pPark),
+                              "the (1,1,0) cell every unit was parked on has no occupant left");
+                        Check(FrameCountOccupants() == nOccBefore - 1 + nXcomBefore,
+                              "and the occupant census the iso layer reads goes from the single park cell to one per soldier");
+                        {
+                            i32 nNodes = (i32)g_world.sTactRmp.nNodeCount;
+                            i32 nOcc   = FrameCountOccupants();
+
+                            printf("       deploy: nodes=%d mods=%d occupants %d -> %d |",
+                                   (int)g_world.sTactRmp.nNodeCount, (int)g_world.sTactRmp.nModCount,
+                                   (int)nOccBefore, (int)nOcc);
+                            for (i = 0; i < nNodes; ++i) {
+                                const RmpNode *pN = g_world.sTactRmp.apNodes[i];
+
+                                if (pN != NULL) { printf(" n%d=%d,%d,%d", i, pN->nX, pN->nY, pN->nZ); }
+                            }
+                            printf(" |");
+                            for (i = 0; i < nXcomBefore; ++i) {
+                                const MapCell *pC = (pMapX->apXcomUnits[i] != NULL)
+                                                        ? pMapX->apXcomUnits[i]->pCell : NULL;
+
+                                printf(" u%d=%d,%d,%d", i, (pC != NULL) ? (int)pC->nX : -1,
+                                       (pC != NULL) ? (int)pC->nY : -1, (pC != NULL) ? (int)pC->nZ : -1);
+                            }
+                            printf("\n");
                         }
                     }
-                    Check(bParked,
-                          "every roster unit stands on the cell (1,1,0) phase 1 parked it on: the rmp arm rejects all eight nodes (byte 20 is 2, 0x55470 wants 1 for a type<=8 unit) and moves nobody");
-                    Check(FrameCountOccupants() == nOccBefore,
-                          "and the census the iso layer's occupant reads see does not move");
 
                     /* Phase 5 (0x3A038): the arm runs -- layers 0 and mission type 3 -- and builds an
                      * empty table. The grid it filters is abFacilityGrid + 0x5F4, which is
@@ -2566,27 +2673,34 @@ int main(void)
                  * Tact_SelectNextUnit @ 0x17304, Input_OnDown @ 0x11A74 -> Tact_SelectPrevUnit @ 0x17260).
                  * Tact_SelectUnit's tail re-places the cursor on the selected unit's OWN cell
                  * (MapCursor_SetPos @ 0x27014 over pUnit->pCell), so the gate needs a roster whose units
-                 * carry that link. Here every unit still stands on the cell phase 1 parked it on, which
-                 * makes the cursor pair (0x15128/0x1512C) the evidence; the same pair is gated on the
-                 * reloaded mission below, where the link comes out of the save reader instead. */
+                 * carry that link. The deploy put every unit on a cell of its own (the Part 86 gate above), so
+                 * the reference here is the selected unit's own cell rather than a parked one, and the cursor
+                 * pair (0x15128/0x1512C) is read against it; the same pair is gated on the reloaded mission
+                 * below, where the link comes out of the save reader instead. */
                 {
                     SeamTrace  s0 = g_seams;
-                    MapCell   *pPark = FrameCellAt(1, 1, 0);
+                    MapCell   *pCell0;
 
                     CLICK(4);
                     Check(g_world.nUiScreen == 1, "the inventory opens for the select arms");
-                    Check(pMapX->pSelUnit != NULL && pMapX->pSelUnit->pCell == pPark,
-                          "a unit is selected before the keys run, and its own cell link is real on this mission");
+                    pCell0 = (pMapX->pSelUnit != NULL) ? pMapX->pSelUnit->pCell : NULL;
+                    Check(pCell0 != NULL && MapCell_HasOccupant(pCell0),
+                          "a unit is selected before the keys run, and its own cell link points at a cell that holds an occupant");
 
                     World_TactKeyDown(&g_world, PUFO_KEY_UP);
                     Check(g_seams.nSelNext == s0.nSelNext + 1,
                           "up runs the installed select-next seam (0x11974 -> 0x17304)");
-                    Check(pMapX->pSelUnit != NULL && pMapX->pSelUnit->pCell == pPark,
-                          "the callee landed on a roster unit parked on cell (1,1,0)");
-                    CheckEqI32(g_world.tactEnv.cursor.nX, (i32)pPark->nX,
-                                "Tact_SelectUnit's tail put the cursor on the selected unit's cell x");
-                    CheckEqI32(g_world.tactEnv.cursor.nY, (i32)pPark->nY,
-                                "and its y: the live pair 0x15128/0x1512C, not the staged copy the dispatch flushes");
+                    Check(pMapX->pSelUnit != NULL && pMapX->pSelUnit->pCell != NULL
+                              && MapCell_HasOccupant(pMapX->pSelUnit->pCell),
+                          "the callee landed on a roster unit whose own cell link is set and occupied");
+                    CheckEqI32(g_world.tactEnv.cursor.nX,
+                               (pMapX->pSelUnit != NULL && pMapX->pSelUnit->pCell != NULL)
+                                   ? (i32)pMapX->pSelUnit->pCell->nX : -1,
+                               "Tact_SelectUnit's tail put the cursor on the selected unit's cell x");
+                    CheckEqI32(g_world.tactEnv.cursor.nY,
+                               (pMapX->pSelUnit != NULL && pMapX->pSelUnit->pCell != NULL)
+                                   ? (i32)pMapX->pSelUnit->pCell->nY : -1,
+                               "and its y: the live pair 0x15128/0x1512C, not the staged copy the dispatch flushes");
                     World_TactKeyUp(&g_world, PUFO_KEY_UP);
                     Check(g_bank.abHeldDir[PUFO_KEY_UP] == 0 && g_seams.nSelNext == s0.nSelNext + 1,
                           "the up release clears only its held byte (0xA0CFC): no second select");
@@ -2664,17 +2778,18 @@ int main(void)
                     /* The save's map chunk stores the occupant id at cell+0x30 (written from the cell,
                      * read back at 0x436C0), so the unit has to STAND on a real terrain cell here. The
                      * original gets there through Unit_PlaceOnMap @ 0x49A0C -- eight MapCell_SetOccupant
-                     * @ 0x548B8 calls, one per sub-cell of a large unit -- which writes BOTH links. The
-                     * fixture writes the same pair; nothing else in this run placed the unit. */
+                     * @ 0x548B8 calls, one per sub-cell of a large unit -- which writes BOTH links AND drops
+                     * the cell the unit was standing on. The deploy left every soldier on its own node cell,
+                     * so writing the pair by hand here would leave the unit an occupant of two cells, and the
+                     * map chunk would write its id into both: the reload's walk scans layer 0 first and would
+                     * find the old one. The fixture therefore calls the original's own mover. */
                     if (g_pMarkUnit != NULL) {
-                        MapCell *pStandCell = g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER
-                                                                  + PUFO_MAP_CELL_DIM * 12 + 10];
+                        Unit_PlaceOnMap(g_pMarkUnit, 10, 12, 1, FrameCellLookup, NULL);
 
-                        Check(pStandCell != NULL, "the terrain table has the cell the fixture stands the unit on");
-                        if (pStandCell != NULL) {
-                            g_pMarkUnit->pCell = pStandCell;
-                            MapCell_SetOccupant(pStandCell, g_pMarkUnit);
-                        }
+                        Check(g_pMarkUnit->pCell == FrameCellAt(10, 12, 1)
+                                  && FrameCellAt(10, 12, 1) != NULL
+                                  && FrameCellAt(10, 12, 1)->pUnit == g_pMarkUnit,
+                              "Unit_PlaceOnMap (0x49A0C) moved the unit to cell (10,12,1) and owns it there");
                     }
                     g_nMarkCellX  = (g_pMarkUnit != NULL && g_pMarkUnit->pCell != NULL) ? g_pMarkUnit->pCell->nX : -1;
                     g_nMarkCellY  = (g_pMarkUnit != NULL && g_pMarkUnit->pCell != NULL) ? g_pMarkUnit->pCell->nY : -1;
@@ -3176,6 +3291,34 @@ int main(void)
                 CheckEqI32(g_world.sTactIso.nTileY, 47, "the outer loop at Map+0x35");
                 Check(g_nBlits > 0, "the frame furniture blits through the shell's pad hook (the HUD panel's 19 controls, the look pad)");
                 DumpFrame("tact_frame_iso");   /* the picture this seam paints: iso layer + furniture */
+
+                /* Part 86: the mission's route nodes, read off the frame's own state. The one room this base
+                 * has contributed eight nodes, and every one of them carries record byte 20 == 1, which is
+                 * what Map_PickRmpSpawnForUnit @ 0x55524 asks a unit whose type byte pUnit[0xA0] is <= 8 for;
+                 * the deploy gate above is where they get consumed. Map_LoadRmp @ 0x55060 APPENDS the modules
+                 * it loads and nothing else in the beta clears the list except TactBuf11408_ctor @ 0x54ff8
+                 * (its only code caller is Tact_InitMission at 0x3C630) and Map_FreeRmpNodes @ 0x55018 from
+                 * Tact_Shutdown @ 0x3d6a0. */
+                {
+                    i32 nNodes = (i32)g_world.sTactRmp.nNodeCount;
+                    i32 nFlag1 = 0;
+
+                    for (i32 n = 0; n < nNodes; ++n) {
+                        const RmpNode *pN = g_world.sTactRmp.apNodes[n];
+
+                        if (pN != NULL && pN->bFlag20 == 1) { nFlag1 += 1; }
+                    }
+                    CheckEqI32((i32)g_world.sTactRmp.nModCount, 1,
+                                "one module carries route nodes: the finished room at tile (2,2), the only tile that is not 0x14");
+                    CheckEqI32(nNodes, 8, "XBASE_1.RMP is 192 bytes: eight records off the truncating divide (0x550E8)");
+                    CheckEqI32(nFlag1, 8, "and all eight are the byte-20 == 1 kind a soldier's gate accepts");
+                    Check(g_world.sTactRmp.nModCount > 0
+                              && strcmp(g_world.sTactRmp.aszModName[0], "xbase_1") == 0,
+                          "the terrain build named the module off the tactical tile grid (the .rmp load is recorded at 0x550FC)");
+                    printf("       rmp: mods=%d nodes=%d byte20==1:%d; tile (2,2) = %d\n",
+                           (int)g_world.sTactRmp.nModCount, (int)nNodes, (int)nFlag1,
+                           (int)g_world.abMapTileTypes[14]);
+                }
 
                 /* The modal arm: the bank's cells in, the pen's slots 20..23 out. Width 120, two
                  * lines, two labels: nX 60, step 6, so 66 / 122 / 165 with the count 2. */

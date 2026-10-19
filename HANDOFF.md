@@ -1437,6 +1437,43 @@ appended line is the blob slice at 0x38B49: «Удачи!», 39 px, centred at 1
 until a line is put in the panel. New reference `tests/ref/tact_briefing.png`, looked at. IDB: 7 comments (0x15692C, 0x1571EC,
 0x223DC, 0x3D2D0, 0x3D504, 0x14C50, 0x1a7a0) + `idb_save`.
 
+`Map_LoadRmp @ 0x55060` appends, and the deployed squad stops being stacked (Part 86). The loader writes at `apRmpNodes[nRmpCount]`
+and posts the count (0x5520C..0x5527C); nothing in it frees or resets. The count is cleared once per mission by
+`TactBuf11408_ctor @ 0x54ff8` — two cells only, the u16 node count at byte 0x1770 and `nModCount` at 0x232C, and its only code
+caller is `Tact_InitMission @ 0x3c630` — and the only release in the beta is `Map_FreeRmpNodes @ 0x55018` from
+`Tact_Shutdown @ 0x3d6a0`. The port freed the list and zeroed the count at the top of every call, so a mission kept only the last
+module's nodes — and `Save_ReadRmp` drives the same loader per saved module, so a loaded mission did too. Same re-read, two more
+deviations: the module record is gated on the member having at least one record (0x550FC), and the real-index link at 0x552EC is
+`(pBuf[4] & 0xFF) - runIndex + nRmpCount - 1` with the count already posted for the node being filled, so the run index cancels and
+the stored target is the record's index in that .rmp **plus** the nodes the earlier modules left behind — not `pLink[0] + i`. A
+sentinel whose edge guard trips jumps to 0x553E8 and leaves the -1 that 0x55294 pre-wrote, skipping the payload pair; the port ran
+that path and the real-index path together, so a tripped guard stored a computed index.
+
+The other half of the stacked squad was in the fixture. The frame test's `memset` left the facility TYPE lane at 0, and 0 is
+facility kind 0, whose placement code in `aCraftPlacementCodeByFacType @ 0xa6568` is 0 — so the tile builder stamped 35 phantom
+`xbase_0` ROOM tiles onto an empty base, and that room's eight nodes all carry byte 20 == 2, which 0x55524 rejects for a unit whose
+type byte is 0..8. The original's empty cell is layers 0 **with the 0xFF sentinel**: `Game_StartNew` stamps it at 0x94908/0x9491C
+over all eight base blocks, `Geoscape_OnMapClick`'s cell clear writes the same shape, and the image agrees — every byte of
+`abFacilityGrid @ 0x159768`, of `abTactTileTypes @ 0x159d5c` and of the count byte at +0x618 is 0xFF in `.data`.
+`Base_CalcMonthlyUpkeep @ 0x6a230` charges for a type byte that is not 0xFF, so the zeros were silently costing money. With the
+grid prepared the game's way the tiles are 36 copies of 20; the fixture then ages its one facility through the product's own day
+tick (0x5ce40 → 0x5d3bc → `Base_TickFacilityConstruction @ 0x62824`) so cell (2,2) is finished at launch, its tile takes placement
+code 1, `xbase_1` loads (0x24150 skips the `.rmp` of a 0x14 tile only), and its eight records all carry byte 20 == 1. Phase 3's rmp
+arm (0x39E9C → 0x39FE8 → 0x55418) then puts the eight soldiers on eight distinct cells and the occupant census the iso layer reads
+goes 1 → 8. Phase 1's park of every unit onto (1,1,0) at 0x399BC is still exactly what the ARM does, and an empty or still-building
+base really does deploy onto bare ground.
+
+Three fixture defects closed on the way, all of them worth remembering. A gate that pinned the parked placement, and the select-key
+gate that used the parked cell as its reference, now read the selected unit's own cell — the stronger form, since `Tact_SelectUnit`'s
+tail re-places the cursor through `pUnit->pCell`. The save fixture stood its marked unit on a cell by writing the
+`pCell`/occupant pair by hand, which left the unit an occupant of two cells; the map chunk wrote its id into both and the reload's
+walk (layer 0 first) found the wrong one — it calls `Unit_PlaceOnMap @ 0x49a0c` now. And `test_rmp` gained the two-module gate:
+13 nodes live, the second module's node numbered 10, its links stored as 11 / 12 / 10 off the rebase, its 255 directions as no link,
+its three unguarded sentinels as -2 / -3 / -5. Eleven tactical references changed and were looked at; an almost-empty base's tactical
+map is bare ground with one bright room, which is what the original's tile rules produce. Gates: 62/62 Release and Debug,
+coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, e2e's 9 pictures unchanged, IDB comments at 0x55060, 0x552EC,
+0x55294, 0x55524, 0x55018, 0x54ff8, 0x39E9C, 0x399BC and 0x159768 plus `idb_save`.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give
