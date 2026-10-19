@@ -26,10 +26,12 @@
  *     last pen position; the release clears the drag flag (0x896BC).
  */
 #include "app/pufo_world.h"
+#include "dat/pufo_dat.h"
 #include "game/pufo_boot.h"
 #include "game/pufo_clock.h"
 #include "game/pufo_font.h"
 #include "game/pufo_options.h"
+#include "game/pufo_save.h"
 #include "game/pufo_tactend.h"
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"
@@ -90,6 +92,7 @@ static UiWidgetBank   g_bank;
 static TactInputHooks g_tactInHooks;
 static bool           g_bBankActionFlag;   /* UiBank_bActionFlag, WorldHooks.pbBankActionFlag */
 static i32            g_nResizeCalls;      /* the WorldHooks.pfnResizeMainWindow seam (Part 61) */
+static i32            g_nSaveRenders;      /* the save unit's frame seam (Part 62) */
 static i32            g_aBankSamples[64];
 static i32            g_nBankSamples;
 static i32            g_nSlotFormatCalls;  /* Menu_OpenSlotList's injected SaveSlot_FormatList */
@@ -114,12 +117,22 @@ static i32 RecLoadGame(i32 nSlot, void *pUser)
     return 1;                                   /* "loaded": the list mode stays 1 (0x19E08 arm) */
 }
 
-static const SaveLoadSlotHooks g_slotHooks = { NULL, RecLoadGame, NULL };  /* no save unit yet */
+/* The save arm stays a stub here: this fixture presses the LOAD screen's SaveLoad_Slot0 (widget 105),
+ * not the save screen's, so the shell's save unit is gated directly in the mission block below
+ * (Part 62); App_HookSaveGame is the app's own half of that arm. */
+static const SaveLoadSlotHooks g_slotHooks = { NULL, RecLoadGame, NULL };
 
 static void RecResizeMainWindow(void *pUser)
 {
     (void)pUser;
     ++g_nResizeCalls;
+}
+
+/* The save unit's frame seam (SaveGame renders before it opens the file, 0x4499C). */
+static void RecSaveRenderFrame(void *pUser)
+{
+    (void)pUser;
+    ++g_nSaveRenders;
 }
 
 static void RecFormatSlots(void *pUser)
@@ -2098,6 +2111,124 @@ int main(void)
                     CLICK(58);
                     Check(g_aFrameSamples[nSampleMark] == 16 && g_nResizeCalls == nResizeSave + 1,
                           "widget 58 plays 16 (Menu_Play) and tail-calls the window seam once (0x9ecb8 twin)");
+                }
+
+                /* The shell save unit over the live mission (Part 62): World_SaveSlot builds the whole
+                 * SaveGameInput from cells this state owns. Distinctive values go into the tact cells the
+                 * tgamedata payload records, the slot file is read back, and every compared value comes
+                 * from the file. The chunk ORDER SaveGame writes is pinned in tests/test_save.c; this gate
+                 * pins the wiring -- which live cell lands in which chunk field. */
+                {
+                    static const char *const aTactChunks[] = {
+                        PUFO_SAVE_TAG_MCNT, PUFO_SAVE_TAG_TGAMEDATA, PUFO_SAVE_TAG_TEAMUNITS,
+                        PUFO_SAVE_TAG_ALIENS, PUFO_SAVE_TAG_DIEDSOLDS, PUFO_SAVE_TAG_HIDDENSOL,
+                        PUFO_SAVE_TAG_FLOBJS, PUFO_SAVE_TAG_MAP, PUFO_SAVE_TAG_V124,
+                        PUFO_SAVE_TAG_OBJBEFORE, PUFO_SAVE_TAG_RMP
+                    };
+                    WorldHooks saveHooks;
+                    DatFile dat;
+                    u8 bCount0 = g_world.bMissionCount;      /* byte_138E8C */
+                    u8 bPanel0 = g_world.sTactInput.bDeployPanelOpen;
+                    u8 bAlt0 = g_world.bMapSpawnAlt;
+                    i32 nTileX0 = g_world.nMapSpawnTileX, nTileY0 = g_world.nMapSpawnTileY;
+                    i32 nHwp0 = g_world.nMapDeployedHwps;
+                    i32 n6C0 = g_world.nMapUnk138E6C, n70C0 = g_world.nMapUnk138E70;
+                    i32 nCamX0 = g_world.tactEnv.focus.nCamScrollX;
+                    i32 nCamY0 = g_world.tactEnv.focus.nCamScrollY;
+                    u8 bPanel = 0, bLay = 0, b115 = 0, bMType = 0, bMode = 0, b11E = 0;
+                    u8 aThree[3] = {0}, aSpr[4] = {0}, aTri[3] = {0}, aTile[3] = {0}, bMcnt = 0;
+                    i32 nTierRaw = 0, nDep = 0, aFour[4] = {0}, aV124[2] = {0};
+                    u8 aStrategSkip[74];   /* version, 4 dwords, 5 type bytes, 13 dwords */
+                    i32 aGlobalPtr[2] = {0};
+
+                    g_world.sTactInput.bDeployPanelOpen = 1;    /* 0x15110 */
+                    g_world.tactEnv.focus.nCamScrollX = 21;     /* 0x15130 */
+                    g_world.tactEnv.focus.nCamScrollY = 23;     /* 0x15134 */
+                    g_world.nMapDeployedHwps = 5;               /* 0x15140 */
+                    g_world.bMapSpawnAlt = 1;                   /* 0x15148 */
+                    g_world.nMapSpawnTileX = 7;                 /* 0x1514C */
+                    g_world.nMapSpawnTileY = 9;                 /* 0x15150 */
+                    g_world.nMapUnk138E6C = 0x1234;             /* v124.dat, first dword */
+                    g_world.nMapUnk138E70 = 0x5678;             /* v124.dat, second dword */
+
+                    memset(&saveHooks, 0, sizeof(saveHooks));
+                    saveHooks.pfnRenderFrame = RecSaveRenderFrame;
+                    g_nSaveRenders = 0;
+
+                    Check(World_SaveSlot(&g_world, "", 62, &saveHooks) != 0,
+                          "World_SaveSlot wrote the tactical slot (SaveGame 0x44988 over the live mission)");
+                    CheckEqI32(g_nSaveRenders, 1, "the save renders one frame before the file opens (0x4499C)");
+                    Check(DatFile_Exists("sav62.sav"), "  sav62.sav was built from the dir and slot");
+
+                    DatFile_ctor(&dat);
+                    Check(DatFile_Open(&dat, "sav62.sav", PUFO_DAT_READ, 0), "  reopened for reading");
+                    for (i = 0; i < (i32)(sizeof(aTactChunks) / sizeof(aTactChunks[0])); ++i) {
+                        char szMsg[80];
+                        snprintf(szMsg, sizeof(szMsg), "  the tact branch wrote the %s chunk", aTactChunks[i]);
+                        Check(DatFile_FindChunk(&dat, aTactChunks[i]), szMsg);
+                    }
+
+                    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_STRATEG)
+                              && DatFile_Read(&dat, aStrategSkip, 74) && DatFile_Read(&dat, aGlobalPtr, 8)
+                              && aGlobalPtr[0] == g_world.economy.aZero44_49[0]
+                              && aGlobalPtr[1] == g_world.economy.anFundBar[0],
+                          "the strateg chunk writes the two globals the original hands as addresses -- "
+                          "0x1865A8 (0x3FD44) then 0x186594 (0x3FD54): the save unit wires the shell's own "
+                          "funding cells, the pair Save_WriteStrateg refuses without");
+
+                    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_MCNT) && DatFile_Read(&dat, &bMcnt, 1)
+                              && bMcnt == (u8)(bCount0 + 1),
+                          "mcnt is the incremented mission counter (0x44A80 writes the new value)");
+                    Check(g_world.bMissionCount == (u8)(bCount0 + 1),
+                          "byte_138E8C took the increment back through the unit's i32 mirror");
+
+                    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TGAMEDATA)
+                              && DatFile_Read(&dat, &bPanel, 1) && DatFile_Read(&dat, &nTierRaw, 4)
+                              && DatFile_Read(&dat, aThree, 3) && DatFile_Read(&dat, &bLay, 1)
+                              && DatFile_Read(&dat, &b115, 1) && DatFile_Read(&dat, aSpr, 4)
+                              && DatFile_Read(&dat, &bMType, 1) && DatFile_Read(&dat, &bMode, 1)
+                              && DatFile_Read(&dat, &b11E, 1),
+                          "tgamedata's first 17 fields read back");
+                    Check(bPanel == 1 && nTierRaw == g_world.nMapMissionTierRaw
+                              && aThree[0] == g_world.nMapTerrainVariant
+                              && aThree[1] == g_world.bMapUnk15112 && aThree[2] == g_world.nMapCraftIndex
+                              && bLay == pMapX->nMapLayers && b115 == g_world.bMapUnk15115
+                              && memcmp(aSpr, g_world.abMapSpriteSet, 4) == 0
+                              && bMType == pMapX->nMissionType && bMode == g_world.bMapMissionMode
+                              && b11E == g_world.bMapUnk1511E,
+                          "the tgamedata head is the mission's own cells, 0x15110..0x1511E");
+                    Check(DatFile_Read(&dat, aFour, 16)
+                              && aFour[0] == g_world.tactEnv.cursor.nX
+                              && aFour[1] == g_world.tactEnv.cursor.nY
+                              && aFour[2] == 21 && aFour[3] == 23,
+                          "the four dwords are the cursor pair (0x15128/0x1512C) and the camera pair the "
+                          "mission's focus owns (0x15130/0x15134)");
+                    Check(DatFile_Read(&dat, aTri, 3) && aTri[0] == g_world.tactEnv.cursor.nFlags
+                              && aTri[1] == g_world.bMapCraftMapX && aTri[2] == g_world.bMapCraftMapY,
+                          "the three bytes are nLayerScratch and the craft map tile (0x15138/0x15139/0x1513A)");
+                    Check(DatFile_Read(&dat, &nDep, 4) && nDep == 5,
+                          "the deployed-hwps dword is the mission's running count (0x15140)");
+                    Check(DatFile_Read(&dat, aTile, 3) && aTile[0] == 1 && aTile[1] == 7 && aTile[2] == 9,
+                          "the three craft-tile dwords are written ONE BYTE each (0x15148/0x1514C/0x15150)");
+                    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_V124) && DatFile_Read(&dat, aV124, 8)
+                              && aV124[0] == 0x1234 && aV124[1] == 0x5678,
+                          "v124.dat is the two scratch dwords (0x448B8..0x448EC)");
+                    Check(g_world.nUiScreen == 0,
+                          "the tactical branch closed the ui screen (0x44B80), as the driver's port does");
+
+                    DatFile_Close(&dat);
+                    (void)remove("sav62.sav");
+
+                    g_world.bMissionCount = bCount0;
+                    g_world.sTactInput.bDeployPanelOpen = bPanel0;
+                    g_world.tactEnv.focus.nCamScrollX = nCamX0;
+                    g_world.tactEnv.focus.nCamScrollY = nCamY0;
+                    g_world.nMapDeployedHwps = nHwp0;
+                    g_world.bMapSpawnAlt = bAlt0;
+                    g_world.nMapSpawnTileX = nTileX0;
+                    g_world.nMapSpawnTileY = nTileY0;
+                    g_world.nMapUnk138E6C = n6C0;
+                    g_world.nMapUnk138E70 = n70C0;
                 }
 
                 /* Restore everything the dispatch moved. */

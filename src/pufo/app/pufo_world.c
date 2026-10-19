@@ -1123,6 +1123,130 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     return nRet;
 }
 
+static MapCell *World_TactLookupCell(i32 nX, i32 nY, i32 nLayer, void *pUser); /* defined below */
+
+/* SaveGame @ 0x44988 over this state (Part 62). The driver is pufo_save.c's SaveGame, tested in
+ * tests/test_save.c; this unit is the shell's input builder, the mirror of World_LoadSlot: every
+ * chunk source is a cell the world already owns. The tactical half is filled only when a mission is
+ * live (bTactFlag with the map ctx and TactState), which is the same condition the original's
+ * tact branch takes. Deviation, recorded: byte_138E8C is one byte in the Map block while
+ * SaveGameInput wants an i32 pointer, so the counter crosses through a local mirror and is written
+ * back masked -- SaveGame increments it only in the tactical branch, so a geoscape save leaves it
+ * alone either way. The render seam reuses WorldHooks' frame hook with the world as its user. */
+i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const WorldHooks *pHooks)
+{
+    SaveGameInput in;
+    TactSaveState tact;       /* the driver reaches these through in, so they live at function scope */
+    TeamUnitsState rosters;
+    FlobjsState flobjs;
+    DatFile dat;
+    GameMap *pMap;
+    i32 nMissionCount;
+    bool bOk;
+
+    if (pW == NULL || pszAppDir == NULL || pHooks == NULL) {
+        return 0;
+    }
+
+    nMissionCount = (i32)pW->bMissionCount; /* byte_138E8C, the mirror above */
+
+    memset(&in, 0, sizeof(in));
+    in.pszAppDir = pszAppDir;
+    in.nSlot = nSlot;
+    in.bTactFlag = pW->bTactFlag;
+    in.pnMissionCount = &nMissionCount;
+    in.pnUiScreen = &pW->nUiScreen;
+    in.pBases = &pW->saveBases;
+    in.apBases = (const BaseRec *const *)pW->apBases;
+    in.pProductBlock = pW->abProductBlock;
+    in.pResearch = &pW->saveResearch;
+    in.apShips = (const Ship *const *)pW->apCraft;
+    in.nShipCount = pW->bCraftCount;
+    in.pSmap = &pW->saveSmap;
+    /* Save_WriteStrateg hands two globals straight to DatFile_Write (0x3FD44 writes 0x1865A8 and
+     * 0x3FD54 writes 0x186594), so it refuses when the port's pointer pair is unset. The shell's
+     * copies of those globals are the economy block's first slots: g_nFundArrow0 and g_nFundBar0. */
+    pW->saveStrateg.pnUnk1865A8 = &pW->economy.aZero44_49[0];  /* 0x1865A8 */
+    pW->saveStrateg.pnUnk186594 = &pW->economy.anFundBar[0];   /* 0x186594 */
+    in.pStrateg = &pW->saveStrateg;
+    in.pStrategList = &pW->strategList;
+    in.pTime = &pW->saveTime;
+    in.apSoldiers = pW->apSoldiers;
+    in.nSoldierCount = pW->nSoldierCount;
+    in.apTactItems = pW->apTactItems;
+    in.nTactItemCount = pW->nTactItemCount;
+    if (pW->pAssets != NULL) {
+        in.apObjects = (ObjectRecFull *const *)pW->pAssets->apObjects;
+        in.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
+    in.pfnRenderFrame = pHooks->pfnRenderFrame;
+    in.pRenderUser = pW;
+
+    pMap = pW->pTactMap;
+    if (pW->bTactFlag != 0 && pMap != NULL && pW->pTactState != NULL) {
+        /* The 23 tgamedata sources, pinned against Save_WriteTGameData @ 0x446a8's reads. */
+        memset(&tact, 0, sizeof(tact));
+        tact.bUnk15110 = pW->sTactInput.bDeployPanelOpen;   /* 0x15110 (0x128AC8) */
+        tact.nUnk1510C = pW->nMapMissionTierRaw;            /* 0x1510C (0x128AC4) */
+        tact.abUnk15111[0] = pW->nMapTerrainVariant;        /* 0x15111 */
+        tact.abUnk15111[1] = pW->bMapUnk15112;              /* 0x15112 */
+        tact.abUnk15111[2] = pW->nMapCraftIndex;            /* 0x15113 */
+        tact.nMapLayers = pMap->nMapLayers;                 /* 0x15114 */
+        tact.bUnk15115 = pW->bMapUnk15115;                  /* 0x15115 */
+        memcpy(tact.abSpriteSet, pW->abMapSpriteSet, sizeof(tact.abSpriteSet)); /* 0x15116..19 */
+        tact.nMissionType = pMap->nMissionType;             /* 0x1511A */
+        tact.bMissionMode = pW->bMapMissionMode;            /* 0x1511D (0x128AD5) */
+        tact.bUnk1511E = pW->bMapUnk1511E;                  /* 0x1511E (0x128AD6) */
+        tact.anUnk15188[0] = pW->tactEnv.cursor.nX;         /* 0x15128 */
+        tact.anUnk15188[1] = pW->tactEnv.cursor.nY;         /* 0x1512C */
+        tact.anUnk15188[2] = pW->tactEnv.focus.nCamScrollX; /* 0x15130, tactEnv.focus is its owner */
+        tact.anUnk15188[3] = pW->tactEnv.focus.nCamScrollY; /* 0x15134 */
+        tact.abUnk15198[0] = pW->tactEnv.cursor.nFlags;     /* 0x15138 (0x128AF0) */
+        tact.abUnk15198[1] = pW->bMapCraftMapX;             /* 0x15139 (0x128AF1) */
+        tact.abUnk15198[2] = pW->bMapCraftMapY;             /* 0x1513A (0x128AF2) */
+        tact.nUnk151A0 = pW->nMapDeployedHwps;              /* 0x15140 (0x128AF8) */
+        tact.anCraftTile[0] = pW->bMapSpawnAlt;             /* 0x15148, one byte on disk */
+        tact.anCraftTile[1] = pW->nMapSpawnTileX;           /* 0x1514C, one byte on disk */
+        tact.anCraftTile[2] = pW->nMapSpawnTileY;           /* 0x15150, one byte on disk */
+        tact.nUnk138E6C = pW->nMapUnk138E6C;                /* v124.dat first dword */
+        tact.nUnk138E70 = pW->nMapUnk138E70;                /* v124.dat second dword */
+
+        memset(&rosters, 0, sizeof(rosters));
+        rosters.nXcomCount = pMap->nXcomCount;
+        rosters.nEnemyCount = pMap->nEnemyCount;
+        rosters.nCivilianCount = pMap->nCivilianCount;
+        rosters.nHiddenCount = pW->nMapEnemyReserveCount;   /* unk_138DF0's count */
+        rosters.apXcomUnits = pMap->apXcomUnits;
+        rosters.apEnemyUnits = pMap->apEnemyUnits;
+        rosters.apCivilians = pMap->apCivilians;
+        rosters.apHiddenUnits = pW->apTactHidden;           /* unk_138DF0 */
+        rosters.pSelUnit = pMap->pSelUnit;
+
+        memset(&flobjs, 0, sizeof(flobjs));
+        flobjs.apTactItems = (const TactItem *const *)pW->apTactItems;
+        flobjs.nTactItemCount = pW->nTactItemCount;
+        if (pW->pAssets != NULL) {
+            flobjs.apObjects = (const ObjectRecFull *const *)pW->pAssets->apObjects;
+            flobjs.nObjectCount = (i32)pW->pAssets->nObjectCount;
+        }
+
+        in.pTact = &tact;
+        in.pRosters = &rosters;
+        in.pFlobjs = &flobjs;
+        in.pMap = &pMap->geom;
+        in.pfnLookup = World_TactLookupCell;
+        in.pLookupUser = pW;
+        in.pRmp = &pW->sTactRmp;
+    }
+
+    DatFile_ctor(&dat);
+    bOk = SaveGame(&dat, &in);
+    DatFile_Close(&dat);
+
+    pW->bMissionCount = (u8)nMissionCount; /* the mirror written back, masked to the byte cell */
+    return bOk ? 1 : 0;
+}
+
 /* ---- the geoscape clock ---------------------------------------------------------------------
  *
  * The shell's half of the geoscape clock. WM_TIMER 0xC353 runs UiPulse_OnTimer @ 0x36630, whose

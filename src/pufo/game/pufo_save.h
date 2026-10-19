@@ -611,10 +611,10 @@ bool Save_ReadTeamUnits(DatFile *pDat, TeamUnitsState *pState,
 
 /* ------------------------------------------------- the tactical session block
  *
- * Save_WriteTGameData @ 0x446a8. One call writes FIVE chunks in this order:
+ * Save_WriteTGameData @ 0x446a8. One call writes EIGHT chunks in this order:
  *
  *     tgamedata (43 bytes), teamunits, aliens, diedsolds, hiddensold,
- *     map, v124.dat (8 bytes)
+ *     flobjs, map, v124.dat (8 bytes)
  *
  * so it is the tactical half of a save, and it calls the three writers above
  * rather than duplicating them.
@@ -651,10 +651,15 @@ typedef struct TactSaveState {
     u8   nMissionType;    /* 0x1511A */
     u8   bMissionMode;    /* 0x1511D, unk_128AD5: the mode Tact_SelectTeamUnits dispatches on */
     u8   bUnk1511E;       /* 0x1511E, unk_128AD6 */
-    i32  anUnk15188[4];   /* 0x15188, 0x1518C, 0x15190, 0x15194, pad86309a[3,7,11,15] */
-    u8   abUnk15198[3];   /* 0x15198 unnamed; 0x15199 is Map_nCraftMapX and 0x1519A is Map_nCraftMapY */
-    i32  nUnk151A0;       /* 0x151A0, gap_86336 */
-    i32  anCraftTile[3];  /* nCraftTileA, stride 4, written one byte each */
+    /* An earlier note here used 0x1517D/0x1517E for the mode bytes and 0x15188..0x151A0 for these
+     * three groups; a bad Map-base subtraction. The writer's data refs are the ones below. */
+    i32  anUnk15188[4];   /* Map_nCursorX @0x15128, Map_nCursorY @0x1512C, Map_nCamScrollX @0x15130,
+                           * Map_nCamScrollY @0x15134 (0x128AE0/04/08/0C) */
+    u8   abUnk15198[3];   /* nLayerScratch @0x15138, Map_nCraftMapX @0x15139, Map_nCraftMapY @0x1513A
+                           * (0x128AF0/01/02) */
+    i32  nUnk151A0;       /* Map_nDeployedHwpsCount @ Map+0x15140 (0x128AF8) */
+    i32  anCraftTile[3];  /* Map_bSpawnAlt @0x15148, Map_nSpawnTileX @0x1514C, Map_nSpawnTileY @0x15150,
+                           * stride 4, written one byte each */
     i32  nUnk138E6C;      /* v124.dat, first dword */
     i32  nUnk138E70;      /* v124.dat, second dword */
 } TactSaveState;

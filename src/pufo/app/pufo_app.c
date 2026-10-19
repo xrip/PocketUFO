@@ -132,12 +132,12 @@ static u8              *g_apTitlesGlyphs[5];   /* unk_1571A0..0x1571B0 */
 static void App_PresentLoadedSurface(void);
 static void App_TitlesToStartup(void *pUser);
 static i32 App_HookLoadGame(i32 nSlot, void *pUser);
+static i32 App_HookSaveGame(i32 nSlot, void *pUser);
 static void App_HookFormatSlots(void *pUser);
 
-/* SaveLoad_Slot0..6 @ 0x19de4's pair. Deviation, recorded: SaveGame @ 0x44988 has no ported save
- * unit yet, so the save hook stays NULL and SaveLoad_Slot returns 0 on the save arm (pufo_menubtn.h
- * documents the NULL-safe path); the load arm reaches the same loader the start menu uses. */
-static const SaveLoadSlotHooks g_saveLoadHooks = { NULL, App_HookLoadGame, NULL };
+/* SaveLoad_Slot0..6 @ 0x19de4's pair. Both arms are wired since Part 62: the save arm reaches
+ * World_SaveSlot (SaveGame @ 0x44988) and the load arm reaches the same loader the start menu uses. */
+static const SaveLoadSlotHooks g_saveLoadHooks = { App_HookSaveGame, App_HookLoadGame, NULL };
 
 static bool App_LoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
                          const char *psz2, void *pUser)
@@ -412,6 +412,32 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
                (int)nSlot, nRet != 0 ? "loaded" : "no save", (int)g_world.nFunds,
                (int)g_world.saveBases.bBaseCount, (int)g_world.nSoldierCount,
                (int)g_world.bCraftCount, (int)g_world.nUiScreen);
+        fflush(stdout);
+        return nRet;
+    }
+}
+
+/* SaveGame @ 0x44988 for the shell (Part 62). SaveLoad_Slot reaches it from the save list
+ * (MenuBtn_Confirm's SaveLoad_Slot(nSlot, 10) arm); World_SaveSlot reads every chunk source straight
+ * off the world, so the frame seam is the only WorldHooks field this path needs. The state line is
+ * the shell's own report, as in App_HookLoadGame. */
+static i32 App_HookSaveGame(i32 nSlot, void *pUser)
+{
+    static WorldHooks hooks; /* the same reason App_HookLoadGame's hooks is static */
+
+    (void)pUser;
+    if (!g_bWorldReady) {
+        return 0;
+    }
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnRenderFrame = App_DrawFrameHook;
+
+    {
+        i32 nRet = World_SaveSlot(&g_world, "", nSlot, &hooks);
+        printf("pocketufo: save slot %d: %s (%d soldiers, %d craft, %d tact items, ui screen %d)\n",
+               (int)nSlot, nRet != 0 ? "written" : "failed", (int)g_world.nSoldierCount,
+               (int)g_world.bCraftCount, (int)g_world.nTactItemCount, (int)g_world.nUiScreen);
         fflush(stdout);
         return nRet;
     }

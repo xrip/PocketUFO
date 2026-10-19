@@ -624,8 +624,8 @@ typedef struct WorldHooks {
      * the groups and loads the widget pads through the pfnLoadPads seam above. The rest is what the
      * installed handlers reach back into the caller for: the caller's TactInputHooks (MenuBtn_Confirm
      * hands them to Input_OnConfirm @ 0x15f3c), the UiBank_bActionFlag scratch Input_OnAction sets,
-     * the SaveLoad_Slot0..6 pair (the save hook stays NULL until a SaveGame unit ports 0x44988 --
-     * SaveLoad_Slot returns 0 through a NULL save hook), the slot-list builder Menu_OpenSlotList
+     * the SaveLoad_Slot0..6 pair (Part 62 wires both arms: the save arm runs World_SaveSlot over
+     * the live world), the slot-list builder Menu_OpenSlotList
      * injects, the list-mode cell *0x157188, and a WRITABLE alias of the same option block pOptions
      * points at: Menu_SetSpeed/Gamma/MusicVolume/SfxVolume and the five toggles write options the way
      * the original writes the Map option bytes. */
@@ -704,6 +704,11 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
  * Returns LoadGame's result (0 when the file is absent). */
 i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
                    const PufoOptions *pOptions, const WorldHooks *pHooks);
+
+/* SaveGame @ 0x44988 over this state (Part 62): the same slot path as World_LoadSlot. The tactical
+ * chunks are built only while a mission is live; the mission counter byte is incremented through an
+ * i32 mirror, as the driver's tact branch does. Returns SaveGame's result. */
+i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const WorldHooks *pHooks);
 
 /* Tact_InitMission @ 0x3c550 over this state, wired by World_InitTactical's env fill. nMode 0 is the
  * launch path (the craft-select seam's 0x83AC4 call); any other value would need the save-file blocks

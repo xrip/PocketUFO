@@ -19599,3 +19599,38 @@ instead of resizing a window). Mutations 2/2: seam passed as NULL 1 red; seam ca
 1 red. Golden startup frame unchanged. Coverage unchanged (0x19930/0x9ecb8 already cited).
 
 IDB: wiring comments at 0x19930 and 0x9ecb8.
+
+## Unit 123 -- the shell SaveGame unit (Part 62)
+
+Original: SaveGame @ 0x44988, Save_WriteTGameData @ 0x446a8, Save_WriteStrateg @ 0x3FBB4.
+Recreated: World_SaveSlot (src/pufo/app/pufo_world.c) builds the SaveGameInput (pufo_save.c's
+SaveGame driver, Unit 5x) from live world cells; App_HookSaveGame (pufo_app.c) is the save arm of
+the SaveLoad_Slot0..6 pair @ 0x19de4, which was NULL-hooked before this unit.
+
+Field-by-field, the tgamedata sources pinned against the writer's data refs: 0x15110 the deploy
+panel byte (the input state owns it), 0x1510C Map_nMissionTierRaw, 0x15111/12/13 the terrain
+variant, tier and craft index, 0x15114 the layer count, 0x15115, the four sprite-set bytes,
+0x1511A mission type, 0x1511D mission mode, 0x1511E, 0x15128/2C the cursor pair, 0x15130/34 the
+camera scroll (tactEnv.focus owns these cells), 0x15138/39/3A the layer scratch byte and the craft
+map tile, 0x15140 the deployed-hwps count, 0x15148/4C/50 the spawn-alt flag and the two spawn tiles
+(written ONE BYTE each on disk), then v124.dat's two scratch dwords. Rosters: the map's Xcom/enemy/
+civilian counts and arrays, the hidden park (unk_138DF0) with its reserve count, and pSelUnit.
+
+The strateg chunk hands two globals straight to DatFile_Write -- 0x1865A8 at 0x3FD44 then 0x186594 at
+0x3FD54 -- and the port refuses the chunk when its pointer pair is unset. The shell wires the pair to
+its own funding cells: g_nFundArrow0 (economy.aZero44_49[0]) and g_nFundBar0 (economy.anFundBar[0]).
+
+Deviations, recorded: (1) byte_138E8C is one byte in the Map block, SaveGameInput wants an i32
+pointer, so the unit passes a local i32 mirror and writes the incremented value back masked --
+SaveGame only increments in the tactical branch, so a geoscape save leaves the byte alone either way;
+(2) an earlier header note gave 0x1517D/0x1517E and 0x15188..0x151A0 for the tail fields; a bad
+Map-base subtraction, corrected in the IDB comments at 0x446a8 and 0x39744 and in pufo_save.h -- the
+writer's data refs are the ones listed above.
+
+Gate: tests/test_geoscapeframe.c writes slot 62 over the live mission and reads the file back -- the
+11 tactical chunks present, mcnt the incremented counter with the world byte carrying it back, the
+tgamedata head against the mission's cells with distinctive values in the camera pair, hwps count,
+spawn triple and v124 pair, the one-byte craft tiles, the two funding globals in the strateg header,
+and screen 0 closed by the tactical branch. Mutations 3/3: a wrong cursor value, a wrong spawn-tile
+value and a wrong funding slot each produce exactly one red. The chunk ORDER the driver writes stays
+pinned in tests/test_save.c.
