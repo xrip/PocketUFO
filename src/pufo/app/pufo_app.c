@@ -244,7 +244,7 @@ static void App_HookNewGame(void *pUser)
     hooks.pTactInputHooks     = &g_tactHooks;   /* MenuBtn_Confirm hands these to Input_OnConfirm */
     hooks.pfnResizeMainWindow = App_ResizeMainWindowThunk; /* widget 58, 0x19930 -> 0x9ecb8 (Part 61) */
     hooks.pResizeUser         = NULL;
-    hooks.pbBankActionFlag    = &g_pointerWorld.bActionFlag; /* UiBank_bActionFlag @ pBank+0x1042 */
+    hooks.pbBankActionFlag    = &g_pointerWorld.bActionFlag; /* UiBank_bActionFlag @ pBank+0x1041 = 0xAD711 */
     hooks.pSaveLoadHooks      = &g_saveLoadHooks;
     hooks.pfnFormatSlotList   = App_HookFormatSlots;         /* SaveSlot_FormatList @ 0x45904 */
     hooks.pFormatSlotListUser = NULL;                        /* it reads the app's own g_slotCtx */
@@ -310,6 +310,23 @@ static i32  App_GeoscapeDrawThunk(void *pUser); /* Geoscape_Draw, defined with t
 static void App_GeoscapePointerThunk(i32 nX, i32 nY, bool bDown, void *pUser);
 static void App_GeoscapePointerUpThunk(void *pUser);
 static void App_HookInvCloseAndCommit(void *pUser); /* Inv_CloseAndCommit @ 0x15a48 (Part 66) */
+/* The keyboard arms' seams (Part 67), defined with the other hook bodies. */
+static void App_HookNoop(void *pUser);                   /* nullsub_3 @ 0x22b50 */
+static void App_HookTactMapClick(void *pUser);           /* Tact_HandleMapClick @ 0x1512c */
+static void App_HookTactSelectNextUnit(void *pUser);     /* Tact_SelectNextUnit @ 0x17304 */
+static void App_HookTactSelectPrevUnit(void *pUser);     /* Tact_SelectPrevUnit @ 0x17260 */
+static void App_HookTactInvScrollUp(void *pUser);        /* Inv_ScrollUp @ 0x173e4 */
+static void App_HookTactInvScrollDown(void *pUser);      /* Inv_ScrollDown @ 0x173a8 */
+static void App_HookTactOnConfirm(u16 nUiScreen, void *pUser);   /* the 0x15660 / 0x163C8 arms' callee */
+static void App_HookTactSetCursorPos(i32 nX, i32 nY, void *pUser); /* MapCursor_SetPos @ 0x27014 */
+static void App_HookTactPushTextRecord(i32 nRecIndex, void *pUser); /* StatusMsg_Push @ 0x2dda4 */
+static void App_HookSaveOptions(void *pUser);            /* Options_SaveToRegistry @ 0x114d8 */
+static void App_HookTactEscapeGeoscape(void *pUser);     /* Tact_Shutdown(0) + Geoscape_InitUI(1) */
+static void App_HookGeoscapePanelA(void *pUser);         /* Geoscape_SetPanelFlagA @ 0x8b448 */
+static void App_HookGeoscapePanelB(void *pUser);         /* Geoscape_SetPanelFlagB @ 0x8b478 */
+static void App_HookGeoscapeFocusPrev(void *pUser);      /* Geoscape_UiFocusPrev @ 0x8afa0 */
+static void App_HookGeoscapeFocusNext(void *pUser);      /* Geoscape_UiFocusNext @ 0x8b1f4 */
+static void App_HookGeoscapeMapClick(void *pUser);       /* Geoscape_OnMapClick @ 0x8b4a8 */
 static void App_ShutdownStartUi(void *pUser); /* defined below with the start-UI teardown */
 static void App_QuitDisplay(void);      /* defined below with the window teardown */
 
@@ -614,6 +631,30 @@ static void App_InitStartupUi(void)
     /* Input_OnConfirm's screen-1 arm (0x160FC plays sample 16, 0x16104 calls) closes the inventory
      * with Inv_CloseAndCommit @ 0x15a48 -- the call that deploys the team (Part 66). */
     g_tactHooks.pfnInvCloseAndCommit = App_HookInvCloseAndCommit;
+    /* The keyboard arms (Part 67). PocketUFO_WndProc's WM_KEYDOWN chain (0xA0DC8..0xA0F74) runs
+     * Input_OnLeft/Right/Up/Down, Input_OnAction, Input_OnSecondary and Input_OnConfirm; each of those
+     * reaches the world over one of the seams below -- the geoscape branch through the geoscape seams
+     * (0x116D8/0x117C8 -> SetPanelFlagA/B, 0x118C8/0x119C8 -> UiFocusPrev/Next, 0x15594 ->
+     * Geoscape_OnMapClick), the tactical branch through the mission wrappers. The pen path already ran
+     * Input_OnPointer/Input_OnPointerUp over this same table, so installing them here changes the pen's
+     * arms too: the seams that were NULL (SetCursorPos, PushTextRecord, FocusOnCell-free) now run. */
+    g_tactHooks.pfnPlaySample        = App_HookPlaySample;   /* Sound_Play @ 0x9e0c0 */
+    g_tactHooks.pfnCursorChanged     = App_HookNoop;         /* nullsub_3 @ 0x22b50 */
+    g_tactHooks.pfnHandleMapClick    = App_HookTactMapClick;
+    g_tactHooks.pfnSelectNextUnit    = App_HookTactSelectNextUnit;
+    g_tactHooks.pfnSelectPrevUnit    = App_HookTactSelectPrevUnit;
+    g_tactHooks.pfnInvScrollUp       = App_HookTactInvScrollUp;
+    g_tactHooks.pfnInvScrollDown     = App_HookTactInvScrollDown;
+    g_tactHooks.pfnOnConfirm         = App_HookTactOnConfirm;
+    g_tactHooks.pfnSetCursorPos      = App_HookTactSetCursorPos;
+    g_tactHooks.pfnPushTextRecord    = App_HookTactPushTextRecord;
+    g_tactHooks.pfnSaveOptions       = App_HookSaveOptions;         /* Input_OnConfirm's screen-12 arm */
+    g_tactHooks.pfnShutdownReinit    = App_HookTactEscapeGeoscape;  /* UiScreen_OnCancel 13/19 */
+    g_tactHooks.pfnGeoscapePanelA    = App_HookGeoscapePanelA;
+    g_tactHooks.pfnGeoscapePanelB    = App_HookGeoscapePanelB;
+    g_tactHooks.pfnGeoscapeFocusPrev = App_HookGeoscapeFocusPrev;
+    g_tactHooks.pfnGeoscapeFocusNext = App_HookGeoscapeFocusNext;
+    g_tactHooks.pfnGeoscapeMapClick  = App_HookGeoscapeMapClick;
 
     /* The menu-button hooks. */
     memset(&g_startHooks, 0, sizeof(g_startHooks));
@@ -753,6 +794,110 @@ static void App_HookInvCloseAndCommit(void *pUser)
 {
     (void)pUser;
     World_InvCloseAndCommit(&g_world);
+}
+
+/* --- the keyboard arms' hook bodies (Part 67) -----------------------------------------------
+ *
+ * TactInputHooks.pUser is the shell's own (NULL): the seams that need the mission reach the world
+ * directly, exactly as App_HookInvCloseAndCommit does. None of them re-stages the input state -- they
+ * run while a key or pen dispatch already holds that window (World_TactKeyDown / World_TactPointerMove). */
+
+static void App_HookNoop(void *pUser)
+{
+    (void)pUser; /* nullsub_3 @ 0x22b50: the cursor-changed callee does nothing in the original */
+}
+
+static void App_HookTactMapClick(void *pUser)
+{
+    (void)pUser;
+    World_TactMapClick();
+}
+
+static void App_HookTactSelectNextUnit(void *pUser)
+{
+    (void)pUser;
+    World_TactSelectNextUnit();
+}
+
+static void App_HookTactSelectPrevUnit(void *pUser)
+{
+    (void)pUser;
+    World_TactSelectPrevUnit();
+}
+
+static void App_HookTactInvScrollUp(void *pUser)
+{
+    (void)pUser;
+    World_TactInvScrollUp();
+}
+
+static void App_HookTactInvScrollDown(void *pUser)
+{
+    (void)pUser;
+    World_TactInvScrollDown();
+}
+
+/* The original's callee is Input_OnConfirm with a3 = Map_nUiScreen (the BL at 0x15660); the port keeps
+ * the screen id in the staged state, so the seam's argument is the same value the callee already reads. */
+static void App_HookTactOnConfirm(u16 nUiScreen, void *pUser)
+{
+    (void)nUiScreen;
+    (void)pUser;
+    World_TactConfirmInPlace();
+}
+
+static void App_HookTactSetCursorPos(i32 nX, i32 nY, void *pUser)
+{
+    (void)pUser;
+    World_TactSetCursorPos(nX, nY);
+}
+
+static void App_HookTactPushTextRecord(i32 nRecIndex, void *pUser)
+{
+    (void)pUser;
+    World_TactPushTextRecord(nRecIndex);
+}
+
+static void App_HookSaveOptions(void *pUser)
+{
+    (void)pUser;
+    Options_SaveToRegistry(&g_options); /* 0x114d8, over the shell's own option block */
+}
+
+static void App_HookTactEscapeGeoscape(void *pUser)
+{
+    (void)pUser;
+    World_TactEscapeToGeoscape();
+}
+
+static void App_HookGeoscapePanelA(void *pUser)
+{
+    (void)pUser;
+    World_GeoscapePanelFlag(&g_world, true);
+}
+
+static void App_HookGeoscapePanelB(void *pUser)
+{
+    (void)pUser;
+    World_GeoscapePanelFlag(&g_world, false);
+}
+
+static void App_HookGeoscapeFocusPrev(void *pUser)
+{
+    (void)pUser;
+    World_GeoscapeFocusScroll(&g_world, true);
+}
+
+static void App_HookGeoscapeFocusNext(void *pUser)
+{
+    (void)pUser;
+    World_GeoscapeFocusScroll(&g_world, false);
+}
+
+static void App_HookGeoscapeMapClick(void *pUser)
+{
+    (void)pUser;
+    (void)World_MapClick(&g_world);
 }
 
 /* The WM_TIMER 0xC352 body (PocketUFO_WndProc @ 0xA0944): advance the anim phase counter
@@ -922,6 +1067,83 @@ static void App_OnPointerUp(void)
     g_tactState.bSlot19Active = g_world.sModal.bOpen ? 1u : 0u; /* Modal_bOpen, the live read at 0x14B68 */
     g_pointerWorld.nListMode = g_nListMode;
     Input_OnPointerUp(&g_tactState, &g_tactHooks, &g_pointerWorld);
+}
+
+/* ---- the keyboard dispatch (Part 67) --------------------------------------------------------
+ *
+ * PocketUFO_WndProc compares WM_KEYDOWN/WM_KEYUP's wParam against the eight slots of the key map at
+ * 0x1884D8 (+0 up, +12 down, +24 left, +36 right, +48 action, +60 secondary, +72 confirm, +84 escape,
+ * each read with LDRSH) and runs the arm; the chains are ported as Input_OnKeyDown/Input_OnKeyUp in
+ * pufo_input.c. The original fills that record with the 96 bytes GXGetDefaultKeys(2) returns
+ * (0x9FF78..0x9FFB0) after memsetting it (0x9FEB8) -- the WinCE gx layer's device defaults, which have
+ * no Win64 equivalent -- so the shell owns the eight codes as a fixed PC mapping.
+ *
+ * The route is the pen's route: a mission that owns the pen owns the keys, and its state is the
+ * world's staged sTactInput; otherwise the shell's own input state carries the geoscape and start-menu
+ * arms, filled the way App_PointerLogical fills it. */
+static const WORD g_anKeyMap[PUFO_KEY_COUNT] = {
+    VK_UP,     /* key map +0  */
+    VK_DOWN,   /* +12  */
+    VK_LEFT,   /* +24  */
+    VK_RIGHT,  /* +36  */
+    VK_RETURN, /* +48  Action: Input_OnAction @ 0xA0F2C / UiScreen_OnBack @ 0xA0D74 */
+    VK_SPACE,  /* +60  Secondary: Input_OnSecondary @ 0xA0F44 / UiScreen_DismissHigh @ 0xA0D90 */
+    VK_BACK,   /* +72  Confirm: Input_OnConfirm @ 0xA0F5C / UiScreen_OnCancel @ 0xA0DA8 */
+    VK_ESCAPE, /* +84  Escape: nullsub_1 @ 0xA0F70 / Input_OnMenuEscape @ 0xA0DC0 */
+};
+
+static i32 App_KeySlotOf(WPARAM wParam)
+{
+    i32 i;
+
+    for (i = 0; i < (i32)PUFO_KEY_COUNT; ++i) {
+        if (g_anKeyMap[i] == (WORD)wParam) {
+            return i;
+        }
+    }
+    return -1; /* no arm: the original's chain falls through and still returns 0 */
+}
+
+/* The shell-side KeyDispatchCtx for the non-mission route: the held bytes are the bank's own
+ * (UiBank_bHeldUp/Down/Left/Right @ pBank+0x104C..0x104F), the two scratch bytes are UiBank_bActionFlag
+ * @ 0xAD711 and bUiEscapeFlag @ 0xAD712. */
+static void App_TactKeyCtxFill(KeyDispatchCtx *pCtx)
+{
+    memset(pCtx, 0, sizeof(*pCtx));
+    g_tactState.nUiScreen   = (u16)g_nUiScreen;                              /* Map_nUiScreen @ Map+0x3A */
+    g_tactState.bGeoscapeUi = (g_bWorldReady && g_world.bGeoscapeUi != 0);  /* Map.bGeoscapeUi @ Map+0x44 */
+    pCtx->pState        = &g_tactState;
+    pCtx->pHooks        = &g_tactHooks;
+    pCtx->pWorld        = &g_pointerWorld.tact;   /* the queue is the mission's; no mission, no queue use */
+    pCtx->pbHeldDir     = g_bank.abHeldDir;
+    pCtx->pbActionFlag  = &g_pointerWorld.bActionFlag;
+    pCtx->pbEscapeFlag  = &g_bank.bEscapeFlag;
+}
+
+static void App_OnKeyDown(PufoKeySlot eSlot)
+{
+    KeyDispatchCtx ctx;
+
+    if (World_bTactPointerLive(&g_world)) {
+        World_TactKeyDown(&g_world, eSlot); /* the mission's own staging (0xA0DC8 chain) */
+        return;
+    }
+    App_TactKeyCtxFill(&ctx);
+    Input_OnKeyDown(&ctx, eSlot);
+    g_nUiScreen = (i32)g_tactState.nUiScreen; /* Input_OnMenuEscape's screen-0 arm opens 7 */
+}
+
+static void App_OnKeyUp(PufoKeySlot eSlot)
+{
+    KeyDispatchCtx ctx;
+
+    if (World_bTactPointerLive(&g_world)) {
+        World_TactKeyUp(&g_world, eSlot); /* the mission's own staging (0xA0CE0 chain) */
+        return;
+    }
+    App_TactKeyCtxFill(&ctx);
+    Input_OnKeyUp(&ctx, eSlot);
+    g_nUiScreen = (i32)g_tactState.nUiScreen; /* UiScreen_OnCancel / Input_OnMenuEscape write the id */
 }
 
 /* ---- shell-side scaffolding for the --new-game dump. Nothing below is ported behaviour: no function in the image
@@ -1485,13 +1707,28 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_LBUTTONUP:
         App_OnPointerUp(); /* 0x148d0, fires the hovered row's handler */
         return 0;
-    case WM_KEYDOWN:
-        /* Scaffold: Esc quits, mirroring the original's escape path. */
-        if (wParam == VK_ESCAPE) {
-            App_QuitDisplay();
-            return 0;
+    case WM_KEYDOWN: {
+        /* PocketUFO_WndProc's WM_KEYDOWN arm (0xA0DC8..0xA0F74): one of the eight key-map slots, or
+         * nothing. Both key messages return 0 in the original (0xA0E1C / 0xA0D00) -- DefWindowProc is
+         * never reached, so a game key generates no character. Esc no longer quits the shell: the
+         * original's escape key is the MenuEscape slot, whose press arm is nullsub_1 (0xA0F70) and
+         * whose release arm is Input_OnMenuEscape (0xA0DC0). Quitting runs through the quit dialog
+         * (screen 8's App_QuitFromTact) or WM_DESTROY, i.e. the window's own close. */
+        i32 nSlot = App_KeySlotOf(wParam);
+
+        if (nSlot >= 0) {
+            App_OnKeyDown((PufoKeySlot)nSlot);
         }
-        break;
+        return 0;
+    }
+    case WM_KEYUP: {
+        i32 nSlot = App_KeySlotOf(wParam);
+
+        if (nSlot >= 0) {
+            App_OnKeyUp((PufoKeySlot)nSlot); /* 0xA0CE0..0xA0DC4 */
+        }
+        return 0;
+    }
     case WM_DESTROY:
         App_QuitDisplay();
         return 0;

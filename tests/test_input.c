@@ -2148,6 +2148,201 @@ static void TestHandleMapClick(void)
     #undef CLICK_SETUP
 }
 
+/* PocketUFO_WndProc's two keyboard chains: WM_KEYDOWN 0xA0DC8..0xA0F74 and WM_KEYUP 0xA0CE0..0xA0DC4.
+ * The eight arms are keyed by the key-map slot (0x1884D8 + 0/12/24/36/48/60/72/84), and the held bytes
+ * are the bank's UiBank_bHeldUp/Down/Left/Right @ 0xAD71C..0xAD71F. */
+static void MakeKeyCtx(KeyDispatchCtx *pCtx, TactInputState *pS, const TactInputHooks *pH,
+                       TactInputWorld *pW, u8 *pbHeld, bool *pbActionFlag, bool *pbEscapeFlag)
+{
+    memset(pCtx, 0, sizeof(*pCtx));
+    pCtx->pState       = pS;
+    pCtx->pHooks       = pH;
+    pCtx->pWorld       = pW;
+    pCtx->pbHeldDir    = pbHeld;
+    pCtx->pbActionFlag = pbActionFlag;
+    pCtx->pbEscapeFlag = pbEscapeFlag;
+}
+
+static void TestKeyChains(void)
+{
+    Trace t;
+    TactInputState s;
+    TactInputHooks h = MakeHooks(&t);
+    TactInputWorld world;
+    TactInputWorld *pWorld = &world;
+    KeyDispatchCtx ctx;
+    u8 abHeld[4];
+    bool bActionFlag;
+    bool bEscapeFlag;
+
+    memset(&world, 0, sizeof(world));
+
+    /* 1. The direction arms' repeat gate, and the held byte that drives it (0xA0DE4..0xA0E18). */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    memset(abHeld, 0, sizeof(abHeld));
+    bActionFlag = false;
+    bEscapeFlag = false;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+
+    Input_OnKeyDown(&ctx, PUFO_KEY_LEFT);
+    Check(s.nCamScrollX == -1, "the first press scrolls the camera (the 0xA0DE8 gate is open)");
+    CheckEqI32(t.nCursorChanged, 1, "and the arm's tail call nullsub_3 runs");
+    Check(abHeld[2] == 1, "the held byte is set on every press (0xA0EC0)");
+    Input_OnKeyDown(&ctx, PUFO_KEY_LEFT);
+    Check(s.nCamScrollX == -1, "a repeat with no UI screen open is swallowed (0xA0DE8/0xA0DF8)");
+    CheckEqI32(t.nCursorChanged, 1, "and the handler does not run a second time");
+    Input_OnKeyUp(&ctx, PUFO_KEY_LEFT);
+    Check(abHeld[2] == 0, "the release arm clears only its own byte (0xA0D3C)");
+    CheckEqI32(t.nCursorChanged, 1, "and calls nothing else");
+    Input_OnKeyDown(&ctx, PUFO_KEY_LEFT);
+    Check(s.nCamScrollX == -2, "after a release the next press scrolls again");
+
+    /* 2. With a UI screen open the repeat runs the arm every time. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 1;                 /* the inventory: Input_OnLeft's arm at 0x11774 -> Inv_ScrollUp */
+    memset(abHeld, 0, sizeof(abHeld));
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyDown(&ctx, PUFO_KEY_LEFT);
+    Input_OnKeyDown(&ctx, PUFO_KEY_LEFT);
+    CheckEqI32(t.nScrollUp, 2, "with nUiScreen non-zero a held key keeps running the arm");
+    CheckEqI32(t.nSelNext, 0, "and only the arm of the key that is held");
+    Input_OnKeyDown(&ctx, PUFO_KEY_UP);
+    CheckEqI32(t.nSelNext, 1, "the inventory's up key selects the next unit (0x11974)");
+    Input_OnKeyDown(&ctx, PUFO_KEY_DOWN);
+    CheckEqI32(t.nSelPrev, 1, "the down key the previous one");
+
+    /* 3. Each slot owns its own held byte, in the bank order up/down/left/right. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    memset(abHeld, 0, sizeof(abHeld));
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyDown(&ctx, PUFO_KEY_UP);
+    Input_OnKeyDown(&ctx, PUFO_KEY_DOWN);
+    Input_OnKeyDown(&ctx, PUFO_KEY_RIGHT);
+    Check(abHeld[0] == 1 && abHeld[1] == 1 && abHeld[2] == 0 && abHeld[3] == 1,
+          "the four slots write 0xAD71C/1D/1E/1F in the order the arms test them");
+    Input_OnKeyUp(&ctx, PUFO_KEY_UP);
+    Check(abHeld[0] == 0 && abHeld[1] == 1 && abHeld[3] == 1, "and a release clears exactly one");
+
+    /* 4. The action key: the scratch byte, then the screen routing. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 0;
+    memset(abHeld, 0, sizeof(abHeld));
+    bActionFlag = false;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyDown(&ctx, PUFO_KEY_ACTION);
+    Check(bActionFlag, "Input_OnAction sets UiBank_bActionFlag (the STRB at 0x155B4)");
+    CheckEqI32(t.nMapClicks, 1, "with no screen open it runs Tact_HandleMapClick (the BL at 0x15668)");
+    s.nUiScreen = 2;
+    Input_OnKeyDown(&ctx, PUFO_KEY_ACTION);
+    Check(t.nConfirmCount == 1 && t.anConfirm[0] == 2,
+          "a screen <= 2 (or 4) runs Input_OnConfirm with that id (the BL at 0x15660)");
+    s.nUiScreen = 6;
+    Input_OnKeyDown(&ctx, PUFO_KEY_ACTION);
+    Check(s.nUiScreen == 0, "screens 6, 12 and 15 are cleared instead (0x15648)");
+    Check(abHeld[0] == 0 && abHeld[3] == 0, "the action key touches no held byte");
+
+    /* 5. The secondary key: the clear arm, and the geoscape branch that calls nothing. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 10;
+    bEscapeFlag = true;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyDown(&ctx, PUFO_KEY_SECONDARY);
+    Check(s.nUiScreen == 0, "the secondary key clears 6/10/11/12/15 (0x159C8..0x159E0)");
+    s.bGeoscapeUi = true;
+    s.nUiScreen = 4;
+    Input_OnKeyDown(&ctx, PUFO_KEY_SECONDARY);
+    Check(s.nUiScreen == 4 && t.nConfirmCount == 0, "its geoscape branch is nullsub_8 (0x8b948)");
+
+    /* 6. The confirm key on the modal screens: UiModal_End then the clear. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 3;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyDown(&ctx, PUFO_KEY_CONFIRM);
+    CheckEqI32(t.nModalEnd, 1, "the press arm runs Input_OnConfirm, whose 3/5/10/11/15 case ends the modal");
+    Check(s.nUiScreen == 0, "and clears the screen");
+
+    /* 7. The escape slot on press is nullsub_1 (0xA0F70): nothing at all. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 0;
+    memset(abHeld, 0, sizeof(abHeld));
+    bActionFlag = false;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyDown(&ctx, PUFO_KEY_ESCAPE);
+    Check(t.nSampleCount == 0 && t.nMapClicks == 0 && t.nConfirmCount == 0 && s.nUiScreen == 0
+              && !bActionFlag && abHeld[0] == 0,
+          "WM_KEYDOWN on the escape slot calls nullsub_1 and changes nothing");
+    Input_OnKeyDown(&ctx, PUFO_KEY_COUNT);
+    Check(t.nSampleCount == 0 && s.nUiScreen == 0, "a code outside the eight slots runs no arm");
+
+    /* 8. WM_KEYUP arms. Action: UiScreen_OnBack (0xA0D74) -- clear the scratch, then the screen 8 quit. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 8;
+    bActionFlag = true;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyUp(&ctx, PUFO_KEY_ACTION);
+    Check(!bActionFlag, "UiScreen_OnBack clears UiBank_bActionFlag (the STRB at 0x15684)");
+    CheckEqI32(t.nShutdownQuit, 1, "screen 8 is Tact_Shutdown(1) + App_QuitDisplay (0x156D0)");
+    Check(s.nUiScreen == 8, "and the original leaves the screen id alone there");
+
+    /* 9. Secondary: UiScreen_DismissHigh (0xA0D90) -- clear the escape scratch, 8/9 close the modal. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 9;
+    bEscapeFlag = true;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyUp(&ctx, PUFO_KEY_SECONDARY);
+    Check(!bEscapeFlag, "UiScreen_DismissHigh clears bUiEscapeFlag (the STRB at 0x15A00)");
+    CheckEqI32(t.nModalEnd, 1, "the 8/9 case runs UiModal_End (0x15A38)");
+    Check(s.nUiScreen == 0, "and writes the screen id 0 (0x15A40)");
+
+    /* 10. Confirm: UiScreen_OnCancel (0xA0DA8). */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 8;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyUp(&ctx, PUFO_KEY_CONFIRM);
+    CheckEqI32(t.nModalEnd, 1, "the cancel arm ends the 8/9 modal");
+    Check(s.nUiScreen == 0, "and clears the screen");
+    s.nUiScreen = 13;
+    Input_OnKeyUp(&ctx, PUFO_KEY_CONFIRM);
+    CheckEqI32(t.nShutdownReinit, 1, "screen 13 reaches the shutdown-and-rebuild seam (0x162BC/0x162C8)");
+
+    /* 11. Escape: Input_OnMenuEscape (0xA0DC0), whose case 0 opens the escape screen 7 with sample 14. */
+    memset(&t, 0, sizeof(t));
+    s = MakeState();
+    s.bTactFlag = true;
+    s.nUiScreen = 0;
+    MakeKeyCtx(&ctx, &s, &h, pWorld, abHeld, &bActionFlag, &bEscapeFlag);
+    Input_OnKeyUp(&ctx, PUFO_KEY_ESCAPE);
+    Check(s.nUiScreen == 7, "the release arm on screen 0 opens screen 7 (0x16394)");
+    Check(t.nSampleCount == 1 && t.anSamples[0] == 14, "with sample 14 (MOV R0,#0xE at 0x163A0)");
+
+    /* 12. The port's guard on the dispatch context. The original's arms read globals, so this shape has
+     * no original counterpart: it is the port's own contract. */
+    Input_OnKeyDown(NULL, PUFO_KEY_ACTION);
+    Input_OnKeyUp(&ctx, PUFO_KEY_CONFIRM); /* ctx from case 11, whose screen id is now 7 */
+    Check(t.nMapClicks == 0 && s.nUiScreen == 7,
+          "a NULL context runs nothing and screen 7 keeps its id (UiScreen_OnCancel returns below 8)");
+}
+
 int main(void)
 {
     TestGeoscape();
@@ -2164,6 +2359,7 @@ int main(void)
     TestPointerUp();
     TestPulseTimer();
     TestHandleMapClick();
+    TestKeyChains();
 
     return TestSummary("test_input");
 }

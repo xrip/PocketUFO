@@ -2207,6 +2207,32 @@ does.
    empty because `abTactTileTypes @ 0x159D5C` holds no type-7 tile. Three port bugs fixed on the way (the
    `anSprBase[nSlot] + *pTbl[nIdx]` glyph index, the `nMapLayers - 1` deploy anchor group, the stale
    visibility copy); the two tactical frame references now show a real isometric base. See the Part 66 row.
+10. Done: **the keyboard reaches the mission (Part 67).** The WndProc's two key chains are ported as
+   `Input_OnKeyDown` / `Input_OnKeyUp` in `src/pufo/game/pufo_input.c` (press chain 0xA0DC8..0xA0F74, release
+   chain 0xA0CE0..0xA0DC4, both `return 0` so `DefWindowProc` never sees a game key) over the 96-byte key map
+   @ 0x1884D8 -- eight LDRSH slots at stride 12 (+0 up, +12 down, +24 left, +36 right, +48 action, +60
+   secondary, +72 confirm, +84 escape), filled from `GXGetDefaultKeys(2)` at 0x9FF78..0x9FFB0. The press arms
+   gate the four directions on `held == 0 || Map_nUiScreen != 0` (0xA0DE8/0xA0DF8): a held key repeats only
+   once a screen is open. Pressing Escape is a no-op (`BLEQ nullsub_1` at 0xA0F70); the release arm is
+   `Input_OnMenuEscape`, whose cases 1/2/4 close the inventory/look/command screens through
+   `Input_OnConfirm` @ 0x163C8. Shell mapping: arrows, VK_RETURN, VK_SPACE, VK_BACK, VK_ESCAPE; Escape is no
+   longer the quit key -- quitting runs through the quit dialog or `WM_DESTROY`. Fifteen seams the hooks table
+   left NULL are installed (`pfnHandleMapClick`, `pfnSelectNextUnit`/`PrevUnit`, `pfnInvScrollUp`/`Down`,
+   `pfnOnConfirm`, `pfnSetCursorPos`, `pfnPushTextRecord`, `pfnCursorChanged`, `pfnPlaySample`,
+   `pfnSaveOptions`, `pfnShutdownReinit`, the geoscape panel flags, the geoscape focus scrolls,
+   `pfnGeoscapeMapClick`), so the pen path now runs the map click, the cursor re-place and the text push too.
+   Two port bugs fixed: `UiScreen_DismissHigh`'s 8/9 and 13 arms went through the wrong seam (the ARM calls
+   `UiModal_End` at 0x15A38 and `UiScreen_OnCancel` @ 0x16200 at 0x15A20), and the Part 60 write-back compared
+   15 mirrored cells against the live cell instead of against `sTactInputPre`, so a handler that wrote a live
+   owner inside the dispatch window (`Map_pSelUnit`, the cursor 0x15128/0x1512C, the camera 0x15130/0x15134)
+   lost to the stale mirror. The camera scroll turned out not to be mirrored at all -- `tactEnv.focus` owns it
+   and SyncIn/SyncOut now carry it both ways. See the Part 67 row. What the keyboard path exposed and is NOT
+   closed: `Save_ReadSoldiers` never restores a reloaded soldier's `pCell` (the 0x419DC write, plus the
+   `stactflg`-before-bodies order and `Soldiers_Reload` @ 0x416C4), so a roster select on a loaded mission
+   faults in `Tact_SelectUnit` -- recorded as a separate issue and the natural next unit; `World_GeoscapeFocusScroll`
+   covers the panel sets for screens 0/2/4/7 only, the hangar/research/manufacture/buy-sell/psi/ufopaedia sets
+   having no owner in the shell; and six input seams stay unwired (`pfnHitTestTactItem`, `pfnInvClearHitSlot`,
+   `pfnInvHandlePointer`, `pfnFocusOnViewCell`, `pfnEndScreenShutdown`, `pfnGeoscapeCloseUi`).
 
 ### Priority 2 — finish the tactical renderer
 

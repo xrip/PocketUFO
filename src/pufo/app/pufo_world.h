@@ -780,6 +780,36 @@ bool World_bTactPointerLive(const PufoWorldState *pW);
 void World_TactPointerMove(PufoWorldState *pW, TactPointerWorld *pPtr, i32 nX, i32 nY, bool bDown);
 void World_TactPointerUp(PufoWorldState *pW, TactPointerWorld *pPtr);
 
+/* Keyboard dispatch while a mission owns the keys (Part 67). Same route as the pen: the world stages
+ * the live Map cells into sTactInput, runs PocketUFO_WndProc's WM_KEYDOWN chain (0xA0DC8..0xA0F74) or
+ * WM_KEYUP chain (0xA0CE0..0xA0DC4) -- ported as Input_OnKeyDown/Input_OnKeyUp in pufo_input.c -- and
+ * flushes them back. The held-repeat bytes come from the caller's widget bank (+0x104C..0x104F), the
+ * same four WM_SETFOCUS clears and UiPulse_OnTimer repeats. Which key means which slot is the shell's
+ * key map: the original fills its record at 0x1884D8 from GXGetDefaultKeys(2) (0x9FF78..0x9FFB0). */
+void World_TactKeyDown(PufoWorldState *pW, PufoKeySlot eSlot);
+void World_TactKeyUp(PufoWorldState *pW, PufoKeySlot eSlot);
+
+/* The keyboard arms' callee seams, each a thin wrapper over the live mission and a no-op without one.
+ * They are what the shell installs on TactInputHooks: the arms of Input_OnAction/Input_OnSecondary/
+ * Input_OnConfirm/Input_OnMenuEscape reach them while sTactInput is already staged, so none of them
+ * re-stages (compare World_InvCloseAndCommit, the Part 66 seam of the same kind). */
+void World_TactConfirmInPlace(void);                        /* Input_OnConfirm @ 0x15f3c, 0x15660 */
+void World_TactMapClick(void);                              /* Tact_HandleMapClick @ 0x1512c, 0x15668 */
+void World_TactSelectNextUnit(void);                        /* Tact_SelectNextUnit @ 0x17304, 0x11974 */
+void World_TactSelectPrevUnit(void);                        /* Tact_SelectPrevUnit @ 0x17260 */
+void World_TactInvScrollUp(void);                           /* Inv_ScrollUp @ 0x173e4, 0x11774 */
+void World_TactInvScrollDown(void);                         /* Inv_ScrollDown @ 0x173a8 */
+void World_TactSetCursorPos(i32 nX, i32 nY);                /* MapCursor_SetPos @ 0x27014 */
+void World_TactPushTextRecord(i32 nRecIndex);               /* StatusMsg_Push @ 0x2dda4, record nRecIndex */
+void World_TactEscapeToGeoscape(void);                      /* Tact_Shutdown(0) + Geoscape_InitUI(1), 0x162BC/0x162C8 */
+
+/* The two geoscape arms of the four directional handlers (the BL sites 0x116D8, 0x117C8, 0x118C8,
+ * 0x119C8): each sets one byte of the held-direction block
+ * 0x1864F4..0x1864F7, which the world owns as abScrollFlags. The panel-scroll dispatcher the up/down
+ * arms run for the other screen ids is Geoscape_UiFocusPrev/Next @ 0x8afa0 / 0x8b1f4. */
+void World_GeoscapePanelFlag(PufoWorldState *pW, bool bPanelA); /* Geoscape_SetPanelFlagA @ 0x8b448, B @ 0x8b478 */
+void World_GeoscapeFocusScroll(PufoWorldState *pW, bool bPrev); /* Geoscape_UiFocusPrev/Next */
+
 /* Render_Frame @ 0x22310's tactical branch over the live mission (Part 63): the cursor tick, the
  * iso layer (MapView_DrawIsoLayer @ 0x21e2c) and its frame furniture, the modal dialog
  * (UiModal_DrawDialog @ 0x264a0, whose button boxes land in the input state's slots 20..23 that the

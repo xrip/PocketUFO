@@ -149,6 +149,95 @@ void Input_OnDown(TactInputState *pState, const TactInputHooks *pHooks)
     }
 }
 
+/* PocketUFO_WndProc's WM_KEYDOWN chain, 0xA0DC8..0xA0F74. The eight arms are an else-if chain in the
+ * original; the codes are distinct, so the port's switch is the same dispatch. */
+void Input_OnKeyDown(const KeyDispatchCtx *pCtx, PufoKeySlot eSlot)
+{
+    TactInputState *pState;
+    u8 *pbHeld;
+
+    if (pCtx == NULL || pCtx->pState == NULL || pCtx->pHooks == NULL) {
+        return;
+    }
+    pState = pCtx->pState;
+    switch (eSlot) {
+    case PUFO_KEY_UP:
+    case PUFO_KEY_DOWN:
+    case PUFO_KEY_LEFT:
+    case PUFO_KEY_RIGHT:
+        /* The held byte sits at the same bank offset the arm tests the key against, in the arm order:
+         * UiBank_bHeldUp/Down/Left/Right @ 0xAD71C..0xAD71F. A first press always runs the handler;
+         * a repeat runs it only while a UI screen is open (0xA0DE8 tests the held byte, 0xA0DF8
+         * tests Map_nUiScreen). The byte is set on both paths (0xA0E18). */
+        pbHeld = (pCtx->pbHeldDir != NULL) ? &pCtx->pbHeldDir[(i32)eSlot] : NULL;
+        if (pbHeld == NULL || *pbHeld == 0 || pState->nUiScreen != 0) {
+            if (eSlot == PUFO_KEY_UP) {
+                Input_OnUp(pState, pCtx->pHooks);    /* 0xA0E08 */
+            } else if (eSlot == PUFO_KEY_DOWN) {
+                Input_OnDown(pState, pCtx->pHooks);  /* 0xA0E5C */
+            } else if (eSlot == PUFO_KEY_LEFT) {
+                Input_OnLeft(pState, pCtx->pHooks);  /* 0xA0EB0 */
+            } else {
+                Input_OnRight(pState, pCtx->pHooks); /* 0xA0F04 */
+            }
+        }
+        if (pbHeld != NULL) {
+            *pbHeld = 1;
+        }
+        break;
+    case PUFO_KEY_ACTION:
+        Input_OnAction(pState, pCtx->pHooks, pCtx->pbActionFlag);   /* 0xA0F2C */
+        break;
+    case PUFO_KEY_SECONDARY:
+        Input_OnSecondary(pState, pCtx->pHooks, pCtx->pWorld, pCtx->pbEscapeFlag); /* 0xA0F44 */
+        break;
+    case PUFO_KEY_CONFIRM:
+        Input_OnConfirm(pState, pCtx->pHooks);       /* 0xA0F5C */
+        break;
+    case PUFO_KEY_ESCAPE:
+        break;                                       /* 0xA0F70: the arm calls nullsub_1 */
+    default:
+        break;
+    }
+}
+
+/* PocketUFO_WndProc's WM_KEYUP chain, 0xA0CE0..0xA0DC4. The four direction arms do nothing but
+ * release the held byte -- a key held across a focus change is released by WM_SETFOCUS instead
+ * (0xA064C..0xA0670), which App_FocusGained ports. */
+void Input_OnKeyUp(const KeyDispatchCtx *pCtx, PufoKeySlot eSlot)
+{
+    TactInputState *pState;
+
+    if (pCtx == NULL || pCtx->pState == NULL || pCtx->pHooks == NULL) {
+        return;
+    }
+    pState = pCtx->pState;
+    switch (eSlot) {
+    case PUFO_KEY_UP:
+    case PUFO_KEY_DOWN:
+    case PUFO_KEY_LEFT:
+    case PUFO_KEY_RIGHT:
+        if (pCtx->pbHeldDir != NULL) {
+            pCtx->pbHeldDir[(i32)eSlot] = 0;        /* 0xA0CFC, 0xA0D1C, 0xA0D3C, 0xA0D5C */
+        }
+        break;
+    case PUFO_KEY_ACTION:
+        UiScreen_OnBack(pState, pCtx->pHooks, pCtx->pbActionFlag);  /* 0xA0D74 */
+        break;
+    case PUFO_KEY_SECONDARY:
+        (void)UiScreen_DismissHigh(pState, pCtx->pHooks, pCtx->pbEscapeFlag); /* 0xA0D90 */
+        break;
+    case PUFO_KEY_CONFIRM:
+        (void)UiScreen_OnCancel(pState, pCtx->pHooks);              /* 0xA0DA8 */
+        break;
+    case PUFO_KEY_ESCAPE:
+        Input_OnMenuEscape(pState, pCtx->pHooks);                   /* 0xA0DC0 */
+        break;
+    default:
+        break;
+    }
+}
+
 void Input_OnAction(TactInputState *pState, const TactInputHooks *pHooks,
                     bool *pbActionFlag)
 {
@@ -238,18 +327,17 @@ i32 UiScreen_DismissHigh(TactInputState *pState, const TactInputHooks *pHooks,
     }
     if (pState->nUiScreen >= PUFO_UI_SCREEN_TARGET_BEGIN) {
         if (pState->nUiScreen <= PUFO_UI_SCREEN_TARGET_END) {
-            /* UiModal_End(); cleared here through the confirm hook, which owns
-             * the modal end in the port. */
-            if (pHooks != NULL && pHooks->pfnOnConfirm != NULL) {
-                pHooks->pfnOnConfirm(pState->nUiScreen, pHooks->pUser);
+            /* UiModal_End @ 0x15A38, then the screen write at 0x15A40. */
+            if (pHooks != NULL && pHooks->pfnModalEnd != NULL) {
+                pHooks->pfnModalEnd(pHooks->pUser);
             }
             pState->nUiScreen = UI_SCREEN_NONE;
             return PUFO_UI_DISMISS_MODAL;
         }
         if (pState->nUiScreen == PUFO_UI_SCREEN_CANCEL) {
-            /* UiScreen_OnCancel(); the screen id is not cleared. */
-            if (pHooks != NULL && pHooks->pfnOnConfirm != NULL) {
-                pHooks->pfnOnConfirm(pState->nUiScreen, pHooks->pUser);
+            /* UiScreen_OnCancel @ 0x15A20; the screen id is not cleared. */
+            if (pHooks != NULL && pHooks->pfnOnCancel != NULL) {
+                pHooks->pfnOnCancel(pHooks->pUser);
             }
             return PUFO_UI_DISMISS_CANCEL;
         }

@@ -122,6 +122,53 @@ static void Rec_InvCloseAndCommit(void *pUser)
     World_InvCloseAndCommit(&g_world);
 }
 
+/* The keyboard arms' seams (Part 67): the same install set pufo_app.c applies, each counting its own
+ * call so a chain assert can say which seam ran. The bodies are the world's wrappers, i.e. the very
+ * functions the shell's thunks call. pfnSaveOptions stays NULL here on purpose -- the app installs
+ * Options_SaveToRegistry @ 0x114d8, which writes the real registry, and this suite keeps its hands off
+ * it; the arm is gated by its own IDB evidence in test_input. pfnShutdownReinit (Tact_Shutdown(0) +
+ * Geoscape_InitUI(1), which the app installs as App_HookTactEscapeGeoscape) is not installed here at
+ * all: it tears the mission down, and the blocks after this one run on the mission the fixture built. */
+typedef struct SeamTrace {
+    i32 nMapClicks;
+    i32 nSelNext;
+    i32 nSelPrev;
+    i32 nScrollUp;
+    i32 nScrollDown;
+    i32 nConfirm;
+    i32 nCursorChanged;
+    i32 nSetCursor;
+    i32 nPushText;
+} SeamTrace;
+
+static SeamTrace g_seams;
+
+static void Rec_TactMapClick(void *pUser)      { (void)pUser; ++g_seams.nMapClicks;    World_TactMapClick(); }
+static void Rec_TactSelNext(void *pUser)       { (void)pUser; ++g_seams.nSelNext;      World_TactSelectNextUnit(); }
+static void Rec_TactSelPrev(void *pUser)       { (void)pUser; ++g_seams.nSelPrev;      World_TactSelectPrevUnit(); }
+static void Rec_TactScrollUp(void *pUser)      { (void)pUser; ++g_seams.nScrollUp;     World_TactInvScrollUp(); }
+static void Rec_TactScrollDown(void *pUser)    { (void)pUser; ++g_seams.nScrollDown;   World_TactInvScrollDown(); }
+static void Rec_TactOnConfirm(u16 nScreen, void *pUser)
+{
+    (void)nScreen;
+    (void)pUser;
+    ++g_seams.nConfirm;
+    World_TactConfirmInPlace();
+}
+static void Rec_TactSetCursorPos(i32 nX, i32 nY, void *pUser)
+{
+    (void)pUser;
+    ++g_seams.nSetCursor;
+    World_TactSetCursorPos(nX, nY);
+}
+static void Rec_TactPushText(i32 nRecIndex, void *pUser)
+{
+    (void)pUser;
+    ++g_seams.nPushText;
+    World_TactPushTextRecord(nRecIndex);
+}
+static void Rec_CursorChanged(void *pUser)     { (void)pUser; ++g_seams.nCursorChanged; } /* nullsub_3 @ 0x22b50 */
+
 static i32 RecLoadGame(i32 nSlot, void *pUser)
 {
     (void)pUser;
@@ -499,6 +546,16 @@ int main(void)
     memset(&g_tactInHooks, 0, sizeof(g_tactInHooks));
     g_tactInHooks.pfnPlaySample        = RecBankSample;
     g_tactInHooks.pfnInvCloseAndCommit = Rec_InvCloseAndCommit; /* the screen-1 arm's callee (Part 66) */
+    /* Part 67: the keyboard arms' seams, the same set the shell installs (pufo_app.c). */
+    g_tactInHooks.pfnHandleMapClick    = Rec_TactMapClick;
+    g_tactInHooks.pfnSelectNextUnit    = Rec_TactSelNext;
+    g_tactInHooks.pfnSelectPrevUnit    = Rec_TactSelPrev;
+    g_tactInHooks.pfnInvScrollUp       = Rec_TactScrollUp;
+    g_tactInHooks.pfnInvScrollDown     = Rec_TactScrollDown;
+    g_tactInHooks.pfnOnConfirm         = Rec_TactOnConfirm;
+    g_tactInHooks.pfnSetCursorPos      = Rec_TactSetCursorPos;
+    g_tactInHooks.pfnPushTextRecord    = Rec_TactPushText;
+    g_tactInHooks.pfnCursorChanged     = Rec_CursorChanged;
     hooks.pBank               = &g_bank;
     hooks.pTactInputHooks     = &g_tactInHooks;
     hooks.pfnResizeMainWindow = RecResizeMainWindow; /* widget 58's window seam (Part 61) */
@@ -2306,6 +2363,57 @@ int main(void)
                           "the scatter table is empty: the arm ran (layers 0, mission 3) but no facility-grid tile matches the type-7 test at 0x3A08C");
                 }
 
+                /* --- the inventory select keys on a deployed mission (Part 67) -------------------
+                 * Screen 1's up/down pair runs the two select seams (Input_OnUp @ 0x11974 ->
+                 * Tact_SelectNextUnit @ 0x17304, Input_OnDown @ 0x11A74 -> Tact_SelectPrevUnit @ 0x17260).
+                 * This gate is here rather than on the reloaded mission because Tact_SelectUnit's tail
+                 * re-places the cursor on the selected unit's own cell (MapCursor_SetPos over
+                 * pUnit->pCell), and a reloaded unit's pCell is NULL: Save_ReadSoldiers reads the
+                 * soldier's three cell bytes and throws them away (the 0x419DC restore is the recorded
+                 * gap). On this mission every unit still stands on the cell phase 1 parked it on, so the
+                 * write lands and the cursor pair (0x15128/0x1512C) is the evidence. */
+                {
+                    SeamTrace  s0 = g_seams;
+                    MapCell   *pPark = FrameCellAt(1, 1, 0);
+
+                    CLICK(4);
+                    Check(g_world.nUiScreen == 1, "the inventory opens for the select arms");
+                    Check(pMapX->pSelUnit != NULL && pMapX->pSelUnit->pCell == pPark,
+                          "a unit is selected before the keys run, and its own cell link is real on this mission");
+
+                    World_TactKeyDown(&g_world, PUFO_KEY_UP);
+                    Check(g_seams.nSelNext == s0.nSelNext + 1,
+                          "up runs the installed select-next seam (0x11974 -> 0x17304)");
+                    Check(pMapX->pSelUnit != NULL && pMapX->pSelUnit->pCell == pPark,
+                          "the callee landed on a roster unit parked on cell (1,1,0)");
+                    CheckEqI32(g_world.tactEnv.cursor.nX, (i32)pPark->nX,
+                                "Tact_SelectUnit's tail put the cursor on the selected unit's cell x");
+                    CheckEqI32(g_world.tactEnv.cursor.nY, (i32)pPark->nY,
+                                "and its y: the live pair 0x15128/0x1512C, not the staged copy the dispatch flushes");
+                    World_TactKeyUp(&g_world, PUFO_KEY_UP);
+                    Check(g_bank.abHeldDir[PUFO_KEY_UP] == 0 && g_seams.nSelNext == s0.nSelNext + 1,
+                          "the up release clears only its held byte (0xA0CFC): no second select");
+
+                    World_TactKeyDown(&g_world, PUFO_KEY_DOWN);
+                    Check(g_seams.nSelPrev == s0.nSelPrev + 1,
+                          "down runs the select-previous seam (0x11A74 -> 0x17260)");
+                    Check(g_world.nUiScreen == 1, "the select arms never change the screen id");
+                    World_TactKeyUp(&g_world, PUFO_KEY_DOWN);
+                    Check(g_bank.abHeldDir[PUFO_KEY_DOWN] == 0, "and the down release clears 0xAD71D");
+
+                    /* Escape closes the inventory the original's way: the release arm is
+                     * Input_OnMenuEscape (0xA0DC0), whose case 1/2/4 calls Input_OnConfirm @ 0x163c8 --
+                     * the same screen-1 commit arm the confirm button takes. The press has no arm at all
+                     * (the WndProc's escape slot is nullsub_1, 0xA0F70). The commit flag is 0 now, so the
+                     * deploy half is gated off; only the merge tail runs again. */
+                    World_TactKeyDown(&g_world, PUFO_KEY_ESCAPE);
+                    Check(g_world.nUiScreen == 1 && g_seams.nConfirm == s0.nConfirm,
+                          "the escape press does nothing: the WndProc's escape slot is nullsub_1 (0xA0F70)");
+                    World_TactKeyUp(&g_world, PUFO_KEY_ESCAPE);
+                    Check(g_seams.nConfirm == s0.nConfirm + 1 && g_world.nUiScreen == 0,
+                          "the escape release closes it through the confirm arm (0xA0DC0 -> 0x163c8 -> the screen-1 commit)");
+                }
+
                 /* The shell save unit over the live mission (Part 62): World_SaveSlot builds the whole
                  * SaveGameInput from cells this state owns. Distinctive values go into the tact cells the
                  * tgamedata payload records, the slot file is read back, and every compared value comes
@@ -3323,6 +3431,109 @@ int main(void)
             Check(pMapL->nXcomCount == nXcomBefore, "no soldier spawns");
             Check(FrameCountOccupants() == nOccBefore,
                   "and no cell changes occupant: the census is exactly what it was before the close");
+        }
+
+        /* --- the keyboard chains run over the live mission (Part 67) ---------------------------
+         * World_TactKeyDown / World_TactKeyUp are PocketUFO_WndProc's WM_KEYDOWN chain (0xA0DC8..0xA0F74)
+         * and WM_KEYUP chain (0xA0CE0..0xA0DC4), staged exactly like the pen dispatch. The camera asserts
+         * read tactEnv.focus, the live owner of Map_nCamScrollX/Y @ 0x15130/0x15134 that the iso layer and
+         * the pointer's cell mapping also read -- so they show the arm reaching the cell the picture is
+         * drawn from, not just the dispatch's own mirror. */
+        {
+            i32 nScrollX = g_world.tactEnv.focus.nCamScrollX;   /* 21, out of the slot file */
+            i32 nScrollY = g_world.tactEnv.focus.nCamScrollY;   /* 23 */
+            i32 nClicks;
+
+            Check(g_world.nUiScreen == 0 && World_bTactPointerLive(&g_world),
+                  "the chain starts on the tactical map with the mission owning the keys");
+
+            World_TactKeyDown(&g_world, PUFO_KEY_LEFT);
+            Check(g_world.tactEnv.focus.nCamScrollX == nScrollX - 1,
+                  "the left key's first press moves the camera scroll on the live cell (Input_OnLeft @ 0x1177C)");
+            Check(g_bank.abHeldDir[2] == 1, "and sets UiBank_bHeldLeft @ pBank+0x104E (0xAD71E)");
+            World_TactKeyDown(&g_world, PUFO_KEY_LEFT);
+            Check(g_world.tactEnv.focus.nCamScrollX == nScrollX - 1,
+                  "the repeat is swallowed while Map_nUiScreen is 0 (the 0xA0DE8/0xA0DF8 pair)");
+            World_TactKeyUp(&g_world, PUFO_KEY_LEFT);
+            Check(g_bank.abHeldDir[2] == 0, "the WM_KEYUP arm clears only its held byte (0xA0D3C)");
+            World_TactKeyDown(&g_world, PUFO_KEY_LEFT);
+            Check(g_world.tactEnv.focus.nCamScrollX == nScrollX - 2, "and after a release the next press scrolls again");
+            World_TactKeyUp(&g_world, PUFO_KEY_LEFT);
+
+            World_TactKeyDown(&g_world, PUFO_KEY_UP);
+            Check(g_world.tactEnv.focus.nCamScrollY == nScrollY - 1,
+                  "the up key's screen-0 arm moves the y scroll (Input_OnUp @ 0x1197C)");
+            World_TactKeyUp(&g_world, PUFO_KEY_UP);
+            Check(g_bank.abHeldDir[0] == 0, "and the up release clears 0xAD71C");
+
+            /* The confirm key on the tactical map: Input_OnConfirm @ 0x15f3c, the unarmed case -- sample 7
+             * and the deploy-panel byte 0x15110, which sTactInput owns outright. */
+            g_nBankSamples = 0;
+            g_world.pTactMap->bActionLatch = 0;         /* fixture: the unarmed case (Map+0x02) */
+            g_world.sTactInput.bDeployPanelOpen = 0;    /* 0x15110 */
+            World_TactKeyDown(&g_world, PUFO_KEY_CONFIRM);
+            Check(g_nBankSamples == 1 && g_aBankSamples[0] == 7, "the confirm key's unarmed arm plays sample 7");
+            Check(g_world.sTactInput.bDeployPanelOpen == 1, "and toggles the deploy-panel byte");
+
+            /* Action on screen 0 runs the map-click seam for real (the BL at 0x15668); its selection and
+             * move rules are gated in test_input against 0x1512c's own body. */
+            nClicks = g_seams.nMapClicks;
+            g_bBankActionFlag = false;
+            World_TactKeyDown(&g_world, PUFO_KEY_ACTION);
+            Check(g_seams.nMapClicks == nClicks + 1, "the action key reaches Tact_HandleMapClick");
+            Check(g_bBankActionFlag, "and Input_OnAction set UiBank_bActionFlag (the STRB at 0x155B4)");
+            World_TactKeyUp(&g_world, PUFO_KEY_ACTION);
+            Check(!g_bBankActionFlag, "the release arm's UiScreen_OnBack clears it again (0x15684)");
+            Check(g_world.nUiScreen == 0, "and screen 0 keeps its id through both arms");
+
+            /* The escape slot: nullsub_1 on press (0xA0F70), Input_OnMenuEscape on release (0xA0DC0),
+             * whose case 0 opens the escape screen 7 with sample 14 (0x16394). */
+            g_nBankSamples = 0;
+            World_TactKeyDown(&g_world, PUFO_KEY_ESCAPE);
+            Check(g_nBankSamples == 0 && g_world.nUiScreen == 0, "the press arm calls nullsub_1 and changes nothing");
+            World_TactKeyUp(&g_world, PUFO_KEY_ESCAPE);
+            Check(g_world.nUiScreen == 7, "the release arm opens screen 7");
+            Check(g_nBankSamples == 1 && g_aBankSamples[0] == 14, "with sample 14");
+
+            /* Screen 7 is not one of Input_OnAction's arms (not <= 2, not 4, not 6/12/15): the routing
+             * leaves it alone, which is what 0x155FC..0x1566C does. */
+            g_nBankSamples = 0;
+            nClicks = g_seams.nMapClicks;
+            World_TactKeyDown(&g_world, PUFO_KEY_ACTION);
+            Check(g_world.nUiScreen == 7 && g_seams.nMapClicks == nClicks && g_nBankSamples == 0,
+                  "the action key has no arm for screen 7: no map click, no sample, no screen write");
+            World_TactKeyUp(&g_world, PUFO_KEY_ACTION);   /* UiScreen_OnBack: screen 7 is below 8, no arm */
+            Check(g_world.nUiScreen == 7, "and its release leaves screen 7 alone (UiScreen_OnBack only arms 8/9/13, 0x1568C..0x156A0)");
+
+            /* Screen 1's left/right arms scroll the item filter (Input_OnLeft @ 0x11774 -> Inv_ScrollUp
+             * @ 0x173e4, Input_OnRight's mirror -> Inv_ScrollDown @ 0x173a8). With a screen open a held key
+             * repeats instead of being swallowed. The camera stays put: the directional handlers only take
+             * the scroll branch on screen 0. Screen 1's up/down pair (Tact_SelectNextUnit @ 0x17304 /
+             * Tact_SelectPrevUnit @ 0x17260) is gated on the deployed mission instead -- see the note there
+             * on the reloaded unit's NULL cell link (Save_ReadSoldiers 0x419DC, the recorded gap). */
+            (void)g_bank.aCtl[4].pfnClick();       /* the installed inventory opener: Map_nUiScreen = 1 */
+            {
+                SeamTrace s0 = g_seams;
+
+                Check(g_world.nUiScreen == 1, "the inventory screen re-opens for the direction arms");
+                nScrollX = g_world.tactEnv.focus.nCamScrollX;
+                nScrollY = g_world.tactEnv.focus.nCamScrollY;
+
+                World_TactKeyDown(&g_world, PUFO_KEY_LEFT);
+                World_TactKeyDown(&g_world, PUFO_KEY_LEFT);
+                Check(g_seams.nScrollUp == s0.nScrollUp + 2,
+                      "left scrolls the filter, and a held left keeps scrolling with a screen open");
+                World_TactKeyDown(&g_world, PUFO_KEY_RIGHT);
+                Check(g_seams.nScrollDown == s0.nScrollDown + 1, "right scrolls it the other way");
+                World_TactKeyUp(&g_world, PUFO_KEY_LEFT);
+                World_TactKeyUp(&g_world, PUFO_KEY_RIGHT);
+                Check(g_bank.abHeldDir[PUFO_KEY_LEFT] == 0 && g_bank.abHeldDir[PUFO_KEY_RIGHT] == 0,
+                      "the two releases clear only their held bytes (0xA0D3C / 0xA0D5C)");
+                Check(g_world.tactEnv.focus.nCamScrollX == nScrollX
+                          && g_world.tactEnv.focus.nCamScrollY == nScrollY,
+                      "and neither arm touched the camera scroll: 0x15130/0x15134 only move on screen 0");
+                Check(g_world.nUiScreen == 1, "the direction arms never change the screen id");
+            }
         }
     }
 

@@ -3688,6 +3688,10 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
     pS->nLayerScratch    = pW->tactEnv.cursor.nFlags;
     pS->nCursorX         = pW->tactEnv.cursor.nX;
     pS->nCursorY         = pW->tactEnv.cursor.nY;
+    pS->nCamScrollX      = pW->tactEnv.focus.nCamScrollX;   /* Map_nCamScrollX @ 0x15130: tactEnv.focus owns it,
+                                                             * the keyboard scroll arms and the pointer's
+                                                             * Map_IsoOffsetA/B read it through this mirror */
+    pS->nCamScrollY      = pW->tactEnv.focus.nCamScrollY;   /* 0x15134 */
     pS->bLookCommitFlag  = pMap->bLookCommitFlag;
     pS->pLookCommitUnit  = pMap->pLookCommitUnit;
     pS->pSelUnit         = pMap->pSelUnit;
@@ -3715,10 +3719,18 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
  * release arm can run an installed handler inside the same window, and that handler writes the
  * SAME live cells from the other side (the EndTurn bracket restores pSelUnit, a screen handler
  * opens a screen). A flat snapshot flush would undo those handler writes; the diff makes the last
- * writer win per cell, which is what the original's single shared memory does. bPlayerInputOn is
+ * writer win per cell, which is what the original's single shared memory does. "Changed" is
+ * measured against sTactInputPre, the dispatch's own snapshot -- never against the live cell:
+ * comparing with the live cell flushes a mirror that never changed over a handler that moved the
+ * live owner inside the window, which is exactly the case the rule exists for (the select thunk
+ * writes Map_pSelUnit 0x15334 and the cursor 0x15128/0x1512C through tactEnv, MapView_FocusSelected
+ * @ 0x16710 moves the camera scroll). A staged value equal to the snapshot IS the value SyncIn
+ * just read from the live cell, so flushing it can only overwrite. bPlayerInputOn is
  * never flushed: the pfnSetPlayerInput hook owns that live byte directly. The cells sTactInput
- * alone owns (the 0x60/0x6C/0x70/0x74 slots, the camera block, bDeployPanelOpen, bUiSlot8Byte0)
- * are not mirrored at all -- sTactInput IS their live owner. */
+ * alone owns (the 0x60/0x6C/0x70/0x74 slots, bDeployPanelOpen, bUiSlot8Byte0) are not mirrored at
+ * all -- sTactInput IS their live owner. The camera scroll 0x15130/0x15134 is not: tactEnv.focus
+ * owns it (Part 67 mirrors it both ways, because the keyboard scroll arms write it and the iso
+ * layer and the pointer's cell mapping read it). */
 static void World_TactInputSyncOut(PufoWorldState *pW)
 {
     const TactInputState *pS = &pW->sTactInput;
@@ -3729,55 +3741,66 @@ static void World_TactInputSyncOut(PufoWorldState *pW)
     if (pS->nUiScreen != pPre->nUiScreen) {
         pW->nUiScreen = pS->nUiScreen;
     }
-    if (pS->nActionLatch != (i32)pMap->bActionLatch) {
+    if (pS->nActionLatch != pPre->nActionLatch) {
         pMap->bActionLatch = (u8)pS->nActionLatch;
     }
-    if (pS->nActionMode != pW->nMapActionMode) {
+    if (pS->nActionMode != pPre->nActionMode) {
         pW->nMapActionMode = pS->nActionMode;
     }
-    if (pS->nLayerScratch != pW->tactEnv.cursor.nFlags) {
+    if (pS->nLayerScratch != pPre->nLayerScratch) {
         pW->tactEnv.cursor.nFlags = pS->nLayerScratch;
     }
-    if (pS->nCursorX != pW->tactEnv.cursor.nX || pS->nCursorY != pW->tactEnv.cursor.nY) {
+    if (pS->nCursorX != pPre->nCursorX || pS->nCursorY != pPre->nCursorY) {
         pW->tactEnv.cursor.nX = pS->nCursorX;
         pW->tactEnv.cursor.nY = pS->nCursorY;
     }
-    if (pS->bLookCommitFlag != pMap->bLookCommitFlag) {
+    /* The camera scroll: the four directional arms' screen-0 branch moves it (0x1177C, 0x1186C,
+     * 0x1197C, 0x11A7C) through the staged copy, and the focus seam (MapView_FocusSelected
+     * @ 0x16710, MapView_FocusOnCell @ 0x2c758) recentres tactEnv.focus directly. A dispatch that
+     * only ran the seam leaves the staged copy at its snapshot, so the seam's write stands; a
+     * dispatch that moved the staged copy flushes it. Each side wins the cell it actually wrote. */
+    if (pS->nCamScrollX != pPre->nCamScrollX) {
+        pW->tactEnv.focus.nCamScrollX = pS->nCamScrollX;
+    }
+    if (pS->nCamScrollY != pPre->nCamScrollY) {
+        pW->tactEnv.focus.nCamScrollY = pS->nCamScrollY;
+    }
+    if (pS->bLookCommitFlag != pPre->bLookCommitFlag) {
         pMap->bLookCommitFlag = pS->bLookCommitFlag;
     }
-    if (pS->pLookCommitUnit != pMap->pLookCommitUnit) {
+    if (pS->pLookCommitUnit != pPre->pLookCommitUnit) {
         pMap->pLookCommitUnit = pS->pLookCommitUnit;
     }
-    if (pS->pSelUnit != pMap->pSelUnit) {
+    if (pS->pSelUnit != pPre->pSelUnit) {
         pMap->pSelUnit = pS->pSelUnit;
     }
-    if (pS->pSelWeapon != pMap->pSelWeapon) {
+    if (pS->pSelWeapon != pPre->pSelWeapon) {
         pMap->pSelWeapon = pS->pSelWeapon;
     }
-    if (pS->nMultiTargetCount != pMap->nMultiTargetCount) {
+    if (pS->nMultiTargetCount != pPre->nMultiTargetCount) {
         pMap->nMultiTargetCount = pS->nMultiTargetCount;
     }
     for (i = 0; i < PUFO_MULTI_TARGET_MAX; ++i) {
-        if (pS->apMultiTargets[i] != pMap->apMultiTargets[i]) {
+        if (pS->apMultiTargets[i] != pPre->apMultiTargets[i]) {
             pMap->apMultiTargets[i] = pS->apMultiTargets[i];
         }
     }
     /* The Part 60 gate cells. The screen-13 press clears the queue and the fire-status trio
      * (0x13ECC); PointerStatusLine writes the hover cell; the screen-5/20/21 releases write
      * nUiScreen (mirrored above). */
-    if (pS->bQueueActive != pW->pTactState->bQueueActive) {
+    if (pS->bQueueActive != pPre->bQueueActive) {
         pW->pTactState->bQueueActive = pS->bQueueActive;
     }
-    if (pS->bFireStatus1 != pMap->bFireStatus1) {
+    if (pS->bFireStatus1 != pPre->bFireStatus1) {
         pMap->bFireStatus1 = pS->bFireStatus1;
     }
-    if (pS->bFireStatus2 != pW->bMapFire2) {
+    if (pS->bFireStatus2 != pPre->bFireStatus2) {
         pW->bMapFire2 = pS->bFireStatus2;
     }
-    if (pS->bTrajPad27_2 != pMap->bTrajHitStop) {
+    if (pS->bTrajPad27_2 != pPre->bTrajPad27_2) {
         pMap->bTrajHitStop = pS->bTrajPad27_2;
     }
-    if (pS->nSlot24Hit != pW->sModal.nField48) {
+    if (pS->nSlot24Hit != pPre->nSlot24Hit) {
         pW->sModal.nField48 = pS->nSlot24Hit;
     }
 }
@@ -5091,6 +5114,201 @@ void World_TactPointerUp(PufoWorldState *pW, TactPointerWorld *pPtr)
     World_TactInputSyncOut(pW);
 }
 
+/* ------------------------------------------------ key dispatch (Part 67)
+ *
+ * PocketUFO_WndProc's WM_KEYDOWN chain (0xA0DC8..0xA0F74) and WM_KEYUP chain (0xA0CE0..0xA0DC4) are
+ * ported in pufo_input.c as Input_OnKeyDown/Input_OnKeyUp. What the world adds is the pen dispatch's
+ * staging around them: the live Map cells in, the chain over sTactInput and the caller's hook table,
+ * the live cells back out. The four held-repeat bytes are the caller's bank bytes -- the chain writes
+ * UiBank_bHeldUp/Down/Left/Right @ 0xAD71C..0xAD71F, which is pBank+0x104C..0x104F, and the shell's
+ * key codes (the original's record at 0x1884D8, filled by GXGetDefaultKeys(2)) are the shell's choice. */
+
+static void World_MissionShutdownAndRebuildGeoscape(PufoWorldState *pW); /* forward: the mission-end seams */
+
+static void World_TactKeyCtxFill(PufoWorldState *pW, KeyDispatchCtx *pCtx, TactInputWorld *pWorld)
+{
+    UiWidgetBank *pBank = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pBank : NULL;
+
+    pWorld->pQueue      = pW->pTactState;                /* pMapTactical @ 0x157198 */
+    pWorld->pfnLookup   = World_TactLookupCell;
+    pWorld->pLookupUser = pW;
+    pCtx->pState        = &pW->sTactInput;
+    pCtx->pHooks        = pW->pFrameHooks->pTactInputHooks;
+    pCtx->pWorld        = pWorld;
+    pCtx->pbHeldDir     = (pBank != NULL) ? pBank->abHeldDir : NULL;
+    pCtx->pbActionFlag  = pW->pFrameHooks->pbBankActionFlag;             /* UiBank_bActionFlag @ 0xAD711 */
+    pCtx->pbEscapeFlag  = (pBank != NULL) ? &pBank->bEscapeFlag : NULL;  /* bUiEscapeFlag @ 0xAD712 */
+}
+
+void World_TactKeyDown(PufoWorldState *pW, PufoKeySlot eSlot)
+{
+    KeyDispatchCtx ctx;
+    TactInputWorld world;
+
+    if (!World_bTactPointerLive(pW) || pW->pFrameHooks == NULL
+        || pW->pFrameHooks->pTactInputHooks == NULL) {
+        return;
+    }
+    World_TactKeyCtxFill(pW, &ctx, &world);
+    World_TactInputSyncIn(pW);
+    Input_OnKeyDown(&ctx, eSlot);
+    World_TactInputSyncOut(pW);
+}
+
+void World_TactKeyUp(PufoWorldState *pW, PufoKeySlot eSlot)
+{
+    KeyDispatchCtx ctx;
+    TactInputWorld world;
+
+    if (!World_bTactPointerLive(pW) || pW->pFrameHooks == NULL
+        || pW->pFrameHooks->pTactInputHooks == NULL) {
+        return;
+    }
+    World_TactKeyCtxFill(pW, &ctx, &world);
+    World_TactInputSyncIn(pW);
+    Input_OnKeyUp(&ctx, eSlot);
+    World_TactInputSyncOut(pW);
+}
+
+/* The seams the chains reach through TactInputHooks. Each runs inside a key dispatch, i.e. while
+ * sTactInput is already staged, so none of them re-stages -- re-syncing here would re-read the live
+ * cells and drop what the calling arm wrote into the mirror. World_InvCloseAndCommit (Part 66) is the
+ * same kind of seam. */
+
+/* Input_OnAction's screens-<=2/4 arm (the BL at 0x15660) and Input_OnMenuEscape's 1/2/4 arms (0x163C8)
+ * call Input_OnConfirm @ 0x15f3c directly: no sample, no screen staging, no modal end. */
+void World_TactConfirmInPlace(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW == NULL || pW->pFrameHooks == NULL || pW->pFrameHooks->pTactInputHooks == NULL) {
+        return;
+    }
+    Input_OnConfirm(&pW->sTactInput, pW->pFrameHooks->pTactInputHooks);
+}
+
+/* Tact_HandleMapClick @ 0x1512c, Input_OnAction's screen-0 arm (the BL at 0x15668). Every MapClickCtx
+ * input already has a live owner in the shell: the cursor triple lives in tactEnv.cursor, the melee
+ * triple in GameMap, the select context in tactEnv.select, the look control is the embedded
+ * sTactLookCtl, and the walk is the mission's own sTactPath (World_InitTactical fills it, 0x2c2a8's
+ * only two readers in the binary are this path and the move walker). */
+void World_TactMapClick(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    GameMap *pMap;
+    TactInputWorld world;
+    MapClickCtx ctx;
+
+    if (pW == NULL || pW->pTactMap == NULL || pW->pTactState == NULL
+        || pW->pFrameHooks == NULL || pW->pFrameHooks->pTactInputHooks == NULL) {
+        return;
+    }
+    pMap = pW->pTactMap;
+    world.pQueue      = pW->pTactState;
+    world.pfnLookup   = World_TactLookupCell;
+    world.pLookupUser = pW;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pState            = &pW->sTactInput;
+    ctx.pWorld            = &world;
+    ctx.pLookCtl          = &pW->sTactLookCtl;              /* pActiveLookCtl @ 0x1571E4 */
+    ctx.pSelect           = &pW->tactEnv.select;            /* Tact_SelectUnit @ 0x2c6c4 */
+    ctx.pHooks            = pW->pFrameHooks->pTactInputHooks;
+    ctx.pnMeleeCellX      = &pMap->nMeleeCellX;             /* 0x1279F8 */
+    ctx.pnMeleeCellY      = &pMap->nMeleeCellY;             /* 0x1279FC */
+    ctx.pnMeleeCellLayer  = &pMap->nMeleeCellLayer;         /* 0x127A00 */
+    ctx.pfnPathToCell     = Unit_PathToCell;                /* 0x2c2a8 */
+    ctx.pUser             = &pW->sTactPath;
+    Tact_HandleMapClick(&ctx);
+}
+
+/* The inventory screen's up/down keys (0x11974 / its mirror in Input_OnDown) select the next or
+ * previous unit; left/right scroll the item filter (0x11774 -> Inv_ScrollUp @ 0x173e4). Same roster
+ * and filter machinery the nav widgets use. */
+void World_TactSelectNextUnit(void) { World_TactRosterCall(Roster_SelectNext); }
+void World_TactSelectPrevUnit(void) { World_TactRosterCall(Roster_SelectPrev); }
+void World_TactInvScrollUp(void)    { World_ClickInvScrollUp(); }
+void World_TactInvScrollDown(void)  { World_ClickInvScrollDown(); }
+
+/* MapCursor_SetPos @ 0x27014, the cursor re-placement Input_OnConfirm's armed multi-target arm runs
+ * after the selection is committed (0x15618) and Input_OnPointerUp runs after a status-line release. */
+void World_TactSetCursorPos(i32 nX, i32 nY)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW == NULL) {
+        return;
+    }
+    MapCursor_SetPos(&pW->tactEnv.cursorPos, nX, nY, World_TactLookupCell, pW);
+}
+
+/* StatusMsg_Push @ 0x2dda4 with aTextRecs record nRecIndex: Tact_HandleMapClick's two refusal records
+ * (7 and 47) and Input_OnPointerUp's "not enough time". The wiring's pMap / pTextRecs / statusHooks
+ * are launch-stable, so this is safe outside a move tick (unlike its visCtx half -- see the Part 66
+ * note on World_TactEnemyAiVisThunk). */
+void World_TactPushTextRecord(i32 nRecIndex)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW == NULL) {
+        return;
+    }
+    Map_PushStatusCb(nRecIndex, &pW->sTactMoveWiring);
+}
+
+/* Tact_Shutdown(0) + Geoscape_InitUI(1), the arm UiScreen_OnCancel @ 0x16200 reaches for screens 13
+ * and 19 (0x162BC / 0x162C8) and Input_OnMenuEscape reaches through it too. */
+void World_TactEscapeToGeoscape(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        World_MissionShutdownAndRebuildGeoscape(pW);
+    }
+}
+
+/* Geoscape_SetPanelFlagA @ 0x8b448 / SetPanelFlagB @ 0x8b478: each writes one byte of the held-direction
+ * block only while the screen id is 0 or 2. The world's abScrollFlags is that block, 0x1864F4..0x1864F7. */
+void World_GeoscapePanelFlag(PufoWorldState *pW, bool bPanelA)
+{
+    GeoscapePanelFlags *pFlags;
+
+    if (pW == NULL) {
+        return;
+    }
+    pFlags = (GeoscapePanelFlags *)pW->abScrollFlags;
+    if (bPanelA) {
+        (void)Geoscape_SetPanelFlagA(pW->screen.nGeoscapeScreen, pFlags); /* 0x116D8 */
+    } else {
+        (void)Geoscape_SetPanelFlagB(pW->screen.nGeoscapeScreen, pFlags); /* 0x117C8 */
+    }
+}
+
+/* Geoscape_UiFocusPrev @ 0x8afa0 / Geoscape_UiFocusNext @ 0x8b1f4 over the panels the shell owns: the
+ * 0/2 arm's two flag bytes, the soldier screen's pair (0x15975C / 0x159DEC) and the base facility
+ * panel (0x15886C). The hangar, research, manufacture, buy/sell, psi and ufopaedia panel sets have no
+ * shell owner yet -- recorded gap, the dispatcher scrolls nothing for those screen ids. */
+void World_GeoscapeFocusScroll(PufoWorldState *pW, bool bPrev)
+{
+    GeoscapeFocusEnv env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.nScreenId      = pW->screen.nGeoscapeScreen;  /* nGeoscapeScreen @ 0x186BC4 */
+    env.pbFocusFlagA   = &pW->abScrollFlags[0];       /* unk_1864F4, the prev arm's byte */
+    env.pbFocusFlagB   = &pW->abScrollFlags[2];       /* unk_1864F6, the next arm's byte */
+    env.pSolPanelNames = pW->pSolPanelNames;          /* 0x15975C */
+    env.pSolPanelCraft = pW->pSolPanelCraft;          /* 0x159DEC */
+    env.pBaseFacPanel  = pW->pFacPanel;               /* 0x15886C */
+    if (bPrev) {
+        Geoscape_UiFocusPrev(&env);                   /* 0x118C8 */
+    } else {
+        Geoscape_UiFocusNext(&env);                   /* 0x119C8 */
+    }
+}
+
 static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }
 static void World_ClickSpeed1(void) { World_TactSpeedCall(1); }
 static void World_ClickSpeed2(void) { World_TactSpeedCall(2); }
@@ -5474,10 +5692,24 @@ bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort)
     return pW->bMapBattleEnded != 0;
 }
 
-bool World_MissionCancelEnd(PufoWorldState *pW)
+/* 0x162BC / 0x162C8: shut the mission down keeping nothing, then rebuild the geoscape UI the launch
+ * seam freed. Mode 1 skips InitUI's new-game branch, so this is a rebuild of the singletons, not a
+ * restart of the run. The two callers are UiScreen_OnCancel's 13/19 arm (here and, through
+ * TactInputHooks.pfnShutdownReinit, in World_TactEscapeToGeoscape). */
+static void World_MissionShutdownAndRebuildGeoscape(PufoWorldState *pW)
 {
     GeoscapeInitEnv env;
 
+    World_EndHookShutdown(0, pW);
+    World_FillInitUiEnv(pW, &env);
+    Geoscape_InitUI(&env, 1);
+    if (pW->pFrameHooks != NULL) {
+        World_WireGeoscapeFrame(pW, pW->pFrameHooks);    /* the frame envs re-point at the new singletons */
+    }
+}
+
+bool World_MissionCancelEnd(PufoWorldState *pW)
+{
     if (pW->bTactFlag == 0) {
         return false;                                    /* 0x16208: outside a mission there is nothing to cancel */
     }
@@ -5515,16 +5747,9 @@ bool World_MissionCancelEnd(PufoWorldState *pW)
         return false;                                    /* the original returns the id unchanged */
     }
 
-    /* 0x162BC / 0x162C8: shut the mission down keeping nothing, then rebuild the geoscape UI the
-     * launch seam freed. Mode 1 skips InitUI's new-game branch, so this is a rebuild of the
-     * singletons, not a restart of the run. The original leaves Map_nUiScreen at 13 here -- only
-     * the 8/9 and 0x14/0x15 arms write it -- and the port keeps that. */
-    World_EndHookShutdown(0, pW);
-    World_FillInitUiEnv(pW, &env);
-    Geoscape_InitUI(&env, 1);
-    if (pW->pFrameHooks != NULL) {
-        World_WireGeoscapeFrame(pW, pW->pFrameHooks);    /* the frame envs re-point at the new singletons */
-    }
+    /* The teardown and rebuild (0x162BC / 0x162C8). The original leaves Map_nUiScreen at 13 here --
+     * only the 8/9 and 0x14/0x15 arms write it -- and the port keeps that. */
+    World_MissionShutdownAndRebuildGeoscape(pW);
     return true;
 }
 

@@ -270,6 +270,59 @@ typedef struct TactInputWorld {
 void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
                        const TactInputWorld *pWorld, bool *pbEscapeFlag);
 
+/* ------------------------------------------------- the WndProc keyboard chains
+ *
+ * Evidence: PocketUFO_WndProc @ 0xa03ec -- WM_KEYDOWN 0xA0DC8..0xA0F74, WM_KEYUP 0xA0CE0..0xA0DC4.
+ *
+ * The key map is the 96-byte record @ 0x1884D8: InitInstance memsets it (0x9FEB8) and then copies the
+ * 96 bytes GXGetDefaultKeys(2) returns into it (0x9FF78..0x9FFB0). Each arm of both chains compares
+ * wParam with LDRSH against one slot at a fixed offset of that record: +0 up (0xA0CE4), +12 down,
+ * +24 left, +36 right, +48 action, +60 secondary, +72 confirm, +84 escape -- eight slots at a
+ * 12-byte stride inside a block sized for six 16-byte GXKeyList records, and the ten bytes between
+ * two slots are read by nothing. The port therefore models the eight compared codes only.
+ *
+ * WM_KEYDOWN. The four direction arms run their handler when the held byte is clear OR a UI screen is
+ * open (the 0xA0DE8/0xA0DF8 pair: a first press always runs, a repeat runs only with a screen up),
+ * and set the held byte either way (0xA0E18). Action (0xA0F2C), Secondary (0xA0F44) and Confirm
+ * (0xA0F5C) run unconditionally. The escape slot is nullsub_1 (0xA0F70) -- nothing on press.
+ *
+ * WM_KEYUP. The four direction arms only clear their held byte (0xA0CFC..0xA0D5C). Action runs
+ * UiScreen_OnBack (0xA0D74), Secondary UiScreen_DismissHigh (0xA0D90), Confirm UiScreen_OnCancel
+ * (0xA0DA8), Escape Input_OnMenuEscape (0xA0DC0).
+ *
+ * Deviation: the repeat gate reads Map_nUiScreen live in the original; the port reads the caller's
+ * staged mirror (pState->nUiScreen). The shell fills that mirror from the live cell before the chain
+ * runs and flushes it back after it (World_TactInputSyncIn/Out). */
+typedef enum PufoKeySlot {
+    PUFO_KEY_UP = 0,      /* key map +0:  Input_OnUp @ 0xA0E08 / clear @ 0xA0CFC */
+    PUFO_KEY_DOWN,        /* +12: Input_OnDown @ 0xA0E5C / clear @ 0xA0D1C */
+    PUFO_KEY_LEFT,        /* +24: Input_OnLeft @ 0xA0EB0 / clear @ 0xA0D3C */
+    PUFO_KEY_RIGHT,       /* +36: Input_OnRight @ 0xA0F04 / clear @ 0xA0D5C */
+    PUFO_KEY_ACTION,      /* +48: Input_OnAction @ 0xA0F2C / UiScreen_OnBack @ 0xA0D74 */
+    PUFO_KEY_SECONDARY,   /* +60: Input_OnSecondary @ 0xA0F44 / UiScreen_DismissHigh @ 0xA0D90 */
+    PUFO_KEY_CONFIRM,     /* +72: Input_OnConfirm @ 0xA0F5C / UiScreen_OnCancel @ 0xA0DA8 */
+    PUFO_KEY_ESCAPE,      /* +84: nullsub_1 @ 0xA0F70 / Input_OnMenuEscape @ 0xA0DC0 */
+    PUFO_KEY_COUNT
+} PufoKeySlot;
+
+/* What the two chains touch beyond the handlers' own arguments: the staged input state, the hook
+ * table, Secondary's tactical queue, and the three scratch bytes the original keeps in the widget
+ * bank. The held bytes are pBank+0x104C..0x104F (UiBank_bHeldUp/Down/Left/Right @ 0xAD71C..0xAD71F),
+ * in the order the arms test them -- the same order UiPulse_OnTimer repeats them in. */
+typedef struct KeyDispatchCtx {
+    TactInputState        *pState;
+    const TactInputHooks  *pHooks;
+    const TactInputWorld  *pWorld;      /* Input_OnSecondary @ 0x156e0's queue and cell grid */
+    u8   *pbHeldDir;      /* pBank+0x104C..0x104F: up, down, left, right */
+    bool *pbActionFlag;   /* UiBank_bActionFlag @ pBank+0x1041 (0xAD711): Input_OnAction sets it
+                           * (STRB at 0x155B4), UiScreen_OnBack clears it (STRB at 0x15684) */
+    bool *pbEscapeFlag;   /* bUiEscapeFlag @ pBank+0x1042 (0xAD712): UiScreen_DismissHigh clears it
+                           * (STRB at 0x15A00), Input_OnSecondary reads it */
+} KeyDispatchCtx;
+
+void Input_OnKeyDown(const KeyDispatchCtx *pCtx, PufoKeySlot eSlot);
+void Input_OnKeyUp(const KeyDispatchCtx *pCtx, PufoKeySlot eSlot);
+
 /* --------------------------------------------------- the held-key repeat timer */
 
 /* UiPulse_OnTimer @ 0x36630, the timer installed as 0xC353.
@@ -323,12 +376,11 @@ void UiPulse_OnTimer(const UiPulseCtx *pCtx);
 #define PUFO_UI_SCREEN_TARGET_END   9u
 #define PUFO_UI_SCREEN_CANCEL       13u
 
-/* UiScreen_DismissHigh @ 0x159ec. Clears the original's byte_AD712 scratch flag
- * (pbEscapeFlag), and when the screen is the target modal (8/9) ends the modal
- * and clears the screen; screen 13 instead runs the cancel handler and keeps its
- * id. Returns PUFO_UI_DISMISS_MODAL, PUFO_UI_DISMISS_CANCEL or
- * PUFO_UI_DISMISS_NONE. The original's no-branch path returns an uninitialised
- * register, so the port returns an explicit NONE instead. */
+/* UiScreen_DismissHigh @ 0x159ec. Clears bUiEscapeFlag @ pBank+0x1042 (the STRB at 0x15A00), and when
+ * the screen is the target modal (8/9) ends the modal (UiModal_End @ 0x15A38) and clears the screen
+ * (0x15A40); screen 13 instead runs UiScreen_OnCancel (0x15A20) and keeps its id. Returns
+ * PUFO_UI_DISMISS_MODAL, PUFO_UI_DISMISS_CANCEL or PUFO_UI_DISMISS_NONE. The original's no-branch path
+ * returns an uninitialised register, so the port returns an explicit NONE instead. */
 #define PUFO_UI_DISMISS_NONE   (-1)
 #define PUFO_UI_DISMISS_MODAL  0
 #define PUFO_UI_DISMISS_CANCEL 1

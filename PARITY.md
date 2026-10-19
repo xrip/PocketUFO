@@ -17,13 +17,13 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 971 / 1103 (88.0%) |
-| Bytes of original code cited | 596884 / 598792 (99.7%) |
-| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 132, 1908 bytes |
-| Behaviour-bearing functions cited | 971 / 971 (100.0%) |
+| Functions cited as evidence | 972 / 1103 (88.1%) |
+| Bytes of original code cited | 596888 / 598792 (99.7%) |
+| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 131, 1904 bytes |
+| Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18283 |
+| Test checks run | 18357 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 18 | 18 | 1080 / 1080 | growable pointer array, RNG, string helpers |
 | `app-shell` | 24 | 24 | 6376 / 6376 | WinMain, window class, display bring-up, registry options |
-| `platform` | 4 | 131 | 56 / 1904 | WinCE -> Win32 seams (GDI display, registry) |
+| `platform` | 5 | 131 | 60 / 1904 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 212 | 214 | 178320 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 51 | 43684 / 43684 | tactical HUD, inventory, command pads, input dispatch |
@@ -152,7 +152,7 @@ is the module that answers to it.
 | `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+4) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+4) |
-| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+9) |
+| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+10) |
 
 ### `util` (18 functions)
 
@@ -181,7 +181,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0xa03ec` | `PocketUFO_WndProc` | 2964 | `src/pufo/app/pufo_app.c` |
+| `0xa03ec` | `PocketUFO_WndProc` | 2964 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.h` |
 | `0x9fd48` | `InitInstance` | 1600 | `src/pufo/app/pufo_app.c`, `src/pufo/platform/pufo_gx.c` (+4) |
 | `0x9edbc` | `Reg_GetString` | 272 | `src/pufo/game/pufo_options.c`, `src/pufo/game/pufo_options.h` (+2) |
 | `0x9e904` | `StartTimers_BySpeed` | 236 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_timer.c` (+1) |
@@ -206,7 +206,7 @@ is the module that answers to it.
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 
-### `platform` (4 functions)
+### `platform` (5 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -214,6 +214,7 @@ is the module that answers to it.
 | `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | `src/pufo/app/pufo_world.c` |
 | `0x460dc` | `j_Font_Free` | 12 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0xa115c` | `??3@YAXPAX@Z` | 12 | `src/pufo/app/pufo_world.c` |
+| `0x22b50` | `nullsub_3` | 4 | `src/pufo/app/pufo_app.c` |
 
 ### `save` (35 functions)
 
@@ -302,7 +303,7 @@ is the module that answers to it.
 | `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` (+2) |
 | `0x33780` | `Tact_TallyUnitResults` | 1136 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactend.c` (+2) |
 | `0x1c240` | `MapView_DrawUnitHeightGlyph` | 1132 | `src/pufo/game/pufo_isodraw.h`, `src/pufo/game/pufo_mapctx.h` |
-| `0x1512c` | `Tact_HandleMapClick` | 1104 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+4) |
+| `0x1512c` | `Tact_HandleMapClick` | 1104 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+6) |
 | `0x47280` | `Soldier_PromoteByTypeScores` | 1096 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x2778c` | `Map_ProbeStepOccupants` | 1068 | `src/pufo/game/pufo_step.h` |
 | `0x2c2a8` | `Unit_PathToCell` | 1052 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+7) |
@@ -318,7 +319,7 @@ is the module that answers to it.
 | `0x478e4` | `Unit_SelectBestFireMode` | 852 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+1) |
 | `0x2c7f4` | `Map_RefreshCellMeta` | 800 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_invdrag.c` (+4) |
 | `0x4a444` | `Tact_UpdateUnitControl` | 788 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_turn.c` (+1) |
-| `0x27014` | `MapCursor_SetPos` | 784 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_input.h` (+3) |
+| `0x27014` | `MapCursor_SetPos` | 784 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x36d68` | `Unit_CanStepExitDir` | 780 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x54cf4` | `Map_ApplyTemplateToCells` | 772 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.c` (+2) |
 | `0x377ec` | `Tact_LoadPalettes` | 760 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
@@ -373,8 +374,8 @@ is the module that answers to it.
 | `0x33264` | `Tact_ScanVictoryTiles` | 184 | `src/pufo/game/pufo_tactctl.h`, `src/pufo/game/pufo_tactend.h` |
 | `0x3bd6c` | `Tact_LoadLoftData` | 184 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_los.c` (+1) |
 | `0x19708` | `Tact_SelectPrevUnitFiltered` | 176 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.c` (+1) |
-| `0x17260` | `Tact_SelectPrevUnit` | 164 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.h` |
-| `0x17304` | `Tact_SelectNextUnit` | 164 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_roster.h` |
+| `0x17260` | `Tact_SelectPrevUnit` | 164 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
+| `0x17304` | `Tact_SelectNextUnit` | 164 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
 | `0x179e4` | `Tact_TryFireMode4` | 156 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+1) |
 | `0x17a80` | `Tact_TryFireMode10` | 156 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x17b1c` | `Tact_TryFireMode5` | 156 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+1) |
@@ -523,10 +524,10 @@ is the module that answers to it.
 | `0x17690` | `Inv_SetFilter2` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x17710` | `Inv_SetFilter5` | 128 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x1a7c8` | `TactHud_ComputeCursorDirState` | 116 | `src/pufo/game/pufo_cursordir.h` |
-| `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | `src/pufo/game/pufo_plane.h`, `src/pufo/game/pufo_ship.c` (+1) |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
-| `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
 
 ### `ui-core` (82 functions)
 
@@ -555,10 +556,10 @@ is the module that answers to it.
 | `0x84bf8` | `Ui_OpenResearch` | 288 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_statusmsg.h` |
 | `0x36c58` | `PadImage_BlitDecimal` | 272 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+7) |
+| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+9) |
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_input.h` |
+| `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/app/pufo_world.c`, `src/pufo/render/pufo_render.c` (+2) |
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x5a294` | `UiPanel_InsertLine` | 160 | `src/pufo/ui/pufo_linelist.c`, `src/pufo/ui/pufo_linelist.h` (+1) |
@@ -665,8 +666,8 @@ is the module that answers to it.
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
 | `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x45c20` | `Ship_ctor` | 620 | `src/pufo/game/pufo_save.h`, `src/pufo/game/pufo_ship.h` |
-| `0x8afa0` | `Geoscape_UiFocusPrev` | 596 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x8b1f4` | `Geoscape_UiFocusNext` | 596 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x8afa0` | `Geoscape_UiFocusPrev` | 596 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
+| `0x8b1f4` | `Geoscape_UiFocusNext` | 596 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x67b1c` | `Geoscape_BuildNavControls` | 588 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x66930` | `Base_CreateNamedEntry` | 576 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x81c08` | `Smap_ZoomOut` | 572 | `src/pufo/game/pufo_strateg.h` |
@@ -797,8 +798,8 @@ is the module that answers to it.
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
 | `0x415cc` | `StrategItem_AllocAdd` | 52 | `src/pufo/game/pufo_strateg.h` |
 | `0x6ac90` | `BaseGrid_SetByteAtFound` | 48 | `src/pufo/game/pufo_geoscape.h` |
-| `0x8b448` | `Geoscape_SetPanelFlagA` | 48 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
-| `0x8b478` | `Geoscape_SetPanelFlagB` | 48 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
+| `0x8b448` | `Geoscape_SetPanelFlagA` | 48 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
+| `0x8b478` | `Geoscape_SetPanelFlagB` | 48 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x6acc0` | `BaseGrid_GetByte0x654` | 44 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8217c` | `Tilemap_GetAt` | 36 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x821a0` | `Tilemap_GetAtAlt` | 36 | `src/pufo/game/pufo_strateg.h` |
@@ -879,7 +880,7 @@ is the module that answers to it.
 | `0x73008` | `ResearchScreen_RefreshPanels` | 568 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6e13c` | `ManufScreen_IncEngineers` | 500 | `src/pufo/game/pufo_baseui.h` |
 | `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
-| `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_options.c` (+2) |
+| `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.h` (+3) |
 | `0x710b0` | `ManufScreen_Init` | 488 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7c9e8` | `BasePlaneScreen_Close` | 480 | `src/pufo/game/pufo_plane.h` |
 | `0x79e00` | `BasePlaneScreen_DrawStatLabelA` | 452 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
@@ -1105,10 +1106,10 @@ init-term entries, the image's own C runtime, the compiled-out debug print —
 read instruction by instruction out of `pufobeta.exe.i64`. The rest are
 attributed to the subsystem whose port work they belong to.
 
-Uncited now: 132 functions, 1908 bytes. Of those, 132 carry no game behaviour.
+Uncited now: 131 functions, 1904 bytes. Of those, 131 carry no game behaviour.
 0 are real port work: none
 
-### `platform` — 127 functions, 1848 bytes remaining
+### `platform` — 126 functions, 1844 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1223,7 +1224,6 @@ Uncited now: 132 functions, 1908 bytes. Of those, 132 carry no game behaviour.
 | `0x163d0` | `nullsub_1` | 4 | **no game behaviour** (`empty-stub`): RET, no effect |
 | `0x22638` | `j_j_TactItem_ctor_pItem` | 4 | **no game behaviour** (`code-thunk`): B -> j_TactItem_ctor_pItem @ 0x2263c |
 | `0x22b4c` | `nullsub_2` | 4 | **no game behaviour** (`empty-stub`): RET, no effect |
-| `0x22b50` | `nullsub_3` | 4 | **no game behaviour** (`empty-stub`): RET, no effect |
 | `0x37074` | `j_j_TactItem_ctor_138EA0` | 4 | **no game behaviour** (`code-thunk`): B -> j_TactItem_ctor_138EA0 @ 0x37078 |
 | `0x37084` | `j_j_TactItem_ctor_156A88` | 4 | **no game behaviour** (`code-thunk`): B -> j_TactItem_ctor_156A88 @ 0x37088 |
 | `0x37094` | `j_Math_StoreSqrtConst` | 4 | **no game behaviour** (`code-thunk`): B -> Math_StoreSqrtConst @ 0x37098 |
@@ -1279,9 +1279,9 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 531 |
+| `test_geoscapeframe` | PASS | 568 |
 | `test_geouimanage` | PASS | 73 |
-| `test_input` | PASS | 338 |
+| `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
 | `test_isodraw` | PASS | 308 |
 | `test_los` | PASS | 36 |
@@ -1342,7 +1342,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 816 citations.
+parity report. Total: 836 citations.
 
 ### Offsets below the image base (44)
 
@@ -1351,7 +1351,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (772)
+### At or above the image base (792)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1672,6 +1672,8 @@ against the IDB when the final report is assembled.
 - `0x159e8c`
 - `0x159e98`
 - `0x159e9c`
+- `0x15a20`
+- `0x15a38`
 - `0x15b79c`
 - `0x15d09c`
 - `0x15e19c`
@@ -1865,6 +1867,7 @@ against the IDB when the final report is assembled.
 - `0x18838c`
 - `0x188398`
 - `0x1883b0`
+- `0x1884d8`
 - `0x188538`
 - `0x188d40`
 - `0x188d50`
@@ -1980,6 +1983,22 @@ against the IDB when the final report is assembled.
 - `0xa08c0`
 - `0xa0944`
 - `0xa09ac`
+- `0xa0cfc`
+- `0xa0d1c`
+- `0xa0d3c`
+- `0xa0d5c`
+- `0xa0d74`
+- `0xa0d90`
+- `0xa0da8`
+- `0xa0dc0`
+- `0xa0e08`
+- `0xa0e5c`
+- `0xa0eb0`
+- `0xa0f04`
+- `0xa0f2c`
+- `0xa0f44`
+- `0xa0f5c`
+- `0xa0f70`
 - `0xa3028`
 - `0xa302c`
 - `0xa3030`
@@ -2118,6 +2137,7 @@ against the IDB when the final report is assembled.
 - `0xac6d0`
 - `0xad1da`
 - `0xad711`
+- `0xad712`
 - `0xad71c`
 - `0xad71d`
 - `0xad71e`
