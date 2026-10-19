@@ -1539,13 +1539,20 @@ static void App_ScriptDump(const char *pszName)
 
 static void App_ScriptState(const char *pszLabel)
 {
+    /* The three cells the status panel's chain tail reads (the line-0 flag decides whether the tail runs at
+     * all, 0x8C798/0x8C7AC; the screen id decides map bar vs globe hover, 0x91CF4; the sweep counters are the
+     * hover's own animation state). Printed because a picture with no bottom bar is only explainable by them. */
     printf("pocketufo: state %s: start screen %d, list mode %d, geoscape screen %d, geo ui byte %d, tact flag %d, "
-           "bases %d, base 0 at %d/%d, soldiers %d, funds %d\n",
+           "bases %d, base 0 at %d/%d, soldiers %d, funds %d, status flag %d, pending region %d, "
+           "globe sweep %d/%d, anim prog %d/%d/%d\n",
            pszLabel, g_nUiScreen, g_nListMode, (int)g_world.screen.nGeoscapeScreen, (int)g_world.bGeoscapeUi,
            (int)g_world.bTactFlag, (int)g_world.nBaseCount,
            (g_world.nBaseCount > 0) ? g_world.apBases[0]->nUnk8 : 0,
            (g_world.nBaseCount > 0) ? g_world.apBases[0]->nUnk12 : 0,
-           (int)g_world.nSoldierCount, (int)g_world.nFunds);
+           (int)g_world.nSoldierCount, (int)g_world.nFunds,
+           (int)UiLineList_GetFlag(&g_world.msgLines, 0), (int)g_world.bPendingRegionId,
+           g_world.nGlobeSweepV, g_world.nGlobeSweepH,
+           (int)g_world.cUiAnimProgress, (int)g_world.bUiAnimStarted, (int)g_world.aRegionBuildCount[9]);
     fflush(stdout);
 }
 
@@ -1664,16 +1671,26 @@ static void App_ScriptLines(void)
     fflush(stdout);
 }
 
-/* n anim ticks, n pulses and n anim-progress ticks -- the same three timer bodies WndProc
- * dispatch, run the way the --dump-frame path already runs them. */
+/* n firings of each of the three timer bodies WndProc dispatch (0xC352 anim, 0xC353 pulse,
+ * 0xC354 anim progress), each followed by a paint.
+ *
+ * The paint belongs inside the loop, and that is the whole point of the shape. WndProc's timers and its
+ * WM_PAINT arrive interleaved, and the first paint of a screen is what STARTS its panel animation:
+ * Ui_AnimExpandBlit @ 0x95bf0 tests byte_187080 (0x95C24) and on the first call sets it and zeroes the
+ * progress byte 0x187058 (0x95C14..0x95C20). Stepping the progress first therefore throws every step away
+ * -- the game's own first call resets it to 0 -- and a dump taken after such a run catches the screen on
+ * the frame where nothing has opened yet. That is why the new-game picture used to show the world map with
+ * no bottom panel at all: the new-base scan panel (0x67450..0x67494, and behind it the scan bars, the
+ * readout lines and the TEXTS[1042]/[1136]/[1137] labels) only runs once Ui_AnimExpandBlit returns true,
+ * i.e. once the progress byte has climbed to the point where the clamped rect equals the full rect
+ * (0x95D60..0x95D74 sets it to 100, which mode 3 reaches at progress 5 for the 236-wide panel). */
 static void App_ScriptTicks(i32 nCount)
 {
     for (i32 i = 0; i < nCount; ++i) {
         App_TickPulse();
         App_TickAnimProgress();
-    }
-    for (i32 i = 0; i < nCount; ++i) {
         App_TickAnim();
+        App_DrawFrame();
     }
 }
 

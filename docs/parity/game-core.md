@@ -9411,6 +9411,21 @@ looks like 0x187055; the ARM is `LDRSB R0,[R6]` with `R6 = 0x187058`.
 Deviations: a mode outside 0..4 or a style byte of 3 or more reads an uninitialised stack slot in the
 original; the port falls back to the full rect and the ordinary frame.
 
+The frame order this byte lives in (Part 74). `cUiAnimProgress` is stepped in exactly one place, the
+`WM_TIMER 0xC354` branch (0xA0C64 `MOV R3,#0xC354` / `CMP` / `BNE`, then `LDRSB cUiAnimProgress`,
+`CMP #0x65`, `BGE`, `ADD #1`, `STRB`), and the first call of an animation resets it (0x95C14/0x95C20). In the
+running game a paint always lands between two firings, so the reset has already happened before a single step
+counts -- a fact about the order of the two events, not about either routine. A driver that steps the byte and
+only then paints throws every step away: the frame re-opens the panel at progress 0, which for mode 3 is a
+`50*0 = 0` wide rect, so the body and the eight frame bars blit as nothing and everything gated on the return
+value (the hover's scan stage, its two readout lines, the TEXTS[1042]/[1136]/[1137] labels) never runs.
+`App_ScriptTicks` did exactly that until Part 74 -- three timer bodies n times, then the picture -- so the
+new-game dump showed the world map with no bottom panel and the base-info dump was caught mid-wipe. One firing
+of each timer plus one paint per scripted tick is what the live WndProc path does, and what the shell's own
+`App_NewGamePickThroughPen` loop already did. Measured after the change: the new-game picture carries the panel
+with its two readout lines and TEXTS[1042], `cUiAnimProgress` sits at 100, and the base-info picture is
+byte-identical for 1, 20 and 40 scripted ticks -- a settled frame, not a phase of the wipe.
+
 ### `BaseFacScreen_DrawBuildDialog` (done)
 
 `src/pufo/game/pufo_baseui.{h,c}`, 23 new checks in `tests/test_baseui.c`. The whole build-dialog

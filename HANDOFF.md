@@ -1206,6 +1206,17 @@ signed byte for the weight-row index (clamped to 5 at 0x81AC0) and 0x81B7C caps 
 0x95490, so a new game's first craft rolls on row 0 with the cap ON. A shell that copies the pair once at
 bring-up freezes mission difficulty for the whole game, which is exactly what the port did until Part 73.
 
+A picture from the scripted path has to be taken the way the game paints (Part 74). `Ui_AnimExpandBlit @ 0x95bf0`
+zeroes `cUiAnimProgress @ 0x187058` on the first call of an animation (0x95C14/0x95C20) and only the `WM_TIMER
+0xC354` branch (0xA0C64..0xA0C90) steps it, so in the running game a paint always lands between two steps. Advance
+the byte with no paint in between and the next frame re-opens the panel at progress 0: mode 3 gives a `50*0`-wide
+rect, the panel is not blitted at all, and everything the callee gates on the return value -- the new-base hover's
+scan stage, its two readout lines, its TEXTS[1042]/[1136]/[1137] labels -- never runs. `App_ScriptTicks` now runs
+one firing of each timer and one paint per tick. Related fact about the new-game screen: the chain tail at 0x91CEC
+tests `CMP R0,#2` at 0x91CF4, and screen 2 -- where `Game_StartNew` leaves the geoscape (0x95450) -- takes the hover
+branch instead of the strip pad, the clock pads and the thirteen root widgets, so the geoscape bottom control bar is
+absent there in the original as well.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

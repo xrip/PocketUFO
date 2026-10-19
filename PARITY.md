@@ -537,7 +537,7 @@ is the module that answers to it.
 | `0x264a0` | `UiModal_DrawDialog` | 2676 | `src/pufo/app/pufo_world.h`, `src/pufo/ui/pufo_modal.c` (+1) |
 | `0x11ac0` | `Ui_HitTestTactItem` | 1152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` (+1) |
 | `0x3e94c` | `UiPanelMsg_Draw` | 1016 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
-| `0x95bf0` | `Ui_AnimExpandBlit` | 948 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
+| `0x95bf0` | `Ui_AnimExpandBlit` | 948 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+3) |
 | `0x257c4` | `Font_LoadTactSprites` | 752 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_font.c` (+6) |
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
