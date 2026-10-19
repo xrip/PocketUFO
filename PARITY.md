@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 18457 |
+| Test checks run | 18473 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -553,11 +553,11 @@ is the module that answers to it.
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+1) |
 | `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
 | `0x3eee0` | `UiScrollList_ClickRow` | 300 | `src/pufo/game/pufo_geopointer.h`, `src/pufo/ui/pufo_panel.c` (+1) |
-| `0x84bf8` | `Ui_OpenResearch` | 288 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x84bf8` | `Ui_OpenResearch` | 288 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_statusmsg.h` |
 | `0x36c58` | `PadImage_BlitDecimal` | 272 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+9) |
-| `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/app/pufo_world.c`, `src/pufo/render/pufo_render.c` (+2) |
@@ -661,7 +661,7 @@ is the module that answers to it.
 | `0x6250c` | `Base_DrawFacilityIconStrip` | 792 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e074` | `Smap_CraftRangeExhausted` | 768 | `src/pufo/game/pufo_strateg.h` |
 | `0x790e8` | `BasePlane_UnloadWeaponStores` | 760 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
-| `0x84688` | `Smap_OnPointerUp` | 732 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x84688` | `Smap_OnPointerUp` | 732 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x602a0` | `RadarScreen_RollDetection` | 720 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
 | `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_strateg.h` |
@@ -686,18 +686,18 @@ is the module that answers to it.
 | `0x62824` | `Base_TickFacilityConstruction` | 396 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x81a9c` | `StrategList_RollCraftStats` | 364 | `src/pufo/game/pufo_strateg.h` |
 | `0x5db24` | `RadarScreen_RollWeaponHit` | 352 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
-| `0x84484` | `Smap_SelectMapTarget` | 340 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
-| `0x84964` | `Smap_ResolveInterceptUI` | 340 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x84484` | `Smap_SelectMapTarget` | 340 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
+| `0x84964` | `Smap_ResolveInterceptUI` | 340 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x623bc` | `BaseFac_SetCellBuildState` | 336 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6a0e0` | `Base_ClearFacilityGridRow` | 336 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x79cb8` | `BasePlane_ResetDetailState` | 328 | `src/pufo/game/pufo_baseui.h` |
-| `0x842ec` | `Smap_ConfirmCraftTarget` | 316 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x842ec` | `Smap_ConfirmCraftTarget` | 316 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x5a484` | `Ship_RetargetTravel` | 308 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x5e808` | `RadarScreen_SetCursorNE` | 308 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5e93c` | `RadarScreen_SetCursorSW` | 308 | `src/pufo/game/pufo_geoscape.h` |
-| `0x852b8` | `Geoscape_PrepScreenOpenSfx` | 300 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x852b8` | `Geoscape_PrepScreenOpenSfx` | 300 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x5d3bc` | `Geoscape_TickBases` | 296 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_geoscape.h` (+1) |
-| `0x85194` | `Geoscape_PrepScreenOpen` | 292 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x85194` | `Geoscape_PrepScreenOpen` | 292 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x7fb98` | `Strateg_ConfirmInterceptTarget` | 280 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x82ab0` | `StrategList_RemoveAt` | 252 | `src/pufo/game/pufo_strateg.h` |
 | `0x61b94` | `Smap_InitCraftSelectState` | 248 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_geoscape.c` (+1) |
@@ -779,9 +779,9 @@ is the module that answers to it.
 | `0x5d160` | `FundingScreen_OpenMonthly` | 92 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x664f0` | `Craft_CountWeaponSlotsCarried` | 92 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x68198` | `Base_CountActiveResearch` | 92 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
-| `0x84428` | `Smap_DismissSelected` | 92 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` (+2) |
-| `0x845d8` | `Smap_ConfirmSelected` | 92 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
-| `0x853e4` | `Smap_ConfirmSelectedAlt` | 92 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
+| `0x84428` | `Smap_DismissSelected` | 92 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+3) |
+| `0x845d8` | `Smap_ConfirmSelected` | 92 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x853e4` | `Smap_ConfirmSelectedAlt` | 92 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x65a6c` | `Ship_ProductSlotToType` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+2) |
 | `0x661d8` | `Base_CountSoldiers` | 88 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x78e78` | `BasePlane_CalcWeaponStoresUsed` | 88 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
@@ -792,7 +792,7 @@ is the module that answers to it.
 | `0x668e8` | `Base_RemoveAllSoldiers` | 72 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x6acec` | `BaseGrid_SubByte0x654` | 68 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e374` | `StrategList_AddUfoAt` | 64 | `src/pufo/game/pufo_strateg.h` |
-| `0x84648` | `Smap_ClearSelection` | 64 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.c` (+3) |
+| `0x84648` | `Smap_ClearSelection` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+4) |
 | `0x5b560` | `FundingScreen_Open` | 60 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x556e4` | `BaseRec_AddItemQty` | 56 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 589 |
+| `test_geoscapeframe` | PASS | 605 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |

@@ -19907,3 +19907,32 @@ pattern from the sprites the map chunk restored at 0x43790..0x4385C) where it pr
 `tests/ref/tact_frame_iso.png` is re-accepted for the real 9x47 bounds instead of the fixture's 6x7 poke. The loaded
 frame shows floor only, no units -- the reloaded roster is not stood on cells, which is Unit 126's deviation 2 and
 the separate-issues entry about the mission bring-up's placement.
+
+### The status panel's click handlers (Part 75)
+
+Geoscape_Draw installs the panel's command handlers into its own controls as it draws. The left footer
+control `*unk_18704C` takes `Geoscape_PrepScreenOpenSfx @ 0x852b8` (LDR at 0x8C9D4, `STR R3,[R2,#0xC]` at
+0x8C9E0), the right one `*unk_187024` takes `Geoscape_PrepScreenOpen @ 0x85194` (0x8C9FC / 0x8CA04), and
+the three card controls take the Smap_* family: `pGeoscapeCtlConfirm` at 0x8EC84 / 0x8F938 / 0x90640 /
+0x91CD0, `pGeoscapeCtlA` at 0x8EC90, 0x8F39C, 0x8F53C, 0x8F688, 0x8F930, 0x8FFC8, 0x8FFDC, 0x90674,
+0x90B5C, 0x90D00, 0x91130, 0x91284, 0x91424, 0x91630, 0x918C4 and 0x91CE0, `pGeoscapeCtlB` at 0x8F69C,
+0x8FFFC, 0x90468, 0x90898, 0x90C74, 0x910A8, 0x91578 and 0x9180C. The shell had never filled the panel
+env's handler fields, and ten arms test the field they need before drawing, so the whole family was
+invisible whatever the message line said: base lost (0x8F270), fuel low (0x8F41C), fly to point
+(0x8F5B4), point reached (0x8F768), target panel (0x909B8), mission site (0x90D90), travel (0x9119C),
+descent (0x91498), descent alt (0x91930), descent target (0x91698) and the alien base panel (0x91B2C).
+Thirteen fields are now wired -- the eleven Smap_* command handlers plus the two footer preps -- and
+`tests/test_geoscapeframe.c` section 9b measures all eleven flags: each paints 2 or 3 blits over the
+1-blit chain-tail baseline, and the descent panel's frame is committed as `tests/ref/geoscape_descent_panel.png`.
+Two fields stay NULL on purpose, because each ends by opening a screen the shell has no Init for:
+`pfnConfirmReport` = `Ui_OpenBaseInfoAlt @ 0x84d18` (MOV R1,#0x10 at 0x84DE4, the store at 0x84DEC --
+ufopaedia, screen 16) and `pfnApplyResearch` = `Ui_OpenResearch @ 0x84bf8` (0x84CEC, research, screen 8).
+Neither gates an arm.
+
+Two facts the wiring made visible. `UiPanel_GetLineFlag @ 0x5a334` is `LDRSB R0,[R1,R0]` with NO test of
+the line count, so the byte a removed line held is still in place and the chain takes the same arm again
+on every later frame -- a panel does not disappear when its message is dropped, only when the byte
+changes. And the descent panel's launch control is conditional at 0x915F4..0x91604: `MOVS` on
+`Craft_CountSoldiersAboard` over the craft colour slot 0 names, then four LDREQ / STREQ that replace
+`Smap_BeginCraftSelect` with `Smap_ResolveInterceptUI` when that craft carries nobody -- so a loaded
+transport is exactly the state that arms the mission launch.

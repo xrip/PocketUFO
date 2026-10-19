@@ -936,8 +936,88 @@ int main(void)
           "Geoscape_Draw case 1 (0x91DC8) runs on the shell's own pad, nav set, controls and map phase");
     Check(pF->radar.pRadarEnv == NULL && g_world.ptrEnv.apRadarCtl == NULL,
           "the radar arm's own env and aRadarControls @ 0x159684 stay unwired");
-    Check(pF->panel.pfnCtlOpen == NULL && pF->panel.pfnCtlSfx == NULL,
-          "the panel's four screen openers stay unwired (0x85194 / 0x852b8 / 0x84d18 / 0x84bf8)");
+    Check(pF->panel.pfnCtlOpen != NULL && pF->panel.pfnCtlSfx != NULL,
+          "the panel's two footer controls run Geoscape_PrepScreenOpen @ 0x85194 and its Sfx twin @ 0x852b8");
+    Check(pF->panel.pfnConfirmReport == NULL && pF->panel.pfnApplyResearch == NULL,
+          "only the two screen openers stay unwired: Ui_OpenBaseInfoAlt @ 0x84d18 ends by opening ufopaedia "
+          "screen 16 (0x84DE4 / 0x84DF4) and Ui_OpenResearch @ 0x84bf8 opens research screen 8 (0x84CEC / "
+          "0x84CF0), and the shell has no Init for either screen yet -- the same gap as nav slots 6/8/9/10/11");
+
+    /* 9b. The message-answer panels. Ten status-panel arms test a handler field and return before drawing
+     * when it is NULL, so the whole family was invisible whatever the message line said. With the handlers
+     * installed, every one of them paints more than the no-arm baseline does -- the counts are the proof,
+     * because a suppressed arm paints exactly the baseline (the chain tail only). */
+    {
+        static const u8 aPanelFlags[] = { 0x11, 0x0F, 0x0C, 0x0E, 0x14, 0x13, 0x12, 0x17, 0x16, 0x15, 0x3C };
+        static const char *aPanelNames[] = {
+            "base lost (0x8F270)", "fuel low (0x8F41C)", "fly to point (0x8F5B4)", "point reached (0x8F768)",
+            "target panel (0x909B8)", "mission site (0x90D90)", "travel panel (0x9119C)",
+            "descent panel (0x91498)", "descent alt (0x91930)", "descent target (0x91698)",
+            "alien base panel (0x91B2C)"
+        };
+        UiControl *pCtlA   = g_world.ui.apCtl[GEOUI_CTL_186BB4];  /* *pGeoscapeCtlA @ 0x186BB4 */
+        UiControl *pCtlB   = g_world.ui.apCtl[GEOUI_CTL_186BB0];  /* *pGeoscapeCtlB @ 0x186BB0 */
+        i32 nBaseline;
+        i32 nAboard;
+
+        Check(pF->panel.pfnResolveInterceptUI != NULL && pF->panel.pfnDismissSelected != NULL
+                  && pF->panel.pfnConfirmCraftTarget != NULL && pF->panel.pfnConfirmSelected != NULL
+                  && pF->panel.pfnConfirmSelectedAlt != NULL && pF->panel.pfnSetWaypoint != NULL
+                  && pF->panel.pfnSelectMapTarget != NULL && pF->panel.pfnCancelTarget != NULL
+                  && pF->panel.pfnSelectTarget != NULL && pF->panel.pfnClearSelection != NULL
+                  && pF->panel.pfnBeginCraftSelect != NULL,
+              "the panel's eleven command handlers are the ported Smap_* functions, not stubs");
+
+        /* No flag in the chain's range and none of the tested ones: no arm runs, so the count is what the
+         * chain tail alone paints. */
+        g_world.msgLines.nLineCount = 0;
+        UiLineList_Insert(&g_world.msgLines, 0, 1, 0, 0, 0, 0);
+        ClearSurface();
+        g_nBlits = 0;
+        Geoscape_DrawStatusPanel(&pF->panel);
+        nBaseline = g_nBlits;
+
+        printf("       panel arms, blits over the %d-blit tail baseline:\n", nBaseline);
+        for (i = 0; i < (i32)(sizeof(aPanelFlags) / sizeof(aPanelFlags[0])); ++i) {
+            pCtlA->pfnClick = NULL;
+            pCtlB->pfnClick = NULL;
+            UiLineList_SetLine(&g_world.msgLines, 0, aPanelFlags[i], 0, 0, 0, 0);
+            ClearSurface();
+            g_nBlits = 0;
+            Geoscape_DrawStatusPanel(&pF->panel);
+            Check(g_nBlits > nBaseline,
+                  "the arm paints more than the tail does, i.e. its guard let it through");
+            printf("         flag 0x%02X %-24s blits %d, ctlA %s, ctlB %s\n", (int)aPanelFlags[i],
+                   aPanelNames[i], g_nBlits, pCtlA->pfnClick ? "armed" : "-", pCtlB->pfnClick ? "armed" : "-");
+        }
+
+        /* The descent panel's own handler table (0x91578 / 0x915F8..0x91604 / 0x91630). Smap_BeginCraftSelect
+         * is stored first; the four LDREQ / STREQ at 0x915F8 overwrite it with Smap_ResolveInterceptUI when
+         * the craft the line names carries no soldiers, and no craft in a new game does. */
+        UiLineList_SetLine(&g_world.msgLines, 0, PUFO_STATUS_FLAG_DESCENT_PANEL, 0, 0, 0, 0);
+        pCtlA->pfnClick = NULL;
+        pCtlB->pfnClick = NULL;
+        ClearSurface();
+        g_nBlits = 0;
+        Geoscape_DrawStatusPanel(&pF->panel);
+        nAboard = Craft_CountSoldiersAboard(g_world.apSoldiers, (i32)g_world.nSoldierCount, 0);
+        Check(pCtlB->pfnClick == ((nAboard == 0) ? pF->panel.pfnResolveInterceptUI
+                                                  : pF->panel.pfnBeginCraftSelect),
+              "the launch control carries Smap_BeginCraftSelect (0x91578), and 0x915F8..0x91604's four LDREQ / "
+              "STREQ swap it for the resolve handler exactly when the craft colour slot 0 names carries nobody");
+        Check(pCtlA->pfnClick == pF->panel.pfnResolveInterceptUI,
+              "and the second control carries the resolve handler the arm stored at 0x91630");
+        Check(pCtlB->y == PUFO_STATUS_TARGETCTL_Y_CANCEL && pCtlA->y == PUFO_STATUS_TARGETCTL_Y_OK2,
+              "and both controls sit on the arm's own rows: 0x9156C puts CtlB at y 102, 0x91624 puts CtlA at y 125");
+        printf("         descent panel: craft 0 carries %d soldier(s), blits %d\n", nAboard, g_nBlits);
+        DumpFrame("geoscape_descent_panel"); /* the picture the 0x91498 arm paints */
+
+        /* UiPanel_GetLineFlag @ 0x5a334 reads the flag byte with no test of the count, so a drawn arm stays
+         * live after the line is dropped. The sections below run on an empty status line, so the byte goes
+         * back to zero with the count. */
+        UiLineList_SetLine(&g_world.msgLines, 0, 0, 0, 0, 0, 0);
+        g_world.msgLines.nLineCount = 0; /* 0x87CF8: a message on the status line stops the scrolling */
+    }
 
     /* 9c. A nav row pressed THROUGH the dispatcher. The screen-1 arm walks the ten base-strip slots at
      * [root + 0x120] (0x87E34) -- apNavCtl @ 0x159888, the same ten controls Geoscape_BuildNavControls

@@ -5896,6 +5896,290 @@ bool World_MissionCancelEnd(PufoWorldState *pW)
     return true;
 }
 
+/* The geoscape status panel's command handlers (Part 75).
+ *
+ * Geoscape_Draw installs thirteen handlers into the panel's own controls while it draws:
+ * pGeoscapeCtlConfirm at 0x8EC84 / 0x8F938 / 0x90640 / 0x91CD0, pGeoscapeCtlA at 0x8EC90 / 0x8F39C /
+ * 0x8F53C / 0x8F688 / 0x8F930 / 0x8FFC8 / 0x8FFDC / 0x90674 / 0x90B5C / 0x90D00 / 0x91130 / 0x91284 /
+ * 0x91424 / 0x91630 / 0x918C4 / 0x91CE0, pGeoscapeCtlB at 0x8F69C / 0x8FFFC / 0x90468 / 0x90898 /
+ * 0x90C74 / 0x910A8 / 0x91578 / 0x9180C, and the two footer controls at 0x8C9E0 / 0x8CA04. Ten panel
+ * arms test the field they need and return before drawing when it is NULL -- StatusPanel_DrawBaseLost,
+ * DrawFuelLow, DrawFlyToPoint, DrawPointReached, DrawTargetPanel, DrawMissionSite, DrawTravel,
+ * DrawDescentPanel, DrawDescentTarget and DrawAlienBasePanel -- so until this commit the shell drew
+ * none of the geoscape's message-answer panels, whatever the message line said.
+ *
+ * Two fields stay NULL on purpose: pfnConfirmReport (Ui_OpenBaseInfoAlt @ 0x84d18, which ends by
+ * opening ufopaedia screen 16 at 0x84DE4 / 0x84DF4) and pfnApplyResearch (Ui_OpenResearch @ 0x84bf8,
+ * research screen 8 at 0x84CEC / 0x84CF0). Neither gates an arm, and each needs the Init tail of a
+ * screen the shell has not built -- the same gap that leaves nav slots 6, 8, 9, 10 and 11 at
+ * World_NoopClick. Recorded in PLAN.md.
+ *
+ * Every env here is built at click time out of live cells instead of assembled once at bring-up,
+ * because two of the fields are handles a mission launch frees and rebuilds -- the strip pad at
+ * 0x186BBC and the six nav-speed controls at 0x186500 -- and a context held across that launch would
+ * keep the released ones. The Part 73 rule again: hold the live cell, never a copy of it. */
+
+/* The env the two footer controls read, in one place because their handlers are the same body with a
+ * sample inserted. `init` carries only the sample hook: neither prep calls an Init of its own. */
+static void World_FillScreenOpenEnv(PufoWorldState *pW, ScreenResetOpenEnv *pEnv)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->pState             = &pW->screen;                      /* nGeoscapeScreen @ 0x186BC4 */
+    pEnv->pszMsg             = pW->szLabelScratch;               /* szRadarMsg @ 0x186B10 */
+    pEnv->cchMsg             = sizeof(pW->szLabelScratch);
+    pEnv->pszScratch         = pW->szUiScratchStr;               /* unk_186420 */
+    pEnv->cchScratch         = sizeof(pW->szUiScratchStr);
+    pEnv->abResearchActive   = pW->abResearchActive;             /* byte_160BBC */
+    pEnv->pbResearchCount    = (const u8 *)&pW->nResearchEntries; /* 0x160C4C, read with LDRB */
+    pEnv->pdwShortfall       = &pW->nShortfall1870C8;            /* 0x1870C8, written as a dword */
+    pEnv->pTime              = &pW->geo.time;                    /* 0x159618, bPaused at 0x15961C */
+    pEnv->pWorld             = &pW->geo.world;                   /* GameTime_Set5Sec's tick dword */
+    pEnv->apSpeedCtl         = pW->ui.apRootCtl + 2;             /* 0x186500..0x186514 */
+    pEnv->pLines             = &pW->msgLines;                    /* the root message list @ 0x158890 */
+    pEnv->init.pfnPlaySample = World_PlaySampleWithArg;
+    pEnv->init.pUser         = pW;
+}
+
+/* Smap_ResolveInterceptUI @ 0x84964 -- the answer to the message line under the map, the handler most
+ * of the arms install (0x8F39C, 0x8F69C, 0x8FFC8, 0x8FFFC, 0x90468, 0x90674, 0x90898, 0x90B5C,
+ * 0x90D00, 0x91130, 0x91284, 0x91424, 0x91630, 0x918C4). */
+static void World_SmapResolveInterceptThunk(void)
+{
+    PufoWorldState       *pW = g_pActiveWorld;
+    SmapResolveInterceptEnv env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pLines             = &pW->msgLines;                 /* 0x158890 */
+    env.pbInterceptDone    = &pW->bInterceptDone;           /* byte_18709C */
+    env.pbFlag187090       = &pW->bFlag187090;
+    env.pbFlag18708C       = &pW->bFlag18708C;
+    env.pbFlag187098       = &pW->bFlag187098;
+    env.pbSelectionFlag    = &pW->bMapSelectionFlag;        /* 0x159E84 */
+    env.pbFinalMissionCtl  = &pW->bFinalMissionCtlArmed;    /* 0x187068 */
+    env.pWorld             = &pW->geo.world;
+    env.apSpeedCtl         = pW->ui.apRootCtl + 2;
+    env.pShipEnv           = &pW->shipEnv;
+    env.pTime              = &pW->geo.time;
+    Smap_ResolveInterceptUI(&env);
+}
+
+/* Smap_DismissSelected @ 0x84428, sent to the craft and send it home (0x8F53C, 0x8FFDC). The original
+ * takes four arguments through this handler, not an env. */
+static void World_SmapDismissSelectedThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    (void)Smap_DismissSelected(&pW->shipEnv, &pW->msgLines, &pW->geo.time, &pW->bMapSelectionFlag);
+}
+
+/* Smap_ConfirmCraftTarget @ 0x842ec: keep the pending order and put a fresh waypoint at the click
+ * (0x8F688). The pending click is the viewport block's own pair -- 0x186414 / 0x186418 are
+ * SmapView + 0x2C / + 0x30, so the same storage Smap_HitTestStrategSelect writes. */
+static void World_SmapConfirmCraftTargetThunk(void)
+{
+    PufoWorldState        *pW = g_pActiveWorld;
+    SmapConfirmTargetEnv  env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pLines            = &pW->msgLines;
+    env.pnSelectedShipIdx = &pW->nSelectedShipIdx;          /* 0x187054 */
+    env.pStrategList      = &pW->strategList;               /* 0x1864F8 + 0x3C */
+    env.pnSeed            = &pW->nStrategSeed;              /* 0x18640C */
+    env.pView             = &pW->view;                      /* 0x1863E8, nMode scales a type-5 spot */
+    env.pnPickX           = &pW->view.nPickX;               /* 0x186414 */
+    env.pnPickY           = &pW->view.nPickY;               /* 0x186418 */
+    env.pShipEnv          = &pW->shipEnv;
+    env.pTime             = &pW->geo.time;
+    env.pbSelectionFlag   = &pW->bMapSelectionFlag;
+    Smap_ConfirmCraftTarget(&env);
+}
+
+/* Smap_ConfirmSelected @ 0x845d8 and Smap_ConfirmSelectedAlt @ 0x853e4: the craft keeps its course.
+ * Same four-field env, the only difference is when the selection flag falls (0x85420 before the
+ * line-count test at 0x8542C). */
+static void World_SmapConfirmSelectedThunk(void)
+{
+    PufoWorldState    *pW = g_pActiveWorld;
+    SmapSelectedEnv    env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pLines          = &pW->msgLines;
+    env.pShipEnv        = &pW->shipEnv;
+    env.pTime           = &pW->geo.time;
+    env.pbSelectionFlag = &pW->bMapSelectionFlag;
+    Smap_ConfirmSelected(&env);
+}
+
+static void World_SmapConfirmSelectedAltThunk(void)
+{
+    PufoWorldState    *pW = g_pActiveWorld;
+    SmapSelectedEnv    env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pLines          = &pW->msgLines;
+    env.pShipEnv        = &pW->shipEnv;
+    env.pTime           = &pW->geo.time;
+    env.pbSelectionFlag = &pW->bMapSelectionFlag;
+    Smap_ConfirmSelectedAlt(&env);
+}
+
+/* Smap_SetWaypoint @ 0x84648 (0x8F940): the order the "point reached" panel offers. */
+static void World_SmapSetWaypointThunk(void)
+{
+    PufoWorldState    *pW = g_pActiveWorld;
+    SmapWaypointEnv    env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pLines            = &pW->msgLines;
+    env.pnMsgShipIdx      = &pW->nMsgShipIdx;               /* 0x159E74 */
+    env.pnSelectedShipIdx = &pW->nSelectedShipIdx;          /* 0x187054 */
+    env.pShipEnv          = &pW->shipEnv;
+    env.pTime             = &pW->geo.time;
+    Smap_SetWaypoint(&env);
+}
+
+/* Smap_SelectMapTarget @ 0x84484 (0x90640's sibling on the mission-site panel): the pending order,
+ * the flag-27 line, and the arm that PAUSES the clock. */
+static void World_SmapSelectMapTargetThunk(void)
+{
+    PufoWorldState        *pW = g_pActiveWorld;
+    SmapSelectTargetEnv    env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pLines             = &pW->msgLines;
+    env.pnSelectedShipIdx  = &pW->nSelectedShipIdx;
+    env.pnSlot159E74       = &pW->nMsgShipIdx;             /* written with the same value at 0x845A4 */
+    env.pStrategList       = &pW->strategList;
+    env.pShipEnv           = &pW->shipEnv;
+    env.aTopics            = pW->aTopics;                  /* 0x15EF08, topic 28 arms the final mission */
+    env.pTime              = &pW->geo.time;
+    env.pbSelectionFlag    = &pW->bMapSelectionFlag;
+    env.pbFinalMissionCtl  = &pW->bFinalMissionCtlArmed;
+    Smap_SelectMapTarget(&env);
+}
+
+/* Smap_CancelTarget @ 0x84254 (0x90C74, 0x910A8, 0x9139C): launch at the pending target and drop the
+ * selection. */
+static void World_SmapCancelTargetThunk(void)
+{
+    PufoWorldState         *pW = g_pActiveWorld;
+    SmapCancelTargetEnv     env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pLines            = &pW->msgLines;
+    env.pnSelectedShipIdx = &pW->nSelectedShipIdx;
+    env.pbSelectionFlag   = &pW->bMapSelectionFlag;
+    env.pbFlag187098      = &pW->bFlag187098;
+    env.pbFlag18708C      = &pW->bFlag18708C;
+    env.pbFlag187090      = &pW->bFlag187090;
+    env.pTime             = &pW->geo.time;
+    env.pShipEnv          = &pW->shipEnv;
+    Smap_CancelTarget(&env);
+}
+
+/* Smap_OnPointerUp @ 0x84688 (0x8EC84, 0x90640, 0x91CD0): launch at the target the line names, or
+ * recentre the view on it and light the crosshair tail. */
+static void World_SmapPointerUpThunk(void)
+{
+    PufoWorldState      *pW = g_pActiveWorld;
+    SmapPointerUpEnv     env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pbSelectionFlag     = &pW->bMapSelectionFlag;
+    env.pLines              = &pW->msgLines;
+    env.pnSelectedShipIdx   = &pW->nSelectedShipIdx;
+    env.pView               = &pW->view;
+    env.pStrategList        = &pW->strategList;
+    env.pStripPad           = pW->ui.apPad[GEOUI_PAD_186BBC]; /* *pGeoscapeStripPad @ 0x186BBC */
+    env.pnCrosshairX        = &pW->frame.cross.nCrosshairX;   /* 0x186BC8 */
+    env.pnCrosshairY        = &pW->frame.cross.nCrosshairY;   /* 0x186BCC */
+    env.pbCrosshairPending  = &pW->frame.g.bCrosshairPending; /* 0x1870B0 */
+    env.pnCooldownR         = &pW->frame.g.nTapCooldown;      /* 0xAC218 */
+    env.pWorld              = &pW->geo.world;
+    env.apSpeedCtl          = pW->ui.apRootCtl + 2;
+    env.pShipEnv            = &pW->shipEnv;
+    env.pTime               = &pW->geo.time;
+    Smap_OnPointerUp(&env);
+}
+
+/* Smap_ClearSelection @ 0x84648 (0x8EC90, 0x91CE0): drop the line and, only if nothing is left on
+ * screen, let the clock run again. */
+static void World_SmapClearSelectionThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    (void)Smap_ClearSelection(&pW->msgLines, &pW->geo.time, &pW->bMapSelectionFlag);
+}
+
+/* Smap_BeginCraftSelect @ 0x838dc, the descent panel's launch control (0x91578, 0x9180C) and the
+ * mission-launch decision tree. Its env is the world's own, built by World_WireMissionSeams. */
+static void World_BeginCraftSelectThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    (void)Smap_BeginCraftSelect(&pW->craftEnv);
+}
+
+/* Geoscape_PrepScreenOpen @ 0x85194 and Geoscape_PrepScreenOpenSfx @ 0x852b8: the panel's two footer
+ * controls (0x8C9E0, 0x8CA04). The Sfx twin is the only one of the six openers that leaves the tick
+ * interval alone. */
+static void World_PrepScreenOpenThunk(void)
+{
+    PufoWorldState       *pW = g_pActiveWorld;
+    ScreenResetOpenEnv    env;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_FillScreenOpenEnv(pW, &env);
+    Geoscape_PrepScreenOpen(&env);
+}
+
+static void World_PrepScreenOpenSfxThunk(void)
+{
+    PufoWorldState       *pW = g_pActiveWorld;
+    ScreenResetOpenEnv    env;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_FillScreenOpenEnv(pW, &env);
+    Geoscape_PrepScreenOpenSfx(&env);
+}
+
 /* Smap_BeginCraftSelect @ 0x838dc, the mission-launch decision tree, and the two envs it reaches
  * through: the ship-removal pair (its lookups at 0x83968, its removal at 0x83F7C and 0x84428) and
  * the demolish call at 0x84208. They live on PufoWorldState because every cell they touch is
@@ -6329,6 +6613,23 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->panel.pbPendingRegionId = &pW->bPendingRegionId;            /* bPendingBaseKind @ 0x159DF4 */
     pF->panel.pbPlacementPending = &pW->bPlacementPending;          /* 0x1870AC */
     pF->panel.pCloseCtl       = pUi->apCtl[GEOUI_CTL_186B00];       /* *g_pUiCloseCtl @ 0x186B00 */
+    /* The panel arms' click handlers. Each arm stores one of these into a control as it draws, and ten
+     * arms return before drawing when the one they need is NULL -- which is why none of the geoscape's
+     * message-answer panels ever appeared. Built at click time, not held here; see the block above
+     * World_WireMissionSeams for the handler table and for the two that stay NULL. */
+    pF->panel.pfnCtlSfx           = World_PrepScreenOpenSfxThunk;   /* 0x8C9E0 */
+    pF->panel.pfnCtlOpen          = World_PrepScreenOpenThunk;      /* 0x8CA04 */
+    pF->panel.pfnSelectTarget     = World_SmapPointerUpThunk;       /* 0x8EC84, 0x90640, 0x91CD0 */
+    pF->panel.pfnClearSelection   = World_SmapClearSelectionThunk;  /* 0x8EC90, 0x91CE0 */
+    pF->panel.pfnResolveInterceptUI = World_SmapResolveInterceptThunk; /* 0x8F39C and thirteen more */
+    pF->panel.pfnDismissSelected  = World_SmapDismissSelectedThunk; /* 0x8F53C, 0x8FFDC */
+    pF->panel.pfnConfirmCraftTarget = World_SmapConfirmCraftTargetThunk; /* 0x8F688 */
+    pF->panel.pfnConfirmSelected  = World_SmapConfirmSelectedThunk;
+    pF->panel.pfnConfirmSelectedAlt = World_SmapConfirmSelectedAltThunk; /* 0x8F930 */
+    pF->panel.pfnSetWaypoint      = World_SmapSetWaypointThunk;     /* 0x8F940 */
+    pF->panel.pfnSelectMapTarget  = World_SmapSelectMapTargetThunk;
+    pF->panel.pfnCancelTarget     = World_SmapCancelTargetThunk;    /* 0x90C74, 0x910A8, 0x9139C */
+    pF->panel.pfnBeginCraftSelect = World_BeginCraftSelectThunk;    /* 0x91578, 0x9180C */
 
     /* The new-base globe hover, 0x67264..0x67b10, reached from the chain tail at 0x91D8C. */
     pF->hover.pStripPad  = pUi->apPad[GEOUI_PAD_186BBC];

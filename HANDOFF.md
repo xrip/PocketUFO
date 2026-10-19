@@ -1215,6 +1215,19 @@ scan stage, its two readout lines, its TEXTS[1042]/[1136]/[1137] labels -- never
 one firing of each timer and one paint per tick. Related fact about the new-game screen: the chain tail at 0x91CEC
 tests `CMP R0,#2` at 0x91CF4, and screen 2 -- where `Game_StartNew` leaves the geoscape (0x95450) -- takes the hover
 branch instead of the strip pad, the clock pads and the thirteen root widgets, so the geoscape bottom control bar is
+
+The geoscape's message-answer panels were invisible until Part 75 because the shell never filled the
+status panel's handler fields. Ten panel arms test the field they need and return before drawing, so base
+lost (0x8F270), fuel low (0x8F41C), fly to point (0x8F5B4), point reached (0x8F768), target (0x909B8),
+mission site (0x90D90), travel (0x9119C), descent (0x91498), descent alt (0x91930), descent target
+(0x91698) and alien base (0x91B2C) painted nothing whatever the message line said. Thirteen of the
+fifteen fields are wired now -- the eleven Smap_* command handlers plus the two footer preps at 0x8C9E0 /
+0x8CA04 -- and the descent panel has a committed picture. Two rules to remember. `UiPanel_GetLineFlag @
+0x5a334` is `LDRSB R0,[R1,R0]` with no test of the line count: dropping a message leaves its flag byte
+behind and the same arm keeps painting. And the descent panel's launch control is `Smap_BeginCraftSelect`
+only when the craft colour slot 0 names carries soldiers -- 0x915F4..0x91604 swaps in
+`Smap_ResolveInterceptUI` when `Craft_CountSoldiersAboard` is zero -- so a loaded transport is the state
+that opens the mission door.
 absent there in the original as well.
 
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
