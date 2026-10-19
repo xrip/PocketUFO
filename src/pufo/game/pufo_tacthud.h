@@ -305,8 +305,11 @@ typedef struct TactHudRoster {
     i32 anModeFlag[12];        /* Map + 20092, the twelve per-mode values also drawn as a number */
     i32 anModeValue[12];       /* Map + 20044 */
     const u8 *pNameTable;      /* 0xB3768, twelve 30-byte mode names, BELOW aTextRecs @ 0xB38D0 */
-    const char *szNumberPrefixA; /* unk_C7051 */
-    const char *szNumberPrefixB; /* unk_C711E */
+    /* unk_C7051 and unk_C711E are 0xB38D0 + 205 * 389 and 205 * 390, so they are TEXTS[389]
+     * "Тч: " (the turn-cost label) and TEXTS[390] "Вр.: " (the time-cost label) -- the two
+     * prefixes 0x21A88/0x21B00 strcat the number onto. Not scratch, despite having no write xref. */
+    const char *szNumberPrefixA; /* TEXTS[389] */
+    const char *szNumberPrefixB; /* TEXTS[390] */
 } TactHudRoster;
 
 i32 TactHud_DrawUnitRoster(UiControl *pPads, const TactHudRoster *pRoster,

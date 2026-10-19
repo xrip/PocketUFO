@@ -10,6 +10,17 @@
 log_rel=/tmp/pufo_check_rel.log
 log_dbg=/tmp/pufo_check_dbg.log
 
+# src/pufo/asset/pufo_texts_lang.h is generated from lang.dat. Regenerate it outside the data
+# directory and fail when the committed copy no longer matches the shipped archive (python -I:
+# lang.dat is downloaded-era untrusted data, so no import path through the cwd).
+if ! python -I tools/gen_texts_lang.py lang.dat /tmp/pufo_texts_lang_gen.h > /tmp/pufo_check_texts.log 2>&1; then
+    echo "TEXTS GENERATOR FAILED (see /tmp/pufo_check_texts.log)"; exit 1
+fi
+if ! diff -q /tmp/pufo_texts_lang_gen.h src/pufo/asset/pufo_texts_lang.h > /tmp/pufo_check_texts_diff.log 2>&1; then
+    echo "src/pufo/asset/pufo_texts_lang.h is STALE vs lang.dat (see /tmp/pufo_check_texts_diff.log)"
+    exit 1
+fi
+
 if ! cmake --build build --config Release > "$log_rel" 2>&1; then
     echo "RELEASE BUILD FAILED"
     grep -iE "error|warning" "$log_rel" | head -40

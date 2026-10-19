@@ -2508,6 +2508,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactEnemyAiAct.anActionCost       = pW->sTactUi.anActionCost;
     pW->sTactEnemyAiAct.anActionEnabled    = pW->sTactUi.anActionEnabled;
     pW->sTactEnemyAiAct.pbActionLatch      = &pMap->bActionLatch;  /* Map+0x02 */
+    pW->sTactEnemyAiAct.pTextRecs          = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL;
     pW->sTactEnemyAiAct.pUser              = pW;
 
     pW->sTactShotHooks.pfnComputeFov = NULL; /* the argument list is still open (pufo_combat.h:93) */

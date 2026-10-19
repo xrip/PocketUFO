@@ -13559,11 +13559,14 @@ static bool FsLoadTexts(void)
     if (!AssetReader_Read(&rdr, aHdr, PUFO_TEXT_HDR_SIZE)) {
         return false;
     }
-    g_fsTexts = malloc((size_t)n * PUFO_TEXT_REC_STRIDE);
+    /* The capacity, not just the loaded count: Ufopaedia_Open reads records 1646..1654 and 1650..1654
+     * are past what TEXTS.DAT fills -- in the app those slots exist and stay zero (the boot blob is
+     * PUFO_TEXT_REC_CAPACITY records), and the test has to model the same block. */
+    g_fsTexts = malloc((size_t)PUFO_TEXT_REC_CAPACITY * PUFO_TEXT_REC_STRIDE);
     if (g_fsTexts == NULL) {
         return false;
     }
-    memset(g_fsTexts, 0, (size_t)n * PUFO_TEXT_REC_STRIDE);
+    memset(g_fsTexts, 0, (size_t)PUFO_TEXT_REC_CAPACITY * PUFO_TEXT_REC_STRIDE);
     for (i = 0; i < n; ++i) {
         if (!AssetReader_Read(&rdr, g_fsTexts + (size_t)i * PUFO_TEXT_REC_STRIDE,
                               PUFO_TEXT_REC_SIZE_DISK)) {
@@ -14739,8 +14742,10 @@ static void TestUfopaediaOpen(void)
     Check(g_ufoEnv.apCatPanels[2]->apLines[2] == NULL,
           "the panel is sized to the shown count, so a third row does not exist at all");
 
-    /* 9. The selector's nine rows are cleared, not labelled: the nine sources sit in .data's
-     * zero-filled span. The category panels, by contrast, do get names. */
+    /* 9. The selector's nine rows are labelled, from TEXTS 1646..1654 (the ARM's 0x105EE6..0x10654E).
+     * The shipped lang.dat has "не исп." ("not used") in 1646..1649 and nothing at all from 1650 on, so
+     * the first four rows carry a real caption and the last five copy a slot TEXTS.DAT never wrote.
+     * The fixture reads the archive itself, so the expected value is the record's own text. */
     UfoFixture();
     for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
         UfoUnlock(i);
@@ -14748,11 +14753,15 @@ static void TestUfopaediaOpen(void)
     Ufopaedia_Open(&g_ufoEnv);
     nBad = 0;
     for (i = 0; i < PUFO_UFOPAEDIA_SEL_LINES; ++i) {
-        if (g_ufoEnv.pSelPanel->apLines[i] == NULL || g_ufoEnv.pSelPanel->apLines[i][0] != 0) {
+        const char *pszRow = (g_ufoEnv.pSelPanel != NULL && g_ufoEnv.pSelPanel->apLines[i] != NULL)
+                                 ? (const char *)g_ufoEnv.pSelPanel->apLines[i] : "<none>";
+        if (strcmp(pszRow, FsRec(PUFO_UFOPAEDIA_SEL_REC_FIRST + i)) != 0) {
             ++nBad;
         }
     }
-    CheckEqI32(nBad, 0, "the selector's nine rows come out empty -- the sources are all-zero .data");
+    CheckEqI32(nBad, 0, "each selector row holds the TEXTS record the ARM names");
+    Check(g_ufoEnv.pSelPanel->apLines[0][0] != 0, "the first four are real labels, not clears");
+    Check(g_ufoEnv.pSelPanel->apLines[4][0] == 0, "and row 4 copies record 1650, which is unwritten");
     Check(g_ufoEnv.apCatPanels[0]->apLines[0] != NULL && g_ufoEnv.apCatPanels[0]->apLines[0][0] != 0,
           "while the category panels do carry names, so the clear is not a general 'no names' path");
 
@@ -15214,6 +15223,11 @@ static void PsiFixture(i32 nBaseCount, i32 nSoldierCount)
     g_psiEnv.pfnScrollPrev  = PsiSeamPrev;
     g_psiEnv.pfnScrollNext  = PsiSeamNext;
     g_psiEnv.pfnLoadPads    = PsiSeamLoadPads;
+    /* The check column carries TEXTS records, not blanks: 1186 "Обучение" on an assigned row
+     * (0x71C8C) and 1187 "Нет" on a free one (0x71E14), so the fixture has to hold both. */
+    g_psiEnv.pTextRecs      = g_aXfText;
+    PutTextRec(g_aXfText, PUFO_PSI_TEXT_ASSIGNED, "ASSIGNED");
+    PutTextRec(g_aXfText, PUFO_PSI_TEXT_UNASSIGNED, "NO");
 }
 
 /* The roster: soldier i is named "S<i>" and stationed at base anKind[i]. */
@@ -15397,16 +15411,18 @@ static void TestPsiScreen(void)
     CheckEqI32(PsiAux(PSI_NAME, 0, 2), 4, "");
     Check(strcmp(PsiRow(PSI_NAME, 1, 0), "S1") == 0, "and base 1's single row is soldier 1");
 
-    /* 5. An assigned soldier: the box row is cleared, the aux carries the state, the row is
-     * highlighted on all four columns, and bPsiActive is set by the build itself. */
+    /* 5. An assigned soldier: the box row is labelled with TEXTS[1186], the aux carries the state,
+     * the row is highlighted on all four columns, and bPsiActive is set by the build itself. */
     PsiFixture(3, 6);
     PsiRoster(aKind6, 6);
     PsiSetPsi(2, 1, 0, 40, 80);            /* assigned, but bPsiActive starts clear */
     PsiScreen_BuildPanels(&g_psiEnv);
     CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 1, "an assigned soldier gets checkbox aux 1 (0x71CEC)");
-    Check(PsiRow(PSI_CHECK, 0, 1)[0] == 0, "while the box row itself is cleared, not labelled");
+    Check(strcmp(PsiRow(PSI_CHECK, 0, 1), "ASSIGNED") == 0,
+          "while the box row itself reads TEXTS[1186] \"Обучение\", not a blank (0x71C8C)");
     CheckEqI32(PsiAux(PSI_CHECK, 0, 0), 0, "an unassigned soldier gets 0 (0x71DC4)");
-    Check(PsiRow(PSI_CHECK, 0, 0)[0] == 0, "and its row is cleared the same way");
+    Check(strcmp(PsiRow(PSI_CHECK, 0, 0), "NO") == 0,
+          "and its row reads TEXTS[1187] \"Нет\" (0x71E14)");
     CheckEqI32(g_aPsiSol[2].bPsiActive, 1, "the build sets Soldier.bPsiActive for an assigned soldier (0x71D00)");
     Check(PsiMetaIs(PSI_NAME, 0, 1, 240, 120, 240, 10, 10, 10), "the assigned row is (240,120,240)");
     Check(PsiMetaIs(PSI_STAT, 0, 1, 240, 120, 240, 10, 10, 10), "on the stat column");
@@ -15488,12 +15504,15 @@ static void TestPsiScreen(void)
     Check(PsiScreen_SelectListed(&g_psiEnv), "assigning the selected row succeeds when the lab has room");
     CheckEqI32(g_nPsiScratch, 1, "byte_15EE84[68] takes the row the four meta calls use (0x712E0)");
     CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 1, "the checkbox aux flips to 1 (0x71420)");
-    Check(PsiRow(PSI_CHECK, 0, 1)[0] == 0, "and the box row stays empty");
+    Check(strcmp(PsiRow(PSI_CHECK, 0, 1), "ASSIGNED") == 0,
+          "and the box row is labelled with TEXTS[1186] at the same time (0x71480)");
     Check(PsiMetaIs(PSI_NAME, 0, 1, 240, 120, 240, 10, 10, 10), "the row turns to the assigned colour");
     Check(PsiMetaIs(PSI_DELTA, 0, 1, 240, 120, 240, 10, 10, 10), "on all four columns");
     CheckEqI32(g_nPsiActionFail, 0, "no failure flag on the success path");
     Check(PsiScreen_SelectListed(&g_psiEnv), "clicking again frees the row");
     CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 0, "the aux flips back to 0 (0x71578)");
+    Check(strcmp(PsiRow(PSI_CHECK, 0, 1), "NO") == 0,
+          "and the box row goes back to TEXTS[1187] (0x715D8)");
     Check(PsiMetaIs(PSI_NAME, 0, 1, 240, 240, 240, 10, 10, 10), "and the row takes the free colour (0x714D4)");
     Check(PsiMetaIs(PSI_CHECK, 0, 1, 240, 240, 240, 10, 10, 10), "on all four columns");
 
@@ -16225,6 +16244,15 @@ static void BiFixture(void)
     PutTextRec(g_aXfText, 418, "Blimp");
     PutTextRec(g_aXfText, 419, "Ufo");
 
+    /* BaseInfoScreen_BuildPanels names its rows from TEXTS records 1623..1645 (0x55AE0..0x56178 and
+     * 0x56DD4..0x56ED4). Naming each one here makes a row/record mix-up show as the wrong string. */
+    for (i = 1623; i <= 1645; ++i) {
+        char szRec[8];
+
+        snprintf(szRec, sizeof(szRec), "T%d", i);
+        PutTextRec(g_aXfText, i, szRec);
+    }
+
     memset(&g_biEnv, 0, sizeof(g_biEnv));
     g_biEnv.pbBuilt = &g_bBiBuilt;
     g_biEnv.pbModeFlag = &g_bBiMode;
@@ -16317,6 +16345,26 @@ static void TestBaseInfoBuildPanels(void)
     BiRowMeta(pNames, 1, 1, &nR, &nG, &nB);
     Check(nR == 0 && nG == 0 && nB == 0, "while row 1 keeps the zeroed meta");
 
+    /* The 15 caption rows take their TEXTS record (0x55AE0..0x55E04). Rows 4 and 11 are the two copies
+     * the original makes from szEmptyString, so they are the only rows in 0..16 with no label. */
+    Check(0 == strcmp(BiRow(pNames, 0), "T1623"), "name row 0 is TEXTS[1623]");
+    Check(0 == strcmp(BiRow(pNames, 1), "T1624"), "row 1 is TEXTS[1624]");
+    Check(0 == strcmp(BiRow(pNames, 2), "T1625"), "row 2 is TEXTS[1625]");
+    Check(0 == strcmp(BiRow(pNames, 3), "T1626"), "row 3 is TEXTS[1626]");
+    Check(0 == strcmp(BiRow(pNames, 4), ""), "row 4 is the empty copy between the groups");
+    Check(0 == strcmp(BiRow(pNames, 5), "T1627"), "row 5 is TEXTS[1627]");
+    Check(0 == strcmp(BiRow(pNames, 6), "T1628"), "row 6 is TEXTS[1628]");
+    Check(0 == strcmp(BiRow(pNames, 7), "T1629"), "row 7 is TEXTS[1629]");
+    Check(0 == strcmp(BiRow(pNames, 8), "T1630"), "row 8 is TEXTS[1630]");
+    Check(0 == strcmp(BiRow(pNames, 9), "T1631"), "row 9 is TEXTS[1631]");
+    Check(0 == strcmp(BiRow(pNames, 10), "T1632"), "row 10 is TEXTS[1632], reached by the ORR literal");
+    Check(0 == strcmp(BiRow(pNames, 11), ""), "row 11 is the other empty copy");
+    Check(0 == strcmp(BiRow(pNames, 12), "T1633"), "row 12 is TEXTS[1633]");
+    Check(0 == strcmp(BiRow(pNames, 13), "T1634"), "row 13 is TEXTS[1634]");
+    Check(0 == strcmp(BiRow(pNames, 14), "T1635"), "row 14 is TEXTS[1635]");
+    Check(0 == strcmp(BiRow(pNames, 15), "T1636"), "row 15 is TEXTS[1636]");
+    Check(0 == strcmp(BiRow(pNames, 16), "T1637"), "row 16 is TEXTS[1637]");
+
     /* The craft list: three of the four craft are homed here, in apCraft order. */
     Check(0 == strcmp(BiRow(pNames, 17), "Intercep1"), "name row 17 is the first craft's display name");
     Check(0 == strcmp(BiRow(pNames, 18), "Transport2"), "row 18 the second");
@@ -16339,8 +16387,14 @@ static void TestBaseInfoBuildPanels(void)
     Check(nR == 200 && nG == 150 && nB == 150, "on nShips+23");
     BiRowMeta(pNames, 28, 1, &nR, &nG, &nB);
     Check(nR == 200 && nG == 150 && nB == 150, "and on nShips+25");
-    Check(0 == strcmp(BiRow(pNames, 21), "") && 0 == strcmp(BiRow(pNames, 28), ""),
-          "the eight rows after the craft list are cleared");
+    Check(0 == strcmp(BiRow(pNames, 21), "T1638"), "nShips+18 is TEXTS[1638]");
+    Check(0 == strcmp(BiRow(pNames, 22), "T1639"), "nShips+19 is TEXTS[1639]");
+    Check(0 == strcmp(BiRow(pNames, 23), "T1640"), "nShips+20 is TEXTS[1640]");
+    Check(0 == strcmp(BiRow(pNames, 24), "T1641"), "nShips+21 is TEXTS[1641]");
+    Check(0 == strcmp(BiRow(pNames, 25), ""), "nShips+22 is the empty copy");
+    Check(0 == strcmp(BiRow(pNames, 26), "T1642"), "nShips+23 is TEXTS[1642]");
+    Check(0 == strcmp(BiRow(pNames, 27), ""), "nShips+24 is the other empty copy");
+    Check(0 == strcmp(BiRow(pNames, 28), "T1643"), "nShips+25 is TEXTS[1643]");
 
     /* Crew and capacity rows of the free column. */
     Check(0 == strcmp(BiRow(pFree, 1), "3"), "soldiers aboard counts by craft id, across every base");
@@ -16381,8 +16435,8 @@ static void TestBaseInfoBuildPanels(void)
     Check(0 == strcmp(BiRow(pTotals, 9), "0"), "workshop capacity");
     Check(0 == strcmp(BiRow(pTotals, 10), "0"), "hangar capacity");
     Check(0 == strcmp(BiRow(pTotals, 13), "0"), "the built-facility score");
-    Check(0 == strcmp(BiRow(pTotals, 14), "") && 0 == strcmp(BiRow(pTotals, 15), ""),
-          "rows 14 and 15 are cleared");
+    Check(0 == strcmp(BiRow(pTotals, 14), "T1644") && 0 == strcmp(BiRow(pTotals, 15), "T1644"),
+          "the two radar rows start as TEXTS[1644] when the base has no radar");
 
     BiRelease();
     Check(g_apBiPanel[0] == NULL && g_apBiPanel[1] == NULL && g_apBiPanel[2] == NULL,
@@ -16407,6 +16461,28 @@ static void TestBaseInfoBuildPanels(void)
     Check(0 == strcmp(BiRow(pTotals, 6), "200"), "the same four cells give 200 living places");
     Check(0 == strcmp(BiRow(pFree, 6), "190"), "ten occupants leave 190 free");
     Check(0 == strcmp(BiRow(pTotals, 13), "0"), "the built-facility score only counts kinds 13..16");
+    Check(0 == strcmp(BiRow(pTotals, 14), "T1644") && 0 == strcmp(BiRow(pTotals, 15), "T1644"),
+          "kind 1 cells do not flip either radar row");
+    BiRelease();
+
+    /* ---- a base with both radars ---- */
+    BiFixture();
+    g_abBiGrid[480 + 144 * 0 + 6 * 2 + 3] = 4; /* FAC_SHORT_RANGE_RADAR */
+    g_abBiGrid[480 + 144 * 0 + 6 * 4 + 1] = 5; /* FAC_LONG_RANGE_RADAR */
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pTotals = g_apBiPanel[2];
+    Check(0 == strcmp(BiRow(pTotals, 14), "T1645"),
+          "a kind-4 cell answers the short-range row with TEXTS[1645]");
+    Check(0 == strcmp(BiRow(pTotals, 15), "T1645"), "and a kind-5 cell the long-range row");
+    BiRelease();
+
+    /* ---- only the long-range radar ---- */
+    BiFixture();
+    g_abBiGrid[480 + 144 * 0 + 6 * 0 + 0] = 5;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pTotals = g_apBiPanel[2];
+    Check(0 == strcmp(BiRow(pTotals, 14), "T1644"), "the short-range row stays TEXTS[1644]");
+    Check(0 == strcmp(BiRow(pTotals, 15), "T1645"), "the long-range row takes TEXTS[1645]");
     BiRelease();
 
     /* ---- a site of this base's type is inbound with craft ---- */
@@ -16824,6 +16900,11 @@ static void TestBaseInfoDraw(void)
      * carry a meta colour; every other row keeps the zeroed meta and draws in black, which a
      * cleared surface cannot show, so the probe uses a meta row. ---- */
     BiDrawFixture();
+    /* The build writes the caption records into the name column, so this probe has to empty the column
+     * first: rows 0 and 1 both reach the y 40..60 band. */
+    for (i32 nClear = 0; nClear < PUFO_BASEINFO_PANEL_LINES; ++nClear) {
+        (void)UiPanel_SetLineText(g_apBiPanel[0], nClear, "");
+    }
     (void)UiPanel_SetLineText(g_apBiPanel[0], 0, "Zeta");
     BiClear(pPix);
     BaseInfoScreen_Draw(&g_biDrawEnv);

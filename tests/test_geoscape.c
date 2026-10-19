@@ -3249,6 +3249,21 @@ static void TestSiteScore(void)
     CheckEqI32(Smap_SumSiteScores(aSites, PUFO_SMAP_SITE_COUNT + 1), 0, "and further out too");
 }
 
+/* A TEXTS block big enough that the cursor records 1595..1598 can be addressed by number. The fixture
+ * puts its own labels in those four slots (the shipped strings are pinned in tests/test_texts_lang.c),
+ * so a setter wired to the wrong record shows up as the wrong string. */
+static u8 g_abRadarCursorTexts[1599 * PUFO_TEXT_REC_STRIDE];
+
+static void RadarPutCursorRec(i32 nRec, const char *psz)
+{
+    u8 *p = g_abRadarCursorTexts + (size_t)nRec * PUFO_TEXT_REC_STRIDE;
+    size_t i = 0;
+
+    do {
+        p[i] = (u8)psz[i];
+    } while (psz[i++] != 0);
+}
+
 /* RadarScreen_SetCursorNW / NE / SW / SE @ 0x5e768 / 0x5e808 / 0x5e93c / 0x5ea70 */
 static void TestRadarCursors(void)
 {
@@ -3274,9 +3289,16 @@ static void TestRadarCursors(void)
     env.pnRangeTarget = &nRange; env.pbFlip = &bFlip;                        \
     env.pnMsgTimer = &nTimer; env.pszMsg = szMsg; env.cchMsg = sizeof(szMsg);\
     env.pnInterceptA = &nInterceptA; env.pnInterceptB = &nInterceptB;        \
-    env.pnLevel = &nLevel; env.pnBoundA = &nBoundA; env.pnBoundB = &nBoundB;
+    env.pnLevel = &nLevel; env.pnBoundA = &nBoundA; env.pnBoundB = &nBoundB; \
+    env.pTextRecs = g_abRadarCursorTexts;
 
-    /* 1. the four corners. */
+    RadarPutCursorRec(1595, "PursueNW");
+    RadarPutCursorRec(1596, "MaxRangeNE");
+    RadarPutCursorRec(1597, "MinRangeSW");
+    RadarPutCursorRec(1598, "StopSE");
+
+    /* 1. the four corners. Each one also writes its own mode text into szRadarMsg -- TEXTS 1595..1598,
+     * the ARM's 0x10360F / 0x1036DC / 0x1037A9 / 0x103876 (0x5E7C0 and friends). */
     RC_RESET();
     RadarScreen_SetCursorNW(&env);
     CheckEqI32(nX, 117, "NW x (0x5E77C)");
@@ -3284,19 +3306,21 @@ static void TestRadarCursors(void)
     CheckEqI32(nRange, 560, "  the range target is the fixed 560 (0x5E794)");
     CheckEqI32(bFlip, 0, "  and the flip byte is cleared");
     CheckEqI32(nTimer, 0, "  the message timer is reset (0x5E7DC)");
-    CheckEqI32(szMsg[0], 0, "  and the scratch string is cleared, not written (0x5E7C0)");
+    Check(strcmp(szMsg, "PursueNW") == 0, "  and the message string takes TEXTS[1595] (0x5E7C0)");
 
     RC_RESET();
     RadarScreen_SetCursorNE(&env);
     CheckEqI32(nX, 161, "NE x (0x5E848)");
     CheckEqI32(nY, 86, "  y, the same north row as NW");
     CheckEqI32(bFlip, 0, "  flip cleared");
+    Check(strcmp(szMsg, "MaxRangeNE") == 0, "  and NE writes TEXTS[1596]");
 
     RC_RESET();
     RadarScreen_SetCursorSW(&env);
     CheckEqI32(nX, 117, "SW x, the same west column as NW");
     CheckEqI32(nY, 107, "  y (0x5E98C)");
     CheckEqI32(bFlip, 0, "  flip cleared");
+    Check(strcmp(szMsg, "MinRangeSW") == 0, "  and SW writes TEXTS[1597]");
 
     RC_RESET();
     RadarScreen_SetCursorSE(&env);
@@ -3304,6 +3328,7 @@ static void TestRadarCursors(void)
     CheckEqI32(nY, 107, "  y");
     CheckEqI32(nRange, 560, "  the fixed 560 again (0x5EA9C)");
     CheckEqI32(bFlip, 1, "  and SE is the only corner that SETS the flip byte (0x5EAA8)");
+    Check(strcmp(szMsg, "StopSE") == 0, "  and SE writes TEXTS[1598]");
 
     /* 2. NE takes the MAX of the two bounds, SW the MIN, both over 560*(26-level)/114.
      * level 0: 560*26 = 14560, 14560/114 = 127. */

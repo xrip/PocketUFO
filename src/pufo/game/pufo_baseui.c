@@ -13,6 +13,16 @@
 #include "util/pufo_rand.h"     /* Game_RandU16, the unlock roll of ResearchScreen_RebuildTopicList */
 #include "platform/pufo_reg.h"  /* Reg_SetString, the four audio values Options_SaveAudioSettings writes */
 
+/* One loaded TEXTS record as a string: aTextRecs @ 0xB38D0 + 205 * nRec. The blob covers the whole
+ * 1912-record block the original reserves (PUFO_TEXT_REC_CAPACITY), so a record number past what
+ * TEXTS.DAT filled reads as "" exactly as the zero-filled .data does -- no special case is needed for
+ * the out-of-range labels. The envs name the block as u8 * or char *, hence the void * parameter; ""
+ * when the archives did not load. */
+static const char *BaseUi_TextRec(const void *pTextRecs, i32 nRec)
+{
+    return (pTextRecs != NULL) ? (const char *)pTextRecs + PUFO_TEXT_REC_STRIDE * nRec : "";
+}
+
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
 {
     if (pScratch == NULL) {
@@ -11535,14 +11545,16 @@ void Ufopaedia_Open(UfopaediaEnv *pEnv)
             }
         }
 
-        /* 0x9AF2C..0x9B0BC: the selector's nine rows. The nine sources at 0x105EE6 .. 0x10654E are
-         * 205 bytes apart and all sit above 0xAC800, inside .data's zero-filled span, so each copy
-         * writes a single NUL: this clears the rows, it does not label them. */
+        /* 0x9AF2C..0x9B0BC: the selector's nine rows are labelled, not cleared. The nine sources
+         * 0x105EE6 .. 0x10654E are 205 apart and each is (addr - 0xB38D0) / 205 = records 1646..1654:
+         * lang.dat carries "не исп." ("not used") in 1646..1649, the four categories the shipped
+         * ufopaedia has no entries for. 1650..1654 sit past the 1650 records TEXTS.DAT fills, so those
+         * five rows copy the zero slack -- an empty row, which is what the original shows there too. */
         if (pEnv->pSelPanel != NULL) {
             for (k = 0; k < PUFO_UFOPAEDIA_SEL_LINES; ++k) {
-                if (pEnv->pSelPanel->apLines[k] != NULL) {
-                    pEnv->pSelPanel->apLines[k][0] = '\0';
-                }
+                (void)UiPanel_SetLineText(pEnv->pSelPanel, k,
+                                          BaseUi_TextRec(pEnv->pTextRecs,
+                                                         PUFO_UFOPAEDIA_SEL_REC_FIRST + k));
             }
         }
 
@@ -11948,15 +11960,17 @@ void PsiScreen_BuildPanels(PsiScreenEnv *pEnv)
             pName->anLineAux[nRow] = s;                        /* 0x71C6C: the soldier INDEX */
 
             if (pS->bPsiAssigned != 0) {
-                /* 0x71C8C: the label source unk_EEE8A sits above 0xAC800, inside .data's zero-filled
-                 * span, so the box row is cleared rather than labelled; the state is in anLineAux. */
-                (void)UiPanel_SetLineText(pCheck, nRow, "");
+                /* 0x71C8C: the check column is labelled, not just flagged -- TEXTS[1186] "Обучение"
+                 * (unk_EEE8A) in the assigned row, and the state in anLineAux as well. */
+                (void)UiPanel_SetLineText(pCheck, nRow,
+                                          BaseUi_TextRec(pEnv->pTextRecs, PUFO_PSI_TEXT_ASSIGNED));
                 pCheck->anLineAux[nRow] = 1;                   /* 0x71CEC */
                 pS->bPsiActive = 1;                            /* 0x71D00: Soldier +0x1A6 */
                 PsiSetRowMeta(pEnv, b, nRow, PUFO_PSI_ROW_ASSIGNED_1); /* 0x71D1C..0x71D9C */
             } else {
                 pCheck->anLineAux[nRow] = 0;                   /* 0x71DC4 */
-                (void)UiPanel_SetLineText(pCheck, nRow, "");   /* 0x71E14, unk_EEF57 is zero too */
+                (void)UiPanel_SetLineText(pCheck, nRow,        /* 0x71E14: TEXTS[1187] "Нет" */
+                                          BaseUi_TextRec(pEnv->pTextRecs, PUFO_PSI_TEXT_UNASSIGNED));
             }
 
             if (pS->bPsiActive != 0) {
@@ -12020,7 +12034,8 @@ bool PsiScreen_SelectListed(PsiScreenEnv *pEnv)
     if (pCheck->anLineAux[nRow] != 0) {                   /* already assigned -> free it */
         PsiSetRowMeta(pEnv, nBase, nRow, PUFO_PSI_ROW_FREE_1);   /* 0x714D4..0x71554 */
         pCheck->anLineAux[nRow] = 0;                      /* 0x71578 */
-        (void)UiPanel_SetLineText(pCheck, nRow, "");      /* 0x715D8, unk_EEF57 */
+        (void)UiPanel_SetLineText(pCheck, nRow,           /* 0x715D8: TEXTS[1187] "Нет" */
+                                  BaseUi_TextRec(pEnv->pTextRecs, PUFO_PSI_TEXT_UNASSIGNED));
         return true;
     }
 
@@ -12040,7 +12055,8 @@ bool PsiScreen_SelectListed(PsiScreenEnv *pEnv)
 
     PsiSetRowMeta(pEnv, nBase, nRow, PUFO_PSI_ROW_ASSIGNED_1); /* 0x7137C..0x713FC */
     pCheck->anLineAux[nRow] = 1;                          /* 0x71420 */
-    (void)UiPanel_SetLineText(pCheck, nRow, "");          /* 0x71480, unk_EEE8A */
+    (void)UiPanel_SetLineText(pCheck, nRow,               /* 0x71480: TEXTS[1186] "Обучение" */
+                              BaseUi_TextRec(pEnv->pTextRecs, PUFO_PSI_TEXT_ASSIGNED));
     return true;
 }
 
@@ -12255,11 +12271,33 @@ static void BaseInfoRowMeta(UiPanel *pPanel, i32 nRow)
                         PUFO_BASEINFO_META_D, PUFO_BASEINFO_META_D);
 }
 
-/* Every label on this screen copies from a zero-filled scratch address, so each one is a clear. */
+/* The 42-row first fill really is a clear: its source is 0x10DA38, i.e. TEXTS record 1800, and
+ * TEXTS.DAT in lang.dat has only 1650 records, so that slot is never written. The fixed captions are
+ * not clears -- every one of them is 0xB38D0 + 205*n with n inside the loaded range, which is a real
+ * text record (src/pufo/asset/pufo_texts_lang.h prints all 1650 in order). */
 static void BaseInfoClearRow(UiPanel *pPanel, i32 nRow)
 {
     (void)UiPanel_SetLineText(pPanel, nRow, "");
 }
+
+/* The name column's fixed captions, in row order 0..16 (0x55AE0..0x55E04). Each number is the record
+ * the ARM's literal names, (literal - 0xB38D0) / 205, and each one is exact. -1 marks the two rows
+ * the original fills from szEmptyString -- rows 4 and 11, the blank lines between the groups. */
+static const i32 g_anBaseInfoNameRec[17] = {
+    1623, 1624, 1625, 1626,   -1,                   /* Personnel Used Total, Soldiers, Engineers, Scientists */
+    1627, 1628, 1629, 1630, 1631, 1632, -1,         /* Base facilities Available Total + the five facility rows */
+    1633, 1634, 1635, 1636, 1637                    /* Radar and defence, Defence strength, the two radar rows,
+                                                     * Crafts Per Unit */
+};
+
+/* The eight rows after the ship list, at nShips+18..nShips+25 (0x55FE4..0x56178): Personnel Per unit
+ * Total, the three personnel rows, a blank, Base support, a blank, Total. */
+static const i32 g_anBaseInfoTailRec[8] = { 1638, 1639, 1640, 1641, -1, 1642, -1, 1643 };
+
+/* The total column's two radar rows: TEXTS[1644] "нет" first, TEXTS[1645] "да" for a base that has
+ * the facility (0x56DD4 / 0x56E08 write 1644, 0x56E50 / 0x56EAC write 1645). */
+#define PUFO_BASEINFO_REC_NO  1644
+#define PUFO_BASEINFO_REC_YES 1645
 
 static void BaseInfoSetNumber(UiPanel *pPanel, i32 nRow, i32 nValue, const char *pszSuffix)
 {
@@ -12351,6 +12389,12 @@ void BaseInfoScreen_BuildPanels(BaseInfoBuildEnv *pEnv)
         static const i32 anMetaRow[4] = { 0, 5, 12, 16 };
         BaseInfoRowMeta(pNames, anMetaRow[i]);
     }
+    for (i = 0; i < 17; ++i) {                           /* 0x55AE0..0x55E04: the 15 caption rows */
+        if (g_anBaseInfoNameRec[i] >= 0) {
+            (void)UiPanel_SetLineText(pNames, i,
+                                      BaseUi_TextRec(pEnv->pTextRecs, g_anBaseInfoNameRec[i]));
+        }
+    }
 
     /* 0x55E28..0x55F20: the base's craft, in apCraft order. Map_nCraftCount is read unsigned here
      * (ANDS R3, R0, #0xFF then CMP #0 / BLS), byte_1870F4 signed (LDRSB at 0x55E6C) and Ship.bHomeBase
@@ -12383,8 +12427,11 @@ void BaseInfoScreen_BuildPanels(BaseInfoBuildEnv *pEnv)
         static const i32 anTailMeta[3] = { 18, 23, 25 };
         BaseInfoRowMeta(pNames, nShips + anTailMeta[i]);
     }
-    for (i = 18; i <= 25; ++i) {                        /* 0x55FE4..0x56178: eight more cleared rows */
-        BaseInfoClearRow(pNames, nShips + i);
+    for (i = 18; i <= 25; ++i) {                        /* 0x55FE4..0x56178: the eight tail rows */
+        const i32 nRec = g_anBaseInfoTailRec[i - 18];
+
+        (void)UiPanel_SetLineText(pNames, nShips + i, (nRec >= 0)
+                                      ? BaseUi_TextRec(pEnv->pTextRecs, nRec) : "");
     }
 
     BaseInfoPanelCommon(pFree, PUFO_BASEINFO_FREE_X, PUFO_BASEINFO_NARROW_CLICKL,
@@ -12519,22 +12566,25 @@ void BaseInfoScreen_BuildPanels(BaseInfoBuildEnv *pEnv)
             BaseInfoSetNumber(pTotals, 13,
                               Base_CountBuiltFacilities(pEnv->abFacilityGrid, nBase), ""); /* 0x56D88 */
 
-            /* 0x56DD4..0x56ED4: rows 14 and 15 are cleared, then cleared again for every cell of this
-             * base that is facility kind 4 or kind 5. Both sources are zero-filled scratch, so the
-             * scan has no visible effect -- reproduced because it is what the original does. */
-            BaseInfoClearRow(pTotals, 14);
-            BaseInfoClearRow(pTotals, 15);
+            /* 0x56DD4..0x56ED4: rows 14 and 15 start as TEXTS[1644] "нет" and every cell of this base
+             * that is a short-range (kind 4) or long-range (kind 5) radar re-writes TEXTS[1645] "да" into
+             * its row. They answer the name column's rows 14 and 15, TEXTS[1635] "Short range detection"
+             * and TEXTS[1636] "Long range detection". */
+            (void)UiPanel_SetLineText(pTotals, 14, BaseUi_TextRec(pEnv->pTextRecs, PUFO_BASEINFO_REC_NO));
+            (void)UiPanel_SetLineText(pTotals, 15, BaseUi_TextRec(pEnv->pTextRecs, PUFO_BASEINFO_REC_NO));
             if (pEnv->abFacilityGrid != NULL) {
                 const u8 *pType = pEnv->abFacilityGrid + 480 + 144 * nBase;
                 i32 nCol, nRow;
 
                 for (nRow = 0; nRow < 6; ++nRow) {
                     for (nCol = 0; nCol < 6; ++nCol) {
-                        if (pType[6 * nRow + nCol] == PUFO_BASEINFO_FAC_LIVING) {
-                            BaseInfoClearRow(pTotals, 14);
+                        if (pType[6 * nRow + nCol] == FAC_SHORT_RANGE_RADAR) {   /* 0x56E50 */
+                            (void)UiPanel_SetLineText(pTotals, 14,
+                                      BaseUi_TextRec(pEnv->pTextRecs, PUFO_BASEINFO_REC_YES));
                         }
-                        if (pType[6 * nRow + nCol] == PUFO_BASEINFO_FAC_WORKSHOP) {
-                            BaseInfoClearRow(pTotals, 15);
+                        if (pType[6 * nRow + nCol] == FAC_LONG_RANGE_RADAR) {    /* 0x56EAC */
+                            (void)UiPanel_SetLineText(pTotals, 15,
+                                      BaseUi_TextRec(pEnv->pTextRecs, PUFO_BASEINFO_REC_YES));
                         }
                     }
                 }
@@ -12645,10 +12695,7 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv)
 
 static const char *BaseInfo_Text(const BaseInfoDrawEnv *pEnv, i32 nRec)
 {
-    if (pEnv->pTextRecs == NULL) {
-        return "";
-    }
-    return pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+    return BaseUi_TextRec(pEnv->pTextRecs, nRec);
 }
 
 static const char *BaseInfo_SiteName(const BaseInfoDrawEnv *pEnv, i32 nBaseIdx)

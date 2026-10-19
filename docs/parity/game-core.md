@@ -10299,10 +10299,14 @@ The divide is `_rt_sdiv`, and this binary calls it with the dividend in R1 and t
 the same convention `Base_UpdateWorkshopNeeded` uses for its `total / 50`, which is worth stating
 because the register order is the opposite of what the names suggest.
 
-**All four "copy" a string that does not exist.** Each one runs a strcpy-style loop from a source that
-is all zero in the image (0x10360F, 0x1036DC, 0x1037A9, 0x103876) and each of those four addresses has
-exactly four xrefs, all from its own setter. So nothing fills them, and what lands at `szRadarMsg`
-(0x186B10) is a single NUL: the scratch string is cleared, not written.
+**All four copies read a TEXTS record.** The four sources 0x10360F, 0x1036DC, 0x1037A9 and 0x103876 are
+0xB38D0 + 205 * 1595, 1596, 1597 and 1598: TEXTS[1595..1598], the four cursor commands. Each setter's
+strcpy-style loop therefore writes the command string into `szRadarMsg` (0x186B10) -- pursue, attack at
+max range, attack at min range, stop fighting. The census that called these "all zero in the image" saw
+only the four reads: the boot load fills a TEXTS slot through the record-copy loop at
+Assets_LoadStartup @ 0x384E0..0x38564, and a loop store like that produces no xref to the slot, so
+"no write xref above 0xAC800" does not mean "nothing writes it". (addr - 0xB38D0) % 205 == 0 is the test
+that tells a TEXTS record from scratch. Checked by tests/test_texts_lang.c.
 
 IDB: comments on 0x55754, 0x66874 and the four setters. Two address corrections found while writing
 the notes: `RadarScreen_Update` is 0x60570 (0x60F4C is an address inside it), and
@@ -14054,10 +14058,12 @@ right second; the winner is stored into `Map.pSelWeapon` (0x113A00), which was z
 leaves its weapon in `Map.pSelWeapon` - and then, for `nUnitType <= 3`, drops that very
 item into a cell list, leaving the global pointing at an item the unit no longer holds.
 
-Both paths end at 0x4B028 pushing the unit's name through `StatusMsg_Push` with
-`bForce = 0`. The original strcat's `unk_104078` onto the name; that buffer is all zeros
-and its only three references in the whole binary are this call site, so it appends
-nothing.
+Both paths end at 0x4B028 pushing a status message through `StatusMsg_Push` with `bForce = 0`. The unit's
+name (Unit + 0xBA) is copied into the 200-byte stack scratch and 0x4B058 strcat's `unk_104078` onto it.
+unk_104078 is 0xB38D0 + 205 * 1608 -- TEXTS[1608], lang.dat's " в панике" with its leading space --
+so the message reads "<name> in panic" on the fire path as well as on the wander path. The three reads
+at 0x4B04C..0x4B074 are all a census sees on that slot: the boot load fills a TEXTS record through the
+record-copy loop at Assets_LoadStartup, and a loop store leaves no xref.
 
 ### The fire burst (0x4aca4..0x4ae28)
 
@@ -15822,9 +15828,10 @@ topic names are asserted to differ so the check cannot pass by accident.
 status line therefore has state that survives from one call to the next, and the test sets the scratch
 explicitly before checking ','.
 
-0x10DA38, the source the ''' arm copies from when the object index is the 255 sentinel, is inside
-.data's zero-filled span, so it copies a single NUL: a clear, not a message. It is the same all-zero
-source the three screen openers use at 0x10DA38 / 0x10DA39.
+0x10DA38, the source the ''' arm copies from when the object index is the 255 sentinel, is
+0xB38D0 + 205 * 1800: a TEXTS slot, but past the 1650 records lang.dat filled, so the boot load never
+wrote it and the copy yields a single NUL -- a clear by data, not by scratch. 0x10DA39 is one byte
+inside that same empty slot, which is what the three screen openers use for the same effect.
 
 ### Deviation
 
@@ -16023,9 +16030,11 @@ research screen uses), and for the five race rows it is then overwritten with a 
 0xAC610, aSnakeman @ 0xAC618, aEthereal @ 0xAC624, aMuton @ 0xAC630, aFloater @ 0xAC638 (0x9B3D8..0x9B4E0).
 Rows are packed from row 0: the row index counts only accepted slots.
 
-The selector's nine rows are cleared, not labelled. The nine sources at 0x105EE6..0x10654E are 205 bytes
-apart and all sit above 0xAC800, inside .data's zero-filled span, so each copy writes a single NUL -- the
-same all-zero source the rest of the binary uses for a clear.
+The selector's nine rows are labelled from TEXTS. The nine sources at 0x105EE6..0x10654E are 205 bytes
+apart and each satisfies (addr - 0xB38D0) % 205 == 0: they are TEXTS[1646..1654]. lang.dat carries the
+four category captions in 1646..1649 and leaves 1650..1654 empty, and the boot block is zero-filled up to
+PUFO_TEXT_REC_CAPACITY, so the first four rows read their captions and the last five read blank -- blank
+from the data, not from a clear.
 
 ### The teardown, and the pad it misses
 
@@ -16133,9 +16142,10 @@ applies whichever colour the row is moving to, on all four columns (0x7137C..0x7
   30 * auStat[7] / 100 days. Already at or above auStat[7] still arms exactly ONE day (0x7209C), so
   auStat[6] keeps climbing past auStat[7]. Either flag clear arms nothing. Geoscape_TickBases spends one
   day per tick raising auStat[6] by 1, which is exactly the gain the "+N" column advertises.
-- The checkbox rows are cleared, not labelled. Both label sources, unk_EEE8A and unk_EEF57, sit above
-  0xAC800 inside .data's zero-filled span, so each copy writes a single NUL; the state lives in
-  anLineAux.
+- The checkbox rows are labelled as well as flagged. unk_EEE8A and unk_EEF57 are 0xB38D0 + 205 * 1186 and
+  0xB38D0 + 205 * 1187 -- TEXTS[1186], the assigned caption, and TEXTS[1187], the free one -- so 0x71C8C
+  writes the first into the assigned row and 0x71E14 the second into a free row, and SelectListed writes
+  them again on both flips (0x71480, 0x715D8). The state also lives in anLineAux.
 - The assigned counter compares anLineAux against 1 exactly (0x71314), so a row holding any other value
   is not counted against the capacity gate.
 - ApplyAssignments closes the screen. Its tail call at 0x72394 reaches BuildPanels while
@@ -16287,12 +16297,18 @@ nPosY 40, nUnk7056 70, SetBytes0to2(B4, B4, B4), SetBytes6to11(F0, F0, F0, 14, 1
 cleared. The name column is x 10, nUnk7052 5, nViewW 200 and never touches nUnk7076; the free column is x 130,
 nUnk7052 210, nViewW 10, nUnk7076 1; the total column is x 190 with the same narrow settings.
 
-Every label on this screen is a clear, not a string. The 42-row loop at 0x559B4 copies from 0x10DA38 into all
-three panels, and the per-row label copies at 0x55A90..0x55C58 (name rows 0..16), 0x55FE4..0x56178 (name rows
+Every label on this screen is a TEXTS record. The 42-row loop at 0x559B4 copies from 0x10DA38 into all three
+panels, and the per-row label copies at 0x55A90..0x55C58 (name rows 0..16), 0x55FE4..0x56178 (name rows
 nShips+18..nShips+25) and 0x56D8C..0x56DCC (total rows 14 and 15) copy from 0x104C7B, 0x104D48, ... 0x105C7F,
-0x105D4C and 0x105E19. All of those sit above 0xAC800, past the end of the .data file image (.data is va 0xA6000,
-vsz 0xE2D70, rsz only 0x6800), and none of them has a write xref anywhere in the binary: they are zero-filled
-scratch, so each copy writes an empty string. The port reproduces them as clears.
+0x105D4C and 0x105E19. Every one of those satisfies (addr - 0xB38D0) % 205 == 0, so they are TEXTS records:
+1623..1637 for name rows 0..16 (the three column-caption records 1623/1627/1637 carry their own padding
+spaces, which is why the header words land over the value columns), 1638..1643 for the eight tail rows and
+1644/1645 for the total column's yes/no pair. 0x10DA38 is 0xB38D0 + 205 * 1800, past lang.dat's 1650 records,
+so the 42-row loop really does write an empty string -- that is the only clear on this screen. The census
+that called the rest "zero-filled scratch" had no write xref to work with: the boot load fills a TEXTS slot
+with the record-copy loop at Assets_LoadStartup @ 0x384E0..0x38564 and such a store leaves no xref.
+tests/test_texts_lang.c compares all 1650 records against lang.dat; the e2e picture 02b_base_screen shows
+the captions.
 
 Craft list, 0x55E28..0x55F20. Map_nCraftCount @ 0x114B4C is read unsigned (ANDS R3, R0, #0xFF then CMP #0 / BLS),
 byte_1870F4 signed (LDRSB at 0x55E6C) and Ship.bHomeBase unsigned (LDRB at 0x55E70); a craft joins the list when
@@ -16321,8 +16337,10 @@ marker ceasing to be 1 ends it. A type outside 0..4 takes the switch default: no
 The money total (0x56958) is 20000 * (Base_CountSoldiers + engineers held here) + 30000 * scientists held here +
 the craft sum. The facility part (0x56A74..0x56AE0) walks grid + 144*base + 108 + k, reading [R1+372] and
 advancing R1 by 6, which is the same 36 cells as grid + 480 + 144*base that every capacity pass walks; each cell
-whose type byte is not 0xFF adds 50000, built or not. The final scan (0x56DD4..0x56ED4) re-clears total rows 14
-and 15 for every cell of kind 4 or kind 5 - both sources are zero-filled scratch, so it has no visible effect.
+whose type byte is not 0xFF adds 50000, built or not. The final scan (0x56DD4..0x56ED4) writes TEXTS[1644], the word for no, into total rows 14 and 15, then
+TEXTS[1645], yes, into row 14 for every grid cell of kind 4 (0x56E50) and into row 15 for every cell of kind 5
+(0x56EAC). Those rows answer the name column's rows 14 and 15, TEXTS[1635] (short-range detection) and
+TEXTS[1636] (long-range detection), so a base holding a short-range radar reads yes on the short row.
 
 Deviations. The port nulls the three panel slots and the two control slots after freeing them; the original
 leaves them dangling (nothing reads them before the next build). The port refuses a null environment, guards the
@@ -16441,8 +16459,9 @@ index 6*row + col. Hex-Rays renders both through the buildDays array type, which
 different for one cell. Every kind test also requires the cell to be free, so a cell under construction is
 not a defence, and a hangar is not one either.
 
-The tail is three rows with aux 0. The first is the EMPTY label: 0x58464 is `LDR R0, =0x10DA38`, a pointer
-into zero-filled .data, not a TEXTS record. Then either TEXTS[1125] "НЛО высадилось рядом с базой" and
+The tail is three rows with aux 0. The first is the EMPTY label: 0x58464 is `LDR R0, =0x10DA38`, which is
+TEXTS slot 1800 -- a slot the boot load leaves untouched because lang.dat only reaches record 1649, so it
+reads empty. Then either TEXTS[1125] "НЛО высадилось рядом с базой" and
 TEXTS[1126] "Подготовка к защите" with bBaseAtMissionFollows = 1 - the budget survived and the ground
 mission follows - or TEXTS[1123] "НЛО уничтожен" and TEXTS[1124] "Угроза захвата снята" with the flag
 clear. nBaseAtLineLimit is the row count, nRadarCooldownR goes to 255 and nLineCount to 0, so the reveal
@@ -19741,9 +19760,13 @@ src/pufo/game/pufo_renderframe.c the decrement-then-frame, and World_TickBannerF
 App_TickAnim) mirrors 0xA0990..0xA09AC.
 
 Recorded deviations:
-1. unk_EACE0 has 8 data reads and no writer anywhere in the image (TactHud_DrawStatusBanner,
-   TactHud_DrawConfirmDialog @ 0x1eb68, Geoscape_DrawScreen @ 0x6c16c), so the port owns no cell for it
-   and the shell draws an empty label.
+1. unk_EACE0 is 0xB38D0 + 205 * 1104, so it is TEXTS[1104] -- lang.dat's "OK" -- not an unwritten cell:
+   its 8 reads (TactHud_DrawStatusBanner, TactHud_DrawConfirmDialog @ 0x1eb68, Geoscape_DrawScreen
+   @ 0x6c16c) are reads of a loaded text record, and the boot loop that wrote it leaves no xref. The port
+   still owns no cell for it and the shell draws an empty label there, which is now a known gap in the
+   wiring rather than a property of the data: the labels this screen needs are TEXTS[1104] at the pad
+   centre, TEXTS[1105] at (10, 30), TEXTS[1106] at (170, 30) and TEXTS[1107] centred at y 10. Recorded as
+   an open item for the tact-HUD wiring, not folded into this unit.
 2. bPanelFlagScratch = 1 @ 0xA0978 has no port owner.
 3. The env snapshots Map_nBannerFadeTicks at call time while the original re-reads it inside its own
    tick (Part 63's deviation 1, now also on the banner gate).

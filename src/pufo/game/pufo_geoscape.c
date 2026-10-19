@@ -1837,9 +1837,25 @@ bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType)
     return true;                                                                     /* 0x5DBB8 */
 }
 
+/* 0x6095C / 0x60ADC / 0x60BBC / 0x610B4 / 0x611E0: the original's strcpy-until-NUL loop out of a
+ * TEXTS record, with no bound on the 100-byte stack buffer. Bounded here (deviation); the longest
+ * of the records this file copies is well inside the buffer, so no real text is clipped. */
+static void Radar_CopyTextRec(const u8 *pTextRecs, i32 nRec, char *pszOut, size_t cchOut)
+{
+    const char *const pszSrc = (const char *)pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+    for (size_t i = 0; i + 1 < cchOut; ++i) {
+        pszOut[i] = pszSrc[i];
+        if (pszSrc[i] == '\0') {
+            return;
+        }
+    }
+    pszOut[cchOut - 1] = '\0';
+}
+
 /* The four corner buttons share everything except the three differences listed in the header, so
  * they share one body. The store order is the originals' order in every case. */
-static void RadarSetCursor(const RadarCursorEnv *pEnv, i32 nX, i32 nY, i32 nRange, u8 bFlip)
+static void RadarSetCursor(const RadarCursorEnv *pEnv, i32 nX, i32 nY, i32 nRange, u8 bFlip,
+                           i32 nRecMsg)
 {
     if (pEnv == NULL) {
         return;
@@ -1859,9 +1875,10 @@ static void RadarSetCursor(const RadarCursorEnv *pEnv, i32 nX, i32 nY, i32 nRang
     if (pEnv->pbFlip != NULL) {
         *pEnv->pbFlip = bFlip;
     }
-    /* The copy loop runs from an all-zero source, so the only byte it writes is the terminator. */
-    if (pEnv->pszMsg != NULL && pEnv->cchMsg > 0) {
-        pEnv->pszMsg[0] = 0;
+    /* The shared radar message gets this corner's mode text: TEXTS[1595..1598], one record per setter
+     * (0x10360F / 0x1036DC / 0x1037A9 / 0x103876 = 0xB38D0 + 205 * n). */
+    if (pEnv->pszMsg != NULL && pEnv->cchMsg > 0 && pEnv->pTextRecs != NULL) {
+        Radar_CopyTextRec(pEnv->pTextRecs, nRecMsg, pEnv->pszMsg, pEnv->cchMsg);
     }
     if (pEnv->pnMsgTimer != NULL) {
         *pEnv->pnMsgTimer = 0;
@@ -1887,13 +1904,14 @@ static i32 RadarScaleRange(const RadarCursorEnv *pEnv, bool bTakeMax)
 void RadarScreen_SetCursorNW(const RadarCursorEnv *pEnv)
 {
     RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_WEST, PUFO_RADAR_CURSOR_NORTH,
-                   PUFO_RADAR_RANGE_FULL, 0);
+                   PUFO_RADAR_RANGE_FULL, 0, PUFO_RADAR_TEXT_CURSOR_NW);
 }
 
 void RadarScreen_SetCursorSE(const RadarCursorEnv *pEnv)
 {
     RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_EAST, PUFO_RADAR_CURSOR_SOUTH,
-                   PUFO_RADAR_RANGE_FULL, 1); /* the only one of the four that sets the flip byte */
+                   PUFO_RADAR_RANGE_FULL, 1, /* the only one of the four that sets the flip byte */
+                   PUFO_RADAR_TEXT_CURSOR_SE);
 }
 
 void RadarScreen_SetCursorNE(const RadarCursorEnv *pEnv)
@@ -1904,7 +1922,7 @@ void RadarScreen_SetCursorNE(const RadarCursorEnv *pEnv)
         return; /* 0x5E818 / 0x5E830: no intercept target, nothing to point at */
     }
     RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_EAST, PUFO_RADAR_CURSOR_NORTH,
-                   RadarScaleRange(pEnv, true), 0);
+                   RadarScaleRange(pEnv, true), 0, PUFO_RADAR_TEXT_CURSOR_NE);
 }
 
 void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv)
@@ -1915,7 +1933,7 @@ void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv)
         return; /* 0x5E94C / 0x5E964 */
     }
     RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_WEST, PUFO_RADAR_CURSOR_SOUTH,
-                   RadarScaleRange(pEnv, false), 0);
+                   RadarScaleRange(pEnv, false), 0, PUFO_RADAR_TEXT_CURSOR_SW);
 }
 
 /* RadarScreen_CyclePalette @ 0x5ed0c. Rotate the 25 animated palette entries of aPalette slot 22,
@@ -3423,20 +3441,7 @@ const RadarPanelRail g_aRadarPanelRail[5] = {
 static const u8 g_anRadarBarMid[PUFO_RADAR_BAR_COUNT]    = { 0x55, 0x5A, 0x5C, 0x5A, 0x55 };
 static const u8 g_anRadarCursorMid[PUFO_RADAR_BAR_COUNT] = { 0x55, 0x5F, 0x69, 0x5F, 0x55 };
 
-/* 0x6095C / 0x60ADC / 0x60BBC / 0x610B4 / 0x611E0: the original's strcpy-until-NUL loop out of a
- * TEXTS record, with no bound on the 100-byte stack buffer. Bounded here (deviation); the longest
- * of the five records this function uses is 21 bytes, so no real text is clipped. */
-static void Radar_CopyTextRec(const u8 *pTextRecs, i32 nRec, char *pszOut, size_t cchOut)
-{
-    const char *const pszSrc = (const char *)pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
-    for (size_t i = 0; i + 1 < cchOut; ++i) {
-        pszOut[i] = pszSrc[i];
-        if (pszSrc[i] == '\0') {
-            return;
-        }
-    }
-    pszOut[cchOut - 1] = '\0';
-}
+/* Radar_CopyTextRec lives above RadarSetCursor, which is its other user. */
 
 /* The contact the intercept is chasing. The original calls PtrArray_Get twice per branch on the
  * same index (once for the x, once for the y of the tile lookup, and again for the nType/nTimer

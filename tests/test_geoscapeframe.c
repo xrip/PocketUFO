@@ -2184,9 +2184,10 @@ int main(void)
                              pRecs + PUFO_TXTREC_DEPLOY_IN * PUFO_TEXT_REC_STRIDE, 1,
                              pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE,
                              pRecs + PUFO_TXTREC_DEPLOY_TAIL * PUFO_TEXT_REC_STRIDE);
-                    snprintf(aszWant2, sizeof(aszWant2), "%d%s%d%s", 0,
+                    snprintf(aszWant2, sizeof(aszWant2), "%d%s%d%s%s", 0,
                              pRecs + PUFO_TXTREC_DEPLOY_IN * PUFO_TEXT_REC_STRIDE, 1,
-                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE);
+                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE,
+                             pRecs + PUFO_TXTREC_DEPLOY_TAIL2 * PUFO_TEXT_REC_STRIDE);
 
                     nSampleMark = g_nSamples;
                     CLICK(56);
@@ -2201,7 +2202,7 @@ int main(void)
                               && g_world.nUiScreen == 9
                               && strcmp(g_world.aszDeployMsg1, aszWant1) == 0
                               && strcmp(g_world.aszDeployMsg2, aszWant2) == 0,
-                          "widget 56 counts 1 small in / 1 big in / 0 small out / 1 big out (the zero-uHp civilian skipped, 0x18C24), formats both messages from records 28/29/30, plays 16, opens the YES/NO modal bank at 170/1069 five rows and writes screen 9 (0x18DE0)");
+                          "widget 56 counts 1 small in / 1 big in / 0 small out / 1 big out (the zero-uHp civilian skipped, 0x18C24), formats both messages from records 28/29/30 and 28/29/1068, plays 16, opens the YES/NO modal bank at 170/1069 five rows and writes screen 9 (0x18DE0)");
 
                     g_world.sModal.pfn18();  /* the stored NO callback: Map_ClearUiScreen @ 0x18a54 */
                     Check(g_world.nUiScreen == 0, "the stored NO callback writes Map_nUiScreen = 0 (0x18a54)");

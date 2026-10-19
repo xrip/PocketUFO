@@ -442,9 +442,14 @@ i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx)
     }
     Tact_CountDeployUnits(&pCtx->Count, &Counts);
 
-    /* 0x18CB8..0x18D6C: itoa + text 28 + itoa + text 29, then the tail copy. The
-     * first message appends text record 30; the second appends unk_E900C, which
-     * nothing ever writes, so it contributes nothing. */
+    /* 0x18CB8..0x18D94: the two messages, each two lines. The original writes the first line into
+     * TEXTS slot 1069 and copies its second line (record 30, "в Зоне выхода,") into slot 1070 -- the
+     * copy is `LDRSB/STRB [Rsrc,#213200]`, 213200 = 205 * 1040, i.e. exactly 1040 records further. The
+     * second message's first line goes to slot 1071 and its second line, copied from record 1068
+     * ("  Прервать миссию?") with the constant 0x401 = 205 * 5, lands in slot 1073. Both message slots
+     * are records the shipped TEXTS.DAT marks "<reserved text line>", so the dialog's scratch lives in
+     * the text block itself. The port keeps one buffer per message and folds each pair into it
+     * (deviation: same text, one string instead of two slots). */
     if (pCtx->aszMsg1 != NULL && pCtx->nMsgCap > 0) {
         snprintf(pCtx->aszMsg1, (size_t)pCtx->nMsgCap, "%d%s%d%s%s",
                  (int)Counts.nSmallIn, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
@@ -452,9 +457,10 @@ i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx)
                  Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_TAIL));
     }
     if (pCtx->aszMsg2 != NULL && pCtx->nMsgCap > 0) {
-        snprintf(pCtx->aszMsg2, (size_t)pCtx->nMsgCap, "%d%s%d%s",
+        snprintf(pCtx->aszMsg2, (size_t)pCtx->nMsgCap, "%d%s%d%s%s",
                  (int)Counts.nSmallOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
-                 (int)Counts.nBigOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN));
+                 (int)Counts.nBigOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN),
+                 Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_TAIL2));
     }
 
     if (pCtx->pHooks->pfnPlaySample != NULL) {

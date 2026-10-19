@@ -1115,10 +1115,11 @@ bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType);
  *
  *     NW 117, 86    NE 161, 86    SW 117, 107    SE 161, 107
  *
- * and both halves clear the message timer and the shared scratch string at 0x186B10. The string
- * "copy" is a clear, not a write: the loop runs from a source that is all zero in the image
- * (0x10360F, 0x1036DC, 0x1037A9, 0x103876 -- each referenced only by its own setter), so exactly one
- * NUL lands. Nothing in the binary fills those four sources.
+ * and both halves write the corner's mode text into the shared string at 0x186B10 (szRadarMsg) and
+ * clear the message timer. The four sources are TEXTS records, not scratch: 0x10360F, 0x1036DC,
+ * 0x1037A9 and 0x103876 are (addr - 0xB38D0) / 205 = 1595..1598, and lang.dat has text in every one --
+ * NW "Преследовать" (pursue), NE "Атаковать с MAX дистанцией", SW "Атаковать с MIN дистанцией",
+ * SE "Немедленно прекратить преследование". Each setter names its own record.
  *
  * The two halves differ in three ways, and the differences are not symmetric:
  *   - NW and SE write a fixed 560 into the range target. NE and SW compute
@@ -1144,6 +1145,12 @@ bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType);
 #define PUFO_RADAR_RANGE_DIVISOR  114
 #define PUFO_RADAR_NO_TARGET       (-2) /* both intercept slots hold this and NE/SW do nothing */
 
+/* The mode text each radar corner button writes into szRadarMsg, as TEXTS record numbers. */
+#define PUFO_RADAR_TEXT_CURSOR_NW 1595 /* 0x10360F "Преследовать" */
+#define PUFO_RADAR_TEXT_CURSOR_NE 1596 /* 0x1036DC "Атаковать с MAX дистанцией" */
+#define PUFO_RADAR_TEXT_CURSOR_SW 1597 /* 0x1037A9 "Атаковать с MIN дистанцией" */
+#define PUFO_RADAR_TEXT_CURSOR_SE 1598 /* 0x103876 "Немедленно прекратить преследование" */
+
 typedef struct RadarCursorEnv {
     const u8 *pbGate;        /* byte_159714 */
     i32      *pnCursorX;     /* unk_1596D4 */
@@ -1153,6 +1160,7 @@ typedef struct RadarCursorEnv {
     i32      *pnMsgTimer;    /* nRadarMsgTimer */
     char     *pszMsg;        /* szRadarMsg @ 0x186B10 = dword_186B08 + 8 */
     size_t    cchMsg;
+    const u8 *pTextRecs;     /* aTextRecs @ 0xB38D0, the corner's mode text record */
     const i32 *pnInterceptA; /* unk_159654, the NE/SW guard pair */
     const i32 *pnInterceptB; /* unk_159664 */
     const i32 *pnLevel;      /* unk_1596E0 */

@@ -296,14 +296,17 @@ bool Tact_ScanVictoryTiles(bool bSpawnAlt, u8 nMissionType, i32 nSpawnTileX,
  * `uHp @ 0x00A` is zero; their position comes from MapCell.nX/nY @ 0x1A/0x1B and
  * their type from Soldier.nUnitType @ 0x0A0, exactly like the XCom pass.
  *
- * The two messages are the original's scratch buffers unk_E90D9 and unk_E9273, built
- * as `itoa(count) + text 28 + itoa(count) + text 29` and then a copy of text record
- * 30 for the first one. The second copies unk_E900C instead, which has no writer
- * anywhere in the executable (xrefs_to 0xE900C returns only the two uses inside this
- * function) and lies past the file-backed .data end, so its tail is empty. */
-#define PUFO_TXTREC_DEPLOY_IN   28
-#define PUFO_TXTREC_DEPLOY_JOIN 29
-#define PUFO_TXTREC_DEPLOY_TAIL 30
+ * The two messages are the original's scratch slots unk_E90D9 and unk_E9273, which are TEXTS
+ * records 1069 and 1071 ("<reserved text line>" slots the dialog reuses). Each line 1 is built as
+ * `itoa(count) + text 28 + itoa(count) + text 29`; the line 2 is a separate slot filled by a copy:
+ * record 30 ("в Зоне выхода,") into slot 1070 (the store offset is 213200 = 205 * 1040) and record
+ * 1068 ("  Прервать миссию?", IDA's unk_E900C) into slot 1073 (offset 0x401 = 205 * 5). An address
+ * inside the loaded TEXTS block needs no write xref to have content -- TEXTS.DAT is the writer --
+ * which is why reading 0xE900C as "empty because nothing writes it" was wrong. */
+#define PUFO_TXTREC_DEPLOY_IN    28
+#define PUFO_TXTREC_DEPLOY_JOIN  29
+#define PUFO_TXTREC_DEPLOY_TAIL  30  /* the first message's line 2 (slot 1070) */
+#define PUFO_TXTREC_DEPLOY_TAIL2 1068 /* the second message's line 2 (slot 1073), unk_E900C */
 
 typedef struct DeployCounts {
     i32 nSmallIn;

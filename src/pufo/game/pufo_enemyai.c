@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "game/pufo_boot.h"   /* PUFO_TEXT_REC_STRIDE, the 205-byte TEXTS slot stride */
 #include "game/pufo_enemyai.h"
 #include "game/pufo_path.h"   /* g_aStepDir, the aDirDeltaXY triples @ 0xa7ae0 */
 #include "game/pufo_tactui.h" /* TactItem_TryReloadClip, the PUFO_ACTION_MODE_* codes */
@@ -329,14 +330,25 @@ void EnemyAi_TryFireOrWander(Soldier *pUnit, const EnemyAiActCtx *pCtx)
         EnemyAi_FireBurst(pUnit, pWeapon, pCtx);
     }
 
-    /* 0x4b028..0x4b068: both paths end here. The original copies the name with LDRSB
-     * into a 200-byte stack buffer and strcat's unk_104078 onto it; that buffer is all
-     * zeros and its only three references in the whole binary are these instructions,
-     * so it appends nothing and the message is just the name. */
+    /* 0x4b028..0x4b068: both paths end here. The name (Unit + 0xBA) is copied with LDRSB into the
+     * 200-byte stack scratch, then `LDR R0,=0xB38D0 / LDR R3,=(unk_104078-0xB38D0) / ADD R1,R0,R3`
+     * hands unk_104078 to strcat at 0x4B058. unk_104078 is not scratch: 0x104078 ==
+     * 0xB38D0 + 205 * 1608, so it is TEXTS[1608], lang.dat's " в панике" with its leading space,
+     * and the message is "<name> in panic". The three reads at 0x4B04C..0x4B074 are the only xrefs
+     * a census sees on a TEXTS slot -- the boot load fills it through the record-copy loop at
+     * Assets_LoadStartup, and a loop store leaves no xref. */
     while (nLen < sizeof(pUnit->szName) && pUnit->szName[nLen] != 0
            && nLen + 1 < sizeof(szMsg)) {
         szMsg[nLen] = pUnit->szName[nLen];
         ++nLen;
+    }
+    if (pCtx->pTextRecs != NULL) {
+        const char *pszSuffix = (const char *)pCtx->pTextRecs
+                              + PUFO_TEXT_REC_STRIDE * PUFO_TXTREC_ENEMYAI_PANIC;
+
+        while (*pszSuffix != 0 && nLen + 1 < sizeof(szMsg)) {
+            szMsg[nLen++] = *pszSuffix++;
+        }
     }
     szMsg[nLen] = 0;
 

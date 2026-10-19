@@ -5823,6 +5823,9 @@ void Ui_DrawBaseInfo(UiBaseInfoDrawEnv *pEnv);
 #define PUFO_UFOPAEDIA_RACE_COUNT        5   /* topics 55..59 */
 #define PUFO_UFOPAEDIA_RACE_TOPIC_FIRST 55   /* Sectoid, Snakeman, Ethereal, Muton, Floater */
 #define PUFO_UFOPAEDIA_SEL_LINES         9   /* UiPanel_ctor's line count for the selector */
+#define PUFO_UFOPAEDIA_SEL_REC_FIRST     1646 /* the selector's nine labels, TEXTS 1646..1654 (0x105EE6
+                                               * .. 0x10654E). 1646..1649 read "не исп." in lang.dat;
+                                               * 1650..1654 are past what TEXTS.DAT fills, so empty. */
 #define PUFO_UFOPAEDIA_TEXT_LINES_BUILT 50   /* and for the text panel */
 #define PUFO_UFOPAEDIA_CAT_VISIBLE_MAX  13   /* 0x9AE44 clamps nStyle, not the panel's line count */
 #define PUFO_UFOPAEDIA_CAT_CENTRE_Y    160   /* posY = 160 - 8 * visible rows */
@@ -6029,6 +6032,7 @@ typedef struct PsiScreenEnv {
     i8        *pnBaseIdx;                          /* byte_1870F4, read SIGNED */
     const i8  *pnBaseCount;                        /* nBaseCount @ 0x159D80, read SIGNED */
     u8        *abFacilityGrid;                     /* abFacilityGrid @ 0x159768 */
+    const u8   *pTextRecs;                         /* aTextRecs @ 0xB38D0, the check column's labels */
     Soldier  **apSoldiers;                         /* Map.apSoldiers @ 0x114B50 */
     i32        nSoldierCount;                      /* nSoldierCount @ 0x115350 */
     i32       *pnActionFail;                       /* dwActionFail @ 0x1870C8 */
@@ -6089,6 +6093,8 @@ void PsiScreen_Init(PsiScreenEnv *pEnv);
  * 0x72A94, skipping the base compare). With it open: byte_158834 == byte_1870F4 runs the same panel,
  * otherwise a non-zero Base_CalcPsiLabCap(byte_158834) adopts that base -- byte_1870F4 takes it and
  * byte_1870F8 clears. */
+#define PUFO_PSI_TEXT_ASSIGNED   1186  /* unk_EEE8A "Обучение", the assigned check-column row */
+#define PUFO_PSI_TEXT_UNASSIGNED 1187  /* unk_EEF57 "Нет", the unassigned one */
 #define PUFO_PSI_TEXT_COLUMNS    1188  /* the four column captions, at (7, 54) */
 #define PUFO_PSI_TEXT_SEL_BASE   1189  /* "Выберете базу", centred at (60, 300) */
 #define PUFO_PSI_TEXT_OK         1127  /* "ОК", centred at (180, 300) */
@@ -6153,12 +6159,25 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
  *   - 0x158820, the FREE column: x 130, click left 210, nViewW 10, nUnk7076 1.
  *   - 0x158838, the TOTAL column: x 190, click left 210, nViewW 10, nUnk7076 1.
  *
- * Every label on this screen is a clear, not a string. All 42 rows of all three panels are first
- * filled from 0x10DA38, and the fixed captions come from 0x104C7B + 461*i (rows 0..16 of the name
- * column), 0x10587E + 461*i (the eight rows after the ship list) and 0x105D4C / 0x105E19 (the two
- * facility rows of the total column). Every one of those addresses is above 0xAC800, inside .data's
- * zero-filled span, and nothing in the binary writes any of them -- so each copy lands exactly one
- * NUL. The only strings the screen really writes are the money literals at 0xAB1D8..0xAB20B.
+ * All 42 rows of all three panels are first filled from 0x10DA38, and that one really is a clear: it
+ * is TEXTS record 1800, past the 1650 records lang.dat loads, so the slot is never written. The fixed
+ * captions are strings, not clears. Every one is 0xB38D0 + 205*n with n inside the loaded range, i.e. a
+ * lang.dat TEXTS.DAT record -- all 1650 strings, in record order, are in src/pufo/asset/pufo_texts_lang.h.
+ * In row order (with the literal the ARM uses, and the shipped text):
+ *   0  0x104C7B 1623 "Персонал Работают Всего"      6  0x10507C 1628 "Жилые"
+ *   1  0x104D48 1624 "Солдаты"                      7  0x105149 1629 "Хранилища"
+ *   2  0x104E15 1625 "Инженеры"                     8  0x105216 1630 "Лаборатории"
+ *   3  0x104EE2 1626 "Ученые"                       9  0x1052E3 1631 "Мастерские"
+ *   4  szEmptyString                                10 0x1053B0 1632 "Ангары"
+ *   5  0x104FAF 1627 "Места Занято Всего"           11 szEmptyString
+ *   12 0x10547D 1633 "Обнаружение и защита"         13 0x10554A 1634 "Мощность защиты"
+ *   14 0x105617 1635 "Близкое обнаружение"          15 0x1056E4 1636 "Дальнее обнаружение"
+ *   16 0x1057B1 1637 "Корабли Обслуживание"
+ * and the eight rows after the ship list, nShips+18..nShips+25: 0x10587E 1638 "Персонал Зарплата Итого",
+ * 0x10594B 1639 "Солдаты", 0x105A18 1640 "Инженеры", 0x105AE5 1641 "Ученые", szEmptyString, 0x105BB2 1642
+ * "Обслуж. базы", szEmptyString, 0x105C7F 1643 "Итого". The meta
+ * rows 0, 5, 12, 16 and nShips+18, +23, +25 are the four group headers plus the three tail ones.
+ * The only non-TEXTS strings here are the money literals at 0xAB1D8..0xAB20B.
  *
  * Rows 0, 5, 12 and 16 of the name column, and rows nShips+18, nShips+23 and nShips+25, get
  * UiPanel_SetLineMeta(200, 150, -106, 50, 10, 10).
@@ -6188,8 +6207,9 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
  * both with the trailing '$' from asc_AB1D8; the total column shows 20000*soldiers, 20000*engineers
  * and 30000*scientists at nShips+19..21, each with the '$'. Rows 1, 2, 3, 6, 7, 8, 9, 10 and 13 of the
  * total column are the raw counts -- soldiers, engineers, scientists, and the five capacities -- and
- * rows 14 and 15 are cleared, then cleared again for every cell of the base that is facility kind 4
- * and kind 5 (0x56E20..0x56ED4), which is the only visible effect that scan has. */
+ * rows 14 and 15 hold TEXTS[1644] "нет", rewritten to TEXTS[1645] "да" for every cell of the base that is
+ * facility kind 4 (FAC_SHORT_RANGE_RADAR) or kind 5 (FAC_LONG_RANGE_RADAR) (0x56E20..0x56ED4): those two
+ * rows are the answers to the name column's "Близкое обнаружение" / "Дальнее обнаружение". */
 #define PUFO_BASEINFO_PAD_NAME      "baseinfo"  /* aBaseinfo @ 0xAB20C */
 #define PUFO_BASEINFO_PAD_MODE      14
 #define PUFO_BASEINFO_PANEL_LINES   42   /* every panel is built with 42 lines (0x55844) */
@@ -6218,8 +6238,8 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
 #define PUFO_BASEINFO_PRICE_SCIENTIST 30000 /* a30000 @ 0xAB1E4 */
 #define PUFO_BASEINFO_PRICE_CELL    50000  /* one built facility cell, 0x56A88 */
 #define PUFO_BASEINFO_FAC_EMPTY     0xFF   /* the type byte that means "no facility here" */
-#define PUFO_BASEINFO_FAC_LIVING    4      /* the kind that re-clears total row 14 */
-#define PUFO_BASEINFO_FAC_WORKSHOP  5      /* and total row 15 */
+/* The two kinds the total column's radar rows test are FacilityKind 4 and 5, FAC_SHORT_RANGE_RADAR and
+ * FAC_LONG_RANGE_RADAR from game/pufo_geoscape.h -- there is no base-info name for them. */
 
 typedef struct BaseInfoInitEnv {
     PadImage  **ppPad;              /* pBaseInfoPad @ 0x158828 */

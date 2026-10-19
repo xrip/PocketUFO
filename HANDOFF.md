@@ -625,8 +625,11 @@ cursor (0x71BDC). **Assigning a soldier is what makes them psi-capable:** 0x71D0
 soldier shows their numbers with the box clear. **The training countdown** arms `30 * auStat[7] / 100` days
 when `auStat[6]` is below `auStat[7]` and exactly **one** day when it is already at or above (0x7209C) --
 which is what `Geoscape_TickBases` spends, one per day, raising `auStat[6]`: the gain the "+N" column
-advertises. **The checkbox rows are cleared, not labelled** -- both label sources (`unk_EEE8A`,
-`unk_EEF57`) sit above 0xAC800 in `.data`'s zero-filled span. **The assigned counter compares against 1
+advertises. **The checkbox rows are labelled as well as flagged** -- `unk_EEE8A` and `unk_EEF57` are
+`0xB38D0 + 205 * 1186` and `205 * 1187`, so they are TEXTS[1186] (assigned) and TEXTS[1187] (free),
+written on both the build (0x71C8C, 0x71E14) and each `SelectListed` flip (0x71480, 0x715D8). A TEXTS
+slot has no write xref because the boot load fills it with a record-copy loop, which is why an earlier
+note here called them zero-filled scratch. **The assigned counter compares against 1
 exactly** (0x71314). **ApplyAssignments closes the screen:** its tail call at 0x72394 reaches BuildPanels
 while the flag is still set, so it takes the release arm. **1 original bug found, reproduced and pinned:**
 0x72370 calls `Base_UpdatePsiLabNeeded` without ever loading its third argument -- R2's last write is the
@@ -657,9 +660,10 @@ topic 57 rather than a family slot. **Opening the screen writes the research mir
 `abResearchZero[topic]` for a race that passes its gate, which is *why* the paging gate at 0x9A6D4 accepts on
 that byte at all -- a race met in the field becomes pageable without its own research topic ever being
 unlocked. Row names come from `TEXTS[aResearchTopics[topic].wGate4]` and the five race rows are then
-overwritten with the literals at 0xAC610..0xAC638; the selector's nine rows are **cleared, not labelled** --
-the nine sources at 0x105EE6..0x10654E are 205 bytes apart and all sit above 0xAC800, inside `.data`'s
-zero-filled span. **1 original bug found:** the teardown's control loop starts at 0x1872E0 and reads slot +2
+overwritten with the literals at 0xAC610..0xAC638; the selector's nine rows are **labelled from TEXTS** --
+the nine sources at 0x105EE6..0x10654E are 205 bytes apart and each is `0xB38D0 + 205 * n`, i.e.
+TEXTS[1646..1654]: lang.dat carries the four category captions in 1646..1649 and leaves 1650..1654 empty,
+so the last five rows are blank from the data rather than from a clear. **1 original bug found:** the teardown's control loop starts at 0x1872E0 and reads slot +2
 on each of its six steps, releasing 0x1872E8..0x1872FC and never 0x1872E4 -- the live entry's PadImage that
 every `Ufopaedia_RefreshEntry` allocates at 0x9A530 -- so closing the ufopaedia after any entry has been shown
 leaks that pad. Ledger row added, not reproduced. 0x9B544 also writes `nLineCount = 50` into the text panel
@@ -730,8 +734,8 @@ at +372, a different window from the hangar arm's rows 12..17. **`'%'` reads the
 in** -- `LDRB [R7,#0x22]` on a 34-byte record is `aTopics[nBaseIdx + 1].abUnk0[0]`, the same
 off-by-one-record pairing `ResearchScreen_RebuildTopicList` uses. **`szScratch186488` carries a name
 between calls**: `'\''` and `'('` write it, `','` appends whatever it finds there. 0x10DA38, the source the
-255 sentinel copies from, is inside `.data`'s zero-filled span, so it copies one NUL -- a clear, not a
-message. **1 deviation recorded:** unbounded copies into fixed scratch buffers and untested indices; the
+255 sentinel copies from, is TEXTS slot 1800 (`0xB38D0 + 205 * 1800`) -- past lang.dat's 1650 records, so the
+boot load never wrote it and the copy yields one NUL: a clear by data, not by scratch. **1 deviation recorded:** unbounded copies into fixed scratch buffers and untested indices; the
 port bounds both. 54 new checks; three mutations -- prefix indices shifted by one record (the exact mistake
 made while writing this unit) turns 31 red, the hangar grid offset turns 4 red, reading the topic byte in
 place turns 1 red. 6 IDB renames, the five arguments named, 1 function comment, 7 line comments, and a

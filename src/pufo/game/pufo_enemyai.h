@@ -165,6 +165,9 @@ typedef struct EnemyAiActCtx {
     const i32     *anActionCost;    /* Map+0x4E4C, 12 slots */
     const i32     *anActionEnabled; /* Map+0x4E7C, 12 slots */
     u8            *pbActionLatch;   /* Map.bActionLatch @ Map+0x2 (0x1139BA) */
+    /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart: the panic message's suffix lives there
+     * (PUFO_TXTREC_ENEMYAI_PANIC below), it is not scratch memory. */
+    const u8      *pTextRecs;
     void           *pUser;
 } EnemyAiActCtx;
 
@@ -185,6 +188,10 @@ void EnemyAi_TryFireOrWander(Soldier *pUnit, const EnemyAiActCtx *pCtx);
 #define PUFO_ENEMYAI_WANDER_DROP 10
 /* The original's pszMsg scratch, 0xD8 - 0x10 on the stack. */
 #define PUFO_ENEMYAI_MSG_SIZE 200
+/* unk_104078 is 0xB38D0 + 205 * 1608, so it is TEXTS[1608]: the suffix 0x4B058 strcat's onto the
+ * unit's name before StatusMsg_Push @ 0x4B068. It reads " в панике" in lang.dat, which is why the
+ * message has a leading space. */
+#define PUFO_TXTREC_ENEMYAI_PANIC 1608
 
 /* Tact_EnemyAiTick @ 0x4cbe0: the enemy turn's per-unit driver.
  *

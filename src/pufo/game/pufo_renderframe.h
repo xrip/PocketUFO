@@ -107,16 +107,20 @@ typedef struct RenderFrameEnv {
     const PadImage         *pBannerBackdrop;
     const TactHudBannerState *pBannerState;
     const char             *pszBannerFooter;
-    const char             *pszBannerPadLabel;
+    const char             *pszBannerPadLabel;  /* unk_EACE0 = TEXTS[1104] */
     UiPanel                *pBannerPanelA;
     UiPanel                *pBannerPanelB;
 
     UiControl              *pConfirmPad;   /* 0x13, bank widget 129 */
     const PadImage         *pConfirmBackdrop;
-    const char             *szConfirmPadLabel;
-    const char             *szConfirmTitle;
-    const char             *szConfirmLeft;
-    const char             *szConfirmRight;
+    /* 0x1eb68's four labels are TEXTS records, not scratch: unk_EACE0 = TEXTS[1104] on the pad,
+     * unk_EAF47 = TEXTS[1107] centred at y 10, unk_EADAD = TEXTS[1105] at (10, 30) and
+     * unk_EAE7A = TEXTS[1106] at (170, 30). The banner screen shares TEXTS[1104] for its own pad
+     * label (0x1eb04/0x1eb0c/0x1eb24). */
+    const char             *szConfirmPadLabel;  /* TEXTS[1104] */
+    const char             *szConfirmTitle;     /* TEXTS[1107] */
+    const char             *szConfirmLeft;      /* TEXTS[1105] */
+    const char             *szConfirmRight;     /* TEXTS[1106] */
     UiPanel                *pConfirmPanelA;
     UiPanel                *pConfirmPanelB;
 

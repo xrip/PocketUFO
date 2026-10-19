@@ -127,6 +127,18 @@ add_test(NAME test_data
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# The committed lang.dat TEXTS table (src/pufo/asset/pufo_texts_lang.h) re-read through the game's
+# own reader: the generator is only trustworthy while this stays green.
+add_executable(test_texts_lang ${CMAKE_SOURCE_DIR}/tests/test_texts_lang.c)
+target_link_libraries(test_texts_lang PRIVATE pufo_options pufo_dat pufo_util)
+set_target_properties(test_texts_lang PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_texts_lang
+    COMMAND test_texts_lang
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 add_executable(test_render ${CMAKE_SOURCE_DIR}/tests/test_render.c)
 target_link_libraries(test_render PRIVATE pufo_options pufo_render)
 set_target_properties(test_render PROPERTIES

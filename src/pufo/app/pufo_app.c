@@ -1518,6 +1518,10 @@ static void App_DumpFramePpm(LPCWSTR pwszPath)
  *   save n        App_HookSaveGame -- World_SaveSlot, what a save-slot row runs
  *   load n        App_HookLoadGame -- LoadGame @ 0x44bbc, what a load-slot row runs
  *   state         print the shell's own state line
+ *   grid n        print base n's 6x6 facility grid, the layer2 occupancy bytes and the build days
+ *   geoframe      print the geoscape frame env: which slots are wired, which are NULL
+ *   strateg       print the strateg list as the geoscape clock left it (the mission path's state)
+ *   lines         print the root line list: the flags and colour slots the mission launch reads
  *
  * The point is one process walking the whole path -- menu, new game, placement, geoscape, save,
  * load -- writing a picture at each step so each step is checkable as a picture. */
@@ -1610,6 +1614,53 @@ static void App_ScriptGeoFrame(void)
     printf("  draw env: mapView %d crosshair %d status %d radar %d worldSize %d\n",
            pF->draw.pMapView != NULL, pF->draw.pCrosshair != NULL, pF->draw.pStatusPanel != NULL,
            pF->draw.pRadarArm != NULL, g_world.ui.pWorldSize != NULL);
+    fflush(stdout);
+}
+
+/* SHELL SCAFFOLDING, not original behaviour: the strateg list as the geoscape clock leaves it. The
+ * mission path is the one thing the shell cannot yet check with a picture, and every step of it moves
+ * these cells -- the event pass that spawns a craft, the travel that rolls a mission subtype, the
+ * spawner that sets nPhase, the panel that offers the order -- so a run has to be able to say what the
+ * list holds. The fields are StrategItem's own (game/pufo_strateg.h). */
+static void App_ScriptStrateg(void)
+{
+    const PtrArray *pList = &g_world.strategList;
+
+    printf("pocketufo: strateg: %d items, seed %d, selected idx %d, clock %d s\n",
+           pList->nCount, (int)g_world.nStrategSeed, (int)g_world.nSelectedStrategIdx,
+           (int)g_world.geo.time.nTotalSec);
+    for (int i = 0; i < pList->nCount; ++i) {
+        const StrategItem *p = (const StrategItem *)pList->apItems[i];
+
+        if (p == NULL) {
+            printf("  [%d] (null)\n", i);
+            continue;
+        }
+        printf("  [%d] type %d active %d class %d at %d/%d site %d disp %d sub %d phase %d "
+               "detected %d race %d done %d targetIdx %d travel %u min\n",
+               i, (int)p->nType, (int)p->bActive, (int)p->bCraftClass, p->nX, p->nY, p->nSiteId,
+               p->nDisplayId, (int)p->nMissionSub, p->nPhase, (int)p->bDetected, (int)p->bRace,
+               (int)p->bDone, p->nTargetIdx, (unsigned)p->uTravelMin);
+    }
+    fflush(stdout);
+}
+
+/* SHELL SCAFFOLDING, not original behaviour: the root line list @ 0x158890. The mission launch reads
+ * this list, not the map -- Smap_BeginCraftSelect takes the selected line's FLAG as the mission kind
+ * (21 urban, 22 alien base, 23 intercept landing) and takes the craft index and the strateg index from
+ * that line's colour slots 0 and 1 (0x83994..0x83B54). So the list is where "a mission is waiting for an
+ * order" is visible at all. UiLineList's own fields (ui/pufo_linelist.h). */
+static void App_ScriptLines(void)
+{
+    const UiLineList *pList = &g_world.msgLines;
+
+    printf("pocketufo: lines: %d of %d, clock %d s\n",
+           (int)pList->nLineCount, PUFO_LINELIST_CAPACITY, (int)g_world.geo.time.nTotalSec);
+    for (int i = 0; i < (int)pList->nLineCount; ++i) {
+        printf("  [%d] flag %d slots %u %u %u %u\n", i, (int)pList->abLineFlags[i],
+               (unsigned)pList->anColor[i][0], (unsigned)pList->anColor[i][1],
+               (unsigned)pList->anColor[i][2], (unsigned)pList->anColor[i][3]);
+    }
     fflush(stdout);
 }
 
@@ -1712,6 +1763,10 @@ static void App_RunDebugScript(LPCWSTR pwszPath)
             App_ScriptGrid((nArgs > 1) ? atoi(azArg[1]) : 0);
         } else if (strcmp(azArg[0], "geoframe") == 0) {
             App_ScriptGeoFrame();
+        } else if (strcmp(azArg[0], "strateg") == 0) {
+            App_ScriptStrateg();
+        } else if (strcmp(azArg[0], "lines") == 0) {
+            App_ScriptLines();
         } else {
             printf("pocketufo: step UNKNOWN '%s'\n", azArg[0]);
         }

@@ -4,6 +4,7 @@
  * decoded byte by byte. The interesting part is the asymmetry: roles 1 and 2 also
  * require the unit to be SMALL, while roles 3 and 4 test only the flag column.
  */
+#include "game/pufo_boot.h"   /* PUFO_TEXT_REC_STRIDE, the 205-byte TEXTS slot stride */
 #include "game/pufo_enemyai.h"
 #include "game/pufo_tactui.h" /* the PUFO_ACTION_MODE_* codes the tick writes */
 
@@ -280,6 +281,17 @@ static i32        g_aRecordPushes[8];
 static i32        g_nRecordPushes;
 static i32        g_nFaceCalls;
 static EnemyAiActCtx g_Ctx;
+/* The panic message carries a TEXTS record (unk_104078 = 0xB38D0 + 205 * 1608), so the fixture
+ * needs the block itself, not just a string. */
+static u8 g_abAiTexts[(PUFO_TXTREC_ENEMYAI_PANIC + 1) * PUFO_TEXT_REC_STRIDE];
+
+static void AiPutTextRec(i32 nRec, const char *psz)
+{
+    char *p = (char *)g_abAiTexts + (size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec;
+
+    memset(p, 0, PUFO_TEXT_REC_STRIDE);
+    snprintf(p, PUFO_TEXT_REC_STRIDE, "%s", psz);
+}
 
 static MapCell *Cell(i32 nX, i32 nY, i32 nLayer)
 {
@@ -432,6 +444,9 @@ static void AiReset(const u32 *pScript, i32 nLen)
     memset(g_aRecordPushes, 0, sizeof(g_aRecordPushes));
 
     memset(&g_Ctx, 0, sizeof(g_Ctx));
+    /* The original's suffix has a leading space, exactly as lang.dat holds it. */
+    AiPutTextRec(PUFO_TXTREC_ENEMYAI_PANIC, " in panic");
+    g_Ctx.pTextRecs         = g_abAiTexts;
     g_Ctx.pfnRandU16        = Ai_Rand;
     g_Ctx.pfnPathToCell     = Ai_Path;
     g_Ctx.pfnFillActionCosts = Ai_FillCosts;
@@ -777,17 +792,18 @@ static void TestStatusMessageOnBothPaths(void)
     static const u32 aScriptFire[]   = { 0, 4, 0, 1 };
     static const u32 aScriptWander[] = { 1, 13, 13 };
 
-    printf("Both paths end by pushing the unit's name (0x4b028)\n");
+    printf("Both paths end by pushing the unit's name plus TEXTS[1608] (0x4b028..0x4b068)\n");
 
     AiReset(aScriptFire, 4);
     EnemyAi_TryFireOrWander(&g_Unit, &g_Ctx);
     CheckEqI32(g_nPushCalls, 1, "  the fire path pushes once");
-    Check(strcmp(g_szPushed, "Sectoid") == 0, "  the message is the name and nothing else");
+    Check(strcmp(g_szPushed, "Sectoid in panic") == 0,
+          "  the message is the name with unk_104078 = TEXTS[1608] strcat'd on (0x4B058)");
 
     AiReset(aScriptWander, 3);
     EnemyAi_TryFireOrWander(&g_Unit, &g_Ctx);
     CheckEqI32(g_nPushCalls, 1, "  the wander path pushes once");
-    Check(strcmp(g_szPushed, "Sectoid") == 0, "  with the same text");
+    Check(strcmp(g_szPushed, "Sectoid in panic") == 0, "  with the same text");
 }
 
 static void TestTuRefusalStillRunsTheTail(void)
@@ -1164,7 +1180,7 @@ static void TestLowMoraleRunsThePanicAi(void)
     g_aEnemy[0].bMorale = PUFO_ENEMYAI_MORALE_MAX - 1;
     Tact_EnemyAiTick(&g_Tact, &g_Tick);
     CheckEqI32(g_nPushCalls, 1, "  the panic AI pushed its status message");
-    Check(strcmp(g_szPushed, "Alien0") == 0, "  the message is the unit name");
+    Check(strcmp(g_szPushed, "Alien0 in panic") == 0, "  the message is the unit name plus TEXTS[1608]");
     CheckEqI32(g_nPathCalls, 1, "  and the unit wandered");
     CheckEqI32(g_nPathFlag, 1, "  the wander path asks for the flag-1 path");
     CheckEqI32(g_aEnemy[0].bAiDone, 1, "  the unit is marked done");
