@@ -520,13 +520,16 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv);
  *
  * Everything MapView_DrawMinimap @ 0x1ed4c reaches outside the draw context.
  *
- * The two span globals have no writer anywhere in the IDB: unk_1139E8 / unk_1139EA (Map+0x30 /
- * Map+0x32) are read as the loop bounds (value >> 2) here and as the camera-centre input of
- * MapView_EnterLookMode (value >> 1), but nothing ever stores to them. In the shipped beta they are
- * 0, so both cell passes of the minimap never run and only the pad, the label and the three controls
- * are drawn. The port reproduces the arithmetic as written. */
+ * The two span cells are the tile-size pair. unk_1139E8 / unk_1139EA (Map+0x30 / Map+0x32) are the
+ * same two bytes Map_InitFacingScratch types as nMapTileW / nMapTileH; they are read here as the loop
+ * bounds (value >> 2) and by MapView_EnterLookMode as the camera-centre input (value >> 1). The census
+ * finds no xref writer, and the reason is the store's shape: Map_InitFacingScratch @ 0x26F38 / 0x26F40
+ * writes STRH 240 / STRH 320 through the Map pointer, which leaves no xref in this IDB. Tact_Init-
+ * Mission's call at 0x3CB30 therefore leaves 60 and 80 as the bounds and BOTH cell passes run, over
+ * the whole field, Map_IsValidCell doing the clipping. The port hands the live pair. */
 #define PUFO_PBANK_MINIMAP_FIRST 98 /* pBank + 0xC40: the three screen-2 (look mode) controls */
 #define PUFO_PBANK_MINIMAP_COUNT  3
+#define PUFO_TEXT_REC_MINIMAP_LABEL 17 /* aTextRec17 @ 0xB466D, the only reference being the copy at 0x1F4DC */
 
 typedef struct IsoMinimapEnv {
     i32 *pnScrollX;      /* Map_nMinimapScrollX @ 0x118864 (Map+0x4EAC): clamped here, panned by

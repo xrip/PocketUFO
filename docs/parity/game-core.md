@@ -20144,4 +20144,60 @@ mission bring-up, where the launch itself leaves screen 1. New reference picture
 tests/ref/tact_hud_inventory.png, looked at: the portrait, the header line, "Вес: 0", the empty equipment
 grid, the ground-item strip and the lit filter row. IDB: 4 comments (0x224AC, 0x16F68, 0x1f58c, 0xAC9DA)
 plus `idb_save`. Gates: all six ran, 62/62 Release and 62/62 Debug, 18567 checks, coverage 972/1103 and
-596888/598792 bytes unchanged, 12 frame references (one new) and 9 e2e pictures unchanged.
+596888/598792 bytes unchanged, 12 frame references (one new) and 9 e2e pictures unchanged.
+## Part 81 - the look-mode minimap paints through the frame, and its loop bounds have a writer after all
+
+`Render_Frame @ 0x22310` routes Map_nUiScreen 2 to 0x224B8 and, exactly as for case 1, never through
+0x22414: the minimap REPLACES the iso layer. The callee was ported and gated long ago
+(`MapView_DrawMinimap @ 0x1ed4c`, tests/test_isodraw.c); what was missing was the seam -- the same shape
+as Part 80. `World_bTactFrameLive` refused screen 2 although 2 is a screen the app reaches by one click:
+bank widget 3 carries `MapView_EnterLookMode @ 0x163d4`, which plays 16, stores 2 at 0x163F0 and derives
+the scroll pair at 0x16448 / 0x16488.
+
+The two loop bounds are the interesting cells, and the IDB was wrong about them. Both passes of
+MapView_DrawMinimap run to `Map_nMinimapSpanX >> 2` and `Map_nMinimapSpanY >> 2` (0x1139E8 / 0x1139EA),
+and the IDB carried the claim that these have NO writer anywhere in the binary. That claim is true of the
+xrefs and false of the program. `Map_InitFacingScratch @ 0x26f14` stores STRH 240 at 0x26F38 and STRH 320
+at 0x26F40 through the Map pointer -- Map+0x30 / Map+0x32, the same two bytes the two globals name -- and
+a plain-immediate STRH with a base register produces no xref in this IDB, exactly how the two 0x34/0x35
+STRBs next to it hide. `Tact_InitMission` runs that call at 0x3CB30, so in the shipped beta the bounds are
+60 and 80 rather than 0 and 0: for the 6 by 6 block mission of the save tests (a 60 by 60 cell grid) the x
+bound is exactly the grid width and the y bound overshoots it, `Map_IsValidCell @ 0x2bc9c` (10*nMapDimY
+rows) doing the clipping. The claim is corrected in the IDB -- the function comment at 0x1ed4c rewritten,
+the two globals 0x1139E8 / 0x1139EA, a new comment on 0x163d4, on 0xAD310 and on 0x224B8 -- and in the
+port note it had made wrong (pufo_isodraw.h said both cell passes never run).
+
+The env needed no new state. The scroll pair is Map_nMinimapScrollX/Y @ 0x118864 / 0x118868, which is
+`sTactInput.anCamWorldX/Y`: the cell MapView_EnterLookMode derives, the cell the look-mode arm of
+Input_OnLeft / Input_OnRight pans while the screen id is 2 (the iso camera pair at 0x15130/0x15134 is the
+screen-0 branch and does not move), and the cell MapView_DrawMinimap clamps back into itself. The bounds
+are `tactEnv.tileSize` -- the pair Map_InitFacingScratch writes, which Init_FillCalleeEnvs copies into
+tactEnv.focus for the two camera calls. The layer count is the cursor byte at 0x15138, read SIGNED at
+0x1EF58. The glyph group is the iso arm's nScangBase (fontSys + 0x2E). The label is text record 17
+(aTextRec17 @ 0xB466D, "Текущий уровень: "), whose only reference in the whole binary is the unbounded
+copy at 0x1F4DC. The cursor is the "minimcur" pad at 0x1571F0: the only readers of that global are
+MapView_DrawMinimap, Tact_LoadUiPads @ 0x3b068 (which centres it by the pad rule) and Tact_Shutdown @
+0x3d568, so the original's minimap cursor stands at the screen centre and never follows the pan. The
+furniture is bank widgets 98..100 (unk_AD310 = pBank + 0xC40), the same span Tact_InitUiControls installs
+handlers on.
+
+Measured on the reloaded mission with look mode opened through the installed handler (bank widget 3, not a
+hand-built call): sample 16, then screen 2. The clamp writes back into the cell it read -- 5000 becomes
+40*(nMapDimX-3)/4 = 30 and -5000 becomes -30 on x, 20 and -40 on y. With the scroll set to the clamp's own
+minima the context's tile cursor ends exactly on 60 and 80, which are the two bounds, and 20267 surface
+pixels get inked. The arm blits three controls: every one of bank 98..100 has a pad in its active slot, so
+UiControl_BlitActivePad draws all three. The label line ends "…: 2" because itoa writes the decimal layer
+count at szText[50] and strcat appends it (0x1F4EC..0x1F500). The left key on screen 2 moves the scroll
+cell only, never 0x15130/0x15134.
+
+Gate: a Part 81 block in tests/test_geoscapeframe.c, on the reloaded mission, opens look mode through the
+installed handler (sample 16, screen 2, seam live), pins the 240/320 pair, checks the pan against the iso
+camera pair, probes the clamp from both sides, runs the two passes at the clamp's minima and pins the
+cursor at 60 and 80 with the ink census, pins the label copy and the appended layer count, and counts the
+three control blits. The seam gate in the same file now reads "and on 2" where it used to read "not on 2",
+and "not on 4" is the negative case. New reference tests/ref/tact_hud_minimap.png, looked at: the label at
+(0,0), the centred cursor pad on the map, the room-and-corridor glyph field, the X control at the top right
+and the two arrow controls at the bottom right. IDB: 6 comments (0x1ed4c, 0x1139E8, 0x1139EA, 0xAD310,
+0x224B8, 0x163d4) plus `idb_save`. Gates: all six ran, 62/62 Release and 62/62 Debug, 18584 checks,
+coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 13 frame references (12 unchanged, 1
+new), 9 e2e pictures unchanged.

@@ -2727,9 +2727,10 @@ static void World_TactStatusRender(void *pUser)
  * The seam covers 0x2237C's jumptable group, "cases 0,3,5,7-12,15", plus 13, the status-banner arm
  * at 0x223E8. Part 76 added the group's six furniture envs -- the fire-mode roster (3), the item
  * sub-mode panel (5), the tactical menu (7), the modal slot lists (10/11), the options top bar (12)
- * and the action buttons (15) -- so the whole iso group now paints here. What stays off the seam is
- * the screens that REPLACE the iso layer with a different env: 1 inventory, 2 minimap, 4 command pads,
- * 6 unit markers, 0x13 confirm dialog and 0x14/0x15 Cydonia.
+ * and the action buttons (15) -- so the whole iso group now paints here. Part 80 and Part 81 added the
+ * two arms that REPLACE the iso layer with their own env and read only cells the bring-up already
+ * owns: 1 inventory (0x224AC) and 2 the look-mode minimap (0x224B8). What stays off the seam is the
+ * other replace-arms: 4 command pads, 6 unit markers, 0x13 confirm dialog and 0x14/0x15 Cydonia.
  *
  * Two deviations, both recorded in docs/parity/game-core.md:
  *   1. The cursor-direction tick runs HERE, before Render_Frame, and RenderFrameEnv.pCursorDir is
@@ -2751,10 +2752,11 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
     case 0: case 3: case 5: case 7: case 8: case 9:      /* 0x2237C's jumptable group: */
     case 10: case 11: case 12: case 15:                  /* "cases 0,3,5,7-12,15"        */
     case PUFO_DEBRIEF_UI_SCREEN:                         /* 13: the status banner arm at 0x223E8 */
-    case 1:                                              /* 0x224AC: the inventory arm, outside that */
-        return true;                                     /* group -- it draws no iso layer at all */
+    case 1:                                              /* 0x224AC: the inventory arm, and 2 the */
+    case 2:                                              /* 0x224B8 minimap arm -- both outside that */
+        return true;                                     /* group, both drawing no iso layer at all */
     default:
-        return false;   /* 2/4/6, 0x13 and 0x14/0x15 replace the iso layer with another env */
+        return false;   /* 4/6, 0x13 and 0x14/0x15 replace the iso layer with another env */
     }
 }
 
@@ -2889,6 +2891,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     TactHudRoster         roster;      /* screen 3, the fire-mode panel */
     TactHudActionGate     actionGate;  /* screen 15, the nine action buttons */
     TactHudInventoryEnv   inv;         /* screen 1, the inventory */
+    IsoMinimapEnv         mini;        /* screen 2, the look-mode minimap */
     char                  aModeNames[PUFO_HUD_ROSTER_PADS][PUFO_HUD_ROSTER_NAME_STRIDE]; /* 0xB3768 */
     UiControl            *pBankCtl;    /* the caller's 130-widget bank, the pad source */
     UiWidgetBank         *pBank;       /* that bank's own block: its pointer pair is 0xAD714/0xAD718 */
@@ -3154,6 +3157,35 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     inv.Strip.pEmptySlot    = &pW->sMapSentinel138EA0;                     /* unk_138EA0 @ Map+0x254E8 */
     inv.Strip.nBigObsBase   = inv.nBigObsBase;
 
+    /* Screen 2, MapView_DrawMinimap @ 0x1ed4c: the look-mode overview, the other arm that REPLACES the
+     * iso layer (0x2237C sends case 2 to 0x224B8, never through 0x22414). Its scroll pair is the world
+     * offset pair Map_nMinimapScrollX/Y @ 0x118864 / 0x118868, which is the same cell the look-mode
+     * pan arm of Input_OnLeft / Input_OnRight moves and the one MapView_EnterLookMode derives at 0x16408
+     * from the camera pair -- tactEnv.focus owns 0x15130/0x15134, sTactInput owns 0x4EAC/0x4EB0.
+     * The two loop bounds are the tile-size pair at Map+0x30/0x32, the cells Map_InitFacingScratch
+     * fills with 240 / 320 at 0x26F38 / 0x26F40 (two plain STRHs against the Map pointer, so the xref
+     * census sees no writer for 0x1139E8 / 0x1139EA even though the mission bring-up's call at 0x3CB30
+     * is exactly what fills them). tactEnv.tileSize is that pair's port owner; focus holds the copy the
+     * two camera calls use. The layer count is the cursor's own byte, read SIGNED at 0x1EF58.
+     * The glyph group is the iso arm's bases block (nScangBase, fontSys + 0x2E), the label is text
+     * record 17, and the cursor is the "minimcur" pad the pad loader stored at 0x1571F0. */
+    memset(&mini, 0, sizeof(mini));
+    mini.pnScrollX    = &pW->sTactInput.anCamWorldX;                       /* 0x118864, Map+0x4EAC */
+    mini.pnScrollY    = &pW->sTactInput.anCamWorldY;                       /* 0x118868, Map+0x4EB0 */
+    mini.nSpanX       = pW->tactEnv.tileSize.nTileW;                       /* Map_nMinimapSpanX @ 0x1139E8 */
+    mini.nSpanY       = pW->tactEnv.tileSize.nTileH;                       /* Map_nMinimapSpanY @ 0x1139EA */
+    mini.nLayerCount  = (i8)pW->tactEnv.cursor.nFlags;                     /* nLayerScratch @ 0x15138 */
+    mini.nMapPhase    = nPhase;                                            /* nMapPhase @ 0x1139EF */
+    mini.pGrid        = &grid;
+    mini.pBases       = &bases;
+    mini.pLabel       = World_TextRec(pW, PUFO_TEXT_REC_MINIMAP_LABEL);    /* aTextRec17 @ 0xB466D */
+    mini.pMiniCursor  = pW->apTactPads[PUFO_UIPAD_MINICURSOR];             /* 0x1571F0 "minimcur" */
+    mini.pBank        = pBankCtl;                    /* the arm indexes widgets 98..100 itself (0xAD310) */
+    mini.pColor       = (pHooks != NULL) ? pHooks->pColor : NULL;
+    mini.pfnCtlBlit   = (pHit != NULL) ? pHit->pfnBlit : NULL;
+    mini.pfnCtlBlitEx = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
+    mini.pCtlUser     = (pHit != NULL) ? pHit->pUser : NULL;
+
     /* --- the dispatch env --- */
     memset(&rf, 0, sizeof(rf));
     rf.bGeoscapeMode   = pW->bGeoscapeUi;   /* 0x2231C tests it before the screen id */
@@ -3199,6 +3231,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     rf.pActionPads        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_ACTION_FIRST] : NULL; /* 0x22458 */
     rf.pActionGate        = &actionGate;
     rf.pInventory         = &inv;                          /* 0x224AC */
+    rf.pMinimap           = &mini;                         /* 0x224B8 */
 
     rf.pBannerPad        = (pHooks != NULL && pHooks->pBank != NULL) ? &pHooks->pBank->aCtl[128] : NULL;
     rf.pBannerBackdrop   = pW->apTactPads[PUFO_UIPAD_ENDMISSION];   /* pPadEndMission @ 0x156A74 */

@@ -753,7 +753,7 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
 /* ------------------------------------------------------------ the minimap
  *
  * MapView_DrawMinimap @ 0x1ed4c. The look-mode overview; see the header for the env and for the
- * dead span globals that keep both cell passes from ever running in the shipped beta. */
+ * tile-size pair at Map+0x30/0x32 that bounds both cell passes. */
 
 /* One of the cell's four sprite records: uUnk20 is its minimap glyph id, and 0 means the sprite has
  * no minimap glyph at all. The glyph index is stored in the context scratch exactly as the original

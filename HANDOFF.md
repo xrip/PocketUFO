@@ -1340,6 +1340,23 @@ rows leave slot 0 empty, and `UiControl_BlitActivePad` reads `apPads[nState]`; t
 from the "invv" backdrop and the control pads are the lit-filter and pressed overlays. New reference:
 `tests/ref/tact_hud_inventory.png`.
 
+Screen 2 now paints (Part 81). The other arm outside the jumptable group: `Render_Frame` routes
+Map_nUiScreen 2 to 0x224B8 and again never through 0x22414, and `MapView_DrawMinimap @ 0x1ed4c` was ported
+and gated long ago — the seam was the missing part. What this unit really fixed is a **wrong IDB claim the
+census trap produced**: the IDB said `Map_nMinimapSpanX/Y` (0x1139E8/0x1139EA, Map+0x30/0x32) have no writer
+anywhere in the binary, so the minimap "never runs its cell passes". `Map_InitFacingScratch @ 0x26f14` writes
+240 and 320 there at 0x26F38/0x26F40 as plain-immediate STRHs through the Map pointer — no xref — and
+`Tact_InitMission` runs it at 0x3CB30, so the bounds are 60 and 80 and both passes run over the whole grid.
+Every cell of the env was already owned: the scroll pair is `sTactInput.anCamWorldX/Y` (0x118864/0x118868),
+which the look-mode opener derives, which `Input_OnLeft/Right` pans on screen 2, and which the arm clamps
+back into itself; the bounds are `tactEnv.tileSize` (focus holds the copy the camera calls use); the layer
+count is the cursor byte at 0x15138 read SIGNED at 0x1EF58; the label is TEXTS[17] (0xB466D); the cursor is
+the "minimcur" pad at 0x1571F0, which no code ever moves — its only three readers are the draw, the pad load
+and the shutdown — so the original's minimap cursor is fixed at the screen centre; the furniture is bank
+widgets 98..100 (0xAD310 = pBank + 0xC40). Measured through the installed handler (bank widget 3): sample 16
+then screen 2, the clamp writes 30 / 20 and −30 / −40 back into the cells, the cursor ends on 60 and 80 with
+20267 pixels inked, and all three controls blit. New reference: `tests/ref/tact_hud_minimap.png`.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

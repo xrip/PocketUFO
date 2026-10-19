@@ -3100,9 +3100,10 @@ int main(void)
                 }
 
                 /* The gate. Live on 0x2237C's jumptable group "cases 0,3,5,7-12,15" plus 13, the status
-                 * banner arm at 0x223E8; the screens outside it replace the iso layer with another env,
-                 * and Render_Frame calls MapView_DrawIsoLayer with no null test (0x22414). Part 76 built
-                 * the six furniture envs, so the group is live end to end. */
+                 * banner arm at 0x223E8, plus 1 and 2 -- the two arms outside that group whose envs the
+                 * shell already owns (0x224AC, 0x224B8). Render_Frame calls MapView_DrawIsoLayer with no
+                 * null test (0x22414) for the group; Part 76 built the group's six furniture envs, Part 80
+                 * and Part 81 the two replace-arms. 4/6, 0x13 and 0x14/0x15 stay off. */
                 g_world.nUiScreen = 0;
                 Check(World_bTactFrameLive(&g_world), "the frame seam is live on screen 0 of a live mission");
                 g_world.nUiScreen = 8;
@@ -3114,7 +3115,9 @@ int main(void)
                 g_world.nUiScreen = 0xC;
                 Check(World_bTactFrameLive(&g_world), "and on 0xC, the top bar arm 0x22464 draws on it");
                 g_world.nUiScreen = 2;
-                Check(!World_bTactFrameLive(&g_world), "not on 2: the minimap replaces the iso layer (0x224B8)");
+                Check(World_bTactFrameLive(&g_world), "and on 2, the minimap arm 0x224B8, which replaces the iso layer");
+                g_world.nUiScreen = 4;
+                Check(!World_bTactFrameLive(&g_world), "not on 4: the command-pad arm 0x224C4 is still off the seam");
                 g_world.nUiScreen = 0;
 
                 /* The cursor tick (0x22360) with the busy arm taken: byte3 = old byte2, byte2 = 1, and
@@ -3759,6 +3762,133 @@ int main(void)
             CheckEqI32(nInv, 2,
                        "the arm blits two pads: the lit All filter (bank 24) and widget 30, the one control whose pad sits in slot 0");
             g_world.nUiScreen = nScreenSave;
+        }
+
+        /* --- screen 2: the minimap arm at 0x224B8 (Part 81) ------------------------------------
+         * The other arm outside 0x2237C's iso group: case 2 goes straight to 0x224B8, so this screen
+         * draws no iso layer either. What sets it apart from the inventory arm is that it is the only
+         * reader of the tile-size pair AS A LOOP BOUND -- Map_nMinimapSpanX / Map_nMinimapSpanY @
+         * 0x1139E8 / 0x1139EA (Map+0x30 / Map+0x32) tested as `value >> 2` -- and that pair is not
+         * writerless: Map_InitFacingScratch puts 240 and 320 into it at 0x26F38 / 0x26F40, two plain
+         * STRHs through the Map pointer, the store shape that leaves no xref in this IDB. The bounds
+         * are therefore 60 and 80 and BOTH cell passes run, Map_IsValidCell doing the clipping.
+         * Opened the way the game opens it: bank widget 3 carries MapView_EnterLookMode @ 0x163d4. */
+        {
+            u16 nScreenSave = g_world.nUiScreen;
+            i32 nWorldXSave = g_world.sTactInput.anCamWorldX;   /* Map_nMinimapScrollX @ 0x118864 */
+            i32 nWorldYSave = g_world.sTactInput.anCamWorldY;   /* Map_nMinimapScrollY @ 0x118868 */
+            i32 nMini;
+            i32 nInk;
+            i32 nWorldX;
+            i32 nWorldY;
+
+            Check(g_world.tactEnv.tileSize.nTileW == 240 && g_world.tactEnv.tileSize.nTileH == 320,
+                  "the tile-size pair holds 240 / 320: the bring-up's Map_InitFacingScratch wrote it at "
+                  "0x26F38 / 0x26F40 (Map+0x30 / Map+0x32), which is the writer the xref census could not see");
+
+            g_nSamples = 0;
+            g_bank.aCtl[3].pfnClick();
+            CheckEqI32(g_world.nUiScreen, 2, "the installed opener writes Map_nUiScreen 2 (0x163F0)");
+            Check(g_nSamples >= 1 && g_aFrameSamples[0] == 16, "and plays sample 16 first (0x163E0)");
+            Check(World_bTactFrameLive(&g_world),
+                  "the look-mode screen is on the tactical frame seam (0x2237C case 2 -> 0x224B8)");
+
+            /* The arm's scroll pair is the world-offset cell the opener just derived (0x16408..0x16488),
+             * and it is the cell the look-mode pan arm of Input_OnLeft moves -- NOT the iso camera pair
+             * at 0x15130/0x15134, which belongs to the screen-0 branch. */
+            {
+                i32 nCamX = g_world.tactEnv.focus.nCamScrollX;
+                i32 nCamY = g_world.tactEnv.focus.nCamScrollY;
+
+                nWorldX = g_world.sTactInput.anCamWorldX;
+                nWorldY = g_world.sTactInput.anCamWorldY;
+
+                World_TactKeyDown(&g_world, PUFO_KEY_LEFT);
+                CheckEqI32(g_world.sTactInput.anCamWorldX, nWorldX - 1,
+                           "on screen 2 the left key pans Map_nMinimapScrollX @ 0x118864 (Input_OnLeft @ 0x1177C's look arm)");
+                Check(g_world.tactEnv.focus.nCamScrollX == nCamX && g_world.tactEnv.focus.nCamScrollY == nCamY,
+                      "and leaves the iso camera pair @ 0x15130/0x15134 where it was -- that is the screen-0 arm");
+                Check(g_world.sTactInput.anCamWorldY == nWorldY, "and pans one axis only");
+                World_TactKeyUp(&g_world, PUFO_KEY_LEFT);
+            }
+
+            /* The clamp writes back into the cell it read, so the stored pair is the clamped pair.
+             * Max first, then min, each against the value the previous clamp left (0x1EE5C..0x1EE80). */
+            {
+                const i32 nMaxX = 40 * (g_world.pTactMap->geom.nDimX - 3) / 4;
+                const i32 nMaxY = 40 * (g_world.pTactMap->geom.nDimY - 4) / 4;
+
+                g_world.sTactInput.anCamWorldX = 5000;
+                g_world.sTactInput.anCamWorldY = 5000;
+                World_TactFrame(&g_world);
+                CheckEqI32(g_world.sTactInput.anCamWorldX, nMaxX,
+                           "the max clamp stores 40*(nMapDimX-3)/4 back into 0x118864");
+                CheckEqI32(g_world.sTactInput.anCamWorldY, nMaxY,
+                           "and 40*(nMapDimY-4)/4 back into 0x118868");
+
+                g_world.sTactInput.anCamWorldX = -5000;
+                g_world.sTactInput.anCamWorldY = -5000;
+                World_TactFrame(&g_world);
+                CheckEqI32(g_world.sTactInput.anCamWorldX, -30, "the min clamp stores -30 into 0x118864");
+                CheckEqI32(g_world.sTactInput.anCamWorldY, -40, "and -40 into 0x118868");
+            }
+
+            /* Set the scroll to the clamp's own minima so the two passes cover the whole field: each loop
+             * runs from the scroll up to the bound, so the context cursor has to end exactly on 60 and 80
+             * (240 >> 2 and 320 >> 2). The iso arm's cursor is what the inventory arm left untouched. */
+            g_world.sTactIso.nTileX = -1;
+            g_world.sTactIso.nTileY = -1;
+            ClearSurface();
+            World_TactFrame(&g_world);
+            CheckEqI32(g_world.sTactIso.nTileX, (i32)g_world.tactEnv.tileSize.nTileW >> 2,
+                       "both cell passes ran to the bound: the context tile cursor ends on nMapTileW >> 2 = 60");
+            CheckEqI32(g_world.sTactIso.nTileY, (i32)g_world.tactEnv.tileSize.nTileH >> 2,
+                       "and on nMapTileH >> 2 = 80 -- this mission is a 6 by 6 block map (60 by 60 cells), so the x "
+                       "bound is exactly the grid width and Map_IsValidCell (10*nMapDimY rows) does the y clipping");
+
+            nInk = 0;
+            for (i32 y = 0; y < 320; ++y) {
+                for (i32 x = 0; x < 240; ++x) {
+                    if (SurfPix(x, y) != 0) { ++nInk; }
+                }
+            }
+            Check(nInk > 0, "and the glyphs land on the surface: the ground pass plus the per-layer sprites, "
+                            "occupants and item markers");
+
+            /* The two paints above are fixtures. The picture is the view the opener actually centres on:
+             * the scroll pair 0x16408..0x16488 derived, with the map under the camera. */
+            g_world.sTactInput.anCamWorldX = nWorldX;
+            g_world.sTactInput.anCamWorldY = nWorldY;
+            ClearSurface();
+            g_nBlits = 0;
+            World_TactFrame(&g_world);
+            nMini = g_nBlits;
+            DumpFrame("tact_hud_minimap");
+
+            /* The furniture the arm blits through the shell: the 'minimcur' pad goes direct (0x1F4B0,
+             * key 0x3F) and the three screen-2 controls go through the blit seam (0x1F554 loop over
+             * pBank + 0xC40 = bank widgets 98..100), so the seam count is those controls only. */
+            {
+                const char *pRec = (const char *)g_world.pAssets->pTextRecs
+                                     + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_MINIMAP_LABEL;
+                const i32 nRecLen = (i32)strlen(pRec);
+                char szCount[16];
+
+                snprintf(szCount, sizeof(szCount), "%d", (i32)(i8)g_world.tactEnv.cursor.nFlags);
+                Check(nRecLen > 0 && strncmp(g_world.sTactIso.szText, pRec, (size_t)nRecLen) == 0,
+                      "the label is text record 17 (0xB466D) copied to its NUL, the only reference in the binary (0x1F4DC)");
+                Check(strcmp(&g_world.sTactIso.szText[50], szCount) == 0,
+                      "and the layer count is itoa'd at szText[50] and strcat onto it (0x1F4EC..0x1F500)");
+                printf("  minimap: %d control blits, %d inked pixels, scroll %d/%d, label \"%s\" + layer %s\n",
+                       nMini, nInk, g_world.sTactInput.anCamWorldX, g_world.sTactInput.anCamWorldY,
+                       g_world.sTactIso.szText, szCount);
+            }
+
+            g_world.sTactInput.anCamWorldX = nWorldXSave;
+            g_world.sTactInput.anCamWorldY = nWorldYSave;
+            g_world.nUiScreen = nScreenSave;
+            ClearSurface();
+            World_TactFrame(&g_world);   /* re-paint screen 0 so the surface holds what the next block expects */
         }
         (void)remove("sav62.sav");
 
