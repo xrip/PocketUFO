@@ -592,9 +592,11 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv);
 #define PUFO_CMDPAD_REC_FIRST 56
 
 typedef struct TactCmdPadEnv {
-    Soldier *pSelUnit;           /* Map_pSelUnit @ 0x128CEC: the original dereferences it with no
-                                  * null test (0x1fcc4); Render_Frame only reaches screen 4 with a
-                                  * selection, so the port takes it as given */
+    Soldier *pSelUnit;           /* Map_pSelUnit @ 0x128CEC: the original dereferences it with no null
+                                  * test at 0x1FCC4, and its openers do not gate on a selection either --
+                                  * Tact_OpenCommandScreen @ 0x16ffc and Tact_OpenCommandScreenFlagged @
+                                  * 0x198c4 both write screen 4 straight out. The port hands the live cell,
+                                  * NULL included: the same fault, in the same place. */
     const PadImage *pSoldierPad; /* unk_128AC0 (Map+0x15108): the 'soldier' pad stored by
                                   * Tact_LoadUiPads, blitted as the panel backdrop */
     PadImage *apCsPad[3];        /* 0x186C30 / 0x186C34 / 0x186C38: the 'cs0' / 'cs1' / 'cs2' pads,

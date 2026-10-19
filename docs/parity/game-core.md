@@ -20200,4 +20200,51 @@ and "not on 4" is the negative case. New reference tests/ref/tact_hud_minimap.pn
 and the two arrow controls at the bottom right. IDB: 6 comments (0x1ed4c, 0x1139E8, 0x1139EA, 0xAD310,
 0x224B8, 0x163d4) plus `idb_save`. Gates: all six ran, 62/62 Release and 62/62 Debug, 18584 checks,
 coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 13 frame references (12 unchanged, 1
-new), 9 e2e pictures unchanged.
+new), 9 e2e pictures unchanged.
+## Part 82 - the command panel paints through the frame, and its opener turns out not to gate on a selection
+
+`Render_Frame @ 0x22310` routes Map_nUiScreen 4 to 0x224C4 and, exactly as for cases 1 and 2, never through
+0x22414: the panel REPLACES the iso layer. `Tact_DrawCommandPads @ 0x1fc8c` was ported and gated long ago
+(tests/test_cmdpads.c); the seam was the missing part -- the third arm in the same shape as Part 80 and Part 81.
+
+What this unit found first is a claim the port had inherited and the ARM disproves. pufo_isodraw.h said the
+arm is safe because "Render_Frame only reaches screen 4 with a selection". It does not. `Tact_OpenCommandScreen
+@ 0x16ffc` -- the handler bank widget 16 carries -- plays 16, clears bLookCommitFlag (unk_128A44 @ Map+0x1508C)
+at 0x1701C and stores 4 at 0x17024 with no test on Map.pSelUnit at all; `Tact_OpenCommandScreenFlagged @
+0x198c4` (widget 31) does the same, and the byte it sets is unk_113A38, the low byte of apUiSlotsA[8], NOT the
+look-commit byte the panel gates its two side controls on. `Tact_DrawCommandPads` then dereferences
+Map.pSelUnit with no null test at 0x1FCC4. A mission with no selected unit that opens the command screen faults
+exactly where the original read its own memory -- the same recorded class as this frame's deviation 2 (the
+multi-target bar gate at 0x22080 calling Unit_bIsOperative on a NULL). The header now states what the code
+does, and 0x16ffc, 0x198c4 and 0x1FCC4 carry comments saying so.
+
+The env needed no new state. Map.pSelUnit @ 0x128CEC; the backdrop is the "soldier" pad the pad loader stored
+at unk_128AC0 (Map+0x15108); the two insignia slots are the startup pads cs0/cs1/cs2 at 0x186C30/0x186C34/
+0x186C38, which the asset block owns (Assets_LoadStartup @ 0x387F4..0x38894, mode 18, origins zeroed) and which
+the arm rewrites to (5,2) and (39,2) before every blit (0x1FD84..0x1FE80) -- the geoscape insignia arm uses the
+same three pads and the same rewriting; the eleven row labels are text records 56..66 read straight from the
+blob (PUFO_CMDPAD_REC_FIRST 56); the name lines go through aszTextE @ 0xB2200 and aszTextA @ 0xB2148; the
+controls are bank widgets 101..103 (unk_AD370 = pBank + 0xCA0); and the gate byte is Map.bLookCommitFlag, whose
+owners in the image are the pen press 0x1480C and release 0x14D0C, Input_OnConfirm 0x16168 and 0x161A8, the
+look-device commit inside Tact_ProcessFallAction 0x52C38, and the clear at 0x1701C.
+
+Measured on the reloaded mission with the opener run through the installed handler (bank widget 16, not a
+hand-built call): 16, then screen 4 with the flag cleared; the arm blits three controls (101 always, 102 and
+103 while the byte is clear); 67097 surface pixels get inked. The selected soldier is unit type 0, class 3,
+uMissions 0, so the `uMissions <= 3` branch runs: the panel draws the grey 32x32 frames with the black 30x30
+inside at (5,2) and (39,2) and never touches the cs pads, which keep the origin the startup load zeroed -- the
+test pins exactly that alternative, because those two are the only states the arm can leave them in. Setting
+unk_128A44 the way the look device leaves it takes exactly two blits away: the panel keeps widget 101 only.
+
+New reference tests/ref/tact_hud_cmdpads.png, looked at: the soldier photo as the backdrop, the name "Новичок"
+at (75,2) with the second name line under it, the two empty insignia frames at the top left, the three controls
+at the top right, the label/value rows with their green, yellow, red and magenta bars, and the ruler's tick rows
+cutting a one-pixel ramp through every label and value -- the 0x20AD4 original bug, reproduced as written.
+
+Gate: a Part 82 block in tests/test_geoscapeframe.c, on the reloaded mission, opens the panel through the
+installed handler (16, screen 4, the flag cleared by 0x1701C), requires the seam (0x2237C case 4 -> 0x224C4),
+pins the three control blits, the ink census, the cs-pad origin alternative and the two-blit drop when the gate
+byte is set. The seam gate in the same file now reads "and on 4" with "not on 6" as the negative case. IDB: 5
+comments (0x224C4, 0xAD370, 0x1FCC4, 0x16ffc, 0x198c4) plus `idb_save`. Gates: all six ran, 62/62 Release and
+62/62 Debug, 18594 checks, coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 14 frame
+references (13 unchanged, 1 new), 9 e2e pictures unchanged.

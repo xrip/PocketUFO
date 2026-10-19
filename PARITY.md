@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 18584 |
+| Test checks run | 18594 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -444,7 +444,7 @@ is the module that answers to it.
 | `0x19670` | `Map_IncByte128AF0_Play11` | 60 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x196ac` | `Map_DecByte128AF0_Play11` | 60 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x27668` | `Map_bFacingTurnPositive` | 56 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
-| `0x16ffc` | `Tact_OpenCommandScreen` | 52 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x16ffc` | `Tact_OpenCommandScreen` | 52 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_isodraw.h` (+1) |
 | `0x2e59c` | `Unit_GetExtraSpr` | 52 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x4f300` | `TactState_EnqueueEndMark` | 52 | `src/pufo/game/pufo_tactstate.h` |
 | `0x4f334` | `TactState_KickQueue` | 52 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+3) |
@@ -478,7 +478,7 @@ is the module that answers to it.
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.c` (+2) |
-| `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/game/pufo_isodraw.h` |
+| `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+6) |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_mainmenu.h` |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+3) |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 662 |
+| `test_geoscapeframe` | PASS | 672 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |

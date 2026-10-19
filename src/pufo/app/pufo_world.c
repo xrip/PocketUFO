@@ -2727,10 +2727,11 @@ static void World_TactStatusRender(void *pUser)
  * The seam covers 0x2237C's jumptable group, "cases 0,3,5,7-12,15", plus 13, the status-banner arm
  * at 0x223E8. Part 76 added the group's six furniture envs -- the fire-mode roster (3), the item
  * sub-mode panel (5), the tactical menu (7), the modal slot lists (10/11), the options top bar (12)
- * and the action buttons (15) -- so the whole iso group now paints here. Part 80 and Part 81 added the
- * two arms that REPLACE the iso layer with their own env and read only cells the bring-up already
- * owns: 1 inventory (0x224AC) and 2 the look-mode minimap (0x224B8). What stays off the seam is the
- * other replace-arms: 4 command pads, 6 unit markers, 0x13 confirm dialog and 0x14/0x15 Cydonia.
+ * and the action buttons (15) -- so the whole iso group now paints here. Part 80, Part 81 and Part 82 added
+ * the three arms that REPLACE the iso layer with their own env and read only cells the bring-up already
+ * owns: 1 inventory (0x224AC), 2 the look-mode minimap (0x224B8) and 4 the selected unit's command panel
+ * (0x224C4). What stays off the seam is the rest of that family: 6 unit markers, 0x13 confirm dialog and
+ * 0x14/0x15 Cydonia.
  *
  * Two deviations, both recorded in docs/parity/game-core.md:
  *   1. The cursor-direction tick runs HERE, before Render_Frame, and RenderFrameEnv.pCursorDir is
@@ -2752,11 +2753,12 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
     case 0: case 3: case 5: case 7: case 8: case 9:      /* 0x2237C's jumptable group: */
     case 10: case 11: case 12: case 15:                  /* "cases 0,3,5,7-12,15"        */
     case PUFO_DEBRIEF_UI_SCREEN:                         /* 13: the status banner arm at 0x223E8 */
-    case 1:                                              /* 0x224AC: the inventory arm, and 2 the */
-    case 2:                                              /* 0x224B8 minimap arm -- both outside that */
-        return true;                                     /* group, both drawing no iso layer at all */
+    case 1:                                              /* 0x224AC: the inventory arm, 2 the 0x224B8 */
+    case 2:                                              /* minimap arm and 4 the 0x224C4 command-pad */
+    case 4:                                              /* arm -- all outside that group, all drawing */
+        return true;                                     /* no iso layer at all */
     default:
-        return false;   /* 4/6, 0x13 and 0x14/0x15 replace the iso layer with another env */
+        return false;   /* 6, 0x13 and 0x14/0x15 replace the iso layer with another env */
     }
 }
 
@@ -2892,6 +2894,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     TactHudActionGate     actionGate;  /* screen 15, the nine action buttons */
     TactHudInventoryEnv   inv;         /* screen 1, the inventory */
     IsoMinimapEnv         mini;        /* screen 2, the look-mode minimap */
+    TactCmdPadEnv         cmd;         /* screen 4, the selected unit's command panel */
     char                  aModeNames[PUFO_HUD_ROSTER_PADS][PUFO_HUD_ROSTER_NAME_STRIDE]; /* 0xB3768 */
     UiControl            *pBankCtl;    /* the caller's 130-widget bank, the pad source */
     UiWidgetBank         *pBank;       /* that bank's own block: its pointer pair is 0xAD714/0xAD718 */
@@ -3186,6 +3189,35 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     mini.pfnCtlBlitEx = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
     mini.pCtlUser     = (pHit != NULL) ? pHit->pUser : NULL;
 
+    /* Screen 4, Tact_DrawCommandPads @ 0x1fc8c: the selected unit's status panel, the third arm that
+     * REPLACES the iso layer (0x2237C case 4 -> 0x224C4). Bank widget 16 carries Tact_OpenCommandScreen
+     * @ 0x16ffc, which plays 16, CLEARS the look-commit byte at 0x1701C and stores 4 at 0x17024 with no
+     * gate on a selection -- and the arm then reads Map.pSelUnit with no null test (0x1FCC4), the same
+     * shape as deviation 2. Widget 31 (Tact_OpenCommandScreenFlagged @ 0x198c4) sets that byte instead,
+     * and it is what keeps widgets 102/103 off the panel. The backdrop is the "soldier" pad the pad loader
+     * stored at Map+0x15108 (unk_128AC0); the two insignia slots are the startup pads cs0/cs1/cs2 the asset
+     * block owns (0x186C30..0x186C38), whose origins the arm rewrites to (5,2) and (39,2) before each blit;
+     * the eleven row labels are text records 56..66 read straight from the blob; the rank names are
+     * aszTextE @ 0xB2200 and aszTextA @ 0xB2148; the controls are bank widgets 101..103
+     * (unk_AD370 = pBank + 0xCA0). */
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.pSelUnit        = pMap->pSelUnit;                        /* 0x128CEC, read with no null test */
+    cmd.pSoldierPad     = pW->apTactPads[PUFO_UIPAD_SOLDIER];    /* unk_128AC0 @ Map+0x15108 "soldier" */
+    if (pW->pAssets != NULL) {
+        for (i32 c = 0; c < (i32)(sizeof(cmd.apCsPad) / sizeof(cmd.apCsPad[0])); ++c) {
+            cmd.apCsPad[c] = &pW->pAssets->aPadCs[c];            /* 0x186C30 + 4c: cs0 / cs1 / cs2 */
+        }
+        cmd.pTextRecs = pW->pAssets->pTextRecs;                  /* records 56..66 are the row labels */
+    }
+    cmd.panRankLow      = (const char *)g_textTables.pE;         /* aszTextE @ 0xB2200 */
+    cmd.panRankOther    = (const char *)g_textTables.pA;         /* aszTextA @ 0xB2148 */
+    cmd.bLookCommitFlag = pMap->bLookCommitFlag;                 /* unk_128A44 @ Map+0x1508C */
+    cmd.pBank           = pBankCtl;                    /* the arm indexes widgets 101..103 itself (0xAD370) */
+    cmd.pColor          = (pHooks != NULL) ? pHooks->pColor : NULL;
+    cmd.pfnCtlBlit      = (pHit != NULL) ? pHit->pfnBlit : NULL;
+    cmd.pfnCtlBlitEx    = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
+    cmd.pCtlUser        = (pHit != NULL) ? pHit->pUser : NULL;
+
     /* --- the dispatch env --- */
     memset(&rf, 0, sizeof(rf));
     rf.bGeoscapeMode   = pW->bGeoscapeUi;   /* 0x2231C tests it before the screen id */
@@ -3232,6 +3264,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     rf.pActionGate        = &actionGate;
     rf.pInventory         = &inv;                          /* 0x224AC */
     rf.pMinimap           = &mini;                         /* 0x224B8 */
+    rf.pCmdPads           = &cmd;                          /* 0x224C4 */
 
     rf.pBannerPad        = (pHooks != NULL && pHooks->pBank != NULL) ? &pHooks->pBank->aCtl[128] : NULL;
     rf.pBannerBackdrop   = pW->apTactPads[PUFO_UIPAD_ENDMISSION];   /* pPadEndMission @ 0x156A74 */

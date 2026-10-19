@@ -3100,10 +3100,10 @@ int main(void)
                 }
 
                 /* The gate. Live on 0x2237C's jumptable group "cases 0,3,5,7-12,15" plus 13, the status
-                 * banner arm at 0x223E8, plus 1 and 2 -- the two arms outside that group whose envs the
-                 * shell already owns (0x224AC, 0x224B8). Render_Frame calls MapView_DrawIsoLayer with no
-                 * null test (0x22414) for the group; Part 76 built the group's six furniture envs, Part 80
-                 * and Part 81 the two replace-arms. 4/6, 0x13 and 0x14/0x15 stay off. */
+                 * banner arm at 0x223E8, plus 1, 2 and 4 -- the arms outside that group whose envs the
+                 * shell already owns (0x224AC, 0x224B8, 0x224C4). Render_Frame calls MapView_DrawIsoLayer
+                 * with no null test (0x22414) for the group; Part 76 built the group's six furniture envs,
+                 * Parts 80/81/82 the three replace-arms. 6, 0x13 and 0x14/0x15 stay off. */
                 g_world.nUiScreen = 0;
                 Check(World_bTactFrameLive(&g_world), "the frame seam is live on screen 0 of a live mission");
                 g_world.nUiScreen = 8;
@@ -3117,7 +3117,9 @@ int main(void)
                 g_world.nUiScreen = 2;
                 Check(World_bTactFrameLive(&g_world), "and on 2, the minimap arm 0x224B8, which replaces the iso layer");
                 g_world.nUiScreen = 4;
-                Check(!World_bTactFrameLive(&g_world), "not on 4: the command-pad arm 0x224C4 is still off the seam");
+                Check(World_bTactFrameLive(&g_world), "and on 4, the command-pad arm 0x224C4, which replaces it");
+                g_world.nUiScreen = 6;
+                Check(!World_bTactFrameLive(&g_world), "not on 6: the unit-marker arm 0x224D0 is still off the seam");
                 g_world.nUiScreen = 0;
 
                 /* The cursor tick (0x22360) with the busy arm taken: byte3 = old byte2, byte2 = 1, and
@@ -3889,6 +3891,95 @@ int main(void)
             g_world.nUiScreen = nScreenSave;
             ClearSurface();
             World_TactFrame(&g_world);   /* re-paint screen 0 so the surface holds what the next block expects */
+        }
+
+        /* --- screen 4: the command-pad panel at 0x224C4 (Part 82) ------------------------------
+         * The third arm outside 0x2237C's iso group. Opened through the installed handler: bank widget 16
+         * carries Tact_OpenCommandScreen @ 0x16ffc, which plays 16, CLEARS the look-commit byte
+         * unk_128A44 @ Map+0x1508C at 0x1701C and stores 4 at 0x17024 with no gate on a selection -- which
+         * is why the arm reads Map.pSelUnit with no null test at 0x1FCC4. The panel is the "soldier" pad
+         * backdrop (unk_128AC0 @ Map+0x15108), the two insignia slots at (5,2) and (39,2), the name at
+         * (75,2) and (75,20), eleven label/value rows from text records 56..66, the 12 x 24 tick ruler that
+         * cuts through them (0x20AD4, the recorded original bug), the frame, then bank widgets 101..103
+         * (unk_AD370 = pBank + 0xCA0). */
+        {
+            u16  nScreenSave = g_world.nUiScreen;
+            u8   nFlagSave   = g_world.pTactMap->bLookCommitFlag;   /* unk_128A44 @ Map+0x1508C */
+            i32  nCmd;
+            i32  nCmdFlagged;
+            i32  nInk;
+            const PadImage *pCs0 = &g_world.pAssets->aPadCs[0];
+            const PadImage *pCs1 = &g_world.pAssets->aPadCs[1];
+            const PadImage *pCs2 = &g_world.pAssets->aPadCs[2];
+
+            Check(pMapL != NULL && pMapL->pSelUnit != NULL,
+                  "the reloaded mission has a selected unit, which is what 0x1FCC4 dereferences with no null test");
+
+            g_nSamples = 0;
+            g_bank.aCtl[16].pfnClick();
+            Check(g_nSamples >= 1 && g_aFrameSamples[0] == 16, "the opener plays 16 (0x17008)");
+            CheckEqI32(g_world.pTactMap->bLookCommitFlag, 0,
+                       "and it CLEARS unk_128A44 first (0x1701C) -- the byte that gates two of its controls");
+            CheckEqI32(g_world.nUiScreen, 4, "and writes Map_nUiScreen 4 (0x17024)");
+            Check(World_bTactFrameLive(&g_world),
+                  "the command screen is on the tactical frame seam (0x2237C case 4 -> 0x224C4)");
+
+            ClearSurface();
+            g_nBlits = 0;
+            World_TactFrame(&g_world);
+            nCmd = g_nBlits;
+            CheckEqI32(nCmd, 3,
+                       "the panel blits three controls: widget 101 always, 102 and 103 while the look-commit byte is clear");
+
+            nInk = 0;
+            for (i32 y = 0; y < 320; ++y) {
+                for (i32 x = 0; x < 240; ++x) {
+                    if (SurfPix(x, y) != 0) { ++nInk; }
+                }
+            }
+            Check(nInk > 0, "and the panel paints: the backdrop pad, the slots, the name, the eleven rows, "
+                            "the bars and the ruler");
+            printf("  command panel: unit type %d, class %d, uMissions %d (<= 3 takes the empty-slot branch); "
+                   "cs pad origins cs0 %d/%d cs1 %d/%d cs2 %d/%d; %d inked pixels\n",
+                   pMapL->pSelUnit->nUnitType, pMapL->pSelUnit->nClass, pMapL->pSelUnit->uMissions,
+                   pCs0->nOriginX, pCs0->nOriginY, pCs1->nOriginX, pCs1->nOriginY,
+                   pCs2->nOriginX, pCs2->nOriginY, nInk);
+            /* Either branch is legal for this unit: the cs pads were rewritten into the two slots the arm
+             * owns ((5,2) and (39,2)), or they stayed where the startup load left them (0,0) because the
+             * empty-slot branch drew frames instead. No other origin is reachable. */
+            {
+                i32 bSlots = 1;
+
+                for (i32 c = 0; c < 3; ++c) {
+                    const PadImage *p = (c == 0) ? pCs0 : (c == 1) ? pCs1 : pCs2;
+
+                    if (!((p->nOriginX == 0 && p->nOriginY == 0)
+                          || (p->nOriginY == 2 && (p->nOriginX == 5 || p->nOriginX == 39)))) {
+                        bSlots = 0;
+                    }
+                }
+                Check(bSlots, "the cs pads sit either in the panel's two slots (5,2)/(39,2) or untouched at the "
+                              "origin the startup load zeroed (0x387F4..0x38894) -- the arm rewrites them at 0x1FD84..0x1FE80");
+            }
+            DumpFrame("tact_hud_cmdpads");
+
+            /* The gate on the look-commit byte. Its writers in the original are the pen press and release
+             * (0x1480C, 0x14D0C), the confirm (0x16168, 0x161A8), the look-device commit inside
+             * Tact_ProcessFallAction (0x52C38) and the clear at 0x1701C; the flagged command opener at
+             * 0x198c4 writes a DIFFERENT byte (unk_113A38), so the flag is set here the way the look device
+             * leaves it and the two side controls have to drop out of the panel. */
+            g_world.pTactMap->bLookCommitFlag = 1;
+            ClearSurface();
+            g_nBlits = 0;
+            World_TactFrame(&g_world);
+            nCmdFlagged = g_nBlits;
+            CheckEqI32(nCmd - nCmdFlagged, 2,
+                       "with unk_128A44 set the panel blits only widget 101 (0x20C04 test, 0x20C0C store)");
+
+            g_world.pTactMap->bLookCommitFlag = nFlagSave;
+            g_world.nUiScreen = nScreenSave;
+            ClearSurface();
+            World_TactFrame(&g_world);
         }
         (void)remove("sav62.sav");
 

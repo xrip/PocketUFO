@@ -1357,6 +1357,22 @@ widgets 98..100 (0xAD310 = pBank + 0xC40). Measured through the installed handle
 then screen 2, the clamp writes 30 / 20 and −30 / −40 back into the cells, the cursor ends on 60 and 80 with
 20267 pixels inked, and all three controls blit. New reference: `tests/ref/tact_hud_minimap.png`.
 
+Screen 4 now paints (Part 82). `Render_Frame` routes Map_nUiScreen 4 to 0x224C4, again not through 0x22414, and
+`Tact_DrawCommandPads @ 0x1fc8c` was ported and gated long ago — the seam was the missing part. The finding here
+is an inherited claim the ARM disproves: the port header said the arm is safe because "Render_Frame only reaches
+screen 4 with a selection". It does not — `Tact_OpenCommandScreen @ 0x16ffc` (bank widget 16) plays 16, clears
+bLookCommitFlag (unk_128A44 @ Map+0x1508C) at 0x1701C and writes screen 4 with no test on Map.pSelUnit, and
+`Tact_OpenCommandScreenFlagged @ 0x198c4` (widget 31) sets unk_113A38 (apUiSlotsA[8] low byte), NOT the
+look-commit byte, while the arm dereferences Map.pSelUnit unguarded at 0x1FCC4. So a mission with no selected
+unit faults where the original read its own memory — the same recorded class as the frame's deviation 2. Env
+cells were all owned already: pSelUnit, the "soldier" pad at Map+0x15108, the asset block's cs0/cs1/cs2 (the arm
+rewrites their origins to (5,2)/(39,2), exactly as the geoscape insignia arm does), text records 56..66 as the row
+labels, aszTextE/aszTextA for the name, bank widgets 101..103 (0xAD370), and `pMap->bLookCommitFlag`. Measured
+through the installed handler: three control blits, 67097 pixels inked; the selected soldier is type 0 class 3
+with uMissions 0, so the empty-slot branch runs and the cs pads stay where the startup load left them; setting
+the gate byte the way the look device does takes exactly two blits away. New reference:
+`tests/ref/tact_hud_cmdpads.png`.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give
