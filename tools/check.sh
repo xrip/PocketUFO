@@ -50,3 +50,5 @@ rc_art=$?
 tail -1 "$log_art"
 if [ "$rc_art" -ne 0 ]; then echo "ARTIFACT CHECK FAILED (see $log_art)"; exit 1; fi
 grep -n "Test checks run" PARITY.md
+# The picture gate: the frames the draw tests dump must still match the committed references in tests/ref.
+sh tools/frames.sh || exit 1

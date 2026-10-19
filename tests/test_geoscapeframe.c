@@ -241,6 +241,37 @@ static i32 DiffInBox(i32 x0, i32 y0, i32 x1, i32 y1, const u16 *pRef)
     return n;
 }
 
+/* The frame as a picture (Part 64's verification change): the surface is 5-6-5 (R at bit 11, G at bit 5
+ * -- PackInk above), so the dump scales each field to 8 bits and writes a binary PPM under tests/ref.
+ * ctest runs every test with WORKING_DIRECTORY at the repo root, which is where that path lands. */
+static void DumpFrame(const char *pszName)
+{
+    const SoftSurf *p = g_assets.pSurface;
+    char   szPath[160];
+    char   szHeader[64];
+    char   aRow[240 * 3];
+    HANDLE hFile;
+    DWORD  cbWritten;
+    int    nHeader;
+
+    snprintf(szPath, sizeof(szPath), "tests/ref/%s.ppm", pszName);
+    hFile = CreateFileA(szPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) { return; }
+    nHeader = snprintf(szHeader, sizeof(szHeader), "P6\n%d %d\n255\n", p->nWidth, p->nHeight);
+    if (nHeader > 0) { (void)WriteFile(hFile, szHeader, (DWORD)nHeader, &cbWritten, NULL); }
+    for (i32 y = 0; y < p->nHeight; ++y) {
+        const u16 *pRow = (const u16 *)p->pPixels + (size_t)y * (size_t)p->nWidth;
+        for (i32 x = 0; x < p->nWidth; ++x) {
+            const u16 v = pRow[x];
+            aRow[3 * x + 0] = (char)(((v >> 11) & 0x1Fu) * 255 / 31);
+            aRow[3 * x + 1] = (char)(((v >> 5)  & 0x3Fu) * 255 / 63);
+            aRow[3 * x + 2] = (char)((v & 0x1Fu) * 255 / 31);
+        }
+        (void)WriteFile(hFile, aRow, (DWORD)(p->nWidth * 3), &cbWritten, NULL);
+    }
+    (void)CloseHandle(hFile);
+}
+
 /* The 16-bit colour SoftSurf_BlitSrcRect_Inner @ 0xA4450 packs from an index/mid/low triple: each
  * 5-6-5 field comes from the top bits of its byte. */
 static i32 PackInk(i32 nIdx, i32 nMid, i32 nLow)
@@ -2612,6 +2643,7 @@ int main(void)
                 CheckEqI32(g_world.sTactIso.nTileX, 6, "the inner loop ended at the Map+0x34 tile count");
                 CheckEqI32(g_world.sTactIso.nTileY, 7, "the outer loop at Map+0x35");
                 Check(g_nBlits > 0, "the frame furniture blits through the shell's pad hook (the HUD panel's 19 controls, the look pad)");
+                DumpFrame("tact_frame_iso");   /* the picture this seam paints: iso layer + furniture */
 
                 /* The modal arm: the bank's cells in, the pen's slots 20..23 out. Width 120, two
                  * lines, two labels: nX 60, step 6, so 66 / 122 / 165 with the count 2. */
@@ -2829,6 +2861,7 @@ int main(void)
                 nDrawScore = DiffInBox(200, nLowY0, 240, nLowY1, aPadInk);
                 nDrawFoot  = InkInBox(10, nLowY0, 10 + nFootW, nLowY1, aPadInk);
                 nDrawPad   = SurfPix(nPadX, nPadY) != 0;
+                DumpFrame("debrief_banner");   /* the picture the 0x1e920 arm paints */
 
                 Check(nDrawCap > 0 && nSkipCap == 0,
                       "the caption appears only with the counter down, at 120 - width/2, y 10 (0x1E9DC)");

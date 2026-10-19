@@ -7,3 +7,4 @@ __pycache__/
 *.nam
 *.til
 .tmp_analyze*.json
+tests/ref/*.ppm
