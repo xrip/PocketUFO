@@ -2226,13 +2226,36 @@ does.
    15 mirrored cells against the live cell instead of against `sTactInputPre`, so a handler that wrote a live
    owner inside the dispatch window (`Map_pSelUnit`, the cursor 0x15128/0x1512C, the camera 0x15130/0x15134)
    lost to the stale mirror. The camera scroll turned out not to be mirrored at all -- `tactEnv.focus` owns it
-   and SyncIn/SyncOut now carry it both ways. See the Part 67 row. What the keyboard path exposed and is NOT
-   closed: `Save_ReadSoldiers` never restores a reloaded soldier's `pCell` (the 0x419DC write, plus the
-   `stactflg`-before-bodies order and `Soldiers_Reload` @ 0x416C4), so a roster select on a loaded mission
-   faults in `Tact_SelectUnit` -- recorded as a separate issue and the natural next unit; `World_GeoscapeFocusScroll`
+   and SyncIn/SyncOut now carry it both ways. See the Part 67 row. What the keyboard path exposed: a roster
+   select on a loaded mission faulted in `Tact_SelectUnit` because `Save_ReadSoldiers` never restored a
+   reloaded soldier's `pCell` -- closed by Part 68 below, and the select-key gate now runs on the loaded
+   mission too. Still not closed: `World_GeoscapeFocusScroll`
    covers the panel sets for screens 0/2/4/7 only, the hangar/research/manufacture/buy-sell/psi/ufopaedia sets
    having no owner in the shell; and six input seams stay unwired (`pfnHitTestTactItem`, `pfnInvClearHitSlot`,
    `pfnInvHandlePointer`, `pfnFocusOnViewCell`, `pfnEndScreenShutdown`, `pfnGeoscapeCloseUi`).
+
+11. Done: **the soldiers chunk gives the soldier back its cell (Part 68).** `Save_ReadSoldiers`
+    (`src/pufo/game/pufo_save.c`) now runs in the original's order: `Soldiers_Reload` 0x416C4, the OPTIONAL
+    `stactflg` at 0x416D0 (present → one byte per soldier stored as `byte == 1` at 0x41744; absent → every
+    soldier filled from `LOBYTE(Map+0x00)` at 0x41790/0x4179C), the re-find at 0x417BC with the 2-byte count
+    read a second time at 0x417D4, the bodies, then the OPTIONAL `1_24scb` at 0x422C4 whose value is an INDEX
+    into `apSoldiers` (0x4231C/0x42320; 0x7FFF → NULL at 0x42318). The body arm at 0x41960 branches on
+    `Soldier.bInTact`: set → `pCell = apCells[60*(60*z+y)+x]` stored at 0x419DC, clear → the same three bytes
+    read and dropped at 0x419F4. `Save_ReadSoldier` takes a `MapCellLookup` for it (the mission load passes
+    `Init_LookupCell`, the geoscape load passes NULL). Why the port's own saves came back with `pCell == NULL`:
+    nothing in the port ever WROTE `bInTact`, while the original recomputes it at save time from the tactical
+    flag and four roster scans (0x423A0..0x424C8, `STRB [R4,#0x40E]` at 0x424C8) -- `Save_bSoldierInTact` and
+    the new `Save_WriteSoldiers(..., u8 bTactFlag, const TeamUnitsState *pRosters)` signature close it. Also
+    fixed: the `1_24scb` writer's hardcoded `+956` into a host-sized `Soldier` (the original's field is
+    Soldier+0x3BC, 0x42E64), and `auStat[8]`'s 10-default (0x4229C). Consequence for the picture gate: the
+    reloaded mission's selected unit has a cell, so `Init_LoadMission`'s tail `MapView_FocusSelected` (0x3D248)
+    re-centres 0x15130/0x15134 on it and Part 65's "the camera comes back at 21/23" turns out to have measured
+    the missing link; the gate now checks the staged tgamedata record (keeps 21/23) and the live camera (the
+    re-centred value, 0x276F0 + 0x26FCC/0x26FFC) separately, and `tests/ref/tact_loaded_mission.png` is
+    re-accepted after looking at both pictures. Deviations recorded in the IDB: the original bounds nothing at
+    0x4231C, and 0x16744 / 0x2C758 deref the selected unit's cell with no guard. What is NOT closed: the
+    soldiers chunk's inventory (0x41D60), multi-target (0x41A70) and spotted (0x42214) blocks are read whole
+    and not resolved into items/targets/spotted set. See the Part 68 row.
 
 ### Priority 2 — finish the tactical renderer
 

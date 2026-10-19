@@ -202,11 +202,12 @@ bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
     return true;
 }
 
-bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit)
+bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void *pCellUser)
 {
     u8  aSkip[244];
     u8  aCell[3];
     u8  bZero = 0;
+    u8  bInTact;
     i32 nLook;
     i32 nFemale;
     u16 uDiscard16;
@@ -215,7 +216,12 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit)
     if (pDat == NULL || pUnit == NULL) {
         return false;
     }
+    /* `bInTact` comes from the `stactflg` chunk, which the original reads BEFORE the bodies (0x416D0)
+     * exactly because the body's variable arms and the cell resolve test it. The memset below is the
+     * port's own clean-record step, so the flag has to survive it. */
+    bInTact = pUnit->bInTact;
     memset(pUnit, 0, sizeof(*pUnit));
+    pUnit->bInTact = bInTact;
 
     if (!ReadFlags(pDat, &pUnit->bFlags)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->bFacing, 1)) { return false; }
@@ -223,9 +229,17 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit)
     if (!DatFile_Read(pDat, &pUnit->uStunOrArmor, 2)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->uHp, 2)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->bMorale, 1)) { return false; }
-    /* The cell coordinates are only meaningful for a tactical save, and the read
-     * side resolves them through the map; store them raw for the caller. */
+    /* 0x41968..0x419DC: a soldier flagged into the mission gets its cell POINTER back --
+     * apCells[3600*layer + 60*y + x] off the cell table -- and a soldier not flagged has the
+     * same three bytes read and dropped. The pointer is what every unit-side reader walks
+     * (Tact_SelectUnit's cursor write @ 0x27014, Unit_UpdateVisibility, the enemy AI distance
+     * test), so dropping it leaves the reloaded roster with no place to stand. Deviation: a NULL
+     * pfnCell drops the bytes -- the geoscape load path has no cell table to resolve against,
+     * which is what the original's own unallocated slots amount to there. */
     if (!DatFile_Read(pDat, aCell, 3)) { return false; }
+    pUnit->pCell = (pUnit->bInTact != 0 && pfnCell != NULL)
+                       ? pfnCell((i32)aCell[0], (i32)aCell[1], (i32)aCell[2], pCellUser)
+                       : NULL;
     if (!DatFile_Read(pDat, &pUnit->nAnimPose, 1)) { return false; }
     if (!DatFile_Read(pDat, &bZero, 1)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->nDrawOffX, 1)) { return false; }
@@ -275,6 +289,12 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit)
     /* 244-byte spotted block, discarded. */
     if (!DatFile_Read(pDat, aSkip, 244)) { return false; }
 
+    /* 0x4229C: the reader defaults auStat[8] (nStatThrow) to 10 when the record carries 0,
+     * so a saved zero never reaches the unit. */
+    if (pUnit->auStat[8] == 0) {
+        pUnit->auStat[8] = 10;
+    }
+
     (void)nDiscard32;
     (void)uDiscard16;
     return true;
@@ -305,8 +325,11 @@ bool Save_WriteTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCo
         u32 nValue = 0x7FFFu; /* the "no link" sentinel */
 
         if (apSoldiers[i] != NULL && apSoldiers[i]->pLinked1040 != NULL) {
-            /* The original reads the linked soldier's nSaveId at +956. */
-            nValue = (u32)*(const i32 *)((const u8 *)apSoldiers[i]->pLinked1040 + 956);
+            /* 0x42E64: `LDR R3,[R0,#0x3BC]` -- the linked soldier's nSaveId. The original reaches it
+             * by offset into its own 1044-byte Soldier; the port's Soldier is host-sized, so the
+             * field is named. (Reading 0x3BC off the host layout would have written whatever dword
+             * happened to sit there -- this is the only +offset reach into Soldier in the module.) */
+            nValue = (u32)((const Soldier *)apSoldiers[i]->pLinked1040)->nSaveId;
         }
         if (!W(pDat, &nValue, 4)) {
             return false;
@@ -315,14 +338,26 @@ bool Save_WriteTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCo
     return true;
 }
 
-bool Save_ReadTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
+bool Save_ReadInTactFlags(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount, u8 bFallback)
 {
     if (pDat == NULL || apSoldiers == NULL || nCount < 0) {
         return false;
     }
-    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_STACTFLG)) {
-        return false;
+
+    /* 0x416D0/0x41704: the chunk is optional. Present, each soldier takes one byte stored as
+     * `pBuf == 1` (0x41744) -- any value other than 1 lands as 0 rather than the byte itself.
+     * Absent, the original fills every entry from LOBYTE(Map) -- the tact flag -- writing 1 or 0
+     * for each (0x41790 and 0x4179C), so the caller's fallback replaces the byte, not a no-op. */
+    (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_STACTFLG);
+    if (!DatFile_ChunkPresent(pDat)) {
+        for (i32 i = 0; i < nCount; ++i) {
+            if (apSoldiers[i] != NULL) {
+                apSoldiers[i]->bInTact = (bFallback != 0) ? 1u : 0u;
+            }
+        }
+        return true;
     }
+
     for (i32 i = 0; i < nCount; ++i) {
         u8 bValue = 0;
 
@@ -330,20 +365,36 @@ bool Save_ReadTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCou
             return false;
         }
         if (apSoldiers[i] != NULL) {
-            apSoldiers[i]->bInTact = bValue;
+            apSoldiers[i]->bInTact = (bValue == 1) ? 1u : 0u;
         }
     }
+    return true;
+}
 
-    /* The `1_24scb` chunk records link ids; the port does not resolve them yet, so
-     * they are consumed to keep the stream consistent. */
-    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_124SCB)) {
+bool Save_ReadLinkedSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
+{
+    if (pDat == NULL || apSoldiers == NULL || nCount < 0) {
         return false;
     }
+
+    /* 0x422C4..0x42340: one u32 per soldier, resolved as an INDEX into apSoldiers (0x42320) -- the
+     * writer stored the linked soldier's nSaveId (0x42E64), and a soldier's nSaveId is its roster
+     * index (Save_AllocSoldiers, pufo_save.c:652), which is why the two agree. 0x7FFF means no
+     * link. The original indexes with no bound; the port bounds it. */
+    (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_124SCB);
+    if (!DatFile_ChunkPresent(pDat)) {
+        return true;
+    }
+
     for (i32 i = 0; i < nCount; ++i) {
         u32 nValue = 0;
 
         if (!DatFile_Read(pDat, &nValue, 4)) {
             return false;
+        }
+        if (apSoldiers[i] != NULL) {
+            apSoldiers[i]->pLinked1040 = (nValue != 0x7FFFu && (i32)nValue < nCount)
+                                             ? apSoldiers[nValue] : NULL;
         }
     }
     return true;
@@ -399,13 +450,41 @@ bool Save_ReadStrategVersion(DatFile *pDat, i8 *pbVersion)
     return DatFile_Read(pDat, pbVersion, 1);
 }
 
+/* 0x423A0..0x424C8: the writer COMPUTES `bInTact`; nothing in the game sets that field. Tact flag
+ * clear (LOBYTE(Map), tested at 0x423B0) -- every soldier is flagged out. Tact flag set -- the default
+ * is 1 (`MOV R5,#1` at 0x423C0) and the four roster scans (apXcomUnits 0x15154 @ 0x423D4, apEnemyUnits
+ * 0x151CC @ 0x42414, apCivilians 0x15244 @ 0x42454, the hidden park unk_138DF0 @ 0x42494) clear it
+ * again for a soldier in none of them. The result is stored INTO the soldier (`STRB R5,[R4,#0x40E]` at
+ * 0x424C8) before its record is written, because the record's own cell arm reads the field. */
+static u8 Save_bSoldierInTact(const Soldier *pUnit, u8 bTactFlag, const TeamUnitsState *pRosters)
+{
+    if (pUnit == NULL || bTactFlag == 0 || pRosters == NULL) {
+        return 0;   /* no tact map, or no rosters to scan -- and the scans are what clear the default */
+    }
+
+    for (i32 i = 0; i < (i32)pRosters->nXcomCount; ++i) {
+        if (pRosters->apXcomUnits != NULL && pRosters->apXcomUnits[i] == pUnit) { return 1; }
+    }
+    for (i32 i = 0; i < (i32)pRosters->nEnemyCount; ++i) {
+        if (pRosters->apEnemyUnits != NULL && pRosters->apEnemyUnits[i] == pUnit) { return 1; }
+    }
+    for (i32 i = 0; i < pRosters->nCivilianCount; ++i) {
+        if (pRosters->apCivilians != NULL && pRosters->apCivilians[i] == pUnit) { return 1; }
+    }
+    for (i32 i = 0; i < pRosters->nHiddenCount; ++i) {
+        if (pRosters->apHiddenUnits != NULL && pRosters->apHiddenUnits[i] == pUnit) { return 1; }
+    }
+    return 0;
+}
+
 /* Save_WriteSoldiers @ 0x42350.
  *
  * The order is: begin the chunk, write the u16 count, every record, then the two
  * trailing per-soldier chunks. This is the only valid entry point because
  * DatFile_Write refuses to work without an open chunk (verified: pufo_dat.c checks
  * `nCurEntry == 0` and returns false). */
-bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
+bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount,
+                        u8 bTactFlag, const TeamUnitsState *pRosters)
 {
     u16 uCount = (u16)nCount;
 
@@ -423,7 +502,11 @@ bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
     }
     if (apSoldiers != NULL) {
         for (i32 i = 0; i < nCount; ++i) {
-            if (apSoldiers[i] != NULL && !Save_WriteSoldier(pDat, apSoldiers[i])) {
+            if (apSoldiers[i] == NULL) {
+                continue;
+            }
+            apSoldiers[i]->bInTact = Save_bSoldierInTact(apSoldiers[i], bTactFlag, pRosters);
+            if (!Save_WriteSoldier(pDat, apSoldiers[i])) {
                 return false;
             }
         }
@@ -432,9 +515,17 @@ bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
 }
 
 /* Save_ReadSoldiers @ 0x416bc. The original allocates the roster from the count;
- * this port fills caller-provided storage so ownership stays explicit. */
+ * this port fills caller-provided storage so ownership stays explicit.
+ *
+ * The chunk order is load-bearing, not cosmetic. `stactflg` runs at 0x416D0, BEFORE the bodies at
+ * 0x417BC, because each body tests bInTact: the cell arm (0x41968 -> the 0x419DC pointer write),
+ * the 30-entry multi-target arm (0x41A70), the inventory arm (0x41D60) and the spotted arm (0x42214).
+ * `1_24scb` runs at 0x422C4, after them. The two chunks are addressed by tag (DatFile_FindChunk
+ * re-seeks), so this reader may take the count from the soldiers chunk first -- the original takes it
+ * from the same two bytes in Soldiers_Reload (0x430F8) -- and then re-finds both. */
 bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
-                       i32 nCapacity)
+                       i32 nCapacity, MapCellLookup pfnCell, void *pCellUser,
+                       u8 bInTactFallback)
 {
     u16 uCount = 0;
 
@@ -450,16 +541,32 @@ bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
     if ((i32)uCount > nCapacity) {
         return false;
     }
+
+    if (!Save_ReadInTactFlags(pDat, apapSoldiers, (i32)uCount, bInTactFallback)) {
+        return false;
+    }
+
+    /* 0x417BC re-finds the chunk and 0x417D4 reads the count again -- the re-find rewinds to the
+     * chunk start, so skipping that second 2-byte read would put every body two bytes early. The
+     * original replaces its count here; the port takes the second value for the bodies too. */
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_SOLDIERS)) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, &uCount, 2)) {
+        return false;
+    }
+    if ((i32)uCount > nCapacity) {
+        return false;
+    }
     for (i32 i = 0; i < (i32)uCount; ++i) {
         if (apapSoldiers != NULL && apapSoldiers[i] != NULL) {
-            if (!Save_ReadSoldier(pDat, apapSoldiers[i])) {
+            if (!Save_ReadSoldier(pDat, apapSoldiers[i], pfnCell, pCellUser)) {
                 return false;
             }
         }
     }
-    /* The write side ends with the two per-soldier chunks, so the read side must
-     * consume them; skipping this leaves bInTact (and the link ids) unrestored. */
-    if (!Save_ReadTrailingChunks(pDat, apapSoldiers, (i32)uCount)) {
+
+    if (!Save_ReadLinkedSoldiers(pDat, apapSoldiers, (i32)uCount)) {
         return false;
     }
     *pnCount = (i32)uCount;
@@ -2358,7 +2465,10 @@ bool SaveGame(DatFile *pDat, const SaveGameInput *pIn)
     if (bOk) { bOk = Save_WriteStrateg(pDat, pIn->pStrateg, pIn->pStrategList); } /* 0x44A48 */
     if (bOk) { bOk = Save_WriteTime(pDat, pIn->pTime); }                        /* 0x44A4C */
     if (bOk) {
-        bOk = Save_WriteSoldiers(pDat, pIn->apSoldiers, pIn->nSoldierCount);    /* 0x44A50 */
+        /* The rosters go along because the writer needs them for the bInTact computation (0x423C0..0x424B8)
+         * that the stactflg chunk and the record's cell arm both carry. */
+        bOk = Save_WriteSoldiers(pDat, pIn->apSoldiers, pIn->nSoldierCount,
+                                 pIn->bTactFlag, pIn->pRosters);                /* 0x44A50 */
     }
 
     if (pIn->bTactFlag != 0) {
@@ -2642,8 +2752,11 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     pEnv->pTime->nUnk34 = (i32)pEnv->pTimeRec->nSlot114;
     pEnv->pTime->nMonthEpochSec = (i32)pEnv->pTimeRec->nSlot115;
     if (*pEnv->pbGameState == 0) { /* 0x44DAC: soldiers only for a non-tactical save */
+        /* No cell lookup on this path: the original resolves the three bytes against the cell table at
+         * 0x15338, which a geoscape-state load has nothing allocated in, so its own result is a NULL
+         * pointer. The tact flag is the stactflg-absent fallback the original takes from Map+0x00. */
         if (!Save_ReadSoldiers(pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
-                               pEnv->nSoldierCapacity)) { bOk = false; }
+                               pEnv->nSoldierCapacity, NULL, NULL, *pEnv->pbTactFlag)) { bOk = false; }
     }
 
     *pEnv->pnListMode = 1; /* 0x44DC8 */

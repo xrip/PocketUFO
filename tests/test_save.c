@@ -130,12 +130,21 @@ static void TestSoldierRoundTrip(void)
 
     FillSoldier(&aWritten);
     {
-        Soldier *apSoldiers[1];
+        Soldier        *apSoldiers[1];
+        Soldier        *apXcom[30];
+        TeamUnitsState  rosters;
+
+        memset(apXcom, 0, sizeof(apXcom));
+        apXcom[0] = &aWritten;
+        memset(&rosters, 0, sizeof(rosters));
+        rosters.nXcomCount  = 1;
+        rosters.apXcomUnits = apXcom;
 
         apSoldiers[0] = &aWritten;
         /* Must go through the chunk wrapper: DatFile_Write refuses without an
-         * open chunk, exactly as the original requires. */
-        Check(Save_WriteSoldiers(&dat, apSoldiers, 1), "  soldier written");
+         * open chunk, exactly as the original requires. The rosters decide bInTact:
+         * the soldier stands in apXcomUnits, so it is flagged into the mission. */
+        Check(Save_WriteSoldiers(&dat, apSoldiers, 1, 1, &rosters), "  soldier written");
     }
     DatFile_Close(&dat);
 
@@ -170,7 +179,7 @@ static void TestSoldierRoundTrip(void)
 
         memset(aBacking, 0, sizeof(aBacking));
         apSoldiers[0] = &aBacking[0];
-        Check(Save_ReadSoldiers(&dat, apSoldiers, &nCount, 1), "  soldiers read");
+        Check(Save_ReadSoldiers(&dat, apSoldiers, &nCount, 1, NULL, NULL, 0), "  soldiers read");
         CheckEqI32(nCount, 1, "  one soldier");
 
         /* Spot-check the fields that matter, plus one deep field to prove the
@@ -3274,11 +3283,21 @@ static void TestSoldiersReload(void)
         aWritten[i].nUnk440 = 500 + i;
     }
     {
-        Soldier *apWrite[3];
+        Soldier        *apWrite[3];
+        Soldier        *apXcom[30];
+        TeamUnitsState  rosters;
+
+        memset(apXcom, 0, sizeof(apXcom));
+        memset(&rosters, 0, sizeof(rosters));
         apWrite[0] = &aWritten[0];
         apWrite[1] = &aWritten[1];
         apWrite[2] = &aWritten[2];
-        Check(Save_WriteSoldiers(&dat, apWrite, 3), "  three soldiers written");
+        apXcom[0] = apWrite[0];
+        apXcom[1] = apWrite[1];
+        apXcom[2] = apWrite[2];
+        rosters.nXcomCount  = 3;
+        rosters.apXcomUnits = apXcom;
+        Check(Save_WriteSoldiers(&dat, apWrite, 3, 1, &rosters), "  three soldiers written");
     }
     DatFile_Close(&dat);
 
@@ -3303,7 +3322,7 @@ static void TestSoldiersReload(void)
     CheckEqI32(apRoster[0]->bFlags, 0, "  flags are zero before the body read");
 
     /* The pairing the original relies on: reload allocates, then the read fills the same objects. */
-    Check(Save_ReadSoldiers(&dat, apRoster, &nRead, 8), "  bodies read into the reloaded roster");
+    Check(Save_ReadSoldiers(&dat, apRoster, &nRead, 8, NULL, NULL, 0), "  bodies read into the reloaded roster");
     CheckEqI32(nRead, 3, "  three bodies read");
     CheckEqI32(apRoster[0]->nUnk440, 500, "  first soldier landed in the reloaded object");
     CheckEqI32(apRoster[2]->nUnk440, 502, "  and so did the last");
@@ -3349,6 +3368,125 @@ static void TestSoldiersReload(void)
     remove("test_reload.tmp");
 }
 
+/* Save_ReadSoldiers' two resolves: the soldier's three cell bytes become a cell POINTER (0x419DC) for
+ * a soldier flagged into the mission, and are read-and-dropped for one that is not (0x419F4); the
+ * `1_24scb` u32 becomes a pointer into the roster that was just reloaded (0x42320). Both need
+ * `stactflg` to have run first -- that is why the original reads it at 0x416D0, before the bodies at
+ * 0x417BC -- and the chunk is optional, in which case every soldier takes LOBYTE(Map) (0x41790/0x4179C). */
+static void TestSoldiersCellLink(void)
+{
+    static DatFile dat;
+    static Soldier aWritten[3];
+    static Soldier aRead[3];
+    Soldier       *apWrite[3];
+    Soldier       *apRoster[4];
+    i32            nCount = 0;
+
+    printf("Save_ReadSoldiers: the cell pointer, the 1_24scb link, and stactflg's order\n");
+
+    memset(g_aMapCells, 0, sizeof(g_aMapCells));
+    for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+        for (i32 nY = 0; nY < 10; ++nY) {
+            for (i32 nX = 0; nX < 10; ++nX) {
+                g_aMapCells[nLayer][nY][nX].nX = (u8)nX;
+                g_aMapCells[nLayer][nY][nX].nY = (u8)nY;
+                g_aMapCells[nLayer][nY][nX].nZ = (u8)nLayer;
+            }
+        }
+    }
+
+    remove("test_soldcell.tmp");
+    for (i32 i = 0; i < 3; ++i) {
+        FillSoldier(&aWritten[i]);
+        aWritten[i].nSaveId = i;      /* the writer stores the linked soldier's nSaveId (0x42E64) */
+        apWrite[i] = &aWritten[i];
+    }
+    aWritten[0].pCell = MapTestLookup(7, 9, 0, NULL);
+    aWritten[2].pCell = MapTestLookup(0, 1, 2, NULL);
+    aWritten[2].auStat[8] = 0;                     /* 0x4229C defaults it to 10 */
+    aWritten[0].pLinked1040 = &aWritten[2];        /* stored as its nSaveId, 2 */
+
+    /* Soldier 1 stands in NO roster, and that is what flags it out: the writer's own scans
+     * (0x423D4..0x424B4) decide bInTact, and the record's cell arm follows the flag. */
+    {
+        Soldier        *apXcom[30];
+        TeamUnitsState  rosters;
+
+        memset(apXcom, 0, sizeof(apXcom));
+        memset(&rosters, 0, sizeof(rosters));
+        apXcom[0] = &aWritten[0];
+        apXcom[1] = &aWritten[2];
+        rosters.nXcomCount  = 2;
+        rosters.apXcomUnits = apXcom;
+
+        Check(OpenWrite("test_soldcell.tmp", &dat, 4), "  container opened");
+        Check(Save_WriteSoldiers(&dat, apWrite, 3, 1, &rosters), "  three soldiers written");
+    }
+    DatFile_Close(&dat);
+
+    memset(aRead, 0, sizeof(aRead));
+    apRoster[0] = &aRead[0];
+    apRoster[1] = &aRead[1];
+    apRoster[2] = &aRead[2];
+    apRoster[3] = NULL;
+
+    Check(OpenRead("test_soldcell.tmp", &dat), "  reopened");
+    Check(Save_ReadSoldiers(&dat, apRoster, &nCount, 4, MapTestLookup, NULL, 0), "  read back");
+    CheckEqI32(nCount, 3, "  three bodies");
+    Check(apRoster[0]->pCell == MapTestLookup(7, 9, 0, NULL),
+          "the flagged soldier gets a cell POINTER, not three loose bytes (0x419DC)");
+    Check(apRoster[0]->pCell != NULL && apRoster[0]->pCell->nX == 7 && apRoster[0]->pCell->nY == 9
+              && apRoster[0]->pCell->nZ == 0,
+          "and the pointer is the cell its three coordinates name");
+    Check(apRoster[1]->pCell == NULL,
+          "the flagged-out soldier's three bytes are read and dropped (0x419F4) -- the flag was live before the body read, which is why stactflg runs first");
+    Check(apRoster[2]->pCell == MapTestLookup(0, 1, 2, NULL), "the layer byte reaches the resolve too");
+    CheckEqI32(apRoster[0]->bInTact, 1, "stactflg's byte round-trips into bInTact");
+    CheckEqI32(apRoster[1]->bInTact, 0, "and the two arms stay distinguishable");
+    Check(apRoster[0]->pLinked1040 == apRoster[2],
+          "1_24scb resolves as an index into the roster the read just filled (0x42320)");
+    Check(apRoster[1]->pLinked1040 == NULL && apRoster[2]->pLinked1040 == NULL,
+          "0x7FFF means no link");
+    CheckEqI32(apRoster[2]->auStat[8], 10, "auStat[8] reads 10 when the record carries 0 (0x4229C)");
+    CheckEqI32(apRoster[0]->auStat[8], 108, "and a non-zero value is left alone");
+    DatFile_Close(&dat);
+    remove("test_soldcell.tmp");
+
+    /* The absent chunk: the original fills every soldier from Map+0x00. The port takes the caller's
+     * fallback, and this container has the soldiers chunk and nothing else, so the fallback is the only
+     * source the flag can come from. */
+    {
+        static Soldier aPlain[2];
+        Soldier       *apPlain[2];
+        u16            uTwo = 2;
+
+        remove("test_soldflag.tmp");
+        memset(aPlain, 0, sizeof(aPlain));
+        for (i32 i = 0; i < 2; ++i) {
+            FillSoldier(&aPlain[i]);
+            aPlain[i].bInTact = 0;      /* the record is written with no flag and no cell */
+            apPlain[i] = &aPlain[i];
+        }
+        Check(OpenWrite("test_soldflag.tmp", &dat, 4), "  second container opened");
+        Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_SOLDIERS), "  soldiers chunk begun by hand");
+        Check(DatFile_Write(&dat, &uTwo, 2), "  count written");
+        for (i32 i = 0; i < 2; ++i) {
+            Check(Save_WriteSoldier(&dat, apPlain[i]), "  soldier written");
+        }
+        DatFile_Close(&dat);
+
+        memset(aPlain, 0, sizeof(aPlain));
+        Check(OpenRead("test_soldflag.tmp", &dat), "  reopened");
+        Check(Save_ReadSoldiers(&dat, apPlain, &nCount, 2, NULL, NULL, 1), "  read with no stactflg chunk");
+        CheckEqI32(nCount, 2, "  two bodies");
+        CheckEqI32(aPlain[0].bInTact, 1, "a missing stactflg fills every soldier from the tact flag (0x41790/0x4179C), not from the record");
+        CheckEqI32(aPlain[1].bInTact, 1, "and both entries, not just the first");
+        Check(aPlain[0].pCell == NULL, "with no cell lookup the flagged bytes are dropped, not guessed at");
+        DatFile_Close(&dat);
+        remove("test_soldflag.tmp");
+    }
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -3378,6 +3516,7 @@ int main(void)
     TestLoadGameOldVersionMissionSeam();
     TestReadTGameData();
     TestSoldiersReload();
+    TestSoldiersCellLink();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

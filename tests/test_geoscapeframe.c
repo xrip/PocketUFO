@@ -2366,12 +2366,11 @@ int main(void)
                 /* --- the inventory select keys on a deployed mission (Part 67) -------------------
                  * Screen 1's up/down pair runs the two select seams (Input_OnUp @ 0x11974 ->
                  * Tact_SelectNextUnit @ 0x17304, Input_OnDown @ 0x11A74 -> Tact_SelectPrevUnit @ 0x17260).
-                 * This gate is here rather than on the reloaded mission because Tact_SelectUnit's tail
-                 * re-places the cursor on the selected unit's own cell (MapCursor_SetPos over
-                 * pUnit->pCell), and a reloaded unit's pCell is NULL: Save_ReadSoldiers reads the
-                 * soldier's three cell bytes and throws them away (the 0x419DC restore is the recorded
-                 * gap). On this mission every unit still stands on the cell phase 1 parked it on, so the
-                 * write lands and the cursor pair (0x15128/0x1512C) is the evidence. */
+                 * Tact_SelectUnit's tail re-places the cursor on the selected unit's OWN cell
+                 * (MapCursor_SetPos @ 0x27014 over pUnit->pCell), so the gate needs a roster whose units
+                 * carry that link. Here every unit still stands on the cell phase 1 parked it on, which
+                 * makes the cursor pair (0x15128/0x1512C) the evidence; the same pair is gated on the
+                 * reloaded mission below, where the link comes out of the save reader instead. */
                 {
                     SeamTrace  s0 = g_seams;
                     MapCell   *pPark = FrameCellAt(1, 1, 0);
@@ -3315,12 +3314,11 @@ int main(void)
             /* The link the map chunk really restores: Save_ReadMap reads a saved id and stores it at
              * cell+0x30 (0x436C0), so the CELL side is the parity check, and the cell's own
              * coordinates are derived from the walk, not stored (0x434DC).
-             * The SOLDIER's own link (Soldier+0x10) is restored in the original by Save_ReadSoldiers
-             * @ 0x419A8..0x419DC: three saved coordinates index apCells (Map+0x15338) as
-             * 60 * (60 * z + y) + x. That read is a recorded gap -- the shell's reader discards the
-             * three bytes -- and the chunk order matters: "soldiers" is read at 0x44DBC, BEFORE
-             * Tact_InitMission (0x44E24) brings the map chunk up, so the original resolves the link
-             * through a cell table that the map bring-up then rebuilds. The shell carries NULL here. */
+             * The SOLDIER's own link (Soldier+0x10) is restored by Save_ReadSoldiers @ 0x419A8..0x419DC:
+             * three saved coordinates index apCells as 60 * (60 * z + y) + x -- an INDEX, so it needs the
+             * grid Init_LoadMission just allocated (0x3D168..0x3D1C0) but NOT the coordinates the map
+             * chunk derives later (0x434DC). Order on this path: soldiers at 0x3D22C, the map chunk inside
+             * Save_ReadTGameData at 0x3D234 -> 0x444B4. */
             {
                 MapCell *pFound = NULL;
                 i32 nZ, nY2, nX2;
@@ -3367,14 +3365,43 @@ int main(void)
                     CheckEqI32((i32)pFound->nY, g_nMarkCellY, "and y");
                     CheckEqI32((i32)pFound->nZ, g_nMarkCellZ, "and the layer");
                 }
-                Check(pMapL->apXcomUnits[0] == NULL || pMapL->apXcomUnits[0]->pCell == NULL,
-                      "recorded gap: the soldier's own cell link stays NULL (Save_ReadSoldiers 0x419DC is unported)");
+                Check(g_pMarkUnit != NULL && pFound != NULL && g_pMarkUnit->pCell == pFound,
+                      "and the soldier's OWN link -- Soldier+0x10, restored from the soldiers chunk at 0x419DC -- names the very cell the map chunk put the occupant on: two chunks, one cell");
             }
         }
         CheckEqI32(g_world.nMapEnemyReserveCount, g_nMarkHidden, "the reserve roster (unk_138DF0) count");
         CheckEqI32(g_world.nTactItemCount, g_nMarkItems, "the flobjs item count (Save_AllocFlobjs + Save_ReadFlobjs)");
-        Check(g_world.tactEnv.focus.nCamScrollX == 21 && g_world.tactEnv.focus.nCamScrollY == 23,
-              "the camera at 0x15130/0x15134 comes back into the shell's focus record");
+        {
+            const Soldier *pSelL = (pMapL != NULL) ? pMapL->pSelUnit : NULL;
+            const MapCell *pSelCell = (pSelL != NULL) ? pSelL->pCell : NULL;
+
+            Check(g_world.sTactSave.anUnk15188[2] == 21 && g_world.sTactSave.anUnk15188[3] == 23,
+                  "the saved camera pair comes back into the staged tgamedata record (anUnk15188[2]/[3] = "
+                  "Map_nCamScrollX/Y @ 0x15130/0x15134, Save_ReadTGameData @ 0x44248)");
+            Check(pSelCell != NULL,
+                  "the selected unit stands on a cell at load time, so the resume tail has something to centre on");
+            if (pSelCell != NULL) {
+                CamOffset co;
+                i32 nA;
+                i32 nB;
+
+                MapView_SetCamOffset(&pMapL->geom, (i32)g_world.tactEnv.focus.nMapTileW >> 1,
+                                     (i32)g_world.tactEnv.focus.nMapTileH >> 1, false, 0, &co);
+                nA = pSelCell->nX - (i32)(i8)co.bScratch40;
+                nB = pSelCell->nY - (i32)(i8)co.bScratch41;
+                Check(g_world.tactEnv.focus.nCamScrollX
+                              == Map_CenterOffsetX((i32)g_world.tactEnv.focus.nDimX, nA, nB)
+                          && g_world.tactEnv.focus.nCamScrollY == Map_CenterOffsetY(nA, nB),
+                      "and the live camera is the re-centred one, not the saved pair: Save_ReadTGameData runs at "
+                      "0x3D234 and the load chain's tail is MapView_FocusSelected at 0x3D248 (0x16710), which puts "
+                      "0x15130/0x15134 on the selected unit's cell through the SetCamOffset scratch and "
+                      "Map_CenterOffsetX/Y (0x276F0, 0x26FCC/0x26FFC)");
+                Check(!(g_world.tactEnv.focus.nCamScrollX == 21 && g_world.tactEnv.focus.nCamScrollY == 23),
+                      "the saved camera is overwritten rather than left in place -- before the 0x419DC link was "
+                      "restored, MapView_FocusOnCell took its NULL early-return and the saved 21/23 survived by "
+                      "accident; that gate was measuring the missing link, not the resume tail");
+            }
+        }
         Check(g_world.sTactInput.nTileShiftX == 9 && g_world.sTactInput.nTileShiftY == 47,
               "the loaded mission keeps the iso bounds the first bring-up wrote: Map_InitFacingScratch guards "
               "on the facing CHANGING (Map+0x36 @ 0x26F28), so Tact_InitMission's second call re-writes "
@@ -3509,8 +3536,8 @@ int main(void)
              * @ 0x173e4, Input_OnRight's mirror -> Inv_ScrollDown @ 0x173a8). With a screen open a held key
              * repeats instead of being swallowed. The camera stays put: the directional handlers only take
              * the scroll branch on screen 0. Screen 1's up/down pair (Tact_SelectNextUnit @ 0x17304 /
-             * Tact_SelectPrevUnit @ 0x17260) is gated on the deployed mission instead -- see the note there
-             * on the reloaded unit's NULL cell link (Save_ReadSoldiers 0x419DC, the recorded gap). */
+             * Tact_SelectPrevUnit @ 0x17260) is gated at the end of this block, on the cell link the
+             * soldiers chunk restores at 0x419DC. */
             (void)g_bank.aCtl[4].pfnClick();       /* the installed inventory opener: Map_nUiScreen = 1 */
             {
                 SeamTrace s0 = g_seams;
@@ -3533,6 +3560,37 @@ int main(void)
                           && g_world.tactEnv.focus.nCamScrollY == nScrollY,
                       "and neither arm touched the camera scroll: 0x15130/0x15134 only move on screen 0");
                 Check(g_world.nUiScreen == 1, "the direction arms never change the screen id");
+
+                /* The select pair on the mission the readers rebuilt -- the part Part 67 had to leave
+                 * on the deployed mission. `Tact_SelectUnit`'s tail reads `pUnit->pCell`, and a reloaded
+                 * unit only has one because Save_ReadSoldiers resolved its three record bytes into a
+                 * cell pointer (0x419DC) against the grid Init_LoadMission allocated at 0x3D168..0x3D1C0. */
+                {
+                    bool bLinked = false;
+
+                    for (i32 i = 0; i < pMapL->nXcomCount; ++i) {
+                        if (pMapL->apXcomUnits[i] != NULL && pMapL->apXcomUnits[i]->pCell != NULL) {
+                            bLinked = true;
+                        }
+                    }
+                    Check(bLinked,
+                          "the reloaded roster stands on cells again: the soldiers chunk's three bytes became a pointer (0x419DC)");
+
+                    World_TactKeyDown(&g_world, PUFO_KEY_UP);
+                    Check(g_seams.nSelNext == s0.nSelNext + 1, "up runs the select-next seam on the loaded mission too");
+                    Check(pMapL->pSelUnit != NULL && pMapL->pSelUnit->pCell != NULL,
+                          "and the unit it selected stands on a cell");
+                    Check(pMapL->pSelUnit != NULL && pMapL->pSelUnit->pCell != NULL
+                              && g_world.tactEnv.cursor.nX == (i32)pMapL->pSelUnit->pCell->nX
+                              && g_world.tactEnv.cursor.nY == (i32)pMapL->pSelUnit->pCell->nY,
+                          "with the live cursor pair (0x15128/0x1512C) moved onto that cell by MapCursor_SetPos @ 0x27014 -- the read side of the restored link");
+                    World_TactKeyUp(&g_world, PUFO_KEY_UP);
+                    Check(g_bank.abHeldDir[PUFO_KEY_UP] == 0, "the up release clears 0xAD71C");
+                    World_TactKeyDown(&g_world, PUFO_KEY_DOWN);
+                    Check(g_seams.nSelPrev == s0.nSelPrev + 1, "down runs the select-previous seam");
+                    World_TactKeyUp(&g_world, PUFO_KEY_DOWN);
+                    Check(g_world.nUiScreen == 1, "and neither select arm changes the screen id");
+                }
             }
         }
     }

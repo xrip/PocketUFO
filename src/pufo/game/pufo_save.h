@@ -104,11 +104,24 @@ bool Save_BuildSlotPath(char *pszOut, size_t cchOut, const char *pszAppDir, i32 
  * then the two trailing chunks. `DatFile_Write` requires an open chunk, so this is
  * the only correct entry point: calling the per-soldier writer directly without an
  * open chunk fails, exactly as the original would. */
-bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount);
+struct TeamUnitsState;   /* the record block below defines it; this declaration only needs a pointer */
 
-/* Save_ReadSoldiers @ 0x416bc: the matching read side. */
+/* bTactFlag (Map+0x00) and the four rosters are not decoration: the writer computes each soldier's
+ * bInTact from them (0x423A0..0x424C8) -- 0 with no tact map, else 1 unless the soldier is in none of
+ * apXcomUnits/apEnemyUnits/apCivilians/apHiddenUnits -- and stores it into the soldier before writing
+ * its record, because the record's cell arm reads it. NULL pRosters means "no scans", i.e. 0. */
+bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount,
+                        u8 bTactFlag, const struct TeamUnitsState *pRosters);
+
+/* Save_ReadSoldiers @ 0x416bc: the matching read side. Three things the original does in this order:
+ * `stactflg` first (0x416D0, one byte per soldier into bInTact, because the body arms and the cell
+ * resolve read that flag), then the bodies (0x417BC re-finds the `soldiers` chunk), then `1_24scb`
+ * (0x422C4). `pfnCell` is the map's cell lookup, used for the bInTact arm (0x419DC); NULL drops those
+ * three bytes instead. `bInTactFallback` is the value the original takes from Map+0x00 when the
+ * stactflg chunk is absent. */
 bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
-                       i32 nCapacity);
+                       i32 nCapacity, MapCellLookup pfnCell, void *pCellUser,
+                       u8 bInTactFallback);
 
 /* Soldiers_Reload @ 0x430cc. Free the whole roster, find the "soldiers" chunk in an open save, read the
  * count out of it, and allocate that many empty soldiers.
@@ -125,13 +138,21 @@ bool Soldiers_Reload(DatFile *pDat, Soldier **apSoldiers, i32 *pnCount, i32 nCap
  * The `soldiers` chunk must already be open. */
 bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit);
 
-/* Reads one soldier's non-tactical record prefix back. Fields the port does not
- * model (the opaque inventory block) are skipped rather than read. */
-bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit);
+/* Reads one soldier's record back. bInTact is READ (the cell arm at 0x41968 tests it) but never
+ * written here -- it comes from Save_ReadInTactFlags, which runs first. Fields the port does not
+ * model (the inventory and spotted blocks) are consumed as their whole fixed size, which is the
+ * same byte count the original's resolved arm spends (150 and 244, checked against 0x41D6C..0x42140
+ * and 0x42218..0x42290). auStat[8] gets the original's 0 -> 10 default (0x4229C). */
+bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void *pCellUser);
 
-/* The two trailing per-soldier chunks. */
+/* The two per-soldier chunks. `stactflg` runs BEFORE the bodies in the original (0x416D0) and
+ * `1_24scb` after them (0x422C4): the first fills bInTact, the second fills pLinked1040 from an
+ * index into apSoldiers (0x7FFF = none). The original indexes without a bound; the port bounds it.
+ * The writer stores the linked soldier's nSaveId (0x42E64), and every soldier's nSaveId IS its
+ * roster index (Save_AllocSoldiers, pufo_save.c:652), which is why the index read round-trips. */
 bool Save_WriteTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount);
-bool Save_ReadTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount);
+bool Save_ReadInTactFlags(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount, u8 bFallback);
+bool Save_ReadLinkedSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount);
 
 /* The "tactver" chunk: a u16 written by the save driver at 0x44A10..0x44A28 and read back.
  * This is NOT the strateg version byte - see Save_ReadStrategVersion below. */

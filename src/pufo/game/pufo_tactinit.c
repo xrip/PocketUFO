@@ -613,8 +613,12 @@ static void Init_LoadMission(TactInitEnv *pEnv)
 
     (void)Save_AllocFlobjs(pEnv->pDat, *pEnv->pnFlobjsWide, pEnv->pnTactItemCount,
                            pEnv->apTactItems);
+    /* The cell lookup is the mission's own grid, allocated by the loops just above (0x3D168..0x3D1C0):
+     * 0x419DC resolves each flagged soldier's three cell bytes against it, so the order here is the
+     * original's -- grid first, soldiers second. */
     (void)Save_ReadSoldiers(pEnv->pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
-                            pEnv->nSoldierCapacity);
+                            pEnv->nSoldierCapacity, Init_LookupCell, pEnv,
+                            *pEnv->pbTactFlag);
     (void)Save_ReadTGameData(pEnv->pDat, pEnv->pSaveState, pEnv->pSaveRosters,
                              pEnv->pSaveFlobjs, &pEnv->pMap->geom, Init_LookupCell, pEnv,
                              pEnv->pSaveReset, pEnv->pSaveHooks);
