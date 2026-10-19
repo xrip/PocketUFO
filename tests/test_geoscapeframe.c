@@ -1614,8 +1614,18 @@ int main(void)
             }
             Check(g_world.bTactFlag == 1 && g_world.bMapUnk1139B9 == 1 && g_world.bMapPlayerInput == 1
                       && g_world.nMapUiSlot1 == 0 && g_world.bMapFire0 == 0 && g_world.bMapFire2 == 0
-                      && g_world.nMapUiSlot9 == 0 && g_world.nMapUiSlot10 == 10 && g_world.nUiScreen == 0,
-                  "the flag block: tactical flag and player input on, unk_1139B9 on because the Xcom roster branch ran (0x3D08C), screen 0, the fire pair clear");
+                      && g_world.nMapUiSlot9 == 0 && g_world.nMapUiSlot10 == 10 && g_world.nUiScreen == 1,
+                  "the flag block: tactical flag and player input on, unk_1139B9 on because the Xcom roster branch ran (0x3D08C), the fire pair clear, screen 1 -- the team branch at 0x3D0B8 opened the inventory (TactHud_OpenInventory 0x16ef4, Part 55)");
+            {
+                const TactUiState *pUiOpen = &g_world.sTactUi;
+                i32 bAllLit = (pUiOpen->bFilterPadAll == 1);
+                for (i32 c = 0; c < PUFO_INV_FILTER_PADS; ++c) {
+                    if (pUiOpen->abFilterPad[c] != 0) { bAllLit = 0; }
+                }
+                Check(bAllLit && pUiOpen->nInvFilterType == 0 && pUiOpen->nInvListSel == 0xFF
+                          && pUiOpen->nUiScreen == 1 && pUiOpen->bActionLatch == 0,
+                      "the inventory opener ran during bring-up: All filter lit, filter type 0, selection unset, staging screen 1 and latch 0 (0x16F14..0x16F40)");
+            }
             Check(g_world.nMapUnk138E6C >= 10 && g_world.nMapUnk138E6C <= 50
                       && g_world.nMapUnk138E70 >= 0 && g_world.nMapUnk138E70 <= 20,
                   "the prologue random pair RandU16(0x28)+10 and RandU16(0x14): each inside its scaled range; the seed is the clock, so the exact pair is not pinned");
@@ -1678,11 +1688,11 @@ int main(void)
                 /* Tact_InitUiControls @ 0x3b498 ran through the shell hook (Part 54): the handlers are
                  * installed on the shell's bank in the g_aUiClickName order, the look control is built,
                  * the HUD origin is recomputed and the direct overrides land. */
-                static const i32 aDeferred[7] = { 4, 5, 17, 18, 56, 57, 58 };
+                static const i32 aDeferred[6] = { 5, 17, 18, 56, 57, 58 };
                 i32 bInstalled = 1, bDeferred = 1, bStart = 1;
                 for (i32 c = 0; c < 113; ++c) {
                     i32 bWant = 1;
-                    for (i32 d = 0; d < 7; ++d) {
+                    for (i32 d = 0; d < 6; ++d) {
                         if (aDeferred[d] == c) { bWant = 0; }
                     }
                     if (bWant && g_bank.aCtl[c].pfnClick == NULL) { bInstalled = 0; }
@@ -1692,7 +1702,7 @@ int main(void)
                     if (g_bank.aCtl[c].pfnClick != NULL) { bStart = 0; }
                 }
                 Check(bInstalled, "every handler the port models is installed on bank widgets 0..112");
-                Check(bDeferred, "the seven deferred families stay NULL: 4 inventory, 5 end-turn, 17/18 hand menus, 56 deploy confirm, 57 quit, 58 resize");
+                Check(bDeferred, "the six deferred families stay NULL: 5 end-turn, 17/18 hand menus, 56 deploy confirm, 57 quit, 58 resize (widget 4 is installed since Part 55)");
                 Check(bStart && g_bank.aCtl[128].pfnClick != NULL && g_bank.aCtl[129].pfnClick != NULL,
                       "113..127 stay uninstalled (start-menu widgets) and 128/129 take MenuBtn_Cancel (0x1a24c / 0x1a26c)");
                 const UiControl *pLook = &g_world.sTactLookCtl;
@@ -1786,6 +1796,21 @@ int main(void)
                 CLICK(98);
                 Check(g_world.nUiScreen == 0 && g_aBankSamples[0] == 16 && g_nBankSamples >= 2,
                       "widget 98 plays 16, then Input_OnConfirm's screen-7 arm plays 14 and closes the live screen cell");
+
+                /* 4: the inventory opener, the same composition 0x3D0B8 ran at bring-up (0x16ef4). */
+                g_world.nUiScreen = 0;
+                g_world.sTactUi.bFilterPadAll = 0;
+                g_world.sTactUi.abFilterPad[0] = 1;
+                g_world.sTactUi.nInvFilterType = 3;
+                g_world.sTactUi.nInvListSel = 4;
+                pMapX->bActionLatch = 4;
+                nSampleMark = g_nSamples;
+                CLICK(4);
+                Check(g_world.nUiScreen == 1 && g_world.sTactUi.bFilterPadAll == 1
+                          && g_world.sTactUi.abFilterPad[0] == 0 && g_world.sTactUi.nInvFilterType == 0
+                          && g_world.sTactUi.nInvListSel == 0xFF && pMapX->bActionLatch == 0
+                          && g_aFrameSamples[nSampleMark] == 16,
+                      "widget 4 re-opens the inventory: sample 16 (the sweep gate is up), All filter lit, filter type 0, selection unset, Map+0x02 cleared, live screen 1");
 
                 /* 53: the load-slot list opener (Menu_OpenLoadSlots 0x18864): the load list is screen 11,
                  * the save list 10 (PUFO_UI_SCREEN_LOAD_SLOTS / _SAVE_SLOTS). */

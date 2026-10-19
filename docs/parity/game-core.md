@@ -19316,3 +19316,49 @@ Teardown mirrors Tact_Shutdown: the widget pads of 0..112 plus 128/129 (0x3D6D8.
 Bug this Part exposed and fixed: `App_HookNewGame`/`App_HookLoadGame` kept their `WorldHooks` on the stack while the world stores the pointer for the whole run; Part 54's teardown was the first code to dereference it after the hook returned (segfault at shutdown in the golden run). Both hook blocks now use function-static storage.
 
 Verification: bring-up asserts (install map with the seven deferred slots NULL, 113..127 untouched, look ctl state + launch/claunch pads + scratch flag, HUD origin rule, the seven overrides, radio nState) and live dispatch through the installed pointers -- 0 CycleNext (select, latch clear), 9 FocusSelected, 53 load opener, 59 samples+clear, 70 toggle coupling (SCROLL off clears SHOW, pads write back), 98 MenuBtn_Confirm into Input_OnConfirm, 99 IncLayer, 105 SaveLoad_Slot load arm -- with every fixture restored for the walker and mission-end asserts. Mutations: neutered init thunk -> 17 reds; dropped SyncOut live-screen write -> exactly 1 targeted red. 18149 checks, 61/61 tests, golden frame unchanged (exit 0 now too).
+
+## Unit 116 -- the mission bring-up opens the inventory (Part 55)
+
+Original: the Xcom-team branch of `Tact_InitMission @ 0x3c550` calls
+`Inv_OpenScreen @ 0x16ef4` at 0x3d0b8, right after `Tact_SelectUnit` picks
+`apXcomUnits[0]`. The same function is also the click handler of bank widget 4
+(the store at 0x3b4f8 writes `dword_AC75C`, pBank+0x8C). Its effect chain
+(0x16ef4 body): sample 16 only when the sweep gate `Map_bSweepArmed` is up; the
+gate needs `nXcomUnitCount != 0` and `pSelUnit->nUnitType <= 3`; then
+`nInvListSel = 0xFF` (0x4A26), `nInvFilterType = 0` (0x1A22), `Inv_BuildVisibleList`,
+the All filter pad lit (0xAC9DA) with the other six darkened, `Map_bActionLatch`
+cleared, `MapCursor_SetPos` re-stamped at the cursor's own cell,
+`Unit_RecalcInventoryStat(pSelUnit)`, `Map_nUiScreen = 1`, `Map_bDrawIsoLayer = 1`.
+
+Port: `TactHud_OpenInventory @ 0x16ef4` was already ported (tacthud.c, Unit 84
+family); what was missing was the caller. `World_TactOpenInventoryBody`
+(pufo_world.c) builds a `TactHudInvOpenCtx` live per call -- the callee env
+`invOpen` copies `pSelUnit`/`nXcomCount` before the 0x3ce70 selection lands, so
+the copy would be stale; the thunk SyncIn, calls, SyncOut, so the screen-1,
+iso-byte and latch writes reach the live owners (`pW->nUiScreen`,
+`pW->bMapDrawIsoLayer`, `pMap->bActionLatch`). Wired in two places:
+`pE->hooks.pfnOpenInventory = World_TactOpenInventoryThunk` in `World_InitTactical`
+(the 0x3d0b8 site) and `g_aTactBankClicks[4] = World_ClickOpenInventory` (the
+0x3b4f8 widget, deferred no more). `pInvStat` gets the existing
+`pW->tactInvHooks` seam; `pfnPlaySample` the bank-sample thunk.
+
+Deviation (recorded in the tacthud unit): the port returns false when
+`pSelUnit == NULL`, where the original's `nUnitType` test would read through the
+NULL pointer -- unreachable behind the `nXcomUnitCount != 0` gate, but the port
+skips instead of dereferencing. The cursor re-stamp goes through a local
+`MapCursorPos` (`bBusy = false`) over the cursor's own cell, as documented in
+the tacthud unit.
+
+Tests (test_geoscapeframe): bring-up now ends with live `nUiScreen == 1` (the
+flag-block assert moved 0 -> 1), plus a gate that the opener ran: All pad lit,
+filter type 0, selection unset, staging latch 0. The widget-4 live dispatch
+dirtying the filter/selection/latch fixture re-opens: sample 16 (sweep armed),
+All lit, sel 0xFF, Map+0x02 cleared, live screen 1. The deferred-handler list
+shrank to six: 5, 17/18, 56, 57, 58. Mutations: neutered body -> 3 reds
+(bring-up screen, bring-up inventory state, widget-4 dispatch); dropped SyncOut
+-> 2 reds (the live screen write-back). The golden startup frame is unchanged:
+the dump happens before any screen-dependent HUD blit.
+
+IDB: appended the port-wiring comment to `Inv_OpenScreen @ 0x16ef4` (both call
+sites, ctx-rebuild rationale). Coverage unchanged -- `Inv_OpenScreen` was
+already cited in ui-core.md.

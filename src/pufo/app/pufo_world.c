@@ -19,6 +19,7 @@
 #include "game/pufo_tactend.h" /* Tact_CheckBattleEnd @ 0x34fbc, the mission-end check the shell runs on the live frame */
 #include "util/pufo_rand.h"    /* Game_RandU16 @ 0x3e59c, the enemy AI's draw seam */
 #include "game/pufo_roster.h"  /* Roster_CycleNext/Select*, the tact nav widgets (Part 54) */
+#include "game/pufo_tacthud.h" /* TactHud_OpenInventory (0x16ef4), the inventory the mission opens (Part 55) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -1614,6 +1615,7 @@ static bool World_TactPathToCellThunk(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void
 static void World_TactFillActionCostsThunk(void *pUser);
 static void World_TactEnqueueTurnKickThunk(Soldier *pUnit, u8 nFacing, void *pUser);
 static void World_TactInitUiControlsThunk(void *pUser); /* Tact_InitUiControls (0x3b498), Part 54 */
+static bool World_TactOpenInventoryThunk(void *pUser);   /* TactHud_OpenInventory (0x16ef4), Part 55 */
 static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser);
 static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser);
 static void World_TactEnemyAiPushTextThunk(i32 nRecIndex, void *pUser);
@@ -1852,8 +1854,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->hooks.pfnSoundApplySfxVolume  = World_TactSfxVolHook;
     pE->hooks.pfnLoadUiPads           = World_TactLoadUiPadsThunk; /* Tact_LoadUiPads (0x3b068), the 54-slot pad table (Part 53) */
     pE->hooks.pfnInitUiControls       = World_TactInitUiControlsThunk; /* Tact_InitUiControls (0x3b498): the bank's click handlers, the look control and the group placement (Part 54) */
-    pE->hooks.pfnOpenInventory        = NULL; /* Inv_OpenScreen (0x16ef4) at 0x3D0B8: ditto. The Xcom
-                                               * branch reaches it whenever the mission has a team. */
+    pE->hooks.pfnOpenInventory        = World_TactOpenInventoryThunk; /* TactHud_OpenInventory (0x16ef4) at the 0x3D0B8 site, the Xcom-team branch (Part 55) */
     pE->hooks.pUser                   = pW;
 
     /* Mode 0 needs none of the save blocks (pDat, pSaveHooks, pfnLoadRmp all stay NULL). */
@@ -2784,9 +2785,6 @@ static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
  * sTactInput (the input handlers' view); the bank handlers use the union and InputSync moves them.
  *
  * Handlers left NULL, each a recorded separate issue:
- *   4    Inv_OpenScreen @ 0x16ef4      -- 0x3D0B8's composition: sweep gate, filter-all reset,
- *                                        latch clear, MapCursor_SetPos re-stamp, RecalcInventoryStat,
- *                                        iso byte 1; the pfnOpenInventory hook stays NULL too
  *   5    MenuBtn_EndTurn @ 0x16494     -- Tact_BeginEnemyTurn's argument list is unchecked yet
  *   17/18 Tact_OpenLeft/RightHandMenu  -- the research gate is ready (g_abSlotTopicGate), but the
  *                                        cost input and the Soldier+0x1A6 gate byte are unmodeled
@@ -3640,6 +3638,52 @@ static void World_ClickSubMode8(void) { World_TactSubModeCall(8); }
 static void World_ClickOpenLoadSlots(void) { World_TactSlotListCall(false); }
 static void World_ClickOpenSaveSlots(void) { World_TactSlotListCall(true); }
 
+/* TactHud_OpenInventory @ 0x16ef4: the inventory the Xcom-team branch of Init_Tactical opens at
+ * 0x3D0B8 (the hook at tactinit.c:560, right after Tact_SelectUnit picks apXcomUnits[0]), and the
+ * same composition the inventory pad (bank widget 4) carries. The ctx is rebuilt live per call
+ * because the callee's `invOpen` env copies pSelUnit/nXcomCount before that selection lands. */
+static bool World_TactOpenInventoryBody(PufoWorldState *pW)
+{
+    GameMap *pMap = pW->pTactMap;
+    TactHudInvOpenCtx c;
+    bool bOpen;
+
+    if (pMap == NULL || pW->pTactState == NULL) {
+        return false;
+    }
+    memset(&c, 0, sizeof(c));
+    World_TactUiSyncIn(pW);
+    c.pUi           = &pW->sTactUi;
+    c.pSelUnit      = pMap->pSelUnit;
+    c.pCursor       = &pW->tactEnv.cursor;
+    c.geom          = pMap->geom;
+    c.pfnLookup     = World_TactLookupCell;
+    c.pLookupUser   = pW;
+    c.nXcomCount    = pMap->nXcomCount;                          /* 0x1511F */
+    c.bSweepGate    = pW->bMapSweepArmed;                        /* LOBYTE(apUiSlotsA[2]) @ 0x68 */
+    c.bSelUnitLarge = pMap->pSelUnit != NULL && Unit_bIsLarge(pMap->pSelUnit);
+    c.pfnPlaySample = World_TactBankSampleThunk;
+    c.pInvStat      = &pW->tactInvHooks;                         /* Unit_RecalcInventoryStat's seam */
+    c.pCallbackUser = pW;
+    bOpen = TactHud_OpenInventory(&c);
+    World_TactUiSyncOut(pW);
+    return bOpen;
+}
+
+static bool World_TactOpenInventoryThunk(void *pUser)
+{
+    return World_TactOpenInventoryBody((PufoWorldState *)pUser);
+}
+
+static void World_ClickOpenInventory(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW != NULL) {
+        (void)World_TactOpenInventoryBody(pW);
+    }
+}
+
 static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }
 static void World_ClickSpeed1(void) { World_TactSpeedCall(1); }
 static void World_ClickSpeed2(void) { World_TactSpeedCall(2); }
@@ -3703,7 +3747,7 @@ static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {
     World_TactHudClickUp,          /* 1   TactHud_ClimbUp @ 0x1674c */
     World_ClickLayerUp,            /* 2   MapView_LayerUp @ 0x16530 */
     World_ClickEnterLookMode,      /* 3   MapView_EnterLookMode @ 0x163d4 */
-    NULL,                          /* 4   Inv_OpenScreen @ 0x16ef4 (deferred) */
+    World_ClickOpenInventory,      /* 4   Inv_OpenScreen @ 0x16ef4 (Part 55) */
     NULL,                          /* 5   MenuBtn_EndTurn @ 0x16494 (deferred: BeginEnemyTurn args) */
     World_TactHudClickDown,        /* 6   TactHud_ClimbDown @ 0x16af0 */
     World_ClickLayerDown,          /* 7   MapView_LayerDown @ 0x164f0 */
