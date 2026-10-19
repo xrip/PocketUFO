@@ -1319,6 +1319,27 @@ global: `ActionCostInput.pActionPads`, written in the same loop, filled by `Worl
 from the caller's `WorldHooks.pBank` at `PUFO_HUD_ROSTER_FIRST` = 32, so both original call sites — the
 hand-menu opener and the enemy AI's cost refill — carry it.
 
+Screen 1 now paints (Part 80). `Render_Frame @ 0x22310` routes Map_nUiScreen 1 to 0x224AC and NOT through
+0x22414, so the inventory replaces the iso layer rather than sitting on it, and the callee
+(`TactHud_DrawInventoryScreen @ 0x1f58c`) was ported and tested long ago — the missing part was the seam:
+`World_bTactFrameLive` refused screen 1, while a mission launch leaves exactly screen 1 (0x3D0B8 calls
+`TactHud_OpenInventory @ 0x16ef4`, which stores 1 at 0x16FD8). The shell was painting nothing on the first
+screen of every mission. The env needed no new state — every cell the arm reads is one the bring-up already
+owns (`PUFO_HUD_INV_FIRST` = 19 for `pBank + 0x260`, "invv" at Map+0x100, the 32 manual pads at Map+0x199C
+as the portrait table, "twonone" at 0x156A70, unk_138EA0, TEXTS[55] "Вес: " with TEXTS[68] empty in
+lang.dat, the two rank tables, Map+0x3C as the held byte, Map_bForceNoDrag @ 0x128A9C, the bank pointer
+pair for the drag ghost). The gap the unit found is the **same class as Part 76's option pads**: the seven
+inventory filter pads ARE bank `UiControl.nState` bytes — widgets 21 (0xAC97A), 24 (0xAC9DA, "All") and
+25..29 (0xAC9FA/0xACA1A/0xACA3A/0xACA5A/0xACA7A), seven widgets, not a contiguous run — written by the
+opener (0x16F68, 0x16F70, 0x16F78..0x16F98) and by `Ui_SetInvFilter`, and blitted by the arm, while the
+port kept them only in `TactUiState`, so the lit filter never reached a widget. `World_TactPushInventoryFilterPads`
+mirrors them on the screen that reads them. Measured through the installed handler (bank widget 4): the arm
+blits two pads — the lit All filter and bank widget 30, the one descriptor row whose pad is in slot 0 —
+because `UiControl_LoadPads @ 0x1a604` writes the three descriptor names into slots 0/1/2 in order, these
+rows leave slot 0 empty, and `UiControl_BlitActivePad` reads `apPads[nState]`; the panel's static grids come
+from the "invv" backdrop and the control pads are the lit-filter and pressed overlays. New reference:
+`tests/ref/tact_hud_inventory.png`.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

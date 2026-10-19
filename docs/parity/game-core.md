@@ -20096,4 +20096,52 @@ exactly two pads, mode 11's pad gets 1 while its enabled entry keeps 30, a refil
 offers nothing clears the pads the first fill enabled (the mirror is a store, not an OR), and a NULL
 bank leaves both tables filled. In the shell's own flow, the screen-3 block of
 tests/test_geoscapeframe.c now requires the twelve bank bytes to match the twelve enabled entries on
-the reloaded mission: 2 modes offered, 2 pads enabled, and the roster still blits 2 pads.
+the reloaded mission: 2 modes offered, 2 pads enabled, and the roster still blits 2 pads.
+## Part 80 - the tactical inventory paints through the frame, and its filter row lives in the bank
+
+`Render_Frame @ 0x22310` routes Map_nUiScreen 1 to 0x224AC and never through 0x22414, so the inventory
+REPLACES the iso layer instead of sitting on top of it. The callee was ported long ago
+(`TactHud_DrawInventoryScreen @ 0x1f58c`, gated in tests/test_tacthud.c); what was missing was the seam.
+`World_bTactFrameLive` refused screen 1, and screen 1 is exactly what a mission launch leaves behind:
+`Init_Tactical`'s team branch at 0x3D0B8 calls `TactHud_OpenInventory @ 0x16ef4`, which lights the All
+filter, rebuilds the ground-item list and stores 1 at 0x16FD8. The shell therefore painted nothing on
+the first screen of every mission.
+
+Every cell the arm reads is one the bring-up already owns, so the env needed no new state: the 13 panel
+controls are bank widgets 19..31 (`pBank + 0x260`, 0x260 / 0x20 = 19 -- `PUFO_HUD_INV_FIRST`), the
+backdrop is the "invv" pad the pad loader stored at Map+0x100, the unit portrait table is the 32-slot
+manual pad set at Map+0x199C indexed `8*nUnitType + 4*bFemale + nLook`, the strip's empty-hand marker is
+the "twonone" pad at 0x156A70, the empty-slot sentinel is unk_138EA0, the burden line is TEXTS[55]
+("Вес: ") with TEXTS[68] as its suffix -- lang.dat leaves 68 EMPTY, so the line reads "Вес: N" -- the
+rank names are aszTextE @ 0xB2200 and aszTextA @ 0xB2148, the drag byte is the pen's own Map+0x3C
+(unk_1139F4), the drag-off option is Map_bForceNoDrag @ 0x128A9C (the byte widget 88's handler flips, so
+the arm and the toggle read one cell), and the drag ghost's position is the bank's pointer pair at
++0x1044 / +0x1048.
+
+The filter row was a real gap, and it is the SAME class Part 76 closed for the options screen. In the
+original the seven inventory filter pads ARE bank UiControl.nState bytes: widget 21 (0xAC97A), widget 24
+(0xAC9DA, "All") and widgets 25..29 (0xAC9FA, 0xACA1A, 0xACA3A, 0xACA5A, 0xACA7A) -- seven widgets, not
+one contiguous run. `TactHud_OpenInventory` lights All at 0x16F70 and darkens the six at 0x16F68 and
+0x16F78..0x16F98, `Ui_SetInvFilter` re-lights one on a tap, and the draw blits the widgets. The port kept
+those seven bytes in `TactUiState` only, so the lit pad never reached a widget and the row drew nothing.
+`World_TactPushInventoryFilterPads` mirrors them on the screen that reads them, exactly as
+`World_TactPushOptionPads` mirrors the 29 option pads on screen 12.
+
+Measured on the reloaded mission with the inventory opened through the installed handler (bank widget 4,
+not a hand-built call): the arm blits exactly two pads -- the lit All filter (bank 24) and widget 30, the
+one descriptor row whose pad is stored in slot 0. The other eleven hold their pad in slot 1, because
+`UiControl_LoadPads @ 0x1a604` stores the descriptor's three names into slots 0, 1, 2 in order and these
+rows name nothing in slot 0, while `UiControl_BlitActivePad` reads `apPads[nState]`. So at rest a dark
+control draws nothing and the panel's frames, pockets, backpack and belt grids come from the "invv"
+backdrop: the control pads are the lit-filter and pressed overlays. Clearing All takes one blit away;
+lighting abFilterPad[0] adds one; all seven bytes stand in the bank in their own slots.
+
+Gate: a Part 80 block in tests/test_geoscapeframe.c opens the inventory through the installed handler
+(screen 1 at 0x16FD8, All lit with the six others dark), requires the arm to run with NO iso layer (the
+iso layer's own loop bounds do not move, because 0x22414 is off this path), counts the two pad blits and
+the two filter mutations, and pins the seven-byte mirror. A second block runs the same paint at the
+mission bring-up, where the launch itself leaves screen 1. New reference picture
+tests/ref/tact_hud_inventory.png, looked at: the portrait, the header line, "Вес: 0", the empty equipment
+grid, the ground-item strip and the lit filter row. IDB: 4 comments (0x224AC, 0x16F68, 0x1f58c, 0xAC9DA)
+plus `idb_save`. Gates: all six ran, 62/62 Release and 62/62 Debug, 18567 checks, coverage 972/1103 and
+596888/598792 bytes unchanged, 12 frame references (one new) and 9 e2e pictures unchanged.

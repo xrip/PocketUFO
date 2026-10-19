@@ -218,6 +218,17 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
  * fire-mode handlers on 32..43, the nine sub-mode handlers on 44..52, the seven menu rows on
  * 53..59, the option pads on 60..88, the nine action buttons on 89..97, SaveLoad_Slot0..6 +
  * MenuBtn_Confirm5 on 105..112), and the range the draw below blits. One span, three uses. */
+#define PUFO_HUD_INV_FIRST    19  /* screen 1  -- TactHud_DrawInventoryScreen's 13 controls are
+                                   * pBank + 0x260 (0x260 / 0x20 = 19), the same 13 widgets
+                                   * Input_OnPointer @ 0x13c6c hit-tests on that screen */
+
+/* The seven inventory filter pads are bank nState bytes, and they are NOT a run: widget 21
+ * (0xAC97A), widget 24 (0xAC9DA, the "All" pad) and widgets 25..29 (0xAC9FA, 0xACA1A, 0xACA3A,
+ * 0xACA5A, 0xACA7A). TactHud_OpenInventory @ 0x16ef4 lights 24 and darkens the six at 0x16F68
+ * and 0x16F78..0x16F98; Ui_SetInvFilter re-lights them on a tap. */
+#define PUFO_HUD_INV_FILTER_X     21
+#define PUFO_HUD_INV_FILTER_ALL   24
+#define PUFO_HUD_INV_FILTER_FIRST 25
 #define PUFO_HUD_ROSTER_FIRST 32  /* screen 3  */
 #define PUFO_HUD_STATUS_FIRST 44  /* screen 5  */
 #define PUFO_HUD_MENU_FIRST   53  /* screen 7  */
@@ -533,6 +544,11 @@ void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor)
  *
  * Deviation: the original builds both text lines in scratch at Map+0xAC and returns whatever the last
  * call left in R0. The port uses local buffers and returns void. */
+/* The two records the burden line is built from: 55 is the label, 68 the suffix. In the shipped
+ * language file 55 is "Вес: " and 68 is EMPTY, so the line reads "Вес: N" with no suffix. */
+#define PUFO_TEXT_REC_BURDEN_LABEL  55
+#define PUFO_TEXT_REC_BURDEN_SUFFIX 68
+
 #define PUFO_HUD_INV_CONTROLS 13
 
 typedef struct TactHudInventoryEnv {

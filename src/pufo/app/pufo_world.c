@@ -2751,9 +2751,10 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
     case 0: case 3: case 5: case 7: case 8: case 9:      /* 0x2237C's jumptable group: */
     case 10: case 11: case 12: case 15:                  /* "cases 0,3,5,7-12,15"        */
     case PUFO_DEBRIEF_UI_SCREEN:                         /* 13: the status banner arm at 0x223E8 */
-        return true;
+    case 1:                                              /* 0x224AC: the inventory arm, outside that */
+        return true;                                     /* group -- it draws no iso layer at all */
     default:
-        return false;   /* 1/2/4/6, 0x13 and 0x14/0x15 replace the iso layer with another env */
+        return false;   /* 2/4/6, 0x13 and 0x14/0x15 replace the iso layer with another env */
     }
 }
 
@@ -2824,6 +2825,26 @@ static void World_TactPushOptionPads(const PufoWorldState *pW, UiControl *pBankC
     }
 }
 
+/* The seven inventory filter pads, same shape and same reason: in the original they ARE bank
+ * UiControl.nState bytes -- 0xAC97A (widget 21), 0xAC9DA (widget 24, the "All" pad) and
+ * 0xAC9FA / 0xACA1A / 0xACA3A / 0xACA5A / 0xACA7A (widgets 25..29). TactHud_OpenInventory lights
+ * 24 and darkens the six (0x16F68, 0x16F78..0x16F98) and Ui_SetInvFilter re-lights them on a tap,
+ * while the port keeps them in TactUiState. TactHud_DrawInventoryScreen blits the widgets, so the
+ * mirror runs on the screen that reads them. */
+static void World_TactPushInventoryFilterPads(const PufoWorldState *pW, UiControl *pBankCtl)
+{
+    static const u8 anFilterWidget[PUFO_INV_FILTER_PADS] = { 25, 26, 27, 28, 29 };  /* 0xAC9FA + 0x20*i */
+
+    if (pBankCtl == NULL) {
+        return;
+    }
+    pBankCtl[PUFO_HUD_INV_FILTER_X].nState   = pW->sTactUi.bFilterPadX;    /* 0xAC97A */
+    pBankCtl[PUFO_HUD_INV_FILTER_ALL].nState = pW->sTactUi.bFilterPadAll;  /* 0xAC9DA */
+    for (i32 i = 0; i < PUFO_INV_FILTER_PADS; ++i) {
+        pBankCtl[anFilterWidget[i]].nState = pW->sTactUi.abFilterPad[i];
+    }
+}
+
 /* Stand-in for MainMenu_pSlotCtx when the caller hands the frame no slot-label block: seven labels
  * that draw as nothing. TactHud_DrawModalPanel reads seven rows of 40 unconditionally, so a short
  * string is not an option here. */
@@ -2838,6 +2859,8 @@ static const char *World_TextRec(const PufoWorldState *pW, i32 nRec)
                ? (const char *)pW->pAssets->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec
                : "";
 }
+
+static PufoOptions *World_TactLiveOptions(PufoWorldState *pW); /* forward: defined with the option toggles */
 
 static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
 {
@@ -2865,8 +2888,11 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     TactHudBannerState    banner;
     TactHudRoster         roster;      /* screen 3, the fire-mode panel */
     TactHudActionGate     actionGate;  /* screen 15, the nine action buttons */
+    TactHudInventoryEnv   inv;         /* screen 1, the inventory */
     char                  aModeNames[PUFO_HUD_ROSTER_PADS][PUFO_HUD_ROSTER_NAME_STRIDE]; /* 0xB3768 */
     UiControl            *pBankCtl;    /* the caller's 130-widget bank, the pad source */
+    UiWidgetBank         *pBank;       /* that bank's own block: its pointer pair is 0xAD714/0xAD718 */
+    PufoOptions          *pOpt;        /* the option block Map_bForceNoDrag lives in */
     RenderFrameEnv        rf;
     i32                   nStatusOutY;
     bool                  bModalOpen;
@@ -3055,6 +3081,8 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
      * 11 = Menu_OpenLoadSlots 0x18884; 12 = Options_SyncUiFromMap_GotoScreen12 0x18A34;
      * 15 = Map_UiScreen0F_PlaySample0F 0x164DC. */
     pBankCtl = (pHooks != NULL && pHooks->pBank != NULL) ? pHooks->pBank->aCtl : NULL;
+    pBank    = (pHooks != NULL) ? pHooks->pBank : NULL;      /* the bank itself, for its pointer pair */
+    pOpt     = World_TactLiveOptions(pW);                    /* the option block Map_bForceNoDrag lives in */
 
     /* Screen 3, TactHud_DrawUnitRoster @ 0x21908. The panel gate is Map.pSelWeapon (Map+0x48), which
      * Ui_OpenHandMenu stores at 0x17060 before its own gates run. The twelve rows come from the two
@@ -3091,6 +3119,40 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     if (pW->nUiScreen == (i32)PUFO_MENU_SCREEN_OPTIONS) {
         World_TactPushOptionPads(pW, pBankCtl);   /* screen 12 (0x18A34): the pads it blits */
     }
+    if (pW->nUiScreen == 1) {
+        World_TactPushInventoryFilterPads(pW, pBankCtl);  /* screen 1 (0x16F68..0x16F98): the filter row */
+    }
+
+    /* Screen 1, TactHud_DrawInventoryScreen @ 0x1f58c. This arm REPLACES the iso layer (0x2237C sends
+     * case 1 straight to 0x224AC, never through 0x22414), and every cell it reads is one the mission
+     * bring-up already owns: the 13 panel controls are bank widgets 19..31 (`pBank + 0x260`, the same
+     * 13 Input_OnPointer hit-tests here), the backdrop is the "invv" pad the pad loader stored at
+     * Map+0x100, the unit portrait table is the 32-slot manual pad set at Map+0x199C indexed
+     * 8*nUnitType + 4*bFemale + nLook, the item strip's empty-hand marker is the "twonone" pad at
+     * 0x156A70, the empty-slot sentinel is unk_138EA0, the drag byte is the pen's own Map+0x3C
+     * (unk_1139F4, written by Input_OnPointer / Input_OnPointerUp), and the drag-off option is
+     * Map_bForceNoDrag @ 0x128A9C -- the byte widget 88's handler flips (Menu_ToggleForceNoDrag
+     * @ 0x19d94), so the arm and the toggle read the one cell. */
+    memset(&inv, 0, sizeof(inv));
+    inv.pInvPad         = pW->apTactPads[PUFO_UIPAD_INV];        /* unk_113AB8, Map+0x100 "invv" */
+    inv.aControls       = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_INV_FIRST] : NULL;  /* 0x1f5a8 */
+    inv.pSelUnit        = pMap->pSelUnit;
+    inv.pHit            = &pW->sTactHit;                         /* the equip/drag hit state */
+    inv.apPortraitPad   = pW->apTactPads;                        /* Map+0x199C: PUFO_UIPAD_MAN(0..31) */
+    inv.pszBurdenLabel  = World_TextRec(pW, PUFO_TEXT_REC_BURDEN_LABEL);   /* TEXTS[55] "Вес: " */
+    inv.pszBurdenSuffix = World_TextRec(pW, PUFO_TEXT_REC_BURDEN_SUFFIX);  /* TEXTS[68], empty */
+    inv.panRankLow      = (const char *)g_textTables.pE;        /* aszTextE @ 0xB2200, Xcom ranks */
+    inv.panRankOther    = (const char *)g_textTables.pA;        /* aszTextA @ 0xB2148, alien ranks */
+    inv.nCursorX        = (pBank != NULL) ? pBank->nPointerX : 0;   /* +0x1044, 0xAD714 */
+    inv.nCursorY        = (pBank != NULL) ? pBank->nPointerY : 0;   /* +0x1048, 0xAD718 */
+    inv.bItemHeld       = pW->sTactInput.bInvDragActive;        /* unk_1139F4 @ Map+0x3C */
+    inv.bForceNoDrag    = (pOpt != NULL) ? pOpt->bForceNoDrag : 0;
+    inv.nBigObsBase     = (pFont != NULL) ? pFont->nBigObsBase : 0;        /* fontSys + 0x26 */
+    inv.Strip.pUi           = &pW->sTactUi;                     /* the ground-item list and its filter */
+    inv.Strip.pSelUnit      = pMap->pSelUnit;
+    inv.Strip.pEmptyHandPad = pW->apTactPads[PUFO_UIPAD_TWONONE];          /* unk_156A70 "twonone" */
+    inv.Strip.pEmptySlot    = &pW->sMapSentinel138EA0;                     /* unk_138EA0 @ Map+0x254E8 */
+    inv.Strip.nBigObsBase   = inv.nBigObsBase;
 
     /* --- the dispatch env --- */
     memset(&rf, 0, sizeof(rf));
@@ -3136,6 +3198,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     rf.pTopBarPads        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_TOPBAR_FIRST] : NULL; /* 0x22464 */
     rf.pActionPads        = (pBankCtl != NULL) ? &pBankCtl[PUFO_HUD_ACTION_FIRST] : NULL; /* 0x22458 */
     rf.pActionGate        = &actionGate;
+    rf.pInventory         = &inv;                          /* 0x224AC */
 
     rf.pBannerPad        = (pHooks != NULL && pHooks->pBank != NULL) ? &pHooks->pBank->aCtl[128] : NULL;
     rf.pBannerBackdrop   = pW->apTactPads[PUFO_UIPAD_ENDMISSION];   /* pPadEndMission @ 0x156A74 */

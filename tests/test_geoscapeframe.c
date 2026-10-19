@@ -1994,6 +1994,26 @@ int main(void)
                           && pUiOpen->nUiScreen == 1 && pUiOpen->bActionLatch == 0,
                       "the inventory opener ran during bring-up: All filter lit, filter type 0, selection unset, staging screen 1 and latch 0 (0x16F14..0x16F40)");
             }
+            /* The state a mission launch actually leaves: screen 1, the inventory, over the shell's own
+             * selected unit. Part 80 put 0x224AC on the frame seam, so this is a paint the app runs the
+             * moment a mission starts -- gated here so a missing env or a NULL Map.pSelUnit shows up as a
+             * failed check rather than as a crash in the shell. */
+            {
+                i32 nTileA = g_world.sTactIso.nTileX;
+                i32 nTileB = g_world.sTactIso.nTileY;
+
+                g_world.sTactIso.nTileX = -1;
+                g_world.sTactIso.nTileY = -1;
+                ClearSurface();
+                g_nBlits = 0;
+                World_TactFrame(&g_world);
+                Check(World_bTactFrameLive(&g_world) && g_world.nUiScreen == 1,
+                      "a mission launch leaves screen 1 on the frame seam (0x2237C case 1)");
+                Check(g_nBlits > 0 && g_world.sTactIso.nTileX == -1 && g_world.sTactIso.nTileY == -1,
+                      "and that paint runs the inventory arm, not the iso layer (0x224AC, never 0x22414)");
+                g_world.sTactIso.nTileX = nTileA;
+                g_world.sTactIso.nTileY = nTileB;
+            }
             Check(g_world.nMapUnk138E6C >= 10 && g_world.nMapUnk138E6C <= 50
                       && g_world.nMapUnk138E70 >= 0 && g_world.nMapUnk138E70 <= 20,
                   "the prologue random pair RandU16(0x28)+10 and RandU16(0x14): each inside its scaled range; the seed is the clock, so the exact pair is not pinned");
@@ -3648,6 +3668,98 @@ int main(void)
         Check(g_nBlits > nBlitsBefore,
               "the iso chain runs over the reloaded mission: the cell passes and the unit glyphs blit");
         DumpFrame("tact_loaded_mission");
+
+        /* --- screen 1: the inventory arm at 0x224AC (Part 80) -------------------------------
+         * 0x2237C routes case 1 to 0x224AC, never through 0x22414, so this arm draws NO iso layer: the
+         * "invv" backdrop pad (Map+0x100), the 13 panel controls at pBank + 0x260 = bank widgets 19..31,
+         * the burden line (TEXTS[55]), the unit header, the item strip and the unit portrait from the
+         * 32-slot manual pad set at Map+0x199C. The mission is the reloaded one, whose selected unit the
+         * resume tail just re-centred the camera on. */
+        {
+            u16 nScreenSave = g_world.nUiScreen;
+            i32 nInv;
+
+            /* Open it the way the game does: widget 4 carries TactHud_OpenInventory (0x16ef4, Part 55),
+             * so the filter bytes this screen reads are the opener's own writes, not a fixture's. */
+            g_bank.aCtl[4].pfnClick();
+            CheckEqI32(g_world.nUiScreen, 1, "the installed opener writes Map_nUiScreen 1 (0x16FD8)");
+            Check(g_world.sTactUi.bFilterPadAll != 0 && g_world.sTactUi.bFilterPadX == 0
+                      && g_world.sTactUi.abFilterPad[0] == 0 && g_world.sTactUi.abFilterPad[1] == 0
+                      && g_world.sTactUi.abFilterPad[2] == 0 && g_world.sTactUi.abFilterPad[3] == 0
+                      && g_world.sTactUi.abFilterPad[4] == 0,
+                  "and its pad writes are All lit with the six others dark (0x16F68, 0x16F78..0x16F98)");
+            Check(World_bTactFrameLive(&g_world),
+                  "the inventory screen is on the tactical frame seam now (0x2237C case 1 -> 0x224AC)");
+            g_world.sTactIso.nTileX = -1;                /* the iso layer's own loop bounds */
+            g_world.sTactIso.nTileY = -1;
+            ClearSurface();
+            g_nBlits = 0;
+            World_TactFrame(&g_world);
+            nInv = g_nBlits;
+            Check(g_world.sTactIso.nTileX == -1 && g_world.sTactIso.nTileY == -1,
+                  "and the arm runs with no iso layer at all: MapView_DrawIsoLayer (0x22414) is off this path");
+            DumpFrame("tact_hud_inventory");
+
+            /* Which blits belong to the filter row: the state byte is the one the opener lit, so
+             * clearing it has to take the pad with it. Six of the seven filter widgets are dark by
+             * the opener's own write, so they draw nothing either way -- lighting one of them has to
+             * ADD a blit. */
+            {
+                u8 bAllSave = g_world.sTactUi.bFilterPadAll;
+                u8 abSave[PUFO_INV_FILTER_PADS];
+                i32 nInvDark;
+                i32 nInvLit;
+
+                memcpy(abSave, g_world.sTactUi.abFilterPad, sizeof(abSave));
+
+                g_world.sTactUi.bFilterPadAll = 0;
+                ClearSurface();
+                g_nBlits = 0;
+                World_TactFrame(&g_world);
+                nInvDark = g_nBlits;
+
+                g_world.sTactUi.bFilterPadAll = bAllSave;
+                g_world.sTactUi.abFilterPad[0] = 1;
+                ClearSurface();
+                g_nBlits = 0;
+                World_TactFrame(&g_world);
+                nInvLit = g_nBlits;
+
+                g_world.sTactUi.bFilterPadAll = bAllSave;
+                memcpy(g_world.sTactUi.abFilterPad, abSave, sizeof(abSave));
+                ClearSurface();                  /* re-paint, so the bank holds the restored state */
+                g_nBlits = 0;
+                World_TactFrame(&g_world);
+
+                printf("  filter row: %d blits lit, %d with All cleared, %d with pad 0x1A25 too\n",
+                       nInv, nInvDark, nInvLit);
+                CheckEqI32(nInv - nInvDark, 1,
+                           "the All pad (bank widget 24, 0xAC9DA) blits because the mirror put the byte in the bank");
+                CheckEqI32(nInvLit - nInv, 1,
+                           "and lighting abFilterPad[0] (bank 25, 0xAC9FA) adds its own pad");
+            }
+            {
+                i32 bMirror = 1;
+
+                if (g_bank.aCtl[PUFO_HUD_INV_FILTER_X].nState != g_world.sTactUi.bFilterPadX) { bMirror = 0; }
+                if (g_bank.aCtl[PUFO_HUD_INV_FILTER_ALL].nState != g_world.sTactUi.bFilterPadAll) { bMirror = 0; }
+                for (i32 c = 0; c < PUFO_INV_FILTER_PADS; ++c) {
+                    if (g_bank.aCtl[PUFO_HUD_INV_FILTER_FIRST + c].nState != g_world.sTactUi.abFilterPad[c]) {
+                        bMirror = 0;
+                    }
+                }
+                Check(bMirror, "all seven filter bytes stand in the bank, in their own widget slots 21 / 24 / 25..29");
+            }
+            /* Two pads, and the reason for the other eleven is in the descriptor: their loaded pad
+             * lands in slot 1 (0x1A6A4 stores the three descriptor names into slots 0, 1, 2 in order
+             * and the inventory rows name nothing in slot 0), while UiControl_BlitActivePad reads
+             * apPads[nState] -- so at rest a dark control draws nothing and the panel's static art
+             * comes from the "invv" backdrop. Widget 30 is the one row whose descriptor does fill
+             * slot 0 (a 15x15 pad at 225, 3), and it is the other blit. */
+            CheckEqI32(nInv, 2,
+                       "the arm blits two pads: the lit All filter (bank 24) and widget 30, the one control whose pad sits in slot 0");
+            g_world.nUiScreen = nScreenSave;
+        }
         (void)remove("sav62.sav");
 
         /* --- and on a loaded mission the same close deploys nothing (Part 66) ------------------
