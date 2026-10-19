@@ -441,6 +441,10 @@ typedef struct PufoWorldState {
      * staging copy its handlers read and write: World_TactUiSyncIn/SyncOut (pufo_world.c) move its
      * fields to and from the live owners around every bank click. */
     TactInputState  sTactInput;
+    TactInputState  sTactInputPre;      /* the SyncIn snapshot (Part 60): SyncOut writes back only the
+                                         * cells the dispatch changed, so a handler running inside a
+                                         * release and writing these live cells is not undone by a
+                                         * flush of the pre-handler values */
     UiControl       sTactLookCtl;       /* unk_1571E4, the screen-0 look control. Input_OnConfirm @ 0x15f3c
                                          * clears its bEnabled on the armed multi-target commit (the
                                          * *unk_1571E4+9 scratch flag) */
@@ -484,6 +488,9 @@ typedef struct PufoWorldState {
     char            aszDeployMsg1[256]; /* unk_E90D9, the deploy confirm "in" message, formatted by the
                                          * widget-56 opener (Map_BuildDeployConfirmYesNo 0x18a68, Part 58) */
     char            aszDeployMsg2[256]; /* unk_E9273, the matching "out" message */
+    CamOffset       sTactCamOffset;     /* Map+0x4A40/0x4A41: the pointer drag's camera scratch
+                                         * (Part 60). The reader is the iso renderer, still the open
+                                         * seam; the FocusCtx callers keep per-call scratch today. */
     /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
     u8        bSolScreenOpen;           /* 0x159DE0 */
     UiPanel  *pSolPanelEquip;           /* 0x159DF0 */
@@ -720,6 +727,16 @@ bool World_GameTickOnce(PufoWorldState *pW);
  * for Tact_Shutdown @ 0x3d568) and the geoscape rebuild Geoscape_InitUI mode 1 (0x162C8). */
 bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort);
 bool World_MissionCancelEnd(PufoWorldState *pW);
+
+/* Pointer dispatch while a mission owns the pen (Part 60). The caller feeds the pen events
+ * (Input_OnPointer @ 0x13c6c press/move and Input_OnPointerUp @ 0x148d0) through the shell's
+ * TactPointerWorld; the world fills the tactical fields (queue, lookup, HUD pad, camera scratch,
+ * look control), moves the live Map cells in and out of sTactInput, and runs the ported
+ * dispatchers. The pen reaches them only while World_bTactPointerLive -- the launch clears
+ * Map.bGeoscapeUi at 0x86D34, which is the original's own branch gate (0x13CE0 / 0x14908). */
+bool World_bTactPointerLive(const PufoWorldState *pW);
+void World_TactPointerMove(PufoWorldState *pW, TactPointerWorld *pPtr, i32 nX, i32 nY, bool bDown);
+void World_TactPointerUp(PufoWorldState *pW, TactPointerWorld *pPtr);
 
 /* GeoscapeUi_FreeAll(bFreeWorld 1) plus the nav controls and the site records. */
 void World_Free(PufoWorldState *pW);

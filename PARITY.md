@@ -17,13 +17,13 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 970 / 1103 (87.9%) |
-| Bytes of original code cited | 596868 / 598792 (99.7%) |
-| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 133, 1924 bytes |
-| Behaviour-bearing functions cited | 970 / 970 (100.0%) |
+| Functions cited as evidence | 971 / 1103 (88.0%) |
+| Bytes of original code cited | 596884 / 598792 (99.7%) |
+| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 132, 1908 bytes |
+| Behaviour-bearing functions cited | 971 / 971 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 61 |
-| Test checks run | 18160 |
+| Test checks run | 18163 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 18 | 18 | 1080 / 1080 | growable pointer array, RNG, string helpers |
 | `app-shell` | 24 | 24 | 6376 / 6376 | WinMain, window class, display bring-up, registry options |
-| `platform` | 3 | 131 | 40 / 1904 | WinCE -> Win32 seams (GDI display, registry) |
+| `platform` | 4 | 131 | 56 / 1904 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 212 | 214 | 178320 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 51 | 43684 / 43684 | tactical HUD, inventory, command pads, input dispatch |
@@ -173,7 +173,7 @@ is the module that answers to it.
 | `0xa0f80` | `PtrArray_ctor` | 16 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa1044` | `PtrArray_Add` | 16 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa1120` | `PtrArray_Clear` | 16 | `src/pufo/util/pufo_ptrarray.h` |
-| `0x11164` | `Bank_RegisterAtexit` | 12 | `src/pufo/ui/pufo_control.h` |
+| `0x11164` | `Bank_RegisterAtexit` | 12 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_control.h` |
 | `0x11170` | `Bank_AtexitThunk` | 12 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0xa1154` | `PtrArray_GetCount` | 8 | `src/pufo/util/pufo_ptrarray.h` |
 
@@ -206,10 +206,11 @@ is the module that answers to it.
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 
-### `platform` (3 functions)
+### `platform` (4 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x11148` | `InitTerm_UiBankEntry` | 16 | `src/pufo/app/pufo_app.c` |
 | `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | `src/pufo/app/pufo_world.c` |
 | `0x460dc` | `j_Font_Free` | 12 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0xa115c` | `??3@YAXPAX@Z` | 12 | `src/pufo/app/pufo_world.c` |
@@ -477,10 +478,10 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.c` (+2) |
 | `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/game/pufo_isodraw.h` |
-| `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geopointer.h` (+3) |
+| `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_mainmenu.h` |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+3) |
-| `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_geopointer.h` (+2) |
+| `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x2cdac` | `TactHud_DrawItemStrip` | 2004 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | `src/pufo/game/pufo_tacthud.h` |
@@ -543,7 +544,7 @@ is the module that answers to it.
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+2) |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x36630` | `UiPulse_OnTimer` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
-| `0x11320` | `UiBank_CtorAll` | 440 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
+| `0x11320` | `UiBank_CtorAll` | 440 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_control.c` (+1) |
 | `0x1117c` | `UiBank_FreeAllPads` | 420 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x3e730` | `UiPanel_ctor` | 408 | `src/pufo/ui/pufo_panel.h` |
@@ -1104,10 +1105,10 @@ init-term entries, the image's own C runtime, the compiled-out debug print —
 read instruction by instruction out of `pufobeta.exe.i64`. The rest are
 attributed to the subsystem whose port work they belong to.
 
-Uncited now: 133 functions, 1924 bytes. Of those, 133 carry no game behaviour.
+Uncited now: 132 functions, 1908 bytes. Of those, 132 carry no game behaviour.
 0 are real port work: none
 
-### `platform` — 128 functions, 1864 bytes remaining
+### `platform` — 127 functions, 1848 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1117,7 +1118,6 @@ Uncited now: 133 functions, 1924 bytes. Of those, 133 carry no game behaviour.
 | `0xa1628` | `_cinit` | 48 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
 | `0xa1658` | `Crt_CallFnTable` | 48 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
 | `0xa1610` | `atexit` | 24 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
-| `0x11148` | `InitTerm_UiBankEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x11158 j_UiBank_CtorAll; B 0x11164 Bank_RegisterAtexit |
 | `0x22604` | `InitTerm_MapEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x22614 j_Map_InitAndLoadRegistry; B 0x22620 Map_RegisterAtexit |
 | `0x3f0b4` | `InitTerm_DatFileEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x3f0c4 j_DatFile_ctor; B 0x3f0d0 DatFile_RegisterAtexit |
 | `0x460b4` | `InitTerm_FontEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x460c4 j_Font_Init_ReturnArg; B 0x460d0 Font_RegisterAtexit |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3211 |
-| `test_geoscapeframe` | PASS | 413 |
+| `test_geoscapeframe` | PASS | 416 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 338 |
 | `test_invdrag` | PASS | 370 |

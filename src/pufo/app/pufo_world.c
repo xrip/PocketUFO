@@ -2890,27 +2890,89 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
     for (i = 0; i < PUFO_MULTI_TARGET_MAX; ++i) {
         pS->apMultiTargets[i] = pMap->apMultiTargets[i];
     }
+    /* Part 60: the pointer dispatch's gate cells, each with a live owner elsewhere. */
+    pS->bTactFlag        = pW->bTactFlag != 0;              /* Map+0x00; Init/FreeTactical also set it */
+    pS->bGeoscapeUi      = pW->bGeoscapeUi != 0;            /* Map+0x44, the 0x13CE0 / 0x14908 gate */
+    pS->bPlayerInputOn   = pW->bMapPlayerInput;             /* unk_1139F0 @ Map+0x38 */
+    pS->bGameTickHold    = pW->bMapTickHold != 0;           /* Map_bTickHold @ Map+0x5A */
+    pS->bQueueActive     = pW->pTactState->bQueueActive;    /* unk_157198->bQueueActive */
+    pS->bFireStatus1     = pMap->bFireStatus1;              /* Map+0x51 */
+    pS->bFireStatus2     = pW->bMapFire2;                   /* Map+0x52 */
+    pS->bTrajPad27_2     = pMap->bTrajHitStop;              /* 0x1406D */
+    pS->nUiSlot11        = (u16)pW->nMapUiSlot11;           /* apUiSlotsA[11] low word @ 0x8C */
+    pS->bSlot19Active    = (u8)(pW->sModal.bOpen ? 1u : 0u); /* the modal open byte @ Map+0xAC */
+    pS->nSlot24Hit       = pW->sModal.nField48;             /* the hover cell @ Map+0xC0 */
+    pW->sTactInputPre = *pS;                                /* the diff basis for SyncOut (Part 60) */
 }
 
+/* Part 60 write-back rule: each mirrored cell is flushed only if the dispatch changed it. A
+ * release arm can run an installed handler inside the same window, and that handler writes the
+ * SAME live cells from the other side (the EndTurn bracket restores pSelUnit, a screen handler
+ * opens a screen). A flat snapshot flush would undo those handler writes; the diff makes the last
+ * writer win per cell, which is what the original's single shared memory does. bPlayerInputOn is
+ * never flushed: the pfnSetPlayerInput hook owns that live byte directly. The cells sTactInput
+ * alone owns (the 0x60/0x6C/0x70/0x74 slots, the camera block, bDeployPanelOpen, bUiSlot8Byte0)
+ * are not mirrored at all -- sTactInput IS their live owner. */
 static void World_TactInputSyncOut(PufoWorldState *pW)
 {
     const TactInputState *pS = &pW->sTactInput;
+    const TactInputState *pPre = &pW->sTactInputPre;
     GameMap *pMap = pW->pTactMap;
     i32 i;
 
-    pW->nUiScreen         = pS->nUiScreen;
-    pMap->bActionLatch    = pS->nActionLatch;
-    pW->nMapActionMode    = pS->nActionMode;
-    pW->tactEnv.cursor.nFlags = pS->nLayerScratch;
-    pW->tactEnv.cursor.nX = pS->nCursorX;
-    pW->tactEnv.cursor.nY = pS->nCursorY;
-    pMap->bLookCommitFlag = pS->bLookCommitFlag;
-    pMap->pLookCommitUnit = pS->pLookCommitUnit;
-    pMap->pSelUnit        = pS->pSelUnit;
-    pMap->pSelWeapon      = pS->pSelWeapon;
-    pMap->nMultiTargetCount = pS->nMultiTargetCount;
+    if (pS->nUiScreen != pPre->nUiScreen) {
+        pW->nUiScreen = pS->nUiScreen;
+    }
+    if (pS->nActionLatch != (i32)pMap->bActionLatch) {
+        pMap->bActionLatch = (u8)pS->nActionLatch;
+    }
+    if (pS->nActionMode != pW->nMapActionMode) {
+        pW->nMapActionMode = pS->nActionMode;
+    }
+    if (pS->nLayerScratch != pW->tactEnv.cursor.nFlags) {
+        pW->tactEnv.cursor.nFlags = pS->nLayerScratch;
+    }
+    if (pS->nCursorX != pW->tactEnv.cursor.nX || pS->nCursorY != pW->tactEnv.cursor.nY) {
+        pW->tactEnv.cursor.nX = pS->nCursorX;
+        pW->tactEnv.cursor.nY = pS->nCursorY;
+    }
+    if (pS->bLookCommitFlag != pMap->bLookCommitFlag) {
+        pMap->bLookCommitFlag = pS->bLookCommitFlag;
+    }
+    if (pS->pLookCommitUnit != pMap->pLookCommitUnit) {
+        pMap->pLookCommitUnit = pS->pLookCommitUnit;
+    }
+    if (pS->pSelUnit != pMap->pSelUnit) {
+        pMap->pSelUnit = pS->pSelUnit;
+    }
+    if (pS->pSelWeapon != pMap->pSelWeapon) {
+        pMap->pSelWeapon = pS->pSelWeapon;
+    }
+    if (pS->nMultiTargetCount != pMap->nMultiTargetCount) {
+        pMap->nMultiTargetCount = pS->nMultiTargetCount;
+    }
     for (i = 0; i < PUFO_MULTI_TARGET_MAX; ++i) {
-        pMap->apMultiTargets[i] = pS->apMultiTargets[i];
+        if (pS->apMultiTargets[i] != pMap->apMultiTargets[i]) {
+            pMap->apMultiTargets[i] = pS->apMultiTargets[i];
+        }
+    }
+    /* The Part 60 gate cells. The screen-13 press clears the queue and the fire-status trio
+     * (0x13ECC); PointerStatusLine writes the hover cell; the screen-5/20/21 releases write
+     * nUiScreen (mirrored above). */
+    if (pS->bQueueActive != pW->pTactState->bQueueActive) {
+        pW->pTactState->bQueueActive = pS->bQueueActive;
+    }
+    if (pS->bFireStatus1 != pMap->bFireStatus1) {
+        pMap->bFireStatus1 = pS->bFireStatus1;
+    }
+    if (pS->bFireStatus2 != pW->bMapFire2) {
+        pW->bMapFire2 = pS->bFireStatus2;
+    }
+    if (pS->bTrajPad27_2 != pMap->bTrajHitStop) {
+        pMap->bTrajHitStop = pS->bTrajPad27_2;
+    }
+    if (pS->nSlot24Hit != pW->sModal.nField48) {
+        pW->sModal.nField48 = pS->nSlot24Hit;
     }
 }
 
@@ -4054,6 +4116,57 @@ static void World_ClickQuitConfirm(void)
     mh = World_TactMenuHooksFor(pW);          /* the Btn_Play sample seam (16) */
     (void)Menu_OpenQuitDialog(&pW->sModal, &pW->nUiScreen, World_QuitYesThunk,
                               World_QuitNoThunk, &mh);
+}
+
+/* ------------------------------------------------ pointer dispatch (Part 60)
+ *
+ * Input_OnPointer @ 0x13c6c and Input_OnPointerUp @ 0x148d0 are fully ported in pufo_input.c;
+ * what was missing was the shell route that feeds them while a mission owns the pen. The world
+ * fills the caller-owned TactPointerWorld's tactical fields, runs the dispatcher over sTactInput
+ * between the input syncs, and leaves the caller's hit callbacks and bank in place. Presses record
+ * UiControl press state; the release arm's HitTest(0, 0, false) half fires the installed pfnClick
+ * (pufo_control.c:191), so the bank handlers Parts 54..59 installed are what the pen now runs. */
+
+bool World_bTactPointerLive(const PufoWorldState *pW)
+{
+    return pW != NULL && pW->bTactFlag != 0 && pW->pTactMap != NULL && pW->pTactState != NULL;
+}
+
+static void World_TactPointerFill(PufoWorldState *pW, TactPointerWorld *pPtr)
+{
+    pPtr->tact.pQueue      = pW->pTactState;
+    pPtr->tact.pfnLookup   = World_TactLookupCell;
+    pPtr->tact.pLookupUser = pW;
+    pPtr->pHudPad          = pW->apTactPads[PUFO_UIPAD_HUD]; /* dpanelv @ Map+0xFC */
+    pPtr->pCamOffset       = &pW->sTactCamOffset;            /* Map+0x4A40/0x4A41 */
+    pPtr->bCursorBusy      = pW->tactEnv.cursorPos.bBusy;    /* unk_157180->bBusy */
+    pPtr->pLookCtl         = &pW->sTactLookCtl;              /* unk_1571E4 */
+}
+
+void World_TactPointerMove(PufoWorldState *pW, TactPointerWorld *pPtr, i32 nX, i32 nY, bool bDown)
+{
+    if (!World_bTactPointerLive(pW) || pPtr == NULL || pPtr->pBank == NULL
+        || pW->pFrameHooks == NULL || pW->pFrameHooks->pTactInputHooks == NULL) {
+        return;
+    }
+    World_TactPointerFill(pW, pPtr);
+    World_TactInputSyncIn(pW);
+    Input_OnPointer(&pW->sTactInput, pW->pFrameHooks->pTactInputHooks, pPtr, nX, nY, bDown);
+    World_TactInputSyncOut(pW);
+}
+
+void World_TactPointerUp(PufoWorldState *pW, TactPointerWorld *pPtr)
+{
+    if (!World_bTactPointerLive(pW) || pPtr == NULL || pPtr->pBank == NULL
+        || pW->pFrameHooks == NULL || pW->pFrameHooks->pTactInputHooks == NULL) {
+        return;
+    }
+    World_TactPointerFill(pW, pPtr);
+    World_TactInputSyncIn(pW);
+    Input_OnPointerUp(&pW->sTactInput, pW->pFrameHooks->pTactInputHooks, pPtr);
+    /* A release can run an installed handler that writes these same live cells from the inside (the
+     * EndTurn bracket restores pSelUnit). The diff-based SyncOut (see above) keeps those writes. */
+    World_TactInputSyncOut(pW);
 }
 
 static void World_ClickSpeed0(void) { World_TactSpeedCall(0); }

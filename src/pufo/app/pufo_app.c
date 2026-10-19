@@ -461,6 +461,13 @@ static void App_InitStartupUi(void)
     GameUiStartupEnv env;
     MapInitEnv initEnv;
 
+    /* InitTerm_UiBankEntry @ 0x11148, the UiBank CRT init-term entry (table slot 0x189030):
+     * UiBank_CtorAll @ 0x11320 builds all 130 bank widgets -- bEnabled 1 at +0x09 is what makes
+     * them hit-testable at all -- and Bank_RegisterAtexit @ 0x11164 arms the pad teardown. The
+     * shell never ran this entry until Part 60 armed the pen path. */
+    (void)UiBank_CtorAll(&g_bank, &g_pointerWorld.bActionFlag);
+    Bank_RegisterAtexit(&g_bank);
+
     /* Map_InitAndLoadRegistry @ 0x22648, the Map subsystem's startup entry (the CRT
      * thunk at 0x22604 runs it before Map_RegisterAtexit): clear the tactical
      * scratch, then load the option block. The shell owns the scratch it can own, and
@@ -800,6 +807,13 @@ static void App_PointerLogical(i32 nX, i32 nY, bool bDown)
 {
     const bool bGeoscape = (g_bWorldReady && g_world.bGeoscapeUi != 0);
 
+    if (World_bTactPointerLive(&g_world)) {
+        /* The mission owns the pen (Part 60): the launch cleared Map.bGeoscapeUi (0x86D34), so the
+         * original's own gate (0x13CE0) would take the tactical branch. The live cells are the
+         * world's; World_TactPointerMove mirrors them in, runs Input_OnPointer and flushes back. */
+        World_TactPointerMove(&g_world, &g_pointerWorld, nX, nY, bDown);
+        return;
+    }
     if (!g_bStartupUi && !bGeoscape) {
         return;
     }
@@ -825,6 +839,10 @@ static void App_OnPointerUp(void)
 {
     const bool bGeoscape = (g_bWorldReady && g_world.bGeoscapeUi != 0);
 
+    if (World_bTactPointerLive(&g_world)) {
+        World_TactPointerUp(&g_world, &g_pointerWorld); /* Input_OnPointerUp @ 0x148d0 (Part 60) */
+        return;
+    }
     if (!g_bStartupUi && !bGeoscape) {
         return;
     }

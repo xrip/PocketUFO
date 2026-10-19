@@ -19524,3 +19524,56 @@ Golden startup frame unchanged. Coverage unchanged -- 0x18e2c/0x18e04/0x18e18 we
 cited through the menubtn unit and the Part 51 seam.
 
 IDB: port-wiring comments at 0x18e2c, 0x18e04, 0x18e18.
+
+## Unit 121 -- the pen dispatches on the tactical screens (Part 60)
+
+`Input_OnPointer @ 0x13c6c` and `Input_OnPointerUp @ 0x148d0` were fully ported (Unit 75
+area); the shell never fed them while a mission owned the pen, and a wiring audit found
+why nothing could ever arm: the CRT init-term entry `InitTerm_UiBankEntry @ 0x11148`
+(table slot 0x189028 -- `UiBank_CtorAll @ 0x11320` + `Bank_RegisterAtexit @ 0x11164`)
+was never run by the shell, so every bank widget sat at `bEnabled = 0` and
+`UiControl_HitTest @ 0x1A3D8` refused every press. The image bakes no bank state
+(0xAC6D0 is zero-filled `.bss`) -- the ctor is the only enabler.
+
+Shell wiring (Part 60):
+* `App_InitStartupUi` now runs the CRT entry: `UiBank_CtorAll(&g_bank,
+  &g_pointerWorld.bActionFlag)` + `Bank_RegisterAtexit(&g_bank)` before the Map entry
+  (the same init-term table the Map thunk at 0x22604 comes from).
+* `App_PointerLogical` / `App_OnPointerUp` route to `World_TactPointerMove` /
+  `World_TactPointerUp` while `World_bTactPointerLive` -- the launch clears
+  `Map.bGeoscapeUi` at 0x86D34, which is exactly the dispatcher's own branch gate
+  (0x13CE0 / 0x14908); geoscape and startup screens keep the app's state copy.
+* `World_TactPointerFill` fills the caller-owned `TactPointerWorld`: queue + lookup
+  (`World_TactLookupCell`), `pHudPad = apTactPads[PUFO_UIPAD_HUD]` (dpanelv @ Map+0xFC),
+  `pCamOffset = &sTactCamOffset` (Map+0x4A40/41, new shell field -- its reader is the
+  iso renderer, still the open seam), `bCursorBusy` from the owned `tactEnv.cursorPos`,
+  `pLookCtl`.
+* `World_TactInputSyncIn/Out` grew the pointer gate cells with live owners: bTactFlag,
+  bGeoscapeUi, bPlayerInputOn (`bMapPlayerInput`), bGameTickHold, bQueueActive
+  (`pTactState`), bFireStatus1/2, bTrajPad27_2 (`bTrajHitStop`), nUiSlot11,
+  bSlot19Active (the modal open byte), nSlot24Hit (the modal bank's `nField48`). The
+  cells sTactInput alone owns (0x60/0x6C/0x70/0x74 slots, the camera block,
+  bDeployPanelOpen, bUiSlot8Byte0) are not mirrored -- sTactInput IS their live owner.
+* Diff-based SyncOut (Part 60): the dispatch writes staging; the flush writes a mirrored
+  cell only if staging differs from the live cell, so a release that runs an installed
+  handler (the EndTurn bracket restores `pSelUnit`) keeps the handler's live write --
+  per-cell last-writer-wins, like the original's single shared memory. `sTactInputPre`
+  records the SyncIn snapshot for the snapshot-only comparisons.
+
+Deviation (recorded, separate issue): the UiPulse timer (`UiPulse_OnTimer @ 0x36630`)
+still runs on the app's geoscape-side state copy during a mission; observable only via
+held-key repeat while the map owns the pen. The modal status-line hover also only
+becomes clickable once the modal DRAW arm fills apUiSlotsA[20..23] (nSlot20..23); the
+read path is wired here, the writer is the renderer seam.
+
+Tests (test_geoscapeframe): a press at the EndTurn pad centre arms widget 5 through the
+real coordinate hit (0x14130 HUD band gate -> 0x14610 whole-group press), and the release
+(0x1492C arms -> the HitTest release half) runs the installed handler end to end -- the
+same bracket asserts as the CLICK(5) gate plus "screen 0 survives the SyncOut diff
+flush". The test harness now runs `UiBank_CtorAll` on its stand-in bank, as the app does.
+Mutations 2/2: dropping the release dispatch 1 red; zeroing bPlayerInputOn 2 reds.
+Golden startup frame unchanged (enabling the widgets does not change the startup draw).
+Coverage 971/1103 (+1: UiBank_CtorAll @ 0x11320 now cited through the shell wiring).
+
+IDB: wiring comments at 0x11148, 0x13c6c, 0x148d0 (the 0x189028 slot note was re-verified
+against the table -- correct as written).

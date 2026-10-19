@@ -351,6 +351,11 @@ int main(void)
     g_hit.pfnBlit   = RecBlitPad;
     g_hit.pfnBlitEx = RecBlitPadEx;
 
+    /* InitTerm_UiBankEntry @ 0x11148 (Part 60): the CRT entry builds all 130 widgets with
+     * bEnabled 1 -- without it the pen path's HitTest never fires. The test's stand-in bank
+     * needs the same bring-up the app now runs. */
+    (void)UiBank_CtorAll(&g_bank, &g_bBankActionFlag);
+
     if (!World_Init(&g_world)) {
         printf("FAIL: World_Init\n");
         return 1;
@@ -2017,6 +2022,68 @@ int main(void)
 
                     g_world.sModal = modalSave;
                     g_world.nUiScreen = nScreenSave;
+                }
+
+                /* 60: the pen path is live on the mission. A press at the EndTurn pad's centre
+                 * (widget 5 of the tact HUD group, 0x14130 HUD band -> 0x14610 whole-group hit-test)
+                 * arms the control, and the release half (UiControl_HitTest @ 0x1A540, x=0 y=0
+                 * bDown=0) runs the installed handler. Same bracket as the CLICK(5) gate, same
+                 * empty-field + empty-park fixture. (Part 60) */
+                {
+                    TactPointerWorld ptr;
+                    PadImage *pHud = g_world.apTactPads[PUFO_UIPAD_HUD];
+                    i32 nCx = (i32)g_bank.aCtl[5].x + (i32)g_bank.aCtl[5].uWidth / 2;
+                    i32 nCy = (i32)g_bank.aCtl[5].y + (i32)g_bank.aCtl[5].uHeight / 2;
+                    u16 nScreenSave2 = g_world.nUiScreen;
+                    u8 bLatchSave2 = pMapX->bActionLatch;
+                    u8 bFire1Save = pMapX->bFireStatus1, bFire2Save = g_world.bMapFire2;
+                    u8 bTrajSave = pMapX->bTrajHitStop;
+                    u8 bTurnSave2 = g_world.bMapEnemyTurnActive;
+                    i32 nEnemySave2 = pMapX->nEnemyCount;
+                    i32 nReserveSave2 = g_world.nMapEnemyReserveCount;
+
+                    Check(pHud != NULL && nCy >= (i32)pHud->nOriginY,
+                          "the EndTurn pad centre sits at or below the dpanelv origin, so the HUD band gate (0x14130) routes to the widget group");
+
+                    memset(&ptr, 0, sizeof(ptr));
+                    ptr.pBank = &g_bank;
+                    ptr.hit = g_hit;
+
+                    pMapX->apXcomUnits[0]->bUnk1037 = 1;
+                    pMapX->apXcomUnits[0]->uTu = 1;
+                    g_world.nUiScreen = 0;              /* screen 0: the map arm (0x1407C) */
+                    pMapX->bActionLatch = 0;            /* whole group 0..18 is hit-tested (0x14610) */
+                    pMapX->bFireStatus1 = 0;
+                    g_world.bMapFire2 = 0;
+                    pMapX->bTrajHitStop = 0;            /* the CanScroll gate (0x143DC/0x14B18) is open */
+                    g_world.bMapEnemyTurnActive = 9;
+                    pMapX->nEnemyCount = 0;             /* the CLICK(5) fixture again: empty field */
+                    g_world.nMapEnemyReserveCount = 0;  /* and empty hidden park */
+                    nSampleMark = g_nSamples;
+
+                    World_TactPointerMove(&g_world, &ptr, nCx, nCy, true);  /* WM_LBUTTONDOWN */
+                    Check(g_bank.aCtl[5].nState != 0,
+                          "the press hit-tests the tact HUD group with real coordinates and arms widget 5");
+
+                    World_TactPointerUp(&g_world, &ptr);                    /* WM_LBUTTONUP */
+                    pMapX->nEnemyCount = nEnemySave2;
+                    g_world.nMapEnemyReserveCount = nReserveSave2;
+
+                    Check(g_aFrameSamples[nSampleMark] == 17
+                              && pMapX->apXcomUnits[0]->bUnk1037 == 0
+                              && pMapX->apXcomUnits[0]->uTu > 1
+                              && g_world.bMapEnemyTurnActive == 0
+                              && pMapX->tact.bBusy == 0 && pMapX->tact.nPhase == 0
+                              && g_world.bMapPlayerInput == 1
+                              && g_world.nUiScreen == 0,
+                          "the release half runs the installed handler through the ported pen path: 17 plays, the bracket runs end to end (0x4ca18..0x4d920), BeforeEnemyStep cleared the 0x40D byte, and screen 0 survives the SyncOut diff flush");
+
+                    g_world.nUiScreen = nScreenSave2;
+                    pMapX->bActionLatch = bLatchSave2;
+                    pMapX->bFireStatus1 = bFire1Save;
+                    g_world.bMapFire2 = bFire2Save;
+                    pMapX->bTrajHitStop = bTrajSave;
+                    g_world.bMapEnemyTurnActive = bTurnSave2;
                 }
 
                 /* Restore everything the dispatch moved. */
