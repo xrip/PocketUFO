@@ -545,6 +545,8 @@ void Tact_ClearSoldierBattleFlags(const TactBattleFlagsEnv *pEnv);
 #define PUFO_DEBRIEF_TEXT_ENTERTAINMENT  177
 #define PUFO_DEBRIEF_TEXT_SURGERY        178
 #define PUFO_DEBRIEF_TEXT_EXAMINATION    198
+#define PUFO_DEBRIEF_TEXT_BANNER_FOOTER  180   /* unk_BC8F4 = aTextRecs + 205 * 180: the line the debrief
+                                                 * status banner draws at (10, 260) (0x1EB24) */
 
 #define PUFO_DEBRIEF_UI_SCREEN       13   /* Map_nUiScreen for the debrief screen (0x351EC) */
 #define PUFO_BANNER_FADE_TICKS       10   /* dword_113A1C @ Map+0x64 (0x351FC) */

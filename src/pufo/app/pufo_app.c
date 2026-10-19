@@ -744,7 +744,8 @@ static void App_GeoscapePointerUpThunk(void *pUser)
 }
 
 /* The WM_TIMER 0xC352 body (PocketUFO_WndProc @ 0xA0944): advance the anim phase counter
- * (0xA0978..0xA098C, >=7 wraps to 0), then per screen: 17 runs the row-key flicker (0xA0AC8),
+ * (0xA0978..0xA098C, >=7 wraps to 0), then the debrief fade arm (0xA0990..0xA09AC: banner counter up
+ * AND screen 13 -> Render_Frame_DecRef), then per screen: 17 runs the row-key flicker (0xA0AC8),
  * 0x10 advances the credits scroll by one and wraps it past 20 * (nTitlesMaxRows + 48) (0xA0C58). */
 static void App_TickAnim(void)
 {
@@ -752,6 +753,9 @@ static void App_TickAnim(void)
         g_nAnimPhase = 0; /* 0xA0988 */
     } else {
         ++g_nAnimPhase;   /* 0xA098C */
+    }
+    if (g_bWorldReady) {
+        World_TickBannerFade(&g_world); /* 0xA0990 gate + 0xA09AC BLEQ Render_Frame_DecRef */
     }
     if (g_nUiScreen == 17) {
         MainMenu_TickRowKeys(g_aRowKeys, g_aRowKeySrc, g_nAnimPhase, &g_nPlaneStatRowCount);

@@ -210,6 +210,37 @@ static i32 SurfPix(i32 x, i32 y)
     return (i32)((const u16 *)p->pPixels)[(size_t)y * (size_t)p->nWidth + (size_t)x];
 }
 
+/* Lit pixels in a surface box, ignoring any a snapshot already lights (Part 64): the debrief banner
+ * blits the endmiss backdrop under its own text, so a box count with the backdrop's ink excluded is
+ * the text's own contribution. The snapshot uses the 240-wide stride this test's surface has. */
+static i32 InkInBox(i32 x0, i32 y0, i32 x1, i32 y1, const u16 *pExcl)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y < y1; ++y) {
+        for (i32 x = x0; x < x1; ++x) {
+            if (SurfPix(x, y) == 0) { continue; }
+            if (pExcl != NULL && pExcl[(size_t)y * 240u + (size_t)x] != 0) { continue; }
+            ++n;
+        }
+    }
+    return n;
+}
+
+/* Pixels in a surface box whose colour differs from a snapshot (Part 64): the score's one glyph lands
+ * on ink the backdrop pad already lit, so its presence proves nothing -- its colour does. */
+static i32 DiffInBox(i32 x0, i32 y0, i32 x1, i32 y1, const u16 *pRef)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y < y1; ++y) {
+        for (i32 x = x0; x < x1; ++x) {
+            if (SurfPix(x, y) != (i32)pRef[(size_t)y * 240u + (size_t)x]) { ++n; }
+        }
+    }
+    return n;
+}
+
 /* The 16-bit colour SoftSurf_BlitSrcRect_Inner @ 0xA4450 packs from an index/mid/low triple: each
  * 5-6-5 field comes from the top bits of its byte. */
 static i32 PackInk(i32 nIdx, i32 nMid, i32 nLow)
@@ -2542,8 +2573,8 @@ int main(void)
                 Check(World_bTactFrameLive(&g_world), "and on 9, the screen the deploy confirm writes at 0x18DE0");
                 g_world.nUiScreen = 3;
                 Check(!World_bTactFrameLive(&g_world), "not on 3: its roster pads are not built yet (0x224A0)");
-                g_world.nUiScreen = 13;
-                Check(!World_bTactFrameLive(&g_world), "not on 13: the debrief banner env is not built yet (0x223E8)");
+                g_world.nUiScreen = 0xC;
+                Check(!World_bTactFrameLive(&g_world), "not on 0xC: its top bar env is not built yet (0x22464)");
                 g_world.nUiScreen = 2;
                 Check(!World_bTactFrameLive(&g_world), "not on 2: the minimap replaces the iso layer (0x224B8)");
                 g_world.nUiScreen = 0;
@@ -2736,6 +2767,102 @@ int main(void)
             Check(g_world.bMapPromotionReport == 0 && g_world.tactEnv.apPanel[2]->nLineCount == 0
                       && g_world.tactEnv.apPanel[3]->nLineCount == 0,
                   "the promotion report stays empty: flag 0, both promotion panels zero lines (0x352E0, 0x352F0)");
+
+            /* --- the debrief status banner and its fade timer (Part 64) ---------------------
+             * TactHud_DrawStatusBanner @ 0x1e920 on screen 13, and the WM_TIMER 0xC352 arm at
+             * 0xA0990..0xA09AC that ticks the 10-tick fade out through Render_Frame_DecRef @ 0x36818.
+             * Two runs of the SAME state -- counter up (banner skipped) and counter down (banner
+             * drawn) -- so every difference is the banner's own ink. */
+            {
+                i32 nFadeKeep  = g_world.nMapUiSlot1;
+                i32 nS10Keep   = g_world.nMapUiSlot10;
+                i32 nScreenKeep= g_world.nUiScreen;
+                const PadImage *pEnd = g_world.apTactPads[PUFO_UIPAD_ENDMISSION];
+                i32 nCapW  = Text_MeasureWidth(g_world.aMapMissionCaption);
+                i32 nCapX  = 120 - nCapW / 2;                        /* 0x1E9DC..0x1E9F8 */
+                i32 nFootW = Text_MeasureWidth((const char *)g_world.pAssets->pTextRecs
+                                               + PUFO_DEBRIEF_TEXT_BANNER_FOOTER * PUFO_TEXT_REC_STRIDE);
+                static u16 aPadInk[240 * 320];   /* the backdrop's own ink, for the delta probes */
+                i32 nSkipCap, nDrawCap, nSkipScore, nDrawScore, nSkipFoot, nDrawFoot;
+                i32 nSkipPad, nDrawPad;
+                i32 nPadX = -1, nPadY = -1;
+                i32 nCapY0 = 10, nCapY1 = 23;    /* the caption box: Text_DrawString at y 10 (0x1E9F8) */
+                i32 nLowY0 = 260, nLowY1 = 273;  /* the footer and the score both sit at y 260 */
+                i32 nPastX0 = 10 + nFootW + 1;
+                i32 nPastX1 = nPastX0 + 20 < 200 ? nPastX0 + 20 : 200;
+
+                /* Backdrop identity: blit the endmiss pad on its own, keep its whole ink as a snapshot,
+                 * and remember a pixel it lights. The banner's own blit (0x1E948) is the only thing that
+                 * can light the same one in a banner run -- screen 13 draws no iso layer, the modal is
+                 * closed, and with the countdown at 10 the fade tail blits neither the enemystp pad nor
+                 * the status stack. Every text probe below excludes this ink, so what survives is the
+                 * text's own contribution, not the pad sitting underneath it. */
+                ClearSurface();
+                PadImage_Blit(pEnd);
+                for (i32 y = 0; y < 320; ++y) {
+                    for (i32 x = 0; x < 240; ++x) {
+                        aPadInk[(size_t)y * 240u + (size_t)x] = (u16)SurfPix(x, y);
+                        if (nPadX < 0 && SurfPix(x, y) != 0) { nPadX = x; nPadY = y; }
+                    }
+                }
+                Check(nPadX >= 0, "the endmiss pad 0x156A74 lays ink on its own (the fixture's premise)");
+
+                Check(g_world.nUiScreen == PUFO_DEBRIEF_UI_SCREEN && g_world.nMapUiSlot1 == 10,
+                      "the mission left the debrief screen up with the banner counter at 10 (0x351EC, 0x351FC)");
+                Check(World_bTactFrameLive(&g_world), "screen 13 is on the frame seam (the 0x223E8 arm)");
+
+                g_world.nMapUiSlot1  = 10;
+                g_world.nMapUiSlot10 = 10;  /* keeps the fade tail quiet in both runs (0x2250c) */
+                ClearSurface();
+                g_nPresents = 0;
+                World_TactFrame(&g_world);
+                CheckEqI32(g_nPresents, 1, "the banner frame presents exactly once");
+                nSkipCap  = InkInBox(nCapX, nCapY0, nCapX + nCapW, nCapY1, aPadInk);
+                nSkipScore= InkInBox(200, nLowY0, 240, nLowY1, aPadInk);
+                nSkipFoot = InkInBox(10, nLowY0, 10 + nFootW, nLowY1, aPadInk);
+                nSkipPad  = SurfPix(nPadX, nPadY) != 0;
+
+                g_world.nMapUiSlot1 = 0;   /* 0x1E934: the banner is skipped only while the counter is up */
+                ClearSurface();
+                World_TactFrame(&g_world);
+                nDrawCap   = InkInBox(nCapX, nCapY0, nCapX + nCapW, nCapY1, aPadInk);
+                nDrawScore = DiffInBox(200, nLowY0, 240, nLowY1, aPadInk);
+                nDrawFoot  = InkInBox(10, nLowY0, 10 + nFootW, nLowY1, aPadInk);
+                nDrawPad   = SurfPix(nPadX, nPadY) != 0;
+
+                Check(nDrawCap > 0 && nSkipCap == 0,
+                      "the caption appears only with the counter down, at 120 - width/2, y 10 (0x1E9DC)");
+                Check(InkInBox(0, nCapY0, nCapX, nCapY1, aPadInk) == 0,
+                      "and nothing sits left of its centred start");
+                Check(nDrawScore > 0 && nSkipScore == 0,
+                      "the score text re-colours its own pixels at (200, 260) over the backdrop (0x1EA4C..0x1EAA8)");
+                Check(nDrawFoot > 0 && nSkipFoot == 0,
+                      "the footer TEXTS[180] (unk_BC8F4, aTextRecs + 205*180) draws at (10, 260) (0x1EB24)");
+                Check(InkInBox(nPastX0, nLowY0, nPastX1, nLowY1, aPadInk) == 0,
+                      "and stops with the record: past its measured width, before the score column, is bare");
+                Check(nDrawPad && !nSkipPad, "the backdrop is the endmiss pad 0x156A74 (0x1E948 PadImage_Blit)");
+
+                /* 0xA0990..0xA09AC: banner counter up AND screen 13, then Render_Frame_DecRef. */
+                g_world.nMapUiSlot1 = 10;
+                g_nPresents = 0;
+                World_TickBannerFade(&g_world);
+                CheckEqI32(g_world.nMapUiSlot1, 9, "the 0xC352 arm decrements Map_nBannerFadeTicks (0x3681C)");
+                CheckEqI32(g_nPresents, 1, "and draws the frame through Render_Frame_DecRef (0x36828)");
+                World_TickBannerFade(&g_world);
+                CheckEqI32(g_world.nMapUiSlot1, 8, "the next tick ticks again (the timer runs at 25 ms)");
+                g_world.nUiScreen = 0;
+                World_TickBannerFade(&g_world);
+                CheckEqI32(g_world.nMapUiSlot1, 8,
+                          "with any other screen the arm does nothing: the BLEQ at 0xA09AC is conditional");
+                g_world.nUiScreen = PUFO_DEBRIEF_UI_SCREEN;
+                g_world.nMapUiSlot1 = 0;
+                World_TickBannerFade(&g_world);
+                CheckEqI32(g_world.nMapUiSlot1, 0, "and at zero the counter stays put (0xA0994 BLE)");
+
+                g_world.nMapUiSlot1 = nFadeKeep;
+                g_world.nMapUiSlot10 = nS10Keep;
+                g_world.nUiScreen = nScreenKeep;
+            }
 
             /* The cancel the debrief's cancel button reaches (UiScreen_OnCancel 0x162BC / 0x162C8):
              * teardown keeping nothing, then Geoscape_InitUI mode 1 -- the rebuild of everything the

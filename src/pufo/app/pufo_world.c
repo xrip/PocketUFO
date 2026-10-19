@@ -18,6 +18,7 @@
 #include "game/pufo_timer.h"   /* GameTickCtx / GameTickHooks / GameTick_OnTimer @ 0x274f0 */
 #include "game/pufo_tactend.h" /* Tact_CheckBattleEnd @ 0x34fbc, the mission-end check the shell runs on the live frame */
 #include "util/pufo_rand.h"    /* Game_RandU16 @ 0x3e59c, the enemy AI's draw seam */
+#include "util/pufo_str.h"     /* pufo_strncpy, the banner's two 16-byte text copies */
 #include "game/pufo_roster.h"  /* Roster_CycleNext/Select*, the tact nav widgets (Part 54) */
 #include "game/pufo_tacthud.h" /* TactHud_OpenInventory (0x16ef4), the inventory the mission opens (Part 55) */
 #include "game/pufo_tactctl.h" /* Map_BuildDeployConfirmYesNo @ 0x18a68, the deploy confirm the shell wires (Part 58) */
@@ -2340,7 +2341,8 @@ bool World_bTactFrameLive(const PufoWorldState *pW)
         || pW->pTactMap == NULL || pW->pTactState == NULL) {
         return false;
     }
-    return pW->nUiScreen == 0 || pW->nUiScreen == 8 || pW->nUiScreen == 9;
+    return pW->nUiScreen == 0 || pW->nUiScreen == 8 || pW->nUiScreen == 9
+        || pW->nUiScreen == PUFO_DEBRIEF_UI_SCREEN;   /* 13: the status banner arm at 0x223E8 */
 }
 
 /* StatusMsg_DrawStack @ 0x1afc4's three calls, straight through: the colour pair at 0x1AFF8,
@@ -2390,7 +2392,7 @@ static void World_TactDecimalBlit(PadImage *pPad, void *pUser)
     (void)PadImage_BlitEx(pPad, 0);
 }
 
-void World_TactFrame(PufoWorldState *pW)
+static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
 {
     GameMap              *pMap;
     TactState            *pTS;
@@ -2413,6 +2415,7 @@ void World_TactFrame(PufoWorldState *pW)
     IsoLayerEnv           layer;
     UiModalAnim           modalAnim;
     UiModalLayout         modalLayout;
+    TactHudBannerState    banner;
     RenderFrameEnv        rf;
     i32                   nStatusOutY;
     bool                  bModalOpen;
@@ -2571,6 +2574,19 @@ void World_TactFrame(PufoWorldState *pW)
     modalAnim.pColor       = (pHooks != NULL) ? pHooks->pColor : NULL;
     memset(&modalLayout, 0, sizeof(modalLayout));
 
+    /* --- the debrief status banner (screen 13, TactHud_DrawStatusBanner @ 0x1e920) ---
+     * nReadyFlag is anActionPhaseSave0[92] @ 0x150D4, which the IDB names Map_bMissionVictory; the
+     * banner text is Map_szMissionCaption @ 0x128A4C (anActionPhaseSave0[28]) and the timer text
+     * Map_szMissionScore @ 0x128A6A ([58]). The red test at 0x1EA74 is on the STRING's first byte
+     * (`Map_szMissionScore[0] == 45`), i.e. a leading '-', so the shell hands that byte over.
+     * The pad label is unk_EACE0: nothing in the image writes it and the port owns no cell for it, so
+     * the shell draws an empty label -- what a never-written scratch would hold (recorded gap). */
+    banner.nFadeCount   = pW->nMapUiSlot1;                        /* Map_nBannerFadeTicks @ 0x64 */
+    banner.nReadyFlag   = pW->bMapMissionVictory;
+    banner.nTimerValue  = (i32)(u8)pW->aMapMissionScore[0];
+    pufo_strncpy(banner.szBanner, pW->aMapMissionCaption, sizeof(banner.szBanner));
+    pufo_strncpy(banner.szTimer, pW->aMapMissionScore, sizeof(banner.szTimer));
+
     /* --- the dispatch env --- */
     memset(&rf, 0, sizeof(rf));
     rf.bGeoscapeMode   = pW->bGeoscapeUi;   /* 0x2231C tests it before the screen id */
@@ -2597,6 +2613,16 @@ void World_TactFrame(PufoWorldState *pW)
     rf.pszModalBtn1      = (const char *)pW->sModal.pLabel15;
     rf.pszModalBtn2      = (const char *)pW->sModal.p17;
     rf.pModalLayout      = &modalLayout;
+    rf.pBannerPad        = (pHooks != NULL && pHooks->pBank != NULL) ? &pHooks->pBank->aCtl[128] : NULL;
+    rf.pBannerBackdrop   = pW->apTactPads[PUFO_UIPAD_ENDMISSION];   /* pPadEndMission @ 0x156A74 */
+    rf.pBannerState      = &banner;
+    rf.pszBannerFooter   = (pW->pAssets != NULL && pW->pAssets->pTextRecs != NULL)
+                             ? (const char *)pW->pAssets->pTextRecs
+                               + PUFO_DEBRIEF_TEXT_BANNER_FOOTER * PUFO_TEXT_REC_STRIDE
+                             : "";                                  /* unk_BC8F4 = aTextRecs + 205*180 */
+    rf.pszBannerPadLabel = "";                                     /* unk_EACE0: no writer, no owner */
+    rf.pBannerPanelA     = pW->tactEnv.apPanel[0];                  /* pUiPanel0 @ 0x1568E8 */
+    rf.pBannerPanelB     = pW->tactEnv.apPanel[1];                  /* pUiPanel1 @ 0x1568E4 */
     rf.nFadeCount        = pW->nMapUiSlot1;                     /* Map_nBannerFadeTicks @ 0x64 */
     rf.nFadeIn           = pW->nMapUiSlot10;                    /* dword_113A40 @ 0x88, post-tick */
     rf.pFadePad          = pW->apTactPads[PUFO_UIPAD_ENEMYSTEP]; /* pPadEnemyStep @ 0x156AA0 */
@@ -2604,7 +2630,11 @@ void World_TactFrame(PufoWorldState *pW)
     rf.pnStatusOutY      = &nStatusOutY;  /* Map.nStatusDrawY: the iso tail and the fade tail share it */
     rf.pStatusHooks      = &statusHooks;
 
-    (void)Render_Frame(&rf);
+    if (bDecRef) {
+        Render_Frame_DecRef(&pW->nMapUiSlot1, &rf); /* 0x3681C: --Map+0x64 first, then the frame */
+    } else {
+        (void)Render_Frame(&rf);
+    }
 
     /* What the frame moved stays in the cells that own it. Only the modal arm writes the layout,
      * so the pen's status-line cells are touched only when the dialog was drawn (0x266D4,
@@ -2617,6 +2647,26 @@ void World_TactFrame(PufoWorldState *pW)
         pW->sTactInput.nSlot22Y = modalLayout.nButtonY;
         pW->sTactInput.nSlot23H = modalLayout.nButtonCount;
     }
+}
+
+void World_TactFrame(PufoWorldState *pW)
+{
+    if (World_bTactFrameLive(pW)) {
+        World_TactFrameDraw(pW, false);
+    }
+}
+
+/* 0xA0990..0xA09AC: `if (Map_nBannerFadeTicks > 0) { if (Map_nUiScreen == 0xD) Render_Frame_DecRef(); }`
+ * -- the BLEQ is conditional, so no other screen ever decrements the counter here. */
+void World_TickBannerFade(PufoWorldState *pW)
+{
+    if (!World_bTactFrameLive(pW)) {
+        return;
+    }
+    if (pW->nMapUiSlot1 <= 0 || pW->nUiScreen != PUFO_DEBRIEF_UI_SCREEN) {
+        return;
+    }
+    World_TactFrameDraw(pW, true);
 }
 
 /* TurnHooks @ 0x4d950. The cursor triple is the TactCursor the launch owns: nX @ 0x15128,

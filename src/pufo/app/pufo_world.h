@@ -763,10 +763,16 @@ void World_TactPointerUp(PufoWorldState *pW, TactPointerWorld *pPtr);
  * iso layer (MapView_DrawIsoLayer @ 0x21e2c) and its frame furniture, the modal dialog
  * (UiModal_DrawDialog @ 0x264a0, whose button boxes land in the input state's slots 20..23 that the
  * pen's status-line arm reads), the fade block and the status stack, then the present hook.
- * Screens 0, 8 and 9 are wired; every other screen -- and every non-mission state -- leaves
- * World_bTactFrameLive false and the caller keeps its own frame path. */
+ * Screens 0, 8, 9 and 13 (the debrief status banner, TactHud_DrawStatusBanner @ 0x1e920) are wired;
+ * every other screen -- and every non-mission state -- leaves World_bTactFrameLive false and the
+ * caller keeps its own frame path. */
 bool World_bTactFrameLive(const PufoWorldState *pW);
 void World_TactFrame(PufoWorldState *pW);
+
+/* The WM_TIMER 0xC352 arm at 0xA0990..0xA09AC: with Map_nBannerFadeTicks positive AND Map_nUiScreen
+ * 13 it runs Render_Frame_DecRef @ 0x36818 -- decrement the counter, then draw the whole frame, which
+ * is what plays the debrief's 10-tick fade out. Any other screen or a counter at zero does nothing. */
+void World_TickBannerFade(PufoWorldState *pW);
 
 /* GeoscapeUi_FreeAll(bFreeWorld 1) plus the nav controls and the site records. */
 void World_Free(PufoWorldState *pW);

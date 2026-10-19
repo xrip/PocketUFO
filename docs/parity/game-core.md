@@ -19703,3 +19703,56 @@ and the two fade arms (the enemystp pad at alpha 120 versus the dark 240x320 bli
 Mutations, each with its reds: camera cell -> cursor.nX (2), fade cells swapped (1), the status
 Text_DrawString removed (1), modal slot 21 <- nButtonX[0] (1). 18213 checks, 61/61 both configs, golden
 frame unchanged.
+
+## Unit 125 -- the debrief status banner and its fade timer (Part 64)
+
+Original side, all verified in pufobeta.exe.i64:
+
+- TactHud_DrawStatusBanner @ 0x1e920 (0x248 bytes), reached from Render_Frame @ 0x22310's screen 0xD arm
+  @ 0x223E8 and from PocketUFO_WndProc's WM_TIMER 0xC352 through Render_Frame_DecRef @ 0x36818.
+- Gate 0x1E930..0x1E938: Map_nBannerFadeTicks @ 0x113A1C (apUiSlotsA[1] = Map+0x64). The whole body runs
+  only while that counter is <= 0; the mission-end arm seeds 10 @ 0x351FC.
+- 0x1E944 PadImage_Blit(pPadEndMission @ 0x156A74) is the backdrop.
+- 0x1E968..0x1E9A4 Gfx_PackRgb565Pair into the draw context at 0x1139B8: green (0,255,0)/(0,90,0) when
+  Map_bMissionVictory @ 0x128A8C (anActionPhaseSave0[92]) is set, red (255,0,0)/(90,0,0) otherwise.
+- 0x1E9B8 Text_MeasureWidth(Map_szMissionCaption @ 0x128A4C), 0x1E9D8 Text_DrawString(120 - w/2, 10).
+- 0x1E9E4 / 0x1E9F0 UiPanelMsg_Draw on 0x1568E8 then 0x1568E4.
+- 0x1EA10 the green pair again, 0x1EA30 Text_DrawString(10, 260, unk_BC8F4). unk_BC8F4 is TEXTS[180]:
+  aTextRecs @ 0xB38D0 + 180*205 (the 205-byte in-memory record stride); 0x1EA20 is its only data xref.
+- 0x1EA4C `Map_szMissionScore[0] == 45` -- the STRING's first byte, a leading '-' -- picks red @ 0x1EA8C
+  over green @ 0x1EA64 for 0x1EAA8 Text_DrawString(200, 260, Map_szMissionScore @ 0x128A6A).
+- 0x1EAB0 stores 0 at (a1+256); the do/while @ 0x1EAD4 runs once and 0x1EAC0 is
+  UiControl_BlitActivePad(&unk_AD6D0[16 * i]) -- widget 128 of the bank control, unk_AD6D0 = pBank+4096.
+- 0x1EB00 the pair 26,244,252 / 13,122,126, 0x1EB14 Text_MeasureWidth(unk_EACE0), 0x1EB58
+  Text_DrawString((unk_AD6D4 - w)/2 + unk_AD6D0[0], unk_AD6D2 + 1, unk_EACE0) -- the label centred on
+  that bank pad.
+- The timer chain: 0xA0958 TIMER 0xC352, bPanelFlagScratch = 1 @ 0xA0978, the nMapPhase 0..6 cycle @
+  0xA097C..0xA098C, the banner gate @ 0xA0990 with BLE @ 0xA0998, and 0xA09AC -- BLEQ, not BL, on the
+  CMP R3,#0xD @ 0xA09A0 -- so only screen 13 takes Render_Frame_DecRef.
+- Render_Frame_DecRef @ 0x36818: --*(pMapCtx + 0x64) @ 0x36820, tail-jump Render_Frame(&gIsoDraw) @ 0x36828.
+
+Port side: World_TactFrameDraw(pW, bDecRef) in src/pufo/app/pufo_world.c fills the banner state
+(nFadeCount from nMapUiSlot1, nReadyFlag from bMapMissionVictory, nTimerValue from the score string's
+first byte, szBanner/szTimer copies) and the env's banner fields (pBannerPad = &pBank->aCtl[128],
+pBannerBackdrop = apTactPads[PUFO_UIPAD_ENDMISSION], pszBannerFooter = TEXTS[180] through
+PUFO_DEBRIEF_TEXT_BANNER_FOOTER, pszBannerPadLabel = "", pBannerPanelA/B = tactEnv.apPanel[0]/[1]);
+TactHud_DrawStatusBanner in src/pufo/game/pufo_tacthud.c does the drawing, Render_Frame_DecRef in
+src/pufo/game/pufo_renderframe.c the decrement-then-frame, and World_TickBannerFade (called from
+App_TickAnim) mirrors 0xA0990..0xA09AC.
+
+Recorded deviations:
+1. unk_EACE0 has 8 data reads and no writer anywhere in the image (TactHud_DrawStatusBanner,
+   TactHud_DrawConfirmDialog @ 0x1eb68, Geoscape_DrawScreen @ 0x6c16c), so the port owns no cell for it
+   and the shell draws an empty label.
+2. bPanelFlagScratch = 1 @ 0xA0978 has no port owner.
+3. The env snapshots Map_nBannerFadeTicks at call time while the original re-reads it inside its own
+   tick (Part 63's deviation 1, now also on the banner gate).
+4. nTimerValue is the first byte of the score string, not a parsed number -- 0x1EA4C only ever compares
+   that byte, so the port colours exactly what the original colours.
+
+Evidence: tests/test_geoscapeframe.c gains 15 checks -- the backdrop's ink snapshot, the caption and
+footer delta boxes with that ink excluded, the score's colour delta (its single glyph lands on
+backdrop ink), bare pixels left of the caption start and past the footer record, the same state drawn
+twice (counter up: nothing; counter down: the banner), and World_TickBannerFade's counter, wrong-screen
+and zero arms. Six mutations all bite: the fade-count cell (3 reds), the footer record (1), the screen
+gate (4), the backdrop pad (2), the score copy (1), the caption copy (1).
