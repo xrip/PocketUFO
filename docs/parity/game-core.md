@@ -19952,3 +19952,72 @@ Gate: `tests/test_geoscapeframe.c`'s Part 76 block opens each of the six screens
 
 Recorded as separate issues, not folded in: the soldiers chunk's tactical inventory block -- the original writes each slot as a 4-byte item id, `TactItem+0x14`, from Soldier+0x104 (left hand, 0x429dc), +0x108 (right hand, 0x429f8) and the three belt pairs +0x10C/+0x110, +0x118/+0x11C, +0x124/+0x128 (0x42a1c, 0x42a50, 0x42a84) -- is written as a zero block and discarded on read, so a loaded roster arrives unarmed; and `Ui_FillActionCosts @ 0x26104`'s bank mirror at 0x2641C (`pBank + 0x400 + 32*m + 9`, the `bEnabled` byte of widgets 32..43) has no port counterpart, which changes click hit-testing on screens 3 and 5 though not their drawing.
 
+
+## Part 77 - the soldiers chunk's three bInTact arms, in both directions
+
+Three blocks of the soldier record depend on the per-soldier tact flag, and each one is the same size
+whether the flag is set or clear. That is what lets a record be read back before the reader knows the
+flag, and it is measured rather than assumed: the port's own containers for a flagged record and an
+unflagged one come out the same length (828 bytes each, tests/test_save.c).
+
+| block | flagged, writer | unflagged, writer | reader |
+| --- | --- | --- | --- |
+| multi-target | 30 save ids, 0x426D4..0x4272C | 120 bytes of 0xFF, 0x42748 | 0x41A70 resolves, 0x41AD8 discards |
+| inventory | 27 item ids + 42 metas, 0x429D8..0x42C18 | 150 zero bytes, 0x42C30 | 0x41D60 resolves, 0x42148 discards |
+| spotted | count dword + 60 roster ids, 0x42CEC..0x42D4C | 244 zero bytes, 0x42D64 | 0x42214 resolves, 0x4227C discards |
+
+The filler values are worth naming exactly. The multi-target filler comes from `memset(buf, 0x7FFF, 0x78)`
+at 0x4274C -- memset takes an int but stores its LOW BYTE, so the block is 120 bytes of 0xFF, not a 0x7FFF
+pattern. The other two fillers are real zeros (0x42C34, 0x42D68). The port writes the same three blocks.
+
+The 27 inventory slots, in the original's own order: pHandL (+0x104, 0x429DC), pHandR (+0x108, 0x429F8),
+the four pocket pairs of two each (+0x10C, +0x118, +0x124, +0x130 -- the 12-byte InvPocketPair stride,
+loop bases 0x42A1C, 0x42A50, 0x42A84, 0x42AB8), the eight backpack slots (the `n += 4 / ii < 4` loop at
+0x42AEC, +0x13C), the nine belt slots (the 3 x 3 loop at 0x42B58, +0x16C). Then the 42 meta bytes: four
+pocket pairs (0x42BA0, 0x42BB0, 0x42BC0, 0x42BD0 -- +0x114, +0x120, +0x12C, +0x138), 8 + 8 backpack (0x42BE0, 0x42BF0),
+9 + 9 belt (0x42C00, 0x42C18).
+
+The sentinels are the same three tests on both sides of every slot: 0x7FFF means a NULL pointer, 32000
+means the shared empty item `unk_138EA0 @ Map+0x254E8`, and anything else indexes the item table
+(`Map.apTactItems @ Map+0x23438`, i.e. `Map + 4*(36110+id)`) or the roster (`Map.apSoldiers @ Map+4504`).
+The stored number is `TactItem.nRefId @ TactItem+0x14` for an item and `Soldier.nSaveId @ Soldier+0x3BC`
+for a soldier, both assigned by `Save_AssignRosterIndices @ 0x42EA0`.
+
+Two quirks of the original that the port keeps instead of fixing. apBackpack[5] and apBackpack[6] are
+never saved: the writer's tests at 0x42B00..0x42B18 (`ii == 1 && n == 4`, `ii == 2 && n == 4`) write
+0x7FFF for them whatever they hold, while their two meta bytes ARE written; the reader clears the same
+two slots at 0x41F98 whatever the record says. And the two roster-id arms bound differently: the spotted
+arm (0x4224C) has no bound at all -- 0x7FFF or index -- while the multi-target arm bounds against
+nSoldierCount at 0x41AB0, with a SIGNED compare (`CMP R6,R3`, `MOVLT`, `CMPLT R0,R3,LSR#16`, nMultiTarget
+loaded by LDRSB).
+
+Deviations, recorded in pufo_save.h and in the code comments: the port reads the ids unsigned, so a
+0xFFFFFFFF can never index the roster or the item table out of bounds, while the original's signed
+compare at 0x41AB0 would take it as -1 and its spotted arm is unbounded. The port also does not
+dereference a NULL multi-target entry inside nMultiTarget -- 0x42704 stores straight through the pointer
+and has no null test. The port's writer gates the arms on the per-soldier flag it computes
+(`Save_bSoldierInTact`, Part 68) exactly as `v11 = v2` at 0x425D4 does, and keeps the original's own
+extra test `LOBYTE(Map) != 0` on the multi-target ids.
+
+Which env the read gets: `SoldierRecordEnv` in pufo_save.h. The mission load fills it in pufo_tactinit.c
+-- apTactItems, nTactItemCount, `pEmptyItem = pUnk138EA0`, plus the cell lookup -- and the geoscape load
+leaves it empty, which is the right answer rather than a gap: `LOBYTE(Map)` is clear in the geoscape
+state, so `Save_bSoldierInTact` flags nobody in, the arms take their filler branches, and there is nothing
+to resolve.
+
+Gate: `TestSoldierTacticalArms` in tests/test_save.c, 38 checks. One soldier written twice, flagged and
+unflagged, into two containers -- equal length; then a two-soldier round trip where the first is in the
+roster and the second is not, resolving the left hand, three pocket slots, the 32000 id to the shared
+empty item, the backpack and belt slots, the 42 metas, a multi-target id into the roster the same read
+just filled, and the spotted ids into the same roster. apBackpack[5] and [6] come back NULL, an entry
+past nMultiTarget comes back NULL whatever the record holds, and the filler arm leaves every slot empty
+without reading nSpottedCount. tests/test_geoscapeframe.c pins the record's geometry on a save the shell
+really wrote: 325 bytes of fixed head, then the 150-byte block at offset 325, with all 21 soldiers of the
+live mission flagged in.
+
+What measuring found instead. The loaded roster is still unarmed, and the cause is not the save format --
+the Part 76 census read it that way. At save time 0 of 8 live soldiers hold a left-hand item, so the 27
+slot ids are honestly 0x7FFF. `Tact_SetupCraftCargo @ 0x38F00` is the only writer of `unk_156CD0` and
+`unk_157208` (the port's `g_world.aTactCargoSplit` / `aTactCargoWork`, 160 and 480 entries), and it and
+`Tact_EquipTeamFromCraft @ 0x3BE24` both run in the bring-up (pufo_tactinit.c:536-538): the shell's
+mission fixture simply has no cargo to hand out. The cargo chain's DATA is a separate issue.

@@ -179,7 +179,7 @@ static void TestSoldierRoundTrip(void)
 
         memset(aBacking, 0, sizeof(aBacking));
         apSoldiers[0] = &aBacking[0];
-        Check(Save_ReadSoldiers(&dat, apSoldiers, &nCount, 1, NULL, NULL, 0), "  soldiers read");
+        Check(Save_ReadSoldiers(&dat, apSoldiers, &nCount, 1, NULL, 0), "  soldiers read");
         CheckEqI32(nCount, 1, "  one soldier");
 
         /* Spot-check the fields that matter, plus one deep field to prove the
@@ -235,7 +235,7 @@ static void TestRecordDeterminism(void)
         remove("test_save2.tmp");
         DatFile_ctor(&dat);
         (void)DatFile_Open(&dat, "test_save2.tmp", PUFO_DAT_CREATE, 2);
-        (void)Save_WriteSoldier(&dat, &aUnit);
+        (void)Save_WriteSoldier(&dat, &aUnit, 0);
         DatFile_Close(&dat);
 
         hFile = CreateFileW(L"test_save2.tmp", GENERIC_READ, FILE_SHARE_READ, NULL,
@@ -3330,7 +3330,7 @@ static void TestSoldiersReload(void)
     CheckEqI32(apRoster[0]->bFlags, 0, "  flags are zero before the body read");
 
     /* The pairing the original relies on: reload allocates, then the read fills the same objects. */
-    Check(Save_ReadSoldiers(&dat, apRoster, &nRead, 8, NULL, NULL, 0), "  bodies read into the reloaded roster");
+    Check(Save_ReadSoldiers(&dat, apRoster, &nRead, 8, NULL, 0), "  bodies read into the reloaded roster");
     CheckEqI32(nRead, 3, "  three bodies read");
     CheckEqI32(apRoster[0]->nUnk440, 500, "  first soldier landed in the reloaded object");
     CheckEqI32(apRoster[2]->nUnk440, 502, "  and so did the last");
@@ -3439,7 +3439,13 @@ static void TestSoldiersCellLink(void)
     apRoster[3] = NULL;
 
     Check(OpenRead("test_soldcell.tmp", &dat), "  reopened");
-    Check(Save_ReadSoldiers(&dat, apRoster, &nCount, 4, MapTestLookup, NULL, 0), "  read back");
+    {
+        SoldierRecordEnv arms;
+
+        memset(&arms, 0, sizeof(arms));
+        arms.pfnCell = MapTestLookup;
+        Check(Save_ReadSoldiers(&dat, apRoster, &nCount, 4, &arms, 0), "  read back");
+    }
     CheckEqI32(nCount, 3, "  three bodies");
     Check(apRoster[0]->pCell == MapTestLookup(7, 9, 0, NULL),
           "the flagged soldier gets a cell POINTER, not three loose bytes (0x419DC)");
@@ -3479,13 +3485,13 @@ static void TestSoldiersCellLink(void)
         Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_SOLDIERS), "  soldiers chunk begun by hand");
         Check(DatFile_Write(&dat, &uTwo, 2), "  count written");
         for (i32 i = 0; i < 2; ++i) {
-            Check(Save_WriteSoldier(&dat, apPlain[i]), "  soldier written");
+            Check(Save_WriteSoldier(&dat, apPlain[i], 0), "  soldier written");
         }
         DatFile_Close(&dat);
 
         memset(aPlain, 0, sizeof(aPlain));
         Check(OpenRead("test_soldflag.tmp", &dat), "  reopened");
-        Check(Save_ReadSoldiers(&dat, apPlain, &nCount, 2, NULL, NULL, 1), "  read with no stactflg chunk");
+        Check(Save_ReadSoldiers(&dat, apPlain, &nCount, 2, NULL, 1), "  read with no stactflg chunk");
         CheckEqI32(nCount, 2, "  two bodies");
         CheckEqI32(aPlain[0].bInTact, 1, "a missing stactflg fills every soldier from the tact flag (0x41790/0x4179C), not from the record");
         CheckEqI32(aPlain[1].bInTact, 1, "and both entries, not just the first");
@@ -3493,6 +3499,149 @@ static void TestSoldiersCellLink(void)
         DatFile_Close(&dat);
         remove("test_soldflag.tmp");
     }
+}
+
+/* The soldier record's three bInTact arms, both directions.
+ *
+ * Writer: the 30 multi-target ids, the 27 item ids + 42 meta bytes (0x429dc left hand, 0x429f8 right
+ * hand, the four pocket pairs at 0x42a1c / 0x42a50 / 0x42a84 / 0x42ab8, the eight backpack slots at
+ * 0x42aec, the nine belt slots at 0x42b58, then the metas at 0x42b9c..0x42c18), and the count + 60
+ * spotted ids. Reader: 0x41A70, 0x41D60 and 0x42214, resolving the item ids against the tactical pool
+ * `Map.apTactItems @ Map+0x23438` and the roster ids against `Map.apSoldiers @ Map+4504`. An unflagged
+ * soldier writes 120 / 150 / 244 filler bytes in the same three places, so a record is the same size
+ * either way -- measured here, not assumed. */
+static void TestSoldierTacticalArms(void)
+{
+    static DatFile dat;
+    static Soldier aWrite[2];
+    static Soldier aRead[2];
+    static TactItem aItems[6];
+    static TactItem aEmpty;   /* stands for unk_138EA0 @ Map+0x254E8, the shared empty item */
+    TactItem       *apPool[6];
+    Soldier        *apRoster[2];
+    Soldier        *apXcom[2];
+    TeamUnitsState  rosters;
+    SoldierRecordEnv arms;
+    i32   nCount = 0;
+    i32   nSizeTact = 0;
+    i32   nSizePlain = 0;
+
+    printf("The soldier record's three bInTact arms: ids out, pointers back, same bytes either way\n");
+
+    for (i32 i = 0; i < 6; ++i) {
+        memset(&aItems[i], 0, sizeof(aItems[i]));
+        aItems[i].nRefId = i;   /* Save_AssignRosterIndices @ 0x42ea0 numbers the pool 0, 1, 2, ... */
+        apPool[i] = &aItems[i];
+    }
+    memset(&aEmpty, 0, sizeof(aEmpty));
+    aEmpty.nRefId = (i32)PUFO_SAVE_EMPTY_ITEM_ID;
+
+    memset(aWrite, 0, sizeof(aWrite));
+    FillSoldier(&aWrite[0]);
+    FillSoldier(&aWrite[1]);
+    aWrite[1].bInTact = 0;      /* the size pair below needs one record per arm */
+    aWrite[0].pHandL = &aItems[0];
+    aWrite[0].pHandR = NULL;                     /* 0x7FFF out, NULL back */
+    aWrite[0].aPockets[0].apItem[0] = &aItems[1];
+    aWrite[0].aPockets[1].apItem[1] = &aItems[2];
+    aWrite[0].aPockets[2].apItem[1] = &aEmpty;   /* the 32000 id */
+    aWrite[0].aPockets[3].apItem[0] = &aItems[3];
+    aWrite[0].apBackpack[0] = &aItems[4];
+    aWrite[0].apBackpack[5] = &aItems[5];        /* written 0x7FFF whatever it holds */
+    aWrite[0].apBackpack[6] = &aItems[5];
+    aWrite[0].apBackpack[7] = &aItems[5];
+    aWrite[0].apBelt[4] = &aItems[5];
+    aWrite[0].aPockets[2].abMeta[0] = 0x31;
+    aWrite[0].abBackpackMeta[9] = 0x42;
+    aWrite[0].abBeltMetaB[8] = 0x55;
+    aWrite[0].nMultiTarget = 2;
+    aWrite[0].multiOrAnim.apMultiTargets[0] = &aWrite[1];
+    aWrite[0].multiOrAnim.apMultiTargets[1] = NULL;
+    aWrite[0].nSpottedCount = 3;
+    aWrite[0].apSpotted[0] = &aWrite[1];
+    aWrite[0].apSpotted[1] = &aWrite[0];
+    aWrite[0].apSpotted[2] = NULL;
+
+    /* The size pair: the same soldier, flagged and unflagged, written straight into two containers. */
+    remove("test_soldarm1.tmp");
+    Check(OpenWrite("test_soldarm1.tmp", &dat, 4), "  flagged container opened");
+    Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_SOLDIERS), "  chunk begun");
+    Check(Save_WriteSoldier(&dat, &aWrite[0], 1), "  flagged record written");
+    DatFile_Close(&dat);
+    remove("test_soldarm2.tmp");
+    Check(OpenWrite("test_soldarm2.tmp", &dat, 4), "  unflagged container opened");
+    Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_SOLDIERS), "  chunk begun");
+    Check(Save_WriteSoldier(&dat, &aWrite[1], 0), "  unflagged record written");
+    DatFile_Close(&dat);
+    nSizeTact  = FileSizeOf(L"test_soldarm1.tmp");
+    nSizePlain = FileSizeOf(L"test_soldarm2.tmp");
+    Check(nSizeTact > 0 && nSizePlain > 0, "  both container sizes read");
+    CheckEqI32((i32)nSizeTact, (i32)nSizePlain,
+               "a flagged record and an unflagged one take the same bytes: 120 / 150 / 244 either way");
+    remove("test_soldarm1.tmp");
+    remove("test_soldarm2.tmp");
+
+    /* The round trip: soldier 0 is in the roster, soldier 1 is not. */
+    memset(&rosters, 0, sizeof(rosters));
+    memset(apXcom, 0, sizeof(apXcom));
+    apXcom[0] = &aWrite[0];
+    rosters.nXcomCount  = 1;
+    rosters.apXcomUnits = apXcom;
+    for (i32 i = 0; i < 2; ++i) {
+        aWrite[i].nSaveId = i;   /* the id a roster link stores (0x42E64) */
+        apRoster[i] = &aWrite[i];
+    }
+    remove("test_soldtact.tmp");
+    Check(OpenWrite("test_soldtact.tmp", &dat, 4), "  round-trip container opened");
+    Check(Save_WriteSoldiers(&dat, apRoster, 2, 1, &rosters), "  two soldiers written");
+    DatFile_Close(&dat);
+
+    memset(aRead, 0, sizeof(aRead));
+    apRoster[0] = &aRead[0];
+    apRoster[1] = &aRead[1];
+    memset(&arms, 0, sizeof(arms));
+    arms.apTactItems    = apPool;
+    arms.nTactItemCount = 6;
+    arms.pEmptyItem     = &aEmpty;
+    Check(OpenRead("test_soldtact.tmp", &dat), "  reopened");
+    Check(Save_ReadSoldiers(&dat, apRoster, &nCount, 2, &arms, 0), "  both records read back");
+    CheckEqI32(nCount, 2, "  two bodies");
+    CheckEqI32(aRead[0].bInTact, 1, "  the roster member comes back flagged in");
+    CheckEqI32(aRead[1].bInTact, 0, "  the soldier in no roster does not");
+
+    Check(aRead[0].pHandL == &aItems[0], "the left hand resolves to its item (0x429dc -> 0x41E58)");
+    Check(aRead[0].pHandR == NULL, "the empty right hand stays empty (0x7FFF)");
+    Check(aRead[0].aPockets[0].apItem[0] == &aItems[1], "pocket 0 slot 0 resolves");
+    Check(aRead[0].aPockets[1].apItem[1] == &aItems[2], "pocket 1 slot 1 resolves (the 12-byte pocket stride)");
+    Check(aRead[0].aPockets[3].apItem[0] == &aItems[3], "and so does the fourth pocket pair");
+    Check(aRead[0].aPockets[2].apItem[1] == &aEmpty, "the 32000 id names the shared empty item, not pool slot 0");
+    Check(aRead[0].apBackpack[0] == &aItems[4], "the backpack slots resolve (0x42aec)");
+    Check(aRead[0].apBackpack[7] == &aItems[5], "including the last one");
+    Check(aRead[0].apBackpack[5] == NULL && aRead[0].apBackpack[6] == NULL,
+          "apBackpack[5] and [6] never survive: the writer forces 0x7FFF (0x42b00..0x42b18) and the reader clears them");
+    Check(aRead[0].apBelt[4] == &aItems[5], "the belt slots resolve (0x42b58)");
+    Check(aRead[0].apBelt[0] == NULL, "an empty belt slot stays empty");
+    CheckEqI32(aRead[0].aPockets[2].abMeta[0], 0x31, "the pocket metas ride along (0x42b9c)");
+    CheckEqI32(aRead[0].abBackpackMeta[9], 0x42, "the second half of the backpack metas too (0x42bec)");
+    CheckEqI32(aRead[0].abBeltMetaB[8], 0x55, "and the belt metas (0x42c14)");
+    Check(aRead[0].multiOrAnim.apMultiTargets[0] == &aRead[1],
+          "the multi-target id resolves into the roster the same read just filled");
+    Check(aRead[0].multiOrAnim.apMultiTargets[1] == NULL, "and an empty target stays empty");
+    Check(aRead[0].multiOrAnim.apMultiTargets[5] == NULL,
+          "an entry past nMultiTarget is NULL whatever the record holds (the original's `v7 < nMultiTarget` gate)");
+    CheckEqI32(aRead[0].nSpottedCount, 3, "the spotted count reads back");
+    Check(aRead[0].apSpotted[0] == &aRead[1] && aRead[0].apSpotted[1] == &aRead[0],
+          "the spotted ids resolve into the same roster (0x42214)");
+    Check(aRead[0].apSpotted[2] == NULL && aRead[0].apSpotted[30] == NULL,
+          "a NULL spotted entry and the 57 past the count both come back NULL");
+
+    Check(aRead[1].pHandL == NULL && aRead[1].apBelt[4] == NULL && aRead[1].apBackpack[0] == NULL,
+          "the unflagged record's filler arms leave every slot empty, as the original leaves it");
+    CheckEqI32(aRead[1].nSpottedCount, 0, "and its spotted count is not read at all on that arm");
+    Check(aRead[1].multiOrAnim.apMultiTargets[0] == NULL,
+          "the 0xFF filler bytes are read and dropped on that arm, not indexed with (0x41AD8)");
+    DatFile_Close(&dat);
+    remove("test_soldtact.tmp");
 }
 
 int main(void)
@@ -3525,6 +3674,7 @@ int main(void)
     TestReadTGameData();
     TestSoldiersReload();
     TestSoldiersCellLink();
+    TestSoldierTacticalArms();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

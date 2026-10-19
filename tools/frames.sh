@@ -34,7 +34,9 @@ done
 
 # A new reference is as much a gate event as a changed one, and `git diff` is blind to untracked files: Part 76's
 # seven new tact_hud_*.png passed this check silently until they were looked at. Both forms are reported now.
-untracked=$(git ls-files --others --exclude-standard -- tests/ref | grep -c '\.png$')
+# `grep -c` exits 1 when it counts nothing, and set -e would kill the script right here -- in the clean
+# case, the one this gate exists to certify. The `|| true` keeps the count and the exit status separate.
+untracked=$(git ls-files --others --exclude-standard -- tests/ref | grep -c '\.png$' || true)
 if git diff --quiet -- tests/ref && [ "$untracked" -eq 0 ]; then
     echo "frames: unchanged ($(ls tests/ref/*.png 2>/dev/null | wc -l) reference pictures)"
 else

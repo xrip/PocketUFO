@@ -616,9 +616,21 @@ static void Init_LoadMission(TactInitEnv *pEnv)
     /* The cell lookup is the mission's own grid, allocated by the loops just above (0x3D168..0x3D1C0):
      * 0x419DC resolves each flagged soldier's three cell bytes against it, so the order here is the
      * original's -- grid first, soldiers second. */
-    (void)Save_ReadSoldiers(pEnv->pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
-                            pEnv->nSoldierCapacity, Init_LookupCell, pEnv,
-                            *pEnv->pbTactFlag);
+    /* The three bInTact arms of a soldier record resolve their ids here, on the mission's own tables:
+     * the cell grid allocated just above, the tactical item pool Save_AllocFlobjs filled one line
+     * before (Map.apTactItems @ Map+0x23438, indexed by TactItem.nRefId), and the roster itself. */
+    {
+        SoldierRecordEnv arms;
+
+        memset(&arms, 0, sizeof(arms));
+        arms.pfnCell        = Init_LookupCell;
+        arms.pCellUser      = pEnv;
+        arms.apTactItems    = pEnv->apTactItems;
+        arms.nTactItemCount = *pEnv->pnTactItemCount;
+        arms.pEmptyItem     = (TactItem *)pEnv->pUnk138EA0;
+        (void)Save_ReadSoldiers(pEnv->pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
+                                pEnv->nSoldierCapacity, &arms, *pEnv->pbTactFlag);
+    }
     (void)Save_ReadTGameData(pEnv->pDat, pEnv->pSaveState, pEnv->pSaveRosters,
                              pEnv->pSaveFlobjs, &pEnv->pMap->geom, Init_LookupCell, pEnv,
                              pEnv->pSaveReset, pEnv->pSaveHooks);

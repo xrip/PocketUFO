@@ -70,7 +70,17 @@ static bool ReadFlags(DatFile *pDat, u8 *pbFlags)
     return true;
 }
 
-bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
+/* One slot of the tactical inventory block: the item's own id (TactItem+0x14), or the 0x7FFF
+ * "nothing here" value. The original reaches the id by `ADD R1, R0, #0x14` on the item pointer and
+ * swaps in a stack 0x7FFF when the slot is NULL (0x429e4..0x429f0 and its seven copies). */
+static bool WriteItemId(DatFile *pDat, const TactItem *pItem)
+{
+    u32 nValue = (pItem != NULL) ? (u32)pItem->nRefId : PUFO_SAVE_ID_NONE;
+
+    return W(pDat, &nValue, 4);
+}
+
+bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit, u8 bTactFlag)
 {
     u8 aPad[PUFO_SAVE_SOLDIER_PREFIX];
     u32 nOff = 0;
@@ -123,10 +133,27 @@ bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
     if (!W(pDat, &pUnit->uTuSpent, 2)) { return false; }
     if (!W(pDat, &pUnit->nMultiTarget, 1)) { return false; }
 
-    /* The non-tactical branch writes a raw 120-byte buffer produced by
-     * `memset(buf, 0x7FFF, 0x78)`. memset takes an int but stores its LOW BYTE,
-     * so the buffer is 120 bytes of 0xFF -- not a 0x7FFF pattern. Reproduced. */
-    {
+    /* The multi-target block, 120 bytes on both arms. A soldier flagged into the mission writes 30
+     * save ids: each one is that target's `nSaveId`, but only while the game itself is in tactical
+     * mode -- the writer tests `LOBYTE(Map) @ 0x1139B8`, the same byte the bInTact scan at 0x423A0
+     * tests -- and only for the first `nMultiTarget` entries; everything else is 0x7FFF. An
+     * unflagged soldier writes the raw buffer the original builds with `memset(buf, 0x7FFF, 0x78)`,
+     * and memset takes an int but stores its LOW BYTE, so it is 120 bytes of 0xFF, not a 0x7FFF
+     * pattern. Deviation: the original dereferences `apMultiTargets[i]` with no null test; the port
+     * writes 0x7FFF for a NULL entry. */
+    if (pUnit->bInTact != 0) {
+        for (i = 0; i < PUFO_UNIT_MULTITARGET_MAX; ++i) {
+            const Soldier *pTarget = pUnit->multiOrAnim.apMultiTargets[i];
+            u32            nValue  = PUFO_SAVE_ID_NONE;
+
+            if (bTactFlag != 0 && i < (i32)pUnit->nMultiTarget && pTarget != NULL) {
+                nValue = (u32)pTarget->nSaveId;
+            }
+            if (!W(pDat, &nValue, 4)) {
+                return false;
+            }
+        }
+    } else {
         u8 aMulti[120];
 
         memset(aMulti, 0xFF, sizeof(aMulti));
@@ -165,8 +192,45 @@ bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
     if (!W(pDat, pUnit->auUnk962, sizeof(pUnit->auUnk962))) { return false; }
     if (!W(pDat, pUnit->abUnk1012, sizeof(pUnit->abUnk1012))) { return false; }
 
-    /* The non-tactical inventory block: a 150-byte zero fill. */
-    {
+    /* The inventory block, 150 bytes on both arms. A flagged soldier writes 27 item ids (108 bytes)
+     * followed by 42 meta bytes; an unflagged one writes the 150 zero bytes the original builds at
+     * 0x42C20 (`new(0x96); memset(0); write`). The 27 slots, in the original's order: pHandL (0x429dc,
+     * Soldier+0x104), pHandR (0x429f8, +0x108), the four pocket pairs (loop bases 0x42a1c +0x10C,
+     * 0x42a50 +0x118, 0x42a84 +0x124, 0x42ab8 +0x130 -- two ids each, the 12-byte pocket stride), the
+     * eight backpack slots (the `n += 4 / ii < 4` loop at 0x42aec, +0x13C), the nine belt slots (the
+     * 3 x 3 loop at 0x42b58, +0x16C). Then the metas: the four pocket abMeta pairs at 0x42b9c..0x42bd0
+     * (+0x114, +0x120, +0x12C, +0x138), 8 + 8 backpack bytes (0x42bdc, 0x42bec), 9 + 9 belt bytes
+     * (0x42bfc, 0x42c14).
+     *
+     * Two backpack slots are never saved: the writer's tests at 0x42b00..0x42b18 (`ii == 1 && n == 4`,
+     * `ii == 2 && n == 4`) write 0x7FFF for apBackpack[5] and apBackpack[6] whatever they hold, and the
+     * reader clears exactly those two (see Save_ReadSoldier). */
+    if (pUnit->bInTact != 0) {
+        if (!WriteItemId(pDat, pUnit->pHandL)) { return false; }
+        if (!WriteItemId(pDat, pUnit->pHandR)) { return false; }
+        for (i = 0; i < PUFO_UNIT_POCKETS; ++i) {
+            i32 n;
+
+            for (n = 0; n < 2; ++n) {
+                if (!WriteItemId(pDat, pUnit->aPockets[i].apItem[n])) { return false; }
+            }
+        }
+        for (i = 0; i < PUFO_UNIT_BACKPACK_SLOTS; ++i) {
+            const TactItem *pSlot = (i == 5 || i == 6) ? NULL : pUnit->apBackpack[i];
+
+            if (!WriteItemId(pDat, pSlot)) { return false; }
+        }
+        for (i = 0; i < PUFO_UNIT_BELT_SLOTS; ++i) {
+            if (!WriteItemId(pDat, pUnit->apBelt[i])) { return false; }
+        }
+        for (i = 0; i < PUFO_UNIT_POCKETS; ++i) {
+            if (!W(pDat, pUnit->aPockets[i].abMeta, 2)) { return false; }
+        }
+        if (!W(pDat, pUnit->abBackpackMeta, 8)) { return false; }
+        if (!W(pDat, &pUnit->abBackpackMeta[8], 8)) { return false; }
+        if (!W(pDat, pUnit->abBeltMetaA, 9)) { return false; }
+        if (!W(pDat, pUnit->abBeltMetaB, 9)) { return false; }
+    } else {
         u8 aInv[150];
 
         memset(aInv, 0, sizeof(aInv));
@@ -184,8 +248,28 @@ bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
     if (!W(pDat, &pUnit->nUnk440, 4)) { return false; }
     if (!W(pDat, &pUnit->nPsiTrainDays, 1)) { return false; }
 
-    /* The non-tactical spotted block: a 244-byte zero fill. */
-    {
+    /* The spotted block, 244 bytes on both arms: a flagged soldier writes its `nSpottedCount` dword
+     * and then 60 save ids (4 + 240 = 244), each target's `nSaveId` when the index is below the count
+     * and the pointer is set, 0x7FFF otherwise; an unflagged one writes the 244 zero bytes the
+     * original builds with `new(0xF4); memset(0); write`. The reader's half is 0x42214. */
+    if (pUnit->bInTact != 0) {
+        u32 nCount = (u32)pUnit->nSpottedCount;
+
+        if (!W(pDat, &nCount, 4)) {
+            return false;
+        }
+        for (i = 0; i < PUFO_UNIT_SPOTTED_MAX; ++i) {
+            const Soldier *pSpotted = pUnit->apSpotted[i];
+            u32            nValue   = PUFO_SAVE_ID_NONE;
+
+            if (i < pUnit->nSpottedCount && pSpotted != NULL) {
+                nValue = (u32)pSpotted->nSaveId;
+            }
+            if (!W(pDat, &nValue, 4)) {
+                return false;
+            }
+        }
+    } else {
         u8 aSpotted[244];
 
         memset(aSpotted, 0, sizeof(aSpotted));
@@ -202,7 +286,31 @@ bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
     return true;
 }
 
-bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void *pCellUser)
+/* One slot of the tactical inventory block, read back. 0x7FFF is "nothing here"; 32000 (0x7D00) is
+ * the empty-item record itself -- `unk_138EA0 @ Map+0x254E8`, whose nRefId the mission bring-up sets
+ * to that value (pufo_tactinit.c) so a slot pointing at it round-trips. Any other value indexes the
+ * tactical item pool `Map.apTactItems @ Map+0x23438`. Deviation: the original indexes it with no
+ * bound at all, so an out-of-range id reads whatever sits past the pool; the port gives NULL. */
+static bool ReadItemId(DatFile *pDat, const SoldierRecordEnv *pEnv, TactItem **ppItem)
+{
+    u32 nValue = 0;
+
+    if (!DatFile_Read(pDat, &nValue, 4)) {
+        return false;
+    }
+    if (nValue == PUFO_SAVE_ID_NONE) {
+        *ppItem = NULL;
+    } else if (nValue == PUFO_SAVE_EMPTY_ITEM_ID) {
+        *ppItem = (pEnv != NULL) ? pEnv->pEmptyItem : NULL;
+    } else if (pEnv != NULL && pEnv->apTactItems != NULL && nValue < (u32)pEnv->nTactItemCount) {
+        *ppItem = pEnv->apTactItems[nValue];
+    } else {
+        *ppItem = NULL;
+    }
+    return true;
+}
+
+bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, const SoldierRecordEnv *pEnv)
 {
     u8  aSkip[244];
     u8  aCell[3];
@@ -212,6 +320,7 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void
     i32 nFemale;
     u16 uDiscard16;
     i32 nDiscard32;
+    i32 i;
 
     if (pDat == NULL || pUnit == NULL) {
         return false;
@@ -237,8 +346,8 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void
      * pfnCell drops the bytes -- the geoscape load path has no cell table to resolve against,
      * which is what the original's own unallocated slots amount to there. */
     if (!DatFile_Read(pDat, aCell, 3)) { return false; }
-    pUnit->pCell = (pUnit->bInTact != 0 && pfnCell != NULL)
-                       ? pfnCell((i32)aCell[0], (i32)aCell[1], (i32)aCell[2], pCellUser)
+    pUnit->pCell = (pUnit->bInTact != 0 && pEnv != NULL && pEnv->pfnCell != NULL)
+                       ? pEnv->pfnCell((i32)aCell[0], (i32)aCell[1], (i32)aCell[2], pEnv->pCellUser)
                        : NULL;
     if (!DatFile_Read(pDat, &pUnit->nAnimPose, 1)) { return false; }
     if (!DatFile_Read(pDat, &bZero, 1)) { return false; }
@@ -248,8 +357,28 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void
     if (!DatFile_Read(pDat, &pUnit->uTuSpent, 2)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->nMultiTarget, 1)) { return false; }
 
-    /* The 120-byte multi-target block is not modelled; discard it. */
-    if (!DatFile_Read(pDat, aSkip, 120)) { return false; }
+    /* The multi-target block (0x41A70), 120 bytes on both arms. A flagged soldier's 30 dwords resolve
+     * into `multiOrAnim.apMultiTargets`: the original reads each one and keeps it only when the index
+     * is below `nMultiTarget` AND the value is below the roster count it read at 0x417D4; anything
+     * else, including 0x7FFF, becomes NULL. An unflagged soldier has the same 120 bytes read and
+     * dropped. */
+    if (pUnit->bInTact != 0) {
+        for (i = 0; i < PUFO_UNIT_MULTITARGET_MAX; ++i) {
+            u32 nValue = 0;
+
+            if (!DatFile_Read(pDat, &nValue, 4)) { return false; }
+            pUnit->multiOrAnim.apMultiTargets[i] = NULL;
+            /* The original's own bound is SIGNED: `CMP R6,R3` / `MOVLT` / `CMPLT R0,R3,LSR#16` at
+             * 0x41A90..0x41AB8, with nMultiTarget loaded by LDRSB. Deviation: the port reads the id as
+             * unsigned, so a 0xFFFFFFFF can never index the roster out of bounds; the original's signed
+             * compare would take it as -1. That value never reaches this arm in a file the original
+             * itself wrote -- its flagged arm stores only real ids or 0x7FFF, and 0x7FFF fails the bound. */
+            if (i < (i32)pUnit->nMultiTarget && nValue != PUFO_SAVE_ID_NONE && pEnv != NULL
+                && pEnv->apSoldiers != NULL && nValue < (u32)pEnv->nSoldierCount) {
+                pUnit->multiOrAnim.apMultiTargets[i] = pEnv->apSoldiers[nValue];
+            }
+        }
+    } else if (!DatFile_Read(pDat, aSkip, 120)) { return false; }
 
     if (!DatFile_Read(pDat, &pUnit->bUnk148, 1)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->bPsiAssigned, 1)) { return false; }
@@ -274,8 +403,37 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void
     if (!DatFile_Read(pDat, pUnit->auUnk962, sizeof(pUnit->auUnk962))) { return false; }
     if (!DatFile_Read(pDat, pUnit->abUnk1012, sizeof(pUnit->abUnk1012))) { return false; }
 
-    /* 150-byte inventory block, discarded. */
-    if (!DatFile_Read(pDat, aSkip, 150)) { return false; }
+    /* The inventory block (0x41D60), 150 bytes on both arms, read in the same 27-slot + 42-meta order
+     * the writer used. The two middle backpack slots resolve to NULL whatever the record holds --
+     * the reader's own test (`v38 == 0x7FFF || (m == 1 && k == 1) || (m == 2 && k == 1)`), the mirror
+     * of the writer forcing those two to 0x7FFF. */
+    if (pUnit->bInTact != 0) {
+        i32 n;
+
+        if (!ReadItemId(pDat, pEnv, &pUnit->pHandL)) { return false; }
+        if (!ReadItemId(pDat, pEnv, &pUnit->pHandR)) { return false; }
+        for (i = 0; i < PUFO_UNIT_POCKETS; ++i) {
+            for (n = 0; n < 2; ++n) {
+                if (!ReadItemId(pDat, pEnv, &pUnit->aPockets[i].apItem[n])) { return false; }
+            }
+        }
+        for (i = 0; i < PUFO_UNIT_BACKPACK_SLOTS; ++i) {
+            TactItem *pItem = NULL;
+
+            if (!ReadItemId(pDat, pEnv, &pItem)) { return false; }
+            pUnit->apBackpack[i] = (i == 5 || i == 6) ? NULL : pItem;
+        }
+        for (i = 0; i < PUFO_UNIT_BELT_SLOTS; ++i) {
+            if (!ReadItemId(pDat, pEnv, &pUnit->apBelt[i])) { return false; }
+        }
+        for (i = 0; i < PUFO_UNIT_POCKETS; ++i) {
+            if (!DatFile_Read(pDat, pUnit->aPockets[i].abMeta, 2)) { return false; }
+        }
+        if (!DatFile_Read(pDat, pUnit->abBackpackMeta, 8)) { return false; }
+        if (!DatFile_Read(pDat, &pUnit->abBackpackMeta[8], 8)) { return false; }
+        if (!DatFile_Read(pDat, pUnit->abBeltMetaA, 9)) { return false; }
+        if (!DatFile_Read(pDat, pUnit->abBeltMetaB, 9)) { return false; }
+    } else if (!DatFile_Read(pDat, aSkip, 150)) { return false; }
 
     if (!DatFile_Read(pDat, &pUnit->bHumanoidInv, 1)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->uInvBurden, 2)) { return false; }
@@ -286,8 +444,22 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void
     if (!DatFile_Read(pDat, &pUnit->nUnk440, 4)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->nPsiTrainDays, 1)) { return false; }
 
-    /* 244-byte spotted block, discarded. */
-    if (!DatFile_Read(pDat, aSkip, 244)) { return false; }
+    /* The spotted block (0x42214), 244 bytes on both arms: the count dword and 60 ids resolved against
+     * the roster the same way the cell link is resolved, 0x7FFF becoming NULL. Deviation: the original
+     * indexes `Map.apSoldiers` with no bound here; the port bounds against the roster count. */
+    if (pUnit->bInTact != 0) {
+        if (!DatFile_Read(pDat, &pUnit->nSpottedCount, 4)) { return false; }
+        for (i = 0; i < PUFO_UNIT_SPOTTED_MAX; ++i) {
+            u32 nValue = 0;
+
+            if (!DatFile_Read(pDat, &nValue, 4)) { return false; }
+            pUnit->apSpotted[i] = NULL;
+            if (nValue != PUFO_SAVE_ID_NONE && pEnv != NULL && pEnv->apSoldiers != NULL
+                && (i32)nValue < pEnv->nSoldierCount) {
+                pUnit->apSpotted[i] = pEnv->apSoldiers[nValue];
+            }
+        }
+    } else if (!DatFile_Read(pDat, aSkip, 244)) { return false; }
 
     /* 0x4229C: the reader defaults auStat[8] (nStatThrow) to 10 when the record carries 0,
      * so a saved zero never reaches the unit. */
@@ -506,7 +678,7 @@ bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount,
                 continue;
             }
             apSoldiers[i]->bInTact = Save_bSoldierInTact(apSoldiers[i], bTactFlag, pRosters);
-            if (!Save_WriteSoldier(pDat, apSoldiers[i])) {
+            if (!Save_WriteSoldier(pDat, apSoldiers[i], bTactFlag)) {
                 return false;
             }
         }
@@ -524,9 +696,9 @@ bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount,
  * re-seeks), so this reader may take the count from the soldiers chunk first -- the original takes it
  * from the same two bytes in Soldiers_Reload (0x430F8) -- and then re-finds both. */
 bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
-                       i32 nCapacity, MapCellLookup pfnCell, void *pCellUser,
-                       u8 bInTactFallback)
+                       i32 nCapacity, const SoldierRecordEnv *pEnv, u8 bInTactFallback)
 {
+    SoldierRecordEnv arms;
     u16 uCount = 0;
 
     if (pDat == NULL || pnCount == NULL) {
@@ -558,9 +730,16 @@ bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
     if ((i32)uCount > nCapacity) {
         return false;
     }
+    /* The three bInTact arms resolve their ids against the roster and the tactical item pool. The
+     * bound is the count this reader just re-read at 0x417D4, not whatever the caller held before, so
+     * the env copy carries it. */
+    arms = (pEnv != NULL) ? *pEnv : (SoldierRecordEnv){ 0 };
+    arms.apSoldiers   = apapSoldiers;
+    arms.nSoldierCount = (i32)uCount;
+
     for (i32 i = 0; i < (i32)uCount; ++i) {
         if (apapSoldiers != NULL && apapSoldiers[i] != NULL) {
-            if (!Save_ReadSoldier(pDat, apapSoldiers[i], pfnCell, pCellUser)) {
+            if (!Save_ReadSoldier(pDat, apapSoldiers[i], &arms)) {
                 return false;
             }
         }
@@ -2853,11 +3032,19 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     pEnv->pTime->nUnk34 = (i32)pEnv->pTimeRec->nSlot114;
     pEnv->pTime->nMonthEpochSec = (i32)pEnv->pTimeRec->nSlot115;
     if (*pEnv->pbGameState == 0) { /* 0x44DAC: soldiers only for a non-tactical save */
-        /* No cell lookup on this path: the original resolves the three bytes against the cell table at
-         * 0x15338, which a geoscape-state load has nothing allocated in, so its own result is a NULL
-         * pointer. The tact flag is the stactflg-absent fallback the original takes from Map+0x00. */
-        if (!Save_ReadSoldiers(pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
-                               pEnv->nSoldierCapacity, NULL, NULL, *pEnv->pbTactFlag)) { bOk = false; }
+        /* No resolvers on this path -- and none needed. A geoscape-state save flags no soldier into a
+         * mission (Save_bSoldierInTact reads the live rosters, and on the geoscape there are none), so
+         * every record takes the filler arms and the cell/item/soldier id tables are never reached. The
+         * original is in the same position: it resolves the three cell bytes against the cell table at
+         * 0x15338, which this load has nothing allocated in, so its own result is a NULL pointer. The
+         * tact flag is the stactflg-absent fallback the original takes from Map+0x00. */
+        {
+            SoldierRecordEnv arms;
+
+            memset(&arms, 0, sizeof(arms));
+            if (!Save_ReadSoldiers(pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
+                                   pEnv->nSoldierCapacity, &arms, *pEnv->pbTactFlag)) { bOk = false; }
+        }
     }
 
     *pEnv->pnListMode = 1; /* 0x44DC8 */

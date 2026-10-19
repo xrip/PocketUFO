@@ -184,6 +184,14 @@ _Static_assert(sizeof(SoldierAnim) == 120, "SoldierAnim is 120 bytes");
  * serialised raw (Save_WriteSoldiers writes it field by field). */
 #define PUFO_UNIT_MULTITARGET_MAX 30
 
+/* The inventory slot counts the save's tactical arms walk: Soldier.aPockets[4] (two item slots and
+ * two meta bytes each), apBackpack[8], apBelt[9]. Named here because the save record visits them in
+ * the original's own loop shapes. */
+#define PUFO_UNIT_POCKETS 4
+#define PUFO_UNIT_BACKPACK_SLOTS 8
+#define PUFO_UNIT_BELT_SLOTS 9
+#define PUFO_UNIT_SPOTTED_MAX 60
+
 typedef union SoldierMultiOrAnim {
     SoldierAnim anim;
     struct Soldier *apMultiTargets[PUFO_UNIT_MULTITARGET_MAX];

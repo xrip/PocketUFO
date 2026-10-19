@@ -1246,7 +1246,35 @@ with the screen id forced to 0 — because the iso layer's viewport-guide arm (`
 cells the opening handler changes, so a baseline taken before the click is not the same mission. Seven new
 pictures: `tests/ref/tact_hud_*.png`. Open gap it exposed: the soldiers chunk writes the tactical inventory
 block as zeros where the original writes seven `TactItem+0x14` ids (0x429dc, 0x429f8, 0x42a1c, 0x42a50,
-0x42a84), so a loaded roster is unarmed and the gate runs on a fixture weapon.
+0x42a84), so a loaded roster is unarmed and the gate runs on a fixture weapon. **That gap is closed (Part 77)
+and its stated cause was wrong** — the block holds 27 ids + 42 meta bytes, the four pairs are pockets not
+belts, and the roster is unarmed for a different reason, at the end of this paragraph.
+
+The soldiers chunk's three tact-gated blocks are ported in both directions now (Part 77). Three things to
+keep straight. (1) Each block is the same length on both arms: 30 ids against 120 filler bytes, 27 ids + 42
+metas (150) against 150 zeros, count + 60 ids (244) against 244 zeros, so a soldier record is 740 bytes
+whatever its flag — that is what lets the reader resolve a body after reading a 2-byte count it cannot trust
+yet. The multi-target filler is `memset(buf, 0x7FFF, 0x78)` at 0x42748, and memset stores the LOW byte: those
+120 bytes are 0xFF, not a 0x7FFF pattern. (2) The slot order and the sentinels are the whole format: left
+hand +0x104, right hand +0x108, four pocket pairs of two (12-byte stride), eight backpack, nine belt, then
+4×2 + 8+8 + 9+9 meta bytes; 0x7FFF is NULL, 32000 is the shared empty item `unk_138EA0`, anything else indexes
+`Map.apTactItems` (Map+0x23438) or `Map.apSoldiers` (Map+4504), through `TactItem+0x14` and `Soldier+0x3BC`.
+(3) Two asymmetries are the original's own and stay: apBackpack[5] and [6] are never saved (forced 0x7FFF at
+0x42B00..0x42B18, cleared again at 0x41F98) while their metas are, and the two roster-id arms bound
+differently — 0x41AB0 signed against nSoldierCount, 0x4224C with no bound at all. The read side now takes a
+`SoldierRecordEnv` (item table, roster, empty item, cell lookup): the mission load fills it, the geoscape load
+leaves it empty on purpose, because a geoscape state flags nobody in.
+
+Two things the gate broke on, worth not rediscovering. `tools/frames.sh` piped `grep -c` into a command
+substitution under `set -e`, and `grep -c` exits 1 when it counts nothing — so the script died silently in the
+clean case, and `tools/check.sh` stopped at that step's `|| exit 1` while printing "check: OK" two lines above
+it. A gate that reports success and a gate that ran are not the same thing: `check.sh` now ends with a line
+that only prints if all six gates ran. And the "loaded roster is unarmed" census Part 76 recorded was not the
+save: the live mission is unarmed too — 0 of 8 soldiers hold a left-hand item at save time while all 21
+soldiers in the chunk are flagged in. `Tact_SetupCraftCargo @ 0x38F00` (only writer of `unk_156CD0` /
+`unk_157208`, the port's `g_world.aTactCargoSplit` / `aTactCargoWork`) and `Tact_EquipTeamFromCraft @ 0x3BE24`
+both run in the bring-up; what is missing is the DATA — nobody computes how much each craft actually carries
+from the base store, so the equip has nothing to hand out. That is the next unit.
 
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"

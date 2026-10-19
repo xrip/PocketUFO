@@ -2679,6 +2679,46 @@ int main(void)
                         Check(DatFile_FindChunk(&dat, aTactChunks[i]), szMsg);
                     }
 
+                    /* Part 77: what the tactical save actually carries for the roster. The record's own
+                     * geometry is pinned here -- 325 bytes of fixed head, then the 150-byte inventory block
+                     * the original writes at 0x429DC..0x42C18 -- because the block's position is what makes
+                     * the flagged and unflagged arms interchangeable. */
+                    {
+                        u8  aSkip325[325];
+                        u8  aInv150[150];
+                        u8  aFlag;
+                        u16 uSoldiers = 0;
+                        i32 nFlagged = 0;
+                        i32 nIds = 0;
+                        i32 nLiveArmed = 0;
+
+                        for (i32 s = 0; s < (i32)pMapX->nXcomCount; ++s) {
+                            if (pMapX->apXcomUnits[s] != NULL && pMapX->apXcomUnits[s]->pHandL != NULL) {
+                                ++nLiveArmed;
+                            }
+                        }
+                        Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_SOLDIERS)
+                                  && DatFile_Read(&dat, &uSoldiers, 2)
+                                  && DatFile_Read(&dat, aSkip325, 325)
+                                  && DatFile_Read(&dat, aInv150, 150),
+                              "  the soldiers record puts its inventory block at offset 325 (0x429DC is where the 27 slot ids start)");
+                        for (i32 s = 0; s < 27; ++s) {
+                            u32 uId;
+
+                            memcpy(&uId, aInv150 + 4 * s, 4);
+                            if (uId != PUFO_SAVE_ID_NONE) { ++nIds; }
+                        }
+                        if (DatFile_FindChunk(&dat, PUFO_SAVE_TAG_STACTFLG)) {
+                            for (i32 s = 0; s < (i32)uSoldiers && s < 64; ++s) {
+                                if (DatFile_Read(&dat, &aFlag, 1) && aFlag != 0) { ++nFlagged; }
+                            }
+                        }
+                        Check(uSoldiers > 0 && nFlagged == (i32)uSoldiers,
+                              "  every soldier of the mission is flagged in, so the three bInTact arms run on every record");
+                        printf("  cargo in this fixture: %d of %d live soldiers armed; soldier 0's 27 slot ids: %d are not 0x7FFF\n",
+                               nLiveArmed, (i32)pMapX->nXcomCount, nIds);
+                    }
+
                     Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_STRATEG)
                               && DatFile_Read(&dat, aStrategSkip, 74) && DatFile_Read(&dat, aGlobalPtr, 8)
                               && aGlobalPtr[0] == g_world.economy.aZero44_49[0]
@@ -3794,12 +3834,14 @@ int main(void)
         pUnit = (pMapH != NULL && pMapH->nXcomCount > 0) ? pMapH->apXcomUnits[0] : NULL;
 
         /* Weapon census. Tact_OpenLeftHandMenu @ 0x17030 needs a hand slot holding an item with an object
-         * record, and every row the fire-mode panel can draw comes from that item. A loaded roster has
-         * none: Save_WriteSoldier writes the soldiers chunk's 150-byte tactical inventory block as zeros
-         * (pufo_save.c:168) and Save_ReadSoldier discards it, while the original writes a slot's
-         * TactItem+0x14 id there -- left hand at 0x429DC, right hand at 0x429F8, then the belt pairs at
-         * 0x42A1C, 0x42A50 and 0x42A84. That is a real save-format gap, recorded as a separate issue; the
-         * fixture in the screen-3 block stands in for it, the same way Part 57's hand-menu block does. */
+         * record, and every row the fire-mode panel can draw comes from that item. The loaded roster has
+         * none, and since Part 77 the reason is not the save format: the soldiers chunk writes the 27 slot
+         * ids and resolves them back (Save_WriteSoldier / Save_ReadSoldier, `TestSoldierTacticalArms` in
+         * tests/test_save.c), and this slot's file holds 21 flagged-in records whose slot ids are all 0x7FFF
+         * because the mission had nothing to hand out before the save -- `Tact_SetupCraftCargo @ 0x38f00` and
+         * `Tact_EquipTeamFromCraft @ 0x3be24` both run, over the shell's own cargo cells, and the shell's
+         * fixture craft carries no cargo. That is a gap in the cargo chain's DATA, recorded as a separate
+         * issue. The fixture in the screen-3 block stands in for the armed case, as Part 57's hand-menu block does. */
         for (i = 0; i < pMapH->nXcomCount; ++i) {
             Soldier *pTry = pMapH->apXcomUnits[i];
 
@@ -3807,7 +3849,7 @@ int main(void)
         }
         printf("  weapon census of the loaded roster: %d of %d carry a left-hand item with an object record\n",
                nArmed, pMapH->nXcomCount);
-        Check(nArmed == 0, "the loaded roster arrives unarmed: the soldiers chunk's inventory block is written empty where 0x429DC..0x42A8C writes the slot item ids (separate issue)");
+        Check(nArmed == 0, "the loaded roster arrives unarmed because the live one was: the mission fixture hands out no cargo (the slot ids themselves round-trip -- TestSoldierTacticalArms)");
 
         pMapH->pSelUnit = pUnit;
         pMapH->bActionLatch = 0;              /* Map_bActionLatch @ Map+0x02: the unarmed case */

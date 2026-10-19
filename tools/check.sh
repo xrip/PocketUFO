@@ -66,3 +66,7 @@ sh tools/frames.sh || exit 1
 # The whole-path gate: the real executable run through menu -> new game -> placement -> geoscape ->
 # save -> load, one picture per step, checked against tests/ref/e2e.
 sh tools/e2e.sh || exit 1
+
+# The sentinel. Every step above is a gate, and a step can die without printing anything (tools/frames.sh
+# did exactly that, silently, in the clean case). A run that reached this line ran all six gates.
+echo "check: ALL SIX GATES RAN -- release build, release tests, debug build, debug tests, report+artifacts, frames+e2e"

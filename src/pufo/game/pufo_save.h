@@ -98,6 +98,27 @@
 /* Builds the slot path `szAppDir + "sav" + nSlot + ".sav"`. */
 bool Save_BuildSlotPath(char *pszOut, size_t cchOut, const char *pszAppDir, i32 nSlot);
 
+/* The two id values the soldier record's tactical arms use for "no item / no soldier here".
+ * PUFO_SAVE_EMPTY_ITEM_ID is the record of the shared empty item itself: `unk_138EA0 @ Map+0x254E8`,
+ * whose TactItem.nRefId the mission bring-up sets to 32000, so a slot pointing at it round-trips
+ * (writer: the `ADD R1, R0, #0x14` id reads; reader: the `v38 == 32000` arms at 0x41E04 and 0x41EE4). */
+#define PUFO_SAVE_ID_NONE 0x7FFFu
+#define PUFO_SAVE_EMPTY_ITEM_ID 32000u
+
+/* What the three bInTact arms of a soldier record resolve their ids against. Every field may be NULL:
+ * a record whose soldier is not flagged into the mission never reads or writes them, and a geoscape
+ * save flags none. apSoldiers / nSoldierCount are filled by Save_ReadSoldiers itself (the bound is the
+ * count re-read at 0x417D4), so a caller only supplies the tables it has. */
+typedef struct SoldierRecordEnv {
+    MapCellLookup pfnCell;        /* the cell arm, 0x419DC */
+    void         *pCellUser;
+    Soldier     **apSoldiers;     /* Map.apSoldiers @ Map+4504: the multi-target and spotted ids */
+    i32           nSoldierCount;
+    TactItem    **apTactItems;    /* Map.apTactItems @ Map+0x23438, indexed by TactItem.nRefId */
+    i32           nTactItemCount;
+    TactItem     *pEmptyItem;     /* unk_138EA0, the item the 32000 id names */
+} SoldierRecordEnv;
+
 /* Save_WriteSoldiers @ 0x42350.
  *
  * Begins the `soldiers` chunk, writes the u16 count, then every soldier's record,
@@ -116,12 +137,12 @@ bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount,
 /* Save_ReadSoldiers @ 0x416bc: the matching read side. Three things the original does in this order:
  * `stactflg` first (0x416D0, one byte per soldier into bInTact, because the body arms and the cell
  * resolve read that flag), then the bodies (0x417BC re-finds the `soldiers` chunk), then `1_24scb`
- * (0x422C4). `pfnCell` is the map's cell lookup, used for the bInTact arm (0x419DC); NULL drops those
- * three bytes instead. `bInTactFallback` is the value the original takes from Map+0x00 when the
- * stactflg chunk is absent. */
+ * (0x422C4). `pEnv` is what the bInTact arms resolve against -- the cell lookup (0x419DC), the roster,
+ * the tactical item pool and the empty item -- and NULL means "no arms resolve anything", which a
+ * geoscape-state load never needs. `bInTactFallback` is the value the original takes from Map+0x00 when
+ * the stactflg chunk is absent. */
 bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
-                       i32 nCapacity, MapCellLookup pfnCell, void *pCellUser,
-                       u8 bInTactFallback);
+                       i32 nCapacity, const SoldierRecordEnv *pEnv, u8 bInTactFallback);
 
 /* Soldiers_Reload @ 0x430cc. Free the whole roster, find the "soldiers" chunk in an open save, read the
  * count out of it, and allocate that many empty soldiers.
@@ -134,16 +155,22 @@ bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
  * the count it just read fits the roster array. The port bounds the allocation by nCapacity. */
 bool Soldiers_Reload(DatFile *pDat, Soldier **apSoldiers, i32 *pnCount, i32 nCapacity);
 
-/* Writes one soldier's non-tactical record prefix (740 bytes) through pDat.
- * The `soldiers` chunk must already be open. */
-bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit);
+/* Writes one soldier's record through pDat, choosing its three arms from `pUnit->bInTact` (the writer
+ * computed that flag before calling, and passes bTactFlag = Map+0x00 because the multi-target arm also
+ * tests it). The `soldiers` chunk must already be open. Each arm pair is the same size: the 30-id
+ * multi-target block against 120 filler bytes, 27 item ids + 42 meta bytes against 150 filler, and
+ * count + 60 ids against 244 filler -- so a record's size never depends on the flag, and the two
+ * trailing per-soldier chunks stay aligned. */
+bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit, u8 bTactFlag);
 
-/* Reads one soldier's record back. bInTact is READ (the cell arm at 0x41968 tests it) but never
- * written here -- it comes from Save_ReadInTactFlags, which runs first. Fields the port does not
- * model (the inventory and spotted blocks) are consumed as their whole fixed size, which is the
- * same byte count the original's resolved arm spends (150 and 244, checked against 0x41D6C..0x42140
- * and 0x42218..0x42290). auStat[8] gets the original's 0 -> 10 default (0x4229C). */
-bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, MapCellLookup pfnCell, void *pCellUser);
+/* Reads one soldier's record back. bInTact is READ (the cell arm at 0x41968 and the three id arms test
+ * it) but never written here -- it comes from Save_ReadInTactFlags, which runs first. The three arms
+ * are modelled: multi-target at 0x41A70, inventory at 0x41D60, spotted at 0x42214, each taking the same
+ * byte count as the filler arm it stands against (120, 150, 244). Deviations, all in the id tables:
+ * the original indexes Map.apSoldiers and Map.apTactItems with no bound in the inventory and spotted
+ * arms, the port bounds both, and the port refuses to dereference a NULL multi-target entry the writer
+ * would have dereferenced. auStat[8] gets the original's 0 -> 10 default (0x4229C). */
+bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, const SoldierRecordEnv *pEnv);
 
 /* The two per-soldier chunks. `stactflg` runs BEFORE the bodies in the original (0x416D0) and
  * `1_24scb` after them (0x422C4): the first fills bInTact, the second fills pLinked1040 from an
