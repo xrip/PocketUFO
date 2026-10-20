@@ -3926,6 +3926,34 @@ unchanged; 18267 checks.
   and 596888/598792 (99.7%) unchanged, 36 frame references (2 new, 1 re-made, both looked at), 9 e2e pictures
   unchanged, `tools/check.sh` clean.
 
+- [x] **Part 96: a save writes the clock it is actually running on, and the item record stops reading heap
+  junk.** `Save_WriteTime @ 0x40204` keeps no record of its own: its eight writes take the live globals
+  straight -- `nGameTotalSec` 0x159618, `bGameClockPaused` 0x15961C, 0x159610 / 0x15960C / 0x159608 (the day, hour
+  and minute tick stamps), 0x15963C, 0x159640, and `nAlienPoolAddend` 0x1472C8 as a WORD -- 27 bytes. The decoded
+  fields `nGameYear`..`nGameSecond` (0x159620..0x159638) are NOT in the file: the load re-runs
+  `GameTime_Decode @ 0x5cfd4` off the saved total (LoadGame's 0x44E34) and `SaveSlot_FormatList @ 0x45904` stamps
+  each slot label the same way. The port carried `SaveTimeRecord` as a wire record and copied it only on the LOAD
+  side, so `World_SaveSlot` handed the writer a record nobody had filled: the slot file measured
+  `TIME size 27 off 180005 payload 00*27`, every slot was stamped "01.01.1999 00:00", and every load restarted the
+  calendar. `World_SaveSlot` now stages the eight live cells into the record at the one point the writer runs, and
+  the payload reads 120 s -- 00:02:00, Friday 1 Jan 1999 -- with slot 0 stamped "01.01.1999 00:02". Gated by
+  reading the chunk back off the file against the mission's own clock (10 checks). Ten geoscape references moved
+  because the tact save/load-back at the end of main now hands the later sections a real clock: six differ only in
+  the hh:mm:ss digits at y 260..272, and `geoscape_craft_card` shows the mission's speed and fuel. Second defect,
+  found while checking the picture path: `geoscape_contact_centre.png` and `geoscape_contact_attack.png` were not
+  reproducible at all -- four identical runs drew "2200 узлов" in one and "2078 узлов" in another. The cause is the
+  record's own allocation: `StrategItem_AllocAdd @ 0x415d8` calls `operator new(0x88)` and `StrategItem_ctor @
+  0x82bd4` writes ONE dword (+0x34), so 132 bytes stay as the allocator left them, and the selection card prints
+  `itoa(abs(2200 - 61 * byte +0x14))` (0x8E920's `MOV R2,#0x3D`) off that byte while a spawn test reads it too. The
+  port's malloc returned recycled CRT bytes, which differ between processes; it now allocates the record zeroed,
+  which is what a fresh WinCE heap hands out, and all 36 dumps came out byte-identical across three runs. IDB:
+  function comments on `Save_WriteTime @ 0x40204` (the eight live sources, the 27-byte payload, the decoded fields
+  that are not saved), on `StrategItem_AllocAdd @ 0x415d8` (ORIGINAL UNDEFINED, the 132 unreadable bytes), names on
+  `nTimeLastTickMinSec @ 0x159608`, `nTimeLastTickHourSec @ 0x15960C`, `nTimeLastTickDaySec @ 0x159610`,
+  `nTimeUnk15963C`, `nTimeMonthEpochSec @ 0x159640`, `idb_save`. Gate: 62/62 Release and Debug, 19275 checks
+  (10 new), coverage 972/1103 (88.1%) and 596888/598792 (99.7%) unchanged, 36 frame references (12 re-made, looked
+  at), 9 e2e pictures (2 re-made, all 9 looked at, 0 bad), `tools/check.sh` clean.
+
 - [ ] **Three options-screen seams stay open.** The seven slot handlers (`SaveGame_Slot0..6_CloseUI`
   0x6af80..0x6b148, `LoadGame_Slot0..6_InitOptions` 0x6b194..0x6b404) are ported and gated but reach SaveGame /
   LoadGame through a `DatFile` the caller opens, and the shell opens slot files only on its tact-bank path

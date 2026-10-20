@@ -1968,6 +1968,19 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
     pW->saveStrateg.nStrategCount = PtrArray_GetCount(&pW->strategList);
     in.pStrateg = &pW->saveStrateg;
     in.pStrategList = &pW->strategList;
+    /* Save_WriteTime @ 0x40210 keeps no record of its own: its eight writes read the clock block
+     * itself -- 0x159618, 0x15961C, 0x159610, 0x15960C, 0x159608, 0x15963C, 0x159640 -- and the word at
+     * 0x1472C8. The port writes through SaveTimeRecord, so the live cells are staged into that record
+     * here, at the one point the writer runs. Left unstaged, the file records an all-zero clock and
+     * every load restarts the calendar at 1999-01-01 00:00 whatever the saved game's date was. */
+    pW->saveTime.nSlot105    = (u32)pW->geo.time.nTotalSec;        /* nGameTotalSec @ 0x159618 */
+    pW->saveTime.nSlot106    = pW->geo.time.bPaused;               /* bGameClockPaused @ 0x15961C */
+    pW->saveTime.nSlot103    = (u32)pW->geo.time.nLastTickDaySec;  /* 0x159610 */
+    pW->saveTime.nSlot102    = (u32)pW->geo.time.nLastTickHourSec; /* 0x15960C */
+    pW->saveTime.nSlot101    = (u32)pW->geo.time.nLastTickMinSec;  /* 0x159608 */
+    pW->saveTime.nSlot114    = (u32)pW->geo.time.nUnk34;           /* 0x15963C */
+    pW->saveTime.nSlot115    = (u32)pW->geo.time.nMonthEpochSec;   /* 0x159640 */
+    pW->saveTime.nWord1472C8 = pW->nAlienPoolAddend;               /* 0x1472C8 */
     in.pTime = &pW->saveTime;
     in.apSoldiers = pW->apSoldiers;
     in.nSoldierCount = pW->nSoldierCount;

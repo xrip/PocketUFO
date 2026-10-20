@@ -3107,3 +3107,16 @@ directories listed in section 12, and a bare `-A` would commit them.
 Before every commit: build, run ctest, run all five audits, and confirm the coverage delta equals
 the byte sizes in `docs/idb/inventory-grouped.tsv`. Quote coverage numbers from a run in the same
 message, never from memory.
+
+Part 96 closed the save's clock. `Save_WriteTime @ 0x40204` writes eight live globals -- 0x159618, 0x15961C,
+0x159610, 0x15960C, 0x159608, 0x15963C, 0x159640 and the word at 0x1472C8 -- and the calendar fields are re-derived
+on load by `GameTime_Decode @ 0x5cfd4`. The port filled its wire record only on the load side, so every save wrote a
+zero clock: the load list stamped "01.01.1999 00:00" on every slot and a load restarted the calendar. `World_SaveSlot`
+stages the eight cells now, and the chunk is read back against the mission clock in the gate. Part 96 also found an
+older one: `geoscape_contact_centre.png` and `geoscape_contact_attack.png` were not reproducible across identical
+runs, because `StrategItem_AllocAdd @ 0x415d8` + `StrategItem_ctor @ 0x82bd4` leave 132 of the record's 136 bytes
+uninitialised and the selection card prints a number off byte +0x14. The port now allocates that record zeroed --
+what a fresh WinCE heap hands out -- and the whole 36-picture set came out byte-identical across three runs. Two
+pictures read as "corrupted" turned out to be my own reading of a scaled preview: the clock's year is four glyphs at
+x 105/115/125/135, y 304, and fingerprinting them against the hour digits shows 1999, not 1989. Read digit cells at
+native scale before calling a picture wrong.

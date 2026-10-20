@@ -3474,6 +3474,17 @@ int main(void)
                     i32 nTierRaw = 0, nDep = 0, aFour[4] = {0}, aV124[2] = {0};
                     u8 aStrategSkip[74];   /* version, 4 dwords, 5 type bytes, 13 dwords */
                     i32 aGlobalPtr[2] = {0};
+                    /* The clock the mission runs on right now. Save_WriteTime @ 0x40204 reads these cells
+                     * directly -- its eight writes have no record in between -- so these are the values the
+                     * chunk has to answer with. */
+                    i32 nMarkTotalSec = g_world.geo.time.nTotalSec;
+                    i32 nMarkTickMin  = g_world.geo.time.nLastTickMinSec;
+                    i32 nMarkTickHour = g_world.geo.time.nLastTickHourSec;
+                    i32 nMarkTickDay  = g_world.geo.time.nLastTickDaySec;
+                    i32 nMarkUnk34    = g_world.geo.time.nUnk34;
+                    i32 nMarkMonthSec = g_world.geo.time.nMonthEpochSec;
+                    u16 wMarkPool     = g_world.nAlienPoolAddend;
+                    u8  bMarkPaused   = g_world.geo.time.bPaused;
                     /* Part 93: Save_WriteStrateg bounds its record loop with the count the geoscape block
                      * keeps at +0x38 -- 0x186530, written into the chunk at 0x3FC14 and read back as the
                      * loop bound at 0x3FE28 and 0x401D4 -- not with the PtrArray's own count. The original
@@ -3558,6 +3569,38 @@ int main(void)
                         char szMsg[80];
                         snprintf(szMsg, sizeof(szMsg), "  the tact branch wrote the %s chunk", aTactChunks[i]);
                         Check(DatFile_FindChunk(&dat, aTactChunks[i]), szMsg);
+                    }
+
+                    /* The time chunk, read back against the live clock. Save_WriteTime @ 0x40204 keeps no record
+                     * of its own: its eight writes take 0x159618, 0x15961C, 0x159610, 0x15960C, 0x159608,
+                     * 0x15963C, 0x159640 and 0x1472C8 straight out of the globals. The port writes through
+                     * SaveTimeRecord, and until here the shell filled that record only on the LOAD side -- so
+                     * every slot this shell saved recorded an all-zero clock: the load restarted the calendar at
+                     * 1999-01-01 00:00 (GameTime_Decode @ 0x5cfd4 bases the year on the saved total) and
+                     * SaveSlot_FormatList @ 0x45904 stamped every slot "01.01.1999 00:00". */
+                    Check(nMarkTotalSec > 0, "the mission's clock has run, so a zero time chunk is a defect and not a value");
+                    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TIME), "  the time chunk");
+                    {
+                        u32 uSlot105 = 0, uSlot103 = 0, uSlot102 = 0, uSlot101 = 0, uSlot114 = 0, uSlot115 = 0;
+                        u8  bSlot106 = 0;
+                        u16 wWord1472C8 = 0;
+
+                        Check(DatFile_Read(&dat, &uSlot105, 4) && uSlot105 == (u32)nMarkTotalSec,
+                              "  nTotalSec @ 0x159618 lands in the chunk's first dword");
+                        Check(DatFile_Read(&dat, &bSlot106, 1) && bSlot106 == bMarkPaused,
+                              "  bGameClockPaused @ 0x15961C lands in the byte");
+                        Check(DatFile_Read(&dat, &uSlot103, 4) && uSlot103 == (u32)nMarkTickDay,
+                              "  the day-tick stamp @ 0x159610");
+                        Check(DatFile_Read(&dat, &uSlot102, 4) && uSlot102 == (u32)nMarkTickHour,
+                              "  the hour-tick stamp @ 0x15960C");
+                        Check(DatFile_Read(&dat, &uSlot101, 4) && uSlot101 == (u32)nMarkTickMin,
+                              "  the minute-tick stamp @ 0x159608");
+                        Check(DatFile_Read(&dat, &uSlot114, 4) && uSlot114 == (u32)nMarkUnk34,
+                              "  the fifth tick stamp @ 0x15963C");
+                        Check(DatFile_Read(&dat, &uSlot115, 4) && uSlot115 == (u32)nMarkMonthSec,
+                              "  the month-throttle stamp @ 0x159640");
+                        Check(DatFile_Read(&dat, &wWord1472C8, 2) && wWord1472C8 == wMarkPool,
+                              "  nAlienPoolAddend @ 0x1472C8, the word the chunk closes with");
                     }
 
                     /* Part 77: what the tactical save actually carries for the roster. The record's own

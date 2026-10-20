@@ -268,6 +268,11 @@ bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed)
     if (pList == NULL) {
         return false;
     }
+    /* operator new(0x88) @ 0x415d8, and StrategItem_ctor @ 0x82bd4 writes one dword: the other 132
+     * bytes are left as the allocator handed them over. calloc makes those bytes 0 in the port, which
+     * is what a fresh WinCE heap hands out and what the shipped game's own readouts answer with; with
+     * plain malloc the same reads pick up recycled bytes and the geoscape card's size/speed number --
+     * and one spawn test behind it -- change from run to run. Recorded as ORIGINAL UNDEFINED. */
     pItem = (StrategItem *)malloc(sizeof(StrategItem)); /* operator new(0x88), 0x415d8 */
     if (pItem != NULL) {
         StrategItem_ctor(pItem, nSeed);

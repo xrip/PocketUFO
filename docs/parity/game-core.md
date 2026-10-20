@@ -20593,3 +20593,60 @@ on its tact-bank path; ctlB's `OptionsScreen_ReturnToTitle @ 0x6b478` belongs to
 screen owner in pufo_app.c, so the quit page's Да answers nothing; and `Ui_CloseScreen18 @
 0x84ecc` hands `gUiRootPanel.anLineAux[119]` to its OpenWithSound tail as the mode, which the
 shell has no writer for.
+
+
+## Part 96 - the clock a save writes, and the 132 bytes of the item record nobody initialises
+
+The save wrote a clock it was not running on. `Save_WriteTime @ 0x40204` has no record between
+it and the game: eight `DatFile_Write` calls take `nGameTotalSec @ 0x159618`, `bGameClockPaused
+@ 0x15961C`, the day/hour/minute tick stamps at 0x159610, 0x15960C and 0x159608, the two dwords
+at 0x15963C and 0x159640, and `nAlienPoolAddend @ 0x1472C8` as a word -- 27 bytes, in that
+order. The decoded calendar fields 0x159620..0x159638 are deliberately absent: the load re-runs
+`GameTime_Decode @ 0x5cfd4` from the saved total (LoadGame calls it at 0x44E34) and
+`SaveSlot_FormatList @ 0x45904` stamps every slot label from a decode of the same chunk.
+
+The port kept `SaveTimeRecord` as the wire shape and copied it across on the load side only, so
+`World_SaveSlot` passed the writer a record that nothing had filled. Measured on the e2e slot
+file before the fix: `TIME size 27 off 180005`, payload 27 zero bytes. Consequences, both seen
+in the pictures: every slot in the load list was stamped "01.01.1999 00:00" whatever the saved
+game's date was, and every load restarted the calendar at that date. `World_SaveSlot` now stages
+the eight live cells into the record at the point the writer runs -- the original reads them at
+that moment, the port reads them out of the record -- and the payload is 120 s: 00:02:00, Friday
+1 January 1999, with slot 0 stamped "01.01.1999 00:02". The gate reads the chunk back off the
+file and compares all eight fields with the live clock, after a check that the mission's clock
+has run, so a zero chunk fails as a defect rather than passing as a value.
+
+Ten geoscape references moved for that reason, and they are the honest consequence rather than a
+leak: the Part 65 save/load-back at the end of `main` now hands the sections that follow it a
+save's real clock. Six of the ten differ only in the hh:mm:ss digits (58..96 px, bbox x 125..157
+y 260..272), which is the clock line at 0x5C618..0x5C764; `geoscape_craft_card` (527 px) carries
+the mission's own speed and fuel, and `geoscape_contact_attack` / `geoscape_contact_centre` re-
+render with the loaded clock and the item record fix below. `geoscape_craft_card.png` shows the
+card the loaded mission really holds: Рейнджер-1, base Азия-1, 760 speed, 99% fuel.
+
+The second defect was older than this part and only a run-to-run comparison found it. Two of the
+36 references were not reproducible: four identical runs produced "2200 узлов" in one and "2078
+узлов" in another, 278 differing pixels in the card's speed line. `StrategItem_AllocAdd @
+0x415d8` is `operator new(0x88)` and `StrategItem_ctor @ 0x82bd4` writes one dword (+0x34, the
+seed counter copy) -- the other 132 bytes stay as the allocator handed them over. The selection
+card reads one of them: `abs(base - 61 * byte +0x14)` with 0x8E920's `MOV R2,#0x3D`, printed at
+0x8EC44, and a spawn test reads the same byte. The port's `malloc` returned recycled CRT bytes,
+so the number changed with the process; the original on WinCE reads a fresh heap block, which is
+zeroed pages. `StrategItem_AllocAdd` now allocates the record zeroed, and all 36 dumps came out
+byte-identical across three runs. Recorded in the IDB at 0x415d8 as ORIGINAL UNDEFINED, because
+what the shipped image reads there is not recoverable from the image.
+
+Whole-path evidence, the run the user asked for: process 1 draws the title/menu, starts a new
+game, places the base, opens the base screen, closes it twice, saves slot 0; process 2 boots to
+the same menu, opens the load list and loads slot 0. Nine pictures, 0 bad, each looked at: the
+menu, the placement screen with the globe hover, the base interior with its facility grid, the
+base-info screen, the geoscape with the chrome and the clock at 00:02:00, the geoscape after the
+save, the menu again in the new process, the slot list with slot 0 stamped with the saved date,
+and the loaded geoscape at 4 147 000 dollars, 1 base, 8 soldiers, 3 craft. The year in the clock
+line reads 1999: four glyph cells at x 105 / 115 / 125 / 135, y 304 (0x5CD30..0x5CE38),
+fingerprinted against the hour digits at y 260 -- the scaled preview makes the last two nines
+look like an 8.
+
+Gate: 62/62 Release and 62/62 Debug, 19275 checks (10 new), coverage 972/1103 (88.1%) and
+596888/598792 bytes (99.7%) unchanged, 36 frame references (12 re-made, all looked at), 9 e2e
+pictures (2 re-made, 9 looked at, 0 bad), `tools/check.sh` clean.
