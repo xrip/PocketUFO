@@ -3435,7 +3435,7 @@ unchanged; 18267 checks.
 - [x] **Part 80: the tactical inventory screen paints through the frame, and its filter row lives in the bank.** `Render_Frame @ 0x22310` routes Map_nUiScreen 1 to 0x224AC and never through 0x22414 -- the inventory REPLACES the iso layer. The callee was ported and tested long ago (`TactHud_DrawInventoryScreen @ 0x1f58c`); the seam was missing: `World_bTactFrameLive` refused screen 1, which is exactly what a mission launch leaves (0x3D0B8 -> `TactHud_OpenInventory @ 0x16ef4` -> store 1 at 0x16FD8), so the shell painted nothing on the first screen of every mission. `World_TactFrameDraw` builds the env from cells the bring-up already owns: bank 19..31 as `PUFO_HUD_INV_FIRST` (pBank + 0x260), the "invv" backdrop (Map+0x100), the portrait table = the 32 manual pads at Map+0x199C indexed `8*nUnitType + 4*bFemale + nLook`, "twonone" (0x156A70) as the strip's empty-hand marker, unk_138EA0 as the empty slot, TEXTS[55] "Вес: " + TEXTS[68] (EMPTY in lang.dat) for the burden line, aszTextE/aszTextA (0xB2200/0xB2148) for the rank, Map+0x3C (`sTactInput.bInvDragActive`) as the held byte, Map_bForceNoDrag @ 0x128A9C (the byte widget 88's handler flips, so arm and toggle share one cell), and the bank's pointer pair +0x1044/+0x1048 for the drag ghost. **Real gap found and closed, same class as Part 76's option pads:** the seven inventory filter pads ARE bank `UiControl.nState` bytes -- widget 21 (0xAC97A), 24 (0xAC9DA, All) and 25..29 (0xAC9FA/0xACA1A/0xACA3A/0xACA5A/0xACA7A), seven widgets, NOT a run -- lit by 0x16F70 and darkened by 0x16F68/0x16F78..0x16F98, re-lit by `Ui_SetInvFilter`, blitted by the arm; the port kept them in `TactUiState` only, so the row drew nothing. `World_TactPushInventoryFilterPads` mirrors them on the screen that reads them. Measured on the reloaded mission opened through the installed handler (bank widget 4, not a hand-built call): 2 pad blits -- the lit All filter (bank 24) and widget 30, the one row whose descriptor fills slot 0 -- because `UiControl_LoadPads @ 0x1a604` stores the three names into slots 0/1/2 in order, these rows leave slot 0 empty, and `UiControl_BlitActivePad` reads `apPads[nState]`: the panel's static grids come from the "invv" backdrop, the control pads are the lit/pressed overlays. Clearing All removes one blit; lighting abFilterPad[0] adds one; all seven bytes stand in the bank. Gate: the Part 80 block (opener through the handler, arm with NO iso layer -- the iso loop bounds do not move, 0x22414 is off the path -- the two counts and the seven-byte mirror) plus a launch-state paint at the bring-up. New reference `tests/ref/tact_hud_inventory.png`, looked at (portrait, header, "Вес: 0", the empty equipment grid, the ground strip, the lit filter row). IDB: 4 comments (0x224AC, 0x16F68, 0x1f58c, 0xAC9DA) + `idb_save`. Gates: all six ran, 62/62 Release and Debug, 18567 checks, coverage unchanged, 12 frame references (1 new) and 9 e2e pictures unchanged.
 
 - [ ] **Next unit: the tactical screens the shell still does not paint or drive, verified by frame images.** Verification changes from this unit on: every draw unit dumps its frame as a PPM the test writes (`tools/frames.sh` collects them) and the gate compares the dump against the stored reference, so parity is checked on the rendered picture, not only on lit-pixel probes. The walker (Part 50), the modal bank (Part 51), the enemy phase (Part 52), the tact pad table (Part 53), the control bring-up with its ~106 installed click handlers (Part 54), the bring-up inventory opener (Part 55), the EndTurn bracket (Part 56), the hand menus (Part 57), the deploy-confirm opener (Part 58) and the quit-confirm opener (Part 59) and the resize pad (Part 61, closing the last NULL in the bank table) are live; still missing: the tact pointer dispatch is live since Part 60 (press/release run the installed handlers on the mission screens, and the modal hover arm now dispatches the slot 16/18 callbacks Parts 58/59 stored), the tact keyboard dispatch since Part 67 (both WndProc chains over the 96-byte key map @ 0x1884D8, and the fifteen `TactInputHooks` seams the table left NULL -- so the pen path now runs the map click, the cursor re-place and the text push as well), but two feeder gaps remain: the UiPulse timer still runs on the app's state copy during a mission, and the modal status-line box only gets its coordinates once the modal DRAW arm fills apUiSlotsA[20..23]; (the save half is closed since Part 62 and the load half since Part 65 (`World_SaveSlot` + `App_HookSaveGame` run `SaveGame @ 0x44988` over the live world; `World_LoadSlot` + `Load_HookTactInitMission` run `Tact_InitMission` mode 1 over the open slot file); the tactical frame behind the RenderFrame seam is live since Part 63 (`World_TactFrame` + `WorldHooks.pfnPresentFrame` cover screens 0, 8 and 9, the walker's repaint arm included), so nothing of 0x2237C's tactical jumptable is left off the seam: the inventory arm, screen 1 at 0x224AC, is live since Part 80, the look-mode minimap arm, screen 2 at 0x224B8, since Part 81, the command panel, screen 4 at 0x224C4, since Part 82, the marked-unit overlay, screen 6 at 0x224D0, since Part 83, the promotion report, screen 0x13 at 0x223F4, since Part 84, and the Cydonia briefing pair, screens 0x14/0x15 at 0x223DC, since Part 85 -- 0xD is live since Part 64 and the whole "cases 0,3,5,7-12,15" group since Part 76 (16..18 stay off it, and those are the outer title/menu cases, not the tactical frame); plus one cell the original touches with no owner in the port at all (`bPanelFlagScratch`, written every 0xC352 tick at 0xA0978) -- `unk_EACE0`, which Part 64 recorded as a label with 8 reads and no writer, is TEXTS[1104] "OK", written by the record read loop at 0x38524..0x38564, and it has drawn on both pads that read it since Part 84 -- and four cells the frame now READS but nothing in the port writes: `anPhaseSave0[94] @ 0x150D6` (the viewport guide's ready byte), the height-glyph gate dword `0x14000` (the IDB's `nHeightGlyphId`, i.e. `aim.anAimRow[10]`), the type-probe bytes `Map+0x16..0x19`, and `Map+0x14070` (`pArrowThrownItem`, written by `Tact_SimulateThrowArc @ 0x319FC`).
-- [ ] **The geoscape can now reach a mission, and the two panel openers still cannot.** Part 75 wired thirteen of the status panel's fifteen handler fields, so a loaded transport arms the launch control (`Smap_BeginCraftSelect` at 0x91578, kept because `Craft_CountSoldiersAboard` is non-zero) and the descent panel paints it. The path geoscape -> descent panel -> `Smap_BeginCraftSelect` -> `World_InitTactical` is open end to end but has never been walked in the shell: it needs a message line with flag 0x17 / 0x16 / 0x15, which is what `Geoscape_PulseUpdate`'s contact handling appends. Two fields stay NULL: `pfnConfirmReport` (Ui_OpenBaseInfoAlt @ 0x84d18 -> ufopaedia screen 16) and `pfnApplyResearch` (Ui_OpenResearch @ 0x84bf8 -> research screen 8), each waiting on that screen's Init (`Ufopaedia_Init` / `ResearchInitEnv`, the same gap as nav slots 6/8/9/10/11 at World_NoopClick).
+- [ ] **The geoscape can now reach a mission, and the two panel openers still cannot.** Part 75 wired thirteen of the status panel's fifteen handler fields, so a loaded transport arms the launch control (`Smap_BeginCraftSelect` at 0x91578, kept because `Craft_CountSoldiersAboard` is non-zero) and the descent panel paints it. The path geoscape -> descent panel -> `Smap_BeginCraftSelect` -> `World_InitTactical` is open end to end but has never been walked in the shell: it needs a message line with flag 0x17 / 0x16 / 0x15, which is what `Geoscape_PulseUpdate`'s contact handling appends. Two fields stay NULL: `pfnConfirmReport` (Ui_OpenBaseInfoAlt @ 0x84d18 -> ufopaedia screen 16, still waiting on that screen's Init) and `pfnApplyResearch` (Ui_OpenResearch @ 0x84bf8 -> research screen 8). **Part 88 moved half of that pairing:** the research Init is live in the shell and nav slot 5 is wired (the LDR at 0x67BAC), and both openers are ported already (`Ui_OpenBaseInfoAlt` at `pufo_baseui.c:9831`, `Ui_OpenResearch` at `pufo_baseui.c:9853`), so what `pfnApplyResearch` waits on now is the `ScreenResetOpen2Env` its body reads -- above all the `pNavOut` handle for the fifteen nav controls Ui_OpenResearch rebuilds -- not a missing Init. Nav slots 6..9 stay at `World_NoopClick` (ManufScreen_Open, TransferScreen_Open, BuySellScreen_OpenBuy, BuySellScreen_OpenSell).
 
 ## Separate issues, not folded into the porting steps
 
@@ -3563,13 +3563,102 @@ unchanged; 18267 checks.
   `idb_save`. Gates: all six ran, 62/62 Release and 62/62 Debug, 18812 checks, coverage 972/1103 (88.1%) and
   596888/598792 bytes (99.7%) unchanged, 21 frame references (4 new), 9 e2e pictures unchanged.
 
-- [ ] **The hangar stores list's two count columns hold numbers that nothing draws.** The builder gives the
-  avail and taken panels their quantities as LINE AUX integers only (0x7B918, 0x7B924) and no line text, and
-  `UiPanel_DrawText` skips a row whose text is empty -- so `geoscape_hangar_stores` shows the item name at x 10
-  and the `<` `>` pair at x 170 / x 186 (the select-row and commit panels' own records) with the two count
-  columns (nPosX 164 and 232, drawn at 0x7BED4 and 0x7BF5C) blank. The stores arm 0x7BD70..0x7C228 has no
-  `itoa` and no digit blit in it. Either the original really leaves those two columns empty, or the aux column
-  is consumed somewhere the arm reaches through a callee -- the frame reference alone cannot tell the two apart.
+- [x] **Part 88: the research screen runs inside the shell, the new game's list really is empty, and four
+  controls were built without their constructor.** No new original function is ported -- the whole screen was
+  already cited -- what was missing was the shell reaching it, the press seam that makes it clickable, and the
+  census that says what a new game shows on it. `ResearchScreen_Open @ 0x616ac` is nav control slot 5's handler
+  (installed at 0x67BAC): `Sound_Play(17, 4)` at 0x616B4 and `nGeoscapeScreen = 8` written at 0x6176C BEFORE the
+  tail call into `ResearchScreen_Init @ 0x749a8` at 0x61778. Init's ten steps now run on the shell's own state:
+  the "Research" pad (mode 6, 0x749DC) onto the block base at 0x749D8, the four controls at 0x74A28 with handlers
+  at 0x74A4C..0x74A94, the close control at (224,1) with the research thunk (0x74AA0..0x74AB8), the cancel and
+  start handlers at 0x74AC4/0x74AD0 with their positions only at 0x74B98..0x74BB4 (165,188 / 165,166),
+  `UiControl_Setup` over `g_aResearchCtlDesc @ 0xABB10` at (205,18)/(205,38)/(10,163)/(10,183), RebuildTopicList
+  at 0x74B00, the not-on-list entry clear at 0x74B08..0x74B8C, BuildPanels at 0x74BB8, tail RefreshPanels.
+  **The draw arm has two shapes** (`Geoscape_DrawResearchArm @ 0x94114`: the draw at 0x9411C, then the
+  two-control run at 0x94120, CMP #2 at 0x9414C): with no row selected `ResearchScreen_Draw` returns at 0x73D64
+  right after the close control, and the whole frame measures exactly 3 control pads -- close plus the paging
+  pair, and neither quantity pad; with a row selected it draws the detail panel (0x73DA0), the three labels at y
+  118/132/146, the three numbers at x 195 (the lab-capacity SUB at 0x73FB0), the +/- pair (0x7406C/0x74088),
+  cancel (0x7409C), start (0x74120) and the allocate-all -- whose HANDLER the draw installs at 0x74184 and whose
+  (100,164) position comes from 0x74190/0x7419C, so that button exists only after a row-selected frame painted.
+  **The shipped list is empty and the census closes every branch that could fill it:** RESEARCH.DAT is 4896 =
+  144 records of 34 copied raw at 0x86900 with wUnk6 zeroed at 0x86938; all 144 locked, none active;
+  `Research_TopicNeedsItem @ 0x72c8c` answers 0 for every one (the only two item bands, 55..65 and 118..142, read
+  `abNeedItems[0] == 0`, so the byte tested is `apObjects[0]`'s stock, a slot never stocked); the 30 records that
+  reach the in-progress branch 0x747A0 all carry an equal (lo,hi) pair in the next record's head, which 0x74868
+  reads and 0x7487C skips on equality, 28 of them sum to zero so 0x748D0 fails, the last two have a locked
+  prerequisite that 0x747AC multiplies into the gate as 0; the finished branch 0x743A4 -- the only writer of
+  `abActivateTopics` at 0x74584, and the only writer of `bActive` outside the block's own slot at 0x7341C -- is
+  unreachable. An empty research screen on a new game is faithful, not a missing feature.
+  **The gate then drives the whole quantity path with the pen,** on a two-byte fixture (records 123..127 naming
+  topics 29 and 36, exactly what 0x74584 would have written): with 0 rows the row click cannot happen at all
+  (nRow <= nLineCount - 1 at 0x3EEDC); with rows it plays sample 7 and caches the panel's row cell into
+  `unk_160C74` (0x73350), which is the row index the +/- pair later reads (0x72F30/0x72F88); the +1 refuses with
+  no scientists (0x72EC8), refuses with no laboratory (0x72EEC, 1 needed against a capacity of 0), and stores
+  through 0x72F58 once a finished lab (kind 2 with buildDays 0, one cell weighted 50 at 0x65890) gives capacity
+  50; the -1 takes it back (0x72FE4); the allocate-all runs `ResearchScreen_UpdateProgress @ 0x72d14` and stops
+  at the scientist count (0x72D94), so two scientists buy two units of one topic; the start control (0x73240)
+  plays 17, books the first progress point (0x732C8/0x732D8), clears the row byte (0x7324C), refreshes the three
+  panels ("2" in the quantity row, the percentage row empty because wTotal is 0 where 0x73160 would divide by
+  it), marks the workshop and lab needed cells (0x732F0, 0x73304) and tail-calls RebuildTopicList.
+  **The close ladder's row-selected arm does not close:** case 8 with a row selected calls StartSelected at
+  0x8BDB4 and RETURNS -- no id store at 0x8BDC4, no teardown at 0x8BDD8 -- so the close control commits and
+  leaves the screen entirely open (id 8, the built flag, the pad and the three panels), and
+  `ResearchScreen_CancelSelectedAndClose @ 0x73380`, which clears the entry at 0x733D8 and tail-closes at 0x733DC
+  with the row STILL selected, lands on the same arm. Recorded in the IDB at 0x8BDB4.
+  **A class defect fell out, the same shape as Part 87's ownership fixes:** the original builds the four controls
+  with `operator new(0x20)` + `UiControl_ctor` at 0x74A28, and the ctor is what sets `bEnabled` -- the very first
+  test in `UiControl_HitTest @ 0x1A3D8`, before the box and before the mode switch. The port's four are
+  caller-owned storage and the shell kept them as zero-initialised array cells, so the screen blitted its
+  buttons, hit-tested them in every arm, and could not be pressed at all. Fixed with one `UiControl_ctor` per
+  control at Init's own allocation site. The rule: a screen-block control the original constructs must be
+  constructed by whoever owns it in the port -- a plain array cell in `PufoWorldState` is not constructed memory.
+  **And one statement recorded here earlier was wrong.** The row name is TEXTS[record + 4] (0x7373C), and in
+  shipped research.dat that field is a COST (0 or 2000..15000; record 28 carries 6000), so 97 of the 144 rows
+  would read past TEXTS.DAT's 1679 records; the index the data actually carries is the u16 at record + 0, which is
+  420 + the topic number (record 28 -> 448 -> TEXTS[448] @ 0xC9F90, the name the note at 0x6CFA8 cites). The port
+  reproduces 0x7373C as it is; the open row below keeps the question. Gate: `test_geoscapeframe` section 12i
+  (the shipped-data census, two opens through nav slot 5, the press seam, the two gates, the fixture restore).
+  Three new references, all looked at: `geoscape_research` (the pad, the rails, "Азия-1", the "Исследование"
+  header, the paging pair, the close, no rows), `geoscape_research_rows` (two "не исп." rows at x 10 with the x
+  170 / x 200 separators), `geoscape_research_allocated` ("Ученых доступно 0", "Свободн. мест в лаборатории 48",
+  "Ученых задействовано 2", Добав./Убрать with their arrows, ВСЕ, ОК, Отмена). IDB: comments at 0x7373C, 0x74364
+  and 0x8BDB4, appended notes at 0x72D00 and 0x74A28, plus `idb_save`. Gates: all six ran, 62/62 Release and
+  62/62 Debug, 18901 checks, coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 24 frame
+  references (3 new, 21 unchanged), 9 e2e pictures unchanged.
+
+- [ ] **The research row name reads a cost as a TEXTS index.** 0x7373C takes the record's `+0x4` u16, scales it
+  by 0xCD and adds it to 0xB38D0, so every row name is TEXTS[record + 4]. In shipped research.dat that field is
+  a cost -- 0 or 2000..15000, record 28 carrying 6000, the same value the note at 0x6CFA8 names -- and 97 of the
+  144 records put a number past TEXTS.DAT's 1679 loaded records there, so on those topics the ORIGINAL reads its
+  row name outside the loaded block. The index the data carries is the u16 at record + 0, 420 + the topic number
+  (record 28 -> 448 -> TEXTS[448] @ 0xC9F90), and `BaseFac_BuildStatusMsg @ 0x6A7B4` reads the low byte of that
+  same field one record off -- the same off-by-one-record pairing `ResearchScreen_RebuildTopicList` uses for the
+  range pairs. The port reproduces 0x7373C unchanged, and the gate compares the row text against TEXTS[record + 4]
+  rather than against a literal. What stays unresolved is which field the data intends: the answer needs either a
+  retail save with an active topic to compare a picture against, or the reader that 0x6A7B4's pairing points at.
+  IDB notes at 0x7373C and 0x6A7B4.
+
+- [ ] **Nothing on shipped data can ever arm a research row.** 0x74584 (the finished branch's five
+  `abActivateTopics` stores) is the only writer of `bActive` in the image besides 0x7341C (topic 0, which is the
+  block's own control slot and is skipped by both list walks), and 0x743A4 is its only route -- which the Part 88
+  census shows no shipped record reaches. Either `ResearchScreen_RebuildTopicList @ 0x74270` has an arming path
+  the census has not found (it would have to unlock at 0x74294 or 0x74334 first, and both read `bUnlocked`, which
+  is 0 for all 144), or main.dat ships a pre-game state that only a played game advances, and the same question
+  applies to the `wUnk6` the load clears at 0x86938. The gate works on a fixture that writes 0x74584's two bytes
+  by hand, and that fixture is precisely where a real arming path would replace it. Census in the IDB at 0x74364
+  and 0x72D00.
+
+- [x] **The hangar stores list's two count columns hold numbers that nothing draws.** CLOSED by the xref
+  census over `pPlaneAvailPanel` and `pPlaneTakenPanel` (40 and 40 hits, both complete): every writer is the
+  builder's own ctor/layout pass (0x7B380..0x7BA0C) plus the two aux writes (0x7B918, 0x7B924); every other hit
+  is an aux read/write in `BasePlaneScreen_AdjustSelectedQty` (0x7A9E4..0x7AA28) or `BasePlaneScreen_CommitStores`
+  (0x7AC74..0x7AFE8), the scroll pair `BuySellScreen_DetailPanelPrev/Next` (0x79A98..0x79B10), or the two
+  `UiPanel_DrawText` calls at 0x7BED4 and 0x7BF5C. `UiPanel_ctor` fills each line buffer with the shared empty
+  string and nothing ever replaces it, so the columns under the "База" (centred 147,54) and "Корабль" (centred
+  210,54) captions really are blank on the original -- the only per-row text is the name (x 10) and the `<` `>`
+  pair (x 170 / x 186). `geoscape_hangar_stores` is therefore faithful, and the aux column is a handler input,
+  not a display field. IDB: notes at 0x7B918 and 0x7BED4.
 
 - [ ] **The hangar's list rows are not pen-reachable while the craft detail is up.** 0x88308/0x88318/0x88320
   gate the panel rows and the control run (0x88324..0x88368) on `bPlanePanelsBuilt != 0 && bPlaneShowCraftDetail

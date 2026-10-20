@@ -51,7 +51,7 @@ typedef struct ScreenScratch {
     i32 nControl0Y;    /* pGeoscapeCtlB @ 0x186BB0 ->y */
     i32 nControl1Y;    /* pGeoscapeCtlA @ 0x186BB4 ->y */
     i32 nCache186BE8;  /* dword_186BE8 */
-    bool bFlag160C80;  /* unk_160C80 */
+    u8   bFlag160C80;  /* unk_160C80 / bUiRowSelected: a byte global -- STRB at 0x73334, LDRB at 0x88B18 */
     u8  bFlag187080;   /* byte_187080 */
     i32 nCache160C74;  /* unk_160C74 */
 } ScreenScratch;

@@ -1505,6 +1505,45 @@ pen-gated on `bPlanePanelsBuilt != 0 && bPlaneShowCraftDetail == 0` (0x88308..0x
 0x7C630, 0x7A3F4, 0x88310, 0x161F24, 0x7AFD8, 0x7B038, 0x7AE54 + `idb_save`. Gates: 62/62 Release and Debug, 18812 checks,
 coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 21 frame references (4 new), e2e's 9 pictures unchanged.
 
+**The research screen (screen 8) runs inside the shell now (Part 88)**, the new game's list really is empty, and four
+controls were being built without their constructor. No new original function: `ResearchScreen_*` was ported long ago.
+The opener is nav slot 5 (`ResearchScreen_Open @ 0x616ac`, the LDR at 0x67BAC): sample 17 at 0x616B4,
+`nGeoscapeScreen = 8` at 0x6176C *before* the tail into `ResearchScreen_Init @ 0x749a8`, and Init's ten steps now run on
+the shell's own state — the mode-6 "Research" pad, the four controls at 0x74A28, the close at (224,1), the cancel/start
+handlers at 0x74AC4/0x74AD0 with their positions only at 0x74B98..0x74BB4, `UiControl_Setup` over
+`g_aResearchCtlDesc @ 0xABB10`, RebuildTopicList, the not-on-list entry clear at 0x74B08..0x74B8C, BuildPanels, tail
+RefreshPanels. **The draw arm has two shapes:** with no row selected `ResearchScreen_Draw` returns at 0x73D64 after the
+close control and the frame blits exactly 3 control pads (close plus the paging pair, neither quantity pad); with a row
+selected it draws the detail panel, the three labels, the three numbers, the +/- pair, cancel, start, and the
+allocate-all **installed by the draw** (handler 0x74184, position 0x74190/0x7419C) — so ВСЕ is a button only after a
+row-selected frame painted. **The shipped list is empty and a census closes every branch that could fill it:**
+RESEARCH.DAT is 144 records of 34 copied raw at 0x86900, all locked, none active; `Research_TopicNeedsItem @ 0x72c8c`
+answers 0 for all 144 (the only two item bands, 55..65 and 118..142, carry `abNeedItems[0] == 0`, so the byte tested is
+`apObjects[0]`'s stock); the 30 records reaching 0x747A0 all carry an equal (lo,hi) pair that 0x74868 reads and 0x7487C
+skips, 28 sum to zero, the last two have a locked prerequisite that 0x747AC multiplies into the gate as 0 — so the
+finished branch 0x743A4, the only writer of `abActivateTopics` (0x74584) and the only `bActive` writer outside the
+block's own slot (0x7341C), never runs. The gate drives the quantity path with the pen on a two-byte fixture (records
+123..127 naming topics 29/36, exactly what 0x74584 would write): 0 rows means no click at all (0x3EEDC); a row click
+plays 7 and caches the panel's row cell into `unk_160C74` (0x73350), which is the index the +/- pair reads (0x72F30);
++1 refuses with no scientists (0x72EC8) and with no laboratory (0x72EEC), and stores through 0x72F58 once a finished
+lab (kind 2 with buildDays 0, one cell weighted 50 at 0x65890, capacity 50) exists; -1 returns it (0x72FE4);
+allocate-all caps at the scientist count (0x72D94); start plays 17, books `wProgress = 1` (0x732C8/0x732D8), clears the
+row byte, refreshes ("2" in the quantity row, the percentage row empty because wTotal is 0 where 0x73160 would divide
+by it), marks the workshop and lab needed cells and tail-calls RebuildTopicList. **The close ladder's row-selected arm
+does not close:** case 8 calls StartSelected at 0x8BDB4 and returns — no id store at 0x8BDC4, no teardown at 0x8BDD8 —
+and `ResearchScreen_CancelSelectedAndClose @ 0x73380` tail-closes with the row still selected, so "cancel" lands on the
+same arm. **The class defect:** the original builds the four controls with `operator new(0x20)` + `UiControl_ctor` at
+0x74A28, and the ctor is what sets `bEnabled` -- the first test in `UiControl_HitTest @ 0x1A3D8` -- while the port's
+four were plain array cells, so the screen blitted its buttons and was dead to the pen; fixed by one `UiControl_ctor`
+per control at Init's own allocation site. **Correction to what this file said earlier:** the row name is
+TEXTS[record + 4] (0x7373C), and shipped research.dat stores a COST there (0 or 2000..15000; record 28 = 6000), so 97
+of the 144 rows read past TEXTS.DAT's 1679 records -- the index the data carries is the u16 at record + 0, 420 + topic
+(record 28 -> 448 -> TEXTS[448] @ 0xC9F90); open in PLAN.md. Gates: `test_geoscapeframe` 12i, three new frames all
+looked at (`geoscape_research`, `geoscape_research_rows`, `geoscape_research_allocated` with "Ученых доступно 0",
+"Свободн. мест в лаборатории 48", "Ученых задействовано 2"). IDB comments at 0x7373C, 0x74364, 0x8BDB4, appended notes
+at 0x72D00 and 0x74A28, plus `idb_save`. Gates: 62/62 Release and Debug, 18901 checks, coverage 972/1103 (88.1%) and
+596888/598792 bytes (99.7%) unchanged, 24 frame references (3 new), e2e's 9 pictures unchanged.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

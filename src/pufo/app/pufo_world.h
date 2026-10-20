@@ -82,6 +82,12 @@ typedef struct GeoscapeFrameState {
     GeoscapeScreenArmEnv     planeCtl;    /* the blit seam its controls go through */
     PlaneDrawEnv             planeDraw;   /* 0x7d374, the callee's env */
     PlaneDetailEnv           planeDetail; /* 0x7baf8, carried by the draw env */
+    /* Case 8, the research screen (0x94114..0x94154), opened by nav control slot 5 (ResearchScreen_Open
+     * @ 0x616ac, installed at 0x67BAC). This arm blits NO pad of its own: the DRAW comes first (0x9411C)
+     * and ResearchScreen_Draw blits the screen's "Research" pad at 0x73A40; then the arm blits the two
+     * topic-list scroll controls at aResearchTopics + 0x1D48 / + 0x1D4C (CMP #2 at 0x9414C). */
+    ResearchDrawEnv          researchDraw; /* 0x73a34, the callee's env */
+    GeoscapeScreenArmEnv     researchCtl;  /* its two scroll controls, 0x94120..0x94150 */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -633,6 +639,31 @@ typedef struct PufoWorldState {
     BuySellApplyQtyEnv     planeApply;     /* BuySellScreen_ApplyQtyChanges @ 0x78d90: the confirm's env */
     BasePlaneDetailEnv     planeStatEnv;   /* BasePlane_ResetDetailState @ 0x7c9dc, on the draw's reset branch */
     ScreenInitHooks        planeOpenHooks; /* BasePlaneScreen_Open's hooks, nav slot 3's handler */
+    /* The research screen (screen 8), opened by nav control slot 5: ResearchScreen_Open @ 0x616ac is
+     * installed at 0x67BAC (apNavCtl + 0x14), plays sample 17 at 0x616B4 and writes id 8 at 0x6176C BEFORE
+     * its tail call into ResearchScreen_Init @ 0x749a8. The original keeps the screen's own pad, its four
+     * controls and its three panels in loose globals -- the pad and the controls INSIDE the topic table
+     * (aResearchTopics[1874..1877], the block base + 0x1D48) -- so the shell owns the same six objects plus
+     * the two cells the topic row click caches. */
+    UiControl              aResearchCtl[4];    /* Init's four, in the original's slot order: the topic-list
+                                                * scroll pair at (205,18) / (205,38) and the quantity pair at
+                                                * (10,163) / (10,183) -- g_aResearchCtlDesc @ 0xABB10 */
+    UiControl             *apResearchCtl[4];   /* the flat view: case 8 blits [0..1] (0x94120..0x94150), the
+                                                * press arm hit-tests 0..1 with no row selected and 2..3 with one */
+    void                  *apResearchRoot[5];  /* the block Init writes: [0] the "Research" pad (mode 6,
+                                                * aResearch_0 @ 0xABB90), [1..4] the four controls */
+    UiPanel               *pResearchTopicPanel;   /* pResearchTopicPanel @ 0x160C68, x 10 y 70, the topic list */
+    UiPanel               *pResearchQtyPanel;     /* pResearchPanelB @ 0x15EEFC, x 197, right-aligned */
+    UiPanel               *pResearchProgPanel;    /* pResearchPanelC @ 0x15EF00, x 233 */
+    ScreenScratch         researchScratch;   /* unk_160C80 (bUiRowSelected, the byte 0x73334 stores) and
+                                              * nResearchTopicRowCache @ 0x160C74 (the row 0x73360 caches) */
+    u8                    bResearchBuilt;    /* bResearchPanelsBuilt @ 0x160C7C, BuildPanels' switch */
+    ScreenResetOpenEnv    researchOpen;      /* ResearchScreen_Open's env: the prologue's live cells */
+    ResearchInitEnv       researchInit;      /* 0x749a8 */
+    ResearchBuildEnv      researchBuild;     /* 0x733f4: Init's call at 0x74BB8 and CloseUI case 8's teardown */
+    ResearchQtyEnv        researchQty;       /* 0x72ea0 / 0x72f70 / 0x72d14, the three quantity controls */
+    ResearchStartEnv      researchStart;     /* 0x73240: the start button, and case 8's first close arm */
+    ResearchCancelEnv     researchCancel;    /* 0x73380: the cancel button */
     /* The frame's loose globals the shell owns: the radar screen gate, the two research walk
      * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
      * and the two scratch lines the status panel writes. */

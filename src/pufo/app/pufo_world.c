@@ -791,6 +791,157 @@ static void World_PlaneBuildPanelsHook(void *pUser)
     }
 }
 
+/* ---- the research screen (screen 8) ----------------------------------------------------------------
+ *
+ * ResearchScreen_Open @ 0x616ac is nav control slot 5's handler (installed at 0x67BAC). The original
+ * reaches its pad, its four controls, its three panels and its two row cells through loose globals -- the
+ * pad and the controls inside the topic table itself -- and these thunks reach the shell's copies held on
+ * PufoWorldState. World_HookRebuildResearchTopics (the clock's copy of the same env) is defined below with
+ * the tick hooks; the two seams here share it.
+ */
+static i32 World_HookRebuildResearchTopics(void *pUser);
+
+/* ResearchScreen_Init @ 0x749a8, the opener's Init hook (the tail call at 0x61778). */
+static void World_ResearchInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot; /* the original passes the topic table as its argument; the port takes the env instead */
+    if (pW != NULL) {
+        ResearchScreen_Init(&pW->researchInit);
+    }
+}
+
+/* ResearchScreen_Open @ 0x616ac -- nav control slot 5 (0x67BAC): sample 17 at 0x616B4, the prologue (the
+ * two scratch clears, the research-active walk, the shortfall dword, GameTime_Set5Sec), id 8 at 0x6176C,
+ * then the Init. No prep and no nav rebuild here -- those belong to Ui_OpenResearch @ 0x84bf8. */
+static void World_ResearchOpenThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        ResearchScreen_Open(&g_pActiveWorld->researchOpen);
+    }
+}
+
+/* ResearchScreen_BuildPanels @ 0x733f4: the build/release switch. This is Init's own call at 0x74BB8, and
+ * Init then tail-calls RefreshPanels with the three panel values -- which the ORIGINAL re-reads from
+ * 0x160C68 / 0x15EEFC / 0x15EF00 after the build. The port's Init carries them as values, so the switch's
+ * result is mirrored back into the same env Init is holding. */
+static void World_ResearchBuildThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    ResearchScreen_BuildPanels(&pW->researchBuild);
+    pW->researchInit.pPanelTopic    = pW->pResearchTopicPanel;
+    pW->researchInit.pPanelQty      = pW->pResearchQtyPanel;
+    pW->researchInit.pPanelProgress = pW->pResearchProgPanel;
+}
+
+/* ResearchScreen_RebuildTopicList @ 0x74270: Init's call at 0x74B00 and StartSelected's tail at 0x73310. */
+static void World_ResearchRebuildThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)World_HookRebuildResearchTopics(g_pActiveWorld);
+    }
+}
+
+/* ResearchScreen_PanelPrev @ 0x72e30 / PanelNext @ 0x72e68: the topic list's scroll pair, paging the three
+ * panels together. */
+static void World_ResearchPanelPrevThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        ResearchScreen_PanelPrev(pW->pResearchTopicPanel, pW->pResearchQtyPanel, pW->pResearchProgPanel);
+    }
+}
+
+static void World_ResearchPanelNextThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        ResearchScreen_PanelNext(pW->pResearchTopicPanel, pW->pResearchQtyPanel, pW->pResearchProgPanel);
+    }
+}
+
+/* ResearchScreen_IncSelectedQty @ 0x72ea0 and DecSelectedQty @ 0x72f70: the quantity pair, which writes the
+ * selected row's auResearchCol entry through the cached row and the scientist/lab budget. */
+static void World_ResearchIncQtyThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)ResearchScreen_IncSelectedQty(&g_pActiveWorld->researchQty);
+    }
+}
+
+static void World_ResearchDecQtyThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)ResearchScreen_DecSelectedQty(&g_pActiveWorld->researchQty);
+    }
+}
+
+/* ResearchScreen_UpdateProgress @ 0x72d14: unk_186B94, the allocate-all control the draw re-points at
+ * (100,164) on every frame (0x74184..0x741A4). */
+static void World_ResearchAllocAllThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)ResearchScreen_UpdateProgress(&g_pActiveWorld->researchQty);
+    }
+}
+
+/* ResearchScreen_StartSelected @ 0x73240: pGeoscapeCtlB at (165,166). It clears the row flag, commits the
+ * allocation, and tail-calls the topic rebuild. */
+static void World_ResearchStartThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)ResearchScreen_StartSelected(&g_pActiveWorld->researchStart);
+    }
+}
+
+/* ResearchScreen_CancelSelectedAndClose @ 0x73380: pGeoscapeCtlA at (165,188), which drops one row's
+ * allocation and tail-calls Geoscape_CloseUI @ 0x8b94c. */
+static void World_ResearchCancelThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        ResearchScreen_CancelSelectedAndClose(&g_pActiveWorld->researchCancel);
+    }
+}
+
+/* ResearchScreen_CloseThunk @ 0x72ffc: the shared close control at (224,1). */
+static void World_ResearchCloseThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        ResearchScreen_CloseThunk(&g_pActiveWorld->closeEnv);
+    }
+}
+
+/* PlaySample7_SetFlags_Cache0xBD8 @ 0x73328: the topic list's row click. It plays sample 7, sets
+ * bUiRowSelected, clears bUiAnimStarted, and caches the panel's nUnk3032 into nResearchTopicRowCache --
+ * the row the three quantity controls and the two bottom controls then read. */
+static void World_ResearchPlaySample(u32 nSample, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW != NULL && pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample((i32)nSample, pW->pSoundUser);
+    }
+}
+
+static void World_ResearchTopicClickThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL || pW->pResearchTopicPanel == NULL) {
+        return; /* deviation: 0x73350 derefs the panel global with no test */
+    }
+    /* 0x73328 hard-codes the sample (MOV R0,#7 / MOV R1,#4), which is what the port's helper passes. */
+    (void)BaseUi_PlaySample7Cache160C74(&pW->researchScratch, pW->pResearchTopicPanel->nUnk3032,
+                                        World_ResearchPlaySample, pW);
+}
+
 /* The options screen is not ported yet; the radar click's type-0 branch reaches it through
  * these stubs (the sample still plays). */
 static void World_OptionsPlaySampleStub(u32 nSample, u32 nArg, void *pUser)
@@ -1127,12 +1278,11 @@ static void World_StartNewHook(void *pUser)
 
     /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28), one unrolled
      * `LDR R3,=fn / STR R3,[R0,#0xC]` per slot, in slot order 0..9 (0x67B74, 0x67B80, 0x67B8C, 0x67B98,
-     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Five of the ten nav slots are filled: the
-     * shell can draw the screen each one opens. The other five -- ResearchScreen_Open (8),
-     * ManufScreen_Open (9), TransferScreen_Open (10), BuySellScreen_OpenBuy (11) and
-     * BuySellScreen_OpenSell (12) -- stay no-ops: their Init envs and their Geoscape_Draw arms
-     * (pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are not built here, so opening
-     * them would land on a screen the shell cannot draw. */
+     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Six of the ten nav slots are filled: the
+     * shell can draw the screen each one opens. The remaining four -- ManufScreen_Open (9),
+     * TransferScreen_Open (10), BuySellScreen_OpenBuy (11) and BuySellScreen_OpenSell (12) -- stay no-ops:
+     * their Init envs and their Geoscape_Draw arms (pManufPad, pTransferPad, pBuySellPad) are not built
+     * here, so opening them would land on a screen the shell cannot draw. */
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
     }
@@ -1141,6 +1291,7 @@ static void World_StartNewHook(void *pUser)
     pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk; /* SoldierScreen_Toggle @ 0x64af0, id 4 (0x67B8C) */
     pW->navEnv.apfnNavClick[3] = World_PlaneOpenThunk;     /* BasePlaneScreen_Open @ 0x617f4, id 6 (0x67B98) */
     pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;   /* BaseFacScreen_Open @ 0x61844, id 7 (0x67BA4) */
+    pW->navEnv.apfnNavClick[5] = World_ResearchOpenThunk;  /* ResearchScreen_Open @ 0x616ac, id 8 (0x67BAC) */
     pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk; /* SoldierScreen_PanelPrev @ 0x61874 (0x67C84) */
     pW->navEnv.apfnPanelClick[1] = World_SolPanelNextThunk; /* SoldierScreen_PanelNext @ 0x6189c (0x67C90) */
     pW->navEnv.apfnFindClick[0] = World_SolFindNextThunk;   /* SoldierScreen_FindNextAtBase @ 0x6192c (0x67D10) */
@@ -6533,9 +6684,11 @@ bool World_MissionCancelEnd(PufoWorldState *pW)
  *
  * Two fields stay NULL on purpose: pfnConfirmReport (Ui_OpenBaseInfoAlt @ 0x84d18, which ends by
  * opening ufopaedia screen 16 at 0x84DE4 / 0x84DF4) and pfnApplyResearch (Ui_OpenResearch @ 0x84bf8,
- * research screen 8 at 0x84CEC / 0x84CF0). Neither gates an arm, and each needs the Init tail of a
- * screen the shell has not built -- the same gap that leaves nav slots 6, 8, 9, 10 and 11 at
- * World_NoopClick. Recorded in PLAN.md.
+ * research screen 8 at 0x84CEC / 0x84CF0). Neither gates an arm. The ufopaedia one still needs the Init
+ * tail of a screen the shell has not built; the research one no longer does -- Part 88 wired nav slot 5
+ * (the LDR at 0x67BAC) and ResearchScreen_Init @ 0x749a8 runs here, so what is missing is the
+ * ScreenResetOpen2Env Ui_OpenResearch reads (pufo_baseui.h:5003), above all its pNavOut handle for the
+ * fifteen nav controls that body rebuilds. Nav slots 6..9 stay at World_NoopClick. Recorded in PLAN.md.
  *
  * Every env here is built at click time out of live cells instead of assembled once at bring-up,
  * because two of the fields are handles a mission launch frees and rebuilds -- the strip pad at
@@ -7018,6 +7171,13 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pfnBuildPlaneListPanels = World_PlaneBuildListHook;     /* 0x8C028 */
     pC->pfnBuildPlaneControls   = World_PlaneBuildControlsHook; /* 0x8C044 */
     pC->pfnBuildPlanePanels     = World_PlaneBuildPanelsHook;   /* 0x8C098 */
+    /* Case 8 (0x8BDB0..0x8BDD8), the research screen: with a row selected the close RUNS the start button
+     * (0x8BDB4) and only then falls back to screen 1; without one it goes to 1 straight away and releases
+     * the three panels through the same build switch the opener ran (0x8BDD8). */
+    pC->pbResearchBuilt    = &pW->bResearchBuilt;                  /* bResearchPanelsBuilt @ 0x160C7C */
+    pC->pbRowSelected      = &pW->researchScratch.bFlag160C80;    /* unk_160C80, tested at 0x8BDB0 */
+    pC->pResearchStart     = &pW->researchStart;                   /* ResearchScreen_StartSelected, 0x8BDB4 */
+    pC->pResearchBuild     = &pW->researchBuild;                   /* ResearchScreen_BuildPanels, 0x8BDD8 */
     pC->pnFunds          = &pW->nFunds;
     pC->anFundBar        = pW->economy.anFundBar;          /* 0x186594..0x1865A4 */
     pC->ppFundPad        = &pW->pFundPad;                  /* 0x1595DC */
@@ -8076,6 +8236,122 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->planeOpenHooks.pSlot         = NULL;
     pW->planeOpenHooks.pUser         = pW;
 
+    /* ---- case 8, the research screen -------------------------------------------------------------
+     *
+     * The original keeps this screen's own objects inside its topic table: the "Research" pad at the block
+     * base (Init's operator new at 0x749B4, stored at 0x749D8) and the four controls at block + 0x1D48
+     * (0x74A28), i.e. array indices 1874..1877. The shell owns the same six objects and Init fills the block
+     * view; BuildPanels' teardown empties the pad slot and the three panel cells. */
+    for (i = 0; i < 4; ++i) {
+        pW->apResearchCtl[i]     = &pW->aResearchCtl[i];
+        pW->researchInit.apCtl[i] = &pW->aResearchCtl[i];   /* Init stores them into ppRoot[1..4], 0x74A28 */
+        pW->researchBuild.apCtl[i] = &pW->aResearchCtl[i];  /* the teardown frees their pads, 0x73A10 */
+    }
+
+    pW->researchInit.ppRoot             = pW->apResearchRoot;             /* the block at 0x15EF08 */
+    pW->researchInit.pCloseCtl          = pUi->apCtl[GEOUI_CTL_186B00];   /* *g_pUiCloseCtl, (224,1) at 0x74AA0 */
+    pW->researchInit.pCancelCtl         = pUi->apCtl[GEOUI_CTL_186BB4];   /* *pGeoscapeCtlA, (165,188) at 0x74B98 */
+    pW->researchInit.pStartCtl          = pUi->apCtl[GEOUI_CTL_186BB0];   /* *pGeoscapeCtlB, (165,166) at 0x74BAC */
+    pW->researchInit.pfnCloseClick      = World_ResearchCloseThunk;       /* 0x74AB8 */
+    pW->researchInit.pfnCancelClick     = World_ResearchCancelThunk;      /* 0x74AC4 */
+    pW->researchInit.pfnStartClick      = World_ResearchStartThunk;       /* 0x74AD0 */
+    pW->researchInit.pfnPanelPrev       = World_ResearchPanelPrevThunk;   /* 0x74A4C */
+    pW->researchInit.pfnPanelNext       = World_ResearchPanelNextThunk;   /* 0x74A64 */
+    pW->researchInit.pfnIncQty          = World_ResearchIncQtyThunk;      /* 0x74A7C */
+    pW->researchInit.pfnDecQty          = World_ResearchDecQtyThunk;      /* 0x74A94 */
+    pW->researchInit.pfnRebuildTopicList = World_ResearchRebuildThunk;    /* the call at 0x74B00 */
+    pW->researchInit.pfnBuildPanels     = World_ResearchBuildThunk;       /* the call at 0x74BB8 */
+    pW->researchInit.aTopics            = pW->aTopics;                    /* aResearchTopics @ 0x15EF08 */
+    pW->researchInit.pbEntryCount       = (const u8 *)&pW->nResearchEntries; /* 0x160C4C, read with LDRB */
+    pW->researchInit.apResearchCols     = pW->auResearchCol;              /* auResearchCol @ 0x16022C */
+    pW->researchInit.pnSelectedBaseIdx  = &pW->nSelectedBase;             /* 0x159D81, read SIGNED */
+    pW->researchInit.pfnLoadPads        = pW->pfnLoadPads;
+    pW->researchInit.pPadUser           = pW->pLoadPadsUser;
+
+    pW->researchBuild.pbPanelsBuilt     = &pW->bResearchBuilt;            /* 0x160C7C, the build switch */
+    pW->researchBuild.ppRoot            = pW->apResearchRoot;
+    pW->researchBuild.ppPanelTopic      = &pW->pResearchTopicPanel;       /* 0x160C68 */
+    pW->researchBuild.ppPanelB          = &pW->pResearchQtyPanel;         /* 0x15EEFC */
+    pW->researchBuild.ppPanelC          = &pW->pResearchProgPanel;        /* 0x15EF00 */
+    pW->researchBuild.aTopics           = pW->aTopics;
+    pW->researchBuild.pbEntryCount      = (const u8 *)&pW->nResearchEntries;
+    pW->researchBuild.apResearchCols    = pW->auResearchCol;
+    pW->researchBuild.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pW->researchBuild.pfnPanelClick     = World_ResearchTopicClickThunk;  /* 0x7348C */
+
+    pW->researchQty.pnTopicRow          = &pW->researchScratch.nCache160C74; /* nResearchTopicRowCache */
+    pW->researchQty.apResearchCols      = pW->auResearchCol;
+    pW->researchQty.puResearchEntries   = &pW->nResearchEntries;
+    pW->researchQty.abFacilityGrid      = pW->abFacilityGrid;             /* the lab-capacity pass */
+    pW->researchQty.pnSelectedBaseIdx   = &pW->nSelectedBase;
+
+    pW->researchStart.qty               = pW->researchQty;
+    pW->researchStart.aTopics           = pW->aTopics;
+    pW->researchStart.apManufCols       = pW->auManufCol;                 /* auManufCol @ 0x15E19C */
+    pW->researchStart.pbTopicSelected   = &pW->researchScratch.bFlag160C80; /* unk_160C80, cleared at 0x7324C */
+    pW->researchStart.pfnPlaySample     = World_ResearchPlaySample;       /* sample 17 at 0x73258 */
+    pW->researchStart.pSampleUser       = pW;
+    pW->researchStart.pfnRebuild        = World_HookRebuildResearchTopics; /* the tail call at 0x73320 */
+    pW->researchStart.pRebuildUser      = pW;
+
+    pW->researchCancel.qty              = pW->researchQty;
+    pW->researchCancel.pClose           = &pW->closeEnv;                  /* the tail call at 0x733DC */
+
+    World_FillScreenOpenEnv(pW, &pW->researchOpen);   /* the prologue's cells, rebuilt live (Part 73) */
+    pW->researchOpen.init.pfnInit = World_ResearchInitThunk;              /* 0x61778 B ResearchScreen_Init */
+    pW->researchOpen.init.pSlot   = NULL;
+    pW->researchOpen.init.pUser   = pW;
+
+    memset(&pF->researchCtl, 0, sizeof(pF->researchCtl));
+    if (pHit != NULL) {
+        pF->researchCtl.apCtl        = pW->apResearchCtl;      /* the arm blits [0..1], CMP #2 at 0x9414C */
+        pF->researchCtl.pfnCtlBlit   = pHit->pfnBlit;
+        pF->researchCtl.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->researchCtl.pCtlBlitUser = pHit->pUser;
+    }
+
+    memset(&pF->researchDraw, 0, sizeof(pF->researchDraw));
+    pF->researchDraw.pPad             = (const PadImage *)pW->apResearchRoot[0]; /* blitted at 0x73A40 */
+    pF->researchDraw.pColor           = pColor;
+    pF->researchDraw.pAnim            = &pF->anim;
+    pF->researchDraw.pbPanelsBuilt    = &pW->bResearchBuilt;
+    pF->researchDraw.pbTopicSelected  = &pW->researchScratch.bFlag160C80;
+    pF->researchDraw.pnTopicRow       = &pW->researchScratch.nCache160C74;
+    pF->researchDraw.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pF->researchDraw.apSiteRecs       = pW->aSiteRecs;                    /* 0x186C40, the base name */
+    pF->researchDraw.apResearchCols   = pW->auResearchCol;
+    pF->researchDraw.pbEntryCount     = (const u8 *)&pW->nResearchEntries;
+    pF->researchDraw.abFacilityGrid   = pW->abFacilityGrid;               /* Base_CalcLabCap's grid */
+    pF->researchDraw.apCtlQty[0]      = &pW->aResearchCtl[2];             /* 0x160C58, the inc control */
+    pF->researchDraw.apCtlQty[1]      = &pW->aResearchCtl[3];             /* 0x160C5C, the dec control */
+    pF->researchDraw.pCtlCancel       = pUi->apCtl[GEOUI_CTL_186BB4];
+    pF->researchDraw.pCtlStart        = pUi->apCtl[GEOUI_CTL_186BB0];
+    pF->researchDraw.pCtlAllocAll     = pUi->apCtl[GEOUI_CTL_186B94];     /* re-pointed at (100,164) each frame */
+    pF->researchDraw.pCtlClose        = pUi->apCtl[GEOUI_CTL_186B00];     /* blitted only with no row selected */
+    pF->researchDraw.pfnAllocAllClick = World_ResearchAllocAllThunk;      /* 0x74188 */
+    if (pHit != NULL) {
+        pF->researchDraw.pfnCtlBlit   = pHit->pfnBlit;
+        pF->researchDraw.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->researchDraw.pCtlUser     = pHit->pUser;
+    }
+
+    pF->draw.pResearchDraw = &pF->researchDraw;                            /* 0x9411C */
+    pF->draw.pResearchCtl  = &pF->researchCtl;                             /* 0x94120..0x94150 */
+
+    /* The press seam. Case 8 derefs bUiRowSelected and the topic panel with NO test (0x88B18), so these
+     * three fields are what makes the screen pressable at all: with no row selected it hit-tests the scroll
+     * pair (0..1), with a row selected the quantity pair (2..3) plus the three shared bottom controls. */
+    pPtr->pbRowSelected   = &pW->researchScratch.bFlag160C80;
+    pPtr->apResearchCtl   = pW->apResearchCtl;
+
+    if (pAssets != NULL) {
+        pW->researchBuild.pTextRecs        = (const char *)pAssets->pTextRecs; /* the row labels, TEXTS[topic + 4] */
+        pW->researchQty.pScientistRec      = (PUFO_ROW_SCIENTIST < (i32)pAssets->nObjectCount)
+                                                 ? pAssets->apObjects[PUFO_ROW_SCIENTIST] : NULL;
+        pF->researchDraw.pScientistRec     = pW->researchQty.pScientistRec;
+        pF->researchDraw.pTextRecs         = (const char *)pAssets->pTextRecs;
+    }
+
     World_WireGeoscapeClock(pW, pHooks);
 }
 
@@ -8211,6 +8487,23 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pW->ptrEnv.pPlaneCommitRowPanel   = pW->planeStorePanels.pCommitPanel;
     pW->ptrEnv.pPlaneSlotPanel        = pW->planeStorePanels.pSlotPanel;
     pW->ptrEnv.pPlaneCrewPanel        = pW->planeListPanels.pCrewPanel;
+
+    /* Case 8, the research screen. BuildPanels replaces the pad and the three panels behind the envs' backs
+     * (Init builds them, the close releases them), so the draw env, the three handler envs and the press arm
+     * all re-read the shell's cells here -- the same rule that fixed the hangar's columns. */
+    pF->researchDraw.pPad             = (const PadImage *)pW->apResearchRoot[0]; /* 0x73A40's blit */
+    pF->researchDraw.pPanelTopic      = pW->pResearchTopicPanel;
+    pF->researchDraw.pPanelQty        = pW->pResearchQtyPanel;
+    pF->researchDraw.pPanelProgress   = pW->pResearchProgPanel;
+    pW->researchInit.pPanelTopic      = pW->pResearchTopicPanel;
+    pW->researchInit.pPanelQty        = pW->pResearchQtyPanel;
+    pW->researchInit.pPanelProgress   = pW->pResearchProgPanel;
+    pW->researchQty.pTopicPanel       = pW->pResearchTopicPanel;
+    pW->researchStart.qty             = pW->researchQty;
+    pW->researchStart.pPanelQty       = pW->pResearchQtyPanel;
+    pW->researchStart.pPanelProgress  = pW->pResearchProgPanel;
+    pW->researchCancel.qty            = pW->researchQty;
+    pW->ptrEnv.pResearchPanel         = pW->pResearchTopicPanel;   /* derefed unguarded at 0x88B30 */
 }
 
 i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), void *pUser)

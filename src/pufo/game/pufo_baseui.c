@@ -60,7 +60,7 @@ i32 BaseUi_PlaySample7Cache160C74(ScreenScratch *pScratch, i32 nUnk3032,
     if (pScratch == NULL) {
         return nUnk3032;
     }
-    pScratch->bFlag160C80 = true;
+    pScratch->bFlag160C80 = 1; /* 0x73334: MOV R1,#1 / STRB -- the cell is a byte */
     pScratch->bFlag187080 = 0;
     pScratch->nCache160C74 = nUnk3032;
     return nUnk3032;
@@ -9908,7 +9908,12 @@ void ResearchScreen_Init(ResearchInitEnv *pEnv)
     }
 
     for (i = 0; i < 4; ++i) {
-        pEnv->ppRoot[i + 1] = pEnv->apCtl[i]; /* 0x74A28, the original's operator new(0x20) slots */
+        /* 0x74A28 is operator new(0x20) followed by UiControl_ctor, and the ctor is what sets
+         * bEnabled -- the gate UiControl_HitTest tests first (0x1A3D8), so a control that skips it is
+         * not pressable at all. The port's four are caller-owned storage (deviation, see the teardown
+         * note at 0x73A18), so the ctor runs here, at the point the original builds the object. */
+        UiControl_ctor(pEnv->apCtl[i]);
+        pEnv->ppRoot[i + 1] = pEnv->apCtl[i]; /* the original's operator new(0x20) slots */
     }
     if (pEnv->apCtl[0] != NULL) {
         pEnv->apCtl[0]->pfnClick = pEnv->pfnPanelPrev; /* 0x74A4C */
