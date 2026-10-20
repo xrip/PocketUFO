@@ -351,6 +351,11 @@ typedef struct MoveActionCtx {
     u8          *pbActionLatch;   /* 0x02  unk_1139BA, the action latch */
     u8          *pbFireStatus1;   /* 0x51  unk_113A09 */
     TactItem    **ppSelWeapon;    /* 0x48  unk_113A00 */
+    /* Map.pFireArg6 @ 0x14050. The original writes it inside the arc walk
+     * (Tact_TraceProjectileArc @ 0x2FC74 stores apObjects[pSelWeapon->nIndex]) and
+     * Tact_ProcessFireAction reads it back for the resolve (0x51CDC, 0x51F04), so the
+     * shot must publish the record it was fired with before the flight runs. */
+    const ObjectRecFull **ppFireWeaponSlot;
     Soldier     **ppThrowTarget;  /* 0x150F0 unk_128AA8 */
     i32         *pnUnk1405C;      /* 0x1405C unk_127A14 */
     bool         bAnimBusy;       /* unk_157180 -> +0xF8, the walk-sound gate */

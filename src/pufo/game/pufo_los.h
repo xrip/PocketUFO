@@ -30,8 +30,12 @@
  * pose:
  *     rowIndex = 12 * row + (z % 12)
  *     row      = word_A9488[16 * nUnitType + 2 * bFacing + (bFlags & 1)]
- * and word_A9488 @ 0xa9488 is the sequence 0,8,1,9,2,10,3,11,4,12,5,13,6,14,7,15
- * repeating per unit type, so `row == facing + 8 * kneeling`.
+ * and word_A9488 @ 0xa9488 is a 736-byte table -- 16 rows per unit type for types
+ * 0..22, ending at g_aUnitMuzzleOffset @ 0xa9768. Types 0..3 use the fold
+ * `row == facing + 8 * kneeling`; every other type has its own row window in
+ * unitloft.dat (floater 11 -> 24, muton 10 -> 0, silacoid 19 -> 40, cyberdisk 18
+ * and the tanks 4..8 -> 80, sectopod 21 -> 48). Type 23 has no row at all: the
+ * original's read lands on the muzzle-offset table and is not a sprite row.
  *
  * ## Blocking rules
  *
@@ -58,9 +62,13 @@
 #define PUFO_MC1_ROW_TABLE_OFF 8   /* 12 bytes, z -> sprite index */
 #define PUFO_MC1_BLOCK_OFF     42  /* 0x2a; the "blocks movement" byte */
 
-/* Outcome codes written to the original's nFireArg5 (pCtxBase+0x1404c) when a
- * voxel test fails. The values come from the return paths of
- * Map_TraceVoxelOccupancy. */
+/* Why a voxel test stopped. The original's Map_TraceVoxelOccupancy @ 0x3242c does NOT
+ * return these: it returns 0 on every blocked path and 1 for a clear voxel, and it
+ * stores the reason in Map.nFireArg5 (0x1404C) on the shared store LABEL_56 @ 0x32C68
+ * that all five blocked paths reach. The port returns the reason instead of the 0/1
+ * pair, so a caller tests LOS_HIT_NONE for "clear" and anything else for "blocked";
+ * the reason is also what a shot's landing slot later reads back (nSlot 4 is the
+ * direct hit on a unit, Combat_ResolveShot @ 0x2f408). */
 typedef enum LosHit {
     LOS_HIT_NONE      = -1,
     LOS_HIT_FLOOR     = 0,
@@ -78,10 +86,11 @@ typedef struct LosTables {
     u32        nUnitloft;
 } LosTables;
 
-/* The 16-entry row table word_A9488 @ 0xa9488, repeated per unit type. Decoded
- * to `facing + 8 * kneeling`, which is the 16 rows each unit type occupies in
- * unitloft.dat. */
+/* word_A9488 @ 0xa9488: 16 sprite rows per unit type, for types 0..22 (736 bytes
+ * up to g_aUnitMuzzleOffset @ 0xa9768). The per-type windows are not identical --
+ * see the decoded table in pufo_los.c. */
 #define PUFO_UNITLOFT_ROWS_PER_TYPE 16
+#define PUFO_UNITLOFT_TYPES         23
 
 /* Tact_LoadLoftData @ 0x3bd6c. Loads LOFTEMPS.DAT and UNITLOFT.DAT into the two row-mask tables.
  * The caller owns the buffers; the original does not free the previous pair when it reloads. */

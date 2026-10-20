@@ -845,6 +845,15 @@ void Tact_EnemyAiTick(TactCtx272 *pTact, const EnemyAiTickCtx *pCtx)
     for (i32 i = 0; i < nCount; ++i) {
         Soldier *pUnit = pCtx->apEnemyUnits[i];
 
+        /* Deviation for a latent original fault: an Xcom-base reinforcement unit that
+         * Map_PickRmpSpawnForUnit @ 0x55418 could not place (its rank gate matches no shipped
+         * .rmp node) stays in apEnemyUnits with no cell. The original would reach it here and
+         * fault inside Unit_UpdateVisibility @ 0x48580, which reads its cell first. The port
+         * parks such a unit as done: it never acts, and the turn still closes. */
+        if (pUnit->pCell == NULL) {
+            pUnit->bAiDone = 1;
+            continue;
+        }
         /* 0x4CC34: past the tick limit a unit is skipped WITHOUT being advanced, so it
          * stays skipped for the rest of the mission. */
         if (pUnit->nAiTick > PUFO_ENEMYAI_TICK_MAX) {

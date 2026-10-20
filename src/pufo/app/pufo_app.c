@@ -1515,6 +1515,10 @@ static void App_DumpFramePpm(LPCWSTR pwszPath)
  *   dump <path>   render one frame, write it as a PPM, print the step
  *   click x y     press+release at logical 240x320 coordinates
  *   tick n        n anim ticks (0xC352) plus n pulses (0xC353) and n anim-progress ticks (0xC354)
+ *   gametick n    n firings of 0xC350 through Timer_TickBySpeed, the same dispatch the
+ *                 WM_TIMER switch runs at 0xA08B0/0xA08C0 -- the mission clock, which walks
+ *                 the tactical queue (Tact_TickActiveUnit @ 0x54130) and the phases
+ *   tact          print the live mission state: queue, phase, cursor, rosters, units
  *   newgame       App_HookNewGame -- what the menu's new-game row runs
  *   pick          App_NewGamePickThroughPen -- the placement screen's confirm, through the pen
  *   close         World_CloseGeoscape -- the placement screen's close control
@@ -1697,6 +1701,83 @@ static void App_ScriptTicks(i32 nCount)
     }
 }
 
+/* n firings of 0xC350 exactly as PocketUFO_WndProc dispatches them (pufo_app.c's own
+ * WM_TIMER arm at the `wParam != 50000` gate 0xA08B0): the speed decides how many
+ * GameTick_OnTimer calls one firing runs (Timer_TickBySpeed 0xA08C0..0xA0934), and each
+ * firing is followed by a paint, which is how the live window path interleaves them.
+ * SHELL SCAFFOLDING, not original behaviour: in the original only WM_TIMER reaches this. */
+static void App_ScriptGameTick(i32 nCount)
+{
+    for (i32 i = 0; i < nCount; ++i) {
+        Timer_TickBySpeed((i32)g_world.gameClock.nSpeed, App_GameTickOnce, NULL);
+        App_DrawFrame();
+    }
+}
+
+/* SHELL SCAFFOLDING, not original behaviour: the live mission's own cells, printed. The
+ * mission is the one state the --script path cannot be trusted about from pictures alone
+ * -- the queue, the phase machine and the rosters move every tick and no picture shows a
+ * time unit. The fields are the originals' (GameMap @ pufo_mapctx.h, TactState @
+ * pufo_tactstate.h, Soldier @ pufo_unit.h). */
+static void App_ScriptTact(void)
+{
+    const GameMap   *pMap = g_world.pTactMap;
+    const TactState *pQ   = g_world.pTactState;
+    const Soldier   *pSel;
+
+    if (pMap == NULL || pQ == NULL) {
+        printf("pocketufo: tact: no live mission\n");
+        fflush(stdout);
+        return;
+    }
+    pSel = pMap->pSelUnit;
+    printf("pocketufo: tact: busy %d, phase %d, enemy turn %d, player input %d, battle ended %d, "
+           "ui screen %d, latch %d, mode %d, reserve %d\n",
+           (int)pMap->tact.bBusy, (int)pMap->tact.nPhase, (int)g_world.bMapEnemyTurnActive,
+           (int)g_world.bMapPlayerInput, (int)g_world.bMapBattleEnded, (int)g_world.nUiScreen,
+           (int)pMap->bActionLatch, (int)g_world.nMapActionMode, (int)g_world.nMapEnemyReserveCount);
+    printf("  queue: len %d, cursor %d, active %d, flag0 %d, flag1 %d, phase max %d, phase tick %d\n",
+           (int)pQ->nQueueLen, (int)pQ->nQueueCursor, (int)pQ->bQueueActive,
+           (int)pQ->bFlag0, (int)pQ->bFlag1, (int)pQ->nPhaseMax, (int)pQ->nPhaseTick);
+    printf("  cursor %d/%d layer %d; selected at %d/%d/%d, uTu %u, hp %u, status %u, facing %u, kills %u\n",
+           (int)g_world.tactEnv.cursor.nX, (int)g_world.tactEnv.cursor.nY,
+           (int)g_world.tactEnv.cursor.nFlags,
+           pSel != NULL && pSel->pCell != NULL ? pSel->pCell->nX : -999,
+           pSel != NULL && pSel->pCell != NULL ? pSel->pCell->nY : -999,
+           pSel != NULL && pSel->pCell != NULL ? pSel->pCell->nZ : -999,
+           pSel != NULL ? (unsigned)pSel->uTu : 0u,
+           pSel != NULL ? (unsigned)pSel->uHp : 0u,
+           pSel != NULL ? (unsigned)pSel->bStatus : 0u,
+           pSel != NULL ? (unsigned)pSel->bFacing : 0u,
+           pSel != NULL ? (unsigned)pSel->uKills : 0u);
+    for (i32 i = 0; i < (i32)pMap->nXcomCount; ++i) {
+        const Soldier *pU = pMap->apXcomUnits[i];
+
+        if (pU == NULL) {
+            continue;
+        }
+        printf("  xcom %d: at %d/%d/%d, uTu %u, hp %u, status %u, large %d\n", i,
+               pU->pCell != NULL ? pU->pCell->nX : -999, pU->pCell != NULL ? pU->pCell->nY : -999,
+               pU->pCell != NULL ? pU->pCell->nZ : -999,
+               (unsigned)pU->uTu, (unsigned)pU->uHp, (unsigned)pU->bStatus,
+               Unit_bIsLarge(pU) ? 1 : 0);
+    }
+    for (i32 i = 0; i < (i32)pMap->nEnemyCount; ++i) {
+        const Soldier *pE = pMap->apEnemyUnits[i];
+
+        if (pE == NULL) {
+            continue;
+        }
+        printf("  enemy %d: type %u at %d/%d/%d, uTu %u, hp %u, status %u, aiTick %d, aiDone %d, large %d\n",
+               i, (unsigned)pE->nUnitType,
+               pE->pCell != NULL ? pE->pCell->nX : -999, pE->pCell != NULL ? pE->pCell->nY : -999,
+               pE->pCell != NULL ? pE->pCell->nZ : -999,
+               (unsigned)pE->uTu, (unsigned)pE->uHp, (unsigned)pE->bStatus,
+               pE->nAiTick, (int)pE->bAiDone, Unit_bIsLarge(pE) ? 1 : 0);
+    }
+    fflush(stdout);
+}
+
 static void App_RunDebugScript(LPCWSTR pwszPath)
 {
     static char azBuf[8192];
@@ -1762,6 +1843,12 @@ static void App_RunDebugScript(LPCWSTR pwszPath)
             printf("pocketufo: step click %s %s\n", azArg[1], azArg[2]);
         } else if (strcmp(azArg[0], "tick") == 0 && nArgs > 1) {
             App_ScriptTicks((i32)atoi(azArg[1]));
+        } else if (strcmp(azArg[0], "gametick") == 0 && nArgs > 1) {
+            App_ScriptGameTick((i32)atoi(azArg[1]));
+            printf("pocketufo: step gametick %s\n", azArg[1]);
+        } else if (strcmp(azArg[0], "tact") == 0) {
+            App_ScriptTact();
+            printf("pocketufo: step tact\n");
         } else if (strcmp(azArg[0], "newgame") == 0) {
             App_HookNewGame(NULL);
             printf("pocketufo: step newgame\n");

@@ -16,9 +16,11 @@ const u8 g_atAimRowTable[PUFO_AIM_ROW_TABLE_SIZE] = {
     0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-/* The arc stops when the sample reaches this height (0x31... constant pair
- * 0x4043000000000000 read by Tact_TraceProjectileArc @ 0x2fd30). */
-#define PUFO_ARC_Z_LIMIT 38.0
+/* The arc stops when the sample reaches this height: 0x300E8 loads the high half
+ * 0x40478000 with the low half 0, so the compared double is 47.0, and the test at
+ * 0x300F4 is "sample z >= 47.0". Four layers of 12 voxels plus the ceiling lift,
+ * i.e. anything above the top layer. */
+#define PUFO_ARC_Z_LIMIT 47.0
 /* Map volume limit for x and y: the arc aborts once the sample reaches
  * 160 * nMapDimX (the original tests ltd(x, 160*nMapDimX) == 0). */
 #define PUFO_ARC_XY_SCALE 160.0
@@ -137,6 +139,13 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
     bool bOutOfRange = false;
     bool bRunning = true;
 
+    /* 0x2FC54: every arc walk clears Map.bFireHitResult before it starts, so the
+     * walk's own outcome -- sample off the map or not -- is what Tact_ProcessFireAction
+     * reads at the resolve, not a leftover from the previous action. */
+    if (pAim->pbFireHitResult != NULL) {
+        *pAim->pbFireHitResult = 0;
+    }
+
     Tact_ComputeAimVector(pAim, pGeom, pfnLookup, pUser,
                           nX0, nY0, nZ0, nX1, nY1, nZ1, nRowId);
 
@@ -158,6 +167,7 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
     tr.dTravelSave = 0.0;
     tr.bOutOfRange = false;
     tr.bLeftMap = false;
+    tr.nHitReason = LOS_HIT_NONE;
 
     do {
         pAim->dTravel += 1.0;
@@ -172,19 +182,32 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
 
         if (!(dX >= 0.0) || !(dY >= 0.0) || !(dZ >= 0.0)
             || dX >= dLimit || dY >= dLimit || dZ >= PUFO_ARC_Z_LIMIT) {
+            /* 0x30104 and 0x3010C: the same branch clears the walk-continue byte and
+             * raises Map.bFireHitResult, which is what Tact_ProcessFireAction's mode-7
+             * gate (0x51CD4, 0x51F50) reads as "the traced arc left the map". */
             bRunning = false;
             tr.bLeftMap = true;
+            if (pAim->pbFireHitResult != NULL) {
+                *pAim->pbFireHitResult = 1;
+            }
         }
 
-        /* The original tests the occupancy result truncated to one byte:
-         *     if ((u8)Map_TraceVoxelOccupancy(...) != 0) continue;
-         *     else { record target; stop; }
-         * A clear voxel returns LOS_HIT_NONE (-1), which is non-zero as a byte,
-         * so the walk continues; only a result of 0 (LOS_HIT_FLOOR) stops it.
-         * That is the original's rule, reproduced literally. */
-        if ((u8)Map_TraceVoxelOccupancy(pTables, pfnLookup, pUser,
-                                        (u32)(i32)dX, (u32)(i32)dY, (u32)(i32)dZ,
-                                        pUnitSelExclude, pUnitExtraExclude) != 0) {
+        /* The original's test at 0x30184 is on the occupancy RETURN value: 1 keeps the
+         * walk going and 0 records the target and ends it, and 0 is what all five
+         * blocked paths return -- wall A, wall B, floor, ceiling and occupant share the
+         * one store at LABEL_56 (0x32C68), which puts the reason code into
+         * Map.nFireArg5 and then returns 0. A shot therefore stops at a wall, a ceiling
+         * or a unit, not at a floor alone. The port's occupancy hands back the reason
+         * instead of that 0/1 pair, so the test is on the reason: LOS_HIT_NONE (the
+         * clear voxel) keeps the walk going and every other code ends it. Matching the
+         * raw "!= 0" against this enum was the defect -- with it only the floor value 0
+         * ended the walk, so a traced shot walked through walls, ceilings and the unit
+         * it was fired at until it left the map volume. */
+        const LosHit eHit = Map_TraceVoxelOccupancy(pTables, pfnLookup, pUser,
+                                                    (u32)(i32)dX, (u32)(i32)dY,
+                                                    (u32)(i32)dZ,
+                                                    pUnitSelExclude, pUnitExtraExclude);
+        if (eHit == LOS_HIT_NONE) {
             /* Keep walking. */
         } else {
             tr.nTgtX = (i32)(dX / (double)PUFO_VOX_PER_CELL_X);
@@ -195,6 +218,10 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
             pAim->nTgtX = tr.nTgtX;
             pAim->nTgtY = tr.nTgtY;
             pAim->nTgtZ = tr.nTgtZ;
+            tr.nHitReason = (i32)eHit;
+            if (pAim->pnFireArg5 != NULL) {
+                *pAim->pnFireArg5 = (i32)eHit;   /* 0x32C68: the reason Map.nFireArg5 holds */
+            }
             bRunning = false;
         }
 
@@ -487,11 +514,13 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
             bLanded = true;
         }
 
-        /* Only LOS_HIT_FLOOR (0) clears the flag; a clear voxel returns -1, and
-         * the original masks the result to a byte before comparing. */
+        /* 0x32384: the byte the walk is clearing goes to 0 on the blocked result, and
+         * every blocked voxel -- wall, floor, ceiling or unit -- reaches that store.
+         * Only a clear voxel (the original's return 1, the port's LOS_HIT_NONE) leaves
+         * the flag alone. */
         if (Map_TraceVoxelOccupancy(pTables, pfnLookup, pUser,
                                     (u32)(i32)dX, (u32)(i32)dY, (u32)(i32)dZ,
-                                    pUnitSelExclude, pUnitExtraExclude) == LOS_HIT_FLOOR) {
+                                    pUnitSelExclude, pUnitExtraExclude) != LOS_HIT_NONE) {
             bHitStop = false;
         }
 

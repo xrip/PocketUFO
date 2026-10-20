@@ -525,8 +525,10 @@ static void TestRefreshVisibility(void)
     queue.nQueueCursor = 4;
 
     Tact_RefreshTeamVisibility(&queue, apXcom, 3, Rec_Visibility, &rec);
-    CheckEqI32(queue.aQueue[4].nCmd, TACTCMD_END_MARK, "  cursor entry marked END_MARK");
-    CheckEqI32(queue.nQueueLen, 6, "  queue length = cursor + 2");
+    CheckEqI32(queue.aQueue[5].nCmd, TACTCMD_END_MARK,
+               "  the end mark is appended at cursor + 1 (0x4f388 STRB #0xC at byte 0x50 = aQueue base 0x18 + one 56-byte entry)");
+    CheckEqI32(queue.aQueue[4].nCmd, 0, "  the cursor's own entry is NOT overwritten");
+    CheckEqI32(queue.nQueueLen, 6, "  queue length = cursor + 2, which covers the appended entry");
     CheckEqI32(queue.bFlag1, 1, "  flag1 raised");
     CheckEqI32(rec.nVisibilityCalls, 3, "  visibility refreshed for every XCom unit");
 

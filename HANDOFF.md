@@ -3134,3 +3134,21 @@ fixed: `StrategItem_AllocAdd` had the calloc comment but a `malloc` call, the 13
 and the contact cards printed 1346 in some runs; with calloc restored all 38 dumps are byte-identical across six runs.
 `Tact_RefreshTeamVisibility` is typed as `TactState *` in the IDB now, which exposed that the port stamps
 `aQueue[nQueueCursor]` where the ARM stamps `aQueue[nQueueCursor + 1]` -- recorded under Separate issues.
+That stamp moved to `nQueueCursor + 1` in Part 98 with both comments rewritten.
+
+Part 98 plays a whole tactical round through the shell and it is now gated: reinforcements from the hidden reserve,
+a clicked walk (pen 32/184, six step entries through the 0x4f68c arm, uTu 55 -> 30), a burst whose arc STOPS on the
+alien, HP actually lost, an enemy turn that moves aliens, a save to slot 64 mid-mission and a load that resumes the
+same fight with the same HP. The arc fix was the big one: the occupancy silhouette table (`word_A9488`, now
+`g_aUnitLoftRowBase`) is 23 rows for types 0..22, not the 16 the port kept -- with 16 rows every unit of type >= 1
+read its row base out of the muzzle-offset data and a traced shot walked through its target. The reinforcement arm
+of `BeforeEnemyStep` (0x4BA3C..0x4BB48) increments the enemy roster BEFORE `Map_PickRmpSpawnForUnit` is asked, and
+the pick's failure is ignored -- an alien no node accepts joins the roster with no cell, and 0x49260, 0x4C8D4 and
+0x4CBE0 dereference that `pCell` unguarded. That is a latent fault of the original; the port guards the four
+consumer sites (deviation comments in place, IDB notes at all of them). Two data semantics the gate now relies on:
+a direct hit resolves through `Combat_DirectUnitDamage @ 0x2f44c`'s `(uFirePower - (1 - ready/100)*bUnk248) -
+rand(power/2)` -- a zero-power weapon means zero damage -- and `Tact_KillUnit` GROWS the tact-item pool with
+`operator new(0x18)` corpse items past the DAT's flobjs count. The Release-only 0xc0000374 was a test bug found
+with a link map: `DatFile_Open` frees the struct's old write buffer, and the section-18 block opened a `DatFile` it
+had never constructed -- one `DatFile_ctor` and both configurations are 62/62. Eight `tact_play_*` frames are new
+references, looked at; `e2e` unchanged at 9/9.

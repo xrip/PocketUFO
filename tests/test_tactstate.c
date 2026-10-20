@@ -1326,8 +1326,9 @@ static void TestFallActionMoveTail(void)
     Tact_ProcessFallAction(&g_state, &g_FallCtx);
     Check(g_FallTactCtx.pTrackUnit == &g_aFallUnits[1], "  track unit kept on a bit-0-set cell");
 
-    /* The spotted flag pushes TEXTS[3] and then runs the team pass, which rewrites
-     * the current entry into END MARK and extends the queue by one. */
+    /* The spotted flag pushes TEXTS[3] and then runs the team pass, which appends
+     * an END MARK at cursor + 1 (0x4f388) and extends the queue by one; the
+     * current entry keeps its own command. */
     FallSetup();
     pActor = &g_aFallUnits[0];
     pActor->bFlags = 0x10;
@@ -1337,7 +1338,8 @@ static void TestFallActionMoveTail(void)
     Tact_ProcessFallAction(&g_state, &g_FallCtx);
     CheckEqI32(g_nStatusCalls, 1, "  the spotted message pushed once");
     CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_SPOTTED, "  and it is TEXTS[3]");
-    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_END_MARK, "  team pass rewrites the entry to 12");
+    CheckEqI32(g_state.aQueue[0].nCmd, 1, "  the current entry keeps its own cmd");
+    CheckEqI32(g_state.aQueue[1].nCmd, TACTCMD_END_MARK, "  team pass appends 12 at cursor + 1");
     CheckEqI32(g_state.nQueueLen, 2, "  team pass sets nQueueLen = cursor + 2");
     CheckEqI32(g_state.bFlag1, 1, "  and bFlag1");
     CheckEqI32(g_state.nQueueCursor, 1, "  cursor advances into the new entry");
@@ -2312,8 +2314,10 @@ static void TestFireTurn(void)
     Tact_ProcessFireAction(&g_state, &g_FireCtx);
     CheckEqI32(g_nLastStatusRec, MOVE_MSG_NO_TIME, "the out-of-TU record is pushed");
     CheckEqI32(g_nVisCalls, 1, "the team pass refreshes the one XCom unit");
-    CheckEqI32(g_state.aQueue[0].nCmd, (i32)TACTCMD_END_MARK,
-               "the team pass rewrites the entry to END_MARK");
+    CheckEqI32(g_state.aQueue[0].nCmd, (i32)TACTCMD_TURN,
+               "the team pass leaves the current entry alone");
+    CheckEqI32(g_state.aQueue[1].nCmd, (i32)TACTCMD_END_MARK,
+               "and appends the END MARK at cursor + 1 (0x4f388)");
     CheckEqI32(g_state.nQueueLen, 2, "the team pass sets the queue length");
     Check(g_state.bFlag1 == 1, "the team pass raises bFlag1");
 

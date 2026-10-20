@@ -275,11 +275,17 @@ void Tact_EndEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks, Soldier *pFirs
 /* Tact_RefreshTeamVisibility @ 0x4f368.
  *
  * The three queue writes come straight from the decompilation:
- *     *((u8*)pQueue + 56 * nQueueCursor + 80) = 12;   -> aQueue[cursor].nCmd
- *     *((u16*)pQueue + 35050) = nQueueLen + 2;        -> nQueueLen
+ *     *((u8*)pQueue + 56 * nQueueCursor + 80) = 12;   -> aQueue[cursor + 1].nCmd
+ *     *((u16*)pQueue + 35050) = LOWORD(cursor) + 2;   -> nQueueLen
  *     *((u8*)pQueue + 1) = 1;                         -> bFlag1
- * The 56-byte stride and the +80 offset are the queue entry layout, and 35050
- * words is byte 70100, i.e. the nQueueLen field. Expressed through the struct. */
+ * The stride is 56 bytes (0x4f380 MUL cursor,56) and the stamp byte is 0x50 =
+ * the aQueue base 0x18 plus one whole entry, with nCmd as the first dword of an
+ * entry -- so the end mark is APPENDED at cursor + 1, next to the entry the
+ * walker is busy with, not written over it. nQueueLen = cursor + 2 covers the
+ * same range. 35050 words is byte 70100, the nQueueLen field. Expressed through
+ * the struct. (An earlier reading put the +80 inside the cursor's own entry and
+ * stamped aQueue[cursor]; the ARM addressing rules that out and the stamp moved
+ * here on 2026-10-20.) */
 void Tact_RefreshTeamVisibility(TactState *pQueue, Soldier **apXcom, i32 nXcom,
                                 TurnUpdateVisibilityFn pfnUpdateVisibility,
                                 void *pUser)
@@ -292,8 +298,8 @@ void Tact_RefreshTeamVisibility(TactState *pQueue, Soldier **apXcom, i32 nXcom,
     /* Index 0 of aQueue is at offset 0x18 in the original's TactState, not 0, so
      * cursor addressing uses the entry array directly. */
     if (pQueue->nQueueCursor >= 0
-        && (u32)pQueue->nQueueCursor < (u32)PUFO_TACT_QUEUE_MAX) {
-        pQueue->aQueue[pQueue->nQueueCursor].nCmd = TACTCMD_END_MARK;
+        && (u32)(pQueue->nQueueCursor + 1) < (u32)PUFO_TACT_QUEUE_MAX) {
+        pQueue->aQueue[pQueue->nQueueCursor + 1].nCmd = TACTCMD_END_MARK;
     }
     pQueue->nQueueLen = (u16)(pQueue->nQueueCursor + 2);
     pQueue->bFlag1    = 1;
@@ -963,8 +969,14 @@ void AfterEnemyStep(TactCtx272 *pTact, const EnemyStepCtx *pCtx)
         }
     }
 
+    /* 0x4C8D4: every enemy's visibility is refreshed. A reinforcement unit the spawn pick never
+     * placed stands in the list with no cell; Unit_UpdateVisibility @ 0x48580 reads its cell as
+     * its first act, so the original faults on such a unit here. Deviation: the port skips it
+     * (same latent fault as in the enemy AI tick guard and the two visibility scans). */
     for (i32 i = 0; i < *pCtx->pnEnemy; ++i) {
-        pCtx->pfnUpdateVisibility(pCtx->apEnemy[i], pCtx->pUser);
+        if (pCtx->apEnemy[i]->pCell != NULL) {
+            pCtx->pfnUpdateVisibility(pCtx->apEnemy[i], pCtx->pUser);
+        }
     }
 
     TactState_KickQueue(pCtx->pQueue);

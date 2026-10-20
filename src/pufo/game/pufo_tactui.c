@@ -821,6 +821,15 @@ bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
     spec.nArg = pUi->anActionEnabled[nMode];
     spec.uAmmoInWeapon = uAmmoInWeapon;
     spec.bAmmoCap = bAmmoCap;
+    /* Mode 7 is the shot count AND the coordinates: 0x4B144 takes nAmmo from Map_nBurstShots, which
+     * 0x187C0 published from the multi-target count moments earlier, and 0x4B198..0x4B1D8 take every
+     * shot's cell from unk_1139C0[i] -- the same list case 3 (0x15344) appended. Without these two
+     * fields a confirmed multi-target burst wrote ZERO shot entries: the loop at 0x4B150 ran
+     * nShots == 0 times and only the aim-clear entry (0x4B2E4) reached the queue, so the shot never
+     * resolved and no HP ever came off the target. The count is the published one, not the cleared
+     * global: 0x187F4 zeroes unk_1139BC only after 0x187C0 has copied it. */
+    spec.apMultiTargets    = apMultiTargets;
+    spec.nMultiTargetCount = nCount;
 
     /* 0x18844 then 0x1884C: the enqueue's refusal is the callee's own work -- 0x4B0D8 returns
      * StatusMsg_Push(aTextRec1_OutOfTime, 0) when the unit cannot pay the mode's cost -- and the kick

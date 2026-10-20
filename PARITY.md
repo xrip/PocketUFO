@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 19291 |
+| Test checks run | 19321 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -260,7 +260,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_step.c` (+1) |
+| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_path.c` (+2) |
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | `src/pufo/game/pufo_tactinit.h`, `src/pufo/game/pufo_terrain.c` (+1) |
 | `0x50adc` | `Tact_ProcessFireAction` | 8192 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
@@ -269,7 +269,7 @@ is the module that answers to it.
 | `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
 | `0x3d568` | `Tact_Shutdown` | 3788 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_unit.c` (+1) |
-| `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+8) |
+| `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.c` (+10) |
 | `0x3a2ac` | `Tact_SpawnAliens` | 3516 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.h` (+1) |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_enemyai.c` (+4) |
 | `0x1c958` | `MapView_DrawUnit` | 3220 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
@@ -286,7 +286,7 @@ is the module that answers to it.
 | `0x1ed4c` | `MapView_DrawMinimap` | 2112 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_isodraw.c` (+1) |
 | `0x33c80` | `Tact_TallyItemRecovery` | 2100 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactend.c` (+2) |
 | `0x30890` | `Map_TraceLos` | 1948 | `src/pufo/game/pufo_los.c`, `src/pufo/game/pufo_los.h` |
-| `0x54130` | `Tact_TickActiveUnit` | 1868 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+3) |
+| `0x54130` | `Tact_TickActiveUnit` | 1868 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x2fc38` | `Tact_TraceProjectileArc` | 1840 | `src/pufo/game/pufo_ballist.h` |
 | `0x3be24` | `Tact_EquipTeamFromCraft` | 1836 | `src/pufo/game/pufo_invdrag.c`, `src/pufo/game/pufo_invdrag.h` |
 | `0x2deac` | `Map_ComputeFov` | 1776 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_mapcell.h` (+2) |
@@ -331,7 +331,7 @@ is the module that answers to it.
 | `0x25e6c` | `Unit_RollChance` | 596 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` |
 | `0x39744` | `Tact_SelectTeamUnits` | 572 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x1b584` | `MapView_DrawCellSelectMarkerHi` | 568 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
-| `0x55418` | `Map_PickRmpSpawnForUnit` | 568 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
+| `0x55418` | `Map_PickRmpSpawnForUnit` | 568 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_rmp.c` (+2) |
 | `0x4834c` | `Unit_ScanVisibleUnits` | 564 | `src/pufo/game/pufo_unit.h` |
 | `0x344b4` | `Tact_TallyCraftRecovery` | 556 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactend.c` (+1) |
 | `0x2b604` | `Path_ExpandCell` | 540 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_path.c` (+2) |
@@ -880,7 +880,7 @@ is the module that answers to it.
 | `0x73008` | `ResearchScreen_RefreshPanels` | 568 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6e13c` | `ManufScreen_IncEngineers` | 500 | `src/pufo/game/pufo_baseui.h` |
 | `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
-| `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.h` (+3) |
+| `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x710b0` | `ManufScreen_Init` | 488 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7c9e8` | `BasePlaneScreen_Close` | 480 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x79e00` | `BasePlaneScreen_DrawStatLabelA` | 452 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 1340 |
+| `test_geoscapeframe` | PASS | 1367 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
@@ -1311,14 +1311,14 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactend` | PASS | 401 |
 | `test_tacthud` | PASS | 268 |
 | `test_tactinit` | PASS | 95 |
-| `test_tactstate` | PASS | 582 |
+| `test_tactstate` | PASS | 584 |
 | `test_tactui` | PASS | 507 |
 | `test_template` | PASS | 49 |
 | `test_terrain` | PASS | 59 |
 | `test_texts_lang` | PASS | 15 |
 | `test_timer` | PASS | 87 |
 | `test_titles` | PASS | 139 |
-| `test_turn` | PASS | 175 |
+| `test_turn` | PASS | 176 |
 | `test_uibank` | PASS | 394 |
 | `test_unit` | PASS | 298 |
 | `test_vis` | PASS | 77 |
@@ -1343,7 +1343,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 858 citations.
+parity report. Total: 863 citations.
 
 ### Offsets below the image base (44)
 
@@ -1352,7 +1352,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (814)
+### At or above the image base (819)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1472,6 +1472,9 @@ against the IDB when the final report is assembled.
 - `0x14040`
 - `0x14044`
 - `0x14048`
+- `0x1404c`
+- `0x14050`
+- `0x1406c`
 - `0x1406d`
 - `0x14078`
 - `0x14080`
@@ -1890,8 +1893,10 @@ against the IDB when the final report is assembled.
 - `0x254bc`
 - `0x26f38`
 - `0x26f40`
-- `0x2fd30`
+- `0x2f408`
+- `0x2fc74`
 - `0x319f4`
+- `0x32c68`
 - `0x33618`
 - `0x3436c`
 - `0x3501c`

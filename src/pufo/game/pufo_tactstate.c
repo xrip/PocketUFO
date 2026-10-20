@@ -950,6 +950,20 @@ static void MoveFire(TactState *pState, const MoveActionCtx *pCtx,
         }
     }
 
+    /* 0x2FC74, the first thing the original's arc walk does: Map.pFireArg6 (0x14050)
+     * takes apObjects[pSelWeapon->nIndex], the object record of the weapon that is
+     * selected. Tact_ProcessFireAction reads that slot back twice at the resolve
+     * (0x51CDC, 0x51F04) and passes it on as Combat_ResolveShot's weapon argument, and
+     * 0x2F24C stores it there a second time. The port's TactItem.pObj IS that record --
+     * every loader stamps pItem->pObj = apObjects[nIndex] (0x432F0 in the save reader)
+     * -- so the selected item gives the same pointer. With nothing published here the
+     * slot stays NULL, Combat_ResolveShot's first read of it at 0x2f2c0 dereferences a
+     * null pointer, and no shot ever resolves at all. */
+    const TactItem *pSel = (pCtx->ppSelWeapon != NULL) ? *pCtx->ppSelWeapon : NULL;
+    if (pCtx->ppFireWeaponSlot != NULL && pSel != NULL) {
+        *pCtx->ppFireWeaponSlot = (const ObjectRecFull *)pSel->pObj;
+    }
+
     Tact_TraceProjectileArc(pCtx->pAim, pCtx->pTables, &pCtx->geom,
                             pCtx->pfnLookup, pCtx->pUser,
                             pCtx->pTraceExcludeSel, pCtx->pTraceExcludeExtra,

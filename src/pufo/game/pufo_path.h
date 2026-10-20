@@ -188,9 +188,11 @@ typedef struct PathToCellCtx {
     i32          *pnPathCount;     /* Map+0x4E44 */
     PathScratch  *pScratch;        /* the flood fill's frontier lists */
     MapCellLookup pfnLookup;
-    PathStepProbe  pfnProbe;       /* Unit_CanStepTo (0x27bb8), not ported yet */
-    void          *pProbeUser;
-    void          *pLookupUser;
+    PathStepProbe  pfnProbe;       /* Unit_CanStepTo (0x27bb8), not ported yet; a NULL seam
+                                    * steps permissively by the delta table (deviation) */
+    void          *pProbeUser;       /* the user Path_ComputeReachable passes to BOTH readers
+                                      * (the original's flood fill is one shared context) */
+    void          *pLookupUser;      /* the user Unit_PathToCell's own lookups use */
     const MapGeom *pGeom;
 } PathToCellCtx;
 

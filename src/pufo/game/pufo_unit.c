@@ -1082,6 +1082,14 @@ i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
             && pOther->nUnitType != PUFO_UNIT_TYPE_SPOTTED_B) {
             continue;
         }
+        /* Deviation for a latent original fault: the Xcom-base reinforcement arm (0x4BAFC..0x4BB3C)
+         * adds a hidden soldier to apEnemyUnits BEFORE Map_PickRmpSpawnForUnit @ 0x55418 runs, and
+         * that pick can reject every node (rank-8 aliens need a bFlag20 == 4 node, which no shipped
+         * .rmp record carries), leaving the added unit with no cell. The original dereferences
+         * pOther->pCell here with no test and would fault on such a unit; the port skips it. */
+        if (pOther == NULL || pOther->pCell == NULL) {
+            continue;
+        }
 
         pOtherCell = pOther->pCell;
         nDx = (i32)pViewCell->nX - (i32)pOtherCell->nX;
@@ -1366,10 +1374,17 @@ i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx)
         }
     }
 
-    /* Multi-target scan over the enemy roster. */
+    /* Multi-target scan over the enemy roster. Same deviation as in Unit_ScanVisibleUnits:
+     * a reinforcement unit the spawn pick never placed stands in the list with no cell, and
+     * the original reads its coordinates unguarded at 0x49260. The port skips it. */
     for (i32 i = 0; i < pCtx->pRosters->nEnemy; ++i) {
         Soldier *pEnemy = pCtx->pRosters->apEnemy[i];
-        MapCell *pEnemyCell = pEnemy->pCell;
+        MapCell *pEnemyCell;
+
+        if (pEnemy == NULL || pEnemy->pCell == NULL) {
+            continue;
+        }
+        pEnemyCell = pEnemy->pCell;
         i32 nDx = nOwnX - pEnemyCell->nX;
         i32 nDy = nOwnY - pEnemyCell->nY;
         i32 nDist = (i32)sqrt((double)nDx * nDx + (double)nDy * nDy);
@@ -1696,7 +1711,25 @@ static i32 Kill_DropCorpse(const KillCtx *pCtx, MapCell *pCell, Soldier *pUnit,
 
     MapCell    *pLand = pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY, nLayer,
                                                  pCtx->pCombat->pUser);
+    /* 0x4EAD8..0x4EB0C (and the three quadrant copies): the corpse item is a FRESH
+     * `operator new(0x18)` + TactItem_ctor, and the new pointer is what lands in
+     * Map_apTactItems[Map_nTactItemCount]. The pool is not a pre-allocated range the kill
+     * consumes -- Save_AllocFlobjs's slots only cover the items the mission DAT carried, and
+     * a kill drops past them: reading the slot and expecting an allocation there was the
+     * defect (slot 22 of a 22-slot mission was NULL and the ctor wrote through it). The port
+     * allocates when the slot is empty; the original stores NULL on a failed new and then
+     * dereferences it, which the port guards. */
     TactItem   *pItem   = pCtx->apTactItems[*pCtx->pnTactItem];
+
+    if (pItem == NULL) {
+        pItem = (TactItem *)malloc(sizeof(TactItem));
+        if (pItem == NULL) {
+            return -1;   /* deviation: the original would store NULL and fault on the next line */
+        }
+        memset((void *)pItem + offsetof(TactItem, pObj), 0,
+               sizeof(TactItem) - offsetof(TactItem, pObj));
+        pCtx->apTactItems[*pCtx->pnTactItem] = pItem;
+    }
     u16         nObjIdx = (nQuadrant == 0)
                         ? g_aCorpseObjByType[pUnit->nUnitType]
                         : Kill_QuadrantObj(pUnit->nUnitType, nQuadrant);

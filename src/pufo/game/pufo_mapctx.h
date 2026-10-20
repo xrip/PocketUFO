@@ -135,10 +135,13 @@ typedef struct GameMap {
     i32 nHeightSrcY;              /* 0x14064 nHeightSrcY, mod 16 */
     i32 nHeightSrcZ;              /* 0x14068 nHeightSrcZ, mod 12 */
 
-    /* --- action scratch: unk_1279F8 / F8 / 00 @ Map+0x14040 / 44 / 48 --- */
-    i32 nMeleeCellX;              /* the melee target cell, written by TactAction_ConfirmMeleeMode6 @ 0x17bb8 */
-    i32 nMeleeCellY;
-    i32 nMeleeCellLayer;
+    /* --- action scratch: unk_1279F8 / FC / 00 @ Map+0x14040 / 44 / 48 ---
+     * These three are AimState.nTgtX/Y/Z above, one cell each, not a second triple:
+     * the aim block spans 0x13FD8..0x14088 and 0x14040/44/48 fall inside it. The IDB
+     * names the slot "melee cell" because TactAction_ConfirmMeleeMode6 @ 0x17bb8 writes
+     * it, and the arc walk writes it too (0x301CC). Every context that needs it takes a
+     * pointer into pMap->aim (see Map_BuildMoveActionCtx), so an arc-written target and
+     * a confirm-written target are the same value the resolve reads. */
     char aTransformName[32];      /* Map+0x230: the name the chryssalid transform copies into
                                    * Soldier.szName. The shell owns the block empty; nothing in the
                                    * ported code fills it yet (recorded gap). */

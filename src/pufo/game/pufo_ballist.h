@@ -127,6 +127,16 @@ typedef struct AimState {
     double *padMtX;
     double *padMtY;
     double *padMtZ;
+    /* The two shot-plumbing bytes that sit INSIDE this same block and that the arc
+     * walk writes on the Map, not on a return value: 0x2FC54 clears Map.bFireHitResult
+     * (0x1406C) at the top of every walk and 0x3010C sets it when the walked sample
+     * leaves the map, and Map_TraceVoxelOccupancy stores its reason in Map.nFireArg5
+     * (0x1404C) on the step that stopped the walk. Tact_ProcessFireAction reads both
+     * back at the resolve (0x51CD4, 0x51F50), so a walk that does not publish them
+     * leaves the resolve looking at the previous action's values. NULL keeps the two
+     * values in ShotTrace only, which is how a test drives the trace. */
+    u8  *pbFireHitResult;
+    i32 *pnFireArg5;
 } AimState;
 
 /* Angle setup shared by Tact_ComputeAimVector and Map_TraceLos.
@@ -159,7 +169,8 @@ typedef struct ShotTrace {
     i32    nEndZ;         /* 0x14068 */
     double dTravelSave;   /* 0x14038 */
     bool   bOutOfRange;   /* true when the bound was passed */
-    bool   bLeftMap;      /* the sample failed the bounds test (port-local flag) */
+    bool   bLeftMap;      /* the sample failed the bounds test (Map.bFireHitResult @ 0x1406C) */
+    i32    nHitReason;    /* the reason the walk stopped, in Map.nFireArg5 @ 0x1404C */
 } ShotTrace;
 
 /* Tact_TraceProjectileArc @ 0x2fc38.

@@ -3090,10 +3090,19 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactPath.pScratch       = &pW->sTactPathScratch;
     pW->sTactPath.pfnLookup      = World_TactLookupCell;
     /* Deviation: pfnProbe stands for Unit_CanStepTo @ 0x27bb8, still unported; the path port
-     * treats a NULL probe as permissive (pufo_path.c:139), so door/step refusals are not
-     * applied on a walked path yet. */
+     * treats a NULL probe as permissive (Path_ExpandCell steps by the plain delta table when
+     * the seam is NULL), so door/step refusals are not applied on a walked path yet. The
+     * seam being NULL used to dereference a null pointer there -- fixed 2026-10-20; the click
+     * move arm only reaches the search once the input mirror carries Map_nMapDimX/Y
+     * (0x1511B/0x1511C) and Tact_HandleMapClick's cursor gate passes. */
     pW->sTactPath.pfnProbe       = NULL;
-    pW->sTactPath.pProbeUser     = NULL;
+    /* Path_ComputeReachable carries ONE user, passed to both the lookup and the probe
+     * (pufo_path.c) -- in the original the flood fill reads one shared context, the
+     * globals. The shell's shared context is the live mission, so the probe user is the
+     * same pW the lookup uses. It used to be NULL here, and a search that actually ran
+     * (the click move arm on a live mission) called World_TactLookupCell through it --
+     * a null dereference, fixed 2026-10-20. */
+    pW->sTactPath.pProbeUser     = pW;
     pW->sTactPath.pLookupUser    = pW;
     pW->sTactPath.pGeom          = &pMap->geom;
 
@@ -3120,9 +3129,12 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactEnemyAi.pnMultiTargetCount    = &pMap->nMultiTargetCount;
     pW->sTactEnemyAi.apMultiTargets        = pMap->apMultiTargets;
     pW->sTactEnemyAi.pnBurstShots          = &pMap->nBurstShots;   /* Map_nBurstShots @ Map+0x28 */
-    pW->sTactEnemyAi.pnMeleeCellX          = &pMap->nMeleeCellX;
-    pW->sTactEnemyAi.pnMeleeCellY          = &pMap->nMeleeCellY;
-    pW->sTactEnemyAi.pnMeleeCellLayer      = &pMap->nMeleeCellLayer;
+    /* The fire-target triple is AimState.nTgtX/Y/Z (Map+0x14040/44/48): the arc walk
+     * and the UI confirmations write the same three cells, so every context points at
+     * the aim block. */
+    pW->sTactEnemyAi.pnMeleeCellX          = &pMap->aim.nTgtX;
+    pW->sTactEnemyAi.pnMeleeCellY          = &pMap->aim.nTgtY;
+    pW->sTactEnemyAi.pnMeleeCellLayer      = &pMap->aim.nTgtZ;
     pW->sTactEnemyAi.anActionCost          = pW->sTactUi.anActionCost;
     pW->sTactEnemyAi.anActionEnabled       = pW->sTactUi.anActionEnabled;
     pW->sTactEnemyAi.pItemMelee            = &pW->sTactItem156910; /* TactItem_156910 @ 0x156910 */
@@ -3606,9 +3618,9 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
 
     height.bFireStatus2      = pW->bMapFire2;           /* byte_113A0A @ 0x52 */
     height.bFireStatus9      = pMap->bFireStatus9;      /* unk_113A11 @ 0x59 */
-    height.nFireTgtX         = pMap->nMeleeCellX;       /* unk_1279F8 @ 0x14040 */
-    height.nFireTgtY         = pMap->nMeleeCellY;       /* 0x14044 */
-    height.nFireTgtZ         = pMap->nMeleeCellLayer;   /* 0x14048 */
+    height.nFireTgtX         = pMap->aim.nTgtX;         /* unk_1279F8 @ 0x14040 */
+    height.nFireTgtY         = pMap->aim.nTgtY;         /* 0x14044 */
+    height.nFireTgtZ         = pMap->aim.nTgtZ;         /* 0x14048 */
     height.nHeightGlyphWord  = (u32)pMap->aim.anAimRow[10]; /* 0x14000, the IDB's nHeightGlyphId */
     height.nHeightSrcX       = pMap->nHeightSrcX;       /* 0x14060 */
     height.nHeightSrcY       = pMap->nHeightSrcY;
@@ -4167,11 +4179,30 @@ static void World_TactRenderThunk(void *pUser)
     World_TactRenderFrame((PufoWorldState *)pUser);
 }
 
+/* MapCursor_SetPos @ 0x27014 reads its two gate bytes off the live record at call time: 0x27054
+ * tests pTactCtx272->bBusy (the queue busy flag, the port's Map.tact.bBusy) and 0x27230 tests
+ * Unit_bIsLarge(Map.pSelUnit). tactEnv.cursorPos is one context built at launch
+ * (pufo_tactinit.c:500..504), so those two copies are only true right after a refresh -- and the
+ * refresh that used to exist ran on tick ENTRY (this file's World_TactTickActiveUnit), i.e. before
+ * the tick body changed the flag. The first mission section that hovered after an enemy turn saw
+ * the mirror still holding 1 while the live byte was 0, and with bBusy 1 MapCursor_SetPos refuses
+ * every VALID cell (0x27054 skips only "busy AND valid"), so the pen could not move the cursor at
+ * all. Every entry that dispatches through the cached context re-stamps the two bytes here. */
+static void World_TactCursorPosRefresh(PufoWorldState *pW)
+{
+    GameMap *pMap = pW->pTactMap;
+
+    pW->tactEnv.cursorPos.bBusy         = (pMap != NULL) && pMap->tact.bBusy != 0;
+    pW->tactEnv.cursorPos.bSelUnitLarge = (pMap != NULL) && pMap->pSelUnit != NULL
+                                          && Unit_bIsLarge(pMap->pSelUnit);
+}
+
 /* TickHooks.pfnSetCursorPos = MapCursor_SetPos @ 0x27014, over the launch's cursor triple. */
 static void World_TactSetCursorPosThunk(i32 nX, i32 nY, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
+    World_TactCursorPosRefresh(pW);
     MapCursor_SetPos(&pW->tactEnv.cursorPos, nX, nY, World_TactLookupCell, pW);
 }
 
@@ -4424,12 +4455,20 @@ static void World_TactTickActiveUnit(void *pUser)
     pW->sTactSpot.bBusy        = pMap->tact.bBusy != 0;
     pW->sTactSpot.bQueueActive = pQ->bQueueActive != 0;
     pW->sTactSpot.pSelUnit     = pMap->pSelUnit;
-    pW->tactEnv.cursorPos.bBusy = pMap->tact.bBusy != 0;
-    pW->tactEnv.cursorPos.bSelUnitLarge = pMap->pSelUnit != NULL && Unit_bIsLarge(pMap->pSelUnit);
+    World_TactCursorPosRefresh(pW);
     pW->sTactMoveWiring.visCtx  = pW->tactEnv.vis;
 
     Map_BuildMoveActionCtx(pMap, &pW->sTactLoft, &move);
     Map_WireMoveActionCtx(&move, &pW->sTactMoveWiring);
+    /* The live grid is the original's apCells pointer table @ Map+0x15338, which the shell owns
+     * as apTactCells (each slot its own allocation, Map_BuildMissionTerrain). Map_LookupCell over
+     * GameMap.aCells is the standalone fallback Map_BuildMoveActionCtx uses for a GameMap that owns
+     * its cells inline -- a test. Here the move FSM must resolve through the same table the deploy,
+     * the visibility pass, the enemy AI and Combat_ResolveShot resolve through, or it walks, aims
+     * and shoots against a grid that has none of the mission's terrain, items or occupants in it:
+     * the shot setup found the alien's target cell empty, and a traced shot stopped at nothing. */
+    move.pfnLookup      = World_TactLookupCell;
+    move.pUser          = pW;
     /* 0x15138 has one live owner, the TactCursor the launch owns. The cast re-views the same
      * byte as the signed scratch the processors expect. */
     move.pnLayerScratch = (i8 *)&pW->tactEnv.cursor.nFlags;
@@ -4538,9 +4577,9 @@ static void World_TactTickActiveUnit(void *pUser)
     fall.pbLookCommitFlag   = &pMap->bLookCommitFlag;   /* 0x1508C unk_128A44 */
     fall.pnCursorX          = &pW->tactEnv.cursor.nX;
     fall.pnCursorY          = &pW->tactEnv.cursor.nY;
-    fall.pnMeleeCellX       = &pMap->nMeleeCellX;       /* unk_1279F8 @ 0x14040 */
-    fall.pnMeleeCellY       = &pMap->nMeleeCellY;
-    fall.pnMeleeCellLayer   = &pMap->nMeleeCellLayer;
+    fall.pnMeleeCellX       = &pMap->aim.nTgtX;         /* unk_1279F8 @ 0x14040 */
+    fall.pnMeleeCellY       = &pMap->aim.nTgtY;
+    fall.pnMeleeCellLayer   = &pMap->aim.nTgtZ;
     /* The throw flight's end is the SECOND sample slot of the multi-target arrays: unk_1278A8
      * = Map+0x13EF0 = adMtX[1], and the same pair offsets on Y and Z. */
     fall.pdThrowX           = &pMap->adMtX[1];
@@ -4718,9 +4757,9 @@ static void World_TactUiSyncIn(PufoWorldState *pW)
     pUi->bActionLatch     = pMap->bActionLatch;                  /* gap_2[1] @ Map+0x02 */
     pUi->bUnk1508C        = pMap->bLookCommitFlag;               /* 0x1508C unk_128A44 */
     pUi->nLayerScratch    = pW->tactEnv.cursor.nFlags;           /* 0x15138 */
-    pUi->nFireTgtX        = pMap->nMeleeCellX;                   /* 0x1279F8 */
-    pUi->nFireTgtY        = pMap->nMeleeCellY;                   /* 0x1279FC */
-    pUi->nFireTgtZ        = pMap->nMeleeCellLayer;               /* 0x127A00 */
+    pUi->nFireTgtX        = pMap->aim.nTgtX;                     /* 0x1279F8 */
+    pUi->nFireTgtY        = pMap->aim.nTgtY;                     /* 0x1279FC */
+    pUi->nFireTgtZ        = pMap->aim.nTgtZ;                     /* 0x127A00 */
     pUi->bDeployPanelOpen = pW->sTactInput.bDeployPanelOpen;     /* gap_86272[16] @ 0x15110 */
     pUi->bSlot80Low       = pW->sTactInput.bUiSlot8Byte0;        /* LOBYTE(apUiSlotsA[8]) @ 0x80 */
     pUi->bDrawIsoLayer    = pW->bMapDrawIsoLayer;                /* unk_138E68 @ 0x254B0 */
@@ -4751,9 +4790,9 @@ static void World_TactUiSyncOut(PufoWorldState *pW)
     pMap->bActionLatch     = pUi->bActionLatch;
     pMap->bLookCommitFlag  = pUi->bUnk1508C;
     pW->tactEnv.cursor.nFlags = pUi->nLayerScratch;
-    pMap->nMeleeCellX      = pUi->nFireTgtX;
-    pMap->nMeleeCellY      = pUi->nFireTgtY;
-    pMap->nMeleeCellLayer  = pUi->nFireTgtZ;
+    pMap->aim.nTgtX        = pUi->nFireTgtX;
+    pMap->aim.nTgtY        = pUi->nFireTgtY;
+    pMap->aim.nTgtZ        = pUi->nFireTgtZ;
     pW->sTactInput.bDeployPanelOpen = pUi->bDeployPanelOpen;
     pW->sTactInput.bUiSlot8Byte0    = pUi->bSlot80Low;
     pW->bMapDrawIsoLayer   = pUi->bDrawIsoLayer;
@@ -4790,6 +4829,31 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
                                                              * the keyboard scroll arms and the pointer's
                                                              * Map_IsoOffsetA/B read it through this mirror */
     pS->nCamScrollY      = pW->tactEnv.focus.nCamScrollY;   /* 0x15134 */
+    pS->nMapDimX         = (u8)pMap->geom.nDimX;   /* Map_nMapDimX @ 0x1511B: GameMap.geom owns the live
+                                                    * cell; the pointer camera arm (0x1443C iso pairs), the
+                                                    * scroll gates (0x1177C..) and the cost reads take it
+                                                    * through this mirror. Read-only for the dispatch. */
+    pS->nMapDimY         = (u8)pMap->geom.nDimY;   /* 0x1511C */
+    /* The pen-gate option bytes. In the original Input_OnPointer reads 0x128A8D/8F/90/91 --
+     * anPhaseSave0[93/95/96/97], the same cells the options record owns (Map_ToggleFlag...
+     * @ 0x19250/0x19348/0x193a0/0x1941c toggle them, Map_InitAndLoadRegistry @ 0x22648 loads
+     * them, Options_SaveToRegistry @ 0x114d8 stores them). The dispatch's staged copy read
+     * zero for all of them, so a map press never committed (0x144CC gates on [95], which the
+     * default-ON "runbydblclick" sets) and the edge tests / drag-scroll never ran. These are
+     * read-only for the dispatch, like the dims: no SyncOut flush entry. bActionReady[94] is
+     * left at zero -- nothing in the binary's pen path writes it; the viewport-guide gap
+     * stands. */
+    {
+        const PufoOptions *pOpt = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pTactOptions : NULL;
+
+        if (pOpt != NULL) {
+            pS->bEdgeTestOn   = pOpt->bScrollByPen;   /* 0x128A8D @ 0x150D5: 0x141BC edge tests */
+            pS->bClickCommits = pOpt->bRunByDblClick; /* 0x128A8F @ 0x150D7: 0x144CC commit gate */
+            pS->bDragScrollA  = pOpt->bTurnByPen;     /* 0x128A90 @ 0x150D8: 0x14534 drag-scroll */
+            pS->bDragScrollB  = pOpt->bMenuByPen;     /* 0x128A91 @ 0x150D9 */
+            pS->bForceNoDrag  = pOpt->bForceNoDrag;   /* 0x150E4: tap-to-place vs drag */
+        }
+    }
     pS->bLookCommitFlag  = pMap->bLookCommitFlag;
     pS->pLookCommitUnit  = pMap->pLookCommitUnit;
     pS->pSelUnit         = pMap->pSelUnit;
@@ -6182,6 +6246,7 @@ static void World_TactPointerFill(PufoWorldState *pW, TactPointerWorld *pPtr)
     pPtr->tact.pLookupUser = pW;
     pPtr->pHudPad          = pW->apTactPads[PUFO_UIPAD_HUD]; /* dpanelv @ Map+0xFC */
     pPtr->pCamOffset       = &pW->sTactCamOffset;            /* Map+0x4A40/0x4A41 */
+    World_TactCursorPosRefresh(pW);                           /* the two gate bytes, live now */
     pPtr->bCursorBusy      = pW->tactEnv.cursorPos.bBusy;    /* unk_157180->bBusy */
     pPtr->pLookCtl         = &pW->sTactLookCtl;              /* unk_1571E4 */
 }
@@ -6312,9 +6377,9 @@ void World_TactMapClick(void)
     ctx.pLookCtl          = &pW->sTactLookCtl;              /* pActiveLookCtl @ 0x1571E4 */
     ctx.pSelect           = &pW->tactEnv.select;            /* Tact_SelectUnit @ 0x2c6c4 */
     ctx.pHooks            = pW->pFrameHooks->pTactInputHooks;
-    ctx.pnMeleeCellX      = &pMap->nMeleeCellX;             /* 0x1279F8 */
-    ctx.pnMeleeCellY      = &pMap->nMeleeCellY;             /* 0x1279FC */
-    ctx.pnMeleeCellLayer  = &pMap->nMeleeCellLayer;         /* 0x127A00 */
+    ctx.pnMeleeCellX      = &pMap->aim.nTgtX;               /* 0x1279F8 */
+    ctx.pnMeleeCellY      = &pMap->aim.nTgtY;               /* 0x1279FC */
+    ctx.pnMeleeCellLayer  = &pMap->aim.nTgtZ;               /* 0x127A00 */
     ctx.pfnPathToCell     = Unit_PathToCell;                /* 0x2c2a8 */
     ctx.pUser             = &pW->sTactPath;
     Tact_HandleMapClick(&ctx);
@@ -6337,6 +6402,7 @@ void World_TactSetCursorPos(i32 nX, i32 nY)
     if (pW == NULL) {
         return;
     }
+    World_TactCursorPosRefresh(pW);
     MapCursor_SetPos(&pW->tactEnv.cursorPos, nX, nY, World_TactLookupCell, pW);
 }
 

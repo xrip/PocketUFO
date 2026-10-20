@@ -3998,15 +3998,78 @@ unchanged; 18267 checks.
   correction at 0x1B0EC (`ADDMI` there is the negative-dividend fix for the `ASR` that follows, not the odd-row test,
   which is the remainder test at 0x1B128/0x1B12C); the index/coordinate note at 0x434DC; `idb_save`.
 
-- [ ] **`Tact_RefreshTeamVisibility` stamps the action queue one entry earlier than the original.** Found while
+- [x] **Part 98: tactical play on a live mission -- reinforcements, a clicked walk, an arc that stops ON an
+  occupant, direct-hit damage, an enemy turn, and a save plus a load inside the mission.** Section 18 of
+  `test_geoscapeframe` fights a full round on a finished-base build (36 tiles carrying placement codes 0..7, both
+  .rmp node kinds). Six things came out of it. (1) THE SILOUETTE ROW-BASE TABLE. The original's table for
+  `Map_TraceVoxelOccupancy @ 0x3242C` (`word_A9488 @ 0xa9488`, now `g_aUnitLoftRowBase`) is 736 bytes = 23 rows x
+  u16[16] for unit types 0..22, ending exactly at `g_aUnitMuzzleOffset @ 0xa9768`. The port kept a 16-row table, so
+  every type >= 1 read its row base out of the muzzle-offset block and the traced arc walked THROUGH the alien it was
+  fired at. The full table is restored (floater 11 -> row window 24..31, muton 10 -> 0..7, silacoid 19 -> 40..47,
+  cyberdisk 18 and the tanks 4..8 -> 80..108, sectopod 21 -> 48..76), with the index forms pinned from the ARM: the
+  small-unit arm at 0x328DC reads `16*type + 2*bFacing(Soldier+0x05) + (bFlags(Soldier+0x04)&1)`, the large-unit arm
+  at 0x32B94 reads `16*type + 2*facing` then `+ nSub` (nSub 0..3 from the 0x327F4 neighbour probes), and the third
+  arm at 0x32BE0 reads `2*index` (the unreachable "unit above" tail). The occupant prologue at 0x3273C skips only
+  `Map.pSelUnit` (Map+0x15334) and `Map.pThrowTarget` (Map+0x150F0); the small/large arm is chosen by
+  `byte_A7B80[type].bLarge`. With the table right, the traced arc stops ON the alien (reason 4 -- `Map.nFireArg5`
+  4 at 0x32C68 -- in its own cell 24/10/0) instead of through it. (2) REINFORCEMENTS. The `BeforeEnemyStep @ 0x4B9B8`
+  arm at 0x4BA3C..0x4BB48 pulls `rand(4)+2` aliens (clamped to `Map_nEnemyReserveCount @ 0x128AFC) from
+  `apHiddenSoldiers @ 0x138DF0` with swap-remove, stores `Map_apEnemyUnits[nEnemy] = unit; ++nEnemyUnitCount;` and
+  then calls `Map_PickRmpSpawnForUnit @ 0x55418` -- whose FAILURE IS IGNORED. An alien every node rejected joins the
+  roster with NO cell, and three consumers dereference its `pCell` unguarded: the enemy scan in
+  `Unit_UpdateVisibility @ 0x48580` at 0x49260 (`LDR R0,[R9,#0x10]`), the AfterEnemyStep visibility loop at 0x4C8D4,
+  and `Tact_EnemyAiTick @ 0x4CBE0`. The data makes the rejection routine: a rank-8 alien's gate (0x5547C normalises
+  8 -> 4) wants a node with bFlag20 == 4 and no shipped .rmp carries one; on an Xcom-base defence mission the rank-2
+  with `unk435 == 0` accepts bFlag20 == 2 ONLY (0x5550C), and the shipped finished-base nodes carry exactly 2 -- so a
+  reinforcement there is placed or parked by the same rule that Part 66 proved for the squad deploy. This is a latent
+  fault of the original; the port guards all four consumer sites (the scan and loops skip the cell-less unit, the AI
+  tick parks it as done and the turn still closes) and every guard carries the deviation comment. (3) THE DIRECT-HIT
+  DAMAGE ARITHMETIC. `Combat_DirectUnitDamage @ 0x2f44c` resolves the slot-4 hit as
+  `(uFirePower - (1 - ready/100)*bUnk248) - rand(power/2)` with armour-point absorption after -- so a stand-in
+  weapon record with `uFirePower == 0` resolves a certain direct hit as ZERO damage. The test fixture now carries
+  `uFirePower = 120` and the burst takes HP off a real alien ("1 field alien(s) lost HP"). (4) CORPSE ITEMS GROW
+  THE POOL. `Tact_KillUnit @ 0x4E430` builds each quadrant's corpse item with `operator new(0x18)` +
+  `TactItem_ctor @ 0x3e718` and stores it at `Map.apTactItems @ 0x136DF0[Map_nTactItemCount @ 0x128AF4]` (0x4EAD8),
+  while `Save_AllocFlobjs @ 0x431AC` allocated only what the mission DAT declares (22 here) -- the kill writes past
+  the allocated slots. The port allocates the missing slot with `malloc` (the original stores NULL on a failed `new`
+  and dereferences it on the next line). (5) THE FULL ROUND. Hover pen 32/184 puts the cursor on walk candidate
+  20/12/0; the click queues 6 step entries and `Tact_ProcessMoveAction`'s step arm at 0x4f68c walks the soldier
+  14/11 -> 20/12 (uTu 55 -> 30); the aim press arms case 3 (0x152E4), `Ui_ConfirmFireBurst @ 0x18774` queues command
+  14, the fire processor drains it, and enemy turn 2 moves 2 aliens with reinforcements standing on the field.
+  `World_SaveSlot` writes the live mission to slot 64 and `World_LoadSlot(64)` resumes with 8 xcom and 4 field
+  enemies, the selected member back on 20/12/0 with hp 47 -- the cell and the HP the fight left her with. Eight new
+  frames -- `tact_play_start`, `tact_play_deployed`, `tact_play_moved`, `tact_play_aim`, `tact_play_shot_mid`,
+  `tact_play_shot`, `tact_play_enemyturn`, `tact_play_resumed` -- all looked at: the map, the units with their
+  arrows, the turn-counter panel mid-burst, the Hidden Movement overlay during the enemy turn, and the resumed
+  mission all read clean. (6) THE RELEASE-ONLY CRASH. `ctest -C Release` failed with 0xc0000374 in `RtlFreeHeap`
+  while Debug passed. The fault site was named with a link map (`lld-link /MAP`): `DatFile_Open` frees the struct's
+  previous write buffer at pufo_dat.c:173 before re-arming it, and the test's section-18 block opened a `DatFile`
+  it had declared but never constructed -- `free()` of an uninitialised stack pointer. A `DatFile_ctor(&dat)` closed
+  it; Debug and Release are 62/62. IDB: `word_A9488` renamed `g_aUnitLoftRowBase` and typed `unsigned __int16[368]`
+  with the full row-window comment, notes at 0x328DC / 0x32B94 / 0x32BE0 (the index forms) and 0x3273C (the exclusion
+  pair), the reinforcement contract at 0x4BA3C, the latent-fault notes at 0x49260, 0x4C8D4 and 0x4CBE0, the
+  corpse-item semantics at 0x4EAD8, `idb_save`.
+
+- [x] **`Tact_RefreshTeamVisibility` stamps the action queue one entry earlier than the original.** Found while
   typing the function in Part 97. The ARM ends the queued list with `LDR R3,[R0,#0x10]` / `MUL R2,R3,#0x38` /
   `STRB R2(=12),[R0,#0x50]` at 0x4F380..0x4F388, and byte 0x50 is the `aQueue` base 0x18 plus one 56-byte entry, so
   the mark lands on `aQueue[nQueueCursor + 1].nCmd`; `nQueueLen` becomes `LOWORD(nQueueCursor) + 2`
   (0x4F394 `LDRH [R0,#0x10]` + 2, stored through 0x11000|0x1D4 = 0x111D4). The port's `Tact_RefreshTeamVisibility`
-  writes `pQueue->aQueue[pQueue->nQueueCursor].nCmd = TACTCMD_END_MARK` -- one entry early -- and its header comment
-  states the decompilation as `aQueue[nQueueCursor]`. The neighbouring writer `TactState_EnqueueEndMark @ 0x4F300`
-  stamps `aQueue[nQueueLen].nCmd`, so the two writers disagree about where the terminator sits. Fix the port and its
-  two comments together, and re-check `test_tactstate`/`test_tactend`, which read the queue back.
+  wrote `pQueue->aQueue[pQueue->nQueueCursor].nCmd = TACTCMD_END_MARK` -- one entry early. Closed in Part 98:
+  the stamp sits on `aQueue[nQueueCursor + 1]`, the `pufo_turn.c` comment carries the ARM addressing and the
+  `pufo_turn.h` comment was rewritten to match; `test_tactstate` and `test_tactend` pass in both configurations.
+
+- [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
+  The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has
+  accepted any node, and the pick's failure is ignored; the original's consumers at 0x49260, 0x4C8D4 and 0x4CBE0
+  dereference `pCell` with no test. Shipped data makes this routine for rank-8 aliens (no bFlag20 == 4 node exists)
+  and for Xcom-base reinforcements. The port guards the four consumer sites instead of reproducing the fault; if a
+  later part wants the original's behaviour exactly, the guard deviation has to be re-argued per site.
+
+- [ ] **`DatFile_Open` frees the struct's old write buffer -- so every caller must `DatFile_ctor` first.**
+  pufo_dat.c:173 (the port of the original's open) does `free(pDat->pWriteBuf)` before re-allocating; a `DatFile`
+  that was declared but not constructed hands `free()` an uninitialised pointer -- a Release-only 0xc0000374. All
+  in-repo call sites now construct first; the rule belongs in the header comment.
 
 - [ ] **Three options-screen seams stay open.** The seven slot handlers (`SaveGame_Slot0..6_CloseUI`
   0x6af80..0x6b148, `LoadGame_Slot0..6_InitOptions` 0x6b194..0x6b404) are ported and gated but reach SaveGame /

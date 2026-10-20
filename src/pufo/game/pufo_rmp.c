@@ -374,7 +374,14 @@ void TactBuf11408_ctor(RmpData *pBuf)
     if (pBuf == NULL) {
         return;
     }
-    /* 0x54ff8 writes *((_WORD *)pBuf + 3000) and *((_DWORD *)pBuf + 2251). */
-    *(u16 *)((u8 *)pBuf + 6000) = 0;
-    *(u32 *)((u8 *)pBuf + 9004) = 0;
+    /* 0x54ff8 writes *((_WORD *)pBuf + 3000) and *((_DWORD *)pBuf + 2251): on the ARM build those byte
+     * offsets ARE nNodeCount and nModCount (1500 4-byte pointers = 6000, 6004). A previous version of the
+     * port reproduced the offsets literally, which on Win64 clears nothing -- apNodes is 1500 8-byte
+     * pointers = 12000 bytes, so the two counters sit at 12000 and 12004 -- and instead zeroes the low half
+     * of the node pointers at slots 750 and 1125: torn, non-NULL, unusable. The visible consequence is the
+     * counters never reset between missions, nModCount sticks at the cap, and every module Save_ReadRmp
+     * tries to re-load on a save resume is rejected, so a resumed mission has no spawn nodes at all. The
+     * two fields are the port's own, so they are written by name. */
+    pBuf->nNodeCount = 0;
+    pBuf->nModCount  = 0;
 }

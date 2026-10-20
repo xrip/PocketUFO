@@ -69,12 +69,19 @@ void Map_BuildMoveActionCtx(GameMap *pMap, const LosTables *pTables,
     pOut->pnCivilianCount = &pMap->nCivilianCount;
 
     pOut->pAim            = &pMap->aim;
+    pOut->ppFireWeaponSlot = &pMap->pFireArg6;   /* 0x14050, published by the shot setup */
     /* The aim block and the ten arc samples are one region of the Map context, and
      * the trace writes the running sample into the Map's arrays (0x2FE6C). Pointing
-     * the AimState at them is what lets it do that. */
+     * the AimState at them is what lets it do that. The last two pairs are the same
+     * idea for the two shot-plumbing bytes inside the same block: the arc clears and
+     * sets Map.bFireHitResult (0x2FC54, 0x3010C) and the voxel test that ends the walk
+     * stores its reason in Map.nFireArg5 (0x32C68), and the fire processor reads both
+     * back at the resolve. */
     pMap->aim.padMtX      = pMap->adMtX;
     pMap->aim.padMtY      = pMap->adMtY;
     pMap->aim.padMtZ      = pMap->adMtZ;
+    pMap->aim.pbFireHitResult = &pMap->bFireHitResult;  /* 0x1406C */
+    pMap->aim.pnFireArg5      = &pMap->nFireArg5;       /* 0x1404C */
     pOut->pTables         = pTables;
     pOut->pScatter        = &pMap->scatter;
     pOut->pAdMtX          = pMap->adMtX;

@@ -20734,3 +20734,80 @@ the `ADDMI R3,R3,#1` there is the negative-dividend fix for the `ASR` that follo
 row adjustment, which is the remainder test at 0x1B128/0x1B12C. One port defect came out of the
 same read and is recorded under Separate issues: the port stamps `aQueue[nQueueCursor]` where
 the ARM stamps `aQueue[nQueueCursor + 1]`.
+
+## Part 98 - tactical play on a live mission: the silhouette row-base table, reinforcement arrivals, direct-hit damage, and a save/load inside the mission
+
+Section 18 of `test_geoscapeframe` now fights a full round on a finished-base build: 36 tactical
+tiles carrying placement codes 0..7, so `Map_BuildMissionTerrain` loads both .rmp node kinds -- the Part 66 mission's
+one finished facility had only byte-20 == 1 soldier nodes, and a rank-2 alien needs byte 20 == 2 (0x55524, 0x5550C).
+The round is: reinforcements arrive on the first enemy turn (2 aliens on the field, 10 still in reserve), a hover pen
+at 32/184 puts the cursor on walk candidate 20/12/0, the click queues 6 step entries and the step arm of
+`Tact_ProcessMoveAction` at 0x4f68c walks the soldier 14/11 -> 20/12 with uTu 55 -> 30, the aim press arms case 3
+(0x152E4), `Ui_ConfirmFireBurst @ 0x18774` queues command 14, the fire processor drains the queue, and enemy turn 2
+moves 2 aliens. `World_SaveSlot` then writes the live mission to slot 64 and `World_LoadSlot(64)` resumes it: 8 xcom,
+4 enemies on the field, the selected member standing back on 20/12/0 with hp 47 -- the cell and the HP the fight left
+her with.
+
+The traced arc was wrong before this part and the reason is a table the port had cut short.
+`Map_TraceVoxelOccupancy @ 0x3242C` picks the sprite row base out of `word_A9488 @ 0xa9488`, and that block is 736
+bytes: 23 rows of 16 u16 words for unit types 0..22, ending exactly at `g_aUnitMuzzleOffset @ 0xa9768`. The port had
+16 rows, so every unit with type >= 1 read its row base out of the muzzle-offset data and the occupancy test walked
+the arc THROUGH the alien it was fired at. The row windows restored from the table: types 0..3 {0,8,1,9,...,7,15};
+4..8 {80,80,84,84,...,108,108} (the tanks); 9 {16,16,...,23,23}; 10 pairs 0..7; 11 pairs 24..31 (floater 11 -> 24);
+12 pairs 32..39; 13 pairs 24..31; 14 pairs 0..7; 15 pairs 40..47; 16,17 pairs 0..7; 18 alone at 80 (cyberdisk);
+19 pairs 40..47 (silacoid 19 -> 40); 20,21 {48,48,52,...,76,76} (sectopod 21 -> 48); 22 pairs 0..7 (chryssalid).
+Type 23 has no row: the original's `16*23` index lands in `g_aUnitMuzzleOffset`, whose deltas are the data it
+wants there. The index forms are pinned from the ARM: the small-unit arm at 0x328DC reads
+`16*type + 2*bFacing(Soldier+0x05) + (bFlags(Soldier+0x04)&1)`, the large-unit arm at 0x32B94 reads `16*type +
+2*facing` then `+ nSub` with nSub 0..3 from the 0x327F4 neighbour probes, and the third arm at 0x32BE0 reads
+`2*index` (the unreachable "unit above" tail). The occupant prologue at 0x3273C skips only `Map.pSelUnit`
+(Map+0x15334) and `Map.pThrowTarget` (Map+0x150F0), and the small/large choice is `byte_A7B80[type].bLarge`.
+With the table right the arc stops ON the occupant: reason 4, stored as `Map.nFireArg5` at 0x32C68, in the target's
+own cell. A second test-side consequence: the walk-candidate probe had to clear the target cell's own stamp while
+tracing, because the corrected silhouette blocks a line that ends on the occupant -- "clear up to the alien, not
+clear through it".
+
+The reinforcement contract of `BeforeEnemyStep @ 0x4B9B8` is now read end to end. The arm at
+0x4BA3C..0x4BB48 pulls `rand(4)+2` aliens (clamped to `Map_nEnemyReserveCount @ 0x128AFC) out of
+`apHiddenSoldiers @ 0x138DF0` with swap-remove, stores `Map_apEnemyUnits[nEnemyUnitCount] = unit` and increments the
+count, and only then calls `Map_PickRmpSpawnForUnit @ 0x55418` -- whose failure is IGNORED. An alien every node
+rejected has joined the roster with no cell, and three consumers dereference `pCell` with no test: the enemy scan in
+`Unit_UpdateVisibility` at 0x49260 (`LDR R0,[R9,#0x10]`), the AfterEnemyStep visibility loop at 0x4C8D4, and the tick
+dispatch `Tact_EnemyAiTick @ 0x4CBE0`. Shipped data makes the rejection routine rather than exotic: a rank-8 alien
+normalises its movement class 8 -> 4 at 0x5547C and needs a node with bFlag20 == 4, which no shipped .rmp carries;
+on an Xcom-base defence mission the rank-2 with `unk435 == 0` accepts bFlag20 == 2 only (0x5550C), exactly the gate
+that keeps the deployed squad off the finished-base nodes. This is a latent fault of the original -- a NULL deref
+two calls after a legal reinforcement -- and the port takes the documented deviation: every consumer skips a roster
+unit with no cell, and the AI tick parks it as done so the turn still closes.
+
+Two arithmetic semantics came out of the burst. `Combat_DirectUnitDamage @ 0x2f44c` resolves the
+slot-4 direct hit as `(uFirePower - (1 - ready/100)*bUnk248) - rand(power/2)` with armour-point absorption after it,
+so a stand-in weapon record with `uFirePower == 0` resolves a certain hit as ZERO damage -- that is why the test's
+`ObjectRecFull` fixture carries `uFirePower = 120`, and with it the gate sees "1 field alien(s) lost HP" with the
+shooter whole at hp 47 and the queue back to 0. And `Tact_KillUnit @ 0x4E430` builds each quadrant's corpse item with
+`operator new(0x18)` plus `TactItem_ctor @ 0x3e718` and stores it at `Map.apTactItems @ 0x136DF0` index
+`Map_nTactItemCount @ 0x128AF4` (0x4EAD8): kills GROW the item pool past the flobjs count `Save_AllocFlobjs
+@ 0x431AC` allocated from the mission DAT (22 in this mission), so a kill writes past the allocated slots. The port
+fills an empty pool slot with `malloc` -- the original stores NULL on a failed `new` and dereferences it on the next
+line, which the port also records as the deviation.
+
+Eight new pictures carry the round: `tact_play_start`, `tact_play_deployed`, `tact_play_moved`,
+`tact_play_aim`, `tact_play_shot_mid`, `tact_play_shot`, `tact_play_enemyturn`, `tact_play_resumed`, all looked at
+at native scale. The base map reads clean in every frame; the moved and aim frames show the squad with its selection
+arrow; the mid-burst frame carries the turn-counter panel; the enemy-turn frame is the Hidden Movement overlay with
+the alien close-up; the resumed frame shows the rebuilt mission with its occupants. The `frames` gate lists the eight
+as new references and `e2e` stayed at 9 pictures, 0 bad.
+
+A Release-only crash was closed on the test side. `ctest -C Release` failed 0xc0000374 inside
+`RtlFreeHeap` right after "sav64.sav stands on disk" while Debug passed 62/62. With a link map (`lld-link /MAP`)
+the fault site named itself: `DatFile_Open`, which frees the struct's previous write buffer (pufo_dat.c:173) before
+re-arming it, met a `DatFile` the test block had declared but never constructed -- `free()` of an uninitialised
+stack pointer (the printout showed `cap -1940004324`). One `DatFile_ctor(&dat)` closed it; Debug and Release are
+now 62/62 and all six gates ran green.
+
+IDB: `word_A9488` renamed `g_aUnitLoftRowBase` and typed `unsigned __int16[368]` with the full
+row-window comment; notes at 0x328DC, 0x32B94 and 0x32BE0 (the three index forms) and 0x3273C (the exclusion pair
+and the `byte_A7B80[type].bLarge` choice); the reinforcement contract with the ignored-pick consequence at 0x4BA3C;
+latent-fault notes at 0x49260, 0x4C8D4 and 0x4CBE0; the corpse-item `new(0x18)`/pool-growth semantics at 0x4EAD8;
+`idb_save`.
+

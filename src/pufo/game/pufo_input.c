@@ -1706,7 +1706,7 @@ static void ClickArmSelectOrMove(const MapClickCtx *pCtx, MapCell *pCell)
     /* 0x15550: the move only happens when the walk landed on a different cell from the
      * unit's own, and it is always the bFlag = 1 form. */
     if (pDest != pState->pSelUnit->pCell && pCtx->pfnPathToCell != NULL) {
-        (void)pCtx->pfnPathToCell(pDest->nX, pDest->nY, pDest->nZ, true, pCtx->pUser);
+        pCtx->pfnPathToCell(pDest->nX, pDest->nY, pDest->nZ, true, pCtx->pUser);
     }
 }
 

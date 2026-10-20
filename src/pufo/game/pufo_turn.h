@@ -157,13 +157,15 @@ void Tact_EndEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks, Soldier *pFirs
 
 /* Tact_RefreshTeamVisibility @ 0x4f368.
  *
- * Marks the queue entry at the current cursor as command 12 (the same END_MARK
+ * Marks the queue entry AFTER the current cursor as command 12 (the same END_MARK
  * TactState_EnqueueEndMark emits), sets a queue length of nQueueCursor + 2, raises
  * bFlag1, and refreshes visibility for every XCom unit.
  *
- * The first three writes address the queue by raw offset in the original, so they
- * are expressed here through the queue's own fields:
- *     aQueue[nQueueCursor].nCmd = TACTCMD_END_MARK;
+ * The first three writes address the queue by raw offset in the original: 0x4F380
+ * LDR R3,[R0,#0x10] / 0x4F384 MUL R2,R3,#0x38 / 0x4F388 STRB #12,[R0,#0x50], and
+ * 0x50 is the aQueue base 0x18 plus one whole 56-byte entry, so the mark lands on
+ * aQueue[nQueueCursor + 1]. Expressed through the queue's own fields:
+ *     aQueue[nQueueCursor + 1].nCmd = TACTCMD_END_MARK;
  *     nQueueLen = nQueueCursor + 2;
  *     bFlag1 = 1;
  *

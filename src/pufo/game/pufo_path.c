@@ -136,9 +136,19 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
         i32  nNz = nCellLayer;
         bool bReanchored = false;
 
-        if (!pfnProbe(nCellX, nCellY, nCellLayer, nDir,
-                      &nNx, &nNy, &nNz, &bReanchored, pUser)) {
-            continue;
+        if (pfnProbe != NULL) {
+            if (!pfnProbe(nCellX, nCellY, nCellLayer, nDir,
+                          &nNx, &nNy, &nNz, &bReanchored, pUser)) {
+                continue;
+            }
+        } else {
+            /* Deviation: with no probe seam the step falls through the plain delta table
+             * (0xa7ae0) and never re-anchors. This is the permissive case the shell's
+             * deviation note at the sTactPath wiring promises -- Unit_CanStepTo @ 0x27bb8
+             * is unported, so door/step refusals are not applied on a walked path. */
+            nNx += (i32)g_aStepDir[nDir].dx;
+            nNy += (i32)g_aStepDir[nDir].dy;
+            nNz += (i32)g_aStepDir[nDir].dz;
         }
         {
             MapCell *pNext = pfnLookup(nNx, nNy, nNz, pUser);

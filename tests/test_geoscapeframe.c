@@ -38,6 +38,7 @@
 #include "game/pufo_terrain.h" /* PUFO_TERRAIN_CELLS_PER_LAYER, the shell's cell-table stride */
 #include "game/pufo_tactctl.h"  /* g_aDeployCellOffsets / g_abDeployPointCounts, the deploy points (Part 66) */
 #include "game/pufo_isodraw.h"  /* MapView_bResolveIsoCell, for the temporary iso probe */
+#include "game/pufo_los.h"       /* Map_TraceLos, for the LOS probe */
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"
 
@@ -570,6 +571,59 @@ static MapCell *FrameCellLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
     (void)pUser;
 
     return FrameCellAt(nX, nY, nLayer);
+}
+
+/* A cell a shot can be fired from: an empty floor cell the mission's own search reaches
+ * (Path_ComputeReachable @ 0x2b820, the call Unit_PathToCell @ 0x2c334 makes) and from which the
+ * game's own line test (Map_TraceLos @ 0x30890) reaches a live alien. The original's voxel test
+ * skips Map.pSelUnit on every call (the test at 0x324A4), so the shooter's own body never blocks
+ * its own line; Map_TraceLos carries the exclusion pair as NULL, NULL, so the probe lifts the
+ * shooter off its own cell for the walk and puts it straight back. */
+static bool FrameShotSpot(MapCell *pFrom, const Soldier *pSel, i32 nX, i32 nY, i32 nZ, i32 *pnFoe)
+{
+    const GameMap *pMap = g_world.pTactMap;
+    MapCell *pC = FrameCellAt(nX, nY, nZ);
+    Soldier *pSelf;
+    bool bOk = false;
+
+    *pnFoe = -1;
+
+    if (pC == NULL || pC->pFloorSpr == NULL || pC->pUnit != NULL) {
+        return false;
+    }
+    if (!Path_ComputeReachable(&g_world.sTactPathScratch, pFrom->nX, pFrom->nY, pFrom->nZ,
+                               pSel->bFacing, nX, nY, nZ,
+                               pSel->nUnitType < PUFO_UNIT_TYPE_COUNT
+                                   && g_aUnitTypeFlag0[pSel->nUnitType] != 0,
+                               FrameCellLookup, NULL, NULL)) {
+        return false;
+    }
+    pSelf = pFrom->pUnit;
+    pFrom->pUnit = NULL;
+    for (i32 k = 0; pMap != NULL && k < (i32)pMap->nEnemyCount && !bOk; ++k) {
+        const Soldier *pE = pMap->apEnemyUnits[k];
+        Soldier *pFoeSave;
+
+        if (pE == NULL || pE->pCell == NULL || pE->uHp == 0) {
+            continue;
+        }
+        /* The trace ends inside the alien's own cell, and the alien is now a real occupant
+         * there (the corrected unitloft row base). The shot the spot stands for stops ON that
+         * occupant (nFireArg5 4, the direct-hit slot), so the probe lifts the target's stamp
+         * for its own walk and puts it back -- "clear up to the alien", not "clear through it". */
+        pFoeSave = pE->pCell->pUnit;
+        pE->pCell->pUnit = NULL;
+        bOk = Map_TraceLos(&g_world.sTactLoft, FrameCellLookup, NULL,
+                           16 * nX + 8, 16 * nY + 8, 12 * nZ + 6,
+                           16 * (i32)pE->pCell->nX + 8, 16 * (i32)pE->pCell->nY + 8,
+                           12 * (i32)pE->pCell->nZ + 6, NULL, NULL);
+        pE->pCell->pUnit = pFoeSave;
+        if (bOk) {
+            *pnFoe = k;
+        }
+    }
+    pFrom->pUnit = pSelf;
+    return bOk;
 }
 
 /* How many of the 14400 slots own a unit -- the census the iso layer's occupant tests read. */
@@ -5633,7 +5687,8 @@ int main(void)
             ClearSurface();
             World_TactFrame(&g_world);
         }
-        (void)remove("sav62.sav");
+        /* sav62.sav stays on disk: section 18 resumes the live mission from it and
+         * removes the file there. */
 
         /* --- screens 0x14/0x15: the Cydonia briefing pair at 0x223DC (Part 85) ------------------
          * The last two arms of 0x2237C's replace family, and the handler is three instructions:
@@ -5900,9 +5955,18 @@ int main(void)
             Check(g_world.sTactInput.bDeployPanelOpen == 1, "and toggles the deploy-panel byte");
 
             /* Action on screen 0 runs the map-click seam for real (the BL at 0x15668); its selection and
-             * move rules are gated in test_input against 0x1512c's own body. */
+             * move rules are gated in test_input against 0x1512c's own body. Park the cursor on the
+             * selected unit's own cell first: Tact_HandleMapClick's "clicked the cell you stand on"
+             * return (0x151A0) keeps this dispatch test side-effect-free -- with the input mirror now
+             * carrying the dims and the option gate bytes, a click on a DIFFERENT cell really enqueues
+             * a walk, and a live queue would change every expectation below. */
             nClicks = g_seams.nMapClicks;
             g_bBankActionFlag = false;
+            if (pMapL->pSelUnit != NULL && pMapL->pSelUnit->pCell != NULL) {
+                g_world.tactEnv.cursor.nX     = pMapL->pSelUnit->pCell->nX;
+                g_world.tactEnv.cursor.nY     = pMapL->pSelUnit->pCell->nY;
+                g_world.tactEnv.cursor.nFlags = (u8)pMapL->pSelUnit->pCell->nZ + 1u;
+            }
             World_TactKeyDown(&g_world, PUFO_KEY_ACTION);
             Check(g_seams.nMapClicks == nClicks + 1, "the action key reaches Tact_HandleMapClick");
             Check(g_bBankActionFlag, "and Input_OnAction set UiBank_bActionFlag (the STRB at 0x155B4)");
@@ -7908,6 +7972,13 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         i8   bBaseSave = g_world.nBaseCount;
         i32  nTypeSave = g_world.nMapMissionType;
         u16  nScreenSave = g_world.nUiScreen;
+        /* The arm writes three cells this fixture does not want carried forward: LABEL_20 sets
+         * Map_bTickHold (Map+0x5A) at 0x35114, 0x35190 sets Map_bBattleEnded, and 0x35110 stores the
+         * outcome. Map_bTickHold is GameTick_OnTimer's gate 1 (0x274FC) -- left standing, it keeps every
+         * later tick out of the tactical branch, which is what stalled the mission section 18 builds. */
+        bool bTickSave = g_world.bMapTickHold != 0;
+        bool bEndSave  = g_world.bMapBattleEnded != 0;
+        i32  nOutSave  = g_world.nMapMissionOutcome;
         bool bLive;
 
         printf("section 17: the failed base defence ends the run, and the ending arm empties the strateg list\n");
@@ -7953,6 +8024,829 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         g_world.nBaseCount      = bBaseSave;
         g_world.nMapMissionType = nTypeSave;
         g_world.nUiScreen       = nScreenSave;
+        g_world.bMapTickHold    = bTickSave ? 1 : 0;
+        g_world.bMapBattleEnded = bEndSave ? 1 : 0;
+        g_world.nMapMissionOutcome = nOutSave;
+    }
+
+    /* ---- section 18: the resumed mission plays (Part 98) ----------------------------------
+     *
+     * The mission Part 62 saved comes back at the very end of the run and plays through the
+     * seams the game itself uses, with a picture at every stage:
+     *
+     *   build         World_InitTactical(0) builds the mission the way the launch tail does (0x83AC4), on
+     *                 a tile grid the fixture finished, so the terrain build loads both shipped node kinds
+     *                 and the deploy and the reinforcement picker have somewhere to put anybody; the
+     *                 visibility pass Part 97 established makes the squad drawable.
+     *   pad 5         MenuBtn_EndTurn @ 0x16494 -> Tact_BeginEnemyTurn @ 0x4ca18: BeforeEnemyStep
+     *                 @ 0x4ba3c pulls real aliens from the reserve onto the field (the pull the
+     *                 widget-5 test emptied on purpose), the phase-3 ticks run Tact_EnemyAiTick,
+     *                 Tact_EndEnemyTurn @ 0x4cb74 closes the bracket.
+     *   pen x2        PointerScreen0's camera arm @ 0x143D0 moves the cursor under the pen and
+     *                 0x144CC commits a press that did not move it: Input_OnAction ->
+     *                 Tact_HandleMapClick @ 0x1512c, whose latch-0 arm reaches Unit_PathToCell
+     *                 @ 0x2c2a8 -- turn, steps, end mark enqueued by the original's own code.
+     *   pad 39        Tact_BeginMultiTarget @ 0x18380 arms the targeting latch; the same double
+     *                 press on an enemy cell lands in case 3 (0x152E4: cell +0x40 flag, target
+     *                 list, look control enabled), and the look control's installed handler is
+     *                 TactAction_ConfirmFireBurst @ 0x18774 -> TactState_EnqueueFireBurst
+     *                 @ 0x4b080: command 14 enters the queue and the fire processor
+     *                 Tact_ProcessMoveAction's cmd-0xE arm @ 0x4FE34..0x509D8 resolves the shot
+     *                 through Unit_ApplyCellDamage @ 0x2e5d0 -- real HP comes off a real alien.
+     *   pad 5 again   the aliens get their own turn: some enemy cell changes or a squad member's
+     *                 HP/status changes (Tact_EnemyAiTick @ 0x4cbe0 through EnemyAi_TryFireOrWander
+     *                 @ 0x4abc8, Unit_PathToCell again or the burst at 0x4d910).
+     *   save 64       World_SaveSlot writes the mission block (mcnt @ 0x44988's tact arm,
+     *                 Save_WriteTGameData @ 0x446a8, the map, the roster, the aliens, the hidden
+     *                 park); load 64 brings the same HP and cells back.
+     *
+     * It is the LAST section on purpose: every Game_RandU16 draw it spends belongs to it alone,
+     * so no earlier pin -- the squad stream, the contact cards, the descent rolls -- shifts. */
+    {
+#define CLICK(i) do { if (g_bank.aCtl[i].pfnClick != NULL) { g_bank.aCtl[i].pfnClick(); } } while (0)
+        /* One clock of the real pump: PocketUFO_WndProc @ 0xA08C0 runs the 0xC350 handler AND a frame,
+         * and the frame is not a cosmetic half -- TactHud_TickCursorDir @ 0x1e888 (0x1e8a8) is the only
+         * mover of apUiSlotsA[10], and GameTick_OnTimer's gate 3 (0x2753C) refuses the tactical arm
+         * while that field holds anything but 10 or 0. A drain of ticks alone therefore stops dead the
+         * moment the fade-out animation (TactHud_ComputeCursorDirState @ 0x1a7c8, 0x1a828/0x1a82c) has
+         * the field mid-count. Every drain below pumps both. */
+#define PUMP() do { (void)World_GameTickOnce(&g_world); World_TactFrame(&g_world); } while (0)
+        GameMap         *pMap;
+        TactState       *pQ;
+        TactPointerWorld ptr;
+        WorldHooks       saveHooks;
+        DatFile          dat;
+        Soldier         *pSel;
+        MapCell         *pTarget;
+        i32              i, k, t;
+        i32              nReserve0, nEnemy0, nXcom0;
+        i32              nPenX = -1, nPenY = -1;
+        u16              uTuSel0;
+        u16              aEHp0[PUFO_MAP_ROSTER_MAX];
+        u16              aEXHp0[PUFO_MAP_ROSTER_MAX];
+        i32              aEX0[PUFO_MAP_ROSTER_MAX], aEY0[PUFO_MAP_ROSTER_MAX];
+        u16              uHpSel0, uHpSel1, uStSel1;
+        i32              nHpDropped = 0, nEnemyMoved = 0, nShotQueued = 0;
+        i32              nEnemyShot0 = 0, nEnemyAct0 = 0;
+
+        printf("section 18: a mission built on a finished base -- reinforcements, a walk, a shot, an enemy turn, a save and a load\n");
+        /* The map is the game's own build on a base the fixture finished. The 36 tactical tile bytes at
+         * aMissionTileTypes @ 0x159D5C are what Smap_InitCraftSelectState fills at 0x84124, and they name the
+         * .ma1/.rmp pair Map_BuildMissionTerrain puts on each tile (0x23eec: "<xbase_>" + the tile byte,
+         * 0x240f4: the .rmp load, skipped only for a 0x14 tile). Part 66's mission had ONE finished facility,
+         * so its map was bare ground plus xbase_1: eight nodes, every one record byte 20 == 1 -- the soldier
+         * nodes. A rank-2 alien is gated on byte 20 == 2 by the movement-class test at 0x55524, and xbase_0 is
+         * that record set, so the fixture finishes the whole base: 36 tiles carrying placement codes 0..7, both
+         * node kinds, floors that are not the transparent placeholder, and a squad the deploy can place. */
+        for (i = 0; i < 36; ++i) {
+            g_world.abMapTileTypes[i] = (u8)(i % 8);
+        }
+        g_world.nMapMissionType = PUFO_MISSION_TYPE_XCOM_BASE;
+        g_world.nMapMapLayers   = 0;   /* the Xcom arm 0x84118 writes 0, which selects the fixed 6x6 base build */
+        /* The launch tail ends with GeoscapeUi_FreeAll(0) at 0x83ABC before Tact_InitMission(0) at
+         * 0x83AC4, and that call's write at 0x86D34 is what CLEARS Map_bGeoscapeUi (Map+0x44) -- the
+         * byte GameTick_OnTimer's gate 2 (0x27508) tests before it takes the tactical branch. This
+         * section brings the mission up through the World_InitTactical seam rather than the Smap tail,
+         * so the byte the FreeAll would have written is stated here; without it every tick stays on
+         * the geoscape arm and the mission's queue never advances. */
+        g_world.bGeoscapeUi     = 0;
+        Check(World_InitTactical(&g_world, 0) != 0,
+              "Tact_InitMission mode 0 builds the mission on the finished base (0x3c550 -> 0x22e10)");
+        pMap = g_world.pTactMap;
+        pQ   = g_world.pTactState;
+        printf("  build wiring: tact live %d, frame hooks %d, tact input hooks %d, bank 5 %d, bank 39 %d, look click %d\n",
+               World_bTactPointerLive(&g_world), g_world.pFrameHooks != NULL,
+               (g_world.pFrameHooks != NULL && g_world.pFrameHooks->pTactInputHooks != NULL),
+               g_bank.aCtl[5].pfnClick != NULL, g_bank.aCtl[39].pfnClick != NULL,
+               g_world.sTactLookCtl.pfnClick != NULL);
+        printf("  built map: dims %d/%d, tile shift %d/%d, nXcom %d, field %d, reserve %d\n",
+               pMap != NULL ? pMap->geom.nDimX : -1, pMap != NULL ? pMap->geom.nDimY : -1,
+               g_world.sTactInput.nTileShiftX, g_world.sTactInput.nTileShiftY,
+               pMap != NULL ? (int)pMap->nXcomCount : -1,
+               pMap != NULL ? (int)pMap->nEnemyCount : -1, g_world.nMapEnemyReserveCount);
+        for (i = 0; i < (i32)pMap->nXcomCount; ++i) {
+            Soldier *pU = pMap->apXcomUnits[i];
+
+            if (pU != NULL) {
+                printf("    parked %d: cell %d/%d/%d, type %u, uTu %u, hp %u, flags %02X\n", i,
+                       pU->pCell != NULL ? pU->pCell->nX : -1,
+                       pU->pCell != NULL ? pU->pCell->nY : -1,
+                       pU->pCell != NULL ? (int)pU->pCell->nZ : -1, (unsigned)pU->nUnitType,
+                       (unsigned)pU->uTu, (unsigned)pU->uHp, (unsigned)pU->bFlags);
+            }
+        }
+        printf("  queue after the build: len %d, active %d, cursor %d\n", (int)pQ->nQueueLen,
+               (int)pQ->bQueueActive, (int)pQ->nQueueCursor);
+        printf("  options: scroll %d show %d run %d turn %d menu %d nodrag %d\n",
+               (int)g_options.bScrollByPen, (int)g_options.bShowBorder, (int)g_options.bRunByDblClick,
+               (int)g_options.bTurnByPen, (int)g_options.bMenuByPen, (int)g_options.bForceNoDrag);
+        /* The pen dispatch reads the shared option bytes (anPhaseSave0[93..97], 0x128A8D/8F/90/91 --
+         * Map_InitAndLoadRegistry @ 0x22648, the toggle pads 0x19250..0x1941c). The options-screen
+         * tests ran earlier in this file; restate the original's registry defaults here so the walk
+         * press commits (scrollbypen/runbydblclick "1", turnbypen/forcenodrag "0"). */
+        g_options.bScrollByPen   = 1;
+        g_options.bRunByDblClick = 1;
+        g_options.bTurnByPen     = 0;
+        g_options.bMenuByPen     = 1;
+        /* A new mission comes up on the loadout screen -- the ui screen 20 the state print shows. The
+         * player's confirm is Inv_CloseAndCommit @ 0x15a48 (Input_OnConfirm's screen-1 arm at 0x16104):
+         * the loadout snapshot, then Tact_DeployTeamAndHwps @ 0x39980, whose phase 3 (0x39E9C) walks the
+         * mission's deploy points and re-places every unit on the first cell with no occupant, then
+         * MapView_FocusSelected, Map_RefreshCellMeta, the per-unit visibility pass, and Map_nUiScreen = 0.
+         * Tact_SelectTeamUnits @ 0x39744 parked all eight on ONE anchor cell, and for a layer count of 0
+         * that anchor is the (0,0,0) the "parked" print above shows. */
+        World_InvCloseAndCommit(&g_world);
+        {
+            i32 nDeployed = 0;
+
+            for (i = 0; i < (i32)pMap->nXcomCount; ++i) {
+                Soldier *pU = pMap->apXcomUnits[i];
+
+                if (pU == NULL || pU->pCell == NULL) {
+                    continue;
+                }
+                printf("    deployed %d: cell %d/%d/%d\n", i, pU->pCell->nX, pU->pCell->nY,
+                       (int)pU->pCell->nZ);
+                if (pU->pCell->pUnit == pU) {
+                    ++nDeployed;
+                }
+            }
+            Check(nDeployed == (i32)pMap->nXcomCount,
+                  "the deploy put every squad member on a cell that owns it (0x39E9C re-place, Unit_PlaceOnMap @ 0x49A0C)");
+        }
+        printf("  queue after the deploy commit: len %d, active %d, cursor %d, entry 0 cmd %u at %d/%d/%d\n",
+               (int)pQ->nQueueLen, (int)pQ->bQueueActive, (int)pQ->nQueueCursor,
+               pQ->nQueueLen > 0 ? (unsigned)pQ->aQueue[0].nCmd : 0u,
+               pQ->nQueueLen > 0 ? (int)pQ->aQueue[0].nX : -1,
+               pQ->nQueueLen > 0 ? (int)pQ->aQueue[0].nY : -1,
+               pQ->nQueueLen > 0 ? (int)pQ->aQueue[0].nZ : -1);
+        printf("  state: tact live %d, tact flag %d, geoscape ui %d, ui screen %d, tick hold %d, "
+               "battle ended %d\n",
+               (int)g_world.bTactLive, (int)g_world.bTactFlag, (int)g_world.bGeoscapeUi,
+               (int)g_world.nUiScreen, (int)g_world.bMapTickHold, (int)g_world.bMapBattleEnded);
+        Check(pMap != NULL && pQ != NULL && g_world.bTactFlag != 0 && g_world.bGeoscapeUi == 0,
+              "the mission frame stands live and the pen is the mission's (GeoscapeUi_FreeAll cleared the mode byte at 0x86D34)");
+
+        /* The pass Part 97 established: one Unit_UpdateVisibility @ 0x48580 per squad member, so
+         * every member stands on a revealed cell and MapView_DrawUnit @ 0x1c958 admits them. */
+        for (i = 0; i < (i32)pMap->nXcomCount; ++i) {
+            if (pMap->apXcomUnits[i] != NULL) {
+                (void)Unit_UpdateVisibility(pMap->apXcomUnits[i], &g_world.tactEnv.vis);
+            }
+        }
+        ClearSurface();
+        World_TactFrame(&g_world);
+        DumpFrame("tact_play_start");
+
+        pSel = pMap->pSelUnit;
+        Check(pSel != NULL && pSel->pCell != NULL, "a squad member stands selected on the resume");
+        nXcom0   = (i32)pMap->nXcomCount;
+        nEnemy0  = (i32)pMap->nEnemyCount;
+        nReserve0 = g_world.nMapEnemyReserveCount;
+        printf("  resume: %d xcom, %d on the field, %d in the reserve, selected at %d/%d/%d, uTu %u, hp %u\n",
+               nXcom0, nEnemy0, nReserve0, pSel->pCell->nX, pSel->pCell->nY, pSel->pCell->nZ,
+               (unsigned)pSel->uTu, (unsigned)pSel->uHp);
+
+        /* 1) reinforcements through the game's own end-turn bracket. BeginEnemyTurn @ 0x4ca18 runs
+         * BeforeEnemyStep, then a full Tact_ProcessActionPhase pass at 0x4cb54 before it returns --
+         * the press drives the whole enemy turn, and EndEnemyTurn's tail hands the turn back:
+         * input re-enabled, the AI bookkeeping reset, uTu refilled by AfterEnemyStep (0x4c4a0). */
+        printf("  rmp spawn table: %d nodes, %d modules\n",
+               (int)g_world.sTactRmp.nNodeCount, (int)g_world.sTactRmp.nModCount);
+        for (i = 0; i < (i32)g_world.sTactRmp.nNodeCount && i < 12; ++i) {
+            const RmpNode *pN = g_world.sTactRmp.apNodes[i];
+
+            if (pN != NULL) {
+                printf("    node %d: %d/%d/%d flag19 %u flag20 %u\n", i,
+                       (int)pN->nX, (int)pN->nY, (int)pN->nZ, (unsigned)pN->bFlag19,
+                       (unsigned)pN->bFlag20);
+            }
+        }
+        for (i = 0; i < g_world.nMapEnemyReserveCount && i < 4; ++i) {
+            Soldier *pH = g_world.apTactHidden[i];
+
+            if (pH != NULL) {
+                printf("    hidden %d: type %u rank(+0xE2) %u unk435(+0x1B3) %u cell %d/%d/%d\n",
+                       i, (unsigned)pH->nUnitType, (unsigned)pH->bRankType, (unsigned)pH->bUnk435,
+                       pH->pCell != NULL ? pH->pCell->nX : -1,
+                       pH->pCell != NULL ? pH->pCell->nY : -1,
+                       pH->pCell != NULL ? (int)pH->pCell->nZ : -1);
+            }
+        }
+        fflush(stdout);
+        CLICK(5); /* widget 5 = MenuBtn_EndTurn @ 0x16494 */
+        printf("  after pad 5: busy %d, phase %d, enemy byte %d, field %d, reserve %d, player input %d\n",
+               (int)pMap->tact.bBusy, (int)pMap->tact.nPhase, (int)g_world.bMapEnemyTurnActive,
+               (int)pMap->nEnemyCount, g_world.nMapEnemyReserveCount, (int)g_world.bMapPlayerInput);
+        Check((i32)pMap->nEnemyCount > nEnemy0 && g_world.nMapEnemyReserveCount < nReserve0,
+              "BeforeEnemyStep @ 0x4ba3c pulled real aliens out of the reserve onto the field -- the "
+              "reinforcement path the widget-5 test emptied on purpose now runs for real");
+        /* BeginEnemyTurn's own tail runs a full Tact_ProcessActionPhase pass at 0x4cb54, and with the
+         * aliens standing on real cells that pass queues real work: the queued actions resolve on the
+         * clock, so the bracket reaches EndEnemyTurn @ 0x4cb74 only once GameTick_OnTimer (0x274f0) has
+         * driven the queue empty. Earlier, with nobody placed, the pass had nothing to run and closed
+         * inside the press. */
+        /* The drain runs the pump the way PocketUFO_WndProc @ 0xA08C0 does it: the clock handler AND a
+         * frame. That matters because of gate 3 (0x2753C): the tick only takes the tactical arm while
+         * apUiSlotsA[10] (dword_113A40) is 10 or 0, and the pen work above put it at 9 -- the fade-out
+         * value TactHud_ComputeCursorDirState @ 0x1a7c8 writes when it also arms the step byte
+         * unk_113A3C (0x1a828: -1, and 0x1a82c: 9). The ONLY mover of that field is
+         * TactHud_TickCursorDir @ 0x1e888, 0x1e8a8 -- "not 0 and not 10, so add the step" -- and that
+         * function runs from the frame (World_TactFrame -> World_TactFrameDraw @ 0x3518), not from the
+         * tick. A drain of ticks alone therefore cannot open gate 3: the queue would sit busy forever,
+         * which is exactly what the first run of this section showed. Counting 9 down to 0 takes nine
+         * frames; the pump has far more than that between two player presses. */
+        for (t = 0; t < 900 && (pMap->tact.bBusy != 0 || g_world.bMapEnemyTurnActive != 0); ++t) {
+            PUMP();
+        }
+        printf("  after %d ticks: busy %d, phase %d, enemy byte %d, player input %d, queue len %d\n",
+               t, (int)pMap->tact.bBusy, (int)pMap->tact.nPhase, (int)g_world.bMapEnemyTurnActive,
+               (int)g_world.bMapPlayerInput, (int)pQ->nQueueLen);
+        for (i = 0; i < (i32)pQ->nQueueLen && i < 6; ++i) {
+            const TactQueueEntry *pEnt = &pQ->aQueue[i];
+
+            printf("    entry %d: cmd %u unit %s cell %d/%d/%d mode %d tu %d argDword %d facing %d | "
+                   "unit type %u its cell %d/%d/%d uTu %u status %u\n",
+                   i, (unsigned)pEnt->nCmd, pEnt->pUnit != NULL ? "unit" : "none",
+                   (int)pEnt->nX, (int)pEnt->nY, (int)pEnt->nZ, (int)pEnt->nMode, (int)pEnt->nTuCost,
+                   (int)pEnt->nArgDword, (int)pEnt->nFacing,
+                   pEnt->pUnit != NULL ? (unsigned)pEnt->pUnit->nUnitType : 0u,
+                   (pEnt->pUnit != NULL && pEnt->pUnit->pCell != NULL) ? pEnt->pUnit->pCell->nX : -1,
+                   (pEnt->pUnit != NULL && pEnt->pUnit->pCell != NULL) ? pEnt->pUnit->pCell->nY : -1,
+                   (pEnt->pUnit != NULL && pEnt->pUnit->pCell != NULL) ? (int)pEnt->pUnit->pCell->nZ : -1,
+                   pEnt->pUnit != NULL ? (unsigned)pEnt->pUnit->uTu : 0u,
+                   pEnt->pUnit != NULL ? (unsigned)pEnt->pUnit->bStatus : 0u);
+        }
+        printf("    queue cursor %d, queue active %d, ai action %d, ai unit %s, track unit %s, "
+               "phase counter %d, flag0 %d flag1 %d | phase active %d, slot8 byte1 %d, ui slot10 %d, "
+               "frame scratch %d, tick hold %d, phase tick %d phase max %d\n",
+               (int)pQ->nQueueCursor, (int)pQ->bQueueActive, (int)pQ->bAiActionActive,
+               pQ->pAiActionUnit != NULL ? "set" : "none",
+               pMap->tact.pTrackUnit != NULL ? "set" : "none", (int)pQ->nPhaseCounter,
+               (int)pQ->bFlag0, (int)pQ->bFlag1, (int)pQ->bPhaseActive, (int)g_world.bMapSlot8Byte1,
+               (int)g_world.nMapUiSlot10, (int)g_world.bMapFrameScratch, (int)g_world.bMapTickHold,
+               (int)pQ->nPhaseTick, (int)pQ->nPhaseMax);
+        Check(pMap->tact.bBusy == 0 && g_world.bMapEnemyTurnActive == 0 && g_world.bMapPlayerInput != 0,
+              "the bracket closed through EndEnemyTurn @ 0x4cb74's tail: busy down, byte down, input back");
+        {
+            i32 nRefilled = 0;
+
+            /* AfterEnemyStep @ 0x4c4a0's Xcom arm (0x4C73C..0x4C82C): uTu = auStat[0], then the
+             * burden penalty q = (4*burden - 4)/auStat[8], d = (2*q*auStat[0])/10. The refill is
+             * each soldier's OWN stat block, not one shared number -- comparing every member to
+             * the selected soldier's 55 measured the wrong thing. */
+            for (i = 0; i < (i32)pMap->nXcomCount; ++i) {
+                Soldier *pU = pMap->apXcomUnits[i];
+                u16      want;
+
+                if (pU == NULL) {
+                    continue;
+                }
+                want = pU->auStat[0];
+                if (pU->auStat[8] != 0) {
+                    i32 q = (4 * (i32)pU->uInvBurden - 4) / (i32)pU->auStat[8];
+
+                    want = (u16)((i32)want - (2 * q * (i32)want) / 10);
+                }
+                if (pU->uTu == want) {
+                    ++nRefilled;
+                }
+            }
+            Check(nRefilled == (i32)pMap->nXcomCount,
+                  "AfterEnemyStep (0x4c4a0, 0x4C73C..0x4C82C) topped every soldier's own auStat[0] "
+                  "back up with the burden penalty taken off -- every member to its own stat block");
+        }
+        ClearSurface();
+        World_TactFrame(&g_world);
+        DumpFrame("tact_play_deployed");
+        printf("  first enemy turn: %d enemies stand on the field (was %d), %d left in the reserve\n",
+               (i32)pMap->nEnemyCount, nEnemy0, g_world.nMapEnemyReserveCount);
+        for (i = 0; i < (i32)pMap->nEnemyCount; ++i) {
+            Soldier *pE = pMap->apEnemyUnits[i];
+
+            if (pE == NULL) {
+                continue;
+            }
+            printf("    enemy %d: type %u rank %u unk435 %u cell %d/%d/%d, uTu %u, status %u, aiTick %d, aiDone %d, large %d\n",
+                   i, (unsigned)pE->nUnitType, (unsigned)pE->bRankType, (unsigned)pE->bUnk435,
+                   pE->pCell != NULL ? pE->pCell->nX : -1,
+                   pE->pCell != NULL ? pE->pCell->nY : -1,
+                   pE->pCell != NULL ? (int)pE->pCell->nZ : -1,
+                   (unsigned)pE->uTu, (unsigned)pE->bStatus, (int)pE->nAiTick, (int)pE->bAiDone,
+                   (int)Unit_bIsLarge(pE));
+        }
+
+        /* The shot further down has to come from a cell the traced arc can actually reach an alien
+         * from: the base is walled, and the traced arc stops at the first blocking voxel (0x30184 with
+         * Map_TraceVoxelOccupancy returning 0 for wall, ceiling and unit alike), so firing from inside
+         * the base at an alien outside it stops at the wall one cell out of the muzzle. The nearest
+         * cell that is both reachable by the mission's own search and open onto an alien is the walk
+         * target, which is exactly the move a player makes: walk to a firing position, then shoot. */
+        /* 2) a walk the map click enqueues. The target is taken the way the game's pen takes a cell: the
+         * camera arm (PointerScreen0's 0x143D0 through MapView_SetCamOffset and MapCursor_SetPos @ 0x26f78)
+         * resolves each pen pixel onto a cell, and that cell must also pass the mission's own search --
+         * Path_ComputeReachable @ 0x2b820 is exactly the call Unit_PathToCell makes at 0x2c334, seeded with
+         * the unit's cell, its facing and its type flag (0x2c33c), and a target the fill reached ends with a
+         * non-zero cost (the test at 0x2c388). A cell whose ceiling OR floor sprite is the transparent 255
+         * placeholder is never a target (MapCell_TestFlag selector 0 @ 0x549c8, the bail at 0x2b84c), though
+         * expansion only needs a floor sprite (0x2b604), so such cells are walkable THROUGH. Taking a cell
+         * the hover actually lands on is what the click needs too: the press can only commit a cell the
+         * cursor can stand on, and the iso resolver answers the cell the screen shows at that pixel -- a
+         * floor buried under another storey is not it. The cursor layer byte is the cell layer + 1. */
+        i32 aCandX[1], aCandY[1], aCandZ[1];
+        i32 nCand = 0;
+        i32 nSpotFoe = -1;
+        i32 nHoverMinX = 9999, nHoverMaxX = -9999, nHoverMinY = 9999, nHoverMaxY = -9999;
+
+        memset(&ptr, 0, sizeof(ptr));
+        ptr.pBank = &g_bank;
+        ptr.hit   = g_hit;
+        {
+            const PadImage *pHud = g_world.apTactPads[PUFO_UIPAD_HUD];
+            i32 nMapBottom = (pHud != NULL) ? (i32)pHud->nOriginY - 20 : 240;
+
+            /* The pen hovers only the band the real screen gives it (about eleven cells -- see the
+             * foe probe further down), so the camera is focused onto an alien first: the band then
+             * sits along the line towards the field, and the DOWN key arm at 0x11AA8 slides it the
+             * rest of the way. */
+            for (i32 k = 0; k < (i32)pMap->nEnemyCount; ++k) {
+                if (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->pCell != NULL) {
+                    MapView_FocusSelected(&g_world.tactEnv.focus, pMap->apEnemyUnits[k]->pCell,
+                                          g_world.bMapSweepArmed, &g_world.tactEnv.cursor);
+                    break;
+                }
+            }
+            for (i = 0; i < 18 && nCand == 0; ++i) {
+            for (i32 py = 20; py <= nMapBottom && nCand == 0; py += 4) {
+                for (i32 px = 24; px <= 216 && nCand == 0; px += 8) {
+                    MapCell *pC;
+                    i32 nCx, nCy, nCz;
+
+                    World_TactPointerMove(&g_world, &ptr, px, py, false);
+                    nCx = g_world.tactEnv.cursor.nX;
+                    nCy = g_world.tactEnv.cursor.nY;
+                    nCz = (i32)g_world.tactEnv.cursor.nFlags - 1;
+                    if (nCx < nHoverMinX) { nHoverMinX = nCx; }
+                    if (nCx > nHoverMaxX) { nHoverMaxX = nCx; }
+                    if (nCy < nHoverMinY) { nHoverMinY = nCy; }
+                    if (nCy > nHoverMaxY) { nHoverMaxY = nCy; }
+                    if (pSel->pCell == NULL
+                        || (nCx == pSel->pCell->nX && nCy == pSel->pCell->nY
+                            && nCz == (i32)pSel->pCell->nZ)) {
+                        continue; /* the unit's own cell is the select arm (0x151A0), not a walk */
+                    }
+                    pC = FrameCellAt(nCx, nCy, nCz);
+                    if (pC == NULL || pC->pFloorSpr == NULL || pC->pUnit != NULL) {
+                        continue;
+                    }
+                    if (MapCell_TestFlag(pC, CELLFLAG_IS_BLANK)) {
+                        continue; /* 0x2b84c: selector-0 true and the fill never starts */
+                    }
+                    if (!Path_ComputeReachable(&g_world.sTactPathScratch,
+                                               pSel->pCell->nX, pSel->pCell->nY, pSel->pCell->nZ,
+                                               pSel->bFacing, nCx, nCy, nCz,
+                                               (pSel->nUnitType < PUFO_UNIT_TYPE_COUNT)
+                                                   && g_aUnitTypeFlag0[pSel->nUnitType] != 0,
+                                               FrameCellLookup, NULL, NULL)) {
+                        continue;
+                    }
+                    /* The cell must also be one the traced arc can shoot an alien from. The base is
+                     * walled, and the arc stops at the first blocking voxel (0x30184, where every
+                     * blocked path returns 0), so a shot fired from inside the base stops at the wall
+                     * one cell out of the muzzle. Walking to a cell with a clear line is what a player
+                     * does, and it is the only way the burst can reach a live alien. */
+                    if (!FrameShotSpot(pSel->pCell, pSel, nCx, nCy, nCz, &nSpotFoe)) {
+                        continue;
+                    }
+                    aCandX[0] = nCx;
+                    aCandY[0] = nCy;
+                    aCandZ[0] = nCz;
+                    nPenX = px;
+                    nPenY = py;
+                    k     = 0;
+                    pTarget = pC;
+                    ++nCand;
+                }
+            }
+                if (nCand == 0) {
+                    World_TactKeyDown(&g_world, PUFO_KEY_DOWN);   /* 0x11AA8: ++Map_nCamScrollY */
+                    World_TactKeyUp(&g_world, PUFO_KEY_DOWN);
+                }
+            }
+            printf("  walk target: cell %d/%d/%d at pen %d/%d; hover reached cells x %d..%d y %d..%d\n",
+                   nCand != 0 ? aCandX[0] : -1, nCand != 0 ? aCandY[0] : -1,
+                   nCand != 0 ? aCandZ[0] : -1, nPenX, nPenY,
+                   nHoverMinX, nHoverMaxX, nHoverMinY, nHoverMaxY);
+            Check(nCand > 0, "a pen pixel hovers an empty floor cell the mission's own search can reach");
+            printf("  hover probe: %d candidates, pen %d/%d, cursor now %d/%d flags %d\n",
+                   nCand, nPenX, nPenY, g_world.tactEnv.cursor.nX, g_world.tactEnv.cursor.nY,
+                   (int)g_world.tactEnv.cursor.nFlags);
+            printf("  input mirror: screen %d, dims %d/%d, scroll %d/%d, layer %d, edge %d, half %d, commit %d, input on %d, slot3 %d\n",
+                   (int)g_world.sTactInput.nUiScreen, g_world.sTactInput.nMapDimX,
+                   g_world.sTactInput.nMapDimY, g_world.sTactInput.nCamScrollX,
+                   g_world.sTactInput.nCamScrollY, (int)g_world.sTactInput.nLayerScratch,
+                   (int)g_world.sTactInput.bEdgeTestOn, (int)g_world.sTactInput.bNoHalfCursor,
+                   (int)g_world.sTactInput.bClickCommits, (int)g_world.sTactInput.bPlayerInputOn,
+                   (int)g_world.sTactInput.nUiSlot3);
+            if (nPenX >= 0) {
+                for (i = 0; i < PUFO_TERRAIN_CELL_SLOTS; ++i) {
+                    MapCell *pC = g_world.apTactCells[i];
+
+                    if (pC != NULL && pC->nX == aCandX[k] && pC->nY == aCandY[k] && pC->nZ == aCandZ[k]) {
+                        pTarget = pC;
+                        break;
+                    }
+                }
+            }
+        }
+        Check(nPenX >= 0 && pTarget != NULL,
+              "a pen pixel in the map region hovers the cursor exactly onto a walk candidate");
+
+        if (nPenX >= 0 && pTarget != NULL) {
+            u8  bLatchSave3 = pMap->bActionLatch;
+            MapCell *pBelow = NULL;
+
+            for (i = 0; i < PUFO_TERRAIN_CELL_SLOTS; ++i) {
+                MapCell *pC = g_world.apTactCells[i];
+
+                if (pC != NULL && pC->nX == pTarget->nX && pC->nY == pTarget->nY && pC->nZ == 0) {
+                    pBelow = pC;
+                    break;
+                }
+            }
+            printf("    walk fixture: cand %d/%d/%d floor %d ceil %d occupant %d flags44 %02X | "
+                   "below %s ceil %d ceilparam %d occupant %d | type %u flag0 %d unitflags %02X\n",
+                   pTarget->nX, pTarget->nY, (int)pTarget->nZ, pTarget->pFloorSpr != NULL,
+                   pTarget->pCeilSpr != NULL, pTarget->pUnit != NULL, (unsigned)pTarget->bFlags44,
+                   pBelow != NULL ? "cell" : "none",
+                   pBelow != NULL && pBelow->pCeilSpr != NULL,
+                   (pBelow != NULL && pBelow->pCeilSpr != NULL) ? pBelow->pCeilSpr->iCeilParam : 0,
+                   pBelow != NULL && pBelow->pUnit != NULL, (unsigned)pSel->nUnitType,
+                   (pSel->nUnitType < PUFO_UNIT_TYPE_COUNT) ? (int)g_aUnitTypeFlag0[pSel->nUnitType] : -1,
+                   (unsigned)pSel->bFlags);
+            fflush(stdout);
+            i32 nCellX0 = pSel->pCell->nX, nCellY0 = pSel->pCell->nY;
+
+            pMap->bActionLatch = 0; /* the resume already stands latch 0; assert the walk arm */
+            uTuSel0 = pSel->uTu;
+
+            World_TactPointerMove(&g_world, &ptr, nPenX, nPenY, true);  /* the press moves the cursor */
+            printf("    press1: cursor %d/%d flags %d slot3 %d commit %d edge %d latch %d clicks %d\n",
+                   g_world.tactEnv.cursor.nX, g_world.tactEnv.cursor.nY,
+                   (int)g_world.tactEnv.cursor.nFlags, (int)g_world.sTactInput.nUiSlot3,
+                   (int)g_world.sTactInput.bClickCommits, (int)g_world.sTactInput.bEdgeTestOn,
+                   (int)pMap->bActionLatch, (int)g_seams.nMapClicks);
+            fflush(stdout);
+            World_TactPointerUp(&g_world, &ptr);
+            World_TactPointerMove(&g_world, &ptr, nPenX, nPenY, true);  /* 0x144CC: a press that did not move it commits */
+            printf("    press2: cursor %d/%d flags %d slot3 %d latch %d clicks %d qlen %d qact %d\n",
+                   g_world.tactEnv.cursor.nX, g_world.tactEnv.cursor.nY,
+                   (int)g_world.tactEnv.cursor.nFlags, (int)g_world.sTactInput.nUiSlot3,
+                   (int)pMap->bActionLatch, (int)g_seams.nMapClicks,
+                   (int)pQ->nQueueLen, (int)pQ->bQueueActive);
+            fflush(stdout);
+            World_TactPointerUp(&g_world, &ptr);
+            printf("    after up: cursor %d/%d flags %d slot3 %d latch %d clicks %d qlen %d qact %d\n",
+                   g_world.tactEnv.cursor.nX, g_world.tactEnv.cursor.nY,
+                   (int)g_world.tactEnv.cursor.nFlags, (int)g_world.sTactInput.nUiSlot3,
+                   (int)pMap->bActionLatch, (int)g_seams.nMapClicks,
+                   (int)pQ->nQueueLen, (int)pQ->bQueueActive);
+            fflush(stdout);
+
+            {
+                i32 nSteps = 0;
+
+                for (i = 0; i < (i32)pQ->nQueueLen; ++i) {
+                    if (pQ->aQueue[i].nCmd == TACTCMD_STEP) {
+                        ++nSteps;
+                    }
+                }
+                Check((i32)pQ->nQueueLen > 0 && pQ->bQueueActive != 0 && nSteps > 0,
+                      "Tact_HandleMapClick's latch-0 arm reached Unit_PathToCell @ 0x2c2a8: turn, steps and end mark in the queue");
+                printf("  walk queue: len %d, cursor %d, %d step entries\n",
+                       (i32)pQ->nQueueLen, (i32)pQ->nQueueCursor, nSteps);
+            }
+
+            for (t = 0; t < 8000 && (pQ->nQueueLen != 0 || pQ->bQueueActive != 0); ++t) {
+                PUMP();
+            }
+            Check(pQ->nQueueLen == 0 && pSel->pCell->nX == pTarget->nX && pSel->pCell->nY == pTarget->nY,
+                  "the walkers moved the soldier to the clicked cell through ProcessMoveAction's step arm @ 0x4f68c");
+            Check(pSel->uTu < uTuSel0, "the steps charged time units");
+            printf("  the walk: %d/%d -> %d/%d, uTu %u -> %u\n", nCellX0, nCellY0,
+                   pSel->pCell->nX, pSel->pCell->nY, (unsigned)uTuSel0, (unsigned)pSel->uTu);
+            ClearSurface();
+            World_TactFrame(&g_world);
+            DumpFrame("tact_play_moved");
+            pMap->bActionLatch = bLatchSave3;
+        }
+
+        /* 3) a shot the targeting chain enqueues. BeginMultiTarget arms the latch; the double
+         * press on an enemy cell is case 3; the look control's installed handler confirms the
+         * burst into command 14. */
+        if ((i32)pMap->nEnemyCount > 0 && pSel->pCell != NULL) {
+            Soldier *pFoe = pMap->apEnemyUnits[0];
+
+            /* The pen hovers the cell at the cursor's own layer (PointerScreen0's camera arm
+             * maps through nLayerScratch), so prefer an alien standing on the shooter's layer --
+             * and above that, the alien the walk target was chosen for: nSpotFoe is the alien the
+             * cell the squad member walked to has a clear line to. */
+            pFoe = NULL;
+            if (nSpotFoe >= 0 && nSpotFoe < (i32)pMap->nEnemyCount) {
+                Soldier *pE = pMap->apEnemyUnits[nSpotFoe];
+
+                if (pE != NULL && pE->pCell != NULL && pE->uHp != 0
+                    && pE->pCell->nZ == pSel->pCell->nZ) {
+                    pFoe = pE;
+                }
+            }
+            if (pFoe == NULL) {
+                for (i = 0; i < (i32)pMap->nEnemyCount; ++i) {
+                    Soldier *pE = pMap->apEnemyUnits[i];
+
+                    if (pE != NULL && pE->pCell != NULL && pE->uHp != 0
+                        && pE->pCell->nZ == pSel->pCell->nZ) {
+                        pFoe = pE;
+                        break;
+                    }
+                }
+            }
+            if (pFoe == NULL) {
+                for (i = 0; i < (i32)pMap->nEnemyCount; ++i) {
+                    Soldier *pE = pMap->apEnemyUnits[i];
+
+                    if (pE != NULL && pE->pCell != NULL && pE->uHp != 0) {
+                        pFoe = pE;
+                        break;
+                    }
+                }
+            }
+            for (i = 0; i < (i32)pMap->nEnemyCount; ++i) {
+                Soldier *pE = pMap->apEnemyUnits[i];
+
+                if (pE == NULL || pE->pCell == NULL) {
+                    continue;
+                }
+                printf("    foe %d: type %u cell %d/%d/%d hp %u (shooter layer %d)\n",
+                       i, (unsigned)pE->nUnitType, pE->pCell->nX, pE->pCell->nY,
+                       (int)pE->pCell->nZ, (unsigned)pE->uHp, (int)pSel->pCell->nZ);
+            }
+            Check(pFoe != NULL && pFoe->pCell != NULL, "an alien stands on the field to shoot");
+
+            /* No cargo reached this squad (the fixture craft carries none -- the cargo-chain DATA
+             * gap recorded in PLAN), so the save holds empty hands and Tact_BeginMultiTarget @ 0x18380
+             * dereferences Map.pSelWeapon for the ammo test. Plant a stand-in weapon the same way
+             * Part 76's screen-3 fixture does: a sort-key-1, category-3 item with research gate 1
+             * unlocked, nRefId = none so the save writes it as an absent slot. The hand menu pad 17
+             * stores it into Map.pSelWeapon at 0x17060 before its gates run. */
+            {
+                static TactItem aShotItem;
+                static ObjectRecFull aShotObj;
+                i32 nGate = g_abSlotTopicGate[1];
+
+                memset(&aShotItem, 0, sizeof(aShotItem));
+                memset(&aShotObj, 0, sizeof(aShotObj));
+                aShotItem.pObj   = &aShotObj;
+                aShotItem.nAmmo  = 8;
+                aShotItem.nRefId = PUFO_SAVE_ID_NONE;
+                aShotObj.uSortKey  = 1;
+                aShotObj.nCategory = 3;
+                /* Combat_DirectUnitDamage @ 0x2f44c reads uFirePower for the whole hit:
+                 * power - armour byte, then minus rand(power / 2). A zeroed record therefore
+                 * resolved a direct hit as zero damage -- the burst looked fired but hurt nobody.
+                 * A rifle-class power that punches through an alien's armour points. */
+                aShotObj.uFirePower = 120;
+                g_world.aTopics[nGate].bUnlocked = 1;
+                pSel->pHandL = &aShotItem;
+                CLICK(17); /* Tact_OpenLeftHandMenu @ 0x17030: stores the hand slot at 0x17060 */
+            }
+            /* The hand menu left the tactical screen on screen 3 (0x17108: the action-mode scan writes
+             * Map_nUiScreen = 3). Input_OnPointer's switch sends a screen-3 pen to the twelve action
+             * controls (0x14014), never to the map arm at 0x143D0, so the cursor could not be moved onto
+             * a cell while that screen was up. The menu's own close is its release tail:
+             * PointerUpScreen3 runs the twelve releases, keeps the latch unless the mode is 0..2/8/11/12,
+             * and at 0x15028..0x1505C drops the screen back to 0 for every mode but 3 and 8 -- mode 12 is
+             * what 0x17104 left there. A press and release over an empty stretch of the map does exactly
+             * that: nothing is under the pen, so no control fires and the tail is all that runs. */
+            World_TactPointerMove(&g_world, &ptr, 24, 20, true);
+            World_TactPointerUp(&g_world, &ptr);
+            CLICK(39); /* Tact_BeginMultiTarget @ 0x18380 */
+            printf("  after pad 39: latch %d, mode %d, screen %d, weapon %d, hands %d/%d\n",
+                   (int)pMap->bActionLatch, (int)g_world.nMapActionMode, (int)g_world.nUiScreen,
+                   pMap->pSelWeapon != NULL, pSel->pHandL != NULL, pSel->pHandR != NULL);
+            Check(pMap->bActionLatch == 3u, /* PUFO_ACTION_LATCH_TARGETING @ pufo_tactui.h:74 */
+                  "the targeting pad arms latch 3 (0x18380)");
+
+            nPenX = -1;
+            /* The focus centres the camera, not the pen's reach. MapView_FocusOnUnit @ 0x2c758 runs
+             * MapView_SetCamOffset(Map+0x30 >> 1, Map+0x32 >> 1, 0) -- the size pair is 240/320
+             * (Map_InitFacingScratch @ 0x26f50), so the virtual pen it stamps is at the screen's far
+             * corner, and Map_CenterOffsetX/Y then anchor the camera at cell MINUS that scratch pair.
+             * The pen, on the other hand, can only hover the band the real screen gives it: 0x143EC
+             * halves the pen coordinates (unk_1139EE @ Map+0x3E has ONE reference, 0x143D0, and no
+             * writer anywhere, so the halving always runs), 0x27714 adds 24 per layer, and
+             * 0x27744/0x2777c divide them down to the two scratch bytes -- about eleven cells of
+             * coverage. A cell the focus anchored past that band is out of the pen's reach until the
+             * view is scrolled, which is exactly what the player does: on screen 0 with an idle queue the
+             * DOWN key arm at 0x11AA8 adds 1 to Map_nCamScrollY, and both iso offsets (0x26f88, 0x26fa8)
+             * read that value with a +1, so the hoverable band slides diagonally. Focus, scroll with the
+             * game's own key, then hover. */
+            MapView_FocusSelected(&g_world.tactEnv.focus, pFoe->pCell, g_world.bMapSweepArmed,
+                                  &g_world.tactEnv.cursor);
+            {
+                const PadImage *pHud = g_world.apTactPads[PUFO_UIPAD_HUD];
+                i32 nMapBottom = (pHud != NULL) ? (i32)pHud->nOriginY - 20 : 240;
+                i32 nScrollKeys = 0;
+
+                for (i = 0; i < 10 && nPenX < 0; ++i) {
+                    for (i32 py = 20; py <= nMapBottom && nPenX < 0; py += 4) {
+                        for (i32 px = 24; px <= 216 && nPenX < 0; px += 8) {
+                            World_TactPointerMove(&g_world, &ptr, px, py, false);
+                            if (g_world.tactEnv.cursor.nX == pFoe->pCell->nX
+                                && g_world.tactEnv.cursor.nY == pFoe->pCell->nY
+                                && (i32)g_world.tactEnv.cursor.nFlags == pFoe->pCell->nZ + 1) {
+                                nPenX = px;
+                                nPenY = py;
+                            }
+                        }
+                    }
+                    if (nPenX < 0) {
+                        World_TactKeyDown(&g_world, PUFO_KEY_DOWN);   /* 0x11AA8: ++Map_nCamScrollY */
+                        World_TactKeyUp(&g_world, PUFO_KEY_DOWN);
+                        ++nScrollKeys;
+                    }
+                }
+                printf("  foe probe: alien at %d/%d/%d, %d scroll keys, pen %d/%d, cursor now %d/%d flags %d\n",
+                       pFoe->pCell->nX, pFoe->pCell->nY, pFoe->pCell->nZ, nScrollKeys, nPenX, nPenY,
+                       g_world.tactEnv.cursor.nX, g_world.tactEnv.cursor.nY,
+                       (int)g_world.tactEnv.cursor.nFlags);
+            }
+            Check(nPenX >= 0, "a pen pixel hovers the cursor onto the alien's cell");
+
+            if (nPenX >= 0) {
+                World_TactPointerMove(&g_world, &ptr, nPenX, nPenY, true);
+                World_TactPointerUp(&g_world, &ptr);
+                World_TactPointerMove(&g_world, &ptr, nPenX, nPenY, true);
+                World_TactPointerUp(&g_world, &ptr);
+            }
+            Check(g_world.sTactLookCtl.bEnabled != 0 || pSel->nMultiTarget > 0,
+                  "case 3 (0x152E4) took the click: the look control is up and the target list carries the alien");
+
+            /* The look control's installed handler IS TactAction_ConfirmFireBurst @ 0x18774 --
+             * press it the way the pen's hit test would (0x140A0 first test in PointerScreen0). */
+            if (pMap->pSelWeapon == NULL) {
+                CLICK(18); /* the right-hand menu stores the unit's own item at 0x17060 */
+                printf("  after pad 18: weapon %d, screen %d, latch %d, mode %d\n",
+                       pMap->pSelWeapon != NULL, (int)g_world.nUiScreen, (int)pMap->bActionLatch,
+                       (int)g_world.nMapActionMode);
+            }
+            Check(pMap->pSelWeapon != NULL, "the shooter has a selected weapon (Map.pSelWeapon @ 0x113A00)");
+            if (g_world.sTactLookCtl.pfnClick != NULL && pMap->pSelWeapon != NULL) {
+                g_world.sTactLookCtl.pfnClick();
+            }
+            for (i = 0; i < (i32)pQ->nQueueLen; ++i) {
+                if (pQ->aQueue[i].nCmd == TACTCMD_FIRE_SHOT) {
+                    ++nShotQueued;
+                }
+            }
+            Check(nShotQueued > 0, "ConfirmFireBurst @ 0x18774 -> TactState_EnqueueFireBurst @ 0x4b080: command 14 stands in the queue");
+
+            for (k = 0; k < (i32)pMap->nEnemyCount; ++k) {
+                aEHp0[k] = (pMap->apEnemyUnits[k] != NULL) ? pMap->apEnemyUnits[k]->uHp : 0u;
+            }
+            uHpSel0      = pSel->uHp;
+            nEnemyShot0  = (i32)pMap->nEnemyCount;
+
+            ClearSurface();
+            World_TactFrame(&g_world);
+            DumpFrame("tact_play_aim");
+            for (t = 0; t < 8000 && (pQ->nQueueLen != 0 || pQ->bQueueActive != 0); ++t) {
+                if (t == 3) {
+                    ClearSurface();
+                    World_TactFrame(&g_world); /* the burst mid-flight: the aim samples the fire processor wrote */
+                    DumpFrame("tact_play_shot_mid");
+                }
+                (void)World_GameTickOnce(&g_world);
+                World_TactFrame(&g_world);
+            }
+            for (k = 0; k < (i32)pMap->nEnemyCount; ++k) {
+                if (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->uHp < aEHp0[k]) {
+                    ++nHpDropped;
+                }
+            }
+            Check(nHpDropped > 0 || (i32)pMap->nEnemyCount < nEnemyShot0,
+                  "the burst resolved: Unit_ApplyCellDamage @ 0x2e5d0 took HP off a real alien, or the alien left the field");
+            printf("  the shot: %d field alien(s) lost HP, shooter hp %u -> %u, queue len back to %d\n",
+                   nHpDropped, (unsigned)uHpSel0, (unsigned)pSel->uHp, (i32)pQ->nQueueLen);
+            ClearSurface();
+            World_TactFrame(&g_world);
+            DumpFrame("tact_play_shot");
+        }
+
+        /* 4) the aliens' own turn: something moves or something bleeds. */
+        for (k = 0; k < (i32)pMap->nEnemyCount; ++k) {
+            aEXHp0[k] = (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->pCell != NULL)
+                          ? pMap->apEnemyUnits[k]->uHp : 0u;
+            aEX0[k] = (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->pCell != NULL)
+                        ? pMap->apEnemyUnits[k]->pCell->nX : -999;
+            aEY0[k] = (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->pCell != NULL)
+                        ? pMap->apEnemyUnits[k]->pCell->nY : -999;
+        }
+        uHpSel1     = (pSel->pCell != NULL) ? pSel->uHp : 0u;
+        uStSel1     = pSel->bStatus;
+        nEnemyAct0  = (i32)pMap->nEnemyCount;
+        CLICK(5);
+        for (t = 0; t < 8000 && pMap->tact.bBusy != 0; ++t) {
+            PUMP();
+        }
+        for (k = 0; k < (i32)pMap->nEnemyCount; ++k) {
+            if (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->pCell != NULL
+                && (pMap->apEnemyUnits[k]->pCell->nX != aEX0[k]
+                    || pMap->apEnemyUnits[k]->pCell->nY != aEY0[k])) {
+                ++nEnemyMoved;
+            }
+        }
+        Check(nEnemyMoved > 0 || pSel->uHp != uHpSel1 || pSel->bStatus != uStSel1
+                  || (i32)pMap->nEnemyCount < nEnemyAct0,
+              "Tact_EnemyAiTick put the aliens in motion or into fire this turn: cells changed, or the squad member was hit, or an alien left the field");
+        printf("  enemy turn 2: %d aliens changed cell, squad member hp %u\n", nEnemyMoved, (unsigned)pSel->uHp);
+        ClearSurface();
+        World_TactFrame(&g_world);
+        DumpFrame("tact_play_enemyturn");
+
+        /* 5) save the mission mid-fight and resume from it. */
+        memset(&saveHooks, 0, sizeof(saveHooks));
+        saveHooks.pfnRenderFrame = RecSaveRenderFrame;
+        g_nSaveRenders = 0;
+        Check(World_SaveSlot(&g_world, "", 64, &saveHooks) != 0,
+              "World_SaveSlot writes the live mission to slot 64 (SaveGame @ 0x44988)");
+        Check(DatFile_Exists("sav64.sav"), "sav64.sav stands on disk");
+        {
+            bool bTact = false, bMap = false, bTeam = false, bAliens = false, bHidden = false;
+
+            DatFile_ctor(&dat);  /* the slot 8080 block declared; ctor is what gives nBufCap/pWriteBuf
+                                  * their defined values. DatFile_Open frees the old write buffer at
+                                  * 0x9f1d6 -- an unconstructed struct freed its garbage pointer there. */
+            if (DatFile_Open(&dat, "sav64.sav", PUFO_DAT_READ, 0)) {
+                bTact   = DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TACTVER);
+                bMap    = DatFile_FindChunk(&dat, PUFO_SAVE_TAG_MAP);
+                bTeam   = DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TEAMUNITS);
+                bAliens = DatFile_FindChunk(&dat, PUFO_SAVE_TAG_ALIENS);
+                bHidden = DatFile_FindChunk(&dat, PUFO_SAVE_TAG_HIDDENSOL);
+                (void)DatFile_Close(&dat);
+            }
+            Check(bTact && bMap && bTeam && bAliens && bHidden,
+                  "the save carries the mission's own chunks: the map, the team roster, the aliens, the hidden park");
+        }
+        {
+            i32 nCellX = pSel->pCell->nX, nCellY = pSel->pCell->nY, nCellZ = pSel->pCell->nZ;
+            u16 uHp = pSel->uHp;
+            i32 nFoeCellX = -999, nFoeCellY = -999;
+            u16 uFoeHp = 0;
+
+            if (pMap->nEnemyCount > 0 && pMap->apEnemyUnits[0] != NULL && pMap->apEnemyUnits[0]->pCell != NULL) {
+                nFoeCellX = pMap->apEnemyUnits[0]->pCell->nX;
+                nFoeCellY = pMap->apEnemyUnits[0]->pCell->nY;
+                uFoeHp    = pMap->apEnemyUnits[0]->uHp;
+            }
+            Check(World_LoadSlot(&g_world, "", 64, &g_assets, &g_fontSys, &g_options, &hooks) != 0,
+                  "load 64 resumes the mission from its own save (the tact flag made SaveGame write the mission block)");
+            pMap = g_world.pTactMap;
+            pQ   = g_world.pTactState;
+            Check(pMap != NULL && pMap->pSelUnit != NULL && pMap->pSelUnit->pCell != NULL
+                      && pMap->pSelUnit->pCell->nX == nCellX && pMap->pSelUnit->pCell->nY == nCellY
+                      && pMap->pSelUnit->pCell->nZ == nCellZ,
+                  "the selected soldier stands back on the cell the walk left her on");
+            Check(pMap->pSelUnit->uHp == uHp, "and with the same HP the fight left her with");
+            if (nFoeCellX != -999) {
+                bool bFound = false;
+
+                for (k = 0; k < (i32)pMap->nEnemyCount; ++k) {
+                    if (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->pCell != NULL
+                        && pMap->apEnemyUnits[k]->pCell->nX == nFoeCellX
+                        && pMap->apEnemyUnits[k]->pCell->nY == nFoeCellY) {
+                        bFound = (pMap->apEnemyUnits[k]->uHp == uFoeHp);
+                        break;
+                    }
+                }
+                Check(bFound, "the shot alien comes back on its cell with the HP the burst left it with");
+            }
+            printf("  resume 64: %d xcom, %d enemies on the field, selected at %d/%d/%d hp %u\n",
+                   (i32)pMap->nXcomCount, (i32)pMap->nEnemyCount, pMap->pSelUnit->pCell->nX,
+                   pMap->pSelUnit->pCell->nY, pMap->pSelUnit->pCell->nZ, (unsigned)pMap->pSelUnit->uHp);
+            for (i = 0; i < (i32)pMap->nXcomCount; ++i) {
+                if (pMap->apXcomUnits[i] != NULL) {
+                    (void)Unit_UpdateVisibility(pMap->apXcomUnits[i], &g_world.tactEnv.vis);
+                }
+            }
+            ClearSurface();
+            World_TactFrame(&g_world);
+            DumpFrame("tact_play_resumed");
+        }
+
+        (void)remove("sav64.sav");
+        (void)remove("sav62.sav");
+#undef CLICK
     }
 
     World_Free(&g_world);

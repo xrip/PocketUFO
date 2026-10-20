@@ -157,6 +157,11 @@ static void ResetWorld(void)
 }
 
 static TactQueueEntry *Entry(void) { return &g_State.aQueue[0]; }
+/* Tact_RefreshTeamVisibility @ 0x4f368 appends its end mark at cursor + 1
+ * (0x4f388: byte 0x50 = aQueue base 0x18 + one 56-byte entry), while the abort
+ * keeps its own 13 on the cursor's entry. */
+static TactQueueEntry *NextEntry(void) { return &g_State.aQueue[1]; }
+#define ABORTED (Entry()->nCmd == 13 && NextEntry()->nCmd == TACTCMD_END_MARK)
 
 int main(void)
 {
@@ -179,7 +184,7 @@ int main(void)
     Entry()->nCmd = 0;
     Entry()->nFacing = 3;
     Tact_ProcessMoveAction(&g_State, &g_Ctx);
-    Check("a unit with no TU aborts", Entry()->nCmd == TACTCMD_END_MARK);
+    Check("a unit with no TU aborts", ABORTED);
     Check("and pushes the no-time record",
           g_nStatusPushed == 1 && g_nStatusMsg == MOVE_MSG_NO_TIME);
 
@@ -216,7 +221,7 @@ int main(void)
     Entry()->nCmd = 1;
     Entry()->nFacing = 2;
     Tact_ProcessMoveAction(&g_State, &g_Ctx);
-    Check("a blocked destination aborts", Entry()->nCmd == TACTCMD_END_MARK);
+    Check("a blocked destination aborts", ABORTED);
     Check("a blocked step does not set the walk flag",
           (g_aUnits[0].bFlags & 2u) == 0);
 
@@ -225,7 +230,7 @@ int main(void)
     Entry()->nCmd = 1;
     Entry()->nFacing = 2;
     Tact_ProcessMoveAction(&g_State, &g_Ctx);
-    Check("three TU is the price of a step", Entry()->nCmd == TACTCMD_END_MARK);
+    Check("three TU is the price of a step", ABORTED);
     Check("and too little TU pushes the no-time record",
           g_nStatusPushed == 1 && g_nStatusMsg == MOVE_MSG_NO_TIME);
 
@@ -236,7 +241,7 @@ int main(void)
     Entry()->nFacing = 2;
     Tact_ProcessMoveAction(&g_State, &g_Ctx);
     Check("an over-burdened unit aborts with the armour record",
-          Entry()->nCmd == TACTCMD_END_MARK && g_nStatusMsg == MOVE_MSG_ARMOUR_BLOCK);
+          ABORTED && g_nStatusMsg == MOVE_MSG_ARMOUR_BLOCK);
 
     ResetWorld();
     g_bArmorWarn = true;
@@ -244,7 +249,7 @@ int main(void)
     Entry()->nFacing = 2;
     Tact_ProcessMoveAction(&g_State, &g_Ctx);
     Check("the armour warning aborts without a message",
-          Entry()->nCmd == TACTCMD_END_MARK && g_nStatusPushed == 0);
+          ABORTED && g_nStatusPushed == 0);
 
     printf("cmd 2, 3, 7, 8, 0xA, 0xF, 0x10\n");
     ResetWorld();
@@ -404,7 +409,7 @@ int main(void)
     Entry()->nTuCost = 30;
     Tact_ProcessMoveAction(&g_State, &g_Ctx);
     Check("too little TU aborts cmd 0x12 with the no-time record",
-          Entry()->nCmd == TACTCMD_END_MARK && g_nStatusMsg == MOVE_MSG_NO_TIME);
+          ABORTED && g_nStatusMsg == MOVE_MSG_NO_TIME);
 
     return TestSummary("test_moveaction");
 }

@@ -361,7 +361,8 @@ static void TestFsmOnMap(void)
 
     /* Command 3 (turn sound) with no TU: the gated "not enough time" push and
      * then the abort. The abort writes 13 into the entry, and
-     * Tact_RefreshTeamVisibility then overwrites it with the end mark. */
+     * Tact_RefreshTeamVisibility appends the end mark at cursor + 1 (0x4f388),
+     * leaving the aborted entry's 13 in place. */
     Reset();
     Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
     Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
@@ -369,7 +370,8 @@ static void TestFsmOnMap(void)
     g_aUnits[0].uTu = 0;
     g_aUnits[0].pCell = At(2, 2, 0);
     RunCmd(3, 4);
-    Check("no TU aborts the entry", g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
+    Check("no TU aborts the entry: 13 stands, the end mark lands at cursor + 1",
+          g_State.aQueue[0].nCmd == 13 && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
     Check("the abort pushed aTextRecs record 1",
           g_Map.status.nCount == 1
           && strcmp(g_Map.status.aszMsg[0], "not enough time") == 0);
@@ -385,7 +387,8 @@ static void TestFsmOnMap(void)
     RunCmd(3, 4);
     g_bSuppressNoTime = 0;
     Check("bAiActionActive suppresses the message", g_Map.status.nCount == 0);
-    Check("and still aborts", g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
+    Check("and still aborts", g_State.aQueue[0].nCmd == 13
+                              && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
 
     /* Command 3 with TU and armour pressure: the armour callback's two records
      * are pushed by Unit_bArmorTuWarn itself, then the FSM aborts. */
@@ -396,7 +399,7 @@ static void TestFsmOnMap(void)
     g_aUnits[0].pCell = At(2, 2, 0);
     RunCmd(3, 4);
     Check("the armour warning aborts the entry",
-          g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
+          g_State.aQueue[0].nCmd == 13 && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
     Check("the warning records are in the map's status stack",
           g_Map.status.nCount == 2
           && strcmp(g_Map.status.aszMsg[0], "tu warning head") == 0);
@@ -644,7 +647,7 @@ static void TestFsmOnMap(void)
         Tact_ProcessMoveAction(&g_State, &g_Ctx);
 
         Check("a short throw with the hit-stop flag clear aborts",
-              g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
+              g_State.aQueue[0].nCmd == 13 && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
         Check("it pushed aTextRecs record 4",
               g_Map.status.nCount == 1
               && strcmp(g_Map.status.aszMsg[0], "throw failed") == 0);
@@ -664,7 +667,8 @@ static void TestFsmOnMap(void)
     g_bSuppressNoTime = 1;
     RunCmd(0x11, 4);
     g_bSuppressNoTime = 0;
-    Check("a throw with no TU aborts", g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
+    Check("a throw with no TU aborts",
+          g_State.aQueue[0].nCmd == 13 && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
     Check("and pushes the no-time record even with bAiActionActive set",
           g_Map.status.nCount == 1
           && strcmp(g_Map.status.aszMsg[0], "not enough time") == 0);

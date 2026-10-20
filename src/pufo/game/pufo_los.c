@@ -57,11 +57,43 @@ bool Tact_LoadLoftData(LosTables *pTables)
     return Los_LoadRowTable("unitloft.dat", &pTables->pUnitloft, &pTables->nUnitloft);
 }
 
-/* word_A9488 @ 0xa9488, decoded from the 32 bytes at that address. It repeats
- * per unit type, giving the base sprite row for each facing with the kneeling
- * flag folded in: row = facing + 8 * kneeling. */
-static const u8 s_aUnitRowBase[PUFO_UNITLOFT_ROWS_PER_TYPE] = {
-    0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15
+/* word_A9488 @ 0xa9488, decoded byte-for-byte from the IDB: 736 bytes, ending
+ * exactly at g_aUnitMuzzleOffset @ 0xa9768 (the muzzle-offset table the move FSM
+ * reads at 0x5008C), so the row-base table covers unit types 0..22 with 16 u16
+ * rows each, indexed as the original does at 0x328dc (small unit: 16*type +
+ * 2*facing + (bFlags&1)) and 0x32b94 (large unit: 16*type + 2*facing).
+ *
+ * Only types 0..3 use the kneeling fold facing + 8*kneeling. Each other type has
+ * its own row block in unitloft.dat: tanks, aliens, civilians and the drones each
+ * get their own 16-row sprite window (e.g. floater type 11 starts at row 24,
+ * silacoid 19 at row 40, cyberdisk 18 and sectopod 21 at rows 80 and 48, and the
+ * four tank types 4..8 share the window at 80). Type 23 (sectopod) has no row:
+ * the original's 16*23 read lands in g_aUnitMuzzleOffset, i.e. on bytes that are
+ * not sprite rows at all -- see the type guard in Map_TraceVoxelOccupancy. */
+static const u8 s_aUnitRowBase[PUFO_UNITLOFT_TYPES * PUFO_UNITLOFT_ROWS_PER_TYPE] = {
+    /*  0 */ 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15,
+    /*  1 */ 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15,
+    /*  2 */ 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15,
+    /*  3 */ 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15,
+    /*  4 */ 80, 80, 84, 84, 88, 88, 92, 92, 96, 96, 100, 100, 104, 104, 108, 108,
+    /*  5 */ 80, 80, 84, 84, 88, 88, 92, 92, 96, 96, 100, 100, 104, 104, 108, 108,
+    /*  6 */ 80, 80, 84, 84, 88, 88, 92, 92, 96, 96, 100, 100, 104, 104, 108, 108,
+    /*  7 */ 80, 80, 84, 84, 88, 88, 92, 92, 96, 96, 100, 100, 104, 104, 108, 108,
+    /*  8 */ 80, 80, 84, 84, 88, 88, 92, 92, 96, 96, 100, 100, 104, 104, 108, 108,
+    /*  9 */ 16, 16, 17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 23,
+    /* 10 */ 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7,
+    /* 11 */ 24, 24, 25, 25, 26, 26, 27, 27, 28, 28, 29, 29, 30, 30, 31, 31,
+    /* 12 */ 32, 32, 33, 33, 34, 34, 35, 35, 36, 36, 37, 37, 38, 38, 39, 39,
+    /* 13 */ 24, 24, 25, 25, 26, 26, 27, 27, 28, 28, 29, 29, 30, 30, 31, 31,
+    /* 14 */ 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7,
+    /* 15 */ 40, 40, 41, 41, 42, 42, 43, 43, 44, 44, 45, 45, 46, 46, 47, 47,
+    /* 16 */ 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7,
+    /* 17 */ 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7,
+    /* 18 */ 80, 80, 84, 84, 88, 88, 92, 92, 96, 96, 100, 100, 104, 104, 108, 108,
+    /* 19 */ 40, 40, 41, 41, 42, 42, 43, 43, 44, 44, 45, 45, 46, 46, 47, 47,
+    /* 20 */ 48, 48, 52, 52, 56, 56, 60, 60, 64, 64, 68, 68, 72, 72, 76, 76,
+    /* 21 */ 48, 48, 52, 52, 56, 56, 60, 60, 64, 64, 68, 68, 72, 72, 76, 76,
+    /* 22 */ 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7
 };
 
 /* Map_TraceVoxelOccupancy reads sprite bytes at record offset (8 + z % 12) and
@@ -163,8 +195,12 @@ LosHit Map_TraceVoxelOccupancy(const LosTables *pTables,
         }
     }
 
-    /* Occupant, using the unit silhouette table. */
-    if (pTables->pUnitloft != NULL && MapCell_HasOccupant(pCell)) {
+    /* Occupant, using the unit silhouette table. Type 23 (sectopod) is skipped: the
+     * original's row-base read at 16*23 lands in g_aUnitMuzzleOffset @ 0xa9768, which
+     * holds muzzle-offset deltas, not sprite rows -- the port's recorded safe deviation
+     * for the original's out-of-table read. */
+    if (pTables->pUnitloft != NULL && MapCell_HasOccupant(pCell)
+        && pCell->pUnit->nUnitType < PUFO_UNITLOFT_TYPES) {
         const Soldier *pUnit = pCell->pUnit;
 
         if (pUnit != pUnitSelExclude && pUnit != pUnitExtraExclude) {
