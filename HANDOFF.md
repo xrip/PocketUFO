@@ -1620,6 +1620,45 @@ the multi-select box has a unit gate but no frame path (its way out is `Geoscape
 0x85504 is the only clearer of byte_18709C[4]), and the flag-20 target panel's colour slots are unverified (0x83524
 appends slot 0 = 0 with the index in slot 1, while the confirm's launch arm 0x8491C reads slot 0).
 
+**The press on a contact orders the intercept (Part 91)** — and the two-item box opens, waits, and answers. No
+product code changed; the gate is `test_geoscapeframe` section 15 (60 checks, three new frames). **Part 90's open
+question resolved:** the select test's type-4 active dispatch arm (0x834D0) is the ONE of the six that never writes
+bMapSelectionFlag, so a selection armed earlier (Smap_SelectMapTarget's 0x84498, or OptionsScreen_OnConfirm's
+0x6CF78) is still up when flag 20 lands, and Geoscape_Draw's flag-0x14 arm branches on exactly that pair (0x909DC).
+Walked through the pen: press the craft, press "new target", press the cell holding an active visible contact, and the
+panel paints "Миссия: <row>" with Smap_CancelTarget @ 0x84254 on *pGeoscapeCtlB at y 102 (0x90C64, 0x90C74, ОК label
+at 103) and Smap_ResolveInterceptUI on *pGeoscapeCtlA at y 125 (0x90CF0, 0x90D00, "Отмена" at 126); the flag-20 press
+arm (0x876C4, the flag 18/19/20 arm) hit-tests *pGeoscapeCtlA then *pGeoscapeCtlB while the selection is up
+(0x876D0..0x87704), and pressing ОК runs Ship_LaunchIntercept at 0x8427C. **The target rides in colour SLOT 1**
+(0x84268), not slot 0 — slot 0 of a flag-20 line is what the DRAW arm reads as the status panel's own ROW (0x90A30,
+0x90BF8, 0x911F4, 0x91320), so the two flag-20 writers differ only in that slot (0x83524 carries the cursor value,
+the radar click's 0x856B4 the row it just selected) and the launch never reads it. **Smap_SelectMapTarget's waypoint
+arm measured at last:** Part 90 ran with bIntercepting clear so 0x844D0 never fired; chasing a type-5 waypoint makes
+0x84504 remove it through StrategList_RemoveAt @ 0x82ab0 and 0x84514 clear Ship+53. **The box (0x832B0's else,
+0x832C0..0x83378):** nPosX 120, left 20 (0x83308), width 200 (0x83348), nUnk7056 = nPosY = 120 - (count/2)*nFont,
+pause (0x83360), byte_18709C[4] up (0x8336C), sample 7 (0x83378) — and the panel's row-selection byte panel+0x1BA1
+DOWN (0x83358, an STRB of the always-zero R9), the message list untouched. That byte gates BOTH row arms
+(UiScrollList_TrackHold, and UiScrollList_ClickRow at 0x3EF44), so the press that builds the box selects nothing and
+so does its release; the release arm then stores 1 back at 0x89B8C, and the NEXT press/release pair is the row click:
+0x3EFD8..0x3EFE8 set [0xBD8] = [0xBD4] + row and 0x3EFFC tail-calls [0xBC4], the panel's pfnClick, which InitUI
+installed at 0x86C1C as Geoscape_OnRadarListClick @ 0x854c4. Two rows put the box top at 104 (nFont 16) and x 120 /
+y 128 selects row 1. **Inside the panel click:** item index out of anLineAux at the row (0x85500), byte_18709C[4]
+cleared (0x85504), index into 0x186BE4 (0x8550C), clock unpaused (0x85510) BEFORE the six (type, active) tests; its
+type-4 test posts flag 20 with the ROW in slot 0 and the item in slot 1, sets byte_18708C (0x85688), pauses
+(0x8567C), writes no radar pulse timer (unlike 11/19/18) and opens no screen (only the type-0 inactive test touches
+0x186BC4, at 0x855B0). With the selection down the same flag paints the OTHER arm (0x90B34..0x90B68): "Крушение "
+(TEXTS 1237) + the row slot 0 names + " " + the size record from slot 1's class (0x90A64..0x90B08), one control,
+*pGeoscapeCtlA at y 115 with Smap_ResolveInterceptUI — pressing it clears 0x187090, 0x18708C, the selection and
+0x187090[8] (0x84A24..0x84A3C), matches no dismiss test, removes the line (0x84A80), unpauses (0x84A8C) and clears
+bFinalMissionCtlArmed (0x84A98). Frames, all looked at: geoscape_order_contact, geoscape_multi_box,
+geoscape_target_panel. IDB: notes at 0x832B0, 0x83358, 0x834D0, 0x87ABC, 0x856B4, 0x89B8C, 0x3EFE8 plus idb_save.
+Gates: 62/62 Release and Debug, 19069 checks (60 new), coverage unchanged, 32 frame references (3 new), e2e's 9
+pictures unchanged. Still open: Smap_OnPointerUp's own launch arm (0x84698 -> 0x8491C -> 0x84930) is installed only
+as the confirm of the panels at 0x8EC84, 0x90640 and 0x91CD0 and needs an ITEM index in colour slot 0 — the radar
+click's flag-10 post (0x8556C) is the writer that supplies one, so a row click on an in-flight craft's entry is the
+next chain; and row hold-to-repeat (0x3EE50..0x3EEB8, gated on panel byte 0x1BA8) never runs on the geoscape because
+nothing there arms that byte (0x98248 / 0x98258 / 0x7BE58 do, on other screens).
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

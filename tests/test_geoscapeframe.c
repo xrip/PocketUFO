@@ -6264,6 +6264,262 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         }
     }
 
+    /* Section 15: the two pointer paths an intercept order needs on the map side, both walked with the pen.
+     *
+     * A. The contact order, i.e. which writer pairs a flag-20 line with an armed selection.
+     *   1. The card's "new target" control arms the selection: Smap_SelectMapTarget @ 0x84484 puts
+     *      bMapSelectionFlag up (0x84498), re-reads the ship index out of the card line (0x844A4), and --
+     *      because Ship+53 (bIntercepting) is set and the chased entry is a type 5 (0x844D0..0x844F0) --
+     *      removes that waypoint (StrategList_RemoveAt @ 0x84504) and clears the byte (0x84514). Line 0
+     *      becomes the flag-27 prompt (0x84574, 0x84580).
+     *   2. A press on the cell of an ACTIVE visible item reaches the select test again (flag 27 has no press
+     *      arm; 0x87D28 only consults it after the drag block) and this time the scan builds one line for it
+     *      (the type-4 active gate 0x831A0..0x831E8). The dispatch's type-4 active arm (0x834D0) clears the
+     *      panel row cursor (0x834D8), stores the item index at 0x186BE4 (0x834E4), pauses (0x834EC), sets
+     *      byte_18708C (0x834F8), drops the prompt (0x83504) and appends flag 20 with the cursor in colour
+     *      slot 0 and the item index in slot 1 (0x83524) -- and it is the one branch of the six that never
+     *      writes bMapSelectionFlag, so the selection the card armed is still up.
+     *   3. Geoscape_Draw's flag-0x14 arm branches on exactly that pair (0x909DC). With the selection up it
+     *      paints "Миссия: <panel row>" and installs Smap_CancelTarget @ 0x84254 on *pGeoscapeCtlB at y 102
+     *      (0x90C64, 0x90C74) with the ОК label at y 103 (0x90CD4), and *pGeoscapeCtlA at y 125 (0x90CF0) with
+     *      Smap_ResolveInterceptUI (0x90D00) and "Отмена" at y 126 (0x90D5C). The press arm for flag 20
+     *      (0x876C4) hit-tests *pGeoscapeCtlA then *pGeoscapeCtlB while the selection is up (0x876D0..0x87704).
+     *   4. Smap_CancelTarget is the launch despite its name: it reads colour SLOT 1 (0x84268) as the strateg
+     *      index and calls Ship_LaunchIntercept @ 0x8427C with 0x187054 as the ship, then clears the
+     *      selection (0x84288), byte_187090[8] (0x84294), the line (0x842A0), byte_18708C (0x842BC) and
+     *      byte_187090 (0x842C8). So the flag-20 panel's own ОК is the order, and the slot that carries the
+     *      target is slot 1 -- the slot 0 the panel paints with (0x90A30) is its ROW, not the target.
+     *
+     * B. The multi-select box, i.e. what the >1 branch (0x832B0's else side) leaves and how it is answered.
+     *   0x832C0..0x83378 turns the status panel into a centred box (nPosX 120, nUnk7052 20, nViewW 200,
+     *   nUnk7056 = nPosY = 120 - (count / 2) * nFont), pauses the clock (0x83360), raises byte_18709C[4]
+     *   (0x8336C), plays sample 7 (0x83378) -- and DROPS the panel's row-selection byte 0x1BA1
+     *   (bFlag7073, 0x83358, STRB of the always-zero R9). The message list is left exactly as it was.
+     *   The press arm for that byte (0x87ABC) hands the pointer to UiScrollList_TrackHold at loc_88298, which
+     *   returns at once while 0x1BA1 is 0; the release arm (0x89B54) runs UiScrollList_ClickRow -- gated on
+     *   0x1BA1 too, so it selects nothing -- and then stores 1 back into it (0x89B8C). So the release that
+     *   follows the box-building press is what re-arms the panel, and the next press/release pair is the row
+     *   click: UiScrollList_ClickRow sets [0xBD8] = [0xBD4] + row and tail-calls [0xBC4], the panel's pfnClick,
+     *   which Geoscape_InitUI installed as Geoscape_OnRadarListClick @ 0x854c4 (0x86C1C).
+     *   Inside it: the item index comes out of anLineAux at the selected row (0x85500), byte_18709C[4] is
+     *   cleared (0x85504), the index is stored at 0x186BE4 (0x8550C) and the clock is unpaused (0x85510)
+     *   before the six (type, active) tests. Its type-4 arm (0x85674) posts the same flag 20 as the press
+     *   dispatch's, with one difference: colour slot 0 carries the panel ROW it just selected (0x856B4's a3 is
+     *   pStatusPanel->nUnk3032), which is what the flag-0x14 arm reads as the row it paints. With no selection
+     *   armed the arm takes its other branch (0x90B34..0x90B68): "Крушение <row> <size>" with a single control,
+     *   *pGeoscapeCtlA at y 115 carrying Smap_ResolveInterceptUI. */
+    {
+        Ship        *pCraft;
+        UiControl   *pCtlTarget, *pCtlA, *pCtlB;
+        StrategItem *pContact;
+        i32  nEntry, nWaypoint, nCellX = 0, nCellY = 0;
+        i32  nTgtX = 0, nTgtY = 0, nPressX = 0, nPressY = 0, nTgtPressX = 0, nTgtPressY = 0;
+        i32  nCount0, nContact, nContact2, nLineCount, nRowPick, nRowY, nBoxTop;
+        i32  nBlitsOrder, nBlitsBox, nBlitsClear;
+        char szWant[64];
+
+        printf("section 15: the contact order through the click, and the multi-select box\n");
+
+        pCraft     = g_world.apCraft[0];
+        pCtlTarget = g_world.ui.apCtl[GEOUI_CTL_186B9C];
+        pCtlA      = g_world.ui.apCtl[GEOUI_CTL_186BB4];  /* *pGeoscapeCtlA */
+        pCtlB      = g_world.ui.apCtl[GEOUI_CTL_186BB0];  /* *pGeoscapeCtlB */
+
+        nWaypoint = pCraft->nStrategIdx;
+        {
+            const StrategItem *pWay = (const StrategItem *)PtrArray_Get(&g_world.strategList, nWaypoint);
+            const StrategItem *pOwn = (const StrategItem *)PtrArray_Get(&g_world.strategList,
+                                                                        FindStrategById(&g_world.strategList,
+                                                                                        (i32)pCraft->bId));
+
+            Check(pCraft->bIntercepting == 1 && pWay != NULL && pWay->nType == 5,
+                  "the state section 14 left: the craft chases the type-5 waypoint its own click wrote");
+            if (pWay != NULL) { nTgtX = pWay->nX; nTgtY = pWay->nY; }   /* copied out: adds and removes realloc */
+            nEntry = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+            if (pOwn != NULL) { nCellX = pOwn->nX; nCellY = pOwn->nY; }
+            Check(nEntry >= 0 && pOwn != NULL && pOwn->nType == 1 && pOwn->bActive == 0 && pOwn->bVisible == 1,
+                  "the craft's entry is still the inactive visible item (0x955C0 made it visible again)");
+        }
+        Check(ScreenForCell(&g_world.view, nCellX, nCellY, &nPressX, &nPressY),
+              "the entry's cell has a screen pixel (the inverse of 0x82C84 / 0x82CAC)");
+        Check(ScreenForCell(&g_world.view, nTgtX, nTgtY, &nTgtPressX, &nTgtPressY),
+              "and so has the waypoint's cell, where the contact is put");
+
+        /* 1. The card, then the control that arms the selection and drops the outstanding waypoint. */
+        World_GeoscapePointer(&g_world, nPressX, nPressY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 11, "the press on the craft gives its card line");
+        nCount0 = PtrArray_GetCount(&g_world.strategList);
+        PressCtl(pCtlTarget);
+        CheckEqI32(g_world.bMapSelectionFlag, 1, "Smap_SelectMapTarget arms the selection (0x84498)");
+        Check(pCraft->bIntercepting == 0,
+              "and the waypoint removal runs this time: Ship+53 is set and the chased entry is a type 5 "
+              "(0x844D0, 0x844F0), so 0x84504 removes it and 0x84514 clears the byte");
+        CheckEqI32(PtrArray_GetCount(&g_world.strategList), nCount0 - 1,
+                   "one item fewer in the list -- the waypoint it was chasing (StrategList_RemoveAt @ 0x82ab0)");
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 27, "line 0 is the flag-27 prompt again");
+
+        /* 2. A contact stands on the waypoint's cell, and the press there answers the prompt with flag 20. */
+        nCount0  = PtrArray_GetCount(&g_world.strategList);
+        pContact = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                       4, 1 /* active */, 2, nTgtX, nTgtY, -1, 1);
+        nContact = nCount0;
+        if (pContact != NULL) { pContact->nDisplayId = 7; }
+        Check(pContact != NULL && pContact->nType == 4 && pContact->bActive == 1 && pContact->bVisible == 1,
+              "a type-4 active visible contact at the waypoint's cell, the shape the type-4 gate reads (0x831A0)");
+
+        World_GeoscapePointer(&g_world, nTgtPressX, nTgtPressY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 20,
+                   "the type-4 active arm appends flag 20 (0x83524)");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), 0,
+                   "colour slot 0 is the panel row cursor the arm cleared (0x834D8)");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 1), nContact,
+                   "and slot 1 is the item index it stored at 0x186BE4 (0x834E4)");
+        CheckEqI32(g_world.nSelectedStrategIdx, nContact, "0x186BE4");
+        CheckEqI32(g_world.bMapSelectionFlag, 1,
+                   "the selection is STILL up: the type-4 arm is the one of the six that never writes the byte");
+        CheckEqI32(g_world.bFlag18708C, 1, "byte_18708C set (0x834F8)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "and the clock paused (0x834EC)");
+        CheckEqI32((i32)g_world.ui.pStatusPanel->nUnk3032, 0, "the panel's row cursor cleared (0x834D8)");
+        CheckEqI32(g_world.nRadarPulseTimer, 250, "the type-4 arm writes no radar pulse timer, unlike 11/19/18");
+
+        /* 3. The panel the pair paints, and its ОК. */
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsOrder = g_nBlits;
+        Check(pCtlB->y == PUFO_STATUS_TARGETCTL_Y_CANCEL && pCtlB->pfnClick == g_world.frame.panel.pfnCancelTarget,
+              "the selecting arm puts Smap_CancelTarget on *pGeoscapeCtlB at y 102 (0x90C64, 0x90C74)");
+        Check(pCtlA->y == PUFO_STATUS_TARGETCTL_Y_OK2 && pCtlA->pfnClick == g_world.frame.panel.pfnResolveInterceptUI,
+              "and Smap_ResolveInterceptUI on *pGeoscapeCtlA at y 125 (0x90CF0, 0x90D00)");
+        Check(pCtlA->x == 120 - ((i32)pCtlA->uWidth / 2) && pCtlB->x == 120 - ((i32)pCtlB->uWidth / 2),
+              "both centred on x 120 (0x90C54, 0x90CE0)");
+        DumpFrame("geoscape_order_contact");
+
+        nCount0 = PtrArray_GetCount(&g_world.strategList);
+        PressCtl(pCtlB);
+        Check(pCraft->bWeaponsHot == 1 && pCraft->bAtBase == 0 && pCraft->bIntercepting == 1
+                  && pCraft->nStrategIdx == nContact,
+              "Smap_CancelTarget @ 0x8427C launches at the item colour SLOT 1 names (0x84268), not slot 0");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "and clears the selection (0x84288)");
+        CheckEqI32(g_world.bFlag18708C, 0, "with byte_18708C (0x842BC)");
+        CheckEqI32(g_world.bFlag187090, 0, "and byte_187090 (0x842C8)");
+        CheckEqI32(g_world.bFlag187098, 0, "and byte_187090[8] (0x84294)");
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "the panel line is gone (0x842A0)");
+        CheckEqI32(g_world.geo.time.bPaused, 0, "and the clock runs again, the list being empty (0x842AC)");
+        Check(pContact != NULL && pContact->nType == 4 && pContact->nX == nTgtX && pContact->nY == nTgtY
+                  && PtrArray_GetCount(&g_world.strategList) == nCount0,
+              "the contact itself is untouched and still in the list");
+
+        /* 4. The box: two contacts in one cell. */
+        {
+            StrategItem *pSecond = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed,
+                                                       g_world.view.nMode, 4, 1, 2, nTgtX, nTgtY, -1, 1);
+            nContact2 = nCount0;
+            if (pSecond != NULL) { pSecond->nDisplayId = 8; }
+            Check(pSecond != NULL, "a second active contact in the same cell, so the scan builds two lines");
+        }
+
+        World_GeoscapePointer(&g_world, nTgtPressX, nTgtPressY, true);
+
+        nLineCount = (i32)g_world.ui.pStatusPanel->nLineCount;
+        nBoxTop    = 120 - (nLineCount / 2) * (i32)g_world.ui.pStatusPanel->nFont;
+        for (nRowPick = 0; nRowPick < nLineCount; ++nRowPick) {
+            if (g_world.ui.pStatusPanel->anLineAux[nRowPick] == nContact2) { break; }
+        }
+        nRowY = nBoxTop + nRowPick * (i32)g_world.ui.pStatusPanel->nFont + 8;
+        printf("  the box has %d rows at y %d..%d; the picked row %d is clicked at x 120, y %d\n",
+               nLineCount, nBoxTop, nBoxTop + nLineCount * (i32)g_world.ui.pStatusPanel->nFont, nRowPick, nRowY);
+
+        Check(nLineCount >= 2 && nRowPick < nLineCount,
+              "the panel carries a row per selectable item in the cell, the picked one carrying the new index (0x83230)");
+        Check(g_world.ui.pStatusPanel->nPosX == 120 && g_world.ui.pStatusPanel->nUnk7052 == 20
+                  && g_world.ui.pStatusPanel->nViewW == 200,
+              "the >1 branch lays the panel out as a box: nPosX 120 (0x832C0), left 20 (0x83308), width 200 (0x83348)");
+        Check(g_world.ui.pStatusPanel->nUnk7056 == nBoxTop && g_world.ui.pStatusPanel->nPosY == nBoxTop,
+              "with nUnk7056 and nPosY both 120 - (count / 2) * nFont (0x832F4, 0x83334)");
+        CheckEqI32(g_world.ui.pStatusPanel->bFlag7073, 0,
+                   "and it DROPS the panel's row-selection byte 0x1BA1 (0x83358, an STRB of the always-zero R9), "
+                   "which is why neither of the two panel arms can select a row on this press");
+        CheckEqI32(g_world.bFlag1870A0, 1, "byte_18709C[4] up (0x8336C), the gate the press arm 0x87ABC reads");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "the branch pauses (0x83360)");
+        CheckEqI32(g_world.msgLines.nLineCount, 0,
+                   "and the message list is left exactly as it was: no line is added, removed or changed");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "the selection stays down, so the clicked row answers as a list click");
+
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsBox = g_nBlits;
+        DumpFrame("geoscape_multi_box");
+
+        (void)World_GeoscapePointerUp(&g_world);
+        CheckEqI32(g_world.msgLines.nLineCount, 0,
+                   "the box-building release selects nothing either: UiScrollList_ClickRow is gated on 0x1BA1 too "
+                   "(0x3EF44), so no row click runs");
+        CheckEqI32(g_world.ui.pStatusPanel->bFlag7073, 1,
+                   "and it then stores 1 back into the byte (0x89B8C) -- the panel is clickable from here on");
+
+        /* 5. The row click, now that the release re-armed the panel: the press hover-tracks and the release
+         *    selects the row and tail-calls the panel's pfnClick, which InitUI installed as
+         *    Geoscape_OnRadarListClick (0x86C1C). */
+        World_GeoscapePointer(&g_world, 120, nRowY, true);
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "the press itself adds nothing (UiScrollList_TrackHold, loc_88298)");
+        (void)World_GeoscapePointerUp(&g_world);
+
+        CheckEqI32(g_world.ui.pStatusPanel->nUnk3032, g_world.ui.pStatusPanel->nUnk3028 + nRowPick,
+                   "UiScrollList_ClickRow sets [0xBD8] = [0xBD4] + row (0x3EFD8..0x3EFE8)");
+        CheckEqI32(g_world.bFlag1870A0, 0, "and Geoscape_OnRadarListClick clears byte_18709C[4] (0x85504)");
+        CheckEqI32(g_world.nSelectedStrategIdx, nContact2,
+                   "the item index read out of anLineAux at that row (0x85500) lands at 0x186BE4 (0x8550C)");
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 20,
+                   "its type-4 active test appends flag 20 (0x856B4), the same post as the press dispatch's");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), nRowPick,
+                   "with colour slot 0 carrying the panel ROW it just selected (0x856B4's third argument is "
+                   "pStatusPanel->nUnk3032), not 0 and not the item index");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 1), nContact2,
+                   "and slot 1 the item index, which is what the ОК reads (0x84268)");
+        CheckEqI32(g_world.bFlag18708C, 1, "byte_18708C up (0x85688)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "and the clock paused again (0x8567C)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0,
+                   "no screen change: only the type-0 inactive test opens one (0x855B0)");
+
+        /* The row the scan built: TEXTS[1147]'s own bytes then the display id, exactly SmapHit_PutLabel
+         * (0x831A0) followed by SmapHit_AppendNumber (0x831E8) -- compared against the loaded blob, not a
+         * source literal, because the record is cp1251. */
+        (void)snprintf(szWant, sizeof(szWant), "%s%d",
+                       g_assets.pTextRecs + (size_t)PUFO_TEXT_REC_CRAFT_LABEL * PUFO_TEXT_REC_STRIDE, 8);
+        {
+            const char *pszRow = (g_world.ui.pStatusPanel->apLines[nRowPick] != NULL)
+                                     ? (const char *)g_world.ui.pStatusPanel->apLines[nRowPick] : NULL;
+
+            Check(pszRow != NULL && strcmp(pszRow, szWant) == 0,
+                  "the row colour slot 0 names is the panel's own row: TEXTS[1147] + the display id (0x831E8)");
+        }
+        printf("  the box's rows read \"%s\" and \"%s\"\n",
+               (g_world.ui.pStatusPanel->apLines[0] != NULL) ? (const char *)g_world.ui.pStatusPanel->apLines[0] : "",
+               (g_world.ui.pStatusPanel->apLines[1] != NULL) ? (const char *)g_world.ui.pStatusPanel->apLines[1] : "");
+
+        /* 6. With no selection armed the same flag-20 line paints the OTHER arm: one control, the resolve. */
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsClear = g_nBlits;
+        Check(pCtlA->y == PUFO_STATUS_TARGETCTL_Y_OK && pCtlA->pfnClick == g_world.frame.panel.pfnResolveInterceptUI,
+              "the clear arm puts Smap_ResolveInterceptUI on *pGeoscapeCtlA at y 115 (0x90B4C, 0x90B60)");
+        DumpFrame("geoscape_target_panel");
+
+        PressCtl(pCtlA);
+        CheckEqI32(g_world.bFlag18708C, 0, "Smap_ResolveInterceptUI clears byte_18708C (0x84A2C)");
+        CheckEqI32(g_world.bFlag187090, 0, "byte_187090 (0x84A24)");
+        CheckEqI32(g_world.bFlag187098, 0, "byte_187090[8] (0x84A3C)");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "and the selection (0x84A34)");
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "removes line 0 (0x84A80), no dismiss test matching flag 20");
+        CheckEqI32(g_world.geo.time.bPaused, 0, "and unpauses with an empty list (0x84A8C)");
+        CheckEqI32(g_world.bFinalMissionCtlArmed, 0, "and clears the final-mission armed byte (0x84A98)");
+        printf("  blits: order panel %d, box %d, clear panel %d\n", (int)nBlitsOrder, (int)nBlitsBox,
+               (int)nBlitsClear);
+    }
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 
