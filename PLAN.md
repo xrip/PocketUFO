@@ -3954,6 +3954,60 @@ unchanged; 18267 checks.
   (10 new), coverage 972/1103 (88.1%) and 596888/598792 (99.7%) unchanged, 36 frame references (12 re-made, looked
   at), 9 e2e pictures (2 re-made, all 9 looked at, 0 bad), `tools/check.sh` clean.
 
+- [x] **Part 97: the tactical view of a live mission -- the iso layer over a reloaded grid, the visibility pass
+  that admits a unit to it, and the grid order both readers need.** The gate now reads the iso-layer byte instead of
+  forcing it: `Tact_InitMission` clears `Map_bDrawIsoLayer` at 0x3C5C0 and its tail sets it at 0x3D55C, and `LoadGame`
+  runs that whole bring-up at 0x44E24, so the mission the save rebuilt already draws the iso layer. Census of the
+  reloaded grid: 14 400 cells, 14 379 with a floor sprite, 8 occupants, 35 cells carrying `bFlags44` bit 0 (the map
+  chunk stores that bit). Two invariants were then gated. (1) The grid order: `Save_ReadMap @ 0x433D8` indexes the
+  inline table as Map+0x15338 + 240*(i + row) + 4*col -- 0x4349C adds the row counter to `i`, which steps 60 per layer
+  at 0x43440, 0x434A0 multiplies by 0xF0, 0x43880 adds 4 per column -- and stores the counters as nX at 0x434DC / nY
+  at 0x434E0 / nZ at 0x434E4, i.e. `[layer][nY][nX]`; `MapView_bResolveIsoCell @ 0x1B0D4` reads the same table as
+  `apCells[60*(60*layer + nMapX) + nMapY]` with nMapX bounded by 10*Map_nMapDimY (0x1B13C..0x1B168), so nMapX is the
+  row. A test check pins both on the selected unit's own cell. (2) Why a resumed mission draws no unit:
+  `MapView_DrawUnit`'s gate reads the drawn cell's byte +0x2C and skips the whole unit when bit 0 is clear (0x1CA50
+  LDR, 0x1CA54 LDRB [R3,#0x2C], 0x1CA58 ANDS #1, 0x1CA5C BEQ 0x1D5E4), while `Tact_InitMission`'s two visibility calls
+  at 0x3CE54 and 0x3D10C run BEFORE `Save_ReadTeamUnits` reads the roster at 0x3D234 -- on a load they walk an empty
+  squad. Running the game's own pass (`Unit_UpdateVisibility @ 0x48580` per member, the loop
+  `UnitList_ForEachRefresh @ 0x22B54` and `Tact_RefreshTeamVisibility @ 0x4F368` run at 0x22B80 and 0x4F3C8) reveals
+  them: after it no member stands on an unrevealed cell, the selected unit's cell gains the bit, and its sprite plus
+  its selection arrow appear (125 new px). The reveal stores were enumerated from the ARM: 0x48688/0x486F0/0x48750 (a
+  large unit's other footprint cells), 0x487DC (down the column), 0x4885C (up the column), 0x48E04 (the cell a ray
+  starts in), 0x48E48/0x48EC0 (up/down the column a ray entered -- the port's `Unit_RevealColumn`), 0x493A0 (an enemy
+  the LOS trace reached). The census moves 35 -> 36 rather than into the hundreds, and that is the ceiling rule, not a
+  stalled fan: the id test at 0x48F90..0x48FE4 blocks every ceiling outside Desert 6's 0x1B..0x41 and Forest 2's
+  0x1B..0x40 plus 82, so a ray in a building reveals its own cell and stops at the room's ceiling, and seven members'
+  own cells were already revealed by the chunk. Two camera states the game itself produces are now dumped and gated:
+  the centring the load's resume tail puts on the selected unit (camera 25,1, iso -4/5, band ink 57 464 of 57 600) and
+  the same focus moved to another squad member with `MapView_FocusSelected @ 0x16710` (camera 27,16, iso 13/18, 66 535
+  px moved, cursor flags = cell nZ + 1 as `MapCursor_SetFlags @ 0x26F78` says). The centred picture reads as a unit on
+  dirt and that is faithful: `MapView_bResolveIsoCell` gives a cell whose `bFlags29` bit 4 is clear the palette 255,
+  which `Font_BlitGlyphToSoft @ 0x9EC48` clamps to 19 at 0x9EC58, while a seen cell draws with its own byte +0x38, and
+  the unit gate at 0x1CA54 tests `bFlags44` alone. Second finding, a regression: the committed `StrategItem_AllocAdd`
+  carried the calloc explanation in its comment but called `malloc` -- the 132 uninitialised record bytes were back,
+  and the two contact cards printed 1346 instead of 2200 in some runs (byte +0x14 = 0x0E, 2200 - 61*14). calloc is
+  restored and all 38 dumps came out byte-identical across 6 runs. References: 10 re-made -- 2 contact cards from the
+  calloc fix (71 px each, x 159..178 y 115..124) and 8 `tact_hud_*` from the visibility pass now running before those
+  sections, proven by guarding only that loop (exactly those 8 revert; the minimap wholesale, 29 506 px, because its
+  per-cell gates read `bFlags29` bit 4 and `bFlags44` + occupant), all looked at; 2 new (`tact_view_centred`,
+  `tact_view_refocus`). IDB: `Tact_RefreshTeamVisibility @ 0x4F368` retyped `int __fastcall(TactState *pTactState)` so
+  the pseudocode now reads `aQueue[nQueueCursor + 1].nCmd = 12` / `nQueueLen = LOWORD(nQueueCursor) + 2` / `bFlag1 = 1`
+  with notes at 0x4F368 and 0x4F388; load-order notes at 0x3CE54 and 0x3D10C; the draw gate at 0x1CA54; the reveal
+  stores at 0x48E04/0x48E48/0x48EC0 (with the floor-sprite break addressing: 0x48E60 reads apCells[nIdx+3600] as
+  base+0x18B78 = 0x15338+0x3840); a grid-order and fog-palette comment on `MapView_bResolveIsoCell @ 0x1B0D4`; a
+  correction at 0x1B0EC (`ADDMI` there is the negative-dividend fix for the `ASR` that follows, not the odd-row test,
+  which is the remainder test at 0x1B128/0x1B12C); the index/coordinate note at 0x434DC; `idb_save`.
+
+- [ ] **`Tact_RefreshTeamVisibility` stamps the action queue one entry earlier than the original.** Found while
+  typing the function in Part 97. The ARM ends the queued list with `LDR R3,[R0,#0x10]` / `MUL R2,R3,#0x38` /
+  `STRB R2(=12),[R0,#0x50]` at 0x4F380..0x4F388, and byte 0x50 is the `aQueue` base 0x18 plus one 56-byte entry, so
+  the mark lands on `aQueue[nQueueCursor + 1].nCmd`; `nQueueLen` becomes `LOWORD(nQueueCursor) + 2`
+  (0x4F394 `LDRH [R0,#0x10]` + 2, stored through 0x11000|0x1D4 = 0x111D4). The port's `Tact_RefreshTeamVisibility`
+  writes `pQueue->aQueue[pQueue->nQueueCursor].nCmd = TACTCMD_END_MARK` -- one entry early -- and its header comment
+  states the decompilation as `aQueue[nQueueCursor]`. The neighbouring writer `TactState_EnqueueEndMark @ 0x4F300`
+  stamps `aQueue[nQueueLen].nCmd`, so the two writers disagree about where the terminator sits. Fix the port and its
+  two comments together, and re-check `test_tactstate`/`test_tactend`, which read the queue back.
+
 - [ ] **Three options-screen seams stay open.** The seven slot handlers (`SaveGame_Slot0..6_CloseUI`
   0x6af80..0x6b148, `LoadGame_Slot0..6_InitOptions` 0x6b194..0x6b404) are ported and gated but reach SaveGame /
   LoadGame through a `DatFile` the caller opens, and the shell opens slot files only on its tact-bank path

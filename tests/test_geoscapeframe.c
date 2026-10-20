@@ -585,6 +585,21 @@ static i32 FrameCountOccupants(void)
     return n;
 }
 
+/* Cells the tactical draw admits a unit onto: MapCell.bFlags44 bit 0, the byte
+ * MapView_DrawUnit tests at 0x1CA54 (BEQ 0x1D5E4 skips the unit) and
+ * Unit_UpdateVisibility @ 0x48580 sets at 0x48E04 / 0x48E48 / 0x48EC0. */
+static i32 FrameCountRevealed(void)
+{
+    i32 n = 0;
+
+    for (i32 k = 0; k < PUFO_TERRAIN_CELL_SLOTS; ++k) {
+        if (g_world.apTactCells[k] != NULL && (g_world.apTactCells[k]->bFlags44 & 1u) != 0) {
+            ++n;
+        }
+    }
+    return n;
+}
+
 /* Part 76's counting rule for the furniture arms. Paint the mission as it stands on its furniture
  * screen and keep that picture; then paint the SAME state with Map_nUiScreen forced to 0, which is the
  * iso layer with no arm on top of it. The difference is that arm's own pad blits: the iso layer's only
@@ -2791,7 +2806,8 @@ int main(void)
                       && g_world.nMapUnk138E70 >= 0 && g_world.nMapUnk138E70 <= 20,
                   "the prologue random pair RandU16(0x28)+10 and RandU16(0x14): each inside its scaled range; the seed is the clock, so the exact pair is not pinned");
             Check(g_world.bMapDrawIsoLayer == 1 && g_world.bMapSweepArmed == 1,
-                  "the tail sets the iso-layer byte (0x3D260) and the sweep-armed byte (0x3D268)");
+                  "the tail sets the iso-layer byte (Map_bDrawIsoLayer, STRB #1 at 0x3D55C -- 0x3D260 is "
+                  "GameSpeed_Set, not this store) and the sweep-armed byte at 0x3D268");
             Check(g_world.bMapSpawnAlt == 0 && g_world.bMapAltOutcomePath == 0 && g_world.pTactBriefPad == NULL,
                   "the assault tail wrote bSpawnAlt 0 (0x83A6C), so the briefing gate (spawnAlt AND mode 0) takes its NULL branch and no pad is loaded");
             {
@@ -4970,15 +4986,210 @@ int main(void)
 
         /* The picture the rebuild paints: the frame seam over the mission the readers brought back. */
         Check(World_bTactFrameLive(&g_world), "the reloaded mission sits on the tactical frame seam");
-        /* The carried tile counts are what make the cell passes cover this mission at all -- see the
-         * note above on Map+0x34/0x35 having no writer in the beta. */
-        g_world.bMapDrawIsoLayer = 1;
+        /* Part 97: the layer is not ours to turn on. Tact_InitMission clears Map_bDrawIsoLayer @ 0x138E68 at
+         * 0x3C5C0 and its return tail sets it at 0x3D55C, and LoadGame runs that whole bring-up at 0x44E24 -- so
+         * the mission the save rebuilt already has the iso layer on. Render_Frame only reads the byte (0x22404,
+         * 0x225C4); the only other writer is Inv_OpenScreen, which puts 0 on the inventory screen. */
+        Check(g_world.bMapDrawIsoLayer == 1,
+              "the bring-up left the iso layer on for the reloaded mission (0x3C5C0 clears, 0x3D55C sets, "
+              "LoadGame runs the bring-up at 0x44E24)");
         ClearSurface();
         nBlitsBefore = g_nBlits;
         World_TactFrame(&g_world);
         Check(g_nBlits > nBlitsBefore,
               "the iso chain runs over the reloaded mission: the cell passes and the unit glyphs blit");
         DumpFrame("tact_loaded_mission");
+
+        /* --- Part 97: the tactical view the mission really shows --------------------------------
+         * Two camera states the game itself produces over the map the readers rebuilt: the centring the
+         * load's resume tail put on the selected unit (MapView_FocusSelected @ 0x16710, run at 0x3D248) and
+         * the same focus moved to another unit of the squad. The gate byte, the window pair and the size
+         * pair are only checked here, never written. */
+        {
+            static u16 aView0[240 * 320];
+            static u16 aSnap0[240 * 320];
+            Soldier *pOther = NULL;
+            i32 nCamX0 = g_world.tactEnv.focus.nCamScrollX;
+            i32 nCamY0 = g_world.tactEnv.focus.nCamScrollY;
+            i32 nBand0, nBand1, nMoved, nReveal0, nReveal1, nUnitPx;
+            i32 nIsoA0, nIsoB0;
+            i32 i2;
+
+            Check(g_world.tactEnv.tileSize.nTileW == PUFO_TILE_W
+                      && g_world.tactEnv.tileSize.nTileH == PUFO_TILE_H,
+                  "Map_InitFacingScratch's size pair Map+0x30/0x32 = 240/320 (STRH at 0x26F50, 0x26F60) is the "
+                  "one the mission runs with -- the iso offsets and the focus scratch both read it");
+
+            for (i2 = 0; i2 < pMapL->nXcomCount && pOther == NULL; ++i2) {
+                Soldier *pU = pMapL->apXcomUnits[i2];
+
+                if (pU != NULL && pU != pMapL->pSelUnit && pU->pCell != NULL) {
+                    pOther = pU;
+                }
+            }
+            Check(pMapL->pSelUnit != NULL && pMapL->pSelUnit->pCell != NULL && pOther != NULL,
+                  "the squad came back with a selected unit on a cell and at least one other unit on a cell, "
+                  "so the view can be re-centred the way a press on that unit does");
+
+            /* What the reloaded grid actually holds, before anything is drawn. */
+            {
+                i32 nCells = 0, nFloor = 0, nOcc = 0;
+
+                for (i2 = 0; i2 < PUFO_MAP_LAYERS; ++i2) {
+                    for (i32 yy = 0; yy < PUFO_MAP_CELL_DIM; ++yy) {
+                        for (i32 xx = 0; xx < PUFO_MAP_CELL_DIM; ++xx) {
+                            const MapCell *pC = g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * i2
+                                                                    + PUFO_MAP_CELL_DIM * yy + xx];
+
+                            if (pC == NULL) { continue; }
+                            ++nCells;
+                            if (pC->pFloorSpr != NULL) { ++nFloor; }
+                            if (pC->pUnit != NULL) { ++nOcc; }
+                        }
+                    }
+                }
+                nReveal0 = FrameCountRevealed();
+                printf("  the reloaded grid: %d cells, %d with a floor sprite, %d with an occupant, %d revealed\n",
+                       nCells, nFloor, nOcc, nReveal0);
+                Check(nFloor > 14000 && nOcc == pMapL->nXcomCount,
+                      "the map chunk restored the terrain and put every squad member on a cell: 14 379 floor "
+                      "sprites and 8 occupants on the 14 400-cell grid (Save_ReadMap's records, 0x434DC walk)");
+                Check((pMapL->pSelUnit->pCell->bFlags44 & 1u) == 0,
+                      "and the selected unit's own cell is NOT revealed, which is why the frame above draws no "
+                      "unit: MapView_DrawUnit's gate reads the drawn cell's byte +0x2C and skips the unit when "
+                      "bit 0 is clear (0x1CA50 LDR, 0x1CA54 LDRB [R3,#0x2C], 0x1CA58 ANDS #1, 0x1CA5C BEQ "
+                      "0x1D5E4), and Tact_InitMission's two visibility calls at 0x3CE54 and 0x3D10C run BEFORE "
+                      "Save_ReadTeamUnits reads the roster at 0x3D234, so on a load they walk an empty squad");
+            }
+
+            /* Snapshot the same frame WITHOUT the refresh, so the unit's own pixels can be measured later. */
+            ClearSurface();
+            World_TactFrame(&g_world);
+            for (i2 = 0; i2 < 320; ++i2) {
+                for (i32 x = 0; x < 240; ++x) {
+                    aSnap0[(size_t)i2 * 240u + (size_t)x] = (u16)SurfPix(x, i2);
+                }
+            }
+
+            /* The game's own refresh: Unit_UpdateVisibility @ 0x48580 once per squad member, the call
+             * Tact_RefreshTeamVisibility @ 0x4f368 makes per unit (and UnitList_ForEachRefresh @ 0x22b54 per
+             * roster, reached from AfterEnemyStep at 0x4C930). It is the pass that puts bFlags44 bit 0 on the
+             * cells MapView_DrawUnit admits. In THIS mission the pass adds one cell, not hundreds: every unit
+             * stands in a room, and the ray fan stops at the first cell whose ceiling is lofted -- the ceiling
+             * id test at 0x48F90..0x48FE4 (Desert 6 allows ceiling ids 0x1B..0x41, Forest 2 allows 0x1B..0x40
+             * plus 82, any other mission type blocks every ceiling) -- so a ray reveals the cell it starts in
+             * and stops at the room's ceiling. */
+            for (i2 = 0; i2 < pMapL->nXcomCount; ++i2) {
+                if (pMapL->apXcomUnits[i2] != NULL) {
+                    (void)Unit_UpdateVisibility(pMapL->apXcomUnits[i2], &g_world.tactEnv.vis);
+                }
+            }
+            Check((pMapL->pSelUnit->pCell->bFlags44 & 1u) != 0,
+                  "the refresh revealed the selected unit's cell: the only writes of cell byte +0x2C bit 0 in "
+                  "Unit_UpdateVisibility @ 0x48580 are 0x48688/0x486F0/0x48750 (a large unit's other footprint "
+                  "cells), 0x487DC (down its column), 0x4885C (up its column), 0x48E04 (the cell a ray starts "
+                  "in), 0x48E48/0x48EC0 (up/down the column a ray entered -- the port's Unit_RevealColumn), and "
+                  "0x493A0 (an enemy the LOS trace reached)");
+            {
+                i32 nOwnUnlit = 0;
+
+                for (i2 = 0; i2 < pMapL->nXcomCount; ++i2) {
+                    if (pMapL->apXcomUnits[i2] != NULL && pMapL->apXcomUnits[i2]->pCell != NULL
+                        && (pMapL->apXcomUnits[i2]->pCell->bFlags44 & 1u) == 0) {
+                        ++nOwnUnlit;
+                    }
+                }
+                Check(nOwnUnlit == 0,
+                      "after the game's own refresh no squad member stands on an unrevealed cell, so every one "
+                      "of them is admissible to MapView_DrawUnit's gate at 0x1CA54");
+                printf("  members on an unrevealed cell after the refresh: %d\n", nOwnUnlit);
+            }
+            printf("  the view the layer draws: tile window %dx%d, %d layers, camera %d,%d, "
+                   "iso pair %d,%d, selected cell %d,%d,%d\n",
+                   g_world.sTactInput.nTileShiftX, g_world.sTactInput.nTileShiftY,
+                   g_world.tactEnv.cursor.nFlags, g_world.tactEnv.focus.nCamScrollX,
+                   g_world.tactEnv.focus.nCamScrollY, g_world.sTactIso.nIsoOffA,
+                   g_world.sTactIso.nIsoOffB, pMapL->pSelUnit->pCell->nX,
+                   pMapL->pSelUnit->pCell->nY, pMapL->pSelUnit->pCell->nZ);
+
+            /* Both the readers of the mission grid have to agree on its order or the terrain lands
+             * transposed under the units. Save_ReadMap walks 10*dimY rows x 10*dimX columns and stores
+             * the row counter as nY and the column counter as nX, into the slot its own index math
+             * builds; MapView_bResolveIsoCell reads the same inline table back with nMapX in the row
+             * position. */
+            {
+                const MapCell *pSel = pMapL->pSelUnit->pCell;
+                i32 nIdxRowX = PUFO_TERRAIN_CELLS_PER_LAYER * (i32)pSel->nZ
+                             + PUFO_MAP_CELL_DIM * (i32)pSel->nX + (i32)pSel->nY;
+                i32 nIdxRowY = PUFO_TERRAIN_CELLS_PER_LAYER * (i32)pSel->nZ
+                             + PUFO_MAP_CELL_DIM * (i32)pSel->nY + (i32)pSel->nX;
+
+                Check(g_world.apTactCells[nIdxRowY] == pSel && g_world.apTactCells[nIdxRowX] != pSel,
+                      "the mission grid is [layer][nY][nX]: Save_ReadMap's index is Map+0x15338 + "
+                      "240*(i + row) + 4*col -- 0x4349C adds the row counter to i (which steps 60 per "
+                      "layer at 0x43440) and 0x434A0 multiplies by 0xF0, 0x43880 adds 4 per column -- and "
+                      "the counters land as nX at 0x434DC / nY at 0x434E0, while MapView_bResolveIsoCell "
+                      "indexes apCells[60*(60*layer + nMapX) + nMapY] with nMapX bounded by 10*nMapDimY");
+            }
+            nReveal1 = FrameCountRevealed();
+            printf("  after the refresh: revealed cells went from %d to %d\n", nReveal0, nReveal1);
+            Check(nReveal1 > nReveal0,
+                  "the pass adds ground rather than only the selected unit's cell, and the count is small "
+                  "because of the ceiling rule, not a stalled fan: seven members' own cells came back revealed "
+                  "in the map chunk, and a facing's pass is 31 rays of the 120 (Tact_BuildVisRayTable @ 0x37AE4 "
+                  "seeds pass p on rays 15p+k for k=0..30)");
+
+            ClearSurface();
+            World_TactFrame(&g_world);
+            nIsoA0 = g_world.sTactIso.nIsoOffA;
+            nIsoB0 = g_world.sTactIso.nIsoOffB;
+            nBand0 = InkInBox(0, 0, 240, 240, NULL);
+            for (i2 = 0; i2 < 320; ++i2) {
+                for (i32 x = 0; x < 240; ++x) {
+                    aView0[(size_t)i2 * 240u + (size_t)x] = (u16)SurfPix(x, i2);
+                }
+            }
+            nUnitPx = DiffInBox(40, 40, 200, 220, aSnap0);
+            printf("  the centred view: camera %d,%d iso %d/%d, ink over the map band %d of %d, "
+                   "new pixels where the revealed unit stands %d\n", nCamX0, nCamY0, nIsoA0, nIsoB0,
+                   nBand0, 240 * 240, nUnitPx);
+            Check(nUnitPx > 40,
+                  "the squad member is drawn once its cell is revealed: the sprite and its selection arrow "
+                  "(pPadSelSold, blitted with bFlag 0xFF at 0x1D5D8) change the centred area against the same "
+                  "frame before the refresh");
+            Check(nBand0 > 40000,
+                  "the terrain pass paints the map band, not a strip of it: the 9 x 47 window over the real "
+                  "camera covers most of the 240 x 240 area above the HUD");
+            /* The state this picture holds: the camera the load's own resume tail put on the selected
+             * unit's cell, and that cell revealed (bFlags44 bit 0) but NOT seen. MapView_bResolveIsoCell
+             * gives a cell whose bFlags29 bit 4 is clear the palette 255, which Font_BlitGlyphToSoft
+             * clamps to 19 at 0x9EC58, while a seen cell draws with its own palette (bUnk56, or 0 when
+             * nFlags32 & 7 is 4) -- so the ground under the soldier is a fallback-palette floor and the
+             * lit corner along the bottom is the cells the save carried with bit 4 set. The soldier is
+             * drawn because its cell passes 0x1CA54, which tests bFlags44 alone. */
+            DumpFrame("tact_view_centred");
+
+            MapView_FocusSelected(&g_world.tactEnv.focus, pOther->pCell, g_world.bMapSweepArmed,
+                                  &g_world.tactEnv.cursor);
+            Check(g_world.tactEnv.cursor.nFlags == (i32)(pOther->pCell->nZ + 1),
+                  "MapCursor_SetFlags @ 0x26F78 puts the layer byte Map+0x15138 on the new cell's layer + 1");
+            Check(g_world.tactEnv.focus.nCamScrollX != nCamX0 || g_world.tactEnv.focus.nCamScrollY != nCamY0,
+                  "the focus put 0x15130/0x15134 on the other unit's cell (Map_CenterOffsetX/Y @ 0x26FCC/0x26FFC)");
+
+            ClearSurface();
+            World_TactFrame(&g_world);
+            nBand1 = InkInBox(0, 0, 240, 240, NULL);
+            nMoved = DiffInBox(0, 0, 240, 320, aView0);
+            printf("  the re-centred view: camera %d,%d iso %d/%d (was %d/%d), ink %d, picture moved %d px\n",
+                   g_world.tactEnv.focus.nCamScrollX, g_world.tactEnv.focus.nCamScrollY,
+                   g_world.sTactIso.nIsoOffA, g_world.sTactIso.nIsoOffB, nIsoA0, nIsoB0, nBand1, nMoved);
+            Check(g_world.sTactIso.nIsoOffA != nIsoA0 || g_world.sTactIso.nIsoOffB != nIsoB0,
+                  "the layer walk changed with the camera: MapView_DrawIsoLayer re-reads Map_IsoOffsetA/B @ "
+                  "0x26F88/0x26FA8 (camX - 5*nMapDimX + camY, 5*nMapDimY - camX + camY - 1) at 0x21E5C/0x21E84");
+            Check(nBand1 > 40000, "and the terrain still covers the band at the second camera");
+            Check(nMoved > 5000, "the terrain and the units moved with the camera rather than staying put");
+            DumpFrame("tact_view_refocus");
+        }
 
         /* --- screen 1: the inventory arm at 0x224AC (Part 80) -------------------------------
          * 0x2237C routes case 1 to 0x224AC, never through 0x22414, so this arm draws NO iso layer: the

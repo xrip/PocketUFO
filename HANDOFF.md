@@ -3120,3 +3120,17 @@ what a fresh WinCE heap hands out -- and the whole 36-picture set came out byte-
 pictures read as "corrupted" turned out to be my own reading of a scaled preview: the clock's year is four glyphs at
 x 105/115/125/135, y 304, and fingerprinting them against the hour digits shows 1999, not 1989. Read digit cells at
 native scale before calling a picture wrong.
+
+Part 97 put a real tactical picture under the gate. The iso layer is now driven by the state the save rebuild
+produces (the bring-up's own 0x3C5C0 clear and 0x3D55C set, reached through `LoadGame` at 0x44E24), the grid order
+`[layer][nY][nX]` is gated against both readers (`Save_ReadMap`'s index math and `MapView_bResolveIsoCell`'s
+`apCells[60*(60*layer + nMapX) + nMapY]`), and the reason a resumed mission drew no unit is named and gated:
+`MapView_DrawUnit`'s gate at 0x1CA54 tests the cell's byte +0x2C, and `Tact_InitMission`'s visibility walks at 0x3CE54
+and 0x3D10C run before `Save_ReadTeamUnits` fills the roster at 0x3D234. After the game's own per-unit pass no member
+stands on an unrevealed cell and the selected unit paints with its arrow. The revealed count only goes 35 -> 36, and
+the ceiling rule at 0x48F90..0x48FE4 is why, not a stalled fan. Two camera states -- the load's centring and a re-focus
+onto another member -- are dumped as `tact_view_centred.png` and `tact_view_refocus.png`. A regression was found and
+fixed: `StrategItem_AllocAdd` had the calloc comment but a `malloc` call, the 132 uninitialised record bytes were back
+and the contact cards printed 1346 in some runs; with calloc restored all 38 dumps are byte-identical across six runs.
+`Tact_RefreshTeamVisibility` is typed as `TactState *` in the IDB now, which exposed that the port stamps
+`aQueue[nQueueCursor]` where the ARM stamps `aQueue[nQueueCursor + 1]` -- recorded under Separate issues.

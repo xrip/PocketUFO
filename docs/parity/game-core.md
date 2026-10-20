@@ -20650,3 +20650,87 @@ look like an 8.
 Gate: 62/62 Release and 62/62 Debug, 19275 checks (10 new), coverage 972/1103 (88.1%) and
 596888/598792 bytes (99.7%) unchanged, 36 frame references (12 re-made, all looked at), 9 e2e
 pictures (2 re-made, 9 looked at, 0 bad), `tools/check.sh` clean.
+
+
+## Part 97 - the tactical view of a live mission: the grid order, the visibility pass, and the fog palette
+
+The tactical mission the save rebuilds is now judged as a picture rather than as a lit-pixel
+probe. The iso-layer byte is read, not written: `Tact_InitMission @ 0x3C550` clears
+`Map_bDrawIsoLayer` at 0x3C5C0 and its return tail sets it at 0x3D55C, and `LoadGame` runs the
+whole bring-up at 0x44E24, so the reloaded mission already draws the layer.
+
+What the reloaded grid holds, measured before any draw: 14 400 cells, 14 379 with a floor
+sprite, 8 with an occupant, 35 cells carrying `MapCell.bFlags44` bit 0 -- the map chunk stores
+that bit per cell. Its order is now a gate. `Save_ReadMap @ 0x433D8` builds the slot as
+Map+0x15338 + 240*(i + row) + 4*col: 0x43440 advances i by 60 per layer, 0x4349C adds the row
+counter, 0x434A0 multiplies by 0xF0 (240 bytes = 60 slots), 0x43880 adds 4 per column, and the
+counters are stored as nX at 0x434DC, nY at 0x434E0, nZ at 0x434E4 -- the table is
+`[layer][nY][nX]`. `MapView_bResolveIsoCell @ 0x1B0D4` reads the same inline table as
+`apCells[60*(60*layer + nMapX) + nMapY]`, bounded with nMapX against 10*Map_nMapDimY and nMapY
+against 10*Map_nMapDimX (0x1B13C..0x1B168), so its nMapX is the row. If either reader disagrees
+the terrain lands transposed under the units.
+
+The reason a resumed mission showed no soldiers is now gated. `MapView_DrawUnit @ 0x1C958` tests
+the drawn cell's byte +0x2C and jumps past the whole unit when bit 0 is clear (0x1CA50 LDR,
+0x1CA54 LDRB [R3,#0x2C], 0x1CA58 ANDS #1, 0x1CA5C BEQ 0x1D5E4). `Tact_InitMission`'s two
+visibility calls at 0x3CE54 and 0x3D10C run BEFORE `Save_ReadTeamUnits` reads the roster at
+0x3D234, so on the load path they walk a squad that has not been read yet. Running the game's
+own per-unit pass -- `Unit_UpdateVisibility @ 0x48580` for each member, which is exactly what
+`UnitList_ForEachRefresh @ 0x22B54` (call at 0x22B80) and `Tact_RefreshTeamVisibility @ 0x4F368`
+(call at 0x4F3C8) do over the roster at Map+0x15154 -- then reveals them: after it no squad
+member stands on an unrevealed cell, the selected unit's own cell gains the bit, and its sprite
+with the selection arrow appears (125 new pixels against the same frame taken before the pass).
+The only writes of that bit inside 0x48580 are 0x48688, 0x486F0 and 0x48750 (the other three
+cells of a large unit's footprint), 0x487DC (down its column), 0x4885C (up its column), 0x48E04
+(the cell a ray starts in), 0x48E48 and 0x48EC0 (up and down the column a ray entered, the
+port's `Unit_RevealColumn`), and 0x493A0 (an enemy the LOS trace reached).
+
+The revealed count goes 35 -> 36, not into the hundreds, and the reason is the ceiling rule
+rather than a stalled ray fan. Inside the walk the id test at 0x48F90..0x48FE4 blocks every
+ceiling outside Desert 6's 0x1B..0x41 and Forest 2's 0x1B..0x40 plus 82, so in a building a ray
+reveals the cell it starts in and stops at that room's ceiling; a facing's pass is 31 rays of
+the 120 (`Tact_BuildVisRayTable @ 0x37AE4` seeds pass p on rays 15p+k for k = 0..30); and seven
+of the eight members' own cells were already revealed by the saved chunk. A break-counter probe
+over the whole test confirmed the fan itself runs (3 379 rays walked, 33 120 steps, 4 975 reveal
+calls, no bounds or lookup breaks, 1 243 wall breaks and 2 136 ceiling breaks).
+
+Two camera states the game produces itself are dumped and gated. The first is the centring the
+load's resume tail applies at 0x3D248 through `MapView_FocusSelected @ 0x16710`: camera 25,1,
+iso pair -4/5, band ink 57 464 of 57 600. The second is the same focus moved to another squad
+member: camera 27,16, iso pair 13/18, 66 535 pixels of the picture moved, and the cursor byte
+Map+0x15138 set to the new cell's nZ + 1 as `MapCursor_SetFlags @ 0x26F78` does. The centred
+picture shows the soldier standing on what looks like open ground, and that is what the
+original's rules paint: `MapView_bResolveIsoCell` gives a cell whose `bFlags29` bit 4 is clear
+the palette 255, which `Font_BlitGlyphToSoft @ 0x9EC48` clamps to 19 at 0x9EC58, while a seen
+cell paints with its own byte +0x38 (or 0 when `nFlags32 & 7` is 4). Bit 4 is the seen stamp --
+`Unit_UpdateVisibility`'s LOS store at 0x49390 -- and the unit gate at 0x1CA54 tests `bFlags44`
+alone, so a revealed-but-unseen unit stands on fallback-palette terrain.
+
+The calloc decision from Part 96 had been lost in the committed tree: `StrategItem_AllocAdd`
+carried the comment explaining that zeroing is what a fresh WinCE heap hands out, while the call
+itself said `malloc(sizeof(StrategItem))` -- and 132 of the record's 136 bytes are uninitialised
+in the original (`operator new(0x88) @ 0x415d8` plus a ctor that writes one dword). The contact
+cards were non-reproducible again: in some runs byte +0x14 held 0x0E and the card printed 1346
+(2200 - 61*14) instead of 2200, in others 0. calloc is restored, the two cards are stable again,
+and all 38 frame dumps came out byte-identical across six runs.
+
+Twelve reference pictures moved and each has a proven cause. The two contact cards changed by 71
+px at x 159..178, y 115..124 -- the size/speed number, from the calloc fix. Eight `tact_hud_*`
+changed because the Part 97 pass now runs before those sections; guarding only that pass returns
+exactly those eight to their committed bytes, and their diffs are small (10..77 px around x
+106..117) except the look-mode minimap, which changes wholesale (29 506 px) because its per-cell
+content is gated on `bFlags29` bit 4 and on `bFlags44` bit 0 with an occupant. All twelve were
+looked at. Two pictures are new: `tact_view_centred.png` and `tact_view_refocus.png`, the second
+showing the interior, its stairs and five squad members with their selection arrows.
+
+IDB: `Tact_RefreshTeamVisibility @ 0x4F368` retyped as `int __fastcall(TactState *pTactState)`,
+which turns the decompilation from three magic-offset writes into `aQueue[nQueueCursor + 1].nCmd
+= 12`, `nQueueLen = LOWORD(nQueueCursor) + 2` and `bFlag1 = 1`; comments added at 0x3CE54 and
+0x3D10C (the load-order consequence), 0x1CA54 (the draw gate), 0x48E04, 0x48E48 and 0x48EC0 (the
+reveal stores, with the break addressing: 0x48E60 reads apCells[nIdx + 3600] as base+0x18B78 =
+0x15338+0x3840), 0x4F368 and 0x4F388, 0x434DC (the read side of the grid order), a grid-order
+and fog-palette comment on `MapView_bResolveIsoCell @ 0x1B0D4`, and a correction at 0x1B0EC --
+the `ADDMI R3,R3,#1` there is the negative-dividend fix for the `ASR` that follows, not the odd-
+row adjustment, which is the remainder test at 0x1B128/0x1B12C. One port defect came out of the
+same read and is recorded under Separate issues: the port stamps `aQueue[nQueueCursor]` where
+the ARM stamps `aQueue[nQueueCursor + 1]`.
