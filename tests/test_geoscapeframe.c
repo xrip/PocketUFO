@@ -67,6 +67,36 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
     }
 }
 
+/* The screen pixel a map cell lands on -- the inverse of the arithmetic Smap_HitTestStrategSelect
+ * resolves a click with (0x82C84 / 0x82CAC, one wrap per axis). The select test scans a 16x16 window
+ * of cells around the click, so any pixel resolving to the cell is a valid press. */
+static bool ScreenForCell(const SmapView *pView, i32 nCellX, i32 nCellY, i32 *pnX, i32 *pnY)
+{
+    for (i32 x = 0; x < PUFO_SURF_W; ++x) {
+        i32 nCol = pView->nScrollX + pView->nMapW / 2 + x - 120;
+
+        if (nCol < 0) {
+            nCol += pView->nMapW; /* 0x82CB4, one wrap only */
+        }
+        if (nCol != nCellX) {
+            continue;
+        }
+        for (i32 y = 0; y < PUFO_SURF_H; ++y) {
+            i32 nRow = pView->nScrollY + pView->nMapH / 2 + y - 160;
+
+            if (nRow < 0) {
+                nRow += pView->nMapH; /* 0x82CC4 */
+            }
+            if (nRow == nCellY) {
+                *pnX = x;
+                *pnY = y;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static i32 FindStrategById(const PtrArray *pList, i32 nId)
 {
     for (int i = 0; i < PtrArray_GetCount(pList); ++i) {
@@ -576,6 +606,7 @@ static i32 PaintFurnitureFrame(const char *pszName)
 int main(void)
 {
     const char *const apsz[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+
     WorldHooks  hooks;
     GeoscapeFrameState *pF;
     const SmapZoomSet *pSet;
@@ -5995,6 +6026,242 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         ClearSurface();
         World_TactFrame(&g_world);
         DumpFrame("tact_mission_from_descent");
+    }
+
+    /* ---- section 14: the pen orders a craft -- the chain from the click to the fly-to-point OK
+     *
+     * Section 13 ordered the intercept with the game's own Ship_LaunchIntercept. Here the order is the
+     * pen's, along the seams the original chains together:
+     *
+     *   1. Smap_HitTestStrategSelect @ 0x82be8, reached from the press dispatcher's generic arm (0x87C10,
+     *      and once more at 0x87C94). No message line is outstanding, so the dispatcher reads flag byte 0,
+     *      falls through its special arms and runs the select test; the marker's cell under the pointer
+     *      builds the type-1 inactive line (0x830B4, 0x830F4), named by Ship_FormatDisplayName of the craft
+     *      whose Ship.bId equals the item's display id (the walk at 0x830F8..0x83158).
+     *   2. The one-line dispatch (0x83394), type-1 inactive arm (0x83688): the ship index into 0x187054 and
+     *      0x159E74, the clock paused, and a flag-11 line that carries that index in COLOUR SLOT 0 -- the
+     *      only one of the six that keeps the line its scan built.
+     *   3. Geoscape_Draw's flag-0x0B arm (0x8F9E4..0x9021C) paints the craft's card and installs
+     *      Smap_SelectMapTarget @ 0x84484 on its "new target" control (0x8FFE8), and the press arm for flag
+     *      11 (0x87938) is the one that hit-tests that control.
+     *   4. Smap_SelectMapTarget puts bMapSelectionFlag up (0x84498), reads the ship index back out of the
+     *      line (0x844A4 / 0x844C4), replaces line 0 with the flag-27 "choose a target" prompt keeping that
+     *      index in colour slot 0 (0x84574), removes the old line (0x84580) and pauses (0x84588).
+     *   5. A press on an empty cell: flag 27 is not one of the special press arms, so the select test runs
+     *      again, builds no line, and its tail (0x83708..0x837BC) clears bMapSelectionFlag, publishes the
+     *      clicked cell into 0x186414 / 0x186418, and re-inserts line 0 as flag 12 with the ship index in
+     *      colour slot 0.
+     *   6. Geoscape_Draw's flag-0x0C arm (0x8F5B4..0x8F758) installs Smap_ConfirmCraftTarget @ 0x842ec on its
+     *      upper control; the flag-12 press arm (0x8765C) hit-tests it, and the confirm writes a fresh
+     *      type-5 waypoint at the published cell (0x843AC) and launches the craft at it (0x843D8).
+     *
+     * Fixture: the type-4 contact section 13 left sitting on the base cell comes back out through the same
+     * remover the order code itself uses (StrategList_RemoveAt @ 0x82ab0, the call sites 0x84364 and
+     * 0x84504), because two items in one cell make the scan build two lines and the >1 branch (0x832B0) is
+     * the multi-select box -- that branch is pinned in tests/test_smaphit.c. */
+    {
+        Ship             *pCraft   = NULL;
+        UiControl        *pCtlTarget = NULL;
+        UiControl        *pCtlOk     = NULL;
+        UiControl        *pCtlCancel = NULL;
+        i32   nMarker, nContact, nCountBefore, nCountAfter;
+        i32   nCellX = 0, nCellY = 0;
+        i32   nPressX = 0, nPressY = 0;
+        i32   nEmptyX = 0, nEmptyY = 0;
+        i32   nWaypoint = -1;
+        i32   nBlitsCard, nBlitsPick, nBlitsFly, nBlitsPlain;
+        char  szName[64];
+
+        printf("section 14: the pen-side order -- click, card, target prompt, fly-to-point\n");
+
+        /* The escape runs Geoscape_InitUI(1), which allocates the thirteen control singletons afresh
+         * (0x86100..0x864DC) after GeoscapeUi_FreeAll released the old ones (0x87008..0x8704C). Every UI
+         * pointer this section uses is therefore read out of g_world.ui AFTER that call, never cached
+         * across it. */
+        World_TactEscapeToGeoscape();
+        pCraft     = g_world.apCraft[0];
+        pCtlTarget = g_world.ui.apCtl[GEOUI_CTL_186B9C];
+        pCtlOk     = g_world.ui.apCtl[GEOUI_CTL_186BB4];
+        pCtlCancel = g_world.ui.apCtl[GEOUI_CTL_186BB0];
+        Check(g_world.bTactLive == 0 && g_world.screen.nGeoscapeScreen == 0,
+              "back on the geoscape map, with the mission behind (0x162BC, 0x162C8)");
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "no message line outstanding");
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 0,
+                   "and the flag byte the press arm reads is 0: the offer's removal shifted the empty slot up "
+                   "(0x5A428 shifts flags[k] = flags[k+1]), so the dispatcher takes its generic arm");
+
+        nContact = FindStrategById(&g_world.strategList, 3);
+        nCountBefore = PtrArray_GetCount(&g_world.strategList);
+        if (nContact >= 0) {
+            (void)StrategList_RemoveAt(&g_world.strategList, &g_world.geo.world, nContact,
+                                       g_world.shipEnv.pnSpawnOnceFlag, g_world.shipEnv.pSpawnCtx);
+        }
+        nCountAfter = PtrArray_GetCount(&g_world.strategList);
+        printf("  the contact at index %d removed: %d items -> %d\n", nContact, nCountBefore, nCountAfter);
+        Check(nContact >= 0 && nCountAfter == nCountBefore - 1,
+              "the section's own contact is out of the list, so one item is under the pointer");
+
+        nMarker = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+        if (nMarker >= 0) {
+            const StrategItem *pItem = (const StrategItem *)PtrArray_Get(&g_world.strategList, nMarker);
+
+            if (pItem != NULL) {
+                nCellX = pItem->nX;   /* the cell is copied out: an added item can realloc the array */
+                nCellY = pItem->nY;
+            }
+            Check(nMarker >= 0 && pItem != NULL && pItem->nType == 1 && pItem->bActive == 0
+                      && pItem->bVisible == 1,
+                  "the craft's own entry is the inactive visible item the select test builds a line for (0x830F4)");
+        }
+        Check(ScreenForCell(&g_world.view, nCellX, nCellY, &nPressX, &nPressY),
+              "and its cell has a screen pixel at the current scroll (the inverse of 0x82C84 / 0x82CAC)");
+        printf("  marker at cell %d,%d pressed at screen %d,%d; strip height %d so the map runs to y %d\n",
+               nCellX, nCellY, nPressX, nPressY,
+               (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight,
+               PUFO_SURF_H - (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight);
+
+        /* 1. The press on the craft, and 2. the line its dispatch posts. */
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsPlain = g_nBlits;
+        World_GeoscapePointer(&g_world, nPressX, nPressY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 11,
+                   "the type-1 inactive arm appends flag 11 (0x836D0), and it is the only branch that does not "
+                   "drop the line it found");
+        CheckEqI32(g_world.msgLines.nLineCount, 1, "one line on the list");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), 0,
+                   "colour slot 0 holds the ship index (0x836A0), the value every later reader re-reads");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 1), 0, "and slots 1 and 2 stay 0");
+        CheckEqI32(g_world.nSelectedShipIdx, 0, "0x187054");
+        CheckEqI32(g_world.nMsgShipIdx, 0, "0x159E74");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "GameTime_Pause @ 0x836B4");
+        CheckEqI32(g_world.nRadarPulseTimer, 250, "and the radar pulse timer (0x836D8)");
+        Check(g_world.bFlag18708C == 0 && g_world.bFlag187090 == 0 && g_world.bFlag187098 == 0
+                  && g_world.bFlag1870A0 == 0,
+              "none of the four flag bytes is touched: the type-1 inactive arm is the one that writes no flag");
+        {
+            const char *pszLine = (g_world.ui.pStatusPanel->apLines[0] != NULL)
+                                      ? (const char *)g_world.ui.pStatusPanel->apLines[0] : NULL;
+
+            (void)Ship_FormatDisplayName(g_world.apCraft, 0, g_assets.pTextRecs, szName, sizeof(szName));
+            Check(pszLine != NULL && strcmp(pszLine, szName) == 0,
+                  "the panel's row 0 is Ship_FormatDisplayName of that craft (0x83164)");
+            CheckEqI32((i32)g_world.ui.pStatusPanel->anLineAux[0], nMarker,
+                       "with the item's list index beside it (0x83230)");
+            CheckEqI32((i32)g_world.ui.pStatusPanel->nLineCount, 1, "one panel row");
+        }
+
+        /* 3. The card the draw paints for flag 11, and the control that arms the target. */
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsCard = g_nBlits;
+        printf("  the card frame blits %d pads; the four controls sit at y %d %d %d %d\n", (int)nBlitsCard,
+               (i32)g_world.ui.apCtl[GEOUI_CTL_186BA8]->y, (i32)pCtlTarget->y,
+               (i32)g_world.ui.apCtl[GEOUI_CTL_186B98]->y, pCtlCancel->y);
+        Check(pCtlTarget->y == PUFO_STATUS_DETAILCTL_Y_TARGET && pCtlCancel->y == PUFO_STATUS_DETAILCTL_Y_CANCEL,
+              "the card's four controls at y 140, 160, 180, 200 (0x9005C..0x90088)");
+        Check(pCtlTarget->pfnClick == g_world.frame.panel.pfnSelectMapTarget,
+              "and 0x8FFE8 installed Smap_SelectMapTarget on the new-target control");
+        Check(pCtlCancel->pfnClick == g_world.frame.panel.pfnResolveInterceptUI,
+              "with the resolve handler on the cancel (0x8FFFC)");
+        DumpFrame("geoscape_craft_card");
+
+        PressCtl(pCtlTarget);
+        CheckEqI32(g_world.bMapSelectionFlag, 1, "Smap_SelectMapTarget arms the selection (0x84498)");
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 27,
+                   "line 0 is now the flag-27 pick-a-cell prompt (0x84574 insert, 0x84580 removal)");
+        CheckEqI32(g_world.msgLines.nLineCount, 1, "still one line");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), 0,
+                   "and its colour slot 0 is the ship index the arm read off the card line (0x84554)");
+        CheckEqI32(g_world.nSelectedShipIdx, 0, "re-stored from the same slot (0x845A4)");
+        CheckEqI32(g_world.nMsgShipIdx, 0, "and into 0x159E74 (0x845A4)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "the arm pauses unconditionally (0x84588)");
+        CheckEqI32((i32)pCraft->bIntercepting, 0,
+                   "the waypoint removal did not run: it is inside the bIntercepting test (0x844D0)");
+
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsPick = g_nBlits;
+        Check(pCtlCancel->x == PUFO_STATUS_LISTCTL_X && pCtlCancel->y == PUFO_STATUS_LISTCTL_Y,
+              "the prompt's own control at x 140, y 274 (0x90874..0x90888)");
+        CheckEqI32(g_world.nSelectedShipIdx, (i32)UiLineList_GetColor(&g_world.msgLines, 0, 0),
+                   "the flag-27 arm reads the ship index back out of the line (0x90748)");
+        DumpFrame("geoscape_pick_target");
+
+        /* 5. A press on a cell with nothing on it: the select test's flag-27 tail. */
+        Check(ScreenForCell(&g_world.view, nCellX + 40, nCellY, &nEmptyX, &nEmptyY),
+              "a cell 40 columns off the base has a screen pixel too");
+        printf("  the empty press lands at screen %d,%d -> cell %d,%d\n", nEmptyX, nEmptyY,
+               nCellX + 40, nCellY);
+        World_GeoscapePointer(&g_world, nEmptyX, nEmptyY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "the tail clears the selection it was answering (0x8372C)");
+        CheckEqI32(g_world.view.nPickX, nCellX + 40, "0x186414 holds the clicked cell (0x83784)");
+        CheckEqI32(g_world.view.nPickY, nCellY, "0x186418 (0x83788)");
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 12,
+                   "and line 0 becomes the flag-12 fly-to-point order (0x837B4)");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), 0,
+                   "with the selected ship index in colour slot 0");
+        CheckEqI32(g_world.msgLines.nLineCount, 1, "one line, the prompt replaced rather than added to");
+        CheckEqI32((i32)g_world.ui.pStatusPanel->nUnk3032, 0, "and the panel's row cursor cleared (0x837BC)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "the tail pauses (0x83720)");
+
+        /* 6. The fly-to-point card and its confirm. */
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsFly = g_nBlits;
+        printf("  blits: card %d, prompt %d, fly-to-point %d, plain %d\n", (int)nBlitsCard, (int)nBlitsPick,
+               (int)nBlitsFly, (int)nBlitsPlain);
+        Check(pCtlOk->y == PUFO_STATUS_ORDERCTL_Y_TOP && pCtlCancel->y == PUFO_STATUS_ORDERCTL_Y_BOTTOM,
+              "the two controls of the flag-12 arm at y 100 and y 124 (0x8F678, 0x8F68C)");
+        Check(pCtlOk->pfnClick == g_world.frame.panel.pfnConfirmCraftTarget,
+              "0x8F688 installed Smap_ConfirmCraftTarget on the upper one");
+        Check(pCtlOk->x == 120 - ((i32)pCtlOk->uWidth / 2) && pCtlCancel->x == 120 - ((i32)pCtlCancel->uWidth / 2),
+              "both centred on x 120 (0x8F650..0x8F674)");
+        DumpFrame("geoscape_fly_to_point");
+
+        nCountBefore = PtrArray_GetCount(&g_world.strategList);
+        PressCtl(pCtlOk);
+        nCountAfter = PtrArray_GetCount(&g_world.strategList);
+        nWaypoint = nCountBefore;
+        {
+            const StrategItem *pWay = (nCountAfter > nCountBefore)
+                                          ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nWaypoint)
+                                          : NULL;
+
+            Check(nWaypoint < nCountAfter && pWay != NULL, "the confirm added one item (0x843AC)");
+            Check(pWay != NULL && pWay->nType == 5, "as a type-5 waypoint");
+            Check(pWay != NULL && pWay->bActive == 1 && pWay->bVisible == 1, "active and visible");
+            Check(pWay != NULL && pWay->nX == nCellX + 40 && pWay->nY == nCellY,
+                  "at the published cell -- and at mode 0 the type-5 scaling (0x8275C) leaves it unchanged");
+        }
+        Check(pCraft->bWeaponsHot == 1 && pCraft->bAtBase == 0 && pCraft->bIntercepting == 1,
+              "Ship_LaunchIntercept @ 0x843D8 has the craft hot, off base and chasing");
+        CheckEqI32(pCraft->nStrategIdx, nWaypoint, "and its target is the new waypoint (Count - 1, 0x843D8)");
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "the confirm drops line 0 (0x843E4)");
+        CheckEqI32(g_world.geo.time.bPaused, 0, "and unpauses, the list being empty (0x843F0)");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "with the selection cleared (0x84400)");
+
+        /* The order the pen wrote is the order the game flies: one event pass and the entry chases. */
+        {
+            const StrategItem *pWay = (const StrategItem *)PtrArray_Get(&g_world.strategList, nWaypoint);
+            i32 nOwn = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+            const StrategItem *pOwn = (nOwn >= 0) ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nOwn)
+                                                  : NULL;
+            i32 nDx0 = (pOwn != NULL && pWay != NULL) ? abs(pOwn->nX - pWay->nX) : -1;
+
+            World_PulseGeoscape(&g_world);
+            printf("  the waypoint is at %d,%d; the entry at %d,%d; distance %d\n",
+                   pWay != NULL ? pWay->nX : -1, pWay != NULL ? pWay->nY : -1,
+                   pOwn != NULL ? pOwn->nX : -1, pOwn != NULL ? pOwn->nY : -1, nDx0);
+            Check(pOwn != NULL && pOwn->bVisible == 1,
+                  "Geoscape_PulseUpdate keeps the entry of a craft that is not at base visible (0x955C0)");
+            Check(pWay != NULL && pWay->nType == 5 && pWay->nX == nCellX + 40,
+                  "the waypoint itself does not move");
+        }
     }
 
     World_Free(&g_world);

@@ -6969,10 +6969,8 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
                         const i32 nBase = SmapHit_FindBaseBySiteId(pEnv, pItem->nSiteId); /* 0x82E94 */
 
                         szText[0] = 0;
-                        if (nBase >= 0 && pEnv->pbBaseInfoRecs != NULL) {
-                            pufo_strncpy(szText,
-                                         (const char *)(pEnv->pbBaseInfoRecs + 64u * (size_t)nBase + 54u),
-                                         sizeof(szText)); /* 0x82F1C */
+                        if (nBase >= 0 && pEnv->apSiteRecs != NULL) {
+                            pufo_strncpy(szText, pEnv->apSiteRecs[nBase].abName, sizeof(szText)); /* 0x82F1C */
                         }
                         SmapHit_AddLine(pPanel, nLine, szText, i);
                         ++nLine;

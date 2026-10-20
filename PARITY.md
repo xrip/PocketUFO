@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 18955 |
+| Test checks run | 19009 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -630,7 +630,7 @@ is the module that answers to it.
 | `0x60570` | `RadarScreen_Update` | 3804 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5f490` | `RadarScreen_Init` | 3600 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6c16c` | `Geoscape_DrawScreen` | 3476 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
-| `0x82be8` | `Smap_HitTestStrategSelect` | 3088 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+5) |
+| `0x82be8` | `Smap_HitTestStrategSelect` | 3088 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+6) |
 | `0x68344` | `Base_TransferTacticalLoot` | 3048 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_ship.c` (+1) |
 | `0x5dc84` | `RadarScreen_DrawOverlay` | 2788 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5b59c` | `FundingScreen_DrawExtended` | 2780 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -808,7 +808,7 @@ is the module that answers to it.
 | `0x661b8` | `Base_GetItemQtyB` | 32 | `src/pufo/game/pufo_geoscape.h` |
 | `0x84ab8` | `Smap_OnZoomOut` | 32 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x84ad8` | `Smap_OnZoomIn` | 32 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
-| `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+7) |
+| `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+8) |
 | `0x5d6c0` | `GameTime_Unpause` | 20 | `src/pufo/game/pufo_clock.h` |
 | `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` (+1) |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 1003 |
+| `test_geoscapeframe` | PASS | 1057 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |

@@ -63,9 +63,9 @@ static void Ptr_HitRange(UiControl *const *apCtl, i32 nFirst, i32 nLast,
 }
 
 /* Smap_HitTestStrategSelect @ 0x82be8 is ported in game/pufo_baseui.c, but it runs on its own
- * SmapHitEnv, so it reaches the dispatcher through this seam. With no hook installed the port reads
- * "nothing selectable under the pointer", which is what the app does today because it builds no
- * SmapHitEnv yet (deviation 2). */
+ * SmapHitEnv, so it reaches the dispatcher through this seam. The shell fills it with a thunk that
+ * builds that env from its own cells (World_GeoHitTestStrategSelect); with no hook at all the port
+ * reads "nothing selectable under the pointer" (deviation 2). */
 static u8 Ptr_StrategHit(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY)
 {
     if (pEnv->pfnHitTestStrategSelect == NULL) {

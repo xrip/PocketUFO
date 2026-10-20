@@ -1580,6 +1580,46 @@ both looked at: `geoscape_descent_offer`, `tact_mission_from_descent` — the Cy
 "Удачи!"), e2e's 9 pictures unchanged. IDB: notes at 0x7F638, 0x955C0, 0x807A0, 0x807D8, 0x91578, 0x83D00, 0x83A74,
 0x82990, 0x84448 plus a correction at 0x3D29C.
 
+**The pen orders a craft through its own click (Part 90)** — the map press, the craft card, the "Выберете цель"
+prompt, the cell press, the "Лететь к выбранной точке" OK, the type-5 waypoint and the launch. The only code change was
+a wiring: `Smap_HitTestStrategSelect @ 0x82be8` was always reachable from the press dispatcher through the seam
+`pfnHitTestStrategSelect`, and the shell left that seam NULL because it did not build the function's `SmapHitEnv`.
+Every cell of that env is a geoscape cell the shell already owns, so app/pufo_world.c builds it in
+`World_GeoHitTestStrategSelect` and hands the dispatcher that thunk; a caller hook only replaces it. **The chain:** a
+press on the craft's map entry takes the dispatcher's generic arm (0x87C10, once more at 0x87C94) into the select test;
+its scan builds one line for the inactive visible type-1 item (0x830F4) with `Ship_FormatDisplayName`'s text; the
+type-1 inactive dispatch arm (0x83688) writes the ship index into 0x187054 and 0x159E74, pauses (0x836B4), sets the
+radar pulse timer to 250 (0x836D8) and appends a flag-11 line with that index in COLOUR SLOT 0 — the only branch of six
+that keeps the line its scan built and the only one writing none of the four flag bytes. `Geoscape_Draw`'s flag-0x0B arm
+paints the card and installs `Smap_SelectMapTarget` at 0x8FFE8; the flag-11 press arm (0x87938) hit-tests exactly the
+four controls the arm positions; the press arms the selection (0x84498), re-reads the ship index out of the line
+(0x844A4/0x844C4) and replaces line 0 with the flag-27 prompt (0x84574/0x84580). Flag 27 has no special press arm —
+`Geoscape_OnPointer` consults 27 only at 0x87D28, after the drag block — so the next map press runs the select test
+again, builds nothing, and its tail (0x83708..0x837BC) clears `bMapSelectionFlag`, publishes the clicked cell into
+0x186414/0x186418 and re-inserts line 0 as flag 12 with the ship index in colour slot 0; the flag-12 press arm (0x8765C)
+then hits the OK control the flag-0x0C panel installed, and `Smap_ConfirmCraftTarget` adds the waypoint at that cell
+(0x843AC) and launches the craft at it (0x843D8). **Where the ends meet:** the pending cell is the viewport block's own
+0x186414/0x186418 = SmapView + 0x2C/+0x30 — the same pair the confirm hands to `StrategList_AddItem` (mode 0 leaves it
+unchanged, 0x8275C); both press call sites run the tail, but the tail rewrites line 0 to flag 12 so the second call's
+0x83718 test fails; the line carries the ship index across the arms (0x90748 re-reads colour slot 0 every frame, 0x843C8
+reads the same slot as the launch's ship argument). **Two rules recorded:** the select test runs only when line 0's flag
+byte is not one of the dispatcher's fourteen special values (0 reaches it; 11, 12, 23 do not); and `UiPanel_RemoveLine
+@ 0x5A428` shifts flags[k] = flags[k+1] and never clears the vacated top slot, so removing the last line leaves flags[0]
+holding whatever flags[1] held — usually 0, which is why the map was clickable again after the descent offer was
+answered. **One env field retyped:** `SmapHitEnv`'s base-name table was a `const u8 *` with the original's own
+arithmetic (+64 * i + 54); the port already names that block `BaseSiteRec @ 0x186C40` with `abName` at +26 in eight other
+envs and 0x186C24 + 54 is the same byte as 0x186C40 + 26, so the field is now `const BaseSiteRec *apSiteRecs`.
+**A test trap:** `World_TactEscapeToGeoscape` runs `Geoscape_InitUI(1)`, which re-allocates the thirteen control
+singletons at 0x86100..0x864DC after `GeoscapeUi_FreeAll` released them at 0x87008..0x8704C — a `UiControl *` cached
+across that call dangles (the section's first run faulted there), and a `StrategItem *` held across an add dangles the
+same way because the list array reallocs. Gate: `test_geoscapeframe` section 14 (54 checks). Gates: 62/62 Release and
+Debug, 19009 checks (54 new), coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 29 frame references
+(3 new, all looked at: `geoscape_craft_card`, `geoscape_pick_target`, `geoscape_fly_to_point`), e2e's 9 pictures
+unchanged. IDB: notes at 0x82be8, 0x87938, 0x83718, 0x843C8, 0x90748, 0x5A428 plus `idb_save`. Open in the same area:
+the multi-select box has a unit gate but no frame path (its way out is `Geoscape_OnRadarListClick @ 0x854c4`, whose
+0x85504 is the only clearer of byte_18709C[4]), and the flag-20 target panel's colour slots are unverified (0x83524
+appends slot 0 = 0 with the index in slot 1, while the confirm's launch arm 0x8491C reads slot 0).
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

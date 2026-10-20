@@ -6917,6 +6917,55 @@ static void World_SmapClearSelectionThunk(void)
     (void)Smap_ClearSelection(&pW->msgLines, &pW->geo.time, &pW->bMapSelectionFlag);
 }
 
+/* Smap_HitTestStrategSelect @ 0x82be8: what the press dispatcher (0x87C10, 0x87C94) finds under the
+ * pointer. Its SmapHitEnv is made of nothing but the shell's own cells, so the shell builds it here and
+ * the caller hook at WorldHooks.pfnHitTestStrategSelect stays an override rather than a requirement. The
+ * dispatcher hands the view through the seam, and the pending-pick pair the flag-27 tail writes is the
+ * viewport block's own 0x186414 / 0x186418 (SmapView + 0x2C / + 0x30), the same pair
+ * World_SmapConfirmCraftTargetThunk reads. */
+static u8 World_GeoHitTestStrategSelect(const SmapView *pView, i32 nX, i32 nY, void *pUser)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    SmapHitEnv      env;
+
+    (void)pUser; /* the dispatcher's pUser is its sound user, which this env carries as pSoundUser */
+
+    if (pW == NULL) {
+        return 0;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pStripPad            = pW->ui.apPad[GEOUI_PAD_186BBC];  /* *pGeoscapeStripPad @ 0x186BBC, the strip gate */
+    env.pStatusPanel         = pW->ui.pStatusPanel;             /* unk_18641C, where the lines are built */
+    env.pLines               = &pW->msgLines;                   /* the root message list @ 0x158890 */
+    env.pStrategList         = &pW->strategList;               /* 0x1864F8 + 0x3C */
+    env.pTextRecs            = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL; /* records 1145..1147 */
+    env.apBases              = pW->apBases;                    /* Map + 0x1174, the base search */
+    env.pnBaseCount          = &pW->nBaseCount;                /* 0x159D80, read SIGNED (0x82EE8) */
+    env.apSiteRecs           = pW->aSiteRecs;                  /* byte_186C24 == 0x186C40, the name table */
+    env.apCraft              = pW->apCraft;                    /* Map + 0x10AC */
+    env.pnCraftCount         = &pW->bCraftCount;               /* Map_nCraftCount @ 0x114B4C */
+    env.pbSelectionFlag      = &pW->bMapSelectionFlag;         /* 0x159E84 */
+    env.pnPendingPickX       = &pW->view.nPickX;               /* 0x186414, the flag-27 tail's write */
+    env.pnPendingPickY       = &pW->view.nPickY;               /* 0x186418 */
+    env.pnScreenId           = &pW->screen.nGeoscapeScreen;    /* 0x186BC4, written 18 by the base branch */
+    env.pnSelectedStrategIdx = &pW->nSelectedStrategIdx;       /* 0x186BE4 */
+    env.pnSelectedShipIdx    = &pW->nSelectedShipIdx;          /* 0x187054 */
+    env.pnMsgShipIdx         = &pW->nMsgShipIdx;               /* 0x159E74 */
+    env.pTime                = &pW->geo.time;                  /* GameTime_Pause @ 0x5d6ac */
+    env.pbFlag18708C         = &pW->bFlag18708C;
+    env.pbFlag187090         = &pW->bFlag187090;
+    env.pbFlag187098         = &pW->bFlag187098;
+    env.pbFlag1870A0         = &pW->bFlag1870A0;               /* the multi-select box byte */
+    env.pnRadarPulseTimer    = &pW->nRadarPulseTimer;          /* 0xAC224 */
+    env.pOptPanelShips       = NULL;                           /* pOptPanelShips @ 0x159E18: the options
+                                                               * screen's own panel, which the shell's
+                                                               * options branch does not keep */
+    env.pOptionsHooks        = &pW->optionsHooks;
+    env.pfnPlaySample        = pW->pfnPlaySample;
+    env.pSoundUser           = pW->pSoundUser;
+    return Smap_HitTestStrategSelect(pView, &env, nX, nY);
+}
+
 /* Smap_BeginCraftSelect @ 0x838dc, the descent panel's launch control (0x91578, 0x9180C) and the
  * mission-launch decision tree. Its env is the world's own, built by World_WireMissionSeams. */
 static void World_BeginCraftSelectThunk(void)
@@ -7707,7 +7756,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
 
     /* The pointer dispatcher, Geoscape_OnPointer @ 0x872d0 and Geoscape_OnPointerUp @ 0x89450. Its
      * env shares one pUser between pfnPlaySample and pfnHitTestStrategSelect, so the shell sets it to
-     * the sound user and leaves the strateg seam NULL (its SmapHitEnv is not built yet). */
+     * the sound user, which is the same value the hit test's env carries as pSoundUser. */
     pPtr->apRootCtl  = pUi->apRootCtl;
     pPtr->pbPopupA   = &pW->bRoot34;                    /* bBaseFacPreviewActive @ 0x18652C */
     pPtr->pbPopupB   = &pW->bRoot35;                    /* bBaseFacPreviewOk @ 0x18652D */
@@ -7775,7 +7824,12 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->pHit           = pHit;
     pPtr->pfnPlaySample  = pW->pfnPlaySample;
     pPtr->pUser          = pW->pSoundUser;
-    pPtr->pfnHitTestStrategSelect = (pHooks != NULL) ? pHooks->pfnHitTestStrategSelect : NULL;
+    /* The map select test. Its env is the shell's own -- World_GeoHitTestStrategSelect builds it from
+     * the cells above -- so the press dispatcher reaches a real answer by default and the caller's hook
+     * only replaces it. */
+    pPtr->pfnHitTestStrategSelect = (pHooks != NULL && pHooks->pfnHitTestStrategSelect != NULL)
+                                        ? pHooks->pfnHitTestStrategSelect
+                                        : World_GeoHitTestStrategSelect;
 
     /* The dispatcher's arm wiring, 0x8C1B4..0x8C20C: the four envs the two map screens need plus the
      * frame end. Every other table word stays NULL, which is the arm not drawing at all. */

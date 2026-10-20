@@ -73,7 +73,7 @@ static void CheckS(const char *pszGot, const char *pszWant, const char *pszWhat)
 #define HIT_CELL       80
 
 static u8 g_aTextRecs[HIT_TEXT_LAST][PUFO_TEXT_REC_STRIDE];
-static u8 g_aBaseInfo[4][64];                /* byte_186C24: 64-byte records, name at +54 */
+static BaseSiteRec g_aBaseInfo[4];           /* byte_186C24 == 0x186C40: 64-byte records, abName at +26 */
 static u8 g_apLineBuf[HIT_LINES][PUFO_PANEL_LINE_BYTES];
 
 static i32 g_nSample;                        /* the env's play-sample seam */
@@ -194,7 +194,7 @@ static void Fix_Reset(void)
     gEnv.pTextRecs = &g_aTextRecs[0][0];
     gEnv.apBases = g.apBase;
     gEnv.pnBaseCount = &g.nBaseCount;
-    gEnv.pbBaseInfoRecs = &g_aBaseInfo[0][0];
+    gEnv.apSiteRecs = g_aBaseInfo;
     gEnv.apCraft = g.apCraft;
     gEnv.pnCraftCount = &g.nCraftCount;
     gEnv.pbSelectionFlag = &g.bMapSelect;
@@ -254,10 +254,10 @@ static void Fix_Text(void)
     pufo_strcpy((char *)g_aTextRecs[419], "AVENGER");
 
     memset(g_aBaseInfo, 0, sizeof(g_aBaseInfo));
-    pufo_strcpy((char *)(g_aBaseInfo[0] + 54), "ALPHA");
-    pufo_strcpy((char *)(g_aBaseInfo[1] + 54), "BETA");
-    pufo_strcpy((char *)(g_aBaseInfo[2] + 54), "GAMMA");
-    pufo_strcpy((char *)(g_aBaseInfo[3] + 54), "SPARE");
+    pufo_strcpy(g_aBaseInfo[0].abName, "ALPHA");
+    pufo_strcpy(g_aBaseInfo[1].abName, "BETA");
+    pufo_strcpy(g_aBaseInfo[2].abName, "GAMMA");
+    pufo_strcpy(g_aBaseInfo[3].abName, "SPARE");
 }
 
 /* ------------------------------------------------- the strip gate */

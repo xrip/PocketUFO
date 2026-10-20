@@ -759,8 +759,9 @@ typedef struct WorldHooks {
     /* Map + 0x37 (nMapPhase @ 0x1139EF), the 0xC352 anim counter. The caller owns it here too, because
      * the tactical Map block is the caller's, and the placement arm's cursor colour reads it. */
     u8                    *pnMapPhase;
-    /* Smap_HitTestStrategSelect @ 0x82be8 needs the caller's SmapHitEnv, which the shell does not
-     * build; the frame hands the dispatcher this seam instead (NULL means "nothing selectable"). */
+    /* Smap_HitTestStrategSelect @ 0x82be8, the map select test the press dispatcher runs at 0x87C10
+     * and 0x87C94. The shell builds its SmapHitEnv itself (World_GeoHitTestStrategSelect), so this
+     * hook only replaces that default. */
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
     void *pHitTestUser;
 

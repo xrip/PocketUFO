@@ -3565,7 +3565,8 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv);
  *      is 3 (0x82FE4) -- with itoa(nSiteId) appended (0x8301C / 0x83028). With bActive clear and no
  *      map selection in progress the line is a base name instead: the first base whose BaseRec.bUnk4
  *      byte, loaded SIGNED (LDRSB at 0x82ED4), equals nSiteId, named from byte_186C24 + 64 * i + 54,
- *      the name field of the per-base info record Geoscape_Draw (0x8c180, unported) owns.
+ *      the name byte of the per-base info record the port keeps as BaseSiteRec @ 0x186C40 -- abName
+ *      at +26 is the same byte (0x186C24 + 54 == 0x186C40 + 26).
  *
  *      nType 1 or 4 (0x830B4). With bActive set, again gated on bVisible, the text is TEXTS record
  *      1147 plus itoa(nDisplayId). With bActive clear, bVisible set and no map selection in progress
@@ -3624,7 +3625,8 @@ typedef struct SmapHitEnv {
     const u8       *pTextRecs;             /* aTextRecs @ 0xB38D0, for records 1145..1147 */
     BaseRec *const *apBases;               /* Map.apBases @ Map + 0x1174 */
     const i8       *pnBaseCount;           /* nBaseCount @ 0x159D80, read SIGNED (LDRSB at 0x82EE8) */
-    const u8       *pbBaseInfoRecs;        /* byte_186C24, 64-byte records; the name is at +54 */
+    const BaseSiteRec *apSiteRecs;         /* byte_186C24 == 0x186C40, 64-byte records; the name is
+                                            * abName at +26, the byte 0x186C24 + 54 names */
     Ship *const *apCraft;                  /* Map.apCraft @ Map + 0x10AC */
     const u8       *pnCraftCount;          /* Map_nCraftCount @ 0x114B4C, read unsigned */
     u8             *pbSelectionFlag;       /* bMapSelectionFlag @ 0x159E84, cleared by the tail */

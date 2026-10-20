@@ -83,9 +83,9 @@
  *      docs/parity/bugs.tsv.
  *   2. Smap_HitTestStrategSelect @ 0x82be8 is ported in game/pufo_baseui.c, but on its own
  *      SmapHitEnv, so the two strateg select tests reach the dispatcher through
- *      pfnHitTestStrategSelect: the app binds a thunk that supplies that env. It builds no
- *      SmapHitEnv yet, so today both tests answer "nothing selectable". The release half never
- *      calls it.
+ *      pfnHitTestStrategSelect. Every cell of that env is a geoscape cell, so the shell wires its own
+ *      thunk (World_GeoHitTestStrategSelect in app/pufo_world.c) and a caller hook only replaces it.
+ *      The release half never calls it.
  *   3. The original re-reads the line-0 flag before every test in the world arm. Nothing writes
  *      the list in between, so the port reads it once.
  *   4. The original's loop counters are the spilled global dword_186B08 (see
@@ -285,8 +285,9 @@ typedef struct GeoscapePointerEnv {
     /* Injected callees. */
     void (*pfnAppendNameGlyph)(i32 nX, i32 nY, void *pUser); /* SoldierScreen_AppendNameGlyph 0x63208 */
     void (*pfnPlaySample)(i32 nSample, void *pUser);         /* Sound_Play @ 0x9e0c0, sample 17 */
-    /* Smap_HitTestStrategSelect @ 0x82be8, ported in game/pufo_baseui.c. The app binds a thunk that
-     * supplies the SmapHitEnv it needs; with no thunk the dispatcher reads "nothing selectable". */
+    /* Smap_HitTestStrategSelect @ 0x82be8, ported in game/pufo_baseui.c. Its SmapHitEnv is built by
+     * the shell's own thunk; a caller hook replaces it, and a NULL with no shell wiring reads
+     * "nothing selectable". */
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
 
     /* Release only: the low-supply report the release gate reads and clears (0x89584 reads it as
