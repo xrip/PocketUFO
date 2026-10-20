@@ -8225,15 +8225,16 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *   - The screen ids the shell can now reach are 0, 1, 2 (the map and the placement screen), 3 (nav slot
  *     1), 4 and 5 (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 6 (nav slot 3 and
  *     BasePlaneScreen_Open 0x617f4: its arm, control seam, draw env and detail env), 7 (nav slot 4, and the
- *     map click's own 0x8B64C), 15 and 19 (the funding screen the monthly close sets). Five nav slots stay
- *     World_NoopClick -- ResearchScreen_Open (8), ManufScreen_Open (9), TransferScreen_Open (10) and
- *     BuySellScreen_OpenBuy/Sell (11, 12) -- because their Init envs and their arms (pResearchDraw,
- *     pManufPad, pTransferPad, pBuySellPad) are not built here, and Geoscape_Draw dereferences several
- *     unwired arm envs with no test of their own.
- *   - GeoscapePointerEnv's per-screen fields for those same screens (the transfer, soldier-name, craft,
- *     research, manufacturing, site-info, buy/sell, screen-16 and options blocks) stay NULL; the hangar's
- *     own block is wired (its 16 controls and its six panel pairs, re-read every frame in
- *     World_RefreshGeoscapeFrame). The
+ *     map click's own 0x8B64C), 8 (nav slot 5, ResearchScreen_Open @ 0x616ac), 9 (nav slot 6,
+ *     ManufScreen_Open @ 0x614cc), 11 and 12 (nav slots 8/9, BuySellScreen_OpenBuy @ 0x61794 /
+ *     OpenSell @ 0x617c4), 15 and 19 (the funding screen the monthly close sets). One nav slot stays
+ *     World_NoopClick -- TransferScreen_Open (10, nav slot 7) -- because its Init env and its pTransferPad
+ *     arm are not built here (it is outside the economy round), and Geoscape_Draw dereferences an unwired
+ *     arm env with no test of its own.
+ *   - GeoscapePointerEnv's per-screen fields: the research, manufacturing and buy/sell blocks are wired
+ *     (Parts 88 and 99), and the hangar's own block is wired (its 16 controls and its six panel pairs,
+ *     re-read every frame in World_RefreshGeoscapeFrame); the transfer, soldier-name, site-info, screen-16
+ *     and options blocks stay NULL. The
  *     dispatcher reaches them only from those screen ids. The strip block IS wired now, and that also
  *     makes the screen-1 arm live for the first time: `Geoscape_OnPointer` case 1 walks the ten slots at
  *     [root + 0x120] (0x87E30), which are apNavCtl -- the very controls the nav handlers sit on -- so a
