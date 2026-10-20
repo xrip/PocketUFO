@@ -153,7 +153,8 @@ void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond);
  *                               arrays, one entry per base, all indexed by the SIGNED byte at
  *                               unk_1870F4 (the psi screen's selected base), so the handler picks
  *                               one entry out of every array for that base. The loops that walk
- *                               them (PsiScreen_ApplyAssignments, 0x72250, not ported) bound the
+ *                               them (PsiScreen_ApplyAssignments, 0x72250, ported at
+ *                               pufo_baseui.c:12142) bound the
  *                               index by the base count at 0x159D80, at most PUFO_FAC_BASE_COUNT.
  *   BuySellScreen_Panel*        unk_161A1C, unk_161A00, unk_161A20, unk_160C88, unk_1615F8
  *   BuySellScreen_DetailPanel*  pPlaneSlotPanel @ 0x161AC8, pPlaneSelRowPanel @ 0x161F00,
@@ -220,7 +221,8 @@ i32 BuySell_RoleToItemId(i32 nRole);
  * eleven records are the alien corpses: 59 Sectoid, 60 Snakeman, 61 Floater, 62 Muton,
  * 63 Ethereal, 64 Cyberdisk, 65 Chryssalid, 66 Reaper, 67 Celatid, 68 Silacoid, 69 Sectopod.
  * So the commit moves the bought item into the base and the matching race corpse out of it.
- * Smap_GrantSiteRecovery (0x98b50, not ported) hard-codes the same pairing per slot instead of going
+ * Smap_GrantSiteRecovery (0x98b50, ported at pufo_baseui.c:6120 and driven hourly by
+ * World_HookGrantSiteRecovery) hard-codes the same pairing per slot instead of going
  * through the race id (77..81 -> 59, 82..86 -> 60, 87..91 -> 61, 92..94 -> 62, 95..98 and 114
  * -> 63, 99 -> 64, 100 -> 65, 101 -> 66, 103 -> 67, 102 -> 68, 104 -> 69), which is what
  * pins the ids to races. Ids 16 and 17 are not used by this map. */
@@ -550,7 +552,8 @@ void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv); /* panel C, the ">" c
  * these two handlers too.
  *
  * The record they mutate is the transfer flow's working site: `aSmapSites[nSiteCount]`, the slot
- * Transfer_ResetSite (0x9690c, not ported) clears and BuySellScreen_ConfirmSiteAndClose commits.
+ * Transfer_ResetSite (0x9690c, ported as Transfer_ResetSite) clears and
+ * BuySellScreen_ConfirmSiteAndClose commits.
  *
  * ValidateCapacity buys one unit per pass:
  *
@@ -803,7 +806,8 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv);
  *   6. 0x99604..0x99630: their clicks, in slot order: Transfer_ScrollPrevAll @ 0x967e4 and
  *      Transfer_ScrollNextAll @ 0x9683c -- both byte-identical to BuySellScreen_PanelPrev and
  *      BuySellScreen_PanelNext over the same five panel globals, see docs/parity/renames.tsv --
- *      then Transfer_ResetSite and TransferScreen_CommitTransfer (0x97aa4, not ported).
+ *      then Transfer_ResetSite and TransferScreen_CommitTransfer (0x97aa4, ported at
+ *      pufo_baseui.c:2625).
  *   7. 0x9963C..0x99654: the close control g_pUiCloseCtl goes to x 224, y 1 with
  *      Geoscape_CloseUI_ThunkB @ 0x96020. Same slot and same thunk as the buy/sell screen, but the
  *      buy/sell Init installs BuySellScreen_CloseThunk @ 0x75154 there instead.
@@ -856,8 +860,9 @@ typedef struct TransferInitEnv {
     void (*pfnPanelPrev)(void);     /* Transfer_ScrollPrevAll @ 0x967e4 */
     void (*pfnPanelNext)(void);     /* Transfer_ScrollNextAll @ 0x9683c */
     void (*pfnResetSite)(void);     /* Transfer_ResetSite @ 0x9690c */
-    void (*pfnCommit)(void);        /* TransferScreen_CommitTransfer (0x97aa4), not ported */
-    void (*pfnBuildPanels)(void);   /* TransferScreen_BuildPanels (0x96b30), not ported */
+    void (*pfnCommit)(void);        /* TransferScreen_CommitTransfer (0x97aa4), ported at 2625 */
+    void (*pfnBuildPanels)(void);   /* TransferScreen_BuildPanels (0x96b30), ported at 1956; the
+                                     * Geoscape_CloseUI transfer arm (0x8BE40) calls it */
     i8 *pbBaseCount;                /* 0x159D80, signed */
     u8 *pbTransferOk;               /* byte_1870F8 */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
@@ -889,7 +894,7 @@ SmapSite *Transfer_ResetSite(TransferResetEnv *pEnv);
 /* ------------------------------------------------- the transfer screen's row list
  *
  * Evidence: TransferScreen_BuildPanels @ 0x96b30 (3956 B), called from Ui_InitTransfer @ 0x9955c
- * (0x995A4) and again from Geoscape_CloseUI (0x8b94c, not ported) at 0x8BE40, and Transfer_MoveOneItem
+ * (0x995A4) and again from Geoscape_CloseUI (0x8b94c, ported at this file:3120) at 0x8BE40, and Transfer_MoveOneItem
  * @ 0x9602c
  * (604 B), the click handler it installs into the decrement column. This is the transfer mode's
  * counterpart of BuySellScreen_BuildPanels @ 0x76de0 -- same five panel globals, same
@@ -921,7 +926,7 @@ SmapSite *Transfer_ResetSite(TransferResetEnv *pEnv);
  *   5. 0x96DC4..0x9732C: the five panels, all nStyle 13 and nFont 16. Panel A x 10 / viewW 125 with
  *      Transfer_CacheSelIndex @ 0x96ab0 as its click; E x 232 / 190 / 45, no click; B x 172 / 168 /
  *      15 with Transfer_MoveOneItem; C x 188 / 184 / 15 with TransferScreen_ValidateCapacity
- *      (0x96288, not ported); D x 166 / 130 / 50, no click. Against the sell mode the B, C and D
+ *      (0x96288, ported at pufo_baseui.c:2366); D x 166 / 130 / 50, no click. Against the sell mode the B, C and D
  *      columns are eight pixels further right and A and E are identical.
  *   6. 0x97330..0x974DC: the soldier rows. Panel A gets the name through the same 17-character cut
  *      and aux 1000, panel D aux 1, panel E aux 0, panels B and C the "<" and ">" literals, panel C
@@ -981,7 +986,7 @@ typedef struct TransferBuildEnv {
     UiPanel **ppPanelE;
     void (*pfnCacheSelIndex)(void);   /* Transfer_CacheSelIndex @ 0x96ab0 */
     void (*pfnMoveOneItem)(void);     /* Transfer_MoveOneItem @ 0x9602c */
-    void (*pfnValidateCapacity)(void);/* TransferScreen_ValidateCapacity (0x96288), not ported */
+    void (*pfnValidateCapacity)(void);/* TransferScreen_ValidateCapacity (0x96288), ported at 2366 */
 } TransferBuildEnv;
 
 void TransferScreen_BuildPanels(TransferBuildEnv *pEnv);
@@ -1190,7 +1195,7 @@ i32 Transfer_WriteErrorDump(const TransferDumpEnv *pEnv);
 
 /* ------------------------------------------------- the transfer screen's frame
  *
- * Evidence: TransferScreen_Draw @ 0x97fa4 (2988 B), reached from Geoscape_Draw (0x8c180, not ported).
+ * Evidence: TransferScreen_Draw @ 0x97fa4 (2988 B), reached from Geoscape_Draw (0x8c180, ported in pufo_geoscape.c:6849).
  *
  * Frame (0x97FB8..0x98150). The two side rails run 24 steps: at x 5 and x 234 a 1x7 block at y 2 + 7*k
  * with index 5*(k + 20) (100..215) and a 1x7 at y 152 + 7*k with the ARM's `RSB #0xE6` index 230 - 5*k
@@ -1520,8 +1525,9 @@ void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *
  *
  * Deviations:
  *   1. The original reaches every global directly. The port hands them through
- *      GeoscapeCloseEnv, and the twelve callees that are not ported yet stay hooks on the
- *      same env.
+ *      GeoscapeCloseEnv, and the callees stay hooks on the same env -- a faithful seam for
+ *      the original's indirect calls through the 0x1864F8 block; every one named below is
+ *      now ported in the library.
  *   2. The original frees the nav controls and the two pads with operator delete and never
  *      nulls the slot. The port frees through the same leaf and writes NULL into the slot,
  *      because a dangling 0x159888 entry is read again by Geoscape_BuildNavControls and by
@@ -1639,7 +1645,8 @@ typedef struct GeoscapeCloseEnv {
     const BaseClearShipsEnv *pClearShips;
     const SmapCraftSelectEnv *pCraftSelect;
 
-    /* Callees that are not ported yet. */
+    /* The callees the original reaches indirectly; each is ported and the shell supplies
+     * the thunk. */
     void (*pfnBuildBaseInfoPanels)(void *pUser);  /* BaseInfoScreen_BuildPanels (0x557f4) */
     void (*pfnBuildPlaneListPanels)(void *pUser); /* BasePlaneScreen_BuildListPanels (0x7a3f4) */
     void (*pfnBuildPlaneControls)(void *pUser);   /* BasePlaneScreen_BuildControls (0x7b014) */
@@ -2144,8 +2151,9 @@ void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv);
 /* ManufScreen_ConfirmAndClose @ 0x6e98c (92 B): clear the selected product's slot for the selected
  * base and tail-call the screen-close dispatcher. The product index comes from the panel's aux
  * column at the cached row, exactly as the quantity buttons read it. Its first argument to
- * ClearProductSlot is the 0x159E98 anchor, which that function never reads. Geoscape_CloseUI is
- * not ported, so the close is the same hook ResearchScreen_CancelSelectedAndClose uses. */
+ * ClearProductSlot is the 0x159E98 anchor, which that function never reads. The close runs as
+ * the same Geoscape_CloseUI hook ResearchScreen_CancelSelectedAndClose uses (the dispatcher is
+ * ported at this file:3120 and the shell hands it through the close env). */
 void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseEnv *pClose);
 
 /* ManufScreen_Init @ 0x710b0 (488 B): the tail call of ManufScreen_Open @ 0x614cc.
@@ -3063,7 +3071,7 @@ typedef struct NewBaseConfirmEnv {
     i32 *pnFunds;         /* unk_1598D8 */
     u8 *pbFlag1870C8;     /* 0x1870C8, the GeoscapeState low-supply flag */
     i32 *pnFlag1870B4;    /* dword_1870B4 */
-    i32 (*pfnMapClick)(void *pUser); /* Geoscape_OnMapClick(&MEMORY[0x1864F8]), not ported */
+    i32 (*pfnMapClick)(void *pUser); /* Geoscape_OnMapClick(&MEMORY[0x1864F8]), ported at this file:7242 */
     void *pUser;
 } NewBaseConfirmEnv;
 
@@ -3081,7 +3089,7 @@ i32 NewBaseScreen_TryConfirm(u8 bPlacementPending, const NewBaseConfirmEnv *pEnv
  *
  * The cursor field is UiPanel.nUnk3028 @ +0xBD4, the same scroll cursor the panel paging helpers
  * read. The three panels are the base-info screen's own (unk_158820 / unk_158824 / unk_158838, all
- * built by BaseInfoScreen_BuildPanels (0x557f4, not ported), and the stores go in the order
+ * built by BaseInfoScreen_BuildPanels (0x557f4, ported at this file:12420), and the stores go in the order
  * 0x158824, 0x158820, 0x158838. Installed as a click handler (0x57714, 0x577BC); the original
  * leaves the third panel pointer in R0 and nothing reads it, so the port returns void. */
 #define PUFO_BASEINFO_CURSOR_ON  16 /* the cursor written when the mode flag was already set */
@@ -3114,9 +3122,9 @@ void BaseInfoScreen_TogglePanelMode(const BaseInfoToggleEnv *pEnv);
  *      SoldierScreen_FindPrevAtBase, Ui_SetTransferFlag. stru_AB630: (35, 37) "bnexts"/"bnext",
  *      (3, 37) "bprevs"/"bprev", (70, 37) "emptyb1"/"cemptyb1".
  *
- * ResearchScreen_Open (0x616ac) is still unported, and SoldierScreen_Toggle (0x64af0) is ported but
- * installed through the env like the rest, so all fifteen handlers arrive as plain click thunks --
- * the same seam Geoscape_InitUI uses for its root controls.
+ * ResearchScreen_Open (0x616ac, ported at this file:9756) and SoldierScreen_Toggle (0x64af0,
+ * ported) are installed through the env like the rest, so all fifteen handlers arrive as plain
+ * click thunks -- the same seam Geoscape_InitUI uses for its root controls.
  *
  * Deviations: the original stores a NULL from a failed operator new and then dereferences the
  * first slot anyway (0x67B74); the port guards every store and reports the failure through the
@@ -3610,8 +3618,8 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv);
  *      flag 27 (the pick-a-target-cell prompt Smap_ConfirmCraftTarget's chain installs), nothing
  *      was selectable, and the click is above the strip, it pauses, clears bMapSelectionFlag,
  *      writes the clicked cell into 0x186414 and 0x186418 -- the pending click
- *      Smap_ConfirmCraftTarget @ 0x842ec reads, whose writer Smap_ConfirmTargetEnv's note called
- *      unported -- drops line 0 and re-inserts it as flag 12 with the selected ship index in colour
+ *      Smap_ConfirmCraftTarget @ 0x842ec reads (its writer is the flag-27 tail at 0x83784 / 0x83788,
+ *      ported in Smap_HitTestStrategSelect at this file:7151) -- drops line 0 and re-inserts it as flag 12 with the selected ship index in colour
  *      slot 0, and clears nUnk3032.
  *
  * Deviations:
@@ -3693,7 +3701,8 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
  *      "down"/"sdown" pads, offsets 11/252 and 11/277) at base (0, 0) (0x5A224..0x5A244).
  *   5. 0x158888 is cleared and BaseFacScreen_Toggle (0x589ec) runs last as a tail call, and its
  *      result is this function's return value. Toggle builds the panel and installs
- *      BaseFacScreen_TryBuySelected; it is not ported yet, so it enters here as a hook.
+ *      BaseFacScreen_TryBuySelected @ 0x58910 (ported at this file:7481); it enters here as a
+ *      hook because the shell supplies the thunk.
  *
  * Deviations: the original allocates with operator new and stores into fixed .bss slots; the port
  * takes caller-owned controls. The port's handler slot is `void (*)(void)`, so the panel pair
@@ -3714,7 +3723,7 @@ typedef struct BaseFacInitEnv {
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser);
     void *pPadUser;
-    void (*pfnToggle)(void *pUser); /* BaseFacScreen_Toggle (0x589ec), not ported yet */
+    void (*pfnToggle)(void *pUser); /* BaseFacScreen_Toggle (0x589ec), ported at this file:7372 */
     void *pToggleUser;
 } BaseFacInitEnv;
 
@@ -3985,7 +3994,7 @@ i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv);
 
 /* --- SoldierScreen_Draw @ 0x65290 (716 B) : the soldier screen's pad, lists and frame ---
  *
- * Reached three times from Geoscape_Draw (0x8c180, not ported) at 0x92DD0 / 0x92F38 / 0x93094, plus a
+ * Reached three times from Geoscape_Draw (0x8c180, ported in pufo_geoscape.c:6849) at 0x92DD0 / 0x92F38 / 0x93094, plus a
  * data reference from the handler table entry at 0x18A2B0.
  *
  * SCREEN 5 (0x652A4): while nGeoscapeScreen is 5 this is not a draw at all - it returns
@@ -4829,7 +4838,7 @@ void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode);
  *    every other caller passes.
  * 4. 0x6CFA4: UiPanel_AppendLineWithSound over the root message list with flag 27 and the selected
  *    craft index as its colour dword. The index is re-read LDRB at 0x6CF8C, so a -1 selection appends
- *    255. Flag 27 is what Smap_ResolveInterceptUI (0x84964, unported) answers with Ship_RetargetTravel:
+ *    255. Flag 27 is what Smap_ResolveInterceptUI (0x84964, ported at this file:5944) answers with Ship_RetargetTravel:
  *    picking a row arms a travel order for that craft.
  * 5. 0x6CFA8..0x6CFE0: aResearchTopics[28].bUnlocked AND apCraft[nSelectedShipIdx]->bCraftType == 2
  *    (LDRB [R3,#2]) arms byte_187068. Both constants are verified against the shipped data: TEXTS[415 +
@@ -4900,8 +4909,9 @@ void OptionsScreen_Init(OptionsInitEnv *pEnv); /* 0x6be74 */
  *
  * Deviations: the original reaches both drivers through the fixed slot context at 0x156938; the port
  * takes the caller's DatFile and its SaveGameInput / LoadGameEnv and writes the handler's slot into
- * pIn->nSlot / pLoadEnv->nSlot before the driver runs. Geoscape_CloseUI (0x8b94c) is not ported and
- * enters as a hook. The original's return register is Geoscape_CloseUI's; the port returns 0. */
+ * pIn->nSlot / pLoadEnv->nSlot before the driver runs. Geoscape_CloseUI (0x8b94c, ported at this
+ * file:3120) is reached as a hook here; it runs this screen's close case. The original's return
+ * register is Geoscape_CloseUI's; the port returns 0. */
 typedef struct SaveSlotEnv {
     DatFile        *pDat;       /* the slot file the driver opens */
     SaveGameInput  *pIn;        /* nSlot is set to this handler's slot before SaveGame runs */
@@ -5558,7 +5568,7 @@ i32 BasePlane_ResetDetailState(const BasePlaneDetailEnv *pEnv);
 /* ------------------------------------------------- the base-facility status line
  *
  * Evidence: BaseFac_BuildStatusMsg @ 0x6a4bc (1,520 B), reached only from 0x8C82C inside the
- * geoscape dispatcher (still unported, so it is named by address only). That call site supplies every
+ * geoscape dispatcher Geoscape_Draw @ 0x8c180 (ported in pufo_geoscape.c:6849). That call site supplies every
  * argument out of line 0 of the root message list @ 0x158890: nCase is UiLineList_GetFlag(line 0)
  * sign-extended from a byte (0x8C818), nBaseIdx is that line's colour dword slot 2 (0x8C7C4),
  * nFacRow is slot 0 (0x8C7EC) and nFacCol is slot 1 (0x8C7D8); a1 is abFacilityGrid (0x8C790 loads it

@@ -15,7 +15,7 @@
  * The table is 128 bytes and ends at 0xA6568. Two things make that worth stating: IDA declares
  * `aTileSprIndex[128]`, which is 256 bytes and runs 128 bytes past the real end into the module-name
  * strings at 0xA6590; and the 40 bytes from 0xA6568 really are a different table, referenced only by
- * Smap_InitCraftSelectState (0x61b94, not ported).
+ * Smap_InitCraftSelectState (0x61b94, ported at pufo_geoscape.c:440).
  *
  * g_aTerrainModuleCount @ 0xA6AF0 is the per-mission-type module ceiling. The builder draws a module
  * number as Game_RandU16(g_aTerrainModuleCount[nMissionType]), except for Urban, which is

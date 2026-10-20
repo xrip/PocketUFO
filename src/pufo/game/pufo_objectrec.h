@@ -49,12 +49,12 @@ typedef struct ObjectRecFull {
     u8   gap_B9[1];        /* 0xb9 */
     u16  uManufWorkPerUnit;/* 0xba the manufacturing work one unit of this item costs: the divisor
                             * that turns an allocated quantity into finished units.
-                            * ManufScreen_CommitProduction (0x6F3EC, not ported) does
+                            * ManufScreen_CommitProduction (0x6f34c; this site at 0x6F3EC) does
                             * `LDRH R0,[R3,#0xBA]` and hands it to _rt_sdiv as the DIVISOR of the
                             * accumulated allocation, so the quotient is how many units the work paid
                             * for, compared against the units already committed (the u16 table at
                             * 0x15D09C). ManufScreen_Draw (0x6E704) and ManufScreen_BuildPanels
-                            * (0x6F060), both not ported, use it the same way for the panel percent:
+                            * (0x6F060), both ported in pufo_baseui.c, use it the same way for the panel percent:
                             * accumulated * 100 / (this * target). BuySellScreen_BuildControls @ 0x76318
                             * requires it to be ZERO before a slot gets a buy row, and in the shipped
                             * OBJECTS.DAT the two sets are exactly complementary -- the 35 records with

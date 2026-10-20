@@ -179,9 +179,9 @@ i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszTe
  * (1 = centre, 2 = right, 0 = left), and the x origin is nPosX minus that offset.
  *
  * The original also blits a background strip and a source rect before the rows,
- * via SoftSurf_BlitRectProxy and SoftSurf_BlitSrcRect. Those two entry points are
- * not ported yet, so this renders the rows only. That is the part the panel engine
- * itself owns. */
+ * via SoftSurf_BlitRectProxy and SoftSurf_BlitSrcRect (both ported in pufo_render.c).
+ * The panel engine does not call them -- it renders the rows only. That is the part
+ * the panel engine itself owns. */
 void UiPanel_DrawText(UiPanel *pPanel);
 
 /* UiScrollList_ClickRow @ 0x3eee0.
@@ -218,7 +218,8 @@ bool UiPanel_SwapLines(UiPanel *pPanel, i32 nIdxA, i32 nIdxB);
  * The entire handler for screens 0x14 and 0x15: blit one pad, then draw one message panel. The
  * original reaches both through globals - a pad POINTER stored at 0x15692C and a panel at 0x1571EC
  * - and the port passes them. It lives here rather than in its own module because it is two calls
- * and nothing else; the screens themselves are not ported. */
+ * and nothing else; the Cydonia briefing screens reach it from the Geoscape_Draw arms wired in
+ * pufo_world.c. */
 void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel);
 
 /* ------------------------------------------------- the animated panel frame

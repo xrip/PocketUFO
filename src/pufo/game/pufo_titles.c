@@ -173,7 +173,7 @@ static void ParticleTimer(TitlesParticle *p)
 /* Titles_AnimateParticles @ 0x46acc. Every frame first walks the particles, then the frame number picks
  * what happens next: under 20 the timers run, 21 restores the targets from the home pair and re-arms the
  * timer, 20 and 22 through 500 do nothing, 501 through 679 run the timers again, and 680 or more hands
- * over to Titles_LoadScene (0x468cc, not ported). */
+ * over to Titles_LoadScene (0x468cc, ported at this file:249). */
 i32 Titles_AnimateParticles(TitlesAnimation *pEnv)
 {
     i32 nFrame = pEnv->nFrame;

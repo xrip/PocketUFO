@@ -16,9 +16,8 @@
  * takes the index as an argument.
  *
  * A closed panel keeps its old selection, and the swap runs whether or not anything was
- * written. BasePlaneScreen_ApplyWeaponSwap (0x79748) is not ported, so it is a hook, and its
- * result is what these handlers return. It is named without a citation on purpose: a citation
- * credits a function as recreated. */
+ * written. BasePlaneScreen_ApplyWeaponSwap (0x79748) is ported at pufo_plane.c:251 and enters
+ * as a hook, and its result is what these handlers return. */
 #ifndef PUFO_PLANE_H
 #define PUFO_PLANE_H
 
@@ -237,8 +236,8 @@ i32 BasePlane_RearmFromStores(PlaneWeaponEnv *pEnv, PlaneWeaponPanels *pPanels);
  * cleared and Geoscape_CloseUI runs over the 0x1864F8 control block.
  *
  * Deviation: the original dereferences apCraft[craft] and apBases[base] with no test; the port skips
- * a row whose craft or object is missing. Geoscape_CloseUI (0x8b94c) is not ported and enters as a
- * hook. */
+ * a row whose craft or object is missing. Geoscape_CloseUI (0x8b94c, ported at
+ * pufo_baseui.c:3120) enters as a hook. */
 typedef struct PlaneCloseEnv {
     Ship *const        *apCraft;
     ObjectRecFull *const *apObjects;
@@ -248,7 +247,7 @@ typedef struct PlaneCloseEnv {
     u8    bStoresCommitted; /* byte_161F28: the screen committed at least one row */
     const i32 *anSlotCount; /* unk_161AD0, indexed 31..35: how many of each row were committed */
     i32 *pnCrewQuota;       /* unk_161EE0 */
-    void (*pfnCloseUi)(void *pUser); /* Geoscape_CloseUI (0x8b94c), not ported */
+    void (*pfnCloseUi)(void *pUser); /* Geoscape_CloseUI (0x8b94c), ported at pufo_baseui.c:3120 */
     void *pUser;
 } PlaneCloseEnv;
 
@@ -338,7 +337,7 @@ i32 BasePlaneScreen_AdjustSelectedQty(PlaneStoresEnv *pEnv);
  *
  * A zero amount takes the positive branch and moves nothing. The loop runs over Map_nObjectCount
  * slots whatever the array's real length is (the global is 256 dwords), and the whole function ends
- * in a tail call to Geoscape_CloseUI (0x8b94c, not ported) -- including when the object count is
+ * in a tail call to Geoscape_CloseUI (0x8b94c, ported at pufo_baseui.c:3120) -- including when the object count is
  * not positive,
  * where the loop is skipped and only the close runs.
  *
@@ -355,7 +354,7 @@ typedef struct BuySellApplyQtyEnv {
     Ship *const *apCraft;              /* Map.apCraft @ Map+0x10AC */
     i32 nCraftIdx;                     /* nSelectedCraftIdx @ 0x161AC4, a DWORD */
     i32 nCraftCount;                   /* Map_nCraftCount @ Map+0x1194 */
-    void (*pfnCloseUi)(void *pUser);   /* Geoscape_CloseUI (0x8b94c), not ported */
+    void (*pfnCloseUi)(void *pUser);   /* Geoscape_CloseUI (0x8b94c), ported at pufo_baseui.c:3120 */
     void *pUser;
 } BuySellApplyQtyEnv;
 
@@ -364,7 +363,7 @@ void BuySellScreen_ApplyQtyChanges(const BuySellApplyQtyEnv *pEnv);
 /* ------------------------------------------------- the crew list's click: assign or unassign
  *
  * Evidence: BasePlaneScreen_FillCrewPanel @ 0x7a188 (620 B). It is installed as the crew panel's
- * pfnClick by BasePlaneScreen_BuildListPanels (0x7a3f4, not ported), and it toggles ONE soldier
+ * pfnClick by BasePlaneScreen_BuildListPanels (0x7a3f4, ported at pufo_plane.c:828), and it toggles ONE soldier
  * selected craft and unassigned.
  *
  * The row is the crew panel's nUnk3032, and the panel's aux column carries the SOLDIER index
@@ -478,7 +477,7 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
  *
  * BUILT (0x7D234..0x7D368): the flag goes down and everything the hangar owns is released - the two
  * list panels (pPlaneCraftPanel 0x161EFC, pPlaneCraftStatusPanel 0x161ED0, each UiPanel_FreeLines +
- * delete), then the object block BasePlaneScreen_Init (0x7d9e4, not ported) allocated at 0x161A48: the
+ * delete), then the object block BasePlaneScreen_Init (0x7d9e4, ported at pufo_plane.c:1219) allocated at 0x161A48: the
  * backdrop pad
  * at +0, five craft art pads at +4..+0x14, six weapon icon pads at +0x18..+0x2C, four main controls at
  * +0x30..+0x3C (UiControl_FreePads + delete) and seven weapon controls at +0x40..+0x58. The original
@@ -610,7 +609,8 @@ i32 BasePlaneScreen_SelectListed(const PlaneCraftSelectEnv *pEnv);
  * skips the wiring of a control or pad that failed to allocate. PadImage_ctor (0x11000) only sets
  * pData, so the original's freshly allocated pads carry an uninitialised uWidth into the
  * `120 - (uWidth >> 1)` at 0x7DC60 whenever the load fails; the port zero-fills the pad.
- * BasePlaneScreen_BuildControls and BuySellScreen_ApplyQtyChanges are not ported and enter as hooks. */
+ * BasePlaneScreen_BuildControls (0x7b014) and BuySellScreen_ApplyQtyChanges (0x78d90) are both
+ * ported in pufo_plane.c (:1392 / :655) and enter here as hooks. */
 #define PUFO_PLANE_MAIN_CTLS 4
 #define PUFO_PLANE_WEAPON_CTLS 7
 #define PUFO_PLANE_CRAFT_PADS 5
@@ -623,7 +623,7 @@ typedef struct BasePlaneScreenInitEnv {
     void (*apfnMainClick[PUFO_PLANE_MAIN_CTLS])(void);   /* DrawStatLabel, BuildListPanels, BuildControls */
     void (*apfnWeaponClick[PUFO_PLANE_WEAPON_CTLS])(void); /* RearmFromStores, SelectWeapon25..30 */
     void (*pfnCloseClick)(void);          /* BasePlaneScreen_Close @ 0x7c9e8 */
-    void (*pfnBuySellClick)(void);        /* BuySellScreen_ApplyQtyChanges (0x78d90), not ported */
+    void (*pfnBuySellClick)(void);        /* BuySellScreen_ApplyQtyChanges (0x78d90), ported at pufo_plane.c:655 */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
                         void *pUser);
     void *pPadUser;

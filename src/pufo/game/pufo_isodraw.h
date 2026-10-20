@@ -115,7 +115,7 @@ typedef struct IsoAnimGlobals {
 
 /* One u16 base per sprite group, kept inside the fontSys block at 0x158268.
  *
- * Font_LoadTactSprites (0x257c4, not ported) is the only writer, and the ARM shows the rule
+ * Font_LoadTactSprites (0x257c4, ported at pufo_font.c:356) is the only writer, and the ARM shows the rule
  * exactly: LDR name; LDRH total; STRH base; BL Font_LoadSpr. Each base is the running frame count
  * captured immediately BEFORE that group is loaded, so it is the group's first index.
  *

@@ -164,7 +164,7 @@ u16 Font_GetFlagSprBase(const PufoFont *pFont, u8 nFlag);
 /* --- Font_LoadTactSprites @ 0x257c4 (752 B) : the tactical sprite set and its group bases ---
  *
  * Reached from Map_BuildMissionTerrain (0x22e10) at 0x22E4C and from Save_ReadTGameData (0x44248) at
- * 0x4444C; both already had it as a hook because it was not ported. It is the only writer of the
+ * 0x4444C; both reach it as a hook seam, and it is ported at pufo_font.c:356. It is the only writer of the
  * group bases in the font block, and the rule is the same for every one of them: the base is the
  * running counter captured immediately BEFORE that group's Font_LoadSpr, so it is the group's first
  * frame index. The counter is fontSys.nTotalSprFrames (+0x36) for the .spr groups and

@@ -53,7 +53,7 @@ typedef struct TitlesBackdrop {
 i32 Titles_DrawBackdrop(TitlesBackdrop *pEnv);
 
 /* The original's titles surface, unk_158808 @ 0x158808. It is created in Titles_ctor (0x46e88,
- * not ported) and freed in Titles_dtor (0x46fa4, not ported), and this is the only module that
+ * ported at this file:347) and freed in Titles_dtor (0x46fa4, ported at this file:501), and this is the only module that
  * touches it, so the port owns it here. */
 extern SoftSurf *g_pTitlesSurface;
 

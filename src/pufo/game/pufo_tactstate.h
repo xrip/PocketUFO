@@ -118,7 +118,7 @@ typedef struct TactState {
     i32            nTraceY;          /* 0x111C0 */
     i32            nTraceZ;          /* 0x111C4 */
     Soldier       *pAiActionUnit;    /* 0x111C8, the unit an AI action is running for.
-                                      * EnemyAi_TryFireOrWander (0x4ABC8, unported) stores it at
+                                      * EnemyAi_TryFireOrWander (0x4ABC8, ported at pufo_enemyai.c:295) stores it at
                                       * 0x4AC04 *before* choosing between its fire-burst path and
                                       * its wander path, so the field names the acting unit, not a
                                       * walking one. Tact_TickActiveUnit @ 0x544E0 clears this unit's
@@ -135,7 +135,7 @@ typedef struct TactState {
     i32            nPhaseMax;        /* 0x111DC */
     u8             gap_70112[2];     /* 0x111E0 */
     u8             bAiActionActive;  /* 0x111E2, raised unconditionally with pAiActionUnit at
-                                      * 0x4AC1C, before EnemyAi_TryFireOrWander (0x4ABC8, unported)
+                                      * 0x4AC1C, before EnemyAi_TryFireOrWander (0x4ABC8, ported at pufo_enemyai.c:295)
                                       * picks fire or wander. Cleared on the wander path's failure
                                       * (0x4B024), by Tact_InitMission, and by the walker's completion
                                       * tail (0x544D8). Read as "the AI is driving this action": it

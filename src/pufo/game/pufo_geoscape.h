@@ -148,7 +148,8 @@ typedef struct GeoscapeHooks {
     void (*pfnOpenMonthly)(void *pUser);
     /* Base_FindIndexBySiteId (0x5a8d0) is a second copy of Base_FindIndexByTypeByte @ 0x6ac30 and
      * the port keeps one implementation; this hook stays because the detect pass is called from
-     * unported screens that resolve the base list their own way. */
+     * the radar path -- ported, but not wired into the shell -- where the caller resolves the
+     * base list its own way. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } GeoscapeHooks;
@@ -693,8 +694,8 @@ i32 Base_UpdateLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveResearch
  * classifier reads.
  *
  * Each one discards its own Base_Calc*Cap call, and each returns the same loop-counter
- * residue of 6. The budget totals come from functions that are not ported yet, so the port
- * takes each total as an argument, exactly as it does for the quantity columns. */
+ * residue of 6. The budget totals come from the Base_Calc*Cap functions in this file, so the
+ * port takes each total as an argument, exactly as it does for the quantity columns. */
 i32 Base_UpdateLivingQuartersNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nSpaceNeeded);
 i32 Base_UpdateStoresNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nStoresNeeded);
 i32 Base_UpdatePsiLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nPsiSoldiers);
@@ -1108,7 +1109,7 @@ bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType);
  * the port takes it as an injected byte.
  *
  * They park the radar cursor at one of four corners. That cursor really is a pixel position:
- * RadarScreen_Update (0x60570, not ported) loads unk_1596D4 at its 0x60F4C into
+ * RadarScreen_Update (0x60570, ported at this file:3709) loads unk_1596D4 at its 0x60F4C into
  * SoftSurf_BlitRectProxy's x argument (`ADD R1, R0, R1,ASR#1 ; ADD R1, R1, #1 ; x`). The four values
  * pair up as west/east and
  * north/south:
@@ -1184,8 +1185,9 @@ void RadarScreen_SetCursorSE(const RadarCursorEnv *pEnv);
  *    back into the bottom. base+0x5800 is aPalette + 22 * 1024, so the block is slot 22 entries 0..24
  *    (0x14CAD0..0x14CB30): 25 entries shifted up one place with entry 24 wrapping into entry 0. The
  *    IDB gives those two endpoints no xref outside this function, so the reader is reached through the
- *    aPalette base in the radar draw path -- RadarScreen_BlitMapBackdrop (0x5eb10, not ported),
- *    RadarScreen_Update (0x60570, not ported) and RadarScreen_Init (0x5f490, not ported) all load
+ *    aPalette base in the radar draw path -- RadarScreen_BlitMapBackdrop (0x5eb10, ported at
+ *    this file:2168), RadarScreen_Update (0x60570, ported at 3709) and RadarScreen_Init (0x5f490,
+ *    ported at 2785) all load
  *    0x1472D0 -- but which of them picks slot 22 is not resolved in the IDB and is not asserted here.
  *
  * 2. Nudge the animated range toward its target. Four conditional steps, each storing:
@@ -1243,7 +1245,7 @@ void RadarScreen_CyclePalette(const RadarPaletteEnv *pEnv);
  * them as their own pointers instead of indexing a 1524-byte array past its end.
  *
  * ORIGINAL BUG (bugs.tsv): in Base_HitTestFacilityStrip @ 0x671B0 the drawer's pitch and the hit
- * test's divisor disagree. Base_DrawFacilityIconStrip (0x6250c, not ported) steps 28 pixels per
+ * test's divisor disagree. Base_DrawFacilityIconStrip (0x6250c, ported at this file:2053) steps 28 pixels per
  * base, but 0x67264 divides the y by 30, so from the third cell down
  * the top of each cell selects the PREVIOUS base -- y = 59 (the first row of the third cell, drawn
  * at 28*2 + 3) reports base 1, and y = 199 (the first row of the eighth) reports 6. Reproduced,
@@ -3417,7 +3419,7 @@ u8 RadarScreen_RollDetection(const RadarDetectEnv *pEnv, i32 nChance);
  *
  * It draws one half per mount, left first, and each half is the same five jobs: the weapon icon, the
  * range bar, the ammo count, the mount's own range ticks, and the state globals the shot animation
- * (RadarScreen_DrawOverlay, still unported) reads.
+ * (RadarScreen_DrawOverlay, ported at this file:3384) reads.
  *
  * 1. Map_nGlyphPalBase = 3 (0x5EE1C) for the whole call.
  * 2. The icon. (i8)Ship.bWeaponL picks a row of g_aRadarMountDraw and Font_DrawGlyph draws
@@ -4074,8 +4076,8 @@ void Geoscape_PulseUpdate(const GeoscapePulseEnv *pEnv);
 /* ------------------------------------------------- the new-base globe hover frame
  *
  * Evidence: Geoscape_DrawGlobeHover @ 0x6727c (2,208 B), reached from the geoscape dispatcher's
- * jumptable default arm (screen ids 13 and 14) at 0x91D8C. That dispatcher is still unported, so it
- * is named by address only. The caller loads nSmapCursorX / nSmapCursorY into R1 / R2 first, but the
+ * jumptable default arm (screen ids 13 and 14) at 0x91D8C inside Geoscape_Draw @ 0x8c180 (ported
+ * at this file:6849). The caller loads nSmapCursorX / nSmapCursorY into R1 / R2 first, but the
  * callee's prologue pushes only R0 (0x67280), so those two are dead; the callee's return value is
  * stored with STRB into bPendingRegionId @ 0x159DF4.
  *

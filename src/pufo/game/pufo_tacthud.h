@@ -192,7 +192,7 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
                         i32 nWidth, bool bLeadZero,
                         HudPadBlitFn pfnBlitEx, void *pUser);
 
-/* --- the HUD draw family that Render_Frame (0x22310, not ported) dispatches ----------
+/* --- the HUD draw family that Render_Frame (0x22310, ported at pufo_renderframe.c:11) dispatches ----------
  *
  * All three read pad geometry out of pBank and centre a label on it. The bank offsets the
  * decompiler shows as "u16 field indices" are the pad records themselves:
@@ -204,7 +204,7 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
  *   TactHud_DrawTopBar      960*2 = 1920 -> unk_ACE50, bank widgets 60..88, labels on 60..69,
  *                                          78..82 and 83..87, also centred on a fixed 23
  *
- * Those three spans are the same groups Tact_Shutdown (0x3d568, not ported) walks (offsets 53/7,
+ * Those three spans are the same groups Tact_Shutdown (0x3d568, ported at pufo_tactend.c:228) walks (offsets 53/7,
  * 105/8 and 44/9), which is the cross-check that the arithmetic is right. */
 #define PUFO_HUD_MENU_PADS        7
 #define PUFO_HUD_MODAL_PADS       8
@@ -267,7 +267,7 @@ i32 TactHud_CopyStatusText(UiControl *pPads, const char *pszStatus, const GfxCol
 /* --- the nine tactical action buttons ---------------------------------------------
  *
  * TactHud_DrawActionButtons @ 0x21430. Bank widgets 89..97 (unk_AD1F0 = pBank + 2848,
- * and 1424*2 = 2848), the same span Tact_Shutdown (0x3d568, not ported) walks as 89/9.
+ * and 1424*2 = 2848), the same span Tact_Shutdown (0x3d568, ported at pufo_tactend.c:228) walks as 89/9.
  *
  * Each button first has its bEnabled cleared, then a per-index rule decides whether it is
  * shown at all. A shown button gets bEnabled = 1 and its y REWRITTEN to 19 * (count of
@@ -329,7 +329,7 @@ i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
 /* --- the fire-mode roster panel (screen 3) ----------------------------------------
  *
  * TactHud_DrawUnitRoster @ 0x21908. Bank widgets 32..43 (unk_ACAD0 = pBank + 1024, and 512*2 =
- * 1024), the same span Tact_Shutdown (0x3d568, not ported) walks as 32/12. Twelve fire modes;
+ * 1024), the same span Tact_Shutdown (0x3d568, ported at pufo_tactend.c:228) walks as 32/12. Twelve fire modes;
  * only the ones with a non-zero entry are drawn, and a drawn pad has its y REWRITTEN to
  * 23 * (drawn count so far) + 67, so the panel packs the visible modes. */
 #define PUFO_HUD_ROSTER_PADS 12

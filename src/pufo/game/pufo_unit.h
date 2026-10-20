@@ -4,7 +4,7 @@
  *           Unit_ResetBattleState @ 0x498b0, Unit_bIsOperative @ 0x49eb8,
  *           Unit_bIsLarge @ 0x49ecc, Unit_PlaceOnMap @ 0x49a0c,
  *           Unit_FaceToward @ 0x49bf0, Soldier_RemoveById @ 0x36b8c,
- *           Tact_SelectUnit (0x2c6c4, not ported), Save_WriteSoldiers @ 0x42350.
+ *           Tact_SelectUnit (0x2c6c4, ported at pufo_tactctl.c:479), Save_WriteSoldiers @ 0x42350.
  *
  * Soldier is 1044 (0x414) bytes in the original (ILP32). It is NOT serialised
  * as a raw blob: Save_WriteSoldiers @ 0x42350 writes every field individually,
@@ -490,7 +490,8 @@ i32 Soldier_RemoveById(Soldier **apSoldiers, i32 nCount, i32 nId);
 /* Base_RemoveAllSoldiers @ 0x668e8. Run Soldier_RemoveById over the scratch id list the buy/sell
  * screens keep at dword_160C90 -- a dword count at +0, then that many dword ids at +4 -- re-reading
  * the count every iteration, and return that re-read count rather than the soldier count. The port
- * takes the list as an input: its only writers are unported. */
+ * takes the list as an input: its only writers (the buy/sell screens) are ported, and the shell
+ * owns the storage. */
 i32 Base_RemoveAllSoldiers(const i32 *anIdList, Soldier **apSoldiers, i32 nSoldierCount);
 
 /* Unit_ResetBattleState @ 0x498b0. Derives TU/HP/armour from auStat:

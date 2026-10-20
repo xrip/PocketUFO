@@ -128,7 +128,8 @@ typedef struct StrategHooks {
      * through this hook: 10, 13 and 15 pause, 43 (low supply) does not. */
     void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
     /* Base_FindIndexBySiteId @ 0x5a8d0 is a second copy of Base_FindIndexByTypeByte @ 0x6ac30;
-     * the port keeps one implementation. The hook stays for the unported callers. */
+     * the port keeps one implementation. The hook stays for the radar-path callers, which are
+     * ported but not wired into the shell. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } StrategHooks;

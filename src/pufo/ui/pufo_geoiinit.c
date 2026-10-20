@@ -376,7 +376,7 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
         pView->nLastDx  = 0;
         pView->nLastDy  = 0;
         if (pEnv->pfnStartNew != NULL) {
-            pEnv->pfnStartNew(pEnv->pHookUser); /* Game_StartNew @ 0x94554, not ported */
+            pEnv->pfnStartNew(pEnv->pHookUser); /* Game_StartNew @ 0x94554, ported at this file:511 */
         }
     }
 
@@ -441,7 +441,7 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
         UiPanel_SetBytes3to5(pPanel, 0x44, 0xF4, 0xFC);
         pPanel->nUnk7076  = 1;
         pPanel->bFlag7073 = 1;
-        pPanel->pfnClick  = pEnv->pfnRadarClick; /* Geoscape_OnRadarListClick, not ported */
+        pPanel->pfnClick  = pEnv->pfnRadarClick; /* Geoscape_OnRadarListClick, ported at pufo_baseui.c:6747 */
         pPanel->bUnk7088  = 100;
     }
 

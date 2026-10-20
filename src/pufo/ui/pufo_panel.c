@@ -315,8 +315,9 @@ i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszTe
  *     1 -> centre (half the width), 2 -> right (full width), 0 -> left.
  *
  * The original also packs two colour triples per row through Gfx_PackRgb565Pair
- * and writes them to a palette LUT; that LUT feeds the blit, which is not ported
- * yet, so the colour step is omitted here and only the text is drawn. */
+ * and writes them to a palette LUT; that LUT feeds the blit (SoftSurf_BlitRectProxy /
+ * SoftSurf_BlitSrcRect, ported in pufo_render.c), and the colour step is still omitted
+ * here -- the deviation this function records -- so only the text is drawn. */
 void UiPanel_DrawText(UiPanel *pPanel)
 {
     i32 row;

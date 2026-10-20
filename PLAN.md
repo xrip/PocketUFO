@@ -3462,9 +3462,39 @@ unchanged; 18267 checks.
   `ObjectRecFull.aItemQty[craft] @ +0x3A` (0x78E4C), reached only from a row that `BasePlaneScreen_CommitStores`
   staged (0x7AFD8) -- and every row additionally needs the slot's research topic unlocked (0x7B1D4). The shell
   walks that whole path now, staging through confirm to teardown, but a fresh game stocks only slot 43 and its
-  topic is locked, so nothing admissible can be moved. What is still missing is the research/manufacture pair
-  (nav slots 8/9) that stocks a weapon the hangar will admit, so `Tact_OpenLeftHandMenu @ 0x17030`, the
-  fire-mode panel and the item strip keep being gated on a fixture weapon, as Parts 57 and 76 had to.
+  topic is locked, so nothing admissible can be moved. Part 99 closed the missing half: the research and
+  manufacture screens are wired (nav slots 5/6, ids 8/9), research completion through the hourly pass unlocks
+  topics, a manufactured product lands in base stock, and `test_geoscapeframe` 99.6 stages a hold item into a
+  transport and mounts a weapon on a combat craft through the swap tail at 0x79A10. Open rows left for this
+  entry: buying a CRAFT (rows 117/118 -- roster growth through the buy -> site record ->
+  `Smap_GrantSiteRecovery @ 0x98b50` craft spawn at 0x99360..0x993AC has no live gate yet; the hangar cap
+  gate 0x75C4C/0x75C74 also needs enough hangar cells), and the live mission that deploys a squad armed by
+  cargo the shell itself staged.
+
+- [ ] **Monthly funding has no live funds delta.** The chain is wired end to end (`Geoscape_AdvanceTime` ->
+  `Tick_Monthly` -> `World_HookOpenMonthly` -> `FundingScreen_OpenMonthly @ 0x5d160`, upkeep via
+  `Base_CalcMonthlyUpkeep`), and Parts 54/56 gated the arithmetic at fixture level, but no test pulses the
+  shell clock across a month boundary and asserts `g_world.nFunds` against the recomputed upkeep plus the
+  id-19 funding screen landing. The 99.x economy ticks use `pfnTickHourly` / `pfnTickBases` directly and
+  never cross the month gate.
+
+- [ ] **Transfer screen 10 is the one unwired nav slot.** All its functions are ported (`Ui_InitTransfer`,
+  `TransferScreen_BuildPanels`, `Transfer_ResetSite`, `Transfer_MoveOneItem`, `TransferScreen_ValidateCapacity`,
+  `TransferScreen_CommitTransfer`, `TransferScreen_Draw`, `TransferScreen_Open`; the `Geoscape_Draw` arm exists
+  at pufo_geoscape.c:6899) and the IDB has no separate `TransferScreen_Init` -- the Init behavior is the Open
+  tail `Ui_InitTransfer @ 0x9955c`, with the id-10 write AFTER the init call (0x6151C), which the port already
+  reproduces. What is missing is shell wiring only: the nav slot 7 thunk, the four env instances, the pad
+  block at 0x1870D8, `pTransferCtl` and the pointer-env fields. Outside the economy round, tracked here so it
+  is not lost.
+
+- [ ] **The tactical path search still steps permissively.** `Unit_CanStepTo @ 0x27bb8` is ported in
+  pufo_step.c but `sTactPath.pfnProbe` stays NULL, so `Path_ExpandCell` walks the plain delta table without
+  door/step refusals (recorded deviation at the wiring site). Wiring the probe is a behavior change that has
+  to be argued against the original's own search, not just connected.
+
+- [ ] **`Tact_Shutdown @ 0x3d568` has no caller yet.** It is ported (pufo_tactend.c:228) and
+  `Tact_CheckBattleEnd @ 0x34fbc` (ported at :988) is the mission-end unit that should reach it; the shell's
+  teardown still uses its own `World_FreeTactical` instead (recorded at the wiring comment).
 
 - [x] **`Ui_FillActionCosts @ 0x26104` mirrors its costs into the bank; the port does not.** CLOSED by Part 79:
   0x2641C writes `pBank + 0x400 + 32*m + 9` -- the `bEnabled @ UiControl+9` byte of bank widgets 32..43 --

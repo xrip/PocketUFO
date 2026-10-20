@@ -3,7 +3,7 @@
  * Evidence: Map_FacingDelta @ 0x276a0, Path_EnqueueCell @ 0x2b534,
  *           Path_ExpandCell @ 0x2b604, Map_ComputeReachable @ 0x2b820,
  *           Unit_PathToCell @ 0x2c2a8, byte_A7B00 @ 0xa7b00,
- *           Unit_CanStepTo (0x27bb8) -- predicate only, the 14.7 KB body is not ported.
+ *           Unit_CanStepTo (0x27bb8) -- ported in pufo_step.c; not wired into the path seam yet.
  *
  * The original runs a cost-based flood fill over the cell grid. Two frontier
  * lists are used alternately (double buffering), selected by byte_10DB80:
@@ -188,8 +188,9 @@ typedef struct PathToCellCtx {
     i32          *pnPathCount;     /* Map+0x4E44 */
     PathScratch  *pScratch;        /* the flood fill's frontier lists */
     MapCellLookup pfnLookup;
-    PathStepProbe  pfnProbe;       /* Unit_CanStepTo (0x27bb8), not ported yet; a NULL seam
-                                    * steps permissively by the delta table (deviation) */
+    PathStepProbe  pfnProbe;       /* Unit_CanStepTo (0x27bb8, ported in pufo_step.c) -- not
+                                    * wired here yet; a NULL seam steps permissively by the
+                                    * delta table (deviation) */
     void          *pProbeUser;       /* the user Path_ComputeReachable passes to BOTH readers
                                       * (the original's flood fill is one shared context) */
     void          *pLookupUser;      /* the user Unit_PathToCell's own lookups use */

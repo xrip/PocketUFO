@@ -215,7 +215,8 @@ i32 Menu_LoadSlot(i32 *pnListMode, i32 nSlot,
  *
  * As in Menu_LoadSlot, the test on the load result is on its LOW BYTE (0x19E28).
  *
- * SaveGame (0x44988) and LoadGame (0x44bbc) are not ported, so both are hooks. */
+ * SaveGame (0x44988) and LoadGame (0x44bbc) are ported in pufo_save.c (:2699 / :2932) and enter
+ * here as hooks. */
 #define PUFO_MENU_MODE_SAVE_LOAD_LIST 1
 #define PUFO_MENU_SCREEN_SAVE_LIST   10
 

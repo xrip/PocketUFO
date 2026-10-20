@@ -63,7 +63,7 @@ typedef struct RenderFrameEnv {
 
     /* Hooks for the callees the port does not have yet. Both return values: the original
      * returns Geoscape_Draw's on the geoscape branch and GX_Present's otherwise. */
-    i32 (*pfnGeoscapeDraw)(void *pUser); /* Geoscape_Draw (0x8c180), not ported */
+    i32 (*pfnGeoscapeDraw)(void *pUser); /* Geoscape_Draw (0x8c180), ported at pufo_geoscape.c:6849 */
     void *pGeoscapeUser;
     i32 (*pfnPresent)(void *pUser);      /* GX_Present (0x27788), mirrored by the shell */
     void *pPresentUser;

@@ -123,7 +123,7 @@ typedef struct GameUiStartupEnv {
 
 void GameUI_InitStartup(GameUiStartupEnv *pEnv);
 
-/* PocketUFO_WndProc (0xa0944, not ported) fragment at 0xA0AC8, the WM_TIMER 0xC352 branch for
+/* PocketUFO_WndProc (0xa0944; the WM_TIMER body is ported in pufo_app.c) fragment at 0xA0AC8, the WM_TIMER 0xC352 branch for
  * screen 0x11: the start-menu row flicker. Per row: when the row's key source is armed the key is 32*acc-1, where acc is the
  * anim phase plus one random roll while the phase is under 4 (0xA0AEC re-seeds the accumulator
  * from the phase every row, so it never carries between rows -- the global is write-only

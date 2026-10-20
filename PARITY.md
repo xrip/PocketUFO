@@ -620,7 +620,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x8c180` | `Geoscape_Draw` | 33744 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
+| `0x8c180` | `Geoscape_Draw` | 33744 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x872d0` | `Geoscape_OnPointer` | 8576 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |

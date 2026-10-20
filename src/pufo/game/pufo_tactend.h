@@ -159,7 +159,7 @@ void Tact_Shutdown(const TactShutdownEnv *pEnv, u8 bKeepSome);
  *
  * Evidence: Tact_TallyBattleStats @ 0x3348c (756 B), Tact_TallyUnitResults @ 0x33780 (1,136 B),
  * Tact_TallyItemRecovery @ 0x33c80 (2,100 B), Tact_TallyCraftRecovery @ 0x344b4 (556 B). All four
- * run back to back inside their caller (Tact_CheckBattleEnd, 0x34fbc, not ported yet): 0x35240,
+ * run back to back inside their caller (Tact_CheckBattleEnd, 0x34fbc, ported at this file:988): 0x35240,
  * 0x35284, 0x352b0, 0x352bc.
  *
  * ## What the tallies are for

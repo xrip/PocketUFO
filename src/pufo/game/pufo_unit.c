@@ -287,8 +287,8 @@ i32 Soldier_RemoveById(Soldier **apSoldiers, i32 nCount, i32 nId)
  * list the original keeps at dword_160C90: a dword count at +0 followed by that many dword ids
  * at +4. BuySellScreen_BuildPanels zeroes the count at 0x76EAC and then walks nSoldierCount
  * against the facility grid of the selected base, so the list is that screen's working set; the
- * only other reader is BuySellScreen_CommitTransaction (0x74bf8). Both are unported, so the port
- * takes the list as an input rather than guessing who fills it.
+ * only other reader is BuySellScreen_CommitTransaction (0x74bf8). Both are ported in
+ * pufo_baseui.c; the port still takes the list as an input, because the shell owns the storage.
  *
  * The loop re-reads the count out of the list on every iteration (0x66910) and compares the
  * iteration index against that fresh value, so a list whose count shrinks mid-walk stops early.

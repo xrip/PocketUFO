@@ -1,11 +1,12 @@
 /* pufo_world.c - the shell's geoscape bring-up: Geoscape_InitUI @ 0x857f4 mode 0 and
  * Game_StartNew @ 0x94554 run over the shell-owned PufoWorldState.
  *
- * The click handlers the geoscape screens would install are no-ops for now: those screens
- * (Geoscape_Draw, Geoscape_OnRadarListClick, the research and soldier screens' open paths)
- * are not ported yet, so the shell wires the slots the same way tests/test_startnew.c does.
- * The spawn pass's two hooks are stubs for the same reason: StrategList_ProcessEvents
- * (0x7fcb0) and the mission-spawn leaf are unported.
+ * The geoscape screens this shell opens are ported and wired -- Geoscape_Draw, the research,
+ * soldier, hangar, facility, manuf and buy/sell open paths, and the spawn pass's hooks
+ * StrategList_ProcessEvents (0x7fcb0) and the mission-spawn leaf all run live (see the frame
+ * wiring header below for the one nav slot that stays a no-op). The slots the shell still
+ * cannot wire keep World_NoopClick handlers: transfer screen 10 (its Init env and pad arm are
+ * not shell state) and the radar screen's own state (0x159684's control set).
  */
 #include "app/pufo_world.h"
 
@@ -2891,7 +2892,8 @@ static void World_HookOpenMonthly(void *pUser)
  * Tact_InitMission @ 0x3c550 with it. Everything the mission builds belongs to the state, and
  * World_FreeTactical releases exactly that -- the shell's own teardown, NOT Tact_Shutdown @ 0x3d568:
  * that function's outcome table acts on the mission's result, and the mission-end unit (whose head
- * is the unported Tact_CheckBattleEnd @ 0x34fbc) is what will call it. Docs/parity/game-core.md
+ * is Tact_CheckBattleEnd @ 0x34fbc, ported in pufo_tactend.c:988) is what will call it -- that
+ * wiring is still open. Docs/parity/game-core.md
  * Unit 108 records the storage decisions and the three hook seams below.
  */
 
@@ -3666,9 +3668,10 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactPath.pnPathCount    = &pMap->nPathCount;       /* Map_nPathCount @ Map+0x4E44 */
     pW->sTactPath.pScratch       = &pW->sTactPathScratch;
     pW->sTactPath.pfnLookup      = World_TactLookupCell;
-    /* Deviation: pfnProbe stands for Unit_CanStepTo @ 0x27bb8, still unported; the path port
-     * treats a NULL probe as permissive (Path_ExpandCell steps by the plain delta table when
-     * the seam is NULL), so door/step refusals are not applied on a walked path yet. The
+    /* Deviation: pfnProbe stands for Unit_CanStepTo @ 0x27bb8 (ported in pufo_step.c:739 but
+     * not wired into the path search yet); the path port treats a NULL probe as permissive
+     * (Path_ExpandCell steps by the plain delta table when the seam is NULL), so door/step
+     * refusals are not applied on a walked path yet. The
      * seam being NULL used to dereference a null pointer there -- fixed 2026-10-20; the click
      * move arm only reaches the search once the input mirror carries Map_nMapDimX/Y
      * (0x1511B/0x1511C) and Tact_HandleMapClick's cursor gate passes. */

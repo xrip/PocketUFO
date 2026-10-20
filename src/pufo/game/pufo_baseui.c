@@ -863,7 +863,7 @@ static i32 BuySellFundsShortfall(const BuySellCapacityEnv *pEnv)
 }
 
 /* The transfer flow's working site: the record AT the site count, which Transfer_ResetSite
- * (0x9690c, not ported) clears and BuySellScreen_ConfirmSiteAndClose commits. */
+ * (0x9690c, ported at this file:1877) clears and BuySellScreen_ConfirmSiteAndClose commits. */
 static SmapSite *BuySellSiteAt(SmapSite *aSites, i32 nSiteCount)
 {
     if (aSites == NULL || nSiteCount < 0 || nSiteCount >= PUFO_SMAP_SITE_COUNT) {

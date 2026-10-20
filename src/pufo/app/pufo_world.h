@@ -333,9 +333,9 @@ typedef struct PufoWorldState {
      * sets and the three geometry bytes; the two bankruptcy paths set the tick/battle pair
      * (0x8BC04, 0x84238). The tactical half of the block -- the cell grid, the rosters' live
      * fields, the TactState region -- is NOT here: see the craft-select env below for what is
-     * still a seam and why. A save game restores these through the tgamedata chunk, and
-     * Save_ReadTGameData @ 0x44248 is not ported yet, so a loaded game rebuilds them from the
-     * mission-follow call, not from the file. */
+     * still a seam and why. A save game restores these through the tgamedata chunk;
+     * Save_ReadTGameData @ 0x44248 is ported at pufo_save.c:2791, so a loaded game takes them
+     * from the file. */
     i32          nMapMissionTierRaw;    /* Map_nMissionTierRaw @ Map+0x1510C (0x128AC4), the tier budget */
     u8           nMapTerrainVariant;    /* Map_nTerrainVariant @ Map+0x15111 */
     u8           bMapUnk15112;          /* Map+0x15112, the third byte of the same dword */
