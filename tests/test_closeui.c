@@ -103,7 +103,9 @@ static u8 g_bPlaneList, g_bPlaneStores, g_bStatA, g_bStatB, g_bPlaneBuilt, g_bPl
 static u8 g_bResBuilt, g_bRowSel, g_bManufSel, g_bManufBuilt;
 static u8 g_bBsCtlBuilt, g_bBsBuilt;
 static u8 g_bUfOpen, g_bUfDirty, g_bOptOpen, g_bOptActive;
-static i8 g_nOptMode;
+static i8 g_nOptTab; /* the ONE gOptionsScratch[0] @ 0x159E88: the tab env, SaveAudioEnv and the close
+                      * env all take a pointer to this byte -- the original has one byte, so the test
+                      * must not carry it in two cells. */
 static u8 g_bAtAssault, g_bTickHold, g_bBattleEnded, g_bMissionMode;
 static u8 g_bShownBase;
 static i8 g_nPsiBase;
@@ -148,7 +150,6 @@ static OptionsScreenCtl g_optCtl;
 static UiControl g_aOptRow[PUFO_OPTIONS_LIST_COUNT];
 static UiControl g_optSaveCtl;
 static UiControl g_optBackCtl;
-static ScreenScratch g_optScratch;
 static OptionsTabEnv g_tabEnv;
 static OptionsInitEnv g_optInitEnv;
 static SaveAudioEnv g_saveEnv;
@@ -314,7 +315,7 @@ static void Fix_Reset(i32 nScreen)
     g_bUfDirty = 0;
     g_bOptOpen = 0;
     g_bOptActive = 0;
-    g_nOptMode = 0;
+    g_nOptTab = 0;
 
     /* The options-screen half: a real tab env for LayoutButtons and a real SaveAudioEnv, so case 18
      * and Options_SaveAudioSettings recurse through each other rather than through a hook. */
@@ -324,15 +325,14 @@ static void Fix_Reset(i32 nScreen)
         g_optCtl.apList[i] = &g_aOptRow[i];
         g_aOptRow[i].uWidth = (u16)(40 + 4 * i);
     }
-    memset(&g_optScratch, 0, sizeof(g_optScratch));
-    g_optScratch.nLineAux145 = 2; /* a non-zero start so LayoutButtons' 0 is visible */
+    g_nOptTab = 2; /* a non-zero start so LayoutButtons' 0 is visible */
     memset(&g_optSaveCtl, 0, sizeof(g_optSaveCtl));
     memset(&g_optBackCtl, 0, sizeof(g_optBackCtl));
     g_optSaveCtl.uWidth = 60;
     g_optBackCtl.uWidth = 100; /* deliberately different: the original centres this one on the OTHER */
     memset(&g_tabEnv, 0, sizeof(g_tabEnv));
     g_tabEnv.pCtl = &g_optCtl;
-    g_tabEnv.pScratch = &g_optScratch;
+    g_tabEnv.pbTab = &g_nOptTab;
     g_tabEnv.pSaveCtl = &g_optSaveCtl;
     g_tabEnv.pBackCtl = &g_optBackCtl;
     g_bSelFlag = 0;
@@ -343,7 +343,7 @@ static void Fix_Reset(i32 nScreen)
     g_bSfxOff = 0;
     g_bMusicOff = 1;
     memset(&g_saveEnv, 0, sizeof(g_saveEnv));
-    g_saveEnv.pbTab = &g_nOptMode;
+    g_saveEnv.pbTab = &g_nOptTab;
     g_saveEnv.pbControlsExist = &g_bOptActive;
     g_saveEnv.pbOptionsOpen = &g_bOptOpen;
     g_saveEnv.pnSfxVol = &g_nSfxVol;
@@ -519,7 +519,7 @@ static void Fix_Reset(i32 nScreen)
     g_e.pbUfopaediaOpen = &g_bUfOpen;
     g_e.pbUfopaediaDirty = &g_bUfDirty;
     g_e.pbOptionsOpen = &g_bOptOpen;
-    g_e.pnOptionsMode = &g_nOptMode;
+    g_e.pnOptionsMode = &g_nOptTab;
     g_e.pbOptionsActive = &g_bOptActive;
     g_e.pnFunds = &g_nFunds;
     g_e.anFundBar = g_aBar;
@@ -970,10 +970,10 @@ static void TestScreen18(void)
      * takes the OTHER arm because the store at 0x8BCFC is what selected the first one. */
     Fix_Reset(18);
     g_bOptActive = 1;
-    g_nOptMode = 4;
+    g_nOptTab = 4;
     g_nBaseCount = 2;
     Geoscape_CloseUI(&g_e);
-    CheckI(g_nOptMode, 0, "the tab byte is cleared before the callee runs (0x8BCFC)");
+    CheckI(g_nOptTab, 0, "the tab byte is cleared before the callee runs (0x8BCFC)");
     CheckI(g_nOptInit, 1, "  and the recursion lands on the rebuild arm (0x6B7F0 -> 0x8BCE4)");
     CheckI(g_nOptSample, 7 + 4, "  with Sound_Play(7, 4) inside that leaf (0x6CF08)");
     CheckI(g_nScreen, 0, "  and the second pass sets screen 0 (0x8BCE8)");
@@ -981,14 +981,14 @@ static void TestScreen18(void)
     CheckI(g_bOptActive, 0, "  and the rebuild's OptionsScreen_Init clears the controls byte (0x6C0FC)");
     CheckI(g_time.bPaused, 0, "the callee's tail resumes the clock, no map selection pending (0x6B8C4)");
     CheckI(g_bSelFlag, 0, "  and clears bMapSelectionFlag (0x6B8CC)");
-    CheckI(g_optScratch.nLineAux145, 2, "the callee's 0x6B7F0 arm lays out no tab");
+    CheckI(g_aOptRow[0].y, 0, "the callee's 0x6B7F0 arm lays out no tab: no row centred (0x6B704)");
     CheckI(g_bDragActive, 0, "the case tail clears bGeoscapeDragActive (0x8BD1C -> 0x8BFF4)");
 
     /* A zero tab byte takes the rebuild arm in the FIRST pass and the callee never runs. The pause
      * and the selection flag are the proof: only the callee's tail touches them. */
     Fix_Reset(18);
     g_bOptActive = 1;
-    g_nOptMode = 0;
+    g_nOptTab = 0;
     g_bSelFlag = 1;
     Geoscape_CloseUI(&g_e);
     CheckI(g_nOptInit, 1, "a zero tab byte rebuilds the options screen (0x8BCE4)");
@@ -1011,7 +1011,7 @@ static void TestScreen18(void)
      * fails and 0x6B7F0 never runs. Exactly two close passes, one rebuild. */
     Fix_Reset(18);
     g_bOptActive = 1;
-    g_nOptMode = 4;
+    g_nOptTab = 4;
     g_bOptOpen = 1;
     Geoscape_CloseUI(&g_e);
     CheckI(g_nSample, 17 * 2, "two close passes and no third (0x6B7C4 runs, 0x6B7F0 does not)");
@@ -1037,10 +1037,10 @@ static void TestScreen18(void)
      * unsigned. */
     Fix_Reset(18);
     g_bOptActive = 1;
-    g_nOptMode = -3;
+    g_nOptTab = -3;
     Geoscape_CloseUI(&g_e);
     CheckI(g_nOptInit, 1, "a negative tab byte takes the callee arm, not the rebuild arm");
-    CheckI(g_nOptMode, 0, "  and the byte is cleared before the call (0x8BCFC)");
+    CheckI(g_nOptTab, 0, "  and the byte is cleared before the call (0x8BCFC)");
 }
 
 /* ------------------------------------------------------------------ 12b. Options_SaveAudioSettings */
@@ -1058,7 +1058,7 @@ static void TestSaveAudioSettings(void)
     (void)Reg_SetString("musicoff", "sentinel-c");
     (void)Reg_SetString("soundoff", "sentinel-d");
     g_bOptActive = 1;
-    g_nOptMode = 4;
+    g_nOptTab = 4;
     g_nSfxVol = 5;
     g_nMusicVol = 3;
     g_bMusicOff = 1;
@@ -1072,9 +1072,8 @@ static void TestSaveAudioSettings(void)
     CheckS(szVal, "1", "musicoff is the shared \"1\" while the music is off (0x6B878)");
     RegFetch("soundoff", szVal, sizeof(szVal));
     CheckS(szVal, "0", "  and the shared \"0\" while it is not (0x6B89C)");
-    CheckI(g_nOptMode, 0, "the tab byte clears (0x6B8A8)");
-    CheckI(g_optScratch.nLineAux145, 0, "  and LayoutButtons selects the audio tab (0x6B8AC -> 0x6B6D0)");
-    CheckI(g_aOptRow[0].y, 90, "the four rows drop to y = 90 + 25*i (0x6B704)");
+    CheckI(g_nOptTab, 0, "the tab byte clears (0x6B8A8)");
+    CheckI(g_aOptRow[0].y, 90, "LayoutButtons lays the four rows out at y = 90 + 25*i (0x6B8AC -> 0x6B704)");
     CheckI(g_aOptRow[1].y, 115, "  row 1");
     CheckI(g_aOptRow[2].y, 140, "  row 2");
     CheckI(g_aOptRow[3].y, 165, "  row 3");
@@ -1091,30 +1090,30 @@ static void TestSaveAudioSettings(void)
     Fix_Reset(18);
     (void)Reg_SetString("soundvolume", "sentinel-a");
     g_bOptActive = 1;
-    g_nOptMode = 3;
+    g_nOptTab = 3;
     (void)Options_SaveAudioSettings(&g_saveEnv);
     RegFetch("soundvolume", szVal, sizeof(szVal));
     CheckS(szVal, "sentinel-a", "tab 3 writes nothing to the registry (0x6B808 CMP R0,#4)");
-    CheckI(g_nOptMode, 0, "  but the tab byte still clears (0x6B8A8)");
-    CheckI(g_optScratch.nLineAux145, 0, "  and the tab still lays out (0x6B8AC)");
+    CheckI(g_nOptTab, 0, "  but the tab byte still clears (0x6B8A8)");
+    CheckI(g_aOptRow[0].y, 90, "  and the tab still lays the rows out (0x6B8AC -> 0x6B704)");
 
     /* 0xFD is non-zero and not 4, so it takes the same shape as tab 3. */
     Fix_Reset(18);
     (void)Reg_SetString("soundvolume", "sentinel-a");
     g_bOptActive = 1;
-    g_nOptMode = -3;
+    g_nOptTab = -3;
     (void)Options_SaveAudioSettings(&g_saveEnv);
     RegFetch("soundvolume", szVal, sizeof(szVal));
     CheckS(szVal, "sentinel-a", "a negative tab byte is non-zero but not 4, so no write");
-    CheckI(g_nOptMode, 0, "  and it still clears");
+    CheckI(g_nOptTab, 0, "  and it still clears");
 
     /* With the controls byte clear the whole middle block is skipped -- but the tail still runs. */
     Fix_Reset(18);
     g_bOptActive = 0;
-    g_nOptMode = 4;
+    g_nOptTab = 4;
     (void)Options_SaveAudioSettings(&g_saveEnv);
-    CheckI(g_nOptMode, 4, "no controls byte -> the middle block is skipped (0x6B7D4)");
-    CheckI(g_optScratch.nLineAux145, 2, "  and no layout runs");
+    CheckI(g_nOptTab, 4, "no controls byte -> the middle block is skipped (0x6B7D4)");
+    CheckI(g_aOptRow[0].y, 0, "  and no layout runs: the rows keep the y they were reset to");
     CheckI(g_time.bPaused, 0, "  the tail runs regardless (0x6B8BC)");
 
     /* A pending map selection is the only thing that keeps the clock paused. */
@@ -1128,19 +1127,19 @@ static void TestSaveAudioSettings(void)
     /* A zero tab byte with the controls present is the 0x6B7F0 arm. */
     Fix_Reset(18);
     g_bOptActive = 1;
-    g_nOptMode = 0;
+    g_nOptTab = 0;
     (void)Options_SaveAudioSettings(&g_saveEnv);
     CheckI(g_nSample, 17, "a zero tab byte calls the close (0x6B7F0)");
     CheckI(g_nOptInit, 1, "  which takes the rebuild arm");
     CheckI(g_nScreen, 0, "  and screen 0");
-    CheckI(g_optScratch.nLineAux145, 2, "  with no layout from this function");
+    CheckI(g_aOptRow[0].y, 0, "  with no layout from this function");
 
     /* The 0x6B7F0 arm does run when the controls byte survives the inner close. With the screen id
      * at 13 the inner close takes the jumptable default and rebuilds nothing, so byte_159E88[4] is
      * still set when this function re-tests it at 0x6B7D4 -- and the second close runs. */
     Fix_Reset(13);
     g_bOptActive = 1;
-    g_nOptMode = 0;
+    g_nOptTab = 0;
     g_bOptOpen = 1;
     (void)Options_SaveAudioSettings(&g_saveEnv);
     CheckI(g_nSample, 17 * 2, "controls byte survives -> both 0x6B7C4 and 0x6B7F0 run");
@@ -1151,7 +1150,7 @@ static void TestSaveAudioSettings(void)
      * never runs. One close pass, not two. */
     Fix_Reset(18);
     g_bOptActive = 1;
-    g_nOptMode = 0;
+    g_nOptTab = 0;
     g_bOptOpen = 1;
     (void)Options_SaveAudioSettings(&g_saveEnv);
     CheckI(g_nSample, 17, "the rebuild clears the controls byte, so only one close pass runs");

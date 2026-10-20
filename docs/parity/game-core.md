@@ -20478,3 +20478,118 @@ IDB: the census comment on `nNextBaseSiteId @ 0x186558`, notes at 0x556bc (the s
 (`World_OptionsInitStub`, `World_OptionsOpenStub`), so the options screen still has no owner;
 the radar pass (`Geoscape_TickBases` on a minute tick) is still not gated; and the shell's
 `SmapHitEnv.pOptPanelShips` stays NULL, which is why 0x83494 has no counterpart.
+
+## Part 95 - the shell owns screen 18: the overlay a base press builds, the row it confirms, the cancel that closes it
+
+The two no-op hooks are gone. `OptionsScreen_OpenWithSound @ 0x6dd04` tail-calls its open at
+0x6DD20 with the mode it kept in R4, and the shell's `World_OptionsOpenRun` answers with
+`OptionsScreen_Open @ 0x6d0ac`; `OptionsScreen_RebuildWithSound @ 0x6cf00` tail-calls
+`OptionsScreen_Init @ 0x6be74` at 0x6CF14 and `World_OptionsInitRun` answers. The state the
+original keeps in globals is `OptionsOwners` in the world: the seven `aOptionsListCtl` rows at
+0x159E20, the prev/next pair at 0x159E3C / 0x159E40 (the two allocations Open makes), the six
+`aOptionsMusicBtn` at 0x159E44 and six `aOptionsSfxBtn` at 0x159E5C, the four columns at
+0x159E18 / 0x159E78 / 0x159E7C / 0x159E1C, and the six envs `World_WireOptions` fills.
+`pF->draw.pOptionsScreen` is assigned, so `Geoscape_Draw`'s case-18 arm at 0x942F4 reaches
+`Geoscape_DrawScreen @ 0x6c16c`, and `World_RefreshGeoscapeFrame` re-reads the screen id, the
+overlay origin, the pads and the four panel cells every frame.
+
+Three fields became cells, because Open runs before the instruction that reads them. The arm at
+0x83480 calls the open and the very next instruction, 0x83494, loads 0x159E18 and stores through
+it: when the toggle was already set, that load answers the close half, which has just freed the
+panel -- so `SmapHitEnv` carries `ppOptPanelShips` and not a copy taken before the call. The
+same reason on the press arm: 0x89370 reads the pair as `ADD R0,R11,R0,LSL#2 / LDR
+R0,[R0,#0x1C]`, and 0x893B4 and 0x8AF1C load 0x159E18 at the call, so `GeoscapePointerEnv`
+carries `apOptPairCtl` and `ppOptPanelShips`. Inside one press a cancel can free what the same
+press's tail then reads; the re-read is what makes that safe here and a dangling write in the
+original.
+
+The press path, read off the disassembly. The type-0 inactive arm plays 7 at 0x6DD10 before it
+tail-calls the open, 0x6D0C8 sets `bOptionsScreenOpen @ 0x159E80`, 0x6D1B0 / 0x6D1C0 put the
+pair into 0x159E3C / 0x159E40 with `OptionsScreen_PanelPrev` / `PanelNext` at 0x6D208 / 0x6D214,
+0x6D24C installs `Options_SaveAudioSettings` on *pGeoscapeCtlA and 0x6D25C / 0x6D26C move it to
+120 - (uWidth >> 1) and y 179, and the four columns come from 0x6D270 / 0x6D3BC / 0x6D490 /
+0x6D55C with the row count 0x6D14C..0x6D190 counted. The run's base holds three craft, and the
+stores column's aux dwords come out -1, 0, 0 exactly as the 0x6D718 / 0x6D77C / 0x6D790 /
+0x6D7D4 / 0x6D818 chain writes them: the first craft is away, so 0x6D858 puts its aux back to
+-1. Then the arm's own 0x83494 clears the names panel's bFlag7073, so the panel is up with no
+row selected.
+
+The release is the case-18 release arm. `gOptionsScratch[4] @ 0x159E8C` is 0 while only the
+overlay is up -- the menu is what sets it -- so 0x8ACE4 skips the page walk; LABEL_229 sees the
+confirm byte (the toggle, read at 0x89338), 0x8AED4 releases *pGeoscapeCtlA, 0x8AEEC releases
+the pair out of its cells, and 0x8AF1C jumps into the shared tail at 0x89B64 with the names
+panel: `UiScrollList_ClickRow @ 0x3eee0` selects the row under the stored cursor and tail-calls
+`OptionsScreen_OnConfirm @ 0x6cf18`, which reads the craft index out of the row's aux dword into
+0x159E74 and 0x187054 (0x6CF4C, 0x6CF50), tests the stores aux at 0x6CF6C -- the readiness gate
+-- and for the full-fuel row arms the selection at 0x6CF78, plays 7 at 0x6CF84, appends the
+flag-27 prompt at 0x6CFA4 with the index in colour slot 0, and pauses at 0x6CFE4. The cancel
+press then closes: ctlA's handler is SaveAudioSettings, whose 0x6B7C4 calls this dispatcher
+back; case 18 finds the controls byte 0 and the toggle 1, so it answers at 0x8BD14 with screen 0
+and at 0x8BD18 with `OptionsScreen_Open(-1)`, and that call takes the close half -- 0x6DC38
+screen 0, 0x6DC40 toggle 0, 0x6DC58 / 0x6DC60 the four columns, 0x6DCDC / 0x6DCE4 the pair. The
+two hotspots keep their handler and their seat: the close half frees the overlay's own
+allocations only.
+
+The residue call is now gated as the original's own behaviour rather than worked around. With
+the tap cooldown under 6, one press calls `Smap_HitTestStrategSelect` twice (0x87C2C for the
+drag flag, 0x87C94 again inside the 0x87C48 gate), so the arm runs twice: the first pass opens
+the craft list, the second finds the toggle set and closes it, and the press hands back 255 with
+the cooldown parked at 0x87CB4. A player pressing their own base with a fresh tap gets a list
+that is gone before the pen is released. Holding the cooldown at 6 runs the arm once, which is
+what the overlay checks use.
+
+The menu comes from root control [8] (the dword at 0x186518 that `Geoscape_InitUI` installs at
+0x86590). `Ui_OpenScreen18` plays 17 at 0x84EA4, writes 18, and its callee plays 7 at 0x6CF08
+before 0x6CF14 -- two samples for one press. `OptionsScreen_Init` then sets the controls byte at
+0x6BE90, builds the seven rows (0x6BEA0..0x6BEF0, all seven off the one descriptor
+`g_aOptionsListDesc {1, 229, "firebtn"}`), installs SaveAudioSettings and ReturnToTitle on the
+two hotspots at 0x6BF1C / 0x6BF2C, builds the twelve radio buttons with the music row at y 107
+(0x6BFBC) and the sound row at y 147 (0x6BFF8), both at x = 46 + 25 i (0x6BFDC, 0x6C018), gives
+them their handlers (0x6C02C..0x6C0B0), and ends with the volume highlight (0x6C0B4) and
+`OptionsScreen_LayoutButtons` (0x6C0B8): the tab byte cleared at 0x6B6D0, the four menu handlers
+at 0x6B6DC / 0x6B6E8 / 0x6B6F4 / 0x6B700, the four rows centred and dropped at 90 / 115 / 140 /
+165, the cancel at y 198 (0x6B784) -- and the return hotspot centred on the *cancel's* width,
+the 0x6B764 reload the original never fixes. Rows 4..6 are built but not laid out: they stay at
+1,229 until a save or load row press centres them (0x6B514 / 0x6B538).
+
+The page gates then decide what a press can reach, and they are the interesting part. A press on
+the volume row runs 0x6B6B8 and the tab byte becomes 4; from there the rows are dead -- 0x89160
+hit-tests slots 9..20 and 0x8AD1C releases the same twelve -- so a press on a list row changes
+nothing. A music step writes the Map byte at 0x6BAD0 and clears the mute byte at 0x6BAA8, with
+the old lit button cleared at 0x6BA2C and the new one lit at 0x6BA50. The cancel writes the four
+registry values (0x6B828, 0x6B834, 0x6B858, 0x6B878..0x6B8A0), clears the tab at 0x6B8A8 and re-
+lays the rows at 0x6B8AC, which is what puts the menu back. The quit row is 0x6B680 with the two
+STRH seats: *pGeoscapeCtlB at y 120 (0x6B68C) and *pGeoscapeCtlA at y 142 (0x6B69C). Closing
+from there runs `Geoscape_CloseUI` case 18 with the tab at 3: 0x8BCFC clears the tab first, then
+0x8BD08 calls SaveAudioSettings -- which now finds the tab 0 and takes its own 0x6B7F0 arm,
+closing a second time. That inner pass sees the controls byte 1 and the tab 0, so it runs
+0x8BCE4's rebuild, Init's teardown half (0x6BE84 -> 0x6C0FC, freeing the same 19 controls' pads)
+and 0x8BCE8's screen 0; and because the tab was already 0 the callee never reaches 0x6B8AC, so
+the hotspots keep the quit page's seats. Recorded in the IDB as ORIGINAL BUG (recursion,
+0x8BD00).
+
+Pictures: `tests/ref/geoscape_options_base.png` (the four columns' text, the pair, the cancel
+and the column rules over the map) and `geoscape_options_volume.png` (the two 0..5 radio rows
+and ОК). Both are taken after the overlay's own expansion finishes -- `Ui_AnimExpandBlit @
+0x95bf0` in mode 2 grows the height 50 per step from the reset 0x6D0DC did, and nothing of the
+overlay draws until 0x95D60 parks the progress at 100 -- so the picture is a settled frame and
+not a mid-animation one. `geoscape_descent_panel.png` was re-made for the reason the 0x91cf4
+note spells out: section 9b ran the message-answer panel family while the camera was still on
+screen 2, and on screen 2 the chain tail runs the globe-hover arm at 0x91D78, painting the hover
+crosshair (0x672DC..0x67450), the build/no-build message and the close control under a descent
+panel the game would never show there. Section 9b states screen 0 now, and the reference shows
+the panel with the tail's own chrome: the strip pad, the clock and the thirteen root controls.
+
+Gates: 62/62 Release and 62/62 Debug, 19265 checks (114 new), coverage 972/1103 (88.1%) and
+596888/598792 bytes (99.7%) unchanged, 36 frame references (2 new, 1 re-made, all three looked
+at), 9 e2e pictures unchanged, tools/check.sh clean. IDB: function comments on
+`OptionsScreen_Init @ 0x6be74` (the gate byte is 0x159E8C; 0x6BE90 sets it, 0x6C0FC clears it
+and frees the same 19 controls' pads) and `Ui_OpenScreen18 @ 0x84e9c` (two samples for one
+press: 17 at 0x84EA4, then 7 at 0x6CF08), line notes at 0x8bd08 (the SaveAudioSettings recursion
+back into case 18) and 0x91cf4 (the chain tail's screen-2 branch paints the hover crosshair over
+whatever panel arm just drew), plus idb_save. Still open: the seven save/load slot handlers stay
+NULL in the shell because they reach SaveGame / LoadGame through a DatFile the shell opens only
+on its tact-bank path; ctlB's `OptionsScreen_ReturnToTitle @ 0x6b478` belongs to the startup-
+screen owner in pufo_app.c, so the quit page's Да answers nothing; and `Ui_CloseScreen18 @
+0x84ecc` hands `gUiRootPanel.anLineAux[119]` to its OpenWithSound tail as the mode, which the
+shell has no writer for.

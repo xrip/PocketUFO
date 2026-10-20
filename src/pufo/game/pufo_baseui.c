@@ -23,22 +23,25 @@ static const char *BaseUi_TextRec(const void *pTextRecs, i32 nRec)
     return (pTextRecs != NULL) ? (const char *)pTextRecs + PUFO_TEXT_REC_STRIDE * nRec : "";
 }
 
-void BaseUi_SetScratch4(ScreenScratch *pScratch)
+void BaseUi_SetScratch4(i8 *pbTab)
 {
-    if (pScratch == NULL) {
+    if (pbTab == NULL) {
         return;
     }
-    pScratch->nLineAux145 = 4;
+    *pbTab = 4; /* 0x6B6B8: MOV R1,#4 / STRB R1,[R0] with R0 = &gOptionsScratch */
 }
 
-void BaseUi_SetScratch3AndUiY(ScreenScratch *pScratch)
+void BaseUi_SetScratch3AndUiY(i8 *pbTab, UiControl *pCtlB, UiControl *pCtlA)
 {
-    if (pScratch == NULL) {
-        return;
+    if (pbTab != NULL) {
+        *pbTab = 3; /* 0x6B680 */
     }
-    pScratch->nLineAux145 = 3;
-    pScratch->nControl0Y = 120;
-    pScratch->nControl1Y = 142;
+    if (pCtlB != NULL) {
+        pCtlB->y = 120; /* 0x6B68C: STRH R3(0x78),[R0,#2] -- the control's own y halfword */
+    }
+    if (pCtlA != NULL) {
+        pCtlA->y = 142; /* 0x6B69C: STRH R3(0x8E),[R0,#2] */
+    }
 }
 
 i32 BaseUi_Cache186BE8(ScreenScratch *pScratch, i32 nUnk3032)
@@ -3487,10 +3490,10 @@ void NewBaseScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
     Geoscape_CloseUI(pEnv); /* 0x615C8 */
 }
 
-i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks *pHooks)
+i32 OptionsScreen_ReturnToTitle(i8 *pbTab, const TitleReturnHooks *pHooks)
 {
-    if (pScratch != NULL) {
-        pScratch->nLineAux145 = 0; /* 0x6B478 */
+    if (pbTab != NULL) {
+        *pbTab = 0; /* 0x6B478 */
     }
     if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
         pHooks->pfnCloseUi(pHooks->pUser); /* 0x6B480 */
@@ -7041,9 +7044,12 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
                 pEnv->pTime->bPaused = 1;                   /* 0x83458 */
                 *pEnv->pnScreenId = 18;                     /* 0x83464 */
                 OptionsScreen_OpenWithSound(0, pItem->nSiteId, pEnv->pOptionsHooks); /* 0x83480 */
-                if (pEnv->pOptPanelShips != NULL) {
-                    pEnv->pOptPanelShips->bFlag7073 = 0;    /* 0x83494, no counterpart in the
-                                                             * status-panel click handler */
+                if (pEnv->ppOptPanelShips != NULL && *pEnv->ppOptPanelShips != NULL) {
+                    (*pEnv->ppOptPanelShips)->bFlag7073 = 0;/* 0x83494, no counterpart in the
+                                                             * status-panel click handler. The original
+                                                             * derefs 0x159E18 with no test at all; the test
+                                                             * on the cell's value is the port's own, because
+                                                             * Open's close half just freed that panel. */
                 }
             }
 
@@ -9019,11 +9025,11 @@ i32 OptionsScreen_RefreshVolumeHighlight(OptionsVolumeEnv *pEnv)
 
 UiControl *OptionsScreen_LayoutButtons(OptionsTabEnv *pEnv)
 {
-    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pScratch == NULL) {
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pbTab == NULL) {
         return NULL;
     }
 
-    pEnv->pScratch->nLineAux145 = 0;                        /* 0x6B6D0: the audio tab */
+    *pEnv->pbTab = 0;                                       /* 0x6B6D0: the audio tab */
     Options_SetClick(pEnv->pCtl->apList[0], pEnv->pfnBindSaveSlots); /* 0x6B6DC */
     Options_SetClick(pEnv->pCtl->apList[1], pEnv->pfnBindLoadSlots); /* 0x6B6E8 */
     Options_SetClick(pEnv->pCtl->apList[2], pEnv->pfnSetTab3);       /* 0x6B6F4 */
@@ -9051,7 +9057,7 @@ UiControl *OptionsScreen_LayoutButtons(OptionsTabEnv *pEnv)
 /* The save and load tabs are the same seven rows with a different tab byte and handler set. */
 static void Options_BindSlotRows(OptionsTabEnv *pEnv, u8 nTab, void (*apfnSlot[])(void))
 {
-    pEnv->pScratch->nLineAux145 = nTab;                     /* 0x6B4A8 (save) / 0x6B594 (load) */
+    *pEnv->pbTab = nTab;                                    /* 0x6B4A8 (save) / 0x6B594 (load) */
 
     for (i32 i = 0; i < PUFO_OPTIONS_LIST_COUNT; ++i) {
         Options_SetClick(pEnv->pCtl->apList[i], apfnSlot[i]);        /* 0x6B4B4..0x6B4FC */
@@ -9068,7 +9074,7 @@ static void Options_BindSlotRows(OptionsTabEnv *pEnv, u8 nTab, void (*apfnSlot[]
 
 void OptionsScreen_BindSaveSlots(OptionsTabEnv *pEnv)
 {
-    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pScratch == NULL) {
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pbTab == NULL) {
         return;
     }
     Options_BindSlotRows(pEnv, 1, pEnv->apfnSaveSlot); /* 0x6b49c */
@@ -9076,7 +9082,7 @@ void OptionsScreen_BindSaveSlots(OptionsTabEnv *pEnv)
 
 void OptionsScreen_BindLoadSlots(OptionsTabEnv *pEnv)
 {
-    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pScratch == NULL) {
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pbTab == NULL) {
         return;
     }
     Options_BindSlotRows(pEnv, 2, pEnv->apfnLoadSlot); /* 0x6b588 */
@@ -9569,14 +9575,14 @@ void OptionsScreen_Init(OptionsInitEnv *pEnv)
 i32 SaveGame_Slot_CloseUI(SaveSlotEnv *pEnv, i32 nSlot)
 {
     if (pEnv == NULL || pEnv->pDat == NULL || pEnv->pIn == NULL || pEnv->pnListMode == NULL
-        || pEnv->pScratch == NULL) {
+        || pEnv->pbTab == NULL) {
         return 0;
     }
 
     *pEnv->pnListMode = PUFO_MAINMENU_MODE_SAVING;              /* 0x6AF90: no rows while writing */
     pEnv->pIn->nSlot = nSlot;                                   /* the original's second argument */
     (void)SaveGame(pEnv->pDat, pEnv->pIn);                      /* 0x6AF98 */
-    pEnv->pScratch->nLineAux145 = 0;                            /* 0x6AFA4 */
+    *pEnv->pbTab = 0;                                           /* 0x6AFA4 */
     *pEnv->pnListMode = PUFO_MAINMENU_MODE_SLOTCLICK;           /* 0x6AFAC */
 
     Geoscape_CloseUI(pEnv->pClose);                             /* 0x6AFB8, the tail call */
@@ -9588,11 +9594,11 @@ i32 LoadGame_Slot_InitOptions(SaveSlotEnv *pEnv, i32 nSlot)
     i32 nRet;
 
     if (pEnv == NULL || pEnv->pDat == NULL || pEnv->pLoadEnv == NULL || pEnv->pnListMode == NULL
-        || pEnv->pScratch == NULL) {
+        || pEnv->pbTab == NULL) {
         return 0;
     }
 
-    pEnv->pScratch->nLineAux145 = 0;                            /* 0x6B1A4 */
+    *pEnv->pbTab = 0;                                           /* 0x6B1A4 */
     if (pEnv->pnGeoscapeScreen != NULL) {
         *pEnv->pnGeoscapeScreen = 0;                            /* 0x6B1B0 */
     }

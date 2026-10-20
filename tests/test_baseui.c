@@ -75,16 +75,26 @@ static void RecFundingOpen(void *pUser) { (void)pUser; g_nFundingOpen++; }
 static void TestScratch(void)
 {
     ScreenScratch s;
+    UiControl ctlB; /* *pGeoscapeCtlB @ 0x186BB0 */
+    UiControl ctlA; /* *pGeoscapeCtlA @ 0x186BB4 */
+    i8 nTab;        /* gOptionsScratch[0] @ 0x159E88 */
 
     printf("BaseUi scratch setters\n");
     memset(&s, 0, sizeof(s));
-    BaseUi_SetScratch4(&s);
-    CheckEqI32(s.nLineAux145, 4, "  scratch byte 4");
+    memset(&ctlB, 0, sizeof(ctlB));
+    memset(&ctlA, 0, sizeof(ctlA));
 
-    BaseUi_SetScratch3AndUiY(&s);
-    CheckEqI32(s.nLineAux145, 3, "  scratch byte 3");
-    CheckEqI32(s.nControl0Y, 120, "  control 0 y = 120");
-    CheckEqI32(s.nControl1Y, 142, "  control 1 y = 142");
+    nTab = -1;
+    BaseUi_SetScratch4(&nTab);
+    CheckEqI32(nTab, 4, "  the tab byte is 4 (STRB at 0x6B6B8)");
+
+    nTab = -1;
+    ctlB.y = 1;
+    ctlA.y = 1;
+    BaseUi_SetScratch3AndUiY(&nTab, &ctlB, &ctlA);
+    CheckEqI32(nTab, 3, "  the tab byte is 3 (STRB at 0x6B680)");
+    CheckEqI32(ctlB.y, 120, "  *pGeoscapeCtlB's own y halfword is 120 (STRH at 0x6B68C)");
+    CheckEqI32(ctlA.y, 142, "  *pGeoscapeCtlA's own y halfword is 142 (STRH at 0x6B69C)");
 
     CheckEqI32(BaseUi_Cache186BE8(&s, 0x1234), 0x1234, "  cache returns the value");
     CheckEqI32(s.nCache186BE8, 0x1234, "  cache stored");
@@ -100,7 +110,7 @@ static void TestScratch(void)
 
     /* NULL tolerance. */
     BaseUi_SetScratch4(NULL);
-    BaseUi_SetScratch3AndUiY(NULL);
+    BaseUi_SetScratch3AndUiY(NULL, NULL, NULL);
     CheckEqI32(BaseUi_Cache186BE8(NULL, 9), 9, "  NULL cache returns the value");
     CheckEqI32(BaseUi_PlaySample7Cache160C74(NULL, 9, NULL, NULL), 9,
                "  NULL scratch returns the value");
@@ -3588,13 +3598,12 @@ static void TestCloseThunks(void)
 
 static void TestTitleReturn(void)
 {
-    ScreenScratch s;
+    i8 nTab;
     TitleReturnHooks hk;
 
     printf("OptionsScreen_ReturnToTitle\n");
 
-    memset(&s, 0, sizeof(s));
-    s.nLineAux145 = 4;
+    nTab = 4;
     hk.pfnCloseUi = CloseUi;
     hk.pfnFreeGeoscapeUi = FreeUi;
     hk.pfnStartupUi = StartupUi;
@@ -3604,8 +3613,8 @@ static void TestTitleReturn(void)
     g_nFreeMode = -1;
     g_nStartupCalls = 0;
 
-    CheckEqI32(OptionsScreen_ReturnToTitle(&s, &hk), 77, "the startup result is returned");
-    CheckEqI32(s.nLineAux145, 0, "the panel scratch byte is cleared first");
+    CheckEqI32(OptionsScreen_ReturnToTitle(&nTab, &hk), 77, "the startup result is returned");
+    CheckEqI32(nTab, 0, "the tab byte is cleared first (STRB at 0x6B478)");
     CheckEqI32(g_nCloseCalls, 1, "the geoscape screen is closed");
     CheckEqI32(g_nFreeMode, 1, "every geoscape widget is freed with mode 1");
     CheckEqI32(g_nStartupCalls, 1, "the startup UI is re-inited");
@@ -6244,7 +6253,7 @@ static UiControl g_aOptSfx[6];
 static UiControl g_ctlSave;  /* unk_186BB4 */
 static UiControl g_ctlBack;  /* unk_186BB0 */
 static OptionsScreenCtl g_optCtl;
-static ScreenScratch g_optScratch;
+static i8 g_nOptTab; /* gOptionsScratch[0] @ 0x159E88, the tab byte */
 static i32 g_nMusicVol;
 static u8 g_bMusicOff;
 static i32 g_nSfxVol;
@@ -7052,7 +7061,7 @@ static void TestOptionsAudioTab(void)
     printf("OptionsScreen_Init @ 0x6be74 and the volume radio group\n");
 
     memset(&g_optCtl, 0, sizeof(g_optCtl));
-    memset(&g_optScratch, 0, sizeof(g_optScratch));
+    g_nOptTab = 0;
     for (i32 i = 0; i < 7; ++i) {
         g_optCtl.apList[i] = &g_aOptList[i];
     }
@@ -7077,7 +7086,7 @@ static void TestOptionsAudioTab(void)
     g_optVol.pbSfxOff = &g_bSfxOff;
 
     g_optTab.pCtl = &g_optCtl;
-    g_optTab.pScratch = &g_optScratch;
+    g_optTab.pbTab = &g_nOptTab;
     g_optTab.pSaveCtl = &g_ctlSave;
     g_optTab.pBackCtl = &g_ctlBack;
     g_optTab.pfnBindSaveSlots = OptTabSave;
@@ -7157,7 +7166,7 @@ static void TestOptionsAudioTab(void)
     CheckEqI32(g_nSfxVol, 2, "an unmuted group keeps its stored step (0x6B93C)");
     CheckEqI32(g_aOptSfx[2].nState, 2, "  and lights that step's button (0x6B984)");
 
-    CheckEqI32(g_optScratch.nLineAux145, 0, "LayoutButtons selects the audio tab (0x6B6D0)");
+    CheckEqI32(g_nOptTab, 0, "LayoutButtons selects the audio tab (0x6B6D0)");
     Check(g_aOptList[0].pfnClick == OptTabSave && g_aOptList[1].pfnClick == OptTabLoad
           && g_aOptList[2].pfnClick == OptTab3 && g_aOptList[3].pfnClick == OptTab4,
           "the first four rows get the four tab handlers (0x6B6DC..0x6B700)");
@@ -7204,7 +7213,7 @@ static void TestOptionsAudioTab(void)
 
     g_nSlotFired = -1;
     OptionsScreen_BindSaveSlots(&g_optTab);
-    CheckEqI32(g_optScratch.nLineAux145, 1, "the save tab is scratch byte 1 (0x6B4A8)");
+    CheckEqI32(g_nOptTab, 1, "the save tab is scratch byte 1 (0x6B4A8)");
     Check(g_aOptList[0].pfnClick == OptSave0 && g_aOptList[6].pfnClick == OptSave6,
           "all seven rows get their save-slot handler (0x6B4B4..0x6B4FC)");
     nBad = 0;
@@ -7218,7 +7227,7 @@ static void TestOptionsAudioTab(void)
     CheckEqI32(g_nSlotFired, 7, "  and the slot list is formatted (0x6B558)");
 
     OptionsScreen_BindLoadSlots(&g_optTab);
-    CheckEqI32(g_optScratch.nLineAux145, 2, "the load tab is scratch byte 2 (0x6B594)");
+    CheckEqI32(g_nOptTab, 2, "the load tab is scratch byte 2 (0x6B594)");
     Check(g_aOptList[0].pfnClick == OptLoad0 && g_aOptList[6].pfnClick == OptLoad6,
           "  and the rows get the load-slot handlers (0x6B5A0..0x6B5E8)");
 
@@ -7292,7 +7301,7 @@ static void TestSaveLoadSlots(void)
     static SaveSlotEnv env;
     static i32 nGeoscapeScreen;
     static u8 bControlsExist;
-    static ScreenScratch scratch;
+    static i8 nTab;
 
     printf("SaveGame_SlotN_CloseUI @ 0x6af80 and LoadGame_SlotN_InitOptions @ 0x6b194\n");
 
@@ -7310,7 +7319,7 @@ static void TestSaveLoadSlots(void)
     env.pIn = &in;
     env.pLoadEnv = &loadEnv;
     env.pnListMode = &g_nSlotListMode;
-    env.pScratch = &scratch;
+    env.pbTab = &nTab;
     env.pbControlsExist = &bControlsExist;
     env.pnGeoscapeScreen = &nGeoscapeScreen;
     env.pOptionsInit = &g_optInit; /* the options fixture the previous test built */
@@ -7320,7 +7329,7 @@ static void TestSaveLoadSlots(void)
     g_nSlotListMode = 0;
     bControlsExist = 0;
     nGeoscapeScreen = 16;
-    scratch.nLineAux145 = 9;
+    nTab = 9;
     g_nSlotRenderCalls = 0;
     g_nSlotCloseCalls = 0;
 
@@ -7331,7 +7340,7 @@ static void TestSaveLoadSlots(void)
     CheckEqI32(in.nSlot, 3, "the handler hands slot 3 to SaveGame (0x6B07C)");
     CheckEqI32(g_nSlotRenderCalls, 1, "SaveGame renders a frame before it opens the file (0x4499C)");
     CheckEqI32(g_nSlotListModeAtRender, 4, "  and the list mode is 4 while it writes (0x6AF90)");
-    CheckEqI32(scratch.nLineAux145, 0, "the tab byte goes back to 0 (0x6AFA4)");
+    CheckEqI32(nTab, 0, "the tab byte goes back to 0 (0x6AFA4)");
     CheckEqI32(g_nSlotCloseCalls, 1, "Geoscape_CloseUI runs last (0x6AFB8)");
     CheckEqI32(g_nSlotListModeAtClose, 1, "  with the list mode already back to 1 (0x6AFAC)");
     CheckEqI32(nGeoscapeScreen, 0, "  and case 16 of the dispatcher sets the screen id to 0 (0x8BD5C)");
@@ -7341,7 +7350,7 @@ static void TestSaveLoadSlots(void)
     g_nSlotListMode = 0;
     bControlsExist = 0;
     nGeoscapeScreen = 7;
-    scratch.nLineAux145 = 9;
+    nTab = 9;
     g_bOptBuilt = 1;
     g_nSetupCalls = 0;
 
@@ -7350,7 +7359,7 @@ static void TestSaveLoadSlots(void)
     DatFile_Close(&dat);
 
     CheckEqI32(loadEnv.nSlot, 5, "the handler hands slot 5 to LoadGame (0x6B1D4)");
-    CheckEqI32(scratch.nLineAux145, 0, "the tab byte is cleared first (0x6B1A4)");
+    CheckEqI32(nTab, 0, "the tab byte is cleared first (0x6B1A4)");
     CheckEqI32(nGeoscapeScreen, 0, "the geoscape screen id is cleared (0x6B1B0)");
     CheckEqI32(g_nSlotListMode, 1, "the failed load puts the list mode back to 1 (0x6B1E0)");
     CheckEqI32(g_bOptBuilt, 0, "OptionsScreen_Init ran and took its teardown branch (0x6B1C4, 0x6B1C8)");

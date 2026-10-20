@@ -1106,6 +1106,14 @@ int main(void)
                   && pF->panel.pfnBeginCraftSelect != NULL,
               "the panel's eleven command handlers are the ported Smap_* functions, not stubs");
 
+        /* The chain tail's own branch (0x91CF4) is part of what the picture has to show, so the fixture takes
+         * the camera off screen 2 first: on screen 2 the tail runs the globe-hover arm at 0x91D78, which paints
+         * the hover crosshair and its "no build here" message into every one of these pictures -- a
+         * combination the game never reaches with a message-answer panel up. Section 5 left the camera on
+         * screen 2 (0x61620); sections 9c, 10 and 12 each state the id they need. */
+        g_world.screen.nGeoscapeScreen = 0;
+        g_world.bPlacementPending = 0;
+
         /* No flag in the chain's range and none of the tested ones: no arm runs, so the count is what the
          * chain tail alone paints. */
         g_world.msgLines.nLineCount = 0;
@@ -6397,20 +6405,27 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
          * SmapHit_FindBaseBySiteId -> apSiteRecs[nBase].abName (0x82F1C), and the dispatch takes the
          * type-0 inactive arm 0x83448: row cursor cleared (0x83450), GameTime_Pause (0x83458),
          * *pnScreenId = 18 (0x83464), OptionsScreen_OpenWithSound(0, nSiteId, pOptionsHooks) (0x83480)
-         * and pOptPanelShips->bFlag7073 = 0 (0x83494), which the shell skips because it keeps no options
-         * panel. The arm writes no message line and no flag byte.
+         * and pOptPanelShips->bFlag7073 = 0 (0x83494), which the shell reads out of its own panel cell
+         * (OptionsOwners.apPanel[0]) now that Part 95 owns the screen. The arm writes no message line and
+         * no flag byte.
          * Before Part 94 this arm was unreachable through the shell: the broken pairing left the entry at
          * (-6000,-6000), outside every scan window, so pressing a base built no line. Reaching it exposed
          * the next gap: Geoscape_OnPointer's case-18 arm derefs gOptionsScratch[4] @ 0x159E8C (0x89110)
          * and bOptionsScreenOpen @ 0x159E80 (0x89338) with no null test -- the original needs none,
          * because those globals are always there -- and the shell owned neither, so the press after this
-         * one crashed in the ported arm. The second press below walks exactly that path. */
+         * one crashed in the ported arm. Part 95 gave the shell that state (OptionsOwners, wired by
+         * World_WireOptions), and the rest of this block walks the arm through it: the overlay Open
+         * builds, the confirm tail, the cancel hotspot's close, and the double call. */
         {
             const BaseRec     *pBaseRec  = g_world.apBases[0];
             const StrategItem *pBaseItem = NULL;
             i32 nGCellX = 0, nGCellY = 0, nGPressX = 0, nGPressY = 0;
             i32 nLines0 = g_world.msgLines.nLineCount;
             i32 nPause0 = g_world.geo.time.bPaused;
+            i32 nSampleMark = g_nSamples;
+            i32 nBlitsGeo0 = 0;
+            i32 nMsgShip0 = g_world.nMsgShipIdx;
+            i32 nSelShip0 = g_world.nSelectedShipIdx;
             i32 k;
 
             printf("  the base's own entry first\n");
@@ -6441,8 +6456,18 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             Check(ScreenForCell(&g_world.view, nGCellX, nGCellY, &nGPressX, &nGPressY),
                   "the base's cell has a screen pixel at the current scroll (the inverse of 0x82C84 / 0x82CAC)");
 
+            /* The plain map first, so the overlay frame below has something to be compared with. */
+            ClearSurface();
+            (void)DrawFrame();
+            nBlitsGeo0 = g_nBlits;
+
+            /* A1. Hold the tap cooldown at 6. 0x87C48 gates the SECOND Smap_HitTestStrategSelect call --
+             * the residue the port reproduces at 0x87C94, which otherwise runs the very arm again inside
+             * the same press -- so with the cooldown held the arm runs once and the base's craft list
+             * stays open, which is what 0x855C8's status-panel path does on its own. */
+            nSampleMark = g_nSamples;
+            g_world.frame.g.nTapCooldown = 6;
             World_GeoscapePointer(&g_world, nGPressX, nGPressY, true);
-            (void)World_GeoscapePointerUp(&g_world);
 
             CheckEqI32(g_world.ui.pStatusPanel->nLineCount, 1,
                        "the scan built one line, for the base entry alone");
@@ -6459,31 +6484,442 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             CheckEqI32(g_world.screen.nGeoscapeScreen, 18, "and it opens screen 18 (0x83464)");
             CheckEqI32(g_world.bMapSelectionFlag, 0,
                        "the type-0 inactive arm is one of the six that writes no selection byte");
-            CheckEqI32(g_world.bOptionsScreenOpen, 0,
-                       "the toggle the original's OptionsScreen_Open sets (0x6D0C8) is still 0: the shell's hook "
-                       "for 0x83480 is a stub, so nothing opened");
-            printf("  the screen-18 cells: open %d, scratch[4] %d, scratch[0] %d, radar timer %d\n",
-                   g_world.bOptionsScreenOpen, (i32)g_world.abOptionsScratch[4],
-                   (i32)g_world.abOptionsScratch[0], g_world.nRadarPulseTimer);
+            Check(g_nSamples == nSampleMark + 1 && g_aFrameSamples[nSampleMark] == 7,
+                  "0x6DD10 plays Sound_Play(7, 4) before it tail-calls the open (OptionsScreen_OpenWithSound)");
+            CheckEqI32(g_world.bOptionsScreenOpen, 1,
+                       "the toggle OptionsScreen_Open writes at 0x6D0C8: the arm's 0x83480 call now runs for "
+                       "real, through OptionsScreen_OpenWithSound -> World_OptionsOpenRun -> 0x6d0ac");
+            CheckEqI32((i32)g_world.abOptionsScratch[4], 0,
+                       "the menu byte stays 0: only OptionsScreen_Init sets it, and the menu itself opens from "
+                       "root control [8] (0x186518), not from this arm");
+            {
+                UiControl *pCtlA  = g_world.ui.apCtl[GEOUI_CTL_186BB4]; /* *pGeoscapeCtlA @ 0x186BB4 */
+                UiControl *pPairA = g_world.options.apPairCtl[0];
+                UiControl *pPairB = g_world.options.apPairCtl[1];
+                UiPanel   *pName  = g_world.options.apPanel[0];
+                UiPanel   *pStores = g_world.options.apPanel[1];
+                UiPanel   *pRegion = g_world.options.apPanel[2];
+                UiPanel   *pCargo  = g_world.options.apPanel[3];
+                i32 nOpenBaseIdx = -1;
+                i32 nHomed = 0;
+                i32 nGSiteId = (pBaseItem != NULL) ? pBaseItem->nSiteId : -1;
 
-            /* The press that used to crash. Screen 18 is up, so the dispatcher is in the case-18 arm, and
-             * 0x89110 / 0x89338 now read the shell's own cells. Both are zero, so the arm falls to the
-             * shared tail at 0x8932C and the confirm gate at 0x89334 / 0x89344 stops it there. */
-            World_GeoscapePointer(&g_world, nGPressX, nGPressY, true);
-            (void)World_GeoscapePointerUp(&g_world);
-            CheckEqI32(g_world.screen.nGeoscapeScreen, 18,
-                       "the case-18 press changed no screen byte: scratch[4] 0 skips the page walk (0x89110), "
-                       "the toggle 0 skips the confirm tail (0x89344)");
-            CheckEqI32(g_world.msgLines.nLineCount, nLines0, "and it posts no line either");
+                /* The same search the callee runs at 0x6D118..0x6D148: the base whose site byte equals the
+                 * entry's, over the SIGNED base-count byte at 0x159D80. */
+                for (k = 0; k < (i32)g_world.nBaseCount; ++k) {
+                    if (g_world.apBases[k] != NULL
+                        && (i8)g_world.apBases[k]->bUnk4 == nGSiteId) {
+                        nOpenBaseIdx = k;
+                        break;
+                    }
+                }
+                for (k = 0; k < (i32)g_world.bCraftCount; ++k) {
+                    if (g_world.apCraft[k] != NULL
+                        && (i32)g_world.apCraft[k]->bHomeBase == nOpenBaseIdx) {
+                        ++nHomed;
+                    }
+                }
 
-            /* The fixture closes the screen this press opened. In the original both clears sit behind a
-             * byte only OptionsScreen_Init and OptionsScreen_Open set -- Geoscape_CloseUI case 18 clears
-             * 0x186BC4 at 0x8BCE8 (the rebuild arm) or at 0x8BD14 (the toggle arm), and the two gates read
-             * gOptionsScratch[4] and bOptionsScreenOpen -- so with no options owner in the shell no arm
-             * would clear it. The pause is restored for the same reason: the rest of the section owns its
-             * own pause transitions. Recorded as the gap the options-screen wiring closes. */
-            g_world.screen.nGeoscapeScreen = 0;
+                Check(pCtlA != NULL, "the cancel hotspot the arm re-arms is the shell's own [0x186BB4] cell");
+                Check(pCtlA != NULL && pCtlA->pfnClick != NULL,
+                      "0x6D24C installs Options_SaveAudioSettings on it");
+                CheckEqI32(pCtlA != NULL ? pCtlA->x : 0,
+                           pCtlA != NULL ? 120 - ((i32)pCtlA->uWidth >> 1) : 0,
+                           "0x6D25C centres it: x = 120 - (uWidth >> 1)");
+                CheckEqI32(pCtlA != NULL ? pCtlA->y : 0, 179, "0x6D26C drops it to y = 179");
+                Check(pPairA != NULL && pPairB != NULL,
+                      "the prev/next pair is allocated into aOptionsListCtl[7] / [8] (0x6D1B0, 0x6D1C0)");
+                Check(pPairA != NULL && pPairA->pfnClick != NULL,
+                      "with OptionsScreen_PanelPrev installed at 0x6D208");
+                Check(pPairB != NULL && pPairB->pfnClick != NULL,
+                      "and OptionsScreen_PanelNext at 0x6D214");
+                Check(pName != NULL && pStores != NULL && pRegion != NULL && pCargo != NULL,
+                      "and the four columns are built (0x6D270, 0x6D3BC, 0x6D490, 0x6D55C)");
+                CheckEqI32(nOpenBaseIdx, 0, "0x6D12C finds the run's base by the site byte the entry carries");
+                CheckEqI32(pName != NULL ? pName->nLineCount : -1, nHomed,
+                           "one row per craft homed at that base (0x6D16C..0x6D190 count, then UiPanel_ctor)");
+                CheckEqI32(pStores != NULL ? pStores->nLineCount : -1, nHomed,
+                           "the same count in the other three columns");
+                Check(pName != NULL && pName->pfnClick != NULL,
+                      "0x6D2E8 installs OptionsScreen_OnConfirm as the names panel's click handler");
+                CheckEqI32(pName != NULL ? pName->bFlag7073 : -1, 0,
+                           "and the arm's own 0x83494 clears that panel's bFlag7073 right after Open, so no "
+                           "row is selected yet");
+
+                printf("  the overlay: base %d, %d craft homed; ctlA %d,%d %ux%u state %d; pair %d,%d / %d,%d; "
+                       "columns %d rows\n",
+                       nOpenBaseIdx, nHomed,
+                       pCtlA != NULL ? (i32)pCtlA->x : 0, pCtlA != NULL ? (i32)pCtlA->y : 0,
+                       pCtlA != NULL ? (u32)pCtlA->uWidth : 0u, pCtlA != NULL ? (u32)pCtlA->uHeight : 0u,
+                       pCtlA != NULL ? (i32)pCtlA->nState : -1,
+                       pPairA != NULL ? (i32)pPairA->x : -1, pPairA != NULL ? (i32)pPairA->y : -1,
+                       pPairB != NULL ? (i32)pPairB->x : -1, pPairB != NULL ? (i32)pPairB->y : -1,
+                       pName != NULL ? pName->nLineCount : -1);
+                for (k = 0; k < nHomed && pName != NULL; ++k) {
+                    printf("    row %d: \"%s\" | \"%s\" | \"%s\" | \"%s\"  aux %d / %d\n", k,
+                           (const char *)pName->apLines[k],
+                           (pStores != NULL) ? (const char *)pStores->apLines[k] : "",
+                           (pRegion != NULL) ? (const char *)pRegion->apLines[k] : "",
+                           (pCargo != NULL) ? (const char *)pCargo->apLines[k] : "",
+                           pName->anLineAux[k], (pStores != NULL) ? pStores->anLineAux[k] : -999);
+                }
+                /* The overlay on the picture: the frame's case-18 arm (0x942F4 -> Geoscape_DrawScreen
+                 * @ 0x6c16c) now paints from the shell's own env, fed by World_WireOptions and refreshed
+                 * every frame by World_RefreshGeoscapeFrame. Its own expansion animation gates it:
+                 * OptionsScreen_Open cleared the start byte at 0x6D0DC, so Ui_AnimExpandBlit @ 0x95bf0
+                 * re-arms at progress 0 and mode 2 grows the height 50 per step (0x95CB0) until it reaches
+                 * the 180 the call asks for (0x6C380), at which point 0x95D60 parks the progress at 100 and
+                 * only then does any of the overlay draw. The app's WM_TIMER branch steps that byte
+                 * (0xA0C88); this fixture has no timer, so it steps it the same way, drawing between the
+                 * steps, and the picture is taken from the settled frame. */
+                {
+                    i32 nFrame;
+                    i32 nBlitsOver = 0;
+
+                    /* The byte is at 100 from the earlier sections, and the first frame after Open finds
+                     * the start byte cleared (0x6D0DC), so it re-arms at 0 (0x95C14) and the run starts
+                     * again; the loop is written for that, not for the value the byte happens to hold. */
+                    for (nFrame = 0; nFrame < 8; ++nFrame) {
+                        if (g_world.cUiAnimProgress < 101) { ++g_world.cUiAnimProgress; }
+                        ClearSurface();
+                        (void)DrawFrame();
+                        nBlitsOver = g_nBlits;
+                        if (g_world.cUiAnimProgress == 100) { break; }
+                    }
+                    CheckEqI32(g_world.cUiAnimProgress, 100,
+                                "the expansion ran to its end: mode 2 clamps the height to the 180 the call "
+                                "asks for and 0x95D60 parks the progress at 100");
+                    /* The three control pads the case-18 arm blits at 0x6C59C and 0x6C5DC -- the cancel
+                     * hotspot and aOptionsListCtl[7] / [8] -- come through the test's own pad seam, so the
+                     * seam count is the direct evidence that this arm ran on the shell's env. */
+                    Check(nBlitsOver > nBlitsGeo0,
+                          "the settled overlay frame blits more pads than the plain map frame: 0x6C59C blits "
+                          "the cancel hotspot and 0x6C5DC the prev/next pair, all through the shell's env");
+                    printf("  the settled overlay frame blits %d pads over the plain map's %d, after %d frames; "
+                           "on the seam: prev %d/%d/%d, hotspot %d/%d/%d\n",
+                           nBlitsOver, nBlitsGeo0, nFrame + 1,
+                           (pPairA != NULL) ? SawPadBlit(pPairA->apPads[0]) : 0,
+                           (pPairA != NULL) ? SawPadBlit(pPairA->apPads[1]) : 0,
+                           (pPairA != NULL) ? SawPadBlit(pPairA->apPads[2]) : 0,
+                           (pCtlA != NULL) ? SawPadBlit(pCtlA->apPads[0]) : 0,
+                           (pCtlA != NULL) ? SawPadBlit(pCtlA->apPads[1]) : 0,
+                           (pCtlA != NULL) ? SawPadBlit(pCtlA->apPads[2]) : 0);
+                    Check(pPairA != NULL && pPairB != NULL
+                              && (SawPadBlit(pPairA->apPads[0]) || SawPadBlit(pPairA->apPads[1])
+                                  || SawPadBlit(pPairA->apPads[2]))
+                              && (SawPadBlit(pPairB->apPads[0]) || SawPadBlit(pPairB->apPads[1])
+                                  || SawPadBlit(pPairB->apPads[2])),
+                          "and the pads on the seam are the pair's own: aOptionsListCtl[7] / [8] as Open "
+                          "built them, not the strip pad the map draws");
+                    DumpFrame("geoscape_options_base");
+                }
+
+                printf("  the press point %d,%d; ctlA state %d; scratch[0] %d; radar timer %d\n",
+                       nGPressX, nGPressY, pCtlA != NULL ? (i32)pCtlA->nState : -1,
+                       (i32)g_world.abOptionsScratch[0], g_world.nRadarPulseTimer);
+
+                /* A2. The press is the map press the arm ran on its own; the release is the case-18
+                 * release arm (0x8ACE4). gOptionsScratch[4] is 0, so no page arm runs; the confirm byte
+                 * is the toggle, and it is 1, so LABEL_229 releases ctlA (0x8AED4), then re-reads the
+                 * pair slots out of their cells (0x8AEEC) and jumps into the shared panel tail with the
+                 * names panel (0x8AF1C -> 0x89B64). */
+                (void)World_GeoscapePointerUp(&g_world);
+                printf("  after that release: open %d, ctlA state %d, names bFlag7073 %d, panel rows %d\n",
+                       g_world.bOptionsScreenOpen, pCtlA != NULL ? (i32)pCtlA->nState : -1,
+                       pName != NULL ? (i32)pName->bFlag7073 : -1,
+                       pName != NULL ? pName->nLineCount : -1);
+                CheckEqI32(g_world.msgLines.nLineCount, nLines0, "and it posts no line either");
+
+                /* A3. A press on a row of the names column. The dispatcher is in the case-18 arm,
+                 * scratch[4] 0 skips the page walk (0x89110), and the confirm gate at 0x89334 / 0x89344
+                 * lets the tail run: ctlA (0x8932C), the two pair slots re-read out of their cells
+                 * (0x89370), then the names panel's press-and-hold tracking (0x893B4). The point is inside
+                 * the panel's rect (nUnk7052 5, nUnk7056 70, nViewW 230) and outside ctlA's box
+                 * (86..153, 179..197) and outside both pair boxes, so nothing is pressed. */
+                World_GeoscapePointer(&g_world, 100, 90, true);
+                CheckEqI32(pCtlA != NULL ? (i32)pCtlA->nState : -1, 0,
+                           "the press misses ctlA's box, so its state stays 0 and Options_SaveAudioSettings "
+                           "does not run (UiControl_HitTest measures the box only on a press, 0x1A42C)");
+                Check(g_world.options.apPairCtl[0] != NULL && g_world.options.apPairCtl[1] != NULL,
+                      "0x89370's re-read still finds the pair: nothing closed in between");
+                CheckEqI32(pName != NULL ? (i32)pName->bUnk3024 : -1, 1,
+                           "the panel's hold tracking marks the hovered row (0x3ED44 sets the byte inside the rect)");
+                CheckEqI32(pName != NULL ? pName->nUnk3032 : -1, 0,
+                           "but no row is selected yet: the click needs the hold count to reach nUnk7084");
+                CheckEqI32(g_world.bOptionsScreenOpen, 1, "the overlay is still up");
+
+                (void)World_GeoscapePointerUp(&g_world);
+                /* The release arm: 0x8ACE4 skips the page walk, LABEL_229 sees the confirm byte 1, 0x8AED4
+                 * releases ctlA (state 0, so its force click finds nothing), 0x8AEEC releases the pair, and
+                 * 0x8AF1C jumps into the shared panel tail 0x89B64 with the names panel: UiScrollList_ClickRow
+                 * selects the row under the stored cursor -- the byte 0x83494 cleared is back up, raised by
+                 * the release before this one -- and tail-calls OptionsScreen_OnConfirm @ 0x6cf18. */
+                CheckEqI32(pName != NULL ? pName->nUnk3032 : -1, 1,
+                           "the clicked row: (90 - nPosY 70) / nFont 16 = 1, held in the panel's row cursor");
+                CheckEqI32(g_world.nMsgShipIdx, pName != NULL ? pName->anLineAux[1] : -1,
+                           "0x6CF4C takes the craft index out of the names row's aux dword");
+                CheckEqI32(g_world.nMsgShipIdx, 1, "and that row is craft 1");
+                CheckEqI32(g_world.nSelectedShipIdx, 1, "0x6CF50 writes the same index into 0x187054");
+                CheckEqI32(g_world.bMapSelectionFlag, 1,
+                           "the readiness gate 0x6CF6C passes for this row (its stores aux is 0, the "
+                           "range-and-fuel-full case at 0x6D77C) and 0x6CF78 arms the selection");
+                CheckEqI32(g_world.msgLines.nLineCount, nLines0 + 1,
+                           "0x6CFA4 appends the fly-to-point prompt");
+                CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, nLines0), 27, "as flag 27");
+                CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, nLines0, 0), 1,
+                           "with the craft index in colour slot 0 (0x6CF8C re-reads it LDRB)");
+                CheckEqI32(g_world.geo.time.bPaused, 1, "and GameTime_Pause @ 0x6CFE4");
+                CheckEqI32(g_world.bOptionsScreenOpen, 1, "the confirm leaves the overlay up");
+
+                /* B. The cancel hotspot. Pressing ctlA inside its own box puts it in state 1; the release
+                 * force-clicks it (0x1A540 never consults the box) and Options_SaveAudioSettings @ 0x6b7ac
+                 * runs: 0x6B7C4 calls Geoscape_CloseUI, whose case 18 finds gOptionsScratch[4] 0 and the
+                 * toggle 1, so it answers at 0x8BD14 with screen 0 and 0x8BD18 OptionsScreen_Open(-1); that
+                 * call takes the close half -- 0x6DC38 screen 0, 0x6DC40 toggle 0, the four panels freed at
+                 * 0x6DC58 / 0x6DC60, the pair at 0x6DCDC / 0x6DCE4. The callee's tail then clears the
+                 * selection byte at 0x6B8CC; the 0x6B8C4 unpause is skipped because the confirm had just
+                 * armed the selection. */
+                {
+                    i32 nCtlAX = (pCtlA != NULL) ? (i32)pCtlA->x + 2 : 0;
+                    i32 nCtlAY = (pCtlA != NULL) ? (i32)pCtlA->y + 2 : 0;
+
+                    World_GeoscapePointer(&g_world, nCtlAX, nCtlAY, true);
+                    CheckEqI32(pCtlA != NULL ? (i32)pCtlA->nState : -1, 1,
+                               "the press lands inside the box 0x6D25C / 0x6D26C wrote");
+                    (void)World_GeoscapePointerUp(&g_world);
+                    CheckEqI32(g_world.bOptionsScreenOpen, 0, "0x6DC40 clears the toggle");
+                    CheckEqI32(g_world.screen.nGeoscapeScreen, 0,
+                               "and screen 0, written twice: 0x8BD14 then 0x6DC38");
+                    Check(g_world.options.apPanel[0] == NULL && g_world.options.apPanel[1] == NULL
+                              && g_world.options.apPanel[2] == NULL && g_world.options.apPanel[3] == NULL,
+                          "all four columns are released (0x6DC58 frees the lines, 0x6DC60 the panel)");
+                    Check(g_world.options.apPairCtl[0] == NULL && g_world.options.apPairCtl[1] == NULL,
+                          "and the prev/next pair with them (0x6DCDC / 0x6DCE4)");
+                    CheckEqI32(g_world.bMapSelectionFlag, 0, "the callee's own tail at 0x6B8CC");
+                    CheckEqI32(g_world.geo.time.bPaused, 1,
+                               "the clock stays paused: 0x6B8C4 unpauses only when the selection byte was 0, "
+                               "and OptionsScreen_OnConfirm had just armed it at 0x6CF78");
+                    Check(pCtlA != NULL && pCtlA->pfnClick != NULL && pCtlA->y == 179,
+                          "the hotspot keeps the handler and the place Open gave it -- the close half frees "
+                          "the panels and the pair only, never the two geoscape hotspots");
+                }
+
+                /* The confirm's flag-27 prompt stays on the message list in the original too: nothing on
+                 * this path removes it, only the next press on the map answers it (0x84554 / 0x83784).
+                 * The two checks below want a clean list -- the world press reads line 0 for its own flag
+                 * gates -- so the fixture drops it here, exactly as this block restores the pause at the end. */
+                (void)UiLineList_Remove(&g_world.msgLines, nLines0);
+                CheckEqI32(g_world.msgLines.nLineCount, nLines0,
+                           "the prompt the confirm appended, dropped");
+
+                /* C. The same press again with the tap cooldown under 6, which is how the original
+                 * actually behaves on your own base: Geoscape_OnPointer calls Smap_HitTestStrategSelect
+                 * twice for one press -- 0x87C2C to decide the drag flag, then 0x87C94 again inside the
+                 * cooldown gate (0x87C48 tests nTapCooldown < 6, and the press point is above the zoom
+                 * strip) -- so the type-0 arm runs twice. The first pass opens the craft list; the second
+                 * finds the toggle already set and takes OptionsScreen_Open's close half, so the list the
+                 * player asked for is gone before the pointer is released, and the gate parks the cooldown
+                 * at 255 (0x87CB4) and hands back 255. Recorded as the original's own behaviour, not a
+                 * port defect: the port reproduces the double call at 0x87C94 (Part 91's note). */
+                {
+                    UiControl *pCtl = g_world.ui.apCtl[GEOUI_CTL_186BB4];
+
+                    g_world.frame.g.nTapCooldown = 0;
+                    World_GeoscapePointer(&g_world, nGPressX, nGPressY, true);
+                    CheckEqI32(g_world.bOptionsScreenOpen, 0,
+                               "open then closed inside the one press (0x6D0C8, then 0x6D0C0 -> the close half)");
+                    CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "screen 18 written, then 0 at 0x6DC38");
+                    Check(g_world.options.apPanel[0] == NULL && g_world.options.apPanel[2] == NULL,
+                          "the columns the first pass allocated are the ones the second pass freed");
+                    Check(g_world.options.apPairCtl[0] == NULL && g_world.options.apPairCtl[1] == NULL,
+                          "and the pair with them");
+                    CheckEqI32(g_world.frame.g.nTapCooldown, 255, "the gate's own store (0x87CB4)");
+                    Check(pCtl != NULL && pCtl->pfnClick != NULL && pCtl->y == 179,
+                          "the cancel hotspot is the same object, handler and place, through both passes");
+                    CheckEqI32(g_world.geo.time.bPaused, 1, "the arm's GameTime_Pause @ 0x83458 stands");
+                    printf("  the double call: open %d, screen %d, cooldown %d, columns %d / %d\n",
+                           g_world.bOptionsScreenOpen, g_world.screen.nGeoscapeScreen,
+                           g_world.frame.g.nTapCooldown,
+                           g_world.options.apPanel[0] != NULL, g_world.options.apPairCtl[0] != NULL);
+                    (void)World_GeoscapePointerUp(&g_world);
+                    CheckEqI32(g_world.msgLines.nLineCount, nLines0,
+                               "no line posted by either pass: the type-0 inactive arm writes none");
+                }
+            }
+            /* 0x6CF4C / 0x6CF50 wrote the confirm's craft index into 0x159E74 and 0x187054, and the sections
+             * below pick the craft they intercept out of those two cells; the original carries both forward
+             * too, so this is the fixture handing its own experiment back, not a parity clear. */
+            g_world.nMsgShipIdx      = nMsgShip0;
+            g_world.nSelectedShipIdx = nSelShip0;
             g_world.geo.time.bPaused = (u8)nPause0;
+        }
+
+        /* E. The geoscape's own options hotspot: root control [8], the handler word at 0x186518 that
+         * Geoscape_InitUI installs at 0x86590 (World_FillCtorEnv hands World_OptionsMenuClick to that
+         * slot). Ui_OpenScreen18 @ 0x84e9c plays 17, writes screen 18, and tail-calls
+         * OptionsScreen_RebuildWithSound @ 0x6cf00, which tail-calls OptionsScreen_Init @ 0x6be74: 0x6BE90
+         * sets gOptionsScratch[4], 0x6BEA0..0x6BEF0 builds the seven list rows, 0x6BF1C / 0x6BF2C put
+         * Options_SaveAudioSettings and OptionsScreen_ReturnToTitle on the two hotspots, 0x6BF34..0x6C018
+         * build the twelve volume buttons, 0x6C02C..0x6C0B0 give them their handlers, and 0x6C0B4 / 0x6C0B8
+         * run the volume highlight and OptionsScreen_LayoutButtons.
+         *
+         * The word is called directly here: in the original the press that reaches it is Input_OnPointer's
+         * index walk @ 0x13c6c (ported in pufo_input.c, gated in test_input.c), and Geoscape_OnPointer's own
+         * press path hit-tests the root controls only when the drag flag is clear (0x87D84). */
+        {
+            UiControl *pCtlA = g_world.ui.apCtl[GEOUI_CTL_186BB4];
+            UiControl *pCtlB = g_world.ui.apCtl[GEOUI_CTL_186BB0];
+            i32 nSampleMark = g_nSamples;
+            i32 nMusicSel = -1;
+            i32 nSelCount = 0;
+            i32 nCtlAX0 = (pCtlA != NULL) ? (i32)pCtlA->x : 0;
+            i32 nCtlAY0 = (pCtlA != NULL) ? (i32)pCtlA->y : 0;
+            i32 nCtlBX0 = (pCtlB != NULL) ? (i32)pCtlB->x : 0;
+            i32 nCtlBY0 = (pCtlB != NULL) ? (i32)pCtlB->y : 0;
+            i32 nMusicVol0 = g_options.nMusicVolume;
+            i32 nMusicOff0 = g_options.bMusicOff;
+            i32 i;
+
+            g_world.ui.apRootCtl[8]->pfnClick(); /* 0x186518, installed at 0x86590 */
+
+            Check(g_nSamples == nSampleMark + 2 && g_aFrameSamples[nSampleMark] == 17
+                      && g_aFrameSamples[nSampleMark + 1] == 7,
+                  "Ui_OpenScreen18 opens with Sound_Play(17) at 0x84EA4, and the callee it tail-calls, "
+                  "OptionsScreen_RebuildWithSound @ 0x6cf00, plays its own 7 at 0x6CF08 before Init");
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 18, "and writes the id 18 (0x84ECC)");
+            CheckEqI32((i32)g_world.abOptionsScratch[4], 1,
+                       "OptionsScreen_Init's own byte: the controls exist (0x6BE90)");
+            CheckEqI32((i32)g_world.abOptionsScratch[0], 0,
+                       "and LayoutButtons cleared the tab byte to the audio page (0x6B6D0)");
+
+            for (i = 0; i < 4; ++i) {
+                UiControl *pRow = g_world.options.ctl.apList[i];
+
+                Check(pRow != NULL && pRow->pfnClick != NULL,
+                      "the four menu rows carry the handlers LayoutButtons installs");
+                CheckEqI32(pRow != NULL ? pRow->y : -1, 90 + 25 * i,
+                           "dropped on the rows 0x6B704..0x6B744 lays out (90 + 25 * i)");
+                CheckEqI32(pRow != NULL ? (i32)pRow->x : -1,
+                           pRow != NULL ? 120 - ((i32)pRow->uWidth >> 1) : -1,
+                           "and centred on x 120 (0x6B718)");
+            }
+            Check(g_world.options.ctl.apList[0]->pfnClick == g_world.options.tab.pfnBindSaveSlots
+                      && g_world.options.ctl.apList[1]->pfnClick == g_world.options.tab.pfnBindLoadSlots
+                      && g_world.options.ctl.apList[2]->pfnClick == g_world.options.tab.pfnSetTab3
+                      && g_world.options.ctl.apList[3]->pfnClick == g_world.options.tab.pfnSetTab4,
+                  "0x6B6DC / 0x6B6E8 / 0x6B6F4 / 0x6B700 in order: save, load, quit, volume");
+            Check(g_world.options.ctl.apList[4] != NULL && g_world.options.ctl.apList[4]->y == 229
+                      && g_world.options.ctl.apList[4]->x == 1,
+                  "rows 4..6 are built by 0x6BEA0..0x6BEF0 with the one shared descriptor "
+                  "g_aOptionsListDesc {1, 229, \"firebtn\"} and LayoutButtons does not touch them: they stay "
+                  "where the descriptor put them until a save or load row press centres them (0x6B514 / 0x6B538)");
+            CheckEqI32(pCtlA != NULL ? pCtlA->y : -1, 198, "0x6B784 seats the cancel hotspot at y 198");
+            CheckEqI32(pCtlA != NULL ? (i32)pCtlA->x : -1,
+                       pCtlA != NULL ? 120 - ((i32)pCtlA->uWidth >> 1) : -1, "centred (0x6B75C)");
+            Check(pCtlB != NULL && pCtlB->pfnClick == NULL,
+                  "the return hotspot keeps no handler in the shell yet: OptionsScreen_ReturnToTitle belongs "
+                  "to the startup-screen owner (recorded gap)");
+            CheckEqI32(pCtlB != NULL ? (i32)pCtlB->x : -1,
+                       (pCtlA != NULL) ? 120 - ((i32)pCtlA->uWidth >> 1) : -1,
+                       "ORIGINAL BUG (0x6B764): its x is centred on the CANCEL control's width, read again "
+                       "from the same register, while the store lands on the other control");
+
+            for (i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {
+                UiControl *pMusic = g_world.options.ctl.apMusic[i];
+                UiControl *pSfx   = g_world.options.ctl.apSfx[i];
+
+                Check(pMusic != NULL && pMusic->pfnClick != NULL && pSfx != NULL && pSfx->pfnClick != NULL,
+                      "the twelve radio buttons carry their handlers (0x6C02C..0x6C0B0)");
+                CheckEqI32(pMusic != NULL ? pMusic->y : -1, 107, "the music row at y 107 (0x6BFBC)");
+                CheckEqI32(pSfx != NULL ? pSfx->y : -1, 147, "the sound row at y 147 (0x6BFF8)");
+                CheckEqI32(pMusic != NULL ? (i32)pMusic->x : -1, 46 + 25 * i, "x = 46 + 25 * i (0x6BFDC)");
+                if (pMusic != NULL && pMusic->nState == PUFO_CONTROL_MAX_STATE) { ++nSelCount; nMusicSel = i; }
+            }
+            CheckEqI32(nSelCount, 1,
+                       "RefreshVolumeHighlight lights exactly one music button (0x6C0B4 -> 0x6B944)");
+            printf("  the menu: rows at y 90 115 140 165, cancel at %d,198; music selected step %d for the "
+                   "stored byte %d off %d; tab %d, controls-exist %d\n",
+                   pCtlA != NULL ? (i32)pCtlA->x : -1, nMusicSel, g_options.nMusicVolume,
+                   g_options.bMusicOff, (i32)g_world.abOptionsScratch[0],
+                   (i32)g_world.abOptionsScratch[4]);
+
+            /* E2. The volume row. Screen 18 with the controls up: 0x89110 lets the page arm run, the tab
+             * byte is 0 so 0x892D0 walks rows 0..3, and the confirm gate at 0x89334 / 0x89344 stops the
+             * tail because bOptionsScreenOpen -- the byte 0x89338 reads -- is the OVERLAY toggle, and the
+             * menu is up without the overlay. The release arm's page-0 walk (0x8AE64) fires what the press
+             * armed, and the row's handler is World_OptionsVolumeTab. */
+            PressCtl(g_world.options.ctl.apList[3]);
+            CheckEqI32((i32)g_world.abOptionsScratch[0], 4,
+                       "the row's handler runs BaseUi_SetScratch4 (0x6B6B8): the tab byte is 4");
+            PressCtl(g_world.options.ctl.apList[0]);
+            CheckEqI32((i32)g_world.abOptionsScratch[0], 4,
+                       "a press on a list row does nothing on the volume page: 0x89160 hit-tests slots 9..20 "
+                       "and 0x8AD1C releases the same twelve, so no row handler is armed");
+
+            /* E3. A music step. With the tab at 4 the press arm walks slots 9..20 (0x89160) and the release
+             * arm walks the same twelve and then the cancel (0x8AD1C). */
+            PressCtl(g_world.options.ctl.apMusic[3]);
+            CheckEqI32(g_options.nMusicVolume, 3, "0x6BAD0 stores the step in the Map option byte");
+            CheckEqI32(g_options.bMusicOff, 0, "and 0x6BAA8 clears the mute byte for any step above 0");
+            CheckEqI32(g_world.options.ctl.apMusic[3]->nState, PUFO_CONTROL_MAX_STATE,
+                       "the pressed button is the lit one (0x6BA50)");
+            CheckEqI32(g_world.options.ctl.apMusic[2]->nState, 0, "and the other ten were cleared first (0x6BA2C)");
+            CheckEqI32((i32)g_world.abOptionsScratch[0], 4, "the tab stays on the volume page");
+
+            ClearSurface();
+            (void)DrawFrame();
+            printf("  the volume page: music %d off %d, sound %d off %d; blits %d\n",
+                   g_options.nMusicVolume, g_options.bMusicOff, g_options.nSoundVolume,
+                   g_options.bSoundOff, g_nBlits);
+            DumpFrame("geoscape_options_volume");
+
+            /* E4. The cancel. Options_SaveAudioSettings @ 0x6b7ac with the tab at 4: 0x6B7C4's close is
+             * gated on the overlay toggle and the overlay is not up, so the menu survives; 0x6B7D4 sees the
+             * controls exist, 0x6B808 takes the tab-4 arm and writes the four registry values, 0x6B8A8 clears
+             * the tab, and 0x6B8AC runs LayoutButtons again -- which is what puts the four rows back. */
+            PressCtl(pCtlA);
+            CheckEqI32((i32)g_world.abOptionsScratch[0], 0, "0x6B8A8");
+            CheckEqI32(g_world.options.ctl.apList[3]->y, 165,
+                       "0x6B8AC's LayoutButtons re-lays the rows (0x6B704..0x6B744)");
+            CheckEqI32(pCtlA != NULL ? pCtlA->y : -1, 198, "and re-seats the cancel (0x6B784)");
+            CheckEqI32(g_world.bOptionsScreenOpen, 0, "the overlay never opened: 0x6B7C4 is gated on it");
+            CheckEqI32((i32)g_world.abOptionsScratch[4], 1, "the menu is still up");
+
+            /* E5. The quit row. Its handler is Options_SetTab3_AndUiY @ 0x6b674, which the port splits into
+             * BaseUi_SetScratch3AndUiY: the tab byte and the two STRH writes 0x6B68C / 0x6B69C that put the
+             * two hotspots on the quit page's rows. */
+            PressCtl(g_world.options.ctl.apList[2]);
+            CheckEqI32((i32)g_world.abOptionsScratch[0], 3, "0x6B680");
+            CheckEqI32(pCtlB != NULL ? pCtlB->y : -1, 120, "0x6B68C's STRH on *pGeoscapeCtlB");
+            CheckEqI32(pCtlA != NULL ? pCtlA->y : -1, 142, "0x6B69C's STRH on *pGeoscapeCtlA");
+
+            /* E6. The close, through Geoscape_CloseUI @ 0x8b94c case 18 -- 0x8BCD0 reads the tab byte
+             * SIGNED, it is 3, so 0x8BCFC clears it and 0x8BD08 runs Options_SaveAudioSettings. That callee
+             * now finds the tab 0, so its own 0x6B7F0 arm closes again, and the second pass takes 0x8BCE4 /
+             * 0x8BCE8: OptionsScreen_RebuildWithSound, which reaches Init's teardown half (0x6BE84 -> 0x6C0FC)
+             * and screen 0. The callee reaches no 0x6B8AC on that path -- the tab-0 arm returns into its own
+             * 0x6B8C4 unpause -- so the menu's controls keep whatever seats the quit page gave them. */
+            Geoscape_CloseUI(&g_world.closeEnv);
+            CheckEqI32((i32)g_world.abOptionsScratch[4], 0, "Init's teardown half clears the controls byte (0x6C0FC)");
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "0x8BCE8");
+            CheckEqI32((i32)g_world.abOptionsScratch[0], 0, "0x8BCFC, then 0x6B6D0");
+            CheckEqI32(pCtlA != NULL ? pCtlA->y : -1, 142,
+                       "and nothing is re-laid: 0x8BCFC already cleared the tab, so SaveAudioSettings takes "
+                       "its tab-0 arm at 0x6B7F0 and never reaches 0x6B8AC -- the cancel keeps the quit page's "
+                       "seat 0x6B69C gave it");
+            printf("  the menu closed: controls-exist %d, tab %d, screen %d\n",
+                   (i32)g_world.abOptionsScratch[4], (i32)g_world.abOptionsScratch[0],
+                   g_world.screen.nGeoscapeScreen);
+
+            /* The menu leaves its marks on shared state the sections below draw and save: the two hotspots'
+             * seats (0x6B68C / 0x6B69C moved them to the quit page's rows and the close reached no 0x6B8AC to
+             * put them back) and the two Map volume bytes the volume page wrote. The original would carry all
+             * four forward; this block is an experiment inside a longer section, so the fixture puts them
+             * back for the sections that follow. */
+            if (pCtlA != NULL) { pCtlA->x = (i16)nCtlAX0; pCtlA->y = (i16)nCtlAY0; }
+            if (pCtlB != NULL) { pCtlB->x = (i16)nCtlBX0; pCtlB->y = (i16)nCtlBY0; }
+            g_options.nMusicVolume = nMusicVol0;
+            g_options.bMusicOff    = (u8)nMusicOff0;
         }
 
         /* 1. The press on the craft, and 2. the line its dispatch posts. */

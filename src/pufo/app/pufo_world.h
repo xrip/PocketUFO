@@ -93,6 +93,32 @@ typedef struct GeoscapeFrameState {
     GeoscapeFrameGlobals   g;
 } GeoscapeFrameState;
 
+/* The options subsystem's owners: the shell's copy of the .bss the options screen runs on.
+ * `OptionsScreen_Init @ 0x6be74` builds 7 menu rows and 12 radio buttons out of caller-owned storage
+ * (its teardown branch runs UiControl_FreePads and leaves the storage), so the nineteen objects live
+ * here. `OptionsScreen_Open @ 0x6d0ac` allocates its own prev/next pair and its four panels into the
+ * pointer cells below and releases them through its close half, so the shell owns the cells only. The
+ * flat 21-slot array is the original's single `aOptionsListCtl @ 0x159E20`, which the frame (0x6C888,
+ * 0x6CD60) and the press arm (0x89160, 0x89210) index; World_RefreshGeoscapeFrame rebuilds it from the
+ * three groups plus the pair, because the pair only exists while the overlay is open. */
+typedef struct OptionsOwners {
+    UiControl           aListCtl[PUFO_OPTIONS_LIST_COUNT];  /* aOptionsListCtl[0..6] @ 0x159E20..0x159E38 */
+    UiControl           aMusicCtl[PUFO_OPTIONS_VOL_COUNT];  /* [9..14] @ 0x159E44, aOptionsMusicBtn */
+    UiControl           aSfxCtl[PUFO_OPTIONS_VOL_COUNT];    /* [15..20] @ 0x159E5C, aOptionsSfxBtn */
+    UiControl          *apPairCtl[2];     /* [7] / [8] @ 0x159E3C / 0x159E40: Open's two allocations */
+    UiControl          *apCtlFlat[PUFO_OPTIONS_CTL_COUNT];  /* the flat view the frame and the press use */
+    UiPanel            *apPanel[PUFO_OPTIONS_PANEL_COUNT];  /* 0x159E18, 0x159E78, 0x159E7C, 0x159E1C */
+    OptionsScreenCtl    ctl;              /* the 19 pointers Init fills */
+    OptionsVolumeEnv    vol;              /* the state RefreshVolumeHighlight re-selects from */
+    OptionsTabEnv       tab;              /* the state LayoutButtons lays out */
+    OptionsInitEnv      init;             /* OptionsScreen_Init's env */
+    SaveAudioEnv        saveAudio;        /* Options_SaveAudioSettings' env, ctlA's click handler */
+    OptionsOpenEnv      open;             /* OptionsScreen_Open @ 0x6d0ac's env, the overlay's half */
+    OptionsConfirmEnv   confirm;          /* OptionsScreen_OnConfirm @ 0x6cf18, the names panel's handler */
+    GeoscapeScreenHooks screenHooks;      /* Ui_OpenScreen18 / Ui_CloseScreen18's hooks */
+    GeoscapeScreenDrawEnv draw;           /* case 18's own env, the call at 0x942F8 */
+} OptionsOwners;
+
 typedef struct PufoWorldState {
     /* Rosters. */
     Soldier *apSoldiers[PUFO_SOLDIER_CAPACITY]; /* Map + 0x1198 */
@@ -235,6 +261,7 @@ typedef struct PufoWorldState {
     u8                bFlag187090;              /* 0x187090, bSmapSitePanel */
     u8                bFlag187098;              /* 0x187098, bSmapAlienBasePanel */
     OptionsScreenHooks optionsHooks;            /* the radar click's options branch */
+    OptionsOwners       options;                /* the shell's owner of the options screen's own state */
     NavControls       nav;
     NavCtlEnv         navEnv;
 

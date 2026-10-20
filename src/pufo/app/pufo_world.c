@@ -942,24 +942,178 @@ static void World_ResearchTopicClickThunk(void)
                                         World_ResearchPlaySample, pW);
 }
 
-/* The options screen is not ported yet; the radar click's type-0 branch reaches it through
- * these stubs (the sample still plays). */
-static void World_OptionsPlaySampleStub(u32 nSample, u32 nArg, void *pUser)
+/* The options screen's sample: Sound_Play(7, 4) at 0x6CF08 / 0x6DD10. The second argument is dead
+ * (Sound_Play takes the sample only), which is why the port keeps it for the record. */
+static void World_OptionsPlaySample(u32 nSample, u32 nArg, void *pUser)
 {
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
     (void)nArg;
-    (void)pUser;
+    if (pW != NULL && pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample((i32)nSample, pW->pSoundUser); /* the caller's seam, as every other geoscape
+                                                          * handler takes it (World_Hook* / the close env) */
+        return;
+    }
     (void)Sound_Play((i32)nSample);
 }
 
-static void World_OptionsInitStub(void *pUser)
+/* OptionsScreenHooks' two slots. `OptionsScreen_RebuildWithSound @ 0x6cf00` tail-calls
+ * OptionsScreen_Init at 0x6CF14 and `OptionsScreen_OpenWithSound @ 0x6dd04` tail-calls
+ * OptionsScreen_Open at 0x6DD20 with the mode it kept in R4; these are those two tail calls. */
+static void World_OptionsInitRun(void *pUser)
 {
-    (void)pUser; /* OptionsScreen_Init is not ported */
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        OptionsScreen_Init(&pW->options.init);
+    }
 }
 
-static void World_OptionsOpenStub(i32 nMode, void *pUser)
+static void World_OptionsOpenRun(i32 nMode, void *pUser)
 {
-    (void)nMode;
-    (void)pUser; /* the options screen itself is not ported */
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        OptionsScreen_Open(&pW->options.open, nMode);
+    }
+}
+
+/* The four menu rows OptionsScreen_LayoutButtons installs (0x6B6DC..0x6B700), the cancel hotspot
+ * (0x6BF1C / 0x6D24C), and the twelve radio buttons (0x6C02C..0x6C0B0). UiControl.pfnClick takes no
+ * arguments, so each reaches the live state through g_pActiveWorld -- the route every other geoscape
+ * control handler in this file takes. */
+static OptionsVolumeEnv *World_OptionsVolEnv(void)
+{
+    return (g_pActiveWorld != NULL) ? &g_pActiveWorld->options.vol : NULL;
+}
+
+static void World_OptionsSaveTab(void)
+{
+    if (g_pActiveWorld != NULL) {
+        OptionsScreen_BindSaveSlots(&g_pActiveWorld->options.tab); /* 0x6b49c */
+    }
+}
+
+static void World_OptionsLoadTab(void)
+{
+    if (g_pActiveWorld != NULL) {
+        OptionsScreen_BindLoadSlots(&g_pActiveWorld->options.tab); /* 0x6b588 */
+    }
+}
+
+static void World_OptionsQuitTab(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseUi_SetScratch3AndUiY(&g_pActiveWorld->abOptionsScratch[0],
+                                 g_pActiveWorld->ui.apCtl[GEOUI_CTL_186BB0],  /* *pGeoscapeCtlB, y = 120 */
+                                 g_pActiveWorld->ui.apCtl[GEOUI_CTL_186BB4]); /* *pGeoscapeCtlA, y = 142 */
+    }
+}
+
+static void World_OptionsVolumeTab(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BaseUi_SetScratch4(&g_pActiveWorld->abOptionsScratch[0]); /* 0x6b6b0 */
+    }
+}
+
+static void World_OptionsCancelClick(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)Options_SaveAudioSettings(&g_pActiveWorld->options.saveAudio); /* 0x6b7ac */
+    }
+}
+
+static void World_OptionsMusicVol0(void) { (void)OptionsScreen_SetMusicVol0(World_OptionsVolEnv()); }
+static void World_OptionsMusicVol1(void) { (void)OptionsScreen_SetMusicVol1(World_OptionsVolEnv()); }
+static void World_OptionsMusicVol2(void) { (void)OptionsScreen_SetMusicVol2(World_OptionsVolEnv()); }
+static void World_OptionsMusicVol3(void) { (void)OptionsScreen_SetMusicVol3(World_OptionsVolEnv()); }
+static void World_OptionsMusicVol4(void) { (void)OptionsScreen_SetMusicVol4(World_OptionsVolEnv()); }
+static void World_OptionsMusicVol5(void) { (void)OptionsScreen_SetMusicVol5(World_OptionsVolEnv()); }
+static void World_OptionsSfxVol0(void) { (void)OptionsScreen_SetSfxVol0(World_OptionsVolEnv()); }
+static void World_OptionsSfxVol1(void) { (void)OptionsScreen_SetSfxVol1(World_OptionsVolEnv()); }
+static void World_OptionsSfxVol2(void) { (void)OptionsScreen_SetSfxVol2(World_OptionsVolEnv()); }
+static void World_OptionsSfxVol3(void) { (void)OptionsScreen_SetSfxVol3(World_OptionsVolEnv()); }
+static void World_OptionsSfxVol4(void) { (void)OptionsScreen_SetSfxVol4(World_OptionsVolEnv()); }
+static void World_OptionsSfxVol5(void) { (void)OptionsScreen_SetSfxVol5(World_OptionsVolEnv()); }
+
+/* The overlay's own three handlers. OptionsScreen_Open installs these on its two scroll controls
+ * (0x6D208 / 0x6D214) and on the names panel (0x6D2E8); all four panels live in one array here
+ * (0x159E18, 0x159E78, 0x159E7C, 0x159E1C), which is the order OptionsScreen_PanelPrev/Next page. */
+static void World_OptionsPanelPrev(void)
+{
+    if (g_pActiveWorld != NULL) {
+        OptionsScreen_PanelPrev(g_pActiveWorld->options.apPanel); /* 0x6d01c */
+    }
+}
+
+static void World_OptionsPanelNext(void)
+{
+    if (g_pActiveWorld != NULL) {
+        OptionsScreen_PanelNext(g_pActiveWorld->options.apPanel); /* 0x6d064 */
+    }
+}
+
+static void World_OptionsConfirmClick(void)
+{
+    if (g_pActiveWorld != NULL) {
+        OptionsScreen_OnConfirm(&g_pActiveWorld->options.confirm); /* 0x6cf18 */
+    }
+}
+
+/* Geoscape_DrawScreen's 0x6C188 tail call: bMapSelectionFlag set runs Geoscape_CloseUI(&0x1864F8) and
+ * draws nothing else this frame. */
+static void World_OptionsCloseUiThunk(void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        Geoscape_CloseUI(&pW->closeEnv);
+    }
+}
+
+/* GeoscapeScreenHooks' sample slot: Ui_OpenScreen18 0x84EA4 and Ui_CloseScreen18 0x84ED4 both play
+ * sample 17 on their way to the options screen. */
+static void World_ScreenPlaySample(u32 nSample, void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL && pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample((i32)nSample, pW->pSoundUser);
+        return;
+    }
+    (void)Sound_Play((i32)nSample);
+}
+
+/* GeoscapeScreenHooks' two slots: the shell's way back into the two Options*_WithSound wrappers, each
+ * of which plays sample 7 and then tail-calls Init or Open on the shell's own envs. */
+static void World_OptionsRebuildThunk(void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        OptionsScreen_RebuildWithSound(&pW->optionsHooks);
+    }
+}
+
+static void World_OptionsOpenWithSoundThunk(i32 nMode, void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        OptionsScreen_OpenWithSound(0, nMode, &pW->optionsHooks);
+    }
+}
+
+/* Root control [8] (the dword at 0x186518, the handler Geoscape_InitUI installs at 0x86590): the
+ * geoscape's own options hotspot. Ui_OpenScreen18 plays sample 17, sets screen 18 and rebuilds. */
+static void World_OptionsMenuClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        Ui_OpenScreen18(&pW->screen, &pW->options.screenHooks); /* 0x84e9c */
+    }
 }
 
 static void World_RadarClickThunk(void)
@@ -1435,6 +1589,11 @@ static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
     for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
         pEnv->apfnRootClick[i] = World_NoopClick;
     }
+    /* Root control [8] -- the handler word at 0x186518, installed by Geoscape_InitUI at 0x86590 -- is the
+     * geoscape's options hotspot: Ui_OpenScreen18 @ 0x84e9c. Slot [9] (0x18651C, Ui_CloseScreen18) stays
+     * a no-op: its OpenWithSound tail reaches the overlay toggle through gUiRootPanel.anLineAux[119],
+     * which has no shell owner yet (recorded in PLAN). */
+    pEnv->apfnRootClick[8] = World_OptionsMenuClick;
     pEnv->pfnCraftSelectClick = World_NoopClick;
     pEnv->pfnRadarClick = World_RadarClickThunk; /* Geoscape_OnRadarListClick @ 0x854c4 */
     pEnv->pfnStartNew = World_StartNewHook;
@@ -1474,9 +1633,10 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     g_pActiveWorld = pW;
 
     memset(&pW->optionsHooks, 0, sizeof(pW->optionsHooks));
-    pW->optionsHooks.pfnPlaySample = World_OptionsPlaySampleStub;
-    pW->optionsHooks.pfnInit = World_OptionsInitStub;
-    pW->optionsHooks.pfnOpen = World_OptionsOpenStub;
+    pW->optionsHooks.pfnPlaySample = World_OptionsPlaySample;
+    pW->optionsHooks.pfnInit = World_OptionsInitRun;   /* OptionsScreen_Init @ 0x6be74, 0x6CF14's tail */
+    pW->optionsHooks.pfnOpen = World_OptionsOpenRun;   /* OptionsScreen_Open @ 0x6d0ac, 0x6DD20's tail */
+    pW->optionsHooks.pUser = pW;                       /* the two runs take the state, not g_pActiveWorld */
 
     World_FillCtorEnv(pW, pAssets);
 
@@ -6980,9 +7140,10 @@ static u8 World_GeoHitTestStrategSelect(const SmapView *pView, i32 nX, i32 nY, v
     env.pbFlag187098         = &pW->bFlag187098;
     env.pbFlag1870A0         = &pW->bFlag1870A0;               /* the multi-select box byte */
     env.pnRadarPulseTimer    = &pW->nRadarPulseTimer;          /* 0xAC224 */
-    env.pOptPanelShips       = NULL;                           /* pOptPanelShips @ 0x159E18: the options
-                                                               * screen's own panel, which the shell's
-                                                               * options branch does not keep */
+    /* pOptPanelShips @ 0x159E18, read at 0x83494 right after OptionsScreen_Open ran: the names panel the
+     * open half just allocated, or NULL when its close half just freed it. Passed as the cell, so the
+     * value is the one the original's global load would see at that same instruction. */
+    env.ppOptPanelShips      = pW->options.apPanel;
     env.pOptionsHooks        = &pW->optionsHooks;
     env.pfnPlaySample        = pW->pfnPlaySample;
     env.pSoundUser           = pW->pSoundUser;
@@ -7262,15 +7423,14 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pSoldierScreen   = &pW->solEnv;
     pC->pOptionsHooks    = &pW->optionsHooks;
     /* Case 18's own three cells (0x8BCD0 / 0x8BCFC / 0x8BD10): the scratch mode byte, the scratch
-     * "a menu is up" byte, and the toggle. The SaveAudioEnv and the OptionsScreen_Open handle this arm
-     * would hand to 0x8BD08 and 0x8BD18 stay NULL -- neither OptionsScreen_Init nor OptionsScreen_Open
-     * has an owner in the shell yet -- so with both bytes zero the arm only clears the drag byte
-     * (0x8BD1C). Recorded gap: while the shell has no options-screen owner, a press on a base entry
-     * leaves nGeoscapeScreen at 18 with nothing open, because the two clears at 0x8BCE8 and 0x8BD14
-     * both sit behind a byte only Init and Open set. */
+     * "a menu is up" byte, and the toggle, plus the two handles the arm hands to 0x8BD08 and 0x8BD18 --
+     * the SaveAudioEnv the cancel hotspot runs, and the OptionsScreen_Open handle whose -1 call at
+     * 0x8BD18 releases the overlay. All five are the shell's own cells now (OptionsOwners). */
     pC->pnOptionsMode    = &pW->abOptionsScratch[0];              /* gOptionsScratch[0], LDRSB 0x8BCD0 */
     pC->pbOptionsActive  = (const u8 *)&pW->abOptionsScratch[4];  /* gOptionsScratch[4] @ 0x159E8C */
     pC->pbOptionsOpen    = &pW->bOptionsScreenOpen;               /* bOptionsScreenOpen @ 0x159E80 */
+    pC->pSaveAudio       = &pW->options.saveAudio;               /* 0x8BD08 */
+    pC->pOptionsOpen     = &pW->options.open;                    /* 0x8BD18, OptionsScreen_Open(-1) */
     pC->pfnBaseAtOpen    = World_BaseAtOpenHook;          /* case 20's Open(&0x158840, -1) at 0x8BB00 */
     /* Case 20's mission-follow branch (0x8BB10) is live: the shell owns the Map cells the two
      * branches write, and Smap_BeginCraftSelect gets a full env from World_WireMissionSeams. */
@@ -7403,6 +7563,184 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *     build-dialog controls the shell holds as two embedded UiControls -- is now the arm's own array,
  *     pW->apFacPanelCtl. apRadarCtl wants 0x159684's control set, which the shell does not build.
  */
+/* The options screen's owners, wired once per bring-up. Every field is a pointer onto a cell the state
+ * already owns, so no env carries a copy of a live byte: the tab byte is abOptionsScratch[0] (the same
+ * byte Geoscape_DrawScreen 0x6C68C, Geoscape_OnPointer 0x89128 and Geoscape_CloseUI 0x8BCD0 read), the
+ * "a menu is up" byte is abOptionsScratch[4], and the toggle is bOptionsScreenOpen. The by-value fields
+ * -- the four Map option bytes, the soldier count, and the whole draw env -- follow the frame in
+ * World_RefreshGeoscapeFrame. */
+static void World_WireOptions(PufoWorldState *pW, const WorldHooks *pHooks)
+{
+    OptionsOwners *pO = &pW->options;
+    UiControl     *pCtlA = pW->ui.apCtl[GEOUI_CTL_186BB4]; /* *pGeoscapeCtlA @ 0x186BB4: cancel / OK / Нет */
+    UiControl     *pCtlB = pW->ui.apCtl[GEOUI_CTL_186BB0]; /* *pGeoscapeCtlB @ 0x186BB0: the quit page's Да */
+    BootAssets    *pAssets = pW->pAssets;
+    i32            i;
+
+    for (i = 0; i < PUFO_OPTIONS_LIST_COUNT; ++i) {
+        pO->ctl.apList[i] = &pO->aListCtl[i];   /* aOptionsListCtl[0..6] @ 0x159E20..0x159E38 */
+    }
+    for (i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {
+        pO->ctl.apMusic[i] = &pO->aMusicCtl[i]; /* [9..14] @ 0x159E44, aOptionsMusicBtn */
+        pO->ctl.apSfx[i]   = &pO->aSfxCtl[i];   /* [15..20] @ 0x159E5C, aOptionsSfxBtn */
+    }
+
+    pO->vol.pCtl = &pO->ctl;
+    if (pHooks != NULL && pHooks->pTactOptions != NULL) {
+        /* The four Map option bytes the volume buttons and the registry write share: Map_nSoundVolume
+         * @ 0x128A94, Map_nMusicVolume @ 0x128A98, Map_bSoundOff @ 0x128A93, Map_bMusicOff @ 0x128A92.
+         * pHooks->pTactOptions is the caller's WRITABLE alias of the very block pW->pOptions names, so
+         * the geoscape's radio buttons and the tact bank's change the same bytes -- and the same bytes
+         * Sound_ApplyMusicVolume / Sound_ApplySfxVolume read at 0x9e454 / 0x9e4dc. */
+        pO->vol.pnSfxVol         = &pHooks->pTactOptions->nSoundVolume;
+        pO->vol.pnMusicVol       = &pHooks->pTactOptions->nMusicVolume;
+        pO->vol.pbSfxOff         = &pHooks->pTactOptions->bSoundOff;
+        pO->vol.pbMusicOff       = &pHooks->pTactOptions->bMusicOff;
+        pO->saveAudio.pnSfxVol   = &pHooks->pTactOptions->nSoundVolume;   /* the itoa at 0x6B828 / 0x6B84C */
+        pO->saveAudio.pnMusicVol = &pHooks->pTactOptions->nMusicVolume;
+        pO->saveAudio.pbSfxOff   = &pHooks->pTactOptions->bSoundOff;      /* the shared "0" at 0x6B89C */
+        pO->saveAudio.pbMusicOff = &pHooks->pTactOptions->bMusicOff;      /* and the "1" at 0x6B878 */
+    }
+
+    pO->tab.pCtl             = &pO->ctl;
+    pO->tab.pbTab            = &pW->abOptionsScratch[0];
+    pO->tab.pSaveCtl         = pCtlA;
+    pO->tab.pBackCtl         = pCtlB;
+    pO->tab.pfnBindSaveSlots = World_OptionsSaveTab;   /* 0x6b49c, row 0's handler at 0x6B6DC */
+    pO->tab.pfnBindLoadSlots = World_OptionsLoadTab;   /* 0x6b588, row 1's at 0x6B6E8 */
+    pO->tab.pfnSetTab3       = World_OptionsQuitTab;   /* 0x6b674, row 2's at 0x6B6F4 */
+    pO->tab.pfnSetTab4       = World_OptionsVolumeTab; /* 0x6b6b0, row 3's at 0x6B700 */
+    if (pHooks != NULL) {
+        pO->tab.pfnFormatSlots = pHooks->pfnFormatSlotList; /* SaveSlot_FormatList @ 0x45904, 0x6B558 */
+        pO->tab.pUser          = pHooks->pFormatSlotListUser;
+    }
+    /* Recorded gap: the seven slot handlers (SaveGame_Slot0..6_CloseUI 0x6af80..0x6b148,
+     * LoadGame_Slot0..6_InitOptions 0x6b194..0x6b404) are ported and gated but reach SaveGame / LoadGame
+     * through a DatFile the caller opens, and the shell opens slot files only on its tact bank path
+     * (World_SaveSlot). They stay NULL, so a press on a slot row hits a cleared handler. */
+
+    pO->init.pCtl             = &pO->ctl;
+    pO->init.pVolEnv          = &pO->vol;
+    pO->init.pTabEnv          = &pO->tab;
+    pO->init.pbControlsExist  = (u8 *)&pW->abOptionsScratch[4]; /* gOptionsScratch[4] @ 0x159E8C */
+    pO->init.pSaveCtl         = pCtlA;   /* 0x6BF1C installs Options_SaveAudioSettings here */
+    pO->init.pBackCtl         = pCtlB;   /* 0x6BF2C installs OptionsScreen_ReturnToTitle here */
+    pO->init.pfnSaveAudio     = World_OptionsCancelClick;
+    pO->init.apfnMusicVol[0]  = World_OptionsMusicVol0; /* 0x6C02C..0x6C0B0, the twelve radio handlers */
+    pO->init.apfnMusicVol[1]  = World_OptionsMusicVol1;
+    pO->init.apfnMusicVol[2]  = World_OptionsMusicVol2;
+    pO->init.apfnMusicVol[3]  = World_OptionsMusicVol3;
+    pO->init.apfnMusicVol[4]  = World_OptionsMusicVol4;
+    pO->init.apfnMusicVol[5]  = World_OptionsMusicVol5;
+    pO->init.apfnSfxVol[0]    = World_OptionsSfxVol0;
+    pO->init.apfnSfxVol[1]    = World_OptionsSfxVol1;
+    pO->init.apfnSfxVol[2]    = World_OptionsSfxVol2;
+    pO->init.apfnSfxVol[3]    = World_OptionsSfxVol3;
+    pO->init.apfnSfxVol[4]    = World_OptionsSfxVol4;
+    pO->init.apfnSfxVol[5]    = World_OptionsSfxVol5;
+    if (pHooks != NULL) {
+        pO->init.pfnLoadPads = pHooks->pfnLoadPads;
+        pO->init.pPadUser    = pHooks->pLoadPadsUser;
+    }
+
+    pO->saveAudio.pbTab            = &pW->abOptionsScratch[0];
+    pO->saveAudio.pbControlsExist  = (u8 *)&pW->abOptionsScratch[4];
+    pO->saveAudio.pbOptionsOpen    = &pW->bOptionsScreenOpen;
+    pO->saveAudio.pbSelectionFlag  = &pW->bMapSelectionFlag;
+    pO->saveAudio.pTime            = &pW->geo.time;      /* 0x159618; its bPaused is the byte at 0x15961C */
+    pO->saveAudio.pClose           = &pW->closeEnv;      /* Geoscape_CloseUI @ 0x8b94c, 0x6B7C4 / 0x6B7F0 */
+    pO->saveAudio.pTabEnv          = &pO->tab;           /* 0x6B8AC's OptionsScreen_LayoutButtons */
+
+    pO->open.pbOptionsOpen    = &pW->bOptionsScreenOpen;   /* 0x6D0C8 / 0x6DC40 */
+    pO->open.pbAnimStarted    = &pW->bUiAnimStarted;       /* 0x6D0DC */
+    pO->open.pbSelectionFlag  = &pW->bMapSelectionFlag;    /* 0x6D1A8 */
+    pO->open.pnScreenId       = &pW->screen.nGeoscapeScreen; /* 0x6DC38 */
+    pO->open.pnBaseCount      = &pW->nBaseCount;           /* 0x159D80, read SIGNED at 0x6D118 */
+    pO->open.pnCraftCount     = &pW->bCraftCount;          /* Map + 0x1194, re-read at 0x6DC08 */
+    pO->open.apBases          = pW->apBases;               /* 0x114B2C */
+    pO->open.apCraft          = pW->apCraft;               /* 0x114A64 */
+    pO->open.apSoldiers       = pW->apSoldiers;
+    pO->open.apPairCtl        = pO->apPairCtl;             /* aOptionsListCtl + 0x1C @ 0x159E3C / 0x159E40 */
+    pO->open.ppPanelName      = &pO->apPanel[0];           /* 0x159E18 */
+    pO->open.ppPanelStores    = &pO->apPanel[1];           /* 0x159E78 */
+    pO->open.ppPanelRegion    = &pO->apPanel[2];           /* 0x159E7C */
+    pO->open.ppPanelCargo     = &pO->apPanel[3];           /* 0x159E1C */
+    pO->open.pSaveCtl         = pCtlA;                     /* 0x6D24C / 0x6D25C / 0x6D26C */
+    pO->open.pfnPanelPrev     = World_OptionsPanelPrev;    /* 0x6D208 */
+    pO->open.pfnPanelNext     = World_OptionsPanelNext;    /* 0x6D214 */
+    pO->open.pfnOnConfirm     = World_OptionsConfirmClick; /* 0x6D2E8 */
+    pO->open.pfnSaveAudio     = World_OptionsCancelClick;  /* 0x6D24C, the same handler Init installs */
+    if (pAssets != NULL) {
+        pO->open.apObjects   = pAssets->apObjects;
+        pO->open.nObjectCount = pAssets->nObjectCount;
+        pO->open.pTextRecs   = pAssets->pTextRecs;         /* aTextRecs: the four state labels 149..152
+                                                            * and the nine region labels 1036 / 1165..1172 */
+    }
+    if (pHooks != NULL) {
+        pO->open.pfnLoadPads = pHooks->pfnLoadPads;
+        pO->open.pPadUser    = pHooks->pLoadPadsUser;
+    }
+
+    pO->confirm.ppPanelName         = &pO->apPanel[0];    /* 0x6CF3C / 0x6CF4C */
+    pO->confirm.ppPanelStores       = &pO->apPanel[1];    /* 0x6CF6C, the readiness gate */
+    pO->confirm.pnMsgShipIdx        = &pW->nMsgShipIdx;   /* 0x159E74 */
+    pO->confirm.pnSelectedShipIdx   = &pW->nSelectedShipIdx; /* 0x187054 */
+    pO->confirm.pbSelectionFlag     = &pW->bMapSelectionFlag; /* 0x6CF78 */
+    pO->confirm.pbFinalMissionCtl   = &pW->bFinalMissionCtlArmed; /* byte_187068, 0x6CFE0 */
+    pO->confirm.apCraft             = pW->apCraft;
+    pO->confirm.aTopics             = pW->aTopics;        /* aResearchTopics[28], the Cydonia gate */
+    pO->confirm.pLines              = &pW->msgLines;      /* the root message list @ 0x158890, 0x6CFA4 */
+    pO->confirm.pTime               = &pW->geo.time;      /* 0x6CFE4's GameTime_Pause */
+    pO->confirm.pfnPlaySample       = pW->pfnPlaySample;  /* Sound_Play(7) at 0x6CF84, and the same seam
+                                                           * UiLineList_AppendWithSound takes at 0x6CFA4 */
+    pO->confirm.pUser               = pW->pSoundUser;
+
+    /* The press arm reads the pair slots and the names panel OUT OF their cells at the call (0x89370
+     * `LDR R0,[R0,#0x1C]`, 0x893B4 / 0x8AF1C), so the env carries the cells rather than copies: the
+     * cancel inside a press frees what the same press's tail then reads. */
+    pW->ptrEnv.apOptPairCtl        = pO->apPairCtl;
+    pW->ptrEnv.ppOptPanelShips     = &pO->apPanel[0];
+
+    pO->screenHooks.pfnPlaySample              = World_ScreenPlaySample;      /* sample 17, 0x84EA4 / 0x84ED4 */
+    pO->screenHooks.pfnOptionsRebuildWithSound = World_OptionsRebuildThunk;    /* 0x84EC0's tail call */
+    pO->screenHooks.pfnOptionsOpenWithSound    = World_OptionsOpenWithSoundThunk; /* 0x84EF4's tail call */
+    pO->screenHooks.pUser                      = pW;
+
+    pO->draw.pView           = &pW->view;                 /* gSmapCam @ 0x1863E8 */
+    pO->draw.pStripPad       = pW->ui.apPad[GEOUI_PAD_186BBC]; /* [0x186BBC], the zoom-strip pad */
+    pO->draw.pWorldBits      = (const u8 *)pW->ui.pWorldSize;  /* *pSmapWorldBits @ 0x186BC0 */
+    pO->draw.pStrategList    = &pW->strategList;          /* 0x1864F8 + 0x3C, 0x6C348 */
+    pO->draw.apClockPads     = pW->ui.apClockDigitPads;   /* apClockDigitPads @ 0x186BF0 */
+    pO->draw.pTime           = &pW->geo.time;             /* 0x6C35C / 0x6C364 */
+    pO->draw.pbMapSelection  = &pW->bMapSelectionFlag;    /* 0x6C180 */
+    pO->draw.pbOptionsOpen   = &pW->bOptionsScreenOpen;   /* 0x6C368 */
+    pO->draw.abOptionsScratch = pW->abOptionsScratch;     /* [0] 0x6C68C, [4] 0x6C640 */
+    pO->draw.pAnim           = &pW->frame.anim;           /* Ui_AnimExpandBlit's root, 0x6C390 */
+    pO->draw.pCtlA           = pCtlA;                     /* the cancel / OK / Нет hotspot */
+    pO->draw.pCtlB           = pCtlB;                     /* the quit page's Да hotspot */
+    pO->draw.apOptCtl        = pO->apCtlFlat;             /* aOptionsListCtl @ 0x159E20, 21 slots */
+    pO->draw.pfnCloseUi      = World_OptionsCloseUiThunk; /* 0x6C188's Geoscape_CloseUI(&0x1864F8) */
+    pO->draw.pCloseUser      = pW;
+    if (pAssets != NULL) {
+        pO->draw.pTextRecs = (const char *)pAssets->pTextRecs; /* aTextRecs @ 0xB38D0 */
+    }
+    if (pHooks != NULL) {
+        pO->draw.pSlotLabels = pHooks->pSlotLabels;       /* MainMenu_pSlotCtx @ 0x156938, 0x6CBFC */
+        pO->draw.pColor      = pHooks->pColor;
+    }
+    /* The pad-blit seam comes from pHooks->pHit, not from pW->pHitCtx: World_WireGeoscapeClock stores
+     * that one at the END of World_WireGeoscapeFrame, and the other arms here read pHooks->pHit too. */
+    if (pHooks != NULL && pHooks->pHit != NULL) {
+        pO->draw.pfnCtlBlit     = pHooks->pHit->pfnBlit;
+        pO->draw.pfnCtlBlitEx   = pHooks->pHit->pfnBlitEx;
+        pO->draw.pCtlBlitUser   = pHooks->pHit->pUser;
+    }
+    /* OptionsScreen_ReturnToTitle's three callees -- Geoscape_CloseUI (0x6B480), GeoscapeUi_FreeAll
+     * (0x6B488) and GameUI_InitStartup (0x6B490) -- belong to the startup-screen owner in pufo_app.c,
+     * so ctlB keeps no handler here: the quit page's Да answers nothing yet. Recorded in PLAN. */
+    pO->init.pfnReturnToTitle = NULL;
+}
+
 void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
 {
     GeoscapeFrameState *pF = &pW->frame;
@@ -7416,6 +7754,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
 
     memset(pF, 0, sizeof(*pF));
     memset(pPtr, 0, sizeof(*pPtr));
+    World_WireOptions(pW, pHooks);
 
     /* Set here, not in World_WireGeoscapeClock: the placement arm below reads it, and that clock wiring
      * only runs at the end of this function. */
@@ -7724,6 +8063,11 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->facOpenHooks.pSlot         = NULL;
     pW->facOpenHooks.pUser         = pW;
 
+    /* Case 18 (0x942F4..0x942F8) has no arm code of its own: Geoscape_Draw calls Geoscape_DrawScreen
+     * with the 21-slot control array and that function draws the map, the overlay and the menu. The
+     * shell's env for it is the options owner's own; its by-value fields follow the frame. */
+    pF->draw.pOptionsScreen = &pW->options.draw;
+
     /* The frame end, 0x944B8..0x94544. Its modal arm runs only for MainMenu_nListMode 1103/1102, the
      * start menu's own modal pair, so the modal anim and layout stay NULL on the geoscape path. The
      * dispatcher copies this env into its own and sets pBaseAtEnv only for id 20 (0x944B4), so the draw
@@ -7815,12 +8159,17 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
      * original those globals are always there. With the shell's cells wired the arm is safe while the
      * options screen itself is not built yet: both bytes are zero, so 0x89110 falls to the shared tail
      * at 0x8932C, the confirm gate at 0x89344 fails, and the press returns the hit-test result. The
-     * control arrays the same arm would walk -- aOptionsListCtl @ 0x159E20, the two pair controls at
-     * 0x159E3C / 0x159E40 and pOptPanelShips @ 0x159E18 -- stay NULL: OptionsScreen_Init and
-     * OptionsScreen_Open allocate them, and the shell has no owner for them yet (recorded gap). */
+     * control arrays the same arm walks are the shell's own: [0..3] at 0x892D0 and [0..6] at 0x89210 are
+     * the seven menu rows, and 0x89160 walks aOptionsMusicBtn then aOptionsSfxBtn. The two pair controls
+     * (0x89370) and the names panel (0x893B4) are by-value and follow the overlay in
+     * World_RefreshGeoscapeFrame, because OptionsScreen_Open allocates them and its close half frees
+     * them. */
     pPtr->pbOptionsConfirm    = &pW->bOptionsScreenOpen;              /* 0x159E80 */
     pPtr->pbOptionsPageActive = (const u8 *)&pW->abOptionsScratch[4]; /* 0x159E8C */
     pPtr->pnOptionsPage       = &pW->abOptionsScratch[0];             /* 0x159E88, read SIGNED */
+    pPtr->apOptListCtl        = pW->options.apCtlFlat;  /* aOptionsListCtl @ 0x159E20: [0..6] are the rows */
+    pPtr->apOptMusicCtl       = pW->options.ctl.apMusic; /* aOptionsMusicBtn @ 0x159E44 */
+    pPtr->apOptSfxCtl         = pW->options.ctl.apSfx;   /* aOptionsSfxBtn @ 0x159E5C */
     pPtr->pView          = &pW->view;
     pPtr->pZoomOverlay   = pUi->apPad[GEOUI_PAD_186BBC]; /* 0x87C48 reads its uHeight as the strip */
     pPtr->pnTapCooldown  = &pF->g.nTapCooldown;
@@ -8524,6 +8873,36 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
      * against (0x5B8CC). Both follow the clock, so they are re-read every frame. */
     pW->fundingDraw.pPad          = pW->pFundPad;
     pW->fundingDraw.nMonthCounter = pW->nMonthCounter;
+
+    /* Case 18, the options screen. The flat array is the original's one aOptionsListCtl @ 0x159E20: slots
+     * 0..6 (the seven menu rows) and 9..20 (the twelve radio buttons) name objects the shell owns, so
+     * they never move, but slots 7 and 8 exist only while OptionsScreen_Open holds its pair, and the four
+     * panels likewise -- Open allocates them and its close half (0x6DC44..0x6DCC8) frees them. The
+     * by-value inputs the original re-reads at the call -- the screen id and the overlay origin (0x6C368),
+     * the anim phase the menu gate 0x6C640 sits under, the strateg sprite base (0x6C348), and the soldier
+     * count the craft loop walks -- follow the frame here. */
+    for (i = 0; i < PUFO_OPTIONS_LIST_COUNT; ++i) {
+        pW->options.apCtlFlat[i] = pW->options.ctl.apList[i];
+    }
+    for (i = 0; i < 2; ++i) {
+        pW->options.apCtlFlat[7 + i] = pW->options.apPairCtl[i];
+    }
+    for (i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {
+        pW->options.apCtlFlat[9 + i]  = pW->options.ctl.apMusic[i]; /* aOptionsMusicBtn @ 0x159E44 */
+        pW->options.apCtlFlat[15 + i] = pW->options.ctl.apSfx[i];   /* aOptionsSfxBtn @ 0x159E5C */
+    }
+    pW->options.draw.nScreenId       = pW->screen.nGeoscapeScreen;
+    pW->options.draw.nOverlayOriginX = pF->g.nOverlayOriginX;
+    pW->options.draw.nMapBitsBase    = (pW->pFont != NULL) ? pW->pFont->nMapBitsBase : 0;
+    pW->options.draw.nAnimPhase      = (pW->pnAnimPhase != NULL) ? (u16)*pW->pnAnimPhase : 0;
+    pW->options.draw.pMapPad         = pSet->pGrid;    /* *pSmapPadCur @ 0x186E40 */
+    pW->options.draw.pLayerPad       = pSet->pOverlay; /* *pSmapLayerPad @ 0x186BE0 */
+    pW->options.draw.pPanelShips     = pW->options.apPanel[0]; /* 0x159E18, the panel whose nFont the rules
+                                                                * use is [1] @ 0x159E78 */
+    pW->options.draw.pPanelMidA      = pW->options.apPanel[1];
+    pW->options.draw.pPanelMidB      = pW->options.apPanel[2];
+    pW->options.draw.pPanelRight     = pW->options.apPanel[3];
+    pW->options.open.nSoldierCount   = pW->nSoldierCount;        /* the cargo column's crew count */
 
     /* Case 6, the hangar. Its three panel sets are allocated and freed by their own builders, and the
      * consumers read the globals they live in -- 0x161EFC/0x161ED0 for the craft pair, 0x161EDC/0x161A3C

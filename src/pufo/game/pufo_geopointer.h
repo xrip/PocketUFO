@@ -134,7 +134,7 @@
 #define PUFO_GEO_PLANE_STAT_COUNT  6
 
 /* The options screen's control groups (0x892E8, 0x89170, 0x89370):
- * aOptionsListCtl @ 0x159E20 holds seven, pOptCtlPrev / pOptCtlNext follow at
+ * aOptionsListCtl @ 0x159E20 holds seven, the prev/next pair follows at
  * 0x159E3C / 0x159E40, and the page-4 loop runs over aOptionsMusicBtn @ 0x159E44 and
  * aOptionsSfxBtn @ 0x159E5C - twelve slots, which is what the ARM's
  * `ADD R0, R11, R0, LSL#2 / LDR R0, [R0, #0x24]` reaches. */
@@ -249,9 +249,15 @@ typedef struct GeoscapePointerEnv {
     UiControl *const *apOptListCtl;  /* aOptionsListCtl @ 0x159E20, PUFO_GEO_OPT_LIST_CTLS */
     UiControl *const *apOptMusicCtl; /* aOptionsMusicBtn @ 0x159E44, PUFO_GEO_OPT_SOUND_CTLS */
     UiControl *const *apOptSfxCtl;   /* aOptionsSfxBtn @ 0x159E5C, PUFO_GEO_OPT_SOUND_CTLS */
-    UiControl *pOptCtlPrev;       /* pOptCtlPrev @ 0x159E3C */
-    UiControl *pOptCtlNext;       /* pOptCtlNext @ 0x159E40 */
-    UiPanel *pOptPanelShips;      /* pOptPanelShips @ 0x159E18 */
+    UiControl *const *apOptPairCtl; /* aOptionsListCtl + 0x1C: the two slots 0x159E3C / 0x159E40, read OUT
+                                     * of the array at the call (0x89370: ADD R0,R11,R0,LSL#2 then
+                                     * LDR R0,[R0,#0x1C], and the same shape at 0x8AEEC) because
+                                     * OptionsScreen_Open allocates them at 0x6D1B0 and its close half frees
+                                     * them at 0x6DCE4 -- a copy taken at the start of the press would be
+                                     * read after the cancel inside the same press has freed them. */
+    UiPanel *const *ppOptPanelShips; /* the cell of pOptPanelShips @ 0x159E18, for the same reason: the
+                                      * tail at 0x893B4 / 0x8AF1C re-reads the global after ctlA's cancel
+                                      * may have run. */
 
     /* Screen 20. */
     const u8 *pbBaseAtDone;       /* bBaseAtDone @ 0x158854 */

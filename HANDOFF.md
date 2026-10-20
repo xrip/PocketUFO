@@ -1812,6 +1812,49 @@ the hook slots are no-ops, `pOptionsScreen` is never assigned, the 21 control sl
 0x159E1C are unbuilt), so nothing can clear 0x186BC4 after a base press; and the radar pass on
 a minute tick is still not gated.
 
+**The shell now owns screen 18 (Part 95)** -- that open item, closed. `World_OptionsInitRun` and
+`World_OptionsOpenRun` are the two tail calls (0x6CF14, 0x6DD20) instead of no-ops, and
+`OptionsOwners` in `PufoWorldState` holds the 7 rows at 0x159E20, the pair at 0x159E3C / 0x159E40,
+the 6 + 6 volume buttons at 0x159E44 / 0x159E5C, the four columns at 0x159E18 / 0x159E78 / 0x159E7C
+/ 0x159E1C and the six envs `World_WireOptions` fills; `pF->draw.pOptionsScreen` is assigned so case
+18 (0x942F4) paints, refreshed each frame by `World_RefreshGeoscapeFrame`. **The port idiom that
+mattered here: three fields had to become cells.** `SmapHitEnv.ppOptPanelShips`,
+`GeoscapePointerEnv.apOptPairCtl` and `ppOptPanelShips` -- because the callee at 0x83480 / 0x6d0ac
+runs *before* the reader at 0x83494 / 0x89370 / 0x893B4 / 0x8AF1C, and a close inside one press frees
+what the same press's tail then loads. A by-value copy of a global is wrong whenever a callee can
+empty that global.
+Measured through the pen: the base press plays 7 at 0x6DD10 and builds the overlay -- toggle 0x6D0C8,
+pair with handlers at 0x6D208 / 0x6D214, Options_SaveAudioSettings on *pGeoscapeCtlA at
+120 - (uWidth >> 1), y 179 (0x6D24C / 0x6D25C / 0x6D26C), four columns with 3 rows (the run's base
+holds 3 craft) whose stores aux come out -1 / 0 / 0 from the 0x6D718..0x6D858 chain -- then the
+release arm's tail (0x8AED4, 0x8AEEC, 0x8AF1C -> 0x89B64) clicks the row under the cursor and
+`OptionsScreen_OnConfirm` writes 0x159E74 / 0x187054, passes the 0x6CF6C readiness gate, appends the
+flag-27 prompt (0x6CFA4) and pauses (0x6CFE4); the cancel closes it through case 18's own recursion
+(0x6B7C4 -> 0x8BD14 / 0x8BD18 -> the close half 0x6DC38..0x6DCE4), freeing the overlay's allocations
+while the two hotspots keep handler and seat. The residue call is the original's behaviour, now gated:
+cooldown under 6 means 0x87C2C *and* 0x87C94 in one press, so your own base's craft list opens and
+closes before the pen is released, with the cooldown parked at 255 (0x87CB4). The menu is gated from
+root control [8] (0x186518): 17 at 0x84EA4 then 7 at 0x6CF08, the controls byte 1 (0x6BE90), rows at
+90/115/140/165, twelve buttons at y 107 / 147 and x 46 + 25 i, rows 4..6 left on their own descriptor
+(1,229), the cancel at y 198 (0x6B784) and the return hotspot centred on the *cancel's* width
+(ORIGINAL BUG 0x6B764); the volume row is 0x6B6B8 and from tab 4 the rows are dead (0x89160 / 0x8AD1C
+walk slots 9..20 only); the cancel writes the registry (0x6B828..0x6B8A0), clears the tab (0x6B8A8) and
+re-lays the rows (0x6B8AC); the quit row writes 0x6B680 and the two seats 0x6B68C / 0x6B69C; and
+closing with the tab at 3 clears it at 0x8BCFC, calls SaveAudioSettings at 0x8BD08, which finds the tab
+0 and closes a second time from 0x6B7F0 -- that pass runs Init's teardown (0x6BE84 -> 0x6C0FC) and
+0x8BCE8's screen 0 and never reaches 0x6B8AC, so the hotspots keep the quit page's seats.
+**A picture lesson.** `geoscape_descent_panel.png` looked broken -- a descent panel under a full-height
+crosshair and a "no build here" message -- and the reason is the chain tail's *screen* test at 0x91CF4:
+the section ran the panel family while the camera was still on screen 2, where the tail runs the
+globe-hover arm (0x91D78) that paints the hover crosshair (0x672DC..0x67450) and its own message. The
+panel flags and the screen id are independent state, and a reference picture that mixes two states the
+game never holds reads as a bug. 9b states screen 0; the reference was re-made. Gates: 62/62 both
+configs, 19265 checks (114 new), coverage unchanged, 36 frame references (2 new, 1 re-made), 9 e2e
+pictures unchanged. Still open: the seven save/load slot handlers stay NULL (they need a DatFile the
+shell opens only on its tact-bank path), ctlB's `OptionsScreen_ReturnToTitle` belongs to the startup
+owner in `pufo_app.c`, `Ui_CloseScreen18`'s mode comes from `gUiRootPanel.anLineAux[119]` which has no
+writer, and the radar pass on a minute tick is still not gated.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

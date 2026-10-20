@@ -3883,19 +3883,57 @@ unchanged; 18267 checks.
   19151 checks (16 new), coverage 972/1103 (88.1%) and 596888/598792 (99.7%) unchanged, 34 frame references (1
   re-made, looked at), 9 e2e pictures unchanged, `tools/check.sh` clean.
 
-- [ ] **The options screen has no owner in the shell, so a press on a base entry opens nothing.** Part 94 reached
-  the type-0 inactive arm (0x83448) for the first time and the screen it opens stays empty: `World_OptionsInitStub`
-  and `World_OptionsOpenStub` (pufo_world.c:947..962) are the hooks 0x83480 reaches, `pF->draw.pOptionsScreen` is
-  never assigned so `Geoscape_Draw`'s case-18 arm (0x942F8) draws nothing, `SmapHitEnv.pOptPanelShips` is NULL so
-  0x83494 is skipped, and no close arm can clear 0x186BC4 because both clears (0x8BCE8, 0x8BD14) sit behind a byte
-  only `OptionsScreen_Init` and `OptionsScreen_Open` set -- the test clears it and says so. What the wiring needs is
-  already ported and gated in `pufo_baseui.c`: `OptionsScreen_Init` (7 list rows, 12 volume buttons, 19
-  `UiControl_Setup` calls), `OptionsScreen_Open` (the toggle, the pair controls at 0x159E3C / 0x159E40, the four
-  panels at 0x159E18 / 0x159E78 / 0x159E7C / 0x159E1C, the craft rows), `OptionsScreen_OnConfirm` and
-  `Options_SaveAudioSettings`. Missing is the shell side: the 21 `UiControl *` slots at 0x159E20 / 0x159E44 /
-  0x159E5C, `apOptListCtl` / `apOptMusicCtl` / `apOptSfxCtl` / `pOptCtlPrev` / `pOptCtlNext` / `pOptPanelShips` in
-  the pointer env, the draw env's `pbOptionsOpen` / `abOptionsScratch` / `apOptCtl`, and a `GeoscapeScreenDrawEnv`
-  for case 18. Verified by a frame picture, like the other openers.
+- [x] **Part 95: the shell owns the options screen -- the overlay a base press builds, the row it confirms, the
+  cancel that closes it, and the menu the geoscape's own hotspot opens.** The two stubs are gone:
+  `World_OptionsInitRun` / `World_OptionsOpenRun` are now the tail calls 0x6CF14 and 0x6DD20 make, and
+  `OptionsOwners` (pufo_world.h) holds the state the original keeps in globals -- the 7 rows at 0x159E20, the pair
+  at 0x159E3C / 0x159E40, the 6 + 6 volume buttons at 0x159E44 / 0x159E5C, the four panels at 0x159E18 / 0x159E78 /
+  0x159E7C / 0x159E1C, and the six envs `World_WireOptions` fills. `pF->draw.pOptionsScreen` is assigned, so
+  `Geoscape_Draw` case 18 (0x942F4) paints, and it is refreshed every frame by `World_RefreshGeoscapeFrame`.
+  Three fields became **cells** because Open runs before the reader: `SmapHitEnv.ppOptPanelShips` (the arm's own
+  0x83494 reads 0x159E18 *after* 0x83480, so a close inside the call empties it), `GeoscapePointerEnv.apOptPairCtl`
+  (0x89370's `LDR R0,[R0,#0x1C]`) and `ppOptPanelShips` (0x893B4, 0x8AF1C). Gates, all through the pen:
+  the base press plays 7 at 0x6DD10 then builds the overlay (0x6D0C8 toggle, 0x6D1B0/0x6D1C0 pair with handlers at
+  0x6D208 / 0x6D214, 0x6D24C seats Options_SaveAudioSettings on *pGeoscapeCtlA at 120 - (uWidth >> 1) / 179, four
+  panels with one row per craft homed at the base 0x6D16C..0x6D190 counted -- 3 rows, the stores aux -1 / 0 / 0 the
+  0x6D718..0x6D858 chain gives); the release arm's tail (0x8AED4, 0x8AEEC, 0x8AF1C -> 0x89B64) clicks the row under
+  the cursor and `OptionsScreen_OnConfirm @ 0x6cf18` writes 0x159E74 / 0x187054, passes the readiness gate at 0x6CF6C
+  for the full-fuel row, appends the flag-27 prompt at 0x6CFA4 and pauses at 0x6CFE4; the cancel press then closes
+  through `Geoscape_CloseUI` case 18's own recursion (0x6B7C4 -> 0x8BD14 screen 0 -> 0x8BD18 Open(-1) -> the close
+  half 0x6DC38..0x6DCE4 frees the four panels and the pair while the two hotspots keep handler and seat); and the
+  residue call is gated as the original's behaviour -- cooldown under 6 runs 0x87C2C and 0x87C94 in one press, so the
+  craft list the press opened is closed again before the pen is released and 0x87CB4 parks the cooldown at 255.
+  The menu is gated from root control [8] (0x186518, installed at 0x86590): 17 at 0x84EA4 then 7 at 0x6CF08, screen
+  18, `gOptionsScratch[4]` 1 at 0x6BE90, the four rows at 90/115/140/165 centred with the handlers 0x6B6DC..0x6B700,
+  rows 4..6 left on their own descriptor, the cancel at y 198 (0x6B784) and the return hotspot centred on the
+  *cancel's* width (ORIGINAL BUG 0x6B764), 12 volume buttons at y 107 / 147, x 46 + 25 i; a press on the volume row
+  runs 0x6B6B8 (tab 4) and from there the rows are dead -- 0x89160 / 0x8AD1C walk slots 9..20 only -- while a music
+  step writes the Map byte at 0x6BAD0 and clears the mute at 0x6BAA8; the cancel writes the four registry values at
+  0x6B828..0x6B8A0, clears the tab at 0x6B8A8 and re-lays the rows at 0x6B8AC; the quit row is 0x6B680 with the two
+  STRH seats 0x6B68C (CtlB y 120) and 0x6B69C (CtlA y 142); and `Geoscape_CloseUI` case 18 with the tab at 3 clears
+  it at 0x8BCFC, calls SaveAudioSettings at 0x8BD08, which finds the tab 0 and closes a second time through
+  0x6B7F0 -- that pass reaches Init's teardown half (0x6BE84 -> 0x6C0FC) and 0x8BCE8's screen 0, and it never
+  reaches 0x6B8AC, so the hotspots keep the quit page's seats. The pictures are `tests/ref/geoscape_options_base.png`
+  and `geoscape_options_volume.png`, taken after the overlay's own expansion animation (mode 2 at 0x6C390, height 50
+  per step) reaches 100 at 0x95D60 -- the frame draws nothing before that. IDB: function comments on
+  `OptionsScreen_Init @ 0x6be74` (the gate byte is 0x159E8C; 0x6BE90 sets it, 0x6C0FC clears it and frees the same 19
+  controls) and `Ui_OpenScreen18 @ 0x84e9c` (two samples: 17 at 0x84EA4, then 7 at 0x6CF08), line notes at 0x8bd08
+  (the SaveAudioSettings recursion) and 0x91cf4 (the chain tail's screen-2 branch paints the hover crosshair over
+  any panel arm), `idb_save`. One reference re-made for the reason 0x91cf4 says: section 9b ran the message-answer
+  panel family while the camera was still on screen 2, so `geoscape_descent_panel.png` showed the globe hover's
+  crosshair, its build/no-build message and its close control under a descent panel -- a combination the game never
+  reaches; 9b now states screen 0. Gate: 62/62 Release and Debug, 19265 checks (114 new), coverage 972/1103 (88.1%)
+  and 596888/598792 (99.7%) unchanged, 36 frame references (2 new, 1 re-made, both looked at), 9 e2e pictures
+  unchanged, `tools/check.sh` clean.
+
+- [ ] **Three options-screen seams stay open.** The seven slot handlers (`SaveGame_Slot0..6_CloseUI`
+  0x6af80..0x6b148, `LoadGame_Slot0..6_InitOptions` 0x6b194..0x6b404) are ported and gated but reach SaveGame /
+  LoadGame through a `DatFile` the caller opens, and the shell opens slot files only on its tact-bank path
+  (`World_SaveSlot`), so they stay NULL and a press on a save or load row hits a cleared handler. Second, ctlB's
+  handler `OptionsScreen_ReturnToTitle @ 0x6b478` belongs to the startup-screen owner in `pufo_app.c` (its three
+  callees are Geoscape_CloseUI 0x6B480, GeoscapeUi_FreeAll 0x6B488, GameUI_InitStartup 0x6B490), so the quit page's
+  Да answers nothing. Third, `Ui_CloseScreen18 @ 0x84ecc` hands `gUiRootPanel.anLineAux[119]` to its OpenWithSound
+  tail as the mode; the shell's `GeoscapeScreenState.nLineAux119` has no writer, so root control [9] stays a no-op.
 
 - [ ] **The quit-YES arm does not empty the strateg list.** `App_HookShutdownQuit` →
   `App_QuitFromTact(App_ShutdownTactNoMission, ...)` → `Tact_Shutdown(NULL, 1)`, and the ported function returns at

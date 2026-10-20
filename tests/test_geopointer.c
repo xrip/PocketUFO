@@ -86,6 +86,8 @@ typedef struct Fix {
     UiControl *apOptList[PUFO_GEO_OPT_LIST_CTLS];
     UiControl *apOptMusic[PUFO_GEO_OPT_SOUND_CTLS];
     UiControl *apOptSfx[PUFO_GEO_OPT_SOUND_CTLS];
+    UiControl *apOptPair[2];      /* aOptionsListCtl[7] / [8]: the arm reads these cells at the call */
+    UiPanel   *pOptShipsCell;     /* the cell pOptPanelShips @ 0x159E18 lives in */
     Ship *apCraft[2];
 
     UiPanel pStatus, pSolNames, pSolEquip, pFac, pResearch, pManufProd, pManufD;
@@ -231,6 +233,8 @@ static void Fix_Reset(void)
     Fix_CtlArray(g.aOptSfx, g.apOptSfx, PUFO_GEO_OPT_SOUND_CTLS);
     Fix_Ctl(&g.aOptPrev);
     Fix_Ctl(&g.aOptNext);
+    g.apOptPair[0] = &g.aOptPrev;
+    g.apOptPair[1] = &g.aOptNext;
     g.apCraft[0] = &g.aCraft[0];
     g.apCraft[1] = &g.aCraft[1];
 
@@ -247,6 +251,7 @@ static void Fix_Reset(void)
     Fix_Panel(&g.p16);
     Fix_Panel(&g.p16Set);
     Fix_Panel(&g.pOptShips);
+    g.pOptShipsCell = &g.pOptShips;
     Fix_Panel(&g.pPsi[0]);
     Fix_Panel(&g.pPsi[1]);
     Fix_Panel(&g.pPlaneCraft);
@@ -360,9 +365,8 @@ static void Fix_Reset(void)
     p->apOptListCtl = g.apOptList;
     p->apOptMusicCtl = g.apOptMusic;
     p->apOptSfxCtl = g.apOptSfx;
-    p->pOptCtlPrev = &g.aOptPrev;
-    p->pOptCtlNext = &g.aOptNext;
-    p->pOptPanelShips = &g.pOptShips;
+    p->apOptPairCtl = g.apOptPair;
+    p->ppOptPanelShips = &g.pOptShipsCell;
     p->pbBaseAtDone = &g.bBaseAtDone;
     p->apCraft = g.apCraft;
     p->pnSelectedCraftIdx = &g.nSelectedCraftIdx;

@@ -8,9 +8,21 @@
  * The original writes scattered globals: the options tab byte `gOptionsScratch[0]` @ 0x159E88, two
  * controls' `y` fields (`pGeoscapeCtlB` @ 0x186BB0 / `pGeoscapeCtlA` @ 0x186BB4), and two cached
  * `nUnk3032` copies (`dword_186BE8` and `nResearchTopicRowCache` @ 0x160C74) plus the `unk_160C80` /
- * `byte_187080` flags. The port carries them in a ScreenScratch so the helpers
- * are testable without the global bank. The `nUnk3032` source values differ per
- * caller and are passed in.
+ * `byte_187080` flags. The port carries the last four in a ScreenScratch so the helpers are testable
+ * without the global bank. The `nUnk3032` source values differ per caller and are passed in.
+ *
+ * The tab byte and the two `y` fields are NOT in the bundle: they are reached through pointers, onto
+ * the run of bytes the caller owns and onto the two control objects. The tab byte is a byte of a
+ * block with other live bytes in it -- `gOptionsScratch[4] @ 0x159E8C` is the "the controls exist"
+ * flag the frame and the pointer arm read -- so a copy in a bundle would put a second home on it.
+ * The writers are the two tab helpers below plus `OptionsScreen_LayoutButtons` 0x6B6D0,
+ * `OptionsScreen_BindSaveSlots` 0x6B4A8, `OptionsScreen_BindLoadSlots` 0x6B594,
+ * `SaveGame_Slot_CloseUI` 0x6AFA4, `LoadGame_Slot_InitOptions` 0x6B1A4,
+ * `OptionsScreen_ReturnToTitle` 0x6B478 and `Options_SaveAudioSettings` 0x6B8A8. The readers are
+ * `Geoscape_DrawScreen` 0x6C68C, `Geoscape_CloseUI` 0x8BCD0 and `Options_SaveAudioSettings` 0x6B7E8.
+ * `Options_SetTab3_AndUiY` writes the two `y` fields with `STRH` at 0x6B68C and 0x6B69C, onto the
+ * controls themselves -- a copy in a bundle is read by nobody, because the draw reads `y` out of the
+ * control (the `LDRSH [R1,#2]` at 0x6C5B4, 0x6CBE0, 0x6CED0).
  */
 #ifndef PUFO_BASEUI_H
 #define PUFO_BASEUI_H
@@ -46,22 +58,19 @@
 void BaseUi_DrawFrameRails(void);
 
 typedef struct ScreenScratch {
-    u8  nLineAux145;   /* gOptionsScratch[0] @ 0x159E88, the options tab byte. The name is a legacy:
-                        * nothing in the image addresses 0x159E88+145, and no anLineAux owner exists. */
-    i32 nControl0Y;    /* pGeoscapeCtlB @ 0x186BB0 ->y */
-    i32 nControl1Y;    /* pGeoscapeCtlA @ 0x186BB4 ->y */
     i32 nCache186BE8;  /* dword_186BE8 */
     u8   bFlag160C80;  /* unk_160C80 / bUiRowSelected: a byte global -- STRB at 0x73334, LDRB at 0x88B18 */
     u8  bFlag187080;   /* byte_187080 */
     i32 nCache160C74;  /* unk_160C74 */
 } ScreenScratch;
 
-/* Options_SetTab4 @ 0x6b6b0: sets the panel scratch byte to 4. */
-void BaseUi_SetScratch4(ScreenScratch *pScratch);
+/* Options_SetTab4 @ 0x6b6b0: STRB 4 to gOptionsScratch[0], and nothing else. */
+void BaseUi_SetScratch4(i8 *pbTab);
 
-/* Options_SetTab3_AndUiY @ 0x6b674: sets the panel scratch byte to 3 and the
- * two controls' y to 120 and 142. */
-void BaseUi_SetScratch3AndUiY(ScreenScratch *pScratch);
+/* Options_SetTab3_AndUiY @ 0x6b674: STRB 3 to gOptionsScratch[0], then STRH 120 to *pGeoscapeCtlB's
+ * y (0x6B68C) and STRH 142 to *pGeoscapeCtlA's y (0x6B69C). Those are the two hotspots the
+ * quit-confirmation page draws its Да under (ctlB) and its Нет under (ctlA). */
+void BaseUi_SetScratch3AndUiY(i8 *pbTab, UiControl *pCtlB, UiControl *pCtlA);
 
 /* Cache_ObjPlus0xBD8_To_dword_186BE8 @ 0x7afec: copies the source object's
  * nUnk3032 into dword_186BE8 and returns it. */
@@ -1653,9 +1662,9 @@ void ResearchScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 void BuySellScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 void NewBaseScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 
-/* OptionsScreen_ReturnToTitle @ 0x6b46c: clears the panel scratch byte, closes the
- * geoscape screen, frees every geoscape widget, and re-inits the startup UI. The scratch
- * byte is the same ScreenScratch field the base-screen helpers set to 3 and 4. */
+/* OptionsScreen_ReturnToTitle @ 0x6b46c: clears the tab byte (STRB 0 at 0x6B478), closes the
+ * geoscape screen, frees every geoscape widget, and re-inits the startup UI. pbTab is the same
+ * gOptionsScratch[0] the two tab helpers write. */
 typedef struct TitleReturnHooks {
     void (*pfnCloseUi)(void *pUser);              /* Geoscape_CloseUI (0x8b94c) */
     void (*pfnFreeGeoscapeUi)(i32 nMode, void *pUser); /* GeoscapeUi_FreeAll (0x86d20) */
@@ -1663,7 +1672,7 @@ typedef struct TitleReturnHooks {
     void *pUser;
 } TitleReturnHooks;
 
-i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks *pHooks);
+i32 OptionsScreen_ReturnToTitle(i8 *pbTab, const TitleReturnHooks *pHooks);
 
 /* Five more copies of the same two instructions: FundingScreen_CloseThunk @ 0x5abd8,
  * FundingScreen_ExitThunk @ 0x5c078, Geoscape_CloseUI_ThunkA @ 0x838d0,
@@ -3636,7 +3645,11 @@ typedef struct SmapHitEnv {
     i32            *pnSelectedStrategIdx;  /* 0x186BE4 */
     i32            *pnSelectedShipIdx;     /* 0x187054 */
     i32            *pnMsgShipIdx;        /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
-    UiPanel        *pOptPanelShips;        /* pOptPanelShips @ 0x159E18, bFlag7073 cleared at 0x83494 */
+    UiPanel *const *ppOptPanelShips;       /* the cell of pOptPanelShips @ 0x159E18, bFlag7073 cleared at
+                                            * 0x83494. A cell and not a copy because Open runs at 0x83480
+                                            * just before: the open half just put the names panel there, the
+                                            * close half just took it out, and the original's load at 0x83494
+                                            * answers whichever of those left the global. */
     GameTime       *pTime;                 /* 0x159618; bPaused is the byte GameTime_Pause writes */
     u8             *pbFlag18708C;
     u8             *pbFlag187090;
@@ -4559,6 +4572,14 @@ char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const
 #define PUFO_OPTIONS_LIST_COUNT 7
 #define PUFO_OPTIONS_VOL_COUNT  6
 
+/* The original keeps all nineteen in ONE array -- `aOptionsListCtl @ 0x159E20`, 21 slots through
+ * 0x159E73 -- laid out 0..6 the seven menu rows, 7 and 8 the overlay's prev/next pair (the two
+ * OptionsScreen_Open allocates at 0x159E3C / 0x159E40), 9..14 the six music buttons (that is why
+ * `PUFO_GEOOPT_VOL_CONTROL0` is 9), 15..20 the six sound buttons. `Geoscape_DrawScreen` 0x6C888 and
+ * `Geoscape_OnPointer` 0x89160 index the flat array; `OptionsScreen_Init` owns only the 19, which is
+ * why the struct below is split and the shell keeps the flat view beside it. */
+#define PUFO_OPTIONS_CTL_COUNT 21
+
 typedef struct OptionsScreenCtl {
     UiControl *apList[PUFO_OPTIONS_LIST_COUNT]; /* 0x159E20..0x159E38 */
     UiControl *apMusic[PUFO_OPTIONS_VOL_COUNT]; /* 0x159E44..0x159E58 */
@@ -4594,7 +4615,7 @@ i32 OptionsScreen_RefreshVolumeHighlight(OptionsVolumeEnv *pEnv); /* 0x6b8fc */
 
 typedef struct OptionsTabEnv {
     OptionsScreenCtl *pCtl;
-    ScreenScratch    *pScratch;
+    i8               *pbTab;   /* gOptionsScratch[0] @ 0x159E88, the tab byte */
     UiControl *pSaveCtl;   /* pGeoscapeCtlA, the "save" hotspot */
     UiControl *pBackCtl;   /* pGeoscapeCtlB, the "return to title" hotspot */
     /* The four handlers LayoutButtons installs on the first four rows. They land in a control's
@@ -4877,7 +4898,7 @@ typedef struct SaveSlotEnv {
     SaveGameInput  *pIn;        /* nSlot is set to this handler's slot before SaveGame runs */
     LoadGameEnv    *pLoadEnv;   /* nSlot is set to this handler's slot before LoadGame runs */
     i32            *pnListMode;      /* MainMenu_nListMode @ 0x157188 */
-    ScreenScratch  *pScratch;        /* gOptionsScratch[0], the tab byte */
+    i8             *pbTab;           /* gOptionsScratch[0] @ 0x159E88, the tab byte */
     u8             *pbControlsExist; /* gOptionsScratch[4] */
     i32            *pnGeoscapeScreen;/* nGeoscapeScreen @ 0x186BC4 */
     OptionsInitEnv *pOptionsInit;    /* re-initialised before the load */

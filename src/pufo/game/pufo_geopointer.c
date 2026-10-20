@@ -607,9 +607,13 @@ i32 Geoscape_OnPointer(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY, bool bDow
             return nResult;
         }
         (void)Ptr_HitSlot(pEnv, GEOUI_CTL_186BB4, nX, nY);
-        (void)Ptr_Hit(pEnv->pOptCtlPrev, nX, nY, pEnv->pHit);               /* 0x89370: [7] and [8] */
-        (void)Ptr_Hit(pEnv->pOptCtlNext, nX, nY, pEnv->pHit);
-        return UiPanel_TrackHoldRow(pEnv->pOptPanelShips, nX, nY);          /* 0x893B4 */
+        if (pEnv->apOptPairCtl != NULL) {                                   /* 0x89370: [7] and [8] */
+            (void)Ptr_Hit(pEnv->apOptPairCtl[0], nX, nY, pEnv->pHit);
+            (void)Ptr_Hit(pEnv->apOptPairCtl[1], nX, nY, pEnv->pHit);
+        }
+        return (pEnv->ppOptPanelShips != NULL)
+                   ? UiPanel_TrackHoldRow(*pEnv->ppOptPanelShips, nX, nY)   /* 0x893B4 */
+                   : 0;
     }
 
     case 20:
@@ -1093,9 +1097,13 @@ i32 Geoscape_OnPointerUp(const GeoscapePointerEnv *pEnv)
             return 0;
         }
         (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);                              /* 0x8AED4 */
-        (void)PtrUp_Hit(pEnv, pEnv->pOptCtlPrev);                                 /* 0x8AEEC: slots 7,8 */
-        (void)PtrUp_Hit(pEnv, pEnv->pOptCtlNext);
-        PtrUp_ClickPanelRow(pEnv, pEnv->pOptPanelShips);                          /* 0x8AF1C -> 0x89B64 */
+        if (pEnv->apOptPairCtl != NULL) {                                         /* 0x8AEEC: slots 7,8 */
+            (void)PtrUp_Hit(pEnv, pEnv->apOptPairCtl[0]);
+            (void)PtrUp_Hit(pEnv, pEnv->apOptPairCtl[1]);
+        }
+        if (pEnv->ppOptPanelShips != NULL) {
+            PtrUp_ClickPanelRow(pEnv, *pEnv->ppOptPanelShips);                    /* 0x8AF1C -> 0x89B64 */
+        }
         return 0;   /* the original hands back the panel pointer itself; see deviation 5 */
     }
 

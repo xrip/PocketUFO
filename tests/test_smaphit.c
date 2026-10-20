@@ -108,6 +108,7 @@ typedef struct Fix {
     PadImage   oStrip;
     UiPanel    pStatus;
     UiPanel    pOptShips;
+    UiPanel   *pOptShipsCell;   /* the cell pOptPanelShips @ 0x159E18 lives in: the env reads it at 0x83494 */
     UiLineList oLines;
     PtrArray   oList;
     StrategItem aItem[HIT_ITEMS];
@@ -204,7 +205,8 @@ static void Fix_Reset(void)
     gEnv.pnSelectedStrategIdx = &g.nSelStrateg;
     gEnv.pnSelectedShipIdx = &g.nSelShip;
     gEnv.pnMsgShipIdx = &g.nStrategIdx;
-    gEnv.pOptPanelShips = &g.pOptShips;
+    g.pOptShipsCell = &g.pOptShips;
+    gEnv.ppOptPanelShips = &g.pOptShipsCell;
     gEnv.pTime = &g.oTime;
     gEnv.pbFlag18708C = &g.bFlag8C;
     gEnv.pbFlag187090 = &g.bFlag90;
