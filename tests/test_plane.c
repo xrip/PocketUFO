@@ -717,7 +717,7 @@ static Soldier g_aStoreSoldier[12];
 static Soldier *g_apStoreSoldier[12];
 static i32 g_anStoreCarry[106];
 static i32 g_nStoreQuota;
-static u8 g_bStoreShortfall;
+static u32 g_bStoreShortfall;   /* unk_1870C8, written as a dword */
 static i32 g_nStoreResidue;
 static PlaneStoresEnv g_storeEnv;
 
@@ -1231,7 +1231,7 @@ static void TestWeaponSlotsCarried(void)
 
 static PlaneListPanels g_listOut;
 static PlaneListPanelsEnv g_listEnv;
-static bool g_bListBuilt;
+static u8 g_bListBuilt;         /* unk_161F24, a byte global */
 static i32 g_nNavThunkCalls;
 static i32 g_nCrewThunkCalls;
 

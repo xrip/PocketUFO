@@ -3456,10 +3456,15 @@ unchanged; 18267 checks.
   3 carried copies. An unarmed first mission is what the original does too: `main.dat`'s cargo columns give
   the starting Skyranger Cyberdisk x10 / Alien surgery x1 / Celatid corpse x3 (`test_startnew`), none of
   them one of the 13 hand-table object ids at `0xA62F0`, and `Base_GrantStarterItems` runs with its grant
-  flag clear. What is still missing is the SHELL walking the trade path that puts a weapon in a craft's
-  column (`BuySell_*`, `Transfer_MoveOneItem @ 0x9602C` -- ported -- then a mission from that craft), so
-  `Tact_OpenLeftHandMenu @ 0x17030`, the fire-mode panel and the item strip keep being gated on a fixture
-  weapon, as Parts 57 and 76 had to.
+  flag clear. One correction from Part 87: the craft's `aItemQty[craft]` column is NOT what `BuySell_*` or
+  `Transfer_MoveOneItem @ 0x9602C` write. It is the hangar's own confirm control
+  `BuySellScreen_ApplyQtyChanges @ 0x78d90`, which drops `auPerBaseVal[base]` (0x78E34) and raises
+  `ObjectRecFull.aItemQty[craft] @ +0x3A` (0x78E4C), reached only from a row that `BasePlaneScreen_CommitStores`
+  staged (0x7AFD8) -- and every row additionally needs the slot's research topic unlocked (0x7B1D4). The shell
+  walks that whole path now, staging through confirm to teardown, but a fresh game stocks only slot 43 and its
+  topic is locked, so nothing admissible can be moved. What is still missing is the research/manufacture pair
+  (nav slots 8/9) that stocks a weapon the hangar will admit, so `Tact_OpenLeftHandMenu @ 0x17030`, the
+  fire-mode panel and the item strip keep being gated on a fixture weapon, as Parts 57 and 76 had to.
 
 - [x] **`Ui_FillActionCosts @ 0x26104` mirrors its costs into the bank; the port does not.** CLOSED by Part 79:
   0x2641C writes `pBank + 0x400 + 32*m + 9` -- the `bEnabled @ UiControl+9` byte of bank widgets 32..43 --
@@ -3505,6 +3510,72 @@ unchanged; 18267 checks.
   IDB: comments at 0x55060, 0x552EC, 0x55294, 0x55018, 0x54ff8, 0x39E9C, 0x399BC and 0x159768, plus
   `idb_save`. The Part 66 record below keeps its shape but its "eight rejections, the team stays stacked"
   conclusion is superseded by this part.
+
+- [x] **Part 87: the hangar runs inside the shell, and the stale-copy class that was eating its columns is
+  closed.** No new original function is ported -- the whole screen was already cited (units 95/96) -- what was
+  missing was the shell reaching it and its panel pointers surviving a frame. `BasePlaneScreen_Open @ 0x617f4`
+  is nav control slot 3's handler (installed at 0x67B98): `Sound_Play(17, 4)` at 0x61800, close control
+  unk_186B00 at (224,1) (0x6180C/0x61820), and `nGeoscapeScreen = 6` written at 0x61828 BEFORE the tail call
+  into `BasePlaneScreen_Init @ 0x7d9e4`, so the frame the opener returns into is already the hangar's. Init
+  builds the 0x161A48 block (backdrop "plane", the 5 craft pads baseb001..005 at nOriginY 80, the 6 weapon pads
+  at 0x7DD98 with nOriginY 95, 4 main controls, 7 weapon controls, then the close and OK handlers) and tail
+  calls `BasePlaneScreen_BuildPanels @ 0x7cc8c`. **Three gates came out of the draw re-read.** (1)
+  `BasePlaneScreen_DrawCraftDetail @ 0x7baf8` has THREE exclusive arms and the crew census belongs to only one
+  of them: the crew arm 0x7BCF8..0x7BD44 draws the two columns, the centred craft name and RETURNS; the stores
+  arm 0x7BD70..0x7C228 returns at 0x7C14C; only the read-out arm computes the census, and only when
+  `Ship.bCanDogfight` (gate 0x7C614, after 0x7C5C0..0x7C5F8 zero the four cells first), which is why
+  `BasePlaneScreen_Draw` returns the detail draw straight away when bPlaneShowCraftDetail is set (0x7D37C) and
+  the census does not move while a panel set is up. (2) `Geoscape_CloseUI`'s case 6 is ONE ARM PER CALL
+  (0x8C018 crew teardown / return, 0x8C034 stores teardown / return, 0x8C0B0-0x8C0B4 the two stat gates /
+  return, 0x8C07C the built flag, 0x8C08C the detail clear / return, 0x8C094 the id then 0x8C098's BuildPanels
+  teardown at 0x7D234), so a walk back out of the hangar takes six close calls, not one. (3) The cargo move is
+  TWO separated steps: `BasePlaneScreen_CommitStores @ 0x7ac38` only stages (`anSlotCarryCount[slot]++`,
+  taken +1 / avail -1 at 0x7AFD8) and `BuySellScreen_ApplyQtyChanges @ 0x78d90` (the OK control unk_186BA4) is
+  what moves base stock down (0x78E34) and `aItemQty[craft]` up (0x78E4C) before it tail-closes the screen at
+  0x78E74; neither clears the staged counts -- only `BasePlaneScreen_BuildControls`' 256-dword clear loop at
+  0x7B038..0x7B058 does, so a rebuild silently drops a commit that was never confirmed. **A port defect fell
+  out of the same re-read, and it is a class defect, not one line:** `World_WireGeoscapeFrame` runs once while
+  the hangar's panels come and go, so every panel pointer and every by-value count the envs carry went stale
+  the moment BuildPanels rebuilt them. `pufo_plane.h` now types the two globals by what the ARM stores into
+  them -- `unk_1870C8` gets a `u32 *` (0x7AE54 is `STR R1,[R5,#0x1F0]`, a dword) and `unk_161F24` a `u8 *`
+  (LDRB 0x7A404 / STRB 0x7A400) -- and `World_RefreshGeoscapeFrame` re-reads the whole hangar set each frame,
+  the press seam's 16 controls and 12 panel pointers included. The seven `pF->planeDetail` panel pointers were
+  the visible symptom: with a stale copy the arm still painted its rails, its headers and its OK control and
+  skipped every column it had been asked to draw, because each `UiPanel_DrawText` sits behind a NULL test.
+  **Measured on the shipped start state:** 149 objects, 3 craft (craft 0 type 0 cap 140 at its home base), 8
+  soldiers all aboard the Skyranger (`bUnk183 == 0`) with real cp1251 names, base 0 stock only at slot 43
+  (Heavy cannon [AP] clip x1, bCargoSize 2), and its topic gate is locked -- so a new game's stores list is
+  legitimately EMPTY (row gate 0x7B190 admits `< 25` or `31..51`, and everything else the base stocks is >= 52).
+  Gates: `test_geoscapeframe` section 12h walks it -- open through the nav handler (sample 17, id 6 before
+  Init, the close control, the block's pads and handlers), the frame paint with 0 control blits (the arm blits
+  its own pads, 0x930A0), craft select, the read-out census (8 aboard / 8 at base), the crew panel built through
+  main control 2 (rows == aboard + unassigned) and its toggle (`bUnk183` 0 -> 255 -> 0 -> 255), the stores panel
+  built empty with locked topics, unlocked with topic 1 open (1 row, aux0 43, avail 1), staged, undone,
+  re-staged, then confirmed through `GEOUI_CTL_186BA4`: stock 1 -> 0, `aItemQty[0][43]` 0 -> 1, the crew pair
+  torn down, the staged count kept (0x7B038 is the only clearer), and the six-call close ladder back to id 1.
+  Four new frame references, all looked at: `geoscape_hangar` (backdrop, 5 craft pads, 6 weapon pads, the two
+  captions), `geoscape_hangar_detail` (name, rails, census read-out), `geoscape_hangar_locked` (the 8 soldier
+  names in two columns), `geoscape_hangar_stores` (the item name at x 10, `<` `>` at x 170/x 186, База/Корабль,
+  OK). Two gates were rewritten because they pinned an assumption: the pulse auto-repeat needs a HELD button
+  (`nState == 1`, 0x1A3F0) and moves `nUnk3028` (the scroll cursor), not `nUnk3032` (the row cursor the click
+  handlers read), clamped at `nLineCount - nStyle` which is negative for the hangar's sets (0x3F00C).
+  IDB: comments at 0x7BCF8, 0x7C5C0, 0x7C630, 0x7A3F4, 0x88310, 0x161F24, 0x7AFD8, 0x7B038 and 0x7AE54, plus
+  `idb_save`. Gates: all six ran, 62/62 Release and 62/62 Debug, 18812 checks, coverage 972/1103 (88.1%) and
+  596888/598792 bytes (99.7%) unchanged, 21 frame references (4 new), 9 e2e pictures unchanged.
+
+- [ ] **The hangar stores list's two count columns hold numbers that nothing draws.** The builder gives the
+  avail and taken panels their quantities as LINE AUX integers only (0x7B918, 0x7B924) and no line text, and
+  `UiPanel_DrawText` skips a row whose text is empty -- so `geoscape_hangar_stores` shows the item name at x 10
+  and the `<` `>` pair at x 170 / x 186 (the select-row and commit panels' own records) with the two count
+  columns (nPosX 164 and 232, drawn at 0x7BED4 and 0x7BF5C) blank. The stores arm 0x7BD70..0x7C228 has no
+  `itoa` and no digit blit in it. Either the original really leaves those two columns empty, or the aux column
+  is consumed somewhere the arm reaches through a callee -- the frame reference alone cannot tell the two apart.
+
+- [ ] **The hangar's list rows are not pen-reachable while the craft detail is up.** 0x88308/0x88318/0x88320
+  gate the panel rows and the control run (0x88324..0x88368) on `bPlanePanelsBuilt != 0 && bPlaneShowCraftDetail
+  == 0`, so with the read-out open the pen hits nothing in the list, and 12h drives rows through the controls'
+  own handlers the way the pulse auto-repeat does (0x95644/0x95654). The door the original leaves open -- a
+  row selectable only with the detail closed -- is faithful, but no gate yet proves it through a real press.
 
 - [ ] **`Save_ReadMapDims` has no test that can see it.** It mirrors the map chunk's two 1-byte dim
   reads (0x43400 `Map_nMapDimX`, 0x43418 `Map_nMapDimY`) and is load-bearing because the shell must size

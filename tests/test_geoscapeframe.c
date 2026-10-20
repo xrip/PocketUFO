@@ -968,12 +968,21 @@ int main(void)
      * longer in that list: the shell owns the base-attack record, so the arm points at its own draw env.
      * Case 3 left it too: BaseInfoScreen_Open @ 0x6167c is installed on nav slot 1 (the unrolled store at
      * 0x67B80) and the shell now owns 0x158828 / 0x15882C / 0x158830 and the three panels, so the arm,
-     * its control run and its draw env all point at the shell's fields. */
-    Check(pF->draw.pPlaneArm == NULL
-              && pF->draw.pResearchDraw == NULL
+     * its control run and its draw env all point at the shell's fields. Case 6 left the same list with
+     * Part 87: BasePlaneScreen_Open @ 0x617f4 sits on nav slot 3 (0x67B98) and the shell owns the object
+     * block at 0x161A48, its control run and all three panel sets. */
+    Check(pF->draw.pResearchDraw == NULL
               && pF->draw.pManufPad == NULL && pF->draw.pTransferPad == NULL
               && pF->draw.pBuySellPad == NULL,
-          "the arms whose screen the shell cannot open stay NULL (see pufo_geoscape.h)");
+          "the four arms whose screen the shell still cannot open stay NULL (see pufo_geoscape.h)");
+    Check(pF->draw.pPlaneArm == &pF->planeArm
+              && pF->planeArm.apCtl == g_world.apPlaneCtl
+              && pF->planeArm.ppBackdropPad == &g_world.planeBlock.pBackdropPad
+              && pF->planeArm.pbStatPanelAOpen == &g_world.planeStatPanels.bPanelAOpen
+              && pF->planeArm.pPlaneEnv == &pF->planeDraw && pF->planeArm.pCtlEnv == &pF->planeCtl
+              && pF->planeDraw.pDetail == &pF->planeDetail
+              && pF->planeDetail.pStatEnv == &g_world.planeStatEnv,
+          "case 6 reaches BasePlaneScreen_Draw through the shell's own arm, control seam, draw env and detail env (0x8C1C8, 0x930F8)");
     Check(pF->draw.pBaseInfoArm == &g_world.baseInfoArm
               && pF->draw.pBaseInfoCtl == &g_world.baseInfoCtl
               && pF->draw.pBaseInfoDraw == &g_world.baseInfoDraw,
@@ -1699,6 +1708,347 @@ int main(void)
                    "and Next cannot move either: both are nStyle 13 over 8 lines, so the bound is negative");
     } else {
         Check(false, "the soldier screen's two list panels exist");
+    }
+
+    /* 12h. The hangar (screen 6), reached the way the game reaches it: nav control slot 3. The screen is
+     * the object block at 0x161A48 with three panel sets behind it -- the craft pair Init's tail call
+     * builds, the crew pair the third main control builds, the five store columns the fourth one builds --
+     * and Geoscape_CloseUI case 6 tears those sets down ONE arm per call, so the chain below runs the
+     * dispatcher several times before it reaches the placement screen. */
+    {
+        UiPanel *pCraft  = g_world.planeCraftPanels.pCraftPanel;
+        UiPanel *pSlot   = g_world.planeStorePanels.pSlotPanel;
+        i32      nCraftRows, nCensusRows, nStoreRows;
+        i32      nSampleMark, nStock43Save, nCarry43Save;
+
+        /* The state the screen reads, before anything is opened: the shipped start state. */
+        CheckEqI32((i32)g_assets.apObjects[43]->auPerBaseVal[0], 1,
+                   "base 0 holds one Heavy cannon [AP] clip -- slot 43, the only slot the hangar's row gate (slot < 25 || 30 < slot < 52, 0x7B190) admits at a new game");
+        CheckEqI32((i32)g_assets.apObjects[43]->bCargoSize, 2, "and its hold cost is 2");
+        CheckEqI32((i32)g_assets.apObjects[43]->aItemQty[0], 0, "while the Skyranger carries none of it");
+        Check(g_abSlotTopicGate[43] == 1 && g_world.aTopics[1].bUnlocked == 0,
+              "the slot's topic gate is topic 1 (byte_AA968 @ 0xAA968) and research.dat ships every topic locked, so the stores list starts empty");
+        Check(g_world.apCraft[0]->bAtBase == 1 && g_world.apCraft[0]->bHomeBase == 0
+                  && (i32)Craft_GetTypeCargoCap(g_world.apCraft[0]) == 140,
+              "craft 0 is the home-base craft with a 140-unit hold (Ship.bCraftType 0, Craft_GetTypeCargoCap @ 0x65ac4)");
+
+        nSampleMark = g_nSamples;
+        g_world.nav.apNav[3]->pfnClick();                 /* BasePlaneScreen_Open @ 0x617f4 */
+        Check(g_nSamples == nSampleMark + 1 && g_aFrameSamples[nSampleMark] == 17,
+              "the opener plays sample 17 with its second argument 4 (0x61800)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "and writes the id 6 BEFORE its tail call to Init (0x61828)");
+        Check(g_world.ui.apCtl[GEOUI_CTL_186B00]->x == 224 && g_world.ui.apCtl[GEOUI_CTL_186B00]->y == 1,
+              "the opener seats the close control at (224,1) (0x6180C MOV #0xE0, 0x61820 MOV #1)");
+
+        Check(g_world.planeBlock.pBackdropPad != NULL, "Init @ 0x7d9e4 loaded the plane backdrop onto the block base");
+        for (i = 0; i < 5; ++i) {
+            Check(g_world.planeBlock.apCraftPads[i] != NULL, "and the five baseb001..005 craft pads");
+        }
+        for (i = 0; i < 6; ++i) {
+            Check(g_world.planeBlock.apWeaponPads[i] != NULL, "and the six baseb049..054 weapon pads");
+        }
+        for (i = 0; i < PUFO_PLANE_MAIN_CTLS; ++i) {
+            Check(g_world.planeBlock.apMainCtl[i] != NULL && g_world.planeBlock.apMainCtl[i]->pfnClick != NULL,
+                  "with the four main controls and their handlers installed");
+        }
+        for (i = 0; i < PUFO_PLANE_WEAPON_CTLS; ++i) {
+            Check(g_world.planeBlock.apWeaponCtl[i] != NULL && g_world.planeBlock.apWeaponCtl[i]->pfnClick != NULL,
+                  "and the seven weapon controls, RearmFromStores plus SelectWeapon25..30");
+        }
+        CheckEqI32(g_world.bPlaneBuilt, 1, "Init's tail call BasePlaneScreen_BuildPanels built the craft list (0x7CCAC)");
+        Check(g_world.planeCraftPanels.pCraftPanel != NULL && g_world.planeCraftPanels.pStatusPanel != NULL
+                  && g_world.planeCraftPanels.pCraftPanel->pfnClick != NULL
+                  && g_world.planeCraftPanels.pStatusPanel->pfnClick != NULL,
+              "both craft panels exist with their two select handlers (0x7CBC8 / 0x7CC3C)");
+        ClearSurface();
+        (void)DrawFrame();
+        Check(SurfPix(2, 2) != 0 && SurfPix(120, 60) != 0 && SurfPix(120, 200) != 0
+                  && SurfPix(20, 120) != 0,
+              "case 6 paints: the backdrop at the top-left, the craft art down the middle, the craft list lower still");
+        CheckEqI32(g_nBlits, 0,
+                   "and nothing of it comes through the control seam -- the arm blits its own pads, as case 7's does (0x930A0)");
+        DumpFrame("geoscape_hangar"); /* the picture case 6 (0x9309C..0x93DD4) paints: backdrop, craft art, weapon icons, craft list */
+
+        /* The wiring re-reads every panel pointer each frame, exactly as the original's consumers read the
+         * globals the builders write, so the panels are only visible to the envs from the next frame on. */
+        pCraft = g_world.planeCraftPanels.pCraftPanel;
+        Check(g_world.ptrEnv.pPlaneCraftPanel == pCraft
+                  && g_world.ptrEnv.pPlaneCraftStatusPanel == g_world.planeCraftPanels.pStatusPanel
+                  && g_world.ptrEnv.pPlaneSlotPanel == g_world.planeStorePanels.pSlotPanel
+                  && g_world.ptrEnv.apPlaneCtl == g_world.apPlaneCtl,
+              "the press seam sees the same panels and the same control run (0x88210..0x88234)");
+        nCraftRows = (pCraft != NULL) ? pCraft->nLineCount : -1;
+        CheckEqI32(nCraftRows, (i32)g_world.bCraftCount,
+                   "the list has one line per craft whose Ship.bHomeBase is the selected base (the count walk at 0x7CCA0)");
+        CheckEqI32(pCraft->anLineAux[0], 0, "the rows are grouped by Ship.bCraftType through aPlaneCraftTypeOrder @ 0xABE28: the type-0 Skyranger first");
+        CheckEqI32(pCraft->anLineAux[1], 1, "then the two type-3 craft");
+
+        /* A row of the craft list, through the handler the panel itself carries. */
+        if (pCraft != NULL) {
+            pCraft->nUnk3032 = 0;
+            pCraft->pfnClick();
+        }
+        CheckEqI32(g_world.nPlaneSelCraftIdx, pCraft != NULL ? pCraft->anLineAux[0] : -1,
+                   "SelectCraft takes the row's roster index into nPlaneSelCraftIdx (0x7CBF8)");
+        CheckEqI32(g_world.nHangarCraftIdx, g_world.nPlaneSelCraftIdx,
+                   "and into nSelectedCraftIdx, the index the stores and weapon side reads (0x7CC00)");
+        CheckEqI32(g_world.bPlaneShowDetail, 1,
+                   "the craft is at base, so the screen switches to the detail view (0x7CC14 LDRB Ship.bAtBase, 0x7CC20 STRB)");
+
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("geoscape_hangar_detail"); /* the detail arm: the two weapon columns, the six stat rows, the crew census */
+        /* The detail draw is what computes the crew census -- Soldier.bUnk183 against the selected craft,
+         * Soldier.nKind against the selected base (0x7C614..0x7C680) -- and a new game ships the whole
+         * eight-man squad already in the Skyranger. */
+        CheckEqI32(g_world.nPlaneSoldiersAboard, 8,
+                   "aboard: every starter has Soldier.bUnk183 == the Skyranger's index (0x7C650)");
+        CheckEqI32(g_world.nPlaneSoldiersAtBase, 8, "at base: every starter's Soldier.nKind @ +0xB6 is base 0 (0x7C664)");
+        CheckEqI32(g_world.nPlaneSoldiersUnassigned, 0, "unassigned: none of them is free, so none is counted (0x7C678)");
+        CheckEqI32(g_world.nPlaneCrewCarried, 0, "the five crew slots carry nothing (0x161AC0)");
+        for (i = 0; i < 6; ++i) {
+            CheckEqI32(g_world.anPlaneStats[i], 0, "and the six weapon stat cells are empty: no weapon is carried");
+        }
+
+        /* The next frame carries that census into the crew builder's line count: BuildListPanels sizes its
+         * two panels with aboard + unassigned (0x161AB4 + 0x161AB8), read at the call. */
+        (void)DrawFrame();
+        g_world.planeBlock.apMainCtl[2]->pfnClick();                 /* BasePlaneScreen_BuildListPanels @ 0x7a3f4 */
+        CheckEqI32(g_world.bPlaneListBuilt, 1, "the crew builder posts bPlaneListPanelsBuilt (0x7A4BC)");
+        Check(g_world.planeListPanels.apNav[0] != NULL && g_world.planeListPanels.apNav[1] != NULL
+                  && g_world.planeListPanels.apNav[0]->pfnClick != NULL
+                  && g_world.planeListPanels.pCrewPanel != NULL
+                  && g_world.planeListPanels.pCrewStatusPanel != NULL
+                  && g_world.planeListPanels.pCrewPanel->pfnClick != NULL,
+              "with its nav pair, its crew column and its status column, all wired");
+        nCensusRows = g_world.planeListPanels.pCrewPanel->nLineCount;
+        CheckEqI32(nCensusRows, g_world.nPlaneSoldiersAboard + g_world.nPlaneSoldiersUnassigned,
+                   "the two panels are sized with the census the draw wrote");
+        CheckEqI32(g_world.planeListPanels.pCrewPanel->anLineAux[0], 0, "the first row is soldier 0");
+        (void)DrawFrame(); /* the envs pick the new panels up, as they pick up every panel the frame sees */
+        Check(SurfPix(12, 74) != 0 && SurfPix(130, 74) != 0,
+              "the crew pair paints its two columns: the eight names out of Soldier.szName @ +0xBA on the left and the craft each man rides on the right (0x7BD00, 0x7BD0C)");
+
+        /* The fourth main control builds the five store columns. With every topic locked -- the shipped
+         * research.dat -- the scan admits nothing, so the list is real but empty. */
+        g_world.planeBlock.apMainCtl[3]->pfnClick();                 /* BasePlaneScreen_BuildControls @ 0x7b014 */
+        CheckEqI32(g_world.bPlaneStoresBuilt, 1,
+                   "BuildControls posts bPlaneStoresCommitted BEFORE a single row exists (0x7B12C)");
+        Check(g_world.planeStorePanels.pSlotPanel != NULL && g_world.planeStorePanels.pAvailPanel != NULL
+                  && g_world.planeStorePanels.pSelRowPanel != NULL && g_world.planeStorePanels.pCommitPanel != NULL
+                  && g_world.planeStorePanels.pTakenPanel != NULL
+                  && g_world.planeStorePanels.pSlotPanel->pfnClick != NULL
+                  && g_world.planeStorePanels.pSelRowPanel->pfnClick != NULL
+                  && g_world.planeStorePanels.pCommitPanel->pfnClick != NULL
+                  && g_world.planeStorePanels.pAvailPanel->pfnClick == NULL
+                  && g_world.planeStorePanels.pTakenPanel->pfnClick == NULL,
+              "the five columns exist, the two quantity rows and the name column carry handlers, the two count columns carry none (0x7B244, 0x7B454, 0x7B574, 0x7B354, 0x7B6C4)");
+        nStoreRows = g_world.planeStorePanels.pSlotPanel->nLineCount;
+        CheckEqI32(nStoreRows, 0, "and the locked topic table leaves the stores list with no row at all");
+        CheckEqI32(g_world.nPlaneCrewQuota, 0,
+                   "the crew quota starts as what the craft carries of slots 31..35, and the Skyranger carries nothing there (0x7B05C..0x7B09C)");
+        CheckEqI32(g_world.anPlaneCarryCount[43], 0, "the build zeroed the 256 staged counts first (0x7B038..0x7B058)");
+
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("geoscape_hangar_locked"); /* the empty list over the backdrop: what a new game's hangar really shows */
+
+        /* Re-open the same builder with the topic gate open -- research is what does this in play -- and the
+         * shipped stock finally has a row. The builder's own clear arm runs first (the flag is set). */
+        g_world.aTopics[1].bUnlocked = 1;
+        g_world.planeBlock.apMainCtl[3]->pfnClick();
+        CheckEqI32(g_world.bPlaneStoresBuilt, 0, "a second call takes the clear arm and frees the set (0x7D238 shape)");
+        Check(g_world.planeStorePanels.pSlotPanel == NULL, "the columns are gone");
+        g_world.planeBlock.apMainCtl[3]->pfnClick();
+        (void)DrawFrame();
+        pSlot = g_world.planeStorePanels.pSlotPanel;
+        nStoreRows = (pSlot != NULL) ? pSlot->nLineCount : -1;
+        CheckEqI32(nStoreRows, 1, "with topic 1 open the scan keeps exactly one row");
+        CheckEqI32(pSlot->anLineAux[0], 43, "and it is slot 43, the clip in the base's stores");
+        CheckEqI32(g_world.planeStorePanels.pAvailPanel->anLineAux[0], 1, "its available column carries the base's own count");
+        CheckEqI32(g_world.planeStorePanels.pTakenPanel->anLineAux[0], 0, "and the carried column is empty");
+        CheckEqI32(pSlot->nPosX, 10, "the name column sits at x 10, nPosY 70, nStyle 14, view width 125 (0x7B238)");
+        CheckEqI32(pSlot->nViewW, 125, "and its name row is the truncated item name (0x7B838 caps it at 17 bytes)");
+
+        /* Stage one unit, then take it back, then stage it again: the two quantity handlers on the same row. */
+        g_world.planeStorePanels.pCommitPanel->nUnk3032 = 0;
+        CheckEqI32(g_world.planeStorePanels.pCommitPanel->pfnClick == NULL ? 0 : 1, 1, "the \">\" row carries its handler");
+        g_world.planeStorePanels.pCommitPanel->pfnClick();
+        CheckEqI32(g_world.anPlaneCarryCount[43], 1, "CommitStores stages one unit of the row (0x7AFD8)");
+        CheckEqI32(g_world.planeStorePanels.pTakenPanel->anLineAux[0], 1, "the carried column goes up");
+        CheckEqI32(g_world.planeStorePanels.pAvailPanel->anLineAux[0], 0, "the available column comes down (0x7AFC4)");
+        CheckEqI32(g_world.nShortfall1870C8, 0,
+                   "and the hold gate passes: 2 for this clip against the 140-unit cap (0x7AD38..0x7AE50)");
+        CheckEqI32((i32)g_assets.apObjects[43]->auPerBaseVal[0], 1,
+                   "committing stages only: the base's stock has not moved yet");
+        g_world.planeStorePanels.pSelRowPanel->nUnk3032 = 0;
+        g_world.planeStorePanels.pSelRowPanel->pfnClick();                /* BasePlaneScreen_AdjustSelectedQty @ 0x7a9b4 */
+        CheckEqI32(g_world.anPlaneCarryCount[43], 0, "the \"<\" row takes the staged unit back (0x7AA28)");
+        CheckEqI32(g_world.planeStorePanels.pAvailPanel->anLineAux[0], 1, "and puts it back in the available column");
+        g_world.planeStorePanels.pCommitPanel->pfnClick();
+        CheckEqI32(g_world.anPlaneCarryCount[43], 1, "staging it again puts the count where the confirm will find it");
+
+        /* The crew column is a toggle. Every starter ships in the Skyranger, so the first click takes the
+         * row's man off him (0x7A338..0x7A388) and the next click re-boards him inside the craft's own
+         * crew gate (0x7A2C0..0x7A2F8). */
+        CheckEqI32(Craft_CountSoldiersAboard(g_world.apSoldiers, g_world.nSoldierCount, 0), 8,
+                   "all eight starters ride craft 0: Soldier.bUnk183 is the craft index");
+        g_world.planeListPanels.pCrewPanel->nUnk3032 = 0;
+        g_world.planeListPanels.pCrewPanel->pfnClick();              /* BasePlaneScreen_FillCrewPanel @ 0x7a188 */
+        CheckEqI32((i32)g_world.apSoldiers[0]->bUnk183, 255, "the row click writes -1 into Soldier.bUnk183 (0x7A388)");
+        CheckEqI32(Craft_CountSoldiersAboard(g_world.apSoldiers, g_world.nSoldierCount, 0), 7,
+                   "and the craft now carries seven men");
+        (void)DrawFrame();
+        CheckEqI32(g_world.nPlaneSoldiersAboard, 8,
+                   "yet the census cell still says eight: while the crew pair is up the detail draw takes its crew arm and returns before the read-out (0x7BCF8..0x7BD44), so 0x161AB8 keeps the value the last read-out wrote -- stale on screen in the original too");
+        g_world.planeListPanels.pCrewPanel->pfnClick();
+        CheckEqI32((i32)g_world.apSoldiers[0]->bUnk183, 0,
+                   "the same row the other way re-boards him (0x7A2F8), inside the type-0 gate 7 + 4 * 0 + 1 <= 14 (0x7A21C)");
+        g_world.planeListPanels.pCrewPanel->pfnClick();
+        CheckEqI32((i32)g_world.apSoldiers[0]->bUnk183, 255,
+                   "and off again: the column toggles, it does not assign, and he stays off for the census check below");
+
+        /* The two main controls that open the weapon columns, and the weapon row that applies a swap. */
+        g_world.planeBlock.apMainCtl[0]->pfnClick();                     /* BasePlaneScreen_DrawStatLabelA @ 0x79e00 */
+        g_world.planeBlock.apMainCtl[1]->pfnClick();                     /* DrawStatLabelB @ 0x79fc4 */
+        CheckEqI32(g_world.planeStatPanels.bPanelAOpen, 1, "DrawStatLabelA raises bStatPanelAOpen (0x79E28)");
+        CheckEqI32(g_world.planeStatPanels.bPanelBOpen, 1, "and B raises bStatPanelBOpen (0x79FEC)");
+        g_world.planeBlock.apWeaponCtl[1]->pfnClick();                   /* SelectWeapon25 @ 0x79b20 */
+        CheckEqI32(g_world.planeStatPanels.nPanelASel, 25,
+                   "SelectWeapon25 writes the weapon into every OPEN column (0x79B34, 0x79B4C)");
+        CheckEqI32(g_world.planeStatPanels.nPanelBSel, 25, "both of them here");
+        CheckEqI32(g_world.planeStatPanels.bPanelAOpen, 0,
+                   "and its tail call applies the swap, which closes both columns (0x79A10, 0x79A18)");
+        CheckEqI32(g_world.planeStatPanels.bPanelBOpen, 0, "both of them");
+
+        /* The pulse's screen-6 auto-repeat (0x95644..0x95870) walks the block's +0x5C/+0x60 crew pair and
+         * +0x64/+0x68 stores pair, each gated on its own built flag. The scroll cursor is nUnk3028 --
+         * nUnk3032 is the row the click handlers read. */
+        g_world.planeStorePanels.pSlotPanel->nUnk3028      = 3;
+        g_world.planeStorePanels.pSelRowPanel->nUnk3028    = 3;
+        g_world.planeStorePanels.pCommitPanel->nUnk3028    = 3;
+        g_world.planeStorePanels.pAvailPanel->nUnk3028     = 3;
+        g_world.planeStorePanels.pTakenPanel->nUnk3028     = 3;
+        g_world.planeListPanels.pCrewPanel->nUnk3028       = 3;
+        g_world.planeListPanels.pCrewStatusPanel->nUnk3028 = 3;
+        *g_world.pnAnimPhase = 1;                /* 0x95644: the switch runs when the phase ARRIVES at 1 */
+        (void)World_PulseGeoscape(&g_world);
+        CheckEqI32(g_world.planeStorePanels.pSlotPanel->nUnk3028, 3,
+                   "nothing repeats for an unarmed control: UiControl_HitTest's force arm fires only a mode-0 control already in state 1 (0x1A3F0)");
+        CheckEqI32(g_world.planeListPanels.pCrewPanel->nUnk3028, 3, "and a freshly built hangar has no control in that state");
+
+        g_world.planeStorePanels.apNavCtl[0]->nState = 1;   /* nState 1 is what a held button leaves behind */
+        g_world.planeListPanels.apNav[0]->nState = 1;
+        *g_world.pnAnimPhase = 1;
+        (void)World_PulseGeoscape(&g_world);
+        CheckEqI32(g_world.planeStorePanels.pSlotPanel->nUnk3028, 2, "the held PREV repeats (0x95790, block +0x64)");
+        CheckEqI32(g_world.planeStorePanels.pAvailPanel->nUnk3028, 2, "and the five columns move together (0x79A78..0x79AB8)");
+        CheckEqI32(g_world.planeStorePanels.pCommitPanel->nUnk3028, 2, "the two row columns with them");
+        CheckEqI32(g_world.planeListPanels.pCrewPanel->nUnk3028, 2, "the crew pair repeats on the same pass (block +0x5C)");
+        CheckEqI32(g_world.planeListPanels.pCrewStatusPanel->nUnk3028, 2, "both of its columns");
+
+        /* NEXT is clamped by nLineCount - nStyle (0x3F00C), and a hangar set is always under that limit. */
+        g_world.planeStorePanels.pSlotPanel->nUnk3028 = 0;
+        g_world.planeStorePanels.apNavCtl[1]->nState = 1;
+        *g_world.pnAnimPhase = 1;
+        (void)World_PulseGeoscape(&g_world);
+        CheckEqI32(g_world.planeStorePanels.pSlotPanel->nUnk3028, 0,
+                   "NEXT moves nothing: one row minus nStyle 14 is a negative limit, so the hangar list never scrolls");
+        CheckEqI32(g_world.planeStorePanels.pSlotPanel->nStyle, 14, "the five columns are nStyle 14 (0x7B238)");
+        CheckEqI32(g_world.planeListPanels.pCrewPanel->nStyle, 14, "and the two crew columns are too (0x7A554)");
+        for (i = 0; i < PUFO_PLANE_STORE_NAV; ++i) {
+            g_world.planeStorePanels.apNavCtl[i]->nState = 0;
+            g_world.planeListPanels.apNav[i]->nState = 0;
+        }
+        g_world.planeStorePanels.pSelRowPanel->nUnk3028    = 0;
+        g_world.planeStorePanels.pCommitPanel->nUnk3028    = 0;
+        g_world.planeStorePanels.pAvailPanel->nUnk3028     = 0;
+        g_world.planeStorePanels.pTakenPanel->nUnk3028     = 0;
+        g_world.planeListPanels.pCrewPanel->nUnk3028       = 0;
+        g_world.planeListPanels.pCrewStatusPanel->nUnk3028 = 0;
+
+        /* The confirm control (unk_186BA4, installed by Init at 0x7DDE8) is what moves the staged unit for
+         * real, and it tail-calls the close dispatcher (0x78E74) -- which for case 6 takes the FIRST arm. */
+        nStock43Save = (i32)g_assets.apObjects[43]->auPerBaseVal[0];
+        nCarry43Save = (i32)g_assets.apObjects[43]->aItemQty[0];
+        nSampleMark  = g_nSamples;
+        g_world.ui.apCtl[GEOUI_CTL_186BA4]->pfnClick();                  /* BuySellScreen_ApplyQtyChanges @ 0x78d90 */
+        CheckEqI32((i32)g_assets.apObjects[43]->auPerBaseVal[0], nStock43Save - 1,
+                   "the confirm takes the clip out of the base's stores (0x78E34 BaseRec_SubItemQty)");
+        CheckEqI32((i32)g_assets.apObjects[43]->aItemQty[0], nCarry43Save + 1,
+                   "and into the craft's cargo column (0x78E4C InvSel_AddItemQty, ObjectRecFull.aItemQty[craft] at +0x3A)");
+        Check(g_nSamples == nSampleMark + 1 && g_aFrameSamples[nSampleMark] == 17,
+              "the close it tail-calls opens with Sound_Play(17, 4) like every other close (0x8B95C)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6,
+                   "the tail close stays on 6: case 6's first arm only tears the crew pair down (0x8C018..0x8C028)");
+        CheckEqI32(g_world.bPlaneListBuilt, 0, "bPlaneListPanelsBuilt is cleared by that teardown");
+        Check(g_world.planeListPanels.pCrewPanel == NULL && g_world.planeListPanels.pCrewStatusPanel == NULL,
+              "and both crew panels are gone");
+        CheckEqI32(g_world.anPlaneCarryCount[43], 1,
+                   "the staged count is left standing: only the next BuildControls zeroes the 256 cells (0x7B038)");
+
+        /* The one frame the five store columns are actually on screen: with the crew pair down the detail
+         * draw reaches its stores arm (0x7BD70..0x7C228), showing the committed row as 1 taken / 0 available. */
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("geoscape_hangar_stores");
+        Check(SurfPix(30, 80) != 0 && SurfPix(190, 80) != 0,
+              "the stores arm paints the row it was given: the item name at x 10 and the two quantity glyphs at x 170 and x 186 (0x7BE78, 0x7BF00, 0x7BF2C)");
+
+        /* The rest of the ladder, one arm per call. The second step goes through the close control itself,
+         * which is BasePlaneScreen_Close (0x7c9e8): its own crew walk over slots 31..35 first -- nothing is
+         * staged there, because a new game's craft carries no crew items and the quota is the carried sum --
+         * and then the same dispatcher tail call. */
+        g_world.ui.apCtl[GEOUI_CTL_186B00]->pfnClick();                  /* BasePlaneScreen_Close @ 0x7c9e8 */
+        CheckEqI32(g_world.bPlaneStoresBuilt, 0, "its dispatcher call takes the stores arm (0x8C034..0x8C044)");
+        Check(g_world.planeStorePanels.pSlotPanel == NULL && g_world.planeStorePanels.pCommitPanel == NULL
+                  && g_world.planeStorePanels.pSelRowPanel == NULL,
+              "with the five columns freed");
+        CheckEqI32(g_world.anPlaneCarryCount[43], 1, "the teardown does not clear the staged count either");
+
+        /* Both panel sets are down now, so the detail draw finally reaches its read-out arm and the four
+         * census cells are recomputed (0x7C5C0..0x7C68C): the crew column's toggle shows up here, not on the
+         * frame the click happened on. */
+        (void)DrawFrame();
+        CheckEqI32(g_world.nPlaneSoldiersAboard, 7, "seven men aboard, counted by the read-out at 0x7C650");
+        CheckEqI32(g_world.nPlaneSoldiersUnassigned, 1, "and one man unassigned at base 0 (0x7C678)");
+        CheckEqI32(g_world.nPlaneSoldiersAtBase, 8, "still eight at the base (0x7C664)");
+
+        /* The crew builder sizes its two panels from exactly those cells, which closes the loop: 7 + 1 rows,
+         * and row 0 is still the man the column took off (the walk stores the roster index, 0x7A934). */
+        g_world.planeBlock.apMainCtl[2]->pfnClick();
+        CheckEqI32(g_world.planeListPanels.pCrewPanel->nLineCount, 8, "seven aboard plus one unassigned");
+        (void)DrawFrame();
+        g_world.planeListPanels.pCrewPanel->nUnk3032 = 0;
+        CheckEqI32(g_world.planeListPanels.pCrewPanel->anLineAux[0], 0, "row 0 is soldier 0");
+        g_world.planeListPanels.pCrewPanel->pfnClick();
+        CheckEqI32((i32)g_world.apSoldiers[0]->bUnk183, 0,
+                   "and the crew column puts him back: census, rows, click -- the whole hangar loop runs through the shell's own seams");
+
+        /* The ladder's remaining arms, one per call. */
+        World_CloseGeoscape(&g_world);
+        CheckEqI32(g_world.bPlaneListBuilt, 0, "the crew arm tears the rebuilt pair down (0x8C018..0x8C028)");
+        g_world.planeBlock.apMainCtl[0]->pfnClick();                     /* DrawStatLabelA re-opens a column */
+        g_world.planeBlock.apMainCtl[1]->pfnClick();                     /* and DrawStatLabelB the other */
+        Check(g_world.planeStatPanels.bPanelAOpen == 1 && g_world.planeStatPanels.bPanelBOpen == 1,
+              "both stat columns are open again (0x79E28, 0x79FEC)");
+        World_CloseGeoscape(&g_world);
+        CheckEqI32(g_world.planeStatPanels.bPanelAOpen, 0, "the next call clears the two stat gates (0x8C0B0/0x8C0B4)");
+        CheckEqI32(g_world.planeStatPanels.bPanelBOpen, 0, "both of them, on the same call");
+        World_CloseGeoscape(&g_world);
+        CheckEqI32(g_world.bPlaneShowDetail, 0, "the next clears the detail view (0x8C08C)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "and still leaves the id at 6");
+        World_CloseGeoscape(&g_world);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "the last one is the tail: the id goes to 1 (0x8C094)");
+        CheckEqI32(g_world.bPlaneBuilt, 0, "and BuildPanels' teardown arm ran (0x7D234)");
+        Check(g_world.planeCraftPanels.pCraftPanel == NULL && g_world.planeCraftPanels.pStatusPanel == NULL,
+              "leaving no craft list behind");
+
+        g_world.aTopics[1].bUnlocked = 0; /* back to the shipped state for the checks below */
+        CheckEqI32((i32)g_assets.apObjects[43]->aItemQty[0], nCarry43Save + 1,
+                   "the moved clip stays moved: the hangar is the seam that arms a craft");
+        CheckEqI32((i32)g_assets.apObjects[43]->auPerBaseVal[0], nStock43Save - 1,
+                   "and the base is one clip lighter for it");
     }
 
     g_world.screen.nGeoscapeScreen = 1; /* back to the placement screen for the close chain below */

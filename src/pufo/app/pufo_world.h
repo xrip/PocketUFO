@@ -20,6 +20,7 @@
 #include "game/pufo_objectrec.h"
 #include "game/pufo_options.h"
 #include "game/pufo_path.h"     /* PathToCellCtx/PathScratch, the walk Unit_PathToCell @ 0x2c2a8 runs */
+#include "game/pufo_plane.h"    /* the hangar (screen 6): BasePlaneScreen, its panel sets and envs */
 #include "game/pufo_save.h"
 #include "game/pufo_ship.h"
 #include "game/pufo_tactinit.h" /* TactInitEnv/TactInitHooks/TactWeaponSel + the callee envs the block below fills */
@@ -72,6 +73,15 @@ typedef struct GeoscapeFrameState {
     /* Case 20 (0x944B0..0x944B4), the base-attack report. It is the only screen id that falls into the
      * frame end instead of branching to it, and BaseAtScreen_Draw is inside that fall-through. */
     BaseAtDrawEnv            baseAtDraw;  /* BaseAtScreen_Draw @ 0x58728, over the shell's base-at record */
+    /* Case 6, the hangar (0x9309C..0x93DD4), opened by nav control slot 3 (BasePlaneScreen_Open @ 0x617f4,
+     * installed at 0x67B98). Geoscape_DrawPlaneArm reads the object block's fifteen control words, the two
+     * stores-row panels and the six stat counts, and calls BasePlaneScreen_Draw @ 0x7d374 at 0x930F8 with
+     * the block base; that callee hands the whole frame to BasePlaneScreen_DrawCraftDetail @ 0x7baf8 when
+     * bPlaneShowCraftDetail is set, so the detail env travels inside the draw env (0x7D37C). */
+    GeoscapePlaneArmEnv      planeArm;    /* the arm itself */
+    GeoscapeScreenArmEnv     planeCtl;    /* the blit seam its controls go through */
+    PlaneDrawEnv             planeDraw;   /* 0x7d374, the callee's env */
+    PlaneDetailEnv           planeDetail; /* 0x7baf8, carried by the draw env */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -567,6 +577,62 @@ typedef struct PufoWorldState {
     ScreenInitHooks   baseInfoOpenHooks;       /* BaseInfoScreen_Open @ 0x6167c, nav slot 1's handler */
     GeoscapeBaseInfoArmEnv baseInfoArm;
     GeoscapeScreenArmEnv   baseInfoCtl;
+    /* The hangar (screen 6, opened by nav control slot 3). BasePlaneScreen_Init @ 0x7d9e4 allocates the
+     * object block and tail-calls BasePlaneScreen_BuildPanels @ 0x7cc8c; the crew pair comes from
+     * BasePlaneScreen_BuildListPanels @ 0x7a3f4 and the stores-transfer set from
+     * BasePlaneScreen_BuildControls @ 0x7b014, each behind one of the block's own controls. In the
+     * original every one of these lives under a fixed global; here the shell is their only holder. */
+    BasePlaneScreen      planeBlock;             /* the 108-byte block at 0x161A48: the backdrop pad, the five
+                                                  * craft art pads, the six weapon icon pads, the four main and
+                                                  * seven weapon controls */
+    UiControl           *apPlaneCtl[PUFO_PLANE_ARM_CTLS]; /* the arm's flat view of those controls: 0..3 the main
+                                                  * four, 4..10 the weapon seven, 11/12 the crew nav pair
+                                                  * (0x161AA4 / 0x161AA8) and 13/14 the stores nav pair
+                                                  * (0x161AAC / 0x161AB0). Re-synced by World_WireGeoscapeFrame,
+                                                  * because each builder allocates and releases its own pair. */
+    PlaneCraftPanels     planeCraftPanels;       /* pPlaneCraftPanel 0x161EFC / pPlaneCraftStatusPanel 0x161ED0 */
+    PlaneListPanels      planeListPanels;        /* the crew nav pair, the crew panel 0x161EDC and its status
+                                                  * column 0x161A3C */
+    PlaneStorePanels     planeStorePanels;       /* slot 0x161AC8, avail 0x161A40, sel-row 0x161F00,
+                                                  * commit-row 0x161EEC, taken 0x161EF4, plus their nav pair */
+    PlaneWeaponPanels    planeStatPanels;        /* 0x161F10 / 0x161F14 the two selected weapons and the two
+                                                  * panel gates at 0x161F18 / 0x161F1C */
+    u8      bPlaneBuilt;              /* bPlanePanelsBuilt @ 0x161F08 */
+    u8      bPlaneRowFlag;            /* bPanelFlagScratch @ 0x161F0C: a row click sets it, the detail draw consumes it */
+    i32     nPlaneSelCraftIdx;        /* nPlaneSelCraftIdx @ 0x161F04, the index the hangar draw reads */
+    u8      bPlaneShowDetail;         /* bPlaneShowCraftDetail @ 0x161F20 */
+    u8      bPlaneListBuilt;          /* bPlaneListPanelsBuilt @ 0x161F24 */
+    u8      bPlaneStoresBuilt;        /* bPlaneStoresCommitted @ 0x161F28 */
+    i32     nHangarCraftIdx;          /* nSelectedCraftIdx @ 0x161AC4, the index the stores and weapon side reads */
+    i32     anPlaneCarryCount[PUFO_PLANE_CARRY_SLOTS]; /* anSlotCarryCount @ 0x161AD0: the staged per-slot change
+                                                  * the confirm finally moves between base and craft */
+    i32     nPlaneCrewQuota;          /* nPlaneCrewQuota @ 0x161EE0 */
+    i32     nPlaneSoldiersAboard;     /* unk_161AB8 */
+    i32     nPlaneSoldiersAtBase;     /* unk_161EE4 */
+    i32     nPlaneSoldiersUnassigned; /* unk_161AB4 */
+    i32     nPlaneCrewCarried;        /* unk_161AC0, the five crew slots' carried sum */
+    i32     anPlaneStats[6];          /* the six stat counts, in the arm's row order: 0x161ED8, 0x161EE8,
+                                                  * 0x161EF8, 0x161EF0, 0x161ABC, 0x161ED4 */
+    i32     nPlaneStatRows;           /* nPlaneStatRowCount @ 0x161A38 */
+    i16     nPlaneCursorX;            /* halfword views of nSmapCursorX / nSmapCursorY @ 0x186BD0 / 0x186BD4.
+                                                  * The frame keeps them as i32; case 6 loads them LDRSH (0x930D0,
+                                                  * 0x930D4), so the arm is given the halfword pair, re-copied on
+                                                  * every wiring. */
+    i16     nPlaneCursorY;
+    ScreenScratch planeScratch;       /* dword_186BE8: the row the slot column's click caches, which the two
+                                                  * quantity handlers and the hovered object line read back */
+    BasePlaneScreenInitEnv planeInit;      /* Init's env: the block, the two controls it wires, its thunks */
+    PlaneBuildEnv          planeBuild;     /* BuildPanels' env: Init's tail call and the close's rebuild */
+    PlaneListPanelsEnv     planeList;      /* BuildListPanels' env */
+    PlaneStoreBuildEnv     planeStoreBuild;/* BuildControls' env */
+    PlaneStoresEnv         planeStores;    /* the two quantity handlers' env */
+    PlaneCraftSelectEnv    planeSelect;    /* the two craft-list clicks' env */
+    PlaneCrewPanelEnv      planeCrew;      /* the crew row click's env */
+    PlaneWeaponEnv         planeWeapon;    /* RearmFromStores / ApplyWeaponSwap's env */
+    PlaneCloseEnv          planeClose;     /* BasePlaneScreen_Close @ 0x7c9e8's env */
+    BuySellApplyQtyEnv     planeApply;     /* BuySellScreen_ApplyQtyChanges @ 0x78d90: the confirm's env */
+    BasePlaneDetailEnv     planeStatEnv;   /* BasePlane_ResetDetailState @ 0x7c9dc, on the draw's reset branch */
+    ScreenInitHooks        planeOpenHooks; /* BasePlaneScreen_Open's hooks, nav slot 3's handler */
     /* The frame's loose globals the shell owns: the radar screen gate, the two research walk
      * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
      * and the two scratch lines the status panel writes. */

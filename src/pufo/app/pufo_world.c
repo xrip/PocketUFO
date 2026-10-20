@@ -487,6 +487,310 @@ static void World_TransferFlagThunk(void)
     }
 }
 
+/* ---- the hangar (screen 6) ------------------------------------------------------------------------
+ *
+ * BasePlaneScreen_Open @ 0x617f4 is nav control slot 3's handler; from there every control of the screen
+ * is one of the thunks below. The original reaches its own globals from inside each handler; these reach
+ * the shell's copy of the same objects, held on PufoWorldState.
+ */
+
+/* Geoscape_CloseUI @ 0x8b94c through the env-shaped hook the two hangar closers take as pfnCloseUi
+ * (BasePlaneScreen_Close 0x7c9e8 and BuySellScreen_ApplyQtyChanges 0x78d90 both tail-call it). */
+static void World_CloseGeoscapeHook(void *pUser)
+{
+    if (pUser != NULL) {
+        World_CloseGeoscape((PufoWorldState *)pUser);
+    }
+}
+
+/* BasePlaneScreen_DrawStatLabelA @ 0x79e00 / DrawStatLabelB @ 0x79fc4: the two stat-panel controls.
+ * Drawing a panel is what marks it open, which is why BasePlane_RearmFromStores and
+ * BasePlane_LoadWeaponStores have gates to consult. */
+static void World_PlaneStatLabelAThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    BasePlaneScreen_DrawStatLabel(&pW->planeStatPanels, 0,
+                                  (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL,
+                                  (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pColor : NULL,
+                                  pW->nPlaneStatRows);
+}
+
+static void World_PlaneStatLabelBThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    BasePlaneScreen_DrawStatLabel(&pW->planeStatPanels, 1,
+                                  (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL,
+                                  (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pColor : NULL,
+                                  pW->nPlaneStatRows);
+}
+
+/* BasePlaneScreen_BuildListPanels @ 0x7a3f4: the crew pair and its nav pair, on bPlaneListPanelsBuilt. */
+static void World_PlaneBuildListThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BasePlaneScreen_BuildListPanels(&g_pActiveWorld->planeListPanels, &g_pActiveWorld->planeList);
+    }
+}
+
+/* BasePlaneScreen_BuildControls @ 0x7b014: the stores-transfer set, on bPlaneStoresCommitted. */
+static void World_PlaneBuildControlsThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BasePlaneScreen_BuildControls(&g_pActiveWorld->planeStorePanels, &g_pActiveWorld->planeStoreBuild);
+    }
+}
+
+/* BasePlaneScreen_ApplyWeaponSwap @ 0x79748: the swap the two weapon selections end in, and the reason
+ * the six SelectWeapon handlers can share it. */
+static i32 World_PlaneApplySwapThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW == NULL) {
+        return 0;
+    }
+    return BasePlaneScreen_ApplyWeaponSwap(&pW->planeStatPanels, &pW->planeWeapon);
+}
+
+/* BasePlane_RearmFromStores @ 0x78ed0: the stat block's first control. */
+static void World_PlaneRearmThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlane_RearmFromStores(&g_pActiveWorld->planeWeapon, &g_pActiveWorld->planeStatPanels);
+    }
+}
+
+/* BasePlaneScreen_SelectWeapon25 @ 0x79b20 .. SelectWeapon30 @ 0x79c74: the six stat controls, one per
+ * weapon slot, each a tail call into the swap. */
+static void World_PlaneSelectWeapon25Thunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectWeapon(&g_pActiveWorld->planeStatPanels, 25,
+                                           World_PlaneApplySwapThunk, g_pActiveWorld);
+    }
+}
+
+static void World_PlaneSelectWeapon26Thunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectWeapon(&g_pActiveWorld->planeStatPanels, 26,
+                                           World_PlaneApplySwapThunk, g_pActiveWorld);
+    }
+}
+
+static void World_PlaneSelectWeapon27Thunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectWeapon(&g_pActiveWorld->planeStatPanels, 27,
+                                           World_PlaneApplySwapThunk, g_pActiveWorld);
+    }
+}
+
+static void World_PlaneSelectWeapon28Thunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectWeapon(&g_pActiveWorld->planeStatPanels, 28,
+                                           World_PlaneApplySwapThunk, g_pActiveWorld);
+    }
+}
+
+static void World_PlaneSelectWeapon29Thunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectWeapon(&g_pActiveWorld->planeStatPanels, 29,
+                                           World_PlaneApplySwapThunk, g_pActiveWorld);
+    }
+}
+
+static void World_PlaneSelectWeapon30Thunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectWeapon(&g_pActiveWorld->planeStatPanels, 30,
+                                           World_PlaneApplySwapThunk, g_pActiveWorld);
+    }
+}
+
+/* BasePlaneScreen_Close @ 0x7c9e8: the (224,1) control Init wires at 0x7DDCC. It hands the items a
+ * committed screen took back to the base, then tail-calls the close dispatcher. */
+static void World_PlaneCloseThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BasePlaneScreen_Close(&g_pActiveWorld->planeClose);
+    }
+}
+
+/* BuySellScreen_ApplyQtyChanges @ 0x78d90: the confirm control (0x186BA4) Init wires at 0x7DDDC. It moves
+ * every staged anSlotCarryCount entry between the selected base and the selected craft and closes. */
+static void World_PlaneApplyQtyThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BuySellScreen_ApplyQtyChanges(&g_pActiveWorld->planeApply);
+    }
+}
+
+/* BasePlaneScreen_SelectCraft @ 0x7cbc8 / SelectListed @ 0x7cc3c: the two craft-list columns. SelectCraft
+ * additionally arms the detail view when the picked craft is at base. */
+static void World_PlaneSelectCraftThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectCraft(&g_pActiveWorld->planeSelect);
+    }
+}
+
+static void World_PlaneSelectListedThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_SelectListed(&g_pActiveWorld->planeSelect);
+    }
+}
+
+/* BasePlaneScreen_FillCrewPanel @ 0x7a188: the crew row's click -- assign the row's soldier to the
+ * selected craft, or let it go. */
+static void World_PlaneCrewClickThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BasePlaneScreen_FillCrewPanel(&g_pActiveWorld->planeCrew);
+    }
+}
+
+/* BuySellScreen_ListPanelPrev @ 0x79a20 / ListPanelNext @ 0x79a48: the crew pair, unk_161EDC first and
+ * unk_161A3C second. */
+static void World_PlaneListPrevThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BuySellScreen_ListPanelPrev(g_pActiveWorld->planeListPanels.pCrewPanel,
+                                    g_pActiveWorld->planeListPanels.pCrewStatusPanel);
+    }
+}
+
+static void World_PlaneListNextThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BuySellScreen_ListPanelNext(g_pActiveWorld->planeListPanels.pCrewPanel,
+                                    g_pActiveWorld->planeListPanels.pCrewStatusPanel);
+    }
+}
+
+/* BuySellScreen_DetailPanelPrev @ 0x79a70 / DetailPanelNext @ 0x79ac8: the hangar's five stores panels, in
+ * the order the handler walks them -- slot, sel-row, commit-row, taken, avail. */
+static void World_PlaneStorePrevThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    UiPanel *apPanels[5];
+
+    if (pW == NULL) {
+        return;
+    }
+    apPanels[0] = pW->planeStorePanels.pSlotPanel;
+    apPanels[1] = pW->planeStorePanels.pSelRowPanel;
+    apPanels[2] = pW->planeStorePanels.pCommitPanel;
+    apPanels[3] = pW->planeStorePanels.pTakenPanel;
+    apPanels[4] = pW->planeStorePanels.pAvailPanel;
+    BuySellScreen_DetailPanelPrev(apPanels);
+}
+
+static void World_PlaneStoreNextThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    UiPanel *apPanels[5];
+
+    if (pW == NULL) {
+        return;
+    }
+    apPanels[0] = pW->planeStorePanels.pSlotPanel;
+    apPanels[1] = pW->planeStorePanels.pSelRowPanel;
+    apPanels[2] = pW->planeStorePanels.pCommitPanel;
+    apPanels[3] = pW->planeStorePanels.pTakenPanel;
+    apPanels[4] = pW->planeStorePanels.pAvailPanel;
+    BuySellScreen_DetailPanelNext(apPanels);
+}
+
+/* Cache_ObjPlus0xBD8_To_dword_186BE8 @ 0x7afec: the slot column's click caches its own row, and the two
+ * quantity handlers and the hovered object line read that cache back. */
+static void World_PlaneSlotClickThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL || pW->planeStorePanels.pSlotPanel == NULL) {
+        return;
+    }
+    (void)BaseUi_Cache186BE8(&pW->planeScratch, pW->planeStorePanels.pSlotPanel->nUnk3032);
+}
+
+/* BasePlaneScreen_AdjustSelectedQty @ 0x7a9b4 (the "<" column) and BasePlaneScreen_CommitStores @ 0x7ac38
+ * (the ">"): the undo and the staging of one row. */
+static void World_PlaneAdjustQtyThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_AdjustSelectedQty(&g_pActiveWorld->planeStores);
+    }
+}
+
+static void World_PlaneCommitStoresThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)BasePlaneScreen_CommitStores(&g_pActiveWorld->planeStores);
+    }
+}
+
+/* BasePlaneScreen_Init @ 0x7d9e4, the Init hook of the opener (the BL at 0x617B8... 0x61828 writes the
+ * screen id first, at 0x61828 before the Init). */
+static void World_PlaneInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot; /* the original passes its own block global; the port takes the env instead */
+    if (pW != NULL) {
+        BasePlaneScreen_Init(&pW->planeInit);
+    }
+}
+
+/* BasePlaneScreen_Open @ 0x617f4 -- nav control slot 3's handler (installed at 0x67B98): sample 17, the
+ * id 6 written BEFORE the Init (0x61828), then the tail call into Init. */
+static void World_PlaneOpenThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        BasePlaneScreen_Open(&g_pActiveWorld->screen, &g_pActiveWorld->planeOpenHooks);
+    }
+}
+
+/* Geoscape_CloseUI case 6's three rebuild hooks (0x8C028, 0x8C044, 0x8C098): each is the same builder the
+ * screen's own control runs, so the close walks the same build/release switch. */
+static void World_PlaneBuildListHook(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW != NULL) {
+        BasePlaneScreen_BuildListPanels(&pW->planeListPanels, &pW->planeList);
+    }
+}
+
+static void World_PlaneBuildControlsHook(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW != NULL) {
+        BasePlaneScreen_BuildControls(&pW->planeStorePanels, &pW->planeStoreBuild);
+    }
+}
+
+static void World_PlaneBuildPanelsHook(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW != NULL) {
+        BasePlaneScreen_BuildPanels(&pW->planeCraftPanels, &pW->planeBuild);
+    }
+}
+
 /* The options screen is not ported yet; the radar click's type-0 branch reaches it through
  * these stubs (the sample still plays). */
 static void World_OptionsPlaySampleStub(u32 nSample, u32 nArg, void *pUser)
@@ -823,11 +1127,11 @@ static void World_StartNewHook(void *pUser)
 
     /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28), one unrolled
      * `LDR R3,=fn / STR R3,[R0,#0xC]` per slot, in slot order 0..9 (0x67B74, 0x67B80, 0x67B8C, 0x67B98,
-     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Four of the ten nav slots are filled: the
-     * shell can draw the screen each one opens. The other six -- BasePlaneScreen_Open (6),
-     * ResearchScreen_Open (8), ManufScreen_Open (9), TransferScreen_Open (10), BuySellScreen_OpenBuy (11)
-     * and BuySellScreen_OpenSell (12) -- stay no-ops: their Init envs and their Geoscape_Draw arms
-     * (pPlaneArm, pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are not built here, so opening
+     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Five of the ten nav slots are filled: the
+     * shell can draw the screen each one opens. The other five -- ResearchScreen_Open (8),
+     * ManufScreen_Open (9), TransferScreen_Open (10), BuySellScreen_OpenBuy (11) and
+     * BuySellScreen_OpenSell (12) -- stay no-ops: their Init envs and their Geoscape_Draw arms
+     * (pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are not built here, so opening
      * them would land on a screen the shell cannot draw. */
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
@@ -835,6 +1139,7 @@ static void World_StartNewHook(void *pUser)
     pW->navEnv.apfnNavClick[0] = World_NewBaseOpenThunk;   /* NewBaseScreen_Open @ 0x615d0, id 2 (0x67B74) */
     pW->navEnv.apfnNavClick[1] = World_BaseInfoOpenThunk;  /* BaseInfoScreen_Open @ 0x6167c, id 3 (0x67B80) */
     pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk; /* SoldierScreen_Toggle @ 0x64af0, id 4 (0x67B8C) */
+    pW->navEnv.apfnNavClick[3] = World_PlaneOpenThunk;     /* BasePlaneScreen_Open @ 0x617f4, id 6 (0x67B98) */
     pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;   /* BaseFacScreen_Open @ 0x61844, id 7 (0x67BA4) */
     pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk; /* SoldierScreen_PanelPrev @ 0x61874 (0x67C84) */
     pW->navEnv.apfnPanelClick[1] = World_SolPanelNextThunk; /* SoldierScreen_PanelNext @ 0x6189c (0x67C90) */
@@ -6656,8 +6961,9 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
      * the screens the shell can reach (1, 2, 4, 19, and 20) are wired, and so is case 20's mission-follows
      * branch: Map_bMissionMode (0x8BB20) writes into the shell's own Map cell and 0x8BB24 hands over to
      * Smap_BeginCraftSelect through pW->craftEnv. Case 3 (the base-info screen) IS wired: the built flag,
-     * the pad slot the case frees at 0x8BE10 and the rebuild hook at 0x8BDF8. What is NOT: the hangar,
-     * research, manufacturing, transfer, buy/sell and ufopaedia blocks (their cases keep NULL gates, which
+     * the pad slot the case frees at 0x8BE10 and the rebuild hook at 0x8BDF8. Case 6 (the hangar) is wired
+     * too: its six plane flags and its three rebuild hooks. What is NOT: research, manufacturing, transfer,
+     * buy/sell and ufopaedia blocks (their cases keep NULL gates, which
      * the dispatcher tests), case 19's bankruptcy tail (its two callees, listed with the wiring below -- the
      * Map pair it sets IS written), and the byte_158834 / byte_1870F4 base-index pair case 19 writes on
      * its psi branch. */
@@ -6701,6 +7007,17 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pbDragActive     = &pW->frame.g.bDragActive;       /* 0x187074 */
     pC->pbSoldierOpen    = &pW->bSolScreenOpen;            /* 0x159DE0 */
     pC->pbTransferFlag   = &pW->bTransferFlag;             /* 0x159E10 */
+    /* Case 6 (0x8C01C..0x8C09C), the hangar: three of its four arms are a rebuild hook, and the fourth
+     * clears bPlaneShowCraftDetail before the screen goes back to 1 and the panels are released. */
+    pC->pbPlaneListBuilt      = &pW->bPlaneListBuilt;      /* 0x161F24, tested at 0x8C01C */
+    pC->pbPlaneStores         = &pW->bPlaneStoresBuilt;    /* 0x161F28, tested at 0x8C034 */
+    pC->pbStatPanelA          = &pW->planeStatPanels.bPanelAOpen;  /* 0x161F18, cleared at 0x8C0B0 */
+    pC->pbStatPanelB          = &pW->planeStatPanels.bPanelBOpen;  /* 0x161F1C, cleared at 0x8C0B4 */
+    pC->pbPlaneBuilt          = &pW->bPlaneBuilt;          /* 0x161F08, the gate at 0x8C07C */
+    pC->pbPlaneDetail         = &pW->bPlaneShowDetail;     /* 0x161F20, cleared at 0x8C08C */
+    pC->pfnBuildPlaneListPanels = World_PlaneBuildListHook;     /* 0x8C028 */
+    pC->pfnBuildPlaneControls   = World_PlaneBuildControlsHook; /* 0x8C044 */
+    pC->pfnBuildPlanePanels     = World_PlaneBuildPanelsHook;   /* 0x8C098 */
     pC->pnFunds          = &pW->nFunds;
     pC->anFundBar        = pW->economy.anFundBar;          /* 0x186594..0x1865A4 */
     pC->ppFundPad        = &pW->pFundPad;                  /* 0x1595DC */
@@ -6734,21 +7051,40 @@ void World_PulseGeoscape(PufoWorldState *pW)
     GeoscapePulseEnv env;
 
     /* Screen 7's auto-repeat pair: the two build-dialog scroll controls at 0x158874 / 0x158878, and
-     * only while bBaseFacPlaceArmed @ 0x158888 is CLEAR (0x95770 ANDS / BEQ). The other per-screen
-     * groups belong to the soldier, hangar, research, manufacturing, transfer, buy/sell, ufopaedia,
-     * start and options screens, whose controls the shell does not build yet -- see the group table in
-     * game/pufo_geoscape.h. */
+     * only while bBaseFacPlaceArmed @ 0x158888 is CLEAR (0x95770 ANDS / BEQ). Screen 6's two pairs: the
+     * stores-nav pair at the block's +0x64 / +0x68 while bPlaneStoresCommitted is set, and the crew-nav
+     * pair at +0x5C / +0x60 while bPlaneListPanelsBuilt is set -- the original runs them as two passes
+     * over one dword each, which is the same four forced clicks as two consecutive-control groups.
+     * The remaining groups belong to the soldier, research, manufacturing, transfer, buy/sell,
+     * ufopaedia, start and options screens -- see the group table in game/pufo_geoscape.h. */
     UiControl *apFacCtl[2] = { &pW->ctlFacUp, &pW->ctlFacDown };
-    GeoscapePulseCtlGroup aGroups[1];
-    GeoscapePulseScreen   aScreens[1];
+    UiControl *apPlaneStoreCtl[PUFO_PLANE_STORE_NAV] = { pW->planeStorePanels.apNavCtl[0],
+                                                         pW->planeStorePanels.apNavCtl[1] };
+    UiControl *apPlaneListCtl[PUFO_PLANE_LIST_NAV]   = { pW->planeListPanels.apNav[0],
+                                                         pW->planeListPanels.apNav[1] };
+    GeoscapePulseCtlGroup aFacGroups[1];
+    GeoscapePulseCtlGroup aPlaneGroups[PUFO_PLANE_STORE_NAV];
+    GeoscapePulseScreen   aScreens[2];
 
-    aGroups[0].apCtl = apFacCtl;
-    aGroups[0].nCount = 2;
-    aGroups[0].pbGate = NULL;
-    aGroups[0].pbNotGate = &pW->bArmedPlacement;
+    aFacGroups[0].apCtl = apFacCtl;
+    aFacGroups[0].nCount = 2;
+    aFacGroups[0].pbGate = NULL;
+    aFacGroups[0].pbNotGate = &pW->bArmedPlacement;
     aScreens[0].nScreenId = 7;
-    aScreens[0].pGroups = aGroups;
+    aScreens[0].pGroups = aFacGroups;
     aScreens[0].nGroupCount = 1;
+
+    aPlaneGroups[0].apCtl = apPlaneStoreCtl;
+    aPlaneGroups[0].nCount = PUFO_PLANE_STORE_NAV;
+    aPlaneGroups[0].pbGate = &pW->bPlaneStoresBuilt;   /* 0x161F28 */
+    aPlaneGroups[0].pbNotGate = NULL;
+    aPlaneGroups[1].apCtl = apPlaneListCtl;
+    aPlaneGroups[1].nCount = PUFO_PLANE_LIST_NAV;
+    aPlaneGroups[1].pbGate = &pW->bPlaneListBuilt;     /* 0x161F24 */
+    aPlaneGroups[1].pbNotGate = NULL;
+    aScreens[1].nScreenId = 6;
+    aScreens[1].pGroups = aPlaneGroups;
+    aScreens[1].nGroupCount = PUFO_PLANE_STORE_NAV;
 
     memset(&env, 0, sizeof(env));
     env.pnActionFail  = (i32 *)&pW->nShortfall1870C8;   /* 0x954EC: == 1 stops the whole tick */
@@ -6767,7 +7103,7 @@ void World_PulseGeoscape(PufoWorldState *pW)
     env.pnMsgTimer    = &pW->nRadarMsgTimer;            /* 0xAC220 */
     env.pnPulseTimer  = &pW->nRadarPulseTimer;          /* 0xAC224 */
     env.pScreens      = aScreens;
-    env.nScreenCount  = 1;
+    env.nScreenCount  = 2;
     env.pHitCtx       = pW->pHitCtx;
     if (pW->ui.apPad[GEOUI_PAD_186BBC] != NULL) {
         env.nStripHeight = (i32)pW->ui.apPad[GEOUI_PAD_186BBC]->uHeight; /* Smap_ScrollBy's clamp */
@@ -6804,14 +7140,17 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *   - The same for the panel's strateg-list handlers (Smap_* @ 0x84254..0x84964) and the craft-select
  *     pair: they take their own Smap envs, which need the strateg item the line refers to.
  *   - The screen ids the shell can now reach are 0, 1, 2 (the map and the placement screen), 3 (nav slot
- *     1), 4 and 5 (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 7 (nav slot 4, and the map click's
- *     own 0x8B64C), 15 and 19 (the funding screen the monthly close sets). Six nav slots stay
- *     World_NoopClick -- BasePlaneScreen_Open (6), ResearchScreen_Open (8), ManufScreen_Open (9),
- *     TransferScreen_Open (10) and BuySellScreen_OpenBuy/Sell (11, 12) -- because their Init envs and
- *     their arms (pPlaneArm, pResearchDraw, pManufPad, pTransferPad, pBuySellPad) are not built here, and
- *     Geoscape_Draw dereferences several unwired arm envs with no test of their own.
+ *     1), 4 and 5 (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 6 (nav slot 3 and
+ *     BasePlaneScreen_Open 0x617f4: its arm, control seam, draw env and detail env), 7 (nav slot 4, and the
+ *     map click's own 0x8B64C), 15 and 19 (the funding screen the monthly close sets). Five nav slots stay
+ *     World_NoopClick -- ResearchScreen_Open (8), ManufScreen_Open (9), TransferScreen_Open (10) and
+ *     BuySellScreen_OpenBuy/Sell (11, 12) -- because their Init envs and their arms (pResearchDraw,
+ *     pManufPad, pTransferPad, pBuySellPad) are not built here, and Geoscape_Draw dereferences several
+ *     unwired arm envs with no test of their own.
  *   - GeoscapePointerEnv's per-screen fields for those same screens (the transfer, soldier-name, craft,
- *     research, manufacturing, site-info, buy/sell, screen-16 and options blocks) stay NULL. The
+ *     research, manufacturing, site-info, buy/sell, screen-16 and options blocks) stay NULL; the hangar's
+ *     own block is wired (its 16 controls and its six panel pairs, re-read every frame in
+ *     World_RefreshGeoscapeFrame). The
  *     dispatcher reaches them only from those screen ids. The strip block IS wired now, and that also
  *     makes the screen-1 arm live for the first time: `Geoscape_OnPointer` case 1 walks the ten slots at
  *     [root + 0x120] (0x87E30), which are apNavCtl -- the very controls the nav handlers sit on -- so a
@@ -6831,6 +7170,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     const UiControlHitCtx *pHit = (pHooks != NULL) ? pHooks->pHit : NULL;
     GfxColorEnv        *pColor = (pHooks != NULL) ? pHooks->pColor : NULL;
     const char         *pszText = (pAssets != NULL) ? (const char *)pAssets->pTextRecs : NULL; /* aTextRecs @ 0xB38D0 */
+    i32                 i;
 
     memset(pF, 0, sizeof(*pF));
     memset(pPtr, 0, sizeof(*pPtr));
@@ -7435,6 +7775,307 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->draw.pBaseInfoCtl  = &pW->baseInfoCtl;
     pF->draw.pBaseInfoDraw = &pW->baseInfoDraw;
 
+    /* Case 6 (0x9309C..0x93DD4), the hangar, opened by nav control slot 3.
+     *
+     * The screen is three panel sets behind four controls, and each set lives only between its own
+     * builder's build arm and its release arm -- the same shape the base-info wiring above has, so the
+     * pointers are re-read every frame and the envs stay pointed at whatever is currently alive. */
+
+    /* The arm's flat view of the object block's control words (block +0x30..+0x68). The block owns the
+     * four main and seven weapon controls; the two nav pairs belong to the crew builder and the stores
+     * builder, so the flat array is rebuilt from all four sources here rather than aliased. */
+    for (i = 0; i < PUFO_PLANE_MAIN_CTLS; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_MAIN_FIRST + i] = pW->planeBlock.apMainCtl[i];
+    }
+    for (i = 0; i < PUFO_PLANE_WEAPON_CTLS; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_WEAPON_FIRST + i] = pW->planeBlock.apWeaponCtl[i];
+    }
+    for (i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_LIST_FIRST + i] = pW->planeListPanels.apNav[i];
+    }
+    for (i = 0; i < PUFO_PLANE_STORE_NAV; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_STORE_FIRST + i] = pW->planeStorePanels.apNavCtl[i];
+    }
+    pW->nPlaneCursorX = (i16)pF->g.nCursorX;   /* 0x186BD0 / 0x186BD4, read LDRSH by the arm */
+    pW->nPlaneCursorY = (i16)pF->g.nCursorY;
+
+    memset(&pW->planeBuild, 0, sizeof(pW->planeBuild));
+    pW->planeBuild.pbBuilt           = &pW->bPlaneBuilt;                /* bPlanePanelsBuilt @ 0x161F08 */
+    pW->planeBuild.pObjects          = &pW->planeBlock;                 /* the block at 0x161A48 Init fills */
+    pW->planeBuild.apCraft           = pW->apCraft;
+    pW->planeBuild.pnCraftCount      = &pW->bCraftCount;                /* read LDRB (0x7CCE4) */
+    pW->planeBuild.pnSelectedBaseIdx = &pW->nSelectedBase;              /* 0x159D81 */
+    pW->planeBuild.pszNameBuf        = pW->szLabelScratch;              /* szRadarMsg @ 0x186B10 */
+    pW->planeBuild.cchNameBuf        = (i32)sizeof(pW->szLabelScratch);
+    pW->planeBuild.pfnCraftClick     = World_PlaneSelectCraftThunk;     /* BasePlaneScreen_SelectCraft @ 0x7cbc8 */
+    pW->planeBuild.pfnStatusClick    = World_PlaneSelectListedThunk;    /* BasePlaneScreen_SelectListed @ 0x7cc3c */
+
+    memset(&pW->planeInit, 0, sizeof(pW->planeInit));
+    pW->planeInit.pScreen        = &pW->planeBlock;
+    pW->planeInit.pCloseCtl      = pUi->apCtl[GEOUI_CTL_186B00];        /* g_pUiCloseCtl, moved to (224,1) at 0x7DDB4 */
+    pW->planeInit.pBuySellCtl    = pUi->apCtl[GEOUI_CTL_186BA4];        /* unk_186BA4, the shared confirm slot (0x7DDDC) */
+    pW->planeInit.apfnMainClick[0] = World_PlaneStatLabelAThunk;        /* BasePlaneScreen_DrawStatLabelA @ 0x79e00 */
+    pW->planeInit.apfnMainClick[1] = World_PlaneStatLabelBThunk;        /* BasePlaneScreen_DrawStatLabelB @ 0x79fc4 */
+    pW->planeInit.apfnMainClick[2] = World_PlaneBuildListThunk;         /* BasePlaneScreen_BuildListPanels @ 0x7a3f4 */
+    pW->planeInit.apfnMainClick[3] = World_PlaneBuildControlsThunk;     /* BasePlaneScreen_BuildControls @ 0x7b014 */
+    pW->planeInit.apfnWeaponClick[0] = World_PlaneRearmThunk;           /* BasePlane_RearmFromStores @ 0x78ed0 */
+    pW->planeInit.apfnWeaponClick[1] = World_PlaneSelectWeapon25Thunk;  /* SelectWeapon25 @ 0x79b20 */
+    pW->planeInit.apfnWeaponClick[2] = World_PlaneSelectWeapon26Thunk;  /* SelectWeapon26 */
+    pW->planeInit.apfnWeaponClick[3] = World_PlaneSelectWeapon27Thunk;  /* SelectWeapon27 */
+    pW->planeInit.apfnWeaponClick[4] = World_PlaneSelectWeapon28Thunk;  /* SelectWeapon28 */
+    pW->planeInit.apfnWeaponClick[5] = World_PlaneSelectWeapon29Thunk;  /* SelectWeapon29 */
+    pW->planeInit.apfnWeaponClick[6] = World_PlaneSelectWeapon30Thunk;  /* SelectWeapon30 @ 0x79c74 */
+    pW->planeInit.pfnCloseClick  = World_PlaneCloseThunk;               /* BasePlaneScreen_Close @ 0x7c9e8 (0x7DDCC) */
+    pW->planeInit.pfnBuySellClick = World_PlaneApplyQtyThunk;           /* BuySellScreen_ApplyQtyChanges @ 0x78d90 */
+    pW->planeInit.pfnLoadPads    = pW->pfnLoadPads;
+    pW->planeInit.pPadUser       = pW->pLoadPadsUser;
+    pW->planeInit.pPanels        = &pW->planeCraftPanels;               /* the tail call's out pair */
+    pW->planeInit.pBuildEnv      = &pW->planeBuild;
+
+    memset(&pW->planeList, 0, sizeof(pW->planeList));
+    pW->planeList.pbBuilt       = &pW->bPlaneListBuilt;                 /* unk_161F24 */
+    pW->planeList.nLineCount    = pW->nPlaneSoldiersUnassigned + pW->nPlaneSoldiersAboard; /* 0x161AB4 + 0x161AB8 */
+    pW->planeList.apCraft       = pW->apCraft;
+    pW->planeList.apSoldiers    = pW->apSoldiers;
+    pW->planeList.nSoldierCount = pW->nSoldierCount;
+    pW->planeList.nBaseIdx      = pW->nSelectedBase;
+    pW->planeList.nCraftIdx     = pW->nHangarCraftIdx;                  /* 0x161AC4 */
+    pW->planeList.pszNameBuf    = pW->szLabelScratch;
+    pW->planeList.cchNameBuf    = (i32)sizeof(pW->szLabelScratch);
+    pW->planeList.apfnNavClick[0] = World_PlaneListPrevThunk;           /* BuySellScreen_ListPanelPrev @ 0x79a20 */
+    pW->planeList.apfnNavClick[1] = World_PlaneListNextThunk;           /* BuySellScreen_ListPanelNext @ 0x79a48 */
+    pW->planeList.pfnCrewClick  = World_PlaneCrewClickThunk;            /* BasePlaneScreen_FillCrewPanel @ 0x7a188 */
+    pW->planeList.pfnLoadPads   = pW->pfnLoadPads;
+    pW->planeList.pPadUser      = pW->pLoadPadsUser;
+
+    memset(&pW->planeStoreBuild, 0, sizeof(pW->planeStoreBuild));
+    pW->planeStoreBuild.pbStoresCommitted = &pW->bPlaneStoresBuilt;     /* 0x161F28 */
+    pW->planeStoreBuild.anSlotCarryCount  = pW->anPlaneCarryCount;      /* 0x161AD0, zeroed by the build arm */
+    pW->planeStoreBuild.pnCrewQuota       = &pW->nPlaneCrewQuota;       /* 0x161EE0 */
+    pW->planeStoreBuild.nCraftIdx         = pW->nHangarCraftIdx;
+    pW->planeStoreBuild.nBaseIdx          = pW->nSelectedBase;
+    pW->planeStoreBuild.aTopics           = pW->aTopics;                /* aResearchTopics @ 0x15EF08, the row gate */
+    pW->planeStoreBuild.abSlotTopic       = g_abSlotTopicGate;          /* byte_AA968 @ 0xAA968 */
+    pW->planeStoreBuild.apfnNavClick[0]   = World_PlaneStorePrevThunk;  /* BuySellScreen_DetailPanelPrev @ 0x79a70 */
+    pW->planeStoreBuild.apfnNavClick[1]   = World_PlaneStoreNextThunk;  /* BuySellScreen_DetailPanelNext @ 0x79ac8 */
+    pW->planeStoreBuild.pfnSlotClick      = World_PlaneSlotClickThunk;  /* Cache_ObjPlus0xBD8 @ 0x7afec */
+    pW->planeStoreBuild.pfnSelRowClick    = World_PlaneAdjustQtyThunk;  /* BasePlaneScreen_AdjustSelectedQty @ 0x7a9b4 */
+    pW->planeStoreBuild.pfnCommitClick    = World_PlaneCommitStoresThunk; /* BasePlaneScreen_CommitStores @ 0x7ac38 */
+    pW->planeStoreBuild.pfnLoadPads       = pW->pfnLoadPads;
+    pW->planeStoreBuild.pPadUser          = pW->pLoadPadsUser;
+
+    memset(&pW->planeStores, 0, sizeof(pW->planeStores));
+    pW->planeStores.pRowPanel     = pW->planeStorePanels.pSelRowPanel;   /* unk_161F00, the "<" column */
+    pW->planeStores.pCommitPanel  = pW->planeStorePanels.pCommitPanel;   /* unk_161EEC, the ">" column */
+    pW->planeStores.pSlotPanel    = pW->planeStorePanels.pSlotPanel;     /* unk_161AC8, the slot id column */
+    pW->planeStores.pAvailPanel   = pW->planeStorePanels.pAvailPanel;    /* unk_161A40 */
+    pW->planeStores.pTakenPanel   = pW->planeStorePanels.pTakenPanel;    /* unk_161EF4 */
+    pW->planeStores.anSlotCarryCount = pW->anPlaneCarryCount;
+    pW->planeStores.pnCrewQuota   = &pW->nPlaneCrewQuota;
+    pW->planeStores.apCraft       = pW->apCraft;
+    pW->planeStores.nCraftIdx     = pW->nHangarCraftIdx;
+    pW->planeStores.apBases       = pW->apBases;
+    pW->planeStores.nBaseIdx      = pW->nSelectedBase;
+    pW->planeStores.apSoldiers    = pW->apSoldiers;
+    pW->planeStores.nSoldierCount = pW->nSoldierCount;
+    pW->planeStores.pbShortfallFlag = &pW->nShortfall1870C8;             /* byte_1870C8, written as a dword */
+    pW->planeStores.pnResidueFlag = &pW->nResidue1870B4;                 /* dword_1870B4 */
+
+    memset(&pW->planeSelect, 0, sizeof(pW->planeSelect));
+    pW->planeSelect.pCraftPanel        = pW->planeCraftPanels.pCraftPanel;    /* 0x161EFC */
+    pW->planeSelect.pStatusPanel       = pW->planeCraftPanels.pStatusPanel;   /* 0x161ED0 */
+    pW->planeSelect.pnSelCraftIdx      = &pW->nPlaneSelCraftIdx;              /* 0x161F04 */
+    pW->planeSelect.pnSelectedCraftIdx = &pW->nHangarCraftIdx;                /* 0x161AC4 */
+    pW->planeSelect.apCraft            = pW->apCraft;
+    pW->planeSelect.pbShowCraftDetail  = &pW->bPlaneShowDetail;               /* 0x161F20 */
+
+    memset(&pW->planeCrew, 0, sizeof(pW->planeCrew));
+    pW->planeCrew.pCrewPanel    = pW->planeListPanels.pCrewPanel;        /* 0x161EDC */
+    pW->planeCrew.pStatusPanel  = pW->planeListPanels.pCrewStatusPanel;  /* 0x161A3C */
+    pW->planeCrew.apCraft       = pW->apCraft;
+    pW->planeCrew.nCraftIdx     = pW->nHangarCraftIdx;
+    pW->planeCrew.apSoldiers    = pW->apSoldiers;
+    pW->planeCrew.nSoldierCount = pW->nSoldierCount;
+    pW->planeCrew.pszNameBuf    = pW->szLabelScratch;
+    pW->planeCrew.cchNameBuf    = (i32)sizeof(pW->szLabelScratch);
+
+    memset(&pW->planeWeapon, 0, sizeof(pW->planeWeapon));
+    pW->planeWeapon.apCraft    = pW->apCraft;
+    pW->planeWeapon.apBases    = pW->apBases;
+    pW->planeWeapon.nCraftIdx  = pW->nHangarCraftIdx;
+    pW->planeWeapon.nBaseIdx   = pW->nSelectedBase;
+
+    memset(&pW->planeClose, 0, sizeof(pW->planeClose));
+    pW->planeClose.apCraft         = pW->apCraft;
+    pW->planeClose.apBases         = pW->apBases;
+    pW->planeClose.nCraftIdx       = pW->nHangarCraftIdx;
+    pW->planeClose.nBaseIdx        = pW->nSelectedBase;
+    pW->planeClose.bStoresCommitted = pW->bPlaneStoresBuilt;             /* byte_161F28, read as a value */
+    pW->planeClose.anSlotCount     = pW->anPlaneCarryCount;              /* unk_161AD0, the 31..35 rows */
+    pW->planeClose.pnCrewQuota     = &pW->nPlaneCrewQuota;
+    pW->planeClose.pfnCloseUi      = World_CloseGeoscapeHook;            /* Geoscape_CloseUI @ 0x8b94c */
+    pW->planeClose.pUser           = pW;
+
+    memset(&pW->planeApply, 0, sizeof(pW->planeApply));
+    pW->planeApply.anSlotCarryCount = pW->anPlaneCarryCount;             /* 0x161AD0, the staged change */
+    pW->planeApply.apBases         = pW->apBases;
+    pW->planeApply.nBaseIdx        = pW->nSelectedBase;
+    pW->planeApply.apCraft         = pW->apCraft;
+    pW->planeApply.nCraftIdx       = pW->nHangarCraftIdx;
+    pW->planeApply.nCraftCount     = (i32)pW->bCraftCount;
+    pW->planeApply.pfnCloseUi      = World_CloseGeoscapeHook;            /* the tail call at 0x78e70 */
+    pW->planeApply.pUser           = pW;
+
+    memset(&pW->planeStatEnv, 0, sizeof(pW->planeStatEnv));
+    pW->planeStatEnv.nBaseIdx       = pW->nSelectedBase;
+    pW->planeStatEnv.pnCraftCannon  = &pW->anPlaneStats[0];              /* 0x161ED8, weapon 25 */
+    pW->planeStatEnv.pnStingray     = &pW->anPlaneStats[1];              /* 0x161EE8, 26 */
+    pW->planeStatEnv.pnAvalanche    = &pW->anPlaneStats[2];              /* 0x161EF8, 27 */
+    pW->planeStatEnv.pnLaserCannon  = &pW->anPlaneStats[3];              /* 0x161EF0, 28 */
+    pW->planeStatEnv.pnPlasmaCannon = &pW->anPlaneStats[4];              /* 0x161ABC, 29 */
+    pW->planeStatEnv.pnFusionBall   = &pW->anPlaneStats[5];              /* 0x161ED4, 30 */
+    pW->planeStatEnv.pnRowCount     = &pW->nPlaneStatRows;               /* 0x161A38 */
+
+    memset(&pF->planeDetail, 0, sizeof(pF->planeDetail));
+    pF->planeDetail.pColor            = pColor;
+    pF->planeDetail.pScreen           = &pW->planeBlock;
+    pF->planeDetail.apCraft           = pW->apCraft;
+    pF->planeDetail.nCraftCount       = (i32)pW->bCraftCount;
+    pF->planeDetail.pnCraftIdx        = &pW->nHangarCraftIdx;            /* 0x161AC4, the index THIS callee reads */
+    pF->planeDetail.pnBaseIdx         = &pW->nSelectedBase;
+    pF->planeDetail.pbListPanelsBuilt = &pW->bPlaneListBuilt;
+    pF->planeDetail.pbStoresCommitted = &pW->bPlaneStoresBuilt;
+    pF->planeDetail.pdwActionFail     = (const u32 *)&pW->nShortfall1870C8;  /* dwActionFail @ 0x1870C8 */
+    pF->planeDetail.pnRefuseReason    = &pW->nResidue1870B4;                 /* dword_1870B4 */
+    pF->planeDetail.pbPanelFlagScratch = &pW->bPlaneRowFlag;                /* 0x161F0C, consumed at 0x7BE50 */
+    pF->planeDetail.pCrewPanel        = pW->planeListPanels.pCrewPanel;
+    pF->planeDetail.pCrewStatusPanel  = pW->planeListPanels.pCrewStatusPanel;
+    pF->planeDetail.pSlotPanel        = pW->planeStorePanels.pSlotPanel;
+    pF->planeDetail.pAvailPanel       = pW->planeStorePanels.pAvailPanel;
+    pF->planeDetail.pSelRowPanel      = pW->planeStorePanels.pSelRowPanel;
+    pF->planeDetail.pCommitPanel      = pW->planeStorePanels.pCommitPanel;
+    pF->planeDetail.pTakenPanel       = pW->planeStorePanels.pTakenPanel;
+    pF->planeDetail.pnRowCursor       = &pW->planeScratch.nCache186BE8;  /* dword_186BE8 */
+    pF->planeDetail.pbPreviewOk       = &pW->bRoot35;                    /* bBaseFacPreviewOk @ 0x18652D */
+    pF->planeDetail.pnCursorY         = &pF->g.nCursorY;                 /* 0x186BD4 */
+    pF->planeDetail.pCtlConfirm       = pUi->apCtl[GEOUI_CTL_186BA4];     /* the OK control, recentred at 0x7C058 */
+    pF->planeDetail.pAnim             = &pF->anim;                       /* the refused-transfer panel's pair */
+    pF->planeDetail.apSoldiers        = pW->apSoldiers;
+    pF->planeDetail.nSoldierCount     = pW->nSoldierCount;
+    pF->planeDetail.pnSoldiersAboard  = &pW->nPlaneSoldiersAboard;       /* 0x161AB8 */
+    pF->planeDetail.pnSoldiersAtBase  = &pW->nPlaneSoldiersAtBase;       /* 0x161EE4 */
+    pF->planeDetail.pnSoldiersUnassigned = &pW->nPlaneSoldiersUnassigned; /* 0x161AB4 */
+    pF->planeDetail.pnCrewCarried     = &pW->nPlaneCrewCarried;          /* 0x161AC0 */
+    pF->planeDetail.pStatPanels       = &pW->planeStatPanels;
+    pF->planeDetail.pnStatRowCount    = &pW->nPlaneStatRows;
+    pF->planeDetail.pStatEnv          = &pW->planeStatEnv;               /* the reset branch's callee (0x7C9DC) */
+    if (pHit != NULL) {
+        pF->planeDetail.pfnCtlBlit   = pHit->pfnBlit;
+        pF->planeDetail.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->planeDetail.pCtlUser     = pHit->pUser;
+    }
+
+    memset(&pF->planeDraw, 0, sizeof(pF->planeDraw));
+    pF->planeDraw.pColor            = pColor;
+    pF->planeDraw.pbShowCraftDetail = &pW->bPlaneShowDetail;             /* gate 1, 0x7D37C */
+    pF->planeDraw.pbPanelsBuilt     = &pW->bPlaneBuilt;                  /* gate 2, 0x7D398 */
+    pF->planeDraw.pbPreviewActive   = &pW->bRoot34;                      /* gate 3, 0x7D3D0 */
+    pF->planeDraw.pnCursorY         = &pF->g.nCursorY;                   /* 0x186BD4, read LDRSH */
+    pF->planeDraw.pCraftPanel       = pW->planeCraftPanels.pCraftPanel;
+    pF->planeDraw.pStatusPanel      = pW->planeCraftPanels.pStatusPanel;  /* the band gate's panel */
+    pF->planeDraw.apCraft           = pW->apCraft;
+    pF->planeDraw.nCraftCount       = (i32)pW->bCraftCount;
+    pF->planeDraw.pnSelCraftIdx     = &pW->nPlaneSelCraftIdx;             /* 0x161F04, not 0x161AC4 */
+    pF->planeDraw.apSoldiers        = pW->apSoldiers;
+    pF->planeDraw.nSoldierCount     = pW->nSoldierCount;
+    pF->planeDraw.pDetail           = &pF->planeDetail;
+
+    memset(&pF->planeCtl, 0, sizeof(pF->planeCtl));
+    if (pHit != NULL) {
+        pF->planeCtl.pfnCtlBlit   = pHit->pfnBlit;
+        pF->planeCtl.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->planeCtl.pCtlBlitUser = pHit->pUser;
+    }
+
+    memset(&pF->planeArm, 0, sizeof(pF->planeArm));
+    pF->planeArm.ppBackdropPad     = &pW->planeBlock.pBackdropPad;        /* 0x930A0, and the block base */
+    pF->planeArm.apCtl             = pW->apPlaneCtl;
+    pF->planeArm.pbStoresCommitted = &pW->bPlaneStoresBuilt;
+    pF->planeArm.pbListPanelsBuilt = &pW->bPlaneListBuilt;
+    pF->planeArm.pbShowCraftDetail = &pW->bPlaneShowDetail;
+    pF->planeArm.pbStatPanelAOpen  = &pW->planeStatPanels.bPanelAOpen;    /* 0x161F18 */
+    pF->planeArm.pbStatPanelBOpen  = &pW->planeStatPanels.bPanelBOpen;    /* 0x161F1C */
+    pF->planeArm.pbPreviewOk       = &pW->bRoot35;
+    pF->planeArm.ppSelRowPanel     = &pW->planeStorePanels.pSelRowPanel;
+    pF->planeArm.ppCommitRowPanel  = &pW->planeStorePanels.pCommitPanel;
+    pF->planeArm.pnCursorX         = &pW->nPlaneCursorX;
+    pF->planeArm.pnCursorY         = &pW->nPlaneCursorY;
+    pF->planeArm.pnSelCraftIdx     = &pW->nHangarCraftIdx;                /* 0x931D8 indexes apCraft with it */
+    pF->planeArm.pnSelBaseIdx      = &pW->nSelectedBase;                  /* read SIGNED (0x93590) */
+    pF->planeArm.apCraft           = pW->apCraft;
+    pF->planeArm.nCraftCount       = (i32)pW->bCraftCount;
+    pF->planeArm.pnRowCount        = &pW->nPlaneStatRows;
+    pF->planeArm.pnStats           = pW->anPlaneStats;
+    pF->planeArm.pColor            = pColor;
+    pF->planeArm.pPlaneEnv         = &pF->planeDraw;                      /* the call at 0x930F8 */
+    pF->planeArm.pCtlEnv           = &pF->planeCtl;
+
+    pF->draw.pPlaneArm = &pF->planeArm;                                    /* 0x8C1C8, case 6's arm slot */
+
+    /* The press seam for the same screen: Geoscape_OnPointer reads the block's control run, the six
+     * panel pointers and the eight gate bytes off GeoscapePointerEnv (0x88210..0x88748), so the hangar's
+     * row clicks -- the craft list, the crew column, the slot column, the two quantity rows -- only
+     * reach their handlers through these fields. Re-read every frame, exactly like the arm's copy. */
+    pPtr->apPlaneCtl             = pW->apPlaneCtl;                          /* 0x88210 walks block +0x30..+0x68 */
+    pPtr->pbPlanePanelsBuilt     = &pW->bPlaneBuilt;                        /* 0x161F08, gates the panel hits */
+    pPtr->pbPlaneShowCraftDetail = &pW->bPlaneShowDetail;                   /* 0x161F20 */
+    pPtr->pbPlaneStoresCommitted = &pW->bPlaneStoresBuilt;                  /* 0x161F28 */
+    pPtr->pbPlaneListBuilt       = &pW->bPlaneListBuilt;                    /* 0x161F24 */
+    pPtr->pbStatPanelAOpen       = &pW->planeStatPanels.bPanelAOpen;        /* 0x161F18 */
+    pPtr->pbStatPanelBOpen       = &pW->planeStatPanels.bPanelBOpen;        /* 0x161F1C */
+    pPtr->pPlaneCraftPanel       = pW->planeCraftPanels.pCraftPanel;       /* 0x161EFC, hit at 0x88234 */
+    pPtr->pPlaneCraftStatusPanel = pW->planeCraftPanels.pStatusPanel;      /* 0x161ED0 */
+    pPtr->pPlaneSelRowPanel      = pW->planeStorePanels.pSelRowPanel;      /* 0x161F00, the "<" column */
+    pPtr->pPlaneCommitRowPanel   = pW->planeStorePanels.pCommitPanel;      /* 0x161EEC, the ">" column */
+    pPtr->pPlaneSlotPanel        = pW->planeStorePanels.pSlotPanel;        /* 0x161AC8, the name column */
+    pPtr->pPlaneCrewPanel        = pW->planeListPanels.pCrewPanel;         /* 0x161EDC, the crew column */
+    for (i = 0; i < PUFO_GEO_PLANE_STAT_COUNT; ++i) {
+        pPtr->apanStatGate[i] = &pW->anPlaneStats[i];                       /* 0x161ED8, 0x161EE8, 0x161EF8,
+                                                                             * 0x161EF0, 0x161ABC, 0x161ED4,
+                                                                             * the six gates at 0x88674..0x88748 */
+    }
+
+    if (pAssets != NULL) {
+        pW->planeBuild.pTextRecs          = pAssets->pTextRecs;            /* Ship_FormatDisplayName's names */
+        pW->planeList.pTextRecs           = pAssets->pTextRecs;            /* the crew status column */
+        pW->planeCrew.pTextRecs           = pAssets->pTextRecs;
+        pW->planeStoreBuild.apObjects     = pAssets->apObjects;            /* the row scan's two columns */
+        pW->planeStoreBuild.nObjectCount  = (i32)pAssets->nObjectCount;
+        pW->planeStores.apObjects         = pAssets->apObjects;
+        pW->planeStores.nObjectCount      = (i32)pAssets->nObjectCount;
+        pW->planeWeapon.apObjects         = pAssets->apObjects;
+        pW->planeWeapon.nObjectCount      = (i32)pAssets->nObjectCount;
+        pW->planeClose.apObjects          = pAssets->apObjects;   /* PlaneCloseEnv carries no count: its walk is slots 31..35 */
+        pW->planeApply.apObjects          = pAssets->apObjects;
+        pW->planeApply.nObjectCount       = (i32)pAssets->nObjectCount;
+        pW->planeStatEnv.apObjects        = pAssets->apObjects;
+        pW->planeStatEnv.nObjectCount     = (i32)pAssets->nObjectCount;
+        pF->planeDraw.apObjects           = pAssets->apObjects;
+        pF->planeDraw.nObjectCount        = (i32)pAssets->nObjectCount;
+        pF->planeDraw.pTextRecs           = (const char *)pAssets->pTextRecs;
+        pF->planeDetail.apObjects         = pAssets->apObjects;
+        pF->planeDetail.nObjectCount      = (i32)pAssets->nObjectCount;
+        pF->planeDetail.pTextRecs         = (char *)pAssets->pTextRecs;    /* the stat labels write NULs into it */
+        pF->planeArm.apObjects            = pAssets->apObjects;
+        pF->planeArm.nObjectCount         = (i32)pAssets->nObjectCount;
+        pF->planeArm.pTextRecs            = (const char *)pAssets->pTextRecs;
+    }
+
+    pW->planeOpenHooks.pfnPlaySample = World_PlaySampleWithArg;            /* Sound_Play(17, 4) at 0x6180C */
+    pW->planeOpenHooks.pfnInit       = World_PlaneInitThunk;              /* the BL at 0x61830 */
+    pW->planeOpenHooks.pSlot         = NULL;
+    pW->planeOpenHooks.pUser         = pW;
+
     World_WireGeoscapeClock(pW, pHooks);
 }
 
@@ -7456,6 +8097,7 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
 {
     GeoscapeFrameState *pF = &pW->frame;
     const SmapZoomSet  *pSet = World_CurrentZoomSet(pW);
+    i32                 i;
 
     pF->map.pMapPad   = pSet->pGrid;    /* *pSmapPadCur @ 0x186E40 */
     pF->map.pLayerPad = pSet->pOverlay; /* *pSmapLayerPad @ 0x186BE0 */
@@ -7508,6 +8150,67 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
      * against (0x5B8CC). Both follow the clock, so they are re-read every frame. */
     pW->fundingDraw.pPad          = pW->pFundPad;
     pW->fundingDraw.nMonthCounter = pW->nMonthCounter;
+
+    /* Case 6, the hangar. Its three panel sets are allocated and freed by their own builders, and the
+     * consumers read the globals they live in -- 0x161EFC/0x161ED0 for the craft pair, 0x161EDC/0x161A3C
+     * for the crew pair, 0x161AC8/0x161A40/0x161F00/0x161EEC/0x161EF4 for the five store columns -- at
+     * every call. The block's ten control words (+0x30..+0x68) are read the same way (0x88210, 0x93130),
+     * and so are the by-value inputs the handlers pass on: nSelectedCraftIdx @ 0x161AC4, the two census
+     * cells the crew builder adds (0x161AB4 + 0x161AB8), the craft count byte and bStoresCommitted's
+     * value. So all of it follows the frame here, not only at World_WireGeoscapeFrame. */
+    for (i = 0; i < PUFO_PLANE_MAIN_CTLS; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_MAIN_FIRST + i] = pW->planeBlock.apMainCtl[i];
+    }
+    for (i = 0; i < PUFO_PLANE_WEAPON_CTLS; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_WEAPON_FIRST + i] = pW->planeBlock.apWeaponCtl[i];
+    }
+    for (i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_LIST_FIRST + i] = pW->planeListPanels.apNav[i];
+    }
+    for (i = 0; i < PUFO_PLANE_STORE_NAV; ++i) {
+        pW->apPlaneCtl[PUFO_PLANE_ARM_STORE_FIRST + i] = pW->planeStorePanels.apNavCtl[i];
+    }
+    pF->planeDraw.pCraftPanel       = pW->planeCraftPanels.pCraftPanel;
+    pF->planeDraw.pStatusPanel      = pW->planeCraftPanels.pStatusPanel;
+    pF->planeDraw.nCraftCount       = (i32)pW->bCraftCount;
+    pW->planeStores.pRowPanel       = pW->planeStorePanels.pSelRowPanel;
+    pW->planeStores.pCommitPanel    = pW->planeStorePanels.pCommitPanel;
+    pW->planeStores.pSlotPanel      = pW->planeStorePanels.pSlotPanel;
+    pW->planeStores.pAvailPanel     = pW->planeStorePanels.pAvailPanel;
+    pW->planeStores.pTakenPanel     = pW->planeStorePanels.pTakenPanel;
+    pW->planeSelect.pCraftPanel     = pW->planeCraftPanels.pCraftPanel;
+    pW->planeSelect.pStatusPanel    = pW->planeCraftPanels.pStatusPanel;
+    pW->planeCrew.pCrewPanel        = pW->planeListPanels.pCrewPanel;
+    pW->planeCrew.pStatusPanel      = pW->planeListPanels.pCrewStatusPanel;
+    pW->planeList.nLineCount        = pW->nPlaneSoldiersUnassigned + pW->nPlaneSoldiersAboard; /* 0x161AB4 + 0x161AB8 */
+    pW->planeStoreBuild.nCraftIdx   = pW->nHangarCraftIdx;   /* 0x161AC4, re-read by every handler */
+    pW->planeStores.nCraftIdx       = pW->nHangarCraftIdx;
+    pW->planeCrew.nCraftIdx         = pW->nHangarCraftIdx;
+    pW->planeWeapon.nCraftIdx       = pW->nHangarCraftIdx;
+    pW->planeClose.nCraftIdx        = pW->nHangarCraftIdx;
+    pW->planeApply.nCraftIdx        = pW->nHangarCraftIdx;
+    pW->planeApply.nCraftCount      = (i32)pW->bCraftCount;
+    pW->planeClose.bStoresCommitted = pW->bPlaneStoresBuilt;  /* 0x161F28, read as a value */
+    pF->planeArm.nCraftCount        = (i32)pW->bCraftCount;
+    pF->planeArm.pnCursorX          = &pW->nPlaneCursorX;
+    pF->planeArm.pnCursorY          = &pW->nPlaneCursorY;
+    pW->nPlaneCursorX               = (i16)pF->g.nCursorX;    /* 0x186BD0 / 0x186BD4, read LDRSH (0x930D0) */
+    pW->nPlaneCursorY               = (i16)pF->g.nCursorY;
+    /* The detail draw's own seven panel reads, 0x7BD00..0x7BF5C: with a stale copy each arm still paints
+     * its rails, its headers and its OK control and silently skips every column it was asked to draw. */
+    pF->planeDetail.pCrewPanel        = pW->planeListPanels.pCrewPanel;
+    pF->planeDetail.pCrewStatusPanel  = pW->planeListPanels.pCrewStatusPanel;
+    pF->planeDetail.pSlotPanel        = pW->planeStorePanels.pSlotPanel;
+    pF->planeDetail.pAvailPanel       = pW->planeStorePanels.pAvailPanel;
+    pF->planeDetail.pSelRowPanel      = pW->planeStorePanels.pSelRowPanel;
+    pF->planeDetail.pCommitPanel      = pW->planeStorePanels.pCommitPanel;
+    pF->planeDetail.pTakenPanel       = pW->planeStorePanels.pTakenPanel;
+    pW->ptrEnv.pPlaneCraftPanel       = pW->planeCraftPanels.pCraftPanel;
+    pW->ptrEnv.pPlaneCraftStatusPanel = pW->planeCraftPanels.pStatusPanel;
+    pW->ptrEnv.pPlaneSelRowPanel      = pW->planeStorePanels.pSelRowPanel;
+    pW->ptrEnv.pPlaneCommitRowPanel   = pW->planeStorePanels.pCommitPanel;
+    pW->ptrEnv.pPlaneSlotPanel        = pW->planeStorePanels.pSlotPanel;
+    pW->ptrEnv.pPlaneCrewPanel        = pW->planeListPanels.pCrewPanel;
 }
 
 i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), void *pUser)

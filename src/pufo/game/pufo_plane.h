@@ -314,7 +314,7 @@ typedef struct PlaneStoresEnv {
     i32 nObjectCount;        /* Map_nObjectCount @ 0x114A60 */
     Soldier *const *apSoldiers;
     i32 nSoldierCount;
-    u8 *pbShortfallFlag;     /* byte_1870C8, written as a dword */
+    u32 *pbShortfallFlag;    /* unk_1870C8: STR R1,[R5,#0x1F0] @ 0x7AE54, so the writer puts a DWORD out */
     i32 *pnResidueFlag;      /* dword_1870B4[0] */
 } PlaneStoresEnv;
 
@@ -452,7 +452,7 @@ typedef struct PlaneListPanels {
 } PlaneListPanels;
 
 typedef struct PlaneListPanelsEnv {
-    bool  *pbBuilt;             /* unk_161F24 */
+    u8    *pbBuilt;             /* unk_161F24: LDRB @ 0x7A404 / STRB @ 0x7A400, a byte global */
     i32    nLineCount;          /* unk_161AB4 + unk_161AB8 */
     Ship *const *apCraft;
     Soldier *const *apSoldiers;

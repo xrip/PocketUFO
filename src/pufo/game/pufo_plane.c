@@ -832,7 +832,7 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
     }
 
     if (*pEnv->pbBuilt) {
-        *pEnv->pbBuilt = false; /* 0x7A400 */
+        *pEnv->pbBuilt = 0; /* 0x7A400: MOV R1,#1 / STRB ... the clear arm writes 0 */
 
         for (i32 i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
             if (pOut->apNav[i] != NULL) {
@@ -848,7 +848,7 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
         return;
     }
 
-    *pEnv->pbBuilt = true; /* 0x7A4BC */
+    *pEnv->pbBuilt = 1; /* 0x7A4BC */
 
     for (i32 i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
         pOut->apNav[i] = (UiControl *)malloc(sizeof(UiControl));

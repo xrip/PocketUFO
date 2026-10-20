@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 18682 |
+| Test checks run | 18812 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -166,7 +166,7 @@ is the module that answers to it.
 | `0x3e434` | `PtrArray_DeleteAll` | 72 | `src/pufo/util/pufo_ptrarray.h` |
 | `0x370e8` | `Math_StoreAtan2Const` | 56 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x3f00c` | `IncDwordIfInRange_AtPlus0xBD4` | 52 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_panel.c` (+1) |
-| `0x7afec` | `Cache_ObjPlus0xBD8_To_dword_186BE8` | 40 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
+| `0x7afec` | `Cache_ObjPlus0xBD8_To_dword_186BE8` | 40 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x82bac` | `PtrArray_DeleteAt` | 40 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa1130` | `PtrArray_Get` | 36 | `src/pufo/util/pufo_ptrarray.h` |
 | `0x3f040` | `DecDwordIfPos_AtPlus0xBD4` | 28 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_panel.c` (+1) |
@@ -672,7 +672,7 @@ is the module that answers to it.
 | `0x66930` | `Base_CreateNamedEntry` | 576 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x81c08` | `Smap_ZoomOut` | 572 | `src/pufo/game/pufo_strateg.h` |
 | `0x5d6e4` | `RadarScreen_DrawRangeBar` | 564 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
-| `0x78ed0` | `BasePlane_RearmFromStores` | 536 | `src/pufo/game/pufo_plane.h` |
+| `0x78ed0` | `BasePlane_RearmFromStores` | 536 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
 | `0x67d68` | `Base_CountItemQtyAcrossBases` | 528 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` (+1) |
 | `0x5d918` | `RadarScreen_DrawFuelGauge` | 524 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5d1bc` | `Geoscape_TickHourly` | 512 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
@@ -833,7 +833,7 @@ is the module that answers to it.
 | `0x76de0` | `BuySellScreen_BuildPanels` | 4236 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x96b30` | `TransferScreen_BuildPanels` | 3956 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x57808` | `BaseAtScreen_Update` | 3872 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
-| `0x7baf8` | `BasePlaneScreen_DrawCraftDetail` | 3824 | `src/pufo/game/pufo_plane.h` |
+| `0x7baf8` | `BasePlaneScreen_DrawCraftDetail` | 3824 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_plane.h` |
 | `0x77e6c` | `BuySellScreen_Draw` | 3524 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x58e10` | `BaseFacScreen_DrawPlacementOverlay` | 3396 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x9a8cc` | `Ufopaedia_Open` | 3368 | `src/pufo/game/pufo_baseui.h` |
@@ -841,40 +841,40 @@ is the module that answers to it.
 | `0x76160` | `BuySellScreen_BuildControls` | 3112 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x97fa4` | `TransferScreen_Draw` | 2988 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x716d4` | `PsiScreen_BuildPanels` | 2940 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7b014` | `BasePlaneScreen_BuildControls` | 2788 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x7b014` | `BasePlaneScreen_BuildControls` | 2788 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x6e9e8` | `ManufScreen_BuildPanels` | 2404 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x996e4` | `Transfer_WriteErrorDump` | 2196 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x73a34` | `ResearchScreen_Draw` | 2108 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x72398` | `PsiScreen_Draw` | 1960 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x64af0` | `SoldierScreen_Toggle` | 1952 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x61c8c` | `BaseFacScreen_DrawNameGrid` | 1840 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7cc8c` | `BasePlaneScreen_BuildPanels` | 1768 | `src/pufo/game/pufo_plane.h` |
+| `0x7cc8c` | `BasePlaneScreen_BuildPanels` | 1768 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_plane.h` |
 | `0x56fb8` | `BaseInfoScreen_Draw` | 1744 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7d374` | `BasePlaneScreen_Draw` | 1648 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` (+2) |
+| `0x7d374` | `BasePlaneScreen_Draw` | 1648 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_geoscape.c` (+3) |
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x9a014` | `Ufopaedia_RefreshEntry` | 1528 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7a3f4` | `BasePlaneScreen_BuildListPanels` | 1472 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x7a3f4` | `BasePlaneScreen_BuildListPanels` | 1472 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x6f34c` | `ManufScreen_CommitProduction` | 1408 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x96288` | `TransferScreen_ValidateCapacity` | 1372 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6e3e0` | `ManufScreen_Draw` | 1332 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x75b88` | `BuySellScreen_ValidateCapacity` | 1280 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x97aa4` | `TransferScreen_CommitTransfer` | 1280 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x74bf8` | `BuySellScreen_CommitTransaction` | 1176 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7d9e4` | `BasePlaneScreen_Init` | 1072 | `src/pufo/game/pufo_plane.h` |
+| `0x7d9e4` | `BasePlaneScreen_Init` | 1072 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x589ec` | `BaseFacScreen_Toggle` | 1060 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x75464` | `BuySellScreen_FillSellPanel` | 1044 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x62d78` | `SoldierScreen_DrawEquipPanels` | 960 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7ac38` | `BasePlaneScreen_CommitStores` | 948 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_plane.h` |
+| `0x7ac38` | `BasePlaneScreen_CommitStores` | 948 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_geoscape.h` (+1) |
 | `0x71298` | `PsiScreen_SelectListed` | 848 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x75878` | `BuySellScreen_UpdatePrices` | 784 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x75160` | `BuySellScreen_FillBuyPanel` | 772 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6be74` | `OptionsScreen_Init` | 760 | `src/pufo/game/pufo_baseui.h` |
-| `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.c` (+1) |
 | `0x65290` | `SoldierScreen_Draw` | 716 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
-| `0x7a9b4` | `BasePlaneScreen_AdjustSelectedQty` | 644 | `src/pufo/game/pufo_plane.h` |
-| `0x7a188` | `BasePlaneScreen_FillCrewPanel` | 620 | `src/pufo/game/pufo_plane.h`, `src/pufo/game/pufo_unit.h` |
+| `0x7a9b4` | `BasePlaneScreen_AdjustSelectedQty` | 644 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
+| `0x7a188` | `BasePlaneScreen_FillCrewPanel` | 620 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` (+1) |
 | `0x9602c` | `Transfer_MoveOneItem` | 604 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x749a8` | `ResearchScreen_Init` | 592 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x73008` | `ResearchScreen_RefreshPanels` | 568 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -882,9 +882,9 @@ is the module that answers to it.
 | `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.h` (+3) |
 | `0x710b0` | `ManufScreen_Init` | 488 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7c9e8` | `BasePlaneScreen_Close` | 480 | `src/pufo/game/pufo_plane.h` |
-| `0x79e00` | `BasePlaneScreen_DrawStatLabelA` | 452 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
-| `0x79fc4` | `BasePlaneScreen_DrawStatLabelB` | 452 | `src/pufo/game/pufo_plane.h` |
+| `0x7c9e8` | `BasePlaneScreen_Close` | 480 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
+| `0x79e00` | `BasePlaneScreen_DrawStatLabelA` | 452 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x79fc4` | `BasePlaneScreen_DrawStatLabelB` | 452 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
 | `0x619cc` | `SoldierScreen_EquipSelected` | 448 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x58728` | `BaseAtScreen_Draw` | 420 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x9690c` | `Transfer_ResetSite` | 420 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -907,7 +907,7 @@ is the module that answers to it.
 | `0x616ac` | `ResearchScreen_Open` | 232 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6b6c4` | `OptionsScreen_LayoutButtons` | 232 | `src/pufo/game/pufo_baseui.h` |
 | `0x73240` | `ResearchScreen_StartSelected` | 232 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x78d90` | `BuySellScreen_ApplyQtyChanges` | 232 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x78d90` | `BuySellScreen_ApplyQtyChanges` | 232 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x6dddc` | `ManufScreen_IncSelectedQty` | 228 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6f8cc` | `ManufScreen_ClearProductSlot` | 216 | `src/pufo/game/pufo_baseui.h` |
 | `0x72ea0` | `ResearchScreen_IncSelectedQty` | 208 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -928,7 +928,7 @@ is the module that answers to it.
 | `0x6318c` | `SoldierScreen_CopyNameToEdit` | 124 | `src/pufo/game/pufo_geopointer.h`, `src/pufo/game/pufo_soldiername.h` |
 | `0x6e914` | `ManufScreen_SelectListed` | 120 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x73380` | `ResearchScreen_CancelSelectedAndClose` | 116 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x7cbc8` | `BasePlaneScreen_SelectCraft` | 116 | `src/pufo/game/pufo_plane.h` |
+| `0x7cbc8` | `BasePlaneScreen_SelectCraft` | 116 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
 | `0x18e2c` | `Menu_ConfirmQuitDialog` | 112 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x55754` | `BaseInfoScreen_TogglePanelMode` | 104 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x618c4` | `SoldierScreen_FindPrevAtBase` | 104 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
@@ -965,8 +965,8 @@ is the module that answers to it.
 | `0x76088` | `BuySellScreen_PanelPrev` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x760e0` | `BuySellScreen_PanelNext` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x76d88` | `BuySell_RoleToItemId` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x79a70` | `BuySellScreen_DetailPanelPrev` | 88 | `src/pufo/game/pufo_baseui.h` |
-| `0x79ac8` | `BuySellScreen_DetailPanelNext` | 88 | `src/pufo/game/pufo_baseui.h` |
+| `0x79a70` | `BuySellScreen_DetailPanelPrev` | 88 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x79ac8` | `BuySellScreen_DetailPanelNext` | 88 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x967e4` | `Transfer_ScrollPrevAll` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x9683c` | `Transfer_ScrollNextAll` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x96ad8` | `Transfer_RoleToIconId` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -988,8 +988,8 @@ is the module that answers to it.
 | `0x19f24` | `SaveLoad_Slot4` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19f74` | `SaveLoad_Slot5` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19fc4` | `SaveLoad_Slot6` | 80 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x617f4` | `BasePlaneScreen_Open` | 80 | `src/pufo/game/pufo_baseui.c` |
-| `0x7cc3c` | `BasePlaneScreen_SelectListed` | 80 | `src/pufo/game/pufo_plane.h` |
+| `0x617f4` | `BasePlaneScreen_Open` | 80 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
+| `0x7cc3c` | `BasePlaneScreen_SelectListed` | 80 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
 | `0x6af80` | `SaveGame_Slot0_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6afcc` | `SaveGame_Slot1_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6b018` | `SaveGame_Slot2_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
@@ -1006,12 +1006,12 @@ is the module that answers to it.
 | `0x6dd4c` | `ManufScreen_PanelPrev` | 72 | `src/pufo/game/pufo_baseui.h` |
 | `0x6dd94` | `ManufScreen_PanelNext` | 72 | `src/pufo/game/pufo_baseui.h` |
 | `0x588cc` | `BaseAtScreen_Open` | 68 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_strateg.h` |
-| `0x79b20` | `BasePlaneScreen_SelectWeapon25` | 68 | `src/pufo/game/pufo_plane.h` |
+| `0x79b20` | `BasePlaneScreen_SelectWeapon25` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
 | `0x79b64` | `BasePlaneScreen_SelectWeapon26` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79ba8` | `BasePlaneScreen_SelectWeapon27` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79bec` | `BasePlaneScreen_SelectWeapon28` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79c30` | `BasePlaneScreen_SelectWeapon29` | 68 | `src/pufo/game/pufo_plane.h` |
-| `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | `src/pufo/game/pufo_plane.h` |
+| `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
 | `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x18864` | `Menu_OpenLoadSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x188a4` | `Menu_OpenSaveSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
@@ -1046,8 +1046,8 @@ is the module that answers to it.
 | `0x6189c` | `SoldierScreen_PanelNext` | 40 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6dd24` | `ManufScreen_SyncSelection` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x76138` | `BuySellScreen_SyncSelection` | 40 | `src/pufo/game/pufo_baseui.h` |
-| `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
-| `0x79a48` | `BuySellScreen_ListPanelNext` | 40 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_plane.h` |
+| `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
+| `0x79a48` | `BuySellScreen_ListPanelNext` | 40 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x96ab0` | `Transfer_CacheSelIndex` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x19650` | `MenuBtn_Confirm0` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 730 |
+| `test_geoscapeframe` | PASS | 860 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
@@ -1343,7 +1343,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 851 citations.
+parity report. Total: 855 citations.
 
 ### Offsets below the image base (44)
 
@@ -1352,7 +1352,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (807)
+### At or above the image base (811)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1947,8 +1947,12 @@ against the IDB when the final report is assembled.
 - `0x6e970`
 - `0x6f638`
 - `0x76318`
+- `0x7a400`
+- `0x7a404`
 - `0x7a514`
+- `0x7ae54`
 - `0x7b018`
+- `0x7c9dc`
 - `0x7d37c`
 - `0x7d3d0`
 - `0x7df84`

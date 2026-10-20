@@ -1474,6 +1474,37 @@ map is bare ground with one bright room, which is what the original's tile rules
 coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, e2e's 9 pictures unchanged, IDB comments at 0x55060, 0x552EC,
 0x55294, 0x55524, 0x55018, 0x54ff8, 0x39E9C, 0x399BC and 0x159768 plus `idb_save`.
 
+**The hangar (screen 6) runs inside the shell now (Part 87)**, and the class defect that had been eating its
+columns is closed. No new original function: `BasePlaneScreen_*` was ported in units 95/96. What was missing was
+nav slot 3 reaching it (`BasePlaneScreen_Open @ 0x617f4` writes `nGeoscapeScreen = 6` at 0x61828 *before* its tail
+call into `BasePlaneScreen_Init @ 0x7d9e4`, plays sample 17, and installs the close control at (224,1)), the press
+seam's 16 controls and 12 panel pointers, and `Geoscape_Draw` case 6's arm at 0x8C1C8. Three gates came out of re-reading
+the draw and the close: `BasePlaneScreen_DrawCraftDetail @ 0x7baf8` has **three exclusive arms** (crew 0x7BCF8..0x7BD44
+returns; stores 0x7BD70..0x7C228 returns at 0x7C14C; only the read-out computes the crew census, and only with
+`Ship.bCanDogfight`, gate 0x7C614) so the census does not move while a panel set is up; `Geoscape_CloseUI`'s case 6 is
+**one arm per call** (0x8C018 / 0x8C034 / 0x8C0B0 / 0x8C07C / 0x8C08C / 0x8C094+0x8C098), so leaving the hangar takes six
+close calls; and the cargo move is **two separated steps** — `BasePlaneScreen_CommitStores @ 0x7ac38` only stages
+(0x7AFD8), `BuySellScreen_ApplyQtyChanges @ 0x78d90` is what moves base stock down (0x78E34) and `aItemQty[craft]`
+up (0x78E4C), and only `BasePlaneScreen_BuildControls`' clear loop at 0x7B038..0x7B058 drops the staged counts.
+**The class defect:** `World_WireGeoscapeFrame` runs once while the hangar's panels come and go, so the envs held stale
+panel pointers and stale by-value counts. `pufo_plane.h` now types `unk_1870C8` as a `u32 *` (0x7AE54 stores a dword) and
+`unk_161F24` as a `u8 *` (LDRB 0x7A404 / STRB 0x7A400), and `World_RefreshGeoscapeFrame` re-reads the whole set every
+frame. The seven `pF->planeDetail` panel pointers were the visible symptom: with a stale copy the arm painted its rails,
+captions, separators and OK control and skipped **every column it was asked to draw**, because each `UiPanel_DrawText`
+sits behind a NULL test — the same shape as the missing text in Parts 82..85. **On shipped data a new game's stores list
+is legitimately empty**: the row gate 0x7B190 admits slot < 25 or 31..51, base 0 stocks only slot 43, and its topic gate
+(byte_AA968[43] → topic 1, 0x7B1D4) is locked, so the hangar cannot arm a squad until research/manufacture stock something
+admissible. Gates: `test_geoscapeframe` 12h walks open → select → read-out census 8/8 → crew panel and its toggle →
+stores built empty, unlocked with 1 row → stage / undo / re-stage → confirm (stock 1→0, `aItemQty[0][43]` 0→1, staged
+count kept) → the six-call close ladder. Four new frames, all looked at: `geoscape_hangar`, `geoscape_hangar_detail`,
+`geoscape_hangar_locked` (8 soldier names), `geoscape_hangar_stores`. Two gates were rewritten because they pinned an
+assumption: the pulse auto-repeat needs a **held** button (0x1A3F0 wants `nState == 1`) and moves `nUnk3028` (scroll) not
+`nUnk3032` (row), clamped at `nLineCount - nStyle` (0x3F00C), which is negative for the hangar's sets. Still open: the
+avail/taken columns carry their quantities as LINE AUX only (0x7B918, 0x7B924) and nothing draws digits, and the rows are
+pen-gated on `bPlanePanelsBuilt != 0 && bPlaneShowCraftDetail == 0` (0x88308..0x88320). IDB comments at 0x7BCF8, 0x7C5C0,
+0x7C630, 0x7A3F4, 0x88310, 0x161F24, 0x7AFD8, 0x7B038, 0x7AE54 + `idb_save`. Gates: 62/62 Release and Debug, 18812 checks,
+coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 21 frame references (4 new), e2e's 9 pictures unchanged.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give
