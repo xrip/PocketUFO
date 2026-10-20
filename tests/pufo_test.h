@@ -25,10 +25,12 @@ static inline void TestCheck(const char *pWhat, int bOk)
     ++g_nChecks;
     if (bOk) {
         printf("  ok   %s\n", pWhat);
+        fflush(stdout); /* a crash later in the test must not swallow this line */
         return;
     }
     ++g_nFails;
     printf("  FAIL %s\n", pWhat);
+    fflush(stdout);
 }
 
 static inline void TestEqI32(const char *pWhat, int nGot, int nWant)
@@ -36,10 +38,11 @@ static inline void TestEqI32(const char *pWhat, int nGot, int nWant)
     ++g_nChecks;
     if (nGot == nWant) {
         printf("  ok   %s (%d)\n", pWhat, nGot);
-        return;
+    } else {
+        ++g_nFails;
+        printf("  FAIL %s: got %d want %d\n", pWhat, nGot, nWant);
     }
-    ++g_nFails;
-    printf("  FAIL %s: got %d want %d\n", pWhat, nGot, nWant);
+    fflush(stdout);
 }
 
 static inline void TestEqU16(const char *pWhat, unsigned nGot, unsigned nWant)
@@ -47,10 +50,11 @@ static inline void TestEqU16(const char *pWhat, unsigned nGot, unsigned nWant)
     ++g_nChecks;
     if (nGot == nWant) {
         printf("  ok   %s (%u)\n", pWhat, nGot);
-        return;
+    } else {
+        ++g_nFails;
+        printf("  FAIL %s: got %u want %u\n", pWhat, nGot, nWant);
     }
-    ++g_nFails;
-    printf("  FAIL %s: got %u want %u\n", pWhat, nGot, nWant);
+    fflush(stdout);
 }
 
 static inline void TestNear(const char *pWhat, double dGot, double dWant)
@@ -58,10 +62,11 @@ static inline void TestNear(const char *pWhat, double dGot, double dWant)
     ++g_nChecks;
     if (fabs(dGot - dWant) < 1e-6) {
         printf("  ok   %s (%g)\n", pWhat, dGot);
-        return;
+    } else {
+        ++g_nFails;
+        printf("  FAIL %s: got %g want %g\n", pWhat, dGot, dWant);
     }
-    ++g_nFails;
-    printf("  FAIL %s: got %g want %g\n", pWhat, dGot, dWant);
+    fflush(stdout);
 }
 
 /* Print the summary line and give main()'s exit code: 0 when nothing failed. */

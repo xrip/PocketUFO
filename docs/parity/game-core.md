@@ -20811,3 +20811,67 @@ and the `byte_A7B80[type].bLarge` choice); the reinforcement contract with the i
 latent-fault notes at 0x49260, 0x4C8D4 and 0x4CBE0; the corpse-item `new(0x18)`/pool-growth semantics at 0x4EAD8;
 `idb_save`.
 
+
+## Part 99 - the economy round on a live world: buying, research to completion, production, and both craft kinds armed
+
+The three geoscape nav slots that stayed `World_NoopClick` are live now: slot 6 opens
+`ManufScreen_Open @ 0x614cc`, slot 8 `BuySellScreen_OpenBuy @ 0x61794`, slot 9
+`BuySellScreen_OpenSell @ 0x617c4`, each with its Init env, root block, controls, `Geoscape_Draw`
+arm and pointer env in `pufo_world.c`. `test_geoscapeframe` 99.1..99.6 then runs the whole economy
+round on the loaded shell and dumps one frame per stage: `econ_facility_dialog` /
+`econ_facility_commit` (module site armed, funds down by the 400000 price), `econ_buysell_open` /
+`econ_buysell_queued` / `econ_buysell_sell`, `econ_research_running` / `econ_research_done`
+(`nFinishedTopic` moves only when `pfnTickHourly` runs `ResearchScreen_AccumulateAllocated @ 0x74914`),
+`econ_manuf_alloc` / `econ_manuf_done`, `econ_after_mission`, `econ_hangar_transport` and
+`econ_hangar_combat`.
+
+The buy round proves the confirm/teardown coupling in `BuySellScreen_BuildControls @ 0x76160`.
+`BuySellScreen_ConfirmSiteAndClose @ 0x75090` writes flag 24 at 0x75120, raises `nSmapSiteCount` at
+0x75124 and snapshots the funds at 0x75130 INSIDE the close chain, and the teardown re-reads the
+count LIVE at 0x76C14: it clears the NEXT (empty) slot and preserves the confirmed record. The port
+carried a by-value copy of the count in `BuySellControlsEnv` and wiped the record instead -- fixed
+by making the env hold `pnSiteCount`, a pointer to the live cell (the pattern the transfer commit
+env already used). Twenty-four hourly ticks later `Smap_GrantSiteRecovery @ 0x98b50` ages the record
+(0x98B68), credits the bought engineer, scientist, weapon and hold item to the base (0x9900C,
+skipping craft slots 117..121), and compacts the record out (0x994C8..0x99558); the test checks each
+credit and that the site count is back to its seed value.
+
+The hangar stage exposed two real faults. First, `World_RefreshGeoscapeFrame` repoints the store
+handlers at the fresh panels during `DrawFrame`; pressing store controls right after the build,
+without a frame in between, let `BasePlaneScreen_CommitStores @ 0x7ac38` read the freed panels of the
+previous hangar visit (it staged slot 43 from a dangling aux column). Pressing after a `DrawFrame`
+is the faithful order, because the original repoints those env cells every frame. Second, the press
+arm crashed: `Geoscape_OnPointer`'s craft-detail arm dereferences `nSelectedCraftIdx @ 0x161AC4` at
+0x884D4 -- the same cell `BasePlaneScreen_SelectCraft @ 0x7CC00` writes -- but the pointer env's
+`pnSelectedCraftIdx` was never wired in the shell, a NULL dereference the moment the detail view was
+open. `pufo_world.c` now points it at `nHangarCraftIdx`.
+
+Closing a hangar with the detail open walks ONE CloseUI arm per press, like case 7's three presses:
+the close click reaches `Geoscape_CloseUI @ 0x8b94c` case 6, and with `bPlaneShowCraftDetail` set,
+0x8C08C clears the detail flag and returns; the id-1 handover at 0x8C094 and the panels teardown at
+0x8C098 (which clears `bPlaneBuilt @ 0x161F08`) happen only on the second press. The test now
+asserts both stages. The transport's cargo move runs `CommitStores @ 0x7ac38` (the row aimed at the
+stocked item's slot aux; 0x7AFB4, 0x7AFC4, 0x7AFD8) and `BuySellScreen_ApplyQtyChanges @ 0x78d90`
+(commit pass 0x78DC0..0x78E50, then the close at 0x78E74 whose stores arm tears the store panels
+down and leaves the screen id where it was); the frame shows 139 of 140 slots free. The away
+transport is recalled through `Ship_RetargetTravel @ 0x5a484` (return leg via the InitTravel bC=1 arm
+at 0x7F648) and lands in `StrategList_ProcessEvents @ 0x7fcb0` (bAtBase 1 at 0x80E5C, loot transfer
+at the tail); `Smap_BeginCraftSelect @ 0x838dc` does not recall a craft by itself (0x83950), which
+the test keeps as original behavior. The combat craft mounts its weapon through
+`BasePlaneScreen_SelectWeapon @ 0x79b34` with the swap tail at 0x79A10; the frame shows the
+Interceptor with the cannon on one side and the laser on the other.
+
+The `bManufQtyGate @ 0x15EE50` comments in `pufo_baseui.c` / `pufo_baseui.h` claimed the gate never
+fires because "the only store is the 0 write at 0x6E970". That was wrong: `ManufScreen_DrawFrame`
+loads the gate's address at 0x7001C and writes 1 at 0x7019C, 0x70358, 0x704B4 and 0x70610 for every
+component row whose requirement exceeds the base stock (the red pair at 0x70194 paints the row), so
+a product that cannot be built locks its quantity and engineer buttons (the read-and-bail sites
+0x6DDE0, 0x6DEC4, 0x6E0A0, 0x6E140, 0x6E334, 0x6DFA8) until a row click clears the byte. The port
+already reproduced the setter at 0x7019C and its three twins; the three stale comments are corrected
+and the IDB carries notes at 0x7019C and 0x6E970.
+
+IDB: live-count notes at 0x7619C and 0x76C14, the confirm writes at 0x75124/0x75130, the full
+`Smap_GrantSiteRecovery @ 0x98b50` contract at its head, CloseUI case-6 arm-per-press notes at
+0x8C08C and 0x8C098, the detail-arm cell identity at 0x884D4, and the gate setter/clear pair at
+0x7019C and 0x6E970; `idb_save`. Gates: release and debug builds clean, 62/62 tests in both
+configurations, report and artifacts OK, frames and e2e reviewed at native scale.

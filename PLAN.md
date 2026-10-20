@@ -4059,6 +4059,48 @@ unchanged; 18267 checks.
   the stamp sits on `aQueue[nQueueCursor + 1]`, the `pufo_turn.c` comment carries the ARM addressing and the
   `pufo_turn.h` comment was rewritten to match; `test_tactstate` and `test_tactend` pass in both configurations.
 
+- [x] **Part 99: the economy round -- build, buy, research to completion, production to an item,
+  arm a transport AND a combat craft -- with a picture per stage.** The audit of what already stands: the facility
+  buy/commit and the 16-day completion (test_geoscapeframe ~1550..~2711), the research open/allocate/start/cancel
+  and its frames (~2192..2486), the hangar open/crew/stores staging for the type-0 transport (~1880..2052), and the
+  unit-level BuySell paging/build gates in `test_baseui`. What is MISSING and is this part's job: the three nav
+  openers stay `World_NoopClick` (slot 6 `ManufScreen_Open @ 0x614cc`, slot 8 `BuySellScreen_OpenBuy @ 0x61794`,
+  slot 9 `BuySellScreen_OpenSell @ 0x617c4`) because their Init envs, their `Geoscape_Draw` arms
+  (`pManufPad/pManufDraw/pManufCtl`, `pBuySellPad/pBuySellDraw/pBuySellCtl` -- the pointer side already hit-tests
+  them: case 9 hits `apManufCtl[2..5]`/`[0..1]`, cases 11/12 hit `apBuySellCtl[0..1]`) and the `aManufProductB
+  @ 0x15B79C` requested-quantity array are not shell state (pufo_world.c:2165 records the gap); no test has ever
+  run `pfnTickHourly`, so neither `ResearchScreen_AccumulateAllocated @ 0x74914` nor `ManufScreen_RefreshBaseTabs
+  @ 0x70ebc -> ManufScreen_CommitProduction @ 0x6f34c` has ever run on a live world. Stages: (1) wire screens 9,
+  11, 12 in the shell (controls, root blocks, Init envs, draw arms, pointer env, nav thunks; TransferScreen 10
+  stays unwired -- not in the goal); (2) live economy round in `test_geoscapeframe`: facility build->completion
+  frames; buy: ">" per `ValidateCapacity @ 0x75b88` (funds -uPrice at 0x75D18+, staging site auItemQty +1,
+  nTransTotal +price, shortfall 1 when funds short) and confirm through `ConfirmSiteAndClose @ 0x75090`, sell via
+  `UpdatePrices @ 0x75878` + `CommitTransaction @ 0x74bf8` with base-stock deltas; research allocate->start->
+  pump `pfnTickHourly`->completion (`nFinishedTopic`); production qty/engineers press gates -> hourly commit (funds
+  -price*1.4 at 0x6F408/0x6f710, components 105/106/107/109 vs stock) -> item appears in base stock; (3) arm both
+  craft kinds in the hangar (produce or field a combat craft, weapon staging + `ApplyQtyChanges @ 0x78d90`);
+  (4) frames for every stage, IDB notes, docs, gates, commit.
+
+  Closed: all four stages run in `test_geoscapeframe` 99.1..99.6 with twelve frames under `tests/ref`
+  (econ_facility_dialog/commit, econ_buysell_open/queued/sell, econ_research_running/done,
+  econ_manuf_alloc/done, econ_after_mission, econ_hangar_transport, econ_hangar_combat).
+  The buy round exposes the confirm/teardown coupling: `BuySellScreen_ConfirmSiteAndClose @ 0x75090` raises
+  `nSmapSiteCount` at 0x75124 *inside* the close chain, and the `BuildControls` teardown re-reads that cell live
+  at 0x76C14 -- so the env must carry a pointer (`pnSiteCount`), not a copy, or the teardown wipes the record
+  just confirmed. The bought crew, weapon and hold item then arrive through `Smap_GrantSiteRecovery @ 0x98b50`
+  24 hourly ticks later and the record compacts out at 0x994C8. The hangar part exposed two real faults: the
+  store handlers must be pressed after a `DrawFrame` (World_RefreshGeoscapeFrame repoints them; before that fix
+  `CommitStores @ 0x7ac38` read the freed panels of the previous hangar visit), and `GeoscapePointerEnv.pnSelectedCraftIdx`
+  was never wired -- the detail press arm dereferenced it at 0x884D4 (the cell at 0x161AC4 that
+  `BasePlaneScreen_SelectCraft @ 0x7CC00` writes) and crashed; both fixed. Closing a hangar with the detail open
+  walks one CloseUI arm per press: 0x8C08C clears only `bPlaneShowCraftDetail`, the teardown at 0x8C094/0x8C098
+  needs the second press. The `bManufQtyGate @ 0x15EE50` "never fires" comments were wrong and are corrected:
+  `ManufScreen_DrawFrame` writes 1 at 0x7019C and its three twins (0x70358, 0x704B4, 0x70610) when a component
+  row is short of stock; 0x6E970 is the clearing side. The combat craft is armed through the weapon swap
+  (`SelectWeapon @ 0x79b34`, tail at 0x79A10); the transport carries a hold item staged through
+  `CommitStores`/`ApplyQtyChanges @ 0x78d90` (139 of 140 slots free in the frame), and the away transport is
+  recalled through `Ship_RetargetTravel @ 0x5a484` landing via the event pass at 0x80E5C.
+
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has
   accepted any node, and the pick's failure is ignored; the original's consumers at 0x49260, 0x4C8D4 and 0x4CBE0

@@ -88,6 +88,16 @@ typedef struct GeoscapeFrameState {
      * topic-list scroll controls at aResearchTopics + 0x1D48 / + 0x1D4C (CMP #2 at 0x9414C). */
     ResearchDrawEnv          researchDraw; /* 0x73a34, the callee's env */
     GeoscapeScreenArmEnv     researchCtl;  /* its two scroll controls, 0x94120..0x94150 */
+    /* Case 9 (0x9415C..0x941A4), the manufacturing screen: pad blit, controls [0..1] blit, then
+     * ManufScreen_DrawFrame @ 0x6e48c, which owns the panels, the shortfall line and the six
+     * bottom controls' pads (0x70AF8). Case 11/12 (0x93DD4..0x93E58): pad blit, controls [0..1],
+     * the SHARED BuySellScreen_Draw @ 0x93E10, then the buy/sell tail that tracks the hovered row
+     * in panels B and C (0x93EB4). */
+    ManufFrameEnv            manufDraw;    /* 0x6e48c, the frame env */
+    GeoscapeScreenArmEnv     manufCtl;     /* the tab scroll pair the arm blits (0x15EE1C/0x15EE20) */
+    BuySellDrawEnv           buySellDraw;  /* 0x77e6c, the frame both buy and sell run */
+    GeoscapeScreenArmEnv     buySellCtl;   /* 0x161A0C / 0x161A10, the two controls the arm blits */
+    GeoscapeBuySellTrackEnv  buySellTrack; /* the tail cases 10, 11 and 12 share (0x93EB4) */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -704,6 +714,90 @@ typedef struct PufoWorldState {
     ResearchQtyEnv        researchQty;       /* 0x72ea0 / 0x72f70 / 0x72d14, the three quantity controls */
     ResearchStartEnv      researchStart;     /* 0x73240: the start button, and case 8's first close arm */
     ResearchCancelEnv     researchCancel;    /* 0x73380: the cancel button */
+    /* Case 9, the manufacturing screen (0x9415C..0x941A4), opened by nav control slot 6:
+     * ManufScreen_Open @ 0x614cc is installed at 0x67BBC, plays sample 0x11 and writes id 9 AFTER its
+     * tail call into ManufScreen_Init @ 0x710b0. The original keeps the screen block at unk_159E98 --
+     * [0] the "manuf" pad (mode 7), the six controls at block+0x4F84..0x4F98 (0x15EE1C..0x15EE30) --
+     * and the four panel columns at 0x15EE44/0x15EE48/0x15EE40/0x15EE38. The shell owns the same
+     * objects plus the two row cells and the requested-unit column aManufProductB @ 0x15B79C, whose
+     * "not shell state yet" note (World_BuildManufClearEnv) this wiring ends: the qty/engineer pair
+     * writes it, the hourly commit reads it. */
+    UiControl              aManufCtl[6];      /* Init's six, on g_aManufCtlDesc @ 0xAB9F8: the tab scroll
+                                               * pair (205,18)/(205,38), the quantity pair (10,251)/(10,271)
+                                               * and the engineers pair (140,251)/(140,271) */
+    UiControl             *apManufCtl[6];     /* the flat view: case 9 blits [0..1] (0x94168..0x94198), the
+                                               * press arm hit-tests 2..5 with a product selected and 0..1
+                                               * without (0x88...) */
+    void                  *apManufRoot[7];    /* the screen block: [0] the pad, [1..6] the six controls,
+                                               * as ManufScreen_Init stores them (0x710E0 / 0x71160) */
+    UiPanel               *pManufProductPanel; /* pManufProductPanel @ 0x15EE44: names, aux = product id */
+    UiPanel               *pManufPanelB;       /* pManufPanelB @ 0x15EE48: the allocated-work column */
+    UiPanel               *pManufPanelC;       /* pManufPanelC @ 0x15EE40: the percent column */
+    UiPanel               *pManufPanelD;       /* pManufPanelD @ 0x15EE38: the asked/produced column */
+    u8                    bManufBuilt;         /* unk_15EE4C, BuildPanels' switch */
+    u8                    bManufQtyGate;       /* bManufQtyGate @ 0x15EE50, set when a component is short */
+    u8                    bManufProductSelected; /* bManufProductSelected @ 0x15EE34 */
+    i32                   nManufProductRow;    /* nManufProductRowCache @ 0x15EE3C */
+    i32                   anProductReq[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* aManufProductB
+                                               * @ 0x15B79C: units the player asked for, per base and product */
+    ManufInitEnv          manufInit;      /* 0x710b0 */
+    ManufBuildEnv         manufBuild;     /* 0x6e9e8: Init's tail call at 0x71268 and CloseUI case 9's teardown */
+    ManufQtyEnv           manufQty;       /* 0x6dddc / 0x6e09c / 0x6df6c / 0x6dec0 */
+    ManufEngineerEnv      manufEngineers; /* 0x6e13c / 0x6e330 */
+    ManufSelectEnv        manufSelect;    /* 0x6e914: the product row click */
+    ManufClearEnv         manufClear;     /* the persistent ClearProductSlot tables: the hourly hook,
+                                           * ConfirmAndClose @ 0x6e98c and the frame draw both read it */
+    ManufDrawEnv          manufDrawEnv;   /* ManufScreen_Draw @ 0x6e3e0: pGeoscapeCtlA's click handler and
+                                           * CloseUI case 9's selected-product rebuild (0x8BD78) */
+    i32                   nManufSelScratch159E90; /* gUiRootPanel.anLineAux[147] @ 0x159E90: the dword
+                                           * ManufScreen_SyncSelection @ 0x6dd24 stores panel D's row cursor in */
+    ScreenInitHooks       manufOpenHooks; /* nav slot 6's handler (0x67BBC) */
+    /* Cases 11 and 12, the buy/sell screen (0x93DD4..0x93E58, one shared BuySellScreen_Draw at 0x93E10),
+     * opened by nav slots 8/9: BuySellScreen_OpenBuy @ 0x61794 (0x67BD4) and BuySellScreen_OpenSell
+     * @ 0x617c4 (0x67BE0), id 11/12 written BEFORE the tail call into the shared BuySellScreen_Init
+     * @ 0x78c30. The pad is the single slot unk_161A08 (the original allocates it in Init at 0x78C70);
+     * the four controls are the globals at 0x161A0C..0x161A18 (case 11/12 blit [0..1] only, 0x93DE0/0x93E2C),
+     * the five columns sit at 0x161A1C/0x161A00/0x161A20/0x160C88/0x1615F8, and the pending deltas fill
+     * g_anBuySellSlotDelta @ 0x161600 -- the cells CommitTransaction @ 0x74bf8 finally moves. */
+    UiControl              aBuySellCtl[4];     /* g_aBuySellCtl @ 0x161A0C..0x161A18, caller-owned storage
+                                                * the two builders seat with their own descriptors */
+    UiControl             *apBuySellCtl[2];    /* the arm/press view: 0x161A0C and 0x161A10, the two the
+                                                * frame blits and the press arm hit-tests (0x88804, 0x8A52C) */
+    PadImage              *pBuySellPad;        /* pBuySellScreenPad @ 0x161A08, Init's allocation, freed by
+                                                * CloseUI cases 11/12 at 0x8C0F0 / 0x8C13C */
+    UiPanel               *pBuySellPanelA;     /* pBuySellPanelA @ 0x161A1C, the name column */
+    UiPanel               *pBuySellPanelB;     /* pBuySellPanelB @ 0x161A00, the "<" column */
+    UiPanel               *pBuySellPanelC;     /* pBuySellPanelC @ 0x161A20, the ">" column */
+    UiPanel               *pBuySellPanelD;     /* pBuySellPanelD @ 0x160C88, the available count */
+    UiPanel               *pBuySellPanelE;     /* pBuySellPanelE @ 0x1615F8, the pending quantity */
+    u8                    bBuySellBuilt;       /* bBuySellPanelsBuilt @ 0x161A28, the sell mode's switch */
+    u8                    bBuySellCtlBuilt;    /* unk_161A24, the buy mode's switch */
+    u8                    bBuySellCursorOnRow; /* unk_161A30, 1 inside the cursor gate, 0 outside */
+    ScreenScratch         buySellScratch;      /* the row cursor unk_186BE8; in the original this dword is
+                                                * the SAME global the hangar caches its row in (planeScratch)
+                                                * -- the port gives each screen its own copy, as research does */
+    i32                   nBuySellTransTotal;  /* BuySell_nTransTotal @ 0x161A2C, the money the transaction moved */
+    i32                   nSoldierHireCount;   /* nSoldierHireCount @ 0x159D90, the 1000-row hire tally Init clears
+                                                * (0x78CB4) and the ">" / "<" soldier rows move; the save chunk's
+                                                * four bytes at 0x159D90 round-trip through this cell now */
+    i32                   nBuySellFundsSnapshot; /* BuySell_nFundsSnapshot @ 0x161460, the rollback baseline the
+                                                * builders' teardown restores when the player leaves uncommitted */
+    i32                   anBuySellSlotDelta[PUFO_RESEARCH_TOPIC_COUNT]; /* g_anBuySellSlotDelta @ 0x161600,
+                                                * one pending unit count per object slot (Map_nObjectCount entries,
+                                                * 144 shipped) */
+    i32                   anAssignedCraftList[PUFO_PRODUCT_ENTRIES_PER_BASE]; /* dword_161468: [0] the count,
+                                                * [1..] the craft CommitTransaction found in panel A rows 117..121 */
+    i32                   anSoldierIdList[256]; /* g_aSoldierIdList @ 0x160C90: [0] the count, [1..] the soldier
+                                                * ids from the panel A rows 1000 */
+    BuySellInitEnv        buySellInit;    /* 0x78c30, shared by both modes */
+    BuySellBuildEnv       buySellBuild;   /* 0x76de0: sell's tail call and CloseUI case 12's teardown */
+    BuySellControlsEnv    buySellControls;/* 0x76160: buy's tail call and CloseUI case 11's teardown */
+    BuySellCapacityEnv    buySellCapacity;/* 0x75b88 / 0x75878: the ">" and "<" row handlers */
+    BuySellRowEditEnv     buySellRowEdit; /* 0x75160 / 0x75464: the FillBuyPanel / FillSellPanel fills */
+    BuySellCommitEnv      buySellCommit;  /* 0x74bf8: the sell confirm */
+    BuySellConfirmEnv     buySellConfirm; /* 0x75090: the buy confirm, the transfer working site's promote */
+    ScreenInitHooks       buySellBuyHooks;  /* nav slot 8's handler (0x67BD4) */
+    ScreenInitHooks       buySellSellHooks; /* nav slot 9's handler (0x67BE0) */
     /* The frame's loose globals the shell owns: the radar screen gate, the two research walk
      * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
      * and the two scratch lines the status panel writes. */
@@ -760,6 +854,8 @@ typedef struct PufoWorldState {
      * this state. Smap_BeginCraftSelect @ 0x838dc reaches the ship env through its lookup and
      * removal calls (0x83968, 0x83F7C, 0x84428) and the demolish env at 0x84208. */
     ShipRemovalEnv    shipEnv;
+    BaseClearShipsEnv clearShipsEnv;  /* the removal pair plus the two cells it lacks: CloseUI case 12's
+                                       * Base_RemoveAllShips teardown @ 0x8C160, fed from shipEnv below */
     BaseDemolishEnv   demolishEnv;
     SmapCraftSelectEnv craftEnv;
     BootAssets *pAssets; /* set by World_NewGame; the StartNew hook reaches it through here */

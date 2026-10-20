@@ -1576,8 +1576,9 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
     }
 
     if (*pEnv->pbControlsBuilt != 0) {
-        /* The teardown branch, 0x76C08..0x76D70. */
-        pSite = BuySellSiteAt(pEnv->aSites, pEnv->nSiteCount);
+        /* The teardown branch, 0x76C08..0x76D70. 0x76C14 re-reads nSmapSiteCount live, so when the
+         * close follows a confirm this clears the next empty slot, not the record just confirmed. */
+        pSite = BuySellSiteAt(pEnv->aSites, (pEnv->pnSiteCount != NULL) ? *pEnv->pnSiteCount : -1);
         if (pSite != NULL) {
             memset(pSite->auItemQty, 0, sizeof(pSite->auItemQty));   /* 0x76C18 */
             pSite->bFlag0 = 0;                                       /* 0x76C30 */
@@ -1618,8 +1619,8 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         return;
     }
 
-    /* Opening the working site, 0x7619C..0x7620C. */
-    pSite = BuySellSiteAt(pEnv->aSites, pEnv->nSiteCount);
+    /* Opening the working site, 0x7619C..0x7620C, at the live site count (0x7619C). */
+    pSite = BuySellSiteAt(pEnv->aSites, (pEnv->pnSiteCount != NULL) ? *pEnv->pnSiteCount : -1);
     if (pSite != NULL) {
         pSite->bFlag0 = PUFO_BUYSSELL_SITE_FLAG_NEW; /* 0x761A8 */
         if (pEnv->apBases != NULL && pEnv->nSelectedBaseIdx >= 0 &&
@@ -3814,12 +3815,13 @@ static i32 ManufQtyIndex(const ManufQtyEnv *pEnv)
     return nProduct + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase; /* MUL #0xC8, ADD product */
 }
 
-/* ORIGINAL BUG (dead code): the gate every one of these buttons opens with. A non-zero
- * bManufQtyGate @ 0x15EE50 stops it dead and the byte itself becomes the return value -- 0x6DDE0,
- * 0x6DEC4, 0x6E0A0, 0x6E140, 0x6E334 and 0x6DFA8 all read it and bail -- but no code in the
- * original ever writes a non-zero value to that byte: the only store to it anywhere is
- * ManufScreen_SelectListed @ 0x6E970 writing 0. The gate never fires in the shipped build. The
- * port keeps it because the original has it. */
+/* The gate every one of these buttons opens with. A non-zero bManufQtyGate @ 0x15EE50 stops it
+ * dead and the byte itself becomes the return value -- 0x6DDE0, 0x6DEC4, 0x6E0A0, 0x6E140,
+ * 0x6E334 and 0x6DFA8 all read it and bail. It is not dead code: ManufScreen_DrawFrame writes 1
+ * at 0x7019C and its three twins (0x70358, 0x704B4, 0x70610) for every component row whose
+ * requirement exceeds the base's stock -- a product that cannot be built with what the base has
+ * locks its quantity and engineer buttons until a new row click clears the byte
+ * (ManufScreen_SelectListed @ 0x6E970). */
 static i32 ManufQtyGateValue(const ManufQtyEnv *pEnv)
 {
     return (pEnv->pbQtyGate != NULL) ? (i32)*pEnv->pbQtyGate : 0;
@@ -3986,7 +3988,7 @@ i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv)
         *pEnv->pbAnimStarted = 0; /* 0x6E964 */
     }
     if (pEnv->pbQtyGate != NULL) {
-        *pEnv->pbQtyGate = 0; /* 0x6E970: the only write bManufQtyGate ever gets */
+        *pEnv->pbQtyGate = 0; /* 0x6E970: the clear; DrawFrame sets 1 at 0x7019C and its twins */
     }
     return nRow;
 }
@@ -4065,7 +4067,10 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv)
 
     const i32 nBaseCount = (i32)(i8)*pEnv->pbBaseCount; /* 0x70EE0: LDRSB of abFacilityGrid + 0x618 */
     if (nBaseCount <= 0) {
-        return; /* 0x71048: ManufScreen_CommitProduction (0x6f34c, not ported) */
+        if (pEnv->pCommitEnv != NULL) {
+            ManufScreen_CommitProduction(pEnv->pCommitEnv); /* 0x70EEC B -> 0x71044/0x71048 */
+        }
+        return;
     }
 
     for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
@@ -4109,10 +4114,13 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv)
         }
     }
 
-    /* 0x71044 / 0x71048: the original tail-calls ManufScreen_CommitProduction here (and from the
-     * zero-base-count guard), while the over-budget path at 0x710A4 branches PAST it. The port keeps
-     * the two envs separate because the hourly tick is not wired into the shell yet; the commit pass
-     * itself is ported below as ManufScreen_CommitProduction. */
+    /* 0x71044 / 0x71048: the tail call into ManufScreen_CommitProduction, the same call the
+     * zero-base-count guard makes. The over-budget path above branches PAST it. The port runs the
+     * call when the caller supplied the commit env -- the hourly hook does, the refresh-only tests
+     * do not. */
+    if (pEnv->pCommitEnv != NULL) {
+        ManufScreen_CommitProduction(pEnv->pCommitEnv); /* 0x71048 */
+    }
 }
 
 /* The four component slots, in the order the original tests them at 0x6F57C..0x6F5B4. Slot 108
@@ -4314,6 +4322,11 @@ void ManufScreen_Init(ManufInitEnv *pEnv)
     }
 
     for (i = 0; i < 6; ++i) {
+        /* 0x71138 is operator new(0x20) followed by UiControl_ctor, and the ctor is what sets
+         * bEnabled -- the gate UiControl_HitTest tests first (0x1A3D8). The port's six are
+         * caller-owned storage (deviation, same as the research pair at 0x74A28), so the ctor runs
+         * here, at the point the original builds the object. */
+        UiControl_ctor(pEnv->apCtl[i]);
         pEnv->ppRoot[i + 1] = pEnv->apCtl[i]; /* 0x71160, the original's operator new(0x20) slots */
     }
     if (pEnv->apCtl[0] != NULL) {
@@ -9957,7 +9970,6 @@ void ResearchScreen_Init(ResearchInitEnv *pEnv)
     if (pEnv->pfnRebuildTopicList != NULL) {
         pEnv->pfnRebuildTopicList(); /* 0x74B00 */
     }
-
     const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
     const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
 
@@ -10116,9 +10128,13 @@ void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv)
             if (pEnv->aTopics[nTopic].bActive != 1) { /* 0x73734 LDRB [R10,#0xC], CMP #1 */
                 continue;
             }
-            /* 0x7373C: the topic's name is TEXTS[topic + 4], the same u16 the weapon fire gate reads. */
-            const char *pszName = (pEnv->pTextRecs != NULL)
-                                      ? pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * pEnv->aTopics[nTopic].wGate4
+            /* 0x7373C: the topic's name is TEXTS[topic + 4], the same u16 the weapon fire gate reads.
+             * Deviation: the shipped records hand out name indices past the 1912-record text table --
+             * topic 47 carries 3600 -- where the original reads the data segment sitting after
+             * aTextRecs. The port reads only inside the table and names such a row empty. */
+            const u32 wName = (u32)pEnv->aTopics[nTopic].wGate4;
+            const char *pszName = (pEnv->pTextRecs != NULL && wName < PUFO_TEXT_REC_CAPACITY)
+                                      ? pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * wName
                                       : "";
             (void)UiPanel_SetLineText(pA, nRows, pszName);       /* 0x7375C..0x73774 */
             UiPanel_SetLineAux(pA, nRows, nTopic);               /* 0x7378C */
@@ -10238,7 +10254,11 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
     if (aTopics[nLast].bUnlocked == 0) {
         u8 bAll = 1;
         for (i32 i = 0; i < 5; ++i) { /* 0x742AC LDRB [R3,R1] over record 143 +4..+8 */
-            bAll = (u8)(bAll * aTopics[aTopics[nLast].abPreTopics[i]].bUnlocked);
+            const u8 nPre = aTopics[nLast].abPreTopics[i];
+            /* Deviation: a prerequisite byte of 144 or more makes the original read the record
+             * that sits where aTopics[nPre] would be -- a neighbour past the table in WinCE's
+             * data segment. The port counts an out-of-table prerequisite as not unlocked. */
+            bAll = (u8)(bAll * ((nPre < PUFO_RESEARCH_TOPIC_COUNT) ? aTopics[nPre].bUnlocked : 0));
         }
         if (bAll == 1) {
             aTopics[nLast].bUnlocked = 1;
@@ -10275,7 +10295,10 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
                 const u8 nPre = pT->abPreTopics[i];
                 if (nPre != 0) {
                     nSum += nPre; /* 0x747BC: the original adds the topic numbers themselves */
-                    bGate = (u8)(bGate * aTopics[nPre].bUnlocked);
+                    /* Deviation: the original reads aTopics[nPre] blindly, so a byte of 144 or
+                     * more reads a record past the table. The port counts it as not unlocked. */
+                    bGate = (u8)(bGate * ((nPre < PUFO_RESEARCH_TOPIC_COUNT)
+                                             ? aTopics[nPre].bUnlocked : 0));
                 }
             }
             for (i32 i = 0; i < 5; ++i) { /* 0x747E4, the five needed-item bytes */
@@ -10299,8 +10322,14 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
             const i32 nHi2 = pbRange[3]; /* 0x74868 */
             const i32 nTotal = nLo2 + nHi2 + nSum; /* 0x74874 */
             if (nHi2 != nLo2) { /* 0x7487C */
-                const i32 nLimit = nHi2 + 1;
-                if (nLo2 >= nLimit) { /* 0x74888 */
+                /* Deviation: the original scans aTopics[nLo2..nHi2] and the same window of
+                 * abResearchZero blindly, and the shipped data has ranges reaching past the
+                 * 144 records -- where the original reads the neighbours past the table. The
+                 * port scans only the window that exists, and a range leaving the table fails
+                 * the gate instead of reading records that do not exist. */
+                const i32 nLimit = (nHi2 + 1 < PUFO_RESEARCH_TOPIC_COUNT)
+                                       ? nHi2 + 1 : PUFO_RESEARCH_TOPIC_COUNT;
+                if (nLo2 >= nLimit || nLo2 >= PUFO_RESEARCH_TOPIC_COUNT) { /* 0x74888 */
                     bGate = 0;
                 } else {
                     i32 nScan = nLo2; /* 0x74894..0x748C8 */
@@ -10342,7 +10371,9 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
         pEnv->abResearchZero[nTopic] = 1; /* 0x7457C */
         for (i32 i = 0; i < 5; ++i) { /* 0x74584..0x745A8 */
             const u8 nOn = pT->abActivateTopics[i];
-            if (nOn != 0) {
+            /* Deviation: the byte indexes the 144-record table blindly, so a value of 144 or more
+             * writes a neighbour of the WinCE table; the port switches on table entries only. */
+            if (nOn != 0 && nOn < PUFO_RESEARCH_TOPIC_COUNT) {
                 aTopics[nOn].bActive = 1;
             }
         }
@@ -10355,9 +10386,19 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
             continue; /* 0x745B4 RSBS / BEQ */
         }
         u16 nRoll = 0;
+        i32 nPick = nLo; /* 0x74614 recomposes lo + roll; the same value this loop holds */
         for (i32 nTry = 1; ; ++nTry) { /* 0x745C0..0x74610 */
             nRoll = Game_RandU16((u16)(nHi - nLo + 1));
-            const i32 nPick = nLo + (i32)nRoll;
+            nPick = nLo + (i32)nRoll;
+            if (nPick < 0 || nPick >= PUFO_RESEARCH_TOPIC_COUNT) {
+                /* Deviation: the shipped data hands out unlock ranges outside the table --
+                 * the record after topic 47 carries (212,1) -- so the original's roll wraps
+                 * inside Game_RandU16's 16-bit nMax and lands on a record that does not
+                 * exist, and its read of that record's bytes (never a clean 1) takes the
+                 * pick at once. The port takes the pick the same way and refuses the
+                 * out-of-table stores below. */
+                break;
+            }
             if (aTopics[nPick].bActive != 1 && aTopics[nPick].bUnlocked != 1) {
                 break;
             }
@@ -10365,7 +10406,23 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
                 break; /* 0x7460C: after 50 tries the original takes what it landed on */
             }
         }
-        const i32 nPick = nLo + (i32)nRoll;
+        if (nPick < 0 || nPick >= PUFO_RESEARCH_TOPIC_COUNT) {
+            /* Deviation (0x74614..0x74798): with an out-of-table pick the original writes
+             * bUnlocked = 1 at 34*nPick+13, sets nResearchTopicShown = nPick, reads and
+             * marks abResearchZero[nPick], and picks the line-rewrite branch off that read --
+             * every one of those lands in a neighbour of the WinCE table, and on Win64 they
+             * are wild writes into other members. The port runs the half of the pass that is
+             * keyed on the FINISHED topic instead -- the column zeroing with its reproduced
+             * 0x74648 bug, the second facility-flag switch at 0x74668, and the line rewrite
+             * that carries nTopic and nRoll into the appended line -- and skips the
+             * out-of-table ones. */
+            for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+                pCol[b * PUFO_RESEARCH_TOPIC_COUNT] = 0;
+            }
+            ResearchRebuild_MarkFacFlag(pEnv, nTopic);
+            ResearchRebuild_RewriteLine(pEnv, nTopic, nRoll);
+            continue;
+        }
         aTopics[nPick].bUnlocked = 1; /* 0x74630 */
         *pEnv->pnShownTopic = nPick;  /* 0x74644 */
         for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
@@ -10874,6 +10931,12 @@ i32 BasePlane_ResetDetailState(const BasePlaneDetailEnv *pEnv)
 
 static const char *FacStatus_Text(const BaseFacStatusEnv *pEnv, i32 nRec)
 {
+    /* Deviation: the topic name at 0x745xx feeds aTopics[nTopic].wGate4 straight in, and the shipped
+     * data has such indices past the 1912-record table; the original reads the data segment after
+     * aTextRecs, the port reads only inside it. */
+    if (pEnv->pTextRecs == NULL || nRec < 0 || nRec >= PUFO_TEXT_REC_CAPACITY) {
+        return "";
+    }
     return (const char *)(pEnv->pTextRecs) + PUFO_TEXT_REC_STRIDE * (size_t)nRec;
 }
 
@@ -11141,6 +11204,11 @@ static i32 Ufopaedia_EntryNum(i32 nTopic)
 
 static const char *Ufopaedia_TextRec(const UfopaediaEnv *pEnv, i32 nRec)
 {
+    /* Deviation: the topic-name call hands in aTopics[nTopic].wGate4 unchecked, and the shipped
+     * data has such indices past the 1912-record table; the port reads only inside it. */
+    if (pEnv->pTextRecs == NULL || nRec < 0 || nRec >= PUFO_TEXT_REC_CAPACITY) {
+        return "";
+    }
     return (const char *)(pEnv->pTextRecs) + PUFO_TEXT_REC_STRIDE * (size_t)nRec;
 }
 
@@ -13174,6 +13242,11 @@ void BaseAtScreen_CloseThunk(const BaseAtCloseEnv *pEnv)
 
 static const char *UdbRec(const char *pTextRecs, i32 nRec)
 {
+    /* Deviation: the topic-title call hands in aTopics[topic].wGate4 unchecked, and the shipped
+     * data has such indices past the 1912-record table; the port reads only inside it. */
+    if (pTextRecs == NULL || nRec < 0 || nRec >= PUFO_TEXT_REC_CAPACITY) {
+        return "";
+    }
     return pTextRecs + (size_t)nRec * PUFO_TEXT_REC_STRIDE;
 }
 

@@ -54,8 +54,11 @@ static const UiControlDesc g_aGeodescSingle[13] = {
  * last two slots (18704C, 187024) take descriptors 5 and 6. */
 static const u8 g_anGeodescSingleSlot[13] = { 0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 5, 6 };
 
-/* g_anObjectPrice @ 0xAA2C0: the initial ObjectRecFull.uPrice per object slot. */
-static const u32 g_anObjectPrice[149] = {
+/* g_anObjectPrice @ 0xAA2C0: the initial ObjectRecFull.uPrice per object slot. Public because
+ * anObjectPriceInit @ 0xAA2C0 is ALSO what the manufacturing screen prices its commit against
+ * (ManufScreen_CommitProduction 0x6F408, ManufScreen_DrawFrame 0x6FB80) -- the ObjectRec copy is
+ * seeded from this table at 0x86A14 and the two must stay the same numbers. */
+const u32 g_anObjectPrice[149] = {
              0,   /* 0 */       800,   /* 1 */     26000,   /* 2 */
          84000,   /* 3 */      3000,   /* 4 */     36000,   /* 5 */
         126000,   /* 6 */     13500,   /* 7 */     10400,   /* 8 */

@@ -9,10 +9,12 @@
  */
 #include "app/pufo_world.h"
 
+
 #include "dat/pufo_dat.h"    /* DatFile, the slot file LoadGame opens */
 #include "audio/pufo_audio.h" /* Sound_Play, the message-list sample the radar click plays */
 #include "render/pufo_render.h" /* g_nGlyphPalSlotBase, the shell's one Map_nGlyphPalBase */
 #include "ui/pufo_linelist.h" /* UiLineList_AppendWithSound, the tick's contact message seam */
+#include "ui/pufo_geoiinit.h"  /* g_anObjectPrice @ 0xAA2C0, the manufacturing screen's price table */
 #include "ui/pufo_panel.h"    /* UiPanel_ctor / SetBytes6to11 / WrapText / FreeLines, the tact init hooks */
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission */
 #include "game/pufo_timer.h"   /* GameTickCtx / GameTickHooks / GameTick_OnTimer @ 0x274f0 */
@@ -942,6 +944,482 @@ static void World_ResearchTopicClickThunk(void)
                                         World_ResearchPlaySample, pW);
 }
 
+/* ---- the manufacturing screen (screen 9) ----------------------------------------------------------
+ *
+ * ManufScreen_Open @ 0x614cc is nav control slot 6 (installed at 0x67BBC): Sound_Play(17, 4),
+ * the Init tail call at 0x71268, and the id 9 written AFTER the Init (0x614EC). The envs live on
+ * PufoWorldState; the by-value panel pointers these handlers carry are the globals the original
+ * re-reads at the call, so each thunk re-reads them from the shell's cells first.
+ */
+
+/* ManufScreen_Init @ 0x710b0, the opener's tail call (0x71268). */
+static void World_ManufInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot; /* the original passes the product block base as R0; the port takes the env */
+    if (pW != NULL) {
+        ManufScreen_Init(&pW->manufInit);
+    }
+}
+
+/* ManufScreen_Open @ 0x614cc: nav control slot 6's handler (0x67BBC). */
+static void World_ManufOpenThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        ManufScreen_Open(&g_pActiveWorld->screen, &g_pActiveWorld->manufOpenHooks);
+    }
+}
+
+/* ManufScreen_CloseThunk @ 0x6e3d4: the shared close control at (224,1). Case 9 (0x8BD74) runs the
+ * frame's own ManufScreen_Draw while a product is selected -- the env's panel cells have to be the
+ * live ones at that moment, which is what the re-read here is for. */
+static void World_ManufCloseThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufDrawEnv.pProductPanel = pW->pManufProductPanel;
+    pW->manufDrawEnv.pPanelB       = pW->pManufPanelB;
+    pW->manufDrawEnv.pPanelC       = pW->pManufPanelC;
+    pW->manufDrawEnv.pPanelD       = pW->pManufPanelD;
+    ManufScreen_CloseThunk(&pW->closeEnv);
+}
+
+/* ManufScreen_PanelPrev @ 0x6dd4c / PanelNext @ 0x6dd9c: the base-tab scroll pair, paging the four
+ * columns together (0x6DD54..0x6DD84, 0x6DD9C..0x6DDCC). */
+static void World_ManufPanelPrevThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        UiPanel *apPanels[4] = { pW->pManufProductPanel, pW->pManufPanelB,
+                                 pW->pManufPanelC, pW->pManufPanelD };
+        ManufScreen_PanelPrev(apPanels);
+    }
+}
+
+static void World_ManufPanelNextThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        UiPanel *apPanels[4] = { pW->pManufProductPanel, pW->pManufPanelB,
+                                 pW->pManufPanelC, pW->pManufPanelD };
+        ManufScreen_PanelNext(apPanels);
+    }
+}
+
+/* ManufScreen_IncSelectedQty @ 0x6dddc / DecSelectedQty @ 0x6e09c: the quantity pair, which writes
+ * the selected row's aManufProductB entry through the cached row, the engineer gate and the
+ * workshop-slot gate. */
+static void World_ManufIncQtyThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufQty.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_IncSelectedQty(&pW->manufQty);
+}
+
+static void World_ManufDecQtyThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufQty.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_DecSelectedQty(&pW->manufQty);
+}
+
+/* ManufScreen_IncEngineers @ 0x6e13c / DecEngineers @ 0x6e330: the engineers pair, moving whole
+ * 1-crew assignments to the selected product against the workshop budget. */
+static void World_ManufIncEngineersThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufEngineers.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_IncEngineers(&pW->manufEngineers);
+}
+
+static void World_ManufDecEngineersThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufQty.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_DecEngineers(&pW->manufQty); /* DecEngineers takes the qty env, 0x6e330 */
+}
+
+/* ManufScreen_UpdateProgress @ 0x6df6c: unk_186B94, the allocate-all control the frame re-points at
+ * (94, 251) every frame. ManufScreen_ReduceSelectedQtyToOne @ 0x6dec0: unk_186B90 at (94, 271). */
+static void World_ManufAllocAllThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufQty.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_UpdateProgress(&pW->manufQty);
+}
+
+static void World_ManufClampOneThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufQty.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_ReduceSelectedQtyToOne(&pW->manufQty);
+}
+
+/* ManufScreen_SelectListed @ 0x6e914: the product list's row click -- plays sample 7, caches the row
+ * and clears bManufProductSelected (0x6E970), the one store to that byte anywhere. */
+static void World_ManufSelectThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufSelect.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_SelectListed(&pW->manufSelect);
+}
+
+/* ManufScreen_SyncSelection @ 0x6dd24: reads panel D's nUnk3032 (0x6DD30 reads unk_15EE38) and
+ * stores it into the scratch dword the original keeps at gUiRootPanel.anLineAux[147] (0x159E90);
+ * the shell owns its own copy of that cell. */
+static void World_ManufSyncSelThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    (void)ManufScreen_SyncSelection(&pW->nManufSelScratch159E90,
+                                    (pW->pManufPanelD != NULL) ? pW->pManufPanelD->nUnk3032 : 0);
+}
+
+/* ManufScreen_Draw @ 0x6e3e0: pGeoscapeCtlA at (40, 294), installed by Init at 0x71228. With no
+ * product selected it clears the pending request and tail-calls the close (ConfirmAndClose's shape). */
+static void World_ManufDrawClickThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufDrawEnv.pProductPanel = pW->pManufProductPanel;
+    pW->manufDrawEnv.pPanelB       = pW->pManufPanelB;
+    pW->manufDrawEnv.pPanelC       = pW->pManufPanelC;
+    pW->manufDrawEnv.pPanelD       = pW->pManufPanelD;
+    (void)ManufScreen_Draw(&pW->manufDrawEnv);
+}
+
+/* ManufScreen_ConfirmAndClose @ 0x6e98c: pGeoscapeCtlB at (130, 294): clear the selected product's
+ * slot for the selected base and tail-call Geoscape_CloseUI. */
+static void World_ManufConfirmThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufClear.pProductPanel = pW->pManufProductPanel;
+    ManufScreen_ConfirmAndClose(&pW->manufClear, &pW->closeEnv);
+}
+
+/* ManufScreen_BuildPanels @ 0x6e9e8: Init's tail call at 0x71268 and CloseUI case 9's release at
+ * 0x8BD94. The panel cells are pointer-to-pointer in the env, so only the by-value counts need the
+ * re-read. */
+static void World_ManufBuildPanelsThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufBuild.nSelectedBaseIdx = pW->nSelectedBase;
+    if (pW->pAssets != NULL) {
+        pW->manufBuild.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
+    ManufScreen_BuildPanels(&pW->manufBuild);
+}
+
+/* Sound_Play's two-argument seam for the manufacturing handlers (sample 7 at ManufScreen_SelectListed's
+ * head, 0x6E920). */
+static void World_ManufPlaySample(u32 nSample, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW != NULL && pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample((i32)nSample, pW->pSoundUser);
+    }
+}
+
+/* ---- the buy/sell screen (screens 11 and 12) ------------------------------------------------------
+ *
+ * BuySellScreen_OpenBuy @ 0x61794 (nav slot 8, 0x67BD4) and BuySellScreen_OpenSell @ 0x617c4
+ * (slot 9, 0x67BE0): Sound_Play(17, 4), the id 11/12 written BEFORE the shared BuySellScreen_Init
+ * @ 0x78c30 (0x617AC / 0x617DC), which the port carries as env state. BuySell_Init then branches on
+ * that id: 11 installs ConfirmSiteAndClose and calls BuildControls, 12 installs CommitTransaction
+ * and calls BuildPanels.
+ */
+static void World_RefreshBuySellBuildEnvs(PufoWorldState *pW); /* defined with the close thunk */
+
+/* BuySellScreen_Init @ 0x78c30, the tail call of both openers (0x78D64 / 0x78D7C reach the builders
+ * through the hooks, which are thunks below). The id select lives in the env, so the open thunks
+ * set it before calling the opener. */
+static void World_BuySellInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot; /* the original passes the screen slot unk_161A08 itself; the port's env owns the cell */
+    if (pW != NULL) {
+        BuySellScreen_Init(&pW->buySellInit);
+    }
+}
+
+static void World_BuySellOpenBuyThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->buySellInit.nScreenId        = PUFO_BUYSSELL_SCREEN_BUY;  /* 0x617AC writes 11 first */
+    World_RefreshBuySellBuildEnvs(pW);
+    BuySellScreen_OpenBuy(&pW->screen, &pW->buySellBuyHooks);
+}
+
+static void World_BuySellOpenSellThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->buySellInit.nScreenId            = PUFO_BUYSSELL_SCREEN_SELL; /* 0x617DC writes 12 first */
+    World_RefreshBuySellBuildEnvs(pW);
+    BuySellScreen_OpenSell(&pW->screen, &pW->buySellSellHooks);
+}
+
+/* BuySellScreen_BuildControls @ 0x76160: Init's 11-branch call at 0x78D64 and CloseUI case 11's
+ * rebuild at 0x8C0D0 -- the teardown half keys off unk_161A24, which the builder itself flips. */
+static void World_BuySellBuildControlsThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->buySellControls.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->buySellControls.nFundsSnapshot   = pW->nBuySellFundsSnapshot;
+    BuySellScreen_BuildControls(&pW->buySellControls);
+}
+
+/* BuySellScreen_BuildPanels @ 0x76de0: Init's 12-branch call at 0x78D7C and CloseUI case 12's
+ * teardown at 0x8C11C. */
+static void World_BuySellBuildPanelsThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->buySellBuild.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->buySellBuild.nSoldierCount    = pW->nSoldierCount;
+    pW->buySellBuild.nCraftCount      = (i32)pW->bCraftCount;
+    pW->buySellBuild.nFundsSnapshot   = pW->nBuySellFundsSnapshot;
+    BuySellScreen_BuildPanels(&pW->buySellBuild);
+}
+
+/* BuySellScreen_PanelPrev @ 0x76088 / PanelNext @ 0x760e0: page the five columns together. */
+static void World_BuySellPanelPrevThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        UiPanel *apPanels[5] = { pW->pBuySellPanelA, pW->pBuySellPanelB, pW->pBuySellPanelC,
+                                 pW->pBuySellPanelD, pW->pBuySellPanelE };
+        BuySellScreen_PanelPrev(apPanels);
+    }
+}
+
+static void World_BuySellPanelNextThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        UiPanel *apPanels[5] = { pW->pBuySellPanelA, pW->pBuySellPanelB, pW->pBuySellPanelC,
+                                 pW->pBuySellPanelD, pW->pBuySellPanelE };
+        BuySellScreen_PanelNext(apPanels);
+    }
+}
+
+/* BuySellScreen_SyncSelection @ 0x76138: read panel A's nUnk3032 (the +0xBD8 dword of the object at
+ * unk_161A1C) and cache it into dword_186BE8 -- the row the ">" and "<" handlers then work on. */
+static void World_BuySellSyncSelThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    (void)BuySellScreen_SyncSelection(&pW->buySellScratch,
+                                      (pW->pBuySellPanelA != NULL) ? pW->pBuySellPanelA->nUnk3032 : 0);
+}
+
+/* BuySellScreen_ValidateCapacity @ 0x75b88 (the ">" row, buys one) and BuySellScreen_UpdatePrices
+ * @ 0x75878 (the "<" row, sells one), installed onto panels B and C by the builders (0x766EC and its
+ * mirror). Both work on the cached row: capacity gates, funds, the pending delta, the money total. */
+static void World_BuySellRefreshCapacityEnv(PufoWorldState *pW)
+{
+    pW->buySellCapacity.pPanelA = pW->pBuySellPanelA;
+    pW->buySellCapacity.pPanelD = pW->pBuySellPanelD;
+    pW->buySellCapacity.abGridBytes = pW->abGridHangarBytes;  /* 0x159DBC, Base_CountShipsAtBase's term */
+    pW->buySellCapacity.nSiteCount = pW->nSiteCount;
+    pW->buySellCapacity.nBaseCount = (i32)pW->nBaseCount;
+    pW->buySellCapacity.nCraftCount = (i32)pW->bCraftCount;
+    pW->buySellCapacity.nSoldierCount = pW->nSoldierCount;
+    pW->buySellCapacity.nSelectedBaseIdx = pW->nSelectedBase;
+    if (pW->pAssets != NULL) {
+        pW->buySellCapacity.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
+}
+
+static void World_BuySellValidateThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_BuySellRefreshCapacityEnv(pW);
+    (void)BuySellScreen_ValidateCapacity(&pW->buySellCapacity);
+}
+
+static void World_BuySellUpdatePricesThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_BuySellRefreshCapacityEnv(pW);
+    (void)BuySellScreen_UpdatePrices(&pW->buySellCapacity);
+}
+
+/* BuySellScreen_FillBuyPanel @ 0x75160 / BuySellScreen_FillSellPanel @ 0x75464: the two row editors
+ * BuildPanels wires onto the column pair (0x771B4 / its mirror). */
+static void World_BuySellRefreshRowEditEnv(PufoWorldState *pW)
+{
+    pW->buySellRowEdit.pPanelA = pW->pBuySellPanelA;
+    pW->buySellRowEdit.pPanelB = pW->pBuySellPanelB;
+    pW->buySellRowEdit.pPanelC = pW->pBuySellPanelC;
+    pW->buySellRowEdit.pPanelD = pW->pBuySellPanelD;
+    pW->buySellRowEdit.pPanelE = pW->pBuySellPanelE;
+    pW->buySellRowEdit.nSlotDeltaCount = pW->buySellCapacity.nObjectCount;
+    pW->buySellRowEdit.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->buySellRowEdit.pBase = (pW->nSelectedBase >= 0 && (i32)pW->nSelectedBase < (i32)pW->nBaseCount)
+                                   ? pW->apBases[pW->nSelectedBase] : NULL;
+}
+
+static void World_BuySellFillBuyThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_BuySellRefreshRowEditEnv(pW);
+    (void)BuySellScreen_FillBuyPanel(&pW->buySellRowEdit);
+}
+
+static void World_BuySellFillSellThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_BuySellRefreshRowEditEnv(pW);
+    (void)BuySellScreen_FillSellPanel(&pW->buySellRowEdit);
+}
+
+/* BuySellScreen_ConfirmSiteAndClose @ 0x75090: the 11-mode confirm. Promotes the transfer flow's
+ * working record aSmapSites[nSiteCount] when it holds anything, snapshots the funds, closes. */
+static void World_BuySellConfirmBuyThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->buySellConfirm.nFunds = pW->nFunds;
+    BuySellScreen_ConfirmSiteAndClose(&pW->buySellConfirm, &pW->closeEnv);
+}
+
+/* BuySellScreen_CommitTransaction @ 0x74bf8: the 12-mode confirm. Moves every pending slot delta
+ * into the base stock, unloads the selected craft's cargo, returns the selected soldiers' gear,
+ * snapshots the funds and closes. */
+static void World_BuySellCommitThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->buySellCommit.pPanelA = pW->pBuySellPanelA;
+    pW->buySellCommit.pPanelC = pW->pBuySellPanelC;
+    pW->buySellCommit.pPanelE = pW->pBuySellPanelE;
+    pW->buySellCommit.pBase = (pW->nSelectedBase >= 0 && (i32)pW->nSelectedBase < (i32)pW->nBaseCount)
+                                  ? pW->apBases[pW->nSelectedBase] : NULL;
+    pW->buySellCommit.nObjectCount = pW->buySellCapacity.nObjectCount;
+    pW->buySellCommit.nCraftCount  = (i32)pW->bCraftCount;
+    pW->buySellCommit.nSoldierCount = pW->nSoldierCount;
+    pW->buySellCommit.nFunds = pW->nFunds;
+    BuySellScreen_CommitTransaction(&pW->buySellCommit);
+}
+
+/* The two builders' by-value cells: the original reads the base selection and the snapshot global
+ * at the call (0x76168 / 0x76DE8 area), so the shell re-reads them before every build pass -- the
+ * opener's and CloseUI case 11/12's teardown rebuild alike. The site count is NOT here: the buy
+ * builder's env holds a pointer to the live cell (the confirm can change the count mid-chain). */
+static void World_RefreshBuySellBuildEnvs(PufoWorldState *pW)
+{
+    pW->buySellControls.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->buySellControls.nFundsSnapshot   = pW->nBuySellFundsSnapshot;
+    pW->buySellBuild.nSelectedBaseIdx    = pW->nSelectedBase;
+    pW->buySellBuild.nSoldierCount       = pW->nSoldierCount;
+    pW->buySellBuild.nCraftCount         = (i32)pW->bCraftCount;
+    pW->buySellBuild.nFundsSnapshot      = pW->nBuySellFundsSnapshot;
+}
+
+/* BuySellScreen_CloseThunk @ 0x75154: the shared close control at (224,1). */
+static void World_BuySellCloseThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_RefreshBuySellBuildEnvs(pW);
+    BuySellScreen_CloseThunk(&pW->closeEnv);
+}
+
 /* The options screen's sample: Sound_Play(7, 4) at 0x6CF08 / 0x6DD10. The second argument is dead
  * (Sound_Play takes the sample only), which is why the port keeps it for the record. */
 static void World_OptionsPlaySample(u32 nSample, u32 nArg, void *pUser)
@@ -1083,6 +1561,34 @@ static void World_ScreenPlaySample(u32 nSample, void *pUser)
         return;
     }
     (void)Sound_Play((i32)nSample);
+}
+
+/* Base_EnterBuildMode @ 0x84e20 -- the handler Geoscape_InitUI installs into the root control at
+ * 0x186520 (the STR at 0x865AC): the geoscape's build-mode widget. This is one of the two bodies that
+ * rebuild the fifteen nav controls the CloseUI case 1 teardown frees (0x8BEA8..0x8BF2C; the other is
+ * Ui_OpenResearch 0x84CBC), so it is also how a player gets the nav bar back after a teardown left it
+ * down. The env is built at click time out of live cells, the Part 73 rule the footer handlers follow. */
+static void World_EnterBuildModeThunk(void)
+{
+    PufoWorldState   *pW = g_pActiveWorld;
+    BaseBuildModeEnv  env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    env.pNavOut           = &pW->nav;                       /* 0x159888..0x1598AC, rebuilt here */
+    env.pNavEnv           = &pW->navEnv;                    /* the ten + two + three handlers */
+    env.abFacilityGrid    = pW->abFacilityGrid;             /* 0x159768 */
+    env.apManufCols       = pW->auManufCol;                 /* 0x15E19C, the workshop pass's budget */
+    env.apResearchCols    = pW->auResearchCol;              /* 0x16022C, the lab pass's budget */
+    env.puResearchEntries = &pW->nResearchEntries;          /* 0x160C4C */
+    env.pnSelectedBaseIdx = &pW->nSelectedBase;             /* 0x159D81 */
+    env.pnScreenId        = &pW->screen.nGeoscapeScreen;    /* 0x186BC4, set to 1 at 0x84E64 */
+    env.pParkCtl          = pW->ui.apCtl[GEOUI_CTL_186BB4]; /* *pGeoscapeCtlA, parked at 1000,1000 */
+    env.pfnPlaySample     = World_ScreenPlaySample;         /* Sound_Play(17) at 0x84E2C */
+    env.pSampleUser       = pW;
+    Base_EnterBuildMode(&env);
 }
 
 /* GeoscapeScreenHooks' two slots: the shell's way back into the two Options*_WithSound wrappers, each
@@ -1432,11 +1938,10 @@ static void World_StartNewHook(void *pUser)
 
     /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28), one unrolled
      * `LDR R3,=fn / STR R3,[R0,#0xC]` per slot, in slot order 0..9 (0x67B74, 0x67B80, 0x67B8C, 0x67B98,
-     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Six of the ten nav slots are filled: the
-     * shell can draw the screen each one opens. The remaining four -- ManufScreen_Open (9),
-     * TransferScreen_Open (10), BuySellScreen_OpenBuy (11) and BuySellScreen_OpenSell (12) -- stay no-ops:
-     * their Init envs and their Geoscape_Draw arms (pManufPad, pTransferPad, pBuySellPad) are not built
-     * here, so opening them would land on a screen the shell cannot draw. */
+     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Nine of the ten nav slots are filled: the
+     * shell can draw the screen each one opens. Only TransferScreen_Open (10) stays a no-op: its Init
+     * env and its Geoscape_Draw arms (pTransferPad/pTransferDraw/pTransferCtl) are not built here, so
+     * opening it would land on a screen the shell cannot draw. */
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
     }
@@ -1446,6 +1951,9 @@ static void World_StartNewHook(void *pUser)
     pW->navEnv.apfnNavClick[3] = World_PlaneOpenThunk;     /* BasePlaneScreen_Open @ 0x617f4, id 6 (0x67B98) */
     pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;   /* BaseFacScreen_Open @ 0x61844, id 7 (0x67BA4) */
     pW->navEnv.apfnNavClick[5] = World_ResearchOpenThunk;  /* ResearchScreen_Open @ 0x616ac, id 8 (0x67BAC) */
+    pW->navEnv.apfnNavClick[6] = World_ManufOpenThunk;       /* ManufScreen_Open @ 0x614cc, id 9 (0x67BBC) */
+    pW->navEnv.apfnNavClick[8] = World_BuySellOpenBuyThunk;  /* BuySellScreen_OpenBuy @ 0x61794, id 11 (0x67BD4) */
+    pW->navEnv.apfnNavClick[9] = World_BuySellOpenSellThunk; /* BuySellScreen_OpenSell @ 0x617c4, id 12 (0x67BE0) */
     pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk; /* SoldierScreen_PanelPrev @ 0x61874 (0x67C84) */
     pW->navEnv.apfnPanelClick[1] = World_SolPanelNextThunk; /* SoldierScreen_PanelNext @ 0x6189c (0x67C90) */
     pW->navEnv.apfnFindClick[0] = World_SolFindNextThunk;   /* SoldierScreen_FindNextAtBase @ 0x6192c (0x67D10) */
@@ -1594,6 +2102,11 @@ static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
      * a no-op: its OpenWithSound tail reaches the overlay toggle through gUiRootPanel.anLineAux[119],
      * which has no shell owner yet (recorded in PLAN). */
     pEnv->apfnRootClick[8] = World_OptionsMenuClick;
+    /* Root control [10] (the dword at 0x186520, the handler installed at 0x865AC) is the geoscape's
+     * build-mode widget: Base_EnterBuildMode @ 0x84e20. Slots [11] (0x186524, Ui_OpenBaseInfo) and
+     * [12] (0x186528, Ui_OpenFunding) stay no-ops: the funding screen's Init chain has no shell owner
+     * yet, and the base-info opener reaches the same panels nav slot 1 already serves. Recorded in PLAN. */
+    pEnv->apfnRootClick[10] = World_EnterBuildModeThunk;
     pEnv->pfnCraftSelectClick = World_NoopClick;
     pEnv->pfnRadarClick = World_RadarClickThunk; /* Geoscape_OnRadarListClick @ 0x854c4 */
     pEnv->pfnStartNew = World_StartNewHook;
@@ -1698,6 +2211,27 @@ void World_Free(PufoWorldState *pW)
         pW->pBaseInfoPad = NULL;
     }
 
+    /* Manufacturing: Init's tail always builds, so a built flag means the teardown branch at
+     * 0x6F264..0x6F340 still owes -- it frees the pad in root[0] along with the four panels. */
+    if (pW->bManufBuilt != 0) {
+        World_ManufBuildPanelsThunk();
+    }
+
+    /* Buy/sell: the controls teardown (0x76C08) also clears the transfer working record, and the
+     * panels teardown (0x77D60) rolls the funds back to the Init snapshot. The pad is not freed by
+     * either -- CloseUI case 11/12's CloseFreePad is its only owner, so the shell owes it here. */
+    if (pW->bBuySellCtlBuilt != 0) {
+        World_BuySellBuildControlsThunk();
+    }
+    if (pW->bBuySellBuilt != 0) {
+        World_BuySellBuildPanelsThunk();
+    }
+    if (pW->pBuySellPad != NULL) {
+        PadImage_FreeData(pW->pBuySellPad);
+        free(pW->pBuySellPad);
+        pW->pBuySellPad = NULL;
+    }
+
     /* Geoscape_BuildNavControls' fifteen controls are not part of pUi (the original never
      * freed them either); the shell does. */
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
@@ -1780,6 +2314,7 @@ static void World_WireBasesLive(PufoWorldState *pW, SaveBasesLive *pLive)
     pLive->pnSelectedBase    = &pW->nSelectedBase;                     /* 0x159D81 */
     pLive->abHangarBytes     = pW->abGridHangarBytes;                  /* 0x159DBC */
     pLive->pnFunds           = &pW->nFunds;                            /* 0x1598D8 */
+    pLive->pnSoldierHireCount = &pW->nSoldierHireCount;                /* 0x159D90, the 1000-row hire tally */
     pLive->pnCraftHomeBase   = &pW->nCraftHomeBase;                    /* 0x158848 */
     pLive->abBaseFacRecords  = (u8 *)&pW->aFac[0];                     /* 0x186E48, stride 0x1C */
     pLive->aRegionBuildCount = pW->aRegionBuildCount;                  /* 0x18655D */
@@ -2162,13 +2697,13 @@ static void World_HookTickFacilityConstruction(void *pUser)
     Base_TickFacilityConstruction(&env); /* 0x62824 */
 }
 
-/* ManufScreen_ClearProductSlot's tables. apProductB @ 0x15B79C (the quantity the player asked for)
- * is not shell state yet -- the manufacturing screen's own set/get buttons are unwired -- and the
- * callee's own head test returns on it, so the clear pass is the documented gap here. */
+/* ManufScreen_ClearProductSlot's tables. apProductB @ 0x15B79C is pW->anProductReq since the
+ * manufacturing screen's quantity buttons went live -- the screen's own set/get writes it. */
 static void World_BuildManufClearEnv(PufoWorldState *pW, ManufClearEnv *pClear)
 {
     memset(pClear, 0, sizeof(*pClear));
     pClear->apProductA = pW->auProductU32;
+    pClear->apProductB = pW->anProductReq;                  /* 0x6F8FC: the ask column is cleared too */
     pClear->apProductC = pW->auProductU16;
     pClear->apManufCols = pW->auManufCol;
     pClear->abGridBytes = pW->abGridHangarBytes; /* 0x159DBC = abFacilityGrid + 1620, the eight base
@@ -2178,13 +2713,54 @@ static void World_BuildManufClearEnv(PufoWorldState *pW, ManufClearEnv *pClear)
     pClear->pnSelectedBaseIdx = &pW->nSelectedBase;
 }
 
+/* Geoscape_TickHourly's hook at 0x5d304: the manufacturing refresh -- and since the refresh tail-
+ * calls the commit (0x71044 / 0x71048, skipped only on the over-budget return at 0x710A4), the
+ * commit's whole env travels with it. The prices are the g_anObjectPrice table the original indexes
+ * as anObjectPriceInit (0x6F408 gate, 0x6F710 / 0x6F788 deductions), and a hangar product's commit
+ * spawns its craft through the same Ship_SpawnAtSlot wiring the new-game path uses. */
 static void World_HookRefreshBaseTabs(void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
     ManufRefreshEnv env;
+    ManufCommitEnv commit;
     ManufClearEnv clear;
+    ShipSpawnEnv spawn;
 
     World_BuildManufClearEnv(pW, &clear);
+
+    memset(&spawn, 0, sizeof(spawn));
+    spawn.apCraft        = pW->apCraft;
+    spawn.pnCraftCount   = &pW->bCraftCount;          /* Map + 0x1194 */
+    spawn.pnNextCraftId  = &pW->nNextCraftId;         /* 0x186550 */
+    spawn.apBases        = pW->apBases;
+    spawn.abFacilityGrid = pW->abFacilityGrid;
+    spawn.pCtorEnv       = &pW->ctorEnv;
+    spawn.pStrategList   = &pW->strategList;
+    spawn.pnStrategSeed  = &pW->nStrategSeed;
+    spawn.pnZoomMode     = &pW->view.nMode;
+
+    memset(&commit, 0, sizeof(commit));
+    commit.apManufCols    = pW->auManufCol;
+    commit.apProductA     = pW->auProductU32;
+    commit.apProductB     = pW->anProductReq;
+    commit.apProductC     = pW->auProductU16;
+    commit.pdwPrices      = g_anObjectPrice;          /* anObjectPriceInit @ 0xAA2C0 */
+    commit.pnFunds        = &pW->nFunds;
+    commit.abFacilityGrid = pW->abFacilityGrid;
+    commit.pbBaseCount    = (const u8 *)&pW->nBaseCount;
+    commit.apBases        = pW->apBases;
+    commit.aSites         = pW->apSites;
+    commit.nSiteCount     = pW->nSiteCount;
+    commit.pdwShortfall   = &pW->nShortfall1870C8;
+    commit.pLines         = &pW->msgLines;
+    commit.pClearEnv      = &clear;
+    commit.pShipEnv       = &spawn;
+    commit.pfnPlaySample  = pW->pfnPlaySample;
+    commit.pSoundUser     = pW->pSoundUser;
+    if (pW->pAssets != NULL) {
+        commit.apObjects    = pW->pAssets->apObjects;
+        commit.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
 
     memset(&env, 0, sizeof(env));
     env.apManufCols = pW->auManufCol;
@@ -2197,6 +2773,7 @@ static void World_HookRefreshBaseTabs(void *pUser)
     env.pdwShortfall = &pW->nShortfall1870C8;
     env.pLines = &pW->msgLines;
     env.pClearEnv = &clear;
+    env.pCommitEnv = &commit;
     env.pfnPlaySample = pW->pfnPlaySample;
     env.pSoundUser = pW->pSoundUser;
     if (pW->pAssets != NULL) {
@@ -2204,7 +2781,7 @@ static void World_HookRefreshBaseTabs(void *pUser)
         env.nObjectCount = (i32)pW->pAssets->nObjectCount;
     }
 
-    ManufScreen_RefreshBaseTabs(&env); /* 0x70ebc */
+    ManufScreen_RefreshBaseTabs(&env); /* 0x70ebc, tail-calling 0x6f34c on the way out */
 }
 
 static i32 World_HookRebuildResearchTopics(void *pUser)
@@ -6950,7 +7527,8 @@ bool World_MissionCancelEnd(PufoWorldState *pW)
  * tail of a screen the shell has not built; the research one no longer does -- Part 88 wired nav slot 5
  * (the LDR at 0x67BAC) and ResearchScreen_Init @ 0x749a8 runs here, so what is missing is the
  * ScreenResetOpen2Env Ui_OpenResearch reads (pufo_baseui.h:5003), above all its pNavOut handle for the
- * fifteen nav controls that body rebuilds. Nav slots 6..9 stay at World_NoopClick. Recorded in PLAN.md.
+ * fifteen nav controls that body rebuilds -- Ui_OpenResearch itself stays unwired, while nav slots
+ * 6/8/9 (the manufacturing, buy and sell openers) have been installed since Part 99. Recorded in PLAN.md.
  *
  * Every env here is built at click time out of live cells instead of assembled once at bring-up,
  * because two of the fields are handles a mission launch frees and rebuilds -- the strip pad at
@@ -7291,7 +7869,10 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pS->pSpawnCtx       = &pW->spawnCtx;
     pS->apBases         = pW->apBases;                     /* Map + 0x1174 */
     pS->pnGameTotalSec  = &pW->geo.time.nTotalSec;         /* GameTime.nTotalSec (0x159610) */
-    /* Three fields stay NULL, and each is the callee's own guard, not a crash waiting to happen:
+    pS->anAssignedShip      = &pW->anAssignedCraftList[1]; /* 0x16146C, the shell's owner since the
+                                                            * buy/sell screen went live */
+    pS->pnAssignedShipCount = &pW->anAssignedCraftList[0]; /* 0x161468, its count dword */
+    /* Two fields stay NULL, and each is the callee's own guard, not a crash waiting to happen:
      *   pnSoldierCount -- ShipRemovalEnv wants a u16* to Map+0x1998 while the shell's owner of
      *     that count is an i32 (pufo_world.h:72, and pufo_save.h notes the original's u16 writes
      *     hit its LOW half). Pointing a u16* at the i32 would be a strict-aliasing violation, so
@@ -7299,10 +7880,7 @@ static void World_WireMissionSeams(PufoWorldState *pW)
      *     u16 owner. Recorded as a deviation, not hidden.
      *   abHangarFlag @ 0x158CD8 -- the table's extent is nowhere in the IDB: no cross-reference
      *     names the address (the writes reach it as a displacement from a register base), so the
-     *     shell does not invent a size for it.
-     *   anAssignedShip @ 0x16146C with its count at 0x161468 -- the same: Ship_RemoveWithCargo,
-     *     Base_RemoveAllShips and BuySellScreen_CommitTransaction maintain it, and the shell has
-     *     no owner of it yet. */
+     *     shell does not invent a size for it. */
 
     memset(pD, 0, sizeof(*pD));
     pD->apCraft           = pW->apCraft;
@@ -7320,8 +7898,8 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pD->nSiteCount        = pW->nSiteCount;                /* 0x186410 */
     pD->pbBaseCount       = (u8 *)&pW->nBaseCount;         /* 0x159D80, read SIGNED */
     pD->pShipEnv          = pS;
-    /* apProductB @ 0x15B79C stays NULL for the reason World_BuildManufClearEnv already records:
-     * the manufacturing screen's set/get buttons are unwired, so nothing in the shell writes it. */
+    pD->apProductB        = pW->anProductReq;         /* 0x15B79C: the requested-unit column, live
+                                                       * since the manufacturing screen's buttons */
 
     memset(pE, 0, sizeof(*pE));
     pE->apCraft             = pW->apCraft;
@@ -7375,6 +7953,13 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pE->pfnInitMission      = World_MissionSeamInitMission;
     pE->pfnInitEndScreen    = World_MissionSeamInitEnd;
     pE->pHookUser           = pW;
+
+    /* CloseUI case 12's teardown pair (0x8C160 Base_RemoveAllShips on CloseSelectedBase): the SAME
+     * removal env, plus the two cells ShipRemovalEnv does not carry. The base count is a by-value
+     * cell, re-read every frame in World_RefreshGeoscapeFrame, as the creation path can move it. */
+    pW->clearShipsEnv.ship          = pW->shipEnv;
+    pW->clearShipsEnv.nBaseCount    = (i32)pW->nBaseCount;
+    pW->clearShipsEnv.abGridBytes   = pW->abGridHangarBytes;   /* 0x159DBC */
 }
 
 void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
@@ -7490,6 +8075,23 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pbRowSelected      = &pW->researchScratch.bFlag160C80;    /* unk_160C80, tested at 0x8BDB0 */
     pC->pResearchStart     = &pW->researchStart;                   /* ResearchScreen_StartSelected, 0x8BDB4 */
     pC->pResearchBuild     = &pW->researchBuild;                   /* ResearchScreen_BuildPanels, 0x8BDD8 */
+    /* Case 9 (0x8BD74..0x8BD98): with a product selected the close runs the frame's own
+     * ManufScreen_Draw (the draw button's rebuild); without one it releases the four panels through
+     * the same BuildPanels switch the opener ran and goes to screen 1. */
+    pC->pbManufSelected    = &pW->bManufProductSelected;           /* 0x15EE34, tested at 0x8BD74 */
+    pC->pbManufBuilt       = &pW->bManufBuilt;                     /* unk_15EE4C, tested at 0x8BD88 */
+    pC->pManufDraw         = &pW->manufDrawEnv;                    /* ManufScreen_Draw, 0x8BD78 */
+    pC->pManufBuild        = &pW->manufBuild;                      /* ManufScreen_BuildPanels, 0x8BD94 */
+    /* Cases 11 and 12 (0x8C0C4..0x8C174): the popup pair is raised for the teardown build and cleared
+     * after it, the mode's own builder runs the release arm, the pad is freed (0x8C0F0 / 0x8C13C), and
+     * 12 additionally empties the base's craft list (0x8C160) and the selected soldiers (0x8C174). */
+    pC->pbBuySellCtlBuilt  = &pW->bBuySellCtlBuilt;                /* unk_161A24, tested at 0x8C0C8 */
+    pC->pbBuySellBuilt     = &pW->bBuySellBuilt;                   /* 0x161A28, tested at 0x8C114 */
+    pC->ppBuySellPad       = &pW->pBuySellPad;                     /* 0x161A08, freed at 0x8C0F0 / 0x8C13C */
+    pC->pBuySellCtl        = &pW->buySellControls;                 /* BuySellScreen_BuildControls, 0x8C0D0 */
+    pC->pBuySell           = &pW->buySellBuild;                    /* BuySellScreen_BuildPanels, 0x8C11C */
+    pC->pClearShips        = &pW->clearShipsEnv;                   /* Base_RemoveAllShips, 0x8C160 */
+    pC->anSoldierIdList    = pW->anSoldierIdList;                  /* 0x160C90, the list 0x8C174 clears */
     pC->pnFunds          = &pW->nFunds;
     pC->anFundBar        = pW->economy.anFundBar;          /* 0x186594..0x1865A4 */
     pC->ppFundPad        = &pW->pFundPad;                  /* 0x1595DC */
@@ -8719,6 +9321,11 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->pbPlaneListBuilt       = &pW->bPlaneListBuilt;                    /* 0x161F24 */
     pPtr->pbStatPanelAOpen       = &pW->planeStatPanels.bPanelAOpen;        /* 0x161F18 */
     pPtr->pbStatPanelBOpen       = &pW->planeStatPanels.bPanelBOpen;        /* 0x161F1C */
+    pPtr->pnSelectedCraftIdx     = &pW->nHangarCraftIdx;                    /* 0x161AC4, read at 0x884C4's
+                                                                             * craft lookup -- the same cell
+                                                                             * BasePlaneScreen_SelectCraft writes
+                                                                             * (0x7CC00). Without it the press
+                                                                             * arm reads a NULL pointer. */
     pPtr->pPlaneCraftPanel       = pW->planeCraftPanels.pCraftPanel;       /* 0x161EFC, hit at 0x88234 */
     pPtr->pPlaneCraftStatusPanel = pW->planeCraftPanels.pStatusPanel;      /* 0x161ED0 */
     pPtr->pPlaneSelRowPanel      = pW->planeStorePanels.pSelRowPanel;      /* 0x161F00, the "<" column */
@@ -8876,6 +9483,377 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
                                                  ? pAssets->apObjects[PUFO_ROW_SCIENTIST] : NULL;
         pF->researchDraw.pScientistRec     = pW->researchQty.pScientistRec;
         pF->researchDraw.pTextRecs         = (const char *)pAssets->pTextRecs;
+    }
+
+    /* Case 9, the manufacturing screen. Init's six controls are shell-owned (the original allocates
+     * them with operator new into the screen block; the port installs caller-owned ones, as the
+     * BuySell and Transfer inits do), seated by Init's own Setup pass on g_aManufCtlDesc @ 0xAB9F8.
+     * The four columns and the row cells follow the build switch; the draw env and the frame env
+     * carry the same live cells the original re-reads at 0x6E3E0 and 0x6E48C. */
+    for (i = 0; i < 6; ++i) {
+        pW->apManufCtl[i] = &pW->aManufCtl[i];
+    }
+
+    memset(&pW->manufInit, 0, sizeof(pW->manufInit));
+    pW->manufInit.ppRoot          = pW->apManufRoot;                        /* unk_159E98 */
+    for (i = 0; i < 6; ++i) {
+        pW->manufInit.apCtl[i]    = &pW->aManufCtl[i];
+    }
+    pW->manufInit.pCloseCtl       = pUi->apCtl[GEOUI_CTL_186B00];           /* g_pUiCloseCtl, to (224,1) at 0x71118 */
+    pW->manufInit.pDrawCtl        = pUi->apCtl[GEOUI_CTL_186BB4];           /* pGeoscapeCtlA, to (40,294) at 0x71200 */
+    pW->manufInit.pConfirmCtl     = pUi->apCtl[GEOUI_CTL_186BB0];           /* pGeoscapeCtlB, to (130,294) at 0x71214 */
+    pW->manufInit.pfnCloseClick   = World_ManufCloseThunk;                  /* ManufScreen_CloseThunk @ 0x6e3d4 */
+    pW->manufInit.pfnDrawClick    = World_ManufDrawClickThunk;              /* ManufScreen_Draw @ 0x6e3e0, 0x7122C */
+    pW->manufInit.pfnConfirmClick = World_ManufConfirmThunk;                /* ManufScreen_ConfirmAndClose @ 0x6e98c, 0x71238 */
+    pW->manufInit.pfnPanelPrev    = World_ManufPanelPrevThunk;              /* 0x71184 */
+    pW->manufInit.pfnPanelNext    = World_ManufPanelNextThunk;              /* 0x7119C */
+    pW->manufInit.pfnIncQty       = World_ManufIncQtyThunk;                 /* 0x711B0 */
+    pW->manufInit.pfnDecQty       = World_ManufDecQtyThunk;                 /* 0x711C4 */
+    pW->manufInit.pfnIncEngineers = World_ManufIncEngineersThunk;           /* 0x711D8 */
+    pW->manufInit.pfnDecEngineers = World_ManufDecEngineersThunk;           /* 0x711EC */
+    pW->manufInit.pfnBuildPanels  = World_ManufBuildPanelsThunk;            /* 0x71268 */
+    pW->manufInit.pfnLoadPads     = pW->pfnLoadPads;
+    pW->manufInit.pPadUser        = pW->pLoadPadsUser;
+
+    memset(&pW->manufBuild, 0, sizeof(pW->manufBuild));
+    pW->manufBuild.pbPanelsBuilt  = &pW->bManufBuilt;                       /* unk_15EE4C */
+    pW->manufBuild.ppRoot         = pW->apManufRoot;
+    for (i = 0; i < 6; ++i) {
+        pW->manufBuild.apCtl[i]   = &pW->aManufCtl[i];
+    }
+    pW->manufBuild.ppPanelA       = &pW->pManufProductPanel;                /* 0x15EE44 */
+    pW->manufBuild.ppPanelB       = &pW->pManufPanelB;                      /* 0x15EE48 */
+    pW->manufBuild.ppPanelC       = &pW->pManufPanelC;                      /* 0x15EE40 */
+    pW->manufBuild.ppPanelD       = &pW->pManufPanelD;                      /* 0x15EE38 */
+    pW->manufBuild.aTopics        = pW->aTopics;                            /* 0x15EF08, the research gate */
+    pW->manufBuild.pbTopicCount   = (const u8 *)&pW->nResearchEntries;      /* 0x160C4C */
+    pW->manufBuild.apProductA     = pW->auProductU32;                       /* 0x159E9C */
+    pW->manufBuild.apProductB     = (u32 *)pW->anProductReq;                /* 0x15B79C */
+    pW->manufBuild.apManufCols    = pW->auManufCol;                         /* 0x15E19C */
+    pW->manufBuild.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->manufBuild.pfnSelectListed = World_ManufSelectThunk;                /* ManufScreen_SelectListed @ 0x6e914 */
+    pW->manufBuild.pfnSyncSelection = World_ManufSyncSelThunk;              /* 0x6dd24 */
+
+    World_BuildManufClearEnv(pW, &pW->manufClear);
+    pW->manufClear.pProductPanel  = pW->pManufProductPanel;                 /* read by ConfirmAndClose only */
+
+    memset(&pW->manufQty, 0, sizeof(pW->manufQty));
+    pW->manufQty.pnProductRow     = &pW->nManufProductRow;                  /* 0x15EE3C */
+    pW->manufQty.apManufCols      = pW->auManufCol;
+    pW->manufQty.apProductB       = pW->anProductReq;
+    pW->manufQty.puManufEntries   = (const u16 *)&pW->nResearchEntries;     /* 0x160C4C, shared count */
+    pW->manufQty.abFacilityGrid   = pW->abFacilityGrid;
+    pW->manufQty.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pW->manufQty.pbQtyGate        = &pW->bManufQtyGate;                     /* 0x15EE50 */
+
+    memset(&pW->manufEngineers, 0, sizeof(pW->manufEngineers));
+    pW->manufEngineers.pnProductRow       = &pW->nManufProductRow;
+    pW->manufEngineers.apProductB         = pW->anProductReq;
+    pW->manufEngineers.abFacilityGrid     = pW->abFacilityGrid;
+    pW->manufEngineers.abGridBytes        = pW->abGridHangarBytes;          /* 0x159DBC */
+    pW->manufEngineers.pnSelectedBaseIdx  = &pW->nSelectedBase;
+    pW->manufEngineers.pbQtyGate          = &pW->bManufQtyGate;
+    pW->manufEngineers.apCraft            = pW->apCraft;
+    pW->manufEngineers.nCraftCount        = (i32)pW->bCraftCount;
+    pW->manufEngineers.apBases            = pW->apBases;
+    pW->manufEngineers.nBaseCount         = (i32)pW->nBaseCount;
+    pW->manufEngineers.aSites             = pW->apSites;
+    pW->manufEngineers.nSiteCount         = pW->nSiteCount;
+    pW->manufEngineers.pdwShortfall       = &pW->nShortfall1870C8;          /* byte_1870C8, as a dword */
+    pW->manufEngineers.pnResidue          = &pW->nResidue1870B4;            /* dword_1870B4[0] */
+
+    memset(&pW->manufSelect, 0, sizeof(pW->manufSelect));
+    pW->manufSelect.pnProductRow      = &pW->nManufProductRow;
+    pW->manufSelect.pbProductSelected = &pW->bManufProductSelected;         /* 0x15EE34 */
+    pW->manufSelect.pbQtyGate         = &pW->bManufQtyGate;
+    pW->manufSelect.pbAnimStarted     = &pW->bUiAnimStarted;                /* 0x187080 */
+    pW->manufSelect.pfnPlaySample     = World_ManufPlaySample;
+    pW->manufSelect.pSampleUser       = pW;
+
+    memset(&pW->manufDrawEnv, 0, sizeof(pW->manufDrawEnv));
+    pW->manufDrawEnv.pnProductRow     = &pW->nManufProductRow;
+    pW->manufDrawEnv.pbProductSelected = &pW->bManufProductSelected;
+    pW->manufDrawEnv.apProductA       = pW->auProductU32;
+    pW->manufDrawEnv.apProductB       = pW->anProductReq;
+    pW->manufDrawEnv.apManufCols      = pW->auManufCol;
+    pW->manufDrawEnv.apResearchCols   = pW->auResearchCol;                  /* 0x16022C, the lab pass count */
+    pW->manufDrawEnv.pbEntryCount     = (const u8 *)&pW->nResearchEntries;
+    pW->manufDrawEnv.apBases          = pW->apBases;
+    pW->manufDrawEnv.nBaseCount       = (i32)pW->nBaseCount;
+    pW->manufDrawEnv.abGridBytes      = pW->abGridHangarBytes;
+    pW->manufDrawEnv.abFacilityGrid   = pW->abFacilityGrid;
+    pW->manufDrawEnv.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pW->manufDrawEnv.pClearEnv        = &pW->manufClear;
+    pW->manufDrawEnv.pfnPlaySample    = World_ManufPlaySample;
+    pW->manufDrawEnv.pSampleUser      = pW;
+
+    memset(&pF->manufDraw, 0, sizeof(pF->manufDraw));
+    pF->manufDraw.pColor            = pColor;
+    pF->manufDraw.pAnim             = &pF->anim;
+    pF->manufDraw.pbPanelsBuilt     = &pW->bManufBuilt;
+    pF->manufDraw.pbProductSelected = &pW->bManufProductSelected;
+    pF->manufDraw.pbQtyGate         = &pW->bManufQtyGate;
+    pF->manufDraw.pnProductRow      = &pW->nManufProductRow;
+    pF->manufDraw.pbPreviewOk       = &pW->bRoot35;                         /* bBaseFacPreviewOk @ 0x18652D */
+    pF->manufDraw.pnCursorY         = &pF->g.nCursorY;                      /* 0x186BD4, read SIGNED */
+    pF->manufDraw.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pF->manufDraw.pbMapPhase        = (const u8 *)pW->pnMapPhase;           /* Map + 0x37: the byte of the
+                                                                             * shell's counter, the red ramp term */
+    pF->manufDraw.apSiteRecs        = pW->aSiteRecs;                        /* 0x186C40, the base name */
+    pF->manufDraw.apProductB        = pW->anProductReq;
+    pF->manufDraw.apManufCols       = pW->auManufCol;
+    pF->manufDraw.pbEntryCount      = (const u8 *)&pW->nResearchEntries;
+    pF->manufDraw.pdwPrices         = g_anObjectPrice;                      /* anObjectPriceInit @ 0xAA2C0 */
+    pF->manufDraw.abFacilityGrid    = pW->abFacilityGrid;                   /* Base_CalcWorkshopCap */
+    for (i = 0; i < 6; ++i) {
+        pF->manufDraw.apCtl[i]      = &pW->aManufCtl[i];
+    }
+    pF->manufDraw.pCtlReset         = pUi->apCtl[GEOUI_CTL_186B00];         /* blitted with no product selected */
+    pF->manufDraw.pCtlAllocAll      = pUi->apCtl[GEOUI_CTL_186B94];         /* re-pointed at (94,251) each frame */
+    pF->manufDraw.pCtlClampOne      = pUi->apCtl[GEOUI_CTL_186B90];         /* re-pointed at (94,271) each frame */
+    pF->manufDraw.pCtlDraw          = pUi->apCtl[GEOUI_CTL_186BB4];         /* the "ОК" control */
+    pF->manufDraw.pCtlConfirm       = pUi->apCtl[GEOUI_CTL_186BB0];         /* the "Отмена" control */
+    pF->manufDraw.pdwShortfall      = &pW->nShortfall1870C8;
+    pF->manufDraw.pnShortfallReason = &pW->nResidue1870B4;
+    pF->manufDraw.pfnAllocAllClick  = World_ManufAllocAllThunk;             /* ManufScreen_UpdateProgress @ 0x6df6c */
+    pF->manufDraw.pfnClampOneClick  = World_ManufClampOneThunk;             /* 0x6dec0 */
+    if (pHit != NULL) {
+        pF->manufDraw.pfnCtlBlit    = pHit->pfnBlit;
+        pF->manufDraw.pfnCtlBlitEx  = pHit->pfnBlitEx;
+        pF->manufDraw.pCtlUser      = pHit->pUser;
+        pF->manufCtl.pfnCtlBlit     = pHit->pfnBlit;
+        pF->manufCtl.pfnCtlBlitEx   = pHit->pfnBlitEx;
+        pF->manufCtl.pCtlBlitUser   = pHit->pUser;
+    }
+
+    pF->manufCtl.apCtl              = pW->apManufCtl;     /* the arm blits [0..1] at 0x94168..0x94198 */
+    pF->draw.pManufPad              = (PadImage *)pW->apManufRoot[0];       /* 0x94160 *unk_159E98 */
+    pF->draw.pManufDraw             = &pF->manufDraw;                       /* 0x941A0 */
+    pF->draw.pManufCtl              = &pF->manufCtl;
+
+    pW->manufOpenHooks.pfnPlaySample = World_PlaySampleWithArg;             /* Sound_Play(17, 4) at 0x614D4 */
+    pW->manufOpenHooks.pfnInit       = World_ManufInitThunk;               /* the tail call at 0x710B4 */
+    pW->manufOpenHooks.pSlot         = NULL;
+    pW->manufOpenHooks.pUser         = pW;
+
+    pPtr->pbProductSelected   = &pW->bManufProductSelected;                 /* tested at 0x88D08 */
+    pPtr->apManufCtl          = pW->apManufCtl;
+
+    if (pAssets != NULL) {
+        pW->manufBuild.apObjects   = pAssets->apObjects;
+        pW->manufBuild.nObjectCount = (i32)pAssets->nObjectCount;
+        pW->manufQty.pEngineerRec  = (112 < (i32)pAssets->nObjectCount)
+                                         ? pAssets->apObjects[112] : NULL;  /* Map_apObjects112 @ 0x113C80 */
+        pW->manufEngineers.apObjects = pAssets->apObjects;
+        pW->manufEngineers.nObjectCount = (i32)pAssets->nObjectCount;
+        pW->manufDrawEnv.apObjects   = pAssets->apObjects;
+        pW->manufDrawEnv.nObjectCount = (i32)pAssets->nObjectCount;
+        pF->manufDraw.apObjects      = pAssets->apObjects;
+        pF->manufDraw.nObjectCount   = (i32)pAssets->nObjectCount;
+        pF->manufDraw.pTextRecs      = pszText;
+        pF->manufDraw.pEngineerRec   = pW->manufQty.pEngineerRec;
+    }
+
+    /* Cases 11 and 12, the buy/sell screen. The four controls are shell-owned cells the builders seat
+     * with their own descriptors (g_aBuySellCtl @ 0x161A0C..0x161A18); the pad is Init's allocation in
+     * the single slot 0x161A08; the five columns follow the build switch. Both modes share the one
+     * Init env, split by its nScreenId, and one pair of controls for close (224,1) and confirm
+     * (unk_186BA4, centred at y 297). */
+    pW->apBuySellCtl[0] = &pW->aBuySellCtl[0];   /* the two the frame blits and the press tests;
+                                                  * the other two cells are not exported to any arm */
+    pW->apBuySellCtl[1] = &pW->aBuySellCtl[1];
+
+    memset(&pW->buySellInit, 0, sizeof(pW->buySellInit));
+    pW->buySellInit.ppScreen            = (PadImage **)&pW->pBuySellPad;    /* the slot unk_161A08 */
+    pW->buySellInit.pCloseCtl           = pUi->apCtl[GEOUI_CTL_186B00];     /* to (224,1) at 0x78CBC */
+    pW->buySellInit.pConfirmCtl         = pUi->apCtl[GEOUI_CTL_186BA4];     /* centred at y 297 at 0x78CE8 */
+    pW->buySellInit.pfnCloseClick       = World_BuySellCloseThunk;          /* BuySellScreen_CloseThunk @ 0x75154 */
+    pW->buySellInit.pfnConfirmBuy       = World_BuySellConfirmBuyThunk;     /* 0x78D60 */
+    pW->buySellInit.pfnConfirmSell      = World_BuySellCommitThunk;         /* 0x78D78 */
+    pW->buySellInit.pfnBuildControls    = World_BuySellBuildControlsThunk;  /* 0x78D64 */
+    pW->buySellInit.pfnBuildPanels      = World_BuySellBuildPanelsThunk;    /* 0x78D7C */
+    pW->buySellInit.nScreenId           = PUFO_BUYSSELL_SCREEN_BUY;         /* the open thunk selects */
+    pW->buySellInit.pnFunds             = &pW->nFunds;
+    pW->buySellInit.pnFundsSnapshot     = &pW->nBuySellFundsSnapshot;       /* 0x78C44 */
+    pW->buySellInit.pnTransTotal        = &pW->nBuySellTransTotal;          /* 0x78CAC */
+    pW->buySellInit.pnSoldierHireCount  = &pW->nSoldierHireCount;           /* 0x78CB4 */
+    pW->buySellInit.anSlotDelta         = pW->anBuySellSlotDelta;           /* 0x161600 */
+
+    memset(&pW->buySellControls, 0, sizeof(pW->buySellControls));
+    pW->buySellControls.pbControlsBuilt = &pW->bBuySellCtlBuilt;            /* unk_161A24 */
+    for (i = 0; i < 4; ++i) {
+        pW->buySellControls.apCtl[i]    = &pW->aBuySellCtl[i];
+    }
+    pW->buySellControls.ppPanelA        = &pW->pBuySellPanelA;              /* 0x161A1C */
+    pW->buySellControls.ppPanelB        = &pW->pBuySellPanelB;              /* 0x161A00 */
+    pW->buySellControls.ppPanelC        = &pW->pBuySellPanelC;              /* 0x161A20 */
+    pW->buySellControls.ppPanelD        = &pW->pBuySellPanelD;              /* 0x160C88 */
+    pW->buySellControls.ppPanelE        = &pW->pBuySellPanelE;              /* 0x1615F8 */
+    pW->buySellControls.aSites          = pW->apSites;                      /* 0x162030, the working record */
+    pW->buySellControls.pnSiteCount     = &pW->nSiteCount;                  /* 0x186410, live, not a copy */
+    pW->buySellControls.apBases         = pW->apBases;
+    pW->buySellControls.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->buySellControls.pnFunds         = &pW->nFunds;
+    pW->buySellControls.pTextRecs       = pszText;
+    pW->buySellControls.pfnPanelPrev    = World_BuySellPanelPrevThunk;      /* BuySellScreen_PanelPrev @ 0x76088 */
+    pW->buySellControls.pfnPanelNext    = World_BuySellPanelNextThunk;      /* 0x760e0 */
+    pW->buySellControls.pfnSyncSelection = World_BuySellSyncSelThunk;       /* 0x76138, panel A's click */
+    pW->buySellControls.pfnUpdatePrices = World_BuySellUpdatePricesThunk;   /* 0x75878 */
+    pW->buySellControls.pfnValidateCapacity = World_BuySellValidateThunk;   /* 0x75b88 */
+    pW->buySellControls.pfnLoadPads     = pW->pfnLoadPads;
+    pW->buySellControls.pPadUser        = pW->pLoadPadsUser;
+
+    memset(&pW->buySellBuild, 0, sizeof(pW->buySellBuild));
+    pW->buySellBuild.pbPanelsBuilt      = &pW->bBuySellBuilt;               /* 0x161A28 */
+    for (i = 0; i < 4; ++i) {
+        pW->buySellBuild.apCtl[i]       = &pW->aBuySellCtl[i];
+    }
+    pW->buySellBuild.ppPanelA           = &pW->pBuySellPanelA;
+    pW->buySellBuild.ppPanelB           = &pW->pBuySellPanelB;
+    pW->buySellBuild.ppPanelC           = &pW->pBuySellPanelC;
+    pW->buySellBuild.ppPanelD           = &pW->pBuySellPanelD;
+    pW->buySellBuild.ppPanelE           = &pW->pBuySellPanelE;
+    pW->buySellBuild.apSoldiers         = pW->apSoldiers;
+    pW->buySellBuild.nSoldierCount      = pW->nSoldierCount;
+    pW->buySellBuild.apCrafts           = pW->apCraft;
+    pW->buySellBuild.nCraftCount        = (i32)pW->bCraftCount;
+    pW->buySellBuild.nSelectedBaseIdx   = pW->nSelectedBase;
+    pW->buySellBuild.pnAssignedShipCount = &pW->anAssignedCraftList[0];    /* dword_161468 */
+    pW->buySellBuild.pnSoldierIdCount   = &pW->anSoldierIdList[0];          /* 0x160C90 */
+    pW->buySellBuild.pnFunds            = &pW->nFunds;
+    pW->buySellBuild.pTextRecs          = pszText;
+    pW->buySellBuild.apManufCol         = pW->auManufCol;                   /* the engineer column */
+    pW->buySellBuild.apResearchCol      = pW->auResearchCol;                /* the scientist column */
+    pW->buySellBuild.nCrewEntries       = (i32)pW->nResearchEntries;        /* 0x160C4C */
+    pW->buySellBuild.pfnSyncSelection   = World_BuySellSyncSelThunk;
+    pW->buySellBuild.pfnFillBuyPanel    = World_BuySellFillBuyThunk;        /* BuySellScreen_FillBuyPanel @ 0x75160 */
+    pW->buySellBuild.pfnFillSellPanel   = World_BuySellFillSellThunk;       /* 0x75464 */
+    pW->buySellBuild.pfnPanelPrev       = World_BuySellPanelPrevThunk;
+    pW->buySellBuild.pfnPanelNext       = World_BuySellPanelNextThunk;
+    pW->buySellBuild.pfnLoadPads        = pW->pfnLoadPads;
+    pW->buySellBuild.pPadUser           = pW->pLoadPadsUser;
+
+    memset(&pW->buySellCapacity, 0, sizeof(pW->buySellCapacity));
+    pW->buySellCapacity.pnRowCursor     = &pW->buySellScratch.nCache186BE8; /* dword_186BE8 */
+    pW->buySellCapacity.pnRadarPulseTimer = &pW->nRadarPulseTimer;          /* 0xAC224, the repeat bound */
+    pW->buySellCapacity.abFacilityGrid  = pW->abFacilityGrid;
+    pW->buySellCapacity.abGridBytes     = pW->abGridHangarBytes;            /* 0x159DBC */
+    pW->buySellCapacity.aSites          = pW->apSites;
+    pW->buySellCapacity.nSiteCount      = pW->nSiteCount;
+    pW->buySellCapacity.apBases         = pW->apBases;
+    pW->buySellCapacity.nBaseCount      = (i32)pW->nBaseCount;
+    pW->buySellCapacity.apCraft         = pW->apCraft;
+    pW->buySellCapacity.nCraftCount     = (i32)pW->bCraftCount;
+    pW->buySellCapacity.apSoldiers      = pW->apSoldiers;
+    pW->buySellCapacity.nSoldierCount   = pW->nSoldierCount;
+    pW->buySellCapacity.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->buySellCapacity.pnFunds         = &pW->nFunds;
+    pW->buySellCapacity.pnTransTotal    = &pW->nBuySellTransTotal;
+    pW->buySellCapacity.pnSoldierHireCount = &pW->nSoldierHireCount;
+    pW->buySellCapacity.pdwShortfall    = &pW->nShortfall1870C8;
+    pW->buySellCapacity.pnResidue       = &pW->nResidue1870B4;
+
+    memset(&pW->buySellRowEdit, 0, sizeof(pW->buySellRowEdit));
+    pW->buySellRowEdit.pnRadarPulseTimer = &pW->nRadarPulseTimer;
+    pW->buySellRowEdit.anSlotDelta      = pW->anBuySellSlotDelta;
+    pW->buySellRowEdit.pnTransTotal     = &pW->nBuySellTransTotal;
+    pW->buySellRowEdit.pnFunds          = &pW->nFunds;
+    pW->buySellRowEdit.apManufCol       = pW->auManufCol;
+    pW->buySellRowEdit.apResearchCol    = pW->auResearchCol;
+    pW->buySellRowEdit.nCrewEntries     = (i32)pW->nResearchEntries;
+
+    memset(&pW->buySellCommit, 0, sizeof(pW->buySellCommit));
+    pW->buySellCommit.anSlotDelta       = pW->anBuySellSlotDelta;
+    pW->buySellCommit.apCrafts          = pW->apCraft;
+    pW->buySellCommit.apSoldiers        = pW->apSoldiers;
+    pW->buySellCommit.pnAssignedCount   = &pW->anAssignedCraftList[0];
+    pW->buySellCommit.anAssignedList    = &pW->anAssignedCraftList[1];      /* 0x161468[1..] */
+    pW->buySellCommit.nAssignedCapacity = (i32)(sizeof(pW->anAssignedCraftList) /
+                                                 sizeof(pW->anAssignedCraftList[0])) - 1;
+    pW->buySellCommit.pnSoldierIdCount  = &pW->anSoldierIdList[0];
+    pW->buySellCommit.anSoldierIdList   = &pW->anSoldierIdList[1];
+    pW->buySellCommit.nSoldierIdCapacity = (i32)(sizeof(pW->anSoldierIdList) /
+                                                 sizeof(pW->anSoldierIdList[0])) - 1;
+    pW->buySellCommit.pnFundsSnapshot   = &pW->nBuySellFundsSnapshot;
+    pW->buySellCommit.pClose            = &pW->closeEnv;                    /* tail call at 0x75078 */
+
+    memset(&pW->buySellConfirm, 0, sizeof(pW->buySellConfirm));
+    pW->buySellConfirm.aSites           = pW->apSites;
+    pW->buySellConfirm.pnSiteCount      = &pW->nSiteCount;                  /* 0x186410 */
+    pW->buySellConfirm.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pW->buySellConfirm.apBases          = pW->apBases;
+    pW->buySellConfirm.pnFundsSnapshot  = &pW->nBuySellFundsSnapshot;       /* 0x75130 */
+
+    memset(&pF->buySellDraw, 0, sizeof(pF->buySellDraw));
+    pF->buySellDraw.pColor              = pColor;
+    pF->buySellDraw.pbPanelsBuilt       = &pW->bBuySellBuilt;
+    pF->buySellDraw.pbControlsBuilt     = &pW->bBuySellCtlBuilt;
+    pF->buySellDraw.pbCursorOnRow       = &pW->bBuySellCursorOnRow;         /* unk_161A30 */
+    pF->buySellDraw.pbPanelFlagScratch  = &pW->bPlaneRowFlag;               /* unk_161F0C, the SAME byte the
+                                                                             * hangar row click sets */
+    pF->buySellDraw.pnRowCursor         = &pW->buySellScratch.nCache186BE8;
+    pF->buySellDraw.pnSelectedBaseIdx   = &pW->nSelectedBase;
+    pF->buySellDraw.pTextRecs           = pszText;
+    pF->buySellDraw.apSiteRecs          = pW->aSiteRecs;
+    pF->buySellDraw.apSoldiers          = pW->apSoldiers;
+    pF->buySellDraw.nSoldierCount       = pW->nSoldierCount;
+    pF->buySellDraw.pnFunds             = &pW->nFunds;
+    pF->buySellDraw.pnTransTotal        = &pW->nBuySellTransTotal;
+    pF->buySellDraw.pbPreviewOk         = &pW->bRoot35;                     /* 0x18652D */
+    pF->buySellDraw.pnCursorY           = &pF->g.nCursorY;
+    pF->buySellDraw.pdwShortfall        = &pW->nShortfall1870C8;
+    pF->buySellDraw.pnShortfallReason   = &pW->nResidue1870B4;
+    pF->buySellDraw.pAnim               = &pF->anim;
+    pF->buySellDraw.pCtlClose           = pUi->apCtl[GEOUI_CTL_186B00];     /* blitted unconditionally */
+    pF->buySellDraw.pCtlOk              = pUi->apCtl[GEOUI_CTL_186BA4];     /* blitted off-row */
+    if (pHit != NULL) {
+        pF->buySellDraw.pfnCtlBlit      = pHit->pfnBlit;
+        pF->buySellDraw.pfnCtlBlitEx    = pHit->pfnBlitEx;
+        pF->buySellDraw.pCtlUser        = pHit->pUser;
+        pF->buySellCtl.pfnCtlBlit       = pHit->pfnBlit;
+        pF->buySellCtl.pfnCtlBlitEx     = pHit->pfnBlitEx;
+        pF->buySellCtl.pCtlBlitUser     = pHit->pUser;
+    }
+
+    pF->buySellCtl.apCtl                = pW->apBuySellCtl;                 /* 0x161A0C / 0x161A10 */
+    pF->buySellTrack.pbPreviewOk        = &pW->bRoot35;                     /* the tail gate at 0x93EB8 */
+    pF->buySellTrack.ppPanelB           = &pW->pBuySellPanelB;
+    pF->buySellTrack.ppPanelC           = &pW->pBuySellPanelC;
+    pF->buySellTrack.pnCursorX          = &pW->nPlaneCursorX;               /* 0x186BD0, LDRSH at 0x93EC4 */
+    pF->buySellTrack.pnCursorY          = &pW->nPlaneCursorY;               /* 0x186BD4, LDRSH at 0x93EC0 */
+    pF->draw.pBuySellPad                = pW->pBuySellPad;                  /* 0x93DD8 *pBuySellScreenPad */
+    pF->draw.pBuySellDraw               = &pF->buySellDraw;                 /* the shared 0x93E10 */
+    pF->draw.pBuySellCtl                = &pF->buySellCtl;
+    pF->draw.pBuySellTrack              = &pF->buySellTrack;                /* 0x93EB4 */
+
+    pW->buySellBuyHooks.pfnPlaySample   = World_PlaySampleWithArg;           /* Sound_Play(17, 4) at 0x6179C */
+    pW->buySellBuyHooks.pfnInit         = World_BuySellInitThunk;            /* the BL at 0x617B8 */
+    pW->buySellBuyHooks.pSlot           = NULL;
+    pW->buySellBuyHooks.pUser           = pW;
+    pW->buySellSellHooks.pfnPlaySample  = World_PlaySampleWithArg;           /* 0x617CC */
+    pW->buySellSellHooks.pfnInit        = World_BuySellInitThunk;            /* the BL at 0x617E8 */
+    pW->buySellSellHooks.pSlot          = NULL;
+    pW->buySellSellHooks.pUser          = pW;
+
+    pPtr->apBuySellCtl        = pW->apBuySellCtl;                            /* hit-tested at 0x88804 */
+
+    if (pAssets != NULL) {
+        pW->buySellInit.nSlotDeltaCount   = (i32)pAssets->nObjectCount;
+        pW->buySellRowEdit.nSlotDeltaCount = (i32)pAssets->nObjectCount;
+        pW->buySellCapacity.apObjects     = pAssets->apObjects;
+        pW->buySellCapacity.nObjectCount  = (i32)pAssets->nObjectCount;
+        pW->buySellControls.apObjects     = pAssets->apObjects;
+        pW->buySellControls.nObjectCount  = (i32)pAssets->nObjectCount;
+        pW->buySellBuild.apObjects        = pAssets->apObjects;
+        pW->buySellBuild.nObjectCount     = (i32)pAssets->nObjectCount;
+        pW->buySellCommit.apObjects       = pAssets->apObjects;
+        pW->buySellCommit.nObjectCount    = (i32)pAssets->nObjectCount;
+        pW->buySellConfirm.apObjects      = pAssets->apObjects;
+        pW->buySellConfirm.nObjectCount   = (i32)pAssets->nObjectCount;
+        pW->buySellRowEdit.apObjects      = pAssets->apObjects;
+        pW->buySellRowEdit.nObjectCount   = (i32)pAssets->nObjectCount;
+        pF->buySellDraw.apObjects         = pAssets->apObjects;
+        pF->buySellDraw.nObjectCount      = (i32)pAssets->nObjectCount;
     }
 
     World_WireGeoscapeClock(pW, pHooks);
@@ -9060,6 +10038,34 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pW->researchStart.pPanelProgress  = pW->pResearchProgPanel;
     pW->researchCancel.qty            = pW->researchQty;
     pW->ptrEnv.pResearchPanel         = pW->pResearchTopicPanel;   /* derefed unguarded at 0x88B30 */
+
+    /* Case 9, the manufacturing screen, and cases 11/12, the buy/sell screen. Both builders swap the
+     * panels behind the envs' backs exactly like the research one (Init builds, the teardown frees),
+     * and both pads are one allocation the openers make and the closers release -- the manuf pad in
+     * root slot 0 (freed by BuildPanels' teardown at 0x6F280), the buy/sell pad by CloseUI's
+     * CloseFreePad. The frame arm and the press arm hold these by value, so they follow the frame. */
+    pF->manufDraw.pPanelA             = pW->pManufProductPanel;    /* 0x15EE44 */
+    pF->manufDraw.pPanelB             = pW->pManufPanelB;          /* 0x15EE48 */
+    pF->manufDraw.pPanelC             = pW->pManufPanelC;          /* 0x15EE40 */
+    pF->manufDraw.pPanelD             = pW->pManufPanelD;          /* 0x15EE38 */
+    pF->draw.pManufPad                = (PadImage *)pW->apManufRoot[0]; /* 0x94160: *unk_159E98 */
+    pW->ptrEnv.pManufProductPanel     = pW->pManufProductPanel;    /* hit-tested at 0x88C98 */
+    pW->ptrEnv.pManufPanelD           = pW->pManufPanelD;          /* tracked and clicked at x 20 */
+
+    pF->buySellDraw.pPanelA           = pW->pBuySellPanelA;        /* 0x161A1C */
+    pF->buySellDraw.pPanelB           = pW->pBuySellPanelB;        /* 0x161A00 */
+    pF->buySellDraw.pPanelC           = pW->pBuySellPanelC;        /* 0x161A20 */
+    pF->buySellDraw.pPanelD           = pW->pBuySellPanelD;        /* 0x160C88 */
+    pF->buySellDraw.pPanelE           = pW->pBuySellPanelE;        /* 0x1615F8 */
+    pF->draw.pBuySellPad              = pW->pBuySellPad;           /* 0x93DD8: *pBuySellScreenPad */
+    pW->ptrEnv.pBuySellPanelA         = pW->pBuySellPanelA;        /* the press arm's row click */
+    pW->ptrEnv.pBuySellPanelB         = pW->pBuySellPanelB;        /* the release arms' "<" pair */
+    pW->ptrEnv.pBuySellPanelC         = pW->pBuySellPanelC;        /* ... and ">" */
+
+    /* Base_RemoveAllShips counts the bases at its call, and nBaseCount can move during the same
+     * press that runs the close (a confirm may create nothing, but the transfer pass reads the
+     * count after the transaction). */
+    pW->clearShipsEnv.nBaseCount      = (i32)pW->nBaseCount;
 }
 
 i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), void *pUser)

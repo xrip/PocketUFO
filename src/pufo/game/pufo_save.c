@@ -1399,8 +1399,9 @@ static void BasesSiteRecordJoin(u8 *pRec, SaveBaseFacility *pFac, bool bToWire)
  *   0x18655D, 9 B     the region counters
  *   0x186C40, 8 x 61  the eight site records
  *
- * unk_159D82 and nSoldierHireCount @ 0x159D90 are not here: the shell has no live cell for either, so
- * the record is their only home and they round trip through it. */
+ * unk_159D82 is not here: the shell has no live cell for it, so the record is its only home and it
+ * round trips through the record. nSoldierHireCount @ 0x159D90 now has a live cell (the buy/sell
+ * screen's hire tally) and travels with the two joins. */
 void Save_BasesLiveToRecord(const SaveBasesLive *pLive, SaveBasesState *pState)
 {
     if (pLive == NULL || pState == NULL) {
@@ -1413,6 +1414,7 @@ void Save_BasesLiveToRecord(const SaveBasesLive *pLive, SaveBasesState *pState)
     pState->bUnk159D81 = (u8)*pLive->pnSelectedBase;                    /* 0x3F25C */
     memcpy(pState->abUnk159DBC, pLive->abHangarBytes, sizeof(pState->abUnk159DBC)); /* 0x3F2A4 */
     memcpy(pState->abUnk1598D8, pLive->pnFunds, sizeof(pState->abUnk1598D8));       /* 0x3F2B4 */
+    memcpy(pState->abUnk159D90, pLive->pnSoldierHireCount, 4);                      /* 0x3F28C, the dword's 4 bytes */
     pState->bUnk158848 = (u8)*pLive->pnCraftHomeBase;                   /* 0x3F2C8 */
     for (i32 i = 0; i < PUFO_BASE_FLAG_COUNT; ++i) {
         pState->abFlag20[i] = pLive->abBaseFacRecords[i * 28 + 0x14];   /* 0x3F2E0, v0 += 0x1C */
@@ -1436,6 +1438,7 @@ void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *p
     *pLive->pnSelectedBase = (i8)pState->bUnk159D81;                    /* 0x4036C */
     memcpy(pLive->abHangarBytes, pState->abUnk159DBC, sizeof(pState->abUnk159DBC)); /* 0x403C4 */
     memcpy(pLive->pnFunds, pState->abUnk1598D8, sizeof(pState->abUnk1598D8));       /* 0x403D4 */
+    memcpy(pLive->pnSoldierHireCount, pState->abUnk159D90, 4);                      /* 0x4039C, the dword's 4 bytes */
     *pLive->pnCraftHomeBase = (i8)pState->bUnk158848;                   /* 0x403F0 */
     for (i32 i = 0; i < PUFO_BASE_FLAG_COUNT; ++i) {
         pLive->abBaseFacRecords[i * 28 + 0x14] = pState->abFlag20[i];   /* 0x40408, v3 += 0x1C */

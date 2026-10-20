@@ -331,7 +331,8 @@ static i32 PointerCraft(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY)
     }
 
     if (*pEnv->pbPlaneShowCraftDetail != 0) {                                /* 0x884C4 */
-        const Ship *pCraft = pEnv->apCraft[*pEnv->pnSelectedCraftIdx];
+        const Ship *pCraft = pEnv->apCraft[*pEnv->pnSelectedCraftIdx];      /* 0x161AC4, wired at the press
+                                                                             * seam -- it indexes apCraft at 0x884D4 */
         const bool bQuiet = *pEnv->pbStatPanelAOpen == 0 && *pEnv->pbStatPanelBOpen == 0 &&
                             *pEnv->pbPlaneListBuilt == 0 && *pEnv->pbPlaneStoresCommitted == 0;
         if (pCraft != NULL && bQuiet) {

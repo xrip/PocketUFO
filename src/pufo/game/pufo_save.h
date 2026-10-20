@@ -479,8 +479,9 @@ typedef struct SaveBasesState {
  * The two byte blocks are one grid on both sides: 0x159768..0x159887 and 0x1598DC..0x159D5B are
  * grid[0..287] and grid[372..1523] of the port's 1524-byte grid, and the 84 bytes between the two
  * blocks is where the original's nFunds sits (0x1598D8 = grid + 368), which the port models as a
- * separate i32. unk_159D82 and nSoldierHireCount have no live cell in the shell yet, so the record
- * is their only home and they keep what the record already held.
+ * separate i32. unk_159D82 has no live cell in the shell yet, so the record is its only home and it
+ * keeps what the record already held; nSoldierHireCount @ 0x159D90 gained one when the buy/sell
+ * screen became live (the 1000-row hire tally) and now round-trips through it.
  *
  * The pointers are byte pointers because BaseFacFlag and BaseSiteRec live in pufo_geoscape.h, which
  * this header does not include; the offsets used below are the original's own addressing. */
@@ -490,6 +491,7 @@ typedef struct SaveBasesLive {
     i8  *pnSelectedBase;      /* nSelectedBaseIdx @ 0x159D81 */
     u8  *abHangarBytes;       /* byte_159DBC, 8 bytes */
     i32 *pnFunds;             /* nFunds @ 0x1598D8 */
+    i32 *pnSoldierHireCount;  /* nSoldierHireCount @ 0x159D90, the 4 bytes at 0x3F28C / 0x4039C */
     i8  *pnCraftHomeBase;     /* 0x158848 */
     u8  *abBaseFacRecords;    /* aBaseFacFlags @ 0x186E48: 17 records of 28, bFlag20 at +0x14 */
     u8  *aRegionBuildCount;   /* g_anRegionBuildCount @ 0x18655D, 9 bytes */

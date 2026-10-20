@@ -1500,6 +1500,7 @@ static void TestBuySellBuildControls(void)
     UiControl aCtl[4];
     BuySellControlsEnv env;
     u8 bBuilt = 0;
+    i32 nSiteCount = 1; /* the working site is the record AT the count, aSites[1] */
     i32 nFunds = 1000;
     i32 nOk = 0;
     i32 i;
@@ -1567,7 +1568,7 @@ static void TestBuySellBuildControls(void)
     env.ppPanelD = &pD;
     env.ppPanelE = &pE;
     env.aSites = aSites;
-    env.nSiteCount = 1;
+    env.pnSiteCount = &nSiteCount; /* a pointer, not a copy: 0x7619C and 0x76C14 re-read the cell live */
     env.apBases = apBase;
     env.nSelectedBaseIdx = 0;
     env.apObjects = apObj;

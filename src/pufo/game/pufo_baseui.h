@@ -321,8 +321,7 @@ void Geoscape_UiFocusNext(GeoscapeFocusEnv *pEnv);
 /* ------------------------------------------------- the buy/sell list panels
  *
  * Evidence: BuySellScreen_BuildPanels @ 0x76de0 (4236 B). The branch selector is the byte the
- * IDB now names bBuySellPanelsBuilt @ 0x161A28; BuySellScreen_Draw (0x77e6c, not ported) reads it
- * too.
+ * IDB now names bBuySellPanelsBuilt @ 0x161A28; BuySellScreen_Draw @ 0x77e6c reads it too.
  *
  * Set -- the teardown branch (0x77D60..0x77E50): clear the flag, release the four screen
  * controls at 0x161A0C..0x161A18 with UiControl_FreePads + delete, release the five panels with
@@ -762,7 +761,10 @@ typedef struct BuySellControlsEnv {
     UiPanel **ppPanelD;               /* pBuySellPanelD @ 0x160C88 */
     UiPanel **ppPanelE;               /* pBuySellPanelE @ 0x1615F8 */
     SmapSite *aSites;                 /* aSmapSites @ 0x162030 */
-    i32 nSiteCount;                   /* nSiteCount @ 0x186410, also the working site's index */
+    i32 *pnSiteCount;                 /* nSmapSiteCount @ 0x186410, also the working site's index. A pointer,
+                                       * not a copy: the original re-reads the global at 0x7619C and 0x76C14,
+                                       * and BuySellScreen_ConfirmSiteAndClose changes it INSIDE the close
+                                       * chain whose teardown reads it. */
     BaseRec *const *apBases;          /* apBases @ 0x114B2C, for the site's bFlag1 */
     i8 nSelectedBaseIdx;              /* nSelectedBaseIdx @ 0x159D81 */
     ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0 */
@@ -1932,7 +1934,9 @@ i32 ManufScreen_UpdateProgress(const ManufQtyEnv *pEnv);
  * and it clears it with a byte store (MOV R2,#0 / STRB R2,[R0,#0xBD8] at 0x6E958) rather than a
  * word store, so only the low byte of the dword cursor is zeroed and the upper 24 bits survive --
  * for any cursor under 256 that is a full clear, and the port reproduces the byte width exactly.
- * And it clears bManufQtyGate, which is the only write that address ever gets.
+ * And it clears bManufQtyGate -- the clearing side of the pair. The setting side is
+ * ManufScreen_DrawFrame @ 0x7019C and its three twins (0x70358, 0x704B4, 0x70610): a component
+ * row whose requirement exceeds the base's stock writes 1 (and paints that row red at 0x70194).
  *
  * Deviation: the original leaves the address of bManufQtyGate in R0 (0x6E974, residue from the
  * last LDR); the port returns the cached row, which is what the research sibling returns. */
@@ -2023,8 +2027,10 @@ void ManufScreen_ClearProductSlot(const ManufClearEnv *pEnv, i32 nBaseIndex, i32
  *     past the commit call, so one over-budget product ends the whole refresh.
  *
  * When the loop finishes with no over-budget product the original calls ManufScreen_CommitProduction
- * (0x6f34c, not ported) on the way out, and makes the same call when the base count is zero. The
- * port leaves that call out and records it here.
+ * on the way out (0x71044 / 0x71048), and makes the same call when the base count is zero. The port
+ * runs that tail call whenever the caller supplies the commit env: the hourly tick hook does, the
+ * refresh-only tests leave pCommitEnv NULL. The over-budget path at 0x710A4 branches PAST the call
+ * either way -- one over-budget product ends the whole refresh without committing.
  *
  * Deviation: the original walks the quantity and accumulator tables with running pointers and
  * bounds nothing; the port indexes them as 200*nBase + product and refuses when either table is
@@ -2042,6 +2048,9 @@ typedef struct ManufRefreshEnv {
     u32             *pdwShortfall;   /* byte_1870C8, written as a dword */
     UiLineList      *pLines;         /* the root message list @ 0x158890 */
     const ManufClearEnv *pClearEnv;  /* ManufScreen_ClearProductSlot's tables */
+    const struct ManufCommitEnv *pCommitEnv; /* the 0x71044/0x71048 tail call's env: set it to run
+                                              * the commit on the way out, leave it NULL to run the
+                                              * refresh alone (the test shape) */
     void (*pfnPlaySample)(i32 nSample, void *pUser);
     void *pSoundUser;
 } ManufRefreshEnv;
@@ -2068,7 +2077,7 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv);
  *   nUnits = apProductA[200*base + product] / apObjects[product]->uManufWorkPerUnit
  *
  * is how many units the accumulated work has paid for. The original's own panel percent
- * (ManufScreen_Draw 0x6E704 and ManufScreen_BuildPanels 0x6F060, both not ported) is
+ * (ManufScreen_Draw's read at 0x6E704, BuildPanels' at 0x6F060) is
  * `accumulated * 100 / (workPerUnit * target)`, which is the same reading.
  *
  * Per base, per product, in this order:
@@ -2182,7 +2191,7 @@ typedef struct ManufInitEnv {
     UiControl *pDrawCtl;            /* pGeoscapeCtlA */
     UiControl *pConfirmCtl;         /* pGeoscapeCtlB */
     void (*pfnCloseClick)(void);    /* ManufScreen_CloseThunk @ 0x6e3d4 */
-    void (*pfnDrawClick)(void);     /* ManufScreen_Draw (0x6e3e0), not ported */
+    void (*pfnDrawClick)(void);     /* ManufScreen_Draw @ 0x6e3e0 */
     void (*pfnConfirmClick)(void);  /* ManufScreen_ConfirmAndClose @ 0x6e98c */
     void (*pfnPanelPrev)(void);     /* ManufScreen_PanelPrev @ 0x6dd4c */
     void (*pfnPanelNext)(void);     /* ManufScreen_PanelNext @ 0x6dd94 */

@@ -41,6 +41,7 @@
 #include "game/pufo_los.h"       /* Map_TraceLos, for the LOS probe */
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"
+#include "ui/pufo_geoiinit.h"  /* g_anObjectPrice @ 0xAA2C0, the price the production commit charges (Part 99) */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,6 +57,7 @@ static void Check(bool bCond, const char *pszWhat)
         printf("  FAIL %s\n", pszWhat);
         g_nFailures += 1;
     }
+    fflush(stdout); /* a crash later in the test must not swallow this line */
 }
 
 static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
@@ -66,6 +68,7 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
         printf("  FAIL %s: got %d, want %d\n", pszWhat, (int)nGot, (int)nWant);
         g_nFailures += 1;
     }
+    fflush(stdout);
 }
 
 /* The screen pixel a map cell lands on -- the inverse of the arithmetic Smap_HitTestStrategSelect
@@ -8847,6 +8850,984 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         (void)remove("sav64.sav");
         (void)remove("sav62.sav");
 #undef CLICK
+    }
+
+    /* ---- Part 99: the economy round on a live geoscape ------------------------------------------
+     *
+     * Everything the run has gated so far gated one screen's machinery at a time. This block walks
+     * the economic loop the shipped game runs it in: end the mission, buy a building and pay for it,
+     * run a research topic to its end on the hourly tick, manufacture the item that research
+     * unlocked and pay for the production, buy at the shop and pay for it, and arm a transport and a
+     * combat craft. The clock calls are the clock's own: pfnTickBases finishes a facility the way
+     * Geoscape_AdvanceTime does (0x5CE40 -> 0x5D3BC -> 0x62824), and pfnTickHourly is the tick that
+     * carries research progress (Geoscape_TickHourly 0x...: pfnAccumulateResearch @ 0x74914) and the
+     * manufacturing refresh with its tail commit (pfnRefreshBaseTabs @ 0x70ebc tail-calling 0x71048).
+     * No test has ever run pfnTickHourly before -- the presence check at 1298 was the only one. */
+    {
+        i32 nEBase, nRow, nTick, nKind, nTopic, nProd, nIdx, nIx;
+        i32 nFunds0, nCost0, nTapX, nTapY, nAimX, nAimY;
+        UiPanel *pPanel;
+
+        /* 99.0 Leaving the mission. World_TactEscapeToGeoscape is the seam UiScreen_OnCancel @ 0x16200
+         * reaches through TactInputHooks.pfnShutdownReinit: Tact_Shutdown(0) keeping nothing, then
+         * Geoscape_InitUI(1) rebuilding the geoscape singletons the launch freed (0x162BC / 0x162C8),
+         * which re-runs World_WireGeoscapeFrame and re-seats every env this block then presses
+         * through. The UI byte stays 13 in the original at this arm (the debrief walk is the tact
+         * UI's own chain, gated in test_tactend); the geoscape seams below never read it, and
+         * clearing it states the plain-geoscape condition the frames show. */
+        printf("  econ stage 0: leaving the mission\n");
+        fflush(stdout);
+        World_TactEscapeToGeoscape();
+        printf("  econ stage 0b: shutdown+rebuild returned\n");
+        fflush(stdout);
+        g_world.nUiScreen = 0;
+        Check(g_world.bTactFlag == 0, "the mission is over: bTactFlag is clear after the shutdown+rebuild (0x162BC)");
+        /* The mission-end walk leaves the nav bar down: the CloseUI case 1 teardown frees the fifteen
+         * controls at 0x159888..0x1598AC (0x8BEA8, 0x8BEDC, 0x8BF0C), and InitUI mode 1 does not rebuild
+         * them -- its callers are Game_StartNew (0x9542C), Base_EnterBuildMode (0x84E6C) and
+         * Ui_OpenResearch (0x84CBC). The geoscape's build widget -- the root control at 0x186520, whose
+         * handler InitUI installs at 0x865AC -- is what a player presses to get the bar back, and
+         * pressing it here is that same act. */
+        Check(g_world.ui.apRootCtl[10] != NULL && g_world.ui.apRootCtl[10]->pfnClick != NULL,
+              "the build widget carries Base_EnterBuildMode (Geoscape_InitUI 0x865AC)");
+        g_world.ui.apRootCtl[10]->pfnClick(); /* sample 17 at 0x84E2C, the id at 0x84E64, the bar at 0x84E6C */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "the build widget writes the id 1 (0x84E64)");
+        Check(g_world.nav.apNav[6] != NULL && g_world.nav.apNav[6]->pfnClick != NULL
+                  && g_world.nav.apNav[8] != NULL && g_world.nav.apNav[8]->pfnClick != NULL
+                  && g_world.nav.apNav[9] != NULL && g_world.nav.apNav[9]->pfnClick != NULL,
+              "Base_EnterBuildMode rebuilt the nav bar with the manufacturing, buy and sell handlers (0x84E6C, 0x67BC8, 0x67BD4, 0x67BE0)");
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("econ_after_mission");
+
+        printf("  econ stage 1: facilities\n");
+        fflush(stdout);
+        nEBase = 0;
+        g_world.nSelectedBase = nEBase;
+        g_world.nFunds = 5000000; /* the three purchases and the production all have to be affordable */
+
+        /* The earlier soldier-equip pass ran the hangar equipment row, and its new-equipment arm
+         * subtracts from the base without any stock test (BaseRec_AddItemQty -1 at 0x61B04) -- the
+         * original's own behaviour, reproduced. Two such presses left the equipment object wrapped
+         * to 65534 in this base's stock, and Base_CalcStorageUsed (0x6555c) charges the engineers
+         * gate of 0x6E300 with it. The economic round starts from clean stock, as a fresh game's
+         * would be. */
+        g_assets.apObjects[25]->auPerBaseVal[nEBase] = 0;
+
+        /* 99.1 Buying a new building: the dialog, a row, an aimed cell, the commit. The sequence is
+         * 12f's, kept whole: the row press's release runs the panel's handler and arms the placement
+         * (0x5897C, 0x58998), the map press aims the cell under the cursor (0x58EC0, 0x58EC8), its
+         * release copies the tap into the pending pair (0x89E8C, 0x89E98) and sets the ok byte
+         * (0x89E84), and the second press's frame runs the overlay's commit: the funds gate at
+         * 0x59A2C, SetCellBuildState at 0x59A9C, the spend at 0x59AC8. A workshop, a laboratory, a
+         * stores block and a living-quarters cell where its 50 stands at or below the mission load --
+         * the capacities the research, manufacturing and shop-crew gates read. Between two purchases
+         * the dialog closes and re-opens the way a
+         * player does it: the commit leaves the placement armed (0x89F10 then skips the row click),
+         * so a new selection needs a fresh open. */
+        {
+            i32 aKinds[5];
+            i32 nKindCount = 0;
+
+            if (Base_CalcWorkshopCap(g_world.abFacilityGrid, nEBase) == 0) {
+                aKinds[nKindCount++] = FAC_WORKSHOP;   /* 3: Base_CalcWorkshopCap's kind (0x65894) */
+            }
+            if (Base_CalcLabCap(g_world.abFacilityGrid, nEBase) == 0) {
+                aKinds[nKindCount++] = FAC_LABORATORY; /* 2: Base_CalcLabCap's kind (0x65818) */
+            }
+            if (Base_CalcStoresCapacity(g_world.abFacilityGrid, nEBase) == 0) {
+                aKinds[nKindCount++] = FAC_GENERAL_STORES; /* 6 */
+                /* Two stores cells, not one: the mission left its recovered items in this base's
+                 * stock, and the engineers budget at 0x6E300 charges their cargo against the
+                 * capacity before it lets an ask rise -- one cell's 300 is below that load. */
+                aKinds[nKindCount++] = FAC_GENERAL_STORES;
+            }
+            if (Base_CalcLivingQuartersCap(g_world.abFacilityGrid, nEBase)
+                <= Base_CalcOccupiedSpace(g_world.apSoldiers, g_world.nSoldierCount,
+                                          (ObjectRecFull *const *)g_assets.apObjects,
+                                          (i32)g_assets.nObjectCount, nEBase)) {
+                /* The shop's crew buys pay only while 0x75E60's living-quarters gate passes:
+                 * outbound + occupied + 1 <= the kind-1 capacity, and the mission load already
+                 * sits above one cell's 50. */
+                aKinds[nKindCount++] = FAC_LIVING_QUARTERS; /* 1: Base_CalcLivingQuartersCap (0x6579C) */
+            }
+            if (nKindCount == 0) {
+                aKinds[nKindCount++] = FAC_WORKSHOP; /* the goal's picture needs a purchase either way */
+            }
+            Check(nKindCount > 0, "the round buys at least one new facility at the selected base");
+
+            g_world.bFacDone = 0; /* the new-base byte, if a BaseAt or craft-select pass left it set: the
+                                   * old-base commit arm at 0x59ACC reads it, and the goal's purchase is
+                                   * a facility on an existing base */
+            /* Stage 12f left the build dialog open, and the mission-end seam leaves the open dialog's
+             * flag and panel exactly as it found them. The original BaseFacScreen_Init tail-calls
+             * BaseFacScreen_Toggle (0x5A27C), so a nav press with the dialog already open CLOSES it;
+             * this pre-press is the original's own semantics, and the loop's press then re-opens the
+             * screen with a fresh panel. */
+            if (g_world.bFacDialogOpen != 0) {
+                g_world.nav.apNav[4]->pfnClick(); /* id 7 at 0x6185C, then the closing toggle at 0x5A27C */
+                CheckEqI32(g_world.bFacDialogOpen, 0, "the carried-open dialog closes on the first nav press (BaseFacScreen_Init's toggle 0x5A27C)");
+            }
+            for (nIx = 0; nIx < nKindCount; ++nIx) {
+                nKind = aKinds[nIx];
+                g_world.nav.apNav[4]->pfnClick(); /* BaseFacScreen_Open @ 0x61844 */
+                CheckEqI32(g_world.screen.nGeoscapeScreen, 7, "nav slot 4 writes the build-screen id (0x61828 -> 0x61844)");
+                Check(g_world.bFacDialogOpen == 1 && g_world.pFacPanel != NULL,
+                      "the dialog is open with its panel (BaseFacScreen_Toggle 0x58A44)");
+
+                pPanel = g_world.pFacPanel;
+                for (nRow = 0; nRow < pPanel->nLineCount && UiPanel_GetLineAux(pPanel, nRow) != nKind; ++nRow) {
+                }
+                Check(nRow < pPanel->nLineCount, "the dialog lists a row for the facility kind (0x58A60)");
+                if (nRow >= pPanel->nLineCount) {
+                    continue;
+                }
+
+                /* UiPanel_ClickRow's gate admits only window rows 0..nStyle-1 (0x3EEE0 with the
+                 * dialog's nStyle 5 at 0x58A7C), so a line below the window is reached with the
+                 * dialog's down control at {11,277}: BaseFacScreen_Init installs the scroll thunk at
+                 * 0x5A220 and one click moves nUnk3028 by 1 (its own limit nLineCount-nStyle). The
+                 * click then lands on the window row, and 0x3EEE0 maps it back to the line through
+                 * nUnk3032 = nUnk3028 + nRow. */
+                while (nRow - pPanel->nUnk3028 > pPanel->nStyle - 1) {
+                    PressCtl(&g_world.ctlFacDown);
+                }
+                nAimX = pPanel->nPosX;
+                nAimY = pPanel->nPosY + pPanel->nFont * (nRow - pPanel->nUnk3028) + pPanel->nFont / 2;
+                World_GeoscapePointer(&g_world, nAimX, nAimY, true);
+                (void)DrawFrame();
+                World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.bArmedPlacement, 1, "the row's release arms the placement (0x5897C)");
+                CheckEqI32(g_world.nPanelSel, nRow, "and stores the row into unk_158868 (0x58998)");
+                CheckEqI32(UiPanel_GetLineAux(g_world.pFacPanel, g_world.nPanelSel), nKind,
+                           "the stored row's aux is the facility kind the commit takes (0x58E20)");
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("econ_facility_dialog");
+
+                /* Aim the empty cell that touches a finished neighbour: the overlay's score is that
+                 * neighbourhood (FacOverlay_Score), and the window needs a tap in 1..5 on both axes
+                 * (0 < nDx < 192 at 0x591D4, 36 < nDy < 227 at 0x591E8 with the +36 origin 0x924D0). */
+                nTapX = -1;
+                nTapY = -1;
+                for (nRow = 1; nRow <= 5 && nTapX < 0; ++nRow) {
+                    for (nTick = 1; nTick <= 5 && nTapX < 0; ++nTick) {
+                        const i32 nCell = 6 * nRow + nTick;
+                        /* The score's footprint gate and its neighbour sum read the tileA lane
+                         * (the 0x592C4 / 0x59320 reads), the days the buildDays lane. A cell counts as
+                         * empty only when tileA is zero AND the facType sentinel is still 0xFF -- the
+                         * original's own empty state (Game_StartNew's stamp 0x94904..0x9491C). */
+                        const u8 *pFac = g_world.abFacilityGrid + PUFO_GRID_FAC_OFF
+                                             + PUFO_GRID_FAC_STRIDE * nEBase + PUFO_GRID_FAC_TYPE_OFF;
+                        const u8 *pTile = g_world.abFacilityGrid + PUFO_GRID_FAC_OFF
+                                             + PUFO_GRID_FAC_STRIDE * nEBase + PUFO_GRID_TILEA_OFF;
+                        const u8 *pDays = g_world.abFacilityGrid + PUFO_GRID_DAYS_STRIDE * nEBase;
+                        if (pFac[nCell] != PUFO_FAC_TYPE_NONE || pTile[nCell] != 0) {
+                            continue; /* the cell must still be empty in both lanes the score reads */
+                        }
+                        {
+                            const i32 aNeigh[4][2] = { { nRow - 1, nTick }, { nRow + 1, nTick },
+                                                       { nRow, nTick - 1 }, { nRow, nTick + 1 } };
+                            i32 k;
+                            for (k = 0; k < 4; ++k) {
+                                if (aNeigh[k][0] < 0 || aNeigh[k][0] > 5 || aNeigh[k][1] < 0
+                                    || aNeigh[k][1] > 5) {
+                                    continue;
+                                }
+                                if (pFac[6 * aNeigh[k][0] + aNeigh[k][1]] != PUFO_FAC_TYPE_NONE
+                                    && pTile[6 * aNeigh[k][0] + aNeigh[k][1]] != 0
+                                    && pDays[6 * aNeigh[k][0] + aNeigh[k][1]] == 0) {
+                                    nTapX = nTick;
+                                    nTapY = nRow;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                Check(nTapX > 0, "an empty cell next to a finished facility was found (FacOverlay_Score's neighbourhood)");
+                if (nTapX <= 0) {
+                    continue;
+                }
+
+                nAimX = pF->facOverlay.nOriginX + PUFO_PLA_TAP_CELL * nTapX;
+                nAimY = pF->facOverlay.nOriginY + PUFO_PLA_TAP_Y0 + PUFO_PLA_TAP_CELL * nTapY;
+                World_GeoscapePointer(&g_world, nAimX, nAimY, true);
+                (void)DrawFrame();
+                CheckEqI32(g_world.nSmapTapX, nTapX, "the held press aims the cell under the cursor (0x58EC0)");
+                CheckEqI32(g_world.nSmapTapY, nTapY, "on both axes (0x58EC8)");
+                World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.nUnk15887C, nTapX, "the release copies the tap into the pending pair (0x89E8C)");
+                CheckEqI32(g_world.nUnk158880, nTapY, "and sets the ok byte (0x89E84)");
+
+                nFunds0 = g_world.nFunds;
+                nCost0  = (i32)g_world.aFac[nKind].uCost; /* aBaseFacFlags[kind] + 0x18, read at 0x59AC0 */
+                ClearSurface();
+                World_GeoscapePointer(&g_world, nAimX, nAimY, true);
+                (void)DrawFrame();
+                World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.nFunds, nFunds0 - nCost0,
+                           "the commit pays the record's own cost: nFunds falls by aFac[kind].uCost (0x59AC8)");
+                CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nEBase
+                                                  + PUFO_GRID_FAC_TYPE_OFF + 6 * nTapY + nTapX],
+                           (i32)g_world.aFac[nKind].bFlag21,
+                           "the aimed cell takes the record's kind (BaseFac_SetCellBuildState 0x59A9C)");
+                Check(g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nEBase + 6 * nTapY + nTapX] != 0,
+                      "and its buildDays start above zero -- the cell is under construction (0x623BC)");
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("econ_facility_commit");
+
+                /* Let the clock finish the cell first: the day tick is Base_TickFacilityConstruction
+                 * @ 0x62824, one decrement per call per cell, and its completion arm appends message
+                 * line 38 and sets dwActionFail @ 0x1870C8 (0x62934) -- the flag that makes the NEXT
+                 * pointer release return at 0x895C4 without dispatching. CloseUI's head clears the
+                 * same flag (0x8B96C), so finishing before closing is the order that keeps the next
+                 * iteration's row press live. */
+                for (nTick = 0; nTick < 40
+                     && g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nEBase + 6 * nTapY + nTapX] != 0; ++nTick) {
+                    g_world.geoClock.pfnTickBases(g_world.geoClock.pUser);
+                }
+                CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nEBase + 6 * nTapY + nTapX], 0,
+                           "the day ticks of 0x62824 finish the new facility (Geoscape_TickBases 0x5D3BC)");
+                CheckEqI32((i32)g_world.nShortfall1870C8, 1,
+                           "the completion arm leaves dwActionFail set with its message (0x62934)");
+
+                /* Close the dialog the way the shipped game does between two purchases. The completion
+                 * message's dwActionFail makes the NEXT pointer release return at 0x895C4 after clearing
+                 * the flag -- PressCtl releases through World_GeoscapePointerUp, so its first press is
+                 * the eaten one and reaches neither the CloseUI head nor its case 7. The second press
+                 * lands on the armed arm at 0x8BFA0 and only clears bBaseFacPlaceArmed (0x8BFA4); the
+                 * third reaches the dialog-open arm (0x8BFB8) and its toggle (0x8BF7C) closes it. */
+                PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+                CheckEqI32(g_world.bArmedPlacement, 1, "the completion release is the swallowed one: the arm is still set (0x895C4)");
+                CheckEqI32(g_world.bFacDialogOpen, 1, "the dialog is still open");
+                CheckEqI32((i32)g_world.nShortfall1870C8, 0, "and the swallowed release clears dwActionFail on its way out (0x895C4)");
+                PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+                CheckEqI32(g_world.bArmedPlacement, 0, "the next press clears the arm set by the commit (CloseUI case 7, 0x8BFA4)");
+                CheckEqI32(g_world.bFacDialogOpen, 1, "and leaves the dialog open");
+                PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+                CheckEqI32(g_world.bFacDialogOpen, 0, "the third press runs the toggle and shuts the dialog (0x8BFB8 -> BaseFacScreen_Toggle 0x589ec)");
+            }
+
+            Check(Base_CalcWorkshopCap(g_world.abFacilityGrid, nEBase) >= 50,
+                  "the base now has workshop capacity (one free kind-3 cell is 50, 0x65894)");
+            Check(Base_CalcLabCap(g_world.abFacilityGrid, nEBase) >= 50,
+                  "and laboratory capacity (one free kind-2 cell is 50, 0x65818)");
+            printf("  econ: base %d has workshop %d, lab %d, stores %d capacity\n", nEBase,
+                   Base_CalcWorkshopCap(g_world.abFacilityGrid, nEBase),
+                   Base_CalcLabCap(g_world.abFacilityGrid, nEBase),
+                   Base_CalcStoresCapacity(g_world.abFacilityGrid, nEBase));
+        }
+
+        /* 99.2 Running a research topic to its end on the hourly tick. The crew column and the
+         * fixture-active topics follow the research section's own precedent: the hired crew is the
+         * object record's per-base column (Base_GetScientistCount @ 0x6812c reads slot 113 of it),
+         * and topics 29/36 are the two RESEARCH.DAT records 123..127 name in the activation bytes,
+         * which the shipped item gate can never reach. Row select, the allocate-all and the start are
+         * the presses; from there the tick does the work: ResearchScreen_AccumulateAllocated @ 0x74914
+         * adds every base's allocation into wProgress, and ResearchScreen_RebuildTopicList @ 0x74314
+         * closes the topic when wProgress reaches wTotal (0x743A4 -> 0x7440C bUnlocked = 1). */
+        {
+            const i32 nColBase = PUFO_RESEARCH_TOPIC_COUNT * nEBase;
+
+            g_assets.apObjects[113]->auPerBaseVal[nEBase] = (u16)((i32)g_assets.apObjects[113]->auPerBaseVal[nEBase] + 2);
+            g_assets.apObjects[112]->auPerBaseVal[nEBase] = (u16)((i32)g_assets.apObjects[112]->auPerBaseVal[nEBase] + 2);
+            CheckEqI32(Base_GetScientistCount(g_assets.apObjects[113], g_world.auResearchCol, nEBase,
+                                              (i32)g_world.nResearchEntries) >= 2 ? 2 : 0, 2,
+                       "the base now has scientists (0x6812c: slot 113's column minus the allocation)");
+
+            /* Pick a topic the shipped data can actually run. Stage 12i measured 30 records that are
+             * locked with nothing booked and a real wTotal -- the ones 0x74364 lets past its gate into
+             * the in-progress branch at 0x747A0 -- and 28 of those with abPreTopics and abNeedItems
+             * both summing to zero, so 0x747AC/0x74808's gates open and 0x748D0 admits the record.
+             * Topics 29/36 are NOT among them: their wTotal is 0, and RebuildTopicList drops a
+             * wTotal == 0 record at 0x74328 before it ever books progress. The fixture arms one of
+             * the 28; the completion arm at 0x74584 then switches on whatever abActivateTopics names,
+             * which is how the original activates the next topics. */
+            nTopic = -1;
+            for (nRow = 1; nRow < (i32)g_world.nResearchEntries && nTopic < 0; ++nRow) {
+                const ResearchTopicLive *pT = &g_world.aTopics[nRow];
+                i32 nSum = 0;
+                i32 k;
+                if (pT->wTotal == 0 || pT->wProgress != 0 || pT->bUnlocked != 0) {
+                    continue; /* the 0x74364 shape: locked, unbooked, with a real total */
+                }
+                for (k = 0; k < 5; ++k) {
+                    nSum += (i32)pT->abPreTopics[k] + (i32)pT->abNeedItems[k];
+                }
+                if (nSum != 0) {
+                    continue;
+                }
+                { /* the topic must feed the manufacturing list: an abItemIds slot the 0x6EA50 filter
+                   * takes and whose object carries uManufWorkPerUnit @ +0xBA (0x6F3EC divides by it). */
+                    i32 j;
+                    i32 bProduct = 0;
+                    for (j = 0; j < 5; ++j) {
+                        const i32 nItem = pT->abItemIds[j];
+                        if (nItem > 0 && nItem < (i32)g_assets.nObjectCount
+                            && g_assets.apObjects[nItem] != NULL
+                            && g_assets.apObjects[nItem]->uManufWorkPerUnit != 0) {
+                            bProduct = 1;
+                            break;
+                        }
+                    }
+                    if (bProduct == 0) {
+                        continue;
+                    }
+                }
+                nTopic = nRow;
+            }
+            Check(nTopic > 0, "a shipped record is locked, unbooked, gate-open, with a real wTotal");
+            g_world.aTopics[nTopic >= 0 ? nTopic : 29].bActive = 1;
+            g_world.nav.apNav[5]->pfnClick(); /* ResearchScreen_Open @ 0x616ac */
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 8, "nav slot 5 writes the research id (0x6176C)");
+            pPanel = g_world.pResearchTopicPanel;
+            Check(pPanel != NULL && pPanel->nLineCount >= 1, "BuildPanels lists the active topics (0x73734)");
+            if (nTopic >= 0) {
+                const i32 nColIdx = nColBase + nTopic;
+                const i32 nProgress0 = (i32)g_world.aTopics[nTopic].wProgress;
+
+                nRow = 0;
+                while (nRow < pPanel->nLineCount && UiPanel_GetLineAux(pPanel, nRow) != nTopic) {
+                    ++nRow;
+                }
+                Check(nRow < pPanel->nLineCount, "the chosen topic stands on the screen list (0x73734)");
+                nAimY = pPanel->nPosY + pPanel->nFont * nRow + pPanel->nFont / 2;
+                World_GeoscapePointer(&g_world, 30, nAimY, true);
+                (void)World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.researchScratch.bFlag160C80, 1, "the row press selects the row (0x73334)");
+                CheckEqI32(g_world.researchScratch.nCache160C74, nRow,
+                           "and caches the row the quantity pair acts on (0x73350)");
+
+                ClearSurface();
+                (void)DrawFrame(); /* the row-selected frame installs the allocate-all (0x74184) */
+                {
+                    const i32 nSci0 = Base_GetScientistCount(g_assets.apObjects[113], g_world.auResearchCol,
+                                                             nEBase, (i32)g_world.nResearchEntries);
+                    PressCtl(&g_world.aResearchCtl[2]); /* ResearchScreen_IncreaseSelected @ 0x72ec8 */
+                    CheckEqI32(g_world.auResearchCol[nColIdx], 1,
+                               "the +1 allocates one scientist: lab gate open, scientist gate open (0x72F58)");
+                    PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B94]); /* ResearchScreen_UpdateProgress @ 0x72d14 */
+                    CheckEqI32(g_world.auResearchCol[nColIdx], nSci0,
+                               "and the allocate-all runs to the scientist count it started with (0x72D94)");
+                }
+                {
+                    /* Every press ends in RebuildTopicList, and its 5a gate activates more topics
+                     * (10322), so RefreshPanels re-lists the rows and a row cached by an earlier
+                     * click can name a different topic by the next press -- the player re-clicks,
+                     * and so does the fixture. */
+                    nRow = 0;
+                    while (nRow < pPanel->nLineCount && UiPanel_GetLineAux(pPanel, nRow) != nTopic) {
+                        ++nRow;
+                    }
+                    Check(nRow < pPanel->nLineCount, "the topic is still on the list before the start press");
+                    if (nRow < pPanel->nLineCount) {
+                        nAimY = pPanel->nPosY + pPanel->nFont * nRow + pPanel->nFont / 2;
+                        World_GeoscapePointer(&g_world, 30, nAimY, true);
+                        (void)World_GeoscapePointerUp(&g_world);
+                    }
+                    CheckEqI32(g_world.researchScratch.nCache160C74, nRow,
+                               "the re-click caches the topic's new row (0x73350)");
+                }
+                {
+                    const i32 nSm0 = g_nSamples;
+                    PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BB0]); /* ResearchScreen_StartSelected @ 0x73258 */
+                    /* The topic has wTotal 1 and progress booked, so the same call's tail rebuild
+                     * finishes it, and the finished branch's UiLineList_AppendWithSound @ 0x74554
+                     * plays its own sample 7 right after the start's 17. */
+                    Check(g_nSamples >= nSm0 + 1 && g_aFrameSamples[nSm0] == 17,
+                          "the start control plays sample 17 (0x73258)");
+                    Check(g_nSamples >= nSm0 + 2 && g_aFrameSamples[nSm0 + 1] == 7,
+                          "the completion line append plays sample 7 too (0x74554)");
+                }
+                Check(g_world.aTopics[nTopic].wProgress >= nProgress0,
+                      "and the topic stands with its booked progress, 0x732C8's arm on a topic that has one");
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("econ_research_running");
+
+                for (nTick = 0; nTick < 3000 && g_world.aTopics[nTopic].bUnlocked == 0; ++nTick) {
+                    g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                }
+                CheckEqI32(g_world.aTopics[nTopic].bUnlocked, 1,
+                           "the hourly accumulation finishes the topic (0x74914 -> 0x7440C)");
+                printf("  econ: topic %d finished after %d hourly ticks, wTotal %u\n",
+                       nTopic, nTick, (unsigned)g_world.aTopics[nTopic].wTotal);
+                CheckEqI32((i32)g_world.nFinishedTopic, nTopic,
+                           "and nResearchFinishedTopic names it (0x74414)");
+                CheckEqI32((i32)g_world.auResearchCol[nColIdx], 0,
+                           "with the topic's allocation cleared across the columns (0x7442C)");
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("econ_research_done");
+            }
+            /* The finished branch at 0x74458 also sets dwActionFail, so the next pointer release --
+             * the first close press on screen 8 -- is the swallowed one: it clears the flag at
+             * 0x895C4 and dispatches nothing. The press after it reaches the no-row-selected arm
+             * (StartSelected had cleared the flag at 0x7324C), writes the id 1 (0x8BDC4) and runs
+             * the BuildPanels teardown (0x8BDD8). */
+            CheckEqI32((i32)g_world.nShortfall1870C8, 1, "the finished branch sets dwActionFail too (0x74458)");
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+            CheckEqI32(g_world.bResearchBuilt, 1, "the first close press is the swallowed release (0x895C4)");
+            CheckEqI32((i32)g_world.nShortfall1870C8, 0, "and it clears dwActionFail on its way out (0x895C4)");
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+            CheckEqI32(g_world.bResearchBuilt, 0, "the next press closes the screen with its teardown (0x8BDD8)");
+        }
+
+        /* 99.3 Manufacturing the researched item. The product list is the unlocked topics' five item
+         * slots each (ManufScreen_BuildPanels 0x6EA0C), filtered by the per-object manufacturable
+         * flag, so the topic 99.2 just finished is what the list offers. The row press selects
+         * (release-arm UiPanel_ClickRow on panel A, 0x8A8DC -> ManufScreen_SelectListed @ 0x6e914),
+         * the engineers pair asks for a unit against the workshop/stores budget (0x6E214), the
+         * allocate-all hands the hired engineers to the ask (0x6df6c), and every pfnTickHourly runs
+         * ManufScreen_RefreshBaseTabs @ 0x70ebc -- the allocated hours land in the accumulated column
+         * (0x70FE8) and the tail call at 0x71048 commits: units = accumulated / uManufWorkPerUnit
+         * (0x6F3EC), BaseRec_AddItemQty puts the item in the base (0x6F6A4), the components leave it
+         * (0x6F6C8), and the funds pay price * 1.4 (0x6F70C..0x6F788). */
+        {
+            const ObjectRecFull *pRec;
+            const i32 aComp[4] = { 105, 106, 107, 109 }; /* OBJ_ELERIUM_115, OBJ_ALIEN_ALLOYS,
+                                                           * OBJ_UFO_POWER_SOURCE, OBJ_UFO_NAVIGATION
+                                                           * -- g_anManufComponentSlots @ 0x... in 0x6F57C */
+
+            nProd = -1;
+            for (nRow = 0; nRow < 5 && nProd < 0; ++nRow) {
+                const i32 nItem = g_world.aTopics[nTopic >= 0 ? nTopic : 29].abItemIds[nRow];
+                if (nItem > 0 && nItem < (i32)g_assets.nObjectCount
+                    && g_assets.apObjects[nItem]->uManufWorkPerUnit != 0) {
+                    nProd = nItem; /* a product the finished topic unlocked */
+                }
+            }
+
+            g_world.nav.apNav[6]->pfnClick(); /* ManufScreen_Open @ 0x614cc, nav slot 6 (0x67BC8) */
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 9, "nav slot 6 writes the manufacturing id (0x614E4)");
+            Check(g_world.bManufBuilt == 1 && g_world.apManufRoot[0] != NULL,
+                  "Init loads the manuf pad onto the block base and its tail builds the panels (0x710E0, 0x71268)");
+            pPanel = g_world.pManufProductPanel;
+            Check(pPanel != NULL && pPanel->nLineCount >= 1, "the product list has rows (0x6EA0C)");
+
+            if (nProd < 0 || pPanel == NULL) {
+                nProd = (pPanel != NULL) ? UiPanel_GetLineAux(pPanel, 0) : -1; /* deviation: any offered product */
+            } else {
+                nRow = 0;
+                while (nRow < pPanel->nLineCount && UiPanel_GetLineAux(pPanel, nRow) != nProd) {
+                    ++nRow;
+                }
+                if (nRow >= pPanel->nLineCount) {
+                    nProd = UiPanel_GetLineAux(pPanel, 0);
+                }
+            }
+            Check(nProd >= 0 && nProd < (i32)g_assets.nObjectCount, "the screen offers a product");
+            pRec = g_assets.apObjects[nProd];
+            Check(pRec != NULL && pRec->uManufWorkPerUnit != 0,
+                  "and it is a manufacturable object (uManufWorkPerUnit non-zero at +0xBA)");
+            printf("  econ: manufacturing product %d, work per unit %u, price %u\n",
+                   nProd, pRec != NULL ? (unsigned)pRec->uManufWorkPerUnit : 0u,
+                   (unsigned)g_anObjectPrice[nProd]);
+            nRow = 0;
+            while (nRow < pPanel->nLineCount && UiPanel_GetLineAux(pPanel, nRow) != nProd) {
+                ++nRow;
+            }
+
+            nAimY = pPanel->nPosY + pPanel->nFont * nRow + pPanel->nFont / 2;
+            World_GeoscapePointer(&g_world, pPanel->nPosX + 10, nAimY, true);
+            (void)World_GeoscapePointerUp(&g_world);
+            CheckEqI32(g_world.bManufProductSelected, 1, "the row's release selects the product (0x6E968)");
+            CheckEqI32(g_world.nManufProductRow, nRow, "and caches the row (0x6E94C)");
+
+            /* Seed the components first: ManufScreen_RefreshBaseTabs sets bManufQtyGate @ 0x15EE50
+             * when a component is short (0x7019C) and every engineers control bails on that gate,
+             * so the stock a production needs has to stand in the base before the first draw. The
+             * commit (0x6F57C) reads the same four columns and is what takes them back out. */
+            for (nRow = 0; nRow < 4; ++nRow) {
+                const i32 nNeed = (pRec != NULL) ? (i32)pRec->abManufComponents[nRow] : 0;
+                if (nNeed > 0) {
+                    BaseRec_AddItemQty(g_world.apBases[nEBase], g_assets.apObjects[aComp[nRow]], nNeed + 2);
+                }
+            }
+
+            /* The row click clears bUiAnimStarted @ 0x187080 (0x6E964), and the detail panel's
+             * Ui_AnimExpandBlit gate at 0x6FE00 returns before the quantity pair and the two shared
+             * bottom controls are moved and re-pointed (0x70B38..0x70B94) -- the allocate-all keeps
+             * the research screen's position and handler until the progress byte
+             * cUiAnimProgress @ 0x187058 climbs to 5 for mode 3's 236-wide panel. The fixture runs
+             * no timer, so it steps the byte as the app's WM_TIMER branch does (0xA0C88), drawing
+             * between the steps. */
+            for (nTick = 0; nTick < 8; ++nTick) {
+                if (g_world.cUiAnimProgress < 101) {
+                    ++g_world.cUiAnimProgress;
+                }
+                ClearSurface();
+                (void)DrawFrame();
+            }
+            PressCtl(&g_world.aManufCtl[4]); /* ManufScreen_IncEngineers @ 0x6e13c */
+            nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nEBase + nProd;
+            CheckEqI32(g_world.anProductReq[nIdx], 1,
+                       "the engineers + asks for one unit against the capacity (0x6E214, 0x6E31C)");
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B94]); /* ManufScreen_UpdateProgress @ 0x6df6c */
+            Check(g_world.auManufCol[nIdx] >= 1, "and the allocate-all assigns hired engineers to it (0x6df6c)");
+
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("econ_manuf_alloc");
+
+            nFunds0 = g_world.nFunds;
+            {
+                const i32 nStock0 = (i32)g_assets.apObjects[nProd]->auPerBaseVal[nEBase];
+                i32 aComp0[4];
+
+                for (nTick = 0; nTick < 4; ++nTick) {
+                    aComp0[nTick] = (i32)g_assets.apObjects[aComp[nTick]]->auPerBaseVal[nEBase];
+                }
+                /* The filled slot does not stay counted: the same refresh that commits runs its
+                 * ClearProductSlot pass (0x710A0 -> 0x6F918/0x6F92C), zeroing the accumulator, the
+                 * committed column and the ask. The stock entry and the paid components are the
+                 * production's evidence, not the columns. */
+                for (nTick = 0; nTick < 3000
+                     && (i32)g_assets.apObjects[nProd]->auPerBaseVal[nEBase] == nStock0; ++nTick) {
+                    g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                }
+                Check(g_world.anProductReq[nIdx] == 0 && g_world.auManufCol[nIdx] == 0,
+                      "the hourly refresh's commit produced the unit and its slot pass cleared the ask (0x71048 -> 0x6F5E8, 0x6F6B8, 0x710A0)");
+                printf("  econ: production committed after %d hourly ticks\n", nTick);
+                CheckEqI32((i32)g_assets.apObjects[nProd]->auPerBaseVal[nEBase], nStock0 + 1,
+                           "the item stands in the base's stores (BaseRec_AddItemQty 0x6F6A4)");
+                for (nTick = 0; nTick < 4; ++nTick) {
+                    CheckEqI32((i32)g_assets.apObjects[aComp[nTick]]->auPerBaseVal[nEBase],
+                               aComp0[nTick] - (pRec != NULL ? (i32)pRec->abManufComponents[nTick] : 0),
+                               "and the four component slots paid for it (0x6F6C8)");
+                }
+                CheckEqI32(g_world.nFunds, (i32)((double)nFunds0 - (double)g_anObjectPrice[nProd] * 1.4),
+                           "production pays the price times 1.4 (0x6F70C..0x6F788)");
+                printf("  econ: production funds %d -> %d, price %u\n",
+                       nFunds0, g_world.nFunds, (unsigned)g_anObjectPrice[nProd]);
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("econ_manuf_done");
+            }
+
+            /* Closing with a product selected is the original's two-step: the first close press takes
+             * case 9's selected arm, which only runs ManufScreen_Draw @ 0x8BD78 -- and that draw
+             * clears the selection at 0x6E410 -- and only the second press reaches the teardown. */
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 9, "the first close press draws and stays on 9 (0x8BD78)");
+            CheckEqI32(g_world.bManufProductSelected, 0, "and ManufScreen_Draw clears the selection (0x6E410)");
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+            CheckEqI32(g_world.bManufBuilt, 0, "the second press runs the teardown (0x8BD94 -> 0x6F264)");
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "and writes the id 1 (0x8BD98)");
+        }
+
+        /* 99.4 Buying at the shop. Nav slot 8 is BuySellScreen_OpenBuy @ 0x61794: the id 11 is written
+         * BEFORE the shared Init @ 0x78c30 (0x617AC), which snapshots the funds (0x78C44), allocates the
+         * pad (0x78C70), clears the transaction pair (0x78CAC, 0x78CB4) and the slot deltas (0x78D3C),
+         * installs ConfirmSiteAndClose on the shared confirm control (0x78D60) and calls BuildControls
+         * (0x78D64). Row select is the press arm's fixed-x row click on panel A (SyncSelection @
+         * 0x76138); the buy press-and-release on panel C (x 196) is the release arm's row click onto
+         * BuySellScreen_ValidateCapacity @ 0x75b88, which pays, queues the delta and loads the working
+         * site record (0x75FBC, 0x75FA8, 0x75FF8). The confirm reaches ConfirmSiteAndClose @ 0x75090:
+         * the working record becomes a real site (0x75120, 0x75124) and the shop closes through case 11
+         * with its controls teardown and pad release (0x8C0D0, 0x8C0F0). The teardown re-reads the site
+         * count live at 0x76C14, so AFTER a confirm it clears the next empty slot and the record just
+         * confirmed survives. Smap_GrantSiteRecovery @ 0x98b50, on the geoscape hourly tick, ages the
+         * record's flag 24 one step per tick (0x98B68), delivers each slot's quantity into the base's
+         * stock (0x9900C), marks it delivered (0x99484) and compacts it out of the list (0x994C8) --
+         * twenty-four ticks later the bought crew and weapon stand in the base. */
+        {
+            const i32 nSite0 = g_world.nSiteCount;
+
+            g_world.nav.apNav[8]->pfnClick(); /* nav slot 8 (0x67BD4) */
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 11, "nav slot 8 writes the buy id before Init (0x617AC)");
+            Check(g_world.pBuySellPad != NULL && g_world.bBuySellCtlBuilt == 1,
+                  "Init allocates the shop pad (0x78C70) and its 11 arm builds the panels and controls (0x78D64)");
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("econ_buysell_open");
+
+            pPanel = g_world.pBuySellPanelA;
+            Check(pPanel != NULL && pPanel->nLineCount >= 1, "the shop lists its transferable rows (0x76FB4)");
+            if (pPanel != NULL && pPanel->nLineCount >= 1) {
+                UiPanel *pShopA   = pPanel;
+                i32 aBuyRows[4]   = { (i32)PUFO_ROW_ENGINEER, (i32)PUFO_ROW_SCIENTIST, -1, -1 };
+                i32 nBuySell0;
+
+                for (nRow = 0; nRow < pShopA->nLineCount; ++nRow) {
+                    const i32 nAux = UiPanel_GetLineAux(pShopA, nRow);
+                    if (nAux >= WM_CANNON && nAux <= WM_FUSION && g_anObjectPrice[nAux] > 0) {
+                        aBuyRows[2] = nAux; /* a craft weapon the shop lists, bought with the crew */
+                        break;
+                    }
+                }
+                for (nRow = 0; nRow < pShopA->nLineCount; ++nRow) {
+                    const i32 nAux = UiPanel_GetLineAux(pShopA, nRow);
+                    if (nAux >= 36 && nAux <= 52 && g_anObjectPrice[nAux] > 0) {
+                        aBuyRows[3] = nAux; /* a hold item: the hangar's staging pass (0x65B30) loads 36..52 */
+                        break;
+                    }
+                }
+                for (nIx = 0; nIx < 4; ++nIx) {
+                    const i32 nSlot = aBuyRows[nIx];
+                    i32 nPrice;
+
+                    if (nSlot < 0) {
+                        continue;
+                    }
+                    nPrice = (nSlot == (i32)PUFO_ROW_ENGINEER) ? 50000
+                             : (nSlot == (i32)PUFO_ROW_SCIENTIST) ? 60000
+                                                                  : (i32)g_anObjectPrice[nSlot];
+                    for (nRow = 0; nRow < pShopA->nLineCount && UiPanel_GetLineAux(pShopA, nRow) != nSlot; ++nRow) {
+                    }
+                    Check(nRow < pShopA->nLineCount, "the shop lists a row for the slot");
+                    printf("  econ: buying slot %d at the shop\n", nSlot);
+                    if (nRow >= pShopA->nLineCount) {
+                        continue;
+                    }
+
+                    /* Panel A lists its nStyle 14 rows out of its own scroll cursor (0x76384),
+                     * and UiPanel_ClickRow only admits window rows 0..nStyle-1 (0x3EEE0), so the
+                     * two paging controls Init installs at 0x76268 and 0x76274 move the window to
+                     * the row (BuySellScreen_PanelPrev @ 0x76088 and PanelNext @ 0x760e0, both
+                     * scrolling all five panels together). The click then maps back through
+                     * nUnk3028 + row (0x3EEE0). */
+                    while (pShopA->nUnk3028 > nRow) {
+                        PressCtl(&g_world.aBuySellCtl[0]); /* PanelPrev */
+                    }
+                    while (nRow - pShopA->nUnk3028 > pShopA->nStyle - 1) {
+                        PressCtl(&g_world.aBuySellCtl[1]); /* PanelNext */
+                    }
+                    nAimY = pShopA->nPosY + pShopA->nFont * (nRow - pShopA->nUnk3028)
+                            + pShopA->nFont / 2;
+                    World_GeoscapePointer(&g_world, 25, nAimY, true); /* the row click is at panel x 20 (0x88DBC) */
+                    (void)World_GeoscapePointerUp(&g_world);
+                    CheckEqI32(g_world.buySellScratch.nCache186BE8, nRow,
+                               "the row click caches the row the columns act on (0x76148)");
+
+                    nFunds0   = g_world.nFunds;
+                    nBuySell0 = g_world.nBuySellTransTotal;
+                    pPanel    = g_world.pBuySellPanelC;              /* the ">" column at x 196 (0x764A0) */
+                    nAimY     = pPanel->nPosY + pPanel->nFont * (nRow - pPanel->nUnk3028)
+                                + pPanel->nFont / 2;
+                    World_GeoscapePointer(&g_world, pPanel->nPosX + 4, nAimY, true);
+                    (void)World_GeoscapePointerUp(&g_world);         /* 0x8A4EC -> ValidateCapacity 0x75b88 */
+                    CheckEqI32(g_world.nFunds, nFunds0 - nPrice,
+                               "the '>' press pays for one unit of the slot (0x75FBC / 0x75D28)");
+                    CheckEqI32(g_world.nBuySellTransTotal, nBuySell0 + nPrice, "the transaction total carries it (0x75FD8)");
+                    CheckEqI32(UiPanel_GetLineAux(g_world.pBuySellPanelD, nRow), 1,
+                               "the queue column counts the unit on panel D (0x75FDC / 0x75D84)");
+                    CheckEqI32((i32)g_world.apSites[g_world.nSiteCount].auItemQty[nSlot], 1,
+                               "and the working site record holds it (0x75FF8)");
+                }
+
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("econ_buysell_queued");
+
+                {
+                    const i32 nFunds1 = g_world.nFunds;
+                    PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BA4]);
+                    CheckEqI32(g_world.nSiteCount, nSite0 + 1, "the confirm promotes the working site (0x75124)");
+                    CheckEqI32((i32)g_world.apSites[nSite0].bFlag0, PUFO_SITE_FLAG_CONFIRM,
+                               "its bFlag0 takes 24 (0x75120)");
+                    Check(g_world.apSites[nSite0].auItemQty[PUFO_ROW_ENGINEER] >= 1
+                              && g_world.apSites[nSite0].auItemQty[PUFO_ROW_SCIENTIST] >= 1,
+                          "the promoted record carries the bought crew cargo");
+                    CheckEqI32(g_world.nBuySellFundsSnapshot, nFunds1,
+                               "and the funds snapshot now equals nFunds (0x75130)");
+                    CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "case 11 closes the shop (0x8C0D8)");
+                    Check(g_world.pBuySellPad == NULL && g_world.bBuySellCtlBuilt == 0,
+                          "its teardown releases the controls and the pad (0x8C0D0, 0x8C0F0)");
+
+                    /* The confirmed record waits for its transport. Smap_GrantSiteRecovery ages the
+                     * countdown byte one step per geoscape hourly tick (0x98B68..0x98BAC), so the flag
+                     * 24 written at 0x75120 reaches 0 at the 24th tick, and the delivery pass adds
+                     * each slot's quantity to the base's stock (0x9900C), marks the record delivered
+                     * (0x99484) and compacts it out of the site list (0x994C8..0x99558). The base it
+                     * delivers to is the one its bFlag1 was opened with (0x761D0, matched at 0x98C18). */
+                    {
+                        const i32 nEng0 = (i32)g_assets.apObjects[PUFO_ROW_ENGINEER]->auPerBaseVal[nEBase];
+                        const i32 nSci0 = (i32)g_assets.apObjects[PUFO_ROW_SCIENTIST]->auPerBaseVal[nEBase];
+                        const i32 nWpn0 = (aBuyRows[2] >= 0)
+                                              ? (i32)g_assets.apObjects[aBuyRows[2]]->auPerBaseVal[nEBase]
+                                              : 0;
+                        const i32 nHold0 = (aBuyRows[3] >= 0)
+                                              ? (i32)g_assets.apObjects[aBuyRows[3]]->auPerBaseVal[nEBase]
+                                              : 0;
+
+                        for (nTick = 0; nTick < 25; ++nTick) {
+                            g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                        }
+                        CheckEqI32((i32)g_assets.apObjects[PUFO_ROW_ENGINEER]->auPerBaseVal[nEBase],
+                                   nEng0 + 1, "the delivery pass credits the bought engineer to the base (0x9900C)");
+                        CheckEqI32((i32)g_assets.apObjects[PUFO_ROW_SCIENTIST]->auPerBaseVal[nEBase],
+                                   nSci0 + 1, "and the bought scientist (0x9900C)");
+                        if (aBuyRows[2] >= 0) {
+                            Check((i32)g_assets.apObjects[aBuyRows[2]]->auPerBaseVal[nEBase] >= nWpn0 + 1,
+                                  "and the bought weapon arrives too (0x9900C; the resupply at 0x68F2c may spend some)");
+                        }
+                        if (aBuyRows[3] >= 0) {
+                            CheckEqI32((i32)g_assets.apObjects[aBuyRows[3]]->auPerBaseVal[nEBase],
+                                       nHold0 + 1, "and the bought hold item (0x9900C)");
+                        }
+                        CheckEqI32(g_world.nSiteCount, nSite0,
+                                    "the delivered record is compacted out of the site list (0x994C8)");
+                    }
+                }
+            }
+        }
+
+        /* 99.5 Selling one back. Nav slot 9 is BuySellScreen_OpenSell @ 0x617c4 (id 12 written first,
+         * 0x617DC); Init's 12 arm installs CommitTransaction on the confirm control (0x78D70) and
+         * calls BuySellScreen_BuildPanels (0x78D7C), whose fill pass lists the base's own stock --
+         * panel D's aux carries the engineer count (0x77C20). The '>' press is the release arm's
+         * row click onto panel C, whose handler here is BuySellScreen_FillSellPanel @ 0x75464
+         * (0x774EC): the crew branch marks the sale with the slot delta at -1 (0x75750) and drops
+         * the queue count by one, and refunds nothing -- the money paths at 0x757AC/0x757BC sit in
+         * the plain-object branch only, so a crew sale carries no price. The confirm reaches
+         * CommitTransaction @ 0x74bf8: its slot pass runs BaseRec_SubItemQty(base, item, -delta)
+         * per marked slot (0x74C60) -- the sold engineer leaves the base's stores -- then the funds
+         * snapshot (0x75070) and the case-12 close (0x75078). */
+        {
+            const i32 nStock0 = (i32)g_assets.apObjects[PUFO_ROW_ENGINEER]->auPerBaseVal[nEBase];
+
+            g_world.nav.apNav[9]->pfnClick(); /* nav slot 9 (0x67BE0) */
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 12, "nav slot 9 writes the sell id before Init (0x617DC)");
+            Check(g_world.bBuySellBuilt == 1 && g_world.pBuySellPanelA != NULL,
+                  "Init's 12 arm builds the five panels (0x78D7C)");
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("econ_buysell_sell");
+
+            pPanel = g_world.pBuySellPanelA;
+            for (nRow = 0; pPanel != NULL && nRow < pPanel->nLineCount
+                 && UiPanel_GetLineAux(pPanel, nRow) != (i32)PUFO_ROW_ENGINEER; ++nRow) {
+            }
+            Check(pPanel != NULL && nRow < pPanel->nLineCount, "the engineer stands on the sell list");
+            if (pPanel != NULL && nRow < pPanel->nLineCount) {
+                i32 nBuySell1, nAux0;
+
+                /* Same window gate as the buy side (0x3EEE0; sell panels get nStyle 13 @ 0x76384):
+                 * the paging control Init installs at 0x76274 scrolls all five panels together. */
+                while (nRow - pPanel->nUnk3028 > pPanel->nStyle - 1) {
+                    PressCtl(&g_world.aBuySellCtl[1]);
+                }
+                nAimY = pPanel->nPosY + pPanel->nFont * (nRow - pPanel->nUnk3028)
+                        + pPanel->nFont / 2;
+                World_GeoscapePointer(&g_world, 25, nAimY, true);
+                (void)World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.buySellScratch.nCache186BE8, nRow, "the row is cached again (0x76148)");
+
+                nFunds0   = g_world.nFunds;
+                nBuySell1 = g_world.nBuySellTransTotal;
+                nAux0     = UiPanel_GetLineAux(g_world.pBuySellPanelD, nRow); /* the stock seed at 0x77C20 */
+                pPanel    = g_world.pBuySellPanelC;   /* sell's panel C is FillSellPanel @ 0x774EC, the column at x 180 */
+                nAimY     = pPanel->nPosY + pPanel->nFont * (nRow - pPanel->nUnk3028)
+                            + pPanel->nFont / 2;
+                World_GeoscapePointer(&g_world, pPanel->nPosX + 4, nAimY, true);
+                (void)World_GeoscapePointerUp(&g_world);            /* ClickRow(C) -> FillSellPanel 0x75464 */
+                CheckEqI32(g_world.anBuySellSlotDelta[PUFO_ROW_ENGINEER], -1,
+                           "the '>' press marks one engineer to sell (0x75750)");
+                CheckEqI32(UiPanel_GetLineAux(g_world.pBuySellPanelD, nRow), nAux0 - 1,
+                           "and the queue column drops one from its stock seed (0x77C20 seed, 0x755FC step)");
+                CheckEqI32(g_world.nFunds, nFunds0,
+                           "the crew sale refunds nothing at marking (0x757AC / 0x757BC are the plain-object branch)");
+                CheckEqI32(g_world.nBuySellTransTotal, nBuySell1, "and carries no price into the total");
+
+                {
+                    const i32 nFunds1 = g_world.nFunds;
+                    PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BA4]);   /* CommitTransaction @ 0x74bf8 */
+                    CheckEqI32((i32)g_assets.apObjects[PUFO_ROW_ENGINEER]->auPerBaseVal[nEBase], nStock0 - 1,
+                               "the commit takes the sold engineer out of the base (0x74C54 pass, 0x55708 store)");
+                    CheckEqI32(g_world.nBuySellFundsSnapshot, nFunds1, "and snapshots the funds (0x75070)");
+                    CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "the tail close writes the id 1 (0x8C124)");
+                    Check(g_world.pBuySellPad == NULL && g_world.bBuySellBuilt == 0,
+                          "case 12's teardown releases the panels and the pad (0x8C11C, 0x8C13C)");
+                }
+            }
+        }
+
+        /* 99.6 Arming a transport and a combat craft. Screen 6 is the hangar (nav slot 3, 0x67B98): the
+         * craft column's rows are roster indices grouped by Ship.bCraftType (aPlaneCraftTypeOrder
+         * 0xABE28), the store pair's staging pass is BasePlaneScreen_CommitStores @ 0x7afd8 (it only
+         * stages -- the base's stock moves when BuySellScreen_ApplyQtyChanges @ 0x78d90, sitting on the
+         * shared confirm control, commits), and the weapon column's SelectWeapon24..30 handlers
+         * (BasePlaneScreen_SelectWeapon25 @ 0x79b20 and its twins) put the mount byte on the craft
+         * through the swap tail call (PlaneSwapSide 0x79A10's shape). The transport's proof is cargo;
+         * the combat craft's proof is a real weapon mount, armed from a weapon the economy just made
+         * or bought. */
+        {
+            UiPanel *pCraftPanel;
+            Ship *pShip;
+            i32 nTransport = -1, nCombat = -1, nWeapon = nProd;
+            i32 nSlot = -1;
+
+            if (nWeapon < WM_CANNON || nWeapon > WM_FUSION) {
+                nWeapon = -1; /* the manufactured product is not a mount weapon; pick one below */
+            }
+
+            /* The transport the Part 98 mission flew out is still away, exactly as the original
+             * leaves it after a debrief. Its home leg is armed the way the original's own handlers
+             * arm one -- Ship_RetargetTravel @ 0x5a484, the call the dismissal at 0x84448, the radar
+             * exits at 0x612CC / 0x613EC and the intercept resolve at 0x849AC all make -- and the
+             * geoscape ship tick runs the event pass unconditionally (Geoscape_TickShips -> 0x7fcb0),
+             * whose landing branch parks a craft whose home leg has run its time: bAtBase 1 at 0x80E5C,
+             * nMissionSub 0 at 0x80E6C. */
+            {
+                i32 nAway = -1;
+                for (nRow = 0; nRow < (i32)g_world.bCraftCount; ++nRow) {
+                    if (g_world.apCraft[nRow] != NULL &&
+                        g_world.apCraft[nRow]->bCraftType == CRAFT_TYPE_SKYRANGER &&
+                        (i32)g_world.apCraft[nRow]->bHomeBase == nEBase &&
+                        g_world.apCraft[nRow]->bAtBase == 0) {
+                        nAway = nRow;
+                        break;
+                    }
+                }
+                Check(nAway >= 0, "the transport the mission flew out is still away from its home base");
+                if (nAway >= 0) {
+                    (void)Ship_RetargetTravel(&g_world.shipEnv, nAway); /* 0x5a484: the home leg, bC 1 at 0x7F648 */
+                    for (nTick = 0; nTick < 400 && g_world.apCraft[nAway]->bAtBase == 0; ++nTick) {
+                        if (g_world.geo.time.bPaused != 0) {
+                            GameTime_Unpause(&g_world.geo.time); /* the event pass runs only on an unpaused clock */
+                        }
+                        g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                        g_world.geoClock.pfnTickShips(g_world.geoClock.pUser);
+                    }
+                    Check(g_world.apCraft[nAway]->bAtBase != 0,
+                          "the event pass landed the transport home (0x80DF8..0x80E78: bAtBase 1 at 0x80E5C)");
+                }
+            }
+
+            g_world.nav.apNav[3]->pfnClick(); /* BasePlaneScreen_Open @ 0x617f4 */
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "nav slot 3 writes the hangar id (0x61828)");
+            ClearSurface();
+            (void)DrawFrame();
+            pCraftPanel = g_world.planeCraftPanels.pCraftPanel;
+            Check(pCraftPanel != NULL && pCraftPanel->nLineCount >= 2,
+                  "the craft column lists the craft by type (0x7CCA0, 0xABE28)");
+            for (nRow = 0; pCraftPanel != NULL && nRow < pCraftPanel->nLineCount; ++nRow) {
+                const i32 nC = UiPanel_GetLineAux(pCraftPanel, nRow);
+                if (nC < 0 || nC >= (i32)g_world.bCraftCount || g_world.apCraft[nC] == NULL) {
+                    continue;
+                }
+                /* Only craft that are actually at the base pass the detail gate (0x7CC14), so the
+                 * staging and the mount use those. The transport bought at 99.4 arrives through the
+                 * grant's craft pass and stands here; the transport the Part 98 mission flew out is
+                 * still away, exactly as the original leaves it. */
+                if (nTransport < 0 && g_world.apCraft[nC]->bCraftType == CRAFT_TYPE_SKYRANGER
+                    && g_world.apCraft[nC]->bAtBase != 0) {
+                    nTransport = nRow;
+                }
+                if (nCombat < 0 && g_world.apCraft[nC]->bCraftType != CRAFT_TYPE_SKYRANGER
+                    && g_world.apCraft[nC]->bAtBase != 0) {
+                    nCombat = nRow;
+                }
+            }
+            Check(nTransport >= 0 && nCombat >= 0,
+                  "the roster holds a type-0 transport and a non-transport combat craft (0xABE28)");
+
+            /* The transport: stage one unit of a base-stocked hold item into the craft. */
+            if (nTransport >= 0) {
+                pCraftPanel->nUnk3032 = nTransport;
+                pCraftPanel->pfnClick();                          /* BasePlaneScreen_SelectCraft @ 0x7cbf0 */
+                Check(g_world.bPlaneShowDetail == 1, "the craft is at base, so the detail view opens (0x7CC14)");
+                g_world.planeBlock.apMainCtl[3]->pfnClick();      /* BasePlaneScreen_BuildControls @ 0x7b014 */
+                Check(g_world.planeStorePanels.pCommitPanel != NULL, "the store columns are built (0x7B1C4)");
+                ClearSurface();
+                (void)DrawFrame(); /* World_RefreshGeoscapeFrame repoints the store handlers at the fresh panels */
+
+                for (nSlot = 36; nSlot <= 52; ++nSlot) {
+                    if ((i32)g_assets.apObjects[nSlot]->auPerBaseVal[nEBase] > 0) {
+                        break;
+                    }
+                }
+                Check(nSlot <= 52, "the base stocks a hold item (objects 36..52 fill the hold, 0x65b30)");
+                if (nSlot <= 52) {
+                    const i32 nStock0 = (i32)g_assets.apObjects[nSlot]->auPerBaseVal[nEBase];
+                    const UiPanel *pSlotP = g_world.planeStorePanels.pSlotPanel;
+                    i32 nStoreRow = -1;
+
+                    /* The row pass lists only slots the base stocks or the craft carries, and the aux
+                     * column holds the slot id (0x7B8A0), so the row to press is the one whose aux is
+                     * the stocked item. CommitStores reads its own panel's cursor (0x161EEC) and bails
+                     * when the row's available count is not positive (0x7AC68). */
+                    for (nRow = 0; pSlotP != NULL && nRow < pSlotP->nLineCount; ++nRow) {
+                        if (UiPanel_GetLineAux(pSlotP, nRow) == nSlot) {
+                            nStoreRow = nRow;
+                            break;
+                        }
+                    }
+                    Check(nStoreRow >= 0, "the store list carries a row for the stocked item (0x7B7F8..0x7B930)");
+                    if (nStoreRow >= 0) {
+                        g_world.planeStorePanels.pCommitPanel->nUnk3032 = nStoreRow;
+                        g_world.planeStorePanels.pSelRowPanel->nUnk3032 = nStoreRow;
+                        g_world.planeStorePanels.pCommitPanel->pfnClick(); /* CommitStores @ 0x7ac38 */
+                        CheckEqI32(g_world.anPlaneCarryCount[nSlot], 1,
+                                   "CommitStores stages one unit of the row (0x7AFD8)");
+                        CheckEqI32((i32)g_assets.apObjects[nSlot]->auPerBaseVal[nEBase], nStock0,
+                                   "and staging has not moved the base's stock yet");
+                        g_world.ui.apCtl[GEOUI_CTL_186BA4]->pfnClick(); /* ApplyQtyChanges @ 0x78d90 */
+                        Check((i32)g_assets.apObjects[nSlot]->auPerBaseVal[nEBase] < nStock0,
+                              "the confirm commit moves the unit out of the base (0x78D90's commit pass)");
+                        CheckEqI32((i32)g_assets.apObjects[nSlot]->aItemQty[UiPanel_GetLineAux(pCraftPanel, nTransport)], 1,
+                                   "and the transport carries it (the per-craft column 0x693EC walks)");
+                        ClearSurface();
+                        (void)DrawFrame();
+                        DumpFrame("econ_hangar_transport");
+                    }
+                }
+            }
+
+            /* The combat craft: a weapon mount from a stocked weapon. A produced product in 24..30 is
+             * the economy's own weapon; otherwise the cheapest stocked mount weapon, seeded if the
+             * round produced none -- the base's weapon column (auPerBaseVal @ 0x2A) is the view the
+             * swap loads from (Base_CraftWeaponItemId 0x6641C reads it). */
+            if (nCombat >= 0) {
+                if (nWeapon < 0) {
+                    for (nRow = WM_CANNON; nRow <= WM_FUSION; ++nRow) {
+                        if ((i32)g_assets.apObjects[nRow]->auPerBaseVal[nEBase] > 0) {
+                            nWeapon = nRow;
+                            break;
+                        }
+                    }
+                    if (nWeapon < 0) {
+                        nWeapon = WM_LASER; /* TEXTS[1474]: the mount the resupply switch leaves
+                                             * alone, so the seeded unit is the whole requirement */
+                        BaseRec_AddItemQty(g_world.apBases[nEBase], g_assets.apObjects[nWeapon], 1);
+                    }
+                }
+                pCraftPanel->nUnk3032 = nCombat;
+                pCraftPanel->pfnClick();
+                CheckEqI32(g_world.nHangarCraftIdx, UiPanel_GetLineAux(pCraftPanel, nCombat),
+                           "the combat craft is selected (0x7CBF8, 0x7CC00)");
+                g_world.planeBlock.apMainCtl[0]->pfnClick();       /* BasePlaneScreen_DrawStatLabelA @ 0x79e00 */
+                g_world.planeBlock.apMainCtl[1]->pfnClick();       /* DrawStatLabelB @ 0x79fc4 */
+                g_world.planeBlock.apWeaponCtl[nWeapon - PUFO_WEAPON_ID_MIN]->pfnClick(); /* SelectWeapon24..30 */
+                pShip = g_world.apCraft[UiPanel_GetLineAux(pCraftPanel, nCombat)];
+                Check(pShip != NULL && ((char)pShip->bWeaponL == (char)nWeapon
+                                            || (char)pShip->bWeaponR == (char)nWeapon),
+                      "the swap mounts the weapon on the combat craft (0x79B34, the swap tail at 0x79A10)");
+                printf("  econ: combat craft %d mounts weapon %d\n",
+                       UiPanel_GetLineAux(pCraftPanel, nCombat), nWeapon);
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("econ_hangar_combat");
+            }
+
+            /* Case 6 walks one arm per press, exactly like case 7's three presses above. With the craft
+             * detail open, the first close press only exits the detail (CloseUI 0x8C07C keeps the screen,
+             * 0x8C08C clears the detail flag and returns); the second reaches 0x8C094 (screen 1) and runs
+             * the panels teardown at 0x8C098, which is what clears bPlaneBuilt. */
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);          /* BasePlaneScreen_Close @ 0x7c9e8 */
+            CheckEqI32(g_world.bPlaneShowDetail, 0,
+                       "the first close press only exits the craft detail (CloseUI 0x8C08C)");
+            CheckEqI32(g_world.bPlaneBuilt, 1, "and leaves the panel build in place (0x8C07C)");
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+            CheckEqI32(g_world.bPlaneBuilt, 0,
+                       "the second press runs the panels teardown (0x8C094 id 1, 0x8C098)");
+        }
+
+        printf("  econ round: funds %d, site count %d, finished topic %d, product %d\n",
+               g_world.nFunds, (i32)g_world.nSiteCount, (i32)g_world.nFinishedTopic, nProd);
     }
 
     World_Free(&g_world);

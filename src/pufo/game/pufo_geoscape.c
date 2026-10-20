@@ -4417,6 +4417,13 @@ static void StatusPanel_DrawAt(i32 nCentreX, i32 nY, const char *psz)
 
 static void StatusPanel_CopyRec(const GeoscapeStatusPanelEnv *pEnv, char *pszDst, i32 nRec)
 {
+    /* Deviation: the finished-research row label at 0x8D5DC feeds aTopics[nTopicId].wGate4 straight
+     * in, and the shipped data has such indices past the 1912-record table; the port reads only
+     * inside it and leaves the label empty. */
+    if (pEnv->pTextRecs == NULL || nRec < 0 || nRec >= PUFO_TEXT_REC_CAPACITY) {
+        pszDst[0] = '\0';
+        return;
+    }
     DrawScreen_CopyTextRec(pszDst, PUFO_TEXT_REC_STRIDE,
                            pEnv->pTextRecs + (size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec);
 }

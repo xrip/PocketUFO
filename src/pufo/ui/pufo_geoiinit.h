@@ -168,6 +168,12 @@ typedef struct GeoscapeInitEnv {
  * and leaves the loaded world alone. */
 void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
 
+/* g_anObjectPrice @ 0xAA2C0 (anObjectPriceInit): the initial per-slot price. Game_StartNew seeds
+ * ObjectRecFull.uPrice from it at 0x86A14; the manufacturing screen prices its commit and its price
+ * line directly against the table (ManufScreen_CommitProduction 0x6F408, ManufScreen_DrawFrame
+ * 0x6FB80), so the shell hands the same table to ManufCommitEnv.pdwPrices and ManufFrameEnv.pdwPrices. */
+extern const u32 g_anObjectPrice[149];
+
 /* ------------------------------------------------- the new game
  *
  * Evidence: Game_StartNew @ 0x94554 (3,976 B), called from Geoscape_InitUI's mode-0
