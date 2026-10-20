@@ -272,6 +272,16 @@ static i32            g_nMarkXcom, g_nMarkEnemy, g_nMarkCiv, g_nMarkHidden, g_nM
 static i32            g_nMarkDimX, g_nMarkDimY, g_nMarkLayers;
 static i32            g_nMarkCellX, g_nMarkCellY, g_nMarkCellZ;
 static Soldier       *g_pMarkUnit;
+/* Part 93: the strateg list as the save unit found it. Save_WriteStrateg bounds its record loop with the
+ * count the geoscape block keeps at +0x38 -- 0x186530, written into the chunk at 0x3FC14 and read back as
+ * the loop bound at 0x3FE28 and 0x401D4 -- and not with the PtrArray's own count; the original keeps that
+ * cell equal to the list at every change (StrategList_AddItem 0x82710, StrategList_RemoveAt 0x82B34). The
+ * Part 65 load-back compares the restored list against this mark. */
+static i32            g_nMarkStrateg;
+static u8             g_aMarkStratType[16];
+static i32            g_aMarkStratX[16], g_aMarkStratY[16], g_aMarkStratId[16];
+static u8             g_aMarkShipHot[PUFO_FAC_BASE_COUNT], g_aMarkShipBase[PUFO_FAC_BASE_COUNT];
+static i32            g_aMarkShipIdx[PUFO_FAC_BASE_COUNT];
 static i32            g_nSamples;
 static i32            g_nPresents;
 
@@ -3456,6 +3466,12 @@ int main(void)
                     i32 nTierRaw = 0, nDep = 0, aFour[4] = {0}, aV124[2] = {0};
                     u8 aStrategSkip[74];   /* version, 4 dwords, 5 type bytes, 13 dwords */
                     i32 aGlobalPtr[2] = {0};
+                    /* Part 93: Save_WriteStrateg bounds its record loop with the count the geoscape block
+                     * keeps at +0x38 -- 0x186530, written into the chunk at 0x3FC14 and read back as the
+                     * loop bound at 0x3FE28 and 0x401D4 -- not with the PtrArray's own count. The original
+                     * keeps that cell equal to the list at every change (StrategList_AddItem 0x82710,
+                     * StrategList_RemoveAt 0x82B34), so this snapshot of the live list is what the chunk
+                     * has to match record for record. */
 
                     g_world.sTactInput.bDeployPanelOpen = 1;    /* 0x15110 */
                     g_world.tactEnv.focus.nCamScrollX = 21;     /* 0x15130 */
@@ -3506,6 +3522,23 @@ int main(void)
                     saveHooks.pfnRenderFrame = RecSaveRenderFrame;
                     g_nSaveRenders = 0;
 
+                    g_nMarkStrateg = PtrArray_GetCount(&g_world.strategList);
+                    Check(g_nMarkStrateg > 0
+                              && g_nMarkStrateg <= (i32)(sizeof(g_aMarkStratType) / sizeof(g_aMarkStratType[0])),
+                          "the live strateg list fits the mark the chunk is compared against");
+                    for (i = 0; i < g_nMarkStrateg; ++i) {
+                        const StrategItem *pSnap = (const StrategItem *)PtrArray_Get(&g_world.strategList, i);
+
+                        g_aMarkStratType[i] = (u8)((pSnap != NULL) ? pSnap->nType : 0xFF);
+                        g_aMarkStratX[i]    = (pSnap != NULL) ? pSnap->nX : 0;
+                        g_aMarkStratY[i]    = (pSnap != NULL) ? pSnap->nY : 0;
+                        g_aMarkStratId[i]   = (pSnap != NULL) ? pSnap->nDisplayId : 0;
+                    }
+                    for (i = 0; i < (i32)g_world.bCraftCount && i < PUFO_FAC_BASE_COUNT; ++i) {
+                        g_aMarkShipHot[i]  = (g_world.apCraft[i] != NULL) ? g_world.apCraft[i]->bWeaponsHot : 0;
+                        g_aMarkShipBase[i] = (g_world.apCraft[i] != NULL) ? g_world.apCraft[i]->bAtBase : 0;
+                        g_aMarkShipIdx[i]  = (g_world.apCraft[i] != NULL) ? g_world.apCraft[i]->nStrategIdx : -1;
+                    }
                     Check(World_SaveSlot(&g_world, "", 62, &saveHooks) != 0,
                           "World_SaveSlot wrote the tactical slot (SaveGame 0x44988 over the live mission)");
                     CheckEqI32(g_nSaveRenders, 1, "the save renders one frame before the file opens (0x4499C)");
@@ -3566,6 +3599,47 @@ int main(void)
                           "the strateg chunk writes the two globals the original hands as addresses -- "
                           "0x1865A8 (0x3FD44) then 0x186594 (0x3FD54): the save unit wires the shell's own "
                           "funding cells, the pair Save_WriteStrateg refuses without");
+
+                    /* The rest of the header (13 more dwords, 0x3FD64..0x3FE24) sits between the two pointer
+                     * writes and the first record, and the dword at chunk offset 13 is the block's +0x38
+                     * count -- 0x186530, the value 0x3FE28 loops the records on. */
+                    {
+                        u8   aStratHead[52];
+                        u8   aRec[113];
+                        i32  nFileCount = 0;
+                        i32  nRec;
+                        bool bMatch = true;
+
+                        (void)DatFile_Read(&dat, aStratHead, sizeof(aStratHead));
+                        memcpy(&nFileCount, aStrategSkip + 13, 4);
+                        Check(nFileCount == g_nMarkStrateg,
+                              "the chunk's count dword is the live list's count -- the shell re-states the "
+                              "original's +0x38 mirror before the write, and 0x3FE28 / 0x401D4 bound the "
+                              "records with that cell rather than the PtrArray's own count");
+                        Check(dat.nChunkSize == (u32)(134 + 113 * g_nMarkStrateg),
+                              "and the chunk is exactly 134 header bytes plus 113 per item: 38 header writes "
+                              "(0x3FBD4..0x3FE24) and 33 field writes per record (0x3FE50..0x401D0)");
+                        for (nRec = 0; nRec < g_nMarkStrateg; ++nRec) {
+                            i32 nId, nX, nY;
+
+                            if (!DatFile_Read(&dat, aRec, sizeof(aRec))) { bMatch = false; break; }
+                            memcpy(&nId, aRec + 16, 4);  /* nDisplayId, the 8th field written */
+                            memcpy(&nX,  aRec + 21, 4);  /* nX, the 10th */
+                            memcpy(&nY,  aRec + 33, 4);  /* nY, the 13th */
+                            bMatch = aRec[67] == g_aMarkStratType[nRec]   /* nType, the 21st field, 0x40080 */
+                                       && nId == g_aMarkStratId[nRec]
+                                       && nX == g_aMarkStratX[nRec]
+                                       && nY == g_aMarkStratY[nRec];
+                            if (!bMatch) {
+                                break;
+                            }
+                        }
+                        Check(bMatch,
+                              "record for record the chunk holds the item's own type, display id and "
+                              "coordinates -- the round trip is the live list, not an empty one");
+                        printf("  strateg chunk: %d records, %u bytes (count dword %d)\n",
+                               g_nMarkStrateg, (unsigned)dat.nChunkSize, nFileCount);
+                    }
 
                     Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_MCNT) && DatFile_Read(&dat, &bMcnt, 1)
                               && bMcnt == (u8)(bCount0 + 1),
@@ -4574,6 +4648,90 @@ int main(void)
 
         nRet = World_LoadSlot(&g_world, "", 62, &g_assets, &g_fontSys, &g_options, &hooks);
         Check(nRet != 0, "World_LoadSlot loaded the tactical slot (LoadGame 0x44bbc over sav62.sav)");
+
+        /* Part 93: the restored list IS the saved list, item for item. That is the whole point of the
+         * +0x38 count mirror: Save_WriteStrateg bounds its record loop with that cell (the loop tests at
+         * 0x3FE28 and 0x401D4), and the original re-states it from PtrArray_GetCount on every add
+         * (0x82710) and every removal (0x82B34). A shell that leaves the cell at its last-read value writes
+         * too few records, and the load then has nothing to restore -- which is what LoadGame's per-craft
+         * find-or-create (0x44F7C..0x45014) is for: it gives every craft an entry when the list has none.
+         * Here 0x44FB0 finds each craft its own record instead, and 0x45008 never runs. */
+        {
+            i32 nMark   = g_nMarkStrateg;
+            i32 nNow    = PtrArray_GetCount(&g_world.strategList);
+            bool bSame  = (nNow == nMark);
+            bool bCraft = true;
+            bool bArmA  = true;   /* 0x45074..0x4508C */
+            bool bArmB  = true;   /* 0x450B8..0x450CC */
+            i32  nType0 = 0;
+            i32  nDeArmed = 0;
+            i32  j;
+
+            for (j = 0; j < nNow && j < nMark; ++j) {
+                const StrategItem *pItem = (const StrategItem *)PtrArray_Get(&g_world.strategList, j);
+
+                if (pItem == NULL || pItem->nType != g_aMarkStratType[j]
+                    || pItem->nDisplayId != g_aMarkStratId[j]
+                    || pItem->nX != g_aMarkStratX[j] || pItem->nY != g_aMarkStratY[j]) {
+                    bSame = false;
+                }
+                if (pItem != NULL && pItem->nType == 0) {
+                    ++nType0;
+                }
+            }
+            Check(bSame,
+                  "every saved item came back with its own type, display id and coordinates -- Save_ReadStrateg "
+                  "empties the list first (0x40F68) and then reads the chunk's own count (0x411CC, 0x41594), so "
+                  "the two sides agree only because the writer counted the same list");
+            Check(nNow == nMark,
+                  "and the list did not grow: the per-craft loop ran 0x44FB0 for every craft and found one, so "
+                  "the add at 0x45008 never ran and the find-or-create stayed the fallback it is");
+            Check(nType0 == (i32)g_world.nBaseCount,
+                  "one inactive type-0 entry per base stands in the reloaded geoscape (Base_CreateNamedEntry "
+                  "adds it at 0x669A8 on every create) -- the pass StrategList_UpdateDetect runs its base loop "
+                  "on (0x813D0) and the select test's base-name branch (0x82E94) both have a basis again");
+
+            for (j = 0; j < (i32)g_world.bCraftCount && j < PUFO_FAC_BASE_COUNT; ++j) {
+                const Ship        *pShip = g_world.apCraft[j];
+                const StrategItem *pItem;
+                i32  nIdx;
+                bool bOffMap;
+
+                if (pShip == NULL) {
+                    continue;
+                }
+                /* The finder the load uses: StrategList_FindIdxForShip @ 0x6A05C returns the first item whose
+                 * nDisplayId equals apCraft[n]->bId, with NO type gate and NO active gate (unlike
+                 * StrategList_FindByShipId @ 0x5A9B4). Its result is the index the two arms below then work
+                 * on; 0x45018..0x450E8 never writes Ship.nStrategIdx, so the craft keeps the stale index the
+                 * ships chunk gave it (Save_ReadShips 0x40BA8). */
+                nIdx  = FindStrategById(&g_world.strategList, (i32)pShip->bId);
+                pItem = (const StrategItem *)PtrArray_Get(&g_world.strategList, nIdx);
+                bCraft = bCraft && pItem != NULL && pItem->nType == 1 && pItem->nDisplayId == (i32)pShip->bId
+                           && pShip->nStrategIdx == g_aMarkShipIdx[j];
+                bOffMap = (pItem != NULL
+                           && (pItem->nX > 1000 || pItem->nX < -1000 || pItem->nY > 1000 || pItem->nY < -1000));
+                if (bOffMap && g_aMarkShipHot[j] != 0) {
+                    bArmA = bArmA && pShip->bWeaponsHot == 0 && pShip->bAtBase == 1;
+                    ++nDeArmed;
+                }
+                if (pShip->bAtBase != 0) {
+                    bArmB = bArmB && pItem != NULL && pItem->bVisible == 0;
+                }
+            }
+            Check(bCraft,
+                  "each craft is matched to the entry whose nDisplayId is its own bId, and its nStrategIdx is "
+                  "still the value the save wrote: 0x44F7C..0x450E8 reads the craft record at +0x34 and +6 and "
+                  "never stores to +0x38, so a loaded craft keeps a stale target index");
+            Check(bArmA,
+                  "and a craft saved hot whose entry sits off the map came back disarmed and back at base "
+                  "(the arm at 0x45074 clears bWeaponsHot @ 0x4507C and sets bAtBase @ 0x45088)");
+            Check(bArmB,
+                  "and every craft the load leaves standing at base has its entry made invisible again "
+                  "(0x450B8 tests bAtBase and 0x450C4 clears bVisible)");
+            printf("  restored strateg list: %d items, %d of them the base entries; %d craft disarmed by 0x45074\n",
+                   nNow, nType0, nDeArmed);
+        }
         Check(g_world.bTactLive && g_world.bTactFlag == 1,
               "the driver's Tact_InitMission(1) ran and the mission is live again (0x44E24)");
         pMapL = g_world.pTactMap;
@@ -5795,12 +5953,24 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         i32             nBlitsPlain;
         i32             nBlitsOffer;
         i32             nSampleMark;
+        const BaseRec  *pHome;
+        i32             nHomeX = 0;
+        i32             nHomeY = 0;
         u8              abSpriteBefore[4];
         u8              abSpriteAfter[4];
 
         printf("section 13: back to the geoscape, order an intercept, arrive, launch\n");
 
         World_TactEscapeToGeoscape();
+        /* Part 93: this is the return arm that KEEPS the map. UiScreen_OnCancel's 13/19 arm (0x162BC /
+         * 0x162C8) runs Tact_Shutdown with bKeepSome 0, and the store that empties the live strateg list --
+         * LDR R0,=sGeoscapeScreenBlock / ADD R0,#0x3C / BL PtrArray_DeleteAll at 0x3E14C, 0x3E150, 0x3E154 --
+         * sits in the bKeepSome != 0 branch, together with the frees of the tactical copies of the rosters.
+         * The bKeepSome == 0 branch runs Shutdown_RemoveUnits and Shutdown_MissionOutcome (0x3DCF4) instead,
+         * and those reach StrategList_RemoveAt only for the craft's own entry (0x3DF6C, 0x3DFBC). */
+        CheckEqI32(PtrArray_GetCount(&g_world.strategList), g_nMarkStrateg,
+                  "the mission return left the whole strateg list standing: Tact_Shutdown(0) never reaches "
+                  "the DeleteAll at 0x3E154");
         Check(g_world.bTactLive == 0 && g_world.bTactFlag == 0,
               "the escape seam runs Tact_Shutdown(0) and leaves geoscape mode (0x162BC)");
         CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "on the geoscape map (0x162C8 rebuilds the UI, not the screen)");
@@ -5825,19 +5995,36 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         Check(pMarker != NULL && pMarker->nType == 1 && pMarker->bActive == 0 && pMarker->bVisible == 0,
               "and it is the inactive invisible marker 0x7FE1C skips, with bVisible 0");
 
-        /* The contact, parked on the marker's own point: the arrival box is |dx| < 2 && |dy| < 2
-         * (0x80348/0x80364), so the first pass after the order arrives. The chase's own arithmetic --
-         * the wrapped leg, the winner kept, the accumulator whole-part move -- is gated in
-         * tests/test_strateg.c against the same function.
+        /* The contact, parked on the HOME BASE's cell and not on the marker's own cell. A parked craft's
+         * entry keeps the coordinates its record was created with. This run's copy came back out of the
+         * save chunk, and on the new game `Base_CreateNamedEntry` put base 0 at (-6000, -6000) (0x94964)
+         * with its nUnk8 / nUnk12 written at 0x66A38 / 0x66A50 and the craft entries beside it, so the
+         * restored marker still sits there: the geoscape moves an entry only when its craft travels.
+         * `Ship_LaunchIntercept` is what pulls it onto the base -- 0x5A6E8's bAtBase arm reads
+         * apBases[Ship.bHomeBase].nUnk8 / .nUnk12 (0x5A718, 0x5A73C) and writes the pair into the leg start
+         * AND the entry's own position (0x5A760, 0x5A780). Parking the contact on that cell parks it where
+         * the marker will stand when the order runs, so the arrival box |dx| < 2 && |dy| < 2 (0x80348,
+         * 0x80364) closes on the first pass. The chase's own arithmetic -- the wrapped leg, the winner
+         * kept, the accumulator whole-part move -- is gated in tests/test_strateg.c against the same
+         * function.
          *
          * StrategList_AddItem writes nSiteId / nDisplayId only for a type 0 or 3 (0x82990..0x829A8) or a
          * type 1 (0x829C8..0x829F8); the ninth argument is inert for a type 4, whose two id fields keep
          * whatever the allocation left -- the same in the original, whose type-4 records arrive read raw
          * out of the save chunk (0x41430). So the id the arrival's row text prints is set here. */
+        pHome  = (pCraft != NULL && pCraft->bHomeBase < PUFO_FAC_BASE_COUNT)
+                     ? g_world.apBases[pCraft->bHomeBase] : NULL;
+        nHomeX = (pHome != NULL) ? pHome->nUnk8  : 0;   /* BaseRec.nUnk8 @ +8, written at 0x66A38 */
+        nHomeY = (pHome != NULL) ? pHome->nUnk12 : 0;   /* BaseRec.nUnk12 @ +12, written at 0x66A50 */
+        Check(pMarker != NULL && pHome != NULL && (pMarker->nX != nHomeX || pMarker->nY != nHomeY),
+              "and the restored marker does NOT stand on its base's cell: it holds the coordinates its "
+              "record was created with (the new game parked base 0 at -6000,-6000), and the snap onto the "
+              "base is the launch's 0x5A6E8 arm");
+
         nListCount0 = PtrArray_GetCount(&g_world.strategList);
         pUfo = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
                                    4 /* a UFO contact */, 0, 2 /* class 2: tier raw 1, budget 250 */,
-                                   pMarker->nX, pMarker->nY, 4250, 1);
+                                   nHomeX, nHomeY, 4250, 1);
         nUfo = nListCount0;
         if (pUfo != NULL) {
             pUfo->nDisplayId = 3;
@@ -6587,6 +6774,25 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                   && pUfo->nTimer == 0 && PtrArray_GetCount(&g_world.strategList) == nCount0 + 1,
               "StrategList_AddUfoAt @ 0x7e374 puts an active invisible type-1 entry eight cells off the chasing "
               "craft (the arguments 0x7E46C hands it), and AddItem leaves nTimer 0 (0x82A2C)");
+
+        /* bRandA (+0x14) is the one StrategItem cell no add path writes. AddItem's field list covers nType
+         * (0x82728), bActive (0x82748), bHyperDetect (0x82888), bDetected (0x828A0), bRace (0x828BC), nPhase
+         * (0x828D4), bDone (0x828EC), the six coordinate dwords (0x82904..0x82984), the two id dwords
+         * (0x829A8..0x829F8), bVisible (0x82A14), nTimer (0x82A2C), bFlagA (0x82A44), bCraftClass (0x82A5C) and
+         * nHp (0x82A74) -- and stops. The two writers the port knows are StrategEntry_InitTravel's type-1 active
+         * arm (0x7F74C's Game_RandU16(0x12), times the class jitter roll at 0x7F7B0..0x7F7CC, which doubles as
+         * the speed jitter) and Base_CreateNamedEntry's region byte (0x669B4, a type-0 entry only), and this
+         * contact is never handed a leg, so its byte is whatever the allocator left. The card this section paints
+         * reads exactly that byte: the SLOT 0 entry's LDRSB [R0,#0x14] ahead of the class switch, 61 as the
+         * multiplier (0x8E920 MOV R2,#0x3D), class 0's base 2200 (0x8E914 MOV R3,#0x898), and the speed line
+         * printing the same number again at 0x8EC44. That is why the two pictures this section dumps changed from
+         * run to run -- 2078 on the run the committed references came from (2200 - 61*2), 5486 on the next
+         * (|2200 - 61*126|), both off the same list. The fixture states the byte, the way the other contact
+         * fixtures state nDisplayId: 0 is the no-jitter value, what a zeroed allocation carries, and the value
+         * that makes the two references reproducible. The committed pictures are re-made with it. */
+        if (pUfo != NULL) {
+            pUfo->bRandA = 0;
+        }
         nDispId0 = (pUfo != NULL) ? pUfo->nDisplayId : -1;
 
         /* One pulse is not one minute tick: Geoscape_PulseUpdate advances the clock by
@@ -6806,6 +7012,77 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
               "the alien is still in the list, active, and the target of the craft");
         printf("  panel blits %d; the craft chases entry %d at cell %d,%d\n", (int)nBlitsPanel, nUfo,
                pUfo != NULL ? pUfo->nX : -1, pUfo != NULL ? pUfo->nY : -1);
+    }
+
+    /* ---- section 17: the arm that ends a run empties the map the geoscape walks (Part 93) -------
+     * Every return from a mission so far took Tact_Shutdown with bKeepSome 0. The value 1 belongs to the
+     * arms that END a run -- Tact_CheckBattleEnd's victory arm (0x35014) and its failed-base arm (0x35180),
+     * UiScreen_OnBack's quit arm (0x156D4) and App_QuitFromTact (0x18E20) -- and that branch is where the
+     * teardown reaches into the geoscape's own block: LDR R0,=sGeoscapeScreenBlock (0x3E14C), ADD R0,#0x3C
+     * (0x3E150), BL PtrArray_DeleteAll (0x3E154). The strateg list is that +0x3C field, so the ending arm
+     * empties it and frees the items. Nothing on this side of the run re-creates it: Base_CreateNamedEntry
+     * is the only writer of a type-0 entry (0x669A8) and its two code callers are the new game (0x94964) and
+     * the placement commit (0x59AFC), while Geoscape_InitUI(1) skips the new-game branch (gate 0x868EC).
+     *
+     * The arm reached here is the abort button: UiScreen_OnBack case 9 runs UiModal_End (0x156BC) and
+     * Tact_CheckBattleEnd with bAbort 1 (0x156C8), which stores the abort into Map_bAltOutcomePath (0x34FE4)
+     * and, with no victory, takes LABEL_20 -> LABEL_21 and then the failed-base gate at 0x35120. That gate
+     * reads the mission type twice (0x35138 for the alien-base/Mars half, 0x3515C for the base half) and
+     * reads the base count byte at 0x159D80 SIGNED (0x35160) -- so the arm means "the defence of the base was
+     * lost and the world has one base". The run has three bases and a victory byte left over from the mission
+     * won at 0x350F0, so the fixture states the two cells the gate reads, runs the check, and puts them back.
+     * The mission itself is brought up with the shell's own Tact_InitMission seam (World_InitTactical, the
+     * same call 0x83AC4 makes on the launch tail and 0x44E24 makes inside LoadGame). */
+    {
+        i32  nBefore = PtrArray_GetCount(&g_world.strategList);
+        i8   bBaseSave = g_world.nBaseCount;
+        i32  nTypeSave = g_world.nMapMissionType;
+        u16  nScreenSave = g_world.nUiScreen;
+        bool bLive;
+
+        printf("section 17: the failed base defence ends the run, and the ending arm empties the strateg list\n");
+        Check(g_world.bTactLive == 0,
+              "the geoscape stands on its own here: no mission is live before the one this section brings up");
+        bLive = World_InitTactical(&g_world, 0);
+        Check(bLive && g_world.bTactLive && g_world.pTactMap != NULL && g_world.pTactState != NULL,
+              "Tact_InitMission mode 0 brings the frame up (the launch tail's own 0x83AC4 call)");
+        CheckEqI32(nBefore, PtrArray_GetCount(&g_world.strategList),
+                   "and bringing it up does not touch the map: the strateg list is the geoscape's, not the frame's");
+
+        /* The two cells the arm reads, stated for the arm and restored after it. */
+        g_world.nMapMissionType    = PUFO_MISSION_TYPE_XCOM_BASE;
+        g_world.nBaseCount         = (i8)PUFO_FACILITY_END_FLAG_SET;
+        g_world.bMapMissionVictory = 0;
+        Check(g_world.nMapMissionType == PUFO_MISSION_TYPE_XCOM_BASE && g_world.nBaseCount == 1
+                  && g_world.bMapMissionVictory == 0,
+              "the fixture states the base-defence type and the base count byte the gate tests at 0x3515C and "
+              "0x35160, and a lost mission (0x35178 needs bMissionVictory 0)");
+
+        Check(World_MissionEndCheck(&g_world, 1) == true,
+              "the abort button's check runs to the end (Map_bBattleEnded was 0, so 0x34FFC does not return early)");
+        Check(g_world.nMapMissionOutcome == 2 && g_world.bMapTickHold == 1 && g_world.bMapBattleEnded == 1,
+              "the abort wrote outcome 2 at 0x35110, LABEL_20 set the tick hold at 0x35114 and the arm set "
+              "battle-ended at 0x35190");
+        Check(g_world.nUiScreen == nScreenSave,
+              "and the debrief never ran: the arm returns at 0x35194, before Map_nUiScreen = 13 at 0x351F4 and "
+              "before any of the tallies");
+        CheckEqI32(PtrArray_GetCount(&g_world.strategList), 0,
+                   "the teardown emptied the geoscape's own list -- 0x3E154 is PtrArray_DeleteAll over the block "
+                   "at +0x3C -- and freed the items, so the map the geoscape walks is empty");
+        Check(PtrArray_Get(&g_world.strategList, 0) == NULL,
+              "and it is empty rather than merely counted down: the array is gone with its items");
+        Check(g_world.saveStrateg.nStrategCount != 0,
+              "the count mirror is left at its old value, exactly as the original leaves 0x186530 stale here "
+              "(only 0x82710 and 0x82B34 refresh it) -- a save made from this state would walk items that no "
+              "longer exist, which is why World_SaveSlot re-states the cell before every write");
+        Check(g_world.bTactLive == 0 && g_world.bTactFlag == 0 && g_world.pTactMap == NULL,
+              "and the frame is down: the same seam Part 47 made stand for the original's global teardown");
+        printf("  the ending arm took the map from %d entries to 0 (mirror left at %d)\n", nBefore,
+               g_world.saveStrateg.nStrategCount);
+
+        g_world.nBaseCount      = bBaseSave;
+        g_world.nMapMissionType = nTypeSave;
+        g_world.nUiScreen       = nScreenSave;
     }
 
     World_Free(&g_world);

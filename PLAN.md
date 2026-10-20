@@ -3812,17 +3812,71 @@ unchanged; 18267 checks.
   `idb_save`. Gates: 62/62 Release and Debug, 19112 checks (43 new), coverage unchanged, 34 frame references (2 new),
   9 e2e pictures unchanged.
 
-- [ ] **The geoscape world the tests reload has no type-0 site entry, so the radar pass and the base-name line have
-  nothing to work on.** `StrategList_UpdateDetect @ 0x81948` measures every alien against the list entries with
-  `nType 0 && bActive 0` (`Strateg_CalcDetect`'s base loop at 0x813D0, reading `apSiteState` 1/2/11/12 and
-  `apRadarPct`), and `Smap_HitTestStrategSelect`'s base-name line comes from the same kind of entry (0x82E94 →
-  `SmapHit_FindBaseBySiteId` → byte_186C24 + 54). In the world `World_LoadSlot` leaves behind at the point
-  `test_geoscapeframe` section 16 starts, the strateg list holds the three player craft entries (type 1, inactive)
-  and the contacts only: no type-0 entry at all. `Base_CreateNamedEntry` (0x66970, the
-  `StrategList_AddItem(..., 0, 0, 0, x, y, nextSiteId, 1)` at 0x66970) writes it on the new-game path. Unresolved:
-  whether the original keeps the base's entry across the mission return or re-adds it on the next minute tick -- the
-  Part 92 gate had to reveal its alien through the proximity pass (0x811c8) instead, and Part 91's base-name branch
-  was never exercised. Needs a run against `Geoscape_TickBases` and the save/load pair, not a guess.
+- [x] **Part 93: the count the save unit reads is the geoscape block's own +0x38 dword, and the reloaded world gets
+  its site entries back.** Two product changes. **(1) 0x186530 is one cell, not two.** It is the block's `+0x38`
+  dword, the mirror of the strateg PtrArray count at `+0x3C`: written by `StrategList_AddItem` (0x82710 --
+  `ADD R0,R4,#0x3C`, `PtrArray_GetCount`, `STR R0,[R4,#0x38]`), by `StrategList_RemoveAt` (0x82B2C/0x82B34 after the
+  DeleteAt at 0x82B28), zeroed by `Game_StartNew` (0x94680, R8 = 0 from 0x94560) and by `LoadGame` (0x44CEC), filled
+  by `Save_ReadStrateg` (0x411CC, the chunk header dword at offset 13), and read as a loop bound by
+  `Ship_RemoveWithCargo` (0x368D4/0x3691C), `Save_WriteStrateg` (0x3FC14 header write, 0x3FE28 and 0x401D4 loops),
+  `Save_ReadStrateg` (0x41594) and `LoadGame` (0x44EA4/0x44F68/0x45010/0x450FC/0x451D4). The port kept a `u8
+  bStrategCount` that nothing refreshed, so the STRATEG chunk held **0 records over a live list of 9** -- 134 header
+  bytes only -- and that is what starved the reloaded world: an empty chunk → `Save_ReadStrateg` (which empties the
+  list at 0x40F68) restores nothing → `LoadGame`'s 0x44F7C..0x450E8 invents the three craft entries at the base's
+  cell (finder 0x44FA8 → `StrategList_FindIdxForShip @ 0x6A05C`, nDisplayId only, no type gate and no active gate) →
+  no type-0 entry at all, which is exactly the absence Part 92 recorded. `GeoscapeInitEnv.pnStrategCount` is an i32*
+  now (0x94680 and 0x82710 both store a dword) wired to `&pW->saveStrateg.nStrategCount`, the cell
+  `Save_ReadStrateg` fills, and `World_SaveSlot` re-states `PtrArray_GetCount` into it immediately before the writer
+  runs; the byte field in `pufo_world.h` is gone. Measured: a 1151-byte chunk = 134 + 113×9 with count dword 9, each
+  record equal to its live item at nType 67 (the 21st field, 0x40080), nDisplayId 16, nX 21, nY 33; the load restores
+  9 items with **3 of them the type-0 base and site entries**, so 0x813D0's base loop and 0x82E94's base-name branch
+  have a basis again; equal counts prove 0x44FB0 matched a craft entry for every craft and 0x45008 never ran; 3 craft
+  come back disarmed by the 0x45074 arm; and every craft keeps the `Ship+0x38` index `Save_ReadShips` wrote at
+  0x40BA8, because **nothing in 0x44F7C..0x450E8 stores to `Ship+0x38`** -- the original's stale index, asserted as
+  behaviour. **(2) `Tact_Shutdown`'s dropped argument is honoured:** bKeepSome != 0 runs LDR =sGeoscapeScreenBlock
+  (0x3E14C), ADD R0,#0x3C (0x3E150), `PtrArray_DeleteAll` (0x3E154) on the LIVE geoscape list, which
+  `World_EndHookShutdown` now does. New section 17 (11 checks) brings the mission up with `World_InitTactical` (the
+  call 0x83AC4/0x44E24 make), states the cells the ending gate reads (type XCOM_BASE at 0x35138, 0x159D80 read signed
+  at 0x35160, victory 0) and pulls the abort -- UiScreen_OnBack case 9 is UiModal_End (0x156BC) plus
+  `Tact_CheckBattleEnd(pMap, bAbort 1)` (0x156C8): 12 entries → 0, hold 1, battle-ended 1, outcome 2, screen 20
+  unchanged, frame down; section 13's `Tact_Shutdown(0)` return leaves all 9 standing. **The two contact frames were
+  non-deterministic, and the cell is `StrategItem.bRandA` (+0x14):** AddItem's writes at 0x82728..0x82A74 stop short
+  of it and of dSpeed, so the size line |base − 61·bRandA| (multiplier 0x8E920, class 0's base 0x8E914 `MOV R3,#0x898`)
+  and the speed line that re-prints it at 0x8EC44 (0x8EBF4's BLE only writes "0" when nTimer > 0) read 2078 in one
+  run and 5486 in the next off the same list. The fixture pins the byte to 0 (the no-jitter value -- the writers are
+  `StrategEntry_InitTravel` 0x7F74C..0x7F7CC and `Base_CreateNamedEntry` 0x669B4) and both references are re-made at
+  "Скорость…………2200 узлов". The contact also stands on its **home base's cell** now: a parked entry keeps the cell it
+  was created with (`Base_CreateNamedEntry` writes `apBases[n]->nUnk8/nUnk12` from it at 0x66A38/0x66A50, and
+  `Game_StartNew` parks base 0 at −6000,−6000 at 0x94964) and only `Ship_LaunchIntercept`'s 0x5A6E8 arm snaps it
+  (0x5A718/0x5A73C, 0x5A760/0x5A780), with a check that the restored marker is NOT on that cell. IDB: 0x186530 named
+  `nStrategItemCount` with the census, notes at 0x3e14c, 0x45014, 0x45018, 0x450cc, 0x44fa8, 0x82710, 0x82b34,
+  0x94680, 0x826e8, 0x7f67c, `idb_save`. Gates: 62/62 Release and Debug, 19135 checks (23 new), coverage unchanged,
+  34 frame references (2 re-made), 9 e2e pictures unchanged.
+
+- [ ] **Press on a base entry: the radar pass and the base-name line still have no gate.** Part 93 gave the reloaded
+  world its three type-0 entries, so `StrategList_UpdateDetect @ 0x81948`'s base loop (0x813D0, reading
+  `apSiteState` 1/2/11/12 and `apRadarPct`) and `Smap_HitTestStrategSelect`'s base-name line (0x82E94 →
+  `SmapHit_FindBaseBySiteId` → byte_186C24 + 54) have a basis at last. Not gated yet: the saved list's type-0 entry
+  at (587,165) is the press target, and the radar pass needs `Geoscape_TickBases` on a minute tick.
+
+- [ ] **The quit-YES arm does not empty the strateg list.** `App_HookShutdownQuit` →
+  `App_QuitFromTact(App_ShutdownTactNoMission, ...)` → `Tact_Shutdown(NULL, 1)`, and the ported function returns at
+  once on a NULL env, so the shell's arm never reaches the DeleteAll at 0x3E154 while the original's 0x18E20 arm --
+  working on the globals -- does. Closing it means the seam carries the geoscape block instead of NULL.
+
+- [ ] **A loaded craft keeps a stale `nStrategIdx`.** `Save_ReadShips` stores it at 0x40BA8 and `LoadGame`'s
+  per-craft pass 0x44F7C..0x450E8 never stores to `Ship+0x38`, so a craft whose entry was matched at another position
+  keeps the number its record carried. Part 93 asserts the stale value; anything that later reads it as a list index
+  (the arrival dispatch re-reads it) works on the wrong entry. Original behaviour, reproduced on purpose.
+
+- [ ] **`nStrategItemCount @ 0x186530` is left stale by the ending arm.** `PtrArray_DeleteAll` at 0x3E154 has no
+  mirror refresh, unlike `StrategList_RemoveAt` at 0x82B2C/0x82B34, so after `Tact_Shutdown(1)` the count cell names
+  items that no longer exist -- and `Save_WriteStrateg`'s loop at 0x3FE28 would write records for them. The port
+  re-states the cell at the save boundary and section 17 asserts the stale value instead of hiding it.
+
+- [ ] **`Tilemap_GetAt` indexes its cell with no bounds test.** The fixed round trip left a restored craft marker at
+  (−6000,−6000) -- the cell its record was created with -- and the test's alt-tilemap lookup read outside the image
+  and crashed. The fixture now parks the contact on a real cell; the unchecked lookup is still open.
 
 - [ ] **Row hold-to-repeat never runs on the geoscape.** `UiScrollList_TrackHold` selects a row by itself only while
   panel byte 0x1BA8 is set, counting to the threshold at panel + 0x1BAC (0x3EE50..0x3EEB8). The image sets 0x1BA8 on

@@ -536,11 +536,12 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     }
 
     /* 0x94650..0x94680: the nine region counters plus the byte at 0x186566 (IDA names it
-     * bUiFrameStyle), then the strateg count byte. */
+     * bUiFrameStyle), then the strateg count dword at block +0x38 (0x186530), zeroed here and
+     * refreshed from the list by every StrategList_AddItem / StrategList_RemoveAt after this. */
     for (i = 0; i < 10; ++i) {
         pEnv->paRegionBuildCount[i] = 1;
     }
-    *pEnv->pbStrategCount = 0;
+    *pEnv->pnStrategCount = 0;
 
     /* 0x94680..0x9472C: the economy dwords of the 0x1864F8 block. The original's stores
      * are scattered; the net effect is this block. */

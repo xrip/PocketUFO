@@ -1329,7 +1329,8 @@ static void World_StartNewHook(void *pUser)
     env.pStrategList = &pW->strategList;
     env.pSpawnCtx = &pW->spawnCtx;
     env.pbPlacementPending = &pW->bPlacementPending;
-    env.pbStrategCount = &pW->bStrategCount;
+    env.pnStrategCount = &pW->saveStrateg.nStrategCount; /* 0x186530, the same cell Save_ReadStrateg
+                                                           * fills and Save_WriteStrateg reads */
     env.abTypeCounters = pW->abTypeCounters;
     env.pnNextDisplayId = &pW->nNextDisplayId;
     env.pnNextSiteId = &pW->nNextSiteId;
@@ -1798,6 +1799,13 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
      * live byte or the file records version 0 while its bodies are written in the version-3 layout, and
      * every read after the version gate lands four bytes early. */
     pW->saveStrateg.bSaveVersion = pW->nSaveVersion;
+    /* Save_WriteStrateg walks the item count the geoscape block keeps at +0x38 (0x186530, the loop
+     * bound at 0x3FE28), not the PtrArray's own count. The original keeps that cell equal to the list
+     * at every change -- StrategList_AddItem re-states PtrArray_GetCount into it at 0x82710 and
+     * StrategList_RemoveAt at 0x82B34 -- so at the moment the writer reads it they are the same
+     * number. The shell's list ops carry the count in the PtrArray alone, so the value is re-stated
+     * here, at the one place the original's reader runs. */
+    pW->saveStrateg.nStrategCount = PtrArray_GetCount(&pW->strategList);
     in.pStrateg = &pW->saveStrateg;
     in.pStrategList = &pW->strategList;
     in.pTime = &pW->saveTime;
@@ -6425,16 +6433,31 @@ static void World_EndHookShutdown(u8 bKeepSome, void *pUser)
     /* The shell's stand-in for Tact_Shutdown @ 0x3d568, the same choice Part 47 made for the
      * teardown: Tact_Shutdown frees the ORIGINAL's global blocks, World_FreeTactical releases the
      * shell-owned counterparts of the same frame. It also stands in for Tact_Shutdown's first
-     * store, the Map+0x00 action-latch clear: the tact flag goes down with the frame. bKeepSome
-     * does not split the shell's teardown -- both arms release the same shell blocks, and the
-     * geoscape rosters have one owner (World_Free), never the frame's. */
-    (void)bKeepSome;
+     * store, the Map+0x00 action-latch clear: the tact flag goes down with the frame. */
     pW->bTactFlag = 0;                                       /* 0x3D574 */
     PufoFont_Free(pW->pFont);      /* Tact_Shutdown releases the font too (TactShutdownEnv.pFont): the
                                      * tact sprites Tact_InitMission loaded go here, so the rebuild's
                                      * PufoFont_Init starts from the cleared block, like the original's
                                      * Geoscape_InitUI(1) at 0x162C8 after Tact_Shutdown(0). */
     World_FreeTactical(pW);
+
+    /* bKeepSome does split it. The branch it selects (pufo_tactend.c's `if (bKeepSome != 0)`) frees the
+     * tactical copies of the rosters and ends with LDR R0,=sGeoscapeScreenBlock / ADD R0,#0x3C /
+     * BL PtrArray_DeleteAll at 0x3E14C, 0x3E150, 0x3E154 -- the geoscape block's OWN strateg list at
+     * +0x3C, emptied with its items freed. Those are the arms that end a run: Tact_CheckBattleEnd's
+     * victory arm (0x35014) and its failed-base arm (0x35180), UiScreen_OnBack's quit arm (0x156D4) and
+     * App_QuitFromTact (0x18E20), each followed by EndScreen_Init or App_QuitDisplay. The arms that return
+     * to the geoscape pass 0 -- UiScreen_OnCancel 13/19 at 0x162C0, LoadGame's teardowns at 0x44D10 and
+     * 0x44D80 -- and the bKeepSome == 0 branch runs Shutdown_RemoveUnits with Shutdown_MissionOutcome
+     * (0x3DCF4), which reaches StrategList_RemoveAt only for the craft's own entry (0x3DF6C, 0x3DFBC).
+     * The shell has no copy of the tactical rosters to free, so the branch's one store is the list.
+     * Deviation, recorded: the original leaves the block's +0x38 count mirror (0x186530) at its stale
+     * value here -- only StrategList_AddItem (0x82710) and StrategList_RemoveAt (0x82B34) refresh it -- so a
+     * save made after this arm would write records for items that are gone. World_SaveSlot re-states the
+     * mirror from the list, so the shell writes a clean empty chunk instead. */
+    if (bKeepSome != 0) {
+        PtrArray_DeleteAll(&pW->strategList);               /* 0x3E154 */
+    }
 }
 
 static void World_EndHookInitMission(i32 nMode, void *pUser)

@@ -121,7 +121,9 @@ typedef struct PufoWorldState {
     u8      bFundScreenOpen;
     PadImage *pFundPad;
     u8      bPlacementPending;                  /* 0x1870AC */
-    u8      bStrategCount;                      /* 0x186530 */
+    /* 0x186530 (the geoscape block's +0x38 strateg count dword) lives in saveStrateg.nStrategCount:
+     * the original keeps one cell there, written by Game_StartNew (0x94680) and by Save_ReadStrateg
+     * (0x411CC) and read by Save_WriteStrateg's loop (0x3FE28) and Ship_RemoveWithCargo (0x368D4). */
     u8      abTypeCounters[PUFO_CRAFT_TYPE_COUNT]; /* 0x18653C..0x186540 */
     i32     nNextDisplayId;                     /* 0x186544 */
     i32     nNextSiteId;                        /* 0x186548 */

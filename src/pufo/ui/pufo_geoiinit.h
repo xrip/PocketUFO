@@ -300,7 +300,12 @@ typedef struct StartNewEnv {
 
     /* The 0x1864F8 block's flags and economy. */
     u8    *pbPlacementPending;        /* 0x1870AC */
-    u8    *pbStrategCount;            /* 0x186530 */
+    i32   *pnStrategCount;            /* 0x186530 = the block's +0x38 dword. It is the mirror of the
+                                       * strateg list count: StrategList_AddItem refreshes it off
+                                       * PtrArray_GetCount at 0x82710, StrategList_RemoveAt at 0x82B34,
+                                       * Ship_RemoveWithCargo loops on it at 0x368D4/0x3691C, and
+                                       * Save_WriteStrateg uses it as its record-loop bound at 0x3FE28.
+                                       * Game_StartNew zeroes it at 0x94680 (MOV R8,#0 at 0x94560). */
     u8    *abTypeCounters;            /* 0x18653C..0x186540, five bytes */
     i32   *pnNextDisplayId;           /* 0x186544 */
     i32   *pnNextSiteId;              /* 0x186548 */

@@ -1708,6 +1708,65 @@ guessed:** the reloaded geoscape world has NO type-0 inactive strateg entry, so 
 `Base_CreateNamedEntry` writes that entry at 0x66970 on the new-game path, and whether the original keeps it across
 the mission return is a separate row in PLAN.md; and the fixture MOVES the revealed entry (position + start +
 destination) instead of letting it wander under the press.
+**The count the save unit reads is a dword of the geoscape block (Part 93)** -- a *product* fix, and it came in two
+halves. **0x186530 is the geoscape block's own +0x38 dword**, the mirror of the strateg PtrArray count at +0x3C:
+`StrategList_AddItem` restates it at 0x82710 (ADD R0,R4,#0x3C, GetCount, STR [R4,#0x38]), `StrategList_RemoveAt` at
+0x82B2C/0x82B34, `Game_StartNew` zeroes it at 0x94680 (MOV R8,#0 at 0x94560), `LoadGame` at 0x44CEC, and
+`Save_ReadStrateg` fills it at 0x411CC from the chunk header dword at offset 13; it is the loop bound at
+0x368D4/0x3691C (`Ship_RemoveWithCargo`), 0x3FE28 and 0x401D4 (`Save_WriteStrateg`), 0x41594, and
+0x44EA4/0x44F68/0x45010/0x450FC/0x451D4. The port kept a `u8 bStrategCount` that nothing ever refreshed, so the
+STRATEG chunk held **0 records over a live list of 9** -- 134 header bytes and nothing else. An empty chunk means
+`Save_ReadStrateg` (which empties the list at 0x40F68) restored nothing, `LoadGame`'s 0x44F7C..0x450E8 pass invented
+the three craft entries at the base's cell (finder 0x44FA8 -> `StrategList_FindIdxForShip @ 0x6A05C`: nDisplayId
+only, no type gate and no active gate, signed-char result), and no type-0 entry ever existed -- **that is Part 92's
+open row, and it was this cell.** `GeoscapeInitEnv.pnStrategCount` is an i32* now (0x94680 and 0x82710 both store a
+dword) wired to `&pW->saveStrateg.nStrategCount`, the cell `Save_ReadStrateg` fills, and `World_SaveSlot` re-states
+`PtrArray_GetCount` into it immediately before the writer runs: the shell carries its count in the PtrArray alone,
+and 0x3FE28 is the one place the original's reader runs. Measured: a 1151-byte chunk = 134 + 113*9 with count dword
+9, each record read back against the live item it came from (nType at 67, the 21st field, written at 0x40080;
+nDisplayId 16, nX 21, nY 33); the load restores 9 items with **3 of them the type-0 base and site entries**, so
+0x813D0's base loop and 0x82E94's base-name branch have a basis again; equal counts prove 0x44FB0 matched a craft
+entry for every craft and 0x45008 never ran; 3 craft come back disarmed by the 0x45074 arm; and every craft still
+holds the nStrategIdx `Save_ReadShips` wrote at 0x40BA8, because **nothing in 0x44F7C..0x450E8 stores to
+Ship+0x38** -- the original's own stale index, asserted as behaviour rather than repaired.
+
+**`Tact_Shutdown`'s dropped argument is honoured.** With bKeepSome != 0 the original runs LDR R0,=sGeoscapeScreenBlock
+(0x3E14C), ADD R0,#0x3C (0x3E150) and `PtrArray_DeleteAll` (0x3E154) -- the LIVE geoscape strateg list and its
+items, not a tactical copy -- so `World_EndHookShutdown` now empties it on that flag. Section 17 brings the mission
+up with `World_InitTactical` (the same call 0x83AC4 and 0x44E24 make), states the cells the ending gate reads
+(mission type XCOM_BASE at 0x35138, the 0x159D80 byte read signed at 0x35160, victory 0) and pulls the abort --
+UiScreen_OnBack case 9 is UiModal_End (0x156BC) plus `Tact_CheckBattleEnd(pMap, bAbort 1)` (0x156C8). Measured:
+**12 strateg entries to 0**, hold 1, battle-ended 1, outcome 2, screen unchanged at 20 (the debrief returns at
+0x35194 before 0x351F4), frame down. Section 13's mission return runs the other branch, `Tact_Shutdown(0)`, and
+leaves all nine standing -- 0x3E154 is not reachable from it. `PtrArray_DeleteAll` has no mirror refresh (unlike
+0x82B2C/0x82B34), so 0x186530 is left at 9 over an empty list: the gate asserts that stale value, because the
+original leaves it, and the shell never saves from that state since `World_SaveSlot` re-states the cell first.
+
+**The two contact pictures were changing run to run, and the cell behind it is `StrategItem.bRandA` (+0x14).**
+AddItem's field writes at 0x82728..0x82A74 cover 15 cells and stop, so +0x14 and dSpeed hold whatever operator new
+left; the card reads that byte -- the SLOT 0 entry's LDRSB [R0,#0x14], 61 as the multiplier (0x8E920
+`MOV R2,#0x3D`), class 0's base 2200 (0x8E914 `MOV R3,#0x898`) -- and the speed line re-prints the same number at
+0x8EC44 while nTimer is not > 0 (0x8EBF4's BLE), so one run printed 2078 (= 2200 - 61*2) and the next 5486
+(= |2200 - 61*126|) off the same list. The fixture pins the byte to 0 (the no-jitter value) the way it already
+pins nDisplayId; the only writers are `StrategEntry_InitTravel`'s active type-1 arm (0x7F74C..0x7F7CC, where the
+byte doubles as the speed jitter) and `Base_CreateNamedEntry`'s region byte (0x669B4). Both references re-made and
+looked at: "НЛО 1 / Размер……………Очень мал. / Скорость…………2200 узлов" with "Центр на НЛО" and with "Атака НЛО!".
+The contact also stands on its **home base's cell** now: a parked entry keeps the coordinates it was created with
+(`Base_CreateNamedEntry` writes apBases[n]->nUnk8 at 0x66A38 and ->nUnk12 at 0x66A50 from the same pair, and
+`Game_StartNew` parks base 0 at -6000,-6000 at 0x94964), and only `Ship_LaunchIntercept`'s 0x5A6E8 arm snaps them
+(0x5A718/0x5A73C for the leg start, 0x5A760/0x5A780 for the position), so the gate asserts the restored marker is
+NOT on its base's cell and parks the contact there to close the arrival box (|dx| < 2, |dy| < 2, 0x80348/0x80364).
+
+IDB: 0x186530 named `nStrategItemCount` with the full writer/reader census, notes appended at 0x3e14c, 0x45014,
+0x45018, 0x450cc, 0x44fa8, 0x82710, 0x82b34, 0x94680, 0x826e8 and 0x7f67c, plus idb_save. Gates: 62/62 Release and
+Debug, 19135 checks (23 new), coverage unchanged, 34 frame references (2 re-made), e2e's 9 pictures unchanged.
+**Open, recorded not guessed:** the shell's quit-YES arm is `App_HookShutdownQuit` ->
+`App_QuitFromTact(App_ShutdownTactNoMission, ...)`, and `App_ShutdownTactNoMission` calls `Tact_Shutdown(NULL, 1)`,
+so the ported function returns at once on a NULL
+env -- so that arm never reaches 0x3E154 while the original's 0x18E20 arm, working on globals, does; `Tilemap_GetAt
+indexes its cell with no bounds test, which is what crashed the test when the fixed round trip left a marker at
+-6000,-6000; and the radar pass and the base-name branch now have their type-0 entries, with no gate pressing on
+one yet.
 
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"

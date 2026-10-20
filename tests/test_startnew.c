@@ -82,7 +82,7 @@ static i32       nStrategSeed;      /* 0x18640C, shared by the three callees */
 static i32       nZoomMode;         /* 0x1863E8 */
 
 static u8   bPlacementPending;      /* 0x1870AC */
-static u8   bStrategCount;          /* 0x186530 */
+static i32  nStrategCount;          /* 0x186530, the geoscape block's +0x38 strateg count dword */
 static u8   abTypeCounters[5];      /* 0x18653C..0x186540 */
 static i32  nNextDisplayId;         /* 0x186544 */
 static i32  nNextSiteId;            /* 0x186548 */
@@ -205,7 +205,7 @@ static void TestStartNew(void)
     nStrategSeed = 0;
     nZoomMode = 0;
     bPlacementPending = 9;
-    bStrategCount = 9;
+    nStrategCount = 9;
     nNextDisplayId = 9;
     nNextSiteId = 9;
     nMissionId = 9;
@@ -373,7 +373,7 @@ static void TestStartNew(void)
     env.pStrategList = &strategList;
     env.pSpawnCtx = &spawnCtx;
     env.pbPlacementPending = &bPlacementPending;
-    env.pbStrategCount = &bStrategCount;
+    env.pnStrategCount = &nStrategCount;
     env.abTypeCounters = abTypeCounters;
     env.pnNextDisplayId = &nNextDisplayId;
     env.pnNextSiteId = &nNextSiteId;
@@ -408,7 +408,7 @@ static void TestStartNew(void)
     CheckEqI32(nSoldierCount, PUFO_STARTNEW_SOLDIER_COUNT, "soldier count");
     CheckEqI32(bCraftCount, 3, "craft count");
     Check(bPlacementPending == 1, "placement pending (0x1870AC)");
-    Check(bStrategCount == 0, "strateg count byte");
+    CheckEqI32(nStrategCount, 0, "the strateg count dword at block +0x38 (0x94680; R8 is 0 from 0x94560)");
     Check(nNextDisplayId == 1 && nNextSiteId == 1 && nMissionId == 1, "the three id counters = 1");
     CheckEqI32(nCreateNextSiteId, 2, "Base_CreateNamedEntry consumed its own site id");
     CheckEqI32(nNextCraftId, 3, "craft id counter after three spawns");
