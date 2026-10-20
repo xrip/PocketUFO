@@ -29,6 +29,7 @@
  * parameters are asserted as ranges, not values.
  */
 #include "asset/pufo_asset.h"
+#include "game/pufo_boot.h"   /* PUFO_TEXT_REC_STRIDE, the record stride the text blob is expanded at */
 #include "game/pufo_combat.h"
 #include "game/pufo_mapctx.h"
 #include "game/pufo_save.h"
@@ -382,7 +383,10 @@ static void Fixture_Reset(void)
     s_Env.pDeployPointCounts = s_aDeployCounts;
     s_Env.pTileTypes       = s_aTileTypes;
     s_Env.pTextRecs        = s_aTextBlob;
-    s_Env.nTextRecCount    = sizeof s_aTextBlob;
+    /* nTextRecCount is a RECORD count -- the same field BootAssets carries and the same one
+     * Map_TextRec bounds a record index with. Init_BriefText multiplies it by the stride to bound the
+     * briefing's byte offsets, so the fixture states records, not bytes. */
+    s_Env.nTextRecCount    = (u32)(sizeof s_aTextBlob / PUFO_TEXT_REC_STRIDE);
     s_Env.pszBriefLine     = "BRIEF-LINE";
 
     s_Env.pbTactFlag    = &s_bTactFlag;
@@ -808,8 +812,10 @@ static void TestBriefing(void)
 
     Check(s_pBriefPad != NULL, "the briefing pad is allocated");
     /* 0x3D29C: LDRH R0,[Map+0x3A]; STR R0,[Map+0x8C]. The save really does read the
-     * screen field -- but the prologue at 0x3C64C already cleared it, so on this path
-     * the saved value is always zero. The fixture's 7 is gone before the briefing runs. */
+     * screen field -- the prologue at 0x3C64C cleared it and this fixture's mission never re-writes it,
+     * so here the saved value is 0 and the fixture's 7 is gone before the briefing runs. It is not
+     * always 0: a launch whose new-mission path reaches Inv_OpenScreen (0x3D0B8) writes 1 back first, and
+     * 0x3D29C then saves 1 -- measured in tests/test_geoscapeframe.c section 13. */
     CheckEqI32(s_nUiSlot11, 0, "apUiSlotsA[11] holds the (already cleared) nUiScreen");
     CheckEqI32(s_uUiScreen, 20, "nUiScreen is set to 20");
     CheckEqI32(s_nWrapCalls, 1, "the briefing text is wrapped once");

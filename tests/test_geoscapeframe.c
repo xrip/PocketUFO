@@ -5711,6 +5711,292 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         g_world.nUiScreen = 0;
     }
 
+    /* ---- section 13: the descent offer, painted from a real arrival, launched with the pen
+     *
+     * This is the geoscape's own core loop, walked end to end on the shell's seams:
+     *   1. back out of the mission the earlier sections started -- Tact_Shutdown(0) +
+     *      Geoscape_InitUI(1) (0x162BC / 0x162C8), the rebuild arm, which is what puts the thirteen
+     *      root controls back that the launch seam freed at 0x83ABC;
+     *   2. order an intercept with Ship_LaunchIntercept @ 0x5a64c on the shell's own shipEnv: it
+     *      parks the leg at the home base (0x5A718/0x5A73C), arms the craft (0x5A790 hot, 0x5A79C
+     *      target, 0x5A7A4 off base, 0x5A7AC intercepting) and hands the leg to
+     *      StrategEntry_InitTravel, whose bB argument is 0 on this call -- so the launch leaves the
+     *      craft's own map entry INVISIBLE (0x7F638);
+     *   3. the pulse lights it: Geoscape_PulseUpdate's 0x9552C..0x955FC pass gives every craft that
+     *      is not at base its entry's bVisible (0x955C0) and its hot byte (0x955C8). Without that
+     *      store the event pass would skip the marker at 0x7FE1C (inactive AND invisible) and the
+     *      craft would never move;
+     *   4. the event pass StrategList_ProcessEvents @ 0x7fcb0 chases the marker (0x7FED8..0x80504)
+     *      and, inside the arrival box (|dx| < 2 && |dy| < 2 at 0x80348/0x80364), dispatches on the
+     *      TARGET's type: a type-4 UFO pauses by storing 1 straight into 0x15961C (0x807A0), writes
+     *      the intercept pair (0x807B8, 0x807C8), appends the flag-23 line with the ship in colour
+     *      slot 0 and the target in slot 1 (0x807D8), and writes the panel's row 0 with TEXTS[1147]
+     *      "НЛО" + the target's display id, its aux and the row cursor (StatusPanelRow0, 0x80748);
+     *   5. Geoscape_Draw's flag-0x17 arm paints the descent panel (0x9148C..0x91688): the reveal,
+     *      TEXTS[1239] + the selected row centred at y 70, the launch control centred at y 102 with
+     *      Smap_BeginCraftSelect stored at 0x91578 before its blit, the "ОК" label at y 103, the
+     *      soldiers-aboard swap gate (0x915D4..0x91604), and the cancel control at y 125 with
+     *      Smap_ResolveInterceptUI at 0x91630;
+     *   6. the pen presses it: the press arm's flag-21/22/23 case (0x87658) hit-tests the cancel and
+     *      the launch control, the release arm's LABEL_52 (0x89AA0) plays 17 and clicks them, and the
+     *      launch control's handler is the shell thunk World_BeginCraftSelectThunk over
+     *      World_WireMissionSeams' env;
+     *   7. Smap_BeginCraftSelect's flag-23 arm (0x83C60..0x83EF0) reads the mission type off the
+     *      alternate tilemap tile under the target (240 desert 6 / 241 jungle 0 / 242 polar 8 /
+     *      243 forest 2 / 244 culta 1), clears the mode (0x83D18), takes the tier budget and the
+     *      terrain variant from the target's class (0x83E20/0x83E24) and the damage band from its hp
+     *      (0x83E6C..0x83ED0), and the mode gate (0x84004) falls to the launch tail: DismissSelected
+     *      (0x83AA0), the selection flag cleared (0x83AB4), GeoscapeUi_FreeAll(0) (0x83ABC) and
+     *      Tact_InitMission(0) (0x83AC4).
+     *
+     * What stays open is the pen-side ORDER: bMapSelectionFlag (0x159E84) has six writer chains in
+     * the image (OptionsScreen_OnConfirm @ 0x6cf18, Smap_SelectMapTarget @ 0x84484,
+     * Smap_HitTestStrategSelect @ 0x82be8, ...) and none of them is walkable through the shell's
+     * pointer yet, so the launch itself is reached through the game's own Ship_LaunchIntercept on the
+     * shell's own env rather than through a click. Recorded in PLAN.md. */
+    {
+        Ship           *pCraft = g_world.apCraft[0];
+        StrategItem    *pMarker = NULL;
+        StrategItem    *pUfo = NULL;
+        i32             nMarker;
+        i32             nUfo;
+        i32             nListCount0;
+        i32             nBlitsPlain;
+        i32             nBlitsOffer;
+        i32             nSampleMark;
+        u8              abSpriteBefore[4];
+        u8              abSpriteAfter[4];
+
+        printf("section 13: back to the geoscape, order an intercept, arrive, launch\n");
+
+        World_TactEscapeToGeoscape();
+        Check(g_world.bTactLive == 0 && g_world.bTactFlag == 0,
+              "the escape seam runs Tact_Shutdown(0) and leaves geoscape mode (0x162BC)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "on the geoscape map (0x162C8 rebuilds the UI, not the screen)");
+        Check(g_world.ui.apCtl[GEOUI_CTL_186BB0] != NULL && g_world.ui.apCtl[GEOUI_CTL_186BB4] != NULL
+                  && g_world.ui.pStatusPanel != NULL,
+              "Geoscape_InitUI(1) put the two panel controls and the status panel back (0x86100..0x864DC)");
+
+        /* The descent panel reads line 0, so the list starts empty. UiLineList_Remove @ 0x5a3dc is the
+         * remover the original's own answer arms use. */
+        while (g_world.msgLines.nLineCount > 0) {
+            UiLineList_Remove(&g_world.msgLines, 0);
+        }
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "the line list is empty before the order");
+
+        Check(pCraft != NULL && pCraft->bAtBase == 1 && pCraft->bIntercepting == 0,
+              "the new game's first craft stands at its base with no order (Game_StartNew's own state)");
+        nMarker = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+        Check(nMarker >= 0, "the rebuild left the craft its own map entry, matched on Ship.bId");
+        if (nMarker >= 0) {
+            pMarker = (StrategItem *)PtrArray_Get(&g_world.strategList, nMarker);
+        }
+        Check(pMarker != NULL && pMarker->nType == 1 && pMarker->bActive == 0 && pMarker->bVisible == 0,
+              "and it is the inactive invisible marker 0x7FE1C skips, with bVisible 0");
+
+        /* The contact, parked on the marker's own point: the arrival box is |dx| < 2 && |dy| < 2
+         * (0x80348/0x80364), so the first pass after the order arrives. The chase's own arithmetic --
+         * the wrapped leg, the winner kept, the accumulator whole-part move -- is gated in
+         * tests/test_strateg.c against the same function.
+         *
+         * StrategList_AddItem writes nSiteId / nDisplayId only for a type 0 or 3 (0x82990..0x829A8) or a
+         * type 1 (0x829C8..0x829F8); the ninth argument is inert for a type 4, whose two id fields keep
+         * whatever the allocation left -- the same in the original, whose type-4 records arrive read raw
+         * out of the save chunk (0x41430). So the id the arrival's row text prints is set here. */
+        nListCount0 = PtrArray_GetCount(&g_world.strategList);
+        pUfo = StrategList_AddItem(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                   4 /* a UFO contact */, 0, 2 /* class 2: tier raw 1, budget 250 */,
+                                   pMarker->nX, pMarker->nY, 4250, 1);
+        nUfo = nListCount0;
+        if (pUfo != NULL) {
+            pUfo->nDisplayId = 3;
+        }
+        Check(pUfo != NULL && PtrArray_GetCount(&g_world.strategList) == nListCount0 + 1,
+              "the contact is in the strateg list (0x82704)");
+        Check(pUfo != NULL && pUfo->nType == 4, "as a type-4 item, the type the arrival dispatch reads (0x803A4)");
+
+        /* 1. The order, on the shell's own shipEnv (World_WireMissionSeams). */
+        (void)Ship_LaunchIntercept(&g_world.shipEnv, 0, nUfo);
+        Check(pCraft->bWeaponsHot == 1 && pCraft->bAtBase == 0 && pCraft->bIntercepting == 1
+                  && pCraft->nStrategIdx == nUfo,
+              "0x5A790 hot, 0x5A7A4 off base, 0x5A7AC intercepting, 0x5A79C holding the target index");
+        Check(pMarker->nTimer == 0 && pMarker->nX == pMarker->nStartX && pMarker->nY == pMarker->nStartY,
+              "the entry's timer restarts (0x5A67C) and its leg starts where the base is (0x5A6A4..0x5A780)");
+        Check(pMarker->bVisible == 0, "and the launch leaves it invisible -- bB is 0 at 0x7F638");
+
+        /* 2. The pulse is what makes the marker chaseable. */
+        World_PulseGeoscape(&g_world);
+        Check(pMarker->bVisible == 1 && pCraft->bWeaponsHot == 1,
+              "Geoscape_PulseUpdate lights the entry of a craft that is not at base (0x955C0, 0x955C8)");
+
+        /* 3. The event pass, on the hook Geoscape_TickBases calls. The pulse above may have posted
+         * its own lines, so the list is emptied again: the flag-23 line has to be line 0 for the
+         * panel and for the pen arm to read it. The empty-list frame is the baseline the offer frame
+         * is compared against. */
+        while (g_world.msgLines.nLineCount > 0) {
+            UiLineList_Remove(&g_world.msgLines, 0);
+        }
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsPlain = g_nBlits;
+
+        Check(g_world.geoHooks.pfnProcessEvents != NULL, "the shell wired the event-pass hook (World_HookProcessEvents)");
+        g_world.geoHooks.pfnProcessEvents(0, g_world.geoHooks.pUser);
+
+        CheckEqI32(g_world.msgLines.nLineCount, 1, "one line posted: the arrival offer (0x807D8)");
+        CheckEqI32(g_world.msgLines.nLineCount > 0 ? (i32)UiLineList_GetFlag(&g_world.msgLines, 0) : -1, 23,
+                   "with flag 23, the descent offer (0x807D8)");
+        CheckEqI32(g_world.msgLines.nLineCount > 0 ? (i32)UiLineList_GetColor(&g_world.msgLines, 0, 0) : -1, 0,
+                   "colour slot 0 carries the ship index (0x807D8 a3)");
+        CheckEqI32(g_world.msgLines.nLineCount > 0 ? (i32)UiLineList_GetColor(&g_world.msgLines, 0, 1) : -1, nUfo,
+                   "and slot 1 the target index (0x807D8 a4)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "the arrival pauses by a store, not by GameTime_Pause (0x807A0)");
+        CheckEqI32(g_world.nInterceptShipIdx, 0, "the intercept pair holds the ship (0x807B8)");
+        CheckEqI32(g_world.nInterceptStrategIdx, nUfo, "  and the target (0x807C8)");
+        {
+            /* The caption is compared as BYTES against the loaded record, not against a literal: the
+             * TEXTS block is cp1251 and this source file is not. */
+            const char *pszCap = (const char *)g_assets.pTextRecs + 1147 * PUFO_TEXT_REC_STRIDE;
+            const char *pszRow = (g_world.ui.pStatusPanel->apLines[0] != NULL)
+                                     ? (const char *)g_world.ui.pStatusPanel->apLines[0] : NULL;
+            char szWant[24];
+
+            snprintf(szWant, sizeof(szWant), "%d", pUfo->nDisplayId);
+            Check(pMarker != NULL && pCraft->bIntercepting == 1,
+                  "the order survives the arrival: the craft is still chasing (a type-4 target clears nothing)");
+            Check(pszRow != NULL && strncmp(pszRow, pszCap, strlen(pszCap)) == 0,
+                  "the status panel's row 0 starts with TEXTS[1147], the UFO caption (StrategCaption, 0x80708)");
+            Check(pszRow != NULL && strcmp(pszRow + strlen(pszCap), szWant) == 0,
+                  "  and continues with the target's display id (StatusPanelRow0's \"%s%d\", 0x80748)");
+            CheckEqI32((i32)g_world.ui.pStatusPanel->anLineAux[0], nUfo, "with its aux holding the target (0x80748)");
+            CheckEqI32((i32)g_world.ui.pStatusPanel->nUnk3032, 0, "and the row cursor reset (0x80760)");
+        }
+
+        /* 4. The frame paints the offer. */
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsOffer = g_nBlits;
+        printf("  the offer frame blits %d pads over the empty-list frame's %d\n",
+               (int)nBlitsOffer, (int)nBlitsPlain);
+        Check(nBlitsOffer > nBlitsPlain, "the flag-0x17 arm painted over the empty-list frame (0x91498)");
+        {
+            const UiControl *pCtlB = g_world.ui.apCtl[GEOUI_CTL_186BB0];
+            const UiControl *pCtlA = g_world.ui.apCtl[GEOUI_CTL_186BB4];
+            Check(pCtlB->y == PUFO_STATUS_TARGETCTL_Y_CANCEL && pCtlA->y == PUFO_STATUS_TARGETCTL_Y_OK2,
+                  "the launch control at y 102 and the cancel at y 125 (0x9156C, 0x91624)");
+            Check(pCtlB->pfnClick == g_world.frame.panel.pfnBeginCraftSelect
+                      && pCtlB->pfnClick != NULL,
+                  "0x91578 stored the shell's own launch handler on the control");
+            Check(pCtlA->pfnClick == g_world.frame.panel.pfnResolveInterceptUI
+                      && pCtlA->pfnClick != NULL,
+                  "and 0x91630 the cancel handler on the other one");
+            Check(pCtlB->x == 120 - ((i32)pCtlB->uWidth / 2), "and centred it on x 120 (0x91554..0x91560)");
+        }
+        memcpy(abSpriteBefore, g_world.abMapSpriteSet, 4);
+        DumpFrame("geoscape_descent_offer");
+
+        /* 5. The pen presses the offer's launch control. The press arm's flag-21/22/23 case (0x87658)
+         * hit-tests 186BB4 then 186BB0 with real coordinates, and only the control that got the press
+         * fires: the release passes x = y = 0 and never measures the box (0x1A540), so the cancel control
+         * beside it stays silent. */
+        {
+            UiControl *pCtl  = g_world.ui.apCtl[GEOUI_CTL_186BB0];
+            const u8    nTile  = Tilemap_GetAt(g_world.ui.apPad[GEOUI_PAD_186C18], pUfo->nX, pUfo->nY);
+            const i32   nType0 = g_world.nMapMissionType;
+            /* 0x83CD4..0x83D00 maps five alt tiles and nothing else: the default arm is a BREAK, so the
+             * type byte keeps whatever the previous mission's arm wrote. The previous launch here was the
+             * assault, whose own arm stores 3 at 0x840FC. */
+            const i32   nWant  = (nTile == 240) ? PUFO_MISSION_TYPE_DESERT
+                                 : (nTile == 241) ? PUFO_MISSION_TYPE_JUNGLE
+                                 : (nTile == 242) ? PUFO_MISSION_TYPE_POLAR
+                                 : (nTile == 243) ? PUFO_MISSION_TYPE_FOREST
+                                 : (nTile == 244) ? PUFO_MISSION_TYPE_CULTA : nType0;
+
+            nSampleMark = g_nSamples;
+            World_GeoscapePointer(&g_world, pCtl->x + (i32)pCtl->uWidth / 2,
+                                  pCtl->y + (i32)pCtl->uHeight / 2, true);
+            (void)World_GeoscapePointerUp(&g_world);
+
+            Check(g_nSamples > nSampleMark && g_aFrameSamples[nSampleMark] == 17,
+                  "the release arm plays 17 before it clicks (0x89AA0 PtrUp_Sample); the mission's own "
+                  "Sound_Init and music passes are the samples after it");
+            printf("  the alt tile under the contact is %d: mission type %d -> %d, tier raw %d, variant %d, "
+                   "band %d, layers %d\n", (int)nTile, (int)nType0, (int)g_world.nMapMissionType,
+                   (int)g_world.nMapMissionTierRaw, (int)g_world.nMapTerrainVariant,
+                   (int)g_world.bMapUnk15115, (int)g_world.nMapMapLayers);
+
+            /* 6. What the launch arm wrote, read back off the shell's Map header. */
+            CheckEqI32(g_world.bMapMissionMode, 0, "the flag-23 arm clears the mission mode (0x83D18)");
+            CheckEqI32(g_world.nMapMissionType, nWant,
+                       "the type is what the alt tile maps, or the previous mission's value when the tile "
+                       "is outside 240..244 (0x83CB0..0x83D00, the default arm writes nothing)");
+        }
+        CheckEqI32(g_world.nMapMissionTierRaw, 1, "class 2 of the 0x83D2C table: tier raw 1 (budget 250)");
+        CheckEqI32(g_world.nMapTerrainVariant, 2, "  and terrain variant variant+1 = 2 (0x83E24)");
+        CheckEqI32(g_world.nMapMapLayers, (i32)pCraft->bCraftType + 1,
+                   "the layer count comes off the selected craft's class (0x83EF0)");
+        CheckEqI32(g_world.nMapCraftIndex, 0, "the selection pass put line 0's slot 0 into Map_nCraftIndex (0x839B8)");
+        CheckEqI32(g_world.nSelectedStrategIdx, nUfo, "  and slot 1 into 0x186BE4 (0x839D8)");
+        memcpy(abSpriteAfter, g_world.abMapSpriteSet, 4);
+        Check(memcmp(abSpriteAfter, abSpriteBefore, 4) == 0,
+              "the sprite set stands: both the contact and the marker carry bRace 255, outside the five races (0x83BB0..0x83C40)");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "the tail cleared the selection flag (0x83AB4)");
+        Check(g_world.bMapTickHold == 0 && g_world.bMapBattleEnded == 0,
+              "and never reached the bad-end pair (0x84238, 0x84240) -- that block is the mode-1 assault's");
+
+        /* 7. The dismiss the head of the tail runs (0x83AA0, the mode != 1 arm), then the hand-over. The
+         * visibility pass at 0x838FC..0x83988 only touches a craft that is ALREADY at base or already cold;
+         * this one was hot and off base, so it passed through unchanged and the order is undone by the
+         * dismiss instead: Ship_RetargetTravel @ 0x84448 sends the craft to its home base with bB 1 -- the
+         * store at 0x7F638 that makes a homing craft's entry VISIBLE, the opposite of what the launch's
+         * bB 0 did -- and clears the intercept byte at 0x5A59C. The contact is type 4, not a waypoint, so
+         * the 0x5A4E8 removal does not run and it stays on the map. */
+        Check(g_world.msgLines.nLineCount == 0,
+              "Smap_DismissSelected dropped the descent offer's line (0x83AA0, then the tail's own clear at 0x83AB4)");
+        CheckEqI32((i32)pCraft->bIntercepting, 0, "the retarget cleared the intercept byte (0x5A59C)");
+        Check(pCraft->bAtBase == 0 && pCraft->bWeaponsHot == 1,
+              "and sent it home rather than parking it: bAtBase and the hot byte are the visibility pass's "
+              "test only (0x8393C), which skipped a hot craft that was off base");
+        Check(pMarker != NULL && pMarker->bVisible == 1,
+              "the homing leg's bB 1 lights the map entry again (0x7F638) -- the launch's bB 0 was the exception");
+        Check(g_world.bTactLive == 1 && g_world.bTactFlag == 1,
+              "the tail ran Tact_InitMission(0) (0x83AC4) and the mission is live");
+        Check(g_world.pTactMap != NULL && (i32)g_world.pTactMap->nMissionType == g_world.nMapMissionType,
+              "the frame's own header carries the type the alt tile picked");
+
+        /* 8. The Cydonia briefing the launch pulled in. Map_bSpawnAlt @ Map+0x15148 is a saved byte
+         * (Save_Read/WriteTGameData @ 0x44410 / 0x4486C) and 0x83A74 -- the assault tail's own arm -- is
+         * the only writer of 1 in the mission-launch code, so the byte is still 1 from the earlier assault
+         * launch and 0x3D2A0 runs the briefing on this mission too. */
+        {
+            const UiPanel *pPanel = g_world.tactEnv.apPanel[PUFO_BRIEF_PANEL];
+            const char *pszTail = (const char *)g_assets.pTextRecs + PUFO_BRIEF_TAIL;
+            i32 nLast;
+
+            CheckEqI32((i32)g_world.bMapSpawnAlt, 1,
+                       "Map_bSpawnAlt is still 1: the assault launch wrote it and the descent launch reads it (0x3D2A0)");
+            CheckEqI32((i32)g_world.nUiScreen, 20, "the briefing gate set Map_nUiScreen to 20 (0x3D2B0)");
+            CheckEqI32(g_world.nMapUiSlot11, 1,
+                       "  and saved into apUiSlotsA[11] the id the mission had at that moment: the prologue "
+                       "cleared it (0x3C67C) but the new-mission path's own Inv_OpenScreen wrote 1 (0x3D0B8), "
+                       "so 0x3D29C stores 1, not 0");
+            Check(g_world.pTactBriefPad != NULL, "the briefing pad was allocated and loaded (0x3D2B4..0x3D2E0)");
+            Check(pPanel != NULL, "the briefing panel is the mission's own (unk_1571EC, 28 lines)");
+            if (pPanel != NULL) {
+                nLast = pPanel->nLineCount - 1;
+                Check(pPanel->apLines[nLast] != NULL
+                          && strcmp((const char *)pPanel->apLines[nLast], pszTail) == 0,
+                      "the closing slice is the aTextRecs byte offset 0x38B49, the record the original "
+                      "names unk_EC419 at 0x3D510 -- a byte offset, not a record index");
+            }
+        }
+        /* The mission's own seam: Map_nUiScreen is 20, so this is the briefing the launch pulled in --
+         * the "cydonia" pad full-screen with the panel's centred closing line. */
+        ClearSurface();
+        World_TactFrame(&g_world);
+        DumpFrame("tact_mission_from_descent");
+    }
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 

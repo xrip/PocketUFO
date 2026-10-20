@@ -337,10 +337,15 @@ static void Init_CopyLine(UiPanel *pPanel, i32 nLine, const char *pszSrc)
     pDst[i] = 0;
 }
 
-/* One aTextRecs slice, bounds-checked against the loaded blob. */
+/* One aTextRecs slice. The seven briefing strings the ARM passes are absolute addresses in the blob
+ * -- unk_EC018 at 0x3D318 is aTextRecs + 0x38748, unk_EC419 at 0x3D510 is aTextRecs + 0x38B49 -- so the
+ * argument here is a BYTE offset, not a record index. The env's nTextRecCount is a RECORD count
+ * (BootAssets.nTextRecCount, the same field Map_TextRec bounds a record index with), so the bound has
+ * to be the blob's byte extent, count * PUFO_TEXT_REC_STRIDE. The original tests nothing at all. */
 static const char *Init_BriefText(const TactInitEnv *pEnv, u32 nOff)
 {
-    if (pEnv->pTextRecs == NULL || nOff >= pEnv->nTextRecCount) {
+    if (pEnv->pTextRecs == NULL
+        || nOff >= (u32)pEnv->nTextRecCount * PUFO_TEXT_REC_STRIDE) {
         return NULL;
     }
     return (const char *)pEnv->pTextRecs + nOff;

@@ -3435,7 +3435,7 @@ unchanged; 18267 checks.
 - [x] **Part 80: the tactical inventory screen paints through the frame, and its filter row lives in the bank.** `Render_Frame @ 0x22310` routes Map_nUiScreen 1 to 0x224AC and never through 0x22414 -- the inventory REPLACES the iso layer. The callee was ported and tested long ago (`TactHud_DrawInventoryScreen @ 0x1f58c`); the seam was missing: `World_bTactFrameLive` refused screen 1, which is exactly what a mission launch leaves (0x3D0B8 -> `TactHud_OpenInventory @ 0x16ef4` -> store 1 at 0x16FD8), so the shell painted nothing on the first screen of every mission. `World_TactFrameDraw` builds the env from cells the bring-up already owns: bank 19..31 as `PUFO_HUD_INV_FIRST` (pBank + 0x260), the "invv" backdrop (Map+0x100), the portrait table = the 32 manual pads at Map+0x199C indexed `8*nUnitType + 4*bFemale + nLook`, "twonone" (0x156A70) as the strip's empty-hand marker, unk_138EA0 as the empty slot, TEXTS[55] "Вес: " + TEXTS[68] (EMPTY in lang.dat) for the burden line, aszTextE/aszTextA (0xB2200/0xB2148) for the rank, Map+0x3C (`sTactInput.bInvDragActive`) as the held byte, Map_bForceNoDrag @ 0x128A9C (the byte widget 88's handler flips, so arm and toggle share one cell), and the bank's pointer pair +0x1044/+0x1048 for the drag ghost. **Real gap found and closed, same class as Part 76's option pads:** the seven inventory filter pads ARE bank `UiControl.nState` bytes -- widget 21 (0xAC97A), 24 (0xAC9DA, All) and 25..29 (0xAC9FA/0xACA1A/0xACA3A/0xACA5A/0xACA7A), seven widgets, NOT a run -- lit by 0x16F70 and darkened by 0x16F68/0x16F78..0x16F98, re-lit by `Ui_SetInvFilter`, blitted by the arm; the port kept them in `TactUiState` only, so the row drew nothing. `World_TactPushInventoryFilterPads` mirrors them on the screen that reads them. Measured on the reloaded mission opened through the installed handler (bank widget 4, not a hand-built call): 2 pad blits -- the lit All filter (bank 24) and widget 30, the one row whose descriptor fills slot 0 -- because `UiControl_LoadPads @ 0x1a604` stores the three names into slots 0/1/2 in order, these rows leave slot 0 empty, and `UiControl_BlitActivePad` reads `apPads[nState]`: the panel's static grids come from the "invv" backdrop, the control pads are the lit/pressed overlays. Clearing All removes one blit; lighting abFilterPad[0] adds one; all seven bytes stand in the bank. Gate: the Part 80 block (opener through the handler, arm with NO iso layer -- the iso loop bounds do not move, 0x22414 is off the path -- the two counts and the seven-byte mirror) plus a launch-state paint at the bring-up. New reference `tests/ref/tact_hud_inventory.png`, looked at (portrait, header, "Вес: 0", the empty equipment grid, the ground strip, the lit filter row). IDB: 4 comments (0x224AC, 0x16F68, 0x1f58c, 0xAC9DA) + `idb_save`. Gates: all six ran, 62/62 Release and Debug, 18567 checks, coverage unchanged, 12 frame references (1 new) and 9 e2e pictures unchanged.
 
 - [ ] **Next unit: the tactical screens the shell still does not paint or drive, verified by frame images.** Verification changes from this unit on: every draw unit dumps its frame as a PPM the test writes (`tools/frames.sh` collects them) and the gate compares the dump against the stored reference, so parity is checked on the rendered picture, not only on lit-pixel probes. The walker (Part 50), the modal bank (Part 51), the enemy phase (Part 52), the tact pad table (Part 53), the control bring-up with its ~106 installed click handlers (Part 54), the bring-up inventory opener (Part 55), the EndTurn bracket (Part 56), the hand menus (Part 57), the deploy-confirm opener (Part 58) and the quit-confirm opener (Part 59) and the resize pad (Part 61, closing the last NULL in the bank table) are live; still missing: the tact pointer dispatch is live since Part 60 (press/release run the installed handlers on the mission screens, and the modal hover arm now dispatches the slot 16/18 callbacks Parts 58/59 stored), the tact keyboard dispatch since Part 67 (both WndProc chains over the 96-byte key map @ 0x1884D8, and the fifteen `TactInputHooks` seams the table left NULL -- so the pen path now runs the map click, the cursor re-place and the text push as well), but two feeder gaps remain: the UiPulse timer still runs on the app's state copy during a mission, and the modal status-line box only gets its coordinates once the modal DRAW arm fills apUiSlotsA[20..23]; (the save half is closed since Part 62 and the load half since Part 65 (`World_SaveSlot` + `App_HookSaveGame` run `SaveGame @ 0x44988` over the live world; `World_LoadSlot` + `Load_HookTactInitMission` run `Tact_InitMission` mode 1 over the open slot file); the tactical frame behind the RenderFrame seam is live since Part 63 (`World_TactFrame` + `WorldHooks.pfnPresentFrame` cover screens 0, 8 and 9, the walker's repaint arm included), so nothing of 0x2237C's tactical jumptable is left off the seam: the inventory arm, screen 1 at 0x224AC, is live since Part 80, the look-mode minimap arm, screen 2 at 0x224B8, since Part 81, the command panel, screen 4 at 0x224C4, since Part 82, the marked-unit overlay, screen 6 at 0x224D0, since Part 83, the promotion report, screen 0x13 at 0x223F4, since Part 84, and the Cydonia briefing pair, screens 0x14/0x15 at 0x223DC, since Part 85 -- 0xD is live since Part 64 and the whole "cases 0,3,5,7-12,15" group since Part 76 (16..18 stay off it, and those are the outer title/menu cases, not the tactical frame); plus one cell the original touches with no owner in the port at all (`bPanelFlagScratch`, written every 0xC352 tick at 0xA0978) -- `unk_EACE0`, which Part 64 recorded as a label with 8 reads and no writer, is TEXTS[1104] "OK", written by the record read loop at 0x38524..0x38564, and it has drawn on both pads that read it since Part 84 -- and four cells the frame now READS but nothing in the port writes: `anPhaseSave0[94] @ 0x150D6` (the viewport guide's ready byte), the height-glyph gate dword `0x14000` (the IDB's `nHeightGlyphId`, i.e. `aim.anAimRow[10]`), the type-probe bytes `Map+0x16..0x19`, and `Map+0x14070` (`pArrowThrownItem`, written by `Tact_SimulateThrowArc @ 0x319FC`).
-- [ ] **The geoscape can now reach a mission, and the two panel openers still cannot.** Part 75 wired thirteen of the status panel's fifteen handler fields, so a loaded transport arms the launch control (`Smap_BeginCraftSelect` at 0x91578, kept because `Craft_CountSoldiersAboard` is non-zero) and the descent panel paints it. The path geoscape -> descent panel -> `Smap_BeginCraftSelect` -> `World_InitTactical` is open end to end but has never been walked in the shell: it needs a message line with flag 0x17 / 0x16 / 0x15, which is what `Geoscape_PulseUpdate`'s contact handling appends. Two fields stay NULL: `pfnConfirmReport` (Ui_OpenBaseInfoAlt @ 0x84d18 -> ufopaedia screen 16, still waiting on that screen's Init) and `pfnApplyResearch` (Ui_OpenResearch @ 0x84bf8 -> research screen 8). **Part 88 moved half of that pairing:** the research Init is live in the shell and nav slot 5 is wired (the LDR at 0x67BAC), and both openers are ported already (`Ui_OpenBaseInfoAlt` at `pufo_baseui.c:9831`, `Ui_OpenResearch` at `pufo_baseui.c:9853`), so what `pfnApplyResearch` waits on now is the `ScreenResetOpen2Env` its body reads -- above all the `pNavOut` handle for the fifteen nav controls Ui_OpenResearch rebuilds -- not a missing Init. Nav slots 6..9 stay at `World_NoopClick` (ManufScreen_Open, TransferScreen_Open, BuySellScreen_OpenBuy, BuySellScreen_OpenSell).
+- [ ] **The geoscape reaches a mission through the descent panel, and it was walked; the pen-side ORDER is still not.** Part 75 wired thirteen of the status panel's fifteen handler fields, so a loaded transport arms the launch control (`Smap_BeginCraftSelect` at 0x91578, kept because `Craft_CountSoldiersAboard` is non-zero) and the descent panel paints it. **Part 89 walked the whole path in the shell** -- order through `Ship_LaunchIntercept`, the pulse, the event pass, the type-4 arrival's flag-23 line, the painted offer, the pen press on the launch control, `Smap_BeginCraftSelect`, `World_InitTactical` -- and the gate is `test_geoscapeframe` section 13. What is still not reachable is the FIRST half of a real intercept: `bMapSelectionFlag @ 0x159E84` has six writer chains in the image (`OptionsScreen_OnConfirm @ 0x6cf18`, `Smap_SelectMapTarget @ 0x84484`, `Smap_HitTestStrategSelect @ 0x82be8`, `Smap_ConfirmCraftTarget @ 0x842ec`, `Smap_ConfirmSelected @ 0x845d8`, and the flag-18/19/20 multi-select arms), and none of them arms through the shell's pointer yet, so section 13 orders the intercept through the game's own function rather than through a click. Two fields stay NULL: `pfnConfirmReport` (Ui_OpenBaseInfoAlt @ 0x84d18 -> ufopaedia screen 16, still waiting on that screen's Init) and `pfnApplyResearch` (Ui_OpenResearch @ 0x84bf8 -> research screen 8). **Part 88 moved half of that pairing:** the research Init is live in the shell and nav slot 5 is wired (the LDR at 0x67BAC), and both openers are ported already (`Ui_OpenBaseInfoAlt` at `pufo_baseui.c:9831`, `Ui_OpenResearch` at `pufo_baseui.c:9853`), so what `pfnApplyResearch` waits on now is the `ScreenResetOpen2Env` its body reads -- above all the `pNavOut` handle for the fifteen nav controls Ui_OpenResearch rebuilds -- not a missing Init. Nav slots 6..9 stay at `World_NoopClick` (ManufScreen_Open, TransferScreen_Open, BuySellScreen_OpenBuy, BuySellScreen_OpenSell).
 
 ## Separate issues, not folded into the porting steps
 
@@ -3626,6 +3626,81 @@ unchanged; 18267 checks.
   and 0x8BDB4, appended notes at 0x72D00 and 0x74A28, plus `idb_save`. Gates: all six ran, 62/62 Release and
   62/62 Debug, 18901 checks, coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 24 frame
   references (3 new, 21 unchanged), 9 e2e pictures unchanged.
+
+- [x] **Part 89: the geoscape's own loop ran end to end -- order, chase, arrival, offer, click, mission -- and
+  the briefing the launch pulled in was crashing.** No new original function; the whole chain was cited long
+  ago and the shell had never walked it. `test_geoscapeframe` section 13 (54 checks) now runs it on the shell's
+  own seams: `World_TactEscapeToGeoscape` (Tact_Shutdown(0) at 0x162BC + `Geoscape_InitUI(1)` at 0x162C8, the
+  rebuild that puts back the thirteen root controls the launch tail freed at 0x83ABC), `Ship_LaunchIntercept
+  @ 0x5a64c` on `PufoWorldState.shipEnv`, `World_PulseGeoscape`, the `geoHooks.pfnProcessEvents` hook the tick
+  takes, `Geoscape_Draw`, and the pen (`World_GeoscapePointer` / `World_GeoscapePointerUp`).
+  **The launch is the one caller that makes a craft invisible on the map.** `StrategEntry_InitTravel`'s bB
+  argument IS the visible byte (0x7F638); the launch call at 0x5A818 passes 0 and `Ship_RetargetTravel`'s at
+  0x5A5A8 passes 1. So after the order the craft's own entry is inactive AND invisible, and the event pass skips
+  exactly that pair at 0x7FE1C -- the craft would never move. `Geoscape_PulseUpdate`'s 0x955C0 is what saves it:
+  every craft not at base gets its entry's bVisible there and its hot byte at 0x955C8. Notes at 0x7F638 and
+  0x955C0. **The arrival, measured:** inside the |dx| < 2 && |dy| < 2 box (0x80348/0x80364) a type-4 target
+  pauses the clock with a STORE into 0x15961C (0x807A0, not `GameTime_Pause`), writes the intercept pair
+  (0x807B8, 0x807C8), appends one line with flag 23 (ship in colour slot 0, target in slot 1, 0x807D8 -- the same
+  two slots 0x83C70/0x83C80 and 0x8443C read back), and writes the status panel's row 0 as `StatusPanelRow0`'s
+  "%s%d" over TEXTS[1147] "НЛО" + the target's display id with its aux at the target index (0x80748) and the row
+  cursor cleared (0x80760). A type-4 target clears nothing, so the order survives its own arrival.
+  **The offer, painted and pressed:** flag 0x17's arm (0x9148C..0x91688) blits 3 pads where the empty list blits
+  1 -- the reveal, TEXTS[1239] + the selected row centred at y 70 (the picture reads "Снижение: НЛО 3"), the
+  launch control centred on x 120 at y 102 with `Smap_BeginCraftSelect` stored at 0x91578, "ОК" at y 103, the
+  cancel control at y 125 with `Smap_ResolveInterceptUI` at 0x91630 and "Отмена" at y 126. Pressing the launch
+  control runs the launch and NOTHING else: the release arm's LABEL_52 (0x89AA0) hit-tests the cancel control
+  first and the launch second, but the release half of `UiControl_HitTest` (0x1A540) fires only a control the
+  press armed -- the cancel handler beside a pressed button does not run. Note at 0x91578.
+  **The mission type is a residue.** The flag-23 arm's alt-tile jumptable (0x83CD4..0x83D00) maps 240 desert 6 /
+  241 jungle 0 / 242 polar 8 / 243 forest 2 / 244 culta 1 and its default arm BREAKS: nothing is written. The tile
+  under the contact was 0, so `nMapMissionType` kept 3 -- the value the previous mission's assault arm stored at
+  0x840FC. Tier raw 1 / budget 250 and variant 2 do come from the target's class 2 (0x83D2C, 0x83E24), the band is
+  0 because the fixture's hp is -1 (0x83E4C), and the layer count comes off the selected craft's class (0x83EF0).
+  Note at 0x83D00.
+  **The briefing the launch pulled in, and the defect it exposed.** `Map_bSpawnAlt @ Map+0x15148` is 1: 0x83A74 --
+  the assault arm -- is the only writer of 1 in the launch code, and the byte round-trips through saves (0x44410,
+  0x4486C), so `Tact_InitMission`'s gate at 0x3D2A0 ran the Cydonia briefing on this mode-0 mission too: screen 20
+  (0x3D2B0), the "cydonia" pad allocated and loaded (0x3D2B4..0x3D2E0), the non-type-9 text set (0x3D2F4's CMP #9
+  fails on a residual 3) wrapped into the 28-line panel, the closing slice appended. **`Init_BriefText` bounded a
+  byte offset with a record count:** the seven briefing strings are absolute blob addresses (unk_EC018 = aTextRecs
+  + 0x38748 at 0x3D318, unk_EC419 = aTextRecs + 0x38B49 at 0x3D510) while `nTextRecCount` is the `BootAssets`
+  record count -- the same field `Map_TextRec` bounds a record index with -- so every one of the seven read as out
+  of range, the helper returned NULL and the `strcat` into the 840-byte stack buffer read through it: any mode-0
+  launch with the spawn byte set crashed in the briefing. Nothing had reached it before: `test_tactinit`'s fixture
+  set `nTextRecCount` to the blob's BYTE size, which hid the mismatch, and no earlier path got to the briefing
+  with the byte set. Fixed by bounding with `count * PUFO_TEXT_REC_STRIDE` (the original tests nothing at all) and
+  by making the fixture state a record count, so the two readers of the field agree. The rule: a "count" field is
+  a count -- a byte bound needs the stride, and a fixture must not state the other unit.
+  **Two corrections came out of the run.** (1) The note at 0x3D29C said the saved Map_nUiScreen is always 0 because
+  0x3C67C cleared it. It is not: the new-mission path re-writes it through `TactHud_OpenInventory @ 0x16ef4` at
+  0x3D0B8 whenever the squad deploys, and 0x3D29C saved 1 here. IDB comment corrected, and `test_tactinit`'s
+  comment now says which case is which. (2) The dismiss at the head of the tail (0x83AA0 -> 0x84448) does NOT park
+  the craft: `bAtBase` and the hot byte are only cleared by `Smap_BeginCraftSelect`'s own visibility pass, whose
+  test at 0x8393C is "at base OR cold", so a hot craft that was off base passed through untouched; the retarget
+  sends it home with bB 1, so its entry is visible again (the launch's bB 0 is the exception), its intercept byte
+  clears at 0x5A59C, and the type-4 contact stays on the map because the 0x5A4E8 removal is waypoints only. Note at
+  0x84448. **And a fixture fact recorded at 0x82990:** `StrategList_AddItem` writes the id fields only for a type 0
+  or 3 (0x829A8/0x829C0) or a type 1 (0x829E0/0x829F8); the ninth argument is inert for a type 4, whose ids keep
+  whatever the allocation left -- in the original too, whose type-4 records come read raw out of the save chunk at
+  0x41430 (the detection pass assigns an id when an item becomes visible). Gate: `test_geoscapeframe` section 13.
+  Two new references, both looked at: `geoscape_descent_offer` (the descent card over the world map, ОК at 102,
+  Отмена at 125) and `tact_mission_from_descent` (the Cydonia briefing the launch produced: the soldier splash,
+  the wrapped paragraph, "Удачи!" centred). IDB: appended notes at 0x7F638, 0x955C0, 0x807A0, 0x807D8, 0x91578,
+  0x83D00, 0x83A74, 0x82990, 0x84448 and a correction at 0x3D29C, plus `idb_save`. Gates: all six ran, 62/62
+  Release and 62/62 Debug, 18955 checks (54 new), coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%)
+  unchanged, 26 frame references (2 new, 24 unchanged), 9 e2e pictures unchanged.
+
+- [ ] **The pen cannot yet order an intercept, only answer one.** `bMapSelectionFlag @ 0x159E84` is the byte that
+  makes `Smap_OnPointerUp`'s select arm call `Ship_LaunchIntercept` (0x84698 -> 0x8491C -> 0x84930), and its six
+  writer chains are `OptionsScreen_OnConfirm @ 0x6cf18`, `Smap_SelectMapTarget @ 0x84484`, `Smap_HitTestStrategSelect
+  @ 0x82be8`, `Smap_ConfirmCraftTarget @ 0x842ec`, `Smap_ConfirmSelected @ 0x845d8` and the flag-18/19/20
+  multi-select arms. `test_geoscapeframe` section 13 reaches the launch through the game's own
+  `Ship_LaunchIntercept` on the shell's own env, so the CLICK side -- a press on a selectable object arming the
+  selection, then the confirm control launching it -- has no gate yet. The press seam itself is live
+  (`Ptr_StrategHit` -> `Smap_HitTestStrategSelect` at `pufo_geopointer.c:69`), so what is missing is which writer the
+  shell's pointer is supposed to reach first and what `pfnHitTestStrategSelect` is handed: that decision is the next
+  step, not a code gap.
 
 - [ ] **The research row name reads a cost as a TEXTS index.** 0x7373C takes the record's `+0x4` u16, scales it
   by 0xCD and adds it to 0xB38D0, so every row name is TEXTS[record + 4]. In shipped research.dat that field is

@@ -285,7 +285,7 @@ typedef struct TactInitEnv {
 
     /* --- the briefing text sources, all aTextRecs @ 0xB38D0 slices except the last --- */
     const u8 *pTextRecs;    /* aTextRecs @ 0xB38D0, may be NULL */
-    u32       nTextRecCount;
+    u32       nTextRecCount; /* RECORD count, the BootAssets field; a byte bound needs * PUFO_TEXT_REC_STRIDE */
     const char *pszBriefLine; /* 0x10DA38: the line written into the panel after the wrap */
 
     /* --- callee contexts. The caller fills the world-dependent fields; this function

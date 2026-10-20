@@ -1544,6 +1544,42 @@ looked at (`geoscape_research`, `geoscape_research_rows`, `geoscape_research_all
 at 0x72D00 and 0x74A28, plus `idb_save`. Gates: 62/62 Release and Debug, 18901 checks, coverage 972/1103 (88.1%) and
 596888/598792 bytes (99.7%) unchanged, 24 frame references (3 new), e2e's 9 pictures unchanged.
 
+**The geoscape's own loop ran end to end (Part 89)** — order, chase, arrival, offer, click, mission — and the briefing
+it pulled in was crashing. No new original function; the shell had never walked the chain. `test_geoscapeframe` section
+13 (54 checks) runs it on the shell's own seams: `World_TactEscapeToGeoscape` (0x162BC + `Geoscape_InitUI(1)` at 0x162C8,
+the rebuild that restores the thirteen root controls the launch tail freed at 0x83ABC), `Ship_LaunchIntercept @ 0x5a64c`
+on the world's own shipEnv, `World_PulseGeoscape`, the `geoHooks.pfnProcessEvents` hook, `Geoscape_Draw`, and the pen.
+**The launch is the one caller that hides a craft:** `StrategEntry_InitTravel`'s bB IS the visible byte (0x7F638), the
+launch's call at 0x5A818 passes 0 and `Ship_RetargetTravel`'s at 0x5A5A8 passes 1 — so the entry is inactive AND
+invisible right after the order, the event pass skips exactly that pair at 0x7FE1C, and `Geoscape_PulseUpdate`'s 0x955C0
+(+ the hot byte at 0x955C8) is what makes the chase start. **The arrival, measured:** inside |dx| < 2 && |dy| < 2
+(0x80348/0x80364) a type-4 target pauses by a STORE into 0x15961C (0x807A0, not `GameTime_Pause`), writes the intercept
+pair (0x807B8/0x807C8), appends one flag-23 line (ship in colour slot 0, target in slot 1 — the slots 0x83C70/0x83C80
+and 0x8443C read back), and writes row 0 as "%s%d" of TEXTS[1147] "НЛО" + the target's display id with aux at the target
+(0x80748) and the row cursor cleared (0x80760). **The offer:** flag 0x17's arm blits 3 pads where the empty list blits 1 —
+TEXTS[1239] + the selected row at y 70 ("Снижение: НЛО 3"), the launch control centred on x 120 at y 102 with the handler
+stored at 0x91578, "ОК" at 103, the cancel at y 125 with `Smap_ResolveInterceptUI` at 0x91630 and "Отмена" at 126. Pressing
+the launch control fires the launch and nothing else: the release arm (0x89AA0) hit-tests the cancel first and the launch
+second, but the release half of `UiControl_HitTest` (0x1A540) only fires a control the press armed. **The mission type is
+a residue:** the alt-tile jumptable (0x83CD4..0x83D00) maps only 240..244 and its default arm writes nothing, so a tile of
+0 left `nMapMissionType` at 3, the previous mission's assault value from 0x840FC; tier 1/budget 250 and variant 2 do come
+from the target's class (0x83D2C/0x83E24), the band is 0 for hp -1 (0x83E4C), the layer count off the craft's class
+(0x83EF0). **The briefing defect:** `Map_bSpawnAlt` is 1 (0x83A74 is the only writer of 1 in the launch code and the byte
+round-trips through saves), so 0x3D2A0 ran the Cydonia briefing on this mission too — and `Init_BriefText` had been
+bounding a BYTE offset (`nOff >= nTextRecCount`) with a RECORD count: the seven briefing strings are absolute blob
+addresses (aTextRecs + 0x38748 at 0x3D318, + 0x38B49 at 0x3D510), so all seven read as out of range, the helper returned
+NULL and the `strcat` into the 840-byte buffer read through it. Any mode-0 launch with the spawn byte set crashed in the
+briefing. `test_tactinit`'s fixture had set the field to the blob's BYTE size, which hid the mismatch. Fixed by bounding
+with `count * PUFO_TEXT_REC_STRIDE` and by making the fixture state a record count. **Two corrections:** 0x3D29C's saved
+Map_nUiScreen is not always 0 — the new-mission path re-writes it through `TactHud_OpenInventory` at 0x3D0B8, and 1 was
+saved here; and the dismiss at the head of the tail (0x83AA0 -> 0x84448) does not park the craft — 0x8393C tests "at base
+OR cold", so a hot craft off base passes through untouched, and the retarget sends it home with bB 1 (visible again, the
+launch's 0 was the exception), clears the intercept byte at 0x5A59C and leaves the type-4 contact on the map (0x5A4E8 is
+waypoints only). Gates: 62/62 Release and Debug, 18955 checks (54 new), coverage unchanged, 26 frame references (2 new,
+both looked at: `geoscape_descent_offer`, `tact_mission_from_descent` — the Cydonia splash with the wrapped paragraph and
+"Удачи!"), e2e's 9 pictures unchanged. IDB: notes at 0x7F638, 0x955C0, 0x807A0, 0x807D8, 0x91578, 0x83D00, 0x83A74,
+0x82990, 0x84448 plus a correction at 0x3D29C.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give
