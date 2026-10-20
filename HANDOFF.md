@@ -1659,6 +1659,56 @@ click's flag-10 post (0x8556C) is the writer that supplies one, so a row click o
 next chain; and row hold-to-repeat (0x3EE50..0x3EEB8, gated on panel byte 0x1BA8) never runs on the geoscape because
 nothing there arms that byte (0x98248 / 0x98258 / 0x7BE58 do, on other screens).
 
+**A revealed alien craft, and the panel that centres on it or attacks it (Part 92)** -- the last ungated
+`Ship_LaunchIntercept` caller is now gated. No product code changed; the gate is `test_geoscapeframe` section 16
+(43 checks, two new frames). **The reveal is the proximity pass, not the radar one:** `StrategList_AddUfoAt
+@ 0x7e374` drops an active invisible type-1 entry eight cells off the chasing craft and `StrategList_UpdateMotion
+@ 0x80fd8` does the rest -- active items only (0x81034), every craft off base (0x81078, the craft's own entry found
+by `StrategList_FindByShipId` at 0x81084), distance `(int)sqrt(dx*dx + dy*dy + nThresh)` with nThresh 120 or 1 above
+300 s (0x81100, 0x81104, 0x81114) against the per-craft radius (15 at 0x81174 for types 0 and 3, 20 at 0x81148 for 1
+and 4, 25 at 0x8116c for 2, nothing for any other value), and an nType 1 item inside that radius is simply made
+visible (0x811c8 -- no timer, no weapons test; the bWeaponsHot block at 0x81184 is the type-0 path) with 0x8122c
+giving it the display id in the same pass. **One pulse is not one minute:** `Geoscape_PulseUpdate` advances the clock
+by nTickSeconds + 1 (0x95618) and `Geoscape_TickShips` -- the caller of this pass -- runs on a minute tick, so the
+reveal landed on the 8th pulse; the pass also gave the alien a leg, so the fixture re-writes position, start and
+destination to one value (AddItem's own invariant, 0x82964..0x82984) to keep the entry out of the 16 x 16 scan
+window at 0x82C48 -- a second match there takes 0x832B0's box branch instead of the dispatch, and the craft flies
+east along that row. **The press is the type-1 ACTIVE dispatch arm 0x833D0:** panel cursor cleared (0x833DC), item
+index into 0x186BE4 (0x834E4), pause (0x83410), flag 10 inserted at line 0 with the ITEM index in colour slot 0
+(0x83408), and no selection byte written -- the same shape Part 91 pinned for 0x834D0. The panel it paints
+(`StatusPanel_DrawSelectedContact`, 0x8E708..0x8F24C through the 0x8E5D4 gate) installs `Smap_OnPointerUp` on
+`*pGeoscapeCtlConfirm` at y 0x88 (0x8EC84, 0x8ECCC) and `Smap_ClearSelection @ 0x84648` on `*pGeoscapeCtlA` at y 0xA0
+(0x8EC90, 0x8ECF4), both CENTRED on x 120 by `StatusPanel_BlitSelControl` (0x8ECC0) -- the x 40 pair 0x8EBBC/0x8EC68
+is the size and speed text, not the controls -- and the action label is TEXTS 1213 "Центр на НЛО" with the selection
+down, TEXTS 1212 "Атака НЛО!" with it up (0x8ED08). **`Smap_OnPointerUp`'s centring arm, measured end to end:**
+GameTime_Set5Sec (0x8469C), nMapW/2 - 120 and nMapH/2 - 160 (0x846C4, 0x846D8), the ITEM out of colour slot 0 read
+twice (0x846DC, 0x84700), nScrollY = nY - nHalfH - 160 (0x84830) with the negative-y clamp at 0x84848 and the strip
+clamp at 0x84870..0x84884, nScrollX = nX - nHalfW - 120 (0x8484C) with NO clamp, the crosshair pair nY - nScrollY -
+nHalfH with x 120 (0x84888, 0x848A4), pending at 0x848B8, cooldown cleared at 0x848C4. Measured on the 800 x 400 map
+from scroll -800,0 with the alien at cell 400,98: the camera went to 0,-40, the crosshair to 120,98. **The cooldown
+is what gates map presses:** 0x87C58 tests nRadarCooldownR < 6 before the second `Smap_HitTestStrategSelect` call
+(0x87C94), a hit parks it at 255 (0x87CB0/0x87CB4) and the pulse only raises it (0x95B8C), so after one map hit
+nothing resolves until 0x87D58 (a drag start) or 0x848C4 (this centring) clears it -- and a press inside the dead
+window still drags even though the first call at 0x87C10 already posted its line. With the gate OPEN the original's
+double call shows up in the message list: the type-1 inactive branch ran twice (0x83688) and appended TWO card lines,
+`Smap_SelectMapTarget`'s insert-at-1 (0x84574) plus Remove(0) (0x84580) then left [27, 11] because
+`UiLineList_Remove @ 0x5A428` shifts and never clears the vacated top slot, and that leftover line is why the tail
+removal at 0x84944 does NOT unpause -- 0x84954 is gated on an EMPTY list. **A control click is the release's doing:**
+`UiControl_HitTest` measures its box only on a press (0x1A42C..0x1A480), branches on bDown at 0x1A488, and a mode-0
+press only raises nState 0 -> 1 (0x1A4F8..0x1A50C); the release never measures the box, tests nState == 1 (0x1A558),
+drops it (0x1A568), redraws (0x1A56C) and tail-calls pfnClick at 0x1A57C/0x1A580. The flag-10 press arm at 0x87AEC is
+what routes the panel press there (confirm then A, no drag block, no map re-test). The launch ran at the index colour
+slot 0 names (0x8491C -> 0x84930) and cleared the selection (0x84938): four Ship_LaunchIntercept callers, four
+gated. Frames looked at: geoscape_contact_centre ("НЛО 1 / Размер...Очень мал. / Скорость...2078 узлов", "Центр на
+НЛО" at 136, "Отмена" at 160), geoscape_contact_attack (the same panel answering "Атака НЛО!"). IDB: notes at
+0x811c8, 0x8122c, 0x87c10, 0x87c58, 0x87aec, 0x848c4, 0x1a580 plus idb_save. Gates: 62/62 Release and Debug, 19112
+checks (43 new), coverage unchanged, 34 frame references (2 new), e2e's 9 pictures unchanged. **Open, recorded not
+guessed:** the reloaded geoscape world has NO type-0 inactive strateg entry, so `StrategList_UpdateDetect @ 0x81948`
+(its base loop at 0x813D0) and the select test's base-name branch (0x82E94) have nothing to work on there --
+`Base_CreateNamedEntry` writes that entry at 0x66970 on the new-game path, and whether the original keeps it across
+the mission return is a separate row in PLAN.md; and the fixture MOVES the revealed entry (position + start +
+destination) instead of letting it wander under the press.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give

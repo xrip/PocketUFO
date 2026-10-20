@@ -6520,6 +6520,294 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                (int)nBlitsClear);
     }
 
+    /* Section 16: a live alien craft on the map, and the panel that either centres on it or attacks it.
+     *
+     * The fixture is the game's own spawn call. StrategList_AddUfoAt @ 0x7e374 is a tail call to
+     * StrategList_AddItem with the alien-craft arguments (nType 1, bActive 1, nId 50000 =
+     * STRATEG_ID_UNASSIGNED, bVisible 0), and StrategList_AddItem leaves nTimer 0 (0x82A2C), the phase 0
+     * (0x828D4) and the destination equal to the start (0x82964..0x82984), so the entry stands still until a
+     * leg is given it. The reveal is the proximity pass, StrategList_UpdateMotion @ 0x80fd8, which walks the
+     * ACTIVE items against every player craft off base and makes a near nType 1 item visible; Geoscape_TickShips
+     * runs it on every minute tick, which World_PulseGeoscape drives. (The radar pass, StrategList_UpdateDetect
+     * @ 0x81948, is not available in this world: it measures from a type-0 inactive list entry and this world has
+     * none -- recorded as a separate issue in PLAN.md.)
+     *
+     * What the panel is then the point of the section. A flag-10 line on message line 0 paints
+     * StatusPanel_DrawSelectedContact (0x8E708..0x8F24C, reached through PUFO_STATUS_SELFLAG at 0x8E5D4) with
+     * its two handlers installed at 0x8EC84 (*pGeoscapeCtlConfirm -> Smap_OnPointerUp) and 0x8EC90
+     * (*pGeoscapeCtlA -> Smap_ClearSelection @ 0x84648), at y 0x88 and 0xA0 (0x8ECCC, 0x8ECF4), and its action
+     * label is TEXTS 1212 "Атака НЛО!" when bMapSelectionFlag is set and TEXTS 1213 "Центр на НЛО" when it is
+     * clear (0x8ED08's test, the two label y's 0x88 / 0xA1). Both Smap_OnPointerUp arms therefore stand behind
+     * this one control: 0x84698 tests the selection, and with it up 0x8491C reads colour slot 0 and launches at
+     * it (0x84930) -- the last Ship_LaunchIntercept caller without a gate, and the only one that reads the
+     * TARGET out of colour slot 0; with the selection down the same press recentres the camera on the entry
+     * slot 0 names (0x846C4..0x848B8, the zoom unscaling at 0x84730..0x84824, the scroll clamp at 0x84838..
+     * 0x84884, the crosshair pair at 0x848A4/0x848AC and bSmapCrosshairPending at 0x848B8, nRadarCooldownR
+     * cleared at 0x848C4). */
+    {
+        Ship        *pCraft;
+        UiControl   *pCtlTarget, *pCtlConfirm, *pCtlA;
+        StrategItem *pUfo;
+        i32  nUfo, nCount0, nEntry, nDispId0;
+        i32  nOwnX = 0, nOwnY = 0, nUfoX = 0, nUfoY = 0, nUfoPressX = 0, nUfoPressY = 0;
+        i32  nEntryX = 0, nEntryY = 0, nEntryPressX = 0, nEntryPressY = 0;
+        i32  nScrollX0, nScrollY0, nScrollX1, nScrollY1, nBlitsPanel, nTicks, nChased0;
+
+        printf("section 16: an alien craft the near pass reveals, and the panel that centres or attacks it\n");
+
+        pCraft      = g_world.apCraft[0];
+        pCtlTarget  = g_world.ui.apCtl[GEOUI_CTL_186B9C];   /* the card's "new target" */
+        pCtlConfirm = g_world.ui.apCtl[GEOUI_CTL_186BA4];   /* *pGeoscapeCtlConfirm */
+        pCtlA       = g_world.ui.apCtl[GEOUI_CTL_186BB4];   /* *pGeoscapeCtlA */
+
+        /* The reveal is the proximity pass, not the radar one. StrategList_UpdateMotion @ 0x80fd8 walks the
+         * ACTIVE items (0x81034) against every player craft that is not at base (the bAtBase test at 0x81078,
+         * after finding the craft's own entry through StrategList_FindByShipId at 0x81084), measures
+         * |entry - item| as (int)sqrt(dx*dx + dy*dy + nThresh) (the addd at 0x81100, the sqrt at 0x81104, the
+         * dtoi at 0x81114, with nThresh 120 or 1 when nGeoscapeTickSeconds > 300 at 0x8100c) and compares it with
+         * the per-craft radius (type 0 -> 15 at 0x81174, type 1 and 4 -> 20 at 0x81148, type 2 -> 25 at 0x8116c,
+         * type 3 -> 15, any other value skips the test at 0x81144). Inside that radius an nType 1 item is simply
+         * made visible (0x811c8), and 0x8122c then gives a still-unassigned item its display id off
+         * nNextStrategDisplayId. Craft 0 is off base and chasing here, so the alien goes eight cells from its
+         * entry -- well inside the 15 of a type-0 craft. */
+        nEntry = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+        if (nEntry >= 0) {
+            const StrategItem *pOwn = (const StrategItem *)PtrArray_Get(&g_world.strategList, nEntry);
+            if (pOwn != NULL) { nOwnX = pOwn->nX; nOwnY = pOwn->nY; }
+        }
+        Check(pCraft->bAtBase == 0 && nEntry >= 0,
+              "the chasing craft is off base, the gate 0x81078 tests before the proximity pass measures it");
+
+        nCount0 = PtrArray_GetCount(&g_world.strategList);
+        pUfo    = StrategList_AddUfoAt(&g_world.strategList, &g_world.nStrategSeed, g_world.view.nMode,
+                                       nOwnX + 8, nOwnY, 0);
+        nUfo    = nCount0;
+        Check(pUfo != NULL && pUfo->nType == 1 && pUfo->bActive == 1 && pUfo->bVisible == 0
+                  && pUfo->nDisplayId == STRATEG_ID_UNASSIGNED && pUfo->nSiteId == -1
+                  && pUfo->nTimer == 0 && PtrArray_GetCount(&g_world.strategList) == nCount0 + 1,
+              "StrategList_AddUfoAt @ 0x7e374 puts an active invisible type-1 entry eight cells off the chasing "
+              "craft (the arguments 0x7E46C hands it), and AddItem leaves nTimer 0 (0x82A2C)");
+        nDispId0 = (pUfo != NULL) ? pUfo->nDisplayId : -1;
+
+        /* One pulse is not one minute tick: Geoscape_PulseUpdate advances the clock by
+         * Geoscape_AdvanceTime(pTime, nTickSeconds + 1, ...) at 0x95618, and Geoscape_TickShips -- the caller of
+         * the proximity pass -- only runs when the clock reaches a minute. So the fixture pulses until the pass
+         * answers, the way the running game does. */
+        printf("  the alien is at cell %d,%d, the chasing craft (type %d) at %d,%d\n", nOwnX + 8, nOwnY,
+               (int)pCraft->bCraftType, nOwnX, nOwnY);
+        for (nTicks = 0; nTicks < 40 && (pUfo == NULL || pUfo->bVisible == 0); ++nTicks) {
+            World_PulseGeoscape(&g_world);
+        }
+        printf("  revealed after %d pulse(s) at cell %d,%d\n", nTicks,
+               pUfo != NULL ? pUfo->nX : -1, pUfo != NULL ? pUfo->nY : -1);
+        Check(pUfo != NULL && pUfo->bVisible == 1,
+              "the proximity pass revealed it: inside the radius an nType 1 item is made visible with no timer and "
+              "no weapons test (0x811c8, the store sits after the bWeaponsHot block)");
+        Check(pUfo != NULL && pUfo->nDisplayId != nDispId0 && pUfo->nDisplayId >= 0
+                  && pUfo->nDisplayId != STRATEG_ID_UNASSIGNED,
+              "and assigned it a display id off the list counter in the same pass (0x8122c, the "
+              "nNextStrategDisplayId++ for a visible item still at 50000)");
+
+        /* Then the fixture moves the revealed entry sixty cells north, and says so plainly. The reveal needs the
+         * alien NEAR the craft; the press needs it ALONE in its window -- the scan at 0x82C48 walks 16 x 16 cells
+         * around the press, and a second match takes 0x832B0's box branch instead of the one-item dispatch, while
+         * the chasing craft flies east along this very row. A wandering alien also has a leg by now (the pass gave
+         * it one), so the move re-writes the leg the way AddItem wrote it: nDest = nStart = position
+         * (0x82964..0x82984), which is the no-leg state the motion pass leaves alone. Nothing else is touched. */
+        if (pUfo != NULL) {
+            pUfo->nX = nOwnX;
+            pUfo->nY = nOwnY - 60;
+            pUfo->nStartX = pUfo->nX;
+            pUfo->nStartY = pUfo->nY;
+            pUfo->nDestX  = pUfo->nX;
+            pUfo->nDestY  = pUfo->nY;
+        }
+        nEntry = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+        if (nEntry >= 0) {
+            const StrategItem *pOwn = (const StrategItem *)PtrArray_Get(&g_world.strategList, nEntry);
+            if (pOwn != NULL) { nOwnX = pOwn->nX; nOwnY = pOwn->nY; }
+        }
+        Check(pUfo != NULL && (pUfo->nX - nOwnX > 8 || nOwnX - pUfo->nX > 8
+                                 || pUfo->nY - nOwnY > 8 || nOwnY - pUfo->nY > 8),
+              "the alien now sits outside the 16 x 16 scan window (0x82C48) around its own press, so the press "
+              "meets one item and 0x832B0 dispatches instead of building a box");
+
+        /* The contact message inside the pass (0x818FC) is a 1000-sided draw -- nForce 100 makes the
+         * percentage 100, so only rolls under 100 post it -- and the section needs the message list empty to
+         * reach the select test rather than a message arm. The remover is the same one every panel uses. */
+        while (g_world.msgLines.nLineCount > 0) {
+            UiLineList_Remove(&g_world.msgLines, 0);
+        }
+        (void)GameTime_Unpause(&g_world.geo.time);   /* GameTime_Pause @ 0x5d6ac is a store; this is its pair */
+        if (pUfo != NULL) { nUfoX = pUfo->nX; nUfoY = pUfo->nY; }
+        Check(ScreenForCell(&g_world.view, nUfoX, nUfoY, &nUfoPressX, &nUfoPressY)
+                  && nUfoPressY < PUFO_SURF_H - (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight,
+                  "the alien's cell has a screen pixel above the strip (0x82C18's gate)");
+        printf("  the alien stands at cell %d,%d, pressed at screen %d,%d\n", nUfoX, nUfoY, nUfoPressX, nUfoPressY);
+
+        /* 1. A press on it with no selection armed: the type-1 ACTIVE dispatch arm, 0x833D0. */
+        nScrollX0 = g_world.view.nScrollX;
+        nScrollY0 = g_world.view.nScrollY;
+        World_GeoscapePointer(&g_world, nUfoPressX, nUfoPressY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), PUFO_STATUS_SELFLAG,
+                   "the type-1 active arm inserts flag 10 at line 0 (0x83408), the panel's own flag");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), nUfo,
+                   "with the ITEM index in colour slot 0 (0x83408's fourth argument) -- the value both "
+                   "Smap_OnPointerUp arms read back");
+        CheckEqI32((i32)g_world.ui.pStatusPanel->nUnk3032, 0, "the panel row cursor cleared (0x833DC)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "and the arm pauses (GameTime_Pause @ 0x83410)");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "with the selection still down, so the panel offers the centring");
+
+        ClearSurface();
+        (void)DrawFrame();
+        nBlitsPanel = g_nBlits;
+        Check(pCtlConfirm->y == PUFO_STATUS_SELCTL_Y_STD_CONF
+                  && pCtlConfirm->pfnClick == g_world.frame.panel.pfnSelectTarget,
+              "0x8EC84 installed Smap_OnPointerUp on *pGeoscapeCtlConfirm at y 0x88 (0x8ECCC)");
+        Check(pCtlA->y == PUFO_STATUS_SELCTL_Y_STD_CLEAR
+                  && pCtlA->pfnClick == g_world.frame.panel.pfnClearSelection,
+              "and 0x8EC90 installed Smap_ClearSelection on *pGeoscapeCtlA at y 0xA0 (0x8ECF4)");
+        Check(pCtlConfirm->x == 120 - ((i32)pCtlConfirm->uWidth / 2)
+                  && pCtlA->x == 120 - ((i32)pCtlA->uWidth / 2),
+              "both controls centred on x 120 (StatusPanel_BlitSelControl's 0x8ECC0), while the size and speed "
+              "lines are the left-aligned text at x 40 (0x8EBBC, 0x8EC68)");
+        DumpFrame("geoscape_contact_centre");
+
+        /* 2. The cancel control: Smap_ClearSelection @ 0x84648. */
+        PressCtl(pCtlA);
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "it drops line 0 (0x84658)");
+        CheckEqI32(g_world.geo.time.bPaused, 0, "and unpauses, the list being empty (0x84664)");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "with the selection byte cleared (0x84674)");
+
+        /* 3. The centring press: the same control with the selection down takes Smap_OnPointerUp's other arm. */
+        Check(ScreenForCell(&g_world.view, nUfoX, nUfoY, &nUfoPressX, &nUfoPressY),
+              "the alien's cell is on screen at the unchanged scroll (the first press dragged, and a drag with a "
+              "message on the line does not scroll -- 0x87CF8)");
+        World_GeoscapePointer(&g_world, nUfoPressX, nUfoPressY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), PUFO_STATUS_SELFLAG, "flag 10 posted again");
+        ClearSurface();
+        (void)DrawFrame();
+        PressCtl(pCtlConfirm);
+        nScrollX1 = g_world.view.nScrollX;
+        nScrollY1 = g_world.view.nScrollY;
+        printf("  the camera went from scroll %d,%d to %d,%d for the entry at cell %d,%d\n",
+               nScrollX0, nScrollY0, nScrollX1, nScrollY1, nUfoX, nUfoY);
+        CheckEqI32(g_world.view.nMode, 0,
+                   "the view is still at zoom 0, so neither unscale branch runs: 0x8471C tests mode 1 and "
+                   "0x847A4 mode 2, and both multiply nX / nY down before the centring");
+        {
+            const i32 nHalfW = g_world.view.nMapW / 2 - 120;   /* the ARM's v3, 0x846C4 */
+            const i32 nHalfH = g_world.view.nMapH / 2 - 160;   /* its v4, 0x846D8 */
+            const i32 nStrip = (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight;
+            i32 nWantY = nUfoY - nHalfH - 160;                 /* 0x84830 */
+            i32 nWantX = nUfoX - nHalfW - 120;                 /* 0x8484C, the x has no clamp */
+            i32 nWantCrossY;
+
+            if (nUfoY - 160 < 0) { nWantY = -nHalfH; }         /* 0x84848's RSBMI arm */
+            if (nWantY + nHalfH > nStrip + g_world.view.nMapH - 320) {
+                nWantY = nStrip - nHalfH + g_world.view.nMapH - 320;   /* 0x84874..0x84884 */
+            }
+            nWantCrossY = nUfoY - nWantY - nHalfH;             /* 0x84888 */
+            if (nWantCrossY > g_world.view.nMapH) { nWantCrossY -= g_world.view.nMapH; } /* 0x84890 */
+
+            Check(g_world.view.nScrollX == nWantX && g_world.view.nScrollY == nWantY,
+                  "the clear arm recentres the scroll on the entry colour slot 0 names (0x8484C, 0x84838), the "
+                  "y clamp at 0x84848 because the entry sits above row 160");
+            Check(g_world.frame.cross.nCrosshairX == 120
+                      && g_world.frame.cross.nCrosshairY == nWantCrossY,
+                  "and writes the crosshair pair as nY - nScrollY - (nMapH / 2 - 160) with x 120 (0x84888, 0x848A4)");
+        }
+        Check(g_world.frame.g.bCrosshairPending == 1, "and arms the crosshair (bSmapCrosshairPending @ 0x848B8)");
+        CheckEqI32(g_world.frame.g.nTapCooldown, 0, "with the radar cooldown cleared (nRadarCooldownR @ 0x848C4)");
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "the line is removed either way (0x84944)");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "and the select arm 0x84698 was not taken (0x84938)");
+
+        /* 4. The attack: arm the selection from the card, then press the alien. The 0x833D0 arm never writes
+         *    bMapSelectionFlag -- the same fact Part 91 pinned for the type-4 arm -- so flag 10 arrives with the
+         *    selection still up, which is the pair the ATTACK label and the launch arm need. */
+        nEntry = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+        if (nEntry >= 0) {
+            const StrategItem *pOwn = (const StrategItem *)PtrArray_Get(&g_world.strategList, nEntry);
+            if (pOwn != NULL) { nEntryX = pOwn->nX; nEntryY = pOwn->nY; }
+        }
+        Check(nEntry >= 0 && ScreenForCell(&g_world.view, nEntryX, nEntryY, &nEntryPressX, &nEntryPressY),
+              "the craft's own entry is reachable at the new scroll");
+        nChased0 = pCraft->nStrategIdx;
+        World_GeoscapePointer(&g_world, nEntryPressX, nEntryPressY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+        Check(g_world.msgLines.nLineCount == 2 && UiLineList_GetFlag(&g_world.msgLines, 0) == 11
+                  && UiLineList_GetFlag(&g_world.msgLines, 1) == 11,
+              "the press runs Smap_HitTestStrategSelect TWICE -- 0x87C10 to decide the drag flag and 0x87C94 again "
+              "inside the cooldown gate (0x87C58 tests nRadarCooldownR < 6, and 0x848C4 cleared it -- a successful "
+              "press hit would park it at 255 at 0x87CB4) -- and the type-1 inactive branch appends a card line at "
+              "0x83688 each time, so lines 0 and 1 are both the craft's card");
+        PressCtl(pCtlTarget);
+        Check(g_world.msgLines.nLineCount == 2 && UiLineList_GetFlag(&g_world.msgLines, 0) == 27
+                  && UiLineList_GetFlag(&g_world.msgLines, 1) == 11,
+              "Smap_SelectMapTarget puts the prompt at index 1 (0x84574) and removes index 0 (0x84580): the insert "
+              "shifts the two cards up to 1 and 2, the removal pulls the prompt down to 0 and copies 11 into 1, "
+              "because UiLineList_Remove never clears the vacated top slot (0x5A428, Part 91's note)");
+        CheckEqI32(g_world.bMapSelectionFlag, 1, "the selection armed (0x84498)");
+        Check(pCraft->bIntercepting == 1,
+              "and the waypoint removal arm SKIPPED: 0x844F0 tests the chased entry's type, and this craft is "
+              "chasing a type-4 contact, not a type-5 waypoint");
+
+        /* The centring moved the camera, so the alien's press pixel has to come from the new scroll. */
+        Check(ScreenForCell(&g_world.view, nUfoX, nUfoY, &nUfoPressX, &nUfoPressY),
+              "the alien is on screen at the centred scroll");
+        World_GeoscapePointer(&g_world, nUfoPressX, nUfoPressY, true);
+        (void)World_GeoscapePointerUp(&g_world);
+        Check(g_world.msgLines.nLineCount == 2 && UiLineList_GetFlag(&g_world.msgLines, 0) == 10
+                  && UiLineList_GetFlag(&g_world.msgLines, 1) == 11,
+              "0x83408 removes line 0 and inserts flag 10 at 0, so the second card line is still there underneath "
+              "the contact line");
+        CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), PUFO_STATUS_SELFLAG,
+                   "the press on the alien answers the prompt with flag 10 (0x833D0's arm)");
+        CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), nUfo, "colour slot 0 is the alien's index");
+        CheckEqI32(g_world.bMapSelectionFlag, 1,
+                   "and the selection is STILL up: 0x833D0's arm writes no flag byte either");
+
+        ClearSurface();
+        (void)DrawFrame();
+        Check(pCtlConfirm->y == PUFO_STATUS_SELCTL_Y_STD_CONF
+                  && pCtlConfirm->pfnClick == g_world.frame.panel.pfnSelectTarget,
+              "the same control, now answering the ATTACK label (0x8ED08's test, TEXTS 1212 at 0x8EDC8)");
+        DumpFrame("geoscape_contact_attack");
+
+        /* The press arm for flag 10 (0x87AEC) hit-tests *pGeoscapeCtlConfirm then *pGeoscapeCtlA, and
+         * UiControl_HitTest fires a mode-0 control's pfnClick on the RELEASE: the press path measures the box at
+         * 0x1A42C..0x1A480, branches on bDown at 0x1A488, and only raises nState 0 -> 1 at 0x1A4F8..0x1A50C, while
+         * the release path -- box never measured -- tests nState == 1 at 0x1A558, drops it at 0x1A568, redraws at
+         * 0x1A56C and tail-calls the handler at 0x1A57C/0x1A580. So the launch is the release's doing, and the
+         * press only arms the control. */
+        nCount0 = PtrArray_GetCount(&g_world.strategList);
+        (void)World_GeoscapePointer(&g_world, pCtlConfirm->x + (i32)pCtlConfirm->uWidth / 2,
+                                    pCtlConfirm->y + (i32)pCtlConfirm->uHeight / 2, true);
+        Check(pCraft->nStrategIdx == nChased0 && pCtlConfirm->nState == 1
+                  && UiLineList_GetFlag(&g_world.msgLines, 0) == PUFO_STATUS_SELFLAG,
+              "the press arms *pGeoscapeCtlConfirm (nState 1) and nothing else: the craft still chases what it "
+              "chased and line 0 is still the contact line (UiControl_HitTest's press path 0x1A42C..0x1A530)");
+        (void)World_GeoscapePointerUp(&g_world);
+        Check(pCraft->bWeaponsHot == 1 && pCraft->bAtBase == 0 && pCraft->bIntercepting == 1
+                  && pCraft->nStrategIdx == nUfo,
+              "the release runs it: Smap_OnPointerUp's select arm launches at the index colour SLOT 0 names "
+              "(0x8491C reads it, 0x84930 calls Ship_LaunchIntercept) -- the last of the four callers to be gated");
+        CheckEqI32(g_world.bMapSelectionFlag, 0, "and clears the selection (0x84938)");
+        Check(g_world.msgLines.nLineCount == 1 && UiLineList_GetFlag(&g_world.msgLines, 0) == 11,
+              "the tail removal at 0x84944 peels the flag-10 contact line and leaves the SECOND card line the "
+              "press's double call wrote underneath it, now at index 0");
+        CheckEqI32(g_world.geo.time.bPaused, 1,
+                   "and the unpause at 0x84954 is not taken: it is gated on the list being empty, and the leftover "
+                   "card line keeps it non-empty");
+        Check(pUfo != NULL && pUfo->nType == 1 && pUfo->bActive == 1
+                  && PtrArray_GetCount(&g_world.strategList) == nCount0,
+              "the alien is still in the list, active, and the target of the craft");
+        printf("  panel blits %d; the craft chases entry %d at cell %d,%d\n", (int)nBlitsPanel, nUfo,
+               pUfo != NULL ? pUfo->nX : -1, pUfo != NULL ? pUfo->nY : -1);
+    }
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 
