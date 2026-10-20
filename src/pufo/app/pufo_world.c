@@ -7261,6 +7261,16 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pFacToggle       = &pW->facToggleEnv;
     pC->pSoldierScreen   = &pW->solEnv;
     pC->pOptionsHooks    = &pW->optionsHooks;
+    /* Case 18's own three cells (0x8BCD0 / 0x8BCFC / 0x8BD10): the scratch mode byte, the scratch
+     * "a menu is up" byte, and the toggle. The SaveAudioEnv and the OptionsScreen_Open handle this arm
+     * would hand to 0x8BD08 and 0x8BD18 stay NULL -- neither OptionsScreen_Init nor OptionsScreen_Open
+     * has an owner in the shell yet -- so with both bytes zero the arm only clears the drag byte
+     * (0x8BD1C). Recorded gap: while the shell has no options-screen owner, a press on a base entry
+     * leaves nGeoscapeScreen at 18 with nothing open, because the two clears at 0x8BCE8 and 0x8BD14
+     * both sit behind a byte only Init and Open set. */
+    pC->pnOptionsMode    = &pW->abOptionsScratch[0];              /* gOptionsScratch[0], LDRSB 0x8BCD0 */
+    pC->pbOptionsActive  = (const u8 *)&pW->abOptionsScratch[4];  /* gOptionsScratch[4] @ 0x159E8C */
+    pC->pbOptionsOpen    = &pW->bOptionsScreenOpen;               /* bOptionsScreenOpen @ 0x159E80 */
     pC->pfnBaseAtOpen    = World_BaseAtOpenHook;          /* case 20's Open(&0x158840, -1) at 0x8BB00 */
     /* Case 20's mission-follow branch (0x8BB10) is live: the shell owns the Map cells the two
      * branches write, and Smap_BeginCraftSelect gets a full env from World_WireMissionSeams. */
@@ -7800,6 +7810,17 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->pbPlacementPending  = &pW->bPlacementPending;
     pPtr->pbPendingRegionId   = &pW->bPendingRegionId;
     pPtr->pbMapSelectionFlag  = &pW->bMapSelectionFlag;
+    /* Screen 18's two gates. The dispatcher's case-18 arm derefs both with no null test, exactly as
+     * 0x89110 (LDRB [gOptionsScratch,#4]) and 0x89338 (LDRB bOptionsScreenOpen) do, because in the
+     * original those globals are always there. With the shell's cells wired the arm is safe while the
+     * options screen itself is not built yet: both bytes are zero, so 0x89110 falls to the shared tail
+     * at 0x8932C, the confirm gate at 0x89344 fails, and the press returns the hit-test result. The
+     * control arrays the same arm would walk -- aOptionsListCtl @ 0x159E20, the two pair controls at
+     * 0x159E3C / 0x159E40 and pOptPanelShips @ 0x159E18 -- stay NULL: OptionsScreen_Init and
+     * OptionsScreen_Open allocate them, and the shell has no owner for them yet (recorded gap). */
+    pPtr->pbOptionsConfirm    = &pW->bOptionsScreenOpen;              /* 0x159E80 */
+    pPtr->pbOptionsPageActive = (const u8 *)&pW->abOptionsScratch[4]; /* 0x159E8C */
+    pPtr->pnOptionsPage       = &pW->abOptionsScratch[0];             /* 0x159E88, read SIGNED */
     pPtr->pView          = &pW->view;
     pPtr->pZoomOverlay   = pUi->apPad[GEOUI_PAD_186BBC]; /* 0x87C48 reads its uHeight as the strip */
     pPtr->pnTapCooldown  = &pF->g.nTapCooldown;

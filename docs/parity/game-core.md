@@ -20401,4 +20401,80 @@ One consequence of 0x3E154 is recorded rather than smoothed over: PtrArray_Delet
 The two contact pictures were changing from run to run, and the reason is a cell no add path writes. AddItem's field-by-field list at 0x82728..0x82A74 covers nType, bActive, bHyperDetect, bDetected, bRace, nPhase, bDone, the six coordinate dwords, the two id dwords, bVisible, nTimer, bFlagA, bCraftClass and nHp - and stops, so StrategItem.bRandA (+0x14) and dSpeed hold whatever operator new left. The contact card reads exactly that byte: the SLOT 0 entry's LDRSB [R0,#0x14] ahead of the class switch, 61 as the multiplier (0x8E920 MOV R2,#0x3D), class 0's base 2200 (0x8E914 MOV R3,#0x898), and the speed line printing the same number again at 0x8EC44 because 0x8EBF4's BLE only replaces it with "0" when nTimer > 0. So the same list printed "2200 - 61*2" as 2078 in one run and |2200 - 61*126| = 5486 in the next. The fixture states the byte - 0, the no-jitter value - the way it already states nDisplayId for its contacts. Only StrategEntry_InitTravel's active type-1 arm (0x7F74C..0x7F7CC, where the same byte doubles as the speed jitter) and Base_CreateNamedEntry's region byte (0x669B4) write it. Both references re-made: the card reads 'Размер……………Очень мал.' and 'Скорость…………2200 узлов' with 'Центр на НЛО' / 'Атака НЛО!' and 'Отмена' under it.
 The fixture's contact also moved off (-6000,-6000) onto its home base's cell, and the reason is worth keeping: a parked entry keeps the coordinates it was created with - Base_CreateNamedEntry @ 0x66930 writes the entry's cell and then apBases[n]->nUnk8 (0x66A38) and ->nUnk12 (0x66A50) from the same pair, and Game_StartNew runs it at (-6000,-6000) at 0x94964 - so a restored craft's entry stands at -6000,-6000 until a launch snaps it (Ship_LaunchIntercept's 0x5A6E8 arm: 0x5A718/0x5A73C for the entry's start, 0x5A760/0x5A780 for its position). The gate now asserts the restored marker is NOT on its base's cell, and the contact stands on that cell so the arrival box (|dx| < 2, |dy| < 2 at 0x80348/0x80364) closes on it.
 Gates: 62/62 Release and 62/62 Debug, 19135 checks (23 new), coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged, 34 frame references (2 re-made, both looked at: geoscape_contact_centre and geoscape_contact_attack), 9 e2e pictures unchanged, tools/check.sh clean. IDB: 0x186530 named nStrategItemCount with the full writer/reader census, notes appended at 0x3e14c, 0x45014, 0x45018, 0x450cc, 0x44fa8, 0x82710, 0x82b34, 0x94680, 0x826e8 and 0x7f67c, plus idb_save.
-Recorded rather than guessed. (1) The shell's quit-YES arm is App_HookShutdownQuit -> App_QuitFromTact(App_ShutdownTactNoMission, ...), and App_ShutdownTactNoMission calls Tact_Shutdown(NULL, 1); the ported function returns at once on a NULL env, so that arm never reaches the DeleteAll at 0x3E154, while the original's 0x18E20 arm works on globals and does. Filing it in PLAN.md rather than re-shaping the seam here. (2) 0x186530 stays stale after 0x3E154 (above). (3) Ship+0x38 stays stale after a load (above). (4) Tilemap_GetAt indexes its cell with no bounds test - the (-6000,-6000) marker the fixed round trip exposed reached outside the alt tilemap and crashed the test at its own lookup; the fixture now parks the contact on a real cell, but the unchecked lookup is a separate problem. (5) The radar pass and the base-name branch finally have their type-0 entries, and no gate presses on one yet.
+Recorded rather than guessed. (1) The shell's quit-YES arm is App_HookShutdownQuit -> App_QuitFromTact(App_ShutdownTactNoMission, ...), and App_ShutdownTactNoMission calls Tact_Shutdown(NULL, 1); the ported function returns at once on a NULL env, so that arm never reaches the DeleteAll at 0x3E154, while the original's 0x18E20 arm works on globals and does. Filing it in PLAN.md rather than re-shaping the seam here. (2) 0x186530 stays stale after 0x3E154 (above). (3) Ship+0x38 stays stale after a load (above). (4) Tilemap_GetAt indexes its cell with no bounds test - the (-6000,-6000) marker the fixed round trip exposed reached outside the alt tilemap and crashed the test at its own lookup; the fixture now parks the contact on a real cell, but the unchecked lookup is a separate problem. (5) The radar pass and the base-name branch finally have their type-0 entries, and no gate presses on one yet.
+## Part 94 - a base's own map entry: the pairing byte, the row it names, and the two cells
+screen 18 derefs
+`BaseRec_ctor @ 0x55650` reads `nNextBaseSiteId @ 0x186558` one time more than the port did. The
+store at 0x556C0 is `pBase->bUnk4 = nNextBaseSiteId` -- the read is the LDRSB at 0x556BC --
+beside `nStoresTotal = 0` at 0x556B8 and the slot byte `bSlot = [0x159D80]` at 0x556D0, and
+`BaseRec_Create @ 0x32c88` calls the ctor with only the record and installs the result at
+`apBases[[0x159D80]]` (0x32CC8). The port's `BaseRec_Create` handed a hard 0, so every base
+record carried site byte 0 while its strateg entry carried 1, 2 or 3. That is a product bug: the
+byte is what three lookups match on, and `BaseRec_Create` now takes the value it stores
+(`bSiteId`), which `Base_CreateNamedEntry` reads from the same cell the original does.
+One counter, three stores, all read before the single increment at 0x66B50: the base record's
+`bUnk4` (0x556C0), the new base's strateg entry `nSiteId` (0x669A8, AddItem's ninth argument),
+and the site record's `nFacType` (0x66A34). Nothing else in the image writes 0x186558 -- the
+census is BaseRec_ctor 0x556BC, Base_CreateNamedEntry 0x66968 / 0x66A18 / 0x66B44 and its own
+STR at 0x66B50 -- and it is NOT the strateg list's site counter at 0x186548. Three readers
+depend on the agreement: `Smap_HitTestStrategSelect`'s base-name branch (0x82E94 through the
+signed compare at 0x82ED4, the name copied out of `byte_186C24 + 54` at 0x82F1C),
+`OptionsScreen_Open`'s base walk for a mode >= 0 (0x6D104..0x6D144), and the placement commit,
+which searches the whole strateg list for the entry whose `nSiteId` equals the just-placed
+base's own byte (0x8B598, LDRSB) and then writes the new cell into it (0x8B5E4 / 0x8B5F8). The
+save carries the byte (Save_WriteBases 0x3F400, Save_ReadBases 0x40558), and the signed read
+matters on both sides: a counter above 127 lands negative in the record, and the compares at
+0x82ED4 and 0x8B598 load the record byte signed too, so the two sides still match.
+The consequence the gates measure. This run places base 0 at (400,158), and its entry now stands
+there: the load dump prints base 0 site 1 cell 400,158 beside entry 0 type 0 site 1 at 400,158,
+and the new pairing check asserts for every base that `Base_FindIndexByTypeByte` answers its own
+index, that exactly one type-0 entry carries its site id, that the entry's cell equals
+`BaseRec.nUnk8 / nUnk12`, and that `BaseSiteRec.nFacType` names the same number. Base 1 was
+never placed, so its entry keeps the (-6000,-6000) its record was created with; base 2 came out
+of the save already at (587,165). A press on the base's cell therefore finds the base's entry,
+the row is the base's own name out of the shipped site record, and the dispatch takes the type-0
+inactive arm 0x83448: panel row cursor cleared (0x83450), GameTime_Pause (0x83458), `*pnScreenId
+= 18` (0x83464), `OptionsScreen_OpenWithSound(0, nSiteId, pOptionsHooks)` (0x83480) and
+`pOptPanelShips->bFlag7073 = 0` (0x83494), which the shell skips because it keeps no options
+panel. Section 14 opens with that press (15 checks): the row equals `apSiteRecs[0].abName`, no
+message line and no selection byte are written, the clock pauses and screen 18 opens, and
+`bOptionsScreenOpen` stays 0 because the shell's hook is a stub.
+The crash the corrected pairing exposed. `Geoscape_OnPointer`'s case-18 arm derefs
+`gOptionsScratch[4] @ 0x159E8C` (0x89110) and `bOptionsScreenOpen @ 0x159E80` (0x89338 /
+0x89344) with no null test, and the original needs none because those globals are always there.
+The port models them as env pointers (`pbOptionsPageActive`, `pbOptionsConfirm`,
+`pnOptionsPage`) and the shell owned neither, so the press after a base press read address 0.
+The shell now owns both: `PufoWorldState.bOptionsScreenOpen` for 0x159E80 and
+`abOptionsScratch[8]` for the IDB's `char[8]` at 0x159E88, wired into the pointer env (0x89110,
+0x89338, the signed page byte at 0x89128) and into `Geoscape_CloseUI` case 18 (0x8BCD0 / 0x8BCFC
+/ 0x8BD10). With both bytes zero the arm falls to the shared tail at 0x8932C and the confirm
+gate stops it, so the second press answers nothing -- which the gate asserts too. What is NOT
+closed: nothing opens, so no arm can clear 0x186BC4 (both clears, 0x8BCE8 and 0x8BD14, sit
+behind a byte only `OptionsScreen_Init` and `OptionsScreen_Open` set), the fixture clears it,
+and `Geoscape_Draw`'s case-18 arm (0x942F8) draws nothing because `pOptionsScreen` is never
+assigned.
+A fixture fact worth recording. `Ship_LaunchIntercept`'s bAtBase arm (0x5A6E8, reading
+`apBases[Ship.bHomeBase].nUnk8 / .nUnk12` at 0x5A718 / 0x5A73C into the leg start and into the
+entry at 0x5A760 / 0x5A780) puts a launched craft's marker on its base's cell -- which is now
+also the base entry's cell. Two items in one cell make the -8..7 scan (0x82C48) build two lines
+and 0x832B0 answers with the multi-select box, base row named by 0x82F1C and craft row by
+`Ship_FormatDisplayName`, and that is the original's behaviour on that cell; the card dispatch
+is the 1-line path, so section 14 parks the marker 50 columns left, outside the window and clear
+of the other two base entries. 50 and not 40 because the fly-to-point press is 40 columns off
+the marker's cell, and 40 would land the new waypoint exactly on the base entry's cell. The
+base-entry press runs before the card chain because the case-18 tail at 0x8932C hit-tests
+*pGeoscapeCtlA with bForceClick set: run after the card arm installs `Smap_SelectMapTarget` /
+`Smap_ResolveInterceptUI` on the hotspots (0x8FFE8, 0x8FFFC), that hit-test fires them and
+re-targets the craft. After `World_TactEscapeToGeoscape` the thirteen controls are the escape's
+fresh allocations (0x86100..0x864DC) and carry no handler yet.
+Gates: 62/62 Release and 62/62 Debug, 19151 checks (16 new), coverage 972/1103 (88.1%) and
+596888/598792 bytes (99.7%) unchanged, 34 frame references (1 re-made, looked at:
+geoscape_contact_attack shows the card НЛО 1 with the size line Очень мал, the speed line 2200
+узлов, and the Атака НЛО! / Отмена controls), 9 e2e pictures unchanged, tools/check.sh clean.
+IDB: the census comment on `nNextBaseSiteId @ 0x186558`, notes at 0x556bc (the signed read),
+0x8b570 (the entry search and the write past the last entry on a miss), 0x89110 and 0x89338
+(case 18's two gates), plus idb_save. Recorded rather than guessed: `OptionsScreen_Init` and
+`OptionsScreen_Open` are ported and test-gated but the shell wires their hooks to no-ops
+(`World_OptionsInitStub`, `World_OptionsOpenStub`), so the options screen still has no owner;
+the radar pass (`Geoscape_TickBases` on a minute tick) is still not gated; and the shell's
+`SmapHitEnv.pOptPanelShips` stays NULL, which is why 0x83494 has no counterpart.

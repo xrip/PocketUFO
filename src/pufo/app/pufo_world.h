@@ -213,6 +213,17 @@ typedef struct PufoWorldState {
      * arrival dispatch writes. */
     u8                bSpawnOnce;               /* 0x162028, the one-shot replacement-craft byte */
     u8                bMapSelectionFlag;        /* bMapSelectionFlag @ 0x159E84 */
+    /* The options screen's own two cells, the run 0x159E80 / 0x159E84 / 0x159E88 that the original
+     * keeps in one block. bOptionsScreenOpen @ 0x159E80 is the toggle every options reader tests --
+     * OptionsScreen_Open 0x6D0B4/0x6D0C8/0x6D1DC/0x6DC40, the pointer confirm gate 0x89338, the
+     * release arm 0x8AEB0, Geoscape_CloseUI 0x8BD04, Geoscape_PulseUpdate 0x95B34, the draw overlay
+     * 0x6C368. gOptionsScratch @ 0x159E88 is the IDB's `char[8]`: [0] is the menu id, read SIGNED at
+     * 0x89128 and 0x6C68C, [4] is the "a menu is up" byte the pointer (0x89110), the draw (0x6C640),
+     * OptionsScreen_Init (0x6BE78, cleared at 0x6C0FC) and the save/load slot handlers all use. The
+     * shell owns both because the original's globals are never absent: Geoscape_OnPointer case 18
+     * derefs 0x159E8C and 0x159E80 with no null test, and a press on a base entry reaches it. */
+    u8                bOptionsScreenOpen;       /* bOptionsScreenOpen @ 0x159E80 */
+    i8                abOptionsScratch[8];      /* gOptionsScratch @ 0x159E88, the IDB's char[8] */
     i32               nInterceptShipIdx;        /* nInterceptShipIdx @ 0x15967C */
     i32               nInterceptStrategIdx;     /* nInterceptStrategIdx @ 0x159680 */
     /* The four panel gates the original keeps in one twelve-byte run at 0x18709C: byte 0 is

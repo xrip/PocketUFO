@@ -261,9 +261,16 @@ typedef struct ShipRemovalEnv {
 } ShipRemovalEnv;
 
 /* BaseRec_Create @ 0x32c88. Allocate one 20-byte base record, run BaseRec_Ctor over it, and store
- * it at roster slot nBaseCount. The caller increments the count; this function does not. */
-BaseRec *BaseRec_Create(BaseRec **apBases, i32 nBaseCount, ObjectRecFull *const *apObjects,
-                        i32 nObjectCount);
+ * it at roster slot nBaseCount. The caller increments the count; this function does not.
+ *
+ * bSiteId is the byte BaseRec_ctor stores at 0x556C0 (`pBase->bUnk4 = nNextBaseSiteId`, the counter
+ * at 0x186558) beside the slot byte at 0x556D0. Base_CreateNamedEntry hands it the same counter it
+ * gives the new base's strateg entry (0x669A8) and its site record (0x66A34), and that is what makes
+ * the pair findable: SmapHit_FindBaseBySiteId matches BaseRec.bUnk4 against an entry's nSiteId
+ * (0x82ED4), OptionsScreen_Open matches it against the mode (0x6D12C), and BaseGrid/Base_CalcDetect
+ * reach the base's site record through it. */
+BaseRec *BaseRec_Create(BaseRec **apBases, i32 nBaseCount, u8 bSiteId,
+                        ObjectRecFull *const *apObjects, i32 nObjectCount);
 
 /* Ship_RetargetTravel @ 0x5a484. Send one craft home: drop a type-5 waypoint it was chasing,
  * restart its own entry's proximity timer, and run StrategEntry_InitTravel to its home base's

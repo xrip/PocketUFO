@@ -3853,11 +3853,49 @@ unchanged; 18267 checks.
   0x94680, 0x826e8, 0x7f67c, `idb_save`. Gates: 62/62 Release and Debug, 19135 checks (23 new), coverage unchanged,
   34 frame references (2 re-made), 9 e2e pictures unchanged.
 
-- [ ] **Press on a base entry: the radar pass and the base-name line still have no gate.** Part 93 gave the reloaded
-  world its three type-0 entries, so `StrategList_UpdateDetect @ 0x81948`'s base loop (0x813D0, reading
-  `apSiteState` 1/2/11/12 and `apRadarPct`) and `Smap_HitTestStrategSelect`'s base-name line (0x82E94 →
-  `SmapHit_FindBaseBySiteId` → byte_186C24 + 54) have a basis at last. Not gated yet: the saved list's type-0 entry
-  at (587,165) is the press target, and the radar pass needs `Geoscape_TickBases` on a minute tick.
+- [x] **Part 94: a base record's site byte, the entry it pairs with, and the two cells screen 18 derefs.** A second
+  *product* fix of the Part 93 kind. `BaseRec_ctor @ 0x55650` stores `pBase->bUnk4 = nNextBaseSiteId @ 0x186558`
+  (0x556C0, the read LDRSB at 0x556BC) beside `nStoresTotal = 0` (0x556B8) and `bSlot = [0x159D80]` (0x556D0), and
+  `BaseRec_Create @ 0x32c88` calls it with only the record; the port's `BaseRec_Create` handed a hard 0, so a base
+  record carried site 0 while its strateg entry carried 1, 2 or 3. One counter, three stores before the single STR
+  at 0x66B50 -- `bUnk4` (0x556C0), the entry's `nSiteId` (0x669A8), `BaseSiteRec.nFacType` (0x66A34) -- and three
+  readers match on it: the base-name branch (0x82E94 through the signed compare at 0x82ED4, name copied from
+  byte_186C24 + 54 at 0x82F1C), `OptionsScreen_Open`'s base walk (0x6D12C) and the placement commit, which finds the
+  entry by the base's own byte (0x8B598) and writes the new cell into it (0x8B5E4 / 0x8B5F8). The save carries the
+  byte (0x3F400 / 0x40558). `BaseRec_Create` gained the `bSiteId` argument and `Base_CreateNamedEntry` passes
+  `*pEnv->pnNextSiteId`. Gates on the reloaded world: the pairing check (each base answers its own index through
+  `Base_FindIndexByTypeByte`, exactly one type-0 entry carries its site id, the entry's cell equals
+  `BaseRec.nUnk8 / nUnk12`, `nFacType` names the same number -- base 0 site 1 at (400,158) with entry 0 beside it,
+  base 1 unplaced at (-6000,-6000), base 2 from the save at (587,165)), and section 14's new opening press on that
+  cell (15 checks): one row named by `apSiteRecs[0].abName` out of lang.dat, cursor cleared (0x83450), pause
+  (0x83458), screen 18 (0x83464), no message line, no selection byte, and `bOptionsScreenOpen` still 0 because the
+  shell's 0x83480 hook is a stub. The shell now owns `bOptionsScreenOpen @ 0x159E80` and `gOptionsScratch @ 0x159E88`
+  (`abOptionsScratch[8]`, the IDB's char[8]) and wires them into the pointer env and into `Geoscape_CloseUI` case 18
+  -- the crash the corrected pairing exposed: 0x89110 and 0x89338 deref both with no null test, and the port models
+  them as env pointers, so a press after a base press read address 0. Two fixture facts recorded in the test:
+  `Ship_LaunchIntercept`'s snap (0x5A760 / 0x5A780) now puts a launched craft's marker on its base's cell, so a
+  press there is the >1 branch (the multi-select box, base row named by 0x82F1C -- the original's behaviour), and
+  section 14 parks the marker 50 columns out for the card's 1-line path (40 would land the new waypoint on the base
+  entry's cell); the base press runs before the card chain because the case-18 tail at 0x8932C hit-tests
+  *pGeoscapeCtlA with bForceClick set and would fire the handlers 0x8FFE8 / 0x8FFFC installed. IDB: census comment on
+  `nNextBaseSiteId @ 0x186558` (readers 0x556bc / 0x66968 / 0x66a18 / 0x66b44, the only writer 0x66b50, NOT the list
+  counter at 0x186548), notes at 0x556bc, 0x8b570, 0x89110, 0x89338, `idb_save`. Gate: 62/62 Release and Debug,
+  19151 checks (16 new), coverage 972/1103 (88.1%) and 596888/598792 (99.7%) unchanged, 34 frame references (1
+  re-made, looked at), 9 e2e pictures unchanged, `tools/check.sh` clean.
+
+- [ ] **The options screen has no owner in the shell, so a press on a base entry opens nothing.** Part 94 reached
+  the type-0 inactive arm (0x83448) for the first time and the screen it opens stays empty: `World_OptionsInitStub`
+  and `World_OptionsOpenStub` (pufo_world.c:947..962) are the hooks 0x83480 reaches, `pF->draw.pOptionsScreen` is
+  never assigned so `Geoscape_Draw`'s case-18 arm (0x942F8) draws nothing, `SmapHitEnv.pOptPanelShips` is NULL so
+  0x83494 is skipped, and no close arm can clear 0x186BC4 because both clears (0x8BCE8, 0x8BD14) sit behind a byte
+  only `OptionsScreen_Init` and `OptionsScreen_Open` set -- the test clears it and says so. What the wiring needs is
+  already ported and gated in `pufo_baseui.c`: `OptionsScreen_Init` (7 list rows, 12 volume buttons, 19
+  `UiControl_Setup` calls), `OptionsScreen_Open` (the toggle, the pair controls at 0x159E3C / 0x159E40, the four
+  panels at 0x159E18 / 0x159E78 / 0x159E7C / 0x159E1C, the craft rows), `OptionsScreen_OnConfirm` and
+  `Options_SaveAudioSettings`. Missing is the shell side: the 21 `UiControl *` slots at 0x159E20 / 0x159E44 /
+  0x159E5C, `apOptListCtl` / `apOptMusicCtl` / `apOptSfxCtl` / `pOptCtlPrev` / `pOptCtlNext` / `pOptPanelShips` in
+  the pointer env, the draw env's `pbOptionsOpen` / `abOptionsScratch` / `apOptCtl`, and a `GeoscapeScreenDrawEnv`
+  for case 18. Verified by a frame picture, like the other openers.
 
 - [ ] **The quit-YES arm does not empty the strateg list.** `App_HookShutdownQuit` →
   `App_QuitFromTact(App_ShutdownTactNoMission, ...)` → `Tact_Shutdown(NULL, 1)`, and the ported function returns at

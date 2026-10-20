@@ -4691,6 +4691,67 @@ int main(void)
                   "adds it at 0x669A8 on every create) -- the pass StrategList_UpdateDetect runs its base loop "
                   "on (0x813D0) and the select test's base-name branch (0x82E94) both have a basis again");
 
+            /* The pairing the two passes look up: BaseRec.bUnk4 @ +0x04 is the site id BaseRec_Create took from
+             * the next-site-id global (0x556B8, the same dword 0x66A34 stores into the site record), and the
+             * base-name branch matches THAT against the entry's nSiteId with a signed read (0x82ED4). */
+            printf("  bases and their entries:");
+            for (j = 0; j < (i32)g_world.nBaseCount && j < PUFO_FAC_BASE_COUNT; ++j) {
+                const BaseRec *pBase = g_world.apBases[j];
+                printf(" base %d site %d cell %d,%d", j,
+                       (pBase != NULL) ? (i32)(i8)pBase->bUnk4 : -1,
+                       (pBase != NULL) ? pBase->nUnk8 : 0, (pBase != NULL) ? pBase->nUnk12 : 0);
+            }
+            printf("\n");
+            for (j = 0; j < nNow; ++j) {
+                const StrategItem *pItem = (const StrategItem *)PtrArray_Get(&g_world.strategList, j);
+                if (pItem != NULL && pItem->nType == 0) {
+                    printf("  entry %d: type 0 active %d visible %d site %d id %d at %d,%d\n", j,
+                           (i32)pItem->bActive, (i32)pItem->bVisible, pItem->nSiteId, pItem->nDisplayId,
+                           pItem->nX, pItem->nY);
+                }
+            }
+            /* The pairing, measured on the reloaded world. BaseRec.bUnk4 @ +0x04, the entry's nSiteId and
+             * BaseSiteRec.nFacType are the same counter read three times before 0x66B50 raises it
+             * (BaseRec_ctor 0x556C0, 0x669A8, 0x66A34), and every lookup matches on it:
+             * Base_FindIndexByTypeByte @ 0x6ac30 -- the copy Base_FindIndexBySiteId @ 0x5a8d0 shares --
+             * answers the base-name branch (0x82E94 through the signed compare at 0x82ED4), the options
+             * walk (0x6D12C), and the placement commit, which finds the entry by the base's byte (0x8B598)
+             * and moves it to the new cell (0x8B5E4 / 0x8B5F8). That last one is why the entry of a base
+             * this run placed stands where the base stands. */
+            bSame = true;
+            for (j = 0; j < (i32)g_world.nBaseCount && j < PUFO_FAC_BASE_COUNT; ++j) {
+                const BaseRec     *pPairBase = g_world.apBases[j];
+                const StrategItem *pPairItem = NULL;
+                const StrategItem *pOther;
+                i32 nSite, k, nShares = 0;
+
+                if (pPairBase == NULL) {
+                    bSame = false;
+                    continue;
+                }
+                nSite = (i32)(i8)pPairBase->bUnk4;
+                if (Base_FindIndexByTypeByte(g_world.apBases, (i32)g_world.nBaseCount,
+                                             (u8)pPairBase->bUnk4) != j) {
+                    bSame = false;  /* two bases would answer the same site id */
+                }
+                for (k = 0; k < nNow; ++k) {
+                    pOther = (const StrategItem *)PtrArray_Get(&g_world.strategList, k);
+                    if (pOther != NULL && pOther->nType == 0 && pOther->nSiteId == nSite) {
+                        ++nShares;
+                        pPairItem = pOther;
+                    }
+                }
+                if (nShares != 1 || pPairItem == NULL || pPairItem->nX != pPairBase->nUnk8 ||
+                    pPairItem->nY != pPairBase->nUnk12 ||
+                    g_world.aSiteRecs[j].nFacType != nSite) {
+                    bSame = false;
+                }
+            }
+            Check(bSame, "base, map entry and site record carry one site id each, and the entry stands on "
+                  "its base's cell -- the save round trip restores BaseRec.bUnk4 (Save_WriteBases 0x3F400, "
+                  "Save_ReadBases 0x40558) and the placement already moved the entry, so the base-name "
+                  "branch finds the name instead of an empty row");
+
             for (j = 0; j < (i32)g_world.bCraftCount && j < PUFO_FAC_BASE_COUNT; ++j) {
                 const Ship        *pShip = g_world.apCraft[j];
                 const StrategItem *pItem;
@@ -6290,15 +6351,35 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
 
         nMarker = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
         if (nMarker >= 0) {
-            const StrategItem *pItem = (const StrategItem *)PtrArray_Get(&g_world.strategList, nMarker);
+            StrategItem *pItem = (StrategItem *)PtrArray_Get(&g_world.strategList, nMarker);
 
-            if (pItem != NULL) {
-                nCellX = pItem->nX;   /* the cell is copied out: an added item can realloc the array */
-                nCellY = pItem->nY;
-            }
             Check(nMarker >= 0 && pItem != NULL && pItem->nType == 1 && pItem->bActive == 0
                       && pItem->bVisible == 1,
                   "the craft's own entry is the inactive visible item the select test builds a line for (0x830F4)");
+            if (pItem != NULL) {
+                /* Part 94 moved the base's own entry onto the base's cell, so this cell is shared and
+                 * the press on it is no longer a single-item press. One counter feeds three stores: the
+                 * base record's site byte (BaseRec_ctor 0x556C0 reads the counter straight out of
+                 * nNextBaseSiteId @ 0x186558), the entry's nSiteId (0x669A8) and the site record's
+                 * nFacType (0x66A34). The placement commit then walks the list for the entry whose nSiteId equals
+                 * the base's byte (0x8B598, LDRSB) and writes the new cell into it (0x8B5E4 / 0x8B5F8).
+                 * Base 0 was placed at (400,158) by this run's own flow, and Ship_LaunchIntercept's
+                 * bAtBase arm (0x5A718 / 0x5A73C reading the base's nUnk8 / nUnk12 into the leg start and
+                 * into the entry at 0x5A760 / 0x5A780) put the marker on that same cell. The -8..7 scan
+                 * (0x82C48) therefore finds two items, and 0x832B0 answers a >1 count with the
+                 * multi-select box -- base row named by 0x82E94/0x82F1C, craft row named by
+                 * Ship_FormatDisplayName -- which is what the original does on that cell.
+                 * The card dispatch this section walks is the 1-line path, so the fixture gives the
+                 * marker a cell of its own, 50 columns left: outside the scan window and clear of the
+                 * other two base entries ((-6000,-6000) unplaced, (587,165)). 50 and not 40 because the
+                 * fly-to-point press is "40 columns off the marker's cell", and 40 would land it exactly
+                 * on the base's cell -- the waypoint would then share a cell with the base entry and
+                 * section 15's two-row box would have three rows. */
+                nCellX = pItem->nX - 50;
+                nCellY = pItem->nY;
+                pItem->nX = nCellX;   /* the cell is also copied out: an added item can realloc the array */
+                pItem->nY = nCellY;
+            }
         }
         Check(ScreenForCell(&g_world.view, nCellX, nCellY, &nPressX, &nPressY),
               "and its cell has a screen pixel at the current scroll (the inverse of 0x82C84 / 0x82CAC)");
@@ -6306,6 +6387,104 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                nCellX, nCellY, nPressX, nPressY,
                (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight,
                PUFO_SURF_H - (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight);
+
+        /* A. First the press on the base's OWN entry, while the escape's fresh thirteen controls are
+         * still un-installed (0x86100..0x864DC) -- the case-18 tail hit-tests *pGeoscapeCtlA /
+         * *pGeoscapeCtlB (0x8932C), and at this point neither hotspot carries a handler yet.
+         *
+         * The base's entry now stands on the base's cell, so this press is the original's own "click
+         * your base". The scan finds the one inactive type-0 item, its row is named by 0x82E94 ->
+         * SmapHit_FindBaseBySiteId -> apSiteRecs[nBase].abName (0x82F1C), and the dispatch takes the
+         * type-0 inactive arm 0x83448: row cursor cleared (0x83450), GameTime_Pause (0x83458),
+         * *pnScreenId = 18 (0x83464), OptionsScreen_OpenWithSound(0, nSiteId, pOptionsHooks) (0x83480)
+         * and pOptPanelShips->bFlag7073 = 0 (0x83494), which the shell skips because it keeps no options
+         * panel. The arm writes no message line and no flag byte.
+         * Before Part 94 this arm was unreachable through the shell: the broken pairing left the entry at
+         * (-6000,-6000), outside every scan window, so pressing a base built no line. Reaching it exposed
+         * the next gap: Geoscape_OnPointer's case-18 arm derefs gOptionsScratch[4] @ 0x159E8C (0x89110)
+         * and bOptionsScreenOpen @ 0x159E80 (0x89338) with no null test -- the original needs none,
+         * because those globals are always there -- and the shell owned neither, so the press after this
+         * one crashed in the ported arm. The second press below walks exactly that path. */
+        {
+            const BaseRec     *pBaseRec  = g_world.apBases[0];
+            const StrategItem *pBaseItem = NULL;
+            i32 nGCellX = 0, nGCellY = 0, nGPressX = 0, nGPressY = 0;
+            i32 nLines0 = g_world.msgLines.nLineCount;
+            i32 nPause0 = g_world.geo.time.bPaused;
+            i32 k;
+
+            printf("  the base's own entry first\n");
+            Check(pBaseRec != NULL, "the run's placed base is still in the array");
+            for (k = 0; k < PtrArray_GetCount(&g_world.strategList); ++k) {
+                const StrategItem *pCand = (const StrategItem *)PtrArray_Get(&g_world.strategList, k);
+                if (pCand != NULL && pCand->nType == 0 && pBaseRec != NULL
+                    && pCand->nSiteId == (i32)(i8)pBaseRec->bUnk4) {
+                    pBaseItem = pCand;
+                    break;
+                }
+            }
+            Check(pBaseItem != NULL,
+                  "its entry is found by the same byte the hit test searches on (0x82ED4)");
+            if (pBaseItem != NULL) {
+                nGCellX = pBaseItem->nX;
+                nGCellY = pBaseItem->nY;
+            }
+            printf("  base 0 site %d cell %d,%d; its entry at %d,%d; the site record names it \"%s\"\n",
+                   (pBaseRec != NULL) ? (i32)(i8)pBaseRec->bUnk4 : -1,
+                   (pBaseRec != NULL) ? pBaseRec->nUnk8 : 0,
+                   (pBaseRec != NULL) ? pBaseRec->nUnk12 : 0,
+                   nGCellX, nGCellY, g_world.aSiteRecs[0].abName);
+            CheckEqI32(g_world.bMapSelectionFlag, 0,
+                       "no map selection is up, so the base-name branch runs (0x82E94)");
+            CheckEqI32(g_world.bFlag1870A0, 0,
+                       "and no multi-select box is up, so the press reaches the map arm (0x87ABC)");
+            Check(ScreenForCell(&g_world.view, nGCellX, nGCellY, &nGPressX, &nGPressY),
+                  "the base's cell has a screen pixel at the current scroll (the inverse of 0x82C84 / 0x82CAC)");
+
+            World_GeoscapePointer(&g_world, nGPressX, nGPressY, true);
+            (void)World_GeoscapePointerUp(&g_world);
+
+            CheckEqI32(g_world.ui.pStatusPanel->nLineCount, 1,
+                       "the scan built one line, for the base entry alone");
+            Check(g_world.ui.pStatusPanel->apLines[0] != NULL
+                      && strcmp((const char *)g_world.ui.pStatusPanel->apLines[0],
+                                g_world.aSiteRecs[0].abName) == 0
+                      && g_world.aSiteRecs[0].abName[0] != 0,
+                  "and the row is the base's own name: the site-id search answers the base and 0x82F1C copies "
+                  "byte_186C24 + 54 (the name the placement commit wrote at 0x8B5E4..0x8B5F8's own label store)");
+            CheckEqI32(g_world.msgLines.nLineCount, nLines0,
+                       "the arm posts no message line of its own");
+            CheckEqI32((i32)g_world.ui.pStatusPanel->nUnk3032, 0, "it clears the panel's row cursor (0x83450)");
+            CheckEqI32(g_world.geo.time.bPaused, 1, "it pauses (0x83458)");
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 18, "and it opens screen 18 (0x83464)");
+            CheckEqI32(g_world.bMapSelectionFlag, 0,
+                       "the type-0 inactive arm is one of the six that writes no selection byte");
+            CheckEqI32(g_world.bOptionsScreenOpen, 0,
+                       "the toggle the original's OptionsScreen_Open sets (0x6D0C8) is still 0: the shell's hook "
+                       "for 0x83480 is a stub, so nothing opened");
+            printf("  the screen-18 cells: open %d, scratch[4] %d, scratch[0] %d, radar timer %d\n",
+                   g_world.bOptionsScreenOpen, (i32)g_world.abOptionsScratch[4],
+                   (i32)g_world.abOptionsScratch[0], g_world.nRadarPulseTimer);
+
+            /* The press that used to crash. Screen 18 is up, so the dispatcher is in the case-18 arm, and
+             * 0x89110 / 0x89338 now read the shell's own cells. Both are zero, so the arm falls to the
+             * shared tail at 0x8932C and the confirm gate at 0x89334 / 0x89344 stops it there. */
+            World_GeoscapePointer(&g_world, nGPressX, nGPressY, true);
+            (void)World_GeoscapePointerUp(&g_world);
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 18,
+                       "the case-18 press changed no screen byte: scratch[4] 0 skips the page walk (0x89110), "
+                       "the toggle 0 skips the confirm tail (0x89344)");
+            CheckEqI32(g_world.msgLines.nLineCount, nLines0, "and it posts no line either");
+
+            /* The fixture closes the screen this press opened. In the original both clears sit behind a
+             * byte only OptionsScreen_Init and OptionsScreen_Open set -- Geoscape_CloseUI case 18 clears
+             * 0x186BC4 at 0x8BCE8 (the rebuild arm) or at 0x8BD14 (the toggle arm), and the two gates read
+             * gOptionsScratch[4] and bOptionsScreenOpen -- so with no options owner in the shell no arm
+             * would clear it. The pause is restored for the same reason: the rest of the section owns its
+             * own pause transitions. Recorded as the gap the options-screen wiring closes. */
+            g_world.screen.nGeoscapeScreen = 0;
+            g_world.geo.time.bPaused = (u8)nPause0;
+        }
 
         /* 1. The press on the craft, and 2. the line its dispatch posts. */
         ClearSurface();
@@ -6450,6 +6629,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                   "the waypoint itself does not move");
         }
     }
+
 
     /* Section 15: the two pointer paths an intercept order needs on the map side, both walked with the pen.
      *

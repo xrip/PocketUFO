@@ -1523,7 +1523,13 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nRegionId
     StrategItem *pItem;
     i32 i;
 
-    (void)BaseRec_Create(pEnv->apBases, nBaseCount, pEnv->apObjects, (i32)pEnv->nObjectCount);
+    /* One counter, three stores, in the original's order: the base record's site byte (BaseRec_ctor
+     * 0x556C0 reads nNextBaseSiteId @ 0x186558 directly), the entry's nSiteId (0x669A8), and the site
+     * record's nFacType (0x66A34). They agree because they are read from one cell before 0x66B50
+     * raises it -- that agreement is what SmapHit_FindBaseBySiteId (0x82ED4) and OptionsScreen_Open
+     * (0x6D12C) match on. */
+    (void)BaseRec_Create(pEnv->apBases, nBaseCount, (u8)*pEnv->pnNextSiteId, pEnv->apObjects,
+                         (i32)pEnv->nObjectCount);
 
     (void)StrategList_AddItem(pEnv->pStrategList, pEnv->pnSeed, pEnv->nZoomMode, 0, 0, 0,
                               x, y, *pEnv->pnNextSiteId, 1);

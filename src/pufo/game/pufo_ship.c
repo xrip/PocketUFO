@@ -875,16 +875,17 @@ i32 Craft_CountWeaponSlotsCarried(ObjectRecFull *const *apObjects, i32 nObjectCo
  * The original stores the result even when operator new returns null, so a failed allocation leaves
  * a NULL in the roster. The port does the same, because the save layer already has to cope with
  * short reads leaving slots empty. */
-BaseRec *BaseRec_Create(BaseRec **apBases, i32 nBaseCount, ObjectRecFull *const *apObjects,
-                        i32 nObjectCount)
+BaseRec *BaseRec_Create(BaseRec **apBases, i32 nBaseCount, u8 bSiteId,
+                        ObjectRecFull *const *apObjects, i32 nObjectCount)
 {
     BaseRec *pNew = (BaseRec *)malloc(sizeof(BaseRec)); /* 0x32C94: operator new(0x14) */
 
     if (pNew != NULL) {
-        /* 0x32CA0 calls BaseRec_ctor with only the record. The port's ctor takes the roster slot
-         * and the object table as well, because the ctor zeroes auPerBaseVal[byte 0x159D80] in
-         * every object record; the new base's slot is its own index. */
-        BaseRec_Ctor(pNew, nBaseCount, 0, apObjects, nObjectCount);
+        /* 0x32CA0 calls BaseRec_ctor with only the record; the ctor then reads its two bytes from
+         * the globals (nNextBaseSiteId at 0x186558 for bUnk4, the base count at 0x159D80 for bSlot)
+         * and Map_nObjectCount for the column zeroing. The port hands all four in: the roster slot,
+         * the site byte the caller read from its own counter, the object table, and the count. */
+        BaseRec_Ctor(pNew, nBaseCount, bSiteId, apObjects, nObjectCount);
     }
 
     if (apBases != NULL && nBaseCount >= 0) {

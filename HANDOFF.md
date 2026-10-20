@@ -1768,6 +1768,50 @@ indexes its cell with no bounds test, which is what crashed the test when the fi
 -6000,-6000; and the radar pass and the base-name branch now have their type-0 entries, with no gate pressing on
 one yet.
 
+**A base's own map entry, and the two cells screen 18 derefs (Part 94)** -- a second *product*
+fix of the Part 93 kind: a lookup that cannot answer because a pairing byte was never stored.
+`BaseRec_ctor` stores `pBase->bUnk4 = nNextBaseSiteId @ 0x186558` at 0x556C0 (the read is the
+LDRSB at 0x556BC); the port's `BaseRec_Create` handed a hard 0, so a base record carried site 0
+while its strateg entry carried 1, 2 or 3. Three stores take that one counter before 0x66B50
+raises it -- `bUnk4` (0x556C0), the entry's `nSiteId` (0x669A8), the site record's `nFacType`
+(0x66A34) -- and three readers match on it: the base-name branch (0x82E94 through the signed
+compare at 0x82ED4, name from `byte_186C24 + 54` at 0x82F1C), `OptionsScreen_Open`'s base walk
+(0x6D12C), and the placement commit, which finds the entry by the base's own byte (0x8B598) and
+moves it to the new cell (0x8B5E4 / 0x8B5F8). The save carries the byte (0x3F400 / 0x40558).
+Measured on the reloaded world: base 0 site 1 at (400,158) with entry 0 at (400,158), base 1
+never placed so its entry keeps (-6000,-6000), base 2 from the save at (587,165).
+
+A new gate presses on that cell (section 14's opening, 15 checks). The scan finds the base
+entry alone, the row names the base out of the shipped site record, and 0x83448 clears the
+panel row cursor (0x83450), pauses (0x83458), sets screen 18 (0x83464) and runs
+`OptionsScreen_OpenWithSound(0, nSiteId, pOptionsHooks)` (0x83480), whose shell hook is a stub
+-- so `bOptionsScreenOpen` stays 0 and `pOptPanelShips->bFlag7073 = 0` (0x83494) has no
+counterpart. What reaching that arm exposed: case 18 derefs `gOptionsScratch[4] @ 0x159E8C`
+(0x89110) and `bOptionsScreenOpen @ 0x159E80` (0x89338) with no null test, because in the
+original those globals are always there, and the shell owned neither cell, so the next press
+read address 0. The shell now owns both (`bOptionsScreenOpen`, `abOptionsScratch[8]`) and wires
+them into the pointer env and into `Geoscape_CloseUI` case 18; the gate's second press proves
+the arm now answers nothing instead of crashing.
+
+Two fixture facts. `Ship_LaunchIntercept`'s snap (0x5A760 / 0x5A780) now puts a launched
+craft's marker on the same cell as its base's entry, so a press there is the >1 branch: the
+multi-select box with the base row named by 0x82F1C -- the original's behaviour on that cell,
+already gated structurally in section 15 -- and section 14 parks the marker 50 columns out to
+keep the card's 1-line path (50 because the fly-to-point press is 40 columns off the marker,
+and 40 would put the new waypoint on the base entry's cell). And the base-entry press runs
+before the card chain, because the case-18 tail at 0x8932C hit-tests *pGeoscapeCtlA with
+bForceClick set: after the card arm installs `Smap_SelectMapTarget` / `Smap_ResolveInterceptUI`
+on the hotspots (0x8FFE8, 0x8FFFC), that hit-test fires them and re-targets the craft; the
+escape's fresh thirteen controls (0x86100..0x864DC) carry no handler yet. IDB: the
+`nNextBaseSiteId @ 0x186558` census comment, notes at 0x556bc, 0x8b570, 0x89110 and 0x89338,
+idb_save. Gates: 62/62 both configs, 19151 checks (16 new), coverage unchanged, 34 frame
+references (1 re-made and looked at), 9 e2e pictures unchanged. Still open: the options screen
+has no owner in the shell (`OptionsScreen_Init` and `OptionsScreen_Open` are ported and gated,
+the hook slots are no-ops, `pOptionsScreen` is never assigned, the 21 control slots at 0x159E20
+/ 0x159E3C / 0x159E44 / 0x159E5C and the four panels at 0x159E18 / 0x159E78 / 0x159E7C /
+0x159E1C are unbuilt), so nothing can clear 0x186BC4 after a base press; and the radar pass on
+a minute tick is still not gated.
+
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
 but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give
