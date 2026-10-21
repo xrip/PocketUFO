@@ -169,6 +169,8 @@ static void TestMapInitScratch(void)
     MapInitEnv env;
     u8   bPhase = 0x5A;
     u8   bBattle = 0x5A;
+    u8   bSlot2 = 0x5A;   /* Part 105: Map+0x68 has one owner (bMapSweepArmed), so the fixture
+                           * keeps its own byte instead of borrowing a TactInputState field */
     i32  nSave112 = 0x5A5A5A5A;
     void *pThrow = (void *)0x5A5A5A5Au;
 
@@ -195,7 +197,7 @@ static void TestMapInitScratch(void)
     env.pbDeployPanelOpen = &st.bDeployPanelOpen;
     env.pbMapPhase        = &bPhase;
     env.pbBattleEnded     = &bBattle;
-    env.pbSlot2Byte0      = &st.bSlot2Byte0;
+    env.pbSlot2Byte0      = &bSlot2;
     env.pbSlot8Byte0      = &st.bUiSlot8Byte0;
     env.pnUiSlot3         = &st.nUiSlot3;
     env.pnUiSlot4         = &st.nUiSlot4;
@@ -211,7 +213,7 @@ static void TestMapInitScratch(void)
     CheckEqI32(st.bDeployPanelOpen, 0, "  0x15110 closes the deploy panel");
     CheckEqI32(bPhase, 0, "  0x0037 clears the map phase");
     CheckEqI32(bBattle, 0, "  0x005C clears the battle-ended byte");
-    CheckEqI32(st.bSlot2Byte0, 0, "  0x0068 clears slot 2's low byte");
+    CheckEqI32(bSlot2, 0, "  0x0068 clears slot 2's low byte (Map_bSweepArmed, one owner: bMapSweepArmed)");
     CheckEqI32(st.nUiSlot3, 0, "  0x006C clears slot 3");
     CheckEqI32(st.nUiSlot4, 200, "  0x0070 sets slot 4 to 200");
     CheckEqI32((i32)st.nUiSlot5, 0, "  0x0074 clears slot 5's four edge bytes");

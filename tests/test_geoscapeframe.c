@@ -236,6 +236,15 @@ static void Rec_TactPushText(i32 nRecIndex, void *pUser)
 }
 static void Rec_CursorChanged(void *pUser)     { (void)pUser; ++g_seams.nCursorChanged; } /* nullsub_3 @ 0x22b50 */
 
+/* Part 105: the two input seams the modal pen dispatch reaches. pfnModalEnd stands for the
+ * UiModal_End @ 0x14B94/0x14BC0 the original calls before the stored callbacks -- the test mirrors
+ * the app's App_TactModalEndThunk. The screen-8 escape seam (World_QuitYesThunk's callee chain,
+ * App_HookShutdownQuit in the real app) is RECORDED, not run: the live mission must survive the
+ * gate; the same seam's body is gated by Part 103 and by the e2e quityes flow. */
+static i32 g_nQuitSeam;
+static void Rec_TactModalEnd(void *pUser)      { (void)pUser; UiModal_End(&g_world.sModal); }
+static void Rec_TactQuitSeam(void *pUser)      { (void)pUser; ++g_nQuitSeam; }
+
 static i32 RecLoadGame(i32 nSlot, void *pUser)
 {
     (void)pUser;
@@ -848,6 +857,8 @@ int main(void)
     g_tactInHooks.pfnSetCursorPos      = Rec_TactSetCursorPos;
     g_tactInHooks.pfnPushTextRecord    = Rec_TactPushText;
     g_tactInHooks.pfnCursorChanged     = Rec_CursorChanged;
+    g_tactInHooks.pfnModalEnd          = Rec_TactModalEnd;   /* the 0x14B94/0x14BC0 end (Part 105) */
+    g_tactInHooks.pfnShutdownQuit      = Rec_TactQuitSeam;   /* the screen-8 escape seam, recorded */
     hooks.pBank               = &g_bank;
     hooks.pTactInputHooks     = &g_tactInHooks;
     hooks.pfnResizeMainWindow = RecResizeMainWindow; /* widget 58's window seam (Part 61) */
@@ -3498,6 +3509,179 @@ int main(void)
                     g_world.bMapFire2 = bFire2Save;
                     pMapX->bTrajHitStop = bTrajSave;
                     g_world.bMapEnemyTurnActive = bTurnSave2;
+                }
+
+                /* 105.a: the modal YES/NO dispatch on a live dialog. The openers were gated at
+                 * 56/57 (Parts 58/59); what was missing is Input_OnPointerUp's status-line arm
+                 * (0x14B68) -- the original reads the stored callbacks straight out of the modal
+                 * bank (apUiSlotsA[16] @ Map+0xA0, [18] @ Map+0xA8) at 0x14BC4/0x14B98, and the
+                 * shell now hands them over in World_TactPointerFill. Geometry follows
+                 * UiModal_DrawDialog's own formulas (pinned in test_modal.c): quit dialog 140
+                 * wide, 4 lines -> buttons x 63/126, row y 178; deploy dialog 170 wide, 5 lines
+                 * -> 58/131, 185. The status-line box is 51 x 18 (0x13E58). */
+                {
+                    TactPointerWorld ptr;
+                    UiModalState modalSave = g_world.sModal;
+                    u16 nScreenSave3 = g_world.nUiScreen;
+                    i32 nQuitSave3 = g_nQuitSeam;
+
+                    memset(&ptr, 0, sizeof(ptr));
+                    ptr.pBank = &g_bank;
+                    ptr.hit = g_hit;
+
+                    CLICK(57);  /* Menu_ConfirmQuitDialog @ 0x18e2c: modal 140/24 four rows, screen 8 */
+                    Check(g_world.sModal.bOpen && g_world.nUiScreen == 8,
+                          "105.a the quit dialog opens live (screen 8, modal bank armed)");
+                    World_TactFrame(&g_world); /* 0x224DC: the modal arm paints it and fills [20..23] */
+                    Check(g_world.sTactInput.nSlot20X == 63 && g_world.sTactInput.nSlot21X == 126
+                              && g_world.sTactInput.nSlot22Y == 178 && g_world.sTactInput.nSlot23H == 2,
+                          "105.a the modal arm fills apUiSlotsA[20..23] with the YES/NO button cells (0x266D4/0x268E4/0x268F0/0x26AE4 writes, copied into the input block every painted frame)");
+                    DumpFrame("tact_quit_confirm");
+
+                    World_TactPointerMove(&g_world, &ptr, g_world.sTactInput.nSlot20X + 25,
+                                          g_world.sTactInput.nSlot22Y + 8, true);
+                    Check(g_world.sModal.nField48 == 1,
+                          "105.a a press inside the left column writes the hover cell 1 (Map+0xC0, 0x13E58 box 51 x 18)");
+                    World_TactFrame(&g_world); /* nSelButton highlights the YES button */
+                    DumpFrame("tact_modal_statusline");
+
+                    World_TactPointerUp(&g_world, &ptr);
+                    Check(!g_world.sModal.bOpen && g_nQuitSeam == nQuitSave3 + 1
+                              && g_world.nUiScreen == 8,
+                          "105.a release answers YES: UiModal_End (0x14BC0) then the stored slot-16 thunk (0x14BC4) -> World_QuitYesThunk -> the screen-8 seam; screen 8 survives because every arm jumps to def_14BEC, the epilogue at 0x15124 -- no screen arm runs");
+
+                    CLICK(57);
+                    World_TactFrame(&g_world);
+                    World_TactPointerMove(&g_world, &ptr, g_world.sTactInput.nSlot21X + 25,
+                                          g_world.sTactInput.nSlot22Y + 8, true);
+                    Check(g_world.sModal.nField48 == 2, "105.a the right column writes 2");
+                    World_TactPointerUp(&g_world, &ptr);
+                    Check(!g_world.sModal.bOpen && g_world.nUiScreen == 0
+                              && g_nQuitSeam == nQuitSave3 + 1,
+                          "105.a release answers NO: slot 18 (0x14B98) runs Menu_CancelQuitDialog @ 0x18e04 (screen 0) and leaves the slot-16 seam untouched");
+
+                    CLICK(56);  /* Map_BuildDeployConfirmYesNo @ 0x18a68: 170/1069 five rows, screen 9 */
+                    Check(g_world.sModal.bOpen && g_world.nUiScreen == 9,
+                          "105.a the deploy dialog opens live (screen 9)");
+                    World_TactFrame(&g_world);
+                    Check(g_world.sTactInput.nSlot20X == 58 && g_world.sTactInput.nSlot21X == 131
+                              && g_world.sTactInput.nSlot22Y == 185 && g_world.sTactInput.nSlot23H == 2,
+                          "105.a the 170-wide five-row dialog fills its own status-line cells");
+                    DumpFrame("tact_deploy_confirm");
+                    World_TactPointerMove(&g_world, &ptr, g_world.sTactInput.nSlot21X + 25,
+                                          g_world.sTactInput.nSlot22Y + 8, true);
+                    Check(g_world.sModal.nField48 == 2, "105.a the deploy dialog's right column writes 2");
+                    World_TactPointerUp(&g_world, &ptr);
+                    Check(!g_world.sModal.bOpen && g_world.nUiScreen == 0
+                              && World_bTactPointerLive(&g_world),
+                          "105.a the deploy NO runs the stored callback (Map_ClearUiScreen @ 0x18a54) and the mission stays live -- YES (World_MissionEndCheck) is gated by the mission-end sections");
+
+                    g_world.sModal = modalSave;
+                    g_world.nUiScreen = nScreenSave3;
+                    g_nQuitSeam = nQuitSave3;
+                }
+
+                /* 105.b: WM_TIMER 0xC353 during a live mission -- World_PulseTact feeds
+                 * UiPulse_OnTimer @ 0x36630 through the SyncIn/SyncOut staging, the way the
+                 * original runs it straight off Map + pBank (0xA0C64). Slots 0/3/4/5 are cells
+                 * sTactInput owns outright. */
+                {
+                    u8 bMenuSave = g_options.bMenuByPen;
+                    u16 nScreenSave4 = g_world.nUiScreen;
+                    u32 nSlot0Save = g_world.sTactInput.nUiSlot0;
+                    i32 nSlot3Save = g_world.sTactInput.nUiSlot3;
+                    i32 nSlot4Save = g_world.sTactInput.nUiSlot4;
+                    u32 nSlot5Save = g_world.sTactInput.nUiSlot5;
+                    i32 nCamXSave = g_world.tactEnv.focus.nCamScrollX;
+                    i32 nCamYSave = g_world.tactEnv.focus.nCamScrollY;
+                    u8 abHeldSave[4];
+                    u8 nState22Save = g_bank.aCtl[22].nState;
+                    u8 nState23Save = g_bank.aCtl[23].nState;
+                    i32 nSeamSave = g_seams.nCursorChanged;
+                    i32 nMark4;
+
+                    memcpy(abHeldSave, g_bank.abHeldDir, sizeof(abHeldSave));
+                    g_options.bMenuByPen = 1;             /* Map+0x150D9: the long-press arm opens screen 15 */
+                    g_world.nUiScreen = 0;
+                    g_world.tactEnv.focus.nCamScrollX = 0;   /* deterministic side of the scroll gate */
+                    g_world.sTactInput.nUiSlot0 = 0;
+                    g_world.sTactInput.nUiSlot3 = 8;
+                    g_world.sTactInput.nUiSlot4 = 14;
+                    g_world.sTactInput.nUiSlot5 = 0;
+                    memset(g_bank.abHeldDir, 0, sizeof(g_bank.abHeldDir));
+
+                    nMark4 = g_nSamples;
+                    World_PulseTact(&g_world);
+                    Check(g_world.sTactInput.nUiSlot0 == 1 && g_world.sTactInput.nUiSlot3 == 7
+                              && g_world.sTactInput.nUiSlot4 == 15,
+                          "105.b one firing: slot 0 counts up, slot 3 counts down while positive, slot 4 counts up to 15 (0x36664/0x367A8/0x367C8)");
+                    Check(g_world.nUiScreen == 15 && g_nSamples == nMark4 + 1
+                              && g_aFrameSamples[nMark4] == 15,
+                          "105.b the tick where slot 4 becomes EXACTLY 15 with Map+0x150D9 set writes screen 15 and plays sample 15 (0x367D0/0x367F4/0x36800), and SyncOut flushes the screen to the live cell");
+
+                    /* The force arm (0x1A3F0) runs the installed handler of a mode-0 control
+                     * in state 1 and does NOT clear nState -- the original leaves the control
+                     * armed. Each handler shifts sTactUi.nInvFilterType the opposite way, so
+                     * firing the two controls on their own wrap proves which one ran. */
+                    u8  nFilterSave = g_world.sTactUi.nInvFilterType;
+                    u16 nInvCntSave = g_world.sTactUi.nInvListCount;
+                    u8  nShiftXSave = g_world.sTactInput.nTileShiftX;
+                    u8  nShiftYSave = g_world.sTactInput.nTileShiftY;
+
+                    g_world.nUiScreen = 0;
+                    g_world.sTactInput.nUiSlot0 = 3;
+                    g_world.sTactUi.nInvFilterType = 0;
+                    g_world.sTactUi.nInvListCount = 8;    /* 0 + 4 < 8: ScrollDown may move */
+                    g_bank.aCtl[22].nState = 1;           /* only widget 22 armed */
+                    g_bank.aCtl[23].nState = 0;
+                    World_PulseTact(&g_world);
+                    Check(g_world.sTactInput.nUiSlot0 == 0
+                              && g_world.sTactUi.nInvFilterType == 1
+                              && g_bank.aCtl[22].nState == 1,
+                          "105.b the wrap force-fires pBank+0x2C0 with x=0,y=0,bDown=0,bForceClick=1 (0x36688..0x366C0): the armed mode-0 control runs Inv_ScrollDown @ 0x173a8 (filter 0 -> 1), nState stays 1 (0x1A3F0 never clears it), then the slot clears");
+
+                    g_world.sTactInput.nUiSlot0 = 3;
+                    g_bank.aCtl[22].nState = 0;           /* only the second control armed */
+                    g_bank.aCtl[23].nState = 1;
+                    World_PulseTact(&g_world);
+                    Check(g_world.sTactInput.nUiSlot0 == 0
+                              && g_world.sTactUi.nInvFilterType == 0
+                              && g_bank.aCtl[23].nState == 1,
+                          "105.b the same wrap force-fires pBank+0x2E0: it runs Inv_ScrollUp @ 0x173e4 (filter 1 -> 0), again with no disarm");
+
+                    /* The held streams. The camera gates read nTileShiftX/Y (the 0x34/0x35
+                     * cells sTactInput owns outright), so both are pinned here, and both
+                     * scroll cells start on the deterministic side 0. */
+                    g_world.sTactInput.nUiSlot0 = 0;
+                    g_world.sTactInput.nUiSlot3 = 0;
+                    g_world.sTactInput.nUiSlot4 = 0;
+                    g_world.sTactInput.nTileShiftX = 24;
+                    g_world.sTactInput.nTileShiftY = 24;
+                    g_world.tactEnv.focus.nCamScrollY = 0;
+                    g_world.sTactInput.nUiSlot5 = 1;      /* byte 0: HUD edge held left */
+                    g_bank.abHeldDir[0] = 1;              /* UiBank_bHeldUp (pBank+0x104C) */
+                    World_PulseTact(&g_world);
+                    Check(g_world.tactEnv.focus.nCamScrollX == -1
+                              && g_world.tactEnv.focus.nCamScrollY == -1
+                              && g_seams.nCursorChanged == nSeamSave + 2,
+                          "105.b one firing moves both held streams -- slot 5's left byte (0x366CC arm, gate nCamScrollX 0 > -(24>>1)) and the bank's up byte (0x36718, gate nCamScrollY 0 > -(24>>2), repeats gated on screen 0) each shift the scroll once and call nullsub_3 (0x1177C scroll arm, seams +2)");
+
+                    g_options.bMenuByPen = bMenuSave;
+                    g_world.nUiScreen = nScreenSave4;
+                    g_world.sTactUi.nInvFilterType = nFilterSave;
+                    g_world.sTactUi.nInvListCount = nInvCntSave;
+                    g_world.sTactInput.nTileShiftX = nShiftXSave;
+                    g_world.sTactInput.nTileShiftY = nShiftYSave;
+                    g_world.sTactInput.nUiSlot0 = nSlot0Save;
+                    g_world.sTactInput.nUiSlot3 = nSlot3Save;
+                    g_world.sTactInput.nUiSlot4 = nSlot4Save;
+                    g_world.sTactInput.nUiSlot5 = nSlot5Save;
+                    g_world.tactEnv.focus.nCamScrollX = nCamXSave;
+                    g_world.tactEnv.focus.nCamScrollY = nCamYSave;
+                    memcpy(g_bank.abHeldDir, abHeldSave, sizeof(g_bank.abHeldDir));
+                    g_bank.aCtl[22].nState = nState22Save;
+                    g_bank.aCtl[23].nState = nState23Save;
+                    g_seams.nCursorChanged = nSeamSave;
                 }
 
                 /* 58: MenuBtn_ResizeWindow (0x19930) -- sample 16, then the caller's window seam

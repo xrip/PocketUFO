@@ -1304,25 +1304,34 @@ void Input_OnPointerUp(TactInputState *pState, const TactInputHooks *pHooks,
         return;
     }
 
-    /* 0x14B68: while the status line is live the hover column decides the action. */
+    /* 0x14B68: while the status line is live the hover column decides the action, and a modal-open
+     * release is CONSUMED here: hit 0 clears the hover cell (0x14B7C BEQ 0x14BE0, 0x14BE0/0x14BE4),
+     * hits 1 and 2 run UiModal_End plus the stored slot-16/slot-18 callback (0x14BBC..0x14BDC and
+     * 0x14B90..0x14BB0, each NULL-testing the stored pointer at 0x14BCC/0x14BA0 first), and any
+     * other value leaves the hover cell alone (0x14B8C BNE) -- and every arm ends in
+     * `B def_14BEC`, which is the FUNCTION EPILOGUE at 0x15124, not the jumptable switch: while a
+     * modal is open the release never reaches the screen switch, whatever the screen id is. The
+     * stored callbacks live in the modal bank (apUiSlotsA[16] @ Map+0xA0, [18] @ Map+0xA8); the
+     * port reaches them through the caller's pfnSlot16/pfnSlot18, which the shell fills from the
+     * live modal state (sModal.pfn16/pfn18 in World_TactPointerFill). */
     if (pState->bSlot19Active != 0) {
         switch (pState->nSlot24Hit) {
         case 0:
-            pState->nSlot24Hit = 0;
+            pState->nSlot24Hit = 0; /* 0x14BE0: STR R8 -- a no-op clear, same as the original */
             return;
         case 1:
             if (pHooks->pfnModalEnd != NULL) {
-                pHooks->pfnModalEnd(pHooks->pUser);
+                pHooks->pfnModalEnd(pHooks->pUser); /* 0x14BC0 BL UiModal_End */
             }
-            if (pWorld->pfnSlot16 != NULL) {
+            if (pWorld->pfnSlot16 != NULL) {        /* 0x14BC4/0x14BCC: slot 16, NULL-tested */
                 pWorld->pfnSlot16();
             }
             return;
         case 2:
             if (pHooks->pfnModalEnd != NULL) {
-                pHooks->pfnModalEnd(pHooks->pUser);
+                pHooks->pfnModalEnd(pHooks->pUser); /* 0x14B94 BL UiModal_End */
             }
-            if (pWorld->pfnSlot18 != NULL) {
+            if (pWorld->pfnSlot18 != NULL) {        /* 0x14B98/0x14BA0: slot 18, NULL-tested */
                 pWorld->pfnSlot18();
             }
             return;

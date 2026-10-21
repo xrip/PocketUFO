@@ -221,6 +221,7 @@ static void TestWindowAndBackend(void)
 typedef struct TickLog {
     i32 nTickUnit;
     i32 nClearScratch;
+    i32 nRender;
 } TickLog;
 
 static TickLog g_tick;
@@ -237,8 +238,14 @@ static void H_ClearScratch(void *pUser)
     g_tick.nClearScratch += 1;
 }
 
+static void H_RenderFrame(void *pUser)
+{
+    (void)pUser;
+    g_tick.nRender += 1; /* GameTick_Step's wrap tail Render_Frame @ 0x274C4 */
+}
+
 static const GameTickHooks g_tickHooks = {
-    H_TickActiveUnit, H_ClearScratch, NULL
+    H_TickActiveUnit, H_ClearScratch, H_RenderFrame, NULL
 };
 
 /* A grid lookup that reports no cells, so GameTick_Step sweeps nothing and the test
@@ -272,6 +279,9 @@ static void TestGameTickOnTimer(void)
     GameTickCtx  ctx;
     StatusStack  stack;
     TactState    state;
+    u8           bSlot8;  /* the slot-8 byte and its pair are now POINTERS in the ctx (Part 105):
+                           * the 0x275CC gate reads the byte after the step, which may clear it */
+    u8           bEnemy;
 
     printf("GameTick_OnTimer -- four gates and the TTL decay\n");
 
@@ -356,26 +366,51 @@ static void TestGameTickOnTimer(void)
     CheckEqI32(stack.nCount, 1, "  busy: nothing shifted");
     CheckEqI32(state.nPhaseCounter, 1, "  busy: the phase counter STILL advanced");
 
-    /* TickActiveUnit is skipped only when the phase is active AND slot8 byte 1 is set. */
+    /* TickActiveUnit is skipped only when the phase is active AND slot8 byte 1 is set -- and the
+     * original reads that byte LIVE at 0x275CC, after the 0x275b0 call into GameTick_Step. */
     TickCtxClear(&ctx);
     state.bPhaseActive = 1;
-    ctx.bSlot8Byte1 = true;
+    ctx.pbSlot8Byte1 = &bSlot8;
+    ctx.pbEnemyTurnActive = &bEnemy;
+    bSlot8 = 1; bEnemy = 0;
     TickLogReset();
     (void)GameTick_OnTimer(&ctx, &stack, &state, &g_tickHooks, Tick_NoCells, NULL);
     CheckEqI32(g_tick.nTickUnit, 0, "  phase active + slot8 -> unit tick SKIPPED");
     CheckEqI32(g_tick.nClearScratch, 1, "  but the scratch still clears");
+    CheckEqI32(bEnemy, 1, "  and the step armed Map_bEnemyTurnActive from the slot-8 byte (0x27364/0x27388)");
+    CheckEqI32(g_tick.nRender, 0, "  a non-wrap step renders nothing");
 
     /* Either condition alone still ticks the unit. */
-    ctx.bSlot8Byte1 = false;
+    bSlot8 = 0;
     TickLogReset();
     (void)GameTick_OnTimer(&ctx, &stack, &state, &g_tickHooks, Tick_NoCells, NULL);
     CheckEqI32(g_tick.nTickUnit, 1, "  phase active alone still ticks the unit");
 
-    ctx.bSlot8Byte1 = true;
+    bSlot8 = 1;
     state.bPhaseActive = 0;
     TickLogReset();
     (void)GameTick_OnTimer(&ctx, &stack, &state, &g_tickHooks, Tick_NoCells, NULL);
     CheckEqI32(g_tick.nTickUnit, 1, "  slot8 alone still ticks the unit");
+
+    /* The wrap tick (Part 105): GameTick_Step's 12th tick clears the trigger byte at 0x274B4, so
+     * the live 0x275CC read sees ZERO and this tick still ticks the unit -- a value copy captured
+     * at entry would wrongly skip it. The wrap also clears the enemy byte and tail-renders. */
+    TickCtxClear(&ctx);
+    TactState_ctor(&state);
+    ctx.pbSlot8Byte1 = &bSlot8;
+    ctx.pbEnemyTurnActive = &bEnemy;
+    state.bPhaseActive = 1;
+    state.nPhaseCounter = PUFO_PHASE_TICK_MAX;  /* this step is tick 12 */
+    bSlot8 = 1; bEnemy = 1;
+    TickLogReset();
+    Check(GameTick_OnTimer(&ctx, &stack, &state, &g_tickHooks, Tick_NoCells, NULL),
+          "  wrap tick ran");
+    CheckEqI32(state.nPhaseCounter, PUFO_PHASE_TICK_MAX + 1, "  counter passed 11");
+    CheckEqI32(state.bPhaseActive, 0, "  0x274AC cleared the phase");
+    CheckEqI32(bSlot8, 0, "  0x274B4 cleared unk_113A39");
+    CheckEqI32(bEnemy, 0, "  0x274BC cleared Map_bEnemyTurnActive");
+    CheckEqI32(g_tick.nRender, 1, "  0x274C4 tail Render_Frame ran once");
+    CheckEqI32(g_tick.nTickUnit, 1, "  the LIVE 0x275CC read sees the cleared byte: the wrap tick still ticks");
 
     /* NULL safety. */
     Check(!GameTick_OnTimer(NULL, &stack, &state, &g_tickHooks, Tick_NoCells, NULL),

@@ -219,8 +219,14 @@ u32 GameTick_DecayCellFlags(u32 nFlags32)
  * Step 2 is the animated-tile decay: every cell on every layer has its bits 3..6
  * field decremented, but only when that field is non-zero. Cells whose field is
  * already zero are skipped, which is what keeps the 4-bit field from wrapping to
- * 0xF in place. */
-bool GameTick_Step(TactState *pState, MapCellLookup pfnLookup, void *pUser)
+ * 0xF in place.
+ *
+ * The two byte arms (Part 105): 0x27364 loads unk_113A39 (Map+0x81) and 0x27388
+ * STRBNEs the literal 1 into Map_bEnemyTurnActive when it is non-zero -- the ONLY
+ * in-game setter of that byte apart from the enemy-AI owner, and the wrap at
+ * 0x274B4/0x274BC clears both bytes before the tail Render_Frame at 0x274C4. */
+bool GameTick_Step(TactState *pState, const GameTickStepCells *pCells,
+                   MapCellLookup pfnLookup, void *pUser)
 {
     i32 nX;
     i32 nY;
@@ -228,6 +234,11 @@ bool GameTick_Step(TactState *pState, MapCellLookup pfnLookup, void *pUser)
 
     if (pState->bPhaseActive == 0) {
         return false;
+    }
+
+    if (pCells->pbSlot8Byte1 != NULL && *pCells->pbSlot8Byte1 != 0 &&
+        pCells->pbEnemyTurnActive != NULL) {
+        *pCells->pbEnemyTurnActive = 1; /* 0x27380 MOVNE R1,#1 / 0x27388 STRBNE */
     }
 
     for (nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
@@ -248,7 +259,16 @@ bool GameTick_Step(TactState *pState, MapCellLookup pfnLookup, void *pUser)
 
     pState->nPhaseCounter += 1;
     if (pState->nPhaseCounter > PUFO_PHASE_TICK_MAX) {
-        pState->bPhaseActive = 0;
+        pState->bPhaseActive = 0;               /* 0x274AC */
+        if (pCells->pbSlot8Byte1 != NULL) {
+            *pCells->pbSlot8Byte1 = 0;          /* 0x274B4 */
+        }
+        if (pCells->pbEnemyTurnActive != NULL) {
+            *pCells->pbEnemyTurnActive = 0;     /* 0x274BC */
+        }
+        if (pCells->pfnRenderFrame != NULL) {
+            pCells->pfnRenderFrame(pCells->pRenderUser); /* 0x274C4 tail */
+        }
         return true;
     }
     return false;

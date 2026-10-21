@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 19896 |
+| Test checks run | 19950 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -93,7 +93,7 @@ is the module that answers to it.
 | `0x2d82c` | `Gfx_PackRgb565Pair` | 1148 | `src/pufo/game/pufo_font.c`, `src/pufo/render/pufo_render.c` (+1) |
 | `0xa306c` | `SoftSurf_BlitIndexed_Inner` | 860 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3638` | `SoftSurf_BlitIndexedKeyed_Inner` | 812 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0x22310` | `Render_Frame` | 756 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
+| `0x22310` | `Render_Frame` | 756 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0xa33c8` | `SoftSurf_BlitRawGlyph` | 604 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3f94` | `SoftSurf_FillRect_Inner` | 576 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3bb8` | `Blit_CopyRows_HiRes` | 512 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
@@ -341,7 +341,7 @@ is the module that answers to it.
 | `0x4b724` | `MapCell_TickProximityItems` | 516 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+2) |
 | `0x1b280` | `MapView_DrawCellSelectMarker` | 476 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
-| `0x27324` | `GameTick_Step` | 460 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_step.h` (+4) |
+| `0x27324` | `GameTick_Step` | 460 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_step.h` (+5) |
 | `0x1b0d4` | `MapView_bResolveIsoCell` | 428 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x4b4f8` | `Unit_DropAllItemsToCell` | 428 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x32fa8` | `Combat_DetonateNearbyItems` | 416 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 1929 |
+| `test_geoscapeframe` | PASS | 1944 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_mapctx` | PASS | 83 |
 | `test_menu` | PASS | 189 |
 | `test_menubtn` | PASS | 184 |
-| `test_modal` | PASS | 33 |
+| `test_modal` | PASS | 48 |
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 171 |
 | `test_path` | PASS | 102 |
@@ -1311,12 +1311,12 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactend` | PASS | 402 |
 | `test_tacthud` | PASS | 268 |
 | `test_tactinit` | PASS | 95 |
-| `test_tactstate` | PASS | 584 |
+| `test_tactstate` | PASS | 599 |
 | `test_tactui` | PASS | 507 |
 | `test_template` | PASS | 49 |
 | `test_terrain` | PASS | 59 |
 | `test_texts_lang` | PASS | 15 |
-| `test_timer` | PASS | 87 |
+| `test_timer` | PASS | 96 |
 | `test_titles` | PASS | 139 |
 | `test_turn` | PASS | 176 |
 | `test_uibank` | PASS | 394 |
@@ -1343,7 +1343,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 871 citations.
+parity report. Total: 875 citations.
 
 ### Offsets below the image base (46)
 
@@ -1352,7 +1352,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x000c`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b8c`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (825)
+### At or above the image base (829)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1893,6 +1893,8 @@ against the IDB when the final report is assembled.
 - `0x254bc`
 - `0x26f38`
 - `0x26f40`
+- `0x27354`
+- `0x274c4`
 - `0x2f408`
 - `0x2fc74`
 - `0x319f4`
@@ -1903,6 +1905,7 @@ against the IDB when the final report is assembled.
 - `0x35188`
 - `0x3519c`
 - `0x351fc`
+- `0x36800`
 - `0x36c60`
 - `0x384e0`
 - `0x387f4`
@@ -1915,6 +1918,7 @@ against the IDB when the final report is assembled.
 - `0x42414`
 - `0x42454`
 - `0x42494`
+- `0x44580`
 - `0x44cb0`
 - `0x44d84`
 - `0x4539c`

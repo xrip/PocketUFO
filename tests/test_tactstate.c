@@ -404,6 +404,26 @@ typedef struct TickGrid {
     i32     nBoundCellCount;
 } TickGrid;
 
+/* Part 105: the step's two Map cells and its wrap tail. The fixtures are one byte each so a
+ * write that lands in the wrong cell (or fails to land) shows up as a failed check. */
+static u8  s_bSlot8;
+static u8  s_bEnemy;
+static i32 s_nRender;
+
+static void TickStep_Render(void *pUser)
+{
+    (void)pUser;
+    s_nRender += 1; /* 0x274C4 tail Render_Frame(&szEmptyString[8]) */
+}
+
+static void TickStepCells(GameTickStepCells *pCells)
+{
+    pCells->pbSlot8Byte1      = &s_bSlot8;
+    pCells->pbEnemyTurnActive = &s_bEnemy;
+    pCells->pfnRenderFrame    = TickStep_Render;
+    pCells->pRenderUser       = NULL;
+}
+
 static MapCell *TickGrid_Lookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 {
     TickGrid *pG = (TickGrid *)pUser;
@@ -436,8 +456,12 @@ static void TickGrid_Init(TickGrid *pG)
 static void TestGameTickStep(void)
 {
     TickGrid grid;
+    GameTickStepCells cells;
     i32      i;
     i32      nEnded;
+
+    s_bSlot8 = 0; s_bEnemy = 0; s_nRender = 0;
+    TickStepCells(&cells);
 
     printf("GameTick_Step\n");
     Reset();
@@ -445,13 +469,13 @@ static void TestGameTickStep(void)
 
     /* Inactive phase: nothing happens at all. */
     grid.aCells[0][0][0].nFlags32 = 0x78;
-    Check(!GameTick_Step(&g_state, TickGrid_Lookup, &grid), "  inactive phase does nothing");
+    Check(!GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid), "  inactive phase does nothing");
     CheckEqI32((i32)grid.aCells[0][0][0].nFlags32, 0x78, "  flags untouched while inactive");
 
     /* Active phase: the flagged cell decays once per tick. */
     printf("GameTick_Step decay while active\n");
     g_state.bPhaseActive = 1;
-    Check(!GameTick_Step(&g_state, TickGrid_Lookup, &grid), "  tick 1 does not end the phase");
+    Check(!GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid), "  tick 1 does not end the phase");
     CheckEqI32((i32)grid.aCells[0][0][0].nFlags32, 0x70, "  field decremented once");
     CheckEqI32(g_state.nPhaseCounter, 1, "  phase counter incremented");
 
@@ -459,7 +483,7 @@ static void TestGameTickStep(void)
     printf("GameTick_Step skips cells already at zero\n");
     grid.aCells[1][2][3].nFlags32 = 0; /* field 0 */
     grid.aCells[1][2][2].nFlags32 = 0x80; /* only a high bit, field 0 */
-    (void)GameTick_Step(&g_state, TickGrid_Lookup, &grid);
+    (void)GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid);
     CheckEqI32((i32)grid.aCells[1][2][3].nFlags32, 0, "  zero field left at zero (no wrap)");
     CheckEqI32((i32)grid.aCells[1][2][2].nFlags32, 0x80, "  high bit preserved, field untouched");
 
@@ -471,7 +495,7 @@ static void TestGameTickStep(void)
     for (i = 0; i < PUFO_MAP_LAYERS; ++i) {
         grid.aCells[i][1][1].nFlags32 = 0x78;
     }
-    (void)GameTick_Step(&g_state, TickGrid_Lookup, &grid);
+    (void)GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid);
     for (i = 0; i < PUFO_MAP_LAYERS; ++i) {
         char szLabel[64];
 
@@ -485,15 +509,64 @@ static void TestGameTickStep(void)
     g_state.bPhaseActive = 1;
     nEnded = 0;
     for (i = 1; i <= 32; ++i) {
-        if (GameTick_Step(&g_state, TickGrid_Lookup, &grid)) {
+        if (GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid)) {
             nEnded = i;
             break;
         }
     }
     CheckEqI32(nEnded, PUFO_PHASE_TICK_MAX + 1, "  phase ends on tick 12 (counter > 11)");
     CheckEqI32(g_state.bPhaseActive, 0, "  phase flag cleared");
+    CheckEqI32(s_nRender, 1, "  the wrap tail Render_Frame ran exactly once (0x274C4, 11 non-wrap ticks gave 0)");
     /* And a further tick is a no-op. */
-    Check(!GameTick_Step(&g_state, TickGrid_Lookup, &grid), "  ended phase stays inactive");
+    Check(!GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid), "  ended phase stays inactive");
+    CheckEqI32(s_nRender, 1, "  the ended phase renders nothing more");
+}
+
+/* Part 105: the byte pair 0x27364/0x27388 (set) and 0x274B4/0x274BC (clear on the wrap). */
+static void TestGameTickStepBytes(void)
+{
+    TickGrid grid;
+    GameTickStepCells cells;
+
+    printf("GameTick_Step enemy-turn byte pair (0x27364/0x27388, 0x274B4/0x274BC)\n");
+    TickGrid_Init(&grid);
+    TickStepCells(&cells);
+
+    /* Inactive phase: the gate at 0x27348 returns before the byte is even read (0x27364 sits
+     * past it), so neither cell moves. */
+    Reset();
+    g_state.bPhaseActive = 0;
+    s_bSlot8 = 1; s_bEnemy = 0x5A; s_nRender = 0;
+    Check(!GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid), "  inactive step returns false");
+    CheckEqI32(s_bSlot8, 1, "  the slot-8 byte is not even read while inactive");
+    CheckEqI32(s_bEnemy, 0x5A, "  the enemy byte is untouched while inactive");
+
+    /* Slot-8 set + active phase: the LDRB/ANDS/MOVNE/STRBNE chain writes the LITERAL 1. */
+    Reset();
+    g_state.bPhaseActive = 1;
+    s_bSlot8 = 3; s_bEnemy = 0;
+    Check(!GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid), "  tick 1 does not end the phase");
+    CheckEqI32(s_bEnemy, 1, "  0x27388 STRBNE writes 1, not the trigger's own value (3 stayed 3, enemy is 1)");
+    CheckEqI32(s_bSlot8, 3, "  the trigger byte is only READ by the set arm");
+
+    /* Slot-8 zero: no write at all -- a non-zero enemy byte survives. */
+    Reset();
+    g_state.bPhaseActive = 1;
+    s_bSlot8 = 0; s_bEnemy = 7;
+    (void)GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid);
+    CheckEqI32(s_bEnemy, 7, "  0x27370 ANDS is zero: MOVNE/STRBNE skip, the 7 survives");
+
+    /* The wrap clears BOTH bytes and renders: counter sits at 11, this step is tick 12. */
+    Reset();
+    g_state.bPhaseActive = 1;
+    g_state.nPhaseCounter = PUFO_PHASE_TICK_MAX;
+    s_bSlot8 = 1; s_bEnemy = 1; s_nRender = 0;
+    Check(GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid), "  tick 12 ends the phase");
+    CheckEqI32(s_bSlot8, 0, "  0x274B4 clears unk_113A39");
+    CheckEqI32(s_bEnemy, 0, "  0x274BC clears Map_bEnemyTurnActive");
+    CheckEqI32(g_state.bPhaseActive, 0, "  0x274AC clears bPhaseActive");
+    CheckEqI32(s_nRender, 1, "  0x274C4 tail-calls Render_Frame once");
+    CheckEqI32(s_bSlot8, 0, "  the cleared trigger stays clear");
 }
 
 /* --- TactState_EnqueueFireBurst @ 0x4b080 ---------------------------------- */
@@ -3563,6 +3636,7 @@ int main(void)
     TestCapacity();
     TestDecayCellFlags();
     TestGameTickStep();
+    TestGameTickStepBytes();
     TestFireBurst();
     TestThrowAndAction18();
     TestQueueDoorAction();

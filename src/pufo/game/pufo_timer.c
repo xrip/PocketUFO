@@ -230,11 +230,21 @@ bool GameTick_OnTimer(const GameTickCtx *pCtx, StatusStack *pStack, TactState *p
         }
     }
 
-    /* Always, busy or not. */
-    (void)GameTick_Step(pState, pfnLookup, pLookupUser);
+    /* Always, busy or not. The step owns the slot-8 byte pair (0x27364/0x27388 set,
+     * 0x274B4/0x274BC clear) and the wrap's tail Render_Frame (0x274C4). */
+    {
+        GameTickStepCells cells;
+        cells.pbSlot8Byte1      = pCtx->pbSlot8Byte1;
+        cells.pbEnemyTurnActive = pCtx->pbEnemyTurnActive;
+        cells.pfnRenderFrame    = (pHooks != NULL) ? pHooks->pfnRenderFrame : NULL;
+        cells.pRenderUser       = (pHooks != NULL) ? pHooks->pUser : NULL;
+        (void)GameTick_Step(pState, &cells, pfnLookup, pLookupUser);
+    }
 
-    /* TickActiveUnit is skipped only when BOTH conditions hold. */
-    if (!(pState->bPhaseActive && pCtx->bSlot8Byte1)) {
+    /* TickActiveUnit is skipped only when BOTH conditions hold -- and the original reads the
+     * slot-8 byte LIVE at 0x275CC, after the 0x275b0 call to GameTick_Step. A wrap step clears
+     * the byte at 0x274B4, so the step's own tick is the last one that skips the walker. */
+    if (!(pState->bPhaseActive && pCtx->pbSlot8Byte1 != NULL && *pCtx->pbSlot8Byte1 != 0)) {
         if (pHooks != NULL && pHooks->pfnTickActiveUnit != NULL) {
             pHooks->pfnTickActiveUnit(pHooks->pUser);
         }

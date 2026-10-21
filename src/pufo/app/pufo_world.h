@@ -1044,6 +1044,12 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks);
  * radar counters. */
 void World_PulseGeoscape(PufoWorldState *pW);
 
+/* WM_TIMER 0xC353's tact half during a live mission (Part 105): the same UiPulse_OnTimer @ 0x36630,
+ * fed through SyncIn/SyncOut so the held-key repeats, the slot-0 force-release of bank widgets
+ * 22/23 and the slot-4 long-press arm read and move the LIVE cells, the way the original reaches
+ * them straight off Map + pBank at 0xA0C64. A no-op unless a mission owns the pen. */
+void World_PulseTact(PufoWorldState *pW);
+
 /* Geoscape_CloseUI @ 0x8b94c over the wired close env: the sound sample, the dwActionFail clear, the five
  * per-base needed-flag passes and the per-screen switch. Called from the twelve 12-byte close thunks the
  * screens install. Case 2 (0x8BE68) and case 1 (0x8BE94) are the 2 -> 1 -> 0 run; case 2 returns early

@@ -6,6 +6,7 @@
 #include "ui/pufo_modal.h"
 #include "render/pufo_render.h"
 #include "game/pufo_font.h"
+#include "game/pufo_input.h"   /* Input_OnPointerUp, TactPointerWorld (Part 105) */
 
 static int g_nFailures;
 
@@ -158,12 +159,84 @@ static void TestDrawDialog(void)
     g_pMainSurface = NULL;
 }
 
+/* Input_OnPointerUp @ 0x148d0, modal dispatch 0x14B68 (Part 105). While the status line is
+ * live the hover column decides the arm, and every arm ends `B def_14BEC` -- the FUNCTION
+ * EPILOGUE at 0x15124, not the jumptable switch, so the release is consumed. Screen 5 is the
+ * observable for the switch: its arm releases widgets 44..52 and then zeroes nUiScreen
+ * (0x15048/0x1505C). The mock bank is all-disabled, so the release half is inert. */
+static int g_nModalEnd;
+static int g_nSlot16;
+static int g_nSlot18;
+
+static void RecModalEnd(void *pUser) { (void)pUser; g_nModalEnd += 1; }
+static void RecSlot16(void) { g_nSlot16 += 1; }
+static void RecSlot18(void) { g_nSlot18 += 1; }
+
+static void TestPointerUpModalDispatch(void)
+{
+    TactInputState   st;
+    TactInputHooks   hooks;
+    UiWidgetBank     bank;
+    TactPointerWorld world;
+
+    printf("Input_OnPointerUp modal dispatch (0x14B68)\n");
+
+    memset(&st, 0, sizeof(st));
+    memset(&hooks, 0, sizeof(hooks));
+    memset(&bank, 0, sizeof(bank));
+    memset(&world, 0, sizeof(world));
+    g_nModalEnd = g_nSlot16 = g_nSlot18 = 0;
+
+    st.bTactFlag = 1;
+    st.nUiScreen = 5;          /* the switch arm that would zero it (0x1505C) */
+    st.bSlot19Active = 1;      /* 0x14B68 gate: status line live */
+    hooks.pfnModalEnd = RecModalEnd;
+    world.pBank = &bank;
+    world.pfnSlot16 = RecSlot16;
+    world.pfnSlot18 = RecSlot18;
+
+    st.nSlot24Hit = 1;
+    Input_OnPointerUp(&st, &hooks, &world);
+    CheckEqI32(g_nModalEnd, 1, "  hover 1 runs UiModal_End (0x14BC0)");
+    CheckEqI32(g_nSlot16, 1, "  ...then the stored apUiSlotsA[16] callback (0x14BC4, NULL-tested at 0x14BCC)");
+    CheckEqI32(g_nSlot18, 0, "  the slot-18 callback stays unused on this arm");
+    CheckEqI32((i32)st.nUiScreen, 5, "  the release is consumed: def_14BEC is the epilogue at 0x15124, not the switch -- the screen-5 arm that zeroes nUiScreen never runs");
+    CheckEqI32(st.nUiSlot4, 200, "  the function head still writes Map+0x70 = 200 (0x148E4)");
+
+    st.nSlot24Hit = 2;
+    Input_OnPointerUp(&st, &hooks, &world);
+    CheckEqI32(g_nModalEnd, 2, "  hover 2 runs UiModal_End (0x14B94)");
+    CheckEqI32(g_nSlot18, 1, "  ...then the stored apUiSlotsA[18] callback (0x14B98, NULL-tested at 0x14BA0)");
+    CheckEqI32(g_nSlot16, 1, "  and slot 16 stays untouched");
+
+    st.nSlot24Hit = 3;
+    Input_OnPointerUp(&st, &hooks, &world);
+    CheckEqI32(st.nSlot24Hit, 3, "  the default arm leaves the hover cell alone (0x14B8C BNE)");
+    CheckEqI32(g_nModalEnd, 2, "  ...and no callback runs");
+    st.nSlot24Hit = 0;
+    Input_OnPointerUp(&st, &hooks, &world);
+    CheckEqI32(st.nSlot24Hit, 0, "  hover 0 clears the hover cell (0x14BE0/0x14BE4)");
+    CheckEqI32(g_nModalEnd, 2, "  ...also without a callback");
+
+    st.nSlot24Hit = 1;
+    world.pfnSlot16 = NULL;    /* 0x14BCC: the stored pointer is NULL-tested */
+    Input_OnPointerUp(&st, &hooks, &world);
+    CheckEqI32(g_nModalEnd, 3, "  a NULL slot-16 skips the callback but still runs UiModal_End");
+
+    /* Control: with the status line not live, the same press reaches the switch. */
+    st.bSlot19Active = 0;
+    Input_OnPointerUp(&st, &hooks, &world);
+    CheckEqI32((i32)st.nUiScreen, 0, "  not live: the release reaches the screen switch and the screen-5 arm zeroes nUiScreen (0x15048/0x1505C)");
+    CheckEqI32(g_nModalEnd, 3, "  ...and the modal arm did not run");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestBeginEnd();
     TestDrawDialog();
+    TestPointerUpModalDispatch();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

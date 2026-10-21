@@ -21378,3 +21378,76 @@ new-game draw (geoscape_terror_site, geoscape_ufo_enroute, options_save_tab, opt
 the panels are identical, only the rolled map/squad moves). IDB comments at 0x86910, 0x86938, 0x73750, 0x73174 and
 0x9DE18; idb_save.
 
+
+## Part 105 - the tactical modal answers the press, GameTick_Step owns its byte pair and its
+tail, and the pulse timer runs on the live mission (W + small E)
+
+**The IDB corrected the dispatch first.** `Input_OnPointerUp` @ 0x148d0 ends its modal arms
+(0x14B68 gate, 0x14BC0/0x14BC4 hover 1, 0x14B94/0x14B98 hover 2, 0x14BE0 hover 0) with `B def_14BEC`.
+`def_<switchaddr>` is IDA's name for the jumptable's DEFAULT-CASE target, and that target is the function
+EPILOGUE at 0x15124 (jumptable 0x14BEC default, screens 8/9/14/16-18 answer to nothing) - not the switch
+itself. While a modal is open the release is therefore CONSUMED and no screen arm runs, whatever the screen id.
+The port briefly believed the opposite (an edit made the modal arms fall through to the switch); the edit was
+reverted after `idc.get_name_ea_simple("def_14BEC") = 0x15124` and the jumptable dump 0x14BF4+4i settled it.
+Recorded in the IDB at 0x14B68 and 0x15124. The stored callbacks are apUiSlotsA[16] @ Map+0xA0 and
+apUiSlotsA[18] @ Map+0xA8, NULL-tested at 0x14BCC/0x14BA0; the shell fills them from the live modal state
+(`World_TactPointerFill` copies `sModal.pfn16/pfn18`), so Parts 58/59's stored YES/NO thunks now actually fire.
+
+**The modal live gate (test_geoscapeframe 105.a).** A pen press on bank widget 57 opens the quit dialog
+(screen 8) and `World_TactFrame` asserts `apUiSlotsA[20..23] == 63/126/178/2` - the UiModal_DrawDialog button
+cells (writes 0x266D4/0x268E4/0x268F0/0x26AE4) for the 140-wide 4-line dialog, copied into the input block with
+every painted frame. A press at (nSlot20X+25, nSlot22Y+8) inside the 51x18 hover box (0x13E58) writes hover 1;
+the release runs UiModal_End (0x14BC0) then slot 16 -> the screen-8 quit seam, and screen 8 SURVIVES the release
+because no screen arm runs. Widget 56 opens the deploy dialog (screen 9, 170 wide, 5 lines, cells 58/131/185);
+its NO press answers through slot 18 (`Map_ClearUiScreen` @ 0x18a54, screen 0) with the mission live. Frames
+`tact_quit_confirm`, `tact_modal_statusline` and `tact_deploy_confirm` reviewed at native scale.
+
+**Engine-level dispatch (test_modal).** A new section drives `Input_OnPointerUp` directly with recorder
+callbacks over an all-disabled mock bank: hover 1 fires slot 16 only, hover 2 fires slot 18 only, hover 3 leaves
+the hover cell alone (0x14B8C), hover 0 clears it, a NULL stored callback still runs UiModal_End, and the modal
+consumption shows as the screen-5 arm that zeroes `nUiScreen` (0x15048/0x1505C) NOT running while the status line
+is live - and running when it is not.
+
+**GameTick_Step gains the byte pair and the tail.** The IDB global `unk_113A39` is now `Map_bSlot8Byte1`
+(Map+0x81, BYTE1(apUiSlotsA[8])) with its census in the IDB: the setters are `MapCell_TickProximityItems`' four
+STRB arms (0x4B738/0x4B804/0x4B890/0x4B8FC), `Save_ReadTGameData` 0x44580 loads it, 0x274B4 clears it.
+`GameTick_Step` @ 0x27324 reads it at 0x27364 and, when non-zero, writes LITERAL 1 to `Map_bEnemyTurnActive`
+@ 0x113A13 (0x27388); the >11 phase wrap clears the phase (0x274AC), the trigger (0x274B4) and the enemy byte
+(0x274BC), then tail-calls `Render_Frame` (0x274C4, IsoDrawCtx = szEmptyString+8 = the global pIso). Port:
+`GameTickStepCells {pbSlot8Byte1, pbEnemyTurnActive, pfnRenderFrame, pUser}` +
+`GameTickHooks.pfnRenderFrame = World_TactRenderThunk`; the shell cells are `bMapSlot8Byte1` /
+`bMapEnemyTurnActive`. A value-copy bug fell out of the re-verification: `GameTick_OnTimer`'s 0x275CC skip gate
+reads the trigger AFTER the 0x275B0 step in the original, and the wrap step CLEARS the byte - so on the wrap tick
+the gate sees zero and the active unit still ticks. The port had copied the flag at ctx build; it now reads the
+cell live (asserted in test_timer: counter 12, phase 0, both bytes 0, renders 1, ticked 1).
+
+**The pulse feeder runs on the live mission (test_geoscapeframe 105.b).** The original installs
+`UiPulse_OnTimer` @ 0x36630 as timer 0xC353 and PocketUFO_WndProc 0xA0C64 calls it straight off Map + pBank.
+`World_PulseTact` now feeds the tact half during a live mission through the SyncIn/SyncOut staging (App_TickPulse
+routes 0xC353 there). Gates: slot 0 counts up and wraps past 3; on the wrap it force-fires pBank+0x2C0/0x2E0
+(widgets 22/23, the inventory scroll controls) - and the original's force arm 0x1A3F0 runs the installed handler
+and does NOT clear nState or redraw, so the controls stay armed (ORIGINAL BEHAVIOUR asserted: nState stays 1; each
+handler proved separately through `nInvFilterType` 0->1 (Inv_ScrollDown @ 0x173a8) and 1->0 (Inv_ScrollUp @
+0x173e4)). Slot 3 counts down while positive, slot 4 counts up, and the tick where slot 4 becomes EXACTLY 15 with
+Map+0x150D9 set writes screen 15 and plays sample 15 (0x367D0/0x367F4/0x36800). The held streams: slot 5's left
+byte (0x366CC) and the bank's held-up byte (0x36718, repeats gated on screen 0) each shift the camera scroll once
+and call nullsub_3 (seams +2); the camera gates read `nTileShiftX/Y` (the 0x34/0x35 cells sTactInput owns) and are
+pinned in the test for determinism.
+
+**Dead field dropped.** `TactInputState.bSlot2Byte0` is gone: Map+0x68 (`Map_bSweepArmed`) is read at
+exactly one site, MapView_FocusSelected 0x16718, cleared by Map_InitAndLoadRegistry's scratch half, and its single
+port owner is `g_world.bMapSweepArmed` - the second copy was only a stale-read hazard (IDB comment at 0x113A20;
+test_boot passes a fixture-owned byte). The tact HUD text-record row closed with HEAD evidence: all six records
+(TEXTS 389/390 roster prefixes at `pufo_world.c:4648-4649`, 1104/1107/1105/1106 promotion pair at
+`pufo_world.c:4848-4851`, 1104 banner label at 4832) are filled by `World_TactFrameDraw` - no code change needed.
+
+**Gates.** Six gates green (62/62 both configs, 19935 test checks), e2e 3 flows, 9 pictures unchanged
+against the committed references. Three new frames reviewed at native scale (tact_quit_confirm,
+tact_modal_statusline, tact_deploy_confirm); no existing reference moved. IDB: rename `Map_bSlot8Byte1` with the
+writer/reader census, comments at 0x113A39, 0x113A20, 0x14B68, 0x14BC0, 0x14BC4, 0x14B94, 0x14B98, 0x14BE0,
+0x15124 (the def_14BEC epilogue fact), 0x1A3F0 (force arm never disarms), 0x27380, 0x27388, 0x274BC, 0x274C4,
+0xA0C64, plus appended notes at 0x36630 (the shell feed); idb_save. PLAN closed: the bSlot2Byte0 row, the
+GameTick_Step byte-pair row, the tact-modal OPENERS row (with the opener claims corrected against HEAD - the
+openers were live since Parts 58/59, the stored callbacks and the consumption were the gap), the tact HUD
+text-record row, and the two feeder-gap claims in the tactical-screens row.
+

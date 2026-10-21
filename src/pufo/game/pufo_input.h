@@ -117,8 +117,11 @@ typedef struct TactInputState {
     /* Fields Map_InitAndLoadRegistry @ 0x22648 initialises at startup and no input
      * handler touches. They are the rest of the apUiSlotsA array @ Map+0x60 this
      * struct already models (slots 0, 3, 4, 5, 11 and 19..24 above); slot 26 takes
-     * the startup roll Game_RandU16(3). */
-    u8   bSlot2Byte0;      /* 0x68 LOBYTE(apUiSlotsA[2]), the sweep/repaint gate */
+     * the startup roll Game_RandU16(3). Slot 2's low byte (0x68, the sweep/repaint
+     * gate) is NOT modelled here: since Part 47 the world cell bMapSweepArmed is its
+     * one owner (MapInitEnv.pbSlot2Byte0 @ pufo_app.c:561; MapView_FocusSelected
+     * tests it at 0x16718 -- the IDB names the cell Map_bSweepArmed), and the second
+     * copy this field used to be was read by nothing. Part 105 dropped it. */
     i32  nUiSlot7;         /* 0x7C apUiSlotsA[7] */
     i32  nUiSlot25;        /* 0xC4 apUiSlotsA[25] */
     i32  nUiSlot26;        /* 0xC8 apUiSlotsA[26], the startup roll */

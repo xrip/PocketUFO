@@ -5086,15 +5086,24 @@ static void World_TactSetCursorPosThunk(i32 nX, i32 nY, void *pUser)
     MapCursor_SetPos(&pW->tactEnv.cursorPos, nX, nY, World_TactLookupCell, pW);
 }
 
-/* TickHooks.pfnGameTickStep = GameTick_Step @ 0x27324, the walker's re-run pass at 0x54814. */
+/* TickHooks.pfnGameTickStep = GameTick_Step @ 0x27324, the walker's re-run pass at 0x54814. The
+ * original's call is GameTick_Step(pMap) -- the cell pair and the wrap's tail Render_Frame belong
+ * to the step, so the thunk hands the step the live cells (bMapSlot8Byte1 @ Map+0x81,
+ * bMapEnemyTurnActive @ Map+0x5B) and its own render seam, the same seam TickHooks.pfnRenderFrame
+ * (0x5422C arm) uses. */
 static void World_TactGameTickStepThunk(void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameTickStepCells cells;
 
     if (pW->pTactState == NULL) {
         return;
     }
-    (void)GameTick_Step(pW->pTactState, World_TactLookupCell, pW);
+    cells.pbSlot8Byte1      = &pW->bMapSlot8Byte1;
+    cells.pbEnemyTurnActive = &pW->bMapEnemyTurnActive;
+    cells.pfnRenderFrame    = World_TactRenderThunk;
+    cells.pRenderUser       = pW;
+    (void)GameTick_Step(pW->pTactState, &cells, World_TactLookupCell, pW);
 }
 
 /* ShotHooks.pfnAreaFire stands for the two writes at 0x2FA80/0x2FA94. The bUnk70115 store is
@@ -5524,11 +5533,16 @@ bool World_GameTickOnce(PufoWorldState *pW)
                                                     * cleared by the launch seam's FreeAll at 0x86D34 */
     ctx.bTactFlag     = pW->bTactFlag != 0;        /* Map+0x00, gate 4 (0x27548) */
     ctx.nUiSlot10     = pW->nMapUiSlot10;          /* apUiSlotsA[10] @ Map+0x88, gate 3 (0x2753C) */
-    ctx.bSlot8Byte1   = pW->bMapSlot8Byte1 != 0;   /* Map+0x81, the TickActiveUnit gate (0x275CC) */
+    ctx.pbSlot8Byte1      = &pW->bMapSlot8Byte1;   /* Map+0x81: the TickActiveUnit gate (0x275CC) reads it
+                                                    * AFTER the step, and GameTick_Step's wrap clears it */
+    ctx.pbEnemyTurnActive = &pW->bMapEnemyTurnActive; /* Map+0x5B: the step's pair (0x27364/0x27388,
+                                                       * 0x274B4/0x274BC); Tact_EndEnemyTurn 0x4CB88 is the
+                                                       * other writer, so the step and the AI share the cell */
     ctx.bBusy         = pW->bTactLive && pW->pTactMap->tact.bBusy != 0;        /* TactCtx272.bBusy @ +0xF8 */
     ctx.bPhaseActive  = pW->bTactLive && pW->pTactState->bPhaseActive != 0;    /* TactState @ +0x111E3 */
 
     hooks.pfnClearFrameScratch = World_TactClearFrameScratch;
+    hooks.pfnRenderFrame       = World_TactRenderThunk; /* GameTick_Step's wrap tail @ 0x274C4 */
     hooks.pUser                = pW;
     /* Tact_TickActiveUnit @ 0x54130 runs over the live frame (Part 50): the thunk rebuilds the
      * three processor contexts from pTactMap/tactEnv and dispatches. The phase gate at 0x275CC
@@ -7167,6 +7181,13 @@ static void World_TactPointerFill(PufoWorldState *pW, TactPointerWorld *pPtr)
     World_TactCursorPosRefresh(pW);                           /* the two gate bytes, live now */
     pPtr->bCursorBusy      = pW->tactEnv.cursorPos.bBusy;    /* unk_157180->bBusy */
     pPtr->pLookCtl         = &pW->sTactLookCtl;              /* unk_1571E4 */
+    /* Part 105: the modal button callbacks. Input_OnPointerUp's status-line arm (0x14B68) reads
+     * them from the modal bank (apUiSlotsA[16] @ Map+0xA0, [18] @ Map+0xA8) at 0x14BC4/0x14B98 and
+     * calls them after UiModal_End; sModal IS the original's modal block, so the fill is one hop.
+     * The dispatch gates them on bSlot19Active, which SyncIn stages from sModal.bOpen (5793), so
+     * a live quit/deploy dialog answers through the pen. */
+    pPtr->pfnSlot16        = pW->sModal.pfn16;
+    pPtr->pfnSlot18        = pW->sModal.pfn18;
 }
 
 void World_TactPointerMove(PufoWorldState *pW, TactPointerWorld *pPtr, i32 nX, i32 nY, bool bDown)
@@ -7248,6 +7269,78 @@ void World_TactKeyUp(PufoWorldState *pW, PufoKeySlot eSlot)
     World_TactKeyCtxFill(pW, &ctx, &world);
     World_TactInputSyncIn(pW);
     Input_OnKeyUp(&ctx, eSlot);
+    World_TactInputSyncOut(pW);
+}
+
+/* ---------------------------------------------------------------- WM_TIMER 0xC353 during a mission
+ *
+ * The original installs UiPulse_OnTimer @ 0x36630 as timer 0xC353 and calls it straight off the Map
+ * block (PocketUFO_WndProc 0xA0C64: `LDR R0,=Map_bTactFlag; LDR R1,=pBank; BL UiPulse_OnTimer`), so
+ * its whole tact chain -- the slot-0 wrap force-release of bank widgets 22/23 (pBank+0x2C0/0x2E0),
+ * the nUiSlot5 edge-flag repeats, the UiBank_bHeldUp/Down/Left/Right repeats gated on nUiScreen == 0
+ * (0x36708..0x367A4), the slot 3/4 countdown pair and the long-press arm at slot 4 == 15 (screen 15
+ * + sample 15 when Map+0x150D9 is set, Input_OnSecondary otherwise, 0x367D0..0x3680C) -- reads and
+ * writes the live cells during a mission. The port's UiPulse_OnTimer takes the same ends as the
+ * caller's bank through UiPulseCtx; this is the feeder that hands it the live ones. SyncIn stages
+ * the gates (bTactFlag 5784, bGeoscapeUi 5785 -- the original's 0x36644/0x36658 order), SyncOut
+ * flushes whatever moved (the screen-15 write, cursor moves from the direction repeats, the camera
+ * scroll), exactly the pattern World_TactKeyDown uses. The geoscape branch is unchanged: with
+ * bGeoscapeUi staged 1 the timer hands over to World_PulseGeoscape and returns (0x36648). */
+static void World_PulseUpdateThunk(void *pUser)
+{
+    World_PulseGeoscape((PufoWorldState *)pUser);
+}
+
+static void World_PulsePlaySampleThunk(i32 nSample, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pfnPlaySample != NULL) {
+        pW->pfnPlaySample(nSample, pW->pSoundUser); /* Sound_Play @ 0x36800, sample 15 */
+    }
+}
+
+void World_PulseTact(PufoWorldState *pW)
+{
+    UiPulseCtx ctx;
+    UiPulseHooks timers;
+    TactInputWorld world;
+    UiWidgetBank *pBank;
+
+    if (!World_bTactPointerLive(pW) || pW->pFrameHooks == NULL
+        || pW->pFrameHooks->pTactInputHooks == NULL) {
+        return;
+    }
+    pBank = pW->pFrameHooks->pBank;
+    if (pBank == NULL) {
+        return;                                      /* no bank: no widgets 22/23, no held bytes */
+    }
+
+    memset(&ctx, 0, sizeof(ctx));
+    memset(&timers, 0, sizeof(timers));
+    memset(&world, 0, sizeof(world));
+
+    timers.pfnPulseUpdate = World_PulseUpdateThunk;  /* Geoscape_PulseUpdate @ 0x954dc */
+    timers.pfnPlaySample  = World_PulsePlaySampleThunk;
+    timers.pUser          = pW;
+
+    world.pQueue      = pW->pTactState;              /* pMapTactical @ 0x157198 */
+    world.pfnLookup   = World_TactLookupCell;
+    world.pLookupUser = pW;
+
+    ctx.pState        = &pW->sTactInput;
+    ctx.pHooks        = pW->pFrameHooks->pTactInputHooks;
+    ctx.pWorld        = &world;
+    ctx.pbEscapeFlag  = &pBank->bEscapeFlag;         /* bUiEscapeFlag @ pBank+0x1042 (0xAD712) */
+    ctx.pCtlPulseA    = &pBank->aCtl[22];            /* unk_AC990 = pBank+0x2C0 */
+    ctx.pCtlPulseB    = &pBank->aCtl[23];            /* unk_AC9B0 = pBank+0x2E0 */
+    ctx.pHit          = pW->pFrameHooks->pHit;     /* the caller's UiControlHitCtx (the same one the
+                                                    * frame env and the pen release half use) */
+    ctx.pbBankHeld    = pBank->abHeldDir;            /* UiBank_bHeldUp/Down/Left/Right */
+    ctx.pTimers       = &timers;
+
+    World_TactInputSyncIn(pW);
+    UiPulse_OnTimer(&ctx);
     World_TactInputSyncOut(pW);
 }
 

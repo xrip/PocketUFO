@@ -951,8 +951,10 @@ static void App_TickAnim(void)
 
 /* The WM_TIMER 0xC353 body (0xA0C64): UiPulse_OnTimer @ 0x36630 over the Map block. Its geoscape
  * branch (0x36644) returns after one hook call, and that hook is Geoscape_PulseUpdate @ 0x954dc --
- * the geoscape clock tick. The tact branch is the held-key repeat, and the shell has no tactical
- * mission state yet, so bTactFlag keeps it at the `return` at 0x36660. */
+ * the geoscape clock tick. The tact branch is the held-key repeat over the live cells; during a
+ * mission App_TickPulse routes it to World_PulseTact (Part 105), and only the geoscape/no-mission
+ * case runs the plain call below -- with no mission the original's own gate at 0x36660 (LDRB
+ * Map_bTactFlag, BEQ loc_36810) keeps the body from doing anything. */
 static void App_GeoscapePulseThunk(void *pUser)
 {
     (void)pUser;
@@ -965,6 +967,11 @@ static void App_TickPulse(void)
 {
     UiPulseHooks hooks;
     UiPulseCtx   ctx;
+
+    if (g_bWorldReady && World_bTactPointerLive(&g_world)) {
+        World_PulseTact(&g_world);   /* 0xC353's tact half, over the live mission cells */
+        return;
+    }
 
     /* The same gate Input_OnPointer / Input_OnPointerUp use at 0x13CE0 / 0x14908. */
     g_tactState.bGeoscapeUi = (g_bWorldReady && g_world.bGeoscapeUi != 0) ? 1 : 0;

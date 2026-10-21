@@ -162,7 +162,14 @@ typedef struct GameTickCtx {
     i32  nUiSlot10;       /* apUiSlotsA[10] @ 0x88 */
     bool bBusy;           /* TactCtx272.bBusy */
     bool bPhaseActive;    /* TactState.bUnk70115 */
-    bool bSlot8Byte1;     /* BYTE1(apUiSlotsA[8]) */
+    /* Part 105: the slot-8 byte is a POINTER because the 0x275CC skip gate runs AFTER GameTick_Step
+     * (0x275b0 is the step call inside this handler) and GameTick_Step's own wrap CLEARS the byte at
+     * 0x274B4. A value copy captured at entry would let a step that just ended its phase keep
+     * TickActiveUnit skipped, where the original -- reading Map+0x81 live at 0x275CC -- ticks. The
+     * pair cell goes through too: GameTick_Step @ 0x27324 reads/writes both (0x27364/0x27388,
+     * 0x274B4/0x274BC). NULL means "no such cell" and reads as zero. */
+    u8   *pbSlot8Byte1;     /* unk_113A39 @ Map+0x81 = BYTE1(apUiSlotsA[8]) */
+    u8   *pbEnemyTurnActive;/* Map_bEnemyTurnActive @ Map+0x5B */
 } GameTickCtx;
 
 typedef struct GameTickHooks {
@@ -170,6 +177,9 @@ typedef struct GameTickHooks {
                                                 * pufo_tactstate.c; a hook because it takes the caller's
                                                 * TactTickCtx, not this handler's arguments */
     void (*pfnClearFrameScratch)(void *pUser); /* byte_138E74 = 0 */
+    void (*pfnRenderFrame)(void *pUser);       /* GameTick_Step's phase-wrap tail call to Render_Frame
+                                                * @ 0x274C4 (Render_Frame @ 0x22310 over the pIso global
+                                                * block); forwarded to GameTickStepCells.pfnRenderFrame */
     void *pUser;
 } GameTickHooks;
 

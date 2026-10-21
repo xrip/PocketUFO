@@ -301,24 +301,46 @@ void TactState_KickQueue(TactState *pState);
  * original does and it is intentional, not a typo. */
 void Unit_EnqueueIfApSpent(TactState *pState, Soldier *pUnit, u8 nArg);
 
+/* The two Map cells GameTick_Step @ 0x27324 reaches directly, and the frame it tail-calls.
+ * The original takes the Map block itself (LDR R0,=Map_bTactFlag @ 0x27354); the port names the
+ * three ends it touches:
+ *   unk_113A39 @ Map+0x81 = BYTE1(apUiSlotsA[8]) -- read at 0x27364, cleared at 0x274B4. Its
+ *   writers in the image are Save_ReadTGameData @ 0x44580 (a loaded save can arm it) and this
+ *   clear; its other readers are the TickActiveUnit skip gate at 0x275CC and
+ *   MapCell_TickProximityItems. The shell names the cell bMapSlot8Byte1.
+ *   Map_bEnemyTurnActive @ 0x113A13 = Map+0x5B -- written 1 here at 0x27388 when the slot-8 byte
+ *   is set, cleared here at 0x274BC on the wrap, cleared by Tact_EndEnemyTurn (0x4CB88) and the
+ *   tact-end family. The shell names it bMapEnemyTurnActive.
+ * The tail call at 0x274C4 is `LDR R0,=(szEmptyString+8); BL Render_Frame` -- the IDB names that
+ * global pIso, the one IsoDrawCtx block, so the original renders the whole frame inline on the
+ * phase-wrap step. The port routes it through the caller's hook. */
+typedef struct GameTickStepCells {
+    u8   *pbSlot8Byte1;                 /* unk_113A39 @ Map+0x81 */
+    u8   *pbEnemyTurnActive;            /* Map_bEnemyTurnActive @ Map+0x5B */
+    void (*pfnRenderFrame)(void *pUser);/* Render_Frame @ 0x274C4 (the 0x22310 entry) */
+    void *pRenderUser;
+} GameTickStepCells;
+
 /* GameTick_Step @ 0x27324.
  *
  * The per-frame tick for animated tiles and the enemy-turn phase counter.
  *
- *  1. Do nothing unless bPhaseActive is set.
- *  2. Sweep every cell on every layer. For any cell whose nFlags32 has a
+ *  1. Do nothing unless bPhaseActive is set (0x27348 reads TactState+0x111E3).
+ *  2. When unk_113A39 (Map+0x81) is set, set Map_bEnemyTurnActive to 1 (0x27364/0x27388:
+ *     LDRB/ANDS/MOVNE R1,#1/STRBNE -- only the non-zero test is a write trigger, and the
+ *     value written is the literal 1).
+ *  3. Sweep every cell on every layer. For any cell whose nFlags32 has a
  *     non-zero bits 3..6 field (mask 0x78), decrement that field:
  *         new = ((((u8)((v9 & 0xF8) - 1)) ^ (u8)v9) & 0x78) ^ v9
  *     The mask isolates bits 3..6 so the decrement cannot borrow into the
  *     surrounding flag bits; the field wraps 0 -> 0xF rather than saturating.
- *  3. Increment nPhaseCounter. Past 11, clear bPhaseActive and stop.
- *
- * The original also sets and clears pCtxBase.bEnemyTurnActive around this, and
- * calls Render_Frame on the final step. Neither belongs here: the port sets the
- * enemy-turn flag from its own phase owner and renders from the frame loop.
+ *  4. Increment nPhaseCounter (0x27478..0x27488, TactState+0x1118C). Past 11 (0x27498 BLE 0xB):
+ *     clear bPhaseActive (0x274AC), clear unk_113A39 (0x274B4), clear Map_bEnemyTurnActive
+ *     (0x274BC), then tail-call Render_Frame (0x274C4) through pfnRenderFrame.
  *
  * Returns true when the phase ended on this call. */
-bool GameTick_Step(TactState *pState, MapCellLookup pfnLookup, void *pUser);
+bool GameTick_Step(TactState *pState, const GameTickStepCells *pCells,
+                   MapCellLookup pfnLookup, void *pUser);
 
 /* Applies the animated-tile decrement to one cell. Exposed so the bit arithmetic
  * can be tested in isolation against the original's expression. */
