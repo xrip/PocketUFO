@@ -435,6 +435,9 @@ typedef struct PufoWorldState {
     LosTables     sTactLoft;            /* lofttemps.dat + unitloft.dat, filled by Tact_LoadLoftData */
     VisRay        aTactVisRays[PUFO_VIS_RAY_COUNT];      /* unk_B2278, 120 records */
     u8            abTactVisSteps[PUFO_VIS_TABLE_BYTES];  /* byte_AD720 */
+    FovField      sTactFov;         /* the FOV field Map_ComputeFov @ 0x2deac writes (Map+77788 in
+                                     * the original); Part 106: the shot resolution's window refresh
+                                     * runs through it */
     TactItem     *apTactItems[2048];    /* Map.apTactItems @ Map+0x23438: the block up to Map+0x25438
                                          * is 2048 pointer slots in the original */
     i32           nTactItemCount;       /* Map_nTactItemCount @ Map+0x1513C */

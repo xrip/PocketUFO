@@ -844,7 +844,12 @@ i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv)
             nLayer = (i32)pRec[-104 + 2];
 
             MapCell *pCell = pEnv->pfnLookupCell(nCellX, nCellY, nLayer, pEnv->pLookupUser);
-            if (pCell == NULL || !MapCell_HasOccupant(pCell)) {
+            /* 0x39F50: the found test is the occupant alone -- MapCell_HasOccupant on the slot the flat
+             * index names; when every point is taken the unit stays on the cell phase 1 parked it on
+             * (0x39FEC). Deviation, recorded: when the port's capacity guard names no slot the
+             * original would call MapCell_HasOccupant on whatever global sits past Map+0x23438; the
+             * port treats that point as taken and moves on. */
+            if (pCell != NULL && !MapCell_HasOccupant(pCell)) {
                 bFound = true;
                 break;
             }

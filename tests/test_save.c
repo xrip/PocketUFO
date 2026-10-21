@@ -3107,7 +3107,7 @@ static void TestReadTGameData(void)
     ObjectRecFull *apObj[1];
     TactItem aItem[1];
     TactItem *apItem[1];
-    i32 nItemCount;
+    i32 nItemCount, nRosterCount;
 
     printf("Save_ReadTGameData\n");
 
@@ -3214,7 +3214,8 @@ static void TestReadTGameData(void)
     read.apObjects = apObj;
     read.nObjectCount = 1;
     read.apSoldiers = apSol;
-    read.nSoldierCount = 2;
+    read.pnSoldierCount = &nRosterCount; /* the reader follows this live cell (0x417D4 shape) */
+    nRosterCount = 2;
     nItemCount = 1;
 
     Check(OpenRead("test_tload.tmp", &dat), "  reopened for reading");

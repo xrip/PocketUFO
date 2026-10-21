@@ -123,6 +123,10 @@ typedef struct PathScratch {
     i32      nCountA;
     i32      nCountB;
     bool     bUseA; /* byte_10DB80: which list is the current frontier */
+    bool     bSearchFlag; /* byte_10DB84 @ 0x10db84: Map_ComputeReachable stores the flood
+                           * flag here (0x2b850/0x2b860); Unit_CanStepTo reads it in the
+                           * vertical re-anchor arms, so the shell's probe thunk reads it
+                           * from here too */
 } PathScratch;
 
 /* Path_EnqueueCell @ 0x2b534. Appends pCell to the active list unless it is
@@ -188,9 +192,9 @@ typedef struct PathToCellCtx {
     i32          *pnPathCount;     /* Map+0x4E44 */
     PathScratch  *pScratch;        /* the flood fill's frontier lists */
     MapCellLookup pfnLookup;
-    PathStepProbe  pfnProbe;       /* Unit_CanStepTo (0x27bb8, ported in pufo_step.c) -- not
-                                    * wired here yet; a NULL seam steps permissively by the
-                                    * delta table (deviation) */
+    PathStepProbe  pfnProbe;       /* Unit_CanStepTo (0x27bb8, ported in pufo_step.c) -- the shell
+                                    * wires its own probe thunk over the live cells (Part 106);
+                                    * a NULL seam still steps permissively by the delta table */
     void          *pProbeUser;       /* the user Path_ComputeReachable passes to BOTH readers
                                       * (the original's flood fill is one shared context) */
     void          *pLookupUser;      /* the user Unit_PathToCell's own lookups use */

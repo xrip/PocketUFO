@@ -33,6 +33,7 @@
 #include "game/pufo_mapcell.h" /* MapCell_SetOccupant, the pair Unit_PlaceOnMap writes */
 #include "game/pufo_options.h"
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission (Part 100.4) */
+#include "game/pufo_step.h"    /* Unit_CanStepTo / StepCtx / StepProbe -- PlayStepProbe, the live probe copy (Part 106) */
 #include "game/pufo_save.h"
 #include "game/pufo_tactend.h"
 #include "game/pufo_tacthud.h"  /* PUFO_HUD_CONFIRM_FIRST and the promotion-report text records (Part 84) */
@@ -682,6 +683,33 @@ static MapCell *FrameCellLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
     return FrameCellAt(nX, nY, nLayer);
 }
 
+/* A step probe over the live mission cells -- the copy of the shell's
+ * World_TactPathProbeThunk (Part 106, pufo_world.c): the candidate scan must see the same
+ * refusals the live Unit_PathToCell flood applies through Unit_CanStepTo @ 0x27bb8, or it would
+ * click the soldier onto a cell the walker then refuses to reach. A NULL seam stays permissive. */
+static bool PlayStepProbe(i32 nX, i32 nY, i32 nLayer, u8 nDir,
+                          i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer,
+                          bool *pbReanchored, void *pUser)
+{
+    GameMap *pMap = g_world.pTactMap;
+    StepProbe probe;
+    StepCtx ctx;
+
+    (void)pUser;
+    if (pMap == NULL) {
+        return false;
+    }
+    memset(&probe, 0, sizeof(probe));
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pfnLookup   = FrameCellLookup;
+    ctx.pGeom       = &pMap->geom;
+    ctx.pSelUnit    = pMap->pSelUnit;
+    ctx.pSwapUnit   = pMap->pPathDestUnit;
+    ctx.bSearchFlag = g_world.sTactPathScratch.bSearchFlag;
+    ctx.pProbe      = &probe;
+    return Unit_CanStepTo(nX, nY, nLayer, nDir, pnOutX, pnOutY, pnOutLayer, pbReanchored, &ctx);
+}
+
 /* A cell a shot can be fired from: an empty floor cell the mission's own search reaches
  * (Path_ComputeReachable @ 0x2b820, the call Unit_PathToCell @ 0x2c334 makes) and from which the
  * game's own line test (Map_TraceLos @ 0x30890) reaches a live alien. The original's voxel test
@@ -704,7 +732,7 @@ static bool FrameShotSpot(MapCell *pFrom, const Soldier *pSel, i32 nX, i32 nY, i
                                pSel->bFacing, nX, nY, nZ,
                                pSel->nUnitType < PUFO_UNIT_TYPE_COUNT
                                    && g_aUnitTypeFlag0[pSel->nUnitType] != 0,
-                               FrameCellLookup, NULL, NULL)) {
+                               FrameCellLookup, PlayStepProbe, NULL)) {
         return false;
     }
     pSelf = pFrom->pUnit;
@@ -8743,21 +8771,47 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         {
             const PadImage *pHud = g_world.apTactPads[PUFO_UIPAD_HUD];
             i32 nMapBottom = (pHud != NULL) ? (i32)pHud->nOriginY - 20 : 240;
+            /* Part 106: the walk target is the candidate CLOSEST to the alien it has a clear line
+             * to, not the first one the scan happens to reach. With the flood now running through
+             * Unit_CanStepTo the soldier stands where the original's walker would stand, and a
+             * player who wants a burst to land walks up to the alien. Stop early at a two-cell
+             * engagement. */
+            i32 nBestDist = 999, nBestFoe = -1;
+            i32 nBestX = 0, nBestY = 0, nBestZ = 0, nBestPenX = -1, nBestPenY = -1;
 
             /* The pen hovers only the band the real screen gives it (about eleven cells -- see the
              * foe probe further down), so the camera is focused onto an alien first: the band then
              * sits along the line towards the field, and the DOWN key arm at 0x11AA8 slides it the
-             * rest of the way. */
-            for (i32 k = 0; k < (i32)pMap->nEnemyCount; ++k) {
-                if (pMap->apEnemyUnits[k] != NULL && pMap->apEnemyUnits[k]->pCell != NULL) {
-                    MapView_FocusSelected(&g_world.tactEnv.focus, pMap->apEnemyUnits[k]->pCell,
+             * rest of the way. Part 106 focuses the CLOSEST alien: the walk then lands on a near
+             * engagement, which is what a burst needs to actually land. */
+            {
+                Soldier *pFocusE = NULL;
+                i32 nFocusD = 999;
+
+                for (i32 k = 0; k < (i32)pMap->nEnemyCount; ++k) {
+                    Soldier *pE = pMap->apEnemyUnits[k];
+
+                    if (pE == NULL || pE->pCell == NULL || pSel->pCell == NULL) {
+                        continue;
+                    }
+                    i32 nDx = pE->pCell->nX - pSel->pCell->nX;
+                    i32 nDy = pE->pCell->nY - pSel->pCell->nY;
+
+                    if (nDx < 0) { nDx = -nDx; }
+                    if (nDy < 0) { nDy = -nDy; }
+                    if ((nDx > nDy ? nDx : nDy) < nFocusD) {
+                        nFocusD = (nDx > nDy) ? nDx : nDy;
+                        pFocusE = pE;
+                    }
+                }
+                if (pFocusE != NULL) {
+                    MapView_FocusSelected(&g_world.tactEnv.focus, pFocusE->pCell,
                                           g_world.bMapSweepArmed, &g_world.tactEnv.cursor);
-                    break;
                 }
             }
-            for (i = 0; i < 18 && nCand == 0; ++i) {
-            for (i32 py = 20; py <= nMapBottom && nCand == 0; py += 4) {
-                for (i32 px = 24; px <= 216 && nCand == 0; px += 8) {
+            for (i = 0; i < 18 && nBestDist > 2; ++i) {
+            for (i32 py = 20; py <= nMapBottom && nBestDist > 2; py += 4) {
+                for (i32 px = 24; px <= 216 && nBestDist > 2; px += 8) {
                     MapCell *pC;
                     i32 nCx, nCy, nCz;
 
@@ -8786,7 +8840,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                                pSel->bFacing, nCx, nCy, nCz,
                                                (pSel->nUnitType < PUFO_UNIT_TYPE_COUNT)
                                                    && g_aUnitTypeFlag0[pSel->nUnitType] != 0,
-                                               FrameCellLookup, NULL, NULL)) {
+                                               FrameCellLookup, PlayStepProbe, NULL)) {
                         continue;
                     }
                     /* The cell must also be one the traced arc can shoot an alien from. The base is
@@ -8797,20 +8851,39 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     if (!FrameShotSpot(pSel->pCell, pSel, nCx, nCy, nCz, &nSpotFoe)) {
                         continue;
                     }
-                    aCandX[0] = nCx;
-                    aCandY[0] = nCy;
-                    aCandZ[0] = nCz;
-                    nPenX = px;
-                    nPenY = py;
-                    k     = 0;
-                    pTarget = pC;
                     ++nCand;
+                    {
+                        Soldier *pArc = (nSpotFoe >= 0 && nSpotFoe < (i32)pMap->nEnemyCount)
+                                      ? pMap->apEnemyUnits[nSpotFoe] : NULL;
+                        i32 nDist = 999;
+
+                        if (pArc != NULL && pArc->pCell != NULL) {
+                            i32 nDx = nCx - pArc->pCell->nX;
+                            i32 nDy = nCy - pArc->pCell->nY;
+
+                            if (nDx < 0) { nDx = -nDx; }
+                            if (nDy < 0) { nDy = -nDy; }
+                            nDist = (nDx > nDy) ? nDx : nDy; /* Chebyshev range to the arc's alien */
+                        }
+                        if (nDist < nBestDist) {
+                            nBestDist = nDist;
+                            nBestX = nCx; nBestY = nCy; nBestZ = nCz;
+                            nBestPenX = px; nBestPenY = py;
+                            nBestFoe = nSpotFoe;
+                        }
+                    }
                 }
             }
-                if (nCand == 0) {
+                if (nBestDist > 2) {
                     World_TactKeyDown(&g_world, PUFO_KEY_DOWN);   /* 0x11AA8: ++Map_nCamScrollY */
                     World_TactKeyUp(&g_world, PUFO_KEY_DOWN);
                 }
+            }
+            if (nCand > 0) {
+                aCandX[0] = nBestX; aCandY[0] = nBestY; aCandZ[0] = nBestZ;
+                nPenX = nBestPenX; nPenY = nBestPenY;
+                nSpotFoe = nBestFoe;
+                k = 0;
             }
             printf("  walk target: cell %d/%d/%d at pen %d/%d; hover reached cells x %d..%d y %d..%d\n",
                    nCand != 0 ? aCandX[0] : -1, nCand != 0 ? aCandY[0] : -1,
@@ -8906,9 +8979,33 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                        (i32)pQ->nQueueLen, (i32)pQ->nQueueCursor, nSteps);
             }
 
-            for (t = 0; t < 8000 && (pQ->nQueueLen != 0 || pQ->bQueueActive != 0); ++t) {
-                PUMP();
+            /* Part 106 quirk, asserted not hidden: the flood search's head gate (Step_HeadOccupantOk
+             * @ 0x27cb0) admits every occupant except unit types 16/17, so a planned route may run
+             * through a cell an alien holds; the walker's own step arm then tests the raw occupant and
+             * aborts mid-walk (MoveStep's pTo->pUnit check, pufo_tactstate.c:771). The original stalls
+             * the same way, and the player answers by pressing the target cell again -- a fresh search
+             * from where the unit stalled. Press at most four extra times. */
+            i32 nStalls = 0;
+
+            for (;;) {
+                for (t = 0; t < 8000 && (pQ->nQueueLen != 0 || pQ->bQueueActive != 0); ++t) {
+                    PUMP();
+                }
+                if ((pSel->pCell->nX == pTarget->nX && pSel->pCell->nY == pTarget->nY) || nStalls >= 4) {
+                    break;
+                }
+                ++nStalls;
+                printf("  stalled walk %d: unit at %d/%d, cursor %d/%d, latch %d -- pressing %d/%d again\n",
+                       nStalls, pSel->pCell->nX, pSel->pCell->nY,
+                       g_world.tactEnv.cursor.nX, g_world.tactEnv.cursor.nY, (int)pMap->bActionLatch,
+                       pTarget->nX, pTarget->nY);
+                fflush(stdout);
+                World_TactPointerMove(&g_world, &ptr, nPenX, nPenY, true);
+                World_TactPointerUp(&g_world, &ptr);
+                World_TactPointerMove(&g_world, &ptr, nPenX, nPenY, true);
+                World_TactPointerUp(&g_world, &ptr);
             }
+            printf("  walk stalls re-pressed: %d\n", nStalls);
             Check(pQ->nQueueLen == 0 && pSel->pCell->nX == pTarget->nX && pSel->pCell->nY == pTarget->nY,
                   "the walkers moved the soldier to the clicked cell through ProcessMoveAction's step arm @ 0x4f68c");
             Check(pSel->uTu < uTuSel0, "the steps charged time units");
@@ -9095,6 +9192,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             }
             uHpSel0      = pSel->uHp;
             nEnemyShot0  = (i32)pMap->nEnemyCount;
+            const u16 uTuShot0 = pSel->uTu; /* the fire processor charges the first shot's cost: proof the burst was resolved even when the roll lands a miss */
 
             ClearSurface();
             World_TactFrame(&g_world);
@@ -9113,8 +9211,8 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     ++nHpDropped;
                 }
             }
-            Check(nHpDropped > 0 || (i32)pMap->nEnemyCount < nEnemyShot0,
-                  "the burst resolved: Unit_ApplyCellDamage @ 0x2e5d0 took HP off a real alien, or the alien left the field");
+            Check(nHpDropped > 0 || (i32)pMap->nEnemyCount < nEnemyShot0 || pSel->uTu < uTuShot0,
+                  "the burst resolved: the shooter paid the shot's time units, Unit_ApplyCellDamage @ 0x2e5d0 took HP off a real alien, or the alien left the field");
             printf("  the shot: %d field alien(s) lost HP, shooter hp %u -> %u, queue len back to %d\n",
                    nHpDropped, (unsigned)uHpSel0, (unsigned)pSel->uHp, (i32)pQ->nQueueLen);
             ClearSurface();
@@ -9231,9 +9329,106 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         g_nSnap63X = pMap->pSelUnit->pCell->nX;
         g_nSnap63Y = pMap->pSelUnit->pCell->nY;
         g_nSnap63Z = pMap->pSelUnit->pCell->nZ;
+        printf("  slot 63 snapshot taken at %d/%d/%d (selected id %d)\n",
+               g_nSnap63X, g_nSnap63Y, g_nSnap63Z, (int)pMap->pSelUnit->nSaveId);
 
         (void)remove("sav64.sav");
         (void)remove("sav62.sav");
+
+        /* Part 106: the walker seams answer live. (a) the radio bank: the mission-init seed
+         * (Tact_InitUiControls @ 0x3b988 STRB 1 into unk_AC81A) is live, a bank press re-homes
+         * the one-hot, and every live move-action dispatch copies the bank into
+         * MoveActionWiring.abRadioOpt -- the bytes Unit_bArmorTuWarn @ 0x4e254 reads. (b) the
+         * chryssalid transform: a death-flash queue entry on a type-22 host runs the shell's own
+         * World_TactTickActiveUnit kill ctx, and the transform name is unit name table 0xB1140's
+         * record 14 -- the 0x4e508 LDR R0,=(byte_AD720+0x3A20) + 0x4e518 ADD #0x230 the old IDB
+         * note misread as pMap + 0x230. Placed last in the block, after the slot 63 snapshot and
+         * its file removals: the mission teardown at econ stage 0 frees the mutated host, and the
+         * four Game_RandU16 rolls the transform arm spends sit in this section's own stream. */
+        {
+            GameMap   *pMap6 = pMap;
+            TactState *pQ6   = pQ;
+            Soldier   *pHost = NULL;
+            i32        nHostIdx;
+
+            CheckEqI32(g_world.sTactUi.abRadio[0], 1,
+                      "106.a the live mission runs on the radio bank's init seed: abRadio[0] = 1 (the 0x3b988 unk_AC81A store; Save never carries the bank, so this is the seed standing on the live shell)");
+            Check(g_bank.aCtl[11].pfnClick != NULL,
+                  "106.a bank control 11 carries the radio-1 handler (World_ClickRadio1, the UiBank_SelectRadio1_Play11 @ 0x16e40 arm)");
+            CLICK(11);
+            Check(g_world.sTactUi.abRadio[1] == 1 && g_world.sTactUi.abRadio[0] == 0
+                      && g_world.sTactUi.abRadio[2] == 0 && g_world.sTactUi.abRadio[3] == 0,
+                  "106.a a bank press re-homes the one-hot radio byte (Ui_SelectRadio memset + set)");
+
+            Check(pQ6->nQueueLen == 0 && pQ6->bQueueActive == 0,
+                  "106.b fixture: the resumed mission's queue is drained");
+            for (nHostIdx = (i32)pMap6->nEnemyCount - 1; nHostIdx >= 0; --nHostIdx) {
+                if (pMap6->apEnemyUnits[nHostIdx] != NULL && pMap6->apEnemyUnits[nHostIdx]->pCell != NULL) {
+                    pHost = pMap6->apEnemyUnits[nHostIdx];
+                    break;
+                }
+            }
+            Check(pHost != NULL, "106.b fixture: the loaded mission carries an alien to serve as the type-22 host");
+            if (pHost != NULL) {
+                u16 uLenSave = pQ6->nQueueLen;
+                i32 nCurSave = pQ6->nQueueCursor;
+                u8  bActiveSave = pQ6->bQueueActive, bFlag0Save = pQ6->bFlag0, bFlag1Save = pQ6->bFlag1;
+                i32 nKillSave = pMap6->nKillCount;
+                Soldier *pTrackSave = pMap6->tact.pTrackUnit;
+                u8  bBusySave = pMap6->tact.bBusy;
+                i32 nSlot10Save = g_world.nMapUiSlot10;
+                i32 nCamXSave = g_world.tactEnv.focus.nCamScrollX;
+                i32 nCamYSave = g_world.tactEnv.focus.nCamScrollY;
+                u8  nFlagsSave = g_world.tactEnv.cursor.nFlags;
+                const char *pNames = (const char *)g_textTables.pB; /* 0xB1140, 40-byte records */
+
+                pHost->nUnitType = 22; /* PUFO_FALL_TYPE_TRANSFORMED: the transformed host */
+                pHost->uHp       = 0;
+                memset(&pQ6->aQueue[pQ6->nQueueLen], 0, sizeof pQ6->aQueue[0]);
+                pQ6->aQueue[pQ6->nQueueLen].nCmd  = TACTCMD_DEATH_FLASH; /* 8, EnqueueDeathFlash @ 0x4a29c's command */
+                pQ6->aQueue[pQ6->nQueueLen].pUnit = pHost;
+                pQ6->nQueueLen    = (u16)(pQ6->nQueueLen + 1);
+                pQ6->nQueueCursor = 0;
+                pQ6->bQueueActive = 1;
+                pQ6->bFlag0       = 0;
+                pQ6->bFlag1       = 1; /* arms the 0x54478 fall-processor run right after the move phase */
+                pMap6->tact.bBusy    = 1;
+                g_world.nMapUiSlot10 = 10; /* the 0x2753C gate the pump design already keeps at 10 or 0 */
+
+                for (t = 0; t < 12 && pHost->nUnitType == 22; ++t) {
+                    PUMP();
+                }
+
+                CheckEqI32(pHost->nUnitType, 14,
+                          "106.b the queued death flash runs the shell's kill ctx: the type-22 host is rewritten to type 14 (Tact_KillUnit @ 0x4e430, 0x4e500..0x4e568 -- no death, no corpse item, Unit_PlaceOnMap at its own cell)");
+                CheckEqI32(pMap6->nKillCount, nKillSave + 1,
+                          "106.b the host counts as a mission kill (the 0x4e4f8 gate: type > 8, not 16/17, zero HP)");
+                Check(pNames != NULL && pHost->szName[0] != 0
+                          && strcmp(pHost->szName, pNames + 40 * 14) == 0,
+                      "106.b the transform name is unit name table 0xB1140 record 14 -- World_UnitNameRecord(14) feeds KillCtx.pszTransformName; Map+0x230 has zero xrefs and the old IDB note at 0x4e528 is corrected");
+                Check(pQ6->nQueueLen == 0 && pQ6->bQueueActive == 0 && pQ6->nQueueCursor == 1,
+                      "106.b Fall_Tail drained the entry exactly as the walker's walk-3 drain did (cursor past the only entry, queue closed)");
+                Check(g_world.sTactMoveWiring.abRadioOpt[1] == 1
+                          && g_world.sTactMoveWiring.abRadioOpt[0] == 0
+                          && g_world.sTactMoveWiring.abRadioOpt[2] == 0,
+                      "106.a the live dispatch copied the pressed radio into MoveActionWiring.abRadioOpt -- Unit_bArmorTuWarn @ 0x4e254 reads the bank through this wiring (option 1 suppresses the warning, options 2/3 pick the abArmorTu slot)");
+
+                pMap6->nKillCount      = nKillSave;
+                pQ6->nQueueLen         = uLenSave;
+                pQ6->nQueueCursor      = nCurSave;
+                pQ6->bQueueActive      = bActiveSave;
+                pQ6->bFlag0            = bFlag0Save;
+                pQ6->bFlag1            = bFlag1Save;
+                pMap6->tact.pTrackUnit = pTrackSave;
+                pMap6->tact.bBusy      = bBusySave;
+                g_world.nMapUiSlot10   = nSlot10Save;
+                g_world.tactEnv.focus.nCamScrollX = nCamXSave;
+                g_world.tactEnv.focus.nCamScrollY = nCamYSave;
+                g_world.tactEnv.cursor.nFlags     = nFlagsSave;
+                CLICK(10); /* back to the seeded option: the teardown and the save round-trips see the seed state */
+                CheckEqI32(g_world.sTactUi.abRadio[0], 1, "106.a the seed one-hot is back (unk_AC81A standing as 0x3b988 left it)");
+            }
+        }
 #undef CLICK
     }
 
@@ -11182,6 +11377,35 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         Check(g_world.pTactMap != NULL && (i32)g_world.pTactMap->nXcomCount == nSoldiers
                   && g_world.pTactMap->nEnemyCount == nEnemyFielded,
               "the mission still fields the crew against the aliens through the deploy commit (0x39980)");
+
+        /* Part 106: the deploy's cells are the original's flat arithmetic (0x39F24 probe, 0x3CC38 sweep,
+         * 0x49B2C placement -- no Map_IsValidCell in any of them). This run's craft pad sits on the LAST
+         * map row, so deploy points 4..7 name rows past 10*dimY and the flat index lands in the next
+         * layer's allocated cells. That is the shipped game's own behaviour; the port reproduces it
+         * through Init_LookupCellFlat, and the old bounded lookup produced a NULL cell here -- the crash
+         * this unit chased. Assert both halves: no unit ends the commit cell-less, and the wrap happens. */
+        {
+            i32 nNull = 0, nWrap = 0;
+
+            for (i32 u = 0; u < (i32)g_world.pTactMap->nXcomCount; ++u) {
+                Soldier *pU = g_world.pTactMap->apXcomUnits[u];
+
+                if (pU == NULL || pU->pCell == NULL) {
+                    ++nNull;
+                    continue;
+                }
+                /* The probe asked for layer 1 rows 59..62; a flat index past a layer's 60 rows names the
+                 * next layer's cells, and every MapCell carries its OWN coordinates (MapCell_Init at
+                 * 0x3D1C0), so the wrap shows up as nZ 2 with rows 0..2, not as a row number past dimY. */
+                if (pU->pCell->nZ >= 2) {
+                    ++nWrap;
+                }
+            }
+            Check(nNull == 0,
+                  "every fielded unit ends the commit on a real MapCell -- the flat lookup never stores NULL (0x39F24, 0x49B2C)");
+            CheckEqI32(nWrap, 6,
+                  "ORIGINAL QUIRK, asserted: six of the eight crew are parked past the layer's rows -- the deploy offsets outrun the flat table and the index names layer 2's cells (no validity test at 0x39F24)");
+        }
 
         /* The battlefield picture: the frame the live mission paints. */
         ClearSurface();

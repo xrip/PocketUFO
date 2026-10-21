@@ -388,6 +388,8 @@ static void TestReachableFlag(void)
                "  the flag does NOT lift the +4 layer surcharge");
     CheckEqI32(grid.aCells[1][2][2].bFlags29 & 8u, 0,
                "  bFlags29 bit 3 stays clear when the probe did not re-anchor");
+    Check(grid.scratch.bSearchFlag,
+          "  the flood keeps its flag on the scratch: the original stores byte_10DB84 @ 0x10db84 (0x2b850/0x2b860) and Path_ExpandCell reads it back from there (0x2b6ac) -- the shell's probe thunk reads the same mirror");
 
     /* The probe's report is what gates both. Same flood, probe says it moved the
      * candidate a layer itself: no surcharge, and bit 3 set (0x2b7a4). */
@@ -433,6 +435,7 @@ static void TestReachableFlag(void)
     Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
                                  Grid_Lookup, Grid_Probe, &grid),
           "  flag clear keeps the floor gate");
+    Check(!grid.scratch.bSearchFlag, "  and the clear call stores the clear mirror too (0x2b850's clear arm)");
 }
 
 /* byte_A7B00 @ 0xa7b00, read through Path_FacingFromDelta. The compass band is the

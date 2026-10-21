@@ -27,6 +27,8 @@
 #include "game/pufo_menu.h"    /* Menu_ResizeWindow @ 0x19930 (widget 58), the last deferred handler (Part 61) */
 #include "game/pufo_renderframe.h" /* Render_Frame @ 0x22310 + the frame envs, the tactical frame (Part 63) */
 #include "game/pufo_invdrag.h"     /* Inv_CloseAndCommit @ 0x15a48, the inventory close that deploys the team (Part 66) */
+#include "game/pufo_step.h"        /* Unit_CanStepTo @ 0x27bb8, the path search's probe seam (Part 106) */
+#include "game/pufo_vistry.h"      /* Map_ComputeFov @ 0x2deac, the shot resolution's window refresh (Part 106) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -2741,6 +2743,9 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
 }
 
 static MapCell *World_TactLookupCell(i32 nX, i32 nY, i32 nLayer, void *pUser); /* defined below */
+static bool World_TactPathProbeThunk(i32 nX, i32 nY, i32 nLayer, u8 nDir,
+                                     i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer,
+                                     bool *pbReanchored, void *pUser); /* defined below */
 
 /* SaveGame @ 0x44988 over this state (Part 62). The driver is pufo_save.c's SaveGame, tested in
  * tests/test_save.c; this unit is the shell's input builder, the mirror of World_LoadSlot: every
@@ -3374,6 +3379,38 @@ static MapCell *World_TactLookupCell(i32 nX, i32 nY, i32 nLayer, void *pUser)
     return pW->apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer + PUFO_MAP_CELL_DIM * nY + nX];
 }
 
+/* PathToCellCtx.pfnProbe: the shell's wiring of Unit_CanStepTo @ 0x27bb8 (Part 106).
+ * The original's flood legality goes through the very same function -- its only code
+ * call site is Path_ExpandCell @ 0x2b6e8 -- so the walked path now applies the same
+ * door/occupant/large-footprint refusals as the walker itself. The probe reads its
+ * inputs fresh from the cells (Unit_CanStepTo seeds the whole StepProbe at 0x27bd8),
+ * the selected unit from the live Map (Map.pSelUnit), the swap unit from
+ * Map_pPathDestUnit, and the search flag from the path scratch cell, mirroring the
+ * original's g_bPathSearchFlag store at 0x2b860. */
+static bool World_TactPathProbeThunk(i32 nX, i32 nY, i32 nLayer, u8 nDir,
+                                     i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer,
+                                     bool *pbReanchored, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+    StepProbe probe;
+    StepCtx ctx;
+
+    if (pMap == NULL) {
+        return false;
+    }
+    memset(&probe, 0, sizeof(probe));
+    ctx.pfnLookup    = World_TactLookupCell;
+    ctx.pLookupUser   = pW;
+    ctx.pGeom         = &pMap->geom;
+    ctx.pSelUnit      = pMap->pSelUnit;
+    ctx.pSwapUnit     = pMap->pPathDestUnit;   /* Map_pPathDestUnit @ 0x150F4 */
+    ctx.bSearchFlag   = pW->sTactPathScratch.bSearchFlag;
+    ctx.pProbe        = &probe;
+    return Unit_CanStepTo(nX, nY, nLayer, nDir, pnOutX, pnOutY, pnOutLayer,
+                          pbReanchored, &ctx);
+}
+
 static u8 World_TactObjWeightHook(TactItem *pItem, void *pUser)
 {
     (void)pUser;
@@ -3462,6 +3499,10 @@ static void World_TactRenderThunk(void *pUser);
 static void World_TactSetCursorPosThunk(i32 nX, i32 nY, void *pUser);
 static void World_TactGameTickStepThunk(void *pUser);
 static void World_TactAreaFireThunk(void *pUser);
+static void World_ShotComputeFovThunk(void *pUser, u32 *paWindow,
+                                      i32 nColBase, i32 nRowBase,
+                                      i32 nOriginX, i32 nOriginY, i32 nLayer,
+                                      i32 nRange, i32 nCostMode, u16 nSortKey);
 static bool World_TactWeaponFireableThunk(i32 nSortKey, void *pUser);
 static void World_TactFallBattleEndThunk(u8 bAbort, void *pUser);
 static void World_TactKillBattleEndThunk(void *pUser);
@@ -3799,6 +3840,11 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
 
     memset(&pW->sTactHit, 0, sizeof(pW->sTactHit));
     memset(&pW->sTactUi, 0, sizeof(pW->sTactUi));
+    /* Tact_InitUiControls @ 0x3b988 seeds the radio bank one-hot on option 1:
+     * STRB R0(1), [R4,#(unk_AC81A - 0xAC6D0)]. abRadio[0..3] mirror unk_AC81A /
+     * AC83A / AC85A / AC87A; the UiBank_SelectRadio0..3_Play11 handlers (0x16e04..
+     * 0x16eb8) keep exactly one of them 1. */
+    pW->sTactUi.abRadio[0] = 1;
     memset(&pW->sTactDrop, 0, sizeof(pW->sTactDrop));
     memset(&pW->sTactDropHooks, 0, sizeof(pW->sTactDropHooks));
     pW->sTactDrop.pHit      = &pW->sTactHit;
@@ -3898,7 +3944,11 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
         pW->sTactFlobjs.apObjects        = (ObjectRecFull *const *)pW->pAssets->apObjects;
         pW->sTactFlobjs.nObjectCount     = pW->pAssets->nObjectCount;
         pW->sTactFlobjs.apSoldiers       = pW->apSoldiers;
-        pW->sTactFlobjs.nSoldierCount    = pW->nSoldierCount;
+        /* Pointer to the live count cell (Part 106): the SOLDIERS reader in the load chain stores
+         * the file's count into nSoldierCount @ Map+0x1998 (0x417D4) before the TeamUnits/Flobjs/Map
+         * readers run, and each of those re-reads the global. A value copy taken here would freeze
+         * the pre-load roster size under the saved occupant ids. */
+        pW->sTactFlobjs.pnSoldierCount   = &pW->nSoldierCount;
 
         memset(&pW->sTactSave, 0, sizeof(pW->sTactSave));
         memset(&pW->sTactReset, 0, sizeof(pW->sTactReset));
@@ -3968,14 +4018,13 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactPath.pnPathCount    = &pMap->nPathCount;       /* Map_nPathCount @ Map+0x4E44 */
     pW->sTactPath.pScratch       = &pW->sTactPathScratch;
     pW->sTactPath.pfnLookup      = World_TactLookupCell;
-    /* Deviation: pfnProbe stands for Unit_CanStepTo @ 0x27bb8 (ported in pufo_step.c:739 but
-     * not wired into the path search yet); the path port treats a NULL probe as permissive
-     * (Path_ExpandCell steps by the plain delta table when the seam is NULL), so door/step
-     * refusals are not applied on a walked path yet. The
-     * seam being NULL used to dereference a null pointer there -- fixed 2026-10-20; the click
-     * move arm only reaches the search once the input mirror carries Map_nMapDimX/Y
-     * (0x1511B/0x1511C) and Tact_HandleMapClick's cursor gate passes. */
-    pW->sTactPath.pfnProbe       = NULL;
+    /* Part 106: the probe seam is real. In the original the flood's per-step legality
+     * IS Unit_CanStepTo @ 0x27bb8 -- its only code caller is Path_ExpandCell @ 0x2b6e8
+     * -- so the walked path now applies the same refusals (blank cells, head occupant
+     * gate, direction arms, large footprints, vertical re-anchors) as a walked step.
+     * The click move arm reaches the search through the input mirror's Map_nMapDimX/Y
+     * (0x1511B/0x1511C) and Tact_HandleMapClick's cursor gate. */
+    pW->sTactPath.pfnProbe       = World_TactPathProbeThunk;
     /* Path_ComputeReachable carries ONE user, passed to both the lookup and the probe
      * (pufo_path.c) -- in the original the flood fill reads one shared context, the
      * globals. The shell's shared context is the live mission, so the probe user is the
@@ -4044,7 +4093,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactEnemyAiAct.pTextRecs          = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL;
     pW->sTactEnemyAiAct.pUser              = pW;
 
-    pW->sTactShotHooks.pfnComputeFov = NULL; /* the argument list is still open (pufo_combat.h:93) */
+    pW->sTactShotHooks.pfnComputeFov = World_ShotComputeFovThunk;
     pW->sTactShotHooks.pfnAreaFire   = World_TactAreaFireThunk;
     pW->sTactShotHooks.pUser         = pW;
     memset(&pW->sTactShotOut, 0, sizeof(pW->sTactShotOut));
@@ -5108,6 +5157,29 @@ static void World_TactGameTickStepThunk(void *pUser)
 
 /* ShotHooks.pfnAreaFire stands for the two writes at 0x2FA80/0x2FA94. The bUnk70115 store is
  * gated on pCtxBase.gap_2[0] == 0 (Map+0x02 = bActionLatch); the nUnk70024[4] clear is not. */
+/* ShotHooks.pfnComputeFov: Map_ComputeFov @ 0x2deac over the live mission (Part 106).
+ * The original runs it on the Map itself - the 31 x 31 x 4 field lives at Map+77788 and
+ * the fold lands on the caller's 41 x 41 x 4 hit window; the shell keeps the field in
+ * the world (sTactFov) and writes the window array the engine hands in, which is the
+ * same array Combat_SplashDamageCells and the ceiling sweep then read. The engine's
+ * nSortKey argument stands for the `nFireArg6 + 200` (ObjectRecFull.uSortKey) read the
+ * original performs inside Map_ComputeFov. */
+static void World_ShotComputeFovThunk(void *pUser, u32 *paWindow,
+                                     i32 nColBase, i32 nRowBase,
+                                     i32 nOriginX, i32 nOriginY, i32 nLayer,
+                                     i32 nRange, i32 nCostMode, u16 nSortKey)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+
+    if (pMap == NULL) {
+        return;
+    }
+    Map_ComputeFov(&pW->sTactFov, paWindow, &pMap->geom, World_TactLookupCell,
+                   pW, pW->abTactVisSteps, nColBase, nRowBase, nOriginX, nOriginY,
+                   nLayer, nRange, nCostMode, nSortKey);
+}
+
 static void World_TactAreaFireThunk(void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
@@ -5317,6 +5389,21 @@ static void World_TactPushForcedThunk(const char *pszMsg, void *pUser)
     (void)StatusMsg_Push(&pW->pTactMap->status, pszMsg, true, &pW->sTactStatusHooks);
 }
 
+/* Record nType of the unit NAME table 0xB1140 (byte_AD720 + 0x3A20, 40-byte records;
+ * the same source the spawn path reads through SpawnEnv.panUnitName @ pufo_tactctl.h:620).
+ * Tact_KillUnit @ 0x4e430 loads R0 = 0xB1140 at 0x4e508 AFTER Tact_RemoveUnitFromSideLists
+ * (an old IDB note claimed R0 was pMap -- the disasm order disproves it) and ADDs #0x230 =
+ * 40 * 14: the unit's type byte became 0xE, and its name comes from record 14. The fall arm
+ * Tact_ProcessFallAction @ 0x53130 ADDs #0x370 = 40 * 22 for the type 0x16 it stores at
+ * [unit+0xA0]. Map+0x230 itself has no xref in the original: the old port field was a
+ * misread and is gone. */
+static const char *World_UnitNameRecord(i32 nType)
+{
+    const char *pNames = (const char *)g_textTables.pB; /* 0xB1140 */
+
+    return pNames != NULL ? pNames + 40 * nType : NULL;
+}
+
 /* The one live dispatch: rebuild the processor contexts from the Map block, then walk. */
 static void World_TactTickActiveUnit(void *pUser)
 {
@@ -5346,6 +5433,12 @@ static void World_TactTickActiveUnit(void *pUser)
     pW->sTactSpot.pSelUnit     = pMap->pSelUnit;
     World_TactCursorPosRefresh(pW);
     pW->sTactMoveWiring.visCtx  = pW->tactEnv.vis;
+    /* Unit_bArmorTuWarn @ 0x4e254 reads the radio bank every move action: option 1
+     * suppresses the armour-TU warning, options 2/3 pick the abArmorTu slot. Fresh
+     * copy per tick so a Ui_SelectRadio press answers the next warning. */
+    pW->sTactMoveWiring.abRadioOpt[0] = pW->sTactUi.abRadio[0];
+    pW->sTactMoveWiring.abRadioOpt[1] = pW->sTactUi.abRadio[1];
+    pW->sTactMoveWiring.abRadioOpt[2] = pW->sTactUi.abRadio[2];
 
     Map_BuildMoveActionCtx(pMap, &pW->sTactLoft, &move);
     Map_WireMoveActionCtx(&move, &pW->sTactMoveWiring);
@@ -5380,7 +5473,7 @@ static void World_TactTickActiveUnit(void *pUser)
     kill.apObjects        = pW->pAssets->apObjects;
     kill.ppSelUnit        = &pMap->pSelUnit;
     kill.pnKillCount      = &pMap->nKillCount;  /* gap_TrajRest + 4 * 49940 */
-    kill.pszTransformName = pMap->aTransformName;
+    kill.pszTransformName = World_UnitNameRecord(14); /* 0x4e518: ADD R3,R0,#0x230 = 40 * 14 */
     kill.bTickHold        = pW->bMapTickHold != 0;
     kill.bFrameScratch    = pW->bMapFrameScratch != 0;
     kill.bUiSlotArmed     = pW->bMapSweepArmed != 0;   /* LOBYTE(apUiSlotsA[2]) @ 0x68 */
@@ -5489,7 +5582,7 @@ static void World_TactTickActiveUnit(void *pUser)
     fall.pStatusHooks       = &pW->sTactStatusHooks;
     fall.pSelectCtx         = &pW->tactEnv.select;
     fall.pCursorPos         = &pW->tactEnv.cursorPos;
-    fall.pszTransformName   = pMap->aTransformName;
+    fall.pszTransformName   = World_UnitNameRecord(22); /* 0x53148: ADD #0x370 = 40 * 22 */
     fall.bLightEnabled      = pW->bMapLightEnabled != 0;
     fall.pLightmap          = pW->abTactLightmap;
     fall.pfnTryOpportunityFire = World_TactFallTryOpportunityThunk;

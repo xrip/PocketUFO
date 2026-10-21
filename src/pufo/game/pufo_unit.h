@@ -732,8 +732,11 @@ void UnitList_ForEachRefresh(struct UnitRosters *pRosters, VisCtx *pCtx);
  * KillCtx carries what the kill path reaches through pCtxBase. The combat fields are
  * a pointer to the existing CombatCtx rather than a copy of them.
  *
- * pszTransformName is Map + 0x230, the NUL-terminated name the chryssalid transform
- * copies into Soldier.szName. pnKillCount is the dword at Map.gap_TrajRest + 4*49940.
+ * pszTransformName is a record of the unit NAME table 0xB1140 (40-byte records), the
+ * name the chryssalid transform copies into Soldier.szName: the kill arm points at
+ * record 14 (0x4e508 LDR R0,=0xB1140 then 0x4e518 ADD #0x230), the fall arm at record
+ * 22 (0x53148 ADD #0x370). It is NOT Map + 0x230 -- that slot has zero xrefs.
+ * pnKillCount is the dword at Map.gap_TrajRest + 4*49940.
  * bTickHold is Map.bGameTickHold (0x5A) and bFrameScratch is byte_138E74, the frame
  * scratch GameTick_OnTimer clears; either one suppresses the death message.
  * bUiSlotArmed is the low byte of Map.apUiSlotsA[2], which arms the spotted-flag

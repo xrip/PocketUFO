@@ -1089,7 +1089,11 @@ typedef struct FlobjsReadState {
     ObjectRecFull *const *apObjects;
     i32                  nObjectCount;
     Soldier *const      *apSoldiers;
-    i32                  nSoldierCount;
+    /* Pointer rather than copy (Part 106): the original reads nSoldierCount (Map + 0x1998 @ 0x115350)
+     * live from the global in every chunk reader, and the SOLDIERS reader stores the file's count into
+     * that global first (0x417D4 and 0x43138). A value copy taken before the load holds the pre-load
+     * roster size, so an occupant id from the saved roster can fail the guard and abort the MAP read. */
+    i32                 *pnSoldierCount;
 } FlobjsReadState;
 
 typedef struct TactLoadHooks {

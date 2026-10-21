@@ -68,6 +68,30 @@ static MapCell *Init_LookupCell(i32 nX, i32 nY, i32 nLayer, void *pUser)
                          + PUFO_MAP_CELL_DIM * nY + nX];
 }
 
+/* The unchecked twin, for the two sites the original addresses with bare arithmetic on its own
+ * pointer table and never through Map_IsValidCell: the deploy-point sweep (0x3CC38 names the cell as
+ * 3600*entry[2] + 60*(10*craftY + entry[1]) + (10*craftX + entry[0])) and Tact_DeployTeamAndHwps
+ * phase 3 (0x39F24..0x39F50: MUL #0x3C twice, then LDR [R3,#0x15338]). The table is ONE flat array
+ * (Map+0x15338..Map+0x23438, 14400 slots) while the allocation loop fills only 10*dimY rows per
+ * layer, so a coordinate past a layer's rows lands in the next layer's allocated slots -- a real
+ * cell, not nothing. Unit_CanStepTo @ 0x27bb8 tests Map_IsValidCell first, so the bounded
+ * Init_LookupCell stays the right seam for the walkers. Deviation, recorded: past the table's own
+ * end the original reads the globals behind it (Map_apTactItems onward); the port refuses. */
+static MapCell *Init_LookupCellFlat(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    const TactInitEnv *pEnv = (const TactInitEnv *)pUser;
+    i32 nIndex;
+
+    if (pEnv == NULL || pEnv->apCells == NULL) {
+        return NULL;
+    }
+    nIndex = PUFO_TERRAIN_CELLS_PER_LAYER * nLayer + PUFO_MAP_CELL_DIM * nY + nX;
+    if (nIndex < 0 || nIndex >= PUFO_TERRAIN_CELLS_PER_LAYER * PUFO_MAP_LAYERS) {
+        return NULL;
+    }
+    return pEnv->apCells[nIndex];
+}
+
 /* 0x3C738..0x3C854: five UiPanel allocations, all before any of them is laid out.
  * The original stores the new pointer, or NULL when the allocation fails. */
 static void Init_AllocPanels(TactInitEnv *pEnv)
@@ -173,7 +197,7 @@ static void Init_DeployCellFlags(TactInitEnv *pEnv)
         const i32 nCellX = PUFO_CELLS_PER_TILE * (i32)*pEnv->pnCraftMapX + (i32)pRec[0];
         const i32 nCellY = PUFO_CELLS_PER_TILE * (i32)*pEnv->pnCraftMapY + (i32)pRec[1];
         const i32 nLayer = (i32)pRec[2];
-        MapCell *pCell = Init_LookupCell(nCellX, nCellY, nLayer, pEnv);
+        MapCell *pCell = Init_LookupCellFlat(nCellX, nCellY, nLayer, pEnv);
 
         if (pCell != NULL) {
             pCell->nFlags40 |= PUFO_DEPLOY_CELL_FLAG;
@@ -486,7 +510,9 @@ static void Init_FillCalleeEnvs(TactInitEnv *pEnv)
     pEnv->deploy.apTactItems      = pEnv->apTactItems;
     pEnv->deploy.pnTactItemCount  = pEnv->pnTactItemCount;
     pEnv->deploy.apObjects        = pEnv->apObjects;
-    pEnv->deploy.pfnLookupCell    = Init_LookupCell;
+    /* The flat twin: phase 3 and the sweep name their cells by arithmetic the original never gates
+     * (Init_LookupCellFlat above). */
+    pEnv->deploy.pfnLookupCell    = Init_LookupCellFlat;
     pEnv->deploy.pLookupUser      = pEnv;
     pEnv->deploy.nMapLayers       = (i32)pMap->nMapLayers;
     pEnv->deploy.nCraftMapX       = *pEnv->pnCraftMapX;

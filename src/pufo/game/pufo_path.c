@@ -213,10 +213,13 @@ bool Path_ComputeReachable(PathScratch *pScratch,
     /* bFlag is the original's sixth argument, and Map_ComputeReachable never reads
      * it itself: it stores it to the global byte_10DB84 @ 0x10db84 (LDRB/STRB at
      * 0x2b850/0x2b860) and Path_ExpandCell reads it back from there at 0x2b6ac.
-     * Carrying it as an argument is the same data flow without the global. */
+     * Carrying it as an argument is the same data flow without the global -- but the
+     * probe needs it too (Unit_CanStepTo reads g_bPathSearchFlag in its re-anchor
+     * arms), so the store is mirrored into the scratch for the shell's probe. */
     pScratch->nCountA = 0;
     pScratch->nCountB = 0;
     pScratch->bUseA   = false;
+    pScratch->bSearchFlag = bFlag;
 
     /* Step 1: clear the accumulated cost and the two flag bits on every cell the
      * lookup can reach. The original walks the whole grid unconditionally. */

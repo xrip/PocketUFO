@@ -94,17 +94,28 @@ typedef struct CombatCtx {
  * model yet.
  *
  * pfnComputeFov is Map_ComputeFov @ 0x2deac (1776 bytes), ported in
- * game/pufo_vistry.c. Its argument list is not settled either: the area-fire call
- * site sets R1 = R2 = 0, the ceiling-break call site sets R1 = 20 - column, R2 = the
- * row counter and R3 = origin X, and Hex-Rays renders both as a one-argument call.
- * The port calls the hook at the two proven points and leaves the arguments to the
- * real function.
+ * game/pufo_vistry.c. Part 106 settled its eight arguments from the three call
+ * sites (the stack args are the four slots the caller keeps at frame 0x20+0x00..
+ * 0x0c under the names nOriginY / nLayer / nRange / a8):
+ *   0x2f324 area fire (bFireType 1/2): a2 = a3 = 0, origin = the shot origin cells
+ *     nFireOrigX/nFireOrigY (0x14054/0x14058), nLayer = the shot layer,
+ *     nRange = ObjectRec+0xB6 (uFirePower), a8 = 2.
+ *   0x2f3a4 normal shot: the same values with a8 = 1 (the 8.0 per-step cost arm).
+ *   0x2f6e8 ceiling break, per window cell: a2 = 20 - column, a3 = 20 - row,
+ *     origin = that window cell, nRange = (int)(sprite+0x18 * 2.5) (muld
+ *     0x40040000 at 0x2f6b4), a8 = 2.
+ * The hook carries them so the shell runs the real Map_ComputeFov over the same
+ * hit-window array the splash walk reads. nWeaponSortKey stands for the
+ * `nFireArg6 + 200` (ObjectRecFull.uSortKey) read inside Map_ComputeFov.
  *
  * pfnAreaFire stands for the two writes at 0x2fa80 and 0x2fa94 -
  * `unk_157198->bUnk70115 = 1` (guarded by `pCtxBase.gap_2[0] == 0`) and
  * `unk_157198->nUnk70024[4] = 0`. The unk_157198 global has no port model yet. */
 typedef struct ShotHooks {
-    void (*pfnComputeFov)(void *pUser);
+    void (*pfnComputeFov)(void *pUser, u32 *paWindow,
+                          i32 nColBase, i32 nRowBase,
+                          i32 nOriginX, i32 nOriginY, i32 nLayer,
+                          i32 nRange, i32 nCostMode, u16 nWeaponSortKey);
     void (*pfnAreaFire)(void *pUser);
     void *pUser;
 } ShotHooks;

@@ -2873,7 +2873,7 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
     }
 
     /* 0x444A8, 0x444B0, 0x444B4: the three chunk readers, in this order. */
-    (void)Save_ReadTeamUnits(pDat, pRosters, pFlobjs->apSoldiers, pFlobjs->nSoldierCount);
+    (void)Save_ReadTeamUnits(pDat, pRosters, pFlobjs->apSoldiers, *pFlobjs->pnSoldierCount);
     if (pHooks->pfnApplyRosters != NULL) {
         pHooks->pfnApplyRosters(pRosters, pHooks->pUser);
     }
@@ -2881,7 +2881,7 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
                           pFlobjs->apTactItems, pFlobjs->apObjects, pFlobjs->nObjectCount,
                           pFlobjs->apSoldiers);
     (void)Save_ReadMap(pDat, pMap, pfnLookup, pLookupUser,
-                       pFlobjs->apSoldiers, pFlobjs->nSoldierCount,
+                       pFlobjs->apSoldiers, *pFlobjs->pnSoldierCount,
                        pFlobjs->apTactItems, *pFlobjs->pnTactItemCount, pHooks->pFont);
 
     /* 0x444C0..0x445CC: the tactical reset. Mostly clears, but two are sets. */

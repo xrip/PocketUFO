@@ -21451,3 +21451,83 @@ GameTick_Step byte-pair row, the tact-modal OPENERS row (with the opener claims 
 openers were live since Parts 58/59, the stored callbacks and the consumption were the gap), the tact HUD
 text-record row, and the two feeder-gap claims in the tactical-screens row.
 
+
+## Part 106 - the walker seams answer live, and the deploy cells turn out to be flat arithmetic
+
+IDB first. The flood search's own call site: `Unit_CanStepTo @ 0x27bb8` has exactly one caller in the
+beta, `Path_ExpandCell @ 0x2b604` (comment at 0x2b6e8), and its head gates the destination through
+`Map_IsValidCell` (0x27c58) BEFORE any table read while the adjacency reads after the gate use the flat
+index unchecked; the occupant gate (0x27d18) admits everything except unit types 16 and 17.
+`Map_ComputeFov @ 0x2deac` has exactly three code callers, all inside `Combat_ResolveShot`: 0x2f324,
+0x2f3a4, 0x2f6e8 (commented). The radio option bank is four globals 32 bytes apart at 0xAC81A/83A/85A/87A,
+now named `g_bRadioOpt0..3`: seeded with 1 at `Tact_InitUiControls` 0x3b994, re-set as a one-hot by the
+four `UiBank_SelectRadioN_Play11` handlers (0x16e04..0x16ecc), read by `Unit_bArmorTuWarn @ 0x4e254`. The
+transform name lives in a static table at 0xB1140, 40-byte rows indexed by `nUnitType`, filled by
+`Assets_LoadStartup`'s Table B (0x385A4..0x385E4: 23 TEXTS records starting at record 198, source
+unk_BD75E). The chryssalid arm (unit 0x16 -> type 0xE at 0x4E520) copies the row for type 14 (0x230 =
+40*14) into `Soldier.szName`; the fall arm takes row 22 (0x370 = 40*22) at 0x53148. The comment that
+claimed the source was `pMap + 0x230` was itself wrong: the ARM's `LDR R0, =(byte_AD720+0x3A20)` loads
+0xB1140 itself - corrected at 0x4e514/0x4e528. And the function comment at `Tact_SpawnAliens @ 0x3a2ac`
+still said "NOT ported" - replaced with the pool truth: `Soldier_CreateAndClassify @ 0x22be8` appends the
+alien into apSoldiers (Map+0x1198) and bumps nSoldierCount (Map+0x1998) at its tail, so occupant ids
+cover aliens, while 0x3a748 copies apSoldiers[count-1] into Map_apEnemyUnits (Map+0x151CC) with the byte
+count at Map+0x15124; mission type 3 fills apHiddenSoldiers (Map+0x25438) with Map_nEnemyReserveCount
+(Map+0x15144) instead.
+
+The port wiring follows those seams directly: `sTactPath.pfnProbe = World_TactPathProbeThunk` (the search
+now refuses doors and blocked steps the plain delta table walked through), `ShotHooks.pfnComputeFov` runs
+the ported `Map_ComputeFov` over the mission's vistry tables at each of its three sites, every live
+move-action dispatch copies the radio one-hot into `MoveActionWiring.abRadioOpt`, and `World_UnitNameRecord(14)` /
+`World_UnitNameRecord(22)` feed `KillCtx.pszTransformName` / `FallCtx.pszTransformName` from the same
+TEXTS table the spawn path reads through `SpawnEnv.panUnitName`. `GameMap.aTransformName` - the invented
+buffer that nothing filled - is gone (pufo_mapctx.h records the correction).
+
+Two engine-side findings fell out of running these seams live. First the frozen scalar: the original's
+chunk readers re-read nSoldierCount LIVE after the SOLDIERS reader stores the file's count into the global
+(0x417D4, and 0x43138 in `Soldiers_Reload`), and aliens extend the pool mid-mission, so a saved occupant id
+can sit past the roster size the port had copied by value at bring-up. `FlobjsReadState.pnSoldierCount` is a
+pointer to the live cell now (pufo_save.h), which is what makes the 6x5 fixture load instead of refusing the
+whole MAP chunk. Second the walk-stall quirk: the flood head admits an alien-held cell but `MoveStep`'s own
+arm refuses any foreign occupant, so a planned route stalls mid-walk exactly as the original stalls - the
+gate re-presses the target the way a player does instead of hiding the stall (asserted; bugs.tsv 0x27CB0).
+
+The crash this unit chased ended at the same table. After the wiring, the deploy commit crashed at the
+visibility pass with a unit whose `pCell` was NULL. The IDB says why the original never hits that shape:
+`Tact_DeployTeamAndHwps` phase 3 resolves its probe cell with bare arithmetic - two `MUL #0x3C` over
+((record row from nMapLayers) + craft-pad offsets), then `LDR [R3,#0x15338]` (0x39F24..0x39F50) - with no
+`Map_IsValidCell` anywhere in the arm; the init deploy-point sweep composes the same index (0x3CC80); and
+`Unit_PlaceOnMap @ 0x49B2C` resolves its target cell the same unchecked way. The allocation loop at 0x3D168
+constructs cells only for `10*dimY` rows per layer, so a point past a layer's 60 rows names the NEXT layer's
+allocated cells - a real MapCell carrying its own coordinates (MapCell_Init at 0x3D1C0), and the shipped game
+parks its squad there. Measured in the live urban mission: the pad sits on the last map row, the probe asks
+for layer-1 rows 59..62, and six of the eight crew end on layer-2 cells whose own rows are 0..2. The port's
+bounded lookup answered those probes NULL, the phase-3 found test read the NULL as "free", and
+`Unit_PlaceOnMap` stored a NULL cell. The fix keeps the original's shape: `Init_LookupCellFlat` answers the
+deploy env and the init sweep exactly like the ARM (the walkers keep the bounded twin, because their head
+test is the validity gate), the found test is the occupant alone (0x39F50), a taken point moves on, and an
+exhausted loop leaves the unit parked as 0x39FEC does. Asserted in test_geoscapeframe 100.5: no fielded unit
+ends the commit cell-less, and exactly six crew cells sit on layer 2. Recorded deviation (bugs.tsv 0x39F24):
+past the table's own end the original reads the globals behind Map+0x23438; the port refuses. The write-side
+record fields (0x43AE8: `[cell+0x30] -> [ptr,#0x3BC]`, then `[cell+0x34] -> [ptr,#0x14]`) are recorded as an
+open question at 0x43ae8 rather than re-asserted from the old comment.
+
+Gates: test_step/test_path refuse the door set the probe now applies; test_geoscapeframe 106.a gates the radio
+bank (seed live, a press re-homes the one-hot, every dispatch copies it), the walk through the probe, the
+stall re-press, the 6x5 pointer load and the two deploy-cell checks; test_fov/test_combat run through the wired
+FOV; the transform path carries a real name from the TEXTS table. Six gates green, 62/62 tests, 19,972 checks.
+e2e: 3 flows, 9 pictures unchanged. Twelve frame references re-referenced, with cause stated after native-scale
+review (side-by-side old/new): the wired seams and the stall re-press move the CRT stream, so
+`geoscape_terror_site`, `geoscape_ufo_enroute`, `options_save_tab` and `options_load_tab` keep their panels,
+clock and funds identical while the rolled world beneath moves; `tact_play_deployed`, `moved`, `aim`,
+`shot_mid`, `shot`, `enemyturn`, `resumed` and `tact_mission_urban` carry the faithful deploy spread and the
+stalled-then-repressed walk. One Debug ctest run showed the stale-mirror strateg-count gate failing (8 saved
+into 7 loaded); it did not reproduce in three serial Debug runs and two full six-gate runs, and it is the
+same stale-`nStrategItemCount` class the project already asserts - recorded here, kept under watch.
+
+IDB upkeep in this unit: comments at 0x39F24, 0x39F88, 0x3CC80, 0x49B2C, 0x27C58, 0x27D18, 0x2b6e8, 0x3b994,
+0x2f324/0x2f3a4/0x2f6e8, 0x53148, 0x3a748, 0xB1140, 0x4e514, 0x43ae8; corrected comments at 0x4e528 (the
+pMap+0x230 claim) and at 0x3a2ac (the "NOT ported" residue); renames unk_AC81A..unk_AC87A -> g_bRadioOpt0..3;
+a data item `char[920]` at 0xB1140 (the IDB item is clipped to 560 by a segment boundary, noted in the
+comment); idb_save. PLAN: the path-probe row and the walker-seams row closed, two new closed rows record the
+frozen roster count and the flat cell lookup, and the four rows Part 106 did not take were re-targeted to
+Part 107.

@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 19950 |
+| Test checks run | 19972 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -260,7 +260,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_path.c` (+2) |
+| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_path.c` (+3) |
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | `src/pufo/game/pufo_tactinit.h`, `src/pufo/game/pufo_terrain.c` (+1) |
 | `0x50adc` | `Tact_ProcessFireAction` | 8192 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
@@ -268,7 +268,7 @@ is the module that answers to it.
 | `0x52adc` | `Tact_ProcessFallAction` | 5716 | `src/pufo/game/pufo_objectrec.h`, `src/pufo/game/pufo_tactstate.c` (+1) |
 | `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
 | `0x3d568` | `Tact_Shutdown` | 3788 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
-| `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_unit.c` (+1) |
+| `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactstate.h` (+2) |
 | `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.c` (+10) |
 | `0x3a2ac` | `Tact_SpawnAliens` | 3516 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.h` (+1) |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_enemyai.c` (+4) |
@@ -289,7 +289,7 @@ is the module that answers to it.
 | `0x54130` | `Tact_TickActiveUnit` | 1868 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x2fc38` | `Tact_TraceProjectileArc` | 1840 | `src/pufo/game/pufo_ballist.h` |
 | `0x3be24` | `Tact_EquipTeamFromCraft` | 1836 | `src/pufo/game/pufo_invdrag.c`, `src/pufo/game/pufo_invdrag.h` |
-| `0x2deac` | `Map_ComputeFov` | 1776 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_mapcell.h` (+2) |
+| `0x2deac` | `Map_ComputeFov` | 1776 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+4) |
 | `0x37ae4` | `Tact_BuildVisRayTable` | 1524 | `src/pufo/game/pufo_vistry.h` |
 | `0x2bd00` | `Map_QueueDoorAction` | 1448 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4dcf4` | `Unit_bFacingAngleDuel` | 1376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -340,7 +340,7 @@ is the module that answers to it.
 | `0x2e5d0` | `Unit_ApplyCellDamage` | 520 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
 | `0x4b724` | `MapCell_TickProximityItems` | 516 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+2) |
 | `0x1b280` | `MapView_DrawCellSelectMarker` | 476 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
-| `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
+| `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_mapctx.c` (+4) |
 | `0x27324` | `GameTick_Step` | 460 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_step.h` (+5) |
 | `0x1b0d4` | `MapView_bResolveIsoCell` | 428 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x4b4f8` | `Unit_DropAllItemsToCell` | 428 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -1269,7 +1269,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_clock` | PASS | 44 |
 | `test_closeui` | PASS | 302 |
 | `test_cmdpads` | PASS | 42 |
-| `test_combat` | PASS | 139 |
+| `test_combat` | PASS | 146 |
 | `test_control` | PASS | 253 |
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 62 |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 1944 |
+| `test_geoscapeframe` | PASS | 1957 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
@@ -1293,7 +1293,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_modal` | PASS | 48 |
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 171 |
-| `test_path` | PASS | 102 |
+| `test_path` | PASS | 104 |
 | `test_plane` | PASS | 509 |
 | `test_render` | PASS | 177 |
 | `test_renderframe` | PASS | 24 |
@@ -1343,7 +1343,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 875 citations.
+parity report. Total: 880 citations.
 
 ### Offsets below the image base (46)
 
@@ -1352,7 +1352,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x000c`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b8c`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (829)
+### At or above the image base (834)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1503,6 +1503,7 @@ against the IDB when the final report is assembled.
 - `0x150dc`
 - `0x150e0`
 - `0x150f0`
+- `0x150f4`
 - `0x150fc`
 - `0x15100`
 - `0x15110`
@@ -1895,7 +1896,9 @@ against the IDB when the final report is assembled.
 - `0x26f40`
 - `0x27354`
 - `0x274c4`
+- `0x2b6e8`
 - `0x2f408`
+- `0x2f6cc`
 - `0x2fc74`
 - `0x319f4`
 - `0x32c68`
@@ -1910,6 +1913,7 @@ against the IDB when the final report is assembled.
 - `0x384e0`
 - `0x387f4`
 - `0x3ad48`
+- `0x3b988`
 - `0x3f2cc`
 - `0x40210`
 - `0x415d8`
@@ -1939,6 +1943,7 @@ against the IDB when the final report is assembled.
 - `0x5116c`
 - `0x5171c`
 - `0x52ac8`
+- `0x53130`
 - `0x5365c`
 - `0x544e0`
 - `0x58e7c`

@@ -861,6 +861,12 @@ static TactItem       g_aFallItemTable[8];
 static TactItem      *g_apFallItemTable[8];
 static i32            g_nFallItemCnt;
 static i32            g_nFallKillCount;
+/* A model of the unit NAME table 0xB1140 (byte_AD720 + 0x3A20): 40-byte records indexed by
+ * unit type, filled in Fall_Init. The transform arms point at the record of the unit's NEW
+ * type -- record 14 in the kill arm (0x4e508 LDR R0,=(byte_AD720+0x3A20), then 0x4e518
+ * ADD R3,R0,#0x230 = 40 * 14), record 22 in the fall arm (0x53148 ADD #0x370 = 40 * 22).
+ * The shell feeds the same indices through World_UnitNameRecord (pufo_world.c). */
+static char           g_aFallNameTable[40 * 23];
 static KillCtx        g_FallKillCtx;
 static KillHooks      g_FallKillHooks;
 static ObjectRecFull  g_FallWeaponObj;
@@ -1012,7 +1018,9 @@ static void FallSetup(void)
     g_FallKillCtx.apObjects = g_apFallObjTable;
     g_FallKillCtx.ppSelUnit = &g_pFallSelUnit;
     g_FallKillCtx.pnKillCount = &g_nFallKillCount;
-    g_FallKillCtx.pszTransformName = "Chryssalid";
+    memcpy(g_aFallNameTable + 40 * 14, "Chryssalid", 11);     /* record 14: the kill arm (0x4e518) */
+    memcpy(g_aFallNameTable + 40 * 22, "ChryssalidHost", 15); /* record 22: the fall arm (0x53148) */
+    g_FallKillCtx.pszTransformName = g_aFallNameTable + 40 * 14;
     g_FallKillCtx.pRosters = &g_FallRosters;
     memset(&g_FallKillHooks, 0, sizeof(g_FallKillHooks));
     g_FallKillHooks.pfnCheckBattleEnd = FallHookKillBattleEnd;
@@ -1077,7 +1085,7 @@ static void FallSetup(void)
     g_FallCtx.pRosters = &g_FallRosters;
     g_FallCtx.pSelectCtx = &g_FallSel;
     g_FallCtx.pCursorPos = &g_FallPos;
-    g_FallCtx.pszTransformName = "Chryssalid";
+    g_FallCtx.pszTransformName = g_aFallNameTable + 40 * 22;
     g_FallCtx.pfnUpdateVisibility = FallHookVisibility;
     g_FallCtx.pfnCheckBattleEnd = FallHookBattleEnd;
     g_FallCtx.pfnPushStatus = FallHookStatus;
@@ -2054,7 +2062,8 @@ static void TestFallActionMelee(void)
     Check(pVictim->abReady252[0] == 0 && pVictim->abReady252[4] == 0,
           "  the five readiness bytes from the record");
     CheckEqI32(pVictim->bStatus, 1, "  bStatus set");
-    Check(strcmp(pVictim->szName, "Chryssalid") == 0, "  the transform name is written");
+    Check(strcmp(pVictim->szName, "ChryssalidHost") == 0,
+          "  the transform name is written -- the record 22 name of the name table, the index the shell supplies (0x53148 ADD #0x370)");
     Check(g_state.pStepFromCell == pVictim->pCell, "  pStepFromCell remembers the cell");
     CheckEqI32(g_nFallEnemy, 1, "  the victim joins the enemy roster");
     Check(g_apFallEnemy[0] == pVictim, "  at the first free slot");
@@ -2207,9 +2216,13 @@ static bool FireHookArmor(const Soldier *pUnit, i32 nTuCost, void *pUser)
     return g_bArmorRefuse != 0;
 }
 
-static void FireHookFov(void *pUser)
+static void FireHookFov(void *pUser, u32 *paWindow, i32 nColBase, i32 nRowBase,
+                        i32 nOriginX, i32 nOriginY, i32 nLayer, i32 nRange,
+                        i32 nCostMode, u16 nSortKey)
 {
-    (void)pUser;
+    (void)pUser; (void)paWindow; (void)nColBase; (void)nRowBase;
+    (void)nOriginX; (void)nOriginY; (void)nLayer; (void)nRange;
+    (void)nCostMode; (void)nSortKey;
     ++g_nFovCalls;
 }
 

@@ -503,7 +503,31 @@ static Mc1Rec g_ceil, g_floor;
 static TactItem g_dropItem;
 static ObjectRecFull g_dropObj;
 
-static void HookFov(void *pUser)  { (void)pUser;  ++g_nFov; }
+/* Part 106: the hook carries the eight Map_ComputeFov arguments the three call
+ * sites pass (settled from 0x2f324/0x2f3a4/0x2f6e8). The last call's values are
+ * kept for the per-site checks; the recorder leaves the window array untouched so
+ * the existing window-content assertions keep measuring the impact record alone. */
+static u32 *g_pFovWindow;
+static i32 g_nFovColBase, g_nFovRowBase, g_nFovOrigX, g_nFovOrigY;
+static i32 g_nFovLayer, g_nFovRange, g_nFovCostMode;
+static u16 g_nFovSortKey;
+
+static void HookFov(void *pUser, u32 *paWindow, i32 nColBase, i32 nRowBase,
+                    i32 nOriginX, i32 nOriginY, i32 nLayer, i32 nRange,
+                    i32 nCostMode, u16 nSortKey)
+{
+    (void)pUser;
+    ++g_nFov;
+    g_pFovWindow   = paWindow;
+    g_nFovColBase  = nColBase;
+    g_nFovRowBase  = nRowBase;
+    g_nFovOrigX    = nOriginX;
+    g_nFovOrigY    = nOriginY;
+    g_nFovLayer    = nLayer;
+    g_nFovRange    = nRange;
+    g_nFovCostMode = nCostMode;
+    g_nFovSortKey  = nSortKey;
+}
 static void HookArea(void *pUser) { (void)pUser;  ++g_nArea; }
 
 static ShotHooks g_hooks = { HookFov, HookArea, NULL };
@@ -556,7 +580,17 @@ static void TestResolveShot(void)
     CheckEqI32("the damage-taken counter records the same amount", g_unit.nUnk436,
                g_out.nDamage);
     CheckEqI32("a direct hit runs no splash walk", g_out.eMode, SPLASH_MODE_NORMAL);
-    CheckEqI32("a direct hit refreshes no field of view", g_out.nFovCalls, 0);
+    /* 0x2f3a4 runs before the 0x2f404 slot test: every bFireType-0 shot refreshes
+     * the field, direct hit included. */
+    CheckEqI32("a direct hit still refreshes the field of view once (0x2f3a4)",
+               g_out.nFovCalls, 1);
+    Check("the refresh is centred on the window (a2 = a3 = 0) at the shot origin",
+          g_nFovColBase == 0 && g_nFovRowBase == 0
+              && g_nFovOrigX == IMPACT_X && g_nFovOrigY == IMPACT_Y
+              && g_nFovLayer == IMPACT_LAYER);
+    Check("its range budget is ObjectRec+0xB6 and its cost mode is a8 = 1",
+          g_nFovRange == 40 && g_nFovCostMode == 1 && g_nFovSortKey == 7
+              && g_pFovWindow == g_aHits);
     CheckEqI32("a direct hit reports no area fire", g_nArea, 0);
     Check("the weapon is published into the map fire context",
           g_c.pCtxWeapon == &g_shot);
@@ -636,7 +670,9 @@ static void TestResolveShot(void)
     CheckEqI32("the floor slot damage counter grows by power - 1.5 * strength",
                g_aCells[IMPACT_LAYER][IMPACT_Y][IMPACT_X].abFaceDamage[0], 15);
     CheckEqI32("mode stays normal", g_out.eMode, SPLASH_MODE_NORMAL);
-    CheckEqI32("no field-of-view refresh without a ceiling break", g_out.nFovCalls, 0);
+    CheckEqI32("the normal shot refreshes the field of view once, before the sweep",
+               g_out.nFovCalls, 1);
+    CheckEqI32("no ceiling refresh without a broken ceiling", g_nFovCostMode, 1);
     CheckEqI32("no area fire reported", g_nArea, 0);
     CheckEqI32("the window is not copied when no copy is asked for",
                (i32)g_aSave[0], (i32)0xAAAAAAAAu);
@@ -655,7 +691,16 @@ static void TestResolveShot(void)
                        3, &g_shot, g_aHits, g_aSave, &g_out);
     CheckEqI32("a broken ceiling promotes the walk to throw mode", g_out.eMode,
                SPLASH_MODE_THROW);
-    CheckEqI32("one field-of-view refresh per broken ceiling", g_out.nFovCalls, 1);
+    /* 0x2f3a4 (normal) + 0x2f6e8 (one per broken ceiling). The ceiling call is the
+     * last one recorded: fold base (20 - column, 20 - row) centred on the broken
+     * window cell (20,20 here), range budget (int)(breakable byte 1 * 2.5) = 2,
+     * cost mode a8 = 2. */
+    CheckEqI32("one normal refresh plus one per broken ceiling", g_out.nFovCalls, 2);
+    Check("the ceiling refresh is centred on the broken window cell (0x2f674/0x2f6cc)",
+          g_nFovColBase == 0 && g_nFovRowBase == 0
+              && g_nFovOrigX == IMPACT_X && g_nFovOrigY == IMPACT_Y);
+    CheckEqI32("the ceiling refresh budgets (int)(sprite+0x18 * 2.5)", g_nFovRange, 2);
+    CheckEqI32("the ceiling refresh takes cost mode a8 = 2", g_nFovCostMode, 2);
     CheckEqI32("the impact point moves to the broken cell", g_out.nImpactX, IMPACT_X);
     CheckEqI32("the impact row moves too", g_out.nImpactY, IMPACT_Y);
     CheckEqI32("the record is marked in the high half of dword 3",
@@ -679,6 +724,9 @@ static void TestResolveShot(void)
     CheckEqI32("area fire centres on the shot origin", g_out.nImpactX, 31);
     CheckEqI32("area fire centres on the shot origin row", g_out.nImpactY, 32);
     CheckEqI32("area fire refreshes the field of view once", g_out.nFovCalls, 1);
+    Check("the area refresh (0x2f324) uses the shot origin cells, budget +0xB6, a8 = 2",
+          g_nFovOrigX == 31 && g_nFovOrigY == 32 && g_nFovRange == 40
+              && g_nFovCostMode == 2 && g_nFovColBase == 0 && g_nFovRowBase == 0);
     CheckEqI32("area fire is reported", g_nArea, 1);
     CheckEqI32("area fire writes no impact record",
                (i32)g_aHits[Combat_HitIndex(20, 20, 0)], 0);

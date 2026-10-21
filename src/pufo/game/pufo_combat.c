@@ -591,7 +591,8 @@ static i32 Combat_DirectUnitDamage(const CombatCtx *pCtx, MapCell *pCell,
  * that gave way becomes the impact point of the splash walk, and the walk mode
  * is promoted to SPLASH_MODE_THROW. */
 static void Combat_CeilingBreakSweep(const CombatCtx *pCtx,
-                                     const ShotHooks *pHooks, i32 nLayer,
+                                     const ShotHooks *pHooks,
+                                     const ObjectRecFull *pWeapon, i32 nLayer,
                                      i32 nOriginX, i32 nOriginY, u32 *apHits,
                                      SplashMode *peMode, i32 *pnImpactX,
                                      i32 *pnImpactY, i32 *pnFovCalls)
@@ -623,10 +624,16 @@ static void Combat_CeilingBreakSweep(const CombatCtx *pCtx,
             }
             *pnImpactX = nX;
             *pnImpactY = nY;
-            /* 0x2f698: (double)sprite+0x18 * 6.0, converted to int and stored
-             * into a spilled slot the decompiler names nRange. No use of that
-             * slot survives in the function, so the port does not compute it. */
-            pHooks->pfnComputeFov(pHooks->pUser);
+            /* 0x2f698/0x2f6b4: (int)((double)sprite+0x18 * 2.5) (muld against
+             * (0, 0x40040000)) is the nRange budget of the Map_ComputeFov call at
+             * 0x2f6e8. Its fold base is (20 - column, 20 - row): the sweep R10/R11
+             * pair, so the new field is centred on the window cell that gave way
+             * (a2 = R10 + 0x14, a3 = R11 = --row counter @ 0x2f6cc). */
+            pHooks->pfnComputeFov(pHooks->pUser, apHits,
+                                  PUFO_SPLASH_HALF - nCol, PUFO_SPLASH_HALF - nRow,
+                                  nX, nY, nLayer,
+                                  (i32)((double)pCeil->bCeilBreakable * 2.5),
+                                  2, pWeapon->uSortKey);
             (*pnFovCalls)++;
             /* 0x2f6f8: mark the record by writing 1 into the high half of dword 3. */
             apHits[nIdx] = (apHits[nIdx] & 0x0000FFFFu) | 0x00010000u;
@@ -931,11 +938,22 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
             Sound_Play(Combat_ShotSound(pWeapon));
             nImpactX = pCtx->nShotOriginX;
             nImpactY = pCtx->nShotOriginY;
-            pHooks->pfnComputeFov(pHooks->pUser);
+            /* 0x2f324: area fire refreshes the field from the shot's own origin
+             * cells, centred (a2 = a3 = 0), range budget = ObjectRec+0xB6, a8 = 2. */
+            pHooks->pfnComputeFov(pHooks->pUser, apHits, 0, 0,
+                                  nImpactX, nImpactY, nLayer,
+                                  (i32)pWeapon->uFirePower, 2, pWeapon->uSortKey);
             nFovCalls++;
         }
     } else {
         Sound_Play(Combat_ShotSound(pWeapon));
+        /* 0x2f3a4: the field-of-view refresh that fills the 41 x 41 hit window the
+         * splash walk and the ceiling sweep read. a2 = a3 = 0, origin = the shot
+         * origin cells, nRange = ObjectRec+0xB6, a8 = 1 (the 8.0 per-step arm). */
+        pHooks->pfnComputeFov(pHooks->pUser, apHits, 0, 0,
+                              pCtx->nShotOriginX, pCtx->nShotOriginY, nLayer,
+                              (i32)pWeapon->uFirePower, 1, pWeapon->uSortKey);
+        nFovCalls++;
         /* 0x2f3dc: the impact record, at the centre of the window, in the slot
          * the shot landed in. */
         apHits[Combat_HitIndex(PUFO_SPLASH_HALF, PUFO_SPLASH_HALF, nSlot)]
@@ -953,8 +971,8 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
         }
     }
 
-    Combat_CeilingBreakSweep(pCtx, pHooks, nLayer, nImpactX, nImpactY, apHits,
-                             &eMode, &nImpactX, &nImpactY, &nFovCalls);
+    Combat_CeilingBreakSweep(pCtx, pHooks, pWeapon, nLayer, nImpactX, nImpactY,
+                             apHits, &eMode, &nImpactX, &nImpactY, &nFovCalls);
     Combat_SplashDamageCells(pCtx, nImpactX, nImpactY, nLayer, pWeapon, apHits,
                              eMode);
 

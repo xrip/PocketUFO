@@ -142,9 +142,11 @@ typedef struct GameMap {
      * it, and the arc walk writes it too (0x301CC). Every context that needs it takes a
      * pointer into pMap->aim (see Map_BuildMoveActionCtx), so an arc-written target and
      * a confirm-written target are the same value the resolve reads. */
-    char aTransformName[32];      /* Map+0x230: the name the chryssalid transform copies into
-                                   * Soldier.szName. The shell owns the block empty; nothing in the
-                                   * ported code fills it yet (recorded gap). */
+    /* No field here for Map+0x230 (0x113BE8): the original never reads or writes it (zero
+     * xrefs). The chryssalid transform name comes from the unit NAME table 0xB1140 --
+     * record 14 in the kill arm (0x4e518 ADD #0x230), record 22 in the fall arm (0x53148
+     * ADD #0x370) -- and reaches KillCtx/FallCtx through the shell's World_UnitNameRecord.
+     * The port's earlier aTransformName[32] was that misread; removed in Part 106. */
 
     /* --- pathfinding scratch (Unit_PathToCell @ 0x2c2a8, wired from the shell in Part 52) --- */
     MapCell *apPathCells[PUFO_PATH_MAX_CELLS]; /* Map_apPathCells @ Map+0x4A48 (0x118400): the walked path,
@@ -188,7 +190,8 @@ typedef struct MoveActionWiring {
     u32          nTextRecCount;
     /* The radio option bank's one-hot bytes at 0xAC81A / 0xAC83A / 0xAC85A.
      * The first suppresses the armour-TU warning entirely, the other two pick
-     * which abArmorTu slot the cost comes from. */
+     * which abArmorTu slot the cost comes from. The shell feeds these from
+     * sTactUi.abRadio[0..2] before every move-action wiring. */
     u8           abRadioOpt[3];
     VisCtx       visCtx;         /* for Unit_UpdateVisibility @ 0x48580 */
     StatusHooks  statusHooks;    /* for StatusMsg_Push @ 0x2dda4 */

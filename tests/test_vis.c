@@ -283,6 +283,10 @@ static Soldier       *g_apKillCiv[8];
 static UnitRosters      g_KillRostersStore;
 static CombatCtx      g_KillCombat;
 static KillCtx        g_KillCtx;
+/* A model of the unit NAME table 0xB1140 (40-byte records indexed by unit type). The kill
+ * transform arm supplies the record of the unit's NEW type -- the shell points at record 14
+ * (0x4e508 LDR R0,=(byte_AD720+0x3A20), 0x4e518 ADD R3,R0,#0x230 = 40 * 14). */
+static char           g_aKillNameTable[40 * 23];
 static KillHooks      g_KillHooks;
 
 static void HookBattleEnd(void *pUser)
@@ -332,7 +336,8 @@ static void KillSetup(void)
     g_KillCtx.apObjects = g_apKillObj;
     g_KillCtx.ppSelUnit = &g_pSelUnit;
     g_KillCtx.pnKillCount = &g_nKillCount;
-    g_KillCtx.pszTransformName = "Chryssalid";
+    memcpy(g_aKillNameTable + 40 * 14, "Chryssalid", 11);
+    g_KillCtx.pszTransformName = g_aKillNameTable + 40 * 14;
     g_KillCtx.pStatus = NULL;
     g_KillCtx.pStatusHooks = NULL;
     g_KillCtx.pVisCtx = NULL;
