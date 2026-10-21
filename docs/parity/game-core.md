@@ -20968,3 +20968,36 @@ cursor pairing above -- the grant pass runs zero times and the craft is silently
 presses, one staging press through the arrow column with its pairing visible in the data, the commit and
 24-hour delivery through the controls' installed handlers, the SELECT press closing the screen, and the
 homeless craft left behind. The QoL pass inherits the five bugs.tsv rows as its work list.
+
+### The six speed buttons press, tick and post -- but the shell had never wired them (Part 100.2)
+
+Geoscape_InitUI installs the six speed handlers -- GameTime_Set5Sec/Set1Min/Set5Min/SetSpeedIdx3/4/5
+(0x84f00..0x85158) -- straight into the root controls [2..7] at 0x186500..0x186514: six STR R3,[R0,#0xC]
+sites at 0x86548..0x86584, with the 5-second default posted over all six at 0x86AB0 before the geoscape
+timers start. The shell's InitUI env filled every root click slot except [8] and [10] with World_NoopClick,
+so in the port the speed buttons armed on a pen press, released their arm, and did nothing: the tick cell
+0x187070 never moved. The six handlers are now thunks over the same live cells (World_SpeedClick ->
+GameTime_Set*), wired through apfnRootClick[2..7].
+
+The live round runs at the clean geoscape point after the placement close (screen 0, empty message list,
+actionFail 0, unpaused): a pen press on the 3600-second control stores 3600 into 0x187070 and posts nState 1
+on its own control and 0 on the other five (0x84F24..0x84F5C); six WM_TIMER pulses then advance the game
+clock by 6*(3600+1) = 21606 seconds -- the same six pulses after pressing the 5-second button move 36.
+The press reaches the six controls through the map screen's own arms (press tail 0x87CF8..0x87D84, release
+tail 0x89CD4..0x89D20), and the two dumped frames show the pressed button glyph and the jumped status-panel
+clock. Frames speed_fast.png / speed_slow.png.
+
+Why the round runs at the clean point: standing status lines re-route the pen before the screen arms ever
+see it. A line carrying flag 11 (the intercept craft prompt; Smap_SetWaypoint inserts one at 0x854A0) makes
+the world press arm 0x87938 and release arm 0x899EC hit-test the card controls 186BA8/186B9C/186B98 plus
+186BB0 instead, so the root controls -- the speed buttons included -- cannot be clicked at all; a line in
+the menu band 31..49 routes the pen to the main menu controls (0x87324 / 0x8946C). The geoscape consumes
+line 0 the other way: Geoscape_PrepScreenOpen drops it on every screen open (0x8525C), pausing when the
+line that moved up carries a band flag (0x85270). Section 100.1's tail leaves a flag-11 line standing, so
+the speed round runs before that chain.
+
+Also proven live on the way: the low-supply gate at 0x89578..0x89600 eats the first pen release on every
+screen but 0/6/9/10/11/12 (screen 1 included) and clears the report there -- after the transfer close left
+byte_1870C8 set, the first press at the strip X armed the control and the release was swallowed; the second
+release ran CloseUI case 1. And the CloseUI header re-posts the speed states for the CURRENT tick on every
+close (0x8B9CC..0x8B9FC), including its 3600-arm double step (SetSpeedIdx4 into SetSpeedIdx5 at 0x8B9E0).

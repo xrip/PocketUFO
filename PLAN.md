@@ -4152,10 +4152,23 @@ unchanged; 18267 checks.
   and a game-core.md section record it; section 100.1 proves the whole chain live -- pin, dead presses, the
   arrow-column staging with its pairing, the commit and 24-hour delivery through the installed handlers, the
   SELECT close -- with frames `transfer_open`, `transfer_staged`, `transfer_committed` (staged and committed
-  are pixel-identical: the changed digit hides under the stuck-open overlay). Remaining stages in
-  `test_geoscapeframe`: 100.2 the speed controls, 100.3 a new base, 100.4 the crashed-disk dispatch chain,
-  100.5 battle setup with mode switching, 100.6 UFO motion and terror-site visibility on a frame; then the
-  six gates, the parity rows, commit.
+  are pixel-identical: the changed digit hides under the stuck-open overlay). 100.2 is done, and it found a
+  real port gap: Geoscape_InitUI installs the six speed handlers (GameTime_Set5Sec..SetSpeedIdx5) into root
+  controls [2..7] (0x186500..0x186514) at the six STRs 0x86548..0x86584, but the shell had left those slots
+  as World_NoopClick -- the buttons armed and released and never touched 0x187070. They are thunks now
+  (World_SpeedClick -> GameTime_Set*, apfnRootClick[2..7]). The live round runs at the clean geoscape point
+  after the placement close: press 3600 -> tick 3600, own state 1, other five 0; six pulses = 21606 game
+  seconds; press 5 -> six pulses = 36; frames `speed_fast`, `speed_slow` show the pressed glyph and the
+  jumped clock. The round had to move there because standing status lines re-route the pen before the screen
+  arms run: a flag-11 line (the intercept prompt) sends press 0x87938/release 0x899EC to the card controls,
+  a menu-band 31..49 line sends the pen to the main menu controls (0x87324/0x8946C), and 100.1's tail leaves
+  both a flag-11 line and a set byte_1870C8 standing -- whose low-supply gate (0x89578) eats the first pen
+  release on screen 1 and clears itself; the second release then closes the strip. That chain and the
+  CloseUI header's speed repost (0x8B9CC..0x8B9FC) are recorded in game-core.md; the 11 geoscape frames
+  after the round are re-referenced (the 6-hour jump moves the world before sections 13-16). Remaining
+  stages in `test_geoscapeframe`: 100.3 a new base, 100.4 the crashed-disk dispatch chain, 100.5 battle setup
+  with mode switching, 100.6 UFO motion and terror-site visibility on a frame; then the six gates, the
+  parity rows, commit.
 
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has

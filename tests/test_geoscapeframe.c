@@ -2515,6 +2515,59 @@ int main(void)
     }
     CheckEqI32(g_world.geo.time.nTotalSec, nSec0 + 3 * (nTick + 1),
                "so at screen 0 the pulse advances the clock again (0x95510, 0x9562C)");
+    /* ---- Part 100.2: speeding the game clock up and slowing it down live -------------------------
+     * The six speed buttons are the geoscape root controls 2..7 (original cells 0x186500..0x186514).
+     * Their press arm is the map screen's own tail: on screen 0 the press tail 0x87CF8..0x87D84
+     * hit-ranges all thirteen root controls once the drag chain leaves it alone, and the release arm
+     * 0x89CD4..0x89D20 "releases all thirteen root controls" on every screen but 2 (the base strip's
+     * arms never touch them). Geoscape_InitUI installed the six handlers GameTime_Set5Sec..
+     * GameTime_SetSpeedIdx5 (0x84f00..0x85158): each stores its interval (5/60/300/1380/2460/3600
+     * into nGeoscapeTickSeconds @ 0x187070) and posts 1 into its own control's nState, 0 into the
+     * other five (the six unrolled stores at 0x84F24..0x84F5C). The clock only advances on the map
+     * screen: Geoscape_PulseUpdate (0x95510, 0x95608, 0x95618) runs the craft pass and the
+     * nTickSeconds + 1 advance per pulse, which the three pulses just above already proved at the
+     * slow speed. The same six pulses here are 21606 game seconds at 3600 and 36 at 5. The section
+     * runs at this clean geoscape point (screen 0, empty message list, shortfall 0, unpaused): with a
+     * status line carrying flag 11 on line 0 the flag-11 arm (press 0x87938, release 0x899EC) routes
+     * the pen to the world's card controls instead, so the speed buttons cannot be pressed at all --
+     * 100.1's tail leaves exactly such a line standing, which is why the round runs here. */
+    {
+        UiControl *const *pSpeed = g_world.ui.apRootCtl + 2; /* the original's 0x186500..0x186514 six */
+        i32 nTotal0, nTotal1, nTotal2;
+
+        /* Fastest: the 3600-second button, through the pen. */
+        PressCtl(pSpeed[5]);
+        CheckEqI32(g_world.geo.world.nTickSeconds, 3600, "GameTime_SetSpeedIdx5 stores 3600 into 0x187070 (0x85124 chain)");
+        CheckEqI32((i32)pSpeed[5]->nState, 1, "its own control posts state 1 (0x84F24 chain)");
+        CheckEqI32((i32)pSpeed[0]->nState + (i32)pSpeed[1]->nState + (i32)pSpeed[2]->nState
+                       + (i32)pSpeed[3]->nState + (i32)pSpeed[4]->nState, 0, "the other five go to 0");
+        nTotal0 = g_world.geo.time.nTotalSec;
+        for (i32 i = 0; i < 6; ++i) {
+            World_PulseGeoscape(&g_world);             /* WM_TIMER 0xC353's geoscape half -> Geoscape_PulseUpdate */
+        }
+        nTotal1 = g_world.geo.time.nTotalSec;
+        CheckEqI32(nTotal1 - nTotal0, 6 * (3600 + 1), "six pulses at this speed are 6*(nTickSeconds+1) game seconds (0x95618)");
+        CheckEqI32(g_world.geo.time.nHour, (nTotal1 / GAME_SECONDS_HOUR) % 24, "the decoded hour follows the advanced total (GameTime_Decode)");
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("speed_fast"); /* the pressed fast button and the jumped clock on the status panel */
+
+        /* Slowest again: the 5-second button. */
+        PressCtl(pSpeed[0]);
+        CheckEqI32(g_world.geo.world.nTickSeconds, 5, "GameTime_Set5Sec stores 5 back into 0x187070 (0x84F24 chain)");
+        CheckEqI32((i32)pSpeed[0]->nState, 1, "the slow button now carries the state");
+        CheckEqI32((i32)pSpeed[5]->nState, 0, "and the fast one lost it");
+        for (i32 i = 0; i < 6; ++i) {
+            World_PulseGeoscape(&g_world);
+        }
+        nTotal2 = g_world.geo.time.nTotalSec;
+        CheckEqI32(nTotal2 - nTotal1, 6 * (5 + 1), "the same six pulses now move only 36 game seconds -- the speed control IS the time rate");
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("speed_slow");
+        printf("  speed round: 6 pulses at 3600 = %d game seconds, 6 pulses at 5 = %d game seconds\n",
+               nTotal1 - nTotal0, nTotal2 - nTotal1);
+    }
 
     /* 13. The base-attack seam, end to end: the assault branch fills the shell's record, the opener builds
      * the panel, the frame reveals it, and the OK click runs the close thunk and the teardown the dispatcher

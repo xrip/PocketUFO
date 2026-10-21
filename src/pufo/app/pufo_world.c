@@ -1806,6 +1806,39 @@ static void World_OptionsMenuClick(void)
     }
 }
 
+/* Root controls [2..7] (the six dwords at 0x186500..0x186514, apGeoscapeSpeedCtl): the six speed
+ * widgets. Geoscape_InitUI installs GameTime_Set5Sec..GameTime_SetSpeedIdx5 into them (the six STRs
+ * at 0x86548..0x86584); each handler plays sample 17, stores its interval (5/60/300/1380/2460/3600)
+ * into nTickSeconds (0x187070) and posts nState 1 into its own control, 0 into the other five
+ * (the six unrolled stores at 0x84F24..0x84F5C). The original reads both operands from globals;
+ * the thunk rebuilds the same pair from live shell cells at click time, like every other footer
+ * handler. */
+static void World_SpeedClick(i32 nIdx)
+{
+    static void (*const aSetters[PUFO_GEOSCAPE_SPEED_COUNT])(
+        GeoscapeWorld *, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]) = {
+        GameTime_Set5Sec, GameTime_Set1Min, GameTime_Set5Min, GameTime_SetSpeedIdx3,
+        GameTime_SetSpeedIdx4, GameTime_SetSpeedIdx5
+    };
+    PufoWorldState *pW = g_pActiveWorld;
+    UiControl *apSpeed[PUFO_GEOSCAPE_SPEED_COUNT];
+
+    if (pW == NULL) {
+        return;
+    }
+    for (i32 i = 0; i < PUFO_GEOSCAPE_SPEED_COUNT; ++i) {
+        apSpeed[i] = pW->ui.apRootCtl[2 + i];
+    }
+    aSetters[nIdx](&pW->geo.world, apSpeed);
+}
+
+static void World_Speed5SecClick(void) { World_SpeedClick(0); }
+static void World_Speed1MinClick(void) { World_SpeedClick(1); }
+static void World_Speed5MinClick(void) { World_SpeedClick(2); }
+static void World_SpeedIdx3Click(void) { World_SpeedClick(3); }
+static void World_SpeedIdx4Click(void) { World_SpeedClick(4); }
+static void World_SpeedIdx5Click(void) { World_SpeedClick(5); }
+
 static void World_RadarClickThunk(void)
 {
     PufoWorldState *pW = g_pActiveWorld;
@@ -2280,6 +2313,15 @@ static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
     for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
         pEnv->apfnRootClick[i] = World_NoopClick;
     }
+    /* Root controls [2..7] (0x186500..0x186514, apGeoscapeSpeedCtl): the six speed handlers, the six
+     * STRs at 0x86548..0x86584. Geoscape_InitUI also posts the 5-second default over them at 0x86AB0
+     * (GameTime_Set5Sec), which the InitUI body runs itself. */
+    pEnv->apfnRootClick[2] = World_Speed5SecClick;
+    pEnv->apfnRootClick[3] = World_Speed1MinClick;
+    pEnv->apfnRootClick[4] = World_Speed5MinClick;
+    pEnv->apfnRootClick[5] = World_SpeedIdx3Click;
+    pEnv->apfnRootClick[6] = World_SpeedIdx4Click;
+    pEnv->apfnRootClick[7] = World_SpeedIdx5Click;
     /* Root control [8] -- the handler word at 0x186518, installed by Geoscape_InitUI at 0x86590 -- is the
      * geoscape's options hotspot: Ui_OpenScreen18 @ 0x84e9c. Slot [9] (0x18651C, Ui_CloseScreen18) stays
      * a no-op: its OpenWithSound tail reaches the overlay toggle through gUiRootPanel.anLineAux[119],
