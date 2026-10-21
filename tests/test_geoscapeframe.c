@@ -10928,6 +10928,390 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                nShipIdx, nModeBefore, nTypeBefore, nModeBefore, nDiskIdx, nXcomFielded, nEnemyFielded);
     }
 
+    /* ---- section 100.6: the map's own traffic -- the replacement arm spawns a UFO, it flies a
+     *      rolled leg, its site-mission landing stamps a terror site the panel captions and the map
+     *      draws, and the base entry stands on the map through every anim phase
+     *      (StrategList_MaybeSpawnCraft_Process @ 0x7e420 / StrategList_RollCraftStats @ 0x81a9c /
+     *      Geoscape_SpawnMissionSite @ 0x7e49c: MissionPickLandTarget 0x7E6F0-ish re-roll, MissionDwell
+     *      0x7E9A0-ish, MissionLanding 0x7EAD0..0x7EB14, StrategList_AddAlienSiteIfValid @ 0x7e3d8;
+     *      Smap_DrawStrategIcons @ 0x822c4 type-1 rows loc_8259C, type-0 active+visible row the
+     *      +6 block at loc_82650, type-0 inactive row the +anim block at loc_8268C) -----------------
+     *
+     * A. Spawn. StrategList_MaybeSpawnCraft_Process with bSpawn 1 is the arm both callers reach:
+     *    Geoscape_TickHourly's `CountActive < 2 && Game_RandU16(4) == 1 -> ProcessEvents(1)` and
+     *    StrategList_RemoveAt's replacement loop (0x82B50/0x82B70, `3 - active` rolls of 1/3) --
+     *    the world wires it as World_HookProcessEvents. The arm is AddUfoAt at a rolled cell
+     *    (0x7E440/0x7E448, x drawn first) + RollCraftStats (race/class from the difficulty rows,
+     *    the 0x81B7C early cap, mission sub from the class row, 0x81BDC hands it to World_SpawnMission
+     *    which starts it: nPhase 3 for sub 0, 4 otherwise) + the event pass tail.
+     * B. Flight. An active item's position is re-derived every event pass at LABEL_84
+     *    (0x809C0..0x80DD0): nX = nStartX +/- elapsed minutes * nTravelStartSec / uTravelMin --
+     *    the accumulator block 0x80418..0x80504 belongs to the intercept branch, not to this path.
+     *    At the 5-second tick one cell costs ~340 game seconds, so the section presses the live
+     *    3600-second speed button (root control 7, GameTime_SetSpeedIdx5 -- Part 100.2) and the
+     *    UFO walks ~10 cells per pulse. The glyph proof toggles bVisible around one probe window:
+     *    the two draws differ only in that byte, so the diff is exactly this item's glyph row.
+     * C. Terror site. The engine's own mission advance (SpawnMissionSite(pItem, -1), the call
+     *    0x809B8 makes) walks the phase gates: the land pick + travel leg, MissionDwell stamps
+     *    g_anMissionDwell[sub] (2880 for sub 4) and nPhase 2, and a spent timer opens MissionLanding --
+     *    the 0x14+1 dice at 0x7EAD0: 16 or less posts an undiscovered site, 17..20 the discovered one
+     *    with the flag-60 line and GameTime_Pause 0x7EB14. AddAlienSiteIfValid (0x7E3D8 rejects ocean,
+     *    0x7E404 stores class 255) makes it a type-0 active item, and MissionTagLastItem stamps the
+     *    race and target (0x7EB48/0x7EB64). UpdateMotion's visible-item pass then trades the carried
+     *    50000 for a real nSiteId off nNextSiteId -- the number the panel row captions with TEXTS[1146]
+     *    (0x82FE4/0x8301C, the pair 100.4 pinned) and the +6 glyph row paints the cell.
+     * The fixture shortens the travel bookkeeping (uTravelMin, the dwell timer, nPhase 2) the way the
+     * per-pass timer decrement 0x7FD24 and the 0x80560 elapsed gate spend them in a running game --
+     * stated at each step; everything else runs on the game's own functions and cells. */
+    {
+        SpawnMissionCtx missionCtx;
+        StrategItem *pUfo     = NULL;
+        StrategItem *pSite    = NULL;
+        i32 nCount0 = 0, nCount1 = 0, nIdxUfo = -1, nIdxSite = -1, i;
+        i32 nSiteId0 = -1, nPx = 0, nPy = 0;
+        i32 nOldX = 0, nOldY = 0, nPulses = 0, nMotionPulses = 0, nTries = 0;
+        i32 nBaseIdx = -1, nSub = -1;
+        u16 aSnapA[16 * 16], aSnapB[16 * 16];
+
+        printf("part 100.6: the game spawns a UFO, it flies, and its landing stamps a terror site\n");
+
+        nCount0 = PtrArray_GetCount(&g_world.strategList);
+        printf("  the list at 100.6's start (%d), paused %d, tick %d:\n",
+               nCount0, (i32)g_world.geo.time.bPaused, g_world.geo.world.nTickSeconds);
+        for (i = 0; i < nCount0; ++i) {
+            const StrategItem *p = (const StrategItem *)PtrArray_Get(&g_world.strategList, i);
+            if (p == NULL) {
+                continue;
+            }
+            printf("    idx %d: type %d act %d vis %d dispId %d siteId %d sub %d phase %d timer %d cell %d,%d race %d class %d\n",
+                   i, (i32)p->nType, (i32)p->bActive, (i32)p->bVisible, p->nDisplayId, p->nSiteId,
+                   (i32)p->nMissionSub, p->nPhase, p->nTimer, p->nX, p->nY, (i32)p->bRace,
+                   (i32)p->bCraftClass);
+            if (p->nType == 0 && p->bActive == 0) {
+                nBaseIdx = i;
+            }
+        }
+
+        /* A. The game's own replacement arm, on the world's own spawn context. */
+        (void)StrategList_MaybeSpawnCraft_Process(&g_world.strategList, g_world.spawnCtx.pnSeed,
+                                                  g_world.spawnCtx.nZoomMode, g_world.spawnCtx.pTables,
+                                                  g_world.nMonthCounter, (i32)g_world.nAlienPoolAddend,
+                                                  1, g_world.spawnCtx.pfnSpawnMission,
+                                                  g_world.spawnCtx.pfnProcessEvents,
+                                                  g_world.spawnCtx.pUser);
+        nCount1 = PtrArray_GetCount(&g_world.strategList);
+        Check(nCount1 > nCount0,
+              "the arm put a new item on the list (0x7E46C AddUfoAt + 0x81A9C RollCraftStats)");
+        for (i = nCount0; i < nCount1; ++i) {
+            const StrategItem *p = (const StrategItem *)PtrArray_Get(&g_world.strategList, i);
+            if (p != NULL && p->nType == 1 && p->bActive == 1) {
+                nIdxUfo = i;
+            }
+        }
+        pUfo = (nIdxUfo >= 0) ? (StrategItem *)PtrArray_Get(&g_world.strategList, nIdxUfo) : NULL;
+        Check(pUfo != NULL && pUfo->nType == 1 && pUfo->bActive == 1 && pUfo->bVisible == 0
+                  && pUfo->nDisplayId == 50000 && pUfo->nSiteId == -1 && pUfo->nHp == -1,
+              "it is the alien shape AddUfoAt builds: type 1, active, invisible, id 50000, no site id, hp -1 (0x7E3AC, 0x82990..0x82A74)");
+        if (pUfo != NULL) {
+            nSub = (i32)pUfo->nMissionSub;
+            printf("  the rolled craft: race %d class %d mission sub %d phase %d cell %d,%d dest %d,%d\n",
+                   (i32)pUfo->bRace, (i32)pUfo->bCraftClass, nSub, pUfo->nPhase,
+                   pUfo->nX, pUfo->nY, pUfo->nDestX, pUfo->nDestY);
+            Check(nSub >= 0 && nSub <= 7 && pUfo->nPhase == ((nSub == 0) ? 3 : 4),
+                  "RollCraftStats rolled a mission sub off the class row and World_SpawnMission started it: phase 3 for sub 0, 4 otherwise (0x81B7C..0x81BDC, 0x3D28C-side start arm 0x7E4CC)");
+            Check(pUfo->nStartX == pUfo->nX && pUfo->nStartY == pUfo->nY
+                      && (pUfo->nDestX != pUfo->nX || pUfo->nDestY != pUfo->nY),
+                  "the start leg is the MissionRollTravel roll: start == spawn, a rolled destination on the 20..780 / 20..360 field (0x7E440/0x7E448, 0x82964..0x82984)");
+            Check(pUfo->dSpeed > 0.0 && pUfo->dTrackA > 0.0
+                      && pUfo->dTrackA == pUfo->dSpeed * 0.02,
+                  "the speed took the active type-1 arm and dTrackA is dSpeed*0.02 (0x7F74C..0x7F7CC, 0x7FA3C)");
+            printf("    dSpeed %f, dTrackA %f, uTravelMin %d, dir %d\n",
+                   pUfo->dSpeed, pUfo->dTrackA, (i32)pUfo->uTravelMin, (i32)pUfo->bTravelDir);
+
+            /* B. Flight. The live speed button first: at 5 s per pulse the interpolation needs
+             * ~340 game seconds to tick one cell over this 1065-minute leg. */
+            PressCtl(g_world.ui.apRootCtl[7]); /* root control 7 = GameTime_SetSpeedIdx5 (0x85124 chain) */
+            CheckEqI32(g_world.geo.world.nTickSeconds, 3600,
+                       "the fastest speed button is pressed live (0x84F00..0x85158, Part 100.2)");
+            g_world.view.nScrollX = pUfo->nX - g_world.view.nMapW / 2 - 40;
+            g_world.view.nScrollY = pUfo->nY - g_world.view.nMapH / 2 + 40;
+            Check(ScreenForCell(&g_world.view, pUfo->nX, pUfo->nY, &nPx, &nPy)
+                      && nPx == 160 && nPy == 120,
+                  "the spawn cell sits dead centre of the map view after the fixture's scroll pair");
+            nOldX = pUfo->nX;
+            nOldY = pUfo->nY;
+            while (nPulses < 40 && pUfo->nX == nOldX && pUfo->nY == nOldY) {
+                World_PulseGeoscape(&g_world);
+                ++nPulses;
+            }
+            Check(pUfo->nX != nOldX || pUfo->nY != nOldY,
+                  "the UFO flew: LABEL_84 re-derives the position from nStartX + elapsed minutes * nTravelStartSec / uTravelMin every pass (0x809C0..0x80DD0)");
+            printf("  after %d pulse(s): cell %d,%d (from %d,%d), dest %d,%d, timer %d, phase %d\n",
+                   nPulses, pUfo->nX, pUfo->nY, nOldX, nOldY, pUfo->nDestX, pUfo->nDestY,
+                   pUfo->nTimer, pUfo->nPhase);
+            nMotionPulses = nPulses;
+            /* The glyph at the new cell: two draws that differ only in the entry's bVisible byte,
+             * so the diff can only be this item's own glyph row (type 1 active: the animated row at
+             * 0x8263C or the static row at 0x82620, behind the visible test in the loc_8259C arm). */
+            pUfo->bVisible = 1; /* fixture: the byte the proximity store 0x811c8 writes, proven live in section 16 */
+            Check(ScreenForCell(&g_world.view, pUfo->nX, pUfo->nY, &nPx, &nPy),
+                  "the flown-to cell stands on the map view");
+            g_world.view.nScrollX = pUfo->nX - g_world.view.nMapW / 2 - 40;
+            g_world.view.nScrollY = pUfo->nY - g_world.view.nMapH / 2 + 40;
+            (void)ScreenForCell(&g_world.view, pUfo->nX, pUfo->nY, &nPx, &nPy);
+            {
+                i32 nX0 = nPx, nY0 = nPy, nDiff = 0;
+                if (nX0 + 16 > PUFO_SURF_W) { nX0 = PUFO_SURF_W - 16; }
+                if (nY0 + 16 > PUFO_SURF_H) { nY0 = PUFO_SURF_H - 16; }
+                ClearSurface();
+                (void)DrawFrame();
+                for (i = 0; i < 16; ++i) {
+                    memcpy(&aSnapB[i * 16],
+                           &((const u16 *)g_assets.pSurface->pPixels)
+                               [(size_t)(nY0 + i) * (size_t)g_assets.pSurface->nWidth + (size_t)nX0],
+                           16 * sizeof(u16));
+                }
+                pUfo->bVisible = 0;
+                ClearSurface();
+                (void)DrawFrame();
+                for (i = 0; i < 16; ++i) {
+                    memcpy(&aSnapA[i * 16],
+                           &((const u16 *)g_assets.pSurface->pPixels)
+                               [(size_t)(nY0 + i) * (size_t)g_assets.pSurface->nWidth + (size_t)nX0],
+                           16 * sizeof(u16));
+                }
+                pUfo->bVisible = 1;
+                for (i = 0; i < 16 * 16; ++i) {
+                    if (aSnapA[i] != aSnapB[i]) { ++nDiff; }
+                }
+                printf("  the entry's glyph window at %d,%d holds %d of 256 pixels\n", nX0, nY0, nDiff);
+                Check(nDiff > 0, "the flown UFO's glyph is painted at its cell by the type-1 visible row (0x8C694/0x8C698, 0x8259C's arm)");
+            }
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("geoscape_ufo_enroute");
+
+            /* D. The base entry stands on the map with no visibility test at all: the type-0
+             * inactive row draws nBase + anim (loc_8268C's block). Two anim phases paint two
+             * frames of the same glyph; a cell that holds such an item must change between them. */
+            if (nBaseIdx >= 0 && g_world.pnAnimPhase != NULL) {
+                const StrategItem *const pBase =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nBaseIdx);
+                if (pBase != NULL && ScreenForCell(&g_world.view, pBase->nX, pBase->nY, &nPx, &nPy)) {
+                    i32 nX0 = nPx, nY0 = nPy, nDiff = 0;
+                    g_world.view.nScrollX = pBase->nX - g_world.view.nMapW / 2 - 40;
+                    g_world.view.nScrollY = pBase->nY - g_world.view.nMapH / 2 + 40;
+                    (void)ScreenForCell(&g_world.view, pBase->nX, pBase->nY, &nPx, &nPy);
+                    nX0 = nPx; nY0 = nPy;
+                    if (nX0 + 16 > PUFO_SURF_W) { nX0 = PUFO_SURF_W - 16; }
+                    if (nY0 + 16 > PUFO_SURF_H) { nY0 = PUFO_SURF_H - 16; }
+                    *g_world.pnAnimPhase = 0;
+                    ClearSurface();
+                    (void)DrawFrame();
+                    for (i = 0; i < 16; ++i) {
+                        memcpy(&aSnapA[i * 16],
+                               &((const u16 *)g_assets.pSurface->pPixels)
+                                   [(size_t)(nY0 + i) * (size_t)g_assets.pSurface->nWidth + (size_t)nX0],
+                               16 * sizeof(u16));
+                    }
+                    *g_world.pnAnimPhase = 3;
+                    ClearSurface();
+                    (void)DrawFrame();
+                    for (i = 0; i < 16; ++i) {
+                        memcpy(&aSnapB[i * 16],
+                               &((const u16 *)g_assets.pSurface->pPixels)
+                                   [(size_t)(nY0 + i) * (size_t)g_assets.pSurface->nWidth + (size_t)nX0],
+                               16 * sizeof(u16));
+                    }
+                    for (i = 0; i < 16 * 16; ++i) {
+                        if (aSnapA[i] != aSnapB[i]) { ++nDiff; }
+                    }
+                    printf("  the base entry at cell %d,%d changes in %d of 256 window pixels between anim 0 and anim 3\n",
+                           pBase->nX, pBase->nY, nDiff);
+                    Check(nDiff > 0,
+                          "the base glyph stands on the map and animates -- the type-0 inactive row has no visibility test (0x822c4's loc_8268C arm, nBase + anim)");
+                } else {
+                    printf("  the base entry is off the map view -- its on-map glyph is not probed here\n");
+                }
+            } else {
+                printf("  no type-0 inactive entry stands in this world -- base visibility rests on newbase_created (Part 100.3)\n");
+            }
+
+            /* C. The terror chain, on the engine's own mission advance (SpawnMissionSite(pItem, -1)
+             * is exactly what 0x809B8 calls once an item's travel time is up). The fixture shortens
+             * the travel bookkeeping to the state the per-pass decrement 0x7FD24 and the 0x80560
+             * elapsed gate reach in a running game, and pins the mission subtype to 4 -- a row the
+             * class-weight roll 0x81B7C..0x81BDC can produce -- so the landing arm walks in this run. */
+            World_FillMissionCtx(&g_world, &missionCtx);
+            /* Fixture: the spawn's rolled sub 0 starts at phase 3 with a cleared target -- that
+             * start dwells onto (0,0) (MissionDwell teleports nTargetX/nTargetY, and 0x7E4CC's start
+             * arm clears them). The fixture pins the site subtype 4 -- a row of the class-weight
+             * table 0x81B7C..0x81BDC rolls from -- and the phase 4 state that same start arm leaves
+             * for every non-zero sub, so the chain runs the land pick 0x7E6F0 instead. */
+            pUfo->nMissionSub = 4;
+            pUfo->nPhase      = 4;
+            nSiteId0 = g_world.nNextSiteId; /* nNextStrategSiteId @ 0x186548 */
+            {
+                const i32 nLines0 = g_world.msgLines.nLineCount;
+                while (pSite == NULL && nIdxUfo >= 0 && nTries < 20) {
+                    ++nTries;
+                    (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx); /* nPhase 4: land pick + travel leg */
+                    (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx); /* nPhase 3: MissionDwell -- timer g_anMissionDwell[4] = 2880, nPhase 2 */
+                    pUfo->nPhase = 2;
+                    pUfo->nTimer = 0; /* the 2880 passes of 0x7FD24, shortened */
+                    nCount0 = PtrArray_GetCount(&g_world.strategList);
+                    (void)Geoscape_SpawnMissionSite(pUfo, -1, &missionCtx); /* MissionLanding: the 0x14+1 dice */
+                    nCount1 = PtrArray_GetCount(&g_world.strategList);
+                    if (nCount1 > nCount0) {
+                        const StrategItem *const pTry =
+                            (const StrategItem *)PtrArray_Get(&g_world.strategList, nCount1 - 1);
+                        if (pTry != NULL && pTry->nType == 0 && pTry->bActive == 1 && pTry->bVisible == 1) {
+                            pSite  = (StrategItem *)pTry;
+                            nIdxSite = nCount1 - 1;
+                        } else if (pTry != NULL && pTry->nType == 0) {
+                            printf("  try %d: the dice rolled 16 or less -- an undiscovered site at %d,%d; radar cannot reveal it in this world, so the fixture removes it and rolls again\n",
+                                   nTries, pTry->nX, pTry->nY);
+                            g_world.bSpawnOnce = 0;
+                            (void)StrategList_RemoveAt(&g_world.strategList, &g_world.geo.world,
+                                                       nCount1 - 1, &g_world.bSpawnOnce, &g_world.spawnCtx);
+                            if (nIdxUfo >= nCount1) { nIdxUfo = -1; }
+                        } else {
+                            printf("  try %d: no item -- AddAlienSiteIfValid refused the dwelling cell (0x7E3D8)\n", nTries);
+                        }
+                    }
+                }
+                Check(pSite != NULL && nIdxSite >= 0 && nTries <= 20,
+                      "the dice reached the 17..20 branch: the discovered site was stamped with its line and pause (0x7EB2C/0x7EB14)");
+                if (pSite != NULL) {
+                    printf("  the site stands at %d,%d (try %d): type %d act %d vis %d race %d class %d siteId %d; the UFO moved on to %d,%d\n",
+                           pSite->nX, pSite->nY, nTries, (i32)pSite->nType, (i32)pSite->bActive,
+                           (i32)pSite->bVisible, (i32)pSite->bRace, (i32)pSite->bCraftClass,
+                           pSite->nSiteId, pUfo->nX, pUfo->nY);
+                    Check(pSite->nType == 0 && pSite->bActive == 1 && pSite->bCraftClass == 255
+                              && pSite->nSiteId == 50000,
+                          "AddAlienSiteIfValid's shape: type 0, active, class 255 through the byte store, the carried 50000 site id (0x7E404, 0x82990..0x829F8)");
+                    Check(pSite->bRace == pUfo->bRace,
+                          "MissionTagLastItem stamped the landing UFO's race onto the site (0x7EB48)");
+                    Check(g_world.geo.time.bPaused == 1, "the discovered landing paused the clock (GameTime_Pause 0x7EB14, 0x5d6ac)");
+                    Check(g_world.msgLines.nLineCount > nLines0
+                              && (i32)UiLineList_GetFlag(&g_world.msgLines, g_world.msgLines.nLineCount - 1) == 60,
+                          "and appended the flag-60 line naming the new item (0x7EB2C's append)");
+
+                    /* The visible-item pass trades the carried 50000 for a real site id off the
+                     * counter (UpdateMotion @ 0x80fd8), and the UFO must be off the site cell before
+                     * the glyph probe reads it. Event passes do both. */
+                    /* Fixture: the clock 0x7EB14 paused runs again -- in a live game the player's
+                     * next answered action does it. Neither the per-minute UpdateMotion pass (the
+                     * site id) nor the interpolation (flying the UFO off the landing cell) runs
+                     * while it is held. */
+                    g_world.geo.time.bPaused = 0;
+                    nPulses = 0;
+                    while (nPulses < 40 && (pSite->nSiteId == 50000
+                               || (pUfo->nX >= pSite->nX - 10 && pUfo->nX <= pSite->nX + 10
+                                   && pUfo->nY >= pSite->nY - 10 && pUfo->nY <= pSite->nY + 10))) {
+                        World_PulseGeoscape(&g_world);
+                        ++nPulses;
+                    }
+                    printf("  after %d pulse(s): site id %d (counter was %d), UFO at %d,%d\n",
+                           nPulses, pSite->nSiteId, nSiteId0, pUfo->nX, pUfo->nY);
+                    Check(pSite->nSiteId != 50000 && pSite->nSiteId == nSiteId0,
+                          "UpdateMotion's visible-item pass assigned the site id off nNextSiteId (the counter 0x18654C pair); it is what TEXTS[1145] captions with itoa");
+                }
+            }
+
+            if (pSite != NULL) {
+                /* The site's own map cell, clear of the UFO: centre, press, and read the row the
+                 * press arm builds (TEXTS[1145] + itoa(nSiteId) -- 0x82E6C/0x8301C; the 1146 overwrite
+                 * at 0x82FE4 is the type-3 disc row 100.4 pinned). */
+                g_world.view.nScrollX = pSite->nX - g_world.view.nMapW / 2 - 40;
+                g_world.view.nScrollY = pSite->nY - g_world.view.nMapH / 2 + 40;
+                Check(ScreenForCell(&g_world.view, pSite->nX, pSite->nY, &nPx, &nPy)
+                          && nPx == 160 && nPy == 120,
+                      "the site cell sits dead centre of the map view");
+                {
+                    i32 nX0 = 152, nY0 = 112, nDiff = 0, nPhaseTry = 0;
+                    /* The row index is nBase + animPhase + 6, and some sprite frames of an animated
+                     * row are blanks; the probe tries the phases and keeps the first that paints. */
+                    for (nPhaseTry = 0; nPhaseTry < 4 && nDiff == 0; ++nPhaseTry) {
+                        if (g_world.pnAnimPhase != NULL) {
+                            *g_world.pnAnimPhase = (i32)nPhaseTry;
+                        }
+                        pSite->bVisible = 0;
+                        ClearSurface();
+                        (void)DrawFrame();
+                        for (i = 0; i < 16; ++i) {
+                            memcpy(&aSnapA[i * 16],
+                                   &((const u16 *)g_assets.pSurface->pPixels)
+                                       [(size_t)(nY0 + i) * (size_t)g_assets.pSurface->nWidth + (size_t)nX0],
+                                   16 * sizeof(u16));
+                        }
+                        pSite->bVisible = 1;
+                        ClearSurface();
+                        (void)DrawFrame();
+                        for (i = 0; i < 16; ++i) {
+                            memcpy(&aSnapB[i * 16],
+                                   &((const u16 *)g_assets.pSurface->pPixels)
+                                       [(size_t)(nY0 + i) * (size_t)g_assets.pSurface->nWidth + (size_t)nX0],
+                                   16 * sizeof(u16));
+                        }
+                        for (i = 0; i < 16 * 16; ++i) {
+                            if (aSnapA[i] != aSnapB[i]) { ++nDiff; }
+                        }
+                    }
+                    printf("  the terror site's glyph window holds %d of 256 pixels (anim phase %d)\n",
+                           nDiff, nPhaseTry - 1);
+                    Check(nDiff > 0,
+                          "the terror site paints its cell through the type-0 active+visible glyph row (+6, 0x822c4's loc_82650 arm)");
+                }
+                /* The landing left its flag-60 line on 0, and a standing line routes the press arm to
+                 * the card controls instead of the world (the 0x87658 guard the Part 100.2 note names
+                 * for flag 11). The fixture clears it with the same UiLineList_Remove the engine's
+                 * own arms use (0x83628 below). */
+                (void)UiLineList_Remove(&g_world.msgLines, 0);
+                Check(TestHitLineCount(&g_world.strategList, pSite->nX, pSite->nY, false) == 1,
+                      "the site stands alone in the 16 x 16 scan window of its own press (0x82C48), so 0x832B0 dispatches one item");
+                World_GeoscapePointer(&g_world, nPx, nPy, true);
+                (void)World_GeoscapePointerUp(&g_world);
+                {
+                    const char *const pszCap = (const char *)g_assets.pTextRecs
+                                               + 1145 * PUFO_TEXT_REC_STRIDE; /* PUFO_TEXT_REC_SITE_LABEL: for a type-0 site the line is record 1145 plus the number (1146 is the type-3 overwrite at 0x82FE4) */
+                    const char *const pszRow = (g_world.ui.pStatusPanel->apLines[0] != NULL)
+                                                   ? (const char *)g_world.ui.pStatusPanel->apLines[0] : NULL;
+                    char szWant[16];
+                    snprintf(szWant, sizeof(szWant), "%d", pSite->nSiteId);
+                    printf("  after the press: %d line(s), line 0 flag %d; controls B %p y %d, A %p y %d\n",
+                           g_world.msgLines.nLineCount,
+                           (g_world.msgLines.nLineCount > 0)
+                               ? (i32)UiLineList_GetFlag(&g_world.msgLines, 0) : -1,
+                           (const void *)g_world.ui.apCtl[GEOUI_CTL_186BB0],
+                           (g_world.ui.apCtl[GEOUI_CTL_186BB0] != NULL) ? (i32)g_world.ui.apCtl[GEOUI_CTL_186BB0]->y : -1,
+                           (const void *)g_world.ui.apCtl[GEOUI_CTL_186BB4],
+                           (g_world.ui.apCtl[GEOUI_CTL_186BB4] != NULL) ? (i32)g_world.ui.apCtl[GEOUI_CTL_186BB4]->y : -1);
+                    Check(pszRow != NULL && strncmp(pszRow, pszCap, strlen(pszCap)) == 0,
+                          "the press builds the panel's row 0 from TEXTS[1145], the site prefix (0x82F8C/0x82E6C)");
+                    Check(pszRow != NULL && strcmp(pszRow + strlen(pszCap), szWant) == 0,
+                          "  and it ends with itoa(the site id) (0x8301C)");
+                    CheckEqI32((i32)g_world.ui.pStatusPanel->anLineAux[0], nIdxSite,
+                                "the row's aux holds the site item (0x8306C)");
+                    Check(g_world.msgLines.nLineCount == 1
+                              && (i32)UiLineList_GetFlag(&g_world.msgLines, 0) == 18,
+                          "the type-0 active dispatch cleared the HitTest line and posted the flag-18 card line (0x83628/0x8362C's arm at 0x835F4)");
+                    Check(g_world.bFlag187098 == 1 && g_world.geo.time.bPaused == 1,
+                          "and the arm set byte 0x187098 and paused (0x8361C, 0x83610)");
+                }
+                ClearSurface();
+                (void)DrawFrame();
+                DumpFrame("geoscape_terror_site");
+            }
+
+            printf("  flight round: spawn sub %d, %d pulse(s) flew %d,%d -> %d,%d; site after %d dice try(ies) at %d,%d with id %d\n",
+                   nSub, nMotionPulses, nOldX, nOldY,
+                   (pUfo != NULL) ? pUfo->nX : -1, (pUfo != NULL) ? pUfo->nY : -1,
+                   nTries, (pSite != NULL) ? pSite->nX : -1, (pSite != NULL) ? pSite->nY : -1,
+                   (pSite != NULL) ? pSite->nSiteId : -1);
+        }
+    }
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 

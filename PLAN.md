@@ -4201,8 +4201,21 @@ unchanged; 18267 checks.
   (0x160FC/0x16104 -> `Inv_CloseAndCommit @ 0x15a48`) commits the deploy (0x39980, spread at 0x39E9C) and
   clears the screen (0x15F34); 8 XCOM == the embarked crew vs 20 aliens, 0 hwps. Escape rebuilds the map
   with the list standing (0x3E154 unreached, Part 93). Frames `tact_briefing_urban`, `tact_mission_urban`,
-  `geoscape_after_mission`. Remaining stages in `test_geoscapeframe`: 100.6 UFO motion and terror-site
-  visibility on a frame; then the six gates, the parity rows, commit.
+  `geoscape_after_mission`. Part 100.6 done: the game's own spawn arm runs live (`MaybeSpawnCraft_Process
+  @ 0x7e420` -- bSpawn==1, x-roll first 0x7E440, `AddUfoAt` 0x7E46C, `RollCraftStats` race 0 class 1,
+  `World_SpawnMission` 0x81BDC phase 3 for sub 0) and the flown UFO moves through LABEL_84's clock
+  interpolation (0x809C0..0x80DD0, elapsed*nTravelStartSec/(60*uTravelMin)) at the live 3600-tick speed
+  button -- not through the dTrackA accumulator (0x80418..0x80504), which is the intercept path only; the
+  terror chain lands the fixture's sub-4 mission on a discovered site at 188,112 (11 dice tries; the
+  hidden 1..16 sites removed via `StrategList_RemoveAt @ 0x82ab0` -- the radar reveal needs an inactive
+  radar entry this world has none of), stamps race 0x7EB48/target 0x7EB64, posts the flag-60 line
+  (0x7EB2C) and pauses (0x7EB14) -- the pause verifiably holds the id pass and the flight until the clock
+  restarts; the press arm 0x835F4 runs (pause, 0x187098, Remove(0), flag-18 card) and the panel row reads
+  TEXTS[1145] + itoa -- 1146 is the type-3 overwrite at 0x82FE4. Frames `geoscape_ufo_enroute` (red
+  contact glyph on the flown cell) and `geoscape_terror_site` (card "База пришельцев 1" + ОК + glyph);
+  glyph probes now sweep the four animation phases (some animated frames are blanks). IDB comments
+  0x7e46c/0x7e404/0x7eb2c/0x835f4/0x809c0 + idb_save. Remaining for Part 100: the six gates, the parity
+  rows, commit.
 
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has

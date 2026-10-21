@@ -21127,3 +21127,57 @@ the DeleteAll at 0x3E154 is never reached (Part 93) and the craft's own entry su
 isometric urban block with the spread squad, HUD and crosshair), `geoscape_after_mission` (rebuilt root
 panel, the craft glyph back on the map, no disc). IDB comments at 0x39138 (the gate correction), 0x38fb8,
 0x83f28, 0x3d0b8 and 0x16294, idb_save.
+
+### The map spawns a UFO, it flies on the clock, and its landing stamps a visible terror site (Part 100.6)
+
+The spawn is the game's own arm. `Geoscape_TickHourly @ 0x5d1bc` re-seeds any entry past |1000| (150,250
++ `SpawnMissionSite(0)`) and runs `StrategList_MaybeSpawnCraft_Process @ 0x7e420` when fewer than two
+items are active and `RandU16(4) == 1`. Section 100.6 called the same hook with the same ctx: the bSpawn
+gate (0x7E420, exactly 1), the roll -- x first (0x7E440) then y (0x7E448) -- `AddUfoAt` at 0x7E46C
+(0x7E3AC's shape: type 1, active, INVISIBLE, id 50000, site -1, hp -1), `RollCraftStats @ 0x81a9c`
+(difficulty from nMonthCounter clamped 0..5 at 0x81AC0; the nAlienPoolAddend < 15 gate at 0x81B7C caps
+class at 2 and did not bind) and `World_SpawnMission @ 0x81BDC`, whose start arm (0x7E4CC) writes
+nPhase 3 for sub 0, 4 otherwise, with the target cleared. The rolled contact: race 0, class 1, sub 0,
+cell 113,202, a destination rolled into the 20..780 / 20..360 field (300,304), dSpeed 10, dTrackA
+dSpeed*0.02 (0x7F74C..0x7F7CC, 0x7FA3C), uTravelMin 1065.
+
+The flight is not the accumulator. `StrategList_ProcessEvents` steps an item only when its nTimer runs
+(0x7FD24), and the dTrackA walk at 0x80418..0x80504 belongs to the intercept/inactive-marker path -- the
+port's first attempt stepped the active UFO through it and the UFO never moved. The real motion is the
+LABEL_84 block (0x809C0..0x80DD0): nX = nStartX +/- elapsed minutes * nTravelStartSec / (60 * uTravelMin),
+nY by the destY sign, wrapped at 0x80DE0/0x80DF0, re-derived from the clock every pass. With the fastest
+speed button pressed live (apRootCtl[7], GameTime_SetSpeedIdx5 0x86584, 3600 s -- the Part 100.2 controls)
+one pulse flew the contact 113,202 -> 123,207, and the type-1 visible glyph row painted 20 pixels of its
+16 x 16 cell window (the map glyph pass 0x8C694/0x8C698 wired in Part 100.4). No type-0 inactive entry
+stands in this world -- base visibility rests on `newbase_created` (Part 100.3).
+
+The terror chain runs through `Geoscape_SpawnMissionSite(pItem, -1)` (0x7e49c). The fixture moved the
+mission onto the sub-4 leg (nMissionSub 4, nPhase 4) on purpose: a sub-0 start holds phase 3 with the
+target cleared at 0x7E4CC, and its zero-second dwell (g_anMissionDwell[0] = 0) teleports onto (0,0)
+through the view-bound test -- the dice branch would have run at the map corner. Two manual advances ran
+MissionPickLandTarget (dry-land re-roll: x = RandU16(0x2F8)+20 re-drawn while the tile is 255) and
+MissionTravelToTarget; the dwell (2880 s for sub 4) was zeroed and one more advance reached MissionLanding.
+The dice `Game_RandU16(0x14)+1` decided the landing: 1..16 built an UNDISCOVERED site through
+`AddAlienSiteIfValid @ 0x7e3b4` (0x7E404's shape: type 0, active, class 255, the carried 50000, hp -1;
+the 0x7E3D8 gate rejects the 255 ocean tile) -- the radar reveal (UpdateMotion @ 0x80fd8, type-0
+`++nTimer` to the threshold) needs an inactive radar entry this world has none of, so the fixture removed
+each hidden site (RemoveAt @ 0x82710-era arms, `StrategList_RemoveAt @ 0x82ab0`, `bSpawnOnce` 0x162028 cleared) and rolled again. The 11th
+try hit 17..20: the site was stamped discovered at 188,112 with `AppendLine(60, count-1, 0)` (0x7EB2C)
+and `GameTime_Pause` (0x7EB14), and MissionTagLastItem wrote the landing UFO's race (0x7EB48) and the
+target index (0x7EB64) into the site record. The pause then proved itself: while held, neither the
+UpdateMotion id pass nor LABEL_84 ran (site id 50000, UFO pinned at the landing cell); after the fixture
+restarted the clock one pulse assigned the real id off nNextSiteId (0x186548, the display/site counter pair)
+and the UFO flew past the 10-cell guard.
+
+Pressing the site's cell proved the read side. The standing flag-60 line routes the pen to the card
+controls instead of the world (the same class as the flag-11/flag-60 re-routing the Part 100.2 note
+records for the root arm), so the fixture removed it with `UiLineList_Remove` first; the 16 x 16 scan
+(0x82C48) found the site alone and 0x832B0 dispatched it through the type-0 active arm at 0x835F4: pause
+(0x83610), 0x187098 = 1 (0x8361C), Remove(0) (0x83628), the flag-18 card line (0x83644), the panel row
+built from TEXTS[1145] SITE_LABEL + itoa(1) -- 1145 alone: the 1146 overwrite at 0x82FE4 is the type-3
+disc row of Part 100.4. The glyph probe painted the site's cell through the type-0 active+visible row
+(nBase + anim + 6, loc_82650) -- 32 of 256 window pixels; the probe now sweeps the four animation phases
+because some frames of an animated row are blanks. Frames `geoscape_ufo_enroute` (the red contact glyph on
+the flown cell, the speed panel live at 3600) and `geoscape_terror_site` (the card "База пришельцев 1" over
+the site glyph, ОК armed, the clock held). IDB comments at 0x7e46c, 0x7e404, 0x7eb2c, 0x835f4 and 0x809c0
+(the LABEL_84-vs-accumulator clarification), idb_save.
