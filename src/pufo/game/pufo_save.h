@@ -647,7 +647,9 @@ bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *p
                   TactItem *const *apItems, i32 nItemCount,
                   const PufoFont *pFont);
 /* The chunk's two dim bytes (0x43400 / 0x43418) read ahead of the shell's grid allocation, so the
- * walk in Save_ReadMap meets the same slots Save_WriteMap wrote. See the note in pufo_save.c. */
+ * walk in Save_ReadMap meets the same slots Save_WriteMap wrote. The chunk is positional full
+ * coverage -- one record per walk slot -- so both maps functions REFUSE a NULL slot inside the range
+ * (Part 103 seam guard, the note in pufo_save.c) instead of skipping and desyncing the streams. */
 bool Save_ReadMapDims(DatFile *pDat, MapGeom *pMap);
 
 /* ------------------------------------------------- the four roster chunks

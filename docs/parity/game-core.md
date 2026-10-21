@@ -21255,3 +21255,47 @@ IDB: 0x1139B8 named `Map_bTactFlag` (it was a nameless byte typed `double`) with
 naming the writers (0x3C690 set, 0x3D588 clear, Save_WriteGameState 0x44928) and line comments at
 0x3C690 and 0x3D588; `Map_bActionLatch @ 0x1139BA` already carried its comment; idb_save.
 test_tactend 402 checks green, test_geoscapeframe green.
+
+## Part 103.3: the "map" chunk's dim bytes become provable, both walks gain a seam guard, and the ctor-first rule lands in the header
+
+**The chunk is positional (IDB).** `Save_WriteMap @ 0x438e0` writes the two dim bytes then exactly one
+record per walk slot (`10*nDimY` rows x `10*nDimX` cols x 4 layers), and `Save_ReadMap @ 0x433d8`
+consumes records in the same slot order -- the record's cell coordinates are not stored, they are
+derived from the walk (0x434DC..0x434E4). Neither walk tests the slot pointer: the read head
+dereferences `[slot]+0x10` at 0x434B4/0x434BC and the write head at 0x4398C/0x43998, which is safe
+only because the original's inline table (Map+0x15338..0x23438) is allocated complete for the dims
+(0x3D138..0x3D1CC). The old PLAN claim that "both sides continue on a NULL slot (0x43B10...)" was a
+misread: 0x43B10 is the occupant sentinel test (unit NULL writes 0x7FFF, else `[unit+0x14]`) -- it
+tests the occupant, never the slot. IDB notes at 0x434B4, 0x4398C and 0x43B10.
+
+**Seam guard (recorded deviation).** Both port maps functions now REFUSE a NULL slot inside the
+walk range instead of skipping: a hole in the shell's grid means grid and stream are out of step,
+and skipping is exactly the Part 65 grid-index shape (59 of 60 columns NULL, every later record
+landing one slot early). The original would dereference NULL instead -- the refusal is recorded at
+both sites and in `pufo_save.h`. Mutations M3 (read guard -> `continue`) and M4 (write guard ->
+`continue`) each produce one red in `test_save`'s new hole fixture (`test_maphole.tmp` write
+refused; read of the good file over the same hole refused).
+
+**Save_ReadMapDims is now provable.** Unit level (`test_save`): with a sentinel `MapGeom` of 9x9,
+`Save_ReadMapDims` returns the chunk's 1x1 (0x43400/0x43418), and `Save_ReadMap`'s own head applies
+the same rule -- 9 becomes 1 and the walk fits the fixture. Live level
+(`test_geoscapeframe` 103.3): section 18 now snapshots the live mission into slot 63 (dims 6/6 as
+InitMission wrote them -- asserted by reading the chunk's two bytes out of the file's directory);
+the tail block stamps the chunk's dim bytes to 6x5 and reloads: the loaded `GameMap` carries the
+FILE's 6/5, `Init_LoadMission` allocated 12000 cells (10*5 rows x 60 cols x 4 layers) instead of
+14400, rows 50..59 stay NULL, and the row-12 occupant lands in its own slot with walk-derived
+coordinates. Mutation M1 (neuter the `Save_ReadMapDims` call) leaves the hard-coded 6/6: 4 reds.
+Mutation M2 (remove the table capacity guard, below) turns the all-NULL assert red.
+
+**Table capacity guard.** The shell's `apTactCells` is fixed 14400 slots with the original's 60-cell
+pitch; a chunk declaring 7+ dims would drive the allocation loop past the table (the original's own
+0x3D168 loop would overrun its inline table too, into the globals behind 0x23438). `Init_LoadMission`
+now refuses the allocation when `10*nDim > 60` -- the grid stays NULL and `Save_ReadMap`'s seam guard
+refuses the chunk; the 7-column stamped load asserts 0 cells allocated while the dims byte stays 7.
+Every original writer of Map_nMapDimX/Y yields 6 (0x3C6C0/0x3C6D0 store 6/6; the load bytes are what
+a save wrote), so no shipped save trips it. Deviation recorded: the original overruns, the port stops.
+
+**Construct-first rule in the header.** `DatFile_Open @ 0x9ef38` ends by freeing the struct's old
+write buffer (0x9F134, operator delete) before re-allocating (0x9F144): `pufo_dat.h` now states the
+rule (`DatFile_ctor` before `DatFile_Open`, the Release-only 0xc0000374 trap). IDB comment at
+0x9F134; `idb_save` for the 0x434B4/0x4398C/0x43B10/0x9F134 notes.

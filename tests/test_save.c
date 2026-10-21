@@ -1128,10 +1128,16 @@ static void TestFlobjsChunk(void)
 
 static MapCell g_aMapCells[PUFO_MAP_LAYERS][10][10];
 
+/* Part 103 seam-guard fixture: one in-range slot the lookup reports as missing. */
+static i32 g_nHoleLayer = -1, g_nHoleRow = -1, g_nHoleCol = -1;
+
 static MapCell *MapTestLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 {
     (void)pUser;
     if (nLayer < 0 || nLayer >= PUFO_MAP_LAYERS || nX < 0 || nX >= 10 || nY < 0 || nY >= 10) {
+        return NULL;
+    }
+    if (nLayer == g_nHoleLayer && nY == g_nHoleRow && nX == g_nHoleCol) {
         return NULL;
     }
     return &g_aMapCells[nLayer][nY][nX];
@@ -1141,6 +1147,7 @@ static void TestMapChunk(void)
 {
     DatFile dat;
     MapGeom geom;
+    MapGeom geomD, geomS;
     MapCell *pCell;
     Soldier aSol[2];
     Soldier *apSol[2];
@@ -1271,6 +1278,44 @@ static void TestMapChunk(void)
     Check(OpenRead("test_mapchunk.tmp", &dat), "  reopened for the font check");
     Check(!Save_ReadMap(&dat, &geom, MapTestLookup, NULL, apSol, 2, apItem, 2, NULL),
           "a sprite index with no font is refused");
+    DatFile_Close(&dat);
+
+    /* Part 103: Save_ReadMapDims mirrors 0x43400/0x43418 -- the chunk's bytes win over the caller. */
+    Check(OpenRead("test_mapchunk.tmp", &dat), "  reopened for the dims read");
+    geomD.nDimX = 9; /* sentinel the chunk must overwrite */
+    geomD.nDimY = 9;
+    Check(Save_ReadMapDims(&dat, &geomD), "  dims read");
+    CheckEqI32((i32)geomD.nDimX, 1, "nDimX comes from the chunk byte (0x43400), not from the caller's 9");
+    CheckEqI32((i32)geomD.nDimY, 1, "nDimY comes from the next byte (0x43418)");
+    DatFile_Close(&dat);
+
+    /* The same rule inside Save_ReadMap's own head: a caller geom of 9x9 becomes the file's 1x1, and
+     * the walk fits the fixture grid. Drop the dim read and this walk leaves the grid -- the seam
+     * guard below is what then bites. */
+    Check(OpenRead("test_mapchunk.tmp", &dat), "  reopened with a sentinel geom");
+    geomS.nDimX = 9;
+    geomS.nDimY = 9;
+    Check(Save_ReadMap(&dat, &geomS, MapTestLookup, NULL, apSol, 2, apItem, 2, &font),
+          "  read with the sentinel geom");
+    CheckEqI32((i32)geomS.nDimX, 1, "the caller's 9 became the file's 1 (0x43400)");
+    CheckEqI32((i32)geomS.nDimY, 1, "and 9 became 1 at 0x43418");
+    DatFile_Close(&dat);
+
+    /* Part 103 seam guard: a NULL slot inside the walk range is refused by BOTH sides, because the
+     * chunk is positional (one record per slot, coordinates derived from the walk 0x434DC..0x434E4)
+     * and skipping a hole is the Part 65 desync -- the original tests nothing (0x4398C/0x434B4
+     * dereference), so the refusal is the recorded deviation. */
+    g_nHoleLayer = 0; g_nHoleRow = 5; g_nHoleCol = 5;
+    Check(OpenWrite("test_maphole.tmp", &dat, 2), "  hole fixture opened for writing");
+    Check(!Save_WriteMap(&dat, &geom, MapTestLookup, NULL),
+          "a NULL slot inside the range refuses the write -- no short chunk is emitted");
+    DatFile_Close(&dat);
+
+    memset(g_aMapCells, 0, sizeof(g_aMapCells));
+    Check(OpenRead("test_mapchunk.tmp", &dat), "  good file read over the same hole");
+    Check(!Save_ReadMap(&dat, &geom, MapTestLookup, NULL, apSol, 2, apItem, 2, &font),
+          "the read refuses instead of shifting the positional stream");
+    g_nHoleLayer = -1; g_nHoleRow = -1; g_nHoleCol = -1;
     DatFile_Close(&dat);
 }
 

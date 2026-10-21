@@ -1847,8 +1847,18 @@ bool Save_WriteMap(DatFile *pDat, const MapGeom *pMap,
                 u32 nLow, nHigh;
                 i32 nIndex;
 
-                if (pCell == NULL) { /* deviation: the original dereferences the slot */
-                    continue;
+                if (pCell == NULL) {
+                    /* Seam guard (Part 103): the chunk is positional -- one record per walk slot,
+                     * record order == slot order, and the record's own cell coordinates are derived
+                     * from the walk (0x434DC..0x434E4 on the read side). The original tests nothing in
+                     * either walk (0x4398C/0x43994 write, 0x434B4/0x434BC read dereference [slot]+0x10
+                     * straight) because its inline table 0x3D138..0x3D1CC is complete over the walk
+                     * range. A NULL inside the range in the shell's grid means the grid and the walk
+                     * are no longer in step; skipping would desync the positional binding -- exactly
+                     * the Part 65 grid-index shape (59 slots in 60 NULL, records landing on the next
+                     * slot) -- so the writer refuses instead of emitting a short stream. Deviation
+                     * recorded: the original dereferences NULL. */
+                    return false;
                 }
 
                 if (!W(pDat, pCell->abFaceDamage, 4)) { /* 0x43998: the four face counters as a block */
@@ -1965,8 +1975,12 @@ bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *p
                 u32 nLow, nHigh;
                 i32 nIndex;
 
-                if (pCell == NULL) { /* deviation: the original dereferences the slot */
-                    continue;
+                if (pCell == NULL) {
+                    /* Seam guard (Part 103), the read-side half of the Save_WriteMap one: a NULL slot
+                     * inside the walk range means the grid and the record stream are out of step;
+                     * consuming the next slot's record here is the Part 65 desync. Refuse instead.
+                     * Deviation recorded: the original dereferences NULL (0x434B4/0x434BC). */
+                    return false;
                 }
 
                 if (!DatFile_Read(pDat, pCell->abFaceDamage, 4)) { /* 0x434C0 */

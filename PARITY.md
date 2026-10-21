@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 19790 |
+| Test checks run | 19816 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 1835 |
+| `test_geoscapeframe` | PASS | 1849 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
@@ -1299,7 +1299,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_renderframe` | PASS | 24 |
 | `test_rmp` | PASS | 83 |
 | `test_roster` | PASS | 146 |
-| `test_save` | PASS | 820 |
+| `test_save` | PASS | 832 |
 | `test_ship` | PASS | 282 |
 | `test_smaphit` | PASS | 132 |
 | `test_soldiername` | PASS | 22 |

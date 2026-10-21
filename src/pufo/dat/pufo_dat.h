@@ -22,6 +22,12 @@
  * DatFile. In READ mode nCurEntry is the index of the first empty-named
  * directory slot (save files zero-fill their directory, so this equals the
  * written chunk count) and FindChunk scans only 0..nCurEntry-1.
+ *
+ * Construct-first rule (recorded by Part 103): DatFile_Open @ 0x9ef38 ends by freeing the
+ * struct's old write buffer (0x9F134, operator delete) before re-allocating the new one
+ * (0x9F144, operator new nBufCap). A DatFile that was declared but never constructed hands
+ * free() an uninitialised pointer -- the Release-only 0xc0000374. Every caller must run
+ * DatFile_ctor before DatFile_Open.
  */
 #ifndef PUFO_DAT_H
 #define PUFO_DAT_H

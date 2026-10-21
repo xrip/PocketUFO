@@ -277,6 +277,54 @@ static i32            g_nMarkXcom, g_nMarkEnemy, g_nMarkCiv, g_nMarkHidden, g_nM
 static i32            g_nMarkDimX, g_nMarkDimY, g_nMarkLayers;
 static i32            g_nMarkCellX, g_nMarkCellY, g_nMarkCellZ;
 static Soldier       *g_pMarkUnit;
+/* Part 103.3: the selected soldier's cell as the slot-63 snapshot wrote it -- the patched-dims load at
+ * the tail of main has to put an occupant back into (or, past row 50 of a 5-row walk, find nothing at)
+ * that slot. Coordinates only: soldier records move between missions, their addresses must not be chased. */
+static i32            g_nSnap63X, g_nSnap63Y, g_nSnap63Z;
+
+/* Part 103.3 fixture: patch the "map" chunk's two dim bytes in place. On-disk DatFile: u32 count at
+ * 0, then count x 21-byte directory entries (name[13], nDataSize u32, nFileOff u32), then the payloads;
+ * DatFile_BeginChunk upper-cases the tag, so the map chunk's entry name is "MAP" and the chunk payload
+ * starts with the two dim bytes (the read head at 0x43400/0x43418 takes them first). */
+static i32 Test_PatchMapDims(const wchar_t *pwFile, u8 bNewX, u8 bNewY, u8 *pOldX, u8 *pOldY)
+{
+    HANDLE hFile = CreateFileW(pwFile, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    u32    nCount = 0;
+    i32    bOk = 0;
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    if (ReadFile(hFile, &nCount, 4, NULL, NULL) && nCount <= 256) {
+        for (u32 i = 0; i < nCount; ++i) {
+            char szName[13];
+            u32  aTail[2];
+            DWORD cb = 0;
+
+            (void)SetFilePointer(hFile, (LONG)(4 + 21 * i), NULL, FILE_BEGIN);
+            if (!ReadFile(hFile, szName, 13, &cb, NULL) || cb != 13) {
+                break;
+            }
+            if (!ReadFile(hFile, aTail, 8, &cb, NULL) || cb != 8) {
+                break;
+            }
+            if (szName[0] == 'M' && szName[1] == 'A' && szName[2] == 'P' && szName[3] == 0) {
+                u8 abNew[2] = { bNewX, bNewY };
+
+                (void)SetFilePointer(hFile, (LONG)aTail[1], NULL, FILE_BEGIN);
+                if (ReadFile(hFile, pOldX, 1, &cb, NULL) && cb == 1
+                    && ReadFile(hFile, pOldY, 1, &cb, NULL) && cb == 1) {
+                    (void)SetFilePointer(hFile, (LONG)aTail[1], NULL, FILE_BEGIN);
+                    bOk = WriteFile(hFile, abNew, 2, &cb, NULL) && cb == 2;
+                }
+                break;
+            }
+        }
+    }
+    (void)CloseHandle(hFile);
+    return bOk;
+}
 /* Part 93: the strateg list as the save unit found it. Save_WriteStrateg bounds its record loop with the
  * count the geoscape block keeps at +0x38 -- 0x186530, written into the chunk at 0x3FC14 and read back as
  * the loop bound at 0x3FE28 and 0x401D4 -- and not with the PtrArray's own count; the original keeps that
@@ -8969,6 +9017,15 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             DumpFrame("tact_play_resumed");
         }
 
+        /* Part 103.3: snapshot this live mission into slot 63. The patched-dims load tests at the tail
+         * of main run on this file; nothing downstream needs the file itself -- the mission stays live
+         * here, and Part 99 stage 0 is what leaves it. Snap the selected soldier's cell: the 50-row walk
+         * over a 5-row dims save has to put her back on exactly that cell. */
+        Check(World_SaveSlot(&g_world, "", 63, &hooks) != 0, "slot 63 snapshots the live mission");
+        g_nSnap63X = pMap->pSelUnit->pCell->nX;
+        g_nSnap63Y = pMap->pSelUnit->pCell->nY;
+        g_nSnap63Z = pMap->pSelUnit->pCell->nZ;
+
         (void)remove("sav64.sav");
         (void)remove("sav62.sav");
 #undef CLICK
@@ -11466,6 +11523,111 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         printf("  the quit-Yes arm: %d live items emptied, mirror cell stays %d, tact flag %d\n",
                nItems0, g_world.saveStrateg.nStrategCount, (i32)g_world.bTactFlag);
         (void)remove("sav0.sav");
+    }
+
+    /* ---- Part 103.3: the "map" chunk's dim bytes drive the shell grid, and the capacity guard stops
+     * dims that overrun the table ---------------------------------------------------------------
+     * The IDB has no test in either walk (0x434B4/0x434BC read, 0x4398C/0x43994 write dereference the
+     * slot untested); the chunk is positional full coverage, and the dims it carries (0x43400/0x43418)
+     * are what Init_LoadMission sizes the allocation from -- while Tact_InitMission itself stores 6/6
+     * at 0x3C6C0/0x3C6D0, the value the save then writes back. So the proof is a save whose dim bytes
+     * lie: run the load on the slot-63 snapshot with 5 stamped into the file and the grid must follow
+     * the file, and with 7 stamped in it the guard must refuse the allocation instead of overrunning
+     * the 14400-slot table (the original would overrun its own inline table at 0x23438). */
+    {
+        u8     bOldX, bOldY, bT1, bT2;
+        i32    nRet, nCells, nLayer, nRow, nCol;
+        GameMap *pMap63;
+
+        Check(Test_PatchMapDims(L"sav63.sav", 6, 5, &bOldX, &bOldY),
+              "sav63.sav holds a map chunk (dir entry \"MAP\")");
+        Check(bOldX == 6 && bOldY == 6,
+              "the live mission saved the dims InitMission wrote (0x3C6C0/0x3C6D0 store 6/6)");
+
+        nRet = World_LoadSlot(&g_world, "", 63, &g_assets, &g_fontSys, &g_options, &hooks);
+        Check(nRet != 0, "the 6x5 save loads -- Save_ReadMapDims sizes the shell grid from the file, not the 6/6");
+        pMap63 = g_world.pTactMap;
+        Check(pMap63 != NULL && pMap63->geom.nDimX == 6 && pMap63->geom.nDimY == 5,
+              "the loaded map carries the FILE's dims 6x5 (0x43400/0x43418 beat the hard-coded 6/6)");
+
+        nCells = 0;
+        for (nLayer = 0; nLayer < 4; ++nLayer) {
+            for (nRow = 0; nRow < 60; ++nRow) {
+                for (nCol = 0; nCol < 60; ++nCol) {
+                    if (g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer
+                                            + PUFO_MAP_CELL_DIM * nRow + nCol] != NULL) {
+                        ++nCells;
+                    }
+                }
+            }
+        }
+        CheckEqI32(nCells, 12000,
+                   "Init_LoadMission allocated 10*5 rows x 60 cols x 4 layers -- the loop bounds follow the file");
+
+        {
+            bool bRowsEmpty = true;
+
+            for (nLayer = 0; nLayer < 4 && bRowsEmpty; ++nLayer) {
+                for (nRow = 50; nRow < 60 && bRowsEmpty; ++nRow) {
+                    for (nCol = 0; nCol < 60; ++nCol) {
+                        if (g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer
+                                                + PUFO_MAP_CELL_DIM * nRow + nCol] != NULL) {
+                            bRowsEmpty = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            Check(bRowsEmpty, "rows 50..59 are never reached by a 50-row walk, so they stay NULL");
+        }
+
+        /* Positional proof: the walk's first 50 rows keep their slots under a 50-row grid. Check the
+         * slot the save wrote the selected soldier's occupant into -- the identity the record resolves
+         * to depends on the roster's nSaveId assignment (Save_AssignRosterIndices), not on the dims,
+         * so the gate is the slot and its walk-derived coordinates, and the occupant being there at all. */
+        {
+            MapCell *pSlot = g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * g_nSnap63Z
+                                                 + PUFO_MAP_CELL_DIM * g_nSnap63Y + g_nSnap63X];
+
+            if (g_nSnap63Y < 50) {
+                Check(pSlot != NULL && pSlot->pUnit != NULL
+                          && pSlot->nX == g_nSnap63X && pSlot->nY == g_nSnap63Y
+                          && pSlot->nZ == g_nSnap63Z,
+                      "the chunk's row 12 occupant still lands in its own slot (coordinates derived at 0x434DC..0x434E4)");
+            } else {
+                Check(pSlot == NULL,
+                      "the soldier's chunk row is 50+ and a 50-row walk allocates and consumes no row past 49");
+            }
+            printf("  dims patch: 6x5 save, grid %d cells, occupant slot %d/%d/%d -> pUnit %s\n",
+                   nCells, g_nSnap63X, g_nSnap63Y, g_nSnap63Z,
+                   (pSlot != NULL && pSlot->pUnit != NULL) ? "set" : "none");
+        }
+
+        World_TactEscapeToGeoscape();
+        Check(g_world.bTactFlag == 0 && g_world.pTactMap == NULL, "the 6x5 mission tears down (0x162BC/0x162C8)");
+
+        Check(Test_PatchMapDims(L"sav63.sav", 7, 6, &bT1, &bT2) && bT1 == 6 && bT2 == 5,
+              "the same chunk stamped 7 columns (and the 6x5 stamp reads back cleanly)");
+        nRet = World_LoadSlot(&g_world, "", 63, &g_assets, &g_fontSys, &g_options, &hooks);
+        Check(nRet != 0, "the 7-column save still runs the load chain -- only the grid allocation is refused");
+        nCells = 0;
+        for (nLayer = 0; nLayer < 4; ++nLayer) {
+            for (nRow = 0; nRow < 60; ++nRow) {
+                for (nCol = 0; nCol < 60; ++nCol) {
+                    if (g_world.apTactCells[PUFO_TERRAIN_CELLS_PER_LAYER * nLayer
+                                            + PUFO_MAP_CELL_DIM * nRow + nCol] != NULL) {
+                        ++nCells;
+                    }
+                }
+            }
+        }
+        CheckEqI32(nCells, 0,
+                   "the capacity guard refused 7*10 > 60 pitch: not one cell allocated, Save_ReadMap's seam guard refuses the chunk");
+        Check(g_world.pTactMap != NULL && g_world.pTactMap->geom.nDimX == 7,
+              "the dims byte is still the chunk's (7) -- the guard is at the allocation, not at the read");
+        World_TactEscapeToGeoscape();
+        Check(g_world.bTactFlag == 0 && g_world.pTactMap == NULL, "the refused mission tears down too");
+        (void)remove("sav63.sav");
     }
 
     World_Free(&g_world);

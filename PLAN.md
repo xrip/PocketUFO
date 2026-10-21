@@ -4291,11 +4291,10 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   later part wants the original's behaviour exactly, the guard deviation has to be re-argued per site. Indexed in
   bugs.tsv (`0x4BA3C`, deviation, Part 101 pass).
 
-- [ ] **`DatFile_Open` frees the struct's old write buffer -- so every caller must `DatFile_ctor` first.**
-  pufo_dat.c:173 (the port of the original's open) does `free(pDat->pWriteBuf)` before re-allocating; a `DatFile`
-  that was declared but not constructed hands `free()` an uninitialised pointer -- a Release-only 0xc0000374. All
-  in-repo call sites now construct first; the rule belongs in the header comment. (target Part 103: the
-  header-comment line lands with the save round.)
+- [x] **`DatFile_Open` frees the struct's old write buffer -- so every caller must `DatFile_ctor` first.**
+  CLOSED by Part 103.3: the original's open frees `pWriteBuf` at 0x9F134 (operator delete) and re-allocates at
+  0x9F144 -- IDB comment there -- and the rule now stands in the `pufo_dat.h` header block ("Construct-first
+  rule": declared-but-not-constructed hands `free()` an uninitialised pointer, the Release-only 0xc0000374).
 
 - [x] **Three options-screen seams are wired.** (Part 102) (1) The fourteen slot thunks
   (`SaveGame_Slot0..6_CloseUI` 0x6af80..0x6b148, `LoadGame_Slot0..6_InitOptions` 0x6b194..0x6b404) reach the
@@ -4391,21 +4390,25 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   row selectable only with the detail closed -- is faithful, but no gate yet proves it through a real press.
   (target Part 107.)
 
-- [ ] **`Save_ReadMapDims` has no test that can see it.** It mirrors the map chunk's two 1-byte dim
-  reads (0x43400 `Map_nMapDimX`, 0x43418 `Map_nMapDimY`) and is load-bearing because the shell must size
-  its heap grid before it walks the records, while the original's table is inline in Map. But the only
-  save the tactical load test uses is 6×6, and the shell hard-codes the built-in mission's dims to 6 at
-  `pufo_tactinit.c:669`, so removing the call changes nothing measurable (mutation M1 produced no red).
-  A fixture whose mission map is not 6×6 -- or a save file with a patched dim byte -- would make it
-  provable. (target Part 103.)
+- [x] **`Save_ReadMapDims` has no test that can see it.** CLOSED by Part 103.3 with both asked-for
+  shapes. Unit level in `test_save`: a sentinel `MapGeom` of 9×9 becomes the chunk's 1×1 through
+  `Save_ReadMapDims` (0x43400/0x43418), and `Save_ReadMap`'s own head applies the same rule. Live in
+  `test_geoscapeframe`: section 18 snapshots the live mission into slot 63 (the chunk's dim bytes
+  read back 6/6 from the file directory), the tail block patches them to 6×5 and reloads -- the
+  loaded map carries the FILE's dims, the allocation follows them (12000 cells, rows 50..59 NULL),
+  and the row-12 occupant lands in its own slot. Mutation M1 (neuter the call) is 4 red; the
+  capacity-guard mutation M2 is red on the 7-column stamp.
 
-- [ ] **`Save_WriteMap` and `Save_ReadMap` agree only while every slot is a real cell.** Both sides
-  `continue` on a NULL slot (0x43B10 on the write, the walk's own test on the read), so the record stream
-  the writer emits and the record stream the reader consumes desync as soon as the grid holds fewer cells
-  than the chunk's record count -- which is what the Part 65 grid-index bug produced. The original gets
-  this consistency from the inline table allocated with the dims (0x3D138..0x3D1CC); the shell has to keep
-  its heap grid and the record walk in step by itself. Worth a guard or an assertion at the seam.
-  (target Part 103.)
+- [x] **`Save_WriteMap` and `Save_ReadMap` agree only while every slot is a real cell.** CLOSED by
+  Part 103.3, after correcting this row's premise: the IDB shows NO slot test on either walk -- the
+  read head dereferences [slot]+0x10 at 0x434B4/0x434BC, the write head at 0x4398C/0x43998; 0x43B10
+  is the occupant sentinel test (unit NULL -> 0x7FFF), it never tests the slot. The chunk is
+  positional full coverage (one record per walk slot, coordinates derived at 0x434DC..0x434E4), and
+  the original's consistency comes from the table being allocated complete for the dims (0x3D138).
+  The seam guard landed: both port functions now REFUSE a NULL slot inside the range (recorded
+  deviation: the original would dereference), `Init_LoadMission` refuses dims that overrun the table,
+  and `test_save`'s hole fixture gates both refusals (mutations M3/M4, 1 red each). IDB notes at
+  0x434B4, 0x4398C, 0x43B10.
 
 - [x] **`Save_ReadSoldiers` did not restore the unit's own cell (0x419DC).** Closed by Part 68: the reader
   follows the original's order (`Soldiers_Reload` → `stactflg` → the re-find and second count read → bodies

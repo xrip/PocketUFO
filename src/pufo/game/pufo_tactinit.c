@@ -599,6 +599,20 @@ static void Init_LoadMission(TactInitEnv *pEnv)
     const i32 nDimX = (i32)pEnv->pMap->geom.nDimX;
     const i32 nDimY = (i32)pEnv->pMap->geom.nDimY;
 
+    /* Table capacity guard (Part 103): the pointer table has a fixed 60-cell row pitch and 3600
+     * slots per layer (Map+0x15338..Map+0x23438 = 14400 slots in the original, the shell's
+     * apTactCells here), and the walk is 10*nDimY rows x 10*nDimX columns x 4 layers. Dims that make
+     * 10*nDim exceed 60 overrun the allocation loop -- the original's own 0x3D168 loop has no test
+     * against its inline table and would run past 0x23438 into the globals behind it. Every writer
+     * of Map_nMapDimX/Y in the beta yields 6 (0x3C6C0/0x3C6D0 store 6/6; 0x43400/0x43418 read back
+     * what the save wrote), so no shipped save trips this. When a crafted chunk does, the grid
+     * stays NULL and Save_ReadMap's seam guard (pufo_save.c) refuses the chunk. Deviation recorded:
+     * the original overruns its own table rather than stopping. */
+    if (PUFO_CELLS_PER_TILE * nDimX > PUFO_MAP_CELL_DIM
+        || PUFO_CELLS_PER_TILE * nDimY > PUFO_MAP_CELL_DIM) {
+        return;
+    }
+
     /* 0x3D168..0x3D1C0, the original's own loops: R7 (col) resets to 0 on every row, the table slot is
      * (60*row + col) + 3600*layer -- R8 walks +4 per column and +0x3840 (=3600 dwords) per layer -- and
      * MapCell_Init gets (col, row, layer). The slot MUST carry the column term: leaving it out stores one
