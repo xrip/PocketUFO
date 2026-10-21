@@ -1376,13 +1376,13 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         pA->pfnClick = pEnv->pfnSyncSelection;     /* 0x771B4, BuySellScreen_SyncSelection */
         pA->nPosX = 10;                             /* 0x771C8 */
         pA->nPosY = 70;                             /* 0x771DC */
-        pA->nUnk7052 = 5;                           /* 0x771F0 */
-        pA->nUnk7056 = 70;                          /* 0x77204 */
+        pA->nRectX = 5;                           /* 0x771F0 */
+        pA->nRectY = 70;                          /* 0x77204 */
         pA->nViewW = 125;                           /* 0x7720C */
         UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);                /* 0x77218 */
         UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14); /* 0x7723C */
-        pA->bFlag7073 = 1;                          /* 0x77250 */
-        pA->bUnk7088 = (u8)0x96;                    /* 0x77264, MOV R0,#0xFFFFFF96 */
+        pA->bSelLineHighlight = 1;                          /* 0x77250 */
+        pA->bColorKey = (u8)0x96;                    /* 0x77264, MOV R0,#0xFFFFFF96 */
     }
     pE = BuySellNewPanel(pEnv->ppPanelE, nRows);
     if (pE != NULL) {
@@ -1391,13 +1391,13 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         pE->pfnClick = NULL;                        /* 0x772CC */
         pE->nPosX = 232;
         pE->nPosY = 70;
-        pE->nUnk7052 = 190;
-        pE->nUnk7056 = 70;
+        pE->nRectX = 190;
+        pE->nRectY = 70;
         pE->nViewW = 45;
         UiPanel_SetBytes0to2(pE, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pE, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pE->bFlag7073 = 0;
-        pE->bFlag7074 = 1;
+        pE->bSelLineHighlight = 0;
+        pE->bAuxNumbers = 1;
         pE->nUnk7076 = 2;
     }
     pB = BuySellNewPanel(pEnv->ppPanelB, nRows);
@@ -1407,15 +1407,15 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         pB->pfnClick = pEnv->pfnFillBuyPanel;       /* 0x773D0, BuySellScreen_FillBuyPanel */
         pB->nPosX = 164;
         pB->nPosY = 70;
-        pB->nUnk7052 = 160;
-        pB->nUnk7056 = 70;
+        pB->nRectX = 160;
+        pB->nRectY = 70;
         pB->nViewW = 15;
         UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pB->bFlag7073 = 1;
+        pB->bSelLineHighlight = 1;
         UiPanel_SetBytes3to5(pB, 0x32, 0x32, 0xFA); /* 0x7745C */
-        pB->nUnk7084 = 5;
-        pB->bUnk7088 = (u8)0x96;
+        pB->nRepeatDelay = 5;
+        pB->bColorKey = (u8)0x96;
     }
     pC = BuySellNewPanel(pEnv->ppPanelC, nRows);
     if (pC != NULL) {
@@ -1424,15 +1424,15 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         pC->pfnClick = pEnv->pfnFillSellPanel;      /* 0x774EC, BuySellScreen_FillSellPanel */
         pC->nPosX = 180;
         pC->nPosY = 70;
-        pC->nUnk7052 = 176;
-        pC->nUnk7056 = 70;
+        pC->nRectX = 176;
+        pC->nRectY = 70;
         pC->nViewW = 15;
         UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pC->bFlag7073 = 1;
+        pC->bSelLineHighlight = 1;
         UiPanel_SetBytes3to5(pC, 0x32, 0x32, 0xFA);
-        pC->nUnk7084 = 5;
-        pC->bUnk7088 = (u8)0x96;
+        pC->nRepeatDelay = 5;
+        pC->bColorKey = (u8)0x96;
     }
     pD = BuySellNewPanel(pEnv->ppPanelD, nRows);
     if (pD != NULL) {
@@ -1441,13 +1441,13 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         pD->pfnClick = NULL;                        /* 0x77608 */
         pD->nPosX = 158;
         pD->nPosY = 70;
-        pD->nUnk7052 = 130;
-        pD->nUnk7056 = 70;
+        pD->nRectX = 130;
+        pD->nRectY = 70;
         pD->nViewW = 50;
         UiPanel_SetBytes0to2(pD, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pD, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pD->bFlag7073 = 0;
-        pD->bFlag7074 = 1;
+        pD->bSelLineHighlight = 0;
+        pD->bAuxNumbers = 1;
         pD->nUnk7076 = 2;
     }
 
@@ -1676,13 +1676,13 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         pA->pfnClick = pEnv->pfnSyncSelection;     /* 0x763B4, BuySellScreen_SyncSelection */
         pA->nPosX = 10;
         pA->nPosY = 70;
-        pA->nUnk7052 = 5;
-        pA->nUnk7056 = 70;
+        pA->nRectX = 5;
+        pA->nRectY = 70;
         pA->nViewW = 125;
         UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pA->bFlag7073 = 1;
-        pA->bUnk7088 = (u8)0x96;                    /* 0x76464, MOV R0,#0xFFFFFF96 */
+        pA->bSelLineHighlight = 1;
+        pA->bColorKey = (u8)0x96;                    /* 0x76464, MOV R0,#0xFFFFFF96 */
     }
     pE = BuySellNewPanel(pEnv->ppPanelE, nRows);
     if (pE != NULL) {
@@ -1691,13 +1691,13 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         pE->pfnClick = NULL;                        /* 0x764CC */
         pE->nPosX = 174;
         pE->nPosY = 70;
-        pE->nUnk7052 = 130;
-        pE->nUnk7056 = 70;
+        pE->nRectX = 130;
+        pE->nRectY = 70;
         pE->nViewW = 50;
         UiPanel_SetBytes0to2(pE, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pE, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pE->bFlag7073 = 0;
-        pE->bFlag7074 = 1;
+        pE->bSelLineHighlight = 0;
+        pE->bAuxNumbers = 1;
         pE->nUnk7076 = 2;
     }
     pB = BuySellNewPanel(pEnv->ppPanelB, nRows);
@@ -1707,15 +1707,15 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         pB->pfnClick = pEnv->pfnUpdatePrices;       /* 0x765D0, BuySellScreen_UpdatePrices */
         pB->nPosX = 180;
         pB->nPosY = 70;
-        pB->nUnk7052 = 176;
-        pB->nUnk7056 = 70;
+        pB->nRectX = 176;
+        pB->nRectY = 70;
         pB->nViewW = 15;
         UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pB->bFlag7073 = 1;
+        pB->bSelLineHighlight = 1;
         UiPanel_SetBytes3to5(pB, 0x32, 0x32, 0xFA);
-        pB->nUnk7084 = 5;
-        pB->bUnk7088 = (u8)0x96;
+        pB->nRepeatDelay = 5;
+        pB->bColorKey = (u8)0x96;
     }
     pC = BuySellNewPanel(pEnv->ppPanelC, nRows);
     if (pC != NULL) {
@@ -1724,15 +1724,15 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         pC->pfnClick = pEnv->pfnValidateCapacity;   /* 0x766EC, BuySellScreen_ValidateCapacity */
         pC->nPosX = 196;
         pC->nPosY = 70;
-        pC->nUnk7052 = 192;
-        pC->nUnk7056 = 70;
+        pC->nRectX = 192;
+        pC->nRectY = 70;
         pC->nViewW = 15;
         UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pC->bFlag7073 = 1;
+        pC->bSelLineHighlight = 1;
         UiPanel_SetBytes3to5(pC, 0x32, 0x32, 0xFA);
-        pC->nUnk7084 = 5;
-        pC->bUnk7088 = (u8)0x96;
+        pC->nRepeatDelay = 5;
+        pC->bColorKey = (u8)0x96;
     }
     pD = BuySellNewPanel(pEnv->ppPanelD, nRows);
     if (pD != NULL) {
@@ -1741,13 +1741,13 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         pD->pfnClick = NULL;                        /* 0x76808 */
         pD->nPosX = 232;
         pD->nPosY = 70;
-        pD->nUnk7052 = 190;
-        pD->nUnk7056 = 70;
+        pD->nRectX = 190;
+        pD->nRectY = 70;
         pD->nViewW = 45;
         UiPanel_SetBytes0to2(pD, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pD, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pD->bFlag7073 = 0;
-        pD->bFlag7074 = 1;
+        pD->bSelLineHighlight = 0;
+        pD->bAuxNumbers = 1;
         pD->nUnk7076 = 2;
     }
 
@@ -2094,13 +2094,13 @@ void TransferScreen_BuildPanels(TransferBuildEnv *pEnv)
         pA->pfnClick = pEnv->pfnCacheSelIndex;     /* 0x96E30, Transfer_CacheSelIndex */
         pA->nPosX = 10;
         pA->nPosY = 70;
-        pA->nUnk7052 = 5;
-        pA->nUnk7056 = 70;
+        pA->nRectX = 5;
+        pA->nRectY = 70;
         pA->nViewW = 125;
         UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pA->bFlag7073 = 1;
-        pA->bUnk7088 = (u8)0x96;
+        pA->bSelLineHighlight = 1;
+        pA->bColorKey = (u8)0x96;
     }
     pE = BuySellNewPanel(pEnv->ppPanelE, nRows);
     if (pE != NULL) {
@@ -2109,13 +2109,13 @@ void TransferScreen_BuildPanels(TransferBuildEnv *pEnv)
         pE->pfnClick = NULL;                        /* 0x96F48 */
         pE->nPosX = 232;
         pE->nPosY = 70;
-        pE->nUnk7052 = 190;
-        pE->nUnk7056 = 70;
+        pE->nRectX = 190;
+        pE->nRectY = 70;
         pE->nViewW = 45;
         UiPanel_SetBytes0to2(pE, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pE, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pE->bFlag7073 = 0;
-        pE->bFlag7074 = 1;
+        pE->bSelLineHighlight = 0;
+        pE->bAuxNumbers = 1;
         pE->nUnk7076 = 2;
     }
     pB = BuySellNewPanel(pEnv->ppPanelB, nRows);
@@ -2125,15 +2125,15 @@ void TransferScreen_BuildPanels(TransferBuildEnv *pEnv)
         pB->pfnClick = pEnv->pfnMoveOneItem;        /* 0x9704C, Transfer_MoveOneItem */
         pB->nPosX = 172;
         pB->nPosY = 70;
-        pB->nUnk7052 = 168;
-        pB->nUnk7056 = 70;
+        pB->nRectX = 168;
+        pB->nRectY = 70;
         pB->nViewW = 15;
         UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pB->bFlag7073 = 1;
+        pB->bSelLineHighlight = 1;
         UiPanel_SetBytes3to5(pB, 0x32, 0x32, 0xFA);
-        pB->nUnk7084 = 5;
-        pB->bUnk7088 = (u8)0x96;
+        pB->nRepeatDelay = 5;
+        pB->bColorKey = (u8)0x96;
     }
     pC = BuySellNewPanel(pEnv->ppPanelC, nRows);
     if (pC != NULL) {
@@ -2142,15 +2142,15 @@ void TransferScreen_BuildPanels(TransferBuildEnv *pEnv)
         pC->pfnClick = pEnv->pfnValidateCapacity;   /* 0x97168, TransferScreen_ValidateCapacity */
         pC->nPosX = 188;
         pC->nPosY = 70;
-        pC->nUnk7052 = 184;
-        pC->nUnk7056 = 70;
+        pC->nRectX = 184;
+        pC->nRectY = 70;
         pC->nViewW = 15;
         UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pC->bFlag7073 = 1;
+        pC->bSelLineHighlight = 1;
         UiPanel_SetBytes3to5(pC, 0x32, 0x32, 0xFA);
-        pC->nUnk7084 = 5;
-        pC->bUnk7088 = (u8)0x96;
+        pC->nRepeatDelay = 5;
+        pC->bColorKey = (u8)0x96;
     }
     pD = BuySellNewPanel(pEnv->ppPanelD, nRows);
     if (pD != NULL) {
@@ -2159,13 +2159,13 @@ void TransferScreen_BuildPanels(TransferBuildEnv *pEnv)
         pD->pfnClick = NULL;                        /* 0x97284 */
         pD->nPosX = 166;
         pD->nPosY = 70;
-        pD->nUnk7052 = 130;
-        pD->nUnk7056 = 70;
+        pD->nRectX = 130;
+        pD->nRectY = 70;
         pD->nViewW = 50;
         UiPanel_SetBytes0to2(pD, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pD, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-        pD->bFlag7073 = 0;
-        pD->bFlag7074 = 1;
+        pD->bSelLineHighlight = 0;
+        pD->bAuxNumbers = 1;
         pD->nUnk7076 = 2;
     }
 
@@ -2854,10 +2854,10 @@ i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
     /* 0x98240..0x9825C: the original routes panel C's value through unk_161F0C, setting it to 1 and
      * back to 0 on the way; the observable effect is both panels flagged. */
     if (pEnv->pPanelB != NULL) {
-        pEnv->pPanelB->bUnk7080 = 1; /* 0x98248 */
+        pEnv->pPanelB->bRepeatArmed = 1; /* 0x98248 */
     }
     if (pEnv->pPanelC != NULL) {
-        pEnv->pPanelC->bUnk7080 = 1; /* 0x98258 */
+        pEnv->pPanelC->bRepeatArmed = 1; /* 0x98258 */
     }
 
     if (pEnv->pPanelA != NULL) {
@@ -3481,6 +3481,15 @@ void ResearchScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
 void BuySellScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
 {
     Geoscape_CloseUI(pEnv);
+}
+
+/* Geoscape_CloseUI_ThunkB @ 0x96020, the transfer screen's copy of the same two instructions.
+ * Ui_InitTransfer seats it on the close control (0x99654) AND on the confirm control (0x9965C), so
+ * the transfer commit closes on the same press -- the commit itself runs through the confirm
+ * control's own handler (0x99630), not through this thunk. */
+void TransferScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv); /* 0x96024 */
 }
 
 void NewBaseScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
@@ -4533,7 +4542,7 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)
         }
     }
 
-    /* The four panels, 0x6EA7C..0x6EE5C. All four share nStyle 13, nFont 16, nPosY 70, nUnk7056 70 and
+    /* The four panels, 0x6EA7C..0x6EE5C. All four share nStyle 13, nFont 16, nPosY 70, nRectY 70 and
      * the two style byte groups; only A gets bytes 3..5. */
     pA = BuySellNewPanel(pEnv->ppPanelA, nRows);
     if (pA != NULL) {
@@ -4542,14 +4551,14 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)
         pA->pfnClick = pEnv->pfnSelectListed; /* 0x6EAF0 */
         pA->nPosX = 10;    /* 0x6EB04 */
         pA->nPosY = 70;    /* 0x6EB18 */
-        pA->nUnk7052 = 5;  /* 0x6EB2C */
-        pA->nUnk7056 = 70; /* 0x6EB40 */
+        pA->nRectX = 5;  /* 0x6EB2C */
+        pA->nRectY = 70; /* 0x6EB40 */
         pA->nViewW = 230;  /* 0x6EB4C */
         UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);                        /* 0x6EB58 */
         UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x6EB7C */
-        pA->bFlag7073 = 1;                                                 /* 0x6EB90 */
+        pA->bSelLineHighlight = 1;                                                 /* 0x6EB90 */
         UiPanel_SetBytes3to5(pA, 0x32, 0x32, 0xFA);                        /* 0x6EBA4 */
-        pA->bUnk7088 = (u8)0x96;                                           /* 0x6EBB8 */
+        pA->bColorKey = (u8)0x96;                                           /* 0x6EBB8 */
     }
     pB = BuySellNewPanel(pEnv->ppPanelB, nRows);
     if (pB != NULL) {
@@ -4557,8 +4566,8 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)
         pB->nFont = 16;
         pB->nPosX = 150;   /* 0x6EC20, R11 = 0x1B84 */
         pB->nPosY = 70;
-        pB->nUnk7052 = 155; /* 0x6EC34, R8 = 0x1B8C */
-        pB->nUnk7056 = 70;
+        pB->nRectX = 155; /* 0x6EC34, R8 = 0x1B8C */
+        pB->nRectY = 70;
         pB->nViewW = 30;   /* 0x6EC48, R6 = 0x1B94 */
         UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
@@ -4570,8 +4579,8 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)
         pC->nFont = 16;
         pC->nPosX = 187;   /* 0x6ECEC */
         pC->nPosY = 70;
-        pC->nUnk7052 = 185; /* 0x6ED00 */
-        pC->nUnk7056 = 70;
+        pC->nRectX = 185; /* 0x6ED00 */
+        pC->nRectY = 70;
         pC->nViewW = 30;   /* 0x6ED14 */
         UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
@@ -4584,14 +4593,14 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)
         pD->pfnClick = pEnv->pfnSyncSelection; /* 0x6EDB8 */
         pD->nPosX = 233;   /* 0x6EDC8 */
         pD->nPosY = 70;
-        pD->nUnk7052 = 5;  /* 0x6EDDC */
-        pD->nUnk7056 = 70;
+        pD->nRectX = 5;  /* 0x6EDDC */
+        pD->nRectY = 70;
         pD->nViewW = 230;  /* 0x6EDF0 */
         UiPanel_SetBytes0to2(pD, 0xB4, 0xB4, 0xB4);
         UiPanel_SetBytes6to11(pD, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
         pD->nUnk7076 = 2;  /* 0x6EE34 */
-        pD->bFlag7073 = 1; /* 0x6EE48 */
-        pD->bUnk7088 = (u8)0x96; /* 0x6EE5C */
+        pD->bSelLineHighlight = 1; /* 0x6EE48 */
+        pD->bColorKey = (u8)0x96; /* 0x6EE5C */
     }
 
     /* Fill pass, 0x6EE60..0x6F25C. No sort pass after it: the rows stay in topic order, which is what
@@ -4635,7 +4644,7 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv)
     if (pEnv->pbProductSelected != NULL) {
         *pEnv->pbProductSelected = 0; /* 0x6E410 */
     }
-    pEnv->pProductPanel->bFlag7073 = 1; /* 0x6E424 */
+    pEnv->pProductPanel->bSelLineHighlight = 1; /* 0x6E424 */
     if (pEnv->pfnPlaySample != NULL) {
         pEnv->pfnPlaySample(17, pEnv->pSampleUser); /* 0x6E430 */
     }
@@ -4664,7 +4673,7 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv)
          * against 119..121 instead of the selected product id, and BuildPanels leaves that dword at its
          * style bytes 0x32B4B4B4, so it never runs in the shipped build. Reproduced as written; the
          * test forces the dword into range to show what the branch would do. */
-        const i32 nStyleDword = *(const i32 *)(const void *)pEnv->pProductPanel->gap_0;
+        const i32 nStyleDword = *(const i32 *)(const void *)pEnv->pProductPanel->aStyleRgb;
         if (nStyleDword > 118 && nStyleDword < 122) { /* 0x6E530 / 0x6E538: products 119..121 */
             if (pEnv->apBases != NULL && nBase >= 0 && nBase < pEnv->nBaseCount
                 && pEnv->apBases[nBase] != NULL && pEnv->abGridBytes != NULL) {
@@ -5339,10 +5348,10 @@ static void FundingFreePanel(UiPanel **ppPanel)
 }
 
 /* One of the funding screen's three panels: operator new(0x1BB4) + UiPanel_ctor(5) plus the field
- * setup all three share. The names panel keeps the ctor's bFlag7072 = 1 and bFlag7074 = 0; the
- * bars and arrows panels clear bFlag7072 and set bFlag7074. */
+ * setup all three share. The names panel keeps the ctor's bRowRules = 1 and bAuxNumbers = 0; the
+ * bars and arrows panels clear bRowRules and set bAuxNumbers. */
 static UiPanel *FundingNewPanel(i32 nPosX, u8 b0, u8 b1, u8 b2,
-                                u8 bFlag7072, u8 bFlag7074, u8 bUnk7089)
+                                u8 bRowRules, u8 bAuxNumbers, u8 bAuxPlusSign)
 {
     UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel)); /* 0x5AC60 */
 
@@ -5355,13 +5364,13 @@ static UiPanel *FundingNewPanel(i32 nPosX, u8 b0, u8 b1, u8 b2,
     pPanel->nPosX = nPosX;                          /* 0x5ACC0 */
     pPanel->nPosY = 70;                             /* 0x5ACD4 */
     UiPanel_SetBytes0to2(pPanel, b0, b1, b2);       /* 0x5AD14 */
-    pPanel->bUnk7088 = 0x96;                        /* 0x5AD28, written as -106 */
+    pPanel->bColorKey = 0x96;                        /* 0x5AD28, written as -106 */
     UiPanel_SetBytes6to11(pPanel, 0xC8, 0xB4, 0xF0, 0x14, 0x14, 0x14); /* 0x5AD4C */
     UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA); /* 0x5AD60 */
-    pPanel->bFlag7073 = 0;                          /* 0x5AD70 */
-    pPanel->bFlag7072 = bFlag7072;
-    pPanel->bFlag7074 = bFlag7074;
-    pPanel->bUnk7089 = bUnk7089;
+    pPanel->bSelLineHighlight = 0;                          /* 0x5AD70 */
+    pPanel->bRowRules = bRowRules;
+    pPanel->bAuxNumbers = bAuxNumbers;
+    pPanel->bAuxPlusSign = bAuxPlusSign;
     return pPanel;
 }
 
@@ -5409,8 +5418,8 @@ void FundingScreen_Toggle(FundingToggleEnv *pEnv)
         pNames = FundingNewPanel(10, 0x64, 0x96, 0x64, 1, 0, 0);
         *pEnv->ppPanelNames = pNames;               /* 0x5AC90 */
         if (pNames != NULL) {
-            pNames->nUnk7052 = 5;                   /* 0x5ACDC */
-            pNames->nUnk7056 = 70;                  /* 0x5ACF0 */
+            pNames->nRectX = 5;                   /* 0x5ACDC */
+            pNames->nRectY = 70;                  /* 0x5ACF0 */
             pNames->nViewW = 230;                   /* 0x5AD04 */
             for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
                 if (pEnv->pTextRecs == NULL) {
@@ -7058,7 +7067,7 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
                 *pEnv->pnScreenId = 18;                     /* 0x83464 */
                 OptionsScreen_OpenWithSound(0, pItem->nSiteId, pEnv->pOptionsHooks); /* 0x83480 */
                 if (pEnv->ppOptPanelShips != NULL && *pEnv->ppOptPanelShips != NULL) {
-                    (*pEnv->ppOptPanelShips)->bFlag7073 = 0;/* 0x83494, no counterpart in the
+                    (*pEnv->ppOptPanelShips)->bSelLineHighlight = 0;/* 0x83494, no counterpart in the
                                                              * status-panel click handler. The original
                                                              * derefs 0x159E18 with no test at all; the test
                                                              * on the cell's value is the port's own, because
@@ -7127,10 +7136,10 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
     } else {
         pPanel->nPosX = 120;                                            /* 0x832C0 */
         pPanel->nPosY = 120 - pPanel->nLineCount / 2 * pPanel->nFont;  /* 0x832F4 */
-        pPanel->nUnk7052 = 20;                                         /* 0x83308 */
-        pPanel->nUnk7056 = 120 - pPanel->nLineCount / 2 * pPanel->nFont; /* 0x83334, recomputed */
+        pPanel->nRectX = 20;                                         /* 0x83308 */
+        pPanel->nRectY = 120 - pPanel->nLineCount / 2 * pPanel->nFont; /* 0x83334, recomputed */
         pPanel->nViewW = 200;                                          /* 0x83348 */
-        pPanel->bFlag7073 = 0;                                         /* 0x83358 */
+        pPanel->bSelLineHighlight = 0;                                         /* 0x83358 */
         pEnv->pTime->bPaused = 1;                                      /* 0x83360 */
         *pEnv->pbFlag1870A0 = 1;                                       /* 0x8336C */
         if (pEnv->pfnPlaySample != NULL) {
@@ -7425,15 +7434,15 @@ void BaseFacScreen_Toggle(const BaseFacToggleEnv *pEnv)
     pPanel->pfnClick = pEnv->pfnBuyThunk;          /* 0x58A9C, the +3020 handler */
     pPanel->nPosX    = 120;                        /* 0x58AB0 */
     pPanel->nPosY    = 234;                        /* 0x58AC4 */
-    pPanel->nUnk7052 = 5;                          /* 0x58AD4 */
-    pPanel->nUnk7056 = 234;                        /* 0x58AE8 */
+    pPanel->nRectX = 5;                          /* 0x58AD4 */
+    pPanel->nRectY = 234;                        /* 0x58AE8 */
     pPanel->nViewW   = 230;                        /* 0x58AFC */
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);                        /* 0x58B0C */
     UiPanel_SetBytes6to11(pPanel, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);    /* 0x58B38 */
     UiPanel_SetBytes3to5(pPanel, 0x46, 0x96, 0xAA);                        /* 0x58B4C */
-    pPanel->bUnk7088  = 0x96;                      /* 0x58B60, the byte -106 */
-    pPanel->bFlag7073 = 1;                         /* 0x58B74 */
-    pPanel->bFlag7072 = 0;                         /* 0x58B88 */
+    pPanel->bColorKey  = 0x96;                      /* 0x58B60, the byte -106 */
+    pPanel->bSelLineHighlight = 1;                         /* 0x58B74 */
+    pPanel->bRowRules = 0;                         /* 0x58B88 */
     pPanel->nUnk7076  = 1;                         /* 0x58B9C */
 
     nAux = 1;
@@ -7616,14 +7625,14 @@ void SoldierScreen_Toggle(const SoldierScreenEnv *pEnv)
         pEquip->pfnClick = pEnv->pfnEquipThunk;    /* 0x64BC0, +3020 */
         pEquip->nPosX    = 55;                     /* 0x64BD4 */
         pEquip->nPosY    = 102;                    /* 0x64BE0 */
-        pEquip->nUnk7052 = 46;                     /* 0x64BE8 */
-        pEquip->nUnk7056 = 102;                    /* 0x64BF0 */
+        pEquip->nRectX = 46;                     /* 0x64BE8 */
+        pEquip->nRectY = 102;                    /* 0x64BF0 */
         pEquip->nViewW   = 167;                    /* 0x64BF8 */
         UiPanel_SetBytes0to2(pEquip, 0x44, 0xF4, 0xFC);                     /* 0x64C08 */
         UiPanel_SetBytes6to11(pEquip, 0xC8, 0xF4, 0xFC, 0x04, 0x46, 0x4B);  /* 0x64C28 */
         UiPanel_SetBytes3to5(pEquip, 0x32, 0xA0, 0xBD);                     /* 0x64C84 */
-        pEquip->bFlag7073 = 1;                     /* 0x64C90 */
-        pEquip->bUnk7088  = 0xFF;                  /* 0x64C9C, the byte -1 */
+        pEquip->bSelLineHighlight = 1;                     /* 0x64C90 */
+        pEquip->bColorKey  = 0xFF;                  /* 0x64C9C, the byte -1 */
     }
 
     pStores = SoldierScreen_AllocPanel(4);
@@ -7635,13 +7644,13 @@ void SoldierScreen_Toggle(const SoldierScreenEnv *pEnv)
         pStores->nFont    = 18;                    /* 0x64CE0 */
         pStores->nPosX    = 190;                   /* 0x64CE4 */
         pStores->nPosY    = 102;                   /* 0x64CEC */
-        pStores->nUnk7052 = 46;                    /* 0x64CF4 */
-        pStores->nUnk7056 = 102;                   /* 0x64D00 */
+        pStores->nRectX = 46;                    /* 0x64CF4 */
+        pStores->nRectY = 102;                   /* 0x64D00 */
         pStores->nViewW   = 167;                   /* 0x64D08 */
         UiPanel_SetBytes0to2(pStores, 0x44, 0xF4, 0xFC);                    /* 0x64D14 */
         UiPanel_SetBytes6to11(pStores, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B); /* 0x64D24 */
         UiPanel_SetBytes3to5(pStores, 0x32, 0x32, 0xFA);                    /* 0x64D68 */
-        pStores->bFlag7072 = 0;                    /* 0x64D78 */
+        pStores->bRowRules = 0;                    /* 0x64D78 */
     }
 
     /* 0x64BA4..0x64CC4: how many soldiers are on the selected base. */
@@ -7666,14 +7675,14 @@ void SoldierScreen_Toggle(const SoldierScreenEnv *pEnv)
         pNames->pfnClick = pEnv->pfnSelectThunk;   /* 0x64E38, +3020 */
         pNames->nPosX    = 10;                     /* 0x64E44 */
         pNames->nPosY    = 70;                     /* 0x64E48 */
-        pNames->nUnk7052 = 2;                      /* 0x64E4C */
-        pNames->nUnk7056 = 70;                     /* 0x64E58 */
+        pNames->nRectX = 2;                      /* 0x64E4C */
+        pNames->nRectY = 70;                     /* 0x64E58 */
         pNames->nViewW   = 234;                    /* 0x64E68 */
         UiPanel_SetBytes0to2(pNames, 0xB4, 0xB4, 0xB4);                     /* 0x64E74 */
         UiPanel_SetBytes6to11(pNames, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);  /* 0x64E88 */
         UiPanel_SetBytes3to5(pNames, 0x32, 0x32, 0xFA);                     /* 0x64EA8 */
-        pNames->bFlag7073 = 1;                     /* 0x64EC8 */
-        pNames->bUnk7088  = 0x96;                  /* 0x64ED8, the byte -106 */
+        pNames->bSelLineHighlight = 1;                     /* 0x64EC8 */
+        pNames->bColorKey  = 0x96;                  /* 0x64ED8, the byte -106 */
     }
 
     pCraft = SoldierScreen_AllocPanel(nCount);
@@ -7685,14 +7694,14 @@ void SoldierScreen_Toggle(const SoldierScreenEnv *pEnv)
         pCraft->nFont    = 18;                     /* 0x64F20 */
         pCraft->nPosX    = 230;                    /* 0x64F28 */
         pCraft->nPosY    = 70;                     /* 0x64F34 */
-        pCraft->nUnk7052 = 5;                      /* 0x64F40 */
-        pCraft->nUnk7056 = 70;                      /* 0x64F48 */
+        pCraft->nRectX = 5;                      /* 0x64F40 */
+        pCraft->nRectY = 70;                      /* 0x64F48 */
         pCraft->nViewW   = 40;                     /* 0x64F54 */
         UiPanel_SetBytes0to2(pCraft, 0xB4, 0xB4, 0xB4);                     /* 0x64F64 */
         UiPanel_SetBytes6to11(pCraft, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);  /* 0x64F74 */
-        pCraft->bFlag7073 = 0;                     /* 0x64FB8 */
+        pCraft->bSelLineHighlight = 0;                     /* 0x64FB8 */
         pCraft->nUnk7076  = 2;                     /* 0x64FC4 */
-        pCraft->bUnk7088  = 0x96;                  /* 0x64FD8, the byte -106 */
+        pCraft->bColorKey  = 0x96;                  /* 0x64FD8, the byte -106 */
     }
 
     /* 0x65018..0x651A0: the row pass. */
@@ -9157,7 +9166,7 @@ static const UiControlDesc g_aOptionsPairDesc[2] = {
 
 /* One of the overlay's four lists: operator new(0x1BB4) + UiPanel_ctor(nLines), then the fields all
  * four share. The per-panel extras are applied by the caller, in the original's own order. */
-static UiPanel *OptionsNewPanel(i32 nLines, i32 nPosX, i32 nUnk7052, i32 nViewW)
+static UiPanel *OptionsNewPanel(i32 nLines, i32 nPosX, i32 nRectX, i32 nViewW)
 {
     UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel));                      /* 0x6D270 */
 
@@ -9172,8 +9181,8 @@ static UiPanel *OptionsNewPanel(i32 nLines, i32 nPosX, i32 nUnk7052, i32 nViewW)
     pPanel->nFont    = 16;                                                     /* 0x6D2D4 */
     pPanel->nPosX    = nPosX;
     pPanel->nPosY    = 70;                                                     /* 0x6D310 */
-    pPanel->nUnk7052 = nUnk7052;
-    pPanel->nUnk7056 = 70;                                                     /* 0x6D338 */
+    pPanel->nRectX = nRectX;
+    pPanel->nRectY = 70;                                                     /* 0x6D338 */
     pPanel->nViewW   = nViewW;                                                 /* 0x6D340 */
     return pPanel;
 }
@@ -9322,9 +9331,9 @@ void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode)
         pName->pfnClick = pEnv->pfnOnConfirm;                                    /* 0x6D2E8 */
         UiPanel_SetBytes0to2(pName, 0x0A, 0x50, 0x5A);                          /* 0x6D34C */
         UiPanel_SetBytes6to11(pName, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);       /* 0x6D374 */
-        pName->bFlag7073 = 1;                                                   /* 0x6D388 */
+        pName->bSelLineHighlight = 1;                                                   /* 0x6D388 */
         UiPanel_SetBytes3to5(pName, 0x44, 0xF4, 0xFC);                          /* 0x6D39C */
-        pName->bUnk7088 = 100;                                                  /* 0x6D3B0 */
+        pName->bColorKey = 100;                                                  /* 0x6D3B0 */
     }
     if (pStores != NULL) {
         UiPanel_SetBytes0to2(pStores, 0x0A, 0x50, 0x5A);                        /* 0x6D444 */
@@ -9340,7 +9349,7 @@ void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode)
         UiPanel_SetBytes0to2(pCargo, 0x0A, 0x50, 0x5A);                         /* 0x6D5E0 */
         UiPanel_SetBytes6to11(pCargo, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);      /* 0x6D60C */
         pCargo->nUnk7076 = 2;                                                   /* 0x6D61C */
-        pCargo->bUnk7088 = 150;                                                 /* 0x6D630, -106 as a byte */
+        pCargo->bColorKey = 150;                                                 /* 0x6D630, -106 as a byte */
     }
 
     if (nCraftCount == 0) {                                                     /* 0x6D654 BLS */
@@ -10083,14 +10092,14 @@ void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv)
         pA->pfnClick = pEnv->pfnPanelClick;      /* 0x7348C, PlaySample7_SetFlags_Cache0xBD8 */
         pA->nPosX = 10;                          /* 0x734A0 */
         pA->nPosY = PUFO_RESEARCH_PANEL_POSY;    /* 0x734B4 */
-        pA->nUnk7052 = 5;                        /* 0x734C8 */
-        pA->nUnk7056 = PUFO_RESEARCH_PANEL_POSY; /* 0x734DC */
+        pA->nRectX = 5;                        /* 0x734C8 */
+        pA->nRectY = PUFO_RESEARCH_PANEL_POSY; /* 0x734DC */
         pA->nViewW = 230;                        /* 0x734E8 */
         UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);                        /* 0x734F4 */
         UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x73518 */
-        pA->bFlag7073 = 1;                                                 /* 0x7352C */
+        pA->bSelLineHighlight = 1;                                                 /* 0x7352C */
         UiPanel_SetBytes3to5(pA, 0x32, 0x32, 0xFA);                        /* 0x73540 */
-        pA->bUnk7088 = (u8)0x94;                                           /* 0x73554 */
+        pA->bColorKey = (u8)0x94;                                           /* 0x73554 */
     }
     UiPanel *pB = BuySellNewPanel(pEnv->ppPanelB, PUFO_RESEARCH_TOPIC_COUNT);
     if (pB != NULL) {
@@ -10098,8 +10107,8 @@ void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv)
         pB->nFont = PUFO_RESEARCH_PANEL_FONT;    /* 0x735A8 */
         pB->nPosX = 197;                         /* 0x735BC */
         pB->nPosY = PUFO_RESEARCH_PANEL_POSY;    /* 0x735CC */
-        pB->nUnk7052 = 175;                      /* 0x735D4 */
-        pB->nUnk7056 = PUFO_RESEARCH_PANEL_POSY; /* 0x735E0 */
+        pB->nRectX = 175;                      /* 0x735D4 */
+        pB->nRectY = PUFO_RESEARCH_PANEL_POSY; /* 0x735E0 */
         pB->nViewW = 30;                         /* 0x735E8 */
         UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);                        /* 0x735F4 */
         UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x73614 */
@@ -10111,8 +10120,8 @@ void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv)
         pC->nFont = PUFO_RESEARCH_PANEL_FONT;    /* 0x73678 */
         pC->nPosX = 233;                         /* 0x7368C */
         pC->nPosY = PUFO_RESEARCH_PANEL_POSY;    /* 0x7369C */
-        pC->nUnk7052 = 205;                      /* 0x736A4 */
-        pC->nUnk7056 = PUFO_RESEARCH_PANEL_POSY; /* 0x736B0 */
+        pC->nRectX = 205;                      /* 0x736A4 */
+        pC->nRectY = PUFO_RESEARCH_PANEL_POSY; /* 0x736B0 */
         pC->nViewW = 30;                         /* 0x736B8 */
         UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);                        /* 0x736C4 */
         UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x736E4 */
@@ -10692,37 +10701,37 @@ void BuySellScreen_Draw(const BuySellDrawEnv *pEnv)
         /* ORIGINAL BUG (0x78864..0x78B80), not reproduced. This half runs while bBuySellPanelsBuilt
          * is 0, and BuySellScreen_BuildPanels' teardown (0x77D60..0x77E38) operator delete's all five
          * panels without ever nulling pBuySellPanelA..E -- the last thing it does is the funds
-         * rollback at 0x77E50. So the original writes bFlag7073 and bUnk7080 into freed panels here,
+         * rollback at 0x77E50. So the original writes bSelLineHighlight and bRepeatArmed into freed panels here,
          * reads panel B's nLineCount at 0x788E4 and panel A's aux column at 0x78B54, and uses the row
          * marker raw at 0x78B80 with no 2000 subtraction, so an alien row would deref
          * apObjects[2077]. The port null-guards the panels and bounds the marker, which is why an
          * alien row in this half draws nothing where the original would read past the object array. */
-        /* 0x78864..0x788A4: the only bFlag7073 writes in this function, and the shared scratch byte. */
+        /* 0x78864..0x788A4: the only bSelLineHighlight writes in this function, and the shared scratch byte. */
         const u8 bNotShort = (u8)((pEnv->pdwShortfall != NULL && *pEnv->pdwShortfall != 1u) ? 1u : 0u);
         if (pEnv->pPanelB != NULL) {
-            pEnv->pPanelB->bFlag7073 = bNotShort;
+            pEnv->pPanelB->bSelLineHighlight = bNotShort;
         }
         if (pEnv->pPanelC != NULL) {
-            pEnv->pPanelC->bFlag7073 = bNotShort;
+            pEnv->pPanelC->bSelLineHighlight = bNotShort;
         }
         const u8 bScratch = (pEnv->pbPanelFlagScratch != NULL) ? *pEnv->pbPanelFlagScratch : 0u;
         if (pEnv->pPanelB != NULL) {
-            pEnv->pPanelB->bUnk7080 = bScratch;
+            pEnv->pPanelB->bRepeatArmed = bScratch;
         }
         if (pEnv->pPanelC != NULL) {
-            pEnv->pPanelC->bUnk7080 = bScratch;
+            pEnv->pPanelC->bRepeatArmed = bScratch;
         }
         if (pEnv->pbPanelFlagScratch != NULL) {
             *pEnv->pbPanelFlagScratch = 0; /* 0x788A4 */
         }
     } else {
-        /* 0x78180..0x7819C: the scratch byte only -- no bFlag7073 write on this path. */
+        /* 0x78180..0x7819C: the scratch byte only -- no bSelLineHighlight write on this path. */
         const u8 bScratch = (pEnv->pbPanelFlagScratch != NULL) ? *pEnv->pbPanelFlagScratch : 0u;
         if (pEnv->pPanelB != NULL) {
-            pEnv->pPanelB->bUnk7080 = bScratch;
+            pEnv->pPanelB->bRepeatArmed = bScratch;
         }
         if (pEnv->pPanelC != NULL) {
-            pEnv->pPanelC->bUnk7080 = bScratch;
+            pEnv->pPanelC->bRepeatArmed = bScratch;
         }
         if (pEnv->pbPanelFlagScratch != NULL) {
             *pEnv->pbPanelFlagScratch = 0; /* 0x7819C */
@@ -11540,13 +11549,13 @@ static void Ufopaedia_InitSelPanel(UiPanel *pPanel, void (*pfnClick)(void))
     pPanel->pfnClick = pfnClick;                            /* 0x9A958: Ufopaedia_CacheSelRow */
     pPanel->nPosX    = 120;                                 /* 0x9A96C */
     pPanel->nPosY    = 50;                                  /* 0x9A980 */
-    pPanel->nUnk7052 = 5;                                   /* 0x9A994 */
-    pPanel->nUnk7056 = 50;                                  /* 0x9A9A8 */
+    pPanel->nRectX = 5;                                   /* 0x9A994 */
+    pPanel->nRectY = 50;                                  /* 0x9A9A8 */
     pPanel->nViewW   = 230;                                 /* 0x9A9B0 */
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);         /* 0x9A9BC */
     UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14); /* 0x9A9E0 */
-    pPanel->bFlag7073 = 1;                                  /* 0x9A9F0 */
-    pPanel->bUnk7088  = 0x96;                               /* 0x9AA04: -106 as a signed byte */
+    pPanel->bSelLineHighlight = 1;                                  /* 0x9A9F0 */
+    pPanel->bColorKey  = 0x96;                               /* 0x9AA04: -106 as a signed byte */
     UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);         /* 0x9AA18 */
     pPanel->nUnk7076  = 1;                                  /* 0x9AA28: centred rows */
 }
@@ -11557,12 +11566,12 @@ static void Ufopaedia_InitTextPanel(UiPanel *pPanel)
     pPanel->nFont    = 12;                                  /* 0x9AA7C */
     pPanel->nPosX    = 5;                                   /* 0x9AA90 */
     pPanel->nPosY    = 230;                                 /* 0x9AA9C */
-    pPanel->nUnk7052 = 5;                                   /* 0x9AAA4 */
-    pPanel->nUnk7056 = 50;                                  /* 0x9AAB0 */
+    pPanel->nRectX = 5;                                   /* 0x9AAA4 */
+    pPanel->nRectY = 50;                                  /* 0x9AAB0 */
     pPanel->nViewW   = 230;                                 /* 0x9AAB8 */
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);         /* 0x9AAC4 */
     UiPanel_SetBytes6to11(pPanel, 0xBE, 0x78, 0xF0, 0x14, 0x14, 0x14); /* 0x9AAE4 */
-    pPanel->bFlag7072 = 0;                                  /* 0x9AAF8: the only panel that clears it */
+    pPanel->bRowRules = 0;                                  /* 0x9AAF8: the only panel that clears it */
 }
 
 static void Ufopaedia_InitCatPanel(UiPanel *pPanel, i32 nShown, void (*pfnClick)(void))
@@ -11579,15 +11588,15 @@ static void Ufopaedia_InitCatPanel(UiPanel *pPanel, i32 nShown, void (*pfnClick)
     /* 0x9AE58..0x9AE6C: `v12 = 16 * n; if (n & 0x8000000) ++v12; posY = 160 - (v12 >> 1)`. The sign
      * correction is the ARM's arithmetic-shift rounding and never fires for a non-negative count. */
     pPanel->nPosY    = PUFO_UFOPAEDIA_CAT_CENTRE_Y - 8 * nVisible;
-    pPanel->nUnk7052 = 5;                                   /* 0x9AE74 */
-    pPanel->nUnk7056 = pPanel->nPosY;                       /* 0x9AE80 */
+    pPanel->nRectX = 5;                                   /* 0x9AE74 */
+    pPanel->nRectY = pPanel->nPosY;                       /* 0x9AE80 */
     pPanel->nViewW   = 230;                                 /* 0x9AE88 */
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);         /* 0x9AE98 */
     UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14); /* 0x9AEB8 */
-    pPanel->bFlag7073 = 1;                                  /* 0x9AECC */
+    pPanel->bSelLineHighlight = 1;                                  /* 0x9AECC */
     UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);         /* 0x9AEE0 */
     pPanel->nUnk7076  = 1;                                  /* 0x9AEF4 */
-    pPanel->bUnk7088  = 0x96;                               /* 0x9AF0C */
+    pPanel->bColorKey  = 0x96;                               /* 0x9AF0C */
 }
 
 void Ufopaedia_Open(UfopaediaEnv *pEnv)
@@ -11884,14 +11893,14 @@ static void PsiFreePanel(UiPanel **ppSlot)
 }
 
 /* The style every column gets: nStyle 14 and nFont 16 (0x7181C/0x71828, 0x71934/0x71940,
- * 0x71A08/0x71A14, 0x71AE0/0x71AEC), nPosY and nUnk7056 of 70, and the same two byte triples
+ * 0x71A08/0x71A14, 0x71AE0/0x71AEC), nPosY and nRectY of 70, and the same two byte triples
  * (0x71884/0x718A8, 0x71988/0x719AC, 0x71A5C/0x71A80, 0x71B34/0x71B54). */
 static void PsiInitPanelCommon(UiPanel *pPanel)
 {
     pPanel->nStyle   = PUFO_PSI_PANEL_STYLE;
     pPanel->nFont    = PUFO_PSI_PANEL_FONT;
     pPanel->nPosY    = PUFO_PSI_ROW_Y;
-    pPanel->nUnk7056 = PUFO_PSI_ROW_Y;
+    pPanel->nRectY = PUFO_PSI_ROW_Y;
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
     UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
 }
@@ -11980,30 +11989,30 @@ void PsiScreen_BuildPanels(PsiScreenEnv *pEnv)
             PsiInitPanelCommon(pName);
             pName->pfnClick  = pEnv->pfnSelClick;          /* 0x7183C */
             pName->nPosX     = PUFO_PSI_NAME_X;            /* 0x7184C */
-            pName->nUnk7052  = 5;                          /* 0x71860 */
+            pName->nRectX  = 5;                          /* 0x71860 */
             pName->nViewW    = PUFO_PSI_NAME_VIEWW;        /* 0x71874 */
-            pName->bFlag7073 = 1;                          /* 0x718C0: only the name column */
+            pName->bSelLineHighlight = 1;                          /* 0x718C0: only the name column */
             UiPanel_SetBytes3to5(pName, 0x32, 0x32, 0xFA); /* 0x718D4 */
-            pName->bUnk7088  = 0x96;                       /* 0x718F4: -106 as a signed byte */
+            pName->bColorKey  = 0x96;                       /* 0x718F4: -106 as a signed byte */
         }
         if (pStat != NULL) {
             PsiInitPanelCommon(pStat);
             pStat->nPosX    = PUFO_PSI_STAT_X;             /* 0x71950 */
-            pStat->nUnk7052 = 175;                         /* 0x71964 */
+            pStat->nRectX = 175;                         /* 0x71964 */
             pStat->nViewW   = PUFO_PSI_NARROW_VIEWW;       /* 0x71978 */
             pStat->nUnk7076 = 1;                           /* 0x719CC */
         }
         if (pDelta != NULL) {
             PsiInitPanelCommon(pDelta);
             pDelta->nPosX    = PUFO_PSI_DELTA_X;           /* 0x71A24 */
-            pDelta->nUnk7052 = 209;                        /* 0x71A38 */
+            pDelta->nRectX = 209;                        /* 0x71A38 */
             pDelta->nViewW   = PUFO_PSI_NARROW_VIEWW;      /* 0x71A4C */
             pDelta->nUnk7076 = 1;                          /* 0x71AA0 */
         }
         if (pCheck != NULL) {
             PsiInitPanelCommon(pCheck);
             pCheck->nPosX    = PUFO_PSI_CHECK_X;           /* 0x71AFC */
-            pCheck->nUnk7052 = 210;                        /* 0x71B10 */
+            pCheck->nRectX = 210;                        /* 0x71B10 */
             pCheck->nViewW   = PUFO_PSI_NARROW_VIEWW;      /* 0x71B24 */
             pCheck->nUnk7076 = 1;                          /* 0x71B68 */
         }
@@ -12332,13 +12341,13 @@ static void BaseInfoPanelCommon(UiPanel *pPanel, i32 nPosX, i32 nClickLeft, i32 
     pPanel->pfnClick = NULL;
     pPanel->nPosX = nPosX;
     pPanel->nPosY = PUFO_BASEINFO_PANEL_Y;
-    pPanel->nUnk7052 = nClickLeft;
-    pPanel->nUnk7056 = PUFO_BASEINFO_CLICK_TOP;
+    pPanel->nRectX = nClickLeft;
+    pPanel->nRectY = PUFO_BASEINFO_CLICK_TOP;
     pPanel->nViewW = nViewW;
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
     UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
-    pPanel->bFlag7073 = 0;
-    pPanel->bFlag7072 = 0;
+    pPanel->bSelLineHighlight = 0;
+    pPanel->bRowRules = 0;
 }
 
 static void BaseInfoRowMeta(UiPanel *pPanel, i32 nRow)
@@ -13072,15 +13081,15 @@ void BaseAtScreen_Update(i32 nBaseIdx, const BaseAtUpdateEnv *pEnv)
     pPanel->nFont = PUFO_BASEAT_PANEL_FONT;                                        /* 0x57AF4 */
     pPanel->nPosX = PUFO_BASEAT_PANEL_X;                                           /* 0x57B08 */
     pPanel->nPosY = PUFO_BASEAT_PANEL_Y;                                           /* 0x57B18 */
-    pPanel->nUnk7052 = PUFO_BASEAT_PANEL_CLICKL;                                   /* 0x57B2C */
-    pPanel->nUnk7056 = PUFO_BASEAT_PANEL_CLICKTOP;                                 /* 0x57B40 */
+    pPanel->nRectX = PUFO_BASEAT_PANEL_CLICKL;                                   /* 0x57B2C */
+    pPanel->nRectY = PUFO_BASEAT_PANEL_CLICKTOP;                                 /* 0x57B40 */
     pPanel->nViewW = PUFO_BASEAT_PANEL_VIEWW;                                      /* 0x57B54 */
     UiPanel_SetBytes0to2(pPanel, 0x64, 0x96, 0x64);                                /* 0x57B64 */
-    pPanel->bUnk7088 = (u8)-106;                                                   /* 0x57B78 */
+    pPanel->bColorKey = (u8)-106;                                                   /* 0x57B78 */
     UiPanel_SetBytes6to11(pPanel, 0xDC, 0xC8, 0xF0, 0x14, 0x14, 0x14);             /* 0x57B9C */
     UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);                                /* 0x57BB0 */
-    pPanel->bFlag7073 = 0;                                                         /* 0x57BC4 */
-    pPanel->bFlag7072 = 0;                                                         /* 0x57BDC */
+    pPanel->bSelLineHighlight = 0;                                                         /* 0x57BC4 */
+    pPanel->bRowRules = 0;                                                         /* 0x57BDC */
 
     nRow = 0;
     bBudgetGone = 0;

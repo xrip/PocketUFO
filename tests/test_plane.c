@@ -1342,14 +1342,14 @@ static void TestBuildListPanels(void)
     TestEqI32("  with a 30 wide view", g_listOut.pCrewStatusPanel->nViewW, 30);
     TestEqI32("both are 14 rows of font 16", g_listOut.pCrewPanel->nStyle, 14);
     TestEqI32("  and the status panel too", g_listOut.pCrewStatusPanel->nStyle, 14);
-    TestEqI32("the status panel clears the ctor's bFlag7073 (0x7A664)",
-              g_listOut.pCrewStatusPanel->bFlag7073, 0);
+    TestEqI32("the status panel clears the ctor's bSelLineHighlight (0x7A664)",
+              g_listOut.pCrewStatusPanel->bSelLineHighlight, 0);
     TestEqI32("  and sets nUnk7076 (0x7A670)", g_listOut.pCrewStatusPanel->nUnk7076, 1);
-    TestEqI32("the crew panel keeps it", g_listOut.pCrewPanel->bFlag7073, 1);
-    TestEqI32("the panel colour is B4/B4/B4", g_listOut.pCrewPanel->gap_0[0], 0xB4);
-    TestEqI32("  and the row colours F0,F0,F0 over 14,14,14", g_listOut.pCrewPanel->gap_0[6], 0xF0);
-    TestEqI32("  with the third triple at 14", g_listOut.pCrewPanel->gap_0[9], 0x14);
-    TestEqI32("bUnk7088 is 0x96", g_listOut.pCrewPanel->bUnk7088, 0x96);
+    TestEqI32("the crew panel keeps it", g_listOut.pCrewPanel->bSelLineHighlight, 1);
+    TestEqI32("the panel colour is B4/B4/B4", g_listOut.pCrewPanel->aStyleRgb[0], 0xB4);
+    TestEqI32("  and the row colours F0,F0,F0 over 14,14,14", g_listOut.pCrewPanel->aStyleRgb[6], 0xF0);
+    TestEqI32("  with the third triple at 14", g_listOut.pCrewPanel->aStyleRgb[9], 0x14);
+    TestEqI32("bColorKey is 0x96", g_listOut.pCrewPanel->bColorKey, 0x96);
     TestCheck("the crew panel's click is FillCrewPanel (0x7A574)",
               g_listOut.pCrewPanel->pfnClick == ListCrewThunk);
 
@@ -1527,16 +1527,16 @@ static void TestBuildCraftPanels(void)
     TestEqI32("eight visible rows", g_hngOut.pCraftPanel->nStyle, 8);
     TestEqI32("  in font 16", g_hngOut.pCraftPanel->nFont, 16);
     TestEqI32("  at y 110", g_hngOut.pCraftPanel->nPosY, 110);
-    TestEqI32("the click rect starts at 5,110", g_hngOut.pCraftPanel->nUnk7052, 5);
+    TestEqI32("the click rect starts at 5,110", g_hngOut.pCraftPanel->nRectX, 5);
     TestEqI32("  and the craft column is 230 wide at x 10", g_hngOut.pCraftPanel->nViewW, 230);
     TestEqI32("  with the status column 30 wide at x 230", g_hngOut.pStatusPanel->nViewW, 30);
     TestEqI32("the status column is right-aligned (0x7CF24)", g_hngOut.pStatusPanel->nUnk7076, 2);
     TestEqI32("  while the craft column keeps the ctor's left alignment",
               g_hngOut.pCraftPanel->nUnk7076, 0);
-    TestEqI32("both panels are B4", g_hngOut.pCraftPanel->gap_0[0], 0xB4);
-    TestEqI32("only panel A gets the row colours (0x7CDFC)", g_hngOut.pCraftPanel->gap_0[6], 0xF0);
-    TestEqI32("  and panel B's stay at the ctor's zero", g_hngOut.pStatusPanel->gap_0[6], 0);
-    TestEqI32("bUnk7088 is 0x96 on both", g_hngOut.pStatusPanel->bUnk7088, 0x96);
+    TestEqI32("both panels are B4", g_hngOut.pCraftPanel->aStyleRgb[0], 0xB4);
+    TestEqI32("only panel A gets the row colours (0x7CDFC)", g_hngOut.pCraftPanel->aStyleRgb[6], 0xF0);
+    TestEqI32("  and panel B's stay at the ctor's zero", g_hngOut.pStatusPanel->aStyleRgb[6], 0);
+    TestEqI32("bColorKey is 0x96 on both", g_hngOut.pStatusPanel->bColorKey, 0x96);
     TestCheck("panel A's click is SelectCraft (0x7CD74)", g_hngOut.pCraftPanel->pfnClick == HngThunk);
     TestCheck("panel B's is SelectListed (0x7CE8C)", g_hngOut.pStatusPanel->pfnClick == HngThunk);
 
@@ -1897,8 +1897,8 @@ static void CtlStock(i32 nSlot, u16 wBase, u16 wCarry)
 }
 
 /* The five panels' shared style plus the fields that tell them apart (the header's panel table). */
-static void CtlPanelStyle(const char *pszName, UiPanel *pPanel, i32 nPosX, i32 nUnk7052, i32 nViewW,
-                          u8 bFlag7073, u8 bFlag7074, i32 nUnk7076, u8 bUnk7088, i32 nUnk7084,
+static void CtlPanelStyle(const char *pszName, UiPanel *pPanel, i32 nPosX, i32 nRectX, i32 nViewW,
+                          u8 bSelLineHighlight, u8 bAuxNumbers, i32 nUnk7076, u8 bColorKey, i32 nRepeatDelay,
                           u8 b3)
 {
     char szMsg[96];
@@ -1907,28 +1907,28 @@ static void CtlPanelStyle(const char *pszName, UiPanel *pPanel, i32 nPosX, i32 n
     TestEqI32(szMsg, pPanel->nStyle, 14);
     TestEqI32("  at font 16", pPanel->nFont, 16);
     TestEqI32("  on row 70 with the click band top also 70", pPanel->nPosY, 70);
-    TestEqI32("  and the click band top 70", pPanel->nUnk7056, 70);
+    TestEqI32("  and the click band top 70", pPanel->nRectY, 70);
     snprintf(szMsg, sizeof szMsg, "%s: x %d", pszName, nPosX);
     TestEqI32(szMsg, pPanel->nPosX, nPosX);
-    snprintf(szMsg, sizeof szMsg, "%s: click band left %d", pszName, nUnk7052);
-    TestEqI32(szMsg, pPanel->nUnk7052, nUnk7052);
+    snprintf(szMsg, sizeof szMsg, "%s: click band left %d", pszName, nRectX);
+    TestEqI32(szMsg, pPanel->nRectX, nRectX);
     snprintf(szMsg, sizeof szMsg, "%s: view width %d", pszName, nViewW);
     TestEqI32(szMsg, pPanel->nViewW, nViewW);
-    TestEqI32("  row colour B4,B4,B4", pPanel->gap_0[0], 0xB4);
-    TestEqI32("  text pair F0,F0,F0", pPanel->gap_0[6], 0xF0);
-    TestEqI32("  over 14,14,14", pPanel->gap_0[9], 0x14);
-    snprintf(szMsg, sizeof szMsg, "%s: bFlag7073 %d", pszName, bFlag7073);
-    TestEqI32(szMsg, pPanel->bFlag7073, bFlag7073);
-    snprintf(szMsg, sizeof szMsg, "%s: bFlag7074 %d", pszName, bFlag7074);
-    TestEqI32(szMsg, pPanel->bFlag7074, bFlag7074);
+    TestEqI32("  row colour B4,B4,B4", pPanel->aStyleRgb[0], 0xB4);
+    TestEqI32("  text pair F0,F0,F0", pPanel->aStyleRgb[6], 0xF0);
+    TestEqI32("  over 14,14,14", pPanel->aStyleRgb[9], 0x14);
+    snprintf(szMsg, sizeof szMsg, "%s: bSelLineHighlight %d", pszName, bSelLineHighlight);
+    TestEqI32(szMsg, pPanel->bSelLineHighlight, bSelLineHighlight);
+    snprintf(szMsg, sizeof szMsg, "%s: bAuxNumbers %d", pszName, bAuxNumbers);
+    TestEqI32(szMsg, pPanel->bAuxNumbers, bAuxNumbers);
     snprintf(szMsg, sizeof szMsg, "%s: alignment key nUnk7076 %d", pszName, nUnk7076);
     TestEqI32(szMsg, pPanel->nUnk7076, nUnk7076);
-    snprintf(szMsg, sizeof szMsg, "%s: bUnk7088 0x%02X", pszName, bUnk7088);
-    TestEqI32(szMsg, pPanel->bUnk7088, bUnk7088);
-    snprintf(szMsg, sizeof szMsg, "%s: auto-repeat nUnk7084 %d", pszName, nUnk7084);
-    TestEqI32(szMsg, pPanel->nUnk7084, nUnk7084);
+    snprintf(szMsg, sizeof szMsg, "%s: bColorKey 0x%02X", pszName, bColorKey);
+    TestEqI32(szMsg, pPanel->bColorKey, bColorKey);
+    snprintf(szMsg, sizeof szMsg, "%s: auto-repeat nRepeatDelay %d", pszName, nRepeatDelay);
+    TestEqI32(szMsg, pPanel->nRepeatDelay, nRepeatDelay);
     snprintf(szMsg, sizeof szMsg, "%s: second colour byte 0x%02X", pszName, b3);
-    TestEqI32(szMsg, pPanel->gap_0[3], b3);
+    TestEqI32(szMsg, pPanel->aStyleRgb[3], b3);
 }
 
 /* The fixture: rows at slots 1, 24, 31, 32, 34, 35 and 51; refusals at 0 (below the loop), 25 and 30
@@ -1997,8 +1997,8 @@ static void TestBuildControls(void)
     TestEqI32("seven rows: slots 1, 24, 31, 32, 34, 35 and 51", g_ctlOut.pSlotPanel->nLineCount, 7);
     TestEqI32("  and every panel was built with the same row count", g_ctlOut.pTakenPanel->nLineCount, 7);
 
-    /* bUnk7088 stays at UiPanel_ctor's 0xFF on the two count columns: BuildControls only writes it on
-     * the three columns that also get bFlag7073. */
+    /* bColorKey stays at UiPanel_ctor's 0xFF on the two count columns: BuildControls only writes it on
+     * the three columns that also get bSelLineHighlight. */
     CtlPanelStyle("the name column", g_ctlOut.pSlotPanel, 10, 5, 125, 1, 0, 0, 0x96, 0, 0x00);
     CtlPanelStyle("the available column", g_ctlOut.pAvailPanel, 164, 130, 50, 0, 1, 2, 0xFF, 0, 0x00);
     CtlPanelStyle("the minus column", g_ctlOut.pSelRowPanel, 170, 166, 15, 1, 0, 0, 0x96, 5, 0x32);

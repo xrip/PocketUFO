@@ -4131,6 +4131,22 @@ unchanged; 18267 checks.
   `CommitStores`/`ApplyQtyChanges @ 0x78d90` (139 of 140 slots free in the frame), and the away transport is
   recalled through `Ship_RetargetTravel @ 0x5a484` landing via the event pass at 0x80E5C.
 
+- [ ] **Part 100 (in progress): prove the live geoscape by pictures -- transfer, time speed, a new base,
+  crashed disks, a battle with mode switching, UFO flight, bases and terror sites.** Done so far: the
+  TransferScreen seam (nav slot 10, `TransferScreen_Open @ 0x614fc`) is wired into the shell -- Open/Init/
+  BuildPanels/SyncSel/Move/Validate/Reset/Commit thunks over the transfer block with `apTransferCtl`, the
+  Init-before-id-10 order of 0x6151C, and the CloseUI case 10 teardown rebuild at 0x8BE40; and a rendering
+  gap the user saw in the shop frames is closed -- `UiPanelMsg_Draw @ 0x3e94c` has two string branches and
+  the port carried only the text one, so every `bAuxNumbers` panel (shop E/D, transfer E/D, hangar
+  avail/taken, funding bars/arrows, the 0x1568E4 mission value column) drew nothing in its number column;
+  the numeric branch (`itoa(anLineAux[row])`, the `+` prefix under `bAuxPlusSign`) is ported and four
+  frames re-referenced. The census over the whole binary found no second missing branch: every numeric
+  panel already had its flags and aux feeds. Twelve UiPanel fields got role names in the IDB and the port
+  (docs/parity/renames.tsv). Remaining stages in `test_geoscapeframe`: 100.1 a transfer round (open frame
+  with the digits, staging, reset, commit, 25 hourly ticks -> arrival), 100.2 the speed controls, 100.3 a
+  new base, 100.4 the crashed-disk dispatch chain, 100.5 battle setup with mode switching, 100.6 UFO motion
+  and terror-site visibility on a frame; then the six gates, the parity rows, commit.
+
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has
   accepted any node, and the pick's failure is ignored; the original's consumers at 0x49260, 0x4C8D4 and 0x4CBE0

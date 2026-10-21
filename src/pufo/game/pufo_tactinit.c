@@ -25,9 +25,9 @@ typedef struct PanelLayout {
     i32 nPosX;      /* panel+0x1B84 */
     i32 nPosY;      /* panel+0x1B88 */
     i8  nAlign;     /* nUnk7076 @ panel+0x1BA4: 0 left, 1 centre, 2 right */
-    i8  bFlag7072;  /* panel+0x1BA0 */
-    i8  bFlag7073;  /* panel+0x1BA1 */
-    i8  bFlag7074;  /* panel+0x1BA2 */
+    i8  bRowRules;  /* panel+0x1BA0 */
+    i8  bSelLineHighlight;  /* panel+0x1BA1 */
+    i8  bAuxNumbers;  /* panel+0x1BA2 */
 } PanelLayout;
 
 static const PanelLayout g_aPanelLayout[PUFO_TACTINIT_PANELS] = {
@@ -38,7 +38,7 @@ static const PanelLayout g_aPanelLayout[PUFO_TACTINIT_PANELS] = {
     { 28, 120, 30,  1, 0, 0, -1 }, /* unk_1571EC, the briefing panel */
 };
 
-/* gap_0[6..8] and gap_0[9..11], written through UiPanel_SetBytes6to11. */
+/* aStyleRgb[6..8] and aStyleRgb[9..11], written through UiPanel_SetBytes6to11. */
 #define PUFO_PANEL_STYLE_RGB 0xF0u
 #define PUFO_PANEL_STYLE_DIM 0x14u
 /* nStyle @ panel+0xBE0, the visible row count: 0x0E. Distinct from the dim bytes above. */
@@ -107,14 +107,14 @@ static void Init_SetupPanels(TactInitEnv *pEnv)
                                            PUFO_PANEL_STYLE_DIM, PUFO_PANEL_STYLE_DIM,
                                            pEnv->hooks.pUser);
         }
-        if (p->bFlag7072 >= 0) {
-            pPanel->bFlag7072 = (u8)p->bFlag7072;
+        if (p->bRowRules >= 0) {
+            pPanel->bRowRules = (u8)p->bRowRules;
         }
-        if (p->bFlag7073 >= 0) {
-            pPanel->bFlag7073 = (u8)p->bFlag7073;
+        if (p->bSelLineHighlight >= 0) {
+            pPanel->bSelLineHighlight = (u8)p->bSelLineHighlight;
         }
-        if (p->bFlag7074 >= 0) {
-            pPanel->bFlag7074 = (u8)p->bFlag7074;
+        if (p->bAuxNumbers >= 0) {
+            pPanel->bAuxNumbers = (u8)p->bAuxNumbers;
         }
         if (p->nAlign >= 0) {
             pPanel->nUnk7076 = (i32)p->nAlign;

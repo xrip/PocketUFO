@@ -315,8 +315,8 @@ static void TestNewGame(void)
     CheckEqI32(g_ui.apRootCtl[3]->nState, 0, "the 1min button is not");
     Check(g_ui.pStatusPanel != NULL && g_ui.pStatusPanel->nLineCount == 20
               && g_ui.pStatusPanel->nStyle == 13 && g_ui.pStatusPanel->nFont == 16
-              && g_ui.pStatusPanel->nUnk7076 == 1 && g_ui.pStatusPanel->bFlag7073 == 1
-              && g_ui.pStatusPanel->bUnk7088 == 100 && g_ui.pStatusPanel->pfnClick == NoopClick,
+              && g_ui.pStatusPanel->nUnk7076 == 1 && g_ui.pStatusPanel->bSelLineHighlight == 1
+              && g_ui.pStatusPanel->bColorKey == 100 && g_ui.pStatusPanel->pfnClick == NoopClick,
           "status panel built (20 lines, style 13, font 16, radar click wired)");
 
     printf("mission sites\n");

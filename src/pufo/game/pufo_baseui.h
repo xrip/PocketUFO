@@ -1207,7 +1207,7 @@ i32 Transfer_WriteErrorDump(const TransferDumpEnv *pEnv);
  * Column separators (0x98178..0x98214). Four 1-pixel vertical lines at x 130, 168, 183 and 198, from
  * y 69, height 16 * min(pPanelB->nLineCount, pPanelB->nStyle) + 2, index 0xB4.
  *
- * Panels (0x98224..0x9828C). Only while bTransferPanelsBuilt: panel B and panel C get bUnk7080 = 1
+ * Panels (0x98224..0x9828C). Only while bTransferPanelsBuilt: panel B and panel C get bRepeatArmed = 1
  * (the original routes panel C's value through unk_161F0C, setting it to 1 and back to 0 in the
  * process), then the five panels draw through UiPanelMsg_Draw in the order A, E, C, B, D.
  *
@@ -1293,7 +1293,8 @@ typedef struct TransferDrawEnv {
     BaseRec *const *apBases;           /* apBases @ 0x114B2C */
     const u8 *pbBaseCount;             /* nBaseCount @ 0x159D80, read signed */
     const u8 *abFacilityGrid;          /* abFacilityGrid @ 0x159768 */
-    const i32 *pnMapPhase;             /* nMapPhase @ 0x1139EF, drives the label's red channel */
+    const u8  *pnMapPhase;             /* nMapPhase @ 0x1139EF, drives the label's red channel. The
+                                        * 0x98A0C read is LDRB, so the byte cell is the right view. */
     const BaseStripHitEnv *pStripHit;  /* Base_HitTestFacilityStrip's env */
     void (*pfnDrawIconStrip)(i32 nBaseIdx, void *pUser);
     void *pStripUser;
@@ -1669,6 +1670,7 @@ void SoldierScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 void ManufScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 void ResearchScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 void BuySellScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void TransferScreen_CloseThunk(const GeoscapeCloseEnv *pEnv); /* Geoscape_CloseUI_ThunkB @ 0x96020 */
 void NewBaseScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 
 /* OptionsScreen_ReturnToTitle @ 0x6b46c: clears the tab byte (STRB 0 at 0x6B478), closes the
@@ -2242,16 +2244,16 @@ void ManufScreen_Init(ManufInitEnv *pEnv);
  *      that count, all nStyle 13 and nFont 16, all with style bytes 0..2 = 0xB4 and 6..11 =
  *      0xF0,0xF0,0xF0,0x14,0x14,0x14:
  *
- *          A  pManufProductPanel @ 0x15EE44   x 10  y 70  +7052 5    viewW 230  click
- *             ManufScreen_SelectListed @ 0x6e914, bytes 3..5 = 0x32,0x32,0xFA, bFlag7073 1,
- *             bUnk7088 0x96
- *          B  pManufPanelB      @ 0x15EE48    x 150 y 70  +7052 155  viewW 30   nUnk7076 2
- *          C  pManufPanelC      @ 0x15EE40    x 187 y 70  +7052 185  viewW 30   nUnk7076 2
- *          D  pManufPanelD      @ 0x15EE38    x 233 y 70  +7052 5    viewW 230  nUnk7076 2, click
- *             ManufScreen_SyncSelection @ 0x6dd24, bFlag7073 1, bUnk7088 0x96
+ *          A  pManufProductPanel @ 0x15EE44   x 10  y 70  nRectX5    viewW 230  click
+ *             ManufScreen_SelectListed @ 0x6e914, bytes 3..5 = 0x32,0x32,0xFA, bSelLineHighlight 1,
+ *             bColorKey 0x96
+ *          B  pManufPanelB      @ 0x15EE48    x 150 y 70  nRectX155  viewW 30   nUnk7076 2
+ *          C  pManufPanelC      @ 0x15EE40    x 187 y 70  nRectX185  viewW 30   nUnk7076 2
+ *          D  pManufPanelD      @ 0x15EE38    x 233 y 70  nRectX5    viewW 230  nUnk7076 2, click
+ *             ManufScreen_SyncSelection @ 0x6dd24, bSelLineHighlight 1, bColorKey 0x96
  *
  *      Only A gets SetBytes3to5; B and C get neither it nor the two flag bytes. All four share
- *      nPosY 70 and nUnk7056 70.
+ *      nPosY 70 and nRectY 70.
  *   3. 0x6EE60..0x6F25C: the fill pass, same walk, same filter, one line per hit in panels A, B, C
  *      and D at the same row index:
  *        - A: the item's own name, copied out of apObjects[id] (the record's szName at +0, reached as
@@ -2326,7 +2328,7 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv);
  * cached cursor points at.
  *
  * 1. 0x6E40C..0x6E430: the selected product is pManufProductPanel->anLineAux[nManufProductRowCache],
- *    cached in a local; bManufProductSelected is cleared; panel A's bFlag7073 is set; sample 17 is
+ *    cached in a local; bManufProductSelected is cleared; panel A's bSelLineHighlight is set; sample 17 is
  *    played. 0x6E428 also loads 4 into R1, but Sound_Play @ 0x9e0c0 takes ONE argument (its body reads
  *    only R0) and never touches R1, so that 4 is register residue, not a second argument.
  * 2. 0x6E478..0x6E48C: when apProductB[200*base + product] is zero the slot is cleared through
@@ -2855,13 +2857,13 @@ void FundingScreen_OpenMonthly(FundingInitEnv *pEnv, i32 *pnScreenId, u8 *pbAnim
  * 2. The pad: operator new(0x14) + PadImage_ctor, PadImage_Load("funding", 28), origin (0, 0)
  *    (0x5AC14..0x5AC54). Same pad FundingScreen_Init loads; the two do not share an instance.
  * 3. Three 5-line panels, each operator new(0x1BB4) + UiPanel_ctor(5), all nStyle 5 and nFont 16,
- *    all at y 70, at x 10 / 100 / 170. The names panel is the only one that sets nUnk7052 = 5,
- *    nUnk7056 = 70 and nViewW = 230; the bars and arrows panels keep the ctor's 240 / 320. All
- *    three get SetBytes0to2, bUnk7088 = 0x96, SetBytes6to11(0xC8, 0xB4, 0xF0, 0x14, 0x14, 0x14),
- *    SetBytes3to5(0x32, 0x32, 0xFA) and bFlag7073 = 0; the names panel uses SetBytes0to2
- *    (0x64, 0x96, 0x64) and leaves bFlag7072 at the ctor's 1, while bars and arrows use
- *    (0xB4, 0xB4, 0xB4), clear bFlag7072 and set bFlag7074 = 1, and the arrows panel also sets
- *    bUnk7089 = 1.
+ *    all at y 70, at x 10 / 100 / 170. The names panel is the only one that sets nRectX = 5,
+ *    nRectY = 70 and nViewW = 230; the bars and arrows panels keep the ctor's 240 / 320. All
+ *    three get SetBytes0to2, bColorKey = 0x96, SetBytes6to11(0xC8, 0xB4, 0xF0, 0x14, 0x14, 0x14),
+ *    SetBytes3to5(0x32, 0x32, 0xFA) and bSelLineHighlight = 0; the names panel uses SetBytes0to2
+ *    (0x64, 0x96, 0x64) and leaves bRowRules at the ctor's 1, while bars and arrows use
+ *    (0xB4, 0xB4, 0xB4), clear bRowRules and set bAuxNumbers = 1, and the arrows panel also sets
+ *    bAuxPlusSign = 1.
  * 4. The five country names go into the NAMES panel's lines in SLOT order -- TEXTS[1302] США,
  *    TEXTS[1305] Австралия, TEXTS[1303] Евро Альянс, TEXTS[1304] Азиатский Альянс, TEXTS[1306]
  *    Африка (0x5AF5C..0x5B038) -- which is what pins the slots: slot 0 USA, slot 1 Australia,
@@ -3611,8 +3613,8 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv);
  *      puts the clicked row. The type-1 inactive branch is the odd one out: it stores the ship index
  *      into 0x187054 and 0x159E74 first, appends flag 11 with that index in colour slot 0, and does
  *      NOT drop line 0.
- *   7. More than one line: the panel becomes a multi-select box -- nPosX 120, nPosY and nUnk7056
- *      both 120 - (nLineCount / 2) * nFont, nUnk7052 20, nViewW 200, bFlag7073 clear -- the clock
+ *   7. More than one line: the panel becomes a multi-select box -- nPosX 120, nPosY and nRectY
+ *      both 120 - (nLineCount / 2) * nFont, nRectX 20, nViewW 200, bSelLineHighlight clear -- the clock
  *      pauses, byte_18709C[4] goes up and Sound_Play(7) plays.
  *   8. The tail (0x83708..0x837BC) runs whatever the line count was. When message line 0 carries
  *      flag 27 (the pick-a-target-cell prompt Smap_ConfirmCraftTarget's chain installs), nothing
@@ -3662,7 +3664,7 @@ typedef struct SmapHitEnv {
     i32            *pnSelectedStrategIdx;  /* 0x186BE4 */
     i32            *pnSelectedShipIdx;     /* 0x187054 */
     i32            *pnMsgShipIdx;        /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
-    UiPanel *const *ppOptPanelShips;       /* the cell of pOptPanelShips @ 0x159E18, bFlag7073 cleared at
+    UiPanel *const *ppOptPanelShips;       /* the cell of pOptPanelShips @ 0x159E18, bSelLineHighlight cleared at
                                             * 0x83494. A cell and not a copy because Open runs at 0x83480
                                             * just before: the open half just put the names panel there, the
                                             * close half just took it out, and the original's load at 0x83494
@@ -3809,9 +3811,9 @@ i32 Geoscape_OnMapClick(const MapClickEnv *pEnv);
  *   2. operator new(0x1BB4) + UiPanel_ctor(nCount) -> unk_15886C. The nStyle store at 0x58A7C
  *      dereferences the result even when the allocation failed (bugs.tsv).
  *   3. nStyle 5, nFont 16, the +3020 click handler = BaseFacScreen_TryBuySelected, nPosX 120,
- *      nPosY 234, nUnk7052 5, nUnk7056 234, nViewW 230, gap_0[0..2] = B4 B4 B4,
- *      gap_0[3..5] = 46 96 AA, gap_0[6..11] = 44 F4 FC 04 46 4B, bUnk7088 0x96, bFlag7072 0,
- *      bFlag7073 1, nUnk7076 1.
+ *      nPosY 234, nRectX 5, nRectY 234, nViewW 230, aStyleRgb[0..2] = B4 B4 B4,
+ *      aStyleRgb[3..5] = 46 96 AA, aStyleRgb[6..11] = 44 F4 FC 04 46 4B, bColorKey 0x96, bRowRules 0,
+ *      bSelLineHighlight 1, nUnk7076 1.
  *   4. rows (0x58BAC..0x58C0C): aBaseFacFlags[1..16] in order, 16 iterations. Each record with
  *      bFlag20 set gets its szName copied into the next apLines slot and anLineAux = the record
  *      number, which is the facility kind BaseFacScreen_TryBuySelected looks up. A 17th row is
@@ -3885,19 +3887,19 @@ i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv);
  *   1. the flag is set; a PadImage (operator new 0x14 + PadImage_ctor) is loaded with the pad
  *      "soldier" at mode 8 into unk_1598D4, with nOriginX / nOriginY 0.
  *   2. panel A @ 0x159DF0 (4 lines): nStyle 4, nFont 18, +3020 = SoldierScreen_EquipSelected,
- *      nPosX 55, nPosY 102, +7052 46, +7056 102, nViewW 167, gap_0[0..2] 44 F4 FC,
- *      gap_0[3..5] 32 A0 BD, gap_0[6..11] C8 F4 FC 04 46 4B, bFlag7073 1, bUnk7088 0xFF.
- *   3. panel B @ 0x159758 (4 lines): nStyle 4, nFont 18, nPosX 190, nPosY 102, +7052 46,
- *      +7056 102, nViewW 167, gap_0[0..2] 44 F4 FC, gap_0[3..5] 32 32 FA,
- *      gap_0[6..11] 44 F4 FC 04 46 4B, bFlag7072 0. No click handler.
+ *      nPosX 55, nPosY 102, nRectX46, nRectY102, nViewW 167, aStyleRgb[0..2] 44 F4 FC,
+ *      aStyleRgb[3..5] 32 A0 BD, aStyleRgb[6..11] C8 F4 FC 04 46 4B, bSelLineHighlight 1, bColorKey 0xFF.
+ *   3. panel B @ 0x159758 (4 lines): nStyle 4, nFont 18, nPosX 190, nPosY 102, nRectX46,
+ *      nRectY102, nViewW 167, aStyleRgb[0..2] 44 F4 FC, aStyleRgb[3..5] 32 32 FA,
+ *      aStyleRgb[6..11] 44 F4 FC 04 46 4B, bRowRules 0. No click handler.
  *   4. n = how many of apSoldiers[0..count) have the base byte at +0xB6 equal to nSelectedBaseIdx
  *      (0x64BA4..0x64CC4; the count is the u16 at unk_115350).
  *   5. panel C @ 0x15975C (n lines): nStyle 13, nFont 18, +3020 = SoldierScreen_SelectListed,
- *      nPosX 10, nPosY 70, +7052 2, +7056 70, nViewW 234, gap_0[0..2] B4 B4 B4,
- *      gap_0[3..5] 32 32 FA, gap_0[6..11] F0 F0 F0 14 14 14, bFlag7073 1, bUnk7088 0x96.
- *   6. panel D @ 0x159DEC (n lines): nStyle 13, nFont 18, nPosX 230, nPosY 70, +7052 5,
- *      +7056 70, nViewW 40, gap_0[0..2] B4 B4 B4, gap_0[6..11] F0 F0 F0 14 14 14,
- *      bFlag7073 0, nUnk7076 2, bUnk7088 0x96. No click handler.
+ *      nPosX 10, nPosY 70, nRectX2, nRectY70, nViewW 234, aStyleRgb[0..2] B4 B4 B4,
+ *      aStyleRgb[3..5] 32 32 FA, aStyleRgb[6..11] F0 F0 F0 14 14 14, bSelLineHighlight 1, bColorKey 0x96.
+ *   6. panel D @ 0x159DEC (n lines): nStyle 13, nFont 18, nPosX 230, nPosY 70, nRectX5,
+ *      nRectY70, nViewW 40, aStyleRgb[0..2] B4 B4 B4, aStyleRgb[6..11] F0 F0 F0 14 14 14,
+ *      bSelLineHighlight 0, nUnk7076 2, bColorKey 0x96. No click handler.
  *   7. the row pass (0x65018..0x651A0) walks the roster again; for every soldier on the selected
  *      base, panel C gets szName (+0xBA) and anLineAux = the ROSTER index, panel D gets
  *      Soldier_FormatDisplayName's string, and the row colours come from the craft byte at +0xB7:
@@ -4740,12 +4742,12 @@ i32 Options_SaveAudioSettings(SaveAudioEnv *pEnv); /* 0x6b7ac */
  * 4. 0x6D240: pGeoscapeCtlA gets Options_SaveAudioSettings at +0xC, x = 120 - (uWidth >> 1), y = 179.
  *    OptionsScreen_LayoutButtons puts the same control at y = 198 -- the two tabs disagree.
  * 5. Four panels, each operator new(0x1BB4) + UiPanel_ctor(count), all with nStyle 6 and nFont 16:
- *      0x159E18 names  nPosX 5,   nUnk7052 5,   nViewW 230, bFlag7073 1, bUnk7088 100,
+ *      0x159E18 names  nPosX 5,   nRectX 5,   nViewW 230, bSelLineHighlight 1, bColorKey 100,
  *                     bytes0-2 (0A,50,5A), bytes3-5 (44,F4,FC), bytes6-11 (44,F4,FC,04,46,4B),
  *                     pfnClick = OptionsScreen_OnConfirm
- *      0x159E78 stores nPosX 115, nUnk7052 155, nViewW 30,  nUnk7076 1
- *      0x159E7C region nPosX 175, nUnk7052 185, nViewW 30,  nUnk7076 1
- *      0x159E1C cargo  nPosX 233, nUnk7052 5,   nViewW 230, nUnk7076 2, bUnk7088 150 (written -106)
+ *      0x159E78 stores nPosX 115, nRectX 155, nViewW 30,  nUnk7076 1
+ *      0x159E7C region nPosX 175, nRectX 185, nViewW 30,  nUnk7076 1
+ *      0x159E1C cargo  nPosX 233, nRectX 5,   nViewW 230, nUnk7076 2, bColorKey 150 (written -106)
  * 6. 0x6D648..0x6DC18: the craft loop. With nMode == -1 the line index IS the craft index and nothing
  *    is filtered; otherwise a craft whose Ship.bHomeBase differs from the found index is skipped. Per
  *    line written:
@@ -5157,11 +5159,11 @@ void ResearchScreen_Init(ResearchInitEnv *pEnv);
  *
  * Build path, 0x73410..0x73940: byte_160C7C = 1; aResearchTopics[0].bActive = 1 (topic 0 is always on
  * the list); three UiPanel_ctor(144) allocations. All three share nStyle 15, nFont 16, nPosY 70,
- * nUnk7056 70, nViewW and the two style byte groups (bytes 0..2 = B4 B4 B4, bytes 6..11 = F0 F0 F0
- * 14 14 14); only panel A gets bytes 3..5 = 32 32 FA, bFlag7073, bUnk7088 = 0x94 and the click handler
+ * nRectY 70, nViewW and the two style byte groups (bytes 0..2 = B4 B4 B4, bytes 6..11 = F0 F0 F0
+ * 14 14 14); only panel A gets bytes 3..5 = 32 32 FA, bSelLineHighlight, bColorKey = 0x94 and the click handler
  * PlaySample7_SetFlags_Cache0xBD8 (0x73328), which is what caches the row cursor into 0x160C74 that
- * ResearchScreen_IncSelectedQty / DecSelectedQty read. Panel A is x 10 width 230 with nUnk7052 5;
- * panel B x 197 width 30 with nUnk7052 175; panel C x 233 width 30 with nUnk7052 205 -- B and C are the
+ * ResearchScreen_IncSelectedQty / DecSelectedQty read. Panel A is x 10 width 230 with nRectX 5;
+ * panel B x 197 width 30 with nRectX 175; panel C x 233 width 30 with nRectX 205 -- B and C are the
  * two narrow numeric columns, both right-aligned (nUnk7076 = 2).
  *
  * Fill pass, 0x73700..0x73914: topics 1..nResearchEntryCount-1, bActive == 1 only. Panel A gets the
@@ -5178,7 +5180,7 @@ void ResearchScreen_Init(ResearchInitEnv *pEnv);
  * derefs every allocation and the panel line buffers with no test. */
 #define PUFO_RESEARCH_PANEL_STYLE 15  /* 0x73464 / 0x73594 / 0x73668: all three panels */
 #define PUFO_RESEARCH_PANEL_FONT  16  /* 0x73478 / 0x735A8 / 0x73678 */
-#define PUFO_RESEARCH_PANEL_POSY  70  /* 0x734B4 / 0x735CC / 0x7369C, and nUnk7056 at the same value */
+#define PUFO_RESEARCH_PANEL_POSY  70  /* 0x734B4 / 0x735CC / 0x7369C, and nRectY at the same value */
 
 typedef struct ResearchBuildEnv {
     u8   *pbPanelsBuilt;              /* byte_160C7C */
@@ -5424,15 +5426,15 @@ void ResearchScreen_Draw(const ResearchDrawEnv *pEnv);
  * Panels not built, 0x786BC..0x78B94. bBuySellControlsBuilt @ 0x161A24 == 0 ends the function here.
  * Otherwise the pair 255,120,120 / 10,10,10 and TEXTS[157] + ":" + itoa(BuySell_nTransTotal) + " $" at
  * (10, 40); then the pair 180,180,250 / 10,10,10 with TEXTS[92] centred at (210 - w/2, 54) and
- * TEXTS[158] centred at (155 - w/2, 54). Then panels B and C get bFlag7073 = (dword at byte_1870C8 != 1)
- * -- the only place in this function that writes that flag -- and both get bUnk7080 = unk_161F0C, which
+ * TEXTS[158] centred at (155 - w/2, 54). Then panels B and C get bSelLineHighlight = (dword at byte_1870C8 != 1)
+ * -- the only place in this function that writes that flag -- and both get bRepeatArmed = unk_161F0C, which
  * is then zeroed. Five UiPanelMsg_Draw in the order A, E, C, B, D. Band = 16 * min(panelB->nLineCount,
  * panelB->nStyle); four 1-pixel separators at x 130, 176, 191, 206, y 69, height band + 2, index 0xB4.
  * The pair 220,80,80 / 50,30,30, and if the shortfall dword is 1 a switch on dword_1870B4[0] runs
  * Ui_AnimExpandBlit_IfEnabled(grid, 20, 130, 200, 70, 1) and draws TEXTS[405 + reason] centred at
  * (120 - w/2, 158) and returns. Reasons 4 and up fall through to the cursor block.
  *
- * Panels built, 0x78180..0x78420. Panels B and C get bUnk7080 = unk_161F0C (no bFlag7073 write here),
+ * Panels built, 0x78180..0x78420. Panels B and C get bRepeatArmed = unk_161F0C (no bSelLineHighlight write here),
  * then the scratch byte is zeroed. The pair 120,120,255 / 10,10,10 and TEXTS[411] + ":" +
  * itoa(BuySell_nTransTotal) + " $" at (10, 40); then 180,180,250 / 10,10,10 with TEXTS[92] centred at
  * (145 - w/2, 54) and TEXTS[158] centred at (212 - w/2, 54) -- the two captions swap sides against the
@@ -5465,8 +5467,8 @@ void ResearchScreen_Draw(const ResearchDrawEnv *pEnv);
  * colour root with no test, and indexes anLineAux with the cached cursor without bounds. The port
  * bounds the label buffer, null-guards the panels and controls, and clamps the marker and the soldier
  * index. It also drops the three Text_MeasureWidth calls whose results the original discards, and it
- * does not follow the original into the freed panels: the panels-not-built half writes bFlag7073 and
- * bUnk7080 into pBuySellPanelB/C and reads panel A's aux column after BuySellScreen_BuildPanels'
+ * does not follow the original into the freed panels: the panels-not-built half writes bSelLineHighlight and
+ * bRepeatArmed into pBuySellPanelB/C and reads panel A's aux column after BuySellScreen_BuildPanels'
  * teardown has deleted all five (0x78864, recorded in docs/parity/bugs.tsv). */
 #define PUFO_BUYSELL_TEXT_FUNDS      156 /* TEXTS[156] + itoa(nFunds) + " $" at (10, 28) */
 #define PUFO_BUYSELL_TEXT_TOTAL_DOWN 157 /* the panels-not-built total line, 255,120,120 */
@@ -5984,10 +5986,10 @@ void Ui_InitBaseInfo(UiBaseInfoInitEnv *pEnv);
  * columns that scroll together through the already ported PsiScreen_PanelPrev/Next. Each column is
  * its own UiPanel and each column is an array of PUFO_FAC_BASE_COUNT entries indexed by base:
  *
- *   unk_15EED0 @ 0x15EED0   the soldier name,   nPosX 10, nUnk7052   5, nViewW 230
- *   unk_15EE88 @ 0x15EE88   "auStat[6]\auStat[7]", nPosX 154, nUnk7052 175, nViewW 10
- *   unk_15EEA8 @ 0x15EEA8   the training delta, nPosX 184, nUnk7052 209, nViewW 10
- *   unk_15EE58 @ 0x15EE58   the assignment box, nPosX 215, nUnk7052 210, nViewW 10
+ *   unk_15EED0 @ 0x15EED0   the soldier name,   nPosX 10, nRectX   5, nViewW 230
+ *   unk_15EE88 @ 0x15EE88   "auStat[6]\auStat[7]", nPosX 154, nRectX 175, nViewW 10
+ *   unk_15EEA8 @ 0x15EEA8   the training delta, nPosX 184, nRectX 209, nViewW 10
+ *   unk_15EE58 @ 0x15EE58   the assignment box, nPosX 215, nRectX 210, nViewW 10
  *
  * The middle two are not separate globals in the image: they are the dword runs at byte_15EE84+4 and
  * byte_15EE84+36. That same 72-byte block also holds the row-selected flag at +0 (byte_15EE84[0], set
@@ -5995,9 +5997,9 @@ void Ui_InitBaseInfo(UiBaseInfoInitEnv *pEnv);
  * 0x890C4) and a scratch row index at +68 that PsiScreen_SelectListed uses to hand one row to its
  * four SetLineMeta calls. The port keeps four named arrays plus the two scalars.
  *
- * All four share nStyle 14 (14 visible rows), nFont 16, nPosY / nUnk7056 of 70 and the same
+ * All four share nStyle 14 (14 visible rows), nFont 16, nPosY / nRectY of 70 and the same
  * SetBytes0to2(B4,B4,B4) and SetBytes6to11(F0,F0,F0,14,14,14). Only the name column gets
- * SetBytes3to5(32,32,FA), bFlag7073 = 1 and bUnk7088 = 0x96 (0x718C0..0x718F4); only the three
+ * SetBytes3to5(32,32,FA), bSelLineHighlight = 1 and bColorKey = 0x96 (0x718C0..0x718F4); only the three
  * narrow columns get nUnk7076 = 1 (0x719CC, 0x71AA0, 0x71B68). The name column is also the only one
  * with a click handler (0x7183C, PsiScreen_SelectListed).
  *
@@ -6044,7 +6046,7 @@ void Ui_InitBaseInfo(UiBaseInfoInitEnv *pEnv);
 #define PUFO_PSI_PAD_MODE           19    /* the palette slot PadImage_Load takes */
 #define PUFO_PSI_PANEL_STYLE        14    /* nStyle: 14 visible rows */
 #define PUFO_PSI_PANEL_FONT         16
-#define PUFO_PSI_ROW_Y              70    /* nPosY and nUnk7056 on all four columns */
+#define PUFO_PSI_ROW_Y              70    /* nPosY and nRectY on all four columns */
 #define PUFO_PSI_NAME_X             10
 #define PUFO_PSI_STAT_X            154
 #define PUFO_PSI_DELTA_X           184
@@ -6196,7 +6198,7 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
  * and builds three 42-line panels.
  *
  * The three panels, all 42 lines, all nStyle 16, nFont 16, nPosY 40, click top 70, no click handler,
- * bytes 0..2 = (B4,B4,B4), bytes 6..11 = (F0,F0,F0,14,14,14), bFlag7072 and bFlag7073 cleared:
+ * bytes 0..2 = (B4,B4,B4), bytes 6..11 = (F0,F0,F0,14,14,14), bRowRules and bSelLineHighlight cleared:
  *   - 0x158824, the NAME column: x 10, click left 5, nViewW 200, nUnk7076 left at the ctor's 0.
  *   - 0x158820, the FREE column: x 130, click left 210, nViewW 10, nUnk7076 1.
  *   - 0x158838, the TOTAL column: x 190, click left 210, nViewW 10, nUnk7076 1.
@@ -6258,11 +6260,11 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
 #define PUFO_BASEINFO_PANEL_STYLE   16   /* and shows 16 of them */
 #define PUFO_BASEINFO_PANEL_FONT    16
 #define PUFO_BASEINFO_PANEL_Y       40
-#define PUFO_BASEINFO_CLICK_TOP     70   /* nUnk7056, the same for all three */
+#define PUFO_BASEINFO_CLICK_TOP     70   /* nRectY, the same for all three */
 #define PUFO_BASEINFO_NAME_X        10
 #define PUFO_BASEINFO_FREE_X        130
 #define PUFO_BASEINFO_TOTAL_X       190
-#define PUFO_BASEINFO_NAME_CLICKL   5    /* nUnk7052 of the name column */
+#define PUFO_BASEINFO_NAME_CLICKL   5    /* nRectX of the name column */
 #define PUFO_BASEINFO_NARROW_CLICKL 210  /* and of the two narrow ones */
 #define PUFO_BASEINFO_NAME_VIEWW    200
 #define PUFO_BASEINFO_NARROW_VIEWW  10
@@ -6461,8 +6463,8 @@ void BaseInfoScreen_Draw(const BaseInfoDrawEnv *pEnv);
 #define PUFO_BASEAT_PANEL_FONT        16
 #define PUFO_BASEAT_PANEL_X           10
 #define PUFO_BASEAT_PANEL_Y           10
-#define PUFO_BASEAT_PANEL_CLICKL      5    /* nUnk7052 */
-#define PUFO_BASEAT_PANEL_CLICKTOP    70   /* nUnk7056 */
+#define PUFO_BASEAT_PANEL_CLICKL      5    /* nRectX */
+#define PUFO_BASEAT_PANEL_CLICKTOP    70   /* nRectY */
 #define PUFO_BASEAT_PANEL_VIEWW       230
 #define PUFO_BASEAT_AUX_DEFENCE       20   /* both rows of a defence pair */
 #define PUFO_BASEAT_AUX_GRAVITY_A     0    /* the gravity pair's first row */

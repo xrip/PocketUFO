@@ -11841,10 +11841,10 @@ static PadImage                g_arFramePad;
 #define AR_ARM_Y      69
 #define AR_ARM_INK  0x3A00  /* g_aPalette[PN_TEST_PAL_SLOT][20], clear of every other fixture glyph */
 
-/* The row UiPanel_TrackHoldRow stores at panel+0xC (its own write is gap_0 + 12). */
+/* The row UiPanel_TrackHoldRow stores at panel+0xC (its own write is nHoverRow). */
 static i32 *ArPanelRowSlot(UiPanel *pPanel)
 {
-    return (i32 *)(void *)(pPanel->gap_0 + 12);
+    return &pPanel->nHoverRow;
 }
 
 static void ArReset(void)
@@ -11906,7 +11906,7 @@ static void TestGeoscapeScreenArms(void)
     g_arArm.pfnCtlBlit   = PnBlit;
     g_arArm.pfnCtlBlitEx = PnBlitEx;
 
-    /* The tail's two lists: nFont 10 so the row is (nY - nPosY) / 10, and bFlag7073 clear so the
+    /* The tail's two lists: nFont 10 so the row is (nY - nPosY) / 10, and bSelLineHighlight clear so the
      * callee stores the row and returns -- no hover repeat, no click. */
     memset(&g_arPanelB, 0, sizeof(g_arPanelB));
     memset(&g_arPanelC, 0, sizeof(g_arPanelC));

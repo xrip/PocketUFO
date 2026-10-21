@@ -817,10 +817,10 @@ static void PlaneListStyle(UiPanel *pPanel)
     pPanel->nStyle = 14;   /* 0x7A554 / 0x7A62C: fourteen visible rows */
     pPanel->nFont = 16;
     pPanel->nPosY = 70;
-    pPanel->nUnk7052 = 5;
-    pPanel->nUnk7056 = 70;
+    pPanel->nRectX = 5;
+    pPanel->nRectY = 70;
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
-    pPanel->bUnk7088 = 0x96;
+    pPanel->bColorKey = 0x96;
     UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
     UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);
 }
@@ -880,7 +880,7 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
         PlaneListStyle(pOut->pCrewStatusPanel);
         pOut->pCrewStatusPanel->nPosX = 190;
         pOut->pCrewStatusPanel->nViewW = 30;
-        pOut->pCrewStatusPanel->bFlag7073 = 0; /* 0x7A664: UiPanel_ctor had set it to 1 */
+        pOut->pCrewStatusPanel->bSelLineHighlight = 0; /* 0x7A664: UiPanel_ctor had set it to 1 */
         pOut->pCrewStatusPanel->nUnk7076 = 1;  /* 0x7A670 */
     }
 
@@ -956,11 +956,11 @@ static void PlaneCraftPanelStyle(UiPanel *pPanel)
     pPanel->nStyle = 8;    /* 0x7CD44 / 0x7CE68: eight visible rows */
     pPanel->nFont = 16;
     pPanel->nPosY = 110;
-    pPanel->nUnk7052 = 5;
-    pPanel->nUnk7056 = 110;
+    pPanel->nRectX = 5;
+    pPanel->nRectY = 110;
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
-    pPanel->bFlag7073 = 1;
-    pPanel->bUnk7088 = 0x96;
+    pPanel->bSelLineHighlight = 1;
+    pPanel->bColorKey = 0x96;
 }
 
 static void PlaneFreePad(PadImage **ppPad)
@@ -1356,35 +1356,35 @@ static u16 PlaneStoreCraftQty(const PlaneStoreBuildEnv *pEnv, const ObjectRecFul
     return pObj->aItemQty[pEnv->nCraftIdx];
 }
 
-/* The five store panels share nStyle 14, nFont 16, nPosY 70, nUnk7056 70 and both colour triples, and
+/* The five store panels share nStyle 14, nFont 16, nPosY 70, nRectY 70 and both colour triples, and
  * differ only as the header table records. nRightAlign marks the two count columns (avail, taken), which
- * clear bFlag7073, set bFlag7074 and get nUnk7076 2; nRowExtras marks the two 15-wide quantity columns,
- * which add gap_0[3..5] 32,32,FA and the nUnk7084 5 auto-repeat. */
-static void PlaneStorePanelStyle(UiPanel *pPanel, i32 nPosX, i32 nUnk7052, i32 nViewW,
+ * clear bSelLineHighlight, set bAuxNumbers and get nUnk7076 2; nRowExtras marks the two 15-wide quantity columns,
+ * which add aStyleRgb[3..5] 32,32,FA and the nRepeatDelay 5 auto-repeat. */
+static void PlaneStorePanelStyle(UiPanel *pPanel, i32 nPosX, i32 nRectX, i32 nViewW,
                                  bool bRowExtras, bool bRightAlign)
 {
     pPanel->nStyle = 14;
     pPanel->nFont = 16;
     pPanel->nPosY = 70;
-    pPanel->nUnk7052 = nUnk7052;
-    pPanel->nUnk7056 = 70;
+    pPanel->nRectX = nRectX;
+    pPanel->nRectY = 70;
     pPanel->nPosX = nPosX;
     pPanel->nViewW = nViewW;
     UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
     UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
 
     if (bRightAlign) {
-        pPanel->bFlag7073 = 0;
-        pPanel->bFlag7074 = 1;
+        pPanel->bSelLineHighlight = 0;
+        pPanel->bAuxNumbers = 1;
         pPanel->nUnk7076 = 2;
         return;
     }
-    pPanel->bFlag7073 = 1;
-    pPanel->bUnk7088 = 0x96;
+    pPanel->bSelLineHighlight = 1;
+    pPanel->bColorKey = 0x96;
 
     if (bRowExtras) {
         UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);
-        pPanel->nUnk7084 = 5;
+        pPanel->nRepeatDelay = 5;
     }
 }
 
@@ -1537,7 +1537,7 @@ void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuild
         UiPanel_SetLineAux(pOut->pSlotPanel, nRow, i);                              /* 0x7B8A0 */
         (void)UiPanel_SetLineText(pOut->pSelRowPanel, nRow, PUFO_PLANE_ROW_DEC);    /* 0x7B8C0..0x7B8E8 */
         (void)UiPanel_SetLineText(pOut->pCommitPanel, nRow, PUFO_PLANE_ROW_INC);    /* 0x7B8F8..0x7B920 */
-        UiPanel_SetLineAux(pOut->pAvailPanel, nRow, anBaseQty[i - 1]);  /* 0x7B918: gap_0[row*4+5044] */
+        UiPanel_SetLineAux(pOut->pAvailPanel, nRow, anBaseQty[i - 1]);  /* 0x7B918: anLineAux[row] @ 0x13B4 */
         UiPanel_SetLineAux(pOut->pTakenPanel, nRow, anCarryQty[i - 1]); /* 0x7B924 */
         ++nRow;
     }
@@ -1871,10 +1871,10 @@ i32 BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *pEnv)
         const u8 bRowFlag = (nFail == 1u) ? 0u : 1u; /* 0x7BDA4 clears, 0x7BDB8 sets */
 
         if (pEnv->pSelRowPanel != NULL) {
-            pEnv->pSelRowPanel->bFlag7073 = bRowFlag;
+            pEnv->pSelRowPanel->bSelLineHighlight = bRowFlag;
         }
         if (pEnv->pCommitPanel != NULL) {
-            pEnv->pCommitPanel->bFlag7073 = bRowFlag;
+            pEnv->pCommitPanel->bSelLineHighlight = bRowFlag;
         }
 
         (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 20, 20, 20); /* 0x7BDD0 */
@@ -1884,10 +1884,10 @@ i32 BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *pEnv)
         if (pEnv->pbPanelFlagScratch != NULL) {
             const u8 bFlag = *pEnv->pbPanelFlagScratch;
             if (pEnv->pSelRowPanel != NULL) {
-                pEnv->pSelRowPanel->bUnk7080 = bFlag; /* 0x7BE58 */
+                pEnv->pSelRowPanel->bRepeatArmed = bFlag; /* 0x7BE58 */
             }
             if (pEnv->pCommitPanel != NULL) {
-                pEnv->pCommitPanel->bUnk7080 = bFlag; /* 0x7BE68 */
+                pEnv->pCommitPanel->bRepeatArmed = bFlag; /* 0x7BE68 */
             }
             *pEnv->pbPanelFlagScratch = 0; /* 0x7BE70: the flag is consumed here */
         }

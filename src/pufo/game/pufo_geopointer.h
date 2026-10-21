@@ -72,7 +72,7 @@
  *      and psi panels. The press arm's pPlaneCraftStatusPanel and pPlaneSlotPanel clicks have no
  *      release counterpart at all.
  *   5. One tail is shared by two arms (0x89B64..0x89B90): click the row under the cursor, then set
- *      the panel's bFlag7073. The world arm's multi-select gate reaches it with the status panel
+ *      the panel's bSelLineHighlight. The world arm's multi-select gate reaches it with the status panel
  *      (0x18641C) and the options confirm tail jumps to it with pOptPanelShips (0x8AF1C).
  *
  * ## Deviations from the original

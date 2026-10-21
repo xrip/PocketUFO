@@ -371,16 +371,16 @@ static i32 PointerBuildDialog(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY)
     const i32 nCurY = *pEnv->pnCursorY;
 
     if (*pEnv->pbFacPlaceArmed == 0) {
-        pEnv->pFacPanel->bFlag7073 = 1;                                      /* 0x87F60 */
+        pEnv->pFacPanel->bSelLineHighlight = 1;                                      /* 0x87F60 */
         Ptr_HitRange(pEnv->apFacCtl, 0, 1, nX, nY, pEnv->pHit);              /* 0x87F88 */
     }
 
     /* 0x87FE4 / 0x88024: the two hot corners of the dialog hide the placement overlay. */
     if (nCurY > 229 && nCurX > 220 && nCurY < 250) {
-        pEnv->pFacPanel->bFlag7073 = 0;
+        pEnv->pFacPanel->bSelLineHighlight = 0;
     }
     if (nY > 251 && nX > 0 && nY < 300 && nX < 40) {
-        pEnv->pFacPanel->bFlag7073 = 0;
+        pEnv->pFacPanel->bSelLineHighlight = 0;
     }
 
     if (*pEnv->pbFacPlaceArmed == 0) {
@@ -672,7 +672,7 @@ static void PtrUp_Sample(const GeoscapePointerEnv *pEnv)
 }
 
 /* The shared panel tail at 0x89B64..0x89B90: click the row under the stored cursor, then raise
- * the panel's bFlag7073 (the ARM builds 0x1BA1 out of `MOV R3, #0x1B80 / ORR R3, R3, #0x21`).
+ * the panel's bSelLineHighlight (the ARM builds 0x1BA1 out of `MOV R3, #0x1B80 / ORR R3, R3, #0x21`).
  * Two sites jump into it: the world arm's multi-select gate on the status panel (0x18641C) and
  * the options confirm tail (0x8AF1C loads 0x159E18 and branches to 0x89B64). */
 static void PtrUp_ClickPanelRow(const GeoscapePointerEnv *pEnv, UiPanel *pPanel)
@@ -681,7 +681,7 @@ static void PtrUp_ClickPanelRow(const GeoscapePointerEnv *pEnv, UiPanel *pPanel)
         return;
     }
     (void)UiPanel_ClickRow(pPanel, *pEnv->pnCursorX, *pEnv->pnCursorY);
-    pPanel->bFlag7073 = 1;
+    pPanel->bSelLineHighlight = 1;
 }
 
 /* ------------------------------------------------- screens 0 and 2: LABEL_25 @ 0x896B4
@@ -853,7 +853,7 @@ static i32 PointerUpBuildDialog(const GeoscapePointerEnv *pEnv)
 {
     *pEnv->pbPopupA = 0;                                                          /* 0x89E14 */
     if (*pEnv->pbFacPlaceArmed == 0) {                                            /* 0x89E30 */
-        pEnv->pFacPanel->bFlag7073 = 1;
+        pEnv->pFacPanel->bSelLineHighlight = 1;
     }
     if (*pEnv->pbFacPlaceArmed == 0) {                                            /* 0x89E40 */
         PtrUp_HitRange(pEnv, pEnv->apFacCtl, 0, 1);
@@ -867,10 +867,10 @@ static i32 PointerUpBuildDialog(const GeoscapePointerEnv *pEnv)
     /* 0x89EC8 / 0x89EEC: the two hot corners of the dialog hide the placement overlay. Both use
      * the stored cursor here - the press arm used its arguments for the second corner. */
     if (nCurY > 229 && nCurX > 220 && nCurY < 250) {
-        pEnv->pFacPanel->bFlag7073 = 0;
+        pEnv->pFacPanel->bSelLineHighlight = 0;
     }
     if (nCurY > 251 && nCurX > 0 && nCurY < 300 && nCurX < 40) {
-        pEnv->pFacPanel->bFlag7073 = 0;
+        pEnv->pFacPanel->bSelLineHighlight = 0;
     }
     if (*pEnv->pbFacPlaceArmed == 0) {                                            /* 0x89F10 */
         (void)UiPanel_ClickRow(pEnv->pFacPanel, nCurX, nCurY);

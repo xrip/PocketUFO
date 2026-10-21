@@ -56,8 +56,8 @@
  *      apObjects[1].uFirePower = 110 (`STRH R3,[R0,#0xB6]`);
  *      unk_159DC4 = 10; GameTime_Set5Sec; StartTimers_D.
  *  11. Builds the status line panel (unk_18641C): UiPanel_ctor(20), nStyle 13, nFont 16,
- *      the three SetBytes groups, nUnk7076 1, bFlag7073 1, pfnClick Geoscape_OnRadarListClick
- *      (hooked), bUnk7088 100.
+ *      the three SetBytes groups, nUnk7076 1, bSelLineHighlight 1, pfnClick Geoscape_OnRadarListClick
+ *      (hooked), bColorKey 100.
  *  12. Reads the 56 mission-site records: 24 bytes from "<i>.cts" into unk_1865C0, then the
  *      name from text record 1655+i into +4. With lang.dat present only 1650 text records
  *      are loaded (Assets_LoadStartup @ 0x384e0 takes the lang copy), so those 56 records

@@ -1243,9 +1243,9 @@ static void TestOptionsOpen(void)
     CheckI(g_pPanelCargo->nPosX, 233, "cargo at 233 (0x6D5A8)");
     CheckI(g_pPanelName->nViewW, 230, "the names and cargo panels are 230 wide (0x6D340)");
     CheckI(g_pPanelStores->nViewW, 30, "  the stores and region panels are 30 (0x6D438)");
-    CheckI(g_pPanelName->bFlag7073, 1, "the names panel keeps bFlag7073 (0x6D388)");
-    CheckI(g_pPanelName->bUnk7088, 100, "  and bUnk7088 100 (0x6D3B0)");
-    CheckI(g_pPanelCargo->bUnk7088, 150, "the cargo panel's bUnk7088 is 150, written as -106 (0x6D630)");
+    CheckI(g_pPanelName->bSelLineHighlight, 1, "the names panel keeps bSelLineHighlight (0x6D388)");
+    CheckI(g_pPanelName->bColorKey, 100, "  and bColorKey 100 (0x6D3B0)");
+    CheckI(g_pPanelCargo->bColorKey, 150, "the cargo panel's bColorKey is 150, written as -106 (0x6D630)");
     CheckI(g_pPanelStores->nUnk7076, 1, "the two narrow panels carry nUnk7076 1 (0x6D484)");
     CheckI(g_pPanelCargo->nUnk7076, 2, "  and the cargo panel carries 2 (0x6D61C)");
     Check(g_apPairCtl[0] != NULL && g_apPairCtl[1] != NULL,

@@ -1765,7 +1765,7 @@ int main(void)
     Check(g_world.ptrEnv.pFacPanel == g_world.pFacPanel,
           "the press seam re-reads the panel pointer before dispatch, so the dispatcher's copy follows at the dereference, as the original's live read does (0x87620 -> 0x87F60)");
     CheckEqI32(g_world.bRoot34, 1, "a press on the build screen sets bBaseFacPreviewActive @ 0x18652C (0x87F44)");
-    Check(g_world.pFacPanel->bFlag7073 == 1, "and re-arms the panel while the placement is unarmed (0x87F60)");
+    Check(g_world.pFacPanel->bSelLineHighlight == 1, "and re-arms the panel while the placement is unarmed (0x87F60)");
     (void)DrawFrame();
     CheckEqI32(g_world.nFunds, nFunds1, "the row press spends nothing");
     World_GeoscapePointerUp(&g_world);
@@ -2271,8 +2271,8 @@ int main(void)
             CheckEqI32(pTopic->nStyle, PUFO_RESEARCH_PANEL_STYLE, "all three are nStyle 15 (0x73464)");
             CheckEqI32(pTopic->nFont, PUFO_RESEARCH_PANEL_FONT, "over nFont 16, which is also the row pitch (0x73478)");
             CheckEqI32(pTopic->nPosY, PUFO_RESEARCH_PANEL_POSY, "at y 70 (0x734B4)");
-            Check(pTopic->nPosX == 10 && pTopic->nViewW == 230 && pTopic->nUnk7052 == 5
-                      && pTopic->bFlag7073 == 1 && pTopic->pfnClick != NULL,
+            Check(pTopic->nPosX == 10 && pTopic->nViewW == 230 && pTopic->nRectX == 5
+                      && pTopic->bSelLineHighlight == 1 && pTopic->pfnClick != NULL,
                   "panel A is the name column: x 10, 230 wide, hit from x 5, its click handler installed (0x7348C..0x7352C)");
             CheckEqI32(pTopic->nLineCount, 0,
                        "and it carries zero rows, because the walk counts bActive topics starting at 1 (0x73034)");
@@ -6726,7 +6726,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
          * SmapHit_FindBaseBySiteId -> apSiteRecs[nBase].abName (0x82F1C), and the dispatch takes the
          * type-0 inactive arm 0x83448: row cursor cleared (0x83450), GameTime_Pause (0x83458),
          * *pnScreenId = 18 (0x83464), OptionsScreen_OpenWithSound(0, nSiteId, pOptionsHooks) (0x83480)
-         * and pOptPanelShips->bFlag7073 = 0 (0x83494), which the shell reads out of its own panel cell
+         * and pOptPanelShips->bSelLineHighlight = 0 (0x83494), which the shell reads out of its own panel cell
          * (OptionsOwners.apPanel[0]) now that Part 95 owns the screen. The arm writes no message line and
          * no flag byte.
          * Before Part 94 this arm was unreachable through the shell: the broken pairing left the entry at
@@ -6863,8 +6863,8 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                            "the same count in the other three columns");
                 Check(pName != NULL && pName->pfnClick != NULL,
                       "0x6D2E8 installs OptionsScreen_OnConfirm as the names panel's click handler");
-                CheckEqI32(pName != NULL ? pName->bFlag7073 : -1, 0,
-                           "and the arm's own 0x83494 clears that panel's bFlag7073 right after Open, so no "
+                CheckEqI32(pName != NULL ? pName->bSelLineHighlight : -1, 0,
+                           "and the arm's own 0x83494 clears that panel's bSelLineHighlight right after Open, so no "
                            "row is selected yet");
 
                 printf("  the overlay: base %d, %d craft homed; ctlA %d,%d %ux%u state %d; pair %d,%d / %d,%d; "
@@ -6945,9 +6945,9 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                  * pair slots out of their cells (0x8AEEC) and jumps into the shared panel tail with the
                  * names panel (0x8AF1C -> 0x89B64). */
                 (void)World_GeoscapePointerUp(&g_world);
-                printf("  after that release: open %d, ctlA state %d, names bFlag7073 %d, panel rows %d\n",
+                printf("  after that release: open %d, ctlA state %d, names bSelLineHighlight %d, panel rows %d\n",
                        g_world.bOptionsScreenOpen, pCtlA != NULL ? (i32)pCtlA->nState : -1,
-                       pName != NULL ? (i32)pName->bFlag7073 : -1,
+                       pName != NULL ? (i32)pName->bSelLineHighlight : -1,
                        pName != NULL ? pName->nLineCount : -1);
                 CheckEqI32(g_world.msgLines.nLineCount, nLines0, "and it posts no line either");
 
@@ -6955,7 +6955,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                  * scratch[4] 0 skips the page walk (0x89110), and the confirm gate at 0x89334 / 0x89344
                  * lets the tail run: ctlA (0x8932C), the two pair slots re-read out of their cells
                  * (0x89370), then the names panel's press-and-hold tracking (0x893B4). The point is inside
-                 * the panel's rect (nUnk7052 5, nUnk7056 70, nViewW 230) and outside ctlA's box
+                 * the panel's rect (nRectX 5, nRectY 70, nViewW 230) and outside ctlA's box
                  * (86..153, 179..197) and outside both pair boxes, so nothing is pressed. */
                 World_GeoscapePointer(&g_world, 100, 90, true);
                 CheckEqI32(pCtlA != NULL ? (i32)pCtlA->nState : -1, 0,
@@ -6963,10 +6963,10 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                            "does not run (UiControl_HitTest measures the box only on a press, 0x1A42C)");
                 Check(g_world.options.apPairCtl[0] != NULL && g_world.options.apPairCtl[1] != NULL,
                       "0x89370's re-read still finds the pair: nothing closed in between");
-                CheckEqI32(pName != NULL ? (i32)pName->bUnk3024 : -1, 1,
+                CheckEqI32(pName != NULL ? (i32)pName->bHoverActive : -1, 1,
                            "the panel's hold tracking marks the hovered row (0x3ED44 sets the byte inside the rect)");
                 CheckEqI32(pName != NULL ? pName->nUnk3032 : -1, 0,
-                           "but no row is selected yet: the click needs the hold count to reach nUnk7084");
+                           "but no row is selected yet: the click needs the hold count to reach nRepeatDelay");
                 CheckEqI32(g_world.bOptionsScreenOpen, 1, "the overlay is still up");
 
                 (void)World_GeoscapePointerUp(&g_world);
@@ -7415,10 +7415,10 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
      *      target is slot 1 -- the slot 0 the panel paints with (0x90A30) is its ROW, not the target.
      *
      * B. The multi-select box, i.e. what the >1 branch (0x832B0's else side) leaves and how it is answered.
-     *   0x832C0..0x83378 turns the status panel into a centred box (nPosX 120, nUnk7052 20, nViewW 200,
-     *   nUnk7056 = nPosY = 120 - (count / 2) * nFont), pauses the clock (0x83360), raises byte_18709C[4]
+     *   0x832C0..0x83378 turns the status panel into a centred box (nPosX 120, nRectX 20, nViewW 200,
+     *   nRectY = nPosY = 120 - (count / 2) * nFont), pauses the clock (0x83360), raises byte_18709C[4]
      *   (0x8336C), plays sample 7 (0x83378) -- and DROPS the panel's row-selection byte 0x1BA1
-     *   (bFlag7073, 0x83358, STRB of the always-zero R9). The message list is left exactly as it was.
+     *   (bSelLineHighlight, 0x83358, STRB of the always-zero R9). The message list is left exactly as it was.
      *   The press arm for that byte (0x87ABC) hands the pointer to UiScrollList_TrackHold at loc_88298, which
      *   returns at once while 0x1BA1 is 0; the release arm (0x89B54) runs UiScrollList_ClickRow -- gated on
      *   0x1BA1 too, so it selects nothing -- and then stores 1 back into it (0x89B8C). So the release that
@@ -7558,12 +7558,12 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
 
         Check(nLineCount >= 2 && nRowPick < nLineCount,
               "the panel carries a row per selectable item in the cell, the picked one carrying the new index (0x83230)");
-        Check(g_world.ui.pStatusPanel->nPosX == 120 && g_world.ui.pStatusPanel->nUnk7052 == 20
+        Check(g_world.ui.pStatusPanel->nPosX == 120 && g_world.ui.pStatusPanel->nRectX == 20
                   && g_world.ui.pStatusPanel->nViewW == 200,
               "the >1 branch lays the panel out as a box: nPosX 120 (0x832C0), left 20 (0x83308), width 200 (0x83348)");
-        Check(g_world.ui.pStatusPanel->nUnk7056 == nBoxTop && g_world.ui.pStatusPanel->nPosY == nBoxTop,
-              "with nUnk7056 and nPosY both 120 - (count / 2) * nFont (0x832F4, 0x83334)");
-        CheckEqI32(g_world.ui.pStatusPanel->bFlag7073, 0,
+        Check(g_world.ui.pStatusPanel->nRectY == nBoxTop && g_world.ui.pStatusPanel->nPosY == nBoxTop,
+              "with nRectY and nPosY both 120 - (count / 2) * nFont (0x832F4, 0x83334)");
+        CheckEqI32(g_world.ui.pStatusPanel->bSelLineHighlight, 0,
                    "and it DROPS the panel's row-selection byte 0x1BA1 (0x83358, an STRB of the always-zero R9), "
                    "which is why neither of the two panel arms can select a row on this press");
         CheckEqI32(g_world.bFlag1870A0, 1, "byte_18709C[4] up (0x8336C), the gate the press arm 0x87ABC reads");
@@ -7581,7 +7581,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         CheckEqI32(g_world.msgLines.nLineCount, 0,
                    "the box-building release selects nothing either: UiScrollList_ClickRow is gated on 0x1BA1 too "
                    "(0x3EF44), so no row click runs");
-        CheckEqI32(g_world.ui.pStatusPanel->bFlag7073, 1,
+        CheckEqI32(g_world.ui.pStatusPanel->bSelLineHighlight, 1,
                    "and it then stores 1 back into the byte (0x89B8C) -- the panel is clickable from here on");
 
         /* 5. The row click, now that the release re-armed the panel: the press hover-tracks and the release

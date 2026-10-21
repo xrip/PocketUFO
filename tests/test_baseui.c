@@ -3003,7 +3003,8 @@ static u8 g_aXfGrid[PUFO_GRID_SIZE];
 static u8 g_aXfText[1721 * PUFO_TEXT_REC_STRIDE];
 static u8 g_bXfBuilt, g_bXfOverlay, g_bXfPreview, g_bXfStarted, g_bXfBaseCount, g_bXfSelected, g_bXfTap;
 static i8 g_bXfTransferBase, g_nXfProgress;
-static i32 g_nXfSiteCount, g_nXfCursorX, g_nXfCursorY, g_nXfMapPhase, g_nXfResidue, g_nXfRowCursor;
+static i32 g_nXfSiteCount, g_nXfCursorX, g_nXfCursorY, g_nXfResidue, g_nXfRowCursor;
+static u8 g_nXfMapPhase; /* TransferDrawEnv.pnMapPhase is a byte view: 0x98A0C reads nMapPhase LDRB */
 static u32 g_dwXfShortfall;
 static i32 g_nXfStripCalls, g_nXfStripArg;
 
@@ -3189,14 +3190,14 @@ static void TestTransferDraw(void)
     Check(pPix[151 * 240 + 130] == 0, "the band is 16 * 5 + 2 tall and no taller");
     Check(pPix[69 * 240 + 131] == 0, "and one pixel wide");
     Check(pPix[0] == 0, "no panel row is drawn while the built byte is clear");
-    CheckEqI32(g_xfB.bUnk7080, 0, "and the panels are not flagged either");
+    CheckEqI32(g_xfB.bRepeatArmed, 0, "and the panels are not flagged either");
 
     /* Built: the panel flags and the closed-state label path. */
     g_bXfBuilt = 1;
     memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
     CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "the built screen with the overlay closed returns 0");
-    CheckEqI32(g_xfB.bUnk7080, 1, "panel B gets bUnk7080 (0x98248)");
-    CheckEqI32(g_xfC.bUnk7080, 1, "and so does panel C (0x98258)");
+    CheckEqI32(g_xfB.bRepeatArmed, 1, "panel B gets bRepeatArmed (0x98248)");
+    CheckEqI32(g_xfC.bRepeatArmed, 1, "and so does panel C (0x98258)");
     Check(pPix[0 * 240 + 208] == 0, "the destination overlay is not drawn (0x986CC)");
     CheckEqI32(g_nXfStripCalls, 0, "the icon-strip hook does not run");
     CheckEqI32(g_bXfTransferBase, 7, "and the destination byte is left alone");
@@ -5415,17 +5416,17 @@ static void TestBaseFacToggle(void)
     CheckEqI32(p->nFont, 16, "nFont 16");
     CheckEqI32(p->nPosX, 120, "nPosX 120");
     CheckEqI32(p->nPosY, 234, "nPosY 234");
-    CheckEqI32(p->nUnk7052, 5, "nUnk7052 5");
-    CheckEqI32(p->nUnk7056, 234, "nUnk7056 234");
+    CheckEqI32(p->nRectX, 5, "nRectX 5");
+    CheckEqI32(p->nRectY, 234, "nRectY 234");
     CheckEqI32(p->nViewW, 230, "nViewW 230");
     CheckEqI32(p->nUnk7076, 1, "nUnk7076 1");
-    CheckEqI32(p->bUnk7088, 0x96, "bUnk7088 is the byte -106");
-    CheckEqI32(p->bFlag7072, 0, "bFlag7072 cleared");
-    CheckEqI32(p->bFlag7073, 1, "bFlag7073 set");
-    CheckEqI32(p->gap_0[0], 0xB4, "gap_0[0] B4");
-    CheckEqI32(p->gap_0[3], 0x46, "gap_0[3] 46");
-    CheckEqI32(p->gap_0[6], 0x44, "gap_0[6] 44");
-    CheckEqI32(p->gap_0[11], 0x4B, "gap_0[11] 4B");
+    CheckEqI32(p->bColorKey, 0x96, "bColorKey is the byte -106");
+    CheckEqI32(p->bRowRules, 0, "bRowRules cleared");
+    CheckEqI32(p->bSelLineHighlight, 1, "bSelLineHighlight set");
+    CheckEqI32(p->aStyleRgb[0], 0xB4, "aStyleRgb[0] B4");
+    CheckEqI32(p->aStyleRgb[3], 0x46, "aStyleRgb[3] 46");
+    CheckEqI32(p->aStyleRgb[6], 0x44, "aStyleRgb[6] 44");
+    CheckEqI32(p->aStyleRgb[11], 0x4B, "aStyleRgb[11] 4B");
     Check(p->pfnClick == NopClick, "the +3020 handler is the buy thunk");
 
     /* Rows: the flagged records 1..16, each carrying its record number as the aux. */
@@ -5602,21 +5603,21 @@ static void TestSoldierScreenToggle(void)
     CheckEqI32(pA->nPosX, 55, "panel A at x 55");
     CheckEqI32(pA->nViewW, 167, "167 wide");
     Check(pA->pfnClick == NopClick, "panel A's click is the equip thunk");
-    CheckEqI32(pA->bUnk7088, 0xFF, "panel A's bUnk7088 is the byte -1");
-    CheckEqI32(pA->gap_0[3], 0x32, "panel A's gap_0[3] 32");
-    CheckEqI32(pA->gap_0[5], 0xBD, "and gap_0[5] BD");
-    CheckEqI32(pA->gap_0[6], 0xC8, "gap_0[6] C8");
+    CheckEqI32(pA->bColorKey, 0xFF, "panel A's bColorKey is the byte -1");
+    CheckEqI32(pA->aStyleRgb[3], 0x32, "panel A's aStyleRgb[3] 32");
+    CheckEqI32(pA->aStyleRgb[5], 0xBD, "and aStyleRgb[5] BD");
+    CheckEqI32(pA->aStyleRgb[6], 0xC8, "aStyleRgb[6] C8");
     CheckEqI32(pB->nPosX, 190, "panel B at x 190");
     Check(pB->pfnClick == NULL, "panel B has no click handler");
-    CheckEqI32(pB->gap_0[5], 0xFA, "panel B's gap_0[5] FA");
+    CheckEqI32(pB->aStyleRgb[5], 0xFA, "panel B's aStyleRgb[5] FA");
     CheckEqI32(pC->nLineCount, 3, "panels C and D hold one line per soldier on the base");
     CheckEqI32(pC->nStyle, 13, "nStyle 13");
     CheckEqI32(pC->nViewW, 234, "panel C is 234 wide");
     Check(pC->pfnClick == NopClick, "panel C's click is the select thunk");
-    CheckEqI32(pC->bUnk7088, 0x96, "panel C's bUnk7088 is the byte -106");
+    CheckEqI32(pC->bColorKey, 0x96, "panel C's bColorKey is the byte -106");
     CheckEqI32(pD->nViewW, 40, "panel D is 40 wide");
     CheckEqI32(pD->nUnk7076, 2, "panel D's nUnk7076 is 2");
-    CheckEqI32(pD->bFlag7073, 0, "panel D's bFlag7073 is clear");
+    CheckEqI32(pD->bSelLineHighlight, 0, "panel D's bSelLineHighlight is clear");
     Check(pD->pfnClick == NULL, "panel D has no click handler");
 
     Check(strcmp(UiPanel_GetLineText(pC, 0), "Sol0") == 0, "row 0 is soldier 0");
@@ -10290,23 +10291,23 @@ static void TestManufBuildPanels(void)
     CheckEqI32(pB->nViewW, 30, "B and C are 30 wide");
     CheckEqI32(pC->nViewW, 30, "C too");
     CheckEqI32(pA->nPosY, 70, "all four at y 70");
-    CheckEqI32(pC->nUnk7056, 70, "with +7056 70");
-    CheckEqI32(pA->nUnk7052, 5, "A's +7052 is 5");
-    CheckEqI32(pB->nUnk7052, 155, "B's is 155");
-    CheckEqI32(pC->nUnk7052, 185, "C's is 185");
-    CheckEqI32(pD->nUnk7052, 5, "D's is 5");
+    CheckEqI32(pC->nRectY, 70, "with +7056 70");
+    CheckEqI32(pA->nRectX, 5, "A's +7052 is 5");
+    CheckEqI32(pB->nRectX, 155, "B's is 155");
+    CheckEqI32(pC->nRectX, 185, "C's is 185");
+    CheckEqI32(pD->nRectX, 5, "D's is 5");
     CheckEqI32(pA->nUnk7076, 0, "only B, C and D get nUnk7076 2");
     CheckEqI32(pB->nUnk7076, 2, "B has it");
     CheckEqI32(pD->nUnk7076, 2, "and D");
-    CheckEqI32(pA->bFlag7073, 1, "flag 7073 is 1 everywhere -- the constructor sets it and only A and "
+    CheckEqI32(pA->bSelLineHighlight, 1, "flag 7073 is 1 everywhere -- the constructor sets it and only A and "
                                  "D write it again");
-    CheckEqI32(pB->bFlag7073, 1, "B keeps the constructor's 1");
-    CheckEqI32(pA->bUnk7088, 0x96, "A and D set +7088 to 0x96");
-    CheckEqI32(pD->bUnk7088, 0x96, "D too");
-    CheckEqI32(pB->bUnk7088, 0xFF, "B and C keep the constructor's 0xFF");
-    CheckEqI32(pA->gap_0[3], 0x32, "only A gets style bytes 3..5");
-    CheckEqI32(pA->gap_0[5], 0xFA, "0x32, 0x32, 0xFA");
-    CheckEqI32(pB->gap_0[5], 0, "B leaves them at zero");
+    CheckEqI32(pB->bSelLineHighlight, 1, "B keeps the constructor's 1");
+    CheckEqI32(pA->bColorKey, 0x96, "A and D set +7088 to 0x96");
+    CheckEqI32(pD->bColorKey, 0x96, "D too");
+    CheckEqI32(pB->bColorKey, 0xFF, "B and C keep the constructor's 0xFF");
+    CheckEqI32(pA->aStyleRgb[3], 0x32, "only A gets style bytes 3..5");
+    CheckEqI32(pA->aStyleRgb[5], 0xFA, "0x32, 0x32, 0xFA");
+    CheckEqI32(pB->aStyleRgb[5], 0, "B leaves them at zero");
     Check(pA->pfnClick == ManufStubPanelPrev, "A gets the row click");
     Check(pD->pfnClick == ManufStubPanelNext, "D gets the selection sync");
     Check(pB->pfnClick == NULL, "B and C get no click here");
@@ -10515,18 +10516,18 @@ static void TestManufDraw(void)
     denv.pPanelC = pC;
     denv.pPanelD = pD;
 
-    CheckEqI32((i32)*(const u32 *)(const void *)pA->gap_0, (i32)0x32B4B4B4u,
+    CheckEqI32((i32)*(const u32 *)(const void *)pA->aStyleRgb, (i32)0x32B4B4B4u,
                "panel A's offset-0 dword is its style bytes B4 B4 B4 32, not a product id");
 
     /* Row 0, product 2: the full percent and unit arithmetic. */
     nRow = 0;
     bSelected = 1;
     g_nDrawSample = -1;
-    pA->bFlag7073 = 0;
+    pA->bSelLineHighlight = 0;
     ManufScreen_Draw(&denv);
     CheckEqI32(g_nDrawSample, 17, "sample 17 is played (0x6E430)");
     CheckEqI32(bSelected, 0, "bManufProductSelected is cleared (0x6E410)");
-    CheckEqI32(pA->bFlag7073, 1, "panel A's flag 7073 is set (0x6E424)");
+    CheckEqI32(pA->bSelLineHighlight, 1, "panel A's flag 7073 is set (0x6E424)");
     Check(ManufLineIs(pB, 0, "100"), "panel B shows the allocated work");
     Check(ManufLineIs(pC, 0, "75%"), "panel C shows 100 * 1728 / (576 * 4)");
     Check(ManufLineIs(pD, 0, "4/3"), "panel D shows 4 asked for and 3 units paid for");
@@ -10566,20 +10567,20 @@ static void TestManufDraw(void)
     nRow = 3;
     ManufScreen_Draw(&denv);
     CheckEqI32(aGridBytes[1], 5, "the real style dword 0x32B4B4B4 is outside 119..121, so nothing is written");
-    *(i32 *)(void *)pA->gap_0 = 118;
+    *(i32 *)(void *)pA->aStyleRgb = 118;
     ManufScreen_Draw(&denv);
     CheckEqI32(aGridBytes[1], 5, "118 is below the range");
-    *(i32 *)(void *)pA->gap_0 = 122;
+    *(i32 *)(void *)pA->aStyleRgb = 122;
     ManufScreen_Draw(&denv);
     CheckEqI32(aGridBytes[1], 5, "122 is above it");
-    *(i32 *)(void *)pA->gap_0 = 120;
+    *(i32 *)(void *)pA->aStyleRgb = 120;
     ManufScreen_Draw(&denv);
     CheckEqI32(aGridBytes[1], 10, "120 takes the branch: 5 plus the low byte of the quantity 5");
-    *(i32 *)(void *)pA->gap_0 = 121;
+    *(i32 *)(void *)pA->aStyleRgb = 121;
     aGridBytes[1] = 250;
     ManufScreen_Draw(&denv);
     CheckEqI32(aGridBytes[1], 255, "the sum is stored as a byte, so 250 + 5 wraps to 255");
-    *(i32 *)(void *)pA->gap_0 = (i32)0x32B4B4B4u;
+    *(i32 *)(void *)pA->aStyleRgb = (i32)0x32B4B4B4u;
 
     /* The two tail passes, with the real budget: 110 allocated work buys 3 needed workshops. */
 #define D_T(c, r) aFacGrid[480 + 144 + 6 * (c) + (r)]
@@ -11743,8 +11744,8 @@ static void TestBuySellDraw(void)
         g_aBsPanel[i].nStyle = 3;
         g_aBsPanel[i].nPosX = 10;
         g_aBsPanel[i].nPosY = 200;
-        g_aBsPanel[i].bFlag7073 = 5;  /* a value the frame could not produce, to see who writes it */
-        g_aBsPanel[i].bUnk7080 = 6;   /* same, for the scratch byte */
+        g_aBsPanel[i].bSelLineHighlight = 5;  /* a value the frame could not produce, to see who writes it */
+        g_aBsPanel[i].bRepeatArmed = 6;   /* same, for the scratch byte */
     }
     /* Panel A's row markers, and panel B's soldier index for the two soldier rows. Row 4 is outside
      * the drawn rows but the cursor reads anLineAux by index, not by nLineCount. */
@@ -11854,10 +11855,10 @@ static void TestBuySellDraw(void)
     bScratch = 3;
     bOnRow = 9;
     nCursorY = 60; /* not above 75 */
-    g_aBsPanel[1].bFlag7073 = 5;
-    g_aBsPanel[2].bFlag7073 = 5;
-    g_aBsPanel[1].bUnk7080 = 6;
-    g_aBsPanel[2].bUnk7080 = 6;
+    g_aBsPanel[1].bSelLineHighlight = 5;
+    g_aBsPanel[2].bSelLineHighlight = 5;
+    g_aBsPanel[1].bRepeatArmed = 6;
+    g_aBsPanel[2].bRepeatArmed = 6;
     FrameZero();
     BuySellScreen_Draw(&env);
 
@@ -11888,10 +11889,10 @@ static void TestBuySellDraw(void)
         Check(!RRefBandSame(130, 233, 52, 68), "the built half's caption positions are the other pair");
     }
 
-    CheckEqI32(g_aBsPanel[1].bFlag7073, 1, "panels B and C get bFlag7073 = (shortfall dword != 1) here");
-    CheckEqI32(g_aBsPanel[2].bFlag7073, 1, "both of them");
-    CheckEqI32(g_aBsPanel[1].bUnk7080, 3, "and bUnk7080 takes the scratch byte's value");
-    CheckEqI32(g_aBsPanel[2].bUnk7080, 3, "on both panels");
+    CheckEqI32(g_aBsPanel[1].bSelLineHighlight, 1, "panels B and C get bSelLineHighlight = (shortfall dword != 1) here");
+    CheckEqI32(g_aBsPanel[2].bSelLineHighlight, 1, "both of them");
+    CheckEqI32(g_aBsPanel[1].bRepeatArmed, 3, "and bRepeatArmed takes the scratch byte's value");
+    CheckEqI32(g_aBsPanel[2].bRepeatArmed, 3, "on both panels");
     CheckEqI32(bScratch, 0, "the scratch byte is zeroed after the copy");
     CheckEqI32(bOnRow, 0, "and the cursor flag is cleared outside the cursor gate");
 
@@ -11993,10 +11994,10 @@ static void TestBuySellDraw(void)
     bBuilt = 1;
     bScratch = 4;
     bOnRow = 9;
-    g_aBsPanel[1].bFlag7073 = 5;
-    g_aBsPanel[2].bFlag7073 = 5;
-    g_aBsPanel[1].bUnk7080 = 6;
-    g_aBsPanel[2].bUnk7080 = 6;
+    g_aBsPanel[1].bSelLineHighlight = 5;
+    g_aBsPanel[2].bSelLineHighlight = 5;
+    g_aBsPanel[1].bRepeatArmed = 6;
+    g_aBsPanel[2].bRepeatArmed = 6;
     FrameZero();
     BuySellScreen_Draw(&env);
 
@@ -12013,9 +12014,9 @@ static void TestBuySellDraw(void)
         BsRef(aLabels, 2, false);
         Check(RRefBandSame(130, 233, 52, 68), "TEXTS[92] centred on 145 and TEXTS[158] on 212 here");
     }
-    CheckEqI32(g_aBsPanel[1].bFlag7073, 5, "this half never writes bFlag7073");
-    CheckEqI32(g_aBsPanel[2].bFlag7073, 5, "on either panel");
-    CheckEqI32(g_aBsPanel[1].bUnk7080, 4, "but the scratch byte still lands on both panels");
+    CheckEqI32(g_aBsPanel[1].bSelLineHighlight, 5, "this half never writes bSelLineHighlight");
+    CheckEqI32(g_aBsPanel[2].bSelLineHighlight, 5, "on either panel");
+    CheckEqI32(g_aBsPanel[1].bRepeatArmed, 4, "but the scratch byte still lands on both panels");
     CheckEqI32(bScratch, 0, "and is still zeroed");
     CheckEqI32(bOnRow, 9, "and the cursor flag is untouched by this half, gate or no gate");
 
@@ -12448,29 +12449,29 @@ static void TestResearchBuildPanels(void)
     CheckEqI32(g_pResPanelA->nFont, 16, "and its font is 16");
     CheckEqI32(g_pResPanelA->nPosX, 10, "panel A starts at x 10");
     CheckEqI32(g_pResPanelA->nViewW, 230, "230 wide, the whole topic column");
-    CheckEqI32(g_pResPanelA->nUnk7052, 5, "with its inner origin at 5");
+    CheckEqI32(g_pResPanelA->nRectX, 5, "with its inner origin at 5");
     CheckEqI32(g_pResPanelA->nPosY, 70, "both at y 70");
-    CheckEqI32(g_pResPanelA->bFlag7073, 1, "panel A carries flag 7073");
-    CheckEqI32(g_pResPanelA->bUnk7088, 0x94, "and byte 7088 is 0x94, not the manufacturing 0x96");
+    CheckEqI32(g_pResPanelA->bSelLineHighlight, 1, "panel A carries flag 7073");
+    CheckEqI32(g_pResPanelA->bColorKey, 0x94, "and byte 7088 is 0x94, not the manufacturing 0x96");
     Check(g_pResPanelA->pfnClick == ResStubPanelClick,
           "panel A's click handler is the one that caches the row cursor");
-    Check(g_pResPanelA->gap_0[0] == 0xB4 && g_pResPanelA->gap_0[1] == 0xB4
-              && g_pResPanelA->gap_0[2] == 0xB4,
+    Check(g_pResPanelA->aStyleRgb[0] == 0xB4 && g_pResPanelA->aStyleRgb[1] == 0xB4
+              && g_pResPanelA->aStyleRgb[2] == 0xB4,
           "style bytes 0..2 are B4 B4 B4");
-    Check(g_pResPanelA->gap_0[3] == 0x32 && g_pResPanelA->gap_0[4] == 0x32
-              && g_pResPanelA->gap_0[5] == 0xFA,
+    Check(g_pResPanelA->aStyleRgb[3] == 0x32 && g_pResPanelA->aStyleRgb[4] == 0x32
+              && g_pResPanelA->aStyleRgb[5] == 0xFA,
           "bytes 3..5 are 32 32 FA, only on panel A");
-    Check(g_pResPanelA->gap_0[6] == 0xF0 && g_pResPanelA->gap_0[9] == 0x14,
+    Check(g_pResPanelA->aStyleRgb[6] == 0xF0 && g_pResPanelA->aStyleRgb[9] == 0x14,
           "bytes 6..11 are F0 F0 F0 14 14 14 on all three");
-    Check(g_pResPanelB->gap_0[3] == 0 && g_pResPanelC->gap_0[5] == 0,
+    Check(g_pResPanelB->aStyleRgb[3] == 0 && g_pResPanelC->aStyleRgb[5] == 0,
           "panels B and C get no bytes 3..5");
 
     CheckEqI32(g_pResPanelB->nPosX, 197, "panel B, the quantity column, sits at x 197");
     CheckEqI32(g_pResPanelB->nViewW, 30, "30 wide");
-    CheckEqI32(g_pResPanelB->nUnk7052, 175, "inner origin 175");
+    CheckEqI32(g_pResPanelB->nRectX, 175, "inner origin 175");
     CheckEqI32(g_pResPanelB->nUnk7076, 2, "right-aligned");
     CheckEqI32(g_pResPanelC->nPosX, 233, "panel C, the progress column, at x 233");
-    CheckEqI32(g_pResPanelC->nUnk7052, 205, "inner origin 205");
+    CheckEqI32(g_pResPanelC->nRectX, 205, "inner origin 205");
     CheckEqI32(g_pResPanelC->nUnk7076, 2, "also right-aligned");
 
     CheckEqI32(g_pResPanelA->nLineCount, 4, "four active topics make four rows");
@@ -13210,27 +13211,27 @@ static void TestFundingPanels(void)
     CheckEqI32(pNames->nFont, 16, "nFont 16 (0x5ACAC)");
     CheckEqI32(pNames->nPosX, 10, "the names column at x 10 (0x5ACC0)");
     CheckEqI32(pNames->nPosY, 70, "the panel row base at y 70 (0x5ACD4)");
-    CheckEqI32(pNames->nUnk7052, 5, "the names panel alone sets the click rect left to 5 (0x5ACDC)");
-    CheckEqI32(pNames->nUnk7056, 70, "and its top to 70 (0x5ACF0)");
+    CheckEqI32(pNames->nRectX, 5, "the names panel alone sets the click rect left to 5 (0x5ACDC)");
+    CheckEqI32(pNames->nRectY, 70, "and its top to 70 (0x5ACF0)");
     CheckEqI32(pNames->nViewW, 230, "and narrows the view to 230 (0x5AD04)");
     CheckEqI32(pNames->nViewH, 320, "keeping the ctor's height 320");
-    CheckEqI32(pNames->gap_0[0], 0x64, "its key triple is (0x64, 0x96, 0x64) (0x5AD14)");
-    CheckEqI32(pNames->gap_0[1], 0x96, "...");
-    CheckEqI32(pNames->gap_0[2], 0x64, "...");
-    CheckEqI32(pNames->gap_0[3], 0x32, "the source triple is (0x32, 0x32, 0xFA) for all three (0x5AD60)");
-    CheckEqI32(pNames->gap_0[4], 0x32, "...");
-    CheckEqI32(pNames->gap_0[5], 0xFA, "...");
-    CheckEqI32(pNames->gap_0[6], 0xC8, "the colour triples are (0xC8, 0xB4, 0xF0) and (0x14, 0x14, 0x14) (0x5AD4C)");
-    CheckEqI32(pNames->gap_0[7], 0xB4, "...");
-    CheckEqI32(pNames->gap_0[8], 0xF0, "...");
-    CheckEqI32(pNames->gap_0[9], 0x14, "...");
-    CheckEqI32(pNames->gap_0[10], 0x14, "...");
-    CheckEqI32(pNames->gap_0[11], 0x14, "...");
-    CheckEqI32((i32)pNames->bUnk7088, 0x96, "bUnk7088 is written as -106 (0x5AD28)");
-    CheckEqI32((i32)pNames->bFlag7072, 1, "the names panel keeps the ctor's bFlag7072 = 1");
-    CheckEqI32((i32)pNames->bFlag7073, 0, "and clears bFlag7073 (0x5AD70)");
-    CheckEqI32((i32)pNames->bFlag7074, 0, "and leaves bFlag7074 at 0");
-    CheckEqI32((i32)pNames->bUnk7089, 0, "and bUnk7089 at 0");
+    CheckEqI32(pNames->aStyleRgb[0], 0x64, "its key triple is (0x64, 0x96, 0x64) (0x5AD14)");
+    CheckEqI32(pNames->aStyleRgb[1], 0x96, "...");
+    CheckEqI32(pNames->aStyleRgb[2], 0x64, "...");
+    CheckEqI32(pNames->aStyleRgb[3], 0x32, "the source triple is (0x32, 0x32, 0xFA) for all three (0x5AD60)");
+    CheckEqI32(pNames->aStyleRgb[4], 0x32, "...");
+    CheckEqI32(pNames->aStyleRgb[5], 0xFA, "...");
+    CheckEqI32(pNames->aStyleRgb[6], 0xC8, "the colour triples are (0xC8, 0xB4, 0xF0) and (0x14, 0x14, 0x14) (0x5AD4C)");
+    CheckEqI32(pNames->aStyleRgb[7], 0xB4, "...");
+    CheckEqI32(pNames->aStyleRgb[8], 0xF0, "...");
+    CheckEqI32(pNames->aStyleRgb[9], 0x14, "...");
+    CheckEqI32(pNames->aStyleRgb[10], 0x14, "...");
+    CheckEqI32(pNames->aStyleRgb[11], 0x14, "...");
+    CheckEqI32((i32)pNames->bColorKey, 0x96, "bColorKey is written as -106 (0x5AD28)");
+    CheckEqI32((i32)pNames->bRowRules, 1, "the names panel keeps the ctor's bRowRules = 1");
+    CheckEqI32((i32)pNames->bSelLineHighlight, 0, "and clears bSelLineHighlight (0x5AD70)");
+    CheckEqI32((i32)pNames->bAuxNumbers, 0, "and leaves bAuxNumbers at 0");
+    CheckEqI32((i32)pNames->bAuxPlusSign, 0, "and bAuxPlusSign at 0");
 
     /* The five names, in SLOT order -- this is what pins slot 0 USA, 1 Australia, 2 Euro, 3 Asia,
      * 4 Africa (0x5AF5C..0x5B038). */
@@ -13245,23 +13246,23 @@ static void TestFundingPanels(void)
     CheckEqI32(pBars->nStyle, 5, "with the same 5 rows");
     CheckEqI32(pBars->nFont, 16, "and the same font");
     CheckEqI32(pBars->nPosY, 70, "and the same row base");
-    CheckEqI32(pBars->gap_0[0], 0xB4, "the bars and arrows panels use the flat key (0xB4, 0xB4, 0xB4)");
-    CheckEqI32(pBars->gap_0[1], 0xB4, "...");
-    CheckEqI32(pBars->gap_0[2], 0xB4, "...");
-    CheckEqI32((i32)pBars->bFlag7072, 0, "they clear bFlag7072");
-    CheckEqI32((i32)pBars->bFlag7074, 1, "and set bFlag7074");
-    CheckEqI32((i32)pBars->bUnk7089, 0, "while only the arrows panel sets bUnk7089");
-    CheckEqI32(pBars->nUnk7052, 0, "the bars panel keeps the click rect at 0");
-    CheckEqI32(pBars->nUnk7056, 0, "...");
+    CheckEqI32(pBars->aStyleRgb[0], 0xB4, "the bars and arrows panels use the flat key (0xB4, 0xB4, 0xB4)");
+    CheckEqI32(pBars->aStyleRgb[1], 0xB4, "...");
+    CheckEqI32(pBars->aStyleRgb[2], 0xB4, "...");
+    CheckEqI32((i32)pBars->bRowRules, 0, "they clear bRowRules");
+    CheckEqI32((i32)pBars->bAuxNumbers, 1, "and set bAuxNumbers");
+    CheckEqI32((i32)pBars->bAuxPlusSign, 0, "while only the arrows panel sets bAuxPlusSign");
+    CheckEqI32(pBars->nRectX, 0, "the bars panel keeps the click rect at 0");
+    CheckEqI32(pBars->nRectY, 0, "...");
     CheckEqI32(pBars->nViewW, 240, "and the ctor's 240 x 320 view");
     CheckEqI32(pBars->nViewH, 320, "...");
-    CheckEqI32(pBars->gap_0[6], 0xC8, "with the same colour triples");
-    CheckEqI32(pBars->gap_0[8], 0xF0, "...");
-    CheckEqI32((i32)pBars->bUnk7088, 0x96, "and the same bUnk7088");
+    CheckEqI32(pBars->aStyleRgb[6], 0xC8, "with the same colour triples");
+    CheckEqI32(pBars->aStyleRgb[8], 0xF0, "...");
+    CheckEqI32((i32)pBars->bColorKey, 0x96, "and the same bColorKey");
 
     CheckEqI32(pArrows->nPosX, 170, "the arrows column at x 170 (0x5AE88 path)");
-    CheckEqI32((i32)pArrows->bUnk7089, 1, "and it is the panel that sets bUnk7089 = 1");
-    CheckEqI32((i32)pArrows->bFlag7074, 1, "with bFlag7074 like the bars panel");
+    CheckEqI32((i32)pArrows->bAuxPlusSign, 1, "and it is the panel that sets bAuxPlusSign = 1");
+    CheckEqI32((i32)pArrows->bAuxNumbers, 1, "with bAuxNumbers like the bars panel");
 
     /* aux: the bars panel takes g_nFundBar0..4, the arrows panel g_nFundArrow0..4, and a bar that
      * is not positive wipes its own bar AND its arrow (0x5B0EC..0x5B11C). */
@@ -13311,13 +13312,18 @@ static void TestFundingPanels(void)
 
 /* The reference frame for FundingScreen_Draw: the three TEXTS strings at the positions and colours
  * the original uses, plus the names panel's five strings at the geometry its own fields carry
- * (x 10, y 70 + 16 * row -- UiPanel_DrawText @ 0x3f1ac). The bars and arrows panels hold empty
- * line texts, so they draw nothing. Rails are not reproduced: the compared band excludes the two
+ * (x 10, y 70 + 16 * row -- UiPanel_DrawText @ 0x3f1ac), plus the bars and arrows panels' numbers:
+ * both panels carry bAuxNumbers = 1 (0x5AE40 / 0x5AF2C), so UiPanelMsg_Draw @ 0x3EBA8 takes the
+ * numeric branch (0x3EC08..0x3EC90) -- bars draw plain itoa(anLineAux) at x 100 (nUnk7076 left),
+ * arrows draw the "+" variant at x 170, both at y 70 + 16 * row. The toggle zeroed a bar's aux
+ * when the bar was not positive and cleared the same row's arrow with it (0x5B0EC..0x5B11C), so
+ * the reference mirrors that. Rails are not reproduced: the compared band excludes the two
  * rail columns (x 5, 234) and the two rail rows (y 5, 315). */
 static void FundRefSimple(i32 nTotal)
 {
     const char *pszTitle = g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_TITLE;
     char szTotal[64];
+    char szNum[16];
     i32 i;
 
     memset(g_frameRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
@@ -13329,6 +13335,19 @@ static void FundRefSimple(i32 nTotal)
     for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
         Text_DrawString(10, 70 + 16 * i,
                         g_aFrameText + PUFO_TEXT_REC_STRIDE * g_anFundingSlotText[i]);
+    }
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        const i32 nBar = (g_anFundBarUi[i] <= 0) ? 0 : g_anFundBarUi[i];
+        const i32 nArrow = (nBar <= 0) ? 0 : g_anFundLevelUi[i];
+
+        (void)snprintf(szNum, sizeof(szNum), "%d", nBar);
+        Text_DrawString(100, 70 + 16 * i, szNum); /* bars panel aux, x 100 */
+        if (nArrow > 0) {
+            (void)snprintf(szNum, sizeof(szNum), "+%d", nArrow);
+        } else {
+            (void)snprintf(szNum, sizeof(szNum), "%d", nArrow);
+        }
+        Text_DrawString(170, 70 + 16 * i, szNum); /* arrows panel, 0x3EC34 vs 0x3EC8C */
     }
     (void)snprintf(szTotal, sizeof(szTotal), "T1151%d$", (int)nTotal); /* 0x5B4E0..0x5B4F8 */
     (void)Gfx_PackRgb565Pair(&g_frameColor, 200, 180, 240, 20, 20, 20); /* 0x5B518 */
@@ -14640,14 +14659,14 @@ static void TestUfopaediaOpen(void)
     CheckEqI32(g_ufoEnv.pSelPanel->nPosY, 50, "y 50");
     CheckEqI32(g_ufoEnv.pSelPanel->nViewW, 230, "230 wide");
     CheckEqI32(g_ufoEnv.pSelPanel->nUnk7076, 1, "centred rows");
-    CheckEqI32(g_ufoEnv.pSelPanel->bUnk7088, 0x96, "the -106 byte");
-    Check(g_ufoEnv.pSelPanel->gap_0[0] == 0xB4 && g_ufoEnv.pSelPanel->gap_0[1] == 0xB4 &&
-          g_ufoEnv.pSelPanel->gap_0[2] == 0xB4, "the row-blit key triple is 0xB4");
-    Check(g_ufoEnv.pSelPanel->gap_0[6] == 0xF0 && g_ufoEnv.pSelPanel->gap_0[7] == 0xF0 &&
-          g_ufoEnv.pSelPanel->gap_0[8] == 0xF0, "the panel colour is white");
-    Check(g_ufoEnv.pSelPanel->gap_0[9] == 0x14 && g_ufoEnv.pSelPanel->gap_0[11] == 0x14,
+    CheckEqI32(g_ufoEnv.pSelPanel->bColorKey, 0x96, "the -106 byte");
+    Check(g_ufoEnv.pSelPanel->aStyleRgb[0] == 0xB4 && g_ufoEnv.pSelPanel->aStyleRgb[1] == 0xB4 &&
+          g_ufoEnv.pSelPanel->aStyleRgb[2] == 0xB4, "the row-blit key triple is 0xB4");
+    Check(g_ufoEnv.pSelPanel->aStyleRgb[6] == 0xF0 && g_ufoEnv.pSelPanel->aStyleRgb[7] == 0xF0 &&
+          g_ufoEnv.pSelPanel->aStyleRgb[8] == 0xF0, "the panel colour is white");
+    Check(g_ufoEnv.pSelPanel->aStyleRgb[9] == 0x14 && g_ufoEnv.pSelPanel->aStyleRgb[11] == 0x14,
           "the second triple is 0x14");
-    Check(g_ufoEnv.pSelPanel->gap_0[3] == 0x32 && g_ufoEnv.pSelPanel->gap_0[5] == 0xFA,
+    Check(g_ufoEnv.pSelPanel->aStyleRgb[3] == 0x32 && g_ufoEnv.pSelPanel->aStyleRgb[5] == 0xFA,
           "the source rect is (50, 50, 250)");
     Check(g_ufoEnv.pSelPanel->pfnClick == (void (*)(void))UfoSeamSel,
           "the selector gets the selector click seam");
@@ -14657,10 +14676,10 @@ static void TestUfopaediaOpen(void)
     CheckEqI32(g_ufoEnv.pTextPanel->nFont, 12, "at font 12");
     CheckEqI32(g_ufoEnv.pTextPanel->nPosX, 5, "at x 5");
     CheckEqI32(g_ufoEnv.pTextPanel->nPosY, 230, "y 230");
-    CheckEqI32(g_ufoEnv.pTextPanel->bFlag7072, 0, "the text panel is the one panel that clears bFlag7072");
-    CheckEqI32(g_ufoEnv.pSelPanel->bFlag7072, 1, "the selector keeps the ctor's 1");
-    Check(g_ufoEnv.pTextPanel->gap_0[6] == 0xBE && g_ufoEnv.pTextPanel->gap_0[7] == 0x78 &&
-          g_ufoEnv.pTextPanel->gap_0[8] == 0xF0, "and its colour is the pale blue 0xBE,0x78,0xF0");
+    CheckEqI32(g_ufoEnv.pTextPanel->bRowRules, 0, "the text panel is the one panel that clears bRowRules");
+    CheckEqI32(g_ufoEnv.pSelPanel->bRowRules, 1, "the selector keeps the ctor's 1");
+    Check(g_ufoEnv.pTextPanel->aStyleRgb[6] == 0xBE && g_ufoEnv.pTextPanel->aStyleRgb[7] == 0x78 &&
+          g_ufoEnv.pTextPanel->aStyleRgb[8] == 0xF0, "and its colour is the pale blue 0xBE,0x78,0xF0");
     Check(g_ufoEnv.apCatPanels[0]->pfnClick == (void (*)(void))UfoSeamCat,
           "the category panels get the refresh seam, not the selector's");
 
@@ -15392,30 +15411,30 @@ static void TestPsiScreen(void)
     for (i = 0; i < 4; ++i) {
         UiPanel *p = PsiPanel(i, 0);
         if (p->nStyle != PUFO_PSI_PANEL_STYLE || p->nFont != PUFO_PSI_PANEL_FONT ||
-            p->nPosY != PUFO_PSI_ROW_Y || p->nUnk7056 != PUFO_PSI_ROW_Y ||
-            p->gap_0[0] != 0xB4 || p->gap_0[1] != 0xB4 || p->gap_0[2] != 0xB4 ||
-            p->gap_0[6] != 0xF0 || p->gap_0[7] != 0xF0 || p->gap_0[8] != 0xF0 ||
-            p->gap_0[9] != 0x14 || p->gap_0[10] != 0x14 || p->gap_0[11] != 0x14) {
+            p->nPosY != PUFO_PSI_ROW_Y || p->nRectY != PUFO_PSI_ROW_Y ||
+            p->aStyleRgb[0] != 0xB4 || p->aStyleRgb[1] != 0xB4 || p->aStyleRgb[2] != 0xB4 ||
+            p->aStyleRgb[6] != 0xF0 || p->aStyleRgb[7] != 0xF0 || p->aStyleRgb[8] != 0xF0 ||
+            p->aStyleRgb[9] != 0x14 || p->aStyleRgb[10] != 0x14 || p->aStyleRgb[11] != 0x14) {
             ++nBad;
         }
     }
     CheckEqI32(nBad, 0, "all four columns share nStyle 14, nFont 16, y 70 and the two byte triples");
     CheckEqI32(PsiPanel(PSI_NAME, 0)->nPosX, 10, "the name column sits at x 10");
-    CheckEqI32(PsiPanel(PSI_NAME, 0)->nUnk7052, 5, "with its draw origin at 5");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->nRectX, 5, "with its draw origin at 5");
     CheckEqI32(PsiPanel(PSI_NAME, 0)->nViewW, 230, "and a 230-wide view");
-    CheckEqI32(PsiPanel(PSI_NAME, 0)->gap_0[3], 0x32, "only the name column gets SetBytes3to5");
-    CheckEqI32(PsiPanel(PSI_NAME, 0)->gap_0[5], 0xFA, "0x32, 0x32, 0xFA (0x718D4)");
-    CheckEqI32(PsiPanel(PSI_NAME, 0)->bUnk7088, 0x96, "and bUnk7088 0x96 instead of the ctor's 0xFF");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->aStyleRgb[3], 0x32, "only the name column gets SetBytes3to5");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->aStyleRgb[5], 0xFA, "0x32, 0x32, 0xFA (0x718D4)");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->bColorKey, 0x96, "and bColorKey 0x96 instead of the ctor's 0xFF");
     Check(PsiPanel(PSI_NAME, 0)->pfnClick == PsiSeamSel, "and it is the only column with a click handler");
-    CheckEqI32(PsiPanel(PSI_STAT, 0)->gap_0[3], 0, "the stat column leaves gap_0[3] at the ctor's 0");
-    CheckEqI32(PsiPanel(PSI_STAT, 0)->bUnk7088, 0xFF, "and keeps bUnk7088 0xFF");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->aStyleRgb[3], 0, "the stat column leaves aStyleRgb[3] at the ctor's 0");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->bColorKey, 0xFF, "and keeps bColorKey 0xFF");
     CheckEqI32(PsiPanel(PSI_STAT, 0)->nPosX, 154, "the stat column is at x 154, origin 175, 10 wide");
-    CheckEqI32(PsiPanel(PSI_STAT, 0)->nUnk7052, 175, "");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->nRectX, 175, "");
     CheckEqI32(PsiPanel(PSI_STAT, 0)->nViewW, 10, "");
     CheckEqI32(PsiPanel(PSI_DELTA, 0)->nPosX, 184, "the delta column at 184, origin 209");
-    CheckEqI32(PsiPanel(PSI_DELTA, 0)->nUnk7052, 209, "");
+    CheckEqI32(PsiPanel(PSI_DELTA, 0)->nRectX, 209, "");
     CheckEqI32(PsiPanel(PSI_CHECK, 0)->nPosX, 215, "the checkbox column at 215, origin 210");
-    CheckEqI32(PsiPanel(PSI_CHECK, 0)->nUnk7052, 210, "");
+    CheckEqI32(PsiPanel(PSI_CHECK, 0)->nRectX, 210, "");
     nBad = 0;
     for (i = 0; i < 4; ++i) {
         if (PsiPanel(i, 0)->nUnk7076 != (i == PSI_NAME ? 0 : 1)) {
@@ -16335,23 +16354,23 @@ static void TestBaseInfoBuildPanels(void)
     CheckEqI32(pNames->nViewW, 200, "the name column is 200 wide");
     CheckEqI32(pFree->nViewW, 10, "the free column is 10 wide");
     CheckEqI32(pTotals->nViewW, 10, "the total column is 10 wide");
-    CheckEqI32(pNames->nUnk7052, 5, "the name column's click rect starts at 5");
-    CheckEqI32(pFree->nUnk7052, 210, "the narrow columns' starts at 210");
-    CheckEqI32(pTotals->nUnk7052, 210, "in both of them");
+    CheckEqI32(pNames->nRectX, 5, "the name column's click rect starts at 5");
+    CheckEqI32(pFree->nRectX, 210, "the narrow columns' starts at 210");
+    CheckEqI32(pTotals->nRectX, 210, "in both of them");
     CheckEqI32(pNames->nStyle, 16, "each column shows 16 rows");
     CheckEqI32(pNames->nFont, 16, "each column draws in font 16");
     CheckEqI32(pNames->nPosY, 40, "each column starts at y 40");
-    CheckEqI32(pNames->nUnk7056, 70, "and its click rect at y 70");
-    CheckEqI32(pNames->bFlag7072, 0, "the ctor's two style flags are cleared");
-    CheckEqI32(pNames->bFlag7073, 0, "in both");
+    CheckEqI32(pNames->nRectY, 70, "and its click rect at y 70");
+    CheckEqI32(pNames->bRowRules, 0, "the ctor's two style flags are cleared");
+    CheckEqI32(pNames->bSelLineHighlight, 0, "in both");
     CheckEqI32(pNames->nUnk7076, 0, "the name column leaves nUnk7076 alone");
     CheckEqI32(pFree->nUnk7076, 1, "the free column sets it to 1");
     CheckEqI32(pTotals->nUnk7076, 1, "and so does the total column");
     Check(pNames->pfnClick == NULL, "no column gets a click handler");
-    CheckEqI32(pNames->gap_0[0], 0xB4, "the shared panel colours");
-    CheckEqI32(pNames->gap_0[2], 0xB4, "for the key triple");
-    CheckEqI32(pNames->gap_0[6], 0xF0, "and the two RGB triples");
-    CheckEqI32(pNames->gap_0[9], 0x14, "down to the last byte");
+    CheckEqI32(pNames->aStyleRgb[0], 0xB4, "the shared panel colours");
+    CheckEqI32(pNames->aStyleRgb[2], 0xB4, "for the key triple");
+    CheckEqI32(pNames->aStyleRgb[6], 0xF0, "and the two RGB triples");
+    CheckEqI32(pNames->aStyleRgb[9], 0x14, "down to the last byte");
 
     /* The four meta rows, and a row that must not have any. */
     BiRowMeta(pNames, 0, 1, &nR, &nG, &nB);
@@ -17237,21 +17256,21 @@ static void TestBaseAtUpdate(void)
     CheckEqI32(g_pBaPanel->nFont, 16, "nFont 16 (0x57AF4)");
     CheckEqI32(g_pBaPanel->nPosX, 10, "the panel sits at x 10 (0x57B08)");
     CheckEqI32(g_pBaPanel->nPosY, 10, "and y 10 (0x57B18)");
-    CheckEqI32(g_pBaPanel->nUnk7052, 5, "nUnk7052 5 (0x57B2C)");
-    CheckEqI32(g_pBaPanel->nUnk7056, 70, "nUnk7056 70 (0x57B40)");
+    CheckEqI32(g_pBaPanel->nRectX, 5, "nRectX 5 (0x57B2C)");
+    CheckEqI32(g_pBaPanel->nRectY, 70, "nRectY 70 (0x57B40)");
     CheckEqI32(g_pBaPanel->nViewW, 230, "nViewW 230 (0x57B54)");
-    CheckEqI32(g_pBaPanel->gap_0[0], 0x64, "the style key is 0x64,0x96,0x64");
-    CheckEqI32(g_pBaPanel->gap_0[1], 0x96, "  its middle byte");
-    CheckEqI32(g_pBaPanel->gap_0[2], 0x64, "  and its last");
-    CheckEqI32(g_pBaPanel->gap_0[3], 0x32, "the source triple is 0x32,0x32,0xFA");
-    CheckEqI32(g_pBaPanel->gap_0[4], 0x32, "  written by the third setter call");
-    CheckEqI32(g_pBaPanel->gap_0[5], 0xFA, "  the three setters cover 0..11 without overlap");
-    CheckEqI32(g_pBaPanel->gap_0[6], 0xDC, "the panel colours are 0xDC,0xC8,0xF0");
-    CheckEqI32(g_pBaPanel->gap_0[8], 0xF0, "  and 0x14,0x14,0x14 for the second");
-    CheckEqI32(g_pBaPanel->gap_0[11], 0x14, "  reaching byte 11");
-    CheckEqI32(g_pBaPanel->bUnk7088, 0x96, "bUnk7088 is -106 as a byte");
-    CheckEqI32(g_pBaPanel->bFlag7072, 0, "both ctor flags are cleared");
-    CheckEqI32(g_pBaPanel->bFlag7073, 0, "  the second too");
+    CheckEqI32(g_pBaPanel->aStyleRgb[0], 0x64, "the style key is 0x64,0x96,0x64");
+    CheckEqI32(g_pBaPanel->aStyleRgb[1], 0x96, "  its middle byte");
+    CheckEqI32(g_pBaPanel->aStyleRgb[2], 0x64, "  and its last");
+    CheckEqI32(g_pBaPanel->aStyleRgb[3], 0x32, "the source triple is 0x32,0x32,0xFA");
+    CheckEqI32(g_pBaPanel->aStyleRgb[4], 0x32, "  written by the third setter call");
+    CheckEqI32(g_pBaPanel->aStyleRgb[5], 0xFA, "  the three setters cover 0..11 without overlap");
+    CheckEqI32(g_pBaPanel->aStyleRgb[6], 0xDC, "the panel colours are 0xDC,0xC8,0xF0");
+    CheckEqI32(g_pBaPanel->aStyleRgb[8], 0xF0, "  and 0x14,0x14,0x14 for the second");
+    CheckEqI32(g_pBaPanel->aStyleRgb[11], 0x14, "  reaching byte 11");
+    CheckEqI32(g_pBaPanel->bColorKey, 0x96, "bColorKey is -106 as a byte");
+    CheckEqI32(g_pBaPanel->bRowRules, 0, "both ctor flags are cleared");
+    CheckEqI32(g_pBaPanel->bSelLineHighlight, 0, "  the second too");
 
     /* ---- one missile cell, class 0: a miss leaves the budget alone ---- */
     CheckEqI32(g_nBaLimit, 5, "one defence pair plus the three tail rows");
@@ -18601,8 +18620,8 @@ static void CdResetStorePanels(void)
         ap[i]->nStyle = 14;
         ap[i]->nFont = 16;
         ap[i]->nUnk7076 = 0;
-        ap[i]->bFlag7073 = 1;
-        ap[i]->bUnk7080 = 0;
+        ap[i]->bSelLineHighlight = 1;
+        ap[i]->bRepeatArmed = 0;
         for (i32 r = 0; r < 4; ++r) {
             ap[i]->anLineAux[r] = 0;
         }
@@ -19103,21 +19122,21 @@ static void TestPlaneCraftDetail(void)
     g_bCdPanelFlag = 0xA5;
     CdClear();
     (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
-    CheckEqI32(g_cdSelRowPanel.bFlag7073, 1, "a transfer that did not fail leaves both row panels enabled (0x7BDB8)");
-    CheckEqI32(g_cdCommitPanel.bFlag7073, 1, "  on the sel-row and the commit-row panel");
-    CheckEqI32(g_cdSelRowPanel.bUnk7080, 0xA5, "bPanelFlagScratch @ 0x161F0C is copied into both row panels (0x7BE58)");
-    CheckEqI32(g_cdCommitPanel.bUnk7080, 0xA5, "  and into the commit-row panel too (0x7BE68)");
+    CheckEqI32(g_cdSelRowPanel.bSelLineHighlight, 1, "a transfer that did not fail leaves both row panels enabled (0x7BDB8)");
+    CheckEqI32(g_cdCommitPanel.bSelLineHighlight, 1, "  on the sel-row and the commit-row panel");
+    CheckEqI32(g_cdSelRowPanel.bRepeatArmed, 0xA5, "bPanelFlagScratch @ 0x161F0C is copied into both row panels (0x7BE58)");
+    CheckEqI32(g_cdCommitPanel.bRepeatArmed, 0xA5, "  and into the commit-row panel too (0x7BE68)");
     CheckEqI32(g_bCdPanelFlag, 0, "  and the scratch byte is cleared -- the draw consumes it (0x7BE70)");
 
     g_dwCdFail = 1;
     CdClear();
     (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
-    CheckEqI32(g_cdSelRowPanel.bFlag7073, 0, "a failed transfer clears both row panels' flag (0x7BDA4)");
-    CheckEqI32(g_cdCommitPanel.bFlag7073, 0, "  on both of them");
+    CheckEqI32(g_cdSelRowPanel.bSelLineHighlight, 0, "a failed transfer clears both row panels' flag (0x7BDA4)");
+    CheckEqI32(g_cdCommitPanel.bSelLineHighlight, 0, "  on both of them");
     g_dwCdFail = 2;
     CdClear();
     (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
-    CheckEqI32(g_cdSelRowPanel.bFlag7073, 1, "  and only the value 1 does it -- 2 sets the flag back");
+    CheckEqI32(g_cdSelRowPanel.bSelLineHighlight, 1, "  and only the value 1 does it -- 2 sets the flag back");
 
     /* The whole stores frame, with the preview armed: the hovered row's object name is drawn straight
      * out of the record at (10, 297). */

@@ -40,16 +40,16 @@ static void TestLayout(void)
 
     printf("UiPanel layout\n");
     /* Fields before the first pointer are at fixed offsets on every target. */
-    Check(offsetof(UiPanel, gap_0) == 0x0000, "  gap_0 at 0x0000");
+    Check(offsetof(UiPanel, aStyleRgb) == 0x0000, "  aStyleRgb at 0x0000");
     Check(offsetof(UiPanel, aLineMeta) == 0x0010, "  aLineMeta at 0x0010");
-    /* aLineMeta spans 500*6 = 3000 bytes, so nUnk3016 follows with no padding on
+    /* aLineMeta spans 500*6 = 3000 bytes, so nHoldCount follows with no padding on
      * either target. Everything from pfnClick onward holds pointers and shifts on
      * Win64, so those absolute offsets are asserted only for ILP32. */
-    Check(offsetof(UiPanel, nUnk3016) == 0x0BC8, "  nUnk3016 at 0x0BC8");
+    Check(offsetof(UiPanel, nHoldCount) == 0x0BC8, "  nHoldCount at 0x0BC8");
 
-    /* The scalar run from bUnk3024 to nStyle keeps its relative layout on both
+    /* The scalar run from bHoverActive to nStyle keeps its relative layout on both
      * targets, which is where a field-order mistake would show. */
-    Check(offsetof(UiPanel, bUnk3024) < offsetof(UiPanel, nUnk3028), "  bUnk3024 before nUnk3028");
+    Check(offsetof(UiPanel, bHoverActive) < offsetof(UiPanel, nUnk3028), "  bHoverActive before nUnk3028");
     Check(offsetof(UiPanel, nUnk3028) < offsetof(UiPanel, nUnk3032), "  nUnk3028 before nUnk3032");
     Check(offsetof(UiPanel, nUnk3032) < offsetof(UiPanel, nLineCount), "  nUnk3032 before nLineCount");
     Check(offsetof(UiPanel, nLineCount) < offsetof(UiPanel, nStyle), "  nLineCount before nStyle");
@@ -59,7 +59,7 @@ static void TestLayout(void)
     /* The rest holds pointers, so the Win64 struct is larger and the tail shifts.
      * The ILP32 offsets are the ones the IDB reports, so assert them there only. */
     Check(offsetof(UiPanel, pfnClick) == 0x0BCC, "  pfnClick at 0x0BCC (ILP32)");
-    Check(offsetof(UiPanel, bUnk3024) == 0x0BD0, "  bUnk3024 at 0x0BD0 (ILP32)");
+    Check(offsetof(UiPanel, bHoverActive) == 0x0BD0, "  bHoverActive at 0x0BD0 (ILP32)");
     Check(offsetof(UiPanel, nUnk3028) == 0x0BD4, "  nUnk3028 at 0x0BD4 (ILP32)");
     Check(offsetof(UiPanel, nLineCount) == 0x0BDC, "  nLineCount at 0x0BDC (ILP32)");
     Check(offsetof(UiPanel, nStyle) == 0x0BE0, "  nStyle at 0x0BE0 (ILP32)");
@@ -67,19 +67,19 @@ static void TestLayout(void)
     Check(offsetof(UiPanel, nPosX) == 0x1B84, "  nPosX at 0x1B84 (ILP32)");
     Check(offsetof(UiPanel, nViewW) == 0x1B94, "  nViewW at 0x1B94 (ILP32)");
     Check(offsetof(UiPanel, nFont) == 0x1B9C, "  nFont at 0x1B9C (ILP32)");
-    Check(offsetof(UiPanel, bUnk7089) == 0x1BB1, "  bUnk7089 at 0x1BB1 (ILP32)");
+    Check(offsetof(UiPanel, bAuxPlusSign) == 0x1BB1, "  bAuxPlusSign at 0x1BB1 (ILP32)");
     Check(sizeof(UiPanel) >= 0x1BB1 + 1, "  struct covers the last field");
 #else
     /* On Win64 the ordering is what matters. Assert the relative layout of the
      * scalar tail, which is where a field-order mistake would show up. */
     Check(offsetof(UiPanel, nPosX) < offsetof(UiPanel, nPosY), "  nPosX before nPosY");
-    Check(offsetof(UiPanel, nPosY) < offsetof(UiPanel, nUnk7052), "  nPosY before nUnk7052");
-    Check(offsetof(UiPanel, nUnk7056) < offsetof(UiPanel, nViewW), "  nUnk7056 before nViewW");
+    Check(offsetof(UiPanel, nPosY) < offsetof(UiPanel, nRectX), "  nPosY before nRectX");
+    Check(offsetof(UiPanel, nRectY) < offsetof(UiPanel, nViewW), "  nRectY before nViewW");
     Check(offsetof(UiPanel, nViewW) < offsetof(UiPanel, nViewH), "  nViewW before nViewH");
     Check(offsetof(UiPanel, nViewH) < offsetof(UiPanel, nFont), "  nViewH before nFont");
-    Check(offsetof(UiPanel, nFont) < offsetof(UiPanel, bFlag7072), "  nFont before bFlag7072");
-    Check(offsetof(UiPanel, bUnk7089) == offsetof(UiPanel, bUnk7088) + 1,
-          "  bUnk7089 directly after bUnk7088");
+    Check(offsetof(UiPanel, nFont) < offsetof(UiPanel, bRowRules), "  nFont before bRowRules");
+    Check(offsetof(UiPanel, bAuxPlusSign) == offsetof(UiPanel, bColorKey) + 1,
+          "  bAuxPlusSign directly after bColorKey");
 #endif
 
     /* The apLines-to-clock aliasing is fixed arithmetic on 32-bit pointers. On
@@ -103,12 +103,12 @@ static void TestCtor(void)
     CheckEqI32(panel.nLineCount, 10, "  line count stored");
     /* Defaults from UiPanel_ctor @ 0x3e730. */
     CheckEqI32(panel.nFont, 17, "  nFont 17");
-    CheckEqI32(panel.bFlag7072, 1, "  bFlag7072 set");
-    CheckEqI32(panel.bFlag7073, 1, "  bFlag7073 set");
+    CheckEqI32(panel.bRowRules, 1, "  bRowRules set");
+    CheckEqI32(panel.bSelLineHighlight, 1, "  bSelLineHighlight set");
     CheckEqI32(panel.nStyle, 1, "  nStyle 1");
     CheckEqI32(panel.nViewW, 240, "  nViewW 240");
     CheckEqI32(panel.nViewH, 320, "  nViewH 320");
-    CheckEqI32(panel.bUnk7088, 0xFF, "  bUnk7088 0xFF");
+    CheckEqI32(panel.bColorKey, 0xFF, "  bColorKey 0xFF");
     CheckEqI32(panel.nUnk3028, 0, "  scroll cursor 0");
 
     {
@@ -175,11 +175,11 @@ static void TestLinesAndMeta(void)
     UiPanel_SetBytes0to2(&panel, 1, 2, 3);
     UiPanel_SetBytes3to5(&panel, 4, 5, 6);
     UiPanel_SetBytes6to11(&panel, 7, 8, 9, 10, 11, 12);
-    Check(panel.gap_0[0] == 1 && panel.gap_0[1] == 2 && panel.gap_0[2] == 3,
+    Check(panel.aStyleRgb[0] == 1 && panel.aStyleRgb[1] == 2 && panel.aStyleRgb[2] == 3,
           "  bytes 0..2 written in order");
-    Check(panel.gap_0[3] == 4 && panel.gap_0[4] == 5 && panel.gap_0[5] == 6,
+    Check(panel.aStyleRgb[3] == 4 && panel.aStyleRgb[4] == 5 && panel.aStyleRgb[5] == 6,
           "  bytes 3..5 written in order");
-    Check(panel.gap_0[6] == 7 && panel.gap_0[11] == 12, "  bytes 6..11 written in order");
+    Check(panel.aStyleRgb[6] == 7 && panel.aStyleRgb[11] == 12, "  bytes 6..11 written in order");
 
     printf("Aux words\n");
     UiPanel_SetLineAux(&panel, 1, 4242);
@@ -299,13 +299,13 @@ static void TestClickRow(void)
     Check(UiPanel_ctor(&panel, 10), "  constructed");
     panel.nPosY = 10;
     panel.nFont = 20;      /* row = (nY - 10) / 20 */
-    panel.nUnk7052 = 5;    /* rect left */
+    panel.nRectX = 5;    /* rect left */
     panel.nViewW = 100;
-    panel.nUnk7056 = 10;   /* rect top */
+    panel.nRectY = 10;   /* rect top */
     panel.nViewH = 50;
     panel.nStyle = 3;
     panel.nLineCount = 10;
-    panel.bFlag7073 = 1;
+    panel.bSelLineHighlight = 1;
     panel.nUnk3028 = 3;    /* the scroll cursor; ClickRow only reads it */
     g_nClicks = 0;
 
@@ -323,8 +323,8 @@ static void TestClickRow(void)
     /* Above the rect: row 0 (the division truncates toward zero) and no callback. */
     CheckEqI32(UiPanel_ClickRow(&panel, 20, 5), 0, "  above the rect row 0");
 
-    /* bFlag7073 clear disables the callback but not the row. */
-    panel.bFlag7073 = 0;
+    /* bSelLineHighlight clear disables the callback but not the row. */
+    panel.bSelLineHighlight = 0;
     CheckEqI32(UiPanel_ClickRow(&panel, 20, 50), 2, "  disabled flag still returns row");
 
     UiPanel_FreeLines(&panel);
@@ -338,60 +338,60 @@ static void TestTrackHold(void)
     Check(UiPanel_ctor(&panel, 10), "  constructed");
     panel.nPosY = 10;
     panel.nFont = 20;      /* row = (nY - 10) / 20 */
-    panel.nUnk7052 = 5;
+    panel.nRectX = 5;
     panel.nViewW = 100;
-    panel.nUnk7056 = 10;
+    panel.nRectY = 10;
     panel.nViewH = 50;
     panel.nStyle = 3;
     panel.nLineCount = 10;
-    panel.bFlag7073 = 1;
-    panel.bUnk7080 = 1;    /* hold repeat armed */
-    panel.nUnk7084 = 3;    /* threshold */
+    panel.bSelLineHighlight = 1;
+    panel.bRepeatArmed = 1;    /* hold repeat armed */
+    panel.nRepeatDelay = 3;    /* threshold */
     panel.nUnk3028 = 4;    /* scroll cursor */
     panel.pfnClick = RecClick;
     g_nClicks = 0;
 
     /* Outside the rect: hover flag and counter both clear, no click. */
     CheckEqI32(UiPanel_TrackHoldRow(&panel, 1, 50), 2, "  outside x still returns row 2");
-    CheckEqI32(panel.bUnk3024, 0, "  outside clears bUnk3024");
-    CheckEqI32(panel.nUnk3016, 0, "  outside clears the repeat counter");
+    CheckEqI32(panel.bHoverActive, 0, "  outside clears bHoverActive");
+    CheckEqI32(panel.nHoldCount, 0, "  outside clears the repeat counter");
     CheckEqI32(g_nClicks, 0, "  outside never clicks");
 
     /* Inside: hover set, counting, nothing fires until the threshold. */
     CheckEqI32(UiPanel_TrackHoldRow(&panel, 20, 50), 2, "  inside row 2");
-    CheckEqI32(panel.bUnk3024, 1, "  inside sets bUnk3024");
-    CheckEqI32(panel.nUnk3016, 1, "  first hold tick");
+    CheckEqI32(panel.bHoverActive, 1, "  inside sets bHoverActive");
+    CheckEqI32(panel.nHoldCount, 1, "  first hold tick");
     CheckEqI32(g_nClicks, 0, "  no click below the threshold");
     (void)UiPanel_TrackHoldRow(&panel, 20, 50);
-    CheckEqI32(panel.nUnk3016, 2, "  second hold tick");
+    CheckEqI32(panel.nHoldCount, 2, "  second hold tick");
     CheckEqI32(g_nClicks, 0, "  still below the threshold");
     (void)UiPanel_TrackHoldRow(&panel, 20, 50);
-    CheckEqI32(panel.nUnk3016, 3, "  counter clamped to the threshold");
+    CheckEqI32(panel.nHoldCount, 3, "  counter clamped to the threshold");
     CheckEqI32(g_nClicks, 1, "  the threshold fires the click once");
     CheckEqI32(panel.nUnk3032, 6, "  nUnk3032 = nUnk3028 + row");
-    CheckEqI32(panel.bUnk7080, 0, "  bUnk7080 clears after firing");
+    CheckEqI32(panel.bRepeatArmed, 0, "  bRepeatArmed clears after firing");
 
     /* With the hold flag clear it hovers but never repeats. */
     g_nClicks = 0;
     (void)UiPanel_TrackHoldRow(&panel, 20, 50);
     (void)UiPanel_TrackHoldRow(&panel, 20, 50);
-    CheckEqI32(panel.nUnk3016, 3, "  counter keeps its clamped value; only leaving the rect or changing row clears it");
-    CheckEqI32(panel.bUnk3024, 1, "  hover flag still set");
-    CheckEqI32(g_nClicks, 0, "  no repeat without bUnk7080");
+    CheckEqI32(panel.nHoldCount, 3, "  counter keeps its clamped value; only leaving the rect or changing row clears it");
+    CheckEqI32(panel.bHoverActive, 1, "  hover flag still set");
+    CheckEqI32(g_nClicks, 0, "  no repeat without bRepeatArmed");
 
     /* Moving to another row restarts the count. */
-    panel.bUnk7080 = 1;
-    panel.nUnk3016 = 0;
+    panel.bRepeatArmed = 1;
+    panel.nHoldCount = 0;
     g_nClicks = 0;
     CheckEqI32(UiPanel_TrackHoldRow(&panel, 20, 30), 1, "  row 1 at nY 30");
-    CheckEqI32(panel.nUnk3016, 1, "  row 1 counts 1");
+    CheckEqI32(panel.nHoldCount, 1, "  row 1 counts 1");
     (void)UiPanel_TrackHoldRow(&panel, 20, 50);
-    CheckEqI32(panel.nUnk3016, 1, "  changing row restarts the counter");
+    CheckEqI32(panel.nHoldCount, 1, "  changing row restarts the counter");
 
-    /* bFlag7073 clear disables everything but the row itself. */
-    panel.bFlag7073 = 0;
+    /* bSelLineHighlight clear disables everything but the row itself. */
+    panel.bSelLineHighlight = 0;
     CheckEqI32(UiPanel_TrackHoldRow(&panel, 20, 50), 2, "  disabled flag still returns row");
-    CheckEqI32(panel.bUnk3024, 1, "  disabled flag leaves bUnk3024 alone");
+    CheckEqI32(panel.bHoverActive, 1, "  disabled flag leaves bHoverActive alone");
 
     UiPanel_FreeLines(&panel);
 }

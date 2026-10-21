@@ -419,7 +419,7 @@ void BasePlaneScreen_FillCrewPanel(PlaneCrewPanelEnv *pEnv);
  * which page the SAME two panels. Then two UiPanels of 0x1BB4 bytes each with nLineCount =
  * unk_161AB4 + unk_161AB8: the crew list at x 10 (view width 230) and its status column at x 190 (view
  * width 30), both y 70, nStyle 14, nFont 16, colours B4/B4/B4 then F0,F0,F0/14,14,14 and 32,32,250. The
- * status panel additionally clears bFlag7073 and sets nUnk7076 to 1; the crew panel gets
+ * status panel additionally clears bSelLineHighlight and sets nUnk7076 to 1; the crew panel gets
  * pfnClick = BasePlaneScreen_FillCrewPanel.
  *
  * Filling walks every soldier and keeps the ones whose Soldier.nKind equals the selected base AND whose
@@ -488,12 +488,12 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
  *   1. nRows = how many of apCraft[0..Map_nCraftCount) have Ship.bHomeBase @ +0x03 equal to
  *      nSelectedBaseIdx (0x7CCD8..0x7CCFC; Map_nCraftCount is a byte, read with LDRB).
  *   2. panel A @ 0x161EFC, nRows lines: nStyle 8, nFont 16, pfnClick = BasePlaneScreen_SelectCraft,
- *      nPosX 10, nPosY 110, nUnk7052 5, nUnk7056 110, nViewW 230, gap_0[0..2] B4 B4 B4,
- *      gap_0[6..11] F0 F0 F0 14 14 14, bFlag7073 1, bUnk7088 0x96. nUnk7076 keeps the ctor's 0, so the
+ *      nPosX 10, nPosY 110, nRectX 5, nRectY 110, nViewW 230, aStyleRgb[0..2] B4 B4 B4,
+ *      aStyleRgb[6..11] F0 F0 F0 14 14 14, bSelLineHighlight 1, bColorKey 0x96. nUnk7076 keeps the ctor's 0, so the
  *      names are left-aligned.
  *   3. panel B @ 0x161ED0, nRows lines: the same style, pfnClick = BasePlaneScreen_SelectListed,
- *      nPosX 230, nViewW 30, gap_0[0..2] B4 B4 B4, bFlag7073 1, bUnk7088 0x96, nUnk7076 2 (right
- *      aligned). It gets no SetBytes6to11 call, so gap_0[6..11] stays at the ctor's zero.
+ *      nPosX 230, nViewW 30, aStyleRgb[0..2] B4 B4 B4, bSelLineHighlight 1, bColorKey 0x96, nUnk7076 2 (right
+ *      aligned). It gets no SetBytes6to11 call, so aStyleRgb[6..11] stays at the ctor's zero.
  *   4. the row pass (0x7CF30..0x7D22C) walks aPlaneCraftTypeOrder @ 0xABE28 - five dwords, 0,1,2,3,4 -
  *      and for each type walks every craft, so the list is grouped by craft type rather than roster
  *      order. A craft is listed when bHomeBase == nSelectedBaseIdx and bCraftType == the table entry.
@@ -670,23 +670,23 @@ void BasePlaneScreen_Init(const BasePlaneScreenInitEnv *pEnv);
  *      (base stock, craft carry) and the row counter are all under the same STRNE (0x7B1F0, 0x7B1FC,
  *      0x7B204), so a slot the topic gate refuses leaves a zero pair behind and the row pass skips it again.
  *   8. five panels, each operator new 0x1BB4 + UiPanel_ctor(nLineCount). All five share nStyle 14, nFont
- *      16, nPosY 70, nUnk7056 70, gap_0[0..2] B4,B4,B4 and gap_0[6..11] F0,F0,F0,14,14,14, and differ as:
+ *      16, nPosY 70, nRectY 70, aStyleRgb[0..2] B4,B4,B4 and aStyleRgb[6..11] F0,F0,F0,14,14,14, and differ as:
  *
- *        panel        slot       nPosX  nUnk7052  nViewW  click                       extras
- *        slot         0x161AC8     10       5        125   Cache_ObjPlus0xBD8 thunk   bFlag7073 1, bUnk7088 0x96
- *        avail        0x161A40    164     130         50   none                       bFlag7073 0, bFlag7074 1, nUnk7076 2
- *        sel-row      0x161F00    170     166         15   AdjustSelectedQty          bFlag7073 1, gap_0[3..5] 32,32,FA, nUnk7084 5, bUnk7088 0x96
+ *        panel        slot       nPosX  nRectX  nViewW  click                       extras
+ *        slot         0x161AC8     10       5        125   Cache_ObjPlus0xBD8 thunk   bSelLineHighlight 1, bColorKey 0x96
+ *        avail        0x161A40    164     130         50   none                       bSelLineHighlight 0, bAuxNumbers 1, nUnk7076 2
+ *        sel-row      0x161F00    170     166         15   AdjustSelectedQty          bSelLineHighlight 1, aStyleRgb[3..5] 32,32,FA, nRepeatDelay 5, bColorKey 0x96
  *        commit-row   0x161EEC    186     182         15   CommitStores               same as sel-row
- *        taken        0x161EF4    232     190         45   none                       bFlag7073 0, bFlag7074 1, nUnk7076 2
+ *        taken        0x161EF4    232     190         45   none                       bSelLineHighlight 0, bAuxNumbers 1, nUnk7076 2
  *
- *      nUnk7084 5 on the two 15-wide row panels is the auto-repeat count UiPanel_ClickRow consults, so
+ *      nRepeatDelay 5 on the two 15-wide row panels is the auto-repeat count UiPanel_ClickRow consults, so
  *      holding the "<" or ">" row repeats the quantity change every fifth click.
  *   9. the row pass (0x7B7D0..0x7B930) walks the same slot range, re-tests the stored pair, and for a kept
  *      slot copies apObjects[slot]->szName through a 112-byte stack buffer cut to 17 characters when strlen
  *      is above 0x11 (0x7B838) into the slot panel's line; that panel's aux column gets the SLOT id; the
  *      sel-row line is "<" (aRowQtyDec @ 0xABC24) and the commit-row line is ">" (aRowQtyInc @ 0xABC20);
  *      and the two counts go into the avail and taken panels' aux columns -- the decompiler writes them as
- *      `gap_0[row*4+5044]`, and 5044 is anLineAux at +0x13B4. The row index advances only for kept slots
+ *      anLineAux[row] at +0x13B4 (the original writes it as `gap_0[5044 + 4*row]`). The row index advances only for kept slots
  *      while the slot counter advances for all of them, which is what makes the aux column a slot id rather
  *      than a row index.
  *  10. the sort (0x7B950..0x7B9F8) reads the first nObjectCount-1 entries of g_aBuySellRowOrder @ 0xAAA04
@@ -878,11 +878,11 @@ i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv);
  * bPlaneStoresCommitted @ 0x161F28 (0x7BD60) is the second gate, and it picks between two arms.
  *
  * STORES ARM, 0x7BD70..0x7C228. dwActionFail @ 0x1870C8 read as a dword decides the two row panels'
- * bFlag7073: exactly 1 clears it on pPlaneSelRowPanel @ 0x161F00 and pPlaneCommitRowPanel @ 0x161EEC,
+ * bSelLineHighlight: exactly 1 clears it on pPlaneSelRowPanel @ 0x161F00 and pPlaneCommitRowPanel @ 0x161EEC,
  * anything else sets it to 1 (0x7BDA4..0x7BDC4 -- and the 1 is the leftover R11 from the rail loop's
  * nRectH, not a constant the reader can see). Then (150,150,255 / 20,20,20), TEXTS[89] "Корабль"
  * centred on 210 and TEXTS[155] "База" centred on 147, both at y 54. bPanelFlagScratch @ 0x161F0C is
- * copied into both row panels' bUnk7080 and cleared -- a one-shot flag a row click sets and this draw
+ * copied into both row panels' bRepeatArmed and cleared -- a one-shot flag a row click sets and this draw
  * consumes. Then the five panels interleave with four separators: the band is 16 * min(nLineCount,
  * nStyle) of the SELECT-ROW panel (0x7BE7C..0x7BEAC, `MOVGE R3,R0,LSL#4`), every separator is 1 x
  * (band + 2) at y 69 in palette index 0xB4, and the order is separator 130, avail (0x161A40),

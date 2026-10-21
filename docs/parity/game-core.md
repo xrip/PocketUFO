@@ -20875,3 +20875,36 @@ IDB: live-count notes at 0x7619C and 0x76C14, the confirm writes at 0x75124/0x75
 0x8C08C and 0x8C098, the detail-arm cell identity at 0x884D4, and the gate setter/clear pair at
 0x7019C and 0x6E970; `idb_save`. Gates: release and debug builds clean, 62/62 tests in both
 configurations, report and artifacts OK, frames and e2e reviewed at native scale.
+
+## UiPanelMsg_Draw's numeric branch -- the missing price and quantity columns (Part 100)
+
+The user looked at the committed econ_buysell frames and named the defect: every row showed
+its name and the two arrow glyphs, and the Cena and Kol-vo columns were blank. The columns are
+aux-number rendering, and UiPanelMsg_Draw @ 0x3e94c picks the string in two ways (branch at
+0x3EBA8): with bAuxNumbers != 0 the line is the number -- psz = itoa(anLineAux[row]), and with
+bAuxPlusSign != 0 and aux > 0 the string starts with the "+" of asc_AAF90 before the itoa digits
+(0x3EC30..0x3EC6C, the plain itoa at 0x3EC8C covers aux <= 0); with bAuxNumbers == 0 the line is
+apLines[row]. Either way nUnk7076 measures the picked string and the same tail at 0x3ECD10 draws
+it. The port's UiPanel_DrawText carried only the text branch, so every bAuxNumbers panel drew its
+(apLines-empty) nothing. That is exactly the six panels the IDB census finds with the flag set:
+shop buy E/D (BuySellScreen_BuildControls 0x76160: E aux = price, D aux = 0), shop sell E/D
+(BuySellScreen_BuildPanels: D aux = 1 for soldier/craft rows and the stock count for items,
+E aux = 0), transfer E/D, hangar avail/taken (BasePlaneScreen_BuildControls), funding bars/arrows
+(FundingScreen_Toggle 0x5AE40/0x5AF2C, arrows with bAuxPlusSign), and the mission value column
+panel held at 0x1568E4 (Tact_InitMission 0x3C958). The port already carried the flags and the aux
+feeds for all six -- only the draw branch was missing.
+
+FundingScreen_Draw @ 0x5b1fc calls UiPanelMsg_Draw three times (0x5B48C/0x5B498/0x5B4A4), so the
+original funding screen really paints the bar numbers and the "+N" arrows; the FundRefSimple test
+reference had been built against the port's text-only drawer and gained the bars at x 100 and the
+arrows at x 170, both y 70 + 16 * row, mirroring the toggle's "a bar not positive zeroes its
+arrow too" rule (0x5B0EC..0x5B11C). Four committed frames changed and were reviewed:
+econ_buysell_open (the price column full, the quantity column zeroes), econ_buysell_queued (the
+queued row counts 1 and the money lines moved), econ_buysell_sell (quantity 1 per row, price
+column 0 as the sell build stores it), and geoscape_hangar_stores (Baza 0 / Korabl 1).
+
+Alongside the fix the UiPanel flag and scratch bytes were renamed in the IDB and the port to the
+roles their use proves -- see docs/parity/renames.tsv for the twelve entries: the four draw flags,
+the hover box origin/size fields, the colour-key byte, the hover-active byte, the hold counter
+trio, the hovered-row dword (the old gap_0[12..15], now its own nHoverRow member), and the colour
+triples (the old gap_0[0..11], now aStyleRgb[12]). The layout, 7092 bytes, is unchanged.

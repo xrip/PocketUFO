@@ -8,7 +8,7 @@
  * controls after it staying down.
  *
  * The panels are set up so UiPanel_TrackHoldRow and UiPanel_ClickRow leave different
- * marks: tracking sets bUnk3024 and leaves nUnk3032 alone, clicking clears bUnk3024 and
+ * marks: tracking sets bHoverActive and leaves nUnk3032 alone, clicking clears bHoverActive and
  * writes nUnk3032 = nUnk3028 + row. So "which panel was tracked, which was clicked" is
  * observable too.
  */
@@ -195,14 +195,14 @@ static void Fix_Panel(UiPanel *p)
     p->nLineCount = 200;
     p->nPosY = 0;
     p->nFont = 1;
-    p->nUnk7052 = 0;
-    p->nUnk7056 = 0;
+    p->nRectX = 0;
+    p->nRectY = 0;
     p->nViewW = PUFO_SURF_W;
     p->nViewH = PUFO_SURF_H;
-    p->bFlag7073 = 1;
+    p->bSelLineHighlight = 1;
 }
 
-static i32 PanelRow(const UiPanel *p) { return *(const i32 *)(const void *)(p->gap_0 + 12); }
+static i32 PanelRow(const UiPanel *p) { return p->nHoverRow; }
 static bool CtlHit(const UiControl *pCtl) { return pCtl->nState != 0; }
 
 static void Fix_Reset(void)
@@ -594,7 +594,7 @@ static void TestWorldFlags(void)
     g.nScreenId = 2;
     g.bMultiSelect = 1;
     CheckEqI32(Call(100, 100, true), 100, "the multi-select panel tracks the pointer row");
-    CheckEqI32(g.pStatus.bUnk3024, 1, "the status panel is the one tracked");
+    CheckEqI32(g.pStatus.bHoverActive, 1, "the status panel is the one tracked");
     CheckEqI32(PanelRow(&g.pStatus), 100, "the tracked row is the cursor y");
 
     Fix_Reset();
@@ -833,14 +833,14 @@ static void TestSoldierScreen(void)
     Call(100, 100, true);
     Check(CtlHit(&g.aSolPanel[0]) && CtlHit(&g.aSolPanel[1]),
           "screen 4 hit-tests its two panel controls");
-    CheckEqI32(g.pSolNames.bUnk3024, 1, "the open soldier screen tracks the names panel");
-    CheckEqI32(g.pSolEquip.bUnk3024, 0, "not the equipment panel");
+    CheckEqI32(g.pSolNames.bHoverActive, 1, "the open soldier screen tracks the names panel");
+    CheckEqI32(g.pSolEquip.bHoverActive, 0, "not the equipment panel");
     Check(Hit(GEOUI_CTL_186B00), "and screen 4 ends on the close control");
 
     Fix_Reset();
     g.nScreenId = 4;
     Call(100, 100, true);
-    CheckEqI32(g.pSolNames.bUnk3024, 0, "with the screen closed no panel is tracked");
+    CheckEqI32(g.pSolNames.bHoverActive, 0, "with the screen closed no panel is tracked");
 
     Fix_Reset();
     g.nScreenId = 5;
@@ -880,7 +880,7 @@ static void TestSoldierScreen(void)
     g.nScreenId = 5;
     g.bTransferFlag = 1;
     Call(100, 100, true);
-    CheckEqI32(g.pSolEquip.bUnk3024, 1, "with the transfer flag the equipment panel is tracked");
+    CheckEqI32(g.pSolEquip.bHoverActive, 1, "with the transfer flag the equipment panel is tracked");
     Check(!CtlHit(&g.aSolFind[0]), "and the soldier-find controls are skipped");
 }
 
@@ -895,7 +895,7 @@ static void TestCraftScreen(void)
     Call(100, 100, true);
     CheckEqI32(g.bPopupB, 1, "screen 6 raises popup B");
     CheckEqI32(g.bPopupA, 1, "and popup A while the craft list is showing");
-    CheckEqI32(g.pPlaneCraft.bUnk3024, 1, "the craft panel is tracked");
+    CheckEqI32(g.pPlaneCraft.bHoverActive, 1, "the craft panel is tracked");
     CheckEqI32(PanelRow(&g.pPlaneStatus), 100, "the status panel is tracked at the raw y");
     CheckEqI32(g.pPlaneStatus.nUnk3032, 100, "and its row is clicked");
     Check(Hit(GEOUI_CTL_186B00), "screen 6 ends on the close control");
@@ -906,13 +906,13 @@ static void TestCraftScreen(void)
     g.bPlaneDetail = 1;
     Call(100, 100, true);
     CheckEqI32(g.bPopupA, 0, "with the craft detail open popup A stays down");
-    CheckEqI32(g.pPlaneCraft.bUnk3024, 0, "and the craft panel is not tracked");
+    CheckEqI32(g.pPlaneCraft.bHoverActive, 0, "and the craft panel is not tracked");
 
     Fix_Reset();
     g.nScreenId = 6;
     g.bPlaneStores = 1;
     Call(100, 100, true);
-    Check(g.pPlaneSel.bUnk3024 == 1 && g.pPlaneCommit.bUnk3024 == 1,
+    Check(g.pPlaneSel.bHoverActive == 1 && g.pPlaneCommit.bHoverActive == 1,
           "committed stores track the two row panels");
     CheckEqI32(g.pPlaneSlot.nUnk3032, 100, "the slot panel is tracked and clicked");
     Check(CtlHit(&g.aPlane[PUFO_GEO_PLANE_STORE_CTL]) &&
@@ -923,7 +923,7 @@ static void TestCraftScreen(void)
     g.nScreenId = 6;
     g.bPlaneListBuilt = 1;
     Call(100, 100, true);
-    CheckEqI32(g.pPlaneCrew.bUnk3024, 1, "the crew panel is tracked with the raw pointer");
+    CheckEqI32(g.pPlaneCrew.bHoverActive, 1, "the crew panel is tracked with the raw pointer");
     CheckEqI32(PanelRow(&g.pPlaneCrew), 100, "at the raw y");
     Check(CtlHit(&g.aPlane[PUFO_GEO_PLANE_CREW_CTL]) &&
           CtlHit(&g.aPlane[PUFO_GEO_PLANE_CREW_CTL + 1]), "the two crew controls are hit");
@@ -985,39 +985,39 @@ static void TestBuildDialog(void)
 
     Fix_Reset();
     g.nScreenId = 7;
-    g.pFac.bFlag7073 = 0;
+    g.pFac.bSelLineHighlight = 0;
     Call(100, 100, true);
     CheckEqI32(g.bPopupA, 1, "screen 7 raises popup A");
-    CheckEqI32(g.pFac.bFlag7073, 1, "with placement not armed the overlay flag is raised");
+    CheckEqI32(g.pFac.bSelLineHighlight, 1, "with placement not armed the overlay flag is raised");
     Check(CtlHit(&g.aFac[0]) && CtlHit(&g.aFac[1]), "and the two dialog controls are hit");
-    CheckEqI32(g.pFac.bUnk3024, 1, "the dialog panel is tracked");
+    CheckEqI32(g.pFac.bHoverActive, 1, "the dialog panel is tracked");
 
     Fix_Reset();
     g.nScreenId = 7;
-    g.pFac.bFlag7073 = 1;
+    g.pFac.bSelLineHighlight = 1;
     Call(230, 240, true); /* the stored cursor in the 220..250 corner */
-    CheckEqI32(g.pFac.bFlag7073, 0, "the right corner hides the placement overlay");
+    CheckEqI32(g.pFac.bSelLineHighlight, 0, "the right corner hides the placement overlay");
 
     Fix_Reset();
     g.nScreenId = 7;
-    g.pFac.bFlag7073 = 1;
+    g.pFac.bSelLineHighlight = 1;
     Call(20, 260, true); /* the raw pointer in the 0..40 / 251..300 corner */
-    CheckEqI32(g.pFac.bFlag7073, 0, "the bottom-left corner hides it too");
+    CheckEqI32(g.pFac.bSelLineHighlight, 0, "the bottom-left corner hides it too");
 
     Fix_Reset();
     g.nScreenId = 7;
-    g.pFac.bFlag7073 = 1;
+    g.pFac.bSelLineHighlight = 1;
     Call(230, 300, true);
-    CheckEqI32(g.pFac.bFlag7073, 1, "y 300 is outside the corner band");
+    CheckEqI32(g.pFac.bSelLineHighlight, 1, "y 300 is outside the corner band");
 
     Fix_Reset();
     g.nScreenId = 7;
-    g.pFac.bFlag7073 = 0;
+    g.pFac.bSelLineHighlight = 0;
     g.bFacArmed = 1;
     Call(100, 100, true);
-    CheckEqI32(g.pFac.bFlag7073, 0, "with placement armed the flag is not raised");
+    CheckEqI32(g.pFac.bSelLineHighlight, 0, "with placement armed the flag is not raised");
     Check(!CtlHit(&g.aFac[0]), "and the dialog controls are not hit");
-    CheckEqI32(g.pFac.bUnk3024, 0, "and the panel is not tracked");
+    CheckEqI32(g.pFac.bHoverActive, 0, "and the panel is not tracked");
 }
 
 /* ------------------------------------------------- screens 8 and 9 */
@@ -1028,7 +1028,7 @@ static void TestResearchAndManuf(void)
     Fix_Reset();
     g.nScreenId = 8;
     Call(100, 100, true);
-    CheckEqI32(g.pResearch.bUnk3024, 1, "with no row selected the topic panel is tracked");
+    CheckEqI32(g.pResearch.bHoverActive, 1, "with no row selected the topic panel is tracked");
     Check(CtlHit(&g.aResearch[0]) && CtlHit(&g.aResearch[1]), "the two row controls are hit");
     Check(!CtlHit(&g.aResearch[2]), "the confirm-row controls are not");
     Check(Hit(GEOUI_CTL_186B00), "and screen 8 ends on the close control");
@@ -1037,7 +1037,7 @@ static void TestResearchAndManuf(void)
     g.nScreenId = 8;
     g.bRowSelected = 1;
     Call(100, 100, true);
-    CheckEqI32(g.pResearch.bUnk3024, 0, "with a row selected the topic panel is not tracked");
+    CheckEqI32(g.pResearch.bHoverActive, 0, "with a row selected the topic panel is not tracked");
     Check(CtlHit(&g.aResearch[2]) && CtlHit(&g.aResearch[3]), "the confirm-row controls are hit");
     Check(!CtlHit(&g.aResearch[0]), "and the row controls are not");
     Check(Hit(GEOUI_CTL_186BB4) && Hit(GEOUI_CTL_186BB0) && Hit(GEOUI_CTL_186B94),
@@ -1047,11 +1047,11 @@ static void TestResearchAndManuf(void)
     g.nScreenId = 9;
     Call(100, 100, true);
     CheckEqI32(g.bPopupB, 1, "screen 9 raises popup B");
-    CheckEqI32(g.pManufProd.bUnk3024, 1, "the product panel is tracked at the stored cursor");
+    CheckEqI32(g.pManufProd.bHoverActive, 1, "the product panel is tracked at the stored cursor");
     CheckEqI32(PanelRow(&g.pManufProd), 100, "at the stored y");
     Check(CtlHit(&g.aManuf[0]) && CtlHit(&g.aManuf[1]), "the two row controls are hit");
     CheckEqI32(g.pManufD.nUnk3032, 100, "the detail panel is tracked and clicked");
-    CheckEqI32(g.pManufD.bUnk3024, 0, "the click clears the hover flag");
+    CheckEqI32(g.pManufD.bHoverActive, 0, "the click clears the hover flag");
 
     Fix_Reset();
     g.nScreenId = 9;
@@ -1108,8 +1108,8 @@ static void TestScreen16(void)
     g.nScreenId = 16;
     Call(100, 100, true);
     Check(!CtlHit(&g.a16[0]), "with both mode bytes clear no list control is hit");
-    CheckEqI32(g.p16.bUnk3024, 1, "the default panel is the one tracked");
-    CheckEqI32(g.p16Set.bUnk3024, 0, "not the selected set");
+    CheckEqI32(g.p16.bHoverActive, 1, "the default panel is the one tracked");
+    CheckEqI32(g.p16Set.bHoverActive, 0, "not the selected set");
 
     Fix_Reset();
     g.nScreenId = 16;
@@ -1117,7 +1117,7 @@ static void TestScreen16(void)
     Call(100, 100, true);
     Check(CtlHit(&g.a16[4]) && CtlHit(&g.a16[5]), "mode A hit-tests controls 4 and 5");
     Check(!CtlHit(&g.a16[0]), "and not the lower ones");
-    CheckEqI32(g.p16Set.bUnk3024, 1, "mode A tracks the panel from the selected set");
+    CheckEqI32(g.p16Set.bHoverActive, 1, "mode A tracks the panel from the selected set");
     CheckEqI32(PanelRow(&g.p16Set), 100, "at the stored cursor y");
 
     Fix_Reset();
@@ -1127,7 +1127,7 @@ static void TestScreen16(void)
     Call(100, 100, true);
     Check(CtlHit(&g.a16[0]) && CtlHit(&g.a16[3]), "mode B with a full list hit-tests 0..3");
     Check(!CtlHit(&g.a16[4]), "and stops at 3");
-    Check(g.p16.bUnk3024 == 0 && g.p16Set.bUnk3024 == 0, "mode B tracks no panel at all");
+    Check(g.p16.bHoverActive == 0 && g.p16Set.bHoverActive == 0, "mode B tracks no panel at all");
 
     Fix_Reset();
     g.nScreenId = 16;
@@ -1207,7 +1207,7 @@ static void TestOptions(void)
     CheckEqI32(Call(100, 100, true), 100, "the confirm tail returns the tracked row");
     Check(Hit(GEOUI_CTL_186BB4), "the tail hit-tests the shared control even with no page");
     Check(CtlHit(&g.aOptPrev) && CtlHit(&g.aOptNext), "and the prev/next controls");
-    CheckEqI32(g.pOptShips.bUnk3024, 1, "tracking the ships panel");
+    CheckEqI32(g.pOptShips.bHoverActive, 1, "tracking the ships panel");
 
     Fix_Reset();
     g.nScreenId = 18;
@@ -1215,7 +1215,7 @@ static void TestOptions(void)
     g.bOptConfirm = 1;
     g.nOptPage = 3;
     Call(100, 100, true);
-    CheckEqI32(g.pOptShips.bUnk3024, 1, "page 3 still runs the confirm tail");
+    CheckEqI32(g.pOptShips.bHoverActive, 1, "page 3 still runs the confirm tail");
 }
 
 /* ------------------------------------------------- screen 20 and the default arm */
@@ -1426,10 +1426,10 @@ static void TestUpWorldFlags(void)
     g.nScreenId = 2;
     g.bPlacementPending = 1;
     g.bMultiSelect = 1;
-    g.pStatus.bFlag7073 = 0;
+    g.pStatus.bSelLineHighlight = 0;
     CheckEqI32(CallUp(), 0, "the multi-select gate returns 0 (deviation 5: the original returns the panel)");
     Check(PanelRow(&g.pStatus) == 100, "the multi-select gate clicks the status panel row");
-    Check(g.pStatus.bFlag7073 == 1, "and raises the panel's bFlag7073 (0x89B8C)");
+    Check(g.pStatus.bSelLineHighlight == 1, "and raises the panel's bSelLineHighlight (0x89B8C)");
 
     Check(g.bDragActive == 0, "the release clears the drag flag (0x896BC)");
 }
@@ -1875,11 +1875,11 @@ static void TestUpBuildDialog(void)
     Fix_UpCursor();
     g.nScreenId = 7;
     g.bFacArmed = 1;
-    g.pFac.bFlag7073 = 1;
+    g.pFac.bSelLineHighlight = 1;
     (void)CallUp();
     Check(ArmedCtl(&g.aFac[0]), "while armed the dialog controls are not released (0x89E40)");
     Check(NotClicked(&g.pFac), "and the list is not clicked (0x89F10)");
-    Check(g.pFac.bFlag7073 == 1, "and the overlay flag is left alone");
+    Check(g.pFac.bSelLineHighlight == 1, "and the overlay flag is left alone");
 
     /* The two hot corners hide the placement overlay. */
     Fix_Reset();
@@ -1889,7 +1889,7 @@ static void TestUpBuildDialog(void)
     g.nCursorX = 230;
     g.nCursorY = 240; /* 229 < y < 250 and x > 220 */
     (void)CallUp();
-    Check(g.pFac.bFlag7073 == 0, "the bottom-right hot corner hides the overlay (0x89ECC)");
+    Check(g.pFac.bSelLineHighlight == 0, "the bottom-right hot corner hides the overlay (0x89ECC)");
 
     Fix_Reset();
     Fix_ArmAll();
@@ -1898,7 +1898,7 @@ static void TestUpBuildDialog(void)
     g.nCursorX = 20;
     g.nCursorY = 260; /* 251 < y < 300 and 0 < x < 40 */
     (void)CallUp();
-    Check(g.pFac.bFlag7073 == 0, "the bottom-left hot corner hides it too (0x89F00)");
+    Check(g.pFac.bSelLineHighlight == 0, "the bottom-left hot corner hides it too (0x89F00)");
 
     Fix_Reset();
     Fix_ArmAll();
@@ -1907,7 +1907,7 @@ static void TestUpBuildDialog(void)
     g.nCursorX = 20;
     g.nCursorY = 300; /* the band is exclusive at 300 */
     (void)CallUp();
-    Check(g.pFac.bFlag7073 == 1, "a cursor at y == 300 is outside the band");
+    Check(g.pFac.bSelLineHighlight == 1, "a cursor at y == 300 is outside the band");
 }
 
 static void TestUpResearchAndManuf(void)
@@ -2140,13 +2140,13 @@ static void TestUpOptions(void)
     g.nScreenId = 18;
     g.bOptPageActive = 0;
     g.bOptConfirm = 1;
-    g.pOptShips.bFlag7073 = 0;
+    g.pOptShips.bSelLineHighlight = 0;
     CheckEqI32(CallUp(), 0, "the confirm tail returns 0 (deviation 5: the original returns the panel)");
     Check(Up(GEOUI_CTL_186BB4), "it releases 186BB4 (0x8AED4)");
     Check(UpCtl(&g.aOptPrev) && UpCtl(&g.aOptNext), "and the prev / next pair, slots 7 and 8 (0x8AEEC)");
     Check(PanelRow(&g.pOptShips) == 100,
           "then clicks the ships panel through the shared tail (0x8AF1C -> 0x89B64)");
-    Check(g.pOptShips.bFlag7073 == 1, "and raises its bFlag7073");
+    Check(g.pOptShips.bSelLineHighlight == 1, "and raises its bSelLineHighlight");
 
     Fix_Reset();
     Fix_ArmAll();

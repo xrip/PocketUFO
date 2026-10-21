@@ -140,7 +140,7 @@ static void Fix_Panel(UiPanel *p)
     p->nFont = 16;
     p->nViewW = 240;
     p->nViewH = 320;
-    p->bFlag7073 = 1;                  /* the UiPanel_ctor default, which some branches clear */
+    p->bSelLineHighlight = 1;                  /* the UiPanel_ctor default, which some branches clear */
     for (i32 i = 0; i < HIT_LINES; ++i) {
         p->apLines[i] = g_apLineBuf[i];
         g_apLineBuf[i][0] = 0;
@@ -490,10 +490,10 @@ static void TestMultiSelect(void)
     CheckI(LineAux(1), 0, "and not the list order");
     CheckI(g.pStatus.nPosX, 120, "the panel is centred at x 120");
     CheckI(g.pStatus.nPosY, 104, "120 - (2 / 2) * nFont");
-    CheckI(g.pStatus.nUnk7052, 20, "the view rect starts at x 20");
-    CheckI(g.pStatus.nUnk7056, 104, "and its y is recomputed, not copied");
+    CheckI(g.pStatus.nRectX, 20, "the view rect starts at x 20");
+    CheckI(g.pStatus.nRectY, 104, "and its y is recomputed, not copied");
     CheckI(g.pStatus.nViewW, 200, "a 200-wide view");
-    Check(g.pStatus.bFlag7073 == 0, "bFlag7073 is cleared");
+    Check(g.pStatus.bSelLineHighlight == 0, "bSelLineHighlight is cleared");
     Check(g.oTime.bPaused == 1, "the clock pauses");
     CheckI(g.bFlagA0, 1, "byte_18709C[4] goes up");
     CheckI(g_nSample, 7, "Sound_Play(7) plays");
@@ -543,7 +543,7 @@ static void TestSingleDispatch(void)
     CheckI(g.nScreenId, 18, "an inactive site opens the options screen id");
     CheckI(g_nOptMode, 5, "OptionsScreen_OpenWithSound gets nSiteId");
     CheckI(g_nOptSample, 7, "with its own sample 7");
-    Check(g.pOptShips.bFlag7073 == 0, "the options ships panel is reset, which the status click does not do");
+    Check(g.pOptShips.bSelLineHighlight == 0, "the options ships panel is reset, which the status click does not do");
     CheckI(g.oLines.nLineCount, 0, "and no message line is edited");
 
     Fix_Reset();

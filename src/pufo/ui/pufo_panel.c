@@ -4,6 +4,7 @@
  */
 #include "ui/pufo_panel.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,26 +39,26 @@ bool UiPanel_ctor(UiPanel *pPanel, i32 nLineCount)
     }
 
     /* Defaults, in the original's order. */
-    pPanel->bUnk3024 = 0;
+    pPanel->bHoverActive = 0;
     pPanel->nFont    = 17;
     pPanel->nUnk3028 = 0;
     pPanel->nUnk3032 = 0;
-    pPanel->bFlag7073 = 1;
+    pPanel->bSelLineHighlight = 1;
     pPanel->nStyle    = 1;
     pPanel->nPosX     = 0;
     pPanel->nPosY     = 0;
-    pPanel->nUnk7052  = 0;
-    pPanel->nUnk7056  = 0;
+    pPanel->nRectX  = 0;
+    pPanel->nRectY  = 0;
     pPanel->nViewW    = 240;
     pPanel->nViewH    = 320;
-    pPanel->bFlag7072 = 1;
-    pPanel->bFlag7074 = 0;
-    pPanel->bUnk7089  = 0;
+    pPanel->bRowRules = 1;
+    pPanel->bAuxNumbers = 0;
+    pPanel->bAuxPlusSign  = 0;
     pPanel->nUnk7076  = 0;
-    pPanel->bUnk7080  = 0;
-    pPanel->nUnk3016  = 0;
-    pPanel->nUnk7084  = 0;
-    pPanel->bUnk7088  = 0xFF;
+    pPanel->bRepeatArmed  = 0;
+    pPanel->nHoldCount  = 0;
+    pPanel->nRepeatDelay  = 0;
+    pPanel->bColorKey  = 0xFF;
     return true;
 }
 
@@ -75,26 +76,26 @@ void UiPanel_FreeLines(UiPanel *pPanel)
 
 void UiPanel_SetBytes0to2(UiPanel *pPanel, u8 b0, u8 b1, u8 b2)
 {
-    pPanel->gap_0[0] = b0;
-    pPanel->gap_0[1] = b1;
-    pPanel->gap_0[2] = b2;
+    pPanel->aStyleRgb[0] = b0;
+    pPanel->aStyleRgb[1] = b1;
+    pPanel->aStyleRgb[2] = b2;
 }
 
 void UiPanel_SetBytes3to5(UiPanel *pPanel, u8 b3, u8 b4, u8 b5)
 {
-    pPanel->gap_0[3] = b3;
-    pPanel->gap_0[4] = b4;
-    pPanel->gap_0[5] = b5;
+    pPanel->aStyleRgb[3] = b3;
+    pPanel->aStyleRgb[4] = b4;
+    pPanel->aStyleRgb[5] = b5;
 }
 
 void UiPanel_SetBytes6to11(UiPanel *pPanel, u8 b6, u8 b7, u8 b8, u8 b9, u8 b10, u8 b11)
 {
-    pPanel->gap_0[6]  = b6;
-    pPanel->gap_0[7]  = b7;
-    pPanel->gap_0[8]  = b8;
-    pPanel->gap_0[9]  = b9;
-    pPanel->gap_0[10] = b10;
-    pPanel->gap_0[11] = b11;
+    pPanel->aStyleRgb[6]  = b6;
+    pPanel->aStyleRgb[7]  = b7;
+    pPanel->aStyleRgb[8]  = b8;
+    pPanel->aStyleRgb[9]  = b9;
+    pPanel->aStyleRgb[10] = b10;
+    pPanel->aStyleRgb[11] = b11;
 }
 
 /* UiPanel_SetLineMeta @ 0x3f06c.
@@ -307,23 +308,32 @@ i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszTe
     return nCommitted;
 }
 
-/* UiPanelMsg_Draw @ 0x3e94c, text rows.
+/* UiPanelMsg_Draw @ 0x3e94c, the row text pass.
+ *
+ * Two ways to pick the string, from the branch at 0x3EBA8:
+ *   bAuxNumbers != 0 (0x3EC08..0x3EC90): the line is a number. apLines is never read;
+ *     psz = itoa(anLineAux[row]), and when bAuxPlusSign != 0 and aux > 0 the string is the
+ *     "+" of asc_AAF90 followed by the itoa digits (0x3EC34..0x3EC6C, then at 0x3EC8C
+ *     the plain itoa covers aux <= 0 and panels without bAuxPlusSign).
+ *   bAuxNumbers == 0: psz = apLines[row].
  *
  * Row y, from the decompilation:
  *     y = (row - nUnk3028) * nFont + (nFont - 16) / 2 + nPosY
- * and the x origin is nPosX adjusted by the measured width according to nUnk7076:
- *     1 -> centre (half the width), 2 -> right (full width), 0 -> left.
+ * and the x origin is nPosX adjusted by the measured width of whichever string was
+ * picked, according to nUnk7076: 1 -> centre (half the width), 2 -> right (full
+ * width), 0 -> left.
  *
  * The original also packs two colour triples per row through Gfx_PackRgb565Pair
  * and writes them to a palette LUT; that LUT feeds the blit (SoftSurf_BlitRectProxy /
  * SoftSurf_BlitSrcRect, ported in pufo_render.c), and the colour step is still omitted
- * here -- the deviation this function records -- so only the text is drawn. */
+ * here -- the deviation this function records -- so only the string is drawn. */
 void UiPanel_DrawText(UiPanel *pPanel)
 {
     i32 row;
 
     for (row = pPanel->nUnk3028; row < pPanel->nLineCount; ++row) {
-        const char *psz = UiPanel_GetLineText(pPanel, row);
+        char        szNum[16];
+        const char *psz;
         i32         nVisible = row - pPanel->nUnk3028;
         i32         nWidth;
         i32         x;
@@ -332,8 +342,20 @@ void UiPanel_DrawText(UiPanel *pPanel)
         if (nVisible >= pPanel->nStyle) {
             break;
         }
-        if (psz == NULL || psz[0] == '\0') {
-            continue;
+        if (pPanel->bAuxNumbers != 0) {
+            const i32 nAux = pPanel->anLineAux[row]; /* anLineAux @ 0x13B4, 0x3EC30 / 0x3EC8C */
+
+            if (pPanel->bAuxPlusSign != 0 && nAux > 0) {
+                snprintf(szNum, sizeof(szNum), "+%d", nAux);
+            } else {
+                snprintf(szNum, sizeof(szNum), "%d", nAux);
+            }
+            psz = szNum;
+        } else {
+            psz = UiPanel_GetLineText(pPanel, row);
+            if (psz == NULL || psz[0] == '\0') {
+                continue;
+            }
         }
         nWidth = Text_MeasureWidth(psz);
         if (pPanel->nUnk7076 == 1) {
@@ -363,21 +385,21 @@ i32 UiPanel_ClickRow(UiPanel *pPanel, i32 nX, i32 nY)
         return 0;
     }
     s_nClickRowFlag = 0;          /* unk_158018 */
-    pPanel->nUnk3016 = 0;
+    pPanel->nHoldCount = 0;
     /* Row = (nY - nPosY) / nFont, exactly the original's two field reads. */
     nRow = (nY - pPanel->nPosY) / pPanel->nFont;
-    /* The original stores the row into the dword at panel offset 12 (gap_0[12]).
+    /* The original stores the row into nHoverRow, the dword at panel offset 12.
      * It never writes nUnk3028 here; ARM 0x3EEE0..0x3F000 writes only unk_158018,
      * 0xBC8, 0xC and 0xBD0, and reads 0xBD4 as the left side of the sum below. */
-    *(i32 *)(void *)(pPanel->gap_0 + 12) = nRow;
-    pPanel->bUnk3024 = 0;
+    pPanel->nHoverRow = nRow;
+    pPanel->bHoverActive = 0;
 
-    if (pPanel->bFlag7073 != 0
+    if (pPanel->bSelLineHighlight != 0
         && nRow <= pPanel->nStyle - 1
         && nRow <= pPanel->nLineCount - 1) {
-        nLeft = pPanel->nUnk7052;
+        nLeft = pPanel->nRectX;
         if (nX > nLeft && nX < pPanel->nViewW + nLeft) {
-            nTop = pPanel->nUnk7056;
+            nTop = pPanel->nRectY;
             if (nY > nTop && nY < pPanel->nViewH + nTop) {
                 pPanel->nUnk3032 = pPanel->nUnk3028 + nRow;
                 if (pPanel->pfnClick != NULL) {
@@ -402,41 +424,41 @@ i32 UiPanel_TrackHoldRow(UiPanel *pPanel, i32 nX, i32 nY)
         return 0;
     }
     nRow = (nY - pPanel->nPosY) / pPanel->nFont;
-    *(i32 *)(void *)(pPanel->gap_0 + 12) = nRow;
+    pPanel->nHoverRow = nRow;
 
-    if (pPanel->bFlag7073 == 0) {
+    if (pPanel->bSelLineHighlight == 0) {
         return nRow;
     }
-    nLeft = pPanel->nUnk7052;
-    nTop = pPanel->nUnk7056;
+    nLeft = pPanel->nRectX;
+    nTop = pPanel->nRectY;
     if (nRow > pPanel->nStyle - 1
         || nRow > pPanel->nLineCount - 1
         || nX <= nLeft
         || nX >= pPanel->nViewW + nLeft
         || nY <= nTop
         || nY >= pPanel->nViewH + nTop) {
-        pPanel->bUnk3024 = 0;
-        pPanel->nUnk3016 = 0;
+        pPanel->bHoverActive = 0;
+        pPanel->nHoldCount = 0;
         return nRow;
     }
 
-    pPanel->bUnk3024 = 1;
-    if (pPanel->bUnk7080 == 0) {
+    pPanel->bHoverActive = 1;
+    if (pPanel->bRepeatArmed == 0) {
         return nRow;
     }
     /* 0x3EE50: a different hovered row restarts the repeat counter. */
     if (s_nClickRowFlag != nRow) {
-        pPanel->nUnk3016 = 0;
+        pPanel->nHoldCount = 0;
     }
-    pPanel->nUnk3016 += 1;
+    pPanel->nHoldCount += 1;
     s_nClickRowFlag = nRow;
 
-    nThreshold = pPanel->nUnk7084;
-    if (pPanel->nUnk3016 >= nThreshold) {
-        /* 0x3EE84..0x3EEB8: re-reads gap_0[12] rather than reusing the register. */
-        i32 nStored = *(i32 *)(void *)(pPanel->gap_0 + 12);
-        pPanel->bUnk7080 = 0;
-        pPanel->nUnk3016 = nThreshold;
+    nThreshold = pPanel->nRepeatDelay;
+    if (pPanel->nHoldCount >= nThreshold) {
+        /* 0x3EE84..0x3EEB8: re-reads nHoverRow rather than reusing the register. */
+        i32 nStored = pPanel->nHoverRow;
+        pPanel->bRepeatArmed = 0;
+        pPanel->nHoldCount = nThreshold;
         pPanel->nUnk3032 = pPanel->nUnk3028 + nStored;
         if (pPanel->pfnClick != NULL) {
             pPanel->pfnClick();

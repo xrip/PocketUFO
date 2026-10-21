@@ -98,6 +98,10 @@ typedef struct GeoscapeFrameState {
     BuySellDrawEnv           buySellDraw;  /* 0x77e6c, the frame both buy and sell run */
     GeoscapeScreenArmEnv     buySellCtl;   /* 0x161A0C / 0x161A10, the two controls the arm blits */
     GeoscapeBuySellTrackEnv  buySellTrack; /* the tail cases 10, 11 and 12 share (0x93EB4) */
+    /* Case 10, the transfer screen (0x93E5C..0x93EB4): the "transfer" pad blit, the four controls
+     * (CMP #4 at 0x93E8C), TransferScreen_Draw @ 0x97fa4 at 0x93EB0, then the shared tail. */
+    TransferDrawEnv          transferDraw; /* 0x97fa4, the callee's env */
+    GeoscapeScreenArmEnv     transferCtl;  /* 0x1870DC..0x1870E8, the four controls the arm blits */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -798,6 +802,35 @@ typedef struct PufoWorldState {
     BuySellConfirmEnv     buySellConfirm; /* 0x75090: the buy confirm, the transfer working site's promote */
     ScreenInitHooks       buySellBuyHooks;  /* nav slot 8's handler (0x67BD4) */
     ScreenInitHooks       buySellSellHooks; /* nav slot 9's handler (0x67BE0) */
+    /* Case 10, the transfer screen, opened by nav control slot 7: TransferScreen_Open @ 0x614fc is
+     * installed at 0x67BC4, plays sample 17 at 0x61508 and writes id 10 at 0x6151C AFTER its tail
+     * call into Ui_InitTransfer @ 0x9955c. The original keeps the screen block at 0x1870D8 -- [0] the
+     * "transfer" pad (mode 13, aTransfer @ 0xAC438), the four controls at 0x1870DC..0x1870E8 -- and
+     * shares the five panel columns with the buy/sell screen. The shell owns the same objects plus
+     * its own copy of the row cache dword and the two scratch bytes beside the root array
+     * (unk_1870D0 / unk_1870F0, the only reads Transfer_ResetSite makes of them). */
+    UiControl              aTransferCtl[4];   /* Init's four, seated by its Setup pass on
+                                               * g_aTransferCtlDesc @ 0xAC3B8: the scroll pair at
+                                               * (205,18)/(205,38), the reset and the commit button */
+    UiControl             *apTransferCtl[4];  /* the flat view: the frame blits [0..3] (0x93E68..0x93E90),
+                                               * the press arms hit-test them (0x889F0, 0x8A6AC) */
+    void                  *apTransferRoot[5]; /* the block Init writes: [0] the pad (0x9958C),
+                                               * [1..4] the four controls (0x995E4) */
+    u8                    bTransferBuilt;     /* bTransferPanelsBuilt @ 0x1870EC, the BuildPanels switch and
+                                               * the strip gate Base_HitTestFacilityStrip tests (0x6723C) */
+    ScreenScratch         transferScratch;    /* the row cache unk_186BE8, the transfer screen's copy, as
+                                               * the research and buy/sell screens each keep their own */
+    i8                    bTransferScratch1870D0; /* unk_1870D0, read SIGNED by Transfer_ResetSite's gate;
+                                                   * no writer exists anywhere in the binary */
+    i8                    bTransferScratch1870F0; /* unk_1870F0, the same */
+    TransferInitEnv       transferInit;      /* 0x9955c */
+    TransferBuildEnv      transferBuild;     /* 0x96b30: Init's call at 0x995A4 and CloseUI case 10's
+                                              * teardown rebuild at 0x8BE40 */
+    TransferResetEnv      transferReset;     /* 0x9690c: the reset button's click */
+    TransferMoveEnv       transferMove;      /* 0x9602c: the decrement column's click */
+    TransferCapacityEnv   transferCapacity;  /* 0x96288: the increment column's click */
+    TransferCommitEnv     transferCommit;    /* 0x97aa4: the commit button's click */
+    ScreenInitHooks       transferOpenHooks; /* nav slot 7's handler (0x67BC4) */
     /* The frame's loose globals the shell owns: the radar screen gate, the two research walk
      * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
      * and the two scratch lines the status panel writes. */

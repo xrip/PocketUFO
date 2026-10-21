@@ -33,19 +33,25 @@
  *
  * ## Layout
  *
- *   gap_0        @ 0x0000  16 panel-level style bytes
+ *   aStyleRgb    @ 0x0000  12 panel-level style bytes: [0..2] the row-rule RGB the
+ *                          UiPanelMsg_Draw rule blits take (SoftSurf_BlitRectProxy
+ *                          nIdx/nColorMid/nColorLow), [3..5] the selection-band RGB
+ *                          (SoftSurf_BlitSrcRect), [6..8] and [9..11] the two text-row
+ *                          RGB triples (Gfx_PackRgb565Pair r1,g1,b1 / r2,g2,b2)
+ *   nHoverRow    @ 0x000C  the row last under the pointer (TrackHold / ClickRow)
  *   aLineMeta    @ 0x0010  500 * 6 bytes: two RGB triples per line
- *   nUnk3016     @ 0x0BC8
+ *   nHoldCount   @ 0x0BC8  press-and-hold counter
  *   pfnClick     @ 0x0BCC
- *   bUnk3024     @ 0x0BD0
+ *   bHoverActive @ 0x0BD0  1 while the pointer is inside the hover box (TrackHold)
  *   nUnk3028     @ 0x0BD4  first visible row (the scroll cursor)
  *   nUnk3032     @ 0x0BD8
  *   nLineCount   @ 0x0BDC
  *   nStyle       @ 0x0BE0  visible row count
  *   apLines      @ 0x0BE4  500 line buffers
  *   anLineAux    @ 0x13B4  500 aux dwords
- *   nPosX/Y      @ 0x1B84
- *   nViewW/H     @ 0x1B94
+ *   nPosX/Y      @ 0x1B84  text origin
+ *   nRectX/Y     @ 0x1B8C  hover box origin (TrackHold/ClickRow hit test, rule blit x)
+ *   nViewW/H     @ 0x1B94  hover box size
  *   nFont        @ 0x1B9C
  */
 #ifndef PUFO_PANEL_H
@@ -58,25 +64,20 @@
 #define PUFO_PANEL_LINES      500
 #define PUFO_PANEL_LINE_BYTES 50  /* 0x32, per-line buffer size from UiPanel_ctor */
 #define PUFO_PANEL_META_BYTES 6   /* aLineMeta stride per line */
-#define PUFO_PANEL_STYLE_LEN  16  /* gap_0 size */
 
 /* Per-line meta byte offsets inside aLineMeta[6 * nLine]. Two RGB triples:
  * the first is the normal row colour, the second the highlighted row colour. */
 #define PUFO_PANEL_META_RGB1 0
 #define PUFO_PANEL_META_RGB2 3
 
-/* Panel-level style byte offsets inside gap_0, from SetBytes0to2/3to5/6to11. */
-#define PUFO_PANEL_STY_KEY   0 /* gap_0[0..2], passed to the row blit as the key */
-#define PUFO_PANEL_STY_SRC   3 /* gap_0[3..5], source rect */
-#define PUFO_PANEL_STY_RGB1  6 /* gap_0[6..8],  panel colour triple */
-#define PUFO_PANEL_STY_RGB2  9 /* gap_0[9..11], panel colour triple */
-
 typedef struct UiPanel {
-    u8   gap_0[PUFO_PANEL_STYLE_LEN];
+    u8   aStyleRgb[12]; /* +0x00: [0..2] rule RGB, [3..5] select-band RGB,
+                         * [6..8]/[9..11] the text-row RGB pair (see the layout note) */
+    i32  nHoverRow;     /* +0x0C: row last under the pointer */
     u8   aLineMeta[PUFO_PANEL_LINES * PUFO_PANEL_META_BYTES];
-    i32  nUnk3016;
+    i32  nHoldCount;    /* +0xBC8: press-and-hold counter */
     void (*pfnClick)(void);
-    u8   bUnk3024;
+    u8   bHoverActive;  /* +0xBD0: 1 while the pointer is inside the hover box */
     i32  nUnk3028;  /* scroll cursor: first visible row */
     i32  nUnk3032;
     i32  nLineCount;
@@ -87,28 +88,36 @@ typedef struct UiPanel {
      * GameClock (see pufo_tactctl.h) so the two identities stay separate. The
      * slots exist here only to preserve the array geometry. */
     i32  anLineAux[PUFO_PANEL_LINES];
-    i32  nPosX;
+    i32  nPosX;         /* text origin */
     i32  nPosY;
-    i32  nUnk7052;
-    i32  nUnk7056;
-    i32  nViewW;
-    i32  nViewH;
+    i32  nRectX;        /* +0x1B8C: hover box left */
+    i32  nRectY;        /* +0x1B90: hover box top */
+    i32  nViewW;        /* hover box width */
+    i32  nViewH;        /* hover box height */
     i32  nFont;
-    u8   bFlag7072;
-    u8   bFlag7073;
-    u8   bFlag7074;
+    /* The four UiPanelMsg_Draw @ 0x3e94c draw flags, named for the branch each one
+     * gates in the decompilation. The original's own names are the field offsets. */
+    u8   bRowRules;          /* panel+0x1BA0: 0x3E974 blits a 1px rail at (nRectX, nPosY-1)
+                              * and 0x3EADC a 1px rule under every visible row. */
+    u8   bSelLineHighlight;  /* panel+0x1BA1: with bHoverActive != 0, 0x3E9E4 blits a
+                              * (nViewW-2) x nFont band at row nHoverRow, keyed by bColorKey. */
+    u8   bAuxNumbers;        /* panel+0x1BA2: 0x3EBA8 takes the numeric branch -- the row is
+                              * itoa(anLineAux[row]), never apLines[row] (0x3EC08..0x3EC90). */
     i32  nUnk7076;
-    u8   bUnk7080;
-    i32  nUnk7084;
-    u8   bUnk7088;
-    u8   bUnk7089;
+    u8   bRepeatArmed;  /* panel+0x1BA8: press-and-hold repeat armed; cleared when the counter
+                         * reaches nRepeatDelay, so one hold fires one repeat (0x3EE50..0x3EEB8) */
+    i32  nRepeatDelay;  /* panel+0x1BAC: the hold counter threshold; the shop/transfer row-panel
+                         * builders store 5 */
+    u8   bColorKey;     /* panel+0x1BB0: the key byte SoftSurf_BlitSrcRect takes (ctor 0xFF) */
+    u8   bAuxPlusSign;       /* panel+0x1BB1: with bAuxNumbers and aux > 0 the number gets the
+                              * leading "+" of asc_AAF90 before the itoa digits (0x3EC34..0x3EC6C). */
 } UiPanel;
 
 /* UiPanel_ctor @ 0x3e730.
  *
  * Allocates nLineCount line buffers of 50 bytes, each an empty string, and
- * applies the original's defaults: nFont 17, bFlag7072 1, bFlag7073 1, nStyle 1,
- * nViewW 240, nViewH 320, bUnk7088 0xFF, everything else 0.
+ * applies the original's defaults: nFont 17, bRowRules 1, bSelLineHighlight 1, nStyle 1,
+ * nViewW 240, nViewH 320, bColorKey 0xFF, everything else 0.
  *
  * nLineCount is clamped to the 500-line capacity. The original trusts its caller;
  * the clamp is a deviation listed in the parity notes. Returns false only when a
@@ -118,7 +127,7 @@ bool UiPanel_ctor(UiPanel *pPanel, i32 nLineCount);
 /* UiPanel_FreeLines @ 0x3e8c8. Frees every line buffer. */
 void UiPanel_FreeLines(UiPanel *pPanel);
 
-/* Style setters. Each writes the exact gap_0 byte slots the original touches. */
+/* Style setters. Each writes the exact aStyleRgb byte slots the original touches. */
 void UiPanel_SetBytes0to2(UiPanel *pPanel, u8 b0, u8 b1, u8 b2);
 void UiPanel_SetBytes3to5(UiPanel *pPanel, u8 b3, u8 b4, u8 b5);
 void UiPanel_SetBytes6to11(UiPanel *pPanel, u8 b6, u8 b7, u8 b8, u8 b9, u8 b10, u8 b11);
@@ -186,25 +195,25 @@ void UiPanel_DrawText(UiPanel *pPanel);
 
 /* UiScrollList_ClickRow @ 0x3eee0.
  *
- * Computes the clicked row as `(nY - nPosY) / nFont`, stores it in the dword at panel
- * offset 12 (gap_0[12]) and clears `nUnk3016`, `bUnk3024` and the global `unk_158018`.
+ * Computes the clicked row as `(nY - nPosY) / nFont`, stores it in `nHoverRow` (the dword at
+ * panel offset 12) and clears `nHoldCount`, `bHoverActive` and the global `unk_158018`.
  * `nUnk3028` is READ, never written: ARM 0x3EEE0..0x3F000 writes only unk_158018,
  * 0xBC8, 0xC and 0xBD0, and reaches 0xBD4 only as the left side of the sum.
- * When `bFlag7073` is set and the row is within `nStyle`/`nLineCount`, and (nX, nY) is
- * strictly inside the rect at (`nUnk7052`, `nUnk7056`) sized `nViewW` x `nViewH`, it
+ * When `bSelLineHighlight` is set and the row is within `nStyle`/`nLineCount`, and (nX, nY) is
+ * strictly inside the rect at (`nRectX`, `nRectY`) sized `nViewW` x `nViewH`, it
  * sets `nUnk3032 = nUnk3028 + row` and calls `pfnClick`. Returns the row index. */
 i32 UiPanel_ClickRow(UiPanel *pPanel, i32 nX, i32 nY);
 
 /* UiScrollList_TrackHold @ 0x3ed44, the pointer-move half of the same list.
  *
- * It computes the row the same way and stores it in gap_0[12], but it does NOT clear
- * `nUnk3016` or `unk_158018` on entry. Outside the rect, or past `nStyle`/`nLineCount`,
- * it clears `bUnk3024` and `nUnk3016`. Inside, it sets `bUnk3024` and then runs the
- * press-and-hold repeat: only while `bUnk7080` is set does it count, it resets the
+ * It computes the row the same way and stores it in `nHoverRow`, but it does NOT clear
+ * `nHoldCount` or `unk_158018` on entry. Outside the rect, or past `nStyle`/`nLineCount`,
+ * it clears `bHoverActive` and `nHoldCount`. Inside, it sets `bHoverActive` and then runs the
+ * press-and-hold repeat: only while `bRepeatArmed` is set does it count, it resets the
  * counter whenever the hovered row differs from the global `unk_158018`, and when
- * `nUnk3016` reaches `nUnk7084` it clears `bUnk7080`, clamps `nUnk3016` to that
+ * `nHoldCount` reaches `nRepeatDelay` it clears `bRepeatArmed`, clamps `nHoldCount` to that
  * threshold, sets `nUnk3032 = nUnk3028 + row` and calls `pfnClick`. So a held pointer
- * auto-repeats the row click once per `nUnk7084` calls, and moving to another row
+ * auto-repeats the row click once per `nRepeatDelay` calls, and moving to another row
  * restarts the count. Returns the row index. */
 i32 UiPanel_TrackHoldRow(UiPanel *pPanel, i32 nX, i32 nY);
 

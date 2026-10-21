@@ -2,11 +2,10 @@
  * Game_StartNew @ 0x94554 run over the shell-owned PufoWorldState.
  *
  * The geoscape screens this shell opens are ported and wired -- Geoscape_Draw, the research,
- * soldier, hangar, facility, manuf and buy/sell open paths, and the spawn pass's hooks
- * StrategList_ProcessEvents (0x7fcb0) and the mission-spawn leaf all run live (see the frame
- * wiring header below for the one nav slot that stays a no-op). The slots the shell still
- * cannot wire keep World_NoopClick handlers: transfer screen 10 (its Init env and pad arm are
- * not shell state) and the radar screen's own state (0x159684's control set).
+ * soldier, hangar, facility, manuf, transfer and buy/sell open paths, and the spawn pass's hooks
+ * StrategList_ProcessEvents (0x7fcb0) and the mission-spawn leaf all run live: all ten nav slots
+ * carry their real handler (see the frame wiring header below). What the shell still cannot wire
+ * keeps World_NoopClick handlers: the radar screen's own state (0x159684's control set).
  */
 #include "app/pufo_world.h"
 
@@ -1421,6 +1420,190 @@ static void World_BuySellCloseThunk(void)
     BuySellScreen_CloseThunk(&pW->closeEnv);
 }
 
+/* ---- the transfer screen (case 10) ------------------------------------------------------------
+ *
+ * TransferScreen_Open @ 0x614fc / Ui_InitTransfer @ 0x9955c, wired over the shell's transfer block
+ * (see GeoscapeFrameState and the transfer envs in PufoWorldState). The five columns are the
+ * buy/sell panel globals themselves, so every handler re-reads the columns and the by-value cells
+ * at its call -- the commit button closes on the same press (0x9965C seats the close thunk), and
+ * the teardown rebuild runs inside CloseUI case 10 (0x8BE40). */
+
+/* The by-value cells every transfer handler reads at its call: the site count (the working record
+ * index moves when the commit promotes it), the roster counts, the base selection and the two
+ * base-index aliases -- nSelectedBase (0x159D81, the base the items leave) and nBaseInfoWorkBase
+ * (byte_1870F4, the base every capacity gate measures and the transfer arrives at). */
+static void World_RefreshTransferEnvs(PufoWorldState *pW)
+{
+    pW->transferBuild.nSiteCount       = pW->nSiteCount;                    /* 0x186410 */
+    pW->transferBuild.nSoldierCount    = pW->nSoldierCount;
+    pW->transferBuild.nCraftCount      = (i32)pW->bCraftCount;
+    pW->transferBuild.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->transferBuild.nCrewEntries     = (i32)pW->nResearchEntries;          /* 0x160C4C */
+    pW->transferReset.nSiteCount       = pW->nSiteCount;
+    pW->transferReset.nPendingBase     = pW->nBaseInfoWorkBase;              /* byte_1870F4, signed */
+    pW->transferMove.nSiteCount        = pW->nSiteCount;
+    pW->transferCapacity.nSiteCount    = pW->nSiteCount;
+    pW->transferCapacity.nBaseCount    = (i32)pW->nBaseCount;
+    pW->transferCapacity.nCraftCount   = (i32)pW->bCraftCount;
+    pW->transferCapacity.nSoldierCount = pW->nSoldierCount;
+    pW->transferCapacity.nSelectedBaseIdx = pW->nSelectedBase;               /* the availability column */
+    pW->transferCapacity.nTransferBaseIdx = pW->nBaseInfoWorkBase;           /* byte_1870F4, every gate */
+    pW->transferCommit.nSoldierCount   = pW->nSoldierCount;
+    pW->transferCommit.nCraftCount     = (i32)pW->bCraftCount;
+    pW->transferCommit.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->transferCommit.nTransferBaseIdx = pW->nBaseInfoWorkBase;
+    if (pW->pAssets != NULL) {
+        pW->transferBuild.nObjectCount   = (i32)pW->pAssets->nObjectCount;
+        pW->transferReset.nObjectCount   = (i32)pW->pAssets->nObjectCount;
+        pW->transferCapacity.nObjectCount = (i32)pW->pAssets->nObjectCount;
+        pW->transferCommit.nObjectCount  = (i32)pW->pAssets->nObjectCount;
+    }
+    /* The columns. BuildPanels allocates them and its teardown frees them, so every handler takes
+     * the current cells -- this is the transfer mode's half of the buy/sell frame refresh. */
+    pW->transferReset.pPanelA    = pW->pBuySellPanelA;
+    pW->transferReset.pPanelD    = pW->pBuySellPanelD;
+    pW->transferReset.pPanelE    = pW->pBuySellPanelE;
+    pW->transferMove.pPanelA     = pW->pBuySellPanelA;
+    pW->transferMove.pPanelB     = pW->pBuySellPanelB;
+    pW->transferMove.pPanelD     = pW->pBuySellPanelD;
+    pW->transferMove.pPanelE     = pW->pBuySellPanelE;
+    pW->transferCapacity.pPanelA = pW->pBuySellPanelA;
+    pW->transferCapacity.pPanelC = pW->pBuySellPanelC;
+    pW->transferCapacity.pPanelD = pW->pBuySellPanelD;
+    pW->transferCapacity.pPanelE = pW->pBuySellPanelE;
+    pW->transferCommit.pPanelA   = pW->pBuySellPanelA;
+    pW->transferCommit.pPanelC   = pW->pBuySellPanelC;
+    pW->transferCommit.pPanelE   = pW->pBuySellPanelE;
+}
+
+/* Ui_InitTransfer @ 0x9955c, the tail call of TransferScreen_Open @ 0x614fc. The screen block is
+ * shell storage, so pSlot goes unused like the buy/sell Init's. The BuildPanels call runs BEFORE
+ * the controls exist (0x995A4), then byte_1870F8 is set (0x995B8). */
+static void World_TransferInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot; /* the original passes the block base 0x1870D8 itself; the shell owns the cells */
+    if (pW != NULL) {
+        World_RefreshTransferEnvs(pW);
+        Ui_InitTransfer(&pW->transferInit);
+    }
+}
+
+static void World_TransferOpenThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    TransferScreen_Open(&pW->screen, &pW->transferOpenHooks); /* id 10 lands AFTER the Init (0x6151C) */
+}
+
+/* TransferScreen_BuildPanels @ 0x96b30: Init's call at 0x995A4 and CloseUI case 10's teardown
+ * rebuild at 0x8BE40 -- one function, both halves, keyed on unk_1870EC. */
+static void World_TransferBuildThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_RefreshTransferEnvs(pW);
+    TransferScreen_BuildPanels(&pW->transferBuild);
+}
+
+/* Transfer_CacheSelIndex @ 0x96ab0: panel A's row click, byte for byte BuySellScreen_SyncSelection
+ * (0x76138) -- both read the +0xBD8 dword of the name column and cache it. */
+static void World_TransferSyncSelThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    (void)Transfer_CacheSelIndex(&pW->transferScratch,
+                                 (pW->pBuySellPanelA != NULL) ? pW->pBuySellPanelA->nUnk3032 : 0);
+}
+
+/* Transfer_MoveOneItem @ 0x9602c, the decrement column's click (0x9704C), and
+ * TransferScreen_ValidateCapacity @ 0x96288, the increment column's (0x97168): the move-out pair. */
+static void World_TransferMoveThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_RefreshTransferEnvs(pW);
+    (void)Transfer_MoveOneItem(&pW->transferMove);
+}
+
+static void World_TransferValidateThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_RefreshTransferEnvs(pW);
+    (void)TransferScreen_ValidateCapacity(&pW->transferCapacity);
+}
+
+/* Transfer_ResetSite @ 0x9690c: the reset button (0x99624) -- clear the working record. */
+static void World_TransferResetThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_RefreshTransferEnvs(pW);
+    (void)Transfer_ResetSite(&pW->transferReset);
+}
+
+/* TransferScreen_CommitTransfer @ 0x97aa4: the commit button (0x99630). It queues the rows, runs
+ * the gate at 0x97D28, and when the transfer carries anything it closes the working record with
+ * bFlag0 = 24 and raises nSmapSiteCount -- the delivery then runs through Smap_GrantSiteRecovery
+ * (0x98b50), 24 hourly ticks later. */
+static void World_TransferCommitThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_RefreshTransferEnvs(pW);
+    (void)TransferScreen_CommitTransfer(&pW->transferCommit);
+}
+
+/* Geoscape_CloseUI_ThunkB @ 0x96020: the close control's and the confirm control's shared click
+ * (0x99654 / 0x9965C). Case 10 (0x8BE2C..0x8BE40) goes to screen 1 and runs the teardown rebuild. */
+static void World_TransferCloseThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_RefreshTransferEnvs(pW);
+    TransferScreen_CloseThunk(&pW->closeEnv);
+}
+
+/* The destination overlay's icon strip: 0x98740 calls Base_DrawFacilityIconStrip with the selected
+ * base as the marked row (R1 = R10). The shell keeps one drawer env (the placement/build arms use
+ * it too) and sets the mark row for this call. */
+static void World_TransferDrawIconStripThunk(i32 nBaseIdx, void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->frame.facStrip.nHighlightRow = nBaseIdx;
+    Base_DrawFacilityIconStrip(&pW->frame.facStrip);
+}
+
 /* The options screen's sample: Sound_Play(7, 4) at 0x6CF08 / 0x6DD10. The second argument is dead
  * (Sound_Play takes the sample only), which is why the port keeps it for the record. */
 static void World_OptionsPlaySample(u32 nSample, u32 nArg, void *pUser)
@@ -1939,10 +2122,8 @@ static void World_StartNewHook(void *pUser)
 
     /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28), one unrolled
      * `LDR R3,=fn / STR R3,[R0,#0xC]` per slot, in slot order 0..9 (0x67B74, 0x67B80, 0x67B8C, 0x67B98,
-     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). Nine of the ten nav slots are filled: the
-     * shell can draw the screen each one opens. Only TransferScreen_Open (10) stays a no-op: its Init
-     * env and its Geoscape_Draw arms (pTransferPad/pTransferDraw/pTransferCtl) are not built here, so
-     * opening it would land on a screen the shell cannot draw. */
+     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). All ten nav slots are filled: the shell
+     * can draw every screen each one opens. */
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
     }
@@ -1953,6 +2134,7 @@ static void World_StartNewHook(void *pUser)
     pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;   /* BaseFacScreen_Open @ 0x61844, id 7 (0x67BA4) */
     pW->navEnv.apfnNavClick[5] = World_ResearchOpenThunk;  /* ResearchScreen_Open @ 0x616ac, id 8 (0x67BAC) */
     pW->navEnv.apfnNavClick[6] = World_ManufOpenThunk;       /* ManufScreen_Open @ 0x614cc, id 9 (0x67BBC) */
+    pW->navEnv.apfnNavClick[7] = World_TransferOpenThunk;    /* TransferScreen_Open @ 0x614fc, id 10 (0x67BC4) */
     pW->navEnv.apfnNavClick[8] = World_BuySellOpenBuyThunk;  /* BuySellScreen_OpenBuy @ 0x61794, id 11 (0x67BD4) */
     pW->navEnv.apfnNavClick[9] = World_BuySellOpenSellThunk; /* BuySellScreen_OpenSell @ 0x617c4, id 12 (0x67BE0) */
     pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk; /* SoldierScreen_PanelPrev @ 0x61874 (0x67C84) */
@@ -8015,8 +8197,9 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
      * branch: Map_bMissionMode (0x8BB20) writes into the shell's own Map cell and 0x8BB24 hands over to
      * Smap_BeginCraftSelect through pW->craftEnv. Case 3 (the base-info screen) IS wired: the built flag,
      * the pad slot the case frees at 0x8BE10 and the rebuild hook at 0x8BDF8. Case 6 (the hangar) is wired
-     * too: its six plane flags and its three rebuild hooks. What is NOT: research, manufacturing, transfer,
-     * buy/sell and ufopaedia blocks (their cases keep NULL gates, which
+     * too: its six plane flags and its three rebuild hooks. Cases 8, 9, 10, 11 and 12 (research,
+     * manufacturing, transfer, buy/sell) are wired with their built flags and rebuild hooks (Parts 88, 99
+     * and 100). What is NOT: the ufopaedia blocks (their cases keep NULL gates, which
      * the dispatcher tests), case 19's bankruptcy tail (its two callees, listed with the wiring below -- the
      * Map pair it sets IS written), and the byte_158834 / byte_1870F4 base-index pair case 19 writes on
      * its psi branch. */
@@ -8093,6 +8276,11 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->ppBuySellPad       = &pW->pBuySellPad;                     /* 0x161A08, freed at 0x8C0F0 / 0x8C13C */
     pC->pBuySellCtl        = &pW->buySellControls;                 /* BuySellScreen_BuildControls, 0x8C0D0 */
     pC->pBuySell           = &pW->buySellBuild;                    /* BuySellScreen_BuildPanels, 0x8C11C */
+    /* Case 10 (0x8BE2C..0x8BE40): screen 1 straight away, then the teardown rebuild when the panels
+     * are still built -- the teardown itself (flag, byte_1870F8, the pad, the controls' pads, the
+     * five columns) runs inside TransferScreen_BuildPanels at 0x97994..0x97A88. */
+    pC->pbTransferBuilt    = &pW->bTransferBuilt;                  /* unk_1870EC, tested at 0x8BE38 */
+    pC->pTransferBuild     = &pW->transferBuild;                   /* TransferScreen_BuildPanels, 0x8BE40 */
     pC->pClearShips        = &pW->clearShipsEnv;                   /* Base_RemoveAllShips, 0x8C160 */
     pC->anSoldierIdList    = pW->anSoldierIdList;                  /* 0x160C90, the list 0x8C174 clears */
     pC->pnFunds          = &pW->nFunds;
@@ -8229,15 +8417,15 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *     1), 4 and 5 (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 6 (nav slot 3 and
  *     BasePlaneScreen_Open 0x617f4: its arm, control seam, draw env and detail env), 7 (nav slot 4, and the
  *     map click's own 0x8B64C), 8 (nav slot 5, ResearchScreen_Open @ 0x616ac), 9 (nav slot 6,
- *     ManufScreen_Open @ 0x614cc), 11 and 12 (nav slots 8/9, BuySellScreen_OpenBuy @ 0x61794 /
- *     OpenSell @ 0x617c4), 15 and 19 (the funding screen the monthly close sets). One nav slot stays
- *     World_NoopClick -- TransferScreen_Open (10, nav slot 7) -- because its Init env and its pTransferPad
- *     arm are not built here (it is outside the economy round), and Geoscape_Draw dereferences an unwired
- *     arm env with no test of its own.
+ *     ManufScreen_Open @ 0x614cc), 10 (nav slot 7, TransferScreen_Open @ 0x614fc: its arm, transfer envs
+ *     and draw, Part 100), 11 and 12 (nav slots 8/9, BuySellScreen_OpenBuy @ 0x61794 /
+ *     OpenSell @ 0x617c4), 15 and 19 (the funding screen the monthly close sets). No nav slot keeps a
+ *     no-op handler anymore.
  *   - GeoscapePointerEnv's per-screen fields: the research, manufacturing and buy/sell blocks are wired
- *     (Parts 88 and 99), and the hangar's own block is wired (its 16 controls and its six panel pairs,
- *     re-read every frame in World_RefreshGeoscapeFrame); the transfer, soldier-name, site-info, screen-16
- *     and options blocks stay NULL. The
+ *     (Parts 88 and 99), the hangar's own block is wired (its 16 controls and its six panel pairs,
+ *     re-read every frame in World_RefreshGeoscapeFrame), and the transfer block is wired (its four
+ *     controls as apSiteInfoCtl, the row-select byte and the destination base byte, Part 100); the
+ *     soldier-name and screen-16 blocks stay NULL. The
  *     dispatcher reaches them only from those screen ids. The strip block IS wired now, and that also
  *     makes the screen-1 arm live for the first time: `Geoscape_OnPointer` case 1 walks the ten slots at
  *     [root + 0x120] (0x87E30), which are apNavCtl -- the very controls the nav handlers sit on -- so a
@@ -8870,9 +9058,17 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->stripHit.pbSelectedBase   = (const u8 *)&pW->nSelectedBase; /* 0x159D81 (0x67224) */
     pPtr->stripHit.pbTapFlag        = &pW->bPlaceActive;              /* 0x1870BC, cleared at 0x67250 */
     pPtr->stripHit.pbGateBaseInfo   = &pW->bBaseInfoPanelsBuilt;      /* unk_15883C */
-    /* The transfer gate (unk_1870EC) and the psi gate (byte_15EEF0) stay NULL: their only writers are
-     * the transfer and psi screens, which the shell does not run, and Base_HitTestFacilityStrip tests
-     * both before it reads them (0x6723C). */
+    pPtr->stripHit.pbGateTransfer   = &pW->bTransferBuilt;          /* unk_1870EC: the transfer screen's
+                                                                     * own gate. The psi gate (byte_15EEF0)
+                                                                     * stays NULL -- its only writer is the
+                                                                     * psi screen, which the shell does not
+                                                                     * run, and Base_HitTestFacilityStrip
+                                                                     * tests each before it reads it
+                                                                     * (0x6723C). */
+    /* Screen 10's own controls (0x1870DC..0x1870E8): with a transfer row selected the press arm hits
+     * only the confirm control (0x88950); without one it walks these four and the close control
+     * (0x889F0), and the release arms mirror that (0x8A6AC). */
+    pPtr->apSiteInfoCtl          = pW->apTransferCtl;
     /* Screen 3's own arm (0x88A08..0x88A24): the two controls it hit-tests are `unk_158828 + 4`, which
      * is BaseInfoScreen_Init's control pair -- the field is named for the base-attack screen because that
      * is where the earlier reading first saw the block, but 0x15882C / 0x158830 are the base-info
@@ -9860,6 +10056,175 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
         pF->buySellDraw.nObjectCount      = (i32)pAssets->nObjectCount;
     }
 
+    /* Case 10, the transfer screen. The four controls are shell-owned cells Ui_InitTransfer seats with
+     * g_aTransferCtlDesc @ 0xAC3B8; the pad is Init's allocation in root slot 0, released by BuildPanels'
+     * teardown (0x979B4). The five columns ARE the buy/sell panel globals -- the transfer screen is the
+     * same row model with a wider slot filter (1..69, 77..111, 114, 122..124, 143..148 plus 112/113) and
+     * a shifted B/C/D geometry -- so the transfer build frees nothing the buy/sell screen still owns:
+     * only one screen runs at a time, and whichever built last tears down first. */
+    for (i = 0; i < 4; ++i) {
+        pW->apTransferCtl[i] = &pW->aTransferCtl[i];
+    }
+
+    memset(&pW->transferInit, 0, sizeof(pW->transferInit));
+    pW->transferInit.ppRoot           = pW->apTransferRoot;                /* 0x1870D8 */
+    for (i = 0; i < 4; ++i) {
+        pW->transferInit.apCtl[i]     = &pW->aTransferCtl[i];              /* 0x1870DC..0x1870E8 */
+    }
+    pW->transferInit.pCloseCtl        = pUi->apCtl[GEOUI_CTL_186B00];      /* to (224,1) at 0x9963C/0x99648 */
+    pW->transferInit.pConfirmCtl      = pUi->apCtl[GEOUI_CTL_186BA4];      /* centred at 0x99698/0x996B8 */
+    pW->transferInit.pfnCloseClick    = World_TransferCloseThunk;          /* Geoscape_CloseUI_ThunkB @ 0x96020:
+                                                                            * BOTH controls get it (0x99654, 0x9965C) */
+    pW->transferInit.pfnPanelPrev     = World_BuySellPanelPrevThunk;       /* Transfer_ScrollPrevAll @ 0x967e4 is
+                                                                            * byte for byte BuySellScreen_PanelPrev
+                                                                            * @ 0x76088 -- the pool constants name
+                                                                            * the same five panel globals */
+    pW->transferInit.pfnPanelNext     = World_BuySellPanelNextThunk;       /* Transfer_ScrollNextAll @ 0x9683c = 0x760e0 */
+    pW->transferInit.pfnResetSite     = World_TransferResetThunk;          /* Transfer_ResetSite @ 0x9690c, 0x99624 */
+    pW->transferInit.pfnCommit        = World_TransferCommitThunk;         /* TransferScreen_CommitTransfer @ 0x97aa4, 0x99630 */
+    pW->transferInit.pfnBuildPanels   = World_TransferBuildThunk;          /* 0x995A4, before the controls exist */
+    pW->transferInit.pbBaseCount      = &pW->nBaseCount;                   /* 0x159D80, read SIGNED at 0x996B8 */
+    pW->transferInit.pbTransferOk     = &pW->bBaseInfoOverlayOpen;         /* byte_1870F8, set at 0x995B8 */
+    pW->transferInit.pfnLoadPads      = pW->pfnLoadPads;
+    pW->transferInit.pPadUser         = pW->pLoadPadsUser;
+
+    memset(&pW->transferBuild, 0, sizeof(pW->transferBuild));
+    pW->transferBuild.pbPanelsBuilt   = &pW->bTransferBuilt;               /* unk_1870EC */
+    pW->transferBuild.ppPad           = (PadImage **)&pW->apTransferRoot[0]; /* 0x1870D8, freed at 0x979B4 */
+    pW->transferBuild.pbTransferOk    = &pW->bBaseInfoOverlayOpen;         /* cleared at 0x979A0 */
+    for (i = 0; i < 4; ++i) {
+        pW->transferBuild.apCtl[i]    = &pW->aTransferCtl[i];              /* their pads freed at 0x979D4 */
+    }
+    pW->transferBuild.aSites          = pW->apSites;                       /* 0x162030: the working record AT the count */
+    pW->transferBuild.apSoldiers      = pW->apSoldiers;
+    pW->transferBuild.nSoldierCount   = pW->nSoldierCount;
+    pW->transferBuild.apCrafts        = pW->apCraft;
+    pW->transferBuild.nCraftCount     = (i32)pW->bCraftCount;
+    pW->transferBuild.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->transferBuild.pTextRecs       = pszText;
+    pW->transferBuild.apManufCol      = pW->auManufCol;                    /* 0x15E19C, the engineer column */
+    pW->transferBuild.apResearchCol   = pW->auResearchCol;                 /* 0x16022C, the scientist column */
+    pW->transferBuild.nCrewEntries    = (i32)pW->nResearchEntries;         /* 0x160C4C */
+    pW->transferBuild.ppPanelA        = &pW->pBuySellPanelA;               /* 0x161A1C */
+    pW->transferBuild.ppPanelB        = &pW->pBuySellPanelB;               /* 0x161A00 */
+    pW->transferBuild.ppPanelC        = &pW->pBuySellPanelC;               /* 0x161A20 */
+    pW->transferBuild.ppPanelD        = &pW->pBuySellPanelD;               /* 0x160C88 */
+    pW->transferBuild.ppPanelE        = &pW->pBuySellPanelE;               /* 0x1615F8 */
+    pW->transferBuild.pfnCacheSelIndex = World_TransferSyncSelThunk;       /* Transfer_CacheSelIndex @ 0x96ab0, panel A's click at 0x96E30 */
+    pW->transferBuild.pfnMoveOneItem  = World_TransferMoveThunk;           /* Transfer_MoveOneItem @ 0x9602c, panel B's click at 0x9704C */
+    pW->transferBuild.pfnValidateCapacity = World_TransferValidateThunk;   /* TransferScreen_ValidateCapacity @ 0x96288, panel C's click at 0x97168 */
+
+    memset(&pW->transferReset, 0, sizeof(pW->transferReset));
+    pW->transferReset.aSites          = pW->apSites;
+    pW->transferReset.apBases         = pW->apBases;
+    pW->transferReset.nPendingBase    = pW->nBaseInfoWorkBase;             /* byte_1870F4, signed */
+    pW->transferReset.pbTransferOk    = &pW->bBaseInfoOverlayOpen;         /* byte_1870F8 */
+    pW->transferReset.pbScratch1870D0 = &pW->bTransferScratch1870D0;       /* unk_1870D0 */
+    pW->transferReset.pbScratch1870F0 = &pW->bTransferScratch1870F0;       /* unk_1870F0 */
+    pW->transferReset.pdwShortfall    = &pW->nShortfall1870C8;             /* 0x1870C8, written as a dword */
+    pW->transferReset.pnResidue       = &pW->nResidue1870B4;               /* dword_1870B4[0], the reason code */
+
+    memset(&pW->transferMove, 0, sizeof(pW->transferMove));
+    pW->transferMove.pnRowCursor      = &pW->transferScratch.nCache186BE8; /* unk_186BE8, the transfer copy */
+    pW->transferMove.pnRadarPulseTimer = &pW->nRadarPulseTimer;            /* 0xAC224, the repeat bound */
+    pW->transferMove.aSites           = pW->apSites;
+
+    memset(&pW->transferCapacity, 0, sizeof(pW->transferCapacity));
+    pW->transferCapacity.pnRowCursor  = &pW->transferScratch.nCache186BE8;
+    pW->transferCapacity.pnRadarPulseTimer = &pW->nRadarPulseTimer;
+    pW->transferCapacity.abFacilityGrid = pW->abFacilityGrid;              /* 0x159768 */
+    pW->transferCapacity.apCraft      = pW->apCraft;
+    pW->transferCapacity.nCraftCount  = (i32)pW->bCraftCount;
+    pW->transferCapacity.apSoldiers   = pW->apSoldiers;
+    pW->transferCapacity.nSoldierCount = pW->nSoldierCount;
+    pW->transferCapacity.aSites       = pW->apSites;
+    pW->transferCapacity.apBases      = pW->apBases;
+    pW->transferCapacity.nBaseCount   = (i32)pW->nBaseCount;
+    pW->transferCapacity.nSelectedBaseIdx = pW->nSelectedBase;             /* 0x159D81, the availability column only */
+    pW->transferCapacity.nTransferBaseIdx = pW->nBaseInfoWorkBase;         /* byte_1870F4: every capacity gate measures the DESTINATION */
+    pW->transferCapacity.pdwShortfall = &pW->nShortfall1870C8;
+    pW->transferCapacity.pnResidue    = &pW->nResidue1870B4;
+
+    memset(&pW->transferCommit, 0, sizeof(pW->transferCommit));
+    pW->transferCommit.aSites         = pW->apSites;
+    pW->transferCommit.pnSiteCount    = &pW->nSiteCount;                   /* 0x186410, raised at 0x97E8C */
+    pW->transferCommit.apBases        = pW->apBases;
+    pW->transferCommit.apSoldiers     = pW->apSoldiers;
+    pW->transferCommit.nSoldierCount  = pW->nSoldierCount;
+    pW->transferCommit.apCraft        = pW->apCraft;
+    pW->transferCommit.nCraftCount    = (i32)pW->bCraftCount;
+    pW->transferCommit.abFacilityGrid = pW->abFacilityGrid;                /* the hangar cell cleared at 0x97CCC */
+    pW->transferCommit.nSelectedBaseIdx = pW->nSelectedBase;               /* the base the items leave (0x97E5C) */
+    pW->transferCommit.nTransferBaseIdx = pW->nBaseInfoWorkBase;           /* byte_1870F4, the destination (0x97DBC) */
+    pW->transferCommit.pszAppDir      = NULL;                              /* szAppDir @ 0x1883B0: the shell keeps no app
+                                                                            * directory on the geoscape path (the same note
+                                                                            * as World_HookGrantSiteRecovery), and the dump
+                                                                            * is a debug path reached only past 60000 */
+    pW->transferCommit.pbBaseCount    = (const u8 *)&pW->nBaseCount;       /* read signed there, for the dump */
+
+    /* The transfer draw env, the arm's callee at 0x93EB0. The panels, the pad and the two base
+     * indexes follow the frame; see World_RefreshGeoscapeFrame. */
+    memset(&pF->transferDraw, 0, sizeof(pF->transferDraw));
+    pF->transferDraw.pColor           = pColor;
+    pF->transferDraw.pAnim            = &pF->anim;
+    pF->transferDraw.pbPanelsBuilt    = &pW->bTransferBuilt;
+    pF->transferDraw.pnRowCursor      = &pW->transferScratch.nCache186BE8;
+    pF->transferDraw.pTextRecs        = pszText;
+    pF->transferDraw.apSiteRecs       = pW->aSiteRecs;                     /* 0x186C40: the eight names, at +26 */
+    pF->transferDraw.pCtlPrev         = &pW->aTransferCtl[0];              /* 0x1870DC, the prev-base control */
+    pF->transferDraw.pCtlNext         = &pW->aTransferCtl[1];              /* 0x1870E0, the next-base control */
+    pF->transferDraw.pCtlReset        = pUi->apCtl[GEOUI_CTL_186B00];      /* g_pUiCloseCtl @ 0x186B00 */
+    pF->transferDraw.pCtlConfirm      = pUi->apCtl[GEOUI_CTL_186BA4];      /* unk_186BA4, blitted at 0x988DC */
+    pF->transferDraw.pbOverlayOpen    = &pW->bBaseInfoOverlayOpen;         /* byte_1870F8, the destination overlay */
+    pF->transferDraw.pbPreviewOk      = &pW->bRoot35;                      /* 0x18652D */
+    pF->transferDraw.pnCursorX        = &pF->g.nCursorX;                   /* nSmapCursorX @ 0x186BD0, zeroed at 0x989E8 */
+    pF->transferDraw.pnCursorY        = &pF->g.nCursorY;                   /* nSmapCursorY @ 0x186BD4, zeroed at 0x989F4 */
+    pF->transferDraw.pdwShortfall     = &pW->nShortfall1870C8;
+    pF->transferDraw.pnResidue        = &pW->nResidue1870B4;
+    pF->transferDraw.pbTransferBase   = &pW->nBaseInfoWorkBase;            /* byte_1870F4, written by the strip hit at 0x98994 */
+    pF->transferDraw.aSites           = pW->apSites;
+    pF->transferDraw.pnSiteCount      = &pW->nSiteCount;
+    pF->transferDraw.apBases          = pW->apBases;
+    pF->transferDraw.pbBaseCount      = (const u8 *)&pW->nBaseCount;
+    pF->transferDraw.abFacilityGrid   = pW->abFacilityGrid;
+    pF->transferDraw.pnMapPhase       = pW->pnMapPhase;                    /* 0x1139EF, read LDRB at 0x98A0C */
+    pF->transferDraw.pStripHit        = &pPtr->stripHit;                   /* the same gate bytes the pointer arm uses */
+    pF->transferDraw.pfnDrawIconStrip = World_TransferDrawIconStripThunk;  /* 0x98740: the drawer with the selected base marked */
+    pF->transferDraw.pStripUser       = pW;
+    pF->transferDraw.nSelectedBaseIdx = pW->nSelectedBase;
+    pF->transferDraw.nDestBaseIdx     = pW->nBaseInfoWorkBase;
+
+    if (pHit != NULL) {
+        pF->transferDraw.pfnCtlBlit   = pHit->pfnBlit;
+        pF->transferDraw.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->transferDraw.pCtlUser     = pHit->pUser;
+        pF->transferCtl.pfnCtlBlit    = pHit->pfnBlit;
+        pF->transferCtl.pfnCtlBlitEx  = pHit->pfnBlitEx;
+        pF->transferCtl.pCtlBlitUser  = pHit->pUser;
+    }
+    pF->transferCtl.apCtl             = pW->apTransferCtl;                 /* the arm blits [0..3], CMP #4 at 0x93E8C */
+    pF->draw.pTransferPad             = (PadImage *)pW->apTransferRoot[0]; /* 0x93E60: the root slot's pad */
+    pF->draw.pTransferDraw            = &pF->transferDraw;                 /* 0x93EB0 */
+    pF->draw.pTransferCtl             = &pF->transferCtl;
+
+    pW->transferOpenHooks.pfnPlaySample = World_PlaySampleWithArg;         /* Sound_Play(17, 4) at 0x61508 */
+    pW->transferOpenHooks.pfnInit       = World_TransferInitThunk;         /* the tail call at 0x61510 */
+    pW->transferOpenHooks.pSlot         = NULL;
+    pW->transferOpenHooks.pUser         = pW;
+
+    if (pAssets != NULL) {
+        pW->transferBuild.apObjects   = pAssets->apObjects;
+        pW->transferBuild.nObjectCount = (i32)pAssets->nObjectCount;
+        pW->transferReset.apObjects   = pAssets->apObjects;
+        pW->transferReset.nObjectCount = (i32)pAssets->nObjectCount;
+        pW->transferCapacity.apObjects = pAssets->apObjects;
+        pW->transferCapacity.nObjectCount = (i32)pAssets->nObjectCount;
+        pW->transferCommit.apObjects  = pAssets->apObjects;
+        pW->transferCommit.nObjectCount = (i32)pAssets->nObjectCount;
+        pF->transferDraw.apObjects    = pAssets->apObjects;
+        pF->transferDraw.nObjectCount = (i32)pAssets->nObjectCount;
+    }
+
     World_WireGeoscapeClock(pW, pHooks);
 }
 
@@ -10065,6 +10430,19 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pW->ptrEnv.pBuySellPanelA         = pW->pBuySellPanelA;        /* the press arm's row click */
     pW->ptrEnv.pBuySellPanelB         = pW->pBuySellPanelB;        /* the release arms' "<" pair */
     pW->ptrEnv.pBuySellPanelC         = pW->pBuySellPanelC;        /* ... and ">" */
+
+    /* Case 10, the transfer screen (0x93E5C..0x93EB4): its five columns ARE the cells above -- the
+     * transfer BuildPanels allocates and frees the very same globals -- and its pad is Init's
+     * allocation in root slot 0, so both follow the frame. The two base indexes are read by value:
+     * the "From: " label's base and the "TO: " destination byte_1870F4. */
+    pF->transferDraw.pPanelA          = pW->pBuySellPanelA;
+    pF->transferDraw.pPanelB          = pW->pBuySellPanelB;
+    pF->transferDraw.pPanelC          = pW->pBuySellPanelC;
+    pF->transferDraw.pPanelD          = pW->pBuySellPanelD;
+    pF->transferDraw.pPanelE          = pW->pBuySellPanelE;
+    pF->draw.pTransferPad             = (PadImage *)pW->apTransferRoot[0]; /* 0x93E60: *0x1870D8 */
+    pF->transferDraw.nSelectedBaseIdx = pW->nSelectedBase;         /* 0x93EA0, signed */
+    pF->transferDraw.nDestBaseIdx     = pW->nBaseInfoWorkBase;     /* 0x93E94, signed */
 
     /* Base_RemoveAllShips counts the bases at its call, and nBaseCount can move during the same
      * press that runs the close (a confirm may create nothing, but the transfer pass reads the

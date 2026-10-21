@@ -634,10 +634,10 @@ static void TestPanelLayout(void)
         if (p->nStyle != 14 || p->nFont != 16) bOk = false;
         if (p->nPosX != aWantX[i] || p->nPosY != aWantY[i]) bOk = false;
         if (p->nUnk7076 != aWantAlign[i]) bOk = false;
-        if (p->bFlag7072 != aWant7072[i]) bOk = false;
-        if (p->bFlag7073 != 0) bOk = false;
-        if (p->bFlag7074 != aWant7074[i]) bOk = false;
-        if (p->gap_0[6] != 0xF0 || p->gap_0[9] != 0x14) bOk = false;
+        if (p->bRowRules != aWant7072[i]) bOk = false;
+        if (p->bSelLineHighlight != 0) bOk = false;
+        if (p->bAuxNumbers != aWant7074[i]) bOk = false;
+        if (p->aStyleRgb[6] != 0xF0 || p->aStyleRgb[9] != 0x14) bOk = false;
     }
     Check(bOk, "positions, style, font, alignment and flags match the ARM");
 

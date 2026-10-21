@@ -440,9 +440,9 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
         UiPanel_SetBytes6to11(pPanel, 0x44, 0xF4, 0xFC, 4, 0x46, 0x4B);
         UiPanel_SetBytes3to5(pPanel, 0x44, 0xF4, 0xFC);
         pPanel->nUnk7076  = 1;
-        pPanel->bFlag7073 = 1;
+        pPanel->bSelLineHighlight = 1;
         pPanel->pfnClick  = pEnv->pfnRadarClick; /* Geoscape_OnRadarListClick, ported at pufo_baseui.c:6747 */
-        pPanel->bUnk7088  = 100;
+        pPanel->bColorKey  = 100;
     }
 
     /* 0x86C34..0x86CDC: the 56 mission sites. With lang.dat present only 1650 text records
