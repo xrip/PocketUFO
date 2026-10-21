@@ -44,10 +44,13 @@
  *   8. Publishes the three zoom layer sets (SmapZoomSet) and sets the viewport to level 0
  *      with the level-0 grid's size (0x1863F4 / 0x1863F8 are gSmapCam.nMapW / nMapH).
  *   9. Only when the low byte of nMode is zero: reads research.dat into the live topic
- *      array, zeroes the u16 at +6 of every topic (ARM `STRH R4,[R1,#6]` - Hex-Rays
- *      renders this as wProgress through its save-order ResearchTopic type; in the
- *      in-memory order it is ResearchTopicLive.wUnk6), clears the viewport scroll and
- *      drag deltas, and runs Game_StartNew through the pfnStartNew hook.
+ *      array at +4 (0x86910 `ADD R1,R6,#4` -- the member's records start four bytes later
+ *      than the slots they fill, so the file's TEXTS name index lands at wGate4, the cost
+ *      at wTotal, and the (lo,hi) unlock roll pair at the NEXT record's head, which is
+ *      what 0x745AC reads), zeroes the in-memory u16 at +10 of every topic (0x86938
+ *      `STRH R4,[R1,#6]` with R1 = base + 4 + 34 * n -- wProgress under the +4 load),
+ *      clears the viewport scroll and drag deltas, and runs Game_StartNew through the
+ *      pfnStartNew hook.
  *  10. GameTime_Decode; per base Base_ClearFacilityGridRow into the site-state array;
  *      the initial object prices from dword_AA2C0 into ObjectRecFull.uPrice (slots
  *      1..nObjectCount-1); object names, text records 1447..1594 into slots 1..148 (148
@@ -73,8 +76,10 @@
  *     mapped code reads the 320000-byte tail - the tile grid lives in the m100 pad.
  *   - The name copies are bounded to the destination field (the original copies until NUL
  *     with no bound; the shipped names fit).
- *   - research.dat is read capped at the topic array size (the shipped file is exactly
- *     144 * 34 = 4896 bytes).
+ *   - research.dat is read at +4 like the original, but capped four bytes before the array end
+ *     (the shipped member is exactly 144 * 34 = 4896 bytes; the original reads all of it and
+ *     spills the last four into the 0x160228 gap, which the port models as the zero range
+ *     pair -- the spilling bytes are zero, so the two models agree).
  *   - The original's `dword_186B08` loop counters are the compiler's spilled locals (see
  *     pufo_geouimanage.h); the port uses real locals.
  *   - The original stores the research entry count with STRB (a byte); the port writes the

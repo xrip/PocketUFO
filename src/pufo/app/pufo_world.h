@@ -103,6 +103,14 @@ typedef struct GeoscapeFrameState {
      * (CMP #4 at 0x93E8C), TransferScreen_Draw @ 0x97fa4 at 0x93EB0, then the shared tail. */
     TransferDrawEnv          transferDraw; /* 0x97fa4, the callee's env */
     GeoscapeScreenArmEnv     transferCtl;  /* 0x1870DC..0x1870E8, the four controls the arm blits */
+    /* Case 16, the ufopaedia screen (0x941AC..0x94288): Ui_DrawBaseInfo @ 0x9b5f4 gets the BLOCK BASE
+     * (0x941AC) and blits the screen pad (0x9B600) and the close control (0x9B7C0); the arm blits no pad
+     * of its own, only control ranges picked by the three gate bytes -- [4..5] when the page flag is up and
+     * the entry dirty byte is clear (0x941DC), [0..3] when dirty AND wide (0x94220) or [2..3] when dirty
+     * and not wide (0x9425C). Part 104. */
+    UiBaseInfoDrawEnv        ufopaediaDraw; /* 0x9b5f4, the callee's env */
+    GeoscapeUfopaediaArmEnv  ufopaediaGates; /* the three gate bytes @ 0x18730C / 0x187310 / 0x1871FC */
+    GeoscapeScreenArmEnv     ufopaediaCtl;   /* the six controls the arm blits (0x1872E8..0x1872FC) */
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -719,6 +727,45 @@ typedef struct PufoWorldState {
     ResearchQtyEnv        researchQty;       /* 0x72ea0 / 0x72f70 / 0x72d14, the three quantity controls */
     ResearchStartEnv      researchStart;     /* 0x73240: the start button, and case 8's first close arm */
     ResearchCancelEnv     researchCancel;    /* 0x73380: the cancel button */
+    /* The ufopaedia screen (geoscape screen 16), opened by Ui_OpenBaseInfoAlt @ 0x84d18 from the status
+     * panel's report confirm (Part 104). The original keeps one eight-pointer block at g_pUfopaediaScreenPad
+     * @ 0x1872E0 -- [0] the screen pad (Ui_InitBaseInfo's allocation at 0x9DDF8, freed by Ufopaedia_Open's
+     * teardown at 0x9B580), [1] the entry pad g_pUfopaediaPad @ 0x1872E4 (allocated by every
+     * Ufopaedia_RefreshEntry, freed at 0x9B5B8..0x9B5DC -- see the recorded ORIGINAL BUG there), [2..7] the
+     * six controls at 0x1872E8..0x1872FC -- and the state bytes as loose globals. The shell owns the same
+     * block: the six controls are embedded (the original heap-allocates them in Init and the teardown
+     * releases them -- deviation, the port's controls persist and only their pads cycle through
+     * UiControl_LoadPads), and the nine cells below are the originals' named globals. */
+    UiControl              aUfopaediaCtl[PUFO_UFOPAEDIA_CTL_COUNT]; /* the six, on g_aUiBaseInfoCtlDesc
+                                               * @ 0xAC548: the text-panel scroll pair at (142,210)/(172,210),
+                                               * the ufopaedia page pair at (10,210)/(40,210), the category
+                                               * selector pair at (200,18)/(200,38) */
+    UiControl             *apUfopaediaCtl[PUFO_UFOPAEDIA_CTL_COUNT]; /* the flat view: the draw arm's three
+                                               * BlitCtlRun ranges (0x941DC..0x94280) and the press arm's
+                                               * hit-test ranges (0x88E0C..0x88E30) index it */
+    void                  *apUfopaediaRoot[8]; /* g_pUfopaediaScreenPad @ 0x1872E0: [0] the pad, [1] the
+                                               * entry pad, [2..7] Init's control stores (0x9DE3C) */
+    i32                   nUfopaediaEntryIdx;  /* unk_1871F4, the entry slot inside the category */
+    i32                   nUfopaediaCategory;  /* g_nUfopaediaCategory @ 0x1871F8, 0..8 -- also the selector
+                                               * row Ufopaedia_CacheSelRow caches (0x99fd0) */
+    i32                   nUfopaediaTopic;     /* g_nUfopaediaTopic @ 0x187300 */
+    i32                   nUfopaediaEntryNum;  /* g_nUfopaediaEntryNum @ 0x1872D8, normalised by the draw */
+    i32                   nUfopaediaEntrySub;  /* g_nUfopaediaEntrySub @ 0x1872DC, derived by that
+                                               * normalisation (UiBaseInfoDrawEnv.pnSub) */
+    u8                    bUfopaediaWidePanel; /* g_bUfopaediaWidePanel @ 0x1871FC: wide text layout, and the
+                                               * draw/press gate that picks the control range */
+    u8                    bUfopaediaPadDirty;  /* g_bUfopaediaPadDirty @ 0x187304: keeps RefreshEntry's
+                                               * re-pick (0x9A054) out after Init's reselect (0x9E038) */
+    u8                    bUfopaediaEntryDirty;/* bUfopaediaEntryDirty @ 0x187310: "an entry is up" */
+    u8                    bUfopaediaReselect;  /* Ufopaedia_bReselectPending @ 0x18706C: Ui_OpenBaseInfoAlt
+                                               * sets it on the way in (0x84D1C), Init consumes it (0x9DEF4) */
+    u8                    bUfopaediaBuilt;     /* unk_187308: Ufopaedia_Open's build/teardown toggle AND the
+                                               * draw arm's "screen built" gate -- one byte, two names */
+    u8                    bUfopaediaOpen;      /* bUfopaediaOpen @ 0x18730C: "a page is up" -- set by Init's
+                                               * reselect (0x9E07C) and by Ufopaedia_CacheSelRow (0x99FD4),
+                                               * cleared by CloseUI case 16 (0x8BD48) */
+    UfopaediaEnv          ufopaedia;    /* 0x9a8cc / 0x9a014 / 0x9a60c / 0x9a754: the state step 6 builds */
+    UiBaseInfoInitEnv     ufopaediaInit; /* Ui_InitBaseInfo @ 0x9ddc8's env */
     /* Case 9, the manufacturing screen (0x9415C..0x941A4), opened by nav control slot 6:
      * ManufScreen_Open @ 0x614cc is installed at 0x67BBC, plays sample 0x11 and writes id 9 AFTER its
      * tail call into ManufScreen_Init @ 0x710b0. The original keeps the screen block at unk_159E98 --

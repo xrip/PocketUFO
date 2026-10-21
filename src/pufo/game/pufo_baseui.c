@@ -11773,6 +11773,19 @@ void Ui_InitBaseInfo(UiBaseInfoInitEnv *pEnv)
         pPad->nOriginY = 0; /* 0x9DE14: STR R7,[R3,#4] */
     }
 
+    /* 0x9DE18..0x9DE38: six times `operator new(0x20)` then UiControl_ctor -- the ctor is what sets
+     * bEnabled = 1, and a disabled control draws nothing and hit-tests nothing (0x1A3F0, UiControl_BlitActivePad's
+     * head test). The port's six are shell-owned (deviation), so it runs the ctor on the existing structs on
+     * every Init; the pads are re-loaded by the Setup pass at 0x9DEAC anyway (UiControl_LoadPads frees the old
+     * slot contents first), and the original's close-time release at 0x9B5B8 is the teardown the port performs
+     * here instead. */
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            UiControl_FreePads(pEnv->apCtl[i]);
+            UiControl_ctor(pEnv->apCtl[i]);
+        }
+    }
+
     for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
         pEnv->ppRoot[i + 2] = pEnv->apCtl[i]; /* 0x9DE3C: ppRoot + 8, stepping by 4 */
     }

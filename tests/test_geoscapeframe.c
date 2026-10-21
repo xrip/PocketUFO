@@ -1247,10 +1247,13 @@ int main(void)
           "the radar arm's own env and aRadarControls @ 0x159684 stay unwired");
     Check(pF->panel.pfnCtlOpen != NULL && pF->panel.pfnCtlSfx != NULL,
           "the panel's two footer controls run Geoscape_PrepScreenOpen @ 0x85194 and its Sfx twin @ 0x852b8");
-    Check(pF->panel.pfnConfirmReport == NULL && pF->panel.pfnApplyResearch == NULL,
-          "only the two screen openers stay unwired: Ui_OpenBaseInfoAlt @ 0x84d18 ends by opening ufopaedia "
-          "screen 16 (0x84DE4 / 0x84DF4) and Ui_OpenResearch @ 0x84bf8 opens research screen 8 (0x84CEC / "
-          "0x84CF0), and the shell has no Init for either screen yet -- the same gap as nav slots 6/8/9/10/11");
+    Check(pF->panel.pfnConfirmReport != NULL && pF->panel.pfnApplyResearch != NULL
+              && pF->draw.pUfopaediaDraw == &pF->ufopaediaDraw && pF->draw.pUfopaediaGates == &pF->ufopaediaGates
+              && pF->draw.pUfopaediaCtl == &pF->ufopaediaCtl && g_world.ptrEnv.ap16Ctl == g_world.apUfopaediaCtl
+              && g_world.ptrEnv.ap16PanelSet == g_world.ufopaedia.apCatPanels,
+          "Part 104 wired the last two openers: pfnConfirmReport runs Ui_OpenBaseInfoAlt @ 0x84d18 (ufopaedia "
+          "screen 16, 0x84DE4 / 0x84DF4) over the shell's own block, pfnApplyResearch runs Ui_OpenResearch "
+          "@ 0x84bf8 (0x84CEC / 0x84CF0), and the case-16 draw/press envs point at it");
 
     /* 9b. The message-answer panels. Ten status-panel arms test a handler field and return before drawing
      * when it is NULL, so the whole family was invisible whatever the message line said. With the handlers
@@ -1980,8 +1983,8 @@ int main(void)
                    "base 0 holds one Heavy cannon [AP] clip -- slot 43, the only slot the hangar's row gate (slot < 25 || 30 < slot < 52, 0x7B190) admits at a new game");
         CheckEqI32((i32)g_assets.apObjects[43]->bCargoSize, 2, "and its hold cost is 2");
         CheckEqI32((i32)g_assets.apObjects[43]->aItemQty[0], 0, "while the Skyranger carries none of it");
-        Check(g_abSlotTopicGate[43] == 1 && g_world.aTopics[1].bUnlocked == 0,
-              "the slot's topic gate is topic 1 (byte_AA968 @ 0xAA968) and research.dat ships every topic locked, so the stores list starts empty");
+        Check(g_abSlotTopicGate[43] == 1 && g_world.aTopics[1].bUnlocked == 1,
+              "the slot's topic gate is topic 1 (byte_AA968 @ 0xAA968), and RESEARCH.DAT ships topic 1 UNLOCKED at the record's +0xD: 0x86910 `ADD R1,R6,#4` lands the member four bytes later than the slots it fills (Part 104), and the record's +9 byte is the shipped 1");
         Check(g_world.apCraft[0]->bAtBase == 1 && g_world.apCraft[0]->bHomeBase == 0
                   && (i32)Craft_GetTypeCargoCap(g_world.apCraft[0]) == 140,
               "craft 0 is the home-base craft with a 140-unit hold (Ship.bCraftType 0, Craft_GetTypeCargoCap @ 0x65ac4)");
@@ -2085,8 +2088,10 @@ int main(void)
         Check(SurfPix(12, 74) != 0 && SurfPix(130, 74) != 0,
               "the crew pair paints its two columns: the eight names out of Soldier.szName @ +0xBA on the left and the craft each man rides on the right (0x7BD00, 0x7BD0C)");
 
-        /* The fourth main control builds the five store columns. With every topic locked -- the shipped
-         * research.dat -- the scan admits nothing, so the list is real but empty. */
+        /* The fourth main control builds the five store columns. With the shipped research.dat (Part 104: 27
+         * topics unlocked at the record's +0xD) the scan admits slot 43 -- its gate topic 1 is one of the 27
+         * -- and slot 43 is the only admitted slot (band slot < 25 || 30 < slot < 52, 0x7B190) holding base
+         * stock at a new game, so the list comes out with exactly its one row. */
         g_world.planeBlock.apMainCtl[3]->pfnClick();                 /* BasePlaneScreen_BuildControls @ 0x7b014 */
         CheckEqI32(g_world.bPlaneStoresBuilt, 1,
                    "BuildControls posts bPlaneStoresCommitted BEFORE a single row exists (0x7B12C)");
@@ -2100,17 +2105,17 @@ int main(void)
                   && g_world.planeStorePanels.pTakenPanel->pfnClick == NULL,
               "the five columns exist, the two quantity rows and the name column carry handlers, the two count columns carry none (0x7B244, 0x7B454, 0x7B574, 0x7B354, 0x7B6C4)");
         nStoreRows = g_world.planeStorePanels.pSlotPanel->nLineCount;
-        CheckEqI32(nStoreRows, 0, "and the locked topic table leaves the stores list with no row at all");
+        CheckEqI32(nStoreRows, 1, "and the shipped gate table leaves exactly one row: slot 43, gate topic 1 unlocked, one clip at base 0");
         CheckEqI32(g_world.nPlaneCrewQuota, 0,
                    "the crew quota starts as what the craft carries of slots 31..35, and the Skyranger carries nothing there (0x7B05C..0x7B09C)");
         CheckEqI32(g_world.anPlaneCarryCount[43], 0, "the build zeroed the 256 staged counts first (0x7B038..0x7B058)");
 
         ClearSurface();
         (void)DrawFrame();
-        DumpFrame("geoscape_hangar_locked"); /* the empty list over the backdrop: what a new game's hangar really shows */
+        DumpFrame("geoscape_hangar_locked"); /* the backdrop view before the detail arm: the case-6 gate at 0x93114 skips the list draw here, so this picture is the same one Part 88 recorded -- the list now holds its shipped one slot-43 row (gate topic 1 unlocked, Part 104), asserted in nStoreRows, and the row shows in the detail frame below */
 
-        /* Re-open the same builder with the topic gate open -- research is what does this in play -- and the
-         * shipped stock finally has a row. The builder's own clear arm runs first (the flag is set). */
+        /* Re-open the same builder: the first call takes the clear arm (the flag is set), the second rebuilds.
+         * The gate has been open since the shipped state (Part 104); the explicit set documents it. */
         g_world.aTopics[1].bUnlocked = 1;
         g_world.planeBlock.apMainCtl[3]->pfnClick();
         CheckEqI32(g_world.bPlaneStoresBuilt, 0, "a second call takes the clear arm and frees the set (0x7D238 shape)");
@@ -2300,7 +2305,7 @@ int main(void)
         Check(g_world.planeCraftPanels.pCraftPanel == NULL && g_world.planeCraftPanels.pStatusPanel == NULL,
               "leaving no craft list behind");
 
-        g_world.aTopics[1].bUnlocked = 0; /* back to the shipped state for the checks below */
+        g_world.aTopics[1].bUnlocked = 1; /* back to the shipped state: topic 1 ships unlocked (0x86910's +4 load) */
         CheckEqI32((i32)g_assets.apObjects[43]->aItemQty[0], nCarry43Save + 1,
                    "the moved clip stays moved: the hangar is the seam that arms a craft");
         CheckEqI32((i32)g_assets.apObjects[43]->auPerBaseVal[0], nStock43Save - 1,
@@ -2310,10 +2315,11 @@ int main(void)
     /* 12i. The research screen (screen 8), reached the way the game reaches it: nav control slot 5.
      * Geoscape_BuildNavControls @ 0x67b1c installs ResearchScreen_Open @ 0x616ac at apNavCtl + 0x14 (the
      * LDR at 0x67BB0); the opener plays sample 17 at 0x616B4 and writes the id 8 at 0x6176C before its tail
-     * call to ResearchScreen_Init @ 0x749a8. The screen's own list is EMPTY at a new game, and the first
-     * half of this gate is the reason, measured against the records main.dat's RESEARCH.DAT ships (4896
-     * bytes = 144 records of 34, copied raw at 0x86900 with wUnk6 zeroed at 0x86938): every branch of
-     * ResearchScreen_RebuildTopicList @ 0x74270 that could arm a topic is closed by that data. */
+     * call to ResearchScreen_Init @ 0x749a8. The first half of this gate measures the screen against the
+     * records main.dat's RESEARCH.DAT ships (4896 bytes = 144 records of 34, read by 0x86900..0x86910 with
+     * `ADD R1,R6,#4` -- the member lands four bytes later than the slots it fills, Part 104 -- with wProgress
+     * zeroed at 0x86938). That data opens the screen's list at a new game: 27 topics ship unlocked, 3 ship
+     * active, and the open's own rebuild arms two more through the 0x747A0 item gate. */
     {
         UiPanel *pTopic, *pQty, *pProg;
         i32 nActive0 = 0, nUnlocked0 = 0, nNeeds0 = 0, nRunning0 = 0, nRangeEq0 = 0, nSumZero0 = 0;
@@ -2341,16 +2347,15 @@ int main(void)
             }
         }
         CheckEqI32((i32)g_world.nResearchEntries, 144, "the topic count is 144 (0x160C4C), one per RESEARCH.DAT record");
-        CheckEqI32(nUnlocked0, 0, "and RESEARCH.DAT ships every topic locked (+0xD == 0): 0x74294's record-143 gate and the 0x74334 unlocked step never run");
-        CheckEqI32(nActive0, 0, "nothing ships active either (+0xC == 0), so the list is empty before the screen is opened");
-        CheckEqI32(nNeeds0, 0, "Research_TopicNeedsItem @ 0x72c8c answers 0 for all 144: only the two bands 55..65 and 118..142 read an item, every one with abNeedItems[0] == 0, and object slot 0 carries no stock at base 0 (0x72CE4, 0x72D00)");
-        CheckEqI32(nRunning0, 30, "30 records are locked with progress booked, so they take the in-progress branch at 0x747A0");
-        CheckEqI32(nRangeEq0, 30, "all 30 have an equal (lo,hi) pair in the NEXT record's head bytes, the only pair the scan reads (0x74868), so nothing is ever scanned as unlocked");
-        CheckEqI32(nSumZero0, 28, "and 28 of the 30 sum to zero, so 0x748D0's nTotal != 0 fails for them; the other two carry a locked prerequisite, which 0x747AC multiplies into the gate as 0");
-        CheckEqI32(g_world.aTopics[28].abUnk0[0] + 256 * g_world.aTopics[28].abUnk0[1], 448,
-                   "the record's own name index is the u16 at +0: record 28 is the Cydonia topic, TEXTS[448] names it, and 0x6CFA8 reads its +0xD");
-        CheckEqI32((i32)g_world.aTopics[28].wGate4, 6000,
-                   "while +0x4 is the 6000 cost -- and 0x7373C reads THAT field as the row's TEXTS index (open row in PLAN.md)");
+        CheckEqI32(nUnlocked0, 27, "and RESEARCH.DAT ships 27 topics UNLOCKED at the record's +0xD (1..5, 17, 18, 22..25, 37..45, 97, 98, 102, 105, 107..109): 0x74334 runs for all 27 and stamps abResearchZero; none of them is armed, because none needs an item and 0x74360/0x74388 take them out of the list");
+        CheckEqI32(nActive0, 3, "three topics ship ACTIVE at the record's +0xC: 14, 15 (item ids 20/21) and 47 (activate list 6)");
+        CheckEqI32(nNeeds0, 0, "Research_TopicNeedsItem @ 0x72c8c answers 0 for all 144: only the two bands 55..65 and 118..142 read an item, and a new game holds base stock only at slots 43, 68, 69, 70 -- the bands' first need bytes are item ids 77..98, none of them stocked (0x72CE4, 0x72D00)");
+        CheckEqI32(nRunning0, 98, "98 records are locked with progress 0 and a real wTotal, so 0x74364 lets every one past its gate into the in-progress branch at 0x747A0");
+        CheckEqI32(nRangeEq0, 97, "97 of the 98 have an equal (lo,hi) pair in the NEXT record's head bytes, the pair the scan reads (0x74868/0x7487C); the exception is record 28, whose window is the pair (138,142) read from record 29's head -- and 138..142 hold no unlocked or zero-stamped topic, so 0x74888/0x748C8 closes that gate anyway");
+        CheckEqI32(nSumZero0, 9, "9 of the 98 sum pre+need to zero, so 0x748D0's nTotal != 0 fails for them: 14, 15, 26, 27, 46, 47, 48, 50, 52");
+        CheckEqI32((i32)g_world.aTopics[28].wGate4, 448,
+                   "record 28's name index lands at +0x4: the member's u16 at record+0 is 448 (TEXTS[448], the Cydonia topic), and 0x86910's `ADD R1,R6,#4` is what puts file+0 at the record's +4 -- exactly where 0x7373C reads a row's TEXTS index. The PLAN open row about a cost sitting in the name field is closed: no cost lands there");
+        CheckEqI32((i32)g_world.aTopics[28].wTotal, 6000, "and the 6000 cost lands at +0x8, where 0x73174 reads the progress divisor");
 
         nSampleMark = g_nSamples;
         g_world.nav.apNav[5]->pfnClick();                     /* ResearchScreen_Open @ 0x616ac */
@@ -2390,15 +2395,15 @@ int main(void)
             Check(pTopic->nPosX == 10 && pTopic->nViewW == 230 && pTopic->nRectX == 5
                       && pTopic->bSelLineHighlight == 1 && pTopic->pfnClick != NULL,
                   "panel A is the name column: x 10, 230 wide, hit from x 5, its click handler installed (0x7348C..0x7352C)");
-            CheckEqI32(pTopic->nLineCount, 0,
-                       "and it carries zero rows, because the walk counts bActive topics starting at 1 (0x73034)");
+            CheckEqI32(pTopic->nLineCount, 5,
+                       "and it carries five rows: the walk counts bActive topics starting at 1 (0x73034), and the open's own rebuild arms 72 and 75 on top of the three shipped active ones -- 0x74814..0x74848 keep their item gate open because items 68 and 69 hold 20 and 15 at base 0, and 0x748D0 admits both");
         }
         Check(pQty != NULL && pQty->nPosX == 197 && pQty->nViewW == 30 && pQty->nUnk7076 == 2,
               "panel B is the allocated-quantity column at x 197, right aligned (0x735BC..0x73628)");
         Check(pProg != NULL && pProg->nPosX == 233 && pProg->nViewW == 30 && pProg->nUnk7076 == 2,
               "panel C is the percentage column at x 233 (0x7368C..0x736FC)");
-        CheckEqI32(pQty != NULL ? pQty->nLineCount : -1, 0, "both quantity columns start with no rows either (0x7307C, 0x73084)");
-        CheckEqI32(pProg != NULL ? pProg->nLineCount : -1, 0, "the percentage column included");
+        CheckEqI32(pQty != NULL ? pQty->nLineCount : -1, 5, "both quantity columns carry the same five rows (0x7307C, 0x73084)");
+        CheckEqI32(pProg != NULL ? pProg->nLineCount : -1, 5, "the percentage column included");
         CheckEqI32(g_world.aTopics[0].bActive, 1,
                    "topic 0 is forced active by BuildPanels and is the block's control slot, not a row -- both walks skip it (0x7341C, 0x73028)");
 
@@ -2420,8 +2425,8 @@ int main(void)
               "the +1 / -1 pair is the draw env's apCtlQty (0x160C58 / 0x160C5C), waiting for a row");
 
         /* With no row selected the press arm hit-tests the paging pair only (0x88B18, 0x88B3C), so the +1
-         * control cannot be armed; and the empty list cannot be clicked, because UiPanel_ClickRow's own
-         * nRow <= nLineCount - 1 test fails with no rows (0x3EEDC). */
+         * control cannot be armed; and a pen at y 163 tracks no row either: the row index 5 fails the panel's
+         * own nRow <= nLineCount - 1 test on a five-row list (0x3EEDC). */
         nColIdx = PUFO_RESEARCH_TOPIC_COUNT * 0 + 29;
         PressCtl(&g_world.aResearchCtl[2]);
         CheckEqI32(g_world.auResearchCol[nColIdx], 0, "a press on the +1 control with no row selected allocates nothing");
@@ -2440,11 +2445,12 @@ int main(void)
               "freeing the pad and then the three panels in the A, B, C order 0x739A4 / 0x739C0 / 0x739DC walks");
 
         /* The rows the screen is built to show, reached the way the tree reaches them: finishing a topic
-         * stores bActive = 1 into the five abActivateTopics bytes at +0x1D (0x74584), and RESEARCH.DAT
-         * records 123..127 name topics 29 and 36 there. Shipped data can never reach that store -- the item
-         * gate at 0x74364 is the door and it answers 0 for every record -- so the fixture writes exactly the
-         * two bytes 0x74584 would have written. Topics 29 and 36 are also the two whose name read stays
-         * inside TEXTS.DAT, because their +0x4 is 0. */
+         * stores bActive = 1 into the five abActivateTopics bytes at +0x1D (0x74584). In the shipped member
+         * no activate list names 29 or 36 -- those two are the completion UNLOCK pair (29,36) that topics
+         * 122..126 carry in the next record's head bytes, which 0x745AC rolls after a finish. Topics 29 and
+         * 36 are records with no cost at all (+0x8 == 0) and no pre/need/item/activate bytes, so the fixture
+         * writes exactly the two bActive stores 0x74584 would have written, and 0x74364's wTotal == 0 branch
+         * leaves them on the list once written. */
         g_world.aTopics[29].bActive = 1;
         g_world.aTopics[36].bActive = 1;
         nSciSave = (i32)g_assets.apObjects[113]->auPerBaseVal[0];
@@ -2463,39 +2469,55 @@ int main(void)
         pTopic = g_world.pResearchTopicPanel; pQty = g_world.pResearchQtyPanel;
         pProg  = g_world.pResearchProgPanel;
         nColIdx = PUFO_RESEARCH_TOPIC_COUNT * 0 + 29;
-        CheckEqI32(pTopic != NULL ? pTopic->nLineCount : -1, 2,
-                   "with two rows now: BuildPanels counts bActive topics 1..143 (0x73734)");
-        if (pTopic != NULL && pTopic->nLineCount == 2 && pQty != NULL && pProg != NULL) {
-            CheckEqI32(UiPanel_GetLineAux(pTopic, 0), 29, "row 0 carries the topic number as its aux (0x7378C)");
-            CheckEqI32(UiPanel_GetLineAux(pTopic, 1), 36, "and row 1 the next active topic");
-            Check(strcmp((char *)pTopic->apLines[0],
-                         (const char *)g_world.pAssets->pTextRecs
-                             + PUFO_TEXT_REC_STRIDE * g_world.aTopics[29].wGate4) == 0,
-                  "the row name is TEXTS[record + 4], the field 0x7373C reads (open row in PLAN.md)");
-            Check(*(char *)pQty->apLines[0] == '\0' && *(char *)pProg->apLines[0] == '\0',
-                  "both quantity columns start empty: a zero entry gets the empty string (0x7313C), and so does wTotal == 0 (0x731EC)");
-        } else {
-            Check(false, "the two fixture rows are on the list");
+        CheckEqI32(pTopic != NULL ? pTopic->nLineCount : -1, 7,
+                   "with seven rows now: BuildPanels counts bActive topics 1..143 (0x73734)");
+        {
+            static const i32 aWantAux[7] = { 14, 15, 29, 36, 47, 72, 75 };
+            bool bRowsOk = pTopic != NULL && pTopic->nLineCount == 7;
+
+            for (i = 0; bRowsOk && i < 7; ++i) {
+                if (UiPanel_GetLineAux(pTopic, i) != aWantAux[i]) { bRowsOk = false; }
+            }
+            Check(bRowsOk, "the rows are the seven bActive topics in topic order, each carrying the topic number as its aux (0x7378C)");
+            if (bRowsOk && pQty != NULL && pProg != NULL) {
+                Check(strcmp((char *)pTopic->apLines[2],
+                             (const char *)g_world.pAssets->pTextRecs
+                                 + PUFO_TEXT_REC_STRIDE * g_world.aTopics[29].wGate4) == 0,
+                      "row 2's name is TEXTS[wGate4] -- the u16 at +4 that 0x7373C reads, 420 + 29 = 449, the name the +4 load put there");
+                Check(*(char *)pQty->apLines[2] == '\0' && *(char *)pProg->apLines[2] == '\0',
+                      "both quantity columns are empty on that row: a zero entry gets the empty string (0x7313C), and so does wTotal == 0 (0x731EC)");
+            } else {
+                Check(false, "the two fixture rows are on the list");
+            }
         }
 
         ClearSurface();
         (void)DrawFrame();
         DumpFrame("geoscape_research_rows");
-        Check(SurfPix(10 + 20, 70 + 8) != 0 && SurfPix(10 + 40, 70 + 24) != 0,
-              "the name column paints its two rows inside panel A (0x7375C..0x73774)");
+        {
+            bool bInk2 = false, bInk3 = false;
+            i32 nInkY;
+
+            for (i = 10; i < 240 && (!bInk2 || !bInk3); ++i) {
+                for (nInkY = 70 + 16 * 2; nInkY < 70 + 16 * 3; ++nInkY) { if (SurfPix(i, nInkY) != 0) { bInk2 = true; } }
+                for (nInkY = 70 + 16 * 3; nInkY < 70 + 16 * 4; ++nInkY) { if (SurfPix(i, nInkY) != 0) { bInk3 = true; } }
+            }
+            Check(bInk2 && bInk3,
+                  "the name column paints the two fixture rows -- ink in the topic-29 strip (y 102..117) and the topic-36 strip (y 118..133) -- inside panel A (0x7375C..0x73774)");
+        }
 
         /* The row click, pen first: the press tracks the row (0x88B18), the release's UiPanel_ClickRow stores
          * scroll + row into the panel's own scroll cell and runs its handler (0x3EEF8), and that handler is
          * PlaySample7_SetFlags_Cache0xBD8 @ 0x73328. */
         nSampleMark = g_nSamples;
-        World_GeoscapePointer(&g_world, 10 + 20, 70 + 8, true);
+        World_GeoscapePointer(&g_world, 10 + 20, 70 + 16 * 2 + 8, true);
         (void)World_GeoscapePointerUp(&g_world);
         Check(g_nSamples == nSampleMark + 1 && g_aFrameSamples[nSampleMark] == 7,
               "the row click plays sample 7 (0x7332C)");
         CheckEqI32(g_world.researchScratch.bFlag160C80, 1, "and sets the row-selected byte unk_160C80 (0x73334)");
         CheckEqI32(g_world.researchScratch.bFlag187080, 0, "with the animation byte cleared (0x73340)");
-        CheckEqI32(g_world.researchScratch.nCache160C74, 0,
-                   "and caches the panel's scroll cell into unk_160C74 -- the row the quantity pair acts on (0x73350)");
+        CheckEqI32(g_world.researchScratch.nCache160C74, 2,
+                   "and caches row 2 into unk_160C74 -- the topic-29 row the quantity pair acts on (0x73350)");
 
         /* The +1 control's two gates, in the original's order (0x72EC8, then 0x72EEC). Base 0 has no
          * scientist and no laboratory, so the shipped state refuses on its own. */
@@ -2561,18 +2583,18 @@ int main(void)
         CheckEqI32(g_world.researchScratch.bFlag160C80, 0, "clearing the row-selected byte on the way (0x7324C)");
         CheckEqI32(g_world.screen.nGeoscapeScreen, 8, "StartSelected does not close the screen");
         if (pQty != NULL && pProg != NULL) {
-            Check(strcmp((char *)pQty->apLines[0], "2") == 0,
-                  "its RefreshPanels pass writes the allocated count into the quantity row (0x730F8, 0x73108)");
-            Check(*(char *)pProg->apLines[0] == '\0',
-                  "and leaves the percentage row empty because wTotal is 0 -- the original would divide by it (0x73160, deviation in pufo_baseui.h)");
+            Check(strcmp((char *)pQty->apLines[2], "2") == 0,
+                  "its RefreshPanels pass writes the allocated count into the topic-29 quantity row (0x730F8, 0x73108)");
+            Check(*(char *)pProg->apLines[2] == '\0',
+                  "and leaves that percentage row empty because wTotal is 0 -- the original would divide by it (0x73160, deviation in pufo_baseui.h)");
         }
 
         /* The cancel arm, and what its tail close really does: CancelSelectedAndClose @ 0x73380 stores 0 into
          * the entry (0x733D8) and tail-calls Geoscape_CloseUI with the row STILL selected, so case 8 takes the
          * StartSelected arm (0x8BDB4) instead of the teardown. */
-        World_GeoscapePointer(&g_world, 10 + 20, 70 + 8, true);
+        World_GeoscapePointer(&g_world, 10 + 20, 70 + 16 * 2 + 8, true);
         (void)World_GeoscapePointerUp(&g_world);
-        CheckEqI32(g_world.researchScratch.bFlag160C80, 1, "the row is selected again (0x7324C cleared it, 0x73334 sets it)");
+        CheckEqI32(g_world.researchScratch.bFlag160C80, 1, "the topic-29 row is selected again (0x7324C cleared it, 0x73334 sets it)");
         PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BB4]); /* pGeoscapeCtlA -> ResearchScreen_CancelSelectedAndClose */
         CheckEqI32(g_world.auResearchCol[nColIdx], 0, "cancel clears the entry with no gate at all (0x733D8)");
         CheckEqI32(g_world.screen.nGeoscapeScreen, 8,
@@ -9299,14 +9321,12 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                    Base_CalcStoresCapacity(g_world.abFacilityGrid, nEBase));
         }
 
-        /* 99.2 Running a research topic to its end on the hourly tick. The crew column and the
-         * fixture-active topics follow the research section's own precedent: the hired crew is the
-         * object record's per-base column (Base_GetScientistCount @ 0x6812c reads slot 113 of it),
-         * and topics 29/36 are the two RESEARCH.DAT records 123..127 name in the activation bytes,
-         * which the shipped item gate can never reach. Row select, the allocate-all and the start are
-         * the presses; from there the tick does the work: ResearchScreen_AccumulateAllocated @ 0x74914
-         * adds every base's allocation into wProgress, and ResearchScreen_RebuildTopicList @ 0x74314
-         * closes the topic when wProgress reaches wTotal (0x743A4 -> 0x7440C bUnlocked = 1). */
+        /* 99.2 Running a research topic to its end on the hourly tick. The crew column follows the research
+         * section's own precedent: the hired crew is the object record's per-base column
+         * (Base_GetScientistCount @ 0x6812c reads slot 113 of it). Row select, the allocate-all and the start
+         * are the presses; from there the tick does the work: ResearchScreen_AccumulateAllocated @ 0x74914
+         * adds every base's allocation into wProgress, and ResearchScreen_RebuildTopicList @ 0x74314 closes
+         * the topic when wProgress reaches wTotal (0x743A4 -> 0x7440C bUnlocked = 1). */
         {
             const i32 nColBase = PUFO_RESEARCH_TOPIC_COUNT * nEBase;
 
@@ -9316,14 +9336,16 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                               (i32)g_world.nResearchEntries) >= 2 ? 2 : 0, 2,
                        "the base now has scientists (0x6812c: slot 113's column minus the allocation)");
 
-            /* Pick a topic the shipped data can actually run. Stage 12i measured 30 records that are
+            /* Pick a topic the shipped data can actually run. Stage 12i measured 98 records that are
              * locked with nothing booked and a real wTotal -- the ones 0x74364 lets past its gate into
-             * the in-progress branch at 0x747A0 -- and 28 of those with abPreTopics and abNeedItems
-             * both summing to zero, so 0x747AC/0x74808's gates open and 0x748D0 admits the record.
-             * Topics 29/36 are NOT among them: their wTotal is 0, and RebuildTopicList drops a
-             * wTotal == 0 record at 0x74328 before it ever books progress. The fixture arms one of
-             * the 28; the completion arm at 0x74584 then switches on whatever abActivateTopics names,
-             * which is how the original activates the next topics. */
+             * the in-progress branch at 0x747A0 -- and 9 of those (14, 15, 26, 27, 46, 47, 48, 50, 52)
+             * with abPreTopics and abNeedItems both summing to zero, so 0x747AC/0x74808's gates open and
+             * 0x748D0 admits the record. Topics 29/36 are NOT among them: their wTotal is 0, and
+             * RebuildTopicList skips a wTotal == 0 locked record at 0x74364 before it ever books
+             * progress. The fixture arms the first admitted record that also names a manufactured item
+             * -- topic 14, item 20, work cost 432 -- so the manufacturing tail downstream still has its
+             * row; the completion arm at 0x74584 then switches on whatever abActivateTopics names, which
+             * is how the original activates the next topics. */
             nTopic = -1;
             for (nRow = 1; nRow < (i32)g_world.nResearchEntries && nTopic < 0; ++nRow) {
                 const ResearchTopicLive *pT = &g_world.aTopics[nRow];
@@ -9412,13 +9434,12 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                 {
                     const i32 nSm0 = g_nSamples;
                     PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BB0]); /* ResearchScreen_StartSelected @ 0x73258 */
-                    /* The topic has wTotal 1 and progress booked, so the same call's tail rebuild
-                     * finishes it, and the finished branch's UiLineList_AppendWithSound @ 0x74554
-                     * plays its own sample 7 right after the start's 17. */
-                    Check(g_nSamples >= nSm0 + 1 && g_aFrameSamples[nSm0] == 17,
-                          "the start control plays sample 17 (0x73258)");
-                    Check(g_nSamples >= nSm0 + 2 && g_aFrameSamples[nSm0 + 1] == 7,
-                          "the completion line append plays sample 7 too (0x74554)");
+                    /* The shipped topic carries a real cost (wTotal 3600), so one progress point does NOT
+                     * finish it: the same call's tail rebuild leaves it in progress, and no completion line
+                     * plays yet. The finished branch's UiLineList_AppendWithSound @ 0x74554 is what the
+                     * hourly loop below earns. */
+                    Check(g_nSamples == nSm0 + 1 && g_aFrameSamples[nSm0] == 17,
+                          "the start control plays only its own 17 (0x73258) -- a second sample here would name a completion the topic has not reached");
                 }
                 Check(g_world.aTopics[nTopic].wProgress >= nProgress0,
                       "and the topic stands with its booked progress, 0x732C8's arm on a topic that has one");
@@ -9426,11 +9447,22 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                 (void)DrawFrame();
                 DumpFrame("econ_research_running");
 
-                for (nTick = 0; nTick < 3000 && g_world.aTopics[nTopic].bUnlocked == 0; ++nTick) {
-                    g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                {
+                    const i32 nSm1 = g_nSamples;
+
+                    for (nTick = 0; nTick < 3000 && g_world.aTopics[nTopic].bUnlocked == 0; ++nTick) {
+                        g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                    }
+                    CheckEqI32(g_world.aTopics[nTopic].bUnlocked, 1,
+                               "the hourly accumulation finishes the topic (0x74914 -> 0x7440C)");
+                    {
+                        bool bFound7 = false;
+                        for (nRow = nSm1; nRow < g_nSamples; ++nRow) {
+                            if (g_aFrameSamples[nRow] == 7) { bFound7 = true; }
+                        }
+                        Check(bFound7, "and the finished branch's completion line plays its sample 7 during the ticks (0x74554)");
+                    }
                 }
-                CheckEqI32(g_world.aTopics[nTopic].bUnlocked, 1,
-                           "the hourly accumulation finishes the topic (0x74914 -> 0x7440C)");
                 printf("  econ: topic %d finished after %d hourly ticks, wTotal %u\n",
                        nTopic, nTick, (unsigned)g_world.aTopics[nTopic].wTotal);
                 CheckEqI32((i32)g_world.nFinishedTopic, nTopic,
@@ -11628,6 +11660,293 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         World_TactEscapeToGeoscape();
         Check(g_world.bTactFlag == 0 && g_world.pTactMap == NULL, "the refused mission tears down too");
         (void)remove("sav63.sav");
+    }
+
+    /* ---- Part 104: the ufopaedia screen 16 live, and the '%' status panel answers the pen ----------
+     *
+     * The two status-panel openers (pfnConfirmReport @ 0x8D428, pfnApplyResearch @ 0x8D680) run through
+     * World_ConfirmReportThunk / World_ApplyResearchThunk into Ui_OpenBaseInfoAlt @ 0x84d18 and
+     * Ui_OpenResearch @ 0x84bf8; screen 16's whole life -- Ui_InitBaseInfo @ 0x9ddc8, Ufopaedia_Open's
+     * build/teardown toggle @ 0x9a8cc, Ufopaedia_RefreshEntry's pad toggle @ 0x9a014, the paging pair
+     * @ 0x9a60c/0x9a754 and Geoscape_CloseUI case 16 @ 0x8BD30 -- runs over the shell's own cells.
+     *
+     * ORIGINAL QUIRK recorded first, asserted, not hidden: StatusPanel_DrawResearch parks BOTH bottom
+     * controls at (1000, 1000) (0x8D3DC/0x8D3E4 for confirm, 0x8D634/0x8D63C for apply), and the
+     * finished-topic tail re-centres only the confirm's x (0x8D654) and only the apply's y (0x8D674).
+     * The apply control therefore keeps x=1000 -- 760 pixels off the 240-wide screen -- so a shipped
+     * pen can never land on it: the original opens the finished-research screen only through this
+     * parked control's press/release pair. The gate presses at the parked coordinates, the exact cell
+     * state the draw leaves behind, and the quirk is recorded in docs/parity/bugs.tsv. */
+    {
+        /* InitUI (re)creates the shared UI controls on every bring-up, so the four pointers
+         * below must be read after World_NewGame, not before -- a pre-new-game UiControl*
+         * points at a freed instance and proves nothing. */
+        UiControl *pConfirm, *pApply, *pClose, *pCtlA;
+        UiPanel   *pCat;
+        i32 nSlot, nAct, nRowCnt, nCat55, nIdx55;
+        i32 nTopicBefore, nCatBefore, nIdxBefore, nBuilt, i, k;
+        bool bAll;
+
+        Check(World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks) != 0,
+              "the world is rebuilt live before the '%' arm runs (the 103.x re-run call shape)");
+        pConfirm = g_world.ui.apCtl[GEOUI_CTL_186BA4];
+        pApply   = g_world.ui.apCtl[GEOUI_CTL_186BAC];
+        pClose   = g_world.ui.apCtl[GEOUI_CTL_186B00];
+        pCtlA    = g_world.ui.apCtl[GEOUI_CTL_186BB4];
+        Check(pConfirm == pF->panel.pCtlConfirm && pApply == pF->panel.pCtlApply,
+              "InitUI's controls and the frame env's confirm/apply cells are the same objects after the rebuild");
+
+        /* Stage the finished-research state the '%' arm reads: the walk at 0x8D488..0x8D620 runs over
+         * aResearchTopics[nResearchFinishedTopic].abActivateTopics and draws for every entry whose
+         * abResearchActive is < 2 (0x8D4DC gate), marking each one active at 0x8D600 as it draws. The
+         * fixture picks the first topic-table row that carries an activate list and makes its first
+         * activated topic inactive -- exactly the state a finished topic leaves behind. */
+        nSlot = -1;
+        for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT && nSlot < 0; ++i) {
+            if (g_world.aTopics[i].abActivateTopics[0] != 0) {
+                nSlot = i;
+            }
+        }
+        Check(nSlot >= 0, "some aResearchTopics row carries a non-empty abActivateTopics list (+0x1D)");
+        nAct = g_world.aTopics[nSlot].abActivateTopics[0];
+        for (nRowCnt = 0;
+             nRowCnt < (i32)(sizeof(g_world.aTopics[nSlot].abActivateTopics)
+                             / sizeof(g_world.aTopics[nSlot].abActivateTopics[0]))
+             && g_world.aTopics[nSlot].abActivateTopics[nRowCnt] != 0; ++nRowCnt) {}
+        Check(nAct >= 0 && nAct < PUFO_RESEARCH_TOPIC_COUNT, "the activated topic is a real table row");
+        g_world.nFinishedTopic = (u8)nSlot;   /* nResearchFinishedTopic @ 0x15EEF8 */
+        g_world.abResearchActive[nAct] = 0;   /* byte_160BBC: < 2 feeds the walk's gate */
+
+        /* Topic 55 (the Sectoid page) is the reselect the original lands on: the walk at
+         * 0x9DFE0..0x9E01C finds it in aUfopaediaCatTopics, and anUfopaediaEntryNum[55] = 54 is what
+         * both the status arm's 0x8D3F8 gate and the 0x9E068 entry store read. Unlocking it mirrors
+         * the game that just finished the research: Ufopaedia_Open's shown set (0x9AB04) is the
+         * unlocked topics plus race overrides, so the category 5 row the gate clicks exists. */
+        nCat55 = -1; nIdx55 = -1;
+        for (i = 0; i < PUFO_UFOPAEDIA_CATEGORIES && nCat55 < 0; ++i) {
+            for (k = 0; k < PUFO_UFOPAEDIA_CAT_WIDTH; ++k) {
+                if (g_aUfopaediaCatTopics[i][k] == 55) {
+                    nCat55 = i;
+                    nIdx55 = k;
+                    break;
+                }
+            }
+        }
+        CheckEqI32(nCat55, 5, "topic 55 sits in category 5 of aUfopaediaCatTopics (the 0x9DFE0 walk's source)");
+        CheckEqI32(nIdx55, 0, "category 5 heads its row with 55 (aUfopaediaCatTopics row 5 is 55, 66, 56, 67 ... 65, 76 -- the only row that fills all 22 slots)");
+        g_world.aTopics[55].bUnlocked = 1;
+
+        /* The '%' line on screen 0: the press band 0x87324..0x873A4 hands the pen to the dialog pair
+         * only for flag 37, and the status arm dispatches the same byte to StatusPanel_DrawResearch. */
+        g_world.screen.nGeoscapeScreen = 0;
+        g_world.msgLines.nLineCount = 0;
+        UiLineList_Insert(&g_world.msgLines, 0, 1, 0, 0, 0, 0);
+        UiLineList_SetLine(&g_world.msgLines, 0, PUFO_GEO_MENU_FLAG_DIALOG, 0, 0, 0, 0);
+        g_world.nShownTopic = 55;
+
+        printf("  DIAG ui.confirm=%p panel.confirm=%p ui.sfx=%p panel.sfx=%p ui.apply=%p panel.apply=%p flag=%d shown=%d\n",
+               (void *)g_world.ui.apCtl[GEOUI_CTL_186BA4], (void *)pF->panel.pCtlConfirm,
+               (void *)g_world.ui.apCtl[GEOUI_CTL_18704C], (void *)pF->panel.pCtlSfx,
+               (void *)g_world.ui.apCtl[GEOUI_CTL_186BAC], (void *)pF->panel.pCtlApply,
+               (int)UiLineList_GetFlag(pF->panel.pLines, 0), g_world.nShownTopic);
+        (void)Geoscape_DrawStatusPanel(&pF->panel);
+        printf("  DIAG after draw: confirm x=%d y=%d fn=%d apply x=%d y=%d fn=%d\n",
+               (int)pConfirm->x, (int)pConfirm->y, (int)(pConfirm->pfnClick != NULL),
+               (int)pApply->x, (int)pApply->y, (int)(pApply->pfnClick != NULL));
+        Check(pConfirm->pfnClick != NULL, "the confirm carries the shell's report opener (0x8D428)");
+        CheckEqI32((i32)pConfirm->x, 120 - ((i32)pConfirm->uWidth >> 1), "confirm centred on 120 (0x8D40C: anUfopaediaEntryNum[55] = 54 passes 0x8D3F8)");
+        CheckEqI32((i32)pConfirm->y, PUFO_STATUS_Y_RESEARCH_REPORT, "confirm y 75 (0x8D420)");
+        Check(pApply->pfnClick != NULL, "the apply carries the research opener (0x8D680)");
+        CheckEqI32((i32)pApply->x, PUFO_STATUS_CTL_PARKED,
+                   "ORIGINAL QUIRK asserted: the apply keeps the 0x8D634 park -- 0x8D654 only moves the confirm");
+        CheckEqI32((i32)pApply->y, PUFO_STATUS_Y_RESEARCH_APPLY + PUFO_STATUS_RESEARCH_ROW_STEP * nRowCnt,
+                   "apply y after the walk (0x8D674: 142 + 14 * walked rows)");
+        CheckEqI32((i32)g_world.abResearchActive[nAct], 1, "the walk marks the activated topic (0x8D600)");
+
+        /* Press the parked apply: the release arm's flag-37 pair fires it (0x894C0 -> UiControl_HitTest
+         * 0x1A540), Ui_OpenResearch runs, and the research screen arrives. */
+        PressCtl(pApply);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 8, "Ui_OpenResearch writes id 8 (0x84CEC)");
+        CheckEqI32(g_world.geo.world.nTickSeconds, 5, "GameTime_Set5Sec at 0x84CC0");
+        Check(UiLineList_GetFlag(&g_world.msgLines, 0) != PUFO_GEO_MENU_FLAG_DIALOG,
+              "Geoscape_PrepScreenOpen's tail removed the '%' line (0x8525C)");
+        CheckEqI32((i32)g_world.bUfopaediaReselect, 0, "Ui_OpenResearch touches no ufopaedia byte (byte_18706C belongs to 0x84D1C)");
+        CheckEqI32((i32)pCtlA->x, 165, "ctlA parked at 1000 by 0x84CD8, then ResearchScreen_Init seats it at 165 (0x74B98)");
+        CheckEqI32((i32)pCtlA->y, 188, "and 188 (0x74B98)");
+        CheckEqI32((i32)g_world.bResearchBuilt, 1, "Init's BuildPanels call (0x74BB8) built the research panels");
+        nBuilt = 0;
+        for (i = 0; i < PUFO_NAV_CTLS; ++i) {
+            if (g_world.nav.apNav[i] != NULL && g_world.nav.apNav[i]->pfnClick != NULL) { ++nBuilt; }
+        }
+        for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
+            if (g_world.nav.apPanel[i] != NULL && g_world.nav.apPanel[i]->pfnClick != NULL) { ++nBuilt; }
+        }
+        for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {
+            if (g_world.nav.apFind[i] != NULL && g_world.nav.apFind[i]->pfnClick != NULL) { ++nBuilt; }
+        }
+        CheckEqI32(nBuilt, PUFO_NAV_CTLS + PUFO_NAV_PANEL_CTLS + PUFO_NAV_FIND_CTLS,
+                   "Geoscape_BuildNavControls rebuilt all fifteen nav handlers through the thunk (0x84CC8)");
+        ClearSurface();
+        (void)DrawFrame();
+        /* The block pads (research 0x73A40, ufopaedia 0x9B600) reach the screen through the callee's own
+         * PadImage_Blit, not through the control-blit seam the recorder sees -- SawPadBlit only records the
+         * pfnCtlBlit calls. Their pixels are the evidence, plus the reviewed frame. */
+        Check(SurfPix(2, 2) != 0 && SurfPix(120, 40) != 0,
+              "the research block pad paints the screen (Init's 0x749D8 store, drawn at 0x73A40)");
+        DumpFrame("geoscape_research_apply");
+
+        PressCtl(pClose); /* research Init seated 186B00 at (224,1), 0x74AA0 */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "case 8 with no row selected lands on the base strip (0x8BDC4)");
+        CheckEqI32((i32)g_world.bResearchBuilt, 0, "BuildPanels ran its teardown (0x8BDD8)");
+
+        /* The report confirm: Ui_OpenBaseInfoAlt sets byte_18706C (0x84D1C), runs the prologue twice,
+         * writes id 16 (0x84DE4) and tails into Ui_InitBaseInfo, whose reselect half lands the entry. */
+        g_world.screen.nGeoscapeScreen = 0;
+        g_world.msgLines.nLineCount = 0;
+        UiLineList_Insert(&g_world.msgLines, 0, 1, 0, 0, 0, 0);
+        UiLineList_SetLine(&g_world.msgLines, 0, PUFO_GEO_MENU_FLAG_DIALOG, 0, 0, 0, 0);
+        (void)Geoscape_DrawStatusPanel(&pF->panel);
+        PressCtl(pConfirm);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 16, "Ui_OpenBaseInfoAlt writes id 16 (0x84DE4)");
+        Check(UiLineList_GetFlag(&g_world.msgLines, 0) != PUFO_GEO_MENU_FLAG_DIALOG, "the doubled prologue consumed the line (0x8525C twice)");
+        CheckEqI32((i32)g_world.bUfopaediaReselect, 0, "Init consumed the reselect byte (0x9E084)");
+        CheckEqI32((i32)g_world.bUfopaediaBuilt, 1, "Ufopaedia_Open's build half leaves its toggle set (0x9A8E8)");
+        CheckEqI32((i32)g_world.bUfopaediaOpen, 1, "Init's reselect raised bUfopaediaOpen (0x9E07C)");
+        CheckEqI32((i32)g_world.bUfopaediaEntryDirty, 1, "0x9E048 clears it, then 0x9A500 sets it -- Init's own RefreshEntry call builds the pad");
+        CheckEqI32((i32)g_world.bUfopaediaPadDirty, 0, "the build path clears the pad byte (0x9A5C4)");
+        CheckEqI32((i32)g_world.bUfopaediaWidePanel, 1, "entry 54 falls in the 53 < e < 76 wide band (0x9A21C)");
+        Check(g_world.apUfopaediaRoot[0] != NULL, "Init's screen pad sits in block slot [0] (0x9DDF8)");
+        Check(g_world.apUfopaediaRoot[1] != NULL, "the entry pad sits in slot [1] (0x9A530)");
+        Check(g_world.ufopaedia.pSelPanel != NULL && g_world.ufopaedia.pTextPanel != NULL,
+              "Open built the selector and the 50-line text panel (0x9A8F4 / 0x9AA34)");
+        bAll = true;
+        for (i = 0; i < PUFO_UFOPAEDIA_CATEGORIES; ++i) {
+            if (g_world.ufopaedia.apCatPanels[i] == NULL) { bAll = false; }
+        }
+        Check(bAll, "all nine category panels were built (0x9ADD8..0x9AE04)");
+        CheckEqI32(g_world.nUfopaediaCategory, 5, "the walk parked category 5 (0x9E020)");
+        CheckEqI32(g_world.nUfopaediaEntryIdx, nIdx55, "and the entry row it found (0x9E058)");
+        CheckEqI32(g_world.nUfopaediaTopic, 55, "the reselect topic (0x9E070)");
+        CheckEqI32(g_world.nUfopaediaEntryNum, 54, "anUfopaediaEntryNum[55] (0x9E068)");
+        CheckEqI32((i32)g_world.ufopaedia.pTextPanel->nStyle, 7, "entry <= 1000 keeps the default text layout (0x9A0C4)");
+        CheckEqI32((i32)g_world.ufopaedia.pTextPanel->nPosY, 230, "and y 230 (0x9A0D8)");
+        pCat = g_world.ufopaedia.apCatPanels[5];
+        Check(pCat != NULL && pCat->nLineCount > 0, "category 5 lists the unlocked Sectoid row");
+        Check(pCat != NULL && pCat->bSelLineHighlight != 0 && pCat->nFont == 16 && pCat->nPosX == 120,
+              "the category panel is the clickable list (0x9AE0C/0x9AE30/0x9AECC)");
+        bAll = true;
+        for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+            if (g_world.aUfopaediaCtl[i].pfnClick == NULL) { bAll = false; }
+        }
+        Check(bAll, "Init installed all six handlers (0x9DE5C..0x9DE98)");
+        CheckEqI32((i32)g_world.aUfopaediaCtl[4].x, 200, "the selector pair seats at (200,18) per g_aUiBaseInfoCtlDesc (0xAC5C8)");
+        CheckEqI32((i32)pClose->x, PUFO_UIBASEINFO_CLOSE_X, "Init re-seats the close control (0x9DED0)");
+        CheckEqI32((i32)pClose->y, PUFO_UIBASEINFO_CLOSE_Y, "at y 1 (0x9DEDC)");
+
+        /* The entry picture: dirty + wide blits the control run 0..3 (0x94220), and Ui_DrawBaseInfo's
+         * entry half fills the screen, frames it and dispatches the normalised kind. The normalisation
+         * writes 54..75 back as kind 3 into the global entry cell (0x9B8D0) -- the original's own
+         * overwrite, asserted rather than smoothed over. */
+        ClearSurface();
+        (void)DrawFrame();
+        Check(SurfPix(2, 2) != 0 && SurfPix(120, 120) != 0,
+              "the screen pad paints the screen, always (0x9B600 -- the callee's own blit, outside the control seam)");
+        Check(g_world.apUfopaediaRoot[1] != NULL,
+              "the entry's art 54 (0x9A5A4) sits in the entry pad slot the entry block helper draws through");
+        Check(SawPadBlit(g_world.aUfopaediaCtl[0].apPads[0]) && SawPadBlit(g_world.aUfopaediaCtl[3].apPads[0]),
+              "dirty + wide blits controls 0..3 (0x94220)");
+        CheckEqI32(g_world.nUfopaediaEntryNum, 3, "0x9B8D0 rewrote entry 54 as category 3 in place");
+        DumpFrame("ufopaedia_entry");
+
+        /* Close press 1: the dirty arm relays the entry back out (0x8BD3C -> RefreshEntry's free arm
+         * 0x9A5D8/0x9A5E4) and the screen stays up. The gate also proves the row read at 0x9A054/0x9A078:
+         * with reselect consumed and padDirty cleared, the relay re-reads the panel's stored row. */
+        /* The arms' TrackHoldRow/ClickRow read the STORED cursor (0x88E3C / 0x8AB30), not the pen:
+         * park it over the close control, off the reach of every panel row. */
+        g_world.frame.g.nCursorX = 224;
+        g_world.frame.g.nCursorY = 1;
+        PressCtl(pClose);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 16, "the dirty arm relays without leaving the screen (0x8BD3C)");
+        CheckEqI32((i32)g_world.bUfopaediaEntryDirty, 0, "the free arm cleared the entry flag (0x9A5D8)");
+        Check(g_world.apUfopaediaRoot[1] == NULL, "CloseFreePad released the entry pad (0x9A5E4)");
+        CheckEqI32((i32)g_world.bUfopaediaOpen, 1, "the relay leaves bUfopaediaOpen set");
+        CheckEqI32(g_world.nUfopaediaEntryIdx, g_world.ufopaedia.apCatPanels[5]->nUnk3032,
+                   "the relay re-read the panel's stored row into the entry index (0x9A054 gate, 0x9A078 store)");
+
+        /* The index picture: open + not-dirty blits only the selector pair 4..5 (0x941DC) and the draw
+         * falls back to the dashed frame -- no entry. */
+        ClearSurface();
+        (void)DrawFrame();
+        Check(SawPadBlit(g_world.aUfopaediaCtl[4].apPads[0]) && SawPadBlit(g_world.aUfopaediaCtl[5].apPads[0]),
+              "open && !dirty blits controls 4..6's run (0x941DC)");
+        DumpFrame("ufopaedia_index");
+
+        /* Press the category row 0: with the stored cursor inside the panel the press arms TrackHoldRow
+         * and the release runs UiPanel_ClickRow (0x8AB30, x in (nRectX, +nViewW)), storing the row and
+         * firing the panel's click -- Ufopaedia_RefreshEntry @ 0x9AE1C. */
+        pCat = g_world.ufopaedia.apCatPanels[5];
+        g_world.frame.g.nCursorX = 120;
+        g_world.frame.g.nCursorY = pCat->nPosY + 8;
+        World_GeoscapePointer(&g_world, 120, pCat->nPosY + 8, true);
+        (void)World_GeoscapePointerUp(&g_world);
+        CheckEqI32((i32)g_world.bUfopaediaEntryDirty, 1, "the row's handler re-ran the build arm (0x9A500)");
+        Check(g_world.apUfopaediaRoot[1] != NULL, "and rebuilt the pad for the new entry");
+        CheckEqI32(g_world.nUfopaediaEntryIdx, 0, "the click stored row 0 and the read took it (0x3EEE0..0x3F000 / 0x9A078)");
+        CheckEqI32(g_world.nUfopaediaTopic, pCat->anLineAux[0], "the entry is the category panel's row 0 (0x9A08C)");
+
+        /* The page pair through its shell thunk: NextEntry walks the index (0x9A7A8..0x9A7D4), DropPad
+         * drops the pad and sets the dirty pair, and its RefreshEntry call (0x9A890) rebuilds -- the
+         * padDirty byte blocks the row read, so the walked entry survives. */
+        nTopicBefore = g_world.nUfopaediaTopic;
+        nCatBefore   = g_world.nUfopaediaCategory;
+        nIdxBefore   = g_world.nUfopaediaEntryIdx;
+        PressCtl(&g_world.aUfopaediaCtl[3]); /* (40,210) per 0xAC5A8, armed by the dirty range 0..3 */
+        Check(g_world.nUfopaediaCategory != nCatBefore || g_world.nUfopaediaEntryIdx != nIdxBefore,
+              "NextEntry walked past the panel's rows (0x9A7A8) -- category 5 lists one unlocked row here");
+        Check(g_world.nUfopaediaTopic != nTopicBefore, "and landed on a different topic (0x9A6A8/0x9A6B4 accept stores)");
+        Check(g_world.apUfopaediaRoot[1] != NULL, "DropPad's pad (0x9A718) came back rebuilt through 0x9A508");
+        CheckEqI32((i32)g_world.bUfopaediaEntryDirty, 1, "the rebuilt pad re-set the entry flag (0x9A500)");
+        ClearSurface();
+        (void)DrawFrame();
+        Check(g_world.apUfopaediaRoot[1] != NULL && SurfPix(2, 2) != 0,
+              "the rebuilt entry pad is in its slot and the frame paints (entry mode, dirty run 0x94220); the walked entry's art is in the reviewed ufopaedia_entry_next frame");
+        DumpFrame("ufopaedia_entry_next");
+
+        /* The three case-16 arms, one press each: relay (dirty set), open-clear (0x8BD48, the panels
+         * survive because only Ufopaedia_Open's teardown releases them), teardown (0x8BD58 + id 0). */
+        g_world.frame.g.nCursorX = 224;
+        g_world.frame.g.nCursorY = 1;
+        PressCtl(pClose);
+        CheckEqI32((i32)g_world.bUfopaediaEntryDirty, 0, "relay #2 ran the free arm again");
+        PressCtl(pClose);
+        CheckEqI32((i32)g_world.bUfopaediaOpen, 0, "the open arm cleared the page flag (0x8BD48)");
+        Check(g_world.ufopaedia.pSelPanel != NULL, "but the open arm releases nothing -- the panels survive");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 16, "and the id stays 16");
+        ClearSurface();
+        (void)DrawFrame();
+        Check(SurfPix(2, 2) != 0, "the not-open gate still paints the screen pad (0x9B600)");
+        Check(!SawPadBlit(g_world.aUfopaediaCtl[4].apPads[0]), "and blits no control -- the draw returns at 0x9B7DC");
+        PressCtl(pClose);
+        CheckEqI32((i32)g_world.bUfopaediaBuilt, 0, "the teardown half cleared its toggle (0x9B50C)");
+        Check(g_world.ufopaedia.pSelPanel == NULL && g_world.ufopaedia.pTextPanel == NULL,
+              "the selector and text panels are freed and nulled (0x9B52C / 0x9B560)");
+        bAll = true;
+        for (i = 0; i < PUFO_UFOPAEDIA_CATEGORIES; ++i) {
+            if (g_world.ufopaedia.apCatPanels[i] != NULL) { bAll = false; }
+        }
+        Check(bAll, "all nine category panels are freed (0x9B588..0x9B5AC)");
+        Check(g_world.apUfopaediaRoot[0] == NULL, "the screen pad is freed (0x9B580)");
+        Check(g_world.apUfopaediaRoot[1] == NULL,
+              "and the entry pad too -- the port releases what the original's 0x9B5B8 loop leaks (recorded ORIGINAL BUG)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "the teardown arm drops the id to 0 (0x8BD5C)");
+        ClearSurface();
+        (void)DrawFrame();
+        Check(g_world.ptrEnv.p16Panel == NULL, "the per-frame re-read follows the teardown (World_RefreshGeoscapeFrame)");
+        Check(pF->ufopaediaDraw.pSelPanel == NULL, "the draw env's selector cell too (0x187204 mirror)");
+
+        printf("  ufopaedia live: category %d row %d entry %d, %d nav handlers rebuilt, three close arms run, screen back to %d\n",
+               g_world.nUfopaediaCategory, g_world.nUfopaediaEntryIdx, g_world.nUfopaediaEntryNum,
+               nBuilt, g_world.screen.nGeoscapeScreen);
     }
 
     World_Free(&g_world);

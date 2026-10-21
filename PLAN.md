@@ -3475,7 +3475,8 @@ Disposition of every remaining open item (target part; each item carries a point
 **102** options seams, `World_SoldierToggleThunk` stack address, `+ 0x80` readability fix, `Map_nUiScreen`
 three homes, `Text_DrawString` colour-pair test pass; **103** quit-YES arm, `Tact_Shutdown` live-caller gap,
 `Save_ReadMapDims` fixture, `Save_WriteMap`/`Save_ReadMap` consistency, `pbActionLatch` conflict, save-record
-duplication, the `DatFile_ctor`-first header rule; **104** ufopaedia Init + research openers, research entry
+duplication (RE-TARGETED to the final pass with the dependency-cycle items), the `DatFile_ctor`-first
+header rule; **104** ufopaedia Init + research openers, research entry
 count type, `ResearchTopic` on-disk mapping, `ctlResearchPanel`; **105** tact modal openers, `GameTick_Step`
 tail, UiPulse-in-mission feeder, modal `apUiSlotsA[20..23]` coordinates, `bSlot2Byte0`, tact HUD text-record
 owner; **106** path probe wiring, the remaining walker seams, height-glyph dword `0x14000`, type-probe bytes
@@ -4350,27 +4351,28 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `UiPanel_ctor` leaves it 0 -- so on the geoscape only `UiScrollList_ClickRow` selects rows, and the hold path here
   stays ungated on purpose. (target Part 107: the transfer/plane repeat gate gets its press-level proof there.)
 
-- [ ] **The research row name reads a cost as a TEXTS index.** 0x7373C takes the record's `+0x4` u16, scales it
-  by 0xCD and adds it to 0xB38D0, so every row name is TEXTS[record + 4]. In shipped research.dat that field is
-  a cost -- 0 or 2000..15000, record 28 carrying 6000, the same value the note at 0x6CFA8 names -- and 97 of the
-  144 records put a number past TEXTS.DAT's 1679 loaded records there, so on those topics the ORIGINAL reads its
-  row name outside the loaded block. The index the data carries is the u16 at record + 0, 420 + the topic number
-  (record 28 -> 448 -> TEXTS[448] @ 0xC9F90), and `BaseFac_BuildStatusMsg @ 0x6A7B4` reads the low byte of that
-  same field one record off -- the same off-by-one-record pairing `ResearchScreen_RebuildTopicList` uses for the
-  range pairs. The port reproduces 0x7373C unchanged, and the gate compares the row text against TEXTS[record + 4]
-  rather than against a literal. What stays unresolved is which field the data intends: the answer needs either a
-  retail save with an active topic to compare a picture against, or the reader that 0x6A7B4's pairing points at.
-  IDB notes at 0x7373C and 0x6A7B4. Indexed in bugs.tsv (`0x7373C`, Part 101 pass).
+- [x] **The research row name reads a cost as a TEXTS index.** CLOSED by Part 104: this was a misread of the
+  load, not a defect in 0x7373C. `Geoscape_InitUI` reads the RESEARCH.DAT member through 0x86910
+  `LDR R6,=aResearchTopics / ADD R1,R6,#4`, so the member's 34-byte records land FOUR BYTES later than the
+  in-memory slots they fill: the member's `u16 at record + 0` -- the TEXTS name, 420 + the topic number, max 1066
+  over the 144 records, all inside the 1679-record TEXTS block -- lands at the record's +4, where 0x7373C reads it
+  as the row name, and the cost lands at +8, where 0x73174/0x73874 read it as the progress divisor. The old census
+  that "found" a cost at +4 and a name at +0 had assumed a `+0` copy. Gate proof: `test_geoscapeframe` section 12i
+  asserts wGate4 = 448 (TEXTS[448], Cydonia) and wTotal = 6000 for record 28, and the first research open now
+  paints the real new-game list (Motion Scanner, Medkit, Laser technology, Silacoid and Sectoid autopsy) -- the
+  picture is the retail answer the old open row asked for. IDB notes rewritten at 0x73750, 0x86910, 0x86938.
+  bugs.tsv row `0x7373C` removed (the finding was a misread of the load, not an original defect).
 
-- [ ] **Nothing on shipped data can ever arm a research row.** 0x74584 (the finished branch's five
-  `abActivateTopics` stores) is the only writer of `bActive` in the image besides 0x7341C (topic 0, which is the
-  block's own control slot and is skipped by both list walks), and 0x743A4 is its only route -- which the Part 88
-  census shows no shipped record reaches. Either `ResearchScreen_RebuildTopicList @ 0x74270` has an arming path
-  the census has not found (it would have to unlock at 0x74294 or 0x74334 first, and both read `bUnlocked`, which
-  is 0 for all 144), or main.dat ships a pre-game state that only a played game advances, and the same question
-  applies to the `wUnk6` the load clears at 0x86938. The gate works on a fixture that writes 0x74584's two bytes
-  by hand, and that fixture is precisely where a real arming path would replace it. Census in the IDB at 0x74364
-  and 0x72D00. Indexed in bugs.tsv (`0x74584`, Part 101 pass).
+- [x] **Nothing on shipped data can ever arm a research row.** CLOSED by Part 104, same root cause as the row
+  above: the Part 88 census read `bUnlocked` at the wrong byte because it assumed the member copied at `+0`. With
+  the +4 load (0x86910), 27 topics ship unlocked at the record's +0xD and 3 ship active at +0xC, and the rebuild
+  arms MORE rows on its own through the 5a gate 0x747A0: 98 records are locked with progress 0 and a real cost,
+  and on a new game records 72 and 75 pass the item gate (0x74814..0x74848: items 68 and 69 hold 20 and 15 at
+  base 0) and 0x748D0 sets `bActive = 1` -- the live `test_geoscapeframe` 12i gate counts exactly those five rows
+  at the first open, and 99.2 runs a shipped topic (14) to completion through 0x743A4, so 0x74584's own stores
+  now run on shipped data (topic 47's activate list names topic 6). The 0x74584 fixture in 12i stays as the
+  activation-by-list proof, not as a stand-in for an unreachable path. IDB notes at 0x86910/0x86938 replace the
+  old census note. bugs.tsv row `0x74584` removed (same root cause: the census read the wrong bytes).
 
 - [x] **The hangar stores list's two count columns hold numbers that nothing draws.** CLOSED by the xref
   census over `pPlaneAvailPanel` and `pPlaneTakenPanel` (40 and 40 hits, both complete): every writer is the
@@ -4806,7 +4808,13 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   travels as raw byte pointers (`u8 *abSiteRecords`, `u8 *abBaseFacRecords`) because `pufo_save.h` cannot
   see `BaseFacFlag` / `BaseSiteRec` in `pufo_geoscape.h` without a cycle. The clean shape is for the writer
   and the reader to take the live owners directly, as `Save_WriteBases @ 0x3f1fc` and `Save_ReadBases @
-  0x402c0` do, and to keep no record copy at all. (target Part 103.)
+  0x402c0` do, and to keep no record copy at all. RE-TARGETED to the final closing pass (design item,
+  recorded 2026-10-21): the conversion is a seam refactor -- `Save_WriteBases`/`Save_ReadBases` take
+  `SaveBasesLive` instead of `SaveBasesState` (the wire `SaveBaseFacility` staging becomes a local,
+  `unk_159D82` gets a shell-owned cell), both driver envs drop the record pointer, the world drops
+  `saveBases`, and the four `test_save` bases sections move to live-owner fixtures. It lands as its own
+  sub-round there, when every gate including the audio/device ones exists and a regression bisects
+  cleanly; Parts 104..108 keep the save round's new seam guards green meanwhile.
 - [ ] **The original's RNG start block is only half ported.** `InitInstance @ 0x9fd48` does three things
   after `GetSystemTime @ 0xA00D8`: `srand(100 * wSecond + wMilliseconds)` @ 0xA00F8 (the port has this as
   `Game_SeedRng`), then `rand()` burned `wSecond` times (0xA010C..0xA011C, so the stream position after

@@ -7865,14 +7865,15 @@ bool World_MissionCancelEnd(PufoWorldState *pW)
  * DrawDescentPanel, DrawDescentTarget and DrawAlienBasePanel -- so until this commit the shell drew
  * none of the geoscape's message-answer panels, whatever the message line said.
  *
- * Two fields stay NULL on purpose: pfnConfirmReport (Ui_OpenBaseInfoAlt @ 0x84d18, which ends by
- * opening ufopaedia screen 16 at 0x84DE4 / 0x84DF4) and pfnApplyResearch (Ui_OpenResearch @ 0x84bf8,
- * research screen 8 at 0x84CEC / 0x84CF0). Neither gates an arm. The ufopaedia one still needs the Init
- * tail of a screen the shell has not built; the research one no longer does -- Part 88 wired nav slot 5
- * (the LDR at 0x67BAC) and ResearchScreen_Init @ 0x749a8 runs here, so what is missing is the
- * ScreenResetOpen2Env Ui_OpenResearch reads (pufo_baseui.h:5003), above all its pNavOut handle for the
- * fifteen nav controls that body rebuilds -- Ui_OpenResearch itself stays unwired, while nav slots
- * 6/8/9 (the manufacturing, buy and sell openers) have been installed since Part 99. Recorded in PLAN.md.
+ * Part 104 closed the last two fields. pfnConfirmReport runs Ui_OpenBaseInfoAlt @ 0x84d18 over the shell's
+ * own ufopaedia block: reselect byte 0x84D1C, the full Geoscape_PrepScreenOpen at 0x84D24, the prologue a
+ * SECOND time, screen id 16 at 0x84DE4, tail call into Ui_InitBaseInfo @ 0x9ddc8 at 0x84DF4.
+ * pfnApplyResearch runs Ui_OpenResearch @ 0x84bf8: scratch clears, the research walk, prep at 0x84CBC, the
+ * tick at 0x84CC0, the fifteen nav controls rebuilt at 0x84CC8 through ScreenResetOpen2Env.pNavOut,
+ * pGeoscapeCtlA parked at (1000,1000) at 0x84CD8/0x84CE4, id 8 at 0x84CEC, ResearchScreen_Init at 0x84CF0.
+ * Neither opener gates an arm: StatusPanel_DrawResearch parks its two controls first (0x8D3DC, 0x8D634) and
+ * installs the handler only on its live branch -- 0x8D428 when g_anUfopaediaEntryNum[nResearchTopicShown]
+ * is non-zero, 0x8D680 only after the finished-topic walk drew a row.
  *
  * Every env here is built at click time out of live cells instead of assembled once at bring-up,
  * because two of the fields are handles a mission launch frees and rebuilds -- the strip pad at
@@ -8190,6 +8191,181 @@ static void World_PrepScreenOpenSfxThunk(void)
     Geoscape_PrepScreenOpenSfx(&env);
 }
 
+/* ---- the ufopaedia screen 16 and the two status-panel openers (Part 104) ----------------------
+ *
+ * Ui_InitBaseInfo @ 0x9ddc8 installs six compiled globals as the control handlers (0x9DE5C..0x9DE98) and
+ * Ufopaedia_Open installs two more into its panels (0x9A958, 0x9AE1C); the original reads the ufopaedia
+ * state straight out of the globals, so the shell routes every handler through g_pActiveWorld's own cells,
+ * as the research screen's thunk set does. */
+
+/* 0x84DF4 / 0x84BD4: the opener's Init tail. The original passes g_pUfopaediaScreenPad @ 0x1872E0 as the
+ * argument; the port takes the env instead, like ResearchScreen_Init's thunk. */
+static void World_UfopaediaInitThunk(void *pSlot, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    (void)pSlot;
+    if (pW != NULL) {
+        Ui_InitBaseInfo(&pW->ufopaediaInit);
+    }
+}
+
+/* 0x99f88 / 0x99f78: the text-panel scroll pair. The wrappers act on the fixed pointer dword_187200;
+ * the port hands the panel explicitly. The guard is the port's NULL discipline -- the original would
+ * fault, and a press can only reach here while Ufopaedia_Open has built the panel. */
+static void World_UfopaediaPanelPrevThunk(void)
+{
+    if (g_pActiveWorld != NULL && g_pActiveWorld->ufopaedia.pTextPanel != NULL) {
+        UiPanel_ScrollPrev(g_pActiveWorld->ufopaedia.pTextPanel); /* 0x99f88 */
+    }
+}
+
+static void World_UfopaediaPanelNextThunk(void)
+{
+    if (g_pActiveWorld != NULL && g_pActiveWorld->ufopaedia.pTextPanel != NULL) {
+        UiPanel_ScrollNext(g_pActiveWorld->ufopaedia.pTextPanel); /* 0x99f78 */
+    }
+}
+
+/* 0x9a60c / 0x9a754: the ufopaedia page pair. Both wrap the entry index into the neighbouring category,
+ * skip locked topics, drop the live entry pad and re-lay the text panel. */
+static void World_UfopaediaEntryPrevThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        Ufopaedia_PrevEntry(&g_pActiveWorld->ufopaedia);
+    }
+}
+
+static void World_UfopaediaEntryNextThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        Ufopaedia_NextEntry(&g_pActiveWorld->ufopaedia);
+    }
+}
+
+/* 0x99fb4 / 0x99f98: the category selector pair. The Sel wrappers scroll dword_1871D0[byte_1871F8] -- the
+ * CURRENT category panel, not the 9-line selector panel -- which is why the index test mirrors
+ * Ufopaedia_CatPanelAt's bound. */
+static UiPanel *World_UfopaediaCatPanel(void)
+{
+    UfopaediaEnv *pU = &g_pActiveWorld->ufopaedia;
+    i32 nCategory = (pU->pnCategory != NULL) ? *pU->pnCategory : -1;
+
+    if (nCategory < 0 || nCategory >= PUFO_UFOPAEDIA_CATEGORIES) {
+        return NULL;
+    }
+    return pU->apCatPanels[nCategory];
+}
+
+static void World_UfopaediaSelPrevThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        UiPanel_ScrollPrev(World_UfopaediaCatPanel()); /* 0x99fb4 */
+    }
+}
+
+static void World_UfopaediaSelNextThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        UiPanel_ScrollNext(World_UfopaediaCatPanel()); /* 0x99f98 */
+    }
+}
+
+/* Ufopaedia_CacheSelRow @ 0x99fd0, installed into the selector panel at 0x9A958: while bUfopaediaOpen is
+ * clear it raises it and caches the selector's selected row into g_nUfopaediaCategory -- a one-shot, the
+ * row is never refreshed by this path. The original derefs the panel with no test; the click only exists
+ * while the panel is built. */
+static void World_UfopaediaSelClickThunk(void)
+{
+    UfopaediaEnv *pU = (g_pActiveWorld != NULL) ? &g_pActiveWorld->ufopaedia : NULL;
+
+    if (pU != NULL && pU->pSelPanel != NULL) {
+        (void)Ufopaedia_CacheSelRow(&g_pActiveWorld->bUfopaediaOpen, &g_pActiveWorld->nUfopaediaCategory,
+                                    pU->pSelPanel->nUnk3032);
+    }
+}
+
+/* Ufopaedia_RefreshEntry @ 0x9a014, installed into every category panel at 0x9AE1C. */
+static void World_UfopaediaCatClickThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        Ufopaedia_RefreshEntry(&g_pActiveWorld->ufopaedia);
+    }
+}
+
+/* Geoscape_CloseUI_ThunkC @ 0x9a8c0: the close control's whole body is Geoscape_CloseUI over the screen
+ * block -- case 16 (0x8BD30) then picks the arm out of the dirty/open bytes. */
+static void World_UfopaediaCloseThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        Geoscape_CloseUI(&g_pActiveWorld->closeEnv);
+    }
+}
+
+/* CloseUI case 16's two hooks: the dirty byte re-lays the entry (0x8BD3C), and the else arm runs the
+ * teardown half of Ufopaedia_Open (0x8BD58) before dropping the screen id (0x8BD5C). */
+static void World_UfopaediaRefreshThunk(void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        Ufopaedia_RefreshEntry(&pW->ufopaedia);
+    }
+}
+
+static void World_UfopaediaOpenThunk(void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        Ufopaedia_Open(&pW->ufopaedia);
+    }
+}
+
+/* StatusPanel_DrawResearch's confirm handler (0x8D428): Ui_OpenBaseInfoAlt @ 0x84d18 -- set the reselect
+ * byte (0x84D1C), run the full Geoscape_PrepScreenOpen (0x84D24), run the prologue a SECOND time, write
+ * id 16 (0x84DE4) and tail-call Ui_InitBaseInfo (0x84DF4). Built at click time, as every panel handler is
+ * (Part 73): the two scratches and the message list are live cells. */
+static void World_ConfirmReportThunk(void)
+{
+    PufoWorldState      *pW = g_pActiveWorld;
+    ScreenResetOpen2Env  env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    World_FillScreenOpenEnv(pW, &env.base);
+    env.pbUfopaediaReselect = &pW->bUfopaediaReselect; /* 0x84D1C */
+    env.base.init.pfnInit = World_UfopaediaInitThunk;  /* 0x84DF4 B Ui_InitBaseInfo */
+    env.base.init.pSlot   = NULL;
+    env.base.init.pUser   = pW;
+    Ui_OpenBaseInfoAlt(&env);
+}
+
+/* StatusPanel_DrawResearch's apply handler (0x8D680): Ui_OpenResearch @ 0x84bf8 -- the prologue WITHOUT
+ * the tick, the full prep (0x84CBC), the tick (0x84CC0), Geoscape_BuildNavControls rebuilding the fifteen
+ * nav controls (0x84CC8), pGeoscapeCtlA parked at (1000,1000) (0x84CD8/0x84CE4), id 8 (0x84CEC), then
+ * ResearchScreen_Init (0x84CF0). The nav handle precedent is World_EnterBuildModeThunk. */
+static void World_ApplyResearchThunk(void)
+{
+    PufoWorldState      *pW = g_pActiveWorld;
+    ScreenResetOpen2Env  env;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&env, 0, sizeof(env));
+    World_FillScreenOpenEnv(pW, &env.base);
+    env.pNavOut  = &pW->nav;                        /* 0x159888..0x1598AC, rebuilt at 0x84CC8 */
+    env.pNavEnv  = &pW->navEnv;
+    env.pParkCtl = pW->ui.apCtl[GEOUI_CTL_186BB4];  /* *pGeoscapeCtlA, 0x84CD8 */
+    env.base.init.pfnInit = World_ResearchInitThunk; /* 0x84CF0 B ResearchScreen_Init @ 0x749a8 */
+    env.base.init.pSlot   = NULL;
+    env.base.init.pUser   = pW;
+    Ui_OpenResearch(&env);
+}
+
 /* Smap_BeginCraftSelect @ 0x838dc, the mission-launch decision tree, and the two envs it reaches
  * through: the ship-removal pair (its lookups at 0x83968, its removal at 0x83F7C and 0x84428) and
  * the demolish call at 0x84208. They live on PufoWorldState because every cell they touch is
@@ -8358,8 +8534,8 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
      * the pad slot the case frees at 0x8BE10 and the rebuild hook at 0x8BDF8. Case 6 (the hangar) is wired
      * too: its six plane flags and its three rebuild hooks. Cases 8, 9, 10, 11 and 12 (research,
      * manufacturing, transfer, buy/sell) are wired with their built flags and rebuild hooks (Parts 88, 99
-     * and 100). What is NOT: the ufopaedia blocks (their cases keep NULL gates, which
-     * the dispatcher tests), case 19's bankruptcy tail (its two callees, listed with the wiring below -- the
+     * and 100), and so is case 16, the ufopaedia (Part 104): the dirty/open bytes, the re-lay hook at
+     * 0x8BD3C and the teardown hook at 0x8BD58. What is NOT: case 19's bankruptcy tail (its two callees, listed with the wiring below -- the
      * Map pair it sets IS written), and the byte_158834 / byte_1870F4 base-index pair case 19 writes on
      * its psi branch. */
     GeoscapeCloseEnv *pC = &pW->closeEnv;
@@ -8440,6 +8616,15 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
      * five columns) runs inside TransferScreen_BuildPanels at 0x97994..0x97A88. */
     pC->pbTransferBuilt    = &pW->bTransferBuilt;                  /* unk_1870EC, tested at 0x8BE38 */
     pC->pTransferBuild     = &pW->transferBuild;                   /* TransferScreen_BuildPanels, 0x8BE40 */
+    /* Case 16 (0x8BD30..0x8BF38), the ufopaedia screen (Part 104): with the entry dirty byte set the close
+     * RE-LAYS the current entry instead of closing (0x8BD3C); with only the page flag up it lowers that flag
+     * (0x8BD48) and leaves the panels built -- the same one-toggle ownership Ufopaedia_Open has; only with
+     * neither does it run the release half (0x8BD58), drop the screen id (0x8BD5C) and clamp the scroll
+     * (0x8BF38). */
+    pC->pbUfopaediaDirty     = &pW->bUfopaediaEntryDirty;          /* bUfopaediaEntryDirty @ 0x187310, tested at 0x8BD30 */
+    pC->pbUfopaediaOpen      = &pW->bUfopaediaOpen;                /* 0x18730C, cleared at 0x8BD48 */
+    pC->pfnUfopaediaRefresh  = World_UfopaediaRefreshThunk;        /* 0x8BD3C */
+    pC->pfnUfopaediaOpen     = World_UfopaediaOpenThunk;           /* 0x8BD58 */
     pC->pClearShips        = &pW->clearShipsEnv;                   /* Base_RemoveAllShips, 0x8C160 */
     pC->anSoldierIdList    = pW->anSoldierIdList;                  /* 0x160C90, the list 0x8C174 clears */
     pC->pnFunds          = &pW->nFunds;
@@ -8565,13 +8750,11 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *     the funding block) need the aRadarControls set at 0x159684 and the radar panel state, which the
  *     shell does not own. The arm runs only while bRadarScreenActive @ 0x159678 is set, and nothing in
  *     the shell sets that byte yet, so screens 0 and 2 draw the map arm.
- *   - The status panel's four screen openers (Geoscape_PrepScreenOpenSfx 0x852b8, Geoscape_PrepScreenOpen
- *     0x85194, Ui_OpenBaseInfoAlt 0x84d18, Ui_OpenResearch 0x84bf8). Each ends in a tail call into the
- *     ufopaedia, research or base-info screen's Init over that screen's own block (0x1872E0, 0x160C68,
- *     the 0x15EF08 panel pointers), none of which the shell owns. UiControl_HitTest tests the handler
- *     pointer, so the two bottom controls draw and simply do nothing on a click.
- *   - The same for the panel's strateg-list handlers (Smap_* @ 0x84254..0x84964) and the craft-select
- *     pair: they take their own Smap envs, which need the strateg item the line refers to.
+ *   - The status panel's four screen openers are all wired: the footer pair runs Geoscape_PrepScreenOpenSfx
+ *     @ 0x852b8 / Geoscape_PrepScreenOpen @ 0x85194, the research arm's confirm runs Ui_OpenBaseInfoAlt
+ *     @ 0x84d18 over the shell's ufopaedia block and its apply runs Ui_OpenResearch @ 0x84bf8 (Part 104).
+ *   - The panel's strateg-list handlers (Smap_* @ 0x84254..0x84964) and the craft-select pair are wired too
+ *     (Parts 90..92): each thunk builds its own Smap env over the live strateg item at click time.
  *   - The screen ids the shell can now reach are 0, 1, 2 (the map and the placement screen), 3 (nav slot
  *     1), 4 and 5 (nav slot 2 and SoldierScreen_SelectListed 0x64a9c), 6 (nav slot 3 and
  *     BasePlaneScreen_Open 0x617f4: its arm, control seam, draw env and detail env), 7 (nav slot 4, and the
@@ -8584,7 +8767,7 @@ void World_CloseGeoscape(PufoWorldState *pW)
  *     (Parts 88 and 99), the hangar's own block is wired (its 16 controls and its six panel pairs,
  *     re-read every frame in World_RefreshGeoscapeFrame), and the transfer block is wired (its four
  *     controls as apSiteInfoCtl, the row-select byte and the destination base byte, Part 100); the
- *     soldier-name and screen-16 blocks stay NULL. The
+ *     soldier-name block stays NULL (the screen-16 block is wired in Part 104). The
  *     dispatcher reaches them only from those screen ids. The strip block IS wired now, and that also
  *     makes the screen-1 arm live for the first time: `Geoscape_OnPointer` case 1 walks the ten slots at
  *     [root + 0x120] (0x87E30), which are apNavCtl -- the very controls the nav handlers sit on -- so a
@@ -8924,6 +9107,8 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->panel.pfnSelectMapTarget  = World_SmapSelectMapTargetThunk;
     pF->panel.pfnCancelTarget     = World_SmapCancelTargetThunk;    /* 0x90C74, 0x910A8, 0x9139C */
     pF->panel.pfnBeginCraftSelect = World_BeginCraftSelectThunk;    /* 0x91578, 0x9180C */
+    pF->panel.pfnConfirmReport  = World_ConfirmReportThunk;         /* 0x8D428 -> Ui_OpenBaseInfoAlt 0x84d18 */
+    pF->panel.pfnApplyResearch  = World_ApplyResearchThunk;         /* 0x8D680 -> Ui_OpenResearch 0x84bf8 */
 
     /* The new-base globe hover, 0x67264..0x67b10, reached from the chain tail at 0x91D8C. */
     pF->hover.pStripPad  = pUi->apPad[GEOUI_PAD_186BBC];
@@ -9867,7 +10052,109 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
                                                  ? pAssets->apObjects[PUFO_ROW_SCIENTIST] : NULL;
         pF->researchDraw.pScientistRec     = pW->researchQty.pScientistRec;
         pF->researchDraw.pTextRecs         = (const char *)pAssets->pTextRecs;
+        pW->ufopaedia.pTextRecs            = pAssets->pTextRecs;            /* aTextRecs @ 0xB38D0 */
+        pF->ufopaediaDraw.pTextRecs        = (const char *)pAssets->pTextRecs;
+        pF->ufopaediaDraw.apObjects        = (const ObjectRecFull *const *)pAssets->apObjects; /* Map + 0x108 */
+        pF->ufopaediaDraw.nObjectCount     = (i32)pAssets->nObjectCount;    /* Map_nObjectCount */
     }
+
+    /* ---- case 16, the ufopaedia screen (Part 104) ------------------------------------------------
+     *
+     * Init's six controls are shell-owned (the original heap-allocates them at 0x9DE2C.. and the teardown
+     * releases them at 0x9B5B8 -- deviation recorded on UfopaediaEnv.apCtl below), seated by Init's own
+     * Setup pass on g_aUiBaseInfoCtlDesc @ 0xAC548. The panels are Ufopaedia_Open's (the env carries them),
+     * so only the env's CELL POINTERS are wired here; the panel VALUES follow the frame in
+     * World_RefreshGeoscapeFrame. */
+    memset(&pW->ufopaediaInit, 0, sizeof(pW->ufopaediaInit));
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        pW->apUfopaediaCtl[i]      = &pW->aUfopaediaCtl[i];
+        pW->ufopaediaInit.apCtl[i] = &pW->aUfopaediaCtl[i]; /* Init stores them into ppRoot[2..7], 0x9DE3C */
+    }
+    pW->ufopaediaInit.ppRoot          = pW->apUfopaediaRoot;          /* g_pUfopaediaScreenPad @ 0x1872E0 */
+    pW->ufopaediaInit.pCloseCtl       = pUi->apCtl[GEOUI_CTL_186B00]; /* *g_pUiCloseCtl, (224,1) at 0x9DED0 */
+    pW->ufopaediaInit.pUfopaedia      = &pW->ufopaedia;
+    pW->ufopaediaInit.pnShownTopic    = &pW->nShownTopic;             /* nResearchTopicShown @ 0x160C60 */
+    pW->ufopaediaInit.pbUfopaediaOpen = &pW->bUfopaediaOpen;          /* set at 0x9E07C */
+    pW->ufopaediaInit.pfnPanelPrev    = World_UfopaediaPanelPrevThunk; /* 0x9DE5C */
+    pW->ufopaediaInit.pfnPanelNext    = World_UfopaediaPanelNextThunk; /* 0x9DE68 */
+    pW->ufopaediaInit.pfnEntryPrev    = World_UfopaediaEntryPrevThunk; /* 0x9DE74 */
+    pW->ufopaediaInit.pfnEntryNext    = World_UfopaediaEntryNextThunk; /* 0x9DE80 */
+    pW->ufopaediaInit.pfnSelPrev      = World_UfopaediaSelPrevThunk;   /* 0x9DE8C */
+    pW->ufopaediaInit.pfnSelNext      = World_UfopaediaSelNextThunk;   /* 0x9DE98 */
+    pW->ufopaediaInit.pfnCloseClick   = World_UfopaediaCloseThunk;     /* 0x9DEE8; Geoscape_CloseUI_ThunkC 0x9a8c0 */
+    pW->ufopaediaInit.pfnLoadPads     = pW->pfnLoadPads;
+    pW->ufopaediaInit.pPadUser        = pW->pLoadPadsUser;
+
+    pW->ufopaedia.aTopics        = pW->aTopics;                /* aResearchTopics @ 0x15EF08 */
+    pW->ufopaedia.abResearchZero = pW->abResearchZero;         /* unk_160B2C, written at 0x9AD68 / 0x9B344 */
+    pW->ufopaedia.pbOpen         = &pW->bUfopaediaBuilt;       /* unk_187308, the build/teardown toggle */
+    pW->ufopaedia.ppScreenPad    = (PadImage **)&pW->apUfopaediaRoot[0];
+    pW->ufopaedia.ppPad          = (PadImage **)&pW->apUfopaediaRoot[1]; /* g_pUfopaediaPad @ 0x1872E4 */
+    pW->ufopaedia.apCtl          = NULL; /* DEVIATION: the original's six controls are operator-new
+                                          * objects that the teardown releases (0x9B5B8..0x9B5DC); the
+                                          * port's are embedded in PufoWorldState, so the env hands the
+                                          * teardown no control list. The controls survive a close, and
+                                          * their pads cycle through UiControl_LoadPads at every re-open
+                                          * (0x1A60C frees what the three slots hold). */
+    pW->ufopaedia.pnEntryIdx     = &pW->nUfopaediaEntryIdx;    /* 0x1871F4 */
+    pW->ufopaedia.pnCategory     = &pW->nUfopaediaCategory;    /* 0x1871F8 */
+    pW->ufopaedia.pnTopic        = &pW->nUfopaediaTopic;       /* 0x187300 */
+    pW->ufopaedia.pnEntryNum     = &pW->nUfopaediaEntryNum;    /* 0x1872D8 */
+    pW->ufopaedia.pbWidePanel    = &pW->bUfopaediaWidePanel;   /* 0x1871FC */
+    pW->ufopaedia.pbPadDirty     = &pW->bUfopaediaPadDirty;    /* 0x187304 */
+    pW->ufopaedia.pbEntryDirty   = &pW->bUfopaediaEntryDirty;  /* 0x187310 */
+    pW->ufopaedia.pbReselect     = &pW->bUfopaediaReselect;    /* 0x18706C */
+    pW->ufopaedia.pfnSelClick    = World_UfopaediaSelClickThunk; /* installed into the selector at 0x9A958 */
+    pW->ufopaedia.pfnCatClick    = World_UfopaediaCatClickThunk; /* installed into every category at 0x9AE1C */
+
+    memset(&pF->ufopaediaDraw, 0, sizeof(pF->ufopaediaDraw));
+    pF->ufopaediaDraw.ppScreenPad     = (PadImage **)pW->apUfopaediaRoot; /* the BLOCK BASE the arm hands over,
+                                               * 0x941AC/0x941B0 -- Ui_DrawBaseInfo blits [0] at 0x9B600 */
+    pF->ufopaediaDraw.pCloseCtl       = pUi->apCtl[GEOUI_CTL_186B00];     /* blitted at 0x9B7C0 */
+    pF->ufopaediaDraw.pbEntryDirty    = &pW->bUfopaediaEntryDirty;
+    pF->ufopaediaDraw.pbScreenBuilt   = &pW->bUfopaediaBuilt;             /* g_bUfopaediaScreenBuilt @ 0x187308 */
+    pF->ufopaediaDraw.pbUfopaediaOpen = &pW->bUfopaediaOpen;
+    pF->ufopaediaDraw.pnEntryNum      = &pW->nUfopaediaEntryNum;          /* normalised in place */
+    pF->ufopaediaDraw.pnSub           = &pW->nUfopaediaEntrySub;          /* 0x1872DC, derived by it */
+    pF->ufopaediaDraw.pnTopic         = &pW->nUfopaediaTopic;
+    pF->ufopaediaDraw.pnCategory      = &pW->nUfopaediaCategory;
+    pF->ufopaediaDraw.apCatPanels     = pW->ufopaedia.apCatPanels;        /* g_apUfopaediaCatPanels @ 0x1871D0 */
+    pF->ufopaediaDraw.aTopics         = pW->aTopics;
+    pF->ufopaediaDraw.paFac           = pW->aFac;                         /* aBaseFacFlags @ 0x186E48 */
+    pF->ufopaediaDraw.paBuildSpec     = g_aFacBuildSpec;                  /* aFacBuildSpec @ 0xAA8F8 */
+    pF->ufopaediaDraw.pFont           = pW->pFont;                        /* fontSys_nBigObsBase / nBaseBitsBase */
+    pF->ufopaediaDraw.pnGlyphPalBase  = &g_nGlyphPalSlotBase;             /* Map_nGlyphPalBase, written at 0x9BF60/0x9C54C */
+    pF->ufopaediaDraw.pColor          = pColor;
+
+    memset(&pF->ufopaediaGates, 0, sizeof(pF->ufopaediaGates));
+    pF->ufopaediaGates.pbOpen       = &pW->bUfopaediaOpen;       /* LDRB at 0x941C0 */
+    pF->ufopaediaGates.pbEntryDirty = &pW->bUfopaediaEntryDirty; /* 0x941D0 and again at 0x94204 */
+    pF->ufopaediaGates.pbWidePanel  = &pW->bUfopaediaWidePanel;  /* 0x94218 */
+
+    memset(&pF->ufopaediaCtl, 0, sizeof(pF->ufopaediaCtl));
+    pF->ufopaediaCtl.apCtl = pW->apUfopaediaCtl;                  /* 0x1872E8..0x1872FC, the arm's run base */
+    if (pHit != NULL) {
+        pF->ufopaediaCtl.pfnCtlBlit   = pHit->pfnBlit;
+        pF->ufopaediaCtl.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->ufopaediaCtl.pCtlBlitUser = pHit->pUser;
+        pF->ufopaediaDraw.pfnCtlBlit   = pHit->pfnBlit;
+        pF->ufopaediaDraw.pfnCtlBlitEx = pHit->pfnBlitEx;
+        pF->ufopaediaDraw.pCtlUser     = pHit->pUser;
+    }
+
+    pF->draw.pUfopaediaDraw  = &pF->ufopaediaDraw;   /* case 16, 0x941B4 */
+    pF->draw.pUfopaediaGates = &pF->ufopaediaGates;
+    pF->draw.pUfopaediaCtl   = &pF->ufopaediaCtl;
+
+    /* The press arm's screen-16 block: open AND not-dirty hit-tests 4..5 (0x88E0C), with the dirty byte
+     * set the wide byte picks 0..3 (0x88E1C) and its clear picks 2..3 (0x88E30); the panel hit-tests the
+     * current category panel when open (dword_1871D0[byte_1871F8], 0x88E3C) and the selector otherwise. */
+    pPtr->pb16ModeA      = &pW->bUfopaediaOpen;
+    pPtr->pb16ModeB      = &pW->bUfopaediaEntryDirty;
+    pPtr->pbWidePanel    = &pW->bUfopaediaWidePanel;
+    pPtr->ap16Ctl        = pW->apUfopaediaCtl;
+    pPtr->ap16PanelSet   = pW->ufopaedia.apCatPanels;
+    pPtr->pn16PanelIndex = &pW->nUfopaediaCategory;
 
     /* Case 9, the manufacturing screen. Init's six controls are shell-owned (the original allocates
      * them with operator new into the screen block; the port installs caller-owned ones, as the
@@ -10595,6 +10882,14 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pW->researchStart.pPanelProgress  = pW->pResearchProgPanel;
     pW->researchCancel.qty            = pW->researchQty;
     pW->ptrEnv.pResearchPanel         = pW->pResearchTopicPanel;   /* derefed unguarded at 0x88B30 */
+
+    /* Case 16, the ufopaedia screen. Ufopaedia_Open builds the selector, the text panel and the nine
+     * category panels and its teardown releases them (0x9B50C..0x9B5DC), so the draw env and the press
+     * arm re-read the cells the same way the research columns do. The category-panel ARRAY is the env's
+     * own storage and never moves; its nine slots are read through it at 0x88E3C / the draw's gate. */
+    pF->ufopaediaDraw.pSelPanel  = pW->ufopaedia.pSelPanel;   /* 0x187204 */
+    pF->ufopaediaDraw.pTextPanel = pW->ufopaedia.pTextPanel;  /* 0x187200 */
+    pW->ptrEnv.p16Panel          = pW->ufopaedia.pSelPanel;
 
     /* Case 9, the manufacturing screen, and cases 11/12, the buy/sell screen. Both builders swap the
      * panels behind the envs' backs exactly like the research one (Init builds, the teardown frees),

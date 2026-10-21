@@ -271,12 +271,12 @@ static void TestNewGame(void)
     {
         bool bZero = true;
         for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
-            if (g_aTopics[i].wUnk6 != 0) { bZero = false; }
+            if (g_aTopics[i].wProgress != 0) { bZero = false; }
         }
-        Check(bZero, "the u16 at +6 zeroed in every topic");
+        Check(bZero, "0x86938's STRH [R1,#6], with the +4 load at 0x86910, is the record's wProgress at +0x0A: zeroed in every topic (the member carries a stale 0x1547 at file+6)");
     }
-    CheckEqI32(g_aTopics[143].abNeedItems[1], 0x1D,
-               "research.dat really loaded (record 143 byte +0x0F is 0x1D in main.dat)");
+    CheckEqI32(g_aTopics[143].abPreTopics[0], 0x1D,
+               "research.dat really loaded: the member's file+15 byte 0x1D lands at the record's +0x13 (the +4 load), which is abPreTopics[0] = 29 -- the head of the prerequisite list 0x742AC reads for the record-143 gate");
 
     printf("clock, bases, objects\n");
     CheckEqI32(g_time.nYear, 2000, "GameTime_Decode ran on the one-year clock");

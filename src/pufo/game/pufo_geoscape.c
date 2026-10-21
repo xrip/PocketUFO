@@ -345,8 +345,10 @@ void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
 }
 
 /* aFacBuildSpec @ 0xAA8F8. The FacBuildSpec type now lives in pufo_geoscape.h because
- * Ui_DrawBaseInfo @ 0x9B5F4 reads the two tile bytes as basebits glyph indices. */
-static const FacBuildSpec g_aFacBuildSpec[PUFO_FAC_SPEC_COUNT] = {
+ * Ui_DrawBaseInfo @ 0x9B5F4 reads the two tile bytes as basebits glyph indices; the table itself
+ * is exported for the same reason -- UiBaseInfoDrawEnv.paBuildSpec (the ufopaedia category-3
+ * entry block) is filled by the shell in World_WireGeoscapeFrame. */
+const FacBuildSpec g_aFacBuildSpec[PUFO_FAC_SPEC_COUNT] = {
     { 0x02, 0x11, 0x00 }, { 0x01, 0x12, 0x10 }, { 0x01, 0x13, 0x1A }, { 0x01, 0x14, 0x20 },
     { 0x02, 0x15, 0x0C }, { 0x01, 0x16, 0x19 }, { 0x01, 0x18, 0x0A }, { 0x01, 0x19, 0x12 },
     { 0x01, 0x1F, 0x18 }, { 0x02, 0x20, 0x1A }, { 0x02, 0x1E, 0x1E }, { 0xFF, 0xFF, 0x19 },

@@ -859,6 +859,10 @@ typedef struct FacBuildSpec {
 
 #define PUFO_FACBUILDSPEC_COUNT 18 /* the aFacBuildSpec record count @ 0xAA8F8 */
 
+/* The 18-record table itself, defined in pufo_geoscape.c: UiBaseInfoDrawEnv.paBuildSpec points at it
+ * (the ufopaedia category-3 entry block reads the build days and the cost, Part 104). */
+extern const FacBuildSpec g_aFacBuildSpec[PUFO_FACBUILDSPEC_COUNT];
+
 /* aFacBuildSpec @ 0xAA8F8: the build days of one facility kind, the third byte of the three-byte
  * record. The original indexes the 18-record table unguarded (0x59E14, 0x623EC); the port returns 0
  * for a kind outside 0..17. */

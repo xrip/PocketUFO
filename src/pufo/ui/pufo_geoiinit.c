@@ -364,12 +364,28 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
         u32 cb;
         (void)AssetReader_Find(pRdr, "research.dat");
         cb = AssetReader_Size(pRdr);
-        if (cb > (u32)(PUFO_RESEARCH_TOPIC_COUNT * (i32)sizeof(ResearchTopicLive))) {
-            cb = (u32)(PUFO_RESEARCH_TOPIC_COUNT * (i32)sizeof(ResearchTopicLive));
+        /* 0x8690C..0x86910: `LDR R6,=aResearchTopics / ADD R1,R6,#4 / AssetReader_Read`. The member's
+         * records start FOUR BYTES later than the in-memory slots they fill: the shipped file's u16 at
+         * record+0 is the TEXTS name index (420 + the topic number -- record 55 carries 475 and
+         * lang.dat TEXTS[475] is the Sectoid research name), and it lands at the record's wGate4 (+4),
+         * where 0x7373C and Ufopaedia_Open read it as a name. Same for the rest: cost file+4 -> wTotal,
+         * needs file+10 -> +14 (0x72CE4 LDRB [R3,#0xE]), prerequisites file+15 -> +19 (0x742AC's
+         * [R3,R1] over record 143 lands on this window), items file+20 -> +24, activate list
+         * file+25 -> +29 (the '%' arm's walk at 0x8D488), and the (lo,hi) unlock pair file+30 -> the
+         * NEXT record's abUnk0, which is exactly what 0x745AC's LDRB [R9,#0x22] reads. The shipped
+         * member is exactly 144 * 34; the original reads all of it and spills its last four bytes past
+         * the table into the 0x160228 gap (they are zero, and ResearchTopic_RangeBytes models the last
+         * record's pair as zero, so the port stops the read four bytes short instead of overrunning
+         * the array). */
+        if (cb > (u32)(PUFO_RESEARCH_TOPIC_COUNT * (i32)sizeof(ResearchTopicLive) - 4)) {
+            cb = (u32)(PUFO_RESEARCH_TOPIC_COUNT * (i32)sizeof(ResearchTopicLive) - 4);
         }
-        (void)AssetReader_Read(pRdr, pEnv->apTopics, cb);
+        (void)AssetReader_Read(pRdr, (char *)pEnv->apTopics + 4, cb); /* 0x86910 ADD R1,R6,#4 */
         for (i = 0; i < (i32)*pEnv->puResearchEntries; ++i) {
-            pEnv->apTopics[i].wUnk6 = 0; /* 0x86938: STRH [R1,#6] */
+            /* 0x86938: R1 = base + 4 + 34 * n, `STRH R4,[R1,#6]` -- with the +4 load that is the
+             * in-memory record's +10, which is wProgress. The shipped records carry a stale 0x1547
+             * there; the original clears it, and so does the port. */
+            pEnv->apTopics[i].wProgress = 0;
         }
         pView->nScrollX = 0;
         pView->nScrollY = 0;

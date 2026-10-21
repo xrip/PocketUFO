@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 19816 |
+| Test checks run | 19896 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -533,14 +533,14 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x9b5f4` | `Ui_DrawBaseInfo` | 10196 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+2) |
+| `0x9b5f4` | `Ui_DrawBaseInfo` | 10196 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+3) |
 | `0x264a0` | `UiModal_DrawDialog` | 2676 | `src/pufo/app/pufo_world.h`, `src/pufo/ui/pufo_modal.c` (+1) |
 | `0x11ac0` | `Ui_HitTestTactItem` | 1152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` (+1) |
 | `0x3e94c` | `UiPanelMsg_Draw` | 1016 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x95bf0` | `Ui_AnimExpandBlit` | 948 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_enemyai.h` (+3) |
 | `0x257c4` | `Font_LoadTactSprites` | 752 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_font.c` (+6) |
-| `0x9ddc8` | `Ui_InitBaseInfo` | 744 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x9ddc8` | `Ui_InitBaseInfo` | 744 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_save.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+2) |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
@@ -557,7 +557,7 @@ is the module that answers to it.
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_statusmsg.h` |
 | `0x36c58` | `PadImage_BlitDecimal` | 272 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+9) |
-| `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
+| `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+3) |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/app/pufo_world.c`, `src/pufo/render/pufo_render.c` (+2) |
@@ -820,7 +820,7 @@ is the module that answers to it.
 | `0x838d0` | `Geoscape_CloseUI_ThunkA` | 12 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+2) |
 | `0x857e8` | `Geoscape_OnMapClick_Thunk` | 12 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
-| `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x94550` | `Geoscape_GameTickStub` | 4 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_timer.c` (+1) |
 
 ### `strat-ui` (250 functions)
@@ -854,7 +854,7 @@ is the module that answers to it.
 | `0x7d374` | `BasePlaneScreen_Draw` | 1648 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_geoscape.c` (+3) |
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
-| `0x9a014` | `Ufopaedia_RefreshEntry` | 1528 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x9a014` | `Ufopaedia_RefreshEntry` | 1528 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x7a3f4` | `BasePlaneScreen_BuildListPanels` | 1472 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x6f34c` | `ManufScreen_CommitProduction` | 1408 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x96288` | `TransferScreen_ValidateCapacity` | 1372 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
@@ -1012,7 +1012,7 @@ is the module that answers to it.
 | `0x79bec` | `BasePlaneScreen_SelectWeapon28` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79c30` | `BasePlaneScreen_SelectWeapon29` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
-| `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x18864` | `Menu_OpenLoadSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x188a4` | `Menu_OpenSaveSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x6b994` | `OptionsScreen_ClearMusicButtons` | 64 | `src/pufo/game/pufo_baseui.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3214 |
-| `test_geoscapeframe` | PASS | 1849 |
+| `test_geoscapeframe` | PASS | 1929 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |

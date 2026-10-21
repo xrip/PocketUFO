@@ -21299,3 +21299,82 @@ a save wrote), so no shipped save trips it. Deviation recorded: the original ove
 write buffer (0x9F134, operator delete) before re-allocating (0x9F144): `pufo_dat.h` now states the
 rule (`DatFile_ctor` before `DatFile_Open`, the Release-only 0xc0000374 trap). IDB comment at
 0x9F134; `idb_save` for the 0x434B4/0x4398C/0x43B10/0x9F134 notes.
+
+## Part 104 - ufopaedia screen 16 goes live, the research openers get wired, and the RESEARCH.DAT read turns out to be `+4`
+
+**The last two status-panel hooks became thunks.** `pfnConfirmReport` (the installed handler at 0x8D428) runs
+`Ui_OpenBaseInfoAlt @ 0x84d18` through `World_ConfirmReportThunk`, and `pfnApplyResearch` (0x8D680) runs
+`Ui_OpenResearch @ 0x84bf8` through `World_ApplyResearchThunk`; both openers write their screen id (16 at 0x84DE4,
+8 at 0x84CEC), run `Geoscape_PrepScreenOpen` (the doubled prologue consumes the flag-37 line 0x8525C twice for the
+ufopaedia), seat the shared controls, and tail-call their Init. The open arms dispatch through the installed cells
+(0x894C0 hit, 0x8BDB4/0x8BD3C/0x8BD48/0x8BD58 arms for case 16), and `Geoscape_BuildNavControls @ 0x84CC8` rebuilds
+all fifteen nav handlers through the case-8 thunk - the two NULL hook cells at `pufo_world.c` are gone.
+
+**The whole ufopaedia screen 16 life ran live.** `Ui_InitBaseInfo @ 0x9ddc8` loads the screen pad
+(0x9DDF8/0x9DDFC "baseinfo"), installs the six handlers (0x9DE5C..0x9DE98), re-seats the close control (0x9DED0),
+builds through `Ufopaedia_Open @ 0x9a8cc` (selector panel, 50-line text panel, nine category panels 0x9ADD8..0x9AE04),
+and its reselect half walks `aUfopaediaCatTopics` (0x9DFE0) - topic 55 sits in category 5 row 0 (the row that fills
+all 22 slots: 55, 66, 56, 67, ... 65, 76), so category 5 / row 0 / entry `anUfopaediaEntryNum[55] = 54` / topic 55
+arrive, and the 0x9E080 RefreshEntry call builds the entry pad before 0x9E084 consumes the reselect byte (which is
+why `entryDirty` ends 1 and `padDirty` 0). The frame blits per 0x941C8..0x94280 (dirty+wide runs controls 0..3,
+open-and-clean runs 4..5), `Ui_DrawBaseInfo @ 0x9b5f4` paints the screen pad (0x9B600) and rewrites the entry cell
+in place (0x9B8D0 normalises 54..75 back to 3), the category row click re-runs the build arm (0x9A500),
+`Ufopaedia_NextEntry @ 0x9a754` walks the index and rebuilds, and the three case-16 close arms relay, clear, tear
+down - freeing the entry pad that the original's 0x9B5B8 loop leaks (the recorded ORIGINAL BUG, asserted in the
+gate).
+
+**The `+4` load - the correction under everything else.** 0x8690C..0x86910 read the RESEARCH.DAT member
+through `LDR R6,=aResearchTopics / ADD R1,R6,#4 / AssetReader_Read`: the member's 34-byte records land FOUR BYTES
+LATER than the in-memory slots they fill. The port copied the member at `+0` since Part 88; the Part 88 census -
+and everything built on it - read every field four bytes early. With the load at +4 the shipped truths are: the
+member's `u16 at record + 0` is the TEXTS name (420 + topic for the base runs, max 1066 over the 144 records - all
+inside the 1679-record TEXTS.DAT block) and it lands at the record's +4, which is exactly where 0x7373C reads the
+row name; the cost lands at +8 (0x73174's divisor); the stale 0x1547 progress lands at +10 and 0x86938 clears it;
+`bActive` at +12 (3 records ship active: 14, 15, 47); `bUnlocked` at +13 (27 topics ship unlocked: 1..5, 17, 18,
+22..25, 37..45, 97, 98, 102, 105, 107..109); the five need bytes at +14 (0x72CE4's `LDRB #0xE`); the five prereq
+bytes at +19 (0x742AC's record-143 gate reads 29..33); the five item ids at +24; the five activate topics at +29
+(45 records carry one); and the head bytes of the NEXT record carry the pairs - [0],[1] are 0x745AC's
+completion-unlock roll ((55,65) at topics 117..121, (29,36) at 122..126, (86,93) at 127..131), [2],[3] are
+0x74868's 5a scan window (exactly one of the 98 in-progress records differs: record 28's (138,142), and its scan
+finds nothing unlocked, so 0x74888 still closes its gate).
+
+**What the corrected data does live.** At a new game 98 records are locked with progress 0 and a real
+cost, so 0x74364 lets all 98 into the 0x747A0 in-progress branch; nine (14, 15, 26, 27, 46, 47, 48, 50, 52) have
+pre+need summing to zero and fail 0x748D0's `nTotal != 0`; the base's starting stock sits at slots 43 (1 clip), 68
+(20), 69 (15), 70 (10), so records 72 and 75 pass the 0x74814..0x74848 item gate and 0x748D0 arms them - the first
+research open shows five rows (14, 15, 47, 72, 75): the Motion Scanner, the Medkit, the Laser technology and the
+two autopsies, the list the shipped game really shows (the `geoscape_research` reference, re-made). The hangar's
+store list ships its one slot-43 row (gate topic 1 is one of the 27 unlocked). 99.2 now runs a shipped topic
+(topic 14, item 20, 432 engineer-hours - the manufacturing screen's real first row) to its end through the hourly
+ticks: the start press plays only its 17, and the completion line with its sample 7 comes from 0x74554 during the
+tick loop.
+
+**The old "bugs" were misreads, and they are gone.** bugs.tsv rows `0x7373C` (the row name "reads a
+cost as a TEXTS index") and `0x74584` (nothing on shipped data can arm a row) came from the `+0` census: the name
+is at +4 in memory because the load put it there, and arming happens through 0x747A0/0x748D0 on shipped stock.
+Both PLAN open rows closed (`- [x]` with the proof), the IDB note at 0x73750 was rewritten to the closed reading,
+new load-truth notes went at 0x86910 and 0x86938, and `test_geoiinit`/`test_geoscapeframe` 12h/12i/99.2 assert the
+corrected numbers.
+
+**Ui_InitBaseInfo constructs its six controls, and the port now does too.** 0x9DE18..0x9DE38: six times
+`operator new(0x20)` then `UiControl_ctor` - the ctor is what sets `bEnabled = 1`, and a disabled control neither
+draws nor hit-tests (UiControl_BlitActivePad head test, 0x1A3F0). The port's six are shell-owned; the first live
+gate caught the missing ctor (no control pad ever blitted, NextEntry never ran), and `Ui_InitBaseInfo` now re-inits
+them on every open (UiControl_FreePads + UiControl_ctor) at the same position the original constructs.
+
+**ORIGINAL QUIRK asserted, not smoothed.** StatusPanel_DrawResearch parks BOTH bottom controls at
+(1000,1000) (0x8D3DC/0x8D3E4 confirm, 0x8D634/0x8D63C apply); the finished-topic tail re-centres only the
+confirm's x (0x8D654, centred on 120 when 0x8D3F8 passes an entry in 54..75) and only the apply's y (0x8D674,
+142 + 14 * walked rows). The apply therefore keeps x=1000 - 760 px off the 240-wide screen - so the finished-
+research open is only reachable through the parked cell; the gate presses at exactly the parked coordinates and
+asserts the asymmetry.
+
+**Gates.** Six gates green (62/62 both configs, 19896 test checks), e2e 9 pictures unchanged against the
+committed references. Four new frames reviewed at native scale (ufopaedia_index, ufopaedia_entry,
+ufopaedia_entry_next, geoscape_research_apply); geoscape_hangar_locked and geoscape_hangar_stores unchanged (the backdrop view never paints the list rows, and the detail frame's row content was already what the Part 88 fixture forced by hand); 15 frames
+deliberately re-referenced with a stated cause: ten from the data truth (research rows, manufacturing rows, buy/
+sell rows) and five from the CRT random-stream shift the changed 99.2 tick loop gives every later section's
+new-game draw (geoscape_terror_site, geoscape_ufo_enroute, options_save_tab, options_load_tab, tact_mission_urban -
+the panels are identical, only the rolled map/squad moves). IDB comments at 0x86910, 0x86938, 0x73750, 0x73174 and
+0x9DE18; idb_save.
+
