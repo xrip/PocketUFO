@@ -104,7 +104,9 @@ typedef struct TactShutdownEnv {
     void     **appBlock156A78;   /* deleted with no null test */
     void     **appBlock187050;   /* deleted only on the bKeepSome path */
     PufoFont  *pFont;            /* fontSys @ 0x158268 */
-    u8        *pbActionLatch;    /* Map+0x00, cleared first */
+    u8        *pbTactFlag;       /* Map.bTactFlag @ Map+0x00 (0x1139B8), cleared first (store 0x3D588);
+                                  * Tact_InitMission sets it 1 at 0x3C690. The action latch is the
+                                  * separate byte Map+0x02 (Map_bActionLatch @ unk_1139BA). */
 
     /* --- the tactical item pool, freed on both paths --- */
     TactItem **apTactItems;      /* Map+0x23438 */

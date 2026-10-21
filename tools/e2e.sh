@@ -32,7 +32,7 @@ fi
 rm -f "$out"/*.ppm "$out"/*.png "$out"/sav*.sav "$(dirname "$exe")"/sav*.sav
 mkdir -p "$out" "$refs"
 
-for flow in e2e_flow_new.txt e2e_flow_load.txt; do
+for flow in e2e_flow_new.txt e2e_flow_load.txt e2e_flow_quit.txt; do
     if ! (cd "$out" && "$exe" --script "$(cygpath -w "$dir/$flow")"); then
         echo "RUN FAILED for $flow"
         exit 1

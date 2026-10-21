@@ -1,0 +1,17 @@
+# Quit-Yes live check (Part 103): after a new game, the seam the quit dialog's YES button reaches --
+# slot 16 -> World_QuitYesThunk -> TactInputHooks.pfnShutdownQuit -> App_HookShutdownQuit ->
+# App_QuitFromTact @ 0x18e18 -- must empty the LIVE strateg list (the App_QuitFromTact 0x18E20 arm,
+# whose Tact_Shutdown(1) tail at 0x3E14C..0x3E154 is PtrArray_DeleteAll on the geoscape block's own
+# list) and reach the teardown at App_QuitDisplay @ 0xa0388 with a clean exit (exit code 0, checked
+# by tools/e2e.sh). The two `strateg` lines report the count and the stale +0x38 count mirror (the
+# 0x186530 cell the DeleteAll arm leaves alone) on either side of the seam. The `save 70` step stamps
+# the mirror first (World_SaveSlot restamps it before Save_WriteStrateg), so the second `strateg` line
+# shows the stale mirror in the real exe: items 0, mirror still 5. Scaffolding: the quityes command
+# dispatches the seam itself -- scripted runs do not stage a tactical mission. No pictures.
+
+newgame
+tick 5
+save 70
+strateg
+quityes
+strateg

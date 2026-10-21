@@ -335,14 +335,16 @@ static void App_HookGeoscapeMapClick(void *pUser);       /* Geoscape_OnMapClick 
 static void App_ShutdownStartUi(void *pUser); /* defined below with the start-UI teardown */
 static void App_QuitDisplay(void);      /* defined below with the window teardown */
 
-/* App_QuitFromTact @ 0x18e18, wired to the screen-8 escape seam (TactInputHooks.pfnShutdownQuit).
- * Deviation: the shell never runs a tactical mission, so its shutdown half reaches Tact_Shutdown with
- * no mission env -- its NULL guard makes the call a no-op. The original's Tact_Shutdown(1) works on the
- * global mission context, which only exists during a mission. */
+/* App_QuitFromTact @ 0x18e18, wired to the screen-8 escape seam (TactInputHooks.pfnShutdownQuit): the
+ * YES arm passes bKeepSome 1 (the store at 0x18E20), whose tail at 0x3E14C..0x3E154 empties the LIVE
+ * geoscape strateg list. The shell answers with the world's own Tact_Shutdown mirror
+ * (World_EndHookShutdown -- the Part 47 stand-in the debrief and battle-end arms already run), so the
+ * quit-Да now reaches the DeleteAll it always had. The old call reached the engine mirror with a NULL
+ * env, which is a no-op (Part 103 closes that). */
 static void App_ShutdownTactNoMission(u8 bKeepSome, void *pUser)
 {
     (void)pUser;
-    Tact_Shutdown(NULL, bKeepSome);
+    World_EndHookShutdown(bKeepSome, &g_world);
 }
 
 static void App_QuitDisplayThunk(void *pUser)
@@ -1659,9 +1661,9 @@ static void App_ScriptStrateg(void)
 {
     const PtrArray *pList = &g_world.strategList;
 
-    printf("pocketufo: strateg: %d items, seed %d, selected idx %d, clock %d s\n",
-           pList->nCount, (int)g_world.nStrategSeed, (int)g_world.nSelectedStrategIdx,
-           (int)g_world.geo.time.nTotalSec);
+    printf("pocketufo: strateg: %d items, count mirror 0x186530 %d, seed %d, selected idx %d, clock %d s\n",
+           pList->nCount, (int)g_world.saveStrateg.nStrategCount, (int)g_world.nStrategSeed,
+           (int)g_world.nSelectedStrategIdx, (int)g_world.geo.time.nTotalSec);
     for (int i = 0; i < pList->nCount; ++i) {
         const StrategItem *p = (const StrategItem *)pList->apItems[i];
 
@@ -1893,6 +1895,13 @@ static void App_RunDebugScript(LPCWSTR pwszPath)
             App_ScriptStrateg();
         } else if (strcmp(azArg[0], "lines") == 0) {
             App_ScriptLines();
+        } else if (strcmp(azArg[0], "quityes") == 0) {
+            /* SHELL SCAFFOLDING (Part 103): run the same seam the quit dialog's YES button reaches --
+             * slot 16 -> World_QuitYesThunk -> TactInputHooks.pfnShutdownQuit -> App_HookShutdownQuit
+             * -> App_QuitFromTact @ 0x18e18. The scripted runs cannot stage a tactical mission, so
+             * this command dispatches the seam itself. */
+            App_HookShutdownQuit(NULL);
+            printf("pocketufo: step quityes\n");
         } else {
             printf("pocketufo: step UNKNOWN '%s'\n", azArg[0]);
         }

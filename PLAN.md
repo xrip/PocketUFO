@@ -3550,11 +3550,16 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   door/step refusals (recorded deviation at the wiring site). Wiring the probe is a behavior change that has
   to be argued against the original's own search, not just connected.
 
-- [ ] **`Tact_Shutdown @ 0x3d568` has a caller but not the right one (reworded by the Part 101 audit).** It is
-  ported (pufo_tactend.c:228) and `App_ShutdownTactNoMission` (pufo_app.c:339-344) does call it -- with a NULL
-  env, which early-returns; `Tact_CheckBattleEnd @ 0x34fbc` (ported at :988) is the mission-end unit that should
-  reach it with the live block, and the shell's teardown still uses its own `World_FreeTactical` instead
-  (recorded at the wiring comment). Part 103 closes this together with the quit-YES arm.
+- [x] **`Tact_Shutdown @ 0x3d568` has a caller but not the right one (reworded by the Part 101 audit).** CLOSED
+  by Part 103. It is ported (pufo_tactend.c:228); `App_ShutdownTactNoMission` used to call it with a NULL env,
+  which early-returned. The seam now runs `World_EndHookShutdown` (public since Part 103), the shell's recorded
+  mirror of the shutdown head: the Map+0x00 tact-flag clear (store 0x3D588), `PufoFont_Free`,
+  `World_FreeTactical`, and `PtrArray_DeleteAll(&pW->strategList)` for bKeepSome != 0 (0x3E14C..0x3E154) — so the
+  arm reaches the DeleteAll the original's 0x18E20 arm runs on the globals. The quit dialog's Да reaches it live
+  (App_HookShutdownQuit -> World_EndHookShutdown(1)); `test_geoscapeframe` 103.1..103.3 gate it (5 live items
+  emptied, mirror cell stays stale, tact flag 0) and `tools/e2e_flow_quit.txt` runs it in the real exe. The engine
+  `Tact_Shutdown` stays the unit-gated mirror (its mission-outcome table belongs to the mission-end unit, the
+  Part 47 record stands).
 
 - [x] **`Ui_FillActionCosts @ 0x26104` mirrors its costs into the bank; the port does not.** CLOSED by Part 79:
   0x2641C writes `pBank + 0x400 + 32*m + 9` -- the `bEnabled @ UiControl+9` byte of bank widgets 32..43 --
@@ -4312,10 +4317,14 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   and root control [9] (0x18651C) runs `World_OptionsMenuCloseClick`. IDB comments 0x6af80, 0x6b194, 0x6b46c,
   0x84ecc, 0x6dd04, 0x18651C; six gates green (62/62 tests, 19,782 checks).
 
-- [ ] **The quit-YES arm does not empty the strateg list.** (target Part 103) `App_HookShutdownQuit` →
-  `App_QuitFromTact(App_ShutdownTactNoMission, ...)` → `Tact_Shutdown(NULL, 1)`, and the ported function returns at
-  once on a NULL env, so the shell's arm never reaches the DeleteAll at 0x3E154 while the original's 0x18E20 arm --
-  working on the globals -- does. Closing it means the seam carries the geoscape block instead of NULL.
+- [x] **The quit-YES arm does not empty the strateg list.** CLOSED by Part 103. `App_HookShutdownQuit` →
+  `App_QuitFromTact` ran `Tact_Shutdown(NULL, 1)`, which returned at once on a NULL env. The seam now calls
+  `World_EndHookShutdown(bKeepSome, &g_world)`, whose bKeepSome arm is `PtrArray_DeleteAll(&pW->strategList)` —
+  the shell's mirror of the original's tail 0x3E14C..0x3E154 working on the globals. Gated three ways:
+  `test_tactend` asserts the engine arm (list emptied, +0x38 mirror left stale), `test_geoscapeframe` 103.x
+  asserts the live shell (5 items → 0, mirror 5 → 5, bTactFlag 0), and `tools/e2e_flow_quit.txt` drives the real
+  exe (`save 70` stamps the mirror, `quityes` empties the list, `strateg` prints "0 items, mirror 0x186530 5",
+  clean exit 0). The stale-mirror defect stays asserted, not hidden (bugs.tsv `0x3E154`).
 
 - [ ] **A loaded craft keeps a stale `nStrategIdx`.** `Save_ReadShips` stores it at 0x40BA8 and `LoadGame`'s
   per-craft pass 0x44F7C..0x450E8 never stores to `Ship+0x38`, so a craft whose entry was matched at another position
@@ -4724,9 +4733,15 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   original does not: in ARM both take none, and `Tact_BuildPaletteLuts` reads `Map_nGamma @ 0x128AB8`
   itself. `Tact_InitMission` passes `*pEnv->pnGamma` to keep the existing signature. Harmless, but it
   is a signature deviation carried in already-ported code. (target Part 106.)
-- [ ] `TactShutdownEnv.pbActionLatch /* Map+0x00 */` conflicts with `Map_bActionLatch @ Map+0x02`;
+- [x] `TactShutdownEnv.pbActionLatch /* Map+0x00 */` conflicts with `Map_bActionLatch @ Map+0x02`;
   `Tact_InitMission` sets `Map+0x00` to 1 and `Map+0x02` to 0, so the two are different fields and one
-  of the two comments is wrong. (target Part 103.)
+  of the two comments is wrong. (target Part 103.) CLOSED: the IDB confirms both stores — `STRB R0,[R4]` at
+  0x3C690 puts 1 into Map+0x00 (R10/base = 0x1139B8, `MOV R0,#1` at 0x3C678) and the latch clear (`R11` = 0)
+  sits at Map+0x02 right below the 6/6 dim writes. The WRONG half was the env name: `TactShutdownEnv` field
+  renamed to `pbTactFlag` (pufo_tactend.h, cited 0x3D588), the fixture follows (test_tactend), and the IDB
+  gained the name `Map_bTactFlag` for 0x1139B8 plus comments there and at 0x3C690 / 0x3D588. The shell
+  comment in `World_EndHookShutdown` carried a wrong citation (0x3D574 is the KillTimers call); corrected to
+  0x3D588.
 - [ ] The cell grid is modelled twice: `GameMap.aCells` and `TactInitEnv.apCells` are the same
   14400-entry array reached through two different fields. One owner should be picked. (target Part 106.)
 - [ ] `Ball_FloorDiv16` is misnamed. The ARM idiom it reproduces (`MOVS` / `ADDMI #0xF` / `ASR #4`) is

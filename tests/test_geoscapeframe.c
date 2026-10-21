@@ -11434,6 +11434,40 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         (void)remove("sav0.sav");
     }
 
+    /* Part 103: the quit-Yes arm (App_QuitFromTact @ 0x18e18, the Tact_Shutdown(1) store at 0x18E20) now
+     * empties the LIVE strateg list. App_ShutdownTactNoMission runs the shell's World_EndHookShutdown
+     * mirror with bKeepSome 1 -- the scripted tools/e2e_flow_quit.txt runs the same seam through
+     * App_HookShutdownQuit in the real exe -- and here the mirror runs over a live world directly. The
+     * world the 102 block's quit Да left is torn down, so the post-title new-game rebuild the menu path
+     * performs (App_HookNewGame -> World_NewGame, the same call) gives the arm a live list to empty. The
+     * +0x38 count cell (0x186530, the shell's saveStrateg.nStrategCount) must come out STALE exactly as
+     * the original leaves it: only StrategList_AddItem 0x82710 and StrategList_RemoveAt 0x82B34 restamp
+     * it, and neither runs at 0x3E154. */
+    {
+        i32 nItems0;
+
+        Check(World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks) != 0,
+              "the post-title new-game rebuild (the App_HookNewGame call shape) brings the world back");
+        nItems0 = (i32)PtrArray_GetCount(&g_world.strategList);
+        Check(nItems0 > 0, "the new run starts with live strateg items");
+        CheckEqI32(g_world.saveStrateg.nStrategCount, 0,
+                   "InitUI zeroes the +0x38 cell (block+0x38 in Geoscape_InitUI) and the port's live list ops "
+                   "keep the count in the PtrArray alone -- the recorded Part 62 deviation, so the cell is 0 here");
+        (void)World_SaveSlot(&g_world, "", 0, &hooks); /* 0x2728's restamp: the save boundary stamps the mirror */
+        CheckEqI32(g_world.saveStrateg.nStrategCount, nItems0,
+                   "World_SaveSlot restamps 0x186530 from the list before Save_WriteStrateg (0x3FE28's bound)");
+
+        World_EndHookShutdown(1, &g_world); /* 0x18E20's arm, tail 0x3E14C..0x3E154 */
+        CheckEqI32((i32)PtrArray_GetCount(&g_world.strategList), 0,
+                   "the arm empties the live list (PtrArray_DeleteAll @ 0x3E154)");
+        CheckEqI32(g_world.saveStrateg.nStrategCount, nItems0,
+                   "ORIGINAL DEFECT asserted, not hidden: the arm writes no +0x38 mirror, so 0x186530 is stale");
+        CheckEqI32((i32)g_world.bTactFlag, 0, "the Map+0x00 tact-flag clear at 0x3D588 (the shell's tact-flag cell, named Map_bTactFlag in the IDB)");
+        printf("  the quit-Yes arm: %d live items emptied, mirror cell stays %d, tact flag %d\n",
+               nItems0, g_world.saveStrateg.nStrategCount, (i32)g_world.bTactFlag);
+        (void)remove("sav0.sav");
+    }
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 

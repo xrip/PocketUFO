@@ -2555,8 +2555,6 @@ void World_Free(PufoWorldState *pW)
  * 0x86d20 -- and what was missing was the env: the shell owns every one of them on the new-game path
  * (World_FillInitUiEnv builds the InitUI env, World_EndHookShutdown is the Tact_Shutdown mirror, and
  * the TactInitEnv is pW->tactEnv), so the same constructions run here. */
-static void World_EndHookShutdown(u8 bKeepSome, void *pUser); /* forward: the mission-end seams define it */
-
 static void Load_HookInitUi(i32 nMode, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
@@ -7585,15 +7583,18 @@ static void World_TactInitUiControlsThunk(void *pUser)
  * pure state -- caption, score, two panels, the pending-fund sum, the site commit -- so the state
  * half is complete here; the banner and debrief DRAWS are the tact-HUD unit's. */
 
-static void World_EndHookShutdown(u8 bKeepSome, void *pUser)
+void World_EndHookShutdown(u8 bKeepSome, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
     /* The shell's stand-in for Tact_Shutdown @ 0x3d568, the same choice Part 47 made for the
      * teardown: Tact_Shutdown frees the ORIGINAL's global blocks, World_FreeTactical releases the
      * shell-owned counterparts of the same frame. It also stands in for Tact_Shutdown's first
-     * store, the Map+0x00 action-latch clear: the tact flag goes down with the frame. */
-    pW->bTactFlag = 0;                                       /* 0x3D574 */
+     * store, the Map+0x00 tact-flag clear (the store sits at 0x3D588; 0x3D574 above it is the
+     * KillTimers call): the tact flag goes down with the frame. Public since Part 103:
+     * App_HookShutdownQuit (the quit dialog's Да seam) runs it with bKeepSome 1,
+     * exactly like the original's App_QuitFromTact at 0x18E20. */
+    pW->bTactFlag = 0;                                       /* 0x3D588: Map+0x00 */
     PufoFont_Free(pW->pFont);      /* Tact_Shutdown releases the font too (TactShutdownEnv.pFont): the
                                      * tact sprites Tact_InitMission loaded go here, so the rebuild's
                                      * PufoFont_Init starts from the cleared block, like the original's

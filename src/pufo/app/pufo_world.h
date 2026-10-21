@@ -1073,6 +1073,15 @@ bool World_GameTickOnce(PufoWorldState *pW);
 bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort);
 bool World_MissionCancelEnd(PufoWorldState *pW);
 
+/* The shell's mirror of Tact_Shutdown @ 0x3d568 (the Part 47 choice: World_FreeTactical releases the
+ * shell-owned counterparts of the original's global blocks, the tact flag carries the Map+0x00 latch
+ * clear at 0x3D588, and the font release is the 0x3D6DC store). bKeepSome 1 is the run-END arm -- the
+ * original reaches it from Tact_CheckBattleEnd 0x35014 / 0x35180, UiScreen_OnBack's quit arm 0x156D4 and
+ * App_QuitFromTact 0x18E20 -- and its tail 0x3E14C..0x3E154 runs PtrArray_DeleteAll on the LIVE geoscape
+ * strateg list while leaving the block's +0x38 count mirror (0x186530, the shell's
+ * saveStrateg.nStrategCount) stale. App_HookShutdownQuit runs it for the quit dialog's Yes (Part 103). */
+void World_EndHookShutdown(u8 bKeepSome, void *pUser);
+
 /* Pointer dispatch while a mission owns the pen (Part 60). The caller feeds the pen events
  * (Input_OnPointer @ 0x13c6c press/move and Input_OnPointerUp @ 0x148d0) through the shell's
  * TactPointerWorld; the world fills the tactical fields (queue, lookup, HUD pad, camera scratch,

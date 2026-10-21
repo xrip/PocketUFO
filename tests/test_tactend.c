@@ -34,7 +34,7 @@ static RmpData   *s_pRmp;
 static void      *s_pBlock156A78;
 static void      *s_pBlock187050;
 static PufoFont   s_Font;
-static u8         s_bActionLatch;
+static u8         s_bTactFlag;
 static TactItem  *s_apTactItems[8];
 static i32        s_nTactItemCount;
 static void      *s_apStrategCopy[4];
@@ -44,6 +44,7 @@ static i8         s_nBaseCount;
 static void      *s_apCraftCopy[4];
 static u8         s_nCraftCount;
 static PtrArray   s_StrategList;
+static i32        s_nStrategMirrorCell; /* a stand-in for the block's +0x38 count global 0x186530 */
 static Soldier   *s_apCivilian[4];
 static i32        s_nCivilian;
 static Soldier   *s_apEnemy[4];
@@ -132,7 +133,7 @@ static void Fixture_Reset(void)
     s_pRmp = NULL;
     s_pBlock156A78 = NULL;
     s_pBlock187050 = NULL;
-    s_bActionLatch = 1;
+    s_bTactFlag = 1;
     s_nTactItemCount = 0;
     s_nStrategCopy = 0;
     s_nBaseCount = 0;
@@ -237,7 +238,7 @@ static TactShutdownEnv Env_Build(void)
     env.appBlock156A78 = &s_pBlock156A78;
     env.appBlock187050 = &s_pBlock187050;
     env.pFont = &s_Font;
-    env.pbActionLatch = &s_bActionLatch;
+    env.pbTactFlag = &s_bTactFlag;
     env.apTactItems = s_apTactItems;
     env.pnTactItemCount = &s_nTactItemCount;
     env.apStrategCraftCopy = s_apStrategCopy;
@@ -358,7 +359,7 @@ static void TestPanelsAndGlobals(void)
     s_pUnitloft = malloc(8);
     s_pMapTactical = malloc(8);
     s_pMapCtx = malloc(8);
-    s_bActionLatch = 1;
+    s_bTactFlag = 1;
 
     env = Env_Build();
     Tact_Shutdown(&env, 1);
@@ -367,7 +368,7 @@ static void TestPanelsAndGlobals(void)
     TestEqI32("four message panels are seen with 14", s_aSeenLineCount[1], 14);
     TestEqI32("all five panels reach the hook", s_nPanelHookCalls, 5);
     TestEqI32("the look control reaches the control hook", s_nControlHookCalls, 1);
-    TestEqI32("Map action latch cleared", s_bActionLatch, 0);
+    TestEqI32("Map+0x00 tact flag cleared (0x3D588)", s_bTactFlag, 0);
 
     TestCheck("line panel slot cleared", s_pLinePanel == NULL);
     for (i = 0; i < 4; ++i) {
@@ -463,8 +464,14 @@ static void TestKeepSomePath(void)
     for (i = 0; i < 2; ++i) {
         s_apCraftCopy[i] = malloc(16);
     }
+    /* A stand-in for the geoscape block's +0x38 count cell (0x186530, the shell's
+     * saveStrateg.nStrategCount): restamped only by StrategList_AddItem 0x82710 / StrategList_RemoveAt
+     * 0x82B34. The arm at 0x3E14C..0x3E154 empties the list and writes NOTHING to the mirror -- the
+     * staleness is asserted, not hidden (the live half: test_geoscapeframe 103 + e2e_flow_quit). */
+    s_nStrategMirrorCell = 0;
     for (i = 0; i < 3; ++i) {
         PtrArray_Add(&s_StrategList, malloc(16));
+        s_nStrategMirrorCell = PtrArray_GetCount(&s_StrategList);
     }
     s_nCivilian = 2;
     s_apCivilian[0] = NewUnit(1, 2, 0);
@@ -477,6 +484,8 @@ static void TestKeepSomePath(void)
     Tact_Shutdown(&env, 1);
 
     TestEqI32("the strateg list is emptied", PtrArray_GetCount(&s_StrategList), 0);
+    TestEqI32("the +0x38 count mirror is left stale (only 0x82710 / 0x82B34 restamp it)",
+              s_nStrategMirrorCell, 3);
     TestEqI32("civilians are left alone", s_nCivilian, 2);
     TestEqI32("enemies are left alone", s_nEnemy, 2);
     /* The original frees the pool but never resets the count. */

@@ -239,7 +239,7 @@ void Tact_Shutdown(const TactShutdownEnv *pEnv, u8 bKeepSome)
     if (pEnv->hooks.pfnKillTimers != NULL) {
         pEnv->hooks.pfnKillTimers(pEnv->hooks.pUser);    /* 0x3D574 */
     }
-    *pEnv->pbActionLatch = 0;  /* 0x3D588 */
+    *pEnv->pbTactFlag = 0;     /* 0x3D588: Map+0x00 */
 
     /* The four message panels and the wide one get their line count set BEFORE the
      * null test -- the original assumes the four exist. */

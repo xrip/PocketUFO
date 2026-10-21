@@ -21222,3 +21222,36 @@ wrote the scratch word, so GeoscapeScreenState.nLineAux119 is deleted and test_b
 0x18651C (written at 0x865c0 / 0x86638) runs World_OptionsMenuCloseClick live. IDB comments at 0x6af80, 0x6b194,
 0x6b46c, 0x84ecc, 0x6dd04 and 0x18651C; idb_save. Six gates green: 62/62 tests both configs, 19,782 checks,
 coverage 972/1103 unchanged, the three new frames committed.
+
+## Part 103 (103.1 + 103.2): the quit dialog's Да reaches the shutdown arm, and the Map+0x00 byte gets its right name
+
+**The live quit arm (103.1).** The original's quit-YES chain is `App_QuitFromTact @ 0x18e18`:
+`Tact_Shutdown(bKeepSome 1)` at 0x18E20 and `App_QuitDisplay @ 0x18E28`. The bKeepSome tail at
+0x3E14C..0x3E154 reads `sGeoscapeScreenBlock` and runs `PtrArray_DeleteAll` on the block's own
+strateg list, but writes no +0x38 count mirror (0x186530) -- only `StrategList_AddItem` 0x82710
+and `StrategList_RemoveAt` 0x82B34 restamp it. The port's arm used to call `Tact_Shutdown(NULL, 1)`,
+which early-returns, so the shell never reached the DeleteAll. `App_ShutdownTactNoMission` now runs
+`World_EndHookShutdown` (public since this Part): tact-flag clear, `PufoFont_Free`,
+`World_FreeTactical`, and `PtrArray_DeleteAll(&pW->strategList)` when bKeepSome != 0 -- the shell's
+mirror of the same tail. Gate three ways: `test_tactend` (engine arm: list emptied, +0x38 mirror
+asserted stale at 3), `test_geoscapeframe` 103.x (live shell: new game's 5 strateg items emptied by the
+arm, mirror cell stays 5, `bTactFlag` 0; the mirror is first stamped through `World_SaveSlot`, the
+same restamp 0x3FE28's bound does at the save boundary), and the real exe through the new
+`tools/e2e_flow_quit.txt` flow (`save 70`, `strateg` "5 items, mirror 5", `quityes`, `strateg`
+"0 items, mirror 0x186530 5", exit 0). The `quityes` script command dispatches the seam itself --
+scripted runs stage no tactical mission (scaffolding, recorded in the flow file). The stale mirror
+stays asserted, not hidden (bugs.tsv `0x3E154`).
+
+**The two Map bytes separated (103.2).** The IDB shows two different fields where the port had one
+name. `STRB R0,[R4]` at 0x3C690 inside `Tact_InitMission` puts 1 into Map+0x00 (base 0x1139B8,
+`MOV R0,#1` at 0x3C678); the action-latch clear (`R11` = 0, Map+0x02) sits at 0x3C6B8, just above the
+6/6 dim writes at 0x3C6C0 / 0x3C6D0. `Tact_Shutdown`'s first store, `STRB R0,[R10]` at 0x3D588, clears Map+0x00 again.
+So `TactShutdownEnv.pbActionLatch` was the wrong name for the Map+0x00 pointer: renamed to
+`pbTactFlag` (pufo_tactend.h, store cited 0x3D588), the test fixture follows (`s_bTactFlag`). The
+shell comment in `World_EndHookShutdown` cited 0x3D574 -- that line is the `KillTimers_BySpeed` call --
+corrected to 0x3D588. The port already modelled both bytes right (`bTactFlag` at Map+0x00,
+`GameMap.bActionLatch` at Map+0x02); only the engine env field and two comments were wrong.
+IDB: 0x1139B8 named `Map_bTactFlag` (it was a nameless byte typed `double`) with a global comment
+naming the writers (0x3C690 set, 0x3D588 clear, Save_WriteGameState 0x44928) and line comments at
+0x3C690 and 0x3D588; `Map_bActionLatch @ 0x1139BA` already carried its comment; idb_save.
+test_tactend 402 checks green, test_geoscapeframe green.
