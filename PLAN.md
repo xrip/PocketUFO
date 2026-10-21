@@ -4292,14 +4292,25 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   in-repo call sites now construct first; the rule belongs in the header comment. (target Part 103: the
   header-comment line lands with the save round.)
 
-- [ ] **Three options-screen seams stay open.** (target Part 102) The seven slot handlers (`SaveGame_Slot0..6_CloseUI`
-  0x6af80..0x6b148, `LoadGame_Slot0..6_InitOptions` 0x6b194..0x6b404) are ported and gated but reach SaveGame /
-  LoadGame through a `DatFile` the caller opens, and the shell opens slot files only on its tact-bank path
-  (`World_SaveSlot`), so they stay NULL and a press on a save or load row hits a cleared handler. Second, ctlB's
-  handler `OptionsScreen_ReturnToTitle @ 0x6b478` belongs to the startup-screen owner in `pufo_app.c` (its three
-  callees are Geoscape_CloseUI 0x6B480, GeoscapeUi_FreeAll 0x6B488, GameUI_InitStartup 0x6B490), so the quit page's
-  Да answers nothing. Third, `Ui_CloseScreen18 @ 0x84ecc` hands `gUiRootPanel.anLineAux[119]` to its OpenWithSound
-  tail as the mode; the shell's `GeoscapeScreenState.nLineAux119` has no writer, so root control [9] stays a no-op.
+- [x] **Three options-screen seams are wired.** (Part 102) (1) The fourteen slot thunks
+  (`SaveGame_Slot0..6_CloseUI` 0x6af80..0x6b148, `LoadGame_Slot0..6_InitOptions` 0x6b194..0x6b404) reach the
+  live world as `World_OptionsSaveSlotRow` / `World_OptionsLoadSlotRow` + per-slot thunks
+  (`pufo_world.c`), each mirroring its original's own stores with `World_SaveSlot` / `World_LoadSlot` as the
+  SaveGame / LoadGame call; the directory is a new `WorldHooks.pszSaveDir` (szAppDir @ 0x1883b0). Gate:
+  `test_geoscapeframe` 102.1/102.2 -- the save row writes `sav0.sav` (file absent before the press), the load
+  row reads it back over the live world after the fixture falsified `nFunds`, and funds/bases/soldiers/craft
+  come back exactly. (2) ctlB carries `World_OptionsReturnToTitleThunk` (Init's only installer is 0x6BF24 /
+  store 0x6BF48 -- the function is 0x6b46c, 0x6B478 is its first store): close over `closeEnv`,
+  `GeoscapeUi_FreeAll(1)` through the shell's mode-1 wrapper (records nulled 0x87114..0x871C8, strateg
+  DeleteAll 0x87208), startup tail through the new `WorldHooks.pfnInitStartupUi`, which the app answers with
+  `App_InitStartupUiThunk` -> `App_InitStartupUi` (GameUI_InitStartup @ 0x38a28; the world's `nUiScreen` copy
+  is re-seeded like the startup arm). Gate: 102.3 ( Да empties the strateg list, clears the geoscape byte,
+  fires the tail exactly once). Frames `options_save_tab`, `options_load_tab`, `options_quit_yes` reviewed at
+  native scale. (3) The `anLineAux[119]` reading was WRONG and is gone: `Ui_CloseScreen18 @ 0x84ecc` passes
+  the mode as the literal −1 (`MOV R1,#0xFFFFFFFF` at 0x84EC8; the callee 0x6dd04 stores it at 0x6DD08 and
+  never reads the first argument), `GeoscapeScreenState.nLineAux119` is deleted, `test_baseui` now asserts −1,
+  and root control [9] (0x18651C) runs `World_OptionsMenuCloseClick`. IDB comments 0x6af80, 0x6b194, 0x6b46c,
+  0x84ecc, 0x6dd04, 0x18651C; six gates green (62/62 tests, 19,782 checks).
 
 - [ ] **The quit-YES arm does not empty the strateg list.** (target Part 103) `App_HookShutdownQuit` →
   `App_QuitFromTact(App_ShutdownTactNoMission, ...)` → `Tact_Shutdown(NULL, 1)`, and the ported function returns at

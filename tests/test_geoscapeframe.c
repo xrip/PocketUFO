@@ -331,6 +331,18 @@ static i32 PresentThunk(void *pUser)
     return 7;
 }
 
+/* WorldHooks.pfnInitStartupUi's stand-in (Part 102): the startup tail callee of
+ * OptionsScreen_ReturnToTitle (GameUI_InitStartup @ 0x38a28, the store at 0x6B490) belongs to the
+ * menu owner -- the app answers it with App_InitStartupUi; this fixture answers it with a counter,
+ * because the rebuild itself (banking the widgets, loading the fonts) is the app's bring-up. */
+static i32 g_nStartupUiThunk;
+static i32 Test_InitStartupThunk(void *pUser)
+{
+    (void)pUser;
+    ++g_nStartupUiThunk;
+    return 1;
+}
+
 static bool LoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
                      const char *psz2, void *pUser)
 {
@@ -769,6 +781,8 @@ int main(void)
     hooks.pColor        = &g_color;
     hooks.pfnPresentFrame = PresentThunk;   /* WorldHooks.pfnPresentFrame, the tact frame's GX_Present (Part 63) */
     hooks.pPresentUser    = NULL;
+    hooks.pfnInitStartupUi = Test_InitStartupThunk; /* the quit page's Да tail callee, 0x6B490 (Part 102) */
+    hooks.pszSaveDir      = "";                     /* the options save/load rows' directory: the cwd, as in the save unit */
     hooks.pnAnimPhase   = (i32 *)&g_nUiSlot0; /* Map + 0x60 @ 0x113A18, the cell the pulse's phase gate counts */
     hooks.pnMapPhase    = &g_nMapPhase;       /* Map + 0x37 @ 0x1139EF, the placement arm's cursor phase */
     /* The tact bank bring-up wiring (Part 54): the world installs InitUiControls' handlers and pads
@@ -7244,9 +7258,10 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             CheckEqI32(pCtlA != NULL ? pCtlA->y : -1, 198, "0x6B784 seats the cancel hotspot at y 198");
             CheckEqI32(pCtlA != NULL ? (i32)pCtlA->x : -1,
                        pCtlA != NULL ? 120 - ((i32)pCtlA->uWidth >> 1) : -1, "centred (0x6B75C)");
-            Check(pCtlB != NULL && pCtlB->pfnClick == NULL,
-                  "the return hotspot keeps no handler in the shell yet: OptionsScreen_ReturnToTitle belongs "
-                  "to the startup-screen owner (recorded gap)");
+            Check(pCtlB != NULL && pCtlB->pfnClick == g_world.options.init.pfnReturnToTitle
+                      && pCtlB->pfnClick != NULL,
+                  "Init's store at 0x6BF48 seats the shell's OptionsScreen_ReturnToTitle thunk on ctlB "
+                  "(Part 102: World_OptionsReturnToTitleThunk, wired in World_WireOptions)");
             CheckEqI32(pCtlB != NULL ? (i32)pCtlB->x : -1,
                        (pCtlA != NULL) ? 120 - ((i32)pCtlA->uWidth >> 1) : -1,
                        "ORIGINAL BUG (0x6B764): its x is centred on the CANCEL control's width, read again "
@@ -11310,6 +11325,113 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                    nTries, (pSite != NULL) ? pSite->nX : -1, (pSite != NULL) ? pSite->nY : -1,
                    (pSite != NULL) ? pSite->nSiteId : -1);
         }
+    }
+
+    /* Part 102: the options screen answers the player through the shell's own thunks. The menu opens as
+     * in section E (root control [8]'s word at 0x186518); every press after that is a real pen press --
+     * the tab-0 arm walks rows 0..3 (0x892D0), the tab-1/2 arm walks all seven slot rows (0x89210 /
+     * 0x89270), and the tab-3 arm hit-tests ctlA and ctlB (0x891C8). A standing card line from the
+     * flight round would re-route the press arm (the 0x87658 guard), so the lines go first. */
+    {
+        UiControl *pCtlA = g_world.ui.apCtl[GEOUI_CTL_186BB4];
+        UiControl *pCtlB = g_world.ui.apCtl[GEOUI_CTL_186BB0];
+        i32 nFunds0 = g_world.nFunds;
+        i32 nBase0 = (i32)g_world.nBaseCount, nSold0 = g_world.nSoldierCount;
+        i32 nCraft0 = (i32)g_world.bCraftCount;
+        i32 nStartup0 = g_nStartupUiThunk;
+        i32 nStrat0 = (i32)PtrArray_GetCount(&g_world.strategList);
+
+        while (g_world.msgLines.nLineCount > 0) {
+            (void)UiLineList_Remove(&g_world.msgLines, 0);
+        }
+        (void)remove("sav0.sav"); /* slot 0's file starts absent, so "exists" afterwards is the press's doing */
+
+        g_world.ui.apRootCtl[8]->pfnClick(); /* 0x186518, installed at 0x86590 (section E's route) */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 18, "the menu is up (0x84ECC)");
+
+        /* 102.1 the save page (SaveGame_Slot0_CloseUI @ 0x6af80 over the shell driver). */
+        PressCtl(g_world.options.ctl.apList[0]); /* row 0: OptionsScreen_BindSaveSlots @ 0x6b49c */
+        CheckEqI32((i32)g_world.abOptionsScratch[0], 1, "the save page: BindSaveSlots writes tab 1 (0x6B4A8)");
+        Check(g_world.options.ctl.apList[0]->pfnClick == g_world.options.tab.apfnSaveSlot[0]
+                  && g_world.options.ctl.apList[6]->pfnClick == g_world.options.tab.apfnSaveSlot[6],
+              "0x6B4B4..0x6B4FC: the seven rows now carry the seven shell slot thunks (World_OptionsSaveSlot0..6)");
+        CheckEqI32(g_world.options.ctl.apList[0]->y, 40, "the rows re-centre at 40 + 22 * i (0x6B514)");
+        CheckEqI32(g_world.options.ctl.apList[6]->y, 40 + 22 * 6, "row 6 at 172 (0x6B538)");
+        CheckEqI32(pCtlA != NULL ? pCtlA->y : -1, 215, "the cancel hotspot moves to 215 (0x6B550)");
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("options_save_tab");
+
+        PressCtl(g_world.options.ctl.apList[0]); /* the row itself: SaveGame over szAppDir + "sav0.sav" */
+        Check(DatFile_Exists("sav0.sav"),
+              "0x6AF98's SaveGame ran through the shell driver (World_SaveSlot @ 0x44988 over the live world)");
+        g_world.nFunds += 1000; /* falsify the live funds so the load's answer cannot be the value it never changed */
+        CheckEqI32((i32)g_world.abOptionsScratch[0], 0, "0x6AFA4 clears the tab byte");
+        CheckEqI32(g_world.nListMode, 1, "0x6AFAC writes MainMenu_nListMode 1 (the thunk held it at 4, 0x6AF90, while writing)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0,
+                   "the tail Geoscape_CloseUI (0x6AFB8): case 18 with the tab already 0 reaches RebuildWithSound's teardown, screen 0");
+        CheckEqI32((i32)g_world.abOptionsScratch[4], 0, "0x6C0FC");
+        printf("  the save row: file exists, list mode %d, tab %d, screen %d, controls %d\n",
+               g_world.nListMode, (i32)g_world.abOptionsScratch[0],
+               g_world.screen.nGeoscapeScreen, (i32)g_world.abOptionsScratch[4]);
+
+        /* 102.2 the load page (LoadGame_Slot0_InitOptions @ 0x6b194): tab 2, the teardown Init, and the
+         * slot file read back over the live world. */
+        g_world.ui.apRootCtl[8]->pfnClick();
+        PressCtl(g_world.options.ctl.apList[1]); /* row 1: OptionsScreen_BindLoadSlots @ 0x6b588 */
+        CheckEqI32((i32)g_world.abOptionsScratch[0], 2, "the load page: BindLoadSlots writes tab 2 (0x6B594)");
+        Check(g_world.options.ctl.apList[0]->pfnClick == g_world.options.tab.apfnLoadSlot[0]
+                  && g_world.options.ctl.apList[6]->pfnClick == g_world.options.tab.apfnLoadSlot[6],
+              "the same 0x6B4B4..0x6B4FC loop with the seven load thunks (World_OptionsLoadSlot0..6)");
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("options_load_tab");
+
+        PressCtl(g_world.options.ctl.apList[0]); /* the row itself: LoadGame over the file just written */
+        CheckEqI32(g_world.nFunds, nFunds0, "the loaded world carries the saved funds back");
+        CheckEqI32((i32)g_world.nBaseCount, nBase0, "  ... the bases ...");
+        CheckEqI32(g_world.nSoldierCount, nSold0, "  ... the soldiers ...");
+        CheckEqI32((i32)g_world.bCraftCount, nCraft0, "  ... and the craft");
+        Check((i32)PtrArray_GetCount(&g_world.strategList) == nStrat0 && nStrat0 >= 1,
+              "the flight round's strateg entries round-trip through the chunk (no fewer than before)");
+        CheckEqI32(g_world.nListMode, 1,
+                   "list mode 1: 0x6B1DC's LOW-byte test with a no-save return, LoadGame's own 0x44DC8 store otherwise");
+        CheckEqI32((i32)g_world.bGeoscapeUi, 1, "Save_ReadGameState writes the geoscape byte the file carried back");
+        printf("  the load row: funds %d == %d, bases %d/%d, soldiers %d/%d, craft %d/%d, strateg %d/%d, list mode %d, geoscape byte %d\n",
+               g_world.nFunds, nFunds0, (i32)g_world.nBaseCount, nBase0, g_world.nSoldierCount, nSold0,
+               (i32)g_world.bCraftCount, nCraft0, (i32)PtrArray_GetCount(&g_world.strategList), nStrat0,
+               g_world.nListMode, (i32)g_world.bGeoscapeUi);
+
+        /* 102.3 the quit page's Да (OptionsScreen_ReturnToTitle @ 0x6b46c, seated on ctlB by Init's
+         * store at 0x6BF48): tab 0 (0x6B478), close (0x6B480), free-all with a1 = 1 (0x6B488), and the
+         * startup tail (0x6B490) through WorldHooks.pfnInitStartupUi. */
+        g_world.ui.apRootCtl[8]->pfnClick();
+        PressCtl(g_world.options.ctl.apList[2]); /* row 2: BaseUi_SetScratch3AndUiY @ 0x6b674 */
+        CheckEqI32((i32)g_world.abOptionsScratch[0], 3, "0x6B680");
+        CheckEqI32(pCtlB != NULL ? (i32)pCtlB->y : -1, 120, "Да seated at 120 (0x6B68C)");
+        CheckEqI32(pCtlA != NULL ? (i32)pCtlA->y : -1, 142, "Нет at 142 (0x6B69C)");
+        Check(pCtlB != NULL && pCtlB->pfnClick == g_world.options.init.pfnReturnToTitle,
+              "ctlB carries the shell's return-to-title thunk (wired in World_WireOptions, Part 102)");
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("options_quit_yes");
+
+        PressCtl(pCtlB); /* the tab-3 arm hit-tests ctlA then ctlB (0x891C8); the press arms ctlB */
+        CheckEqI32((i32)g_world.abOptionsScratch[0], 0, "0x6B478 clears the tab byte first");
+        Check(g_nStartupUiThunk == nStartup0 + 1,
+              "the startup tail (0x6B490) reached the menu owner's WorldHooks.pfnInitStartupUi seam exactly once");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "the 0x6B480 close (tab already 0) reaches the teardown and screen 0");
+        CheckEqI32((i32)g_world.abOptionsScratch[4], 0, "0x6C0FC clears the controls byte");
+        CheckEqI32((i32)g_world.bGeoscapeUi, 0, "the free-all clears Map_bGeoscapeUi at 0x86D34");
+        CheckEqI32((i32)PtrArray_GetCount(&g_world.strategList), 0,
+                   "a1 = 1 empties the strateg list (PtrArray_DeleteAll @ 0x87208)");
+        Check(g_world.nSoldierCount > 0 && g_world.apSoldiers[0] == NULL,
+              "the soldier records are freed AND nulled, the 0x87114..0x871C8 stores");
+        printf("  the quit Да: startup tail %d time(s), screen %d, controls %d, geoscape byte %d, strateg items %d\n",
+               g_nStartupUiThunk - nStartup0, g_world.screen.nGeoscapeScreen,
+               (i32)g_world.abOptionsScratch[4], (i32)g_world.bGeoscapeUi,
+               (i32)PtrArray_GetCount(&g_world.strategList));
+        (void)remove("sav0.sav");
     }
 
     World_Free(&g_world);

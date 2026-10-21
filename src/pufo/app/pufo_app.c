@@ -135,6 +135,7 @@ static void App_TitlesToStartup(void *pUser);
 static i32 App_HookLoadGame(i32 nSlot, void *pUser);
 static i32 App_HookSaveGame(i32 nSlot, void *pUser);
 static void App_HookFormatSlots(void *pUser);
+static i32 App_InitStartupUiThunk(void *pUser); /* WorldHooks.pfnInitStartupUi: OptionsScreen_ReturnToTitle's tail callee, 0x6B490 (Part 102) */
 
 /* SaveLoad_Slot0..6 @ 0x19de4's pair. Both arms are wired since Part 62: the save arm reaches
  * World_SaveSlot (SaveGame @ 0x44988) and the load arm reaches the same loader the start menu uses. */
@@ -253,6 +254,8 @@ static void App_HookNewGame(void *pUser)
     hooks.pnListMode          = &g_nListMode;                /* *0x157188 */
     hooks.pTactOptions        = &g_options;                  /* writable alias: the menu handlers write
                                                               * speed/gamma/volumes/toggles here */
+    hooks.pfnInitStartupUi    = App_InitStartupUiThunk;      /* the quit page's Да tail callee, 0x6B490 (Part 102) */
+    hooks.pszSaveDir          = g_szAppDir;                  /* szAppDir @ 0x1883b0: the options save/load rows open slot files (Part 102) */
 
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
     printf("pocketufo: new game: %d funds, %d bases, %d soldiers, %d craft, screen %d, zoom %d\n",
@@ -433,6 +436,9 @@ static i32 App_HookLoadGame(i32 nSlot, void *pUser)
     hooks.pSlotLabels         = &g_aSlotLabels[0][0]; /* MainMenu_pSlotCtx @ 0x156938 */
     hooks.pnListMode          = &g_nListMode;
     hooks.pTactOptions        = &g_options;
+
+    hooks.pfnInitStartupUi    = App_InitStartupUiThunk; /* the quit page's Да tail callee, 0x6B490 (Part 102) */
+    hooks.pszSaveDir          = g_szAppDir;             /* szAppDir @ 0x1883b0: the options save/load rows open slot files (Part 102) */
 
     {
         i32 nRet = World_LoadSlot(&g_world, g_szAppDir, nSlot, &g_assets, &g_fontSys, &g_options, &hooks);
@@ -679,6 +685,19 @@ static void App_InitStartupUi(void)
     g_slotCtx.pszPrefix    = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1800);
     g_slotCtx.pszNotSaved  = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1074);
     g_slotCtx.pszMission   = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1075);
+}
+
+/* WorldHooks.pfnInitStartupUi (Part 102): OptionsScreen_ReturnToTitle @ 0x6b46c -- the quit page's Да --
+ * tails into GameUI_InitStartup (the store at 0x6B490), the same bring-up App_InitStartupUi runs at
+ * startup. The world's copy of Map_nUiScreen is re-seeded to the menu value right after, exactly as the
+ * startup arm does: it is the cell LoadGame @ 0x44CB0 tests (== 17) to decide that a later load starts
+ * from the start menu. */
+static i32 App_InitStartupUiThunk(void *pUser)
+{
+    (void)pUser;
+    App_InitStartupUi();
+    g_world.nUiScreen = (u16)g_nUiScreen;
+    return g_bStartupUi ? 1 : 0;
 }
 
 /* The screen-16 arm of Input_OnPointerUp @ 0x14924: release the credits screen, then bring the

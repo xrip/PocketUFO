@@ -913,6 +913,13 @@ typedef struct WorldHooks {
     /* The LoadGame teardown/frame hooks (LoadGameHooks @ pufo_save.h). */
     void (*pfnRenderFrame)(void *pUser);
     void (*pfnStartUiShutdown)(void *pUser);
+    /* OptionsScreen_ReturnToTitle's tail callee (GameUI_InitStartup @ 0x38a28, the store at 0x6B490):
+     * the startup-screen owner supplies it, because the menu controls, the font and the option block
+     * are its objects (Part 102). The quit page's Да reaches it through the world's own thunk. */
+    i32 (*pfnInitStartupUi)(void *pUser);
+    /* szAppDir @ 0x1883b0, the save-file directory the caller owns. The options save/load rows hand it
+     * to World_SaveSlot / World_LoadSlot, the same string App_HookSaveGame uses (Part 102). */
+    const char *pszSaveDir;
     /* GX_Present @ 0x27788, the tail Render_Frame reaches at 0x22600 (Part 63). The geoscape branch
      * never gets here -- Geoscape_Draw presents itself (0x22328) -- so only the tactical seam uses
      * this hook. */

@@ -21181,3 +21181,44 @@ because some frames of an animated row are blanks. Frames `geoscape_ufo_enroute`
 the flown cell, the speed panel live at 3600) and `geoscape_terror_site` (the card "База пришельцев 1" over
 the site glyph, ОК armed, the clock held). IDB comments at 0x7e46c, 0x7e404, 0x7eb2c, 0x835f4 and 0x809c0
 (the LABEL_84-vs-accumulator clarification), idb_save.
+
+
+### The options screen answers the player: the save row writes a slot, the load row reads it back, and the quit page's Да ends the geoscape run (Part 102)
+
+The fourteen slot handlers were ported and gated but the shell never used them: Options_BindSlotRows
+(0x6B4B4..0x6B4FC) installed NULL thunks on the seven rows. The live half is now World_OptionsSaveSlotRow /
+World_OptionsLoadSlotRow in pufo_world.c with fourteen no-argument thunks -- a faithful shape, because the
+original really has fourteen thunks 0x6af80..0x6b404 that differ only by their hardcoded slot. Each mirror
+carries its original's stores: 0x6AF90 list mode 4 while the file is written, 0x6AF98 SaveGame -- this port's
+SaveGame driver is World_SaveSlot, given szAppDir @ 0x1883b0 through the new WorldHooks.pszSaveDir -- 0x6AFA4
+tab clear, 0x6AFAC mode 1, 0x6AFB8 tail Geoscape_CloseUI over the world closeEnv (case 18 with the tab already
+0 reaches the teardown and screen 0); the load side 0x6B1A4 / 0x6B1B0 / 0x6B1B8 / 0x6B1C4 (the controls byte up
+so the Init at 0x6B1C8 takes its teardown half 0x6BE84 -> 0x6C0FC), 0x6B1D4 LoadGame over the slot as
+World_LoadSlot, and the 0x6B1DC LOW-byte test on the result. Live (test_geoscapeframe 102.1 / 102.2, every
+press a real pen press -- the tab-1/2 press arm walks all seven rows at 0x89210 / 0x89270): the save page
+arrives (tab 1, rows re-centred at 40 + 22 * i, cancel at 215), the slot-0 press writes sav0.sav -- deleted
+before the press, so the file's appearance is the press's doing -- and the load row press, after the fixture
+falsified nFunds by 1000, brings back the saved funds, bases, soldiers, craft and all seven strateg entries.
+The load is proven, not assumed.
+
+The quit page. OptionsScreen_ReturnToTitle @ 0x6b46c has exactly one installer -- OptionsScreen_Init (address
+load 0x6BF24, ctlB store 0x6BF48); OptionsScreen_Open seats only SaveAudioSettings on ctlA (0x6D244). The
+shell's thunk supplies the three callees: the close at 0x6B480 over closeEnv, the free-all at 0x6B488 with
+mode 1 -- the same GeoscapeUi_FreeAll the bankruptcy tails use: the soldier/base/craft records are freed and
+nulled (0x87114..0x871C8) and the strateg list is PtrArray_DeleteAll'd (0x87208) -- and the startup tail at
+0x6B490, which the menu owner answers through the new WorldHooks.pfnInitStartupUi seam (App_InitStartupUiThunk
+-> App_InitStartupUi, the GameUI_InitStartup @ 0x38a28 bring-up, with the world's nUiScreen copy re-seeded to
+17 as the startup arm does). 102.3 presses Да live (the tab-3 arm hit-tests ctlA then ctlB, 0x891C8): tab 0
+first (0x6B478), the teardown close (screen 0, 0x6C0FC), bGeoscapeUi 0 (0x86D34), the strateg list empty, the
+soldier records nulled, the startup tail fired exactly once. Frames options_save_tab (the "Выбрать запись"
+page: seven labelled slot rows + Отмена), options_load_tab ("Выбрать загрузку") and options_quit_yes
+("Вы хотите выйти из игры", Да seated at 120 and Нет at 142 by 0x6B68C / 0x6B69C) reviewed at native scale.
+
+And a misread died with this part. The note "Ui_CloseScreen18 hands gUiRootPanel.anLineAux[119] to its
+OpenWithSound tail as the mode" -- the reason root control [9] (0x18651C) had stayed a no-op -- is not what the
+function does: the tail at 0x84EF4 carries a LITERAL, MOV R1,#0xFFFFFFFF at 0x84EC8, and
+OptionsScreen_OpenWithSound @ 0x6dd04 saves that R1 at 0x6DD08 and never reads the first argument. Nothing ever
+wrote the scratch word, so GeoscapeScreenState.nLineAux119 is deleted and test_baseui now asserts the -1.
+0x18651C (written at 0x865c0 / 0x86638) runs World_OptionsMenuCloseClick live. IDB comments at 0x6af80, 0x6b194,
+0x6b46c, 0x84ecc, 0x6dd04 and 0x18651C; idb_save. Six gates green: 62/62 tests both configs, 19,782 checks,
+coverage 972/1103 unchanged, the three new frames committed.

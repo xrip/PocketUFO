@@ -138,12 +138,12 @@ static void TestGeoscapeScreens(void)
 
     g_nSampleCount = 0;
     g_nOptionsOpen = 0;
-    st.nLineAux119 = 77;
     Ui_CloseScreen18(&st, &h);
     CheckEqI32(g_nSamples[0], 17, "  close 18 plays sample 17");
     CheckEqI32(st.nGeoscapeScreen, 18, "  close 18 also sets id 18");
     CheckEqI32(g_nOptionsOpen, 1, "  close 18 opens options");
-    CheckEqI32(g_nOptionsOpenArg, 77, "  options arg is anLineAux[119]");
+    CheckEqI32(g_nOptionsOpenArg, -1, "  the mode is the literal -1 (0x84EC8 MOV R1,#0xFFFFFFFF; "
+                                      "0x6DD08 saves it and never reads the first argument)");
 
     g_nSampleCount = 0;
     g_nFundingOpen = 0;

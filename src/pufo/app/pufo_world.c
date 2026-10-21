@@ -1679,6 +1679,69 @@ static void World_OptionsVolumeTab(void)
     }
 }
 
+/* SaveGame_Slot0..6_CloseUI @ 0x6af80..0x6b148, over the shell. Every original thunk is the same five
+ * stores around SaveGame(MainMenu_pSlotCtx @ 0x156938, slot): list mode 4 while the file is written
+ * (0x6AF90), the save itself (0x6AF98), the tab-byte clear (0x6AFA4), list mode 1 (0x6AFAC), and the
+ * tail Geoscape_CloseUI(&0x1864F8) (0x6AFB8). "The caller opens the slot file" is World_SaveSlot in
+ * this port -- the same SaveGame driver App_HookSaveGame runs, with szAppDir @ 0x1883b0 handed in as
+ * WorldHooks.pszSaveDir. The engine's SaveGame_Slot_CloseUI stays the unit-gated mirror (test_save);
+ * this is the live half. */
+static void World_OptionsSaveSlotRow(i32 nSlot)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL || pW->pFrameHooks == NULL || pW->pFrameHooks->pszSaveDir == NULL) {
+        return;
+    }
+    pW->nListMode = PUFO_MAINMENU_MODE_SAVING;                      /* 0x6AF90: no rows while writing */
+    (void)World_SaveSlot(pW, pW->pFrameHooks->pszSaveDir, nSlot, pW->pFrameHooks); /* 0x6AF98 */
+    pW->abOptionsScratch[0] = 0;                                    /* 0x6AFA4 */
+    pW->nListMode = PUFO_MAINMENU_MODE_SLOTCLICK;                   /* 0x6AFAC */
+    Geoscape_CloseUI(&pW->closeEnv);                                /* 0x6AFB8, the tail call: case 18
+                                                                     * tears the options UI down through
+                                                                     * Options_SaveAudioSettings (tab is
+                                                                     * already 0) and lands on screen 0 */
+}
+
+/* LoadGame_Slot0..6_InitOptions @ 0x6b194..0x6b404: clear the tab (0x6B1A4), write screen 0 (0x6B1B0),
+ * list mode 3 (0x6B1B8), raise the controls byte (0x6B1C4) so OptionsScreen_Init (0x6B1C8) takes its
+ * teardown half (0x6BE84 -> 0x6C0FC), LoadGame over the slot (0x6B1D4), and the low-byte test at
+ * 0x6B1DC puts list mode back to 1. */
+static void World_OptionsLoadSlotRow(i32 nSlot)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    i32 nRet;
+
+    if (pW == NULL || pW->pFrameHooks == NULL || pW->pFrameHooks->pszSaveDir == NULL) {
+        return;
+    }
+    pW->abOptionsScratch[0] = 0;                                    /* 0x6B1A4 */
+    pW->screen.nGeoscapeScreen = 0;                                 /* 0x6B1B0 */
+    pW->nListMode = PUFO_MAINMENU_MODE_LOADING;                     /* 0x6B1B8 */
+    pW->abOptionsScratch[4] = 1;                                    /* 0x6B1C4 */
+    OptionsScreen_Init(&pW->options.init);                          /* 0x6B1C8 */
+    nRet = World_LoadSlot(pW, pW->pFrameHooks->pszSaveDir, nSlot, pW->pAssets, pW->pFont,
+                          pW->pOptions, pW->pFrameHooks);           /* 0x6B1D4 */
+    if (((u8)nRet) == 0) {                                          /* 0x6B1DC: the test is on the LOW byte */
+        pW->nListMode = PUFO_MAINMENU_MODE_SLOTCLICK;               /* 0x6B1E0 */
+    }
+}
+
+static void World_OptionsSaveSlot0(void) { World_OptionsSaveSlotRow(0); } /* 0x6af80 */
+static void World_OptionsSaveSlot1(void) { World_OptionsSaveSlotRow(1); } /* 0x6afcc */
+static void World_OptionsSaveSlot2(void) { World_OptionsSaveSlotRow(2); } /* 0x6b018 */
+static void World_OptionsSaveSlot3(void) { World_OptionsSaveSlotRow(3); } /* 0x6b064 */
+static void World_OptionsSaveSlot4(void) { World_OptionsSaveSlotRow(4); } /* 0x6b0b0 */
+static void World_OptionsSaveSlot5(void) { World_OptionsSaveSlotRow(5); } /* 0x6b0fc */
+static void World_OptionsSaveSlot6(void) { World_OptionsSaveSlotRow(6); } /* 0x6b148 */
+static void World_OptionsLoadSlot0(void) { World_OptionsLoadSlotRow(0); } /* 0x6b194 */
+static void World_OptionsLoadSlot1(void) { World_OptionsLoadSlotRow(1); } /* 0x6b1fc */
+static void World_OptionsLoadSlot2(void) { World_OptionsLoadSlotRow(2); } /* 0x6b264 */
+static void World_OptionsLoadSlot3(void) { World_OptionsLoadSlotRow(3); } /* 0x6b2cc */
+static void World_OptionsLoadSlot4(void) { World_OptionsLoadSlotRow(4); } /* 0x6b334 */
+static void World_OptionsLoadSlot5(void) { World_OptionsLoadSlotRow(5); } /* 0x6b39c */
+static void World_OptionsLoadSlot6(void) { World_OptionsLoadSlotRow(6); } /* 0x6b404 */
+
 static void World_OptionsCancelClick(void)
 {
     if (g_pActiveWorld != NULL) {
@@ -1803,6 +1866,20 @@ static void World_OptionsMenuClick(void)
 
     if (pW != NULL) {
         Ui_OpenScreen18(&pW->screen, &pW->options.screenHooks); /* 0x84e9c */
+    }
+}
+
+/* Root control [9] (the dword at 0x18651C, the handler Geoscape_InitUI installs at 0x865c0 and 0x86638):
+ * the options-exit hotspot. Ui_CloseScreen18 @ 0x84ecc plays sample 17, re-writes screen 18, and
+ * tail-calls OptionsScreen_OpenWithSound with the mode LITERAL -1 (0x84EC8 MOV R1,#0xFFFFFFFF) -- the
+ * old "anLineAux[119] has no writer" note was a misread of the function, re-read in Part 102. The
+ * existing pfnOptionsOpenWithSound thunk runs the callee. */
+static void World_OptionsMenuCloseClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        Ui_CloseScreen18(&pW->screen, &pW->options.screenHooks); /* 0x84ecc */
     }
 }
 
@@ -2323,10 +2400,11 @@ static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
     pEnv->apfnRootClick[6] = World_SpeedIdx4Click;
     pEnv->apfnRootClick[7] = World_SpeedIdx5Click;
     /* Root control [8] -- the handler word at 0x186518, installed by Geoscape_InitUI at 0x86590 -- is the
-     * geoscape's options hotspot: Ui_OpenScreen18 @ 0x84e9c. Slot [9] (0x18651C, Ui_CloseScreen18) stays
-     * a no-op: its OpenWithSound tail reaches the overlay toggle through gUiRootPanel.anLineAux[119],
-     * which has no shell owner yet (recorded in PLAN). */
+     * geoscape's options hotspot: Ui_OpenScreen18 @ 0x84e9c. Slot [9] (0x18651C, the STRs at 0x865c0 and
+     * 0x86638) is the exit hotspot: Ui_CloseScreen18 @ 0x84ecc, whose OpenWithSound tail carries the
+     * literal mode -1 (Part 102 re-read; the former "anLineAux[119]" note was wrong). */
     pEnv->apfnRootClick[8] = World_OptionsMenuClick;
+    pEnv->apfnRootClick[9] = World_OptionsMenuCloseClick;
     /* Root control [10] (the dword at 0x186520, the handler installed at 0x865AC) is the geoscape's
      * build-mode widget: Base_EnterBuildMode @ 0x84e20. Slots [11] (0x186524, Ui_OpenBaseInfo) and
      * [12] (0x186528, Ui_OpenFunding) stay no-ops: the funding screen's Init chain has no shell owner
@@ -5509,6 +5587,44 @@ static i32 World_MissionSeamInitMission(i32 nMode, void *pUser)
     return World_InitTactical((PufoWorldState *)pUser, nMode) ? 1 : 0;
 }
 
+/* OptionsScreen_ReturnToTitle @ 0x6b46c, the quit page's Да: OptionsScreen_Init installs the thunk on
+ * ctlB at 0x6BF2C. Its three callees are stores at 0x6B480 / 0x6B488 / 0x6B490. The close runs over the
+ * shell's closeEnv (screen is 18 while the menu is up, so case 18 tears the options UI down and lands on
+ * screen 0); the free-all is the mode-1 pass -- the same GeoscapeUi_FreeAll the bankruptcy tails use:
+ * widgets, fontSys, and with 1 the soldier/base/craft records (each nulled after free, the original's
+ * 0x87114..0x871C8 stores) and the strateg list; the startup tail belongs to the menu owner and reaches
+ * it through WorldHooks.pfnInitStartupUi (App_InitStartupUi in the shell, Part 102). */
+static void World_TitleReturnCloseUiThunk(void *pUser)
+{
+    Geoscape_CloseUI(&((PufoWorldState *)pUser)->closeEnv); /* 0x6B480 */
+}
+
+static i32 World_TitleReturnStartupThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->pFrameHooks != NULL && pW->pFrameHooks->pfnInitStartupUi != NULL) {
+        return pW->pFrameHooks->pfnInitStartupUi(pW); /* 0x6B490, the tail callee */
+    }
+    return 0;
+}
+
+static void World_OptionsReturnToTitleThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    TitleReturnHooks hooks;
+
+    if (pW == NULL) {
+        return;
+    }
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnCloseUi        = World_TitleReturnCloseUiThunk; /* 0x6B480 */
+    hooks.pfnFreeGeoscapeUi = World_MissionSeamFreeUi;       /* 0x6B488: the engine passes mode 1 */
+    hooks.pfnStartupUi      = World_TitleReturnStartupThunk; /* 0x6B490 */
+    hooks.pUser             = pW;
+    (void)OptionsScreen_ReturnToTitle(&pW->abOptionsScratch[0], &hooks);
+}
+
 static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
 {
     (void)bGoodEnd;
@@ -8529,10 +8645,25 @@ static void World_WireOptions(PufoWorldState *pW, const WorldHooks *pHooks)
         pO->tab.pfnFormatSlots = pHooks->pfnFormatSlotList; /* SaveSlot_FormatList @ 0x45904, 0x6B558 */
         pO->tab.pUser          = pHooks->pFormatSlotListUser;
     }
-    /* Recorded gap: the seven slot handlers (SaveGame_Slot0..6_CloseUI 0x6af80..0x6b148,
-     * LoadGame_Slot0..6_InitOptions 0x6b194..0x6b404) are ported and gated but reach SaveGame / LoadGame
-     * through a DatFile the caller opens, and the shell opens slot files only on its tact bank path
-     * (World_SaveSlot). They stay NULL, so a press on a slot row hits a cleared handler. */
+    /* SaveGame_Slot0..6_CloseUI 0x6af80..0x6b148 and LoadGame_Slot0..6_InitOptions 0x6b194..0x6b404
+     * (Part 102): the live half is the shell drivers above, World_OptionsSaveSlotRow /
+     * World_OptionsLoadSlotRow -- each thunk mirrors its original's own stores with the shell's
+     * World_SaveSlot / World_LoadSlot as the SaveGame / LoadGame call. Options_BindSlotRows installs
+     * them on the seven rows at 0x6B4B4..0x6B4FC. */
+    pO->tab.apfnSaveSlot[0] = World_OptionsSaveSlot0; /* 0x6af80 */
+    pO->tab.apfnSaveSlot[1] = World_OptionsSaveSlot1; /* 0x6afcc */
+    pO->tab.apfnSaveSlot[2] = World_OptionsSaveSlot2; /* 0x6b018 */
+    pO->tab.apfnSaveSlot[3] = World_OptionsSaveSlot3; /* 0x6b064 */
+    pO->tab.apfnSaveSlot[4] = World_OptionsSaveSlot4; /* 0x6b0b0 */
+    pO->tab.apfnSaveSlot[5] = World_OptionsSaveSlot5; /* 0x6b0fc */
+    pO->tab.apfnSaveSlot[6] = World_OptionsSaveSlot6; /* 0x6b148 */
+    pO->tab.apfnLoadSlot[0] = World_OptionsLoadSlot0; /* 0x6b194 */
+    pO->tab.apfnLoadSlot[1] = World_OptionsLoadSlot1; /* 0x6b1fc */
+    pO->tab.apfnLoadSlot[2] = World_OptionsLoadSlot2; /* 0x6b264 */
+    pO->tab.apfnLoadSlot[3] = World_OptionsLoadSlot3; /* 0x6b2cc */
+    pO->tab.apfnLoadSlot[4] = World_OptionsLoadSlot4; /* 0x6b334 */
+    pO->tab.apfnLoadSlot[5] = World_OptionsLoadSlot5; /* 0x6b39c */
+    pO->tab.apfnLoadSlot[6] = World_OptionsLoadSlot6; /* 0x6b404 */
 
     pO->init.pCtl             = &pO->ctl;
     pO->init.pVolEnv          = &pO->vol;
@@ -8650,10 +8781,12 @@ static void World_WireOptions(PufoWorldState *pW, const WorldHooks *pHooks)
         pO->draw.pfnCtlBlitEx   = pHooks->pHit->pfnBlitEx;
         pO->draw.pCtlBlitUser   = pHooks->pHit->pUser;
     }
-    /* OptionsScreen_ReturnToTitle's three callees -- Geoscape_CloseUI (0x6B480), GeoscapeUi_FreeAll
-     * (0x6B488) and GameUI_InitStartup (0x6B490) -- belong to the startup-screen owner in pufo_app.c,
-     * so ctlB keeps no handler here: the quit page's Да answers nothing yet. Recorded in PLAN. */
-    pO->init.pfnReturnToTitle = NULL;
+    /* OptionsScreen_ReturnToTitle @ 0x6b46c, the quit page's Да: OptionsScreen_Init is its only installer
+     * (the address load at 0x6BF24, the store at 0x6BF48; OptionsScreen_Open seats only SaveAudioSettings
+     * on ctlA at 0x6D244). Its three callees are Geoscape_CloseUI
+     * (0x6B480) and GeoscapeUi_FreeAll(1) (0x6B488), both over the world, and the startup tail
+     * (0x6B490), which the menu owner answers through WorldHooks.pfnInitStartupUi (Part 102). */
+    pO->init.pfnReturnToTitle = World_OptionsReturnToTitleThunk;
 }
 
 void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)

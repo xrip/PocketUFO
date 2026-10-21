@@ -88,10 +88,13 @@ i32 BaseUi_PlaySample7Cache160C74(ScreenScratch *pScratch, i32 nUnk3032,
  *
  * Each plays sample 17, sets the geoscape screen id, then calls the matching
  * screen function. `Ui_CloseScreen18` sets the SAME id (18) as the open function
- * and passes the panel scratch value to the options screen. */
+ * and hands the options screen the LITERAL mode -1: 0x84EC8 is `MOV R1,#0xFFFFFFFF`
+ * before the tail call at 0x84EF4, and the callee (OptionsScreen_OpenWithSound
+ * 0x6dd04) stores that R1 and never reads the first argument (0x6DD08). Part 102
+ * re-read the function; the old "anLineAux[119]" reading was wrong, and no code
+ * ever wrote that scratch word. */
 typedef struct GeoscapeScreenState {
     i32 nGeoscapeScreen;   /* nGeoscapeScreen */
-    i32 nLineAux119;       /* gUiRootPanel.anLineAux[119], the options-screen arg */
 } GeoscapeScreenState;
 
 typedef struct GeoscapeScreenHooks {

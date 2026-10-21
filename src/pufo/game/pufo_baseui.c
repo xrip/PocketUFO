@@ -83,7 +83,9 @@ void Ui_OpenScreen18(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHo
     }
 }
 
-/* Ui_CloseScreen18 @ 0x84ecc. Note it also sets the screen id to 18. */
+/* Ui_CloseScreen18 @ 0x84ecc. Note it also sets the screen id to 18, and its OpenWithSound tail
+ * carries the mode as a literal: 0x84EC8 is `MOV R1,#0xFFFFFFFF`, the value the tail at 0x84EF4
+ * passes (Part 102 re-read of the function). */
 void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHooks)
 {
     if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
@@ -93,8 +95,7 @@ void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pH
         pState->nGeoscapeScreen = 18;
     }
     if (pHooks != NULL && pHooks->pfnOptionsOpenWithSound != NULL) {
-        pHooks->pfnOptionsOpenWithSound(pState != NULL ? pState->nLineAux119 : 0,
-                                        pHooks->pUser);
+        pHooks->pfnOptionsOpenWithSound(-1, pHooks->pUser); /* 0x84EC8 MOV R1,#0xFFFFFFFF */
     }
 }
 
