@@ -21070,3 +21070,60 @@ proves a wider box of that cell is item-free) and gains 32 changed pixels after 
 re-references 13 committed frames (10 geoscape map frames -- every diff is exactly a glyph box -- and 3 e2e
 frames, 32 pixels each) and adds the five new ones. IDB comments at 0x8c698, 0x822c4, 0x2cb9c, 0x7de14,
 0x83560, 0x8427c, 0x80684 and 0x80774, idb_save.
+
+### The descent offer decides both ways -- recall, re-order, and the urban assault (Part 100.5)
+
+100.4's arrival card (`StatusPanel_DrawDescentTarget @ 0x916a0`) offers the flag-21 line with two live
+controls, and section 100.5 spends its pen on both answers. Отмена is `Smap_ResolveInterceptUI @ 0x84964`:
+the head sets the tick to 5 s (0x84968) and clears bInterceptDone (0x84984); the line holds no flag 27,
+so the clear block (0x84A24..0x84A3C) drops 0x187090/0x18708C/0x187098 and the selection, the flag-21
+dismiss at 0x84A58 calls `Smap_DismissSelected @ 0x84428`, the unconditional Remove(0) at 0x84A80 (100.1's
+recorded original defect) finds an empty list, and 0x84A84 restarts the clock. DismissSelected is a
+RECALL, not a park: its line slot 0 goes to `Ship_RetargetTravel @ 0x5a484`, which clears the entry timer
+(0x5A524), runs `StrategEntry_InitTravel` with bA0 bB1 bC1 -- the entry lights again (0x7F638) with the
+landing byte nMissionSub 1 (0x7F648) toward the home base cell (0x5A570 reads BaseRec +8/+12) -- and
+clears bIntercepting (0x5A59C). The mission header never moves (mode 0, the standing type) and the disc
+survives: dismiss only drops the card line, `StrategList_RemoveAt` at 0x83F7C is ОК's alone.
+
+ОК is `Smap_BeginCraftSelect @ 0x838dc`, and the order behind it ran through its own re-order first
+(the section-13 idiom): `Ship_LaunchIntercept @ 0x5a64c` re-arms the recall (hot 0x5A790, off base
+0x5A7A4, intercepting 0x5A7AC, entry dark again 0x7F638, timer restart 0x5A67C, leg start at the CURRENT
+cell 0x5A6A4 -- the 0x5A718 snap needs bAtBase) and the short leg re-fires the type-3 arrival (0x80684)
+with a fresh flag-21 offer. The press itself then walks the function: the visibility pass
+(0x838FC..0x83988) parks every idle craft (hot 0 at 0x8393C, atBase 1 at 0x83950, entry hidden at
+0x83968 -- a hot craft off base passes the test at 0x83938 untouched); the selection pass (mode != 1)
+reads the card line's slots into 0x187054/0x159E74/Map_nCraftIndex (0x839CC..0x839DC) and 0x186BE4
+(0x839E4); the overlay read at the disc cell (10 < 0x32 through the zoom pads at 0x83B44) zeroes
+unk_128AD6 at 0x83B54; the marker's bRace 255 is outside the five race rows so the sprite set stands
+(0x83BB0..0x83C40); and the flag-21 arm (0x83C60 -> 0x83F28) writes the mode switch Отмена never made:
+type 5 (Urban), bMissionMode 3 (0x83F34), damage band 0 (0x83F44), terrain variant 0 (0x83F50), layer
+count from the selected craft's class (0x83F68), and the disc consumed from the list (0x83F7C). The tail
+at 0x83A0C dismisses the offer line (0x83AA0 -- which recalls the craft once more, bIntercepting 0 again
+through 0x84448), clears the selection (0x83AB4), frees the geoscape UI (0x83ABC, the write at 0x86D34
+that opens the tick's tactical branch) and hand-over-runs `Tact_InitMission(0)` at 0x83AC4.
+
+Two things in the hand-over proved themselves against the IDB reading. First, `Tact_SetupCraftCargo`'s
+at-home re-arm loop (0x39108..0x39138, hot = 1 for every craft whose bHomeBase equals nBaseAtClass+8 ==
+nCraftHomeBase and whose bAtBase stands) belongs ONLY to the base-assault arm: the head gate at 0x38FB8
+`CMP Map_nMissionType,#3` sends every other type -- urban 5 included -- to the craft-cargo copy arm at
+0x38FC0 (uRecovScore = aItemQty[Map_nCraftIndex] for every object), so the parked craft measured hot 0
+after an urban hand-over; the re-arm is a type-3 fact (the 0x840FC arm is the only writer of that type).
+Second, the Cydonia briefing gate (0x3D28C, 0x3D29C) tests `Map_bSpawnAlt` AND the init ARGUMENT's mode
+-- the 0x83AC4 call passes 0, so Map_bMissionMode 3 does NOT close the gate: Map_nUiScreen becomes 20
+(0x3D2B0), the pad is allocated and loaded (0x3D2C0..0x3D2E0), and apUiSlotsA[11] saves 1 -- because the
+init's deploy walk opens the tactical inventory at 0x3D0B8 before the gate, and that 1 is what 0x3D29C
+stores (the 0x3C67C prologue clear only holds on paths that never reach 0x3D0B8). `World_MissionCancelEnd`'s
+0x14/0x15 arm (0x16294) restores that saved 1: closing the briefing lands on the open inventory, and the
+shipped close is the tactical confirm -- MenuBtn_Confirm(16) into Input_OnConfirm's screen-1 arm
+(0x160FC plays 16, 0x16104 calls) runs `Inv_CloseAndCommit @ 0x15a48`: snapshot the loadouts, clear the
+Map+0x01 commit flag (0x15C68, it was up since 0x3D08C), run `Tact_DeployTeamAndHwps @ 0x39980` (the 8
+soldiers the bring-up shared on one cell spread out through phase 3 at 0x39E9C) and clear the screen
+(0x15F34). The mission fielded 8 XCOM -- exactly the embarked crew (`Craft_CountSoldiersAboard`,
+Soldier.bUnk183) with 0 hardware deployed (Map_nDeployedHwps @ 0x15140 -- the base hardware lives only in
+the type-3 arm) -- against 20 aliens (0x1511F, 0x15124). The return arm is 100.1-era proven again:
+0x162BC Tact_Shutdown(0) + 0x162C8 InitUI(1), the root controls rebuilt, and the strateg list stands --
+the DeleteAll at 0x3E154 is never reached (Part 93) and the craft's own entry survives visible. Frames
+`tact_briefing_urban` (the cydonia pad with the mission text and "Удачи!"), `tact_mission_urban` (the
+isometric urban block with the spread squad, HUD and crosshair), `geoscape_after_mission` (rebuilt root
+panel, the craft glyph back on the map, no disc). IDB comments at 0x39138 (the gate correction), 0x38fb8,
+0x83f28, 0x3d0b8 and 0x16294, idb_save.

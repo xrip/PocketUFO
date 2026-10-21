@@ -4186,9 +4186,23 @@ unchanged; 18267 checks.
   runs `Ship_LaunchIntercept`, the 92-cell leg closes in 392 dSpeed*0.02 passes, and the type-3 arrival
   (0x80684, clears nothing) posts the flag-21 descent offer with ОК on pfnBeginCraftSelect (0x917F8) --
   100.5's door. Frames `crashdisk_map/offer/dispatched/enroute/arrival`; 13 committed frames re-referenced
-  (10 geoscape + 3 e2e, every diff exactly a glyph box). Remaining stages in `test_geoscapeframe`: 100.5
-  battle setup with mode switching (through the flag-21 offer), 100.6 UFO motion and terror-site visibility
-  on a frame; then the six gates, the parity rows, commit.
+  (10 geoscape + 3 e2e, every diff exactly a glyph box). Part 100.5 done: both flag-21 answers run live --
+  Отмена (`Smap_ResolveInterceptUI @ 0x84964`: clear block 0x84A24..0x84A3C, dismiss 0x84A58, unconditional
+  Remove(0) 0x84A80, unpause 0x84A84; `Smap_DismissSelected @ 0x84428` is a recall through
+  `Ship_RetargetTravel @ 0x5a484` -- entry lit 0x7F638, nMissionSub 1 0x7F648, home cell 0x5A570,
+  bIntercepting 0 0x5A59C; header and disc untouched, no mission) and ОК (`Smap_BeginCraftSelect @ 0x838dc`
+  after a `Ship_LaunchIntercept @ 0x5a64c` re-order): park pass 0x8393C/0x83950/0x83968, slot reads
+  0x839CC..0x839E4, overlay gate 0x83B54, the flag-21 arm 0x83C60/0x83F28/0x83F34 makes mode 0 -> 3 and
+  type -> 5 (Urban) and consumes the disc (0x83F7C), tail 0x83A0C ends on `Tact_InitMission(0)` 0x83AC4.
+  The cargo re-arm (0x39108..0x39138) is type-3-only (gate 0x38FB8 `CMP #3`) -- an urban run leaves parked
+  craft cold (IDB note corrected). The briefing gate (0x3D28C/0x3D29C) tests the init ARGUMENT (0), not the
+  Map mode: Cydonia briefing stands (screen 20, slot 11 saves the 1 left by the init's own
+  Inv_OpenScreen 0x3D0B8), cancel 0x16294 restores that 1, and MenuBtn_Confirm's screen-1 arm
+  (0x160FC/0x16104 -> `Inv_CloseAndCommit @ 0x15a48`) commits the deploy (0x39980, spread at 0x39E9C) and
+  clears the screen (0x15F34); 8 XCOM == the embarked crew vs 20 aliens, 0 hwps. Escape rebuilds the map
+  with the list standing (0x3E154 unreached, Part 93). Frames `tact_briefing_urban`, `tact_mission_urban`,
+  `geoscape_after_mission`. Remaining stages in `test_geoscapeframe`: 100.6 UFO motion and terror-site
+  visibility on a frame; then the six gates, the parity rows, commit.
 
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has

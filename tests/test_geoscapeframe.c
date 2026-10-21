@@ -10557,6 +10557,377 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         }
     }
 
+    /* ---- section 100.5: the descent offer decides -- Отмена recalls the craft, ОК opens the urban
+     *      assault with the mission mode switched (Smap_BeginCraftSelect @ 0x838dc) -------------
+     *
+     * The standing state is 100.4's arrival: the flag-21 line (slots ship, disc), the clock paused,
+     * the card installed with ОК = pfnBeginCraftSelect on *pGeoscapeCtlB at y 105 (0x917F8, 0x9180C)
+     * and Отмена = pfnResolveInterceptUI on *pGeoscapeCtlA at y 128 (0x918B0, 0x918C4). Both card
+     * answers run here, and the mission header shows what only the ОК answer changes.
+     *
+     * A. Отмена -- Smap_ResolveInterceptUI @ 0x84964. Its head resets the tick to 5 s (0x84968) and
+     *    clears bInterceptDone (0x84984); the flag is 21, so neither the flag-27 retarget (0x849AC)
+     *    nor the flag-13 insert (0x849DC) runs; the clear block drops 0x187090/18708C/selection/
+     *    0x187098 (0x84A24..0x84A3C); the flag-21 arm at 0x84A58 runs Smap_DismissSelected --
+     *    Ship_RetargetTravel @ 0x5a484 sends the craft to apBases[bHomeBase] with bB 1 (the entry
+     *    goes VISIBLE again, 0x7F638, the opposite of the launch's bB 0) with nMissionSub 1
+     *    (0x7F648), timer 0 (0x5A524), and the intercept byte cleared (0x5A59C); then the ORIGINAL
+     *    BUG at 0x84A80 -- the unconditional Remove(0) -- and the unpause-if-empty (0x84A84). The
+     *    mission header does not move and no mission starts.
+     * B. The re-order runs through the game's own Ship_LaunchIntercept @ 0x5a64c on the shell's env,
+     *    the recorded section-13 precedent: the card chain that reaches the same call (0x8427C) was
+     *    proven live in 100.4, so 100.5 spends its pen on the two card answers. With bAtBase 0 the
+     *    leg leaves from the entry's current cell (0x5A6A4 -- the 0x5A718 base snap needs bAtBase),
+     *    which is the arrival cell, two cells from the disc: the pulse lights the entry (0x955C0) and
+     *    the very next event passes re-run the arrival arm at 0x80684.
+     * C. ОК -- the press arm's flag-21/22/23 case (0x87658, proven pressing this card in section 13)
+     *    arms the launch control, the release (0x89AA0) clicks it, and the thunk runs
+     *    Smap_BeginCraftSelect @ 0x838dc on the shell's craft-select env. The visibility pass
+     *    (0x838FC..0x83988) parks the two parked craft (hot 0 at 0x8393C, at base at 0x83950, entry
+     *    hidden at 0x83968) and passes the chasing one through. The selection pass (mode != 1,
+     *    0x839A4) republishes the line's slots into 0x187054/0x159E74/Map_nCraftIndex (0x839CC..
+     *    0x839DC) and 0x186BE4 (0x839E4); the overlay at the target decides unk_128AD6 (0x83B54);
+     *    the marker's bRace 255 keeps the sprite set (0x83BB0..0x83C40). The flag-21 arm (0x83F1C)
+     *    switches the mission: Map_nMissionType = Urban 5 (0x83F28), Map_bMissionMode = 3 (0x83F34),
+     *    the geometry trio 0/0/craft class+1 (0x83F44..0x83F68), and the disc is REMOVED from the
+     *    list (StrategList_RemoveAt 0x83F7C) -- the offer consumed its site. The mode gate falls to
+     *    the tail (0x84004, 0x83A0C): Smap_DismissSelected (0x83AA0), the selection clear (0x83AB4),
+     *    GeoscapeUi_FreeAll(0) (0x83ABC) and Tact_InitMission(0) (0x83AC4) over the shell's
+     *    World_InitTactical. The briefing gate (spawnAlt AND the INIT-ARGUMENT mode 0, 0x3D28C/0x3D29C)
+     *    tests that argument, not Map_bMissionMode 3 -- measured: the Cydonia briefing DOES stand
+     *    (screen 20, slot 11 saves the 1 the init's own Inv_OpenScreen 0x3D0B8 left); cancel (0x16294)
+     *    restores that 1 and the tactical confirm arm (0x160FC/0x16104, Inv_CloseAndCommit 0x15a48)
+     *    commits the deploy (0x39980, spread 0x39E9C) and clears the screen (0x15F34); the frame dumps
+     *    the battlefield. The escape seam (0x162BC/0x162C8) then returns to the geoscape -- measured:
+     *    the list STANDS (Tact_Shutdown(0) never reaches the DeleteAll at 0x3E154, Part 93) and the
+     *    craft's own entry survives visible. */
+    {
+        Ship      *pCraft = NULL;
+        UiControl *pCtlOk     = g_world.ui.apCtl[GEOUI_CTL_186BB0];
+        UiControl *pCtlCancel = g_world.ui.apCtl[GEOUI_CTL_186BB4];
+        i32 nShipIdx = -1, nMarkIdx = -1, nDiskIdx = -1;
+        i32 nModeBefore = g_world.bMapMissionMode;
+        i32 nTypeBefore = g_world.nMapMissionType;
+        i32 nTickBefore = g_world.geo.world.nTickSeconds;
+        i32 abSpriteBefore[4];
+        i32 nOverlayAtDisc;
+        i32 nSoldiers = -1;
+        i32 nCountBeforePress;
+        i32 nPasses = 0, nArriveFlag = -1, i;
+        const i32 nPassMax = 400;
+
+        printf("part 100.5: the descent offer decides -- Отмена, re-order, ОК into the urban assault\n");
+
+        /* The standing state, read off the live cells. */
+        CheckEqI32(UiLineList_GetFlag(&g_world.msgLines, 0), 21,
+                   "100.4's arrival left the flag-21 line standing (0x80774)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "and the arrival's pause by store (0x80684)");
+        Check(pCtlOk != NULL && pCtlCancel != NULL, "both card controls are live (0x186BB0, 0x186BB4)");
+        if (pCtlOk != NULL) {
+            Check(pCtlOk->pfnClick == g_world.frame.panel.pfnBeginCraftSelect
+                      && pCtlOk->y == PUFO_STATUS_SITECTL_Y_CANCEL,
+                  "ОК carries the craft-select handler at y 105 (0x917F8, 0x9180C)");
+        }
+        if (pCtlCancel != NULL) {
+            Check(pCtlCancel->pfnClick == g_world.frame.panel.pfnResolveInterceptUI
+                      && pCtlCancel->y == PUFO_STATUS_SITECTL_Y_OK2,
+                  "and Отмена carries the resolve handler at y 128 (0x918B0, 0x918C4)");
+        }
+
+        /* The chasing craft is 100.4's -- its target byte still names the disc. */
+        for (i = 0; i < (i32)g_world.bCraftCount; ++i) {
+            Ship *pS = g_world.apCraft[i];
+            if (pS != NULL && pS->bIntercepting != 0) {
+                nShipIdx = i;
+                pCraft   = pS;
+                break;
+            }
+        }
+        Check(nShipIdx >= 0 && pCraft != NULL && pCraft->bAtBase == 0 && pCraft->bWeaponsHot == 1,
+              "exactly one craft is mid-intercept, hot and off base (0x5A790, 0x5A7A4, 0x5A7AC)");
+        if (pCraft != NULL) {
+            nDiskIdx = (i32)pCraft->nStrategIdx; /* 0x5A79C */
+            nMarkIdx = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+        }
+        {
+            const StrategItem *const pDisk =
+                (nDiskIdx >= 0) ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx) : NULL;
+            Check(pDisk != NULL && pDisk->nType == 3 && pDisk->bActive == 1,
+                  "the disc stands at the craft's target index (0x5A79C names 0x835B4's item)");
+            Check(nMarkIdx >= 0, "and the marker entry is on the list (0x2CB90's spawn entry)");
+        }
+        memcpy(abSpriteBefore, g_world.abMapSpriteSet, 4);
+        nSoldiers = Craft_CountSoldiersAboard(g_world.apSoldiers, g_world.nSoldierCount, nShipIdx);
+        nOverlayAtDisc = -1;
+        if (pCraft != NULL) {
+            const StrategItem *const pDisk =
+                (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx);
+            const PadImage *aOv[3] = {
+                g_world.ui.apPad[GEOUI_PAD_186C28], g_world.ui.apPad[GEOUI_PAD_186C1C],
+                g_world.ui.apPad[GEOUI_PAD_186BB8] /* the three zoom overlays, 0x186C28/1C/18 */
+            };
+            if (pDisk != NULL) {
+                nOverlayAtDisc = Smap_GetOverlayAtMode(&g_world.view, aOv,
+                                                       g_world.frame.g.nOverlayOriginX,
+                                                       pDisk->nX, pDisk->nY);
+            }
+        }
+        printf("  before the answers: mode %d, type %d, tick %d, overlay at the disc %d, soldiers aboard %d\n",
+               nModeBefore, nTypeBefore, nTickBefore, nOverlayAtDisc, nSoldiers);
+        Check(nSoldiers > 0, "the craft carries soldiers -- why the arrival card put BeginCraftSelect on ОК (CraftSelectGate 0x91868)");
+
+        /* A. Отмена. */
+        PressCtl(pCtlCancel);
+        CheckEqI32(g_world.geo.world.nTickSeconds, 5,
+                   "the resolve head reset the tick to 5 s (0x84968)");
+        CheckEqI32(g_world.bInterceptDone, 0, "and cleared bInterceptDone (0x84984)");
+        CheckEqI32(g_world.msgLines.nLineCount, 0,
+                   "the dismiss dropped the card line and the unconditional Remove(0) found nothing to eat (0x84454, 0x84A80)");
+        CheckEqI32(g_world.geo.time.bPaused, 0,
+                   "an empty panel unpaused the clock (0x84A84)");
+        Check(g_world.bFlag187090 == 0 && g_world.bFlag18708C == 0 && g_world.bFlag187098 == 0
+                  && g_world.bMapSelectionFlag == 0,
+              "the clear block ran before the dismiss (0x84A24..0x84A3C)");
+        if (pCraft != NULL) {
+            CheckEqI32((i32)pCraft->bIntercepting, 0, "the retarget cleared the intercept byte (0x5A59C)");
+            Check(pCraft->bAtBase == 0 && pCraft->bWeaponsHot == 1,
+                  "a recall is not a park: only the visibility pass touches those bytes (0x8393C), and it skipped a hot craft off base");
+            {
+                StrategItem *const pMark = (nMarkIdx >= 0)
+                                               ? (StrategItem *)PtrArray_Get(&g_world.strategList, nMarkIdx)
+                                               : NULL;
+                const BaseRec *const pHome = (pCraft->bHomeBase < PUFO_FAC_BASE_COUNT)
+                                                 ? g_world.apBases[pCraft->bHomeBase] : NULL;
+                Check(pMark != NULL && pMark->bVisible == 1 && pMark->nTimer == 0
+                          && (i32)pMark->nMissionSub == 1,
+                      "the homing leg lights the entry (0x7F638's bB 1), restarts the timer (0x5A524) and arms the landing byte nMissionSub 1 (0x7F648)");
+                Check(pMark != NULL && pHome != NULL && pMark->nDestX == pHome->nUnk8
+                          && pMark->nDestY == pHome->nUnk12,
+                      "and its destination is the home base cell (0x5A570 reads BaseRec +8/+12)");
+            }
+        }
+        {
+            const StrategItem *const pDisk =
+                (nDiskIdx >= 0) ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx) : NULL;
+            Check(pDisk != NULL && pDisk->nType == 3 && pDisk->bActive == 1,
+                  "the disc SURVIVED the recall -- only ОК consumes it (0x84A58 dismisses, 0x83F7C removes)");
+        }
+        Check(g_world.bMapMissionMode == nModeBefore && g_world.nMapMissionType == nTypeBefore,
+              "and the mission header did not move: Отмена writes nothing there");
+        Check(g_world.bTactLive == 0, "no mission started (0x83AC4 is the ОК tail's call, 0x83AC4)");
+
+        /* B. Re-order the same craft at the same disc, then the arrival again. */
+        {
+            const StrategItem *const pDisk =
+                (nDiskIdx >= 0) ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx) : NULL;
+            const i32 nLaunch = Ship_LaunchIntercept(&g_world.shipEnv, nShipIdx, nDiskIdx);
+            Check(nLaunch >= 0, "Ship_LaunchIntercept @ 0x5a64c took the order (the 0x8427C call is 100.4's, proven there)");
+            if (pDisk != NULL && pCraft != NULL) {
+                const StrategItem *const pMark =
+                    (nMarkIdx >= 0) ? (StrategItem *)PtrArray_Get(&g_world.strategList, nMarkIdx) : NULL;
+                Check(pMark != NULL && pMark->bVisible == 0 && pMark->nTimer == 0
+                          && pMark->nStartX == pMark->nX && pMark->nStartY == pMark->nY
+                          && (i32)pCraft->bIntercepting == 1 && (i32)pCraft->bWeaponsHot == 1
+                          && (i32)pCraft->bAtBase == 0,
+                      "the launch left the entry dark (0x7F638's bB 0), restarted the leg timer (0x5A67C), and left the leg at the CURRENT cell -- the 0x5A718 snap needs bAtBase, and this craft is mid-flight (0x5A6A4)");
+            }
+        }
+        World_PulseGeoscape(&g_world);
+        {
+            StrategItem *const pMark = (nMarkIdx >= 0)
+                                           ? (StrategItem *)PtrArray_Get(&g_world.strategList, nMarkIdx) : NULL;
+            Check(pMark != NULL && pMark->bVisible == 1,
+                  "the pulse lights the entry of the craft that is off base (0x955C0, 0x955C8)");
+        }
+        while (nPasses < nPassMax && nArriveFlag < 0) {
+            const StrategItem *const pDisk = (nDiskIdx >= 0)
+                                                 ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx)
+                                                 : NULL;
+            if (pDisk == NULL) {
+                printf("  pass %d: the disc is gone (0x7FD14 expiry)\n", nPasses);
+                break;
+            }
+            ++nPasses;
+            g_world.geoHooks.pfnProcessEvents(0, g_world.geoHooks.pUser);
+            if (g_world.msgLines.nLineCount > 0) {
+                const i32 nFlagNow = (i32)UiLineList_GetFlag(&g_world.msgLines, 0);
+                if (nFlagNow == 21 || nFlagNow == 13) {
+                    nArriveFlag = nFlagNow;
+                    break;
+                }
+                printf("  pass %d: stray line %d removed\n", nPasses, nFlagNow);
+                (void)UiLineList_Remove(&g_world.msgLines, 0);
+            }
+        }
+        CheckEqI32(nArriveFlag, 21,
+                   "the short leg re-arrived and the type-3 arm posted the offer again (0x80348, 0x80684, 0x80774)");
+        CheckEqI32(g_world.geo.time.bPaused, 1, "and paused by store (0x80684)");
+        if (nShipIdx >= 0 && nDiskIdx >= 0) {
+            CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), nShipIdx,
+                       "line 0 slot 0 names the ship (0x80774's a3)");
+            CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 1), nDiskIdx,
+                       "and slot 1 the disc (its a4)");
+        }
+        ClearSurface();
+        (void)DrawFrame();
+        Check(pCtlOk->pfnClick == g_world.frame.panel.pfnBeginCraftSelect
+                  && pCtlOk->y == PUFO_STATUS_SITECTL_Y_CANCEL,
+              "the rebuilt card seats the launch control again (0x917F8, 0x9180C)");
+
+        /* C. ОК -- the mode switch and the mission. */
+        nCountBeforePress = PtrArray_GetCount(&g_world.strategList);
+        i32 nDiskX = -1, nDiskY = -1;
+        {
+            const StrategItem *const pDisk =
+                (nDiskIdx >= 0) ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx) : NULL;
+            if (pDisk != NULL) { nDiskX = pDisk->nX; nDiskY = pDisk->nY; }
+        }
+        PressCtl(pCtlOk);
+
+        {
+            i32 bPark = 1;
+            for (i = 0; i < (i32)g_world.bCraftCount; ++i) {
+                const Ship *const pS = g_world.apCraft[i];
+                const i32 nOwnIdx = (pS != NULL) ? FindStrategById(&g_world.strategList, (i32)pS->bId) : -1;
+                const StrategItem *const pOwn = (nOwnIdx >= 0)
+                                                    ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nOwnIdx)
+                                                    : NULL;
+                /* Park (0x8393C/0x83950) then the cargo pass's at-home re-arm (0x39114..0x39138) --
+                 * but the re-arm loop sits in the base-assault arm the mission-type test selects
+                 * (0x38FB8 CMP Map_nMissionType,#3, BEQ 0x39044): an urban run (type 5) takes the
+                 * craft-cargo copy at 0x38FFC instead, so a parked craft STAYS cold here. The
+                 * re-arm chain is a type-3 fact (the 0x840FC assault arm writes that type). */
+                const i32 bWantHot = (pS != NULL && g_world.nMapMissionType == 3
+                                          && (i32)pS->bHomeBase == (i32)g_world.nCraftHomeBase
+                                          && pS->bAtBase != 0) ? 1 : 0;
+                if (pS == NULL || i == nShipIdx) {
+                    continue;
+                }
+                if (pS->bAtBase != 1 || pS->bWeaponsHot != bWantHot) { bPark = 0; }
+                if (pOwn != NULL && pOwn->bVisible != 0 && pOwn->nType == 1) { bPark = 0; }
+            }
+            Check(bPark, "the visibility pass parked every idle craft at base and hid its entry (0x8393C, 0x83950, 0x83968); the cargo pass's at-home re-arm (0x39114..0x39138) only runs in the type-3 base-assault arm (0x38FB8 CMP #3) this urban run never enters");
+            Check(pCraft->bWeaponsHot == 1 && pCraft->bAtBase == 0,
+                  "while the chasing one passed the pass untouched (0x83938's test) and the tail recalled it afterwards (0x83AA0)");
+        }
+        CheckEqI32(g_world.nSelectedShipIdx, nShipIdx, "the selection pass read line slot 0 into 0x187054 (0x839CC)");
+        CheckEqI32(g_world.nMsgShipIdx, nShipIdx, "  0x159E74 (0x839D0)");
+        CheckEqI32(g_world.nMapCraftIndex, nShipIdx, "  and Map_nCraftIndex (0x839DC)");
+        CheckEqI32(g_world.nSelectedStrategIdx, nDiskIdx, "line slot 1 into 0x186BE4 (0x839E4)");
+        Check((nOverlayAtDisc < 0x32) ? g_world.bMapUnk1511E == 0 : g_world.bMapUnk1511E == 1,
+              "unk_128AD6 answers the overlay read at the disc cell (0x83B54 read the three zoom pads at 0x83B44)");
+        Check(memcmp(abSpriteBefore, g_world.abMapSpriteSet, 4) == 0,
+              "the marker's bRace 255 is outside the five race rows, so the sprite set stands (0x83BB0..0x83C40)");
+
+        CheckEqI32(g_world.nMapMissionType, 5, "ОК switched the mission TYPE to Urban (0x83F28)");
+        CheckEqI32(g_world.bMapMissionMode, 3, "and the MODE to 3 (0x83F34) -- the switch Отмена never made");
+        CheckEqI32(g_world.bMapUnk15115, 0, "the damage band is cleared for an urban run (0x83F44)");
+        CheckEqI32(g_world.nMapTerrainVariant, 0, "  the terrain variant (0x83F50)");
+        CheckEqI32(g_world.nMapMapLayers, (i32)pCraft->bCraftType + 1,
+                   "  and the layer count comes off the selected craft's class (0x83F68)");
+        CheckEqI32(PtrArray_GetCount(&g_world.strategList), nCountBeforePress - 1,
+                   "the offer consumed its site: the disc is removed from the list (0x83F7C)");
+        {
+            i32 bGone = 1;
+            for (i = 0; i < PtrArray_GetCount(&g_world.strategList); ++i) {
+                const StrategItem *const pItem =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, i);
+                if (pItem != NULL && pItem->nType == 3 && pItem->bActive != 0
+                    && pItem->nX == nDiskX && pItem->nY == nDiskY) { bGone = 0; }
+            }
+            Check(bGone, "no active type-3 item stands at the disc's cell any more (0x83F7C removed it)");
+        }
+        Check(g_world.bMapSelectionFlag == 0, "the tail cleared the selection byte (0x83AB4)");
+        Check(g_world.bMapTickHold == 0 && g_world.bMapBattleEnded == 0,
+              "and never reached the bad-end pair -- that block is the mode-1 assault's (0x84238, 0x84240)");
+        Check(g_world.msgLines.nLineCount == 0,
+              "the tail's DismissSelected dropped the offer line (0x83AA0, 0x84454)");
+        CheckEqI32((i32)pCraft->bIntercepting, 0, "with the craft recalled by the same call (0x84448 -> 0x5A59C)");
+        CheckEqI32(g_world.bGeoscapeUi, 0,
+                   "GeoscapeUi_FreeAll(0) cleared the geoscape flag -- the write that opens the tick's tactical branch (0x86D34)");
+
+        Check(g_world.bTactLive == 1 && g_world.bTactFlag == 1,
+              "the tail ran Tact_InitMission(0) (0x83AC4) and the urban mission is live");
+        Check(g_world.pTactMap != NULL && (i32)g_world.pTactMap->nMissionType == 5,
+              "the frame's own header carries the type ОК picked (0x83F28)");
+        const i32 nXcomFielded = (g_world.pTactMap != NULL) ? (i32)g_world.pTactMap->nXcomCount : -1;
+        const i32 nEnemyFielded = (g_world.pTactMap != NULL) ? (i32)g_world.pTactMap->nEnemyCount : -1;
+        printf("  the mission fielded %d XCOM units against %d enemies (Map_nXcomUnitCount 0x1511F, Map_nEnemyUnitCount 0x15124), %d deployed by the cargo pass (0x15140)\n",
+               nXcomFielded, nEnemyFielded, g_world.nMapDeployedHwps);
+        Check(g_world.pTactMap != NULL && g_world.pTactMap->nXcomCount > 0
+                  && g_world.pTactMap->nEnemyCount > 0,
+              "the mission fielded both sides (Map_nXcomUnitCount 0x1511F, Map_nEnemyUnitCount 0x15124)");
+        Check(g_world.pTactMap != NULL && (i32)g_world.pTactMap->nXcomCount == nSoldiers
+                  && g_world.nMapDeployedHwps == 0,
+              "the XCOM side is exactly the embarked crew -- no hardware was deployed (Map_nDeployedHwps @ 0x15140)");
+
+        /* The launch hand-over passes nMode 0 to Tact_InitMission (0x83AC4), and the briefing gate
+         * tests that ARGUMENT together with Map_bSpawnAlt (0x3D28C, 0x3D29C) -- Map_bMissionMode 3
+         * does not gate it. The Cydonia briefing therefore stands: Map_nUiScreen 20 (0x3D2B0), the
+         * pre-launch screen saved into apUiSlotsA[11] (0x3D2A4/0x3D2A8), the pad loaded (0x3D2C0..
+         * 0x3D2E0). Its cancel arm is World_MissionCancelEnd's 0x14/0x15 case: the saved screen
+         * comes back out of slot 11 (0x16294) and the mission is left standing. */
+        CheckEqI32(g_world.nUiScreen, 0x14, "the briefing gate fired: spawnAlt is 1 and the init argument is 0 (0x3D28C, 0x3D29C, 0x3D2B0)");
+        Check(g_world.pTactBriefPad != NULL, "the cydonia pad was allocated and loaded (0x3D2C0..0x3D2E0)");
+        CheckEqI32(g_world.nMapUiSlot11, 1,
+              "slot 11 saves 1: the prologue cleared Map_nUiScreen (0x3C67C), but the deploy walk reaches Inv_OpenScreen (0x3D0B8) and that store saves the 1 it left (0x3D29C)");
+        ClearSurface();
+        World_TactFrame(&g_world);
+        DumpFrame("tact_briefing_urban");
+        Check(World_MissionCancelEnd(&g_world), "the mission's cancel arm takes the 0x14/0x15 case (0x16294)");
+        CheckEqI32(g_world.nUiScreen, 1, "and restores the screen slot 11 saved (1): the briefing closes onto the inventory the init left open");
+
+        /* The shipped build then closes that inventory with its own confirm arm:
+         * MenuBtn_Confirm(16) -> Input_OnConfirm's screen-1 arm (0x160FC plays 16, 0x16104 calls),
+         * whose Inv_CloseAndCommit @ 0x15a48 snapshots the loadouts, clears the Map+0x01 commit flag
+         * (0x15C68), runs Tact_DeployTeamAndHwps @ 0x39980 (phase 3 at 0x39E9C spreads the squad that
+         * shared one cell), then clears Map_nUiScreen (0x15F34). The battlefield is what screen 0
+         * paints. */
+        CheckEqI32(g_world.bMapUnk1139B9, 1, "Map+0x01 is still up for this new mission (0x3D08C) -- that byte is what makes the commit do its work");
+        {
+#define CLICK(i) do { if (g_bank.aCtl[i].pfnClick != NULL) { g_bank.aCtl[i].pfnClick(); } } while (0)
+            CLICK(98); /* MenuBtn_Confirm(16), the arm's gate is the open screen 1 */
+#undef CLICK
+        }
+        CheckEqI32(g_world.nUiScreen, 0, "the arm closes the inventory and the callee tail clears Map_nUiScreen (0x160FC, 0x16104, 0x15F34)");
+        CheckEqI32(g_world.bMapUnk1139B9, 0, "the commit flag is cleared before the deploy runs (0x15C68)");
+        Check(g_world.pTactMap != NULL && (i32)g_world.pTactMap->nXcomCount == nSoldiers
+                  && g_world.pTactMap->nEnemyCount == nEnemyFielded,
+              "the mission still fields the crew against the aliens through the deploy commit (0x39980)");
+
+        /* The battlefield picture: the frame the live mission paints. */
+        ClearSurface();
+        World_TactFrame(&g_world);
+        DumpFrame("tact_mission_urban");
+
+        /* D. Back to the geoscape through the proven return arm. */
+        World_TactEscapeToGeoscape();
+        Check(g_world.bTactLive == 0 && g_world.bTactFlag == 0,
+              "the escape seam runs Tact_Shutdown(0) and leaves geoscape mode (0x162BC, 0x162C8)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "and the map screen rebuilds (0x162C8's InitUI(1))");
+        Check(g_world.ui.apCtl[GEOUI_CTL_186BB0] != NULL && g_world.ui.apCtl[GEOUI_CTL_186BB4] != NULL
+                  && g_world.ui.pStatusPanel != NULL,
+              "the thirteen root controls came back, freshly allocated (0x86100..0x864DC)");
+        Check(PtrArray_GetCount(&g_world.strategList) > 0,
+              "the return arm leaves the standing map: Tact_Shutdown(0) never reaches the DeleteAll at 0x3E154 (Part 93)");
+        {
+            const i32 nOwnIdx = FindStrategById(&g_world.strategList, (i32)pCraft->bId);
+            const StrategItem *const pOwn = (nOwnIdx >= 0)
+                                                ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nOwnIdx)
+                                                : NULL;
+            printf("  after the return: craft %d atBase %d hot %d, its entry %s (idx %d, vis %d, act %d)\n",
+                   nShipIdx, (i32)pCraft->bAtBase, (i32)pCraft->bWeaponsHot,
+                   (nOwnIdx >= 0) ? "stands" : "is gone", nOwnIdx,
+                   (pOwn != NULL) ? (i32)pOwn->bVisible : -1, (pOwn != NULL) ? (i32)pOwn->bActive : -1);
+        }
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("geoscape_after_mission");
+
+        printf("  descent decision: Отмена recalled craft %d with the header at mode %d/type %d; the re-order + ОК switched the mission %d -> mode 3 type 5 (Urban), consumed the disc at %d, and fielded %d XCOM vs %d aliens on the live map\n",
+               nShipIdx, nModeBefore, nTypeBefore, nModeBefore, nDiskIdx, nXcomFielded, nEnemyFielded);
+    }
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 
