@@ -1626,6 +1626,9 @@ int main(void)
               && g_world.ui.apCtl[GEOUI_CTL_186BA4]->x == 120
                  - (i32)(g_world.ui.apCtl[GEOUI_CTL_186BA4]->uWidth >> 1),
           "the region arm seats the confirm control centred on 120 at y 290 (0x679F0 / 0x67A00)");
+    /* Part 100.3 picture 1: the same pick as a picture -- the globe, the resolved region readout and the
+     * seated "Build base" caption, on the frame 1621-1622 already drew. */
+    DumpFrame("newbase_pick");
 
     nRowX = g_world.ui.apCtl[GEOUI_CTL_186BA4]->x + 2;
     nRowY = g_world.ui.apCtl[GEOUI_CTL_186BA4]->y + 2;
@@ -1690,6 +1693,11 @@ int main(void)
 
     nKind  = UiPanel_GetLineAux(g_world.pFacPanel, g_world.nPanelSel);
     CheckEqI32(nKind, 0, "and that stored row's aux is 0, the 17th row the open writes (0x58C50)");
+    /* Part 100.3 picture 2: the new-base build screen as the player sees it -- the dialog list, the 6x6
+     * placement overlay over the wiped grid of the slot the new base takes, and the row-new-base caption. */
+    ClearSurface();
+    (void)DrawFrame();
+    DumpFrame("newbase_overlay");
     nPhase = PUFO_PLA_TAP_COLOR_STEP * ((i32)g_nMapPhase + PUFO_PLA_TAP_COLOR_BASE);
     nCost1 = (i32)g_world.aFac[nKind].uCost;
     nCnt1  = (i32)g_world.aRegionBuildCount[nRegionIdx];
@@ -1745,6 +1753,13 @@ int main(void)
     CheckEqI32(g_world.bFacDialogOpen, 0, "BaseFacScreen_Toggle closes the dialog (the call at 0x59B1C)");
     Check(g_world.pFacPanel == NULL, "and frees its panel");
     CheckEqI32(g_world.nShortfall1870C8, 0, "with no shortfall left behind (0x1870C8)");
+
+    /* Part 100.3 picture 3: the state the commit landed on (0x59B2C) -- the placement strip with the NEW base
+     * selected (0x8B638 seated it on the old count), so the strip's own base list is the proof: the record
+     * Base_CreateNamedEntry added at 0x66930 stands there with its built cell. */
+    ClearSurface();
+    (void)DrawFrame();
+    DumpFrame("newbase_created");
 
     /* 12f. The same purchase reached the way a pen reaches it: press, frame, release. No flow byte is written
      * by hand here -- only the two coordinates the WM_LBUTTONDOWN / WM_LBUTTONUP paths carry, and the funds the

@@ -4165,9 +4165,16 @@ unchanged; 18267 checks.
   both a flag-11 line and a set byte_1870C8 standing -- whose low-supply gate (0x89578) eats the first pen
   release on screen 1 and clears itself; the second release then closes the strip. That chain and the
   CloseUI header's speed repost (0x8B9CC..0x8B9FC) are recorded in game-core.md; the 11 geoscape frames
-  after the round are re-referenced (the 6-hour jump moves the world before sections 13-16). Remaining
-  stages in `test_geoscapeframe`: 100.3 a new base, 100.4 the crashed-disk dispatch chain, 100.5 battle setup
-  with mode switching, 100.6 UFO motion and terror-site visibility on a frame; then the six gates, the
+  after the round are re-referenced (the 6-hour jump moves the world before sections 13-16). 100.3 is done:
+  the section 12g new-base chain (nav 0 NewBaseScreen_Open -> the globe hover resolving a buildable region
+  from its own sample -> the price gate's failure and the swallowed release -> the affordable click -> screen
+  7 with the wiped new-base slot -> the aimed cell commit through Base_CreateNamedEntry, funds paying record
+  cost + region cost) is now proven by pictures too: `newbase_pick` (globe, crosshair sample, "Territory:
+  North America", price, the seated "Build base" caption), `newbase_overlay` (the 6x6 placement overlay over
+  the wiped grid, the row caption and cost panel), `newbase_created` (the strip of the NEW base with its
+  built module in the aimed cell and the funds arithmetic 3,000,000 - 800,000 - 300,000 = 1,900,000 on
+  screen). Remaining stages in `test_geoscapeframe`: 100.4 the crashed-disk dispatch chain, 100.5 battle
+  setup with mode switching, 100.6 UFO motion and terror-site visibility on a frame; then the six gates, the
   parity rows, commit.
 
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
