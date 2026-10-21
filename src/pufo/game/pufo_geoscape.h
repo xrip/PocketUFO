@@ -2625,11 +2625,16 @@ typedef struct GeoscapePlaneArmEnv {
     const char         *pTextRecs;           /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
     const struct PlaneDrawEnv *pPlaneEnv;    /* BasePlaneScreen_Draw @ 0x7d374, called with the block base */
     const GeoscapeScreenArmEnv *pCtlEnv;     /* the blit seam every control here goes through */
+    UiControl                *pCloseCtl;     /* *g_pUiCloseCtl @ 0x186B00: BOTH arm tails land on the shared
+                                              * close-control blit -- 0x9339C BEQ loc_91DA8 and the rails' tail
+                                              * 0x93D74 B loc_91DA8; the block there loads the control at 0x91DA8
+                                              * and blits it at the shared site 0x93058. The Init seats it at
+                                              * (224,1) @ 0x7DDB4. */
 } GeoscapePlaneArmEnv;
 
 /* 0x9309C..0x93DD4: screen 6. Pad, the two store-list tracking calls, the hangar draw, the two paired
  * control runs, the crew slots and their markers, the two captions, then the stat panel's bars, header,
- * six rows and three column rails. */
+ * six rows and three column rails; every path ends on the shared close-control blit at 0x91DA8. */
 void Geoscape_DrawPlaneArm(const GeoscapePlaneArmEnv *pArmEnv);
 
 /* ---- the placement arm, 0x91DC8..0x92ADC (Geoscape_Draw case 1) ------------------------------------

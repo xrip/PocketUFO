@@ -20908,3 +20908,25 @@ roles their use proves -- see docs/parity/renames.tsv for the twelve entries: th
 the hover box origin/size fields, the colour-key byte, the hover-active byte, the hold counter
 trio, the hovered-row dword (the old gap_0[12..15], now its own nHoverRow member), and the colour
 triples (the old gap_0[0..11], now aStyleRgb[12]). The layout, 7092 bytes, is unchanged.
+
+## The hangar's exit pad -- the close blit every Geoscape_Draw case-6 path ends on (Part 100)
+
+The user looked at the hangar frames and asked how one leaves that screen: the pictures had no X,
+no back button. In the original the hangar Init seats the shared close control at (224,1) with
+BasePlaneScreen_Close @ 0x7C9E8 as its click (0x7DDB4/0x7DDCC), and Geoscape_Draw's case-6 arm ends
+on the control's blit through both of its tails: the stat-clear gate 0x9339C BEQ loc_91DA8 and the
+stat panel's rail tail 0x93D74 B loc_91DA8. loc_91DA8 loads *g_pUiCloseCtl and blits it at the
+shared site 0x93058. The port's Geoscape_DrawPlaneArm returned at the 0x9339C mirror and ended after
+the rails without either blit, so the exit pad was missing from the picture even though the press
+path (Geoscape_OnPointer hit-test, GEOUI_CTL_186B00) worked. Both tails now blit the control, wired
+through the arm env's new pCloseCtl like the soldier, placement and base-info arms do. Six committed
+hangar frames changed and were reviewed: geoscape_hangar (the list view), geoscape_hangar_detail,
+geoscape_hangar_locked (the crew list), geoscape_hangar_stores, econ_hangar_transport and
+econ_hangar_combat -- each now shows the blue X at the top right with nothing else disturbed. The
+sweep checked the other screens' close blits against the IDB: the placement arm (0x92018), the
+soldier arm (0x92D80 paths), the base-info arm (0x940E8, gated on byte_1870F8), and the callee-side
+blits in BuySellScreen_Draw 0x78020, ManufScreen_DrawFrame 0x70D84, FundingScreen_Draw 0x5B3B8,
+ResearchScreen_Draw 0x74258 and TransferScreen_Draw 0x98394 all already had port mirrors. The detail
+view's missing Ekirazh/Oborud buttons on the produced craft are original behaviour, not a gap: that
+arm gates on Ship.bCanDogfight @ +0x21 (0x932A4), and the ship table at 0x45CEC..0x45D78 clears the
+byte for craft type 3 -- the type that production built.

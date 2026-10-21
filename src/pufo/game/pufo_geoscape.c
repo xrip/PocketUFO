@@ -6172,9 +6172,16 @@ void Geoscape_DrawPlaneArm(const GeoscapePlaneArmEnv *pArmEnv)
         }
     }
 
-    /* 0x93380: the gate every path above falls into. Neither stat panel open -- the arm ends here. */
-    if (nStatA == 0 && nStatB == 0) {
-        return;                                                             /* 0x9339C BEQ loc_91DA8 */
+    /* 0x93380: the gate every path above falls into. Neither stat panel open -- the arm jumps to the shared
+     * tail at 0x91DA8, which loads *g_pUiCloseCtl (0x91DAC) and blits it at the shared site 0x93058. The hangar
+     * Init seated that control at (224,1) @ 0x7DDB4 with BasePlaneScreen_Close @ 0x7C9E8 as its click: the exit
+     * pad is part of every hangar frame, list view and detail view alike. */
+    if (nStatA == 0 && nStatB == 0) {                                       /* 0x9339C BEQ loc_91DA8 */
+        if (pArmEnv->pCloseCtl != NULL) {
+            (void)UiControl_BlitActivePad(pArmEnv->pCloseCtl, pCtlEnv->pfnCtlBlit,
+                                          pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);
+        }
+        return;
     }
 
     /* 0x933A0..0x93438: 226x1 bars at x 7, two per row of the row count. */
@@ -6238,6 +6245,12 @@ void Geoscape_DrawPlaneArm(const GeoscapePlaneArmEnv *pArmEnv)
     (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_RAIL_X0, PUFO_PLANE_RAIL_Y, 1, nRailH, 4, 70, 75);  /* 0x93D18 */
     (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_RAIL_X1, PUFO_PLANE_RAIL_Y, 1, nRailH, 4, 70, 75);  /* 0x93D44 */
     (void)SoftSurf_BlitRectProxy(0, PUFO_PLANE_RAIL_X2, PUFO_PLANE_RAIL_Y, 1, nRailH, 4, 70, 75);  /* 0x93D70 */
+
+    if (pArmEnv->pCloseCtl != NULL) {                                       /* 0x93D74 B loc_91DA8: the stat-open
+                                                                             * path lands on the same close blit */
+        (void)UiControl_BlitActivePad(pArmEnv->pCloseCtl, pCtlEnv->pfnCtlBlit,
+                                      pCtlEnv->pfnCtlBlitEx, pCtlEnv->pCtlBlitUser);
+    }
 }
 
 /* 0x91DC8..0x92ADC: screen 1, the placement screen -- Base_EnterBuildMode @ 0x84E60 sets the id. Rails,

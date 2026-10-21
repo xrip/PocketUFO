@@ -1905,8 +1905,10 @@ int main(void)
         Check(SurfPix(2, 2) != 0 && SurfPix(120, 60) != 0 && SurfPix(120, 200) != 0
                   && SurfPix(20, 120) != 0,
               "case 6 paints: the backdrop at the top-left, the craft art down the middle, the craft list lower still");
-        CheckEqI32(g_nBlits, 0,
-                   "and nothing of it comes through the control seam -- the arm blits its own pads, as case 7's does (0x930A0)");
+        CheckEqI32(g_nBlits, 1,
+                   "and one control comes through the seam: the close pad at (224,1) -- the list view skips the "
+                   "detail control runs (0x93114 BEQ loc_93380) and the gate lands on the shared close blit "
+                   "(0x9339C BEQ loc_91DA8 -> 0x91DA8/0x93058)");
         DumpFrame("geoscape_hangar"); /* the picture case 6 (0x9309C..0x93DD4) paints: backdrop, craft art, weapon icons, craft list */
 
         /* The wiring re-reads every panel pointer each frame, exactly as the original's consumers read the

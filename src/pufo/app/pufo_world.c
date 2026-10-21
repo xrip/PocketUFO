@@ -9507,6 +9507,8 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->planeArm.pColor            = pColor;
     pF->planeArm.pPlaneEnv         = &pF->planeDraw;                      /* the call at 0x930F8 */
     pF->planeArm.pCtlEnv           = &pF->planeCtl;
+    pF->planeArm.pCloseCtl         = pUi->apCtl[GEOUI_CTL_186B00];        /* the arm's two tails end on its blit
+                                                                           * (0x9339C and 0x93D74 -> loc_91DA8) */
 
     pF->draw.pPlaneArm = &pF->planeArm;                                    /* 0x8C1C8, case 6's arm slot */
 
