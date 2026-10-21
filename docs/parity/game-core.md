@@ -21001,3 +21001,72 @@ screen but 0/6/9/10/11/12 (screen 1 included) and clears the report there -- aft
 byte_1870C8 set, the first press at the strip X armed the control and the release was swallowed; the second
 release ran CloseUI case 1. And the CloseUI header re-posts the speed states for the CURRENT tick on every
 close (0x8B9CC..0x8B9FC), including its 3600-arm double step (SetSpeedIdx4 into SetSpeedIdx5 at 0x8B9E0).
+
+### The crashed-disc dispatch is live end to end -- and the map never drew a single glyph (Part 100.4)
+
+The dispatch chain starts from a landing. `Geoscape_SpawnMissionSite @ 0x7e49c` writes a mission-site
+record into aMissionSites (0x1865C0, 24-byte: i16 x, i16 y, szName[20]) and, for a MissionLanding whose
+bSub is 5, calls the hook at 0x7ED10 -- `BasePlaneScreen_AddInterceptMission @ 0x7de14`, its only code
+caller at 0x7ecc8. The generator posts the crashed disc: `StrategList_AddItem` with nType 3, bActive 1,
+bVisible 1, the id the mission counter 0x18654C holds (type 3 routes it to nSiteId and to nDisplayId = -1
+at 0x82990..0x829A8), the record's own x/y read with LDRSH at 0x7DE48/0x7DE3C, nTimer 2880 (0x7DE80), the
+new index into 0x186BE4 (0x7DE98), and the counter post-incremented as the return value. The shell reaches
+it through the `World_MissionAddIntercept` hook (pufo_world.c); section 100.4 calls it on the shell's own
+cells with the same ctx the hook builds.
+
+Choosing the craft is where the shipped build differs from the obvious map press. `Ship_SpawnAtSlot`
+builds every parked craft's strateg entry with bVisible 0 (0x2CB98/0x2CB9C) and bActive 0 (0x2CBA0), and
+`Geoscape_PulseUpdate` lights entries only when they are off base (0x955C0/0x955C8), so a parked marker
+draws nothing on the map (the type-1 tests at 0x825C8/0x825F0) and the press side has no row to hit:
+Smap_HitTestStrategSelect builds no line for an inactive-dark entry. The live selection is the status-panel
+row: InitUI installs `Geoscape_OnRadarListClick @ 0x854c4` as the root panel's click handler (0x86C1C), the
+panel's 20 rows already carry anLineAux values equal to the list indices, and pointing nUnk3032 at a row
+whose aux names the marker runs the type-1 INACTIVE arm at 0x855FC -- 0x187054 (0x85624) and 0x159E74
+(0x85630) take the craft found by `Ship_FindIndexByStrategType`, the card line appends with flag 11
+(0x8563C), the pulse timer lights at 250 (0x85644), and the clock pauses (0x85610). The card's "new
+target" control 186B9C carries Smap_SelectMapTarget (0x8FFE8 overwrites 0x8FFE0 two instructions later);
+pressing it arms bMapSelectionFlag (0x84498) and posts the flag-27 fly-to-point prompt (insert@1 0x84574).
+
+Pressing the map cell under that armed selection runs the type-3 ACTIVE arm at 0x83560: cursor 0 (0x83568),
+0x186BE4 = disc (0x83574), pause by store (0x8357C), 0x187090 = 1 (0x83588), Remove(0) (0x83594), the
+flag-19 line with colour slots (0, disc) (0x835B4), timer 250 (0x835BC) -- and no write to the selection
+byte, so the crosshair stays armed. The card the flag-19 line draws (`StatusPanel_DrawMissionSite @
+0x90D78`) glues TEXTS[1238] "Миссия: " onto the panel's terror row -- TEXTS record 1146 "Район террора"
+(0x82FE4) + itoa(nSiteId) (0x8301C) -- plus TEXTS[1232] "Город: " + the mission record's own name
+(0x91038), with *pGeoscapeCtlB at y 105 carrying pfnCancelTarget (0x91098/0x910AC) and *pGeoscapeCtlA at
+y 128 carrying pfnResolveInterceptUI (0x91120/0x91134). And the ОК is `Smap_CancelTarget @ 0x84254`
+despite its name: it reads the disc out of colour SLOT 1 (0x84268), the craft out of 0x187054, and calls
+`Ship_LaunchIntercept @ 0x8427C` -- hot (0x5A790), off base (0x5A7A4), intercepting 1, nStrategIdx = disc
+(0x5A79C/0x5A7AC) -- then clears the selection, 0x187098, the line, 0x18708C and 0x187090 and unpauses
+when the list is empty. The launch restarts the entry's timer (0x5A67C) and leaves the entry invisible
+(0x7F638); the next pulse lights it because the craft is off base.
+
+The chase runs inside the `pfnProcessEvents` pass: the inactive marker's dTrackA = dSpeed*0.02 walks the
+diagonal per call (0x7FA3C, 0x8043C..0x80504) while the disc's nTimer decrements (0x7FD14; expiry posts
+the flag-13 lines and removes the disc). Arrival -- |dx| < 2 and |dy| < 2 over a type-3 target at 0x80684
+-- pauses by store, posts 0x159E74 (0x80694), rebuilds the panel row as the terror caption
+(0x80708..0x80748), and appends flag 21 with slots (ship, disc) (0x80774). It clears NOTHING, so the craft
+keeps chasing the disc (unlike the type-5 arm at 0x80668). Flag 21 is the descent offer,
+`StatusPanel_DrawDescentTarget @ 0x916A0`: TEXTS[1239] dive prefix + the same row, "Город: " from the
+entry's nTargetIdx, ОК at y 105 on pfnBeginCraftSelect (0x917F8/0x9180C, behind the CraftSelectGate
+0x91868 when no soldiers are aboard) and Отмена at y 128 on pfnResolveInterceptUI (0x918B0/0x918C4) --
+100.5's door. Section 100.4 ran all of this live: mission id 1, site 42, disc item 5 at (308,119), craft 0
+closed the 92-cell leg in 392 passes, and the arrival card carries the handlers the asserts read off the
+controls. Frames `crashdisk_map`, `crashdisk_offer`, `crashdisk_dispatched`, `crashdisk_enroute`,
+`crashdisk_arrival`.
+
+And the pictures exposed the bigger gap: `Geoscape_Draw @ 0x8c180` runs `Smap_DrawStrategIcons` inside its
+own map arm -- 0x8C694 MOV R0,R5 (&g_smapCamera) / 0x8C698 BL, unconditional for both screen ids, where
+0x8C690's last layer-pad blit is BLNE and skips screen 2. The port ported `Smap_DrawStrategIcons` long ago
+but wired it only into Geoscape_DrawScreen (0x6C348, the options frame); the main geoscape frame jumped
+from the chrome to the crosshair and never made the call, so NO committed map frame had ever drawn a
+strateg glyph -- no craft square, no UFO cross, no disc. With the call in (Geoscape_Draw's case 0/2 arm,
+env wired through a live SmapIconDrawEnv: the root list, fontSys.nMapBitsBase @ 0x15829C, and the animation
+phase nUiSlot0AnimPhase @ 0x113A18 re-read every frame), the map paints the shipped icons: the blue box
+disc (nBase+anim+8 at 0x82594), the animated craft cross (nBase+anim+12 at 0x8263C, a static green square
+at 0x82620 when the marker timer is 0), the red inactive-contact cross (nBase+2 at 0x825DC). A pixel probe
+pins it in the test: the 16x16 window at the disc's press pixel is empty before the add (the site scan
+proves a wider box of that cell is item-free) and gains 32 changed pixels after the redraw. The fix
+re-references 13 committed frames (10 geoscape map frames -- every diff is exactly a glyph box -- and 3 e2e
+frames, 32 pixels each) and adds the five new ones. IDB comments at 0x8c698, 0x822c4, 0x2cb9c, 0x7de14,
+0x83560, 0x8427c, 0x80684 and 0x80774, idb_save.

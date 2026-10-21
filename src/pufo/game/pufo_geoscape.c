@@ -6875,6 +6875,11 @@ i32 Geoscape_Draw(const GeoscapeDrawEnv *pEnv)
             Geoscape_DrawRadarArm(pEnv->pRadarArm);                   /* 0x8C224..0x8C29C */
         } else {
             Geoscape_BlitMapView(pEnv->pMapView);                     /* 0x8C2B0..0x8C690 */
+            /* 0x8C694 MOV R0,R5 / 0x8C698 BL Smap_DrawStrategIcons: the glyphs go onto the map
+             * after the chrome block and before the crosshair. Unlike 0x8C690's last layer flip,
+             * which the BNE at 0x8C674 skips for screen 2, this call runs for both ids. */
+            Smap_DrawStrategIcons((pEnv->pMapView != NULL) ? pEnv->pMapView->pView : NULL,
+                                  pEnv->pIconEnv);                    /* 0x8C694..0x8C698 */
             Geoscape_BlitCrosshair(pEnv->pCrosshair);                 /* 0x8C69C..0x8C760 */
             Geoscape_DrawStatusPanel(pEnv->pStatusPanel);             /* 0x8C760..0x91DB0, tail included */
         }

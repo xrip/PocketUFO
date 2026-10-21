@@ -4173,9 +4173,22 @@ unchanged; 18267 checks.
   North America", price, the seated "Build base" caption), `newbase_overlay` (the 6x6 placement overlay over
   the wiped grid, the row caption and cost panel), `newbase_created` (the strip of the NEW base with its
   built module in the aimed cell and the funds arithmetic 3,000,000 - 800,000 - 300,000 = 1,900,000 on
-  screen). Remaining stages in `test_geoscapeframe`: 100.4 the crashed-disk dispatch chain, 100.5 battle
-  setup with mode switching, 100.6 UFO motion and terror-site visibility on a frame; then the six gates, the
-  parity rows, commit.
+  screen). 100.4 is done, and it exposed the part's biggest gap: `Geoscape_Draw @ 0x8c180` calls
+  `Smap_DrawStrategIcons` in its own map arm (0x8C694/0x8C698, unconditional for both screen ids) and the
+  port had only ever wired that callee into Geoscape_DrawScreen (0x6C348) -- no committed map frame had
+  ever drawn a strateg glyph. The call is in now (live SmapIconDrawEnv: root list, fontSys.nMapBitsBase
+  @ 0x15829C, anim phase @ 0x113A18 re-read per frame), and a test probe pins it (the 16x16 window at the
+  disc's press pixel gains 32 pixels after the add). The dispatch round runs the whole shipped chain live:
+  the 0x7ecc8 generator hook posts the disc (type 3, timer 2880, 0x186BE4), a parked craft is selected by
+  the status-panel row click because spawn makes its entry dark (0x2CB9C) and only 0x955C0 lights off-base
+  entries, the card's "new target" arms the selection (0x84498), the disc press builds the flag-19 card
+  (0x83560) without disarming the crosshair, the ОК -- `Smap_CancelTarget @ 0x84254`, despite its name --
+  runs `Ship_LaunchIntercept`, the 92-cell leg closes in 392 dSpeed*0.02 passes, and the type-3 arrival
+  (0x80684, clears nothing) posts the flag-21 descent offer with ОК on pfnBeginCraftSelect (0x917F8) --
+  100.5's door. Frames `crashdisk_map/offer/dispatched/enroute/arrival`; 13 committed frames re-referenced
+  (10 geoscape + 3 e2e, every diff exactly a glyph box). Remaining stages in `test_geoscapeframe`: 100.5
+  battle setup with mode switching (through the flag-21 offer), 100.6 UFO motion and terror-site visibility
+  on a frame; then the six gates, the parity rows, commit.
 
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has

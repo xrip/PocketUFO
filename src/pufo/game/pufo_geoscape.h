@@ -2950,6 +2950,9 @@ typedef struct GeoscapeDrawEnv {
     /* Cases 0 and 2, 0x8C214..0x8C760. */
     const GeoscapeRadarArmEnv    *pRadarArm;    /* the radar branch, 0x8C214..0x8C29C */
     GeoscapeMapViewEnv           *pMapView;     /* 0x8C2B0..0x8C690 */
+    const struct SmapIconDrawEnv *pIconEnv;     /* 0x8C694 MOV R0,R5 (&g_smapCamera) / 0x8C698 BL
+                                                 * Smap_DrawStrategIcons: the strateg glyphs, run after
+                                                 * the chrome block and before the crosshair */
     const GeoscapeCrosshairEnv   *pCrosshair;   /* 0x8C69C..0x8C760 */
     const GeoscapeStatusPanelEnv *pStatusPanel; /* 0x8C760..0x91DB0, chain tail included */
 

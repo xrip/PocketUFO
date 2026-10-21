@@ -46,6 +46,7 @@
 typedef struct GeoscapeFrameState {
     GeoscapeDrawEnv        draw;      /* the dispatcher's arm wiring, 0x8C1B4..0x8C20C */
     GeoscapeMapViewEnv     map;       /* 0x8C2B0..0x8C690 */
+    SmapIconDrawEnv        icon;      /* 0x8C694..0x8C698, carried by draw.pIconEnv */
     GeoscapeCrosshairEnv   cross;     /* 0x8C69C..0x8C760 */
     GeoscapeRadarArmEnv    radar;     /* 0x8C214..0x8C29C, only while the radar screen is open */
     GeoscapeStatusPanelEnv panel;     /* 0x8C760..0x91DB0, chain tail included */

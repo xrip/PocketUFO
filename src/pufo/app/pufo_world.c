@@ -8709,6 +8709,12 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->map.pTime      = &pW->geo.time;
     pF->map.pnOverlayOriginX = &pF->g.nOverlayOriginX;
 
+    /* The glyph pass between chrome and crosshair, 0x8C694..0x8C698. The list cell never moves --
+     * it is the same root-block PtrArray the status panel arm receives at 0x8C760 -- while the two
+     * by-value cells are re-read every frame below, next to the map pads. */
+    pF->draw.pIconEnv     = &pF->icon;
+    pF->icon.pStrategList = &pW->strategList;
+
     /* The crosshair tail, 0x8C69C..0x8C760. */
     pF->cross.pChromePad  = pUi->apPad[GEOUI_PAD_186BBC]; /* *pGeoscapeStripPad @ 0x186BBC */
     pF->cross.pbPending   = &pF->g.bCrosshairPending;     /* bSmapCrosshairPending @ 0x1870B0 */
@@ -10295,6 +10301,10 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->map.pMapPad   = pSet->pGrid;    /* *pSmapPadCur @ 0x186E40 */
     pF->map.pLayerPad = pSet->pOverlay; /* *pSmapLayerPad @ 0x186BE0 */
     pF->map.nScreenId = pW->screen.nGeoscapeScreen;
+    /* 0x8C698's callee re-reads both cells per item: nMapBitsBase out of fontSys (0x15829C) and the
+     * animation phase as an LDRH at 0x82634 out of nUiSlot0AnimPhase @ 0x113A18 (Map + 0x60). */
+    pF->icon.nMapBitsBase = (pW->pFont != NULL) ? pW->pFont->nMapBitsBase : 0;
+    pF->icon.nAnimPhase   = (pW->pnAnimPhase != NULL) ? (u16)*pW->pnAnimPhase : 0;
     pF->hover.pTiles  = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL; /* [0x186B04]->pData */
     pF->cross.nCrosshairX = pF->g.nCrosshairX;   /* nSmapCrosshairX @ 0x186BC8 */
     pF->cross.nCrosshairY = pF->g.nCrosshairY;   /* nSmapCrosshairY @ 0x186BCC */

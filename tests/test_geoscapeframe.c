@@ -32,6 +32,7 @@
 #include "game/pufo_font.h"
 #include "game/pufo_mapcell.h" /* MapCell_SetOccupant, the pair Unit_PlaceOnMap writes */
 #include "game/pufo_options.h"
+#include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission (Part 100.4) */
 #include "game/pufo_save.h"
 #include "game/pufo_tactend.h"
 #include "game/pufo_tacthud.h"  /* PUFO_HUD_CONFIRM_FIRST and the promotion-report text records (Part 84) */
@@ -393,6 +394,42 @@ static void PressCtl(UiControl *pCtl)
 
     World_GeoscapePointer(&g_world, nX, nY, true);
     (void)World_GeoscapePointerUp(&g_world);
+}
+
+/* How many status-panel rows Smap_HitTestStrategSelect would build for a press whose cell is
+ * (nCellX, nCellY): its scan is the 16x16 window dx, dy over -8..7 (0x82C48 / 0x82C50), and the gates
+ * that add a row are the ones the builders apply -- an ACTIVE type 0/3/1/4 needs bVisible
+ * (0x82E84..0x82F8C, 0x830D4..0x831A0), an INACTIVE type 0/3 needs the selection flag down
+ * (0x82E94 gate at 0x82E6C's else side), an INACTIVE type 1/4 needs BOTH bVisible and the flag down
+ * (0x830F4). Zoom mode 0 only: the scale at 0x82D48 / 0x82DD0 runs at mode 1 and 2. The Part 100.4
+ * round uses this to pick press cells that answer as single-item clicks, never as the >1 box (0x832B0). */
+static i32 TestHitLineCount(const PtrArray *pList, i32 nCellX, i32 nCellY, bool bSelectionUp)
+{
+    i32 nLines = 0;
+
+    for (i32 i = 0; i < PtrArray_GetCount(pList); ++i) {
+        const StrategItem *const pItem = (const StrategItem *)PtrArray_Get(pList, i);
+        i32 nDx, nDy;
+
+        if (pItem == NULL) {
+            continue;
+        }
+        nDx = pItem->nX - nCellX;
+        nDy = pItem->nY - nCellY;
+        if (nDx < -8 || nDx > 7 || nDy < -8 || nDy > 7) {
+            continue;
+        }
+        if (pItem->nType == 0 || pItem->nType == 3) {
+            if (pItem->bActive != 0 ? pItem->bVisible != 0 : !bSelectionUp) {
+                ++nLines;
+            }
+        } else if (pItem->nType == 1 || pItem->nType == 4) {
+            if (pItem->bActive != 0 ? pItem->bVisible != 0 : (pItem->bVisible != 0 && !bSelectionUp)) {
+                ++nLines;
+            }
+        }
+    }
+    return nLines;
 }
 
 /* The frame as a picture (Part 64's verification change): the surface is 5-6-5 (R at bit 11, G at bit 5
@@ -10049,6 +10086,474 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                        "the craft is never re-homed: the grant loop walks bRecoveredCraftCount (0), so the queued id (0x97C18) strands the craft -- bugs.tsv row 0x97C18");
             printf("  transfer round: slot %d stocked at base 0, staged at row 2 (soldier slot) while the digits moved on row 0 (craft), commit queued craft %d with the counter still 0, record delivered and compacted in %d ticks, craft %d left homeless (255)\n",
                    nSlot, (i32)pShip->bId, nTicks, (i32)pShip->bId);
+        }
+    }
+
+    /* ---- Part 100.4: the crashed disc dispatch, map press to arrival offer ------------------------
+     * The goal asks for sending craft to crashed discs, and the IDB says the shipped build runs the
+     * whole thing through six links:
+     *
+     *   1. The generator. A subtype-5 mission's landing effect (MissionLanding's bSub 5 branch,
+     *      0x7ED10) calls BasePlaneScreen_AddInterceptMission @ 0x7de14: the mission-site record the
+     *      class picks (LDRSH +0 / +2 at 0x7DE48 / 0x7DE3C) becomes a strateg entry of type 3,
+     *      active, visible, with nId = the mission counter (0x7DE64) and nTimer 2880 (0x7DE80) --
+     *      the countdown 0x7FD14..0x7FD34 spends before the disc expires. The round runs that very
+     *      function over the shell's own cells, on the same ctx the shell's World_MissionAddIntercept
+     *      builds.
+     *   2. The craft. The status panel's installed click handler (Geoscape_InitUI at 0x86C1C) answers a
+     *      row of a parked craft's entry through its type-1 inactive arm (0x855FC):
+     *      Ship_FindIndexByStrategType writes the craft index into 0x187054 and 0x159E74 (0x85624,
+     *      0x85630), the clock pauses (0x85610) and a flag-11 craft-card line is appended (0x8563C).
+     *      (The press-side twin 0x83688 needs a LIT marker and is gated live in Part 15; a parked
+     *      craft's spawn entry is dark -- added with bVisible 0 at 0x2CB90, and 0x9554C lights only
+     *      off-base entries.) The card's "new target" control carries Smap_SelectMapTarget (installed
+     *      at 0x8FFEC): it raises bMapSelectionFlag (0x84498) and turns line 0 into the flag-27 "fly to
+     *      the chosen point" prompt (0x84574, 0x84580).
+     *   3. The disc press. Flag 27 has no press arm, so a press on the disc's cell reaches the select
+     *      test again, and its type-3 active arm (0x83560) clears the panel row cursor (0x83568),
+     *      stores the disc index at 0x186BE4 (0x83574), pauses (0x8357C), raises byte_187090 -- the
+     *      crash panel's gate -- (0x83588), drops the prompt (0x83594) and appends flag 19 with the
+     *      row in colour slot 0 and the item index in slot 1 (0x835B4), plus the radar pulse timer
+     *      250 (0x835BC). Like the type-4 arm, it never touches bMapSelectionFlag, so the selection
+     *      the card armed is still up.
+     *   4. The offer. Flag 19 == 0x13 selects the mission-site panel arm (0x90D78): line 1 is
+     *      TEXTS[1238] "Миссия: " with the panel's selected row glued on -- that row is the disc's
+     *      own HitTest row, TEXTS[1146] written over 1145 at 0x82FE4 with itoa(nSiteId) appended
+     *      (0x8301C) -- line 2 is TEXTS[1232] "Город: " with
+     *      aMissionSites[strategList[slot 1].bCraftClass].szName (0x91038: LDRSB +0x02, *0x18, off
+     *      0x1865C0 -- the very table the generator read), and with a selection up it seats
+     *      *pGeoscapeCtlB at y 105 with Smap_CancelTarget (0x91098, 0x910AC) under the TEXTS[1127]
+     *      caption at y 106, and *pGeoscapeCtlA at y 128 with Smap_ResolveInterceptUI (0x91120,
+     *      0x91134) above "Отмена" at y 129.
+     *   5. The launch. Smap_CancelTarget @ 0x84254 is the order despite its name: colour SLOT 1
+     *      (0x84268) is the disc index, 0x187054 the craft, and 0x8427C calls Ship_LaunchIntercept --
+     *      hot, off base, chasing with nStrategIdx = the disc (0x5A790, 0x5A7A4, 0x5A7AC, 0x5A79C).
+     *      It then clears the selection (0x84284), 0x187098 (0x84290), the line (0x8429C), unpauses
+     *      when the list runs empty (0x842B4), and clears 0x18708C (0x842BC) and 0x187090 (0x842C8).
+     *   6. The arrival. Each event pass walks the marker dTrackA = dSpeed * 0.02 along the true
+     *      diagonal (0x7FA3C, 0x8043C..0x80504); when |dx| < 2 && |dy| < 2 (0x80348, 0x80364) closes
+     *      over a type-3 target (0x80684): the clock pauses by store, 0x159E74 takes the ship
+     *      (0x80694), StatusPanelRow0 builds the terror caption with the disc's site id
+     *      (0x80708..0x80748), and flag 21 is appended (0x80774) -- the descent offer onto the crash
+     *      site, which Part 100.5 answers.
+     *
+     * The pen path mirrors section 15's card sequence. Fixture hygiene: the message list is emptied
+     * with the same leaf every answer arm uses (UiLineList_Remove @ 0x5a3dc, as section 13 does
+     * before an order); the tap cooldown is pre-set to 255, the value 0x87CE4 itself leaves after
+     * every selecting press, so the disc press cannot run 0x87C94's second dispatch; and the disc
+     * press is aimed at a cell whose 16x16 scan reads exactly one row, so the >1 box branch (0x832B0)
+     * never runs. */
+    {
+        UiControl *pCtlNew = g_world.ui.apCtl[GEOUI_CTL_186B9C]; /* the craft card's "new target" */
+        UiControl *pCtlA   = g_world.ui.apCtl[GEOUI_CTL_186BB4]; /* *pGeoscapeCtlA */
+        UiControl *pCtlB   = g_world.ui.apCtl[GEOUI_CTL_186BB0]; /* *pGeoscapeCtlB */
+        InterceptMissionCtx ictx;
+        i32 nMissionId0 = g_world.nMissionId;
+        i32 nList0, nSiteIdx = -1, nDiskIdx = -1;
+        i32 nShipIdx = -1, nMarkIdx = -1;
+        i32 nMarkX = 0, nMarkY = 0, nRowIdx = -1;
+        i32 nSiteX = 0, nSiteY = 0, nSitePressX = 0, nSitePressY = 0;
+        i32 nStripH, nBest, nMid = -1, nPasses = 0, nArriveFlag = -1, i;
+        const i32 nPassMax = 2870; /* the disc expires at 2880 passes (0x7FD14), one less stays honest */
+
+        printf("part 100.4: the crashed disc dispatch, map press to arrival offer\n");
+
+        /* Close from the screen 1 the transfer's SELECT left the world on (100.1's live press), so
+         * CloseUI case 1 runs (0x8BE94) and the world arm owns the pen again. */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "100.1's SELECT close left screen 1 (0x8BE44)");
+        World_CloseGeoscape(&g_world);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0, "the close reaches the globe (0x8BE94)");
+
+        /* The line 100.1's commit left standing (100.2's opening comment names it) is dropped with
+         * the leaf every answer arm uses -- section 13 empties the list the same way before an order. */
+        while (g_world.msgLines.nLineCount > 0) {
+            UiLineList_Remove(&g_world.msgLines, 0);
+        }
+        CheckEqI32(g_world.msgLines.nLineCount, 0, "line 0 is free, so no flag arm reroutes the pen");
+        printf("  the opening state: sel %d, 18708C %d, 187090 %d, 187098 %d, 1870A0 %d, shortfall %d, paused %d, zoom %d\n",
+               g_world.bMapSelectionFlag, g_world.bFlag18708C, g_world.bFlag187090, g_world.bFlag187098,
+               g_world.bFlag1870A0, g_world.nShortfall1870C8, g_world.geo.time.bPaused, g_world.view.nMode);
+        CheckEqI32(g_world.bMapSelectionFlag, 0,
+                   "the selection byte is down: an inactive marker may build its row (0x830F4 gate)");
+        CheckEqI32(g_world.view.nMode, 0, "zoom 0, the mode at which stored coordinates are used raw (0x82D48 gate)");
+        for (i = 0; i < (i32)g_world.bCraftCount; ++i) {
+            const Ship *const pC = g_world.apCraft[i];
+            const i32 nM = (pC != NULL) ? FindStrategById(&g_world.strategList, (i32)pC->bId) : -1;
+            const StrategItem *const pE = (nM >= 0) ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nM) : NULL;
+            printf("  craft %d: id %d atBase %d hot %d chas %d home %d contactMsg %d | marker %d: %s type %d act %d vis %d at %d,%d timer %d\n",
+                   i, (pC != NULL) ? (i32)pC->bId : -1, (pC != NULL) ? (i32)pC->bAtBase : -1,
+                   (pC != NULL) ? (i32)pC->bWeaponsHot : -1, (pC != NULL) ? (i32)pC->bIntercepting : -1,
+                   (pC != NULL) ? (i32)pC->bHomeBase : -1, (pC != NULL) ? (i32)pC->bContactMsg : -1,
+                   nM, (pE != NULL) ? "item" : "none", (pE != NULL) ? (i32)pE->nType : -1,
+                   (pE != NULL) ? (i32)pE->bActive : -1, (pE != NULL) ? (i32)pE->bVisible : -1,
+                   (pE != NULL) ? pE->nX : 0, (pE != NULL) ? pE->nY : 0, (pE != NULL) ? pE->nTimer : -1);
+        }
+        printf("  view: scroll %d,%d size %d,%d, selShip %d, msgShip %d\n", g_world.view.nScrollX,
+               g_world.view.nScrollY, g_world.view.nMapW, g_world.view.nMapH,
+               g_world.nSelectedShipIdx, g_world.nMsgShipIdx);
+        printf("  root status panel: %d rows, cursor %d", (i32)g_world.ui.pStatusPanel->nLineCount,
+               (i32)g_world.ui.pStatusPanel->nUnk3032);
+        for (i = 0; i < (i32)g_world.ui.pStatusPanel->nLineCount && i < 8; ++i) {
+            printf(" | row %d aux %d", i, (i32)g_world.ui.pStatusPanel->anLineAux[i]);
+        }
+        printf("\n");
+
+        nStripH = (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight;
+        g_world.frame.g.nTapCooldown = 255; /* the value 0x87CE4 itself leaves after a selecting press */
+
+        /* The craft. A parked craft is selected in the shipped build through the status panel's own row
+         * click: Geoscape_InitUI installs Geoscape_OnRadarListClick @ 0x854c4 as the root panel's click
+         * handler (0x86C1C), and its type-1 inactive arm (0x855FC) takes the row's aux -- a strateg-list
+         * index -- through Ship_FindIndexByStrategType into 0x187054 and 0x159E74 (0x85624, 0x85630),
+         * pauses (0x85610), appends the flag-11 craft-card line (0x8563C) and lights the radar pulse
+         * timer 250 (0x85644). The press-side answer 0x83688 is the same arm for a LIT marker, and Part
+         * 15 gates it live; here all three craft stand at base and the entries they were spawned with
+         * stay dark (Ship_SpawnAtSlot @ 0x2CB90 adds the entry with bVisible 0, and the hot pass at
+         * 0x9554C lights only the entry of a craft that is not at base), so the row click is the live
+         * selection in this state -- the installed-handler idiom Part 12f's rows used (pfnClick()). */
+        for (i = 0; i < (i32)g_world.bCraftCount && nShipIdx < 0; ++i) {
+            const Ship *const pCand = g_world.apCraft[i];
+            const StrategItem *pMark;
+            i32 nM;
+
+            if (pCand == NULL || pCand->bContactMsg != 0 || i > 254
+                || (i32)pCand->bHomeBase >= (i32)g_world.nBaseCount) {
+                continue; /* bContactMsg would re-hand the card's controls to Resolve (0x8FFC8..0x8FFF8) */
+            }
+            nM = FindStrategById(&g_world.strategList, (i32)pCand->bId);
+            pMark = (nM >= 0) ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nM) : NULL;
+            if (pMark == NULL || pMark->nType != 1 || pMark->bActive != 0) {
+                continue; /* the spawn's entry IS the craft's map marker (0x2CB90) */
+            }
+            nShipIdx = i;
+            nMarkIdx = nM;
+            nMarkX = pMark->nX;
+            nMarkY = pMark->nY;
+        }
+        Check(nShipIdx >= 0, "one parked craft has a valid home base and its spawn entry on the list");
+        Check(nMarkIdx >= 0 && nShipIdx <= 254, "the craft index fits the byte the line slots carry (0x8563C's a3 is LDRB-masked)");
+
+        /* The row that names it: the click handler indexes anLineAux with the cursor row (0x85500), so the
+         * cursor goes to a row whose aux already holds the marker index -- the rows the geoscape's own
+         * list passes left standing. */
+        for (i = 0; nMarkIdx >= 0 && i < (i32)g_world.ui.pStatusPanel->nLineCount; ++i) {
+            if ((i32)g_world.ui.pStatusPanel->anLineAux[i] == nMarkIdx) {
+                nRowIdx = i;
+                break;
+            }
+        }
+        Check(nRowIdx >= 0 && g_world.ui.pStatusPanel->pfnClick != NULL,
+              "the root panel carries a row at the marker's list index and the click handler InitUI installed at 0x86C1C");
+
+        /* The disc's home: the closest mission-site record (0x1865C0, stride 0x18 -- 0x91038's own
+         * scale) that lands on-screen clear of the strip, answers as a single active row under an
+         * armed selection, and stands far enough from the marker that the marker press stays single
+         * too (a type-3 active row builds under either flag state, 0x82F8C). */
+        nBest = 0x7FFFFFFF;
+        for (i = 0; nShipIdx >= 0 && i < PUFO_MISSION_SITE_COUNT; ++i) {
+            const MissionSiteRec *const pSite = &g_world.aMissionSites[i];
+            const i32 nDx = pSite->x - nMarkX;
+            const i32 nDy = pSite->y - nMarkY;
+            const i32 nAbsX = (nDx < 0) ? -nDx : nDx;
+            const i32 nAbsY = (nDy < 0) ? -nDy : nDy;
+            const i32 nCheb = (nAbsX > nAbsY) ? nAbsX : nAbsY;
+            i32 nPx, nPy;
+
+            if (nCheb <= 8 || nCheb >= nBest) {
+                continue;
+            }
+            if (!ScreenForCell(&g_world.view, pSite->x, pSite->y, &nPx, &nPy)
+                || nPy > 320 - nStripH - 6) {
+                continue;
+            }
+            if (TestHitLineCount(&g_world.strategList, pSite->x, pSite->y, true) != 0) {
+                continue; /* with the disc added this cell must read as one row, so it starts empty */
+            }
+            nBest = nCheb;
+            nSiteIdx = i;
+            nSiteX = pSite->x;
+            nSiteY = pSite->y;
+            nSitePressX = nPx;
+            nSitePressY = nPy;
+        }
+        Check(nSiteIdx >= 0, "a mission-site cell stands on-screen, clear, and near the chosen craft");
+
+        if (nSiteIdx < 0 || nShipIdx < 0) {
+            printf("  the fixture found no craft/site pair -- the dispatch round cannot run (craft %d, site %d)\n",
+                   nShipIdx, nSiteIdx);
+            Check(nSiteIdx >= 0 && nShipIdx >= 0, "both picks exist");
+        }
+
+        /* The map before the disc exists, and a 16x16 window at the site's press pixel. The site
+         * scan above read a wider box of that cell with the selection up, so the window holds no
+         * item the icon pass could already paint; a redraw that changes pixels inside it can then
+         * only be the disc's own glyph (Geoscape_Draw's call at 0x8C694/0x8C698, the type-3 row at
+         * 0x82594). Nothing between the two draws touches the view, the clock, or the anim phase,
+         * so the map, its drift, and the strip are pixel-identical in both. */
+        u16 aGlyphBefore[16 * 16];
+        i32 nGlyphX0 = 0, nGlyphY0 = 0;
+        if (nSiteIdx >= 0 && nShipIdx >= 0) {
+            nGlyphX0 = nSitePressX;
+            nGlyphY0 = nSitePressY;
+            if (nGlyphX0 + 16 > PUFO_SURF_W) { nGlyphX0 = PUFO_SURF_W - 16; }
+            if (nGlyphY0 + 16 > PUFO_SURF_H) { nGlyphY0 = PUFO_SURF_H - 16; }
+            ClearSurface();
+            (void)DrawFrame();
+            for (i = 0; i < 16; ++i) {
+                memcpy(&aGlyphBefore[i * 16],
+                       &((const u16 *)g_assets.pSurface->pPixels)
+                           [(size_t)(nGlyphY0 + i) * (size_t)g_assets.pSurface->nWidth
+                                + (size_t)nGlyphX0],
+                       16 * sizeof(u16));
+            }
+        }
+
+        /* 1. The generator, on the shell's own cells: the ctx is what World_MissionAddIntercept
+         * (pufo_world.c) builds for the 0x7ED10 hook. */
+        if (nSiteIdx >= 0 && nShipIdx >= 0) {
+            i32 nRet;
+
+            memset(&ictx, 0, sizeof(ictx));
+            ictx.pList       = &g_world.strategList;
+            ictx.pnZoomMode  = &g_world.view.nMode;
+            ictx.pnSeed      = &g_world.nStrategSeed;
+            ictx.apSites     = g_world.aMissionSites;
+            ictx.nSiteCount  = PUFO_MISSION_SITE_COUNT;
+            ictx.pnMissionId = &g_world.nMissionId;
+            ictx.pnLastIndex = &g_world.nSelectedStrategIdx;
+
+            nList0 = PtrArray_GetCount(&g_world.strategList);
+            nRet = BasePlaneScreen_AddInterceptMission(nSiteIdx, &ictx);
+            nDiskIdx = nList0;
+            CheckEqI32(PtrArray_GetCount(&g_world.strategList), nList0 + 1, "the add lands one item on the list (0x7DE64)");
+            CheckEqI32(g_world.nSelectedStrategIdx, nDiskIdx, "0x7DE98 stores the new index at 0x186BE4");
+            CheckEqI32(nRet, nMissionId0 + 1, "the call returns the POST-incremented mission id");
+            Check(nDiskIdx <= 254, "the disc index fits the byte the flag-19 line and the arrival line carry (0x835B4, 0x80774)");
+
+            {
+                const StrategItem *const pDisk =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx);
+                Check(pDisk != NULL && pDisk->nType == 3 && pDisk->bActive == 1 && pDisk->bVisible == 1,
+                      "type 3, active, visible -- the shape the crash arms read (0x7DE64 arguments)");
+                Check(pDisk != NULL && (i32)(i8)pDisk->bCraftClass == nSiteIdx && pDisk->nSiteId == nMissionId0
+                          && pDisk->nX == nSiteX && pDisk->nY == nSiteY,
+                      "its byte is the site index the table read used, its id the mission id the counter held, its cell the record's own x/y (0x7DE48, 0x7DE3C, 0x7DE64)");
+                Check(pDisk != NULL && pDisk->nTimer == 2880, "0x7DE80 sets the expiry timer 2880");
+                Check(pDisk != NULL && pDisk->nDisplayId == -1, "nType 3 sends the id to nSiteId and clears nDisplayId (0x82990..0x829A8)");
+            }
+        }
+
+        /* 2. The disc on the map before anything answers: the picture is the icon the type-3 draw
+         * puts up (the mapbits + anim + 8 blend Part 90 gated at unit level). */
+        if (nSiteIdx >= 0) {
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("crashdisk_map");
+            if (nShipIdx >= 0) {
+                const u16 *const pPix = (const u16 *)g_assets.pSurface->pPixels;
+                i32 nDiff = 0;
+                for (i = 0; i < 16; ++i) {
+                    for (int x = 0; x < 16; ++x) {
+                        if (pPix[(size_t)(nGlyphY0 + i) * (size_t)g_assets.pSurface->nWidth
+                                 + (size_t)(nGlyphX0 + x)]
+                            != aGlyphBefore[i * 16 + x]) {
+                            ++nDiff;
+                        }
+                    }
+                }
+                printf("  glyph window at %d,%d changed in %d of 256 pixels\n",
+                       nGlyphX0, nGlyphY0, nDiff);
+                Check(nDiff > 0, "the disc glyph appears between chrome and crosshair (0x8C694, 0x8C698, 0x82594)");
+            }
+        }
+
+        if (nSiteIdx >= 0 && nShipIdx >= 0) {
+            /* 3. The row click the shipped build answers with: point the panel's cursor at the marker's
+             * row and run the handler InitUI installed -- exactly what a release on that row runs
+             * (UiScrollList_ClickRow sets [0xBD8] = [0xBD4] + row and tail-calls [0xBC4], section 15 B). */
+            g_world.ui.pStatusPanel->nUnk3032 = nRowIdx;
+            g_world.ui.pStatusPanel->pfnClick();
+            CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 11, "the type-1 inactive arm appends the card line (0x8563C)");
+            CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), nShipIdx, "its colour slot carries the craft the lookup found (0x85624's result)");
+            CheckEqI32(g_world.nSelectedShipIdx, nShipIdx, "0x187054 holds it (0x85624)");
+            CheckEqI32(g_world.nMsgShipIdx, nShipIdx, "and 0x159E74 with it (0x85630)");
+            CheckEqI32(g_world.nSelectedStrategIdx, nMarkIdx, "the click stored the row's aux at 0x186BE4 first (0x8550C)");
+            CheckEqI32(g_world.nRadarPulseTimer, 250, "and the arm lights the radar pulse timer (0x85644)");
+            CheckEqI32(g_world.geo.time.bPaused, 1, "the arm pauses (0x85610)");
+
+            /* 4. The card's "new target" control arms the selection and posts the fly-to-point prompt. */
+            ClearSurface();
+            (void)DrawFrame();
+            Check(pCtlNew->pfnClick == g_world.frame.panel.pfnSelectMapTarget,
+                  "the craft-detail card carries Smap_SelectMapTarget on 186B9C (0x8FFE8, and 0x8FFE0's Dismiss store is overwritten two instructions later)");
+            PressCtl(pCtlNew);
+            CheckEqI32(g_world.bMapSelectionFlag, 1, "Smap_SelectMapTarget arms the selection (0x84498)");
+            CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 27, "line 0 is the fly-to-point prompt (0x84574, 0x84580)");
+
+            /* 5. The disc press answers its own cell. */
+            World_GeoscapePointer(&g_world, nSitePressX, nSitePressY, true);
+            (void)World_GeoscapePointerUp(&g_world);
+            CheckEqI32((i32)UiLineList_GetFlag(&g_world.msgLines, 0), 19, "the type-3 active arm appends flag 19 (0x835B4)");
+            CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), 0, "colour slot 0 is the row cursor it cleared (0x83568)");
+            CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 1), nDiskIdx, "slot 1 carries the disc index (0x83574 -> 0x835B4)");
+            CheckEqI32(g_world.nSelectedStrategIdx, nDiskIdx, "0x186BE4 holds the disc (0x83574)");
+            CheckEqI32(g_world.bFlag187090, 1, "byte_187090, the crash panel gate, is up (0x83588)");
+            CheckEqI32(g_world.bMapSelectionFlag, 1, "the selection is STILL up: the type-3 arm never writes the byte");
+            CheckEqI32(g_world.nRadarPulseTimer, 250, "and 0x835BC lights the pulse timer");
+            CheckEqI32(g_world.geo.time.bPaused, 1, "the arm pauses by store (0x8357C)");
+
+            /* 6. The mission-site card as the player sees it. */
+            ClearSurface();
+            (void)DrawFrame();
+            Check(pCtlB->y == PUFO_STATUS_SITECTL_Y_CANCEL && pCtlB->pfnClick == g_world.frame.panel.pfnCancelTarget,
+                  "the selecting arm puts Smap_CancelTarget on *pGeoscapeCtlB at y 105 (0x91098, 0x910AC)");
+            Check(pCtlA->y == PUFO_STATUS_SITECTL_Y_OK2 && pCtlA->pfnClick == g_world.frame.panel.pfnResolveInterceptUI,
+                  "and Smap_ResolveInterceptUI on *pGeoscapeCtlA at y 128 (0x91120, 0x91134)");
+            Check(pCtlA->x == 120 - ((i32)pCtlA->uWidth / 2) && pCtlB->x == 120 - ((i32)pCtlB->uWidth / 2),
+                  "both centred on x 120 (0x91088, 0x91110)");
+            {
+                const char *const pszCap = (const char *)g_assets.pTextRecs
+                                           + 1146 * PUFO_TEXT_REC_STRIDE; /* PUFO_TEXT_REC_ALIEN_LABEL, 0x82FE4's record */
+                const char *const pszRow = (g_world.ui.pStatusPanel->apLines[0] != NULL)
+                                               ? (const char *)g_world.ui.pStatusPanel->apLines[0] : NULL;
+                char szWant[24];
+
+                snprintf(szWant, sizeof(szWant), "%d", nMissionId0);
+                Check(pszRow != NULL && strncmp(pszRow, pszCap, strlen(pszCap)) == 0,
+                      "the panel's row 0 is the disc's HitTest row: TEXTS[1146] over 1145 (0x82FE4)");
+                Check(pszRow != NULL && strcmp(pszRow + strlen(pszCap), szWant) == 0,
+                      "  and it ends with itoa(nSiteId) (0x8301C) -- the card's line 1 is this row glued onto TEXTS[1238] (0x90F7C..0x90FB8)");
+                CheckEqI32((i32)g_world.ui.pStatusPanel->anLineAux[0], nDiskIdx, "the row's aux holds the disc (0x8306C)");
+            }
+            DumpFrame("crashdisk_offer");
+
+            /* 7. The ОК: Smap_CancelTarget is the order despite its name. */
+            PressCtl(pCtlB);
+            {
+                Ship *const pShip = g_world.apCraft[nShipIdx];
+                const StrategItem *const pDisk =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx);
+                Check(pShip != NULL && pShip->bWeaponsHot == 1 && pShip->bAtBase == 0
+                          && pShip->bIntercepting == 1 && (i32)pShip->nStrategIdx == nDiskIdx,
+                      "Ship_LaunchIntercept @ 0x8427C: hot (0x5A790), off base (0x5A7A4), chasing the disc index 0x84268 read out of colour slot 1 (0x5A79C, 0x5A7AC)");
+                Check(pDisk != NULL && pDisk->nType == 3 && pDisk->nX == nSiteX && pDisk->nY == nSiteY,
+                      "the disc itself stands untouched where the table put it");
+            }
+            CheckEqI32(g_world.bMapSelectionFlag, 0, "the launch clears the selection (0x84284)");
+            CheckEqI32(g_world.bFlag187098, 0, "0x187098 (0x84290)");
+            CheckEqI32(g_world.msgLines.nLineCount, 0, "and the card line (0x8429C)");
+            CheckEqI32(g_world.geo.time.bPaused, 0, "the clock runs again with the list empty (0x842B4)");
+            CheckEqI32(g_world.bFlag18708C, 0, "0x18708C (0x842BC)");
+            CheckEqI32(g_world.bFlag187090, 0, "and the crash gate 0x187090 (0x842C8)");
+
+            /* 8. The launch leaves the marker dark; the pulse's hot pass is what lights it (0x955C0),
+             * and only a lit marker is walked by the travel pass (0x7FE1C skips the dark one). */
+            {
+                StrategItem *const pMark =
+                    (StrategItem *)PtrArray_Get(&g_world.strategList, nMarkIdx);
+                Check(pMark != NULL && pMark->nTimer == 0, "the launch restarts the entry's timer (0x5A67C)");
+                Check(pMark != NULL && pMark->bVisible == 0, "and leaves the entry invisible (0x7F638's bB 0)");
+            }
+            World_PulseGeoscape(&g_world);
+            {
+                const StrategItem *const pMark =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nMarkIdx);
+                Check(pMark != NULL && pMark->bVisible == 1,
+                      "Geoscape_PulseUpdate lights the entry of the craft that is off base (0x955C0, 0x955C8)");
+                nMarkX = (pMark != NULL) ? pMark->nX : 0;
+                nMarkY = (pMark != NULL) ? pMark->nY : 0;
+            }
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("crashdisk_dispatched");
+
+            /* 9. The chase, pass by pass, until |dx| < 2 && |dy| < 2 closes (0x80348, 0x80364).
+             * nMid carries the opening leg: the en-route picture is dumped once the marker has
+             * closed half of it, and nMid then drops to 0 so the dump runs at most once. */
+            {
+                const StrategItem *const pMark0 =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nMarkIdx);
+                const StrategItem *const pDisk0 =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx);
+                if (pMark0 != NULL && pDisk0 != NULL) {
+                    const i32 nAx = pDisk0->nX - pMark0->nX;
+                    const i32 nAy = pDisk0->nY - pMark0->nY;
+                    const i32 nAbsX = (nAx < 0) ? -nAx : nAx;
+                    const i32 nAbsY = (nAy < 0) ? -nAy : nAy;
+                    nMid = (nAbsX > nAbsY) ? nAbsX : nAbsY;
+                }
+            }
+            while (nPasses < nPassMax && nArriveFlag < 0) {
+                const StrategItem *const pMark =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nMarkIdx);
+                const StrategItem *const pDisk =
+                    (const StrategItem *)PtrArray_Get(&g_world.strategList, nDiskIdx);
+                i32 nDx, nDy, nCheb;
+
+                if (pMark == NULL || pDisk == NULL) {
+                    break; /* the disc expired (0x7FD34) or the entry left the list */
+                }
+                nDx = pDisk->nX - pMark->nX;
+                nDy = pDisk->nY - pMark->nY;
+                nCheb = ((nDx < 0 ? -nDx : nDx) > (nDy < 0 ? -nDy : nDy)) ? (nDx < 0 ? -nDx : nDx)
+                                                                          : (nDy < 0 ? -nDy : nDy);
+                ++nPasses;
+                g_world.geoHooks.pfnProcessEvents(0, g_world.geoHooks.pUser);
+                if (g_world.msgLines.nLineCount > 0) {
+                    const i32 nFlag = (i32)UiLineList_GetFlag(&g_world.msgLines, 0);
+                    if (nFlag == 21 || nFlag == 13) {
+                        nArriveFlag = nFlag;
+                        break;
+                    }
+                    printf("  pass %d: a stray flag-%d line from an unrelated item -- dropped for the round\n", nPasses, nFlag);
+                    UiLineList_Remove(&g_world.msgLines, 0);
+                }
+                if (nMid > 0 && nCheb * 2 <= nMid) { /* the marker has closed half its opening leg */
+                    ClearSurface();
+                    (void)DrawFrame();
+                    DumpFrame("crashdisk_enroute");
+                    nMid = 0;
+                }
+                if ((nPasses % 100) == 0) {
+                    printf("  pass %d: marker at %d,%d, disc at %d,%d (cheb %d), disc timer %d\n",
+                           nPasses, pMark->nX, pMark->nY, pDisk->nX, pDisk->nY, nCheb, pDisk->nTimer);
+                }
+            }
+            Check(nArriveFlag == 21, "the chase closed on the disc and the arrival posted its offer (0x80684, 0x80774)");
+
+            if (nArriveFlag == 21) {
+                CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 0), nShipIdx, "the offer line names the craft (0x80774's a3)");
+                CheckEqI32((i32)UiLineList_GetColor(&g_world.msgLines, 0, 1), nDiskIdx, "  and the disc (its a4)");
+                CheckEqI32(g_world.geo.time.bPaused, 1, "the arrival pauses by store (0x80684)");
+                CheckEqI32(g_world.nMsgShipIdx, nShipIdx, "0x159E74 takes the ship (0x80694)");
+                {
+                    const char *const pszCap = (const char *)g_assets.pTextRecs
+                                               + 1146 * PUFO_TEXT_REC_STRIDE; /* the terror caption, PUFO_CAP_TERROR_TEXT at 0x964 */
+                    const char *const pszRow = (g_world.ui.pStatusPanel->apLines[0] != NULL)
+                                                   ? (const char *)g_world.ui.pStatusPanel->apLines[0] : NULL;
+                    char szWant[24];
+
+                    snprintf(szWant, sizeof(szWant), "%d", nMissionId0);
+                    Check(pszRow != NULL && strncmp(pszRow, pszCap, strlen(pszCap)) == 0
+                              && strcmp(pszRow + strlen(pszCap), szWant) == 0,
+                          "StatusPanelRow0 rebuilt the terror caption with the disc's site id (0x80708..0x80748)");
+                    CheckEqI32((i32)g_world.ui.pStatusPanel->anLineAux[0], nDiskIdx, "its aux holds the disc (0x80748)");
+                }
+                {
+                    const Ship *const pShip = g_world.apCraft[nShipIdx];
+                    Check(pShip != NULL && pShip->bIntercepting == 1,
+                          "the craft is still chasing: a type-3 arrival clears nothing (0x80684..0x80774 has no clear, unlike the type-5 arm at 0x80668)");
+                }
+                ClearSurface();
+                (void)DrawFrame();
+                Check(pCtlB->y == PUFO_STATUS_SITECTL_Y_CANCEL && pCtlB->pfnClick == g_world.frame.panel.pfnBeginCraftSelect,
+                      "flag 21 is the descent-target panel (0x916A0): its launch control at y 105 carries the craft-select handler (0x917F8, 0x9180C)");
+                Check(pCtlA->y == PUFO_STATUS_SITECTL_Y_OK2 && pCtlA->pfnClick == g_world.frame.panel.pfnResolveInterceptUI,
+                      "and the cancel handler sits at y 128 (0x918B0, 0x918C4)");
+                DumpFrame("crashdisk_arrival");
+            }
+            printf("  disc round: mission id %d, site %d, disc item %d at (%d,%d); craft %d dispatched by the card's ОК, closed the %d-cell leg in %d passes; arrival flag %d\n",
+                   nMissionId0, nSiteIdx, nDiskIdx, nSiteX, nSiteY, nShipIdx, nBest, nPasses, nArriveFlag);
         }
     }
 
