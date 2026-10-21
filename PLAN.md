@@ -4142,10 +4142,20 @@ unchanged; 18267 checks.
   the numeric branch (`itoa(anLineAux[row])`, the `+` prefix under `bAuxPlusSign`) is ported and four
   frames re-referenced. The census over the whole binary found no second missing branch: every numeric
   panel already had its flags and aux feeds. Twelve UiPanel fields got role names in the IDB and the port
-  (docs/parity/renames.tsv). Remaining stages in `test_geoscapeframe`: 100.1 a transfer round (open frame
-  with the digits, staging, reset, commit, 25 hourly ticks -> arrival), 100.2 the speed controls, 100.3 a
-  new base, 100.4 the crashed-disk dispatch chain, 100.5 battle setup with mode switching, 100.6 UFO motion
-  and terror-site visibility on a frame; then the six gates, the parity rows, commit.
+  (docs/parity/renames.tsv). 100.1 is done, and it changed shape once the IDB was read to the end: the
+  shipped build cannot commit a base-to-base transfer through its own UI -- the picker byte 1870F8 is armed
+  by every Init (0x995B8) and never cleared during a session, so the press arm (0x88950) routes presses to
+  the confirm control only (dead prev/next/reset/commit buttons, bare-close SELECT), the overlay frame pins
+  the destination byte to the source (0x98994), staging always follows the never-cached cursor row 0
+  (0x96368/0x186BE8), the digits it moves are painted under the overlay band, and the queued craft is never
+  re-homed (0x97C18). Five bugs.tsv rows (0x88950, 0x96368, 0x186BE8, 0x97C18, plus the existing 0x989d4)
+  and a game-core.md section record it; section 100.1 proves the whole chain live -- pin, dead presses, the
+  arrow-column staging with its pairing, the commit and 24-hour delivery through the installed handlers, the
+  SELECT close -- with frames `transfer_open`, `transfer_staged`, `transfer_committed` (staged and committed
+  are pixel-identical: the changed digit hides under the stuck-open overlay). Remaining stages in
+  `test_geoscapeframe`: 100.2 the speed controls, 100.3 a new base, 100.4 the crashed-disk dispatch chain,
+  100.5 battle setup with mode switching, 100.6 UFO motion and terror-site visibility on a frame; then the
+  six gates, the parity rows, commit.
 
 - [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has

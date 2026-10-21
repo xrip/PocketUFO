@@ -9832,6 +9832,158 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                g_world.nFunds, (i32)g_world.nSiteCount, (i32)g_world.nFinishedTopic, nProd);
     }
 
+    /* ---- Part 100.1: the transfer screen end to end, exactly as the shipped build runs it ----------
+     * The goal asks for transfer between bases to be proven live; the IDB says the shipped build cannot
+     * commit one through its own UI (docs/parity/bugs.tsv rows 0x88950, 0x96368, 0x186BE8, 0x989d4):
+     * Ui_InitTransfer arms the destination picker byte_1870F8 at 0x995B8 on every open and nothing on
+     * the screen ever clears it, so the press arm (0x88950 BNE loc_889C4) routes presses to the confirm
+     * control ONLY -- the prev/next/reset/commit buttons can never click, the confirm press is a bare
+     * close (0x9965C thunk -> CloseUI case 10, teardown only), and the overlay frame pins byte_1870F4
+     * to the source base (0x98994), so the destination equals the source. This section proves all of
+     * that live, and runs the commit-and-delivery round through the controls' installed handlers, the
+     * same functions the buttons would call (0x99624 / 0x99630). The staging press itself IS live: the
+     * release arm blits ClickRow(B/C) unconditionally (0x8A64C), which is the screen's only working
+     * control, and bugs.tsv row 0x96368 says the aux pair lands on the cached cursor row, not the aimed
+     * row -- asserted here as it happens. The round: open at base 0, stage through the only live press,
+     * commit (bFlag0 = 24, bFlag1 = the destination base's id, the pending quantity leaves the source),
+     * close through the live SELECT press, delivery through Smap_GrantSiteRecovery 24 hours later. The
+     * craft the commit queues (the pending row is a craft row) is never re-homed: the grant loop walks
+     * bRecoveredCraftCount, which the commit never raised (bugs.tsv row 0x97C18) -- asserted too. */
+    {
+        const i32 nSlot    = 43;                   /* slot 43, the Heavy cannon [AP] clip, bCargoSize 2 */
+        const i32 nSite0   = (i32)g_world.nSiteCount;
+        UiPanel *pTrA, *pTrC, *pTrD, *pTrE;
+        i32 nRow43 = -1, nTicks = 0;
+
+        Check(g_world.nBaseCount >= 2, "the world has a second base");
+
+        /* Stock the item at base 0 -- the cell the shop delivery's AddItemQty (0x9900C) writes, and
+         * the cell the transfer fill (0x97810) reads. Base 0 also has the stores the gate measures
+         * (the 99.x purchases built its storage block), which the picker pin then makes the
+         * destination, so every gate measures the same base the items leave. */
+        g_assets.apObjects[nSlot]->auPerBaseVal[0] = (u16)1;
+        g_world.nSelectedBase = 0;                 /* nSelectedBaseIdx @ 0x159D81: source AND pinned destination */
+
+        g_world.nav.apNav[7]->pfnClick();          /* nav slot 7: TransferScreen_Open @ 0x614fc */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 10, "nav slot 7 lands the transfer id AFTER the Init (0x6151C)");
+        CheckEqI32((i32)g_world.bTransferBuilt, 1, "Init's call at 0x995A4 built the five columns (0x96B60)");
+        CheckEqI32((i32)g_world.bBaseInfoOverlayOpen, 1, "Init arms the picker: byte_1870F8 = 1 (0x995B8)");
+        pTrA = g_world.pBuySellPanelA;
+        pTrC = g_world.pBuySellPanelC;
+        pTrD = g_world.pBuySellPanelD;
+        pTrE = g_world.pBuySellPanelE;
+        Check(pTrA != NULL && pTrC != NULL && pTrD != NULL && pTrE != NULL && pTrC->pfnClick != NULL,
+              "all five columns exist and the increment column carries its handler (0x97168)");
+        Check(g_world.ui.apCtl[GEOUI_CTL_186B00]->x == 224 && g_world.ui.apCtl[GEOUI_CTL_186B00]->y == 1,
+              "Init seats the close control at (224,1) (0x9963C/0x99648)");
+        CheckEqI32(g_world.ui.apCtl[GEOUI_CTL_186BA4]->y, 28 * (i32)g_world.nBaseCount + 10,
+                   "Init seats the confirm control under the picker list, at the SELECT caption (0x99698/0x996B8)");
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("transfer_open"); /* picker list + SELECT, From: line, the five columns with digits */
+
+        CheckEqI32((i32)g_world.nBaseInfoWorkBase, 0,
+                   "the overlay frame pinned byte_1870F4 to the source base (the 0x98994 store)");
+        for (i32 nRow = 0; pTrA != NULL && nRow < pTrA->nLineCount; ++nRow) {
+            if (UiPanel_GetLineAux(pTrA, nRow) == nSlot) {
+                nRow43 = nRow;
+            }
+        }
+        Check(nRow43 >= 0, "the stocked slot is on the list (the 0x96CC4 filter, auPerBaseVal non-zero)");
+
+        /* The dead buttons, live: a press at the commit button's box centre changes nothing -- the
+         * press arm is behind the picker gate and the close thunk never runs for it. */
+        if (nRow43 >= 0) {
+            const i32 nCtlCx = g_world.aTransferCtl[3].x + (i32)g_world.aTransferCtl[3].uWidth / 2;
+            const i32 nCtlCy = g_world.aTransferCtl[3].y + (i32)g_world.aTransferCtl[3].uHeight / 2;
+            World_GeoscapePointer(&g_world, nCtlCx, nCtlCy, true);
+            (void)World_GeoscapePointerUp(&g_world);
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 10, "the commit press cannot click: the arm hit-tests only 186BA4 (0x88950)");
+            CheckEqI32((i32)g_world.nSiteCount, nSite0, "and it committed nothing either");
+            PressCtl(&g_world.aTransferCtl[2]);    /* the reset button centre -- same gate */
+            CheckEqI32((i32)g_world.nResidue1870B4, 0, "reset pressed dead: no reason code moves");
+            CheckEqI32((i32)g_world.nShortfall1870C8, 0, "and no block flag either");
+            Check(nRow43 > 12, "the stocked row sits past the 13 clickable rows (UiScrollList_ClickRow bounds nRow at nStyle-1) while the scroll buttons are dead (0x88950): the shipped screen cannot reach it");
+
+            /* Staging through the screen's only live control: a press+release aimed at the increment
+             * column's arrow box (panel C rect 184..199, row band from nPosY 70, nFont 16). The press
+             * lands on the picker-gated arm (no effect); the release runs ClickRow(B/C) unconditionally
+             * (0x8A64C..0x8A678). The aimed row supplies the SLOT (row 2, a soldier row), but the branch
+             * and the aux pair follow the cached cursor row (dword_186BE8 -- never written on this
+             * screen, so 0, a craft row): bugs.tsv row 0x96368, asserted here as it happens. */
+            const i32 nCurRow = g_world.transferScratch.nCache186BE8; /* dword_186BE8, the cursor row */
+            SmapSite *pSite = &g_world.apSites[nSite0];
+            Ship *pShip = NULL;
+            CheckEqI32(nCurRow, 0, "the transfer screen never caches a row: its only writer (0x96E30) is behind the dead arm");
+            CheckEqI32(UiPanel_GetLineAux(pTrA, 0), 118, "row 0 is the first craft row (aux 117..121, the 0x97604 id-slot)");
+            CheckEqI32(UiPanel_GetLineAux(pTrA, 2), 1000, "row 2 is a soldier row (the 0x9741C marker) -- the row the arrow is aimed at");
+            CheckEqI32(UiPanel_GetLineAux(pTrD, 0), 1, "row 0's stock digit is the craft (one per craft row, 0x97610)");
+            CheckEqI32(UiPanel_GetLineAux(pTrE, 0), 0, "row 0's pending digit starts at zero");
+            CheckEqI32((i32)pSite->bRecoveredSoldierAssign, 0, "the working record starts without a soldier assignment");
+
+            World_GeoscapePointer(&g_world, 191, 70 + 16 * 2 + 8, true);
+            (void)World_GeoscapePointerUp(&g_world);
+            CheckEqI32((i32)pTrC->nUnk3032, 2, "ClickRow(C) stores the aimed row into panel C (UiScrollList_ClickRow, 0x3EE..0x3F000 chain)");
+            CheckEqI32((i32)pSite->bRecoveredSoldierAssign, 1,
+                       "the soldier row supplied the slot: the crew gate ran and handed one soldier to the working record (0x9672C)");
+            CheckEqI32(UiPanel_GetLineAux(pTrD, nCurRow), 0, "the stock digit drops on the CRAFT row (the cursor row), not the aimed row (0x96704)");
+            CheckEqI32(UiPanel_GetLineAux(pTrE, nCurRow), 1, "the pending digit 1 lands on row 0 (the assign at 0x966E8, set not incremented)");
+            CheckEqI32((i32)g_world.nShortfall1870C8, 0, "the living-quarters gate at the pinned destination passes (0x96690: 100 capacity vs 68 occupied + 1)");
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("transfer_staged"); /* the pending 1 sits on row 0 -- under the overlay's black band (0x9877C spans y 0..87, row 0 spans 70..85): the stuck-open picker hides the very digit its own row pairing produced */
+
+            /* Commit through the control's installed handler (Init wires it at 0x99630, the shell
+             * thunk refreshes the envs first) -- the function a press would call if the press arm
+             * ever reached it. The row with pending 1 is row 0, a craft row, so the commit queues
+             * THAT craft and the soldier assignment rides in the record unsynchronised. */
+            for (i32 i = 0; i < (i32)g_world.bCraftCount; ++i) {
+                Ship *pC0 = g_world.apCraft[i];
+                if (pC0 != NULL && (i32)pC0->bId == (i32)pTrC->anLineAux[nCurRow]) {
+                    pShip = pC0;
+                }
+            }
+            Check(pShip != NULL && (i32)pShip->bHomeBase == 0,
+                  "row 0's craft (panel C carries its bId, 0x97690) stands homed at base 0");
+            const i32 nHome0 = (i32)pShip->bHomeBase;
+            g_world.aTransferCtl[3].pfnClick();  /* World_TransferCommitThunk -> TransferScreen_CommitTransfer @ 0x97aa4 */
+            CheckEqI32((i32)pSite->bFlag0, PUFO_TRANSFER_SITE_FLAG_COMMIT, "the filled record closes with flag 24 (0x97DA4)");
+            CheckEqI32((i32)pSite->bFlag1, (i32)g_world.apBases[0]->bUnk4,
+                       "bFlag1 is the pinned destination base's id byte -- the source itself (0x97DBC over the 0x98994 pin)");
+            CheckEqI32((i32)pSite->anCraftIds[0], (i32)pShip->bId, "the commit queued the craft of the pending row (0x97C48)");
+            CheckEqI32((i32)pShip->bHomeBase, 255, "the craft leaves the roster: bHomeBase := 255 (0x97CD4)");
+            CheckEqI32((i32)g_world.abFacilityGrid[444 + 144 * nHome0 + 6 * pShip->bHangarY + pShip->bHangarX], 0,
+                       "and the home hangar cell is cleared (0x97CCC)");
+            CheckEqI32(UiPanel_GetLineAux(pTrE, nCurRow), 0, "the commit zeroes the pending digit over every row (0x97DE8)");
+            CheckEqI32((i32)g_world.nSiteCount, nSite0 + 1, "the commit raises nSmapSiteCount (0x97E8C)");
+            CheckEqI32((i32)g_world.apSites[nSite0 + 1].bRecoveredSoldierAssign, 0, "the fresh working record is cleared (0x97F54)");
+            CheckEqI32((i32)pSite->bRecoveredCraftCount, 0,
+                       "the commit queued the craft id but never raised the counter its delivery loop counts (0x97C18 vs 0x205 -- the 0x96604 increment belongs to the craft staging that never ran here)");
+            ClearSurface();
+            (void)DrawFrame();
+            DumpFrame("transfer_committed");
+
+            /* The one press the live screen offers: SELECT under the picker list -- a bare close. */
+            PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BA4]); /* 0x9965C thunk -> Geoscape_CloseUI case 10 (0x8BE2C..0x8BE44) */
+            CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "SELECT closes: case 10 releases to screen 1 and runs the teardown (no commit, no delivery request)");
+            CheckEqI32((i32)g_world.bTransferBuilt, 0, "the teardown cleared the built flag (0x97994)");
+            CheckEqI32((i32)g_world.bBaseInfoOverlayOpen, 0, "and the picker flag with it (0x979A0) -- the only live clear of byte_1870F8");
+            Check(g_world.pBuySellPanelA == NULL && g_world.pBuySellPanelE == NULL,
+                  "and freed the columns (0x97994..0x97A88)");
+
+            /* 24 hours on the geoscape clock: the record delivers to the base its bFlag1 id resolves to. */
+            while (nTicks < 25 && (i32)g_world.nSiteCount > nSite0) {
+                g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                ++nTicks;
+            }
+            CheckEqI32((i32)g_world.nSiteCount, nSite0, "the delivered record compacts out of the list (0x994C8)");
+            CheckEqI32((i32)pShip->bHomeBase, 255,
+                       "the craft is never re-homed: the grant loop walks bRecoveredCraftCount (0), so the queued id (0x97C18) strands the craft -- bugs.tsv row 0x97C18");
+            printf("  transfer round: slot %d stocked at base 0, staged at row 2 (soldier slot) while the digits moved on row 0 (craft), commit queued craft %d with the counter still 0, record delivered and compacted in %d ticks, craft %d left homeless (255)\n",
+                   nSlot, (i32)pShip->bId, nTicks, (i32)pShip->bId);
+        }
+    }
+
     World_Free(&g_world);
     Boot_Shutdown(&g_assets);
 

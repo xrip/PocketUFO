@@ -20930,3 +20930,41 @@ ResearchScreen_Draw 0x74258 and TransferScreen_Draw 0x98394 all already had port
 view's missing Ekirazh/Oborud buttons on the produced craft are original behaviour, not a gap: that
 arm gates on Ship.bCanDogfight @ +0x21 (0x932A4), and the ship table at 0x45CEC..0x45D78 clears the
 byte for craft type 3 -- the type that production built.
+### The transfer screen cannot commit a base-to-base transfer in the shipped build (Part 100)
+
+Ui_InitTransfer (0x9955c) arms the destination picker with byte_1870F8 = 1 at 0x995B8 on every open,
+and nothing that a transfer session can reach ever clears it. TransferScreen_Draw's own clear at 0x989D4
+is dead code (the strip fallback makes its compare always equal -- bugs.tsv row 0x989d4); BuildPanels
+clears the byte only in its teardown at 0x979A0, which runs only at close; Transfer_ResetSite's clear at
+0x96980 sits behind the very press gate that keeps reset unreachable. During a session the byte is 1, so
+the press arm (Geoscape_OnPointer case 10, 0x88950 BNE loc_889C4) hit-tests only pGeoscapeCtlConfirm: the
+four buttons Init seats at 0x1870DC..0x1870E8 -- prev (0x99604), next (0x99614), reset (0x99624), commit
+(0x99630) -- can never click, and the one press the screen answers, the SELECT control seated at
+120-w/2, 28*baseCount+10 under the base list (0x99698/0x996B8, caption drawn at 0x98968), is wired to the
+same bare Geoscape_CloseUI_ThunkB as the X pad (0x99654/0x9965C), whose case 10 (0x8BE2C..0x8BE44) only
+tears the panels down. The shipped game therefore has no reachable way to commit a transfer, and the
+overlay frame pins byte_1870F4 to the source base at 0x98994, so even the gates all measure the base the
+items leave (bugs.tsv rows 0x88950, 0x989d4).
+
+What the screen can do live is staging: the release arm runs UiPanel_ClickRow(pBuySellPanelB/C) before
+any gate (0x8A64C..0x8A678), so the '<' and '>' columns work. But the aimed click only supplies the SLOT
+(0x962D0 reads panel C's cached row); the branch and the aux pair follow the cursor dword_186BE8, whose
+only writer on this screen is panel A's cache handler (0x96E30), itself behind the dead press arm -- so
+the cursor is 0, a leftover from another screen at best, and every staging pass rewrites row 0's digits
+while counting the aimed row's slot into the working record (bugs.tsv rows 0x96368, 0x186BE8). With
+nStyle 13 capping UiScrollList_ClickRow and the scroll buttons dead, rows past 12 are unreachable at all.
+And the stuck-open overlay paints its black band over y 0..87 (0x9877C), exactly covering panel rows 0..1
+(nPosY 70, nFont 16): the digits staging moves are drawn under the overlay that cannot close, which is
+why the transfer_staged and transfer_committed frames are pixel-identical in
+tests/test_geoscapeframe.c section 100.1.
+
+One cascade closes the picture: CommitTransfer's craft-row pass queues panel C's craft id into
+site->anCraftIds (0x97C48), unhomes the craft (0x97CD4) and clears its hangar cell (0x97CCC), but raises
+none of the counters the delivery obeys -- Smap_GrantSiteRecovery's craft pass walks the signed byte
+site->bRecoveredCraftCount, whose only increment is ValidateCapacity's own craft-staging branch (0x96604).
+When the pending row is a craft row but staging never took that branch -- the normal outcome of the
+cursor pairing above -- the grant pass runs zero times and the craft is silently lost at compaction
+(bugs.tsv row 0x97C18). Section 100.1 asserts all of this live: the pin, the dead commit and reset
+presses, one staging press through the arrow column with its pairing visible in the data, the commit and
+24-hour delivery through the controls' installed handlers, the SELECT press closing the screen, and the
+homeless craft left behind. The QoL pass inherits the five bugs.tsv rows as its work list.
