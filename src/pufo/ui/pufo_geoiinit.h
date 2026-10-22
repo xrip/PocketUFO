@@ -207,11 +207,14 @@ extern const u32 g_anObjectPrice[149];
  *      GameTime_Reset on the clock at 0x159618.
  *   7. 0x94730: the research mirror: the 144 bytes at 0x160B2C are zeroed and
  *      byte_160BBC[i] = aResearchTopics[i].bActive, for the count byte at 0x160C4C.
- *   8. 0x94798: eight bases: the 144-entry research column (0x16022C) is zeroed, and for
- *      every object the u16 product column (0x15D09C) entries [i] and [i + 2176] and the
- *      u32 column (0x159E9C) entries [i] and [i + 1600] are zeroed -- the +2176 / +1600
- *      stores reach into the NEXT base, exactly as Base_CreateNamedEntry's clear does.
- *   9. 0x947EC: the site count's low byte (0x186410) = 0; all 200 SmapSite records at
+ *   8. 0x94798: eight bases (the pointer advance at 0x94824/0x94830/0x94834 adds 288 to the
+ *      research view, 800 to the dword product view and 400 to the u16 product view): the
+ *      144-entry research column (0x16022C) is zeroed, and for every object entry [i] of the four
+ *      product-block columns is zeroed -- 0x947F8 STRH [R0] auManufCommitted (0x15D09C), 0x947F0
+ *      STRH [R0,#0x1100] auManufCol (0x15E19C), 0x94808 STR [R3] the accumulator (0x159E9C),
+ *      0x94800 STR [R3,#0x1900] aManufProductB (0x15B79C). The 0x1100 / 0x1900 terms are the
+ *      distances to the neighbouring column of the SAME base, as in Base_CreateNamedEntry.
+ *   9. 0x94854: the site count's low byte (0x186410) = 0; all 200 SmapSite records at
  *      0x162030 have bFlag0/bFlag1/bUnk518/bRecoveredSoldierAssign/uRecoveredSoldiers/
  *      bRecoveredCraftCount cleared and auItemQty[0..nObjectCount-1] zeroed.
  *  10. 0x9485C: the facility grid reset, eight bases: fac layers 0/1/2 (grid + 0x174 +
@@ -293,8 +296,9 @@ typedef struct StartNewEnv {
     /* Grid and the per-base economy columns. */
     u8    *abFacilityGrid;            /* gBaseFacGrid @ 0x159768, 1524 bytes */
     u16   *pProductU16Col;            /* auManufCommitted @ 0x15D09C, 200 u16 per base */
-    u32   *pProductU32Col;            /* unk_159E9C, 200 dwords per base */
-    u16   *pManufCol;                 /* 0x15E19C, Base_CountActiveManuf's column */
+    i32   *pProductReqCol;            /* aManufProductB @ 0x15B79C, 200 u32 per base: units ordered */
+    u32   *pProductU32Col;            /* the accumulator @ 0x159E9C, 200 dwords per base */
+    u16   *pManufCol;                 /* auManufCol @ 0x15E19C, 200 u16 per base: engineers assigned */
     u16   *pResearchCol;              /* unk_16022C, 144 u16 per base */
     u8    *abResearchZero;            /* unk_160B2C, 144 bytes */
     u8    *abResearchActive;          /* byte_160BBC, 144 bytes */

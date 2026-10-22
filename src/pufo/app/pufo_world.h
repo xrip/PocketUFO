@@ -196,10 +196,24 @@ typedef struct PufoWorldState {
     u8  abFacilityGrid[PUFO_GRID_SIZE];         /* gBaseFacGrid @ 0x159768 */
     u8  abGridHangarBytes[PUFO_FAC_BASE_COUNT]; /* 0x159DBC = abFacilityGrid + 1620 in the image: the
                                                  * eight base bytes the three hangar products clear */
-    u16 auProductU16[4096];                     /* auManufCommitted @ 0x15D09C, 200 per base + the
-                                                 * +2176 spill */
-    u32 auProductU32[3600];                     /* unk_159E9C, 200 per base + the +1600 spill */
-    u16 auManufCol[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* 0x15E19C */
+    u16 auProductU16[4096];                     /* auManufCommitted @ 0x15D09C. The column is 200 u16 per
+                                                 * base = 1600 entries; the rest is spare room. Part 117 cut
+                                                 * the array to 1600 and the geoscapeframe run changed (239
+                                                 * output lines, 7 pictures), so the room is load-bearing:
+                                                 * a poison-filled pad of exactly the removed bytes is never
+                                                 * read nor written, and a pad in the same place that keeps
+                                                 * the old extents reproduces the old run byte for byte,
+                                                 * while the same pad moved to the end of the struct does
+                                                 * not. Some access therefore depends on the byte distance
+                                                 * between these columns and the members after them; the
+                                                 * site is not pinned -- recorded as PLAN gap 118c, do not
+                                                 * shrink these two arrays until it is. */
+    u32 auProductU32[3600];                     /* the accumulator @ 0x159E9C (IDB: int[1600]). The column
+                                                 * is 1600 dwords; the spare room has the same status as the
+                                                 * array above. Read as a signed int wherever the ARM
+                                                 * divides (0x6F3F0, 0x6E718, 0x6F070) or prints it. */
+    u16 auManufCol[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* auManufCol @ 0x15E19C:
+                                                * engineers assigned per (base, product) */
     u16 auResearchCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];  /* auResearchCol @ 0x16022C */
     u8  abResearchZero[PUFO_RESEARCH_TOPIC_COUNT];   /* unk_160B2C */
     u8  abResearchActive[PUFO_RESEARCH_TOPIC_COUNT]; /* byte_160BBC */

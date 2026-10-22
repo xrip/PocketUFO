@@ -976,7 +976,18 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
                 }
             }
 
-            /* Product array C (u16) and B (u32). 0x67078 and 0x67090. */
+            /* The four product-block columns, each moved one base earlier: 0x6706C/0x67078 (the
+             * engineers u16), 0x67088/0x67090 (committed u16), 0x670A0/0x670A8 (ordered u32) and
+             * 0x670B0/0x670BC (accumulator u32, `LDR R5,[R1,#4]` -> `STR R5,[R1,#-0x31C]`). The
+             * accumulator was missing from the port until Part 117: the two dword pairs sit on the
+             * same register with offsets 0x1904 and 4, so both columns move by one 800-byte column
+             * and neither one is optional. */
+            if (pEnv->apProductA != NULL) {
+                for (i32 k = 0; k < nObjectCount; ++k) {
+                    pEnv->apProductA[PUFO_BASE_COLUMN_ENTRIES * nDst + k] =
+                        pEnv->apProductA[PUFO_BASE_COLUMN_ENTRIES * nSrc + k];
+                }
+            }
             if (pEnv->apProductC != NULL) {
                 for (i32 k = 0; k < nObjectCount; ++k) {
                     pEnv->apProductC[PUFO_BASE_COLUMN_ENTRIES * nDst + k] =
@@ -1592,11 +1603,18 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nRegionId
         for (i = 0; i < (i32)pEnv->nObjectCount; ++i) {
             pEnv->pResearchCol[i] = 0;
         }
+        /* The ARM walks a u16 view and a dword view of this base's columns and clears entry [i] of
+         * four of them (Part 116 measured the offsets; Part 117 names the columns). The u16 view
+         * R3 is auManufCommitted, R3 + 0x1100 is auManufCol; the dword view LR is the accumulator,
+         * LR + 0x1900 is aManufProductB. The port keeps the four columns in four arrays, so the
+         * neighbour offsets become four pointers -- writing [i + 2176] / [i + 1600] inside one array
+         * landed in that array's own filler and left the engineers and ordered-units columns
+         * untouched. */
         for (i = 0; i < (i32)pEnv->nObjectCount; ++i) {
-            pEnv->pProductU16Col[i] = 0;         /* 0x66B24 */
-            pEnv->pProductU16Col[i + 2176] = 0;  /* 0x66B1C: + 0x1100 bytes */
-            pEnv->pProductU32Col[i] = 0;         /* 0x66B34 */
-            pEnv->pProductU32Col[i + 1600] = 0;  /* 0x66B2C: + 0x1900 bytes */
+            pEnv->pManufCol[i] = 0;        /* 0x66B1C STRH [R3,#0x1100] */
+            pEnv->pProductU16Col[i] = 0;   /* 0x66B24 STRH [R3] */
+            pEnv->pProductReqCol[i] = 0;   /* 0x66B2C STR [LR,#0x1900] */
+            pEnv->pProductU32Col[i] = 0;   /* 0x66B34 STR [LR] */
         }
     }
 

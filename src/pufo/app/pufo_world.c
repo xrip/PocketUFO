@@ -2170,9 +2170,10 @@ bool World_Init(PufoWorldState *pW)
 }
 
 /* Base_CreateNamedEntry @ 0x66930 reads every one of its inputs from a global at the call: the base count
- * (0x159D80), the next site id (dword_186558), the zoom (0x1863E8) and the three economy columns already
- * OFFSET to the base it is about to create -- 0x159E9C + 800*n (u32), 0x15D09C + 400*n (u16),
- * 0x16022C + 288*n (u16), 200/200/144 entries per base. The port takes them through BaseCreateEnv, so the
+ * (0x159D80), the next site id (dword_186558), the zoom (0x1863E8) and the five economy columns already
+ * OFFSET to the base it is about to create -- 0x159E9C + 800*n and 0x15B79C + 800*n (the dword pair),
+ * 0x15D09C + 400*n and 0x15E19C + 400*n (the u16 pair), 0x16022C + 288*n, with 200/200/200/200/144
+ * entries per base. The port takes them through BaseCreateEnv, so the
  * shell fills it from its own state and re-offsets the columns with the count: Game_StartNew creates base 0
  * (0x94964) and the placement overlay's commit creates base *pbBaseCount (0x59AFC). */
 static void World_WireCreateEnv(PufoWorldState *pW)
@@ -2192,8 +2193,14 @@ static void World_WireCreateEnv(PufoWorldState *pW)
     pC->pnNextSiteId = &pW->nCreateNextSiteId;         /* dword_186558 */
     pC->apSiteRecs = pW->aSiteRecs;                    /* 0x186C40, 64-byte records */
     pC->paRegionBuildCount = pW->aRegionBuildCount;    /* 0x18655D */
-    pC->pProductU32Col = pW->auProductU32 + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;
-    pC->pProductU16Col = pW->auProductU16 + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;
+    pC->pProductU32Col = pW->auProductU32 + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;   /* 0x159E9C */
+    pC->pProductReqCol = pW->anProductReq + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;   /* 0x15B79C: the
+                                                                                      * u32 column 0x1900
+                                                                                      * bytes above it */
+    pC->pProductU16Col = pW->auProductU16 + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;   /* 0x15D09C */
+    pC->pManufCol      = pW->auManufCol + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;     /* 0x15E19C: the
+                                                                                      * u16 column 0x1100
+                                                                                      * bytes above it */
     pC->pResearchCol   = pW->auResearchCol + PUFO_RESEARCH_TOPIC_COUNT * nBase;
 }
 
@@ -2281,9 +2288,10 @@ static void World_StartNewHook(void *pUser)
     env.pnAlienPoolAddend = &pW->nAlienPoolAddend;
     env.pTime = &pW->geo.time;
     env.abFacilityGrid = pW->abFacilityGrid;
-    env.pProductU16Col = pW->auProductU16;
-    env.pProductU32Col = pW->auProductU32;
-    env.pManufCol = pW->auManufCol;
+    env.pProductU16Col = pW->auProductU16;                          /* 0x15D09C */
+    env.pProductReqCol = pW->anProductReq;                          /* 0x15B79C */
+    env.pProductU32Col = pW->auProductU32;                          /* 0x159E9C */
+    env.pManufCol = pW->auManufCol;                                 /* 0x15E19C */
     env.pResearchCol = pW->auResearchCol;
     env.abResearchZero = pW->abResearchZero;
     env.abResearchActive = pW->abResearchActive;
@@ -8628,8 +8636,8 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pD->apObjects         = pS->apObjects;
     pD->abFacilityGrid    = pW->abFacilityGrid;            /* gBaseFacGrid @ 0x159768 */
     pD->apSiteRecs        = pW->aSiteRecs;                 /* 0x186C40 */
-    pD->apManufCols       = pW->auManufCol;                /* 0x15E19C */
-    pD->apProductC        = pW->auProductU16;              /* 0x15D09C */
+    pD->apManufCols       = pW->auManufCol;                /* auManufCol @ 0x15E19C */
+    pD->apProductC        = pW->auProductU16;              /* auManufCommitted @ 0x15D09C */
     pD->apResearchCols    = pW->auResearchCol;             /* auResearchCol @ 0x16022C */
     pD->pnResearchEntries = &pW->nResearchEntries;         /* 0x160C4C */
     pD->apSites           = pW->apSites;                   /* 0x162030 */
@@ -8638,6 +8646,9 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pD->pShipEnv          = pS;
     pD->apProductB        = pW->anProductReq;         /* 0x15B79C: the requested-unit column, live
                                                        * since the manufacturing screen's buttons */
+    pD->apProductA        = pW->auProductU32;         /* 0x159E9C: the accumulator column. The
+                                                       * compaction shifts it too (0x670B0 -> 0x670BC),
+                                                       * which the port missed until Part 117 */
 
     memset(pE, 0, sizeof(*pE));
     pE->apCraft             = pW->apCraft;

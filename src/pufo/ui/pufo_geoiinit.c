@@ -588,8 +588,11 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
         pEnv->abResearchZero[i] = 0;                           /* 0x9474C */
     }
 
-    /* 0x94798..0x94840: eight bases' research and product columns. The +2176 / +1600
-     * entries belong to the next base -- reproduced, as in Base_CreateNamedEntry. */
+    /* 0x94798..0x94840: eight bases' research and product columns. The per-base advance is at
+     * 0x94824 (+0x120 = 288, the 144 u16 research column), 0x94834 (+0x190 = 400, the u16 product
+     * view) and 0x94830 (+0x320 = 800, the dword product view). The product pass clears entry [i]
+     * of four columns; 0x1100 and 0x1900 are the distances to the neighbouring column of the same
+     * base, exactly as in Base_CreateNamedEntry (see the Part 117 note there). */
     for (b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
         if (pEnv->bResearchCount != 0) {
             for (i = 0; i < (i32)pEnv->bResearchCount; ++i) {
@@ -597,10 +600,11 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
             }
         }
         for (i = 0; i < (i32)pEnv->nObjectCount; ++i) {
-            pEnv->pProductU16Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i] = 0;
-            pEnv->pProductU16Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i + 2176] = 0;
-            pEnv->pProductU32Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i] = 0;
-            pEnv->pProductU32Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i + 1600] = 0;
+            const i32 nOff = PUFO_PRODUCT_ENTRIES_PER_BASE * b + i;
+            pEnv->pManufCol[nOff] = 0;        /* 0x947F0 STRH [R0,#0x1100] */
+            pEnv->pProductU16Col[nOff] = 0;   /* 0x947F8 STRH [R0] */
+            pEnv->pProductReqCol[nOff] = 0;   /* 0x94800 STR [R3,#0x1900] */
+            pEnv->pProductU32Col[nOff] = 0;   /* 0x94808 STR [R3] */
         }
     }
 

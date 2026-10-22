@@ -2329,6 +2329,7 @@ static void TestPsiCapAndUpkeep(void)
 static u16 g_apManufCol[200 * 4];
 static u16 g_apProductC[200 * 4];
 static i32 g_apProductB[200 * 4];
+static u32 g_apProductA[200 * 4];
 static u16 g_apResearch[144 * 4];
 static u8 g_abDemoGrid[1524];
 static BaseSiteRec g_aSiteRec[3];
@@ -2429,6 +2430,8 @@ static void TestDemolishBase(void)
     g_apProductC[200 * 2] = 2222;
     g_apProductB[200 * 1] = 11111;
     g_apProductB[200 * 2] = 22222;
+    g_apProductA[200 * 1] = 11111111u;
+    g_apProductA[200 * 2] = 22222222u;
     g_apResearch[144 * 1] = 55;
     g_apResearch[144 * 2] = 66;
 
@@ -2471,6 +2474,7 @@ static void TestDemolishBase(void)
     env.apManufCols = g_apManufCol;
     env.apProductC = g_apProductC;
     env.apProductB = g_apProductB;
+    env.apProductA = g_apProductA;
     env.apResearchCols = g_apResearch;
     env.pnResearchEntries = &nResearchEntries;
     env.apSites = g_aDemoSite;
@@ -2501,8 +2505,11 @@ static void TestDemolishBase(void)
     CheckEqI32(g_abDemoGrid[36 * 1], 9, "and the build days move with it");
 
     CheckEqI32(g_aDemoObj[0].auPerBaseVal[1], 9, "every object's per-base column shifts left");
-    CheckEqI32(g_apProductC[200 * 1], 2222, "product C shifts left");
-    CheckEqI32(g_apProductB[200 * 1], 22222, "product B shifts left");
+    CheckEqI32(g_apProductC[200 * 1], 2222, "auManufCommitted shifts left (0x67088 -> 0x67090)");
+    CheckEqI32(g_apProductB[200 * 1], 22222, "aManufProductB shifts left (0x670A0 -> 0x670A8)");
+    CheckEqI32((i32)g_apProductA[200 * 1], 22222222,
+               "the accumulator shifts left too (0x670B0 LDR [R1,#4] -> 0x670BC STR [R1,#-0x31C])");
+    Check(g_apProductA[200 * 2] == 22222222u, "and its source column is not zeroed by the shift");
     CheckEqI32(g_apResearch[144 * 1], 66, "the research column shifts left");
 
     CheckEqI32(g_apManufCol[200 * 1], 111,
@@ -2773,8 +2780,12 @@ static void TestCreateNamedEntry(void)
     static ObjectRecFull objs[3];
     static ObjectRecFull *apObjs[3];
     static BaseSiteRec sites[8];
-    static u32 prodU32[1600 + 3];
-    static u16 prodU16[2176 + 3];
+    /* Four columns, two bases each (200 entries), so a clear that reached the wrong column or the
+     * wrong base shows up as a sentinel that moved. */
+    static u32 prodU32[400];          /* the accumulator @ 0x159E9C */
+    static i32 prodReq[400];          /* aManufProductB @ 0x15B79C */
+    static u16 prodU16[400];          /* auManufCommitted @ 0x15D09C */
+    static u16 manufCol[400];         /* auManufCol @ 0x15E19C */
     static u16 research[3];
     static const u8 kindTable[8] = { 3, 9, 4, 0, 0, 0, 0, 0 };
     static PtrArray list;
@@ -2794,11 +2805,11 @@ static void TestCreateNamedEntry(void)
         objs[i].auPerBaseVal[0] = 7;
         objs[i].auPerBaseVal[1] = 7;
     }
-    for (i = 0; i < 1600 + 3; ++i) {
+    for (i = 0; i < 400; ++i) {
         prodU32[i] = 0xAAAAAAAAu;
-    }
-    for (i = 0; i < 2176 + 3; ++i) {
+        prodReq[i] = 0xAAAAAAAA;
         prodU16[i] = 0xAAAA;
+        manufCol[i] = 0xAAAA;
     }
     for (i = 0; i < 3; ++i) {
         research[i] = 0xAAAA;
@@ -2816,7 +2827,9 @@ static void TestCreateNamedEntry(void)
     env.apSiteRecs = sites;
     env.paRegionBuildCount = kindTable;
     env.pProductU32Col = prodU32;
+    env.pProductReqCol = prodReq;
     env.pProductU16Col = prodU16;
+    env.pManufCol = manufCol;
     env.pResearchCol = research;
 
     printf("\nBase_CreateNamedEntry @ 0x66930\n");
@@ -2852,19 +2865,31 @@ static void TestCreateNamedEntry(void)
     CheckEqI32(sites[0].nUnk48, 0, "the three scratch dwords are cleared");
 
     CheckEqI32((i32)research[0], 0, "research column cleared");
-    CheckEqI32((i32)prodU16[2], 0, "product u16 column cleared");
-    CheckEqI32((i32)prodU16[2178], 0, "and its +2176 twin");
-    CheckEqI32((i32)prodU32[1602], 0, "product u32 column and its +1600 twin");
+    CheckEqI32((i32)prodU16[2], 0, "auManufCommitted [0..2] cleared (0x66B24 STRH [R3])");
+    CheckEqI32((i32)manufCol[2], 0, "auManufCol [0..2] cleared (0x66B1C STRH [R3,#0x1100])");
+    CheckEqI32(prodReq[2], 0, "aManufProductB [0..2] cleared (0x66B2C STR [LR,#0x1900])");
+    CheckEqI32((i32)prodU32[2], 0, "the accumulator [0..2] cleared (0x66B34 STR [LR])");
     Check(prodU32[3] == 0xAAAAAAAAu, "the entry past the object count is untouched");
+    Check(prodU16[3] == 0xAAAA && manufCol[3] == 0xAAAA && (u32)prodReq[3] == 0xAAAAAAAAu,
+          "and every other column stops at the object count too");
+    Check(prodU16[200] == 0xAAAA && manufCol[200] == 0xAAAA && (u32)prodReq[200] == 0xAAAAAAAAu
+          && prodU32[200] == 0xAAAAAAAAu, "the next base keeps its entry in all four columns");
 
     /* A 30-character name: the original would run past the 20-byte field; the port truncates
-     * at 19 + NUL and the record's own fields stay clean. */
+     * at 19 + NUL and the record's own fields stay clean. The column pointers move with the base,
+     * as the original's +800 / +400 per-base advance does. */
+    env.pProductU32Col = prodU32 + 200;
+    env.pProductReqCol = prodReq + 200;
+    env.pProductU16Col = prodU16 + 200;
+    env.pManufCol = manufCol + 200;
     (void)Base_CreateNamedEntry(&env, 100, 200, 0, "012345678901234567890123456789");
     CheckEqI32(bBaseCount, 2, "second base created");
     Check(strcmp(sites[1].abName, "0123456789012345678") == 0, "the long name is truncated to 19");
     CheckEqI32(sites[1].nUnk48, 0, "and nothing spilled into the fields below");
     CheckEqI32(sites[1].bType, 0x80, "region 0 (Game_StartNew) gives bType 0 - 0x80 as a byte");
     CheckEqI32(apBases[1]->bUnk16, 0xFF, "and region 0 has no counter, so bUnk16 is 0 - 1");
+    Check(prodU16[202] == 0 && manufCol[202] == 0 && prodReq[202] == 0 && prodU32[202] == 0u,
+          "the re-offset pointers clear the second base's own four columns");
 }
 
 static void TestBudgetHelpers(void)

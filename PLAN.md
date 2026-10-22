@@ -5607,6 +5607,52 @@ true name and the stale one side by side. A second, smaller one: the text block 
 unnamed `char[]` in the IDB even though dozens of draws index it as `base + 205 * record`; a name there
 makes every `aText*` offset self-checking, and it belongs in the same IDB pass.
 
+### Goal 2026-10-22b: the five gaps the closing pass left, each with the Part that takes it
+
+Written after Part 116, because the closing status and this list had drifted: the measured section below
+was produced at Part 110 and seven Parts have landed since. `grep -c "^- [ ]" PLAN.md` is the tracker: seven
+now, zero when the goal closes.
+
+Part 117 landed on a different pair of problems from its two rows. Reading the create and start-new paths
+showed that both clear **four** product-block columns and the port cleared two, and that base removal
+compacts four and the port compacted three; those are fixed and gated, and the two rows below move to
+Part 118, which also takes the new 118c.
+
+- [ ] **117a. Array A of the product block (`anManufAccum`, was `unk_159E9C`): the signed sweep.** The IDB
+  types it `int[1600]`; the port carries `u32 *` in `ManufClearEnv`, `ManufCommitEnv`, `ManufRefreshEnv` and
+  `pProductU32Col`. Part 117 gathered the census and wrote it into the IDB note at 0x159E9C -- no direct xref
+  anywhere, every access is block+4 off 0x159E98; signed at 0x6F3E4, 0x6F038 with 0x6F070,
+  0x6E70C/0x6E714/0x6E718 and panel D's 0x6F174; sign-free at 0x6F03C, 0x6E4F0, 0x70F64/0x70F68,
+  0x70FD8/0x70FE8, 0x6E51C, 0x6F918, 0x66B34, 0x94808, 0x670B0->0x670BC, 0x455A4, 0x45608, 0x456AC -- but
+  added none of the planned signed-value checks. The port already casts to `i32` at every division and prints
+  with `%d`, so the sweep is now the checks that a `u32` reading would fail. Part 118.
+- [ ] **117b. `0x6E58C`'s low-byte read: close it as recorded, not as a gate.** Part 117 re-checked it and
+  there is no gate to build. 0x6E58C `LDRB [R3,#0x1904]` (R9 = 0x1904 built at 0x6E440 / 0x6E450) feeds the
+  `ADD` at 0x6E590 into `BaseGrid_SetByteAtFound`, whose only store is 0x6ACB4 `STRB R5,[R2,R3,ASR#24]` -- the
+  value never survives as anything wider than a byte, so no fixture crossing 255 separates a byte read from a
+  dword read. State that in the record and drop the row. Part 118.
+- [ ] **118c. Pin the padding dependency before the product columns are sized down.** Cutting `auProductU16`
+  from 4096 entries to the 1600 the IDB says it has changes the geoscapeframe run -- 239 output lines, 7
+  pictures, one Debug strateg check -- although a 0xBEEF-filled pad of exactly the removed bytes is never read
+  or written and reproduces the old run byte for byte, while the same pad moved to the end of the struct does
+  not. So the dependency is the byte distance to the members *after* the columns, not the struct's size.
+  Find the access, pin it with a test, then size the arrays. Until then `auProductU16[4096]` and
+  `auProductU32[3600]` must not be shrunk. Part 118.
+- [ ] **118a. Re-measure the closing status and move it to the tail.** It cites `build/crops/check110d.log`
+  and sits before Parts 111..116 in `docs/parity/game-core.md`; it has to carry the current numbers (63/63,
+  20,594 checks and whatever they become, coverage, frames, e2e) and sit after the last Part section. Part 118.
+- [ ] **118b. Refresh `HANDOFF.md`.** It last names Part 98. Part 118.
+- [ ] **119a. The IDB naming pass the closing pass deferred.** `Map +0x150F0` is still `nAnimScratchX`
+  (`_BYTE[4]`) while the address carries `pThrowTargetUnit @ 0x128AA8` and `Map_TraceVoxelOccupancy` (0x3242c)
+  dereferences it as a `Soldier *`; and the text block base `0xB38D0` is an unnamed `char[]` although every
+  draw indexes it as `base + 205 * record`. Both need the readers re-checked after the rename, in one pass.
+  Part 119.
+- [ ] **119b. Rows 4994 and 5038: re-test whether they are still blocked.** 4994 says it is blocked on the
+  unported `LoadGame @ 0x44bbc` -- `LoadGame` and its product-array tail are in `pufo_save.c` now, so the
+  blocker has to be re-checked and the row either closed or restated with the real blocker. 5038 names seven
+  RNG start globals whose readers this IDB does not establish; a fresh census either finds the readers or
+  records that it does not. Part 119.
+
 ### CLAUDE.md's verification contract, mapped to evidence
 
 | Criterion | Evidence, measured in build/crops/check110d.log (EXIT=0) and the audits |
@@ -5637,3 +5683,4 @@ new check | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) | 93 frames 
 unchanged; its reported mutation did gate a pairing, but not the one it described -- 0x6E330 reads
 neither column the way the row says, which Part 116 corrected and re-gated.
 `<this commit>` + Part 116 | 63/63 Release and 63/63 Debug | 20,594 checks (+5 in `TestManufQty`) | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged: no function newly cited, one column of an already-cited function read correctly | 93 frames and 9 e2e pictures unchanged: the manufacturing flow presses the units '+1' and the allocate-all, never the units '-1' | teeth: putting the floor back on `auManufCols` fails "20 engineers, 0 committed: 2 orders drop to 1: got 2, want 1".
+`<this commit>` + Part 117 | 63/63 Release and 63/63 Debug | 20,598 checks (+14 `Check*` call sites, -10 removed: the four-column clears re-gated in `TestCreateNamedEntry` and `test_startnew`, the accumulator shift gated in `TestDemolishBase`, the two fake `+2176/+1600 twin` gates and the wrong `the manufacturing column is not cleared` check deleted) | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged: no function newly cited or uncited, two already-cited functions now clear one more column each and a third compacts one more | 93 frames and 9 e2e pictures unchanged | teeth: dropping the engineers clear fails "auManufCol [0..2] cleared: got 43690, want 0"; self-copying the accumulator shift fails "the accumulator shifts left too: got 11111111, want 22222222"; dropping the ordered-units clear fails "aManufProductB [0..2] cleared: got -1431655766, want 0" -- and the column sizes stay 4096/3600 because cutting the u16 column to 1600 moved 7 pictures, which is gap 118c and the last section of `docs/parity/game-core.md`.

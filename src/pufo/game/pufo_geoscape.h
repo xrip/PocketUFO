@@ -363,9 +363,10 @@ typedef struct BaseDemolishEnv {
     u16 *pnObjectCount;
     u8 *abFacilityGrid;      /* 1524 bytes: buildDays then eight 144-byte blocks */
     BaseSiteRec *apSiteRecs; /* 0x186C40 */
-    u16 *apManufCols;        /* 0x15E19C, 200 u16 per base */
-    u16 *apProductC;         /* 0x15D09C, 200 u16 per base */
-    i32  *apProductB;        /* 0x15B79C, 200 u32 per base */
+    u16 *apManufCols;        /* auManufCol @ 0x15E19C, 200 u16 per base */
+    u16 *apProductC;         /* auManufCommitted @ 0x15D09C, 200 u16 per base */
+    i32  *apProductB;        /* aManufProductB @ 0x15B79C, 200 u32 per base */
+    u32  *apProductA;        /* the accumulator @ 0x159E9C, 200 u32 per base */
     u16 *apResearchCols;     /* 0x16022C, 144 u16 per base */
     u8 *pnResearchEntries;   /* 0x160C4C, a byte, shared by every base */
     struct SmapSite *apSites;  /* 0x162030 */
@@ -943,10 +944,16 @@ void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
  *      and gets bUnk16 = -1. The port reads 0 for any region below 0x80 (deviation, same value).
  *   6. When Map_nObjectCount is non-zero, clear this base's economy columns: the first
  *      nObjectCount u16 of the research column (144 entries per base, so 149 objects spill five
- *      into the next base - reproduced), and entries [i] and [i + 2176] of the u16 product
- *      column, [i] and [i + 1600] of the u32 product column. The column pointers are passed
- *      already offset to this base: 0x159E9C + 800*n (u32), 0x15D09C + 400*n (u16),
- *      0x16022C + 288*n (u16).
+ *      into the next base - reproduced), and entry [i] of the four product-block columns. The ARM
+ *      walks two pointers per iteration -- a u16 view R3 and a dword view LR, both already at this
+ *      base -- and reaches four columns off them: 0x66B24 STRH [R3] is auManufCommitted (0x15D09C),
+ *      0x66B1C STRH [R3,#0x1100] is auManufCol (0x15E19C), 0x66B34 STR [LR] is the accumulator
+ *      (0x159E9C) and 0x66B2C STR [LR,#0x1900] is aManufProductB (0x15B79C). 0x1100 and 0x1900 are
+ *      the distances between neighbouring columns (0x15D09C+0x1100 = 0x15E19C, 0x159E9C+0x1900 =
+ *      0x15B79C), not the next base: the u16 pair clears the same entry of the engineers column,
+ *      the dword pair the same entry of the ordered-units column. Column pointers are passed
+ *      already offset to this base: 0x159E9C + 800*n, 0x15B79C + 800*n (dword), 0x15D09C + 400*n,
+ *      0x15E19C + 400*n (u16), 0x16022C + 288*n.
  *   7. ++site id, ++base count.
  *
  * The return value is the constant 1560 (0x618, the offset the count store used - register
@@ -962,8 +969,10 @@ typedef struct BaseCreateEnv {
     i32 *pnNextSiteId;          /* dword_186558 */
     BaseSiteRec *apSiteRecs;    /* 0x186C40, eight 64-byte records */
     const u8 *paRegionBuildCount; /* g_anRegionBuildCount @ 0x18655D, indexed by region - 0x80 */
-    u32 *pProductU32Col;        /* 0x159E9C + 800 * nBaseCount */
-    u16 *pProductU16Col;        /* 0x15D09C + 400 * nBaseCount */
+    u32 *pProductU32Col;        /* the accumulator @ 0x159E9C + 800 * nBaseCount */
+    i32 *pProductReqCol;        /* aManufProductB @ 0x15B79C + 800 * nBaseCount: units ordered */
+    u16 *pProductU16Col;        /* auManufCommitted @ 0x15D09C + 400 * nBaseCount */
+    u16 *pManufCol;             /* auManufCol @ 0x15E19C + 400 * nBaseCount: engineers assigned */
     u16 *pResearchCol;          /* 0x16022C + 288 * nBaseCount */
 } BaseCreateEnv;
 

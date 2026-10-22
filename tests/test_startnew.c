@@ -66,9 +66,10 @@ static u16       nAlienPoolAddend;  /* 0x1472c8 */
 static GameTime  g_time;
 
 static u8   grid[PUFO_GRID_SIZE];
-static u16  prodU16[4096];          /* auManufCommitted @ 0x15D09C plus the +2176 spill */
-static u32  prodU32[3600];          /* unk_159E9C plus the +1600 spill */
-static u16  manuf[1600];            /* 0x15E19C, StartNew does not clear it */
+static u16  prodU16[1600];          /* auManufCommitted @ 0x15D09C, 200 per base */
+static i32  prodReq[1600];          /* aManufProductB @ 0x15B79C, 200 per base */
+static u32  prodU32[1600];          /* the accumulator @ 0x159E9C, 200 per base */
+static u16  manuf[1600];            /* auManufCol @ 0x15E19C, 200 per base: engineers assigned */
 static u16  researchCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];
 static u8   resZero[PUFO_RESEARCH_TOPIC_COUNT];
 static u8   resActive[PUFO_RESEARCH_TOPIC_COUNT];
@@ -216,6 +217,7 @@ static void TestStartNew(void)
     memset(radarPct, 0xAA, sizeof(radarPct));
     memset(grid, 0x5A, sizeof(grid));
     memset(prodU16, 0xAA, sizeof(prodU16));
+    memset(prodReq, 0xAA, sizeof(prodReq));
     memset(prodU32, 0xAA, sizeof(prodU32));
     memset(manuf, 0xBB, sizeof(manuf));
     memset(researchCol, 0xAA, sizeof(researchCol));
@@ -315,7 +317,9 @@ static void TestStartNew(void)
     createEnv.apSiteRecs = aSiteRecs;
     createEnv.paRegionBuildCount = paRegionBuildCount;
     createEnv.pProductU32Col = prodU32;
+    createEnv.pProductReqCol = prodReq;
     createEnv.pProductU16Col = prodU16;
+    createEnv.pManufCol = manuf;
     createEnv.pResearchCol = researchCol;
 
     memset(&spawnCtx, 0, sizeof(spawnCtx));
@@ -361,6 +365,7 @@ static void TestStartNew(void)
     env.pTime = &g_time;
     env.abFacilityGrid = grid;
     env.pProductU16Col = prodU16;
+    env.pProductReqCol = prodReq;
     env.pProductU32Col = prodU32;
     env.pManufCol = manuf;
     env.pResearchCol = researchCol;
@@ -626,11 +631,30 @@ static void TestStartNew(void)
         }
         Check(bAll, "the eight research columns cleared");
     }
-    Check(prodU16[2176] == 0 && prodU16[2324] == 0, "the u16 column's +2176 spill cleared");
-    Check(prodU16[3800] == 0xAAAA, "the u16 column past the spill untouched");
-    Check(prodU32[1600] == 0 && prodU32[3148] == 0, "the u32 column's +1600 spill cleared");
-    Check(prodU32[3300] == 0xAAAAAAAAu, "the u32 column past the spill untouched");
-    Check(manuf[0] == 0xBBBB && manuf[1599] == 0xBBBB, "the manufacturing column is not cleared");
+    {
+        /* Game_StartNew clears entry [i] of all four product-block columns for every base:
+         * 0x947F8 committed, 0x947F0 engineers (the +0x1100 term), 0x94808 accumulator,
+         * 0x94800 ordered units (the +0x1900 term). The port's [i + 2176] / [i + 1600] stores
+         * faked the two neighbour columns inside one array and left the real columns alone. */
+        const i32 nObjects = (i32)g_assets.nObjectCount;
+        bool bAll = true;
+        for (i = 0; i < PUFO_FAC_BASE_COUNT; ++i) {
+            const i32 nFirst = PUFO_PRODUCT_ENTRIES_PER_BASE * i;
+            if (prodU16[nFirst] != 0 || prodU16[nFirst + nObjects - 1] != 0 ||
+                prodU32[nFirst] != 0 || prodU32[nFirst + nObjects - 1] != 0 ||
+                prodReq[nFirst] != 0 || prodReq[nFirst + nObjects - 1] != 0 ||
+                manuf[nFirst] != 0 || manuf[nFirst + nObjects - 1] != 0) {
+                bAll = false;
+            }
+        }
+        Check(bAll, "all four columns cleared for every base, first and last cleared entry");
+        Check(prodU16[nObjects] == 0xAAAA && prodU32[nObjects] == 0xAAAAAAAAu &&
+              (u32)prodReq[nObjects] == 0xAAAAAAAAu && manuf[nObjects] == 0xBBBB,
+              "each column stops at the object count");
+        Check(prodU16[1599] == 0xAAAA && prodU32[1599] == 0xAAAAAAAAu &&
+              (u32)prodReq[1599] == 0xAAAAAAAAu && manuf[1599] == 0xBBBB,
+              "and the tail of base 7 keeps its value");
+    }
     {
         bool bAll = true;
         for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
