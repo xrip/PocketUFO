@@ -5009,8 +5009,14 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
     `BaseAtScreen_Draw :13182` -- and `PsiScreen_Draw` paints the three captions at the original's
     own sites (0x726A0 / 0x726F8 / 0x7274C, `:12749-12751`) from the text records named there
     (`PUFO_PSI_TEXT_COLUMNS` = TEXTS[1188], `..._SEL_BASE` = TEXTS[1189], `..._OK` = TEXTS[1127],
-    the `0xEBF4B` 'ОК' record). The 'no writer' half stands as an IDB fact: the four `.data` scratch
-    addresses have only these reads in the whole binary, so they ship empty.
+    the `0xEBF4B` 'ОК' record). The 'no writer' half is now DISPROVED, not standing: `PsiScreen_Draw`
+    loads the text block base at 0x72664 (`LDR R11, =0xB38D0`) and reads each caption as base + 205 *
+    record, and 243540 / 243745 / 243950 / 231035 are exactly TEXTS[1188] / [1189] / [1190] / [1127]. So
+    the four addresses are lang.dat text records the loader writes, and `0xEF024`/`0xEF0F1`/`0xEF1BE`
+    carry the IDB names `aTextPsiColumnCaptions`, `aTextSelectBase`, `aTextNoPsiRoom`. Zero store xrefs is
+    what a read-only text record looks like, not dead scratch. The caption lines are asserted live in
+    `test_baseui` ("TEXTS[1188] draws at (7, 54) (0x726A0)", `:15976`, and its siblings at `:15960-15987`).
+    Recorded in `bugs.tsv` at `0xEF024` so the older wording is not repeated.
 - [x] **The research entry count is modelled as `u16` where the original has a byte.** Found in part 43:
   the ARM reads the count at `0x160C4C` with `LDRB` (`LDRB R3, [R2, #0x1D44]` over the 0x15EF08 anchor,
   and `LDRB` again at 0x74B14), and `Geoscape_InitUI` writes it with `STRB R1, #0x90` — the port's own
@@ -5566,7 +5572,9 @@ One IDB upkeep item came out of this pass and is left open on purpose. The `Map`
 `Map_TraceVoxelOccupancy` dereferences it as a `Soldier *` twice (0x3242c's decompile shows both
 comparisons). Renaming one member of a 156-member type that every IDB note in this project cites belongs in
 its own verified pass with the readers re-checked after it. The comments at 0x3242c and 0x31A0C state the
-true name and the stale one side by side.
+true name and the stale one side by side. A second, smaller one: the text block base `0xB38D0` is an
+unnamed `char[]` in the IDB even though dozens of draws index it as `base + 205 * record`; a name there
+makes every `aText*` offset self-checking, and it belongs in the same IDB pass.
 
 ### CLAUDE.md's verification contract, mapped to evidence
 

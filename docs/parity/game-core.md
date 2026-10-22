@@ -21977,3 +21977,21 @@ parallel Debug run with the stale nStrategItemCount signature (9 saved, 8 loaded
 three serial Debug runs and in every full run measured since, the two six-gate runs of
 this Part among them. The class is the original's own stale
 write, asserted at test_save:1986-1995 and in the quit-YES e2e output; the flake is the harness.
+### Two claims the closing pass corrected, after the commit (docs upkeep)
+
+The audit pass that classified the open rows flagged two findings that had never reached the bug ledger.
+Both were checked against HEAD before being added. Unit_ResetBattleState @ 0x498b0 clears the
+pocket/belt/backpack slots, sets apBackpack[5] and apBackpack[6] to unk_138EA0 and calls
+Unit_RecalcInventoryStat itself; the port does the type-armour pair and the armor constant only and leaves
+the recalc to its three pufo_tactctl.c call sites. Nothing is red, but the deviation was only in the IDB
+comment, so it is now a ledger row (0x498B0).
+
+The older claim about four writer-less caption buffers is WRONG, and the new ledger row (0xEF024) says so.
+PsiScreen_Draw loads a base at 0x72664 (LDR R11, =0xB38D0) and reads each caption as base + 205 * record;
+the offsets of 0xEF024, 0xEF0F1, 0xEF1BE and 0xEBF4B are 243540, 243745, 243950 and 231035, exactly
+TEXTS[1188], TEXTS[1189], TEXTS[1190] and TEXTS[1127]. They are lang.dat text records - the IDB already
+names them aTextPsiColumnCaptions, aTextSelectBase, aTextNoPsiRoom and aTextOk - and the port's
+PUFO_PSI_TEXT_* constants are the same four record numbers the original indexes. Zero store references is
+what a read-only text record looks like; it is not evidence of dead scratch, and the caption lines are
+asserted live in test_baseui (TEXTS[1188] at (7,54) and its siblings). The general rule this re-teaches:
+a base-relative index (base + 205 * n) hides from xrefs the same way a register-built Map offset does.
