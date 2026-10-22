@@ -63,3 +63,14 @@ with its six call sites in `Tact_UpdateUnitControl` (0x4A5D4, 0x4A678), `BeforeE
 so the dump cannot lag behind a rename again; it disagreed on nine rows, seven of them these
 renames and two (`Options_SetTab3_AndUiY @ 0x6b674`, `Geoscape_GameTickStub @ 0x94550`) from
 renames made in earlier units.
+
+The 135 artifact rows were re-derived from the IDB on 2026-10-22 instead of inherited: every row's name and
+function size were read back live (`idc.get_name`, `ida_funcs.get_func`) and all 135 agree, 1952 bytes in both.
+By instruction shape they are 85 import stubs (`LDR R12, =__imp_X; LDR PC, [R12]`), 26 thunks and tail calls,
+8 `RET`-only nullsubs, 6 CRT init-term entries, 2 `B atexit` registrars, and 8 more that are CRT machinery
+rather than game code: `start`, `_cinit`, `Crt_CallFnTable`, `Crt_DoExit`, `_onexit`, `atexit`, the compiled-out
+debug print `Debug_TracePrint` @ 0x9E0B0, and the `POP {R0-R12,PC}` data word `nullsub_10` @ 0xA42E0 -- that
+last one is also the only row in the image with no cross-reference at all, the other 134 all have one.
+`docs/parity/coverage.py --check` is the structural guard (every row names a real inventory function with a
+class and evidence, every target it cites is cited or another artifact); this paragraph is the instruction-level
+confirmation under that guard.
