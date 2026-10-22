@@ -5652,11 +5652,14 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   20,594 checks and whatever they become, coverage, frames, e2e) and sit after the last Part section. Part 119.
 - [ ] **118b. Refresh `HANDOFF.md`.** It last names Part 98. Part 119.
 - [ ] **119c. Close the reach deficit the new ledger names.** `python docs/parity/teeth_ledger.py` writes
-  `docs/parity/teeth.tsv` from the inventory, the artifact ledger, the src/ citations and tests/*.c: 968
-  behaviour-bearing functions, 968 cited (0 uncited), 814 reached by a test, **154 cited but not reached** --
-  strat-ui 57, tact 41, render 13, ui-core 12, app-shell 12, tact-ui 7, strat 5, util 4, dat 2, boot-assets 1.
-  Reach is not assertion coverage: after a function is reached, the next step is a check that fails when it is
-  wrong, which no gate measures yet. That second step is the actual "100% coverage with proofs" gap. Part 119.
+  `docs/parity/teeth.tsv` from the inventory, the artifact ledger, the src/ citations (each address attributed
+  to the port function whose header or body cites it) and tests/*.c: 968 behaviour-bearing functions, 968
+  cited (0 uncited), 848 reached by a test, **120 cited but not reached** -- strat-ui 43, tact 38, render 11,
+  ui-core 10, tact-ui 7, strat 5, app-shell 3, dat 2, util 1. The address->port-owner map covers 367 of the
+  968 rows, so 120 is an upper bound, not a count: a port wrapper that cites one address for five original
+  variants reads as unreached for the other four. Reach is not assertion coverage either: after reach comes a
+  check that fails when the function is wrong, which no gate measures yet. That second step is the real
+  "100% coverage with proofs" gap. Part 119.
 - [ ] **119a. The IDB naming pass the closing pass deferred.** `Map +0x150F0` is still `nAnimScratchX`
   (`_BYTE[4]`) while the address carries `pThrowTargetUnit @ 0x128AA8` and `Map_TraceVoxelOccupancy` (0x3242c)
   dereferences it as a `Soldier *`; and the text block base `0xB38D0` is an unnamed `char[]` although every
