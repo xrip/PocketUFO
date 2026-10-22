@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 65 |
-| Test checks run | 20734 |
+| Test checks run | 20819 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -201,7 +201,7 @@ is the module that answers to it.
 | `0x9e7c4` | `KillTimers_C` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
 | `0x18e18` | `App_QuitFromTact` | 20 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
 | `0x54c48` | `??1CDialogTemplate@@QAA@XZ` | 20 | `src/pufo/game/pufo_template.c` |
-| `0x54c3c` | `??0CDialogTemplate@@QAA@XZ` | 12 | `src/pufo/game/pufo_template.h` |
+| `0x54c3c` | `??0CDialogTemplate@@QAA@XZ` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c5c` | `CDialogTemplate_GetTemplateByte1` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
@@ -1265,7 +1265,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_ballist` | PASS | 106 |
 | `test_baseui` | PASS | 4178 |
 | `test_blast` | PASS | 14 |
-| `test_boot` | PASS | 62 |
+| `test_boot` | PASS | 77 |
 | `test_clock` | PASS | 44 |
 | `test_closeui` | PASS | 302 |
 | `test_cmdpads` | PASS | 42 |
@@ -1316,10 +1316,10 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactinit` | PASS | 105 |
 | `test_tactstate` | PASS | 599 |
 | `test_tactui` | PASS | 507 |
-| `test_template` | PASS | 49 |
+| `test_template` | PASS | 66 |
 | `test_terrain` | PASS | 59 |
 | `test_texts_lang` | PASS | 15 |
-| `test_timer` | PASS | 96 |
+| `test_timer` | PASS | 149 |
 | `test_titles` | PASS | 167 |
 | `test_turn` | PASS | 176 |
 | `test_uibank` | PASS | 394 |

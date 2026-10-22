@@ -152,3 +152,20 @@ at 0x9F71C limits how many bytes a refill may pull past the chunk's end, and dro
 at 0x9F774 takes `nLeft` bytes from the buffer front and `nLeft` is already bounded by the chunk's remaining bytes,
 so the bytes beyond what was needed are never consumed. That is written in the IDB note for 0x9f698, next to the
 measurement that agrees with it.
+
+Part 126 closed the 19 `app-shell` rows and produced two tool findings worth keeping. First: the mutation runner
+restored with a second whole-file `replace(new -> old)`, so a mutation whose replacement text also occurs somewhere
+else restores too much. The `KillTimers_D @ 0x9e864` case shortened `KillOne(UIPULSE); KillOne(EXTRA); }` to
+`KillOne(UIPULSE); }` -- which is also `Timer_KillBySpeed`'s tail -- and the restore put the dropped kill back in
+BOTH functions, leaving a real edit in `pufo_timer.c` (0xC354 killed, where 0x9e8b4 kills 0xC350..0xC353) that only
+`restored exactly: False` revealed. `mutate_run.py` now splices at the recorded offset, the source was repaired, and
+all 30 cases were re-run with 30 exact restores. Second: a check that compares zero with zero has no teeth. The
+first version of the `CDialogTemplate_GetCellByte @ 0x54c80` stride checks compared the accessor against the shipped
+AVENGER.MA1 byte at the offset under test, and only 117 of that blob's 2400 slot bytes are non-zero, so three of
+them were 0 against 0. They became a synthetic 2403-byte blob whose byte at every checked offset is different
+(3->4, 43->44, 82->83, 763->252, 805->38, 2402->99). The third finding came from the registry rather than the
+instructions: `CMP R3,#0xFF` + `BHI` at 0x9EE70/0x9EE74 rejects cbData strictly above 255, and `Reg_SetString`
+stores strlen+1, so the longest value that reads back is 254 characters -- the port comment's claim that 256 stored
+bytes are accepted was wrong, and the new test failed before the comment was corrected. Measured after Part 126:
+**555** cited, **410** not (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26 left;
+`app-shell` closed -- its three process entry points stay cited-but-unreached, exercised only by `tools/e2e.sh`).

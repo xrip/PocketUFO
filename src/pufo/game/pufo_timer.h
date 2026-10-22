@@ -18,10 +18,17 @@
  *
  * ## The four plain sets
  *
- * `KillTimers_A/B/C` and `StartTimers_A/B/C` are **three byte-identical pairs**:
+ * `KillTimers_A/B/C` and `StartTimers_A/B/C` are **three copies of two bodies**:
  *
  *     Kill  A/B/C : kill 0xC351, 0xC352
  *     Start A/B/C : 0xC351 = 40 ms, 0xC352 = 25 ms
+ *
+ * A byte compare over the six functions shows the copies are not literally identical: the Start
+ * trio differs only at +0x1C and +0x38 and the Kill trio only at +0x14 and +0x28, and those four
+ * words are the branch displacements to the shared SetTimer/KillTimer import thunk. Ids are built as
+ * `MOV R1,#0xC300` then `ORR R1,R1,#0x5n` (0x9E6DC/0x9E6EC for 0xC351, 0x9E8BC for 0xC350, and so
+ * on); the only exception is the Kill trio's first id, which is the wide immediate `MOV R1,#0xC351`
+ * at 0x9E6AC / 0x9E75C / 0x9E7CC.
  *
  * That is an original redundancy, not a transcription error, and the port keeps
  * the three names so the call sites stay recognisable.

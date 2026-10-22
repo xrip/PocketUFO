@@ -11,8 +11,23 @@
 #include "asset/pufo_asset.h"
 #include "util/pufo_str.h"
 
-/* Map_LoadMa1 @ 0x54ba4. The original appends ".ma1" to the caller's base name
- * and reads the whole member; it stores the flag byte at pOut + 4. */
+/* Map_LoadMa1 @ 0x54ba4. The original appends ".ma1" to the caller's base name and reads the whole
+ * member; it stores the flag byte at pOut + 4. Three things the instructions show and this port does
+ * differently, all of them stated rather than assumed:
+ *
+ *   - ??0CDialogTemplate@@QAA@XZ @ 0x54c3c is the template ctor, one store `pTemplate = 0` at 0x54C40.
+ *     MapTemplate_Load reproduces it with its leading MapTemplate_Free(pTpl) (the same store the
+ *     original's own inline guard-and-delete at 0x54BC8 leaves behind), so a load that fails leaves a
+ *     NULL blob exactly as the ctor+dtor pair does.
+ *   - the flag store at 0x54BD0 happens BEFORE the name copy, the Find and the read, so a failed load
+ *     in the original still records the flag. Here the flag is stored only on the success path, which
+ *     is the answer the shell's own callers can see (a failed load frees the old blob and the caller
+ *     keeps the previous template state instead of a half-written one).
+ *   - the name goes into a 16-byte stack buffer (pszName[16]) by an unbounded byte loop at
+ *     0x54BDC..0x54BEC followed by strcat ".ma1" at 0x54BF8, so a base name of 12 characters already
+ *     writes 17 bytes past that buffer. AssetReader_Find's result is never tested either: on a miss
+ *     the size is 0, `operator new(0)` at 0x54C14 still returns a pointer, and the function returns
+ *     AssetReader_Read's refusal value. The port bounds the name (szName[64]) and refuses. */
 bool MapTemplate_Load(MapTemplate *pTpl, const char *pszBase, u8 nFlag)
 {
     AssetReader rdr;
@@ -87,13 +102,21 @@ u8 MapTemplate_GetHeaderByte1(const MapTemplate *pTpl)
     return pTpl->nCols;
 }
 
-/* CDialogTemplate_GetCellByte @ 0x54c80.
+/* CDialogTemplate_GetCellByte @ 0x54c80 (116 bytes). It calls the accessors three times -- byte 1 at
+ * 0x54C94, byte 0 at 0x54CA0 and byte 1 AGAIN at 0x54CAC -- and then, with every factor masked to
+ * eight bits (AND #0xFF at 0x54CB0, 0x54CB4, 0x54CBC, 0x54CC4, 0x54CC8, 0x54CD0, so a caller that
+ * passes 259 reaches cell 3), builds
  *
- * The original computes
- *     pTemplate[4 * nRows * nCols * nZ + 4 * nCols * nY + 4 * nX + nSlot + 3]
- * with no bound check, and reads the two header bytes fresh each call. The trailing +3 skips the
- * header. Reproduced, with a bounds check added because the original's behaviour out of range is
- * undefined rather than defined. */
+ *     pTemplate[4 * (byte0 * byte1 * nZ) + 4 * (byte1 * nY) + 4 * nX + nSlot + 3]
+ *
+ * from MUL at 0x54CB8/0x54CC0/0x54CCC, ADD at 0x54CD4/0x54CD8, `ADD R3, R2, R3, LSL #2` at 0x54CE0
+ * (nSlot is the fourth argument and arrives on the stack: `LDRB R2,[SP,#nSlot]` at 0x54CDC), and the
+ * final `LDRB R0,[R3,#3]` at 0x54CEC. The row stride is byte 1 and the level stride is byte0*byte1,
+ * which is what makes byte 1 the X extent. There is no bound check anywhere.
+ *
+ * The port adds the bounds check the original lacks (out of range reads outside the allocation in the
+ * original, which is undefined rather than a value), and takes u32 arguments: an over-range index is
+ * refused here instead of being truncated to its low byte. */
 u8 MapTemplate_GetCellByte(const MapTemplate *pTpl, u32 nX, u32 nY, u32 nZ, u32 nSlot)
 {
     u32 nIndex;

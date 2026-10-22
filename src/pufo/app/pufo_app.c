@@ -2143,6 +2143,19 @@ static void App_FocusGained(void)
     g_bank.abHeldDir[3] = 0;    /* UiBank_bHeldRight@ 0xAD71F, written 0xA0670 */
 }
 
+/* App_QuitDisplay @ 0xa0388 (100 bytes), the shell's teardown, in the original's order:
+ * `if (Map_bTactFlag) Tact_Shutdown(0)` at 0xA0398/0xA039C, GameAssets_Shutdown at 0xA03A0,
+ * GXCloseInput at 0xA03B0, GXCloseDisplay at 0xA03C0, PostQuitMessage(0) at 0xA03C8, and then the
+ * store nobody expects on a quit path: `g_bListRowSticky[0] = 1` at 0xA03D4, on
+ * unk_188D4C -- the same byte the screen-17 list handler reads at 0x14A94..0x14ADC to decide whether
+ * the hit row is cleared. Here it is g_pointerWorld.bListRowSticky. Reproduced because the original
+ * stores it unconditionally; nothing can observe it, because it is the last store of a process that
+ * has already queued its quit message (see the Part 126 mutation results).
+ * The two GX calls are one Gx_Close here: the port's close releases the input and the surface
+ * together. The first half maps as `Tact_Shutdown(0)` -> World_Free, which begins with
+ * World_FreeTactical and then frees the geoscape UI and roster; the gate differs on purpose -- the
+ * original tests Map_bTactFlag (0xA0398, "a tactical mission is live") and the port tests
+ * g_bWorldReady ("the world was built"), because the port's teardown owns both halves at once. */
 static void App_QuitDisplay(void)
 {
     if (g_bWorldReady) {
@@ -2155,6 +2168,7 @@ static void App_QuitDisplay(void)
     }
     Gx_Close(&g_gx);
     PostQuitMessage(0);
+    g_pointerWorld.bListRowSticky = true; /* 0xA03D4 */
 }
 
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)

@@ -99,17 +99,27 @@ static void TestLoad(void)
     CheckEqI32(tpl.nCols, 10, "  header byte 1 is the column count, 10");
     CheckEqI32(tpl.nLevels, 3, "  levels 3");
     CheckEqI32(tpl.nFlag, 1, "  flag stored");
+    /* CDialogTemplate_GetTemplateByte0 @ 0x54c68 is `LDR R3,[R0]` + `LDRB R0,[R3]` (the load is at
+     * 0x54C70): header byte 0 read through the template pointer, not from a cached field.
+     * CDialogTemplate_GetTemplateByte1 @ 0x54c5c is the same with `LDRB R0,[R3,#1]` at 0x54C64. The
+     * port caches both on load, so the check is against the blob byte itself. */
     CheckEqI32(MapTemplate_GetHeaderByte0(&tpl), tpl.pBlob[0],
-               "  GetHeaderByte0 (0x54c68) is header byte 0");
+               "  GetHeaderByte0 reads byte 0 (0x54c68 -> 0x54C70)");
     CheckEqI32(MapTemplate_GetHeaderByte1(&tpl), tpl.pBlob[1],
-               "  GetHeaderByte1 (0x54c5c) is header byte 1");
+               "  GetHeaderByte1 reads byte 1 (0x54c5c -> 0x54C64)");
     /* 3 + 4*20*10*3 == 2403, the shipped size. */
     CheckEqI32((i32)tpl.cbBlob, 2403, "  blob size matches 3 + 4*rows*cols*levels");
     CheckEqI32((i32)tpl.cbBlob,
                PUFO_MA1_HDR + PUFO_MA1_CELL_BYTES * tpl.nRows * tpl.nCols * tpl.nLevels,
                "  blob size matches the computed geometry");
+    /* ??1CDialogTemplate@@QAA@XZ @ 0x54c48 is the dtor: it loads pTemplate at 0x54C4C and calls
+     * operator delete only when it is non-null (the guard and the call share 0x54C54). A second free
+     * of an already-freed template is therefore safe in the original for the same reason it is safe
+     * here -- the port's free(NULL) is a no-op -- and that is what the next two checks pin. */
     MapTemplate_Free(&tpl);
     Check(tpl.pBlob == NULL, "  freed");
+    MapTemplate_Free(&tpl);
+    Check(tpl.pBlob == NULL, "  freeing an already-freed template is safe (the 0x54c48 guard)");
 
     printf("MapTemplate_Load (single level)\n");
     Check(MapTemplate_Load(&tpl, "culta0", 2), "  CULTA0.MA1 loaded");
@@ -120,8 +130,24 @@ static void TestLoad(void)
     MapTemplate_Free(&tpl);
 
     printf("MapTemplate_Load (missing)\n");
+    /* ??0CDialogTemplate@@QAA@XZ @ 0x54c3c is 12 bytes with one store: `pTemplate = 0` at 0x54C40.
+     * MapTemplate_Load reproduces it with its leading MapTemplate_Free (pufo_template.c), which is also
+     * what Map_LoadMa1's own guard-and-delete at 0x54BC8 does before it allocates. So a load that
+     * fails must leave a NULL blob -- the state the ctor+dtor pair leaves. */
     Check(!MapTemplate_Load(&tpl, "no_such_template", 0), "  missing member fails");
-    Check(tpl.pBlob == NULL, "  blob stays NULL");
+    Check(tpl.pBlob == NULL, "  blob stays NULL (the ctor's one store, 0x54C40)");
+
+    /* Where the port differs on purpose: Map_LoadMa1 stores the flag byte at pOut+4 at 0x54BD0, BEFORE
+     * the name copy, AssetReader_Find at 0x54C04 and the read at 0x54C34, so in the original a failed
+     * load still records the flag -- and its Find result is never tested, so a miss answers with a
+     * 0-byte `operator new` (0x54C14) and AssetReader_Read's refusal value. The port stores the flag
+     * only when the load worked. A 12-character base name is the other half of that: the original
+     * copies into a 16-byte pszName[16] by an unbounded loop (0x54BDC..0x54BEC) and then strcat's
+     * ".ma1" at 0x54BF8, writing 17 bytes; the port bounds it. */
+    Check(MapTemplate_Load(&tpl, "culta0", 5), "  loaded with flag 5");
+    Check(!MapTemplate_Load(&tpl, "no_such_template", 9), "  a failed load is refused");
+    CheckEqI32(tpl.nFlag, 5, "  the failed load did not write the flag (the original stores it at 0x54BD0)");
+    MapTemplate_Free(&tpl);
 
     /* Re-loading must free the previous blob, as the original does -- MapTemplate_Load calls MapTemplate_Free
      * before it allocates (pufo_template.c:22). This used to assert that the new blob lands at a DIFFERENT address
@@ -168,13 +194,24 @@ static void TestCellByte(void)
     printf("       (%d non-zero slot bytes across %u cells)\n",
            (int)nNonZero, (unsigned)(tpl.nRows * tpl.nCols * tpl.nLevels));
 
-    /* Out of range must be safe, not an overread. */
+    /* CDialogTemplate_GetLevelCount @ 0x54c74 is 12 bytes: `LDR R3,[R0]` then `LDRB R0,[R3,#2]`, the
+     * load at 0x54C7C -- header byte 2, nothing else. AVENGER.MA1 stores 3 there. */
+    CheckEqI32(MapTemplate_GetLevelCount(&tpl), 3, "  GetLevelCount is header byte 2, literal 3 (0x54c74)");
+    CheckEqI32(MapTemplate_GetLevelCount(&tpl), tpl.pBlob[2], "  and it is the byte the loader read");
+
+    /* Out of range must be safe, not an overread. CDialogTemplate_GetCellByte @ 0x54c80 has no bound
+     * check at all, so these four are port behaviour standing in for undefined original behaviour. */
     CheckEqI32(MapTemplate_GetCellByte(&tpl, tpl.nCols, 0, 0, 0), 0, "  x out of range");
     CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, tpl.nRows, 0, 0), 0, "  y out of range");
     CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 0, tpl.nLevels, 0), 0, "  z out of range");
-    CheckEqI32(MapTemplate_GetLevelCount(&tpl), tpl.nLevels,
-               "  GetLevelCount returns header byte 2");
     CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 0, 0, PUFO_MA1_CELL_BYTES), 0, "  slot out of range");
+
+    /* The original truncates every index to eight bits (AND #0xFF at 0x54CB0..0x54CD0), so a caller
+     * that passed 259 reached cell 3. The port refuses instead -- 259 is past byte1 = 10 -- and that
+     * refusal is what distinguishes "masked" from "range-checked" here. */
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 259, 0, 0, 0), 0, "  index 259 is refused, not masked to 3");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 3, 0, 0, 0), tpl.pBlob[15],
+               "  (and cell 3 itself is readable, so the refusal above is about the index)");
 
     /* The last cell of the blob is the last row and column of the last level, and the row stride is
      * the COLUMN count -- which is what pins byte 1 as the X extent. */
@@ -186,6 +223,61 @@ static void TestCellByte(void)
         Check(nLast + 1 == tpl.cbBlob, "  the last cell ends exactly at the blob end");
     }
     MapTemplate_Free(&tpl);
+}
+
+/* The strides, pinned with a blob whose every byte is different.
+ *
+ * The shipped templates are sparse -- only 117 of AVENGER.MA1's 2400 slot bytes are non-zero -- so a
+ * check that compares the accessor against the blob byte at a guessed offset can be satisfied by two
+ * zeros. Here the blob is built as blob[i] = (u8)(i + 1), so each offset I want to prove has a value
+ * no other offset has: 3 -> 4, 43 -> 44, 82 -> 83, 805 -> 38, 763 -> 252, 2402 -> 99.
+ *
+ * 0x54c80's arithmetic is 4*(byte0*byte1*nZ) + 4*(byte1*nY) + 4*nX + nSlot + 3 (MUL at 0x54CB8,
+ * 0x54CC0 and 0x54CCC, ADD at 0x54CD4 and 0x54CD8, `LDRB R0,[R3,#3]` at 0x54CEC), so with byte0 = 20
+ * and byte1 = 10 one row forward is 4*10 = 40 bytes and one level forward is 4*20*10 = 800. Using
+ * byte0 for the row stride instead would land on 83 -> 84, and using byte1 for the level stride would
+ * land on 43 -> 44 for z = 1; both are checked below as explicit negatives. */
+#define TPLF_ROWS  20
+#define TPLF_COLS  10
+#define TPLF_LEVEL 3
+#define TPLF_CB    (3 + 4 * TPLF_ROWS * TPLF_COLS * TPLF_LEVEL)
+
+static u8 g_aTplFill[TPLF_CB];
+
+static void TplFillInit(MapTemplate *pTpl)
+{
+    u32 i;
+
+    for (i = 0; i < TPLF_CB; ++i) {
+        g_aTplFill[i] = (u8)(i + 1u);
+    }
+    pTpl->pBlob   = g_aTplFill;
+    pTpl->cbBlob  = TPLF_CB;
+    pTpl->nRows   = TPLF_ROWS;
+    pTpl->nCols   = TPLF_COLS;
+    pTpl->nLevels = TPLF_LEVEL;
+}
+
+static void TestCellIndexArithmetic(void)
+{
+    MapTemplate tpl;
+
+    printf("MapTemplate_GetCellByte @ 0x54c80 -- the strides, on a blob with distinct bytes\n");
+    memset(&tpl, 0, sizeof(tpl));
+    TplFillInit(&tpl);
+
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 0, 0, 0), 4, "  cell (0,0,0) slot 0 is blob[3]");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 1, 0, 0), 44, "  one row forward is 40 bytes: blob[43]");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 9, 1, 0, 3), 83, "  the row's last cell/slot is blob[82]");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 19, 0, 0), 252, "  the last row is 19 * 40 in: blob[763]");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 0, 1, 2), 38, "  one level forward is 800 bytes: blob[805]");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 9, 19, 2, 3), 99, "  the last byte of the blob is the last slot: blob[2402]");
+
+    /* The two wrong strides, stated as negatives so a swap fails here and not only above. */
+    Check(MapTemplate_GetCellByte(&tpl, 0, 1, 0, 0) != 84, "  the row stride is NOT 4 * byte0 = 80");
+    Check(MapTemplate_GetCellByte(&tpl, 0, 0, 1, 0) != 44, "  the level stride is NOT 4 * byte1 = 40");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 0, 0, 4), 0, "  slot 4 is refused (4 bytes per cell)");
+    CheckEqI32(MapTemplate_GetCellByte(&tpl, 10, 0, 0, 0), 0, "  x = 10 is refused, so the row cannot run into the next");
 }
 
 /* The sprite-index rule: 0 and 1 mean "no sprite", 2 and up are real. */
@@ -292,6 +384,7 @@ int main(void)
 
     TestLoad();
     TestCellByte();
+    TestCellIndexArithmetic();
     TestSpriteIndexRule();
     TestApply();
 

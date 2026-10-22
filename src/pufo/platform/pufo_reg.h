@@ -15,8 +15,10 @@
 
 #include "pufo_common.h"
 
-/* The original's Data @ 0x187328 is 256 bytes; Reg_GetString rejects any
- * stored value longer than 0xFF. */
+/* The original's Data @ 0x187328 is 256 bytes (paSoundSamples follows at 0x187428), but
+ * Reg_GetString rejects any value whose stored byte count is above 0xFF (`CMP #0xFF` / `BHI` at
+ * 0x9EE70/0x9EE74), so at most 255 bytes are ever copied -- 254 characters plus the NUL
+ * Reg_SetString adds. */
 #define PUFO_REG_VALUE_MAX 256
 
 /* Writes pszValue under HKEY_CURRENT_USER\Software\PocketUFO\pszName as REG_SZ.

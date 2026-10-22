@@ -59,32 +59,50 @@ static void Timer_KillOne(u32 nId)
 
 /* --------------------------------------------------------------- the A/B/C set */
 
-/* KillTimers_A/B/C @ 0x9e6a4/0x9e754/0x9e7c4 are byte-identical: kill the render
- * and animation timers. The three names are kept because the original has three,
- * and the call sites are recognisable by them. */
+/* KillTimers_A @ 0x9e6a4 (48 bytes): KillTimer(hWndMain, 0xC351) at 0x9E6B8, then POP {R4,LR} at
+ * 0x9E6C8 and the tail `B KillTimer` with 0xC352 at 0x9E6CC. Those are the only two ids: 0xC350 and
+ * 0xC353 keep running through this call. */
 void Timer_KillA(void)
 {
     Timer_KillOne(PUFO_TIMER_RENDER);
     Timer_KillOne(PUFO_TIMER_ANIM);
 }
 
+/* KillTimers_B @ 0x9e754: the same two kills, at 0x9E768 and the tail 0x9E77C. */
 void Timer_KillB(void) { Timer_KillA(); }
+
+/* KillTimers_C @ 0x9e7c4: the same two kills, at 0x9E7D8 and the tail 0x9E7EC. Reached from
+ * Titles_Shutdown (0x38274). */
 void Timer_KillC(void) { Timer_KillA(); }
 
-/* StartTimers_A/B/C @ 0x9e6d4/0x9e714/0x9e784 are also byte-identical:
- * 0xC351 = 40 ms, 0xC352 = 25 ms. */
+/* StartTimers_A @ 0x9e6d4 (64 bytes): SetTimer with id 0xC300|0x51 and uTimeOut 0x28 (40 ms) at
+ * 0x9E6F0, then POP {R4,LR} at 0x9E708 and the tail `B SetTimer` with 0xC300|0x52 and 0x19 (25 ms)
+ * at 0x9E70C. pfnTimerProc is 0 in both calls, so every timer posts WM_TIMER to the window. */
 void Timer_StartA(void)
 {
     Timer_StartOne(PUFO_TIMER_RENDER, PUFO_TIMER_MS_RENDER);
     Timer_StartOne(PUFO_TIMER_ANIM, PUFO_TIMER_MS_ANIM);
 }
 
+/* StartTimers_B @ 0x9e714: the same pair, at 0x9E730 and the tail 0x9E74C. Reached from
+ * GameUI_InitStartup (0x38D64). */
 void Timer_StartB(void) { Timer_StartA(); }
+
+/* StartTimers_C @ 0x9e784: the same pair, at 0x9E7A0 and the tail 0x9E7BC. */
 void Timer_StartC(void) { Timer_StartA(); }
 
-/* StartTimers_D @ 0x9e7f4 is the outlier: four ids, and 0xC351 gets an interval of
- * ZERO. Win32 treats a zero interval as "fire as often as possible", not as
- * "disabled", so it is reproduced verbatim rather than corrected. */
+/* The three Start copies and the three Kill copies are identical but for their branch words: a byte
+ * compare of 0x9e6d4/0x9e714/0x9e784 differs only at +0x1C and +0x38 (0x9E6F0 and 0x9E70C, the two
+ * SetTimer branches), and 0x9e6a4/0x9e754/0x9e7c4 only at +0x14 and +0x28 (0x9E6B8 and 0x9E6CC).
+ * Those four words are the branch displacements to the shared SetTimer/KillTimer import thunk, so
+ * the six bodies carry the same ids and the same intervals. */
+
+/* StartTimers_D @ 0x9e7f4 (112 bytes) is the outlier: four ids, and 0xC351 gets an interval of
+ * ZERO -- MOV R2,#0 at 0x9E808, SetTimer at 0x9E810. Win32 treats a zero interval as "fire as often
+ * as possible", not as "disabled", so it is reproduced verbatim rather than corrected. Then
+ * 0xC352 = 0x32 (50 ms) at 0x9E828, 0xC353 = 0x14 (20 ms) at 0x9E840, and the tail call
+ * POP {R4,LR} at 0x9E858 with 0xC354 = 0xA (10 ms) at 0x9E85C. Note the intervals here are not the
+ * plain set's: the pulse is 20 ms not 50, and 0xC354 exists only in this function. */
 void Timer_StartD(void)
 {
     Timer_StartOne(PUFO_TIMER_RENDER, 0);
@@ -93,7 +111,9 @@ void Timer_StartD(void)
     Timer_StartOne(PUFO_TIMER_EXTRA, PUFO_TIMER_MS_D_EXTRA);
 }
 
-/* KillTimers_D @ 0x9e864 kills the same four ids. */
+/* KillTimers_D @ 0x9e864 (80 bytes): KillTimer on 0xC351 at 0x9E878, 0xC352 at 0x9E888, 0xC353 at
+ * 0x9E898, and the tail `B KillTimer` on 0xC354 at 0x9E8AC. It kills exactly what StartTimers_D
+ * started and nothing else -- 0xC350 keeps running across this call. */
 void Timer_KillD(void)
 {
     Timer_KillOne(PUFO_TIMER_RENDER);
@@ -104,8 +124,10 @@ void Timer_KillD(void)
 
 /* ------------------------------------------------------------ the speed-driven set */
 
-/* KillTimers_BySpeed @ 0x9e8b4 kills 0xC350..0xC353 unconditionally, including
- * 0xC350 which StartTimers_BySpeed may never have set (any speed above 4). */
+/* KillTimers_BySpeed @ 0x9e8b4 (80 bytes): KillTimer on 0xC350 at 0x9E8C8, 0xC351 at 0x9E8D8,
+ * 0xC352 at 0x9E8E8, tail `B KillTimer` on 0xC353 at 0x9E8FC. Unconditional, including 0xC350 which
+ * StartTimers_BySpeed may never have set (any speed outside 0..4). 0xC354 is not in this list --
+ * only KillTimers_D touches that id. */
 void Timer_KillBySpeed(void)
 {
     Timer_KillOne(PUFO_TIMER_GAMETICK);
@@ -114,9 +136,19 @@ void Timer_KillBySpeed(void)
     Timer_KillOne(PUFO_TIMER_UIPULSE);
 }
 
-/* StartTimers_BySpeed @ 0x9e904. The switch has no default arm, so a speed of 5
- * or more sets neither game-rate timer -- while still setting the two trailing
- * timers. That asymmetry is the original's and is reproduced exactly. */
+/* StartTimers_BySpeed @ 0x9e904 (236 bytes). The speed is read from the live Map block at 0x9E918
+ * (`MOV R12,#(Map_nGameSpeed-0x1139B8)` at 0x9E910) and compared with an UNSIGNED chain: CMP/BEQ for
+ * 0 at 0x9E91C/0x9E920, for 1 at 0x9E924/0x9E928, for 2 and 3 at 0x9E92C..0x9E938, then CMP #4 at
+ * 0x9E93C with `BNE 0x9E9BC` at 0x9E940 -- so speed 4 reaches the 2/3 block by falling through, and
+ * any other value (5, or a negative stored speed, which reads as a huge unsigned) jumps straight to
+ * the tail block and sets neither game-rate timer. The blocks: 0x9E98C for speed 0 (SetTimer 0xC350
+ * with 0x64 at 0x9E9A0, then MOV R2,#0x64 at 0x9E9A4 which FALLS THROUGH), 0x9E96C for speed 1
+ * (0x32 at 0x9E980, `B 0x9E9A8`), 0x9E944 for speeds 2/3/4 (0xA at 0x9E958, `B 0x9E9A8`). They join
+ * at 0x9E9A8, where SetTimer takes id 0xC300|0x51 with the speed interval (call at 0x9E9B8), and
+ * that block falls through into 0x9E9BC: 0xC352 = 0x19 (25 ms) at 0x9E9D0, then POP {R4,LR} at
+ * 0x9E9E8 and the tail `B SetTimer` with 0xC353 = 0x32 (50 ms) at 0x9E9EC. So the two trailing
+ * timers are set for every speed including the out-of-range one, while 0xC350/0xC351 belong only to
+ * 0..4. That asymmetry is the original's and is reproduced exactly. */
 void Timer_StartBySpeed(u32 nGameSpeed)
 {
     switch (nGameSpeed) {

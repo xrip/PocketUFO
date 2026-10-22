@@ -20,7 +20,14 @@ def run_case(name, target, path, old, new, show=8):
         print("SKIP", name, "- anchor occurs", data.count(old), "times in", path)
         return None
 
-    open(path, "wb").write(data.replace(old, new))
+    # The splice is by POSITION, not by a second text search. A replace-all restore is wrong whenever the
+    # mutated text also occurs somewhere else in the file: Part 126's KillTimers_D case shortened
+    # "KillOne(UIPULSE); KillOne(EXTRA); }" to "KillOne(UIPULSE); }", which is also KillTimers_BySpeed's
+    # tail, and the restore put the dropped line back in BOTH functions -- a real edit left in the source,
+    # reported only as `restored exactly: False`. Splicing at the recorded offset cannot do that.
+    off = data.find(old)
+    mutated = data[:off] + new + data[off + len(old):]
+    open(path, "wb").write(mutated)
     try:
         r = subprocess.run(["sh", "tools/iter.sh", target],
                            capture_output=True, text=True, cwd=".")
@@ -32,8 +39,7 @@ def run_case(name, target, path, old, new, show=8):
             print("   ", l)
         return lines
     finally:
-        now = open(path, "rb").read()
-        open(path, "wb").write(now.replace(new, old))
+        open(path, "wb").write(mutated[:off] + old + mutated[off + len(new):])
         back = open(path, "rb").read()
         print("   restored exactly:", back == data,
               "| MUTATION left:", back.count(b"MUTATION"))

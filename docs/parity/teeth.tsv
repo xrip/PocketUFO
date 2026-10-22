@@ -6,28 +6,28 @@
 # test_calls_directly separates the two. A name inside a test comment does not count; an address cite does.
 # Reach only: the code runs under a test, which is not the same as a check pinning its value.
 0x18e18	App_QuitFromTact	20	app-shell	yes	yes	yes	App_InitStartupUi|App_RunDebugScript|World_QuitYesThunk	yes
-0x54c3c	??0CDialogTemplate@@QAA@XZ	12	app-shell	yes	no	yes	MapTemplate_Load	yes
-0x54c48	??1CDialogTemplate@@QAA@XZ	20	app-shell	yes	no	yes	MapTemplate_Free	yes
-0x54c5c	CDialogTemplate_GetTemplateByte1	12	app-shell	yes	no	yes	MapTemplate_GetHeaderByte1	yes
-0x54c68	CDialogTemplate_GetTemplateByte0	12	app-shell	yes	no	yes	MapTemplate_GetHeaderByte0	yes
-0x54c74	CDialogTemplate_GetLevelCount	12	app-shell	yes	no	yes	MapTemplate_GetLevelCount	yes
-0x54c80	CDialogTemplate_GetCellByte	116	app-shell	yes	no	yes	MapTemplate_GetCellByte	yes
-0x9e6a4	KillTimers_A	48	app-shell	yes	no	yes	Timer_KillA|EndScreen_Shutdown	yes
-0x9e6d4	StartTimers_A	64	app-shell	yes	no	yes	Timer_StartA	yes
-0x9e714	StartTimers_B	64	app-shell	yes	no	yes	Timer_StartA	yes
-0x9e754	KillTimers_B	48	app-shell	yes	no	yes	App_HookKillTimersB|Timer_KillA	yes
-0x9e784	StartTimers_C	64	app-shell	yes	no	yes	Timer_StartA	yes
-0x9e7c4	KillTimers_C	48	app-shell	yes	no	yes	Timer_KillA|Titles_Shutdown	yes
-0x9e7f4	StartTimers_D	112	app-shell	yes	no	yes	Timer_StartD	yes
-0x9e864	KillTimers_D	80	app-shell	yes	no	yes	Timer_KillD	yes
-0x9e8b4	KillTimers_BySpeed	80	app-shell	yes	no	yes	Timer_KillBySpeed	yes
-0x9e904	StartTimers_BySpeed	236	app-shell	yes	no	yes	Timer_StartBySpeed	yes
+0x54c3c	??0CDialogTemplate@@QAA@XZ	12	app-shell	yes	yes	yes	MapTemplate_Load	yes
+0x54c48	??1CDialogTemplate@@QAA@XZ	20	app-shell	yes	yes	yes	MapTemplate_Free	yes
+0x54c5c	CDialogTemplate_GetTemplateByte1	12	app-shell	yes	yes	yes	MapTemplate_GetHeaderByte1	yes
+0x54c68	CDialogTemplate_GetTemplateByte0	12	app-shell	yes	yes	yes	MapTemplate_GetHeaderByte0	yes
+0x54c74	CDialogTemplate_GetLevelCount	12	app-shell	yes	yes	yes	MapTemplate_GetLevelCount	yes
+0x54c80	CDialogTemplate_GetCellByte	116	app-shell	yes	yes	yes	MapTemplate_GetCellByte	yes
+0x9e6a4	KillTimers_A	48	app-shell	yes	yes	yes	Timer_KillA|EndScreen_Shutdown	yes
+0x9e6d4	StartTimers_A	64	app-shell	yes	yes	yes	Timer_StartA	yes
+0x9e714	StartTimers_B	64	app-shell	yes	yes	yes	Timer_StartB	yes
+0x9e754	KillTimers_B	48	app-shell	yes	yes	yes	App_HookKillTimersB|Timer_KillB	yes
+0x9e784	StartTimers_C	64	app-shell	yes	yes	yes	Timer_StartC	yes
+0x9e7c4	KillTimers_C	48	app-shell	yes	yes	yes	Timer_KillC|Titles_Shutdown	yes
+0x9e7f4	StartTimers_D	112	app-shell	yes	yes	yes	Timer_StartD	yes
+0x9e864	KillTimers_D	80	app-shell	yes	yes	yes	Timer_KillD	yes
+0x9e8b4	KillTimers_BySpeed	80	app-shell	yes	yes	yes	Timer_KillBySpeed	yes
+0x9e904	StartTimers_BySpeed	236	app-shell	yes	yes	yes	Timer_StartBySpeed	yes
 0x9ecb8	App_ResizeMainWindow	84	app-shell	yes	yes	yes	App_HookNewGame|World_ResizeWindowSeamThunk	no
-0x9ed0c	Reg_SetString	176	app-shell	yes	no	yes		yes
-0x9edbc	Reg_GetString	272	app-shell	yes	no	yes		yes
+0x9ed0c	Reg_SetString	176	app-shell	yes	yes	yes		yes
+0x9edbc	Reg_GetString	272	app-shell	yes	yes	yes		yes
 0x9fcc4	WinMain	132	app-shell	yes	no	no	wWinMain	no
 0x9fd48	InitInstance	1600	app-shell	yes	no	no	App_BuildAssetPaths|App_InitInstance	no
-0xa0388	App_QuitDisplay	100	app-shell	yes	no	yes	App_HookQuit	yes
+0xa0388	App_QuitDisplay	100	app-shell	yes	yes	yes	App_HookQuit	yes
 0xa03ec	PocketUFO_WndProc	2964	app-shell	yes	no	no		no
 0x9e0c0	Sound_Play	112	audio	yes	yes	yes	App_InitStartupUi|World_InitTactical|Ui_ConfirmMeleeMode6	yes
 0x9e130	Sound_LoadAndPlayMusic	312	audio	yes	yes	yes	World_TactMusicHook	yes

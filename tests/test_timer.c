@@ -100,13 +100,35 @@ static bool KilledId(u32 nId)
     return false;
 }
 
+/* The original calls its two SetTimers in a fixed order -- the first through a BL, the second through
+ * a tail branch -- so the recorded pair IS the function. These two helpers pin one recorded call at
+ * one position rather than only its presence. */
+static bool SetPairAt(u32 nPos, u32 nId, u32 nMs)
+{
+    return nPos < g_log.nSets && nPos < LOG_MAX
+        && g_log.aSets[nPos].nId == nId && g_log.aSets[nPos].nMs == nMs;
+}
+
+static bool KillAt(u32 nPos, u32 nId)
+{
+    return nPos < g_log.nKills && nPos < LOG_MAX && g_log.aKills[nPos] == nId;
+}
+
 /* --- tests ---------------------------------------------------------------- */
 
 static void TestPlainSets(void)
 {
-    printf("Timer_StartA / StartB / StartC -- byte-identical pairs\n");
-    /* A, B and C are three copies of the same body in the original; the port must
-     * produce the same requests for each. */
+    static const char *const apszStart[] = { "StartTimers_A", "StartTimers_B", "StartTimers_C" };
+    static const char *const apszKill[]  = { "KillTimers_A", "KillTimers_B", "KillTimers_C" };
+
+    printf("Timer_StartA / StartB / StartC -- three copies of one body\n");
+
+    /* StartTimers_A @ 0x9e6d4: SetTimer(0xC300|0x51, 0x28 = 40 ms) at 0x9E6F0, then POP {R4,LR} at
+     * 0x9E708 and the tail `B SetTimer` with (0xC300|0x52, 0x19 = 25 ms) at 0x9E70C.
+     * StartTimers_B @ 0x9e714 and StartTimers_C @ 0x9e784 run the same pair (calls at 0x9E730 /
+     * 0x9E74C and 0x9E7A0 / 0x9E7BC). A byte compare over the 64 bytes of each shows the three copies
+     * differ only at +0x1C and +0x38 -- the two branch words, which encode the distance to the shared
+     * SetTimer thunk -- so the ids and the intervals are the same in all three. */
     for (i32 variant = 0; variant < 3; ++variant) {
         LogReset();
         switch (variant) {
@@ -114,11 +136,20 @@ static void TestPlainSets(void)
             case 1: Timer_StartB(); break;
             default: Timer_StartC(); break;
         }
+        printf("       (%s)\n", apszStart[variant]);
         CheckEqI32(g_log.nSets, 2, "  sets exactly two timers");
+        Check(SetPairAt(0, PUFO_TIMER_RENDER, 40), "  first set is 0xC351 at 40 ms");
+        Check(SetPairAt(1, PUFO_TIMER_ANIM, 25), "  second set is 0xC352 at 25 ms (the tail call)");
         CheckEqI32(IntervalFor(PUFO_TIMER_RENDER), 40, "  render interval 40 ms");
         CheckEqI32(IntervalFor(PUFO_TIMER_ANIM), 25, "  anim interval 25 ms");
+        Check(IntervalFor(PUFO_TIMER_GAMETICK) == -1, "  no 0xC350 -- this set does not arm the game tick");
+        Check(IntervalFor(PUFO_TIMER_EXTRA) == -1, "  no 0xC354 -- that id belongs to StartTimers_D");
     }
 
+    /* KillTimers_A @ 0x9e6a4: KillTimer(0xC351) at 0x9E6B8, then the tail KillTimer(0xC352) at
+     * 0x9E6CC. KillTimers_B @ 0x9e754 (0x9E768 / 0x9E77C) and KillTimers_C @ 0x9e7c4 (0x9E7D8 /
+     * 0x9E7EC) are the same two kills. Both copies leave 0xC350 and 0xC353 running -- only
+     * KillTimers_BySpeed and KillTimers_D touch those -- which the two negative checks below pin. */
     for (i32 variant = 0; variant < 3; ++variant) {
         LogReset();
         switch (variant) {
@@ -126,49 +157,84 @@ static void TestPlainSets(void)
             case 1: Timer_KillB(); break;
             default: Timer_KillC(); break;
         }
+        printf("       (%s)\n", apszKill[variant]);
         CheckEqI32(g_log.nKills, 2, "  kills exactly two timers");
+        Check(KillAt(0, PUFO_TIMER_RENDER), "  first kill is 0xC351");
+        Check(KillAt(1, PUFO_TIMER_ANIM), "  second kill is 0xC352 (the tail call)");
         Check(KilledId(PUFO_TIMER_RENDER), "  kills the render timer");
         Check(KilledId(PUFO_TIMER_ANIM), "  kills the anim timer");
+        Check(!KilledId(PUFO_TIMER_GAMETICK), "  does NOT kill 0xC350");
+        Check(!KilledId(PUFO_TIMER_UIPULSE), "  does NOT kill 0xC353");
     }
 }
 
 static void TestSetD(void)
 {
     printf("Timer_StartD / KillD -- the four-id outlier\n");
+
+    /* StartTimers_D @ 0x9e7f4 (112 bytes): SetTimer at 0x9E810 with id 0xC300|0x51 and
+     * `MOV R2,#0` at 0x9E808, at 0x9E828 with 0xC352 and 0x32 (50), at 0x9E840 with 0xC353 and 0x14
+     * (20), and through the tail branch at 0x9E85C with 0xC354 and 0xA (10). The intervals are this
+     * set's own: 20 ms for the pulse here, not the 50 ms the plain set uses. */
     LogReset();
     Timer_StartD();
     CheckEqI32(g_log.nSets, 4, "  sets four timers");
+    Check(SetPairAt(0, PUFO_TIMER_RENDER, 0), "  first set is 0xC351 at 0 ms (MOV R2,#0 at 0x9E808)");
+    Check(SetPairAt(1, PUFO_TIMER_ANIM, 50), "  second is 0xC352 at 50 ms (0x9E828)");
+    Check(SetPairAt(2, PUFO_TIMER_UIPULSE, 20), "  third is 0xC353 at 20 ms (0x9E840)");
+    Check(SetPairAt(3, PUFO_TIMER_EXTRA, 10), "  fourth is 0xC354 at 10 ms (the tail at 0x9E85C)");
     /* The zero interval is the original's: Win32 treats it as "as fast as
      * possible", not as "disabled". */
     CheckEqI32(IntervalFor(PUFO_TIMER_RENDER), 0, "  render interval is 0 ms");
     CheckEqI32(IntervalFor(PUFO_TIMER_ANIM), 50, "  anim interval 50 ms");
     CheckEqI32(IntervalFor(PUFO_TIMER_UIPULSE), 20, "  ui pulse 20 ms");
     CheckEqI32(IntervalFor(PUFO_TIMER_EXTRA), 10, "  extra 10 ms");
+    Check(IntervalFor(PUFO_TIMER_GAMETICK) == -1, "  StartTimers_D never sets 0xC350");
 
+    /* KillTimers_D @ 0x9e864: KillTimer at 0x9E878 (0xC351), 0x9E888 (0xC352), 0x9E898 (0xC353) and
+     * the tail at 0x9E8AC (0xC354). It is exactly StartTimers_D's id set -- 0xC350 survives this call. */
     LogReset();
     Timer_KillD();
     CheckEqI32(g_log.nKills, 4, "  kills the same four ids");
+    Check(KillAt(0, PUFO_TIMER_RENDER), "  kills 0xC351 (0x9E878)");
+    Check(KillAt(1, PUFO_TIMER_ANIM), "  kills 0xC352 (0x9E888)");
+    Check(KillAt(2, PUFO_TIMER_UIPULSE), "  kills 0xC353 (0x9E898)");
+    Check(KillAt(3, PUFO_TIMER_EXTRA), "  kills 0xC354 (the tail at 0x9E8AC)");
     Check(KilledId(PUFO_TIMER_RENDER), "  kills render");
     Check(KilledId(PUFO_TIMER_UIPULSE), "  kills ui pulse");
     Check(KilledId(PUFO_TIMER_EXTRA), "  kills the extra id");
+    Check(!KilledId(PUFO_TIMER_GAMETICK), "  does NOT kill 0xC350");
 }
 
 static void TestBySpeed(void)
 {
     printf("Timer_StartBySpeed -- one interval pair per speed\n");
 
-    /* speed 0 and 1 set both game-rate timers to the same value. */
+    /* StartTimers_BySpeed @ 0x9e904 reads Map_nGameSpeed at 0x9E918 and dispatches on an UNSIGNED
+     * CMP chain (0x9E91C..0x9E940). Speed 0 lands at 0x9E98C, whose SetTimer(0xC350, 0x64) at 0x9E9A0
+     * is followed by `MOV R2,#0x64` at 0x9E9A4 and FALLS THROUGH into 0x9E9A8, where SetTimer takes
+     * 0xC300|0x51 with that same R2 (the call is at 0x9E9B8); speed 1 uses 0x9E96C with 0x32 (50) at
+     * 0x9E980 and `B 0x9E9A8`; speeds 2 and 3 use 0x9E944 with 0xA (10) at 0x9E958, and speed 4 gets
+     * there by falling through `CMP R0,#4` / `BNE` at 0x9E93C/0x9E940. From 0x9E9A8 every matched
+     * speed falls into 0x9E9BC: SetTimer(0xC352, 0x19 = 25) at 0x9E9D0 and the tail
+     * `B SetTimer` with 0xC353 and 0x32 (50) at 0x9E9EC. */
     LogReset();
     Timer_StartBySpeed(0);
     CheckEqI32(IntervalFor(PUFO_TIMER_GAMETICK), 100, "  speed 0 gametick 100 ms");
     CheckEqI32(IntervalFor(PUFO_TIMER_RENDER), 100, "  speed 0 render 100 ms");
     CheckEqI32(IntervalFor(PUFO_TIMER_ANIM), 25, "  speed 0 still sets anim");
     CheckEqI32(g_log.nSets, 4, "  speed 0 sets four timers");
+    Check(SetPairAt(0, PUFO_TIMER_GAMETICK, 100), "  order: 0xC350 first (0x9E9A0)");
+    Check(SetPairAt(1, PUFO_TIMER_RENDER, 100), "  then 0xC351 with the same interval (0x9E9B8)");
+    Check(SetPairAt(2, PUFO_TIMER_ANIM, 25), "  then 0xC352 at 25 ms (0x9E9D0)");
+    Check(SetPairAt(3, PUFO_TIMER_UIPULSE, 50), "  then 0xC353 at 50 ms (the tail at 0x9E9EC)");
 
     LogReset();
     Timer_StartBySpeed(1);
     CheckEqI32(IntervalFor(PUFO_TIMER_GAMETICK), 50, "  speed 1 gametick 50 ms");
     CheckEqI32(IntervalFor(PUFO_TIMER_RENDER), 50, "  speed 1 render 50 ms");
+    CheckEqI32(g_log.nSets, 4, "  speed 1 also sets the two trailing timers");
+    Check(SetPairAt(0, PUFO_TIMER_GAMETICK, 50), "  speed 1: 0xC350 at 50 ms (0x9E978)");
 
     /* Speeds 2, 3 and 4 share one arm. */
     for (u32 nSpeed = 2; nSpeed <= 4; ++nSpeed) {
@@ -176,10 +242,18 @@ static void TestBySpeed(void)
         Timer_StartBySpeed(nSpeed);
         CheckEqI32(IntervalFor(PUFO_TIMER_GAMETICK), 10, "  speeds 2-4 gametick 10 ms");
         CheckEqI32(IntervalFor(PUFO_TIMER_RENDER), 10, "  speeds 2-4 render 10 ms");
+        CheckEqI32(g_log.nSets, 4, "  speeds 2-4 set four timers too");
     }
+    /* Speed 4 is not its own arm: `CMP R0,#4` at 0x9E93C is followed by `BNE 0x9E9BC` at 0x9E940, so
+     * the equal case falls through into the 2/3 block. It answers exactly like 2 and 3, checked above;
+     * what distinguishes it is that a missing fall-through would make 4 behave like 5+. */
+    LogReset();
+    Timer_StartBySpeed(4);
+    Check(SetPairAt(0, PUFO_TIMER_GAMETICK, 10), "  speed 4 reaches the 2/3 block (fall-through at 0x9E940)");
 
     /* Speed 5+ sets NEITHER game-rate timer, but still sets the two trailing
-     * ones. This asymmetry is the original's missing default arm. */
+     * ones. This asymmetry is the original's missing default arm: `BNE 0x9E9BC` at 0x9E940 jumps
+     * straight to the trailing block, and 0x9E9BC is the only block it reaches. */
     LogReset();
     Timer_StartBySpeed(5);
     CheckEqI32(IntervalFor(PUFO_TIMER_GAMETICK), -1, "  speed 5 sets no gametick timer");
@@ -187,14 +261,31 @@ static void TestBySpeed(void)
     CheckEqI32(IntervalFor(PUFO_TIMER_ANIM), 25, "  speed 5 still sets anim");
     CheckEqI32(IntervalFor(PUFO_TIMER_UIPULSE), 50, "  speed 5 still sets ui pulse");
     CheckEqI32(g_log.nSets, 2, "  speed 5 sets exactly two timers");
+    Check(SetPairAt(0, PUFO_TIMER_ANIM, 25), "  speed 5 starts at 0x9E9BC: anim is the FIRST set");
 
-    /* KillBySpeed kills four ids regardless of what was started. */
+    /* The dispatch chain compares UNSIGNED (CMP R0,#0 through CMP R0,#4 with no signed branch), so a
+     * speed that arrived as a negative int reads as a huge unsigned value and takes the same
+     * BNE-to-0x9E9BC path as 5. 0xFFFFFFFF is that value, and it must not reach any game-rate arm. */
+    LogReset();
+    Timer_StartBySpeed(0xFFFFFFFFu);
+    CheckEqI32(g_log.nSets, 2, "  a wrapped speed sets exactly the two trailing timers");
+    CheckEqI32(IntervalFor(PUFO_TIMER_GAMETICK), -1, "  a wrapped speed sets no gametick timer");
+    CheckEqI32(IntervalFor(PUFO_TIMER_RENDER), -1, "  a wrapped speed sets no render timer");
+
+    /* KillTimers_BySpeed @ 0x9e8b4: KillTimer(0xC350) at 0x9E8C8, 0xC351 at 0x9E8D8, 0xC352 at
+     * 0x9E8E8, and the tail `B KillTimer` with 0xC353 at 0x9E8FC. Unconditional -- it kills 0xC350
+     * even when the speed-driven start never set it -- and 0xC354 is NOT in the list. */
     LogReset();
     Timer_KillBySpeed();
     CheckEqI32(g_log.nKills, 4, "  KillBySpeed kills four ids");
+    Check(KillAt(0, PUFO_TIMER_GAMETICK), "  first kill is 0xC350 (0x9E8C8)");
+    Check(KillAt(1, PUFO_TIMER_RENDER), "  then 0xC351 (0x9E8D8)");
+    Check(KillAt(2, PUFO_TIMER_ANIM), "  then 0xC352 (0x9E8E8)");
+    Check(KillAt(3, PUFO_TIMER_UIPULSE), "  then 0xC353 (the tail at 0x9E8FC)");
     Check(KilledId(PUFO_TIMER_GAMETICK), "  kills the gametick id");
     Check(KilledId(PUFO_TIMER_ANIM), "  kills the anim id");
     Check(KilledId(PUFO_TIMER_UIPULSE), "  kills the ui pulse id");
+    Check(!KilledId(PUFO_TIMER_EXTRA), "  does NOT kill 0xC354 -- only KillTimers_D does");
 }
 
 static void TestWindowAndBackend(void)

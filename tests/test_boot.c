@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <windows.h>   /* the REG_DWORD case below writes a value the port has no API for */
+
 static int g_nFailures;
 
 static void Check(bool bCond, const char *pszWhat)
@@ -313,6 +315,111 @@ static void TestOptionFlagSemantics(void)
     MapOptionsRestoreDefaults();
 }
 
+/* The registry pair on its own, not through the option block.
+ *
+ * Reg_SetString @ 0x9ed0c: RegCreateKeyExW(HKEY_CURRENT_USER, SubKey @ 0xac680, samDesired 0xF003F)
+ * at 0x9ED60; on success mbstowcs of the name into ValueName @ 0x187750 at 0x9ED78 and RegSetValueExW
+ * at 0x9EDA0 with dwType 1 and cbData = strlen + 1 (`ADD R3,R0,#1` at 0x9ED8C) -- the terminating NUL
+ * is part of what gets stored, which is why an empty value is a value and not a miss.
+ *
+ * Reg_GetString @ 0x9edbc: Type is pre-set to 1 at 0x9EDC4/0x9EDC8, the key opens at 0x9EE1C, a probe
+ * query with lpData = 0 at 0x9EE54 answers Type and cbData, and three answers return the caller's
+ * default through `MOV R4,R5` at 0x9EEAC: the query failed (BNE 0x9EE5C), Type != 1 (0x9EE64/0x9EE68),
+ * or cbData > 0xFF (CMP/BHI 0x9EE70/0x9EE74). Measured against the real registry: 254 characters
+ * (255 stored bytes) read back whole, 255 characters (256 bytes) are refused. Otherwise the answer is
+ * the one global buffer Data @ 0x187328 (`LDR R4,=0x187328` at 0x9EE7C) and the real query at 0x9EE98
+ * fills it.
+ *
+ * The value names are the game's own names (SubKey @ 0xac680 is Software\PocketUFO), so this block
+ * deletes what it writes instead of leaving test values in the user's registry. */
+static void RegCopyOut(char *pszDst, size_t cchDst, const char *pszSrc)
+{
+    snprintf(pszDst, cchDst, "%s", pszSrc != NULL ? pszSrc : "");
+}
+
+static void TestRegistryStrings(void)
+{
+    HKEY  hKey = NULL;
+    char  sz254[255], sz255[256];
+    char  szFirst[400], szSecond[400];
+    u32   nDword = 0x12345678u;
+    const char *pFirst, *pSecond;
+
+    printf("Reg_SetString / Reg_GetString on their own\n");
+
+    memset(sz254, 'a', 254); sz254[254] = '\0';
+    memset(sz255, 'b', 255); sz255[255] = '\0';
+
+    Check(Reg_SetString("pufo126probe", "hello"),
+          "  a write reports success (0x9ed0c itself returns RegCloseKey's result, the BL at 0x9EDA8)");
+    RegCopyOut(szFirst, sizeof(szFirst), Reg_GetString("pufo126probe", "FALLBACK"));
+    Check(strcmp(szFirst, "hello") == 0, "  the stored bytes read back (0x9edbc -> Data @ 0x187328)");
+
+    RegCopyOut(szSecond, sizeof(szSecond), Reg_GetString("pufo126absent", "FALLBACK"));
+    Check(strcmp(szSecond, "FALLBACK") == 0,
+          "  a name never written answers the caller's default (probe fails, BNE 0x9EE5C -> 0x9EEAC)");
+
+    /* strlen + 1 at 0x9ED8C: an empty value is stored as its NUL alone, so it reads back as "" and
+     * not as the default. A port that treated an empty stored value as absent would fail here. */
+    Check(Reg_SetString("pufo126empty", ""), "  an empty value is written");
+    RegCopyOut(szFirst, sizeof(szFirst), Reg_GetString("pufo126empty", "FALLBACK"));
+    Check(szFirst[0] == '\0', "  and reads back empty, not as the default (cbData = 1)");
+
+    /* The 0xFF test at 0x9EE70/0x9EE74 is `CMP R3,#0xFF` + `BHI`, i.e. reject when cbData is STRICTLY
+     * greater than 255. Because Reg_SetString stores strlen+1 (0x9ED8C), the accepted window is
+     * cbData 1..255, which is 0..254 characters -- so the 256-byte Data buffer @ 0x187328 is never
+     * filled by this path. 254 characters arrive whole; 255 (cbData 256) are refused. */
+    Check(Reg_SetString("pufo126len254", sz254), "  a 254-character value is written (255 stored bytes)");
+    RegCopyOut(szFirst, sizeof(szFirst), Reg_GetString("pufo126len254", "FALLBACK"));
+    Check(strcmp(szFirst, sz254) == 0, "  254 characters read back whole (cbData 255 is not > 0xFF)");
+    CheckEqI32((i32)strlen(szFirst), 254, "  all 254 of them, so the buffer is not clipped");
+
+    Check(Reg_SetString("pufo126len255", sz255), "  a 255-character value is written (256 stored bytes)");
+    RegCopyOut(szFirst, sizeof(szFirst), Reg_GetString("pufo126len255", "FALLBACK"));
+    Check(strcmp(szFirst, "FALLBACK") == 0,
+          "  255 characters are REFUSED (cbData 256 > 0xFF, BHI 0x9EE74 -> 0x9EEAC)");
+
+    /* Type is only accepted as 1 (0x9EDC4 preset, CMP/BNE 0x9EE64/0x9EE68). A REG_DWORD under the same
+     * name is the one way to reach that branch, so the test writes one directly. */
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\PocketUFO", 0, NULL, 0, 0xF003Fu,
+                        NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        (void)RegSetValueExW(hKey, L"pufo126dword", 0, REG_DWORD,
+                             (const BYTE *)&nDword, sizeof(nDword));
+        (void)RegCloseKey(hKey);
+        RegCopyOut(szFirst, sizeof(szFirst), Reg_GetString("pufo126dword", "FALLBACK"));
+        Check(strcmp(szFirst, "FALLBACK") == 0,
+              "  a REG_DWORD value is refused by the Type != 1 test (0x9EE64/0x9EE68)");
+    } else {
+        Check(false, "  the subkey could not be opened for the REG_DWORD case");
+    }
+
+    /* One buffer for the whole process: the answer is &Data @ 0x187328 (`LDR R4,=0x187328` at
+     * 0x9EE7C), so a caller that keeps two results sees the second read overwrite the first. All 12
+     * original call sites (Map_InitAndLoadRegistry 0x226CC..0x22ACC) dereference the pointer
+     * immediately, which is why this is a fact and not a bug in the game. */
+    (void)Reg_SetString("pufo126probeA", "first");
+    (void)Reg_SetString("pufo126probeB", "second");
+    pFirst  = Reg_GetString("pufo126probeA", "FALLBACK");
+    RegCopyOut(szFirst, sizeof(szFirst), pFirst);
+    pSecond = Reg_GetString("pufo126probeB", "FALLBACK");
+    Check(pFirst == pSecond, "  both answers are the same buffer (Data @ 0x187328, loaded at 0x9EE7C)");
+    Check(strcmp(pSecond, "second") == 0, "  the live answer is the second name's value");
+    Check(strcmp(szFirst, "first") == 0, "  a copy taken before the second read keeps the first value");
+
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\PocketUFO", 0, NULL, 0, 0xF003Fu,
+                        NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        (void)RegDeleteValueW(hKey, L"pufo126probe");
+        (void)RegDeleteValueW(hKey, L"pufo126empty");
+        (void)RegDeleteValueW(hKey, L"pufo126len254");
+        (void)RegDeleteValueW(hKey, L"pufo126len255");
+        (void)RegDeleteValueW(hKey, L"pufo126dword");
+        (void)RegDeleteValueW(hKey, L"pufo126probeA");
+        (void)RegDeleteValueW(hKey, L"pufo126probeB");
+        (void)RegCloseKey(hKey);
+    }
+    Check(Reg_GetString("pufo126probeA", "gone")[0] == 'g', "  the probe values were cleaned up");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -321,6 +428,7 @@ int main(void)
     TestMissingArchive();
     TestMapInitScratch();
     TestOptionFlagSemantics();
+    TestRegistryStrings();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

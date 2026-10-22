@@ -23058,3 +23058,181 @@ one restored to its exact bytes, `grep -rn "MUTATION" src tests` empty. IDB comm
 0x9f5ac (745), 0x9f698 (996 -- the first draft hit the 1024-character cap and was shortened), 0x9f7a8 (359),
 0x9f7d8 (522), 0x9f7e4 (709), 0x9f8d0 (765), 0x9f95c (348), 0x9f964 (453) and 0x83874 (648), where none of the
 sixteen had a note before; `GameAssets_Shutdown`'s note rewritten to 847 characters; `idb_save` reported ok.
+
+## Part 126 - `app-shell` closed: 19 rows, 410 left, and a mutation runner that restored too much
+
+The nineteen uncited `app-shell` rows went through the row-121a method: the ten timer functions
+(`KillTimers_A @ 0x9e6a4`, `StartTimers_A @ 0x9e6d4`, `StartTimers_B @ 0x9e714`, `KillTimers_B @ 0x9e754`,
+`StartTimers_C @ 0x9e784`, `KillTimers_C @ 0x9e7c4`, `StartTimers_D @ 0x9e7f4`, `KillTimers_D @ 0x9e864`,
+`KillTimers_BySpeed @ 0x9e8b4`, `StartTimers_BySpeed @ 0x9e904`), the six `CDialogTemplate` members
+(`??0CDialogTemplate@@QAA@XZ @ 0x54c3c`, `??1CDialogTemplate@@QAA@XZ @ 0x54c48`,
+`CDialogTemplate_GetTemplateByte1 @ 0x54c5c`, `GetTemplateByte0 @ 0x54c68`, `GetLevelCount @ 0x54c74`,
+`GetCellByte @ 0x54c80`), the registry pair (`Reg_SetString @ 0x9ed0c`, `Reg_GetString @ 0x9edbc`) and
+`App_QuitDisplay @ 0xa0388`. Rows with a test cite at their own address 536 -> 555, without one 429 -> 410;
+`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30 and `save` 26 are what row 121a has left.
+`WinMain @ 0x9fcc4`, `InitInstance @ 0x9fd48` and `PocketUFO_WndProc @ 0xa03ec` stay cited-but-unreached:
+they run only inside the real executable, which `tools/e2e.sh` drives.
+
+### The six timer copies are identical except for their branch words
+
+The port comment said "three byte-identical pairs". It is not true and the byte compare says what is:
+`StartTimers_A/B/C` (0x9e6d4, 0x9e714, 0x9e784 -- 64 bytes each) differ only at +0x1C and +0x38, and
+`KillTimers_A/B/C` (0x9e6a4, 0x9e754, 0x9e7c4 -- 48 bytes each) only at +0x14 and +0x28. Those four words are
+the branch displacements: `EB000AE1` against `EB000AD1` against `EB000AB5`, because each copy sits a different
+distance from the shared `SetTimer` import thunk. Everything else -- the ids, the intervals, the literal pools
+holding `hWndMain @ 0x188d54` -- is the same byte. So the redundancy is real but its evidence is a byte compare,
+not an eyeball, and the header now says so.
+
+What the six bodies do: the Start trio sets 0xC300|0x51 with 0x28 (40 ms) through a `BL` (0x9E6F0, 0x9E730,
+0x9E7A0) and 0xC300|0x52 with 0x19 (25 ms) through the tail branch after `POP {R4,LR}` (0x9E70C, 0x9E74C,
+0x9E7BC); the Kill trio kills 0xC351 (0x9E6B8, 0x9E768, 0x9E7D8) and 0xC352 at the tail (0x9E6CC, 0x9E77C,
+0x9E7EC). Ids are built as `MOV R1,#0xC300` + `ORR R1,R1,#0x5n` except the Kill trio's first id, which is the
+wide immediate `MOV R1,#0xC351` (0x9E6AC / 0x9E75C / 0x9E7CC). `pfnTimerProc` is 0 in every call, so all of them
+post WM_TIMER to the window. The pair-and-order and the ids these calls do NOT touch are now checks:
+`Timer_KillA` leaves 0xC350 and 0xC353 running, `StartTimers_D` never touches 0xC350, and
+`KillTimers_BySpeed` never touches 0xC354.
+
+### The speed switch has two fall-throughs and an unsigned compare
+
+`StartTimers_BySpeed @ 0x9e904` reads `Map_nGameSpeed` from the live Map block at 0x9E918 and dispatches on
+`CMP`/`BEQ` for 0 (0x9E91C/0x9E920), 1 (0x9E924/0x9E928), 2 and 3 (0x9E92C..0x9E938), then `CMP R0,#4` at
+0x9E93C followed by `BNE 0x9E9BC` at 0x9E940. Two things follow that a reading of the pseudocode misses.
+
+Speed 4 has no arm of its own: the equal case falls through the `BNE` into the 2/3 block at 0x9E944, so 4 answers
+exactly like 2 and 3 (10 ms). A `switch` that listed 4 separately would look the same until a mutation removed it,
+which is why there is a check named for the fall-through and not only for the interval.
+
+The compares are unsigned, so a speed stored as a negative int reads as a huge unsigned value and takes the same
+`BNE 0x9E9BC` path as 5 -- it sets neither 0xC350 nor 0xC351. `Timer_StartBySpeed` takes `u32` and the wrapped
+value 0xFFFFFFFF is a check.
+
+The three arms (0x9E98C speed 0 with 0x64 at 0x9E9A0, 0x9E96C speed 1 with 0x32 at 0x9E980, 0x9E944 speeds 2/3/4
+with 0xA at 0x9E958) all join at 0x9E9A8, where id 0xC300|0x51 takes the same interval in R2 (`BL SetTimer` at
+0x9E9B8) -- and speed 0's block reaches it by falling through its `MOV R2,#0x64` at 0x9E9A4 rather than by
+branching. 0x9E9A8 then falls into 0x9E9BC, which sets 0xC352 with 0x19 (0x9E9D0) and tail-calls 0xC353 with 0x32
+(0x9E9EC). So the animation and pulse timers run for every speed, including the out-of-range one, while the
+0xC350/0xC351 pair belongs only to 0..4. The recorded order is a check too: for speed 5 the first recorded set is
+0xC352, because 0x9E9BC is the only block it reaches.
+
+### The template family, byte by byte
+
+`??0CDialogTemplate@@QAA@XZ @ 0x54c3c` is 12 bytes with one store (`pTemplate = 0` at 0x54C40);
+`??1CDialogTemplate@@QAA@XZ @ 0x54c48` loads `pTemplate` at 0x54C4C and deletes it only if non-null (the guard and
+the call share 0x54C54). `GetTemplateByte1 @ 0x54c5c` is `LDRB R0,[R3,#1]` at 0x54C64, `GetTemplateByte0 @ 0x54c68`
+is `LDRB R0,[R3]` at 0x54C70, `GetLevelCount @ 0x54c74` is `LDRB R0,[R3,#2]` at 0x54C7C. Each reads through the
+template pointer every call; the port caches the three bytes when the template loads, which is the same value, and
+the checks compare against the blob byte rather than against the cached field.
+
+`CDialogTemplate_GetCellByte @ 0x54c80` (116 bytes) calls the accessors three times -- byte 1 at 0x54C94, byte 0 at
+0x54CA0 and byte 1 AGAIN at 0x54CAC -- masks every factor to eight bits (AND #0xFF at 0x54CB0, 0x54CB4, 0x54CBC,
+0x54CC4, 0x54CC8, 0x54CD0, so a caller passing 259 reaches cell 3) and reads
+`pTemplate[4*(byte0*byte1*nZ) + 4*(byte1*nY) + 4*nX + nSlot + 3]` from MUL 0x54CB8/0x54CC0/0x54CCC, ADD
+0x54CD4/0x54CD8, `LDRB R2,[SP,#nSlot]` at 0x54CDC (nSlot is the fourth argument and arrives on the stack),
+`ADD R3,R2,R3,LSL #2` at 0x54CE0 and `LDRB R0,[R3,#3]` at 0x54CEC. The row stride is byte 1 and the level stride
+byte0*byte1, which is the proof that byte 1 is the X extent. There is no bound check anywhere in it. The port
+refuses an out-of-range index instead of reading outside the allocation, and takes u32 indices instead of
+truncating them -- both stated in the code comment and both checked (index 259 is refused here where the original
+would have read cell 3).
+
+The stride proof needed its own blob. The first version compared the accessor with the byte the shipped
+AVENGER.MA1 holds at the offset being proven -- but only 117 of that 2400-byte slot area is non-zero, so three of
+the four checks compared 0 with 0 and could not have failed. `TestCellIndexArithmetic` now builds a 2403-byte
+blob as `blob[i] = (u8)(i + 1)`, so every offset under test holds a byte no other tested offset holds
+(3->4, 43->44, 82->83, 763->252, 805->38, 2402->99), and the two wrong strides are asserted as negatives as well:
+`0x54c80`'s row term is not `4*byte0` (that would land on 84) and its level term is not `4*byte1` (that would land
+on 44).
+
+### Map_LoadMa1's own order, and where the port differs on purpose
+
+Reading `Map_LoadMa1 @ 0x54ba4` for the ctor row turned up three things the port does not do:
+
+* The flag byte is stored at `pOut + 4` at 0x54BD0 -- before the name copy, before `AssetReader_Find` at 0x54C04
+  and before the read at 0x54C34. In the original a failed load still records the flag. The port stores it only on
+  the success path, and that is a check ("the failed load did not write the flag") whose mutation -- putting the
+  store back before the Find -- fails 2 checks.
+* The name is copied into a 16-byte `pszName[16]` by an unbounded byte loop (0x54BDC..0x54BEC) and then
+  `strcat(".ma1")` runs at 0x54BF8, so a 12-character base name already writes 17 bytes past that buffer. The port
+  bounds its 64-byte buffer and refuses.
+* `AssetReader_Find`'s result is never tested (0x54C04). On a miss the size is 0, `operator new(0)` at 0x54C14
+  still returns a pointer, and the function returns `AssetReader_Read`'s refusal value -- a non-zero one, per
+  Part 125's finding about that function. The port refuses and leaves the blob NULL, which is the state the
+  ctor/dtor pair leaves, and that too is a check.
+
+`??1CDialogTemplate`'s guard is the one original behaviour the port cannot prove: `MapTemplate_Free` calls
+`free` on a NULL blob, which is a no-op for the same reason the guard makes a second destruction safe. A mutation
+that adds the guard back fails 0 checks, so it is reported as inert rather than counted as covered; the null store
+the free performs after it is what the check pins (removing it fails 1).
+
+### The registry pair: three default answers, one shared buffer, and a return value nobody reads
+
+`Reg_SetString @ 0x9ed0c` opens HKCU\Software\PocketUFO (`SubKey @ 0xac680`) with samDesired 0xF003F built as
+`MOV R3,#0xF0000` + `ORR R3,R3,#0x3F` (0x9ED2C/0x9ED38), converts the value name with `mbstowcs` into
+`ValueName @ 0x187750` (0x9ED78), and writes REG_SZ with `cbData = strlen + 1` (`ADD R3,R0,#1` at 0x9ED8C,
+`RegSetValueExW` at 0x9EDA0). What it returns is `RegCloseKey`'s result: the `BL` at 0x9EDA8 leaves its value in R0
+and the epilogue hands it out, so a successful write answers 0. The deviation is safe because of a census: all 16
+`BL` sites are inside `Options_SaveToRegistry` (0x11504..0x11678) or `Options_SaveAudioSettings`
+(0x6B834..0x6B8A0), none of them reads R0 before overwriting it, and `Options_SaveToRegistry`'s single call site
+(`Input_OnConfirm`, 0x161F0) writes `MOV R0,#0` next.
+
+`Reg_GetString @ 0x9edbc` presets Type to 1 (0x9EDC4/0x9EDC8), opens the key at 0x9EE1C (a failure returns the
+caller's default at 0x9EEC0 with no close, because there is no handle), then runs a PROBE query at 0x9EE54 with
+`lpData = 0` that answers only Type and cbData. Three answers take the default through `MOV R4,R5` at 0x9EEAC: the
+query failed (BNE 0x9EE5C), Type != 1 (0x9EE64/0x9EE68), or cbData > 0xFF (0x9EE70/0x9EE74). Everything else
+returns `Data @ 0x187328` -- one buffer for the whole process, loaded at 0x9EE7C -- and the real query at 0x9EE98
+fills it, with its own failure unchecked.
+
+The 0xFF gate was measured, not inferred, and my first reading of it was wrong. `CMP R3,#0xFF` with `BHI` rejects
+cbData strictly above 255, and `Reg_SetString` stores strlen+1, so the longest value that survives the round trip
+is 254 characters. The new test asserted 255 first and failed ("got 8, want 255" -- 8 is `FALLBACK`), and the
+port comment that said "256 stored bytes are accepted" was corrected in three places. `Data`'s room is exactly 256
+bytes -- `paSoundSamples` follows at 0x187428 -- and its IDB item was 1 byte wide until this Part typed it as the
+256 it is; the accepted maximum is 255 bytes, so the last byte of that buffer is never written by this path. The
+shared buffer is safe only because all 12 `BL` sites (`Map_InitAndLoadRegistry`, 0x226CC..0x22ACC) dereference R0
+immediately, which the test also pins: two reads return the same pointer, and a copy taken before the second read
+keeps the first value. A REG_DWORD written under the same name is the only way to reach the Type test, so the test
+writes one directly.
+
+### App_QuitDisplay ends with a store nothing can see
+
+`App_QuitDisplay @ 0xa0388` is 100 bytes: the gate on `Map_bTactFlag` at 0xA0398 with `Tact_Shutdown(0)` at
+0xA039C, `GameAssets_Shutdown @ 0x38e4c` at 0xA03A0, `GXCloseInput` at 0xA03B0, `GXCloseDisplay` at 0xA03C0,
+`PostQuitMessage(0)` at 0xA03C8, and then `g_bListRowSticky[0] = 1` at 0xA03D4 -- on `unk_188D4C`, the byte the
+screen-17 list handler reads at 0x14A94..0x14ADC to decide whether the hit row is cleared. The store is
+unconditional and it is the last thing a process does after it has already queued its quit message, so no state
+that the game can still reach depends on it. It is reproduced anyway (`g_pointerWorld.bListRowSticky = true` in
+`pufo_app.c`'s `App_QuitDisplay`), and it is the Part's one case with no teeth for a structural reason rather than
+a semantic one: `pufo_app.c` belongs to the `pocketufo` target only, no test links it, so removing the line changes
+no check in any of the 65. What does cover this function is `tools/e2e.sh`'s quit flow -- `e2e_flow_quit.txt`
+drives the seam down to `App_QuitDisplay @ 0xa0388` and requires exit code 0 -- and the `App_QuitFromTact` seam
+checks in `tests/test_menubtn.c` that pin the order and the once-only call.
+
+### The runner bug, which left a real edit in the source
+
+`docs/parity/mutate_run.py` applied a mutation with `data.replace(old, new)` and restored it with
+`now.replace(new, old)`. That is only safe when the mutated text is unique, and the `KillTimers_D @ 0x9e864` case
+was not: its `new` was `KillOne(UIPULSE); }`, which is also `Timer_KillBySpeed`'s tail, so the restore put
+`Timer_KillOne(PUFO_TIMER_EXTRA)` back in BOTH functions. The tree was left with `Timer_KillBySpeed` killing five
+ids including 0xC354, where 0x9e8b4 kills 0xC350..0xC353, and the only sign was the runner's own
+`restored exactly: False`. The affected function was repaired, the runner now splices at the recorded offset
+(`data[:off] + new + data[off+len(old):]` and back), and all 30 cases were re-run: 30 exact restores, 0 cases with
+a `MUTATION` string left, `grep -rn "MUTATION" src tests` empty. It is also the reason the earlier parts'
+single-line anchors never showed the problem: a one-line replacement text is almost never also another line's
+text.
+
+Measured: gates ran all six with `CHECK EXIT=0` (`build/check126b.log`), Release 65/65 and Debug 65/65,
+coverage 972/1103 functions and 596888/598792 bytes unchanged, `check: OK -- 135 artifact rows, 131 uncited
+functions, 0 of them real gaps`, 20,819 checks (+85; `test_timer.c` runs 149, `test_boot.c` 77,
+`test_template.c` 66), 93 frame pictures and 9 e2e pictures unchanged. The first gate run of this Part
+(`build/check126.log`) recorded Debug 64/65 with `test_geoscapeframe`'s "the flight round's strateg entries
+round-trip through the chunk" failing under `-j 8`; the same suite passed 65/65 run serially, the test passed alone
+with 2156 checks, and two more `-j 8` runs were clean -- row 120b's contention, reported rather than smoothed
+over. Teeth: 30 cases in `docs/parity/mutations_part126.py`, 29 failing 1 to 13 checks, 1 inert by construction
+(the 0xA03D4 store), 0 skipped, every file back to its exact bytes. IDB comments written and read back at 0x9e6a4
+(591), 0x9e6d4 (700), 0x9e714 (417), 0x9e754 (391), 0x9e784 (254), 0x9e7c4 (295), 0x9e7f4 (630), 0x9e864 (284),
+0x9e8b4 (395), 0x9e904 (1014), 0x9ed0c (996), 0x9edbc (991), 0xa0388 (834), 0x54c74 (455) and 0x54c80 (995) -- none
+of the fifteen had a note before -- and 0x54c3c (720), 0x54c48 (398), 0x54c5c (353), 0x54c68 (283) extended; three
+drafts hit the 1024-character cap (0x54c80 at 1024, 0x9ed0c at 1024, 0x9edbc at 1024) and were shortened and read
+back at 995, 996 and 991. `Data @ 0x187328` got its real 256-byte item and a 444-character note; `idb_save`
+reported ok. The ledger's address-to-port-function map stayed at 604/968 (these port functions keep the original
+names except the timer and template families), and reach stayed 965/968 with the same three entry points
+unreached.

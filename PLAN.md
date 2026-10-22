@@ -5765,6 +5765,22 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   its own `pDir`, which `DatFile_Close` frees at 0x9F19C, and `GameAssets_Shutdown` frees that global's slots a
   second time at 0x38E80 -- its IDB note said the opposite and was rewritten; and `AssetReader_Read @ 0x9f8d0` /
   `DatFile_Read @ 0x9f698` return a pointer, not a flag (351 and 23 BL sites read R0 at none of them).
+  Progress (Part 126): `app-shell` (19) closed -- 555 rows now carry a test cite, **410** do not. Three findings.
+  (1) A runner bug left a real edit in the source: `mutate_run.py` restored with a second whole-file
+  `replace(new -> old)`, and the `KillTimers_D @ 0x9e864` case's shortened text is also `KillTimers_BySpeed`'s
+  tail, so the restore put the dropped `KillOne(EXTRA)` back in both functions -- only `restored exactly: False`
+  showed it. The runner splices at the recorded offset now; the source was repaired and all 30 cases re-run.
+  (2) A check that compares zero with zero has no teeth: the first `CDialogTemplate_GetCellByte @ 0x54c80` stride
+  checks compared the accessor against the shipped AVENGER.MA1 byte at the same offset, and only 117 of that
+  blob's 2400 slot bytes are non-zero, so three of four passed whatever the code did. They use a synthetic
+  2403-byte blob with a unique byte per tested offset (3->4, 43->44, 82->83, 763->252, 805->38, 2402->99).
+  (3) The registry's length gate was wrong in the port comment: `CMP R3,#0xFF` + `BHI` at 0x9EE70/0x9EE74 rejects
+  cbData strictly above 255 and `Reg_SetString` stores strlen+1, so 254 characters is the longest value that reads
+  back -- the claim that 256 stored bytes are accepted was corrected in three places after the new test failed it.
+  Also measured: the speed switch's two fall-throughs (speed 4 reaches the 2/3 block; 0x9E9A8 falls into 0x9E9BC,
+  so 0xC352/0xC353 run for every speed including an out-of-range one, while 0xC350/0xC351 belong only to 0..4),
+  the unsigned compare that makes a negative speed take the out-of-range path, and that the six timer copies differ
+  only in their branch words (+0x1C/+0x38 for Start, +0x14/+0x28 for Kill).
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5909,3 +5925,20 @@ checks and 1 inert by proof (the `DatFile_Read` refill clamp at 0x9F71C) and rec
 reverted to the exact bytes, `grep -rn "MUTATION" src tests` empty | the ledger's address-to-port-function map
 stayed at 604/968 because `teeth_ledger.py` drops a port function whose name equals the original's; row 121a
 stays open with 429 rows left.
+
+`<this commit>` + Part 126 | Release 65/65 and Debug 65/65 with `check: ALL SIX GATES RAN`, `CHECK EXIT=0`
+(`build/check126b.log`) | 20,819 checks (+85; `test_timer.c` runs 149, `test_boot.c` 77, `test_template.c` 66) |
+coverage 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged | reach unchanged at 965/968,
+residue 0; cites at a row's own address 536 -> **555**, without one 429 -> **410** (`app-shell` closed) | one
+behaviour change in `src/`: `App_QuitDisplay` reproduces the original's last store `g_bListRowSticky = 1`
+(0xA03D4); the rest is cites and comment corrections in `pufo_timer.c/.h`, `pufo_template.c`, `pufo_reg.c/.h` |
+93 frame pictures and 9 e2e pictures unchanged | IDB comments written and read back at 0x9e6a4 (591), 0x9e6d4
+(700), 0x9e714 (417), 0x9e754 (391), 0x9e784 (254), 0x9e7c4 (295), 0x9e7f4 (630), 0x9e864 (284), 0x9e8b4 (395),
+0x9e904 (1014), 0x9ed0c (996), 0x9edbc (991), 0xa0388 (834), 0x54c74 (455), 0x54c80 (995) -- none of the fifteen
+had one -- and 0x54c3c (720), 0x54c48 (398), 0x54c5c (353), 0x54c68 (283) extended, plus `Data @ 0x187328` given
+its real 256-byte item and a 444-character note; `idb_save` written | teeth: 30 cases in
+`docs/parity/mutations_part126.py`, 29 failing 1 to 13 checks, 1 inert by construction (0xA03D4: no test links
+`pufo_app.c`), 0 skipped, every file back to its exact bytes | `docs/parity/mutate_run.py` fixed to splice at the
+recorded offset (see the Part 126 progress block); row 120b got another instance (the first gate run,
+`build/check126.log`, was Debug 64/65 with the same test green serially and in the clean re-run) | row 121a stays
+open with 410 rows left.

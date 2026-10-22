@@ -355,6 +355,13 @@ static void TestQuitFromTact(void)
 {
     printf("App_QuitFromTact (0x18e18)\n");
 
+    /* The display half is App_QuitDisplay @ 0xa0388 (100 bytes): the gate on Map_bTactFlag at 0xA0398
+     * with Tact_Shutdown(0) at 0xA039C, GameAssets_Shutdown at 0xA03A0, GXCloseInput at 0xA03B0,
+     * GXCloseDisplay at 0xA03C0, PostQuitMessage(0) at 0xA03C8 and the store at 0xA03D4 that sets
+     * g_bListRowSticky[0] to 1. The shell owns that function (its port counterpart is App_QuitDisplay
+     * in pufo_app.c, run by tools/e2e.sh's quit path); what this test reaches is the seam App_QuitFromTact
+     * installs -- that the display half runs exactly once, after the shutdown half, and is skipped when
+     * the caller has none. */
     Reset();
     App_QuitFromTact(QtShutdown, QtDisplay, NULL);
     CheckOrder("SD", "  shutdown first, then the display teardown");
