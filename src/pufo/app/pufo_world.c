@@ -10411,7 +10411,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->manufBuild.aTopics        = pW->aTopics;                            /* 0x15EF08, the research gate */
     pW->manufBuild.pbTopicCount   = (const u8 *)&pW->nResearchEntries;      /* 0x160C4C */
     pW->manufBuild.apProductA     = pW->auProductU32;                       /* 0x159E9C */
-    pW->manufBuild.apProductB     = (u32 *)pW->anProductReq;                /* 0x15B79C */
+    pW->manufBuild.apProductB     = pW->anProductReq;                       /* 0x15B79C */
     pW->manufBuild.apManufCols    = pW->auManufCol;                         /* 0x15E19C */
     pW->manufBuild.nSelectedBaseIdx = pW->nSelectedBase;
     pW->manufBuild.pfnSelectListed = World_ManufSelectThunk;                /* ManufScreen_SelectListed @ 0x6e914 */

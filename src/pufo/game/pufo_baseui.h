@@ -2311,7 +2311,10 @@ typedef struct ManufBuildEnv {
     ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0 */
     i32     nObjectCount;             /* Map_nObjectCount @ 0x114A60 */
     u32   *apProductA;                /* unk_159E9C, 200 u32 per base: accumulated work */
-    u32   *apProductB;                /* unk_15B79C, 200 u32 per base: units asked for */
+    i32   *apProductB;                /* aManufProductB @ 0x15B79C, 200 dwords per base. The IDB types
+                                     * that block int[1600] and every reader reaches it with LDR/STR
+                                     * (0x6E228, 0x6E2EC, 0x6E30C, 0x6F7A4, 0x6F8FC), so all seven
+                                     * apProductB fields now spell it the way the IDB does. */
     u16   *apManufCols;               /* auManufCol @ 0x15E19C, 200 u16 per base: allocated work */
     i8     nSelectedBaseIdx;          /* nSelectedBaseIdx @ 0x159D81 */
     void (*pfnSelectListed)(void);    /* ManufScreen_SelectListed @ 0x6e914 */

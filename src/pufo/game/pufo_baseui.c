@@ -4034,7 +4034,7 @@ void ManufScreen_ClearProductSlot(const ManufClearEnv *pEnv, i32 nBaseIndex, i32
     const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nBaseIndex + nProduct;
     if (nIdx >= 0 && nIdx < PUFO_PRODUCT_COLUMN_TOTAL) {
         if (pEnv->apProductB != NULL) {
-            pEnv->apProductB[nIdx] = 0; /* 0x6F8FC, the u32 column at 0x15B79C */
+            pEnv->apProductB[nIdx] = 0; /* 0x6F8FC, the 32-bit column at 0x15B79C (a dword STR) */
         }
         if (pEnv->apManufCols != NULL) {
             pEnv->apManufCols[nIdx] = 0; /* 0x6F910, auManufCol @ 0x15E19C */
@@ -4417,7 +4417,7 @@ static void ManufFillRow(const ManufBuildEnv *pEnv, UiPanel *pA, UiPanel *pB, Ui
     const bool bIndexed = (nIdx >= 0 && nIdx < PUFO_PRODUCT_COLUMN_TOTAL);
     const u16 nAllocated = (bIndexed && pEnv->apManufCols != NULL) ? pEnv->apManufCols[nIdx] : 0u;
     const u32 nAccum = (bIndexed && pEnv->apProductA != NULL) ? pEnv->apProductA[nIdx] : 0u;
-    const u32 nTarget = (bIndexed && pEnv->apProductB != NULL) ? pEnv->apProductB[nIdx] : 0u;
+    const i32 nTarget = (bIndexed && pEnv->apProductB != NULL) ? pEnv->apProductB[nIdx] : 0;
     const u16 nWork = (pObj != NULL) ? pObj->uManufWorkPerUnit : 0u;
     char szName[18];
     char szLine[PUFO_PANEL_LINE_BYTES];
@@ -4452,7 +4452,9 @@ static void ManufFillRow(const ManufBuildEnv *pEnv, UiPanel *pA, UiPanel *pB, Ui
      * R0 (0x6F064..0x6F068) and the dividend in R1 (0x6F070), which is _rt_sdiv's argument order. */
     {
         const i32 nNum = (i32)(nAccum * 100u);
-        const i32 nDen = (i32)((u32)nWork * nTarget);
+        const i32 nDen = (i32)((u32)nWork * (u32)nTarget);   /* the ARM's MUL wraps in 32 bits; the
+                                                            * (u32) pair is what makes the same wrap
+                                                            * defined in C */
         (void)snprintf(szLine, sizeof(szLine), "%d%%", (nDen != 0) ? (nNum / nDen) : 0);
     }
     if (pC != NULL) {
@@ -4462,7 +4464,9 @@ static void ManufFillRow(const ManufBuildEnv *pEnv, UiPanel *pA, UiPanel *pB, Ui
     /* Panel D: what was asked for, then the units the accumulated work has paid for. */
     {
         const i32 nUnits = (nWork != 0u) ? ((i32)nAccum / (i32)nWork) : 0; /* 0x6F174..0x6F180 */
-        (void)snprintf(szLine, sizeof(szLine), "%u/%d", (unsigned)nTarget, nUnits);
+        (void)snprintf(szLine, sizeof(szLine), "%d/%d", nTarget, nUnits);   /* 0x6F108 j_itoa takes the
+                                                                            * signed int that LDR
+                                                                            * loaded */
     }
     if (pD != NULL) {
         (void)UiPanel_SetLineText(pD, nRow, szLine);   /* 0x6F110..0x6F140, then strcat("/") at 0x6F140 */

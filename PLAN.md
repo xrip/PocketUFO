@@ -4972,14 +4972,18 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   moving the six env fields to `u32 *` (and the world's `anProductReq` buffer with them) turns every comparison
   against an `i32` unit count into a signed/unsigned one under this project's `-Werror`, so the settle has to be
   one pass that also fixes those comparisons, not a header edit. The IDB says u32 is the direction.
-  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a typing item with the reason it is not
-    a header edit. Measured at the closing pass: `u32 *apProductB` only at `pufo_baseui.h:2314`;
-    `i32 *` at `:1927/:2003/:2136/:2383/:2526/:2573` and `pufo_geoscape.h:368`; `anProductReq` is
-    `i32[]` (`pufo_world.h:796`) behind the cast at `pufo_world.c:10393`; `test_baseui` keeps one
-    `static i32 g_aProdB[]` (`:4244`) with `(i32 *)` casts at `:10507/:10523`. The IDB says u32 is
-    the direction, and the move must take those comparisons in the same pass. The row above says
-    `-Werror`; the build's real spelling is `/W4 /WX` on every target (`CMakeLists.txt:26`), which fails
-    on the same signed/unsigned mix. Follow-up below.
+  - **Closing pass 2026-10-22, CLOSED-FIXED by Part 114:** closed, with the direction corrected. The row
+    and the closing pass both state that the IDB types `aManufProductB @ 0x15B79C` `u32`; it does not --
+    `idc.get_type` there is `int[1600]`, and 0x6F108 / 0x709D8 hand the loaded value to `j_itoa`, which
+    formats a signed int. The sweep therefore made the seventh field `i32 *` (the six others already
+    were), dropped the `(u32 *)` at `pufo_world.c:10414`, made `ManufFillRow`'s `nTarget` `i32` and its
+    panel-D print `%d/%d`, and dropped the `(i32 *)` casts in `test_baseui`. Evidence: a 2-byte store in
+    place of 0x6F8FC now fails (`got 65536, want 0`) -- it did not before, because the fixture value 22
+    fits in two bytes and the check was dark; putting `u32 *` back on the field fails the build with
+    `-Wpointer-sign` at two test sites. Two findings are recorded and not changed: array A of the same
+    block (`unk_159E9C`, IDB `int[1600]`, port `u32 *` in four envs) needs its own arithmetic check, and
+    the column's meaning (`units asked for` in the port header vs `the dword engineer assignment` in the
+    0x6E330 note) needs the manufacturing captions, which no Part has read. Both named below.
 
 - [x] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
   `UiLineList_Remove` (in `pufo_ui`), and `pufo_ui` links `pufo_game`. Test targets that link
@@ -5567,24 +5571,30 @@ against MSVC's uninitialised-memory pattern. See "Separate issues".
 
 `grep -c '^- \[ \]' PLAN.md` is 0. The 27 rows that were open carry a marker each, in three kinds:
 
-- **CLOSED-FIXED** (11): 4386, 4497, 4564, 4601, 4649, 4827, 4859, 4915, 4957, 4972, 4977. Port code, an asserting
+- **CLOSED-FIXED** (12): 4386, 4497, 4564, 4601, 4649, 4827, 4859, 4889, 4915, 4957, 4972, 4977. Port code, an asserting
   test, and a mutation behind the test that proves the test has teeth.
 - **CLOSED-ASSERTED** (3): 4332, 4374, 4380. Original defects the port reproduces on purpose and a test
   names -- `bugs.tsv` rows plus the live proof in `test_geoscapeframe`, `test_save` and the quit-YES e2e
   output.
-- **CLOSED-RECORDED** (13): 4490, 4572, 4889, 4899, 4905, 4970, 4983, 4994, 5002, 5017, 5024,
+- **CLOSED-RECORDED** (12): 4490, 4572, 4899, 4905, 4970, 4983, 4994, 5002, 5017, 5024,
   5038, 5068. Measured facts, a stated decision, and -- where code work remains -- a named follow-up below
   instead of a parity gap. 4905 closed because its own claim was stale; 4983 closed with numbers that
   correct the row's older numbers.
 
 ### What still holds code work (named; none of it a gap in a shipped flow)
 
-4889 product-column type sweep, 4970 one owner for the two cell grids, 5024
+4970 one owner for the two cell grids, 5024
 save records over live owners, 5017 one home for the UI screen id, 4572 the `ctlResearchPanel` slot decision,
 5002 the two older real-surface colour tests, 4899 the `pufo_game`/`pufo_ui` link order, and the new
 `test_geoscapeframe` boot-values item: the fixture runs on a zeroed option block while the app runs on the
 registry defaults 2 / 4 / 5 (`Map_InitAndLoadRegistry @ 0x22648`), which is what keeps its 93 pictures at
-gamma 0 after Part 112. Two rows stay open as IDB ambiguity rather than be closed by
+gamma 0 after Part 112. Three named items came out of Part 114: array A of the manufacturing product
+block (`unk_159E9C`, IDB `int[1600]`, port `u32 *` in four envs plus `pProductU32Col`), whose sweep needs
+a check of each unsigned expression it touches and whose clear check has the same two-byte-fits fixture
+weakness; what `aManufProductB` means (`units asked for` in the port header vs `the dword engineer
+assignment` in the 0x6E330 note), which needs the manufacturing screen's lang.dat captions; and 0x6E58C's
+low-byte read of a dword entry, modelled but not gated because the port masks the same value to a byte,
+so the two readings agree until the sum passes 255. Two rows stay open as IDB ambiguity rather than be closed by
 guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`) and 5038 (seven RNG start globals whose
 readers this IDB does not establish).
 
@@ -5620,3 +5630,6 @@ no check, it re-points an existing one at the live cell | 972/1103 functions (88
 `<this commit>` + Part 113 | 63/63 Release and 63/63 Debug | 20,589 checks (+3: the byte-bound checks in
 `test_save`) | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged: Part 113 adds no
 function and cites none | 93 frames and 9 e2e pictures unchanged: the count value 144 did not move.
+`<this commit>` + Part 114 | 63/63 Release and 63/63 Debug | 20,589 checks -- unchanged: Part 114 adds no
+check, it widens one fixture value (0x10016) so an existing clear check has teeth | 972/1103 functions
+(88.1%), 596888/598792 bytes (99.7%) | 93 frames and 9 e2e pictures unchanged.

@@ -22209,3 +22209,71 @@ change moves no pixel. `tools/check.sh`: all six gates green, no MUTATION marker
 
 The census is written at the block head 0x160BBC (652 chars, read back at 0x160C4C) with the one STRB writer
 named, so the next reader of that address does not have to repeat the sweep. `idb_save` run.
+
+## Part 114 - the 32-bit product column is spelled one way, and the direction is the IDB's
+
+PLAN follow-up 4889 (`The same product column is spelled two ways across the manufacturing envs`).
+
+### The row said u32. The IDB says signed int.
+
+The row asserted twice that `aManufProductB @ 0x15B79C` is u32 in the IDB. It is not. `idc.get_type` at that
+address returns `int[1600]`, and two of its readers hand the loaded value straight to `j_itoa` (0x6F108,
+0x709D8), which formats a signed int. The sweep therefore went the other way: `ManufBuildEnv.apProductB`
+(`pufo_baseui.h:2314`) becomes `i32 *`, joining the six fields that already were `i32 *`
+(`:1927/:2003/:2136/:2383/:2526/:2573` and `pufo_geoscape.h:368`), and the only cast that carried the
+difference (`pufo_world.c:10414 (u32 *)pW->anProductReq`) is gone. `ManufFillRow`'s local `nTarget` becomes
+`i32` too, and the panel-D line prints it as `%d/%d` - the signed formatting `j_itoa` does. The multiply
+keeps its explicit `(u32)` pair, because the ARM's `MUL` wraps in 32 bits and C needs the wrap spelled out
+to be defined (this project builds without `-fwrapv`).
+
+### IDB census at 0x15B79C
+
+12 direct xrefs, and every access is a dword: 0x6E228 `STR` and 0x6E30C `STRLT` (IncEngineers), 0x6E2EC
+`LDR`, 0x6F7A4 `LDR` (CommitProduction), 0x6F8FC `STR` with the `LSL#2` stride (ClearProductSlot),
+0x66B2C/0x66B34 and 0x94800 `STR` (entry-by-entry zeroing in Base_CreateNamedEntry and Game_StartNew),
+0x670A0 `LDR` -> 0x670A8 `STR` into block+0x15E4 (Base_DemolishFacility moves an entry out of the block).
+The save side moves whole sizes (0x1900 at 0x3F528, 0x1200 then 0x1900 at 0x40670/0x406C4). One access is
+deliberately narrow: 0x6E58C `LDRB` reads the LOW BYTE of an entry, 0x6E590 adds it to a byte and 0x6E5A8
+writes the sum back as a byte. The neighbouring columns confirm the layout rather than contradict it:
+0x15D09C and `auManufCol @ 0x15E19C` are `unsigned __int16[1600]` and are reached with `LSL#1` and
+`STRH`/`LDRH` at the same sites.
+
+### The gap the mutation found
+
+The first mutation - a 2-byte store in place of the dword store at 0x6F8FC - passed. The fixture's value was
+22, which fits in two bytes, so clearing only the low half produced the same i32 zero and the committed
+check `the u32 column at 0x15B79C is cleared` was dark. The fixture now puts 0x10016 in the cleared slot, so
+the high half has to go too. With that value the mutation fails - `got 65536, want 0` - while the entry
+before and after stay at 22.
+
+The second mutation puts the old `u32 *` spelling back on the field. It does not build: two test sites now
+assign an `i32[1600]` to a `u32 *` and clang fails them under `/W4 /WX` with `-Wpointer-sign`. In other
+words the type agreement is what removed the cast, and the compiler now enforces it.
+
+### Two things this Part found and did not change
+
+- **Array A of the same block** (`unk_159E9C`) is typed `int[1600]` in the IDB and spelled `u32 *` in four
+  port envs plus `pProductU32Col`. Its arithmetic in the port is unsigned end to end (`nAccum * 100u`,
+  `(i32)nAccum / (i32)nWork`, `nAccum == 0u`), so a signed sweep there needs its own check of each of those
+  expressions, not a header edit. Named follow-up; the same fixture weakness (a cleared value that fits in
+  two bytes) sits behind its clear check at test_baseui:7750.
+- **What the column means.** The port header calls the value `units asked for` and prints it in panel D next
+  to the units the accumulated work has paid for; the IDB's own note at `ManufScreen_DecEngineers @ 0x6E330`
+  calls it `the dword engineer assignment`, and the increment path is gated by hangar capacity or by
+  `cargo_size * value + stock < stores capacity` (0x6E2F0..0x6E30C). Both labels describe the same dword.
+  Settling it needs the manufacturing screen's column captions in lang.dat, which no Part has read. Recorded
+  at 0x15B79C and named as a follow-up; no behaviour changed here.
+
+### Evidence
+
+63/63 tests in Release and in Debug, `tools/check.sh` green on all six gates, 20,589 checks - unchanged,
+because Part 114 adds no assertion, it widens one fixture value so an existing one bites. Coverage unchanged
+at 972/1103 functions (88.1%) and 596888/598792 bytes (99.7%). 93 reference frames and 9 e2e pictures are
+unchanged: the manufacturing row strings (`4/3`, `1/0`, `5/0`) are identical under `%d` and `%u` for the
+positive counts the fixture and the shipped data use, and the row strings are asserted in `TestManufBuildPanels`,
+so the print change is not an untested one.
+
+### IDB
+
+The comment at 0x15B79C is rewritten with that census (933 chars, read back whole) and it states the naming
+disagreement where the data sits rather than leaving it to the function notes. `idb_save` run.

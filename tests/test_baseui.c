@@ -7746,9 +7746,12 @@ static void TestClearProductSlot(void)
     for (i = 238; i <= 242; ++i) {
         g_aProdA[i] = 11u; g_aProdB[i] = 22; g_aProdC[i] = 33; g_aManufCol[i] = 44;
     }
+    /* The cleared slot needs all four bytes to reach zero: a 0x100 in its high half survives a
+     * 2-byte store, and 0x6F8FC is a dword STR (0x6F8FC `STR R2,[LR,R0,LSL#2]`, stride x4). */
+    g_aProdB[240] = 0x10016;
     ManufScreen_ClearProductSlot(&env, 1, 40); /* idx = 200*1 + 40 = 240 */
     CheckEqI32((i32)g_aProdA[240], 0, "the u32 column at 0x159E9C is cleared (0x6F918)");
-    CheckEqI32(g_aProdB[240], 0, "  the u32 column at 0x15B79C is cleared (0x6F8FC)");
+    CheckEqI32(g_aProdB[240], 0, "  the 32-bit column at 0x15B79C is cleared (0x6F8FC)");
     CheckEqI32((i32)g_aProdC[240], 0, "  the u16 column at 0x15D09C is cleared (0x6F92C)");
     CheckEqI32((i32)g_aManufCol[240], 0, "  and auManufCol at 0x15E19C (0x6F910)");
     CheckEqI32(g_aProdB[239], 22, "the entry before it is untouched");
@@ -10216,7 +10219,7 @@ static void TestManufBuildPanels(void)
     static ObjectRecFull *apObj[149];
     static u16 aManufCol[1600];
     static u32 aProdA[1600];
-    static u32 aProdB[1600];
+    static i32 aProdB[1600];
     static UiControl aCtl[6];
     static void *aRoot[7];
     UiPanel *pA = NULL, *pB = NULL, *pC = NULL, *pD = NULL;
@@ -10427,7 +10430,7 @@ static void TestManufDraw(void)
     static ObjectRecFull *apObj[149];
     static u16 aManufCol[1600];
     static u32 aProdA[1600];
-    static u32 aProdB[1600];   /* the column at 0x15B79C is u32 in the IDB; the clear and draw envs
+    static i32 aProdB[1600];   /* the column at 0x15B79C is u32 in the IDB; the clear and draw envs
                                 * spell it i32, so the two spellings meet in an explicit cast here. */
     static u16 aProdC[1600];
     static BaseRec aBases[8];
@@ -10510,7 +10513,7 @@ static void TestManufDraw(void)
 
     memset(&cenv, 0, sizeof(cenv));
     cenv.apProductA = aProdA;
-    cenv.apProductB = (i32 *)aProdB;
+    cenv.apProductB = aProdB;
     cenv.apProductC = aProdC;
     cenv.apManufCols = aManufCol;
     cenv.abGridBytes = aGridBytes;
@@ -10526,7 +10529,7 @@ static void TestManufDraw(void)
     denv.pnProductRow = &nRow;
     denv.pbProductSelected = &bSelected;
     denv.apProductA = aProdA;
-    denv.apProductB = (i32 *)aProdB;
+    denv.apProductB = aProdB;
     denv.apManufCols = aManufCol;
     denv.apResearchCols = aResearchCol;
     denv.pbEntryCount = &bEntryCount;
