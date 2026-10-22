@@ -5067,11 +5067,25 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   original does not: in ARM both take none, and `Tact_BuildPaletteLuts` reads `Map_nGamma @ 0x128AB8`
   itself. `Tact_InitMission` passes `*pEnv->pnGamma` to keep the existing signature. Harmless, but it
   is a signature deviation carried in already-ported code. (target Part 106.)
-  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a signature deviation carried in ported
-    code, stated at the port site. In ARM both `Tact_LoadPalettes` and `Tact_BuildPaletteLuts` take
-    no argument and the second reads `Map_nGamma @ 0x128AB8` itself; the port keeps `i32 nGamma` and
-    `Tact_InitMission` passes `*pEnv->pnGamma`. Dropping the parameter touches already-ported call
-    sites, so it belongs to a signature pass, not to a porting step. Follow-up below.
+  - **Closing pass 2026-10-22, FIXED by Part 111 (CLOSED-FIXED):** the parameters are gone. Both ARM
+    functions are `__fastcall()` with an empty argument list (0x377ec, 0x3734c) and the gamma is read
+    from `Map_nGamma @ 0x128AB8` at 0x37368, once, before the loops; every gamma button is a tail
+    branch (0x190C4..0x19244) one step behind a `STR` into that dword (0x190BC..0x1923C). The port now
+    holds the live cell through `Render_SetGammaCell`, installed in `World_Init`, and the hook that
+    serves the five widgets refreshes the Map+0x15100 mirror BEFORE the rebuild - the mirror used to
+    land after it, which was a one-step lag rather than only a signature difference. `TactInitEnv
+    .pnGamma` is deleted; 0x3CB80's call and the `MenuBtn_SetGamma` tail call carry nothing.
+    Gates: `test_render`'s LUT tables over its own installed cell, and `test_geoscapeframe` 18.1,     which presses bank widgets 65 and 69 on a live mission and reads the palette - it is also the     gate that catches an install that stops happening (proved by mutation).
+- [x] **Part 111 (2026-10-22): the colour-pair scale cell has no shell writer.**
+  `Gfx_PackRgb565Pair @ 0x2d82c` re-reads `Map_nGamma @ 0x128AB8` at 0x2d860 on every call and divides
+  each channel of both packs by `0.1 * gamma + 0.7`; `Map_InitAndLoadRegistry @ 0x22648` puts the
+  registry "gamma" in that dword at 0x227A0 (default 2, clamped 0..4 by 0x22764 / 0x22778 with the
+  fallback at 0x22794). The port's `GfxColorEnv.nScaleSource` is a copy and nothing in `src/` writes
+  it - `pufo_app.c`'s `g_color` is a zeroed static - so a live run packs every colour at the gamma-0
+  divisor 0.7 and a gamma press moves only the palettes. Tests set the field by hand, which is why
+  they cannot see it. Recorded as the 0x2d860 row in `docs/parity/bugs.tsv`; left to its own Part
+  because wiring the live cell changes the colours in every committed picture, and a re-reference is a
+  deliberate event, not a side effect. Named follow-up.
 - [x] `TactShutdownEnv.pbActionLatch /* Map+0x00 */` conflicts with `Map_bActionLatch @ Map+0x02`;
   `Tact_InitMission` sets `Map+0x00` to 1 and `Map+0x02` to 0, so the two are different fields and one
   of the two comments is wrong. (target Part 103.) CLOSED: the IDB confirms both stores — `STRB R0,[R4]` at
@@ -5547,22 +5561,23 @@ against MSVC's uninitialised-memory pattern. See "Separate issues".
 
 `grep -c '^- \[ \]' PLAN.md` is 0. The 27 rows that were open carry a marker each, in three kinds:
 
-- **CLOSED-FIXED** (9): 4386, 4497, 4564, 4601, 4649, 4827, 4859, 4972, 4977. Port code, an asserting
+- **CLOSED-FIXED** (10): 4386, 4497, 4564, 4601, 4649, 4827, 4859, 4957, 4972, 4977. Port code, an asserting
   test, and a mutation behind the test that proves the test has teeth.
 - **CLOSED-ASSERTED** (3): 4332, 4374, 4380. Original defects the port reproduces on purpose and a test
   names -- `bugs.tsv` rows plus the live proof in `test_geoscapeframe`, `test_save` and the quit-YES e2e
   output.
-- **CLOSED-RECORDED** (15): 4490, 4572, 4889, 4899, 4905, 4915, 4957, 4970, 4983, 4994, 5002, 5017, 5024,
+- **CLOSED-RECORDED** (14): 4490, 4572, 4889, 4899, 4905, 4915, 4970, 4983, 4994, 5002, 5017, 5024,
   5038, 5068. Measured facts, a stated decision, and -- where code work remains -- a named follow-up below
   instead of a parity gap. 4905 closed because its own claim was stale; 4983 closed with numbers that
   correct the row's older numbers.
 
 ### What still holds code work (named; none of it a gap in a shipped flow)
 
-4889 product-column type sweep, 4915 research-count type sweep, 4957 the two no-argument palette
-signatures, 4970 one owner for the two cell grids, 5024 save records over live owners, 5017 one home for the
-UI screen id, 4572 the `ctlResearchPanel` slot decision, 5002 the two older real-surface colour tests, 4899
-the `pufo_game`/`pufo_ui` link order. Two rows stay open as IDB ambiguity rather than be closed by
+4889 product-column type sweep, 4915 research-count type sweep, 4970 one owner for the two cell grids, 5024
+save records over live owners, 5017 one home for the UI screen id, 4572 the `ctlResearchPanel` slot decision,
+5002 the two older real-surface colour tests, 4899 the `pufo_game`/`pufo_ui` link order, and 0x2d860 the
+colour-pair scale cell `GfxColorEnv.nScaleSource`, which the shell never fills (the 0x2d860 row, found while
+closing 4957). Two rows stay open as IDB ambiguity rather than be closed by
 guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`) and 5038 (seven RNG start globals whose
 readers this IDB does not establish).
 
@@ -5589,3 +5604,6 @@ makes every `aText*` offset self-checking, and it belongs in the same IDB pass.
 Measured state row for this Part (the table above is a per-commit log; the hash lands with the commit):
 `0739ff9` + Part 110 | 63/63 Release and 63/63 Debug | 20,579 checks | 972/1103 functions (88.1%) |
 596888/598792 bytes (99.7%) | 46 tables checked, 0 mismatched | 93 frames and 9 e2e pictures unchanged.
+`<this commit>` + Part 111 | 63/63 Release and 63/63 Debug | 20,586 checks | 972/1103 functions (88.1%) |
+596888/598792 bytes (99.7%) -- unchanged: Part 111 adds no function and cites none | 9 e2e pictures
+checked and unchanged, no frame re-referenced.

@@ -688,6 +688,16 @@ static void TestPackRgb565Pair(void)
  * 0.1 * gamma + 0.7, per-channel division, truncation toward zero, clamp to the channel width - and are
  * written here as literals rather than recomputed in C, so a change in the port shows up as a failure
  * instead of changing with it. */
+/* Tact_BuildPaletteLuts reads a gamma cell the host installed (Map_nGamma in the original,
+ * 0x37368); this fixture has no world, so it installs its own cell. */
+static i32 s_nGammaCell;
+
+static void GammaCell(i32 nValue)
+{
+    s_nGammaCell = nValue;
+    Render_SetGammaCell(&s_nGammaCell);
+}
+
 static void TestPaletteLut(void)
 {
     static const u32 aWant565[5][3] = {
@@ -725,7 +735,8 @@ static void TestPaletteLut(void)
         g_aPalette[0][0] = 0x39E7;
         g_aPalette[0][1] = 0xFFFF;
         g_aPalette[0][2] = 0x0001;
-        Tact_BuildPaletteLuts(nGamma);
+        GammaCell(nGamma);
+        Tact_BuildPaletteLuts();
         CheckEqU32(g_aPalette[0][0], aWant565[nGamma][0], "lut 565 R7 G15 B7");
         CheckEqU32(g_aPalette[0][1], aWant565[nGamma][1], "lut 565 white");
         CheckEqU32(g_aPalette[0][2], aWant565[nGamma][2], "lut 565 blue 1");
@@ -733,7 +744,8 @@ static void TestPaletteLut(void)
 
     /* gamma 3 is the neutral setting: divisor is exactly 1.0, so the pass must be the identity. */
     g_aPalette[0][0] = 0x39E7;
-    Tact_BuildPaletteLuts(3);
+    GammaCell(3);
+    Tact_BuildPaletteLuts();
     CheckEqU32(g_aPalette[0][0], 0x39E7, "lut 565 gamma 3 is identity");
     CheckEqU32(g_aPalette[57][0], 0xBEEF, "lut covers slots 0..56 only");
 
@@ -742,7 +754,8 @@ static void TestPaletteLut(void)
     for (nGamma = 0; nGamma <= PUFO_PAL_GAMMA_MAX; ++nGamma) {
         g_aPalette[0][0] = 0x7FFF;
         g_aPalette[0][1] = 0x1234;
-        Tact_BuildPaletteLuts(nGamma);
+        GammaCell(nGamma);
+        Tact_BuildPaletteLuts();
         CheckEqU32(g_aPalette[0][0], aWant555[nGamma][0], "lut 555 white");
         CheckEqU32(g_aPalette[0][1], aWant555[nGamma][1], "lut 555 0x1234");
     }
@@ -752,7 +765,8 @@ static void TestPaletteLut(void)
      * display this drops the blue channel out of every palette. Reproduced, so the test pins it. */
     g_ffFormat = PUFO_FF_888;
     g_aPalette[0][0] = 0x00AABB1234ULL & 0xFFFFFFFFu;   /* R 0x34, G 0x12, B 0xBB, A 0xAA in the top byte */
-    Tact_BuildPaletteLuts(3);
+    GammaCell(3);
+    Tact_BuildPaletteLuts();
     CheckEqU32(g_aPalette[0][0], 0x00001234u, "lut 888 drops the high half of the entry");
 
     g_ffFormat = ffSave;
@@ -788,7 +802,8 @@ static void TestPaletteRamp(void)
         aBefore[i] = g_aPalette[i][0];
     }
 
-    Tact_LoadPalettes(3);   /* gamma 3: the LUT pass is the identity, so the ramp is all that is visible */
+    GammaCell(3);           /* gamma 3: the LUT pass is the identity, so the ramp is all that is visible */
+    Tact_LoadPalettes();
 
     /* Slot 34 is both the source and the destination at i = 0, where the scale is exactly 0.5. If that
      * pass were not the identity it would destroy the palette the rest of the ramp reads from. */

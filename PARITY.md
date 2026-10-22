@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 63 |
-| Test checks run | 20579 |
+| Test checks run | 20586 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -295,7 +295,7 @@ is the module that answers to it.
 | `0x4dcf4` | `Unit_bFacingAngleDuel` | 1376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x4c4a0` | `AfterEnemyStep` | 1368 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x30368` | `Tact_ComputeAimVector` | 1320 | `src/pufo/game/pufo_ballist.h` |
-| `0x22648` | `Map_InitAndLoadRegistry` | 1284 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
+| `0x22648` | `Map_InitAndLoadRegistry` | 1284 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x1aadc` | `MapView_DrawViewportGuide` | 1256 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x21e2c` | `MapView_DrawIsoLayer` | 1252 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_isodraw.c` (+1) |
 | `0x4abc8` | `EnemyAi_TryFireOrWander` | 1208 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_enemyai.c` (+2) |
@@ -880,7 +880,7 @@ is the module that answers to it.
 | `0x73008` | `ResearchScreen_RefreshPanels` | 568 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6e13c` | `ManufScreen_IncEngineers` | 500 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
-| `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
+| `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
 | `0x710b0` | `ManufScreen_Init` | 488 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x7c9e8` | `BasePlaneScreen_Close` | 480 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x79e00` | `BasePlaneScreen_DrawStatLabelA` | 452 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` (+1) |
@@ -1280,7 +1280,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3221 |
-| `test_geoscapeframe` | PASS | 2149 |
+| `test_geoscapeframe` | PASS | 2156 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |

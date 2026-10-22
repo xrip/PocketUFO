@@ -103,7 +103,7 @@ void MenuBtn_SetGamma(UiControl *pBank, i32 nGamma, i32 *pnGamma, const MenuHook
         *pnGamma = nGamma;                                /* unk_128AB8, Map+0x15100 */
     }
 
-    Tact_LoadPalettes(nGamma);                            /* tail call */
+    Tact_LoadPalettes();   /* tail call: the rebuild reads the installed gamma cell (0x377ec) */
 }
 
 void Menu_OpenSlotList(u16 *pnUiScreen, i32 *pnListMode, bool bSaveMode,

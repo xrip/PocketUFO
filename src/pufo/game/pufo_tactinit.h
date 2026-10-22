@@ -65,12 +65,12 @@
  *    `Tact_InitUiControls` live in pufo_ui, and pufo_ui links pufo_game. They are
  *    reached through hooks so this module does not widen the cycle -- the same seam
  *    Tact_Shutdown uses for UiPanel_FreeLines.
- * 5. The original calls `Tact_LoadPalettes` with whatever `AssetReader_Read` left in R0.
- *    `Tact_LoadPalettes` takes no argument in ARM (it reads Map_nGamma inside
- *    Tact_BuildPaletteLuts), so the residue is harmless there. The port's already-ported
- *    `Tact_LoadPalettes(i32 nGamma)` takes the gamma explicitly, so this function passes
- *    `*pnGamma`, the value the original reads. The signature mismatch in the existing
- *    port is reported as a separate issue, not changed here.
+ * 5. The original calls `Tact_LoadPalettes` with whatever `AssetReader_Read` left in R0, and the
+ *    residue is harmless because the ARM function takes no argument at all (`int __fastcall()` at
+ *    0x377ec): the gamma it applies is `Map_nGamma @ Map+0x15100`, read at 0x37368 inside
+ *    `Tact_BuildPaletteLuts`. The port matches that shape now -- `Tact_LoadPalettes(void)` and the
+ *    live cell the shell installed with `Render_SetGammaCell`, so no gamma pointer travels through
+ *    this env.
  */
 #ifndef PUFO_TACTINIT_H
 #define PUFO_TACTINIT_H
@@ -200,7 +200,6 @@ typedef struct TactInitEnv {
     i32  *pnUiSlot10;        /* unk_113A40 @ Map+0x88 = apUiSlotsA[10], set to 10 */
     i32  *pnUiSlot11;        /* unk_113A44 @ Map+0x8C = apUiSlotsA[11], holds the saved nUiScreen */
     u8   *pbAltOutcomePath;  /* unk_1153D9 @ Map+0x1A21 */
-    i32  *pnGamma;           /* Map_nGamma @ Map+0x15100 */
     u8   *pbUnkMap1511E;     /* unk_128AD6 @ Map+0x1511E: non-zero skips the grid-wide bUnk56 clear */
     u8   *pnCraftMapX;       /* Map_nCraftMapX @ Map+0x15139, the craft's map tile */
     u8   *pnCraftMapY;       /* Map_nCraftMapY @ Map+0x1513A */

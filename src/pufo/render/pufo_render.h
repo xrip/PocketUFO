@@ -174,7 +174,11 @@ void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph);
 /* What Gfx_PackRgb565Pair reads out of the world. The port has no owner for either value yet,
  * so they are passed in rather than reached through a global. */
 typedef struct GfxColorEnv {
-    i32 nScaleSource; /* unk_128AB8, Map + 0x15100 */
+    i32 nScaleSource; /* unk_128AB8 = Map_nGamma, Map + 0x15100. The original re-reads that global on every
+                       * call (the LDR at 0x2d860), so a gamma press changes the colours as well as the
+                       * palettes. This is a plain copy and the shell never fills it -- the gap is the 0x2d860
+                       * row in docs/parity/bugs.tsv and a named follow-up in PLAN.md, not something this
+                       * Part changes: fixing it moves every committed picture. */
     i32 nFadeCount;   /* Map.apUiSlotsA[1], the fade counter */
 } GfxColorEnv;
 
@@ -224,23 +228,36 @@ extern u32 g_ffFormat;
 #define PUFO_PAL_RAMP_COUNT 20
 #define PUFO_PAL_LUT_SLOTS  57
 
-/* Map_nGamma (IDB name for unk_128AB8), Map+0x15100. Written only by MenuBtn_SetGamma0..4,
- * which set 0..4. Read by Tact_BuildPaletteLuts @ 0x3734c, Gfx_PackRgb565Pair @ 0x2d82c and
- * Options_SyncUiFromMap_GotoScreen12 @ 0x188e4.
- *
- * It is also read back from the registry by Map_InitAndLoadRegistry (0x22648) and written there by
- * Options_SaveToRegistry (0x114d8). Neither of those two is ported.
+/* Map_nGamma (IDB name for unk_128AB8), Map+0x15100, a dword: the five handlers store it with STR at
+ * 0x190BC / 0x1911C / 0x1917C / 0x191DC / 0x1923C. Two writers, not one -- Map_InitAndLoadRegistry @ 0x22648
+ * puts the registry "gamma" here at 0x227A0 (atoi'd at 0x22760, a value above 4 by the CMP at 0x22764 or a
+ * negative one by the BMI at 0x22778 falls back to 2 at 0x22794), and MenuBtn_SetGamma0..4 store 0..4 after
+ * a press. Three readers: Tact_BuildPaletteLuts @ 0x3734c (the LDR at 0x37368), Gfx_PackRgb565Pair @ 0x2d82c
+ * (the LDR at 0x2d860 -- the divisor of every packed colour pair, over 100 call sites) and
+ * Options_SyncUiFromMap_GotoScreen12 @ 0x188e4 (0x18944, the gamma pads); Options_SaveToRegistry @ 0x114d8
+ * takes the same cell back out to the registry at 0x11510. The port models the registry pair in the options
+ * layer: Options_Load clamps "gamma" to 0..4 with the default 2 (pufo_options.c:126) and Options_Save writes
+ * it back (pufo_options.c:106).
  * The LUT divisor is 0.1 * gamma + 0.7, so 3 is neutral (divisor 1.0), 0 brightens (1/0.7) and 4 dims
- * (1/1.1). The port does not own the Map block, so gamma is passed in. */
+ * (1/1.1). */
 #define PUFO_PAL_GAMMA_MAX 4
 
+/* The port does not own the Map block, so the gamma cell is handed in once, the same way the render
+ * target is (Render_SetTarget). ARM takes no argument here: 0x37368 loads Map_nGamma into R1 before the
+ * slot loop, and Tact_LoadPalettes @ 0x377ec / Tact_BuildPaletteLuts @ 0x3734c are both `__fastcall()`
+ * with an empty argument list. Install the SAME cell the gamma handlers write. With none installed the cell
+ * reads 0, and that is a fixture value rather than the original's startup value: Map_InitAndLoadRegistry
+ * puts the registry "gamma" (default 2) into Map+0x15100 at 0x227A0 before anything can press a widget. */
+void Render_SetGammaCell(const i32 *pCell);
+
 /* Tact_BuildPaletteLuts @ 0x3734c. Rescale every channel of palette slots 0..56 in place by
- * 1 / (0.1 * nGamma + 0.7), in the field layout selected by g_ffFormat. */
-void Tact_BuildPaletteLuts(i32 nGamma);
+ * 1 / (0.1 * gamma + 0.7), in the field layout selected by g_ffFormat. The gamma cell is read once,
+ * before the loop, exactly as 0x37368 reads it once into R1. */
+void Tact_BuildPaletteLuts(void);
 
 /* Tact_LoadPalettes @ 0x377ec. Load the eight tactical palettes, derive the 20-slot brightness ramp
- * from tactical.pal, then run the gamma pass. */
-void Tact_LoadPalettes(i32 nGamma);
+ * from tactical.pal, then run the gamma pass (the tail call at 0x37A98). */
+void Tact_LoadPalettes(void);
 
 /* Pad image (PadImage, 20 bytes). pData is a glyph record. */
 typedef struct PadImage {

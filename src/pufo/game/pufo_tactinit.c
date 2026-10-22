@@ -778,11 +778,10 @@ bool Tact_InitMission(TactInitEnv *pEnv, i32 nMode)
 
     Init_LoadLightmap(pEnv, &rdr);
 
-    /* 0x3CB80..0x3CB8C. The original calls Tact_LoadPalettes with whatever
-     * AssetReader_Read left in R0, but in ARM that function takes no argument at all --
-     * Tact_BuildPaletteLuts reads Map_nGamma itself. The port's signature takes the gamma
-     * explicitly, so it is passed here. */
-    Tact_LoadPalettes(*pEnv->pnGamma);
+    /* 0x3CB80..0x3CB8C: the call carries the residue of AssetReader_Read in R0 and it does not
+     * matter -- ARM's Tact_LoadPalettes takes no argument and the gamma pass reads Map_nGamma at
+     * 0x37368. The port has the same shape: no argument, live cell in the render layer. */
+    Tact_LoadPalettes();
     if (pEnv->hooks.pfnLoadUiPads != NULL) {
         (void)pEnv->hooks.pfnLoadUiPads(pEnv->hooks.pUser);
     }

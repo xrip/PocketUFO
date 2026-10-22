@@ -8560,6 +8560,57 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         }
         printf("  queue after the build: len %d, active %d, cursor %d\n", (int)pQ->nQueueLen,
                (int)pQ->bQueueActive, (int)pQ->nQueueCursor);
+
+        /* 18.1 the gamma widgets on the bank (Part 111). Bank widgets 65..69 are MenuBtn_SetGamma0..4
+         * @ 0x19070/0x190d0/0x19130/0x19190/0x191f0: each writes the dword at Map+0x15100 and tail-calls
+         * Tact_LoadPalettes, and the rebuild reads that dword itself (0x37368) -- no argument carries the
+         * gamma. The port now has the same shape: the shell hands the render layer the live cell at
+         * World_Init and the hook refreshes it before the rebuild. These checks are what fails if the
+         * shell stops handing the cell out, or writes the mirror after the rebuild instead of before it.
+         * The pair ends on the value the mission was built with, so nothing drawn later moves. */
+        {
+            u32 aPal0[PUFO_PAL_SIZE];
+            u32 aPal4[PUFO_PAL_SIZE];
+            i32 k, nUp, nChanged4, nChangedBack;
+
+            Check(g_bank.aCtl[65].pfnClick != NULL && g_bank.aCtl[69].pfnClick != NULL,
+                  "18.1 Tact_InitUiControls installed the gamma handlers on bank widgets 65 and 69");
+            CheckEqI32(g_world.nMapGamma, g_options.nGamma,
+                       "18.1 Map_nGamma @ Map+0x15100 holds the option byte the new game copied");
+            memcpy(aPal0, g_aPalette[PUFO_PAL_TACTICAL], sizeof(aPal0));
+
+            CLICK(69);   /* MenuBtn_SetGamma4 @ 0x191f0: store 4, then the rebuild */
+            CheckEqI32(g_world.nMapGamma, 4, "18.1 the press stores 4 into Map_nGamma @ Map+0x15100");
+            memcpy(aPal4, g_aPalette[PUFO_PAL_TACTICAL], sizeof(aPal4));
+            nChanged4 = 0;
+            nUp = 0;
+            for (k = 0; k < PUFO_PAL_SIZE; ++k) {
+                /* Tact_BuildPaletteLuts divides each channel by 0.1 * gamma + 0.7 and clamps, and the
+                 * repack sums the channels with positive weights: a bigger gamma never raises an entry. */
+                if (aPal4[k] != aPal0[k]) {
+                    ++nChanged4;
+                }
+                if (aPal4[k] > aPal0[k]) {
+                    ++nUp;
+                }
+            }
+            Check(nChanged4 > 0, "18.1 and the rebuild ran on the pressed value: the tactical palette moved");
+            Check(nUp == 0, "18.1 it only moved down -- no entry is above its gamma-0 value");
+
+            CLICK(65);   /* MenuBtn_SetGamma0 @ 0x19070: back to the value the mission built with */
+            CheckEqI32(g_world.nMapGamma, 0, "18.1 the second press stores 0");
+            nChangedBack = 0;
+            for (k = 0; k < PUFO_PAL_SIZE; ++k) {
+                if (g_aPalette[PUFO_PAL_TACTICAL][k] != aPal0[k]) {
+                    ++nChangedBack;
+                }
+            }
+            Check(nChangedBack == 0,
+                  "18.1 the same cell value rebuilds the same bytes: the palette is exactly the mission's "
+                  "again, so the rebuild reads the cell and not a stale argument");
+            printf("  gamma: 0 -> 4 moves %d of %d tactical entries, 4 -> 0 restores all of them\n",
+                   nChanged4, (int)PUFO_PAL_SIZE);
+        }
         printf("  options: scroll %d show %d run %d turn %d menu %d nodrag %d\n",
                (int)g_options.bScrollByPen, (int)g_options.bShowBorder, (int)g_options.bRunByDblClick,
                (int)g_options.bTurnByPen, (int)g_options.bMenuByPen, (int)g_options.bForceNoDrag);

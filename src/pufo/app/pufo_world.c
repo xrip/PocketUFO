@@ -2156,6 +2156,10 @@ bool World_Init(PufoWorldState *pW)
      * installs it, the startup path does not. */
     pW->bPendingRegionId = 0;
     pW->view.nMode = 2;  /* the geoscape starts at the closest zoom; StartNew zooms out twice */
+    /* Map_nGamma @ Map+0x15100 is one global in the original and Tact_BuildPaletteLuts reads it
+     * itself (0x37368), so the render layer is handed THIS world's cell once -- the same shape as the
+     * render target install. World_NewGame and World_LoadSlot keep it equal to the option byte. */
+    Render_SetGammaCell(&pW->nMapGamma);
     return true;
 }
 
@@ -3708,7 +3712,8 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->pnUiSlot10       = &pW->nMapUiSlot10;         /* Map+0x88 */
     pE->pnUiSlot11       = &pW->nMapUiSlot11;         /* Map+0x8C */
     pE->pbAltOutcomePath = &pW->bMapAltOutcomePath;   /* unk_1153D9 @ Map+0x1A21 */
-    pE->pnGamma          = &pW->nMapGamma;            /* Map_nGamma @ Map+0x15100, synced from options */
+    /* Map_nGamma @ Map+0x15100 is not a TactInitEnv field: the call at 0x3CB80 carries no argument,
+     * and the render layer holds this world's cell through Render_SetGammaCell. */
     pE->pbUnkMap1511E    = &pW->bMapUnk1511E;         /* Map+0x1511E */
     pE->pnCraftMapX      = &pW->bMapCraftMapX;        /* Map+0x15139 / 0x1513A (0x128AF1 / 0x128AF2) */
     pE->pnCraftMapY      = &pW->bMapCraftMapY;
@@ -6038,13 +6043,20 @@ static TactUiHooks World_TactUiHooksFor(PufoWorldState *pW)
     return h;
 }
 
-/* The original's gamma buttons tail-call Tact_LoadPalettes after writing the gamma dword; the hook
- * reads the value the handler just wrote into the option block. */
+/* The original's gamma handlers write unk_128AB8 (Map_nGamma @ Map+0x15100) and only then tail-call
+ * Tact_LoadPalettes, and the rebuild takes no argument at all: it reads that cell itself (0x377ec is
+ * `int __fastcall()`, 0x37368 reads Map_nGamma). Menu_SetGamma has already stored the new byte when
+ * this runs, so the mirror is refreshed first and the rebuild sees the new value -- the order the
+ * five handlers have. */
 static void World_TactLoadPalettesThunk(void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
+    const PufoOptions *pOpt = World_TactLiveOptions(pW);
 
-    Tact_LoadPalettes((pW->pOptions != NULL) ? pW->pOptions->nGamma : pW->nMapGamma); /* 0x377ec */
+    if (pOpt != NULL) {
+        pW->nMapGamma = pOpt->nGamma;   /* Map+0x15100 follows the byte just written */
+    }
+    Tact_LoadPalettes();
 }
 
 static MenuHooks World_TactMenuHooksFor(PufoWorldState *pW)
@@ -6481,9 +6493,10 @@ static void World_TactGammaCall(i32 nStep)
         return;
     }
     h = World_TactMenuHooksFor(pW);
+    /* Menu_SetGamma stores the option byte and calls the hook, and the hook mirrors it into
+     * Map_nGamma @ 0x15100 before it rebuilds -- the original's write-then-tail-call order. The
+     * mirror used to sit here, after the rebuild, so the rebuild used the previous gamma. */
     (void)Menu_SetGamma(pOpt, &pW->sTactMenuPads, nStep, &h);
-    pW->nMapGamma = pOpt->nGamma;                          /* Map_nGamma @ 0x15100 follows the byte
-                                                            * the handler wrote @ 0x15100 */
 }
 
 static void World_TactMusicVolCall(i32 nStep)

@@ -962,6 +962,23 @@ void Palette_Load(const char *pszName, u8 nSlot)
     }
 }
 
+/* Map_nGamma @ Map+0x15100 lives in the shell's Map model. ARM reaches it as a global (0x37368
+ * `LDR R1, =Map_nGamma`, read once before the slot loop), so the port reads a cell the app installed
+ * instead of taking an argument -- the same shape as the render target block above. NULL means "not
+ * installed yet", and 0 is then the value, because unk_128AB8 is BSS and holds 0 until the first
+ * MenuBtn_SetGamma write. */
+static const i32 *g_pnGammaCell;
+
+void Render_SetGammaCell(const i32 *pCell)
+{
+    g_pnGammaCell = pCell;
+}
+
+static i32 Gamma_Current(void)
+{
+    return (g_pnGammaCell != NULL) ? *g_pnGammaCell : 0;
+}
+
 /* Soft-float conversions, reproduced rather than simplified.
  *
  * The original calls the WinCE runtime helpers through pointer tables: _itod, _muld, _addd, _divd,
@@ -997,9 +1014,10 @@ static i32 Pufo_dtoi(double d)
  * The repack looks like it can overflow a signed short - 32 * (31 << 6 | 63) is 65504 - and it does,
  * but the wrap is the answer: the original keeps only 16 bits anyway, so computing in u32 and masking
  * gives the same value. */
-void Tact_BuildPaletteLuts(i32 nGamma)
+void Tact_BuildPaletteLuts(void)
 {
     u32 ff = g_ffFormat;
+    i32 nGamma = Gamma_Current();   /* 0x37368: one read of Map_nGamma before the loops */
     i32 nSlot;
     i32 i;
 
@@ -1063,7 +1081,7 @@ void Tact_BuildPaletteLuts(i32 nGamma)
  *
  * Slot 34 is both the source and the destination at i = 0, where scale is exactly 0.5 and the pass is
  * the identity. Slot 53 (i = 19) is forced to zero, so the ramp ends in black. */
-void Tact_LoadPalettes(i32 nGamma)
+void Tact_LoadPalettes(void)
 {
     static const struct {
         const char *szName;
@@ -1107,7 +1125,7 @@ void Tact_LoadPalettes(i32 nGamma)
         }
     }
 
-    Tact_BuildPaletteLuts(nGamma);
+    Tact_BuildPaletteLuts();   /* 0x37A98: the tail call, no argument */
 }
 
 /* PadImage_ctor @ 0x11000. The original clears only pData. */

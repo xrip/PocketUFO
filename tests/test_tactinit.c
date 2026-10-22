@@ -134,7 +134,7 @@ static u8   s_nTerrainVariant, s_nTier, s_bUnk15115;
 static i32  s_nTierSource, s_nShotX, s_nShotY, s_nSpawnX, s_nSpawnY;
 static u16  s_uUiScreen;
 static i32  s_nUiSlot1, s_nUiSlot9, s_nUiSlot10, s_nUiSlot11;
-static i32  s_nUnk254B4, s_nUnk254B8, s_nGamma;
+static i32  s_nUnk254B4, s_nUnk254B8;
 static GameClock s_Clock;
 static TactItem s_Item156A88, s_Item156910, s_Item156A58;
 
@@ -340,7 +340,7 @@ static void Fixture_Reset(void)
     s_nShotX = 0; s_nShotY = 0; s_nSpawnX = 0; s_nSpawnY = 0;
     s_uUiScreen = 7;
     s_nUiSlot1 = 0x99; s_nUiSlot9 = 0x99; s_nUiSlot10 = 0x99; s_nUiSlot11 = 0x99;
-    s_nUnk254B4 = 0x99; s_nUnk254B8 = 0x99; s_nGamma = 3;
+    s_nUnk254B4 = 0x99; s_nUnk254B8 = 0x99;
     s_Clock.nSpeed = 1;
     s_Clock.bPaused = false;
     memset(&s_Item156A88, 0x5A, sizeof(s_Item156A88));
@@ -405,7 +405,6 @@ static void Fixture_Reset(void)
     s_Env.pnUiSlot10    = &s_nUiSlot10;
     s_Env.pnUiSlot11    = &s_nUiSlot11;
     s_Env.pbAltOutcomePath = &s_bAltPath;
-    s_Env.pnGamma       = &s_nGamma;
     s_Env.pbUnkMap1511E = &s_bUnk1511E;
     s_Env.pnCraftMapX   = &s_nCraftX;
     s_Env.pnCraftMapY   = &s_nCraftY;

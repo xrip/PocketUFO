@@ -21995,3 +21995,92 @@ PUFO_PSI_TEXT_* constants are the same four record numbers the original indexes.
 what a read-only text record looks like; it is not evidence of dead scratch, and the caption lines are
 asserted live in test_baseui (TEXTS[1188] at (7,54) and its siblings). The general rule this re-teaches:
 a base-relative index (base + 205 * n) hides from xrefs the same way a register-built Map offset does.
+
+## Part 111 - the gamma reaches the palette as one global, the way it does in the original
+
+PLAN row 4957 said the port carried a signature the original does not have: `Tact_LoadPalettes` and
+`Tact_BuildPaletteLuts` took an `i32 nGamma` that no ARM call site can supply. This Part closes that row.
+
+### IDB first
+
+`Tact_LoadPalettes @ 0x377ec` is `int __fastcall()` and `Tact_BuildPaletteLuts @ 0x3734c` is
+`void __fastcall()`: empty argument lists, both of them. The tail call at `0x37A98` sets nothing up - R0
+still holds the residue of the ramp loop - and the callee loads the gamma itself at `0x37368`
+(`LDR R9, [R1,R12]; Map_nGamma` with `R12 = Map_nGamma - 0x1139B8`), once, before the 57 x 256 loops.
+The five callers of `Tact_LoadPalettes` from the gamma buttons are tail branches at 0x190C4, 0x19124,
+0x19184, 0x191E4 and 0x19244, each one step behind a `STR` into the same dword (0x190BC, 0x1911C, 0x1917C,
+0x191DC, 0x1923C). Write the cell, then rebuild - that is the whole shape.
+
+Two further facts the IDB gave up while this was being checked. `Map_nGamma @ 0x128AB8` (Map+0x15100) is a
+dword - every writer uses `STR` and every reader uses `LDR` - and it has a startup writer besides the five
+handlers: `Map_InitAndLoadRegistry @ 0x22648` stores the registry "gamma" there at 0x227A0, atoi'd at
+0x22760, with a value above 4 (the `CMP R0,#4` at 0x22764) or a negative one (the `BMI` at 0x22778)
+falling back to 2 at 0x22794. The port already models that pair in the options layer
+(`Options_Load` clamps "gamma" to 0..4 with the default 2 at `pufo_options.c:126`, `Options_Save` writes
+it back at `:106`), and `Options_SaveToRegistry @ 0x114d8` reads the Map cell itself at 0x11510, as does
+`Options_SyncUiFromMap_GotoScreen12 @ 0x188e4` at 0x18944 to light the gamma pads.
+
+### What the port now does
+
+- `Render_SetGammaCell(const i32 *)` (src/pufo/render/pufo_render.c) is the seam, installed once per world
+  in `World_Init` next to the render target install: the render layer holds a pointer to the shell's live
+  `nMapGamma` rather than being handed a value.
+- `Tact_BuildPaletteLuts(void)` reads it once before its loops (`Gamma_Current()`), and
+  `Tact_LoadPalettes(void)` tail-calls it with nothing, exactly as 0x37A98 does.
+- `World_TactLoadPalettesThunk` now refreshes `pW->nMapGamma` from the option byte BEFORE it rebuilds.
+  Before this Part the mirror sat after `Menu_SetGamma` returned (`pufo_world.c`, `World_TactGammaCall`),
+  so a press rebuilt with the previous gamma: a real one-step lag, not just a signature difference. The
+  duplicate mirror line is gone with it.
+- `TactInitEnv.pnGamma` is deleted (`pufo_tactinit.h`), `Tact_InitMission`'s call at 0x3CB80 passes nothing
+  like the ARM does, and `MenuBtn_SetGamma`'s tail call passes nothing. The handler's own `i32 *pnGamma`
+  argument stays - that one is the write side of Map+0x15100 (0x190BC and friends).
+
+### Gates, and the three mutations that prove them
+
+- `test_render` keeps its numeric gates: the fixture installs its own cell (`GammaCell`) before each pass,
+  so the 565/555/888 LUT tables and the ramp cross-check still pin the divisor for gamma 0..4.
+- `test_geoscapeframe` 18.1, on the mission section 18 already brings up: bank widgets 65 and 69 carry the
+  installed `MenuBtn_SetGamma0`/`SetGamma4` handlers; the world's Map+0x15100 mirror equals the option byte
+  at mission build; pressing 69 stores 4 and moves the tactical palette (and no entry moves up, because the
+  repack sums channels with positive weights and a bigger divisor can only lower one); pressing 65 stores 0
+  and restores all 256 entries byte for byte, which is what says the rebuild is a function of the cell it
+  reads rather than of the press that came before. 18.1 ends on the gamma the mission was built with, so no
+  picture later in the run depends on it.
+- Mutation A, `Gamma_Current()` returning `*g_pnGammaCell + 1`: `test_render` red on 12 LUT checks (for
+  example "lut 565 R7 G15 B7: got 0x4248, want 0x52aa").
+- Mutation B, the `Render_SetGammaCell` install in `World_Init` removed: `test_geoscapeframe` 18.1 red -
+  "FAIL 18.1 and the rebuild ran on the pressed value: the tactical palette moved". This is the gap an
+  audit named on 2026-10-22: no committed gate looked at the tactical palettes a live mission builds.
+- Mutation C, the mirror written after `Tact_LoadPalettes()` in the thunk (the Part-111 order reversed):
+  18.1 red twice - the press moves nothing, and the press back does not restore.
+- Six gates green in both configs: 63/63 Release, 63/63 Debug, 20,586 checks, coverage 972/1103 functions
+  (88.1%) and 596888/598792 bytes (99.7%), 9 e2e pictures checked and unchanged. No frame moved: this Part
+  changes when a value is read, not what any draw computes, and the fixtures never pressed gamma before.
+
+### The gap this Part found and deliberately did not close
+
+`Gfx_PackRgb565Pair @ 0x2d82c` is the third reader of the same dword: 0x2d860 loads Map_nGamma on every
+call, turns it into `0.1 * gamma + 0.7` (itod at 0x2D870, the 0.1 pair lo 0x9999999A hi 0x3FB99999 at
+0x2D878/0x2D880, the 0.7 pair lo 0x66666666 hi 0x3FE66666 at 0x2D890/0x2D898) and divides every channel of
+both packs by it, in a helper with over 100 call sites. The port expresses that cell as
+`GfxColorEnv.nScaleSource`, a plain copy - and nothing in `src/` ever writes it: `pufo_app.c`'s `g_color` is
+a zeroed static. So a live run packs every colour with the gamma-0 divisor 0.7 while the shipped startup
+value in that dword is 2, and a gamma press moves the palettes but not the colours. Tests hand-set the
+field (test_baseui, test_geoscape, test_plane, test_render), which is why the gap is invisible to them.
+Recorded as the 0x2d860 row in docs/parity/bugs.tsv and as a named follow-up in PLAN.md. It is left to its
+own Part on purpose: feeding the live cell there changes the colours in every committed picture, and a
+picture re-reference is a deliberate, documented event, not a side effect of a signature fix.
+
+### IDB and PLAN
+
+- `Map_nGamma @ 0x128AB8` is now a 4-byte `int` item; it was a single byte while every writer stored four.
+- New comments at 0x227A0 (the startup writer and its clamp/default), 0x2d860 (the scale source and its
+  constants), 0x18944 (the gamma pads read the Map cell), 0x37368 (the only gamma read in the LUT pass),
+  0x37A98 (a tail call that carries no argument) and the five stores 0x190BC / 0x1911C / 0x1917C / 0x191DC
+  / 0x1923C.
+- Two function comments were sitting at IDA's 1024-character cap, cut mid-sentence by an earlier Part
+  (`append_comments` reports success and truncates). `Tact_BuildPaletteLuts` and `Tact_LoadPalettes` now
+  hold complete 965- and 971-character comments, both verified by read-back, and both say the
+  no-argument fact that this Part closed.
+- PLAN: row 4957 moves from CLOSED-RECORDED to CLOSED-FIXED, the follow-up list loses it and gains
+  0x2d860.
