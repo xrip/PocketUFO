@@ -3435,8 +3435,18 @@ unchanged; 18267 checks.
 
 - [x] **Part 80: the tactical inventory screen paints through the frame, and its filter row lives in the bank.** `Render_Frame @ 0x22310` routes Map_nUiScreen 1 to 0x224AC and never through 0x22414 -- the inventory REPLACES the iso layer. The callee was ported and tested long ago (`TactHud_DrawInventoryScreen @ 0x1f58c`); the seam was missing: `World_bTactFrameLive` refused screen 1, which is exactly what a mission launch leaves (0x3D0B8 -> `TactHud_OpenInventory @ 0x16ef4` -> store 1 at 0x16FD8), so the shell painted nothing on the first screen of every mission. `World_TactFrameDraw` builds the env from cells the bring-up already owns: bank 19..31 as `PUFO_HUD_INV_FIRST` (pBank + 0x260), the "invv" backdrop (Map+0x100), the portrait table = the 32 manual pads at Map+0x199C indexed `8*nUnitType + 4*bFemale + nLook`, "twonone" (0x156A70) as the strip's empty-hand marker, unk_138EA0 as the empty slot, TEXTS[55] "Вес: " + TEXTS[68] (EMPTY in lang.dat) for the burden line, aszTextE/aszTextA (0xB2200/0xB2148) for the rank, Map+0x3C (`sTactInput.bInvDragActive`) as the held byte, Map_bForceNoDrag @ 0x128A9C (the byte widget 88's handler flips, so arm and toggle share one cell), and the bank's pointer pair +0x1044/+0x1048 for the drag ghost. **Real gap found and closed, same class as Part 76's option pads:** the seven inventory filter pads ARE bank `UiControl.nState` bytes -- widget 21 (0xAC97A), 24 (0xAC9DA, All) and 25..29 (0xAC9FA/0xACA1A/0xACA3A/0xACA5A/0xACA7A), seven widgets, NOT a run -- lit by 0x16F70 and darkened by 0x16F68/0x16F78..0x16F98, re-lit by `Ui_SetInvFilter`, blitted by the arm; the port kept them in `TactUiState` only, so the row drew nothing. `World_TactPushInventoryFilterPads` mirrors them on the screen that reads them. Measured on the reloaded mission opened through the installed handler (bank widget 4, not a hand-built call): 2 pad blits -- the lit All filter (bank 24) and widget 30, the one row whose descriptor fills slot 0 -- because `UiControl_LoadPads @ 0x1a604` stores the three names into slots 0/1/2 in order, these rows leave slot 0 empty, and `UiControl_BlitActivePad` reads `apPads[nState]`: the panel's static grids come from the "invv" backdrop, the control pads are the lit/pressed overlays. Clearing All removes one blit; lighting abFilterPad[0] adds one; all seven bytes stand in the bank. Gate: the Part 80 block (opener through the handler, arm with NO iso layer -- the iso loop bounds do not move, 0x22414 is off the path -- the two counts and the seven-byte mirror) plus a launch-state paint at the bring-up. New reference `tests/ref/tact_hud_inventory.png`, looked at (portrait, header, "Вес: 0", the empty equipment grid, the ground strip, the lit filter row). IDB: 4 comments (0x224AC, 0x16F68, 0x1f58c, 0xAC9DA) + `idb_save`. Gates: all six ran, 62/62 Release and Debug, 18567 checks, coverage unchanged, 12 frame references (1 new) and 9 e2e pictures unchanged.
 
-- [ ] **Next unit: the tactical screens the shell still does not paint or drive, verified by frame images.** Verification changes from this unit on: every draw unit dumps its frame as a PPM the test writes (`tools/frames.sh` collects them) and the gate compares the dump against the stored reference, so parity is checked on the rendered picture, not only on lit-pixel probes. The walker (Part 50), the modal bank (Part 51), the enemy phase (Part 52), the tact pad table (Part 53), the control bring-up with its ~106 installed click handlers (Part 54), the bring-up inventory opener (Part 55), the EndTurn bracket (Part 56), the hand menus (Part 57), the deploy-confirm opener (Part 58) and the quit-confirm opener (Part 59) and the resize pad (Part 61, closing the last NULL in the bank table) are live; still missing: the tact pointer dispatch is live since Part 60 (press/release run the installed handlers on the mission screens, and the modal hover arm now dispatches the slot 16/18 callbacks Parts 58/59 stored), the tact keyboard dispatch since Part 67 (both WndProc chains over the 96-byte key map @ 0x1884D8, and the fifteen `TactInputHooks` seams the table left NULL -- so the pen path now runs the map click, the cursor re-place and the text push as well), and BOTH feeder gaps closed by Part 105 (World_PulseTact runs UiPulse_OnTimer @ 0x36630 over the live world cells during a mission -- App_TickPulse routes 0xC353 there, gate test_geoscapeframe 105.b -- and the modal draw arm's apUiSlotsA[20..23] fills reach the input block with every painted frame, gate 105.a); (the save half is closed since Part 62 and the load half since Part 65 (`World_SaveSlot` + `App_HookSaveGame` run `SaveGame @ 0x44988` over the live world; `World_LoadSlot` + `Load_HookTactInitMission` run `Tact_InitMission` mode 1 over the open slot file); the tactical frame behind the RenderFrame seam is live since Part 63 (`World_TactFrame` + `WorldHooks.pfnPresentFrame` cover screens 0, 8 and 9, the walker's repaint arm included), so nothing of 0x2237C's tactical jumptable is left off the seam: the inventory arm, screen 1 at 0x224AC, is live since Part 80, the look-mode minimap arm, screen 2 at 0x224B8, since Part 81, the command panel, screen 4 at 0x224C4, since Part 82, the marked-unit overlay, screen 6 at 0x224D0, since Part 83, the promotion report, screen 0x13 at 0x223F4, since Part 84, and the Cydonia briefing pair, screens 0x14/0x15 at 0x223DC, since Part 85 -- 0xD is live since Part 64 and the whole "cases 0,3,5,7-12,15" group since Part 76 (16..18 stay off it, and those are the outer title/menu cases, not the tactical frame); (`bPanelFlagScratch` has an owner since the Part 64-era app tick: the 0xC352 timer walks 0xA0978..0xA098C (`pufo_app.c:909`, `:2129`); `unk_EACE0` is TEXTS[1104] "OK", written by the record read loop at 0x38524..0x38564, and it has drawn on both pads that read it since Part 84; `anPhaseSave0[94] @ 0x150D6` is `TactInputState.bActionReady` (`pufo_input.h:95`), handed to the viewport guide at `pufo_world.c:4446` -- all three closed by the Part 101 audit) and three cells the frame now READS but nothing in the port writes, tracked for Part 106: the height-glyph gate dword `0x14000` (the IDB's `nHeightGlyphId`, `aim.anAimRow[10]` -- "No ported code writes it yet" at `pufo_mapctx.h:133`), the type-probe bytes `Map+0x16..0x19`, and `Map+0x14070` (`pArrowThrownItem` -- "no writer yet (recorded gap)" at `pufo_world.c:4443`). Part 101 audit: the two feeder gaps named earlier in this item were closed by Part 105; what keeps this row open is the three read-without-writer cells named above (height-glyph dword, the type-probe bytes, `pArrowThrownItem`), tracked for Part 107 -- the Part 106 unit closed the walker seams this
-row also named (probe, FOV, radio bank, transform name) but never touched these three cells.
+- [x] **Next unit: the tactical screens the shell still does not paint or drive, verified by frame images.** CLOSED by Parts 50..107 (see this row's own tail for the last three cells). Verification changes from this unit on: every draw unit dumps its frame as a PPM the test writes (`tools/frames.sh` collects them) and the gate compares the dump against the stored reference, so parity is checked on the rendered picture, not only on lit-pixel probes. The walker (Part 50), the modal bank (Part 51), the enemy phase (Part 52), the tact pad table (Part 53), the control bring-up with its ~106 installed click handlers (Part 54), the bring-up inventory opener (Part 55), the EndTurn bracket (Part 56), the hand menus (Part 57), the deploy-confirm opener (Part 58) and the quit-confirm opener (Part 59) and the resize pad (Part 61, closing the last NULL in the bank table) are live; still missing: the tact pointer dispatch is live since Part 60 (press/release run the installed handlers on the mission screens, and the modal hover arm now dispatches the slot 16/18 callbacks Parts 58/59 stored), the tact keyboard dispatch since Part 67 (both WndProc chains over the 96-byte key map @ 0x1884D8, and the fifteen `TactInputHooks` seams the table left NULL -- so the pen path now runs the map click, the cursor re-place and the text push as well), and BOTH feeder gaps closed by Part 105 (World_PulseTact runs UiPulse_OnTimer @ 0x36630 over the live world cells during a mission -- App_TickPulse routes 0xC353 there, gate test_geoscapeframe 105.b -- and the modal draw arm's apUiSlotsA[20..23] fills reach the input block with every painted frame, gate 105.a); (the save half is closed since Part 62 and the load half since Part 65 (`World_SaveSlot` + `App_HookSaveGame` run `SaveGame @ 0x44988` over the live world; `World_LoadSlot` + `Load_HookTactInitMission` run `Tact_InitMission` mode 1 over the open slot file); the tactical frame behind the RenderFrame seam is live since Part 63 (`World_TactFrame` + `WorldHooks.pfnPresentFrame` cover screens 0, 8 and 9, the walker's repaint arm included), so nothing of 0x2237C's tactical jumptable is left off the seam: the inventory arm, screen 1 at 0x224AC, is live since Part 80, the look-mode minimap arm, screen 2 at 0x224B8, since Part 81, the command panel, screen 4 at 0x224C4, since Part 82, the marked-unit overlay, screen 6 at 0x224D0, since Part 83, the promotion report, screen 0x13 at 0x223F4, since Part 84, and the Cydonia briefing pair, screens 0x14/0x15 at 0x223DC, since Part 85 -- 0xD is live since Part 64 and the whole "cases 0,3,5,7-12,15" group since Part 76 (16..18 stay off it, and those are the outer title/menu cases, not the tactical frame); (`bPanelFlagScratch` has an owner since the Part 64-era app tick: the 0xC352 timer walks 0xA0978..0xA098C (`pufo_app.c:909`, `:2129`); `unk_EACE0` is TEXTS[1104] "OK", written by the record read loop at 0x38524..0x38564, and it has drawn on both pads that read it since Part 84; `anPhaseSave0[94] @ 0x150D6` is `TactInputState.bActionReady` (`pufo_input.h:95`), handed to the viewport guide at `pufo_world.c:4446` -- all three closed by the Part 101 audit) and three cells the frame now READS but nothing in the port writes, tracked for Part 106: the height-glyph gate dword `0x14000` (the IDB's `nHeightGlyphId`, `aim.anAimRow[10]` -- "No ported code writes it yet" at `pufo_mapctx.h:133`), the type-probe bytes `Map+0x16..0x19`, and `Map+0x14070` (`pArrowThrownItem` -- "no writer yet (recorded gap)" at `pufo_world.c:4443`). Part 101 audit: the two feeder gaps named earlier in this item were closed by Part 105; what keeps this row open is the three read-without-writer cells named above (height-glyph dword, the type-probe bytes, `pArrowThrownItem`), tracked for Part 107 -- the Part 106 unit closed the walker seams this
+row also named (probe, FOV, radio bank, transform name) but never touched these three cells. Part 107 closes two
+of the three. The height-glyph dword `0x14000` has a writer the port already runs: `Tact_ComputeAimVector @ 0x30368`
+copies `atAimRowTable[11*nRowId + 0..10]` into Map+0x13FD8..0x14000, `PUFO_AIM_ROW_COUNT 11` stores the tenth row,
+and the only reader is `MapView_DrawUnitHeightGlyph @ 0x1c240` (0x1c2b0/0x1c2b4, 0x1c62c/0x1c630). The "type-probe
+bytes `Map+0x16..0x19`" were a phantom: an earlier pass read a Soldier-relative `LDRB [R,#0x16]` (0x498DC, inside
+`Unit_ResetBattleState`) as a Map-relative one; the four bytes `Tact_MapTypeToGlyphIdx @ 0x46664` really scans are
+`Map_abSpriteSet @ Map+0x15116..0x15119`, the GameMap field standing on the phantom bytes is deleted,
+`IsoUnitDrawGate.paTypeProbe` points at the live set (`pufo_world.c:4537`), and the mission's own aliens now prove
+the race-group arm live ("sprite groups: 2 alien(s) on the race arm, 0 on the fallback, 0 XCom on the race arm,
+set 11 20 23 23"). The third cell, `Map+0x14070`, stays open and is tracked in its own row, "The throw arc's two
+Map writes still have no owner in the port", together with the flag byte written beside it.
 - [x] **The geoscape reaches a mission through the descent panel, and it was walked; the pen-side ORDER was closed by Part 90.** Part 75 wired thirteen of the status panel's fifteen handler fields, so a loaded transport arms the launch control (`Smap_BeginCraftSelect` at 0x91578, kept because `Craft_CountSoldiersAboard` is non-zero) and the descent panel paints it. **Part 89 walked the whole path in the shell** -- order through `Ship_LaunchIntercept`, the pulse, the event pass, the type-4 arrival's flag-23 line, the painted offer, the pen press on the launch control, `Smap_BeginCraftSelect`, `World_InitTactical` -- and the gate is `test_geoscapeframe` section 13. **Part 90 closed the FIRST half of a real intercept:** the shell now builds `SmapHitEnv` itself (`World_GeoHitTestStrategSelect`), so a press on the craft's map entry, the card, the flag-27 prompt, the cell press and the fly-to-point OK all run through the press dispatcher and end in the type-5 waypoint and `Ship_LaunchIntercept` -- gate `test_geoscapeframe` section 14. Of `bMapSelectionFlag @ 0x159E84`'s six writer chains (`OptionsScreen_OnConfirm @ 0x6cf18`, `Smap_SelectMapTarget @ 0x84484`, `Smap_HitTestStrategSelect @ 0x82be8`, `Smap_ConfirmCraftTarget @ 0x842ec`, `Smap_ConfirmSelected @ 0x845d8`, and the flag-18/19/20 multi-select arms), the geoscape-pointer ones are gated through the click now, the multi-select arms and the flag-20 target panel since Part 91, and `Smap_OnPointerUp`'s own select arm (0x84698 → 0x8491C → 0x84930) since Part 92 -- its flag-10 panel reached through the press arm 0x87AEC, with the click fired by the release (0x1A580). Section 13 still orders its intercept through the game's own function, which is faithful to that path too. Two fields stay NULL: `pfnConfirmReport` (Ui_OpenBaseInfoAlt @ 0x84d18 -> ufopaedia screen 16, still waiting on that screen's Init) and `pfnApplyResearch` (Ui_OpenResearch @ 0x84bf8 -> research screen 8). **Part 88 moved half of that pairing:** the research Init is live in the shell and nav slot 5 is wired (the LDR at 0x67BAC), and both openers are ported already (`Ui_OpenBaseInfoAlt` at `pufo_baseui.c:9831`, `Ui_OpenResearch` at `pufo_baseui.c:9853`), so what `pfnApplyResearch` waits on now is the `ScreenResetOpen2Env` its body reads -- above all the `pNavOut` handle for the fifteen nav controls Ui_OpenResearch rebuilds -- not a missing Init. Nav slots 6..9 were wired by Part 99 (`9a1e10b`): the Manuf/Transfer/BuySellBuy/BuySellSell thunks at `pufo_world.c:2169-2172` (closed by the Part 101 audit). What remained of this item -- `pfnConfirmReport` / `pfnApplyResearch` and the ufopaedia screen-16 Init -- was closed by Part 104: both NULL hooks became thunks (`World_ConfirmReportThunk` runs `Ui_OpenBaseInfoAlt` @ 0x84d18, `World_ApplyResearchThunk` runs `Ui_OpenResearch` @ 0x84bf8 with a real `ScreenResetOpen2Env`), `Ui_InitBaseInfo` @ 0x9ddc8 is live, and the whole screen-16 life ran in `test_geoscapeframe` (category/entry navigation, the case-8 nav rebuild, three close arms; frames `ufopaedia_index`, `ufopaedia_entry`, `ufopaedia_entry_next`, `geoscape_research_apply`).
 
 ## Part 101 (2026-10-21): PLAN re-audit -- decisions and dispositions (verification only, no code)
@@ -3505,7 +3515,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   path in this row was wrong, and so was the claim that the census measured a save-format gap: see the row
   below).
 
-- [ ] **The shell's own flow never buys or loads cargo, so its missions deploy an unarmed squad.** (target Part 107) Part 77
+- [x] **The shell's own flow never buys or loads cargo, so its missions deploy an unarmed squad.** CLOSED by Part 107; Part 77
   measured it (0 of 8 live soldiers armed at save time, all 21 chunk records flagged in) and Part 78 proved
   the mechanism is right rather than missing: `Tact_SetupCraftCargo` takes the amount straight from the
   launching craft's `aItemQty[Map_nCraftIndex]` column (0x39018) or, for a base defence, from the base's
@@ -3523,18 +3533,38 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   topic is locked, so nothing admissible can be moved. Part 99 closed the missing half: the research and
   manufacture screens are wired (nav slots 5/6, ids 8/9), research completion through the hourly pass unlocks
   topics, a manufactured product lands in base stock, and `test_geoscapeframe` 99.6 stages a hold item into a
-  transport and mounts a weapon on a combat craft through the swap tail at 0x79A10. Open rows left for this
-  entry: buying a CRAFT (rows 117/118 -- roster growth through the buy -> site record ->
-  `Smap_GrantSiteRecovery @ 0x98b50` craft spawn at 0x99360..0x993AC has no live gate yet; the hangar cap
-  gate 0x75C4C/0x75C74 also needs enough hangar cells), and the live mission that deploys a squad armed by
-  cargo the shell itself staged.
+  transport and mounts a weapon on a combat craft through the swap tail at 0x79A10. What Part 107 adds is the
+  rest. `test_geoscapeframe` 107.a builds the hangar to its shipped limit (three cells laid, cap 3, with three
+  craft homed) and takes the shipped cap refusal as the answer: 0x75C4C/0x75C74 measure the free kind-11 cells,
+  0x75C80 wants ships + inbound + 1 = 4, and the close's rollback (0x76C14, `BuySell_nFundsSnapshot`) proves the
+  refused buy paid nothing. 107.f runs the half that refusal blocks: a transfer frees a home slot (homed 2), the
+  gate passes, the buy pays the row price (0x75D28, 0x75DC8 -- 1946930 -> 1446930), a second press sets
+  `dwActionFail` with shortfall reason 2 (0x75F34, 0x75F3C), the confirm restamps the snapshot at 0x75130 so the
+  close's 0x76D70 finds nothing to undo, the working site holds the craft count (0x75DA4, 0x75DB8) plus the
+  site+0x206 byte (0x75D5C) that the inbound pair sums with at 0x67F78, and the hourly
+  `Smap_GrantSiteRecovery @ 0x98b50` delivery spawns the craft: one new Ship in the roster (0x2CB6C..0x2CBE8),
+  standing at the base's own cell (0x2CBC8), with the delivered record compacted out (0x994C8..0x99550) and no
+  further funds spent (0x75DC8). 107.d then stages the cargo through the same commit chain -- object 4 x 2 with
+  its clip 38 x 2 onto craft 0 -- and 100.5 launches it: 2 items in the tactical pool, both loaded with clip 38
+  x 20, 0 already in an XCOM hold, 2 loose on the deploy cell. The last number is the original's own rule, not a
+  gap: all 8 soldiers aboard carry `Soldier+0x3C1`, whose only two writers are 0x3C510 (set) and
+  `Soldier_Generate @ 0x4974C` (cleared at generation), so 0x3BE60 routes veterans through `Equip_SlotPass` and
+  0x3C2D8 never dresses them -- asserted live ("the squad aboard: 8 soldiers, 8 carrying the equipped byte").
+  The fresh-recruit half runs in `test_tactinit TestCargoWeaponNeedsItsClip`: magazine aboard puts 2 items in
+  hands and leaves the cell empty, magazine left behind puts 0 in hands and leaves 2 on the cell, because the
+  hand gate 0x3C26C needs a non-zero magazine and an unloaded weapon builds `nAmmo 0` at 0x39530. Frames
+  `econ_buy_craft_queued`, `econ_craft_spawned`, `econ_hangar_cap_full`, `econ_craft_loaded`, `econ_hold_repeat`.
 
-- [ ] **Monthly funding has no live funds delta.** (target Part 107) The chain is wired end to end (`Geoscape_AdvanceTime` ->
+- [x] **Monthly funding has no live funds delta.** CLOSED by Part 107. The chain was already wired (`Geoscape_AdvanceTime` ->
   `Tick_Monthly` -> `World_HookOpenMonthly` -> `FundingScreen_OpenMonthly @ 0x5d160`, upkeep via
-  `Base_CalcMonthlyUpkeep`), and Parts 54/56 gated the arithmetic at fixture level, but no test pulses the
-  shell clock across a month boundary and asserts `g_world.nFunds` against the recomputed upkeep plus the
-  id-19 funding screen landing. The 99.x economy ticks use `pfnTickHourly` / `pfnTickBases` directly and
-  never cross the month gate.
+  `Base_CalcMonthlyUpkeep`); what was missing was the pulse across the gate, and `test_geoscapeframe` 107.b runs
+  it on the live shell: the fast button stores its 3600 s interval (0x85124 chain), the clock is ticked until
+  the month flips, `nMonthCounter` advances by exactly 1 and `geo.time.nMonth` changes, the id-19 funding report
+  is the screen the boundary lands on, `nFunds` stands unchanged through every pre-boundary pulse, and at the
+  boundary it moves to `nFunds0 - nUpkeep + nBars` with `Base_CalcMonthlyUpkeep` recomputed from the live base
+  set and the four bar columns read back off the panel. The after-close block adds the shipped guards the
+  boundary can hit: the mission-hold/battle-ended combination, the bankruptcy limit, and the psi-base report
+  screen when the roster has a psi soldier. Frames `funding_monthly`, `funding_closed`.
 
 - [x] **Transfer screen 10 is the one unwired nav slot.** All its functions are ported (`Ui_InitTransfer`,
   `TransferScreen_BuildPanels`, `Transfer_ResetSite`, `Transfer_MoveOneItem`, `TransferScreen_ValidateCapacity`,
@@ -4350,11 +4380,16 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   no CMP against any dimension (0x8217C, 36 bytes) -- and the defect is indexed in bugs.tsv; fixtures park
   contacts on real cells.
 
-- [ ] **Row hold-to-repeat never runs on the geoscape.** `UiScrollList_TrackHold` selects a row by itself only while
+- [x] **Row hold-to-repeat never runs on the geoscape.** CLOSED by Part 107 (`test_geoscapeframe` 107.c).
+  `UiScrollList_TrackHold` selects a row by itself only while
   panel byte 0x1BA8 is set, counting to the threshold at panel + 0x1BAC (0x3EE50..0x3EEB8). The image sets 0x1BA8 on
   the transfer panels (0x98248, 0x98258) and the plane screens (0x7BE58), never on the status panel, whose
-  `UiPanel_ctor` leaves it 0 -- so on the geoscape only `UiScrollList_ClickRow` selects rows, and the hold path here
-  stays ungated on purpose. (target Part 107: the transfer/plane repeat gate gets its press-level proof there.)
+  `UiPanel_ctor` leaves it 0 -- so on the geoscape only `UiScrollList_ClickRow` selects rows. The gate now proves
+  all three cases with held presses: the status panel stays `bRepeatArmed 0` and eight holds on it count nothing
+  (`nHoldCount` stays 0); the transfer screen arms panels B and C in its own draw (0x98248, 0x98258) and leaves
+  panel A unarmed; the hangar's store row panels get armed by the craft-detail draw (0x7BE58, 0x7BE68), one fired
+  hold disarms the panel, and the next detail draw re-arms it (0x7BE70 is the clear the draw runs first).
+  Frame `econ_hold_repeat`.
 
 - [x] **The research row name reads a cost as a TEXTS index.** CLOSED by Part 104: this was a misread of the
   load, not a defect in 0x7373C. `Geoscape_InitUI` reads the RESEARCH.DAT member through 0x86910
@@ -4390,12 +4425,14 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   pair (x 170 / x 186). `geoscape_hangar_stores` is therefore faithful, and the aux column is a handler input,
   not a display field. IDB: notes at 0x7B918 and 0x7BED4.
 
-- [ ] **The hangar's list rows are not pen-reachable while the craft detail is up.** 0x88308/0x88318/0x88320
+- [x] **The hangar's list rows are not pen-reachable while the craft detail is up.** CLOSED by Part 107,
+  asserted as the ORIGINAL QUIRK it is (`test_geoscapeframe` 107.c block C1). 0x88308/0x88318/0x88320
   gate the panel rows and the control run (0x88324..0x88368) on `bPlanePanelsBuilt != 0 && bPlaneShowCraftDetail
-  == 0`, so with the read-out open the pen hits nothing in the list, and 12h drives rows through the controls'
-  own handlers the way the pulse auto-repeat does (0x95644/0x95654). The door the original leaves open -- a
-  row selectable only with the detail closed -- is faithful, but no gate yet proves it through a real press.
-  (target Part 107.)
+  == 0`, and the release arm gates its own `ClickRow` on the same pair (0x8A0F0). With the read-out closed a pen
+  press over a craft row selects it (status-column `ClickRow` on the press at 0x88368, craft column on the
+  release at 0x8A0F0) and the select opens the read-out (0x7CC14); with the read-out open, the same press over
+  the other craft row selects nothing and leaves the panel's selected-row cell (`nUnk3032`) untouched -- both
+  gates fail on `bPlaneShowCraftDetail`. Frames `econ_hangar_cap_full`, `econ_craft_loaded`.
 
 - [x] **`Save_ReadMapDims` has no test that can see it.** CLOSED by Part 103.3 with both asked-for
   shapes. Unit level in `test_save`: a sentinel `MapGeom` of 9×9 becomes the chunk's 1×1 through
@@ -4563,16 +4600,39 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   ordinary cell blocks -- and the base-facility suite should be given the same shape. Left as it is here, so
   the fix is a separate change. (Part 109 sweep.)
 
-- [ ] **`pufo_ballist.h` names two `auStat` slots against the UI captions.** The soldier readout (unit 101)
+- [x] **`pufo_ballist.h` names two `auStat` slots against the UI captions.** CLOSED by Part 107. The soldier readout (unit 101)
   draws its nine stat bars from `auStat[]` under the TEXTS 127..136 captions, and the pair that settles the
   order is TEXTS 133 "Throwing Accuracy" over `auStat[5]`, TEXTS 134 "Strength" over `auStat[8]` and TEXTS 129
   "Stamina" over `auStat[9]` — the same order unit 74's training screen gives. `pufo_unit.h` now has a
   `SoldierStat` enum in that order. `pufo_ballist.h` instead calls `auStat[8]` `nStatThrow` and `auStat[9]`
   `nStatStrength`, so its ballistics gate reads the slot the UI labels Strength for throwing and the slot it
   labels Stamina for strength. One of the two is wrong; the UI captions are the direct evidence, but the
-  ballistics gate's own numbers have not been re-read against the ARM. Settle it before the tactical hit
-  chances are trusted, then rename in both the port and the IDB. (target Part 107; the Part 106 unit closed the
-  walker seams instead.)
+  ballistics gate's own numbers have not been re-read against the ARM. The ARM settles it in the port's favour of
+  the captions: `Tact_ResolveThrowLanding @ 0x31A18` composes its range budget at 0x31A44..0x31A78 as
+  `MUL R0, [R1,#0xB4], [pObj,#0xA5]` and `MUL R1, [R1,#0xB2], [R1,#8]` with R1 = `Map.pSelUnit`, i.e. auStat[8]
+  multiplies the stun/armor word and auStat[9] multiplies the object weight -- auStat[8] is Strength and
+  auStat[9] Stamina, the same pair `Unit_RecalcInventoryStat`'s equip divisor divides the carried weight by
+  (`4*(uInvBurden+weight+3)/auStat[8] == 0` at 0x3C26C) and the same order `auStatBase[7] = auStat[8]` copies.
+  `ThrowBudget` now reads `nStatStrength` / `nStatStamina` (pufo_ballist.h), pufo_unit.h's obsolete cross-note is
+  gone, and the tests that fixed the pair (test_ballist, test_mapctx, test_tactstate, test_moveaction) keep their
+  numbers while using the settled names. The pair is also what makes the throw budget live: see the row below on
+  the budget's carrier. IDB notes at 0x31A4C..0x31A68 carry the naming.
+
+- [ ] **The throw arc's two Map writes still have no owner in the port.** Found while settling the `auStat` pair
+  (Part 107). `Tact_SimulateThrowArc`'s tail 0x319E0..0x31A10 stores its `pItem` argument into
+  `Map.pArrowThrownItem @ 0x14070` and raises `Map.bTrajHitStop @ 0x1406D` in the same instruction sequence, and
+  `Tact_ResolveThrowLanding @ 0x31A18` calls that arc from inside its own landing loop -- so on a real throw the
+  slot holds the landing call's item (`entry->pWeapon`, the entry field at 0x1c that 0x507F8 passes as `v124[13]`)
+  until MoveThrow's own arc call at 0x50960 rewrites it with `pSelWeapon`. `MapView_DrawUnitFacingArrow @ 0x1c1e4`
+  dereferences the slot with no null test whenever the flag stands -- recorded at that address as an ORIGINAL BUG.
+  The port carries the flag as a copied bool (`MoveActionCtx.bThrowHitStop`, `pufo_mapctx.c:93`), reports the
+  loop's final value in `ThrowLanding.bHitStop` without writing it back to the Map byte, and has no writer for
+  `pArrowThrownItem` at all (the shell hands the draw NULL, `pufo_world.c:4571`). Closing it means threading the
+  two Map cells through the ballist seam the way the original hands them -- an engine step at
+  `Tact_SimulateThrowArc` / `Tact_ResolveThrowLanding` with its fixtures, not a rename -- so it is kept out of the
+  economy unit it was found in. The third input the same function reads is fixed here: `MoveThrow` now composes
+  `ThrowBudget` from `Map.pSelUnit` and the thrown entry's object weight at the throw site (0x31A4C..0x31A58), and
+  `test_mapctx` asserts the composed values instead of a prefilled slot.
 
 - [x] **Ten rows of `docs/parity/bugs.tsv` use bare LF while the file is CRLF.** Rows 163..172 (the
   `EnemyAi_TryFireOrWander` / `Tact_EnemyAiTick` block) end in `\n`, the other 256 in `\r\n`. `audit_bugs.py`
@@ -4655,15 +4715,23 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   the IDB comments at 0x577D4, 0x7EF60 and the global 0x158844 saying so. Still gated: the mission-follows
   branch (`pbBaseAtAssault` NULL) for the Map-block reason above.
 
-- [ ] **The dormant `sizeof(MapCell)` assert is wrong, and the original's cell is 62 bytes.**
+- [x] **The dormant `sizeof(MapCell)` assert is wrong, and the original's cell is 62 bytes.** CLOSED by Part 107:
+  the assert is deleted, and the census answers the "what reads them" half.
   `src/pufo/game/pufo_mapcell.h` asserts `sizeof(MapCell) == 60` inside
   `#if UINTPTR_MAX == 0xFFFFFFFFu`, so it never runs on the Win64 build. It would fail if the port were ever
   built 32-bit: the port's own layout ends at `bFlags57[4]` (0x39..0x3c), which rounds to 64 with 4-byte
   pointers. The IDB's `MapCell` has the same 23 members and reports size 62, i.e. two bytes past the last
   named field. Nothing is hurt today — `Map.apCells @ 0x15338` is a `MapCell *[4][60][60]` pointer table and
   cells are never serialised — but the assert states an invariant that is not true, and the two unnamed bytes
-  at 0x3d/0x3e have never been accounted for. Worth a pass that either finds what reads them or deletes the
-  assert. (target Part 107; the Part 106 unit closed the walker seams instead.)
+  at 0x3d/0x3e have never been accounted for. The pass ran in Part 107 and the assert is gone. `MapCell_Reset @
+  0x54A90` writes `bFlags57[0]` (mask 0xF3) and `[1]` only, the save pair stores the same two (0x43B58 bits 2/3,
+  0x43B8C the byte IDA calls `bFlags58`), `MapCell_SetBFlags57_3` and the visibility wall marks touch `[0]`, and a
+  census over the `#0x3D]` / `#0x3E]` store and read forms names only Ship-record users -- no MapCell one. The
+  allocation explains it: `new(0x3C)` at 0x3D190 hands out 60 bytes (said in that site's own IDB comment), so the
+  IDA type's 62 overhangs the cell the original owns and 0x3b..0x3e sit past its end. The `sizeof == 60` line
+  stated an invariant this layout (ends at 0x3c, rounds to 64) does not have, so it is removed rather than padded
+  into a lie; `offsetof(MapCell, pUnit) == 0x30` stays because that is the one field accesses depend on. Note
+  recorded in `pufo_mapcell.h` and at 0x54A90.
 
 - [ ] **`Tact_KillUnit` removes a dead unit from the side lists without writing the counts back.**
   `src/pufo/game/pufo_unit.c` builds `SideLists lists = Kill_SideLists(pCtx->pRosters)` twice (the chryssalid
@@ -4673,7 +4741,9 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   a duplicated pointer in its last slot and the count is one too high. `Tact_ProcessFallAction` gets this
   right through `Fall_SyncCounts`, and `Tact_UpdateUnitControl` now does the same through
   `Turn_SyncSideCounts`; the kill path does not. Fixing it means deciding whether `KillCtx.pRosters` should
-  own the counts or whether `Tact_KillUnit` should sync them, so it is its own step. (target Part 106.)
+  own the counts or whether `Tact_KillUnit` should sync them, so it is its own step. RE-TARGETED by Part 107 to a
+  dedicated engine step in the final sweep: the two Parts it was parked against (106, 107) both ran on other
+  scopes, and this one needs an IDB decision plus a roster-count gate, not a rename.
 
 - [x] **Fixed in Part 41: `Ui_ConfirmFireBurst` (0x18774) now reports the refusal its callee reports.**
   In the original the message is the callee's own work — `TactState_EnqueueFireBurst @ 0x4B0D8`,
@@ -4730,8 +4800,10 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `ManufCommitEnv`, `ManufQtyEnv` and now `ManufDrawEnv`. The IDB says the column is u32. Nothing is
   wrong today — the values are small unit counts and the tests keep one buffer per spelling — but the
   day the shell builds one buffer and hands it to both families it needs a cast, and `TestManufDraw`
-  already carries that cast. Worth settling once, in one direction, rather than at every call site.
-  (target Part 107.)
+  already carries that cast. RE-TARGETED by Part 107 to the final sweep rather than run inside the economy unit:
+  moving the six env fields to `u32 *` (and the world's `anProductReq` buffer with them) turns every comparison
+  against an `i32` unit count into a signed/unsigned one under this project's `-Werror`, so the settle has to be
+  one pass that also fixes those comparisons, not a header edit. The IDB says u32 is the direction.
 
 - [ ] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
   `UiLineList_Remove` (in `pufo_ui`), and `pufo_ui` links `pufo_game`. Test targets that link

@@ -1864,7 +1864,7 @@ const i8 g_aUnitFacingDrawOff[PUFO_ISO_FACING_OFF_TYPE_COUNT][8][2] = {
 
 #define ISO_CELLS_PER_LAYER 3600
 #define ISO_CELLS_PER_ROW      60
-#define ISO_TYPE_PROBE_COUNT     4  /* Map+0x16..0x19, probed by Tact_MapTypeToGlyphIdx */
+#define ISO_TYPE_PROBE_COUNT     4  /* Map_abSpriteSet @ Map+0x15116..19, probed by Tact_MapTypeToGlyphIdx */
 
 /* itos -> muls(0.125f) -> muls(scale) -> stoi. The original round-trips through decimal strings;
  * the port keeps the arithmetic in a double and truncates toward zero, the same assumption already

@@ -38,8 +38,9 @@
  * "Stamina" over [9], "Bravery" over [2], "Reaction" over [3], "Firing Accuracy" over [4],
  * "Throwing Accuracy" over [5], "Strength" over [8], "Psi Strength" over [7] and "Psi Skill" over [6].
  * auStat[1] is the one that screen never shows; Unit_ResetBattleState @ 0x498b0 derives uTu from [0],
- * uHp from [1] and uStunOrArmor from [9]. Separately reported, not fixed here: pufo_ballist.h calls
- * auStat[8] nStatThrow and auStat[9] nStatStrength, which does not match those captions. */
+ * uHp from [1] and uStunOrArmor from [9]. pufo_ballist.h names the same pair from the throw-budget
+ * arithmetic at 0x31A3C..0x31A6C (auStat[8] = nStatStrength, auStat[9] = nStatStamina), which matches
+ * these captions. */
 typedef enum SoldierStat {
     PUFO_STAT_TIME      = 0, /* "Time"; Unit_ResetBattleState -> uTu */
     PUFO_STAT_HP        = 1, /* never drawn; Unit_ResetBattleState -> uHp */

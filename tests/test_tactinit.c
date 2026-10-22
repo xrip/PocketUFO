@@ -996,6 +996,115 @@ static void TestCargoArmsTheSquad(void)
     s_nSoldierCount = 0;
 }
 
+/* 0x392EC..0x39570 read with a shipped-shaped weapon: the rifle record carries no ammo of its own
+ * (bAmmoCap 0, the shipped object 4 is exactly this) and names its magazine in anAmmoTypeId[0]. The split
+ * reserves one score of that magazine record per weapon copy, and only a copy inside the reservation is
+ * built as a weapon with a magazine (0x394EC/0x394E0); a copy past it is built as the bare object with
+ * nAmmo = its own cap (0x39530), and the equip hand gate refuses an item whose nAmmo is 0 (0x3C26C).
+ * So the same rifle arms a squad when its magazine rides along and lands unloaded when it does not.
+ * The live half of this runs in tests/test_geoscapeframe.c part 107.d/100.5. */
+static void TestCargoWeaponNeedsItsClip(void)
+{
+    /* The weapon, its magazine, the copies carried, the squad aboard. */
+    enum { nRifle = 4, nClip = 7, nCarry = 2, nCap = 20, nSquad = 3 };
+    i32 nOnCell = 0;
+    i32 nHand = 0;
+    i32 nClipItems = 0;
+    i32 nLoaded = 0;
+
+    printf("cargo weapon and its magazine: the split decides who can be armed\n");
+
+    for (i32 nRun = 0; nRun < 2; ++nRun) {
+        const bool bClipAboard = (nRun == 0);
+
+        Fixture_Reset();
+        srand(1);
+
+        for (i32 i = 0; i < nSquad; ++i) {
+            (void)Unit_CreateAndClassify(&s_Env.deploy.create, 0);  /* 0x22BA0: fresh recruits, bUnk961 0 */
+        }
+        for (i32 i = 0; i < s_nSoldierCount; ++i) {
+            s_apSoldiers[i]->bUnk183 = (u8)s_nCraftIndex;   /* aboard the launching craft (0x0B7) */
+            s_apSoldiers[i]->auStat[8] = 100;               /* strength, so the weight gate is not the question */
+        }
+        s_Env.teamSelect.nSoldierCount = s_nSoldierCount;
+
+        s_aObjects[nRifle].bAmmoCap      = 0;      /* the shipped rifle: no ammo of its own */
+        s_aObjects[nRifle].bTwoHanded    = 0;
+        s_aObjects[nRifle].bWeight       = 1;
+        s_aObjects[nRifle].anAmmoTypeId[0] = nClip;
+        s_aObjects[nClip].bAmmoCap       = nCap;
+        s_aObjects[nClip].bTwoHanded     = 0;
+        s_aObjects[nRifle].aItemQty[s_nCraftIndex] = nCarry;
+        if (bClipAboard) {
+            s_aObjects[nClip].aItemQty[s_nCraftIndex] = nCarry;
+        }
+
+        RunMission(0);
+
+        for (i32 i = 0; i < s_nTactItems; ++i) {
+            const TactItem *pItem = s_apTactItems[i];
+
+            if (pItem == NULL) {
+                continue;
+            }
+            if (pItem->pObj == &s_aObjects[nRifle]) {
+                if ((i32)pItem->nAmmo == nCap && (i32)pItem->nIndex == nClip) {
+                    ++nLoaded;
+                }
+            } else if (pItem->pObj == &s_aObjects[nClip]) {
+                ++nClipItems;
+            }
+        }
+        for (const TactItem *pItem = (s_pDeployCell != NULL) ? s_pDeployCell->pItemList : NULL;
+             pItem != NULL; pItem = pItem->pNext) {
+            if (pItem->pObj == &s_aObjects[nRifle]) {
+                ++nOnCell;
+            }
+        }
+        for (i32 i = 0; i < (i32)s_Map.nXcomCount; ++i) {
+            const Soldier *pUnit = s_Map.apXcomUnits[i];
+
+            if (pUnit != NULL && pUnit->pHandL != NULL && pUnit->pHandL->pObj == &s_aObjects[nRifle]) {
+                ++nHand;
+            }
+        }
+
+        printf("  %s: %d rifle items, %d with a magazine, %d clip items, %d on the cell, %d in hands\n",
+               bClipAboard ? "magazine aboard" : "magazine left behind", s_nTactItems, nLoaded,
+               nClipItems, nOnCell, nHand);
+
+        CheckEqI32(s_nTactItems, nCarry,
+                   "one item per carried rifle either way (0x39414..0x39570)");
+        CheckEqI32(nClipItems, 0,
+                   "and never a separate clip item: the magazine copies were reserved as the rifles' own score (0x392EC..0x39344, 0x39400)");
+        if (bClipAboard) {
+            CheckEqI32(nLoaded, nCarry,
+                       "with the magazine aboard every copy is a loaded weapon: nAmmo is the clip's cap (0x394E0) and nIndex the clip id (0x394EC)");
+            CheckEqI32(nHand, nCarry, "and the equip pass hands them out (0x3C2D8)");
+            CheckEqI32(nOnCell, 0, "with nothing rifle-shaped left on the deploy cell (0x3C2D8 removes each one)");
+        } else {
+            CheckEqI32(nLoaded, 0,
+                       "without the magazine the split is 0, so every copy takes the bare arm: nAmmo is the rifle's own cap 0 (0x39530)");
+            CheckEqI32(nHand, 0,
+                       "ORIGINAL RULE, asserted: an unloaded weapon is refused by the equip hand gate (0x3C26C needs nAmmo non-zero) -- the cargo of a craft is unusable until its ammunition rides with it");
+            CheckEqI32(nOnCell, nCarry, "and the copies stay loose on the deploy cell");
+        }
+
+        for (i32 i = 0; i < s_nTactItems; ++i) {
+            free(s_apTactItems[i]);
+            s_apTactItems[i] = NULL;
+        }
+        s_nTactItems = 0;
+        for (i32 i = 0; i < s_nSoldierCount; ++i) {
+            free(s_apSoldiers[i]);
+            s_apSoldiers[i] = NULL;
+        }
+        s_nSoldierCount = 0;
+        nOnCell = nHand = nClipItems = nLoaded = 0;
+    }
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -1016,6 +1125,7 @@ int main(void)
     TestBriefingSkipped();
     TestSaveModeClearsFlag();
     TestCargoArmsTheSquad();
+    TestCargoWeaponNeedsItsClip();
 
     Asset_CloseArchives();
 

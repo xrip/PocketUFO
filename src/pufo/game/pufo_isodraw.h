@@ -164,7 +164,9 @@ typedef struct IsoUnitDrawGate {
                                      * is a TactItem*, not an object pointer (Tact_SetFireModeAimed
                                      * @ 0x17790 reads pSelWeapon's +6 ammo byte, then pObj's +0xAE cap). */
     PadImage         *pSelectFrame; /* unk_156928, the selection frame pad */
-    const u8         *paTypeProbe;  /* Map+0x16..0x19, the four bytes Tact_MapTypeToGlyphIdx scans */
+    const u8         *paTypeProbe;  /* Map_abSpriteSet @ Map+0x15116..19, the four bytes
+                                     * Tact_MapTypeToGlyphIdx scans (0x466A0: first match wins, then
+                                     * the nType + 5 fallback) */
 } IsoUnitDrawGate;
 
 /* MapView_DrawUnit @ 0x1c958 (3,220 bytes). See the header note in pufo_isodraw.c for the decode.

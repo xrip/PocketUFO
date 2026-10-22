@@ -1043,6 +1043,18 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
     nY1 = 16 * (i32)pEntry->nY + 8;
     nZ1 = 12 * (i32)pEntry->nZ;
 
+    /* The range budget, composed exactly where the original composes it -- inside
+     * the landing call at 0x31A44..0x31A78. Its soldier is Map.pSelUnit @ 0x15334
+     * (0x31A54), the SELECTED unit rather than the acting one, carried here as
+     * pTraceExcludeSel (Map_BuildMoveActionCtx @ pufo_mapctx.c:96); its weight is
+     * the thrown entry's own object record (entry->pWeapon @ 0x1c -- v124[13] at
+     * 0x507F8, then pObj->bWeight @ 0xA5 at 0x31A58). The original reads the
+     * soldier unguarded; a mission always has a selected unit when a throw runs. */
+    pCtx->pThrowBudget->nStatStrength  = pCtx->pTraceExcludeSel->auStat[PUFO_STAT_STRENGTH];
+    pCtx->pThrowBudget->nStatStamina   = pCtx->pTraceExcludeSel->auStat[PUFO_STAT_STAMINA];
+    pCtx->pThrowBudget->nStunOrArmor   = pCtx->pTraceExcludeSel->uStunOrArmor;
+    pCtx->pThrowBudget->nWeight        = ((const TactItem *)pEntry->pWeapon)->pObj->bWeight;
+
     if (Tact_ResolveThrowLanding(pCtx->pThrowArc, pCtx->pThrowLanding,
                                  pCtx->pTables, &pCtx->geom, pCtx->pfnLookup,
                                  pCtx->pUser, pUnit, *pCtx->ppThrowTarget,

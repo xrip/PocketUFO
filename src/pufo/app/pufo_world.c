@@ -1228,7 +1228,6 @@ static void World_BuySellBuildControlsThunk(void)
         return;
     }
     pW->buySellControls.nSelectedBaseIdx = pW->nSelectedBase;
-    pW->buySellControls.nFundsSnapshot   = pW->nBuySellFundsSnapshot;
     BuySellScreen_BuildControls(&pW->buySellControls);
 }
 
@@ -1244,7 +1243,6 @@ static void World_BuySellBuildPanelsThunk(void)
     pW->buySellBuild.nSelectedBaseIdx = pW->nSelectedBase;
     pW->buySellBuild.nSoldierCount    = pW->nSoldierCount;
     pW->buySellBuild.nCraftCount      = (i32)pW->bCraftCount;
-    pW->buySellBuild.nFundsSnapshot   = pW->nBuySellFundsSnapshot;
     BuySellScreen_BuildPanels(&pW->buySellBuild);
 }
 
@@ -1396,18 +1394,19 @@ static void World_BuySellCommitThunk(void)
     BuySellScreen_CommitTransaction(&pW->buySellCommit);
 }
 
-/* The two builders' by-value cells: the original reads the base selection and the snapshot global
- * at the call (0x76168 / 0x76DE8 area), so the shell re-reads them before every build pass -- the
- * opener's and CloseUI case 11/12's teardown rebuild alike. The site count is NOT here: the buy
- * builder's env holds a pointer to the live cell (the confirm can change the count mid-chain). */
+/* The two builders' by-value cells: the original reads the base selection, the soldier count and the
+ * craft count at the call (0x76168 / 0x76DE8 area), so the shell re-reads them before every build
+ * pass -- the opener's and CloseUI case 11/12's teardown rebuild alike. The funds snapshot is NOT
+ * here: the original's rollback reads the 0x161460 global live inside the builder (0x76D60, 0x77E40),
+ * so both envs hold a pointer to it -- a copy taken at the open would undo a buy that already paid
+ * (the confirm stamps the post-payment value at 0x75130 before its own close). The site count is
+ * likewise a pointer (the confirm can change the count mid-chain). */
 static void World_RefreshBuySellBuildEnvs(PufoWorldState *pW)
 {
     pW->buySellControls.nSelectedBaseIdx = pW->nSelectedBase;
-    pW->buySellControls.nFundsSnapshot   = pW->nBuySellFundsSnapshot;
     pW->buySellBuild.nSelectedBaseIdx    = pW->nSelectedBase;
     pW->buySellBuild.nSoldierCount       = pW->nSoldierCount;
     pW->buySellBuild.nCraftCount         = (i32)pW->bCraftCount;
-    pW->buySellBuild.nFundsSnapshot      = pW->nBuySellFundsSnapshot;
 }
 
 /* BuySellScreen_CloseThunk @ 0x75154: the shared close control at (224,1). */
@@ -4535,7 +4534,11 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     unit.nHandobBase  = (pFont != NULL) ? pFont->nHandobBase : 0;        /* fontSys + 0x20 */
     unit.apSelWeapon  = &pMap->pSelWeapon;              /* 0x113A00, the selected weapon ITEM */
     unit.pSelectFrame = pW->apTactPads[PUFO_UIPAD_SELSOLD];             /* pPadSelSold @ 0x156928 */
-    unit.paTypeProbe  = pMap->abTypeProbe;              /* 0x16..0x19 */
+    unit.paTypeProbe  = pW->abMapSpriteSet;             /* Map_abSpriteSet @ 0x15116..19, the four bytes
+                                                         * Tact_MapTypeToGlyphIdx scans at 0x466A0; written by
+                                                         * Tact_SpawnAliens (0x3A364..0x3A8E0), Save_ReadTGameData
+                                                         * (0x442F8..0x4464C) and Smap_BeginCraftSelect
+                                                         * (0x83A30..0x840E8) */
 
     bases.nCursorBase  = (pFont != NULL) ? pFont->anFlagSprBase[1] : 0; /* fontSys + 0x02 */
     bases.nFloorobBase = (pFont != NULL) ? pFont->nFloorobBase : 0;     /* +0x22 */
@@ -10551,6 +10554,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->buySellControls.apBases         = pW->apBases;
     pW->buySellControls.nSelectedBaseIdx = pW->nSelectedBase;
     pW->buySellControls.pnFunds         = &pW->nFunds;
+    pW->buySellControls.pnFundsSnapshot = &pW->nBuySellFundsSnapshot;       /* 0x161460, live: 0x76D60 reads it */
     pW->buySellControls.pTextRecs       = pszText;
     pW->buySellControls.pfnPanelPrev    = World_BuySellPanelPrevThunk;      /* BuySellScreen_PanelPrev @ 0x76088 */
     pW->buySellControls.pfnPanelNext    = World_BuySellPanelNextThunk;      /* 0x760e0 */
@@ -10578,6 +10582,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->buySellBuild.pnAssignedShipCount = &pW->anAssignedCraftList[0];    /* dword_161468 */
     pW->buySellBuild.pnSoldierIdCount   = &pW->anSoldierIdList[0];          /* 0x160C90 */
     pW->buySellBuild.pnFunds            = &pW->nFunds;
+    pW->buySellBuild.pnFundsSnapshot    = &pW->nBuySellFundsSnapshot;       /* 0x161460, live: 0x77E40 reads it */
     pW->buySellBuild.pTextRecs          = pszText;
     pW->buySellBuild.apManufCol         = pW->auManufCol;                   /* the engineer column */
     pW->buySellBuild.apResearchCol      = pW->auResearchCol;                /* the scientist column */

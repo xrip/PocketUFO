@@ -461,7 +461,7 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit, const SoldierRecordEnv *pEn
         }
     } else if (!DatFile_Read(pDat, aSkip, 244)) { return false; }
 
-    /* 0x4229C: the reader defaults auStat[8] (nStatThrow) to 10 when the record carries 0,
+    /* 0x4229C: the reader defaults auStat[8] (the Strength slot) to 10 when the record carries 0,
      * so a saved zero never reaches the unit. */
     if (pUnit->auStat[8] == 0) {
         pUnit->auStat[8] = 10;

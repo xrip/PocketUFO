@@ -158,6 +158,9 @@ static i32            g_nResizeCalls;      /* the WorldHooks.pfnResizeMainWindow
 static i32            g_nSaveRenders;      /* the save unit's frame seam (Part 62) */
 static i32            g_aBankSamples[64];
 static i32            g_nBankSamples;
+static i32            g_nLoadSlot;   /* 107.d: the object the hangar loaded onto the launching craft's cargo
+                                      * column; 100.5 reads it back to check the squad was armed off it */
+static i32            g_nLoadWant;
 static i32            g_nSlotFormatCalls;  /* Menu_OpenSlotList's injected SaveSlot_FormatList */
 
 /* Fixture for MainMenu_pSlotCtx @ 0x156938: seven 40-byte slot labels. This test's SaveSlot_FormatList
@@ -9194,6 +9197,43 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             nEnemyShot0  = (i32)pMap->nEnemyCount;
             const u16 uTuShot0 = pSel->uTu; /* the fire processor charges the first shot's cost: proof the burst was resolved even when the roll lands a miss */
 
+            /* The sprite group every fielded unit draws from. Tact_MapTypeToGlyphIdx @ 0x46664 scans the
+             * four race ids this mission's spawn pass left in Map_abSpriteSet (0x15116..19) and a type it
+             * finds draws the race group 9..12 -- fontSys_anAlienSprBase @ +0x12, the four bases
+             * Tact_SpawnAliens stores at 0x3AAFC. Types 0..3 (the XCom) return type+5 before the scan is
+             * ever reached. The frame below is the picture this decision paints. */
+            {
+                i32 nAlienRace = 0, nAlienFall = 0, nXcomRace = 0;
+
+                for (i32 nE = 0; nE < (i32)pMap->nEnemyCount; ++nE) {
+                    const Soldier *const pAl = pMap->apEnemyUnits[nE];
+                    const i32 nGroup = (pAl != NULL)
+                                           ? Tact_MapTypeToGlyphIdx(pAl->nUnitType, g_world.abMapSpriteSet, 4)
+                                           : -1;
+
+                    if (nGroup >= 9 && nGroup <= 12) {
+                        ++nAlienRace;
+                    } else if (nGroup >= 0) {
+                        ++nAlienFall;
+                    }
+                }
+                for (int nU = 0; nU < (i32)pMap->nXcomCount; ++nU) {
+                    const Soldier *const pSol = pMap->apXcomUnits[nU];
+
+                    if (pSol != NULL) {
+                        const i32 nGroup = Tact_MapTypeToGlyphIdx(pSol->nUnitType, g_world.abMapSpriteSet, 4);
+                        nXcomRace += (nGroup >= 9 && nGroup <= 12) ? 1 : 0;
+                    }
+                }
+                Check(nAlienRace > 0,
+                      "the aliens this mission fielded stand in its own race set, so the draw takes the race-group arm (0x466A0)");
+                Check(nXcomRace == 0,
+                      "and no XCom does: types 0..3 return type + 5 before the scan (0x46670)");
+                printf("  sprite groups: %d alien(s) on the race arm, %d on the fallback, %d XCom on the race arm, set %d %d %d %d\n",
+                       nAlienRace, nAlienFall, nXcomRace, g_world.abMapSpriteSet[0],
+                       g_world.abMapSpriteSet[1], g_world.abMapSpriteSet[2], g_world.abMapSpriteSet[3]);
+            }
+
             ClearSurface();
             World_TactFrame(&g_world);
             DumpFrame("tact_play_aim");
@@ -10420,6 +10460,213 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                g_world.nFunds, (i32)g_world.nSiteCount, (i32)g_world.nFinishedTopic, nProd);
     }
 
+    /* ---- Part 107.a: the shop sells a CRAFT, and the hourly pass spawns it ------------------------
+     * 3450's last open half, on the IDB's own words. BuySellScreen_BuildPanels lists a craft row only for
+     * a craft homed at the selected base with nobody aboard and bAtBase set, and the row's aux is
+     * BuySell_RoleToItemId @ 0x76d88 (type 0 -> 117, 3 -> 118, 4 -> 119, 1 -> 120, 2 -> 121), so the two
+     * rows BuySellScreen_ValidateCapacity's craft arm special-cases at 0x75C24 are exactly the two craft
+     * classes a new game fields -- buying a craft means ordering one more of a class the base already
+     * parks. The arm gates against Base_CalcHangarCap @ 0x6611c, whose 0x66178 test reads
+     * `pBaseGrid + 6*(6*base + col) + row` -- the buildDays lane (36 bytes per base at grid+0), not the
+     * layer2 lane: the cap counts FINISHED kind-11 cells, and a parked craft's glyph never moves it against
+     * Base_CountShipsAtBase + Base_CountInboundTransfers + 1 (0x75C4C, 0x75C68, 0x75C80), pays the row's
+     * ObjectRec+0xBC, bumps the working site's auItemQty[slot] AND its byte at site+0x206 (0x75D5C -- the
+     * SmapSite census says that is `bUnk518`, NOT the recovery count 0x205 the delivery's park pass reads,
+     * so a buy order never runs the recovery re-park), and a refusal sets dwActionFail with reason 2
+     * (0x75F34..0x75F40). Delivery (Smap_GrantSiteRecovery, hourly): the item pass skips the base-stock
+     * add for slots 117..121 (0x98FD4), and the spawn pass reads the site's own five count words
+     * (0x9935C) and calls Ship_SpawnAtSlot @ 0x2cb14 with the slot map 117->0, 118->3, 119->4, 120->1,
+     * 121->2 (the switch at 0x99364..0x993A8, the call at 0x993AC): a new Ship with the current next id at
+     * apCraft[nCraftCount], a type-1 strateg entry at the home base's own cell (0x2CBC8), the id and count
+     * bumped after (0x2CBDC, 0x2CBE8), and the 5x5 scan parks it with Ship+0x12/0x13 plus the type glyph
+     * 33..37 into layer2. */
+    {
+        UiPanel *pShopA;
+        i32 nCraftRow = -1, nCraftSlot = -1, nRowY, nGlyph0 = 0;
+        i32 nRow, nTick, nIx;
+        const i32 nEBase   = 0; /* the economy round's base: 99.x ran on base 0 (its own nEBase) */
+        const i32 nCraft0  = (i32)g_world.bCraftCount;
+        const i32 nCap0    = Base_CalcHangarCap(g_world.abFacilityGrid, nEBase);
+        const i32 nShips0  = Base_CountShipsAtBase(g_world.apCraft, nCraft0, g_world.apBases,
+                                                   g_world.nBaseCount, g_world.abFacilityGrid, nEBase);
+        const i32 nInb0    = Base_CountInboundTransfers(g_world.apSites, g_world.nSiteCount,
+                                                        g_world.nSiteCount, g_world.apBases,
+                                                        nEBase, true);
+        u8 *const pFacE = g_world.abFacilityGrid + PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nEBase;
+
+        for (nTick = 0; nTick < 6; ++nTick) {
+            for (nIx = 0; nIx < 6; ++nIx) {
+                const u8 nL2 = pFacE[PUFO_GRID_LAYER2_OFF + 6 * nTick + nIx];
+                if (nL2 >= 33 && nL2 <= 37) ++nGlyph0;
+            }
+        }
+        printf("  107.a hangar: cap %d (free kind-11 cells), ships at base %d, inbound %d, "
+               "craft %d, craft glyphs on the grid %d\n", nCap0, nShips0, nInb0, nCraft0, nGlyph0);
+
+        if (nCap0 < nShips0 + nInb0 + 1) {
+            /* The gate at 0x75C80 wants cap >= ships + inbound + 1, and the shipped new game ships a base
+             * with NOT ONE kind-11 cell -- that is 3450's "the hangar cap gate also needs enough hangar
+             * cells". Hangars come through the build dialog exactly as 99.1 buys a workshop: the row press
+             * arms the placement (0x5897C), the aimed cell runs BaseFac_SetCellBuildState (0x59A9C) and
+             * pays aFac[11].uCost (0x59AC8), the cell starts under construction (0x623BC), and the day
+             * ticks of Base_TickFacilityConstruction @ 0x62824 finish it. Completion matters here and not
+             * only decoratively: Ship_SpawnAtSlot's park scan accepts a hangar cell only with buildDays 0
+             * (0x2CC54..0x2CC60), so a still-undelivered hangar parks nothing. */
+            const i32 nNeed = nShips0 + nInb0 + 1;
+            i32 nBuy;
+
+            for (nBuy = 0; nBuy < 6 && Base_CalcHangarCap(g_world.abFacilityGrid, nEBase) < nNeed; ++nBuy) {
+                UiPanel *pFacP;
+                i32 nTapX = -1, nTapY = -1, nRowX, nFundsH, nCostH;
+
+                g_world.bFacDone = 0; /* the old-base commit arm reads it (0x59ACC), as 99.1 notes */
+                g_world.nav.apNav[4]->pfnClick(); /* BaseFacScreen_Open @ 0x61844 */
+                pFacP = g_world.pFacPanel;
+                Check(pFacP != NULL && g_world.bFacDialogOpen == 1, "107.a the build dialog opens for the hangar");
+                for (nRow = 0; pFacP != NULL && nRow < pFacP->nLineCount; ++nRow) {
+                    if (UiPanel_GetLineAux(pFacP, nRow) == (i32)FAC_HANGAR) break;
+                }
+                Check(pFacP != NULL && nRow < pFacP->nLineCount, "107.a the dialog lists a hangar row (0x58A60)");
+                if (pFacP == NULL || nRow >= pFacP->nLineCount) break;
+                while (nRow - pFacP->nUnk3028 > pFacP->nStyle - 1) {
+                    PressCtl(&g_world.ctlFacDown); /* the dialog's scroll control (0x5A220) */
+                }
+                nRowY = pFacP->nPosY + pFacP->nFont * (nRow - pFacP->nUnk3028) + pFacP->nFont / 2;
+                World_GeoscapePointer(&g_world, pFacP->nPosX, nRowY, true);
+                (void)DrawFrame();
+                World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.bArmedPlacement, 1, "107.a the hangar row arms the placement (0x5897C)");
+                CheckEqI32(UiPanel_GetLineAux(g_world.pFacPanel, g_world.nPanelSel), (i32)FAC_HANGAR,
+                           "and the stored row is the kind the commit takes (0x58E20)");
+
+                /* The hangar is a 2 by 2 footprint (pufo_geoscape.h's SetCellBuildState note: four tileA
+                 * quadrants 9..12, buildDays at three of them, facType only on the anchor), so the cell
+                 * search asks for the whole footprint empty -- tileA 0 and the facType sentinel 0xFF on all
+                 * four cells -- with a finished neighbour on one of the footprint's sides, the same
+                 * neighbourhood rule 99.1's 1x1 kinds lean on (BaseFacScreen's footprint walk, 0x8B6FC..). */
+                {
+                    const u8 *const pFacA = pFacE + PUFO_GRID_TILEA_OFF;
+                    const u8 *const pFacD = g_world.abFacilityGrid + PUFO_GRID_DAYS_STRIDE * nEBase;
+                    i32 r, c, k;
+                    for (nTick = 1; nTick <= 4 && nTapX < 0; ++nTick) {
+                        for (nIx = 1; nIx <= 4 && nTapX < 0; ++nIx) {
+                            r = nTick; c = nIx;
+                            if (pFacA[6 * r + c] != 0 || pFacA[6 * r + c + 1] != 0
+                                || pFacA[6 * (r + 1) + c] != 0 || pFacA[6 * (r + 1) + c + 1] != 0) {
+                                continue; /* the original's footprint test is the tileA sum (0x592C4..) */
+                            }
+                            {
+                                const i32 aNeigh[8][2] = { { r - 1, c }, { r - 1, c + 1 }, { r + 2, c },
+                                                           { r + 2, c + 1 }, { r, c - 1 }, { r + 1, c - 1 },
+                                                           { r, c + 2 }, { r + 1, c + 2 } };
+                                for (k = 0; k < 8; ++k) {
+                                    if (aNeigh[k][0] < 0 || aNeigh[k][0] > 5 || aNeigh[k][1] < 0
+                                        || aNeigh[k][1] > 5) {
+                                        continue;
+                                    }
+                                    /* The score's neighbour rule (BaseFacScreen's preview block,
+                                     * 0x5917C..0x59320): a side counts when its tileA is non-zero and
+                                     * its buildDays byte is 0 -- nothing under construction there. */
+                                    if (pFacA[6 * aNeigh[k][0] + aNeigh[k][1]] != 0
+                                        && pFacD[6 * aNeigh[k][0] + aNeigh[k][1]] == 0) {
+                                        nTapX = c;
+                                        nTapY = r;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (nTapX <= 0) {
+                    printf("  107.a no legal 2x2 footprint left -- the layout's hangar limit. Dump:\n");
+                    for (nTick = 0; nTick < 6; ++nTick) {
+                        printf("    tileA ");
+                        for (nIx = 0; nIx < 6; ++nIx) printf("%3d", pFacE[PUFO_GRID_TILEA_OFF + 6 * nTick + nIx]);
+                        printf("   fac ");
+                        for (nIx = 0; nIx < 6; ++nIx) printf("%3d", pFacE[PUFO_GRID_FAC_TYPE_OFF + 6 * nTick + nIx]);
+                        printf("\n");
+                    }
+                    break;
+                }
+
+                nRowX = pF->facOverlay.nOriginX + PUFO_PLA_TAP_CELL * nTapX;
+                nRowY = pF->facOverlay.nOriginY + PUFO_PLA_TAP_Y0 + PUFO_PLA_TAP_CELL * nTapY;
+                World_GeoscapePointer(&g_world, nRowX, nRowY, true);
+                (void)DrawFrame();
+                CheckEqI32(g_world.nSmapTapX, nTapX, "107.a the held press aims the cell (0x58EC0)");
+                CheckEqI32(g_world.nSmapTapY, nTapY, "on both axes (0x58EC8)");
+                World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.nUnk15887C, nTapX, "the release copies the tap into the pending pair (0x89E8C)");
+
+                nFundsH = g_world.nFunds;
+                nCostH  = (i32)g_world.aFac[FAC_HANGAR].uCost;
+                ClearSurface();
+                World_GeoscapePointer(&g_world, nRowX, nRowY, true);
+                (void)DrawFrame();
+                World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.nFunds, nFundsH - nCostH, "107.a the hangar commit pays its record's cost (0x59AC8)");
+                CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nEBase
+                                                  + PUFO_GRID_FAC_TYPE_OFF + 6 * nTapY + nTapX],
+                           (i32)g_world.aFac[FAC_HANGAR].bFlag21, "and stamps the kind (0x59A9C)");
+                Check(g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nEBase + 6 * nTapY + nTapX] != 0,
+                      "107.a the cell starts under construction (0x623BC)");
+
+                for (nTick = 0; nTick < 40
+                     && g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nEBase + 6 * nTapY + nTapX] != 0; ++nTick) {
+                    g_world.geoClock.pfnTickBases(g_world.geoClock.pUser);
+                }
+                CheckEqI32(g_world.abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nEBase + 6 * nTapY + nTapX], 0,
+                           "107.a the day ticks finish it -- the park scan needs buildDays 0 (0x62824, 0x2CC60)");
+
+                /* The completion arm leaves dwActionFail with its message line (0x62934), and that flag
+                 * makes the next pointer release return at 0x895C4 after clearing it -- 99.1's three-press
+                 * close dance, kept whole. */
+                PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+                CheckEqI32((i32)g_world.nShortfall1870C8, 0, "107.a the swallowed release clears dwActionFail (0x895C4)");
+                PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+                CheckEqI32(g_world.bArmedPlacement, 0, "107.a the next press clears the commit's arm (0x8BFA4)");
+                PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+                CheckEqI32(g_world.bFacDialogOpen, 0, "107.a the third press toggles the dialog shut (0x8BFB8, 0x589EC)");
+            }
+            CheckEqI32(Base_CalcHangarCap(g_world.abFacilityGrid, nEBase), 3,
+                       "107.a the grid takes exactly three hangar cells; with three craft homed the gate at 0x75C80 wants ships + inbound + 1 = 4 finished cells, and this base cannot lay a fourth out (the dump above is the proof) -- the refusal below is the shipped new game's own answer");
+            printf("  107.a after hangar builds: cap %d, funds %d\n",
+                   Base_CalcHangarCap(g_world.abFacilityGrid, nEBase), g_world.nFunds);
+        }
+
+        g_world.nav.apNav[8]->pfnClick(); /* BuySellScreen_OpenBuy @ 0x61794 (nav slot 8) */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 11, "107.a the buy screen opens (0x617AC)");
+        const i32 nFundsOpen = g_world.nFunds;
+        pShopA = g_world.pBuySellPanelA;
+        for (nRow = 0; pShopA != NULL && nRow < pShopA->nLineCount; ++nRow) {
+            const i32 nAux = UiPanel_GetLineAux(pShopA, nRow);
+            if (nAux == (i32)OBJ_CRAFT_COUNT_SKYRANGER || nAux == (i32)OBJ_CRAFT_COUNT_INTERCEPTOR) {
+                nCraftRow  = nRow;
+                nCraftSlot = nAux;
+                break;
+            }
+        }
+        Check(nCraftRow >= 0,
+              "107.a the shop lists a craft row 117/118 -- a craft homed here with nobody aboard (0x77740..0x777D0, 0x76d88)");
+        printf("  107.a craft row %d, product slot %d; funds %d, price %d\n",
+               nCraftRow, nCraftSlot, g_world.nFunds,
+               (nCraftSlot >= 0) ? g_anObjectPrice[nCraftSlot] : 0);
+
+        /* No press here: three built hangars with three craft homed and nothing inbound already give
+         * ships + inbound + 1 = 4 > cap 3, and the read at 0x66178 is `pBaseGrid + 6*(6*base + col) +
+         * row` -- the buildDays lane (36 bytes per base at grid+0), not the layer2 lane -- so a craft glyph
+         * would not have moved the cap anyway. Pressing the '>' here would only leave dwActionFailReason
+         * standing for 100.1's scratch check; the live refusal runs in 107.f, where the order the buy
+         * accepts is itself what fills the cap. What this half proves is the listing: the craft row is
+         * offered even while the gate cannot pass. */
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "107.a case 11 closes the shop (0x8C0D8)");
+        CheckEqI32(g_world.nFunds, nFundsOpen,
+                   "107.a and the teardown restores the funds snapshot -- nothing was ever paid (0x76C14, BuySell_nFundsSnapshot 0x161460)");
+        Check(g_world.pBuySellPad == NULL, "107.a the shop pad is released (0x8C0D0)");
+    }
+
     /* ---- Part 100.1: the transfer screen end to end, exactly as the shipped build runs it ----------
      * The goal asks for transfer between bases to be proven live; the IDB says the shipped build cannot
      * commit one through its own UI (docs/parity/bugs.tsv rows 0x88950, 0x96368, 0x186BE8, 0x989d4):
@@ -10570,6 +10817,368 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             printf("  transfer round: slot %d stocked at base 0, staged at row 2 (soldier slot) while the digits moved on row 0 (craft), commit queued craft %d with the counter still 0, record delivered and compacted in %d ticks, craft %d left homeless (255)\n",
                    nSlot, (i32)pShip->bId, nTicks, (i32)pShip->bId);
         }
+    }
+
+    /* ---- Part 107.f: with a home slot free, the craft buy runs and the hourly pass spawns it ------
+     * 100.1's own transfer left one craft homeless -- the grant loop walks bRecoveredCraftCount, which the
+     * transfer commit never raises, so the queued id strands the craft at 255 (0x97C18, bugs.tsv) -- and the
+     * homed count at base 0 fell to two. 107.a's three hangar cells now clear the gate 0x75C80 wants
+     * (3 >= 2 + 0 + 1), and this is the half 107.a could not run at its position: one '>' press pays
+     * (0x75D28, 0x75DC8) and queues the slot plus the byte at site+0x206 (0x75DA4, 0x75D5C), the confirm
+     * promotes the record with the 24-tick countdown (0x75120, 0x75124), and the delivery skips the
+     * base-stock add for slots 117..121 (0x98FD4) while its spawn pass reads the site's own five count
+     * words (0x9935C) and calls Ship_SpawnAtSlot @ 0x2cb14 with the switch's map 117->0, 118->3, 119->4,
+     * 120->1, 121->2 (0x99364..0x993AC). */
+    {
+        const i32 nSite0  = g_world.nSiteCount;
+        const i32 nCraft0 = (i32)g_world.bCraftCount;
+        const i32 nEBase  = 0;
+        const i32 nCap0   = Base_CalcHangarCap(g_world.abFacilityGrid, nEBase);
+        const i32 nShips0 = Base_CountShipsAtBase(g_world.apCraft, nCraft0, g_world.apBases,
+                                                  g_world.nBaseCount, g_world.abFacilityGrid, nEBase);
+        const i32 nInb0   = Base_CountInboundTransfers(g_world.apSites, nSite0, nSite0,
+                                                       g_world.apBases, nEBase, true);
+        u8 *const pFacE = g_world.abFacilityGrid + PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nEBase;
+        UiPanel *pShopA;
+        i32 nRow, nTick, nIx, nRowY, nCraftRow = -1, nCraftSlot = -1, nGlyph0 = 0, nGlyph1 = 0;
+
+        printf("  107.f hangar after the transfer: cap %d, ships homed %d, inbound %d, craft %d\n",
+               nCap0, nShips0, nInb0, nCraft0);
+        Check(nCap0 >= nShips0 + nInb0 + 1,
+              "107.f the free home slot clears the buy gate (0x75C80: ships + inbound + 1 <= cap)");
+
+        for (nTick = 0; nTick < 6; ++nTick) {
+            for (nIx = 0; nIx < 6; ++nIx) {
+                const u8 nL2 = pFacE[PUFO_GRID_LAYER2_OFF + 6 * nTick + nIx];
+                if (nL2 >= 33 && nL2 <= 37) ++nGlyph0;
+            }
+        }
+        CheckEqI32(nGlyph0, 0, "107.f no craft is parked on the grid yet (the starter craft never had a hangar)");
+
+        g_world.nav.apNav[8]->pfnClick(); /* BuySellScreen_OpenBuy @ 0x61794 */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 11, "107.f the buy screen opens (0x617AC)");
+        pShopA = g_world.pBuySellPanelA;
+        for (nRow = 0; pShopA != NULL && nRow < pShopA->nLineCount; ++nRow) {
+            const i32 nAux = UiPanel_GetLineAux(pShopA, nRow);
+            if (nAux == (i32)OBJ_CRAFT_COUNT_SKYRANGER || nAux == (i32)OBJ_CRAFT_COUNT_INTERCEPTOR) {
+                nCraftRow  = nRow;
+                nCraftSlot = nAux;
+                break;
+            }
+        }
+        Check(nCraftRow >= 0, "107.f the shop still lists a craft row (homed, empty, at base -- 0x77740, 0x76d88)");
+        printf("  107.f craft row %d, product slot %d; funds %d, price %d\n",
+               nCraftRow, nCraftSlot, g_world.nFunds,
+               (nCraftRow >= 0) ? g_anObjectPrice[nCraftSlot] : 0);
+        if (nCraftRow >= 0) {
+            while (pShopA->nUnk3028 > nCraftRow) PressCtl(&g_world.aBuySellCtl[0]);
+            while (nCraftRow - pShopA->nUnk3028 > pShopA->nStyle - 1) PressCtl(&g_world.aBuySellCtl[1]);
+            nRowY = pShopA->nPosY + pShopA->nFont * (nCraftRow - pShopA->nUnk3028) + pShopA->nFont / 2;
+            World_GeoscapePointer(&g_world, 25, nRowY, true);
+            (void)World_GeoscapePointerUp(&g_world);
+            CheckEqI32(g_world.buySellScratch.nCache186BE8, nCraftRow, "107.f the row click caches the row (0x76148)");
+
+            {
+                UiPanel *const pShopC = g_world.pBuySellPanelC;
+                const i32 nFundsB = g_world.nFunds;
+                const i32 nTransB = g_world.nBuySellTransTotal;
+                const i32 nPrice  = g_anObjectPrice[nCraftSlot];
+
+                nRowY = pShopC->nPosY + pShopC->nFont * (nCraftRow - pShopC->nUnk3028) + pShopC->nFont / 2;
+                World_GeoscapePointer(&g_world, pShopC->nPosX + 4, nRowY, true);
+                (void)World_GeoscapePointerUp(&g_world); /* 0x8A4EC -> ValidateCapacity @ 0x75b88 */
+                CheckEqI32(g_world.nFunds, nFundsB - nPrice,
+                           "107.f the gate passes and the buy pays the row price (0x75C80, 0x75D28, 0x75DC8)");
+                CheckEqI32(g_world.nBuySellTransTotal, nTransB + nPrice, "and the transaction total carries it (0x75DD8)");
+                CheckEqI32(UiPanel_GetLineAux(g_world.pBuySellPanelD, nCraftRow), 1, "the queue column counts it (0x75D84)");
+                CheckEqI32((i32)g_world.apSites[g_world.nSiteCount].auItemQty[nCraftSlot], 1,
+                           "107.f the working site holds the craft count (0x75DA4, 0x75DB8)");
+                CheckEqI32((i32)g_world.apSites[g_world.nSiteCount].bUnk518, 1,
+                           "107.f and the byte at site+0x206 (0x75D5C) -- the pair inbound transfers sum with 0x205 (0x67F78)");
+                CheckEqI32((i32)g_world.apSites[g_world.nSiteCount].bRecoveredCraftCount, 0,
+                           "107.f while the recovery count stays clear, so the delivery never runs the re-park pass (0x990A8)");
+                DumpFrame("econ_buy_craft_queued");
+
+                /* The same row, pressed a second time. ValidateCapacity calls Base_CountInboundTransfers
+                 * with nSiteIdx = nSiteCount (0x75C58), so the WORKING site counts: its 0x205+0x206 pair is
+                 * what 0x67F78 sums. The order just accepted is therefore already against the cap --
+                 * ships 2 + inbound 1 + 1 = 4 > cap 3 -- and the gate at 0x75C80 sits before 0x75D5C, so
+                 * nothing moves. */
+                {
+                    const i32 nFundsA = g_world.nFunds;
+                    const i32 nTransA = g_world.nBuySellTransTotal;
+
+                    nRowY = pShopC->nPosY + pShopC->nFont * (nCraftRow - pShopC->nUnk3028) + pShopC->nFont / 2;
+                    World_GeoscapePointer(&g_world, pShopC->nPosX + 4, nRowY, true);
+                    (void)World_GeoscapePointerUp(&g_world); /* 0x8A4EC -> ValidateCapacity @ 0x75b88 */
+                    CheckEqI32((i32)g_world.nShortfall1870C8, 1,
+                               "107.f the second press sets dwActionFail (0x75F34)");
+                    CheckEqI32((i32)g_world.nResidue1870B4, 2,
+                               "107.f with the hangar shortfall reason 2 -- ships + inbound + 1 past the cap (0x75C80, 0x75F3C)");
+                    CheckEqI32(g_world.nFunds, nFundsA,
+                               "107.f and pays nothing further (the refusal at 0x75F34 returns before 0x75DC8)");
+                    CheckEqI32(g_world.nBuySellTransTotal, nTransA, "and the total stands (0x75DD8 is behind the gate)");
+                    CheckEqI32(UiPanel_GetLineAux(g_world.pBuySellPanelD, nCraftRow), 1,
+                               "107.f the queue column keeps the one order it accepted (0x75D84)");
+                    CheckEqI32((i32)g_world.apSites[g_world.nSiteCount].auItemQty[nCraftSlot], 1,
+                               "107.f and the working site holds exactly one craft (0x75DB8)");
+                    DumpFrame("econ_hangar_cap_full");
+                }
+
+                {
+                    const i32 nFundsC = g_world.nFunds;
+                    const i32 nStock0 = (i32)g_assets.apObjects[nCraftSlot]->auPerBaseVal[nEBase];
+
+                    PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BA4]); /* ConfirmSiteAndClose @ 0x75090 */
+                    CheckEqI32(g_world.nSiteCount, nSite0 + 1, "107.f the confirm promotes the working site (0x75124)");
+                    CheckEqI32((i32)g_world.apSites[nSite0].bFlag0, PUFO_SITE_FLAG_CONFIRM,
+                               "107.f with the 24-tick countdown (0x75120)");
+                    CheckEqI32((i32)g_world.apSites[nSite0].auItemQty[nCraftSlot], 1, "and the craft count rides with it");
+                    /* No close press: ConfirmSiteAndClose tail-calls Geoscape_CloseUI itself (0x7513C), so
+                     * the confirm IS the close, and case 11 lands on screen 1 -- the same value 107.a's close
+                     * control reached (0x8C0D8). The snapshot it stamped at 0x75130 is the post-payment
+                     * funds, so the teardown's rollback at 0x76D70 has nothing to undo. Pressing the close
+                     * control here would run case 1 instead and drop the world to the globe (0x8BE94),
+                     * which is 100.4's opening state, not this section's. */
+                    CheckEqI32(g_world.screen.nGeoscapeScreen, 1,
+                               "107.f the confirm's own CloseUI closes the shop onto screen 1 (0x7513C, 0x8C0D8)");
+                    Check(g_world.pBuySellPad == NULL, "107.f and the confirm's close releases the shop pad (0x8C0D0)");
+
+                    CheckEqI32(g_world.nBuySellFundsSnapshot, g_world.nFunds,
+                               "107.f the confirm restamped the snapshot at 0x75130 with the POST-payment funds: "
+                               "that stamp is what makes a buy permanent, because the close's rollback at 0x76D70 "
+                               "then finds nothing to undo (a plain close control restores the older stamp instead)");
+                    for (nTick = 0; nTick < 25; ++nTick) {
+                        g_world.geoClock.pfnTickHourly(g_world.geoClock.pUser);
+                    }
+                    CheckEqI32(g_world.nSiteCount, nSite0, "107.f the delivered record compacts out (0x994C8..0x99550)");
+                    CheckEqI32((i32)g_world.bCraftCount, nCraft0 + 1,
+                               "107.f the spawn pass fielded one new craft (0x2CB6C..0x2CBE8)");
+                    {
+                        const Ship *const pNew = (nCraft0 < (i32)PUFO_FAC_BASE_COUNT)
+                                                     ? g_world.apCraft[nCraft0] : NULL;
+                        Check(pNew != NULL, "107.f the new slot holds the Ship the spawn built");
+                        if (pNew != NULL) {
+                            CheckEqI32((i32)pNew->bCraftType, Ship_ProductSlotToType(nCraftSlot),
+                                       "107.f its class comes from the slot (0x99364..0x993A8 == Ship_ProductSlotToType @ 0x65a6c)");
+                            CheckEqI32((i32)pNew->bHomeBase, nEBase, "107.f homed at the selected base (0x2CB50)");
+                            Check(pNew->bAtBase != 0, "107.f and at base (Ship_ctor's u16 1 at 0x45C80)");
+                            Check(pNew->bHangarX >= 1 && pNew->bHangarX <= 5
+                                      && pNew->bHangarY >= 1 && pNew->bHangarY <= 5,
+                                  "107.f the 5x5 scan parked it on a built hangar cell (0x2CC54..0x2CC98)");
+                            CheckEqI32((i32)pFacE[PUFO_GRID_LAYER2_OFF + 6 * (i32)pNew->bHangarY
+                                                   + (i32)pNew->bHangarX], 33 + (i32)pNew->bCraftType,
+                                       "107.f with its type glyph in that layer2 cell (0x2CDA0)");
+                            {
+                                const i32 nStrat = FindStrategById(&g_world.strategList, (i32)pNew->bId);
+                                const StrategItem *const pEntry = (nStrat >= 0)
+                                                                      ? (const StrategItem *)PtrArray_Get(&g_world.strategList, nStrat)
+                                                                      : NULL;
+                                Check(pEntry != NULL && pEntry->nType == 1,
+                                      "107.f the entry the spawn added stands at the base's cell (0x2CBC8)");
+                                if (pEntry != NULL) {
+                                    g_world.view.nScrollX = pEntry->nX - g_world.view.nMapW / 2 - 40;
+                                    g_world.view.nScrollY = pEntry->nY - g_world.view.nMapH / 2 + 40;
+                                }
+                            }
+                        }
+                    }
+                    for (nTick = 0; nTick < 6; ++nTick) {
+                        for (nIx = 0; nIx < 6; ++nIx) {
+                            const u8 nL2 = pFacE[PUFO_GRID_LAYER2_OFF + 6 * nTick + nIx];
+                            if (nL2 >= 33 && nL2 <= 37) ++nGlyph1;
+                        }
+                    }
+                    CheckEqI32(nGlyph1, nGlyph0 + 1, "107.f exactly one craft glyph now stands on the grid (0x2CDA0)");
+                    CheckEqI32((i32)g_assets.apObjects[nCraftSlot]->auPerBaseVal[nEBase], nStock0,
+                               "107.f and the craft slot skipped the base-stock add (0x98FD4)");
+                    CheckEqI32(g_world.nFunds, nFundsC, "107.f while delivery spends nothing further (0x75DC8)");
+                    CheckEqI32(Base_CountShipsAtBase(g_world.apCraft, (i32)g_world.bCraftCount,
+                                                     g_world.apBases, g_world.nBaseCount,
+                                                     g_world.abFacilityGrid, nEBase), nShips0 + 1,
+                               "107.f the base counts one more homed craft (0x66090)");
+                    ClearSurface();
+                    (void)DrawFrame();
+                    DumpFrame("econ_craft_spawned");
+                }
+            }
+        }
+    }
+
+    /* ---- Part 107.d: the hangar loads the cargo the mission will carry -----------------------------
+     * The cargo lane is the launching craft's own column: Tact_SetupCraftCargo 0x39018 copies
+     * aItemQty[Map_nCraftIndex] into every object's uRecovScore for any mission that is not a base defence
+     * (0x3906C is the base lane), the build pass 0x39414..0x39570 turns each carried copy into a TactItem on
+     * the deploy cell, and Tact_EquipTeamFromCraft 0x3C2D8 dresses the squad off them. The plane screen is the
+     * game's own way into that column: a row commit stages a per-slot delta (0x7AFD8) and the confirm applies
+     * it -- BuySellScreen_ApplyQtyChanges 0x78E34 takes it off the base shelf, 0x78E4C puts it on
+     * aItemQty[Ship.nSlotIdx], and nSlotIdx is the craft's roster index (pufo_ship.c:402).
+     *
+     * A weapon alone is not a load the squad can use: the cargo pass reserves one score of the weapon's own
+     * ammo record per copy (0x392EC..0x39344) and only the copies inside that reservation are built as weapons
+     * carrying a magazine (0x394EC/0x394E0). So this round loads the rifle AND its clip, and 100.5 reads the
+     * armed squad back off the mission. */
+    printf("part 107.d: the hangar loads the cargo the mission will carry\n");
+    {
+        const i32 nLoadBase = (i32)g_world.nSelectedBase;
+        const i32 nLoadSlot = 4; /* Винтовка / Rifle: admitted by the band test (0x7B190, slot < 25), unlocked by
+                                  * its topic gate byte_AA968[4] == 2 (one of the 27 the shipped RESEARCH.DAT
+                                  * unlocks), bTwoHanded 0, bWeight 3, and one of the thirteen ids in the hand
+                                  * table unk_A62F0 that the equip pass can put in a hand. */
+        const i32 nClipSlot = 38;   /* the rifle's own magazine: anAmmoTypeId[0] == 38, bAmmoCap 20, admitted by
+                                     * the same band test (0x7B190) and unlocked by byte_AA968[38] == 1. The cargo
+                                     * pass spends it: the split at 0x392EC..0x39344 reserves one clip score per
+                                     * weapon copy, so with the clip aboard the copies take the WEAPON arm at
+                                     * 0x394EC/0x394E0 and carry nAmmo 20, while with no clip aboard the split is
+                                     * 0 and every copy takes the ammo arm at 0x39530 with nAmmo = bAmmoCap = 0 --
+                                     * and the equip hand gate refuses an item whose nAmmo is 0 (0x3C26C, asserted
+                                     * in tests/test_invdrag.c). Carrying a rifle without its magazine is what the
+                                     * original does: the weapon lands unloaded and nobody picks it up. */
+        const i32 nWant     = 2;
+        const i32 nClipWant = 2;
+        const i32 nStock0   = (i32)g_assets.apObjects[nLoadSlot]->auPerBaseVal[nLoadBase];
+        const i32 nClipStock0 = (i32)g_assets.apObjects[nClipSlot]->auPerBaseVal[nLoadBase];
+        i32 nLoadCraft = -1;
+
+        g_nLoadSlot = nLoadSlot;
+        g_nLoadWant = nWant;
+
+        for (i32 i = 0; i < (i32)g_world.bCraftCount; ++i) {
+            if (Craft_CountSoldiersAboard(g_world.apSoldiers, g_world.nSoldierCount, i) > 0) {
+                nLoadCraft = i;
+                break;
+            }
+        }
+        Check(nLoadCraft >= 0,
+              "one craft carries the squad -- CraftSelectGate 0x91868 is why the arrival card offers a mission");
+        CheckEqI32((i32)g_assets.apObjects[nLoadSlot]->bTwoHanded, 0, "the load slot is a one-handed weapon");
+        CheckEqI32((i32)g_world.aTopics[g_abSlotTopicGate[nLoadSlot]].bUnlocked, 1,
+                   "and its research gate stands open (0x7B1D4)");
+        CheckEqI32((i32)g_assets.apObjects[nLoadSlot]->anAmmoTypeId[0], nClipSlot,
+                   "the rifle's first ammo id is the clip slot");
+        CheckEqI32((i32)g_assets.apObjects[nClipSlot]->bAmmoCap, 20,
+                   "the clip's cap is the magazine count the built weapon will carry (0x394E0)");
+        CheckEqI32((i32)g_world.aTopics[g_abSlotTopicGate[nClipSlot]].bUnlocked, 1,
+                   "and the clip row's own gate (byte_AA968[38] == 1) stands open too");
+
+        /* The shelf first: the row's available digit is a copy of auPerBaseVal taken at the build (0x7B1F0). */
+        BaseRec_AddItemQty(g_world.apBases[nLoadBase], g_assets.apObjects[nLoadSlot], nWant);
+        BaseRec_AddItemQty(g_world.apBases[nLoadBase], g_assets.apObjects[nClipSlot], nClipWant);
+        CheckEqI32((i32)g_assets.apObjects[nLoadSlot]->auPerBaseVal[nLoadBase], nStock0 + nWant,
+                   "the base shelf now holds the rifles to load");
+        CheckEqI32((i32)g_assets.apObjects[nClipSlot]->auPerBaseVal[nLoadBase], nClipStock0 + nClipWant,
+                   "and the clips to go with them");
+        CheckEqI32((i32)g_assets.apObjects[nLoadSlot]->aItemQty[nLoadCraft], 0,
+                   "and the craft's cargo column starts empty (0x39018 reads exactly this column)");
+
+        g_world.nav.apNav[3]->pfnClick(); /* BasePlaneScreen_Open @ 0x617f4 */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "the hangar opens (0x61828)");
+        ClearSurface();
+        (void)DrawFrame();
+
+        {
+            UiPanel *const pCraft = g_world.planeCraftPanels.pCraftPanel;
+            i32 nCraftRow = -1;
+
+            for (i32 r = 0; pCraft != NULL && r < pCraft->nLineCount; ++r) {
+                if (UiPanel_GetLineAux(pCraft, r) == nLoadCraft) {
+                    nCraftRow = r;
+                    break;
+                }
+            }
+            Check(pCraft != NULL && nCraftRow >= 0, "the craft column lists the craft that carries the squad");
+            if (nCraftRow >= 0) {
+                World_GeoscapePointer(&g_world, 60,
+                                      pCraft->nPosY + pCraft->nFont * nCraftRow + pCraft->nFont / 2, true);
+                (void)World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.nHangarCraftIdx, nLoadCraft,
+                           "the pen selects it (0x88368 press, 0x8A0F0 release) -- the store env follows the "
+                           "selected craft (0x161AC4 read at 0x884D4, planeStores.nCraftIdx)");
+                Check(g_world.bPlaneShowDetail != 0, "and the read-out opens (0x7CC14)");
+
+                g_world.planeBlock.apMainCtl[3]->pfnClick(); /* BasePlaneScreen_BuildControls @ 0x7b014 */
+                Check(g_world.bPlaneStoresBuilt != 0, "the store columns are built (0x7B12C)");
+                ClearSurface();
+                (void)DrawFrame();
+
+                UiPanel *const pSlot  = g_world.planeStorePanels.pSlotPanel;
+                UiPanel *const pAvail = g_world.planeStorePanels.pAvailPanel;
+                UiPanel *const pCommit = g_world.planeStorePanels.pCommitPanel;
+                i32 nStoreRow = -1;
+
+                Check(pSlot != NULL && pAvail != NULL && pCommit != NULL, "the three columns came up");
+                for (i32 r = 0; pSlot != NULL && r < pSlot->nLineCount; ++r) {
+                    if (UiPanel_GetLineAux(pSlot, r) == nLoadSlot) {
+                        nStoreRow = r;
+                        break;
+                    }
+                }
+                Check(nStoreRow >= 0, "the rifle row stands in the list (0x7B7F8..0x7B930)");
+                if (nStoreRow >= 0) {
+                    const i32 nY = pCommit->nPosY + pCommit->nFont * nStoreRow + pCommit->nFont / 2;
+
+                    CheckEqI32(UiPanel_GetLineAux(pAvail, nStoreRow), nStock0 + nWant,
+                               "with the shelf count as its available digit (0x7B1F0, 0x7B918)");
+                    for (i32 k = 0; k < nWant; ++k) {
+                        World_GeoscapePointer(&g_world, pCommit->nRectX + 4, nY, true);
+                        (void)World_GeoscapePointerUp(&g_world); /* the release arm's ClickRow (0x8A130) */
+                        CheckEqI32(g_world.anPlaneCarryCount[nLoadSlot], k + 1,
+                                   "one click stages one rifle (0x7AC38, 0x7AFD8)");
+                        CheckEqI32(UiPanel_GetLineAux(pAvail, nStoreRow), nStock0 + nWant - (k + 1),
+                                   "and spends one off the row's digit (0x7AFC4)");
+                    }
+
+                    /* The clip rides in the same round: one build, one list, one confirm for both rows. */
+                    i32 nClipRow = -1;
+
+                    for (i32 r = 0; r < pSlot->nLineCount; ++r) {
+                        if (UiPanel_GetLineAux(pSlot, r) == nClipSlot) {
+                            nClipRow = r;
+                            break;
+                        }
+                    }
+                    Check(nClipRow >= 0, "the clip row stands in the same list (0x7B7F8..0x7B930)");
+                    if (nClipRow >= 0) {
+                        const i32 nClipY = pCommit->nPosY + pCommit->nFont * nClipRow + pCommit->nFont / 2;
+
+                        CheckEqI32(UiPanel_GetLineAux(pAvail, nClipRow), nClipStock0 + nClipWant,
+                                   "with its own shelf count as the available digit (0x7B1F0, 0x7B918)");
+                        for (i32 k = 0; k < nClipWant; ++k) {
+                            World_GeoscapePointer(&g_world, pCommit->nRectX + 4, nClipY, true);
+                            (void)World_GeoscapePointerUp(&g_world);
+                            CheckEqI32(g_world.anPlaneCarryCount[nClipSlot], k + 1,
+                                       "one click stages one clip (0x7AC58 reads the aux column, 0x7AFD8 stages it)");
+                        }
+                    }
+
+                    /* The confirm is the game's own apply: 0x78E34 off the shelf, 0x78E4C onto
+                     * aItemQty[Ship.nSlotIdx], then the tail CloseUI (0x78E74) whose case 6 takes the store
+                     * release arm (0x8C044 -> 0x7BA18). */
+                    PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BA4]);
+                    CheckEqI32((i32)g_assets.apObjects[nLoadSlot]->aItemQty[nLoadCraft], nWant,
+                               "the confirm moves the staged rifles onto the craft's cargo column (0x78E4C)");
+                    CheckEqI32((i32)g_assets.apObjects[nClipSlot]->aItemQty[nLoadCraft], nClipWant,
+                               "and the staged clips with the same pass");
+                    CheckEqI32((i32)g_assets.apObjects[nLoadSlot]->auPerBaseVal[nLoadBase], nStock0,
+                               "and takes them off the shelf with it (0x78E34)");
+                    CheckEqI32((i32)g_assets.apObjects[nClipSlot]->auPerBaseVal[nLoadBase], nClipStock0,
+                               "and the clips off it");
+                    CheckEqI32((i32)g_world.bPlaneStoresBuilt, 0,
+                               "its tail CloseUI releases the store columns (0x8C044, 0x7BA18)");
+                }
+            }
+        }
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]); /* the detail arm (0x8C08C) */
+        CheckEqI32((i32)g_world.bPlaneShowDetail, 0, "the read-out closes (0x8C08C)");
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "and the hangar closes to the base view (0x8C094)");
+        printf("  load round: slot %d x %d + clip %d x %d onto craft %d, shelf %d -> %d / %d -> %d\n",
+               nLoadSlot, nWant, nClipSlot, nClipWant, nLoadCraft,
+               nStock0, (i32)g_assets.apObjects[nLoadSlot]->auPerBaseVal[nLoadBase],
+               nClipStock0, (i32)g_assets.apObjects[nClipSlot]->auPerBaseVal[nLoadBase]);
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("econ_craft_loaded");
     }
 
     /* ---- Part 100.4: the crashed disc dispatch, map press to arrival offer ------------------------
@@ -11158,6 +11767,26 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         printf("  before the answers: mode %d, type %d, tick %d, overlay at the disc %d, soldiers aboard %d\n",
                nModeBefore, nTypeBefore, nTickBefore, nOverlayAtDisc, nSoldiers);
         Check(nSoldiers > 0, "the craft carries soldiers -- why the arrival card put BeginCraftSelect on ОК (CraftSelectGate 0x91868)");
+        /* Soldier+0x3C1, the already-equipped byte. Soldier_Generate clears it (STRB R6 #0 at 0x4974C, R6 being
+         * the same zero that clears the 25 auUnk962 slots and the 25 abUnk1012 bytes), Tact_EquipTeamFromCraft
+         * sets it at 0x3C510, and nothing else in the beta writes it -- so after the first mission of this run
+         * every soldier here is a veteran, and 0x3BE60 will dress them from their declared loadout instead of
+         * from the craft's loose cargo. */
+        {
+            i32 nAboard = 0, nFlagged = 0;
+
+            for (i = 0; i < g_world.nSoldierCount; ++i) {
+                const Soldier *const pS = g_world.apSoldiers[i];
+
+                if (pS != NULL && (i32)pS->bUnk183 == nShipIdx) {
+                    ++nAboard;
+                    nFlagged += (pS->bUnk961 != 0) ? 1 : 0;
+                }
+            }
+            CheckEqI32(nFlagged, nAboard,
+                       "every soldier aboard is already equipped (0x3C510 set the byte on an earlier mission of this run; 0x4974C is the only clear)");
+            printf("  the squad aboard: %d soldiers, %d carrying the equipped byte\n", nAboard, nFlagged);
+        }
 
         /* A. Отмена. */
         PressCtl(pCtlCancel);
@@ -11378,14 +12007,22 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                   && g_world.pTactMap->nEnemyCount == nEnemyFielded,
               "the mission still fields the crew against the aliens through the deploy commit (0x39980)");
 
-        /* Part 106: the deploy's cells are the original's flat arithmetic (0x39F24 probe, 0x3CC38 sweep,
-         * 0x49B2C placement -- no Map_IsValidCell in any of them). This run's craft pad sits on the LAST
-         * map row, so deploy points 4..7 name rows past 10*dimY and the flat index lands in the next
-         * layer's allocated cells. That is the shipped game's own behaviour; the port reproduces it
-         * through Init_LookupCellFlat, and the old bounded lookup produced a NULL cell here -- the crash
-         * this unit chased. Assert both halves: no unit ends the commit cell-less, and the wrap happens. */
+        /* Part 106/107: the deploy's cells are the original's flat arithmetic (0x39F24 probe, 0x3CC38
+         * sweep, 0x49B2C placement -- no Map_IsValidCell in any of them); the port reproduces it through
+         * Init_LookupCellFlat, and the bounded lookup that used to answer here produced the NULL cell
+         * this unit chased. Whether a live mission SHOWS the wrap depends on where the rolled map put
+         * the craft pad, and 107.f's delivery ticks move the CRT random stream (the same class Part 104
+         * recorded), so this run's pad sits inside the table and no crew cell wraps. The quirk is
+         * therefore asserted on the seam the deploy itself uses, where the answer does not depend on
+         * the roll: every point the sweep names must be the cell the flat index decomposes to (every
+         * MapCell carries its OWN coordinates, MapCell_Init 0x3D1C0), and an ask past a layer's
+         * 10*dimY rows must answer the NEXT layer's real cell. */
         {
-            i32 nNull = 0, nWrap = 0;
+            const TactInitEnv *const pTE = &g_world.tactEnv;
+            const i32 nLayers = (i32)g_world.pTactMap->nMapLayers;
+            const i32 nPitch = PUFO_CELLS_PER_TILE * (i32)g_world.pTactMap->geom.nDimX;
+            const i32 nRows  = PUFO_CELLS_PER_TILE * (i32)g_world.pTactMap->geom.nDimY;
+            i32 nNull = 0, nWrap = 0, nBad = 0;
 
             for (i32 u = 0; u < (i32)g_world.pTactMap->nXcomCount; ++u) {
                 Soldier *pU = g_world.pTactMap->apXcomUnits[u];
@@ -11394,17 +12031,129 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     ++nNull;
                     continue;
                 }
-                /* The probe asked for layer 1 rows 59..62; a flat index past a layer's 60 rows names the
-                 * next layer's cells, and every MapCell carries its OWN coordinates (MapCell_Init at
-                 * 0x3D1C0), so the wrap shows up as nZ 2 with rows 0..2, not as a row number past dimY. */
                 if (pU->pCell->nZ >= 2) {
                     ++nWrap;
                 }
             }
             Check(nNull == 0,
                   "every fielded unit ends the commit on a real MapCell -- the flat lookup never stores NULL (0x39F24, 0x49B2C)");
-            CheckEqI32(nWrap, 6,
-                  "ORIGINAL QUIRK, asserted: six of the eight crew are parked past the layer's rows -- the deploy offsets outrun the flat table and the index names layer 2's cells (no validity test at 0x39F24)");
+            printf("  this roll parks %d of %d crew cells on a layer past the mission's own; the pad tile is %d,%d\n",
+                   nWrap, (i32)g_world.pTactMap->nXcomCount,
+                   (i32)*pTE->pnCraftMapX, (i32)*pTE->pnCraftMapY);
+
+            Check(pTE->deploy.pfnLookupCell != NULL && pTE->deploy.pLookupUser != NULL,
+                  "the deploy env names its cells through the flat twin, not the bounded lookup (Init_LookupCellFlat, wired for 0x39F24/0x3CC80)");
+            if (pTE->deploy.pfnLookupCell != NULL && pTE->pDeployOffsets != NULL
+                && pTE->pDeployPointCounts != NULL && nLayers >= 1 && nLayers <= 3) {
+                const i32 nPoints = (i32)pTE->pDeployPointCounts[nLayers - 1];
+
+                for (i32 n = 0; n < nPoints; ++n) {
+                    const u8 *const pRec = pTE->pDeployOffsets + PUFO_DEPLOY_RECORD_BYTES * n
+                                         + PUFO_DEPLOY_GROUP_BYTES * (nLayers - 1);
+                    const i32 nAskX = PUFO_CELLS_PER_TILE * (i32)*pTE->pnCraftMapX + (i32)pRec[0];
+                    const i32 nAskY = PUFO_CELLS_PER_TILE * (i32)*pTE->pnCraftMapY + (i32)pRec[1];
+                    const i32 nAskL = (i32)pRec[2];
+                    const i32 nIndex = PUFO_TERRAIN_CELLS_PER_LAYER * nAskL + nPitch * nAskY + nAskX;
+                    MapCell *const pCell = pTE->deploy.pfnLookupCell(nAskX, nAskY, nAskL,
+                                                                     pTE->deploy.pLookupUser);
+
+                    if (pCell == NULL || (i32)pCell->nZ != nIndex / PUFO_TERRAIN_CELLS_PER_LAYER
+                        || (i32)pCell->nY != (nIndex / nPitch) % nRows
+                        || (i32)pCell->nX != nIndex % nPitch) {
+                        ++nBad;
+                    }
+                }
+                Check(nBad == 0,
+                      "ORIGINAL QUIRK, asserted: every point the deploy sweep names lands on the cell the flat index decomposes to -- the arithmetic IS the table's layout (0x3CC38: 3600*entry[2] + 60*(10*craftY + entry[1]) + (10*craftX + entry[0])), not a bounded lookup");
+                {
+                    const i32 nRowPast = nRows + 1;
+                    MapCell *const pCross = pTE->deploy.pfnLookupCell(0, nRowPast, 0,
+                                                                      pTE->deploy.pLookupUser);
+
+                    Check(pCross != NULL && (i32)pCross->nZ == 1 && (i32)pCross->nY == 1,
+                          "ORIGINAL QUIRK, asserted: an ask one row past a layer's 60 rows answers the NEXT layer's real cell -- layer +1, row 1; nothing in 0x39F24, 0x3CC80 or 0x49B2C tests the coordinate");
+                    printf("  an ask at row %d, layer 0 answers cell (%d,%d,%d)\n",
+                           nRowPast, pCross ? (i32)pCross->nX : -1,
+                           pCross ? (i32)pCross->nY : -1, pCross ? (i32)pCross->nZ : -1);
+                }
+            }
+        }
+
+        /* 107.d's cargo, read where the mission runs: the seed pass copied the launching craft's column into
+         * every object's uRecovScore (0x39018), the split reserved one magazine score per rifle copy
+         * (0x392EC..0x39344) and the build pass put one TactItem per carried copy on the deploy cell
+         * (0x39414..0x39570). What the equip pass then does depends on Soldier+0x3C1, so this section reads the
+         * branch the live squad really takes; the recruit branch (0x3C2D8 taking copies into hands) is gated on
+         * fresh soldiers in tests/test_tactinit.c. */
+        {
+            const ObjectRecFull *const pRifle = g_assets.apObjects[g_nLoadSlot];
+            const i32 nClipId = (i32)pRifle->anAmmoTypeId[0];
+            const ObjectRecFull *const pClip  = g_assets.apObjects[nClipId];
+            const GameMap *const pField = g_world.pTactMap;
+            i32 nPool = 0, nLoaded = 0, nClipItems = 0, nHanded = 0, nOnCell = 0, nVeteran = 0;
+
+            for (i32 i = 0; i < g_world.nTactItemCount; ++i) {
+                const TactItem *const pItem = g_world.apTactItems[i];
+
+                if (pItem == NULL) {
+                    continue;
+                }
+                if (pItem->pObj == pRifle) {
+                    ++nPool;
+                    if ((i32)pItem->nAmmo == (i32)pClip->bAmmoCap && (i32)pItem->nIndex == nClipId) {
+                        ++nLoaded;
+                    }
+                } else if (pItem->pObj == pClip) {
+                    ++nClipItems;
+                }
+            }
+            for (i32 i = 0; i < (i32)pField->nXcomCount; ++i) {
+                const Soldier *const pUnit = pField->apXcomUnits[i];
+
+                if (pUnit == NULL) {
+                    continue;
+                }
+                nVeteran += (pUnit->bUnk961 != 0) ? 1 : 0;
+                if (pUnit->pHandL != NULL && pUnit->pHandL->pObj == pRifle) {
+                    ++nHanded;
+                }
+            }
+            for (const TactItem *pItem = (g_world.pTactDeployCell != NULL)
+                                             ? g_world.pTactDeployCell->pItemList : NULL;
+                 pItem != NULL; pItem = pItem->pNext) {
+                if (pItem->pObj == pRifle) {
+                    ++nOnCell;
+                }
+            }
+            CheckEqI32(nPool, g_nLoadWant,
+                       "107.d's carried rifles built one item each in the mission's item pool (0x39018 seed, "
+                       "0x39414..0x39570)");
+            CheckEqI32(nLoaded, g_nLoadWant,
+                       "107.d's clip rode along, so the split reserved one clip score per copy (0x392EC..0x39344) "
+                       "and each copy takes the weapon arm (0x394EC) carrying the clip's cap (0x394E0) -- that "
+                       "non-zero magazine is what the equip hand gate needs (0x3C26C); a rifle carried without "
+                       "its magazine builds nAmmo 0 at 0x39530 and equips nobody");
+            CheckEqI32(nClipItems, 0,
+                       "and no separate clip item stands in the pool: the build count is score minus the "
+                       "reservation (0x39400), so both clips were spent as magazines");
+            /* The squad this craft launches was equipped by an earlier mission of this run (the byte was proven
+             * set before the launch, 0x3C510), so 0x3BE60 takes the re-dress branch for every one of them: the
+             * declared loadout columns (auUnk962 / abUnk1012) are what the slot passes read, and the craft's
+             * cargo stays where the build pass put it -- loose at the drop cell, to be picked up in the mission.
+             * A never-equipped squad takes the copies into its hands instead; that half is gated with fresh
+             * recruits in tests/test_tactinit.c (TestCargoArmsTheSquad, TestCargoWeaponNeedsItsClip). */
+            CheckEqI32(nVeteran, (i32)pField->nXcomCount,
+                       "the fielded squad is all veterans of this run's earlier missions (+0x3C1 set, 0x3BE60)");
+            CheckEqI32(nHanded, 0,
+                       "ORIGINAL RULE, asserted live: the equip pass does not dress a veteran from loose cargo "
+                       "(0x3BE60 -> Equip_SlotPass 0x3BE8C, 0x3C2D8 never runs)");
+            CheckEqI32(nOnCell, g_nLoadWant,
+                       "and the loaded rifles the hangar put on the craft are standing loose on the deploy cell "
+                       "at the start of the mission (0x39480)");
+            printf("  cargo in the mission: %d of %d XCOM hold object %d, %d in the pool (%d loaded with clip %d "
+                   "x %d), %d loose on the deploy cell\n",
+                   nHanded, (i32)pField->nXcomCount, g_nLoadSlot, nPool, nLoaded, nClipId,
+                   (i32)pClip->bAmmoCap, nOnCell);
         }
 
         /* The battlefield picture: the frame the live mission paints. */
@@ -12355,6 +13104,356 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         printf("  ufopaedia live: category %d row %d entry %d, %d nav handlers rebuilt, three close arms run, screen back to %d\n",
                g_world.nUfopaediaCategory, g_world.nUfopaediaEntryIdx, g_world.nUfopaediaEntryNum,
                nBuilt, g_world.screen.nGeoscapeScreen);
+    }
+
+    /* ---- Part 107.b: the month boundary runs the funding report live, and the funds move only when
+     * the report closes -------------------------------------------------------------------------
+     * Geoscape_AdvanceTime fires the month hook when nMonth changes (pufo_clock.c:102 -> 0x95618's
+     * pulse), FundingScreen_OpenMonthly @ 0x5d160 bumps nMonthCounter FIRST (0x5D170), writes the
+     * screen id 19 (0x5D18C) and runs FundingScreen_Init (0x5D194), which is what fills
+     * g_nFundBar0..4 @ 0x186594..0x1865A4. While the report is open the funds do not move: the draw
+     * arm (0x94314, the bar read at 0x94394) computes the projection only. The write is the close's:
+     * Geoscape_CloseUI case 19 does `nFunds += bar2 - upkeep + bar1 + bar3 + bar0 + bar4` with upkeep
+     * summed per base through Base_CalcMonthlyUpkeep (0x8BB84), and bankruptcy is a separate branch
+     * at -3,000,000 (0x8BBE8). This runs the whole boundary through the shell's own pulse path. */
+    {
+        const i32 nMonth0   = g_world.geo.time.nMonth;
+        const i32 nCounter0 = g_world.nMonthCounter;
+        const i32 nFunds0   = g_world.nFunds;
+        const i32 nCraft0   = (i32)g_world.bCraftCount;
+        i32 nPulses = 0, nUpkeep = 0, nBars = 0, nPsiBase = -1;
+
+        printf("part 107.b: the month boundary -- the funding report and the funds write\n");
+        World_CloseGeoscape(&g_world);
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 0,
+                   "the clock only advances on the bare map (0x95618 gates on nGeoscapeScreen == 0)");
+        PressCtl(g_world.ui.apRootCtl[7]); /* GameTime_SetSpeedIdx5: 3600 game seconds a pulse (Part 100.2) */
+        CheckEqI32(g_world.geo.world.nTickSeconds, 3600, "the fast button stores its interval (0x85124 chain)");
+
+        while (g_world.screen.nGeoscapeScreen != 19 && nPulses < 900) {
+            (void)World_PulseGeoscape(&g_world);
+            ++nPulses;
+        }
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 19,
+                   "the month hook opened the funding report through the live pulse path (0x95618 -> FundingScreen_OpenMonthly @ 0x5d160, the id at 0x5D18C)");
+        CheckEqI32(g_world.nMonthCounter, nCounter0 + 1,
+                   "OpenMonthly bumps the month counter BEFORE it opens (0x5D170)");
+        Check(g_world.geo.time.nMonth != nMonth0,
+              "the clock's own month cell moved -- a month boundary is 31 days at month 1 (GameTime_Decode's month table)");
+        CheckEqI32(g_world.nFunds, nFunds0,
+                   "while the report stands the funds do not move: the draw arm reads the bars and writes nothing (0x94314, 0x94394)");
+        DumpFrame("funding_monthly");
+
+        for (i32 b = 0; b < (i32)g_world.nBaseCount; ++b) {
+            nUpkeep += Base_CalcMonthlyUpkeep(g_world.apCraft, nCraft0, g_world.apSoldiers,
+                                              g_world.nSoldierCount, g_world.apSites,
+                                              g_world.nSiteCount, g_world.pAssets->apObjects,
+                                              g_world.abFacilityGrid, b); /* 0x8BB84, per base */
+        }
+        nBars = g_world.economy.anFundBar[2] + g_world.economy.anFundBar[1]
+              + g_world.economy.anFundBar[3] + g_world.economy.anFundBar[0]
+              + g_world.economy.anFundBar[4]; /* 0x8BBA8..0x8BBE0, in the order the ARM adds them */
+        printf("  month %d -> %d in %d pulses; upkeep %d, bars %d (%d,%d,%d,%d,%d), funds %d\n",
+               nMonth0, g_world.geo.time.nMonth, nPulses, nUpkeep, nBars,
+               g_world.economy.anFundBar[0], g_world.economy.anFundBar[1], g_world.economy.anFundBar[2],
+               g_world.economy.anFundBar[3], g_world.economy.anFundBar[4], nFunds0);
+
+        for (i32 b = 0; b < (i32)g_world.nBaseCount; ++b) {
+            if (Base_CalcPsiLabCap(g_world.abFacilityGrid, b) > 0) {
+                nPsiBase = b; /* 0x8BC40, the first base with a lab wins */
+                break;
+            }
+        }
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]); /* FundingScreen_ExitThunk -> Geoscape_CloseUI case 19 */
+        CheckEqI32(g_world.nFunds, nFunds0 - nUpkeep + nBars,
+                   "the funds move by exactly bars - upkeep, in the close's own term order (0x8BBA8..0x8BBE0)");
+        if (g_world.nFunds < PUFO_FUNDS_BANKRUPT_LIMIT) {
+            Check(g_world.bMapTickHold != 0 && g_world.bMapBattleEnded != 0,
+                  "bankruptcy: the close frees the geoscape UI, inits the end screen and holds the tick (0x8BBF0..0x8BC0C)");
+        } else {
+            Check(g_world.nFunds >= PUFO_FUNDS_BANKRUPT_LIMIT,
+                  "the bankruptcy branch at 0x8BBE8 is a strict -3,000,000 test, not a zero test");
+            CheckEqI32(g_world.screen.nGeoscapeScreen, (nPsiBase >= 0) ? 17 : 0,
+                       "the report hands the screen to the psi lab when a base has one, to the map otherwise (0x8BC90, 0x8BCB4)");
+        }
+        printf("  after the close: funds %d, screen %d, psi base %d\n",
+               g_world.nFunds, g_world.screen.nGeoscapeScreen, nPsiBase);
+        ClearSurface();
+        (void)DrawFrame();
+        DumpFrame("funding_closed");
+    }
+
+    /* ---- Part 107.c: the held pen repeats only where the draw arms the tracked panel ------------
+     * UiScrollList_TrackHold @ 0x3ed44 (UiPanel_TrackHoldRow) counts only while the byte at
+     * panel+0x1BA8 (bRepeatArmed) stands, fires the panel's own click when panel+0xBC8 (nHoldCount)
+     * reaches panel+0x1BAC (nRepeatDelay), pins the counter there and DISARMS (0x3EE84..0x3EEB8):
+     * one fire per arming, and a different hovered row restarts the count (0x3EE50). What arms the
+     * byte is the WM_TIMER 0xC352 body's `MOV R1,#1 / STRB R1,[bPanelFlagScratch]` at
+     * 0xA0968..0xA0978 (bPanelFlagScratch @ 0x161F0C, now App_TickAnim's store), which the per-screen
+     * draw copies into panels and clears: BuySellScreen_Draw 0x78874..0x788A4, TransferScreen_Draw
+     * 0x98248/0x98258, BasePlaneScreen_DrawCraftDetail 0x7BE58/0x7BE68 with the clear at 0x7BE70.
+     * Which panel the pen hands to the hold pass is the jumptable's choice: screens 10/11/12 pass
+     * pBuySellPanelA (0x88A28 LDR R4,=pBuySellPanelA, the call at 0x88DBC) -- a column no draw arms --
+     * while the plane screen passes the two store row panels its detail draw arms (0x88398, 0x883AC).
+     * The geoscape status panel is passed too (0x87AEC) and is inert twice over: nothing arms it, and
+     * the box layout drops its row-selection byte 0x1BA1 at 0x83358, which the pass tests first. */
+    {
+        const i32 nEBase = 0;
+        i32 nTicks = 0, nSlot = -1, nRow = -1;
+
+        printf("part 107.c: the hold arm -- armed where the original arms it, inert where it does not\n");
+
+        /* A. the geoscape status panel: the pen hands it to the hold pass, nothing arms it. */
+        {
+            UiPanel *const pStatus = g_world.ui.pStatusPanel;
+            const i32 nY = (pStatus != NULL) ? pStatus->nPosY + pStatus->nFont / 2 : 0;
+
+            Check(pStatus != NULL, "the status panel is live on the map screen");
+            ClearSurface();
+            (void)DrawFrame();
+            Check(pStatus != NULL && pStatus->bRepeatArmed == 0,
+                  "no geoscape draw arms the status panel's 0x1BA8");
+            for (nTicks = 0; nTicks < 8; ++nTicks) {
+                (void)UiPanel_TrackHoldRow(pStatus, 120, nY); /* 0x87AEC's own call shape */
+            }
+            CheckEqI32((i32)pStatus->nHoldCount, 0,
+                       "eight holds over a status row leave no counter: the panel stays inert (0x3ED44's arm test)");
+            printf("  status panel: armed %d, highlight %d, hold %d\n", (i32)pStatus->bRepeatArmed,
+                   (i32)pStatus->bSelLineHighlight, (i32)pStatus->nHoldCount);
+        }
+
+        /* B. the transfer screen arms the quantity pair; the pen tracks the name column. */
+        g_world.nav.apNav[7]->pfnClick(); /* TransferScreen_Open @ 0x614fc, id 10 at 0x6151C */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 10, "nav slot 7 opens the transfer screen (0x6151C)");
+        ClearSurface();
+        (void)DrawFrame(); /* TransferScreen_Draw's panel pass, gated on bTransferPanelsBuilt at 0x98224 */
+        {
+            UiPanel *const pA = g_world.pBuySellPanelA;
+            UiPanel *const pB = g_world.pBuySellPanelB;
+            UiPanel *const pC = g_world.pBuySellPanelC;
+
+            Check(pA != NULL && pB != NULL && pC != NULL, "the shared five columns are live (0x161A1C..0x161A28)");
+            Check(pB != NULL && pB->bRepeatArmed != 0, "TransferScreen_Draw arms panel B (0x98248)");
+            Check(pC != NULL && pC->bRepeatArmed != 0, "and panel C (0x98258)");
+            Check(pA != NULL && pA->bRepeatArmed == 0,
+                  "ORIGINAL QUIRK, asserted: the column screens 10/11/12 hand to the hold pass is pBuySellPanelA "
+                  "(0x88A28, the call at 0x88DBC) and no draw ever arms it -- a held pen on a transfer row "
+                  "never repeats; the row moves through the release arm's ClickRow on B/C (0x8A64C)");
+            if (pA != NULL) {
+                const i32 nY = pA->nPosY + pA->nFont / 2;
+
+                for (nTicks = 0; nTicks < 8; ++nTicks) {
+                    (void)UiPanel_TrackHoldRow(pA, 20, nY);
+                }
+                CheckEqI32((i32)pA->nHoldCount, 0, "and eight holds on it count nothing");
+                printf("  transfer columns: A armed %d highlight %d hold %d, B armed %d delay %d, C armed %d\n",
+                       (i32)pA->bRepeatArmed, (i32)pA->bSelLineHighlight, (i32)pA->nHoldCount,
+                       (i32)pB->bRepeatArmed, pB->nRepeatDelay, (i32)pC->bRepeatArmed);
+            }
+        }
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186BA4]); /* SELECT (0x9965C) -> CloseUI case 10 */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "SELECT closes: case 10 releases to screen 1 (0x8BE2C..0x8BE44)");
+        CheckEqI32((i32)g_world.bTransferBuilt, 0, "and its teardown freed the columns (0x97994..0x97A88)");
+        /* No close here: CloseUI case 1 frees the fifteen nav controls and nulls every slot (0x8BEA8..0x8BF0C,
+         * asserted at the case-1 section above), and only Game_StartNew (0x9542C), Ui_OpenResearch (0x84CBC)
+         * and Base_EnterBuildMode (0x84E6C) rebuild them -- so a held-pen gate that reaches nav slot 3 has to
+         * run while the bar is still up, which is exactly where case 10 leaves the game. */
+
+        /* C. the hangar: the tracked pair IS the armed pair, and the held pen fires at the threshold.
+         * The row's "available" digit is a per-build scratch counter, not a live stock read: 0x7B1F0 puts
+         * auPerBaseVal[base] into the scan pair, 0x7B918 stores it into the column, and 0x7AFC4 spends one
+         * per commit. The shipped shelf of the only admitted stocked slot (43, gate topic 1) is one unit,
+         * so a repeat proof puts a second unit on the shelf before the build. */
+        nSlot = -1;
+        for (i32 s = 36; s <= 52; ++s) {
+            if ((i32)g_assets.apObjects[s]->auPerBaseVal[nEBase] > 0) {
+                nSlot = s;
+                break;
+            }
+        }
+        Check(nSlot >= 0, "one hold slot carries base stock at the shown base (0x7B1F0, auPerBaseVal[base])");
+        const i32 nStock0 = (nSlot >= 0) ? (i32)g_assets.apObjects[nSlot]->auPerBaseVal[nEBase] : 0;
+        if (nSlot >= 0) {
+            BaseRec_AddItemQty(g_world.apBases[nEBase], g_assets.apObjects[nSlot], 1);
+        }
+        g_world.nav.apNav[3]->pfnClick(); /* BasePlaneScreen_Open @ 0x617f4, id 6 at 0x61828 */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "nav slot 3 opens the hangar (0x61828)");
+        ClearSurface();
+        (void)DrawFrame();
+        /* C1. the craft-row door, proven with the pen. 0x88320 gates the craft column's whole row pass -- the
+         * hold track, the status-column ClickRow at x 20 and the store control run -- on
+         * bPlanePanelsBuilt != 0 && bPlaneShowCraftDetail == 0, and the release arm gates its own
+         * ClickRow(pPlaneCraftPanel, ...) on the same pair (0x8A0F0). With the read-out open the pen hits
+         * nothing in the list, which is why 12h drove rows through the controls' handlers instead. */
+        {
+            UiPanel *const pCraft = g_world.planeCraftPanels.pCraftPanel;
+            i32 aRows[2];
+            i32 nFound = 0;
+
+            for (i32 r = 0; pCraft != NULL && nFound < 2 && r < pCraft->nLineCount; ++r) {
+                const i32 nC = UiPanel_GetLineAux(pCraft, r);
+
+                if (nC >= 0 && nC < (i32)g_world.bCraftCount && g_world.apCraft[nC] != NULL
+                    && g_world.apCraft[nC]->bAtBase != 0) {
+                    aRows[nFound++] = r;
+                }
+            }
+            Check(pCraft != NULL && nFound == 2, "the craft column lists two craft standing at the base");
+            if (pCraft != NULL && nFound == 2) {
+                const i32 nX = pCraft->nRectX + 55; /* inside the 230-wide name column, outside the 30-wide status column */
+                const i32 nRowA = aRows[0];
+                const i32 nCraftA = UiPanel_GetLineAux(pCraft, nRowA);
+
+                World_GeoscapePointer(&g_world, nX,
+                                      pCraft->nPosY + pCraft->nFont * nRowA + pCraft->nFont / 2, true);
+                (void)World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.nHangarCraftIdx, nCraftA,
+                           "with the read-out closed the press selects its row: the status column's ClickRow runs on "
+                           "the press (0x88368) and the craft column's on the release (0x8A0F0)");
+                Check(g_world.bPlaneShowDetail != 0, "and the select opens the read-out (0x7CC14)");
+
+                const i32 nRowB = aRows[1];
+                const i32 nHold0 = pCraft->nUnk3032; /* the first press left the craft column on row A */
+
+                Check(nCraftA != UiPanel_GetLineAux(pCraft, nRowB), "the second row names another craft");
+                World_GeoscapePointer(&g_world, nX,
+                                      pCraft->nPosY + pCraft->nFont * nRowB + pCraft->nFont / 2, true);
+                (void)World_GeoscapePointerUp(&g_world);
+                CheckEqI32(g_world.nHangarCraftIdx, nCraftA,
+                           "ORIGINAL QUIRK, asserted: with the read-out open the same press over another craft row "
+                           "selects nothing -- 0x88320 and 0x8A0F0 both fail on bPlaneShowCraftDetail");
+                CheckEqI32(pCraft->nUnk3032, nHold0,
+                           "and the panel's selected-row cell is untouched by the swallowed press");
+                CheckEqI32((i32)g_world.bPlaneShowDetail, 1, "the read-out stays open");
+
+                g_world.planeBlock.apMainCtl[3]->pfnClick(); /* BasePlaneScreen_BuildControls @ 0x7b014 */
+                Check(g_world.bPlaneStoresBuilt != 0,
+                      "the store columns are built with bPlaneStoresCommitted standing (0x7B12C) -- "
+                      "the byte the pen arm at 0x88384 tests before tracking the row pair");
+            }
+        }
+        {
+            UiPanel *const pCommit = g_world.planeStorePanels.pCommitPanel;
+            UiPanel *const pSel    = g_world.planeStorePanels.pSelRowPanel;
+
+            UiPanel *const pSlot   = g_world.planeStorePanels.pSlotPanel;
+            UiPanel *const pAvail  = g_world.planeStorePanels.pAvailPanel;
+            UiPanel *const pTaken  = g_world.planeStorePanels.pTakenPanel;
+
+            if (pCommit == NULL || pSel == NULL || pSlot == NULL || pAvail == NULL || pTaken == NULL) {
+                Check(false, "the five store columns came up (0x7B218..0x7B65C)");
+            } else {
+                nRow = -1;
+                /* The row is found the way the commit finds it: the slot id lives in the NAME column's
+                 * aux (0x7B8A0), and BasePlaneScreen_CommitStores reads it back from there (0x7AC58). */
+                for (i32 r = 0; nSlot >= 0 && r < pSlot->nLineCount; ++r) {
+                    if (UiPanel_GetLineAux(pSlot, r) == nSlot) {
+                        nRow = r;
+                        break;
+                    }
+                }
+                Check(nSlot >= 0 && nRow >= 0 && nRow < pCommit->nStyle,
+                      "the row columns list the stocked hold item within the visible window (0x7B7F8..0x7B930, nStyle 14 at 0x7B238)");
+                if (nSlot >= 0 && nRow >= 0) {
+                    const i32 nX = pCommit->nRectX + 4;
+                    const i32 nY = pCommit->nPosY + pCommit->nFont * nRow + pCommit->nFont / 2;
+                    const i32 nCarry0 = g_world.anPlaneCarryCount[nSlot];
+                    const i32 nAvail0 = UiPanel_GetLineAux(pAvail, nRow);
+                    const i32 nTaken0 = UiPanel_GetLineAux(pTaken, nRow);
+
+                    CheckEqI32(nAvail0, nStock0 + 1,
+                               "the available column carries the shelf count the scan stored (0x7B1F0, 0x7B918)");
+                    CheckEqI32(nTaken0, 0, "and the taken column starts empty (0x7B924)");
+
+                    /* The 0xC352 body sets the scratch byte every tick (0xA0968..0xA0978); the detail
+                     * draw copies it into the two row panels and clears it. The test supplies the byte
+                     * the way the timer supplies it. */
+                    g_world.bPlaneRowFlag = 1;
+                    ClearSurface();
+                    (void)DrawFrame();
+                    CheckEqI32((i32)pCommit->bRepeatArmed, 1, "the detail draw arms the \">\" row panel (0x7BE58)");
+                    CheckEqI32((i32)pSel->bRepeatArmed, 1, "and the \"<\" row panel (0x7BE68)");
+                    CheckEqI32((i32)g_world.bPlaneRowFlag, 0, "and consumes the scratch byte (0x7BE70)");
+                    CheckEqI32(pCommit->nRepeatDelay, 5, "the threshold on these panels is 5 (0x7B238-area builder)");
+
+                    g_world.frame.g.nCursorX = nX; /* nSmapCursorX @ 0x186BD0, the halfword the arm re-reads (0x930D0) */
+                    g_world.frame.g.nCursorY = nY;
+                    for (nTicks = 1; nTicks <= 4; ++nTicks) {
+                        World_GeoscapePointer(&g_world, nX, nY, true);
+                    }
+                    CheckEqI32((i32)pCommit->nHoldCount, 4,
+                               "four holds inside the row count but do not fire (0x3EE50..0x3EE84)");
+                    CheckEqI32(g_world.anPlaneCarryCount[nSlot], nCarry0, "and nothing is staged yet");
+                    World_GeoscapePointer(&g_world, nX, nY, true); /* the fifth */
+                    CheckEqI32(g_world.anPlaneCarryCount[nSlot], nCarry0 + 1,
+                               "the fifth hold fires the row's handler -- BasePlaneScreen_CommitStores @ 0x7ac38 stages one unit (0x3EE84..0x3EEB8)");
+                    CheckEqI32(UiPanel_GetLineAux(pTaken, nRow), nTaken0 + 1, "the taken digit moves up (0x7AFB4)");
+                    CheckEqI32(UiPanel_GetLineAux(pAvail, nRow), nAvail0 - 1, "and the available digit down (0x7AFC4)");
+                    CheckEqI32((i32)pCommit->bRepeatArmed, 0, "and the fire disarms the panel: one fire per arming");
+                    CheckEqI32((i32)pCommit->nHoldCount, 5, "with the counter pinned at the threshold (0x3EEA0)");
+                    for (nTicks = 0; nTicks < 4; ++nTicks) {
+                        World_GeoscapePointer(&g_world, nX, nY, true);
+                    }
+                    CheckEqI32(g_world.anPlaneCarryCount[nSlot], nCarry0 + 1,
+                               "four more holds stage nothing: the panel is disarmed until a draw re-arms it");
+                    g_world.bPlaneRowFlag = 1; /* the next 0xC352 tick */
+                    ClearSurface();
+                    (void)DrawFrame();
+                    CheckEqI32((i32)pCommit->bRepeatArmed, 1, "the next detail draw re-arms it (0x7BE58)");
+                    CheckEqI32((i32)pCommit->nHoldCount, 5,
+                               "and the counter stands at the threshold, so the very next hold fires (0x3EEA8's >= test)");
+                    World_GeoscapePointer(&g_world, nX, nY, true);
+                    CheckEqI32(g_world.anPlaneCarryCount[nSlot], nCarry0 + 2,
+                               "and it does: the re-armed panel stages a second unit");
+                    CheckEqI32(UiPanel_GetLineAux(pAvail, nRow), nAvail0 - 2,
+                               "with the available digit spent a second time");
+
+                    /* The stock gate: the digit is all the row knows about the shelf, and at zero the commit
+                     * returns at 0x7AC68 -- without touching the fail globals the refusal text reads. */
+                    g_world.bPlaneRowFlag = 1;
+                    ClearSurface();
+                    (void)DrawFrame();
+                    World_GeoscapePointer(&g_world, nX, nY, true);
+                    CheckEqI32(g_world.anPlaneCarryCount[nSlot], nCarry0 + 2,
+                               "an emptied row refuses the next stage (0x7AC68)");
+                    /* The pen comes up before anything else is pressed: every hold above was a down with no
+                     * release, so the dispatcher has the pen down and a further down would only be a move.
+                     * The release runs UiPanel_ClickRow on the row pair (0x3eee0), which for this row is the
+                     * same refusal at 0x7AC68. */
+                    (void)World_GeoscapePointerUp(&g_world);
+                    CheckEqI32(g_world.anPlaneCarryCount[nSlot], nCarry0 + 2,
+                               "and the release arm's click refuses too");
+                    printf("  hold round: slot %d row %d, shelf %d, carry %d -> %d at the threshold -> %d after "
+                           "the re-arm, then refused on the empty digit\n",
+                           nSlot, nRow, nAvail0, nCarry0, nCarry0 + 1, nCarry0 + 2);
+                    ClearSurface();
+                    (void)DrawFrame();
+                    DumpFrame("econ_hold_repeat");
+                }
+            }
+        }
+        /* Case 6 walks one arm per press, and with the store columns standing the FIRST press is not a close
+         * at all: 0x8C044 calls BasePlaneScreen_BuildControls, and that function is a toggle -- its head takes
+         * the release arm whenever bPlaneStoresCommitted stands (0x7BA18 clears the flag, 0x7BA1C..0x7BAE4 free
+         * the two nav controls and the five columns, then it returns). Only the second press reaches the detail
+         * arm (0x8C07C keeps the screen, 0x8C08C clears the flag), and only the third reaches 0x8C094 (id 1)
+         * with the panels teardown at 0x8C098. */
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]); /* BasePlaneScreen_Close @ 0x7c9e8 */
+        CheckEqI32((i32)g_world.bPlaneStoresBuilt, 0,
+                   "the first close press is the store toggle: 0x8C044 runs BuildControls, whose head releases");
+        Check(g_world.planeStorePanels.pSlotPanel == NULL && g_world.planeStorePanels.pAvailPanel == NULL
+                  && g_world.planeStorePanels.pSelRowPanel == NULL
+                  && g_world.planeStorePanels.pCommitPanel == NULL
+                  && g_world.planeStorePanels.pTakenPanel == NULL,
+              "and the five columns are gone with it (0x7BA48..0x7BAE4; the original leaves the slots dangling)");
+        CheckEqI32((i32)g_world.bPlaneShowDetail, 1, "the craft detail survives that press");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "and the hangar is still the screen");
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+        CheckEqI32((i32)g_world.bPlaneShowDetail, 0, "the second press exits the craft detail (0x8C08C)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "and leaves the hangar standing (0x8C07C)");
+        PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
+        CheckEqI32((i32)g_world.bPlaneBuilt, 0, "the third press runs the panels teardown (0x8C098)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "and lands on the base view (0x8C094)");
     }
 
     World_Free(&g_world);

@@ -281,7 +281,7 @@ int main(void)
 
         /* auStat[8]*uStunOrArmor = 50*60 = 3000, auStat[9]*bWeight = 50*2 = 100.
          * 3000/100 = 30, shifted right by one gives 15. */
-        b.nStatThrow = 50; b.nStunOrArmor = 60; b.nStatStrength = 50; b.nWeight = 2;
+        b.nStatStrength = 50; b.nStunOrArmor = 60; b.nStatStamina = 50; b.nWeight = 2;
         CheckNear("quotient/2 is the budget", Throw_RangeBudget(&b, &nQuot, &nRem), 15.0);
         Check("quotient 30, remainder 0", nQuot == 30 && nRem == 0);
 
@@ -292,15 +292,15 @@ int main(void)
         Check("remainder 200 is left in R1 and ignored", nRem == 200);
 
         /* (3000/100)/2 with an odd quotient truncates: 31/2 = 15. */
-        b.nStatThrow = 100; b.nStunOrArmor = 31; b.nWeight = 2;
+        b.nStatStrength = 100; b.nStunOrArmor = 31; b.nWeight = 2;
         CheckNear("odd quotient truncates", Throw_RangeBudget(&b, &nQuot, &nRem), 15.0);
 
         /* 1/1 -> quotient 1 -> half 0 -> below the floor. */
-        b.nStatThrow = 1; b.nStunOrArmor = 1; b.nStatStrength = 1; b.nWeight = 1;
+        b.nStatStrength = 1; b.nStunOrArmor = 1; b.nStatStamina = 1; b.nWeight = 1;
         CheckNear("tiny budget clamps to 1.0", Throw_RangeBudget(&b, NULL, NULL), 1.0);
 
         /* 100*60/(50*2) = 60 -> half 30 -> above the ceiling. */
-        b.nStatThrow = 100; b.nStunOrArmor = 60; b.nStatStrength = 50; b.nWeight = 2;
+        b.nStatStrength = 100; b.nStunOrArmor = 60; b.nStatStamina = 50; b.nWeight = 2;
         CheckNear("big budget clamps to 22.0", Throw_RangeBudget(&b, NULL, NULL), 22.0);
     }
 

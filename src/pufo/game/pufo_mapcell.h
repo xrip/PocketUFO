@@ -198,7 +198,8 @@ typedef struct MapCell {
     Soldier   *pUnit;       /* 0x30 */
     TactItem  *pItemList;   /* 0x34 */
     u8         bUnk56;      /* 0x38 */
-    u8         bFlags57[4]; /* 0x39; [0] bit3 via SetBFlags57_3, bits 2,3 cleared by Reset */
+    u8         bFlags57[4]; /* 0x39, the IDA width; only [0] (bit3 door via SetBFlags57_3, bit2 wall) and [1]
+                             * are ever touched -- Reset clears them, the save stores them; see the note below */
 } MapCell;
 
 /* Mc1Rec holds no pointers, so its size must match the original on every
@@ -209,10 +210,19 @@ _Static_assert(sizeof(Mc1Rec) == 52, "Mc1Rec must stay 52 bytes");
  * design (4-byte -> 8-byte). They are never written to disk or shared with the
  * original binary, so only the ILP32 layout is a meaningful invariant; these
  * asserts encode it for the 32-bit case and are skipped on Win64. */
+/* The original allocates the cell as 60 bytes (new(0x3C) at 0x3D190, said in the
+ * IDB's own comment there) and its IDA type is 62, bFlags57 typed u8[4] at 0x39,
+ * i.e. the type overhangs the allocation by two bytes. No code touches those:
+ * MapCell_Reset @ 0x54A90 writes bFlags57[0] (mask 0xF3) and [1] only, the save
+ * pair writes the same two (0x43B58/0x43B8C), and a census over `#0x3D]`/`#0x3E]`
+ * finds only Ship-record users, never a MapCell one. An earlier assert here read
+ * `sizeof(MapCell) == 60` under ILP32; this layout ends at 0x3c and rounds to 64,
+ * so the assert stated an invariant the port does not have, and it is removed
+ * rather than fudged. The pUnit offset assert below is the one the field
+ * accesses actually depend on. */
 #if UINTPTR_MAX == 0xFFFFFFFFu
 _Static_assert(sizeof(TactItem) == 24, "TactItem is 24 bytes on ILP32");
 _Static_assert(offsetof(MapCell, pUnit) == 0x30, "MapCell.pUnit is at 0x30 on ILP32");
-_Static_assert(sizeof(MapCell) == 60, "MapCell is 60 bytes on ILP32");
 #endif
 
 /* The four face counters and the six passes the fire tick makes over them

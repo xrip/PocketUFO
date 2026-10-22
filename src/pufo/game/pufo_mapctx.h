@@ -73,9 +73,11 @@ typedef struct GameMap {
                                 * the SAME cell as TactCursor.nFlags (the recorded multi-view issue). */
     i32     nMaxLayerClamp;    /* 0x15074 */
     i32     nAnimPhase;        /* 0x00F8 */
-    u8      abTypeProbe[4];    /* 0x0016..0x0019: the four bytes Tact_MapTypeToGlyphIdx scans to pick a
-                                * unit's sprite row; IsoUnitDrawGate.paTypeProbe. Nothing ported writes
-                                * them, so a mission draws through the probe's fallback arm. */
+    /* There is no four-byte sprite probe at 0x0016..0x0019. The bytes there are apMultiTargets[3..4]
+     * halves, and the four bytes Tact_MapTypeToGlyphIdx really scans are Map_abSpriteSet at
+     * 0x15116..0x15119 -- an earlier pass took a Soldier-relative `LDRB [R,#0x16]` (0x498DC, in
+     * Unit_ResetBattleState) for a Map-relative one. The world feeds the live sprite set to
+     * IsoUnitDrawGate.paTypeProbe. */
     i32     nShotCount;        /* 0x002C, Hex-Rays' nStatusDrawY */
     i32     nBurstShots;       /* 0x0028 Map_nBurstShots, the shots a mode-7 burst still owes */
     u8      bActionLatch;      /* 0x0002, unk_1139BA: 0 none, 3 multi-target, 4 fire mode */
@@ -113,11 +115,14 @@ typedef struct GameMap {
                                         * calls ThrowPending in the action contexts */
     TactItem       *pArrowThrownItem;  /* 0x14070 Map_pArrowThrownItem: the thrown item Tact_SimulateThrowArc
                                         * stores at 0x319FC, which MapView_DrawUnitFacingArrow dereferences
-                                        * (unguarded, like the original) whenever bTrajHitStop is set. No
-                                        * ported writer exists yet -- recorded gap; the shell holds it NULL. */
+                                        * (unguarded, like the original) whenever bTrajHitStop is set. The
+                                        * stored value is the arc call's own argument: pSelWeapon at 0x50960,
+                                        * entry->pWeapon inside the landing loop's arc call. No ported writer
+                                        * exists yet -- recorded gap; the shell holds it NULL. */
     ThrowArc        throwArc;
     ThrowLanding    throwLanding;
-    ThrowBudget     throwBudget;
+    ThrowBudget     throwBudget;     /* not an original slot: 0x31A44..0x31A78 composes the budget inline;
+                                      * MoveThrow writes this scratch at the throw site -- see MoveActionCtx */
 
     /* --- combat scratch: Map.gap_TrajRest @ 0x4EBC --- */
     u32 aHitWindow[PUFO_SPLASH_DWORDS];      /* 0x4EBC, the 41 x 41 hit window (26896 bytes) */

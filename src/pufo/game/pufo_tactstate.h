@@ -403,7 +403,14 @@ typedef struct MoveActionCtx {
     const double      *pAdMtZ;    /* 0x13F88, 10 entries */
     ThrowArc          *pThrowArc; /* scratch the two throw calls share */
     ThrowLanding      *pThrowLanding;
-    const ThrowBudget *pThrowBudget;
+    /* Scratch the move FSM fills at the throw site. The original has no budget
+     * slot: 0x31A44..0x31A78 builds both products inline inside
+     * Tact_ResolveThrowLanding, from Map.pSelUnit @ 0x15334 (LDR R1,[R4,#0x15334]
+     * at 0x31A54 -- the SELECTED unit, not the acting one) and from the entry's
+     * own weapon (entry->pWeapon @ 0x1c, then pObj->bWeight @ 0xA5 at
+     * 0x31A4C/0x31A58). The port keeps the same inputs in this scratch slot and
+     * MoveThrow writes it at the point of use. */
+    ThrowBudget *pThrowBudget;
     const InvStatHooks *pInvHooks;    /* for Unit_RecalcInventoryStat */
     bool         bThrowHitStop;   /* Map.bTrajHitStop @ 0x1406D as the throw
                                    * landing call sees it */

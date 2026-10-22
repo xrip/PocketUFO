@@ -713,7 +713,8 @@ static void TestBuySellBuildPanels(void)
     env.pnAssignedShipCount = &nAssigned;
     env.pnSoldierIdCount = &nIdCount;
     env.pnFunds = &nFunds;
-    env.nFundsSnapshot = 4147000;
+    const i32 nSnapOpen = 4147000;
+    env.pnFundsSnapshot = &nSnapOpen;
     env.pTextRecs = (const char *)aText;
     env.pfnPanelPrev = BuySellTestPanelPrev;
     env.pfnPanelNext = BuySellTestPanelNext;
@@ -1574,7 +1575,8 @@ static void TestBuySellBuildControls(void)
     env.apObjects = apObj;
     env.nObjectCount = 149;
     env.pnFunds = &nFunds;
-    env.nFundsSnapshot = 4147000;
+    const i32 nSnapOpen = 4147000;
+    env.pnFundsSnapshot = &nSnapOpen;
     env.pTextRecs = (const char *)aText;
     env.pfnPanelPrev = BuySellTestPanelPrev;
     env.pfnPanelNext = BuySellTestPanelNext;

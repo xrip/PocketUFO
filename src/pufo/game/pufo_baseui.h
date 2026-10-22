@@ -397,7 +397,8 @@ typedef struct BuySellBuildEnv {
     i32 *pnAssignedShipCount;       /* dword_161468 */
     i32 *pnSoldierIdCount;          /* g_aSoldierIdList @ 0x160C90, its count dword */
     i32 *pnFunds;                   /* nFunds @ 0x1598D8 */
-    i32 nFundsSnapshot;             /* BuySell_nFundsSnapshot @ 0x161460 */
+    const i32 *pnFundsSnapshot;     /* BuySell_nFundsSnapshot @ 0x161460, reached live: the teardown's
+                                     * rollback reads the global at the call (0x77E40), not a copy */
     const char *pTextRecs;          /* the loaded TEXTS.DAT records, PUFO_TEXT_REC_STRIDE apart */
     const u16 *apManufCol;          /* the engineer column @ 0x15E19C */
     const u16 *apResearchCol;       /* the scientist column @ 0x16022C */
@@ -776,7 +777,7 @@ typedef struct BuySellControlsEnv {
     ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0 */
     i32 nObjectCount;                 /* Map_nObjectCount @ 0x114A60 */
     i32 *pnFunds;                     /* nFunds @ 0x1598D8 */
-    i32 nFundsSnapshot;               /* BuySell_nFundsSnapshot @ 0x161460 */
+    const i32 *pnFundsSnapshot;       /* BuySell_nFundsSnapshot @ 0x161460, reached live at the rollback (0x76D60) */
     const char *pTextRecs;            /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
     void (*pfnPanelPrev)(void);       /* BuySellScreen_PanelPrev @ 0x76088 */
     void (*pfnPanelNext)(void);       /* BuySellScreen_PanelNext @ 0x760e0 */

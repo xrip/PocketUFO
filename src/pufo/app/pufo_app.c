@@ -926,12 +926,21 @@ static void App_HookGeoscapeMapClick(void *pUser)
     (void)World_MapClick(&g_world);
 }
 
-/* The WM_TIMER 0xC352 body (PocketUFO_WndProc @ 0xA0944): advance the anim phase counter
- * (0xA0978..0xA098C, >=7 wraps to 0), then the debrief fade arm (0xA0990..0xA09AC: banner counter up
- * AND screen 13 -> Render_Frame_DecRef), then per screen: 17 runs the row-key flicker (0xA0AC8),
+/* The WM_TIMER 0xC352 body (PocketUFO_WndProc @ 0xA0944): FIRST it arms panel auto-repeat for the
+ * next draw -- `MOV R1,#1 / STRB R1,[bPanelFlagScratch]` at 0xA0968..0xA0978, bPanelFlagScratch
+ * @ 0x161F0C. The consumer is per screen: BuySellScreen_Draw copies it into panels B and C and
+ * clears it (0x78874..0x788A4), TransferScreen_Draw copies it into panels B and C (0x9824C, 0x9825C),
+ * BasePlaneScreen_DrawCraftDetail copies it into the store row panels and clears it
+ * (0x7BE58, 0x7BE68, 0x7BE70). UiPanel_TrackHoldRow @ 0x3ed44 only counts while the panel's
+ * bRepeatArmed stands, so this store is what makes a held pen repeat at all. Then the anim phase
+ * counter (0xA0978..0xA098C, >=7 wraps to 0), the debrief fade arm (0xA0990..0xA09AC: banner counter
+ * up AND screen 13 -> Render_Frame_DecRef), and per screen: 17 runs the row-key flicker (0xA0AC8),
  * 0x10 advances the credits scroll by one and wraps it past 20 * (nTitlesMaxRows + 48) (0xA0C58). */
 static void App_TickAnim(void)
 {
+    g_world.bPlaneRowFlag = 1; /* 0xA0968 MOV R1,#1 / 0xA0978 STRB [bPanelFlagScratch] -- the arm,
+                                * unconditional in the original's timer body: bPanelFlagScratch
+                                * @ 0x161F0C, consumed by the panel draws (0x788A4, 0x7BE70) */
     if (g_nAnimPhase >= 7) {
         g_nAnimPhase = 0; /* 0xA0988 */
     } else {

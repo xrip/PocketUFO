@@ -569,6 +569,12 @@ static void TestFsmOnMap(void)
      * land in one bump while Map.bTrajHitStop is clear, which is the failure
      * path checked after this one. */
     Reset();
+    /* Map.pSelUnit reaches the move FSM as a pointer copied at build time, and
+     * the stats are read through it at dispatch -- exactly the original's
+     * read-inside-the-function (0x31A54). The selection must therefore be in the
+     * Map block before Map_BuildMoveActionCtx; the World rebuilds the ctx on
+     * every dispatch for the same reason. */
+    g_Map.pSelUnit = &g_aUnits[0];
     Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
     Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
     {
@@ -587,16 +593,21 @@ static void TestFsmOnMap(void)
         pUnit->pHandL = &g_aItems[0];
         g_Map.pSelWeapon = &g_aItems[0];
 
-        /* 50 throw, 50 strength, weight 2, 60 stun: budget 15.0. */
-        g_Map.throwBudget.nStatThrow   = 50;
-        g_Map.throwBudget.nStatStrength = 50;
-        g_Map.throwBudget.nWeight      = 2;
-        g_Map.throwBudget.nStunOrArmor = 60;
+        /* The budget's live sources, as the original reads them: Map.pSelUnit is
+         * the soldier (the selected unit at 0x31A54, not the acting one) and the
+         * thrown entry's own object carries the weight (entry->pWeapon->pObj
+         * ->bWeight, 0x31A4C/0x31A58). 50 strength, 50 stamina, 60 stun, weight 2
+         * -> budget 15.0. Nothing is prefilled in the scratch slot any more. */
+        pUnit->auStat[PUFO_STAT_STRENGTH] = 50;
+        pUnit->auStat[PUFO_STAT_STAMINA]  = 50;
+        pUnit->uStunOrArmor = 60;
+        g_aObjs[0].bWeight = 2;
 
         memset(&g_State, 0, sizeof(g_State));
         g_State.nQueueCursor = 0;
         g_State.aQueue[0].nCmd = 0x11;
         g_State.aQueue[0].pUnit = pUnit;
+        g_State.aQueue[0].pWeapon = &g_aItems[0];
         g_State.aQueue[0].nTuCost = 4;
         g_State.aQueue[0].nArg = 100;
         g_State.aQueue[0].nX = 10;
@@ -614,12 +625,18 @@ static void TestFsmOnMap(void)
         Check("the throw clears the action latch", g_Map.bActionLatch == 0);
         Check("the landing was not rejected by range",
               g_Map.throwLanding.bRejected == 0);
+        Check("MoveThrow composed the budget from the SELECTED unit (0x31A54), not a prefilled slot",
+              g_Map.throwBudget.nStatStrength == 50 && g_Map.throwBudget.nStatStamina == 50
+              && g_Map.throwBudget.nStunOrArmor == 60);
+        Check("and the weight from the thrown entry's object (0x31A58)",
+              g_Map.throwBudget.nWeight == 2);
     }
 
     /* Command 0x11 at a neighbouring cell, with Map.bTrajHitStop clear: the
      * landing loop runs once, the throw falls short, and the FSM pushes
      * aTextRecs record 4 before aborting. */
     Reset();
+    g_Map.pSelUnit = &g_aUnits[0];
     Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
     Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
     {
@@ -630,15 +647,17 @@ static void TestFsmOnMap(void)
         pUnit->nUnitType = 0;
         pUnit->uTu = 20;
         pUnit->pCell = At(10, 10, 0);
-        g_Map.throwBudget.nStatThrow = 50;
-        g_Map.throwBudget.nStatStrength = 50;
-        g_Map.throwBudget.nWeight = 2;
-        g_Map.throwBudget.nStunOrArmor = 60;
+        pUnit->auStat[PUFO_STAT_STRENGTH] = 50;
+        pUnit->auStat[PUFO_STAT_STAMINA]  = 50;
+        pUnit->uStunOrArmor = 60;
+        g_aObjs[0].bWeight = 2;
+        g_aItems[0].pObj = &g_aObjs[0];
 
         memset(&g_State, 0, sizeof(g_State));
         g_State.nQueueCursor = 0;
         g_State.aQueue[0].nCmd = 0x11;
         g_State.aQueue[0].pUnit = pUnit;
+        g_State.aQueue[0].pWeapon = &g_aItems[0];
         g_State.aQueue[0].nTuCost = 4;
         g_State.aQueue[0].nArg = 100;
         g_State.aQueue[0].nX = 11;

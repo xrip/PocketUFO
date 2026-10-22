@@ -1272,8 +1272,9 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         if (pEnv->ppPanelE != NULL) *pEnv->ppPanelE = NULL;
         if (pEnv->ppPanelC != NULL) *pEnv->ppPanelC = NULL;
         if (pEnv->ppPanelD != NULL) *pEnv->ppPanelD = NULL;
-        if (pEnv->pnFunds != NULL && *pEnv->pnFunds != pEnv->nFundsSnapshot) {
-            *pEnv->pnFunds = pEnv->nFundsSnapshot; /* 0x77E50 */
+        if (pEnv->pnFunds != NULL && pEnv->pnFundsSnapshot != NULL
+            && *pEnv->pnFunds != *pEnv->pnFundsSnapshot) {
+            *pEnv->pnFunds = *pEnv->pnFundsSnapshot; /* 0x77E50, the global read live at 0x77E40 */
         }
         return;
     }
@@ -1614,8 +1615,9 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         if (pEnv->ppPanelE != NULL) *pEnv->ppPanelE = NULL;
         if (pEnv->ppPanelC != NULL) *pEnv->ppPanelC = NULL;
         if (pEnv->ppPanelD != NULL) *pEnv->ppPanelD = NULL;
-        if (pEnv->pnFunds != NULL && *pEnv->pnFunds != pEnv->nFundsSnapshot) {
-            *pEnv->pnFunds = pEnv->nFundsSnapshot; /* 0x76D70 */
+        if (pEnv->pnFunds != NULL && pEnv->pnFundsSnapshot != NULL
+            && *pEnv->pnFunds != *pEnv->pnFundsSnapshot) {
+            *pEnv->pnFunds = *pEnv->pnFundsSnapshot; /* 0x76D70, the global read live at 0x76D60 */
         }
         return;
     }

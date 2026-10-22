@@ -21531,3 +21531,120 @@ a data item `char[920]` at 0xB1140 (the IDB item is clipped to 560 by a segment 
 comment); idb_save. PLAN: the path-probe row and the walker-seams row closed, two new closed rows record the
 frozen roster count and the flat cell lookup, and the four rows Part 106 did not take were re-targeted to
 Part 107.
+
+## Part 107 - the craft economy answers the shop live, the month writes the funds, and a rifle's magazine decides who is armed
+
+The shop really sells a craft now. `test_geoscapeframe` 107.a builds the hangar the shipped way: the dialog arms
+placement through 0x5897C, the held press aims a cell (0x58EC0), the commit pays the record cost (0x59AC8) and the
+cell starts under construction (0x623BC), the day ticks finish it (0x62824, 0x2CC60), and the layout runs out of
+legal 2x2 footprints exactly where the shipped new game does. The cap then says no: 0x75C4C/0x75C74 measure the
+free kind-11 cells (three built, cap 3), and 0x75C80 wants ships homed + inbound + 1 = 4, so the press is refused
+with `dwActionFail` (0x75F34) and shortfall reason 2 (0x75F3C), and the close's rollback (0x76C14,
+`BuySell_nFundsSnapshot`) proves the refused buy paid nothing. 107.f runs the half that refusal blocks. A transfer
+frees a home slot (homed 2), the gate passes, the buy pays the row price (0x75D28: 1946930 -> 1446930, the
+transaction total carries it at 0x75DD8, the queue column counts it at 0x75D84), the working site holds the craft
+count (0x75DA4/0x75DB8) together with the site+0x206 byte (0x75D5C) that `Base_CountInboundTransfers` sums with
+site+0x205 at 0x67F78, and the confirm promotes the site (0x75124) while restamping the funds snapshot at 0x75130 -
+that restamp is what makes a buy permanent, because the close's 0x76D70 rollback then finds nothing to undo. The
+hourly pass delivers: `Smap_GrantSiteRecovery @ 0x98b50` runs the spawn (`Ship_ProductSlotToType` +
+`Ship_SpawnAtSlot @ 0x2CB6C..0x2CBE8`), the new Ship is homed at the selected base (0x2CB50), stands at the base's
+own cell (0x2CBC8), puts exactly one craft glyph on the grid (0x2CDA0), the delivered record compacts out
+(0x994C8..0x99550), and because the recovered-craft count stayed clear the delivery never runs the re-park pass
+(0x990A8). Delivery spends nothing further (0x75DC8).
+
+The cargo then rides into a mission the shell itself armed. 107.d stages object 4 (the rifle) x 2 with its clip 38
+x 2 onto craft 0 through the store commit chain (0x7AC58 row from the staged column, 0x7AC68 refusing an empty
+shelf, 0x7AFB4/0x7AFC4 moving the pair, 0x7AFD8 counting the carry) and confirm (0x78E34 drops base stock, 0x78E4C
+raises `aItemQty[craft] @ +0x3A` - the very column 0x39018 seeds `uRecovScore` from). The shipped split then does
+what the IDB says it does: the reserve loop 0x392EC..0x39344 skips `bAmmoCap == 255` items (0x3929C) and anything
+with no score or two-handed (0x392C4), so a magazine riding along reserves one magazine score per weapon copy and
+`nBuild = uRecovScore - anAlloc[i]` (0x39400); inside the split the weapon takes `nAmmo =
+apObjects[anAmmoTypeId[slot]]->bAmmoCap` and `nIndex = the ammo id` (0x394EC/0x394E0), which is what the equip hand
+gate 0x3C26C needs; a rifle whose magazine stayed home builds `nAmmo 0` at 0x39530 and equips nobody. 100.5 shows
+the live answer: "cargo in the mission: 0 of 8 XCOM hold object 4, 2 in the pool (2 loaded with clip 38 x 20), 2
+loose on the deploy cell". The loose half is the original's own rule, not a gap: all 8 soldiers aboard carry
+`Soldier+0x3C1`, whose only two writers in the beta are 0x3C510 (set after an `Equip_FromCraft` pass) and
+`Soldier_Generate @ 0x4974C` (cleared with the same zero that clears the 25+25 declared slots), so 0x3BE60 routes
+every veteran through `Equip_SlotPass` and 0x3C2D8 never dresses them - the cargo stays on the drop cell for the
+player to pick up. `test_tactinit TestCargoWeaponNeedsItsClip` runs the fresh-recruit mirror both ways: magazine
+aboard puts 2 items in hands and leaves the cell empty, magazine left behind puts 0 in hands and leaves 2 on the
+cell.
+
+The month now writes the funds. 107.b drives the shell clock across the boundary: the fast button stores its 3600 s
+interval (0x85124 chain), the clock ticks until the month flips, `nMonthCounter` advances by exactly 1 and
+`geo.time.nMonth` changes, the id-19 funding report is the screen the boundary lands on, `nFunds` stands unchanged
+through every pre-boundary pulse, and at the boundary it moves to `nFunds0 - nUpkeep + nBars` with
+`Base_CalcMonthlyUpkeep` recomputed from the live base set and the four bar columns read back off the panel. The
+after-close block adds the shipped guards a boundary can hit: the mission-hold with the battle-ended flag, the
+bankruptcy limit, and the psi-base report when the roster has a psi soldier.
+
+Hold-to-repeat and the hangar's row door are press-proven. 107.c holds the pen on the geoscape status panel:
+`UiScrollList_TrackHold @ 0x3EE50` selects nothing there because `UiPanel_ctor` leaves panel+0x1BA8 at 0, and eight
+holds count nothing. `TransferScreen_Draw` arms panels B and C (0x98248/0x98258) and leaves panel A inert. In the
+hangar, `BasePlaneScreen_DrawCraftDetail` arms the store row panels (0x7BE58 for ">", 0x7BE68 for "<") after its
+own clear at 0x7BE70 - one fired hold per arming, the next detail draw re-arms. Block C1 asserts the ORIGINAL QUIRK
+the row-4398 audit recorded: with the read-out closed a press over a craft row selects it (status `ClickRow` on the
+press at 0x88368, craft column on the release at 0x8A0F0) and the select opens the read-out (0x7CC14); with the
+read-out open the same press over another craft row selects nothing and leaves the panel's selected-row cell
+untouched, because 0x88320 and 0x8A0F0 both gate on `!bPlaneShowCraftDetail`.
+
+Two engine truths came out of the same unit. First the `auStat` naming: the throw budget is composed at
+0x31A44..0x31A78 as `auStat[9] x pObj->bWeight` and `auStat[8] x uStunOrArmor`, with the soldier read as
+`LDR R1,[R4,#0x15334]` - `Map.pSelUnit`, the selected unit rather than the acting one - so auStat[8] is Strength
+and auStat[9] Stamina, matching the readout captions (TEXTS 134/129) and the equip divisor
+`4*(uInvBurden+weight+3)/auStat[8] == 0` at 0x3C26C. `ThrowBudget` now says `nStatStrength` / `nStatStamina`, and
+the naming was not cosmetic: the port never filled the budget at all, so every live throw fell to the deviation
+floor of 1.0. `MoveThrow` composes it at the throw site from the same live sources (the selected unit through the
+context's `pTraceExcludeSel`, the weight from `entry->pWeapon->pObj->bWeight`), and `test_mapctx` asserts the
+composed values instead of a prefilled slot. Second, the draw-side sprite probe: the "type-probe bytes
+`Map+0x16..0x19`" were a phantom - an earlier pass read a Soldier-relative `LDRB [R,#0x16]` (0x498DC, inside
+`Unit_ResetBattleState`) as a Map-relative one - while `Tact_MapTypeToGlyphIdx @ 0x46664` scans
+`Map_abSpriteSet @ Map+0x15116..0x15119`, written by `Tact_SpawnAliens` (0x3AAFC), `Save_ReadTGameData`
+(0x442F8..0x4464C) and `Smap_BeginCraftSelect` (0x83A30..0x840E8). The GameMap field standing on the phantom bytes
+is deleted, `IsoUnitDrawGate.paTypeProbe` points at the live set, and the mission's own aliens prove the race-group
+arm: "sprite groups: 2 alien(s) on the race arm, 0 on the fallback, 0 XCom on the race arm, set 11 20 23 23". The
+height-glyph dword `0x14000` keeps its writer too: the aim-row copy at 0x305C4 moves
+`atAimRowTable[11*nRowId + 0..10]` into Map+0x13FD8..0x14000, and `PUFO_AIM_ROW_COUNT 11` stores the tenth row the
+height-glyph draw reads.
+
+One dormant lie went away. `pufo_mapcell.h` asserted `sizeof(MapCell) == 60` under an ILP32 guard that never runs
+on Win64; the layout ends at `bFlags57[4]` (0x39..0x3c) and rounds to 64, so the assert stated an invariant the
+port does not have. The census answers the other half of the old question: `MapCell_Reset @ 0x54A90` writes
+`bFlags57[0]` (mask 0xF3) and `[1]` only, the save pair stores the same two (0x43B58 bits 2/3, 0x43B8C), and the
+`#0x3D]`/`#0x3E]` census names only Ship-record users - while `new(0x3C)` at 0x3D190 allocates 60 bytes, so the
+IDA type's 62 overhangs the cell the original owns. The assert is deleted, `offsetof(MapCell, pUnit) == 0x30`
+stays, and the reasoning sits in the header and at 0x54A90.
+
+Still open, and recorded as its own row: `Tact_SimulateThrowArc`'s tail (0x319F4..0x31A10) stores its `pItem` into
+`Map.pArrowThrownItem @ 0x14070` and raises `Map.bTrajHitStop @ 0x1406D` in one sequence, the landing loop calls
+that arc with `entry->pWeapon` (the entry field at 0x1c, `v124[13]` at 0x507F8) and `MoveThrow`'s own call at 0x50960
+rewrites the slot with `pSelWeapon`, and `MapView_DrawUnitFacingArrow @ 0x1c1e4` dereferences it unguarded while the
+flag stands (bugs.tsv 0x1C1F4). The port copies the flag into the action contexts and has no writer for either.
+Closing it is an engine step at the ballist seam, not a rename, so it stays out of this unit - as do the two rows
+re-targeted from it (`Tact_KillUnit`'s side lists by value, and the `aManufProductB` u32/i32 spelling, whose
+settle drags a signed/unsigned sweep through `-Werror`).
+
+Gates: `test_geoscapeframe` 107.a gates the hangar build and the cap refusal, 107.f the paid buy with the confirm
+restamp and the delivery spawn, 107.b the month boundary, 107.c the hold arm and the pen door (C1), 107.d the cargo
+staging, and 100.5 the cargo in the live mission plus the sprite-group probe; `test_tactinit
+TestCargoWeaponNeedsItsClip` runs the fresh-recruit cargo both ways; `test_mapctx` (85 checks) asserts the composed
+throw budget. Six gates green: 62/62 tests, 20,174 checks, coverage 972/1103 functions and 596888/598792 bytes.
+e2e: 3 flows, 9 pictures unchanged against the committed references. Twenty-one frame references re-referenced,
+each with a cause stated after native-scale side-by-side review: the probe fix moves the six `tact_play_*` frames
+and `tact_mission_urban` (aliens draw their race group now, and the crew stands at the map edge exactly where the
+original's own index wrap puts it); the added transfer round moves `transfer_open`, `transfer_staged`,
+`transfer_committed`; the economy rounds move `econ_buysell_sell`; and the changed draws earlier in the run shift
+the CRT random stream, so `crashdisk_arrival/dispatched/enroute/map/offer`, `geoscape_terror_site`,
+`geoscape_ufo_enroute`, `geoscape_after_mission`, `options_save_tab` and `options_load_tab` keep their panels, clock
+and funds identical while the rolled world beneath them moves. Seven new references reviewed at native scale:
+`econ_buy_craft_queued`, `econ_craft_spawned`, `econ_hangar_cap_full`, `econ_craft_loaded`, `econ_hold_repeat`,
+`funding_monthly`, `funding_closed`. IDB upkeep: 53 line and function comments across 0x5d250, 0x5d314, 0x8bea8,
+0x7ac58/0x7ac68/0x7afb4/0x7afc4, 0x78e34/0x78e4c/0x78e74, 0x88320, 0x8a0f0, 0x7cc14, 0x98248/0x98258,
+0x7be58/0x7be68/0x7be70, 0x3ee50, 0xa0968/0xa0978 (the App_TickAnim owner correction), 0x392ec/0x39400/0x394ec/
+0x39530, 0x3c26c, 0x3c2d8, 0x3be60, 0x3c510, 0x4974c, 0x31a54, 0x31a58, 0x319f4, 0x46664, 0x498dc, 0x305c4,
+0x54a90, 0x75c80/0x75d5c/0x75da4/0x75db8/0x75d84/0x75dd8/0x75f34/0x75f3c, 0x76c14, 0x76148, 0x77740, 0x990a8,
+0x994c8, 0x2cb6c, 0x67f78, 0x85124; idb_save. PLAN: the cargo/economy row, the monthly-funding row, the
+hold-to-repeat row, the hangar row-door row, the `auStat` naming row and the `sizeof(MapCell)` assert row closed;
+the tactical-screens row closed with two of its three read-without-writer cells fixed and the third moved into its
+own open row (the throw-arc Map writes); `Tact_KillUnit`'s counts and the `aManufProductB` spelling re-targeted to
+the final sweep with their reasons recorded.

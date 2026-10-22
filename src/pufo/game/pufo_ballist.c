@@ -379,8 +379,8 @@ done:
 /* Throw_RangeBudget - see pufo_ballist.h for the disassembly it reproduces. */
 double Throw_RangeBudget(const ThrowBudget *pB, i32 *pQuot, i32 *pRem)
 {
-    i32 nW = pB->nStatStrength * pB->nWeight;
-    i32 nS = pB->nStatThrow * pB->nStunOrArmor;
+    i32 nW = pB->nStatStamina * pB->nWeight;         /* w = auStat[9] * bWeight (0x31A5C, 0x31A60) */
+    i32 nS = pB->nStatStrength * pB->nStunOrArmor;   /* s = auStat[8] * uStunOrArmor (0x31A64, 0x31A68) */
     i32 nQuot;
     i32 nRem;
     i32 nHalf;

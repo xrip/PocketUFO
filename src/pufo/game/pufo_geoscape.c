@@ -128,6 +128,10 @@ void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
             pItem->nX = 150;
             pItem->nY = 250;
             pHooks->pfnSpawnMissionSite(pItem, 0, pHooks->pUser);
+            /* 0x5d250 re-reads the global with PtrArray_Get on every test, and the spawn can add
+             * an entry through its intercept hook (BasePlaneScreen_AddInterceptMission 0x7de14 ->
+             * StrategList_AddItem), so the view has to be fresh for the next iteration. */
+            list = GeoscapeListView(pState);
         }
     }
 
@@ -144,6 +148,11 @@ void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
     pHooks->pfnRefreshBaseTabs(pHooks->pUser);
     pHooks->pfnAccumulateResearch(pHooks->pUser);
 
+    /* The test re-reads the live container: 0x5d314 runs StrategList_CountActive AFTER
+     * Smap_GrantSiteRecovery (0x5d2fc), and a delivered craft adds its entry through
+     * Ship_SpawnAtSlot's StrategList_AddItem (0x2CBC8) -- an add reallocates the array
+     * (PtrArray_Insert), so the view taken above would read freed memory here. */
+    list = GeoscapeListView(pState);
     if (StrategList_CountActive(&list) < 2) {
         if (Game_RandU16(4u) == 1u)
             pHooks->pfnProcessEvents(1, pHooks->pUser);

@@ -232,22 +232,28 @@ void Tact_SimulateThrowArc(ThrowArc *pOut, const MapGeom *pGeom,
 
 /* ## Tact_ResolveThrowLanding @ 0x31a18
  *
- * Range budget inputs, all read straight off the records in the original:
+ * Range budget inputs, all read straight off the records in the original. The soldier the ARM reads is
+ * the SELECTED unit, not the acting one: `LDR R1,[R4,#0x15334]` at 0x31A54 is Map.pSelUnit, and the weight
+ * is the thrown object's own (`LDR R2,[pItem]` at 0x31A4C, then `LDRB R2,[R2,#0xA5]`).
  *
- *   nStatThrow    Soldier.auStat[8]  (LDRH [R1,#0xB2])
- *   nStatStrength Soldier.auStat[9]  (LDRH [R1,#0xB4])
- *   nWeight       ObjectRecFull.bWeight @ 0xA5 (LDRB [R2,#0xA5])
- *   nStunOrArmor  Soldier.uStunOrArmor @ 0x8   (LDRH [R1,#8])
+ *   nStatStrength  Soldier.auStat[8] @ 0xB2 (LDRH [R1,#0xB2]) -- "Сила / Strength", the caption over stat 8
+ *                  on the soldier readout (TEXTS 134), and the divisor Unit_RecalcInventoryStat's equip gate
+ *                  divides the carried weight by.
+ *   nStatStamina   Soldier.auStat[9] @ 0xB4 (LDRH [R1,#0xB4]) -- "Выносливость / Stamina", the caption over
+ *                  stat 9 (TEXTS 129).
+ *   nWeight        ObjectRecFull.bWeight @ 0xA5 (LDRB [R2,#0xA5])
+ *   nStunOrArmor   Soldier.uStunOrArmor @ 0x8   (LDRH [R1,#8])
+ *
+ * The earlier names called auStat[8] "nStatThrow" and auStat[9] "nStatStrength", which contradicted both
+ * the readout captions and the equip gate; pufo_unit.h's PUFO_STAT_STRENGTH / PUFO_STAT_STAMINA are the
+ * same pair, and the arithmetic below is unchanged by the rename.
  */
 typedef struct ThrowBudget {
-    i32 nStatThrow;
     i32 nStatStrength;
+    i32 nStatStamina;
     i32 nWeight;
     i32 nStunOrArmor;
 } ThrowBudget;
-
-#define PUFO_THROW_STAT_THROW    8   /* auStat index */
-#define PUFO_THROW_STAT_STRENGTH 9   /* auStat index */
 #define PUFO_THROW_RANGE_SCALE   0.0625  /* 1/16, cell distance to range units */
 #define PUFO_THROW_Z_DIV         8       /* integer divisor on the height gain */
 #define PUFO_THROW_BUDGET_MIN    1.0
