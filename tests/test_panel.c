@@ -190,7 +190,12 @@ static void TestLinesAndMeta(void)
 }
 
 /* ScrollNext is bounded by nLineCount - nStyle, which is the interesting part:
- * the window can never scroll past the last full page. */
+ * the window can never scroll past the last full page.
+ *
+ * Evidence: IncDwordIfInRange_AtPlus0xBD4 @ 0x3f00c -- `v = *(0xBD4); if (v < *(0xBDC) - *(0xBE0))
+ * *(0xBD4) = v + 1` (the compare at 0x3F034, the store at 0x3F038) -- and
+ * DecDwordIfPos_AtPlus0xBD4 @ 0x3f040 -- `if (v > 0) v - 1` (0x3F050 / 0x3F054). Both return the
+ * object pointer, neither wraps, and the port keeps them as UiPanel_ScrollNext / UiPanel_ScrollPrev. */
 static void TestScroll(void)
 {
     UiPanel panel;
@@ -200,11 +205,12 @@ static void TestScroll(void)
     Check(UiPanel_ctor(&panel, 10), "  constructed with 10 lines");
     panel.nStyle = 3;
 
-    /* ScrollPrev at the top is a no-op. */
+    /* ScrollPrev at the top is a no-op (the `v > 0` guard at 0x3F050). */
     UiPanel_ScrollPrev(&panel);
     CheckEqI32(panel.nUnk3028, 0, "  cannot scroll above 0");
 
-    /* The last valid cursor is nLineCount - nStyle == 7. */
+    /* The last valid cursor is nLineCount - nStyle == 7: the compare at 0x3F034 is `<`, so a cursor
+     * already at the limit does not move. */
     for (i = 0; i < 20; ++i) {
         UiPanel_ScrollNext(&panel);
     }
@@ -216,7 +222,8 @@ static void TestScroll(void)
     CheckEqI32(panel.nUnk3028, 5, "  scrolls back two");
 
     /* A style larger than the line count makes the limit negative, so scrolling
-     * stays at 0. That is the original's arithmetic, not a special case. */
+     * stays at 0. That is 0x3f00c's own arithmetic -- the subtraction at 0x3F034 is a signed dword
+     * compare, not a special case. */
     printf("UiPanel_ScrollNext with nStyle > nLineCount\n");
     panel.nStyle = 20;
     panel.nUnk3028 = 0;

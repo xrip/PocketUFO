@@ -959,12 +959,12 @@
 0x11170	Bank_AtexitThunk	12	util	yes	yes	yes		yes
 0x37098	Math_StoreSqrtConst	76	util	yes	yes	yes	Math_StoreAtan2Const	yes
 0x370e8	Math_StoreAtan2Const	56	util	yes	yes	yes		yes
-0x3e434	PtrArray_DeleteAll	72	util	yes	no	yes		yes
-0x3e59c	Game_RandU16	132	util	yes	no	yes	World_TactRandU16Thunk	yes
-0x3f00c	IncDwordIfInRange_AtPlus0xBD4	52	util	yes	no	yes	BaseFacScreen_PanelNext|BaseFacScreen_PanelPrev|ManufScreen_PanelPrev|UiPanel_ScrollNext	yes
-0x3f040	DecDwordIfPos_AtPlus0xBD4	28	util	yes	no	yes	BaseFacScreen_PanelPrev|ManufScreen_PanelPrev|UiPanel_ScrollPrev|UiPanel_ScrollNext	yes
+0x3e434	PtrArray_DeleteAll	72	util	yes	yes	yes		yes
+0x3e59c	Game_RandU16	132	util	yes	yes	yes	World_TactRandU16Thunk	yes
+0x3f00c	IncDwordIfInRange_AtPlus0xBD4	52	util	yes	yes	yes	BaseFacScreen_PanelNext|BaseFacScreen_PanelPrev|ManufScreen_PanelPrev|UiPanel_ScrollNext	yes
+0x3f040	DecDwordIfPos_AtPlus0xBD4	28	util	yes	yes	yes	BaseFacScreen_PanelPrev|ManufScreen_PanelPrev|UiPanel_ScrollPrev|UiPanel_ScrollNext	yes
 0x73328	PlaySample7_SetFlags_Cache0xBD8	88	util	yes	yes	yes	World_ResearchPlaySample|World_ResearchTopicClickThunk|BaseUi_PlaySample7Cache160C74	yes
-0x7afec	Cache_ObjPlus0xBD8_To_dword_186BE8	40	util	yes	no	yes	World_PlaneSlotClickThunk|World_WireGeoscapeFrame|BaseUi_Cache186BE8	yes
+0x7afec	Cache_ObjPlus0xBD8_To_dword_186BE8	40	util	yes	yes	yes	World_PlaneSlotClickThunk|World_WireGeoscapeFrame|BaseUi_Cache186BE8	yes
 0x82bac	PtrArray_DeleteAt	40	util	yes	yes	yes		no
 0xa0f80	PtrArray_ctor	16	util	yes	yes	yes		yes
 0xa0f94	PtrArray_Insert	176	util	yes	yes	yes		yes

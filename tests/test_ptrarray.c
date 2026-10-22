@@ -2,7 +2,7 @@
  *
  * Evidence: PtrArray_ctor @ 0xa0f80, PtrArray_Insert @ 0xa0f94, PtrArray_Add @ 0xa1044,
  *           PtrArray_Remove @ 0xa1054, PtrArray_Clear @ 0xa1120, PtrArray_Get @ 0xa1130,
- *           PtrArray_GetCount @ 0xa1154.
+ *           PtrArray_GetCount @ 0xa1154, PtrArray_DeleteAll @ 0x3e434.
  *
  * The two functions this file exists for are Insert and Remove. Neither was called by any test
  * before, so the whole index contract -- where an out-of-range index lands, what an out-of-range
@@ -13,6 +13,7 @@
 #include "util/pufo_ptrarray.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 static int g_nFailures;
 
@@ -198,10 +199,57 @@ static void TestRemoveContract(void)
     PtrArray_Clear(&arr);
 }
 
+/* ------------------------------------------------------- DeleteAll @ 0x3e434 */
+
+/* PtrArray_DeleteAll @ 0x3e434 walks 0..GetCount()-1, takes each item through
+ * PtrArray_Get @ 0xa1130 and operator delete @ 0x3E458, then calls PtrArray_Clear @ 0x3E478. The
+ * count is re-read every iteration in the original (BL GetCount inside the loop at 0x3E448) and the
+ * clear is the Remove(0xFFFF, 0) the Remove section above pins, so the list ends with count 0 and no
+ * array. What a unit test cannot see is the delete itself: the items are heap blocks and free() is the
+ * only difference a running test can observe, so the per-item free is pinned by the leak route
+ * (tools/asan.sh over the geoscape frame run, which calls DeleteAll on the live strateg list at
+ * 0x3E154) rather than by a check here. */
+static void TestDeleteAll(void)
+{
+    PtrArray arr;
+    int      i;
+
+    printf("PtrArray_DeleteAll @ 0x3e434 -- the list ends empty, with no array\n");
+
+    ArrReset(&arr);
+    for (i = 0; i < 3; ++i) {
+        PtrArray_Add(&arr, malloc(8));
+    }
+    CheckEqI32(PtrArray_GetCount(&arr), 3, "  three heap items added");
+    PtrArray_DeleteAll(&arr);
+    CheckEqI32(PtrArray_GetCount(&arr), 0, "  DeleteAll leaves count 0");
+    Check(arr.apItems == NULL, "  and the Clear @ 0x3E478 leaves no array");
+
+    /* An empty list: the loop body never runs, and the same clear leaves nothing behind. */
+    ArrReset(&arr);
+    PtrArray_DeleteAll(&arr);
+    CheckEqI32(PtrArray_GetCount(&arr), 0, "  an empty list stays empty");
+    Check(arr.apItems == NULL, "  and still has no array");
+
+    /* The walk visits every slot, so a list whose items are distinct keeps visiting all of them:
+     * re-populating after a DeleteAll starts from the emptied state, not from the old array. */
+    ArrReset(&arr);
+    for (i = 0; i < 2; ++i) {
+        PtrArray_Add(&arr, malloc(8));
+    }
+    PtrArray_DeleteAll(&arr);
+    PtrArray_Add(&arr, &g_aItems[1]);
+    CheckEqI32(PtrArray_GetCount(&arr), 1, "  the list is reusable afterwards");
+    Check(PtrArray_Get(&arr, 0) == &g_aItems[1], "  from a fresh array, not the freed one");
+
+    PtrArray_Clear(&arr);
+}
+
 int main(void)
 {
     TestInsertIndexContract();
     TestRemoveContract();
+    TestDeleteAll();
 
     if (g_nFailures > 0) {
         printf("test_ptrarray: %d check(s) FAILED\n", g_nFailures);

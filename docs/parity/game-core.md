@@ -22559,3 +22559,94 @@ and 64/64 Debug, 20,626 checks (the +7 from test_geoscape Case 6), coverage 972/
 cited), 93 frame pictures and 9 e2e pictures unchanged. IDB: comments written and read back at 0x84634
 (375), 0x1a0bc (617), 0x19de4 (859), 0x18ecc (327), 0x19a10 (601), 0x19bb4 (301), 0x6ba14 (697), 0x6bc1c
 (590), 0x79b20 (756) and 0x9fcc4 (318), `idb_save` reported ok.
+
+## Part 121 - the mutation pass starts: 5 `util` rows, and one port deviation fixed
+
+Row 121a says reach is not assertion coverage: 475 of the 965 reached rows ran under a test with no cite
+attributed to their own address. This Part takes the smallest subsystem, `util` (5 rows), and works each row the
+way the row says -- read the original in the IDB, name the value or store the port's run already produces, and
+either put a check with the cite on it or record why nothing observable depends on it.
+
+### Game_RandU16 @ 0x3e59c: the port consumed one draw less than the original
+
+The function is 30 instructions and ONE basic block. `BL rand` at 0x3E5A4 is the first thing it does; nMax is not
+moved into a register until 0x3E5CC (`MOV R3, R4, LSL#16`), and the chain after it is `_itos` 0x3E5B4, `_muls`
+with the single-precision constant 0x38000000 (= 1/32768) at 0x3E5D0, `_itos` of nMax at 0x3E5E4, `_muls` at
+0x3E5FC, `_stou` at 0x3E610. There is no branch anywhere. So a zero bound consumes a draw and returns 0: the
+multiply by 0 runs *after* rand(), not instead of it.
+
+The port had `if (nMax == 0) { return 0; }`. That is not a formatting difference -- a zero bound is reached in the
+port's own flows: the fire-damage roll (`pufo_turn.c`) computes `u16 nMax = (nRaw / 4) & 0xFFFF`, which is 0
+whenever the base rounds down to nothing, and the enemy AI reads the same seam on a signed byte. After any such
+call the port's stream was one draw ahead of the original's, and every later roll in that tact run differed. The
+early return is removed. `tools/frames.sh` prints "frames: unchanged (93 reference pictures)" and the 9 e2e
+pictures are unchanged, which says the scripted flows do not hit a zero bound -- the fix is parity, not a picture
+change, and the absence of movement is measured rather than assumed.
+
+`tests/test_rand.c` (new, 7 checks) pins the seam:
+
+| Check | What it pins | Teeth |
+|---|---|---|
+| nMax 0 returns 0, and `rand()` after the call gives the *next* value | 0x3E5A4 runs before 0x3E5E4 | putting the early return back fails it |
+| `Game_RandU16(32768)` is the identity on the draw, over a 400-draw sequence | the 0x38000000 scale exactly | scale 2^-14 fails it (400 mismatches) |
+| nMax 1 is 0 for every draw | the product is under 1, then truncated | scale 2^-14 fails it; so does `+0.5f` rounding |
+| nMax 65535 never exceeds 65533, and the largest value seen is 65377 | the u16 truncation at the top of the range | 65377 = floor(32689 * 65535 / 32768), this seed's largest draw; scale 2^-14 gives 65218 |
+
+Two things this Part had to learn about its own test method:
+
+* Re-seeding per draw is useless. `srand(seed)` advances MSVC's LCG by one step, so `srand(12345+k); rand()` for
+  k = 0..199 gives 7584..8234 -- the whole 200-draw sample sits in one corner of the 0..32767 range and the
+  upper-half checks would have tested nothing. The test seeds once and walks the sequence (min 253, max 32689
+  over the 400 draws), and a check states that the sequence really reached the top half, because without it
+  "never exceeds" is trivially true of a run that never got high.
+* A one-sided bound is not a pin. With the scale doubled, the nMax 65535 values wrap (130752 -> 65218) and stay
+  *under* 65533, so the bound check did not fail. The exact top -- 65377, the truncation of the sequence's
+  largest draw -- is what gives that check teeth, and it is asserted alongside the bound.
+
+The rounding mutation (`(u16)(fScaled + 0.5f)`) is a good example of a limit: at nMax 32768 it is invisible,
+because an integer plus 0.5 truncates back to the integer, so the identity check passes; the nMax 1 check catches
+it. No single check here is sufficient -- the file is the union.
+
+### The other four `util` rows
+
+`PtrArray_DeleteAll @ 0x3e434` re-reads the count inside the loop (`BL PtrArray_GetCount` at 0x3E448, not hoisted),
+takes each item through `PtrArray_Get` at 0x3E454 and `operator delete` at 0x3E458, then calls `PtrArray_Clear` at
+0x3E478. `tests/test_ptrarray.c` gained TestDeleteAll (7 checks): a 3-item heap list ends with count 0 and no
+array, an empty list stays empty, and the list is reusable from a fresh array rather than the freed one. Dropping
+the Clear fails 4 of them. What a unit check cannot pin is the per-item delete itself -- `free()` leaves no
+in-process observable -- so that part is recorded instead of pretended: a skipped free is a leak, and the leak
+route (`tools/asan.sh`, whose geoscape frame run calls DeleteAll on the live strateg list at 0x3E154) is what
+would report it.
+
+`IncDwordIfInRange_AtPlus0xBD4 @ 0x3f00c` and `DecDwordIfPos_AtPlus0xBD4 @ 0x3f040` already had checks in
+`tests/test_panel.c` TestScroll, but no cite, so the row read as unpinned. Both now cite the instructions that
+produce the checked value: the limit is `*(0xBDC) - *(0xBE0)` = nLineCount - nStyle and the compare at 0x3F034 is
+a *signed* dword `<` (a style larger than the line count makes it negative and the cursor never moves), and the
+prev guard at 0x3F050 is `v > 0` with no wrap to the last page. Teeth: `<` -> `<=` fails 3 checks ("clamped to
+nLineCount - nStyle: got 8, want 7"), `> 0` -> `>= 0` fails 1 ("cannot scroll above 0: got -1, want 0").
+
+`Cache_ObjPlus0xBD8_To_dword_186BE8 @ 0x7afec` reads `pPlaneSlotPanel->nUnk3032` (panel +0xBD8) at 0x7B000,
+stores it into `nPanelRowCursor` (dword_186BE8) at 0x7B004 and returns it -- the store is the only effect. The port
+splits it: the caller reads the panel field and the global lives in the scratch block as `nCache186BE8`.
+`tests/test_baseui.c` already checked both halves; the cite is now on them, and removing the store fails 4 checks
+there.
+
+### The trap in the measure itself
+
+The first draft of `tests/test_rand.c` named `InitInstance @ 0x9fd48` in its evidence comment as the seeding site,
+and the ledger counted reach as 966 with InitInstance reached. It is not: no test calls it. The ledger reads a
+`@ 0x...` anywhere in a test file -- next to a check or inside a comment -- and cannot tell the difference. The
+cite is removed, reach is 965 again with the same three entry points left, and row 121a now says out loud that a
+cite is earned by the checks under it. The ledger stays as it is (it is a measure, not a judge); the rule is
+enforced by reading the file.
+
+### Measured
+
+Reach is unchanged at **965 of 968** (3 entry points, residue 0); the assertion column moves: **495** reached rows
+now carry a test cite at their own address, **470** do not (`util` and `platform` closed; `strat-ui` 121, `tact` 93,
+`strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16, `tact-ui` 12, `titles` 6, `audio` 4,
+`boot-assets` 3 left). Gates (`build/check121.log`, `CHECK EXIT=0`): 65/65 Release and 65/65 Debug (test_rand is
+the 65th), 20,640 checks (+14: 7 in test_rand, 7 in TestDeleteAll), coverage 972/1103 functions and 596888/598792
+bytes unchanged, 93 frame pictures and 9 e2e pictures unchanged. IDB comments written and read back at 0x3e59c
+(940 chars), 0x3e434 (580), 0x3f00c (593), 0x3f040 (319) and 0x7afec (586); `idb_save` reported ok. Every mutation
+listed above was applied, shown failing the named checks, and reverted -- `grep -rn "MUTATION" src tests` empty.

@@ -5708,6 +5708,15 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   it. Deliverable per Part: a shrinking 475 count printed by `teeth_ledger.py` and the mutation lines in
   `docs/parity/game-core.md`. Do not shrink the count by widening a cite without a check -- that is the failure
   mode Part 120 would have fallen into. Part 121.
+  Progress (Part 121): `util` is closed -- 5 rows, 470 left. Three things the pass learned, all now part of the
+  method: a cite in a test file counts even inside a header comment, so the first draft of `tests/test_rand.c`
+  "reached" `InitInstance @ 0x9fd48` by naming it as the seeding site (the cite is removed; a cite is earned by the
+  checks under it); re-seeding per draw is useless on MSVC's LCG (`srand(12345+k); rand()` for k = 0..199 gives
+  7584..8234), so a fixture must seed once and walk the sequence, and say that it reached the top of the range;
+  a one-sided bound is not a pin (a doubled scale wraps 65535's values to 65218, still under 65533), so an exact
+  companion value is asserted next to it. `Game_RandU16 @ 0x3e59c` also produced a port fix: the original is one
+  basic block with `BL rand` first, so a zero bound consumes a draw, and the port's `if (nMax == 0) return 0;`
+  shifted every later roll -- removed, with the frame and e2e pictures measured unchanged.
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5776,3 +5785,18 @@ address, which is row 121a | 93 frames and 9 e2e pictures unchanged | IDB commen
 stores 1 into the assault flag before it runs (0x8463C): got 0, want 1", "and the run it launches is the flag-armed
 one: got 5, want 9", "same sprite set as the hand-set flag: got 10, want 13") -- restored, `grep -rn "MUTATION"
 src tests` empty | 119c and 120a closed, 121a opened.
+
+`<this commit>` + Part 121 | 65/65 Release and 65/65 Debug (one new test: `test_rand`) | 20,640 checks (+14: 7 in
+`tests/test_rand.c`, 7 in `TestDeleteAll`) | coverage 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) --
+unchanged | reach unchanged at 965/968, residue 0; the assertion column moves: reached rows with a test cite at
+their own address 490 -> **495**, reached rows without one 475 -> **470** (`util` and `platform` closed) | **port
+behaviour changed**: `Game_RandU16 @ 0x3e59c` is one basic block with `BL rand` at 0x3E5A4 before nMax is read, so
+a zero bound consumes a draw; the port's `if (nMax == 0) return 0;` skipped it and shifted every later roll, and
+the early return is removed. `tools/frames.sh` "frames: unchanged (93 reference pictures)" and the 9 e2e pictures
+unchanged are the measurement that no scripted flow hits a zero bound | 93 frames and 9 e2e pictures unchanged |
+IDB comments read back at 0x3e59c (940), 0x3e434 (580), 0x3f00c (593), 0x3f040 (319), 0x7afec (586), `idb_save`
+written | teeth: the early return back fails "the draw it consumed is real"; scale 2^-14 fails 3 rand checks
+(identity, nMax 1, the exact top 65377); `+0.5f` rounding fails "nMax 1 is 0 for every draw"; dropping
+`PtrArray_Clear` in DeleteAll fails 4; `<=` in ScrollNext fails 3; `>= 0` in ScrollPrev fails 1; dropping the cache
+store at 0x7B004 fails 4 in `test_baseui` -- all reverted, `grep -rn "MUTATION" src tests` empty | row 121a stays
+open with 470 rows left and three method rules added to it.

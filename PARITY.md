@@ -22,8 +22,8 @@ python docs/parity/coverage.py            # coverage numbers only
 | Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 131, 1904 bytes |
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 64 |
-| Test checks run | 20626 |
+| Test suites | 65 |
+| Test checks run | 20640 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1296,7 +1296,8 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_panel` | PASS | 171 |
 | `test_path` | PASS | 104 |
 | `test_plane` | PASS | 509 |
-| `test_ptrarray` | PASS | 21 |
+| `test_ptrarray` | PASS | 28 |
+| `test_rand` | PASS | 7 |
 | `test_render` | PASS | 177 |
 | `test_renderframe` | PASS | 24 |
 | `test_rmp` | PASS | 83 |
@@ -1326,7 +1327,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 81 |
 | `test_vistry` | PASS | 42 |
 
-**64 / 64 suites passing.**
+**65 / 65 suites passing.**
 
 ## Per-subsystem parity notes
 

@@ -29,10 +29,13 @@ u16 Game_RandU16(u16 nMax)
     int   nRand;
     float fScaled;
 
-    if (nMax == 0) {
-        return 0;
-    }
-
+    /* No branch on nMax in the original: 0x3e59c is one basic block and `BL rand` at 0x3e5A4 is the
+     * first thing it does, before nMax is moved into a register (MOV R3, R4, LSL#16 at 0x3E5CC). A zero
+     * bound therefore CONSUMES a draw and still returns 0 -- the multiply by 0 happens after the draw,
+     * not instead of it. The port's early return skipped that draw, and a zero bound is reached: the
+     * fire-damage roll (pufo_turn.c) computes `u16 nMax = (nRaw / 4) & 0xFFFF`, which is 0 whenever the
+     * base rounds down to nothing, and the enemy AI's pick from the multi-target list runs the same
+     * seam on a signed byte. After such a call the port's stream was one draw ahead of the original's. */
     nRand = rand() % RAND_ORIGINAL_MODULUS;
     fScaled = (float)nRand * RAND_SCALE * (float)nMax;
     return (u16)fScaled;

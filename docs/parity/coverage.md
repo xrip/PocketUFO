@@ -94,7 +94,13 @@ port installs it as a pointer and no call graph can follow that). Measured after
 exercises, by running the real executable -- and residue 0 in the IDB classification. Nothing in any of that is an
 assertion: a wrapper whose shared routine runs does
 not have its own constant pinned, and the ledger says so in its own header. The same TSV measures that gap: of the
-965 reached rows, 490 carry a test cite at their own address and 475 run under a test with no cite attributed to
-them (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, the rest in the
-small subsystems). The per-function "check-fails-when-wrong" pass over those 475 is the part of the goal no gate
-runs, and PLAN row 121a carries it.
+965 reached rows, 495 carry a test cite at their own address and 470 run under a test with no cite attributed to
+them (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16,
+`tact-ui` 12, `titles` 6, `audio` 4, `boot-assets` 3; `util` and `platform` are closed). The per-function
+"check-fails-when-wrong" pass over those 470 is the part of the goal no gate runs, and PLAN row 121a carries it.
+
+Part 121 closed the 5 open `util` rows and learned a rule the ledger cannot enforce: a `@ 0x...` in a test file
+counts whether it sits next to a check or in a header comment, so the first draft of `tests/test_rand.c` made
+`InitInstance @ 0x9fd48` read as reached by naming it as the seeding site in its evidence comment. That cite is
+removed -- no test reaches that function -- and reach went back to 965 with the same three entry points left. A
+cite has to be earned by the checks it sits on.

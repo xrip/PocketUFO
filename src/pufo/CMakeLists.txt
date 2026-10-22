@@ -143,6 +143,18 @@ add_test(NAME test_ptrarray
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# Game_RandU16 @ 0x3e59c is one basic block: rand() at 0x3E5A4 runs before nMax is read, so a zero bound
+# consumes a draw, and the 0x38000000 scale is pinned by the identity Game_RandU16(32768) == the draw.
+add_executable(test_rand ${CMAKE_SOURCE_DIR}/tests/test_rand.c)
+target_link_libraries(test_rand PRIVATE pufo_options pufo_util)
+set_target_properties(test_rand PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_rand
+    COMMAND test_rand
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # The committed lang.dat TEXTS table (src/pufo/asset/pufo_texts_lang.h) re-read through the game's
 # own reader: the generator is only trustworthy while this stays green.
 add_executable(test_texts_lang ${CMAKE_SOURCE_DIR}/tests/test_texts_lang.c)

@@ -96,6 +96,9 @@ static void TestScratch(void)
     CheckEqI32(ctlB.y, 120, "  *pGeoscapeCtlB's own y halfword is 120 (STRH at 0x6B68C)");
     CheckEqI32(ctlA.y, 142, "  *pGeoscapeCtlA's own y halfword is 142 (STRH at 0x6B69C)");
 
+    /* Cache_ObjPlus0xBD8_To_dword_186BE8 @ 0x7afec: read the panel's dword at +0xBD8, store it into
+     * dword_186BE8, and return it -- the store is the only effect (0x7B000 then 0x7B004). The port's
+     * global lives in the scratch block, so the check reads it there. */
     CheckEqI32(BaseUi_Cache186BE8(&s, 0x1234), 0x1234, "  cache returns the value");
     CheckEqI32(s.nCache186BE8, 0x1234, "  cache stored");
 
