@@ -7,7 +7,11 @@
 #include <stdio.h>   /* snprintf, the row name copy */
 #include <string.h>  /* strlen, the 17-character cut at 0x7B838 */
 
-/* One body for BasePlaneScreen_SelectWeapon25..30; only the constant differs. */
+/* One body for BasePlaneScreen_SelectWeapon25 @ 0x79b20, 26 @ 0x79b64, 27 @ 0x79ba8, 28 @ 0x79bec,
+ * 29 @ 0x79c30, 30 @ 0x79c74. Verified 2026-10-22 by walking each body in the IDB: 13 instructions
+ * each, 68 bytes each, and the only differing immediates are `MOVNE R1, #0x19 .. #0x1E` -- the weapon
+ * index written into whichever panel is open. The tail `B BasePlaneScreen_ApplyWeaponSwap` is in all
+ * six. */
 i32 BasePlaneScreen_SelectWeapon(PlaneWeaponPanels *pPanels, i32 nWeaponIndex,
                                  i32 (*pfnApplySwap)(void *pUser), void *pUser)
 {

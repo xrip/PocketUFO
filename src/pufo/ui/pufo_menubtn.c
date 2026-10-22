@@ -207,7 +207,13 @@ void MenuCtl3_OnClick(const StartMenuHooks *pHooks)
     }
 }
 
-/* One body for the seven load buttons; only the slot number differs. */
+/* MenuCtl8_OnClick @ 0x1a0bc, MenuCtl9_OnClick @ 0x1a0f0, MenuCtl10_OnClick @ 0x1a124,
+ * MenuCtl11_OnClick @ 0x1a158, MenuCtl12_OnClick @ 0x1a18c, MenuCtl13_OnClick @ 0x1a1c0,
+ * MenuCtl14_OnClick @ 0x1a1f4. Verified 2026-10-22: seven copies of one 11-instruction body
+ * (52 bytes each), the only difference the slot
+ * immediate `MOV R1, #0..#6` -- MainMenu_nListMode = 3 (0x1A0CC) BEFORE LoadGame @ 0x44bbc runs, the
+ * slot passed as its index, and if the result's LOW byte is zero (0x1A0DC) MainMenu_nListMode goes back
+ * to 2 and the function returns 2, not the callee's value. */
 i32 Menu_LoadSlot(i32 *pnListMode, i32 nSlot,
                   i32 (*pfnLoadGame)(i32 nSlot, void *pUser), void *pUser)
 {
@@ -227,6 +233,13 @@ i32 Menu_LoadSlot(i32 *pnListMode, i32 nSlot,
     return nResult;
 }
 
+/* SaveLoad_Slot0 @ 0x19de4, Slot1 @ 0x19e34, Slot2 @ 0x19e84, Slot3 @ 0x19ed4, Slot4 @ 0x19f24,
+ * Slot5 @ 0x19f74, Slot6 @ 0x19fc4. Verified 2026-10-22: seven copies of one 17-instruction body
+ * (80 bytes each) differing only in the slot
+ * immediate `MOV R1, #0..#6` -- MainMenu_nListMode = 1 (0x19DF4, NOT 3), then the direction comes from
+ * the current screen: Map_nUiScreen == 10 returns SaveGame @ 0x44988 unchanged with the mode left at 1,
+ * otherwise LoadGame @ 0x44bbc runs and a zero LOW byte (0x19E28) puts the mode back to 0 (not 2) and
+ * the handler returns 0. */
 i32 SaveLoad_Slot(i32 nSlot, i32 nUiScreen, i32 *pnListMode,
                   const SaveLoadSlotHooks *pHooks)
 {

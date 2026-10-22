@@ -8948,6 +8948,13 @@ static void Options_CentreRow(UiControl *pCtl, i32 nY)
     }
 }
 
+/* OptionsScreen_SetMusicVol0 @ 0x6ba14, Vol1 @ 0x6ba70, Vol2 @ 0x6babc, Vol3 @ 0x6bb18, Vol4 @ 0x6bb74,
+ * Vol5 @ 0x6bbd0 -- six entry points, one effect. Verified 2026-10-22 by walking all six in the IDB:
+ * store N into
+ * Map_nMusicVolume, OptionsScreen_ClearMusicButtons, select the radio for the clamped step, store
+ * (N == 0) into Map_bMusicOff, then the tail call `B Sound_ApplyMusicVolume @ 0x9e454`. Only register
+ * choice and instruction order differ (0x6ba14, 0x6babc, 0x6bb18 and 0x6bb74 are 92 bytes, 0x6ba70 and
+ * 0x6bbd0 are 76); every one of them performs all five steps. */
 i32 OptionsScreen_SetMusicVol(OptionsVolumeEnv *pEnv, i32 nStep)
 {
     if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pnMusicVol == NULL || pEnv->pbMusicOff == NULL) {
@@ -8963,6 +8970,11 @@ i32 OptionsScreen_SetMusicVol(OptionsVolumeEnv *pEnv, i32 nStep)
     return 0;
 }
 
+/* OptionsScreen_SetSfxVol0 @ 0x6bc1c, Vol1 @ 0x6bc80, Vol2 @ 0x6bce4, Vol3 @ 0x6bd48, Vol4 @ 0x6bdac,
+ * Vol5 @ 0x6be10 -- six entry points, one effect, all 100 bytes and 21 instructions (verified
+ * 2026-10-22): clear the sfx buttons, store N into Map_nSoundVolume, select the radio for the clamped
+ * step, store (N == 0) into the sfx-off byte, apply the volume, then `Sound_Play(17)` so the player
+ * hears the new level. */
 i32 OptionsScreen_SetSfxVol(OptionsVolumeEnv *pEnv, i32 nStep)
 {
     if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pnSfxVol == NULL || pEnv->pbSfxOff == NULL) {

@@ -22491,3 +22491,71 @@ through the chunk (no fewer than before)" - while the two Debug tests red at HEA
 reading is parallel-run interference in the Debug suite (the frame test does save/write round-trips),
 recorded as a harness finding for a separate Part, not silenced: `check.sh` treats `rc_dbg` as
 non-fatal on purpose, which is exactly why a different Debug failure can pass through the sentinel.
+
+## Part 120 - every variant handler gets its own cite, and reach lands at 965/968
+
+Part 119 left 44 functions cited but not reached, 40 of them per-level UI handlers: five speed buttons,
+five music-volume buttons, five sound-volume buttons, six of each in the options screen, seven save/load
+slots, seven main-menu load buttons, six plane-weapon buttons. The port implements each family once, with
+the level as a parameter, so the question was not "write forty tests" but "say which original address the
+shared routine reproduces" -- and that claim has to be verified in the IDB first, not assumed from the
+naming.
+
+The verification is an instruction walk per member (`idautils.FuncItems` over the function, mnemonic plus
+operands), and it is now in the IDB notes at the family leader. What it found:
+
+| Family | Members | Body | The only difference |
+|---|---|---|---|
+| `MenuBtn_SetSpeed0..4` | 0x18ecc..0x1901c | 19 insns, 84 B | `Sound_Play(17)`, one-hot over the pad globals 0xACE5A/7A/9A/BA/DA at index N, then `GameSpeed_Set(N)` |
+| `Options_SetMusicVol1..5` | 0x19a10..0x19b60 | 18 insns, 84 B | Map_nMusicVolume = N, pad one-hot at N-1, and no `Sound_Play` anywhere in the family |
+| `MenuBtn_SetSfxVol1..5` | 0x19bb4..0x19d34 | 21 insns, 96 B | store N, pad at N-1, apply, then `Sound_Play(17)` LAST |
+| `OptionsScreen_SetMusicVol0..5` | 0x6ba14..0x6bbd0 | 18 insns, 92 or 76 B | store N, clear the buttons, select the radio, off-flag = (N==0), tail `B Sound_ApplyMusicVolume` |
+| `OptionsScreen_SetSfxVol0..5` | 0x6bc1c..0x6be10 | 21 insns, 100 B | same shape, `Sound_Play(17)` at the end |
+| `SaveLoad_Slot0..6` | 0x19de4..0x19fc4 | 17 insns, 80 B | the slot immediate only: mode 1 (0x19DF4), save screen returns `SaveGame(slot)` unchanged, else `LoadGame(slot)` and a zero LOW byte puts the mode back to 0 and returns 0 |
+| `MenuCtl8..14_OnClick` | 0x1a0bc..0x1a1f4 | 11 insns, 52 B | the slot immediate only: mode 3 BEFORE `LoadGame` (0x1A0CC), a zero low byte puts mode back to 2 and returns 2, not the callee's value |
+| `BasePlaneScreen_SelectWeapon25..30` | 0x79b20..0x79c74 | 13 insns, 68 B | `MOVNE R1, #0x19..#0x1E`, all end in `B BasePlaneScreen_ApplyWeaponSwap` |
+
+Two things the walk corrected in the reading. `OptionsScreen_SetMusicVol1 @ 0x6ba70` and `..Vol5 @ 0x6bbd0`
+are 76 bytes where the other four are 92 -- different register choice and instruction order, not a
+different effect: all six store the level, clear the buttons, select the radio, set the off flag and tail
+into `Sound_ApplyMusicVolume @ 0x9e454`. And the main-menu load buttons set `MainMenu_nListMode = 3`
+*before* `LoadGame` runs and only put it back to 2 on a failed load, returning 2 rather than the callee's
+value -- the port's `Menu_LoadSlot` already had that right at 0x1A0CC/0x1A0DC, and now the seven addresses
+are named at it.
+
+The cites landed at the shared routines: `Menu_SetSpeed`, `Menu_SetMusicVolume`, `Menu_SetSfxVolume`
+(game/pufo_menu.c), `OptionsScreen_SetMusicVol`, `OptionsScreen_SetSfxVol` (game/pufo_baseui.c),
+`SaveLoad_Slot`, `Menu_LoadSlot` (ui/pufo_menubtn.c), `BasePlaneScreen_SelectWeapon` (game/pufo_plane.c) --
+each address with its own `@ 0x...` so the pairing is an explicit claim and the ledger's matcher and the
+gate's matcher read the same thing.
+
+One handler needed a test rather than a cite. `Smap_BeginCraftSelectBtn @ 0x84634` is two instructions --
+`STRB` storing 1 into bCraftSelectAssaultFlag @ 0x1870A8 at 0x8463C, then the tail call into
+`Smap_BeginCraftSelect @ 0x838dc` -- and the port installs it as a function pointer (Geoscape_InitUI's
+fourteenth handler, `pfnCraftSelectClick`), which a static call graph cannot follow. test_geoscape.c gained
+Case 6: the same `RESET(21, 0)` state run twice, once with the assault flag set by hand and the plain call,
+once with the flag clear and the button call. That comparison only means something because the flag has an
+effect -- 0x839E8 reads it and the arm at 0x83A04/0x83A1C forces `Map_nMissionType = MissionType_MarsOrSpecial`
+with sprite sets 13/21/23/23 -- so the checks pin type 9 and sprite 13 from both routes, and `bAssault == 1`
+after the button. Teeth: storing 0 instead of 1 at 0x8463C fails three checks -- "the button stores 1 into
+the assault flag before it runs (0x8463C): got 0, want 1", "and the run it launches is the flag-armed one:
+got 5, want 9", "same sprite set as the hand-set flag: got 10, want 13". Restored, `grep -rn "MUTATION"
+src tests` empty.
+
+Reach now: **965 of 968** (938 by a direct test call or an address cite, 27 through the port call graph),
+3 cited but not reached, and the IDB classification pass reports residue 0 -- the three are `WinMain
+@ 0x9fcc4`, `InitInstance @ 0x9fd48` and `PocketUFO_WndProc @ 0xa03ec`, the process entry points. No unit
+test calls them; the port's equivalents run inside the real executable, and the only gate that exercises
+them is `tools/e2e.sh`, which drives menu -> new game -> placement -> geoscape -> save -> load and checks 9
+pictures. That is recorded in the IDB at 0x9FCC4 so the next reader does not go looking for a unit test.
+
+What is still not proven is unchanged by this Part and is the expensive half: reach is not assertion
+coverage. 965 functions run under some test; the number of functions where a *value* is pinned so that
+changing it fails a check is what the mutation pass would produce, and PLAN row 121a now carries that.
+
+Gate state for this tree: `tools/check.sh` printed "ALL SIX GATES RAN" with `CHECK EXIT=0` -- 64/64 Release
+and 64/64 Debug, 20,626 checks (the +7 from test_geoscape Case 6), coverage 972/1103 functions and
+596888/598792 bytes unchanged (no function newly cited: these cites point at addresses that were already
+cited), 93 frame pictures and 9 e2e pictures unchanged. IDB: comments written and read back at 0x84634
+(375), 0x1a0bc (617), 0x19de4 (859), 0x18ecc (327), 0x19a10 (601), 0x19bb4 (301), 0x6ba14 (697), 0x6bc1c
+(590), 0x79b20 (756) and 0x9fcc4 (318), `idb_save` reported ok.

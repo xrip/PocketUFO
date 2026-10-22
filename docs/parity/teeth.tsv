@@ -142,8 +142,8 @@
 0x446a8	Save_WriteTGameData	640	save	yes	yes	yes	World_TactLookupCell	yes
 0x44928	Save_WriteGameState	48	save	yes	no	yes		yes
 0x44958	Save_ReadGameState	48	save	yes	no	yes	Save_WriteGameState	yes
-0x44988	SaveGame	564	save	yes	yes	yes	App_HookSaveGame|World_SaveSlot	yes
-0x44bbc	LoadGame	3400	save	yes	yes	yes	App_HookLoadGame|App_ScriptDump|World_LoadSlot	yes
+0x44988	SaveGame	564	save	yes	yes	yes	App_HookSaveGame|World_SaveSlot|SaveLoad_Slot	yes
+0x44bbc	LoadGame	3400	save	yes	yes	yes	App_HookLoadGame|App_ScriptDump|World_LoadSlot|Menu_LoadSlot|SaveLoad_Slot	yes
 0x45904	SaveSlot_FormatList	796	save	yes	yes	yes	App_HookNewGame|App_HookFormatSlots|App_HookLoadGame|App_InitStartupUi|World_TactFormatSlotListThunk|World_WireOptions|OptionsScreen_SetMusicVol0	yes
 0x32c88	BaseRec_Create	76	strat	yes	no	yes		no
 0x415cc	StrategItem_AllocAdd	52	strat	yes	no	yes		yes
@@ -309,7 +309,7 @@
 0x84428	Smap_DismissSelected	92	strat	yes	no	yes	World_SmapDismissSelectedThunk	yes
 0x84484	Smap_SelectMapTarget	340	strat	yes	yes	yes	World_SmapSelectMapTargetThunk	yes
 0x845d8	Smap_ConfirmSelected	92	strat	yes	yes	yes	World_SmapConfirmSelectedThunk	yes
-0x84634	Smap_BeginCraftSelectBtn	20	strat	yes	no	no		no
+0x84634	Smap_BeginCraftSelectBtn	20	strat	yes	yes	yes		yes
 0x84648	Smap_ClearSelection	64	strat	yes	yes	yes	World_SmapSetWaypointThunk|World_SmapClearSelectionThunk|StatusPanel_DrawAlienBasePanel	yes
 0x84688	Smap_OnPointerUp	732	strat	yes	yes	yes	World_SmapPointerUpThunk|StatusPanel_DrawAlienBasePanel	yes
 0x84964	Smap_ResolveInterceptUI	340	strat	yes	yes	yes	World_SmapResolveInterceptThunk	yes
@@ -354,11 +354,11 @@
 0x188e4	Options_SyncUiFromMap_GotoScreen12	352	strat-ui	yes	yes	yes	World_TactPushOptionPads|World_ClickOpenOptions|void|Menu_SyncOptionPads	yes
 0x18e04	Menu_CancelQuitDialog	20	strat-ui	yes	yes	yes	World_QuitYesThunk|World_QuitNoThunk|Menu_OpenQuitDialog	yes
 0x18e2c	Menu_ConfirmQuitDialog	112	strat-ui	yes	yes	yes	World_QuitYesThunk|void|Menu_OpenQuitDialog	yes
-0x18ecc	MenuBtn_SetSpeed0	84	strat-ui	yes	no	no		no
-0x18f20	MenuBtn_SetSpeed1	84	strat-ui	yes	no	no		no
-0x18f74	MenuBtn_SetSpeed2	84	strat-ui	yes	no	no		no
-0x18fc8	MenuBtn_SetSpeed3	84	strat-ui	yes	no	no		no
-0x1901c	MenuBtn_SetSpeed4	84	strat-ui	yes	no	no		no
+0x18ecc	MenuBtn_SetSpeed0	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
+0x18f20	MenuBtn_SetSpeed1	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
+0x18f74	MenuBtn_SetSpeed2	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
+0x18fc8	MenuBtn_SetSpeed3	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
+0x1901c	MenuBtn_SetSpeed4	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
 0x19070	MenuBtn_SetGamma0	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
 0x190d0	MenuBtn_SetGamma1	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
 0x19130	MenuBtn_SetGamma2	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
@@ -376,36 +376,36 @@
 0x198f0	MenuBtn_ConfirmSnd15	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
 0x19910	MenuBtn_Confirm4	32	strat-ui	yes	no	yes	void|MenuBtn_Confirm	yes
 0x19930	MenuBtn_ResizeWindow	24	strat-ui	yes	no	yes	App_ResizeMainWindow|App_HookNewGame|World_ResizeWindowSeamThunk|void|Menu_ResizeWindow	yes
-0x19a10	Options_SetMusicVol1	84	strat-ui	yes	no	no		no
-0x19a64	Options_SetMusicVol2	84	strat-ui	yes	no	no		no
-0x19ab8	Options_SetMusicVol3	84	strat-ui	yes	no	no		no
-0x19b0c	Options_SetMusicVol4	84	strat-ui	yes	no	no		no
-0x19b60	Options_SetMusicVol5	84	strat-ui	yes	no	no		no
-0x19bb4	MenuBtn_SetSfxVol1	96	strat-ui	yes	no	no		no
-0x19c14	MenuBtn_SetSfxVol2	96	strat-ui	yes	no	no		no
-0x19c74	MenuBtn_SetSfxVol3	96	strat-ui	yes	no	no		no
-0x19cd4	MenuBtn_SetSfxVol4	96	strat-ui	yes	no	no		no
-0x19d34	MenuBtn_SetSfxVol5	96	strat-ui	yes	no	no		no
+0x19a10	Options_SetMusicVol1	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
+0x19a64	Options_SetMusicVol2	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
+0x19ab8	Options_SetMusicVol3	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
+0x19b0c	Options_SetMusicVol4	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
+0x19b60	Options_SetMusicVol5	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
+0x19bb4	MenuBtn_SetSfxVol1	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
+0x19c14	MenuBtn_SetSfxVol2	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
+0x19c74	MenuBtn_SetSfxVol3	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
+0x19cd4	MenuBtn_SetSfxVol4	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
+0x19d34	MenuBtn_SetSfxVol5	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
 0x19d94	Menu_ToggleForceNoDrag	80	strat-ui	yes	no	yes	World_TactLiveOptions|void	yes
-0x19de4	SaveLoad_Slot0	80	strat-ui	yes	no	no		no
-0x19e34	SaveLoad_Slot1	80	strat-ui	yes	no	no		no
-0x19e84	SaveLoad_Slot2	80	strat-ui	yes	no	no		no
-0x19ed4	SaveLoad_Slot3	80	strat-ui	yes	no	no		no
-0x19f24	SaveLoad_Slot4	80	strat-ui	yes	no	no		no
-0x19f74	SaveLoad_Slot5	80	strat-ui	yes	no	no		no
-0x19fc4	SaveLoad_Slot6	80	strat-ui	yes	no	no		no
+0x19de4	SaveLoad_Slot0	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
+0x19e34	SaveLoad_Slot1	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
+0x19e84	SaveLoad_Slot2	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
+0x19ed4	SaveLoad_Slot3	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
+0x19f24	SaveLoad_Slot4	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
+0x19f74	SaveLoad_Slot5	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
+0x19fc4	SaveLoad_Slot6	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
 0x1a014	MenuBtn_Confirm5	32	strat-ui	yes	no	yes	void|MenuBtn_Confirm	yes
 0x1a034	MenuCtl1_OnClick	48	strat-ui	yes	no	yes		yes
 0x1a064	MenuCtl2_OnClick	28	strat-ui	yes	no	yes		yes
 0x1a080	MenuCtl3_OnClick	28	strat-ui	yes	no	yes		yes
 0x1a09c	MenuCtl0_OnClick	32	strat-ui	yes	no	yes		yes
-0x1a0bc	MenuCtl8_OnClick	52	strat-ui	yes	no	no		no
-0x1a0f0	MenuCtl9_OnClick	52	strat-ui	yes	no	no		no
-0x1a124	MenuCtl10_OnClick	52	strat-ui	yes	no	no		no
-0x1a158	MenuCtl11_OnClick	52	strat-ui	yes	no	no		no
-0x1a18c	MenuCtl12_OnClick	52	strat-ui	yes	no	no		no
-0x1a1c0	MenuCtl13_OnClick	52	strat-ui	yes	no	no		no
-0x1a1f4	MenuCtl14_OnClick	52	strat-ui	yes	no	no		no
+0x1a0bc	MenuCtl8_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
+0x1a0f0	MenuCtl9_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
+0x1a124	MenuCtl10_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
+0x1a158	MenuCtl11_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
+0x1a18c	MenuCtl12_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
+0x1a1c0	MenuCtl13_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
+0x1a1f4	MenuCtl14_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
 0x1a24c	MenuBtn_Cancel0	32	strat-ui	yes	yes	yes	void|MenuBtn_Cancel	yes
 0x1a26c	MenuBtn_Cancel1	32	strat-ui	yes	yes	yes	void|MenuBtn_Cancel	yes
 0x217e0	Menu_DrawLabeledPads	296	strat-ui	yes	yes	yes	Menu_LabelRecordIndex	yes
@@ -478,18 +478,18 @@
 0x6b8fc	OptionsScreen_RefreshVolumeHighlight	152	strat-ui	yes	yes	yes		no
 0x6b994	OptionsScreen_ClearMusicButtons	64	strat-ui	yes	no	yes		yes
 0x6b9d4	OptionsScreen_ClearSfxButtons	64	strat-ui	yes	no	yes	OptionsScreen_ClearMusicButtons	yes
-0x6ba14	OptionsScreen_SetMusicVol0	92	strat-ui	yes	yes	yes		yes
-0x6ba70	OptionsScreen_SetMusicVol1	76	strat-ui	yes	no	no		no
-0x6babc	OptionsScreen_SetMusicVol2	92	strat-ui	yes	no	no		no
-0x6bb18	OptionsScreen_SetMusicVol3	92	strat-ui	yes	no	yes		yes
-0x6bb74	OptionsScreen_SetMusicVol4	92	strat-ui	yes	no	no		no
-0x6bbd0	OptionsScreen_SetMusicVol5	76	strat-ui	yes	no	no		no
-0x6bc1c	OptionsScreen_SetSfxVol0	100	strat-ui	yes	no	yes		yes
-0x6bc80	OptionsScreen_SetSfxVol1	100	strat-ui	yes	no	yes		yes
-0x6bce4	OptionsScreen_SetSfxVol2	100	strat-ui	yes	no	no		no
-0x6bd48	OptionsScreen_SetSfxVol3	100	strat-ui	yes	no	no		no
-0x6bdac	OptionsScreen_SetSfxVol4	100	strat-ui	yes	no	no		no
-0x6be10	OptionsScreen_SetSfxVol5	100	strat-ui	yes	no	yes		yes
+0x6ba14	OptionsScreen_SetMusicVol0	92	strat-ui	yes	yes	yes	OptionsScreen_SetMusicVol	yes
+0x6ba70	OptionsScreen_SetMusicVol1	76	strat-ui	yes	no	yes	OptionsScreen_SetMusicVol	yes
+0x6babc	OptionsScreen_SetMusicVol2	92	strat-ui	yes	no	yes	OptionsScreen_SetMusicVol	yes
+0x6bb18	OptionsScreen_SetMusicVol3	92	strat-ui	yes	no	yes	OptionsScreen_SetMusicVol	yes
+0x6bb74	OptionsScreen_SetMusicVol4	92	strat-ui	yes	no	yes	OptionsScreen_SetMusicVol	yes
+0x6bbd0	OptionsScreen_SetMusicVol5	76	strat-ui	yes	no	yes	OptionsScreen_SetMusicVol	yes
+0x6bc1c	OptionsScreen_SetSfxVol0	100	strat-ui	yes	no	yes	OptionsScreen_SetSfxVol	yes
+0x6bc80	OptionsScreen_SetSfxVol1	100	strat-ui	yes	no	yes	OptionsScreen_SetSfxVol	yes
+0x6bce4	OptionsScreen_SetSfxVol2	100	strat-ui	yes	no	yes	OptionsScreen_SetSfxVol	yes
+0x6bd48	OptionsScreen_SetSfxVol3	100	strat-ui	yes	no	yes	OptionsScreen_SetSfxVol	yes
+0x6bdac	OptionsScreen_SetSfxVol4	100	strat-ui	yes	no	yes	OptionsScreen_SetSfxVol	yes
+0x6be10	OptionsScreen_SetSfxVol5	100	strat-ui	yes	no	yes	OptionsScreen_SetSfxVol	yes
 0x6be74	OptionsScreen_Init	760	strat-ui	yes	yes	yes	World_NewGame	yes
 0x6cf00	OptionsScreen_RebuildWithSound	24	strat-ui	yes	yes	yes	World_OptionsInitRun	yes
 0x6cf18	OptionsScreen_OnConfirm	260	strat-ui	yes	yes	yes	World_OptionsConfirmClick|Options_SaveAudioSettings	yes
@@ -560,12 +560,12 @@
 0x79a48	BuySellScreen_ListPanelNext	40	strat-ui	yes	no	yes	World_PlaneListPrevThunk|World_WireGeoscapeFrame|BuySellScreen_ListPanelPrev	yes
 0x79a70	BuySellScreen_DetailPanelPrev	88	strat-ui	yes	no	yes	World_PlaneStorePrevThunk|World_WireGeoscapeFrame|ManufScreen_PanelPrev	yes
 0x79ac8	BuySellScreen_DetailPanelNext	88	strat-ui	yes	no	yes	World_PlaneStorePrevThunk|World_WireGeoscapeFrame|ManufScreen_PanelPrev	yes
-0x79b20	BasePlaneScreen_SelectWeapon25	68	strat-ui	yes	yes	yes	World_PlaneSelectWeapon25Thunk|World_WireGeoscapeFrame	no
-0x79b64	BasePlaneScreen_SelectWeapon26	68	strat-ui	yes	no	no		no
-0x79ba8	BasePlaneScreen_SelectWeapon27	68	strat-ui	yes	no	no		no
-0x79bec	BasePlaneScreen_SelectWeapon28	68	strat-ui	yes	no	no		no
-0x79c30	BasePlaneScreen_SelectWeapon29	68	strat-ui	yes	no	no		no
-0x79c74	BasePlaneScreen_SelectWeapon30	68	strat-ui	yes	no	yes	World_PlaneSelectWeapon25Thunk|World_WireGeoscapeFrame	no
+0x79b20	BasePlaneScreen_SelectWeapon25	68	strat-ui	yes	yes	yes	World_PlaneSelectWeapon25Thunk|World_WireGeoscapeFrame|BasePlaneScreen_SelectWeapon	yes
+0x79b64	BasePlaneScreen_SelectWeapon26	68	strat-ui	yes	no	yes	BasePlaneScreen_SelectWeapon	yes
+0x79ba8	BasePlaneScreen_SelectWeapon27	68	strat-ui	yes	no	yes	BasePlaneScreen_SelectWeapon	yes
+0x79bec	BasePlaneScreen_SelectWeapon28	68	strat-ui	yes	no	yes	BasePlaneScreen_SelectWeapon	yes
+0x79c30	BasePlaneScreen_SelectWeapon29	68	strat-ui	yes	no	yes	BasePlaneScreen_SelectWeapon	yes
+0x79c74	BasePlaneScreen_SelectWeapon30	68	strat-ui	yes	no	yes	World_PlaneSelectWeapon25Thunk|World_WireGeoscapeFrame|BasePlaneScreen_SelectWeapon	yes
 0x79e00	BasePlaneScreen_DrawStatLabelA	452	strat-ui	yes	yes	yes	World_PlaneStatLabelAThunk|World_WireGeoscapeFrame	no
 0x79fc4	BasePlaneScreen_DrawStatLabelB	452	strat-ui	yes	yes	yes	World_PlaneStatLabelAThunk|World_WireGeoscapeFrame	no
 0x7a188	BasePlaneScreen_FillCrewPanel	620	strat-ui	yes	yes	yes	World_PlaneCrewClickThunk|World_WireGeoscapeFrame	yes

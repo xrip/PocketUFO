@@ -5651,7 +5651,7 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   and sits before Parts 111..116 in `docs/parity/game-core.md`; it has to carry the current numbers (63/63,
   20,594 checks and whatever they become, coverage, frames, e2e) and sit after the last Part section. Part 119.
 - [ ] **118b. Refresh `HANDOFF.md`.** It last names Part 98. Part 119.
-- [ ] **119c. Close the reach deficit the new ledger names.** Part 119 rebuilt the measure and took the deficit
+- [x] **119c. Close the reach deficit the new ledger names.** Part 119 rebuilt the measure and took the deficit
   from 154 to 44, and it says what the 44 are. Reach now means: a test cites the original address, or calls the
   original name or its port owner directly (comments stripped -- a mention is not a call), or reaches it through
   the port call graph from such a call (a name the test defines for itself is not a root). Measured on this tree:
@@ -5659,17 +5659,27 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   `docs/idb/ida_unreached_callees.py` (run inside IDA) puts all 44 in one class -- their own callee chain lands on
   an address the port owns and a test reaches -- so residue is 0. Five missing cites were added in `src/` where a
   test already drove the port function, and `tests/test_ptrarray.c` (21 checks, two mutations proven) covers the
-  only two functions no test called. Still open, and this is what closes it: 40 of the 44 are per-level button
-  handlers the port implements once, so the honest closure is a cite at the shared handler **per original address**
-  (row 120a), and reach is still not assertion coverage -- the per-function check-that-fails-when-wrong pass is the
-  half no gate runs. Part 120.
-- [ ] **120a. Give each variant handler its own cite at the port's shared routine.** The IDB family pass is done:
+  only two functions no test called. Closed by row 120a: 40 of the 44 are per-level button handlers the port
+  implements once, each family verified member-by-member in the IDB, and the shared routine now cites every address
+  it reproduces. Reach is **965 of 968**; the 3 left are `WinMain @ 0x9fcc4`, `InitInstance @ 0x9fd48` and
+  `PocketUFO_WndProc @ 0xa03ec`, run by `tools/e2e.sh` and recorded as such in the IDB. What is NOT closed by any
+  of this is the other half -- reach is not assertion coverage -- and row 121a carries it. Part 120.
+- [x] **120a. Give each variant handler its own cite at the port's shared routine.** The IDB family pass is done:
   `MenuCtl8..14_OnClick` @ 0x1a0bc.. are one 11-instruction body differing only in `MOVR1,#0..#6`;
   `MenuBtn_SetSpeed0..4`, `Options_SetMusicVol1..5` + `OptionsScreen_SetMusicVol*`, `MenuBtn_SetSfxVol1..5` +
   `OptionsScreen_SetSfxVol*`, `SaveLoad_Slot0..6`, `Map_SetSubMode0..8_Play11`, `BasePlaneScreen_SelectWeapon26..29`
   are the same shape per family (`docs/idb/unreached-callees.tsv` carries each row's chain and its reached
   sibling). Verify every member against its sibling in the IDB, then list the addresses in the shared port
   function's doc so the fold is recorded per address and the ledger pairs them. Part 120.
+  Done: every family was walked member-by-member in the IDB (instruction count, byte size, the immediate that
+  differs, the tail call), two readings were corrected on the way (`OptionsScreen_SetMusicVol1/5` are 76 B not 92;
+  `MenuCtl8..14` set mode 3 **before** `LoadGame` and return 2, not the callee's value), and the shared port
+  routines now carry one `@ 0x...` per original address -- `Menu_SetSpeed`, `Menu_SetMusicVolume`,
+  `Menu_SetSfxVolume`, `OptionsScreen_SetMusicVol`, `OptionsScreen_SetSfxVol`, `SaveLoad_Slot`, `Menu_LoadSlot`,
+  `BasePlaneScreen_SelectWeapon`. `Map_SetSubMode0..8_Play11` was already reached through `Ui_SetSubMode`, so it
+  needed nothing. `Smap_BeginCraftSelectBtn @ 0x84634` got a test instead of a cite (test_geoscape Case 6) because
+  the port installs it as a pointer. Reach measured after this: 965/968, and the IDB classification pass prints
+  residue 0.
 - [ ] **120b. The Debug suite is not parallel-safe.** `tools/check.sh` runs Debug `ctest -j 8` and treats a
   nonzero `rc_dbg` as non-fatal by design (the two known-red tests are reported, not hidden). On 2026-10-22 the
   `-j 8` failure was `test_geoscapeframe`'s "the flight round's strateg entries round-trip through the chunk"
@@ -5687,6 +5697,17 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   blocker has to be re-checked and the row either closed or restated with the real blocker. 5038 names seven
   RNG start globals whose readers this IDB does not establish; a fresh census either finds the readers or
   records that it does not. Part 119.
+- [ ] **121a. The mutation pass over the 475 reached-but-uncited rows.** Reach is closed (119c, 120a); assertion
+  coverage is not. `docs/parity/teeth.tsv` separates the two: 490 of the 965 reached rows carry a test cite at
+  their own original address, **475 run under a test with no cite attributed to them** -- `strat-ui` 121, `tact` 93,
+  `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19. Method, in the order that costs least: take the
+  rows subsystem by subsystem, smallest first (`util` 5, `titles` 6, `audio` 4, `boot-assets` 3, `tact-ui` 12); for
+  each, read the original in the IDB and name the one value or store the run of its port already produces; either
+  add the check and cite the address next to it, or record in the row's note why no observable value depends on it
+  (a fold, a dead branch, a formatting-only read); then prove the new check with one mutation per check and restore
+  it. Deliverable per Part: a shrinking 475 count printed by `teeth_ledger.py` and the mutation lines in
+  `docs/parity/game-core.md`. Do not shrink the count by widening a cite without a check -- that is the failure
+  mode Part 120 would have fallen into. Part 121.
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5741,3 +5762,17 @@ lines added in `src/` (comment only) where a test already drove the port functio
 (the IDB-side classification pass) and the rewritten `docs/parity/teeth_ledger.py` reach rules | teeth: an
 out-of-range insert index landing at 0 instead of at the end fails 8 `test_ptrarray` checks; storing an array
 instead of NULL for an emptied list fails 3 -- both restored, `grep -rn "MUTATION" src tests` empty.
+
+`<this commit>` + Part 120 | 64/64 Release and 64/64 Debug (the `-j 8` Debug failure of row 120b did not reproduce
+on this tree) | 20,626 checks (+7 from `tests/test_geoscape.c` Case 6) | coverage 972/1103 functions (88.1%),
+596888/598792 bytes (99.7%) -- unchanged: no function newly cited, eight families of already-cited variants got
+their own address at the shared port routine | reach: **965/968** (938 by a direct test call or an address cite,
+27 through the port call graph), 3 cited-not-reached (`WinMain @ 0x9fcc4`, `InitInstance @ 0x9fd48`,
+`PocketUFO_WndProc @ 0xa03ec` -- the entry points only `tools/e2e.sh` runs), residue 0 in
+`docs/idb/ida_unreached_callees.py`; the new deficit measure says 475 reached rows carry no test cite at their own
+address, which is row 121a | 93 frames and 9 e2e pictures unchanged | IDB comments read back at 0x84634 (375),
+0x1a0bc (617), 0x19de4 (859), 0x18ecc (327), 0x19a10 (601), 0x19bb4 (301), 0x6ba14 (697), 0x6bc1c (590), 0x79b20
+(756), 0x9fcc4 (318), `idb_save` written | teeth: storing 0 instead of 1 at 0x8463C fails 3 checks ("the button
+stores 1 into the assault flag before it runs (0x8463C): got 0, want 1", "and the run it launches is the flag-armed
+one: got 5, want 9", "same sprite set as the hand-set flag: got 10, want 13") -- restored, `grep -rn "MUTATION"
+src tests` empty | 119c and 120a closed, 121a opened.

@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 64 |
-| Test checks run | 20619 |
+| Test checks run | 20626 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -149,7 +149,7 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x9e268` | `Sound_InitAndLoadSamples` | 364 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` |
 | `0x9e130` | `Sound_LoadAndPlayMusic` | 312 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` |
-| `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+4) |
+| `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+5) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/app/pufo_world.c`, `src/pufo/audio/pufo_audio.c` (+4) |
 | `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+10) |
@@ -220,7 +220,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x44bbc` | `LoadGame` | 3400 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.h` (+2) |
+| `0x44bbc` | `LoadGame` | 3400 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.h` (+3) |
 | `0x416bc` | `Save_ReadSoldiers` | 3220 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x42350` | `Save_WriteSoldiers` | 2896 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+2) |
 | `0x40f4c` | `Save_ReadStrateg` | 1664 | `src/pufo/game/pufo_save.h` |
@@ -236,7 +236,7 @@ is the module that answers to it.
 | `0x3f1fc` | `Save_WriteBases` | 760 | `src/pufo/game/pufo_save.h` |
 | `0x446a8` | `Save_WriteTGameData` | 640 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_save.h` |
 | `0x43c84` | `Save_WriteTeamUnits` | 604 | `src/pufo/game/pufo_save.h` |
-| `0x44988` | `SaveGame` | 564 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+3) |
+| `0x44988` | `SaveGame` | 564 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+4) |
 | `0x44020` | `Save_ReadTeamUnits` | 552 | `src/pufo/game/pufo_save.h` |
 | `0x3fa28` | `Save_WriteSmap` | 396 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x3f558` | `Save_WriteResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
@@ -939,28 +939,28 @@ is the module that answers to it.
 | `0x6b334` | `LoadGame_Slot4_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
 | `0x6b39c` | `LoadGame_Slot5_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
 | `0x6b404` | `LoadGame_Slot6_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bc1c` | `OptionsScreen_SetSfxVol0` | 100 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bc80` | `OptionsScreen_SetSfxVol1` | 100 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bce4` | `OptionsScreen_SetSfxVol2` | 100 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bd48` | `OptionsScreen_SetSfxVol3` | 100 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bdac` | `OptionsScreen_SetSfxVol4` | 100 | `src/pufo/game/pufo_baseui.h` |
-| `0x6be10` | `OptionsScreen_SetSfxVol5` | 100 | `src/pufo/game/pufo_baseui.h` |
+| `0x6bc1c` | `OptionsScreen_SetSfxVol0` | 100 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6bc80` | `OptionsScreen_SetSfxVol1` | 100 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6bce4` | `OptionsScreen_SetSfxVol2` | 100 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6bd48` | `OptionsScreen_SetSfxVol3` | 100 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6bdac` | `OptionsScreen_SetSfxVol4` | 100 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6be10` | `OptionsScreen_SetSfxVol5` | 100 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x19070` | `MenuBtn_SetGamma0` | 96 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.c` (+1) |
 | `0x190d0` | `MenuBtn_SetGamma1` | 96 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.c` (+1) |
 | `0x19130` | `MenuBtn_SetGamma2` | 96 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.c` (+1) |
 | `0x19190` | `MenuBtn_SetGamma3` | 96 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.c` (+1) |
 | `0x191f0` | `MenuBtn_SetGamma4` | 96 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.c` (+1) |
-| `0x19bb4` | `MenuBtn_SetSfxVol1` | 96 | `src/pufo/game/pufo_menu.h` |
-| `0x19c14` | `MenuBtn_SetSfxVol2` | 96 | `src/pufo/game/pufo_menu.h` |
-| `0x19c74` | `MenuBtn_SetSfxVol3` | 96 | `src/pufo/game/pufo_menu.h` |
-| `0x19cd4` | `MenuBtn_SetSfxVol4` | 96 | `src/pufo/game/pufo_menu.h` |
-| `0x19d34` | `MenuBtn_SetSfxVol5` | 96 | `src/pufo/game/pufo_menu.h` |
+| `0x19bb4` | `MenuBtn_SetSfxVol1` | 96 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19c14` | `MenuBtn_SetSfxVol2` | 96 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19c74` | `MenuBtn_SetSfxVol3` | 96 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19cd4` | `MenuBtn_SetSfxVol4` | 96 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19d34` | `MenuBtn_SetSfxVol5` | 96 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
 | `0x715e8` | `PsiScreen_PanelPrev` | 96 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x71648` | `PsiScreen_PanelNext` | 96 | `src/pufo/game/pufo_baseui.h` |
-| `0x6ba14` | `OptionsScreen_SetMusicVol0` | 92 | `src/pufo/game/pufo_baseui.h` |
-| `0x6babc` | `OptionsScreen_SetMusicVol2` | 92 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bb18` | `OptionsScreen_SetMusicVol3` | 92 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bb74` | `OptionsScreen_SetMusicVol4` | 92 | `src/pufo/game/pufo_baseui.h` |
+| `0x6ba14` | `OptionsScreen_SetMusicVol0` | 92 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6babc` | `OptionsScreen_SetMusicVol2` | 92 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6bb18` | `OptionsScreen_SetMusicVol3` | 92 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6bb74` | `OptionsScreen_SetMusicVol4` | 92 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6e98c` | `ManufScreen_ConfirmAndClose` | 92 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x76088` | `BuySellScreen_PanelPrev` | 88 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x760e0` | `BuySellScreen_PanelNext` | 88 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
@@ -970,24 +970,24 @@ is the module that answers to it.
 | `0x967e4` | `Transfer_ScrollPrevAll` | 88 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x9683c` | `Transfer_ScrollNextAll` | 88 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x96ad8` | `Transfer_RoleToIconId` | 88 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x18ecc` | `MenuBtn_SetSpeed0` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x18f20` | `MenuBtn_SetSpeed1` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x18f74` | `MenuBtn_SetSpeed2` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x18fc8` | `MenuBtn_SetSpeed3` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x1901c` | `MenuBtn_SetSpeed4` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x19a10` | `Options_SetMusicVol1` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x19a64` | `Options_SetMusicVol2` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x19ab8` | `Options_SetMusicVol3` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x19b0c` | `Options_SetMusicVol4` | 84 | `src/pufo/game/pufo_menu.h` |
-| `0x19b60` | `Options_SetMusicVol5` | 84 | `src/pufo/game/pufo_menu.h` |
+| `0x18ecc` | `MenuBtn_SetSpeed0` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x18f20` | `MenuBtn_SetSpeed1` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x18f74` | `MenuBtn_SetSpeed2` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x18fc8` | `MenuBtn_SetSpeed3` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x1901c` | `MenuBtn_SetSpeed4` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19a10` | `Options_SetMusicVol1` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19a64` | `Options_SetMusicVol2` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19ab8` | `Options_SetMusicVol3` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19b0c` | `Options_SetMusicVol4` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
+| `0x19b60` | `Options_SetMusicVol5` | 84 | `src/pufo/game/pufo_menu.c`, `src/pufo/game/pufo_menu.h` |
 | `0x19d94` | `Menu_ToggleForceNoDrag` | 80 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.c` (+1) |
-| `0x19de4` | `SaveLoad_Slot0` | 80 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.h` |
-| `0x19e34` | `SaveLoad_Slot1` | 80 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19e84` | `SaveLoad_Slot2` | 80 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19ed4` | `SaveLoad_Slot3` | 80 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19f24` | `SaveLoad_Slot4` | 80 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19f74` | `SaveLoad_Slot5` | 80 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x19fc4` | `SaveLoad_Slot6` | 80 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x19de4` | `SaveLoad_Slot0` | 80 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.c` (+1) |
+| `0x19e34` | `SaveLoad_Slot1` | 80 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19e84` | `SaveLoad_Slot2` | 80 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19ed4` | `SaveLoad_Slot3` | 80 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19f24` | `SaveLoad_Slot4` | 80 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19f74` | `SaveLoad_Slot5` | 80 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x19fc4` | `SaveLoad_Slot6` | 80 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x617f4` | `BasePlaneScreen_Open` | 80 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+1) |
 | `0x7cc3c` | `BasePlaneScreen_SelectListed` | 80 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
 | `0x6af80` | `SaveGame_Slot0_CloseUI` | 76 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
@@ -997,8 +997,8 @@ is the module that answers to it.
 | `0x6b0b0` | `SaveGame_Slot4_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6b0fc` | `SaveGame_Slot5_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6b148` | `SaveGame_Slot6_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
-| `0x6ba70` | `OptionsScreen_SetMusicVol1` | 76 | `src/pufo/game/pufo_baseui.h` |
-| `0x6bbd0` | `OptionsScreen_SetMusicVol5` | 76 | `src/pufo/game/pufo_baseui.h` |
+| `0x6ba70` | `OptionsScreen_SetMusicVol1` | 76 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6bbd0` | `OptionsScreen_SetMusicVol5` | 76 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x577c0` | `BaseAtScreen_CloseThunk` | 72 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x64a9c` | `SoldierScreen_SelectListed` | 72 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x6d01c` | `OptionsScreen_PanelPrev` | 72 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -1006,12 +1006,12 @@ is the module that answers to it.
 | `0x6dd4c` | `ManufScreen_PanelPrev` | 72 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6dd94` | `ManufScreen_PanelNext` | 72 | `src/pufo/game/pufo_baseui.h` |
 | `0x588cc` | `BaseAtScreen_Open` | 68 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_strateg.h` |
-| `0x79b20` | `BasePlaneScreen_SelectWeapon25` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
-| `0x79b64` | `BasePlaneScreen_SelectWeapon26` | 68 | `src/pufo/game/pufo_plane.h` |
-| `0x79ba8` | `BasePlaneScreen_SelectWeapon27` | 68 | `src/pufo/game/pufo_plane.h` |
-| `0x79bec` | `BasePlaneScreen_SelectWeapon28` | 68 | `src/pufo/game/pufo_plane.h` |
-| `0x79c30` | `BasePlaneScreen_SelectWeapon29` | 68 | `src/pufo/game/pufo_plane.h` |
-| `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.h` |
+| `0x79b20` | `BasePlaneScreen_SelectWeapon25` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.c` (+1) |
+| `0x79b64` | `BasePlaneScreen_SelectWeapon26` | 68 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x79ba8` | `BasePlaneScreen_SelectWeapon27` | 68 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x79bec` | `BasePlaneScreen_SelectWeapon28` | 68 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x79c30` | `BasePlaneScreen_SelectWeapon29` | 68 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_plane.c` (+1) |
 | `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x18864` | `Menu_OpenLoadSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
 | `0x188a4` | `Menu_OpenSaveSlots` | 64 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_menu.h` (+1) |
@@ -1023,13 +1023,13 @@ is the module that answers to it.
 | `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x72e30` | `ResearchScreen_PanelPrev` | 56 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x72e68` | `ResearchScreen_PanelNext` | 56 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x1a0bc` | `MenuCtl8_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a0f0` | `MenuCtl9_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a124` | `MenuCtl10_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a158` | `MenuCtl11_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a18c` | `MenuCtl12_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a1c0` | `MenuCtl13_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
-| `0x1a1f4` | `MenuCtl14_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a0bc` | `MenuCtl8_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a0f0` | `MenuCtl9_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a124` | `MenuCtl10_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a158` | `MenuCtl11_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a18c` | `MenuCtl12_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a1c0` | `MenuCtl13_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a1f4` | `MenuCtl14_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a034` | `MenuCtl1_OnClick` | 48 | `src/pufo/ui/pufo_menubtn.h` |
@@ -1279,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 3227 |
+| `test_geoscape` | PASS | 3234 |
 | `test_geoscapeframe` | PASS | 2156 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |

@@ -78,11 +78,23 @@ confirmation under that guard.
 Citation coverage is one claim; reach is another, and `docs/parity/teeth_ledger.py` now measures it over the same
 968 behaviour-bearing rows. A row counts as reached when a test cites its original address, calls the original
 name or its port owner directly (test text with the comments stripped, so a mention is not a call), or reaches it
-through the port call graph from such a call. Measured 2026-10-22: 924 of 968 reached (896 by a direct call or an
-address cite, 28 through the call graph), 44 cited but not reached. `docs/idb/ida_unreached_callees.py`, run
-inside IDA over the live database, puts all 44 into one class: their own callee chain lands on an address the port
-owns and a test reaches, so each is a variant of a routine that is covered (`MenuBtn_SetSpeed0 @ 0x18ecc` ->
-`GameSpeed_Set @ 0x260c0`; `Smap_BeginCraftSelectBtn @ 0x84634` -> `Smap_BeginCraftSelect @ 0x838dc`). Nothing is
-left as unexplained residue, and nothing in that claim is an assertion: a wrapper whose shared routine runs does
-not have its own constant pinned, and the ledger says so in its own header. The per-function
-"check-fails-when-wrong" pass is still the part of the goal no gate runs.
+through the port call graph from such a call. Measured after Part 119: 924 of 968 reached (896 by a direct call or
+an address cite, 28 through the call graph), 44 cited but not reached -- and `docs/idb/ida_unreached_callees.py`,
+run inside IDA over the live database, put all 44 in one class: their own callee chain lands on an address the port
+owns and a test reaches (`MenuBtn_SetSpeed0 @ 0x18ecc` -> `GameSpeed_Set @ 0x260c0`), so nothing was unexplained
+but nothing was claimed per address either. Part 120 turned that into per-address cites: 40 of the 44 are per-level
+button handlers the port implements once, each family verified in the IDB by an instruction walk (members share one
+body and differ only in the level immediate -- `MenuCtl8..14_OnClick` 11 instructions and 52 bytes each,
+`SaveLoad_Slot0..6` 17 and 80, `BasePlaneScreen_SelectWeapon25..30` 13 and 68, `OptionsScreen_SetMusicVol0..5` 18
+each with two of them 76 bytes rather than 92 and the same five steps), and the shared port routine now cites every
+address it reproduces. `Smap_BeginCraftSelectBtn @ 0x84634` got a test instead (test_geoscape.c Case 6, since the
+port installs it as a pointer and no call graph can follow that). Measured after Part 120: **965 of 968 reached**
+(938 by a direct call or an address cite, 27 through the call graph), 3 cited but not reached -- `WinMain @ 0x9fcc4`,
+`InitInstance @ 0x9fd48` and `PocketUFO_WndProc @ 0xa03ec`, the process entry points that only `tools/e2e.sh`
+exercises, by running the real executable -- and residue 0 in the IDB classification. Nothing in any of that is an
+assertion: a wrapper whose shared routine runs does
+not have its own constant pinned, and the ledger says so in its own header. The same TSV measures that gap: of the
+965 reached rows, 490 carry a test cite at their own address and 475 run under a test with no cite attributed to
+them (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, the rest in the
+small subsystems). The per-function "check-fails-when-wrong" pass over those 475 is the part of the goal no gate
+runs, and PLAN row 121a carries it.

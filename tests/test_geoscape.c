@@ -2219,6 +2219,31 @@ static void TestBeginCraftSelect(void)
     /* pShip was freed by Ship_RemoveWithCargo inside the demolish - do not free it again. */
     PtrArray_DeleteAll(&g_List);
 
+    /* Case 6: the assault-confirm nav button, Smap_BeginCraftSelectBtn @ 0x84634. The original is two
+     * instructions -- `STRB R1` storing 1 into bCraftSelectAssaultFlag @ 0x1870A8 (0x8463C), then the
+     * tail call into Smap_BeginCraftSelect. The flag is not inert: 0x839E8 reads it and the arm at
+     * 0x83A04 forces Map_nMissionType = MissionType_MarsOrSpecial with sprite sets 13/21/23/23. So the
+     * pin is a pair of runs from the same RESET state -- once with the flag set by hand and the plain
+     * call, once with the flag clear and the button call -- and both must land in the same place. */
+    RESET(21, 0);
+    bAssault = 1;
+    nRet = Smap_BeginCraftSelect(&env);
+    CheckEqI32(nMissionType, 9, "the assault flag forces the Mars/special mission type (0x83A1C)");
+    CheckEqI32(abSprite[0], 13, "with that arm's sprite set 13/21/23/23");
+    CheckEqI32(abSprite[1], 21, "  second entry 21");
+    free(pShip);
+    PtrArray_DeleteAll(&g_List);
+
+    RESET(21, 0);
+    bAssault = 0;
+    nRet = Smap_BeginCraftSelectBtn(&env);
+    CheckEqI32(bAssault, 1, "the button stores 1 into the assault flag before it runs (0x8463C)");
+    CheckEqI32(nMissionType, 9, "and the run it launches is the flag-armed one");
+    CheckEqI32(abSprite[0], 13, "  same sprite set as the hand-set flag");
+    CheckEqI32(nRet, 7, "  same launch tail as the plain call");
+    free(pShip);
+    PtrArray_DeleteAll(&g_List);
+
 #undef RESET
 }
 

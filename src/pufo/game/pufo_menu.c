@@ -28,6 +28,11 @@ static bool ValidStep(i32 nStep)
     return nStep >= 0 && nStep < PUFO_MENU_STEPS;
 }
 
+/* MenuBtn_SetSpeed0 @ 0x18ecc, MenuBtn_SetSpeed1 @ 0x18f20, MenuBtn_SetSpeed2 @ 0x18f74,
+ * MenuBtn_SetSpeed3 @ 0x18fc8, MenuBtn_SetSpeed4 @ 0x1901c. Verified 2026-10-22: five copies of one
+ * 19-instruction body (84 bytes each) whose only difference is the level -- `Sound_Play(17)`,
+ * a one-hot over the five speed pad globals 0xACE5A/0xACE7A/0xACE9A/0xACEBA/0xACEDA at the button's own
+ * index, then `GameSpeed_Set(&Map_bTactFlag, nSpeed = index)`. */
 bool Menu_SetSpeed(PufoOptions *pOpt, GameClock *pClock, MenuPads *pPads,
                    i32 nStep, const MenuHooks *pHooks)
 {
@@ -58,6 +63,11 @@ bool Menu_SetGamma(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
     return true;
 }
 
+/* Options_SetMusicVol1 @ 0x19a10, Vol2 @ 0x19a64, Vol3 @ 0x19ab8, Vol4 @ 0x19b0c, Vol5 @ 0x19b60.
+ * Verified 2026-10-22: five copies of one 18-instruction body (84 bytes each); the only difference is
+ * the level -- the value
+ * written to Map_nMusicVolume is 1..5 and the pad made one-hot is that value minus one. No
+ * Sound_Play anywhere in this family (that is what separates it from the sfx group below). */
 bool Menu_SetMusicVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
                          const MenuHooks *pHooks)
 {
@@ -75,6 +85,10 @@ bool Menu_SetMusicVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
     return true;
 }
 
+/* MenuBtn_SetSfxVol1 @ 0x19bb4, Vol2 @ 0x19c14, Vol3 @ 0x19c74, Vol4 @ 0x19cd4, Vol5 @ 0x19d34.
+ * Verified 2026-10-22: five copies of one 21-instruction body (96 bytes each), the level the only
+ * difference -- store 1..5 into
+ * Map_nSoundVolume, one-hot the pad at level-1, `Sound_ApplySfxVolume`, then `Sound_Play(17)` last. */
 bool Menu_SetSfxVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
                        const MenuHooks *pHooks)
 {
