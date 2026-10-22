@@ -47,7 +47,7 @@ static u8              g_bRoot34;
 static u8              g_bRoot35;
 static GameTime        g_time;
 static ResearchTopicLive g_aTopics[PUFO_RESEARCH_TOPIC_COUNT];
-static u16             g_nResearchEntries;
+static u8              g_nResearchEntries;
 static BaseFacFlag     g_aFac[PUFO_BASEFAC_COUNT];
 static u8              g_aFacilityGrid[480 + 144]; /* one base: type lane + occupancy lane */
 static u8              g_aSiteState[8];

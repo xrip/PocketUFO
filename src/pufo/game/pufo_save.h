@@ -1258,7 +1258,7 @@ typedef struct LoadGameEnv {
                                         * after the 17152-byte product block, which is why the block's own
                                         * offsets reach it there; in the shell it is a separate array, so
                                         * the writes MUST go through this pointer. */
-    u16             *puResearchEntries;/* 0x160C4C, shared by every base */
+    u8              *puResearchEntries;/* 0x160C4C, a byte, shared by every base */
     u16             *puShotObjectWords;/* the word array of the shot object = apObjects[0] */
     SaveTimeRecord  *pTimeRec;         /* the time chunk's wire record */
     GameTime        *pTime;            /* 0x159618, the live clock the record is copied into */

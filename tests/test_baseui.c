@@ -3938,7 +3938,7 @@ static void TestResearchAllocate(void)
     static ResearchTopicLive g_aTopics[PUFO_RESEARCH_TOPIC_COUNT];
     static i32 g_nRow;
     static i8 g_nBase;
-    static u16 g_nEntries;
+    static u8 g_nEntries;
     ResearchQtyEnv env;
     ResearchCancelEnv cancel;
     ResearchAccumulateEnv accum;
@@ -4123,7 +4123,7 @@ static void TestScreenSelect(void)
     static ObjectRecFull g_SciRec;
     static i32 g_nRow, g_nManufRow;
     static i8 g_nBase;
-    static u16 g_nEntries;
+    static u8 g_nEntries;
     static u8 g_bSelected, g_bGate, g_bAnim, g_bTopicSel;
     ManufSelectEnv sel;
     ResearchStartEnv start;
@@ -4249,7 +4249,7 @@ static void TestManufQty(void)
     static ObjectRecFull g_EngRec;
     static i32 g_nRow;
     static i8 g_nBase;
-    static u16 g_nEntries;
+    static u8 g_nEntries;
     static u8 g_nGate;
     ManufQtyEnv env;
 
@@ -4424,7 +4424,7 @@ static void TestResearchQty(void)
     static ObjectRecFull g_SciRec;
     static i32 g_nRow;
     static i8 g_nBase;
-    static u16 g_nEntries;
+    static u8 g_nEntries;
     ResearchQtyEnv env;
 
     printf("\nResearchScreen_IncSelectedQty @ 0x72ea0 / ResearchScreen_DecSelectedQty @ 0x72f70\n");
@@ -7433,7 +7433,7 @@ static void TestEnterBuildMode(void)
     static NavCtlEnv navEnv;
     static UiControl parkCtl;
     i8 nBase;
-    u16 nEntries;
+    u8 nEntries;
     i32 nScreen;
     BaseBuildModeEnv env;
     i32 i;
@@ -7537,14 +7537,16 @@ static void TestEnterBuildMode(void)
     CheckEqI32(aGrid[GRID_NEED(3, 0, 0)], 1,
                "base 3 keeps its mark: the passes use nSelectedBaseIdx, not a scan");
 
-    /* 7. the count is an unsigned byte, so entries past 255 are outside the sum. */
+    /* 7. the count is an unsigned byte (one byte at 0x160C4C, STRB @ 0x859E4), so its largest
+     * possible value 255 still leaves the entry at index 255 outside the sum. The old spelling
+     * modelled the count as u16 and tested a count of 300, a value the byte cannot hold. */
     BUILD_BEGIN();
-    nEntries = 300;
+    nEntries = 255;
     aGrid[GRID_CELL(2, 0, 0)] = 3;
     aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * 2 + 255] = 9000;
     Base_EnterBuildMode(&env);
     CheckEqI32(aGrid[GRID_NEED(2, 0, 0)], 0,
-               "a count of 300 is capped at 255, so the 9000 at index 255 is not summed");
+               "the byte count tops out at 255, so the 9000 at index 255 is not summed");
 
     /* 8. deviation: an index outside 0..7 is refused. The original sign-extends the byte and
      * walks whatever block that lands on -- base 8 would write needed at grid[1632..1667], past

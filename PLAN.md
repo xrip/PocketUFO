@@ -5028,10 +5028,14 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `const u8 *`, so the two spellings disagree inside the same header. Fixing it is a type change across
   four envs, `pufo_world.h` and the tests that fill them; it is its own step, not part of a port.
   (target Part 104.)
-  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a typing item, measured rather than
-    argued. Three spellings today: `u16` at `pufo_world.h:205`, `i32` at `pufo_baseui.h:1587`,
-    `const u8 *` at `pufo_baseui.h:5011`. The original's field is a byte. Nothing is wrong in
-    behaviour; one type sweep closes it. Follow-up below.
+  - **Closing pass 2026-10-22, CLOSED-FIXED by Part 113:** closed on the census, not on the argument.
+    All 78 xrefs to `0x160C4C` are: 31 `LDRB`, 6 `LDRBEQ`, 1 `LDRBHI` (38 byte reads), 40 `MOV R12, #(...)`
+    base setups, and one writer `0x859E4 STRB` in `Geoscape_InitUI` (144). No word read of it. The field is
+    now `u8` (`pufo_world.h:205`) and every pointer to it is `u8 *` / `const u8 *` (`pufo_baseui.h:1833/
+    1890/3188`, `pufo_geoiinit.h:133`, `pufo_geoscape.h:370`, `pufo_save.h:1261`); the two envs carrying it
+    as a value keep `i32` because the original passes it in a register (0x8BA58, 0x628F0). The byte bound is
+    asserted at the widened boundary in `test_save`: 144 sums 0..143, 255 sums 0..254, 300 is clamped to 255,
+    and widening the guard to 320 fails exactly the third check.
 - [x] **Lifted by the frame wiring: the app now runs the geoscape frame.** This bullet said the geoscape screen was
   a hook the port did not implement (`RenderFrameEnv.pfnGeoscapeDraw`), which made per-screen visual checks
   impossible. `App_GeoscapeDrawThunk` installs that hook (`pufo_app.c:542`) over the shell's own `nGeoscapeScreen`,
@@ -5563,19 +5567,19 @@ against MSVC's uninitialised-memory pattern. See "Separate issues".
 
 `grep -c '^- \[ \]' PLAN.md` is 0. The 27 rows that were open carry a marker each, in three kinds:
 
-- **CLOSED-FIXED** (10): 4386, 4497, 4564, 4601, 4649, 4827, 4859, 4957, 4972, 4977. Port code, an asserting
+- **CLOSED-FIXED** (11): 4386, 4497, 4564, 4601, 4649, 4827, 4859, 4915, 4957, 4972, 4977. Port code, an asserting
   test, and a mutation behind the test that proves the test has teeth.
 - **CLOSED-ASSERTED** (3): 4332, 4374, 4380. Original defects the port reproduces on purpose and a test
   names -- `bugs.tsv` rows plus the live proof in `test_geoscapeframe`, `test_save` and the quit-YES e2e
   output.
-- **CLOSED-RECORDED** (14): 4490, 4572, 4889, 4899, 4905, 4915, 4970, 4983, 4994, 5002, 5017, 5024,
+- **CLOSED-RECORDED** (13): 4490, 4572, 4889, 4899, 4905, 4970, 4983, 4994, 5002, 5017, 5024,
   5038, 5068. Measured facts, a stated decision, and -- where code work remains -- a named follow-up below
   instead of a parity gap. 4905 closed because its own claim was stale; 4983 closed with numbers that
   correct the row's older numbers.
 
 ### What still holds code work (named; none of it a gap in a shipped flow)
 
-4889 product-column type sweep, 4915 research-count type sweep, 4970 one owner for the two cell grids, 5024
+4889 product-column type sweep, 4970 one owner for the two cell grids, 5024
 save records over live owners, 5017 one home for the UI screen id, 4572 the `ctlResearchPanel` slot decision,
 5002 the two older real-surface colour tests, 4899 the `pufo_game`/`pufo_ui` link order, and the new
 `test_geoscapeframe` boot-values item: the fixture runs on a zeroed option block while the app runs on the
@@ -5613,3 +5617,6 @@ checked and unchanged, no frame re-referenced.
 `<this commit>` + Part 112 | 63/63 Release and 63/63 Debug | 20,586 checks -- unchanged: Part 112 adds
 no check, it re-points an existing one at the live cell | 972/1103 functions (88.1%), 596888/598792 bytes
 (99.7%) | 93 frames unchanged, 6 of 9 e2e pictures re-accepted with the A/B proof in the Part 112 section.
+`<this commit>` + Part 113 | 63/63 Release and 63/63 Debug | 20,589 checks (+3: the byte-bound checks in
+`test_save`) | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged: Part 113 adds no
+function and cites none | 93 frames and 9 e2e pictures unchanged: the count value 144 did not move.

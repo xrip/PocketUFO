@@ -1830,7 +1830,7 @@ typedef struct ResearchQtyEnv {
     UiPanel             *pTopicPanel;       /* pResearchTopicPanel @ 0x160C68 */
     const i32           *pnTopicRow;        /* nResearchTopicRowCache @ 0x160C74, a cached nUnk3032 */
     u16                 *apResearchCols;    /* auResearchCol @ 0x16022C, 144 u16 per base */
-    const u16           *puResearchEntries; /* nResearchEntryCount @ 0x160C4C, shared by every base */
+    const u8            *puResearchEntries; /* nResearchEntryCount @ 0x160C4C, byte, shared by every base */
     const ObjectRecFull *pScientistRec;     /* Map_apObjects113 @ 0x113C84, the scientists item */
     u8                  *abFacilityGrid;    /* gBaseFacGrid @ 0x159768; mutable because the start
                                              * button re-runs the two needed passes over it */
@@ -1887,7 +1887,7 @@ void ResearchScreen_CancelSelectedAndClose(const ResearchCancelEnv *pEnv);
 typedef struct ResearchAccumulateEnv {
     ResearchTopicLive *aTopics;           /* aResearchTopics @ 0x15EF08, 144 records of 34 bytes */
     const u16         *apResearchCols;    /* auResearchCol @ 0x16022C, 144 u16 per base */
-    const u16         *puResearchEntries; /* nResearchEntryCount @ 0x160C4C */
+    const u8          *puResearchEntries; /* nResearchEntryCount @ 0x160C4C, a byte */
     i32 (*pfnRebuild)(void *pUser);       /* ResearchScreen_RebuildTopicList @ 0x74270, ported in this file behind ResearchRebuildEnv */
     void              *pRebuildUser;
 } ResearchAccumulateEnv;
@@ -1925,7 +1925,7 @@ typedef struct ManufQtyEnv {
     const i32           *pnProductRow;    /* nManufProductRowCache @ 0x15EE3C, a cached nUnk3032 */
     u16                 *apManufCols;     /* auManufCol @ 0x15E19C, 200 u16 per base */
     i32                 *apProductB;      /* aManufProductB @ 0x15B79C, 200 u32 per base */
-    const u16           *puManufEntries;  /* nResearchEntryCount @ 0x160C4C, shared with research */
+    const u8            *puManufEntries;  /* nResearchEntryCount @ 0x160C4C, a byte, shared with research */
     const ObjectRecFull *pEngineerRec;    /* Map_apObjects112 @ 0x113C80, the engineers item */
     const u8            *abFacilityGrid;  /* gBaseFacGrid @ 0x159768 */
     const i8            *pnSelectedBaseIdx; /* nSelectedBaseIdx @ 0x159D81 */
@@ -3185,7 +3185,7 @@ typedef struct BaseBuildModeEnv {
     u8              *abFacilityGrid;      /* gBaseFacGrid @ 0x159768 */
     const u16       *apManufCols;         /* auManufCol @ 0x15E19C, the workshop pass's budget source */
     const u16       *apResearchCols;      /* auResearchCol @ 0x16022C, the lab pass's budget source */
-    const u16       *puResearchEntries;   /* nResearchEntryCount @ 0x160C4C */
+    const u8        *puResearchEntries;   /* nResearchEntryCount @ 0x160C4C, a byte */
     const i8        *pnSelectedBaseIdx;   /* nSelectedBaseIdx @ 0x159D81 */
     i32             *pnScreenId;          /* nGeoscapeScreen @ 0x186BC4 */
     UiControl       *pParkCtl;            /* pGeoscapeCtlA, moved to 1000,1000 */

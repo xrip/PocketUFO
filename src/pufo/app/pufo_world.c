@@ -10424,7 +10424,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->manufQty.pnProductRow     = &pW->nManufProductRow;                  /* 0x15EE3C */
     pW->manufQty.apManufCols      = pW->auManufCol;
     pW->manufQty.apProductB       = pW->anProductReq;
-    pW->manufQty.puManufEntries   = (const u16 *)&pW->nResearchEntries;     /* 0x160C4C, shared count */
+    pW->manufQty.puManufEntries   = &pW->nResearchEntries;                  /* 0x160C4C, shared count */
     pW->manufQty.abFacilityGrid   = pW->abFacilityGrid;
     pW->manufQty.pnSelectedBaseIdx = &pW->nSelectedBase;
     pW->manufQty.pbQtyGate        = &pW->bManufQtyGate;                     /* 0x15EE50 */

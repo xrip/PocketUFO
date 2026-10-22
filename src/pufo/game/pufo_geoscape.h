@@ -367,7 +367,7 @@ typedef struct BaseDemolishEnv {
     u16 *apProductC;         /* 0x15D09C, 200 u16 per base */
     i32  *apProductB;        /* 0x15B79C, 200 u32 per base */
     u16 *apResearchCols;     /* 0x16022C, 144 u16 per base */
-    u16 *pnResearchEntries;  /* 0x160C4C, shared by every base */
+    u8 *pnResearchEntries;   /* 0x160C4C, a byte, shared by every base */
     struct SmapSite *apSites;  /* 0x162030 */
     i32 nSiteCount;          /* 0x186410, signed */
     u8 *pbBaseCount;         /* 0x159D80, signed char */

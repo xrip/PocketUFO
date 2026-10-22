@@ -22147,3 +22147,65 @@ that residue stated.
 
 A comment at 0x22738 states the gamma read's default string and what `Reg_GetString` does when the key is
 absent, so the startup value 2 is recorded where the read happens rather than only at the store.
+
+## Part 113 - the research entry count is one byte, and the port reads it as one
+
+PLAN follow-up 4915 (`The research entry count is modelled as `u16` where the original has a byte`, found
+in Part 43). Closed with a census of the address rather than with the older argument.
+
+### IDB first
+
+The field is `byte_160BBC + 0x90 = 0x160C4C`, a byte inside the 164-byte block that starts at 0x160BBC.
+Every xref to that address in the IDB today: 78, and the split is exact - 31 `LDRB`, 6 `LDRBEQ`, 1 `LDRBHI`
+(38 byte reads, in LoadGame 0x45374, ResearchScreen_Open 0x6170C, Base_DemolishFacility 0x67000/0x67030,
+Base_GetScientistCount 0x68154, Base_CountActiveResearch 0x681AC, Base_GetEngineerCount 0x68210,
+Base_CountActiveManuf 0x68278, ManufScreen_BuildPanels 0x6EA1C/0x6EE6C/0x6F22C, ...), 40 `MOV R12, #(
+byte_160BBC+0x90 - 0x15EF08)` base setups, and one writer: `0x859E4 STRB R1, [R0,R12]` in Geoscape_InitUI,
+the value 144. No word read of it - no `LDR`, no `LDRD` - anywhere in those 78.
+
+The loop shape is what makes the width observable. `Base_CountActiveResearch @ 0x68198` reads the byte at
+0x681AC, skips the array when it is zero (`CMP R3,#0` / `BLE locret_681EC`, the port's `nEntries <= 0`), and
+then runs `do { total += *(u16 *)(p + 2*i); --count } while (count != 0)`. A count of 144 sums indices 0..143;
+a count of 255 - the largest a byte can say - sums 0..254. `Base_CountActiveManuf @ 0x68264` does the same at
+0x68278 over its own column, and the load tail calls the research sum at 0x458AC for the lab budget.
+
+### The sweep
+
+- The field: `pufo_world.h:205` `u16 nResearchEntries` -> `u8`, with the census in its comment.
+- Every pointer to it: `const u16 *puResearchEntries` -> `const u8 *` in `ResearchQtyEnv`
+  (`pufo_baseui.h:1833`), `ResearchAccumulateEnv` (`:1890`), `ManufQtyEnv` (`:3188`); `u16 *` -> `u8 *` in
+  `GeoscapeInitEnv` (`pufo_geoiinit.h:133`), `pufo_geoscape.h:370` and `pufo_save.h:1261`.
+- The `(const u16 *)&pW->nResearchEntries` cast at the frame wiring is gone: the field and the pointer now
+  have the same type, so the assignment stands on its own.
+- What stays `i32`, and why: the two envs that hold the count as a value (`pufo_baseui.h:1587`,
+  `pufo_geoscape.h:753`) are filled from the byte cell (`pufo_world.c:3006`, `:8778`) and answer call sites
+  where the original carries the count in a register (0x8BA58, 0x628F0). A register is wider than a byte; a
+  pointer to the field is not.
+
+### The boundary the widening needs, and the check that pins it
+
+`QuantitySumColumn` (`src/pufo/game/pufo_geoscape.c:670`) keeps an `i32 nEntries` parameter and clamps
+`nEntries > 255` to 255, because the only value the original can hand it is one a byte can hold. That guard
+had no test behind it: `test_save`'s own research columns are zero-filled (`memset(aResearchCols, 0, ...)`,
+test_save.c:2484 and :2880), so the 0x458AC sum was dark and an earlier mutation of that call site passed.
+Three checks now sit at the end of `TestLoadGame` on a column that is not zero (4 at index 10, 9 at index
+200, 7 at index 260):
+
+- count 144 -> 4: the sum stops at the count, index 200 is past it;
+- count 255 -> 13: the largest a byte can say sums 0..254, index 255 stays outside;
+- count 300 -> 13: 300 is not a value the byte can hold, and the guard keeps the sum at 255 entries.
+
+Teeth: widening the guard to 320 fails exactly the third check (`got 20, want 13`) and leaves the other two
+green - the right split, since 144 and 255 are below both bounds.
+
+### Evidence
+
+63/63 tests in Release and in Debug; checks 20,586 -> 20,589 (+3, the byte-bound checks); coverage unchanged
+at 972/1103 functions (88.1%) and 596888/598792 bytes (99.7%) - Part 113 adds no function and cites none.
+93 reference frames and 9 e2e pictures are unchanged: 144 was the value the port already carried, so a width
+change moves no pixel. `tools/check.sh`: all six gates green, no MUTATION marker left in src or tests.
+
+### IDB
+
+The census is written at the block head 0x160BBC (652 chars, read back at 0x160C4C) with the one STRB writer
+named, so the next reader of that address does not have to repeat the sweep. `idb_save` run.

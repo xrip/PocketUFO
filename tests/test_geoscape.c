@@ -1899,7 +1899,8 @@ static void TestBeginCraftSelect(void)
     static SmapSite g_aSites[4];
     static u16 g_aManuf[200], g_aProdC[200], g_aResearch[144];
     static i32 g_aProdB[200];
-    static u16 g_nResearchEntries, g_nObjectCount, g_nSoldierCount;
+    static u8  g_nResearchEntries;
+    static u16 g_nObjectCount, g_nSoldierCount;
     static i32 g_nSeed, g_nTotalSec, g_nAssignedCount;
     static u8 g_abHangar[64];
     static i32 g_anAssigned[1];
@@ -2356,7 +2357,7 @@ static void TestDemolishBase(void)
     u8 nBaseCount = 3;
     u16 nSoldierCount = 3;
     u16 nObjectCount = 1;
-    u16 nResearchEntries = 1;
+    u8 nResearchEntries = 1;
     u8 once = 0;
 
     printf("Base_DemolishFacility\n");

@@ -130,7 +130,7 @@ typedef struct GeoscapeInitEnv {
 
     GameTime         *pTime;     /* nGameTimeSec @ 0x159618; bPaused is 0x15961C */
     ResearchTopicLive *apTopics; /* the live topic array @ 0x15EF0C */
-    u16              *puResearchEntries; /* 0x160C4C, the shared entry count */
+    u8               *puResearchEntries; /* 0x160C4C, the shared entry count, a byte */
 
     BaseFacFlag *paFacFlags;     /* aBaseFacFlags @ 0x186E48 */
 

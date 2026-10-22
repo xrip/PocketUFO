@@ -202,7 +202,12 @@ typedef struct PufoWorldState {
     u16 auResearchCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];  /* auResearchCol @ 0x16022C */
     u8  abResearchZero[PUFO_RESEARCH_TOPIC_COUNT];   /* unk_160B2C */
     u8  abResearchActive[PUFO_RESEARCH_TOPIC_COUNT]; /* byte_160BBC */
-    u16 nResearchEntries;                       /* 0x160C4C, the shared entry count */
+    u8  nResearchEntries;                       /* 0x160C4C = byte_160BBC + 0x90, the shared entry
+                                                 * count: one byte. Census of every xref in the IDB:
+                                                 * 38 byte reads (31 LDRB + 6 LDRBEQ + 1 LDRBHI), one
+                                                 * byte write (STRB R1,[R0,R12] @ 0x859E4 in
+                                                 * Geoscape_InitUI, the value 144), no LDR/LDRH/STR/
+                                                 * STRH ever touches 0x160C4C. */
     ResearchTopicLive aTopics[PUFO_RESEARCH_TOPIC_COUNT]; /* aResearchTopics @ 0x15EF08 */
 
     /* Sites and the strateg list. */

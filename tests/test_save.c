@@ -2338,7 +2338,7 @@ static void TestLoadGame(void)
      * block the version-<3 tail copies out (0x455F8) and clears (0x45638). */
     static u16 aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
     static u16 aResearchCols[144];
-    static u16 uResearchEntries;
+    static u8 uResearchEntries;
     static u16 aShotWords[128];
     static Ship aShip;
     static Ship *apShips[1];
@@ -2634,6 +2634,23 @@ static void TestLoadGame(void)
     Check(aShotWords[30] == 0xEEEE, "  word 30 is past the nCraftCount-1 stores and stays");
     CheckEqI32((i32)nTactVerOut, 1, "  tactver value handed to the slot-context slot");
     Check(apObj[4] == &aObj[4], "  and the object table is NOT touched by tactver");
+
+    /* The load tail's 0x458AC hands Base_UpdateLabNeeded the sum of the research column up to the
+     * count byte at 0x160C4C (LDRB at 0x681AC, the STRB writer at 0x859E4 stores 144). The fixture's
+     * own column is zero, so the bound is pinned here on a column that is not: a byte cannot hold a
+     * value past 255, and the port's QuantitySumColumn guard is what keeps its wider parameter to the
+     * width the byte has. */
+    {
+        u16 aProbe[320];
+        memset(aProbe, 0, sizeof(aProbe));
+        aProbe[10] = 4; aProbe[200] = 9; aProbe[260] = 7;
+        CheckEqI32(Base_CountActiveResearch(aProbe, 144), 4,
+                   "  the research sum stops at the count: index 200 is past a count of 144");
+        CheckEqI32(Base_CountActiveResearch(aProbe, 255), 13,
+                   "  a count of 255 -- the largest a byte can say -- sums indices 0..254");
+        CheckEqI32(Base_CountActiveResearch(aProbe, 300), 13,
+                   "  and 300 is not a value the byte can hold: the guard keeps the sum at 255 entries");
+    }
     CheckEqI32((i32)aRadarPct[0], Base_CountEmptyFacilityCells(aGrid, 0), "  radar byte recomputed");
 
     DatFile_Close(&dat);
@@ -2681,7 +2698,7 @@ static void TestLoadGameOldVersionMissionSeam(void)
     static i32 aRadarPct[8];
     static u16 aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* 3200 bytes, auManufCol */
     static u16 aResearchCols[144];
-    static u16 uResearchEntries;
+    static u8 uResearchEntries;
     static u16 aShotWords[128];
     static Ship aShip;
     static Ship *apShips[1];
