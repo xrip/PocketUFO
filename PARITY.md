@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 65 |
-| Test checks run | 20644 |
+| Test checks run | 20672 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1320,7 +1320,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_terrain` | PASS | 59 |
 | `test_texts_lang` | PASS | 15 |
 | `test_timer` | PASS | 96 |
-| `test_titles` | PASS | 139 |
+| `test_titles` | PASS | 167 |
 | `test_turn` | PASS | 176 |
 | `test_uibank` | PASS | 394 |
 | `test_unit` | PASS | 298 |
@@ -1346,7 +1346,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 892 citations.
+parity report. Total: 893 citations.
 
 ### Offsets below the image base (46)
 
@@ -1355,7 +1355,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x000c`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b8c`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (846)
+### At or above the image base (847)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1496,6 +1496,7 @@ against the IDB when the final report is assembled.
 - `0x147b3c`
 - `0x147b54`
 - `0x14924`
+- `0x14a2d0`
 - `0x14f2c`
 - `0x14fc0`
 - `0x14fe4`

@@ -5,6 +5,7 @@
  * record draws a glyph. Text rows are not asserted: Text_DrawString writes through the font layer
  * and is not injected, so a string's pixels are not observable here. */
 #include <stdio.h>
+#include <stdlib.h> /* srand, for the two seeded rand fixtures */
 #include <string.h>
 
 #include "game/pufo_titles.h"
@@ -224,7 +225,7 @@ static void TestBorderAndBlur(void)
 
 static SoftSurf g_titlesSurf;
 static TitlesParticle g_aParticles[4096];
-static TitlesStar g_aStars[4];
+static TitlesStar g_aStars[8];
 
 static void ClearTitles(void)
 {
@@ -246,8 +247,6 @@ static TitlesAnimation MakeAnimEnv(void)
     env.aStars           = g_aStars;
     env.nStarCount       = 0;
     env.pTitlesSurface   = &g_titlesSurf;
-    env.nFillPalSlot     = 0;
-    env.nPresentPalSlot  = 12;
     env.Credits          = MakeEnv(0);
     return env;
 }
@@ -287,8 +286,14 @@ static void TestAnimation(void)
     CheckEqI32("a particle already at its target does not move", p->nX, 100);
     CheckEqI32("in either axis", p->nY, 100);
 
-    /* The timer: positive counts down, zero re-arms and goes negative, negative never counts down and
-     * only moves the target. */
+    /* Titles_AnimateParticles @ 0x46acc. Every call first walks every particle by
+     * (target - current) / 15 with the signed divide and a sign fallback, so a gap under 15 still moves
+     * exactly one pixel instead of stalling. Then the frame number picks the mode: under 20 the timers
+     * run, frame 21 restores the target pair from the home pair and re-arms the timer, 20 and 22..500 do
+     * nothing, 501..679 run the timers again, and 680 or more hands over to Titles_LoadScene @ 0x468cc.
+     * Timer semantics, read one at a time below: positive counts down by one; zero sets target x to 230,
+     * target y to RandU16(100) + 200 and makes the timer -1; a NEGATIVE timer never counts down and only
+     * moves the target -- x down by 10 when target y is at least 300, otherwise y up by 10. */
     env.nFrame = 5;
     p->nTimer = 5; p->nTargetX = 100; p->nTargetY = 100;
     (void)Titles_AnimateParticles(&env);
@@ -339,7 +344,11 @@ static void TestAnimation(void)
     CheckEqI32("and advances the scene index even when nothing could be loaded", env.nSceneIndex, 1);
     env.nSceneIndex = 0;
 
-    /* Stars advance by speed and are reborn past the bottom. */
+    /* Titles_UpdateStars @ 0x46dbc: y += speed, and a star past 320 is reborn IN THE SAME CALL with
+     * x = RandU16(240) at 0x46E2C, y = 0 at 0x46E38, speed = RandU16(3) + 1 at 0x46E50 and
+     * amplitude = RandU16(100) + 1 at 0x46E6C. Game_RandU16(n) returns 0..n-1, so speed lands in 1..3 and
+     * amplitude in 1..100. A reborn star loses its old amplitude -- the second case keeps 50 only because
+     * the star never reached the wrap. */
     env.nStarCount = 1;
     pStar->nBaseX = 100; pStar->nY = 318; pStar->nSpeed = 3; pStar->nAmplitude = 50;
     Titles_UpdateStars(&env);
@@ -348,13 +357,60 @@ static void TestAnimation(void)
     Check(pStar->nSpeed >= 1 && pStar->nSpeed <= 3, "with speed 1..3");
     Check(pStar->nAmplitude >= 1 && pStar->nAmplitude <= 100, "and amplitude 1..100");
 
+    /* 0x46E20 tests > 320 and not >= 320: a star that lands exactly ON 320 waits for the next call. */
+    pStar->nBaseX = 100; pStar->nY = 317; pStar->nSpeed = 3; pStar->nAmplitude = 50;
+    Titles_UpdateStars(&env);
+    CheckEqI32("317 + 3 lands on 320 and is not reborn (0x46E20 tests >, not >=)", pStar->nY, 320);
+    CheckEqI32("  with its speed untouched", pStar->nSpeed, 3);
+    Check(pStar->nAmplitude == 50, "  and its amplitude untouched");
+    Titles_UpdateStars(&env);
+    CheckEqI32("  and the next call reborns it", pStar->nY, 0);
+
     pStar->nBaseX = 100; pStar->nY = 100; pStar->nSpeed = 2; pStar->nAmplitude = 50;
     Titles_UpdateStars(&env);
     CheckEqI32("below the wrap it just advances", pStar->nY, 102);
     CheckEqI32("without touching the amplitude", pStar->nAmplitude, 50);
 
-    /* The frame driver: a 1x1 particle fill, a 3x3 star fill, and the frame counter. With speed 0 the
-     * angle is 0 and cos is 1, so the star lands exactly at baseX + amplitude.
+    /* The three bounds this call site draws with: 0x46E2C RandU16(240) for the new x, 0x46E50
+     * RandU16(3) + 1 for the new speed and 0x46E6C RandU16(100) + 1 for the new amplitude. Game_RandU16's
+     * arithmetic and the CRT generator behind it are pinned on their own in test_rand.c, so what these
+     * three checks pin are the three CONSTANTS. The expected numbers are the generator's outputs at seed
+     * 777 put through the original's scaling -- ((rand() % 32768) * n) / 32768, truncated -- computed
+     * outside the port rather than read back from it. Six stars sit at y 318 with speed 3, so every one of
+     * them is reborn in the same call and consumes exactly three draws in the fixed order x, speed,
+     * amplitude. Each bound is mutated in docs/parity/mutations_part123.py and each check moves. */
+    srand(777);
+    env.nStarCount = 6;
+    for (i32 i = 0; i < 6; ++i) {
+        g_aStars[i].nBaseX = 100; g_aStars[i].nY = 318;
+        g_aStars[i].nSpeed = 3;   g_aStars[i].nAmplitude = 50;
+    }
+    Titles_UpdateStars(&env);
+    {
+        static const i32 aWant[6][3] = { { 18, 1, 25}, {160, 3, 48}, { 13, 2, 85},
+                                         { 36, 3, 91}, {238, 2, 86}, {146, 1, 71} };
+        i32 nMatchX = 0, nMatchSpeed = 0, nMatchAmp = 0;
+
+        for (i32 i = 0; i < 6; ++i) {
+            if (g_aStars[i].nBaseX     == aWant[i][0]) { ++nMatchX; }
+            if (g_aStars[i].nSpeed     == aWant[i][1]) { ++nMatchSpeed; }
+            if (g_aStars[i].nAmplitude == aWant[i][2]) { ++nMatchAmp; }
+        }
+        CheckEqI32("every reborn x is what RandU16(240) gives at seed 777 (0x46E2C)", nMatchX, 6);
+        CheckEqI32("every reborn speed is what RandU16(3) + 1 gives (0x46E50)", nMatchSpeed, 6);
+        CheckEqI32("every reborn amplitude is what RandU16(100) + 1 gives (0x46E6C)", nMatchAmp, 6);
+    }
+    env.nStarCount = 1;
+
+    /* Titles_DrawAnimatedFrame @ 0x1a83c. Particles are 1x1 fills at (x + RandU16(5), y + RandU16(5)) --
+     * Game_RandU16(5) returns 0..4, so the jitter is 0..4 and never 5. Stars are 3x3 fills: ARM loads 3
+     * into R11 for the width and the stack slot IDA labels nW holds 3 as the height. Star x =
+     * amplitude * cos(speed * y * 0.01) + baseX, and the constant pair 1065646817 / 1202590843 is the
+     * double 0x3F847AE147AE147B = 0.01 exactly. Both fills take palette slot 0 with index 255. Then the
+     * frame counter at state +8 advances and the tail is SoftSurf_DrawBorderAndBlur,
+     * Titles_PresentToSoftSurf @ 0x466dc, Titles_AnimateParticles, Titles_UpdateStars,
+     * Titles_DrawCreditLines. With speed 0 the angle is 0 and cos is 1, so the star lands exactly at
+     * baseX + amplitude.
      *
      * The driver runs the border fill and the blur AFTER the fills, so the top row is erased and ink
      * bleeds one pixel outwards. Everything here is therefore placed in the interior and asserted by
@@ -371,6 +427,15 @@ static void TestAnimation(void)
     CheckEqI32("the frame counter advances once", env.nFrame, 1);
     Check(TitlesPix(106, 161) != 0, "a zero speed puts the star at baseX + amplitude = 105");
     Check(TitlesPix(121, 161) == 0, "so nothing is drawn where amplitude 20 would land");
+
+    /* The 3x3 itself, read off the blur. SoftSurf_BlurPixels @ 0xa2000 replaces every interior pixel by
+     * (left + right + up + down) / 4 - 1 in place, so a filled block leaves a fingerprint that reaches two
+     * cells past its edge in each axis: with the star at (105, 160) the block is 105..107 by 160..162 and
+     * the cells (110, 161) and (106, 165) are the last ones that stay non-zero. Measured under the size
+     * mutations in docs/parity/mutations_part123.py: a 3x1, a 1x3 or a 2x2 block leaves both cells at 0,
+     * so these two checks are what pins 3x3 rather than anything smaller. */
+    Check(TitlesPix(110, 161) != 0, "the star fill is 3 wide and 3 tall: the blur reaches (110, 161) only for a 3x3 block");
+    Check(TitlesPix(106, 165) != 0, "  and reaches (106, 165) for the same reason");
 
     ClearTitles();
     env.nFrame = 0;
@@ -398,7 +463,12 @@ static void TestAnimation(void)
     Check(TitlesPix(112, 100) == 0 && TitlesPix(100, 112) == 0,
           "and the jitter never reaches past 4");
 
-    /* The credit-line window, which is the same rule Titles_DrawBackdrop uses. */
+    /* Titles_DrawCreditLines @ 0x46738: the same window rule as Titles_DrawBackdrop @ 0x1e630 and the same
+     * "@ means a decimal glyph index" rule, with the glyph palette at slot 31 and the text colour pair
+     * (255,255,255) over (60,60,60) packed at 0x467D8. scroll >= 320 gives the first row as
+     * (scroll - 340) / 20 clamped at 0 (0x4678C / 0x46790) and a span of 36 rows; below that it starts at
+     * row 0 and spans scroll / 20 rows. Both ends clamp against the row count (0x467A4 / 0x467B4), and the
+     * function returns the row count whatever the window did (0x4679C). */
     env.nStarCount = 0;
     env.nParticleCount = 0;
     env.Credits = MakeEnv(340);
@@ -414,6 +484,127 @@ static void TestAnimation(void)
     env.Credits.nMaxRows = 2;
     CheckEqI32("with only two rows the window is empty but the count is still returned",
                Titles_DrawCreditLines(&env.Credits), 2);
+}
+
+/* --- Titles_DrawCreditLines window @ 0x46738 ---------------------------------------------------
+ * Titles_DrawCreditLines @ 0x46738 picks the rows it draws and then draws each one at
+ * y = 20 * (row + 17) - scroll (DrawCreditRow, PUFO_TITLES_ROW_STEP / PUFO_TITLES_ROW_BASE). The window
+ * is [nFirst, nFirst + 36) clamped to the row count, where nFirst is (scroll - 340) / 20 clamped at 0 for
+ * a scroll of 320 or more, and 0 with a last row of scroll / 20 below that. Which of those numbers can be
+ * SEEN is worth saying plainly: a row is on screen exactly when 20 * (row + 17) - scroll >= 0, and that
+ * inequality is the same one nFirst already enforces, so a window that starts one row too late only drops
+ * a row that was off screen. That is why the span of 36 rows and the 320 test cannot be pinned by any
+ * picture: 36 is more than the 17 rows that can fit on a 320-pixel screen at 20 pixels per row, and below
+ * 340 the two branches select the same on-screen rows. The 340 offset and the 20/17 positions are visible,
+ * because they decide which rows are on screen and where they land. Those are the values this probe pins.
+ *
+ * Every row of the probe table is the same '@1' record, so every drawn row is the same 4x2 glyph
+ * (g_aCreditGlyph, columns 118..121) through palette slot 31 at 0x7777, and a check on (119, y) says
+ * whether that row was drawn. */
+static void TestCreditWindow(void)
+{
+    static i32 aRowRec[44];
+    TitlesBackdrop env;
+
+    printf("Titles_DrawCreditLines window @ 0x46738\n");
+
+    g_pMainSurface = &g_surf;
+    Render_SetTarget(240, 320, 2, 240 * 2, 320 * 2, g_surf.pPixels);
+    memset(g_aPalette[31], 0x77, sizeof(g_aPalette[31]));
+    for (i32 i = 0; i < 44; ++i) {
+        aRowRec[i] = 11;
+    }
+
+    ClearScreen();
+    env = MakeEnv(340);
+    env.nMaxRows = 44;
+    env.anRowRec  = aRowRec;
+    (void)Titles_DrawCreditLines(&env);
+    CheckEqI32("at scroll 340 the window starts at row 0, which lands at y 0 (0x4678C)",
+               SampleAt(119, 0), 0x7777);
+    CheckEqI32("  and row 15 lands at y 300: 20 pixels per row over a base of 17 rows",
+               SampleAt(119, 300), 0x7777);
+    CheckEqI32("  with the 18 lines between two rows left empty", SampleAt(119, 10), 0);
+
+    ClearScreen();
+    env = MakeEnv(320);
+    env.nMaxRows = 44;
+    env.anRowRec  = aRowRec;
+    (void)Titles_DrawCreditLines(&env);
+    CheckEqI32("at scroll 320 row 0 lands at y 20, not at 0 (the 17-row base)",
+               SampleAt(119, 20), 0x7777);
+    CheckEqI32("  so the first screen line stays empty", SampleAt(119, 0), 0);
+    CheckEqI32("  and the last row that still fits is at y 300", SampleAt(119, 300), 0x7777);
+
+    ClearScreen();
+    env = MakeEnv(345);
+    env.nMaxRows = 44;
+    env.anRowRec  = aRowRec;
+    (void)Titles_DrawCreditLines(&env);
+    CheckEqI32("at scroll 345 row 16 is still inside the 36-row span, at y 315",
+               SampleAt(119, 315), 0x7777);
+
+    ClearScreen();
+    env = MakeEnv(700);
+    env.nMaxRows = 20;
+    env.anRowRec  = aRowRec;
+    (void)Titles_DrawCreditLines(&env);
+    CheckEqI32("at scroll 700 the window starts at row 18 = (700 - 340) / 20, at y 0",
+               SampleAt(119, 0), 0x7777);
+    CheckEqI32("  and row 19 is the last one the row count allows, at y 20",
+               SampleAt(119, 20), 0x7777);
+    CheckEqI32("  while row 20 is cut by the row count (0x467B4)", SampleAt(119, 40), 0);
+
+    ClearScreen();
+    env = MakeEnv(700);
+    env.nMaxRows = 17;
+    env.anRowRec  = aRowRec;
+    CheckEqI32("a first row past the row count returns the row count (0x4679C)",
+               Titles_DrawCreditLines(&env), 17);
+    CheckEqI32("  and draws nothing", SampleAt(119, 0), 0);
+}
+
+/* --- Titles_PresentToSoftSurf @ 0x466dc ---------------------------------------------------------
+ * The original takes no argument. It loads the titles surface's own ALLOCATION as the glyph
+ * (SoftSurf_GetAlloc at 0x466EC -- the raw block, whose 4-byte header is u16 width then u16 height) and
+ * blits it into g_pMainSurface at (0, 0) with the palette POINTER unk_14A2D0 @ 0x14A2D0, which is
+ * aPalette + 0x3000, i.e. palette slot 12. So the two things that can be wrong are the dimensions, which
+ * come out of that header rather than out of any size argument, and the slot. One index is placed in each
+ * corner and slot 12 and slot 0 are given different colours for it, so the wrong slot reads as the wrong
+ * colour rather than as nothing.
+ */
+static void TestPresentToSoftSurf(void)
+{
+    static SoftSurf titles;
+
+    printf("Titles_PresentToSoftSurf @ 0x466dc\n");
+
+    SoftSurf_ctor(&titles);
+    SoftSurf_AllocPixels(&titles, 240, 320, PIXMODE_8BPP);
+    memset(titles.pPixels, 0, (size_t)titles.nWidth * (size_t)titles.nHeight);
+    /* No argument is handed to the port, because the original reads the global. */
+    g_pTitlesSurface = &titles;
+    g_pMainSurface = &g_surf;
+    Render_SetTarget(240, 320, 2, 240 * 2, 320 * 2, g_surf.pPixels);
+    ClearScreen();
+
+    /* Blit_Indexed @ 0xa306c reads one u32 per index and writes its low half into the 16bpp target, so
+     * the colour of index 0x2A is g_aPalette[slot][0x2A] -- the entry is a u32, not a byte offset. */
+    memset(g_aPalette[12], 0, sizeof(g_aPalette[12]));
+    memset(g_aPalette[0], 0, sizeof(g_aPalette[0]));
+    g_aPalette[12][0x2A] = 0x0000F800u;
+    g_aPalette[12][0x2B] = 0x0000001Fu;
+    g_aPalette[0][0x2A]  = 0x000007E0u;
+
+    titles.pPixels[0]               = 0x2A;
+    titles.pPixels[239 + 319 * 240] = 0x2B;
+
+    CheckEqI32("the present slot is the original's hardcoded 12 (unk_14A2D0 = aPalette + 0x3000)",
+               PUFO_TITLES_PRESENT_PAL_SLOT, 12);
+    Titles_PresentToSoftSurf();
+    CheckEqI32("index 0x2A lands at (0,0) through slot 12 (0x46718)", (i32)SampleAt(0, 0), 0xF800);
+    CheckEqI32("index 0x2B lands at (239,319): the 240x320 comes from the allocation header (0x466EC)",
+               (i32)SampleAt(239, 319), 0x001F);
 }
 
 static int TestLoadScene(void)
@@ -674,8 +865,6 @@ static void TestTitlesInit(void)
     memset(&anim, 0, sizeof(anim));
     anim.aParticles      = aParts;
     anim.aStars          = aStars;
-    anim.nFillPalSlot    = 0;
-    anim.nPresentPalSlot = 12;
     memset(aRowRec, 0xEE, sizeof(aRowRec));
     memset(apGlyphs, 0, sizeof(apGlyphs));
     memset(g_aPalette[12], 0, sizeof(g_aPalette[12]));
@@ -695,6 +884,11 @@ static void TestTitlesInit(void)
     env.puUiScreen = &nUiScreen;
     env.pOptions   = &opts;
 
+    /* Titles_Init's first move after clearing the reader is Titles_ctor @ 0x46e88, and Titles_ctor is the
+     * first thing in it to draw a random number, so seeding here puts the generator exactly at the start of
+     * the 190-star seeding loop: four draws per star in the order x (0x46F1C), y (0x46F3C), speed (0x46F5C),
+     * amplitude (0x46F78). */
+    srand(4242);
     Titles_Init(&env);
 
     CheckEqI32("the opening credits have 44 rows", nMaxRows, 44);
@@ -705,6 +899,12 @@ static void TestTitlesInit(void)
     CheckEqI32("the screen id becomes 16", (i32)nUiScreen, 16);
     CheckEqI32("the credits scroll is zeroed", anim.nScroll, 0);
 
+    /* Titles_ctor @ 0x46e88: the scene index is zeroed (0x46E98), the titles surface is new(0x28) +
+     * SoftSurf_ctor + AllocPixels(240, 320, mode 0) into g_pTitlesSurface (0x46E9C..0x46EC8 -- one byte
+     * per pixel, which is why Titles_Init memsets 0x12C00 of it), then 190 stars are seeded (0x46EF8) with
+     * x = RandU16(240), y = RandU16(320) - 320 (so every star starts above the top edge, at -320..-1),
+     * speed = RandU16(3) + 1 and amplitude = RandU16(100) + 1 -- and finally one Titles_UpdateStars runs
+     * at 0x46F94, which is why the y bound below is -319..3 rather than -320..-1. */
     CheckEqI32("190 stars are seeded", anim.nStarCount, 190);
     {
         bool bOk = true;
@@ -716,6 +916,32 @@ static void TestTitlesInit(void)
             if (aStars[i].nY < -319 || aStars[i].nY > 3) bOk = false;
         }
         Check(bOk, "x in 0..239, speed 1..4, amplitude 1..101, y in -319..3 after one step");
+    }
+
+    /* The four seed bounds and the -320 offset, pinned by value rather than by range: a range check cannot
+     * tell RandU16(100) from RandU16(101) unless the draw happens to land on the one value that differs.
+     * The expected numbers below are the generator's outputs at seed 4242 put through the original's
+     * scaling -- ((rand() % 32768) * n) / 32768, truncated -- computed outside the port, exactly as
+     * test_rand.c pins that arithmetic; the y column already has the one Titles_UpdateStars step that
+     * Titles_ctor runs at 0x46F94 folded in (no star reaches 320, so none of them is reborn here). Every
+     * bound and the offset is mutated in docs/parity/mutations_part123.py and every check moves. */
+    {
+        static const i32 aWant[6][4] = {
+            {101, -103, 1,  21}, {131,  -96, 1,   4}, {200, -309, 1,  56},
+            {  8, -311, 2, 100}, {  2, -304, 1,  85}, {105, -297, 2,  87},
+        };
+        i32 nMatchX = 0, nMatchY = 0, nMatchSpeed = 0, nMatchAmp = 0;
+
+        for (i32 i = 0; i < 6; ++i) {
+            if (aStars[i].nBaseX     == aWant[i][0]) { ++nMatchX; }
+            if (aStars[i].nY         == aWant[i][1]) { ++nMatchY; }
+            if (aStars[i].nSpeed     == aWant[i][2]) { ++nMatchSpeed; }
+            if (aStars[i].nAmplitude == aWant[i][3]) { ++nMatchAmp; }
+        }
+        CheckEqI32("the first six stars' x are what RandU16(240) gives at seed 4242 (0x46F1C)", nMatchX, 6);
+        CheckEqI32("their y is RandU16(320) - 320, before the one step (0x46F3C)", nMatchY, 6);
+        CheckEqI32("their speed is RandU16(3) + 1 (0x46F5C)", nMatchSpeed, 6);
+        CheckEqI32("their amplitude is RandU16(100) + 1 (0x46F78)", nMatchAmp, 6);
     }
 
     CheckEqI32("scene 0 was loaded and the index advanced to 1", anim.nSceneIndex, 1);
@@ -1011,6 +1237,8 @@ int main(void)
     TestBackdrop();
     TestBorderAndBlur();
     TestAnimation();
+    TestCreditWindow();
+    TestPresentToSoftSurf();
     TestEndScreen();
     TestTitlesInit();
     TestTitlesShutdown();

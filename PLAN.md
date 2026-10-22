@@ -5727,6 +5727,18 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   unconditional `FMUSIC_LoadSongEx` / `g_bMusicLoaded` on a missing track at 0x9E244, and `FMUSIC_FreeSong` with no
   handle test at 0x9E420): both are inert behind the `Stub_` backend, so they are stated in the test comment and the
   IDB note instead of copied into the port.
+  Progress (Part 123): `titles` (6) closed -- 508 rows now carry a test cite, **457** do not. Two new rules, both
+  about checks that cannot fail. (1) A range check is not a pin on a random bound: `RandU16(100)` against
+  `RandU16(101)` differs in one output in 32768, so `amplitude <= 101` passes either way. The seeding loop at
+  0x46F1C..0x46F8C and the reborn at 0x46E2C..0x46E6C are pinned by exact values from a seeded generator (4242 and
+  777) computed outside the port. (2) Some constants are inert and only a proof of that is honest: the credits
+  window's `scroll >= 320` test and its 36-row span only decide about rows that are off screen (a row is on screen
+  exactly when the window already includes it, and 36 exceeds the 17 rows that fit), so 340 -> 360 fails 0 checks
+  by construction while 340 -> 320 fails 3; the same is recorded for `StartUi`'s 8bpp fills (the written byte is
+  the palette index, so slot 0 against 12 cannot change a pixel) and for a smaller jitter bound. Third finding: an
+  apparently inert value may only look inert -- 0x1a83c's 3x3 star is invisible behind SoftSurf_BlurPixels @
+  0xa2000, but the blur leaves a fingerprint two cells past the block's edge, and (110,161) and (106,165) are
+  non-zero for 3x3 and zero for 3x1, 1x3 and 2x2, measured before the check was written.
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5825,3 +5837,19 @@ check; surface release skipped; record size 208 -> 200 giving 154 instead of 149
 exact bytes, `grep -rn "MUTATION" src tests` empty. Mid-Part: a `sed` mutation hit the wrong line and a shell parse
 error left `pufo_audio.c` half-mutated; restored with `git checkout --` and re-proved with the byte-exact runner |
 row 121a stays open with 463 rows left.
+
+`<this commit>` + Part 123 | 65/65 Release and 65/65 Debug | 20,672 checks (+28: 3 for the present blit, 7 exact
+rand-bound values, 4 for the wrap landing on 320, 12 credit-window probes, 2 blur-fingerprint cells) | coverage
+972/1103 functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged | reach unchanged at 965/968, residue 0;
+cites at a row's own address 502 -> **508**, without one 463 -> **457** (`titles` closed) | two port changes in
+`pufo_titles.c`: the two palette slots become `PUFO_TITLES_FILL_PAL_SLOT` / `PUFO_TITLES_PRESENT_PAL_SLOT` (the
+original's operands are `MEMORY[0x1472D0]` and the pointer `unk_14A2D0`, with no variable in front of either) and
+`Titles_PresentToSoftSurf` loses its argument and reads `g_pTitlesSurface`, as 0x466EC does | 93 frames and 9 e2e
+pictures unchanged | IDB comments read back at 0x1a83c (1013), 0x466dc (557), 0x46738 (832), 0x46acc (841),
+0x46dbc (535), 0x46e88 (738 -- none existed), `idb_save` written | teeth: 24 cases in
+`docs/parity/mutations_part123.py` -- 21 fail at least one check (slot 12 -> 0 fails 2; GetPixels-as-glyph fails
+2; 340 -> 320 fails 2; span 36 -> 16 fails 1; base 17 -> 18 fails 4; `/15 -> /16` fails 2; `>` -> `>=` fails 3;
+reborn y 0 -> 1 fails 2; each rand bound fails 1 or 2; 190 -> 189 fails 2; 3x3 -> 3x1, -> 1x3 and -> 2x2 fail 2
+each; jitter 5 -> 13 fails 1), 3 inert by construction (340 -> 360, jitter 5 -> 1, the fills' palette slot) and
+recorded as such | every mutation reverted to the exact bytes, `grep -rn "MUTATION" src tests` empty | row 121a
+stays open with 457 rows left.

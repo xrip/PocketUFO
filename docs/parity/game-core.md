@@ -22749,3 +22749,101 @@ test cite at their own address, and 470 -> **463** without one: `audio` and `boo
 65/65 Debug, 20,644 checks (+4 new audio checks), coverage 972/1103 functions and 596888/598792 bytes unchanged,
 93 frame pictures and 9 e2e pictures unchanged. IDB comments written and read back at 0x9e130 (844 chars), 0x9e268
 (661), 0x9e3d4 (550), 0x9e4dc (569), 0x382d0 (648), 0x38e4c (602) and 0x38d7c (847); `idb_save` reported ok.
+
+## Part 123 - `titles` closed: 6 rows, 457 left, and three constants no check can pin
+
+Row 121a's six `titles` rows went through the method: `Titles_DrawAnimatedFrame @ 0x1a83c`,
+`Titles_PresentToSoftSurf @ 0x466dc`, `Titles_DrawCreditLines @ 0x46738`, `Titles_AnimateParticles @ 0x46acc`,
+`Titles_UpdateStars @ 0x46dbc` and `Titles_ctor @ 0x46e88`. All six now carry a cite in `tests/test_titles.c` at
+their own address and 28 new checks were added (20,644 -> 20,672). Rows with a cite at their own address:
+502 -> 508; without one: 463 -> 457. 24 mutation cases ran through `docs/parity/mutations_part123.py`; 21 of them
+fail at least one check and three fail none for a reason the code makes necessary, which is stated below rather
+than hidden.
+
+### The two palette slots are constants of the original, and one port argument had to go
+
+`Titles_DrawAnimatedFrame` takes `MEMORY[0x1472D0]` for both of its fills -- palette slot 0 -- and
+`Titles_PresentToSoftSurf` hands `SoftSurf_BlitIndexedEx` the POINTER `unk_14A2D0 @ 0x14A2D0` at 0x46718.
+`aPalette` is `0x1472D0` with 1024 bytes per slot, so `0x1472D0 + 0x3000` is slot 12, and neither operand has a
+variable in front of it anywhere in the function. The port carried both as `nFillPalSlot` and `nPresentPalSlot`
+in the animation block, with `pufo_app.c` writing 0 and 12 into them; nothing read them and no test compared
+them, so the two most certain constants in the subsystem were the least checked. They are
+`PUFO_TITLES_FILL_PAL_SLOT` and `PUFO_TITLES_PRESENT_PAL_SLOT` now and the shell assignments are gone. The same
+read gave the second change: `Titles_PresentToSoftSurf @ 0x466dc` has no arguments at all -- 0x466EC loads the
+global `g_pTitlesSurface @ 0x158808` through `SoftSurf_GetAlloc` -- while the port took the surface from its
+caller. The parameter is removed; the port reads the global, as the original does.
+
+### Titles_PresentToSoftSurf @ 0x466dc: 3 checks, and a palette entry is a dword
+
+The glyph is the surface's own allocation, not its pixels: 0x466EC calls `SoftSurf_GetAlloc`, and the 4-byte
+header of that block is `u16 width` then `u16 height`, which is what makes the blit 240x320 rather than whatever
+the first index bytes say. Three checks: the slot constant is 12, index `0x2A` placed at (0, 0) reads
+`g_aPalette[12][0x2A]`'s low half (0xF800) at (0, 0), and index `0x2B` placed at (239, 319) reads 0x001F there.
+The first draft wrote the colours at `&g_aPalette[12][4 * 0x2A]`, which is entry 168 and not entry 42 -- a
+`u32[256]` palette is addressed by entry, not by byte offset -- so both checks read 0 and the port looked broken
+when it was not. It is the same trap as reading `aPalette` as bytes, recorded because it is easy to fall into
+twice. Teeth: slot 12 -> 0 fails 2 checks, and handing `SoftSurf_GetPixels` instead of `SoftSurf_GetAlloc`
+fails 2 (the header then parses as 0x2A and 0x00, the height is 0, and `Blit_Indexed @ 0xa306c` returns
+immediately).
+
+### The random bounds at 0x46dbc and 0x46e88: a range check is not a pin
+
+This is the part of the goal the ledger cannot see. `RandU16(n)` returns 0..n-1, and the two loops differ only
+in `n`: `RandU16(100)` and `RandU16(101)` give the same value for 32,668 of the 32,768 possible draws. So the
+checks that were there -- `speed 1..4`, `amplitude 1..101`, `y in -319..3` -- pass for `0x64` and for `0x65`, and
+the mutation `0x64u -> 0x65u` would have produced no failing check at all. The fix is to pin values instead of
+ranges. `rand()` is MSVC's LCG and `Game_RandU16 @ 0x3e59c` is `((rand() % 32768) * n) / 32768` truncated;
+`test_rand.c` pins that arithmetic on its own, so the bounds at these two call sites can be pinned by the
+generator's own outputs at a named seed, computed outside the port. `srand(777)` before six stars parked at
+y 318 with speed 3 (every one reborn in the same call, three draws each in the order x, speed, amplitude) pins
+0x46E2C's 240, 0x46E50's `3 + 1` and 0x46E6C's `100 + 1`; `srand(4242)` immediately before `Titles_Init` -- whose
+first random call is the first star seed of the ctor loop -- pins 0x46F1C's 240, 0x46F3C's `320` and `-320`,
+0x46F5C's `3 + 1` and 0x46F78's `100 + 1`. Seven checks (three reborns, four seeds). Teeth: `PUFO_TITLES_W -> PUFO_TITLES_W - 1`, `3 -> 2`,
+`100 -> 101`, `0xF0 -> 0xEF`, `0x140 -> 0x13F`, `3u -> 2u`, `0x64 -> 0x65` and `-320 -> -319` each fail 1 or 2
+checks, and `190 -> 189` fails 2.
+
+### Titles_DrawCreditLines @ 0x46738: 12 checks, and what a window constant can never do
+
+The window rule is `nFirst = (scroll - 340) / 20` clamped at 0 for a scroll of 320 or more, `nLast = nFirst + 36`,
+both ends clamped to the row count, and a row drawn at `y = 20 * (row + 17) - scroll`. Read those two facts
+together and something falls out: a row is on screen exactly when `20 * (row + 17) >= scroll`, which is the same
+inequality `nFirst` already enforces. A window that starts one row late therefore only drops rows that were off
+screen, and 36 rows is more than the 17 that can fit on a 320-pixel screen at 20 pixels per row. So the `320`
+test and the `36` span decide nothing that any picture can show, and the measurement agrees: `340 -> 360` fails 0
+checks, because starting earlier only adds off-screen rows. `340 -> 320` fails 2 (at scroll 700 the window starts
+at row 19 instead of 18, and row 18 was the one at y 0), `36 -> 16` fails 1 (at scroll 345 row 16 at y 315 is
+inside the visible set and outside a 16-row span) and the row base `17 -> 18` fails 4 (at scroll 320 every row
+moves 20 pixels down and the first screen line empties). The 12 new checks are those probes: a 44-row table whose
+rows are all the same `@1` record, so every drawn row is the same 4x2 glyph through palette slot 31, and a sample
+at (119, y) says whether that row was drawn. The inert pair is written into the IDB note at 0x46738 instead of
+being claimed as covered.
+
+### Titles_DrawAnimatedFrame @ 0x1a83c: the 3x3 was invisible until the blur was measured
+
+Everything this function draws is overwritten before it can be read: the border fill clears rows 0 and 319 and
+columns 0 and 239 after the fills, and `SoftSurf_BlurPixels @ 0xa2000` then replaces every interior pixel by
+`(left + right + up + down) / 4 - 1` in place. A star one row smaller still leaves non-zero neighbours, so the
+existing position checks could not see the size at all -- `3x3 -> 3x1` and `3x3 -> 1x3` failed nothing. Measuring
+the cascade instead of guessing it fixed that: from a 3x3 block of 255 at (105..107, 160..162) the ink reaches
+(110, 161) with value 2 and (106, 165) with value 2, and those are the last cells that stay non-zero; a 3x1, a
+1x3 or a 2x2 block leaves both at 0. Two checks now read exactly those cells and all three size mutations fail
+them. Two cases in this row stay inert and are reported as such: the fills' palette slot (on an 8bpp surface the
+byte written is the palette index, so slot 0 against 12 changes nothing on the titles surface) and a smaller
+jitter bound (`RandU16(5) -> RandU16(1)` keeps the 1x1 fill inside the same probe box). The larger side does have
+teeth: `RandU16(5) -> RandU16(13)` fails 1 check, the one that asserts the jitter never reaches past 4.
+
+`Titles_UpdateStars @ 0x46dbc` needed a fixture rather than a mutation to get teeth on the wrap test. Its check
+parked a star at 318 with speed 3, which passes 320 either way, so `>` -> `>=` failed nothing; a star at 317 with
+speed 3 lands exactly ON 320 and the original reborns it only on the next call (0x46E20 tests `>`), which fails 3
+checks when the test is changed to `>=`. `0x46acc` needed nothing: its `(target - current) / 15` was already
+pinned by six gap checks, and `/ 15 -> / 16` fails 2 of them.
+
+Measured: reach 965/968 with residue 0; cites at a row's own address 508, without one 457; `titles` closed
+alongside `util`, `platform`, `audio` and `boot-assets`, with `strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50,
+`render` 30, `save` 26, `app-shell` 19, `dat` 16 and `tact-ui` 12 left. Gates (`build/check123.log`,
+`CHECK EXIT=0`): 65/65 Release and 65/65 Debug, 20,672 checks (+28), coverage 972/1103 functions and 596888/598792
+bytes unchanged, 93 frame pictures and 9 e2e pictures unchanged -- the two port changes (the constants and the
+removed argument) move no picture. IDB comments written and read back at 0x1a83c (1013), 0x466dc (557), 0x46738
+(832), 0x46acc (841, the stale "0x468cc still unported" claim replaced), 0x46dbc (535) and 0x46e88 (738, the row
+had no comment at all); `idb_save` reported ok. Teeth: 24 cases in `docs/parity/mutations_part123.py`, every one
+restored to its exact bytes, `grep -rn "MUTATION" src tests` empty.

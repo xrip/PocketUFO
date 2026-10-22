@@ -103,11 +103,15 @@ static void DrawCreditRow(const TitlesBackdrop *pEnv, i32 nRow, i32 y, i32 nPal)
     }
 }
 
-/* Titles_PresentToSoftSurf @ 0x466dc. */
-void Titles_PresentToSoftSurf(SoftSurf *pTitlesSurface, i32 nPresentPalSlot)
+/* Titles_PresentToSoftSurf @ 0x466dc. The original takes no argument and reads the global
+ * g_pTitlesSurface @ 0x158808 at 0x466EC, loading that surface's own allocation as the glyph
+ * (SoftSurf_GetAlloc -- the raw block, whose 4-byte header is u16 width then u16 height) and blits it at
+ * (0,0) with the hardcoded palette pointer unk_14A2D0 = aPalette + 0x3000 at 0x46718. */
+void Titles_PresentToSoftSurf(void)
 {
     SoftSurf_BlitIndexedEx(g_pMainSurface, 0, 0,
-                           (const u8 *)SoftSurf_GetAlloc(pTitlesSurface), nPresentPalSlot);
+                           (const u8 *)SoftSurf_GetAlloc(g_pTitlesSurface),
+                           PUFO_TITLES_PRESENT_PAL_SLOT);
 }
 
 /* Titles_UpdateStars @ 0x46dbc. A star advances by its speed and is reborn once it passes the bottom of
@@ -314,7 +318,7 @@ i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv)
 
         /* Each particle jitters by 0..4 in both axes every frame. */
         SoftSurf_FillRectEx(pSurf, p->nX + (i32)Game_RandU16(5), p->nY + (i32)Game_RandU16(5),
-                            1, 1, pEnv->nFillPalSlot, 255);
+                            1, 1, PUFO_TITLES_FILL_PAL_SLOT, 255);
     }
 
     for (i32 i = 0; i < pEnv->nStarCount; ++i) {
@@ -325,13 +329,13 @@ i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv)
         /* Both the width and the height are 3. ARM loads 3 into R11 for the 4th argument, and the stack
          * slot IDA labels nW holds 3 and is the 5th, which is the height. */
         SoftSurf_FillRectEx(pSurf, nX, pStar->nY, PUFO_TITLES_STAR_COLS, PUFO_TITLES_STAR_COLS,
-                            pEnv->nFillPalSlot, 255);
+                            PUFO_TITLES_FILL_PAL_SLOT, 255);
     }
 
     pEnv->nFrame += 1;
 
     (void)SoftSurf_DrawBorderAndBlur();
-    Titles_PresentToSoftSurf(pSurf, pEnv->nPresentPalSlot);
+    Titles_PresentToSoftSurf();
     (void)Titles_AnimateParticles(pEnv);
     Titles_UpdateStars(pEnv);
     /* The original hands the state block itself to Titles_DrawCreditLines, whose scroll is the

@@ -860,18 +860,18 @@
 0x3b498	Tact_InitUiControls	2260	tact-ui	yes	yes	yes	World_TactInitUiControlsThunk|World_InitTactical|World_TactLiveOptions|World_TactLiveMission	yes
 0x45e8c	InvSel_AddItemQty	60	tact-ui	yes	no	yes		yes
 0x45ec8	InvSel_SubItemQty	60	tact-ui	yes	no	yes	InvSel_AddItemQty	yes
-0x1a83c	Titles_DrawAnimatedFrame	672	titles	yes	no	yes		yes
+0x1a83c	Titles_DrawAnimatedFrame	672	titles	yes	yes	yes		yes
 0x1e630	Titles_DrawBackdrop	600	titles	yes	yes	yes	DrawCreditRow	yes
 0x380d8	Titles_Init	404	titles	yes	yes	yes	App_HookPlaySample|App_HookTitles	yes
 0x3826c	Titles_Shutdown	100	titles	yes	yes	yes	App_InitStartupUi|App_TitlesToStartup	yes
 0x388b0	EndScreen_Init	328	titles	yes	yes	yes	World_MissionSeamFreeUi	yes
 0x389f8	EndScreen_Shutdown	48	titles	yes	yes	yes		yes
-0x466dc	Titles_PresentToSoftSurf	76	titles	yes	no	yes		no
-0x46738	Titles_DrawCreditLines	404	titles	yes	no	yes	DrawCreditRow	yes
+0x466dc	Titles_PresentToSoftSurf	76	titles	yes	yes	yes		yes
+0x46738	Titles_DrawCreditLines	404	titles	yes	yes	yes	DrawCreditRow	yes
 0x468cc	Titles_LoadScene	512	titles	yes	yes	yes		yes
-0x46acc	Titles_AnimateParticles	752	titles	yes	no	yes		yes
-0x46dbc	Titles_UpdateStars	204	titles	yes	no	yes		yes
-0x46e88	Titles_ctor	284	titles	yes	no	yes		no
+0x46acc	Titles_AnimateParticles	752	titles	yes	yes	yes		yes
+0x46dbc	Titles_UpdateStars	204	titles	yes	yes	yes		yes
+0x46e88	Titles_ctor	284	titles	yes	yes	yes		no
 0x46fa4	Titles_dtor	60	titles	yes	yes	yes		yes
 0x11000	PadImage_ctor	12	ui-core	yes	no	yes	World_TactPadAllocThunk|BuySellPadNew|PlanePadNew	yes
 0x1100c	PadImage_FreeData	20	ui-core	yes	no	yes		yes

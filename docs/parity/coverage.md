@@ -98,9 +98,23 @@ not have its own constant pinned, and the ledger says so in its own header. The 
 them (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16,
 `tact-ui` 12, `titles` 6; `util`, `platform`, `audio` and `boot-assets` are closed). The per-function
 "check-fails-when-wrong" pass over those 463 is the part of the goal no gate runs, and PLAN row 121a carries it.
+Measured after Part 123: cites at a row's own address **508**, without one **457**, with `titles` closed too
+(`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16, `tact-ui`
+12 left).
 
 Part 121 closed the 5 open `util` rows and learned a rule the ledger cannot enforce: a `@ 0x...` in a test file
 counts whether it sits next to a check or in a header comment, so the first draft of `tests/test_rand.c` made
 `InitInstance @ 0x9fd48` read as reached by naming it as the seeding site in its evidence comment. That cite is
 removed -- no test reaches that function -- and reach went back to 965 with the same three entry points left. A
 cite has to be earned by the checks it sits on.
+
+Part 123 closed the 6 `titles` rows and produced the clearest rule of the pass so far: a range check is not a
+pin on a random bound. `RandU16(100)` and `RandU16(101)` differ in exactly one output out of 32768, so the
+"speed 1..4, amplitude 1..101" checks in `test_titles.c` could not tell one from the other and the mutations
+`0x64 -> 0x65` and `3 -> 2` would have passed. The seeding loop at 0x46F1C..0x46F8C and the reborn at
+0x46E2C..0x46E6C are pinned by exact values from a seeded generator instead (seeds 4242 and 777, the outputs put
+through ((rand() % 32768) * n) / 32768 truncated, which is the arithmetic test_rand.c pins on its own). The
+second rule is that some original constants are inert and no check can pin them: the credits window's `scroll >=
+320` test and its 36-row span only ever decide about rows that are off screen, because a row is on screen exactly
+when the window already includes it, and 36 is more than the 17 rows that fit. Those are written in the IDB note
+instead of being pretended to be covered.

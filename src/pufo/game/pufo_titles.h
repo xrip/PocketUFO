@@ -34,6 +34,14 @@
 #define PUFO_TITLES_BACKDROP_PAL 21
 #define PUFO_TITLES_GLYPH_PAL     1
 
+/* The two slots Titles_DrawAnimatedFrame hardcodes. The particle and star fills take
+ * MEMORY[0x1472D0] -- palette slot 0 -- and Titles_PresentToSoftSurf passes the POINTER
+ * unk_14A2D0 @ 0x14A2D0, which is aPalette + 0x3000, i.e. slot 12 (the call is at 0x46718 with no
+ * variable in front of either). They are constants of the original, not state: the port once carried
+ * them in the animation block and set them from the shell, where nothing read or checked them. */
+#define PUFO_TITLES_FILL_PAL_SLOT    0
+#define PUFO_TITLES_PRESENT_PAL_SLOT 12
+
 typedef struct TitlesBackdrop {
     i32 nScroll;                /* unk_138E88: the scroll position in pixels */
     i32 nMaxRows;               /* unk_157194: how many credit rows the data has */
@@ -118,17 +126,13 @@ typedef struct TitlesAnimation {
     i32             nSceneScaleY;    /* g_pTitlesState + 4 */
     i32             nSceneIndex;     /* g_pTitlesState + 16: which titleN.dat to load next */
     SoftSurf       *pTitlesSurface;  /* g_pTitlesSurface, 0x158808 */
-    /* aPalette is at 0x1472D0 with 1024 bytes per slot, so the two palettes this module passes are
-     * slot 0 (the original writes MEMORY[0x1472D0]) and slot 12 (the original writes &unk_14A2D0,
-     * which is 0x1472D0 + 0x3000). */
-    i32             nFillPalSlot;    /* 0 */
-    i32             nPresentPalSlot; /* 12 */
     TitlesBackdrop  Credits;         /* the credit lines; note their scroll is this nScroll */
 } TitlesAnimation;
 
-/* Titles_PresentToSoftSurf @ 0x466dc. Copies the titles surface into the main surface at (0, 0), using
- * the surface's own allocation as the glyph and palette slot 12. */
-void Titles_PresentToSoftSurf(SoftSurf *pTitlesSurface, i32 nPresentPalSlot);
+/* Titles_PresentToSoftSurf @ 0x466dc. Copies g_pTitlesSurface into g_pMainSurface at (0, 0) using that
+ * surface's own allocation as the glyph, through PUFO_TITLES_PRESENT_PAL_SLOT. There is no argument at
+ * all: the original has none, the surface is the global, and the palette is the hardcoded slot. */
+void Titles_PresentToSoftSurf(void);
 
 /* Titles_UpdateStars @ 0x46dbc. Every star advances by its speed; above 320 it is reborn at a random
  * x with speed 1..4 and amplitude 1..101. */

@@ -285,8 +285,6 @@ static void App_HookTitles(void *pUser)
     memset(&g_titlesAnim, 0, sizeof(g_titlesAnim));
     g_titlesAnim.aParticles      = g_aTitlesParticles;
     g_titlesAnim.aStars          = g_aTitlesStars;
-    g_titlesAnim.nFillPalSlot    = 0;  /* the original fills with MEMORY[0x1472D0] */
-    g_titlesAnim.nPresentPalSlot = 12; /* fade.pal, loaded by Titles_Init itself */
 
     memset(&env, 0, sizeof(env));
     env.pFont      = &g_fontSys;
