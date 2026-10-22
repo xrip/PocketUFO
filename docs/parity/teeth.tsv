@@ -30,15 +30,15 @@
 0xa0388	App_QuitDisplay	100	app-shell	yes	no	yes	App_HookQuit	yes
 0xa03ec	PocketUFO_WndProc	2964	app-shell	yes	no	no		no
 0x9e0c0	Sound_Play	112	audio	yes	yes	yes	App_InitStartupUi|World_InitTactical|Ui_ConfirmMeleeMode6	yes
-0x9e130	Sound_LoadAndPlayMusic	312	audio	yes	no	yes	World_TactMusicHook	yes
-0x9e268	Sound_InitAndLoadSamples	364	audio	yes	no	yes	World_TactSoundInitHook	yes
-0x9e3d4	Sound_Shutdown	128	audio	yes	no	yes	App_HookSoundShutdown	yes
+0x9e130	Sound_LoadAndPlayMusic	312	audio	yes	yes	yes	World_TactMusicHook	yes
+0x9e268	Sound_InitAndLoadSamples	364	audio	yes	yes	yes	World_TactSoundInitHook	yes
+0x9e3d4	Sound_Shutdown	128	audio	yes	yes	yes	App_HookSoundShutdown	yes
 0x9e454	Sound_ApplyMusicVolume	136	audio	yes	yes	yes	World_TactMusicVolHook|World_TactMenuHooksFor|World_WireOptions|OptionsScreen_SetMusicVol|Options_MusicLevel	yes
-0x9e4dc	Sound_ApplySfxVolume	124	audio	yes	no	yes	World_TactSfxVolHook|World_TactMenuHooksFor|World_WireOptions|Options_MusicLevel	yes
-0x382d0	Assets_LoadStartup	1504	boot-assets	yes	no	yes	App_InitInstance|TextTables_Extract|Boot_LoadStartup	yes
+0x9e4dc	Sound_ApplySfxVolume	124	audio	yes	yes	yes	World_TactSfxVolHook|World_TactMenuHooksFor|World_WireOptions|Options_MusicLevel	yes
+0x382d0	Assets_LoadStartup	1504	boot-assets	yes	yes	yes	App_InitInstance|TextTables_Extract|Boot_LoadStartup	yes
 0x38a28	GameUI_InitStartup	852	boot-assets	yes	yes	yes	App_InitStartupUi|App_TitlesToStartup|wWinMain	no
-0x38d7c	StartUi_Shutdown	208	boot-assets	yes	no	yes	App_ShutdownStartUi|StartMenu_Shutdown	yes
-0x38e4c	GameAssets_Shutdown	180	boot-assets	yes	no	yes	Boot_Shutdown	yes
+0x38d7c	StartUi_Shutdown	208	boot-assets	yes	yes	yes	App_ShutdownStartUi|StartMenu_Shutdown	yes
+0x38e4c	GameAssets_Shutdown	180	boot-assets	yes	yes	yes	Boot_Shutdown	yes
 0x3f0d0	DatFile_RegisterAtexit	12	dat	yes	yes	yes	DatFile_AtexitThunk	yes
 0x83874	AssetReader_ClearGlobal	12	dat	yes	no	yes	AssetReader_Clear	yes
 0x9eecc	DatFile_ctor	40	dat	yes	no	yes		yes

@@ -5717,6 +5717,16 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   companion value is asserted next to it. `Game_RandU16 @ 0x3e59c` also produced a port fix: the original is one
   basic block with `BL rand` first, so a zero bound consumes a draw, and the port's `if (nMax == 0) return 0;`
   shifted every later roll -- removed, with the frame and e2e pictures measured unchanged.
+  Progress (Part 122): `audio` (4) and `boot-assets` (3) closed -- 502 rows now carry a test cite, **463** do not.
+  Two more rules for the method: a sentinel in static storage cannot fail a check (an out-of-range tear-down is
+  undefined behaviour and the process aborts instead of reporting -- `StartUi_Shutdown`'s 113..127 range had no
+  teeth at its start until the sentinels moved to the heap), and a mutation is applied by a runner that asserts the
+  anchor is unique and restores the exact bytes (`build/crops/part122mut.py`), because a line-number `sed` hit the
+  wrong line once and a shell parse error mid-batch left `pufo_audio.c` half-mutated -- repaired with
+  `git checkout --` and re-proved. Two audio deviations are recorded rather than reproduced (the original's
+  unconditional `FMUSIC_LoadSongEx` / `g_bMusicLoaded` on a missing track at 0x9E244, and `FMUSIC_FreeSong` with no
+  handle test at 0x9E420): both are inert behind the `Stub_` backend, so they are stated in the test comment and the
+  IDB note instead of copied into the port.
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5800,3 +5810,18 @@ written | teeth: the early return back fails "the draw it consumed is real"; sca
 `PtrArray_Clear` in DeleteAll fails 4; `<=` in ScrollNext fails 3; `>= 0` in ScrollPrev fails 1; dropping the cache
 store at 0x7B004 fails 4 in `test_baseui` -- all reverted, `grep -rn "MUTATION" src tests` empty | row 121a stays
 open with 470 rows left and three method rules added to it.
+
+`<this commit>` + Part 122 | 65/65 Release and 65/65 Debug | 20,644 checks (+4: the `OptimizeChannels` min volume
+and both branches of the `g_bMusicLoaded` song-free gate, plus its flag check) | coverage 972/1103 functions
+(88.1%), 596888/598792 bytes (99.7%) -- unchanged | reach unchanged at 965/968, residue 0; cites at a row's own
+address 495 -> **502**, without one 470 -> **463** (`audio` and `boot-assets` closed) | no port behaviour changed;
+two audio deviations recorded rather than reproduced (unconditional `FMUSIC_LoadSongEx` + `g_bMusicLoaded` on a
+missing track at 0x9E244, `FMUSIC_FreeSong` with no handle test at 0x9E420) because the default backend is the
+no-op `Stub_` set | 93 frames and 9 e2e pictures unchanged | IDB comments read back at 0x9e130 (844), 0x9e268
+(661), 0x9e3d4 (550), 0x9e4dc (569), 0x382d0 (648), 0x38e4c (602), 0x38d7c (847), `idb_save` written | teeth: 8
+mutations via `build/crops/part122mut.py` / `part122mut2.py` (min volume 8; song-free gate removed; `4*v-1` -> `4*v`
+failing only the sfx side; init guard 10 -> 9; pad range 113 -> 112 failing 2; pad groups 15 -> 14 failing the 127
+check; surface release skipped; record size 208 -> 200 giving 154 instead of 149) -- every one reverted to the
+exact bytes, `grep -rn "MUTATION" src tests` empty. Mid-Part: a `sed` mutation hit the wrong line and a shell parse
+error left `pufo_audio.c` half-mutated; restored with `git checkout --` and re-proved with the byte-exact runner |
+row 121a stays open with 463 rows left.

@@ -57,6 +57,7 @@ typedef struct FakeState {
     u32  nMusicMode;
     i32  nMusicLoopSet;
     i32  nMusicOptimizeMax;
+    i32  nMusicOptimizeMin;
     i32  nMusicPlayCalls;
     i32  nMusicVolume;
     i32  nMusicPaused;
@@ -136,9 +137,10 @@ static void Fake_MusicSetLooping(void *pMod, i32 bLoop)
 
 static void Fake_MusicOptimize(void *pMod, i32 nMaxChannels, i32 nMinVolume)
 {
+    /* FMUSIC_OptimizeChannels(mod, 16, 10) at 0x9E208 -- both constants are asserted. */
     g_fake.nMusicOptimizeMax = nMaxChannels;
+    g_fake.nMusicOptimizeMin = nMinVolume;
     (void)pMod;
-    (void)nMinVolume;
 }
 
 static void Fake_MusicPlay(void *pMod)
@@ -182,6 +184,10 @@ static void Fake_Reset(void)
 
 /* --- tests --- */
 
+/* Sound_InitAndLoadSamples @ 0x9e268: FSOUND_Init retried at i = 0..10 (11 attempts, 0x9E27C..0x9E2B4),
+ * then the prefix scan -- "<prefix>0", "<prefix>1", ... -- that stops at the first index the asset reader
+ * does not have, each hit going through FSOUND_Sample_Load with mode 0xA000 and then FSOUND_Sample_SetMode(1).
+ * g_bSoundInitReady is set after the retry loop on both paths -- the original's quirk, kept. */
 static void TestLoadSamples(void)
 {
     printf("Sound_InitAndLoadSamples(\"tact\")\n");
@@ -198,9 +204,14 @@ static void TestLoadSamples(void)
     Check(g_fake.aSampleModes[0] == 0xA000u, "  sample load mode 0xA000");
     Check(g_fake.aSampleSetMode[0] == 1u, "  sample set mode 1");
 
+    /* Sound_Shutdown @ 0x9e3d4: FSOUND_Sample_Free per item while the index runs to
+     * g_nSoundSampleCount (0x9E3F4, loop test at 0x9E408), FMUSIC_FreeSong only when g_bMusicLoaded
+     * stands (0x9E418 / 0x9E420), FSOUND_Close at 0x9E424, then g_bSoundInitReady = 0 at 0x9E430 and
+     * g_bMusicLoaded = 0 at 0x9E438. */
     printf("Sound_Shutdown\n");
     Sound_Shutdown();
     CheckEqI32(g_fake.nSampleFreeCalls, 35, "  freed every sample");
+    CheckEqI32(g_fake.nMusicFreeCalls, 0, "  no song free here: no music was loaded, so 0x9E418 fails");
     CheckEqI32(g_fake.nCloseCalls, 1, "  backend closed");
     Check(!Sound_IsInitialised(), "  ready flag cleared");
 }
@@ -247,6 +258,12 @@ static void TestInitRetry(void)
     Sound_Shutdown();
 }
 
+/* Sound_LoadAndPlayMusic @ 0x9e130: build "back<N>.it" (aBack at 0xAC670, aIt at 0xAC66C, the
+ * strcat pair at 0x9E17C/0x9E188), read it through the asset reader, allocate the buffer, and hand
+ * it to FMUSIC_LoadSongEx with mode 0x8000 (LOADMEMORY) at 0x9E1F4 -- then SetLooping(1) at 0x9E1F8,
+ * OptimizeChannels(16, 10) at 0x9E208, PlaySong at 0x9E210, SetPaused(1) only when Map_bMusicOff
+ * stands (0x9E228/0x9E230), free the buffer, and set g_bMusicLoaded at 0x9E244 whether the load
+ * worked or not. */
 static void TestMusic(void)
 {
     printf("Sound_LoadAndPlayMusic(2)\n");
@@ -258,17 +275,35 @@ static void TestMusic(void)
     Check(g_fake.nMusicMode == 0x8000u, "  load mode 0x8000 (load from memory)");
     CheckEqI32(g_fake.nMusicLoopSet, 1, "  looping enabled");
     CheckEqI32(g_fake.nMusicOptimizeMax, 16, "  optimised to 16 channels");
+    CheckEqI32(g_fake.nMusicOptimizeMin, 10, "  with min volume 10 (0x9E208 passes 16 and 10)");
     CheckEqI32(g_fake.nMusicPlayCalls, 1, "  song played");
     Check(Sound_HasMusic(), "  music flag set");
 
+    /* Recorded deviation, not a claim that the port is right: the original has no "is the asset
+     * there" test. It reads whatever AssetReader_Size gives (0 for a missing name), allocates 0 bytes,
+     * calls FMUSIC_LoadSongEx with length 0 anyway, and sets g_bMusicLoaded at 0x9E244 regardless of
+     * what the load returned. The port returns early. The difference is inert in this build -- the
+     * default backend is the Stub_ set, which no-ops every FMUSIC_* call -- so it is recorded rather
+     * than reproduced, and the loaded flag the original would have left set is what would make a
+     * later FMUSIC_FreeSong(NULL) reachable at 0x9E420. */
     printf("Sound_LoadAndPlayMusic for a missing track\n");
     g_fake.nMusicLoads = 0;
     Sound_LoadAndPlayMusic(99);
     CheckEqI32(g_fake.nMusicLoads, 0, "  no load attempt for missing track");
+
+    /* 0x9E418 gates FMUSIC_FreeSong on g_bMusicLoaded: the flag stands here (track 2 loaded), so the
+     * shutdown frees the song exactly once. */
+    printf("Sound_Shutdown frees the loaded song\n");
+    Sound_Shutdown();
+    CheckEqI32(g_fake.nMusicFreeCalls, 1, "  one FMUSIC_FreeSong because the loaded flag stands (0x9E418/0x9E420)");
+    Check(!Sound_HasMusic(), "  and the flag is cleared at 0x9E438");
 }
 
-/* The volume mapping is exact arithmetic from Sound_ApplyMusicVolume @ 0x9e454:
- * v = muted ? 0 : 12*step + 4;  level = 4*v - 1. */
+/* The volume mapping is exact arithmetic in both appliers: Sound_ApplyMusicVolume @ 0x9e454 and
+ * Sound_ApplySfxVolume @ 0x9e4dc compute `v = muted ? 0 : 12*level + 4` (for sfx the branch is at
+ * 0x9E4F4 and the arithmetic at 0x9E50C) and hand the backend `4 * v - 1` (0x9E518). Step 0 gives 15,
+ * step 5 gives 255, and a muted pair gives -1 -- the original's value, not a clamped 0.
+ * Options_MusicLevel / Options_SfxLevel are where the port keeps the arithmetic. */
 static void TestVolumeMapping(void)
 {
     PufoOptions opt;

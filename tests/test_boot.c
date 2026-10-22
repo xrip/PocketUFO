@@ -39,7 +39,13 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
     }
 }
 
-/* Independent ground truth, measured from the shipped archives:
+/* Independent ground truth, measured from the shipped archives. Each line is the observable
+ * end state of one step of Assets_LoadStartup @ 0x382d0 -- open lang.dat then main.dat, OBJECTS.DAT
+ * split by its 208-byte record size (0xD0) into a blob plus a parallel record-pointer array,
+ * TEXTS.DAT re-strided from 200 bytes on disk to 205-byte slots (the source advance is 205 at
+ * 0x38718), FONTSIZE.DAT as the 256-entry advance table, the 240x320 16bpp surface bound as
+ * g_pMainSurface, CLASS.PAL into g_aPalette slot 0x12, and the three cs pads. The counts below come
+ * from the files, not from the port.
  *   main.dat OBJECTS.DAT  30992 bytes -> 30992 / 208 == 149 records
  *   main.dat TEXTS.DAT   344202 bytes -> (344202 - 2) / 200 == 1721 records
  *   main.dat FONTSIZE.DAT   256 bytes -> 256 advances
@@ -124,6 +130,11 @@ static void TestRealLoad(void)
     Check(assets.aPadCs[1].pData != NULL, "  cs1 loaded");
     Check(assets.aPadCs[2].pData != NULL, "  cs2 loaded");
 
+    /* GameAssets_Shutdown @ 0x38e4c, in the original's order: operator delete of the object blob
+     * (unk_157190) at 0x38E58 and the text blob (unk_156A54) at 0x38E64, then two iterations closing
+     * each archive handle and freeing its directory block (0x38E78 / 0x38E80), then the three cs pads
+     * through PadImage_FreeData + delete (0x38EA8 / 0x38EB0), then g_pMainSurface through
+     * SoftSurf_dtor + delete (0x38ED8 / 0x38EE0). */
     printf("Boot_Shutdown\n");
     Boot_Shutdown(&assets);
     Check(assets.pObjectBlob == NULL, "  object blob released");

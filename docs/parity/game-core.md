@@ -22650,3 +22650,102 @@ the 65th), 20,640 checks (+14: 7 in test_rand, 7 in TestDeleteAll), coverage 972
 bytes unchanged, 93 frame pictures and 9 e2e pictures unchanged. IDB comments written and read back at 0x3e59c
 (940 chars), 0x3e434 (580), 0x3f00c (593), 0x3f040 (319) and 0x7afec (586); `idb_save` reported ok. Every mutation
 listed above was applied, shown failing the named checks, and reverted -- `grep -rn "MUTATION" src tests` empty.
+
+## Part 122 - `audio` and `boot-assets` closed: 7 rows, 463 left, and a sentinel that could not fail
+
+Seven rows went through the row-121a method: the four `audio` functions (`Sound_LoadAndPlayMusic @ 0x9e130`,
+`Sound_InitAndLoadSamples @ 0x9e268`, `Sound_Shutdown @ 0x9e3d4`, `Sound_ApplySfxVolume @ 0x9e4dc`) and the three
+`boot-assets` ones (`Assets_LoadStartup @ 0x382d0`, `StartUi_Shutdown @ 0x38d7c`, `GameAssets_Shutdown @ 0x38e4c`).
+Six of the seven already had checks -- `tests/test_audio.c`, `tests/test_boot.c` and `tests/test_menubtn.c` drive
+them through their port owners -- but the checks carried no cite, so the ledger read the rows as unpinned. What
+this Part added: the cites on the checks that already test the right thing, four new checks where a value was not
+pinned at all, and a mutation proof per row.
+
+### What the audio rows pin, and what is recorded rather than reproduced
+
+`Sound_ApplySfxVolume @ 0x9e4dc` computes `v = Map_bSoundOff ? 0 : 12 * Map_nSoundVolume + 4` (branch at 0x9E4F4,
+arithmetic at 0x9E50C) and hands the backend `4 * v - 1` at 0x9E518 -- step 0 gives 15, step 5 gives 255, a muted
+pair gives -1, the original's value and not a clamped 0. The port keeps that arithmetic in `Options_SfxLevel`, and
+`TestVolumeMapping` now cites 0x9e4dc where it asserts 15 / 255 / 159 / -1. The second half of the function is the
+pause: gated on `g_bSoundInitReady` at 0x9E528, `FSOUND_SetPaused(FSOUND_ALL = -3, Map_bSoundOff != 0)` at 0x9E548
+-- the mute flag *is* the pause argument, which `TestVolumeApply` pins through the backend seam (the -3 channel and
+the pause flag).
+
+Two deviations were found and recorded instead of reproduced, both inert in this build because the default backend
+is the no-op `Stub_` set:
+
+* `Sound_LoadAndPlayMusic` has no "does the asset exist" test. It reads whatever `AssetReader_Size` gives (0 for a
+  missing name), allocates 0 bytes, calls `FMUSIC_LoadSongEx` with length 0 anyway, and sets `g_bMusicLoaded` at
+  0x9E244 whether the load worked or not. The port returns early for a missing track and gates looping, optimise
+  and play on the module handle.
+* `Sound_Shutdown` calls `FMUSIC_FreeSong` with no null test on the handle (gate on `g_bMusicLoaded` only,
+  0x9E418 -> 0x9E420); the port adds a handle test. With a stub backend neither difference reaches the game, so the
+  deviation is stated in the test comment and in the IDB note rather than copied into the port -- reproducing it
+  would add a call into a stub for no behavioural gain.
+
+Four new checks: `FMUSIC_OptimizeChannels(16, 10)` at 0x9E208 -- the 10 was never read by any test, only the 16
+(`nMusicOptimizeMin` is now recorded by the fake); and both branches of the `g_bMusicLoaded` gate at 0x9E418 -- no
+song free when no music was loaded, exactly one after a successful `Sound_LoadAndPlayMusic`, with the flag cleared
+at 0x9E438.
+
+### StartUi_Shutdown's range claim could not fail, and now it can
+
+`StartUi_Shutdown @ 0x38d7c` frees the three pads of bank widgets 113..127 (`MOV R3,#0xE34` loaded once, 0xE34 =
+32*113 + 0x14 = widget 113's pPad0, inner step `ADD R4,#4`, outer `ADD R7,#0x20`). The test put sentinels on
+widgets 112 and 128 to prove the range -- but they were `static PadImage` objects. Shifting the loop to 112..126
+then made the port call `PadImage_FreeData` and `free()` on static storage: the process aborted, and the mutation
+produced **zero failing checks**. A check that cannot fail is not a check, and the range *start* had no teeth at
+all until this Part.
+
+The sentinels are heap-owned now. The checks compare the stored pointer, and the test frees a sentinel only when
+the port still holds it, so a wrong range reads as the port's own NULL store instead of undefined behaviour. Two
+mutations prove it: `113 + i` -> `112 + i` fails "widget 112 is OUTSIDE the range and keeps its pad" *and*
+"widget 127 is still inside the range" (the window slides off 127); `i < 15` -> `i < 14` fails only the 127 check.
+The rest of the row was already checked and is now cited: sound shutdown 0x38D80, timers 0x38D84, the font at
+0x38DE8, the standalone control at 0x38DF8..0x38E08, the two blocks at 0x38E14/0x38E20, `Map.nUiScreen = 22` at
+0x38E2C.
+
+`Assets_LoadStartup @ 0x382d0` and `GameAssets_Shutdown @ 0x38e4c` are cited on `test_boot.c`'s existing checks,
+whose counts come from the shipped archives rather than from the port (30992 / 208 = 149 object records,
+(330002 - 2) / 200 = 1650 text records from lang.dat, the 200-to-205 re-stride visible as the source advance at
+0x38718, the 240x320 16bpp surface bound as `g_pMainSurface`, CLASS.PAL into palette slot 0x12). Teeth: dividing
+the object blob by 200 instead of 208 fails "object count = 30992 / 208: got 154, want 149"; skipping the surface
+release in `Boot_Shutdown` fails "surface released" and "global surface unbound". The IDB note records that the
+original frees only the two blobs here and leaves the archive directory arrays to `DatFile_dtor`, while the port
+frees them in `Asset_CloseArchives` -- an improvement the game cannot observe.
+
+### The mutation run itself
+
+An early attempt used `sed` with line numbers and a shell `&&` inside the replacement. Two things went wrong and
+both are worth recording: one `sed` hit the wrong line (it replaced `pfnMusicPlay` with a second
+`pfnMusicOptimize`, which failed an unrelated check and revealed the slip), and a shell parse error aborted the
+batch after a mutation had been applied, leaving `pufo_audio.c` half-mutated. The file was restored from git
+(`git checkout -- src/pufo/audio/pufo_audio.c`, which was safe because that Part made no intentional edit to it) and
+the proofs were re-driven by a runner that is now committed -- `docs/parity/mutate_run.py`, with this Part's
+cases in `docs/parity/mutations_part122.py`: binary anchor replace, the anchor must occur exactly once, run the
+one test that reads the file, print the FAIL lines (0 fail lines is reported as "the check has no teeth",
+because that is a finding and not a pass), restore the exact bytes and report `restored exactly: True`. Every
+mutation below is from that runner, and re-running it reproduces all eight.
+
+| Mutation | Failed checks |
+|---|---|
+| `OptimizeChannels(16, 10)` -> `(16, 8)` | "with min volume 10 (0x9E208 passes 16 and 10): got 8, want 10" |
+| `Sound_Shutdown`'s `g_bMusicLoaded` gate removed | "no song free here: no music was loaded, so 0x9E418 fails: got 1, want 0" |
+| `Options_SfxLevel` `4 * v - 1` -> `4 * v` | "sfx step 0 -> 15: got 16", "sfx step 5 -> 255: got 256", "sfx muted -> -1: got 0" (the music side, untouched, stayed green -- attribution is clean) |
+| `PUFO_AUDIO_INIT_GUARD` 10 -> 9 | "11 init attempts (i = 0..10): got 10, want 11" |
+| StartUi pad range `113 + i` -> `112 + i` | 2 checks, including the range-start sentinel |
+| StartUi pad group count 15 -> 14 | "widget 127 is still inside the range" |
+| `Boot_Shutdown` skips the surface | 2 checks |
+| object record size 208 -> 200 | "object count = 30992 / 208: got 154, want 149" |
+
+All reverted; `grep -rn "MUTATION" src tests` empty.
+
+### Measured
+
+Reached stays **965 of 968** (3 entry points, residue 0). The assertion column moves 495 -> **502** rows with a
+test cite at their own address, and 470 -> **463** without one: `audio` and `boot-assets` join `util` and
+`platform` as closed, leaving `strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26,
+`app-shell` 19, `dat` 16, `tact-ui` 12, `titles` 6. Gates (`build/check122.log`, `CHECK EXIT=0`): 65/65 Release and
+65/65 Debug, 20,644 checks (+4 new audio checks), coverage 972/1103 functions and 596888/598792 bytes unchanged,
+93 frame pictures and 9 e2e pictures unchanged. IDB comments written and read back at 0x9e130 (844 chars), 0x9e268
+(661), 0x9e3d4 (550), 0x9e4dc (569), 0x382d0 (648), 0x38e4c (602) and 0x38d7c (847); `idb_save` reported ok.

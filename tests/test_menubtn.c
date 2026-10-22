@@ -567,12 +567,23 @@ static void *SdFree(void *pBlock, void *pUser)
     return NULL;
 }
 
+/* StartUi_Shutdown @ 0x38d7c: sound shutdown at 0x38D80, kill timers at 0x38D84, then 15 groups
+ * (R8 = 15 at 0x38D8C) of 3 pads each (R5 = 3 at 0x38D94) walked with ADD R4,#4 inside and
+ * ADD R7,#0x20 outside -- so the three dwords are one widget's pPad0..pPad2, and the constant
+ * 0xE34 loaded once outside both loops is 32*113 + 0x14, i.e. widget 113's pPad0: the range is bank
+ * widgets 113..127. Each pad goes PadImage_FreeData (0x38DB8) then delete (0x38DC0) and is stored
+ * NULL. Then the font at 0x38DE8, the standalone control at 0x38DF8..0x38E08, the two blocks at
+ * 0x38E14/0x38E20, and Map.nUiScreen = 22 at 0x38E2C. The sentinels just outside the range are what
+ * make the 113..127 claim a check rather than a reading. */
 static void TestStartUiShutdown(void)
 {
     static UiControl g_aBank[130];
-    static PadImage g_SentinelA, g_SentinelB;
     static PadImage g_Font;
     static i32 nUiScreen;
+    PadImage *pSentinelA;
+    PadImage *pSentinelB;
+    bool bKeepA;
+    bool bKeepB;
     StartUiShutdownEnv env;
     UiControl *pStartCtl;
 
@@ -588,9 +599,15 @@ static void TestStartUiShutdown(void)
     env.hooks.pfnFontFree = SdFontFree;
     env.hooks.pfnFree = SdFree;
 
-    /* Sentinels just outside the range the loop covers. If the range is wrong these get freed. */
-    g_aBank[112].apPads[0] = &g_SentinelA;
-    g_aBank[128].apPads[0] = &g_SentinelB;
+    /* Sentinels just outside the range the loop covers, and heap-owned on purpose. The earlier
+     * version used two statics, which made an out-of-range tear-down undefined behaviour: shifting
+     * the loop to 112..126 aborted the process instead of failing a check, so the range start had no
+     * teeth at all. A heap sentinel is freed legally by the wrong range and the observable is the
+     * port's own NULL store. */
+    pSentinelA = (PadImage *)calloc(1, sizeof(PadImage));
+    pSentinelB = (PadImage *)calloc(1, sizeof(PadImage));
+    g_aBank[112].apPads[0] = pSentinelA;
+    g_aBank[128].apPads[0] = pSentinelB;
 
     /* Real heap pads at both ends of the range, so a miss shows up as a pointer left set. */
     for (int k = 0; k < 3; ++k) {
@@ -615,10 +632,20 @@ static void TestStartUiShutdown(void)
     TestCheck("widget 113's first pad is gone", g_aBank[113].apPads[0] == NULL);
     TestCheck("widget 113's third pad is gone", g_aBank[113].apPads[2] == NULL);
     TestCheck("widget 127 is still inside the range", g_aBank[127].apPads[0] == NULL);
-    TestCheck("widget 112 is OUTSIDE the range and keeps its pad",
-              g_aBank[112].apPads[0] == &g_SentinelA);
-    TestCheck("widget 128 is outside the range too",
-              g_aBank[128].apPads[0] == &g_SentinelB);
+    bKeepA = (g_aBank[112].apPads[0] == pSentinelA);
+    bKeepB = (g_aBank[128].apPads[0] == pSentinelB);
+    TestCheck("widget 112 is OUTSIDE the range and keeps its pad (0x38D8C's 15 groups start at 113)",
+              bKeepA);
+    TestCheck("widget 128 is outside the range too", bKeepB);
+
+    /* Release the sentinels only while the port still holds them: a wrong range means the port has
+     * already freed them, and a second free would be a new bug rather than a second check. */
+    if (bKeepA) {
+        free(pSentinelA);
+    }
+    if (bKeepB) {
+        free(pSentinelB);
+    }
 
     TestEqI32("the standalone control and the two blocks are freed", g_nFreeCalls, 3);
     TestEqI32("and the screen id becomes 22", nUiScreen, 22);
