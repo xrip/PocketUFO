@@ -606,11 +606,21 @@ static void SetupClip(TactItem **ppHand)
     g_Item1x1.nIndex = 4;
 }
 
+/* --- the drop path, Inv_HandlePointer @ 0x12260 -------------------------------------------------------------
+ * One 6,668-byte function. The anchor is Map_nInvDragOffX/Y + (pBank + 0x1044, pBank + 0x1048) + 10, the hit
+ * test walks aInvHitRects and the first hit wins, and the charge is per region: pocket 0/1 cost 4 TU,
+ * pocket 2/3 cost 5, hand 6, backpack 7, belt 8, the ground strip 5, an ammo split 6. The charge is skipped
+ * when the Map + 2 latch is set or the hit region is the region the item already occupies. The refusal modals
+ * are fixed triples: (160, 31, 1) for not enough time, (160, 45, 1) for a weapon already loaded, and
+ * (200, 43, 2) when a priority weapon fills the other hand. The four drop tests below are the checks for this
+ * address: which slot the item lands in, what the object's cargo column and the craft's total became, and
+ * which modal a refusal opens. The charge checks below state 4, 5, 6, 7 and 8 as literals and not through
+ * PUFO_INV_TU_* -- the constants are the thing under test, and an expectation built from them cannot fail. */
 static void TestDropPocket(void)
 {
     InvDropCtx c;
 
-    printf("Inv_HandlePointer -- the pocket slots\n");
+    printf("Inv_HandlePointer @ 0x12260 -- the pocket slots\n");
     ResetDrop();
     SetupItems();
 
@@ -620,7 +630,7 @@ static void TestDropPocket(void)
     Check(g_Unit.aPockets[0].apItem[0] == &g_Item2x1, "  the anchor slot holds the item");
     Check(g_Unit.aPockets[0].apItem[1] == &g_Sentinel, "  the covered slot holds the sentinel");
     CheckEqI32(g_Unit.aPockets[0].abMeta[1], 0, "  its meta byte names slot 0");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_POCKET_A, "  pockets 0/1 cost 4 time units");
+    CheckEqI32(g_Unit.uTu, 20 - 4, "  pockets 0/1 cost 4 time units");
     CheckSamples("  sample 17 on a placed drop", 17, -1);
     Check(g_nWeightCalls > 0, "  Unit_RecalcInventoryStat ran");
 
@@ -628,11 +638,11 @@ static void TestDropPocket(void)
     ResetDrop();
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 1, 0, 110, 30);
     Check(Inv_HandlePointer(&c), "  pocket 1 slot 1");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_POCKET_A, "  pocket 1 also costs 4");
+    CheckEqI32(g_Unit.uTu, 20 - 4, "  pocket 1 also costs 4");
     ResetDrop();
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 170);
     Check(Inv_HandlePointer(&c), "  pocket 2 slot 0");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_POCKET_B, "  pockets 2/3 cost 5");
+    CheckEqI32(g_Unit.uTu, 20 - 5, "  pockets 2/3 cost 5");
 
     /* An occupied slot is refused before any charge, and the item goes back. */
     ResetDrop();
@@ -682,7 +692,7 @@ static void TestDropHands(void)
 {
     InvDropCtx c;
 
-    printf("Inv_HandlePointer -- the hands\n");
+    printf("Inv_HandlePointer @ 0x12260 -- the hands\n");
     ResetDrop();
     SetupItems();
 
@@ -690,7 +700,7 @@ static void TestDropHands(void)
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
     Check(Inv_HandlePointer(&c), "  an empty left hand takes the item");
     Check(g_Unit.pHandL == &g_Item1x1, "  pHandL");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_HAND, "  a hand costs 6");
+    CheckEqI32(g_Unit.uTu, 20 - 6, "  a hand costs 6");
 
     ResetDrop();
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 130, 90);
@@ -742,7 +752,7 @@ static void TestDropHands(void)
     Check(Inv_HandlePointer(&c), "  a clip loads into the empty weapon");
     CheckEqI32(g_Weapon.nAmmo, 7, "  the weapon now holds the clip");
     CheckEqI32(g_Weapon.nIndex, 4, "  and its ammo index follows the clip");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_HAND, "  loading costs 6");
+    CheckEqI32(g_Unit.uTu, 20 - 6, "  loading costs 6");
     CheckSamples("  sample 6 for the load, then 17", 6, 17);
     CheckEqI32(g_nFreed, 1, "  the clip object was deleted");
     CheckEqI32(g_nPool, 2, "  the pool count dropped by one");
@@ -796,7 +806,7 @@ static void TestDropGrid(void)
 {
     InvDropCtx c;
 
-    printf("Inv_HandlePointer -- the backpack and the belt\n");
+    printf("Inv_HandlePointer @ 0x12260 -- the backpack and the belt\n");
     ResetDrop();
     SetupItems();
 
@@ -807,7 +817,7 @@ static void TestDropGrid(void)
     Check(g_Unit.apBackpack[1] == &g_Sentinel, "  slot 1 holds the sentinel");
     CheckEqI32(g_Unit.abBackpackMeta[1], 0, "  meta A names the column");
     CheckEqI32(g_Unit.abBackpackMeta[1 + 8], 0, "  meta B names the row");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_BACKPACK, "  the backpack costs 7");
+    CheckEqI32(g_Unit.uTu, 20 - 7, "  the backpack costs 7");
 
     /* Row 1 is y 179..198 and only columns 0 and 3 have a rect. */
     ResetDrop();
@@ -839,7 +849,7 @@ static void TestDropGrid(void)
     Check(g_Unit.apBelt[1] == &g_Sentinel, "  slot 1 holds the sentinel");
     CheckEqI32(g_Unit.abBeltMetaA[1], 0, "  meta A");
     CheckEqI32(g_Unit.abBeltMetaB[1], 0, "  meta B");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_BELT, "  the belt costs 8");
+    CheckEqI32(g_Unit.uTu, 20 - 8, "  the belt costs 8");
 
     ResetDrop();
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 2, 2, 220, 70);
@@ -859,7 +869,7 @@ static void TestDropGround(void)
 {
     InvDropCtx c;
 
-    printf("Inv_HandlePointer -- the ground strip\n");
+    printf("Inv_HandlePointer @ 0x12260 -- the ground strip\n");
     ResetDrop();
     SetupItems();
 
@@ -867,7 +877,7 @@ static void TestDropGround(void)
     c = DropCtx(&g_Item1x1, INV_REGION_POCKET0, 0, 0, 100, 300);
     Check(Inv_HandlePointer(&c), "  a drop on the ground strip is placed");
     Check(g_aGrid[2][3][3].pItemList == &g_Item1x1, "  it went into the unit's own cell");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_GROUND, "  the ground costs 5");
+    CheckEqI32(g_Unit.uTu, 20 - 5, "  the ground costs 5");
     CheckEqI32(g_Ui.nInvListCount, 1, "  the visible list was rebuilt");
     Check(g_Ui.apInvList[0] == &g_Item1x1, "  with the dropped item in it");
 
@@ -914,7 +924,7 @@ static void TestDropSplit(void)
     Check(g_aAlloc[0].pObj == &g_aObjById[6], "  and the ammo object the index names");
     Check(g_apPool[0] == &g_aAlloc[0], "  the new item entered the pool");
     CheckEqI32(g_nPool, 1, "  and the count grew");
-    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_SPLIT, "  the split costs 6");
+    CheckEqI32(g_Unit.uTu, 20 - 6, "  the split costs 6");
     CheckSamples("  sample 17 on the split", 17, -1);
 
     /* An empty weapon, a 255 weapon and a two-handed weapon are all refused. */

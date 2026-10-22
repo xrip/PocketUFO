@@ -395,6 +395,12 @@ static void TestClimbDown(void)
           && Queued(1, TACTCMD_VERT_STEP, 0xFF));
 }
 
+/* TactHud_OpenInventory @ 0x16ef4 (the original's name is Inv_OpenScreen). Plays sample 16 only when
+ * LOBYTE(apUiSlotsA[2]) at +0x68 is non-zero; needs nXcomUnitCount non-zero and pSelUnit->nUnitType <= 3 or it
+ * opens nothing at all. On the open path: nInvListSel = 0xFF (the Map selection byte at +0x4A26),
+ * nInvFilterType = 0 (+0x1A22), the rebuild runs, the All pad (pBank + 0x30A) lights and the other six pad
+ * globals go dark, Map_bActionLatch is cleared, and the cursor is re-stamped at its own position. Screen id
+ * 1 is the observable half of the gate. */
 static void TestOpenInventory(void)
 {
     TactHudInvOpenCtx ctx;
@@ -468,6 +474,17 @@ static void TestOpenInventory(void)
     ctx.nXcomCount = 4;
     g_Unit.nUnitType = 4;
     Check("a non-humanoid gets no inventory", !TactHud_OpenInventory(&ctx));
+
+    /* The gate is `nUnitType <= 3` at 0x16F30-ish: type 3 is the last one that opens, 4 the first refused. */
+    Reset();
+    ctx.nXcomCount = 4;
+    g_Unit.nUnitType = 3;
+    Check("unit type 3 still opens the inventory",
+          TactHud_OpenInventory(&ctx) && ui.nUiScreen == 1);
+    g_Unit.nUnitType = 4;
+    ui.nUiScreen = 0;
+    Check("unit type 4 is the first one refused",
+          !TactHud_OpenInventory(&ctx) && ui.nUiScreen == 0);
 
     Reset();
     g_Unit.nUnitType = 0;
@@ -993,12 +1010,27 @@ static void TestHudDraw(void)
                                        &panelB, &color, CountBlit, CountBlit, NULL), 1);
     TestEqI32("the banner blits its one pad", g_nPadBlits, 1);
 
+    /* TactHud_DrawConfirmDialog @ 0x1eb68: a backdrop pad, one bank pad (widget 129), the pad label in cyan
+     * (26,244,252 over 13,122,126), a title centred at y 10 and two fixed side labels at (10, 30) and
+     * (170, 30) in green, then the two message panels, and the return is 1. With the fake font installed every
+     * code point is one pixel and advances 8, so the three text positions are observable: "title" is 5 glyphs
+     * = 40 wide and centres at (240 - 40) / 2 = 100. */
+    InstallFakeFont();
+    g_pTestPix = (u16 *)surf.pPixels;
+    memset(surf.pPixels, 0, (size_t)240 * 320 * sizeof(u16));
     g_nPadBlits = 0;
     TestEqI32("the confirm dialog draws", TactHud_DrawConfirmDialog(&aPad[0], &aImg[0], "pad",
                                                                     "title", "left", "right",
                                                                     &panelA, &panelB, &color,
                                                                     CountBlit, CountBlit, NULL), 1);
     TestEqI32("the dialog blits its one pad", g_nPadBlits, 1);
+    TestCheck("the title is centred at x 100 on y 10", PixAt(100, 10) != 0);
+    TestCheck("  and nothing is drawn left of it", PixAt(99, 10) == 0);
+    TestCheck("the left label sits at the constant (10, 30)", PixAt(10, 30) != 0);
+    TestCheck("  with (9, 30) empty", PixAt(9, 30) == 0);
+    TestCheck("the right label sits at the constant (170, 30)", PixAt(170, 30) != 0);
+    TestCheck("  with (169, 30) empty", PixAt(169, 30) == 0);
+    g_fontSys.apSprIndex = NULL;
 
     /* TactHud_DrawUnitRoster @ 0x21908: twelve modes, only the ones with a non-zero entry drawn,
      * and a drawn pad's y rewritten to 23 * (drawn so far) + 67. */

@@ -100,7 +100,8 @@ them (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 2
 "check-fails-when-wrong" pass over those 463 is the part of the goal no gate runs, and PLAN row 121a carries it.
 Measured after Part 123: cites at a row's own address **508**, without one **457**, with `titles` closed too
 (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16, `tact-ui`
-12 left).
+12 left). Measured after Part 124: **520** cited, **445** not, with `tact-ui` closed as well (`strat-ui` 121,
+`tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16 left).
 
 Part 121 closed the 5 open `util` rows and learned a rule the ledger cannot enforce: a `@ 0x...` in a test file
 counts whether it sits next to a check or in a header comment, so the first draft of `tests/test_rand.c` made
@@ -118,3 +119,11 @@ second rule is that some original constants are inert and no check can pin them:
 320` test and its 36-row span only ever decide about rows that are off screen, because a row is on screen exactly
 when the window already includes it, and 36 is more than the 17 rows that fit. Those are written in the IDB note
 instead of being pretended to be covered.
+
+Part 124 closed the 12 `tact-ui` rows and found the second kind of toothless check: an expectation built out of
+the constant under test. Nine `Inv_HandlePointer @ 0x12260` checks read `uTu == 20 - PUFO_INV_TU_POCKET_A`, which
+moves with the constant, so changing `#define PUFO_INV_TU_POCKET_A 4` to 5 would have passed. They state 4, 5, 6,
+7 and 8 as literals now. The filter row is the other shape worth naming: the original has seven 128-byte functions
+that a byte census shows are identical except two immediates -- which pad global gets 1, and what lands in
+`unk_1183DE` -- while the port implements the family once, so each address is cited at the shared routine together
+with the value only it stores (0x17410 stores 0xFF, 0x17710 lights `pBank + 0x2AA`), and each has its own mutation.

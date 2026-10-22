@@ -98,6 +98,27 @@ static void UiReset(TactUiState *pUi)
 
 /* --- tests ---------------------------------------------------------------- */
 
+/* --- the seven inventory filter buttons ---------------------------------------------------------------
+ * The filter row is seven separate ARM functions, not one function with an argument. A byte census over all
+ * seven 128-byte bodies shows they are identical except two immediates each -- the MOV that feeds one pad
+ * store, and the MOV that feeds the selection byte unk_1183DE:
+ *
+ *   Inv_SetFilterAll @ 0x17410  lights unk_AC9DA (the All pad),  stores unk_1183DE = 0xFF at 0x1747C
+ *   Inv_SetFilter0   @ 0x17490  lights unk_AC9FA,                stores unk_1183DE = 0 at 0x174FC
+ *   Inv_SetFilter1   @ 0x17610  lights unk_ACA5A,                stores unk_1183DE = 1 at 0x1767C
+ *   Inv_SetFilter2   @ 0x17690  lights unk_ACA7A,                stores unk_1183DE = 2 at 0x176FC
+ *   Inv_SetFilter3   @ 0x17510  lights unk_ACA1A,                stores unk_1183DE = 3 at 0x1757C
+ *   Inv_SetFilter4   @ 0x17590  lights unk_ACA3A,                stores unk_1183DE = 4 at 0x175FC
+ *   Inv_SetFilter5   @ 0x17710  lights pBank + 0x2AA (the X pad), stores unk_1183DE = 5 at 0x1777C
+ *
+ * All seven first zero the seven pad globals and byte_1153DA[0], play sample 17, and end in a tail
+ * `B Inv_BuildVisibleList` -- so the original hands back the rebuild's value, while the port returns true
+ * (no port path reads it: World_TactFilterCall discards it). The port implements the family once, as
+ * Ui_SetInvFilter, and its pad order matches those globals in address order: abFilterPad[0..4] is
+ * unk_AC9FA, unk_ACA1A, unk_ACA3A, unk_ACA5A, unk_ACA7A, bFilterPadX is pBank + 0x2AA and bFilterPadAll is
+ * unk_AC9DA. The loop below is the check for all seven addresses: which pad ends lit, and what byte the
+ * filter leaves in the selection index.
+ */
 static void TestFilterMapping(void)
 {
     TactUiState ui;

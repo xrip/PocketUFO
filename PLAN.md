@@ -5687,6 +5687,11 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   is 64/64 green. So a Debug-only ordering or shared-file coupling exists and a different failure can pass through
   the sentinel unnoticed. Find the shared state (candidate: the save-slot files the frame test round-trips) or
   make Debug serial. Part 120.
+  Instance (Part 124, 2026-10-23): the same test and the same check failed in a `-j 8` Debug run while Release was
+  65/65; that test then passed 3/3 run alone in Debug, the whole Debug suite was 65/65 run serially, and a second
+  full gate run (`build/check124b.log`) was 65/65 in both configurations. New negative evidence for the candidate:
+  `sav4.sav`, `sav62.sav` and `sav63.sav` appear in `tests/test_geoscapeframe.c` and nowhere else in `tests/` or
+  `tools/`, so the coupling is not two tests naming the same save slot.
 - [ ] **119a. The IDB naming pass the closing pass deferred.** `Map +0x150F0` is still `nAnimScratchX`
   (`_BYTE[4]`) while the address carries `pThrowTargetUnit @ 0x128AA8` and `Map_TraceVoxelOccupancy` (0x3242c)
   dereferences it as a `Soldier *`; and the text block base `0xB38D0` is an unnamed `char[]` although every
@@ -5734,11 +5739,18 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   777) computed outside the port. (2) Some constants are inert and only a proof of that is honest: the credits
   window's `scroll >= 320` test and its 36-row span only decide about rows that are off screen (a row is on screen
   exactly when the window already includes it, and 36 exceeds the 17 rows that fit), so 340 -> 360 fails 0 checks
-  by construction while 340 -> 320 fails 3; the same is recorded for `StartUi`'s 8bpp fills (the written byte is
+  by construction while 340 -> 320 fails 2; the same is recorded for `StartUi`'s 8bpp fills (the written byte is
   the palette index, so slot 0 against 12 cannot change a pixel) and for a smaller jitter bound. Third finding: an
   apparently inert value may only look inert -- 0x1a83c's 3x3 star is invisible behind SoftSurf_BlurPixels @
   0xa2000, but the blur leaves a fingerprint two cells past the block's edge, and (110,161) and (106,165) are
   non-zero for 3x3 and zero for 3x1, 1x3 and 2x2, measured before the check was written.
+  Progress (Part 124): `tact-ui` (12) closed -- 520 rows now carry a test cite, **445** do not. The new rule: an
+  expectation built out of the constant under test has no teeth. Nine `Inv_HandlePointer @ 0x12260` charge checks
+  read `uTu == 20 - PUFO_INV_TU_POCKET_A`, so `4 -> 5` moves the expectation with it and stays green; they state 4,
+  5, 6, 7 and 8 as literals now and the mutations fail 2, 2 and 1. Two shapes also got named: seven byte-identical
+  128-byte ARM filter functions collapsed into one port routine (cited per address with the pad global and the
+  `unk_1183DE` immediate only it stores, each with its own mutation), and a gate tested only on the refuse side --
+  `nUnitType <= 3` never had its opening side tested, so `> 3u -> > 2u` would have passed.
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5853,3 +5865,18 @@ reborn y 0 -> 1 fails 2; each rand bound fails 1 or 2; 190 -> 189 fails 2; 3x3 -
 each; jitter 5 -> 13 fails 1), 3 inert by construction (340 -> 360, jitter 5 -> 1, the fills' palette slot) and
 recorded as such | every mutation reverted to the exact bytes, `grep -rn "MUTATION" src tests` empty | row 121a
 stays open with 457 rows left.
+
+`<this commit>` + Part 124 | Release 65/65; Debug 64/65 in the first `-j 8` run (`test_geoscapeframe`'s
+strateg-chunk check) with the same test 3/3 green when run alone, the Debug suite 65/65 run serially, and a second
+full gate run 65/65 in both configurations (`build/check124.log`, `build/check124b.log`, both `CHECK EXIT=0`) |
+20,680 checks (+8: 6 confirm-dialog text positions, 2 for the `nUnitType <= 3` boundary) | coverage 972/1103
+functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged | reach unchanged at 965/968, residue 0; cites at a
+row's own address 508 -> **520**, without one 457 -> **445** (`tact-ui` closed) | no `src/` change: the Part is
+cites, 8 new checks, and 9 charge expectations rewritten from `20 - PUFO_INV_TU_*` to literals, because an
+expectation built from the constant under test cannot fail | 93 frame pictures and 9 e2e pictures unchanged | IDB
+comments read back at 0x17410 (917), 0x17490/0x17510/0x17590/0x17610/0x17690 (845 each), 0x17710 (861) -- none of
+the seven had one -- and 0x1eb68 (923, replacing 217), `idb_save` written | teeth: 16 cases in
+`docs/parity/mutations_part124.py`, every one failing 1 to 8 checks (the seven filter pad moves, `All`'s 0xFF -> 0,
+the two cargo-flag swaps, `> 3u -> > 2u`, the selection byte, title y 10 -> 12, right label 170 -> 160, and the
+three TU costs) -- all reverted, `grep -rn "MUTATION" src tests` empty | row 120b got a new instance and a negative
+result (the frame test's save names appear in no other test); row 121a stays open with 445 rows left.

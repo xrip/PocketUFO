@@ -222,9 +222,17 @@ static void TestSupplyConsume(void)
     CheckEqI32(bLowFlag, 0, "low-supply flag stays clear");
 }
 
+/* --- the cargo pair, InvSel_AddItemQty @ 0x45e8c and InvSel_SubItemQty @ 0x45ec8 -----------------------
+ * 0x45E8C is two stores and a return: `pItem->aItemQty[pSel->nSlotIdx] += nDelta` at 0x45EB0,
+ * `pSel->uUnk4 += nDelta` at 0x45EC0, `return pSel` at 0x45EC4 -- the ship pointer, not a status.
+ * 0x45EC8 is the same shape with `-=` at 0x45EEC and 0x45EFC and the same return at 0x45F00. Neither clamps,
+ * so a u16 cargo total taken below zero wraps. The column index is Ship.nSlotIdx at +0x1C, which Ship_ctor
+ * set to the ship count at the moment the ship was created: aItemQty is a per-craft column, the way
+ * auPerBaseVal is a per-base column through BaseRec.bSlot.
+ */
 static void TestCargoPair(void)
 {
-    printf("InvSel_AddItemQty / InvSel_SubItemQty\n");
+    printf("InvSel_AddItemQty @ 0x45e8c / InvSel_SubItemQty @ 0x45ec8\n");
     Ship ship;
     ObjectRecFull item;
 

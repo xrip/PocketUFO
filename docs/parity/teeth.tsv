@@ -814,7 +814,7 @@
 0x118b0	Input_OnUp	256	tact-ui	yes	yes	yes		yes
 0x119b0	Input_OnDown	272	tact-ui	yes	yes	yes		yes
 0x11f40	Inv_ClearHitSlot	788	tact-ui	yes	yes	yes		yes
-0x12260	Inv_HandlePointer	6668	tact-ui	yes	no	yes		yes
+0x12260	Inv_HandlePointer	6668	tact-ui	yes	yes	yes		yes
 0x13c6c	Input_OnPointer	3172	tact-ui	yes	yes	yes	App_PointerLogical|App_HoverOnRegion|PocketUFO_WndProc|World_bTactPointerLive	yes
 0x148d0	Input_OnPointerUp	2140	tact-ui	yes	yes	yes	App_OnPointerUp|App_HoverOnRegion|PocketUFO_WndProc|World_bTactPointerLive	yes
 0x1557c	Input_OnAction	244	tact-ui	yes	yes	yes	UiBank_CtorAll	yes
@@ -825,16 +825,16 @@
 0x16570	TactHud_ToggleKneel	276	tact-ui	yes	yes	yes	void	yes
 0x1674c	TactHud_ClimbUp	932	tact-ui	yes	yes	yes	void	yes
 0x16af0	TactHud_ClimbDown	788	tact-ui	yes	yes	yes	void|TactHud_ClimbUp	yes
-0x16ef4	Inv_OpenScreen	264	tact-ui	yes	no	yes	World_InitTactical|World_TactOpenInventoryBody|void|TactHud_OpenInventory	yes
+0x16ef4	Inv_OpenScreen	264	tact-ui	yes	yes	yes	World_InitTactical|World_TactOpenInventoryBody|void|TactHud_OpenInventory	yes
 0x173a8	Inv_ScrollDown	60	tact-ui	yes	yes	yes	void|Ui_InvScrollDown	yes
 0x173e4	Inv_ScrollUp	44	tact-ui	yes	yes	yes	World_TactSelectNextUnit|void|Ui_InvScrollUp	yes
-0x17410	Inv_SetFilterAll	128	tact-ui	yes	no	yes	void|Ui_SetInvFilter	yes
-0x17490	Inv_SetFilter0	128	tact-ui	yes	no	yes	void|Ui_SetInvFilter	yes
-0x17510	Inv_SetFilter3	128	tact-ui	yes	no	yes	void	yes
-0x17590	Inv_SetFilter4	128	tact-ui	yes	no	yes	void	yes
-0x17610	Inv_SetFilter1	128	tact-ui	yes	no	yes	void|Ui_SetInvFilter	yes
-0x17690	Inv_SetFilter2	128	tact-ui	yes	no	yes	void|Ui_SetInvFilter	yes
-0x17710	Inv_SetFilter5	128	tact-ui	yes	no	yes	void	yes
+0x17410	Inv_SetFilterAll	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
+0x17490	Inv_SetFilter0	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
+0x17510	Inv_SetFilter3	128	tact-ui	yes	yes	yes	void	yes
+0x17590	Inv_SetFilter4	128	tact-ui	yes	yes	yes	void	yes
+0x17610	Inv_SetFilter1	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
+0x17690	Inv_SetFilter2	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
+0x17710	Inv_SetFilter5	128	tact-ui	yes	yes	yes	void	yes
 0x17d54	TactHud_UseSpecialItem20	1292	tact-ui	yes	yes	yes	World_TactLiveOptions|void|TactHud_UseSpecialItem	yes
 0x1a7c8	TactHud_ComputeCursorDirState	116	tact-ui	yes	yes	yes		yes
 0x1b4b0	TactUnit_DrawHpGlyphs	212	tact-ui	yes	yes	yes		yes
@@ -844,7 +844,7 @@
 0x1dbb8	MainMenu_Draw	2680	tact-ui	yes	yes	yes		yes
 0x1e888	TactHud_TickCursorDir	152	tact-ui	yes	yes	yes		yes
 0x1e920	TactHud_DrawStatusBanner	584	tact-ui	yes	yes	yes	World_TactLiveOptions|World_bTactFrameLive	yes
-0x1eb68	TactHud_DrawConfirmDialog	484	tact-ui	yes	no	yes	World_TactLiveOptions	yes
+0x1eb68	TactHud_DrawConfirmDialog	484	tact-ui	yes	yes	yes	World_TactLiveOptions	yes
 0x1f58c	TactHud_DrawInventoryScreen	1792	tact-ui	yes	yes	yes	World_TactLiveOptions	yes
 0x1fc8c	Tact_DrawCommandPads	4044	tact-ui	yes	yes	yes	World_TactLiveOptions	yes
 0x20c58	TactHud_DrawUnitMarkers	672	tact-ui	yes	yes	yes	World_TactLiveOptions	yes
@@ -858,8 +858,8 @@
 0x2d580	Inv_BuildVisibleList	536	tact-ui	yes	yes	yes		yes
 0x3b068	Tact_LoadUiPads	1072	tact-ui	yes	yes	yes	World_TactPadAllocThunk|World_TactLoadUiPadsThunk|World_InitTactical	yes
 0x3b498	Tact_InitUiControls	2260	tact-ui	yes	yes	yes	World_TactInitUiControlsThunk|World_InitTactical|World_TactLiveOptions|World_TactLiveMission	yes
-0x45e8c	InvSel_AddItemQty	60	tact-ui	yes	no	yes		yes
-0x45ec8	InvSel_SubItemQty	60	tact-ui	yes	no	yes	InvSel_AddItemQty	yes
+0x45e8c	InvSel_AddItemQty	60	tact-ui	yes	yes	yes		yes
+0x45ec8	InvSel_SubItemQty	60	tact-ui	yes	yes	yes	InvSel_AddItemQty	yes
 0x1a83c	Titles_DrawAnimatedFrame	672	titles	yes	yes	yes		yes
 0x1e630	Titles_DrawBackdrop	600	titles	yes	yes	yes	DrawCreditRow	yes
 0x380d8	Titles_Init	404	titles	yes	yes	yes	App_HookPlaySample|App_HookTitles	yes

@@ -22847,3 +22847,89 @@ removed argument) move no picture. IDB comments written and read back at 0x1a83c
 (832), 0x46acc (841, the stale "0x468cc still unported" claim replaced), 0x46dbc (535) and 0x46e88 (738, the row
 had no comment at all); `idb_save` reported ok. Teeth: 24 cases in `docs/parity/mutations_part123.py`, every one
 restored to its exact bytes, `grep -rn "MUTATION" src tests` empty.
+
+## Part 124 - `tact-ui` closed: 12 rows, 445 left, and nine checks whose expectation moved with the constant
+
+The twelve uncited `tact-ui` rows went through the row-121a method: the seven inventory filter buttons
+(`Inv_SetFilterAll @ 0x17410`, `Inv_SetFilter0/1/2/3/4/5 @ 0x17490 / 0x17610 / 0x17690 / 0x17510 / 0x17590 /
+0x17710`), the cargo pair (`InvSel_AddItemQty @ 0x45e8c`, `InvSel_SubItemQty @ 0x45ec8`), the inventory open
+gate (`Inv_OpenScreen @ 0x16ef4`), the confirm dialog (`TactHud_DrawConfirmDialog @ 0x1eb68`) and the drop path
+(`Inv_HandlePointer @ 0x12260`). Rows with a cite at their own address: 508 -> 520; without one: 457 -> 445.
+`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19 and `dat` 16 are what
+row 121a has left. 16 mutation cases ran, every one failing at least one check; 8 checks were added
+(20,672 -> 20,680) and nine existing checks were rewritten because they could not have failed.
+
+### The seven filter buttons, and the byte census that proves they are one function seven times
+
+`tests/test_tactui.c` already asserted which pad a filter number lights and what byte it leaves in the selection
+index; what the rows lacked were cites and per-address mutations. The IDB fact that makes the cites honest is a
+byte census: all seven bodies are 128 bytes and differ in nothing but the immediates that feed two stores -- the
+pad global that gets 1, and `unk_1183DE`.
+
+    Inv_SetFilterAll @ 0x17410  unk_AC9DA = 1 at 0x17430,   unk_1183DE = 0xFF at 0x1747C
+    Inv_SetFilter0   @ 0x17490  unk_AC9FA = 1 at 0x174B8,   unk_1183DE = 0   at 0x174FC
+    Inv_SetFilter3   @ 0x17510  unk_ACA1A = 1 at 0x17540,   unk_1183DE = 3   at 0x1757C
+    Inv_SetFilter4   @ 0x17590  unk_ACA3A = 1 at 0x175C8,   unk_1183DE = 4   at 0x175FC
+    Inv_SetFilter1   @ 0x17610  unk_ACA5A = 1 at 0x17650,   unk_1183DE = 1   at 0x1767C
+    Inv_SetFilter2   @ 0x17690  unk_ACA7A = 1 at 0x176D8,   unk_1183DE = 2   at 0x176FC
+    Inv_SetFilter5   @ 0x17710  pBank+0x2AA = 1 at 0x17728, unk_1183DE = 5   at 0x1777C
+
+The order is the original's quirk, not a transcription error: in address order the pads are filter 5, All, 0, 3,
+4, 1, 2. Every one of them first zeroes all seven pad globals and `byte_1153DA[0]`, plays sample 17, and ends in a
+tail `B Inv_BuildVisibleList`, so the original returns the rebuild's value while the port returns true -- stated in
+each of the seven IDB comments, which did not exist before this Part. The port carries the mapping in one
+`s_aFilterPad` table, so one mutation per address is possible and was done: each entry moved to a different pad
+fails the check of that filter (1 failing check each, 2 for filter 5 because the X pad has its own flag), and
+`All`'s `(u8)-1` -> `(u8)0` fails 2. The port's pad order matches those globals in address order, which is what
+makes the cite and the check say the same thing: `abFilterPad[0..4]` is unk_AC9FA, unk_ACA1A, unk_ACA3A,
+unk_ACA5A, unk_ACA7A; `bFilterPadX` is pBank + 0x2AA and `bFilterPadAll` is unk_AC9DA.
+
+### The cargo pair and the open gate: cites, and a boundary that was never tested
+
+`InvSel_AddItemQty @ 0x45e8c` is two stores and a return -- the object's column for this craft at 0x45EB0, the
+craft's own total at 0x45EC0, the ship pointer at 0x45EC4 -- and `InvSel_SubItemQty @ 0x45ec8` is the same with
+`-=` at 0x45EEC and 0x45EFC. `tests/test_ship.c` already pinned the column-versus-total split, the wrap of the
+u16 total below zero and the port's out-of-range deviation; it now cites both addresses, and swapping the add
+flag on either half fails 8 and 7 checks. `Inv_OpenScreen @ 0x16ef4` needed a new check rather than a cite: the
+test refused a type-4 unit but never tried the last type that opens, so the gate `nUnitType <= 3` was untested at
+its boundary. Type 3 opening and type 4 refusing are asserted now, and `> 3u` -> `> 2u` fails 1 check where
+before it would have passed; the selection byte `0xFF -> 0` fails 2.
+
+### The confirm dialog: six positions pinned through a one-pixel font, and the call sites recorded
+
+`TactHud_DrawConfirmDialog @ 0x1eb68` had two checks -- it returns 1 and it blits one pad. With the fake font the
+suite already installs for the top bar (every code point is one pixel, advancing 8) the three text positions become
+observable, so six checks were added: "title" is 5 glyphs and centres at (240 - 40) / 2 = 100 on y 10, the left
+label is at (10, 30) with (9, 30) empty, and the right label is at (170, 30) with (169, 30) empty. Title y 10 -> 12
+fails 1 and the right label 170 -> 160 fails 1. The IDB note was rewritten from 217 characters to 923 with the
+call sites read out of the disassembly: `PadImage_Blit` at 0x1EB7C, `UiControl_BlitActivePad` of bank widget 129
+at 0x1EBA0, `Gfx_PackRgb565Pair(26,244,252 over 13,122,126)` at 0x1EBE0 (R1=#0x1A, R2=#0xF4, R3=#0xFC with
+#0xD/#0x7A/#0x7E pushed), the cyan pad label, then three green labels each after `Gfx_PackRgb565Pair(0,255,0 over
+0,90,0)` -- the title at 0x1EC94, `unk_EADAD` (= TEXTS record 1105) at 0x1ECD0, `unk_EAE7A` at 0x1ED08 -- and the
+two message panels as `UiPanelMsg_Draw @ 0x3e94c` at 0x1ED14 and 0x1ED20, which the port calls UiPanel_DrawText.
+
+### The drop path: nine checks whose expectation moved with the constant under test
+
+`Inv_HandlePointer @ 0x12260` is the one function of the twelve with no port-side twin to cite -- 6,668 bytes
+ported into `src/pufo/game/pufo_invdrag.c`, and `tests/test_invdrag.c` already has four drop tests over it. What
+was wrong is worth its own line, because it is the failure mode a green gate cannot see: nine of its charge
+checks read `g_Unit.uTu == 20 - PUFO_INV_TU_POCKET_A` and so on. The expectation is built out of the constant
+under test, so changing `#define PUFO_INV_TU_POCKET_A 4` to 5 moves the expectation with it and the check stays
+green -- while its own name said "pockets 0/1 cost 4 time units". The nine now state 4, 5, 6, 7 and 8 as
+literals, and `POCKET_A 4 -> 5` fails 2, `HAND 6 -> 5` fails 2, `BELT 8 -> 7` fails 1. The IDB note already
+recorded the seven costs (pocket 0/1 4, pocket 2/3 5, hand 6, backpack 7, belt 8, ground strip 5, ammo split 6);
+the literals are what make that note testable.
+
+Measured: reach 965/968 with residue 0; cites at a row's own address 520, without one 445; `tact-ui` closed
+alongside `titles`, `util`, `platform`, `audio` and `boot-assets`. Gates: `build/check124.log` ran all six with
+`CHECK EXIT=0`, Release 65/65, but its Debug ctest run at `-j 8` failed one test -- `test_geoscapeframe`, at
+"the flight round's strateg entries round-trip through the chunk". That test passes 3 times out of 3 run alone in
+Debug, the Debug suite passes 65/65 when run serially, and a second full gate run (`build/check124b.log`) came out
+65/65 in both configurations with `CHECK EXIT=0`. It is the failure mode PLAN row 120b already names (the Debug
+suite is not parallel-safe) and the gate prints `rc_dbg` without treating it as fatal, so it is recorded here and
+in PLAN rather than smoothed over; nothing in `src/` changed in this Part. Second run: 20,680 checks (+8),
+coverage 972/1103 functions and 596888/598792 bytes unchanged, 93 frame pictures and 9 e2e pictures unchanged.
+IDB comments written and read back at 0x17410 (917), 0x17490 (845), 0x17510 (845), 0x17590 (845), 0x17610 (845),
+0x17690 (845), 0x17710 (861) -- none of the seven had one before -- and at 0x1eb68 (923, replacing a 217-character
+note); `idb_save` reported ok. Teeth: 16 cases in `docs/parity/mutations_part124.py`, every one restored to its
+exact bytes, `grep -rn "MUTATION" src tests` empty.
