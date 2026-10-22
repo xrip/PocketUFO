@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 62 |
-| Test checks run | 20174 |
+| Test checks run | 20187 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -181,7 +181,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0xa03ec` | `PocketUFO_WndProc` | 2964 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.h` |
+| `0xa03ec` | `PocketUFO_WndProc` | 2964 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x9fd48` | `InitInstance` | 1600 | `src/pufo/app/pufo_app.c`, `src/pufo/platform/pufo_gx.c` (+4) |
 | `0x9edbc` | `Reg_GetString` | 272 | `src/pufo/game/pufo_options.c`, `src/pufo/game/pufo_options.h` (+2) |
 | `0x9e904` | `StartTimers_BySpeed` | 236 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_timer.c` (+1) |
@@ -1261,7 +1261,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 
 | Suite | Result | Checks |
 |---|---|---|
-| `test_audio` | PASS | 64 |
+| `test_audio` | PASS | 72 |
 | `test_ballist` | PASS | 105 |
 | `test_baseui` | PASS | 4172 |
 | `test_blast` | PASS | 14 |
@@ -1299,7 +1299,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_renderframe` | PASS | 24 |
 | `test_rmp` | PASS | 83 |
 | `test_roster` | PASS | 146 |
-| `test_save` | PASS | 832 |
+| `test_save` | PASS | 837 |
 | `test_ship` | PASS | 282 |
 | `test_smaphit` | PASS | 132 |
 | `test_soldiername` | PASS | 22 |
@@ -1343,7 +1343,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 881 citations.
+parity report. Total: 885 citations.
 
 ### Offsets below the image base (46)
 
@@ -1352,7 +1352,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x000c`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b8c`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (835)
+### At or above the image base (839)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1875,6 +1875,7 @@ against the IDB when the final report is assembled.
 - `0x187f24`
 - `0x187f28`
 - `0x187f58`
+- `0x188380`
 - `0x18838c`
 - `0x188398`
 - `0x1883b0`
@@ -2023,6 +2024,9 @@ against the IDB when the final report is assembled.
 - `0xa00f8`
 - `0xa046c`
 - `0xa0564`
+- `0xa0690`
+- `0xa06a4`
+- `0xa06d0`
 - `0xa08c0`
 - `0xa0944`
 - `0xa09ac`

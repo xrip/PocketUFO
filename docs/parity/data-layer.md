@@ -120,3 +120,33 @@ and is not reproduced.
   computed by `Assets_LoadStartup` is `(size-2)/200` (1650 in lang.dat, 1721 in
   main.dat). The 200 is a format marker, not a count. Text record loading is the
   next task's concern; noted here because it is easy to misread.
+
+## The distribution cab's members, and what `0000SKKV.000` really is (Part 108)
+
+`pUFO1.26RUS.cab` holds eight members. Seven are the program the game reads: `00fmodce.001` =
+`fmodce.dll`, `000000gx.002` = `gx.dll`, `0000lang.003` = `lang.dat`, `0000main.004` =
+`main.dat`, `pufobeta.005` = `pufobeta.exe`, `save_e~1.006` = `save_editor.exe`, plus
+`_setup.xml`. The eighth, `0000SKKV.000` (359 bytes), is that cab's own install manifest: it
+opens with the CE cab signature `MSCE`, and its strings name the six member files by their
+device names (`fmodce.dll`, `gx.dll`, `lang.dat`, `main.dat`, `pufobeta.exe`,
+`save_editor.exe`), the install folders `%CE8%\Pocket UFO` and `%CE14%`, and the publisher
+block `UFO` / `SMK Software Pocket` / `HPC` / `JUPITER`.
+
+**It is not a save, and no save ships.** The beta imports no cab API (an import-table filter
+for `cab` returns nothing at all), and the save path `pufo_save.h` records is
+`szAppDir + "sav" + slot + ".sav"` -- a plain `DatFile`. The workspace therefore holds no
+original save bytes, and the gate that stands in for one is `test_save.c TestForeignSaveBytes`:
+it stages the 359 manifest bytes verbatim as a save file, runs them through the port's
+container open, and asserts the count they carry (1162040141) and that no save chunk is
+reachable through them.
+
+That path is also where the container's missing validation shows itself. `DatFile_Open` @
+`0x9ef38` reads the file's first four bytes as the entry count with the result unchecked
+(`0x9EFE8`), sizes the directory with a 32-bit `MUL` at `0x9EFF4` (1162040141 wraps to
+`0xAE0C4E51` = 2,928,006,481) and hands it to the throwing `operator new` at `0x9EFF8`. A WinCE
+device cannot give that size, so the original's load of such a file ends the process. The port's
+multiply widens to 64-bit in the same expression and asks 24,402,842,961 -- measured with
+`_msize` in the test, not assumed -- and on a large host it succeeds; the directory scan (the
+port's twin of `0x9F030..0x9F058`) then finds the manifest's empty first slot, sets
+`nCurEntry = 0`, and no chunk lookup can reach anything. Recorded as a deviation in
+`docs/parity/bugs.tsv`.

@@ -3182,13 +3182,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   turned a 12-line change into an 18,600-line one. That file's edits go through the byte-level Python scripts in
   `C:/Windows/Temp/pufo_scripts` and nothing else.
 
-- [ ] **Open decision for the user: the AYGSHELL trio.** `PocketUFO_WndProc` case 6 calls `SHHandleWMActivate`
+- [x] **Open decision for the user: the AYGSHELL trio.** `PocketUFO_WndProc` case 6 calls `SHHandleWMActivate`
   (0xA068C) and case 0x1A calls `SHHandleWMSettingChange` (0xA145C), both AYGSHELL imports, over the 12-byte
   `SHACTIVATEINFO` at 0x188380 that WM_CREATE (case 1) memsets and sets `cbSize = 12`. There is no Win32 counterpart and
   the project boundary keeps the original DLLs out of the link. Either the platform seam stands in for them (a
   documented no-op, like `Gx_Suspend`) or they are recorded as WinCE-only and left out. **Decision recorded
   2026-10-21 (Part 101 pass): the platform seam stands in as a documented no-op; the implementation lands with
-  Part 108.**
+  Part 108.** **Closed by Part 108**: `src/pufo/platform/pufo_aygshell.{h,c}` carries `g_shActInfo` (the 12-byte
+  `SHACTIVATEINFO`, renamed in the IDB with its struct type), `Sh_ActivateInfoInit` (memset + `cbSize = 12`, the WM_CREATE
+  arm at 0xA06B4/0xA06BC) and the two no-op handlers at the arms 0xA0690 / 0xA06D0, installed as `WM_CREATE`,
+  `WM_ACTIVATE` and `WM_SETTINGCHANGE` cases in `PocketUFO_WndProc`; no AYGSHELL is linked. The stand-in is safe because
+  nothing in the beta reads the block back -- its only five references (0xA0688, 0xA0698, 0xA06A4, 0xA06BC, 0xA06C4) are
+  these arms, and `bGameTickExtraDue` follows at 0x18838C. Row recorded in `docs/parity/scaffold.md`.
 
 - [x] **The two Debug-red suites were one missing target publish and two bets on fresh pages (Part 39).** No new
   original block, and no IDB change — the two gates the diagnosis rests on are already commented there. Both reds
@@ -3456,7 +3461,12 @@ were recorded and go into the closing plan (Parts 101-108 in `C:/Users/xr1p/.cla
 **audio** -- a real Win64 playback backend (winmm `waveOut`) at the existing `PufoAudioBackend` seam, the stub
 kept as the no-device fallback; **AYGSHELL trio** -- documented no-op platform stand-in; **`Tilemap_GetAt`** --
 the original's unchecked read stays, now with a bugs.tsv row; **`0000SKKV.000`** -- loading the real device save
-through the LoadGame path is a required gate.
+through the LoadGame path is a required gate. **Corrected by Part 108's inspection: that file is not a save.** It is
+member 0 of `pUFO1.26RUS.cab` -- that cab's install manifest (`MSCE` signature, the six member names, the
+`%CE8%\Pocket UFO` and `%CE14%` folders) -- the beta imports no cab API, and no save ships at all, so the gate that
+stands in runs those 359 bytes verbatim through the container open and asserts they reach no save chunk
+(`test_save.c TestForeignSaveBytes`), with the container's unguarded count read recorded in `docs/parity/bugs.tsv`.
+Full finding in `docs/parity/data-layer.md`.
 
 Stale claims the audit closed, with current-HEAD evidence (the items themselves were edited in place):
 - Transfer nav slot wired: `World_TransferOpenThunk` installed at `pufo_world.c:2170`, `pPtr->apSiteInfoCtl =

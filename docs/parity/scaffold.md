@@ -15,6 +15,7 @@ Original: `pufobeta.exe` (WinCE/ARM32) in `pufobeta.exe.i64`.
 | `util/pufo_ptrarray.{h,c}` | `PtrArray_ctor` @ `0xa0f80`, `_Insert` @ `0xa0f94`, `_Add` @ `0xa1044`, `_Remove` @ `0xa1054`, `_Clear` @ `0xa1120`, `_Get` @ `0xa1130`, `_GetCount` @ `0xa1154`, `_DeleteAll` @ `0x3e434`, `_DeleteAt` @ `0x82bac` | layout `{int nCount; void **apItems;}`, `0xFFFF` = all, realloc-per-change | none |
 | `util/pufo_rand.{h,c}` | `Game_RandU16` @ `0x3e59c`, seeding @ `0x9fd48` | `1/32768` scale, truncate to u16 | modulo-32768 guard added; see below |
 | `app/pufo_app.c` | `WinMain` @ `0x9fcc4`, `InitInstance` @ `0x9fd48`, `PocketUFO_WndProc` @ `0xa03ec`, `App_QuitDisplay` @ `0xa0388` | single instance, class name/style, WS_VISIBLE, accelerator loop | see drops below |
+| `platform/pufo_aygshell.{h,c}` | `PocketUFO_WndProc` WM_CREATE arm `0xA06A4..0xA06BC` (memset + `cbSize = 12` on the `SHACTIVATEINFO` at `0x188380`), WM_ACTIVATE arm `SHHandleWMActivate` @ `0xA0690`, WM_SETTINGCHANGE arm `SHHandleWMSettingChange` @ `0xA06D0` | the 12-byte block `g_shActInfo` (`SHACTIVATEINFO`: cbSize, fstate, cesFlags) with the same init, and the two arms called with the same arguments | the handlers themselves are documented no-ops: see the deviation row below |
 
 ## Verified function details
 
@@ -53,6 +54,7 @@ The constant `0x38000000` confirms the assumption `rand()` yields `0..32767`.
 | No `SetForegroundWindow(hWnd \| 1)` | CE idiom to activate an existing instance; handler bit 1 is meaningless on Win32 |
 | Integer-scale letterbox present | the original was always 1:1; scaling keeps pixel art sharp and is the only sane Win64 behaviour. Flagged as a deliberate port decision, not original behaviour |
 | `rand() % 32768` guard | keeps the original `0..32767` range on CRTs whose `rand()` is wider, so content generated from the RNG matches |
+| `Sh_HandleWmActivate` / `Sh_HandleWmSettingChange` are no-ops (Part 108) | they are AYGSHELL imports (`0xA0690`, `0xA06D0`) and AYGSHELL is WinCE-only, so no DLL is linked (CLAUDE.md boundary). The shell's job is bookkeeping inside `g_shActInfo` -- `fstate` (the window was already activated, so the shell can skip the first suspend) and `cesFlags` (the last settings key seen) -- and nothing in the beta reads that block back: its only five references are `0xA0688`, `0xA0698`, `0xA06A4`, `0xA06BC` and `0xA06C4`, all inside `PocketUFO_WndProc`, and the cell right after it (`0x18838C`) is `bGameTickExtraDue`. Decision recorded in PLAN.md (the AYGSHELL row): the arms and the block stay in the port, the handlers stand in with the same signatures. |
 
 ## Checks run
 

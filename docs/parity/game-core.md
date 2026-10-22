@@ -21648,3 +21648,94 @@ hold-to-repeat row, the hangar row-door row, the `auStat` naming row and the `si
 the tactical-screens row closed with two of its three read-without-writer cells fixed and the third moved into its
 own open row (the throw-arc Map writes); `Tact_KillUnit`'s counts and the `aManufProductB` spelling re-targeted to
 the final sweep with their reasons recorded.
+
+## Part 108 - sound actually plays, the AYGSHELL arms get their stand-in, and the shipped
+"device save" turns out to be the cab's install manifest (E-interface + V)
+
+**IDB first, and it corrected the audio control flow before any code moved.** `Sound_InitAndLoadSamples`
+@ 0x9e268 is 11 `FSOUND_Init(22000, 32, 0)` attempts with 10 `Sleep(100)` between them (the guard `i < 10` is tested
+only after an attempt), `FSOUND_SetHWND` UNCONDITIONALLY at 0x9E2C0 even after 11 failures, and the ready flag
+`g_bSoundInitReady` set unconditionally at 0x9E2D4 BEFORE the sample scan - so `Sound_Play`'s gate opens whether or
+not the mixer ever came up. Its return value is `AssetReader_Found`'s answer at the first missing index (always
+false) and NO caller tests it: 0x38200/0x38d48/0x3d270/0x86cf4 reload R0 with the music track straight after the BL,
+and 0x38920 goes on to `CMP R5`. `Sound_LoadAndPlayMusic` @ 0x9e130 pauses at LOAD: 0x9E224 tests `Map_bMusicOff`
+and 0x9E230 calls `FMUSIC_SetPaused(1)` after `FMUSIC_PlaySong` at 0x9E210, and 0x9E244 sets `g_bMusicLoaded`
+whatever `FMUSIC_LoadSongEx` @ 0x9E1E8 returned. `Sound_ApplySfxVolume` 0x9E548 pauses FSOUND_ALL with the soundoff
+byte as the pause argument, gated on the ready flag at 0x9E528. Three port gaps fell out of that reading: no device
+output at all, a mirrored copy of the mute state instead of the live byte, and no load-time music pause.
+
+**The winmm backend (`src/pufo/audio/pufo_audio_winmm.{h,c}`).** The whole `PufoAudioBackend` table is
+answered with `waveOut` (winmm is a system library; no original DLL is linked - CLAUDE.md boundary), installed in
+`App_InitInstance` before the sample load, with the no-op stub kept as the fallback the control flow expects. The
+device opens ONCE at 11025 Hz mono 16-bit, not at FMOD's 22000 mix rate: measured across the archive, all 35 shipped
+`TACT*.WAV` are PCM / 1 channel / 11025 Hz / 8-bit, FMOD resampled internally and winmm does not, so the mix rate
+would play everything an octave up. 8-bit PCM (unsigned, centred at 128) is widened to signed 16-bit at load without
+changing its level; a non-PCM tag, another rate or another channel count fails the load the way
+`FSOUND_Sample_Load` would. Volume takes the original's own 0..255 (`4*(12*step+4)-1`) times 257 into both channels;
+pause/restart map onto what FSOUND_ALL means (the whole device); `.it` modules carry load/flag/mute state only, with
+the `IMPT` magic checked so a non-module image fails the load. Two real bugs died in the first run: the fmt chunk's
+fields were read at the wrong offsets (bits-per-sample is at chunk+22, not chunk+14, so EVERY sample was being
+refused - and the "35 loaded" figure counted scan indices, not handles, which is why it looked fine), and the device
+play was muted because `TestFocusPause` leaves the pause mirror at 1 and `Sound_SfxMuted` falls back to it when no
+live cell is installed.
+
+**Gates.** `test_audio` is now 72 checks. `TestMuteBytes` runs the live pair: a set soundoff byte stops
+`Sound_Play` before the backend is reached, and the musicoff pair runs the load-time pause both ways - with the byte
+clear `FMUSIC_SetPaused` is called NOT AT ALL (the -1 sentinel survives, which is 0x9E228's branch shape, not a call
+with 0), with it set it is called with 1 after the play. `TestDevice` is the real-output gate: `waveOutGetNumDevs()`,
+`waveOutOpen`, all 35 samples through the real backend, TACT2 queued, `WOM_DONE` waited on the completion event; a
+host without a wave device prints "device gate skipped" and stays green, because the control-flow half never needed
+hardware. `sh tools/audiocheck.sh` gives the manual one-liner: `audiocheck: TACT2 played through winmm and the device
+reported it done`.
+
+**The AYGSHELL stand-in (`src/pufo/platform/pufo_aygshell.{h,c}`).** Three arms of `PocketUFO_WndProc`
+are reproduced: WM_CREATE memsets the 12-byte `SHACTIVATEINFO` (0xA06B4, size at 0xA06A8) and stores `cbSize = 12`
+(0xA06BC); WM_ACTIVATE calls `Sh_HandleWmActivate` where the original calls `SHHandleWMActivate` (0xA0690);
+WM_SETTINGCHANGE calls `Sh_HandleWmSettingChange` at 0xA06D0. The handlers are documented no-ops and the IDB now
+says why: `g_shActInfo` @ 0x188380 has exactly five references in the whole image (0xA0688, 0xA0698, 0xA06A4,
+0xA06BC, 0xA06C4), all of them these arms, and `bGameTickExtraDue` follows at 0x18838C - the shell's `fstate` /
+`cesFlags` bookkeeping has no reader, so standing in changes no behaviour. Row in `docs/parity/scaffold.md`; the
+PLAN decision row closed.
+
+**The shipped "device save" is not a save.** `0000SKKV.000` (359 bytes) is member 0 of `pUFO1.26RUS.cab`,
+and 7z just copies it because it is not a supported container - it is a CE CAB: `MSCE` at 0x0000, then the cab's own
+install manifest naming its six members (`fmodce.dll`, `gx.dll`, `lang.dat`, `main.dat`, `pufobeta.exe`,
+`save_editor.exe` - the same eight-member list `7z l` prints, 1:1), the folders `%CE8%\Pocket UFO` and `%CE14%`, and
+the publisher block UFO / SMK Software Pocket / HPC / JUPITER. The beta imports no cab API at all (an import-table
+filter for `cab` returns nothing), and `pufo_save.h` records the save name as `szAppDir + "sav" + slot + ".sav"`, a
+plain `DatFile` - so no original save bytes exist anywhere in the workspace. The standing-in gate
+(`test_save.c TestForeignSaveBytes`) stages the 359 bytes verbatim (byte-for-byte verified against the file) and
+asserts what the container does with them: the header count they carry is 1162040141, and no save chunk is reachable
+through them - `nCurEntry` lands on 0 because the manifest's own zero bytes sit in the first directory slot.
+
+**The measurement corrected an assumption mid-flight.** `DatFile_Open`'s read path (0x9EFE8) takes the
+file's first four bytes as the entry count with the result unchecked and sizes the directory with `21 * count`. On
+the original's ARM target that is a 32-bit MUL at 0x9EFF4: 1162040141 wraps to 0xAE0C4E51 = 2,928,006,481, handed to
+the throwing `operator new` at 0x9EFF8 - a size a WinCE device cannot give, so the original's load of a foreign file
+ends the process. The first draft of the test claimed the port sign-extends its i32 product and asks 17 exabytes;
+the gate took the ALLOCATION-SUCCEEDED branch instead, so the request was measured with `_msize` rather than
+reasoned out: 24,402,842,961 - MSVC widens the product in that context (the C rules make the 32-bit product
+undefined, not wrapped). Recorded as a deviation row in `docs/parity/bugs.tsv`, and the test asserts the invariant on
+whichever allocation outcome the host gives.
+
+**IDB accuracy in the same block.** Renames with types: `g_bSfxToggle` (0x187318), `g_hfmMusicModule`
+(0x187320), `g_nSoundSampleCount` (0x187324), `paSoundSamples[202]` (0x187428), `g_bSoundInitReady` (0x187F24,
+narrowed from a 4-byte item whose other three bytes have no reference), `g_bMusicLoaded` (0x187F28, narrowed from a
+12-byte item that had swallowed the render-target block at 0x187F30 - that block is now `g_renderTarget`, and
+`Render_SetTarget` reads six named fields instead of `*(_DWORD *)&byte_187F28[8]`), and `g_shActInfo` (0x188380, the
+12-byte `SHACTIVATEINFO`). Function comments at 0x9e268, 0x9e130, 0x9e454, 0x9e4dc, 0x9e0c0 and 14 line comments at
+0x9E2C0, 0x9E2D4, 0x9E230, 0x9E244, 0x9E4C8, 0x9E548, 0x9E0F4, 0x9E118, 0xA0690, 0xA06B4, 0xA06D0, 0x9EFE8, 0x9EFF4,
+0x9EFF8; idb_save.
+
+**Gates and docs.** Six gates green: 62/62 in both configurations, 20187 test checks; e2e 3 flows with 9
+pictures unchanged against the committed references - no new frame and no reference moved, because this Part has no
+visual surface (a sound and three window messages). Docs: `docs/parity/scaffold.md` gains the aygshell file row and
+the no-op deviation row; `docs/parity/render-audio.md` gains the winmm file row, four behaviour rows (live mute
+byte, load-time module pause, ready flag set even when the device never opened, samples widened) and six deviation
+rows (backend swap, 11025 Hz device rate, `.it` silent, one queue slot per sample, no SetHWND counterpart, the port
+skipping NULL sample handles where the original's 0x9E3F0..0x9E408 loop frees every slot); `docs/parity/data-layer.md`
+gains the cab-member finding and the container's unguarded count read; `docs/parity/bugs.tsv` gains the 0x9EFF4
+deviation row. PLAN: the AYGSHELL decision row closed with the stand-in, and the `0000SKKV.000` decision sentence
+corrected in place - the required gate exists, but what it gates is the refusal of a non-save, because nothing in the
+distribution is a save.
+

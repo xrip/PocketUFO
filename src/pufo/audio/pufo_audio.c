@@ -22,7 +22,9 @@ static bool             s_bAudioReady;   /* byte_187F24 */
 static bool             s_bMusicLoaded;  /* byte_187F28 */
 static void            *s_pMusicMod;     /* pMusicMod */
 static bool             s_bSfxToggle;    /* byte_187318 */
-static bool             s_bSfxMuted;     /* mirrors pCtxBase +99 (soundoff) */
+static bool             s_bSfxMuted;     /* fallback mirror of pCtxBase +99 (soundoff) */
+static const u8        *s_pbSoundOff;    /* pCtxBase +99 when the app hands it over */
+static const u8        *s_pbMusicOff;    /* Map_bMusicOff @ 0x128A92, ditto */
 
 /* No-op backend: every call reports failure the way a missing fmodce.dll would.
  * This makes the port behave like the original does when audio is unavailable
@@ -96,6 +98,19 @@ void Sound_SetBackend(const PufoAudioBackend *pBackend)
 void Sound_SetSfxMuted(bool bMuted)
 {
     s_bSfxMuted = bMuted;
+}
+
+void Sound_SetMuteBytes(const u8 *pbSoundOff, const u8 *pbMusicOff)
+{
+    s_pbSoundOff = pbSoundOff;
+    s_pbMusicOff = pbMusicOff;
+}
+
+/* The soundoff read Sound_Play makes before it plays: the live options cell when
+ * one is installed, the mirror otherwise. */
+static bool Sound_SfxMuted(void)
+{
+    return (s_pbSoundOff != NULL) ? (*s_pbSoundOff != 0u) : s_bSfxMuted;
 }
 
 bool Sound_IsInitialised(void)
@@ -221,7 +236,7 @@ void Sound_Play(i32 nSample)
     s_bSfxToggle = !s_bSfxToggle;
     (void)Game_RandU16(0xC8);
 
-    if (s_bSfxMuted) {
+    if (Sound_SfxMuted()) {
         return;
     }
     /* Deliberate deviation: the original indexes paSoundSamples with no bound
@@ -272,6 +287,13 @@ void Sound_LoadAndPlayMusic(i32 nTrack)
         s_pBackend->pfnMusicSetLooping(s_pMusicMod, 1);
         s_pBackend->pfnMusicOptimize(s_pMusicMod, 16, 10);
         s_pBackend->pfnMusicPlay(s_pMusicMod);
+        /* 0x9E228/0x9E230: the load pauses the module straight away when the
+         * musicoff byte stands. The original reaches FMUSIC_SetPaused with no
+         * null test on the module handle; the port tests the handle, which is the
+         * recorded stricter guard. */
+        if (s_pbMusicOff != NULL && *s_pbMusicOff != 0u) {
+            s_pBackend->pfnMusicSetPaused(s_pMusicMod, 1);
+        }
     }
     free(pData); /* the original frees the buffer right after LoadSongEx */
 

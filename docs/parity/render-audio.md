@@ -9,6 +9,7 @@ Tests: `tests/test_render.c`, `tests/test_audio.c`.
 |---|---|
 | `render/pufo_render.{h,c}` | `SoftSurf_ctor` @ `0x9f96c`, `dtor` @ `0x9f97c`, `AllocPixels` @ `0x9f9a4`, `GetWidth` @ `0x9f994`, `GetHeight` @ `0x9f99c`, `GetPixels` @ `0x9fcb4`, `Render_SetTarget` @ `0x9faa4`, `Render_BlitSoft_LoRes` @ `0x9fa7c`, `HiRes` @ `0x9fa90`, `Render_Frame` @ `0x22310`, `Blit_LoadSurface` @ `0xa3964`, `Blit_SetTargetParams` @ `0xa39ac`, `Blit_CopyRows` @ `0xa3a14`, `Blit_CopyRows_HiRes` @ `0xa3bb8`, `BlitParams_Set` @ `0xa47b0`, `Blit_SetSrcRect` @ `0xa3f5c`, `Store_dword_A3028` @ `0xa3624`, `SoftSurf_Blit_Inner` @ `0xa47d0`, `BlitFlip_Inner` @ `0xa49a0`, `BlitIndexed_Inner` @ `0xa306c`, `BlitIndexedKeyed_Inner` @ `0xa3638`, `FillRect_Inner` @ `0xa3f94`, `BlitIndexed` @ `0x9e9f4`, `BlitIndexedKeyed` @ `0x9ea34`, `Blit` @ `0x9e558`, `BlitFlip` @ `0x9e590`, `BlitSrcRect` @ `0x9ebf8`, `BlitRect` @ `0x9ebb0`, `BlitCopyRaw` @ `0xa3db8`, `PadImage_ctor` @ `0x11000`, `Load` @ `0x11020`, `Blit` @ `0x110dc`, `Palette_Load` @ `0x3e47c` |
 | `audio/pufo_audio.{h,c}` | `Sound_Play` @ `0x9e0c0`, `Sound_LoadAndPlayMusic` @ `0x9e130`, `Sound_InitAndLoadSamples` @ `0x9e268`, `Sound_Shutdown` @ `0x9e3d4`, `Sound_ApplyMusicVolume` @ `0x9e454`, `Sound_ApplySfxVolume` @ `0x9e4dc` |
+| `audio/pufo_audio_winmm.{h,c}` (Part 108) | the `PufoAudioBackend` slots the six functions above fill: `FSOUND_Init` @ `0x9E27C`, `FSOUND_SetHWND` @ `0x9E2C0`, `FSOUND_Sample_Load` @ `0x9E38C`, `FSOUND_Sample_SetMode` @ `0x9E398`, `FSOUND_Sample_Free` @ `0x9E3F4`, `FSOUND_PlaySound` @ `0x9E118`, `FSOUND_SetSFXMasterVolume` @ `0x9E518`, `FSOUND_SetPaused` @ `0x9E548`, `FMUSIC_LoadSongEx` @ `0x9E1E8`, `FMUSIC_SetLooping` @ `0x9E1F8`, `FMUSIC_OptimizeChannels` @ `0x9E208`, `FMUSIC_PlaySong` @ `0x9E210`, `FMUSIC_SetMasterVolume` @ `0x9E498`, `FMUSIC_SetPaused` @ `0x9E230`/`0x9E4C8`, `FMUSIC_FreeSong` @ `0x9E420`, `FSOUND_Close` @ `0x9E424` (unconditional, even with no module) |
 | `game/pufo_options.{h,c}` | `Options_SaveToRegistry` @ `0x114d8` (all twelve keys), volume mapping from `Sound_Apply*Volume` |
 | `platform/pufo_reg.{h,c}` | `Reg_SetString` @ `0x9ed0c`, `Reg_GetString` @ `0x9edbc` |
 | `util/pufo_str.{h,c}` | `_strupr` @ `0xa60e4` + the CRT copies, factored out of `dat`/`asset`/`render` |
@@ -112,13 +113,21 @@ Palette ground truth was extracted independently from `main.dat`:
 | Muted volume is `-1`, not 0 | same function: `v = muted ? 0 : 12*step+4` then `4*v-1` | muted → `-1` |
 | SFX volume also sends the unpause-all sentinel `-3` | `Sound_ApplySfxVolume` @ `0x9e4dc` | `-3` observed |
 | `Sound_Play` advances the RNG even when muted | `Sound_Play` @ `0x9e0c0` draws `Game_RandU16(0xC8)` before the soundoff test | noted in code; mute path exercised |
+| The mute test reads the LIVE soundoff byte | `0x9E10C` tests `Map_bSoundOff` (`pCtxBase+99`), the same byte `Sound_ApplySfxVolume` pauses with at `0x9E548` | `Sound_SetMuteBytes` installs the live `PufoOptions` cells in `App_InitInstance`; `test_audio` gates both ways (a set byte stops the play before the backend is reached) |
+| A muted setting pauses the module AT LOAD, not only through the volume pass | `0x9E224` tests `Map_bMusicOff`, `0x9E230` calls `FMUSIC_SetPaused(1)` after `FMUSIC_PlaySong` @ `0x9E210` | `test_audio`: with the byte clear the load calls `SetPaused` not at all (the `-1` sentinel survives), with it set it calls with 1 |
+| The ready flag is set even if the device never opened | `0x9E2D4` follows the retry loop with no test of its result; `0x9E244` sets the music flag the same way | the 11-attempt / 10-sleep retry shape and the ready flag either way are both asserted |
 | Registry: HKCU `Software\PocketUFO`, REG_SZ, 0xFF length cap | `Reg_SetString` @ `0x9ed0c`, `Reg_GetString` @ `0x9edbc` | same key, same type, same cap |
 
 ## Deviations, each with its reason
 
 | Deviation | Reason |
 |---|---|
-| FMOD is behind `PufoAudioBackend`; the shipped backend is a no-op stub | `fmodce.dll` is an ARM/WinCE FMOD 3 build and cannot be linked on Win64. The stub returns failure exactly as a missing DLL would, so the game's control flow is unchanged |
+| FMOD is behind `PufoAudioBackend`; the shipped backend is winmm `waveOut` (`audio/pufo_audio_winmm.c`), the no-op stub stays the fallback | `fmodce.dll` is an ARM/WinCE FMOD 3 build and cannot be linked on Win64 (CLAUDE.md boundary). `Winmm_Init` answers the seam where `FSOUND_Init` was: it fails exactly as a missing DLL would, and `Sound_InitAndLoadSamples` sets `g_bSoundInitReady` either way (`0x9E2D4`), so the game's control flow is unchanged whichever backend is installed |
+| The device opens at 11025 Hz mono, not FMOD's 22000 mix rate | measured across all 35 shipped samples: every `TACT*.WAV` in main.dat is PCM / 1 channel / 11025 Hz / 8-bit. FMOD resampled internally; winmm does not, and playing them at the mix rate would sound an octave up. 8-bit PCM (unsigned, centred at 128) is widened to signed 16-bit at load without changing its level |
+| `.it` music is load / flag / mute state only, nothing audible | no MOD playback on Win64. `Winmm_MusicLoad` checks the `IMPT` magic so a non-module image fails the load the way `FMUSIC_LoadSongEx` would, and the non-NULL handle is what `g_bMusicLoaded` (`0x9E244`) and `Sound_HasMusic` answer from |
+| One waveOut queue slot per sample | `FSOUND_PlaySound` returned a channel handle and every caller in the image ignores it; winmm writes one prepared header per sample, so a sample that is still sounding is not overlapped (no channel multiplexing) |
+| `FSOUND_SetHWND` has no counterpart | `Winmm_SetWindow` is a documented no-op: `waveOutOpen` takes no window argument |
+| `Sound_Shutdown` frees only non-NULL sample handles | the original's loop (0x9E3F0..0x9E408) calls `FSOUND_Sample_Free` on every slot including a NULL one; the port skips NULL. Stricter than the original in the same family as the `Sound_Play` index guard below |
 | `Render_BlitSurface` always uses the 1:1 row copy; `Blit_CopyRows_HiRes` is not ported | HiRes wrote each source pixel as a 2x2 block to fill a 480x640 panel. The Win64 target presents the 240x320 surface at integer scale instead, so the HiRes path has no equivalent target |
 | GAPI display modes and per-mode pitch sign flips dropped | Those compensated for rotated Pocket PC panels. A top-down DIB needs none. Already recorded in `docs/parity/scaffold.md` |
 | `Sound_Play` bounds-checks the sample index | the original indexes `paSoundSamples` unchecked, which is a buffer overrun for a bad index. The port guards it because the original behaviour there is undefined, not defined. The only place the port is deliberately stricter |
@@ -143,7 +152,8 @@ Palette ground truth was extracted independently from `main.dat`:
 |---|---|
 | `cmake --build build --config Release` | 0 errors, 0 warnings (`/W4 /WX`) |
 | `build/tests/Release/test_render.exe` | **PASS, 0 failures** (43 checks) |
-| `build/tests/Release/test_audio.exe` | **PASS, 0 failures** (35 checks) |
+| `build/tests/Release/test_audio.exe` | **PASS, 0 failures** (72 checks, Part 108: the live mute-byte pair and the winmm device gate) |
+| `sh tools/audiocheck.sh` | `audiocheck: TACT2 played through winmm and the device reported it done` — the device gate opens `WAVE_MAPPER` at 11025 Hz mono, loads all 35 shipped `TACT*.WAV` and waits on the completion event; a host with no wave device prints `device gate skipped` and stays green |
 | `build/tests/Release/test_data.exe` | **PASS, 0 failures** (data layer still green) |
 | `build/src/pufo/Release/pocketufo.exe` | links |
 

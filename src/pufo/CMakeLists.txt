@@ -1,6 +1,7 @@
 add_library(pufo_platform STATIC
     platform/pufo_gx.c
     platform/pufo_reg.c
+    platform/pufo_aygshell.c # the AYGSHELL stand-in: no AYGSHELL is linked
 )
 target_include_directories(pufo_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_platform PUBLIC pufo_options user32 gdi32)
@@ -96,9 +97,12 @@ target_link_libraries(pufo_ui PUBLIC pufo_options pufo_game pufo_render pufo_uti
 
 add_library(pufo_audio STATIC
     audio/pufo_audio.c
+    audio/pufo_audio_winmm.c
 )
 target_include_directories(pufo_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(pufo_audio PUBLIC pufo_options pufo_dat pufo_util)
+# winmm is the Win64 stand-in for fmodce.dll (the original's FMOD 3 import). It is
+# a system library; no original DLL is linked (CLAUDE.md constraint).
+target_link_libraries(pufo_audio PUBLIC pufo_options pufo_dat pufo_util winmm)
 
 # The shell's geoscape bring-up. It is a library, not exe code, because its frame wiring is state a
 # test must drive: tests/test_geoscapeframe.c runs World_NewGame, Geoscape_Draw and the geoscape

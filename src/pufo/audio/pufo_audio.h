@@ -82,6 +82,14 @@ typedef struct PufoAudioBackend {
  * Must be called before Sound_InitAndLoadSamples. */
 void Sound_SetBackend(const PufoAudioBackend *pBackend);
 
+/* Hand the module the live mute cells. The original's Sound_Play reads the soundoff
+ * byte out of the options block (pCtxBase + 99, PufoOptions.bSoundOff) before it
+ * reaches FSOUND_PlaySound, and Sound_LoadAndPlayMusic pauses the module right after
+ * FMUSIC_PlaySong when Map_bMusicOff @ 0x128A92 stands (test at 0x9E228, pause at
+ * 0x9E230). With the pair installed these are read live; until then the module falls
+ * back to the SetSfxMuted mirror and the load-time pause cannot happen. */
+void Sound_SetMuteBytes(const u8 *pbSoundOff, const u8 *pbMusicOff);
+
 /* Loads "<pszPrefix><n>.wav" for n = 0, 1, ... until one is missing.
  * Retries FSOUND_Init 11 times with a 100 ms sleep between tries. The count is
  * 11, not 10: the original jumps straight into the first FSOUND_Init at i = 0,

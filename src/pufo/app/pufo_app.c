@@ -23,6 +23,7 @@
  */
 #include "pufo_common.h"
 #include "audio/pufo_audio.h"
+#include "audio/pufo_audio_winmm.h"  /* the winmm backend at the Sound_SetBackend seam */
 #include "game/pufo_boot.h"
 #include "game/pufo_clock.h"    /* GameTime, the scratch clock SaveSlot_FormatList uses */
 #include "game/pufo_font.h"     /* PufoFont, the shell owns the fontSys block */
@@ -36,6 +37,7 @@
 #include "game/pufo_timer.h"    /* Timer_SetWindow, the ids the WM_TIMER branch dispatches on */
 #include "game/pufo_titles.h"   /* Titles_Init / TitlesAnimation, the credits screen */
 #include "platform/pufo_gx.h"
+#include "platform/pufo_aygshell.h"  /* the WM_CREATE / WM_ACTIVATE / WM_SETTINGCHANGE arms */
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"    /* UiControl_LoadPads, the start controls' pad loader */
 #include "ui/pufo_menubtn.h"    /* MenuCtl*_OnClick / Menu_LoadSlot / StartUi_Shutdown */
@@ -2011,6 +2013,17 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
     }
     g_hWndMain = hWnd;
 
+    /* Part 108: the sound output. The original links fmodce.dll; the port answers the
+     * same PufoAudioBackend table with winmm (PufoAudioWinmm_HasDevice decides whether
+     * the device opens, and a false init is the state the original reaches after 11
+     * failed FSOUND_Init calls -- Sound_InitAndLoadSamples sets its ready flag either
+     * way, 0x9E2D4). The mute pair is handed over as live cells: Sound_Play's soundoff
+     * read is pCtxBase + 99 and Sound_LoadAndPlayMusic's load-time pause reads
+     * Map_bMusicOff (0x9E228/0x9E230). Both installs precede the first
+     * Sound_InitAndLoadSamples, which GameUI_InitStartup reaches at 0x38D48. */
+    Sound_SetBackend(&g_pufoAudioWinmm);
+    Sound_SetMuteBytes(&g_options.bSoundOff, &g_options.bMusicOff);
+
     if (!Gx_Open(&g_gx, hWnd, PUFO_SURF_W, PUFO_SURF_H)) {
         printf("pocketufo: display surface failed to open\n");
         fflush(stdout);
@@ -2154,6 +2167,20 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         (void)EndPaint(hWnd, &ps);
         return 0;
     }
+    case WM_CREATE:
+        /* case 1 @ 0xA06A4: the AYGSHELL activation block is created here -- memset of the
+         * 12 bytes at 0x188380 and cbSize = 12. */
+        Sh_ActivateInfoInit();
+        return 0;
+    case WM_ACTIVATE:
+        /* case 6 @ 0xA0690: SHHandleWMActivate(hwnd, msg, wParam, lParam, psai). The
+         * stand-in is documented in platform/pufo_aygshell.h. */
+        Sh_HandleWmActivate(hWnd, (u32)wParam, (const void *)lParam);
+        return 0;
+    case WM_SETTINGCHANGE:
+        /* case 0x1A @ 0xA06D0: SHHandleWMSettingChange(hwnd, wParam, psai). */
+        Sh_HandleWmSettingChange(hWnd, (u32)wParam, (const void *)lParam);
+        return 0;
     case WM_ERASEBKGND:
         return 1; /* the surface covers the client area */
     case WM_SIZE:

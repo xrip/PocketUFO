@@ -12,6 +12,7 @@
  */
 #include "asset/pufo_asset.h"
 #include "audio/pufo_audio.h"
+#include "audio/pufo_audio_winmm.h"
 #include "game/pufo_options.h"
 #include "platform/pufo_reg.h"
 
@@ -407,6 +408,83 @@ static void TestFocusPause(void)
     Sound_Shutdown();
 }
 
+/* Part 108: the mute reads are the live option cells, not a mirror the caller has
+ * to remember. Sound_Play's soundoff test is the original's pCtxBase + 99 read, and
+ * Sound_LoadAndPlayMusic pauses the module right after FMUSIC_PlaySong when
+ * musicoff stands (0x9E228 tests it, 0x9E230 pauses). */
+static u8 g_bSoundOffCell;
+static u8 g_bMusicOffCell;
+
+static void TestMuteBytes(void)
+{
+    printf("Sound_SetMuteBytes (the live soundoff / musicoff cells)\n");
+    Fake_Reset();
+    Sound_SetBackend(&g_fakeBackend);
+    g_bSoundOffCell = 0;
+    g_bMusicOffCell = 0;
+    Sound_SetMuteBytes(&g_bSoundOffCell, &g_bMusicOffCell);
+    (void)Sound_InitAndLoadSamples("tact");
+
+    Sound_Play(3);
+    CheckEqI32(g_fake.nPlayCalls, 1, "  soundoff clear: the sample reaches the backend");
+
+    g_bSoundOffCell = 1;   /* the byte OptionsScreen_SetSfxVol0..5 writes (0x6BD04) */
+    Sound_Play(3);
+    CheckEqI32(g_fake.nPlayCalls, 1, "  soundoff set: Sound_Play stops before the backend");
+    g_bSoundOffCell = 0;
+
+    Sound_Shutdown();
+
+    Fake_Reset();
+    Sound_SetBackend(&g_fakeBackend);
+    (void)Sound_InitAndLoadSamples("tact");
+    g_fake.nMusicPaused = -1;
+    Sound_LoadAndPlayMusic(0);
+    /* 0x9E228 tests the byte and 0x9E230 is inside the taken branch: a clear byte
+     * means FMUSIC_SetPaused is never reached, not that it is called with 0. */
+    CheckEqI32(g_fake.nMusicPaused, -1, "  musicoff clear: the load calls SetPaused not at all");
+    Sound_Shutdown();
+
+    Fake_Reset();
+    Sound_SetBackend(&g_fakeBackend);
+    (void)Sound_InitAndLoadSamples("tact");
+    g_fake.nMusicPaused = -1;
+    g_bMusicOffCell = 1;   /* 0x9E228's test, 0x9E230's call */
+    Sound_LoadAndPlayMusic(1);
+    CheckEqI32(g_fake.nMusicPaused, 1, "  musicoff set: the load pauses the module at once");
+    CheckEqI32(g_fake.nMusicPlayCalls, 1, "  and it still played it first, as 0x9E210 does");
+    Sound_Shutdown();
+    Sound_SetMuteBytes(NULL, NULL);
+}
+
+/* The device gate. Everything above runs on the fake backend and needs no sound
+ * hardware; this is the only section that proves real output, and a machine with no
+ * wave device says so and stays green -- the control-flow parity the rest of the
+ * file asserts does not depend on a device existing. */
+static void TestDevice(void)
+{
+    u8 bSoundOff = 0; /* the two live cells, as App_InitInstance hands them over */
+    u8 bMusicOff = 0;
+
+    printf("winmm device gate (the real output path)\n");
+    if (!PufoAudioWinmm_HasDevice()) {
+        printf("  device gate skipped: waveOutGetNumDevs() == 0\n");
+        return;
+    }
+    /* Without the live cells Sound_SfxMuted falls back to the pause mirror, and
+     * TestFocusPause above leaves that mirror at 1 -- the play would be muted. */
+    Sound_SetMuteBytes(&bSoundOff, &bMusicOff);
+    Sound_SetBackend(&g_pufoAudioWinmm);
+    Check(Sound_InitAndLoadSamples("tact"), "  waveOutOpen succeeded where FSOUND_Init would have");
+    CheckEqI32(Sound_GetSampleCount(), 35, "  the same 35 TACT*.WAV loaded through the real backend");
+    PufoAudioWinmm_DrainDone(8);        /* WOM_OPEN arrives on the same event */
+    Sound_Play(2);                      /* TACT2 */
+    Check(PufoAudioWinmm_WaitDone(4000u), "  waveOutWrite reported WOM_DONE: the sample played");
+    Sound_Shutdown();
+    Sound_SetMuteBytes(NULL, NULL);
+    Sound_SetBackend(NULL);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -425,6 +503,8 @@ int main(void)
     TestOptionsDefaults();
     TestVolumeApply();
     TestFocusPause();
+    TestMuteBytes();
+    TestDevice();
 
     Asset_CloseArchives();
 
