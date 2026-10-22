@@ -22,8 +22,8 @@ python docs/parity/coverage.py            # coverage numbers only
 | Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 131, 1904 bytes |
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 63 |
-| Test checks run | 20598 |
+| Test suites | 64 |
+| Test checks run | 20619 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -128,7 +128,7 @@ is the module that answers to it.
 | `0x9fb0c` | `SoftSurf_BlitIndexedKeyedEx` | 56 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3f5c` | `Blit_SetRectAndColor` | 56 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9fadc` | `SoftSurf_BlitIndexedEx` | 48 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0x9fc00` | `SoftSurf_BlitGlyph` | 48 | `src/pufo/game/pufo_font.h` |
+| `0x9fc00` | `SoftSurf_BlitGlyph` | 48 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0xa47b0` | `BlitParams_Set` | 32 | `src/pufo/render/pufo_render.h` |
 | `0x36818` | `Render_Frame_DecRef` | 24 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_renderframe.c` (+1) |
 | `0x9f97c` | `SoftSurf_dtor` | 24 | `src/pufo/render/pufo_render.h` |
@@ -579,7 +579,7 @@ is the module that answers to it.
 | `0x663c4` | `Ui_AnimExpandBlit_IfEnabled` | 88 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3e8c8` | `UiPanel_FreeLines` | 76 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3f06c` | `UiPanel_SetLineMeta` | 72 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
-| `0x460e8` | `Font_Init` | 72 | `src/pufo/game/pufo_font.h` |
+| `0x460e8` | `Font_Init` | 72 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x5a394` | `UiPanel_AppendLineWithSound` | 72 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
 | `0x1a5c0` | `UiControl_SetPosMode` | 68 | `src/pufo/ui/pufo_control.h` |
 | `0x1a75c` | `UiControl_Setup` | 68 | `src/pufo/ui/pufo_control.h`, `src/pufo/ui/pufo_uibank.c` (+1) |
@@ -1296,6 +1296,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_panel` | PASS | 171 |
 | `test_path` | PASS | 104 |
 | `test_plane` | PASS | 509 |
+| `test_ptrarray` | PASS | 21 |
 | `test_render` | PASS | 177 |
 | `test_renderframe` | PASS | 24 |
 | `test_rmp` | PASS | 83 |
@@ -1325,7 +1326,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 81 |
 | `test_vistry` | PASS | 42 |
 
-**63 / 63 suites passing.**
+**64 / 64 suites passing.**
 
 ## Per-subsystem parity notes
 

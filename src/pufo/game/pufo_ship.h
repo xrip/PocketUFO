@@ -167,6 +167,7 @@ typedef struct ShipCtorEnv {
     i32 nObjectCount;
 } ShipCtorEnv;
 
+/* Ship_ctor @ 0x45c20 -- the contract is the doc block above ShipCtorEnv. */
 Ship *Ship_Ctor(Ship *pShip, u8 nCraftType, i32 nId, i32 nHomeBase, u8 bSkip,
                 ShipCtorEnv *pEnv);
 

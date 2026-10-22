@@ -131,6 +131,18 @@ add_test(NAME test_data
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# The growable pointer list: Insert and Remove carry the index contract (out-of-range index lands at
+# the end, an over-long removal clamps, 0xFFFF means "all") and no test called either one before.
+add_executable(test_ptrarray ${CMAKE_SOURCE_DIR}/tests/test_ptrarray.c)
+target_link_libraries(test_ptrarray PRIVATE pufo_options pufo_util)
+set_target_properties(test_ptrarray PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_ptrarray
+    COMMAND test_ptrarray
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # The committed lang.dat TEXTS table (src/pufo/asset/pufo_texts_lang.h) re-read through the game's
 # own reader: the generator is only trustworthy while this stays green.
 add_executable(test_texts_lang ${CMAKE_SOURCE_DIR}/tests/test_texts_lang.c)

@@ -22425,3 +22425,69 @@ What this settles and what it does not. The spare room is not load-bearing for p
 Rows. Closed: 117b -- `0x6E58C` has no gate to build, because its byte feeds the `ADD` at 0x6E590 into `BaseGrid_SetByteAtFound` whose only store is 0x6ACB4 `STRB R5,[R2,R3,ASR#24]`, so no fixture crossing 255 separates a byte read from a dword read; the proof is in Part 117's section and the PLAN row is dropped. Moved to Part 119: 117a (the array-A signed sweep and its checks), 118a (the closing status re-measure), 118b (`HANDOFF.md`). Still open: 118c, now with the measurement above and the narrowed target.
 
 Evidence. Nothing under src/ or tests/ changed in this Part (`git status --porcelain src tests` empty), so Part 117's measured row is still this tree's state: 63/63 tests in both configs, 20,598 checks, coverage 972/1103 functions (88.1%) and 596888/598792 bytes (99.7%), 9 e2e pictures. Re-measured after the Part: `tools/asan.sh` prints "built 63 library files + tests/test_geoscapeframe.c into build/asan" and "ASan reports: 1"; `tools/frames.sh` prints "frames: unchanged (93 reference pictures)" with exit 0. The new files are `tools/asan.sh` and this section.
+
+## Part 119 - the reach ledger learns the difference between a call, a mention, and a wrapper
+
+The goal is "ported start-to-end with 100% coverage, with proofs". Citation coverage is proven (968/968
+behaviour-bearing functions cited, 135 artifact rows over the 131 uncited names, 0 real gaps). What was
+NOT proven was the other half: does a test actually reach a function. `docs/parity/teeth_ledger.py` now
+answers that, and this Part is what it took to make its answer mean something.
+
+The first version counted a function as reached when a test *named* it. That is wrong twice over. A name
+in a test comment is a note, not a check; and a test that calls `Titles_Init` never names `Titles_ctor`,
+which `Titles_Init` calls. The ledger now measures reach three ways: an address cite inside a test, a
+direct call (`name(`) in test text with the comments stripped, and reach through the port's own call
+graph - every port function a test calls is a root, and anything a root reaches through its body counts.
+A name a test defines for itself is not a root, so a test-local helper cannot impersonate a port function.
+
+Counting only calls and cites put reach at 871 of 968. Pairing fixes moved it to 924, and they were all
+real defects in the pairing, not in the port:
+
+* The owner walk only read `/* Name @ 0x... */` blocks contiguous with a single-line definition. Three
+  shapes broke it: a declaration in a .h (the pairing lives there in several modules), a blank line inside
+  a doc block (`pufo_enemyai.h` puts `@ 0x4b928` at line 42 and the declaration at 59), and a multi-line
+  signature (`Line_Write` at `pufo_linelist.c:22`). All three are now read.
+* Five cites were missing where a test already drove the port function, so it read as unreached. Added
+  in `src/`, comment only, each checked against the IDB decompile first: `Ship_ctor @ 0x45c20` at the
+  `Ship_Ctor` declaration, `Tact_MarkAllSoldiersSeen @ 0x33bf0` at `SideLists_MarkAllSoldiersSeen`,
+  `Font_Init @ 0x460e8` at `PufoFont_Init`, `SoftSurf_BlitGlyph @ 0x9fc00` at the `Blit_LoadSurface` call
+  inside `Font_DrawGlyph` (0x9fc00 is exactly `Blit_LoadSurface` + `SoftSurf_BlitGlyph_Inner @ 0xa41d4`),
+  and `CDialogTemplate @ 0x54c3c` at `MapTemplate_Load` - that constructor's only effect is
+  `this->pTemplate = nullptr`, which the port gets from a zero-initialised record.
+
+Two functions had no test at all, and that is the only place this Part wrote new test code:
+`PtrArray_Insert @ 0xa0f94` and `PtrArray_Remove @ 0xa1054`. `tests/test_ptrarray.c` (21 checks) pins the
+index contract the IDB states: insert lands at the end when `nIndex < 0 || nIndex >= nCount`; a removal
+with `nCount <= 0` or `nIndex >= nCount` does nothing; `nIndex + nRemove > nCount` clamps to the end;
+`nIndex == 0xFFFF` removes everything and does not read `nCount`; an emptied list stores a NULL array.
+Teeth, each restored and `grep -rn "MUTATION" src tests` empty afterwards:
+
+| Mutation in `pufo_ptrarray.c` | Failing check |
+|---|---|
+| out-of-range insert index set to 0 instead of `nCount` | 8 checks, starting "index 2 lands between the old items 1 and 2" |
+| emptied list keeps an array (`<= 0` changed to `< 0`) | "an emptied list stores no array, as 0x1054 does" + 2 more |
+
+What is left: 44 cited-but-not-reached rows. `docs/idb/ida_unreached_callees.py` (committed; run inside
+IDA, it walks `idautils.FuncItems` then `CodeRefsFrom` per instruction - `CodeRefsFrom(fn.start_ea, ...)`
+alone returns nothing) reads each one's callee chain two hops deep. All 44 land on a routine the port has
+AND a test reaches: `MenuBtn_SetSpeed0 @ 0x18ecc` -> `Sound_Play` + `GameSpeed_Set @ 0x260c0`,
+`Smap_BeginCraftSelectBtn @ 0x84634` -> `Smap_BeginCraftSelect @ 0x838dc` (test_geoscape.c runs that one
+six times), `WinMain @ 0x9fcc4` -> `InitInstance` -> `InitAcceleratorTable`. Residue after that rule: 0.
+The same pass also fingerprints each handler family: `MenuCtl8..14_OnClick` are one 11-instruction body
+with `MOVR1,#0..#6` as the only difference - the port implements such a family once, so the honest claim
+is the shared routine plus a per-address cite, and adding those cites is the next step, not this one.
+
+Say plainly what reach is not: it says the code runs under a test. It does not say a check would fail if
+the value were wrong. 896 of the 924 are reached by a direct call or an address cite, 28 only through the
+call graph; the 44 wrappers say a shared routine runs, not that `MenuCtl11_OnClick`'s constant `#3` is
+pinned. The assertion-per-function pass is still the half of the goal no gate measures.
+
+Gate state for this tree: `tools/check.sh` printed "check: ALL SIX GATES RAN" with `CHECK EXIT=0`, now
+64 tests (test_ptrarray added), 20619 checks, coverage 972/1103 functions and 596888/598792 bytes,
+93 frame pictures and 9 e2e pictures unchanged. One thing the run showed and this Part did not fix:
+under Debug `-j 8` the failure was `test_geoscapeframe` - "the flight round's strateg entries round-trip
+through the chunk (no fewer than before)" - while the two Debug tests red at HEAD (`test_titles`,
+`test_plane`) passed. Run alone that test passes twice, and Debug run serially is 64/64 green. The
+reading is parallel-run interference in the Debug suite (the frame test does save/write round-trips),
+recorded as a harness finding for a separate Part, not silenced: `check.sh` treats `rc_dbg` as
+non-fatal on purpose, which is exactly why a different Debug failure can pass through the sentinel.

@@ -74,3 +74,15 @@ last one is also the only row in the image with no cross-reference at all, the o
 `docs/parity/coverage.py --check` is the structural guard (every row names a real inventory function with a
 class and evidence, every target it cites is cited or another artifact); this paragraph is the instruction-level
 confirmation under that guard.
+
+Citation coverage is one claim; reach is another, and `docs/parity/teeth_ledger.py` now measures it over the same
+968 behaviour-bearing rows. A row counts as reached when a test cites its original address, calls the original
+name or its port owner directly (test text with the comments stripped, so a mention is not a call), or reaches it
+through the port call graph from such a call. Measured 2026-10-22: 924 of 968 reached (896 by a direct call or an
+address cite, 28 through the call graph), 44 cited but not reached. `docs/idb/ida_unreached_callees.py`, run
+inside IDA over the live database, puts all 44 into one class: their own callee chain lands on an address the port
+owns and a test reaches, so each is a variant of a routine that is covered (`MenuBtn_SetSpeed0 @ 0x18ecc` ->
+`GameSpeed_Set @ 0x260c0`; `Smap_BeginCraftSelectBtn @ 0x84634` -> `Smap_BeginCraftSelect @ 0x838dc`). Nothing is
+left as unexplained residue, and nothing in that claim is an assertion: a wrapper whose shared routine runs does
+not have its own constant pinned, and the ledger says so in its own header. The per-function
+"check-fails-when-wrong" pass is still the part of the goal no gate runs.

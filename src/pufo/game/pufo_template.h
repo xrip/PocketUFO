@@ -69,6 +69,10 @@ typedef struct MapTemplate {
 /* Map_LoadMa1 @ 0x54ba4. Reads "<pszBase>.ma1" from the archives. Returns false
  * when the member is missing or too small to hold its own header. Frees any
  * previous blob, exactly as the original does. */
+/* Map_LoadMa1 @ 0x54ba4, and the fold of CDialogTemplate @ 0x54c3c: that constructor does one thing,
+ * `this->pTemplate = nullptr` (IDB 0x54C3C, sizeof 0x18 from the stack stride in sub_22E10, no vptr).
+ * The port's MapTemplate records start zeroed at the call site, so this is where the cleared pointer
+ * appears; the constructor has no function of its own here. */
 bool MapTemplate_Load(MapTemplate *pTpl, const char *pszBase, u8 nFlag);
 
 void MapTemplate_Free(MapTemplate *pTpl);

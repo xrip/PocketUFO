@@ -177,6 +177,7 @@ bool SideLists_RemoveUnit(SideLists *pLists, Soldier *pUnit);
  * Returns the number of soldiers whose link was cleared. */
 #define PUFO_SOLDIER_LIST_MAX 512
 
+/* Tact_MarkAllSoldiersSeen @ 0x33bf0 -- the contract is the doc block above. */
 i32 SideLists_MarkAllSoldiersSeen(Soldier **apSoldiers, i32 nSoldierCount);
 
 /* --- soldier searches -------------------------------------------------------

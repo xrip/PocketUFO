@@ -112,6 +112,7 @@ const u8 g_abTactUfoClassByVariant[16] = {
      0,  5,  7,  0,  6,  0,  0,  0
 };
 
+/* Font_Init @ 0x460e8. */
 void PufoFont_Init(PufoFont *pFont)
 {
     memset(pFont, 0, sizeof(*pFont));
@@ -620,6 +621,9 @@ void Font_DrawGlyph(i32 x, i32 y, u16 nIdx, i32 nPal)
         return;
     }
     pGlyph = g_fontSys.apSprIndex[nIdx];
+    /* SoftSurf_BlitGlyph @ 0x9fc00 is exactly this pair -- Blit_LoadSurface on the target then
+     * SoftSurf_BlitGlyph_Inner @ 0xa41d4. The port keeps the pair inline here instead of having a
+     * wrapper of its own. */
     Blit_LoadSurface(g_pMainSurface);
     /* Font_BlitGlyphToSoft @ 0x9ec48 picks the palette as slot (unk_1183F4 + nPal) -- the
      * glyph base the shell's Render_Frame step will maintain. At startup it is 0. */

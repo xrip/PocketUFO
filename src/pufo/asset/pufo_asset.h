@@ -47,6 +47,9 @@ bool Asset_OpenArchives(const char *const *ppszPaths);
 /* Close both archives and free their directories. Safe to call twice. */
 void Asset_CloseArchives(void);
 
+/* AssetReader_Clear @ 0x9f7d8. AssetReader_ClearGlobal @ 0x83874 is its fixed-global form --
+ * `AssetReader_Clear(&g_rdr)` on one reader the original keeps at 0x187028. The port hands every
+ * caller its own reader, so the wrapper is folded into the call sites and has no function here. */
 void  AssetReader_Clear(AssetReader *pRdr);
 
 /* Locate pszName (case-insensitive). Returns true if found. */
