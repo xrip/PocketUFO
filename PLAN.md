@@ -5751,6 +5751,20 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   128-byte ARM filter functions collapsed into one port routine (cited per address with the pad global and the
   `unk_1183DE` immediate only it stores, each with its own mutation), and a gate tested only on the refuse side --
   `nUnitType <= 3` never had its opening side tested, so `> 3u -> > 2u` would have passed.
+  Progress (Part 125): `dat` (16) closed -- 536 rows now carry a test cite, **429** do not. Two method rules
+  came out of it. (1) A mutation whose failure mode is a crash reports as no teeth: `AssetReader_Read @ 0x9f8d0`
+  with its bound removed failed 0 checks because the test's over-read asked for 400000 bytes into a 16-byte
+  buffer and the process died before printing. The case became measurable only against a member small enough to
+  over-read by one byte (main.dat entry 41, `0.CTS`, 24 bytes at 2730656) and then failed 4. (2) A write done in
+  two places needs a check at each: `DatFile_FlushWrite @ 0x9f234` patches the directory in the struct at
+  21*n-8 (0x9F304) and on disk at 21*n-4 (0x9F338); the disk half failed 17 checks, the struct half failed 0
+  until two checks on `dat.pDir[0]` were added, and then the same mutation failed 3. Third: the read refill clamp
+  at 0x9F71C is inert -- dropping it fails no check and the copy at 0x9F774 can never consume the bytes the clamp
+  would have kept out -- so it is recorded as inert, like the `scroll >= 320` test of Part 123. Also recorded:
+  `DatFile_dtor @ 0x9eef4` deletes the *address* of the archive-directory global `unk_1571B8` (0x9EF10) instead of
+  its own `pDir`, which `DatFile_Close` frees at 0x9F19C, and `GameAssets_Shutdown` frees that global's slots a
+  second time at 0x38E80 -- its IDB note said the opposite and was rewritten; and `AssetReader_Read @ 0x9f8d0` /
+  `DatFile_Read @ 0x9f698` return a pointer, not a flag (351 and 23 BL sites read R0 at none of them).
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5880,3 +5894,18 @@ the seven had one -- and 0x1eb68 (923, replacing 217), `idb_save` written | teet
 the two cargo-flag swaps, `> 3u -> > 2u`, the selection byte, title y 10 -> 12, right label 170 -> 160, and the
 three TU costs) -- all reverted, `grep -rn "MUTATION" src tests` empty | row 120b got a new instance and a negative
 result (the frame test's save names appear in no other test); row 121a stays open with 445 rows left.
+
+`<this commit>` + Part 125 | Release 65/65 and Debug 65/65 in one run, `check: ALL SIX GATES RAN`,
+`CHECK EXIT=0` (`build/check125.log`) | 20,734 checks (+54; `test_data.c` alone runs 116) | coverage 972/1103
+functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged | reach unchanged at 965/968, residue 0; cites at a
+row's own address 520 -> **536**, without one 445 -> **429** (`dat` closed) | `src/` change is evidence only:
+per-function cites in `pufo_dat.c` and `pufo_asset.c`, no behaviour change; 42 new checks in `test_data.c` |
+93 frame pictures and 9 e2e pictures unchanged | IDB comments written and read back at 0x9eecc (632), 0x9eef4
+(867), 0x9f174 (618), 0x9f1bc (651), 0x9f234 (817), 0x9f348 (875), 0x9f4b4 (774), 0x9f5ac (745), 0x9f698 (996),
+0x9f7a8 (359), 0x9f7d8 (522), 0x9f7e4 (709), 0x9f8d0 (765), 0x9f95c (348), 0x9f964 (453), 0x83874 (648) -- none
+of the sixteen had one -- plus `GameAssets_Shutdown` rewritten to 847 after its note was found to contradict its
+own listing; `idb_save` written | teeth: 24 cases in `docs/parity/mutations_part125.py`, 23 failing 1 to 22
+checks and 1 inert by proof (the `DatFile_Read` refill clamp at 0x9F71C) and recorded as such; 0 skipped; all
+reverted to the exact bytes, `grep -rn "MUTATION" src tests` empty | the ledger's address-to-port-function map
+stayed at 604/968 because `teeth_ledger.py` drops a port function whose name equals the original's; row 121a
+stays open with 429 rows left.

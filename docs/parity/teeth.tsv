@@ -40,23 +40,23 @@
 0x38d7c	StartUi_Shutdown	208	boot-assets	yes	yes	yes	App_ShutdownStartUi|StartMenu_Shutdown	yes
 0x38e4c	GameAssets_Shutdown	180	boot-assets	yes	yes	yes	Boot_Shutdown	yes
 0x3f0d0	DatFile_RegisterAtexit	12	dat	yes	yes	yes	DatFile_AtexitThunk	yes
-0x83874	AssetReader_ClearGlobal	12	dat	yes	no	yes	AssetReader_Clear	yes
-0x9eecc	DatFile_ctor	40	dat	yes	no	yes		yes
-0x9eef4	DatFile_dtor	68	dat	yes	no	yes		no
+0x83874	AssetReader_ClearGlobal	12	dat	yes	yes	yes	AssetReader_Clear	yes
+0x9eecc	DatFile_ctor	40	dat	yes	yes	yes		yes
+0x9eef4	DatFile_dtor	68	dat	yes	yes	yes		no
 0x9ef38	DatFile_Open	572	dat	yes	yes	yes		yes
-0x9f174	DatFile_Close	72	dat	yes	no	yes		yes
-0x9f1bc	DatFile_Exists	120	dat	yes	no	yes		yes
-0x9f234	DatFile_FlushWrite	276	dat	yes	no	yes		no
-0x9f348	DatFile_BeginChunk	364	dat	yes	no	yes		yes
-0x9f4b4	DatFile_Write	248	dat	yes	no	yes		yes
-0x9f5ac	DatFile_FindChunk	236	dat	yes	no	yes		yes
-0x9f698	DatFile_Read	272	dat	yes	no	yes		yes
-0x9f7a8	DatFile_ChunkPresent	48	dat	yes	no	yes		yes
-0x9f7d8	AssetReader_Clear	12	dat	yes	no	yes		yes
-0x9f7e4	AssetReader_Find	236	dat	yes	no	yes		yes
-0x9f8d0	AssetReader_Read	140	dat	yes	no	yes		yes
-0x9f95c	AssetReader_Found	8	dat	yes	no	yes		yes
-0x9f964	AssetReader_Size	8	dat	yes	no	yes		yes
+0x9f174	DatFile_Close	72	dat	yes	yes	yes		yes
+0x9f1bc	DatFile_Exists	120	dat	yes	yes	yes		yes
+0x9f234	DatFile_FlushWrite	276	dat	yes	yes	yes		no
+0x9f348	DatFile_BeginChunk	364	dat	yes	yes	yes		yes
+0x9f4b4	DatFile_Write	248	dat	yes	yes	yes		yes
+0x9f5ac	DatFile_FindChunk	236	dat	yes	yes	yes		yes
+0x9f698	DatFile_Read	272	dat	yes	yes	yes		yes
+0x9f7a8	DatFile_ChunkPresent	48	dat	yes	yes	yes		yes
+0x9f7d8	AssetReader_Clear	12	dat	yes	yes	yes		yes
+0x9f7e4	AssetReader_Find	236	dat	yes	yes	yes		yes
+0x9f8d0	AssetReader_Read	140	dat	yes	yes	yes		yes
+0x9f95c	AssetReader_Found	8	dat	yes	yes	yes		yes
+0x9f964	AssetReader_Size	8	dat	yes	yes	yes		yes
 0x460dc	j_Font_Free	12	platform	yes	yes	yes	Font_AtexitThunk	yes
 0x22310	Render_Frame	756	render	yes	yes	yes	App_DrawFrame|World_bTactFrameLive|World_TactRenderThunk|World_ClickEndTurn|Tact_BeginEnemyTurn	yes
 0x27788	GX_Present	4	render	yes	yes	yes	App_PresentHook|App_HookNewGame|App_HookLoadGame|App_DrawFrame|World_TactLiveOptions	no

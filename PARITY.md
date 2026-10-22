@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 65 |
-| Test checks run | 20680 |
+| Test checks run | 20734 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -59,23 +59,23 @@ is the module that answers to it.
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x9ef38` | `DatFile_Open` | 572 | `src/pufo/dat/pufo_dat.h` |
-| `0x9f348` | `DatFile_BeginChunk` | 364 | `src/pufo/dat/pufo_dat.h` |
+| `0x9f348` | `DatFile_BeginChunk` | 364 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
 | `0x9f234` | `DatFile_FlushWrite` | 276 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
-| `0x9f698` | `DatFile_Read` | 272 | `src/pufo/dat/pufo_dat.h` |
-| `0x9f4b4` | `DatFile_Write` | 248 | `src/pufo/dat/pufo_dat.h` |
-| `0x9f5ac` | `DatFile_FindChunk` | 236 | `src/pufo/dat/pufo_dat.h` |
-| `0x9f7e4` | `AssetReader_Find` | 236 | `src/pufo/asset/pufo_asset.h` |
-| `0x9f8d0` | `AssetReader_Read` | 140 | `src/pufo/asset/pufo_asset.h` |
-| `0x9f1bc` | `DatFile_Exists` | 120 | `src/pufo/dat/pufo_dat.h` |
-| `0x9f174` | `DatFile_Close` | 72 | `src/pufo/dat/pufo_dat.h` |
-| `0x9eef4` | `DatFile_dtor` | 68 | `src/pufo/dat/pufo_dat.h` |
-| `0x9f7a8` | `DatFile_ChunkPresent` | 48 | `src/pufo/dat/pufo_dat.h` |
-| `0x9eecc` | `DatFile_ctor` | 40 | `src/pufo/dat/pufo_dat.h` |
+| `0x9f698` | `DatFile_Read` | 272 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
+| `0x9f4b4` | `DatFile_Write` | 248 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
+| `0x9f5ac` | `DatFile_FindChunk` | 236 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
+| `0x9f7e4` | `AssetReader_Find` | 236 | `src/pufo/asset/pufo_asset.c`, `src/pufo/asset/pufo_asset.h` |
+| `0x9f8d0` | `AssetReader_Read` | 140 | `src/pufo/asset/pufo_asset.c`, `src/pufo/asset/pufo_asset.h` |
+| `0x9f1bc` | `DatFile_Exists` | 120 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
+| `0x9f174` | `DatFile_Close` | 72 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
+| `0x9eef4` | `DatFile_dtor` | 68 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
+| `0x9f7a8` | `DatFile_ChunkPresent` | 48 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
+| `0x9eecc` | `DatFile_ctor` | 40 | `src/pufo/dat/pufo_dat.c`, `src/pufo/dat/pufo_dat.h` |
 | `0x3f0d0` | `DatFile_RegisterAtexit` | 12 | `src/pufo/dat/pufo_dat.h` |
-| `0x83874` | `AssetReader_ClearGlobal` | 12 | `src/pufo/asset/pufo_asset.h` |
-| `0x9f7d8` | `AssetReader_Clear` | 12 | `src/pufo/asset/pufo_asset.h` |
-| `0x9f95c` | `AssetReader_Found` | 8 | `src/pufo/asset/pufo_asset.h` |
-| `0x9f964` | `AssetReader_Size` | 8 | `src/pufo/asset/pufo_asset.h` |
+| `0x83874` | `AssetReader_ClearGlobal` | 12 | `src/pufo/asset/pufo_asset.c`, `src/pufo/asset/pufo_asset.h` |
+| `0x9f7d8` | `AssetReader_Clear` | 12 | `src/pufo/asset/pufo_asset.c`, `src/pufo/asset/pufo_asset.h` |
+| `0x9f95c` | `AssetReader_Found` | 8 | `src/pufo/asset/pufo_asset.c`, `src/pufo/asset/pufo_asset.h` |
+| `0x9f964` | `AssetReader_Size` | 8 | `src/pufo/asset/pufo_asset.c`, `src/pufo/asset/pufo_asset.h` |
 
 ### `boot-assets` (4 functions)
 
@@ -1273,7 +1273,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_constants` | PASS | 360 |
 | `test_control` | PASS | 253 |
 | `test_cursordir` | PASS | 25 |
-| `test_data` | PASS | 62 |
+| `test_data` | PASS | 116 |
 | `test_enemyai` | PASS | 213 |
 | `test_font` | PASS | 85 |
 | `test_fov` | PASS | 31 |

@@ -32,6 +32,9 @@ static bool Dat_ToWide(const char *pszPath, wchar_t *pwOut, size_t cchOut)
 }
 
 
+/* DatFile_ctor @ 0x9eecc. Six stores, nothing else: nMode 0 at 0x9EED8, pDir 0 at 0x9EEDC,
+ * bChunkOpen 0 at 0x9EEE0, pWriteBuf 0 at 0x9EEE4, nBufCap 150000 at 0x9EEE8, nBufUsed 0 at 0x9EEEC.
+ * The port memsets the whole struct first, so the eight fields the original leaves alone are zero too. */
 void DatFile_ctor(DatFile *pDat)
 {
     memset(pDat, 0, sizeof(*pDat));
@@ -43,6 +46,13 @@ void DatFile_ctor(DatFile *pDat)
     pDat->nBufUsed = 0;
 }
 
+/* DatFile_dtor @ 0x9eef4. When nMode != 0: CloseHandle(this+0x10) at 0x9EF0C, then a delete whose
+ * argument is the literal address of the archive-directory global -- `LDR R0, =unk_1571B8` at 0x9EF10,
+ * BL delete at 0x9EF14 -- then nMode = 0 at 0x9EF1C and bChunkOpen = 0 at 0x9EF20; finally a guarded
+ * delete of this+0x34 at 0x9EF2C. The struct's own directory pointer at +0x0C is not freed here
+ * (DatFile_Close frees it at 0x9F19C) and unk_1571B8 is not a DatFile member: Assets_LoadStartup writes
+ * it at 0x38308 and GameAssets_Shutdown frees it again as unk_1571B8[i] at 0x38E80. The port frees the
+ * struct's own directory and no global -- the deviation tests/test_data.c states. */
 void DatFile_dtor(DatFile *pDat)
 {
     if (pDat->nMode != PUFO_DAT_CLOSED) {
@@ -73,6 +83,11 @@ int DatFile_RegisterAtexit(DatFile *pDat)
     return atexit(DatFile_AtexitThunk); /* 0x3F0D8 */
 }
 
+/* DatFile_Close @ 0x9f174. Body only when nMode != 0 (0x9F188): FlushWrite at 0x9F18C -- so a chunk's
+ * pending bytes reach the file before anything is read back -- CloseHandle at 0x9F194, the directory
+ * free at 0x9F19C, nMode = 0 at 0x9F1A0; then the guarded write-buffer free at 0x9F1AC with
+ * pWriteBuf = 0 at 0x9F1B4, which is what makes a second Close safe. The IDB types it void -- R0 at the
+ * exit is only whatever the buffer load at 0x9F1A4 left there. */
 void DatFile_Close(DatFile *pDat)
 {
     if (pDat->nMode != PUFO_DAT_CLOSED) {
@@ -85,6 +100,11 @@ void DatFile_Close(DatFile *pDat)
     pDat->pWriteBuf = NULL;
 }
 
+/* DatFile_Exists @ 0x9f1bc. mbstowcs at 0x9F1E4, FindFirstFileW at 0x9F1F4, then one exit test at
+ * 0x9F20C that answers 0 for INVALID_HANDLE_VALUE *or* for dwFileAttributes bit 1
+ * (FILE_ATTRIBUTE_DIRECTORY). FindClose at 0x9F21C runs only on the success path, so the original
+ * leaks one find handle per directory; the port closes in that case too, which tests/test_data.c
+ * states as the deviation. */
 bool DatFile_Exists(const char *pszPath)
 {
     WIN32_FIND_DATAW ffd;
@@ -181,6 +201,12 @@ bool DatFile_Open(DatFile *pDat, const char *pszPath, DatMode nMode, int nEntryC
     return true;
 }
 
+/* DatFile_FlushWrite @ 0x9f234. Runs only when (nMode == 2 || nMode == 3) && bDirty, tested together
+ * at 0x9F25C. Appends the pending buffer at EOF (0x9F280/0x9F294) and folds it into nChunkSize at
+ * 0x9F2A8, then, when nChunkSize > 0, patches the slot the previous BeginChunk reserved: in memory at
+ * 21*nCurEntry - 8 (0x9F304) and on disk at 21*nCurEntry - 4 (0x9F320 with WriteFile at 0x9F338). The
+ * 4-byte read at 0x9F2DC that loads the old value into the stack scratch is overwritten at 0x9F2EC
+ * before it is ever used. bDirty is cleared at 0x9F33C, inside the gate. */
 void DatFile_FlushWrite(DatFile *pDat)
 {
     DWORD cbWritten = 0;
@@ -208,6 +234,14 @@ void DatFile_FlushWrite(DatFile *pDat)
     pDat->bDirty = 0;
 }
 
+/* DatFile_BeginChunk @ 0x9f348. FlushWrite first at 0x9F358; mode gate at 0x9F36C; "no slots left"
+ * gate `nCurEntry == nEntryCount` at 0x9F37C; the tag is copied into the struct's own szTag by the
+ * byte loop at 0x9F398..0x9F3A8 and upper-cased at 0x9F3B0, and only then is its length tested at
+ * 0x9F3C0 (`== 0 || > 12`). The port tests the length before it copies, so a rejected tag cannot
+ * overwrite szTag and the fields after it -- stated in tests/test_data.c. Then the reserved slot is
+ * written: name copy, nDataSize = 0 at 0x9F414, nFileOff = GetFileSize at 0x9F444, the whole 0x15-byte
+ * entry to file offset 21*nCurEntry + 4 (0x9F460/0x9F484), and the state reset nBufUsed = 0,
+ * bDirty = 0, nCurEntry += 1, nChunkSize = 0 at 0x9F490..0x9F4A0. */
 bool DatFile_BeginChunk(DatFile *pDat, const char *pszTag)
 {
     DWORD cbWritten = 0;
@@ -246,6 +280,13 @@ bool DatFile_BeginChunk(DatFile *pDat, const char *pszTag)
     return true;
 }
 
+/* DatFile_Write @ 0x9f4b4. Guard order is `nCurEntry == 0` at 0x9F4D0, `(nSize & 0x80000000)` at
+ * 0x9F4D8, mode at 0x9F4EC. The buffering loop is 0x9F4FC..0x9F59C: at nBufUsed >= nBufCap it appends
+ * the buffer at EOF (0x9F524/0x9F53C) and folds it into nChunkSize at 0x9F550, then copies
+ * min(nBufCap - nBufUsed, nLeft) bytes from pBuf + nSrc at 0x9F578, advancing nSrc at 0x9F584 and
+ * setting bDirty at 0x9F594. The original has no buffer guard: with nBufCap == 0 that loop makes no
+ * progress at all (the append writes 0 bytes, the copy is 0 bytes, nLeft never drops) and the call
+ * never returns. The port refuses instead, which tests/test_data.c names as the deviation. */
 bool DatFile_Write(DatFile *pDat, const void *pBuf, u32 nSize)
 {
     DWORD cbWritten = 0;
@@ -288,6 +329,13 @@ bool DatFile_Write(DatFile *pDat, const void *pBuf, u32 nSize)
     return true;
 }
 
+/* DatFile_FindChunk @ 0x9f5ac. Requires nMode == 1 at 0x9F5C0, copies the tag into the struct at
+ * 0x9F5CC..0x9F5DC and upper-cases it at 0x9F5E4, then scans slots 0..nCurEntry-1 with the 21-byte
+ * stride (0x9F61C). On a hit it stores bChunkFound at 0x9F654, nChunkSize at 0x9F664, nChunkFileOff at
+ * 0x9F67C, nChunkReadPos = 0 at 0x9F688, bChunkOpen = 1 at 0x9F68C and nBufUsed = nBufCap at 0x9F690:
+ * that last store is what makes the first DatFile_Read refill from the chunk instead of serving the
+ * bytes the previous chunk left in the buffer. On a miss only bChunkFound (0x9F628) and bChunkOpen
+ * (0x9F62C) are cleared; size and offset keep their old values. */
 bool DatFile_FindChunk(DatFile *pDat, const char *pszTag)
 {
     i32 i;
@@ -314,6 +362,15 @@ bool DatFile_FindChunk(DatFile *pDat, const char *pszTag)
     return false;
 }
 
+/* DatFile_Read @ 0x9f698. Four gates in order: nMode == 1 (0x9F6B0), bChunkOpen (0x9F6B8),
+ * bChunkFound (0x9F6C4), and the signed bound nChunkReadPos + nSize <= nChunkSize (ADD 0x9F6D8,
+ * BGT 0x9F6E0), so a read that exactly fills the chunk is allowed. Each refusal goes straight to the
+ * epilogue at 0x9F7A0: no SetFilePointer at 0x9F72C, no ReadFile at 0x9F744, and nChunkReadPos is not
+ * advanced. R0 is never normalised on those paths (only MOV R4,R0 at 0x9F6A0 writes it), so the
+ * original answers a refusal with the DatFile pointer and a success with the memmove result: a pointer
+ * either way, never a 0/1 flag. None of the 351 BL sites reads that register; the port returns false
+ * on refusal, which no original caller can observe. The refill at 0x9F6FC..0x9F744 reads
+ * min(nBufCap, nChunkSize - nChunkReadPos) bytes. */
 bool DatFile_Read(DatFile *pDat, void *pBuf, u32 nSize)
 {
     DWORD cbRead = 0;
@@ -352,6 +409,9 @@ bool DatFile_Read(DatFile *pDat, void *pBuf, u32 nSize)
     return true;
 }
 
+/* DatFile_ChunkPresent @ 0x9f7a8. Three tests, in this order, each with its own 0 exit:
+ * nMode == 1 at 0x9F7B0, bChunkFound at 0x9F7BC, bChunkOpen at 0x9F7C0 with the 0 at 0x9F7D0 and the
+ * 1 at 0x9F7C4. It reads no file and no directory entry. */
 bool DatFile_ChunkPresent(const DatFile *pDat)
 {
     if (pDat->nMode != PUFO_DAT_READ) {

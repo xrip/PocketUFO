@@ -22933,3 +22933,128 @@ IDB comments written and read back at 0x17410 (917), 0x17490 (845), 0x17510 (845
 0x17690 (845), 0x17710 (861) -- none of the seven had one before -- and at 0x1eb68 (923, replacing a 217-character
 note); `idb_save` reported ok. Teeth: 16 cases in `docs/parity/mutations_part124.py`, every one restored to its
 exact bytes, `grep -rn "MUTATION" src tests` empty.
+
+## Part 125 - `dat` closed: 16 rows, 429 left, and a proof that reached only one half of a two-half write
+
+The sixteen uncited `dat` rows went through the row-121a method: `DatFile_ctor @ 0x9eecc`,
+`DatFile_dtor @ 0x9eef4`, `DatFile_Close @ 0x9f174`, `DatFile_Exists @ 0x9f1bc`,
+`DatFile_FlushWrite @ 0x9f234`, `DatFile_BeginChunk @ 0x9f348`, `DatFile_Write @ 0x9f4b4`,
+`DatFile_FindChunk @ 0x9f5ac`, `DatFile_Read @ 0x9f698`, `DatFile_ChunkPresent @ 0x9f7a8`,
+`AssetReader_Clear @ 0x9f7d8`, `AssetReader_Find @ 0x9f7e4`, `AssetReader_Read @ 0x9f8d0`,
+`AssetReader_Found @ 0x9f95c`, `AssetReader_Size @ 0x9f964`, plus the `AssetReader_ClearGlobal @ 0x83874`
+thunk. Rows with a test cite at their own address: 520 -> 536; without one: 445 -> 429. `strat-ui` 121,
+`tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26 and `app-shell` 19 are what row 121a has left.
+24 mutation cases ran: 23 failed between 1 and 22 checks, 1 is inert by proof (below), none was skipped,
+every file came back to its exact bytes. `tests/test_data.c` now runs 116 checks and the suite total went
+20,680 -> 20,734.
+
+### DatFile_dtor deletes the address of a global that is not its own member
+
+`DatFile_dtor @ 0x9eef4` is 68 bytes: `CloseHandle(this+0x10)` at 0x9EF0C, then an `operator delete` whose
+argument comes from `LDR R0, =unk_1571B8` at 0x9EF10 -- a literal load of the address of a global, not a
+field load -- then `nMode = 0` at 0x9EF1C and `bChunkOpen = 0` at 0x9EF20, and finally the guarded delete of
+`this+0x34` at 0x9EF2C. Two things follow. The struct's own directory pointer at `+0x0C` is never freed
+here; `DatFile_Close` frees it at 0x9F19C. And `unk_1571B8` is not a `DatFile` member at all:
+`Assets_LoadStartup` writes it as archive 0's directory array at 0x38308, and `GameAssets_Shutdown` frees it
+again as `unk_1571B8[i]` at 0x38E80, a value load of the same global. The dtor is reached from
+`j_DatFile_dtor @ 0x3f0dc` (the atexit entry, `this = unk_158220`) and from `SaveSlot_FormatList @ 0x45904`
+at 0x45C14, where `ADD R0, SP` at 0x45C0C makes `this` a stack local -- so formatting a save slot deletes the
+archive-0 directory the asset reader is still using, and shutdown deletes it a second time. The port frees
+`this->pDir` and no global. No check can observe a free of a static global's address, so that half is stated
+in the IDB note and not claimed as covered; the dtor's own stores are pinned -- changing the `bChunkOpen = 0`
+at 0x9EF20 fails 2 checks.
+
+Fixing this row also fixed a wrong IDB note. `GameAssets_Shutdown`'s comment said "It frees only the two blobs
+allocated with operator new -- archive directory arrays belong to DatFile_dtor", while the listing it sits on
+shows `operator delete(p: unk_1571B8[i]); /*0x38E80*/` inside its own loop. The note now says both functions
+free those arrays and neither nulls the slot, which is the double free the instructions show. The comment's
+self-contradiction had been in the IDB since the row was first written, and only the dtor work noticed it.
+
+### Two readers answer with a pointer where a flag is expected
+
+`AssetReader_Read @ 0x9f8d0` and `DatFile_Read @ 0x9f698` never normalise their return register. In 0x9f8d0
+the two refusals (BEQ at 0x9F8EC, BGT at 0x9F900) land on the epilogue at 0x9F950 with R0 holding what they
+loaded there: the reader pointer when `bFound` is 0 (`MOV R4,R0` at 0x9F8D8 leaves R0 alone), or `nReadPos`
+when the bound fails (`LDR R0,[R4,#0x18]` at 0x9F8F0) -- 6 in the test's case, i.e. truthy. 0x9f698 is the
+same shape: `MOV R4,R0` at 0x9F6A0, four refusal branches (0x9F6B4, 0x9F6C0, 0x9F6CC, 0x9F6E0) landing on
+0x9F7A0, and the success path leaving the `memmove` result in R0. The original therefore reports a refused
+read as a non-zero value in both functions, and the port returns false.
+
+The deviation is safe because of a census, not because it looks harmless. Walking every code xref and
+following R0 forward until something writes it, none of the 23 `BL AssetReader_Read` sites and none of the 351
+`BL DatFile_Read` sites read the register before overwriting it. The one site where the value survives is
+`Map_LoadMa1 @ 0x54ba4` at 0x54C2C, which uses it as its own BOOL return, and its nine call sites in
+`Font_LoadTactSprites` (0x23078, 0x23204, 0x234b0, 0x235bc, 0x23858, 0x23f34, 0x246b8, 0x24a5c, 0x24e90) drop
+it too. What the checks pin is what both versions agree on: a refused read performs no seek and no read,
+leaves the caller's buffer untouched, and leaves the read position where it was.
+
+### Three guards, and the order the original puts them in
+
+`DatFile_Write @ 0x9f4b4` has no buffer guard at all. Its loop (0x9F4FC..0x9F59C) flushes when `nBufUsed >=
+nBufCap` and then copies `min(nBufCap - nBufUsed, nLeft)` bytes, so with `nBufCap == 0` the flush writes
+nothing, the copy is zero bytes, `nLeft` never drops and 0x9F59C branches back -- the call never returns. The
+port refuses instead, and that refusal is now a check.
+
+`DatFile_BeginChunk @ 0x9f348` tests its tag length at 0x9F3C0 *after* copying the tag into the struct's own
+`szTag` (the byte loop at 0x9F398..0x9F3A8) and upper-casing it at 0x9F3B0, and that copy has no bound: 12
+characters fill `szTag` (13 bytes at `+0x15`) exactly, 13 write 14 bytes and reach the pad byte at `+0x22`,
+and 15 or more reach `nChunkFileOff` at `+0x24` -- all of it stored before the call answers 0. The port
+checks the length first.
+
+`DatFile_Exists @ 0x9f1bc` answers 0 from one test at 0x9F20C that covers two different answers,
+`INVALID_HANDLE_VALUE` and `dwFileAttributes & 1`, and calls `FindClose` only on the success path at 0x9F21C,
+so the original leaks one find handle per directory it tests. The port closes in that case too. A file, a
+missing name and a directory are three checks now, because they are three answers in the original.
+
+### FlushWrite writes one value twice, and the proof reached only one of the two places
+
+`DatFile_FlushWrite @ 0x9f234` patches the slot the previous `BeginChunk` reserved in two places: in the
+struct at `21*nCurEntry - 8` (0x9F304) and in the file at `21*nCurEntry - 4` (SetFilePointer 0x9F320 with
+WriteFile 0x9F338). The first mutation run showed `-8 -> -4` failing **0** checks while `-4 -> -8` failed 17.
+The reason is that every read-back in the test reopened the file and re-read the directory from disk, so the
+struct half of that write was never looked at. Two checks on `dat.pDir[0]` added right after
+`BeginChunk(beta)` -- `nDataSize == 4`, and `nFileOff == 88` to name the field that store must *not* touch --
+made the same mutation fail 3 checks: `got 0, want 4` and `got 4, want 88`. A proof that reaches one half of a
+two-half write is a half proof.
+
+The other lesson from that run is about the runner. The `0x9f8d0` bounds mutation looked toothless at first,
+0 failing check lines, because the over-read the test asked for was 400000 bytes into a 16-byte stack buffer:
+with the bound removed the read smashed the stack and the test died before printing a FAIL, and the runner
+counts FAIL lines. A mutation is only measurable when the behaviour it allows still fits inside what the check
+can look at. main.dat directory entry 41, `0.CTS`, is 24 bytes at 2730656 with its neighbour starting at
+2730680, so 20 + 4 lands exactly on the bound (the `<=` at 0x9F900 allows equality) and one byte more is
+refused -- with the bound gone that byte reads the neighbour. That case now fails 4 checks. The same rule
+explains Part 122's static-storage sentinel finding from the other side: a failure that cannot be reported is
+not a check.
+
+### The read refill clamp is inert, and the proof of that is the result
+
+`DatFile_Read`'s refill is clamped at 0x9F71C to `min(nBufCap, nChunkSize - nChunkReadPos)`, so it never
+pulls the next chunk's bytes into the buffer. Dropping the clamp changes nothing observable: the mutation
+measured **0** failing checks. The argument agrees. The copy at 0x9F774 takes `min(nBufCap - nBufUsed, nLeft)`
+bytes from the buffer front; `nLeft` is already bounded by the chunk's remaining bytes by the gate at 0x9F6E0;
+and a refill reads at least as many bytes as the loop is still allowed to consume, so the buffer positions
+past what was needed are never served. This is the same class as the credits window's `scroll >= 320` test and
+the titles' 36-row span from Part 123: a real instruction whose value no check can pin, written into the IDB
+note rather than pretended to be covered. `AssetReader_ClearGlobal @ 0x83874` is the other shape -- `LDR R0,
+=0x187028` at 0x83874 and `B AssetReader_Clear` at 0x83878, reached from the tail branch at 0x83870 and a
+pointer-table slot at 0x18aa08 -- so it is cited at the shared routine and gets no mutation case of its own.
+
+Measured: reach 965/968 with residue 0; cites at a row's own address 520 -> 536, without one 445 -> 429;
+`dat` closed alongside `titles`, `util`, `platform`, `audio`, `boot-assets` and `tact-ui`. Gates: Release
+65/65 and Debug 65/65, `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, coverage 972/1103 functions and
+596888/598792 instruction bytes unchanged, `check: OK -- 135 artifact rows, 131 uncited functions, 0 of them
+real gaps`, 20,734 checks (+54), `frames: unchanged (93 reference pictures)`, `e2e pictures: unchanged (9
+pictures)`. Teeth: 24 cases in `docs/parity/mutations_part125.py`, 23 failing 1 to 22 checks (ctor capacity
+150000 -> 149999 fails 2; the dtor's chunk-open store fails 2; Close without its flush fails 6; Exists'
+attribute bit fails 2; the two FlushWrite patch offsets fail 3 and 17; flushing a clean container fails 18;
+tag bound 12 -> 13 fails 2 and the empty tag fails 16; the dropped strupr fails 22; Write before BeginChunk
+fails 1; the dropped source advance fails 2; the uncounted buffer fails 5; FindChunk's mode gate fails 20 and
+its priming store fails 6; the exact-fit bound fails 12; ChunkPresent's mode test fails 2; Clear's bFound
+fails 2; the archive scan order fails 3 and the dropped strupr fails 11; the missing AssetReader bound fails
+4; Found inverted fails 4; Size returning the offset fails 10), 1 inert and recorded as such, 0 skipped, every
+one restored to its exact bytes, `grep -rn "MUTATION" src tests` empty. IDB comments written and read back at
+0x9eecc (632), 0x9eef4 (867), 0x9f174 (618), 0x9f1bc (651), 0x9f234 (817), 0x9f348 (875), 0x9f4b4 (774),
+0x9f5ac (745), 0x9f698 (996 -- the first draft hit the 1024-character cap and was shortened), 0x9f7a8 (359),
+0x9f7d8 (522), 0x9f7e4 (709), 0x9f8d0 (765), 0x9f95c (348), 0x9f964 (453) and 0x83874 (648), where none of the
+sixteen had a note before; `GameAssets_Shutdown`'s note rewritten to 847 characters; `idb_save` reported ok.

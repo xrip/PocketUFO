@@ -102,6 +102,16 @@ Measured after Part 123: cites at a row's own address **508**, without one **457
 (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16, `tact-ui`
 12 left). Measured after Part 124: **520** cited, **445** not, with `tact-ui` closed as well (`strat-ui` 121,
 `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19, `dat` 16 left).
+Measured after Part 125: **536** cited, **429** not, with `dat` closed too (`strat-ui` 121, `tact` 93,
+`strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19 left). `pufo_dat.c` and `pufo_asset.c`
+now cite each address at the function that reproduces it, not only in the whole-file `Evidence:` block
+the ledger cannot attribute. The address-to-port-function map stayed at 604 of 968, and the reason is a
+property of the ledger worth recording: `teeth_ledger.py` builds `port_function` with `p != name`, so a port
+function that keeps the original's own name -- all sixteen of these do -- reads as a blank map cell even when
+its address is cited on exactly the right definition. The map counts renamed port functions and nothing else.
+A first draft of this Part put both accessor cites in one comment block and the ledger then claimed
+`AssetReader_Size @ 0x9f964` was owned by `AssetReader_Found`, which sits above it: a shared comment
+attributes every address in it to one function, so the two cites were split into two blocks.
 
 Part 121 closed the 5 open `util` rows and learned a rule the ledger cannot enforce: a `@ 0x...` in a test file
 counts whether it sits next to a check or in a header comment, so the first draft of `tests/test_rand.c` made
@@ -127,3 +137,18 @@ moves with the constant, so changing `#define PUFO_INV_TU_POCKET_A 4` to 5 would
 that a byte census shows are identical except two immediates -- which pad global gets 1, and what lands in
 `unk_1183DE` -- while the port implements the family once, so each address is cited at the shared routine together
 with the value only it stores (0x17410 stores 0xFF, 0x17710 lights `pBank + 0x2AA`), and each has its own mutation.
+
+Part 125 closed the 16 `dat` rows and produced two method findings. First: a mutation whose failure mode is a
+crash reports as no teeth. `AssetReader_Read @ 0x9f8d0` with its bounds test removed looked toothless -- 0 failing
+check lines -- because the over-read the test asked for was 400000 bytes into a 16-byte stack buffer, so the test
+died before printing anything. The case is real, but it is only *measurable* when the wrongly-permitted read fits
+the caller's buffer, which needed a member small enough to over-read by one byte (main.dat entry 41, `0.CTS`, 24
+bytes). The same trap explains a second result: `DatFile_FlushWrite @ 0x9f234` patches the directory in the struct
+at 21*nCurEntry - 8 and on disk at 21*nCurEntry - 4; the disk half failed 17 checks, the struct half failed none,
+because every existing read reopened the file and re-read the directory from disk. Adding two checks on `dat.pDir[0]`
+turned that case into 3 failing checks. A proof that reaches only one half of a two-half write is a half proof.
+Second: some code is inert and the honest report is a proof of inertness, not a missing case. The read refill clamp
+at 0x9F71C limits how many bytes a refill may pull past the chunk's end, and dropping it fails no check -- the copy
+at 0x9F774 takes `nLeft` bytes from the buffer front and `nLeft` is already bounded by the chunk's remaining bytes,
+so the bytes beyond what was needed are never consumed. That is written in the IDB note for 0x9f698, next to the
+measurement that agrees with it.

@@ -84,12 +84,24 @@ bool Asset_OpenArchives(const char *const *ppszPaths)
     return true;
 }
 
+/* AssetReader_Clear @ 0x9f7d8 is 12 bytes and one store: bFound = 0 at 0x9F7DC. AssetReader_ClearGlobal
+ * @ 0x83874 is that call on the single reader the original keeps at 0x187028: three instructions,
+ * `LDR R0, =0x187028` at 0x83874, `B AssetReader_Clear` at 0x83878, literal at 0x8387C. It is reached
+ * from one tail branch (0x83870, the last instruction of the geoscape routine ahead of it) and from one
+ * pointer-table slot at 0x18aa08. The port memsets the caller's own reader, so the fields the original
+ * leaves stale (name, offset, size, position, archive index) are zero here too. */
 void AssetReader_Clear(AssetReader *pRdr)
 {
     memset(pRdr, 0, sizeof(*pRdr));
     pRdr->bFound = 0;
 }
 
+/* AssetReader_Find @ 0x9f7e4. Copies the requested name into the reader's own szName (byte loop
+ * 0x9F7F4..0x9F804) and upper-cases that copy at 0x9F80C, then scans archive 0 fully before archive 1
+ * (`++v5 >= 2` at 0x9F864) over the counts at 0x1472C0 with the 21-byte stride at 0x9F850. A hit stores
+ * bFound at 0x9F87C, memmoves the size at 0x9F8A8 and the offset at 0x9F8C0 (both fields are zeroed at
+ * 0x9F88C/0x9F894 first, which the memmoves immediately overwrite), clears nReadPos at 0x9F8C4 and
+ * stores the archive index at 0x9F8C8. A miss stores bFound = 0 at 0x9F868 and nothing else. */
 bool AssetReader_Find(AssetReader *pRdr, const char *pszName)
 {
     u32 nArchive;
@@ -122,6 +134,14 @@ bool AssetReader_Find(AssetReader *pRdr, const char *pszName)
     return false;
 }
 
+/* AssetReader_Read @ 0x9f8d0. Tests bFound first (LDRB 0x9F8DC, CMP 0x9F8E8), then the signed bound
+ * nReadPos + cb <= nDataSize (ADD 0x9F8F8, BGT 0x9F900). Both refusals branch to the epilogue at
+ * 0x9F950 with the file handle untouched, so no SetFilePointer at 0x9F920, no ReadFile at 0x9F940 and no
+ * `nReadPos += cb` at 0x9F94C. R0 keeps what the refusal loaded: the reader pointer when bFound is 0
+ * (MOV R4,R0 at 0x9F8D8 leaves R0 alone) or nReadPos when the bound fails (LDR R0,[R4,#0x18] at 0x9F8F0)
+ * -- a non-zero value in both cases, never a 0/1 flag. Of the 23 BL sites none reads R0 before
+ * overwriting it; only Map_LoadMa1 at 0x54C2C passes the value on, as its own return, and all nine of
+ * its call sites in Font_LoadTactSprites drop it. The port returns false on refusal. */
 bool AssetReader_Read(AssetReader *pRdr, void *pBuf, u32 cb)
 {
     DWORD cbRead = 0;
@@ -144,11 +164,17 @@ bool AssetReader_Read(AssetReader *pRdr, void *pBuf, u32 cb)
     return true;
 }
 
+/* AssetReader_Found @ 0x9f95c: LDRB of bFound at 0x9F960, returned as-is, 8 bytes, reached from three
+ * call sites (0x11084, 0x4630C, 0x9E33C). It checks nothing else. */
 bool AssetReader_Found(const AssetReader *pRdr)
 {
     return pRdr->bFound != 0;
 }
 
+/* AssetReader_Size @ 0x9f964: LDR of nDataSize at 0x9F968 -- the size field Find stored at 0x9F8A8, not
+ * the file offset next to it (0x9F8C0) -- with 40 or more call sites, the widest reach of the family.
+ * These two accessors sit next to each other and their cites are kept separate on purpose: a shared
+ * comment block attributes both addresses to whichever function it sits above. */
 u32 AssetReader_Size(const AssetReader *pRdr)
 {
     return pRdr->nDataSize;
