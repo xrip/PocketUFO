@@ -5610,7 +5610,7 @@ makes every `aText*` offset self-checking, and it belongs in the same IDB pass.
 ### Goal 2026-10-22b: the five gaps the closing pass left, each with the Part that takes it
 
 Written after Part 116, because the closing status and this list had drifted: the measured section below
-was produced at Part 110 and eight Parts have landed since. `grep -c "^- [ ]" PLAN.md` is the tracker: six
+was produced at Part 110 and eight Parts have landed since. `grep -c "^- [ ]" PLAN.md` is the tracker: seven
 now, zero when the goal closes.
 
 Part 117 landed on a different pair of problems from its two rows. Reading the create and start-new paths
@@ -5651,6 +5651,12 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   and sits before Parts 111..116 in `docs/parity/game-core.md`; it has to carry the current numbers (63/63,
   20,594 checks and whatever they become, coverage, frames, e2e) and sit after the last Part section. Part 119.
 - [ ] **118b. Refresh `HANDOFF.md`.** It last names Part 98. Part 119.
+- [ ] **119c. Close the reach deficit the new ledger names.** `python docs/parity/teeth_ledger.py` writes
+  `docs/parity/teeth.tsv` from the inventory, the artifact ledger, the src/ citations and tests/*.c: 968
+  behaviour-bearing functions, 968 cited (0 uncited), 814 reached by a test, **154 cited but not reached** --
+  strat-ui 57, tact 41, render 13, ui-core 12, app-shell 12, tact-ui 7, strat 5, util 4, dat 2, boot-assets 1.
+  Reach is not assertion coverage: after a function is reached, the next step is a check that fails when it is
+  wrong, which no gate measures yet. That second step is the actual "100% coverage with proofs" gap. Part 119.
 - [ ] **119a. The IDB naming pass the closing pass deferred.** `Map +0x150F0` is still `nAnimScratchX`
   (`_BYTE[4]`) while the address carries `pThrowTargetUnit @ 0x128AA8` and `Map_TraceVoxelOccupancy` (0x3242c)
   dereferences it as a `Soldier *`; and the text block base `0xB38D0` is an unnamed `char[]` although every
