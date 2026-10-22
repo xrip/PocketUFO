@@ -3912,7 +3912,10 @@ i32 ManufScreen_ReduceSelectedQtyToOne(const ManufQtyEnv *pEnv)
 }
 
 /* ManufScreen_DecUnits @ 0x6e330. The units to produce (aManufProductB, a dword per product per
- * base) may not fall to or below the engineers assigned to the same product (auManufCol) plus one. */
+ * base) may fall by one only while they stay strictly above the units already committed for the
+ * same product, plus one. That floor is auManufCommitted @ 0x15D09C -- the column
+ * ManufScreen_CommitProduction raises once per unit it builds (0x6F6C0) -- read here with LDRH at
+ * 0x6E3A4. The engineers column is not part of this gate; it belongs to 0x6dddc / 0x6e09c. */
 i32 ManufScreen_DecUnits(const ManufQtyEnv *pEnv)
 {
     const i32 nIdx = ManufQtyIndex(pEnv);
@@ -3924,11 +3927,11 @@ i32 ManufScreen_DecUnits(const ManufQtyEnv *pEnv)
         return nGate; /* 0x6E338 */
     }
 
-    if (pEnv->apProductB != NULL) {
-        const i32 nAlloc = pEnv->apProductB[nIdx]; /* 0x6E394 */
-        const i32 nQty = (i32)pEnv->apManufCols[nIdx] + 1; /* 0x6E3A4..0x6E3AC */
-        if (nAlloc > nQty) { /* 0x6E3B0: CMP R4, R1 / SUBGT */
-            pEnv->apProductB[nIdx] = nAlloc - 1; /* 0x6E3B8 */
+    if (pEnv->apProductB != NULL && pEnv->apProductC != NULL) {
+        const i32 nWant = pEnv->apProductB[nIdx];                /* 0x6E394 */
+        const i32 nFloor = (i32)pEnv->apProductC[nIdx] + 1;      /* 0x6E3A4 LDRH + 0x6E3A8 ADD #1 */
+        if (nWant > nFloor) { /* 0x6E3B0: CMP R4, R1 / SUBGT */
+            pEnv->apProductB[nIdx] = nWant - 1; /* 0x6E3B8 */
         }
     }
     return PUFO_MANUF_ANCHOR; /* 0x6E3BC: R0 still holds the 0x159E98 product-block anchor */

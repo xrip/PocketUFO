@@ -556,11 +556,11 @@ i32 Base_CountEmptyFacilityCells(const u8 *abFacilityGrid, i32 nBaseIndex);
  * argument. */
 i32 Base_CountActiveResearch(const u16 *apResearchQty, i32 nEntries);
 
-/* Base_CountActiveManuf @ 0x68264: total manufacturing quantity held by one base.
+/* Base_CountActiveManuf @ 0x68264: how many engineers a base has on its products.
  *
- * It sums the first nEntries u16 entries of that base's quantity column and returns the
- * total. nEntries comes from the single global byte at 0x160C4C, which is shared by every
- * base rather than stored per base, and it is read as an unsigned byte, so the most the
+ * It sums the first nEntries u16 entries of that base's engineers column (auManufCol @ 0x15E19C)
+ * and returns the total. nEntries comes from the single global byte at 0x160C4C, which is shared
+ * by every base rather than stored per base, and it is read as an unsigned byte, so the most the
  * original will ever walk is 255 entries. When it is zero the array is not touched at all.
  *
  * Where the column lives is worth spelling out, because the decompiler hides it. It renders

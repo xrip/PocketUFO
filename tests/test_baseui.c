@@ -4245,6 +4245,7 @@ static void TestManufQty(void)
     static UiPanel g_Panel;
     static u16 g_aCols[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
     static i32 g_aProdB[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
+    static u16 g_aDone[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* auManufCommitted */
     static u8 g_aGrid[PUFO_GRID_SIZE];
     static ObjectRecFull g_EngRec;
     static i32 g_nRow;
@@ -4259,6 +4260,7 @@ static void TestManufQty(void)
     memset(&g_Panel, 0, sizeof(g_Panel));
     memset(g_aCols, 0, sizeof(g_aCols));
     memset(g_aProdB, 0, sizeof(g_aProdB));
+    memset(g_aDone, 0, sizeof(g_aDone));
     memset(g_aGrid, 0, sizeof(g_aGrid));
     memset(&g_EngRec, 0, sizeof(g_EngRec));
 
@@ -4273,6 +4275,7 @@ static void TestManufQty(void)
     env.pnProductRow = &g_nRow;
     env.apManufCols = g_aCols;
     env.apProductB = g_aProdB;
+    env.apProductC = g_aDone;
     env.puManufEntries = &g_nEntries;
     env.pEngineerRec = &g_EngRec;
     env.abFacilityGrid = g_aGrid;
@@ -4338,18 +4341,30 @@ static void TestManufQty(void)
     (void)ManufScreen_ReduceSelectedQtyToOne(&env);
     CheckEqI32(g_aCols[7], 1, "and an entry already at 1 stays there");
 
-    /* DecUnits @ 0x6e330: the units to produce may not fall to or below the engineers assigned + 1. */
+    /* DecUnits @ 0x6e330: the floor is the units already committed -- auManufCommitted @ 0x15D09C,
+     * the column CommitProduction raises at 0x6F6C0, read here with LDRH at 0x6E3A0 -- plus one. */
     g_aCols[7] = 3;
+    g_aDone[7] = 3;
     g_aProdB[7] = 10;
     CheckEqI32(ManufScreen_DecUnits(&env), PUFO_MANUF_ANCHOR,
                "the units step returns the product-block anchor, register residue");
-    CheckEqI32(g_aProdB[7], 9, "10 units over 3 engineers drops to 9");
+    CheckEqI32(g_aProdB[7], 9, "10 units with 3 committed drops to 9");
     g_aProdB[7] = 4;
     CheckEqI32(ManufScreen_DecUnits(&env), PUFO_MANUF_ANCHOR, "again");
-    CheckEqI32(g_aProdB[7], 4, "4 units is exactly engineers + 1, so it stops there");
+    CheckEqI32(g_aProdB[7], 4, "4 units is exactly committed + 1, so it stops there");
     g_aProdB[7] = 0;
     (void)ManufScreen_DecUnits(&env);
-    CheckEqI32(g_aProdB[7], 0, "and a zero assignment never goes negative");
+    CheckEqI32(g_aProdB[7], 0, "and a zero order never goes negative");
+
+    /* The engineers column is NOT the floor: 20 engineers and nothing committed still lets the
+     * order fall, and neither column this function does not own moves. */
+    g_aCols[7] = 20;
+    g_aDone[7] = 0;
+    g_aProdB[7] = 2;
+    (void)ManufScreen_DecUnits(&env);
+    CheckEqI32(g_aProdB[7], 1, "20 engineers, 0 committed: 2 orders drop to 1");
+    CheckEqI32((i32)g_aCols[7], 20, "the engineers column is not touched");
+    CheckEqI32((i32)g_aDone[7], 0, "the committed column is read here, not written");
 
     /* UpdateProgress: six engineers spare, all six land. */
     g_aCols[7] = 0;
@@ -4402,6 +4417,12 @@ static void TestManufQty(void)
         bad.apProductB = NULL;
         CheckEqI32(ManufScreen_DecUnits(&bad), PUFO_MANUF_ANCHOR,
                    "a missing product-B array skips the store but keeps the return");
+        bad = env;
+        bad.apProductC = NULL;
+        g_aProdB[7] = 5;
+        CheckEqI32(ManufScreen_DecUnits(&bad), PUFO_MANUF_ANCHOR,
+                   "a missing committed column skips the store but keeps the return");
+        CheckEqI32(g_aProdB[7], 5, "and the order is left alone");
     }
     g_nRow = PUFO_PANEL_LINES;
     CheckEqI32(ManufScreen_IncEngineers(&env), 0, "a row past the panel's rows is refused");
@@ -10140,8 +10161,8 @@ static void TestManufInit(void)
     Check(g_aManufInitCtl[1].pfnClick == ManufStubPanelNext, "slot 2 scrolls them forward");
     Check(g_aManufInitCtl[2].pfnClick == ManufStubIncQty, "slot 3 is the quantity +");
     Check(g_aManufInitCtl[3].pfnClick == ManufStubDecQty, "slot 4 is the quantity -");
-    Check(g_aManufInitCtl[4].pfnClick == ManufStubIncUnits, "slot 5 is the engineers +");
-    Check(g_aManufInitCtl[5].pfnClick == ManufStubDecUnits, "slot 6 is the engineers -");
+    Check(g_aManufInitCtl[4].pfnClick == ManufStubIncUnits, "slot 5 is the units +");
+    Check(g_aManufInitCtl[5].pfnClick == ManufStubDecUnits, "slot 6 is the units -");
 
     /* Step 6: the positions come straight out of g_aManufCtlDesc, both bases being zero. */
     CheckEqI32(g_aManufInitCtl[0].x, 0xCD, "the tab scroll pair sits at x 0xCD");

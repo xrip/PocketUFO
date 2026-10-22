@@ -196,7 +196,8 @@ typedef struct PufoWorldState {
     u8  abFacilityGrid[PUFO_GRID_SIZE];         /* gBaseFacGrid @ 0x159768 */
     u8  abGridHangarBytes[PUFO_FAC_BASE_COUNT]; /* 0x159DBC = abFacilityGrid + 1620 in the image: the
                                                  * eight base bytes the three hangar products clear */
-    u16 auProductU16[4096];                     /* unk_15D09C, 200 per base + the +2176 spill */
+    u16 auProductU16[4096];                     /* auManufCommitted @ 0x15D09C, 200 per base + the
+                                                 * +2176 spill */
     u32 auProductU32[3600];                     /* unk_159E9C, 200 per base + the +1600 spill */
     u16 auManufCol[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* 0x15E19C */
     u16 auResearchCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];  /* auResearchCol @ 0x16022C */

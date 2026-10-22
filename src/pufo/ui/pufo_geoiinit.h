@@ -292,7 +292,7 @@ typedef struct StartNewEnv {
 
     /* Grid and the per-base economy columns. */
     u8    *abFacilityGrid;            /* gBaseFacGrid @ 0x159768, 1524 bytes */
-    u16   *pProductU16Col;            /* unk_15D09C, 200 u16 per base */
+    u16   *pProductU16Col;            /* auManufCommitted @ 0x15D09C, 200 u16 per base */
     u32   *pProductU32Col;            /* unk_159E9C, 200 dwords per base */
     u16   *pManufCol;                 /* 0x15E19C, Base_CountActiveManuf's column */
     u16   *pResearchCol;              /* unk_16022C, 144 u16 per base */

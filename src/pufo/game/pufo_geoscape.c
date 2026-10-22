@@ -685,7 +685,7 @@ static i32 QuantitySumColumn(const u16 *apColumn, i32 nEntries)
     return nTotal;
 }
 
-/* Base_CountActiveManuf @ 0x68264. Manufacturing quantity column. */
+/* Base_CountActiveManuf @ 0x68264. The manufacturing engineers column (auManufCol @ 0x15E19C). */
 i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries)
 {
     return QuantitySumColumn(apManufQty, nEntries); /* 0x682BC */
@@ -994,7 +994,7 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
             memmove(&pEnv->apSiteRecs[nDst], &pEnv->apSiteRecs[nSrc], sizeof(BaseSiteRec));
         }
 
-        /* ORIGINAL BUG (0x67048), reproduced: the manufacturing quantity column is shifted one
+        /* ORIGINAL BUG (0x67048), reproduced: the manufacturing engineers column is shifted one
          * base LATER than every other array. Its fixed offset 17156 lands on 0x15E19C with the loop
          * index itself, while product C at 12404 and product B at 5604 land one column earlier. So
          * column nBase keeps its value and column nBase+1 is overwritten from nBase+2. */

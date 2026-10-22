@@ -1912,6 +1912,14 @@ i32 ResearchScreen_AccumulateAllocated(const ResearchAccumulateEnv *pEnv);
  * anchor plus 0x4304 (17156), and three of the buttons return that 17156 -- the same kind of
  * address residue the research buttons return as 4900.
  *
+ * DecUnits @ 0x6e330 is the one button here that does not read auManufCol. Its floor is the
+ * committed-units column auManufCommitted @ 0x15D09C (block + 0x3204, the counter
+ * ManufScreen_CommitProduction raises at 0x6F6C0 once per unit it builds): 0x6E398/0x6E3A0 build
+ * the address with MOV R11,#0x3200 / ORR R11,R11,#4 and 0x6E3A4 reads it with LDRH, so the order
+ * may fall only while it stays strictly above what has already been built, plus one. Part 116
+ * corrected this: the comment here and the IDB note both named auManufCol, which this function
+ * never reads.
+ *
  * All five open by reading bManufQtyGate @ 0x15EE50 and bail out returning that byte when it is
  * non-zero. Worth stating plainly: no code in the binary ever writes a non-zero value to that
  * byte -- the only store to it anywhere is ManufScreen_SelectListed writing 0 at 0x6E970 -- so in
@@ -1931,7 +1939,9 @@ typedef struct ManufQtyEnv {
     u16                 *apManufCols;     /* auManufCol @ 0x15E19C, 200 u16 per base: the engineers
                                            * assigned to each product */
     i32                 *apProductB;      /* aManufProductB @ 0x15B79C, 200 dwords per base: the units
-                                           * to produce -- DecUnits compares it against the column above */
+                                           * to produce -- DecUnits compares it against the column below */
+    const u16           *apProductC;      /* auManufCommitted @ 0x15D09C, 200 u16 per base: the units
+                                           * already built -- DecUnits' floor, read not written */
     const u8            *puManufEntries;  /* nResearchEntryCount @ 0x160C4C, a byte, shared with research */
     const ObjectRecFull *pEngineerRec;    /* Map_apObjects112 @ 0x113C80, the engineers item */
     const u8            *abFacilityGrid;  /* gBaseFacGrid @ 0x159768 */
@@ -1977,11 +1987,11 @@ i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv);
  * Evidence: ManufScreen_ClearProductSlot @ 0x6f8cc (216 B), ManufScreen_ConfirmAndClose @ 0x6e98c
  * (92 B), ManufScreen_IncUnits @ 0x6e13c (500 B).
  *
- * The product table is three parallel arrays plus the quantity column, all contiguous and all
+ * The product table is three parallel arrays plus the engineers column, all contiguous and all
  * 200 entries per base (see the product chunk note in game/pufo_save.h):
  *
  *     A  u32  @ 0x159E9C   B  u32 @ 0x15B79C (aManufProductB)
- *     C  u16 @ 0x15D09C    quantity column u16 @ 0x15E19C (auManufCol)
+ *     C  u16 @ 0x15D09C (auManufCommitted)   auManufCol u16 @ 0x15E19C
  *
  * ClearProductSlot zeroes one index of all four. Its first argument is never read. Products
  * 119..121 -- the three hangar products, the same range ManufScreen_IncUnits splits on --
@@ -2008,7 +2018,7 @@ typedef struct ManufClearEnv {
     const i32   *pnProductRow;      /* nManufProductRowCache @ 0x15EE3C, likewise */
     u32         *apProductA;        /* unk_159E9C, 200 u32 per base */
     i32         *apProductB;        /* aManufProductB @ 0x15B79C, 200 u32 per base */
-    u16         *apProductC;        /* unk_15D09C, 200 u16 per base */
+    u16         *apProductC;        /* auManufCommitted @ 0x15D09C, 200 u16 per base */
     u16         *apManufCols;       /* auManufCol @ 0x15E19C, 200 u16 per base */
     u8          *abGridBytes;       /* 0x159DBC = abFacilityGrid + 1620, the eight base bytes the
                                      * hangar products clear. BaseGrid_Get/SubTypeByte take THIS
@@ -2085,7 +2095,7 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv);
  *
  * The four per-product tables, 200 entries per base off the anchor unk_159E98:
  *
- *   auManufCol  @ 0x15E19C  u16  the work units allocated to this product at this base
+ *   auManufCol  @ 0x15E19C  u16  the engineers assigned to this product at this base
  *   apProductA  @ 0x159E9C  u32  the work units accumulated so far
  *   apProductB  @ 0x15B79C  u32  the unit count the player asked for
  *   apProductC  @ 0x15D09C  u16  the units already committed
@@ -2138,10 +2148,10 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv);
  * components -- items you buy rather than build -- so a queued product never hits it. The port also
  * bounds the selected-base index against the base count, which the original does not. */
 typedef struct ManufCommitEnv {
-    u16               *apManufCols;   /* auManufCol @ 0x15E19C: the allocated work per product */
+    u16               *apManufCols;   /* auManufCol @ 0x15E19C: the engineers per product */
     u32               *apProductA;    /* unk_159E9C: the accumulated work */
     i32               *apProductB;    /* aManufProductB @ 0x15B79C: the requested unit count */
-    u16               *apProductC;    /* unk_15D09C: the units already committed */
+    u16               *apProductC;    /* auManufCommitted @ 0x15D09C: the units already committed */
     const u32         *pdwPrices;     /* anObjectPriceInit @ 0xAA2C0, indexed by product */
     i32               *pnFunds;       /* nFunds @ 0x1598D8 */
     ObjectRecFull    **apObjects;     /* Map.apObjects @ Map + 0x108 */
@@ -2326,7 +2336,7 @@ typedef struct ManufBuildEnv {
                                      * that block int[1600] and every reader reaches it with LDR/STR
                                      * (0x6E228, 0x6E2EC, 0x6E30C, 0x6F7A4, 0x6F8FC), so all seven
                                      * apProductB fields now spell it the way the IDB does. */
-    u16   *apManufCols;               /* auManufCol @ 0x15E19C, 200 u16 per base: allocated work */
+    u16   *apManufCols;               /* auManufCol @ 0x15E19C, 200 u16 per base: engineers assigned */
     i8     nSelectedBaseIdx;          /* nSelectedBaseIdx @ 0x159D81 */
     void (*pfnSelectListed)(void);    /* ManufScreen_SelectListed @ 0x6e914 */
     void (*pfnSyncSelection)(void);   /* ManufScreen_SyncSelection @ 0x6dd24 */
@@ -2395,7 +2405,7 @@ typedef struct ManufDrawEnv {
     u8                  *pbProductSelected; /* bManufProductSelected @ 0x15EE34 */
     u32                 *apProductA;      /* unk_159E9C: accumulated work */
     i32                 *apProductB;      /* aManufProductB @ 0x15B79C: units asked for */
-    u16                 *apManufCols;     /* auManufCol @ 0x15E19C: allocated work */
+    u16                 *apManufCols;     /* auManufCol @ 0x15E19C: engineers assigned */
     const u16           *apResearchCols;  /* auResearchCol @ 0x16022C, for the lab pass's active count */
     const u8            *pbEntryCount;    /* nResearchEntryCount @ 0x160C4C, shared by both counts */
     ObjectRecFull *const *apObjects;      /* apObjects @ 0x113AC0, for uManufWorkPerUnit */

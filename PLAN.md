@@ -1074,8 +1074,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - [x] part 38, the manufacturing commit pass: `ManufScreen_CommitProduction (0x6f34c)`, 1408 bytes —
   61 more checks. This is what `ManufScreen_RefreshBaseTabs` tail-calls, so the hourly manufacturing
   chain is now complete apart from the UI that fills the tables. The four per-base columns are
-  allocated work (`auManufCol` @ 0x15E19C), accumulated work (0x159E9C), units requested (0x15B79C)
-  and units committed (0x15D09C), and `ObjectRec+0xBA` is the **work one unit costs**: `_rt_sdiv`
+  the engineers assigned (`auManufCol` @ 0x15E19C -- Part 38 called it "allocated work", Part 116
+  corrected the wording), accumulated work (0x159E9C), units requested (aManufProductB @
+  0x15B79C) and units committed (`auManufCommitted` @ 0x15D09C), and `ObjectRec+0xBA` is the **work one unit costs**: `_rt_sdiv`
   takes the divisor in R0 and the dividend in R1 (proved at 0x65BD0/0x65BDC, where
   `Base_UpdateWorkshopNeeded` divides by 50), so the quotient is the units the accumulated work has
   paid for. Three independent confirmations: the panel percent at 0x6E704/0x6F060 is
@@ -5592,7 +5593,7 @@ gamma 0 after Part 112. Three named items came out of Part 114: array A of the m
 block (`unk_159E9C`, IDB `int[1600]`, port `u32 *` in four envs plus `pProductU32Col`), whose sweep needs
 a check of each unsigned expression it touches and whose clear check has the same two-byte-fits fixture
 weakness; what `aManufProductB` means (`units asked for` in the port header vs `the dword engineer
-assignment` in the 0x6E330 note) was settled by Part 115 against the shipped captions -- lang.dat TEXTS 1180..1183 paired with their values at 0x70908 (LDRH, `auManufCol`) and 0x709D0 (LDR, `aManufProductB`), the caption positions (10,216)/(140,216), and `g_aManufCtlDesc` putting the two +/- pairs at (10,251/271) and (140,251/271): `auManufCol` is the engineers assigned, `aManufProductB` the units to produce, and the four manufacturing button names moved in the IDB and in `src/` to match (renames.tsv); and 0x6E58C's low-byte read of a dword entry, modelled but not gated because the port masks the same value to a byte, so the two readings agree until the sum passes 255. Two rows stay open as IDB ambiguity rather than be closed by
+assignment` in the 0x6E330 note) was settled by Part 115 against the shipped captions -- lang.dat TEXTS 1180..1183 paired with their values at 0x70908 (LDRH, `auManufCol`) and 0x709D0 (LDR, `aManufProductB`), the caption positions (10,216)/(140,216), and `g_aManufCtlDesc` putting the two +/- pairs at (10,251/271) and (140,251/271): `auManufCol` is the engineers assigned, `aManufProductB` the units to produce, and the four manufacturing button names moved in the IDB and in `src/` to match -- though the four `renames.tsv` rows Part 115 announced were not in its commit and are in the file only from Part 116. Part 116 also found that Part 115's claim about the 0x6E330 floor was wrong: the guard reads `auManufCommitted @ 0x15D09C` (block + 0x3204, `LDRH` at 0x6E3A0), never `auManufCol`, and the port's `ManufScreen_DecUnits` had been reading the engineers column -- now fixed, named in the IDB, and gated by five new checks; and 0x6E58C's low-byte read of a dword entry, modelled but not gated because the port masks the same value to a byte, so the two readings agree until the sum passes 255. Two rows stay open as IDB ambiguity rather than be closed by
 guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`) and 5038 (seven RNG start globals whose
 readers this IDB does not establish).
 
@@ -5633,5 +5634,6 @@ check, it widens one fixture value (0x10016) so an existing clear check has teet
 (88.1%), 596888/598792 bytes (99.7%) | 93 frames and 9 e2e pictures unchanged.
 `<this commit>` + Part 115 | 63/63 Release and 63/63 Debug | 20,589 checks -- unchanged: a naming Part, no
 new check | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) | 93 frames and 9 e2e pictures
-unchanged; the pairing is gated -- reading the units column where 0x6E330 reads the engineers column
-fails "10 units over 3 engineers drops to 9".
+unchanged; its reported mutation did gate a pairing, but not the one it described -- 0x6E330 reads
+neither column the way the row says, which Part 116 corrected and re-gated.
+`<this commit>` + Part 116 | 63/63 Release and 63/63 Debug | 20,594 checks (+5 in `TestManufQty`) | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) -- unchanged: no function newly cited, one column of an already-cited function read correctly | 93 frames and 9 e2e pictures unchanged: the manufacturing flow presses the units '+1' and the allocate-all, never the units '-1' | teeth: putting the floor back on `auManufCols` fails "20 engineers, 0 committed: 2 orders drop to 1: got 2, want 1".

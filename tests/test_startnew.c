@@ -66,7 +66,7 @@ static u16       nAlienPoolAddend;  /* 0x1472c8 */
 static GameTime  g_time;
 
 static u8   grid[PUFO_GRID_SIZE];
-static u16  prodU16[4096];          /* unk_15D09C plus the +2176 spill */
+static u16  prodU16[4096];          /* auManufCommitted @ 0x15D09C plus the +2176 spill */
 static u32  prodU32[3600];          /* unk_159E9C plus the +1600 spill */
 static u16  manuf[1600];            /* 0x15E19C, StartNew does not clear it */
 static u16  researchCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];

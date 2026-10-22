@@ -1044,7 +1044,7 @@ static void World_ManufDecEngineersThunk(void)
  * under TEXTS[1182] "Единиц" + TEXTS[1183] "произвести:". It moves the aManufProductB entry
  * (0x15B79C, the units to produce): for the three hangar products only while the count stays under the
  * free hangar cells, otherwise while cargo size * count + the base's stock stays under the stores
- * capacity; DecUnits stops one above the engineers assigned to the same product. */
+ * capacity; DecUnits stops one above the units already committed for the same product. */
 static void World_ManufIncUnitsThunk(void)
 {
     PufoWorldState *pW = g_pActiveWorld;
@@ -1064,8 +1064,8 @@ static void World_ManufDecUnitsThunk(void)
         return;
     }
     pW->manufQty.pProductPanel = pW->pManufProductPanel;
-    (void)ManufScreen_DecUnits(&pW->manufQty); /* 0x6e330 needs the engineers column too, so it takes
-                                                * the qty env (auManufCol is the comparison at 0x6E3B0) */
+    (void)ManufScreen_DecUnits(&pW->manufQty); /* 0x6e330 compares against the committed-units column
+                                                * (LDRH at 0x6E3A4), so it takes the qty env */
 }
 
 /* ManufScreen_UpdateProgress @ 0x6df6c: unk_186B94, the allocate-all-engineers control ("ВСЕ") the frame
@@ -10429,7 +10429,10 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     memset(&pW->manufQty, 0, sizeof(pW->manufQty));
     pW->manufQty.pnProductRow     = &pW->nManufProductRow;                  /* 0x15EE3C */
     pW->manufQty.apManufCols      = pW->auManufCol;
-    pW->manufQty.apProductB       = pW->anProductReq;
+    pW->manufQty.apProductB       = pW->anProductReq;                       /* 0x15B79C */
+    pW->manufQty.apProductC       = pW->auProductU16;                       /* auManufCommitted @
+                                                                             * 0x15D09C: DecUnits'
+                                                                             * floor */
     pW->manufQty.puManufEntries   = &pW->nResearchEntries;                  /* 0x160C4C, shared count */
     pW->manufQty.abFacilityGrid   = pW->abFacilityGrid;
     pW->manufQty.pnSelectedBaseIdx = &pW->nSelectedBase;

@@ -22288,7 +22288,7 @@ Closes the naming question Part 114 recorded (`what aManufProductB means`). The 
 - `ManufScreen_DrawFrame @ 0x6f9a4` pairs each label with a value. 0x708C4..0x70918: TEXTS[1181] plus the `LDRH` at block+0x4304 -- `auManufCol @ 0x15E19C` -- drawn at (10,230), under the TEXTS[1180] caption at (10,216). 0x70994..0x709D0: TEXTS[1183] plus the `LDR` at block+0x1904 -- `aManufProductB @ 0x15B79C` -- drawn at (140,230), under TEXTS[1182] at (140,216). One dword column, one u16 column, one caption each.
 - The committed picture says it in the open: `tests/ref/econ_manuf_alloc.png` shows "Инженеров занято: 2" over the left Add/Remove pair and "Единиц произвести: 1" over the right pair, with the product line "432 инженер-часов для производства одной единицы" -- 432 engineer-hours per unit, which is what makes the u16 column a headcount and not a work amount.
 - The control placement closes the pairing. `g_aManufCtlDesc @ 0xAB9F8` holds the six slots: (205,18) "up", (205,38) "down", (10,251), (10,271), (140,251), (140,271). `ManufScreen_Init @ 0x710b0` installs the handlers in that slot order at 0x71184..0x711EC: PanelPrev, PanelNext, 0x6DDDC, 0x6E09C, 0x6E13C, 0x6E330. So the buttons of 0x6DDDC/0x6E09C sit under the x 10 column (engineers) and the buttons of 0x6E13C/0x6E330 under the x 140 column (units).
-- The gates agree with the labels. 0x6DDDC requires `Base_GetEngineerCount > 0` and a free workshop slot for `Base_CountActiveManuf + 1` (the busy engineers) before it raises auManufCol; 0x6E13C raises aManufProductB only while the free hangar cells allow it (products 119..121) or while `cargo size * count + stock + used` stays under the stores capacity -- both properties of a unit count; 0x6E330 stops one above `auManufCol + 1`.
+- The gates agree with the labels. 0x6DDDC requires `Base_GetEngineerCount > 0` and a free workshop slot for `Base_CountActiveManuf + 1` (the busy engineers) before it raises auManufCol; 0x6E13C raises aManufProductB only while the free hangar cells allow it (products 119..121) or while `cargo size * count + stock + used` stays under the stores capacity -- both properties of a unit count; 0x6E330 stops one above `auManufCommitted + 1` (the u16 column at 0x15D09C -- Part 115 wrote `auManufCol` here and Part 116 corrected it).
 
 ### What was wrong, and how wrong
 
@@ -22307,7 +22307,7 @@ In the port the same swap moved with them: `ManufEngineerEnv` -> `ManufUnitsEnv`
 
 ### IDB
 
-Comments rewritten and read back at 0x6DDDC, 0x6E09C, 0x6E13C, 0x6E330, 0x6DEC0, 0x6DF6C, `auManufCol` 0x15E19C, `aManufProductB` 0x15B79C, the gate byte 0x15EE50, `ManufScreen_Init` 0x710B0 and `g_aManufCtlDesc` 0xAB9F8. Two of them had been silently cut by the 1024-char comment cap -- the Init note ended mid-word ("...unk_18"); its step list now fits in 994 chars as the regular comment and the pairing evidence sits in the repeatable comment (503 chars), both verified by read-back. Hex-Rays was recompiled for the six functions so the pseudocode carries the new text. Four rows went into `docs/parity/renames.tsv`, and the `0x6DDE0` row in `bugs.tsv` (the dead gate byte) now names `ManufScreen_IncEngineers`.
+Comments rewritten and read back at 0x6DDDC, 0x6E09C, 0x6E13C, 0x6E330, 0x6DEC0, 0x6DF6C, `auManufCol` 0x15E19C, `aManufProductB` 0x15B79C, the gate byte 0x15EE50, `ManufScreen_Init` 0x710B0 and `g_aManufCtlDesc` 0xAB9F8. Two of them had been silently cut by the 1024-char comment cap -- the Init note ended mid-word ("...unk_18"); its step list now fits in 994 chars as the regular comment and the pairing evidence sits in the repeatable comment (503 chars), both verified by read-back. Hex-Rays was recompiled for the six functions so the pseudocode carries the new text. Four rows were said to go into `docs/parity/renames.tsv` -- they did not: that file is not in the Part 115 commit and held none of the four, and Part 116 wrote them. The `0x6DDE0` row in `bugs.tsv` (the dead gate byte) does name `ManufScreen_IncEngineers`.
 
 ### Evidence
 
@@ -22316,3 +22316,57 @@ Comments rewritten and read back at 0x6DDDC, 0x6E09C, 0x6E13C, 0x6E330, 0x6DEC0,
 ### Left recorded
 
 Two items Part 114 named stay open: array A of the product block (`unk_159E9C`, IDB `int[1600]`, port `u32 *` in four envs) needs its own signed sweep with a check of each unsigned expression, and 0x6E58C's low-byte read of a dword entry is modelled but ungated.
+
+## Part 116 - the units '-1' floors on the units already built, not on the engineers
+
+Part 115 named the four manufacturing buttons from the shipped captions and closed with the sentence "0x6E330 stops one above `auManufCol + 1`". That sentence is wrong, and the port had been built on it: `ManufScreen_DecUnits` read the engineers column where the ARM reads another one. Working out which array it is, and what it holds, is this Part.
+
+### The instruction Part 115 skipped
+
+`ManufScreen_DecUnits @ 0x6e330` builds two offsets from the product-block anchor and reads them with different widths:
+
+| address | instruction | what it reaches |
+|---|---|---|
+| 0x6E37C | `ORR R2,R2,#4`, completing the earlier `MOV R2,#0x1900` | block + 0x1904 = `aManufProductB @ 0x15B79C` |
+| 0x6E394 | `LDR R4,[R11,R2]` | `R4 = aManufProductB[product + 200*base]`, a dword |
+| 0x6E398 / 0x6E39C / 0x6E3A0 | `MOV R11,#0x3200`, `ADD R1,R0,R1,LSL#1` (stride 2), `ORR R11,R11,#4` | block + 0x3204 = `auManufCommitted @ 0x15D09C` |
+| 0x6E3A4 | `LDRH R1,[R1,R11]` | `R1 = auManufCommitted[product + 200*base]`, a 16-bit read |
+| 0x6E3A8 | `ADD R1,R1,#1` | plus one |
+| 0x6E3AC / 0x6E3B0 / 0x6E3B8 | `CMP R4,R1`, `SUBGT`, `STRGT` | stores `R4 - 1` only while `R4 > that + 1` |
+
+`auManufCol @ 0x15E19C` is block + 0x4304. Every site that builds 0x4304 with the same MOV/ORR idiom is elsewhere: 0x6DE88 (IncEngineers), 0x6E0FC (DecEngineers), 0x6DFA0 (UpdateProgress), 0x6E5B8 (Draw), 0x6EF98 (BuildPanels), 0x6F3CC (CommitProduction), 0x70904 (DrawFrame) and the save pair 0x3F58C / 0x4071C. None of them sits inside 0x6E330..0x6E3BC. The engineers column and this gate have nothing to do with each other.
+
+### Which array it is, and what it holds
+
+Census of `auManufCommitted` -- 11 direct xrefs to the name, plus three functions that reach it only through the offset idiom and have no xref to it at all (`DecUnits`, `CommitProduction`, `Base_DemolishFacility`). Not one of the sites is in the draw code:
+
+- read: 0x6E3A4 (`DecUnits`) and 0x6F5E8 (`CommitProduction`, `CMP` at 0x6F5EC, `BLE` at 0x6F5F0). Saved out at 0x3F540 with `nSize 0xC80` = 3200 bytes = 1600 u16 -- the store that fixes the array's size -- and back in at 0x40688 (`nSize 0x900`) and 0x406DC (`0xC80`); `LoadGame` copies it at 0x455D0, memsets it at 0x45624 and re-spreads it at 0x456DC/0x456E0.
+- written: `STRH` at 0x6F6C0 in `CommitProduction`, +1 per unit granted, truncated to 16 bits by `LSL#16`/`LSR#16` at 0x6F6B8; zeroed at 0x6F92C (`ClearProductSlot`), at 0x66B1C/0x66B24 (`Base_CreateNamedEntry` -- entries [i] and [i+2176], the `+0x1100` term at 0x66B18 -- when a base is founded) and at 0x94778 (`Game_StartNew`).
+- moved: `Base_DemolishFacility` 0x67088 `LDRH [R0,#0x3204]` -> 0x67090 `STRH [R0,#0x3074]` in the per-product loop -- the 0x190 = 400-byte step is the 200-u16 base stride, the column being compacted one base-slot down when a base is deleted. That is the same loop that carries the original's off-by-one-base bug at 0x67048, where the 0x4304 column is shifted one base later than every other array.
+
+The meaning comes from `CommitProduction @ 0x6f34c`: `nUnits = A[idx] / ObjectRec.uManufWorkPerUnit` is what the accumulated work has paid for, the produce branch runs only while `nUnits > C[idx]` (0x6F5F0), `C[idx]` is raised by one after each unit is granted (0x6F6C0), and the completion test at 0x6F7AC is `nUnits == B[idx]`. So column C counts the units this (base, product) has already produced, and `DecUnits` enforces "an order may not be cut below what has already been built", with a one-unit slack: `B > C + 1`.
+
+IDB: `unk_15D09C` renamed to `auManufCommitted`, `unsigned __int16[1600]`. The type was already there but the item sitting at the anchor was 1 byte; `make_data` replaced it with the 3200-byte array the type claims. Hex-Rays was recompiled at 0x6E330, 0x6F34C, 0x6F8CC and 0x66930 so the new name reaches the pseudocode.
+
+### The port fix
+
+- `ManufQtyEnv` gains `const u16 *apProductC` (auManufCommitted @ 0x15D09C), wired in `pufo_world.c` from `PufoWorldState.auProductU16`, the same array `ManufClearEnv`, `ManufCommitEnv` and the save path already use. `ManufScreen_DecUnits` now compares `apProductB[idx]` against `apProductC[idx] + 1`.
+- Five new checks in `TestManufQty`: "20 engineers, 0 committed: 2 orders drop to 1", "the engineers column is not touched", "the committed column is read here, not written", and the guard pair "a missing committed column skips the store but keeps the return" / "and the order is left alone". The three checks the block already had ("10 units with 3 committed drops to 9", "4 units is exactly committed + 1, so it stops there", "and a zero order never goes negative") keep their places with the floor named correctly.
+- Teeth: with the floor put back on `apManufCols`, the committed check fails -- "20 engineers, 0 committed: 2 orders drop to 1: got 2, want 1" -- while every older check stays green. That is the point: Part 115's own mutation test passed for the wrong reason, because the fixture put 3 engineers and 3 committed units in the same place, so the two columns agreed.
+
+### Part 115's record, corrected
+
+Two things Part 115 wrote were not true, and both are fixed here rather than left in the parity record.
+
+- The claim quoted at the top of this section. The Part 115 paragraph in this file now reads `auManufCommitted`, with the correction marked, and the IDB comment at 0x6E330 says the same with the instruction trail.
+- "Four rows went into `docs/parity/renames.tsv`" -- they never did. That file is not in the Part 115 commit (`git show --stat 58618de` lists eleven files, `renames.tsv` is not one of them) and it held no row for any of the four names. The four rows are written now, together with this Part's `unk_15D09C` -> `auManufCommitted`.
+- The wordings Part 115 said it had cleaned still described `auManufCol` as work rather than as people: `pufo_baseui.h` "the work units allocated to this product", three `apManufCols` field comments saying "allocated work", the four-column table calling it "the quantity column", `pufo_geoscape.h` "total manufacturing quantity held by one base", `pufo_geoscape.c`'s `Base_CountActiveManuf` notes, and the test labels "slot 5 is the engineers +" / "slot 6 is the engineers -" on the two x 140 unit buttons. All of them now say engineers, and those two labels say units.
+- Five comments cited the IDB name `unk_15D09C` (`pufo_world.h`, `pufo_baseui.h` twice, `pufo_geoiinit.h`, `test_startnew.c`); they cite `auManufCommitted @ 0x15D09C`.
+
+### IDB
+
+Comments rewritten and read back at `auManufCommitted` 0x15D09C -- 735 chars regular (the reads, the writes, the meaning) plus 554 in the repeatable slot (the save round-trip and the base-deletion compaction) -- and at `ManufScreen_DecUnits` 0x6E330: 865 chars, the MOV/ORR/LDRH trail and the plain statement that `auManufCol @ 0x4304` is never read here. All three under the 1024-char cap, all three verified by read-back. `idb_save` written.
+
+### Evidence
+
+63/63 tests in Release and in Debug, `tools/check.sh` green on all six gates, 20,594 checks (+5, all in `TestManufQty`), coverage 972/1103 (88.1%) and 596888/598792 bytes (99.7%) unchanged -- no original function is newly cited, one column of an already-cited function is read correctly -- 93 frames and 9 e2e pictures unchanged: the manufacturing flow in `test_geoscapeframe` presses the units '+1' (control 4) and the allocate-all, never the units '-1' (control 5), so no drawn picture depends on this gate.
