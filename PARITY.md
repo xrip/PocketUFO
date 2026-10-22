@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 63 |
-| Test checks run | 20555 |
+| Test checks run | 20579 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -356,7 +356,7 @@ is the module that answers to it.
 | `0x4b2f4` | `TactState_EnqueueThrow` | 300 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+2) |
-| `0x33148` | `Tact_RemoveUnitFromSideLists` | 284 | `src/pufo/game/pufo_roster.h` |
+| `0x33148` | `Tact_RemoveUnitFromSideLists` | 284 | `src/pufo/game/pufo_roster.h`, `src/pufo/game/pufo_unit.h` |
 | `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x17148` | `Tact_OpenRightHandMenu` | 280 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x48028` | `Unit_bScanOpportunityFire` | 272 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
@@ -1262,7 +1262,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | Suite | Result | Checks |
 |---|---|---|
 | `test_audio` | PASS | 72 |
-| `test_ballist` | PASS | 105 |
+| `test_ballist` | PASS | 106 |
 | `test_baseui` | PASS | 4173 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 62 |
@@ -1270,7 +1270,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_closeui` | PASS | 302 |
 | `test_cmdpads` | PASS | 42 |
 | `test_combat` | PASS | 146 |
-| `test_constants` | PASS | 358 |
+| `test_constants` | PASS | 360 |
 | `test_control` | PASS | 253 |
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 62 |
@@ -1280,7 +1280,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3221 |
-| `test_geoscapeframe` | PASS | 2147 |
+| `test_geoscapeframe` | PASS | 2149 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
 | `test_invdrag` | PASS | 370 |
@@ -1288,7 +1288,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_los` | PASS | 36 |
 | `test_mainmenu` | PASS | 25 |
 | `test_mapcell` | PASS | 112 |
-| `test_mapctx` | PASS | 85 |
+| `test_mapctx` | PASS | 100 |
 | `test_menu` | PASS | 189 |
 | `test_menubtn` | PASS | 184 |
 | `test_modal` | PASS | 48 |
@@ -1322,7 +1322,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_turn` | PASS | 176 |
 | `test_uibank` | PASS | 394 |
 | `test_unit` | PASS | 298 |
-| `test_vis` | PASS | 77 |
+| `test_vis` | PASS | 81 |
 | `test_vistry` | PASS | 42 |
 
 **63 / 63 suites passing.**
@@ -1344,7 +1344,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 885 citations.
+parity report. Total: 890 citations.
 
 ### Offsets below the image base (46)
 
@@ -1353,7 +1353,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x000c`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b8c`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (839)
+### At or above the image base (844)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1415,11 +1415,16 @@ against the IDB when the final report is assembled.
 - `0x118860`
 - `0x118864`
 - `0x118868`
+- `0x1278a0`
+- `0x1278a8`
+- `0x1278f0`
+- `0x127940`
 - `0x1279f8`
 - `0x1279fc`
 - `0x127a00`
 - `0x127a14`
 - `0x127a25`
+- `0x127a28`
 - `0x128a2c`
 - `0x128a40`
 - `0x128a44`
@@ -1903,7 +1908,7 @@ against the IDB when the final report is assembled.
 - `0x2f408`
 - `0x2f6cc`
 - `0x2fc74`
-- `0x319f4`
+- `0x319fc`
 - `0x32c68`
 - `0x33618`
 - `0x3436c`

@@ -1038,8 +1038,9 @@ i32 Base_CanPlaceHangarAt(const HangarPlaceEnv *pEnv, i32 nX, i32 nY);
  *
  * Evidence: BaseFac_FormatCostLabel @ 0x6a404. Two callers: BaseFacScreen_DrawPlacementOverlay @
  * 0x59AE4, and Geoscape_OnMapClick @ 0x8B550, which copies the result into the aBaseFacilities
- * record's label field (0x186C5A, that is record + 26) after storing region + 0x80 at record + 0
- * (the byte wraps, so the stored bType is the region index 0..9).
+ * record's label field (0x186C5A, that is record + 26) after storing region - 0x80 at record + 0
+ * (`SUB R0,R1,#0x80` at 0x8B544, `STRB` at 0x8B548; Hex-Rays renders the pair as `+ 0x80`, which is
+ * the same byte for every value), so the stored bType is the region index 0..9.
  *
  * Its second argument is the PENDING REGION id 0x80..0x89 (byte_159DF4), not a facility kind --
  * both callers pass byte_159DF4 straight through. It builds `TEXTS[905 + region]` + "-" +

@@ -307,63 +307,71 @@ int main(void)
     printf("throw landing loop\n");
     {
         MapGeom wide = {4, 4};   /* 40 x 40 cells, 640 x 640 voxels */
+        MapGeom edge = {2, 2};   /* the volume limit here is 160 * 2 = 320 voxels */
         ThrowBudget b = {50, 50, 7, 60};   /* 3000 / 350 = 8 -> budget 4.0 */
         ThrowBudget bExact = {50, 50, 2, 60};
         ThrowLanding land;
         i32 nRet;
 
-        /* A 160-voxel flat throw. The flag is clear on entry, so the loop runs
-         * exactly once: dTravel takes one 0.5 bump and yaw is 0. */
-        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
-                                        NULL, NULL, &bExact, 4, false,
+        /* A 160-voxel flat throw on a map that ends 160 voxels further on. Nothing here blocks
+         * the walk and the walk takes no start value from the caller: Tact_SimulateThrowArc
+         * raises the flag at its own tail (0x31A0C) and the loop reads that byte at 0x31DC8, so
+         * the sample steps on until 0x322B8 finds it outside the volume and 0x322C4 clears it.
+         * With yaw 0 that is x = 160 * 2 = 320, i.e. after exactly 160.0 of travel. */
+        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &edge, CellLookup, NULL,
+                                        NULL, NULL, &bExact, 2,
                                         160, 160, 12, 320, 160, 12);
-        CheckNear("one bump of 0.5", land.dTravel, 0.5);
-        CheckNear("x follows yaw 0", land.dMtX, 160.5);
+        CheckNear("the walk steps on to the map edge", land.dTravel, 160.0);
+        CheckNear("x follows yaw 0 to the limit", land.dMtX, 320.0);
         CheckNear("y unchanged", land.dMtY, 160.0);
-        Check("not landed (0.5 < 160 - 8)", !land.bLanded);
-        Check("flag stays clear", !land.bHitStop);
+        Check("landed: 160 >= 160 - 8", land.bLanded);
+        Check("the loop ends with the byte cleared (0x323A0)", !land.bHitStop);
         Check("not rejected by range", !land.bRejected);
-        Check("returns the landed flag", nRet == 0);
+        Check("in budget at the end (160 * 0.0625 = 10 <= 15), so the landed flag", nRet == 1);
         CheckNear("arc bound is the horizontal run", arc.dBound, 160.0);
         CheckNear("arc yaw is atan2(0, 160)", arc.dYaw, 0.0);
 
-        /* Same throw with the flag set: the loop keeps stepping until the sample
-         * reaches 160 * nMapDimX = 640. */
+        /* The same throw on a map four times as wide, with the 4.0 budget: the walk is still
+         * going when the tail test (0x323E0/0x32404) finds the distance out of budget, which is
+         * the other return-0 path. */
         nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
-                                        NULL, NULL, &b, 4, true,
+                                        NULL, NULL, &b, 4,
                                         160, 160, 12, 320, 160, 12);
-        Check("loop ran on the caller's flag", land.dTravel > 100.0);
+        Check("the walk ran on the flag the arc raised, not a caller's", land.dTravel > 100.0);
         Check("landed once travel passed bound - 8", land.bLanded);
         Check("loop ends on the map volume limit", land.dMtX >= 160.0 * 4.0);
         Check("out of budget at the end, so returns 0", nRet == 0);
 
-        /* |dz| larger than the bound selects the other bump: bound/|dz| * 0.01.
-         * The range test costs 16 * 0.0625 * (64/8) = 8.0, so this uses the
-         * 15.0 budget rather than the 4.0 one. */
+        /* |dz| larger than the bound selects the other bump: bound/|dz| * 0.01 = 0.0025, taken
+         * thousands of times. The steep arc leaves the volume through the Z limit (47.0) well
+         * before its own bound, so the walk is long, the landing flag is set on the way, and the
+         * distance is inside the budget. The range test costs 16 * 0.0625 * (64/8) = 8.0, so this
+         * uses the 15.0 budget rather than the 4.0 one. */
         nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
-                                        NULL, NULL, &bExact, 4, false,
+                                        NULL, NULL, &bExact, 4,
                                         160, 160, 0, 176, 160, 64);
-        CheckNear("bound bump is 16/64 * 0.01", land.dTravel, 0.0025);
         Check("steep throw is not rejected", !land.bRejected);
+        Check("the scaled bump walks far past one bump", land.dTravel > 1.0 && land.dTravel < 40.0);
+        Check("and the throw lands inside the budget", land.bLanded && nRet == 1);
 
         /* A short throw is landed immediately, so the tail test decides the
          * result: 0.5 * 0.0625 is well inside the budget. */
         nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &geom, CellLookup, NULL,
-                                        NULL, NULL, &b, 1, true,
+                                        NULL, NULL, &b, 1,
                                         160, 160, 12, 168, 160, 12);
         Check("short throw lands", land.bLanded);
         Check("returns 1 when landed and in budget", nRet == 1);
 
         /* Range rejection: 1600 voxels of run times a height factor of 10. */
         nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
-                                        NULL, NULL, &b, 4, false,
+                                        NULL, NULL, &b, 4,
                                         160, 160, 0, 1760, 160, 80);
         Check("too far is rejected", land.bRejected && nRet == 0);
 
         /* The height factor is an integer division, so a climb under 8 voxels
          * earns nothing and the throw is never rejected on height. */
         nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
-                                        NULL, NULL, &b, 4, false,
+                                        NULL, NULL, &b, 4,
                                         160, 160, 0, 1760, 160, 7);
         Check("a 7-voxel climb adds no range cost", !land.bRejected);
     }

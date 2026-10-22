@@ -1975,6 +1975,19 @@ int main(void)
     g_world.nav.apNav[2]->pfnClick(); /* SoldierScreen_Toggle @ 0x64af0 */
     CheckEqI32(g_world.bSolScreenOpen, (nOpen0 != 0) ? 0 : 1, "nav slot 2 flips 0x159DE0 in either direction");
     CheckEqI32(g_world.screen.nGeoscapeScreen, 4, "and writes the id 4 either way (0x651C4)");
+    /* The toggle built the shell's PERSISTENT soldier env (PufoWorldState.solEnv, handed to the close
+     * env as pSoldierScreen at pufo_world.c:8828). Every field in it has to name a cell that outlives
+     * World_SoldierToggleThunk -- a count copied into a local there is a dead stack cell by the time
+     * the close chain reads it. */
+    Check(g_world.solEnv.pbOpen == &g_world.bSolScreenOpen
+              && g_world.solEnv.apSoldiers == g_world.apSoldiers
+              && g_world.solEnv.pnSoldierCount == &g_world.nSoldierCount
+              && g_world.solEnv.pnSelectedBaseIdx == &g_world.nSelectedBase
+              && g_world.solEnv.ppPanelNames == &g_world.pSolPanelNames,
+          "the soldier env left behind points at the shell's own live cells (0x159DE0, Map+0x1198, "
+          "0x115350, 0x159D81, 0x15975C), not at copies taken in the thunk");
+    CheckEqI32((i32)*g_world.solEnv.pnSoldierCount, g_world.nSoldierCount,
+               "and reading the count through it answers the live roster");
     g_world.bSolScreenOpen = 1;
     ClearSurface();
     (void)DrawFrame();
@@ -12590,7 +12603,10 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         while (g_world.msgLines.nLineCount > 0) {
             (void)UiLineList_Remove(&g_world.msgLines, 0);
         }
-        (void)remove("sav0.sav"); /* slot 0's file starts absent, so "exists" afterwards is the press's doing */
+        /* Slot 4, not slot 0: test_save.c writes sav0.sav in this same working directory and ctest
+         * runs the suites side by side, which is the collision PLAN records. Slot 4 belongs to nobody
+         * else; the press arm is the same arm for any row. */
+        (void)remove("sav4.sav"); /* the file starts absent, so "exists" afterwards is the press's doing */
 
         g_world.ui.apRootCtl[8]->pfnClick(); /* 0x186518, installed at 0x86590 (section E's route) */
         CheckEqI32(g_world.screen.nGeoscapeScreen, 18, "the menu is up (0x84ECC)");
@@ -12608,8 +12624,8 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         (void)DrawFrame();
         DumpFrame("options_save_tab");
 
-        PressCtl(g_world.options.ctl.apList[0]); /* the row itself: SaveGame over szAppDir + "sav0.sav" */
-        Check(DatFile_Exists("sav0.sav"),
+        PressCtl(g_world.options.ctl.apList[4]); /* the row itself: SaveGame over szAppDir + "sav4.sav" */
+        Check(DatFile_Exists("sav4.sav"),
               "0x6AF98's SaveGame ran through the shell driver (World_SaveSlot @ 0x44988 over the live world)");
         g_world.nFunds += 1000; /* falsify the live funds so the load's answer cannot be the value it never changed */
         CheckEqI32((i32)g_world.abOptionsScratch[0], 0, "0x6AFA4 clears the tab byte");
@@ -12633,7 +12649,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         (void)DrawFrame();
         DumpFrame("options_load_tab");
 
-        PressCtl(g_world.options.ctl.apList[0]); /* the row itself: LoadGame over the file just written */
+        PressCtl(g_world.options.ctl.apList[4]); /* the row itself: LoadGame over the sav4.sav just written */
         CheckEqI32(g_world.nFunds, nFunds0, "the loaded world carries the saved funds back");
         CheckEqI32((i32)g_world.nBaseCount, nBase0, "  ... the bases ...");
         CheckEqI32(g_world.nSoldierCount, nSold0, "  ... the soldiers ...");
@@ -12677,7 +12693,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                g_nStartupUiThunk - nStartup0, g_world.screen.nGeoscapeScreen,
                (i32)g_world.abOptionsScratch[4], (i32)g_world.bGeoscapeUi,
                (i32)PtrArray_GetCount(&g_world.strategList));
-        (void)remove("sav0.sav");
+        (void)remove("sav4.sav");
     }
 
     /* Part 103: the quit-Yes arm (App_QuitFromTact @ 0x18e18, the Tact_Shutdown(1) store at 0x18E20) now
@@ -12699,7 +12715,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         CheckEqI32(g_world.saveStrateg.nStrategCount, 0,
                    "InitUI zeroes the +0x38 cell (block+0x38 in Geoscape_InitUI) and the port's live list ops "
                    "keep the count in the PtrArray alone -- the recorded Part 62 deviation, so the cell is 0 here");
-        (void)World_SaveSlot(&g_world, "", 0, &hooks); /* 0x2728's restamp: the save boundary stamps the mirror */
+        (void)World_SaveSlot(&g_world, "", 4, &hooks); /* 0x2728's restamp: the save boundary stamps the mirror */
         CheckEqI32(g_world.saveStrateg.nStrategCount, nItems0,
                    "World_SaveSlot restamps 0x186530 from the list before Save_WriteStrateg (0x3FE28's bound)");
 
@@ -12711,7 +12727,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         CheckEqI32((i32)g_world.bTactFlag, 0, "the Map+0x00 tact-flag clear at 0x3D588 (the shell's tact-flag cell, named Map_bTactFlag in the IDB)");
         printf("  the quit-Yes arm: %d live items emptied, mirror cell stays %d, tact flag %d\n",
                nItems0, g_world.saveStrateg.nStrategCount, (i32)g_world.bTactFlag);
-        (void)remove("sav0.sav");
+        (void)remove("sav4.sav");
     }
 
     /* ---- Part 103.3: the "map" chunk's dim bytes drive the shell grid, and the capacity guard stops

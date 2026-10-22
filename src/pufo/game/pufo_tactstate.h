@@ -412,8 +412,15 @@ typedef struct MoveActionCtx {
      * MoveThrow writes it at the point of use. */
     ThrowBudget *pThrowBudget;
     const InvStatHooks *pInvHooks;    /* for Unit_RecalcInventoryStat */
-    bool         bThrowHitStop;   /* Map.bTrajHitStop @ 0x1406D as the throw
-                                   * landing call sees it */
+    /* The two Map cells the arc tail writes on EVERY call: the item store `STR R2,[R4,R3]`
+     * with R3 = 0x14070 at 0x319FC, and `MOV R2,#1; STRB R2,[R4,#0x1406D]` at 0x31A0C. The
+     * landing loop clears the byte at 0x322C4 (sample outside the volume) and 0x32390
+     * (occupied voxel), so the port publishes what each call leaves in it. Only
+     * Tact_ProcessFallAction's throw arm (0x53CFC/0x53D04) clears it afterwards, and the
+     * input handlers refuse while it stands (Input_OnLeft 0x116F4 and its nine siblings). */
+    TactItem      **ppArrowItem;    /* 0x14070 Map_pArrowThrownItem @ 0x127A28 */
+    u8            *pbThrowPending;  /* 0x1406D Map_bTrajHitStop @ 0x127A25, the same byte
+                                     * FireCtx.pbThrowPending and FallCtx.pbThrowPending point at */
     Soldier           *pTraceExcludeSel;   /* the two units Map_TraceVoxelOccupancy
                                             * @ 0x3242C skips: Map.pSelUnit @ 0x15334
                                             * and Map.pThrowTargetUnit @ 0x150F0. The

@@ -191,19 +191,19 @@ static void World_SoldierEquipThunk(void)
 static void World_SoldierToggleThunk(void)
 {
     PufoWorldState *pW = g_pActiveWorld;
-    u16 nCount;
 
     if (pW == NULL) {
         return;
     }
 
-    nCount = (u16)pW->nSoldierCount; /* unk_115350 is the u16 count */
-
+    /* solEnv is the shell's own persistent env (World_WireControls hands &pW->solEnv to the close
+     * env at 0x8828), so every field in it must name a cell that outlives this function. The count
+     * is the shell's live nSoldierCount (unk_115350), not a copy of it taken here. */
     memset(&pW->solEnv, 0, sizeof(pW->solEnv));
     pW->solEnv.pbOpen = &pW->bSolScreenOpen;
     pW->solEnv.pnScreenId = &pW->screen.nGeoscapeScreen;
     pW->solEnv.apSoldiers = pW->apSoldiers;
-    pW->solEnv.pnSoldierCount = &nCount;
+    pW->solEnv.pnSoldierCount = &pW->nSoldierCount;
     pW->solEnv.pnSelectedBaseIdx = &pW->nSelectedBase;
     pW->solEnv.ppPanelEquip = &pW->pSolPanelEquip;
     pW->solEnv.ppPanelStores = &pW->pSolPanelStores;
@@ -4568,7 +4568,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     arrow.anAimRow        = pMap->aim.anAimRow;         /* 0x13FD8 */
     arrow.nRowId          = pMap->aim.nRowId;           /* 0x14088 */
     arrow.bTrajHitStop    = pMap->bTrajHitStop;         /* 0x1406D */
-    arrow.pThrownItem     = pMap->pArrowThrownItem;     /* 0x14070: no writer yet (recorded gap) */
+    arrow.pThrownItem     = pMap->pArrowThrownItem;     /* 0x14070: MoveThrow writes it (0x319FC), pSelWeapon */
 
     guide.bGameTickHold       = pW->bMapTickHold;        /* 0x5A */
     guide.bActionReady        = pW->sTactInput.bActionReady;  /* anPhaseSave0[94] @ 0x150D6 */
@@ -5471,6 +5471,8 @@ static void World_TactTickActiveUnit(void *pUser)
     memset(&kill, 0, sizeof(kill));
     kill.pCombat          = &combat;
     kill.pRosters         = &pW->sTactRosters;
+    kill.pnXcomCount      = &pMap->nXcomCount;   /* 0x1511F: the byte the removal decrements (0x3325C) */
+    kill.pnEnemyCount     = &pMap->nEnemyCount;  /* 0x15124 */
     kill.apTactItems      = pW->apTactItems;
     kill.pnTactItem       = &pW->nTactItemCount;
     kill.apObjects        = pW->pAssets->apObjects;

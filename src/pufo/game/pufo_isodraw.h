@@ -420,7 +420,8 @@ typedef struct IsoArrowGate {
     const i32   *anAimRow;       /* Map+0x13FD8, 11 entries: the copied aim row */
     i32          nRowId;         /* Map+0x14088: selects the glyph-offset group, 10 * nRowId + n */
     u8           bTrajHitStop;   /* Map+0x1406D */
-    TactItem    *pThrownItem;    /* Map+0x14070, written by Tact_SimulateThrowArc @ 0x319f4 */
+    TactItem    *pThrownItem;    /* Map+0x14070, stored by every Tact_SimulateThrowArc call @ 0x319FC with
+                                  * that call's own item; the throw's last call stores Map.pSelWeapon */
 } IsoArrowGate;
 
 /* MapView_DrawUnitFacingArrow @ 0x1b7bc.
@@ -431,12 +432,14 @@ typedef struct IsoArrowGate {
  *   1. bFireAnimActive: the muzzle smoke, nSmokeBase + (nPhaseCounter % 4) + 56, at the unit's own
  *      facing offset (nDrawX + nDrawOffX, nDrawY + nObjParam + nDrawOffY). Needs pUnit.
  *   2. bFireStatus1: walk the ten-entry roster in pIso->nRosterIndex. An entry is drawn when its
- *      floored voxel coordinates are this cell: floor(X/16) == nX, floor(Y/16) == nY, (int)Z/12 == nZ,
+ *      truncated voxel coordinates are this cell: trunc(X/16) == nX, trunc(Y/16) == nY, (int)Z/12 == nZ,
  *      and the aim-row dword is > 0. The glyph is LOWORD(anAimRow[n]) + nBulletsBase - 1.
  *   3. bTrajHitStop: the thrown item's own floor-object glyph, pThrownItem->pObj->aItemQty[50]
  *      + nFloorobBase - 1, at the end of entry 0 of the roster.
  *
- * X and Y are floored (ARM MOVS / ADDMI #0xF / ASR #4) while Z uses C-style truncating division,
+ * X and Y go through the original's truncating idiom (MOVS / ADDMI #0xF / ASR #4, which the port's
+ * Ball_TruncDiv16 reproduces: (v + 15) >> 4 == v / 16 for v < 0) while Z is C's own truncating
+ * division,
  * exactly as in the arc code. The three height operands are the remainders, stored as doubles at
  * 0x78/0x80/0x88, and the projection is the same iso rotation MapView_DrawUnitHeightGlyph uses -
  * but with its own constants: the roster branch ends at +40.0 - 16.0 - 2.0*C, the throw branch

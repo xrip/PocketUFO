@@ -1602,18 +1602,36 @@ void UnitList_ForEachRefresh(UnitRosters *pRosters, VisCtx *pCtx)
     }
 }
 
-/* SideLists is the same two rosters UnitRosters already carries, seen through the
- * type Tact_RemoveUnitFromSideLists works on. Built locally so there is one source
- * of truth for the rosters. */
-static SideLists Kill_SideLists(const UnitRosters *pR)
+/* SideLists is the same two rosters UnitRosters already carries, seen through the type
+ * Tact_RemoveUnitFromSideLists works on. The counts come from the byte cells when the ctx
+ * carries them, because that is what the original's helper reads (`LDRB nXcomUnitCount` at
+ * 0x33158, `LDRB nEnemyUnitCount` at 0x33198); the roster view is only a copy of them. */
+static SideLists Kill_SideLists(const KillCtx *pCtx)
 {
+    const UnitRosters *pR = pCtx->pRosters;
     SideLists lists;
 
     lists.apXcom  = pR->apXcom;
-    lists.nXcom   = pR->nXcom;
+    lists.nXcom   = (pCtx->pnXcomCount != NULL) ? (i32)*pCtx->pnXcomCount : pR->nXcom;
     lists.apEnemy = pR->apEnemy;
-    lists.nEnemy  = pR->nEnemy;
+    lists.nEnemy  = (pCtx->pnEnemyCount != NULL) ? (i32)*pCtx->pnEnemyCount : pR->nEnemy;
     return lists;
+}
+
+/* 0x3325C: the removal's own `--*p_nXcomUnitCount`. SideLists holds the counts by value, so the
+ * removal is only real once it is written back. Without the write-back the sweep that follows runs
+ * over the OLD count: the compaction left the last survivor's pointer duplicated in the vacated
+ * slot, so that unit takes the shock twice (and the byte cells keep counting a unit that is no
+ * longer in either array). Same shape as Fall_SyncCounts (pufo_tactstate.c) and
+ * Turn_SyncSideCounts (pufo_turn.c), which the fall and control paths already do. */
+static void Kill_SyncCounts(const KillCtx *pCtx, const SideLists *pLists)
+{
+    if (pCtx->pRosters != NULL) {
+        pCtx->pRosters->nXcom  = pLists->nXcom;
+        pCtx->pRosters->nEnemy = pLists->nEnemy;
+    }
+    if (pCtx->pnXcomCount  != NULL) { *pCtx->pnXcomCount  = (u8)pLists->nXcom; }
+    if (pCtx->pnEnemyCount != NULL) { *pCtx->pnEnemyCount = (u8)pLists->nEnemy; }
 }
 
 /* Copy a NUL-terminated string into a fixed field, truncating rather than
@@ -1786,9 +1804,14 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
     if (pUnit->nUnitType == 22) {
         /* The chryssalid transform. This path does not kill the unit: it rewrites
          * it as unit type 14 and returns. */
-        SideLists lists = Kill_SideLists(pCtx->pRosters);
+        /* 0x4e50c: the transform arm removes the unit from the side lists too (it is re-placed
+         * below but it is no longer in either roster), and 0x3325C decrements the count it
+         * searched. */
+        SideLists lists = Kill_SideLists(pCtx);
 
-        SideLists_RemoveUnit(&lists, pUnit);
+        if (SideLists_RemoveUnit(&lists, pUnit)) {
+            Kill_SyncCounts(pCtx, &lists);
+        }
         pUnit->bStatus    = 1;
         pUnit->nUnitType  = 14;
 
@@ -1824,8 +1847,14 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
      * and masks the other animation bits off. */
     Unit_UpdateAnimPose(pUnit, NULL, NULL);
     {
-        SideLists lists = Kill_SideLists(pCtx->pRosters);
-        SideLists_RemoveUnit(&lists, pUnit);
+        /* 0x4e66c/0x4e674: the death arm runs the same removal, and the morale sweep that follows
+         * re-reads the two byte cells the removal just decremented (LDRB nEnemyUnitCount at 0x4e6a4,
+         * nXcomUnitCount at 0x4e700) -- so the dead unit is out of its own shock. */
+        SideLists lists = Kill_SideLists(pCtx);
+
+        if (SideLists_RemoveUnit(&lists, pUnit)) {
+            Kill_SyncCounts(pCtx, &lists);
+        }
     }
 
     /* Morale shock, and its sign depends on whether the dead unit was human-sized.

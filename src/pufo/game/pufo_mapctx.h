@@ -44,8 +44,14 @@
  * apMultiTargets[8] @ 0x08, so the array runs from 0x04 to 0x24. */
 #define PUFO_MAP_SHOT_MAX 9
 
-/* The ten multi-target world positions, Map.adMtX/Y/Z. */
-#define PUFO_MAP_MULTI_TARGET_MAX PUFO_AIM_SAMPLE_COUNT
+/* The ten shot-sample world positions, Map.adMtX/Y/Z. The IDB lays the three blocks 80 bytes
+ * apart (Map_adMtX @ 0x1278A0, Map_adMtY @ 0x1278F0, Map_adMtZ @ 0x127940), which is ten doubles
+ * each -- the same ten the ballistician fills, PUFO_AIM_SAMPLE_COUNT. The second slot of every
+ * block has its own name in the IDB (Map_dThrowX @ 0x1278A8, Map_dThrowY, Map_dThrowLayer), which
+ * is the throw position World_InitFallRecord points at. The multi-target CELL list is a different
+ * thing with its own bound, PUFO_MULTI_TARGET_MAX 8 in pufo_input.h; the two constants share
+ * nothing but a former name. */
+#define PUFO_MAP_MT_SAMPLE_COUNT PUFO_AIM_SAMPLE_COUNT
 
 typedef struct GameMap {
     /* --- geometry: nMapLayers @ 0x15114, nMapDimX @ 0x1511B, nMapDimY @ 0x1511C --- */
@@ -100,9 +106,9 @@ typedef struct GameMap {
     /* --- shot plumbing --- */
     AimState        aim;      /* 0x13FD8..0x14088 */
     ScatterOffset   scatter;  /* 0x15058 / 0x1505C / 0x15060 */
-    double          adMtX[PUFO_MAP_MULTI_TARGET_MAX]; /* 0x13EE8 */
-    double          adMtY[PUFO_MAP_MULTI_TARGET_MAX]; /* 0x13F38 */
-    double          adMtZ[PUFO_MAP_MULTI_TARGET_MAX]; /* 0x13F88 */
+    double          adMtX[PUFO_MAP_MT_SAMPLE_COUNT]; /* 0x13EE8 Map_adMtX; [1] = Map_dThrowX */
+    double          adMtY[PUFO_MAP_MT_SAMPLE_COUNT]; /* 0x13F38 Map_adMtY; [1] = Map_dThrowY */
+    double          adMtZ[PUFO_MAP_MT_SAMPLE_COUNT]; /* 0x13F88 Map_adMtZ; [1] = Map_dThrowLayer */
     /* The two units Map_TraceVoxelOccupancy @ 0x3242c skips are pSelUnit @ 0x15334
      * and pThrowTarget @ 0x150F0 (the IDB's pThrowTargetUnit) — both already modelled
      * above, so there is no separate exclusion pair here. An earlier version of this
@@ -111,14 +117,18 @@ typedef struct GameMap {
     u8              bFireHitResult;    /* 0x1406C Map_bFireHitResult: cleared at 0x2FC54 by every
                                         * Tact_TraceProjectileArc call, set at 0x3010C when the walked
                                         * sample leaves the map (the port's ShotTrace.bLeftMap) */
-    u8              bTrajHitStop;      /* 0x1406D Map.bTrajHitStop, the byte the port
-                                        * calls ThrowPending in the action contexts */
-    TactItem       *pArrowThrownItem;  /* 0x14070 Map_pArrowThrownItem: the thrown item Tact_SimulateThrowArc
-                                        * stores at 0x319FC, which MapView_DrawUnitFacingArrow dereferences
-                                        * (unguarded, like the original) whenever bTrajHitStop is set. The
-                                        * stored value is the arc call's own argument: pSelWeapon at 0x50960,
-                                        * entry->pWeapon inside the landing loop's arc call. No ported writer
-                                        * exists yet -- recorded gap; the shell holds it NULL. */
+    u8              bTrajHitStop;      /* 0x1406D Map.bTrajHitStop, the in-flight flag. Three writers only:
+                                        * raised to 1 by every Tact_SimulateThrowArc call (0x31A0C), cleared by
+                                        * the landing walk (0x322C4 volume, 0x32390 occupied voxel), cleared by
+                                        * Tact_ProcessFallAction's throw arm (0x53D04). The port names it
+                                        * ThrowPending in the three action contexts, and the input handlers read
+                                        * it as a refusal gate (0x116F4 and nine siblings). */
+    TactItem       *pArrowThrownItem;  /* 0x14070 Map_pArrowThrownItem: the thrown item every arc call stores
+                                        * at 0x319FC with its own argument -- the landing call's item first, then
+                                        * Tact_ProcessMoveAction's own call at 0x50960 with Map.pSelWeapon, so
+                                        * pSelWeapon is what survives the throw. MapView_DrawUnitFacingArrow
+                                        * dereferences it (unguarded, like the original) whenever bTrajHitStop
+                                        * stands. MoveThrow writes both cells through MoveActionCtx. */
     ThrowArc        throwArc;
     ThrowLanding    throwLanding;
     ThrowBudget     throwBudget;     /* not an original slot: 0x31A44..0x31A78 composes the budget inline;

@@ -5581,7 +5581,7 @@ static void TestSoldierScreenToggle(void)
     static PadImage *pPad;
     static UiControl closeCtl;
     static u8 bOpen;
-    static u16 nSolCount;
+    static i32 nSolCount;   /* SoldierScreenEnv.pnSoldierCount takes the shell's i32 cell */
     static i32 nScreen;
     static i8 nSelBase;
     SoldierScreenEnv env;

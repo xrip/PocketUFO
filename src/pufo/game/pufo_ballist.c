@@ -29,7 +29,7 @@ const u8 g_atAimRowTable[PUFO_AIM_ROW_TABLE_SIZE] = {
  * division, the same as C's /, not floor: for v < 0, (v + 15) >> 4 equals v / 16. z uses _rt_sdiv,
  * which truncates too. MapView_DrawUnitFacingArrow @ 0x1b7bc divides the roster the same way, so
  * this one is shared. See docs/parity/bugs.tsv at 0x1B8EC for the naming finding. */
-i32 Ball_FloorDiv16(i32 nV)
+i32 Ball_TruncDiv16(i32 nV)
 {
     return (nV >= 0) ? (nV >> 4) : ((nV + 15) >> 4);
 }
@@ -73,8 +73,8 @@ static void Ball_StampOrigin(MapCellLookup pfnLookup, void *pUser,
                              const MapGeom *pGeom, bool bCheckBounds,
                              i32 nX0, i32 nY0, i32 nZ0)
 {
-    i32 nCellX = Ball_FloorDiv16(nX0);
-    i32 nCellY = Ball_FloorDiv16(nY0);
+    i32 nCellX = Ball_TruncDiv16(nX0);
+    i32 nCellY = Ball_TruncDiv16(nY0);
     i32 nLayer = Ball_Trunc(nZ0, PUFO_VOX_PER_CELL_Z);
     MapCell *pCell;
 
@@ -436,7 +436,6 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
                              const Soldier *pUnitSelExclude,
                              const Soldier *pUnitExtraExclude,
                              const ThrowBudget *pBudget, u8 nMapDimX,
-                             bool bHitStopIn,
                              i32 nX0, i32 nY0, i32 nZ0,
                              i32 nX1, i32 nY1, i32 nZ1)
 {
@@ -448,7 +447,7 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
     double dTravel;
     double dX, dY, dZ;
     double dBound;
-    bool bHitStop = bHitStopIn;
+    bool bHitStop = false;   /* Map.bTrajHitStop @ 0x1406D; the arc call below raises it (0x31A0C) */
     bool bLanded = false;
 
     memset(&arc, 0, sizeof(arc));
@@ -483,6 +482,11 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
     Tact_SimulateThrowArc(&arc, pGeom, pfnLookup, pUser,
                           nX0, nY0, nZ0, nX1, nY1, nZ1);
 
+    /* 0x31A0C: the arc's own tail raises the flag before the loop reads it -- the loop's
+     * flag cell is Map.bTrajHitStop, taken at 0x31DC8 after the call, so the walk always
+     * starts armed. The caller has no say in this value. */
+    bHitStop = true;
+
     dTravel = 0.0;   /* the arc setup writes 0.0 into Map.dTravel */
     dBound = arc.dBound;
     dX = (double)arc.nOriginX;
@@ -503,6 +507,9 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
         dZ = Throw_LandingZ(dTravel, arc.dPitch, arc.dArcDenom,
                             (double)arc.nOriginZ);
 
+        /* 0x322B8..0x322C4: a sample outside the map volume clears the flag. Both
+         * horizontal limits are 160 * nMapDimX -- the original's own bug, nMapDimY is
+         * never read here (recorded in bugs.tsv). */
         if (dX <= 0.0 || dY <= 0.0 || dZ <= 0.0
             || dX >= PUFO_ARC_XY_SCALE * (double)nMapDimX
             || dY >= PUFO_ARC_XY_SCALE * (double)nMapDimX
@@ -514,10 +521,12 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
             bLanded = true;
         }
 
-        /* 0x32384: the byte the walk is clearing goes to 0 on the blocked result, and
-         * every blocked voxel -- wall, floor, ceiling or unit -- reaches that store.
-         * Only a clear voxel (the original's return 1, the port's LOS_HIT_NONE) leaves
-         * the flag alone. */
+        /* 0x32388/0x32390: Map_TraceVoxelOccupancy returns 1 for a clear voxel (the tail
+         * store at 0x32C84) and 0 for a wall, floor, ceiling or unit sprite, with the
+         * reason code left in Map.nFireArg5 (0x32C6C). The walk clears the flag on the 0,
+         * so every blocked voxel -- wall, floor, ceiling or unit -- ends the walk; only a
+         * clear voxel leaves the flag standing. The port's encoding is the mask, where
+         * LOS_HIT_NONE is the original's 1. */
         if (Map_TraceVoxelOccupancy(pTables, pfnLookup, pUser,
                                     (u32)(i32)dX, (u32)(i32)dY, (u32)(i32)dZ,
                                     pUnitSelExclude, pUnitExtraExclude) != LOS_HIT_NONE) {

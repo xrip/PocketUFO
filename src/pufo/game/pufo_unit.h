@@ -758,6 +758,11 @@ typedef struct StatusHooks StatusHooks;
 typedef struct KillCtx {
     CombatCtx          *pCombat;        /* lookup, geom, rosters' shot origin */
     struct UnitRosters *pRosters;
+    u8                *pnXcomCount;     /* nXcomUnitCount @ 0x1511F. Tact_RemoveUnitFromSideLists
+                                         * @ 0x33148 searches the arrays and decrements THIS byte
+                                         * (0x3325C), and Tact_KillUnit's morale loops re-read the
+                                         * two bytes after the removal (0x4e6a4, 0x4e700). */
+    u8                *pnEnemyCount;    /* nEnemyUnitCount @ 0x15124 */
     TactItem          **apTactItems;    /* Map.apTactItems */
     i32                *pnTactItem;     /* Map.nTactItemCount, in/out */
     ObjectRecFull     **apObjects;      /* Map.apObjects */

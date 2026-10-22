@@ -59,6 +59,8 @@ static u8          g_bActionLatch;
 static u8          g_bFireStatus1;
 static TactItem   *g_pSelWeapon;
 static Soldier    *g_pThrowTarget;
+static TactItem   *g_pArrowItem;    /* MoveActionCtx.ppArrowItem: the 0x14070 slot */
+static u8          g_bThrowPending;  /* MoveActionCtx.pbThrowPending: the 0x1406D byte */
 static i32         g_nUnk1405C;
 static Soldier    *g_apXcom[30];
 static Soldier    *g_apEnemy[30];
@@ -138,7 +140,10 @@ static void ResetWorld(void)
     g_Ctx.pThrowLanding = NULL;
     g_Ctx.pThrowBudget = NULL;
     g_Ctx.pInvHooks = NULL;
-    g_Ctx.bThrowHitStop = false;
+    g_pArrowItem = NULL;
+    g_bThrowPending = 0;
+    g_Ctx.ppArrowItem = &g_pArrowItem;
+    g_Ctx.pbThrowPending = &g_bThrowPending;
     g_Ctx.pTraceExcludeSel = NULL;
     g_Ctx.pTraceExcludeExtra = NULL;
     g_Ctx.pfnArmorTuWarn = ArmorWarn;

@@ -1055,12 +1055,25 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
     pCtx->pThrowBudget->nStunOrArmor   = pCtx->pTraceExcludeSel->uStunOrArmor;
     pCtx->pThrowBudget->nWeight        = ((const TactItem *)pEntry->pWeapon)->pObj->bWeight;
 
-    if (Tact_ResolveThrowLanding(pCtx->pThrowArc, pCtx->pThrowLanding,
-                                 pCtx->pTables, &pCtx->geom, pCtx->pfnLookup,
-                                 pCtx->pUser, pUnit, *pCtx->ppThrowTarget,
-                                 pCtx->pThrowBudget, pCtx->geom.nDimX,
-                                 pCtx->bThrowHitStop,
-                                 nX0, nY0, nZ0, nX1, nY1, nZ1) == 0) {
+    const i32 nReachable = Tact_ResolveThrowLanding(pCtx->pThrowArc, pCtx->pThrowLanding,
+                                                    pCtx->pTables, &pCtx->geom, pCtx->pfnLookup,
+                                                    pCtx->pUser, pUnit, *pCtx->ppThrowTarget,
+                                                    pCtx->pThrowBudget, pCtx->geom.nDimX,
+                                                    nX0, nY0, nZ0, nX1, nY1, nZ1);
+
+    /* Publish before the result is tested: both stores belong to the call itself. The item
+     * store 0x319FC takes the call's own argument -- the thrown entry's weapon, the value
+     * pushed for the landing call at 0x508E0 (`LDR R3,[R3,#0x34]`, the same object the budget
+     * reads at 0x31A58) -- and 0x31A0C raises the flag, which the walk may then clear at
+     * 0x322C4 or 0x32390. When this call fails the FSM returns below, so these are the values
+     * the Map block keeps: the tail arc call never runs. The rejected case is the exception --
+     * 0x31CD4 returns before Tact_SimulateThrowArc is reached, so neither store happens. */
+    if (!pCtx->pThrowLanding->bRejected) {
+        *pCtx->ppArrowItem    = (TactItem *)pEntry->pWeapon;
+        *pCtx->pbThrowPending = (u8)(pCtx->pThrowLanding->bHitStop ? 1 : 0);
+    }
+
+    if (nReachable == 0) {
         MoveAbortMsg(pState, pCtx, MOVE_MSG_THROW_FAIL);
         return;
     }
@@ -1080,10 +1093,18 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
     Tact_ResolveThrowLanding(pCtx->pThrowArc, pCtx->pThrowLanding, pCtx->pTables,
                              &pCtx->geom, pCtx->pfnLookup, pCtx->pUser, pUnit,
                              *pCtx->ppThrowTarget, pCtx->pThrowBudget,
-                             pCtx->geom.nDimX, pCtx->bThrowHitStop,
+                             pCtx->geom.nDimX,
                              nX0, nY0, nZ0,
                              nX1 + pCtx->pScatter->nDx,
                              nY1 + pCtx->pScatter->nDy, nZ1);
+    /* The doubled-scatter call is the one whose dTravel survives (0x323BC below); it stores the
+     * same item again -- the pushed entry+0x34 value at 0x508E0 -- and leaves its walk's byte
+     * in 0x1406D, which the tail arc raises back to 1 in a moment. Same rule: a call the range
+     * test rejects (0x31CD4) writes neither cell. */
+    if (!pCtx->pThrowLanding->bRejected) {
+        *pCtx->ppArrowItem    = (TactItem *)pEntry->pWeapon;
+        *pCtx->pbThrowPending = (u8)(pCtx->pThrowLanding->bHitStop ? 1 : 0);
+    }
 
     /* 0x323BC: the landing's walked distance goes to Map+0x14038, where
      * Tact_ProcessFireAction cmd 0x11 compares its own flight counter against it.
@@ -1095,6 +1116,14 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
                           nX1 + pCtx->pScatter->nDx,
                           nY1 + pCtx->pScatter->nDy,
                           nZ1 + pCtx->pScatter->nDz);
+
+    /* 0x319FC / 0x31A0C, the arc tail's two Map stores. This is the call whose values survive
+     * the throw: the item is the Map.pSelWeapon loaded at 0x5090C for the call at 0x50960, and
+     * the flag goes back to 1 whatever the landing walk left. MapView_DrawUnitFacingArrow
+     * (0x1BDC8/0x1BDD0 gate, 0x1C1F4/0x1C1FC deref) reads both while the flag stands, and only
+     * Tact_ProcessFallAction's throw arm (0x53CFC/0x53D04) clears them, once the item lands. */
+    *pCtx->ppArrowItem    = *pCtx->ppSelWeapon;
+    *pCtx->pbThrowPending = 1;
 
     *pCtx->pnMaxLayerClamp = *pCtx->pnLayerScratch;
     *pCtx->pbActionLatch = 0;

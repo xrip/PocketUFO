@@ -281,6 +281,8 @@ static Soldier       *g_apKillXcom[4];
 static Soldier       *g_apKillEnemy[4];
 static Soldier       *g_apKillCiv[8];
 static UnitRosters      g_KillRostersStore;
+static u8               g_nKillXcomCount;   /* nXcomUnitCount @ 0x1511F */
+static u8               g_nKillEnemyCount;  /* nEnemyUnitCount @ 0x15124 */
 static CombatCtx      g_KillCombat;
 static KillCtx        g_KillCtx;
 /* A model of the unit NAME table 0xB1140 (40-byte records indexed by unit type). The kill
@@ -355,6 +357,13 @@ static void KillRosters(void)
     g_KillCtx.pRosters->nEnemy = 0;
     g_KillCtx.pRosters->apCiv = g_apKillCiv;
     g_KillCtx.pRosters->nCiv = 0;
+    /* The byte cells the original's removal reads and decrements (nXcomUnitCount @ 0x1511F,
+     * nEnemyUnitCount @ 0x15124, the decrement at 0x3325C). Left NULL the ctx falls back to the
+     * roster view's copy, which is what the earlier sections exercise. */
+    g_nKillXcomCount = 0;
+    g_nKillEnemyCount = 0;
+    g_KillCtx.pnXcomCount = &g_nKillXcomCount;
+    g_KillCtx.pnEnemyCount = &g_nKillEnemyCount;
 }
 
 static void TestKillUnit(void)
@@ -463,6 +472,33 @@ static void TestKillUnit(void)
         Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
         CheckEqI32("an alien death hurts enemy morale", pEnemy->bMorale, 34);
         CheckEqI32("an alien death encourages Xcom", pAlly->bMorale, 51);
+    }
+
+    /* The removal is part of the behaviour, not bookkeeping. Tact_RemoveUnitFromSideLists
+     * @ 0x33148 searches the arrays, compacts the one it found, and decrements the byte cell it
+     * read (`--*p_nXcomUnitCount` at 0x3325C); Tact_KillUnit's own morale loops then RE-READ the
+     * two bytes (LDRB nEnemyUnitCount at 0x4e6a4, nXcomUnitCount at 0x4e700), so the dead unit is
+     * out of its own shock. SideLists carries the counts by value, so the write-back has to happen
+     * here: without it the sweep runs over the OLD count, and because the compaction left the
+     * survivor's pointer duplicated in the vacated slot, that survivor takes the shock twice. */
+    KillSetup();
+    KillRosters();
+    {
+        Soldier *pMate = Place(1, 8, 8, 0, 0, 0);
+        pUnit = Place(0, 5, 5, 0, 0, 0);   /* the victim: a human, IN the Xcom list */
+        pUnit->uHp = 10;
+        pUnit->auStat[2] = 10; pUnit->bMorale = 50;
+        pMate->auStat[2] = 10; pMate->bMorale = 50;
+        g_apKillXcom[0] = pUnit;
+        g_apKillXcom[1] = pMate;
+        g_KillCtx.pRosters->nXcom = 2;
+        g_nKillXcomCount = 2;
+        Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+        CheckEqI32("the byte cell the removal searched is decremented (0x3325C)",
+                   g_nKillXcomCount, 1);
+        CheckEqI32("the roster view follows the same number", g_KillCtx.pRosters->nXcom, 1);
+        Check("the array is compacted over the dead unit", g_apKillXcom[0] == pMate);
+        CheckEqI32("the survivor is shocked once, not twice", pMate->bMorale, 17);
     }
 
     /* A large unit leaves four corpses and clears all four cells. */

@@ -90,7 +90,12 @@ void Map_BuildMoveActionCtx(GameMap *pMap, const LosTables *pTables,
     pOut->pThrowArc       = &pMap->throwArc;
     pOut->pThrowLanding   = &pMap->throwLanding;
     pOut->pThrowBudget    = &pMap->throwBudget;
-    pOut->bThrowHitStop   = pMap->bTrajHitStop != 0;
+    /* The two slots the arc tail writes (0x319FC item store, 0x31A0C flag raise) and the
+     * two the landing walk clears (0x322C4, 0x32390) are live Map cells, so the ctx points
+     * at them instead of copying the byte: FireCtx/FallCtx point at the same flag cell and
+     * MapView_DrawUnitFacingArrow's gate copy reads it straight after the mission tick. */
+    pOut->ppArrowItem     = &pMap->pArrowThrownItem;   /* 0x14070 */
+    pOut->pbThrowPending  = &pMap->bTrajHitStop;       /* 0x1406D */
     /* 0x3242C skips Map.pSelUnit and the unit at Map.pThrowTargetUnit; the arc trace
      * takes them as arguments because the port has no Map block. */
     pOut->pTraceExcludeSel   = pMap->pSelUnit;    /* 0x15334 */

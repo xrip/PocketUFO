@@ -23,12 +23,25 @@
  *   0x1406C  bFireHitResult (char), cleared at 0x2FC54 by every arc walk and set to 1
  *                           at 0x3010C when the walked sample leaves the map; read at
  *                           five sites in Tact_ProcessFireAction
- *   0x1406D  bTrajHitStop   (char), the throw gate: written by the input handlers
- *                           (Input_OnPointer, Input_OnConfirm, UiScreen_OnCancel, ...) and
- *                           by Tact_SimulateThrowArc at 0x31A0C; read by Tact_ProcessFireAction
- *                           cmd 0xE/0x11, Tact_ProcessFallAction and MapView_DrawUnitFacingArrow.
+ *   0x1406D  bTrajHitStop   (char), the in-flight flag. It has exactly three writers:
+ *                           Tact_SimulateThrowArc's tail sets it to 1 on every call (0x31A0C),
+ *                           Tact_ResolveThrowLanding clears it when a walked sample leaves the
+ *                           map volume (0x322C4) or its voxel is occupied (0x32390), and
+ *                           Tact_ProcessFallAction's throw arm clears it together with
+ *                           Map.pThrowTarget (0x53CFC/0x53D04, the port's case 0x11).
+ *                           Set-only on the throw side,
+ *                           clear-only on the fall side. The input handlers only READ it as a
+ *                           refusal gate (Input_OnLeft 0x116F4 `LDRB/ANDS/BNE`, and the same
+ *                           shape in OnRight/OnUp/OnDown/OnPointer/OnPointerUp/OnAction/
+ *                           OnSecondary/OnConfirm/UiScreen_OnCancel/OnMenuEscape); so does
+ *                           Tact_ProcessFireAction cmd 0xE/0x11 and MapView_DrawUnitFacingArrow.
  *                           The action contexts call this byte ThrowPending.
- *   0x14070  pArrowThrownItem (TactItem*), written by Tact_SimulateThrowArc at 0x319FC
+ *   0x14070  pArrowThrownItem (TactItem*), written by Tact_SimulateThrowArc at 0x319FC with
+ *                           that call's own pItem argument: the landing call passes the thrown
+ *                           entry's item (0x508E0 `LDR R3,[R3,#0x34]`), Tact_ProcessMoveAction's
+ *                           own arc call at 0x50960 rewrites it with Map.pSelWeapon (loaded at
+ *                           0x5090C, `LDR R0,[R5,#(pSelWeapon-0x1139B8)]`), so pSelWeapon is
+ *                           what survives the throw.
  *   0x14078  arc denominator  (double, Tact_SimulateThrowArc)
  *   0x14080  nTrajBound       \ the bound double, stored as two dwords
  *   0x14084  nTrajBoundHi     /
@@ -89,10 +102,10 @@ extern const u8 g_atAimRowTable[PUFO_AIM_ROW_TABLE_SIZE];
 
 /* The original's voxel-to-cell divide on x and y: MOVS / ADDMI #0xF / ASR #4. That is TRUNCATING
  * division, not floor - for v < 0, (v + 15) >> 4 equals v / 16 exactly, so -17 gives -1 and not
- * -2. The name says floor and is kept because three call sites and the parity notes use it; the
+ * -2. The old name said floor; the helper was renamed in Part 110 because nothing here floors; the
  * finding is in docs/parity/bugs.tsv at 0x1B8EC. Shared with MapView_DrawUnitFacingArrow @ 0x1b7bc,
  * which divides the roster the same way. */
-i32 Ball_FloorDiv16(i32 nV);
+i32 Ball_TruncDiv16(i32 nV);
 
 /* Shot state, one copy of the Map aim block. */
 typedef struct AimState {
@@ -301,11 +314,19 @@ typedef struct ThrowLanding {
 
 /* Tact_ResolveThrowLanding @ 0x31a18.
  *
- * Returns 0 when the throw cannot reach the target, or when the walked distance
- * is out of budget at the end; otherwise the "landed" flag. bHitStopIn is the
- * Map flag the caller leaves behind: the loop always runs once, but the flag
- * decides whether it runs again. The original's only writers of that flag are
- * the input handlers, Tact_ProcessFireAction and Tact_ProcessFallAction.
+ * Returns 0 when the throw cannot reach the target (the pre-arc range test at 0x31CD4),
+ * or when the walked distance is out of budget at the end; otherwise the "landed" flag.
+ *
+ * The walk takes no caller-supplied start value. Tact_SimulateThrowArc writes 1 into
+ * Map.bTrajHitStop at its tail (0x31A0C), and the loop's flag cell is that same byte,
+ * taken at 0x31DC8 -- after the call, never before it. The loop therefore always enters
+ * with the flag standing and steps on while the walked sample is inside the map volume
+ * and its voxel is clear: Map_TraceVoxelOccupancy returns 1 for a clear voxel (0x32C84)
+ * and 0 for a wall, floor, ceiling or unit sprite, storing the reason in Map.nFireArg5
+ * at 0x32C6C. The two clears inside the loop are 0x322C4 (sample outside the volume) and
+ * 0x32390 (occupied voxel); 0x323A0 breaks when the byte reads clear. An earlier reading
+ * of this function took the byte as a caller input, which stopped every walk at one bump
+ * and made a throw with a bound over PUFO_THROW_LAND_MARGIN fail -- corrected in Part 110.
  *
  * The target jitter is applied twice on purpose, once here for the range test
  * and again inside Tact_SimulateThrowArc, each with its own draws. */
@@ -315,7 +336,6 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
                              const Soldier *pUnitSelExclude,
                              const Soldier *pUnitExtraExclude,
                              const ThrowBudget *pBudget, u8 nMapDimX,
-                             bool bHitStopIn,
                              i32 nX0, i32 nY0, i32 nZ0,
                              i32 nX1, i32 nY1, i32 nZ1);
 

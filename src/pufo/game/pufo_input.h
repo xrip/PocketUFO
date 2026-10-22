@@ -128,8 +128,10 @@ typedef struct TactInputState {
 } TactInputState;
 
 /* Map.apMultiTargets @ Map+0x08 is eight cells wide and Tact_HandleMapClick @ 0x15328
- * refuses a ninth (`CMP R0, #8 / BGE`). Note pufo_mapctx.h's PUFO_MAP_MULTI_TARGET_MAX
- * is 10, not 8 -- a separate inconsistency, recorded in PLAN.md rather than changed here. */
+ * refuses a ninth (`CMP R0, #8 / BGE`). This is the multi-target CELL list; the ten shot
+ * SAMPLE positions live in Map.adMtX/Y/Z and carry their own bound,
+ * PUFO_MAP_MT_SAMPLE_COUNT in pufo_mapctx.h. The two numbers were once one macro; Part 110
+ * split them. */
 #define PUFO_MULTI_TARGET_MAX 8
 
 /* The effects the handlers trigger in other subsystems, all injected. */

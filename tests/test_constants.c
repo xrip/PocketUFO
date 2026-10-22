@@ -22,8 +22,10 @@
 #include "game/pufo_geoscape.h"
 #include "game/pufo_input.h"
 #include "game/pufo_invdrag.h"
+#include "game/pufo_ballist.h"
 #include "game/pufo_los.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_mapctx.h"
 #include "game/pufo_path.h"
 #include "game/pufo_rmp.h"
 #include "game/pufo_save.h"
@@ -300,6 +302,10 @@ int main(void)
     PIN(PUFO_GLOBE_LABEL_Y_BUILD, 290);
     /* game/pufo_input.h */
     PIN(PUFO_MULTI_TARGET_MAX, 8);
+    /* game/pufo_mapctx.h + game/pufo_ballist.h: the ten shot samples in Map.adMtX/Y/Z are a
+     * different thing from the eight-cell multi-target list above. */
+    PIN(PUFO_MAP_MT_SAMPLE_COUNT, 10);
+    PIN(PUFO_AIM_SAMPLE_COUNT, 10);
     PIN(PUFO_UI_DISMISS_MODAL, 0);
     PIN(PUFO_UI_DISMISS_CANCEL, 1);
     PIN(PUFO_TXT_NO_ALIEN_SPECIFIED, 7);

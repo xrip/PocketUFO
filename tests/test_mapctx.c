@@ -565,9 +565,9 @@ static void TestFsmOnMap(void)
 
     /* Command 0x11 (throw) end to end. The target is the unit's own cell, so
      * the arc bound is 0 and the landing test (travel >= bound - 8) passes on
-     * the first bump. A throw at a neighbouring cell has bound 16 and cannot
-     * land in one bump while Map.bTrajHitStop is clear, which is the failure
-     * path checked after this one. */
+     * the first bump. A throw at a neighbouring cell has bound 16 and lands
+     * after a walk of its own (checked after this one); the refusal path needs
+     * the pre-arc range test and is checked after that. */
     Reset();
     /* Map.pSelUnit reaches the move FSM as a pointer copied at build time, and
      * the stats are read through it at dispatch -- exactly the original's
@@ -625,6 +625,9 @@ static void TestFsmOnMap(void)
         Check("the throw clears the action latch", g_Map.bActionLatch == 0);
         Check("the landing was not rejected by range",
               g_Map.throwLanding.bRejected == 0);
+        Check("the throw raises the in-flight flag (0x31A0C)", g_Map.bTrajHitStop == 1);
+        Check("and leaves its own item in the arrow slot (0x319FC, pSelWeapon from 0x5090C)",
+              g_Map.pArrowThrownItem == &g_aItems[0]);
         Check("MoveThrow composed the budget from the SELECTED unit (0x31A54), not a prefilled slot",
               g_Map.throwBudget.nStatStrength == 50 && g_Map.throwBudget.nStatStamina == 50
               && g_Map.throwBudget.nStunOrArmor == 60);
@@ -632,9 +635,13 @@ static void TestFsmOnMap(void)
               g_Map.throwBudget.nWeight == 2);
     }
 
-    /* Command 0x11 at a neighbouring cell, with Map.bTrajHitStop clear: the
-     * landing loop runs once, the throw falls short, and the FSM pushes
-     * aTextRecs record 4 before aborting. */
+    /* Command 0x11 at a neighbouring cell: bound 16 voxels. The walk takes its start from the
+     * arc's own tail (0x31A0C), not from anything a caller left in the byte, so the sample keeps
+     * stepping -- the lob falls from the thrower's mid-cell height (6) to the target's floor
+     * level (0), and 0x322C4 clears the flag the moment the sample reaches z 0. The landing test
+     * (travel >= bound - 8) is met on the way and the distance is inside the budget, so this
+     * throw lands. An earlier version of this test asserted an abort here, because the port
+     * entered the walk with the flag clear and stopped after a single bump. */
     Reset();
     g_Map.pSelUnit = &g_aUnits[0];
     Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
@@ -652,6 +659,7 @@ static void TestFsmOnMap(void)
         pUnit->uStunOrArmor = 60;
         g_aObjs[0].bWeight = 2;
         g_aItems[0].pObj = &g_aObjs[0];
+        g_Map.pSelWeapon = &g_aItems[0];
 
         memset(&g_State, 0, sizeof(g_State));
         g_State.nQueueCursor = 0;
@@ -665,12 +673,114 @@ static void TestFsmOnMap(void)
         g_State.aQueue[0].nZ = 0;
         Tact_ProcessMoveAction(&g_State, &g_Ctx);
 
-        Check("a short throw with the hit-stop flag clear aborts",
+        Check("the neighbouring throw is not aborted",
+              g_State.aQueue[0].nCmd == 0x11);
+        Check("it pushed no aTextRecs record 4", g_Map.status.nCount == 0);
+        Check("and it charged the TU", pUnit->uTu == 16);
+        Check("the landing is inside the budget",
+              g_Map.throwLanding.bLanded && !g_Map.throwLanding.bRejected);
+        Check("the tail arc call raised the flag again after the walk cleared it (0x31A0C)",
+              g_Map.bTrajHitStop == 1);
+        Check("and stored Map.pSelWeapon in the arrow slot (0x319FC)",
+              g_Map.pArrowThrownItem == &g_aItems[0]);
+    }
+
+    /* Command 0x11 with a heavy item and a climb: the pre-arc range test (0x31CD4) is the only
+     * path that leaves the two Map cells alone -- it returns before Tact_SimulateThrowArc runs,
+     * so no item is stored and no flag is raised. Budget here is (50*60)/(50*30) = 2 >> 1 = 1.0,
+     * and the range is hypot 160 * 0.0625 * ((24-6)/8 = 2) = 20.0. */
+    Reset();
+    g_Map.pSelUnit = &g_aUnits[0];
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+    {
+        Soldier *pUnit = &g_aUnits[0];
+
+        memset(pUnit, 0, sizeof(*pUnit));
+        pUnit->bStatus = 0;
+        pUnit->nUnitType = 0;
+        pUnit->uTu = 20;
+        pUnit->pCell = At(10, 10, 0);
+        pUnit->auStat[PUFO_STAT_STRENGTH] = 50;
+        pUnit->auStat[PUFO_STAT_STAMINA]  = 50;
+        pUnit->uStunOrArmor = 60;
+        g_aObjs[0].bWeight = 30;
+        g_aItems[0].pObj = &g_aObjs[0];
+        g_Map.pSelWeapon = &g_aItems[0];
+
+        memset(&g_State, 0, sizeof(g_State));
+        g_State.nQueueCursor = 0;
+        g_State.aQueue[0].nCmd = 0x11;
+        g_State.aQueue[0].pUnit = pUnit;
+        g_State.aQueue[0].pWeapon = &g_aItems[0];
+        g_State.aQueue[0].nTuCost = 4;
+        g_State.aQueue[0].nArg = 100;
+        g_State.aQueue[0].nX = 20;
+        g_State.aQueue[0].nY = 10;
+        g_State.aQueue[0].nZ = 2;
+        Tact_ProcessMoveAction(&g_State, &g_Ctx);
+
+        Check("a throw out of range aborts",
               g_State.aQueue[0].nCmd == 13 && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
         Check("it pushed aTextRecs record 4",
               g_Map.status.nCount == 1
               && strcmp(g_Map.status.aszMsg[0], "throw failed") == 0);
         Check("and charged no TU", pUnit->uTu == 20);
+        Check("the refusal touched neither Map cell",
+              g_Map.bTrajHitStop == 0 && g_Map.pArrowThrownItem == NULL);
+    }
+
+    /* Command 0x11 past the budget at the END of the walk, which is the other failure path and
+     * the one that does write both Map cells. The range test (0x31CD4) is passed: budget is
+     * (50*60)/(50*2) = 30 >> 1 = 15.0 and the range is hypot 160 * 0.0625 = 10.0, because the
+     * height factor is (12-6)/8 = 0 -- a six-voxel lift costs nothing. The arc runs, stores the
+     * THROWN item (0x319FC) and raises the flag (0x31A0C); the lift keeps the sample above z 0
+     * well past the target, the walk clears the byte at 0x322C4 on the way down at 259.0 of
+     * travel, and the tail test (0x323E0/0x32404) then finds 259.0 * 0.0625 = 16.1875 over the
+     * 15.0 budget. The FSM aborts before the tail arc call, so Map.pArrowThrownItem keeps the
+     * thrown entry's weapon and NOT Map.pSelWeapon, and the flag keeps what the walk left. */
+    Reset();
+    g_Map.pSelUnit = &g_aUnits[0];
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+    {
+        Soldier *pUnit = &g_aUnits[0];
+
+        memset(pUnit, 0, sizeof(*pUnit));
+        pUnit->bStatus = 0;
+        pUnit->nUnitType = 0;
+        pUnit->uTu = 20;
+        pUnit->pCell = At(10, 10, 0);
+        pUnit->auStat[PUFO_STAT_STRENGTH] = 50;
+        pUnit->auStat[PUFO_STAT_STAMINA]  = 50;
+        pUnit->uStunOrArmor = 60;
+        g_aObjs[0].bWeight = 2;
+        g_aItems[0].pObj = &g_aObjs[0];
+        g_Map.pSelWeapon = &g_aItems[1];   /* a different item, so the two stores are told apart */
+
+        memset(&g_State, 0, sizeof(g_State));
+        g_State.nQueueCursor = 0;
+        g_State.aQueue[0].nCmd = 0x11;
+        g_State.aQueue[0].pUnit = pUnit;
+        g_State.aQueue[0].pWeapon = &g_aItems[0];
+        g_State.aQueue[0].nTuCost = 4;
+        g_State.aQueue[0].nArg = 100;
+        g_State.aQueue[0].nX = 20;
+        g_State.aQueue[0].nY = 10;
+        g_State.aQueue[0].nZ = 1;
+        Tact_ProcessMoveAction(&g_State, &g_Ctx);
+
+        Check("the throw that walks past its budget aborts",
+              g_State.aQueue[0].nCmd == 13 && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
+        Check("and pushes aTextRecs record 4",
+              g_Map.status.nCount == 1
+              && strcmp(g_Map.status.aszMsg[0], "throw failed") == 0);
+        Check("the walk ran before it failed",
+              !g_Map.throwLanding.bRejected && g_Map.throwLanding.dTravel > 100.0);
+        Check("the arrow slot holds the THROWN item, not pSelWeapon (0x319FC, entry+0x34)",
+              g_Map.pArrowThrownItem == &g_aItems[0]);
+        Check("the flag keeps the value the walk left (0x322C4)", g_Map.bTrajHitStop == 0);
+        Check("and no TU was charged", pUnit->uTu == 20);
     }
 
     /* Command 0x11 with no TU: the ungated push of aTextRecs record 1, then the

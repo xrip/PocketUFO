@@ -7325,7 +7325,10 @@ i32 Geoscape_OnMapClick(const MapClickEnv *pEnv)
                 pBase->bUnk16 = 1;                      /* 0x8B53C */
             }
             if (pEnv->apSiteRecs != NULL) {
-                pEnv->apSiteRecs[0].bType = (u8)(pEnv->bPendingRegionId + 0x80); /* 0x8B548 */
+                pEnv->apSiteRecs[0].bType = (u8)(pEnv->bPendingRegionId - PUFO_REGION_ID_FIRST);
+                                                        /* 0x8B544 SUB R0,R1,#0x80 / 0x8B548 STRB.
+                                                         * The two spellings are identical for every
+                                                         * byte value; this one is what the ARM says. */
             }
 
             /* 0x8B550..0x8B56C: the label is built in the shared scratch string and then copied

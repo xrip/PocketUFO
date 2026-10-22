@@ -1,29 +1,65 @@
 # HANDOFF — PocketUFO Win64 recreation
-Date: 2026-10-18. HEAD before this edit: `dc4504c`. Unit 107 is `Geoscape_Draw` @ 0x8c180 (33,744 B);
-its code finished at part 24 and this commit is its twenty-fifth part -- **the wiring**, the shell side
-that makes the frame run. `RenderFrameEnv.pfnGeoscapeDraw` is `World_DrawGeoscapeFrame` over a new
-`GeoscapeFrameState` (one env per arm, the frame globals, the pointer env), `App_DrawFrame` takes the
-`Render_Frame @ 0x22310` geoscape branch, and `TactInputHooks.pfnGeoscapePointer/Up` drive the real
-`Geoscape_OnPointer @ 0x872d0` / `Geoscape_OnPointerUp @ 0x89450`. 57 new checks in
-tests/test_geoscapeframe.c, 7/7 mutations caught, 5 IDB type corrections and 1 comment extended, and one
-real port bug fixed: `Blit_ClipGlyph` measured its right/bottom cut from the already-clamped x/y, so the
-wrapped map copy (x = -280, an 800-wide glyph on a 240-wide surface) clipped to -40 columns and painted
-nothing -- the frame now paints 76800 of 76800 surface pixels with the exact palette lookup, and
-`pocketufo --new-game --dump-frame` shows the earth100 world with the globe hover's rules on it.
-**Unit 107 is now complete as code and as a running frame.** What is left of it: the radar arm's own
-`RadarUpdateEnv` and `aRadarControls @ 0x159684`, the panel's four screen openers, the `Smap_*` pointer
-handlers, the other nineteen arms' screen state, and the geoscape clock tick that advances the panel
-animation. After that the platform glue (137 uncited functions, 2,040 B of Win32/CRT/FMOD thunks and CRT
-exit tables) is the last gap before a full recompilation.
-Parts 1..24 are behind this: the map-view chrome `5917656`, the 13-arm body `2485d25`, the action-fail line
-`79b7979`, the order questions `a2d454b`, the craft-detail card `c5f90b5`, the trace-lost panel `4a02d1a`,
-the attacked-city panel `ac13d77`, the intercept list `c612882`, the map-target panel `7c14ff8`, the
-mission-site / travel panels `e9145c0` + `2c3c1cd`, the descent panel `4a8e181`, the descent-target panel
-`bbf9c53`, the flag-0x16 clone `f3bbc75`, the alien-base panel `3f98d17`, the chain's shared tail `d445057`,
-the frame end `84cdb03`, the thin screen arms `7623894`, the ufopaedia and psi arms `219899e`, the soldier
-arms `5eedf75`, the base-facility arm `ca4c9bc`, the base-info and funding arms `51267b6`, the hangar arm
-`2b030eb`, the placement arm `27aff71` and the `0x186BC0` world-record correction `dc4504c`.
 
+Date: 2026-10-22. HEAD before this edit: 0739ff9 (Part 109); this block is written during Part 110.
+Everything below the divider is history, written on the day its own numbers were measured. Sections 2, 5
+and 6 are the ones a fresh reader would otherwise trust, and all three are superseded: 61 suites and 17729
+checks became 63 and 20579, "no end-to-end playable session" is no longer true, and the "largest unported
+functions" table names functions that have long been ported. They stay because they record how the work
+went, not what the tree is.
+
+## Where the project stands, measured on 2026-10-22
+
+- Gates (`sh tools/check.sh`, build/crops/check110d.log, EXIT=0): Release build, Debug build, 63 CTest
+  suites 63/63 in both configs, 20579 checks, `gen_report.py` and `coverage.py --check` green,
+  `tools/frames.sh` clean (93 reference pictures unchanged), `tools/e2e.sh` green (3 scripted flows, 9
+  pictures, 0 bad, every one unchanged against its committed reference).
+- Coverage of the original: 972/1103 functions cited (88.1%), 596888/598792 bytes (99.7%). The report gate
+  names the 131 uncited functions against 135 rows in docs/idb/image-artifacts.tsv and prints "0 of them
+  real gaps". audit_bugs.py matches 326 ledger rows to 93 ORIGINAL BUG markers in src/ ("ledger and port
+  agree"); audit_tables.py checks 46 tables with 0 mismatches; audit_names.py has 4 credited addresses
+  whose original name is undefined, 48 bytes, all four already artifact rows.
+- What runs end to end on Win64: new game to base placement to the base screen to the geoscape to a save of
+  slot 0, in one process; boot to the slot list to a load of that slot, in a second process; new game to a
+  save to quit-YES, where the strateg list empties to 0 items while the original's stale count mirror
+  0x186530 still reads 5. A tactical mission runs live in test_geoscapeframe (the 99.x, 100.x, 105.x, 106.x
+  and 107.x sections) with the modal, the clock, the craft economy, the monthly funds, the cargo staging, the
+  walker seams and the HUD painted by the shell's own frame build.
+- Platform: winmm waveOut answers the whole `PufoAudioBackend` table (no original DLL is linked - the CMake
+  note says winmm stands in for fmodce.dll), AYGSHELL is a documented no-op stand-in in
+  src/pufo/platform/pufo_aygshell.c, and the cab member 0000SKKV.000 is staged byte for byte in test_save as
+  foreign bytes the load refuses.
+- Parity docs: PARITY.md regenerated (2208 lines), docs/parity/game-core.md gained a Part 110 section and a
+  closing status section mapped to the CLAUDE.md verification contract, docs/parity/bugs.tsv holds 351 rows,
+  and every one of PLAN.md's 27 open rows now carries a closing verdict.
+
+## How to work in this tree
+
+- All shell work goes through the context-mode sandbox: the native Bash tool fails in this workspace with
+  ENAMETOOLONG. Inner loop `sh tools/iter.sh <target>`, full gate `sh tools/check.sh`, flows
+  `sh tools/e2e.sh`, pictures `sh tools/frames.sh`.
+- docs/parity/game-core.md is cp1251 with CRLF and Edit refuses it: append with a python script kept in
+  build/crops. bugs.tsv is CRLF. PLAN.md is LF-only; a few sources are LF-only too and Git warns about them
+  on commit, which is a notice, not an error.
+- The IDB (pufobeta.exe.i64) is the source of truth: check the address before writing a claim, then
+  append_comments and idb_save. "No xref" does not mean "no writer" in this IDB - STR/STRB [Rbase,#imm] Map
+  stores and the 205-byte TEXTS slots both hide from xrefs.
+- A result is stated only after the tool output that supports it is in the conversation. Sub-agent reports
+  are leads, not evidence: re-check them against HEAD before writing any of them into a doc.
+
+## What is left, named
+
+The closing pass gave every PLAN row a verdict: nine rows closed by code with a test and a mutation behind
+it, three closed as original defects the port asserts rather than hides, one closed because its own claim
+was stale, fourteen re-labelled as measured design, typing or scope items. The rows that still hold code
+work, none of them a gap in a shipped flow: the product-column type sweep (4889), the research-count type
+sweep (4915), the two no-argument palette signatures (4957), one owner for the two cell grids (4970), the
+save records reading live owners instead of a record copy (5024), one home for the UI screen id (5017), the
+ctlResearchPanel slot decision (4572), the two older real-surface colour tests (5002) and the
+pufo_game/pufo_ui link order (4899). Two rows stay open as IDB ambiguity rather than be closed by guessing:
+ResearchTopic's on-disk mapping, blocked on the unported `LoadGame @ 0x44bbc` (4994), and the seven RNG
+start globals whose readers this IDB does not establish (5038).
+
+---
 What this unit found:
 
 - **A clip that re-derives its far edges from clamped input drops whole glyphs.** The fix is the
@@ -117,6 +153,9 @@ map, accepts input, and plays, with every original subsystem recreated and every
 explicitly recorded rather than hidden.
 
 ---
+
+> History below this point. Sections 2, 5 and 6 were measured on 2026-10-18 and are superseded by the block
+> at the top of this file; they are kept as the record of the work, not as the state of the tree.
 
 ## 2. Current state, measured
 

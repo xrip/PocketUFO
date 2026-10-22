@@ -1,7 +1,7 @@
 /* pufo_isodraw.c - see pufo_isodraw.h for evidence and the field map. */
 #include "game/pufo_isodraw.h"
 
-#include "game/pufo_ballist.h" /* Ball_FloorDiv16, the original's voxel-to-cell divide */
+#include "game/pufo_ballist.h" /* Ball_TruncDiv16, the original's voxel-to-cell divide */
 #include "game/pufo_font.h"   /* Font_DrawGlyph_IndexedOffset / Font_DrawGlyph / g_fontSys */
 #include "game/pufo_mapctx.h" /* PUFO_MAP_CELL_DIM */
 #include "game/pufo_tactui.h" /* Tact_MapTypeToGlyphIdx */
@@ -552,10 +552,10 @@ int MapView_DrawUnitFacingArrow(IsoDrawCtx *pIso, const IsoArrowGate *pGate,
                 dY = pGate->adMtY[n];
                 dZ = pGate->adMtZ[n];
 
-                /* Voxel to cell: x and y floor-divide, z truncates. The compares are in the
+                /* Voxel to cell: x and y use the original's truncating idiom, z truncates. The compares are in the
                  * original's order and stop at the first mismatch. */
-                nFloorX = Ball_FloorDiv16((i32)dX);
-                nFloorY = Ball_FloorDiv16((i32)dY);
+                nFloorX = Ball_TruncDiv16((i32)dX);
+                nFloorY = Ball_TruncDiv16((i32)dY);
                 nZq     = (i32)dZ / 12;
 
                 if (nFloorX == (i32)pIso->pCell->nX
@@ -599,8 +599,8 @@ int MapView_DrawUnitFacingArrow(IsoDrawCtx *pIso, const IsoArrowGate *pGate,
     dX = pGate->adMtX[0];
     dY = pGate->adMtY[0];
     dZ = pGate->adMtZ[0];
-    nFloorX = Ball_FloorDiv16((i32)dX);
-    nFloorY = Ball_FloorDiv16((i32)dY);
+    nFloorX = Ball_TruncDiv16((i32)dX);
+    nFloorY = Ball_TruncDiv16((i32)dY);
     nZq     = (i32)dZ / 12;
 
     dA = dX - (double)(16 * nFloorX);

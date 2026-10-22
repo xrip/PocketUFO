@@ -21840,3 +21840,140 @@ suspect in PLAN as its own issue.
 No IDB change this Part: the two gate directions the sweep rests on - the chevron inside the per-cell loop
 at 0x62720, already documented there as repainted 36 times, and the ghost gate at 0x1FC18 - were recorded
 earlier, and the sweep found nothing in the IDB to correct.
+
+## Part 110 - a thrown item walks its whole arc, the kill writes its counts back, and every open PLAN row gets a verdict
+
+### The throw pair in the IDB first: the walk starts armed, and a refusal writes neither cell
+Tact_SimulateThrowArc @ 0x3102c ends with two stores in the same tail: 0x319FC puts the call's own item into
+Map+0x14070, and 0x31A0C puts 1 into Map+0x1406D. Tact_ResolveThrowLanding @ 0x31a18 is the caller in the
+throw path, and the order of its own instructions settles what the port had wrong. The budget and range
+tests run first and return 0 at 0x31CD4, before any arc call, so a refusal writes neither cell. The arc call
+is at 0x31D00. The flag is read at 0x31DC8, after it. So the walk always starts armed: nobody hands the loop
+a start value and the caller has no say in it. Inside the loop the byte is cleared at 0x322C4 (the step left
+the volume) and at 0x32390 (the voxel is occupied), and the loop breaks at 0x323A0. Both horizontal limits
+of that volume are 160 * Map_nMapDimX - Map_nMapDimY is never read, the original's own bug already on record
+at 0x52718. Map_TraceVoxelOccupancy @ 0x3242c answers 1 for a clear voxel (0x32C84) and 0 for a blocked one
+with the reason in Map.nFireArg5 (0x32C6C: 1, 2, 0, 3, 4). The throw arm supplies the item from two places:
+0x508E0 loads it from entry+0x34, the thrown item, for the landing calls at 0x507F8 and 0x50908, and 0x5090C
+loads Map.pSelWeapon for the tail arc call at 0x50960. The readers of 0x1406D are eleven input handlers that
+refuse while the byte is set (Input_OnLeft @ 0x116F4 and nine siblings, LDRB / ANDS / BNE), the fire command
+0xE at 0x51F94, command 0x11 at 0x52634 and 0x5263C, and the arrow gate at 0x1BDC8 / 0x1BDD0 with its
+unguarded deref at 0x1C1F4 / 0x1C1FC. Only Tact_ProcessFallAction clears the byte, at 0x53CFC and 0x53D04.
+
+### What the port's model cost a player: every throw was cut to one bump  The port had bool bHitStopIn as an
+argument of Tact_ResolveThrowLanding and no writer for it anywhere, so it was always 0. The walk stopped
+after the first bump, and any throw whose bound was over PUFO_THROW_LAND_MARGIN (8.0, the 0x40200000
+constant) returned 0 and the action-fail line said 'throw failed' (aTextRecs 4). The argument is gone. The
+model raises the flag where the arc's own tail raises it, and MoveThrow publishes both cells at its three
+call sites: the thrown item for the two landing calls and Map.pSelWeapon for the tail call, and neither cell
+when the landing report says the walk refused before the arc - that guard is 0x31CD4, and a publish without
+it was one of this Part's mutations. Map_BuildMoveActionCtx (pufo_mapctx.c:97) hands the cells as addresses,
+ppArrowItem and pbThrowPending, so MoveActionCtx, FireCtx.pbThrowPending, FallCtx.pbThrowPending and
+MapView_DrawUnitFacingArrow's gate copy all read and write the same Map byte. The four constants the arc
+reads came out of the IDB's own bit patterns: 0x40478000 = 47.0 for the z ceiling, 0x40200000 = 8.0 for the
+landing margin, 160.0 for the xy scale, 0.0625 for the range scale, plus the 0.5 bump step, the 0.01 bound
+bound and gravity 9.18.
+
+### The four smaller closes in the same Part  Tact_KillUnit removed a dead unit from the side lists and
+never wrote the counts. Kill_SyncCounts (pufo_unit.c:1627) is the original's own --*p_nXcomUnitCount at
+0x3325C: it writes both counts back into the rosters and into the Map byte cells nXcomUnitCount @ 0x1511F
+and nEnemyUnitCount @ 0x15124, at the two kill arms (:1813, :1856). Without it the sweep that follows a kill
+runs over the old count, and because the compaction leaves the last survivor's pointer duplicated in the
+vacated slot, that unit takes the shock twice - Tact_KillUnit's own morale loops re-read the two bytes after
+the removal (LDRB nEnemyUnitCount at 0x4e6a4, nXcomUnitCount at 0x4e700), so the byte cells must agree with
+the arrays before that sweep. test_vis asserts the decrement and the array pair. World_SoldierToggleThunk
+stored a stack address into the persistent solEnv: pufo_world.c:206 now stores &pW->nSoldierCount, a pointer
+to the live cell, the same fix Part 106 recorded for FlobjsReadState. PUFO_MAP_MULTI_TARGET_MAX (10) was
+split into PUFO_MAP_MT_SAMPLE_COUNT = 10, the shot-sample positions the IDB lays 80 bytes apart at
+0x1278A0/0x1278F0/0x127940, and PUFO_MULTI_TARGET_MAX = 8, the CMP R0,#8 / BGE refusal in
+Tact_HandleMapClick @ 0x15328; test_constants pins both. Geoscape_OnMapClick's site-record write now
+subtracts PUFO_REGION_ID_FIRST the way the ARM does (0x8B544 SUB R0,R1,#0x80, pufo_baseui.c:7328): the two
+spellings are identical for every byte value, so this is a readability fix and no test can tell them apart.
+Ball_FloorDiv16 is Ball_TruncDiv16 - the idiom it copies (MOVS / ADDMI #0xF / ASR #4) truncates, and (v +
+15) >> 4 equals v / 16 for v < 0.
+
+### Gates, and what each new check was broken to prove  test_mapctx went from 85 to 100 checks: an own-cell
+throw asserts the flag raised (0x31A0C) and the item stored (0x319FC); a neighbour throw that the old model
+aborted now lands, charges the TU and writes no action-fail record; a weight-30 throw is refused before the
+arc and touches neither cell; a walk that runs past its budget aborts with the action-fail line, and the
+arrow slot keeps the THROWN item rather than pSelWeapon while the flag keeps the value the walk left at
+0x322C4. test_ballist (106 checks) walks the arc to the map edge and past it, and states the loop's end: the
+byte cleared at 0x323A0, the distance in budget (160 * 0.0625 = 10 <= 15), so landed. test_moveaction (48)
+carries the two live cells. test_vis wires KillCtx.pnXcomCount / pnEnemyCount and asserts both counts after
+a removal. Three mutations gave the throw gates teeth: the publish taken out (the arrow slot check goes
+red), the publish moved outside the 0x31CD4 guard (the refusal check goes red), and the walk started from
+the caller's 0 again (the neighbour throw fails again as it did before the fix). test_ballist: 106 checks 0
+failures, test_isodraw 0 failures after the rename. Six gates after the Part: 63/63 CTest suites in Release
+and 63/63 in Debug, 20579 checks, coverage 972/1103 functions (88.1%) and 596888/598792 bytes (99.7%), 93
+reference frames unchanged, e2e 9 pictures 0 bad and unchanged against their committed references, EXIT=0.
+No frame moved in this Part and no e2e picture was re-referenced: no scripted flow throws an item.
+
+### IDB, and the PLAN verdicts  Function comments appended at 0x3102c, 0x31a18 and 0x3242c; line comments at
+0x508E0, 0x5090C, 0x319FC and 0x31A0C; idb_save written. PLAN.md held 27 open rows at the start of this
+closing pass and holds none now. Nine closed as fixed with a test and a mutation behind it (4386, 4497,
+4564, 4601, 4649, 4827, 4859, 4972, 4977), three closed as recorded original defects the port asserts rather
+than hides (4332, 4374, 4380 - the quit-YES e2e run is the live proof: 'strateg: 0 items, count mirror
+0x186530 5'), one closed because its own claim was stale (4905: all five caption screens are ported at
+pufo_baseui.c:4800, :10478, :10650, :12724, :13182 and PsiScreen_Draw paints its three captions at 0x726A0 /
+0x726F8 / 0x7274C), and fourteen re-labelled as measured design, typing or scope items whose remaining code
+work is named in PLAN as a follow-up list rather than as a parity gap (4490, 4572, 4889, 4899, 4915, 4957,
+4970, 4983, 4994, 5002, 5017, 5024, 5038, 5068).
+
+## Closing status - the port measured on 2026-10-22, against the CLAUDE.md verification contract
+
+Build. tools/check.sh gates 1 and 3 are the Release and Debug builds; both succeeded in the same run that
+produced every number below (build/crops/check110d.log, EXIT=0). The parity rule in CMakeLists.txt:23-28
+puts /W4 and /WX on every target through the pufo_options interface, and neither build emitted a warning.
+Clang, C23 and CMake per AGENTS.md.
+
+Subsystems. All 63 suites cover every subsystem in the objective: startup/config (test_boot, test_startnew,
+test_mainmenu, test_titles), data loading of the original main.dat, lang.dat and saves (test_data,
+test_texts_lang, test_save - including the cab member 0000SKKV.000 staged byte for byte), map and world
+(test_mapctx, test_mapcell, test_terrain, test_geoscape, test_strateg), entities (test_unit,
+test_soldiername, test_ship, test_roster), game logic (test_ballist, test_combat, test_fov, test_los,
+test_turn, test_enemyai, test_vis, test_vistry, test_rmp, test_clock), UI and input (test_baseui,
+test_geoscapeframe, test_modal, test_input, test_panel, test_cmdpads, test_menu, test_menubtn,
+test_statusmsg), rendering (test_render, test_renderframe, test_isodraw, test_font, test_cursordir), audio
+(test_audio, with the winmm device gate that prints 'device gate skipped' on a host with no wave device).
+docs/parity/coverage.py --check reports 972/1103 functions cited (88.1%) and 596888/598792 bytes (99.7%);
+the report gate names the 131 uncited functions as image artifacts against 135 rows in docs/idb/image-
+artifacts.tsv and prints '0 of them real gaps'. The three audits were re-run at this closing pass and their
+numbers, not the older numbers in PLAN, are recorded there: audit_names.py finds 4 credited addresses whose
+original name is not defined (48 bytes, 0.0%), all four already artifact rows (init-term-entry, code-thunk,
+import-thunk, empty-stub); audit_credits.py finds 5 negated citations, each a hook seam whose comment states
+its own denial; audit_tables.py checks 46 tables with 0 mismatches; audit_bugs.py matches 326 ledger rows
+against 93 ORIGINAL BUG markers in src/ and prints 'ledger and port agree'.
+
+Launch and main flow on Win64. tools/e2e.sh runs three scripted flows in two processes: new game to a placed
+base to the geoscape screen to a save, a boot to a slot list to a load of that slot, and a new game to quit-
+YES. It reports 9 pictures checked, 0 bad, unchanged against the committed references. The quit-YES flow is
+the parity proof of the mission-end arm in the same output: 5 strateg items before, 0 after, with the
+original's stale mirror 0x186530 still reading 5.
+
+Original data, original formats. The e2e run loads the shipped lang.dat and main.dat unchanged ('assets
+loaded (lang.dat=..., main.dat=...)'), writes and reads slot 0, and test_save reads the cab's first member
+as foreign bytes and asserts the refusal the original's own arithmetic produces. No original DLL is linked:
+src/pufo/CMakeLists.txt:103 states that winmm stands in for fmodce.dll, and the AYGSHELL arms are documented
+no-ops in src/pufo/platform/pufo_aygshell.c.
+
+Per-subsystem parity evidence. PARITY.md is regenerated by docs/parity/gen_report.py in the same run (2208
+lines) from the @ 0xADDR citations in src/, so every entry is checkable against the IDB.
+docs/parity/bugs.tsv holds 351 rows; each row names the original site, the port site and whether an
+asserting test exists, and the original defects the port reproduces on purpose are the asserted ones:
+0x4BA3C, 0x40BA8, 0x3E154, 0x52718, 0x8217c, 0x39F24, 0x27CB0 and the rest of the list. PLAN.md's 27 closing
+markers carry the per-item verdicts and the follow-up list below.
+
+Follow-ups with code work named, none of them a parity gap in a shipped flow: the product-column type sweep
+(4889), the research-count type sweep (4915), the two no-argument palette signatures (4957), one owner for
+the two cell grids (4970), the save records reading live owners instead of a record copy (5024), one home
+for the UI screen id (5017), the ctlResearchPanel slot decision (4572), the two older real-surface colour
+tests (5002), the pufo_game/pufo_ui link order (4899), ResearchTopic's on-disk mapping which is blocked on
+the unported LoadGame @ 0x44bbc (4994), and the seven RNG start globals whose meaning the IDB does not
+establish (5038). The two things this project will not close by guessing are 4994 and 5038: both are
+recorded as IDB ambiguity, with the reason and the address named.
+
+Open watch item, recorded not hidden: test_geoscapeframe section 102's strateg round trip failed once in a
+parallel Debug run with the stale nStrategItemCount signature (9 saved, 8 loaded) and went green in the
+three serial Debug runs and in every full run measured since, the two six-gate runs of
+this Part among them. The class is the original's own stale
+write, asserted at test_save:1986-1995 and in the quit-YES e2e output; the flake is the harness.

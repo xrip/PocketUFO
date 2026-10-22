@@ -1,0 +1,19 @@
+unit	plan_unit	plan_rows	closing_disposition	evidence
+Part 101	Part 101 [V] re-audit	Part 34..73-era open rows	closed with evidence or re-labelled in the audit	commit d885e28; docs/parity/bugs.tsv rows; the audit scripts
+Part 102	Part 102 [W] options	4232	options save row, load row and quit tab answer the player live	commit 10f7287; test_geoscapeframe options sections
+Part 103	Part 103 [W] quit-YES	4241, 3495	quit-YES empties the strateg list; Tact_Shutdown gains its live caller	commits 0f34fe9 and 66badf9; test_tactend; the quit-YES e2e flow
+Part 104	Part 104 [E+W] screen 16	the descent-panel pair (0x84d18 / 0x84bf8 hooks)	ufopaedia screen 16 live; the two status-panel hooks are real thunks	commit 1228e1c; test_geoscapeframe ufopaedia and research sections
+Part 105	Part 105 [W+E] modal and tick	3437 tail, bSlot2Byte0, GameTick_Step, tact-modal openers, tact HUD text records	modal answers the press, GameTick_Step owns its byte pair, UiPulse feeder wired	commit ba9dadf; test_modal, test_tactstate, test_timer
+Part 106	Part 106 [E-arg+W] walker seams	3490, frozen-count pair, flat-lookup pair	probe, FOV, radio bank and transform name wired live; the deploy cells are flat arithmetic	commit 40bce47; test_step, test_path, test_combat, test_fov, test_geoscapeframe 106.x
+Part 107	Part 107 [V/W] economy	3450 tail, 3474	craft buy and delivery live, monthly funds live, cargo staging live	commit 5259f90; test_geoscapeframe 107.x, test_tactinit, test_mapctx
+Part 108	Part 108 [E-if+V] platform	3185 and the audio / AYGSHELL / device-save decisions	audio backend plays on winmm, AYGSHELL stand-in, the cab member asserted as foreign bytes	commit 2b6649e; test_audio, test_save
+Part 109	Part 109 [V] gate hardening	its own six rows	every claim re-proved by breaking the code it reads; the scripted paint order fixed	commit 0739ff9; the mutation records in game-core.md
+Part 110	Part 110 [W] throw cells	4649, 4827, 4564, 4497, 4859, 4972, 4977, 4386, 4601	closed by code with an asserting test and a mutation behind it	this commit; test_mapctx 100 checks, test_ballist 106, test_moveaction 48, test_vis, test_constants
+Closing pass	Final closing pass	the 27 rows open at Part 110's start	9 CLOSED-FIXED, 3 CLOSED-ASSERTED, 15 CLOSED-RECORDED; follow-ups named in PLAN.md	PLAN.md closing section; docs/parity/game-core.md closing status; HANDOFF.md top block
+Row 4332	recorded original defect	4332	asserted, not hidden	bugs.tsv 0x4BA3C; test_geoscapeframe section 18 at 8515/8633/8666
+Row 4374	recorded original defect	4374	asserted, not hidden	bugs.tsv 0x40BA8; test_geoscapeframe 5310-5315
+Row 4380	recorded original defect	4380	asserted, not hidden	bugs.tsv 0x3E154; test_save 1986-1995; the quit-YES e2e output
+Row 4905	stale claim corrected	4905	the "stay unported" half is stale	pufo_baseui.c 4800/10478/10650/12724/13182; PsiScreen_Draw captions at 0x726A0/0x726F8/0x7274C
+Row 4983	policy with measured numbers	4983	the row's own audit numbers corrected	audit_names 4 credits all artifact rows; audit_credits 5 negated citations; audit_bugs 326/93 agree
+Row 4994	IDB ambiguity, stays open	4994	blocked on LoadGame @ 0x44bbc (0x45364/0x453EC), not ported	PLAN row 4994; no port change
+Row 5038	IDB ambiguity, stays open	5038	seven start globals with no established reader	comments at 0xA00F8/0xA010C/0xA0134/0xA035C; the STRB [Rbase,#imm] no-xref trap

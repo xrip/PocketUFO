@@ -3760,8 +3760,9 @@ i32 BaseFacScreen_Init(const BaseFacInitEnv *pEnv);
  *
  *   - With bBaseFacConfirm (0x1870AC) set, the pending placement is committed: apBases[0] gets
  *     nUnk8 / nUnk12 = the pending coordinates (0x159D94 / 0x159D98), bRegionId = the region and
- *     bUnk16 = 1; the aBaseFacilities record gets bType = region + 0x80 -- the byte wraps, so the
- *     stored value is the region index 0..9 -- and its abName field (the
+ *     bUnk16 = 1; the aBaseFacilities record gets bType = region - 0x80 (the ARM is `SUB R0,R1,#0x80`
+ *     at 0x8B544; Hex-Rays renders it as `+ 0x80` and the two spellings agree for every byte value),
+ *     so the stored value is the region index 0..9 -- and its abName field (the
  *     label at 0x186C5A) gets the string BaseFac_FormatCostLabel builds. Then the strateg list is
  *     searched for the entry whose nSiteId equals apBases[0]->bUnk4 and that entry's nX / nY are
  *     set to the pending coordinates. The screen id becomes 1, bBaseFacConfirm and bBaseFacDone
@@ -3918,7 +3919,11 @@ typedef struct SoldierScreenEnv {
     u8      *pbOpen;              /* 0x159DE0, the screen-open byte */
     i32     *pnScreenId;          /* nGeoscapeScreen @ 0x186BC4 */
     Soldier *const *apSoldiers;   /* Map + 0x1198 */
-    const u16 *pnSoldierCount;    /* unk_115350 */
+    const i32 *pnSoldierCount;    /* unk_115350: the original reads this global as a u16; the shell
+                                   * owns one i32 cell (PufoWorldState.nSoldierCount) and this env
+                                   * points at that live cell. It is a live pointer, not a copy:
+                                   * SoldierScreenEnv lives in the world, not in the thunk that fills
+                                   * it (World_SoldierToggleThunk). */
     const i8 *pnSelectedBaseIdx;  /* nSelectedBaseIdx @ 0x159D81 */
     UiPanel **ppPanelEquip;       /* 0x159DF0, panel A */
     UiPanel **ppPanelStores;      /* 0x159758, panel B */

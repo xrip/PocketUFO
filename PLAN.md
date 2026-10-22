@@ -4329,13 +4329,19 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   100.3 `b5fa2f0`, 100.4 `c29ae95`, 100.5 `e42ac4f`, 100.6 `cf4e502` -- six gates + e2e green at every
   stage, parity sections in docs/parity/game-core.md.
 
-- [ ] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
+- [x] **A reinforcement alien can join the roster without a cell (original latent fault).** Recorded in Part 98.
   The 0x4BA3C arm of `BeforeEnemyStep` increments `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit @ 0x55418` has
   accepted any node, and the pick's failure is ignored; the original's consumers at 0x49260, 0x4C8D4 and 0x4CBE0
   dereference `pCell` with no test. Shipped data makes this routine for rank-8 aliens (no bFlag20 == 4 node exists)
   and for Xcom-base reinforcements. The port guards the four consumer sites instead of reproducing the fault; if a
   later part wants the original's behaviour exactly, the guard deviation has to be re-argued per site. Indexed in
   bugs.tsv (`0x4BA3C`, deviation, Part 101 pass).
+  - **Closing pass 2026-10-22 (CLOSED-ASSERTED):** Verdict: an original latent fault, recorded and
+    asserted, not hidden. It has a `bugs.tsv` row (`0x4BA3C`, line 347: the reinforcement arm raises
+    `nEnemyUnitCount` before `Map_PickRmpSpawnForUnit`) and the reinforcement path runs live in
+    `test_geoscapeframe` section 18 (the mission at `:8515`, the end-turn bracket at `:8633`, the
+    check at `:8666`; the parked cell is also named at `:3314`). Parts 106/107 added no new caller,
+    so the risk this row named did not grow.
 
 - [x] **`DatFile_Open` frees the struct's old write buffer -- so every caller must `DatFile_ctor` first.**
   CLOSED by Part 103.3: the original's open frees `pWriteBuf` at 0x9F134 (operator delete) and re-allocates at
@@ -4371,19 +4377,29 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   exe (`save 70` stamps the mirror, `quityes` empties the list, `strateg` prints "0 items, mirror 0x186530 5",
   clean exit 0). The stale-mirror defect stays asserted, not hidden (bugs.tsv `0x3E154`).
 
-- [ ] **A loaded craft keeps a stale `nStrategIdx`.** `Save_ReadShips` stores it at 0x40BA8 and `LoadGame`'s
+- [x] **A loaded craft keeps a stale `nStrategIdx`.** `Save_ReadShips` stores it at 0x40BA8 and `LoadGame`'s
   per-craft pass 0x44F7C..0x450E8 never stores to `Ship+0x38`, so a craft whose entry was matched at another position
   keeps the number its record carried. Part 93 asserts the stale value; anything that later reads it as a list index
   (the arrival dispatch re-reads it) works on the wrong entry. Original behaviour, reproduced on purpose;
   indexed in bugs.tsv (`0x40BA8`, Part 101 pass).
+  - **Closing pass 2026-10-22 (CLOSED-ASSERTED):** Verdict: an original bug the port reproduces,
+    recorded and asserted. `bugs.tsv` line 345 (`0x40BA8`); the loaded world asserts it in
+    `test_geoscapeframe:5310-5315` -- the finder is `StrategList_FindIdxForShip @ 0x6A05C` (no type
+    gate, no active gate) and the check keeps `pShip->nStrategIdx` equal to the index the ships
+    chunk gave it, with the stated reason that 0x45018..0x450E8 never writes the field.
 
-- [ ] **`nStrategItemCount @ 0x186530` is left stale by the ending arm.** `PtrArray_DeleteAll` at 0x3E154 has no
+- [x] **`nStrategItemCount @ 0x186530` is left stale by the ending arm.** `PtrArray_DeleteAll` at 0x3E154 has no
   mirror refresh, unlike `StrategList_RemoveAt` at 0x82B2C/0x82B34, so after `Tact_Shutdown(1)` the count cell names
   items that no longer exist -- and `Save_WriteStrateg`'s loop at 0x3FE28 would write records for them. The port
   re-states the cell at the save boundary and section 17 asserts the stale value instead of hiding it. Indexed
   in bugs.tsv (`0x3E154`, Part 101 pass).
+  - **Closing pass 2026-10-22 (CLOSED-ASSERTED):** Verdict: an original stale write, recorded and
+    asserted. `bugs.tsv` line 346 (`0x3E154`); `test_save:1986-1995` keeps the stale value on
+    purpose ('but the stale count still allocates three items', also `:1392`), and Part 103's
+    `test_tactend` round holds the mission-end arm. The port asserts the stale original value
+    instead of hiding it.
 
-- [ ] **Two suites write the same save file in the same directory.** `test_save.c` writes `sav0.sav` (1701) while
+- [x] **Two suites write the same save file in the same directory.** `test_save.c` writes `sav0.sav` (1701) while
   `test_geoscapeframe`'s section 102 removes, writes and re-reads `sav0.sav` (12593, 12611, 12680), and every test
   runs with `WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}`, so `ctest -j 8` can overlap them. This is the standing suspect
   for the intermittent Debug failure of that section's strateg round-trip check: seen once in the Part 109 six-gate
@@ -4392,6 +4408,12 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   fix is per-suite fixture names or a per-test working directory -- test infrastructure, not port behaviour -- so it
   is recorded here as a separate issue rather than folded into a Part. See also the stale-`nStrategItemCount` row
   above: the same gate is where that defect surfaces when it surfaces at all.
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed in Part 110: the geoscapeframe save round
+    moved to slot 4 -- `test_geoscapeframe:12606` states the reason (test_save writes `sav0.sav` in
+    the same working directory), `:12627` and `:12652` press `options.ctl.apList[4]`,
+    `:12609/:12696/:12730` remove `sav4.sav`. `grep -l 'sav0\.sav' tests` now names `test_save.c`
+    and one comment in `test_geoscapeframe.c`. The intermittent Debug failure never reproduced in
+    three serial runs and two six-gate runs; the collision it came from is gone.
 
 - [x] **`Tilemap_GetAt` indexes its cell with no bounds test.** The fixed round trip left a restored craft marker at
   (−6000,−6000) -- the cell its record was created with -- and the test's alt-tilemap lookup read outside the image
@@ -4487,20 +4509,32 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   and 32000 as the boundary cases and `SoldierRecordEnv` (pufo_save.h) carrying the item table, the roster
   and `unk_138EA0`. Gate: `TestSoldierTacticalArms` in tests/test_save.c.
 
-- [ ] **`Unit_ResetBattleState` skips three of the original's internal acts.** The original @ 0x498b0
+- [x] **`Unit_ResetBattleState` skips three of the original's internal acts.** The original @ 0x498b0
   clears the pocket/belt/backpack item slots, sets `apBackpack[5] = apBackpack[6] = &unk_138EA0`, and
   calls `Unit_RecalcInventoryStat` itself; the port does the trio derivation and the armor constant only,
   and its callers recalc where they need it. Every call site reached so far compensates, so nothing is
   red — but a new caller that trusts the original's behavior would carry stale items. Found wiring the
   team-select call (Part 47); the deviation is recorded in the IDB comment at 0x498b0. Re-read before the
   turn-order unit (Part 106) adds callers.
-- [ ] **`UnitRosters` and `SpotCtx` carry launch-time count copies.** `World_InitTactical` writes
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a stated deviation, decision stands.
+    Three call sites in `pufo_tactctl.c` and one note in `pufo_tactend.c`; each recalcs what it
+    needs, and the IDB comment at 0x498b0 states the trio the port leaves out. Rule for a new
+    caller: call `Unit_RecalcInventoryStat` yourself. No consumer is red, so this is not a parity
+    gap; the follow-up is a rule to keep, not code to write.
+- [x] **`UnitRosters` and `SpotCtx` carry launch-time count copies.** `World_InitTactical` writes
   `nXcomCount`/`nEnemyCount` into the rosters and the copy is a value, not a link — same class as the
   aCells two-views problem: any tactical-runtime unit that changes roster membership must rewire these
   or own them live. Deliberately not folded into Part 47 (KISS: the launch pass consumes them read-only).
   Rewire with the turn-order unit (Part 106). Part 106 fixed the same class where it actually hurt — the save
   chain's roster count (see the closed row above) — and left these two copies value-owned; they are still read-only
   for every pass that consumes them today.
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed across Part 106 and Part 110. Every dispatch
+    re-reads the Map counts into the rosters (`pufo_world.c:5431-5433` for the tactical frame,
+    `:6820-6822` before `UnitList_ForEachRefresh`), the envs take the roster object by pointer
+    (`:3881`, `:5473`, `:5497`, `:5538`, `:5585`, `:6876`), and Part 110's `Kill_SyncCounts`
+    (`pufo_unit.c:1627`, the 0x3325C write-back) is the writer that keeps the arrays and the Map
+    byte cells in step. A copy is still a copy; what changed is that no count moves without its
+    owner being re-read or written.
 - [x] **`TactInputState.bSlot2Byte0` is now unused by the shell instance.** CLOSED by Part 105: the field was
   dropped from `TactInputState`. The IDB re-check closed the "the tactical-input unit will own it later" hope:
   Map+0x68 is read at exactly one site, MapView_FocusSelected 0x16718 (arm the sweep focus, then the sample),
@@ -4561,7 +4595,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `Map_IsValidCell` before any table read. Recorded deviation (bugs.tsv): past the table's own end the original
   reads the globals behind it; the port refuses. IDB comments at 0x39F24/0x39F88/0x3CC80/0x49B2C/0x27C58/0x27D18.
 
-- [ ] **`World_SoldierToggleThunk` stores a stack address into the persistent `solEnv`.** At
+- [x] **`World_SoldierToggleThunk` stores a stack address into the persistent `solEnv`.** At
   `src/pufo/app/pufo_world.c:192` the thunk's local `u16 nCount` (a faithful copy of the original's u16
   count at unk_115350) is handed to `pW->solEnv.pnSoldierCount`, and `solEnv` outlives the function. No
   path dereferences it today -- every soldier-screen handler reaches the count through a freshly built env
@@ -4569,13 +4603,24 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   reads `solEnv.pnSoldierCount` would read a dead stack frame. The fix is one owner change: give the shell a
   persistent `u16` mirror of the count (or retype the field) and point at it. Found while wiring
   `World_WireMissionSeams` (Part 46); reported, not folded. (target Part 102.)
-- [ ] **`ctlResearchPanel` is the same duplicate-control shape Part 34 removed for the confirm control.** The port keeps
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed in Part 110, the same shape Part 106 recorded
+    for `FlobjsReadState`: `pufo_world.c:206` now stores `&pW->nSoldierCount` -- a pointer to the
+    live cell -- where it stored `&nCount`, an address on the thunk's stack. `test_geoscapeframe`
+    asserts the pointer identity and the value read back after the SOLDIERS stores; the mutation
+    that put the stack copy back made the fixture read 0 while the live roster held 8.
+- [x] **`ctlResearchPanel` is the same duplicate-control shape Part 34 removed for the confirm control.** The port keeps
   `pW->ctlResearchPanel` as its own `UiControl` and `Game_StartNew` parks it at 1000,1000 (the original's 0x95434..0x95448
   `STRH` pair), but the original does that through the global pointer `pGeoscapeCtlA` -- the control InitUI allocated at
   0x86100..0x864DC, the one the pointer dispatchers reach (0x87BF0 press, 0x896E8 release). Nothing in the port hit-tests
   or draws `pW->ctlResearchPanel`, so today it is a dead second object rather than a live bug; it becomes one the moment
   anything installs a handler on it. Decide which slot `pGeoscapeCtlA` is, point the env at `pW->ui.apCtl[that slot]`, and
   drop the field. (target Part 104.)
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a dead second object, not a live bug,
+    and the decision is recorded. `test_startnew` asserts the parked control at 1000,1000 (the
+    original's 0x95434..0x95448 `STRH` pair); nothing in the port draws or hit-tests
+    `pW->ctlResearchPanel`. The question it asks -- which `pGeoscapeCtlA` slot the InitUI control at
+    0x86100..0x864DC is, point the env at `pW->ui.apCtl[slot]`, drop the field -- stays a named
+    follow-up below.
 - [x] **Resolved in Part 37: the Debug suite's "run order" problem was one bad check. The stale-binary trap remains a
   rule.** The claim was that `test_template` was green in a serial Debug run and red under `-j 8` or run alone, which
   read as one test depending on what another left in the shared working directory, and `tools/check.sh` kept Debug
@@ -4598,7 +4643,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   every one was a check-side artefact, not port behaviour. The rule the class leaves behind is written with the
   Part 39 entry: never assert "untouched" about memory the original never initialised.
 
-- [ ] **`Geoscape_OnMapClick`'s site-record write is stated in the wrong direction.** The original subtracts:
+- [x] **`Geoscape_OnMapClick`'s site-record write is stated in the wrong direction.** The original subtracts:
   0x8B540/0x8B544/0x8B548 are `LDRB R1,[bPendingRegionId]`, `SUB R0,R1,#0x80`, `STRB R0,[R5]`, while
   `pufo_baseui.c`'s screen-2 arm writes `apSiteRecs[0].bType = (u8)(bPendingRegionId + 0x80)`. The two agree for
   every tile in 0x80..0x89 because the byte store wraps (`0x80 + 0x80` and `0x80 - 0x80` both land on 0), and Hex-Rays
@@ -4609,6 +4654,12 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   fix and not a behavioural one. The census as of Part 41: one `+ 0x80` site left (`pufo_baseui.c:7285`); the other
   two the same decompiler habit produced (`pufo_geoscape.c:1535`, `:1560`) already subtract. Change it to
   `- PUFO_REGION_ID_FIRST` in its own pass. Lands with the Part 102 commit (readability only).
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed in Part 110: the site-record write subtracts
+    (`pufo_baseui.c:7328`, `apSiteRecs[0].bType = bPendingRegionId - PUFO_REGION_ID_FIRST`),
+    matching the original's SUB, and `PUFO_REGION_ID_FIRST 0x80` (`pufo_baseui.h:2666`) now carries
+    the other sites too (`pufo_geoscape.c:1523/1526/1777/1778/4384`, `pufo_baseui.c:5191/5279`,
+    `pufo_app.c:1217-1218`). Unobservable by test because a region id never leaves that range --
+    stated, not measured.
 
 - [x] **`TestGeoscapeBaseFacArm`'s strip-highlight check is an invariance check and cannot see a changed
   constant.** It compares the arm's output with the env's highlight 0 against the arm's output with the env's
@@ -4646,7 +4697,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   numbers while using the settled names. The pair is also what makes the throw budget live: see the row below on
   the budget's carrier. IDB notes at 0x31A4C..0x31A68 carry the naming.
 
-- [ ] **The throw arc's two Map writes still have no owner in the port.** Found while settling the `auStat` pair
+- [x] **The throw arc's two Map writes still have no owner in the port.** Found while settling the `auStat` pair
   (Part 107). `Tact_SimulateThrowArc`'s tail 0x319E0..0x31A10 stores its `pItem` argument into
   `Map.pArrowThrownItem @ 0x14070` and raises `Map.bTrajHitStop @ 0x1406D` in the same instruction sequence, and
   `Tact_ResolveThrowLanding @ 0x31A18` calls that arc from inside its own landing loop -- so on a real throw the
@@ -4661,6 +4712,21 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   economy unit it was found in. The third input the same function reads is fixed here: `MoveThrow` now composes
   `ThrowBudget` from `Map.pSelUnit` and the thrown entry's object weight at the throw site (0x31A4C..0x31A58), and
   `test_mapctx` asserts the composed values instead of a prefilled slot.
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed in Part 110, and the IDB first corrected what
+    the port believed about the flag. `Tact_ResolveThrowLanding @ 0x31a18` takes no start value: the
+    flag cell is read at 0x31DC8, after the arc call at 0x31D00, and the arc's tail raises it at
+    0x31A0C -- so the walk always starts armed. The port's caller-supplied `bHitStopIn` was always 0
+    (no writer existed), which stopped every walk at one bump and made any throw with a bound over 8
+    voxels fail with action-fail 4. The parameter is gone; `MoveThrow` publishes both cells per
+    call: the thrown item from `entry+0x34` for the landing calls (the original pushes it at
+    0x508E0) and `Map.pSelWeapon` for the tail call (loaded at 0x5090C for the call at 0x50960), and
+    neither cell is written when the walk returns at 0x31CD4 before any arc. Asserted in
+    `test_mapctx` (own-cell throw raises the byte and stores the item; the neighbour throw now
+    lands; a weight-30 throw refuses before the arc and touches neither cell; a walk past budget
+    aborts and keeps the THROWN item plus the value the walk left at 0x322C4), with `test_ballist`'s
+    reworked loop cases (106 checks) and `test_moveaction`'s live cells (48 checks). Three mutations
+    gave the gates teeth: a missing publish, a publish after the 0x31CD4 return, and the walk-start
+    value.
 
 - [x] **Ten rows of `docs/parity/bugs.tsv` use bare LF while the file is CRLF.** Rows 163..172 (the
   `EnemyAi_TryFireOrWander` / `Tact_EnemyAiTick` block) end in `\n`, the other 256 in `\r\n`. `audit_bugs.py`
@@ -4824,7 +4890,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   into a lie; `offsetof(MapCell, pUnit) == 0x30` stays because that is the one field accesses depend on. Note
   recorded in `pufo_mapcell.h` and at 0x54A90.
 
-- [ ] **`Tact_KillUnit` removes a dead unit from the side lists without writing the counts back.**
+- [x] **`Tact_KillUnit` removes a dead unit from the side lists without writing the counts back.**
   `src/pufo/game/pufo_unit.c` builds `SideLists lists = Kill_SideLists(pCtx->pRosters)` twice (the chryssalid
   transform at ~1758 and the death path at ~1795) and calls `SideLists_RemoveUnit(&lists, pUnit)`, but
   `SideLists` carries `nXcom` / `nEnemy` **by value** and nothing writes them back to the canonical
@@ -4835,6 +4901,12 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   own the counts or whether `Tact_KillUnit` should sync them, so it is its own step. RE-TARGETED by Part 107 to a
   dedicated engine step in the final sweep: the two Parts it was parked against (106, 107) both ran on other
   scopes, and this one needs an IDB decision plus a roster-count gate, not a rename.
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed in Part 110: `Kill_SyncCounts`
+    (`pufo_unit.c:1627`, the 0x3325C `--*p_nXcomUnitCount` shape) writes both side-list counts back
+    into the rosters and into the Map byte cells at the two kill arms (`:1813`, `:1856`); `test_vis`
+    wires `KillCtx.pnXcomCount/pnEnemyCount` (`:365-366`) and asserts the counts after a removal.
+    Without the write-back the sweep that follows the kill runs over the old count and the
+    compaction's duplicated survivor takes the shock twice.
 
 - [x] **Fixed in Part 41: `Ui_ConfirmFireBurst` (0x18774) now reports the refusal its callee reports.**
   In the original the message is the callee's own work — `TactState_EnqueueFireBurst @ 0x4B0D8`,
@@ -4856,13 +4928,18 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   the callee is handed `(int)(cost*(2/3))`. That is why it stays a `(void)` call rather than getting a push it can never
   reach. The same census closed `pufo_tacthud.c:430` (the medikit pad gates at 0x17d54 and pushes record 1 itself).
 
-- [ ] **`PUFO_MAP_MULTI_TARGET_MAX` is 10 but `Map.apMultiTargets` is eight wide.** `src/pufo/game/pufo_mapctx.h:46`
+- [x] **`PUFO_MAP_MULTI_TARGET_MAX` is 10 but `Map.apMultiTargets` is eight wide.** `src/pufo/game/pufo_mapctx.h:46`
   defines it as `PUFO_AIM_SAMPLE_COUNT` (10, from `pufo_ballist.h:77`), while the Map block gives the array
   eight entries (`Map.apMultiTargets @ Map+0x08`, `TactInputState.apMultiTargets[8]`) and
   `Tact_HandleMapClick @ 0x15328` refuses the ninth with `CMP #8 / BGE`. The two constants describe different
   things — the ballistician's ten arc samples and the multi-target cell list — and sharing a value makes one
   of them wrong. `pufo_input.h` now carries its own `PUFO_MULTI_TARGET_MAX 8` rather than propagate the
   mismatch; resolving it means checking every reader of `PUFO_MAP_MULTI_TARGET_MAX`. (target Part 106.)
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed in Part 110: the names now say what each
+    bound owns. `PUFO_MAP_MT_SAMPLE_COUNT` = `PUFO_AIM_SAMPLE_COUNT` = 10 shot-sample positions
+    (`pufo_mapctx.h:54`; the IDB lays Map_adMtX/Y/Z 80 bytes apart at 0x1278A0/0x1278F0/0x127940)
+    and `PUFO_MULTI_TARGET_MAX` = 8 cells, the `CMP R0,#8 / BGE` refusal in `Tact_HandleMapClick @
+    0x15328` (`pufo_input.h:133`). `test_constants:304/:307` pins both numbers.
 
 - [x] **The object name field is at record+0x00, not +0x04, and `Geoscape_InitUI`'s name loop is
   one slot short — fixed in part 18.** Found while verifying the alien race ids (part 17); it also explains the older
@@ -4886,7 +4963,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   1446+slot, read back out of the loaded table, and slot 0 is never written. The names are the
   shipped Russian set from lang.dat TEXTS.DAT (slot 59 "Труп Сектоида", slot 77 "Сектоид солдат",
   slot 117 "Рэйнджер"), which is the table the original actually reads.
-- [ ] **The same product column is spelled two ways across the manufacturing envs.** `aManufProductB
+- [x] **The same product column is spelled two ways across the manufacturing envs.** `aManufProductB
   @ 0x15B79C` is `u32 *apProductB` in `ManufBuildEnv` and `i32 *apProductB` in `ManufClearEnv`,
   `ManufCommitEnv`, `ManufQtyEnv` and now `ManufDrawEnv`. The IDB says the column is u32. Nothing is
   wrong today — the values are small unit counts and the tests keep one buffer per spelling — but the
@@ -4895,14 +4972,28 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   moving the six env fields to `u32 *` (and the world's `anProductReq` buffer with them) turns every comparison
   against an `i32` unit count into a signed/unsigned one under this project's `-Werror`, so the settle has to be
   one pass that also fixes those comparisons, not a header edit. The IDB says u32 is the direction.
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a typing item with the reason it is not
+    a header edit. Measured at the closing pass: `u32 *apProductB` only at `pufo_baseui.h:2314`;
+    `i32 *` at `:1927/:2003/:2136/:2383/:2526/:2573` and `pufo_geoscape.h:368`; `anProductReq` is
+    `i32[]` (`pufo_world.h:796`) behind the cast at `pufo_world.c:10393`; `test_baseui` keeps one
+    `static i32 g_aProdB[]` (`:4244`) with `(i32 *)` casts at `:10507/:10523`. The IDB says u32 is
+    the direction, and the move must take those comparisons in the same pass. The row above says
+    `-Werror`; the build's real spelling is `/W4 /WX` on every target (`CMakeLists.txt:26`), which fails
+    on the same signed/unsigned mix. Follow-up below.
 
-- [ ] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
+- [x] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
   `UiLineList_Remove` (in `pufo_ui`), and `pufo_ui` links `pufo_game`. Test targets that link
   `pufo_game` without `pufo_ui` only link because nothing pulls `pufo_strateg.obj` out of the
   archive; one new shared symbol pulled it in and 19 targets failed to link while ctest still
   reported 48/48. Until this is fixed, share a value across modules as a header define, not an
   `extern` symbol. (final closing pass.)
-- [ ] **Four caption buffers have no writer anywhere in the binary.** `PsiScreen_Draw` copies three
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a build-structure item, recorded.
+    Measured: `pufo_game` links no `pufo_ui` (`src/pufo/CMakeLists.txt:80`) while `pufo_ui` links
+    `pufo_game` (`:96`), and `pufo_strateg.c:9` calls `UiLineList_Remove`. The habit this row asks
+    for is in use -- every value shared across modules in Part 110 is a header define
+    (`PUFO_REGION_ID_FIRST`, the 10/8 macro split). The archive or link-order change is build
+    design, kept out of the parity contract. Follow-up below.
+- [x] **Four caption buffers have no writer anywhere in the binary.** `PsiScreen_Draw` copies three
   strings and draws them — `unk_EF024` at (7, 54), `unk_EF0F1` centred at (60, 300) and
   `szBaseAtDone @ 0xEBF4B` centred at (180, 300) — and `unk_EF1BE` for its shortfall panel. All four
   are `.data` / BSS scratch whose only cross-references in the whole binary are these reads; the same
@@ -4912,7 +5003,15 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   the likeliest candidate — the port cannot say what those captions are supposed to say, and the
   screen draws that read them stay unported. Recorded rather than guessed. (re-verify at the final closing
   pass: Parts 72+ ported several of these very screens, so "stay unported" may itself be stale.)
-- [ ] **The research entry count is modelled as `u16` where the original has a byte.** Found in part 43:
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Closed: the row's own warning was right and its
+    claim was stale. All five draws are ported -- `ManufScreen_DrawFrame` `pufo_baseui.c:4800`,
+    `ResearchScreen_Draw :10478`, `BuySellScreen_Draw :10650`, `PsiScreen_Draw :12724`,
+    `BaseAtScreen_Draw :13182` -- and `PsiScreen_Draw` paints the three captions at the original's
+    own sites (0x726A0 / 0x726F8 / 0x7274C, `:12749-12751`) from the text records named there
+    (`PUFO_PSI_TEXT_COLUMNS` = TEXTS[1188], `..._SEL_BASE` = TEXTS[1189], `..._OK` = TEXTS[1127],
+    the `0xEBF4B` 'ОК' record). The 'no writer' half stands as an IDB fact: the four `.data` scratch
+    addresses have only these reads in the whole binary, so they ship empty.
+- [x] **The research entry count is modelled as `u16` where the original has a byte.** Found in part 43:
   the ARM reads the count at `0x160C4C` with `LDRB` (`LDRB R3, [R2, #0x1D44]` over the 0x15EF08 anchor,
   and `LDRB` again at 0x74B14), and `Geoscape_InitUI` writes it with `STRB R1, #0x90` — the port's own
   comment at `pufo_geoiinit.c:243` already says STRB. But `ResearchQtyEnv`, `ResearchAccumulateEnv`,
@@ -4923,6 +5022,10 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `const u8 *`, so the two spellings disagree inside the same header. Fixing it is a type change across
   four envs, `pufo_world.h` and the tests that fill them; it is its own step, not part of a port.
   (target Part 104.)
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a typing item, measured rather than
+    argued. Three spellings today: `u16` at `pufo_world.h:205`, `i32` at `pufo_baseui.h:1587`,
+    `const u8 *` at `pufo_baseui.h:5011`. The original's field is a byte. Nothing is wrong in
+    behaviour; one type sweep closes it. Follow-up below.
 - [x] **Lifted by the frame wiring: the app now runs the geoscape frame.** This bullet said the geoscape screen was
   a hook the port did not implement (`RenderFrameEnv.pfnGeoscapeDraw`), which made per-screen visual checks
   impossible. `App_GeoscapeDrawThunk` installs that hook (`pufo_app.c:542`) over the shell's own `nGeoscapeScreen`,
@@ -4954,10 +5057,15 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   in the clock part, and `test_titles` plus `test_plane` are Part 39. The rule the class leaves behind: a check may
   not assert "untouched" about memory the original never initialised — `SoftSurf_AllocPixels @ 0x9f9a4` zeroes
   nothing, so a check fills the memory with a sentinel and asserts the sentinel.
-- [ ] `Tact_LoadPalettes(i32 nGamma)` / `Tact_BuildPaletteLuts(i32 nGamma)` take an argument the
+- [x] `Tact_LoadPalettes(i32 nGamma)` / `Tact_BuildPaletteLuts(i32 nGamma)` take an argument the
   original does not: in ARM both take none, and `Tact_BuildPaletteLuts` reads `Map_nGamma @ 0x128AB8`
   itself. `Tact_InitMission` passes `*pEnv->pnGamma` to keep the existing signature. Harmless, but it
   is a signature deviation carried in already-ported code. (target Part 106.)
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a signature deviation carried in ported
+    code, stated at the port site. In ARM both `Tact_LoadPalettes` and `Tact_BuildPaletteLuts` take
+    no argument and the second reads `Map_nGamma @ 0x128AB8` itself; the port keeps `i32 nGamma` and
+    `Tact_InitMission` passes `*pEnv->pnGamma`. Dropping the parameter touches already-ported call
+    sites, so it belongs to a signature pass, not to a porting step. Follow-up below.
 - [x] `TactShutdownEnv.pbActionLatch /* Map+0x00 */` conflicts with `Map_bActionLatch @ Map+0x02`;
   `Tact_InitMission` sets `Map+0x00` to 1 and `Map+0x02` to 0, so the two are different fields and one
   of the two comments is wrong. (target Part 103.) CLOSED: the IDB confirms both stores — `STRB R0,[R4]` at
@@ -4967,20 +5075,39 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   gained the name `Map_bTactFlag` for 0x1139B8 plus comments there and at 0x3C690 / 0x3D588. The shell
   comment in `World_EndHookShutdown` carried a wrong citation (0x3D574 is the KillTimers call); corrected to
   0x3D588.
-- [ ] The cell grid is modelled twice: `GameMap.aCells` and `TactInitEnv.apCells` are the same
+- [x] The cell grid is modelled twice: `GameMap.aCells` and `TactInitEnv.apCells` are the same
   14400-entry array reached through two different fields. One owner should be picked. (target Part 106.)
-- [ ] `Ball_FloorDiv16` is misnamed. The ARM idiom it reproduces (`MOVS` / `ADDMI #0xF` / `ASR #4`) is
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: two live grids, measured, one owner
+    undecided. The shell's table is `pW->apTactCells` -- a pointer array whose slots are per-mission
+    allocations (`pufo_world.c:3689`, freed at `:4160-4163`, handed out at
+    `:3742/:4512/:4526/:7854/:7877`); `GameMap.aCells` is the embedded array in `pufo_mapctx.h:62`
+    behind `Map_LookupCell` (`:185`). Part 106 put the flat deploy lookup and the bounded walker
+    lookup on the Map model. Picking one owner is design work. Follow-up below.
+- [x] `Ball_FloorDiv16` is misnamed. The ARM idiom it reproduces (`MOVS` / `ADDMI #0xF` / `ASR #4`) is
   **truncating** division, not floor: for `v < 0`, `(v + 15) >> 4` equals `v / 16` exactly, so -17 gives
   -1 and not -2. The arithmetic is right and matches the ARM; only the name and the older comments say
   "floor". Renaming touches three call sites in `pufo_ballist.c` plus the parity notes, so it is left as
   its own step. Recorded at `0x1B8EC` in `bugs.tsv`; the comments now state the truth. (target Part 106.)
-- [ ] Map+0x1406C..0x14070 has three competing models. `pufo_mapctx.h` calls it
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed in Part 110: `Ball_FloorDiv16` is
+    `Ball_TruncDiv16` (11 sites: `pufo_ballist.c`, `pufo_ballist.h`, `pufo_isodraw.c`,
+    `pufo_isodraw.h`, `bugs.tsv:92`), and the wording that said 'floor' is corrected in the same
+    files. The only remaining occurrences of the old name are bugs.tsv's history sentence and a
+    historical game-core.md Part section. `test_ballist` 106 checks and `test_isodraw` 0 failures
+    after the rename.
+- [x] Map+0x1406C..0x14070 has three competing models. `pufo_mapctx.h` calls it
   `Soldier *apTraceExclude[2]`, `pufo_ballist.h` calls 0x1406C `bFireHitResult` and 0x1406D
   `bTrajHitStop`, and `MapView_DrawUnitFacingArrow` proves 0x14070 holds a `TactItem *` written by
   `Tact_SimulateThrowArc` (0x319F4). A byte pair and a pointer cannot both own the same four bytes, so
   one of the three is wrong. Not folded into this step — the arrow port takes the pointer through
   `IsoArrowGate.pThrownItem` and leaves the Map model alone. (target Part 106.)
-- [ ] The coverage metric counts **every** `@ 0xADDR` citation in `src/pufo`, so a comment that cites
+  - **Closing pass 2026-10-22 (CLOSED-FIXED):** Closed: the model is settled and the missing writer
+    is the Part 110 fix. `apTraceExclude[2]` is gone (Part 106 removed the invented one);
+    `pufo_mapctx.h` now holds the byte pair 0x1406C `bFireHitResult` / 0x1406D `bTrajHitStop` and
+    the pointer 0x14070 `pArrowThrownItem`. Writers on record: the arc tail (0x319FC + 0x31A0C), the
+    walk's two clears (0x322C4, 0x32390), the fall arm (0x53CFC, 0x53D04), and `MoveThrow`
+    publishing through `MoveActionCtx`. The eleven input handlers only read the byte (`Input_OnLeft
+    @ 0x116F4` and its nine siblings, the fire command at 0x51F94 / 0x52634).
+- [x] The coverage metric counts **every** `@ 0xADDR` citation in `src/pufo`, so a comment that cites
   an unported callee inflates the headline number. `audit_names.py` reports the live list, and it is
   currently empty: 0 credited addresses whose original name is not defined. The five that used to be on
   it — `Geoscape_OnPointer @ 0x872d0`, `Geoscape_OnPointerUp @ 0x89450`, `Ui_TextInputDialog @ 0x632cc`,
@@ -4991,7 +5118,17 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `pufo_uibank.c` handler-name table is the same class of credit: it quotes the original bank entry's
   name and address as data, which counts even when only the name string is recreated. (policy decided at the
   final closing pass.)
-- [ ] **The on-disk `ResearchTopic` field order still has no mapping onto `ResearchTopicLive`.** Part 45
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: the policy is the decision and it is in
+    force, and this closing pass measured the two lists instead of repeating the numbers above, which
+    are stale. Measured now: `audit_names.py` reports 4 credited addresses whose original name is not
+    defined -- 48 bytes, 0.0% of the binary -- `0x11148` InitTerm_UiBankEntry, `0x18a44`
+    j_Tact_CheckBattleEnd, `0xa115c` ??3@YAXPAX@Z and `0x22b50` nullsub_3, and all four are already
+    artifact rows in `docs/idb/image-artifacts.tsv` (init-term-entry, code-thunk, import-thunk,
+    empty-stub), so no behaviour is credited for them. `audit_credits.py` reports 5 negated citations,
+    each one a hook seam whose comment states the denial in the same block. `audit_bugs.py`: 326 ledger
+    rows against 93 `ORIGINAL BUG` markers in `src/pufo`, and it ends "ledger and port agree". The
+    `pufo_uibank.c` handler-name table stays the named exception this row already names.
+- [x] **The on-disk `ResearchTopic` field order still has no mapping onto `ResearchTopicLive`.** Part 45
   narrowed it without closing it. The in-memory record now has four evidenced 5-byte groups —
   `abNeedItems` (+0x0E), `abPreTopics` (+0x13), `abItemIds` (+0x18), `abActivateTopics` (+0x1D) — and the
   save chunk has exactly four 5-byte arrays (`abUnk10`, `abUnlock`, `abUnk20`, `abUnk25`), so the counts
@@ -4999,12 +5136,22 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   on-disk +0x1D but in-memory +0x0A. Closing it needs `LoadGame @ 0x44bbc` (0x45364/0x453EC are its two
   `aResearchTopics` references), which is not ported. Until then the port keeps the two layouts as
   separate types and does not pretend one converts into the other. (target Part 104.)
-- [ ] **`Text_DrawString` paints with the SECOND triple of the packed colour pair.** Part 46 pinned it on
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: an IDB ambiguity, recorded and blocked,
+    not guessed. Closing it needs `LoadGame @ 0x44bbc` -- its two `aResearchTopics` references are
+    0x45364 and 0x453EC -- and that function is not ported. The port keeps `ResearchTopic` (on disk)
+    and `ResearchTopicLive` (in memory) as separate types and does not pretend one converts into the
+    other. The four 5-byte groups and the `wProgress` offset mismatch are stated in the row above.
+- [x] **`Text_DrawString` paints with the SECOND triple of the packed colour pair.** Part 46 pinned it on
   the real surface: the "white" pair 250,250,250 / 0,0,0 draws black glyphs, and the research screen's
   teal captions come out as 4,70,75 rather than 68,244,252. The research frame test builds every
   reference with all six values; `TestManufDrawFrame` and `TestTransferDraw` still pass a bare triple, so
   their colour claims are weaker than they look. Worth its own pass over those two older real-surface
   tests rather than a fix folded into a porting step. (target Part 102.)
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: an original quirk kept, and a named test
+    pass. The second triple of the packed pair is what paints, and the research frame test builds
+    references with all six values. `TestManufDrawFrame` and `TestTransferDraw` still pass a bare
+    triple, so their colour claims are weaker than they look -- that is a pass over two older real-
+    surface tests, not a fix in `Text_DrawString`. Follow-up below.
 - [x] **Closed in Part 43: the mission-site table at `0x1865C0` had two models, it has one now.**
   `MissionSiteRec` in `game/pufo_strateg.h` is `i16 x; i16 y; char szName[20];` and serves the spawner
   (0x7DE48 / 0x7DE3C `LDRSH` on +0 and +2), the InitUI fill (0x86C6C reads 24 raw bytes, 0x86CA4 writes the
@@ -5014,14 +5161,19 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   spawner's `apSites` to `World.aMissionSites`, so the two views met before the merge — worth recording since
   this note claimed they never would. The remaining question about the table is its content, not its layout:
   every name is empty because lang.dat has 1650 records and InitUI asks for 1655+i.
-- [ ] **`Map_nUiScreen` has three homes in the port.** The original has ONE u16 that the
+- [x] **`Map_nUiScreen` has three homes in the port.** The original has ONE u16 that the
   draw path reads and that `LoadGame` tests (`LDRH` 0x44CA4, `CMP #0x11` 0x44CAC). The port has
   `g_nUiScreen` (an app i32, read on the draw path), `g_world.nUiScreen` (u16, the copy `World_LoadSlot`
   reaches through the load chain) and `g_tactState.nUiScreen` (u16, the tactical copy). Part 69 had to seed
   the world's copy from the app's after `World_Init` to make the load gate fire at all, which is a
   workaround, not a model. One owner, one place that writes it, is the fix; until then every screen-id
   bug has three candidates. (target Part 102.)
-- [ ] **The save records duplicate globals the original owns once.** `SaveBasesState` re-holds the base
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: three homes remain, and the row's
+    warning is the state of the port. `g_nUiScreen` (app i32, the draw path), `g_world.nUiScreen`
+    (u16, the load chain's copy) and `g_tactState.nUiScreen` (u16, the tactical copy); the load gate
+    still needs the seed from the app copy after `World_Init`. Part 110 added no fourth home. One
+    owner is design work. Follow-up below.
+- [x] **The save records duplicate globals the original owns once.** `SaveBasesState` re-holds the base
   count, the selected base, funds, the 8 hangar bytes, the facility grid, the region counters and the
   8 site records; `SaveStrategState` re-holds the version byte @ 0x18655C. Part 69 stopped the drift at
   the driver seams with `Save_BasesLiveToRecord` / `Save_BasesRecordToLive` (`pufo_save.h`), but the join
@@ -5035,7 +5187,13 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `saveBases`, and the four `test_save` bases sections move to live-owner fixtures. It lands as its own
   sub-round there, when every gate including the audio/device ones exists and a regression bisects
   cleanly; Parts 104..108 keep the save round's new seam guards green meanwhile.
-- [ ] **The original's RNG start block is only half ported.** `InitInstance @ 0x9fd48` does three things
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: a refactor with its shape named,
+    deliberately not run in this pass. Part 69's `Save_BasesLiveToRecord` / `Save_BasesRecordToLive`
+    guards at the driver seams stay green; the join still travels as raw byte pointers because
+    `pufo_save.h` cannot see `BaseFacFlag` / `BaseSiteRec` without a cycle. The clean shape the row
+    states -- `Save_WriteBases`/`Save_ReadBases` over `SaveBasesLive`, no record copy, four
+    `test_save` sections on live-owner fixtures -- is the follow-up. Follow-up below.
+- [x] **The original's RNG start block is only half ported.** `InitInstance @ 0x9fd48` does three things
   after `GetSystemTime @ 0xA00D8`: `srand(100 * wSecond + wMilliseconds)` @ 0xA00F8 (the port has this as
   `Game_SeedRng`), then `rand()` burned `wSecond` times (0xA010C..0xA011C, so the stream position after
   seeding depends on the second of the minute), then nine start parameters drawn at 0xA0120..0xA0250:
@@ -5049,6 +5207,12 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   0xA035C and on all seven globals. What is not known: whether the mission-type and 128AD6 draws matter
   at start, or whether the game overwrites both before use. (target Part 108: a fresh IDB sweep of the seven
   globals -- remembering the `STRB [Rbase,#imm]` no-xref trap -- accompanies the platform round.)
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: half ported, and the half that is not is
+    recorded rather than invented. Comments sit on 0xA00F8, 0xA010C, 0xA0134, 0xA035C and on all
+    seven globals. Part 108's platform round found no reader for the seven, and `STRB [Rbase,#imm]`
+    stores show no xref in this IDB, so their meaning is still unestablished. The open question --
+    whether the mission-type draw and the `unk_128AD6` draw matter at start -- is stated as a
+    question.
 - [x] **Closed in Part 71: the e2e pictures were nondeterministic, and the cause is the original's seed.**
   Six scripted runs of one flow gave two different `01_newgame.ppm` pictures with no code change between
   them, and *every* one of the 240x320 pixels differed -- the new game's map/region pick is a
@@ -5065,7 +5229,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   live since Parts 76/84), and the banner's pad label TEXTS[1104] (`pufo_world.c:4832`). No test fixture fills any
   of them on the live path; Part 105 verified the six sites against HEAD and closed the row without a code change.
 
-- [ ] **Each parity entry still has to answer "which globals does the callee read, and does the port hand
+- [x] **Each parity entry still has to answer "which globals does the callee read, and does the port hand
   live cells for them?"** Part 73 caught one: `StrategSpawnCtx` held the month counter and the alien-pool
   addend as frozen 0/99, so every mission rolled on weight row 0 and skipped 0x81B7C's early cap. A text
   census of `pufo_world.c` was run for this and found nothing more: 41 by-value `env.x = pW->cell` copies
@@ -5078,6 +5242,12 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   `fundingInit.pnMonthCounter`) or re-reads it per frame in `World_RefreshGeoscapeFrame`
   (`fundingDraw.nMonthCounter`). Part of the per-subsystem parity pass, not a sweep of the shell file.
   (final closing pass.)
+  - **Closing pass 2026-10-22 (CLOSED-RECORDED):** Verdict: an obligation on every parity entry, not
+    a sweep of the shell file. Each entry lists the callee's global reads and names the live cell
+    the port hands for them; Part 110 ran exactly that question twice (the throw cells
+    `Map+0x1406D`/`Map+0x14070` needed a writer, `Map.nXcomCount`/`Map.nEnemyCount` needed
+    `Kill_SyncCounts`). The by-value copies that are fine stay fine because they sit in a per-call
+    hook builder or re-read at dispatch (`pufo_world.c:5431-5433`, `:6820-6822`).
 
 - [x] **A scripted picture only means something if a paint runs between the timer steps.** Part 74 caught this: `App_ScriptTicks` fired the three timer bodies n times and painted once at the end, and `Ui_AnimExpandBlit` zeroes `cUiAnimProgress` on the first call of an animation (0x95C14), so the reset swallowed every step and the panel screens were captured on the frame where nothing has opened. The class is the harness's event order rather than the port's logic, and it applies to any state a timer advances that a draw reads -- the clock digits, the radar cooldown, the three sweep counters, the fade timers. The rule, now written into `App_ScriptTicks` and into the `Ui_AnimExpandBlit` section of docs/parity/game-core.md: one firing of each timer, then one paint. **Closed by the Part 109 sweep.** Every loop that steps the animation byte was listed mechanically (all
 1378 `for (` loops in `tests/*.c` plus `pufo_app.c`, classified by what they step and whether a draw sits
@@ -5366,3 +5536,48 @@ failure was checked directly against this step: with the step's `src/pufo` edits
 build directory, the same check fails ("the craft's display name lands in the 0x186488 caption scratch"),
 so it is not from the wiring. Every failing Debug check seen so far is a string or counter compared
 against MSVC's uninitialised-memory pattern. See "Separate issues".
+
+## Closing pass (2026-10-22, Part 110) -- every open row has a verdict
+
+`grep -c '^- \[ \]' PLAN.md` is 0. The 27 rows that were open carry a marker each, in three kinds:
+
+- **CLOSED-FIXED** (9): 4386, 4497, 4564, 4601, 4649, 4827, 4859, 4972, 4977. Port code, an asserting
+  test, and a mutation behind the test that proves the test has teeth.
+- **CLOSED-ASSERTED** (3): 4332, 4374, 4380. Original defects the port reproduces on purpose and a test
+  names -- `bugs.tsv` rows plus the live proof in `test_geoscapeframe`, `test_save` and the quit-YES e2e
+  output.
+- **CLOSED-RECORDED** (15): 4490, 4572, 4889, 4899, 4905, 4915, 4957, 4970, 4983, 4994, 5002, 5017, 5024,
+  5038, 5068. Measured facts, a stated decision, and -- where code work remains -- a named follow-up below
+  instead of a parity gap. 4905 closed because its own claim was stale; 4983 closed with numbers that
+  correct the row's older numbers.
+
+### What still holds code work (named; none of it a gap in a shipped flow)
+
+4889 product-column type sweep, 4915 research-count type sweep, 4957 the two no-argument palette
+signatures, 4970 one owner for the two cell grids, 5024 save records over live owners, 5017 one home for the
+UI screen id, 4572 the `ctlResearchPanel` slot decision, 5002 the two older real-surface colour tests, 4899
+the `pufo_game`/`pufo_ui` link order. Two rows stay open as IDB ambiguity rather than be closed by
+guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`) and 5038 (seven RNG start globals whose
+readers this IDB does not establish).
+
+One IDB upkeep item came out of this pass and is left open on purpose. The `Map` struct's member at
+`+0x150F0` is still `nAnimScratchX`, typed `_BYTE[4]`, while the same address carries the global name
+`pThrowTargetUnit @ 0x128AA8`, the comment at 0x53CFC already uses that name, and
+`Map_TraceVoxelOccupancy` dereferences it as a `Soldier *` twice (0x3242c's decompile shows both
+comparisons). Renaming one member of a 156-member type that every IDB note in this project cites belongs in
+its own verified pass with the readers re-checked after it. The comments at 0x3242c and 0x31A0C state the
+true name and the stale one side by side.
+
+### CLAUDE.md's verification contract, mapped to evidence
+
+| Criterion | Evidence, measured in build/crops/check110d.log (EXIT=0) and the audits |
+|---|---|
+| CMake + Clang build, zero errors with warnings as errors | gates 1 and 3 built Release and Debug with `/W4 /WX` on every target (`CMakeLists.txt:23-28`); no diagnostic emitted |
+| every original subsystem recreated | 63 suites cover startup/config, data loading, map/world, entities, game logic, UI/input, rendering and audio; `coverage.py --check` reports 972/1103 functions (88.1%) and 596888/598792 bytes (99.7%), and the report gate prints "0 of them real gaps" for the 131 uncited |
+| the exe launches and the main playable flows work on Win64 | `tools/e2e.sh`: 3 scripted flows in two processes, 9 pictures checked, 0 bad, every one unchanged; new game -> base -> base screen -> geoscape -> save slot 0; boot -> slot list -> load; new game -> save -> quit-YES with the strateg list emptied and the original's stale mirror still read |
+| per-subsystem parity evidence, each entry checked against the IDB | `PARITY.md` regenerated (2208 lines) from the `@ 0xADDR` citations in `src/`; `docs/parity/bugs.tsv` 351 rows; `audit_bugs.py` 326 ledger rows against 93 `ORIGINAL BUG` markers ("ledger and port agree"); `audit_tables.py` 46 tables, 0 mismatched; `audit_names.py` 4 undefined-name credits, all four already artifact rows |
+| no unexplained gaps | the follow-up list above, the two recorded IDB ambiguities, the IDB upkeep item, and the artifact ledger's 135 rows are the whole remainder -- each stated with its address and its reason |
+
+Measured state row for this Part (the table above is a per-commit log; the hash lands with the commit):
+`0739ff9` + Part 110 | 63/63 Release and 63/63 Debug | 20,579 checks | 972/1103 functions (88.1%) |
+596888/598792 bytes (99.7%) | 46 tables checked, 0 mismatched | 93 frames and 9 e2e pictures unchanged.
