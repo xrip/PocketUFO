@@ -22084,3 +22084,66 @@ picture re-reference is a deliberate, documented event, not a side effect of a s
   no-argument fact that this Part closed.
 - PLAN: row 4957 moves from CLOSED-RECORDED to CLOSED-FIXED, the follow-up list loses it and gains
   0x2d860.
+
+## Part 112 - the colour packs read the gamma the game runs with, and six live pictures move
+
+Part 111 recorded that `Gfx_PackRgb565Pair @ 0x2d82c` is a third reader of `Map_nGamma @ 0x128AB8` and that
+the port's `GfxColorEnv.nScaleSource` was a copy nothing in `src/` ever wrote. This Part closes that.
+
+### IDB first
+
+The read is unconditional inside the 565 branch: 0x2d858 `MOV R12, #(Map_nGamma - 0x1139B8)`, 0x2d860
+`LDR R0, [R6,R12]`, then itod at 0x2D870, `muld` by 0.1 (lo 0x9999999A at 0x2D878, hi 0x3FB99999 at
+0x2D880), `addd` 0.7 (lo 0x66666666 at 0x2D890, hi 0x3FE66666 at 0x2D898). The pair R4/R5 is the divisor of
+every channel of both packed pairs (0x2d8d4, 0x2d914, 0x2d954 for the first colour, 0x2dab8, 0x2dafc,
+0x2db40 for the second) in the helper with over 100 call sites, and the same dword is what
+`Map_InitAndLoadRegistry @ 0x22648` fills at startup: `Reg_GetString("gamma", "2")` at 0x22738 with the
+default string loaded at 0x22728, the out-of-range fallback `MOV R0,#2` at 0x22794, the store at 0x227A0.
+`Reg_GetString @ 0x9edbc` returns the caller's default pointer when the value is absent (0x9EEAC), so a
+device with no key starts at gamma 2 - and this machine's `HKCU\Software\PocketUFO` holds `gamma REG_SZ 2`,
+written by the port's own `Options_SaveToRegistry` on a previous run.
+
+### What the port now does
+
+`GfxColorEnv` no longer carries a value: it carries `const i32 *pnGamma`, a pointer to the live cell - the
+same idiom the tactical wiring already uses for cells the shell owns. `World_NewGame` and `World_LoadSlot`
+point the caller's colour env at `&pW->nMapGamma` beside the `Map+0x15100` copy they already make, so every
+packed colour divides by the gamma the run actually has, and `Gfx_PackRgb565Pair` reads it at the point
+0x2d860 reads it. A fixture states its own gamma by pointing at a cell of its own (test_render, test_baseui,
+test_geoscape, test_plane, test_tacthud); a fixture that states none leaves NULL, which is the value a fresh
+Map block holds.
+
+### Evidence
+
+- Step A, the mechanism alone: 63/63 tests and all 93 reference frames unchanged. The fixtures keep the
+  gammas they already stated, so nothing in the test binaries moved - the change is value-preserving there
+  and reaches only the shell, which had no value at all.
+- The live flows then moved, as they should: six of the nine e2e pictures (01_newgame, 02_base_placed,
+  02b_base_screen, 03_geoscape, 04_after_save, 12_after_load) differ from the Part-111 references; 00_mainmenu,
+  10_menu_at_boot and 11_slot_list do not, because their drawn colours clamp the same either way.
+- A/B, one variable: with the install removed (`pnGamma = NULL`) the nine e2e pictures come back
+  byte-identical to the committed references, and putting it back moves exactly those six again. Pixel counts
+  of the accepted change: 01_newgame 1670/76800 (2.2%), 02_base_placed 6861 (8.9%), 02b_base_screen 12587
+  (16.4%), 03_geoscape 684 (0.9%), 04_after_save 684 (0.9%), 12_after_load 684 (0.9%); the largest single
+  channel delta anywhere is 41 out of 255. Text, layout and every sprite sit where they did - the change is
+  colour depth, which is what a divisor of 0.9 instead of 0.7 does.
+- The references were re-accepted after looking at them (02b_base_screen reviewed at native scale: the base
+  screen reads normally, the labels legible, the green field now visible). The e2e gate then has teeth on
+  this: dropping the install moves six committed pictures.
+
+### What is left, and it is a fixture value rather than a mechanism
+
+`test_geoscapeframe` boots its world on a zeroed `PufoOptions`: `nGamma` 0, `nGameSpeed` 0, the two volumes
+0 - where the app boots on the registry defaults 2, 4 and 5 (`Options_InitDefaults`, verified against the
+12 `Reg_GetString` calls of `Map_InitAndLoadRegistry`). Section 18 already restates four of those defaults by
+hand for the pen tests (scrollbypen, runbydblclick, turnbypen, menubypen) precisely because the fixture's
+block does not carry them. Making the fixture boot like the game is a separate piece of work: it would move
+part of the 93 frames and every expectation inside the test that pins a packed colour, and gamma is only one
+of the six values involved - `nGameSpeed` decides the tactical clock's step, which is a bigger observable than
+a colour. Recorded as a named follow-up, and the 0x2d860 ledger row now reads as the fixed mechanism with
+that residue stated.
+
+### IDB
+
+A comment at 0x22738 states the gamma read's default string and what `Reg_GetString` does when the key is
+absent, so the startup value 2 is recorded where the read happens rather than only at the store.

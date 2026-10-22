@@ -2446,6 +2446,10 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
                                                        * (Map_InitAndLoadRegistry @ 0x22648) fills: the shell's
                                                        * startup speed is the registry value, default 4 */
     pW->nMapGamma = pOptions->nGamma;                 /* Map+0x15100, same model and same copy */
+    if (pHooks->pColor != NULL) {
+        pHooks->pColor->pnGamma = &pW->nMapGamma;     /* the colour packs read this same cell: 0x2d860
+                                                     * re-reads Map_nGamma on every call in the original */
+    }
     pW->pfnLoadPads = pHooks->pfnLoadPads;
     pW->pLoadPadsUser = pHooks->pLoadPadsUser;
     pW->pfnPlaySample = pHooks->pfnPlaySample;
@@ -2643,6 +2647,10 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     pW->pFont = pFont;
     pW->gameClock.nSpeed = (u32)pOptions->nGameSpeed; /* the same Map+0x150FC mirror as World_NewGame */
     pW->nMapGamma = pOptions->nGamma;                 /* Map+0x15100 */
+    if (pHooks != NULL && pHooks->pColor != NULL) {
+        pHooks->pColor->pnGamma = &pW->nMapGamma;     /* as in World_NewGame: the colour packs read the
+                                                     * Map gamma cell, not a copy of it */
+    }
 
     memset(&hooks, 0, sizeof(hooks));
     hooks.pfnRenderFrame = pHooks->pfnRenderFrame;

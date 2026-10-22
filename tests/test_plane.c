@@ -460,6 +460,7 @@ static void TestAddInterceptMission(void)
 static SoftSurf g_planeSurf;
 static u8 g_aPlaneText[PUFO_TEXT_REC_STRIDE * 144];
 static GfxColorEnv g_planeColor;
+static const i32 g_nPlaneGamma = 3;   /* the gamma this fixture states: divisor 1.0 */
 
 static void PlanePutRec(i32 nRec, const char *psz)
 {
@@ -502,7 +503,7 @@ static void TestStatPanelLabels(void)
     PlanePutRec(142, "BBBBBBBBBB"); /* ten, cut to seven at 0x79F34 */
     PlanePutRec(143, "CCCCCCCC");   /* eight, cut to five at 0x79F78 */
 
-    g_planeColor.nScaleSource = 3;
+    g_planeColor.pnGamma = &g_nPlaneGamma;
     g_planeColor.nFadeCount = 0;
 
     memset(&p, 0, sizeof(p));

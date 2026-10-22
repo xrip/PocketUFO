@@ -1206,7 +1206,8 @@ static void TestSelectedUnitPanel(void)
     PadImage   hudPad;
     TactHudPanelEnv env;
     TactItem   handL, handR;
-    GfxColorEnv color = { 1, 0 };
+    static const i32 nGamma1 = 1;   /* the gamma this fixture states: 0.1*1+0.7 = 1.1 */
+    GfxColorEnv color = { &nGamma1, 0 };
     SoftSurf   surf;
 
     printf("TactHud_DrawSelectedUnitPanel @ 0x1d5ec\n");

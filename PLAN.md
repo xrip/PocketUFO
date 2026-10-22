@@ -5076,16 +5076,18 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
     land after it, which was a one-step lag rather than only a signature difference. `TactInitEnv
     .pnGamma` is deleted; 0x3CB80's call and the `MenuBtn_SetGamma` tail call carry nothing.
     Gates: `test_render`'s LUT tables over its own installed cell, and `test_geoscapeframe` 18.1,     which presses bank widgets 65 and 69 on a live mission and reads the palette - it is also the     gate that catches an install that stops happening (proved by mutation).
-- [x] **Part 111 (2026-10-22): the colour-pair scale cell has no shell writer.**
-  `Gfx_PackRgb565Pair @ 0x2d82c` re-reads `Map_nGamma @ 0x128AB8` at 0x2d860 on every call and divides
-  each channel of both packs by `0.1 * gamma + 0.7`; `Map_InitAndLoadRegistry @ 0x22648` puts the
-  registry "gamma" in that dword at 0x227A0 (default 2, clamped 0..4 by 0x22764 / 0x22778 with the
-  fallback at 0x22794). The port's `GfxColorEnv.nScaleSource` is a copy and nothing in `src/` writes
-  it - `pufo_app.c`'s `g_color` is a zeroed static - so a live run packs every colour at the gamma-0
-  divisor 0.7 and a gamma press moves only the palettes. Tests set the field by hand, which is why
-  they cannot see it. Recorded as the 0x2d860 row in `docs/parity/bugs.tsv`; left to its own Part
-  because wiring the live cell changes the colours in every committed picture, and a re-reference is a
-  deliberate event, not a side effect. Named follow-up.
+- [x] **Part 111 found it, Part 112 (2026-10-22) fixed it: the colour packs read the live gamma cell.**
+  `Gfx_PackRgb565Pair @ 0x2d82c` re-reads `Map_nGamma @ 0x128AB8` at 0x2d860 on every call (itod at
+  0x2D870, 0.1 at 0x2D878/0x2D880, 0.7 at 0x2D890/0x2D898) and divides every channel of both packs by
+  it; `Map_InitAndLoadRegistry @ 0x22648` fills that dword at 0x227A0 from the registry "gamma", default
+  2. `GfxColorEnv` now holds `const i32 *pnGamma` and `World_NewGame` / `World_LoadSlot` point it at the
+  world's Map+0x15100 mirror; fixtures point their envs at cells of their own. Evidence: the mechanism
+  alone moved no test (63/63) and no frame (93), while six of the nine e2e pictures moved -- 0.9% to
+  16.4% of their pixels, max channel delta 41 -- and removing the install brings all nine back
+  byte-identical. The six pictures were looked at and re-accepted. What is left is a fixture value, not
+  a mechanism: `test_geoscapeframe` boots on a zeroed `PufoOptions` (nGamma 0, nGameSpeed 0, volumes 0)
+  where the app boots on the registry defaults 2, 4, 5, and making the fixture boot like the game moves
+  part of the 93 frames plus every colour literal inside the test -- a named follow-up of its own.
 - [x] `TactShutdownEnv.pbActionLatch /* Map+0x00 */` conflicts with `Map_bActionLatch @ Map+0x02`;
   `Tact_InitMission` sets `Map+0x00` to 1 and `Map+0x02` to 0, so the two are different fields and one
   of the two comments is wrong. (target Part 103.) CLOSED: the IDB confirms both stores — `STRB R0,[R4]` at
@@ -5575,9 +5577,10 @@ against MSVC's uninitialised-memory pattern. See "Separate issues".
 
 4889 product-column type sweep, 4915 research-count type sweep, 4970 one owner for the two cell grids, 5024
 save records over live owners, 5017 one home for the UI screen id, 4572 the `ctlResearchPanel` slot decision,
-5002 the two older real-surface colour tests, 4899 the `pufo_game`/`pufo_ui` link order, and 0x2d860 the
-colour-pair scale cell `GfxColorEnv.nScaleSource`, which the shell never fills (the 0x2d860 row, found while
-closing 4957). Two rows stay open as IDB ambiguity rather than be closed by
+5002 the two older real-surface colour tests, 4899 the `pufo_game`/`pufo_ui` link order, and the new
+`test_geoscapeframe` boot-values item: the fixture runs on a zeroed option block while the app runs on the
+registry defaults 2 / 4 / 5 (`Map_InitAndLoadRegistry @ 0x22648`), which is what keeps its 93 pictures at
+gamma 0 after Part 112. Two rows stay open as IDB ambiguity rather than be closed by
 guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`) and 5038 (seven RNG start globals whose
 readers this IDB does not establish).
 
@@ -5607,3 +5610,6 @@ Measured state row for this Part (the table above is a per-commit log; the hash 
 `<this commit>` + Part 111 | 63/63 Release and 63/63 Debug | 20,586 checks | 972/1103 functions (88.1%) |
 596888/598792 bytes (99.7%) -- unchanged: Part 111 adds no function and cites none | 9 e2e pictures
 checked and unchanged, no frame re-referenced.
+`<this commit>` + Part 112 | 63/63 Release and 63/63 Debug | 20,586 checks -- unchanged: Part 112 adds
+no check, it re-points an existing one at the live cell | 972/1103 functions (88.1%), 596888/598792 bytes
+(99.7%) | 93 frames unchanged, 6 of 9 e2e pictures re-accepted with the A/B proof in the Part 112 section.

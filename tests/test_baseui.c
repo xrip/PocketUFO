@@ -3006,6 +3006,9 @@ static SoftSurf g_xfSurf;
 static UiPanel g_xfA, g_xfB, g_xfC, g_xfD, g_xfE;
 static TransferDrawEnv g_xfEnv;
 static GfxColorEnv g_xfColor;
+/* The gamma cell the colour envs of this file that state no gamma point at. The original reads one
+ * global here (0x2d860); a fixture states its own. */
+static i32 g_nGammaZero;
 static UiAnimBlitEnv g_xfAnim;
 static ObjectRecFull g_xfObj[149];
 static ObjectRecFull *g_apXfObj[149];
@@ -3103,7 +3106,7 @@ static void XfReset(void)
     g_xfStrip.pbTapFlag = &g_bXfTap;
 
     memset(&g_xfEnv, 0, sizeof(g_xfEnv));
-    g_xfColor.nScaleSource = 0;
+    g_xfColor.pnGamma = &g_nGammaZero;
     g_xfColor.nFadeCount = 0;
     g_xfAnim.pbStarted = &g_bXfStarted;
     g_xfAnim.pnProgress = &g_nXfProgress;
@@ -6602,7 +6605,8 @@ static i32 SdInk(i32 x0, i32 y0, i32 x1, i32 y1)
 }
 
 /* Gfx_PackRgb565Pair's colour, written out independently (0x544fc): the pair's first colour lands in
- * palette entry 33 and the second in entry 27, both after the same 0.7 scale (nScaleSource is 0 here). */
+ * palette entry 33 and the second in entry 27, both after the same 0.7 scale (the gamma this fixture
+ * states is 0). */
 static u16 SdPair565(i32 nR, i32 nG, i32 nB)
 {
     i32 nR1 = (i32)(((double)(nR >> 3)) / 0.7);
@@ -10674,6 +10678,7 @@ static u8 g_bFrameAnimStarted;
 static i8 g_nFrameAnimProgress;
 static UiAnimBlitEnv g_frameAnim;
 static GfxColorEnv g_frameColor;
+static i32 g_nFrameGamma = 3;   /* factor 1.0: the neutral gamma */
 static bool g_bFrameFontReady;
 
 static ObjectRecFull g_aFrameObj[149];
@@ -10921,7 +10926,7 @@ static void TestManufDrawFrame(void)
     g_frameAnim.pnProgress = &g_nFrameAnimProgress;
     g_frameAnim.nFrameStyle = 0;
 
-    g_frameColor.nScaleSource = 3; /* factor 1.0, so the colour pairs pass through */
+    g_frameColor.pnGamma = &g_nFrameGamma; /* factor 1.0, so the colour pairs pass through */
     g_frameColor.nFadeCount = 0;
 
     bEntryCount = 144;
@@ -11377,7 +11382,7 @@ static void TestResearchDraw(void)
     g_frameAnim.pnProgress = &g_nFrameAnimProgress;
     g_frameAnim.nFrameStyle = 0;
 
-    g_frameColor.nScaleSource = 3; /* factor 1.0, so the colour pairs pass through */
+    g_frameColor.pnGamma = &g_nFrameGamma; /* factor 1.0, so the colour pairs pass through */
     g_frameColor.nFadeCount = 0;
 
     bEntryCount = 144;
@@ -11804,7 +11809,7 @@ static void TestBuySellDraw(void)
     g_frameAnim.pbStarted = &g_bFrameAnimStarted;
     g_frameAnim.pnProgress = &g_nFrameAnimProgress;
     g_frameAnim.nFrameStyle = 0;
-    g_frameColor.nScaleSource = 3;
+    g_frameColor.pnGamma = &g_nFrameGamma;
     g_frameColor.nFadeCount = 0;
 
     bBuilt = 0;
@@ -13462,7 +13467,7 @@ static void TestFundingReport(void)
     (void)SoftSurf_AllocPixels(&g_frameRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
     g_pMainSurface = &g_frameSurf;
     g_blitState.nPixelMode = 2;
-    g_frameColor.nScaleSource = 3; /* factor 1.0, so the colour pairs pass through */
+    g_frameColor.pnGamma = &g_nFrameGamma; /* factor 1.0, so the colour pairs pass through */
     g_frameColor.nFadeCount = 0;
 
     FundUiFixture(&tenv);
@@ -15887,7 +15892,7 @@ static void TestPsiScreenDraw(void)
     g_pMainSurface = &g_pdSurf;
     pPix = (const u16 *)g_pdSurf.pPixels;
 
-    g_pdColor.nScaleSource = 0;
+    g_pdColor.pnGamma = &g_nGammaZero;
     g_pdColor.nFadeCount = 0;
     g_pdAnim.pbStarted = &g_bPdAnimStarted;
     g_pdAnim.pnProgress = &g_nPdProgress;
@@ -16836,7 +16841,7 @@ static void BiDrawFixture(void)
     g_nBiAltBase = 0;
     g_bBiOverlay = 0;
     g_nBiBaseCount = 2;
-    g_biColor.nScaleSource = 0;
+    g_biColor.pnGamma = &g_nGammaZero;
     g_biColor.nFadeCount = 0;
 
     memset(&g_biDrawEnv, 0, sizeof(g_biDrawEnv));
@@ -17579,7 +17584,7 @@ static void TestBaseAtDraw(void)
     g_pMainSurface = &g_baSurf;
     pPix = (const u16 *)g_baSurf.pPixels;
 
-    g_baColor.nScaleSource = 0;
+    g_baColor.pnGamma = &g_nGammaZero;
     g_baColor.nFadeCount = 0;
     /* The draw packs this same pair at 0x5884C right before the caption, so pre-packing it gives the
      * glyph colour the caption must be drawn in. */
@@ -18078,7 +18083,7 @@ static void TestPlaneScreenDraw(void)
     g_blitState.nPixelMode = 2;
     pPix = (const u16 *)g_plSurf.pPixels;
 
-    g_plColor.nScaleSource = 0;
+    g_plColor.pnGamma = &g_nGammaZero;
     g_plColor.nFadeCount = 0;
     PlBuildPanels();
 
@@ -18568,7 +18573,7 @@ static void CdFixture(void)
     g_cdAnim.pnProgress = &g_nCdAnimProgress;
     g_cdAnim.nFrameStyle = 0;
 
-    g_cdColor.nScaleSource = 0;
+    g_cdColor.pnGamma = &g_nGammaZero;
     g_cdColor.nFadeCount = 0;
 
     g_cdEnv.pColor = &g_cdColor;

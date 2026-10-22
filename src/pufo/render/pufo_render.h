@@ -174,11 +174,14 @@ void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph);
 /* What Gfx_PackRgb565Pair reads out of the world. The port has no owner for either value yet,
  * so they are passed in rather than reached through a global. */
 typedef struct GfxColorEnv {
-    i32 nScaleSource; /* unk_128AB8 = Map_nGamma, Map + 0x15100. The original re-reads that global on every
-                       * call (the LDR at 0x2d860), so a gamma press changes the colours as well as the
-                       * palettes. This is a plain copy and the shell never fills it -- the gap is the 0x2d860
-                       * row in docs/parity/bugs.tsv and a named follow-up in PLAN.md, not something this
-                       * Part changes: fixing it moves every committed picture. */
+    /* The gamma the packer divides by. The original has no field here: 0x2d860 loads
+     * Map_nGamma @ 0x128AB8 (Map+0x15100) on EVERY call and turns it into 0.1*g + 0.7 (0x2D870 itod,
+     * 0x2D878/0x2D880 the 0.1, 0x2D890/0x2D898 the 0.7), so a gamma press changes the colours as well as
+     * the palettes. The port hands the env a POINTER to the live cell rather than a copy: World_NewGame
+     * and World_LoadSlot point it at the world's Map+0x15100 mirror, and a test fixture points it at a
+     * cell of its own. NULL says the caller never stated one, and 0 is then the value -- what a fresh
+     * Map block holds. */
+    const i32 *pnGamma;
     i32 nFadeCount;   /* Map.apUiSlotsA[1], the fade counter */
 } GfxColorEnv;
 

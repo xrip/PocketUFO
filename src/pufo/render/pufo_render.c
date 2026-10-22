@@ -32,6 +32,30 @@ i32 g_nGlyphPalSlotBase;
 /* gxDisp.ffFormat @ 0x188398+0x14. The Win64 target is RGB565. */
 u32 g_ffFormat = PUFO_FF_565;
 
+/* Map_nGamma @ 0x128AB8 (Map+0x15100) lives in the shell's Map model and ARM reaches it as a global from
+ * two places: 0x37368 loads it once before the palette LUT loops, and 0x2d860 loads it on every call of
+ * Gfx_PackRgb565Pair. Neither passes it as an argument, so the LUT pass reads the cell the shell installed
+ * once per world (Render_SetGammaCell, from World_Init) and the colour pack reads the cell its env points
+ * at -- both stand-ins for the same dword. NULL means nothing was installed and 0 is then the value: the
+ * BSS initial. The original's own startup value is not 0 -- Map_InitAndLoadRegistry writes the registry
+ * "gamma" there at 0x227A0, default 2 (0x22738, the out-of-range fallback at 0x22794). */
+static const i32 *g_pnGammaCell;
+
+void Render_SetGammaCell(const i32 *pCell)
+{
+    g_pnGammaCell = pCell;
+}
+
+static i32 Gamma_Current(void)
+{
+    return (g_pnGammaCell != NULL) ? *g_pnGammaCell : 0;
+}
+
+static i32 ColorEnvGamma(const GfxColorEnv *pEnv)
+{
+    return (pEnv->pnGamma != NULL) ? *pEnv->pnGamma : 0;
+}
+
 /* Blitter scratch, matching blitColorKey..s_nBlendAlpha @ 0xa3028..0xa3040. */
 static i32 s_nColorKey;   /* blitColorKey @ 0xa3028: glyph index treated as transparent */
 static i32 s_nColorMid;   /* blitColorMid @ 0xa302c: green field source of the fill colour */
@@ -517,9 +541,10 @@ void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph)
  * divides again by a fade factor when a fade is in progress, clamps to 5/6/5 bits and packs
  * (r<<11) | (g<<5) | b. It runs only when the display format is 565 (bit 7 of ffFormat).
  *
- * The factor is (double)nScaleSource * 0.1 + 0.7. The constants are exact doubles:
- * 0x3FB99999:0x9999999A is 0.1 and 0x3FE66666:0x66666666 is 0.7. Hex-Rays renders the scale
- * source as if it came from r1; the disassembly at 0x2D85C loads unk_128AB8 (Map + 0x15100).
+ * The factor is (double)Map_nGamma * 0.1 + 0.7. The constants are exact doubles:
+ * 0x3FB99999:0x9999999A is 0.1 and 0x3FE66666:0x66666666 is 0.7. The value comes from
+ * unk_128AB8 (Map + 0x15100) at 0x2D858/0x2D860 -- a global read on every call, not an argument;
+ * Hex-Rays renders it as if it came from r1. The port reads the cell the env points at.
  *
  * The channel shifts are not symmetric: red and blue are >> 3 (8 to 5 bits) and green is >> 2
  * (8 to 6 bits).
@@ -535,7 +560,8 @@ void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph)
 u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
                        i32 r2, i32 g2, i32 b2)
 {
-    double dFactor = (double)pEnv->nScaleSource * 0.1 + 0.7;
+    i32    nGamma  = ColorEnvGamma(pEnv);   /* 0x2d860: Map_nGamma, read on every call */
+    double dFactor = (double)nGamma * 0.1 + 0.7;
     double dFade   = 0.0;
     i32    nR1, nG1, nB1, nR2, nG2, nB2;
     u32    nFirst, nSecond;
@@ -960,23 +986,6 @@ void Palette_Load(const char *pszName, u8 nSlot)
         }
         g_aPalette[nSlot & (PUFO_PAL_SLOTS - 1)][i] = nEntry;
     }
-}
-
-/* Map_nGamma @ Map+0x15100 lives in the shell's Map model. ARM reaches it as a global (0x37368
- * `LDR R1, =Map_nGamma`, read once before the slot loop), so the port reads a cell the app installed
- * instead of taking an argument -- the same shape as the render target block above. NULL means "not
- * installed yet", and 0 is then the value, because unk_128AB8 is BSS and holds 0 until the first
- * MenuBtn_SetGamma write. */
-static const i32 *g_pnGammaCell;
-
-void Render_SetGammaCell(const i32 *pCell)
-{
-    g_pnGammaCell = pCell;
-}
-
-static i32 Gamma_Current(void)
-{
-    return (g_pnGammaCell != NULL) ? *g_pnGammaCell : 0;
 }
 
 /* Soft-float conversions, reproduced rather than simplified.

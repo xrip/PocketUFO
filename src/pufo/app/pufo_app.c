@@ -106,6 +106,9 @@ static i32              g_nPlaneStatRowCount; /* nPlaneStatRowCount @ 0x161A38. 
                              * read at 0x79E30..0x79E90). Named after the global, not after one of its uses. */
 static i32              g_nPhaseSave112;
 static u32              g_nUiSlot0;         /* apUiSlotsA[0] @ Map+0x60, cleared by UiControl_HitTest */
+/* World_NewGame and World_LoadSlot point this env's pnGamma at the world's Map_nGamma mirror
+ * (Map+0x15100), so the packed colours divide by the gamma the game is actually running with --
+ * 0x2d860 re-reads that global on every call in the original. */
 static GfxColorEnv      g_color;
 static bool             g_bStartupUi;
 static char             g_aSlotLabels[7][40]; /* MainMenu_pSlotCtx @ 0x156938 */

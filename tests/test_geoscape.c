@@ -5893,6 +5893,8 @@ static void TestRadarOverlay(void)
 static RadarUpdateEnv   g_updEnv;
 static UiAnimBlitEnv    g_updAnim;
 static GfxColorEnv      g_updColor;
+static const i32 g_nUpdGamma = 3;   /* neutral gamma: divisor 1.0 */
+static const i32 g_nGammaOne = 1;   /* divisor 1.1, the gamma-1 value */
 static RadarPaletteEnv  g_updPal;
 static RadarRangeBarEnv g_updBar;
 static RadarFuelEnv     g_updFuel;
@@ -6127,7 +6129,7 @@ static void UpdFixture(i32 nStrategIdx)
     g_updAnim.pnProgress = &g_nUpdProgress;
     g_updAnim.nFrameStyle = 1;
 
-    g_updColor.nScaleSource = 3; /* neutral gamma: the LUT divisor is 1.0 */
+    g_updColor.pnGamma = &g_nUpdGamma; /* neutral gamma: the LUT divisor is 1.0 */
     g_updColor.nFadeCount = 0;
 
     g_updPal.pnRangeCur = &g_nRadarRangeCur;
@@ -7274,7 +7276,7 @@ static void DsFixture(void)
     memset(g_dsScratch, 0, sizeof(g_dsScratch));
     g_dsSelFlag  = 0;
     g_dsOptOpen  = 0;
-    g_dsColor.nScaleSource = 1;
+    g_dsColor.pnGamma = &g_nGammaOne;
     g_dsColor.nFadeCount   = 0;
 
     memset(&g_dsEnv, 0, sizeof(g_dsEnv));
@@ -8166,7 +8168,7 @@ static void GhFixture(i32 nTile)
     g_ghAnim.pnProgress  = &g_ghAnimProgress;
     g_ghAnim.nFrameStyle = 0;
 
-    g_ghColor.nScaleSource = 1;
+    g_ghColor.pnGamma = &g_nGammaOne;
     g_ghColor.nFadeCount   = 0;
 
     memset(&g_ghEnv, 0, sizeof(g_ghEnv));
@@ -9414,7 +9416,7 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnAnim.pbStarted   = &g_bPnAnimStarted;
     g_pnAnim.pnProgress  = &g_nPnAnimProgress;
     g_pnAnim.nFrameStyle = 0;
-    g_pnColor.nScaleSource = 1;
+    g_pnColor.pnGamma = &g_nGammaOne;
     g_pnColor.nFadeCount   = 0;
 
     memset(&g_pnEnv, 0, sizeof(g_pnEnv));
@@ -11701,7 +11703,7 @@ static void TestGeoscapeFrameEnd(void)
 
     memset(&g_fePanel, 0, sizeof(g_fePanel));
     g_fePanel.nLineCount = 0;                 /* equal to nLimit: BaseAt's confirm-shown path runs (0x587D8) */
-    g_feColor.nScaleSource = 1;
+    g_feColor.pnGamma = &g_nGammaOne;
     memset(&g_feModal, 0, sizeof(g_feModal));
     g_feModal.pColor = &g_feColor;
     memset(&g_feLayout, 0, sizeof(g_feLayout));
