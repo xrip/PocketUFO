@@ -175,13 +175,16 @@ static void TextPut(i32 nRec, const char *psz)
     snprintf((char *)(g_aTexts + PUFO_TEXT_REC_STRIDE * nRec), PUFO_TEXT_REC_STRIDE, "%s", psz);
 }
 
-static void OpenPanelPrev(void) {}
-static void OpenPanelNext(void) {}
+/* Distinct bodies: /OPT:ICF folds identical functions to one address, so the pair-click check
+ * (panel A prev, panel B next) would pass even if both slots got the same handler. */
+static i32 g_nOpenSeamFired;
+static void OpenPanelPrev(void) { g_nOpenSeamFired = 1; }
+static void OpenPanelNext(void) { g_nOpenSeamFired = 2; }
 /* The thunk OptionsScreen_Open installs at the names panel's +0xC (0x6D2E8), standing in for the
  * original's direct install of OptionsScreen_OnConfirm itself. */
 static void OpenOnConfirm(void) { OptionsScreen_OnConfirm(&g_confirmEnv); }
 static void HConfirmSample(i32 nSample, void *p) { (void)p; g_nConfirmSample += nSample; }
-static void OpenSaveAudio(void) {}
+static void OpenSaveAudio(void) { g_nOpenSeamFired = 3; }
 
 static UiPanel *OpenMakePanel(i32 nLines)
 {

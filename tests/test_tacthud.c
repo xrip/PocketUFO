@@ -1141,8 +1141,10 @@ static void TestHudDraw(void)
      * pad x + (23 - 8) / 2 = pad x + 7, at pad y + 4. Pad 0 is at (10, 30). */
     TestCheck("pad 0 gets a label at 10 + 7", PixAt(17, 34) != 0);
 
-    /* Pad 10 is in the blit loop but past its label cutoff. */
-    TestCheck("pad 10 is blitted but never labelled", PixAt(210 + 7, 130 + 4) == 0);
+    /* Pad 10 is in the blit loop but past its label cutoff. Its own slot in THIS layout is
+     * x 10 + 8*10 = 90, y 30 + 10*10 = 130, so a label would land at 90 + 7, 134 -- probing the
+     * old 10 + 20*i x (210) would stay green whatever the cutoff does. */
+    TestCheck("pad 10 is blitted but never labelled", PixAt(10 + 8 * 10 + 7, 130 + 4) == 0);
 
     /* Pads 18 and 27 are labelled only by the two later loops, which blit nothing. */
     TestCheck("pad 18 is labelled by the second loop", PixAt(154 + 7, 210 + 4) != 0);
@@ -1448,6 +1450,23 @@ static void ClearStrip(void)
     memset(g_pTestPix, 0, (size_t)240 * 320 * sizeof(u16));
 }
 
+/* Ink inside one strip column's glyph cell: the anchor is x 38*col + 24, y 265 and the centring pair
+ * can move the glyph by +/- 9, so a cell is probed rather than the anchor pixel. The count row (301)
+ * is left out because the neighbouring column's own count overlaps this x range. A column that must
+ * stay empty stays green only while nothing at all is drawn in it, whatever entry leaked there. */
+static i32 StripColumnInk(i32 nCol)
+{
+    i32 nInk = 0;
+    for (i32 x = 38 * nCol + 12; x < 38 * nCol + 44; ++x) {
+        for (i32 y = 265; y < 301; ++y) {
+            if (PixAt(x, y) != 0) {
+                ++nInk;
+            }
+        }
+    }
+    return nInk;
+}
+
 static void TestItemStrip(void)
 {
     static TactUiState ui;
@@ -1516,7 +1535,7 @@ static void TestItemStrip(void)
     ui.nInvListCount = 2;
     TactHud_DrawItemStrip(&env, &color);
     Check("two entries still draw the first two columns", PixAt(24, 275) != 0 && PixAt(62, 276) != 0);
-    Check("and stop there", PixAt(100, 277) == 0);
+    Check("and stop there", StripColumnInk(2) == 0 && StripColumnInk(3) == 0);
 
     /* nInvFilterType is a scroll offset into the same list. */
     ClearStrip();
@@ -1525,7 +1544,7 @@ static void TestItemStrip(void)
     TactHud_DrawItemStrip(&env, &color);
     Check("with the filter at 1 the first column shows the second entry", PixAt(24, 276) != 0);
     Check("and the third entry lands in the first column's slot", PixAt(62, 277) != 0);
-    Check("nothing is drawn past the end of the list", PixAt(100, 278) == 0);
+    Check("nothing is drawn past the end of the list", StripColumnInk(2) == 0 && StripColumnInk(3) == 0);
     ui.nInvFilterType = 0;
 
     /* Both hands. */
@@ -1802,6 +1821,13 @@ static void TestInventoryScreen(void)
     hit.nDragOffX = 0;
     hit.nDragOffY = 0;
     env.bForceNoDrag = 1;
+
+    /* The other side of the same gate: 0x1FC18 draws the ghost only while forcenodrag is clear,
+     * so with the flag set and the item still held the cursor stays bare. */
+    ClearStrip();
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("with forcenodrag set the held item draws no ghost at the cursor",
+          PixAt(100, 100) == 0);
 
     /* The burden number is uInvBurden - 1, drawn left aligned at x 185, row 140. */
     ClearStrip();

@@ -4383,6 +4383,16 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   re-states the cell at the save boundary and section 17 asserts the stale value instead of hiding it. Indexed
   in bugs.tsv (`0x3E154`, Part 101 pass).
 
+- [ ] **Two suites write the same save file in the same directory.** `test_save.c` writes `sav0.sav` (1701) while
+  `test_geoscapeframe`'s section 102 removes, writes and re-reads `sav0.sav` (12593, 12611, 12680), and every test
+  runs with `WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}`, so `ctest -j 8` can overlap them. This is the standing suspect
+  for the intermittent Debug failure of that section's strateg round-trip check: seen once in the Part 109 six-gate
+  run (`strateg 9/8`, `FAIL the flight round's strateg entries round-trip through the chunk`) and once in Part 106,
+  and green in the three serial Debug runs and three further full parallel Debug runs measured on 2026-10-22. The
+  fix is per-suite fixture names or a per-test working directory -- test infrastructure, not port behaviour -- so it
+  is recorded here as a separate issue rather than folded into a Part. See also the stale-`nStrategItemCount` row
+  above: the same gate is where that defect surfaces when it surfaces at all.
+
 - [x] **`Tilemap_GetAt` indexes its cell with no bounds test.** The fixed round trip left a restored craft marker at
   (−6000,−6000) -- the cell its record was created with -- and the test's alt-tilemap lookup read outside the image
   and crashed. The fixture now parks the contact on a real cell. **Decided 2026-10-21 (Part 101 pass): the
@@ -4600,7 +4610,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   two the same decompiler habit produced (`pufo_geoscape.c:1535`, `:1560`) already subtract. Change it to
   `- PUFO_REGION_ID_FIRST` in its own pass. Lands with the Part 102 commit (readability only).
 
-- [ ] **`TestGeoscapeBaseFacArm`'s strip-highlight check is an invariance check and cannot see a changed
+- [x] **`TestGeoscapeBaseFacArm`'s strip-highlight check is an invariance check and cannot see a changed
   constant.** It compares the arm's output with the env's highlight 0 against the arm's output with the env's
   highlight -1 and requires them identical; if the arm's own `-1` constant were changed to `0`, both runs
   would still be identical and the check would pass. Found by the Part 23 sweep: the mutant
@@ -4608,7 +4618,15 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   claim directionally -- a direct `Base_DrawFacilityIconStrip` call with highlight 0 pins the chevron pixels
   (212,4), (212,26) and (234,26) at `PC_PACK(0xFF,0,0)`, and the arm's run must leave those same pixels as
   ordinary cell blocks -- and the base-facility suite should be given the same shape. Left as it is here, so
-  the fix is a separate change. (Part 109 sweep.)
+  the fix is a separate change. **Closed by the Part 109 sweep.** The base-facility suite now states the
+  claim directionally, the way the placement arm already did: `Base_DrawFacilityIconStrip` called directly
+  with highlight 0 pins its 2x2 chevron steps at (212,4), (212,26) and (234,26) as the packed
+  `(0xFF,0,0)`, and `Geoscape_DrawBaseFacArm` -- handed an env that says highlight 0 -- must leave those
+  three pixels anything but that colour while the strip's 36 cell blocks stay. `PUFO_BFA_STRIP_MARK`
+  (0x92D38) `(-1) -> (0)` now turns BOTH arms' checks red ("the arm overwrites that argument with -1
+  before the call (0x92D38)" and the placement arm's twin at 0x922B8), and it also fails
+  `test_constants`, which pins the two marks and the strip geometry (211/3/28, 212/4/6, 23 steps) the two
+  checks measure against. The old invariance pair is gone; the suite runs green at 0 failures.
 
 - [x] **`pufo_ballist.h` names two `auStat` slots against the UI captions.** CLOSED by Part 107. The soldier readout (unit 101)
   draws its nine stat bars from `auStat[]` under the TEXTS 127..136 captions, and the pair that settles the
@@ -4651,7 +4669,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   was normalized to CRLF when its six new rows were added, in that change's only two touched files (PLAN.md +
   bugs.tsv).**
 
-- [ ] **Empty fixture handlers make every click-identity check in the tests vacuous.** MSVC folds identical
+- [x] **Empty fixture handlers make every click-identity check in the tests vacuous.** MSVC folds identical
   functions to one address in Release (`/OPT:ICF`, on by default), so a suite whose click fixtures are
   `static void Foo(void) {}` cannot tell one installed handler from another: the comparison is between two
   names that resolve to the same pointer. Unit 95's mutation sweep found this by swapping two nav clicks and
@@ -4660,15 +4678,35 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   fixed by giving each handler a distinct body writing to a `volatile` global. **Every other suite that
   installs empty handlers as click fixtures has the same blind spot** — `test_baseui.c`, `test_geoscape.c`,
   `test_tactui.c` and `test_modal.c` are the likely ones, and they should be swept the same way before their
-  click-order claims are trusted. (Part 109 sweep.)
+  click-order claims are trusted. **Closed by the Part 109 sweep.** Every suite that installs click
+  fixtures now gives them distinct recording bodies: `test_uibank.c`'s 130 empty stubs became
+  `DEFINE_STUB(0..129)` writing into a `volatile` id (−131/+19 lines), `test_baseui.c`'s shared `NopClick`
+  split into eight named bodies (`NopPanelPrev`, `NopPanelNext`, `NopFacClose`, `NopBuyThunk`,
+  `NopSoldierClose`, `NopEquipThunk`, `NopSelectThunk`, `NopPlaneClose`) with `CtlStub*`, `Thunk*`,
+  `ResStub*` (ids 1..8) and `PsiSeam*` (1..5) given bodies of their own, and `test_closeui.c`,
+  `test_geoscape.c`, `test_modal.c`, `test_menubtn.c`, `test_plane.c` and `test_geoiinit.c` took the same
+  shape — `test_geoiinit` now has `DEFINE_ROOTCLICK(0..12)`, `CraftSelectClick`, `RadarClick` and a
+  `g_apfnRootStub` table, and `test_plane` wires `HngThunkCraft`/`HngThunkListed` to the two hangar seams
+  and asserts them apart. Teeth were proved rather than assumed: installing a table with slots 3 and 7
+  exchanged in `test_uibank` reported 2 FAILs and a red exit; the swap was reverted and the suite ran
+  green at 394 checks. `test_tactui.c` was read for the shape and has no empty click fixtures.
 
-- [ ] **A test that reads the same macro the port reads cannot see that macro move.** Unit 95's sweep hit it
+- [x] **A test that reads the same macro the port reads cannot see that macro move.** Unit 95's sweep hit it
   three times, unit 96's twice more: the fixture placed its text at `PUFO_TEXT_REC_STRIDE *
   PUFO_PLANE_TEXT_CRAFT_CAPTION` while the port read the same macro, so mutating 124 to 125 moved the
   expectation and the result together and nothing failed. **Values a mutation is meant to pin must be
   literals in the test** — record numbers, coordinates, counts — and the reference side of a comparison
   should be written from the ARM evidence, not from the port's own macros. Worth a sweep of the existing
-  suites for assertions that read a `PUFO_*` constant the code under test also reads. (Part 109 sweep.)
+  suites for assertions that read a `PUFO_*` constant the code under test also reads. **Closed by the
+  Part 109 sweep, one gate instead of rewriting the assertions.** 986 test lines read a `PUFO_*` value
+  inside the comparison itself, so moving such a constant moves the expectation with it. Rather than
+  literalising 986 lines (DRY), the sweep adds `tests/test_constants.c`: 358 `PIN(name, literal)` rows
+  over the 34 headers the suites read, one row per value another suite asserts against, built with no
+  libraries so the gate sees only the macros. A moved constant now moves the gate and nothing else:
+  `PUFO_UFOPAEDIA_CAT_WIDTH` 22 → 23 produced `FAIL constant PUFO_UFOPAEDIA_CAT_WIDTH: got 23 want 22`
+  with a red exit, and the value restored went green. The suite is in CTest (63 tests in both configs),
+  and the two strip-mark constants plus the chevron geometry the Part 109 `test_geoscape` check measures
+  against joined the census with this Part.
 
 - [x] **`docs/idb/functions.tsv` drifted behind the IDB's own renames.** Unit 103 found eleven rows still
   carrying names the IDB had dropped: `Map_PlaySamples10_7_SetFlag_ClearScreen` (0x19528),
@@ -4684,7 +4722,7 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   name is still a name in `functions.tsv`, look those addresses up in the IDB, and fix the rows whose IDB
   name differs.
 
-- [ ] **A negative pixel probe has to sit where the drawing would actually land.** Unit 103's mutation
+- [x] **A negative pixel probe has to sit where the drawing would actually land.** Unit 103's mutation
   sweep flipped the `forcenodrag` half of the inventory highlight gate and nothing failed. The "no highlight"
   checks probed `PixAt(98, 263)`, but they ran after a case that left `hit.nHitSub0` at 1, and region 0 paints
   at `38 * nHitSub0 + 22` — with sub-column 1 the highlight would have been at x 60, so the probe was asserting
@@ -4692,7 +4730,30 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   inputs pinned to the values that would put a mark on the probed pixel**; worth a sweep of the drawing suites
   for negative checks whose coordinates were inherited from the case before them. Unit 106 hit the mirror of the
   same hole: its item-strip assertion sat at x 51, which is the divider's own column, so the strip's right edge
-  was never actually observed. The assertion moved to x 46. (Part 109 sweep.)
+  was never actually observed. The assertion moved to x 46. **Closed by the Part 109 sweep.** A census of
+  the drawing suites found `PixAt` probes in exactly one file (`test_tacthud.c`, 65 of them), so that file
+  is the class. Twenty gates in `src/pufo/game/pufo_tacthud.c` were broken one at a time -- sentinel-slot
+  test, the strip's list-end break, the glyph index, the pocket x table, the portrait coefficient, the
+  count-text x, the highlight's two halves, the footprint widths of regions 1..4 and 7/8, the region
+  switch's default arm, the carried-item ghost, the name suffix's three conjuncts, the panel's clip test,
+  `PanelShowsAmmo`, the top bar's fixed x 40 and its label cutoff -- and each one had to turn its paired
+  "nothing here" check red. Mutations run one per build: a grouped run masks (the glyph-index shift moves
+  the very rows another probe reads, which is what made two proved probes look unpinned). Fifteen proved
+  as they stood; three probes were holes and are fixed, one gate had no probe at all on one of its sides,
+  and two mutations had to be retargeted before they broke the right thing (the pocket table's order
+  index 0, not pocket 0's entry; the portrait coefficient 8 → 6, which lands type 1 on entry 6, rather
+  than dropping the term, which moves the index off entry 6 entirely): the top-bar check "pad 10 is blitted but never labelled"
+  probed x 210 -- the `10 + 20*i` spacing named in the comment -- while this fixture lays its pads at
+  `10 + 8*i`, so pad 10's own slot is (90,130) and a label would ink at (97,134); widening the cutoff
+  10 → 11 now turns it red. The two strip checks ("and stop there", "nothing is drawn past the end of the
+  list") probed the single pixel where the *third* entry's glyph inks, so a leak of any other entry
+  escaped; both now scan the whole column cell (`StripColumnInk`: x 38*col+12..+43, y 265..300, the count
+  row left out because the neighbouring column's count overlaps that x range) and a mutation that clamps
+  the guard -- repeating the last entry into the past-the-end column -- turns both red. One gate had no
+  probe on its other side at all: 0x1FC18 draws the carried-item ghost only while forcenodrag is clear and
+  nothing asserted the opposite, so `test_tacthud` gained "with forcenodrag set the held item draws no
+  ghost at the cursor" (`PixAt(100,100) == 0`), which goes red under `if (bForceNoDrag == 0) → if (1)`.
+  Suite: 269 checks, 0 failures.
 
 - [x] **A checker that prints FAIL but does not count makes its whole suite unable to fail.** Unit 105's
   mutation sweep missed three counter/order mutants for this reason alone: `test_renderframe.c`'s
@@ -4704,14 +4765,34 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   report counts `^  FAIL` lines, but the build only fails on the exit code, and a green exit code is what
   the gates and the mutation sweeps read.
 
-- [ ] **A pointer comparison between two empty stubs can never fail.** Unit 104's first version compared each
+- [x] **A pointer comparison between two empty stubs can never fail.** Unit 104's first version compared each
   control's `pfnClick` against the seam stub it was supposed to hold, and its mutation sweep swapped two of
   them with nothing failing: the stubs were identical empty functions and the linker folds identical functions
   to a single address, so `stubA == stubB` is always true. The checks now CALL the installed handler and read
   back an id each stub records, and the two handler swaps went red. The same shape sits in the older fixtures
   -- `ResStub*` in the research init test, `PsiSeam*`, `UfoSeam*`, the manufacturing and transfer stubs --
   where identity is asserted against empty stubs. **Worth a sweep: every seam-handler identity check should
-  either give the stubs distinct bodies or call what was installed.** (Part 109 sweep.)
+  either give the stubs distinct bodies or call what was installed.** **Closed by the Part 109 sweep** --
+  this is the same defect as the click-fixture row above and it was swept with it: the older fixtures the
+  row names are no longer empty. `ResStub*` carries ids 1..8 with `ResStubPanelClick` as 8, `PsiSeam*`
+  ids 1..5, `ThunkTryConfirm`/`ThunkClose` and `CtlStubSync`/`Prices`/`Capacity` each write their own id
+  into a `volatile` global, `test_uibank`'s 130 bank slots are `DEFINE_STUB(0..129)`, and the identity
+  claims now compare against those distinct bodies. `test_plane`'s two hangar seams are separately wired
+  (`HngThunkCraft` on `pfnCraftClick`, `HngThunkListed` on `pfnStatusClick`) and asserted apart. Teeth:
+  the swapped-install probe in `test_uibank` (slots 3 and 7 exchanged) reported 2 FAILs, then reverted
+  green. A scan for what the sweep had not reached found four sites, all closed here: the five
+  `RadarClick*` fixtures in `test_geoscape` were empty, so the loop claim "each radar control gets its click
+  handler at +0xC" could not see a wrong slot -- they now record ids 0..4 and the loop also calls each
+  installed handler, and `pUi->apCtl[i]->pfnClick = pEnv->apfnClick[i]` (`pufo_geoscape.c:2953`,
+  0x5FCB8..0x5FCF4) shifted by one slot turns 10 checks red (`got 1, want 0` plus its four siblings and the
+  five identity claims). `test_baseui`'s ufopaedia seams (`UfoSeamSel`/`UfoSeamCat`, both empty) record 1
+  and 2 and the two claims call what was installed: installing `pfnCatClick` on the selector at
+  `pufo_baseui.c:11614` gives `got 2, want 1`. `TransferStubClose` records, and pointing `pConfirmCtl` at
+  `pfnCommit` instead of `pfnCloseClick` (0x9965C) turns both the identity claim and the new "pressing both
+  runs the close thunk twice" proof red. `test_startnew`'s `NoopClick` records, and NULLing the store at
+  `pufo_geoiinit.c:746` turns both its claims red. `Fake_Close` (`test_baseui`, `test_titles`) and
+  `HookCopyName` (`test_geopointer`) stay empty: nothing compares them by identity, they are installed
+  stand-ins only, and a recorder without a claim behind it would be scaffolding for its own sake.
 
 - [x] **Closed in Part 44: the assault branch now has an owner, and the base-attack screen runs.**
   `World_ContactScreen` performs the branch's own side effects in the original's order — pause the clock
@@ -4998,7 +5079,20 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
   (`fundingDraw.nMonthCounter`). Part of the per-subsystem parity pass, not a sweep of the shell file.
   (final closing pass.)
 
-- [ ] **A scripted picture only means something if a paint runs between the timer steps.** Part 74 caught this: `App_ScriptTicks` fired the three timer bodies n times and painted once at the end, and `Ui_AnimExpandBlit` zeroes `cUiAnimProgress` on the first call of an animation (0x95C14), so the reset swallowed every step and the panel screens were captured on the frame where nothing has opened. The class is the harness's event order rather than the port's logic, and it applies to any state a timer advances that a draw reads -- the clock digits, the radar cooldown, the three sweep counters, the fade timers. The rule, now written into `App_ScriptTicks` and into the `Ui_AnimExpandBlit` section of docs/parity/game-core.md: one firing of each timer, then one paint. (Part 109 sweep: prove every scripted dump honours the order.)
+- [x] **A scripted picture only means something if a paint runs between the timer steps.** Part 74 caught this: `App_ScriptTicks` fired the three timer bodies n times and painted once at the end, and `Ui_AnimExpandBlit` zeroes `cUiAnimProgress` on the first call of an animation (0x95C14), so the reset swallowed every step and the panel screens were captured on the frame where nothing has opened. The class is the harness's event order rather than the port's logic, and it applies to any state a timer advances that a draw reads -- the clock digits, the radar cooldown, the three sweep counters, the fade timers. The rule, now written into `App_ScriptTicks` and into the `Ui_AnimExpandBlit` section of docs/parity/game-core.md: one firing of each timer, then one paint. **Closed by the Part 109 sweep.** Every loop that steps the animation byte was listed mechanically (all
+1378 `for (` loops in `tests/*.c` plus `pufo_app.c`, classified by what they step and whether a draw sits
+in the body): three test loops step `cUiAnimProgress` and all three draw inside the body
+(`test_geoscapeframe` 621, 7298, 9987); seven loops step only state (hourly production, the craft's return,
+the hold trackers) and none of them touches the byte the reset eats, each dumping through its own
+`ClearSurface(); DrawFrame();`. On the app side `App_NewGamePickThroughPen` (1299) and `App_ScriptTicks`
+(1735) already interleaved, and the sweep found the class still live in one place: the `--dump-frame`
+debug path ran 40 `App_TickAnim` and then 50 `App_TickPulse` + `App_TickAnimProgress` with no paint between
+them and a single `App_DrawFrame` at the end -- the Part 74 shape. It now calls `App_ScriptTicks(50)`; the
+manual run measures 300 s of geoscape clock and anim progress 101 on a 240x320 picture. Teeth: putting
+`App_ScriptTicks` back into the batched shape makes `tools/e2e.sh` exit 1 reporting
+`CHANGED or NEW -- M tests/ref/e2e/01_newgame.png`, the same picture Part 74 had to re-accept, and nothing
+else; with the interleaved order the gate is 9 pictures unchanged. Gates after this Part: 63/63 in Release
+and Debug, 20,548 checks, frames and e2e clean.
 
 ## Measured state
 

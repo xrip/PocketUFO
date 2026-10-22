@@ -88,8 +88,11 @@ static MenuHooks       g_MenuHooks;
 static UiButtonCtx     g_Ctx;
 static UiModalState    g_Modal;
 
-static void YesCb(void) {}
-static void NoCb(void) {}
+/* Distinct bodies: two empty stubs fold to one address under /OPT:ICF, and the YES/NO identity
+ * claims would then pass whatever the modal stored. Each records its own id. */
+static i32 g_nMenuSeamFired;
+static void YesCb(void) { g_nMenuSeamFired = 1; }
+static void NoCb(void)  { g_nMenuSeamFired = 2; }
 
 static void Reset(void)
 {

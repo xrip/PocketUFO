@@ -22,8 +22,8 @@ python docs/parity/coverage.py            # coverage numbers only
 | Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 131, 1904 bytes |
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 62 |
-| Test checks run | 20187 |
+| Test suites | 63 |
+| Test checks run | 20555 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1263,13 +1263,14 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 72 |
 | `test_ballist` | PASS | 105 |
-| `test_baseui` | PASS | 4172 |
+| `test_baseui` | PASS | 4173 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 62 |
 | `test_clock` | PASS | 44 |
 | `test_closeui` | PASS | 302 |
 | `test_cmdpads` | PASS | 42 |
 | `test_combat` | PASS | 146 |
+| `test_constants` | PASS | 358 |
 | `test_control` | PASS | 253 |
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 62 |
@@ -1278,7 +1279,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 3214 |
+| `test_geoscape` | PASS | 3221 |
 | `test_geoscapeframe` | PASS | 2147 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 375 |
@@ -1303,13 +1304,13 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_ship` | PASS | 282 |
 | `test_smaphit` | PASS | 132 |
 | `test_soldiername` | PASS | 22 |
-| `test_startnew` | PASS | 107 |
+| `test_startnew` | PASS | 108 |
 | `test_statusmsg` | PASS | 106 |
 | `test_step` | PASS | 82 |
 | `test_strateg` | PASS | 408 |
 | `test_tactctl` | PASS | 380 |
 | `test_tactend` | PASS | 402 |
-| `test_tacthud` | PASS | 268 |
+| `test_tacthud` | PASS | 269 |
 | `test_tactinit` | PASS | 105 |
 | `test_tactstate` | PASS | 599 |
 | `test_tactui` | PASS | 507 |
@@ -1324,7 +1325,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**62 / 62 suites passing.**
+**63 / 63 suites passing.**
 
 ## Per-subsystem parity notes
 

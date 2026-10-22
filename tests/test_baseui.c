@@ -1366,8 +1366,10 @@ static void TestBuySellCapacityGate(void)
     UiPanel_FreeLines(&pD);
 }
 
-static i32 g_nInitBuy, g_nInitSell, g_nInitControls, g_nInitPanels;
-static void InitStubClose(void) {}
+static i32 g_nInitBuy, g_nInitSell, g_nInitControls, g_nInitPanels, g_nInitClose;
+static void InitStubClose(void) { ++g_nInitClose; } /* every fixture in this group records: an empty
+                                                     * body folds under /OPT:ICF into some other
+                                                     * empty body's address */
 static void InitStubBuy(void) { ++g_nInitBuy; }
 static void InitStubSell(void) { ++g_nInitSell; }
 static void InitStubControls(void) { ++g_nInitControls; }
@@ -1480,9 +1482,12 @@ static void TestBuySellInit(void)
     pScreen = NULL;
 }
 
-static void CtlStubSync(void) {}
-static void CtlStubPrices(void) {}
-static void CtlStubCapacity(void) {}
+/* Three columns, three handlers: the selection re-read, the decrement and the increment. Distinct
+ * bodies, or the three slot claims are one comparison repeated three times. */
+static i32 g_nCtlStubId;
+static void CtlStubSync(void)     { g_nCtlStubId = 1; }
+static void CtlStubPrices(void)   { g_nCtlStubId = 2; }
+static void CtlStubCapacity(void) { g_nCtlStubId = 3; }
 
 static void TestBuySellBuildControls(void)
 {
@@ -1708,11 +1713,11 @@ static void TestBuySellBuildControls(void)
     CheckEqI32(bBuilt, 0, "a missing flag pointer makes it do nothing");
 }
 
-static i32 g_nTransferBuild, g_nTransferReset, g_nTransferCommit;
+static i32 g_nTransferBuild, g_nTransferReset, g_nTransferCommit, g_nTransferClose;
 static void TransferStubBuild(void) { ++g_nTransferBuild; }
 static void TransferStubReset(void) { ++g_nTransferReset; }
 static void TransferStubCommit(void) { ++g_nTransferCommit; }
-static void TransferStubClose(void) {}
+static void TransferStubClose(void) { ++g_nTransferClose; }
 
 static void TestTransferInitAndReset(void)
 {
@@ -1782,6 +1787,15 @@ static void TestTransferInitAndReset(void)
     Check(closeCtl.pfnClick == TransferStubClose, "with the close thunk");
     Check(confirmCtl.pfnClick == TransferStubClose,
           "and the confirm control gets the same close thunk, not a commit handler");
+    g_nTransferClose = 0;
+    if (closeCtl.pfnClick != NULL) {
+        closeCtl.pfnClick();
+    }
+    if (confirmCtl.pfnClick != NULL) {
+        confirmCtl.pfnClick();
+    }
+    CheckEqI32(g_nTransferClose, 2,
+               "pressing both runs the close thunk twice, so neither carries some other handler");
     CheckEqI32(confirmCtl.x, 100, "the confirm control centres on its 40-pixel width");
     CheckEqI32(confirmCtl.y, 94, "and sits at 28 * 3 bases + 10");
 
@@ -4649,8 +4663,9 @@ static i32 RecMapClick(void *pUser)
     return g_nMapClickResult;
 }
 
-static void ThunkTryConfirm(void) {}
-static void ThunkClose(void) {}
+static i32 g_nNewBaseSeamId; /* distinct: the confirm control and the frame control get different thunks */
+static void ThunkTryConfirm(void) { g_nNewBaseSeamId = 1; }
+static void ThunkClose(void)      { g_nNewBaseSeamId = 2; }
 
 static void TestNewBaseScreen(void)
 {
@@ -5105,7 +5120,19 @@ static bool RecordPads(UiControl *pCtl, const char *psz0, const char *psz1,
     return true;
 }
 
-static void NopClick(void) { }
+/* One fixture per env handler, not one fixture for all of them. Two reasons, both real: the claims
+ * below name DIFFERENT original handlers (panel prev vs panel next vs the close thunk), which one
+ * shared function cannot express; and empty bodies fold to a single address under MSVC's /OPT:ICF,
+ * so even the shared-pointer claims were comparisons of a pointer with itself. Each records its id. */
+static i32 g_nNopClickId;
+static void NopPanelPrev(void)     { g_nNopClickId = 1; }
+static void NopPanelNext(void)     { g_nNopClickId = 2; }
+static void NopFacClose(void)      { g_nNopClickId = 3; }
+static void NopBuyThunk(void)      { g_nNopClickId = 4; }
+static void NopSoldierClose(void)  { g_nNopClickId = 5; }
+static void NopEquipThunk(void)    { g_nNopClickId = 6; }
+static void NopSelectThunk(void)   { g_nNopClickId = 7; }
+static void NopPlaneClose(void)    { g_nNopClickId = 8; }
 
 static void TestBaseFacScreenInit(void)
 {
@@ -5132,9 +5159,9 @@ static void TestBaseFacScreenInit(void)
     env.pnUnk15887C = &n7C;
     env.pnUnk158880 = &n80;
     env.pbArmed = &n88;
-    env.pfnPanelPrev = NopClick;
-    env.pfnPanelNext = NopClick;
-    env.pfnCloseThunk = NopClick;
+    env.pfnPanelPrev = NopPanelPrev;
+    env.pfnPanelNext = NopPanelNext;
+    env.pfnCloseThunk = NopFacClose;
     env.pfnLoadPads = RecordPads;
     env.pfnToggle = RecordToggle;
 
@@ -5153,11 +5180,11 @@ static void TestBaseFacScreenInit(void)
     CheckEqI32(downCtl.x, 11, "the down control at the same x");
     CheckEqI32(downCtl.y, 277, "and y 277");
     CheckEqI32(upCtl.nMode, 0, "the descriptor's mode lands on the control");
-    Check(upCtl.pfnClick == NopClick, "the +12 handler is stored BEFORE Setup and survives it");
-    Check(downCtl.pfnClick == NopClick, "for both controls");
+    Check(upCtl.pfnClick == NopPanelPrev, "the +12 handler is the panel-prev thunk, stored BEFORE Setup and surviving it");
+    Check(downCtl.pfnClick == NopPanelNext, "and the +22 handler is the panel-next thunk, not the same one");
     CheckEqI32(closeCtl.x, 224, "the close control is moved to x 224");
     CheckEqI32(closeCtl.y, 229, "and y 229");
-    Check(closeCtl.pfnClick == NopClick, "its click handler is installed at both ends of the init");
+    Check(closeCtl.pfnClick == NopFacClose, "its click handler is the close thunk, installed at both ends of the init");
 
     CheckEqI32(BaseFacScreen_Init(NULL), 0, "a null env is refused");
 }
@@ -5199,7 +5226,7 @@ static void TestMapClick(void)
     facEnv.pCloseCtl = &closeCtl;
     facEnv.pUpCtl = &upCtl;
     facEnv.pDownCtl = &downCtl;
-    facEnv.pfnCloseThunk = NopClick;
+    facEnv.pfnCloseThunk = NopPlaneClose;
     facEnv.pfnLoadPads = RecordPads;
     facEnv.pfnToggle = RecordToggle;
 
@@ -5407,7 +5434,7 @@ static void TestBaseFacToggle(void)
     env.pnSelectedBaseIdx = &nSelBase;
     env.paFac = g_aToggleFac;
     env.pszLastRowName = szLast;
-    env.pfnBuyThunk = NopClick;
+    env.pfnBuyThunk = NopBuyThunk;
 
     BaseFacScreen_Toggle(&env);
     CheckEqI32(bOpen, 1, "the first call takes the build branch");
@@ -5429,7 +5456,7 @@ static void TestBaseFacToggle(void)
     CheckEqI32(p->aStyleRgb[3], 0x46, "aStyleRgb[3] 46");
     CheckEqI32(p->aStyleRgb[6], 0x44, "aStyleRgb[6] 44");
     CheckEqI32(p->aStyleRgb[11], 0x4B, "aStyleRgb[11] 4B");
-    Check(p->pfnClick == NopClick, "the +3020 handler is the buy thunk");
+    Check(p->pfnClick == NopBuyThunk, "the +3020 handler is the buy thunk");
 
     /* Rows: the flagged records 1..16, each carrying its record number as the aux. */
     Check(strcmp(UiPanel_GetLineText(p, 0), "Fac01") == 0, "row 0 is facility 1");
@@ -5587,9 +5614,9 @@ static void TestSoldierScreenToggle(void)
     env.ppPad = &pPad;
     env.pszPadName = NULL; /* the test has no pad bank */
     env.pCloseCtl = &closeCtl;
-    env.pfnCloseSoldierThunk = NopClick;
-    env.pfnEquipThunk = NopClick;
-    env.pfnSelectThunk = NopClick;
+    env.pfnCloseSoldierThunk = NopSoldierClose;
+    env.pfnEquipThunk = NopEquipThunk;
+    env.pfnSelectThunk = NopSelectThunk;
     env.pfnFormatName = FormatNameStub;
 
     SoldierScreen_Toggle(&env);
@@ -5604,7 +5631,7 @@ static void TestSoldierScreenToggle(void)
     CheckEqI32(pA->nFont, 18, "nFont 18");
     CheckEqI32(pA->nPosX, 55, "panel A at x 55");
     CheckEqI32(pA->nViewW, 167, "167 wide");
-    Check(pA->pfnClick == NopClick, "panel A's click is the equip thunk");
+    Check(pA->pfnClick == NopEquipThunk, "panel A's click is the equip thunk, not the select one");
     CheckEqI32(pA->bColorKey, 0xFF, "panel A's bColorKey is the byte -1");
     CheckEqI32(pA->aStyleRgb[3], 0x32, "panel A's aStyleRgb[3] 32");
     CheckEqI32(pA->aStyleRgb[5], 0xBD, "and aStyleRgb[5] BD");
@@ -5615,7 +5642,7 @@ static void TestSoldierScreenToggle(void)
     CheckEqI32(pC->nLineCount, 3, "panels C and D hold one line per soldier on the base");
     CheckEqI32(pC->nStyle, 13, "nStyle 13");
     CheckEqI32(pC->nViewW, 234, "panel C is 234 wide");
-    Check(pC->pfnClick == NopClick, "panel C's click is the select thunk");
+    Check(pC->pfnClick == NopSelectThunk, "panel C's click is the select thunk");
     CheckEqI32(pC->bColorKey, 0x96, "panel C's bColorKey is the byte -106");
     CheckEqI32(pD->nViewW, 40, "panel D is 40 wide");
     CheckEqI32(pD->nUnk7076, 2, "panel D's nUnk7076 is 2");
@@ -5638,7 +5665,7 @@ static void TestSoldierScreenToggle(void)
     CheckEqI32(pD->aLineMeta[6 * 1 + 0], 250, "panel D gets the same colours");
     CheckEqI32(pD->aLineMeta[6 * 1 + 3], 20, "and the second triple is 20,20,20 on both");
     CheckEqI32(pC->aLineMeta[6 * 2 + 0], 150, "row 2 is a 255 soldier again");
-    Check(closeCtl.pfnClick == NopClick, "the close control gets the soldier close thunk");
+    Check(closeCtl.pfnClick == NopSoldierClose, "the close control gets the soldier close thunk");
 
     SoldierScreen_Toggle(&env);
     CheckEqI32(nScreen, 1, "the close branch puts the screen id back to 1");
@@ -11238,7 +11265,8 @@ static i32 RCenterX(i32 nCenter, const char *psz)
     return nCenter - Text_MeasureWidth(psz) / 2;
 }
 
-static void ResearchStubAlloc(void) { }
+static i32 g_nResearchAllocClicks;
+static void ResearchStubAlloc(void) { ++g_nResearchAllocClicks; }
 
 static void TestResearchDraw(void)
 {
@@ -12153,13 +12181,18 @@ static UiPanel g_aResPanel[3];
 static i32 g_nResHookRebuild, g_nResHookBuild;
 static i32 g_nResCancelXAtRebuild, g_nResCancelYAtRebuild, nResPanelLinesAtBuild;
 
-static void ResStubClose(void)   { }
-static void ResStubCancel(void)  { }
-static void ResStubStart(void)   { }
-static void ResStubPanelPrev(void) { }
-static void ResStubPanelNext(void) { }
-static void ResStubIncQty(void)  { }
-static void ResStubDecQty(void)  { }
+/* Seven env handlers, seven ids. The init claims one handler per slot (panel prev, panel next,
+ * quantity +, quantity -) plus the close/cancel/start controls; with seven EMPTY bodies MSVC's
+ * /OPT:ICF folds them into a single address and every one of those claims compares a pointer with
+ * itself. */
+static i32 g_nResStubId;
+static void ResStubClose(void)     { g_nResStubId = 1; }
+static void ResStubCancel(void)    { g_nResStubId = 2; }
+static void ResStubStart(void)     { g_nResStubId = 3; }
+static void ResStubPanelPrev(void) { g_nResStubId = 4; }
+static void ResStubPanelNext(void) { g_nResStubId = 5; }
+static void ResStubIncQty(void)    { g_nResStubId = 6; }
+static void ResStubDecQty(void)    { g_nResStubId = 7; }
 
 static void ResHookRebuild(void)
 {
@@ -12375,7 +12408,7 @@ static ResearchTopicLive g_aResTopicB[144];
 static u8 g_bResCount;
 static i8 g_nResBase;
 
-static void ResStubPanelClick(void) { }
+static void ResStubPanelClick(void) { g_nResStubId = 8; }
 
 static bool ResLineIs(const UiPanel *pPanel, i32 nRow, const char *pszWant)
 {
@@ -14528,8 +14561,9 @@ static UfopaediaEnv g_ufoEnv;
 
 /* The original installs Ufopaedia_CacheSelRow and Ufopaedia_RefreshEntry straight into the
  * argument-less pfnClick slot. The port's versions take an env, so the caller supplies thunks. */
-static void UfoSeamSel(void) { }
-static void UfoSeamCat(void) { }
+static volatile i32 g_nUfoSeamFired = -1; /* distinct bodies: two empty ones fold to one address */
+static void UfoSeamSel(void) { g_nUfoSeamFired = 1; }
+static void UfoSeamCat(void) { g_nUfoSeamFired = 2; }
 
 static void UfoFixture(void)
 {
@@ -14670,8 +14704,11 @@ static void TestUfopaediaOpen(void)
           "the second triple is 0x14");
     Check(g_ufoEnv.pSelPanel->aStyleRgb[3] == 0x32 && g_ufoEnv.pSelPanel->aStyleRgb[5] == 0xFA,
           "the source rect is (50, 50, 250)");
-    Check(g_ufoEnv.pSelPanel->pfnClick == (void (*)(void))UfoSeamSel,
-          "the selector gets the selector click seam");
+    g_nUfoSeamFired = -1;
+    if (g_ufoEnv.pSelPanel->pfnClick != NULL) {
+        g_ufoEnv.pSelPanel->pfnClick();
+    }
+    CheckEqI32(g_nUfoSeamFired, 1, "the selector gets the selector click seam");
     CheckEqI32(g_ufoEnv.pTextPanel->nLineCount, PUFO_UFOPAEDIA_TEXT_LINES_BUILT,
                "the text panel is built with 50 rows");
     CheckEqI32(g_ufoEnv.pTextPanel->nStyle, 7, "shows 7");
@@ -14682,8 +14719,11 @@ static void TestUfopaediaOpen(void)
     CheckEqI32(g_ufoEnv.pSelPanel->bRowRules, 1, "the selector keeps the ctor's 1");
     Check(g_ufoEnv.pTextPanel->aStyleRgb[6] == 0xBE && g_ufoEnv.pTextPanel->aStyleRgb[7] == 0x78 &&
           g_ufoEnv.pTextPanel->aStyleRgb[8] == 0xF0, "and its colour is the pale blue 0xBE,0x78,0xF0");
-    Check(g_ufoEnv.apCatPanels[0]->pfnClick == (void (*)(void))UfoSeamCat,
-          "the category panels get the refresh seam, not the selector's");
+    g_nUfoSeamFired = -1;
+    if (g_ufoEnv.apCatPanels[0]->pfnClick != NULL) {
+        g_ufoEnv.apCatPanels[0]->pfnClick();
+    }
+    CheckEqI32(g_nUfoSeamFired, 2, "the category panels get the refresh seam, not the selector's");
 
     /* 3. Nothing researched: every panel is built, with no rows. */
     UfoFixture();
@@ -15193,11 +15233,15 @@ static i32       g_nPsiScratch, g_nPsiActionFail, g_nPsiResidue, g_nPsiScreen;
 static i8        g_nPsiBaseIdx, g_nPsiBaseCount;
 static PsiScreenEnv g_psiEnv;
 
-static void PsiSeamOk(void)    { }
-static void PsiSeamApply(void) { }
-static void PsiSeamSel(void)   { }
-static void PsiSeamPrev(void)  { }
-static void PsiSeamNext(void)  { }
+/* Five seams, five ids (Ok 0x72BB4, ApplyAssignments 0x72BDC, the column select, PanelPrev 0x72C34,
+ * PanelNext 0x72C40). Each records, because five empty bodies are one address under /OPT:ICF and the
+ * per-control claims would then prove nothing about which seam landed where. */
+static i32 g_nPsiSeamId;
+static void PsiSeamOk(void)    { g_nPsiSeamId = 1; }
+static void PsiSeamApply(void) { g_nPsiSeamId = 2; }
+static void PsiSeamSel(void)   { g_nPsiSeamId = 3; }
+static void PsiSeamPrev(void)  { g_nPsiSeamId = 4; }
+static void PsiSeamNext(void)  { g_nPsiSeamId = 5; }
 
 /* The pad names UiControl_Setup hands down, captured so the descriptor table is read back from the
  * image instead of assumed. */

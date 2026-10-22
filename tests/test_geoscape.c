@@ -4679,11 +4679,14 @@ static RadarSessionEnv g_radarEnv;
 static char g_szRadarMsg[108];
 static u8 *g_pRadarTexts;
 
-static void RadarClickNW(void) { }
-static void RadarClickNE(void) { }
-static void RadarClickSW(void) { }
-static void RadarClickSE(void) { }
-static void RadarClickBackdrop(void) { }
+static volatile i32 g_nRadarClickFired = -1; /* distinct bodies: five empty ones fold to one address,
+                                              * which makes the "each control gets its handler in order"
+                                              * loop below unable to see a wrong slot */
+static void RadarClickNW(void) { g_nRadarClickFired = 0; }
+static void RadarClickNE(void) { g_nRadarClickFired = 1; }
+static void RadarClickSW(void) { g_nRadarClickFired = 2; }
+static void RadarClickSE(void) { g_nRadarClickFired = 3; }
+static void RadarClickBackdrop(void) { g_nRadarClickFired = 4; }
 
 static bool RadarLoadCtlPads(UiControl *pCtl, const char *psz0, const char *psz1,
                              const char *psz2, void *pUser)
@@ -4887,6 +4890,12 @@ static void TestRadarSession(void)
     for (i = 0; i < PUFO_RADAR_CONTROLS; ++i) {
         Check(g_radarUi.apCtl[i] != NULL && g_radarUi.apCtl[i]->pfnClick == g_radarEnv.apfnClick[i],
               "each radar control gets its click handler at +0xC");
+        g_nRadarClickFired = -1;
+        if (g_radarUi.apCtl[i] != NULL && g_radarUi.apCtl[i]->pfnClick != NULL) {
+            g_radarUi.apCtl[i]->pfnClick();
+        }
+        CheckEqI32(g_nRadarClickFired, i,
+                   "and calling control i runs the handler the env carries in slot i");
     }
     Check(g_radarUi.apCtl[0] != NULL && g_radarUi.apCtl[0]->apPads[0] != NULL
           && RadarPadIs(g_radarUi.apCtl[0]->apPads[0], "i_but0")
@@ -12775,16 +12784,30 @@ static void TestGeoscapeBaseFacArm(void)
     g_bBfDialogOpen = 0;
     g_bBfArmed = 0;
 
-    /* ---- the strip mark is the arm's own argument ---- */
+    /* ---- the strip mark is the arm's own argument, measured directionally ----
+     *
+     * The old form compared the arm's run with a hand-set -1 copy and required the two surfaces to be
+     * identical: an invariance check that cannot see the arm's constant itself moving, because both
+     * sides move with it. Stated the other way round -- like the placement arm's pair at 0x922B8 --
+     * a DIRECT call with highlight 0 is the control that shows where the chevron lands, and the arm's
+     * run has to leave those same pixels as ordinary cell blocks (0x92D38 MOV R1,#0xFFFFFFFF). */
+    const u16 uChevron = (u16)(((u32)0xFF >> 3) << 11); /* (0xFF,0,0) through the Blit_CopyToXY packing */
     ArReset();
-    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &g_bfStrip, &g_bfDialog);   /* env says highlight 0 */
-    SolSaveInk();
+    BaseStripDrawEnv ctlMark = g_bfStrip;
+    ctlMark.nHighlightRow = 0;
+    Base_DrawFacilityIconStrip(&ctlMark);
+    Check((u16)BdPix(212, 4) == uChevron && (u16)BdPix(212, 26) == uChevron
+              && (u16)BdPix(234, 26) == uChevron,
+          "control: Base_DrawFacilityIconStrip with highlight 0 paints its chevron steps at (212+k, 4+k) "
+          "and (212+k, 26-k), 23 of them, over the cell blocks (0x62720..0x627C4)");
     ArReset();
-    BaseStripDrawEnv noMark = g_bfStrip;
-    noMark.nHighlightRow = PUFO_BFA_STRIP_MARK;
-    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &noMark, &g_bfDialog);
-    SolInkIs("the arm overwrites the strip's highlight with -1 (0x92D38 MOV R1,#0xFFFFFFFF), so the chevron "
-             "never appears whichever way the env had it");
+    Geoscape_DrawBaseFacArm(&g_bfArm, &g_bfGrid, &g_bfStrip, &g_bfDialog);   /* the env says highlight 0 */
+    Check((u16)BdPix(212, 4) != uChevron && (u16)BdPix(212, 26) != uChevron
+              && (u16)BdPix(234, 26) != uChevron,
+          "the arm overwrites that argument with -1 before the call (0x92D38), so not one chevron step "
+          "appears even though the env asked for base 0");
+    Check(BfaInk(BFA_STRIP_X0, BFA_STRIP_Y0, BFA_STRIP_X1, BFA_STRIP_Y1) > 0,
+          "while the strip still drew its 36 cell blocks -- the mark is the only thing suppressed");
 
     /* ---- the mark band belongs to the callee: clear the cell and the same band is empty ---- */
     g_abBfGrid[6 * 2 + 2] = 0;
@@ -13553,8 +13576,11 @@ static i32                     g_nPcTapX, g_nPcTapY, g_nPcOriginX, g_nPcOriginY,
 static BaseSiteRec             g_aPcSites[PUFO_FAC_BASE_COUNT];
 static BaseFacFlag             g_aPcFlags[PUFO_BASEFAC_COUNT];
 
-static void PcCloseClick(void) { /* installed at 0x9203C; identity is what is asserted */ }
-static void PcMapClick(void)   { /* installed at 0x92764 */ }
+/* Distinct bodies: identity is what these two checks assert (0x9203C vs 0x92764), and two EMPTY
+ * stubs fold to one address under /OPT:ICF -- a swap would have been invisible. Each records an id. */
+static i32 g_nPcSeamFired;
+static void PcCloseClick(void) { g_nPcSeamFired = 1; } /* installed at 0x9203C */
+static void PcMapClick(void)   { g_nPcSeamFired = 2; } /* installed at 0x92764 */
 
 static void PcSetFlag(i32 nKind, const char *psz)
 {

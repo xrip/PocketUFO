@@ -1440,9 +1440,12 @@ static const char *HngRec(i32 nRec)
     return (const char *)(g_aHngText + PUFO_TEXT_REC_STRIDE * nRec);
 }
 
-static void HngThunk(void)
-{
-}
+/* Two stubs, not one: the check claims panel A carries the SelectCraft install (0x7CD74) and panel
+ * B the SelectListed install (0x7CE8C). A single shared thunk cannot express that difference, and an
+ * empty thunk is not even distinguishable from another empty one under /OPT:ICF. */
+static i32 g_nHngClickId;
+static void HngThunkCraft(void)  { g_nHngClickId = 1; }
+static void HngThunkListed(void) { g_nHngClickId = 2; }
 
 static void HngReset(void)
 {
@@ -1506,8 +1509,8 @@ static void HngReset(void)
     g_hngEnv.pTextRecs = g_aHngText;
     g_hngEnv.pszNameBuf = g_aHngName;
     g_hngEnv.cchNameBuf = (i32)sizeof(g_aHngName);
-    g_hngEnv.pfnCraftClick = HngThunk;
-    g_hngEnv.pfnStatusClick = HngThunk;
+    g_hngEnv.pfnCraftClick = HngThunkCraft;
+    g_hngEnv.pfnStatusClick = HngThunkListed;
 }
 
 static void TestBuildCraftPanels(void)
@@ -1537,8 +1540,8 @@ static void TestBuildCraftPanels(void)
     TestEqI32("only panel A gets the row colours (0x7CDFC)", g_hngOut.pCraftPanel->aStyleRgb[6], 0xF0);
     TestEqI32("  and panel B's stay at the ctor's zero", g_hngOut.pStatusPanel->aStyleRgb[6], 0);
     TestEqI32("bColorKey is 0x96 on both", g_hngOut.pStatusPanel->bColorKey, 0x96);
-    TestCheck("panel A's click is SelectCraft (0x7CD74)", g_hngOut.pCraftPanel->pfnClick == HngThunk);
-    TestCheck("panel B's is SelectListed (0x7CE8C)", g_hngOut.pStatusPanel->pfnClick == HngThunk);
+    TestCheck("panel A's click is SelectCraft (0x7CD74)", g_hngOut.pCraftPanel->pfnClick == HngThunkCraft);
+    TestCheck("panel B's is SelectListed (0x7CE8C)", g_hngOut.pStatusPanel->pfnClick == HngThunkListed);
 
     /* Grouped by craft type: 0,1,2,3,4 - so craft 0,1 (type 0), then 2,3 (type 1), then 5 (type 2).
      * Craft 4 is at another base and never appears. */

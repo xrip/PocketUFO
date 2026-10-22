@@ -2326,17 +2326,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                 App_PointerLogical(g_nClickX, g_nClickY, true);
                 App_OnPointerUp();
             }
-            /* Debug path: run the timer set for about a second -- 40 anim ticks (0xC352 at 25 ms) and
-             * 50 pulses (0xC353 at 20 ms, StartTimers_D's interval) plus the same number of 0xC354
-             * anim-progress ticks -- so the row keys reach their steady value and the geoscape clock
-             * shows its own advance, then render one frame, write it out, and leave. */
-            for (int i = 0; i < 40; ++i) {
-                App_TickAnim();
-            }
-            for (int i = 0; i < 50; ++i) {
-                App_TickPulse();
-                App_TickAnimProgress();
-            }
+            /* Debug path: run the timer set for about a second -- 50 firings of all three bodies
+             * (0xC352 anim, 0xC353 pulse at 20 ms, 0xC354 anim progress), each followed by a paint --
+             * so the row keys reach their steady value and the geoscape clock shows its own advance.
+             * The paint has to be inside the loop here as much as in App_ScriptTicks: the batched
+             * shape this used to have (40 anim, then 50 pulse+progress, one paint at the end) is the
+             * Part 74 defect -- any panel that opened after the last paint had its progress steps
+             * swallowed by Ui_AnimExpandBlit's first-call reset (0x95C14) and the picture came out on
+             * the frame where nothing has opened. */
+            App_ScriptTicks(50);
             printf("pocketufo: clock after 50 pulses: geoscape screen %d, tick %d s, "
                    "total %d s, %02d:%02d day %d month %d year %d, anim progress %d, funds %d\n",
                    (int)g_world.screen.nGeoscapeScreen, (int)g_world.geo.world.nTickSeconds,

@@ -30,8 +30,12 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
     }
 }
 
-static void Yes(void) {}
-static void No(void) {}
+/* Distinct bodies on purpose: MSVC's /OPT:ICF folds identical functions into one address, so two
+ * EMPTY stubs are one address and `pfn16 == Yes` next to `pfn18 == No` could not tell a swapped
+ * pair from a correct one. Each records its own id. */
+static i32 g_nModalSeamFired;
+static void Yes(void) { g_nModalSeamFired = 1; }
+static void No(void)  { g_nModalSeamFired = 2; }
 
 static void TestBeginEnd(void)
 {

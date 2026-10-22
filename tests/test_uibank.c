@@ -12,137 +12,25 @@ static UiWidgetBank g_Bank;
 static UiControl    g_Look;
 static PadImage     g_HudPad;
 
-/* One distinct stub per widget, so a wrong slot is visible. */
-static void Stub0(void) {}
-static void Stub1(void) {}
-static void Stub2(void) {}
-static void Stub3(void) {}
-static void Stub4(void) {}
-static void Stub5(void) {}
-static void Stub6(void) {}
-static void Stub7(void) {}
-static void Stub8(void) {}
-static void Stub9(void) {}
-static void Stub10(void) {}
-static void Stub11(void) {}
-static void Stub12(void) {}
-static void Stub13(void) {}
-static void Stub14(void) {}
-static void Stub15(void) {}
-static void Stub16(void) {}
-static void Stub17(void) {}
-static void Stub18(void) {}
-static void Stub19(void) {}
-static void Stub20(void) {}
-static void Stub21(void) {}
-static void Stub22(void) {}
-static void Stub23(void) {}
-static void Stub24(void) {}
-static void Stub25(void) {}
-static void Stub26(void) {}
-static void Stub27(void) {}
-static void Stub28(void) {}
-static void Stub29(void) {}
-static void Stub30(void) {}
-static void Stub31(void) {}
-static void Stub32(void) {}
-static void Stub33(void) {}
-static void Stub34(void) {}
-static void Stub35(void) {}
-static void Stub36(void) {}
-static void Stub37(void) {}
-static void Stub38(void) {}
-static void Stub39(void) {}
-static void Stub40(void) {}
-static void Stub41(void) {}
-static void Stub42(void) {}
-static void Stub43(void) {}
-static void Stub44(void) {}
-static void Stub45(void) {}
-static void Stub46(void) {}
-static void Stub47(void) {}
-static void Stub48(void) {}
-static void Stub49(void) {}
-static void Stub50(void) {}
-static void Stub51(void) {}
-static void Stub52(void) {}
-static void Stub53(void) {}
-static void Stub54(void) {}
-static void Stub55(void) {}
-static void Stub56(void) {}
-static void Stub57(void) {}
-static void Stub58(void) {}
-static void Stub59(void) {}
-static void Stub60(void) {}
-static void Stub61(void) {}
-static void Stub62(void) {}
-static void Stub63(void) {}
-static void Stub64(void) {}
-static void Stub65(void) {}
-static void Stub66(void) {}
-static void Stub67(void) {}
-static void Stub68(void) {}
-static void Stub69(void) {}
-static void Stub70(void) {}
-static void Stub71(void) {}
-static void Stub72(void) {}
-static void Stub73(void) {}
-static void Stub74(void) {}
-static void Stub75(void) {}
-static void Stub76(void) {}
-static void Stub77(void) {}
-static void Stub78(void) {}
-static void Stub79(void) {}
-static void Stub80(void) {}
-static void Stub81(void) {}
-static void Stub82(void) {}
-static void Stub83(void) {}
-static void Stub84(void) {}
-static void Stub85(void) {}
-static void Stub86(void) {}
-static void Stub87(void) {}
-static void Stub88(void) {}
-static void Stub89(void) {}
-static void Stub90(void) {}
-static void Stub91(void) {}
-static void Stub92(void) {}
-static void Stub93(void) {}
-static void Stub94(void) {}
-static void Stub95(void) {}
-static void Stub96(void) {}
-static void Stub97(void) {}
-static void Stub98(void) {}
-static void Stub99(void) {}
-static void Stub100(void) {}
-static void Stub101(void) {}
-static void Stub102(void) {}
-static void Stub103(void) {}
-static void Stub104(void) {}
-static void Stub105(void) {}
-static void Stub106(void) {}
-static void Stub107(void) {}
-static void Stub108(void) {}
-static void Stub109(void) {}
-static void Stub110(void) {}
-static void Stub111(void) {}
-static void Stub112(void) {}
-static void Stub113(void) {}
-static void Stub114(void) {}
-static void Stub115(void) {}
-static void Stub116(void) {}
-static void Stub117(void) {}
-static void Stub118(void) {}
-static void Stub119(void) {}
-static void Stub120(void) {}
-static void Stub121(void) {}
-static void Stub122(void) {}
-static void Stub123(void) {}
-static void Stub124(void) {}
-static void Stub125(void) {}
-static void Stub126(void) {}
-static void Stub127(void) {}
-static void Stub128(void) {}
-static void Stub129(void) {}
+/* One distinct stub per widget, so a wrong slot is visible. The bodies are NOT empty on purpose:
+ * MSVC's /OPT:ICF (on by default in Release) folds identical functions into one address, so 130 empty
+ * stubs are ONE address and the slot-by-slot comparison further down would pass whatever the install
+ * order was. Each one records its own index instead. */
+static volatile i32 g_nStubFired = -1;
+#define DEFINE_STUB(i) static void Stub##i(void) { g_nStubFired = (i); }
+DEFINE_STUB(0)  DEFINE_STUB(1)  DEFINE_STUB(2)  DEFINE_STUB(3)  DEFINE_STUB(4)  DEFINE_STUB(5)  DEFINE_STUB(6)  DEFINE_STUB(7)  DEFINE_STUB(8)  DEFINE_STUB(9)
+DEFINE_STUB(10)  DEFINE_STUB(11)  DEFINE_STUB(12)  DEFINE_STUB(13)  DEFINE_STUB(14)  DEFINE_STUB(15)  DEFINE_STUB(16)  DEFINE_STUB(17)  DEFINE_STUB(18)  DEFINE_STUB(19)
+DEFINE_STUB(20)  DEFINE_STUB(21)  DEFINE_STUB(22)  DEFINE_STUB(23)  DEFINE_STUB(24)  DEFINE_STUB(25)  DEFINE_STUB(26)  DEFINE_STUB(27)  DEFINE_STUB(28)  DEFINE_STUB(29)
+DEFINE_STUB(30)  DEFINE_STUB(31)  DEFINE_STUB(32)  DEFINE_STUB(33)  DEFINE_STUB(34)  DEFINE_STUB(35)  DEFINE_STUB(36)  DEFINE_STUB(37)  DEFINE_STUB(38)  DEFINE_STUB(39)
+DEFINE_STUB(40)  DEFINE_STUB(41)  DEFINE_STUB(42)  DEFINE_STUB(43)  DEFINE_STUB(44)  DEFINE_STUB(45)  DEFINE_STUB(46)  DEFINE_STUB(47)  DEFINE_STUB(48)  DEFINE_STUB(49)
+DEFINE_STUB(50)  DEFINE_STUB(51)  DEFINE_STUB(52)  DEFINE_STUB(53)  DEFINE_STUB(54)  DEFINE_STUB(55)  DEFINE_STUB(56)  DEFINE_STUB(57)  DEFINE_STUB(58)  DEFINE_STUB(59)
+DEFINE_STUB(60)  DEFINE_STUB(61)  DEFINE_STUB(62)  DEFINE_STUB(63)  DEFINE_STUB(64)  DEFINE_STUB(65)  DEFINE_STUB(66)  DEFINE_STUB(67)  DEFINE_STUB(68)  DEFINE_STUB(69)
+DEFINE_STUB(70)  DEFINE_STUB(71)  DEFINE_STUB(72)  DEFINE_STUB(73)  DEFINE_STUB(74)  DEFINE_STUB(75)  DEFINE_STUB(76)  DEFINE_STUB(77)  DEFINE_STUB(78)  DEFINE_STUB(79)
+DEFINE_STUB(80)  DEFINE_STUB(81)  DEFINE_STUB(82)  DEFINE_STUB(83)  DEFINE_STUB(84)  DEFINE_STUB(85)  DEFINE_STUB(86)  DEFINE_STUB(87)  DEFINE_STUB(88)  DEFINE_STUB(89)
+DEFINE_STUB(90)  DEFINE_STUB(91)  DEFINE_STUB(92)  DEFINE_STUB(93)  DEFINE_STUB(94)  DEFINE_STUB(95)  DEFINE_STUB(96)  DEFINE_STUB(97)  DEFINE_STUB(98)  DEFINE_STUB(99)
+DEFINE_STUB(100)  DEFINE_STUB(101)  DEFINE_STUB(102)  DEFINE_STUB(103)  DEFINE_STUB(104)  DEFINE_STUB(105)  DEFINE_STUB(106)  DEFINE_STUB(107)  DEFINE_STUB(108)  DEFINE_STUB(109)
+DEFINE_STUB(110)  DEFINE_STUB(111)  DEFINE_STUB(112)  DEFINE_STUB(113)  DEFINE_STUB(114)  DEFINE_STUB(115)  DEFINE_STUB(116)  DEFINE_STUB(117)  DEFINE_STUB(118)  DEFINE_STUB(119)
+DEFINE_STUB(120)  DEFINE_STUB(121)  DEFINE_STUB(122)  DEFINE_STUB(123)  DEFINE_STUB(124)  DEFINE_STUB(125)  DEFINE_STUB(126)  DEFINE_STUB(127)  DEFINE_STUB(128)  DEFINE_STUB(129)
 
 typedef void (*StubFn)(void);
 static const StubFn g_aStub[PUFO_PBANK_WIDGET_COUNT] = {

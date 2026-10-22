@@ -545,6 +545,18 @@ add_test(NAME test_uibank
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# Part 109: the constant census. Every PUFO_* value another suite asserts against, pinned to a
+# literal here so moving the constant in src/ moves this gate instead of moving the expectation.
+add_executable(test_constants ${CMAKE_SOURCE_DIR}/tests/test_constants.c)
+target_include_directories(test_constants PRIVATE ${CMAKE_SOURCE_DIR}/src/pufo) # no libs: macros only
+set_target_properties(test_constants PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_constants
+    COMMAND test_constants
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # Enemy AI decision predicates: the multi-target type table and the random turn.
 add_executable(test_enemyai ${CMAKE_SOURCE_DIR}/tests/test_enemyai.c)
 target_link_libraries(test_enemyai PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)

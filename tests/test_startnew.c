@@ -109,7 +109,8 @@ static i32 g_nSpawnCalls;
 static i32 g_nEventCalls;
 static i32 g_nNavClickedSlot = -1;
 
-static void NoopClick(void) { }
+static volatile i32 g_nConfirmSeamFired = -1; /* a distinct body: an empty one folds with any other */
+static void NoopClick(void) { g_nConfirmSeamFired = 1; }
 
 #define DEFINE_NAVCLICK(i) static void NavClick##i(void) { g_nNavClickedSlot = (i); }
 DEFINE_NAVCLICK(0)  DEFINE_NAVCLICK(1)  DEFINE_NAVCLICK(2)  DEFINE_NAVCLICK(3)
@@ -670,6 +671,11 @@ static void TestStartNew(void)
     CheckEqI32(ctlResearchPanel.x, 1000, "research panel parked at x=1000");
     CheckEqI32(ctlResearchPanel.y, 1000, "research panel parked at y=1000");
     Check(ctlConfirm.pfnClick == NoopClick, "the confirm control got the TryConfirm thunk");
+    g_nConfirmSeamFired = -1;
+    if (ctlConfirm.pfnClick != NULL) {
+        ctlConfirm.pfnClick();
+    }
+    CheckEqI32(g_nConfirmSeamFired, 1, "and calling the stored pointer runs that thunk");
     Check(bFlag187080 == 0, "byte_187080 cleared");
     CheckEqI32(view.nMode, 0, "zoom 2 -> 0 through two Smap_ZoomOut steps");
     Check(worldSize.uW == 111 && worldSize.uH == 222, "the world size published by the last zoom step");

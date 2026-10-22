@@ -62,7 +62,23 @@ static i32             g_nGlyphPalBase;
 static i32             g_nSmapOriginX;
 static i32             g_nStartNewCalls;
 
-static void NoopClick(void) { }
+/* One fixture per installed handler. A single shared empty stub cannot express "root slot 5 got
+ * the root-5 handler, the 186B8C control got the craft-select handler, the status panel got the
+ * radar handler" -- and empty bodies fold to one address under MSVC's /OPT:ICF anyway, so every
+ * comparison against it was between the same pointer. Each one records its own id. */
+static i32 g_nGeoClickId;
+#define DEFINE_ROOTCLICK(i) static void RootClick##i(void) { g_nGeoClickId = (i); }
+DEFINE_ROOTCLICK(0)  DEFINE_ROOTCLICK(1)  DEFINE_ROOTCLICK(2)  DEFINE_ROOTCLICK(3)
+DEFINE_ROOTCLICK(4)  DEFINE_ROOTCLICK(5)  DEFINE_ROOTCLICK(6)  DEFINE_ROOTCLICK(7)
+DEFINE_ROOTCLICK(8)  DEFINE_ROOTCLICK(9)  DEFINE_ROOTCLICK(10) DEFINE_ROOTCLICK(11)
+DEFINE_ROOTCLICK(12)
+static void CraftSelectClick(void) { g_nGeoClickId = 100; }
+static void RadarClick(void)       { g_nGeoClickId = 101; }
+static void (*const g_apfnRootStub[PUFO_GEOUI_ROOT_CTLS])(void) = {
+    RootClick0,  RootClick1,  RootClick2,  RootClick3,  RootClick4,  RootClick5,
+    RootClick6,  RootClick7,  RootClick8,  RootClick9,  RootClick10, RootClick11,
+    RootClick12
+};
 static void StartNewProbe(void *pUser) { (void)pUser; ++g_nStartNewCalls; }
 
 static bool LoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
@@ -147,10 +163,10 @@ static void TestNewGame(void)
     env.pbSaveVersion   = &g_nSaveVersion;
     env.pOptions        = &g_options;
     for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
-        env.apfnRootClick[i] = NoopClick;
+        env.apfnRootClick[i] = g_apfnRootStub[i];
     }
-    env.pfnCraftSelectClick = NoopClick;
-    env.pfnRadarClick       = NoopClick;
+    env.pfnCraftSelectClick = CraftSelectClick;
+    env.pfnRadarClick       = RadarClick;
     env.pfnStartNew         = StartNewProbe;
     env.pfnLoadPads         = LoadPads;
 
@@ -240,10 +256,10 @@ static void TestNewGame(void)
     {
         bool bClicks = true;
         for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
-            if (g_ui.apRootCtl[i]->pfnClick != NoopClick) { bClicks = false; }
+            if (g_ui.apRootCtl[i]->pfnClick != g_apfnRootStub[i]) { bClicks = false; }
         }
-        Check(bClicks && g_ui.apCtl[GEOUI_CTL_186B8C]->pfnClick == NoopClick,
-              "13 root handlers plus the 186B8C craft-select handler stored");
+        Check(bClicks && g_ui.apCtl[GEOUI_CTL_186B8C]->pfnClick == CraftSelectClick,
+              "13 root handlers, each its OWN one, plus the 186B8C craft-select handler stored");
     }
     CheckEqI32(g_ui.apRootCtl[0]->x, 0, "root 0 x");
     CheckEqI32(g_ui.apRootCtl[0]->y, 236, "root 0 y (cplus)");
@@ -316,7 +332,7 @@ static void TestNewGame(void)
     Check(g_ui.pStatusPanel != NULL && g_ui.pStatusPanel->nLineCount == 20
               && g_ui.pStatusPanel->nStyle == 13 && g_ui.pStatusPanel->nFont == 16
               && g_ui.pStatusPanel->nUnk7076 == 1 && g_ui.pStatusPanel->bSelLineHighlight == 1
-              && g_ui.pStatusPanel->bColorKey == 100 && g_ui.pStatusPanel->pfnClick == NoopClick,
+              && g_ui.pStatusPanel->bColorKey == 100 && g_ui.pStatusPanel->pfnClick == RadarClick,
           "status panel built (20 lines, style 13, font 16, radar click wired)");
 
     printf("mission sites\n");
