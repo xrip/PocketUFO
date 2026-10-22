@@ -1894,13 +1894,18 @@ typedef struct ResearchAccumulateEnv {
 
 i32 ResearchScreen_AccumulateAllocated(const ResearchAccumulateEnv *pEnv);
 
-/* ------------------------------------------------- the manufacturing quantity buttons
+/* ------------------------------------------------- the manufacturing engineers buttons
  *
  * The manufacturing screen is the mirror of the research one: a product panel whose anLineAux
  * carries a product number per row, a cached copy of that panel's nUnk3032 row cursor, a per-base
- * quantity column, and the same two gates with engineers and workshops in place of scientists and
- * labs. Evidence: ManufScreen_IncSelectedQty @ 0x6dddc (228 B), ManufScreen_ReduceSelectedQtyToOne
- * @ 0x6dec0 (172 B), ManufScreen_DecSelectedQty @ 0x6e09c (160 B), ManufScreen_DecEngineers @
+ * column, and the same two gates with engineers and workshops in place of scientists and labs. The
+ * column here is auManufCol @ 0x15E19C and it holds the ENGINEERS ASSIGNED to each product: the
+ * screen prints TEXTS[1180] "Инженеров" at (10,216) and TEXTS[1181] "занято: " with the value at
+ * (10,230), and 0x70908 reads it with LDRH (the units column beside it, aManufProductB, is read with
+ * LDR at 0x709D0 under TEXTS[1182] "Единиц" + TEXTS[1183] "произвести: "). The names in this file
+ * follow those captions: Part 115 found them swapped and moved them.
+ * Evidence: ManufScreen_IncEngineers @ 0x6dddc (228 B), ManufScreen_ReduceSelectedQtyToOne
+ * @ 0x6dec0 (172 B), ManufScreen_DecEngineers @ 0x6e09c (160 B), ManufScreen_DecUnits @
  * 0x6e330 (164 B), ManufScreen_UpdateProgress @ 0x6df6c (304 B).
  *
  * The entry index is auManufCol[product + 200*base], composed over the 0x159E98 product-block
@@ -1913,18 +1918,20 @@ i32 ResearchScreen_AccumulateAllocated(const ResearchAccumulateEnv *pEnv);
  * the shipped build the gate is dead. The port keeps it because the original has it.
  *
  * ManufScreen_ReduceSelectedQtyToOne is renamed in the IDB from ManufScreen_GetSelectedProductId:
- * it never returns a product id. It decrements the selected product's quantity one at a time while
- * the value is above 1 (0x6DF30..0x6DF54), which is a clamp to 1. */
+ * it never returns a product id. It decrements the selected product's engineer count one at a time
+ * while the value is above 1 (0x6DF30..0x6DF54), which is a clamp to 1. */
 #define PUFO_MANUF_COL_OFFSET 17156 /* 0x4304: auManufCol @ 0x15E19C minus the product-block
                                      * anchor @ 0x159E98. The value three buttons return. */
-#define PUFO_MANUF_ANCHOR 0x159E98  /* ManufScreen_DecEngineers leaves the product-block anchor in
+#define PUFO_MANUF_ANCHOR 0x159E98  /* ManufScreen_DecUnits leaves the product-block anchor in
                                      * R0 (ADDGT R2,R0,R2 is the last thing that touches it).
                                      * Register residue; reproduced, not interpreted. */
 typedef struct ManufQtyEnv {
     UiPanel             *pProductPanel;   /* pManufProductPanel @ 0x15EE44 */
     const i32           *pnProductRow;    /* nManufProductRowCache @ 0x15EE3C, a cached nUnk3032 */
-    u16                 *apManufCols;     /* auManufCol @ 0x15E19C, 200 u16 per base */
-    i32                 *apProductB;      /* aManufProductB @ 0x15B79C, 200 u32 per base */
+    u16                 *apManufCols;     /* auManufCol @ 0x15E19C, 200 u16 per base: the engineers
+                                           * assigned to each product */
+    i32                 *apProductB;      /* aManufProductB @ 0x15B79C, 200 dwords per base: the units
+                                           * to produce -- DecUnits compares it against the column above */
     const u8            *puManufEntries;  /* nResearchEntryCount @ 0x160C4C, a byte, shared with research */
     const ObjectRecFull *pEngineerRec;    /* Map_apObjects112 @ 0x113C80, the engineers item */
     const u8            *abFacilityGrid;  /* gBaseFacGrid @ 0x159768 */
@@ -1932,10 +1939,10 @@ typedef struct ManufQtyEnv {
     const u8            *pbQtyGate;       /* bManufQtyGate @ 0x15EE50 */
 } ManufQtyEnv;
 
-i32 ManufScreen_IncSelectedQty(const ManufQtyEnv *pEnv);
-i32 ManufScreen_DecSelectedQty(const ManufQtyEnv *pEnv);
-i32 ManufScreen_ReduceSelectedQtyToOne(const ManufQtyEnv *pEnv);
+i32 ManufScreen_IncEngineers(const ManufQtyEnv *pEnv);
 i32 ManufScreen_DecEngineers(const ManufQtyEnv *pEnv);
+i32 ManufScreen_ReduceSelectedQtyToOne(const ManufQtyEnv *pEnv);
+i32 ManufScreen_DecUnits(const ManufQtyEnv *pEnv);
 i32 ManufScreen_UpdateProgress(const ManufQtyEnv *pEnv);
 
 /* ManufScreen_SelectListed @ 0x6e914 (120 B): the manufacturing product list's row click, the
@@ -1968,7 +1975,7 @@ i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv);
 /* ------------------------------------------------- clearing a product slot, and the engineer "+"
  *
  * Evidence: ManufScreen_ClearProductSlot @ 0x6f8cc (216 B), ManufScreen_ConfirmAndClose @ 0x6e98c
- * (92 B), ManufScreen_IncEngineers @ 0x6e13c (500 B).
+ * (92 B), ManufScreen_IncUnits @ 0x6e13c (500 B).
  *
  * The product table is three parallel arrays plus the quantity column, all contiguous and all
  * 200 entries per base (see the product chunk note in game/pufo_save.h):
@@ -1977,7 +1984,7 @@ i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv);
  *     C  u16 @ 0x15D09C    quantity column u16 @ 0x15E19C (auManufCol)
  *
  * ClearProductSlot zeroes one index of all four. Its first argument is never read. Products
- * 119..121 -- the three hangar products, the same range ManufScreen_IncEngineers splits on --
+ * 119..121 -- the three hangar products, the same range ManufScreen_IncUnits splits on --
  * additionally clear the selected base's byte in the eight-byte base grid table at
  * abFacilityGrid + 1620 = 0x159DBC, and they do it by reading it and subtracting that same value
  * back (BaseGrid_GetByte0x654 then BaseGrid_SubByte0x654 with the amount it just returned), so
@@ -2174,8 +2181,11 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseE
  *   3. 0x71134..0x7116C: six operator new(0x20) + UiControl_ctor into the six slots the ARM builds
  *      as ppScreen + (0x4F00 | 0x84) + 4*i, i.e. byte offsets 0x4F84..0x4F98 -- array indices
  *      5089..5094, which is what Hex-Rays shows.
- *   4. 0x71184..0x711EC: their handlers in slot order -- PanelPrev, PanelNext, IncSelectedQty,
- *      DecSelectedQty, IncEngineers, DecEngineers.
+ *   4. 0x71184..0x711EC: their handlers in slot order -- PanelPrev, PanelNext, IncEngineers (0x6dddc),
+ *      DecEngineers (0x6e09c), IncUnits (0x6e13c), DecUnits (0x6e330). g_aManufCtlDesc gives each slot
+ *      its position -- 0 (205,18) "up", 1 (205,38) "down", 2 (10,251), 3 (10,271), 4 (140,251),
+ *      5 (140,271) -- so the engineers pair sits under the x 10 column ("Инженеров занято") and the
+ *      units pair under the x 140 column ("Единиц произвести").
  *   5. 0x71200..0x71238: two controls that already exist as globals, pGeoscapeCtlA at x 40 y 294 with
  *      handler ManufScreen_Draw, and pGeoscapeCtlB at x 130 y 294 with handler
  *      ManufScreen_ConfirmAndClose. Neither is allocated here.
@@ -2188,9 +2198,10 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseE
  * keeps the original's order.
  *
  * g_aManufCtlDesc @ 0xAB9F8 is six 32-byte descriptors. Read against the handler order of step 4 they
- * are the base-tab scroll pair at x 205 y 18/38, the quantity pair at x 10 y 251/271, and the
- * engineers pair at x 140 y 251/271. All six use the "up"/"sup" or "down"/"sdown" pad pair and mode
- * 0, so every one of them is a press/release button in UiControl_HitTest's mode-0 branch.
+ * are the base-tab scroll pair at x 205 y 18/38, the engineers pair at x 10 y 251/271, and the units
+ * pair at x 140 y 251/271 (the two pairs were named the other way round until Part 115). All six use
+ * the "up"/"sup" or "down"/"sdown" pad pair and mode 0, so every one of them is a press/release button
+ * in UiControl_HitTest's mode-0 branch.
  *
  * Deviation: the original allocates the six controls with operator new and stores them into the
  * screen block; the port takes caller-owned controls and installs them into ppRoot[1..6], as the
@@ -2209,10 +2220,10 @@ typedef struct ManufInitEnv {
     void (*pfnConfirmClick)(void);  /* ManufScreen_ConfirmAndClose @ 0x6e98c */
     void (*pfnPanelPrev)(void);     /* ManufScreen_PanelPrev @ 0x6dd4c */
     void (*pfnPanelNext)(void);     /* ManufScreen_PanelNext @ 0x6dd94 */
-    void (*pfnIncQty)(void);        /* ManufScreen_IncSelectedQty @ 0x6dddc */
-    void (*pfnDecQty)(void);        /* ManufScreen_DecSelectedQty @ 0x6e09c */
-    void (*pfnIncEngineers)(void);  /* ManufScreen_IncEngineers @ 0x6e13c */
-    void (*pfnDecEngineers)(void);  /* ManufScreen_DecEngineers @ 0x6e330 */
+    void (*pfnIncQty)(void);        /* ManufScreen_IncEngineers @ 0x6dddc */
+    void (*pfnDecQty)(void);        /* ManufScreen_DecEngineers @ 0x6e09c */
+    void (*pfnIncUnits)(void);  /* ManufScreen_IncUnits @ 0x6e13c */
+    void (*pfnDecUnits)(void);  /* ManufScreen_DecUnits @ 0x6e330 */
     void (*pfnBuildPanels)(void);   /* ManufScreen_BuildPanels @ 0x6e9e8 */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser);
@@ -2549,9 +2560,12 @@ typedef struct ManufFrameEnv {
 
 void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv);
 
-/* ManufScreen_IncEngineers @ 0x6e13c (500 B): the manufacturing screen's engineer "+" button. Like
- * the other four buttons it opens by reading bManufQtyGate and bails returning that byte, and like
- * them the gate is dead in the shipped build. It then splits on the selected product:
+/* ManufScreen_IncUnits @ 0x6e13c (500 B): the manufacturing screen's units "+" button -- the right of
+ * the two "+/-" pairs, the one under TEXTS[1182] "Единиц" + TEXTS[1183] "произвести: ", so the number
+ * it moves is aManufProductB, the units to produce. Part 115 moved the name from IncEngineers: the
+ * engineer gates (available engineers, a free workshop slot) sit on 0x6dddc and 0x6e09c. Like the
+ * other four buttons it opens by reading bManufQtyGate and bails returning that byte, and like them
+ * the gate is dead in the shipped build. It then splits on the selected product:
  *
  *   product 119..121 (the hangar products) -- the budget is free hangar slots,
  *     Base_CalcHangarCap - Base_CountShipsAtBase. When that is zero it stores 1 into byte_1870C8
@@ -2562,7 +2576,7 @@ void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv);
  *   every other product -- the budget is Base_CalcStoresCapacity, and the pressure on it is
  *     ObjectRecFull[product].bCargoSize * aManufProductB[idx]  (0x6E214: the object is found by the
  *     PRODUCT index, not the base)  + Base_CalcStorageUsed + Base_CountItemQtyAcrossBases. Below
- *     capacity the quantity goes up by one; at or above it, byte_1870C8 = 1 and
+ *     capacity the units count goes up by one; at or above it, byte_1870C8 = 1 and
  *     dword_1870B4[0] = 0 -- note the residue differs from the hangar path, 1 versus 0.
  *
  * Base_CountItemQtyAcrossBases is called with the site count at 0x186410, the selected base as the
@@ -2570,7 +2584,7 @@ void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv);
  *
  * Return value: the gate byte, or 4*idx (hangar path), or the capacity, or &dword_1870B4. It is
  * installed as a click handler (0x711D0, 0x7127C) and nothing reads it, so the port returns void. */
-typedef struct ManufEngineerEnv {
+typedef struct ManufUnitsEnv {
     UiPanel              *pProductPanel;   /* pManufProductPanel @ 0x15EE44 */
     const i32            *pnProductRow;    /* nManufProductRowCache @ 0x15EE3C */
     i32                  *apProductB;      /* aManufProductB @ 0x15B79C */
@@ -2588,9 +2602,9 @@ typedef struct ManufEngineerEnv {
     i32                   nSiteCount;      /* 0x186410 */
     u32                  *pdwShortfall;    /* byte_1870C8, written as a dword here too */
     i32                  *pnResidue;       /* dword_1870B4[0] */
-} ManufEngineerEnv;
+} ManufUnitsEnv;
 
-void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv);
+void ManufScreen_IncUnits(const ManufUnitsEnv *pEnv);
 
 /* ------------------------------------------------- the buy/sell confirm, and the region funding bonus
  *

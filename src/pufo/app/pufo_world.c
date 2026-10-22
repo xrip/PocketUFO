@@ -1014,33 +1014,10 @@ static void World_ManufPanelNextThunk(void)
     }
 }
 
-/* ManufScreen_IncSelectedQty @ 0x6dddc / DecSelectedQty @ 0x6e09c: the quantity pair, which writes
- * the selected row's aManufProductB entry through the cached row, the engineer gate and the
- * workshop-slot gate. */
-static void World_ManufIncQtyThunk(void)
-{
-    PufoWorldState *pW = g_pActiveWorld;
-
-    if (pW == NULL) {
-        return;
-    }
-    pW->manufQty.pProductPanel = pW->pManufProductPanel;
-    (void)ManufScreen_IncSelectedQty(&pW->manufQty);
-}
-
-static void World_ManufDecQtyThunk(void)
-{
-    PufoWorldState *pW = g_pActiveWorld;
-
-    if (pW == NULL) {
-        return;
-    }
-    pW->manufQty.pProductPanel = pW->pManufProductPanel;
-    (void)ManufScreen_DecSelectedQty(&pW->manufQty);
-}
-
-/* ManufScreen_IncEngineers @ 0x6e13c / DecEngineers @ 0x6e330: the engineers pair, moving whole
- * 1-crew assignments to the selected product against the workshop budget. */
+/* ManufScreen_IncEngineers @ 0x6dddc / ManufScreen_DecEngineers @ 0x6e09c: the engineers pair, the
+ * left "+/-" under the screen's TEXTS[1180] "Инженеров" + TEXTS[1181] "занято:" captions. It moves the
+ * selected row's auManufCol entry (0x15E19C, the engineers assigned to the product) through the cached
+ * row, the available-engineer gate and the free-workshop-slot gate. */
 static void World_ManufIncEngineersThunk(void)
 {
     PufoWorldState *pW = g_pActiveWorld;
@@ -1048,8 +1025,8 @@ static void World_ManufIncEngineersThunk(void)
     if (pW == NULL) {
         return;
     }
-    pW->manufEngineers.pProductPanel = pW->pManufProductPanel;
-    (void)ManufScreen_IncEngineers(&pW->manufEngineers);
+    pW->manufQty.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_IncEngineers(&pW->manufQty);
 }
 
 static void World_ManufDecEngineersThunk(void)
@@ -1060,11 +1037,40 @@ static void World_ManufDecEngineersThunk(void)
         return;
     }
     pW->manufQty.pProductPanel = pW->pManufProductPanel;
-    (void)ManufScreen_DecEngineers(&pW->manufQty); /* DecEngineers takes the qty env, 0x6e330 */
+    (void)ManufScreen_DecEngineers(&pW->manufQty);
 }
 
-/* ManufScreen_UpdateProgress @ 0x6df6c: unk_186B94, the allocate-all control the frame re-points at
- * (94, 251) every frame. ManufScreen_ReduceSelectedQtyToOne @ 0x6dec0: unk_186B90 at (94, 271). */
+/* ManufScreen_IncUnits @ 0x6e13c / ManufScreen_DecUnits @ 0x6e330: the units pair, the right "+/-"
+ * under TEXTS[1182] "Единиц" + TEXTS[1183] "произвести:". It moves the aManufProductB entry
+ * (0x15B79C, the units to produce): for the three hangar products only while the count stays under the
+ * free hangar cells, otherwise while cargo size * count + the base's stock stays under the stores
+ * capacity; DecUnits stops one above the engineers assigned to the same product. */
+static void World_ManufIncUnitsThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufUnits.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_IncUnits(&pW->manufUnits);
+}
+
+static void World_ManufDecUnitsThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW == NULL) {
+        return;
+    }
+    pW->manufQty.pProductPanel = pW->pManufProductPanel;
+    (void)ManufScreen_DecUnits(&pW->manufQty); /* 0x6e330 needs the engineers column too, so it takes
+                                                * the qty env (auManufCol is the comparison at 0x6E3B0) */
+}
+
+/* ManufScreen_UpdateProgress @ 0x6df6c: unk_186B94, the allocate-all-engineers control ("ВСЕ") the frame
+ * re-points at (94, 251) every frame. ManufScreen_ReduceSelectedQtyToOne @ 0x6dec0: unk_186B90 at
+ * (94, 271), the clamp of the same engineers column to 1. */
 static void World_ManufAllocAllThunk(void)
 {
     PufoWorldState *pW = g_pActiveWorld;
@@ -10390,10 +10396,10 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->manufInit.pfnConfirmClick = World_ManufConfirmThunk;                /* ManufScreen_ConfirmAndClose @ 0x6e98c, 0x71238 */
     pW->manufInit.pfnPanelPrev    = World_ManufPanelPrevThunk;              /* 0x71184 */
     pW->manufInit.pfnPanelNext    = World_ManufPanelNextThunk;              /* 0x7119C */
-    pW->manufInit.pfnIncQty       = World_ManufIncQtyThunk;                 /* 0x711B0 */
-    pW->manufInit.pfnDecQty       = World_ManufDecQtyThunk;                 /* 0x711C4 */
-    pW->manufInit.pfnIncEngineers = World_ManufIncEngineersThunk;           /* 0x711D8 */
-    pW->manufInit.pfnDecEngineers = World_ManufDecEngineersThunk;           /* 0x711EC */
+    pW->manufInit.pfnIncQty       = World_ManufIncEngineersThunk;           /* 0x711B0 */
+    pW->manufInit.pfnDecQty       = World_ManufDecEngineersThunk;           /* 0x711C4 */
+    pW->manufInit.pfnIncUnits = World_ManufIncUnitsThunk;           /* 0x711D8 */
+    pW->manufInit.pfnDecUnits = World_ManufDecUnitsThunk;           /* 0x711EC */
     pW->manufInit.pfnBuildPanels  = World_ManufBuildPanelsThunk;            /* 0x71268 */
     pW->manufInit.pfnLoadPads     = pW->pfnLoadPads;
     pW->manufInit.pPadUser        = pW->pLoadPadsUser;
@@ -10429,21 +10435,21 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pW->manufQty.pnSelectedBaseIdx = &pW->nSelectedBase;
     pW->manufQty.pbQtyGate        = &pW->bManufQtyGate;                     /* 0x15EE50 */
 
-    memset(&pW->manufEngineers, 0, sizeof(pW->manufEngineers));
-    pW->manufEngineers.pnProductRow       = &pW->nManufProductRow;
-    pW->manufEngineers.apProductB         = pW->anProductReq;
-    pW->manufEngineers.abFacilityGrid     = pW->abFacilityGrid;
-    pW->manufEngineers.abGridBytes        = pW->abGridHangarBytes;          /* 0x159DBC */
-    pW->manufEngineers.pnSelectedBaseIdx  = &pW->nSelectedBase;
-    pW->manufEngineers.pbQtyGate          = &pW->bManufQtyGate;
-    pW->manufEngineers.apCraft            = pW->apCraft;
-    pW->manufEngineers.nCraftCount        = (i32)pW->bCraftCount;
-    pW->manufEngineers.apBases            = pW->apBases;
-    pW->manufEngineers.nBaseCount         = (i32)pW->nBaseCount;
-    pW->manufEngineers.aSites             = pW->apSites;
-    pW->manufEngineers.nSiteCount         = pW->nSiteCount;
-    pW->manufEngineers.pdwShortfall       = &pW->nShortfall1870C8;          /* byte_1870C8, as a dword */
-    pW->manufEngineers.pnResidue          = &pW->nResidue1870B4;            /* dword_1870B4[0] */
+    memset(&pW->manufUnits, 0, sizeof(pW->manufUnits));
+    pW->manufUnits.pnProductRow       = &pW->nManufProductRow;
+    pW->manufUnits.apProductB         = pW->anProductReq;
+    pW->manufUnits.abFacilityGrid     = pW->abFacilityGrid;
+    pW->manufUnits.abGridBytes        = pW->abGridHangarBytes;          /* 0x159DBC */
+    pW->manufUnits.pnSelectedBaseIdx  = &pW->nSelectedBase;
+    pW->manufUnits.pbQtyGate          = &pW->bManufQtyGate;
+    pW->manufUnits.apCraft            = pW->apCraft;
+    pW->manufUnits.nCraftCount        = (i32)pW->bCraftCount;
+    pW->manufUnits.apBases            = pW->apBases;
+    pW->manufUnits.nBaseCount         = (i32)pW->nBaseCount;
+    pW->manufUnits.aSites             = pW->apSites;
+    pW->manufUnits.nSiteCount         = pW->nSiteCount;
+    pW->manufUnits.pdwShortfall       = &pW->nShortfall1870C8;          /* byte_1870C8, as a dword */
+    pW->manufUnits.pnResidue          = &pW->nResidue1870B4;            /* dword_1870B4[0] */
 
     memset(&pW->manufSelect, 0, sizeof(pW->manufSelect));
     pW->manufSelect.pnProductRow      = &pW->nManufProductRow;
@@ -10527,8 +10533,8 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
         pW->manufBuild.nObjectCount = (i32)pAssets->nObjectCount;
         pW->manufQty.pEngineerRec  = (112 < (i32)pAssets->nObjectCount)
                                          ? pAssets->apObjects[112] : NULL;  /* Map_apObjects112 @ 0x113C80 */
-        pW->manufEngineers.apObjects = pAssets->apObjects;
-        pW->manufEngineers.nObjectCount = (i32)pAssets->nObjectCount;
+        pW->manufUnits.apObjects = pAssets->apObjects;
+        pW->manufUnits.nObjectCount = (i32)pAssets->nObjectCount;
         pW->manufDrawEnv.apObjects   = pAssets->apObjects;
         pW->manufDrawEnv.nObjectCount = (i32)pAssets->nObjectCount;
         pF->manufDraw.apObjects      = pAssets->apObjects;

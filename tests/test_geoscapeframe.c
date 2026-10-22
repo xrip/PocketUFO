@@ -10055,7 +10055,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                 ClearSurface();
                 (void)DrawFrame();
             }
-            PressCtl(&g_world.aManufCtl[4]); /* ManufScreen_IncEngineers @ 0x6e13c */
+            PressCtl(&g_world.aManufCtl[4]); /* ManufScreen_IncUnits @ 0x6e13c */
             nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nEBase + nProd;
             CheckEqI32(g_world.anProductReq[nIdx], 1,
                        "the engineers + asks for one unit against the capacity (0x6E214, 0x6E31C)");

@@ -22277,3 +22277,42 @@ so the print change is not an untested one.
 
 The comment at 0x15B79C is rewritten with that census (933 chars, read back whole) and it states the naming
 disagreement where the data sits rather than leaving it to the function notes. `idb_save` run.
+
+## Part 115 - the manufacturing +/- buttons get the names of the columns they move
+
+Closes the naming question Part 114 recorded (`what aManufProductB means`). The answer was in the shipped screen, and it says the two pairs were named the other way round.
+
+### What the shipped screen says
+
+- lang.dat TEXTS records 1178..1183, read out of `src/pufo/asset/pufo_texts_lang.h` (generated from lang.dat by `tools/gen_texts_lang.py`, and `tools/check.sh` fails when that header no longer matches the data file): 1178 "Инженеров доступно: " (engineers available), 1179 "Свободных мест в мастерских: " (free workshop places), 1180 "Инженеров" (Engineers), 1181 "занято: " (used:), 1182 "Единиц" (Units), 1183 "произвести: " (to produce:).
+- `ManufScreen_DrawFrame @ 0x6f9a4` pairs each label with a value. 0x708C4..0x70918: TEXTS[1181] plus the `LDRH` at block+0x4304 -- `auManufCol @ 0x15E19C` -- drawn at (10,230), under the TEXTS[1180] caption at (10,216). 0x70994..0x709D0: TEXTS[1183] plus the `LDR` at block+0x1904 -- `aManufProductB @ 0x15B79C` -- drawn at (140,230), under TEXTS[1182] at (140,216). One dword column, one u16 column, one caption each.
+- The committed picture says it in the open: `tests/ref/econ_manuf_alloc.png` shows "Инженеров занято: 2" over the left Add/Remove pair and "Единиц произвести: 1" over the right pair, with the product line "432 инженер-часов для производства одной единицы" -- 432 engineer-hours per unit, which is what makes the u16 column a headcount and not a work amount.
+- The control placement closes the pairing. `g_aManufCtlDesc @ 0xAB9F8` holds the six slots: (205,18) "up", (205,38) "down", (10,251), (10,271), (140,251), (140,271). `ManufScreen_Init @ 0x710b0` installs the handlers in that slot order at 0x71184..0x711EC: PanelPrev, PanelNext, 0x6DDDC, 0x6E09C, 0x6E13C, 0x6E330. So the buttons of 0x6DDDC/0x6E09C sit under the x 10 column (engineers) and the buttons of 0x6E13C/0x6E330 under the x 140 column (units).
+- The gates agree with the labels. 0x6DDDC requires `Base_GetEngineerCount > 0` and a free workshop slot for `Base_CountActiveManuf + 1` (the busy engineers) before it raises auManufCol; 0x6E13C raises aManufProductB only while the free hangar cells allow it (products 119..121) or while `cargo size * count + stock + used` stays under the stores capacity -- both properties of a unit count; 0x6E330 stops one above `auManufCol + 1`.
+
+### What was wrong, and how wrong
+
+The IDB and the port had the pairs swapped: 0x6DDDC/0x6E09C were `ManufScreen_IncSelectedQty` / `DecSelectedQty`, 0x6E13C/0x6E330 were `ManufScreen_IncEngineers` / `DecEngineers`. The code therefore called the units buttons the engineers buttons and the engineers buttons the quantity buttons, and the comments drew the wrong conclusion from the names: `pufo_baseui.c` said of 0x6E330 "the engineers assigned to this product (aManufProductB ...)", the IDB note at 0x6E330 said "the dword engineer assignment", and `auManufCol` was described as "allocated work" / "the manufacturing quantity column" where panel B in fact prints a headcount.
+
+### The renames
+
+| address | old name | new name | the column it moves |
+|---|---|---|---|
+| 0x6DDDC | ManufScreen_IncSelectedQty | ManufScreen_IncEngineers | auManufCol (u16), control (10,251) |
+| 0x6E09C | ManufScreen_DecSelectedQty | ManufScreen_DecEngineers | auManufCol, control (10,271) |
+| 0x6E13C | ManufScreen_IncEngineers | ManufScreen_IncUnits | aManufProductB (dword), control (140,251) |
+| 0x6E330 | ManufScreen_DecEngineers | ManufScreen_DecUnits | aManufProductB, control (140,271) |
+
+In the port the same swap moved with them: `ManufEngineerEnv` -> `ManufUnitsEnv`, `PufoWorldState.manuf-Engineers` -> `manufUnits`, `World_ManufInc/DecEngineersThunk` -> `...UnitsThunk`, `World_ManufInc/Dec-QtyThunk` -> `...EngineersThunk`, and `ManufInitEnv.pfnIncEngineers/pfnDecEngineers` -> `pfnIncUnits/pfnDecUnits` (slots [4]/[5], the x 140 pair). `pfnIncQty/pfnDecQty` (slots [2]/[3]) stay generic and their comments now cite the engineers handlers. `grep` over `src/` and `tests/` finds none of the old spellings.
+
+### IDB
+
+Comments rewritten and read back at 0x6DDDC, 0x6E09C, 0x6E13C, 0x6E330, 0x6DEC0, 0x6DF6C, `auManufCol` 0x15E19C, `aManufProductB` 0x15B79C, the gate byte 0x15EE50, `ManufScreen_Init` 0x710B0 and `g_aManufCtlDesc` 0xAB9F8. Two of them had been silently cut by the 1024-char comment cap -- the Init note ended mid-word ("...unk_18"); its step list now fits in 994 chars as the regular comment and the pairing evidence sits in the repeatable comment (503 chars), both verified by read-back. Hex-Rays was recompiled for the six functions so the pseudocode carries the new text. Four rows went into `docs/parity/renames.tsv`, and the `0x6DDE0` row in `bugs.tsv` (the dead gate byte) now names `ManufScreen_IncEngineers`.
+
+### Evidence
+
+63/63 tests in Release and in Debug, `tools/check.sh` green on all six gates, 20,589 checks unchanged, coverage 972/1103 (88.1%) and 596888/598792 (99.7%) unchanged, 93 frames and 9 e2e pictures unchanged: nothing in the drawn text moved, because the labels come from the same TEXTS records and only the code's names did. Teeth: with `ManufScreen_DecUnits` comparing the units column against itself instead of `auManufCol + 1`, the committed check fails - "10 units over 3 engineers drops to 9: got 10, want 9" - so the pairing this Part asserts is gated, not just stated. The rename itself is enforced by the build: a call site left on an old name does not compile.
+
+### Left recorded
+
+Two items Part 114 named stay open: array A of the product block (`unk_159E9C`, IDB `int[1600]`, port `u32 *` in four envs) needs its own signed sweep with a check of each unsigned expression, and 0x6E58C's low-byte read of a dword entry is modelled but ungated.

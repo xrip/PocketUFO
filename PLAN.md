@@ -5592,9 +5592,7 @@ gamma 0 after Part 112. Three named items came out of Part 114: array A of the m
 block (`unk_159E9C`, IDB `int[1600]`, port `u32 *` in four envs plus `pProductU32Col`), whose sweep needs
 a check of each unsigned expression it touches and whose clear check has the same two-byte-fits fixture
 weakness; what `aManufProductB` means (`units asked for` in the port header vs `the dword engineer
-assignment` in the 0x6E330 note), which needs the manufacturing screen's lang.dat captions; and 0x6E58C's
-low-byte read of a dword entry, modelled but not gated because the port masks the same value to a byte,
-so the two readings agree until the sum passes 255. Two rows stay open as IDB ambiguity rather than be closed by
+assignment` in the 0x6E330 note) was settled by Part 115 against the shipped captions -- lang.dat TEXTS 1180..1183 paired with their values at 0x70908 (LDRH, `auManufCol`) and 0x709D0 (LDR, `aManufProductB`), the caption positions (10,216)/(140,216), and `g_aManufCtlDesc` putting the two +/- pairs at (10,251/271) and (140,251/271): `auManufCol` is the engineers assigned, `aManufProductB` the units to produce, and the four manufacturing button names moved in the IDB and in `src/` to match (renames.tsv); and 0x6E58C's low-byte read of a dword entry, modelled but not gated because the port masks the same value to a byte, so the two readings agree until the sum passes 255. Two rows stay open as IDB ambiguity rather than be closed by
 guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`) and 5038 (seven RNG start globals whose
 readers this IDB does not establish).
 
@@ -5633,3 +5631,7 @@ function and cites none | 93 frames and 9 e2e pictures unchanged: the count valu
 `<this commit>` + Part 114 | 63/63 Release and 63/63 Debug | 20,589 checks -- unchanged: Part 114 adds no
 check, it widens one fixture value (0x10016) so an existing clear check has teeth | 972/1103 functions
 (88.1%), 596888/598792 bytes (99.7%) | 93 frames and 9 e2e pictures unchanged.
+`<this commit>` + Part 115 | 63/63 Release and 63/63 Debug | 20,589 checks -- unchanged: a naming Part, no
+new check | 972/1103 functions (88.1%), 596888/598792 bytes (99.7%) | 93 frames and 9 e2e pictures
+unchanged; the pairing is gated -- reading the units column where 0x6E330 reads the engineers column
+fails "10 units over 3 engineers drops to 9".

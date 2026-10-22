@@ -803,7 +803,7 @@ typedef struct PufoWorldState {
     ManufInitEnv          manufInit;      /* 0x710b0 */
     ManufBuildEnv         manufBuild;     /* 0x6e9e8: Init's tail call at 0x71268 and CloseUI case 9's teardown */
     ManufQtyEnv           manufQty;       /* 0x6dddc / 0x6e09c / 0x6df6c / 0x6dec0 */
-    ManufEngineerEnv      manufEngineers; /* 0x6e13c / 0x6e330 */
+    ManufUnitsEnv      manufUnits; /* 0x6e13c / 0x6e330 */
     ManufSelectEnv        manufSelect;    /* 0x6e914: the product row click */
     ManufClearEnv         manufClear;     /* the persistent ClearProductSlot tables: the hourly hook,
                                            * ConfirmAndClose @ 0x6e98c and the frame draw both read it */

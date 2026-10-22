@@ -3839,9 +3839,9 @@ static i32 ManufQtyGateValue(const ManufQtyEnv *pEnv)
     return (pEnv->pbQtyGate != NULL) ? (i32)*pEnv->pbQtyGate : 0;
 }
 
-/* ManufScreen_IncSelectedQty @ 0x6dddc. The engineer gate first, then the workshop-slot gate,
+/* ManufScreen_IncEngineers @ 0x6dddc. The engineer gate first, then the workshop-slot gate,
  * then the increment -- the research pair's shape with the crew and facility kinds swapped. */
-i32 ManufScreen_IncSelectedQty(const ManufQtyEnv *pEnv)
+i32 ManufScreen_IncEngineers(const ManufQtyEnv *pEnv)
 {
     const i32 nIdx = ManufQtyIndex(pEnv);
     if (nIdx < 0) {
@@ -3869,9 +3869,9 @@ i32 ManufScreen_IncSelectedQty(const ManufQtyEnv *pEnv)
     return PUFO_MANUF_COL_OFFSET; /* 0x6DE88 */
 }
 
-/* ManufScreen_DecSelectedQty @ 0x6e09c. No gate beyond the entry being non-zero, and 17156 in R0
+/* ManufScreen_DecEngineers @ 0x6e09c. No gate beyond the entry being non-zero, and 17156 in R0
  * whether it stored anything or not. */
-i32 ManufScreen_DecSelectedQty(const ManufQtyEnv *pEnv)
+i32 ManufScreen_DecEngineers(const ManufQtyEnv *pEnv)
 {
     const i32 nIdx = ManufQtyIndex(pEnv);
     if (nIdx < 0) {
@@ -3911,9 +3911,9 @@ i32 ManufScreen_ReduceSelectedQtyToOne(const ManufQtyEnv *pEnv)
     return PUFO_MANUF_COL_OFFSET; /* 0x6DF10 */
 }
 
-/* ManufScreen_DecEngineers @ 0x6e330. The engineers assigned to this product (aManufProductB, a
- * dword per product per base) may not fall to or below the quantity being made plus one. */
-i32 ManufScreen_DecEngineers(const ManufQtyEnv *pEnv)
+/* ManufScreen_DecUnits @ 0x6e330. The units to produce (aManufProductB, a dword per product per
+ * base) may not fall to or below the engineers assigned to the same product (auManufCol) plus one. */
+i32 ManufScreen_DecUnits(const ManufQtyEnv *pEnv)
 {
     const i32 nIdx = ManufQtyIndex(pEnv);
     if (nIdx < 0) {
@@ -4354,10 +4354,10 @@ void ManufScreen_Init(ManufInitEnv *pEnv)
         pEnv->apCtl[3]->pfnClick = pEnv->pfnDecQty; /* 0x711C4 */
     }
     if (pEnv->apCtl[4] != NULL) {
-        pEnv->apCtl[4]->pfnClick = pEnv->pfnIncEngineers; /* 0x711D8 */
+        pEnv->apCtl[4]->pfnClick = pEnv->pfnIncUnits; /* 0x711D8 */
     }
     if (pEnv->apCtl[5] != NULL) {
-        pEnv->apCtl[5]->pfnClick = pEnv->pfnDecEngineers; /* 0x711EC */
+        pEnv->apCtl[5]->pfnClick = pEnv->pfnDecUnits; /* 0x711EC */
     }
 
     if (pEnv->pDrawCtl != NULL) {
@@ -4431,7 +4431,7 @@ static void ManufFillRow(const ManufBuildEnv *pEnv, UiPanel *pA, UiPanel *pB, Ui
         UiPanel_SetLineAux(pC, nRow, nTopic);          /* 0x6EF70, the TOPIC index, not the slot */
     }
 
-    /* Panel B: the allocated work, or the empty string at 0x10DA38 when nothing is allocated. */
+    /* Panel B: the engineers assigned to this product, or the empty string at 0x10DA38 when none. */
     if (nAllocated != 0) {
         (void)snprintf(szLine, sizeof(szLine), "%u", (unsigned)nAllocated); /* j_itoa, 0x6EFB0 */
     } else {
@@ -4696,7 +4696,7 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv)
 
         char szLine[PUFO_PANEL_LINE_BYTES];
 
-        /* Panel B: the allocated work, or the empty string at 0x10DA38 when nothing is allocated. */
+        /* Panel B: the engineers assigned to this product, or the empty string at 0x10DA38 when none. */
         if (nAllocated != 0u) {
             (void)snprintf(szLine, sizeof(szLine), "%u", (unsigned)nAllocated); /* j_itoa, 0x6E614 */
         } else {
@@ -5048,7 +5048,7 @@ void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv)
     ManufUi_DrawShortfall(pEnv, szLabel, sizeof(szLabel));
 }
 
-void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv)
+void ManufScreen_IncUnits(const ManufUnitsEnv *pEnv)
 {
     if (pEnv == NULL) {
         return;

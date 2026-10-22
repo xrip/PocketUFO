@@ -4253,8 +4253,8 @@ static void TestManufQty(void)
     static u8 g_nGate;
     ManufQtyEnv env;
 
-    printf("\nManufScreen_IncSelectedQty @ 0x6dddc / DecSelectedQty @ 0x6e09c / "
-           "ReduceSelectedQtyToOne @ 0x6dec0 / DecEngineers @ 0x6e330 / UpdateProgress @ 0x6df6c\n");
+    printf("\nManufScreen_IncEngineers @ 0x6dddc / DecEngineers @ 0x6e09c / "
+           "ReduceSelectedQtyToOne @ 0x6dec0 / DecUnits @ 0x6e330 / UpdateProgress @ 0x6df6c\n");
 
     memset(&g_Panel, 0, sizeof(g_Panel));
     memset(g_aCols, 0, sizeof(g_aCols));
@@ -4284,26 +4284,26 @@ static void TestManufQty(void)
     g_nGate = 0;
 
     g_aCols[7] = 3;
-    CheckEqI32(ManufScreen_IncSelectedQty(&env), 17156,
+    CheckEqI32(ManufScreen_IncEngineers(&env), 17156,
                "the increment returns 17156, the column's offset from the product-block anchor");
-    CheckEqI32(g_aCols[7], 4, "product 7's quantity went 3 to 4");
+    CheckEqI32(g_aCols[7], 4, "product 7's engineers went 3 to 4");
     CheckEqI32(g_aCols[6], 0, "the neighbour is untouched");
     CheckEqI32(g_aCols[200 + 7], 0, "and base 1's copy of the same product is untouched");
 
     /* The gate byte. It is dead in the shipped build -- nothing writes it non-zero -- but the
      * original tests it, so the port does too. */
     g_nGate = 1;
-    CheckEqI32(ManufScreen_IncSelectedQty(&env), 1, "a set gate returns the byte itself");
+    CheckEqI32(ManufScreen_IncEngineers(&env), 1, "a set gate returns the byte itself");
     CheckEqI32(g_aCols[7], 4, "and nothing is stored");
-    CheckEqI32(ManufScreen_DecSelectedQty(&env), 1, "the decrement is gated too");
+    CheckEqI32(ManufScreen_DecEngineers(&env), 1, "the decrement is gated too");
     CheckEqI32(ManufScreen_ReduceSelectedQtyToOne(&env), 1, "so is the clamp");
-    CheckEqI32(ManufScreen_DecEngineers(&env), 1, "and the engineer step");
+    CheckEqI32(ManufScreen_DecUnits(&env), 1, "and the units step");
     g_nGate = 0;
 
     /* The engineer gate: 0 total against 4 allocated is -4, returned verbatim. */
     g_EngRec.auPerBaseVal[0] = 0;
-    CheckEqI32(ManufScreen_IncSelectedQty(&env), -4, "no engineers to spare: the negative is returned");
-    CheckEqI32(g_aCols[7], 4, "and the quantity is not touched");
+    CheckEqI32(ManufScreen_IncEngineers(&env), -4, "no engineers to spare: the negative is returned");
+    CheckEqI32(g_aCols[7], 4, "and the engineers column is not touched");
     g_EngRec.auPerBaseVal[0] = 6;
 
     /* The workshop gate: 60 already active needs 61 over a capacity of 50. The engineer total has
@@ -4312,18 +4312,18 @@ static void TestManufQty(void)
     for (i32 i = 0; i < 8; ++i) {
         g_aCols[i] = 8; /* 64 active */
     }
-    CheckEqI32(ManufScreen_IncSelectedQty(&env), 0, "64 active against a capacity of 50 is refused");
+    CheckEqI32(ManufScreen_IncEngineers(&env), 0, "64 active against a capacity of 50 is refused");
     for (i32 i = 0; i < 8; ++i) {
         g_aCols[i] = 0;
     }
     g_EngRec.auPerBaseVal[0] = 6;
 
-    /* DecSelectedQty: no gate beyond non-zero, and 17156 either way. */
+    /* DecEngineers @ 0x6e09c: no gate beyond non-zero, and 17156 either way. */
     g_aCols[7] = 9;
-    CheckEqI32(ManufScreen_DecSelectedQty(&env), 17156, "the decrement returns 17156");
+    CheckEqI32(ManufScreen_DecEngineers(&env), 17156, "the decrement returns 17156");
     CheckEqI32(g_aCols[7], 8, "9 to 8");
     g_aCols[7] = 0;
-    CheckEqI32(ManufScreen_DecSelectedQty(&env), 17156, "a zero entry still returns 17156");
+    CheckEqI32(ManufScreen_DecEngineers(&env), 17156, "a zero entry still returns 17156");
     CheckEqI32(g_aCols[7], 0, "and stays zero");
 
     /* ReduceSelectedQtyToOne: the ARM steps it down while above 1, which is a clamp to 1. Zero is
@@ -4338,17 +4338,17 @@ static void TestManufQty(void)
     (void)ManufScreen_ReduceSelectedQtyToOne(&env);
     CheckEqI32(g_aCols[7], 1, "and an entry already at 1 stays there");
 
-    /* DecEngineers: the assigned engineers may not fall to or below quantity + 1. */
+    /* DecUnits @ 0x6e330: the units to produce may not fall to or below the engineers assigned + 1. */
     g_aCols[7] = 3;
     g_aProdB[7] = 10;
-    CheckEqI32(ManufScreen_DecEngineers(&env), PUFO_MANUF_ANCHOR,
-               "the engineer step returns the product-block anchor, register residue");
-    CheckEqI32(g_aProdB[7], 9, "10 assigned over a quantity of 3 drops to 9");
+    CheckEqI32(ManufScreen_DecUnits(&env), PUFO_MANUF_ANCHOR,
+               "the units step returns the product-block anchor, register residue");
+    CheckEqI32(g_aProdB[7], 9, "10 units over 3 engineers drops to 9");
     g_aProdB[7] = 4;
-    CheckEqI32(ManufScreen_DecEngineers(&env), PUFO_MANUF_ANCHOR, "again");
-    CheckEqI32(g_aProdB[7], 4, "4 assigned is exactly quantity + 1, so it stops there");
+    CheckEqI32(ManufScreen_DecUnits(&env), PUFO_MANUF_ANCHOR, "again");
+    CheckEqI32(g_aProdB[7], 4, "4 units is exactly engineers + 1, so it stops there");
     g_aProdB[7] = 0;
-    (void)ManufScreen_DecEngineers(&env);
+    (void)ManufScreen_DecUnits(&env);
     CheckEqI32(g_aProdB[7], 0, "and a zero assignment never goes negative");
 
     /* UpdateProgress: six engineers spare, all six land. */
@@ -4374,7 +4374,7 @@ static void TestManufQty(void)
     /* Row and base selection. */
     g_nRow = 1; /* product 199, the last of base 0's column */
     g_aCols[199] = 1;
-    (void)ManufScreen_IncSelectedQty(&env);
+    (void)ManufScreen_IncEngineers(&env);
     CheckEqI32(g_aCols[199], 2, "row 1 selects product 199");
     CheckEqI32(g_aCols[198], 0, "the entry before it is untouched");
 
@@ -4383,31 +4383,31 @@ static void TestManufQty(void)
     g_aGrid[480 + 144 * 1 + 6 * 0 + 0] = 3; /* give base 1 a workshop cell */
     g_aCols[7] = 20;
     g_aCols[200 + 7] = 1;
-    (void)ManufScreen_IncSelectedQty(&env);
+    (void)ManufScreen_IncEngineers(&env);
     CheckEqI32(g_aCols[200 + 7], 2, "base 1's copy of product 7 is the one that moved");
     CheckEqI32(g_aCols[7], 20, "base 0's copy is untouched");
     g_nBase = 0;
 
     /* The guards the original does not have. */
-    CheckEqI32(ManufScreen_IncSelectedQty(NULL), 0, "a missing environment is refused");
+    CheckEqI32(ManufScreen_IncEngineers(NULL), 0, "a missing environment is refused");
     CheckEqI32(ManufScreen_UpdateProgress(NULL), 0, "so is the progress loop");
     {
         ManufQtyEnv bad = env;
         bad.pProductPanel = NULL;
-        CheckEqI32(ManufScreen_DecSelectedQty(&bad), 0, "a missing product panel is refused");
+        CheckEqI32(ManufScreen_DecEngineers(&bad), 0, "a missing product panel is refused");
         bad = env;
         bad.apManufCols = NULL;
         CheckEqI32(ManufScreen_ReduceSelectedQtyToOne(&bad), 0, "a missing column is refused");
         bad = env;
         bad.apProductB = NULL;
-        CheckEqI32(ManufScreen_DecEngineers(&bad), PUFO_MANUF_ANCHOR,
+        CheckEqI32(ManufScreen_DecUnits(&bad), PUFO_MANUF_ANCHOR,
                    "a missing product-B array skips the store but keeps the return");
     }
     g_nRow = PUFO_PANEL_LINES;
-    CheckEqI32(ManufScreen_IncSelectedQty(&env), 0, "a row past the panel's rows is refused");
+    CheckEqI32(ManufScreen_IncEngineers(&env), 0, "a row past the panel's rows is refused");
     g_nRow = 0;
     g_Panel.anLineAux[0] = PUFO_PRODUCT_ENTRIES_PER_BASE;
-    CheckEqI32(ManufScreen_DecEngineers(&env), 0, "a product number past the 200 is refused");
+    CheckEqI32(ManufScreen_DecUnits(&env), 0, "a product number past the 200 is refused");
     g_Panel.anLineAux[0] = -1;
     CheckEqI32(ManufScreen_ReduceSelectedQtyToOne(&env), 0, "and a negative one");
     g_Panel.anLineAux[0] = 7;
@@ -7866,7 +7866,7 @@ static void TestClearProductSlot(void)
 #undef CLEAR_RESET
 }
 
-static void TestIncEngineers(void)
+static void TestIncUnits(void)
 {
     static Ship aCraft[3];
     static Ship *apCraft[3];
@@ -7879,7 +7879,7 @@ static void TestIncEngineers(void)
     static u8 aGrid[1524];
     static u8 aGridBytes[8];
     static UiPanel panel;
-    ManufEngineerEnv env;
+    ManufUnitsEnv env;
     i32 nRow;
     i8 nBase;
     u8 nGate;
@@ -7887,9 +7887,9 @@ static void TestIncEngineers(void)
     i32 nResidue;
     i32 i;
 
-    printf("ManufScreen_IncEngineers @ 0x6e13c\n");
+    printf("ManufScreen_IncUnits @ 0x6e13c\n");
 
-#define ENG_RESET(nProduct)                                                  \
+#define UNITS_RESET(nProduct)                                                  \
     memset(aProdB, 0, sizeof(aProdB));                                       \
     memset(aGrid, 0, sizeof(aGrid));                                         \
     memset(aGridBytes, 0, sizeof(aGridBytes));                               \
@@ -7919,109 +7919,109 @@ static void TestIncEngineers(void)
     env.pdwShortfall = &dwShortfall; env.pnResidue = &nResidue;
 
     /* The hangar products, 119..121. One free hangar cell is one slot. */
-    ENG_RESET(119);
+    UNITS_RESET(119);
     aGrid[480 + 0] = 11; /* facType[base 0, row 0, col 0], buildDays 0 so it is free */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[119], 1, "one free hangar cell lets the allocation reach 1 (0x6E228)");
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[119], 1, "a second press stops at the free-slot count (0x6E21C)");
     CheckEqI32(dwShortfall, 0, "  and a hangar with room sets no shortfall");
 
-    ENG_RESET(120);
+    UNITS_RESET(120);
     aGrid[480 + 0] = 11;
     aGrid[480 + 6] = 11; /* row 0, col 1 */
     aProdB[120] = 1;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[120], 2, "two hangar cells allow two units");
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[120], 2, "  and stops there");
 
     /* A hangar cell under construction is not capacity: the capacity pass wants buildDays zero. */
-    ENG_RESET(119);
+    UNITS_RESET(119);
     aGrid[480 + 0] = 11;
     aGrid[0] = 3; /* buildDays[base 0, row 0, col 0] */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[119], 0, "a hangar still being built gives no free slot (0x6611C)");
     CheckEqI32(dwShortfall, 1, "  cap 0 == at 0, so the shortfall dword is set (0x6E1BC)");
     CheckEqI32(nResidue, 1, "  and dword_1870B4[0] becomes 1 here (0x6E1C8)");
 
     /* Craft homed at the base count against the free slots. */
-    ENG_RESET(119);
+    UNITS_RESET(119);
     env.nCraftCount = 3;
     aGrid[480 + 0] = 11;
     aCraft[0].bHomeBase = 0;
     aCraft[1].bHomeBase = 1; /* a different base */
     aCraft[2].bHomeBase = 1;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[119], 0, "the craft at this base fills the only slot");
     CheckEqI32(dwShortfall, 1, "  shortfall dword set");
     CheckEqI32(nResidue, 1, "  residue 1 on this path");
 
     /* Base_CountShipsAtBase adds the 0x159DBC byte for the base's type, and that counts too. */
-    ENG_RESET(119);
+    UNITS_RESET(119);
     aGrid[480 + 0] = 11;
     aGrid[480 + 6] = 11;
     aGrid[480 + 12] = 11; /* three slots */
     aBases[0].bUnk4 = 4;
     aGridBytes[0] = 3;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[119], 0, "the grid byte fills all three slots (0x66110)");
     CheckEqI32(dwShortfall, 1, "  so this is the full-hangar path");
 
     /* The dead gate still short-circuits, and it is read a second time after the two flag stores. */
-    ENG_RESET(119);
+    UNITS_RESET(119);
     nGate = 1;
     aGrid[480 + 0] = 11;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[119], 0, "a non-zero gate stops the button before anything else (0x6E14C)");
     CheckEqI32(dwShortfall, 0, "  no capacity call, so no shortfall store either");
 
     /* --- the stores path: every other product --- */
-    ENG_RESET(0);
+    UNITS_RESET(0);
     aGrid[480 + 0] = 6; /* one free stores cell -> capacity 300 */
     aObjs[0].bCargoSize = 7;
     aProdB[0] = 42; /* 42 * 7 = 294 < 300 */
-    ManufScreen_IncEngineers(&env);
-    CheckEqI32(aProdB[0], 43, "below the stores capacity the quantity rises by one (0x6E30C)");
+    ManufScreen_IncUnits(&env);
+    CheckEqI32(aProdB[0], 43, "below the stores capacity the units count rises by one (0x6E30C)");
     aProdB[0] = 43; /* 43 * 7 = 301 >= 300 */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 43, "at the capacity it stops");
     CheckEqI32(dwShortfall, 1, "  shortfall dword set (0x6E314)");
     CheckEqI32(nResidue, 0, "  and residue 0 here, where the full-hangar path wrote 1 (0x6E320)");
 
-    ENG_RESET(0);
+    UNITS_RESET(0);
     aGrid[480 + 0] = 6;
     aGrid[480 + 6] = 6; /* two cells -> 600 */
     aObjs[0].bCargoSize = 7;
     aProdB[0] = 85; /* 595 < 600 */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 86, "a second stores cell doubles the capacity");
 
-    ENG_RESET(0);
+    UNITS_RESET(0);
     aGrid[480 + 6] = 6; /* facType at 480 + 6*col + row, here row 0 col 1 */
     aGrid[6] = 5;       /* buildDays at 6*col + row, the same cell */
     aObjs[0].bCargoSize = 7;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 0, "a stores cell under construction gives no capacity (0x65720)");
     CheckEqI32(dwShortfall, 1, "  capacity 0 == pressure 0, so the shortfall dword is set");
 
     /* Base_CalcStorageUsed adds bCargoSize * auPerBaseVal[base] over the filtered object indices,
      * and object 0 is never in that set -- so the product's own cargo size is not double counted. */
-    ENG_RESET(0);
+    UNITS_RESET(0);
     env.nObjectCount = 2; /* the storage sum walks indices 1..nObjectCount-1 */
     aGrid[480 + 0] = 6;
     aObjs[0].bCargoSize = 7;
     aObjs[1].bCargoSize = 10;
     aObjs[1].auPerBaseVal[0] = 4; /* index 1 is inside the 1..69 filter */
     aProdB[0] = 37; /* 259 + 40 = 299 < 300 */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 38, "the base's own stock counts against the capacity (0x6E274)");
     aProdB[0] = 38; /* 266 + 40 = 306 >= 300 */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 38, "  and pushes it over");
 
     /* Base_CountItemQtyAcrossBases adds the site cargo, gated on the site index being the base. */
-    ENG_RESET(0);
+    UNITS_RESET(0);
     env.nObjectCount = 2; /* the site walk also needs more than one object */
     aGrid[480 + 0] = 6;
     aObjs[0].bCargoSize = 7;
@@ -8029,46 +8029,46 @@ static void TestIncEngineers(void)
     env.nSiteCount = 1;
     aSites[0].auItemQty[1] = 5; /* 10 * 5 = 50 */
     aProdB[0] = 35; /* 245 + 50 = 295 < 300 */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 36, "the site cargo counts too (0x6E294)");
     aProdB[0] = 36; /* 252 + 50 = 302 >= 300 */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 36, "  and pushes it over");
 
     /* The object whose cargo size is read is apObjects[PRODUCT], not apObjects[base]. */
-    ENG_RESET(1);
+    UNITS_RESET(1);
     env.nObjectCount = 2; /* product 1 has to be inside the object table to be read at all */
     aGrid[480 + 0] = 6;
     aObjs[0].bCargoSize = 100; /* if the base index were used here, 42*100 would blow the cap */
     aObjs[1].bCargoSize = 7;
     aProdB[1] = 42; /* base 0, product 1 -> idx 1, and 42*7 = 294 < 300 */
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[1], 43, "the cargo size comes from the product's object record (0x6E214)");
 
-    ENG_RESET(0);
+    UNITS_RESET(0);
     nBase = 1;
     aGrid[480 + 144] = 6; /* base 1's stores cell */
     aObjs[0].bCargoSize = 7;
     aProdB[200] = 42;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[200], 43, "the column index is 200*nSelectedBaseIdx + product");
 
-    ENG_RESET(0);
+    UNITS_RESET(0);
     nGate = 200;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(dwShortfall, 0, "the gate short-circuits the stores path too");
 
-    ENG_RESET(0);
+    UNITS_RESET(0);
     env.apProductB = NULL;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     CheckEqI32(dwShortfall, 0, "no product column: nothing is stored");
 
-    ENG_RESET(0);
+    UNITS_RESET(0);
     env.pnProductRow = NULL;
-    ManufScreen_IncEngineers(&env);
+    ManufScreen_IncUnits(&env);
     Check(true, "a missing row cache is not dereferenced");
 
-    ManufScreen_IncEngineers(NULL);
+    ManufScreen_IncUnits(NULL);
     Check(true, "a null env does nothing");
 #undef ENG_RESET
 }
@@ -9517,7 +9517,7 @@ static void TestGrantSiteRecovery(void)
     }
 }
 
-/* ManufScreen_RefreshBaseTabs @ 0x70ebc. Fixture: the quantity table auManufCol (200 u16 per
+/* ManufScreen_RefreshBaseTabs @ 0x70ebc. Fixture: the engineers table auManufCol (200 u16 per
  * base), the accumulator auProductU32 (200 u32 per base), the three other product columns the
  * clear writes, 150 object records with bCargoSize 1, and the facility grid. */
 static u16 g_aMfQty[200 * 8];
@@ -9604,7 +9604,7 @@ static void TestManufRefreshBaseTabs(void)
 
     printf("ManufScreen_RefreshBaseTabs @ 0x70ebc\n");
 
-    /* A product whose base has room takes its quantity into the accumulator column. */
+    /* A product whose base has room takes its engineers into the accumulator column. */
     MF_RESET();
     MFCAP(0) = FAC_GENERAL_STORES;   /* one stores cell: capacity 300 */
     g_aMfQty[MFIDX(0, 1)] = 5;
@@ -9613,7 +9613,7 @@ static void TestManufRefreshBaseTabs(void)
     CheckEqI32((i32)g_mfLines.nLineCount, 0, "and nothing is reported");
     CheckEqI32((i32)g_dwMfShortfall, 0, "with the shortfall dword clear");
 
-    /* A zero quantity is skipped outright. */
+    /* A zero engineer count is skipped outright. */
     MF_RESET();
     MFCAP(0) = FAC_GENERAL_STORES;
     g_aMfQty[MFIDX(0, 1)] = 0;
@@ -10045,8 +10045,8 @@ static void ManufStubPanelPrev(void)   { ++g_nManufStub[3]; }
 static void ManufStubPanelNext(void)   { ++g_nManufStub[4]; }
 static void ManufStubIncQty(void)      { ++g_nManufStub[5]; }
 static void ManufStubDecQty(void)      { ++g_nManufStub[6]; }
-static void ManufStubIncEng(void)      { ++g_nManufStub[7]; }
-static void ManufStubDecEng(void)      { ++g_nManufStub[8]; }
+static void ManufStubIncUnits(void)      { ++g_nManufStub[7]; }
+static void ManufStubDecUnits(void)      { ++g_nManufStub[8]; }
 static void ManufStubBuildPanels(void) { ++g_nManufStub[9]; g_nBuildCtlX = g_aManufInitCtl[0].x; }
 
 /* The pad seam runs for real here: the archives are open, so the descriptor names either resolve
@@ -10112,8 +10112,8 @@ static void TestManufInit(void)
     env.pfnPanelNext = ManufStubPanelNext;
     env.pfnIncQty = ManufStubIncQty;
     env.pfnDecQty = ManufStubDecQty;
-    env.pfnIncEngineers = ManufStubIncEng;
-    env.pfnDecEngineers = ManufStubDecEng;
+    env.pfnIncUnits = ManufStubIncUnits;
+    env.pfnDecUnits = ManufStubDecUnits;
     env.pfnBuildPanels = ManufStubBuildPanels;
     env.pfnLoadPads = ManufLoadPadsReal;
 
@@ -10140,8 +10140,8 @@ static void TestManufInit(void)
     Check(g_aManufInitCtl[1].pfnClick == ManufStubPanelNext, "slot 2 scrolls them forward");
     Check(g_aManufInitCtl[2].pfnClick == ManufStubIncQty, "slot 3 is the quantity +");
     Check(g_aManufInitCtl[3].pfnClick == ManufStubDecQty, "slot 4 is the quantity -");
-    Check(g_aManufInitCtl[4].pfnClick == ManufStubIncEng, "slot 5 is the engineers +");
-    Check(g_aManufInitCtl[5].pfnClick == ManufStubDecEng, "slot 6 is the engineers -");
+    Check(g_aManufInitCtl[4].pfnClick == ManufStubIncUnits, "slot 5 is the engineers +");
+    Check(g_aManufInitCtl[5].pfnClick == ManufStubDecUnits, "slot 6 is the engineers -");
 
     /* Step 6: the positions come straight out of g_aManufCtlDesc, both bases being zero. */
     CheckEqI32(g_aManufInitCtl[0].x, 0xCD, "the tab scroll pair sits at x 0xCD");
@@ -19958,7 +19958,7 @@ int main(void)
     TestEnterBuildMode();
     TestSetWaypoint();
     TestClearProductSlot();
-    TestIncEngineers();
+    TestIncUnits();
     TestTogglePanelMode();
     TestBuySellConfirm();
     TestFundingBonus();

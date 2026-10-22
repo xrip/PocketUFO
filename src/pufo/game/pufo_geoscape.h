@@ -310,7 +310,7 @@ i32 Base_CalcStoresCapacity(const u8 *abFacilityGrid, i32 nBaseIndex);
  * column for this base is zero contributes nothing, which is the only test the original makes.
  *
  * This is one of the two inputs Base_UpdateStoresNeeded uses for its budget inside the original;
- * the other is Base_CountItemQtyAcrossBases (0x67d68). Both are ported, and ManufScreen_IncEngineers
+ * the other is Base_CountItemQtyAcrossBases (0x67d68). Both are ported, and ManufScreen_IncUnits
  * (0x6e13c) calls this pair directly rather than going through the needed pass. */
 i32 Base_CalcStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nBase);
 
