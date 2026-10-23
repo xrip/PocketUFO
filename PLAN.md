@@ -6400,3 +6400,19 @@ src and 16 name a port function in the ledger cell (6 empty cells: 0x2b604, 0x33
 119b's 4994 half, 121a, the 4 half-written bugs.tsv rows, and the two src changes waiting for sign-off (the
 Part 142 try-fire caption record 1 vs 6, the Part 143 ListRemove tail comment).
 
+Done (Part 149, the two src fixes the user signed off): (1) Ui_TryFireMode's too-little-TU refusal pushed
+PUFO_TXT_OUT_OF_AMMO (record 6) where Tact_TryFireMode4 @ 0x179e4, Tact_TryFireMode10 @ 0x17a80 and
+Tact_TryFireMode5 @ 0x17b1c all push record 1 (aTextRec1_OutOfTime @ 0xB399D, StatusMsg_Push at 0x17A54 and the
+matching offsets) -- fixed to PUFO_TXT_OUT_OF_TU, and the test that should have caught it now asserts the pushed
+INDEX (g_log.aStatus[0]) instead of only the push count, which is why the wrong record passed for so long;
+reverting it gives "FAIL ... got 6, want 1". (2) MapCell_ListRemove @ 0x54b58's comment claimed the tail link is
+left dangling; the original writes the node's own successor (NULL for a tail), so the link is cleared -- the code
+was already correct, the comment is replaced, and a mutation that makes the code match the old comment fails 2
+checks. IDB: the false "PORT DEVIATION" sentence replaced in the three originals' comments (947/770/766 chars,
+read back exact), IDB saved. bugs.tsv row 395 updated to a recorded fix (373 rows). Teeth: 2 cases, 5 FAIL lines,
+0 inert, restored byte-exact. Gates green: 66/66, 21568 checks (+1), 93 frames, 9 e2e pictures, CHECK EXIT=0.
+Next, as the user chose: PLAN 122 -- make the live e2e chain enter a real tactical mission instead of
+dispatching the quit seam, so the last named limit of the start-to-end proof goes away. Still open: the 22 uncited
+behaviour rows (16 with a port cell, 6 empty, 2 not driven directly), 117a, 118a, 118b, 118c, 119b's 4994 half,
+121a, the 4 half-written bugs.tsv rows.
+

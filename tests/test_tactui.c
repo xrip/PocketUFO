@@ -523,6 +523,10 @@ static void TestTryFireMode(void)
     CheckEqI32(ui.nActionMode, PUFO_ACTION_MODE_NONE, "  mode falls back to 12");
     CheckEqI32(ui.bActionLatch, PUFO_ACTION_LATCH_NONE, "  latch cleared");
     CheckEqI32(g_log.nStatus, 1, "  out-of-TU message pushed");
+    /* The count alone proves nothing about WHICH caption: the original's refusal arm at 0x17A54 passes
+     * aTextRec1_OutOfTime, so the pushed index must be record 1, not the out-of-ammo record 6. */
+    CheckEqI32(g_log.aStatus[0], PUFO_TXT_OUT_OF_TU,
+               "  Ui_TryFireMode @ 0x17b1c pushes record 1 (aTextRec1_OutOfTime), not record 6");
 
     /* The requested mode is written before the test, so a later reader sees it. */
     UiReset(&ui);

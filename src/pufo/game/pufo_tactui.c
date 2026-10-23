@@ -351,7 +351,7 @@ bool Ui_TryFireMode(TactUiState *pUi, i32 nMode, u16 uTu, const TactUiHooks *pHo
     pUi->nActionMode = PUFO_ACTION_MODE_NONE;
     pUi->bActionLatch = PUFO_ACTION_LATCH_NONE;
     pUi->nUnk40 = 0;
-    Ui_Status(pHooks, PUFO_TXT_OUT_OF_AMMO);
+    Ui_Status(pHooks, PUFO_TXT_OUT_OF_TU);   /* 0x17A54: StatusMsg_Push with aTextRec1_OutOfTime, record 1 */
     return false;
 }
 

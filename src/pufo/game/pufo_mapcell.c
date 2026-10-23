@@ -200,8 +200,10 @@ MapCell *MapCell_ListInsertByPri(MapCell *pCell, TactItem *pNode)
 }
 
 /* MapCell_ListRemove @ 0x54b58. The original walks with a trailing pointer and
- * only relinks when the successor is non-NULL, so removing the tail leaves the
- * previous node's link dangling rather than clearing it. Reproduced as-is. */
+ * relinks only when it finds the node, so the relink writes the successor's own
+ * link -- which for the tail is NULL: the previous node's link is CLEARED, not
+ * left dangling. A node that is not in the list is left alone (the walk stops at
+ * NULL and nothing is written). Asserted in tests/test_mapcell.c. */
 MapCell *MapCell_ListRemove(MapCell *pCell, TactItem *pNode)
 {
     TactItem *pPrev = pCell->pItemList;

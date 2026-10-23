@@ -520,3 +520,15 @@ tests, 21567 checks, 93 frames and 9 e2e pictures unchanged, check: ALL SIX GATE
 (build/check148.log). No src/tests change, no IDB change (the -6000/-6000 unplaced-base sentinel the chain
 shows was already recorded at 0x94964 in `pufo_geoiinit.h` item 11).
 
+coverage (Part 149): two signed-off src fixes. Ui_TryFireMode's refusal now pushes text record 1 as 0x179e4 /
+0x17a80 / 0x17b1c all do at 0x17A54 (StatusMsg_Push @ 0x2DDA4 with aTextRec1_OutOfTime @ 0xB399D); the check that
+was supposed to cover it counted status pushes only, so tests/test_tactui.c now asserts the pushed index
+(g_log.aStatus[0]). MapCell_ListRemove's comment claimed the tail link is left dangling; 0x54b58 clears it, the
+code already did, and a mutation that makes the code match the old comment fails 2 checks. Function coverage is
+unchanged (972/1103 cited, 131 proven artifacts); the behaviour ledger is unchanged (968 rows, 946 cited, 22
+uncited) because this Part corrected a wrong value rather than closing a row. Teeth: 2 mutation cases, 5 FAIL
+lines, 0 inert, both restored byte-exact (docs/parity/mutations_part149.py, build/crops/mut149.log). IDB: the
+"PORT DEVIATION" sentence replaced in 0x179e4/0x17a80/0x17b1c (947/770/766 chars), read back exact, IDB saved.
+bugs.tsv row 395 records the fix (373 rows). Gates: 66/66 tests, 21568 checks, 93 frames and 9 e2e pictures
+unchanged, check: ALL SIX GATES RAN (build/check149.log, build/check149b.log).
+

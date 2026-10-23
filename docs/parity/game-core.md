@@ -24732,3 +24732,44 @@ unchanged, `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, build/check148.log. Files
 two assertions), `tools/e2e_flow_load.txt` (the chain half), and the regenerated `PARITY.md`, whose only moved
 row is the `atexit` wording Part 147 put into `docs/idb/image-artifacts.tsv`. No `src/` or `tests/` change.
 
+
+### Part 149 -- the two signed-off `src` fixes: the out-of-TU caption, and the tail-link comment
+
+**The caption.** `Ui_TryFireMode` maps three originals -- `Tact_TryFireMode4 @ 0x179e4`, `Tact_TryFireMode10 @
+0x17a80`, `Tact_TryFireMode5 @ 0x17b1c` -- and all three refusal arms do the same thing: `StatusMsg_Push @ 0x2DDA4`
+with `aTextRec1_OutOfTime @ 0xB399D`, i.e. text record 1 ("no free time"), called at 0x17A54 in 0x179e4 and at the
+matching offset in the two siblings. The port pushed `PUFO_TXT_OUT_OF_AMMO` (record 6, "weapon not charged")
+instead. It is now `PUFO_TXT_OUT_OF_TU`, with the 0x17A54 pointer written on the line.
+
+**Why the tests did not see it.** The refusal check was `CheckEqI32(g_log.nStatus, 1, "out-of-TU message pushed")`
+-- but `g_log.nStatus` is a *count* of status pushes: the test hook (`OnStatus`, tests/test_tactui.c:64) appends the
+record index into `g_log.aStatus[]` and then increments the count. Nothing ever read `aStatus[0]`, so a wrong
+record index passed a check whose message named the right record. The new check asserts the index:
+`CheckEqI32(g_log.aStatus[0], PUFO_TXT_OUT_OF_TU, "  Ui_TryFireMode @ 0x17b1c pushes record 1
+(aTextRec1_OutOfTime), not record 6")`. Putting record 6 back gives `FAIL ... got 6, want 1` -- the check has teeth
+that the old one did not.
+
+**The comment.** `MapCell_ListRemove @ 0x54b58`: the old comment claimed the original relinks only when the
+successor is non-NULL and therefore "removing the tail leaves the previous node's link dangling". That is not what
+0x54b58 does: the walk finds the node and writes the node's *own* successor, which for a tail is NULL -- the
+predecessor's link is cleared. The code was already right (and the IDB comment at 0x54b58 already said so, from
+Part 143); the comment was wrong, and it is replaced with what the original does, including the absent-node case
+(the walk stops at NULL and writes nothing). Mutation 2 makes the code do what the old comment claimed -- relink
+only when `pNode->pNext != NULL` -- and 2 checks fail, so the claim the comment now states is the measured one.
+
+**Teeth** (`docs/parity/mutations_part149.py`, build/crops/mut149.log): 2 cases, fail lines 2 and 3 (1 and 2 real
+FAILs), 0 inert, 2/2 restored byte-exact, `MUTATION left: 0`, and `grep -rn MUTATION src tests` clean.
+
+**IDB upkeep:** the three original functions' comments carried the sentence "PORT DEVIATION: the port's
+Ui_TryFireMode pushes record 6 ... bugs.tsv carries the row", which became false with the fix. It was *replaced*,
+not appended -- 841 -> 947, 653 -> 770, 649 -> 766 characters, all under the 1024 cap, each read back byte-exact
+and each now naming the test that pins the record index. IDB saved.
+
+**Ledger:** `docs/parity/bugs.tsv` row 395 (0x179e4) moves from an open deviation to a recorded fix, quoting the
+mutation line and the `aStatus[0]` assertion; still 373 rows. The behaviour ledger is unchanged at 968 rows / 946
+cited / 22 uncited -- this Part fixed a wrong value, it did not close an uncited row.
+
+Gates: `tests: 66/66 passing`, 21568 checks (one more than Part 148 -- the new index check), `frames: unchanged
+(93 reference pictures)`, 9 e2e pictures unchanged, `check: ALL SIX GATES RAN`, build/check149.log, and the run
+after the ledger edit in build/check149b.log.
+

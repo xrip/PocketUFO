@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 66 |
-| Test checks run | 21567 |
+| Test checks run | 21568 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1316,7 +1316,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tacthud` | PASS | 277 |
 | `test_tactinit` | PASS | 105 |
 | `test_tactstate` | PASS | 599 |
-| `test_tactui` | PASS | 519 |
+| `test_tactui` | PASS | 520 |
 | `test_template` | PASS | 66 |
 | `test_terrain` | PASS | 59 |
 | `test_texts_lang` | PASS | 15 |
