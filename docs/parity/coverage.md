@@ -552,3 +552,12 @@ each of the 22 has a mutation that fails its own port function (24 cases, 0 iner
 One cite had to move: `Path_EnqueueCell @ 0x2b534` sat on a `Unit_PathToCell` queue check, so `tests/test_path.c`
 gained `TestEnqueueCell` (10 checks) for the frontier lists the original owns. The function ledger is unchanged
 from Part 147: 1103 = 972 cited + 131 proven no-behaviour artifacts, 0 real gaps.
+Measured after Part 152: still **968** cited, **0** not -- regenerating the ledger after the owner fix changes
+no reach number. The `void` owner PLAN 151 reported is gone (76 rows re-mapped to their click handlers, 0 rows
+lost a mapping, empty port cells still 363).
+coverage (Part 152): PLAN 123a closed in docs/parity/teeth_ledger.py (a keyword is never an owner; a cite on a
+function-pointer table entry belongs to the handler named on that line). PLAN 122a's gate measured on both
+sides: the flag-23 mission line comes from Strateg_ConfirmInterceptTarget @ 0x7fb98, and reaching it needs a
+detected contact -- Strateg_CalcDetect @ 0x81378's site-state arms (1/2/11/12), its 24/31 radius, the
+`nTimer == 0` test and `Game_RandU16(1000) < empty-cell-count(+7)`. Live measurement: 2000 game-minutes,
+closest approach 25.3 tiles, 0 detections, 0 lines.

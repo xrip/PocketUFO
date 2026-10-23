@@ -39,6 +39,16 @@ os.chdir(ROOT)
 HEAD_RE = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_ \*]*\b)?([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 SKIP_START = ("typedef", "#", "return", "else", "case", "goto", "static_assert")
 
+# A function-pointer table head, `static void (*const g_aTactBankClicks[N])(void) = {`, matches HEAD_RE
+# with `void` captured: the `[` stops the type-prefix class, and `void` is what sits before ` (`. Every
+# cite in such a table was then owned by a function named `void` (Part 151, PLAN 123a). A keyword is
+# never an owner, and the true owner of a table cite is the handler named on the entry's own line.
+HEAD_KEYWORDS = {"void", "int", "char", "unsigned", "signed", "short", "long", "float", "double",
+                 "static", "const", "struct", "enum", "union", "bool", "sizeof", "auto", "NULL"}
+TABLE_HEAD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_ \*]*\(\*(?:const\s+)?\w+\s*\[[^\]]*\]\)\s*"
+                           r"\([^)]*\)\s*=\s*\{")
+TABLE_ENTRY_RE = re.compile(r"^\s+([A-Za-z_][A-Za-z0-9_]*)\s*,?\s")
+
 
 def commentish(s):
     return s.startswith(("/*", "*/", "*", "//"))
@@ -89,11 +99,25 @@ def load_port_names():
                 if not line or line[0] == " " or line.startswith(SKIP_START):
                     i += 1
                     continue
+                if TABLE_HEAD_RE.match(line):
+                    k = i + 1
+                    while k < len(lines) and not lines[k].lstrip().startswith("}"):
+                        em = TABLE_ENTRY_RE.match(lines[k])
+                        if em and em.group(1) not in HEAD_KEYWORDS:
+                            for mm in cv.CITE_RE.finditer(lines[k]):
+                                for a in cv.ADDR_RE.finditer(mm.group(1)):
+                                    own(a.group(1), em.group(1))
+                        k += 1
+                    i = k + 1
+                    continue
                 m = HEAD_RE.match(line)
                 if not m:
                     i += 1
                     continue
                 name = m.group(1)
+                if name in HEAD_KEYWORDS:
+                    i += 1
+                    continue
                 j = i - 1
                 while j >= 0:
                     s = lines[j].strip()

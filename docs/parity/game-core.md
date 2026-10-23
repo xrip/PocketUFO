@@ -24905,3 +24905,56 @@ Reported, not fixed (PLAN 123a): `teeth_ledger.py`'s `HEAD_RE` matches
 click-table rows carry `void` in their `port_function` cell (0x18260, 0x197b8, 0x19708 in this batch) and the
 address->port map reads 605/968 instead of the real coverage. Reach numbers are not affected -- every row is
 reached -- so the ledger's uncited count stands, but the mapping column is wrong for those rows.
+
+
+## Part 152 - the click-table owner in the ledger fixed (PLAN 123a), and the gate PLAN 122a really sits behind
+
+### PLAN 123a closed: a keyword is never a function owner
+
+`teeth_ledger.py`'s `HEAD_RE` matched the table head
+`static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {` (pufo_world.c:7692) with `void`
+captured: the `[` stops the type-prefix character class, and `void` is the identifier that sits right before
+` (`. Every cite written inside such a table was therefore owned by a function named `void` -- 76 rows carried it.
+
+Two rules added to `docs/parity/teeth_ledger.py`, both short:
+* `HEAD_KEYWORDS` -- a captured C keyword or `NULL` is not a definition, the line is skipped.
+* `TABLE_HEAD_RE` + `TABLE_ENTRY_RE` -- a cite on a function-pointer table's entry line belongs to the handler
+  named on that entry line (`World_ClickConfirm0, /* 58 Map_Confirm0_... @ 0x19650 */`), which is the real owner
+  and the one Part 142's presses drive.
+
+Measured effect (`build/crops/teeth.before` against the regenerated `docs/parity/teeth.tsv`): 76 rows changed
+(`tact` 39, `strat-ui` 21, `tact-ui` 14, `ui-core` 2), rows carrying `void` 76 -> 0, empty port cells unchanged at
+363, no row lost its owner, and every changed row gained the handler it really maps to -- 0x19498 `void` ->
+`World_ClickSecondary`, 0x16494 -> `World_TactStepSyncIn|World_ClickEndTurn|Menu_EndTurn`,
+0x18e2c -> `World_QuitYesThunk|World_ClickQuitConfirm|Menu_OpenQuitDialog`. Ledger totals are unchanged: 968
+behaviour rows, 968 cited, 0 uncited, 968 reached, address->port map 605/968. Gates after the regeneration:
+66/66 tests (release and debug), 21578 checks, `check: OK -- 135 artifact rows, 131 uncited functions, 0 of them
+real gaps`, `frames: unchanged (93 reference pictures)`, `e2e pictures: unchanged (10)`,
+`check: ALL SIX GATES RAN`, build/check152.log.
+
+### The gate PLAN 122a is behind, measured on both sides
+
+The line `Smap_BeginCraftSelect @ 0x838dc` reads as the mission kind is appended by
+`Strateg_ConfirmInterceptTarget @ 0x7fb98`: flag 23 (intercept landing), colour slot 0 = `nInterceptShipIdx`
+(0x15967C), slot 1 = `nInterceptStrategIdx` (0x159680), and that append needs the chased item's `nTimer > 0` and
+`Craft_CountSoldiersAboard(chosen craft) != 0`. So a mission with an enemy roster needs a *detected* contact first.
+
+`Strateg_CalcDetect @ 0x81378` is that gate, and the port models it (`game/pufo_strateg.c`): the per-base byte
+`unk_161F38[baseIdx]` -- the site state `Base_ClearFacilityGridRow` writes (1 = a free type-4 cell, 2 = a free
+type-5 cell, +10 for a free type-9 cell, so 11/12 also set `bHyperDetect`) -- has arms only for 1, 2, 11 and 12,
+with a per-state radius (the port carries 24.0 and 31.0); `pUfo->nTimer` must be 0; `dx` is wrapped over the
+800-wide map; and the reveal needs `bVisible == 0 && Game_RandU16(1000) < nPct`, where `nPct` is
+`anBaseRadarPct[baseIdx]` -- which is not a radar-facility flag at all but `Base_CountEmptyFacilityCells` (stored
+at 0x9461C in `Game_StartNew` and 0x4582C in `LoadGame`) -- plus 7 while `apLines[117]` is 0.
+
+Measured in the live exe (build/crops/flow152d.txt -> run152d.log): after the base is placed, 20000 pulse steps =
+120000 game-seconds = 2000 game-minutes give 6 strateg items, two active alien craft (a second one spawns during
+the run), classes and phases change, one item despawns -- and `detected 0` on every item, `lines: 0 of 200` at
+every print, `site -1` on every travelling item. The closest measured approach of an active alien item to the base
+at 354/86 was 25.3 tiles (item at 378/94, wrapped dx 24, dy 8): inside the 31 arm, outside the 24 arm. With the
+base's empty-cell count the pct is a few dozen out of 1000, so the rand draw is what has to land. Closing 122a
+means driving that chain -- a base whose site state has an arm, a contact held inside the radius, and enough
+draws -- then the intercept order, then the descent panel's launch control.
+
+IDB: the gate written into `0x81378`'s function comment (998 chars, read back exact); the item comment at the same
+address is untouched. IDB saved.

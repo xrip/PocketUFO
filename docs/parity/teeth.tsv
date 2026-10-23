@@ -348,12 +348,12 @@
 0x98b50	Smap_GrantSiteRecovery	2572	strat	yes	yes	yes	World_HookGrantSiteRecovery	yes
 0x9a8c0	Geoscape_CloseUI_ThunkC	12	strat	yes	yes	yes	World_UfopaediaCloseThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
 0x114d8	Options_SaveToRegistry	488	strat-ui	yes	yes	yes	App_HookSaveOptions|World_TactInputSyncIn	yes
-0x16494	MenuBtn_EndTurn	36	strat-ui	yes	yes	yes	World_TactStepSyncIn|void|Menu_EndTurn	yes
-0x18864	Menu_OpenLoadSlots	64	strat-ui	yes	yes	yes	World_TactSlotListCall|void|Menu_OpenSlotList	yes
-0x188a4	Menu_OpenSaveSlots	64	strat-ui	yes	yes	yes	World_TactSlotListCall|void|Menu_OpenSlotList	yes
-0x188e4	Options_SyncUiFromMap_GotoScreen12	352	strat-ui	yes	yes	yes	World_TactPushOptionPads|World_ClickOpenOptions|void|Menu_SyncOptionPads	yes
+0x16494	MenuBtn_EndTurn	36	strat-ui	yes	yes	yes	World_TactStepSyncIn|World_ClickEndTurn|Menu_EndTurn	yes
+0x18864	Menu_OpenLoadSlots	64	strat-ui	yes	yes	yes	World_TactSlotListCall|World_ClickOpenLoadSlots|Menu_OpenSlotList	yes
+0x188a4	Menu_OpenSaveSlots	64	strat-ui	yes	yes	yes	World_TactSlotListCall|World_ClickOpenSaveSlots|Menu_OpenSlotList	yes
+0x188e4	Options_SyncUiFromMap_GotoScreen12	352	strat-ui	yes	yes	yes	World_TactPushOptionPads|World_ClickOpenOptions|Menu_SyncOptionPads	yes
 0x18e04	Menu_CancelQuitDialog	20	strat-ui	yes	yes	yes	World_QuitYesThunk|World_QuitNoThunk|Menu_OpenQuitDialog	yes
-0x18e2c	Menu_ConfirmQuitDialog	112	strat-ui	yes	yes	yes	World_QuitYesThunk|void|Menu_OpenQuitDialog	yes
+0x18e2c	Menu_ConfirmQuitDialog	112	strat-ui	yes	yes	yes	World_QuitYesThunk|World_ClickQuitConfirm|Menu_OpenQuitDialog	yes
 0x18ecc	MenuBtn_SetSpeed0	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
 0x18f20	MenuBtn_SetSpeed1	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
 0x18f74	MenuBtn_SetSpeed2	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
@@ -364,18 +364,18 @@
 0x19130	MenuBtn_SetGamma2	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
 0x19190	MenuBtn_SetGamma3	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
 0x191f0	MenuBtn_SetGamma4	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
-0x19498	MenuBtn_Secondary	48	strat-ui	yes	yes	yes	void	yes
-0x194c8	MenuBtn_ConfirmClear	48	strat-ui	yes	yes	yes	void	yes
-0x195a8	MenuBtn_ActionBack0	56	strat-ui	yes	yes	yes	void|MenuBtn_ActionBack	yes
-0x195e0	MenuBtn_SecondaryDismiss	56	strat-ui	yes	yes	yes	void	yes
-0x19618	MenuBtn_ActionBack1	56	strat-ui	yes	yes	yes	void|MenuBtn_ActionBack	yes
-0x19650	MenuBtn_Confirm0	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x196e8	MenuBtn_Confirm1	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x19884	MenuBtn_Confirm2	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x198a4	MenuBtn_Confirm3	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x198f0	MenuBtn_ConfirmSnd15	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x19910	MenuBtn_Confirm4	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x19930	MenuBtn_ResizeWindow	24	strat-ui	yes	yes	yes	App_ResizeMainWindow|App_HookNewGame|World_ResizeWindowSeamThunk|void|Menu_ResizeWindow	yes
+0x19498	MenuBtn_Secondary	48	strat-ui	yes	yes	yes	World_ClickSecondary	yes
+0x194c8	MenuBtn_ConfirmClear	48	strat-ui	yes	yes	yes	World_ClickConfirmClear	yes
+0x195a8	MenuBtn_ActionBack0	56	strat-ui	yes	yes	yes	World_ClickActionBack|MenuBtn_ActionBack	yes
+0x195e0	MenuBtn_SecondaryDismiss	56	strat-ui	yes	yes	yes	World_ClickSecondaryDismiss	yes
+0x19618	MenuBtn_ActionBack1	56	strat-ui	yes	yes	yes	World_ClickActionBack|MenuBtn_ActionBack	yes
+0x19650	MenuBtn_Confirm0	32	strat-ui	yes	yes	yes	World_ClickConfirm0|MenuBtn_Confirm	yes
+0x196e8	MenuBtn_Confirm1	32	strat-ui	yes	yes	yes	World_ClickConfirm1|MenuBtn_Confirm	yes
+0x19884	MenuBtn_Confirm2	32	strat-ui	yes	yes	yes	World_ClickConfirm2|MenuBtn_Confirm	yes
+0x198a4	MenuBtn_Confirm3	32	strat-ui	yes	yes	yes	World_ClickConfirm3|MenuBtn_Confirm	yes
+0x198f0	MenuBtn_ConfirmSnd15	32	strat-ui	yes	yes	yes	World_ClickConfirmSnd15|MenuBtn_Confirm	yes
+0x19910	MenuBtn_Confirm4	32	strat-ui	yes	yes	yes	World_ClickConfirm4|MenuBtn_Confirm	yes
+0x19930	MenuBtn_ResizeWindow	24	strat-ui	yes	yes	yes	App_ResizeMainWindow|App_HookNewGame|World_ResizeWindowSeamThunk|World_ClickResizeWindow|Menu_ResizeWindow	yes
 0x19a10	Options_SetMusicVol1	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
 0x19a64	Options_SetMusicVol2	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
 0x19ab8	Options_SetMusicVol3	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
@@ -386,7 +386,7 @@
 0x19c74	MenuBtn_SetSfxVol3	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
 0x19cd4	MenuBtn_SetSfxVol4	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
 0x19d34	MenuBtn_SetSfxVol5	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
-0x19d94	Menu_ToggleForceNoDrag	80	strat-ui	yes	yes	yes	World_TactLiveOptions|void	yes
+0x19d94	Menu_ToggleForceNoDrag	80	strat-ui	yes	yes	yes	World_TactLiveOptions|World_ClickForceNoDrag	yes
 0x19de4	SaveLoad_Slot0	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
 0x19e34	SaveLoad_Slot1	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
 0x19e84	SaveLoad_Slot2	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
@@ -394,7 +394,7 @@
 0x19f24	SaveLoad_Slot4	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
 0x19f74	SaveLoad_Slot5	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
 0x19fc4	SaveLoad_Slot6	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
-0x1a014	MenuBtn_Confirm5	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
+0x1a014	MenuBtn_Confirm5	32	strat-ui	yes	yes	yes	World_ClickConfirm5|MenuBtn_Confirm	yes
 0x1a034	MenuCtl1_OnClick	48	strat-ui	yes	yes	yes		yes
 0x1a064	MenuCtl2_OnClick	28	strat-ui	yes	yes	yes		yes
 0x1a080	MenuCtl3_OnClick	28	strat-ui	yes	yes	yes		yes
@@ -406,8 +406,8 @@
 0x1a18c	MenuCtl12_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
 0x1a1c0	MenuCtl13_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
 0x1a1f4	MenuCtl14_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
-0x1a24c	MenuBtn_Cancel0	32	strat-ui	yes	yes	yes	void|MenuBtn_Cancel	yes
-0x1a26c	MenuBtn_Cancel1	32	strat-ui	yes	yes	yes	void|MenuBtn_Cancel	yes
+0x1a24c	MenuBtn_Cancel0	32	strat-ui	yes	yes	yes	World_ClickCancel|MenuBtn_Cancel	yes
+0x1a26c	MenuBtn_Cancel1	32	strat-ui	yes	yes	yes	World_ClickCancel|MenuBtn_Cancel	yes
 0x217e0	Menu_DrawLabeledPads	296	strat-ui	yes	yes	yes	Menu_LabelRecordIndex	yes
 0x55754	BaseInfoScreen_TogglePanelMode	104	strat-ui	yes	yes	yes	World_BaseInfoToggleThunk|World_WireGeoscapeFrame	yes
 0x557bc	BaseInfoScreen_CloseThunk	12	strat-ui	yes	yes	yes	World_CloseGeoscapeThunk|World_WireGeoscapeFrame	yes
@@ -598,30 +598,30 @@
 0x9a754	Ufopaedia_NextEntry	364	strat-ui	yes	yes	yes		yes
 0x9a8cc	Ufopaedia_Open	3368	strat-ui	yes	yes	yes		yes
 0x1512c	Tact_HandleMapClick	1104	tact	yes	yes	yes	World_TactLookupCell|World_TactRandU16Thunk|World_TactSetPlayerInput|World_TactMapClick	yes
-0x163d4	MapView_EnterLookMode	192	tact	yes	yes	yes	void	yes
-0x164b8	Map_UiScreen7_PlaySample0E	28	tact	yes	yes	yes	void|Ui_OpenScreen7	yes
-0x164d4	Map_UiScreen0F_PlaySample0F	28	tact	yes	yes	yes	void|Ui_OpenScreen15	yes
-0x164f0	MapView_LayerDown	64	tact	yes	yes	yes	void|Ui_LayerUp	yes
-0x16530	MapView_LayerUp	64	tact	yes	yes	yes	void|Ui_LayerUp	yes
-0x16684	Tact_CycleNextUnit	140	tact	yes	yes	yes	void|Roster_CycleNext	yes
-0x16710	MapView_FocusSelected	60	tact	yes	yes	yes	World_TactFocusSelectedThunk|World_TactInputSyncOut|World_TactRosterPrepare|World_TactUnitIsLargeThunk|void|Inv_CloseAndCommit	yes
-0x16ffc	Tact_OpenCommandScreen	52	tact	yes	yes	yes	World_TactLiveOptions|void|Ui_OpenCommandScreen	yes
-0x17030	Tact_OpenLeftHandMenu	280	tact	yes	yes	yes	World_TactWeaponHasMenuThunk|void	yes
-0x17148	Tact_OpenRightHandMenu	280	tact	yes	yes	yes	World_TactWeaponHasMenuThunk|void	yes
-0x17260	Tact_SelectPrevUnit	164	tact	yes	yes	yes	void|Roster_SelectPrev	yes
-0x17304	Tact_SelectNextUnit	164	tact	yes	yes	yes	void|Roster_SelectNext	yes
-0x17790	Tact_SetFireModeAimed	108	tact	yes	yes	yes	void|Ui_SetFireMode	yes
-0x177fc	Tact_SetFireModeSnap	108	tact	yes	yes	yes	void|Ui_SetFireMode	yes
-0x17868	Tact_SetFireModeAuto	108	tact	yes	yes	yes	void|Ui_SetFireMode	yes
-0x178d4	TactAction_ConfirmUseItem	236	tact	yes	yes	yes	void|Ui_ConfirmUseItem	yes
-0x179c0	Map_PlaySample17_SetMode11	36	tact	yes	yes	yes	void|Ui_SetMode11	yes
-0x179e4	Tact_TryFireMode4	156	tact	yes	yes	yes	void|Ui_TryFireMode	yes
-0x17a80	Tact_TryFireMode10	156	tact	yes	yes	yes	void|Ui_TryFireMode	yes
-0x17b1c	Tact_TryFireMode5	156	tact	yes	yes	yes	void|Ui_TryFireMode	yes
-0x17bb8	TactAction_ConfirmMeleeMode6	412	tact	yes	yes	yes	void|Ui_ConfirmMeleeMode6	yes
-0x18260	TactAction_ConfirmSpecial9	288	tact	yes	yes	yes	void|Ui_ConfirmSpecial9	yes
-0x18380	Tact_BeginMultiTarget	152	tact	yes	yes	yes	void|Ui_BeginMultiTarget	yes
-0x18418	Map_SetSubMode0_Play11	96	tact	yes	yes	yes	void|Ui_SetSubMode	yes
+0x163d4	MapView_EnterLookMode	192	tact	yes	yes	yes	World_ClickEnterLookMode	yes
+0x164b8	Map_UiScreen7_PlaySample0E	28	tact	yes	yes	yes	World_ClickOpenScreen7|Ui_OpenScreen7	yes
+0x164d4	Map_UiScreen0F_PlaySample0F	28	tact	yes	yes	yes	World_ClickOpenScreen15|Ui_OpenScreen15	yes
+0x164f0	MapView_LayerDown	64	tact	yes	yes	yes	World_ClickLayerDown|Ui_LayerUp	yes
+0x16530	MapView_LayerUp	64	tact	yes	yes	yes	World_ClickLayerUp|Ui_LayerUp	yes
+0x16684	Tact_CycleNextUnit	140	tact	yes	yes	yes	World_ClickCycleNext|Roster_CycleNext	yes
+0x16710	MapView_FocusSelected	60	tact	yes	yes	yes	World_TactFocusSelectedThunk|World_TactInputSyncOut|World_TactRosterPrepare|World_TactUnitIsLargeThunk|World_ClickFocusSelected|Inv_CloseAndCommit	yes
+0x16ffc	Tact_OpenCommandScreen	52	tact	yes	yes	yes	World_TactLiveOptions|World_ClickOpenCommand|Ui_OpenCommandScreen	yes
+0x17030	Tact_OpenLeftHandMenu	280	tact	yes	yes	yes	World_TactWeaponHasMenuThunk|World_ClickOpenLeftHand	no
+0x17148	Tact_OpenRightHandMenu	280	tact	yes	yes	yes	World_TactWeaponHasMenuThunk|World_ClickOpenRightHand	no
+0x17260	Tact_SelectPrevUnit	164	tact	yes	yes	yes	World_ClickSelectPrev|Roster_SelectPrev	yes
+0x17304	Tact_SelectNextUnit	164	tact	yes	yes	yes	World_ClickSelectNext|Roster_SelectNext	yes
+0x17790	Tact_SetFireModeAimed	108	tact	yes	yes	yes	World_ClickFireAimed|Ui_SetFireMode	yes
+0x177fc	Tact_SetFireModeSnap	108	tact	yes	yes	yes	World_ClickFireSnap|Ui_SetFireMode	yes
+0x17868	Tact_SetFireModeAuto	108	tact	yes	yes	yes	World_ClickFireAuto|Ui_SetFireMode	yes
+0x178d4	TactAction_ConfirmUseItem	236	tact	yes	yes	yes	World_ClickConfirmUseItem|Ui_ConfirmUseItem	yes
+0x179c0	Map_PlaySample17_SetMode11	36	tact	yes	yes	yes	World_ClickMode11|Ui_SetMode11	no
+0x179e4	Tact_TryFireMode4	156	tact	yes	yes	yes	World_ClickTryFire4|Ui_TryFireMode	yes
+0x17a80	Tact_TryFireMode10	156	tact	yes	yes	yes	World_ClickTryFire10|Ui_TryFireMode	yes
+0x17b1c	Tact_TryFireMode5	156	tact	yes	yes	yes	World_ClickTryFire5|Ui_TryFireMode	yes
+0x17bb8	TactAction_ConfirmMeleeMode6	412	tact	yes	yes	yes	World_ClickMelee6|Ui_ConfirmMeleeMode6	yes
+0x18260	TactAction_ConfirmSpecial9	288	tact	yes	yes	yes	World_ClickConfirmSpecial9|Ui_ConfirmSpecial9	yes
+0x18380	Tact_BeginMultiTarget	152	tact	yes	yes	yes	World_ClickBeginMultiTarget|Ui_BeginMultiTarget	yes
+0x18418	Map_SetSubMode0_Play11	96	tact	yes	yes	yes	World_ClickSubMode0|Ui_SetSubMode	yes
 0x18478	Map_SetSubMode1_Play11	92	tact	yes	yes	yes	Ui_SetSubMode	yes
 0x184d4	Map_SetSubMode2_Play11	96	tact	yes	yes	yes	Ui_SetSubMode	yes
 0x18534	Map_SetSubMode3_Play11	96	tact	yes	yes	yes	Ui_SetSubMode	yes
@@ -632,21 +632,21 @@
 0x18714	Map_SetSubMode8_Play11	96	tact	yes	yes	yes	Ui_SetSubMode	yes
 0x18774	TactAction_ConfirmFireBurst	240	tact	yes	yes	yes	World_TactLookClickThunk|World_TactInitUiControlsThunk|Ui_ConfirmFireBurst	yes
 0x18a54	Map_ClearUiScreen	20	tact	yes	yes	yes	World_TactTextRecordThunk|World_DeployNoThunk|Ui_ClearScreen	yes
-0x18a68	Map_BuildDeployConfirmYesNo	924	tact	yes	yes	yes	World_TactTextRecordThunk|void|Deploy_Bucket	yes
-0x18e9c	Map_PlaySamples16_14_ClearUiScreen	48	tact	yes	yes	yes	void|Ui_Samples16_14_ClearScreen	yes
-0x19250	Map_ToggleFlag128A8D_Play11	132	tact	yes	yes	yes	World_TactInputSyncIn|void	yes
-0x192d4	Map_ToggleFlag128A8E_Play11	116	tact	yes	yes	yes	void	yes
-0x19348	Map_ToggleFlag128A8F_Play11	88	tact	yes	yes	yes	World_TactInputSyncIn|void	yes
-0x193a0	Map_ToggleFlag128A90_Play11	124	tact	yes	yes	yes	World_TactInputSyncIn|void	yes
-0x1941c	Map_ToggleFlag128A91_Play11	124	tact	yes	yes	yes	World_TactInputSyncIn|void	yes
-0x194f8	Map_UiScreen7_PlaySamples16_14	48	tact	yes	yes	yes	void|Ui_Screen7_Samples16_14	yes
-0x19528	Map_PlaySamples16_7_SetDeployFlag	64	tact	yes	yes	yes	void|Ui_Samples16_7_SetDeployFlag	yes
-0x19568	Map_PlaySamples16_7_ClearDeployFlag	64	tact	yes	yes	yes	void|Ui_Samples16_7_SetDeployFlag	yes
-0x19670	Map_IncByte128AF0_Play11	60	tact	yes	yes	yes	void|Ui_IncLayer	yes
-0x196ac	Map_DecByte128AF0_Play11	60	tact	yes	yes	yes	void|Ui_IncLayer	yes
-0x19708	Tact_SelectPrevUnitFiltered	176	tact	yes	yes	yes	void	yes
-0x197b8	Tact_SelectNextUnitFiltered	204	tact	yes	yes	yes	void	yes
-0x198c4	Tact_OpenCommandScreenFlagged	44	tact	yes	yes	yes	World_TactLiveOptions|void|Ui_OpenCommandScreenFlagged	yes
+0x18a68	Map_BuildDeployConfirmYesNo	924	tact	yes	yes	yes	World_TactTextRecordThunk|World_ClickDeployConfirm|Deploy_Bucket	yes
+0x18e9c	Map_PlaySamples16_14_ClearUiScreen	48	tact	yes	yes	yes	World_ClickSamples1614Clear|Ui_Samples16_14_ClearScreen	yes
+0x19250	Map_ToggleFlag128A8D_Play11	132	tact	yes	yes	yes	World_TactInputSyncIn|World_ClickToggleScroll	no
+0x192d4	Map_ToggleFlag128A8E_Play11	116	tact	yes	yes	yes	World_ClickToggleShow	no
+0x19348	Map_ToggleFlag128A8F_Play11	88	tact	yes	yes	yes	World_TactInputSyncIn|World_ClickToggleRun	no
+0x193a0	Map_ToggleFlag128A90_Play11	124	tact	yes	yes	yes	World_TactInputSyncIn|World_ClickToggleTurn	no
+0x1941c	Map_ToggleFlag128A91_Play11	124	tact	yes	yes	yes	World_TactInputSyncIn|World_ClickToggleMenu	no
+0x194f8	Map_UiScreen7_PlaySamples16_14	48	tact	yes	yes	yes	World_ClickScreen7Samples|Ui_Screen7_Samples16_14	yes
+0x19528	Map_PlaySamples16_7_SetDeployFlag	64	tact	yes	yes	yes	World_ClickDeployOpen|Ui_Samples16_7_SetDeployFlag	yes
+0x19568	Map_PlaySamples16_7_ClearDeployFlag	64	tact	yes	yes	yes	World_ClickDeployClose|Ui_Samples16_7_SetDeployFlag	yes
+0x19670	Map_IncByte128AF0_Play11	60	tact	yes	yes	yes	World_ClickIncLayer|Ui_IncLayer	yes
+0x196ac	Map_DecByte128AF0_Play11	60	tact	yes	yes	yes	World_ClickDecLayer|Ui_IncLayer	yes
+0x19708	Tact_SelectPrevUnitFiltered	176	tact	yes	yes	yes	World_ClickSelectPrevFiltered	no
+0x197b8	Tact_SelectNextUnitFiltered	204	tact	yes	yes	yes	World_ClickSelectNextFiltered	no
+0x198c4	Tact_OpenCommandScreenFlagged	44	tact	yes	yes	yes	World_TactLiveOptions|World_ClickOpenCommandFlagged|Ui_OpenCommandScreenFlagged	yes
 0x1aadc	MapView_DrawViewportGuide	1256	tact	yes	yes	yes		yes
 0x1b0d4	MapView_bResolveIsoCell	428	tact	yes	yes	yes		yes
 0x1b280	MapView_DrawCellSelectMarker	476	tact	yes	yes	yes		yes
@@ -822,20 +822,20 @@
 0x15a48	Inv_CloseAndCommit	1268	tact-ui	yes	yes	yes	App_HookInvCloseAndCommit|App_InitStartupUi|World_TactUnitIsLargeThunk|World_TactInvCommitBody|World_InvCloseAndCommit	yes
 0x15f3c	Input_OnConfirm	708	tact-ui	yes	yes	yes	World_TactLiveMission|World_TactButtonPrep|World_TactConfirmInPlace	yes
 0x162ec	Input_OnMenuEscape	228	tact-ui	yes	yes	yes		yes
-0x16570	TactHud_ToggleKneel	276	tact-ui	yes	yes	yes	void	yes
-0x1674c	TactHud_ClimbUp	932	tact-ui	yes	yes	yes	void	yes
-0x16af0	TactHud_ClimbDown	788	tact-ui	yes	yes	yes	void|TactHud_ClimbUp	yes
-0x16ef4	Inv_OpenScreen	264	tact-ui	yes	yes	yes	World_InitTactical|World_TactOpenInventoryBody|void|TactHud_OpenInventory	yes
-0x173a8	Inv_ScrollDown	60	tact-ui	yes	yes	yes	void|Ui_InvScrollDown	yes
-0x173e4	Inv_ScrollUp	44	tact-ui	yes	yes	yes	World_TactSelectNextUnit|void|Ui_InvScrollUp	yes
-0x17410	Inv_SetFilterAll	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
-0x17490	Inv_SetFilter0	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
-0x17510	Inv_SetFilter3	128	tact-ui	yes	yes	yes	void	yes
-0x17590	Inv_SetFilter4	128	tact-ui	yes	yes	yes	void	yes
-0x17610	Inv_SetFilter1	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
-0x17690	Inv_SetFilter2	128	tact-ui	yes	yes	yes	void|Ui_SetInvFilter	yes
-0x17710	Inv_SetFilter5	128	tact-ui	yes	yes	yes	void	yes
-0x17d54	TactHud_UseSpecialItem20	1292	tact-ui	yes	yes	yes	World_TactLiveOptions|void|TactHud_UseSpecialItem	yes
+0x16570	TactHud_ToggleKneel	276	tact-ui	yes	yes	yes	World_ClickToggleKneel	yes
+0x1674c	TactHud_ClimbUp	932	tact-ui	yes	yes	yes	World_TactHudClickUp	yes
+0x16af0	TactHud_ClimbDown	788	tact-ui	yes	yes	yes	World_TactHudClickDown|TactHud_ClimbUp	yes
+0x16ef4	Inv_OpenScreen	264	tact-ui	yes	yes	yes	World_InitTactical|World_TactOpenInventoryBody|World_ClickOpenInventory|TactHud_OpenInventory	yes
+0x173a8	Inv_ScrollDown	60	tact-ui	yes	yes	yes	World_ClickInvScrollDown|Ui_InvScrollDown	yes
+0x173e4	Inv_ScrollUp	44	tact-ui	yes	yes	yes	World_TactSelectNextUnit|World_ClickInvScrollUp|Ui_InvScrollUp	yes
+0x17410	Inv_SetFilterAll	128	tact-ui	yes	yes	yes	World_ClickFilterAll|Ui_SetInvFilter	yes
+0x17490	Inv_SetFilter0	128	tact-ui	yes	yes	yes	World_ClickFilter0|Ui_SetInvFilter	yes
+0x17510	Inv_SetFilter3	128	tact-ui	yes	yes	yes	World_ClickFilter3	no
+0x17590	Inv_SetFilter4	128	tact-ui	yes	yes	yes	World_ClickFilter4	no
+0x17610	Inv_SetFilter1	128	tact-ui	yes	yes	yes	World_ClickFilter1|Ui_SetInvFilter	yes
+0x17690	Inv_SetFilter2	128	tact-ui	yes	yes	yes	World_ClickFilter2|Ui_SetInvFilter	yes
+0x17710	Inv_SetFilter5	128	tact-ui	yes	yes	yes	World_ClickFilter5	no
+0x17d54	TactHud_UseSpecialItem20	1292	tact-ui	yes	yes	yes	World_TactLiveOptions|World_ClickUseSpecialItem|TactHud_UseSpecialItem	yes
 0x1a7c8	TactHud_ComputeCursorDirState	116	tact-ui	yes	yes	yes		yes
 0x1b4b0	TactUnit_DrawHpGlyphs	212	tact-ui	yes	yes	yes		yes
 0x1c6ac	TactUnit_DrawAnimGlyphs	168	tact-ui	yes	yes	yes		yes
@@ -889,8 +889,8 @@
 0x16e40	UiBank_SelectRadio1_Play11	60	ui-core	yes	yes	yes	Ui_SelectRadio	yes
 0x16e7c	UiBank_SelectRadio2_Play11	60	ui-core	yes	yes	yes	Ui_SelectRadio	yes
 0x16eb8	UiBank_SelectRadio3_Play11	60	ui-core	yes	yes	yes	World_InitTactical|Ui_SelectRadio	yes
-0x19948	Ui_ToggleMusicMute	100	ui-core	yes	yes	yes	void|Menu_ToggleMusicMute	yes
-0x199ac	Ui_ToggleSfxMute	100	ui-core	yes	yes	yes	void|Menu_ToggleMusicMute	yes
+0x19948	Ui_ToggleMusicMute	100	ui-core	yes	yes	yes	World_ClickMusicMute|Menu_ToggleMusicMute	yes
+0x199ac	Ui_ToggleSfxMute	100	ui-core	yes	yes	yes	World_ClickSfxMute|Menu_ToggleMusicMute	yes
 0x1a228	EmptyBtn_OnClick	36	ui-core	yes	yes	yes	App_EmptyBtnClick	yes
 0x1a28c	UiControl_ctor	60	ui-core	yes	yes	yes		yes
 0x1a2c8	UiControl_FreePads	120	ui-core	yes	yes	yes		yes

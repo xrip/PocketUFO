@@ -6454,3 +6454,21 @@ CHECK EXIT=0, build/check151.log. New open item PLAN 123a (reported, not fixed):
 `static void (*const g_aTactBankClicks[...])(void) = {` as a definition named `void`, so the click-table rows carry
 `void` in their port_function cell and the address->port map understates its coverage. Still open: PLAN 122a, 117a,
 118a, 118b, 118c, 119b's 4994 half, 121a, 123a, the 4 half-written bugs.tsv rows.
+
+Done (Part 152, PLAN 123a): docs/parity/teeth_ledger.py no longer reads a function-pointer table as a definition
+named `void`. HEAD_RE captured `void` from `static void (*const g_aTactBankClicks[...])(void) = {` (pufo_world.c:7692)
+and every cite in such a table was owned by it. Fixed with two short rules: HEAD_KEYWORDS (a keyword or NULL is not
+an owner) and TABLE_HEAD_RE/TABLE_ENTRY_RE (a cite on a table entry line belongs to the handler named there).
+Measured: 76 rows changed (tact 39, strat-ui 21, tact-ui 14, ui-core 2), `void` owners 76 -> 0, empty port cells
+363 -> 363, no row lost a mapping, totals unchanged (968 rows, 968 cited, 0 uncited, map 605/968). Gates: 66/66,
+21578 checks, coverage check OK, 93 frames, 10 e2e pictures unchanged, CHECK EXIT=0 (build/check152.log).
+PLAN 122a's gate now measured on both sides and recorded in game-core.md: the mission line is flag 23 from
+Strateg_ConfirmInterceptTarget @ 0x7fb98 (needs the chased item's nTimer > 0 and Craft_CountSoldiersAboard != 0),
+and a contact is selectable only after Strateg_CalcDetect @ 0x81378 -- site-state arms 1/2/11/12 (the byte
+Base_ClearFacilityGridRow writes), radius 24/31, nTimer == 0, then Game_RandU16(1000) < anBaseRadarPct (= the base's
+empty-facility-cell count, +7 while apLines[117] is 0). Live: 2000 game-minutes after placing the base gives 2 active
+alien craft, closest approach 25.3 tiles, 0 detections, 0 lines. IDB: those gates written at 0x81378 (998 chars, read
+back exact), IDB saved. 122a stays open with the route the user chose -- script the chain to a detected contact in the
+e2e -- which needs new --script scaffolding (a print of the site state and the empty-cell count, then the select /
+confirm / launch commands). Still open: PLAN 122a, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4 half-written
+bugs.tsv rows.
