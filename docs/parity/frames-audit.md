@@ -16,9 +16,9 @@ The corrected sweep over 103 pictures (93 `tests/ref/*.ppm` + 10 live `build/e2e
 | geoscape_ufo_enroute | 1..41 | FIXED in Part 156 (fixture scroll outside the 0x837f8 window) |
 | geoscape_terror_site | 156..235 | FIXED in Part 156 (same cause) |
 | geoscape_descent_panel | 1..59, 156..235 | arm isolation: the frame runs `ClearSurface` + `Geoscape_DrawStatusPanel` only (test_geoscapeframe.c ~1362..1375) -- no map, no strip. Open: is a panel-only frame a useful reference? |
-| tact_hud_minimap | 16..63, 317..319 | open -- the radar inset's own area, not the map |
+| tact_hud_minimap | 0, 16..63, 317..319 | CLOSED in Part 158: the arm fills 240x320 with index 0 itself (0x1ED54), and the cell field is 4*(cell - scroll) -- measured x 12..239, y 64..303, i.e. scroll (-3, -16) inside the clamp window [-30..570] x [-40..560] for a 60x60 map |
 | tact_mission_urban | 1..16 | open |
-| tact_briefing, tact_briefing_urban, tact_mission_from_descent | 1..7, 311..319 | open |
+| tact_briefing, tact_briefing_urban, tact_mission_from_descent | 0..7, 311..319 | CLOSED in Part 158: the arm is two calls -- PadImage_Blit of the cydonia pad at (0,0) then UiPanelMsg_Draw (0x1A7A0) -- and the indexed blit writes every pixel including index 0 (0xA3278 `*v24++ = *(pPal + 4*index)`, no skip), so the bands are the pad's own index-0 rows |
 | debrief_banner | 1..12, 25..42, 44 | open |
 | tact_hud_promotion | 1..12, 25..32 | open |
 | tact_hud_inventory, 13_tact_unit_panel | 153..159, 199 | open -- same region in a fixture frame and a live e2e frame |
@@ -119,9 +119,10 @@ explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the
 ## Open items
 
 1. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
-2. Open questions 5 and 6 above are still open: the thin tact bands (rows 1..16, 311..319) and `tact_hud_minimap`'s 48-row hole.
+2. Open questions 5 and 6 are measured and partly closed: `tact_hud_minimap`'s 48-row hole and the briefing trio are closed in the last section, `tact_mission_urban` and the three remaining tact bands sit under item 5 below.
 3. Open question 1 keeps one half open: the selector's four identical rows are closed (the Part 158 ufopaedia section), but what the pad blitted at 0x9B600 holds in that state is not yet read.
 4. The per-picture pass has not yet reached the rest of the corpus: the 10 `tests/ref/e2e/` pictures were reviewed only where a Part changed them, and the research / manuf / radar / psi / base-info / ufopaedia-entry / save-slot / tact families still need one picture-by-picture read each.
+5. Four pictures still need their rect-by-rect read against their arm: `debrief_banner` (0..12, 25..42, 44), `tact_mission_urban` (0..16), `tact_hud_inventory` (153..159, 199) and `tact_hud_markers` (319). The bands are measured; the arms `TactHud_DrawStatusBanner @ 0x1E920`, the inventory arm (Render_Frame case 1, the call at 0x224AC) and the unit-markers arm (case 6, the call at 0x224D0) are not yet matched blit by blit. `tact_hud_promotion`'s 54 / 71 / 87 are already explained as panel rules in the Part 157 review.
 
 ## Part 157 review: the 29 references that moved, read against 0x3e94c (2026-10-23)
 
@@ -331,3 +332,45 @@ So the empty lower half of econ_hangar_combat is the shipped dogfight gate sitti
 port omission. IDB: `Ship_ctor`'s comment now carries the four +0x21 sites, the three +0x14 sites, the type dispatch
 table, and a correction of its old claim that no code indexes a text record by bCraftType -- Ship_FormatDisplayName does
 (903 characters, read back identical, IDB saved).
+
+## Part 158: the tact black bands -- minimap closed, the briefing trio closed (2026-10-23)
+
+Baseline first: the sweep was re-run over the current corpus (93 `tests/ref/*.ppm`; the `tests/ref/e2e/` set is PNG-only)
+and 13 pictures have an all-black run now, against 21 in the original table. The difference is the menu family --
+`00_mainmenu`, `10_menu_at_boot` and `11_slot_list` no longer have their 264..268 / 313..319 runs, and `econ_buy_craft_queued`
+and `econ_hangar_cap_full` have none at all. Those runs disappeared when Part 157 gave the panels their hovered-row fill
+and Part 158 gave those two dumps a frame, which is the expected direction for a fix.
+
+`tact_hud_minimap` (rows 16..63 black, the biggest remaining band) is closed as shipped behaviour of its own arm.
+Screen 2 goes to `MapView_DrawMinimap @ 0x1ED4C` (Render_Frame case 2 at 0x224B8, which REPLACES the iso layer). That
+function's first instruction after the prologue is `SoftSurf_BlitRectProxy(x 0, y 0, w 0xF0 = 240, h 0x140 = 320,
+colours 0, 0, 0)` -- the arm paints the whole screen black itself. Then the clamp (max `40*(nMapDimX-3)/4` then min -30,
+max `40*(nMapDimY-4)/4` then min -40, each comparing against what the previous clamp stored -- matches the port), then
+the two cell passes draw `Font_DrawGlyph(4*(tileX - nScrollX), 4*(tileY - nScrollY), ...)`.
+
+Measured in tests/ref/tact_hud_minimap.ppm: the ground pass covers x 12..239, y 64..303, completely filled
+(52941 of 228 x 240 px in the two ground colours (164,97,32) and (148,80,32), the rest overdrawn). 228 x 240 at 4 px per
+cell is 57 x 60 cells for a 60 x 60 map clipped at the right edge, and the origin says `nScrollX = -3`, `nScrollY = -16`
+-- inside the clamp window (max 570 / 560 for a 60x60 map, min -30 / -40). So the 48-row band above the field and the
+16 rows below it are the arm's own black field where the cell passes do not reach, at a scroll value the original's own
+clamp allows. The inset in the middle of the field (the pink/blue grid with the green item marks) is the second pass:
+the mission's floor/wall/ceiling glyphs over the ground glyphs.
+
+`tact_briefing`, `tact_briefing_urban` and `tact_mission_from_descent` (rows 0..7 and 311..319 black, identical ink
+bounds in all three -- first lit row 8, last lit row 310, a full-width lit row somewhere in the middle) are closed too.
+Their arm is Render_Frame case 0x14 at 0x223DC, and the whole handler at 0x1A7A0 is two calls: `PadImage_Blit` of the
+pad pointer at unk_15692C, then `UiPanelMsg_Draw` of the panel at unk_1571EC. The port's `Cydonia_BlitThenDrawPanel`
+(src/pufo/ui/pufo_panel.c:553) is those two calls. `PadImage_Blit @ 0x110DC` is a single call to
+`SoftSurf_BlitIndexed(x, y, w, h, pGlyph, nPal = [pad+0x10])`, and the inner loop at 0xA3264..0xA3294 is
+
+    *v24++ = *(_DWORD *)(pPal + 4 * *(unsigned __int8 *)v18);
+
+-- every index is written, index 0 included, with no key skip (the key form is the separate `PadImage_BlitEx @ 0x11110`).
+So a pad row whose pixels are index 0 paints palette entry 0, and the bands are the cydonia pad's own art. The fixture
+check at that dump already proves nothing else is drawn on this path: the frame paint against the pad alone is the one
+centred panel line (`nBelowInk == 0`, `nOutsideInk == 0`), which is what "the arm REPLACES the iso layer" means.
+
+For the record, the same mechanism explains the row-rule runs in `tact_hud_promotion` (54 / 71 / 87): a panel rule is
+`SoftSurf_BlitRectProxy(..., aStyleRgb[0], aStyleRgb[1], aStyleRgb[2])`, and a panel whose style triple is 0,0,0 paints
+a black rule row every `nFont` rows. That was measured in the Part 157 review; it is recorded here only to keep the
+sweep table consistent.

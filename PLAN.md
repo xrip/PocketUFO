@@ -6639,3 +6639,15 @@ tact thin bands, tact_hud_minimap's 48-row hole, Ui_DrawBaseInfo's 0x9B600 pad c
 the research / manuf / radar / psi / base-info / ufopaedia-entry / save-slot / tact families. IDB: Ship_ctor's comment
 rewritten (903 chars, read back identical) with the four +0x21 sites, the +0x14 sites, the type dispatch table, and a
 correction of its stale claim that no code indexes a text record by bCraftType.
+Measured (Part 158, the tact black bands): the black-row sweep was re-run over the current corpus (93
+tests/ref/*.ppm) -- 13 pictures have an all-black run, down from 21, because the menu family's runs disappeared with the
+Part 157 hovered-row fill and the two econ pictures' runs disappeared with their re-recorded frames. Two are closed with
+IDB evidence. tact_hud_minimap's 48-row band (16..63) is its arm's own field: MapView_DrawMinimap @ 0x1ED4C begins with
+SoftSurf_BlitRectProxy(0,0,240,320, 0,0,0), the clamp is [-30..40*(nMapDimX-3)/4] x [-40..40*(nMapDimY-4)/4], and the
+cell passes draw Font_DrawGlyph(4*(tile - scroll)); the picture's ground field measures x 12..239 y 64..303, i.e. scroll
+(-3,-16), legal for a 60x60 map, and the inset is the second pass over the ground glyphs. tact_briefing /
+tact_briefing_urban / tact_mission_from_descent (0..7, 311..319) are the Cydonia arm at 0x1A7A0 -- PadImage_Blit of the
+cydonia pad plus UiPanelMsg_Draw -- and SoftSurf_BlitIndexed_Inner at 0xA3264..0xA3294 writes every index including 0
+(*v24++ = *(pPal + 4*index), no key skip), so the bands are the pad's own index-0 rows. Still to match blit by blit:
+debrief_banner (0..12, 25..42, 44), tact_mission_urban (0..16), tact_hud_inventory (153..159, 199), tact_hud_markers
+(319), and the non-tact families listed in frames-audit.md's Open items.
