@@ -6508,3 +6508,25 @@ tools/check.sh reports the Debug ctest exit without treating it as fatal (docume
 build, release 66/66, 21578 checks, coverage check OK, 93 frames, 10 e2e pictures unchanged, CHECK EXIT=0
 (build/check154b.log). New open item 154a: those two intermittent checks. Still open: PLAN 122a (the rest of that
 chain), 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4 half-written bugs.tsv rows.
+
+Done (Part 155, PLAN 122a measured 16.46 game-days live): docs/parity/measure_122a_days.sh drives 80 `fasttick 3000` blocks,
+each answered with `tick 1` + `click 120 136`, and reached clock 1421850 s = 16.46 game-days with a monotone clock. The painted
+step is mandatory: the flag-10 controls exist only after a paint (0x8EC74/0x8EC8C store them), and 80 blocks of
+`fasttick`+`click 120 160` without one froze the run at 357300 s with `status flag 10, lines: 1`. The day gate is now measured,
+not inferred: craft classes 0..2 up to block 75 and a class-4 craft at block 76 (15.83 game-days) -- the clamp
+`nAlienPoolAddend < 0xF && class > 2 -> 2` at 0x81B7C. No site item and no line other than flag 10 appeared in 16.46 days. The
+flag-23 line's producers are now read end to end (comments written at 0x80368/0x80410/0x80f08, IDB saved): both sit past the
+arrival gate at 0x80368, reachable only for a marker whose Ship has bIntercepting set, and the same gate dispatches flag 14
+(target type 5, remove), flag 21 (type 3, site text), flag 23 with a direct pause store (type 4), flag 22 (type 0 active 1), and
+for type 1 either Strateg_ConfirmInterceptTarget immediately (nTimer <= 0) or the flag-23 append at 0x80f08. SpawnMissionSite
+switches on the mission SUBTYPE: 4 -> AddAlienSiteIfValid + flag 60 + pause, 5 -> BasePlaneScreen_AddInterceptMission + flag 16 +
+nRadarPulseTimer 250 + pause, 6 -> pause + nGeoscapeScreen 20 + BaseAtScreen_Open. Corrected wording (no code change): the flag-10
+confirm control's handler is Smap_OnPointerUp @ 0x84688, exactly as the port wires it (World_SmapPointerUpThunk). Measured
+negative result: docs/parity/measure_122a_intercept.sh pressed the map centre after answering (120,160) and nothing happened --
+status flag 0, lines 0, list unchanged, no launch, no arrival flag in 40 more blocks -- so 122a must drive the card flow whose ОК
+is Smap_CancelTarget @ 0x84254 (Ship_LaunchIntercept at 0x8427c, proven live in Part 100.4), using the card's own control
+rectangles read from `geoframe` rather than assumed coordinates. No src/ change: Part 154's six-gate run (build/check154c.log,
+release 66/66, 21578 checks, coverage OK, 93 frames, 10 e2e pictures, ALL SIX GATES RAN, Debug exit 0) still describes the tree.
+New open item 155a: the card-flow coordinates (select -> ОК -> launch -> arrival flag 23 -> descent press -> tact roster). Still
+open: 154a (the two intermittent gate checks), PLAN 122a's tail, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4
+half-written bugs.tsv rows.

@@ -573,3 +573,12 @@ press on the flag-10 panel answers it -- confirm at (120,136) = Smap_SelectTarge
 Smap_ClearSelection -- measured resuming the clock from 357300 to 477300 s. The class 3..7 mission sites the event
 engine needs are gated by day counters (nAlienPoolAddend, clamped while < 15 at 0x81B7C), so 122a needs ~15
 game-days ~ 220000 pulse steps: minutes with fasttick.
+coverage (Part 155): PLAN 122a measured 16.46 game-days in one process (docs/parity/measure_122a_days.sh: 80 blocks of
+`fasttick 3000` answered by `tick 1` + `click 120 136`), clock monotone, and the class gate measured live -- classes 0..2
+until 15 days, then class 4 at 15.83 days, which is the 0x81B7C clamp under nAlienPoolAddend < 15. Only flag-10 lines and
+types 0/1 appeared. Read the flag-23 producers in the IDB: both sit past the arrival gate 0x80368, which needs a Ship with
+bIntercepting set (a launched intercept), and SpawnMissionSite's mission-subtype switch (4 alien site/flag 60, 5 intercept/
+flag 16, 6 base assault/screen 20) is what the day-gated roll selects. Corrected prose: the flag-10 confirm control's handler
+IS Smap_OnPointerUp @ 0x84688 (0x8EC74) -- the port already wires World_SmapPointerUpThunk. Measured negative: a map press at
+the recentred (120,160) does not select or launch (status flag 0, list unchanged), so 122a's next step is the card flow whose
+ОК is Smap_CancelTarget's Ship_LaunchIntercept at 0x8427c.

@@ -25074,3 +25074,79 @@ that control's handler, so one press there runs `Smap_BeginCraftSelect @ 0x838dc
 Gates: clean build, release 66/66 tests, 21578 checks, `check: OK -- 135 artifact rows, 131 uncited functions,
 0 of them real gaps`, `frames: unchanged (93 reference pictures)`, `e2e pictures: unchanged (10)`,
 `check: ALL SIX GATES RAN`, build/check154b.log.
+
+
+## Part 155 - PLAN 122a measured 16 game-days live, and the flag-23 line's real producers
+
+### The answered multi-day sweep
+
+`docs/parity/measure_122a_days.sh` runs `fasttick 3000` blocks, each answered by `tick 1` + `click 120 136`, printing
+`state`, `strateg` and `lines` per block. 80 blocks = 240000 pulse steps reached clock 1,421,850 s = **16.46 game-days**
+in one process, with the clock monotone across answers (a block is 18006 s: 3000 pulses plus the one painted step).
+build/measure122d/days.log.
+
+Why the painted step is mandatory: the two controls the flag-10 press arm hit-tests are *installed* by the flag-10 draw
+arm (0x8EC74 stores the confirm handler, 0x8EC8C the clear handler) and the draw arm runs on the paint. Without it the
+panel is logically open -- `state` printed `status flag 10`, `lines: 1` -- and a click hits nothing: 80 blocks of
+`fasttick 3000` + `click 120 160` with no paint froze the clock at 357300 s from block 19 to the end of the run.
+
+What 16.46 days of the scenario produced: 3 detections (at 357300 s, 427560 s and 1331820 s), every message line was
+flag 10, item types seen were only 0 (the base, `site 1`) and 1 (crafts), and the craft **class** grew with the day
+counter: classes 0..2 only up to block 75, then `[6] type 1 active 1 class 4 at 504/347 ... travel 206 min` at block 76
+(1367832 s = 15.83 game-days). That is the clamp at 0x81B7C measured live --
+`if ( nAlienPoolAddend < 0xFu && v11 > 2 ) LOBYTE(v11) = 2;` -- the addend being raised once a day at 0x5D3C8. No mission
+SITE item appeared (site ids seen: -1 and the base's 1) and no line other than flag 10.
+
+### The pause latch, and what clears it
+
+`GameTime_Pause @ 0x5d6ac` is one store into `bGameClockPaused @ 0x15961c`; `GameTime_Unpause @ 0x5d6c0` is the mirror
+store and has **no code callers** -- its nine xrefs are eight `Smap_*` functions (0x842b0 CancelTarget, 0x843f4
+ConfirmCraftTarget, 0x84464 DismissSelected, 0x84614 ConfirmSelected, 0x84668 ClearSelection, 0x84954 OnPointerUp,
+0x84a90 ResolveInterceptUI, 0x8542c ConfirmSelectedAlt) plus the data cell 0x18a100. The one the scripted press reaches
+is `Smap_OnPointerUp @ 0x84688`: every geoscape release runs `UiPanel_RemoveLine(0)` at 0x84944 and `GameTime_Unpause()`
+at 0x84954 when the list is then empty. Its no-pending-selection branch also recentres the camera on line 0 slot 0's
+item (0x84838/0x8484C) and sets the crosshair pending -- which is why answering a contact puts the crosshair on it.
+
+### The flag-23 line has two producers, and both need a craft that arrived
+
+Reading `StrategList_ProcessEvents @ 0x7fcb0` end to end: flag 23 is appended only past the arrival gate at 0x80368
+(`abs(item.nX - target.nX) < 2 && abs(item.nY - target.nY) < 2`), and that gate is only reachable for a type-1 marker
+whose Ship was found by `Ship.bId == item.nDisplayId` (0x7FE5C) with `bIntercepting != 0` (0x7FEB4). So the descent offer
+is not a UI event at all: it is the arrival of a **launched intercept**. The same gate dispatches on the target's type --
+5 -> pause + flag 14 + remove the target (0x80634..0x80678); 3 -> pause + flag 21 with the site id in the panel text and
+0x159E74 = ship slot (0x80684..0x80774); 4 -> flag 23 with the pause written straight into 0x15961C at 0x807A0;
+0 with bActive == 1 -> pause + flag 22 (0x808A4..0x80990); 1 -> the arm at 0x80410, which pauses, arms
+`nInterceptShipIdx @ 0x15967C` / `nInterceptStrategIdx @ 0x159680`, and then either answers immediately through
+`Strateg_ConfirmInterceptTarget @ 0x7fb98` when the target's `nTimer <= 0` (0x80EEC/0x80FCC) or appends flag 23 at
+0x80F08. Three item comments (0x80368 787 chars, 0x80410 404, 0x80f08 334) were written and read back; the IDB was saved.
+
+Two other producers matter for the same chain. `Geoscape_SpawnMissionSite @ 0x7e49c` switches on the rolled **mission
+subtype**, not the item type: sub 4 dwells 2880 min and then calls `StrategList_AddAlienSiteIfValid @ 0x7e3b4`, and the
+discovered half appends flag 60 and pauses (0x7eb2c..0x7eb14); sub 5 calls `BasePlaneScreen_AddInterceptMission` and
+appends flag 16 with `nRadarPulseTimer = 250` and a pause (0x7ecc8..0x7ed3c); sub 6 is the base assault -- a direct
+pause store, `nGeoscapeScreen = 20` and `BaseAtScreen_Open` (0x7ef4c..0x7ef80). A class-gated roll (unk_AAC98 indexed by
+bCraftClass) is what selects those subtypes, so the 16-day sweep's classes 0..4 with `sub 0` explain why none of those
+lines appeared.
+
+### The control wiring, corrected in words (the code was already right)
+
+The flag-10 draw arm stores `Smap_OnPointerUp @ 0x84688` as the **confirm** control's pfnClick at 0x8EC74 and
+`Smap_ClearSelection @ 0x84648` for the other control at 0x8EC8C. There is no `Smap_SelectTarget` in the image. The port
+already matches: `World_SmapPointerUpThunk` is wired as `pfnSelectTarget` (src/pufo/app/pufo_world.c:9342) and
+`pufo_geoscape.c:4635` carries the 0x8EC84 / Smap_OnPointerUp comment. Only the prose in earlier notes named it wrong.
+
+### The launch press that did not fire, and what that rules out
+
+`docs/parity/measure_122a_intercept.sh` answers the detection in block 20 and then presses the map centre:
+`tick 1; click 120 136; tick 1; click 120 160`. Measured (build/measure122e/chain.log): after the second press
+`status flag 0`, `lines: 0`, the strateg list unchanged (item 4 still `detected 1 disp 1` at 337/93), the clock 357306 s
+-- no select, no `bMapSelectionFlag`, no launch. 40 further blocks produced one more contact (flag 10 at 427560 s) and
+no arrival flag at all (14/21/22/23: zero). So a bare map press at the recentred position is not the select arm: the
+select path that writes `nSelectedShipIdx @ 0x187054` and `bMapSelectionFlag @ 0x159E84` (0x8372C) needs the card flow
+the frame test already pins (contact card, "new target", press the contact, ÎÊ -- the ÎÊ handler is
+`Smap_CancelTarget @ 0x84254`, whose `Ship_LaunchIntercept` call at 0x8427c was proven live in Part 100.4). The next
+measurement is the card's own control rectangles, taken from `geoframe`'s zoom/scroll/map numbers rather than guessed.
+
+No `src/` file changed in this Part, so the six-gate run recorded for Part 154 still describes the tree
+(build/check154c.log: release 66/66, 21578 checks, coverage check OK, 93 frames, 10 e2e pictures, ALL SIX GATES RAN,
+Debug ctest exit 0).
