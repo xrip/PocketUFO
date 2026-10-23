@@ -121,7 +121,7 @@ explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the
 1. CLOSED (Part 159 cont. 3): all 32 tact-family references now have their draw call recorded, screen by screen, against `Render_Frame`'s inner switch at 0x2237C -- the table is in the last section of this file. The count was 28 because seven of them are emitted by `PaintFurnitureFrame` (test_geoscapeframe.c:834) rather than a bare `DumpFrame`.
 2. CLOSED: open questions 5 and 6. Every tact band the sweep table lists is now explained -- the minimap hole (Part 158), the briefing trio, `debrief_banner`, `tact_hud_inventory`, `tact_hud_markers` (Part 159) and `tact_mission_urban` (Part 159 cont.).
 3. CLOSED (Part 159 cont. 3): the pad blitted at 0x9B600 is the ufopaedia screen's own pad -- `g_pUfopaediaScreenPad[0]` at 0x1872E0, allocated and loaded `PadImage_Load("baseinfo", 14)` in `Ui_InitBaseInfo @ 0x9DDD4..0x9DE14`, i.e. main.dat's BASEINFO.PAD (240x320) through baseinfo.pal in slot 14. Measured against `ufopaedia_index`: 71403 of 76800 px (93.0%) equal the pad blit exactly, and the rest is the selector panel, the four-entry list and the bottom control bar drawn over it.
-4. CLOSED for the pass itself (Part 159 cont. 2): all 103 references were looked at -- the 93 `tests/ref/*.ppm` in eight labelled montages and the 10 `tests/ref/e2e/*.png` in a ninth -- with a structural screen and a palette-provenance measure behind every one. No layering artifact, no half-painted panel, no unexplained empty area found. What stays open in this file is item 1 (the 28 tact `DumpFrame` sites with no recorded draw call) and the second half of item 3 (what the pad blitted at 0x9B600 holds in the ufopaedia state).
+4. CLOSED for the pass itself (Part 159 cont. 2): all 103 references were looked at -- the 93 `tests/ref/*.ppm` in eight labelled montages and the 10 `tests/ref/e2e/*.png` in a ninth -- with a structural screen and a palette-provenance measure behind every one. No layering artifact, no half-painted panel, no unexplained empty area found. Nothing stays open in this file (that sentence was written while item 1 and item 3 were still open): item 1 and item 3 closed in cont. 3, the sweep table's last two `open` rows closed in cont. 4, and `ufopaedia_entry`'s pad origin closed in cont. 4.
 5. CLOSED in Part 159: all four read against their arm. `debrief_banner` = ENDMISS.PAD's index-0 rows 0..41 plus the banner text; `tact_hud_inventory` = INVV.PAD's 139..159 / 199 with the burden labels over 139..152; `tact_hud_markers` = MSCANV.PAD's all-index-254 last row (SCANNER.PAL[254] = (0,0,0)); `tact_mission_urban` = the iso layer's own edge (camera-free tile geometry, no overlay arm on screen 0). `tact_hud_promotion`'s 54 / 71 / 87 were already panel rules from the Part 157 review.
 
 ## Part 157 review: the 29 references that moved, read against 0x3e94c (2026-10-23)
@@ -626,9 +626,7 @@ The per-entry picture is a second pad: `Ufopaedia_RefreshEntry @ 0x9A014` builds
 one (`PadImage_FreeData` + `operator delete`, 0x9A718..0x9A720 / 0x9A880..0x9A888) and tail-jump back, which is why
 paging changes the picture. main.dat carries the numbered pair members (54.PAD 31004 / 54.PAL, ..., 93.PAD 48004 /
 93.PAL, ... 98.PAD 5989), and the colour provenance of the two entry references follows them exactly:
-`ufopaedia_entry_next` matches 93.PAD (240x200) through 93.pal at 44729 of 48000 px (93.2%). `ufopaedia_entry`'s pad is
-54.PAD at 155x200, and my placement guess of the blit origin does not fit it (22.6%), so where that entry's image sits is
-the one part of this family still unmeasured -- it is a placement question, not a content question.
+`ufopaedia_entry_next` matches 93.PAD (240x200) through 93.pal at 44729 of 48000 px (93.2%). `ufopaedia_entry`'s pad is 54.PAD at 155x200, and its origin is now measured (Part 159 cont. 4, `build/crops/entry159.py`, an origin search over every position the pad could occupy, scored on 705 rare pad pixels): the pad sits at (43, 0), 705 of 705 sample pixels match there and only 61 at the next-best position, and the full pad is 30225 of 31000 px (97.5%) equal to the picture pixel for pixel -- the 2.5% remainder is the border rect and the label text drawn over it. x = 43 is `120 - 155/2`, the shared centre-pad block the port has as `Udb_CentrePadBlit` (src/pufo/game/pufo_baseui.c:13464, `pPad->nOriginX = 0x78 - (i32)pPad->uWidth / 2`); 93.PAD is 240 wide so it centres on x 0, which is why the sibling frame matched at 93.2% without a search. 54.PAD has no index-0 pixel at all, which is why `ufopaedia_entry` shows no all-black row.
 
 IDB: line comments at 0x22404 (`Map_bDrawIsoLayer` gates the whole iso group) and at 0x9A584 (the per-entry
 "N.pad" / "N.pal" pair and the free-and-tail-call cycle), both read back identical, `idb_save` ok.
@@ -672,5 +670,7 @@ row 1, and the two Part 156 fixes now show no all-black row. The Part 158 baseli
 runs were gone is retracted above: that scan covered only `tests/ref/*.ppm` and those pictures have no `.ppm` there.
 
 IDB: line comments at 0x38B18 (STARTG.PAD -> `MainMenu_pBgGlyph`, its blank rows, startg.pal slot 0x14), at 0x1DC80 (the
-row body at index 0 with 0x57/0x5E and the frame strips at index 1 with 0x9F/0xAB) and at 0x223F4 (case 19, the promotion
-dialog's pad rows), read back at 408 / 358 / 348 characters. `idb_save` ok. No `src/` or test change, so no gate re-run.
+row body at index 0 with 0x57/0x5E and the frame strips at index 1 with 0x9F/0xAB), at 0x223F4 (case 19, the promotion
+dialog's pad rows) and at 0x9A5A4 (the per-entry pad's centre blit: x = 0x78 - uWidth/2, 54.PAD measured at (43,0),
+54.PAD has no index-0 pixel), read back at 408 / 358 / 348 / 454 characters. `idb_save` ok. No `src/` or test change, so
+no gate re-run.

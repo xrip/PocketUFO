@@ -6729,3 +6729,9 @@ Sweep re-measured over 113 files (93 ref .ppm + 9 ref e2e .png + 11 build e2e .p
 names; seven top runs start at row 0 not row 1; geoscape_ufo_enroute and geoscape_terror_site now have none. Retracted the
 Part 158 baseline claim that the menu family's 264..268/313..319 runs were gone -- that scan saw only tests/ref/*.ppm and
 those pictures have no .ppm there. IDB: comments at 0x38b18, 0x1dc80, 0x223f4 (408/358/348 chars, read back), idb_save ok.
+Closed (Part 159 cont. 4, final open detail): where ufopaedia_entry's 155x200 54.PAD sits. Origin search over every
+position the pad could occupy (build/crops/entry159.py, scored on 705 pad pixels whose colour occurs < 40 times in the pad):
+(43, 0) matches 705/705 samples and the whole pad matches 30225/31000 px (97.5%); the next best origin matches 61. x = 43 is
+120 - 155/2, the centre-pad block the port has as Udb_CentrePadBlit (src/pufo/game/pufo_baseui.c:13464, nOriginX = 0x78 -
+uWidth/2); 93.PAD at 240 wide centres on x 0, which is why ufopaedia_entry_next already matched at 93.2%. 54.PAD has no
+index-0 pixel, which is why ufopaedia_entry has no all-black row. IDB: comment at 0x9a5a4 (454 chars, read back), idb_save ok.
