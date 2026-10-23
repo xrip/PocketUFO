@@ -374,3 +374,32 @@ For the record, the same mechanism explains the row-rule runs in `tact_hud_promo
 `SoftSurf_BlitRectProxy(..., aStyleRgb[0], aStyleRgb[1], aStyleRgb[2])`, and a panel whose style triple is 0,0,0 paints
 a black rule row every `nFont` rows. That was measured in the Part 157 review; it is recorded here only to keep the
 sweep table consistent.
+
+## Part 158: the four remaining tact bands, measured but not yet adjudicated (2026-10-23)
+
+Each picture was read as a per-row coverage profile (rows with all 240 px non-black, rows partially covered and their
+x span, rows fully black). This is the state of these four:
+
+  * `tact_hud_markers` -- rows 0..45 and 261..318 fully covered, 46..260 partially covered but spanning x 0..239,
+    only row 319 black. The arm is `TactHud_DrawUnitMarkers @ 0x20C58` (Render_Frame case 6, the call at 0x224D0, which
+    replaces the iso layer). Next check: the marker pad's own rect and art -- whether the pad ends at 318 or its last
+    row is index 0 (index 0 is painted, not skipped: 0xA3278), and whether the two unit-marker loops could reach row 319.
+  * `tact_hud_inventory` -- rows 0..21 and 200..319 fully covered, 22..152 and 160..198 partially covered with the ink
+    confined to x 22..227, black at 153..159 (7 rows) and 199 (1 row). The arm is `TactHud_DrawInventoryScreen @ 0x1F58C`
+    (case 1, call at 0x224AC): `PadImage_Blit(pInvPad)`, the control pads, `InventoryHighlight` when an item is held with
+    forcenodrag set, the burden label at (113,140) and the burden number at (185,140), the header at (3,2),
+    `TactHud_DrawItemStrip`, the portrait `PadImage_BlitEx(..., 0)`, and while an item is held the name at (3,203) and the
+    dragged glyph. So the drawing region narrower than the screen (x 22..227) is the inventory pad's own rect, and the two
+    black runs sit inside it. Next check: the pad's rect and its index-0 rows against 153..159 and 199, and the strip's
+    top edge against 200.
+  * `tact_mission_urban` -- rows 0..16 black, ink from row 17 (a 4-to-10-px wide cluster at x 168..177, i.e. a control
+    pad), rows 239..319 fully covered, 83..94 and 104..192 fully covered. This is the iso group, so the map content comes
+    from `MapView_DrawIsoLayer @ 0x22414`. Next check: the iso origin for this camera -- 17 empty rows at the top is the
+    same class as the Part 156 geoscape finding, where the fixture had moved the scroll outside the clamp the original
+    enforces, and the tact clamp has already been pinned here (max `40*(nMapDim-3)/4` / `40*(nMapDim-4)/4`, min -30 / -40).
+  * `debrief_banner` -- rows 0..12, 25..42 and 44 black; ink from row 13 (a narrow cluster at x 99..120 -- the centred
+    banner text `Text_DrawString(120 - w/2, 10, ...)` from `TactHud_DrawStatusBanner @ 0x1E920`), a wide partial band
+    45..289, and full coverage only at 290..291 and 297..300. Next check: the banner backdrop pad's rect and index-0 rows
+    against 0..12 / 25..42 / 44, plus the two panel draws' rows against the 45..289 band.
+
+None of these four is claimed fixed. The measurements above are what the next pass starts from.
