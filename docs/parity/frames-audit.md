@@ -243,3 +243,25 @@ The other four byte-identical dumps this sweep found are all faithful, each with
 
 IDB: 0x98968's item comment now carries both the Text_DrawString glyph-base note and the caption-vs-pad-blit note
 (690 characters, read back through the listing), and the IDB was saved.
+
+## Part 158: 157a closed -- the overlay overlap is the original's own coordinates (2026-10-23)
+
+The manuf and research allocation overlays draw their text over the panel rows behind them (econ_manuf_alloc,
+geoscape_research_allocated). Checked whether the original erases the area first. It does not.
+
+Enumerated every surface blit in each ARM function. ManufScreen_DrawFrame (0x6F9A4): 11 SoftSurf_BlitRectProxy calls --
+eight rails at 0x6F9F4, 0x6FA24, 0x6FA48, 0x6FA6C, 0x6FAC4, 0x6FAEC, 0x6FB1C, 0x6FB44 and three separators at
+0x6FD68, 0x6FD8C, 0x6FDB0. ResearchScreen_Draw (0x73A34, 2108 B): 10 -- eight rails at 0x73A84..0x73BD0 and two
+separators at 0x73D30, 0x73D54. Neither function calls SoftSurf_BlitSrcRect, blits a pad into the overlay area, or
+fills a rectangle there. The port's blit set is the same count in both.
+
+The overlay frame itself is Ui_AnimExpandBlit, which paints eight band rects and no interior (0x95E18 outer top,
+0x95E6C inner top, 0x95EA0/0x95ECC bottom, 0x95F00/0x95F28/0x95F58/0x95F80 sides) -- so whatever stands behind the
+frame stays visible, and it does in the pictures.
+
+The collision is in the original's own coordinates. The research detail block draws its labels at fixed y: 0x73DE8 at
+(10, 118), 0x73E28 at (10, 132), 0x73E64 at (10, 146), 0x73EC8 at (40, 164), 0x73F04 at (40, 184), and its three
+numbers at x 195 through 0x73F24..0x74068. The topic panel puts its rows at nPosY 70 with nFont 16, i.e. y 70, 86, 102,
+118, 134 -- rows 3 and 4 land exactly on the "Ученых доступно" and "Свободн. мест в лаборатории" labels, which is what
+geoscape_research_allocated shows. Same shape on the manuf screen with its own panel band. Recorded as shipped layout,
+not a port omission.
