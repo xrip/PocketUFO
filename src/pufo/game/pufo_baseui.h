@@ -129,8 +129,9 @@ void BaseFacScreen_PanelNext(UiPanel *pPanel);
 void SoldierScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond);
 void SoldierScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond);
 
-/* BuySellScreen_ListPanelPrev @ 0x79a20 / ListPanelNext @ 0x79a48: the same two-panel
- * shape as the soldier screen, over unk_161EDC first and unk_161A3C second. */
+/* BuySellScreen_ListPanelPrev @ 0x79a20 / ListPanelNext @ 0x79a48: 40 bytes = 8 instructions + 2 pool words,
+ * the same two-panel shape as the soldier screen, over pPlaneCrewPanel @ 0x161EDC first and
+ * pPlaneCrewStatusPanel @ 0x161A3C second. */
 void BuySellScreen_ListPanelPrev(UiPanel *pFirst, UiPanel *pSecond);
 void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond);
 
@@ -145,30 +146,44 @@ void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond);
  * run the already ported scroll mover on it -- UiPanel_ScrollPrev (DecDwordIfPos_AtPlus0xBD4
  * @ 0x3f040) for the previous button, UiPanel_ScrollNext (IncDwordIfInRange_AtPlus0xBD4
  * @ 0x3f00c) for the next. Nothing else: no redraw, no return value, no wrap. Only the last
- * mover call in each body is a tail call (B rather than BL), which is the sole difference from
- * the calls before it.
+ * mover call in each body is a tail call (B rather than BL, with POP {LR} in front of it), which
+ * is the sole difference from the calls before it.
+ *
+ * Records, measured 2026-10-23 by walking each member (instructions + pool words, no two-word
+ * MOV in this family): BaseFac pair 16 B = 3 + 1, the only pair that moves ONE panel; the crew
+ * pair @ 0x79a20/0x79a48 40 B = 8 + 2; the research pair @ 0x72e30/0x72e68 56 B = 11 + 3; the
+ * manuf pair 72 B = 14 + 4; the psi pair 96 B = 19 + 5; the buy/sell pair and the transfer pair
+ * and the hangar detail pair all 88 B = 17 + 5. Prev and next of one pair are the same size and
+ * the same shape.
  *
  * The panel sets, in the order each handler walks them:
  *
- *   ManufScreen_Panel*          pManufProductPanel @ 0x15EE44, unk_15EE48, unk_15EE40,
- *                               unk_15EE38
- *   PsiScreen_Panel*            unk_15EED0, unk_15EE88, unk_15EEA8, unk_15EE58 -- four parallel
- *                               arrays, one entry per base, all indexed by the SIGNED byte at
- *                               unk_1870F4 (the psi screen's selected base), so the handler picks
+ *   ManufScreen_Panel*          pManufProductPanel @ 0x15EE44, pManufPanelB @ 0x15EE48,
+ *                               pManufPanelC @ 0x15EE40, pManufPanelD @ 0x15EE38
+ *   PsiScreen_Panel*            g_apPsiNamePanel @ 0x15EED0, g_apPsiStatPanel @ 0x15EE88,
+ *                               g_apPsiDeltaPanel @ 0x15EEA8, g_apPsiCheckPanel @ 0x15EE58 -- four
+ *                               parallel arrays, one entry per base, all indexed by the SIGNED byte at
+ *                               byte_1870F4 (the psi screen's selected base), which the body re-reads
+ *                               before every step (0x715F4, 0x71600, 0x71610, 0x71620), so the handler picks
  *                               one entry out of every array for that base. The loops that walk
  *                               them (PsiScreen_ApplyAssignments, 0x72250, ported at
  *                               pufo_baseui.c:12142) bound the
  *                               index by the base count at 0x159D80, at most PUFO_FAC_BASE_COUNT.
- *   BuySellScreen_Panel*        unk_161A1C, unk_161A00, unk_161A20, unk_160C88, unk_1615F8
+ *   BuySellScreen_Panel*        pBuySellPanelA @ 0x161A1C, pBuySellPanelB @ 0x161A00,
+ *                               pBuySellPanelC @ 0x161A20, pBuySellPanelD @ 0x160C88,
+ *                               pBuySellPanelE @ 0x1615F8
  *   BuySellScreen_DetailPanel*  pPlaneSlotPanel @ 0x161AC8, pPlaneSelRowPanel @ 0x161F00,
  *                               pPlaneCommitRowPanel @ 0x161EEC, pPlaneTakenPanel @ 0x161EF4,
  *                               pPlaneAvailPanel @ 0x161A40
  *   Transfer_Scroll*            the same five globals as BuySellScreen_Panel*, same order
  *
- * BuySellScreen_PanelPrev @ 0x76088 and Transfer_ScrollPrevAll @ 0x967e4 are the same eleven
- * instructions over the same five globals -- only the BL displacements differ -- and the next
- * pair (0x760e0 / 0x9683c) likewise. The port keeps one implementation of each and cites both
- * addresses; the pair is on record in docs/parity/renames.tsv.
+ * BuySellScreen_PanelPrev @ 0x76088 and Transfer_ScrollPrevAll @ 0x967e4 are the same seventeen
+ * instructions over the same five globals -- re-measured 2026-10-23 word by word: 5 of their 22 words
+ * differ and all five are branch displacements (four BL plus the tail B); the 17 instructions and the
+ * 5 pool words are the same. An earlier note here said "eleven instructions", which undercounts the
+ * record (88 B = 17 insns + 5 pool). The next pair (0x760e0 / 0x9683c) is the same case. The port
+ * keeps one implementation of each and cites both addresses; the pair is on record in
+ * docs/parity/renames.tsv.
  *
  * The port takes the panels as arguments instead of reaching through the globals, as the
  * earlier handlers in this family do. PsiScreen_Panel* takes the four panels already resolved
@@ -808,8 +823,9 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv);
  *      clears when it finds the load blocked.
  *   5. 0x995C0..0x995F0: four controls (operator new 0x20 + UiControl_ctor) into ppRoot[1..4].
  *   6. 0x99604..0x99630: their clicks, in slot order: Transfer_ScrollPrevAll @ 0x967e4 and
- *      Transfer_ScrollNextAll @ 0x9683c -- both byte-identical to BuySellScreen_PanelPrev and
- *      BuySellScreen_PanelNext over the same five panel globals, see docs/parity/renames.tsv --
+ *      Transfer_ScrollNextAll @ 0x9683c -- compared word by word with BuySellScreen_PanelPrev and
+ *      BuySellScreen_PanelNext they share the 17 instructions and the same five panel globals, and differ only in
+ *      the five branch displacements (four BL plus the tail B); see docs/parity/renames.tsv --
  *      then Transfer_ResetSite and TransferScreen_CommitTransfer (0x97aa4, ported at
  *      pufo_baseui.c:2625).
  *   7. 0x9963C..0x99654: the close control g_pUiCloseCtl goes to x 224, y 1 with

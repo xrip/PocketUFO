@@ -23694,3 +23694,117 @@ The IDB carries a comment on 32 addresses (29 rows plus the four family heads 0x
 single-play claim at 0x6bc1c and the return-value claim at 0x99fd0 replaced, and `idb_save` reported ok
 twice. Ledger after this Part: 968 behaviour rows, 730 carrying a test cite at their own address (+29), 238
 not (`tact` 93, `strat` 90, `strat-ui` 52, `app-shell` 3); reach 965/968.
+
+## Part 132 - 28 `strat-ui` rows closed: nine close thunks, seven panel prev/next pairs, five weapon copies
+Twenty-eight rows went from uncited to cited: the nine close thunks `BaseInfoScreen_CloseThunk` @ 0x557bc,
+`BaseFacScreen_CloseThunkA` @ 0x589c0, `BaseFacScreen_CloseThunk` @ 0x59b54, `SoldierScreen_CloseThunk` @ 0x64ae4,
+`ManufScreen_CloseThunk` @ 0x6e3d4, `ResearchScreen_CloseThunk` @ 0x72ffc, `BuySellScreen_CloseThunk` @ 0x75154,
+`BaseAtScreen_CloseThunk` @ 0x577c0 and `NewBaseScreen_CloseThunk` @ 0x615b0; the seven panel pairs
+0x589cc/0x589dc, 0x6dd4c/0x6dd94, 0x715e8/0x71648, 0x72e30/0x72e68, 0x79a20/0x79a48, 0x79a70/0x79ac8 and
+0x967e4/0x9683c; and the five weapon-select copies 0x79b64, 0x79ba8, 0x79bec, 0x79c30, 0x79c74. Measured after the
+Part: 758 cited, 210 not (`tact` 93, `strat` 90, `strat-ui` 24, `app-shell` 3).
+Every record in this Part was re-measured by walking it item by item and separating code items from pool words
+(14 insns + 4 pool = 72 B, and so on), and the family members were compared word by word rather than by eye. That
+found six wrong claims the tree was carrying, listed at the end of this section; five of them were sizes, one was
+the word "byte-identical" applied to copies that differ in their branch displacement.
+### The close-thunk family, re-censused
+25 function bodies end with a `B Geoscape_CloseUI` (target 0x8b94c). Twelve of them are the 12-byte shape
+`LDR R0,=sGeoscapeScreenBlock / B Geoscape_CloseUI / DCD 0x1864F8`: 0x557bc, 0x589c0, 0x59b54, 0x5abd8
+(`FundingScreen_CloseThunk`), 0x5c078 (`FundingScreen_ExitThunk`), 0x64ae4, 0x6e3d4, 0x72ffc, 0x75154, 0x838d0
+(`Geoscape_CloseUI_ThunkA`), 0x96020 (`Geoscape_CloseUI_ThunkB`), 0x9a8c0 (`Geoscape_CloseUI_ThunkC`). Word by word
+they share the LDR encoding `E59F0000` and the pool value `0x1864F8`; only the branch-displacement word differs,
+because each copy sits at a different distance from the dispatcher. They are shape-identical, not byte-identical.
+The other 13 bodies do work before the tail. Two of them are rows in this Part:
+| address | record | what it does before the tail |
+|---|---|---|
+| 0x577c0 | 72 B = 14 insns + 4 pool | one byte test: `LDRB bBaseAtMissionFollows` at 0x577C8, `ANDS` at 0x577CC, `BNE 0x577EC` at 0x577D0. With the byte clear it runs `StrategList_RemoveAt(nBaseAtStrategIdx)` at 0x577D4 and clears `GameTime.bPaused` (0x15961C) with `MOV R1,#0` + `STRB` at 0x577E4/0x577E8; with the byte set both are skipped. Both arms reach `B Geoscape_CloseUI` at 0x577F4. Pool: 0x1864F8, 0x159618, 0x1863E8 (loaded at 0x577D8, never read), 0x158840. |
+| 0x615b0 | 32 B = 7 insns + 1 pool | `PUSH {LR}` / `MOV R1,#4` / `MOV R0,#0x11` / `BL Sound_Play` at 0x615BC / `LDR R0,=sGeoscapeScreenBlock` / `POP {LR}` / `B Geoscape_CloseUI` at 0x615C8 / `DCD 0x1864F8`. It plays sample 17 itself and `Geoscape_CloseUI`'s head plays 17 again at 0x8B95C, so the new-base close pays the sample twice. |
+`tests/test_baseui.c` `TestCloseThunks` runs each of the twelve-shape members through a probe env whose screen id
+is 13 - a screen the dispatcher's switch has no case for - so every assertion is the dispatcher head's own work: the
+sample sink counts 17 for each plain copy and 2*17 for 0x615b0, `dwActionFail` @ 0x1870C8 is cleared, both popup
+bytes are cleared, and the screen id stays 13. `TestBaseAtCloseThunk` does the same for 0x577c0 and adds the two arms
+of its byte test: with the follow-up byte up the contact stays on the strateg list and the clock stays paused; with
+it clear the item at the stored index is removed and the pause byte goes to 0. The removal test builds its items with
+`StrategItem_AllocAdd` because `PtrArray_DeleteAt` @ 0x82bac frees the element it removes.
+### The seven panel prev/next pairs
+Every pair is the same loop - read the panel pointer out of its global, call the already ported mover, do nothing
+else - and the only structural difference inside a body is that the last mover is a tail call (`B`, with `POP {LR}`
+just before it) while the earlier movers are `BL`. Measured records:
+| pair | bytes = insns + pool | columns it moves, in load order |
+|---|---|---|
+| 0x589cc / 0x589dc | 16 B = 3 + 1 | `pBaseFacPanel` @ 0x15886C alone - the only pair in the game that moves one panel |
+| 0x79a20 / 0x79a48 | 40 B = 8 + 2 | `pPlaneCrewPanel` @ 0x161EDC, then `pPlaneCrewStatusPanel` @ 0x161A3C |
+| 0x72e30 / 0x72e68 | 56 B = 11 + 3 | `pResearchTopicPanel` @ 0x160C68, `pResearchPanelB` @ 0x15EEFC, `pResearchPanelC` @ 0x15EF00 |
+| 0x6dd4c / 0x6dd94 | 72 B = 14 + 4 | `pManufProductPanel` @ 0x15EE44, `pManufPanelB` @ 0x15EE48, `pManufPanelC` @ 0x15EE40, `pManufPanelD` @ 0x15EE38 |
+| 0x715e8 / 0x71648 | 96 B = 19 + 5 | `g_apPsiNamePanel` @ 0x15EED0, `g_apPsiStatPanel` @ 0x15EE88, `g_apPsiDeltaPanel` @ 0x15EEA8, `g_apPsiCheckPanel` @ 0x15EE58 - four 8-dword arrays indexed by the SIGNED `byte_1870F4`, which the body re-reads before every step (0x715F4, 0x71600, 0x71610, 0x71620), so one entry per array moves |
+| 0x76088 / 0x760e0 | 88 B = 17 + 5 | `pBuySellPanelA` @ 0x161A1C, `pBuySellPanelB` @ 0x161A00, `pBuySellPanelC` @ 0x161A20, `pBuySellPanelD` @ 0x160C88, `pBuySellPanelE` @ 0x1615F8 |
+| 0x79a70 / 0x79ac8 | 88 B = 17 + 5 | `pPlaneSlotPanel` @ 0x161AC8, `pPlaneSelRowPanel` @ 0x161F00, `pPlaneCommitRowPanel` @ 0x161EEC, `pPlaneTakenPanel` @ 0x161EF4, `pPlaneAvailPanel` @ 0x161A40 |
+| 0x967e4 / 0x9683c | 88 B = 17 + 5 | the same five `pBuySellPanelA..E` as 0x76088/0x760e0, in the same load order |
+The pool words sit in reverse load order in every one of these bodies: 0x96828 is `pBuySellPanelE` while the body
+loads `pBuySellPanelA` at 0x967E8, and the research pair puts 0x72E5C = `pResearchPanelC` while the body loads
+`pResearchTopicPanel` first. The mover pair is always `DecDwordIfPos_AtPlus0xBD4` @ 0x3f040 (floor at 0, no wrap) and
+`IncDwordIfInRange_AtPlus0xBD4` @ 0x3f00c (ceiling `nLineCount - nStyle`, read from +0xBDC and +0xBE0).
+Word compares across the 88-byte bodies say how much the three five-column pairs really share: 0x967e4 vs 0x76088
+differs in 5 of 22 words, 0x9683c vs 0x760e0 in 5, and all ten differences are branch displacements (four `BL` plus
+the tail `B`); their 17 instructions and 5 pool words are the same. 0x79a70 vs 0x967e4 differs in 10 words: the same
+5 displacements plus the 5 pool words, which name the hangar columns instead. That is exactly why the port keeps one
+implementation per width (the 88-byte bodies of `BuySellScreen_PanelPrev/Next` serve both the buy/sell and the
+transfer screens, as `docs/parity/renames.tsv` records) and why the transfer rows are cited through the wiring line
+that seats them: `pW->transferInit.pfnPanelPrev/Next` in `app/pufo_world.c` 10783/10787.
+`tests/test_baseui.c` pins the widths and the order: `TestPanelPaging` (the single-panel pair, its floor and its
+ceiling), `TestPanelScrollFamily` (the manuf four, the psi four, the buy/sell five, the detail five, and that a NULL
+slot is stepped over while the panels after it still move), `TestBuySellPaging` (the crew pair, both cursors moving
+on one press, in slot order), and `TestResearchPaging` (the research three, the tail-called cursor, the ceiling
+`nLineCount - nStyle` and the floor at 0). `tests/test_geoscapeframe.c` now drives the transfer pair through the
+screen's own nav controls: one press moves all five columns, prev floors at 0 with no wrap, next pages all five and
+stops at `nLineCount - nStyle`; the cursors are saved and restored so the flow below the block reads the columns it
+read before.
+### The five remaining weapon-select copies
+`BasePlaneScreen_SelectWeapon25..30` @ 0x79b20, 0x79b64, 0x79ba8, 0x79bec, 0x79c30, 0x79c74 are six 68-byte
+records = 13 instructions + 4 pool words. Each is two gated stores and a tail call: `LDRB bStatPanelAOpen` at
+0x79B68 with `ANDS` at 0x79B6C gate `LDRNE bStatPanelASel` / `MOVNE R1,#0x1A` / `STRBNE` for column A, the same pair
+at 0x79B80/0x79B84 for column B, then `B BasePlaneScreen_ApplyWeaponSwap`. A closed column keeps its mount byte. The
+pool words are the same four in all six: `bStatPanelBSel` 0x161F14, `bStatPanelBOpen` 0x161F1C, `bStatPanelASel`
+0x161F10, `bStatPanelAOpen` 0x161F18. Consecutive members differ in exactly 3 words - the two `MOVNE` immediates
+(slots 4 and 10) and the tail-`B` displacement - so the mount number is the only behavioural difference, and the port
+puts it in the wiring: `planeInit.apfnWeaponClick[1..6]` = `World_PlaneSelectWeapon25..30Thunk`
+(`app/pufo_world.c` 9906..9911) installed onto the hangar block's weapon controls at `pufo_plane.c:1258`.
+`tests/test_geoscapeframe.c` presses the five through that wiring, at the end of the run rather than inside the
+hangar section: a swap spends funds and moves stock, and the first draft put the presses in the middle of the hangar
+flow and broke 19 state checks that had nothing to do with the mount byte. Run last, the presses raise both stat
+gates, hand 26, 27, 28, 29, 30 to both open columns, and drop A's gate - which is what the record's own gating
+claims. `BasePlaneScreen_SelectWeapon25` @ 0x79b20 was already cited from the hangar section.
+### Claims this Part corrected (6 rows, `docs/parity/bugs.tsv` 359 -> 365 data rows)
+1. "Thirteen thunks, one tail call" (port comment) - the census is 12 copies of the 12-byte shape inside 25 bodies
+ending in the tail call, and the extra one it counted is a different 32-byte record.
+2. "byte-identical" for the close thunks - they differ in the branch-displacement word.
+3. `BaseAtScreen_CloseThunk` as "17 instructions" - it is 14 + 4 pool = 72 B; 17 would be 76 bytes.
+4. `NewBaseScreen_CloseThunk` as "8 insns, no pool" - it is 7 insns + 1 pool word, the block it passes the dispatcher.
+5. The transfer/buy-sell pair as "the same eleven instructions" - 17 instructions + 5 pool words.
+6. The weapon copies as differing "only in `MOVNE R1,#..`" - also the tail-`B` displacement; and their gates were
+quoted as 0x79B6C and 0x79B80, which mix the `ANDS` of one column with the `LDRB` of the other.
+The same pass renamed the panel globals in the port's comments to the names the IDB already carries
+(`pPlaneCrewPanel`, `pManufPanelB/C/D`, `g_apPsi*Panel`, `pBuySellPanelA..E`), so the sets in the header comment line
+up with the pool words in the record.
+### Teeth
+28 cases in `docs/parity/mutations_part132.py`, one per row: 113 failing checks, 0 skipped, 0 inert, every file
+back to its exact bytes, `grep -rn "MUTATION" src tests` empty. The cases attack different claims: dropping a thunk's
+tail call ((void)pEnv, because deleting the call alone trips C4100 under /W4 /WX and a BUILD FAILED is not a proof),
+dropping the follow-up byte test at 0x577c0, changing 17 to 18 in the new-base sample, cutting a pair's set by one
+column so the tail-called one stays put, dropping the tail-called step in the three two-panel and three-cursor
+bodies, swapping prev and next in the transfer wiring, and changing a weapon copy's mount number. Two examples of
+what the measurements bought: the detail pair's `DetailPanelPrev` case fails "all five, and prev floors at zero: got
+1, want 0" only because the fifth column is the tail-called one; and the Research prev case has to duplicate the
+first panel rather than drop the third, because the test's cursor values put the third cursor on its floor where a
+dropped step cannot be seen.
+One runner defect surfaced with this Part and is fixed in `docs/parity/mutate_run.py`: `subprocess.run` with
+`text=True` used the host locale codec (cp1251), and `test_geoscapeframe` prints the game's own captions, so a byte
+the codec cannot map raised inside the reader thread, the exception was swallowed by threading, and `r.stdout` came
+back `None` - the case looked like a crash of the suite instead of a decode failure. The runner now decodes as UTF-8
+with `errors="replace"`.
+### Gates
+`build/check132.log`: `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, 65/65 tests in both configurations, 21450
+checks (was 21372), coverage unchanged at 972/1103 functions and 596888/598792 instruction bytes, 135 artifact rows
+and 131 uncited functions with 0 real gaps, `frames: unchanged (93 reference pictures)` and the 9 e2e pictures
+unchanged. IDB: comments written and read back exact on all 28 addresses, longest 999 characters (`0x557bc`),
+`idb_save` ok.

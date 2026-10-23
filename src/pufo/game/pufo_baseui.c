@@ -3450,7 +3450,12 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
     }
 }
 
-/* Thirteen thunks, one tail call: LDR R0, =0x1864F8 / B Geoscape_CloseUI. */
+/* The twelve 12-byte close thunks, each one tail call: LDR R0, =0x1864F8 / B Geoscape_CloseUI / DCD 0x1864F8. Census
+ * measured 2026-10-23 over every function body in the IDB (comment at 0x557bc): 25 bodies end with this tail call, 12
+ * of them are this shape -- 0x557bc 0x589c0 0x59b54 0x5abd8 0x5c078 0x64ae4 0x6e3d4 0x72ffc 0x75154 0x838d0 0x96020
+ * 0x9a8c0 -- and they differ only in the branch displacement, so they are shape-identical, not byte-identical. The
+ * other 13 do work before the tail. An earlier note here said "thirteen thunks", which counted NewBaseScreen_CloseThunk
+ * @ 0x615b0 with them; it is 32 bytes = 7 instructions + 1 pool word and plays its own sample first. */
 void BaseInfoScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
 {
     Geoscape_CloseUI(pEnv);

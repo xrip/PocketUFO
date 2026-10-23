@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 65 |
-| Test checks run | 21372 |
+| Test checks run | 21450 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1060,7 +1060,7 @@ is the module that answers to it.
 | `0x1a09c` | `MenuCtl0_OnClick` | 32 | `src/pufo/ui/pufo_geoiinit.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a24c` | `MenuBtn_Cancel0` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a26c` | `MenuBtn_Cancel1` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/ui/pufo_menubtn.h` |
-| `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x1a064` | `MenuCtl2_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a080` | `MenuCtl3_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
@@ -1263,7 +1263,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 76 |
 | `test_ballist` | PASS | 106 |
-| `test_baseui` | PASS | 4317 |
+| `test_baseui` | PASS | 4349 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 77 |
 | `test_clock` | PASS | 44 |
@@ -1280,7 +1280,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3234 |
-| `test_geoscapeframe` | PASS | 2156 |
+| `test_geoscapeframe` | PASS | 2202 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 378 |
 | `test_invdrag` | PASS | 370 |

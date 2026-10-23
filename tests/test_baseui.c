@@ -250,6 +250,15 @@ static void TestFundingHelpers(void)
     CheckEqI32(Funding_DeltaToArrow(600, -800), 2, "up a lot");
 }
 
+/* One cite builder for every test in this file: the message plus `@ 0x...`, which is what the
+ * `test_cites_addr` column of docs/parity/teeth.tsv looks for. */
+static char g_szOptCited[256];
+static const char *OptCite(const char *pszText, const char *pszAddr)
+{
+    snprintf(g_szOptCited, sizeof(g_szOptCited), "%s %s", pszText, pszAddr);
+    return g_szOptCited;
+}
+
 static void TestPanelPaging(void)
 {
     UiPanel a, b;
@@ -264,13 +273,20 @@ static void TestPanelPaging(void)
     b.nLineCount = 4;
     b.nStyle = 4;
 
+    /* BaseFacScreen_PanelPrev @ 0x589cc / PanelNext @ 0x589dc: 16 bytes each, one panel global (0x15886C),
+     * `LDR R0,=pBaseFacPanel` / `LDR R0,[R0]` / tail call into the step. Three instructions plus one pool word
+     * -- the only panel pair in the game that moves a single panel. */
     BaseFacScreen_PanelPrev(&a);
-    CheckEqI32(a.nUnk3028, 2, "prev decrements the scroll cursor");
+    CheckEqI32(a.nUnk3028, 2, OptCite("prev decrements the one cursor", "@ 0x589cc"));
     BaseFacScreen_PanelNext(&a);
-    CheckEqI32(a.nUnk3028, 3, "next increments while the limit is not reached");
+    CheckEqI32(a.nUnk3028, 3, OptCite("next increments while the limit is not reached", "@ 0x589dc"));
     a.nUnk3028 = 5;
     BaseFacScreen_PanelNext(&a);
-    CheckEqI32(a.nUnk3028, 5, "next stops at nLineCount - nStyle");
+    CheckEqI32(a.nUnk3028, 5, OptCite("next stops at nLineCount - nStyle", "@ 0x589dc"));
+    a.nUnk3028 = 0;
+    BaseFacScreen_PanelPrev(&a);
+    CheckEqI32(a.nUnk3028, 0, OptCite("prev floors at zero, with no wrap", "@ 0x589cc"));
+    a.nUnk3028 = 5; /* back to the value the SoldierScreen pair below starts from */
 
     SoldierScreen_PanelPrev(&a, &b);
     CheckEqI32(a.nUnk3028, 4, "both panels move, in slot order");
@@ -354,24 +370,27 @@ static void TestBuySellPaging(void)
     printf("buy/sell list paging\n");
 
     memset(g_aBuySellPanels, 0, sizeof(g_aBuySellPanels));
-    g_aBuySellPanels[0].nUnk3028 = 4;   /* unk_161EDC */
+    g_aBuySellPanels[0].nUnk3028 = 4;   /* pPlaneCrewPanel @ 0x161EDC */
     g_aBuySellPanels[0].nLineCount = 9;
     g_aBuySellPanels[0].nStyle = 3;
-    g_aBuySellPanels[1].nUnk3028 = 1;   /* unk_161A3C */
+    g_aBuySellPanels[1].nUnk3028 = 1;   /* pPlaneCrewStatusPanel @ 0x161A3C */
     g_aBuySellPanels[1].nLineCount = 6;
     g_aBuySellPanels[1].nStyle = 2;
 
+    /* BuySellScreen_ListPanelPrev @ 0x79a20 / ListPanelNext @ 0x79a48: 40 bytes = 8 instructions + 2 pool
+     * words over pPlaneCrewPanel (0x161EDC) and pPlaneCrewStatusPanel (0x161A3C) -- the second step is the tail
+     * call, so both cursors move on one press and nothing else does. */
     BuySellScreen_ListPanelNext(&g_aBuySellPanels[0], &g_aBuySellPanels[1]);
-    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 5, "both panels page");
-    CheckEqI32(g_aBuySellPanels[1].nUnk3028, 2, "the second one too");
+    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 5, OptCite("both panels page", "@ 0x79a48"));
+    CheckEqI32(g_aBuySellPanels[1].nUnk3028, 2, OptCite("the second one, through the tail call", "@ 0x79a48"));
 
     BuySellScreen_ListPanelPrev(&g_aBuySellPanels[0], &g_aBuySellPanels[1]);
-    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 4, "prev moves both back");
-    CheckEqI32(g_aBuySellPanels[1].nUnk3028, 1, "in the same slot order");
+    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 4, OptCite("prev moves both back", "@ 0x79a20"));
+    CheckEqI32(g_aBuySellPanels[1].nUnk3028, 1, OptCite("in the same slot order", "@ 0x79a20"));
 
     g_aBuySellPanels[0].nUnk3028 = 6;
     BuySellScreen_ListPanelNext(&g_aBuySellPanels[0], &g_aBuySellPanels[1]);
-    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 6, "next stops at nLineCount - nStyle");
+    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 6, OptCite("next stops at nLineCount - nStyle", "@ 0x79a48"));
 
     BuySellScreen_ListPanelPrev(NULL, NULL);
     BuySellScreen_ListPanelNext(NULL, NULL);
@@ -399,18 +418,29 @@ static void TestPanelScrollFamily(void)
     UiPanel *apFive[5] = { &g_aScrollPanels[0], &g_aScrollPanels[1], &g_aScrollPanels[2],
                            &g_aScrollPanels[3], &g_aScrollPanels[4] };
 
+    /* ManufScreen_PanelPrev @ 0x6dd4c / PanelNext @ 0x6dd94 (72 B = 14 insns + 4 pool words over
+     * pManufProductPanel, pManufPanelB/C/D) and PsiScreen_PanelPrev @ 0x715e8 / PanelNext @ 0x71648 (96 B =
+     * 19 insns + 5 pool words). The Psi pair differs in HOW the four columns are found: it re-reads
+     * `LDRSB R3,[R4]` with R4 = byte_1870F4 before EVERY step (0x715F4, 0x71600, 0x71610, 0x71620) and indexes
+     * four arrays -- g_apPsiNamePanel, g_apPsiStatPanel, g_apPsiDeltaPanel, g_apPsiCheckPanel -- so the SIGNED
+     * byte selects which per-base set scrolls. The port resolves that byte at the caller and hands the four
+     * resolved pointers here (see PsiScreen_ScrollEnv.apPsiPanels and the dispatcher case 17 at 0x8B198). */
     ResetScrollPanels();
     ManufScreen_PanelNext(apFour);
-    CheckEqI32(g_aScrollPanels[0].nUnk3028, 3, "ManufScreen_PanelNext pages its four");
-    CheckEqI32(g_aScrollPanels[3].nUnk3028, 3, "the tail-called one last, same effect");
-    CheckEqI32(g_aScrollPanels[4].nUnk3028, 2, "and the fifth panel is not in that set");
+    CheckEqI32(g_aScrollPanels[0].nUnk3028, 3, OptCite("ManufScreen_PanelNext pages its four", "@ 0x6dd94"));
+    CheckEqI32(g_aScrollPanels[3].nUnk3028, 3, OptCite("the tail-called one last, same effect", "@ 0x6dd94"));
+    CheckEqI32(g_aScrollPanels[4].nUnk3028, 2, OptCite("and the fifth panel is not in that set", "@ 0x6dd94"));
     ManufScreen_PanelPrev(apFour);
-    CheckEqI32(g_aScrollPanels[0].nUnk3028, 2, "ManufScreen_PanelPrev moves them back");
+    CheckEqI32(g_aScrollPanels[0].nUnk3028, 2, OptCite("ManufScreen_PanelPrev moves them back", "@ 0x6dd4c"));
+    CheckEqI32(g_aScrollPanels[3].nUnk3028, 2, OptCite("all four, the tail-called one included", "@ 0x6dd4c"));
 
     PsiScreen_PanelNext(apFour);
-    CheckEqI32(g_aScrollPanels[2].nUnk3028, 3, "PsiScreen_PanelNext pages its own four");
+    CheckEqI32(g_aScrollPanels[2].nUnk3028, 3, OptCite("PsiScreen_PanelNext pages its own four", "@ 0x71648"));
+    CheckEqI32(g_aScrollPanels[3].nUnk3028, 3, OptCite("through the tail call too", "@ 0x71648"));
+    CheckEqI32(g_aScrollPanels[4].nUnk3028, 2, OptCite("and stops at four columns", "@ 0x71648"));
     PsiScreen_PanelPrev(apFour);
-    CheckEqI32(g_aScrollPanels[2].nUnk3028, 2, "and PsiScreen_PanelPrev returns them");
+    CheckEqI32(g_aScrollPanels[2].nUnk3028, 2, OptCite("and PsiScreen_PanelPrev returns them", "@ 0x715e8"));
+    CheckEqI32(g_aScrollPanels[3].nUnk3028, 2, OptCite("all four back", "@ 0x715e8"));
 
     BuySellScreen_PanelNext(apFive);
     CheckEqI32(g_aScrollPanels[4].nUnk3028, 3, "the buy/sell set carries five panels");
@@ -425,10 +455,15 @@ static void TestPanelScrollFamily(void)
     BuySellScreen_PanelPrev(apFive);
     CheckEqI32(g_aScrollPanels[4].nUnk3028, 0, "prev stops at zero");
 
+    /* BuySellScreen_DetailPanelPrev @ 0x79a70 / DetailPanelNext @ 0x79ac8: 88 B = 17 insns + 5 pool words over
+     * pPlaneSlotPanel, pPlaneSelRowPanel, pPlaneCommitRowPanel, pPlaneTakenPanel, pPlaneAvailPanel -- the
+     * hangar's five stores columns, the same width as the transfer pair at 0x967e4/0x9683c. */
     BuySellScreen_DetailPanelNext(apFive);
-    CheckEqI32(g_aScrollPanels[1].nUnk3028, 1, "the detail set pages the same way");
+    CheckEqI32(g_aScrollPanels[1].nUnk3028, 1, OptCite("the detail set pages the same way", "@ 0x79ac8"));
+    CheckEqI32(g_aScrollPanels[4].nUnk3028, 1, OptCite("five columns, the tail-called last", "@ 0x79ac8"));
     BuySellScreen_DetailPanelPrev(apFive);
-    CheckEqI32(g_aScrollPanels[1].nUnk3028, 0, "and back again");
+    CheckEqI32(g_aScrollPanels[1].nUnk3028, 0, OptCite("and back again", "@ 0x79a70"));
+    CheckEqI32(g_aScrollPanels[4].nUnk3028, 0, OptCite("all five, and prev floors at zero", "@ 0x79a70"));
 
     apFive[2] = NULL;
     BuySellScreen_PanelNext(apFive);
@@ -3588,18 +3623,40 @@ static void TestCloseThunks(void)
     hk.pbPopupB = &bPopupB;
     hk.pfnPlaySample = CloseSampleI;
 
-    g_nCloseSamples = 0;
-    BaseInfoScreen_CloseThunk(&hk);
-    BaseFacScreen_CloseThunkA(&hk);
-    BaseFacScreen_CloseThunk(&hk);
-    SoldierScreen_CloseThunk(&hk);
-    ManufScreen_CloseThunk(&hk);
-    ResearchScreen_CloseThunk(&hk);
-    BuySellScreen_CloseThunk(&hk);
-    CheckEqI32(g_nCloseSamples, 7 * 17, "seven thunks, and each plays sample 17 at 0x8B95C");
-    CheckEqI32(g_nCloseFail, 0, "each clears the action-fail dword (0x8B96C)");
-    Check(bPopupA == 0 && bPopupB == 0, "and both popup bytes (0x8B978 / 0x8B97C)");
-    CheckEqI32(g_nCloseScreen, 13, "the default case leaves the screen id alone");
+    /* Seven of them are the same 12-byte shape: `LDR R0,=sGeoscapeScreenBlock`, `B Geoscape_CloseUI`, and the block
+     * as the only pool word. Measured 2026-10-23 by comparing those records word by word: the twelve members of the
+     * shape (0x557bc 0x589c0 0x59b54 0x5abd8 0x5c078 0x64ae4 0x6e3d4 0x72ffc 0x75154 0x838d0 0x96020 0x9a8c0) share
+     * the LDR word E59F0000 and the DCD 0x1864F8 and differ ONLY in the branch-displacement word -- shape-identical,
+     * not byte-identical -- and 25 function bodies end with this tail call in all (census in the IDB at 0x557bc). The
+     * row that tells them apart is the screen whose close control carries it, so each one runs on its own here and
+     * gets its own cite. */
+    static const char *const apszThunk[7] = { "@ 0x557bc", "@ 0x589c0", "@ 0x59b54", "@ 0x64ae4",
+                                              "@ 0x6e3d4", "@ 0x72ffc", "@ 0x75154" };
+    static const char *const apszThunkName[7] = { "BaseInfo", "BaseFac A", "BaseFac B", "Soldier",
+                                                  "Manuf", "Research", "BuySell" };
+    static void (*const apfnThunk[7])(const GeoscapeCloseEnv *) = {
+        BaseInfoScreen_CloseThunk, BaseFacScreen_CloseThunkA, BaseFacScreen_CloseThunk,
+        SoldierScreen_CloseThunk, ManufScreen_CloseThunk, ResearchScreen_CloseThunk,
+        BuySellScreen_CloseThunk };
+
+    for (i32 i = 0; i < 7; ++i) {
+        CloseProbe(&hk);
+        hk.pWorld = &world;
+        hk.pbPopupA = &bPopupA;
+        hk.pbPopupB = &bPopupB;
+        hk.pfnPlaySample = CloseSampleI;
+        bPopupA = 1;
+        bPopupB = 1;
+        g_nCloseSamples = 0;
+        apfnThunk[i](&hk);
+        CheckEqI32(g_nCloseSamples, 17, OptCite(apszThunkName[i], apszThunk[i]));
+        CheckEqI32(g_nCloseFail, 0, OptCite("  its tail call reaches the dispatcher head (0x8B95C, 0x8B96C)",
+                                            apszThunk[i]));
+        Check(bPopupA == 0 && bPopupB == 0, OptCite("  and both popup bytes are cleared (0x8B978, 0x8B97C)",
+                                                    apszThunk[i]));
+        CheckEqI32(g_nCloseScreen, 13, OptCite("  with the default case leaving the screen id alone",
+                                               apszThunk[i]));
+    }
     CheckEqI32(world.nTickSeconds, 7, "and a tick no arm matches is not rewritten");
 
     CloseProbe(&hk);
@@ -3611,8 +3668,9 @@ static void TestCloseThunks(void)
     bPopupB = 1;
     g_nCloseSamples = 0;
     NewBaseScreen_CloseThunk(&hk);
-    CheckEqI32(g_nCloseSamples, 2 * 17,
-               "the new-base thunk plays 17 at 0x615BC and the dispatcher plays it again");
+    CheckEqI32(g_nCloseSamples, 2 * 17, OptCite(
+        "the odd thunk: 32 bytes playing 17 itself (0x615BC) and the dispatcher plays it again",
+        "@ 0x615b0"));
 
     CloseProbe(&hk);
     g_nCloseSamples = 0;
@@ -3684,14 +3742,21 @@ static void TestResearchPaging(void)
     b.nUnk3028 = 1; b.nLineCount = 5; b.nStyle = 2;
     c.nUnk3028 = 0; c.nLineCount = 6; c.nStyle = 3;
 
+    /* ResearchScreen_PanelPrev @ 0x72e30 / PanelNext @ 0x72e68: 56 B = 11 instructions + 3 pool words over
+     * pResearchTopicPanel, pResearchPanelB, pResearchPanelC -- the third step is the tail call. */
     ResearchScreen_PanelNext(&a, &b, &c);
-    CheckEqI32(a.nUnk3028, 3, "all three panels page");
-    CheckEqI32(b.nUnk3028, 2, "the middle one too");
-    CheckEqI32(c.nUnk3028, 1, "and the last one");
+    CheckEqI32(a.nUnk3028, 3, OptCite("all three panels page", "@ 0x72e68"));
+    CheckEqI32(b.nUnk3028, 2, OptCite("the middle one too", "@ 0x72e68"));
+    CheckEqI32(c.nUnk3028, 1, OptCite("and the last one, through the tail call", "@ 0x72e68"));
 
+    a.nUnk3028 = 4; /* 8 - 4: the ceiling the step allows */
+    ResearchScreen_PanelNext(&a, &b, &c);
+    CheckEqI32(a.nUnk3028, 4, OptCite("next stops at nLineCount - nStyle", "@ 0x72e68"));
+
+    c.nUnk3028 = 0; /* the ceiling step moved it too; put it back on the floor */
     ResearchScreen_PanelPrev(&a, &b, &c);
-    CheckEqI32(a.nUnk3028, 2, "prev moves all three back");
-    CheckEqI32(c.nUnk3028, 0, "the last cursor stops at zero");
+    CheckEqI32(a.nUnk3028, 3, OptCite("prev moves all three back", "@ 0x72e30"));
+    CheckEqI32(c.nUnk3028, 0, OptCite("the last cursor stays at zero, no wrap", "@ 0x72e30"));
 
     ResearchScreen_PanelNext(NULL, NULL, NULL);
     Check(1, "NULL panels are tolerated");
@@ -6324,12 +6389,6 @@ static OptionsTabEnv g_optTab;
 static OptionsInitEnv g_optInit;
 
 static i32 g_nSetupCalls;
-static char g_szOptCited[256];
-static const char *OptCite(const char *pszText, const char *pszAddr)
-{
-    snprintf(g_szOptCited, sizeof(g_szOptCited), "%s %s", pszText, pszAddr);
-    return g_szOptCited;
-}
 static char g_szRowPad0[16];
 static char g_szRowPad1[16];
 static char g_szVolPad0[16];
@@ -17947,10 +18006,18 @@ static void TestBaseAtCloseThunk(void)
     g_nBaLimit = 0;
     g_nBaCloseFail = 1;
     clock.bPaused = 1;
+    /* BaseAtScreen_CloseThunk @ 0x577c0: 72 B = 14 instructions + 4 pool words (re-walked 2026-10-23 item by item:
+     * PUSH, LDR, LDRB, ANDS, BNE, LDR, LDR, BL, LDR, MOV, STRB, LDR, POP, B; pool 0x1864F8 0x159618 0x1863E8
+     * 0x158840 -- an earlier note here said 17 instructions, which is 12 bytes too many). The only test is
+     * `LDRB bBaseAtMissionFollows` + `ANDS` + `BNE 0x577EC` -- with the follow-up byte up the handler skips
+     * BOTH the strateg-list removal (0x577D4) and the clock resume (0x577E0..0x577E8), and both arms converge
+     * on the tail `B Geoscape_CloseUI` at 0x577F4. */
     BaseAtScreen_CloseThunk(&env);
-    CheckEqI32(PtrArray_GetCount(&list), 2, "with the follow-up flag set the contact is not removed");
-    CheckEqI32(clock.bPaused, 1, "  and the game stays paused for the ground mission");
-    CheckEqI32(g_nBaCloseFail, 0, "the dispatcher still ran, so the close happened");
+    CheckEqI32(PtrArray_GetCount(&list), 2, OptCite("with the follow-up flag set the contact is not removed",
+                                                    "@ 0x577c0"));
+    CheckEqI32(clock.bPaused, 1, OptCite("  and the game stays paused for the ground mission", "@ 0x577c0"));
+    CheckEqI32(g_nBaCloseFail, 0, OptCite("the dispatcher still ran, so the close happened either way",
+                                          "@ 0x577c0"));
 
     /* ---- the craft was destroyed: the item goes and the game resumes ---- */
     g_bBaResult = 0;
@@ -17958,10 +18025,11 @@ static void TestBaseAtCloseThunk(void)
     g_nBaCloseFail = 1;
     clock.bPaused = 1;
     BaseAtScreen_CloseThunk(&env);
-    CheckEqI32(PtrArray_GetCount(&list), 1, "with the flag clear the contact is removed");
-    Check(PtrArray_Get(&list, 0) == pItem1, "  the index says which one");
-    CheckEqI32(clock.bPaused, 0, "and the pause byte is cleared");
-    CheckEqI32(g_nBaCloseFail, 0, "  with the same tail call");
+    CheckEqI32(PtrArray_GetCount(&list), 1, OptCite("with the flag clear the contact is removed (0x577D4)",
+                                                    "@ 0x577c0"));
+    Check(PtrArray_Get(&list, 0) == pItem1, OptCite("  nBaseAtStrategIdx says which one", "@ 0x577c0"));
+    CheckEqI32(clock.bPaused, 0, OptCite("and the pause byte is cleared (0x577E8)", "@ 0x577c0"));
+    CheckEqI32(g_nBaCloseFail, 0, OptCite("  on the same tail call as the other arm (0x577F4)", "@ 0x577c0"));
 
     /* ---- the index is the one the opener stored ---- */
     PtrArray_DeleteAll(&list);

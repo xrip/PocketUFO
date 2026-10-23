@@ -6148,3 +6148,36 @@ every file back to its exact bytes, `grep -rn "MUTATION" src tests` empty; the o
 was fixed by repairing the test's split byte rather than by re-cutting the case, and one ad-hoc mutation
 (measured, not committed as a row case) showed removing `Options_ClampStep` changes no check | row 121a stays
 open with 238 rows left.
+  Progress (Part 132): 28 `strat-ui` rows closed -- nine close thunks, seven panel prev/next pairs, five weapon
+  copies. 758 rows now carry a test cite, **210** do not (`tact` 93, `strat` 90, `strat-ui` 24, `app-shell` 3). No
+  port behaviour changed; what this batch found was six wrong claims the tree was carrying, after every record was
+  walked item by item (code items separated from pool words) and each family compared word by word. (1) The port
+  comment said "Thirteen thunks, one tail call": the census over every function body is 25 bodies ending
+  `B Geoscape_CloseUI` @ 0x8b94c, 12 of them the 12-byte shape (0x557bc 0x589c0 0x59b54 0x5abd8 0x5c078 0x64ae4
+  0x6e3d4 0x72ffc 0x75154 0x838d0 0x96020 0x9a8c0), and the thirteenth it counted is a 32-byte record. (2) Those 12
+  are not byte-identical: they share `LDR E59F0000` and `DCD 0x1864F8` and differ only in the branch-displacement
+  word. (3) `BaseAtScreen_CloseThunk @ 0x577c0` is 14 instructions + 4 pool = 72 B, not 17 instructions. (4)
+  `NewBaseScreen_CloseThunk @ 0x615b0` is 7 instructions + 1 pool word, not "8 insns, no pool" -- the pool word is
+  the block it hands the dispatcher, and it plays sample 17 before `Geoscape_CloseUI` plays 17 again, which is what
+  the test's 2*17 sample count pins. (5) The transfer/buy-sell pairs are 17 instructions + 5 pool words, not "the
+  same eleven instructions": 0x967e4 vs 0x76088 and 0x9683c vs 0x760e0 differ in 5 of 22 words, all five branch
+  displacements, while the 17 instructions and the 5 pool words (the same `pBuySellPanelA..E`) are the same;
+  0x79a70 vs 0x967e4 differs in 10 (the same 5 plus 5 pool words naming the hangar columns). (6) Consecutive weapon
+  copies differ in exactly 3 words -- the two `MOVNE` immediates (slots 4 and 10) and the tail-`B` displacement --
+  and their gates are A: 0x79B68/0x79B6C, B: 0x79B80/0x79B84, where the old note mixed one column's `ANDS` with the
+  other's `LDRB`. All six are `docs/parity/bugs.tsv` rows (359 -> 365 data rows, kind `naming`), the IDB comments
+  on the 28 addresses carry the measured shape, and the panel globals in the port comments now use the IDB names
+  (`pPlaneCrewPanel`, `pManufPanelB/C/D`, `g_apPsi*Panel`, `pBuySellPanelA..E`). Cites: 54 new address cites in `test_baseui.c` (8 close-thunk, 46 panel-pair),
+  14 in `test_geoscapeframe.c` (the transfer nav block through the screen's own controls, and the five mounts
+  through `planeInit.apfnWeaponClick` -- that block sits at the END of the run because a swap spends funds, and the
+  first draft put it inside the hangar section and broke 19 unrelated state checks). Teeth: 28 cases in
+  `docs/parity/mutations_part132.py`, one per row -- 113 failing checks, 0 skipped, 0 inert, every file back to its
+  exact bytes, `grep -rn "MUTATION" src tests` empty; the transfer pair's two cases mutate the wiring line in
+  `app/pufo_world.c` 10783/10787 because the port keeps one body for that pair and its buy/sell twin. Runner fix:
+  `mutate_run.py` decoded the child output with the host locale codec (cp1251), and `test_geoscapeframe` prints the
+  game's own captions -- the decode error was swallowed by the reader thread and `stdout` came back `None`, so the
+  case looked like a suite crash; the runner now decodes UTF-8 with `errors="replace"`. Gates: `build/check132.log`
+  -- `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, 65/65 both configurations, 21450 checks, coverage unchanged at
+  972/1103 functions and 596888/598792 bytes, 135 artifact rows, 131 uncited functions, 0 real gaps, 93 frame
+  pictures and 9 e2e pictures unchanged. IDB: 28 comments written and read back exact (longest 999, at 0x557bc),
+  `idb_save` ok. Row 121a stays open with 210 rows left.

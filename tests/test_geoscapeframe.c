@@ -2237,6 +2237,10 @@ int main(void)
                    "and its tail call applies the swap, which closes both columns (0x79A10, 0x79A18)");
         CheckEqI32(g_world.planeStatPanels.bPanelBOpen, 0, "both of them");
 
+        /* SelectWeapon26..30 @ 0x79b64..0x79c74 are the five remaining copies of these 68 bytes (see the
+         * wiring check in TestPlaneWeaponWiring, near the end of this file): the mount number lives in the
+         * wiring (`planeInit.apfnWeaponClick[2..6]`), not in the body. */
+
         /* The pulse's screen-6 auto-repeat (0x95644..0x95870) walks the block's +0x5C/+0x60 crew pair and
          * +0x64/+0x68 stores pair, each gated on its own built flag. The scroll cursor is nUnk3028 --
          * nUnk3032 is the row the click handlers read. */
@@ -10781,6 +10785,53 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         (void)DrawFrame();
         DumpFrame("transfer_open"); /* picker list + SELECT, From: line, the five columns with digits */
 
+        /* ---- Transfer_ScrollPrevAll @ 0x967e4 / ScrollNextAll @ 0x9683c ----
+         * 88 bytes each = 17 instructions + 5 pool words over pBuySellPanelA..E (0x161A1C, 0x161A00, 0x161A20,
+         * 0x160C88, 0x1615F8). Compared word by word with the BuySell pair at 0x76088/0x760e0, 5 of the 22 words
+         * differ and all five are branch displacements (four BL plus the tail B): the 17 instructions and the five
+         * pool words -- the SAME five globals -- are the same, which is why the port keeps one implementation. Ui_InitTransfer seats them on the nav controls at 0x1870DC / 0x1870E0 (the installs
+         * at 0x99604 and 0x99614), so one press on the transfer screen's prev/next moves all five columns. */
+        {
+            UiPanel *apTr[5] = { pTrA, g_world.pBuySellPanelB, pTrC, pTrD, pTrE };
+            i32 aOld[5];
+            if (apTr[0] != NULL && apTr[1] != NULL && apTr[2] != NULL && apTr[3] != NULL
+                && apTr[4] != NULL && g_world.aTransferCtl[0].pfnClick != NULL
+                && g_world.aTransferCtl[1].pfnClick != NULL) {
+                for (int k = 0; k < 5; ++k) {
+                    aOld[k] = apTr[k]->nUnk3028;
+                    apTr[k]->nUnk3028 = 2;
+                }
+                g_world.aTransferCtl[0].pfnClick(); /* 0x1870DC, the prev-base control */
+                for (int k = 0; k < 5; ++k) {
+                    CheckEqI32(apTr[k]->nUnk3028, 1,
+                               "Transfer_ScrollPrevAll moves column on this press @ 0x967e4");
+                }
+                g_world.aTransferCtl[0].pfnClick();
+                g_world.aTransferCtl[0].pfnClick();
+                for (int k = 0; k < 5; ++k) {
+                    CheckEqI32(apTr[k]->nUnk3028, 0,
+                               "and floors at zero, with no wrap @ 0x967e4");
+                }
+                g_world.aTransferCtl[1].pfnClick(); /* 0x1870E0, the next-base control */
+                for (int k = 0; k < 5; ++k) {
+                    CheckEqI32(apTr[k]->nUnk3028, 1,
+                               "Transfer_ScrollNextAll pages all five on one press @ 0x9683c");
+                }
+                for (int k = 0; k < 5; ++k) {
+                    apTr[k]->nUnk3028 = apTr[k]->nLineCount - apTr[k]->nStyle; /* the ceiling */
+                }
+                g_world.aTransferCtl[1].pfnClick();
+                g_world.aTransferCtl[1].pfnClick();
+                for (int k = 0; k < 5; ++k) {
+                    CheckEqI32(apTr[k]->nUnk3028, apTr[k]->nLineCount - apTr[k]->nStyle,
+                               "with next stopping at nLineCount - nStyle @ 0x9683c");
+                }
+                for (int k = 0; k < 5; ++k) {
+                    apTr[k]->nUnk3028 = aOld[k]; /* the flow below reads these columns unchanged */
+                }
+            }
+        }
+
         CheckEqI32((i32)g_world.nBaseInfoWorkBase, 0,
                    "the overlay frame pinned byte_1870F4 to the source base (the 0x98994 store)");
         for (i32 nRow = 0; pTrA != NULL && nRow < pTrA->nLineCount; ++nRow) {
@@ -13521,6 +13572,42 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         PressCtl(g_world.ui.apCtl[GEOUI_CTL_186B00]);
         CheckEqI32((i32)g_world.bPlaneBuilt, 0, "the third press runs the panels teardown (0x8C098)");
         CheckEqI32(g_world.screen.nGeoscapeScreen, 1, "and lands on the base view (0x8C094)");
+    }
+
+    /* ---- SelectWeapon26..30 @ 0x79b64 / 0x79ba8 / 0x79bec / 0x79c30 / 0x79c74, through the wiring ----
+     * Five more copies of SelectWeapon25's 68 bytes = 13 instructions + 4 pool words (the four pool words are
+     * bStatPanelAOpen/bStatPanelASel and bStatPanelBOpen/bStatPanelBSel). Compared word by word, consecutive
+     * members differ in exactly 3 words: the two `MOVNE R1,#0x19..#0x1E` immediates (slots 4 and 10) and the tail-B
+     * displacement. Each store is gated by its own `LDRB` + `ANDS` (column A: 0x79B68 / 0x79B6C, column B: 0x79B80 /
+     * 0x79B84), so a closed column keeps its mount byte; all six end `B
+     * BasePlaneScreen_ApplyWeaponSwap`. The port keeps one body (BasePlaneScreen_SelectWeapon) and puts each
+     * member's own number in the wiring instead: `planeInit.apfnWeaponClick[2..6] =
+     * World_PlaneSelectWeapon26..30Thunk` (app/pufo_world.c 9907..9911), installed onto the hangar block's
+     * weapon controls at pufo_plane.c:1258. These presses therefore run last: every reference picture and every
+     * state check above is already done, and a swap spends funds, which is why they are not squeezed into the
+     * hangar section in the middle of the run. */
+    {
+        static const char *const apszSel[5] = {
+            "SelectWeapon26 hands its own 0x1A to both open columns @ 0x79b64",
+            "SelectWeapon27 hands its own 0x1B to both open columns @ 0x79ba8",
+            "SelectWeapon28 hands its own 0x1C to both open columns @ 0x79bec",
+            "SelectWeapon29 hands its own 0x1D to both open columns @ 0x79c30",
+            "SelectWeapon30 hands its own 0x1E to both open columns @ 0x79c74" };
+
+        g_world.nav.apNav[3]->pfnClick(); /* BasePlaneScreen_Open @ 0x617f4, id 6 at 0x61828 */
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 6, "the hangar re-opens for the weapon wiring");
+        if (g_world.bPlaneBuilt != 0 && g_world.planeBlock.apWeaponCtl[2] != NULL) {
+            for (int k = 0; k < 5; ++k) {
+                g_world.planeBlock.apMainCtl[0]->pfnClick(); /* DrawStatLabelA raises A's gate (0x79E28) */
+                g_world.planeBlock.apMainCtl[1]->pfnClick(); /* DrawStatLabelB raises B's (0x79FEC) */
+                CheckEqI32(g_world.planeStatPanels.bPanelAOpen, 1, "the gate is up before the press");
+                CheckEqI32(g_world.planeStatPanels.bPanelBOpen, 1, "and so is the second one");
+                g_world.planeBlock.apWeaponCtl[2 + k]->pfnClick();
+                CheckEqI32(g_world.planeStatPanels.nPanelASel, 26 + k, apszSel[k]);
+                CheckEqI32(g_world.planeStatPanels.nPanelBSel, 26 + k, apszSel[k]);
+                CheckEqI32(g_world.planeStatPanels.bPanelAOpen, 0, apszSel[k]);
+            }
+        }
     }
 
     World_Free(&g_world);

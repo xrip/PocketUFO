@@ -291,3 +291,40 @@ unchanged; coverage unchanged at 972/1103 functions and 596888/598792 bytes. IDB
 (the 29 rows plus heads 0x6ba14/0x6bc1c/0x6af80/0x6b194), longest 971, all read back exact, two stale claims
 replaced, `idb_save` ok. Measured after Part 131: **730** cited, **238** not (`tact` 93, `strat` 90,
 `strat-ui` 52, `app-shell` 3 left).
+## Part 132 - 28 `strat-ui` rows: nine close thunks, seven panel pairs, five weapon copies
+
+Closed this Part: `BaseInfoScreen_CloseThunk` 0x557bc, `BaseFacScreen_CloseThunkA` 0x589c0,
+`BaseFacScreen_CloseThunk` 0x59b54, `SoldierScreen_CloseThunk` 0x64ae4, `ManufScreen_CloseThunk` 0x6e3d4,
+`ResearchScreen_CloseThunk` 0x72ffc, `BuySellScreen_CloseThunk` 0x75154, `BaseAtScreen_CloseThunk` 0x577c0,
+`NewBaseScreen_CloseThunk` 0x615b0; the panel pairs 0x589cc/0x589dc, 0x6dd4c/0x6dd94, 0x715e8/0x71648,
+0x72e30/0x72e68, 0x79a20/0x79a48, 0x79a70/0x79ac8, 0x967e4/0x9683c; and `SelectWeapon26..30`
+0x79b64/0x79ba8/0x79bec/0x79c30/0x79c74.
+
+New cites: 54 in `tests/test_baseui.c` (8 close-thunk, 46 panel-pair) (the seven-member thunk loop with four checks each, the new BaseFac floor
+step, the research ceiling step, the crew/detail/psi/manuf pair cites) and 14 in `tests/test_geoscapeframe.c` (the
+transfer nav block: five cursors per press, the floor, the next page, the `nLineCount - nStyle` stop; and the
+weapon-wiring block at the end of the run: five mounts x three asserts). Total test checks 21372 -> 21450.
+
+Records re-measured item by item, code separated from pool: 12 B = 2 + 1 for each of the twelve 12-byte close
+thunks, 72 B = 14 + 4 at 0x577c0, 32 B = 7 + 1 at 0x615b0, 16 = 3 + 1, 40 = 8 + 2, 56 = 11 + 3, 72 = 14 + 4,
+96 = 19 + 5, 88 = 17 + 5 for the panel pairs, 68 = 13 + 4 for each weapon copy. No two-word MOV immediate occurs in
+any of these 28 records, so here 4 * insn count + 4 * pool count is the size exactly. Six claims the tree carried
+were wrong (five sizes and one "byte-identical"); all six are now `docs/parity/bugs.tsv` rows (359 -> 365 data
+rows) and the IDB comments at the 28 addresses carry the measured shape.
+
+Family facts worth keeping: 25 bodies end `B Geoscape_CloseUI` @ 0x8b94c and 12 of them are the 12-byte shape,
+differing only in the branch-displacement word; the three 88-byte panel bodies (0x76088/0x760e0, 0x79a70/0x79ac8,
+0x967e4/0x9683c) share their 17 instructions and their 5 pool words, and differ only in 5 or 10 words of branch
+displacement plus pool; consecutive weapon copies differ in 3 words.
+
+Teeth: 28 cases in `docs/parity/mutations_part132.py`, one per row - 113 failing checks, 0 skipped, 0 inert, every
+file restored to its exact bytes, `grep -rn "MUTATION" src tests` empty. `docs/parity/mutate_run.py` got one fix:
+the child output is decoded as UTF-8 with `errors="replace"` instead of the host locale codec, which had been
+swallowing a decode error in `test_geoscapeframe`'s caption output and handing back `stdout = None`.
+
+Gates: `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, 65/65 tests in both configurations, 21450 checks, coverage
+unchanged at 972/1103 functions (88.1%) and 596888/598792 bytes (99.7%), 135 artifact rows, 131 uncited functions,
+0 real gaps, 93 frame pictures and 9 e2e pictures unchanged. IDB comments on 28 addresses, all read back exact
+(longest 999), `idb_save` ok.
+
+Measured after Part 132: **758** cited, **210** not (`tact` 93, `strat` 90, `strat-ui` 24, `app-shell` 3 left).

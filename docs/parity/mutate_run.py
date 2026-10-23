@@ -29,8 +29,13 @@ def run_case(name, target, path, old, new, show=8):
     mutated = data[:off] + new + data[off + len(old):]
     open(path, "wb").write(mutated)
     try:
-        r = subprocess.run(["sh", "tools/iter.sh", target],
-                           capture_output=True, text=True, cwd=".")
+        # The codec has to be explicit. text=True alone picks the host locale codec, which is cp1251 here, and a
+        # test that prints the game's own captions writes bytes cp1251 cannot decode: the reader thread raised
+        # UnicodeDecodeError (byte 0x98, a Cyrillic caption in test_geoscapeframe's output), the exception was
+        # swallowed by threading, and r.stdout came back None -- a TypeError on `r.stdout + r.stderr`, with the
+        # mutation already restored, so the case looked like a crash of the suite rather than of the decode.
+        r = subprocess.run(["sh", "tools/iter.sh", target], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", cwd=".")
         lines = [l.strip() for l in (r.stdout + r.stderr).splitlines()
                  if "FAIL" in l or "BUILD FAILED" in l]
         print("###", name)
