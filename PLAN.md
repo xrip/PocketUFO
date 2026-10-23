@@ -6530,3 +6530,20 @@ release 66/66, 21578 checks, coverage OK, 93 frames, 10 e2e pictures, ALL SIX GA
 New open item 155a: the card-flow coordinates (select -> ОК -> launch -> arrival flag 23 -> descent press -> tact roster). Still
 open: 154a (the two intermittent gate checks), PLAN 122a's tail, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4
 half-written bugs.tsv rows.
+
+155a's starting evidence, measured in the IDB the same evening: Ship_LaunchIntercept @ 0x5a64c is the ONLY craft-launch
+function in the image (the name census finds no other), and it has exactly three call sites -- Smap_CancelTarget @ 0x84254
+(the card/offer panel's ОК, launch at 0x8427C), Smap_ConfirmCraftTarget @ 0x842ec (the craft-select confirm, launch at
+0x843D8, reading nSelectedShipIdx @ 0x187054 at 0x84274) and Smap_OnPointerUp @ 0x84688 (the map release, only when
+bMapSelectionFlag @ 0x159E84 is set, 0x84698/0x84930). So a live mission from a self-generated contact must pass through one
+of those three, and each needs the selection armed first: the arm sites are Smap_SelectMapTarget @ 0x84488 (0x84498, the
+craft card's 'new target' control), Smap_HitTestStrategSelect @ 0x8372C, Smap_BeginCraftSelect @ 0x83AB4 and
+Smap_ResolveInterceptUI @ 0x84A34. Part 90 already walked the order end to end in the frame test -- press the craft, press
+'new target', press the cell holding the active visible contact, which lands flag 20 with the target in COLOUR SLOT 1 and
+paints the offer panel with ОК at y 102 (installed at 0x90C74) and Отмена at y 125 (0x90D00) -- so 155a is to reproduce that
+same press order in the live exe against the contact the sweep detects at 357300 s, reading every press coordinate from the
+draw arm that installs the control instead of assuming it. The open question 155a must answer first: in a live new-game
+world every player craft is parked at -6000/-6000 with bAtBase set, so the first press in Part 90's order has no map object
+to press -- which means the game's own way of getting a craft onto the map (the radar/intercept screen: RadarScreen_SetActive
+@ 0x61464 writes the pause latch on entry and clears it on exit, Geoscape_OnRadarListClick stores at 0x85510/0x856EC/0x85764,
+Smap_ConfirmSelectedAlt @ 0x853e4 is its unpause-and-clear tail) has to be measured before the order can be walked.
