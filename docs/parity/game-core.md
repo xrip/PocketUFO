@@ -24636,3 +24636,38 @@ Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictu
 `CHECK EXIT=0`, build/check146.log.
 
 Measured after Part 146: **946** cited, **22** not (`tact` 22).
+
+### Part 147 -- PLAN 119a: the no-behaviour artifact ledger re-derived from the IDB
+
+The claim `135 artifact rows, 131 uncited functions, 0 of them real gaps` had been carried since 2026-10-18. It was
+re-derived from the current `pufobeta.exe.i64` instead of inherited, in three independent passes.
+
+Pass 1, in the IDB: list every function (1103), collect every `@ 0x...` address written in `src/` (1865 addresses,
+1865 distinct), and take the functions none of them names. That is **131 functions**, matching the number the tool
+reports. Each was classified from its own instructions, not from the ledger: `LDR`-only import stubs, `LDR`+`B`
+code thunks, single-`BX`/`RET` empty stubs, the `PUSH / BL / POP / B` init-term pattern, and everything else. The
+"everything else" set held 120 entries, and reading their mnemonics showed they are exactly those four shapes plus
+the 9 rows whose class is not mechanical.
+
+Pass 2, ledger against IDB, row by row (135 rows): every row is still a function, **no name is stale, no size is
+wrong, no class contradicts the instructions**. **0 uncited functions lack a ledger row.** Four rows -- 0x11148
+`InitTerm_UiBankEntry`, 0x18a44 `j_Tact_CheckBattleEnd`, 0x22b50 `nullsub_3`, 0xa115c `??3@YAXPAX@Z` -- are *also*
+cited in `src/`, so they appear in both ledgers by design; `coverage.py --check` prints them as notes and the header
+now says so.
+
+Pass 3, the 9 rows whose "no behaviour" claim is a judgement rather than a shape: `Debug_TracePrint @ 0x9e0b0`
+(6 code call sites in `Tact_UpdateUnitControl`, `BeforeEnemyStep`, `AfterEnemyStep`, each setting up a real call,
+plus one data ref; the body drops all four arguments), the seven CRT entries (`start`, `_onexit`, `atexit`,
+`_cinit`, `Crt_CallFnTable`, `Crt_Exit`, `Crt_DoExit` -- all reachable from the entry-table data block at
+0x18aef0..0x18af20 and from each other, none from game logic except `atexit`), and `nullsub_10 @ 0xa42e0` (0 xrefs,
+bytes `ff 9f bd e8` = `POP {R0-R12,PC}` sitting in the screen_w data segment next to a `PUSH {R0-R12,LR}`). The one
+row that needed its wording changed is `atexit`: six of its callers are the game's own `*RegisterAtexit` thunks
+(0x11168, 0x22624, 0x3f0d4, 0x460d4, 0x614b8, 0x838a4), so the *registration* of shutdown callbacks is game-visible
+even though the exit mechanics belong to the runtime. Its evidence field now says that.
+
+Validator, re-run against the re-derived ledger: `uncited functions that carry game behaviour: (none)`; class census
+`import-thunk 84, code-thunk 26, empty-stub 7, init-term-entry 5, crt-runtime 7, debug-print-stub 1, decode-artifact
+1` = 131; and `check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps`. So the "no real gaps"
+statement is now measured rather than asserted. What is still not 100% is the *behaviour-row* ledger: 946 of 968
+rows carry a test citation, and the 22 remaining are all `tact`.
+

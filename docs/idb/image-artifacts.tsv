@@ -1,6 +1,12 @@
 # addr	name	size	class	evidence
 # pufobeta.exe functions that carry no game behaviour of their own: 135 of the 1103.
 # Read instruction by instruction out of pufobeta.exe.i64 on 2026-10-18.
+# Re-derived from pufobeta.exe.i64 on 2026-10-23 (Part 147, PLAN 119a): all 1103 IDB functions listed, every
+# `@ 0x...` address in src/ collected (1865 of them), and the 131 uncited functions classified from their
+# instructions. Result: all 131 have a row here (0 unaccounted); no row's name, size or instruction shape disagreed
+# with the current IDB. 4 rows (0x11148, 0x18a44, 0x22b50, 0xa115c) are ALSO cited in src -- listed twice by
+# design, not an error. The 9 rows whose class is not mechanically checkable (1 debug-print-stub, 7 crt-runtime,
+# 1 decode-artifact) were each re-read: xref counts, callers and bytes, and the two small bodies decompiled.
 # classes: import-thunk, code-thunk, empty-stub, init-term-entry, crt-runtime, debug-print-stub, decode-artifact
 
 0x11148	InitTerm_UiBankEntry	16	init-term-entry	BL 0x11158 j_UiBank_CtorAll; B 0x11164 Bank_RegisterAtexit
@@ -129,7 +135,7 @@
 0xa1528	FSOUND_SetSFXMasterVolume	12	import-thunk	LDR R12, =__imp_FSOUND_SetSFXMasterVolume; LDR PC, [R12] -> __imp_FSOUND_SetSFXMasterVolume
 0xa1534	start	52	crt-runtime	C runtime startup/exit code shipped inside the image
 0xa1568	_onexit	168	crt-runtime	C runtime startup/exit code shipped inside the image
-0xa1610	atexit	24	crt-runtime	C runtime startup/exit code shipped inside the image
+0xa1610	atexit	24	crt-runtime	C runtime startup/exit code shipped inside the image. 6 code callers, all the *RegisterAtexit thunks (0x11168, 0x22624, 0x3f0d4, 0x460d4, 0x614b8, 0x838a4), plus the entry-table data ref at 0x18af00: the game registers shutdown callbacks here, so the registration is game-visible while the exit mechanics are the runtime's, not game logic.
 0xa1628	_cinit	48	crt-runtime	C runtime startup/exit code shipped inside the image
 0xa1658	Crt_CallFnTable	48	crt-runtime	C runtime startup/exit code shipped inside the image
 0xa1688	Crt_Exit	12	crt-runtime	C runtime startup/exit code shipped inside the image

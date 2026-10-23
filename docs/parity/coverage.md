@@ -503,3 +503,6 @@ Measured after Part 145: **931** cited, **37** not (`tact` 37).
 coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 15 function comments appended (pin lines only, no existing analysis overwritten) and read back, IDB saved. No new bugs.tsv row.
 
 Measured after Part 146: **946** cited, **22** not (`tact` 22).
+coverage after re-derivation (Part 147, PLAN 119a): 972/1103 functions (88.1%) cited by src comments, 131 uncited functions carry a no-behaviour artifact row (1904 bytes, 99.7% cited), 0 real gaps. `coverage.py --check` now reads: `check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps`, with 4 notes for rows that src also cites (0x11148, 0x18a44, 0x22b50, 0xa115c). The artifact ledger's header records the re-derivation (2026-10-23) and the `atexit` row's evidence names its six *RegisterAtexit callers.
+
+Behaviour-row ledger: 968 rows, 946 cited, 22 uncited (all `tact`) -- that is the remaining coverage gap, not the function ledger.
