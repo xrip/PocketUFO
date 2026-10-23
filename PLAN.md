@@ -6713,3 +6713,19 @@ Ufopaedia_RefreshEntry @ 0x9a014 does itoa(entry)+".pal" -> Palette_Load (0x9a58
 into block+4 (g_pUfopaediaPad 0x1872e4), and Prev/NextEntry free it (PadImage_FreeData + delete) and tail-call back;
 ufopaedia_entry_next matches 93.PAD/93.pal at 93.2%. Unmeasured: where ufopaedia_entry's 155x200 54.PAD sits (a placement
 question). IDB: line comments at 0x22404 and 0x9a584, read back identical, idb_save ok.
+Closed (Part 159 cont. 4, the last two sweep rows, and the sweep re-measured). tact_hud_promotion: arm Render_Frame case
+19 -> TactHud_DrawConfirmDialog (0x223f4, PUFO_PROMOTION_UI_SCREEN 19) over ENDMISS.PAD, whose all-index-0 rows are 0..41
+with endmiss.pal[0] = (0,0,0); the frame's 0..12 and 25..32 are inside that blank block, 54/71/87 are the panel row rules
+(Part 157), provenance 71751/76800 (93.4%) endmiss.pal. The menu trio: MainMenu_Draw @ 0x1dbb8 opens with
+SoftSurf_BlitIndexed(0,0,MainMenu_pBgGlyph, nPal 0x14) at 0x1dbe4; MainMenu_pBgGlyph is main.dat's STARTG.PAD read raw in
+GameUI_InitStartup @ 0x38a28 (Find 0x38b08, new 0x38b14, Read 0x38b34) and startg.pal is loaded into slot 0x14 at 0x38aec.
+STARTG.PAD's all-index-0 rows are exactly 0,1,2,264..268,313..319 -- the measured runs of all three pictures in every copy;
+startg.pal[0] = (4,3,5) is the only entry packing to 565 = 0, so every black pixel is index 0 of the backdrop or a menu row
+body. 85.2% of 00_mainmenu and 10_menu_at_boot equal the raw blit, 63.1% of 11_slot_list; 11_slot_list has zero non-pad
+black pixels, 00_mainmenu's 2087 are inside rows 118..130/141..152/163..174/185..196 x 67..172 = the row bodies the original
+itself fills at 0x1dc80 (BlitSrcRect 50,y,140,18 index 0, colours 0x57/0x5E) with 1-px frame strips at index 1
+(0x1dca8/0x1dcc8/0x1dcec/0x1dd10, 0x9F/0xAB) -- the port's DrawMenuRow uses the same index and the same colour pairs.
+Sweep re-measured over 113 files (93 ref .ppm + 9 ref e2e .png + 11 build e2e .ppm): 21 files with an all-black row, 17
+names; seven top runs start at row 0 not row 1; geoscape_ufo_enroute and geoscape_terror_site now have none. Retracted the
+Part 158 baseline claim that the menu family's 264..268/313..319 runs were gone -- that scan saw only tests/ref/*.ppm and
+those pictures have no .ppm there. IDB: comments at 0x38b18, 0x1dc80, 0x223f4 (408/358/348 chars, read back), idb_save ok.

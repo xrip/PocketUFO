@@ -13,20 +13,22 @@ The corrected sweep over 103 pictures (93 `tests/ref/*.ppm` + 10 live `build/e2e
 
 | picture | black row runs | status |
 | --- | --- | --- |
-| geoscape_ufo_enroute | 1..41 | FIXED in Part 156 (fixture scroll outside the 0x837f8 window) |
-| geoscape_terror_site | 156..235 | FIXED in Part 156 (same cause) |
-| geoscape_descent_panel | 1..59, 156..235 | CLOSED as a fixture property, not a game property: the frame runs `ClearSurface` + `Geoscape_DrawStatusPanel` only (test_geoscapeframe.c ~1362..1375), so the 140 all-black rows are the harness clearing the surface. It is kept as an arm-isolation diagnostic and must never be read as shipped output; the live sibling `geoscape_descent_offer` paints the same screen with the map under it (0 all-black rows) |
+| geoscape_ufo_enroute | none (was 1..41) | FIXED in Part 156 (fixture scroll outside the 0x837f8 window) |
+| geoscape_terror_site | none (was 156..235) | FIXED in Part 156 (same cause) |
+| geoscape_descent_panel | 0..59, 156..235 | CLOSED as a fixture property, not a game property: the frame runs `ClearSurface` + `Geoscape_DrawStatusPanel` only (test_geoscapeframe.c ~1362..1375), so the 140 all-black rows are the harness clearing the surface. It is kept as an arm-isolation diagnostic and must never be read as shipped output; the live sibling `geoscape_descent_offer` paints the same screen with the map under it (0 all-black rows) |
 | tact_hud_minimap | 0, 16..63, 317..319 | CLOSED in Part 158: the arm fills 240x320 with index 0 itself (0x1ED54), and the cell field is 4*(cell - scroll) -- measured x 12..239, y 64..303, i.e. scroll (-3, -16) inside the clamp window [-30..570] x [-40..560] for a 60x60 map |
-| tact_mission_urban | 1..16 | CLOSED in Part 159: the iso arm's overlay chain is a CMP chain on Map_nUiScreen (3,5,7,0xA,0xB,0xC,0xF) and this frame is screen 0, so only MapView_DrawIsoLayer runs; the tile's screen position is camera-free (0x1B1AC nDrawX = 32*tileX-16, 0x1B1C4 nDrawY = 8*(tileY-3*layer-4), culled at 0x1B1DC when nDrawY+40 <= 0), and the measured top edge is one tile diamond starting at the grid node x = 32*6-16 = 176, y = 16 -- rows 0..16 are outside the map's edge, painted by the layer-0 blank-glyph branch (0x21ED8 gate, the Font_DrawGlyph at 0x21EF4 / 0x21F8C) |
+| tact_mission_urban | 0..16 | CLOSED in Part 159: the iso arm's overlay chain is a CMP chain on Map_nUiScreen (3,5,7,0xA,0xB,0xC,0xF) and this frame is screen 0, so only MapView_DrawIsoLayer runs; the tile's screen position is camera-free (0x1B1AC nDrawX = 32*tileX-16, 0x1B1C4 nDrawY = 8*(tileY-3*layer-4), culled at 0x1B1DC when nDrawY+40 <= 0), and the measured top edge is one tile diamond starting at the grid node x = 32*6-16 = 176, y = 16 -- rows 0..16 are outside the map's edge, painted by the layer-0 blank-glyph branch (0x21ED8 gate, the Font_DrawGlyph at 0x21EF4 / 0x21F8C) |
 | tact_briefing, tact_briefing_urban, tact_mission_from_descent | 0..7, 311..319 | CLOSED in Part 158: the arm is two calls -- PadImage_Blit of the cydonia pad at (0,0) then UiPanelMsg_Draw (0x1A7A0) -- and the indexed blit writes every pixel including index 0 (0xA3278 `*v24++ = *(pPal + 4*index)`, no skip), so the bands are the pad's own index-0 rows |
-| debrief_banner | 1..12, 25..42, 44 | CLOSED in Part 159: ENDMISS.PAD's all-index-0 rows are 0..41 and the arm's centred banner text paints the only lit rows in that range (13..24); rows 42/44 are pad rows whose indices carry black endmiss entries -- rows 12,13,24,25,41,42,43,44,45 checked pixel by pixel against pad index + slot 11 |
-| tact_hud_promotion | 1..12, 25..32 | open |
+| debrief_banner | 0..12, 25..42, 44 | CLOSED in Part 159: ENDMISS.PAD's all-index-0 rows are 0..41 and the arm's centred banner text paints the only lit rows in that range (13..24); rows 42/44 are pad rows whose indices carry black endmiss entries -- rows 12,13,24,25,41,42,43,44,45 checked pixel by pixel against pad index + slot 11 |
+| tact_hud_promotion | 0..12, 25..32, 54, 71, 87 | CLOSED in Part 159 cont. 4: the arm is Render_Frame case 19 -> `TactHud_DrawConfirmDialog` (call 0x223F4; `PUFO_PROMOTION_UI_SCREEN` = 19, src/pufo/game/pufo_tactend.h:553), and its backdrop is ENDMISS.PAD, whose all-index-0 rows are 0..41 with `endmiss.pal[0] = (0,0,0)`. So 0..12 and 25..32 are the pad's own blank rows; 54 / 71 / 87 are the drawn panel's row rules (Part 157). Colour provenance: 71751 of 76800 px (93.4%) are endmiss.pal colours |
 | tact_hud_inventory, 13_tact_unit_panel | 153..159, 199 | CLOSED in Part 159 for the .ppm: INVV.PAD's all-index-0 rows are 139..159 and 199, and pad rows 139..152 are overdrawn by the burden label at (113,140) and the number at (185,140); invv's mode 1 = menu.pal in slot 1, and 95.0% of the frame's pixels are menu.pal colours |
 | tact_hud_markers | 319 | CLOSED in Part 159: MSCANV.PAD has no all-index-0 row, and its last row is entirely index 254, which SCANNER.PAL[254] = (0,0,0) renders black (mscanv's mode 16 = scanner.pal); 99.7% of the frame is scanner.pal colours |
-| econ_buy_craft_queued, econ_hangar_cap_full, transfer_open, transfer_staged, transfer_committed | 1..2, 29..30, 57..58, 85..87 | CLOSED in Part 158: the four runs are the gaps between the transfer picker's 26-tall base boxes, drawn at step 28 (0x987D8 `3, nY+3, 205, 26`, then 0x9880C and 0x9883C), under the erase rect 0x98738 whose height is `28 * n + 4` = 88 rows with n = 3. Re-measured on the current references: the transfer trio keeps exactly those runs (0..2, 29..30, 57..58, 85..87) and the two econ pictures have none at all after their frames were re-recorded |
-| 00_mainmenu, 10_menu_at_boot, 11_slot_list | 1..2, 264..268, 313..319 | open |
+| econ_buy_craft_queued, econ_hangar_cap_full, transfer_open, transfer_staged, transfer_committed | 0..2, 29..30, 57..58, 85..87 | CLOSED in Part 158: the four runs are the gaps between the transfer picker's 26-tall base boxes, drawn at step 28 (0x987D8 `3, nY+3, 205, 26`, then 0x9880C and 0x9883C), under the erase rect 0x98738 whose height is `28 * n + 4` = 88 rows with n = 3. Re-measured on the current references: the transfer trio keeps exactly those runs (0..2, 29..30, 57..58, 85..87) and the two econ pictures have none at all after their frames were re-recorded |
+| 00_mainmenu, 10_menu_at_boot, 11_slot_list | 0..2, 264..268, 313..319 | CLOSED in Part 159 cont. 4: `MainMenu_Draw @ 0x1DBB8` opens with `SoftSurf_BlitIndexed(0, 0, MainMenu_pBgGlyph, nPal 0x14)` (0x1DBE4), and `MainMenu_pBgGlyph` is main.dat's STARTG.PAD read raw in `GameUI_InitStartup @ 0x38A28` (Find 0x38B08, alloc 0x38B14, Read 0x38B34) while startg.pal goes to slot 0x14 at 0x38AEC. STARTG.PAD's all-index-0 rows are exactly 0..2, 264..268, 313..319 -- the measured runs, row for row -- and `startg.pal[0] = (4,3,5)` is the only entry in that palette that packs to 565 = 0 |
 
 Nothing else in the corpus has an unfilled row, and no picture has a black gap inside a lit span.
+
+Every run value in that table is re-measured (Part 159 cont. 4, `build/crops/sweep159e.py`) over 113 files: 93 `tests/ref/*.ppm`, 9 `tests/ref/e2e/*.png`, 11 `build/e2e/*.ppm`. 21 files carry an all-black row, over 17 distinct picture names. Two systematic corrections came out of it: seven pictures have their top run starting at row 0, not row 1 (the first pass dropped row 0), and the two Part 156 fixes (`geoscape_ufo_enroute`, `geoscape_terror_site`) now have no all-black row at all.
 
 ## What Part 156 proved about geoscape frames
 
@@ -45,8 +47,7 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
    when the entry is NOT dirty, the dashed frame (0x9B61C..0x9B7BC -- verified pixel by pixel in the picture: the ramp
    ((i+20)*5 -> 0x62..0xD5 on the near pair, 0xE6-5i on the far pair) is there). The full-screen fill
    (`BlitSrcRect 0,0,240,320 idx 0x64`) belongs to the DIRTY arm, so the map showing through in the index frame matches
-   the arm order. Unresolved: what the pad blitted at 0x9B600 actually contains in this state (PadImage_ctor in
-   `Ui_InitBaseInfo @ 0x9ddc8`, freed at 0x9B564..0x9B584), and why the selector shows four identical rows.
+   the arm order. CLOSED (Part 159 cont. 3): the pad blitted at 0x9B600 is `g_pUfopaediaScreenPad[0]` (0x1872E0), loaded `PadImage_Load("baseinfo", 14)` in `Ui_InitBaseInfo @ 0x9DDD4..0x9DE14` -- main.dat's BASEINFO.PAD 240x320 through baseinfo.pal in slot 14, and 93.0% of the frame's pixels equal that blit exactly; the four identical rows are four text records (Part 158 ufopaedia section).
 2. `econ_buy_craft_queued` / `econ_hangar_cap_full` / `transfer_open` / `transfer_staged` / `transfer_committed` -- measured:
    the thing the user saw is one rectangle, x 64..177, y 94..110 (114 x 17), a bright frame (0xAC009D) around a filled
    interior 0x5A0055, different from the panel field around it (0x5A0028/0x5A002C), with zero text-coloured pixels inside.
@@ -335,10 +336,12 @@ table, and a correction of its old claim that no code indexes a text record by b
 ## Part 158: the tact black bands -- minimap closed, the briefing trio closed (2026-10-23)
 
 Baseline first: the sweep was re-run over the current corpus (93 `tests/ref/*.ppm`; the `tests/ref/e2e/` set is PNG-only)
-and 13 pictures have an all-black run now, against 21 in the original table. The difference is the menu family --
-`00_mainmenu`, `10_menu_at_boot` and `11_slot_list` no longer have their 264..268 / 313..319 runs, and `econ_buy_craft_queued`
-and `econ_hangar_cap_full` have none at all. Those runs disappeared when Part 157 gave the panels their hovered-row fill
-and Part 158 gave those two dumps a frame, which is the expected direction for a fix.
+and 13 pictures have an all-black run now, against 21 in the original table. The econ half of that difference is real --
+`econ_buy_craft_queued` and `econ_hangar_cap_full` have no all-black row at all after Part 158 gave those two dumps a frame.
+The menu half was a scan-scope error and is retracted in Part 159 cont. 4: that run looked only at `tests/ref/*.ppm`, the
+menu trio has no `.ppm` there, so its 264..268 / 313..319 runs were never "gone" -- they were never looked at. Measured in
+every copy that exists (`tests/ref/e2e/*.png`, `build/e2e/*.ppm`, `build/e2e/*.png`) all three carry 0..2, 264..268,
+313..319, and those are STARTG.PAD's own blank rows.
 
 `tact_hud_minimap` (rows 16..63 black, the biggest remaining band) is closed as shipped behaviour of its own arm.
 Screen 2 goes to `MapView_DrawMinimap @ 0x1ED4C` (Render_Frame case 2 at 0x224B8, which REPLACES the iso layer). That
@@ -629,3 +632,45 @@ the one part of this family still unmeasured -- it is a placement question, not 
 
 IDB: line comments at 0x22404 (`Map_bDrawIsoLayer` gates the whole iso group) and at 0x9A584 (the per-entry
 "N.pad" / "N.pal" pair and the free-and-tail-call cycle), both read back identical, `idb_save` ok.
+
+## Part 159 (cont. 4): the last two sweep rows closed -- the promotion pad rows and the menu backdrop (2026-10-23)
+
+Both rows the sweep table still called `open` are closed, and the whole table is re-measured in the same pass.
+
+**`tact_hud_promotion`.** The arm is `Render_Frame`'s case 19 (0x223F0, call 0x223F4 `TactHud_DrawConfirmDialog`;
+`PUFO_PROMOTION_UI_SCREEN` = 19), and the dialog's backdrop is ENDMISS.PAD. Measured: ENDMISS.PAD (240x320) has every
+index 0 across rows 0..41, `endmiss.pal[0] = (0,0,0)`, and the frame's all-black runs 0..12 and 25..32 sit inside that
+blank block. The frame's other two runs, 54 and 71 and 87, are the drawn panel's row rules, already read in Part 157.
+Colour provenance from the Part 159 scan: 71751 of 76800 px (93.4%) of this picture are endmiss.pal colours -- the same
+palette the arm's blit uses (slot 11).
+
+**The menu family (`00_mainmenu`, `10_menu_at_boot`, `11_slot_list`).** `MainMenu_Draw @ 0x1DBB8` begins with
+`SoftSurf_BlitIndexed(0, 0, MainMenu_pBgGlyph, nPal 0x14)` at 0x1DBE4 (0x1DBC0 `LDR R0, =MainMenu_pBgGlyph`, 0x1DBC4
+`MOV R3, #0x14`). `MainMenu_pBgGlyph` is not a PadImage: `GameUI_InitStartup @ 0x38A28` reads main.dat's STARTG.PAD raw --
+`AssetReader_Find` 0x38B08, `operator new` 0x38B14, `AssetReader_Read` 0x38B34 -- and puts its size straight into the
+glyph header, and it is `startg.pal` that goes to slot 0x14 at 0x38AEC (the same function loads `menu.pal` into slot 1 at
+0x38AF8 and reads EMPTYB.PAD into 0x1568EC at 0x38B3C..0x38B6C).
+
+Measured (`build/crops/menu159.py`, all comparisons in packed 565 space, so a match means the pixel equals the blit pixel):
+
+- STARTG.PAD is 240x320 and its all-index-0 rows are 0, 1, 2, 264..268, 313..319 -- exactly the runs all three pictures
+  show, in every copy of them. Its index-0 pixel count is 30614.
+- `startg.pal[0] = (4,3,5)`, which packs to 565 = 0, and it is the only entry of that palette that packs to 0. So a
+  pure-black pixel in these frames is an index-0 pixel of the backdrop or a menu row body -- nothing else can be black.
+- 65397 of 76800 px (85.2%) of `00_mainmenu` and of `10_menu_at_boot` equal the raw STARTG.PAD blit through startg.pal;
+  `11_slot_list` is 48427 (63.1%) -- the rest is its slot panel drawn over the backdrop.
+- `11_slot_list` has **zero** black pixels that are not pad index 0. `00_mainmenu` has 2087 of them, confined to rows
+  118..130, 141..152, 163..174, 185..196 within x 67..172 -- the four menu row bodies. `MainMenu_Draw`'s row loop draws
+  each body as `SoftSurf_BlitSrcRect(x 50, y, w 140, h 18)` at index 0 with colours 0x57/0x5E (87/94) at 0x1DC48..0x1DC80,
+  plus 1-pixel frame strips at index 1 with 0x9F/0xAB (159/171) at 0x1DCA8, 0x1DCC8, 0x1DCEC, 0x1DD10. The port's
+  `DrawMenuRow` (src/pufo/game/pufo_mainmenu.c:41..45) uses the same index 0 and the same (87,94)/(159,171) pair, so those
+  black pixels are the original's own blended row bodies, not a hole punched in the art.
+
+**The sweep, re-measured.** 113 files (93 `tests/ref/*.ppm` + 9 `tests/ref/e2e/*.png` + 11 `build/e2e/*.ppm`), 21 files
+with an all-black row, 17 distinct names. Seven pictures have their top run starting at row 0 where the first pass wrote
+row 1, and the two Part 156 fixes now show no all-black row. The Part 158 baseline sentence claiming the menu family's
+runs were gone is retracted above: that scan covered only `tests/ref/*.ppm` and those pictures have no `.ppm` there.
+
+IDB: line comments at 0x38B18 (STARTG.PAD -> `MainMenu_pBgGlyph`, its blank rows, startg.pal slot 0x14), at 0x1DC80 (the
+row body at index 0 with 0x57/0x5E and the frame strips at index 1 with 0x9F/0xAB) and at 0x223F4 (case 19, the promotion
+dialog's pad rows), read back at 408 / 358 / 348 characters. `idb_save` ok. No `src/` or test change, so no gate re-run.
