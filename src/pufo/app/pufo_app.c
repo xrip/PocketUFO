@@ -1591,7 +1591,7 @@ static void App_ScriptState(const char *pszLabel)
      * hover's own animation state). Printed because a picture with no bottom bar is only explainable by them. */
     printf("pocketufo: state %s: start screen %d, list mode %d, geoscape screen %d, geo ui byte %d, tact flag %d, "
            "bases %d, base 0 at %d/%d, soldiers %d, funds %d, status flag %d, pending region %d, "
-           "globe sweep %d/%d, anim prog %d/%d/%d\n",
+           "globe sweep %d/%d, anim prog %d/%d/%d, mission type %d, map 0x1511E %d\n",
            pszLabel, g_nUiScreen, g_nListMode, (int)g_world.screen.nGeoscapeScreen, (int)g_world.bGeoscapeUi,
            (int)g_world.bTactFlag, (int)g_world.nBaseCount,
            (g_world.nBaseCount > 0) ? g_world.apBases[0]->nUnk8 : 0,
@@ -1599,7 +1599,8 @@ static void App_ScriptState(const char *pszLabel)
            (int)g_world.nSoldierCount, (int)g_world.nFunds,
            (int)UiLineList_GetFlag(&g_world.msgLines, 0), (int)g_world.bPendingRegionId,
            g_world.nGlobeSweepV, g_world.nGlobeSweepH,
-           (int)g_world.cUiAnimProgress, (int)g_world.bUiAnimStarted, (int)g_world.aRegionBuildCount[9]);
+           (int)g_world.cUiAnimProgress, (int)g_world.bUiAnimStarted, (int)g_world.aRegionBuildCount[9],
+           (int)g_world.nMapMissionType, (int)g_world.bMapUnk1511E);
     fflush(stdout);
 }
 
@@ -1957,6 +1958,16 @@ static void App_ClearSurface(u16 colour)
     }
 }
 
+/* InitInstance's two live startup picks, held here until the world exists: App_InitInstance runs
+ * before World_Init, and World_Init memsets its whole block, so the values from 0xA01C0/0xA0228/
+ * 0xA024C are kept here and installed in wWinMain right after World_Init. Nothing between the two
+ * reads them, which is also true in the original: outside this window the only stores in the image are
+ * the save read (Save_ReadTGameData 0x4430C / 0x44318) and the mission-start path --
+ * Smap_BeginCraftSelect writes both six times, and Tact_CheckBattleEnd stores the mission type at
+ * 0x365B8. */
+static u8 g_nStartupMissionType;   /* Map_nMissionType @ 0x128AD2 */
+static u8 g_bStartupMapUnk1511E;   /* unk_128AD6 @ Map+0x1511E */
+
 static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
 {
     WNDCLASSW wc;
@@ -2033,17 +2044,20 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
         return false;
     }
 
-    /* Game_SeedRng is the port's srand @ 0xA00F8, seeded from 100 * wSecond + wMilliseconds, so a real
-     * new game draws a different map every run (the region the pick lands on is a Game_RandU16 draw --
-     * measured: six scripted runs of the same flow gave two different 01_newgame.ppm pictures, and every
-     * one of the 240x320 pixels differed). The two debug paths compare their pictures against committed
-     * references, so they draw from a fixed seed instead. SHELL SCAFFOLDING: the interactive path keeps
-     * the original's clock seed. */
+    /* The seeding block, 0xA00D8..0xA024C. Game_SeedRng is srand(100 * wSecond + wMilliseconds) at
+     * 0xA00F8 followed by the warm-up loop at 0xA0108..0xA011C, so a real new game draws a different
+     * map every run (the region the pick lands on is a Game_RandU16 draw -- measured: six scripted runs
+     * of the same flow gave two different 01_newgame.ppm pictures, and every one of the 240x320 pixels
+     * differed). The two debug paths compare their pictures against committed references, so they draw
+     * from a fixed clock instead. SHELL SCAFFOLDING: the interactive path keeps the original's clock.
+     * Game_SeedStartupPicks is the nine draws after the seed; the record spends them before the asset
+     * paths (0xA0250) are built, and so do we. */
     if (bHidden) {
         Game_SeedRngFixed();
     } else {
         Game_SeedRng();
     }
+    Game_SeedStartupPicks(&g_nStartupMissionType, &g_bStartupMapUnk1511E);
 
     /* Assets_LoadStartup @ 0x382d0. The original resolves the paths from the exe
      * directory in InitInstance and loads here; a failure is not fatal there
@@ -2290,9 +2304,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         return 0;
     }
 
-    /* Match WinMain @ 0x9fcc4: accelerators are loaded unconditionally. A
-     * missing table is not fatal there either. */
-    hAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(1));
+    /* Match WinMain @ 0x9fcc4: accelerators are loaded unconditionally, from table 3 --
+     * `MOV R1, #3` at 0x9FCE4, `BL LoadAcceleratorsW` at 0x9FCEC. A missing table is not fatal
+     * there either: TranslateAcceleratorW then returns 0 and every message goes through the
+     * normal translate/dispatch pair. */
+    hAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(3));
 
     /* GameUI_InitStartup @ 0x38a28 runs after the assets are in (the original reaches it from
      * the title/menu path once Boot_LoadStartup's archives are open). It loads the fonts, the
@@ -2301,6 +2317,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (g_bAssetsLoaded) {
         App_InitStartupUi();
         g_bWorldReady = World_Init(&g_world);
+        /* InitInstance's startup picks, into the Map block the world owns: the mission type from
+         * 0xA0228 and the Map+0x1511E byte from 0xA01C8 / 0xA024C. A save read overwrites both
+         * (Save_ReadTGameData 0x4430C / 0x44318), which is the original's order too. */
+        g_world.nMapMissionType = g_nStartupMissionType;
+        g_world.bMapUnk1511E    = g_bStartupMapUnk1511E;
         /* Map_nUiScreen is ONE global in the original and the world's copy is the one LoadGame @ 0x44CB0
          * tests (`== 17`) to decide that a load starts from the start menu -- that arm runs
          * StartUi_Shutdown, then Geoscape_InitUI(1), and zeroes the soldier/base/craft/strateg counters

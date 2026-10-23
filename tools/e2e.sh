@@ -29,15 +29,30 @@ fi
 # The slot files are szAppDir-relative -- the exe's own directory, which is where App_BuildAssetPaths
 # points szAppDir @ 0x1883b0 -- so that is where they are cleared, and the one the new-game flow wrote
 # is what the load flow reads.
-rm -f "$out"/*.ppm "$out"/*.png "$out"/sav*.sav "$(dirname "$exe")"/sav*.sav
+rm -f "$out"/*.ppm "$out"/*.png "$out"/sav*.sav "$out"/flow_*.log "$(dirname "$exe")"/sav*.sav
 mkdir -p "$out" "$refs"
 
 for flow in e2e_flow_new.txt e2e_flow_load.txt e2e_flow_quit.txt; do
-    if ! (cd "$out" && "$exe" --script "$(cygpath -w "$dir/$flow")"); then
+    if ! (cd "$out" && "$exe" --script "$(cygpath -w "$dir/$flow")") > "$out/flow_$flow.log" 2>&1; then
         echo "RUN FAILED for $flow"
+        cat "$out/flow_$flow.log"
         exit 1
     fi
+    cat "$out/flow_$flow.log"
 done
+
+# State assertion for the startup picks: InitInstance @ 0x9FD48 spends nine draws (0xA0134..0xA024C) and the
+# two live results are Map_nMissionType (stored at 0xA0228) and Map+0x1511E (raised at 0xA01C8, cleared for
+# mission types 3 and 4 at 0xA0244/0xA024C). With the shell's fixed clock (30 s 0 ms) those draws land on
+# mission 6 with the byte left 0 -- the same values tests/test_rand.c pins from the record. The unit tests
+# cannot see the install itself (pufo_app.c is the executable's own file), so this gate is what proves the
+# values reach the live world.
+if ! grep -q 'mission type 6, map 0x1511E 0' "$out/flow_e2e_flow_new.txt.log"; then
+    echo "STATE FAILED: the startup picks did not reach the world (want mission 6, Map+0x1511E 0)"
+    grep -m2 'pocketufo: state' "$out/flow_e2e_flow_new.txt.log" || true
+    exit 1
+fi
+echo "startup picks: mission type 6, Map+0x1511E 0 (InitInstance 0xA0228 / 0xA01C8)"
 
 mv "$(dirname "$exe")"/sav*.sav "$out"/ 2>/dev/null || true
 

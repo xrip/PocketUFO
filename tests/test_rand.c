@@ -1,8 +1,9 @@
 /* test_rand.c - Game_RandU16 @ 0x3e59c, the draw every roll in the game runs through.
  *
- * Evidence: Game_RandU16 @ 0x3e59c (30 instructions, ONE basic block). The seeding that feeds it is
- * in the process entry point (see pufo_rand.h), which no test calls -- it is not cited here because
- * nothing in this file reaches it. The block is a straight line: `BL rand` at 0x3E5A4 is the first
+ * Evidence: Game_RandU16 @ 0x3e59c (30 instructions, ONE basic block), and the seeding that feeds it,
+ * which lives in InitInstance @ 0x9fd48 (0xA00D8..0xA024C) -- Game_SeedRng, Game_SeedRngFixed and
+ * Game_SeedStartupPicks are the port's three pieces of that block, and the last tests below reach all
+ * three. The block is a straight line: `BL rand` at 0x3E5A4 is the first
  * thing it does; the result goes through _itos (0x3E5B4), _muls with the single-precision
  * constant 0x38000000 (0x3E5BC), _itos of nMax (0x3E5E4), a second _muls (0x3E5FC) and _stou
  * (0x3E610). Nothing reads nMax before the draw, and there is no branch anywhere.
@@ -167,11 +168,157 @@ static void TestTruncationBounds(void)
     printf("       highest draw seen: %d, highest value at nMax 65535: %d\n", nTopDraw, nTopSeen);
 }
 
+/* ---- InitInstance @ 0x9fd48's own seeding and picks, 0xA00D8..0xA024C ------------------------ */
+
+/* The shell's fixed clock (pufo_rand.h), written as a literal here on purpose: a check that reads
+ * the same constant the port reads cannot see that constant change. */
+#define SHELL_CLOCK_SECOND 30
+#define SHELL_CLOCK_MS 0
+
+static void ReplayStartupDraws(u8 *pnType, u8 *pbFlagRaw, u8 *pbFlagCleared)
+{
+    u16 nTier;
+    u16 nType;
+    u8  bFlag;
+
+    (void)Game_RandU16(5);                        /* 0xA0134 dword_AC6C0 */
+    nTier = Game_RandU16(3);                      /* 0xA014C unk_188D58 */
+    if (nTier != 1) {
+        (void)Game_RandU16(2);                    /* 0xA016C, skipped by 0xA0154's `== 1` arm */
+    }
+    (void)Game_RandU16(8);                        /* 0xA01A0 dword_AC6C8 */
+    bFlag = 0;
+    if (Game_RandU16(2) == 0) {
+        bFlag = 1;                                /* 0xA01C0/0xA01C8 Map+0x1511E */
+    }
+    (void)Game_RandU16(4);                        /* 0xA01E4 dword_AC6CC */
+    (void)Game_RandU16(0x46);                     /* 0xA01FC word_188D5C */
+    (void)Game_RandU16(0xC8);                     /* 0xA0214 unk_188D60 */
+    do {
+        nType = (u16)Game_RandU16(0xA);           /* 0xA0220 */
+    } while (nType == 7);                         /* 0xA0230 */
+    *pnType = (u8)nType;                          /* 0xA0228 Map_nMissionType */
+    *pbFlagRaw = bFlag;
+    if (nType == 3 || nType == 4) {
+        bFlag = 0;                                /* 0xA0244/0xA024C */
+    }
+    *pbFlagCleared = bFlag;
+}
+
+/* The seed and the warm-up are one clock field (0xA00F8 seeds from 100 * wSecond + wMilliseconds and
+ * 0xA0108..0xA011C then calls rand() wSecond times). The replay spells both numbers out; a port that
+ * seeds from the second alone, or that drops the loop, lands somewhere else in the stream. */
+static void TestSeedAndWarmUpAreOneField(void)
+{
+    unsigned i;
+    int nWant;
+    int nGot;
+
+    printf("InitInstance @ 0x9fd48 -- the seed and the warm-up it spends\n");
+
+    CheckEqI32(PUFO_SHELL_CLOCK_SECOND, SHELL_CLOCK_SECOND, "the shell clock's seconds @ 0x9fd48");
+    CheckEqI32(PUFO_SHELL_CLOCK_MS, SHELL_CLOCK_MS, "  and its milliseconds @ 0x9fd48");
+
+    srand(100u * SHELL_CLOCK_SECOND + SHELL_CLOCK_MS);
+    for (i = 0; i < SHELL_CLOCK_SECOND; ++i) {
+        (void)rand();
+    }
+    nWant = rand();
+
+    Game_SeedRngFixed();
+    nGot = rand();
+    CheckEqI32(nGot, nWant, "srand(100 * second + ms) then exactly `second` plain draws @ 0x9fd48");
+}
+
+/* The nine draws after the seed. The replay uses the record's own bounds in the record's order, so a
+ * bound changed, a draw dropped, or 0xA0154's gate inverted moves the port off the replay. The draw
+ * asked for after the block is what a missing or extra draw shows up as. */
+static void TestStartupPicksFollowTheRecord(void)
+{
+    u8 bPortType, bPortFlag;
+    u8 bType, bRaw, bCleared;
+    int nPortNext;
+    int nReplayNext;
+
+    printf("InitInstance @ 0x9fd48 -- the nine draws 0xA0134..0xA024C\n");
+
+    Game_SeedRngFixed();
+    Game_SeedStartupPicks(&bPortType, &bPortFlag);
+    nPortNext = (int)Game_RandU16(1000);
+
+    srand(100u * SHELL_CLOCK_SECOND + SHELL_CLOCK_MS);
+    for (unsigned i = 0; i < SHELL_CLOCK_SECOND; ++i) {
+        (void)rand();
+    }
+    ReplayStartupDraws(&bType, &bRaw, &bCleared);
+    nReplayNext = (int)Game_RandU16(1000);
+
+    CheckEqI32(bPortType, bType, "the mission pick the shell clock draws @ 0x9fd48");
+    CheckEqI32(bPortFlag, bCleared, "  and the Map+0x1511E byte it leaves @ 0x9fd48");
+    CheckEqI32(nPortNext, nReplayNext, "  the block spent exactly those draws: the next one agrees too @ 0x9fd48");
+}
+
+/* 800 seeds, each run twice: once through the record spelled out, once through the port's block. The
+ * pick must stay in 0..10 and never 7, the flag must stay 0/1, the draw-skipping arm at 0xA0154 must
+ * actually be taken by some seed, and the type-3/4 clear at 0xA0244 must actually matter somewhere. */
+static void TestPickRangeGateAndClear(void)
+{
+    unsigned s;
+    int nGateArm = 0;
+    int nClearMattered = 0;
+    int nFlagUp = 0;
+    bool bBadRange = false;
+    bool bMismatch = false;
+
+    for (s = 1; s <= 800; ++s) {
+        u8 bPortType, bPortFlag;
+        u8 bType, bRaw, bCleared;
+
+        srand(s);
+        ReplayStartupDraws(&bType, &bRaw, &bCleared);
+        srand(s);
+        Game_SeedStartupPicks(&bPortType, &bPortFlag);
+
+        if (bPortType == 7 || bPortType > 10) {
+            bBadRange = true;
+        }
+        if (bPortFlag > 1) {
+            bBadRange = true;
+        }
+        if (bPortType != bType || bPortFlag != bCleared) {
+            bMismatch = true;
+        }
+        if (bRaw != bCleared) {
+            ++nClearMattered;
+        }
+        if (bCleared == 1) {
+            ++nFlagUp;
+        }
+    }
+
+    for (s = 1; s <= 800; ++s) {
+        srand(s);
+        (void)Game_RandU16(5);
+        if (Game_RandU16(3) == 1) {
+            ++nGateArm;
+        }
+    }
+
+    Check(!bBadRange, "800 seeds: the pick stays in 0..10 and is never 7, the flag stays 0 or 1 @ 0x9fd48");
+    Check(!bMismatch, "  and the port's block agrees with the record on all 800 @ 0x9fd48");
+    Check(nGateArm > 0, "  some seeds take 0xA0154's arm that skips a draw @ 0x9fd48");
+    Check(nFlagUp > 0, "  some seeds raise Map+0x1511E at 0xA01C8 @ 0x9fd48");
+    Check(nClearMattered > 0, "  some seeds are type 3 or 4, where 0xA024C clears it again @ 0x9fd48");
+}
+
 int main(void)
 {
     TestZeroBoundStillDraws();
     TestScaleIsOneOver32768();
     TestTruncationBounds();
+    TestSeedAndWarmUpAreOneField();
+    TestStartupPicksFollowTheRecord();
+    TestPickRangeGateAndClear();
 
     if (g_nFailures > 0) {
         printf("test_rand: %d check(s) FAILED\n", g_nFailures);
