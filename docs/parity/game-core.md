@@ -24958,3 +24958,56 @@ draws -- then the intercept order, then the descent panel's launch control.
 
 IDB: the gate written into `0x81378`'s function comment (998 chars, read back exact); the item comment at the same
 address is untouched. IDB saved.
+
+
+## Part 153 - PLAN 122a's first link measured live: the ported geoscape detects a contact by itself
+
+### What gates detection, measured on a placed new-game base
+
+The existing `--script grid 0` print already holds both gate inputs: the `facTyp` rows are the cell kinds
+(`Base_ClearFacilityGridRow` reads them at `grid + 480 + 144*base`) and the `days` rows are the occupancy bytes
+(it reads them at `grid + 36*base`). For the base this flow places: exactly one cell of kind 4 (row 3, column 1),
+no cell of kind 5, no cell of kind 9, and every occupancy byte 0. So the site state is 1 (the free-type-4 arm,
+radius 24.0) and the radar pct is 2*1 + 3*0 = 2, plus 7 while `apLines[117]` is 0 -- nine chances in a thousand
+per eligible observation.
+
+This also corrects a natural misreading of `anBaseRadarPct @ 0x162008`: it is not a radar-facility flag.
+`Game_StartNew` at 0x9461C and `LoadGame` at 0x4582C store `Base_CountEmptyFacilityCells @ 0x6aee0` into it --
+2 per free kind-4 cell, 3 per free kind-5 cell -- so it measures how much room a base has left.
+
+### The sweep, and the contact it produced
+
+`docs/parity/measure_122a_sweep.sh` runs the flow: new game, place the base, then `tick` in 1500-pulse blocks with
+`strateg` and `lines` after each block. Geoscape time advances on the 0xC353 pulse only -- the 0xC350 arm in the
+geoscape is the four-byte stub `Geoscape_GameTickStub @ 0x94550` (re-measured at 0x27508), so `gametick` moves
+nothing there.
+
+60000 pulses (build/crops/run153b.log): clock 357300 s = 5955 game-minutes, item 4 `detected 1` with `disp 1`
+(a display id, i.e. it is on the map), and the message list holds `[0] flag 10 slots 4 0 0 0` -- flag 10 with
+colour slot 0 = the strateg index, which is exactly the append at 0x818F4 (message 10) followed by
+`GameTime_Pause`. Closest measured approach to the base at 354/86: 18.4 tiles (item at 337/93, wrapped dx 17,
+dy 7) -- inside the 24 arm. A 15000-pulse run (1500 game-minutes, the script's own output) found no contact: with
+9/1000 per eligible observation the sweep length is the knob, and the draw is random.
+
+### What is unlocked, and what the next step has to measure
+
+A detected contact has `bVisible` set, so `Smap_HitTestStrategSelect`'s gate at 0x83250 accepts it (the IDB note
+at 0x82E58: an invisible contact is selectable but contributes nothing to the panel; a visible one builds the card
+line). Every remaining step is pen-driven and every command already exists:
+
+* `geoframe` prints the zoom mode, `scroll X/Y` and `map WxH` -- the same inputs the hit-test's coordinate math
+  uses at 0x82C84/0x82CAC, so `clickX = itemX*scale - scrollX - mapW/2 - dx + 120` with the 16x16 window and the
+  per-mode scale 1 / 0.7501875468867217 / 0.5903187721369539 (comments at 0x82D48 and 0x82DD0), and the click must
+  not fall below `320 - pGeoscapeStripPad->uHeight` (0x82C18).
+* From there the walk the frame test already pins (IDB note at 0x82be8): the contact's card, "new target", press
+  the contact, ÎÊ -- which arms `nInterceptShipIdx @ 0x15967C` and `nInterceptStrategIdx @ 0x159680`.
+* `Strateg_ConfirmInterceptTarget @ 0x7fb98` then appends the flag-23 line that `Smap_BeginCraftSelect` reads as
+  the mission kind, needing the chased item's `nTimer > 0` and `Craft_CountSoldiersAboard != 0` (its own original
+  bug -- the `Soldier.bUnk183` against `Ship.bId` compare -- is recorded and reproduced in the port).
+* The descent panel's launch control (0x91578, 0x9180C) runs `Smap_BeginCraftSelect`, whose flag-23 arm takes the
+  terrain from the tile under the contact (`Tilemap_GetAtAlt`, 240..244), the tier from `bCraftClass` (the measured
+  contact is class 2 -> `Map_nMissionTierRaw` 1, tier value 250) and `Map_bUnk15115` from the damage band.
+
+No `src/` change is needed to try that chain; the open risk is the pen coordinates, which the next Part measures
+step by step. This Part changed no `src/` file, so the six-gate run recorded for Part 152 (build/check152.log,
+66/66 tests, 21578 checks, 93 frames, 10 e2e pictures) still describes the tree.

@@ -561,3 +561,8 @@ sides: the flag-23 mission line comes from Strateg_ConfirmInterceptTarget @ 0x7f
 detected contact -- Strateg_CalcDetect @ 0x81378's site-state arms (1/2/11/12), its 24/31 radius, the
 `nTimer == 0` test and `Game_RandU16(1000) < empty-cell-count(+7)`. Live measurement: 2000 game-minutes,
 closest approach 25.3 tiles, 0 detections, 0 lines.
+coverage (Part 153): PLAN 122a's first link measured live, no src change. A placed new-game base has site state
+1 (one free kind-4 cell) and a detection pct of 2+7 = 9 per thousand -- anBaseRadarPct is Base_CountEmptyFacilityCells
+(0x9461C, 0x4582C), not a radar flag. docs/parity/measure_122a_sweep.sh: 60000 pulse steps = 5955 game-minutes gave
+one detected contact (line `flag 10 slots 4`, 0x818F4's contact message) at 18.4 tiles from the base; 15000 pulses
+(1500 min) gave none. The chain from a visible contact to a mission is pen-driven and every command exists already.

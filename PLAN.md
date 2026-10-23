@@ -6472,3 +6472,18 @@ back exact), IDB saved. 122a stays open with the route the user chose -- script 
 e2e -- which needs new --script scaffolding (a print of the site state and the empty-cell count, then the select /
 confirm / launch commands). Still open: PLAN 122a, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4 half-written
 bugs.tsv rows.
+
+Done (Part 153, PLAN 122a's first link measured): the ported geoscape detects a contact on its own, with no src change.
+The gate numbers come from the existing `grid 0` print: for the placed new-game base the site state is 1 (one free
+kind-4 cell at row 3 col 1, no kind-5 or kind-9 cell, every occupancy byte 0) and the pct is Base_CountEmptyFacilityCells
+= 2, +7 while apLines[117] is 0 -- 9 per thousand. anBaseRadarPct is therefore not a radar flag (0x9461C / 0x4582C store
+the empty-cell score). docs/parity/measure_122a_sweep.sh drives the geoscape clock with the 0xC353 pulse (gametick does
+nothing there: 0x27508's geoscape arm is the four-byte stub 0x94550). Measured: 60000 pulses = 357300 s = 5955 game-min
+-> item 4 `detected 1`, `disp 1`, and the line `[0] flag 10 slots 4 0 0 0` = 0x818F4's contact message with the strateg
+index in colour slot 0; closest approach 18.4 tiles (337/93). A 15000-pulse run gave no contact -- the draw is random and
+the sweep length is the knob. Next (122a continues): press that contact with the pen -- `geoframe` gives the zoom mode,
+scroll and map size that Smap_HitTestStrategSelect's math at 0x82C84/0x82CAC needs -- then card / "new target" / press /
+ОК to arm 0x15967C + 0x159680, then Strateg_ConfirmInterceptTarget @ 0x7fb98's flag-23 line, then the descent panel's
+launch control (0x91578, 0x9180C) runs Smap_BeginCraftSelect with the tier from bCraftClass 2 and the terrain from the
+tile under the contact. Still open: PLAN 122a (the rest of that chain), 117a, 118a, 118b, 118c, 119b's 4994 half, 121a,
+the 4 half-written bugs.tsv rows.
