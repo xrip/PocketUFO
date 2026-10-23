@@ -23991,3 +23991,104 @@ Gates: `build/check134.log` -- `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, 65/65
 checks, coverage unchanged at 972/1103 functions (88.1%) and 596888/598792 instruction bytes (99.7%), 135 artifact
 rows, 131 uncited functions, 0 real gaps, `frames: unchanged (93 reference pictures)` and the 9 e2e pictures unchanged.
 The ledger is unchanged at 782 cited / 186 uncited: Part 134 closes a PLAN row, not a ledger row.
+### Part 135 -- InitInstance's startup block: the warm-up draws, the nine picks, and the one picture they move
+
+The port seeded the CRT RNG and stopped there. InitInstance @ 0x9FD48 does three things after
+`GetSystemTime` (0xA00D8): `srand(100 * wSecond + wMilliseconds)` @ 0xA00F8, then plain `rand()` wSecond
+times (0xA0108..0xA011C), then nine `Game_RandU16` draws (0xA0134..0xA024C) before it builds the asset
+paths. The port ran the first step only, so `Map_nMissionType` (0x128AD2) and `Map+0x1511E` (unk_128AD6)
+were 0 in every new game -- the values the original draws at start -- and every roll after them sat a
+warm-up plus nine draws away from the original's stream. Part 134's ledger row 29 was this function; the
+row was reached by name only, with nothing asserting the block.
+
+#### The block as the ARM writes it
+
+| record | the instruction | where the value lands | who reads it |
+|---|---|---|---|
+| 0xA00F8 | `srand(100 * wSecond + wMilliseconds)` | the CRT state | every Game_RandU16 after it |
+| 0xA0108..0xA011C | `BL rand`, `wSecond` times | nowhere -- the results are dropped | -- |
+| 0xA0134 | Game_RandU16(5) | 0xAC6C0 | no reader in the image |
+| 0xA014C | Game_RandU16(3) | unk_188D58 | no reader |
+| 0xA0154 / 0xA016C | `CMP #1`; only when it is NOT 1: Game_RandU16(2) | 0xAC6C4 | no reader |
+| 0xA01A0 / 0xA01A8 | Game_RandU16(8); a 0 result raised to 1 | 0xAC6C8 | no reader |
+| 0xA01C8 | Game_RandU16(2) == 0 -> `STRBEQ` | Map+0x1511E (unk_128AD6) | 24 reads in 6 functions |
+| 0xA01E4 / 0xA035C | Game_RandU16(4), then 2 unconditionally | 0xAC6CC | no reader |
+| 0xA01FC | Game_RandU16(0x46) | word_188D5C | no reader |
+| 0xA0214 | Game_RandU16(0xC8) | unk_188D60 | no reader |
+| 0xA0220 / 0xA0230 | Game_RandU16(10), redrawn while the value is 7 | -- | -- |
+| 0xA0228 | `STRB` | Map_nMissionType (0x128AD2) | 75 reads in 17 functions |
+| 0xA0244 / 0xA024C | pick 3 or 4 -> clear again | Map+0x1511E | as above |
+
+Seven of the pre-pick cells are write-only, and that was measured twice rather than inferred from the
+xref list: their only direct xrefs are the InitInstance stores, and a scan of the 103 functions that touch
+their neighbours (0xAC6D0, the SYSTEMTIME block at 0x188D30/3C/40/50/54/60/64) over 12 991 instructions
+finds no `LDR/STR/STRB [Rbase,#imm]` and no `ADD Rn,Rn,#imm` reach into any of the seven -- hidden reach
+0, the trap memory `idb-writer-census-trap` warns about. A write-only cell is still a draw, and that is
+what this Part is for.
+
+#### What the port does now
+
+`Game_SeedRng` is GetSystemTime (0xA00D8) + srand (0xA00F8) + the warm-up (0xA0108..0xA011C).
+`Game_SeedRngFixed` is the same two steps from the shell's clock PAIR `PUFO_SHELL_CLOCK_SECOND` /
+`PUFO_SHELL_CLOCK_MS` (30 s, 0 ms -> seed 3000, then 30 plain draws); the old single-seed constant is
+gone, because the original takes the seed AND the draw count out of one clock field. `Game_SeedStartupPicks`
+is 0xA0134..0xA024C in the record's order, the two live results out through its arguments. `App_InitInstance`
+runs them right after the seed -- the record spends them before the asset paths at 0xA0250 -- and `wWinMain`
+installs both into the Map block directly after `World_Init`, which memsets that block; nothing in between
+reads them, and the same is true in the image: the only stores outside InitInstance are the save pair
+(0x4430C/0x44318 as DatFile_Read's `pBuf`, i.e. a write with no store xref) and the mission-start path
+(`Smap_BeginCraftSelect` six times each, `Tact_CheckBattleEnd` at 0x365B8). `LoadAcceleratorsW` now asks for
+resource 3, the `MOV R1,#3` @ 0x9FCE4 / `BL` @ 0x9FCEC pair, not 1.
+
+#### What moved, and only that
+
+- `frames: unchanged (93 reference pictures)` -- no frame test runs `App_InitInstance`, so none of them sees
+  the change.
+- The e2e gate moved exactly one picture: `tests/ref/e2e/01_newgame.png`, 414 differing pixels of 76800,
+  spread x 8..78 / y 203..226. The whole spread is the two coordinate readouts: 868.845.861 and 748.608.437
+  become 500.782.175 and 560.926.480. The map, the crosshair, the panel text and the other 8 pictures are
+  byte-identical to before. The new reference is committed in this Part's code commit.
+- The script-state line gained `mission type %d, map 0x1511E %d`, and `tools/e2e.sh` now asserts
+  `mission type 6, map 0x1511E 0` on the new-game flow. That assertion exists because `pufo_app.c` is the
+  executable's own file and is linked into no test: the unit tests can prove the picks, only the gate can
+  prove the install.
+
+#### Tests and teeth
+
+11 new checks in `tests/test_rand.c` (test_rand 7 -> 18, total 21478), every one citing `@ 0x9fd48`. The shell
+clock is repeated there as the literals `SHELL_CLOCK_SECOND` / `SHELL_CLOCK_MS` -- a check that reads the
+same constant the port reads cannot see that constant change. Three checks replay the fixed-clock seed and
+warm-up, three compare the port's block against the record spelled out in the test (pick 6, flag 0, and the
+next draw 475 after the block), and five run 800 seeds twice: the port's pick must stay in 0..10 and never
+land on 7, the port's block must agree with the record on all 800, and the fixture must prove that some seed
+takes 0xA0154's draw-skipping arm, that some seed raises Map+0x1511E at 0xA01C8, and that some seed is type
+3 or 4 where 0xA024C clears it again.
+
+8 cases in `docs/parity/mutations_part135.py` -- the seed formula's `100 *`, one warm-up draw fewer, the
+gate at 0xA0154 inverted, the 0xA01FC draw dropped, the 0xA0214 draw dropped, the type-3/4 clear moved onto
+type 5, the pick drawn from 9, the redraw-while-7 loop dropped. 22 failing checks, 0 skipped, 0 inert, 0
+build failures, 8 of 8 files back to their exact bytes, `grep -rn "MUTATION" src tests` empty; every case
+prints a failing check naming `@ 0x9fd48`. Log: `build/crops/teeth135.log`. The committed picture carries a
+proof of its own (`build/crops/pic135_diffs.sh`): a build with the 0xA0214 draw removed runs the new-game
+flow printing `mission type 9` and lands 53 595 differing pixels of 76 800 (spread x 0..239, y 0..313)
+against the committed reference. Restore in that script is from a saved copy -- `git checkout --` there
+would delete the Part's own uncommitted work in the file it touches.
+
+#### IDB and gates
+
+InitInstance head note (691) plus block notes at 0x9FD94 (473), 0x9FEE8 (425), 0xA00D8 (838), 0xA0220 (392),
+0xA0250 (766), 0xA035C (129); write-only census notes on the seven start cells (160 each); the Map pair
+carries its full reader/writer census at 0x128AD2 (711) and 0x128AD6 (769), including the save pair's
+pointer-passed writes at 0x4430C/0x44318 and 0x44334/0x44340 -- the reason "no store xref" does not mean
+"no writer" here. Two IDB corrections came out of re-reading: the 0xA0250 note had been lost from the
+database while the head comment still pointed at it, and 0xA02F8's operand comment described the two path
+literals as `...\lang.dat` with a 261-wchar stride -- the literals at 0xA64C0/0xA64D4 are plain ANSI
+`lang.dat` and `main.dat` 20 bytes apart, the backslash comes from szAppDir (the strip loop at
+0xA027C..0xA02D0 keeps it) and the 261-wchar stride is the destination records at 0x187F58. WinMain @ 0x9fcc4
+(682), PocketUFO_WndProc @ 0xa03ec (992) and its WM_TIMER dispatch at 0xA08AC (778) carry the notes Part 135
+needed for the next round. All read back exact; `idb_save` ok.
+
+Gates: `build/check135b.log`, run against the committed code commit -- coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 65/65 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21478 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures),
+CHECK EXIT=?. The earlier run `build/check135.log` shows the same numbers with one difference: its last line is the
+e2e gate's own guard, `e2e pictures: CHANGED or NEW -- M tests/ref/e2e/01_newgame.png`, because at that
+moment the re-referenced picture was in the tree but not in a commit yet.

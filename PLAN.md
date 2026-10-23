@@ -5244,6 +5244,23 @@ Gate: no code or test change; `audit_bugs.py` and `coverage.py --check` green; s
     stores show no xref in this IDB, so their meaning is still unestablished. The open question --
     whether the mission-type draw and the `unk_128AD6` draw matter at start -- is stated as a
     question.
+  - **Reopened and CLOSED-FIXED 2026-10-23 (Part 135):** The gap was not the seven globals, it was the ten
+    draws in front of the pick. The port ran `srand` and stopped: the warm-up loop (0xA0108..0xA011C) and the
+    nine start draws (0xA0134..0xA024C) were missing, so `Map_nMissionType` and `Map+0x1511E` were 0 in every
+    new game. `Game_SeedRng` spends the warm-up now, `Game_SeedRngFixed` seeds from the shell's clock PAIR
+    (30 s 0 ms -> seed 3000, then 30 draws) because the original takes both numbers out of one field, and
+    `Game_SeedStartupPicks` reproduces 0xA0134..0xA024C in the record's order; `App_InitInstance` runs it and
+    `wWinMain` installs the two live cells after `World_Init` (which memsets them). The closing pass's open
+    question -- do the mission-type and `unk_128AD6` draws matter at start -- is answered by the run: with the
+    fixed clock a new game reaches mission 6 with the byte left 0, and `tools/e2e.sh` now asserts that. The
+    seven dead cells are measured now, not assumed: their only direct xrefs are the InitInstance stores, and a
+    `LDR/STR/STRB [Rbase,#imm]` plus `ADD Rn,Rn,#imm` scan of the 103 functions touching their neighbours
+    (12 991 instructions) finds no hidden reach. The live pair got its census in the IDB at 0x128AD2 / 0x128AD6,
+    which also shows a hidden writer the xref list hides: the save pair passes both as `DatFile_Read`'s `pBuf`
+    (0x4430C/0x44318, 0x44334/0x44340). One committed picture moved and is re-referenced
+    (`tests/ref/e2e/01_newgame.png`, 414 of 76 800 pixels); the 93 frame pictures and the other 8 e2e pictures
+    did not. Teeth: 8 mutation cases (22 failing checks, all naming `@ 0x9fd48`) plus the picture proof. Row
+    121a's `app-shell` part drops 3 -> 2.
 - [x] **Closed in Part 71: the e2e pictures were nondeterministic, and the cause is the original's seed.**
   Six scripted runs of one flow gave two different `01_newgame.ppm` pictures with no code change between
   them, and *every* one of the 240x320 pixels differed -- the new game's map/region pick is a
@@ -5593,9 +5610,11 @@ gamma 0 after Part 112. Three named items came out of Part 114: array A of the m
 block (`unk_159E9C`, IDB `int[1600]`, port `u32 *` in four envs plus `pProductU32Col`), whose sweep needs
 a check of each unsigned expression it touches and whose clear check has the same two-byte-fits fixture
 weakness; what `aManufProductB` means (`units asked for` in the port header vs `the dword engineer
-assignment` in the 0x6E330 note) was settled by Part 115 against the shipped captions -- lang.dat TEXTS 1180..1183 paired with their values at 0x70908 (LDRH, `auManufCol`) and 0x709D0 (LDR, `aManufProductB`), the caption positions (10,216)/(140,216), and `g_aManufCtlDesc` putting the two +/- pairs at (10,251/271) and (140,251/271): `auManufCol` is the engineers assigned, `aManufProductB` the units to produce, and the four manufacturing button names moved in the IDB and in `src/` to match -- though the four `renames.tsv` rows Part 115 announced were not in its commit and are in the file only from Part 116. Part 116 also found that Part 115's claim about the 0x6E330 floor was wrong: the guard reads `auManufCommitted @ 0x15D09C` (block + 0x3204, `LDRH` at 0x6E3A4), never `auManufCol`, and the port's `ManufScreen_DecUnits` had been reading the engineers column -- now fixed, named in the IDB, and gated by five new checks; and 0x6E58C's low-byte read of a dword entry, modelled but not gated because the port masks the same value to a byte, so the two readings agree until the sum passes 255. Two rows stay open as IDB ambiguity rather than be closed by
-guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`) and 5038 (seven RNG start globals whose
-readers this IDB does not establish).
+assignment` in the 0x6E330 note) was settled by Part 115 against the shipped captions -- lang.dat TEXTS 1180..1183 paired with their values at 0x70908 (LDRH, `auManufCol`) and 0x709D0 (LDR, `aManufProductB`), the caption positions (10,216)/(140,216), and `g_aManufCtlDesc` putting the two +/- pairs at (10,251/271) and (140,251/271): `auManufCol` is the engineers assigned, `aManufProductB` the units to produce, and the four manufacturing button names moved in the IDB and in `src/` to match -- though the four `renames.tsv` rows Part 115 announced were not in its commit and are in the file only from Part 116. Part 116 also found that Part 115's claim about the 0x6E330 floor was wrong: the guard reads `auManufCommitted @ 0x15D09C` (block + 0x3204, `LDRH` at 0x6E3A4), never `auManufCol`, and the port's `ManufScreen_DecUnits` had been reading the engineers column -- now fixed, named in the IDB, and gated by five new checks; and 0x6E58C's low-byte read of a dword entry, modelled but not gated because the port masks the same value to a byte, so the two readings agree until the sum passes 255. One row stays open as IDB ambiguity rather than be closed by
+guessing: 4994 (blocked on the unported `LoadGame @ 0x44bbc`). 5038 -- the seven RNG start globals -- got its
+census in Part 135: direct xrefs are InitInstance's stores only, and a base-displacement scan of the 103
+functions touching their neighbours (12 991 instructions) finds no hidden reach, so the seven are write-only;
+what mattered was the ten draws in front of the two live picks, and the port spends them now.
 
 One IDB upkeep item came out of this pass and is left open on purpose. The `Map` struct's member at
 `+0x150F0` is still `nAnimScratchX`, typed `_BYTE[4]`, while the same address carries the global name
@@ -5702,6 +5721,11 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   blocker has to be re-checked and the row either closed or restated with the real blocker. 5038 names seven
   RNG start globals whose readers this IDB does not establish; a fresh census either finds the readers or
   records that it does not. Part 119.
+  - **Part 135 closes the 5038 half (CLOSED-RECORDED):** the census ran and it records that there are no
+    readers -- direct xrefs are InitInstance's seven stores, and the base-displacement scan finds no hidden
+    reach (103 functions, 12 991 instructions, 0 hits). The two live picks the block also draws are ported,
+    asserted and gated. 4994 stays open: its blocker (`LoadGame @ 0x44bbc`) has to be re-read against
+    `pufo_save.c` before the row says anything.
 - [x] **133a. Two values the suite never read: the burn's exactness and the site clear's extent.** Opened in Part
   133, closed in Part 134. Part 133's `-= nDamage + 1` printed 0 failing checks and the reason it recorded ('every
   `TestBaseAtUpdate` fixture rolls a miss') was wrong: that test already pins all four burns with hit fixtures
@@ -6252,3 +6276,17 @@ open with 238 rows left.
   interval statement (555 chars), both read back exact, `idb_save` ok. Gates: `build/check134.log` -- `check: ALL SIX
   GATES RAN`, `CHECK EXIT=0`, 65/65 in both configurations, 21467 checks, 972/1103 functions and 596888/598792 bytes,
   135 artifact rows, 131 uncited functions, 0 real gaps, 93 frames and 9 e2e pictures unchanged.
+  Progress (Part 135): `InitInstance @ 0x9fd48` closed as a ledger row (783 cited / 185 uncited now: `tact` 93,
+  `strat` 90, `app-shell` 2) and the startup block it names is ported. The number that makes this worth a Part
+  is the ten draws the port never spent -- a warm-up of `wSecond` plain `rand()` calls plus nine
+  `Game_RandU16` draws -- and the two live results they decide, which were 0 in every new game. Three rules
+  this Part adds to the method: a write-only global is still a draw, so "no reader in the image" is a reason to
+  port the store, not a reason to skip it; the census for "no reader" has to be run against the
+  `LDR/STR/STRB [Rbase,#imm]` and `ADD Rn,Rn,#imm` forms as well as the xref list (0 hidden reach over 103
+  functions and 12 991 instructions); and a value the unit tests cannot reach -- the install into the world,
+  through `pufo_app.c`, which is linked into no test -- is gated by the e2e flow instead (`mission type 6,
+  map 0x1511E 0`). 11 new checks (test_rand 7 -> 18), 8 mutation cases with 22 failing checks and no inert
+  case, and one committed picture re-referenced with its diff measured (414 of 76 800 pixels, the two
+  coordinate readouts only). The last two `app-shell` rows (`WinMain @ 0x9fcc4`, `PocketUFO_WndProc @ 0xa03ec`)
+  are next, through the e2e gate: cite-attributed state assertions in the flow plus a mutation that breaks a
+  committed picture.

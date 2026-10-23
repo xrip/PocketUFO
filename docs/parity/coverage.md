@@ -394,3 +394,37 @@ frames and 9 e2e pictures unchanged.
 
 Measured after Part 134: **782** cited, **186** not (`tact` 93, `strat` 90, `app-shell` 3 left) -- this Part closed a
 PLAN row, not a ledger row.
+
+## Part 135 -- InitInstance's startup block ported: 783 cited / 185 uncited
+
+The port ran `srand` and stopped; the original spends a warm-up (`rand()` `wSecond` times,
+0xA0108..0xA011C) and nine `Game_RandU16` draws (0xA0134..0xA024C) in front of the asset paths. Two of the
+nine results are live -- `Map_nMissionType` @ 0x128AD2 (drawn 0..9 from a bound of 10, redrawn while 7) and
+`Map+0x1511E` @ unk_128AD6 (raised when a 0..1 draw is 0, cleared again for mission types 3 and 4) -- and
+both were 0 in every new game. The other seven cells (0xAC6C0, 0xAC6C4, 0xAC6C8, 0xAC6CC, 0x188D58,
+0x188D5C, 0x188D60) have no reader in the image -- measured as direct xrefs and again as a
+base-displacement scan (103 functions touching their neighbours, 12 991 instructions, hidden reach 0) -- but
+they are still draws, and the draws decide every roll that follows.
+
+`Game_SeedRng` now spends the warm-up, `Game_SeedRngFixed` seeds from the shell's clock pair (30 s 0 ms ->
+seed 3000 + 30 draws) instead of a fixed seed, `Game_SeedStartupPicks` reproduces 0xA0134..0xA024C in order,
+and `wWinMain` installs the two live cells after `World_Init` (which memsets them). `LoadAcceleratorsW` asks
+for resource 3 (`MOV R1,#3` @ 0x9FCE4).
+
+11 new checks (test_rand 7 -> 18), all citing `@ 0x9fd48`; a new `tools/e2e.sh` state assertion proves the
+install reaches the live world (`mission type 6, map 0x1511E 0`). Teeth: 8 mutation cases, 22 failing checks,
+0 inert, 0 skipped, 8/8 restored -- plus a picture proof: dropping the 0xA0214 draw runs the flow at mission
+type 9 and differs from the committed `01_newgame.png` in 53 595 of 76 800 pixels.
+
+Pictures: 93 frame references unchanged; one e2e reference re-referenced -- `01_newgame.png`, 414 of
+76 800 pixels, x 8..78 / y 203..226, the two coordinate readouts only (868.845.861 / 748.608.437 ->
+500.782.175 / 560.926.480). The other 8 e2e pictures are identical.
+
+IDB: InitInstance head + 6 block notes, the seven write-only cells, the reader/writer census at 0x128AD2 and
+0x128AD6 (including the save pair's pointer-passed writes 0x4430C/0x44318, 0x44334/0x44340), 0xA0250's note
+restored after it was found missing, and 0xA02F8's operand comment corrected (the literals are plain
+`lang.dat` / `main.dat` 20 bytes apart). All read back exact, `idb_save` ok. Gates: `build/check135b.log` --
+coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 65/65 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21478 checks, frames: unchanged (93 reference pictures) and e2e pictures: unchanged against the committed references (9 pictures) unchanged.
+
+Measured after Part 135: **783** cited, **185** not (`tact` 93, `strat` 90, `app-shell` 2 left -- the two
+`app-shell` rows are `WinMain @ 0x9fcc4` and `PocketUFO_WndProc @ 0xa03ec`, to be closed through the e2e gate).

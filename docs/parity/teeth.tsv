@@ -26,7 +26,7 @@
 0x9ed0c	Reg_SetString	176	app-shell	yes	yes	yes		yes
 0x9edbc	Reg_GetString	272	app-shell	yes	yes	yes		yes
 0x9fcc4	WinMain	132	app-shell	yes	no	no	wWinMain	no
-0x9fd48	InitInstance	1600	app-shell	yes	no	no	App_BuildAssetPaths|App_InitInstance	no
+0x9fd48	InitInstance	1600	app-shell	yes	yes	yes	App_BuildAssetPaths|App_InitInstance|Game_SeedStartupPicks	yes
 0xa0388	App_QuitDisplay	100	app-shell	yes	yes	yes	App_HookQuit	yes
 0xa03ec	PocketUFO_WndProc	2964	app-shell	yes	no	no		no
 0x9e0c0	Sound_Play	112	audio	yes	yes	yes	App_InitStartupUi|World_InitTactical|Ui_ConfirmMeleeMode6	yes
