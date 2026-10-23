@@ -6416,3 +6416,22 @@ dispatching the quit seam, so the last named limit of the start-to-end proof goe
 behaviour rows (16 with a port cell, 6 empty, 2 not driven directly), 117a, 118a, 118b, 118c, 119b's 4994 half,
 121a, the 4 half-written bugs.tsv rows.
 
+Done (Part 150, PLAN 122): the live tactical mission is in the e2e chain. tools/e2e_flow_tact.txt runs the launch
+tail (0x83ABC GeoscapeUi_FreeAll mode 0 -> 0x86D34 clears Map_bGeoscapeUi -> GameTick_OnTimer's tactical branch at
+0x27508 opens -> 0x83AC4 Tact_InitMission mode 0) through the world's own mission-seam hooks; src gained the
+scaffolding wrapper World_ScriptLaunchMissionTail plus the --script "launch" command, both with the user's sign-off.
+Measured live: 0x83AC4 returns 1, the world's 8 soldiers deploy (uTu 50..56, hp 44..54), the tact HUD draws from
+lang.dat (new committed reference 13_tact_unit_panel.png, looked at first), the pen reaches Input_OnPointer's tact
+arm, and quityes closes a LIVE mission -- last tact line "no live mission", exit 0. tools/e2e.sh asserts all three
+halves, and both new assertions have proven teeth (mut150.log: no launch -> fail; no quityes -> fail; restored exact).
+New open item PLAN 122a, stated as measured: this mission has no enemy roster and the queue never starts (len 0 after
+5 and after 35 tactical ticks), because the mission's tier/terrain-variant/sprite-set cells are computed by
+Smap_BeginCraftSelect @ 0x838dc's decision tree, which the scripted run skips -- its selection reads the root line
+list (0x839CC craft, 0x839E4 strateg entry), the run has 0 lines, and the only travelling item (class 0 at 562/285,
+travel 304 min) is undetected (bVisible 0, bDetected 0); 200 extra tactical ticks produced no line. Closing 122a
+means either walking the tree over a detected site or reproducing the contact the tree selects. IDB: 0x3c550's
+Map_nUiScreen arms (0x3C64C clear, 0x3C67C store, 0x3D2A8 save into word_113A44, 0x3D2B0 = 20) appended to its
+comment, read back exact. Gates: 66/66 tests, 21568 checks, 93 frames, 10 e2e pictures unchanged, CHECK EXIT=0.
+Still open: PLAN 122a, the 22 uncited behaviour rows, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4
+half-written bugs.tsv rows.
+

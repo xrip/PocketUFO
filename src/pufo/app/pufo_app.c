@@ -1911,6 +1911,14 @@ static void App_RunDebugScript(LPCWSTR pwszPath)
         } else if (strcmp(azArg[0], "close") == 0) {
             World_CloseGeoscape(&g_world);
             printf("pocketufo: step close\n");
+        } else if (strcmp(azArg[0], "launch") == 0) {
+            /* SHELL SCAFFOLDING (Part 150): run the launch tail the descent panel's control reaches --
+             * 0x83ABC GeoscapeUi_FreeAll(0), which clears Map_bGeoscapeUi at 0x86D34 and so opens
+             * GameTick_OnTimer's tactical branch (0x27508), then 0x83AC4 Tact_InitMission mode 0. Scripted
+             * runs stage no descent panel, so the two seam hooks are dispatched directly. */
+            printf("pocketufo: step launch (0x83ABC then 0x83AC4): %d\n",
+                   World_ScriptLaunchMissionTail(&g_world));
+            App_ScriptTact();
         } else if (strcmp(azArg[0], "save") == 0 && nArgs > 1) {
             (void)App_HookSaveGame((i32)atoi(azArg[1]), NULL);
             printf("pocketufo: step save slot %s\n", azArg[1]);

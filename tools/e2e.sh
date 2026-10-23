@@ -32,7 +32,7 @@ fi
 rm -f "$out"/*.ppm "$out"/*.png "$out"/sav*.sav "$out"/flow_*.log "$(dirname "$exe")"/sav*.sav
 mkdir -p "$out" "$refs"
 
-for flow in e2e_flow_new.txt e2e_flow_load.txt e2e_flow_quit.txt; do
+for flow in e2e_flow_new.txt e2e_flow_load.txt e2e_flow_quit.txt e2e_flow_tact.txt; do
     if ! (cd "$out" && "$exe" --script "$(cygpath -w "$dir/$flow")") > "$out/flow_$flow.log" 2>&1; then
         echo "RUN FAILED for $flow"
         cat "$out/flow_$flow.log"
@@ -96,6 +96,38 @@ if [ "${n_first:-0}" -le 0 ] || [ "${n_last:-1}" -ne 0 ] || [ "$m_first" != "$m_
 fi
 echo "quit-YES on a loaded world: $n_first live items -> 0, mirror 0x186530 unchanged ($m_first)"
 
+# Live mission (Part 150, PLAN 122): the tact flow runs the launch tail -- GeoscapeUi_FreeAll mode 0 at
+# 0x83ABC, whose 0x86D34 store clears Map_bGeoscapeUi and opens GameTick_OnTimer's tactical branch at
+# 0x27508, then Tact_InitMission mode 0 at 0x83AC4 -- over the world the new-game flow built. What the
+# gate requires is what the original's own bring-up produces: the 0x83AC4 thunk returns 1, the eight
+# soldiers the world already had are deployed on the tactical map, the tactical branch owns the ticks
+# (player input live), and the quit seam at App_QuitFromTact @ 0x18e18 closes a LIVE mission rather than
+# standing in for one -- the last tact line must read "no live mission". What the gate does NOT claim:
+# this mission has no enemy roster (the tier/variant cells come from Smap_BeginCraftSelect @ 0x838dc's
+# decision tree, which a scripted run does not walk), so the queue stays empty -- stated in
+# tools/e2e_flow_tact.txt and in PLAN, not hidden by a weaker assertion.
+tlog=$out/flow_e2e_flow_tact.txt.log
+if ! grep -q 'step launch (0x83ABC then 0x83AC4): 1' "$tlog"; then
+    echo "STATE FAILED: the launch tail did not bring the mission up (0x83AC4 must hand back 1)"
+    grep -m2 'step launch' "$tlog" || true
+    exit 1
+fi
+t_first=$(grep -m1 'pocketufo: tact:' "$tlog")
+n_xcom=$(sed -n '/step launch/,/step gametick/p' "$tlog" | grep -c '^  xcom ')
+if ! printf '%s\n' "$t_first" | grep -q 'player input 1' || [ "$n_xcom" -lt 4 ]; then
+    echo "STATE FAILED: the mission came up without the world's own soldiers or without player input"
+    echo "  first tact line: $t_first"
+    echo "  deployed soldiers reported: $n_xcom"
+    exit 1
+fi
+t_last=$(grep 'pocketufo: tact:' "$tlog" | tail -1)
+if [ "$t_last" != "pocketufo: tact: no live mission" ]; then
+    echo "STATE FAILED: the quit seam did not close the live mission"
+    echo "  last tact line: $t_last"
+    exit 1
+fi
+echo "live mission in the exe: 0x83AC4 returned 1, $n_xcom deployed soldiers, tactical ticks live; quit-YES closed the live mission"
+
 mv "$(dirname "$exe")"/sav*.sav "$out"/ 2>/dev/null || true
 
 # Gate scaffolding: a --script run does NOTHING and still exits 0 while another pocketufo.exe owns the
@@ -103,7 +135,7 @@ mv "$(dirname "$exe")"/sav*.sav "$out"/ 2>/dev/null || true
 # returns false and WinMain returns 0 before the script is read. Measured: one leftover hidden window from
 # a killed run made six later runs write no pictures at all. Count the pictures against the flow files
 # before believing the run.
-want=$(grep -h '^[[:space:]]*dump ' "$dir"/e2e_flow_new.txt "$dir"/e2e_flow_load.txt | wc -l)
+want=$(grep -h '^[[:space:]]*dump ' "$dir"/e2e_flow_new.txt "$dir"/e2e_flow_load.txt "$dir"/e2e_flow_tact.txt | wc -l)
 got=$(ls "$out"/*.ppm 2>/dev/null | wc -l)
 if [ "$got" -lt "$want" ]; then
     echo "RUN FAILED: $got pictures, the flows ask for $want"

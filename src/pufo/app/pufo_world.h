@@ -1128,6 +1128,13 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
  * grid, TactState, the rosters' live fields) and sets bTactLive. Returns Tact_InitMission's result. */
 bool World_InitTactical(PufoWorldState *pW, i32 nMode);
 
+/* SHELL SCAFFOLDING (--script "launch", Part 150): the two mission-seam thunks in the launch tail's own
+ * order -- 0x83ABC GeoscapeUi_FreeAll mode 0 (which clears Map_bGeoscapeUi at 0x86D34, opening
+ * GameTick_OnTimer's tactical branch at 0x27508) then 0x83AC4 Tact_InitMission mode 0. Scripted runs have
+ * no descent panel and no craft-select line, so they reach the mission through this instead of through
+ * Smap_BeginCraftSelect @ 0x838dc. Returns the 0x83AC4 thunk's value. */
+i32 World_ScriptLaunchMissionTail(PufoWorldState *pW);
+
 /* Release what World_InitTactical brought up: every apTactCells slot, the items, the five panels, the
  * showship blob, the rmp nodes, the loft buffers, the map ctx and TactState. The soldier records stay
  * owned by apSoldiers and World_Free. This is the shell's own teardown, NOT Tact_Shutdown @ 0x3d568:

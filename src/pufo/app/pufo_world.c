@@ -5724,6 +5724,20 @@ static i32 World_MissionSeamInitMission(i32 nMode, void *pUser)
     return World_InitTactical((PufoWorldState *)pUser, nMode) ? 1 : 0;
 }
 
+/* SHELL SCAFFOLDING (--script "launch", Part 150): the launch tail in the original's own order --
+ * GeoscapeUi_FreeAll(0) at 0x83ABC, whose store at 0x86D34 CLEARS Map_bGeoscapeUi (Map+0x44), the byte
+ * GameTick_OnTimer's gate 2 (0x27508) tests before it takes the tactical branch; then Tact_InitMission
+ * mode 0 at 0x83AC4. A scripted run has no descent panel to press and no craft-select line to select, so
+ * this dispatches the two seam thunks directly instead of walking Smap_BeginCraftSelect @ 0x838dc's
+ * decision tree -- they are the same two hooks World_WireMissionSeams installs on pW->craftEnv
+ * (0x8701/0x8702 here), and the pair test_geoscapeframe.c's mission sections bring a mission up with.
+ * Returns the 0x83AC4 thunk's value (1 when the mission came up). */
+i32 World_ScriptLaunchMissionTail(PufoWorldState *pW)
+{
+    World_MissionSeamFreeUi(0, pW);
+    return World_MissionSeamInitMission(0, pW);
+}
+
 /* OptionsScreen_ReturnToTitle @ 0x6b46c, the quit page's Да: OptionsScreen_Init installs the thunk on
  * ctlB at 0x6BF2C. Its three callees are stores at 0x6B480 / 0x6B488 / 0x6B490. The close runs over the
  * shell's closeEnv (screen is 18 while the menu is up, so case 18 tears the options UI down and lands on

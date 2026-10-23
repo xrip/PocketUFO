@@ -24773,3 +24773,50 @@ Gates: `tests: 66/66 passing`, 21568 checks (one more than Part 148 -- the new i
 (93 reference pictures)`, 9 e2e pictures unchanged, `check: ALL SIX GATES RAN`, build/check149.log, and the run
 after the ledger edit in build/check149b.log.
 
+
+### Part 150 -- PLAN 122: the live tactical mission joins the chain
+
+The chain now ends in a mission that the executable itself brings up. `tools/e2e_flow_tact.txt` runs the launch tail
+the descent panel's control reaches: `GeoscapeUi_FreeAll` mode 0 at 0x83ABC -- whose store at 0x86D34 CLEARS
+`Map_bGeoscapeUi` (Map+0x44), the byte `GameTick_OnTimer`'s gate 2 at 0x27508 tests before it takes the tactical
+branch -- then `Tact_InitMission` mode 0 at 0x83AC4. The `src` change is one scaffolding wrapper,
+`World_ScriptLaunchMissionTail`, that calls the two mission-seam thunks `pufo_world.c` already installs on
+`craftEnv` (`World_MissionSeamFreeUi` / `World_MissionSeamInitMission`, the 0x83ABC and 0x83AC4 hooks) plus the
+`--script "launch"` command that runs them and prints the tact report. It re-uses the hooks rather than re-deriving
+them, and it was done with the user's sign-off.
+
+Measured in the live process, not inferred: 0x83AC4 hands back 1; `Tact_InitMission @ 0x3c550` builds the mission over
+the world the new-game flow made; the eight soldiers that world already had are deployed (`uTu 50..56`, `hp 44..54`);
+the tactical HUD draws from `lang.dat`; the pen press `click 200 200` goes through `Input_OnPointer`'s tactical arm;
+and `quityes` now closes a **live** mission -- the last tact line reads `pocketufo: tact: no live mission` -- with exit
+0. So the quit seam is no longer only a stand-in for the tactical case.
+
+The picture is the committed reference `tests/ref/e2e/13_tact_unit_panel.png`, looked at before committing: the unit
+panel of "новичок Мэйнфред Вебб (52)" with the torso sprite, the equipment slots, `Вес: 0`, and the tact bank controls
+(`ВСЁ` and the rest). It is the tactical UI running, with the shipped strings.
+
+What was **not** achieved, stated as measured: the mission has no enemy roster. `queue: len 0` after 5 gameticks and
+after 35, no enemy lines at all, because the mission's tier, terrain-variant and sprite-set cells are computed by
+`Smap_BeginCraftSelect @ 0x838dc`'s decision tree, which the scripted run does not walk. That tree selects through the
+root line list -- `UiLineList_GetColor(pLines, 0, 0)` at 0x839CC for the craft and `(0, 1)` at 0x839E4 for the strateg
+entry -- and the run has nothing to select: after new game + pick the line list holds 0 lines, and the one travelling
+item (type 1, class 0, at 562/285, `travel 304 min`) has `bVisible 0` and `bDetected 0`, so it is not a selectable
+contact. Running 200 extra tactical ticks did not create a line either (clock still 0 s, the item barely moved). A
+mission with enemies therefore needs the tree's inputs -- a detected site and a chosen craft -- which is recorded as
+**PLAN 122a** rather than hidden behind a weaker assertion.
+
+Gate assertions added in `tools/e2e.sh`: the 0x83AC4 thunk returns 1; the first tact report shows `player input 1`
+with at least 4 deployed soldiers reported; the last tact report is exactly `pocketufo: tact: no live mission`. Their
+teeth (flow-file mutations only, build/crops/mut150.log): dropping the `launch` line makes the launch assertion fail;
+dropping the `quityes` line makes the "closed the live mission" assertion fail. Each produced the gate's own
+`STATE FAILED` line, exit 1, and the flow was restored byte-exact.
+
+IDB upkeep: `Tact_InitMission @ 0x3c550`'s comment did not name its `Map_nUiScreen` arms. Appended: cleared in the
+prologue at 0x3C64C, stored at 0x3C67C, and on the shared 0x3D24C tail saved into `word_113A44` at 0x3D2A8 before 20
+is stored at 0x3D2B0 -- 1004 characters, read back exact, IDB saved. (The live run leaves the port's state on the
+0x3C67C arm with `ui screen 1`, which is the unit panel the picture shows.)
+
+Gates: `tests: 66/66 passing`, 21568 checks, `frames: unchanged (93 reference pictures)`, e2e 10 pictures unchanged
+against the committed references, `check: ALL SIX GATES RAN`, build/check150.log; the run that first produced the new
+reference is build/e2e150.log (`e2e pictures: 10 checked, 0 bad`).
+

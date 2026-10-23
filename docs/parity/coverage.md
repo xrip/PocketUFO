@@ -532,3 +532,17 @@ lines, 0 inert, both restored byte-exact (docs/parity/mutations_part149.py, buil
 bugs.tsv row 395 records the fix (373 rows). Gates: 66/66 tests, 21568 checks, 93 frames and 9 e2e pictures
 unchanged, check: ALL SIX GATES RAN (build/check149.log, build/check149b.log).
 
+coverage (Part 150, PLAN 122): the start-to-end chain now includes a live tactical mission brought up by the
+executable itself -- 0x83ABC GeoscapeUi_FreeAll mode 0 (clearing Map_bGeoscapeUi at 0x86D34, which opens
+GameTick_OnTimer's tactical branch at 0x27508) then 0x83AC4 Tact_InitMission mode 0, dispatched through the world's
+own mission-seam hooks. Live and asserted: 0x83AC4 returns 1, 8 of the world's soldiers deployed, tactical ticks
+live, pen press through Input_OnPointer's tact arm, quit-YES closing a live mission ("no live mission", exit 0), and
+one new committed picture (tests/ref/e2e/13_tact_unit_panel.png, the unit panel drawn with lang.dat strings). Named
+shortfall, not hidden: the mission has no enemy roster and the queue stays empty because the tier/variant cells come
+from Smap_BeginCraftSelect @ 0x838dc's tree (selection reads the root line list at 0x839CC/0x839E4) and a scripted
+run has no contact line -- PLAN 122a. Teeth: 2 flow mutations, each its gate's only failure line, each restored
+byte-exact (build/crops/mut150.log). IDB: 0x3c550's Map_nUiScreen arms appended to its comment (1004 chars, read
+back), IDB saved. Function and behaviour ledgers unchanged (972/1103 cited, 131 proven artifacts; 968 rows / 946
+cited / 22 uncited). Gates: 66/66 tests, 21568 checks, 93 frames, 10 e2e pictures unchanged, check: ALL SIX GATES
+RAN (build/check150.log; build/e2e150.log for the first run of the new reference).
+

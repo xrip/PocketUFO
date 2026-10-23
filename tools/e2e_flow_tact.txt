@@ -1,0 +1,33 @@
+# The tactical half of the chain (Part 150, PLAN 122): the live mission the launch tail brings up, in the
+# real executable.
+#
+# The launch runs the tail the descent panel's control reaches through Smap_BeginCraftSelect @ 0x838dc --
+# GeoscapeUi_FreeAll mode 0 at 0x83ABC (its store at 0x86D34 clears Map_bGeoscapeUi, the byte
+# GameTick_OnTimer's gate 2 at 0x27508 tests before it takes the tactical branch) and then
+# Tact_InitMission mode 0 at 0x83AC4. The scripted run has no descent panel to press and no craft-select
+# line: the mission's tier, terrain-variant and sprite-set cells are computed by the decision tree the
+# shell skips, so the mission that comes up here has its roster empty. What it does have is real: the
+# bring-up runs 0x3c550 over the live world, the eight deployed soldiers are the world's own soldiers, the
+# tactical HUD draws from lang.dat, the pen reaches Input_OnPointer's tactical arm, and the quit seam runs
+# over a live mission instead of standing in for one.
+#
+# MEASURED, stated rather than smoothed over: `queue: len 0` and no enemy lines after 5 tactical ticks --
+# with no roster the turn system has nothing to schedule. A mission with enemies needs the select tree's
+# inputs (a detected mission site and a chosen craft line), which is a separate PLAN item.
+
+newgame
+tick 20
+pick
+close
+close
+tick 20
+launch
+gametick 5
+tact
+dump  13_tact_unit_panel.ppm
+gametick 30
+tact
+click 200 200
+tact
+quityes
+tact
