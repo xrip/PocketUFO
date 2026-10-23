@@ -23,7 +23,7 @@ The corrected sweep over 103 pictures (93 `tests/ref/*.ppm` + 10 live `build/e2e
 | tact_hud_promotion | 1..12, 25..32 | open |
 | tact_hud_inventory, 13_tact_unit_panel | 153..159, 199 | open -- same region in a fixture frame and a live e2e frame |
 | tact_hud_markers | 319 | open (1 row) |
-| econ_buy_craft_queued, econ_hangar_cap_full, transfer_open, transfer_staged, transfer_committed | 1..2, 29..30, 57..58, 85..87 | open -- the same four thin runs in five pictures of the same panel family |
+| econ_buy_craft_queued, econ_hangar_cap_full, transfer_open, transfer_staged, transfer_committed | 1..2, 29..30, 57..58, 85..87 | CLOSED in Part 158: the four runs are the gaps between the transfer picker's 26-tall base boxes, drawn at step 28 (0x987D8 `3, nY+3, 205, 26`, then 0x9880C and 0x9883C), under the erase rect 0x98738 whose height is `28 * n + 4` = 88 rows with n = 3. Re-measured on the current references: the transfer trio keeps exactly those runs (0..2, 29..30, 57..58, 85..87) and the two econ pictures have none at all after their frames were re-recorded |
 | 00_mainmenu, 10_menu_at_boot, 11_slot_list | 1..2, 264..268, 313..319 | open |
 
 Nothing else in the corpus has an unfilled row, and no picture has a black gap inside a lit span.
@@ -72,6 +72,7 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
    A, E, C, B, D (0x78314..0x7833C). So the open point is now exact: (i) whether the buy/sell panel draws in the IDB are
    the whole `UiPanelMsg_Draw` (with the head blit) or its text tail, and (ii) panel E's hover-box fields
    [0x1B8C]/[0x1B90]/[0x1B9C] and its hover row (panel+0xC) at that dump.
+   CLOSED by Part 157 and Part 158. (i) the IDB draws the whole `UiPanelMsg_Draw` at those call sites and the port now does the same -- `UiPanel_DrawText` (src/pufo/ui/pufo_panel.c:348) holds the head blit, the per-row colour pack, both rules and the per-row meta pack; (ii) the box itself was never a panel highlight: those two dumps had no frame draw behind them at all, and the rect is the transfer picker's control pad with its caption blitted away (the stale-surface section below).
 3. A live deviation behind the "flat / empty panel rows" look, now pinned from both sides. The IDB: `BuySellScreen_Draw`
    calls **`UiPanelMsg_Draw`** for all five panels at 0x78314..0x7833C (E, C, B, D explicit, plus the one at the top of the
    block) -- the whole function, whose head block 0x3E9C0 blits the hovered-row rect and whose row loop
@@ -84,7 +85,8 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
    unclosed deviation, not a picture to re-reference. Consequence for the box: the 114 x 17 rect in
    `econ_buy_craft_queued` cannot be the panel highlight, because the port never blits one -- it has to be attributed to
    another blit before that frame is judged.
-4. `econ_hangar_combat` -- does the original's hangar arm put controls in the bottom strip in this state?
+   CLOSED: Part 157 put all five steps of 0x3e94c into `UiPanel_DrawText` (committed 67ee0d9, mutation-proved), and Part 158 showed the 114 x 17 rect is the transfer picker's control pad on a stale surface, not a panel fill -- the two pictures now draw their own frame and show the buy screen and the shortfall panel.
+4. `econ_hangar_combat` -- CLOSED, see the last section of this file. Short answer: no. The arm's bottom-strip block 0x93298..0x9337C (TEXTS 97 "Экипаж" at y 201, TEXTS 98 "Оборуд." at y 241, both centred on x 53, plus the control pair at block+0x38 and block+0x3C) is gated on `Ship.bCanDogfight @ +0x21` -- 0x93298 `LDRB [R3,#0x21]`, 0x932AC `BEQ loc_93380` -- and the craft on this screen is a type-3 Interceptor, whose byte is 0 by 0x45E28.
 5. `tact_hud_*` and `tact_briefing*` / `debrief_banner` -- thin bands at rows 1..16 and 311..319: compare against the
    tact HUD draw arms' pad rects before judging.
 6. `tact_hud_minimap` rows 16..63 -- a 48-row hole in a live-looking frame, the biggest remaining one.
@@ -117,6 +119,9 @@ explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the
 ## Open items
 
 1. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
+2. Open questions 5 and 6 above are still open: the thin tact bands (rows 1..16, 311..319) and `tact_hud_minimap`'s 48-row hole.
+3. Open question 1 keeps one half open: the selector's four identical rows are closed (the Part 158 ufopaedia section), but what the pad blitted at 0x9B600 holds in that state is not yet read.
+4. The per-picture pass has not yet reached the rest of the corpus: the 10 `tests/ref/e2e/` pictures were reviewed only where a Part changed them, and the research / manuf / radar / psi / base-info / ufopaedia-entry / save-slot / tact families still need one picture-by-picture read each.
 
 ## Part 157 review: the 29 references that moved, read against 0x3e94c (2026-10-23)
 
@@ -278,3 +283,51 @@ the zero slack and draw nothing. Four identical rows and five blank ones is ther
 list the port failed to build. The category panels are built separately (pass 1 0x9AB04..0x9AF14 counts the shown
 entries, pass 2 0x9B0C4..0x9B4FC writes the names into packed rows), and the entry screens ufopaedia_entry /
 ufopaedia_entry_next carry the names.
+
+## Part 158: econ_hangar_combat closed -- the empty bottom strip is the dogfight gate (2026-10-23)
+
+The question was whether the hangar arm puts controls in the bottom strip of the craft-detail view. Reading the arm in
+the IDB (`Geoscape_Draw @ 0x8C180`, arm block 0x9309C..0x93438; the port's copy is `Geoscape_DrawPlaneArm` at
+src/pufo/game/pufo_geoscape.c:6123), in draw order:
+
+  * 0x93118..0x93148 -- two controls, only with the store columns committed. Not this state (no store round ran on this
+    craft).
+  * 0x9314C..0x93180 -- two controls, only with the list panels built. Not this state.
+  * 0x93198..0x93290 -- one crew control per crew slot, gated on all four flags being clear (`bStatPanelAOpen 0x161F18`,
+    `bStatPanelBOpen 0x161F1C`, `bPlaneListPanelsBuilt`, `bPlaneStoresCommitted`), with the digit "1" at (28, 103) from
+    0x93234 and "2" at (205, 103) from 0x9325C. This is the block that paints the picture's two pads and their digits.
+  * 0x93298..0x9337C -- the caption block: `LDRB [R3,#0x21]` = Ship.bCanDogfight, `BEQ loc_93380` when clear; otherwise
+    the loop 0x932C8..0x93378 (counter 2 to 4) blits the block's last two controls (+0x38, +0x3C) and draws TEXTS 97
+    "Экипаж" at y 201 (0x93330) and TEXTS 98 "Оборуд." at y 241 (0x9335C), both centred on x 53.
+  * 0x93380 → 0x91DA8 → 0x93058 -- the close control, seated at (224, 1) by the hangar Init at 0x7DDB4. It is the only
+    control every hangar frame draws, and it is the blue "x" at the top right of the picture.
+
+The claim that the hangar views "omit the controls 0x91DA8 / 0x91E08 add" is not what the IDB says: 0x91DA8 is three
+instructions (load `*g_pUiCloseCtl @ 0x186B00`, branch to the shared blit at 0x93058), and 0x91E08 sits inside the
+screen-1 placement arm that starts at 0x91DC8 -- pad `pBaseFacScreenPad @ 0x186BA0`, three side rails at x 2 / 237 / 210,
+the ten nav controls and the ten action captions. The hangar arm reaches 0x91DA8 and nothing after it.
+
+Why the caption block does not run here: the craft is type 3. `Ship_ctor @ 0x45C20` writes Ship.bCanDogfight @ +0x21 at
+exactly four sites and nowhere else -- 1 at 0x45DA4 (type 0), 1 at 0x45E84 (types 1 and 2 share the block 0x45E7C..0x45E88),
+0 at 0x45E28 (type 3), 0 at 0x45E18 (type 4). Ship.bCrewSlots @ +0x14 is written 2 at 0x45D88, 1 for type 1 at 0x45D8C,
+0 for type 0 at 0x45D9C -- which is why a 2-slot Interceptor draws both digits.
+
+Measured in the reference itself (build/crops/hangcomb.ppm, converted from tests/ref/econ_hangar_combat.png; the first
+attempt at this measurement was wrong and is recorded: the PPM header parser ate one pixel byte and shifted every read by
+one byte, so the first pass found nothing anywhere):
+
+  * The title's ink breaks into 11 clusters: five glyphs, a 3-wide bar occupying row 19 only at x 121..123, three glyphs,
+    a second 3-wide bar at x 146..148, then one digit. That is TEXTS 418 read as "Перех-тик" (CF E5 F0 E5 F5 2D F7 E8 EA),
+    then g_abCraftNameSep[3] = '-', then bType 1 -- the name Ship_FormatDisplayName @ 0x666CC gives a type-3 craft. The
+    name is the type proof: the two dashes are the proof, not a guess.
+  * The crew digits sit at x 30..32 rows 107..114 and x 206..212 rows 107..114, i.e. the ARM's (28, 103) and (205, 103)
+    with the font's own glyph offsets. Their ink is (90, 255, 255), from the pack 0x931F8..0x9321C (68, 244, 252 /
+    4, 70, 75).
+  * That caption block packs the same pair (0x932EC..0x93310), so a caption would be the same colour. Scanning every
+    pixel below row 120 for it: 0 matches. Rows 199..205 and 239..245 hold only the backdrop pad's own browns and greys
+    ((164,149,131), (180,161,139) / (74,80,82), (180,153,123)) -- nothing drawn, nothing erased.
+
+So the empty lower half of econ_hangar_combat is the shipped dogfight gate sitting over the backdrop pad (0x930A0), not a
+port omission. IDB: `Ship_ctor`'s comment now carries the four +0x21 sites, the three +0x14 sites, the type dispatch
+table, and a correction of its old claim that no code indexes a text record by bCraftType -- Ship_FormatDisplayName does
+(903 characters, read back identical, IDB saved).

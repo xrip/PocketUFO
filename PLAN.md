@@ -6621,3 +6621,21 @@ carries the caption-vs-pad-blit note next to the glyph-base note, read back and 
 band pictures, 157a (the manuf/research overlay overlap), 155a, 154a, PLAN 122a's tail, 117a, 118a, 118b, 118c,
 119b's 4994 half, 121a, the 4 half-written bugs.tsv rows, and the 28 tact DumpFrame sites still without a recorded
 draw call.
+Done (Part 158, econ_hangar_combat closed): the last open picture question of the user's named set is settled from the
+IDB. The hangar arm's bottom-strip block 0x93298..0x9337C -- TEXTS 97 "Экипаж" at y 201, TEXTS 98 "Оборуд." at y 241
+both centred on x 53, plus the control pair at block+0x38/+0x3C -- is gated on Ship.bCanDogfight @ +0x21 (0x93298 LDRB
+[R3,#0x21], 0x932AC BEQ loc_93380), and Ship_ctor writes that byte at four sites only: 1 at 0x45DA4 (type 0), 1 at
+0x45E84 (types 1 and 2), 0 at 0x45E28 (type 3), 0 0x45E18 (type 4). The craft on that screen is a type-3 Interceptor:
+its title splits into 11 ink clusters reading "Перех-тик-1" (TEXTS 418 with its own dash plus g_abCraftNameSep[3]), so
+the two dashes are the type proof. The picture's "1"/"2" pads are the crew block 0x93198..0x93290 at (28,103) and
+(205,103) -- the digit ink (90,255,255) has 0 matching pixels anywhere below row 120, so the original draws nothing in
+the bottom strip in this state either. The claim that the hangar views omit controls 0x91DA8/0x91E08 add is not in the
+IDB: 0x91DA8 is the close pad (load *g_pUiCloseCtl, branch to the shared blit 0x93058) and 0x91E08 belongs to the
+screen-1 placement arm at 0x91DC8, which the hangar arm does not reach. The sweep row for the five transfer-family
+pictures is closed too: their four black runs (0..2, 29..30, 57..58, 85..87) are the gaps between the picker's 26-tall
+base boxes drawn at step 28 (0x987D8/0x9880C/0x9883C) under the erase rect 0x98738 (h = 28n + 4 = 88). frames-audit.md
+items 2, 3 and 4 now read as closed with their evidence, and its Open items list states what is still not audited: the
+tact thin bands, tact_hud_minimap's 48-row hole, Ui_DrawBaseInfo's 0x9B600 pad content, the 28 tact DumpFrame sites, and
+the research / manuf / radar / psi / base-info / ufopaedia-entry / save-slot / tact families. IDB: Ship_ctor's comment
+rewritten (903 chars, read back identical) with the four +0x21 sites, the +0x14 sites, the type dispatch table, and a
+correction of its stale claim that no code indexes a text record by bCraftType.
