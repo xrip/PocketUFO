@@ -8277,7 +8277,7 @@ static void TestIncUnits(void)
     CheckEqI32(aProdB[0], 0, "a stores cell under construction gives no capacity (0x65720)");
     CheckEqI32(dwShortfall, 1, "  capacity 0 == pressure 0, so the shortfall dword is set");
 
-    /* Base_CalcStorageUsed adds bCargoSize * auPerBaseVal[base] over the filtered object indices,
+    /* Base_CalcStorageUsed @ 0x6555c adds bCargoSize * auPerBaseVal[base] over the filtered object indices,
      * and object 0 is never in that set -- so the product's own cargo size is not double counted. */
     UNITS_RESET(0);
     env.nObjectCount = 2; /* the storage sum walks indices 1..nObjectCount-1 */

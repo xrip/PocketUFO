@@ -3019,7 +3019,7 @@ static void World_HookTickFacilityConstruction(void *pUser)
     env.apResearchCols = pW->auResearchCol;
     env.nResearchEntries = (i32)pW->nResearchEntries;
     env.apManufCols = pW->auManufCol;
-    env.nManufEntries = PUFO_PRODUCT_ENTRIES_PER_BASE;
+    env.nManufEntries = (i32)pW->nResearchEntries; /* 0x160C4C: the count Base_CountActiveManuf reads */
     env.pdwShortfall = &pW->nShortfall1870C8;
     env.pLines = &pW->msgLines;
     env.pfnPlaySample = pW->pfnPlaySample;

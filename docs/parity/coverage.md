@@ -456,3 +456,23 @@ WM_SIZE (5) re-presents where 0xA041C/0xA0420 swallows the message; WM_ERASEBKGN
 Gates: coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21505 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures).
 
 Measured after Part 136: **785** cited, **183** not (`tact` 93, `strat` 90); `app-shell` 24/24 cited.
+
+## Part 137 -- 28 `strat` rows close: 813 cited / 155 uncited, and the manuf count fixed at 144
+
+`Base_CountActiveManuf @ 0x68264` reads its entry count from the byte at 0x160C4C (144, written once at 0x859E4),
+not from an argument, and sums that many u16 of a 200-entry-per-base column. The port hoists the call into
+`Base_UpdateWorkshopNeeded`'s callers and four of them passed 200: `pufo_geoscape.c` (0x62920), `pufo_baseui.c`
+(0x8BA64), `pufo_save.c` (0x458B8), `pufo_geoiinit.c` (0x953E4). Products 144..148 exist (149 object records), so the
+port charged rows the original cannot count to the workshop budget. All four now pass the shared byte. The
+`Game_StartNew` site is inert by construction -- 0x947EC..0x94814 clears `auManufCol` before 0x953A4's passes.
+
+4 new checks in `TestManufCountIsTheSharedByte`: row 143 counts, row 144 does not, and the 0x62920 pass raises the
+needed flag for one and not the other. 28 rows gained test citations, so the ledger moved 785 -> 813 cited
+(`tact` 93, `strat` 62 left). Teeth: 27 cases, 121 failing checks, 0 inert, 27/27 restored byte-exact. Two inert
+cases (the lab and stores budget divisors) were replaced by cell-kind mutations after measuring that both divisors
+give the same budget at the fixtures' totals.
+
+coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21509 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 0x68264 (789), 0x68278 (189), 0x62920 (377), 0x8BA64 (202), 0x458B8 (207), 0x953E4 (311); `idb_save` ok.
+
+Measured after Part 137: **813** cited, **155** not (`tact` 93, `strat` 62).
+

@@ -24189,3 +24189,55 @@ Gates: `coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests
 
 Measured after Part 136: **785** cited, **183** not (`tact` 93, `strat` 90) and `app-shell` closed -- all 24
 `app-shell` rows are cited.
+
+### Part 137 -- 28 `strat` rows close, and the manuf count the record keeps at 144
+
+The family is the base capacity/need/count leaves: the six `Base_Calc*Cap` twins (0x65720, 0x6579c, 0x65818,
+0x65894, 0x65910, 0x6598c), the five `Base_Update*Needed` passes (0x65bb4, 0x65c7c, 0x65d44, 0x65e24, 0x65fc8),
+`Base_CalcStorageUsed` 0x6555c, `Base_CalcWeaponStorageUsed` 0x65b30, `Base_GetItemQtyA` 0x66198 and
+`Base_GetItemQtyB` 0x661b8, `Base_CountShipsAtBase` 0x66090, `Base_CountSoldiers` 0x661d8, `Base_HasResearchSlotFree`
+0x662bc, `Base_HasWorkshopSlotFree` 0x66340, `Base_CraftWeaponItemId` 0x6641c, `Base_CountActiveResearch` 0x68198,
+`Base_GetEngineerCount` 0x681f4, `Base_CountActiveManuf` 0x68264, `Base_CountBuiltFacilities` 0x682c8,
+`Base_ClearFacilityGridRow` 0x6a0e0, `Base_CalcMonthlyUpkeep` 0x6a230, `Base_FindFacilityCell` 0x6ae54,
+`Base_CountEmptyFacilityCells` 0x6aee0. All 28 were already ported and already called by tests -- what the ledger
+could not see was a test naming their addresses, so the Part is mostly citations onto the checks that already
+pinned them (section headers in `tests/test_geoscape.c`, `tests/test_ship.c`, `tests/test_baseui.c`).
+
+Reading `Base_CountActiveManuf @ 0x68264` found a real port bug. The original takes no entry count: 0x68278
+`LDRB R3,[R1,#0x90]` reads the shared byte at 0x160C4C and the loop sums exactly that many u16 of a column whose
+stride is 200 (`MUL R11, nBase, #0x190`, anchor unk_159E98 + 0x4304 = 0x15E19C). That byte is 144: one writer,
+`MOV R1,#0x90` at 0x859D8 and `STRB R1,[R0,R12]` at 0x859E4 in `Geoscape_InitUI`; `LoadGame` 0x45374,
+`Base_DemolishFacility` 0x66FF8, `Base_CountActiveResearch` 0x681A4, `Base_GetScientistCount` 0x6814C and
+`Base_GetEngineerCount` 0x68208 only read it. The port hoists the call into `Base_UpdateWorkshopNeeded`'s callers,
+and four of them passed `PUFO_PRODUCT_ENTRIES_PER_BASE` -- 200 -- instead: `pufo_geoscape.c` 0x62920,
+`pufo_baseui.c` 0x8BA64, `pufo_save.c` 0x458B8 and `pufo_geoiinit.c` 0x953E4. `main.dat` carries 149 object records
+(30992 / 208), so products 144..148 exist and a quantity in those rows charged the port a workshop budget the
+original never sees. The other call sites already read the shared byte through `pbEntryCount` / `puManufEntries` and
+were left alone. Fix: `env.nManufEntries` now carries `pW->nResearchEntries`, and the three direct sites pass the
+env's own copy of the byte (`pEnv->nResearchEntries`, `*pEnv->puResearchEntries`, `pEnv->bResearchCount`).
+
+Where the fix cannot be seen doing anything: at 0x953E4 the column is already clear. 0x947EC..0x94814 stores zero
+into `auManufCol` for `Map_nObjectCount` entries per base and the five needed passes run later at 0x953A4.., so a new
+game reaches that call with nothing to sum. Recorded rather than claimed as tested.
+
+The boundary is pinned where it is observable. `TestManufCountIsTheSharedByte` in `tests/test_geoscape.c` (4 checks)
+puts a quantity at row 143 and at row 144 of a 200-entry column and reads the sum, then runs
+`Base_TickFacilityConstruction`'s pass at 0x62920 both ways: row 143 raises the needed flag (100 / 50 + 1 = 3 cells
+of budget), row 144 does not. The tick fixture's `nManufEntries` now carries 144, matching what `pufo_world.c` wires.
+
+Teeth: 27 mutation cases, 121 failing checks, 0 inert, 0 skipped, 0 build failures at the end, 27/27 files restored
+byte-exact, `grep -rn "MUTATION" src tests` empty. Two of them were inert on the first run and were replaced rather
+than accepted: `Base_UpdateLabNeeded`'s divisor 50 -> 60 and `Base_UpdateStoresNeeded`'s 300 -> 250 both leave the
+mark pattern identical at the small totals these fixtures use (total/50 + 1 and total/60 + 1 are the same number),
+so those cases now change the cell kind instead (lab -> workshop, 5 failing checks; stores -> containment, 4). One
+case was written wrong first -- replacing only the head of the multi-line `BaseGrid_GetTypeByte` call broke the build
+and produced no failing check; it now counts the wrong craft instead (9 failing checks).
+
+IDB: the head note at 0x68264 (789 chars) with the count-byte census, inline notes at 0x68278 (189), 0x62920 (377),
+0x8BA64 (202), 0x458B8 (207) and 0x953E4 (311). `idb_save` ok. One note could not be attached: `set_cmt` at 0x160C4C
+leaves its existing 652-char census in place (the address is not a comment-attachable head -- `get_head` returns
+None), so the port-side sentence lives at 0x68278 instead.
+
+Gates: coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21509 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures), `check: ALL SIX GATES RAN`, `build/check137.log`.
+
+Measured after Part 137: **813** cited, **155** not (`tact` 93, `strat` 62).

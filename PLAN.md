@@ -6311,3 +6311,18 @@ open with 238 rows left.
   (21478 -> 21505), 9 mutation cases with 25 failing checks and no inert case. Next: the 183
   remaining rows are `tact` 93 and `strat` 90, in Part-sized batches; PLAN rows 117a, 118a, 118b, 118c, 119a, 119b's
   4994 half, 120b and 121a stay open.
+
+
+  Progress (Part 137): 28 `strat` rows close -- 813 cited / 155 uncited (`tact` 93, `strat` 62). The rows were
+  already ported and already called; the gap was that no test named their addresses, so the Part is citation work
+  plus one real fix found while verifying them. `Base_CountActiveManuf @ 0x68264` has no count argument -- 0x68278
+  `LDRB` of the byte at 0x160C4C (144, one writer at 0x859E4) -- while the port hoists the call to four sites that
+  passed the 200-entry column size instead. Fixed at 0x62920, 0x8BA64, 0x458B8 and 0x953E4; observable and pinned at
+  0x62920 (4 checks on rows 143/144 and the needed flag), inert at 0x953E4 because 0x947EC..0x94814 clears the column
+  first. Two method points. (1) An inert mutation is a finding, not a nuisance: the lab and stores budget divisors
+  (50 -> 60, 300 -> 250) left the mark pattern identical because `total/50 + 1` and `total/60 + 1` agree at the
+  fixtures' totals -- measured, then replaced with cell-kind mutations that do have teeth. (2) A citation added to a
+  section header names the row for every check in it, which is what makes 28 rows creditable in one Part.
+  Teeth: 27 cases, 121 failing checks, 0 inert, 27/27 restored. Gates: 66/66 tests, 21509 checks, 93 frames and 9
+  e2e pictures unchanged. Next: `tact` 93 and `strat` 62 remain; PLAN rows 117a, 118a, 118b, 118c, 119a, 119b's 4994
+  half, 120b and 121a stay open.

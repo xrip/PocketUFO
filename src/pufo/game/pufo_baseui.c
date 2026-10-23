@@ -3183,7 +3183,7 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
                                          pEnv->nResearchEntries));                      /* 0x8BA58 */
             (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, nBase,
                 Base_CountActiveManuf(pEnv->apManufCol + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase,
-                                      PUFO_PRODUCT_ENTRIES_PER_BASE));                  /* 0x8BA64 */
+                                      pEnv->nResearchEntries));    /* 0x8BA64: the count is the byte at 0x160C4C */
             nBaseCount = CloseBaseCount(pEnv);                                         /* 0x8BA70 */
         }
     }

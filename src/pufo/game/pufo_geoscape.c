@@ -1124,9 +1124,14 @@ void Base_TickFacilityConstruction(const BaseTickConstructionEnv *pEnv)
                     Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount, -1,
                                                  pEnv->apBases, nBase, pEnv->apObjects,
                                                  pEnv->nObjectCount, true));           /* 0x62914 */
+                /* 0x62920 calls Base_UpdateWorkshopNeeded, whose own body calls Base_CountActiveManuf
+                 * @ 0x68264 -- and that function takes no count: it reads one byte at 0x160C4C (144,
+                 * stored once at 0x859E4) and sums only that many u16 of the base's 200-entry column.
+                 * The port hoists the call out, so the count has to be the shared one; charging the full
+                 * 200 lets products 144..199 raise the workshop budget the original never sees. */
                 (void)Base_UpdateWorkshopNeeded(pGrid, nBase,
                     Base_CountActiveManuf(pEnv->apManufCols + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase,
-                                          pEnv->nManufEntries));                       /* 0x62920 */
+                                          pEnv->nManufEntries));                       /* 0x62920, 0x68278 */
 
                 *pEnv->pdwShortfall = 1;                                             /* 0x62934 */
                 /* The callee takes six arguments: a3 in R2, a4 in R3, a5 at [SP+0] and a6 at

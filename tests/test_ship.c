@@ -602,7 +602,7 @@ static void TestCargoHold(void)
     TestEqI32Local("no ship at all is the same as an unknown type",
                    (i32)Craft_GetTypeCargoCap(NULL), -1);
 
-    printf("Base_CalcWeaponStorageUsed\n");
+    printf("Base_CalcWeaponStorageUsed @ 0x65b30\n");
 
     /* Every object carries ten units of size one. Only the weapon range 1..24 and the
      * ammo range 36..51 are charged, so 40 objects contribute. */
@@ -997,7 +997,7 @@ static void TestCraftWeaponItemId(void)
     static ObjectRecFull g_aObj[106];
     static ObjectRecFull *g_apObj[106];
 
-    printf("Base_CraftWeaponItemId\n");
+    printf("Base_CraftWeaponItemId @ 0x6641c\n");
 
     for (int i = 0; i < 106; ++i) {
         memset(&g_aObj[i], 0, sizeof(g_aObj[i]));

@@ -3279,7 +3279,7 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
         (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, b,
             Base_CountActiveResearch(pEnv->apResearchCols + 144 * b, (i32)*pEnv->puResearchEntries)); /* 0x458AC */
         (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, b,
-            Base_CountActiveManuf(pEnv->apManufCols + 200 * b, PUFO_PRODUCT_ENTRIES_PER_BASE)); /* 0x458B8 */
+            Base_CountActiveManuf(pEnv->apManufCols + 200 * b, (i32)*pEnv->puResearchEntries)); /* 0x458B8: count = the byte at 0x160C4C */
     }
 
     *pEnv->pbCraftSelectAssaultFlag = 0;          /* 0x458DC */

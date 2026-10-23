@@ -514,7 +514,7 @@ static void TestBaseGridLookup(void)
 
 static void TestFacilityClassify(void)
 {
-    printf("Base_ClearFacilityGridRow\n");
+    printf("Base_ClearFacilityGridRow @ 0x6a0e0\n");
     static u8 grid[700];
     static u8 site[8];
 
@@ -580,7 +580,7 @@ static void TestFindFacilityCell(void)
 {
     static u8 grid[700];
 
-    printf("Base_FindFacilityCell\n");
+    printf("Base_FindFacilityCell @ 0x6ae54\n");
 
 #define F_T(c, r) grid[480 + 144 * 0 + 6 * (c) + (r)]
 #define F_O(c, r) grid[6 * (c) + (r)]
@@ -630,7 +630,7 @@ static void TestFindFacilityCell(void)
 
 static void TestWorkshopCap(void)
 {
-    printf("Base_CalcWorkshopCap\n");
+    printf("Base_CalcWorkshopCap @ 0x65894\n");
     static u8 grid[700];
 
 #define W_T(c, r) grid[480 + 6 * (c) + (r)]
@@ -679,7 +679,7 @@ static void TestWorkshopCap(void)
 
 static void TestActiveManuf(void)
 {
-    printf("Base_CountActiveManuf\n");
+    printf("Base_CountActiveManuf @ 0x68264\n");
     static u16 col[200];
 
     memset(col, 0, sizeof(col));
@@ -714,7 +714,7 @@ static void TestActiveManuf(void)
 
 static void TestWorkshopNeeded(void)
 {
-    printf("Base_UpdateWorkshopNeeded\n");
+    printf("Base_UpdateWorkshopNeeded @ 0x65bb4\n");
     static u8 grid[700];
 
 #define N_T(c, r) grid[480 + 6 * (c) + (r)]
@@ -771,7 +771,7 @@ static void TestWorkshopNeeded(void)
 
 static void TestLabChain(void)
 {
-    printf("Base_CalcLabCap / Base_CountActiveResearch / Base_UpdateLabNeeded\n");
+    printf("Base_CalcLabCap @ 0x65818 / Base_CountActiveResearch @ 0x68198 / Base_UpdateLabNeeded @ 0x65c7c\n");
     static u8 grid[700];
     static u16 col[200];
 
@@ -827,7 +827,7 @@ static void TestLabChain(void)
 
 static void TestCrewAvailable(void)
 {
-    printf("Base_GetScientistCount / Base_GetEngineerCount\n");
+    printf("Base_GetScientistCount @ 0x6812c / Base_GetEngineerCount @ 0x681f4\n");
     static ObjectRecFull sci, eng;
     static u16 col[400];
 
@@ -872,7 +872,8 @@ static void TestCrewAvailable(void)
 
 static void TestRemainingNeededPasses(void)
 {
-    printf("LivingQuarters / Stores / PsiLab needed passes\n");
+    printf("Base_UpdateLivingQuartersNeeded @ 0x65e24 / Base_UpdateStoresNeeded @ 0x65d44 / "
+           "Base_UpdatePsiLabNeeded @ 0x65fc8\n");
     static u8 grid[700];
 
 #define K_T(c, r) grid[480 + 6 * (c) + (r)]
@@ -945,7 +946,7 @@ static void TestRemainingNeededPasses(void)
 
 static void TestEmptyFacilityCells(void)
 {
-    printf("Base_CountEmptyFacilityCells\n");
+    printf("Base_CountEmptyFacilityCells @ 0x6aee0\n");
     static u8 grid[700];
 
 #define E_T(c, r) grid[480 + 6 * (c) + (r)]
@@ -999,7 +1000,9 @@ static void TestCapacityFamily(void)
 {
     static u8 grid[700];
 
-    printf("Base capacity family\n");
+    printf("Base_CalcStoresCapacity @ 0x65720, Base_CalcLivingQuartersCap @ 0x6579c, "
+           "Base_CalcAlienContainmentCap @ 0x65910, Base_HasResearchSlotFree @ 0x662bc, "
+           "Base_HasWorkshopSlotFree @ 0x66340, Base_CountBuiltFacilities @ 0x682c8\n");
 
 #define C_T(c, r) grid[480 + 6 * (c) + (r)]
 #define C_O(c, r) grid[6 * (c) + (r)]
@@ -1138,7 +1141,7 @@ static void TestShipsAtBase(void)
     static BaseRec *g_apBase[2];
     static u8 g_abGrid[8];
 
-    printf("Base_CountShipsAtBase\n");
+    printf("Base_CountShipsAtBase @ 0x66090\n");
 
     memset(g_aShip, 0, sizeof(g_aShip));
     memset(g_aBase, 0, sizeof(g_aBase));
@@ -2258,7 +2261,8 @@ static void TestPsiCapAndUpkeep(void)
     static ObjectRecFull *g_apObj[114];
     static SmapSite g_aSite[2];
 
-    printf("Base_CalcPsiLabCap and Base_CalcMonthlyUpkeep\n");
+    printf("Base_CalcPsiLabCap @ 0x6598c, Base_CountSoldiers @ 0x661d8, Base_GetItemQtyA @ 0x66198 (slot 113), "
+           "Base_GetItemQtyB @ 0x661b8 (slot 112), Base_CalcMonthlyUpkeep @ 0x6a230\n");
 
 #define P_T(c, r) g_abGrid[480 + 6 * (c) + (r)]
 #define P_O(c, r) g_abGrid[6 * (c) + (r)]
@@ -3857,7 +3861,7 @@ static void TickSample(i32 nSample, void *pUser)
     (env).apResearchCols = g_aTickResearch;                               \
     (env).nResearchEntries = 1;                                           \
     (env).apManufCols = g_aTickManuf;                                     \
-    (env).nManufEntries = 1;                                              \
+    (env).nManufEntries = 144;  /* 0x160C4C, the count Base_CountActiveManuf reads */ \
     (env).pdwShortfall = &g_dwTickShortfall;                              \
     (env).pLines = &g_tickLines;                                          \
     (env).pfnPlaySample = TickSample;                                     \
@@ -3990,6 +3994,49 @@ static void TestTickFacilityConstruction(void)
     env.abFacilityGrid = NULL;
     Base_TickFacilityConstruction(&env);
     CheckEqI32(TICKDAYS(0, 0), 4, "a null grid changes nothing");
+}
+
+/* Base_CountActiveManuf @ 0x68264 takes no entry count in the record: 0x68278 reads the shared byte at
+ * 0x160C4C (144, written once at 0x859E4 in Geoscape_InitUI; LoadGame 0x45374 and Base_DemolishFacility
+ * 0x66FF8 only read it) and sums exactly that many u16 of the base's 200-entry column. The port hoists the
+ * call to its callers, so each one has to pass the shared count, not the column size: reading 200 would let
+ * a quantity at rows 144..199 reach a budget the original never sees. */
+static void TestManufCountIsTheSharedByte(void)
+{
+    BaseTickConstructionEnv env;
+    i32 i;
+
+    printf("Base_CountActiveManuf @ 0x68264: the count is the byte at 0x160C4C\n");
+
+    memset(g_aTickManuf, 0, sizeof(g_aTickManuf));
+    g_aTickManuf[143] = 100;
+    CheckEqI32(Base_CountActiveManuf(g_aTickManuf, 144), 100,
+               "row 143 is the last row inside the 144 the record reads");
+    memset(g_aTickManuf, 0, sizeof(g_aTickManuf));
+    g_aTickManuf[144] = 100;
+    CheckEqI32(Base_CountActiveManuf(g_aTickManuf, 144), 0,
+               "row 144 is outside it, even though the column holds 200 entries");
+
+    /* The budget the hoisted call buys, through Base_TickFacilityConstruction's pass at 0x62920. */
+    TICK_RESET();
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_WORKSHOP;
+    TICKDAYS(3, 3) = 1;
+    g_aTickManuf[144] = 100;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKFAC(PUFO_GRID_LAYER2_OFF, 0, 0), 0,
+               "a workshop is not wanted for manufacturing the record cannot count");
+
+    TICK_RESET();
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_WORKSHOP;
+    TICKDAYS(3, 3) = 1;
+    g_aTickManuf[143] = 100;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKFAC(PUFO_GRID_LAYER2_OFF, 0, 0), 1,
+               "one row earlier it is 100 / 50 + 1 = 3 cells of budget, so the flag is raised");
+
+    memset(g_aTickManuf, 0, sizeof(g_aTickManuf));
 }
 
 /* ---- RadarScreen_BlitMapBackdrop @ 0x5eb10 ---------------------------------------
@@ -14697,6 +14744,7 @@ int main(void)
     TestCountInbound();
     TestBaseStripHit();
     TestTickFacilityConstruction();
+    TestManufCountIsTheSharedByte();
     TestGeoscapeMapView();
     TestGeoscapeCrosshair();
     TestRadarBackdrop();

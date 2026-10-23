@@ -753,7 +753,8 @@ typedef struct BaseTickConstructionEnv {
     const u16       *apResearchCols;   /* 0x16022C, 144 u16 per base */
     i32              nResearchEntries; /* 0x160C4C, shared by every base */
     const u16       *apManufCols;      /* 0x15E19C, 200 u16 per base */
-    i32              nManufEntries;    /* PUFO_PRODUCT_ENTRIES_PER_BASE */
+    i32              nManufEntries;    /* the count Base_CountActiveManuf reads: the shared byte at
+                                        * 0x160C4C (144), NOT the 200-entry column it indexes into */
     u32             *pdwShortfall;     /* byte_1870C8, written as a dword */
     UiLineList      *pLines;           /* the root message list @ 0x158890 */
     void (*pfnPlaySample)(i32 nSample, void *pUser);

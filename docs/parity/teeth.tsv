@@ -201,34 +201,34 @@
 0x6250c	Base_DrawFacilityIconStrip	792	strat	yes	yes	yes		yes
 0x62824	Base_TickFacilityConstruction	396	strat	yes	yes	yes	World_HookTickFacilityConstruction	yes
 0x629b0	Base_CanPlaceHangarAt	968	strat	yes	yes	yes		yes
-0x6555c	Base_CalcStorageUsed	156	strat	yes	no	yes	Base_TransferTacticalLoot	yes
+0x6555c	Base_CalcStorageUsed	156	strat	yes	yes	yes	Base_TransferTacticalLoot	yes
 0x655f8	Base_CalcOccupiedSpace	180	strat	yes	yes	yes		yes
 0x656ac	Base_CountAmmoItems	116	strat	yes	yes	yes		yes
-0x65720	Base_CalcStoresCapacity	124	strat	yes	no	yes	Base_CalcLivingQuartersCap	yes
-0x6579c	Base_CalcLivingQuartersCap	124	strat	yes	no	yes		yes
-0x65818	Base_CalcLabCap	124	strat	yes	no	yes		yes
-0x65894	Base_CalcWorkshopCap	124	strat	yes	no	yes		yes
-0x65910	Base_CalcAlienContainmentCap	124	strat	yes	no	yes	Base_CalcLivingQuartersCap	yes
-0x6598c	Base_CalcPsiLabCap	124	strat	yes	no	yes		yes
+0x65720	Base_CalcStoresCapacity	124	strat	yes	yes	yes	Base_CalcLivingQuartersCap	yes
+0x6579c	Base_CalcLivingQuartersCap	124	strat	yes	yes	yes		yes
+0x65818	Base_CalcLabCap	124	strat	yes	yes	yes		yes
+0x65894	Base_CalcWorkshopCap	124	strat	yes	yes	yes		yes
+0x65910	Base_CalcAlienContainmentCap	124	strat	yes	yes	yes	Base_CalcLivingQuartersCap	yes
+0x6598c	Base_CalcPsiLabCap	124	strat	yes	yes	yes		yes
 0x65a08	Base_CountPsiSoldiers	100	strat	yes	yes	yes		yes
 0x65a6c	Ship_ProductSlotToType	88	strat	yes	yes	yes	Smap_GrantSiteRecovery	yes
 0x65ac4	Craft_GetTypeCargoCap	108	strat	yes	yes	yes		yes
-0x65b30	Base_CalcWeaponStorageUsed	132	strat	yes	no	yes		yes
-0x65bb4	Base_UpdateWorkshopNeeded	200	strat	yes	no	yes		yes
-0x65c7c	Base_UpdateLabNeeded	200	strat	yes	no	yes		yes
-0x65d44	Base_UpdateStoresNeeded	224	strat	yes	no	yes	Base_UpdateLivingQuartersNeeded	yes
-0x65e24	Base_UpdateLivingQuartersNeeded	224	strat	yes	no	yes		yes
+0x65b30	Base_CalcWeaponStorageUsed	132	strat	yes	yes	yes		yes
+0x65bb4	Base_UpdateWorkshopNeeded	200	strat	yes	yes	yes		yes
+0x65c7c	Base_UpdateLabNeeded	200	strat	yes	yes	yes		yes
+0x65d44	Base_UpdateStoresNeeded	224	strat	yes	yes	yes	Base_UpdateLivingQuartersNeeded	yes
+0x65e24	Base_UpdateLivingQuartersNeeded	224	strat	yes	yes	yes		yes
 0x65f04	Base_UpdateAlienContainmentNeeded	196	strat	yes	yes	yes		yes
-0x65fc8	Base_UpdatePsiLabNeeded	200	strat	yes	no	yes	Base_UpdateLivingQuartersNeeded	yes
-0x66090	Base_CountShipsAtBase	140	strat	yes	no	yes		yes
+0x65fc8	Base_UpdatePsiLabNeeded	200	strat	yes	yes	yes	Base_UpdateLivingQuartersNeeded	yes
+0x66090	Base_CountShipsAtBase	140	strat	yes	yes	yes		yes
 0x6611c	Base_CalcHangarCap	124	strat	yes	yes	yes	Base_CalcLivingQuartersCap	yes
-0x66198	Base_GetItemQtyA	32	strat	yes	no	yes	ResearchScreen_UpdateProgress|Base_GetItemQty	yes
-0x661b8	Base_GetItemQtyB	32	strat	yes	no	yes	Base_GetItemQty	yes
-0x661d8	Base_CountSoldiers	88	strat	yes	no	yes		yes
+0x66198	Base_GetItemQtyA	32	strat	yes	yes	yes	ResearchScreen_UpdateProgress|Base_GetItemQty	yes
+0x661b8	Base_GetItemQtyB	32	strat	yes	yes	yes	Base_GetItemQty	yes
+0x661d8	Base_CountSoldiers	88	strat	yes	yes	yes		yes
 0x66230	Base_CountSoldiersAssigned	140	strat	yes	yes	yes		yes
-0x662bc	Base_HasResearchSlotFree	132	strat	yes	no	yes		yes
-0x66340	Base_HasWorkshopSlotFree	132	strat	yes	no	yes	Base_HasResearchSlotFree	yes
-0x6641c	Base_CraftWeaponItemId	128	strat	yes	no	yes		yes
+0x662bc	Base_HasResearchSlotFree	132	strat	yes	yes	yes		yes
+0x66340	Base_HasWorkshopSlotFree	132	strat	yes	yes	yes	Base_HasResearchSlotFree	yes
+0x6641c	Base_CraftWeaponItemId	128	strat	yes	yes	yes		yes
 0x6649c	Craft_CountSoldiersAboard	84	strat	yes	no	yes		yes
 0x664f0	Craft_CountWeaponSlotsCarried	92	strat	yes	yes	yes		yes
 0x666cc	Ship_FormatDisplayName	424	strat	yes	yes	yes		yes
@@ -243,18 +243,18 @@
 0x67f78	Base_CountInboundTransfers	204	strat	yes	yes	yes		yes
 0x68044	Base_CountOutboundTransferSpace	232	strat	yes	yes	yes		yes
 0x6812c	Base_GetScientistCount	108	strat	yes	yes	yes		yes
-0x68198	Base_CountActiveResearch	92	strat	yes	no	yes		yes
-0x681f4	Base_GetEngineerCount	112	strat	yes	no	yes	Base_GetScientistCount	yes
-0x68264	Base_CountActiveManuf	100	strat	yes	no	yes		yes
-0x682c8	Base_CountBuiltFacilities	124	strat	yes	no	yes		yes
+0x68198	Base_CountActiveResearch	92	strat	yes	yes	yes		yes
+0x681f4	Base_GetEngineerCount	112	strat	yes	yes	yes	Base_GetScientistCount	yes
+0x68264	Base_CountActiveManuf	100	strat	yes	yes	yes	Base_TickFacilityConstruction	yes
+0x682c8	Base_CountBuiltFacilities	124	strat	yes	yes	yes		yes
 0x68344	Base_TransferTacticalLoot	3048	strat	yes	no	yes	FacTypeCell	yes
 0x68f2c	Base_DistributeRecoveredItems	1216	strat	yes	yes	yes		yes
 0x693ec	Craft_LoadStoresFromBase	1612	strat	yes	no	yes	LoadUnits	yes
 0x69a38	Base_StripAllCraftCargo	1476	strat	yes	no	yes		yes
 0x69ffc	Ship_FindIndexById	96	strat	yes	yes	yes		yes
 0x6a05c	StrategList_FindIdxForShip	132	strat	yes	yes	yes		yes
-0x6a0e0	Base_ClearFacilityGridRow	336	strat	yes	no	yes		yes
-0x6a230	Base_CalcMonthlyUpkeep	468	strat	yes	no	yes		yes
+0x6a0e0	Base_ClearFacilityGridRow	336	strat	yes	yes	yes		yes
+0x6a230	Base_CalcMonthlyUpkeep	468	strat	yes	yes	yes		yes
 0x6a404	BaseFac_FormatCostLabel	184	strat	yes	yes	yes		yes
 0x6a4bc	BaseFac_BuildStatusMsg	1520	strat	yes	yes	yes	World_WireGeoscapeFrame	yes
 0x6ab58	StrategList_PurgeType5	216	strat	yes	no	yes		yes
@@ -262,8 +262,8 @@
 0x6ac90	BaseGrid_SetByteAtFound	48	strat	yes	no	yes	BaseGrid_GetTypeByte	yes
 0x6acc0	BaseGrid_GetByte0x654	44	strat	yes	no	yes	BaseGrid_GetTypeByte	yes
 0x6acec	BaseGrid_SubByte0x654	68	strat	yes	yes	yes	BaseGrid_SubTypeByte	yes
-0x6ae54	Base_FindFacilityCell	140	strat	yes	no	yes		yes
-0x6aee0	Base_CountEmptyFacilityCells	160	strat	yes	no	yes		yes
+0x6ae54	Base_FindFacilityCell	140	strat	yes	yes	yes		yes
+0x6aee0	Base_CountEmptyFacilityCells	160	strat	yes	yes	yes		yes
 0x6c16c	Geoscape_DrawScreen	3476	strat	yes	yes	yes	DrawScreen_CopyTextRec	yes
 0x78e78	BasePlane_CalcWeaponStoresUsed	88	strat	yes	no	yes		yes
 0x78ed0	BasePlane_RearmFromStores	536	strat	yes	yes	yes	World_PlaneRearmThunk|World_WireGeoscapeFrame	yes

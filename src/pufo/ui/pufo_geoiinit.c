@@ -733,7 +733,7 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
                                      (i32)pEnv->bResearchCount));
         (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, b,
             Base_CountActiveManuf(pEnv->pManufCol + PUFO_PRODUCT_ENTRIES_PER_BASE * b,
-                                  PUFO_PRODUCT_ENTRIES_PER_BASE));
+                                  (i32)pEnv->bResearchCount)); /* 0x953E4: count = the byte at 0x160C4C */
     }
 
     /* 0x95400..0x95414: the starter items again through the grant leaf, then the alien
