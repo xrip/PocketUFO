@@ -17,7 +17,7 @@ The corrected sweep over 103 pictures (93 `tests/ref/*.ppm` + 10 live `build/e2e
 | geoscape_terror_site | 156..235 | FIXED in Part 156 (same cause) |
 | geoscape_descent_panel | 1..59, 156..235 | arm isolation: the frame runs `ClearSurface` + `Geoscape_DrawStatusPanel` only (test_geoscapeframe.c ~1362..1375) -- no map, no strip. Open: is a panel-only frame a useful reference? |
 | tact_hud_minimap | 0, 16..63, 317..319 | CLOSED in Part 158: the arm fills 240x320 with index 0 itself (0x1ED54), and the cell field is 4*(cell - scroll) -- measured x 12..239, y 64..303, i.e. scroll (-3, -16) inside the clamp window [-30..570] x [-40..560] for a 60x60 map |
-| tact_mission_urban | 1..16 | open -- the only band left, and the only one whose content is not one pad: the iso layer draws through Map_nGlyphPalBase = 34 plus other slots, so it needs a rect-by-rect read (Part 159) |
+| tact_mission_urban | 1..16 | CLOSED in Part 159: the iso arm's overlay chain is a CMP chain on Map_nUiScreen (3,5,7,0xA,0xB,0xC,0xF) and this frame is screen 0, so only MapView_DrawIsoLayer runs; the tile's screen position is camera-free (0x1B1AC nDrawX = 32*tileX-16, 0x1B1C4 nDrawY = 8*(tileY-3*layer-4), culled at 0x1B1DC when nDrawY+40 <= 0), and the measured top edge is one tile diamond starting at the grid node x = 32*6-16 = 176, y = 16 -- rows 0..16 are outside the map's edge, painted by the layer-0 blank-glyph branch (0x21ED8 gate, the Font_DrawGlyph at 0x21EF4 / 0x21F8C) |
 | tact_briefing, tact_briefing_urban, tact_mission_from_descent | 0..7, 311..319 | CLOSED in Part 158: the arm is two calls -- PadImage_Blit of the cydonia pad at (0,0) then UiPanelMsg_Draw (0x1A7A0) -- and the indexed blit writes every pixel including index 0 (0xA3278 `*v24++ = *(pPal + 4*index)`, no skip), so the bands are the pad's own index-0 rows |
 | debrief_banner | 1..12, 25..42, 44 | CLOSED in Part 159: ENDMISS.PAD's all-index-0 rows are 0..41 and the arm's centred banner text paints the only lit rows in that range (13..24); rows 42/44 are pad rows whose indices carry black endmiss entries -- rows 12,13,24,25,41,42,43,44,45 checked pixel by pixel against pad index + slot 11 |
 | tact_hud_promotion | 1..12, 25..32 | open |
@@ -118,10 +118,10 @@ explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the
 ## Open items
 
 1. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
-2. Open questions 5 and 6 are measured and partly closed: `tact_hud_minimap`'s 48-row hole and the briefing trio are closed in the last section, `tact_mission_urban` and the three remaining tact bands sit under item 5 below.
+2. CLOSED: open questions 5 and 6. Every tact band the sweep table lists is now explained -- the minimap hole (Part 158), the briefing trio, `debrief_banner`, `tact_hud_inventory`, `tact_hud_markers` (Part 159) and `tact_mission_urban` (Part 159 cont.).
 3. Open question 1 keeps one half open: the selector's four identical rows are closed (the Part 158 ufopaedia section), but what the pad blitted at 0x9B600 holds in that state is not yet read.
 4. The per-picture pass has not yet reached the rest of the corpus: the 10 `tests/ref/e2e/` pictures were reviewed only where a Part changed them, and the research / manuf / radar / psi / base-info / ufopaedia-entry / save-slot / tact families still need one picture-by-picture read each.
-5. Four pictures still need their rect-by-rect read against their arm: `debrief_banner` (0..12, 25..42, 44), `tact_mission_urban` (0..16), `tact_hud_inventory` (153..159, 199) and `tact_hud_markers` (319). The bands are measured; the arms `TactHud_DrawStatusBanner @ 0x1E920`, the inventory arm (Render_Frame case 1, the call at 0x224AC) and the unit-markers arm (case 6, the call at 0x224D0) are not yet matched blit by blit. `tact_hud_promotion`'s 54 / 71 / 87 are already explained as panel rules in the Part 157 review.
+5. CLOSED in Part 159: all four read against their arm. `debrief_banner` = ENDMISS.PAD's index-0 rows 0..41 plus the banner text; `tact_hud_inventory` = INVV.PAD's 139..159 / 199 with the burden labels over 139..152; `tact_hud_markers` = MSCANV.PAD's all-index-254 last row (SCANNER.PAL[254] = (0,0,0)); `tact_mission_urban` = the iso layer's own edge (camera-free tile geometry, no overlay arm on screen 0). `tact_hud_promotion`'s 54 / 71 / 87 were already panel rules from the Part 157 review.
 
 ## Part 157 review: the 29 references that moved, read against 0x3e94c (2026-10-23)
 
@@ -473,3 +473,35 @@ minimap arm only. The iso origin is `Map_IsoOffsetA @ 0x26F88` = `camX - 5*dimX 
 is what writes the camera pair `unk_1183F8/0x1183F9`: `n = a2 + 2*(a3 + 8)`, `byte0 = n / 32`,
 `byte1 = (a2/2 - a3 <= 0 ? 8 : -8 + (a2/2 - a3)) / -16`. The next pass starts from those two formulas and this
 fixture's camera values.
+
+## Part 159 (cont.): `tact_mission_urban` closed as the map's own edge (2026-10-23)
+
+What the arm is allowed to draw here, from the IDB. `Render_Frame` reaches the iso group through 0x22414, which is
+always `MapView_DrawIsoLayer`; the block after it is a CMP chain on `Map_nUiScreen` -- 3 -> 0x2249C (roster),
+5 -> 0x22490 (status text), 7 -> 0x22484 (labeled pads), 0xA -> 0x22478 (modal left), 0xB -> 0x22470 (modal right),
+0xC -> 0x22464 (top bar), 0xF -> 0x22458 (action buttons) -- and every other value falls to `def_2237C`. This dump is
+the plain battlefield at screen 0 (the fixture's own assertion: "the battlefield is what screen 0 paints"), so no
+overlay arm runs, and the modal arm is behind `Modal_bOpen`. Nothing but map tiles is expected in the top rows, and the
+dump's colour check agrees: no single palette explains this frame (tactical.pal reaches only 73.7%), because it is a
+map and not a pad.
+
+The covered rows are fixed by the arm, not by the camera. `MapView_bResolveIsoCell @ 0x1B0D4`: 0x1B1AC
+`nDrawX = 32*nTileX - 16` (or `- 32` when `nTileY` is odd), 0x1B1C4 `nDrawY = 8*(nTileY - 3*nLayer - 4)`, and the cell
+is dropped when `bOob` or `nDrawY + 40 <= 0` (0x1B1DC). The camera (`Map_nCamScrollX/Y`) enters only `nMapY` (0x1B0F8)
+and `nMapX` (0x1B108, plus the odd-row +1 at 0x1B130) -- it chooses which map cell a tile shows and cannot move a tile
+on screen. So no fixture camera can be "outside a clamp" here: there is no clamp in this arm, and the -30 / -40 pair
+Part 158 pinned belongs to `MapView_DrawMinimap @ 0x1ED4C` through `Map_nMinimapScrollX/Y @ 0x118864/0x118868`.
+Layer 0's tile rows start at `nDrawY = -32, -24, -16, -8, 0, 8, ...`, and a tile whose cell resolves out of range falls
+to the layer-0 fallback: 0x21ED8 `CMP R3, #0` gating the `Font_DrawGlyph` at 0x21EF4 (and its twin at 0x21F8C in the
+second pass), the port's `Font_DrawGlyph(nDrawX, nDrawY, paGroupBase[0], 0)`.
+
+Measured in `tests/ref/tact_mission_urban.ppm` (`build/crops/isogrid159.py`): the ink starts at row 17 as ONE 4-px run
+at x 174..177, and that run grows by exactly 1 px per row -- 172..177 at row 18, 170..177 at 19, ... 144..177 at row 32.
+That is a straight edge, not scattered missing furniture, and its starting point sits on the grid: the draw origin of
+tile (tileX 6, tileY 6, layer 0) is `nDrawX = 32*6 - 16 = 176`, `nDrawY = 8*(6 - 0 - 4) = 16`, i.e. the measured
+first-ink pixel (177, 17) is one pixel inside the glyph drawn at the grid node (176, 16). Every tile above it either is
+culled by the 40-px test or maps outside the map and takes the blank-glyph branch, so rows 0..16 black is the area
+north of the map's edge, which is what the original's own fallback paints there.
+
+IDB: line comment at 0x1B1C4 with the camera-free geometry and that consequence (731 chars, read back identical),
+`idb_save` ok. The tact family now has no unexplained band; the corpus families in Open item 4 are the remaining work.

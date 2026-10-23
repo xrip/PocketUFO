@@ -6668,3 +6668,16 @@ label; MSCANV.PAD has no zero row -- its last row is index 254 = (0,0,0). Closed
 tact_hud_inventory, debrief_banner, the briefing trio. Only tact_mission_urban 1..16 is left, and the correction that
 matters for it: MapView_EnterLookMode @ 0x163D4's -30/-40 pair feeds Map_nMinimapScrollX/Y, not the iso origin; the
 iso origin is Map_IsoOffsetA @ 0x26F88 (camX - 5*dimX + camY) and Map_IsoOffsetB @ 0x26FA8 (5*dimY - camX + camY - 1).
+Measured (Part 159 cont., the last tact band): tact_mission_urban's 1..16 black rows are the map's own north edge,
+not a porting gap. Render_Frame's iso group always calls MapView_DrawIsoLayer (0x22414) and then a CMP chain on
+Map_nUiScreen -- 3, 5, 7, 0xA, 0xB, 0xC, 0xF to the seven overlay arms, everything else to def_2237C -- and this dump
+is the plain battlefield at screen 0, so no overlay arm runs. The covered rows are fixed by MapView_bResolveIsoCell
+@ 0x1b0d4: nDrawX = 32*nTileX - 16 (0x1b1ac, 32*tileX - 32 on odd rows) and nDrawY = 8*(nTileY - 3*nLayer - 4)
+(0x1b1c4), culled at 0x1b1dc when nDrawY + 40 <= 0; the camera reaches only nMapY (0x1b0f8) and nMapX (0x1b108/0x1b130),
+so it cannot move a tile on screen and this arm has no clamp at all. An out-of-range tile falls to the layer-0
+blank-glyph branch (0x21ed8 CMP R3,#0 gating the Font_DrawGlyph at 0x21ef4 and its twin at 0x21f8c). Measured: the
+ink starts at row 17 as one 4-px run at x 174..177 and grows exactly 1 px per row to x 144..177 at row 32 -- a straight
+tile-diamond edge whose origin is the grid node nDrawX = 32*6-16 = 176, nDrawY = 8*(6-4) = 16. IDB: line comment at
+0x1b1c4 (731 chars, read back identical), idb_save ok. Open items 2 and 5 closed; the tact family has no unexplained
+band left, and what remains in the frame audit is Open item 4 (the research / manuf / radar / psi / base-info /
+ufopaedia-entry / save-slot / e2e families) plus the 0x9b600 pad content of Open item 3.
