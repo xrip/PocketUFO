@@ -6697,3 +6697,19 @@ whole dialog rect (0x26538, key 128) and paints only 2-px frame edges at key 200
 0xa62ec; the empty text is the diagonal reveal at 0x26e14 with a fresh cursor. IDB: line comment at 0x26538. Still open
 in the frame audit: item 1 (28 tact DumpFrame sites without a recorded draw call) and the second half of item 3 (the pad
 blitted at 0x9b600 in the ufopaedia state).
+Closed (Part 159 cont. 3, the last two frame-audit items). (a) All 32 tact-family references now have their draw call
+recorded against Render_Frame's inner switch at 0x2237c: 20/21 -> 0x223dc Cydonia pair; 13 -> 0x223e8 TactHud_DrawStatusBanner
+(debrief_banner, PUFO_DEBRIEF_UI_SCREEN 13 set at 0x351ec); 19 -> 0x223f4 TactHud_DrawConfirmDialog (tact_hud_promotion); 1 ->
+0x224ac inventory; 2 -> 0x224b8 minimap; 4 -> 0x224c4 command pads; 6 -> 0x224d0 unit markers; 0/3/5/7..12/15 -> 0x223fc, where
+0x22404 LDRB Map_bDrawIsoLayer + 0x2240c BEQ mean the iso layer itself is skipped when that byte is clear, then one overlay arm
+by CMP: 3 -> 0x2249c roster, 5 -> 0x22490 status text, 7 -> 0x22484 labeled pads, 10 -> 0x22478 modal right, 11 -> 0x2246c modal
+left, 12 -> 0x22460 top bar, 15 -> 0x22458 action buttons. Seven references (fire_modes 3, sub_modes 5, menu 7, save_slots 10,
+load_slots 11, options 12, actions 15) are dumped by PaintFurnitureFrame (test_geoscapeframe.c:834), which is a live
+World_TactFrame at the fixture's own screen plus a base run at screen 0 -- the earlier count of 28 missed them. (b) The ufopaedia
+pad: Ui_DrawBaseInfo @ 0x9b5f4 receives the block base (Geoscape_Draw 0x941ac LDR R6, =g_pUfopaediaScreenPad) and blits block+0
+at 0x9b600; that pad is PadImage_Load("baseinfo", 14) in Ui_InitBaseInfo 0x9ddd4..0x9de14, i.e. BASEINFO.PAD 240x320 through
+baseinfo.pal in slot 14 -- 71403/76800 px (93.0%) of ufopaedia_index equal it exactly. The entry picture is a separate pad:
+Ufopaedia_RefreshEntry @ 0x9a014 does itoa(entry)+".pal" -> Palette_Load (0x9a584) and itoa(entry) -> PadImage_Load (0x9a5a4)
+into block+4 (g_pUfopaediaPad 0x1872e4), and Prev/NextEntry free it (PadImage_FreeData + delete) and tail-call back;
+ufopaedia_entry_next matches 93.PAD/93.pal at 93.2%. Unmeasured: where ufopaedia_entry's 155x200 54.PAD sits (a placement
+question). IDB: line comments at 0x22404 and 0x9a584, read back identical, idb_save ok.

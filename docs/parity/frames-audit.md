@@ -117,9 +117,9 @@ explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the
 
 ## Open items
 
-1. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
+1. CLOSED (Part 159 cont. 3): all 32 tact-family references now have their draw call recorded, screen by screen, against `Render_Frame`'s inner switch at 0x2237C -- the table is in the last section of this file. The count was 28 because seven of them are emitted by `PaintFurnitureFrame` (test_geoscapeframe.c:834) rather than a bare `DumpFrame`.
 2. CLOSED: open questions 5 and 6. Every tact band the sweep table lists is now explained -- the minimap hole (Part 158), the briefing trio, `debrief_banner`, `tact_hud_inventory`, `tact_hud_markers` (Part 159) and `tact_mission_urban` (Part 159 cont.).
-3. Open question 1 keeps one half open: the selector's four identical rows are closed (the Part 158 ufopaedia section), but what the pad blitted at 0x9B600 holds in that state is not yet read.
+3. CLOSED (Part 159 cont. 3): the pad blitted at 0x9B600 is the ufopaedia screen's own pad -- `g_pUfopaediaScreenPad[0]` at 0x1872E0, allocated and loaded `PadImage_Load("baseinfo", 14)` in `Ui_InitBaseInfo @ 0x9DDD4..0x9DE14`, i.e. main.dat's BASEINFO.PAD (240x320) through baseinfo.pal in slot 14. Measured against `ufopaedia_index`: 71403 of 76800 px (93.0%) equal the pad blit exactly, and the rest is the selector panel, the four-entry list and the bottom control bar drawn over it.
 4. CLOSED for the pass itself (Part 159 cont. 2): all 103 references were looked at -- the 93 `tests/ref/*.ppm` in eight labelled montages and the 10 `tests/ref/e2e/*.png` in a ninth -- with a structural screen and a palette-provenance measure behind every one. No layering artifact, no half-painted panel, no unexplained empty area found. What stays open in this file is item 1 (the 28 tact `DumpFrame` sites with no recorded draw call) and the second half of item 3 (what the pad blitted at 0x9B600 holds in the ufopaedia state).
 5. CLOSED in Part 159: all four read against their arm. `debrief_banner` = ENDMISS.PAD's index-0 rows 0..41 plus the banner text; `tact_hud_inventory` = INVV.PAD's 139..159 / 199 with the burden labels over 139..152; `tact_hud_markers` = MSCANV.PAD's all-index-254 last row (SCANNER.PAL[254] = (0,0,0)); `tact_mission_urban` = the iso layer's own edge (camera-free tile geometry, no overlay arm on screen 0). `tact_hud_promotion`'s 54 / 71 / 87 were already panel rules from the Part 157 review.
 
@@ -553,3 +553,79 @@ the ufopaedia family each show their pad plus their panels with no orphan rect; 
 with the modal text over it (the diagonal reveal again) and the "Hidden Movement" banner where the status-banner arm
 runs; the e2e chain (mainmenu -> newgame -> base placed -> base screen -> geoscape -> after save -> menu at boot ->
 slot list -> after load -> tact unit panel) reads as one continuous flow with no frame out of place.
+
+## Part 159 (cont. 3): every tact reference matched to its draw call, and the ufopaedia pad read (2026-10-23)
+
+`Render_Frame`'s inner switch (0x2237C) is the authority for what each tactical frame runs, and the disassembly of
+0x223DC..0x22414 gives the complete map: cases 20/21 -> 0x223DC `Cydonia_Blit_Then_UiPanelMsg_Draw`; case 13 -> 0x223E4 /
+the call at 0x223E8 `TactHud_DrawStatusBanner`; case 19 -> 0x223F0 / 0x223F4 `TactHud_DrawConfirmDialog`; cases
+0, 3, 5, 7..12, 15 -> 0x223FC, which first reads `Map_bDrawIsoLayer` and **skips `MapView_DrawIsoLayer` entirely when
+that byte is clear** (0x22404 `LDRB`, 0x2240C `BEQ def_2237C`), then the CMP chain on `Map_nUiScreen` adds exactly one
+overlay arm (3 -> 0x2249C roster, 5 -> 0x22490 status text, 7 -> 0x22484 labeled pads, 10 -> 0x22478 modal right,
+11 -> 0x2246C modal left, 12 -> 0x22460 top bar, 15 -> 0x22458 action buttons); case 1 -> 0x224A8 inventory, case 2 ->
+0x224B4 minimap, case 4 -> 0x224C0 command pads, case 6 -> 0x224CC unit markers; cases 14 and 16..18 and everything
+else are default. With that map the whole tact family is accounted for:
+
+
+| reference | dump site (tests/test_geoscapeframe.c) | Map_nUiScreen | the draw call that paints it (IDB) |
+|---|---|---|---|
+| `tact_quit_confirm` | 3621 | 8, modal open | iso group 0x223FC/0x22414 `MapView_DrawIsoLayer` + `UiModal_DrawDialog` (0x22500) |
+| `tact_modal_statusline` | 3628 | 8, modal open, YES highlighted | same, with the highlight from apUiSlotsA[24] |
+| `tact_deploy_confirm` | 3652 | 9, modal open | iso group + the modal built by `Map_BuildDeployConfirmYesNo @ 0x18A68` |
+| `tact_frame_iso` | 4944 | 0 | `MapView_DrawIsoLayer` only (no overlay arm matches screen 0) |
+| `debrief_banner` | 5188 | 13 (`PUFO_DEBRIEF_UI_SCREEN`, set at 0x351EC) | `TactHud_DrawStatusBanner` (call 0x223E8) |
+| `tact_hud_promotion` | 5386 | 19 (`PUFO_PROMOTION_UI_SCREEN`, 0x13) | `TactHud_DrawConfirmDialog` (call 0x223F4, widget 129) |
+| `tact_loaded_mission` | 5807 | 0 | iso group only |
+| `tact_view_centred` | 5976 | 0 | iso group only |
+| `tact_view_refocus` | 5997 | 0 | iso group only |
+| `tact_hud_inventory` | 6029 | 1 | `TactHud_DrawInventoryScreen` (call 0x224AC), replaces the iso layer |
+| `tact_hud_minimap` | 6191 | 2 (widget 3 -> `MapView_EnterLookMode @ 0x163D4`, store at 0x163F0) | `MapView_DrawMinimap` (call 0x224B8), replaces the iso layer |
+| `tact_hud_cmdpads` | 6287 | 4 | `Tact_DrawCommandPads` (call 0x224C4), replaces the iso layer |
+| `tact_hud_markers` | 6434 | 6 (widget 40 at 0x17D54) | `TactHud_DrawUnitMarkers` (call 0x224D0), replaces the iso layer |
+| `tact_briefing` | 6589 | 20 | `Cydonia_Blit_Then_UiPanelMsg_Draw` (0x223DC) |
+| `tact_mission_from_descent` | 7354 | 20 | `Cydonia_Blit_Then_UiPanelMsg_Draw` |
+| `tact_briefing_urban` | 12436 | 20 | `Cydonia_Blit_Then_UiPanelMsg_Draw` |
+| `tact_mission_urban` | 12610 | 0 | iso group only |
+| `tact_play_start` | 9003 | 0 | iso group only |
+| `tact_play_deployed` | 9125 | 0 | iso group only |
+| `tact_play_moved` | 9413 | 0 | iso group only |
+| `tact_play_aim` | 9633 | 0 | iso group only |
+| `tact_play_shot_mid` | 9638 | 0 | iso group only |
+| `tact_play_shot` | 9654 | 0 | iso group only |
+| `tact_play_enemyturn` | 9686 | 0 | iso group only |
+| `tact_play_resumed` | 9755 | 0 | iso group only |
+| `tact_hud_fire_modes` | 6920 (`PaintFurnitureFrame`) | 3 (widget 17, 0x17140) | iso group + `TactHud_DrawUnitRoster` (0x2249C) |
+| `tact_hud_sub_modes` | 6940 | 5 (widget 35, 0x179B8) | iso group + `TactHud_CopyStatusText` (0x22490) |
+| `tact_hud_menu` | 6957 | 7 (widget 14, 0x164C0) | iso group + `Menu_DrawLabeledPads` (0x22484) |
+| `tact_hud_save_slots` | 6971 | 10 | iso group + `TactHud_DrawModalRight` (block 0x22478, call 0x2247C, text record 1103) |
+| `tact_hud_load_slots` | 6977 | 11 | iso group + `TactHud_DrawModalLeft` (block 0x2246C, call 0x22470, text record 1102) |
+| `tact_hud_options` | 6987 | 12 (widget 55, 0x18A34) | iso group + `TactHud_DrawTopBar` (0x22460, widgets 60..88) |
+| `tact_hud_actions` | 7026 | 15 (widget 15, 0x164DC) | iso group + `TactHud_DrawActionButtons` (0x22458, widgets 89..97) |
+
+
+The earlier count of 28 was low because seven references are emitted by `PaintFurnitureFrame`
+(test_geoscapeframe.c:834), which dumps the live frame at the fixture's own `Map_nUiScreen` and then re-runs the frame at
+screen 0 to get the base blit count -- it is a full `World_TactFrame` dump, not a partial paint. Its screen values are
+asserted in the fixtures: 3 (widget 17, 0x17140), 5 (widget 35, 0x179B8), 7 (widget 14, 0x164C0), 10, 11, 12 (widget 55,
+0x18A34), 15 (widget 15, 0x164DC). That is also why those seven frames have low single-palette coverage -- they are an
+overlay arm plus whatever the map gate allows, not one pad.
+
+The ufopaedia open half is closed on both sides. `Ui_DrawBaseInfo @ 0x9B5F4` takes the ufopaedia block base as its
+argument (`Geoscape_Draw` 0x941AC `LDR R6, =g_pUfopaediaScreenPad`, 0x941B0 `MOV R0, R6`) and its first act is
+`LDR R0, [R0]; BL PadImage_Blit` at 0x9B5F8..0x9B600 -- block+0. That pad is allocated and loaded in
+`Ui_InitBaseInfo @ 0x9DDD4..0x9DE14` with `PadImage_Load("baseinfo", 14)`, so the index screen's background is main.dat's
+BASEINFO.PAD (240x320) through baseinfo.pal in slot 14. Measured (`build/crops/ufopaedia159b.py`): 71403 of 76800 px
+(93.0%) of `ufopaedia_index` equal that pad blit pixel for pixel, 0 rows fully different.
+
+The per-entry picture is a second pad: `Ufopaedia_RefreshEntry @ 0x9A014` builds the name from `g_nUfopaediaEntryNum` --
+`j_itoa`, `strcat` with `aPal` ".pal" (0x9A55C) and `Palette_Load` (0x9A584), then `j_itoa` again and `PadImage_Load`
+(0x9A5A4) into `g_pUfopaediaPad` = block+4 at 0x1872E4 -- and `Ufopaedia_PrevEntry` / `Ufopaedia_NextEntry` free the old
+one (`PadImage_FreeData` + `operator delete`, 0x9A718..0x9A720 / 0x9A880..0x9A888) and tail-jump back, which is why
+paging changes the picture. main.dat carries the numbered pair members (54.PAD 31004 / 54.PAL, ..., 93.PAD 48004 /
+93.PAL, ... 98.PAD 5989), and the colour provenance of the two entry references follows them exactly:
+`ufopaedia_entry_next` matches 93.PAD (240x200) through 93.pal at 44729 of 48000 px (93.2%). `ufopaedia_entry`'s pad is
+54.PAD at 155x200, and my placement guess of the blit origin does not fit it (22.6%), so where that entry's image sits is
+the one part of this family still unmeasured -- it is a placement question, not a content question.
+
+IDB: line comments at 0x22404 (`Map_bDrawIsoLayer` gates the whole iso group) and at 0x9A584 (the per-entry
+"N.pad" / "N.pal" pair and the free-and-tail-call cycle), both read back identical, `idb_save` ok.
