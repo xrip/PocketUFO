@@ -344,10 +344,11 @@ size` asserted): 44 = 8+3 (0x557c8, 0x716a8), 40 = 7(1 wide)+2 (0x6dd24, 0x76138
 
 Two port claims corrected against the record (bugs.tsv 365 -> 367, kind `naming`): the defence burn is a fixed
 immediate per pair (500 at 0x57CE0, 600 at 0x57E8C, 900 at 0x5803C, 1500 as 0x5D0|0xC at 0x581E0 with the subtract
-at 0x581EC; only the gravity pair burns a variable at 0x58390) rather than the value the `/* 0x57CE4 */` comment
+at 0x581EC; the gravity pair burns nothing -- 0x58390 is a label-copy pointer difference) rather than the value the `/* 0x57CE4 */` comment
 implies; and 0x76C18 is the setup `ADD R3,R0,#2` of the teardown's 256 x `STRH [R3],#2` clear at 0x76C20, which
-spans exactly `SmapSite.auItemQty` at 0x002..0x201. Two anchors had no teeth at all -- the burn (no fixture rolls a
-hit) and the extent of that clear (no check reads the last slot) -- recorded as PLAN row 133a.
+spans exactly `SmapSite.auItemQty` at 0x002..0x201. One anchor had no teeth at all (nothing read the last slot of the clear); the burn anchor was inert because of its
+direction, not because nothing reads the budget -- `TestBaseAtUpdate` already pins the burns with hit fixtures.
+Part 134 closed both halves: 8 interval checks on the burns, 3 last-slot checks on the clears (PLAN row 133a).
 
 Tests: 174 new address cites (167 in `test_baseui.c`, 7 in `test_plane.c`), check count unchanged at 21450. 14 of
 them went onto the specific checks the mutations break, so each failing line names its own row.
@@ -365,3 +366,31 @@ coverage unchanged at 972/1103 functions and 596888/598792 bytes, 135 artifact r
 gaps, 93 frames and 9 e2e pictures unchanged.
 
 Measured after Part 133: **782** cited, **186** not (`tact` 93, `strat` 90, `app-shell` 3 left).
+## Part 134 -- row 133a closed: burn intervals and the last slot of each teardown clear
+
+No port behaviour changed; 17 checks added (21450 -> 21467), 17 cites, 12 mutation cases.
+
+Two of Part 133's statements were wrong and are corrected in `docs/parity/bugs.tsv`, `docs/parity/coverage.md`,
+`docs/parity/game-core.md`, PLAN.md and the IDB. (1) `SUB R3,R3,R1` at 0x58390 is not a burn -- it is the pointer
+difference that opens the "ALL RECHARGED" label copy, and the gravity pair stores nothing to the budget cell.
+(2) "no fixture in `TestBaseAtUpdate` rolls a HIT" is false -- tests/test_baseui.c:17689..17716 pins all four burns
+with hit fixtures and 17717..17742 the eight-class budget table; Part 133's `+1` mutation was inert because of its
+direction (every boundary there is `reaches exactly 0`, and 501 off 500 is still below 1).
+
+What is true, and what the new checks are for: the budget cell [SP,#var_C0] is never written out of the frame, its
+only read is the stop test, so a burn is observable as a pair count -- an interval. The suite now pins each constant's
+two ends: missile 500..599 (`SUB #0x1F4` 0x57CE0), laser 600..749 (`#0x258` 0x57E8C), plasma 750..999 (`#0x384`
+0x5803C), fusion 1500..2199 (`0x5D0|0xC` 0x581E0, subtract 0x581EC). The clear half was a real gap: `auItemQty[255]`,
+`anSoldierIds[99]` and `anCraftIds[9]` are prefilled and asserted, and `bUnk518` (site+0x206) is asserted to survive
+the teardown, which the port only claimed in a comment.
+
+Teeth: 12 cases in `docs/parity/mutations_part134.py` -- 22 failing checks, 0 skipped, 0 inert, 0 build failures, 12/12
+files restored byte-exact, every case's failing check naming 0x57808 or 0x76160. Log `build/crops/teeth134.log`.
+
+IDB: 0x57914 corrected, 0x57CE0 carries the burn census and the interval statement (555 chars), both read back exact,
+`idb_save` ok. Gates: `build/check134.log` -- `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, 65/65 both configurations,
+21467 checks, 972/1103 functions and 596888/598792 bytes, 135 artifact rows, 131 uncited functions, 0 real gaps, 93
+frames and 9 e2e pictures unchanged.
+
+Measured after Part 134: **782** cited, **186** not (`tact` 93, `strat` 90, `app-shell` 3 left) -- this Part closed a
+PLAN row, not a ledger row.

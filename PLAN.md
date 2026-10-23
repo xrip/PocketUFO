@@ -5702,15 +5702,18 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   blocker has to be re-checked and the row either closed or restated with the real blocker. 5038 names seven
   RNG start globals whose readers this IDB does not establish; a fresh census either finds the readers or
   records that it does not. Part 119.
-- [ ] **133a. Two values the suite never reads: the defence burn and the site clear's extent.** Measured in Part
-  133. `*pnBudget -= nDamage` (`src/pufo/game/pufo_baseui.c:BaseAt_EmitDefencePair`, ARM 0x57CE0..0x57CE4) can be
-  changed by +1 with **0 failing checks**: every `TestBaseAtUpdate` fixture rolls a miss, so the hit arm never runs
-  and no check reads the remaining budget -- and the hit arm is where the burn lives. Likewise shortening the
-  teardown's `memset(pSite->auItemQty, ...)` by two bytes (ARM 0x76C08..0x76C28, the 256 x `STRH [R3],#2` loop over
-  site+2..0x201) gives **0 failing checks**: no check reads slot 255. Fix: drive `BaseAtScreen_Update` with a seed
-  and a defence count that force at least one HIT and assert the budget after each pair (the burn is fixed per pair:
-  500 at 0x57CE0, 600 at 0x57E8C, 900 at 0x5803C, 1500 at 0x581EC), and prefill `auItemQty[255]` before a teardown
-  and assert it goes to zero. Until then state the two values as unpinned, not as proved. Part 134.
+- [x] **133a. Two values the suite never read: the burn's exactness and the site clear's extent.** Opened in Part
+  133, closed in Part 134. Part 133's `-= nDamage + 1` printed 0 failing checks and the reason it recorded ('every
+  `TestBaseAtUpdate` fixture rolls a miss') was wrong: that test already pins all four burns with hit fixtures
+  (tests/test_baseui.c:17689..17716) and the eight-class budget table (17717..17742). A +1 crosses none of them,
+  because every boundary there is `the budget reaches exactly 0` and 501 off 500 is still below 1. What is true is
+  weaker and worth keeping: the budget is a stack cell that is never read out, so a burn is observable only as the
+  pair count it allows, i.e. as an interval. Part 134 pins each constant's two ends -- missile 500..599, laser 600..749,
+  plasma 750..999, fusion 1500..2199 -- and the record's immediates (#0x1F4, #0x258, #0x384, 0x5D0|0xC = 1500) all
+  sit inside their interval. The clear half was a genuine gap: the three teardown loops (256 x `STRH [R3],#2` from site+2
+  at 0x76C20, 100 x u16 from site+0x208 at 0x76C54, 10 x u16 from site+0x2D0 at 0x76C74) had no check on their last
+  slot; `auItemQty[255]`, `anSoldierIds[99]` and `anCraftIds[9]` are now prefilled and asserted. 11 mutation cases
+  in `docs/parity/mutations_part134.py`, every file restored byte-exact, each failing check naming 0x57808 or 0x76160.
 - [ ] **121a. The mutation pass over the 186 reached-but-uncited rows.** Reach is closed (119c, 120a); assertion
   coverage is not. `docs/parity/teeth.tsv` separates the two: 782 of the 968 behaviour rows carry a test cite at
   their own original address, **186 run under a test with no cite attributed to them** -- `tact` 93, `strat` 90,
@@ -6198,17 +6201,18 @@ open with 238 rows left.
   Two claims about these records were wrong and are `docs/parity/bugs.tsv` rows (365 -> 367 data rows, kind
   `naming`). (1) `*pnBudget -= nDamage; /* 0x57CE4 */` reads as a per-class burn; the record burns a fixed
   immediate per pair -- 500 (`SUB #0x1F4`, 0x57CE0), 600 (`#0x258`, 0x57E8C), 900 (`#0x384`, 0x5803C) and 1500
-  (`MOV #0x5D0` / `ORR #0xC` at 0x581E0, `SUB R3,R2,R3` at 0x581EC) -- and only the gravity pair burns a variable
-  (`SUB R3,R3,R1` at 0x58390); the port's four `PUFO_BASEAT_DAMAGE_*` constants are those four numbers, so behaviour
+  (`MOV #0x5D0` / `ORR #0xC` at 0x581E0, `SUB R3,R2,R3` at 0x581EC) -- and the gravity pair burns nothing
+  (`SUB R3,R3,R1` at 0x58390 is the label copy's pointer difference); the port's four `PUFO_BASEAT_DAMAGE_*` constants are those four numbers, so behaviour
   was already right. (2) The teardown clear cited as `memset(auItemQty, ...); /* 0x76C18 */` -- 0x76C18 is
   `ADD R3,R0,#2`, the loop start; the stores are 256 x `STRH [R3],#2` at 0x76C20 over site+2..0x201, which is
   exactly where `SmapSite.auItemQty[256]` sits (0x002), and the bytes after it follow the ARM order (bFlag0 0x000,
   bFlag1 0x001, uRecoveredSoldiers 0x202, 0x204, 0x205, then the 100-entry run from 0x208).
 
-  Two mutation anchors printed `fail lines: 0` and that is a coverage fact, not a runner problem: no check anywhere
-  reads the burned defence budget (every `TestBaseAtUpdate` fixture rolls a miss) and no check reads the last slot of
-  the site's quantity clear. Row 133a opened for it. The teeth came from one level in: the days-byte gate at
-  0x57968 and the site's flag byte at 0x76C30.
+  Two mutation anchors printed `fail lines: 0`. Half of that was a real coverage gap (nothing read the last
+  slot of the site's quantity clear); the other half was the mutation's direction rather than a missing
+  observer -- `TestBaseAtUpdate` already pins the burns with hit fixtures, and `+1` does not cross a
+  boundary written as `reaches exactly 0`. Row 133a opened for both and Part 134 closed it. The teeth in
+  Part 133 came from one level in: the days-byte gate at 0x57968 and the site's flag byte at 0x76C30.
 
   Records re-measured item by item with the identity `4*items + pool_bytes == size` asserted for all 24 (items that
   occupy two words counted separately): 37 of them at 0x96b30, 34 at 0x76de0, 25 at 0x57808. `0x76d88` vs `0x96ad8`
@@ -6227,3 +6231,24 @@ open with 238 rows left.
   16 head comments (12 new) read back exact, longest 1018 at 0x96b30; 0x6e9e8, 0x57808, 0x96288 and 0x79748 had been
   sitting at the 1024-character comment limit mid-sentence, so each head now stops at a complete sentence and the
   detail moved to 0x6EA7C, 0x57914, 0x9628C and 0x7974C; `idb_save` ok. Row 121a stays open with 186 rows left.
+  Progress (Part 134): PLAN row 133a closed; no ledger row closed (782 cited / 186 uncited unchanged, `tact` 93,
+  `strat` 90, `app-shell` 3). Two of Part 133's statements proved wrong and are corrected in all five places that carried
+  them. (1) `SUB R3,R3,R1` at 0x58390 is not a burn -- it is the pointer difference that opens the "ALL RECHARGED"
+  label copy (`ADD R3,SP,var_98` / `ADD R1,R8,str` / `SUB`), the same idiom as 0x58334 above it, and the gravity pair
+  writes nothing to the budget cell. (2) "no fixture in `TestBaseAtUpdate` rolls a HIT" is false -- 17689..17716 pins
+  all four burns with hit fixtures and 17717..17742 the eight-class budget table; the `+1` mutation was inert because of
+  its direction, since every boundary there is `reaches exactly 0` and 501 off 500 is still below 1.
+
+  The real limit is what the new checks are for: the budget cell [SP,#var_C0] is never written out of the frame and its
+  only read is the stop test, so a burn is observable as how many pairs it allows. 17 new checks (21450 -> 21467) pin
+  each constant's interval -- missile 500..599, laser 600..749, plasma 750..999, fusion 1500..2199 -- and the record's
+  four immediates sit inside them. The teardown half was a genuine gap: `auItemQty[255]`, `anSoldierIds[99]` and
+  `anCraftIds[9]` are now prefilled and asserted, and `bUnk518` (site+0x206) is asserted to survive the teardown, a
+  claim the port only had in a comment. 17 new cites (13 at 0x57808, 4 at 0x76160).
+
+  Teeth: 12 cases in `docs/parity/mutations_part134.py` -- 22 failing checks, 0 skipped, 0 inert, 0 build failures,
+  12/12 files back to their exact bytes, `grep -rn "MUTATION" src tests` empty, and every case prints a failing check
+  that names its own row. Log `build/crops/teeth134.log`. IDB: 0x57914 corrected, 0x57CE0 given the burn census and the
+  interval statement (555 chars), both read back exact, `idb_save` ok. Gates: `build/check134.log` -- `check: ALL SIX
+  GATES RAN`, `CHECK EXIT=0`, 65/65 in both configurations, 21467 checks, 972/1103 functions and 596888/598792 bytes,
+  135 artifact rows, 131 uncited functions, 0 real gaps, 93 frames and 9 e2e pictures unchanged.

@@ -1726,9 +1726,15 @@ static void TestBuySellBuildControls(void)
 
     CheckEqI32(nFunds, 1000, OptCite("the build branch does not touch the funds", "@ 0x76160"));
 
-    /* Teardown. */
+    /* Teardown. The last element of each cleared span is prefilled too: the record's three clear loops
+     * are 256 u16 from site+2 (`ADD R3,R0,#2` at 0x76C18 sets the start, 256 x `STRH [R3],#2` at 0x76C20
+     * with the SUBS/BPL counter at 0x76C24/0x76C28), 100 u16 from site+0x208 (0x76C50..0x76C64) and 10 u16
+     * from site+0x2D0 (0x76C68..0x76C7C), and only the last slot says how far a loop actually went. */
     nFunds = 100;
     aSites[1].auItemQty[10] = 5;
+    aSites[1].auItemQty[255] = 7;
+    aSites[1].anSoldierIds[99] = 11;
+    aSites[1].anCraftIds[9] = 13;
     aSites[1].uRecoveredSoldiers = 3;
     aSites[1].bUnk518 = 77;
     BuySellScreen_BuildControls(&env);
@@ -1743,7 +1749,14 @@ static void TestBuySellBuildControls(void)
     CheckEqI32(aSites[1].bRecoveredSoldierAssign, 0, "the recovery assignment byte");
     CheckEqI32(aSites[1].anSoldierIds[0], 0, "the soldier id list");
     CheckEqI32(aSites[1].anCraftIds[0], 0, "and the craft id list");
-    CheckEqI32(aSites[1].bUnk518, 77, "but not bUnk518, which only the build branch clears");
+    CheckEqI32(aSites[1].auItemQty[255], 0, OptCite("the quantity clear spans all 256 slots, site+2..0x201",
+                                                    "@ 0x76160"));
+    CheckEqI32(aSites[1].anSoldierIds[99], 0, OptCite("the soldier id clear spans all 100 slots, site+0x208..0x2CE",
+                                                      "@ 0x76160"));
+    CheckEqI32(aSites[1].anCraftIds[9], 0, OptCite("the craft id clear spans all 10 slots, site+0x2D0..0x2DE",
+                                                   "@ 0x76160"));
+    CheckEqI32(aSites[1].bUnk518, 77, OptCite("but not the byte at site+0x206: no store in the teardown reaches it",
+                                              "@ 0x76160"));
     CheckEqI32(nFunds, 4147000, "and the funds roll back to the snapshot");
 
     /* Slot 113 with no price: the +1 row is still counted, but the soldier row is written inside the
@@ -17848,6 +17861,78 @@ static void TestBaseAtUpdate(void)
                                       "@ 0x57808"));
     BaseAtScreen_Update(8, &g_baUpd);
     CheckEqI32(g_bBaActive, 0, OptCite("and the release arm runs on the same call", "@ 0x57808"));
+
+    /* ---- the burn each defence pair takes out of the attack budget ------------------------------------
+     * The burns are fixed immediates in the record: 500 (`SUB R3,R3,#0x1F4` at 0x57CE0, stored back at
+     * 0x57CE4), 600 (`#0x258` at 0x57E8C), 900 (`#0x384` at 0x5803C) and 1500 (`MOV R3,#0x5D0` / `ORR
+     * R3,R3,#0xC` at 0x581E0, `SUB R3,R2,R3` at 0x581EC, stored back at 0x581F0). The budget itself is a
+     * stack cell ([SP,#var_C0]) and nothing reads it out: it only decides whether the barrage runs the
+     * next pair, so a burn is observable as the pair count it allows. Two fixtures per constant therefore
+     * pin that constant's interval, and the interval's ends are what the checks assert. Gravity pairs burn
+     * nothing (0x58390 is `SUB R3,R3,R1` between the two ends of the "ALL RECHARGED" label copy, not a
+     * burn), the barrage runs nGravity + 1 rounds, and every round re-fires every defence cell. */
+    {
+        const i32 nSeedM = BaSeedRolls(5, 0, 50); /* five rolls under the missile threshold: all hit */
+        const i32 nSeedL = BaSeedRolls(5, 0, 60);
+        const i32 nSeedP = BaSeedRolls(5, 0, 70);
+        const i32 nSeedF = BaSeedRolls(5, 0, 80);
+
+        Check(nSeedM > 0 && nSeedL > 0 && nSeedP > 0 && nSeedF > 0, "seeds with five hits per kind were found");
+
+        /* missile >= 500: a 500 budget with one missile cell and a gravity cell, so 2 rounds are available.
+         * The first pair leaves 0, which is < 1, and the barrage stops before the gravity pair. */
+        BaRun(3, 1, 0, 0, 0, 1, nSeedM);
+        CheckEqI32(g_nBaLimit, 5, OptCite("one missile pair burns the whole 500 budget and stops the barrage",
+                                          "@ 0x57808"));
+        CheckEqI32(g_nBaCap, 9, OptCite("  the capacity still counts the round that never ran", "@ 0x57808"));
+
+        /* missile <= 599: a 1200 budget, one missile cell, 3 rounds. 1200 - 2*600 is 0, so a burn of 600
+         * would stop the barrage after the second pair; the burn that lets all three pairs run is under 600. */
+        BaRun(5, 1, 0, 0, 0, 2, nSeedM);
+        CheckEqI32(g_nBaLimit, 13, OptCite("all three missile pairs run, so the missile burn is under 600",
+                                           "@ 0x57808"));
+        CheckEqI32(g_nBaCap, 13, OptCite("  and the log fills the capacity exactly", "@ 0x57808"));
+
+        /* laser >= 600: 1200 budget, one laser cell, 3 rounds. Two laser burns of 600 empty the budget, so
+         * the third pair never runs; a burn of 599 leaves 2 and the run completes. */
+        BaRun(5, 0, 1, 0, 0, 2, nSeedL);
+        CheckEqI32(g_nBaLimit, 9, OptCite("the laser burn is at least 600: two pairs empty a 1200 budget",
+                                          "@ 0x57808"));
+
+        /* laser <= 749: 3000 budget, one laser cell, 5 rounds. Four burns of 750 empty it (3000 - 4*750 = 0),
+         * so the fifth round would not fire; 600 leaves 600 and the run completes all five rounds. */
+        BaRun(7, 0, 1, 0, 0, 4, nSeedL);
+        CheckEqI32(g_nBaLimit, 21, OptCite("the laser burn is under 750: five rounds of it fit in 3000",
+                                           "@ 0x57808"));
+        CheckEqI32(g_nBaCap, 21, OptCite("  so the log reaches the capacity", "@ 0x57808"));
+
+        /* plasma >= 750: 3000 budget, one plasma cell, 5 rounds. Four burns of 749 leave 5, so the fifth pair
+         * runs; the real burn of 900 leaves -600 and stops after the fourth. */
+        BaRun(7, 0, 0, 1, 0, 4, nSeedP);
+        CheckEqI32(g_nBaLimit, 17, OptCite("the plasma burn is at least 750: four rounds of it overshoot 3000",
+                                           "@ 0x57808"));
+
+        /* plasma <= 999: 3000 budget, one plasma cell, 4 rounds. A burn of 1000 empties the budget on the
+         * third round's pair and that round's gravity pair never appears; 900 leaves 300 and all four
+         * rounds' pairs run, which is exactly the capacity. */
+        BaRun(7, 0, 0, 1, 0, 3, nSeedP);
+        CheckEqI32(g_nBaLimit, 17, OptCite("the plasma burn is under 1000: three rounds of it leave 300 to spare",
+                                           "@ 0x57808"));
+        CheckEqI32(g_nBaCap, 17, OptCite("  and the log fills the capacity", "@ 0x57808"));
+
+        /* fusion >= 1500: 3000 budget, one fusion cell, 3 rounds. Two burns of 1500 empty it, so the barrage
+         * stops after the second pair; 1499 leaves 2 and the run reaches the third pair. */
+        BaRun(7, 0, 0, 0, 1, 2, nSeedF);
+        CheckEqI32(g_nBaLimit, 9, OptCite("the fusion burn is at least 1500: two pairs empty a 3000 budget",
+                                          "@ 0x57808"));
+
+        /* fusion <= 2199: 2200 budget, one fusion cell, 2 rounds. A burn of 2200 empties the budget on the
+         * first pair and the gravity pair never appears; 1500 leaves 700 and the run completes. */
+        BaRun(6, 0, 0, 0, 1, 1, nSeedF);
+        CheckEqI32(g_nBaLimit, 9, OptCite("the fusion burn is under 2200: one pair leaves 700 of a 2200 budget",
+                                          "@ 0x57808"));
+        CheckEqI32(g_nBaCap, 9, OptCite("  so both rounds run and the log fills the capacity", "@ 0x57808"));
+    }
 }
 
 static void BaDrawEnv(void)
