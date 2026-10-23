@@ -24092,3 +24092,100 @@ Gates: `build/check135b.log`, run against the committed code commit -- coverage:
 CHECK EXIT=?. The earlier run `build/check135.log` shows the same numbers with one difference: its last line is the
 e2e gate's own guard, `e2e pictures: CHANGED or NEW -- M tests/ref/e2e/01_newgame.png`, because at that
 moment the re-referenced picture was in the tree but not in a commit yet.
+
+### Part 136 -- the shell's own two records close: the pump, the window procedure, and four dispatch deviations
+
+`WinMain @ 0x9fcc4` and `PocketUFO_WndProc @ 0xa03ec` were the last two `app-shell` rows the ledger could not
+reach: `pufo_app.c` lived in the executable, and no test links an executable. The fix is the one the user chose
+-- make the layer linkable rather than copy it. `src/pufo/CMakeLists.txt` now builds `add_library(pufo_app STATIC
+app/pufo_app.c)` with the include directory and the nine module libraries as PUBLIC properties, the executable is
+`add_executable(pocketufo app/pufo_main.c)`, and `app/pufo_main.c` is four lines: `wWinMain` calling
+`App_Run(hInstance, hPrevInstance, lpCmdLine, nCmdShow)`. What the test calls is the code the exe runs, not a
+copy of it. `test_appshell` links `pufo_app`.
+
+#### WinMain's pump, 0x9FD04..0x9FD44
+
+The record is `if (!InitInstance(...)) return 0` (0x9FCD8..0x9FCE4), `LoadAcceleratorsW(hInstance,
+MAKEINTRESOURCE(3))` (`MOV R1,#3` at 0x9FCE4, BL at 0x9FCEC), then `GetMessageW(&Msg, NULL, 0, 0)` tested for
+NON-ZERO at 0x9FD38 with no signed comparison anywhere, `TranslateAcceleratorW` FIRST at 0x9FD0C with the
+`TranslateMessage` / `DispatchMessageW` pair at 0x9FD14/0x9FD1C only when it answers 0, and the exit code taken
+from `Msg.wParam` at 0x9FD44. The port had two invented guards: a `> 0` comparison and a
+`hAccel == NULL ||` short-circuit. `App_PumpMessages` now reads the record: `!= 0` and the accelerator call
+unconditional. The short-circuit was measured rather than assumed (build/crops/accel_null.c):
+`TranslateAcceleratorW(hwnd, NULL, &msg)` answers 0 and leaves the message untouched, so a table that failed to
+load was safe to pass through. The `!= 0` change has no teeth and is stated as such -- in this suite GetMessageW
+answers 0 for the WM_QUIT and never answered negative, so `!= 0` and `> 0` are the same program for every
+message the test can produce; `docs/parity/mutations_part136.py` says the same in its header instead of faking a
+check.
+
+The pump test is what makes the order visible: a real `CreateAcceleratorTableW` entry (FVIRTKEY, VK_F5, cmd 1)
+plus a posted WM_KEYDOWN VK_F5 and a posted WM_QUIT 7. The dispatched set contains a WM_COMMAND whose LOW half is
+1, no WM_KEYDOWN for VK_F5, the unrelated WM_KEYDOWN VK_F9, and no WM_QUIT dispatched; `App_PumpMessages` returns
+7, the WM_QUIT's own wParam.
+
+That low-half detail is the reason the record can test only the low half: an accelerator-sourced WM_COMMAND
+carries its source id in the HIGH word -- VK_F5 with cmd 1 arrived as wParam 0x10001 -- while a menu-sourced one
+carries 0, and both have to land in the same arm.
+
+#### PocketUFO_WndProc's WM_COMMAND arm, 0xA0C9C..0xA0CDC -- the arm the port did not have
+
+`MOV R3,R0,LSL#16` / `MOV R3,R3,LSR#16` / `CMP R3,#1` at 0xA0C9C..0xA0CA4 (R0 is the wParam the prologue moved in
+at 0xA03F4). Command 1 re-enters the same window procedure twice: `SendMessageW(hwnd, WM_ACTIVATE, 0, hwnd)` at
+0xA0CB0 -- the lParam slot really gets the hwnd, R4 saved from R0 at 0xA03F0 -- and `SendMessageW(hwnd, WM_CLOSE,
+0, 0)` at 0xA0CC4, and the arm answers 0 at 0xA0F74. WM_CLOSE has no arm of its own, so DefWindowProcW destroys
+the window and WM_DESTROY runs App_QuitDisplay: command 1 is this window's own quit. `MOVNE R1,#0x111` at 0xA0CA8
+puts the message id back for the fall-through, which is 0xA0740's `MOV R3,R2 / MOV R2,R0 / MOV R0,R4 / BL
+DefWindowProcW`. The port had no WM_COMMAND case at all, so every command went to DefWindowProcW and the quit
+path never ran. The head comment at 0xa03ec also said "WM_ACTIVATE then WM_SETFOCUS" -- WM_CLOSE, 0x10, is what
+the BL at 0xA0CC4 calls; the comment is corrected.
+
+Two checks make the arm real rather than plausible: after `PocketUFO_WndProc` handles WM_COMMAND 1 the window is
+gone (`IsWindow` false), and the pump -- with no accelerator table -- then returns 0 instead of hanging, which is
+the WM_QUIT the destroy path posted (0xa0388). Dropping the WM_CLOSE (mutation case 8) leaves the window alive and
+fails 3 checks.
+
+#### The timer dispatch, and what this Part cannot prove through the pictures
+
+The 0xA08B0 gate (`wParam == 50000` = 0xC350) keeps the game tick out of the 0xA0944 switch, whose arms are
+0xC351 -> Render_Frame (0xA094C), 0xC352 -> the anim block (0xA0978..0xA0AEC), 0xC353 -> UiPulse_OnTimer
+(0xA0C64) and 0xC354 -> `cUiAnimProgress++` clamped at 101 (0xA0C6C..0xA0C90). `App_WorldState()` lets the test
+read those cells after calling `PocketUFO_WndProc` directly: 0xC352 sets the row flag, 0xC354 advances the progress
+and clamps, 0xC351 / 50000 / 0xC399 move neither. Trading the 0xC351 and 0xC352 bodies fails 4 checks; moving the
+0xC354 body to 0xC399 fails 3; deleting the 0xA08B0 gate so 0xC350 takes the anim arm fails 2.
+
+What is NOT proven here is the picture. The scripted dumps drive the timer bodies through `App_ScriptTicks`, not
+through `PocketUFO_WndProc`, so a dispatch error does not move a committed picture: `tools/e2e.sh` reports the same
+9 pictures before and after this Part, and 93 frame references are unchanged. For these two rows the unit
+mutations carry the teeth, and the honest statement is that the dispatch has no end-to-end picture proof.
+
+#### Four deviations recorded, and the WM_SIZE correction
+
+Reading the low switch at 0xA040C..0xA0440 in full -- it tests 1, 2, 5, 6, 7, 8, 0xF -- turned one earlier claim
+around: WM_SIZE is 5, and `CMP R1,#5` / `BEQ 0xA0F74` at 0xA041C/0xA0420 means the record swallows it, answering
+0 with no work. Four rows now sit in `docs/parity/bugs.tsv` with kind `deviation`: WM_PAINT presenting where
+0xA0444..0xA0468 draws nothing, WM_SIZE re-presenting where 0xA041C does nothing, WM_ERASEBKGND answering 1 where
+0x14 falls through to 0xA0740's DefWindowProcW, and App_MapPointer inverting the shell's own letterbox instead of
+running the DisplayMode table at 0xA0768..0xA07E0 (mode 1 swap, mode 2 halve, mode 3 halve-and-rotate with
+`RSB R0,R3,#0xF0` at 0xA07AC, mode 0 and the unmatched case identity at 0xA07E0). The fourth one also fixes an old
+comment in `pufo_app.c` that said the raw client point goes through.
+
+#### Tests, teeth, IDB
+
+27 checks in the new `tests/test_appshell.c`, every one citing `@ 0x9fcc4` or `@ 0xa03ec`; the total goes 21478 ->
+21505. Teeth: 9 mutation cases, 25 failing checks (3, 2, 2, 4, 3, 2, 3, 3, 3), 0 skipped, 0 inert, 0 build
+failures, 9/9 files restored byte-exact, `grep -rn "MUTATION" src tests` empty -- `pufo_app.c`
+measured byte-identical to its pre-mutation copy (`build/crops/app_before_136.c`).
+
+IDB: `WinMain` @ 0x9fcc4 (1015 chars), `PocketUFO_WndProc` @ 0xa03ec (972, the WM_SETFOCUS claim replaced with
+WM_CLOSE), the WM_COMMAND arm at 0xA0C9C (951), the DisplayMode table at 0xA0768 (873) and its WM_MOUSEMOVE copy
+at 0xA0810 (272), and `unk_AD710` = pBank+0x1040 (902) with its census: the only IDA-rendered references to that
+name are the two stores (0xA0804/0xA0808 storing 1, and 0x38310/0x38314 storing R1 = 1 from 0x382E8), and the only
+code literal `#0x1040` in .text is Input_OnPointer's 0x13C9C, which ORRs in 4 at 0x13CA4 and so reaches
+bank+0x1044 -- no rendered read of the pressed byte exists, so no reader is pinned and the port keeps no state for
+it. All six read back exact; `idb_save` ok.
+
+Gates: `coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21505 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). check: ALL SIX GATES RAN -- release build, release tests, debug build, debug tests, report+artifacts, frames+e2e --
+`build/check136.log`.
+
+Measured after Part 136: **785** cited, **183** not (`tact` 93, `strat` 90) and `app-shell` closed -- all 24
+`app-shell` rows are cited.

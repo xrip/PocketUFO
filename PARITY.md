@@ -22,8 +22,8 @@ python docs/parity/coverage.py            # coverage numbers only
 | Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | 131, 1904 bytes |
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 65 |
-| Test checks run | 21478 |
+| Test suites | 66 |
+| Test checks run | 21505 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -181,12 +181,12 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0xa03ec` | `PocketUFO_WndProc` | 2964 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.h` (+1) |
+| `0xa03ec` | `PocketUFO_WndProc` | 2964 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_app.h` (+3) |
 | `0x9fd48` | `InitInstance` | 1600 | `src/pufo/app/pufo_app.c`, `src/pufo/platform/pufo_gx.c` (+4) |
 | `0x9edbc` | `Reg_GetString` | 272 | `src/pufo/game/pufo_options.c`, `src/pufo/game/pufo_options.h` (+2) |
 | `0x9e904` | `StartTimers_BySpeed` | 236 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_timer.c` (+1) |
 | `0x9ed0c` | `Reg_SetString` | 176 | `src/pufo/game/pufo_options.c`, `src/pufo/game/pufo_options.h` (+2) |
-| `0x9fcc4` | `WinMain` | 132 | `src/pufo/app/pufo_app.c` |
+| `0x9fcc4` | `WinMain` | 132 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_app.h` (+1) |
 | `0x54c80` | `CDialogTemplate_GetCellByte` | 116 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x9e7f4` | `StartTimers_D` | 112 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
 | `0xa0388` | `App_QuitDisplay` | 100 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.h` |
@@ -1261,6 +1261,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 
 | Suite | Result | Checks |
 |---|---|---|
+| `test_appshell` | PASS | 27 |
 | `test_audio` | PASS | 76 |
 | `test_ballist` | PASS | 106 |
 | `test_baseui` | PASS | 4366 |
@@ -1327,7 +1328,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 81 |
 | `test_vistry` | PASS | 42 |
 
-**65 / 65 suites passing.**
+**66 / 66 suites passing.**
 
 ## Per-subsystem parity notes
 

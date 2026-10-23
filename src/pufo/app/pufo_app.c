@@ -28,6 +28,7 @@
 #include "game/pufo_clock.h"    /* GameTime, the scratch clock SaveSlot_FormatList uses */
 #include "game/pufo_font.h"     /* PufoFont, the shell owns the fontSys block */
 #include "game/pufo_input.h"    /* Input_OnPointer / Input_OnPointerUp, the menu click path */
+#include "app/pufo_app.h"     /* this file's own entry points, shared with tests/test_appshell.c */
 #include "app/pufo_world.h"   /* PufoWorldState, the geoscape bring-up state */
 #include "game/pufo_mainmenu.h" /* GameUI_InitStartup / MainMenu_Draw / MainMenu_TickRowKeys */
 #include "game/pufo_options.h"  /* Options_LoadFromRegistry */
@@ -1032,9 +1033,20 @@ static void App_GameTickOnce(void *pUser)
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 static void App_PresentLoadedSurface(void);
 
-/* Client pixels to the 240x320 logical surface, inverting Gx_Present's integer-scale
- * letterbox. The original's WinCE pointers were already in logical space (WM_LBUTTONDOWN
- * feeds Input_OnPointer straight through, 0xa03ec). */
+/* Client pixels to the 240x320 logical surface, inverting Gx_Present's integer-scale letterbox.
+ *
+ * ADAPTATION, and the older comment here was wrong: the record does NOT feed the raw client point
+ * through. 0xA0768..0xA080C unpacks lParam into (x,y) with `MOV R3,R2,LSL#16` / `MOV R1,R2,LSR#16` /
+ * `MOV R0,R3,LSR#16` and branches on the DisplayMode held at 0x187F48: mode 0 (240x320) jumps to 0xA07E0
+ * with both values untouched; mode 1 (320x240) swaps them at 0xA07D4 (`MOV R2,R0` / `MOV R0,R1` /
+ * `MOV R1,R2`); mode 2 (480x640) halves both at 0xA07B8, with the ARM negative-divide idiom
+ * (`MOVS` / `ADDMI #1` / `ASR#1` -- see memory `arm-negative-div-idiom`); mode 3 (640x480) halves and
+ * rotates at 0xA077C: R2 = x/2, then 0xA07DC moves it into the second argument while `RSB R0,R3,#0xF0`
+ * makes the first 240 - y/2. WM_MOUSEMOVE runs the same table with bDown 0 at 0xA0810..0xA0884, and
+ * WM_LBUTTONDOWN stores the pressed byte unk_AD710 (pBank+0x1040) at 0xA0804..0xA080C. The Win64 shell has
+ * one display geometry -- a letterboxed 240x320 surface, the record's mode 0, its identity row -- so this
+ * is the inverse of the shell's own letterbox rather than the mode table. Recorded as a deviation in
+ * docs/parity/bugs.tsv; modes 1..3 have no Win64 path that selects them. */
 static void App_MapPointer(LPARAM lParam, i32 *pnX, i32 *pnY)
 {
     RECT  rc;
@@ -2185,6 +2197,15 @@ static void App_QuitDisplay(void)
     g_pointerWorld.bListRowSticky = true; /* 0xA03D4 */
 }
 
+/* SHELL SCAFFOLDING, not the original: the shell's own Map-block copy, so a test can see WHICH arm a
+ * WM_TIMER firing moved (tests/test_appshell.c). The original has one Map block at 0x1139B8 that every
+ * function reaches directly; the port's copy is this static, and nothing outside this file could name it
+ * without an accessor. */
+PufoWorldState *App_WorldState(void)
+{
+    return &g_world;
+}
+
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg) {
@@ -2243,6 +2264,22 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             App_TickAnimProgress();
         }
         return 0;
+    case WM_COMMAND:
+        /* 0xA0C9C..0xA0CDC. The arm tests the LOW half of wParam: `MOV R3,R0,LSL#16` /
+         * `MOV R3,R3,LSR#16` / `CMP R3,#1` at 0xA0C9C..0xA0CA4, R0 being the wParam the prologue moved in
+         * (0xA03F4 `MOV R0,R2`). Command 1 re-enters this window procedure twice -- SendMessageW
+         * (hWnd, WM_ACTIVATE, 0, hWnd) at 0xA0CB0, where the lParam slot really gets the hwnd (R4, saved
+         * from R0 at 0xA03F0), and SendMessageW (hWnd, WM_CLOSE, 0, 0) at 0xA0CC4 -- and returns 0. WM_CLOSE
+         * has no arm of its own here, so DefWindowProcW destroys the window and WM_DESTROY runs
+         * App_QuitDisplay: command 1 is the window's own quit. Any other command value jumps to 0xA0740,
+         * which is the `MOV R3,R2 / MOV R2,R0 / MOV R0,R4 / BL DefWindowProcW` tail with R1 left at 0x111 by
+         * 0xA0CA8's `MOVNE`. */
+        if ((u16)wParam == 1u) {
+            (void)SendMessageW(hWnd, WM_ACTIVATE, 0, (LPARAM)(INT_PTR)hWnd);
+            (void)SendMessageW(hWnd, WM_CLOSE, 0, 0);
+            return 0;
+        }
+        return DefWindowProcW(hWnd, uMsg, wParam, lParam);
     case WM_MOUSEMOVE:
         App_OnPointer(lParam, false); /* 0x13c6c, hover marks */
         return 0;
@@ -2283,10 +2320,36 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     return DefWindowProcW(hWnd, uMsg, wParam, lParam);
 }
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-                    LPWSTR lpCmdLine, int nCmdShow)
+/* WinMain @ 0x9fcc4's pump, 0x9FD04..0x9FD44: GetMessageW(&Msg, NULL, 0, 0) tested for NON-ZERO
+ * (0x9FD38 -- the record has no signed comparison, so a -1 error answer would keep the loop spinning,
+ * and the port used to read this as `> 0`), then TranslateAcceleratorW(msg.hwnd, hAccel, &Msg) FIRST at
+ * 0x9FD0C with the TranslateMessage / DispatchMessageW pair at 0x9FD14/0x9FD1C only when it answers 0,
+ * and the exit code is the WM_QUIT message's own wParam at 0x9FD44.
+ *
+ * hAccel is passed through exactly as 0x9FCF0 leaves it: the record checks nothing, and a table that
+ * failed to load is handed straight to TranslateAcceleratorW. Measured here (build/crops/accel_null.c):
+ * TranslateAcceleratorW(hwnd, NULL, &msg) answers 0 and leaves the message untouched, so the port's old
+ * `hAccel == NULL ||` short-circuit was not load-bearing -- it is gone. */
+int App_PumpMessages(HACCEL hAccel)
 {
-    MSG            msg;
+    MSG msg;
+
+    while (GetMessageW(&msg, NULL, 0, 0) != 0) {
+        if (TranslateAcceleratorW(msg.hwnd, hAccel, &msg) == 0) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    return (int)msg.wParam;
+}
+
+/* WinMain @ 0x9fcc4, the whole 132-byte body: the InitInstance gate at 0x9FCDC (FALSE -> return 0),
+ * LoadAcceleratorsW from table 3 (`MOV R1,#3` 0x9FCE4, `BL LoadAcceleratorsW` 0x9FCEC), the pump, and its
+ * return value. src/pufo/app/pufo_main.c carries the `wWinMain` the CRT looks for and calls this, so that
+ * tests/test_appshell.c links the pump and the window procedure it tests instead of a copy of them. */
+int App_Run(HINSTANCE hInstance, HINSTANCE hPrevInstance,
+            LPWSTR lpCmdLine, int nCmdShow)
+{
     HACCEL         hAccel;
     unsigned short colour = 0x0000u; /* black in RGB565 */
 
@@ -2398,11 +2461,5 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         (void)Gx_Present(&g_gx);
     }
 
-    while (GetMessageW(&msg, NULL, 0, 0) > 0) {
-        if (hAccel == NULL || TranslateAcceleratorW(msg.hwnd, hAccel, &msg) == 0) {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-    }
-    return (int)msg.wParam;
+    return App_PumpMessages(hAccel);
 }

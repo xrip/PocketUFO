@@ -25,10 +25,10 @@
 0x9ecb8	App_ResizeMainWindow	84	app-shell	yes	yes	yes	App_HookNewGame|World_ResizeWindowSeamThunk	no
 0x9ed0c	Reg_SetString	176	app-shell	yes	yes	yes		yes
 0x9edbc	Reg_GetString	272	app-shell	yes	yes	yes		yes
-0x9fcc4	WinMain	132	app-shell	yes	no	no	wWinMain	no
+0x9fcc4	WinMain	132	app-shell	yes	yes	yes	App_PumpMessages|App_Run	yes
 0x9fd48	InitInstance	1600	app-shell	yes	yes	yes	App_BuildAssetPaths|App_InitInstance|Game_SeedStartupPicks	yes
 0xa0388	App_QuitDisplay	100	app-shell	yes	yes	yes	App_HookQuit	yes
-0xa03ec	PocketUFO_WndProc	2964	app-shell	yes	no	no		no
+0xa03ec	PocketUFO_WndProc	2964	app-shell	yes	yes	yes		yes
 0x9e0c0	Sound_Play	112	audio	yes	yes	yes	App_InitStartupUi|World_InitTactical|Ui_ConfirmMeleeMode6	yes
 0x9e130	Sound_LoadAndPlayMusic	312	audio	yes	yes	yes	World_TactMusicHook	yes
 0x9e268	Sound_InitAndLoadSamples	364	audio	yes	yes	yes	World_TactSoundInitHook	yes
@@ -36,7 +36,7 @@
 0x9e454	Sound_ApplyMusicVolume	136	audio	yes	yes	yes	World_TactMusicVolHook|World_TactMenuHooksFor|World_WireOptions|OptionsScreen_SetMusicVol|Options_MusicLevel	yes
 0x9e4dc	Sound_ApplySfxVolume	124	audio	yes	yes	yes	World_TactSfxVolHook|World_TactMenuHooksFor|World_WireOptions|Options_MusicLevel	yes
 0x382d0	Assets_LoadStartup	1504	boot-assets	yes	yes	yes	App_InitInstance|TextTables_Extract|Boot_LoadStartup	yes
-0x38a28	GameUI_InitStartup	852	boot-assets	yes	yes	yes	App_InitStartupUi|App_TitlesToStartup|wWinMain	no
+0x38a28	GameUI_InitStartup	852	boot-assets	yes	yes	yes	App_InitStartupUi|App_TitlesToStartup|App_Run	no
 0x38d7c	StartUi_Shutdown	208	boot-assets	yes	yes	yes	App_ShutdownStartUi|StartMenu_Shutdown	yes
 0x38e4c	GameAssets_Shutdown	180	boot-assets	yes	yes	yes	Boot_Shutdown	yes
 0x3f0d0	DatFile_RegisterAtexit	12	dat	yes	yes	yes	DatFile_AtexitThunk	yes
@@ -302,7 +302,7 @@
 0x83890	StrategList_ctor	16	strat	yes	no	yes		yes
 0x838a0	StrategList_RegisterAtexit	12	strat	yes	no	yes		yes
 0x838ac	StrategList_Clear	36	strat	yes	no	yes		yes
-0x838d0	Geoscape_CloseUI_ThunkA	12	strat	yes	no	yes	wWinMain|World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
+0x838d0	Geoscape_CloseUI_ThunkA	12	strat	yes	no	yes	App_Run|World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
 0x838dc	Smap_BeginCraftSelect	2424	strat	yes	yes	yes	World_BeginCraftSelectThunk|World_WireMissionSeams|StatusPanel_DrawDescentPanel	yes
 0x84254	Smap_CancelTarget	152	strat	yes	yes	yes	World_SmapCancelTargetThunk|World_WireOptions	yes
 0x842ec	Smap_ConfirmCraftTarget	316	strat	yes	yes	yes	World_SmapConfirmCraftTargetThunk	yes
@@ -327,7 +327,7 @@
 0x853e4	Smap_ConfirmSelectedAlt	92	strat	yes	yes	yes	World_SmapConfirmSelectedThunk	yes
 0x85440	Smap_SetWaypoint	132	strat	yes	yes	yes		yes
 0x854c4	Geoscape_OnRadarListClick	804	strat	yes	yes	yes	World_FillInitUiEnv	yes
-0x857e8	Geoscape_OnMapClick_Thunk	12	strat	yes	no	yes	wWinMain|World_MapClick|World_MapClickThunk|World_WireGeoscapeFrame	yes
+0x857e8	Geoscape_OnMapClick_Thunk	12	strat	yes	no	yes	App_Run|World_MapClick|World_MapClickThunk|World_WireGeoscapeFrame	yes
 0x857f4	Geoscape_InitUI	5420	strat	yes	yes	yes	App_HookPlaySample|App_HookNewGame|World_NewGame|Load_HookInitUi	yes
 0x86d20	GeoscapeUi_FreeAll	1456	strat	yes	yes	yes	World_Free|World_MissionSeamFreeUi	yes
 0x872d0	Geoscape_OnPointer	8576	strat	yes	yes	yes	App_GeoscapePointerThunk|World_WireGeoscapeFrame|World_GeoscapePointer	yes
@@ -336,7 +336,7 @@
 0x8b1f4	Geoscape_UiFocusNext	596	strat	yes	no	yes	World_GeoscapeFocusScroll|Geoscape_FocusScroll	yes
 0x8b448	Geoscape_SetPanelFlagA	48	strat	yes	no	yes	World_GeoscapePanelFlag	yes
 0x8b478	Geoscape_SetPanelFlagB	48	strat	yes	no	yes	World_GeoscapePanelFlag	yes
-0x8b4a8	Geoscape_OnMapClick	1184	strat	yes	yes	yes	App_HoverOnRegion|wWinMain|World_MapClick|Geoscape_OnMapClick_Thunk	yes
+0x8b4a8	Geoscape_OnMapClick	1184	strat	yes	yes	yes	App_HoverOnRegion|App_Run|World_MapClick|Geoscape_OnMapClick_Thunk	yes
 0x8b94c	Geoscape_CloseUI	2100	strat	yes	yes	yes	World_CloseGeoscapeThunk|World_SoldierToggleThunk|World_CloseGeoscapeHook|World_ResearchCancelThunk|World_StartNewHook|World_WireGeoscapeClock|World_CloseGeoscape|World_WireOptions|World_WireGeoscapeFrame|OptionsScreen_Init	yes
 0x8c180	Geoscape_Draw	33744	strat	yes	yes	yes	App_GeoscapeDrawThunk|World_WireOptions|World_DrawGeoscapeFrame|Geoscape_BlitMapView|Geoscape_BlitCrosshair|StatusPanel_DrawAt|Geoscape_DrawRadarArm	yes
 0x94550	Geoscape_GameTickStub	4	strat	yes	yes	yes	App_GameTickOnce|Geoscape_Draw|GameTick_OnTimer	yes

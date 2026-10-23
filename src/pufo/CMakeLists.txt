@@ -114,8 +114,30 @@ target_include_directories(pufo_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_world PUBLIC
     pufo_options pufo_game pufo_ui pufo_render pufo_dat pufo_util pufo_audio)
 
-add_executable(pocketufo
+# The shell layer is a library, not exe-only code, for the same reason pufo_world is one: two of its
+# functions are original records a test has to reach. WinMain @ 0x9fcc4 is the pump -- accelerator table 3,
+# TranslateAcceleratorW before the translate/dispatch pair, MSG.wParam as the exit code -- and PocketUFO_
+# WndProc @ 0xa03ec is the 2964-byte message and timer-id dispatch. tests/test_appshell.c links this library
+# and calls both, so what it tests is the code the executable runs. The executable keeps only its entry
+# point, app/pufo_main.c.
+add_library(pufo_app STATIC
     app/pufo_app.c
+)
+target_include_directories(pufo_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(pufo_app PUBLIC
+    pufo_options
+    pufo_platform
+    pufo_util
+    pufo_dat
+    pufo_render
+    pufo_game
+    pufo_audio
+    pufo_ui
+    pufo_world
+)
+
+add_executable(pocketufo
+    app/pufo_main.c
 )
 
 # Parity tests. These read the shipped main.dat / lang.dat and compare against
@@ -863,14 +885,20 @@ add_test(NAME test_invdrag
 # point and no console. Without this the CRT looks for main().
 set_target_properties(pocketufo PROPERTIES WIN32_EXECUTABLE TRUE)
 
-target_link_libraries(pocketufo PRIVATE
-    pufo_options
-    pufo_platform
-    pufo_util
-    pufo_dat
-    pufo_render
-    pufo_game
-    pufo_audio
-    pufo_ui
-    pufo_world
+# Everything the shell needs comes through pufo_app's own PUBLIC list.
+target_link_libraries(pocketufo PRIVATE pufo_app)
+
+# The shell's own two records. This is the only test that links the shell layer, and the only one that
+# creates a window: the pump needs a thread queue and a window to dispatch to, and PocketUFO_WndProc needs
+# a real HWND for the DefWindowProcW / SendMessageW arms. The world block stays at its static state, so the
+# timer arms that would need a live mission (0xC351's frame, 0xC353's pulse) are not fired here -- the frame
+# and e2e gates cover those, and what this test pins is which arm a message selects.
+add_executable(test_appshell ${CMAKE_SOURCE_DIR}/tests/test_appshell.c)
+target_link_libraries(test_appshell PRIVATE pufo_app)
+set_target_properties(test_appshell PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_appshell
+    COMMAND test_appshell
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )

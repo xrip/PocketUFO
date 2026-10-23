@@ -428,3 +428,31 @@ coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 65/65 
 
 Measured after Part 135: **783** cited, **185** not (`tact` 93, `strat` 90, `app-shell` 2 left -- the two
 `app-shell` rows are `WinMain @ 0x9fcc4` and `PocketUFO_WndProc @ 0xa03ec`, to be closed through the e2e gate).
+
+## Part 136 -- the app-shell rows close: 785 cited / 183 uncited
+
+`app-shell` is closed. `pufo_app.c` became the static library `pufo_app`, the executable kept only
+`app/pufo_main.c` (four lines, `wWinMain` -> `App_Run`), and `tests/test_appshell.c` calls the pump and the window
+procedure themselves. The two rows read `test_cites_addr yes`, `test_names_it yes`, `test_calls_directly yes`, with
+`App_PumpMessages|App_Run` as WinMain's port function.
+
+What the record has and the port did not: the WM_COMMAND arm at 0xA0C9C..0xA0CDC -- wParam's low half tested
+against 1, then `SendMessageW WM_ACTIVATE` with the hwnd in the lParam slot (0xA0CB0) and `SendMessageW WM_CLOSE`
+(0xA0CC4), answering 0; and the pump's order, with `TranslateAcceleratorW` first at 0x9FD0C and the exit code taken
+from `Msg.wParam` at 0x9FD44. `!= 0` at 0x9FD38 replaces the port's `> 0`; that difference has no teeth (GetMessageW
+never answered negative in this suite) and is recorded instead of faked.
+
+27 new checks (21478 -> 21505 total). Teeth: 9 cases, 25 failing checks, 0 inert, 0 skipped, all
+restored byte-exact. No picture proof for the dispatch: the scripted dumps run the timer bodies through
+`App_ScriptTicks`, not through `PocketUFO_WndProc`, so the 9 e2e pictures and the 93 frame references are unchanged
+and the unit mutations carry these rows' teeth.
+
+Four `deviation` rows went into `docs/parity/bugs.tsv`: WM_PAINT presents where 0xA0444..0xA0468 draws nothing;
+WM_SIZE (5) re-presents where 0xA041C/0xA0420 swallows the message; WM_ERASEBKGND answers 1 where 0x14 falls to
+0xA0740's DefWindowProcW; App_MapPointer inverts the shell's letterbox instead of the DisplayMode table at
+0xA0768..0xA07E0. IDB: 0x9fcc4 (1015), 0xa03ec (972, WM_SETFOCUS -> WM_CLOSE), 0xA0C9C (951), 0xA0768 (873),
+0xA0810 (272), 0xAD710 (902 with its two-stores-only census). All read back exact, `idb_save` ok.
+
+Gates: coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21505 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures).
+
+Measured after Part 136: **785** cited, **183** not (`tact` 93, `strat` 90); `app-shell` 24/24 cited.

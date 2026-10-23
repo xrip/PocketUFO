@@ -6290,3 +6290,24 @@ open with 238 rows left.
   coordinate readouts only). The last two `app-shell` rows (`WinMain @ 0x9fcc4`, `PocketUFO_WndProc @ 0xa03ec`)
   are next, through the e2e gate: cite-attributed state assertions in the flow plus a mutation that breaks a
   committed picture.
+
+
+  Progress (Part 136): the last two `app-shell` rows close -- 785 cited / 183 uncited (`tact` 93, `strat` 90), and
+  the route is structural rather than another assertion: `src/pufo/app/pufo_app.c` became the static library
+  `pufo_app`, the executable kept only `app/pufo_main.c`, so `tests/test_appshell.c` calls the same pump and window
+  procedure the exe runs. Three rules this Part adds to the method. (1) A record the tests cannot reach is not a
+  record to prove through a picture -- make the code linkable. `PocketUFO_WndProc`'s dispatch does not move a
+  committed picture (the scripted dumps drive the timer bodies through `App_ScriptTicks`), and saying so is better
+  than inventing a picture claim; the 9 e2e pictures and 93 frames are unchanged and the 9 mutations carry the
+  teeth. (2) Check a guard by experiment before keeping or dropping it: `TranslateAcceleratorW(hwnd, NULL, &msg)`
+  answers 0 with the message untouched (build/crops/accel_null.c), so the port's `hAccel == NULL ||` short-circuit
+  was not load-bearing and is gone, while the `!= 0` rewrite at 0x9FD38 has no teeth and is recorded as such.
+  (3) Read a whole compare chain before naming a message: 0xA040C..0xA0440 tests 1, 2, 5, 6, 7, 8, 0xF, so WM_SIZE
+  (5) is swallowed at 0xA041C/0xA0420 with a 0 answer and no work -- the earlier note about "the record's WM_SIZE"
+  meant something else. Four `deviation` rows now name the differences: WM_PAINT presenting where 0xA0444..0xA0468
+  draws nothing, WM_SIZE re-presenting, WM_ERASEBKGND answering 1 where 0x14 falls to 0xA0740, and App_MapPointer
+  inverting the shell's own letterbox instead of the DisplayMode table (mode 1 swap 0xA07D4, mode 2 halve 0xA07B8,
+  mode 3 halve-and-rotate 0xA0794 with `RSB R0,R3,#0xF0` at 0xA07AC, mode 0 identity 0xA07E0). 27 new checks
+  (21478 -> 21505), 9 mutation cases with 25 failing checks and no inert case. Next: the 183
+  remaining rows are `tact` 93 and `strat` 90, in Part-sized batches; PLAN rows 117a, 118a, 118b, 118c, 119a, 119b's
+  4994 half, 120b and 121a stay open.
