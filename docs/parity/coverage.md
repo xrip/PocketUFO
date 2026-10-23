@@ -506,3 +506,17 @@ Measured after Part 146: **946** cited, **22** not (`tact` 22).
 coverage after re-derivation (Part 147, PLAN 119a): 972/1103 functions (88.1%) cited by src comments, 131 uncited functions carry a no-behaviour artifact row (1904 bytes, 99.7% cited), 0 real gaps. `coverage.py --check` now reads: `check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps`, with 4 notes for rows that src also cites (0x11148, 0x18a44, 0x22b50, 0xa115c). The artifact ledger's header records the re-derivation (2026-10-23) and the `atexit` row's evidence names its six *RegisterAtexit callers.
 
 Behaviour-row ledger: 968 rows, 946 cited, 22 uncited (all `tact`) -- that is the remaining coverage gap, not the function ledger.
+coverage after the start-to-end chain (Part 148, PLAN 120b): the function ledger is closed at 1103/1103 -- 972
+functions cited by `src/` comments, and the 131 uncited ones each carrying a no-behaviour artifact row proven
+from the IDB in Part 147: 84 import thunks (library imports), 26 code thunks, 7 empty stubs, 5 init-term
+entries, 7 CRT runtime entries, 1 debug-print stub that drops all four arguments, 1 decode artifact. Under the
+gate rule the user set on 2026-10-23 (functions proven to be library or WinCE-specific may be left out of the
+100% coverage gate), the coverage gate is closed by that proof rather than by citing them. What is left is
+behaviour teeth, not coverage: 946 of 968 behaviour rows carry a test citation, 22 do not, all 22 cited in
+`src/`, 16 with a port function named in the ledger cell and 6 with that cell empty. Start-to-end: `tools/e2e.sh` now asserts the save->load cross-process
+state match (`1 354/86 8 4147000 6 0` on both sides) and quit-YES over a loaded world (8 live items -> 0,
+mirror 0x186530 unchanged at 5), each with its own mutation record in build/crops/mut148.log. Gates: 66/66
+tests, 21567 checks, 93 frames and 9 e2e pictures unchanged, check: ALL SIX GATES RAN, CHECK EXIT=0
+(build/check148.log). No src/tests change, no IDB change (the -6000/-6000 unplaced-base sentinel the chain
+shows was already recorded at 0x94964 in `pufo_geoiinit.h` item 11).
+

@@ -24671,3 +24671,64 @@ Validator, re-run against the re-derived ledger: `uncited functions that carry g
 statement is now measured rather than asserted. What is still not 100% is the *behaviour-row* ledger: 946 of 968
 rows carry a test citation, and the 22 remaining are all `tact`.
 
+
+### Part 148 -- PLAN 120b: the start-to-end chain runs in the real executable, measured
+
+The chain is now two live processes and three gate assertions over them. Process 1: the boot menu, the
+new-game row, the placement confirm, the base-info screen, two closes to the geoscape, `save 0`. Process 2: a
+fresh process whose only way into that world is the original's own way -- boot menu row 1, a slot row -- then
+ticks, `strateg`, the quit dialog's YES seam, `strateg`, exit 0. `tools/e2e.sh` asserts the seam results, not
+just the pictures.
+
+Assertion 1 (already there): the startup picks reach the live world -- `mission type 6, map 0x1511E 0`, the
+InitInstance 0xA0228 / 0xA01C8 pair.
+
+Assertion 2 (new): the cells the save carries come out identical in the process that only ever loaded them:
+`bases 1, base 0 at 354/86, soldiers 8, funds 4147000, mission type 6, Map+0x1511E 0` in the process that wrote
+the file and the same tuple in the process that read it. The gate compares exactly that tuple, and the slot
+files it reads are the ones the previous flow wrote -- `tools/e2e.sh` clears them before the flows run. What is
+deliberately not compared: list mode, globe sweep, animation progress, pending region -- per-process UI state
+the save does not carry to the loaded moment. The base's own coordinates are comparable because both processes
+have it placed; an unplaced base reads -6000/-6000, which the port records at `pufo_geoiinit.h` item 11
+(0x94964, `Base_CreateNamedEntry(-6000, -6000, 0, "new")`), and the live run shows that value in process 1
+before the pick and 354/86 after it.
+
+Assertion 3 (new): quit-YES over a *loaded* world, not over a new game. The list the load built is live
+(`8 items`), the seam (`App_QuitFromTact @ 0x18e18`, 0x18E20 arm, `Tact_Shutdown(1)` tail at 0x3E14C..0x3E154 =
+`PtrArray_DeleteAll`) empties it to `0 items`, and the 0x186530 count mirror keeps the value the save restamped
+(`5`) -- the residue the original leaves. That the loaded count (8) is larger than the stamp (5) is the
+original's own behaviour, not drift: LoadGame's fix-up passes spawn what the save's stamp did not cover
+(0x44F64 `Geoscape_SpawnMissionSite`, 0x45008 `StrategList_AddItem`). Exit code 0 is checked by the run loop.
+
+Teeth, on the tooling itself (`build/crops/mut148.log`, flow file only, no `src/`, no test change): loading an
+unwritten slot 1 instead of slot 0 -- the click moves to the next row, no `sav1.sav` exists, `LoadGame @ 0x44bbc`
+returns at its `DatFile_Exists` guard (0x44c38) and the world stays empty -- gives `STATE FAILED: the save->load
+round trip changed the save-carried cells`; swapping `quityes` before the first `strateg` gives `STATE FAILED:
+quit-YES over a loaded world`. Each was the only failure line, each restored the flow byte-exact.
+
+The `0000SKKV.000` leg, corrected rather than performed: the shipped ".000" is not a save. It is
+`pUFO1.26RUS.cab`'s own install manifest (359 bytes, `MSCE` signature, naming the cab's six members) and
+`tests/test_save.c::TestForeignSaveBytes` already runs those exact bytes through `DatFile_Open @ 0x9ef38`: the
+read path takes the file's own four header bytes as the entry count with no guard (0x9EFE8) and sizes the
+directory at `21 * count` (0x9EFF4), which is where the 32-bit/64-bit width deviation sits in `bugs.tsv`.
+`LoadGame @ 0x44bbc` has no format guard of its own -- the only file test in it is `DatFile_Exists` (0x44c38) --
+so the distribution ships no save, and those manifest bytes are the only original bytes the load path can be run
+against. The leg is therefore closed as a correction, not as a run.
+
+Measured correction to the residual list, from the ledger itself: the 22 uncited behaviour rows are all cited in
+`src/` (22 of 22) and 16 of them carry a port function in the ledger's port cell. Six have an empty port cell --
+0x2b604 Path_ExpandCell, 0x3331c Tact_GetCameraBounds, 0x47280 Soldier_PromoteByTypeScores, 0x48028
+Unit_bScanOpportunityFire, 0x49e60 TactState_EnqueueStandFromKneel, 0x4ab98 EnemyAi_EnqueueRandomTurn -- and two
+are not driven directly by any test (0x2b604, 0x49e60). The earlier PLAN wording "10 rows with no port-name
+mapping" was wrong; these 22 are ported functions that need a test citation, not a rename.
+
+Named limit of the chain, so the proof is not overstated: the scripted runs never stage a tactical mission, so
+`quityes` dispatches the quit seam directly instead of reaching it through a live battle -- recorded in the
+comments of `tools/e2e_flow_load.txt` and `tools/e2e_flow_quit.txt`. The tactical subsystem is covered by the
+unit suites; the live chain covers menu, new game, placement, the base screen, the geoscape, save, load and quit.
+
+Gates: `tests: 66/66 passing`, 21567 checks, `frames: unchanged (93 reference pictures)`, 9 e2e pictures
+unchanged, `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, build/check148.log. Files changed: `tools/e2e.sh` (the
+two assertions), `tools/e2e_flow_load.txt` (the chain half), and the regenerated `PARITY.md`, whose only moved
+row is the `atexit` wording Part 147 put into `docs/idb/image-artifacts.tsv`. No `src/` or `tests/` change.
+

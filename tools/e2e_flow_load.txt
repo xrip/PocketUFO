@@ -18,3 +18,15 @@ click 120 74
 tick 20
 dump  12_after_load.ppm
 state after loading slot 0
+
+# The chain half (Part 148, PLAN 120b). This process never ran a new game: the only world it has is the
+# save the new-game process wrote, reached through the menu the original uses for it. `strateg` shows the
+# strateg list that load put in the live world; `quityes` runs the seam the quit dialog's YES button
+# reaches (slot 16 -> World_QuitYesThunk -> App_HookShutdownQuit -> App_QuitFromTact @ 0x18e18, whose
+# 0x18E20 arm tail-calls Tact_Shutdown(1) at 0x3E14C..0x3E154 = PtrArray_DeleteAll on the live list); the
+# second `strateg` shows the list empty with the 0x186530 count mirror left stale -- the same residue the
+# original leaves and the same shape the quit flow shows over a new game. Exit code 0 is checked by
+# tools/e2e.sh, and no picture is taken after the seam, so the nine references do not move.
+strateg
+quityes
+strateg

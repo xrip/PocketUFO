@@ -1118,7 +1118,7 @@ Uncited now: 131 functions, 1904 bytes. Of those, 131 carry no game behaviour.
 | `0xa1534` | `start` | 52 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
 | `0xa1628` | `_cinit` | 48 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
 | `0xa1658` | `Crt_CallFnTable` | 48 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
-| `0xa1610` | `atexit` | 24 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image |
+| `0xa1610` | `atexit` | 24 | **no game behaviour** (`crt-runtime`): C runtime startup/exit code shipped inside the image. 6 code callers, all the *RegisterAtexit thunks (0x11168, 0x22624, 0x3f0d4, 0x460d4, 0x614b8, 0x838a4), plus the entry-table data ref at 0x18af00: the game registers shutdown callbacks here, so the registration is game-visible while the exit mechanics are the runtime's, not game logic. |
 | `0x22604` | `InitTerm_MapEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x22614 j_Map_InitAndLoadRegistry; B 0x22620 Map_RegisterAtexit |
 | `0x3f0b4` | `InitTerm_DatFileEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x3f0c4 j_DatFile_ctor; B 0x3f0d0 DatFile_RegisterAtexit |
 | `0x460b4` | `InitTerm_FontEntry` | 16 | **no game behaviour** (`init-term-entry`): BL 0x460c4 j_Font_Init_ReturnArg; B 0x460d0 Font_RegisterAtexit |

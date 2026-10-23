@@ -54,6 +54,48 @@ if ! grep -q 'mission type 6, map 0x1511E 0' "$out/flow_e2e_flow_new.txt.log"; t
 fi
 echo "startup picks: mission type 6, Map+0x1511E 0 (InitInstance 0xA0228 / 0xA01C8)"
 
+# Chain assertion (Part 148, PLAN 120b): the load flow's world is the save the new-game process wrote, and
+# the file it reads is the one the previous flow wrote -- the slot files are cleared at the top of this
+# script and only these two flows touch them. So the cells the save carries must come out identical in the
+# second process: the base count, the placed base's own coordinates, the soldier count, the funds, the
+# mission type and Map+0x1511E. The cells deliberately NOT compared are the per-process UI state -- list
+# mode, globe sweep, animation progress, pending region -- which the save does not carry through to the
+# loaded moment, and the base coordinates are compared only because both processes have the base placed by
+# then (an unplaced base reads -6000/-6000, which is the placement screen's state, not the save's).
+save_tuple() {
+    grep 'pocketufo: state after' "$1" | tail -1 |
+        sed -E 's/.*bases ([0-9]+), base 0 at (-?[0-9]+)\/(-?[0-9]+), soldiers (-?[0-9]+), funds (-?[0-9]+).*mission type (-?[0-9]+), map 0x1511E (-?[0-9]+)/\1 \2\/\3 \4 \5 \6 \7/'
+}
+t_new=$(save_tuple "$out/flow_e2e_flow_new.txt.log")
+t_load=$(save_tuple "$out/flow_e2e_flow_load.txt.log")
+if [ -z "$t_new" ] || [ "$t_new" != "$t_load" ]; then
+    echo "STATE FAILED: the save->load round trip changed the save-carried cells"
+    echo "  wrote (process 1): $t_new"
+    echo "  read  (process 2): $t_load"
+    exit 1
+fi
+echo "save->load across processes: bases/base-0/soldiers/funds/mission/map identical ($t_new -> $t_load)"
+
+# Quit seam on a loaded world (Part 148, PLAN 120b): the load flow now runs App_QuitFromTact @ 0x18e18 over
+# the world a save produced, not over a new game. The list the load built must be live before the seam
+# (the original's LoadGame fix-ups at 0x44f64/0x45008 add items on top of what the save carried, so a
+# loaded count larger than the stamp is the original's own behaviour), must come out empty through the
+# seam's PtrArray_DeleteAll arm (0x3E14C..0x3E154), and the 0x186530 count mirror must keep the value the
+# save restamped -- the residue App_QuitFromTact's 0x18E20 arm leaves, which the quit flow already shows
+# over a new game. Exit code 0 of the whole run is checked by the loop above.
+strat_pair() { sed -E 's/.*strateg: ([0-9]+) items, count mirror 0x186530 ([0-9]+).*/\1 \2/'; }
+s_first=$(grep -m1 'pocketufo: strateg:' "$out/flow_e2e_flow_load.txt.log" | strat_pair)
+s_last=$(grep 'pocketufo: strateg:' "$out/flow_e2e_flow_load.txt.log" | tail -1 | strat_pair)
+n_first=${s_first% *}; m_first=${s_first#* }
+n_last=${s_last% *}; m_last=${s_last#* }
+if [ "${n_first:-0}" -le 0 ] || [ "${n_last:-1}" -ne 0 ] || [ "$m_first" != "$m_last" ]; then
+    echo "STATE FAILED: quit-YES over a loaded world"
+    echo "  before the seam: items $n_first, mirror $m_first"
+    echo "  after  the seam: items $n_last, mirror $m_last"
+    exit 1
+fi
+echo "quit-YES on a loaded world: $n_first live items -> 0, mirror 0x186530 unchanged ($m_first)"
+
 mv "$(dirname "$exe")"/sav*.sav "$out"/ 2>/dev/null || true
 
 # Gate scaffolding: a --script run does NOTHING and still exits 0 while another pocketufo.exe owns the
