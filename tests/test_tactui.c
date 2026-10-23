@@ -1385,7 +1385,7 @@ static void TestConfirmSpecial9(void)
     TactState_ctor(&queue);
     LogReset();
     Check(!Ui_ConfirmSpecial9(&ui, &queue, &unit, &weapon, &cell, &g_hooks),
-          "  full HP + morale + spent TU is refused");
+          "  full HP + morale + spent TU is refused (Ui_ConfirmSpecial9 @ 0x18260)");
     CheckEqI32(ui.nActionMode, 9, "  mode 9 still set");
     CheckEqI32(ui.nUiScreen, 0, "  screen cleared");
     CheckEqI32(g_log.nStatus, 2, "  TWO status messages pushed");
@@ -1598,7 +1598,7 @@ static void TestTryReloadClip(void)
     item.nAmmo = 0;
     owner.bHumanoidInv = 2;
     Check(TactItem_TryReloadClip(&item, 12, 7, &owner, ClipCap, &nClipCap),
-          "reload succeeds from a spare clip");
+          "reload succeeds from a spare clip (TactItem_TryReloadClip @ 0x4b6a4)");
     CheckEqI32(item.nAmmo, 10, "magazine refilled from the clip cap");
     CheckEqI32(owner.bHumanoidInv, 1, "one clip consumed");
 

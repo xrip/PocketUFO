@@ -174,7 +174,7 @@ static void TestCtor(void)
     printf("TactCtx_ctor\n");
     memset(&ctx, 0xFF, sizeof(ctx));
     TactCtx_ctor(&ctx);
-    CheckEqI32(ctx.nOppFireCount, 0, "  count cleared");
+    CheckEqI32(ctx.nOppFireCount, 0, "  count cleared (TactCtx_ctor @ 0x4c9f8)");
     CheckEqI32(ctx.nPhase, 0, "  phase cleared");
     CheckEqI32(ctx.bBusy, 0, "  busy cleared");
     Check(ctx.pScanUnit == NULL, "  scan unit cleared");
@@ -493,7 +493,7 @@ static void TestScanOpportunityFire(void)
     ctx.nOppFireCount = 7;
     Unit_bScanOpportunityFire(&ctx, &target, aEnemy, &nEnemyCount,
                               aXcom, &nXcomCount, RecordTry, &ctx);
-    CheckEqI32(ctx.nOppFireCount, 2, "two enemy shooters above morale 0x1E");
+    CheckEqI32(ctx.nOppFireCount, 2, "two enemy shooters above morale 0x1E (Unit_bScanOpportunityFire @ 0x48028)");
     Check(ctx.pScanUnit == &target, "scan unit stored");
 
     /* A non-operative unit scans the XCom list instead. */

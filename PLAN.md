@@ -6435,3 +6435,22 @@ comment, read back exact. Gates: 66/66 tests, 21568 checks, 93 frames, 10 e2e pi
 Still open: PLAN 122a, the 22 uncited behaviour rows, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4
 half-written bugs.tsv rows.
 
+
+Done (Part 151, the 22 uncited behaviour rows close): all 22 were `tact` rows whose check already existed -- the
+citation went onto the line that asserts the value, naming the port function at the original address (the pairing
+each module already states, e.g. pufo_roster.c:186 Tact_SelectPrevUnitFiltered @ 0x19708 -> Roster_SelectPrevFiltered).
+Tests only: 11 test files, no src change, no IDB note, no bugs.tsv row (nothing contradicted a recorded claim).
+teeth.tsv regenerated: 968 rows, 968 cited, 0 uncited, tact 212/212. Teeth: 24 mutation cases (0x2b534 has three),
+0 inert, 24/24 restored byte-exact, 124 failing check lines total (mut151c.log, mut151d.log). One cite was in the
+wrong place: Path_EnqueueCell @ 0x2b534 sat on "three steps plus the end marker", which observes Unit_PathToCell's
+command queue; nothing read apListA/apListB/nCountA/nCountB/bUseA, so three mutations gave 0 fail lines --
+TestEnqueueCell (10 new checks, 21568 -> 21578) now checks the frontier list itself and the cite sits there. Harness
+lesson recorded in game-core.md: that 0 was a crash, not an inert check -- the append -> NULL mutation made the flood
+tests dereference the NULL entry and end the process before the enqueue checks ran, so TestEnqueueCell is now first
+in main() and the same mutation fails 5 checks. Two first-pass mutations were inert and were re-anchored (0x33bf0
+gate -> the link counter, 4 fails; 0x33c80 "one object short" -> the box's exclusive upper bound, 1 fail). IDB: the
+22 addresses re-checked for name and size. Gates: 66/66 tests, 21578 checks, 93 frames, 10 e2e pictures unchanged,
+CHECK EXIT=0, build/check151.log. New open item PLAN 123a (reported, not fixed): teeth_ledger.py's HEAD_RE reads
+`static void (*const g_aTactBankClicks[...])(void) = {` as a definition named `void`, so the click-table rows carry
+`void` in their port_function cell and the address->port map understates its coverage. Still open: PLAN 122a, 117a,
+118a, 118b, 118c, 119b's 4994 half, 121a, 123a, the 4 half-written bugs.tsv rows.

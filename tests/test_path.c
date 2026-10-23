@@ -344,7 +344,7 @@ static void TestFloorGate(void)
     grid.aCells[0][1][2].pFloorSpr = NULL;
     Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
-          "  a single hole is routed around diagonally");
+          "  a single hole is routed around diagonally (Path_ExpandCell @ 0x2b604 refuses a cell with no floor sprite)");
 
     /* A column blocked on ONE layer is bypassed through another layer, because
      * the flood can step vertically. Worth asserting: a 2D wall is not a wall. */
@@ -647,10 +647,47 @@ static void TestPathVertical(void)
                "  the layer delta is stored in the nFacing slot");
 }
 
+/* Path_EnqueueCell @ 0x2b534 on its own. It is the only writer of the two frontier lists in the
+ * scratch: it appends to the list the scratch says is NOT current (the flood consumes the other
+ * one), it refuses a cell that is already queued, it marks the queued bit in the cell, and the
+ * original has no capacity test while this build refuses at PUFO_PATH_LIST_CAP (a recorded
+ * deviation). Nothing else in this file can see these three facts, so they are checked here. */
+static void TestEnqueueCell(void)
+{
+    Grid grid;
+    PathScratch *pS;
+    MapCell *pFirst  = &grid.aCells[0][1][1];
+    MapCell *pSecond = &grid.aCells[0][1][2];
+
+    printf("Path_EnqueueCell -- the frontier list itself\n");
+    Grid_Init(&grid);
+    pS = &grid.scratch;
+    pS->bUseA   = true;   /* A is current, so the append goes to list B */
+    pS->nCountA = 0;
+    pS->nCountB = 0;
+    pFirst->bFlags44  = 0;
+    pSecond->bFlags44 = 0;
+
+    Check(Path_EnqueueCell(pS, pFirst), "  the first cell is accepted");
+    CheckEqI32(pS->nCountB, 1, "  Path_EnqueueCell @ 0x2b534 appends to the list that is not current");
+    Check(pS->apListB[0] == pFirst, "  and the slot holds that cell");
+    CheckEqI32(pFirst->bFlags44 & 2, 2, "  it sets the queued mark (bFlags44 bit 1)");
+    Check(!Path_EnqueueCell(pS, pFirst), "  the same cell a second time is refused");
+    CheckEqI32(pS->nCountB, 1, "  and the refusal leaves the list the same length");
+    Check(Path_EnqueueCell(pS, pSecond), "  a different cell is accepted");
+    CheckEqI32(pS->nCountB, 2, "  appended after the first");
+    Check(pS->apListB[1] == pSecond, "  into the next slot");
+    CheckEqI32(pS->nCountA, 0, "  the current list is not touched");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
+    /* The frontier-list checks come first on purpose: a wrong enqueue corrupts the lists every
+     * later test floods over, and a corrupted list makes the flood dereference NULL and end the
+     * process before any check below it can print. */
+    TestEnqueueCell();
     TestFacingDelta();
     TestFacingTurnPositive();
     TestReachableStraight();

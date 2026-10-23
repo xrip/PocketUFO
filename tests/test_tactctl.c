@@ -543,7 +543,7 @@ static void TestCameraBounds(void)
 
     /* No craft: the whole map. */
     Tact_GetCameraBounds(&ctx, &nX0, &nY0, &nX1, &nY1);
-    CheckEqI32(nX0, 0, "  whole map X0");
+    CheckEqI32(nX0, 0, "  whole map X0 (Tact_GetCameraBounds @ 0x3331c)");
     CheckEqI32(nY0, 0, "  whole map Y0");
     CheckEqI32(nX1, 100, "  whole map X1 = 10*dimX");
     CheckEqI32(nY1, 80, "  whole map Y1 = 10*dimY");

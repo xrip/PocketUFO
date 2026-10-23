@@ -420,7 +420,7 @@ static void TestSelectFireMode(void)
 
     Check("an affordable left hand selects",
           Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs));
-    CheckEqI32("mode 0 chosen", g_nMode, 0);
+    CheckEqI32("mode 0 chosen (Unit_SelectBestFireMode @ 0x478e4)", g_nMode, 0);
     CheckEqI32("TU cost for mode 0", g_costs.nTuCost[0], 20);
     CheckEqI32("accuracy is pct * auStat[4] / 100", g_costs.nAccuracy[0], 40);
     Check("the chosen item is the left hand", g_pSel == &g_handL);

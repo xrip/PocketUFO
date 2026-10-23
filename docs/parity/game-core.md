@@ -24820,3 +24820,88 @@ Gates: `tests: 66/66 passing`, 21568 checks, `frames: unchanged (93 reference pi
 against the committed references, `check: ALL SIX GATES RAN`, build/check150.log; the run that first produced the new
 reference is build/e2e150.log (`e2e pictures: 10 checked, 0 bad`).
 
+
+
+## Part 151 - the last 22 `tact` behaviour rows close: 968 cited / 0 not, every one of them with a mutation that bites
+
+Part 150 left 22 uncited rows in the behaviour ledger, all in `tact`. Each one already had a check in the tree
+that asserts the original's value; what was missing was the citation. The `name @ 0x...` went onto the line that
+asserts it, naming the PORT function at the ORIGINAL address -- the pairing each module already states, e.g.
+`pufo_roster.c:186` `Tact_SelectPrevUnitFiltered @ 0x19708` is ported as `Roster_SelectPrevFiltered`, and the test
+cites the second name at the first address. Nothing in `src/` changed: this Part is 11 test files and one new check
+section.
+
+| addr | IDB name | port function (mutated here) | the check the cite now sits on | mutation | fail lines |
+|---|---|---|---|---|---|
+| 0x18260 | TactAction_ConfirmSpecial9 | Ui_ConfirmSpecial9 (tactui) | "full HP + morale + spent TU is refused" | `nActionMode = 9` -> 8 | 2 |
+| 0x197b8 | Tact_SelectNextUnitFiltered | Roster_SelectNextFiltered (roster) | "active filter skips the alien at 1" | walk direction flipped | 6 |
+| 0x19708 | Tact_SelectPrevUnitFiltered | Roster_SelectPrevFiltered (roster) | "prev with active filter skips the alien at 1" | walk direction flipped | 3 |
+| 0x2b534 | Path_EnqueueCell | Path_EnqueueCell (path) | new `TestEnqueueCell`, see below | 3 cases: slot -> NULL / refusal -> acceptance / mark cleared | 5, 2, 2 |
+| 0x2b604 | Path_ExpandCell | Path_ExpandCell (path) | "a single hole is routed around diagonally" | floor-sprite gate inverted | 47 |
+| 0x3331c | Tact_GetCameraBounds | Tact_GetCameraBounds (tactctl) | "whole map X0" | map-width bound widened by 1 | 2 |
+| 0x33bf0 | Tact_MarkAllSoldiersSeen | SideLists_MarkAllSoldiersSeen (roster) | "two soldiers marked" | link counter credits 2 | 4 |
+| 0x33c80 | Tact_TallyItemRecovery | Tact_TallyItemRecovery (tactend) | "a single-handed weapon with a full clip is recovered" | box upper bound made inclusive (the original is exclusive at 0x33EB8/0x33EC4) | 1 |
+| 0x36b8c | Soldier_RemoveById | Unit_RemoveAt (unit) | "count decremented" | count not decremented | 8 |
+| 0x47280 | Soldier_PromoteByTypeScores | Soldier_PromoteByTypeScores (roster) | "score 50 promotes" | rookie gate inverted (the 0x47654 arm) | 3 |
+| 0x476c8 | Soldier_ctor | Unit_ctor (unit) | "bFacing from the argument" | zero fill -> 0xFF | 2 |
+| 0x478e4 | Unit_SelectBestFireMode | Unit_SelectBestFireMode (combat) | "mode 0 chosen" | right-hand preference inverted | 2 |
+| 0x48028 | Unit_bScanOpportunityFire | Unit_bScanOpportunityFire (turn) | "two enemy shooters above morale 0x1E" | count seeded at 1 | 3 |
+| 0x4978c | Unit_UpdateAnimPose | Unit_UpdateAnimPose (unit) | "dead pose forces 18" | pose 18 -> 19 | 2 |
+| 0x49bf0 | Unit_FaceToward | Unit_FacingToward (unit) | "same cell -> 0" | same-cell AND -> OR | 2 |
+| 0x49e60 | TactState_EnqueueStandFromKneel | TactState_EnqueueStandFromKneel (tactstate) | "stand cmd (7)" | command 7 -> 8 | 2 |
+| 0x4ab98 | EnemyAi_EnqueueRandomTurn | EnemyAi_EnqueueRandomTurn (enemyai) | "one RNG draw" | the RNG draw skipped | 4 |
+| 0x4b420 | Tact_EnqueueActionOrStatus205 | Tact_EnqueueActionOrStatus205 (tactstate) | "action 18 enqueued" | command 18 -> 19 | 2 |
+| 0x4b6a4 | TactItem_bTryReloadClip | TactItem_TryReloadClip (tactui) | "reload succeeds from a spare clip" | capacity test inverted | 5 |
+| 0x4b928 | EnemyAi_bMultiTargetTypeMatch | EnemyAi_MultiTargetTypeMatch (enemyai) | "every role/type pair matches the transcribed rule" | role read from the candidate | 5 |
+| 0x4c9f8 | TactCtx272_ctor | TactCtx_ctor (turn) | "count cleared" | zero fill -> 0xFF | 5 |
+| 0x54ba4 | Map_LoadMa1 | MapTemplate_Load (template) | "AVENGER.MA1 loaded" | ".ma1" -> ".ma2" | 5 |
+
+Measured after the Part (`docs/parity/teeth_ledger.py`): 968 behaviour rows, **968 cited, 0 not** -- `tact` 212/212,
+`strat-ui` 250/250, `strat` 202/202, `render` 52/52, `ui-core` 82/82, the rest closed; 968 reached by a direct test
+call or an address cite, 0 only through the call graph. The function ledger is unchanged from Part 147: 1103 =
+972 cited by `src/` + 131 proven no-behaviour artifacts, `coverage.py --check` -> "135 artifact rows, 131 uncited
+functions, 0 of them real gaps".
+
+### 0x2b534 was cited in the wrong place, and the row needed a check
+
+The first pass put `Path_EnqueueCell @ 0x2b534` on "three steps plus the end marker". That check observes
+`Unit_PathToCell`'s command queue, not the two frontier lists `Path_EnqueueCell` owns, and nothing in the file read
+`apListA/apListB/nCountA/nCountB/bUseA` -- so three different mutations of `Path_EnqueueCell` reported 0 fail lines.
+The cite was moved back to the message it belongs to and `tests/test_path.c` gained `TestEnqueueCell` (10 checks,
+suite total 21568 -> 21578): the append goes to the list that is not current, the slot holds the cell, the queued
+mark is set, a second enqueue of the same cell is refused and leaves the length alone, a different cell appends
+after it, and the current list is untouched.
+
+### A mutation that poisons shared state earlier than the check is not an inert check
+
+The first run of the append -> NULL case printed "fail lines: 0", which the runner reads as "no teeth". It was not
+that. `TestEnqueueCell` sat after the flood tests; with NULL in a frontier list the first flood dereferences it and
+the process ends before the enqueue checks run -- a crash, not a passing check. `TestEnqueueCell` is now first in
+`main()` (each section builds its own `Grid`, so the order costs nothing) and the same mutation fails 5 checks.
+Rule for later Parts: when a mutation reports 0, check WHERE the process died before believing the check is inert.
+
+### Teeth
+
+24 cases (`docs/parity/mutations_part151.py`, logs build/crops/mut151c.log + mut151d.log): 22 rows, 0x2b534 with
+three cases. Every case fails at least 1 check line (the runner counts every output line containing FAIL, the
+suite's own `FAIL: k failure(s)` tail line included in some cases), every case restores byte-exact
+(`restored exactly: True`, `MUTATION left: 0`), `grep -rn MUTATION src tests` is empty after the batch. Three first
+versions were inert and were re-anchored, and the re-anchored ones bite: 0x33bf0's `&&` -> `||` gate became the link
+counter `+1` -> `+2` (4 fails), 0x33c80's "clear one object short" became the box's exclusive upper bound
+`nX < nX1` -> `nX <= nX1` (1 fail), 0x2b534 became the three cases above. Two mutations were rejected before
+running: removing a call to an unreferenced static function risks C4505 under `/WX`, so 0x47280 is mutated through
+the gate condition instead.
+
+IDB: the 22 addresses were re-checked against the IDB (name, size) before the cites were written -- the tests name
+the port function, the `src/` comments name the IDB name, and both are in the ledger. No new IDB note: nothing this
+Part found contradicted or extended what those functions' comments already record, and no new `bugs.tsv` row.
+
+Gates: 66/66 tests (release and debug), 21578 checks, PARITY.md 2214 lines, `frames: unchanged (93 reference
+pictures)`, `e2e pictures: unchanged against the committed references (10 pictures)`,
+`check: ALL SIX GATES RAN`, build/check151.log.
+
+Reported, not fixed (PLAN 123a): `teeth_ledger.py`'s `HEAD_RE` matches
+`static void (*const g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT])(void) = {` as a definition named `void`, so the
+click-table rows carry `void` in their `port_function` cell (0x18260, 0x197b8, 0x19708 in this batch) and the
+address->port map reads 605/968 instead of the real coverage. Reach numbers are not affected -- every row is
+reached -- so the ledger's uncited count stands, but the mapping column is wrong for those rows.

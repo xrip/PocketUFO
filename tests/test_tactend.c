@@ -1170,7 +1170,7 @@ static void TestItemTallyChain(void)
     env = ItemEnv();
     Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
 
-    TestEqI32("a single-handed weapon with a full clip is recovered", t_apObj[10]->uRecovCount, 3);
+    TestEqI32("a single-handed weapon with a full clip is recovered (Tact_TallyItemRecovery @ 0x33c80)", t_apObj[10]->uRecovCount, 3);
     TestEqI32("and the clip object is credited once, for the full clip",
               t_apObj[36]->uRecovCount, 2);
     TestEqI32("an alien corpse with nothing holding it is recovered",

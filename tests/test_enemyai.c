@@ -95,7 +95,7 @@ static void TestPredicateExhaustive(void)
             }
         }
     }
-    CheckEqI32(g_nFailures, 0, "  every role/type pair matches the transcribed rule");
+    CheckEqI32(g_nFailures, 0, "  every role/type pair matches the transcribed rule (EnemyAi_MultiTargetTypeMatch @ 0x4b928)");
 }
 
 static void TestRoleReadFromOther(void)
@@ -221,7 +221,7 @@ static void TestRandomTurn(void)
     hooks.pUser = NULL;
 
     EnemyAi_EnqueueRandomTurn(&unit, &hooks);
-    CheckEqI32(g_turn.nDraws, 1, "  one RNG draw");
+    CheckEqI32(g_turn.nDraws, 1, "  one RNG draw (EnemyAi_EnqueueRandomTurn @ 0x4ab98)");
     CheckEqI32((i32)g_turn.nLastMax, (i32)PUFO_ENEMYAI_FACING_MAX,
                "  the draw bound is 8");
     CheckEqI32(g_turn.nTurns, 1, "  one turn enqueued and kicked");

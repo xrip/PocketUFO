@@ -303,7 +303,7 @@
 0x838a0	StrategList_RegisterAtexit	12	strat	yes	yes	yes		yes
 0x838ac	StrategList_Clear	36	strat	yes	yes	yes		yes
 0x838d0	Geoscape_CloseUI_ThunkA	12	strat	yes	yes	yes	App_Run|World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
-0x838dc	Smap_BeginCraftSelect	2424	strat	yes	yes	yes	World_BeginCraftSelectThunk|World_WireMissionSeams|StatusPanel_DrawDescentPanel	yes
+0x838dc	Smap_BeginCraftSelect	2424	strat	yes	yes	yes	World_ScriptLaunchMissionTail|World_BeginCraftSelectThunk|World_WireMissionSeams|StatusPanel_DrawDescentPanel	yes
 0x84254	Smap_CancelTarget	152	strat	yes	yes	yes	World_SmapCancelTargetThunk|World_WireOptions	yes
 0x842ec	Smap_ConfirmCraftTarget	316	strat	yes	yes	yes	World_SmapConfirmCraftTargetThunk	yes
 0x84428	Smap_DismissSelected	92	strat	yes	yes	yes	World_SmapDismissSelectedThunk	yes
@@ -619,7 +619,7 @@
 0x17a80	Tact_TryFireMode10	156	tact	yes	yes	yes	void|Ui_TryFireMode	yes
 0x17b1c	Tact_TryFireMode5	156	tact	yes	yes	yes	void|Ui_TryFireMode	yes
 0x17bb8	TactAction_ConfirmMeleeMode6	412	tact	yes	yes	yes	void|Ui_ConfirmMeleeMode6	yes
-0x18260	TactAction_ConfirmSpecial9	288	tact	yes	no	yes	void|Ui_ConfirmSpecial9	yes
+0x18260	TactAction_ConfirmSpecial9	288	tact	yes	yes	yes	void|Ui_ConfirmSpecial9	yes
 0x18380	Tact_BeginMultiTarget	152	tact	yes	yes	yes	void|Ui_BeginMultiTarget	yes
 0x18418	Map_SetSubMode0_Play11	96	tact	yes	yes	yes	void|Ui_SetSubMode	yes
 0x18478	Map_SetSubMode1_Play11	92	tact	yes	yes	yes	Ui_SetSubMode	yes
@@ -644,8 +644,8 @@
 0x19568	Map_PlaySamples16_7_ClearDeployFlag	64	tact	yes	yes	yes	void|Ui_Samples16_7_SetDeployFlag	yes
 0x19670	Map_IncByte128AF0_Play11	60	tact	yes	yes	yes	void|Ui_IncLayer	yes
 0x196ac	Map_DecByte128AF0_Play11	60	tact	yes	yes	yes	void|Ui_IncLayer	yes
-0x19708	Tact_SelectPrevUnitFiltered	176	tact	yes	no	yes	void	yes
-0x197b8	Tact_SelectNextUnitFiltered	204	tact	yes	no	yes	void	yes
+0x19708	Tact_SelectPrevUnitFiltered	176	tact	yes	yes	yes	void	yes
+0x197b8	Tact_SelectNextUnitFiltered	204	tact	yes	yes	yes	void	yes
 0x198c4	Tact_OpenCommandScreenFlagged	44	tact	yes	yes	yes	World_TactLiveOptions|void|Ui_OpenCommandScreenFlagged	yes
 0x1aadc	MapView_DrawViewportGuide	1256	tact	yes	yes	yes		yes
 0x1b0d4	MapView_bResolveIsoCell	428	tact	yes	yes	yes		yes
@@ -682,8 +682,8 @@
 0x276f0	MapView_SetCamOffset	152	tact	yes	yes	yes		yes
 0x2778c	Map_ProbeStepOccupants	1068	tact	yes	yes	yes		yes
 0x27bb8	Unit_CanStepTo	14716	tact	yes	yes	yes	World_TactPathProbeThunk|World_InitTactical|Path_ExpandCell|Init_LookupCellFlat	yes
-0x2b534	Path_EnqueueCell	208	tact	yes	no	yes	Path_ComputeReachable	yes
-0x2b604	Path_ExpandCell	540	tact	yes	no	yes		no
+0x2b534	Path_EnqueueCell	208	tact	yes	yes	yes	Path_ComputeReachable	yes
+0x2b604	Path_ExpandCell	540	tact	yes	yes	yes		no
 0x2b820	Map_ComputeReachable	1148	tact	yes	yes	yes	Path_ComputeReachable|Titles_Init	yes
 0x2bc9c	Map_IsValidCell	100	tact	yes	yes	yes		yes
 0x2bd00	Map_QueueDoorAction	1448	tact	yes	yes	yes		yes
@@ -707,16 +707,16 @@
 0x32fa8	Combat_DetonateNearbyItems	416	tact	yes	yes	yes		yes
 0x33148	Tact_RemoveUnitFromSideLists	284	tact	yes	yes	yes		no
 0x33264	Tact_ScanVictoryTiles	184	tact	yes	yes	yes		yes
-0x3331c	Tact_GetCameraBounds	368	tact	yes	no	yes		yes
+0x3331c	Tact_GetCameraBounds	368	tact	yes	yes	yes		yes
 0x3348c	Tact_TallyBattleStats	756	tact	yes	yes	yes	World_MissionEndCheck	yes
 0x33780	Tact_TallyUnitResults	1136	tact	yes	yes	yes	World_MissionEndCheck	yes
-0x33bf0	Tact_MarkAllSoldiersSeen	144	tact	yes	no	yes	SideLists_MarkAllSoldiersSeen	yes
-0x33c80	Tact_TallyItemRecovery	2100	tact	yes	no	yes	World_MissionEndCheck	yes
+0x33bf0	Tact_MarkAllSoldiersSeen	144	tact	yes	yes	yes	SideLists_MarkAllSoldiersSeen	yes
+0x33c80	Tact_TallyItemRecovery	2100	tact	yes	yes	yes	World_MissionEndCheck	yes
 0x344b4	Tact_TallyCraftRecovery	556	tact	yes	yes	yes	World_MissionEndCheck	yes
 0x346e0	Tact_ClearSoldierBattleFlags	2268	tact	yes	yes	yes	World_MissionEndCheck	yes
 0x34fbc	Tact_CheckBattleEnd	5748	tact	yes	yes	yes	World_TactPanelCtorHook|World_EndHookShutdown|World_MissionEndCheck	yes
 0x36830	Ship_RemoveWithCargo	860	tact	yes	yes	yes		yes
-0x36b8c	Soldier_RemoveById	204	tact	yes	no	yes	Unit_RemoveAt	yes
+0x36b8c	Soldier_RemoveById	204	tact	yes	yes	yes	Unit_RemoveAt	yes
 0x36d68	Unit_CanStepExitDir	780	tact	yes	yes	yes		yes
 0x3734c	Tact_BuildPaletteLuts	1184	tact	yes	yes	yes	Render_SetGammaCell	yes
 0x377ec	Tact_LoadPalettes	760	tact	yes	yes	yes	Render_SetGammaCell|MenuBtn_SetGamma	yes
@@ -737,24 +737,24 @@
 0x46fe0	Soldier_PickBestScoreAmong	388	tact	yes	yes	yes	Soldier_MissionScore	yes
 0x47164	Soldier_FindNextSmallByType	148	tact	yes	yes	yes		yes
 0x471f8	Soldier_CountSmallByType	136	tact	yes	yes	yes		yes
-0x47280	Soldier_PromoteByTypeScores	1096	tact	yes	no	yes		yes
-0x476c8	Soldier_ctor	12	tact	yes	no	yes	Unit_ctor	yes
+0x47280	Soldier_PromoteByTypeScores	1096	tact	yes	yes	yes		yes
+0x476c8	Soldier_ctor	12	tact	yes	yes	yes	Unit_ctor	yes
 0x476d4	Unit_FormatDisplayName	528	tact	yes	yes	yes		yes
-0x478e4	Unit_SelectBestFireMode	852	tact	yes	no	yes	World_TactRequestFireThunk|Combat_HandCost	yes
+0x478e4	Unit_SelectBestFireMode	852	tact	yes	yes	yes	World_TactRequestFireThunk|Combat_HandCost	yes
 0x47c38	Unit_bTryOpportunityFire	1008	tact	yes	yes	yes	World_TactFallTryOpportunityThunk|Unit_bScanOpportunityFire	yes
-0x48028	Unit_bScanOpportunityFire	272	tact	yes	no	yes		yes
+0x48028	Unit_bScanOpportunityFire	272	tact	yes	yes	yes		yes
 0x48138	Unit_SpotCellOccupant	532	tact	yes	yes	yes		yes
 0x4834c	Unit_ScanVisibleUnits	564	tact	yes	yes	yes		yes
 0x48580	Unit_UpdateVisibility	3728	tact	yes	yes	yes	World_TactEnemyAiVisThunk|World_TactUnitIsLargeThunk|Tact_EnemyAiTick|Map_UpdateVisibilityCb|Fall_UpdateVisibility|AfterEnemyStep|Unit_LoftRowId	yes
 0x49410	Soldier_Generate	892	tact	yes	yes	yes	Unit_Generate	yes
-0x4978c	Unit_UpdateAnimPose	292	tact	yes	no	yes	Spawn_UpdatePose	yes
+0x4978c	Unit_UpdateAnimPose	292	tact	yes	yes	yes	Spawn_UpdatePose	yes
 0x498b0	Unit_ResetBattleState	348	tact	yes	yes	yes	Tact_SelectTeamUnits|Unit_ArmorForType	yes
 0x49a0c	Unit_PlaceOnMap	376	tact	yes	yes	yes		yes
 0x49b84	TactState_EnqueueTurn	108	tact	yes	yes	yes		yes
-0x49bf0	Unit_FaceToward	364	tact	yes	no	yes	World_TactFaceTowardThunk|World_TactLookClickThunk|TactState_EnqueueFireBurst|Unit_FacingToward	yes
+0x49bf0	Unit_FaceToward	364	tact	yes	yes	yes	World_TactFaceTowardThunk|World_TactLookClickThunk|TactState_EnqueueFireBurst|Unit_FacingToward	yes
 0x49d5c	TactState_EnqueueStep	128	tact	yes	yes	yes		yes
 0x49ddc	TactState_EnqueueVertStep	132	tact	yes	yes	yes	Unit_PathToCell	yes
-0x49e60	TactState_EnqueueStandFromKneel	88	tact	yes	no	yes		no
+0x49e60	TactState_EnqueueStandFromKneel	88	tact	yes	yes	yes		no
 0x49eb8	Unit_bIsOperative	20	tact	yes	yes	yes		yes
 0x49ecc	Unit_bIsLarge	36	tact	yes	yes	yes	Rmp_Init	yes
 0x49ef0	Unit_RecalcInventoryStat	940	tact	yes	yes	yes		yes
@@ -764,18 +764,18 @@
 0x4a444	Tact_UpdateUnitControl	788	tact	yes	yes	yes	block	yes
 0x4a758	TactState_EnqueueClearAim	88	tact	yes	yes	yes		yes
 0x4a7b0	Unit_ApplyFallDamage	1000	tact	yes	yes	yes	Fall_Div|Fall_FootprintCell	yes
-0x4ab98	EnemyAi_EnqueueRandomTurn	48	tact	yes	no	yes		yes
+0x4ab98	EnemyAi_EnqueueRandomTurn	48	tact	yes	yes	yes		yes
 0x4abc8	EnemyAi_TryFireOrWander	1208	tact	yes	yes	yes	EnemyAi_PickOneHanded	yes
 0x4b080	TactState_EnqueueFireBurst	628	tact	yes	yes	yes	World_TactRequestFireThunk	yes
 0x4b2f4	TactState_EnqueueThrow	300	tact	yes	yes	yes		yes
-0x4b420	Tact_EnqueueActionOrStatus205	216	tact	yes	no	yes	ClickArmMelee|TactState_EnqueueAction18	yes
+0x4b420	Tact_EnqueueActionOrStatus205	216	tact	yes	yes	yes	ClickArmMelee|TactState_EnqueueAction18	yes
 0x4b4f8	Unit_DropAllItemsToCell	428	tact	yes	yes	yes		yes
-0x4b6a4	TactItem_bTryReloadClip	128	tact	yes	no	yes	TactItem_TryReloadClip	yes
+0x4b6a4	TactItem_bTryReloadClip	128	tact	yes	yes	yes	TactItem_TryReloadClip	yes
 0x4b724	MapCell_TickProximityItems	516	tact	yes	yes	yes	World_TactStepProxThunk	yes
-0x4b928	EnemyAi_bMultiTargetTypeMatch	144	tact	yes	no	yes	EnemyAi_MultiTargetRoleMatch|EnemyAi_MultiTargetTypeMatch	yes
+0x4b928	EnemyAi_bMultiTargetTypeMatch	144	tact	yes	yes	yes	EnemyAi_MultiTargetRoleMatch|EnemyAi_MultiTargetTypeMatch	yes
 0x4b9b8	BeforeEnemyStep	2792	tact	yes	yes	yes		yes
 0x4c4a0	AfterEnemyStep	1368	tact	yes	yes	yes	World_InitTactical	yes
-0x4c9f8	TactCtx272_ctor	32	tact	yes	no	yes	TactCtx_ctor	yes
+0x4c9f8	TactCtx272_ctor	32	tact	yes	yes	yes	TactCtx_ctor	yes
 0x4ca18	Tact_BeginEnemyTurn	348	tact	yes	yes	yes	World_TactStepSyncIn	yes
 0x4cb74	Tact_EndEnemyTurn	108	tact	yes	yes	yes		yes
 0x4cbe0	Tact_EnemyAiTick	3440	tact	yes	yes	yes	TactCtx_ctor	yes
@@ -801,7 +801,7 @@
 0x54a90	MapCell_Reset	132	tact	yes	yes	yes		yes
 0x54b14	MapCell_ListInsertByPri	68	tact	yes	yes	yes		yes
 0x54b58	MapCell_ListRemove	76	tact	yes	yes	yes	MapCell_TickProximityItems	yes
-0x54ba4	Map_LoadMa1	152	tact	yes	no	yes	MapTemplate_Load	yes
+0x54ba4	Map_LoadMa1	152	tact	yes	yes	yes	MapTemplate_Load	yes
 0x54cf4	Map_ApplyTemplateToCells	772	tact	yes	yes	yes	Font_GetFlagSprBase|Map_CellIndex|MapTemplate_ApplyToCells	yes
 0x54ff8	TactBuf11408_ctor	32	tact	yes	yes	yes	Rmp_Load	yes
 0x55018	Map_FreeRmpNodes	72	tact	yes	yes	yes	Rmp_FreeNodes|Rmp_Load	yes

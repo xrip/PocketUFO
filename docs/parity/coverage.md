@@ -546,3 +546,9 @@ back), IDB saved. Function and behaviour ledgers unchanged (972/1103 cited, 131 
 cited / 22 uncited). Gates: 66/66 tests, 21568 checks, 93 frames, 10 e2e pictures unchanged, check: ALL SIX GATES
 RAN (build/check150.log; build/e2e150.log for the first run of the new reference).
 
+Measured after Part 151: **968** cited, **0** not -- the behaviour ledger is closed at 968/968 rows.
+coverage (Part 151): the last 22 `tact` behaviour rows are cited on the checks that already assert them, and
+each of the 22 has a mutation that fails its own port function (24 cases, 0 inert, 24/24 byte-exact restores).
+One cite had to move: `Path_EnqueueCell @ 0x2b534` sat on a `Unit_PathToCell` queue check, so `tests/test_path.c`
+gained `TestEnqueueCell` (10 checks) for the frontier lists the original owns. The function ledger is unchanged
+from Part 147: 1103 = 972 cited + 131 proven no-behaviour artifacts, 0 real gaps.

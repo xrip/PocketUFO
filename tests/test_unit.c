@@ -120,7 +120,7 @@ static void TestResetBattleState(void)
     unit.bFacing = 9;
     Unit_ResetBattleState(&unit, 3, 0, auStat, PUFO_UNIT_STAT_COUNT);
 
-    CheckEqI32(unit.bFacing, 3, "  bFacing from the argument");
+    CheckEqI32(unit.bFacing, 3, "  bFacing from the argument (Unit_ctor @ 0x476c8)");
     CheckEqI32(unit.bFlags, 0xC0, "  bFlags masked to top two bits");
     CheckEqI32(unit.nAnimPose, 1, "  anim pose set to 1");
     CheckEqI32(unit.nDrawOffX, 0, "  draw offset X cleared");
@@ -156,7 +156,7 @@ static void TestFacing(void)
 {
     printf("Unit_FacingToward\n");
     /* Same tile returns 0 without calling atan2. */
-    CheckEqI32(Unit_FacingToward(10, 10, 10, 10), 0, "  same cell -> 0");
+    CheckEqI32(Unit_FacingToward(10, 10, 10, 10), 0, "  same cell -> 0 (Unit_FacingToward @ 0x49bf0)");
 
     /* Cardinal directions. The grid is screen-like: +x is right, +y is down.
      * From (0,0) the original's arithmetic yields 0..7 in this arrangement;
@@ -333,7 +333,7 @@ static void TestRemove(void)
     nCount = 3;
 
     nCount = Unit_RemoveAt(apUnits, nCount, 1);
-    CheckEqI32(nCount, 2, "  count decremented");
+    CheckEqI32(nCount, 2, "  count decremented (Unit_RemoveAt @ 0x36b8c compacts the array)");
     CheckEqI32(apUnits[0]->nAiTick, 100, "  element 0 unchanged");
     CheckEqI32(apUnits[1]->nAiTick, 102, "  element 2 shifted into slot 1");
 
@@ -648,7 +648,7 @@ static void TestAnimPose(void)
     /* Dead (flag 0x20): pose 18, flags masked to 0xE0. */
     s.bFlags = 0x3F;
     Unit_UpdateAnimPose(&s, NULL, NULL);
-    CheckEqI32(s.nAnimPose, 18, "dead pose forces 18");
+    CheckEqI32(s.nAnimPose, 18, "dead pose forces 18 (Unit_UpdateAnimPose @ 0x4978c)");
     CheckEqI32(s.bFlags, 0x20, "dead masks bFlags to 0xE0");
 
     /* Aiming poses. */

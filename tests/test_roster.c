@@ -343,7 +343,7 @@ static void TestFilteredSelection(void)
     /* Filter ACTIVE: non-humans are skipped, so 0 -> 2 (same as unfiltered). */
     log.bActive = true;
     CheckEqI32(Roster_SelectNextFiltered(&roster, &fh), 2,
-               "  active filter skips the alien at 1");
+               "  active filter skips the alien at 1 (Roster_SelectNextFiltered @ 0x197b8)");
 
     /* Filter INACTIVE: the alien at 1 is accepted immediately. */
     BuildRoster(&roster, aUnits, aType, 5, &aUnits[0]);
@@ -355,7 +355,7 @@ static void TestFilteredSelection(void)
     BuildRoster(&roster, aUnits, aType, 5, &aUnits[2]);
     log.bActive = true;
     CheckEqI32(Roster_SelectPrevFiltered(&roster, &fh), 0,
-               "  prev with active filter skips the alien at 1");
+               "  prev with active filter skips the alien at 1 (Roster_SelectPrevFiltered @ 0x19708)");
 
     BuildRoster(&roster, aUnits, aType, 5, &aUnits[2]);
     log.bActive = false;
@@ -543,7 +543,7 @@ static void TestMarkAllSoldiersSeen(void)
     aSoldiers[3].pLinked1040 = aLinkStorage[3];
     aSoldiers[3].uHp = 5;
 
-    CheckEqI32(SideLists_MarkAllSoldiersSeen(apSoldiers, 4), 2, "  two soldiers marked");
+    CheckEqI32(SideLists_MarkAllSoldiersSeen(apSoldiers, 4), 2, "  two soldiers marked (SideLists_MarkAllSoldiersSeen @ 0x33bf0)");
     CheckEqI32(*(u16 *)(aLinkStorage[0] + 250), 1, "  live link counter incremented");
     CheckEqI32(*(u16 *)(aLinkStorage[3] + 250), 1, "  second live link incremented");
     CheckEqI32(*(u16 *)(aLinkStorage[1] + 250), 0, "  a dead soldier's link is NOT counted");
@@ -718,7 +718,7 @@ static void TestPromoteRookieRung(void)
 
     Soldier_PromoteByTypeScores(&env);
 
-    CheckEqI32(aUnits[0].bRankType, 1, "  score 50 promotes");
+    CheckEqI32(aUnits[0].bRankType, 1, "  score 50 promotes (Soldier_PromoteByTypeScores @ 0x47280)");
     CheckEqI32(aUnits[0].bRankDirty, 1, "  and marks the promotion");
     CheckEqI32(aUnits[1].bRankType, 0, "  score exactly 45 does not");
     CheckEqI32(aUnits[2].bRankType, 0, "  a dead soldier is not promoted");

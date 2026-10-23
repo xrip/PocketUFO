@@ -94,7 +94,7 @@ static void TestLoad(void)
 
     printf("MapTemplate_Load\n");
     memset(&tpl, 0, sizeof(tpl));
-    Check(MapTemplate_Load(&tpl, "avenger", 1), "  AVENGER.MA1 loaded");
+    Check(MapTemplate_Load(&tpl, "avenger", 1), "  AVENGER.MA1 loaded (MapTemplate_Load @ 0x54ba4)");
     CheckEqI32(tpl.nRows, 20, "  header byte 0 is the row count, 20");
     CheckEqI32(tpl.nCols, 10, "  header byte 1 is the column count, 10");
     CheckEqI32(tpl.nLevels, 3, "  levels 3");

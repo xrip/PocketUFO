@@ -149,7 +149,7 @@ static void TestThrowAndAction18(void)
     Reset();
     unit.uTu = 10;
     Check(TactState_EnqueueAction18(&g_state, &unit, &target, &item, 3, 9),
-          "  action 18 enqueued");
+          "  action 18 enqueued (Tact_EnqueueActionOrStatus205 @ 0x4b420)");
     CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_ACTION18, "  cmd ACTION18 (18)");
     Check(g_state.aQueue[0].pTarget == &target, "  target stored");
     CheckEqI32(g_state.aQueue[0].nMode, 9, "  mode stored");
@@ -179,7 +179,7 @@ static void TestVertStep(void)
     unit.bFlags = 1; /* kneeling (bit 0) */
     TactState_EnqueueVertStep(&g_state, &unit, 2);
     CheckEqI32(g_state.nQueueLen, 2, "  kneeling: stand entry added first");
-    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_STAND_FROM_KNEEL, "  stand cmd (7)");
+    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_STAND_FROM_KNEEL, "  stand cmd (7) (TactState_EnqueueStandFromKneel @ 0x49e60)");
     CheckEqI32(g_state.aQueue[1].nCmd, TACTCMD_VERT_STEP, "  then the vert step");
     Check(g_state.aQueue[1].pUnit == &unit, "  unit on the vert step");
 }
