@@ -163,3 +163,30 @@ be missing.
 
 Test behind the change: TestPanelMsgDrawPasses in tests/test_panel.c (20 checks), and 13 mutations of
 src/pufo/ui/pufo_panel.c that each broke the checks they had to break -- the full table is in game-core.md, Part 157.
+
+## Part 157 review, the e2e picture that moved: 02b_base_screen (2026-10-23)
+
+`tools/check.sh` moved one reference outside the frame gate: tests/ref/e2e/02b_base_screen.png, 11255 px, the base
+information window. Reviewed the same way (mask, colour pairs, row bands, sheet s_e2e_02b_base_screen.png).
+
+The change is colour only -- no blit, no geometry, and the picture gains no ink anywhere. Two pairs, in row bands that
+are exactly the names panel's rows (nPosY 40, nFont 16, y = row * 16 + 40):
+
+  rows 0, 5, 12  (bands 43..54, 123..132, 235..246)  41FFFF -> C5858B and 004852 -> 310808   x2926
+  other drawn rows (1..3, 6..10, 13..15)             41FFFF -> EEEEF6 and 004852 -> 101410   x8329
+
+Those three rows are the three the ARM marks with a row meta pair: 0x55A6C, 0x55A90, 0x55AB4 and 0x55AD8 are four
+`BL UiPanel_SetLineMeta` calls, each reached by `LDR R0, [R5]` -- the names panel only -- with nLine 0, 5, 0xC, 0x10.
+The fourth meta row, 0x10 = 16, is packed and not drawn, and the picture has no changed band at 296..311: nStyle is 16,
+so rows 0..15 are drawn and 16 stops at the 0x3EACC test. The two blank separator rows 4 and 11 (TEXTS slot -1 in
+g_anBaseInfoNameRec) change nothing at all, which is what the empty-string skip does.
+
+The colours decode to the packs the panels own. The value rows' second colour 0x101410 unpacks to r5 2, g6 5, b5 1 =
+4258 = 0x10A2, exactly the second triple Gfx_PackRgb565Pair packs from aStyleRgb[9..11] = 0x14,0x14,0x14. The three
+header rows' second colour 0x310808 unpacks to r5 6, g6 2, b5 1 = 12353 = 0x3041, exactly the meta row's second triple
+(50, 10, 10) -> (6, 2, 1). In HEAD both kinds of row carried one stale pair (41FFFF / 004852) because the port's
+UiPanel_DrawText packed nothing at all -- the deviation this Part closes.
+
+No rule and no fill appear here, as they should not: BaseInfoPanelCommon clears bRowRules and bSelLineHighlight, and no
+changed band is a full-width single row (the widest changed row is 118 px). The "Азия-1" caption at 16..25 changed with
+the pair the panels leave behind, the 0x57284-after-0x57230 order recorded in game-core.md.
