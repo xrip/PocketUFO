@@ -24385,3 +24385,30 @@ Gates: 66/66 tests, 21526 checks, `frames: unchanged (93 reference pictures)`,
 `build/check140.log`.
 
 Measured after Part 140: **866** cited, **102** not (`tact` 93, `strat` 9).
+
+### Part 141 -- the base-block leaves, the plane weapon pair, the hourly tick and the scroll pair (9 `strat` rows)
+
+Rows closed: `Base_DemolishFacility @ 0x66b70`, `Base_TransferTacticalLoot @ 0x68344`,
+`Base_StripAllCraftCargo @ 0x69a38`, `BasePlane_CalcWeaponStoresUsed @ 0x78e78`,
+`BasePlane_UnloadWeaponStores @ 0x790e8`, `BasePlane_LoadWeaponStores @ 0x793e0`,
+`Geoscape_TickHourly @ 0x5d1bc`, `Geoscape_UiFocusPrev @ 0x8afa0`, `Geoscape_UiFocusNext @ 0x8b1f4`.
+This empties the `strat` subsystem: what remains uncited is `tact` only. The citation gap was the same as in
+Parts 139 and 140 -- `(0x69a38)` in a test printf, and `Geoscape_TickHourly @` wrapped onto the end of a
+comment line with `0x5d1bc` on the next -- and no row needed a new check.
+
+Teeth: 9 cases, 52 failing checks, 0 inert, 0 SKIP, 0 build failures, every file restored byte-exact,
+`grep -rn MUTATION src tests` empty (`docs/parity/mutations_part141.py`, build/crops/mut141.log). The scroll
+pair is worth one sentence: the port routes both originals through one shared body (`Geoscape_FocusScroll`)
+and the two originals differ only in the direction they ask for, so each row's mutation is its wrapper's
+argument -- flipping Prev to Next fails 7 checks and flipping Next to Prev fails 11, which is the proof that
+the two wrappers are not interchangeable even though their bodies are the same code.
+
+IDB: no new note was written -- the census (function comment plus entry item comment) found a note at all
+nine addresses: 0x66b70 (577), 0x68344 (498), 0x69a38 (1024), 0x78e78 (636), 0x790e8 (935), 0x793e0 (920),
+0x5d1bc (182), 0x8afa0 (672 + 79), 0x8b1f4 (211). No `bugs.tsv` row either: nothing in this batch contradicted
+what the ledger already recorded.
+
+Gates: 66/66 tests, 21526 checks, `frames: unchanged (93 reference pictures)`, `e2e pictures: unchanged
+against the committed references (9 pictures)`, `check: ALL SIX GATES RAN`, `build/check141.log`.
+
+Measured after Part 141: **875** cited, **93** not (`tact` 93).

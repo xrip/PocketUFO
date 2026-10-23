@@ -175,7 +175,7 @@
 0x5ce40	Geoscape_AdvanceTime	404	strat	yes	yes	yes	World_HookSpawnMissionSite	yes
 0x5cfd4	GameTime_Decode	396	strat	yes	yes	yes		yes
 0x5d160	FundingScreen_OpenMonthly	92	strat	yes	yes	yes	World_HookOpenMonthly	yes
-0x5d1bc	Geoscape_TickHourly	512	strat	yes	no	yes		yes
+0x5d1bc	Geoscape_TickHourly	512	strat	yes	yes	yes		yes
 0x5d3bc	Geoscape_TickBases	296	strat	yes	yes	yes	World_StartNewHook	yes
 0x5d4e4	Geoscape_TickShips	456	strat	yes	yes	yes		yes
 0x5d6ac	GameTime_Pause	20	strat	yes	yes	yes	World_GeoHitTestStrategSelect|Smap_SelectMapTarget|Geoscape_OnRadarListClick|OptionsScreen_OnConfirm|ScreenOpen_DropLine0AndPause|GameTime_Unpause|Geoscape_TickShips|StatusPanel_DrawInterceptPause|Strateg_CalcDetect|Ship_ClearExpiredIntercepts|MissionLanding	yes
@@ -235,7 +235,7 @@
 0x66874	Base_RemoveAllShips	116	strat	yes	yes	yes		yes
 0x668e8	Base_RemoveAllSoldiers	72	strat	yes	yes	yes		yes
 0x66930	Base_CreateNamedEntry	576	strat	yes	yes	yes	World_WireCreateEnv	yes
-0x66b70	Base_DemolishFacility	1600	strat	yes	no	yes	ShiftColumnU16	yes
+0x66b70	Base_DemolishFacility	1600	strat	yes	yes	yes	ShiftColumnU16	yes
 0x671b0	Base_HitTestFacilityStrip	204	strat	yes	yes	yes		yes
 0x6727c	Geoscape_DrawGlobeHover	2208	strat	yes	yes	yes		yes
 0x67b1c	Geoscape_BuildNavControls	588	strat	yes	yes	yes		yes
@@ -247,10 +247,10 @@
 0x681f4	Base_GetEngineerCount	112	strat	yes	yes	yes	Base_GetScientistCount	yes
 0x68264	Base_CountActiveManuf	100	strat	yes	yes	yes	Base_TickFacilityConstruction	yes
 0x682c8	Base_CountBuiltFacilities	124	strat	yes	yes	yes		yes
-0x68344	Base_TransferTacticalLoot	3048	strat	yes	no	yes	FacTypeCell	yes
+0x68344	Base_TransferTacticalLoot	3048	strat	yes	yes	yes	FacTypeCell	yes
 0x68f2c	Base_DistributeRecoveredItems	1216	strat	yes	yes	yes		yes
 0x693ec	Craft_LoadStoresFromBase	1612	strat	yes	yes	yes	LoadUnits	yes
-0x69a38	Base_StripAllCraftCargo	1476	strat	yes	no	yes		yes
+0x69a38	Base_StripAllCraftCargo	1476	strat	yes	yes	yes		yes
 0x69ffc	Ship_FindIndexById	96	strat	yes	yes	yes		yes
 0x6a05c	StrategList_FindIdxForShip	132	strat	yes	yes	yes		yes
 0x6a0e0	Base_ClearFacilityGridRow	336	strat	yes	yes	yes		yes
@@ -265,10 +265,10 @@
 0x6ae54	Base_FindFacilityCell	140	strat	yes	yes	yes		yes
 0x6aee0	Base_CountEmptyFacilityCells	160	strat	yes	yes	yes		yes
 0x6c16c	Geoscape_DrawScreen	3476	strat	yes	yes	yes	DrawScreen_CopyTextRec	yes
-0x78e78	BasePlane_CalcWeaponStoresUsed	88	strat	yes	no	yes		yes
+0x78e78	BasePlane_CalcWeaponStoresUsed	88	strat	yes	yes	yes		yes
 0x78ed0	BasePlane_RearmFromStores	536	strat	yes	yes	yes	World_PlaneRearmThunk|World_WireGeoscapeFrame	yes
-0x790e8	BasePlane_UnloadWeaponStores	760	strat	yes	no	yes		yes
-0x793e0	BasePlane_LoadWeaponStores	872	strat	yes	no	yes		yes
+0x790e8	BasePlane_UnloadWeaponStores	760	strat	yes	yes	yes		yes
+0x793e0	BasePlane_LoadWeaponStores	872	strat	yes	yes	yes		yes
 0x79cb8	BasePlane_ResetDetailState	328	strat	yes	yes	yes		yes
 0x7debc	Funding_AddRegionBonus	196	strat	yes	yes	yes		yes
 0x7df80	Smap_DistWrapped	244	strat	yes	yes	yes		yes
@@ -332,8 +332,8 @@
 0x86d20	GeoscapeUi_FreeAll	1456	strat	yes	yes	yes	World_Free|World_MissionSeamFreeUi	yes
 0x872d0	Geoscape_OnPointer	8576	strat	yes	yes	yes	App_GeoscapePointerThunk|World_WireGeoscapeFrame|World_GeoscapePointer	yes
 0x89450	Geoscape_OnPointerUp	6992	strat	yes	yes	yes	World_WireGeoscapeFrame|World_GeoscapePointer|PtrUp_Hit	yes
-0x8afa0	Geoscape_UiFocusPrev	596	strat	yes	no	yes	World_GeoscapeFocusScroll|Geoscape_FocusScroll	yes
-0x8b1f4	Geoscape_UiFocusNext	596	strat	yes	no	yes	World_GeoscapeFocusScroll|Geoscape_FocusScroll	yes
+0x8afa0	Geoscape_UiFocusPrev	596	strat	yes	yes	yes	World_GeoscapeFocusScroll|Geoscape_FocusScroll	yes
+0x8b1f4	Geoscape_UiFocusNext	596	strat	yes	yes	yes	World_GeoscapeFocusScroll|Geoscape_FocusScroll	yes
 0x8b448	Geoscape_SetPanelFlagA	48	strat	yes	yes	yes	World_GeoscapePanelFlag	yes
 0x8b478	Geoscape_SetPanelFlagB	48	strat	yes	yes	yes	World_GeoscapePanelFlag	yes
 0x8b4a8	Geoscape_OnMapClick	1184	strat	yes	yes	yes	App_HoverOnRegion|App_Run|World_MapClick|Geoscape_OnMapClick_Thunk	yes

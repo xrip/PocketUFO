@@ -1,5 +1,5 @@
-/* test_geoscape.c - Geoscape_TickShips @ 0x5d4e4, Geoscape_TickHourly @
- * 0x5d1bc, Geoscape_TickBases @ 0x5d3bc and the AdvanceTime wiring.
+/* test_geoscape.c - Geoscape_TickShips @ 0x5d4e4, Geoscape_TickHourly @ 0x5d1bc,
+ * Geoscape_TickBases @ 0x5d3bc and the AdvanceTime wiring.
  *
  * The tick order is the contract: minute -> range recovery, even-minute
  * detect, motion, spawn/process, counter, every-5 intercept sweep, contact
@@ -293,7 +293,7 @@ static void TestTickShips(void)
 
 static void TestTickHourly(void)
 {
-    printf("Geoscape_TickHourly\n");
+    printf("Geoscape_TickHourly @ 0x5d1bc\n");
     GeoscapeState st;
     GeoscapeHooks hooks;
     Setup(&st, &hooks);
@@ -2411,7 +2411,7 @@ static void TestDemolishBase(void)
     u8 nResearchEntries = 1;
     u8 once = 0;
 
-    printf("Base_DemolishFacility\n");
+    printf("Base_DemolishFacility @ 0x66b70\n");
 
     for (int i = 0; i < 2; ++i) {
         aShip[i] = (Ship *)calloc(1, sizeof(Ship));

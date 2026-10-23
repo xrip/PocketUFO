@@ -756,7 +756,7 @@ static void TestStripCraftCargo(void)
     static ObjectRecFull *g_apObj[53];
     CraftStoreLoadEnv env;
 
-    printf("Base_StripAllCraftCargo\n");
+    printf("Base_StripAllCraftCargo @ 0x69a38\n");
 
     memset(g_aShip, 0, sizeof(g_aShip));
     memset(g_aBase, 0, sizeof(g_aBase));
@@ -1044,7 +1044,7 @@ static void TestCrewAndStoresTotals(void)
     static ObjectRecFull g_aObj[3];
     static ObjectRecFull *g_apObj[3];
 
-    printf("Craft_CountSoldiersAboard and BasePlane_CalcWeaponStoresUsed\n");
+    printf("Craft_CountSoldiersAboard and BasePlane_CalcWeaponStoresUsed @ 0x78e78\n");
 
     for (int i = 0; i < 4; ++i) {
         memset(&g_aSol[i], 0, sizeof(g_aSol[i]));
@@ -1400,7 +1400,7 @@ static void TestTransferTacticalLoot(void)
 {
     TacticalLootEnv env;
 
-    printf("Base_TransferTacticalLoot\n");
+    printf("Base_TransferTacticalLoot @ 0x68344\n");
 
     for (int i = 0; i < LOOT_N_OBJECTS; ++i) {
         g_apLootObj[i] = &g_aLootObj[i];

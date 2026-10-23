@@ -549,7 +549,7 @@ static void TestFocusDispatcher(void)
 {
     GeoscapeFocusEnv env;
 
-    printf("the screen-id scroll dispatcher\n");
+    printf("Geoscape_UiFocusPrev @ 0x8afa0, Geoscape_UiFocusNext @ 0x8b1f4\n");
 
     ResetFocusPanels();
     FillFocusEnv(&env, 0);

@@ -93,7 +93,7 @@ static void TestUnloadWeaponStores(void)
     static ObjectRecFull *g_apObjects[106];
     PlaneWeaponEnv env;
 
-    printf("BasePlane_UnloadWeaponStores\n");
+    printf("BasePlane_UnloadWeaponStores @ 0x790e8\n");
 
     memset(g_aCraft, 0, sizeof(g_aCraft));
     memset(g_aBase, 0, sizeof(g_aBase));
@@ -172,7 +172,7 @@ static void TestLoadWeaponStores(void)
     static PlaneWeaponEnv env;
     PlaneWeaponPanels panels;
 
-    printf("BasePlane_LoadWeaponStores\n");
+    printf("BasePlane_LoadWeaponStores @ 0x793e0\n");
 
     memset(g_aCraft, 0, sizeof(g_aCraft));
     memset(g_aBase, 0, sizeof(g_aBase));
