@@ -5817,6 +5817,28 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   and `SoftSurf_BlitGlyph_Inner @ 0xa41d4`, whose penY < 0 arm spins without advancing (0xA42A4/0xA42A8) and whose
   penY >= nSurf1 arm ends the glyph (0xA42BC to the POP at 0xA42DC).
 
+  Progress (Part 129): `ui-core` (50) closed -- 661 rows now carry a test cite, **307** do not. Nothing here
+  needed a port change: the Part read fifty functions at instruction level and the port already matched all of
+  them, while nine shapes were recorded in `docs/parity/bugs.tsv` as deviations the original has and the port
+  does not -- `PadImage_FreeData @ 0x1100c` frees the buffer and never writes 0 back (0x11010..0x1101C is a load,
+  a test, a delete and a return); `PadImage_Load @ 0x11020` frees the old buffer at 0x1103C..0x11044 before the
+  lookup, tests only `AssetReader_Found` (0x11088/0x1108C) so a miss leaves stale +8/+0xA/+0x10 fields, copies
+  the name with an unbounded byte loop (0x11054..0x11064) and stores the allocation with no null test (0x1109C);
+  `UiControl_FreePads @ 0x1a2c8` deletes each pad record (0x1A2F0/0x1A314/0x1A338) and leaves the apPads slot;
+  `UiControl_ctor @ 0x1a28c` publishes seven fields and never writes the click handler at +0xC;
+  `UiControl_SetPosMode @ 0x1a5c0` reads pad 1's size with no null test (0x1A5E0); `Font_Free @ 0x46144` hides its
+  body behind bInited (0x46154..0x4615C), its slot loop behind nSlotCount, deletes apSprData with no test (0x46180)
+  but apMc1Data after CMP #0 (0x46190), frees both index tables behind a test on apSprIndex alone (0x461AC) and
+  clears bInited only (0x461D0); `Font_GetSprByIndex @ 0x46600` has no bound; `UiPanel_FreeLines @ 0x3e8c8` frees
+  to nLineCount and nulls nothing; and the selector pair `UiPanel_ScrollNextSel @ 0x99f98` /
+  `UiPanel_ScrollPrevSel @ 0x99fb4` picks the category panel with `LDRSB` of g_nUfopaediaCategory (0x99F9C /
+  0x99FB8, signed) indexed into the nine pointers (0x99FA4 / 0x99FC0) with no range test. Each row names the arm
+  that would have to be reached, and none is reached by the shipped run -- which is also why 93 frame pictures and
+  9 e2e pictures did not move. Two reads changed how a row is to be read, not the code: `UiBank_CtorAll @ 0x11320`
+  clears the two bank flags LAST (0x114B8, 0x114C8) after the fourteen spans, and `UiBank_FreeAllPads @ 0x1117c`
+  walks those spans in reverse, so its first action is widget 129; and `UiScrollList_ClickRow @ 0x3eee0` stores the
+  row at panel+0xC (0x3EF38) before its seven gates (0x3EF44..0x3EFCC) and only ever reads the cursor at 0xBD4.
+
 ### CLAUDE.md's verification contract, mapped to evidence
 
 | Criterion | Evidence, measured in build/crops/check110d.log (EXIT=0) and the audits |
@@ -6010,3 +6032,26 @@ written | teeth: 30 cases in `docs/parity/mutations_part128.py`, one per row; th
 130 checks and 1 inert (`0x9f96c`: the test pinned two fields, not the two the ctor writes), and after two new
 accessor checks the re-run has all 30 failing, 245 failing checks in total, 0 skipped, every file back to its exact
 bytes, `grep -rn "MUTATION" src tests` empty | row 121a stays open with 357 rows left.
+
+`<this commit>` + Part 129 | Release 65/65 and Debug 65/65 with `check: ALL SIX GATES RAN`, `CHECK EXIT=0`
+(`build/check129.log`) | 21,190 checks (+91) | coverage 972/1103 functions (88.1%), 596888/598792 bytes (99.7%)
+-- unchanged | reach unchanged at 965/968, residue 0; cites at a row's own address 611 -> **661**, without one
+357 -> **307** (`ui-core` closed; `strat-ui` 121, `tact` 93, `strat` 90, `app-shell` 3 left) | no port behaviour
+changed -- the fifty reads confirmed the port, and nine original shapes went to `docs/parity/bugs.tsv` (356 -> 365
+rows) as stated deviations; new checks in `tests/test_render.c` (`TestPadImageRecord`), `tests/test_control.c`
+(`TestFreePads`), `tests/test_font.c` (`TestFontInitFreeAndIndex`, extended `TestBlitGlyphPair` and
+`TestLoadTactSprites`), `tests/test_panel.c` (`TestScroll`, `TestLinesAndMeta`, `TestClickRow`, `TestLineList`,
+`TestSwapLines`), `tests/test_tactui.c` (`TestRadio` one-hot table), `tests/test_uibank.c` (the fourteen span
+boundaries and the planted pads), `tests/test_input.c`, `tests/test_statusmsg.c`, `tests/test_tacthud.c`,
+`tests/test_menu.c` and `tests/test_baseui.c` | 93 frame pictures and 9 e2e pictures unchanged | IDB comments
+written and read back on all 50 addresses, longest 1008 at 0x5a294 -- 0x1100c (465), 0x11020 (827), 0x15670 (508),
+0x159ec (416), 0x16e04 (480), 0x16e7c (278), 0x16eb8 (241), 0x19948 (402), 0x199ac (181), 0x1a228 (292),
+0x1a2c8 (477), 0x1a340 (449), 0x1a5c0 (493), 0x1a75c (368), 0x26104 (602), 0x2dca8 (494), 0x2dd20 (534),
+0x3e8c8 (303), 0x3e914 (210), 0x3e93c (143), 0x3f05c (88), 0x3f06c (287), 0x46144 (719), 0x46480 (331),
+0x46600 (386), 0x4661c (336), 0x46630 (323), 0x5a294 (1008), 0x6aaac (455), 0x84ecc (211), 0x85164 (150),
+0x9955c (519), 0x99f78 (365), 0x99f88 (225), 0x99f98 (490), 0x99fb4 (274) -- none at the 1024 cap; the census found
+no stale `0x5A2F4` claim in the IDB (the byte-mask note is correctly at 0x5a2fc), `idb_save` written | teeth: 50
+cases in `docs/parity/mutations_part129.py`, one per row -- 169 failing checks, 0 skipped, 0 inert, every file back
+to its exact bytes, `grep -rn "MUTATION" src tests` empty; three first drafts were inert or mis-anchored and were
+re-cut (CtorAll onto the flag clear at 0x114C8, InsertLine onto the count byte at 0x5A32C, GetLineColor onto the
+slot read) | row 121a stays open with 307 rows left.

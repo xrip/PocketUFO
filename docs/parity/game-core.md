@@ -23432,3 +23432,92 @@ regenerated at 2213 lines. `tools/frames.sh` reports 93 reference pictures uncha
 pictures unchanged -- the fixed arms are real and they are off the shipped path. IDB comments are read back
 on all 32 render addresses, longest 1018 at 0xa3bb8 and 1009 at 0xa41d4, both rewritten shorter after
 hitting the 1024 cap; `idb_save` reported ok. Reach stayed 965/968 with residue 0.
+
+## Part 129 - the 50 `ui-core` rows close: what the pads, the line list, the font block and the ufopaedia wrappers really do
+
+### The pad record is smaller and more careless than its name suggests  `PadImage_ctor @ 0x11000` is one
+store: `pData = 0` at +0xC, over a 20-byte record (new(0x14) at the call sites). Width, height, mode and the
+two origins are left exactly as the allocation held them. `PadImage_FreeData @ 0x1100c` is four instructions
+-- LDR [R0,#0xC] (0x11010), CMP #0 (0x11014), BLNE operator delete (0x11018), POP (0x1101C) -- and it never
+writes 0 back, so the record keeps the pointer it just released. `PadImage_Load @ 0x11020` frees the OLD
+buffer before it looks anything up (0x1103C/0x11040/0x11044), copies the name into a stack buffer by a byte
+loop with no bound (0x11054..0x11064), strcat's ".pad" (0x11068..0x11070), and then tests only
+`AssetReader_Found`: ANDS/BEQ at 0x11088/0x1108C. On a miss the record keeps its old uWidth/uHeight/nMode
+with +0xC set to NULL. On a hit the size is read out of the member as two little-endian u16 -- LDRH [R0] to
+STRH +8 (0x110BC/0x110C0) and LDRH [R0,#2] to STRH +0xA (0x110C4/0x110CC) -- with the mode byte store (STRB
+[R4,#0x10], 0x110C8) interleaved between them, which is scheduling only. `tests/test_render.c` drives all
+four through a hand-made record: a 2x1 pad whose pixels are 9 then 7, blitted with `nOriginX = 1` and key 9,
+which leaves the first target pixel untouched and takes the second from the pad's own nMode palette slot (@
+0x11110).
+
+### The widget bank is fourteen fixed spans, and the release walks them backwards  `UiBank_CtorAll @
+0x11320` constructs the 130-widget bank as 19@0, 13@19, 12@32, 9@44, 7@53, 29@60, 9@89, 3@98, 3@101, 1@104,
+8@105, 15@113, 1@128, 1@129 and then clears the two bank flags last -- UiBank_bEscapeFlag at 0x114B8 and
+UiBank_bActionFlag at 0x114C8 (globals 0xAD712 and 0xAD711). `UiBank_FreeAllPads @ 0x1117c` visits the same
+fourteen spans in reverse, and inside each span in reverse, so its first action is `UiControl_FreePads` on
+widget 129. The port mirrors both through `g_aUiBankSpans` (@ 0x11320, @ 0x1117c). `UiControl_FreePads @
+0x1a2c8` is three LDR/CMP pairs (0x1A2D0/0x1A2D4, 0x1A2F4/0x1A2F8, 0x1A318/0x1A31C) each followed by
+`PadImage_FreeData` (0x1A2E8/0x1A30C/0x1A330) and then operator delete of the pad record itself
+(0x1A2F0/0x1A314/0x1A338), and it never clears the apPads slot it just deleted -- a recorded deviation,
+pinned by a new `tests/test_control.c:TestFreePads` that plants three pads with live buffers and checks the
+buffers are gone, the slots are gone and the records are still there.
+
+### The line list: three style ranges, one insert, one swap  `UiPanel_SetBytes0to2 @ 0x3f05c`, `SetBytes3to5
+@ 0x3e93c` and `SetBytes6to11 @ 0x3e914` are three disjoint ranges of the same twelve-byte style field --
+0..2, 3..5, 6..11 -- and no other field; `SetLineMeta @ 0x3f06c` writes meta +0..+5 for one line, and the
+order Hex-Rays shows (slot 1 before slot 0) is register scheduling. `tests/test_panel.c:TestLinesAndMeta`
+now pins all six style bytes on two different calls (@ 0x3f05c, @ 0x3e93c, @ 0x3e914, @ 0x3f06c).
+`UiScrollList_ClickRow @ 0x3eee0` clears the global hover byte (0x3EEF8 at 0x3EEFC) and panel+0xBC8,
+computes the row through `_rt_sdiv` (0x3EF24..0x3EF30), stores it at panel+0xC (0x3EF38) and clears byte
+0xBD0 (0x3EF40) BEFORE any of the seven gates at 0x3EF44..0x3EFCC -- so an outside click still returns its
+row and runs no handler -- and it only ever READS the cursor at 0xBD4 (0x3EFD0) to seed 0xBD8.
+`UiPanel_InsertLine @ 0x5a294` reads its count as a byte at +0xD48 (0x5A2A0), gates the shift on CMP/BLE
+(0x5A2A8/0x5A2AC), shifts top-down (LDRSB [R6,#-1] at 0x5A2BC, STRB at 0x5A2CC, the 16-byte record copy at
+0x5A2D4/0x5A2DC), masks slot 0 with `AND R3,R3,#0xFF` at 0x5A2FC and byte-loads slots 1..3 at
+0x5A30C/0x5A314/0x5A31C, then writes the count back at 0x5A32C. `SetLineColors @ 0x5a450` is the same write
+block with no shift and no count touch. `Ui_SwapStringSlots @ 0x6aaac` swaps strings at table + 4*nIdx +
+3044 and their aux dwords at table + 4*(nIdx+1261) through a 200-byte stack temp (0x6AAC0..0x6AAD8, aux
+reads at 0x6AAEC/0x6AB18, writes at 0x6AB24/0x6AB4C).
+
+### The font block's own gates, and the two index tables  `Font_Init @ 0x460e8` sets bInited (0x460F4),
+reads back nSlotCount (0x46104), nTotalSprFrames (0x46108) and nTotalMc1 (0x46110), stores apSprIndex
+(0x46118) and clears the 40 apMc1Data slots with a post-increment store (`STR R1,[R3],#4` at 0x46120, SUBS
+at 0x46124); it does not touch apSprData. `Font_Free @ 0x46144` runs its whole body behind the bInited test
+(0x46154..0x4615C), runs the slot loop behind a test on nSlotCount (0x46160..0x46168), deletes apSprData[i]
+with no null test (0x46180) but apMc1Data[i] only after CMP #0 (0x46190), frees the two index tables
+together behind a test on apSprIndex alone (0x461AC, deletes at 0x461B8 and 0x461C8), and clears bInited
+alone (0x461D0) -- the three counts keep their values. The port drops all four gates and clears the counts,
+which the `tests/test_font.c:TestFontInitFreeAndIndex` checks state rather than hide (@ 0x460e8, @ 0x46144).
+`Font_BuildIndex @ 0x46480` walks each block's u16 count and its u16 offsets at +2+2k and stores block +
+offset. `Font_GetSprByIndex @ 0x46600` has no bound at all -- MOV R2,#0x594, the u16 widened through
+LSL#16/LSR#16, `LDR R0,[R2,R3,LSL#2]`, RET. `Font_DrawGlyph @ 0x4661c` is a pure wrapper (0x4661C..0x46624
+shuffle, nPal from the stack at 0x46628, tail call at 0x4662C) and never reads the pFont it is handed.
+`Text_MeasureWidth @ 0x2dca8` never reads its first argument either: R0 is set to 0 at 0x2DCB0, the byte is
+masked at 0x2DCC4 and the advance table is indexed signed.
+
+### Nine deviations, all of them out of the shipped run's reach  New `bugs.tsv` rows: `PadImage_FreeData`
+leaves the freed pointer in the record; `PadImage_Load` frees before it looks up and leaves stale sizes on a
+miss, tests neither reader result, copies the name without a bound and stores the allocation without a null
+test; `UiControl_FreePads` deletes the pad records and leaves the slots; `UiControl_ctor` never writes the
+click handler at +0xC; `UiControl_SetPosMode` reads pad 1's size with no null test (0x1A5E0); `Font_Free`'s
+four gates and its uncleared counts; `Font_GetSprByIndex`'s absent bound; `UiPanel_FreeLines`'s uncleared
+apLines; and the selector pair `0x99f98` / `0x99fb4`, which pick the category panel with `LDRSB` of
+g_nUfopaediaCategory (0x99F9C / 0x99FB8, signed) indexed into the nine pointers at 0x99FA4 / 0x99FC0 with no
+range test -- the port bounds it. Each row names the arm that would have to be reached, and none of them is:
+the .pad members all exist, the category byte only moves inside the nine categories, the font is initialised
+once and released once, and no panel or control is drawn after its release. `UiScreen_OnBack @ 0x15670` and
+`UiScreen_DismissHigh @ 0x159ec` were also re-read: OnBack clears the bank action flag first (0x15688) and
+never writes a screen id; DismissHigh clears the escape flag (0x15A04), compares the id as a half word
+(0x15A08) and clears it only on the 8..9 arm after `UiModal_End` (@ 0x15670, @ 0x159ec, both now with the
+extra checks in `tests/test_input.c`).
+
+### Proof for this Part  50 mutation cases, one per row (`docs/parity/mutations_part129.py`): 169 failing
+checks, 0 skipped, 0 inert, every source file restored byte-exact (`restored exactly: True` x50, `grep -rn
+MUTATION src tests` empty). Three of the first drafts were inert or mis-anchored and were re-cut against the
+checks they should have touched: the CtorAll case now attacks the action-flag clear it claims (0x114C8),
+`InsertLine` the count byte at 0x5A32C, and `GetLineColor` the slot read rather than the bound.
+`tools/check.sh` reports `check: ALL SIX GATES RAN` with exit 0: 65/65 tests, 21190 checks, 93 frame
+references and 9 e2e pictures unchanged. The IDB now carries a function comment on every one of the 50
+addresses (longest 1008 at 0x5a294, all read back under the 1024 cap) and `idb_save` reported ok. Row 121a
+after this Part: 968 behaviour rows, 661 carrying a test cite, 307 not (strat-ui 121, tact 93, strat 90,
+app-shell 3); reach 965/968.

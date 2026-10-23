@@ -142,18 +142,18 @@ static void TestGeoscapeScreens(void)
     g_nSampleCount = 0;
     g_nOptionsOpen = 0;
     Ui_CloseScreen18(&st, &h);
-    CheckEqI32(g_nSamples[0], 17, "  close 18 plays sample 17");
-    CheckEqI32(st.nGeoscapeScreen, 18, "  close 18 also sets id 18");
-    CheckEqI32(g_nOptionsOpen, 1, "  close 18 opens options");
+    CheckEqI32(g_nSamples[0], 17, "  close 18 plays sample 17 @ 0x84ecc");
+    CheckEqI32(st.nGeoscapeScreen, 18, "  close 18 also sets id 18 @ 0x84ecc");
+    CheckEqI32(g_nOptionsOpen, 1, "  close 18 opens options @ 0x84ecc");
     CheckEqI32(g_nOptionsOpenArg, -1, "  the mode is the literal -1 (0x84EC8 MOV R1,#0xFFFFFFFF; "
                                       "0x6DD08 saves it and never reads the first argument)");
 
     g_nSampleCount = 0;
     g_nFundingOpen = 0;
     Ui_OpenFunding(&st, &h);
-    CheckEqI32(g_nSamples[0], 17, "  funding plays sample 17");
-    CheckEqI32(st.nGeoscapeScreen, 15, "  funding screen id 15");
-    CheckEqI32(g_nFundingOpen, 1, "  funding screen opened");
+    CheckEqI32(g_nSamples[0], 17, "  funding plays sample 17 @ 0x85164");
+    CheckEqI32(st.nGeoscapeScreen, 15, "  funding screen id 15 @ 0x85164");
+    CheckEqI32(g_nFundingOpen, 1, "  funding screen opened @ 0x85164");
 }
 
 static void TestUfopaediaCache(void)
@@ -1768,10 +1768,10 @@ static void TestTransferInitAndReset(void)
     g_nTransferCommit = 0;
 
     Ui_InitTransfer(&ienv);
-    Check(aRoot[0] != NULL, "the screen's pad object is allocated");
+    Check(aRoot[0] != NULL, "the screen's pad object is allocated @ 0x9955c");
     Check(((PadImage *)aRoot[0])->nOriginX == 0, "with origin 0 on x");
     Check(((PadImage *)aRoot[0])->nOriginY == 0, "and on y");
-    CheckEqI32(g_nTransferBuild, 1, "the panels are built before the controls exist");
+    CheckEqI32(g_nTransferBuild, 1, "the panels are built before the controls exist @ 0x9955c");
     CheckEqI32(bTransferOk, 1, "and the transfer is marked possible");
     for (i = 0; i < 4; ++i) {
         Check(aRoot[i + 1] == (void *)&aCtl[i], "the four controls land in the root array's slots");
@@ -15090,12 +15090,12 @@ static void TestUiInitBaseInfo(void)
      * installed in the wrong slot. */
     static const i32 aSeamId[6] = { 2, 3, 4, 5, 6, 7 };
     static const char *const apszSeam[6] = {
-        "slot 2 runs the text-panel scroller back (0x99f88)",
-        "slot 3 runs it forward (0x99f78)",
+        "slot 2 runs the text-panel scroller back @ 0x99f88",
+        "slot 3 runs it forward @ 0x99f78",
         "slot 4 runs the ufopaedia pager back (0x9a60c)",
         "slot 5 runs it forward (0x9a754)",
-        "slot 6 runs the selector scroller back (0x99fb4)",
-        "slot 7 runs it forward (0x99f98)"
+        "slot 6 runs the selector scroller back @ 0x99fb4",
+        "slot 7 runs it forward @ 0x99f98"
     };
     for (i = 0; i < 6; ++i) {
         g_nUbiSeamLast = 0;

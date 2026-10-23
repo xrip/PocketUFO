@@ -333,13 +333,31 @@ static void TestLoadPads(void)
 static void TestBankAtexit(void)
 {
     PadImage *apPlanted[4];
+    PadImage *apSpanPlants[14];
     bool      bActionFlag = true;
+    i32       nBad;
     i32       i;
 
     printf("Bank_RegisterAtexit / Bank_AtexitThunk (0x11164, 0x11170)\n");
 
+    /* UiBank_CtorAll @ 0x11320 builds the 130-widget bank as fourteen fixed spans and then clears the
+     * two flags (bUiEscapeFlag at 0x113FC, UiBank_bActionFlag at 0x113EC). The span boundaries are
+     * 19@0, 13@19, 12@32, 9@44, 7@53, 29@60, 9@89, 3@98, 3@101, 1@104, 8@105, 15@113, 1@128, 1@129 --
+     * the same fourteen ranges UiBank_FreeAllPads @ 0x1117c walks in reverse (its first action is
+     * `UiControl_FreePads(pBank + 129)` at 0x11184, then 128, then the twelve counting-down groups),
+     * which is what makes the pair a proof that every slot is visited exactly once. */
+    static const i32 aSpanFirst[14] = { 0, 19, 32, 44, 53, 60, 89, 98, 101, 104, 105, 113, 128, 129 };
+
+    memset(&g_Bank, 0xFF, sizeof(g_Bank));
+    bActionFlag = true;
     UiBank_CtorAll(&g_Bank, &bActionFlag);
-    TestCheck("  ctor clears the action flag", !bActionFlag);
+    TestCheck("  ctor clears the action flag @ 0x11320", !bActionFlag);
+    for (i = 0; i < 14; ++i) {
+        TestCheck("  every span's first widget got the ctor defaults",
+                  g_Bank.aCtl[aSpanFirst[i]].uWidth == 10
+                      && g_Bank.aCtl[aSpanFirst[i]].bEnabled == 1
+                      && g_Bank.aCtl[aSpanFirst[i]].apPads[0] == NULL);
+    }
 
     /* Plant live pads on the first and the last widget: the thunk walks all fourteen groups in
      * reverse, so both ends of the bank must come loose. */
@@ -347,6 +365,14 @@ static void TestBankAtexit(void)
         apPlanted[i] = (PadImage *)malloc(sizeof(PadImage));
         PadImage_ctor(apPlanted[i]);
         apPlanted[i]->pData = (u8 *)malloc(16);
+    }
+    /* One planted pad at the first widget of each of the fourteen spans: UiBank_FreeAllPads @ 0x1117c
+     * has to reach every one of them, and a span it misses leaves its planted pad in place. */
+    for (i = 0; i < 14; ++i) {
+        apSpanPlants[i] = (PadImage *)malloc(sizeof(PadImage));
+        PadImage_ctor(apSpanPlants[i]);
+        apSpanPlants[i]->pData = (u8 *)malloc(8);
+        g_Bank.aCtl[aSpanFirst[i]].apPads[0] = apSpanPlants[i];
     }
     g_Bank.aCtl[0].apPads[0]   = apPlanted[0];
     g_Bank.aCtl[0].apPads[2]   = apPlanted[1];
@@ -357,12 +383,19 @@ static void TestBankAtexit(void)
 
     Bank_AtexitThunk();
 
-    TestCheck("  thunk released the pads on the first widget",
+    TestCheck("  thunk released the pads on the first widget @ 0x1117c",
               g_Bank.aCtl[0].apPads[0] == NULL && g_Bank.aCtl[0].apPads[2] == NULL);
-    TestCheck("  thunk released the pads on the last widget",
+    TestCheck("  thunk released the pads on the last widget @ 0x1117c",
               g_Bank.aCtl[129].apPads[1] == NULL && g_Bank.aCtl[129].apPads[2] == NULL);
-    TestCheck("  thunk freed the planted pixel data",
+    TestCheck("  thunk freed the planted pixel data @ 0x1117c",
               apPlanted[0]->pData == NULL && apPlanted[3]->pData == NULL);
+    nBad = 0;
+    for (i = 0; i < 14; ++i) {
+        if (g_Bank.aCtl[aSpanFirst[i]].apPads[0] != NULL) {
+            ++nBad;
+        }
+    }
+    TestCheck("  every one of the fourteen planted span pads came loose @ 0x1117c", nBad == 0);
 
     /* The registered atexit entry runs this same thunk once more at process exit, so a second run
      * must be safe on an already-empty bank. */
@@ -371,6 +404,9 @@ static void TestBankAtexit(void)
 
     for (i = 0; i < 4; ++i) {
         free(apPlanted[i]); /* UiControl_FreePads releases the pixel data, not the pad struct */
+    }
+    for (i = 0; i < 14; ++i) {
+        free(apSpanPlants[i]);
     }
 }
 

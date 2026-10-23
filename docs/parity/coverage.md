@@ -209,3 +209,28 @@ penY >= nSurf1 arm ends the glyph (0xA42BC to the POP at 0xA42DC). Teeth: 30 cas
 new accessor checks all 30 fail, 1 to 130 checks each, 245 failing checks in total, 0 skipped, every file back to
 its exact bytes and `grep -rn "MUTATION" src tests` empty. Measured after Part 128: **611** cited, **357** not
 (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `app-shell` 3 left; `render` closed).
+
+Part 129 closes the `ui-core` family: the 50 rows row 121a still had uncited, and every one of them now
+carries an `@ 0x...` cite sitting on a check that has teeth. The reads that made the cites honest are
+instruction-level: `PadImage_FreeData @ 0x1100c` is four instructions and never writes 0 back to +0xC;
+`PadImage_Load @ 0x11020` frees the old buffer at 0x1103C..0x11044 before the lookup, tests only
+`AssetReader_Found` (ANDS/BEQ 0x11088/0x1108C), and reads the member's two little-endian u16 into +8/+0xA at
+0x110BC..0x110CC with the mode byte store interleaved; `UiBank_CtorAll @ 0x11320` and `UiBank_FreeAllPads @
+0x1117c` walk the same fourteen spans in opposite directions (first action of the release: widget 129) and
+clear the two bank flags last at 0x114B8/0x114C8; `UiScrollList_ClickRow @ 0x3eee0` stores the row at
+panel+0xC (0x3EF38) before its seven gates (0x3EF44..0x3EFCC) and only reads the cursor at 0xBD4;
+`UiPanel_InsertLine @ 0x5a294` gates its top-down shift at 0x5A2A8/0x5A2AC, masks slot 0 at 0x5A2FC and
+writes the count at 0x5A32C; `Ui_SwapStringSlots @ 0x6aaac` swaps strings at table+4*nIdx+3044 with aux
+dwords at table+4*(nIdx+1261) through a 200-byte temp; `Font_Free @ 0x46144` hides its whole body behind
+bInited (0x46154..0x4615C) and its slot loop behind nSlotCount, and clears only bInited (0x461D0);
+`Font_GetSprByIndex @ 0x46600` has no bound at all; the selector pair `0x99f98`/`0x99fb4` picks the category
+panel with an unbounded `LDRSB` of g_nUfopaediaCategory (0x99F9C/0x99FB8). Nine of these are recorded in
+`docs/parity/bugs.tsv` as deviations rather than fixes (0x1100C, 0x11020, 0x1A2C8, 0x1A28C, 0x1A5C0,
+0x46144, 0x46600, 0x3E8C8, 0x99F98) with the arm that would have to be reached named, and none of them is
+reached by the shipped run. Teeth: 50 cases in `docs/parity/mutations_part129.py`, one per row -- 169
+failing checks, 0 skipped, 0 inert, every file back to its exact bytes and `grep -rn "MUTATION" src tests`
+empty; three first drafts were inert or mis-anchored and were re-cut (CtorAll now attacks the flag clear at
+0x114C8, InsertLine the count byte at 0x5A32C, GetLineColor the slot read). Gates: `check: ALL SIX GATES
+RAN` with exit 0, 65/65 tests, 21190 checks, 93 frame references and 9 e2e pictures unchanged. Measured
+after Part 129: **661** cited, **307** not (`strat-ui` 121, `tact` 93, `strat` 90, `app-shell` 3 left; `ui-
+core` closed).

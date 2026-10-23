@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 65 |
-| Test checks run | 21099 |
+| Test checks run | 21190 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1271,18 +1271,18 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_cmdpads` | PASS | 42 |
 | `test_combat` | PASS | 146 |
 | `test_constants` | PASS | 360 |
-| `test_control` | PASS | 253 |
+| `test_control` | PASS | 259 |
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 116 |
 | `test_enemyai` | PASS | 213 |
-| `test_font` | PASS | 89 |
+| `test_font` | PASS | 116 |
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3234 |
 | `test_geoscapeframe` | PASS | 2156 |
 | `test_geouimanage` | PASS | 73 |
-| `test_input` | PASS | 375 |
+| `test_input` | PASS | 378 |
 | `test_invdrag` | PASS | 370 |
 | `test_isodraw` | PASS | 308 |
 | `test_los` | PASS | 36 |
@@ -1293,12 +1293,12 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_menubtn` | PASS | 184 |
 | `test_modal` | PASS | 48 |
 | `test_moveaction` | PASS | 48 |
-| `test_panel` | PASS | 171 |
+| `test_panel` | PASS | 182 |
 | `test_path` | PASS | 104 |
 | `test_plane` | PASS | 509 |
 | `test_ptrarray` | PASS | 28 |
 | `test_rand` | PASS | 7 |
-| `test_render` | PASS | 284 |
+| `test_render` | PASS | 300 |
 | `test_renderframe` | PASS | 24 |
 | `test_rmp` | PASS | 83 |
 | `test_roster` | PASS | 146 |
@@ -1307,7 +1307,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_smaphit` | PASS | 132 |
 | `test_soldiername` | PASS | 22 |
 | `test_startnew` | PASS | 106 |
-| `test_statusmsg` | PASS | 106 |
+| `test_statusmsg` | PASS | 107 |
 | `test_step` | PASS | 82 |
 | `test_strateg` | PASS | 408 |
 | `test_tactctl` | PASS | 380 |
@@ -1315,14 +1315,14 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tacthud` | PASS | 277 |
 | `test_tactinit` | PASS | 105 |
 | `test_tactstate` | PASS | 599 |
-| `test_tactui` | PASS | 507 |
+| `test_tactui` | PASS | 519 |
 | `test_template` | PASS | 66 |
 | `test_terrain` | PASS | 59 |
 | `test_texts_lang` | PASS | 15 |
 | `test_timer` | PASS | 149 |
 | `test_titles` | PASS | 167 |
 | `test_turn` | PASS | 176 |
-| `test_uibank` | PASS | 394 |
+| `test_uibank` | PASS | 409 |
 | `test_unit` | PASS | 298 |
 | `test_vis` | PASS | 81 |
 | `test_vistry` | PASS | 42 |

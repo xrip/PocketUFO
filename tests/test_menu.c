@@ -311,21 +311,27 @@ static void TestMuteToggles(void)
     opt.bMusicOff = 0;
     opt.bSoundOff = 0;
 
+    /* Ui_ToggleMusicMute @ 0x19948: the flag is flipped, Sound_ApplyMusicVolume is called on BOTH arms
+     * (0x19974 on the clear arm, 0x19994 on the set arm), and the new value lands in the pad byte last
+     * (STRB at 0x199A0, into unk_AD05A -- a byte at pBank + 0x98A). The port hands that byte in as
+     * pPad. The flag stores are 0x19970 and 0x19990. */
     TraceReset();
-    Check(Menu_ToggleMusicMute(&opt, &nMusicPad, &g_hooks), "  music mute turns on");
-    CheckEqI32(opt.bMusicOff, 1, "  music flag set");
-    CheckEqI32(nMusicPad, 1, "  music pad mirrors the flag");
-    Check(TraceAt(g_trace.nEvents - 1, "applyMusic"), "  music mute applies music volume");
+    Check(Menu_ToggleMusicMute(&opt, &nMusicPad, &g_hooks), "  music mute turns on @ 0x19948");
+    CheckEqI32(opt.bMusicOff, 1, "  music flag set @ 0x19948");
+    CheckEqI32(nMusicPad, 1, "  the pad byte mirrors the new flag @ 0x19948");
+    Check(TraceAt(g_trace.nEvents - 1, "applyMusic"), "  music mute applies music volume @ 0x19948");
 
-    Check(!Menu_ToggleMusicMute(&opt, &nMusicPad, &g_hooks), "  music mute turns off");
+    Check(!Menu_ToggleMusicMute(&opt, &nMusicPad, &g_hooks), "  music mute turns off @ 0x19948");
     CheckEqI32(opt.bMusicOff, 0, "  music flag cleared");
-    CheckEqI32(nMusicPad, 0, "  music pad cleared");
+    CheckEqI32(nMusicPad, 0, "  the pad byte mirrors the new flag @ 0x19948");
 
+    /* Ui_ToggleSfxMute @ 0x199ac is the same shape on Map_bSoundOff with Sound_ApplySfxVolume and the
+     * pad byte unk_AD07A. */
     TraceReset();
-    Check(Menu_ToggleSfxMute(&opt, &nSfxPad, &g_hooks), "  sfx mute turns on");
-    CheckEqI32(opt.bSoundOff, 1, "  sfx flag set");
-    CheckEqI32(nSfxPad, 1, "  sfx pad mirrors the flag");
-    Check(TraceAt(g_trace.nEvents - 1, "applySfx"), "  sfx mute applies sfx volume");
+    Check(Menu_ToggleSfxMute(&opt, &nSfxPad, &g_hooks), "  sfx mute turns on @ 0x199ac");
+    CheckEqI32(opt.bSoundOff, 1, "  sfx flag set @ 0x199ac");
+    CheckEqI32(nSfxPad, 1, "  the pad byte mirrors the new flag @ 0x199ac");
+    Check(TraceAt(g_trace.nEvents - 1, "applySfx"), "  sfx mute applies sfx volume @ 0x199ac");
 
     /* NULL option and NULL pad must be safe. */
     Check(!Menu_ToggleMusicMute(NULL, NULL, &g_hooks), "  NULL options refused");

@@ -341,30 +341,37 @@ static void TestDismissHigh(void)
 
     memset(&t, 0, sizeof(t));
     s.nUiScreen = 8;
+    /* UiScreen_DismissHigh @ 0x159ec clears bUiEscapeFlag first (`STRB R2,[R1,R12]` at 0x15A04) and then
+     * branches on `LDRH Map_nUiScreen` at 0x15A08: `CMP #8` / `BLT` at 0x15A0C/0x15A10 leaves anything
+     * below 8 alone, 8..9 run `BL UiModal_End` (0x15A38) and put Map_nUiScreen back to 0, 13 runs
+     * `BL UiScreen_OnCancel` (0x15A24), and anything above 13 also does nothing. Note what it does NOT do
+     * on screen 8:
+     * no Tact_Shutdown and no App_QuitDisplay -- that pair is OnBack only. */
     Check(UiScreen_DismissHigh(&s, &h, &bFlag) == PUFO_UI_DISMISS_MODAL,
-          "dismiss screen 8 ends the modal");
-    Check(s.nUiScreen == 0 && !bFlag, "dismiss screen 8 clears screen and flag");
+          "dismiss screen 8 ends the modal @ 0x159ec");
+    Check(s.nUiScreen == 0 && !bFlag, "dismiss screen 8 clears screen and flag @ 0x159ec");
+    Check(t.nShutdownQuit == 0, "  ... and never runs the screen-8 quit pair @ 0x159ec");
 
     memset(&t, 0, sizeof(t));
     bFlag = true;
     s.nUiScreen = 9;
     Check(UiScreen_DismissHigh(&s, &h, &bFlag) == PUFO_UI_DISMISS_MODAL,
-          "dismiss screen 9 ends the modal");
-    Check(s.nUiScreen == 0, "dismiss screen 9 clears the screen");
+          "dismiss screen 9 ends the modal @ 0x159ec");
+    Check(s.nUiScreen == 0, "dismiss screen 9 clears the screen @ 0x159ec");
 
     memset(&t, 0, sizeof(t));
     bFlag = true;
     s.nUiScreen = 13;
     Check(UiScreen_DismissHigh(&s, &h, &bFlag) == PUFO_UI_DISMISS_CANCEL,
-          "dismiss screen 13 runs cancel");
-    Check(s.nUiScreen == 13, "dismiss screen 13 keeps the screen id");
-    Check(!bFlag, "dismiss clears the escape flag");
+          "dismiss screen 13 runs cancel @ 0x159ec");
+    Check(s.nUiScreen == 13, "dismiss screen 13 keeps the screen id @ 0x159ec");
+    Check(!bFlag, "dismiss clears the escape flag first @ 0x159ec");
 
     memset(&t, 0, sizeof(t));
     bFlag = true;
     s.nUiScreen = 1;
     Check(UiScreen_DismissHigh(&s, &h, &bFlag) == PUFO_UI_DISMISS_NONE,
-          "dismiss low screen is a no-op");
+          "dismiss low screen is a no-op @ 0x159ec");
     Check(s.nUiScreen == 1, "no-op leaves the screen alone");
 }
 
@@ -375,22 +382,35 @@ static void TestOnBackCancel(void)
     TactInputHooks h = MakeHooks(&t);
     bool bFlag = true;
 
-    /* UiScreen_OnBack. */
+    /* UiScreen_OnBack @ 0x15670: it clears UiBank_bActionFlag first (`STRB R2,[R1,R12]` at 0x15688),
+     * then a three-way dispatch on Map_nUiScreen -- `CMP #8`/`BEQ` at 0x15690/0x15694 picks
+     * `Tact_Shutdown(1)` (0x156D4) followed by `App_QuitDisplay` (0x156D8); `CMP #9`/`BEQ` at
+     * 0x15698/0x1569C picks `UiModal_End` (0x156BC) followed by `Tact_CheckBattleEnd(1)` (0x156C8);
+     * `CMP #0xD` at 0x156A0 picks `UiScreen_OnCancel` (0x156A8); every other screen id does nothing.
+     * Unlike DismissHigh it never writes Map_nUiScreen. */
     memset(&t, 0, sizeof(t));
     s.nUiScreen = 8;
     UiScreen_OnBack(&s, &h, &bFlag);
-    Check(t.nShutdownQuit == 1 && !bFlag, "back on screen 8 quits");
+    Check(t.nShutdownQuit == 1 && !bFlag, "back on screen 8 quits @ 0x15670");
+    Check(s.nUiScreen == 8, "  ... and the screen id is left where it was @ 0x15670");
 
     memset(&t, 0, sizeof(t));
     bFlag = true;
     s.nUiScreen = 9;
     UiScreen_OnBack(&s, &h, &bFlag);
-    Check(t.nModalEndCheckBattle == 1 && !bFlag, "back on screen 9 aborts battle");
+    Check(t.nModalEndCheckBattle == 1 && !bFlag, "back on screen 9 aborts the battle @ 0x15670");
 
     memset(&t, 0, sizeof(t));
     s.nUiScreen = 13;
     UiScreen_OnBack(&s, &h, &bFlag);
-    Check(t.nOnCancel == 1, "back on screen 13 cancels");
+    Check(t.nOnCancel == 1, "back on screen 13 cancels @ 0x15670");
+
+    memset(&t, 0, sizeof(t));
+    bFlag = true;
+    s.nUiScreen = 2;
+    UiScreen_OnBack(&s, &h, &bFlag);
+    Check(!bFlag && t.nOnCancel == 0 && t.nShutdownQuit == 0,
+          "  any other screen clears only the action flag @ 0x15670");
 
     /* UiScreen_OnCancel. A clear tactical flag returns immediately. */
     memset(&t, 0, sizeof(t));

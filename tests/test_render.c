@@ -1354,6 +1354,84 @@ static void TestPaletteDispatch(void)
     g_ffFormat = nFmtSave;
 }
 
+/* The PadImage record and its four helpers: ctor @ 0x11000, FreeData @ 0x1100c, Load @ 0x11020 and the
+ * keyed blit @ 0x11110. The record is 0x14 bytes -- operator new(0x14) -- with nOriginX +0, nOriginY +4,
+ * uWidth +8, uHeight +0xA, pData +0xC and nMode +0x10. */
+static void TestPadImageRecord(void)
+{
+    PadImage   pad;
+    u8        *pRaw;
+    static u8  aRec[4 + 2] = { 2, 0, 1, 0, 9, 7 };
+    SoftSurf   surf;
+    u16       *pPix;
+
+    printf("PadImage record: ctor / free / load / keyed blit\n");
+
+    /* 0x11000 is one store: `STR R1,[R0,#0xC]` with R1 = 0 at 0x11008. Nothing else in the record is
+     * touched, which is why a ctor over a filled record must leave the fill alone. */
+    pRaw = (u8 *)&pad;
+    memset(pRaw, 0x5A, sizeof(pad));
+    PadImage_ctor(&pad);
+    Check(pad.pData == NULL, "  ctor clears pData @ 0x11000");
+    Check(pad.nOriginX != 0 && pad.uWidth != 0 && pad.nMode != 0,
+          "  ctor reaches no other field of the 0x14-byte record @ 0x11000");
+
+    /* 0x1100c: `if (pPad->pData) operator delete(pPad->pData)` and nothing else -- the original leaves
+     * the field pointing at freed memory, so a second call there is a second free. The port clears the
+     * field, which is the stated deviation. */
+    pad.pData = (u8 *)malloc(16);
+    PadImage_FreeData(&pad);
+    Check(pad.pData == NULL, "  FreeData releases the buffer and the port clears the field @ 0x1100c");
+    PadImage_FreeData(&pad);
+    Check(pad.pData == NULL, "  ... and the port's second call is a no-op @ 0x1100c");
+
+    /* 0x11020: the old buffer goes first (the free at 0x1102C), then "<name>.pad" is looked up, and on a
+     * hit the record is new(size) + Read + uWidth = the member's first u16 + uHeight = its second +
+     * nMode = the caller's third argument. The original checks neither Find's nor Read's result. */
+    memset(&pad, 0, sizeof(pad));
+    pad.nMode = 0xEE;
+    Check(PadImage_Load(&pad, "invv", 14), "  invv.pad loads @ 0x11020");
+    Check(pad.pData != NULL, "  the member's bytes land in the record @ 0x11020");
+    CheckEqI32(pad.uWidth, (i32)pad.pData[0] | ((i32)pad.pData[1] << 8),
+               "  uWidth is the member's first little-endian u16 @ 0x11020");
+    CheckEqI32(pad.uHeight, (i32)pad.pData[2] | ((i32)pad.pData[3] << 8),
+               "  uHeight is its second u16, not the first repeated @ 0x11020");
+    CheckEqI32(pad.nMode, 14, "  nMode is the third argument, not a byte off the member @ 0x11020");
+    Check(!PadImage_Load(&pad, "nosuchpad", 3), "  a missing member is refused @ 0x11020");
+    Check(pad.pData == NULL, "  the port leaves no buffer pointing at freed memory after a miss @ 0x11020");
+
+    /* 0x11110 hands four things to SoftSurf_BlitIndexedKeyed @ 0x9ea34: the pad's own origin pair, the
+     * buffer, nMode as the palette slot, and the caller's key. The two sizes it also passes are dead
+     * arguments -- the callee reads the size from the glyph header. */
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 4, 1, PIXMODE_16BPP);
+    pPix = (u16 *)SoftSurf_GetPixels(&surf);
+    pPix[0] = 0xDEAD; pPix[1] = 0xDEAD; pPix[2] = 0xDEAD; pPix[3] = 0xDEAD;
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    g_aPalette[3][7]  = 0x1234;
+    g_aPalette[9][7]  = 0x5678;
+    g_pMainSurface = &surf;
+
+    memset(&pad, 0, sizeof(pad));
+    pad.pData   = aRec;                      /* width 2, height 1, pixels 9 then 7 */
+    pad.nMode   = 3;
+    pad.nOriginX = 1;
+    pad.nOriginY = 0;
+    PadImage_BlitEx(&pad, 9);
+    CheckEqU32(pPix[0], 0xDEAD, "  the origin x leaves column 0 alone @ 0x11110");
+    CheckEqU32(pPix[1], 0xDEAD, "  the keyed index 9 is skipped @ 0x11110");
+    CheckEqU32(pPix[2], 0x1234, "  the second pixel comes from the pad's nMode slot @ 0x11110");
+    CheckEqU32(pPix[3], 0xDEAD, "  and the blit stops at the header's width of 2 @ 0x11110");
+
+    pPix[2] = 0xDEAD;
+    pad.nMode = 9;
+    PadImage_BlitEx(&pad, 9);
+    CheckEqU32(pPix[2], 0x5678, "  a different nMode picks a different slot @ 0x11110");
+
+    g_pMainSurface = NULL;
+    SoftSurf_dtor(&surf);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1385,6 +1463,7 @@ int main(void)
     TestTwentyFourBppIndexed();
     TestHiResUpscale();
     TestPaletteDispatch();
+    TestPadImageRecord();
 
     Asset_CloseArchives();
 

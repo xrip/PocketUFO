@@ -873,88 +873,88 @@
 0x46dbc	Titles_UpdateStars	204	titles	yes	yes	yes		yes
 0x46e88	Titles_ctor	284	titles	yes	yes	yes		no
 0x46fa4	Titles_dtor	60	titles	yes	yes	yes		yes
-0x11000	PadImage_ctor	12	ui-core	yes	no	yes	World_TactPadAllocThunk|BuySellPadNew|PlanePadNew	yes
-0x1100c	PadImage_FreeData	20	ui-core	yes	no	yes		yes
-0x11020	PadImage_Load	188	ui-core	yes	no	yes	World_TactPadAllocThunk|World_TactPadLoadThunk	yes
+0x11000	PadImage_ctor	12	ui-core	yes	yes	yes	World_TactPadAllocThunk|BuySellPadNew|PlanePadNew	yes
+0x1100c	PadImage_FreeData	20	ui-core	yes	yes	yes		yes
+0x11020	PadImage_Load	188	ui-core	yes	yes	yes	World_TactPadAllocThunk|World_TactPadLoadThunk	yes
 0x110dc	PadImage_Blit	52	ui-core	yes	yes	yes	World_TactLiveOptions|Geoscape_DrawBaseInfoArm	yes
-0x11110	PadImage_BlitEx	56	ui-core	yes	no	yes		yes
-0x1117c	UiBank_FreeAllPads	420	ui-core	yes	no	yes		yes
-0x11320	UiBank_CtorAll	440	ui-core	yes	no	yes	App_InitStartupUi	yes
+0x11110	PadImage_BlitEx	56	ui-core	yes	yes	yes		yes
+0x1117c	UiBank_FreeAllPads	420	ui-core	yes	yes	yes		yes
+0x11320	UiBank_CtorAll	440	ui-core	yes	yes	yes	App_InitStartupUi	yes
 0x11ac0	Ui_HitTestTactItem	1152	ui-core	yes	yes	yes		yes
 0x12254	UiModal_EndThunk	12	ui-core	yes	yes	yes	World_ModalEndThunk	yes
-0x15670	UiScreen_OnBack	112	ui-core	yes	no	yes	UiBank_CtorAll	yes
-0x159ec	UiScreen_DismissHigh	92	ui-core	yes	no	yes		yes
+0x15670	UiScreen_OnBack	112	ui-core	yes	yes	yes	UiBank_CtorAll	yes
+0x159ec	UiScreen_DismissHigh	92	ui-core	yes	yes	yes		yes
 0x16200	UiScreen_OnCancel	236	ui-core	yes	yes	yes	World_TactEscapeToGeoscape|World_MissionEndCheck	yes
-0x16e04	UiBank_SelectRadio0_Play11	60	ui-core	yes	no	yes	World_InitTactical|Ui_SelectRadio	yes
+0x16e04	UiBank_SelectRadio0_Play11	60	ui-core	yes	yes	yes	World_InitTactical|Ui_SelectRadio	yes
 0x16e40	UiBank_SelectRadio1_Play11	60	ui-core	yes	yes	yes	Ui_SelectRadio	yes
-0x16e7c	UiBank_SelectRadio2_Play11	60	ui-core	yes	no	yes	Ui_SelectRadio	yes
-0x16eb8	UiBank_SelectRadio3_Play11	60	ui-core	yes	no	yes	World_InitTactical|Ui_SelectRadio	yes
-0x19948	Ui_ToggleMusicMute	100	ui-core	yes	no	yes	void|Menu_ToggleMusicMute	yes
-0x199ac	Ui_ToggleSfxMute	100	ui-core	yes	no	yes	void|Menu_ToggleMusicMute	yes
-0x1a228	EmptyBtn_OnClick	36	ui-core	yes	no	yes	App_EmptyBtnClick	yes
-0x1a28c	UiControl_ctor	60	ui-core	yes	no	yes		yes
-0x1a2c8	UiControl_FreePads	120	ui-core	yes	no	yes		yes
-0x1a340	UiControl_BlitActivePad	152	ui-core	yes	no	yes		yes
+0x16e7c	UiBank_SelectRadio2_Play11	60	ui-core	yes	yes	yes	Ui_SelectRadio	yes
+0x16eb8	UiBank_SelectRadio3_Play11	60	ui-core	yes	yes	yes	World_InitTactical|Ui_SelectRadio	yes
+0x19948	Ui_ToggleMusicMute	100	ui-core	yes	yes	yes	void|Menu_ToggleMusicMute	yes
+0x199ac	Ui_ToggleSfxMute	100	ui-core	yes	yes	yes	void|Menu_ToggleMusicMute	yes
+0x1a228	EmptyBtn_OnClick	36	ui-core	yes	yes	yes	App_EmptyBtnClick	yes
+0x1a28c	UiControl_ctor	60	ui-core	yes	yes	yes		yes
+0x1a2c8	UiControl_FreePads	120	ui-core	yes	yes	yes		yes
+0x1a340	UiControl_BlitActivePad	152	ui-core	yes	yes	yes		yes
 0x1a3d8	UiControl_HitTest	488	ui-core	yes	yes	yes	ManufScreen_Init|ResearchScreen_Init	yes
-0x1a5c0	UiControl_SetPosMode	68	ui-core	yes	no	yes		yes
+0x1a5c0	UiControl_SetPosMode	68	ui-core	yes	yes	yes		yes
 0x1a604	UiControl_LoadPads	344	ui-core	yes	yes	yes	App_LoadPads|World_TactInitUiControlsThunk	yes
-0x1a75c	UiControl_Setup	68	ui-core	yes	no	yes		yes
+0x1a75c	UiControl_Setup	68	ui-core	yes	yes	yes		yes
 0x1a7a0	Cydonia_Blit_Then_UiPanelMsg_Draw	40	ui-core	yes	yes	yes	World_TactLiveOptions|Cydonia_BlitThenDrawPanel	yes
-0x1afc4	StatusMsg_DrawStack	272	ui-core	yes	no	yes	World_TactStatusSetColor	yes
-0x257c4	Font_LoadTactSprites	752	ui-core	yes	no	yes	World_TactLoadTactSpritesHook|Save_ReadTGameData|Map_BuildMissionTerrain	yes
-0x26104	Ui_FillActionCosts	812	ui-core	yes	no	yes	World_TactRequestFireThunk|World_TactBuildCostInput|PointerUpScreen3	yes
+0x1afc4	StatusMsg_DrawStack	272	ui-core	yes	yes	yes	World_TactStatusSetColor	yes
+0x257c4	Font_LoadTactSprites	752	ui-core	yes	yes	yes	World_TactLoadTactSpritesHook|Save_ReadTGameData|Map_BuildMissionTerrain	yes
+0x26104	Ui_FillActionCosts	812	ui-core	yes	yes	yes	World_TactRequestFireThunk|World_TactBuildCostInput|PointerUpScreen3	yes
 0x26430	UiModal_Begin	92	ui-core	yes	yes	yes		yes
 0x2648c	UiModal_End	20	ui-core	yes	yes	yes	UiModal_EndThunk	yes
 0x264a0	UiModal_DrawDialog	2676	ui-core	yes	yes	yes	World_bTactFrameLive	yes
 0x2d798	Text_DrawString	148	ui-core	yes	yes	yes	Text_MeasureWidth	yes
-0x2dca8	Text_MeasureWidth	60	ui-core	yes	no	yes		yes
-0x2dd20	StatusMsg_Shift	132	ui-core	yes	no	yes		yes
+0x2dca8	Text_MeasureWidth	60	ui-core	yes	yes	yes		yes
+0x2dd20	StatusMsg_Shift	132	ui-core	yes	yes	yes		yes
 0x2dda4	StatusMsg_Push	264	ui-core	yes	yes	yes	World_TactStatusIsBusy|World_TactUiHooksFor|World_TactPushTextRecord|Map_PushRecord|Map_PushStatusCb	yes
 0x36630	UiPulse_OnTimer	488	ui-core	yes	yes	yes	App_GeoscapePulseThunk|World_HookSpawnMissionSite|World_PulseUpdateThunk|World_PulseGeoscape|World_PulseTact|Pulse_RepeatHeld|GameTick_OnTimer	yes
-0x36c58	PadImage_BlitDecimal	272	ui-core	yes	no	yes	TactHud_BlitDecimal	yes
+0x36c58	PadImage_BlitDecimal	272	ui-core	yes	yes	yes	TactHud_BlitDecimal	yes
 0x37144	UiPanel_WrapText	520	ui-core	yes	yes	yes	World_TactPanelWrapHook|Ufopaedia_RefreshEntry	yes
 0x3e730	UiPanel_ctor	408	ui-core	yes	yes	yes	World_TactPanelCtorHook	yes
-0x3e8c8	UiPanel_FreeLines	76	ui-core	yes	no	yes	World_FreeTactical	yes
-0x3e914	UiPanel_SetBytes6to11	40	ui-core	yes	no	yes	World_TactPanelStyleHook	yes
-0x3e93c	UiPanel_SetBytes3to5	16	ui-core	yes	no	yes		yes
+0x3e8c8	UiPanel_FreeLines	76	ui-core	yes	yes	yes	World_FreeTactical	yes
+0x3e914	UiPanel_SetBytes6to11	40	ui-core	yes	yes	yes	World_TactPanelStyleHook	yes
+0x3e93c	UiPanel_SetBytes3to5	16	ui-core	yes	yes	yes		yes
 0x3e94c	UiPanelMsg_Draw	1016	ui-core	yes	yes	yes	UiPanel_DrawText	yes
 0x3ed44	UiScrollList_TrackHold	412	ui-core	yes	yes	yes	App_TickAnim|UiPanel_TrackHoldRow	yes
-0x3eee0	UiScrollList_ClickRow	300	ui-core	yes	no	yes	UiPanel_ClickRow	yes
-0x3f05c	UiPanel_SetBytes0to2	16	ui-core	yes	no	yes		yes
-0x3f06c	UiPanel_SetLineMeta	72	ui-core	yes	no	yes		yes
+0x3eee0	UiScrollList_ClickRow	300	ui-core	yes	yes	yes	UiPanel_ClickRow	yes
+0x3f05c	UiPanel_SetBytes0to2	16	ui-core	yes	yes	yes		yes
+0x3f06c	UiPanel_SetLineMeta	72	ui-core	yes	yes	yes		yes
 0x460d0	Font_RegisterAtexit	12	ui-core	yes	yes	yes		yes
-0x460e8	Font_Init	72	ui-core	yes	no	yes	PufoFont_Init	yes
+0x460e8	Font_Init	72	ui-core	yes	yes	yes	PufoFont_Init	yes
 0x46130	Font_Init_ReturnArg	20	ui-core	yes	yes	yes		yes
-0x46144	Font_Free	148	ui-core	yes	no	yes	App_HookFontFree|PufoFont_Free	yes
+0x46144	Font_Free	148	ui-core	yes	yes	yes	App_HookFontFree|PufoFont_Free	yes
 0x461d8	Font_LoadSpr	680	ui-core	yes	yes	yes		yes
-0x46480	Font_BuildIndex	384	ui-core	yes	no	yes		yes
-0x46600	Font_GetSprByIndex	28	ui-core	yes	no	yes		no
-0x4661c	Font_DrawGlyph	20	ui-core	yes	no	yes		yes
-0x46630	Font_DrawGlyph_IndexedOffset	52	ui-core	yes	no	yes		no
-0x5a294	UiPanel_InsertLine	160	ui-core	yes	no	yes	Line_Write|UiLineList_Insert	yes
+0x46480	Font_BuildIndex	384	ui-core	yes	yes	yes		yes
+0x46600	Font_GetSprByIndex	28	ui-core	yes	yes	yes		yes
+0x4661c	Font_DrawGlyph	20	ui-core	yes	yes	yes		yes
+0x46630	Font_DrawGlyph_IndexedOffset	52	ui-core	yes	yes	yes		yes
+0x5a294	UiPanel_InsertLine	160	ui-core	yes	yes	yes	Line_Write|UiLineList_Insert	yes
 0x5a334	UiPanel_GetLineFlag	8	ui-core	yes	yes	yes	UiLineList_GetFlag	yes
-0x5a33c	UiPanel_GetLineColor	88	ui-core	yes	no	yes	UiLineList_GetColor	yes
-0x5a394	UiPanel_AppendLineWithSound	72	ui-core	yes	no	yes	World_MissionAppendLine|World_HookContactMsg|UiLineList_AppendWithSound	yes
+0x5a33c	UiPanel_GetLineColor	88	ui-core	yes	yes	yes	UiLineList_GetColor	yes
+0x5a394	UiPanel_AppendLineWithSound	72	ui-core	yes	yes	yes	World_MissionAppendLine|World_HookContactMsg|UiLineList_AppendWithSound	yes
 0x5a3dc	UiPanel_RemoveLine	116	ui-core	yes	yes	yes	UiLineList_Remove	yes
-0x5a450	UiPanel_SetLineColors	52	ui-core	yes	no	yes	Line_Write|UiLineList_SetLine	yes
+0x5a450	UiPanel_SetLineColors	52	ui-core	yes	yes	yes	Line_Write|UiLineList_SetLine	yes
 0x619a8	Ui_SetTransferFlag	36	ui-core	yes	yes	yes	World_TransferFlagThunk|World_StartNewHook	yes
 0x663c4	Ui_AnimExpandBlit_IfEnabled	88	ui-core	yes	yes	yes		yes
-0x6aaac	Ui_SwapStringSlots	172	ui-core	yes	no	yes	UiPanel_SwapLines	yes
+0x6aaac	Ui_SwapStringSlots	172	ui-core	yes	yes	yes	UiPanel_SwapLines	yes
 0x84af8	Ui_OpenBaseInfo	256	ui-core	yes	yes	yes		yes
 0x84bf8	Ui_OpenResearch	288	ui-core	yes	yes	yes	World_ResearchOpenThunk|World_FillScreenOpenEnv|World_ApplyResearchThunk|World_WireOptions|World_WireGeoscapeFrame	yes
 0x84d18	Ui_OpenBaseInfoAlt	264	ui-core	yes	yes	yes	World_FillScreenOpenEnv|World_ConfirmReportThunk|World_WireOptions|World_WireGeoscapeFrame	yes
 0x84e9c	Ui_OpenScreen18	48	ui-core	yes	yes	yes	World_OptionsMenuClick|World_FillInitUiEnv	yes
-0x84ecc	Ui_CloseScreen18	52	ui-core	yes	no	yes	World_OptionsMenuCloseClick|World_FillInitUiEnv	yes
-0x85164	Ui_OpenFunding	48	ui-core	yes	no	yes		yes
+0x84ecc	Ui_CloseScreen18	52	ui-core	yes	yes	yes	World_OptionsMenuCloseClick|World_FillInitUiEnv	yes
+0x85164	Ui_OpenFunding	48	ui-core	yes	yes	yes		yes
 0x95bf0	Ui_AnimExpandBlit	948	ui-core	yes	yes	yes	App_ScriptTicks	yes
-0x9955c	Ui_InitTransfer	392	ui-core	yes	no	yes	World_RefreshTransferEnvs|World_TransferInitThunk	yes
-0x99f78	UiPanel_ScrollNext	16	ui-core	yes	no	yes	World_UfopaediaPanelNextThunk	yes
-0x99f88	UiPanel_ScrollPrev	16	ui-core	yes	no	yes	World_UfopaediaPanelPrevThunk|UiPanel_ScrollNext	yes
-0x99f98	UiPanel_ScrollNextSel	28	ui-core	yes	no	yes	World_UfopaediaSelNextThunk|UiPanel_ScrollNext	yes
-0x99fb4	UiPanel_ScrollPrevSel	28	ui-core	yes	no	yes	World_UfopaediaSelPrevThunk|UiPanel_ScrollNext	yes
+0x9955c	Ui_InitTransfer	392	ui-core	yes	yes	yes	World_RefreshTransferEnvs|World_TransferInitThunk	yes
+0x99f78	UiPanel_ScrollNext	16	ui-core	yes	yes	yes	World_UfopaediaPanelNextThunk	yes
+0x99f88	UiPanel_ScrollPrev	16	ui-core	yes	yes	yes	World_UfopaediaPanelPrevThunk|UiPanel_ScrollNext	yes
+0x99f98	UiPanel_ScrollNextSel	28	ui-core	yes	yes	yes	World_UfopaediaSelNextThunk|UiPanel_ScrollNext	yes
+0x99fb4	UiPanel_ScrollPrevSel	28	ui-core	yes	yes	yes	World_UfopaediaSelPrevThunk|UiPanel_ScrollNext	yes
 0x9b5f4	Ui_DrawBaseInfo	10196	ui-core	yes	yes	yes		yes
 0x9ddc8	Ui_InitBaseInfo	744	ui-core	yes	yes	yes	World_FillScreenOpenEnv|World_UfopaediaInitThunk|Ui_OpenBaseInfo	yes
-0x9ec48	Font_BlitGlyphToSoft	112	ui-core	yes	no	yes	Font_DrawGlyph	yes
+0x9ec48	Font_BlitGlyphToSoft	112	ui-core	yes	yes	yes	Font_DrawGlyph	yes
 0x11164	Bank_RegisterAtexit	12	util	yes	yes	yes	App_InitStartupUi|Bank_AtexitThunk	yes
 0x11170	Bank_AtexitThunk	12	util	yes	yes	yes		yes
 0x37098	Math_StoreSqrtConst	76	util	yes	yes	yes	Math_StoreAtan2Const	yes

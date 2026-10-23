@@ -7,6 +7,7 @@
 #include "ui/pufo_control.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int g_nFailures;
@@ -98,17 +99,22 @@ static void TestCtor(void)
     memset(&ctl, 0xFF, sizeof(ctl));
     memset(aRaw, 0xFF, sizeof(aRaw));
     UiControl_ctor(&ctl);
-    CheckEqI32(ctl.x, 0, "  x zeroed");
-    CheckEqI32(ctl.y, 0, "  y zeroed");
-    CheckEqI32(ctl.uWidth, 10, "  width defaults to 10");
-    CheckEqI32(ctl.uHeight, 10, "  height defaults to 10");
-    CheckEqI32(ctl.bEnabled, 1, "  enabled by default");
-    CheckEqI32(ctl.nMode, 0, "  mode 0");
-    CheckEqI32(ctl.nState, 0, "  state 0");
-    Check(ctl.pfnClick == NULL, "  no click handler");
-    Check(ctl.bUnk17 == 0, "  bUnk17 clear");
+    /* UiControl_ctor @ 0x1a28c writes nine fields and reaches no tenth: nMode 0, nState 0, x 0, y 0,
+     * uWidth and uHeight both from the same literal (MOV R2,#0xA at 0x1A290, STRH at 0x1A2A8 and 0x1A2AC),
+     * bEnabled 1 at 0x1A2B0, bUnk17 0 at 0x1A2B4, and the three pad pointers at +0x14/+0x18/+0x1C to NULL
+     * (0x1A2B8, 0x1A2BC, 0x1A2C0). pfnClick at +12 is NOT among them -- the original leaves it to whoever
+     * installs the handler, the port's memset clears it, which is the stated deviation. */
+    CheckEqI32(ctl.x, 0, "  x zeroed @ 0x1a28c");
+    CheckEqI32(ctl.y, 0, "  y zeroed @ 0x1a28c");
+    CheckEqI32(ctl.uWidth, 10, "  width defaults to 10 @ 0x1a28c");
+    CheckEqI32(ctl.uHeight, 10, "  height defaults to 10, not the width @ 0x1a28c");
+    CheckEqI32(ctl.bEnabled, 1, "  enabled by default @ 0x1a28c");
+    CheckEqI32(ctl.nMode, 0, "  mode 0 @ 0x1a28c");
+    CheckEqI32(ctl.nState, 0, "  state 0 @ 0x1a28c");
+    Check(ctl.pfnClick == NULL, "  no click handler (the original leaves the slot alone) @ 0x1a28c");
+    Check(ctl.bUnk17 == 0, "  bUnk17 clear @ 0x1a28c");
     for (i32 i = 0; i < PUFO_CONTROL_PADS; ++i) {
-        Check(ctl.apPads[i] == NULL, "  pad slot NULL");
+        Check(ctl.apPads[i] == NULL, "  pad slot NULL @ 0x1a28c");
     }
 
     /* NULL is tolerated. */
@@ -211,16 +217,21 @@ static void TestBlitExAndOrigin(void)
     ctl.y = -7;
     ctl.bUnk17 = 1;
     LogReset();
+    /* UiControl_BlitActivePad @ 0x1a340, the choice half: after the pad is picked, the original stores
+     * pad->nOriginY = ctl->y (`STR R3,[R1,#4]` at 0x1A3A4) and pad->nOriginX = ctl->x (`STR R3,[R1]` at
+     * 0x1A3B0), then branches on bUnk17 (CMP R3,#0 at 0x1A3BC) -- set means `PadImage_BlitEx(pad, 0)`
+     * (the call at 0x1A3C8, the key a literal 0), clear means `PadImage_Blit(pad)` (0x1A3D0). */
     (void)UiControl_BlitActivePad(&ctl, OnBlit, OnBlitEx, NULL);
-    CheckEqI32(g_log.nBlitEx, 1, "  bUnk17 selects the extended blit");
-    CheckEqI32(g_log.nBlit, 0, "  the plain blit was not used");
-    CheckEqI32(g_log.nLastOriginX, 42, "  the pad's origin x follows the control");
-    CheckEqI32(g_log.nLastOriginY, -7, "  the pad's origin y follows the control");
+    CheckEqI32(g_log.nBlitEx, 1, "  bUnk17 selects the extended blit @ 0x1a340");
+    CheckEqI32(g_log.nBlit, 0, "  the plain blit was not used @ 0x1a340");
+    CheckEqI32(g_log.nLastOriginX, 42, "  the pad's origin x follows the control @ 0x1a340");
+    CheckEqI32(g_log.nLastOriginY, -7, "  the pad's origin y follows the control @ 0x1a340");
 
     ctl.bUnk17 = 0;
     LogReset();
     (void)UiControl_BlitActivePad(&ctl, OnBlit, OnBlitEx, NULL);
-    CheckEqI32(g_log.nBlit, 1, "  bUnk17 clear selects the plain blit");
+    CheckEqI32(g_log.nBlit, 1, "  bUnk17 clear selects the plain blit @ 0x1a340");
+    CheckEqI32(g_log.nBlitEx, 0, "  ... and not the keyed one @ 0x1a340");
 
     /* A NULL blit callback must not crash even when it is the selected one. */
     LogReset();
@@ -241,13 +252,21 @@ static void TestSetPosMode(void)
     ctl.uWidth = 99;
     ctl.uHeight = 99;
     ctl.nState = 5;
+    /* UiControl_SetPosMode @ 0x1a5c0: y first (`STRH R2,[R0,#2]` at 0x1A5C8), then the mode test
+     * `CMP R2,#2` at 0x1A5D8, which turns the size block into conditional instructions: x is `STRH
+     * R1,[R0]` at 0x1A5DC (unconditional), the pad-1 pointer is `LDRNE R1,[R0,#0x18]` at 0x1A5E0, its
+     * uWidth read from its +8 and written at 0x1A5E8, its uHeight read from its +0xA at 0x1A5EC and
+     * written by `STRHNE [R0,#6]` at 0x1A5F8 -- the height store still carries the NE condition that
+     * survived the nMode store at 0x1A5F0. nState is cleared last at 0x1A5FC, whatever the mode. So mode
+     * 2 writes x, y, nMode and nState and touches neither size. There is no NULL test on pad 1: the
+     * original faults on a control with no second pad. */
     UiControl_SetPosMode(&ctl, 11, 22, 0);
-    CheckEqI32(ctl.x, 11, "  x set");
-    CheckEqI32(ctl.y, 22, "  y set");
-    CheckEqI32(ctl.nMode, 0, "  mode set");
-    CheckEqI32(ctl.nState, 0, "  state reset to 0");
-    CheckEqI32(ctl.uWidth, 11, "  width adopted from pad 1");
-    CheckEqI32(ctl.uHeight, 21, "  height adopted from pad 1");
+    CheckEqI32(ctl.x, 11, "  x set @ 0x1a5c0");
+    CheckEqI32(ctl.y, 22, "  y set @ 0x1a5c0");
+    CheckEqI32(ctl.nMode, 0, "  mode set @ 0x1a5c0");
+    CheckEqI32(ctl.nState, 0, "  state reset to 0 @ 0x1a5c0");
+    CheckEqI32(ctl.uWidth, 11, "  width adopted from pad 1 @ 0x1a5c0");
+    CheckEqI32(ctl.uHeight, 21, "  height adopted from pad 1's +10, not its +8 @ 0x1a5c0");
 
     /* Mode 1 also adopts the size. */
     ctl.uWidth = 99;
@@ -295,15 +314,22 @@ static void TestSetupAndClick(void)
     struct LoadCtx { i32 *pn; } ctx;
     ctx.pn = &nLoads;
 
+    /* UiControl_Setup @ 0x1a75c is exactly two calls in a fixed order: the three name pointers are read
+     * out of the descriptor at +4, +0xD and +0x16 (0x1A774, 0x1A770, 0x1A76C), `BL UiControl_LoadPads`
+     * at 0x1A77C runs FIRST, and only then are the two coordinates formed -- `ADD R1,R6,R1` for
+     * xBase + xOff at 0x1A794 and `ADD R2,R7,R2` for yBase + yOff at 0x1A790 -- and handed to
+     * UiControl_SetPosMode. Loading the pads before the size is set is what lets SetPosMode adopt the
+     * freshly loaded pad's dimensions. */
     UiControl_Setup(&ctl, 100, 200, &desc,
                     (bool (*)(UiControl *, const char *, const char *, const char *,
                               void *))NULL,
                     NULL);
     (void)ctx;
-    CheckEqI32(ctl.x, 105, "  x is base + desc offset");
-    CheckEqI32(ctl.y, 197, "  y is base + desc offset (negative offset works)");
-    CheckEqI32(ctl.nMode, 1, "  mode from the description");
-    CheckEqI32(ctl.nState, 0, "  state reset");
+    CheckEqI32(ctl.x, 105, "  x is base + desc offset @ 0x1a75c");
+    CheckEqI32(ctl.y, 197, "  y is base + desc offset, negative offset works @ 0x1a75c");
+    CheckEqI32(ctl.nMode, 1, "  mode comes from the description @ 0x1a75c");
+    CheckEqI32(ctl.nState, 0, "  state reset, through SetPosMode @ 0x1a75c");
+    CheckEqI32(ctl.uWidth, 11, "  and mode 1 adopts the pad size Setup loaded first @ 0x1a75c");
 
     UiControl_Setup(NULL, 0, 0, &desc, NULL, NULL);
     Check(true, "  NULL ctl is safe");
@@ -340,10 +366,13 @@ static void TestEmptyBtnClick(void)
     g_nClickSamples = 0;
     g_nClickCleared = 0;
     g_nClickLastSample = -1;
+    /* EmptyBtn_OnClick @ 0x1a228 plays one sample and then clears one dword, in that order:
+     * `MOV R0,#0x10` at 0x1A230 with `BL Sound_Play` at 0x1A234, then `LDR R0,=MainMenu_nListMode` at
+     * 0x1A238 and `MOV R1,#0` + `STR R1,[R0]` at 0x1A23C/0x1A240. It reaches nothing else. */
     EmptyBtn_OnClick(Click_PlaySample, Click_ClearDrawMode, NULL);
-    CheckEqI32(g_nClickSamples, 1, "  one sample played");
-    CheckEqI32(g_nClickLastSample, PUFO_CONTROL_SAMPLE_CLICK, "  sample index 16");
-    CheckEqI32(g_nClickCleared, 1, "  the draw mode was cleared");
+    CheckEqI32(g_nClickSamples, 1, "  one sample played @ 0x1a228");
+    CheckEqI32(g_nClickLastSample, PUFO_CONTROL_SAMPLE_CLICK, "  sample index 16, the 0x10 literal @ 0x1a228");
+    CheckEqI32(g_nClickCleared, 1, "  the draw-mode dword was cleared @ 0x1a228");
 
     CheckEqI32(PUFO_CONTROL_SAMPLE_CLICK, 16, "  the click sample is 16");
 }
@@ -610,11 +639,51 @@ static void TestBankAll(void)
     Check(true, "  NULL bank is tolerated by FreeAllPads");
 }
 
+/* UiControl_FreePads @ 0x1a2c8 visits all three pad slots, each with its own NULL test
+ * (LDR the slot, CMP #0, skip): 0x1A2D0/0x1A2D4 for pad 0, 0x1A2F4/0x1A2F8 for pad 1, 0x1A318/0x1A31C for
+ * pad 2. Each visited pad gets `BL PadImage_FreeData` first (0x1A2E8, 0x1A30C, 0x1A330) and then the pad
+ * record itself is
+ * operator-deleted. The port releases the pixel data and clears the slot; the record belongs to the
+ * caller here, which is the stated deviation. */
+static void TestFreePads(void)
+{
+    UiControl  ctl;
+    PadImage  *apPlanted[3];
+    i32        i;
+
+    printf("UiControl_FreePads\n");
+    UiControl_ctor(&ctl);
+    for (i = 0; i < 3; ++i) {
+        apPlanted[i] = (PadImage *)malloc(sizeof(PadImage));
+        PadImage_ctor(apPlanted[i]);
+        apPlanted[i]->pData  = (u8 *)malloc(16);
+        apPlanted[i]->uWidth = (u16)(4 + i);
+        ctl.apPads[i] = apPlanted[i];
+    }
+    UiControl_FreePads(&ctl);
+    Check(apPlanted[0]->pData == NULL && apPlanted[1]->pData == NULL && apPlanted[2]->pData == NULL,
+          "  every one of the three slots released its pad data @ 0x1a2c8");
+    Check(ctl.apPads[0] == NULL && ctl.apPads[1] == NULL && ctl.apPads[2] == NULL,
+          "  every one of the three slots is cleared @ 0x1a2c8");
+    Check(apPlanted[0]->uWidth == 4 && apPlanted[2]->uWidth == 6,
+          "  the pad records themselves are untouched @ 0x1a2c8");
+    for (i = 0; i < 3; ++i) {
+        free(apPlanted[i]);
+    }
+
+    /* Empty slots are skipped by the three tests, and a NULL control is refused. */
+    UiControl_FreePads(NULL);
+    UiControl_ctor(&ctl);
+    UiControl_FreePads(&ctl);
+    Check(true, "  a NULL control and three empty slots are safe @ 0x1a2c8");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestCtor();
+    TestFreePads();
     TestModeStateSelection();
     TestBlitExAndOrigin();
     TestSetPosMode();

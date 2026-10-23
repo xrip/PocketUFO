@@ -300,8 +300,15 @@ static void TestShiftOnly(void)
 
     printf("StatusMsg_Shift\n");
     memset(&st, 0, sizeof(st));
+    /* StatusMsg_Shift @ 0x2dd20: the count read at 0x2DD24 with `CMP #0` / `BEQ` at 0x2DD28/0x2DD2C guards
+     * everything, and the decrement (`SUB R3,R3,#1` + `STR [R0,#0x54]` at 0x2DD98/0x2DD9C) runs whether or
+     * not the copy ran. The copy starts only when the count is above 1 (`CMP #1` / `BLE` at
+     * 0x2DD34/0x2DD38) and walks up from record 1 with its counter test at 0x2DD8C/0x2DD90: each aux
+     * dword moves by `LDR R3,[R1,R3]` / `STR R3,[R1,R11]` at 0x2DD58/0x2DD60, and each 100-byte string
+     * moves byte for byte by `LDRSB R5,[R3]` / `STRB R5,[R3,#-0x64]` at 0x2DD68/0x2DD6C -- the byte loop
+     * stops after it has copied the NUL, so the terminator travels with the text. */
     StatusMsg_Shift(&st);
-    CheckEqI32(st.nCount, 0, "  shift on an empty stack is a no-op");
+    CheckEqI32(st.nCount, 0, "  shift on an empty stack is a no-op @ 0x2dd20");
 
     memset(&st, 0, sizeof(st));
     HsReset();
@@ -310,12 +317,13 @@ static void TestShiftOnly(void)
     st.anTtl[0] = 11;
     st.anTtl[1] = 22;
     StatusMsg_Shift(&st);
-    CheckEqI32(st.nCount, 1, "  count decremented");
-    CheckEqStr(st.aszMsg[0], "b", "  the newest moved down");
-    CheckEqI32(st.anTtl[0], 22, "  the TTL moved with it");
+    CheckEqI32(st.nCount, 1, "  count decremented once @ 0x2dd20");
+    CheckEqStr(st.aszMsg[0], "b", "  the newest string moved down one slot @ 0x2dd20");
+    CheckEqI32(st.anTtl[0], 22, "  the aux dword moved with its string @ 0x2dd20");
+    CheckEqI32(st.anTtl[1], 22, "  ... and the source slot is left holding it, not zeroed @ 0x2dd20");
 
     StatusMsg_Shift(&st);
-    CheckEqI32(st.nCount, 0, "  shift to empty");
+    CheckEqI32(st.nCount, 0, "  shift to empty, and no copy below count 1 @ 0x2dd20");
 }
 
 static void TestDraw(void)
@@ -333,10 +341,14 @@ static void TestDraw(void)
         i32 nDrawY = 0;
         i32 nDrawn = StatusMsg_DrawStack(&st, &nDrawY, &g_drawHooks);
 
-        CheckEqI32(nDrawn, 3, "  three records drawn");
-        CheckEqI32(g_hs.nColors, 1, "  the colour pair is packed once");
+        /* StatusMsg_DrawStack @ 0x1afc4 packs the colour pair once, unconditionally, at the top of the
+         * function; writes nStatusDrawY = 320 before any of the four conditions (only a player-input
+         * enabled + selected unit + operative + not-busy chain replaces it with the inventory pad's own
+         * y); then subtracts 14 and walks the records newest-first at x = 5, 12 pixels apart. */
+        CheckEqI32(nDrawn, 3, "  three records drawn, newest first @ 0x1afc4");
+        CheckEqI32(g_hs.nColors, 1, "  the colour pair is packed once, whatever the count @ 0x1afc4");
         /* Base: 320 - 14 = 306. Then 12 per already-drawn record. */
-        CheckEqI32(nDrawY, 306, "  base y is 320 - 14");
+        CheckEqI32(nDrawY, 306, "  base y is 320 - 14 @ 0x1afc4");
         CheckEqI32(g_hs.anDrawX[0], PUFO_STATUS_DRAW_X, "  x is 5");
         CheckEqI32(g_hs.anDrawY[0], 306, "  first record at y 306");
         CheckEqI32(g_hs.anDrawY[1], 294, "  second at 306 - 12");

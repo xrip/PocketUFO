@@ -247,7 +247,10 @@ static void TestBlitGlyphPair(void)
     SoftSurf stale;
     u16     *pPix;
     u16     *pStale;
-    static u8 *apSpr[1];
+    static u8 *apSpr[2];
+    static u8  aGlyphB[8] = { 0, 0, 6, 0xFF, 0, 0, 0, 0 };
+    Mc1Rec     tbl;
+    u16        nSavedSprBase3;
     u8        aGlyph[8];
     i32       i;
 
@@ -283,11 +286,44 @@ static void TestBlitGlyphPair(void)
         g_aPalette[0][i] = (u32)(0x2000 + i);
     }
 
+    /* Font_DrawGlyph @ 0x4661c is `LDR ...; B Font_BlitGlyphToSoft` -- it takes the font block as its
+     * first argument and never uses it, and Font_BlitGlyphToSoft @ 0x9ec48 picks the palette as slot
+     * (Map_nGlyphPalBase + nPal) after clamping nPal to 19 (`if (a4 > 19) a4 = 19` at 0x9EC50). The
+     * glyph itself is `apGlyphIndexTable[nIdx]`, dereferenced with no bound in the original. */
     Font_DrawGlyph(1, 1, 0, 0);
-    CheckEqU32(pPix[1 * 8 + 1], 0x2005, "  Font_DrawGlyph loads g_pMainSurface @ 0x9fc00 before it blits");
-    CheckEqU32(pPix[1 * 8 + 2], 0x2006, "  ... on the main surface's stride of 8, not the stale 4");
+    CheckEqU32(pPix[1 * 8 + 1], 0x2005, "  the pair Font_DrawGlyph @ 0x4661c runs loads g_pMainSurface @ 0x9fc00");
+    CheckEqU32(pPix[1 * 8 + 2], 0x2006, "  ... on the main surface's stride of 8, not the stale 4 @ 0x4661c");
     CheckEqU32(pStale[0], 0xDEAD, "  ... the surface that was loaded before is not drawn on");
     CheckEqI32(g_blitState.nSurf0, 8, "  ... the state really was reloaded (nSurf0 is now the main width)");
+
+    /* The clamp and the base: base 3 with nPal 25 must land on slot 3 + 19 = 22, not on 28. */
+    g_nGlyphPalSlotBase = 3;
+    g_aPalette[22][5]   = 0xAAAA;
+    g_aPalette[28][5]   = 0xBBBB;
+    pPix[1 * 8 + 1]     = 0;
+    Font_DrawGlyph(1, 1, 0, 25);
+    CheckEqU32(pPix[1 * 8 + 1], 0xAAAA,
+               "  nPal over 19 is clamped to 19 before the base is added @ 0x9ec48");
+    g_nGlyphPalSlotBase = 0;
+
+    /* Font_DrawGlyph_IndexedOffset @ 0x46630 forms the sprite index as
+     * anSprBase[*(u16 *)(pTbl + 38)] + *(u8 *)(pTbl + nIdx): the second term is a byte read OUT OF the
+     * record at offset nIdx, not nIdx itself (the ARM is `LDRB [R3,R4]` at 0x46654). */
+    nSavedSprBase3         = g_fontSys.anSprBase[3];
+    g_fontSys.apSprIndex[1] = aGlyphB;
+    g_fontSys.nSprIndexCount = 2;
+    g_fontSys.anSprBase[3]   = 0;
+    memset(&tbl, 0, sizeof(tbl));
+    tbl.nSlot  = 3;
+    ((u8 *)&tbl)[2] = 1;                 /* the byte the original reads at nIdx = 2 */
+    g_aPalette[0][5] = 0x2005;
+    g_aPalette[0][6] = 0x2006;
+    pPix[1 * 8 + 1] = 0;
+    pPix[1 * 8 + 2] = 0;
+    Font_DrawGlyph_IndexedOffset(1, 1, &tbl, 2, 0);
+    CheckEqU32(pPix[1 * 8 + 1], 0x2006,
+               "  the record's byte at nIdx picks sprite 1, not sprite 2 @ 0x46630");
+    g_fontSys.anSprBase[3] = nSavedSprBase3;
 
     g_fontSys.apSprIndex     = NULL;
     g_fontSys.nSprIndexCount = 0;
@@ -547,7 +583,7 @@ static void TestLoadTactSprites(void)
                   "culta loads the 19 shipped sets in the original's order (0x257C4)");
 
     /* The bases are the running total captured BEFORE their own group's load. */
-    CheckEqI32(g_tacFont.anFlagSprBase[0], 11, "the blanks base is the spr total at entry (0x257DC)");
+    CheckEqI32(g_tacFont.anFlagSprBase[0], 11, "the blanks base is the spr total at entry @ 0x257c4");
     CheckEqI32(g_tacFont.anFlagSprBase[1], 13, "the cursor base is the spr total after blanks (0x257F0)");
     CheckEqI32(g_tacFont.anFlagSprBase[2], 9, "the terrain base is the MC1 total, not the spr one (0x25814)");
     CheckEqI32(g_tacFont.anFlagSprBase[3], 75, "the craft base is the mc1 total the terrain loop left (0x25874)");
@@ -671,6 +707,133 @@ static void TestFontAtexit(void)
     CheckEqI32(g_fontSys.bInited, 0, "a second thunk run is idempotent");
 }
 
+/* Font_Init @ 0x460e8, Font_Free @ 0x46144, Font_BuildIndex @ 0x46480, Font_GetSprByIndex @ 0x46600 and
+ * Text_MeasureWidth @ 0x2dca8. */
+static void TestFontInitFreeAndIndex(void)
+{
+    PufoFont    font;
+    static u8   aSpr[12] = { 2, 0, 6, 0, 9, 0, 'A', 'A', 'A', 'A', 'A', 'A' };
+    Mc1Rec     *pMc1;
+    i32         i;
+    i32         nW_A;
+    i32         nW_B;
+    i32         nW_AB;
+
+    printf("Font_Init / Font_Free / Font_BuildIndex / GetSprByIndex / Text_MeasureWidth\n");
+
+    /* Font_Init @ 0x460e8 writes six things and then runs a fixed 40-entry loop: bInited = 1 (STRB at
+     * 0x460F4), nSlotCount = 0 (`STRB [R0,#0x400]` at 0x46104 -- the slot count is a byte), nTotalSprFrames
+     * = 0 (`STRH [R0,#0x36]` at 0x46108), nTotalMc1 = 0 (`STRH [R0,#0x38]` at 0x46110), apSprIndex = 0
+     * (`STR [R0,#0xDC]` at 0x46118), and finally `STR R1,[R3],#4` at 0x46120 with the counter test
+     * `SUBS R2,R2,#1` at 0x46124 -- 40 dword clears down apMc1Data. apSprData is not touched. */
+    memset(&font, 0xA5, sizeof(font));
+    PufoFont_Init(&font);
+    CheckEqI32(font.bInited, 1, "  bInited set @ 0x460e8");
+    CheckEqI32(font.nSlotCount, 0, "  slot count cleared @ 0x460e8");
+    CheckEqI32(font.nTotalSprFrames, 0, "  sprite-frame total cleared @ 0x460e8");
+    CheckEqI32(font.nTotalMc1, 0, "  mc1 total cleared @ 0x460e8");
+    Check(font.apSprIndex == NULL, "  apSprIndex cleared @ 0x460e8");
+    for (i = 0; i < PUFO_FONT_SLOTS; ++i) {
+        if (font.apMc1Data[i] != NULL) {
+            break;
+        }
+    }
+    Check(i == PUFO_FONT_SLOTS, "  all 40 apMc1Data entries cleared @ 0x460e8");
+    for (i = 0; i < PUFO_FONT_SLOTS; ++i) {
+        font.apSprData[i] = NULL;
+    }
+
+    /* Font_Free @ 0x46144, as the original is built: the whole body sits behind the bInited test (LDRB /
+     * CMP #0 / BEQ at 0x46154..0x4615C); the per-slot walk is gated on a non-zero nSlotCount
+     * (0x46160..0x46168) with its counter test at 0x461A4/0x461A8; per slot it deletes apSprData[i] with
+     * NO null test (`BL operator delete` at 0x46180) but apMc1Data[i] only after `CMP R0,#0` at 0x46190;
+     * the two index tables are released TOGETHER behind a test on apSprIndex alone (`LDR R0,[R4,#0xDC]` at
+     * 0x461AC, `BEQ` at 0x461B4, deletes at 0x461B8 and 0x461C8); and the only field it writes is bInited,
+     * at 0x461D0 -- nSlotCount, nTotalMc1 and nTotalSprFrames keep their values.
+     *
+     * The port drops three of those shapes: no bInited gate, apMc1Index freed on its own, and the three
+     * counts cleared. All three are on the record in docs/parity/bugs.tsv; the checks below pin the port's
+     * behaviour and name the original's at each point. */
+    PufoFont_Free(&font);
+    CheckEqI32(font.bInited, 0, "  bInited is cleared, as at 0x461D0 @ 0x46144");
+    CheckEqI32(font.nSlotCount, 0,
+               "  the port clears nSlotCount, which the original leaves alone @ 0x46144");
+
+    font.nSlotCount     = 2;
+    font.apSprData[0]   = malloc(8);
+    font.apSprData[1]   = malloc(8);
+    font.apMc1Data[0]   = NULL;             /* free(NULL) is the port's answer to the 0x46190 test */
+    font.apMc1Data[1]   = malloc(8);
+    font.apSprData[2]   = malloc(8);        /* past nSlotCount: the walk must not reach it */
+    font.apMc1Index     = (Mc1Rec **)malloc(8);
+    font.apSprIndex     = NULL;
+    font.nTotalMc1      = 7;
+    font.nTotalSprFrames = 9;
+    font.bInited        = 0;                /* the original's gate; the port has none */
+    PufoFont_Free(&font);
+    Check(font.apSprData[0] == NULL && font.apSprData[1] == NULL,
+          "  both slots under nSlotCount are released @ 0x46144");
+    Check(font.apMc1Data[1] == NULL, "  the mc1 records are released too @ 0x46144");
+    Check(font.apSprData[2] != NULL, "  the walk stops at nSlotCount, as at 0x461A4 @ 0x46144");
+    free(font.apSprData[2]);
+    font.apSprData[2] = NULL;
+    Check(font.apMc1Index == NULL,
+          "  apMc1Index is freed on its own -- the original frees it only with apSprIndex @ 0x46144");
+    CheckEqI32(font.nTotalMc1, 0,
+               "  nTotalMc1 cleared by the port, left alone by the original @ 0x46144");
+    CheckEqI32(font.nTotalSprFrames, 0,
+               "  nTotalSprFrames cleared by the port, left alone by the original @ 0x46144");
+
+    /* Font_BuildIndex @ 0x46480 rebuilds both flat tables out of the per-slot blocks: the sprite table
+     * walks each block's own count word (u16 at +0) and its u16 offset table at +2, and stores
+     * `block + offset`; the mc1 table walks anMc1Count and stores &apMc1Data[slot][k]. */
+    memset(&font, 0, sizeof(font));
+    font.nSlotCount    = 1;
+    font.apSprData[0]  = aSpr;
+    pMc1               = (Mc1Rec *)malloc(2 * sizeof(Mc1Rec));
+    font.apMc1Data[0]  = pMc1;
+    font.anMc1Count[0] = 2;
+    font.nTotalSprFrames = 2;
+    font.nTotalMc1       = 2;
+    Font_BuildIndex(&font);
+    CheckEqI32(font.nSprIndexCount, 2, "  two sprite frames from the block's count word @ 0x46480");
+    Check(font.apSprIndex[0] == aSpr + 6 && font.apSprIndex[1] == aSpr + 9,
+          "  each sprite pointer is the block plus its own u16 offset @ 0x46480");
+    CheckEqI32(font.nMc1IndexCount, 2, "  two mc1 entries from anMc1Count @ 0x46480");
+    Check(font.apMc1Index[0] == &pMc1[0] && font.apMc1Index[1] == &pMc1[1],
+          "  the mc1 table is the record address, in slot order @ 0x46480");
+
+    /* Font_GetSprByIndex @ 0x46600 is `return apMc1Index[nIndex]` with no test of any kind -- the port's
+     * bound turns the original's out-of-range read into NULL, which is the stated deviation. */
+    Check(Font_GetSprByIndex(&font, 0) == &pMc1[0], "  index 0 reads the first record @ 0x46600");
+    Check(Font_GetSprByIndex(&font, 1) == &pMc1[1], "  index 1 reads the second @ 0x46600");
+    Check(Font_GetSprByIndex(&font, 2) == NULL, "  the count bound is the port's guard @ 0x46600");
+
+    /* Clean up through the same pair the original uses: drop the records, rebuild the (now empty) index
+     * pair -- which frees the first one -- and let Font_Free take the second. */
+    font.apMc1Data[0] = NULL;
+    font.anMc1Count[0] = 0;
+    font.apSprData[0] = NULL;
+    free(pMc1);
+    font.bInited    = 1;
+    font.nSlotCount = 0;
+    Font_BuildIndex(&font);
+    PufoFont_Free(&font);
+    Check(font.apSprIndex == NULL && font.apMc1Index == NULL,
+          "  both index tables come back through Font_Free @ 0x46144");
+
+    /* Text_MeasureWidth @ 0x2dca8 sums the advance byte of every character and nothing else -- the first
+     * argument of the original is never read, and the empty string costs 0 (the `if (*psz)` test at
+     * 0x2DCB4). */
+    nW_A  = Text_MeasureWidth("A");
+    nW_B  = Text_MeasureWidth("B");
+    nW_AB = Text_MeasureWidth("AB");
+    CheckEqI32(nW_AB, nW_A + nW_B, "  width is the sum of the per-character advances @ 0x2dca8");
+    CheckEqI32(Text_MeasureWidth(""), 0, "  an empty string measures 0 @ 0x2dca8");
+    CheckEqI32(Text_MeasureWidth("\xE9"), g_fontMetrics.aAdvance[0xE9],
+               "  a high byte indexes the advance table unsigned @ 0x2dca8");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -693,6 +856,7 @@ int main(void)
     TestFlagSprBases();
     TestLoadTactSprites();
     TestFontInitReturnArg();
+    TestFontInitFreeAndIndex();
     TestFontAtexit();
 
     Asset_CloseArchives();

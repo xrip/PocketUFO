@@ -161,32 +161,56 @@ static void TestLinesAndMeta(void)
     }
 
     printf("UiPanel_SetLineMeta / GetLineMeta\n");
+    /* UiPanel_SetLineMeta @ 0x3f06c writes the six meta bytes of one line: the decompiled form is
+     * v8[17] = a4, v8[16] = a3, aLineMeta[6*nLine+2] = a5, then 19, 20, 21 -- scheduling only, the net
+     * effect is a3..a8 landing on meta +0..+5 in order. */
     UiPanel_SetLineMeta(&panel, 2, 10, 20, 30, 40, 50, 60);
-    Check(UiPanel_GetLineMeta(&panel, 2, 1, &r, &g, &b), "  triple 1 readable");
-    Check(r == 10 && g == 20 && b == 30, "  triple 1 bytes in order");
+    Check(UiPanel_GetLineMeta(&panel, 2, 1, &r, &g, &b), "  triple 1 readable @ 0x3f06c");
+    Check(r == 10 && g == 20 && b == 30, "  meta +0/+1/+2 hold a3,a4,a5 @ 0x3f06c");
     Check(UiPanel_GetLineMeta(&panel, 2, 2, &r, &g, &b), "  triple 2 readable");
-    Check(r == 40 && g == 50 && b == 60, "  triple 2 bytes in order");
+    Check(r == 40 && g == 50 && b == 60, "  meta +3/+4/+5 hold a6,a7,a8 @ 0x3f06c");
     Check(!UiPanel_GetLineMeta(&panel, 2, 3, &r, &g, &b), "  invalid triple refused");
-    /* Meta of line 0 must be untouched. */
+    /* Meta of line 0 must be untouched: the block is 6 bytes per line at +0x10. */
     Check(UiPanel_GetLineMeta(&panel, 0, 1, &r, &g, &b) && r == 0 && g == 0 && b == 0,
-          "  line 0 meta untouched");
+          "  line 0 meta untouched @ 0x3f06c");
+    Check(UiPanel_GetLineMeta(&panel, 3, 2, &r, &g, &b) && r == 0 && g == 0 && b == 0,
+          "  line 3 meta untouched @ 0x3f06c");
 
     printf("Style setters\n");
+    /* Three setters, three disjoint slot ranges: SetBytes0to2 @ 0x3f05c, SetBytes3to5 @ 0x3e93c,
+     * SetBytes6to11 @ 0x3e914. Each writes its own bytes and no others, in argument order. */
     UiPanel_SetBytes0to2(&panel, 1, 2, 3);
     UiPanel_SetBytes3to5(&panel, 4, 5, 6);
     UiPanel_SetBytes6to11(&panel, 7, 8, 9, 10, 11, 12);
     Check(panel.aStyleRgb[0] == 1 && panel.aStyleRgb[1] == 2 && panel.aStyleRgb[2] == 3,
-          "  bytes 0..2 written in order");
+          "  bytes 0..2 in argument order @ 0x3f05c");
     Check(panel.aStyleRgb[3] == 4 && panel.aStyleRgb[4] == 5 && panel.aStyleRgb[5] == 6,
-          "  bytes 3..5 written in order");
-    Check(panel.aStyleRgb[6] == 7 && panel.aStyleRgb[11] == 12, "  bytes 6..11 written in order");
+          "  bytes 3..5 in argument order @ 0x3e93c");
+    Check(panel.aStyleRgb[6] == 7 && panel.aStyleRgb[7] == 8 && panel.aStyleRgb[8] == 9
+              && panel.aStyleRgb[9] == 10 && panel.aStyleRgb[10] == 11 && panel.aStyleRgb[11] == 12,
+          "  all six of bytes 6..11 in argument order @ 0x3e914");
+    UiPanel_SetBytes6to11(&panel, 0x16, 0xF4, 0xFC, 0x04, 0x46, 0x4B);
+    Check(panel.aStyleRgb[6] == 0x16 && panel.aStyleRgb[9] == 0x04,
+          "  the second call overwrites the same six slots @ 0x3e914");
 
     printf("Aux words\n");
     UiPanel_SetLineAux(&panel, 1, 4242);
     CheckEqI32(UiPanel_GetLineAux(&panel, 1), 4242, "  aux stored");
     CheckEqI32(UiPanel_GetLineAux(&panel, 0), 0, "  other aux untouched");
 
+    /* UiPanel_FreeLines @ 0x3e8c8 walks nLineCount and not the capacity: 0x3E8D4 is the `count > 0`
+     * guard and 0x3E900 is `while (v2 < pPanel->nLineCount)`, one delete per iteration. A pointer
+     * parked past the count is therefore left alone -- that is the only way to tell the bound from a
+     * loop over the 500-entry array. */
+    panel.apLines[5] = malloc(8);
     UiPanel_FreeLines(&panel);
+    Check(panel.apLines[0] == NULL && panel.apLines[3] == NULL,
+          "  the four constructed lines are released @ 0x3e8c8");
+    Check(panel.apLines[5] != NULL, "  FreeLines stops at nLineCount, not at the capacity @ 0x3e8c8");
+    free(panel.apLines[5]);
+    panel.apLines[5] = NULL;
+    UiPanel_FreeLines(&panel);
+    Check(panel.apLines[5] == NULL, "  the second call frees nothing twice @ 0x3e8c8");
 }
 
 /* ScrollNext is bounded by nLineCount - nStyle, which is the interesting part:
@@ -207,14 +231,14 @@ static void TestScroll(void)
 
     /* ScrollPrev at the top is a no-op (the `v > 0` guard at 0x3F050). */
     UiPanel_ScrollPrev(&panel);
-    CheckEqI32(panel.nUnk3028, 0, "  cannot scroll above 0");
+    CheckEqI32(panel.nUnk3028, 0, "  cannot scroll above 0 @ 0x99f88");
 
     /* The last valid cursor is nLineCount - nStyle == 7: the compare at 0x3F034 is `<`, so a cursor
      * already at the limit does not move. */
     for (i = 0; i < 20; ++i) {
         UiPanel_ScrollNext(&panel);
     }
-    CheckEqI32(panel.nUnk3028, 7, "  clamped to nLineCount - nStyle");
+    CheckEqI32(panel.nUnk3028, 7, "  clamped to nLineCount - nStyle @ 0x99f78");
 
     UiPanel_ScrollPrev(&panel);
     CheckEqI32(panel.nUnk3028, 6, "  scrolls back one");
@@ -318,21 +342,29 @@ static void TestClickRow(void)
 
     /* Inside the rect: row 2, callback fires. */
     panel.pfnClick = RecClick;
-    CheckEqI32(UiPanel_ClickRow(&panel, 20, 50), 2, "  inside click row is 2");
-    CheckEqI32(panel.nUnk3028, 3, "  nUnk3028 is read, never written");
-    CheckEqI32(panel.nUnk3032, 5, "  nUnk3032 = nUnk3028 + row");
-    CheckEqI32(g_nClicks, 1, "  the click callback ran");
+    /* UiScrollList_ClickRow @ 0x3eee0: two clears first (0x3EEF8 the global hover row, 0x3EEFC the
+     * panel's +0xBC8), then row = (nY - [panel+0x1B88]) / [panel+0x1B9C] through _rt_sdiv at
+     * 0x3EF24..0x3EF30, the row stored at panel+0xC (0x3EF38) and byte 0xBD0 cleared (0x3EF40). The
+     * cursor at 0xBD4 is only READ, at 0x3EF4C on, to seed 0xBD8. */
+    CheckEqI32(UiPanel_ClickRow(&panel, 20, 50), 2, "  inside click row is 2 @ 0x3eee0");
+    CheckEqI32(panel.nUnk3028, 3, "  the cursor at +0xBD4 is read, never written @ 0x3eee0");
+    CheckEqI32(panel.nUnk3032, 5, "  +0xBD8 = the cursor + row @ 0x3eee0");
+    CheckEqI32(g_nClicks, 1, "  the tail call runs the handler @ 0x3eee0");
     Check(panel.pfnClick != NULL, "  callback installed");
 
-    /* Outside the x range: no callback, but the row is still stored. */
-    CheckEqI32(UiPanel_ClickRow(&panel, 1, 50), 2, "  outside x still returns row");
+    /* Outside the x range: no callback, but the row is still stored (0x3EF38 and 0x3EF40 run before
+     * any of the seven gates at 0x3EF44..0x3EFCC). */
+    g_nClicks = 0;
+    CheckEqI32(UiPanel_ClickRow(&panel, 1, 50), 2, "  outside x still returns the row @ 0x3eee0");
+    CheckEqI32(g_nClicks, 0, "  ... and the handler does not run @ 0x3eee0");
 
     /* Above the rect: row 0 (the division truncates toward zero) and no callback. */
-    CheckEqI32(UiPanel_ClickRow(&panel, 20, 5), 0, "  above the rect row 0");
+    CheckEqI32(UiPanel_ClickRow(&panel, 20, 5), 0, "  above the rect row 0 @ 0x3eee0");
 
-    /* bSelLineHighlight clear disables the callback but not the row. */
+    /* bSelLineHighlight ([panel+0x1BA1], read at 0x3EF1C) disables the handler but not the row. */
     panel.bSelLineHighlight = 0;
-    CheckEqI32(UiPanel_ClickRow(&panel, 20, 50), 2, "  disabled flag still returns row");
+    CheckEqI32(UiPanel_ClickRow(&panel, 20, 50), 2, "  disabled flag still returns the row @ 0x3eee0");
+    CheckEqI32(g_nClicks, 0, "  ... and still no handler @ 0x3eee0");
 
     UiPanel_FreeLines(&panel);
 }
@@ -417,7 +449,7 @@ static void TestLineList(void)
     CheckEqI32((i32)offsetof(UiLineList, abLineFlags), 0, "  flags at +0");
     CheckEqI32((i32)offsetof(UiLineList, anColor), 200, "  records at +0xC8 (200)");
     CheckEqI32((i32)offsetof(UiLineList, nLineCount), PUFO_LINELIST_COUNT_OFF,
-               "  count at +0xD48 (3400)");
+               "  count at +0xD48 (3400): the LDRB at 0x5A2A0, the increment's STRB at 0x5A32C @ 0x5a294");
     CheckEqI32((i32)sizeof(UiLineList), 3404,
                "  3401 bytes of fields, padded to 3404 by the u32 record array");
 
@@ -427,35 +459,48 @@ static void TestLineList(void)
     g_nLineSample = 0;
     UiLineList_AppendWithSound(&list, 11, 100, 101, 102, 103, Line_Sample, NULL);
     UiLineList_AppendWithSound(&list, 12, 200, 201, 202, 203, Line_Sample, NULL);
-    CheckEqI32((i32)list.nLineCount, 2, "  two appends");
-    CheckEqI32(g_nLineSample, 7, "  append plays sample 7");
-    CheckEqI32(UiLineList_GetFlag(&list, 1), 12, "  line 1 flag");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 2), 102, "  line 0 colour slot 2");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 3), 203, "  line 1 colour slot 3");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 4), 0, "  slot 4 reads zero");
+    /* UiPanel_AppendLineWithSound @ 0x5a394 is `UiPanel_InsertLine(base, [base+3400], ...)` followed by
+     * `Sound_Play(7)` -- the append index is the count, which is why no shift ever runs here. */
+    CheckEqI32((i32)list.nLineCount, 2, "  two appends @ 0x5a394");
+    CheckEqI32(g_nLineSample, 7, "  append plays sample 7 @ 0x5a394");
+    CheckEqI32(UiLineList_GetFlag(&list, 1), 12, "  line 1 flag @ 0x5a394");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 2), 102, "  line 0 colour slot 2 @ 0x5a33c");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 3), 203, "  line 1 colour slot 3, the last one @ 0x5a33c");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 4), 0, "  slot 4 reads zero @ 0x5a33c");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, -1), 0, "  a negative slot reads zero @ 0x5a33c");
 
-    /* Insert at the front shifts everything up one place. */
+    /* Insert at the front shifts everything up one place. UiPanel_InsertLine @ 0x5a294 gates the shift
+     * on `count > nLine` (CMP at 0x5A2A8, BLE to the write block at 0x5A2AC) and walks the shift from
+     * the top end downwards: 0x5A2B0 puts the pointer at index `count`, 0x5A2B4 at record `count`,
+     * 0x5A2BC reads the previous flag with LDRSB and 0x5A2CC stores it, and 0x5A2D4/0x5A2DC move the
+     * 16-byte colour record one place up (R9 = 0x10 at 0x5A2C8 is the record length). */
     UiLineList_Insert(&list, 0, 9, 900, 901, 902, 903);
-    CheckEqI32((i32)list.nLineCount, 3, "  insert increments the count");
+    CheckEqI32((i32)list.nLineCount, 3, "  insert increments the count byte @ 0x5a294");
     CheckEqI32(UiLineList_GetFlag(&list, 0), 9, "  the new line is at 0");
     CheckEqI32(UiLineList_GetFlag(&list, 1), 11, "  the old line 0 moved to 1");
     CheckEqI32(UiLineList_GetFlag(&list, 2), 12, "  the old line 1 moved to 2");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 0), 100, "  the whole record moved");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 3), 103, "  including its last slot");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 2, 0), 200, "  and so did the next one");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 0), 100, "  the whole record moved @ 0x5a294");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 3), 103, "  including its last slot @ 0x5a294");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 2, 0), 200, "  and so did the next one @ 0x5a294");
     /* Every slot is truncated to a byte at the write: slot 0 by `AND R3,R3,#0xFF` at 0x5A2FC,
      * slots 1..3 by the LDRB of their stack arguments at 0x5A30C..0x5A31C. */
-    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 132, "  slot 0 keeps 900 & 0xFF");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 1), 133, "  slot 1 keeps 901 & 0xFF");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 2), 134, "  slot 2 keeps 902 & 0xFF");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 3), 135, "  slot 3 keeps 903 & 0xFF");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 132, "  slot 0 keeps 900 & 0xFF @ 0x5a294");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 1), 133, "  slot 1 keeps 901 & 0xFF @ 0x5a294");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 2), 134, "  slot 2 keeps 902 & 0xFF @ 0x5a294");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 3), 135, "  slot 3 keeps 903 & 0xFF @ 0x5a294");
 
-    /* SetLine overwrites in place and leaves the count alone. */
+    /* SetLine overwrites in place and leaves the count alone -- the same write block as InsertLine
+     * without the shift: flag STRB at 0x5A454, slot 0 masked at 0x5A458, slots 1..3 through LDRB at
+     * 0x5A468, 0x5A470, 0x5A478, and no count byte touched anywhere in 0x5A450..0x5A484. */
     UiLineList_SetLine(&list, 1, 77, 1, 2, 3, 4);
-    CheckEqI32((i32)list.nLineCount, 3, "  SetLine does not touch the count");
-    CheckEqI32(UiLineList_GetFlag(&list, 1), 77, "  flag replaced");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 1), 2, "  colours replaced");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 132, "  neighbours untouched");
+    CheckEqI32((i32)list.nLineCount, 3, "  SetLine does not touch the count @ 0x5a450");
+    CheckEqI32(UiLineList_GetFlag(&list, 1), 77, "  flag replaced @ 0x5a450");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 1), 2, "  colours replaced @ 0x5a450");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 0), 1, "  slot 0 replaced through its byte mask @ 0x5a450");
+    UiLineList_SetLine(&list, 3, 78, 0x1FF, 0x102, 0x103, 0x104);
+    CheckEqI32((i32)UiLineList_GetColor(&list, 3, 0), 0xFF, "  slot 0 truncated to a byte @ 0x5a450");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 3, 3), 4, "  slot 3 truncated to a byte @ 0x5a450");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 132, "  neighbours untouched @ 0x5a450");
 
     /* Remove shifts the tail down. */
     UiLineList_Remove(&list, 0);
@@ -499,11 +544,17 @@ static void TestSwapLines(void)
     UiPanel_SetLineAux(&panel, 0, 11);
     UiPanel_SetLineAux(&panel, 1, 22);
 
-    Check(UiPanel_SwapLines(&panel, 0, 1), "  swapped");
-    Check(strcmp(UiPanel_GetLineText(&panel, 0), "bravo") == 0, "  line 0 is bravo");
-    Check(strcmp(UiPanel_GetLineText(&panel, 1), "alpha") == 0, "  line 1 is alpha");
-    CheckEqI32(UiPanel_GetLineAux(&panel, 0), 22, "  aux 0 swapped");
-    CheckEqI32(UiPanel_GetLineAux(&panel, 1), 11, "  aux 1 swapped");
+    /* Ui_SwapStringSlots @ 0x6aaac swaps a string slot AND its aux dword. The strings are the char*
+     * entries at table + 4*nIdx + 3044 and the aux dwords are at table + 4*(nIdx + 1261) (= +5044);
+     * the original copies A into a 200-byte stack buffer (A loaded at 0x6AAC0, copied to 0x6AAD8), reads
+     * A's aux at 0x6AAEC, copies B over A in place (0x6AAF4..0x6AB08), reads B's aux at 0x6AB18 and
+     * stores it into A at 0x6AB24, then writes the buffer into B (0x6AB2C..0x6AB44) and A's saved aux
+     * into B at 0x6AB4C -- the buffer is what lets two char* entries swap without losing A. */
+    Check(UiPanel_SwapLines(&panel, 0, 1), "  swapped @ 0x6aaac");
+    Check(strcmp(UiPanel_GetLineText(&panel, 0), "bravo") == 0, "  line 0 is bravo @ 0x6aaac");
+    Check(strcmp(UiPanel_GetLineText(&panel, 1), "alpha") == 0, "  line 1 is alpha @ 0x6aaac");
+    CheckEqI32(UiPanel_GetLineAux(&panel, 0), 22, "  aux 0 takes B's aux dword @ 0x6aaac");
+    CheckEqI32(UiPanel_GetLineAux(&panel, 1), 11, "  aux 1 takes A's aux dword @ 0x6aaac");
 
     /* Swapping with itself is stable. */
     Check(UiPanel_SwapLines(&panel, 0, 0), "  self swap accepted");

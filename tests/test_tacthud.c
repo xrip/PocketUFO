@@ -753,10 +753,15 @@ static void TestBlitDecimal(void)
     /* No field width: two digits, one pixel apart. */
     g_nBlits = 0;
     nRet = TactHud_BlitDecimal(g_apDigitPad, 100, 50, 42, 0, false, Dec_Blit, NULL);
-    ChkEq(g_nBlits, 2, "  42 blits two digit pads");
-    ChkEq(g_aBlitX[0], 100, "  first digit at x");
-    ChkEq(g_aBlitX[1], 106, "  next digit at width + 1");
-    ChkEq(nRet, 111, "  returns the right edge of the last digit");
+    /* PadImage_BlitDecimal @ 0x36c58. The digit table is 11 PadImage* at ctx + 0xCC: the character byte
+     * picks slots 0..9 (0x36D28 computes `ctx + 4*ch - 192`, and 4*'0' - 192 is 0), and the filler is
+     * slot 10 when bLeadZero is set, slot 0 otherwise (0x36CB0). Both filler and digits advance by
+     * uWidth + 1 (0x36CF8 for the filler, the for-increment at 0x36D14 for the digits); the return value
+     * is the last digit's x + uWidth, with no trailing +1 (0x36D54). */
+    ChkEq(g_nBlits, 2, "  42 blits two digit pads @ 0x36c58");
+    ChkEq(g_aBlitX[0], 100, "  first digit at x @ 0x36c58");
+    ChkEq(g_aBlitX[1], 106, "  next digit at width + 1 @ 0x36c58");
+    ChkEq(nRet, 111, "  returns x + uWidth of the last digit, not +1 @ 0x36c58");
     ChkEq(g_aDigitPad[4].nOriginY, 50, "  the pad origin Y is written too");
 
     /* Field width 5 with the plain filler: three filler pads then the digits. */
@@ -774,8 +779,8 @@ static void TestBlitDecimal(void)
     g_nBlits = 0;
     (void)TactHud_BlitDecimal(g_apDigitPad, 200, 50, 7, 4, true, Dec_Blit, NULL);
     ChkEq(g_nBlits, 4, "  three leading pads plus the digit");
-    ChkEq(g_aDigitPad[10].nOriginX, 212, "  slot 10 is the leading pad; the last write wins");
-    ChkEq(g_aDigitPad[0].nOriginX, -1, "  slot 0 is not used when bLeadZero is set");
+    ChkEq(g_aDigitPad[10].nOriginX, 212, "  slot 10 is the leading pad when bLeadZero is set @ 0x36c58");
+    ChkEq(g_aDigitPad[0].nOriginX, -1, "  ... and slot 0 is the filler only when it is clear @ 0x36c58");
 
     /* A width that is not larger than the digit count adds no filler. */
     g_nBlits = 0;

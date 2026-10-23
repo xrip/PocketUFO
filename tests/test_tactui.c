@@ -361,6 +361,41 @@ static void TestRadio(void)
         }
         CheckEqI32(ui.abRadio[r], 1, "  the chosen radio is the one lit");
         CheckEqI32(g_log.nSamples, 1, "  played one sample");
+        /* Each handler's own MOV R0,#0x11 -- 0x16E0C, 0x16E48, 0x16E84, 0x16EC0 -- before Sound_Play. */
+        CheckEqI32(g_log.nLastSample, 17, "  ... and it is sample 17, the 0x11 literal");
+    }
+
+    /* One row per handler: the four bank handlers are separate functions, each with its own one-hot
+     * store order -- UiBank_SelectRadio0_Play11 @ 0x16e04 lights option 0 (MOV R1,#1 at 0x16E18, the four
+     * STRB at 0x16E1C..0x16E34), ...2 @ 0x16e7c lights option 2 (0x16E94..0x16EAC) and ...3 @ 0x16eb8
+     * lights option 3 (0x16ED0..0x16EE8). All four write the same four bytes g_bRadioOpt0..3, reached as
+     * pBank + a fixed offset (LDR R0,=pBank at 0x16E14, 0x16E8C, 0x16EC8). */
+    static const u8 aWantOneHot[4][4] = {
+        { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 1 }
+    };
+    static const char *const apszOneHot[4] = {
+        "  radio 0's handler lights 1,0,0,0 @ 0x16e04",
+        "  radio 1's handler lights 0,1,0,0",
+        "  radio 2's handler lights 0,0,1,0 @ 0x16e7c",
+        "  radio 3's handler lights 0,0,0,1 @ 0x16eb8"
+    };
+    for (i32 r = 0; r < 4; ++r) {
+        i32 i;
+        bool bBad = false;
+
+        UiReset(&ui);
+        for (i = 0; i < 4; ++i) {
+            ui.abRadio[i] = 1;      /* everything on: a missing clear shows up here */
+        }
+        LogReset();
+        (void)Ui_SelectRadio(&ui, r, &g_hooks);
+        for (i = 0; i < 4; ++i) {
+            if (ui.abRadio[i] != aWantOneHot[r][i]) {
+                bBad = true;
+            }
+        }
+        Check(!bBad, apszOneHot[r]);
+        CheckEqI32(g_log.nSamples, 1, "  ... and plays exactly one sample");
     }
 
     UiReset(&ui);
@@ -513,8 +548,8 @@ static void TestActionCosts(void)
     UiReset(&ui);
     Ui_FillActionCosts(&in, &ui);
     /* 50 * 80 * 0.01 = 40. Cost = 200 * 60 / 100 = 120. */
-    CheckEqI32(ui.anActionEnabled[0], 40, "  mode 0 enabled = auStat4 * pct * 0.01");
-    CheckEqI32(ui.anActionCost[0], 120, "  mode 0 cost = auStat0 * pct2 / 100");
+    CheckEqI32(ui.anActionEnabled[0], 40, "  mode 0 enabled = auStat4 * pct * 0.01 @ 0x26104");
+    CheckEqI32(ui.anActionCost[0], 120, "  mode 0 cost = auStat0 * pct2 / 100 @ 0x26104");
 
     /* Kneeling raises the price by a quarter: 40 + 10 = 50. */
     in.bFlags = 1;
