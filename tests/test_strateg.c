@@ -349,7 +349,7 @@ static void TestRollCraftStats(void)
 
 static void TestAddAlienSiteAndTravel(void)
 {
-    printf("AddAlienSiteIfValid / InitTravel\n");
+    printf("StrategList_AddAlienSiteIfValid @ 0x7e3b4, StrategEntry_InitTravel\n");
     PtrArray list;
     StrategItem item;
     StrategItem *p;
@@ -526,7 +526,7 @@ static void TestMaybeSpawnCraft(void)
 
 static void TestRemoveAtAndPurge(void)
 {
-    printf("RemoveAt / PurgeType5\n");
+    printf("StrategList_RemoveAt @ 0x82ab0, StrategList_PurgeType5 @ 0x6ab58\n");
     PtrArray list;
     Ship ship;
     Ship *apCraft[1];

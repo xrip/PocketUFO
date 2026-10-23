@@ -161,15 +161,15 @@
 0x5a8d0	Base_FindIndexBySiteId	92	strat	yes	yes	yes	World_HookFindBaseBySiteId|Base_FindIndexByTypeByte	yes
 0x5a92c	Ship_FindIndexByStrategType	136	strat	yes	no	yes	Ship_FindIndexById|Smap_ClearSelection	yes
 0x5a9b4	StrategList_FindByShipId	172	strat	yes	yes	yes	StrategList_FindIdxForShip	yes
-0x5aa60	Funding_ScoreToBarLevel	212	strat	yes	no	yes		yes
+0x5aa60	Funding_ScoreToBarLevel	212	strat	yes	yes	yes		yes
 0x5ab34	Funding_DeltaToArrow	164	strat	yes	yes	yes		yes
-0x5abd8	FundingScreen_CloseThunk	12	strat	yes	no	yes	World_CloseGeoscapeThunk	yes
-0x5abe4	FundingScreen_Toggle	1560	strat	yes	no	yes		yes
-0x5b1fc	FundingScreen_Draw	868	strat	yes	no	yes		yes
-0x5b560	FundingScreen_Open	60	strat	yes	no	yes		yes
-0x5b59c	FundingScreen_DrawExtended	2780	strat	yes	no	yes		yes
-0x5c078	FundingScreen_ExitThunk	12	strat	yes	no	yes	World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
-0x5c084	FundingScreen_Init	1256	strat	yes	no	yes		yes
+0x5abd8	FundingScreen_CloseThunk	12	strat	yes	yes	yes	World_CloseGeoscapeThunk	yes
+0x5abe4	FundingScreen_Toggle	1560	strat	yes	yes	yes		yes
+0x5b1fc	FundingScreen_Draw	868	strat	yes	yes	yes		yes
+0x5b560	FundingScreen_Open	60	strat	yes	yes	yes		yes
+0x5b59c	FundingScreen_DrawExtended	2780	strat	yes	yes	yes		yes
+0x5c078	FundingScreen_ExitThunk	12	strat	yes	yes	yes	World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
+0x5c084	FundingScreen_Init	1256	strat	yes	yes	yes		yes
 0x5c56c	GameTime_Reset	92	strat	yes	yes	yes		yes
 0x5c5c8	Geoscape_DrawClockPads	2168	strat	yes	yes	yes		yes
 0x5ce40	Geoscape_AdvanceTime	404	strat	yes	yes	yes	World_HookSpawnMissionSite	yes
@@ -197,7 +197,7 @@
 0x60570	RadarScreen_Update	3804	strat	yes	yes	yes		yes
 0x6144c	RadarScreen_SetActive	76	strat	yes	yes	yes		yes
 0x61b94	Smap_InitCraftSelectState	248	strat	yes	yes	yes		yes
-0x623bc	BaseFac_SetCellBuildState	336	strat	yes	no	yes		yes
+0x623bc	BaseFac_SetCellBuildState	336	strat	yes	yes	yes		yes
 0x6250c	Base_DrawFacilityIconStrip	792	strat	yes	yes	yes		yes
 0x62824	Base_TickFacilityConstruction	396	strat	yes	yes	yes	World_HookTickFacilityConstruction	yes
 0x629b0	Base_CanPlaceHangarAt	968	strat	yes	yes	yes		yes
@@ -257,10 +257,10 @@
 0x6a230	Base_CalcMonthlyUpkeep	468	strat	yes	yes	yes		yes
 0x6a404	BaseFac_FormatCostLabel	184	strat	yes	yes	yes		yes
 0x6a4bc	BaseFac_BuildStatusMsg	1520	strat	yes	yes	yes	World_WireGeoscapeFrame	yes
-0x6ab58	StrategList_PurgeType5	216	strat	yes	no	yes		yes
+0x6ab58	StrategList_PurgeType5	216	strat	yes	yes	yes		yes
 0x6ac30	Base_FindIndexByTypeByte	96	strat	yes	yes	yes	World_HookFindBaseBySiteId|SmapHit_FindBaseBySiteId	yes
-0x6ac90	BaseGrid_SetByteAtFound	48	strat	yes	no	yes	BaseGrid_GetTypeByte	yes
-0x6acc0	BaseGrid_GetByte0x654	44	strat	yes	no	yes	BaseGrid_GetTypeByte	yes
+0x6ac90	BaseGrid_SetByteAtFound	48	strat	yes	yes	yes	BaseGrid_GetTypeByte	yes
+0x6acc0	BaseGrid_GetByte0x654	44	strat	yes	yes	yes	BaseGrid_GetTypeByte	yes
 0x6acec	BaseGrid_SubByte0x654	68	strat	yes	yes	yes	BaseGrid_SubTypeByte	yes
 0x6ae54	Base_FindFacilityCell	140	strat	yes	yes	yes		yes
 0x6aee0	Base_CountEmptyFacilityCells	160	strat	yes	yes	yes		yes
@@ -274,7 +274,7 @@
 0x7df80	Smap_DistWrapped	244	strat	yes	yes	yes		yes
 0x7e074	Smap_CraftRangeExhausted	768	strat	yes	yes	yes	Smap_DistWrapped	yes
 0x7e374	StrategList_AddUfoAt	64	strat	yes	yes	yes		yes
-0x7e3b4	StrategList_AddAlienSiteIfValid	108	strat	yes	no	yes		yes
+0x7e3b4	StrategList_AddAlienSiteIfValid	108	strat	yes	yes	yes		yes
 0x7e420	StrategList_MaybeSpawnCraft_Process	124	strat	yes	yes	yes	World_HookProcessEvents	yes
 0x7e49c	Geoscape_SpawnMissionSite	4464	strat	yes	yes	yes	World_FillMissionCtx	yes
 0x7f60c	StrategEntry_InitTravel	1420	strat	yes	no	yes		yes
@@ -302,7 +302,7 @@
 0x83890	StrategList_ctor	16	strat	yes	yes	yes		yes
 0x838a0	StrategList_RegisterAtexit	12	strat	yes	yes	yes		yes
 0x838ac	StrategList_Clear	36	strat	yes	yes	yes		yes
-0x838d0	Geoscape_CloseUI_ThunkA	12	strat	yes	no	yes	App_Run|World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
+0x838d0	Geoscape_CloseUI_ThunkA	12	strat	yes	yes	yes	App_Run|World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
 0x838dc	Smap_BeginCraftSelect	2424	strat	yes	yes	yes	World_BeginCraftSelectThunk|World_WireMissionSeams|StatusPanel_DrawDescentPanel	yes
 0x84254	Smap_CancelTarget	152	strat	yes	yes	yes	World_SmapCancelTargetThunk|World_WireOptions	yes
 0x842ec	Smap_ConfirmCraftTarget	316	strat	yes	yes	yes	World_SmapConfirmCraftTargetThunk	yes
@@ -327,26 +327,26 @@
 0x853e4	Smap_ConfirmSelectedAlt	92	strat	yes	yes	yes	World_SmapConfirmSelectedThunk	yes
 0x85440	Smap_SetWaypoint	132	strat	yes	yes	yes		yes
 0x854c4	Geoscape_OnRadarListClick	804	strat	yes	yes	yes	World_FillInitUiEnv	yes
-0x857e8	Geoscape_OnMapClick_Thunk	12	strat	yes	no	yes	App_Run|World_MapClick|World_MapClickThunk|World_WireGeoscapeFrame	yes
+0x857e8	Geoscape_OnMapClick_Thunk	12	strat	yes	yes	yes	App_Run|World_MapClick|World_MapClickThunk|World_WireGeoscapeFrame	yes
 0x857f4	Geoscape_InitUI	5420	strat	yes	yes	yes	App_HookPlaySample|App_HookNewGame|World_NewGame|Load_HookInitUi	yes
 0x86d20	GeoscapeUi_FreeAll	1456	strat	yes	yes	yes	World_Free|World_MissionSeamFreeUi	yes
 0x872d0	Geoscape_OnPointer	8576	strat	yes	yes	yes	App_GeoscapePointerThunk|World_WireGeoscapeFrame|World_GeoscapePointer	yes
 0x89450	Geoscape_OnPointerUp	6992	strat	yes	yes	yes	World_WireGeoscapeFrame|World_GeoscapePointer|PtrUp_Hit	yes
 0x8afa0	Geoscape_UiFocusPrev	596	strat	yes	no	yes	World_GeoscapeFocusScroll|Geoscape_FocusScroll	yes
 0x8b1f4	Geoscape_UiFocusNext	596	strat	yes	no	yes	World_GeoscapeFocusScroll|Geoscape_FocusScroll	yes
-0x8b448	Geoscape_SetPanelFlagA	48	strat	yes	no	yes	World_GeoscapePanelFlag	yes
-0x8b478	Geoscape_SetPanelFlagB	48	strat	yes	no	yes	World_GeoscapePanelFlag	yes
+0x8b448	Geoscape_SetPanelFlagA	48	strat	yes	yes	yes	World_GeoscapePanelFlag	yes
+0x8b478	Geoscape_SetPanelFlagB	48	strat	yes	yes	yes	World_GeoscapePanelFlag	yes
 0x8b4a8	Geoscape_OnMapClick	1184	strat	yes	yes	yes	App_HoverOnRegion|App_Run|World_MapClick|Geoscape_OnMapClick_Thunk	yes
 0x8b94c	Geoscape_CloseUI	2100	strat	yes	yes	yes	World_CloseGeoscapeThunk|World_SoldierToggleThunk|World_CloseGeoscapeHook|World_ResearchCancelThunk|World_StartNewHook|World_WireGeoscapeClock|World_CloseGeoscape|World_WireOptions|World_WireGeoscapeFrame|OptionsScreen_Init	yes
 0x8c180	Geoscape_Draw	33744	strat	yes	yes	yes	App_GeoscapeDrawThunk|World_WireOptions|World_DrawGeoscapeFrame|Geoscape_BlitMapView|Geoscape_BlitCrosshair|StatusPanel_DrawAt|Geoscape_DrawRadarArm	yes
 0x94550	Geoscape_GameTickStub	4	strat	yes	yes	yes	App_GameTickOnce|Geoscape_Draw|GameTick_OnTimer	yes
 0x94554	Game_StartNew	3976	strat	yes	yes	yes	App_HookNewGame|Geoscape_InitUI	yes
 0x954dc	Geoscape_PulseUpdate	1812	strat	yes	yes	yes	App_GeoscapePulseThunk|World_HookSpawnMissionSite|World_PulseTact|World_PulseGeoscape	yes
-0x95fa4	Base_GrantStarterItems	124	strat	yes	no	yes		yes
-0x96020	Geoscape_CloseUI_ThunkB	12	strat	yes	no	yes	World_TransferCloseThunk|World_WireGeoscapeFrame|TransferScreen_CloseThunk|FundingScreen_CloseThunk	yes
+0x95fa4	Base_GrantStarterItems	124	strat	yes	yes	yes		yes
+0x96020	Geoscape_CloseUI_ThunkB	12	strat	yes	yes	yes	World_TransferCloseThunk|World_WireGeoscapeFrame|TransferScreen_CloseThunk|FundingScreen_CloseThunk	yes
 0x96894	Smap_SumSiteScores	120	strat	yes	yes	yes		yes
 0x98b50	Smap_GrantSiteRecovery	2572	strat	yes	yes	yes	World_HookGrantSiteRecovery	yes
-0x9a8c0	Geoscape_CloseUI_ThunkC	12	strat	yes	no	yes	World_UfopaediaCloseThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
+0x9a8c0	Geoscape_CloseUI_ThunkC	12	strat	yes	yes	yes	World_UfopaediaCloseThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
 0x114d8	Options_SaveToRegistry	488	strat-ui	yes	yes	yes	App_HookSaveOptions|World_TactInputSyncIn	yes
 0x16494	MenuBtn_EndTurn	36	strat-ui	yes	yes	yes	World_TactStepSyncIn|void|Menu_EndTurn	yes
 0x18864	Menu_OpenLoadSlots	64	strat-ui	yes	yes	yes	World_TactSlotListCall|void|Menu_OpenSlotList	yes

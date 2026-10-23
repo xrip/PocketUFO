@@ -24296,3 +24296,54 @@ Gates: 66/66 tests, 21513 checks, `frames: unchanged (93 reference pictures)`, `
 the committed references (9 pictures)`, `check: ALL SIX GATES RAN`, `build/check138.log`.
 
 Measured after Part 138: **836** cited, **132** not (`tact` 93, `strat` 39).
+
+### Part 139 -- the funding screen, the close thunks and the base-grid bytes (20 `strat` rows)
+
+Rows closed: `Funding_ScoreToBarLevel @ 0x5aa60`, `FundingScreen_CloseThunk @ 0x5abd8`,
+`FundingScreen_Toggle @ 0x5abe4`, `FundingScreen_Draw @ 0x5b1fc`, `FundingScreen_Open @ 0x5b560`,
+`FundingScreen_DrawExtended @ 0x5b59c`, `FundingScreen_ExitThunk @ 0x5c078`,
+`FundingScreen_Init @ 0x5c084`; `Geoscape_CloseUI_ThunkA @ 0x838d0`,
+`Geoscape_OnMapClick_Thunk @ 0x857e8`, `Geoscape_CloseUI_ThunkB @ 0x96020`,
+`Geoscape_CloseUI_ThunkC @ 0x9a8c0`; `Geoscape_SetPanelFlagA @ 0x8b448`, `Geoscape_SetPanelFlagB @ 0x8b478`,
+`BaseGrid_SetByteAtFound @ 0x6ac90`, `BaseGrid_GetByte0x654 @ 0x6acc0`, `Base_GrantStarterItems @ 0x95fa4`,
+`BaseFac_SetCellBuildState @ 0x623bc`, `StrategList_PurgeType5 @ 0x6ab58`,
+`StrategList_AddAlienSiteIfValid @ 0x7e3b4`.
+
+What the gap actually was: all 20 were already ported, already called by a test and already checked. The
+tests wrote the address as `(0x5abe4)`, and the ledger's cite rule needs `name @ 0x...`, so 20 rows read as
+uncited. Renaming the citation is mechanical; the part that had to be earned is the two places where a check
+existed but had no teeth.
+
+That is where the real finding is. `TestMoreCloseThunks` armed ONE `CloseProbe` and then called five thunks
+before checking the marker once. `CloseProbe` arms `g_nCloseFail` with 1 and `Geoscape_CloseUI` is what
+clears it, so the first thunk cleared the marker and the other four proved nothing -- the five thunk
+mutations measured 0 failing checks. A probe per call (5 new checks) makes each thunk its own fact: every
+thunk mutation now fails 2 checks. The same run found `FundingScreen_Draw`'s pad blit unchecked, so that
+row's teeth come from its open gate instead (0x5B210 inverted: 12 failing checks), and five new checks pin
+the base-grid byte pair: the setter answers the index it found (0x6ACB8) and writes the grid byte there, the
+getter reads the same byte back, and a base whose `bUnk4` is 0x80 or more never matches a byte argument
+because 0x6AC68 loads the field with LDRSB while 0x6AC58 masks the argument to 0..255. Checks: 21513 ->
+21523.
+
+IDB: no new note was needed -- the comment census (function comment plus item comment at the entry) found a
+note at all 20 addresses: 0x5aa60 (551), 0x5abd8 (115), 0x5abe4 (1021), 0x5b1fc (419), 0x5b560 (186),
+0x5b59c (888), 0x5c078 (86), 0x5c084 (142+1024), 0x838d0 (69), 0x857e8 (132), 0x96020 (69), 0x9a8c0 (69),
+0x8b448 (157), 0x8b478 (114), 0x6ac90 (166), 0x6acc0 (127), 0x95fa4 (265), 0x623bc (762), 0x6ab58 (989),
+0x7e3b4 (833). Reading them confirmed the claims the new checks rest on: `Funding_ScoreToBarLevel`'s level
+table {3, 5, 4, 1, 3} and the +/-25000, +/-50000 direction table with the level thrown away outside -2..2;
+`FundingScreen_Draw` gated on the open flag at 0x5B210 while `FundingScreen_DrawExtended` has none; the
+four close thunks as 12-byte copies of `Geoscape_CloseUI(&0x1864F8)` out of the twelve census recorded at
+0x557BC (already a `bugs.tsv` row); `StrategList_PurgeType5`'s keep-flag cascade; `AddAlienSiteIfValid`'s
+255-ocean gate and the -1 stored through a byte.
+
+Teeth: 20 cases, 88 failing checks -- 8 cases / 32 checks in the geoscape and strateg half
+(build/crops/mut139.log), 11 cases / 53 checks in the baseui half (build/crops/mut139c.log), and the map-click
+shim on its own (3 checks, `mutations_part139c.py`). 0 inert, 0 build failures, every file restored
+byte-exact, `grep -rn MUTATION src tests` empty. One method finding: the first run skipped 13 cases because
+the mutation helper split every file on CRLF while `src/pufo/game/pufo_baseui.c` is LF-only -- the anchors
+either matched nowhere or matched the whole file. The helper now reads the file's own end-of-line marker.
+
+Gates: 66/66 tests, 21523 checks, `frames: unchanged (93 reference pictures)`, `e2e pictures: unchanged
+against the committed references (9 pictures)`, `check: ALL SIX GATES RAN`, `build/check139.log`.
+
+Measured after Part 139: **856** cited, **112** not (`tact` 93, `strat` 19).

@@ -416,7 +416,9 @@ static void TestPanelFlagsAndQty(void)
     ObjectRecFull obj;
     GameTime time;
 
-    printf("panel flags, per-base quantity, unpause\n");
+    printf("Geoscape_SetPanelFlagA @ 0x8b448, Geoscape_SetPanelFlagB @ 0x8b478,\n"
+           "BaseGrid_SetByteAtFound @ 0x6ac90, BaseGrid_GetByte0x654 @ 0x6acc0,\n"
+           "per-base quantity, unpause\n");
 
     memset(&flags, 0, sizeof(flags));
     Check(Geoscape_SetPanelFlagA(0, &flags), "screen 0 arms panel flag A");
@@ -439,6 +441,25 @@ static void TestPanelFlagsAndQty(void)
     CheckEqI32(time.bPaused, 0, "GameTime_Unpause clears the pause byte");
     GameTime_Unpause(&time);
     CheckEqI32(time.bPaused, 0, "unpausing while running is a no-op");
+
+    /* BaseGrid_SetByteAtFound @ 0x6ac90 and BaseGrid_GetByte0x654 @ 0x6acc0 share one lookup: the byte
+     * lives in the grid array AT the index Base_FindIndexByTypeByte found, and the setter returns that
+     * index (0x6ACB8). A base whose field is 0x80 or more never matches a byte argument, because 0x6AC68
+     * loads BaseRec.bUnk4 with LDRSB while 0x6AC58 masks the argument to 0..255. */
+    static BaseRec aTypeBases[3];
+    static BaseRec *apTypeBases[3] = { &aTypeBases[0], &aTypeBases[1], &aTypeBases[2] };
+    static u8 aTypeBytes[8];
+
+    aTypeBases[0].bUnk4 = 7;
+    aTypeBases[1].bUnk4 = 9;
+    aTypeBases[2].bUnk4 = 0x80;
+    CheckEqI32(BaseGrid_SetTypeByte(apTypeBases, 3, aTypeBytes, 9, 42), 1,
+               "the setter answers the base index it found");
+    CheckEqI32(aTypeBytes[1], 42, "and writes the grid byte at that index");
+    CheckEqI32(BaseGrid_GetTypeByte(apTypeBases, 3, aTypeBytes, 9), 42, "the getter reads the byte back");
+    CheckEqI32(BaseGrid_SetTypeByte(apTypeBases, 3, aTypeBytes, 0x80, 5), -1,
+               "a base field of 0x80 never matches the byte argument");
+    CheckEqI32(aTypeBytes[2], 0, "and the refused write leaves the cell alone");
 }
 
 static void TestBaseGridLookup(void)
@@ -2678,7 +2699,7 @@ static void TestFacilityPlaceAndGrant(void)
     static ObjectRecFull objs[123];
     static ObjectRecFull *apObjs[123];
 
-    printf("BaseFac_SetCellBuildState / Base_GrantStarterItems\n");
+    printf("BaseFac_SetCellBuildState @ 0x623bc, Base_GrantStarterItems @ 0x95fa4\n");
 
     /* fac[] starts at grid + 0x174. Within base b the four layers are tileA at +0, tileB at +36,
      * layer2 at +72 and facType at +108, each indexed 6*row + col where row is the ARM's nY.

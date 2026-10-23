@@ -222,7 +222,7 @@ static void TestOptionsPanelPaging(void)
 
 static void TestFundingHelpers(void)
 {
-    printf("Funding_ScoreToBarLevel and Funding_DeltaToArrow\n");
+    printf("Funding_ScoreToBarLevel @ 0x5aa60 and Funding_DeltaToArrow\n");
 
     CheckEqI32(Funding_ScoreToBarLevel(0, 1), 75000, "score 0 is level 3, one step is 25000");
     CheckEqI32(Funding_ScoreToBarLevel(1, 2), 250000, "score 1 is level 5, two steps is 50000 each");
@@ -3758,8 +3758,28 @@ static void TestMoreCloseThunks(void)
     GeoscapeCloseEnv hk;
     MapClickHooks mk;
 
-    printf("five more close thunks, the map click shim\n");
+    printf("FundingScreen_CloseThunk @ 0x5abd8, FundingScreen_ExitThunk @ 0x5c078,\n"
+           "Geoscape_CloseUI_ThunkA @ 0x838d0, Geoscape_CloseUI_ThunkB @ 0x96020,\n"
+           "Geoscape_CloseUI_ThunkC @ 0x9a8c0, Geoscape_OnMapClick_Thunk @ 0x857e8\n");
 
+    /* Each thunk gets its own probe: CloseProbe arms g_nCloseFail with 1 and Geoscape_CloseUI is what
+     * clears it, so a probe per call is the only way to tell which thunk reached the dispatcher -- one
+     * probe after five calls is cleared by the first one and says nothing about the other four. */
+    CloseProbe(&hk);
+    FundingScreen_CloseThunk(&hk);
+    CheckEqI32(g_nCloseFail, 0, "FundingScreen_CloseThunk reaches the dispatcher");
+    CloseProbe(&hk);
+    FundingScreen_ExitThunk(&hk);
+    CheckEqI32(g_nCloseFail, 0, "FundingScreen_ExitThunk reaches the dispatcher");
+    CloseProbe(&hk);
+    Geoscape_CloseUI_ThunkA(&hk);
+    CheckEqI32(g_nCloseFail, 0, "Geoscape_CloseUI_ThunkA reaches the dispatcher");
+    CloseProbe(&hk);
+    Geoscape_CloseUI_ThunkB(&hk);
+    CheckEqI32(g_nCloseFail, 0, "Geoscape_CloseUI_ThunkB reaches the dispatcher");
+    CloseProbe(&hk);
+    Geoscape_CloseUI_ThunkC(&hk);
+    CheckEqI32(g_nCloseFail, 0, "Geoscape_CloseUI_ThunkC reaches the dispatcher");
     CloseProbe(&hk);
     FundingScreen_CloseThunk(&hk);
     FundingScreen_ExitThunk(&hk);
@@ -13287,7 +13307,7 @@ static void TestFundingRecompute(void)
     /* A. The pad and the close control. */
     FundFixture(&env, 4, 5);
     FundingScreen_Init(&env);
-    Check(g_pFundPad != NULL, "the funding pad is allocated (0x5C090)");
+    Check(g_pFundPad != NULL, "FundingScreen_Init @ 0x5c084 allocates the funding pad (0x5C090)");
     Check(g_pFundPad != NULL && g_pFundPad->uWidth != 0 && g_pFundPad->uHeight != 0,
           "and PadImage_Load(\"funding\", 28) filled it from the shipped archives (0x5C0B8)");
     CheckEqI32(g_pFundPad != NULL ? g_pFundPad->nOriginX : -1, 0, "the pad origin is x 0 (0x5C0C8)");
@@ -13416,8 +13436,8 @@ static void TestFundingRecompute(void)
 }
 
 /* ---------------------------------------------------------------------------
- * The funding screen's own UI: FundingScreen_Toggle (0x5abe4), FundingScreen_Open (0x5b560),
- * FundingScreen_Draw (0x5b1fc) and FundingScreen_DrawExtended (0x5b59c).
+ * The funding screen's own UI: FundingScreen_Toggle @ 0x5abe4, FundingScreen_Open @ 0x5b560,
+ * FundingScreen_Draw @ 0x5b1fc and FundingScreen_DrawExtended @ 0x5b59c.
  * ------------------------------------------------------------------------- */
 
 static u8        g_bFundOpen;

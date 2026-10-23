@@ -6342,3 +6342,17 @@ Progress (Part 138): 23 `strat` rows close -- 836 cited / 132 uncited (`tact` 93
   mut138.log, mut138c.log), 0 build failures in the final set, all restored byte-exact. Gates: 66/66 tests,
   21513 checks, 93 frames and 9 e2e pictures unchanged. Next: `tact` 93 and `strat` 39 remain; PLAN rows 117a,
   118a, 118b, 118c, 119a, 119b's 4994 half, 120b and 121a stay open.
+Progress (Part 139): 20 `strat` rows close -- 856 cited / 112 uncited (`tact` 93, `strat` 19). Every row was
+  ported, called and checked already; the tests wrote `(0x5abe4)` where the ledger's cite rule needs
+  `name @ 0x5abe4`, which is why 20 rows read as uncited. Two checks had no teeth and that is the Part's real
+  finding: `TestMoreCloseThunks` armed one probe, called five thunks and checked the marker once -- the first
+  thunk clears it, so four thunks were unproven (their mutations measured 0 failing checks) until a probe per
+  call was added; and `FundingScreen_Draw`'s pad blit is unchecked, so that row's teeth come from its 0x5B210
+  open gate. New checks: 5 per-thunk probes, 5 for the base-grid byte pair (the setter answers the found index
+  and writes the byte there; a `bUnk4` of 0x80 never matches a byte argument because 0x6AC68 loads it signed).
+  Teeth: 20 cases, 88 failing checks, 0 inert (mut139.log 8/32, mut139c.log 11/53, the map-click shim 3).
+  Method: the first mutation run skipped 13 cases because the helper assumed CRLF while pufo_baseui.c is
+  LF-only -- read the file's own end-of-line marker. No `bugs.tsv` row (the twelve-copy census is already the
+  0x557BC row; the other finding was in a test). No IDB note (the census found a comment at all 20 addresses).
+  Gates: 66/66 tests, 21523 checks, 93 frames and 9 e2e pictures unchanged. Next: `tact` 93 and `strat` 19
+  remain; PLAN rows 117a, 118a, 118b, 118c, 119a, 119b's 4994 half, 120b and 121a stay open.
