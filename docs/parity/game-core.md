@@ -23236,3 +23236,108 @@ back at 995, 996 and 991. `Data @ 0x187328` got its real 256-byte item and a 444
 reported ok. The ledger's address-to-port-function map stayed at 604/968 (these port functions keep the original
 names except the timer and template families), and reach stayed 965/968 with the same three entry points
 unreached.
+
+## Part 127 - `save` closed: 35 rows, 387 left, and a chunk payload that is a stream not a struct
+
+The thirty-five `save` rows went through the row-121a method: `Save_ReadObjBefore @ 0x3f0e8`,
+`Save_WriteObjBefore @ 0x3f158`, `Save_ReadStrategVer @ 0x3f1c8`, `Save_WriteBases @ 0x3f1fc`,
+`Save_WriteProduct @ 0x3f4f4`, `Save_WriteResearch @ 0x3f558`, `Save_WriteShips @ 0x3f6dc`,
+`Save_WriteSmap @ 0x3fa28`, `Save_WriteStrateg @ 0x3fbb4`, `Save_WriteTime @ 0x40204`,
+`Save_ReadBases @ 0x402c0`, `Save_ReadProduct @ 0x4062c`, `Save_ReadResearch @ 0x406e8`,
+`Save_ReadShips @ 0x4086c`, `Save_ReadSmap @ 0x40c4c`, `Save_ReadStrateg @ 0x40f4c`,
+`Save_ReadTime @ 0x41600`, `Save_ReadSoldiers @ 0x416bc`, `Save_WriteSoldiers @ 0x42350`,
+`Save_AssignRosterIndices @ 0x42ea0`, `Save_WriteFlobjs @ 0x42f48`, `Save_AllocFlobjs @ 0x431ac`,
+`Save_ReadFlobjs @ 0x43258`, `Save_ReadMap @ 0x433d8`, `Save_WriteMap @ 0x438e0`,
+`Save_WriteTeamUnits @ 0x43c84`, `Save_ReadRmp @ 0x43ee0`, `Save_ReadTeamUnits @ 0x44020`,
+`Save_ReadTGameData @ 0x44248`, `Save_WriteTGameData @ 0x446a8`, `Save_WriteGameState @ 0x44928`,
+`Save_ReadGameState @ 0x44958`, `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`,
+`SaveSlot_FormatList @ 0x45904`. Rows with a test cite at their own address 555 -> 581, without one
+410 -> 387; `strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30 and `app-shell` 3 are what
+row 121a has left. Reach stays 965/968 with the same three process entry points unreached.
+
+### A chunk payload is the call order, not the struct layout
+
+This is the Part's main method result, and it is the reason the `save` rows were the most expensive so far.
+A DatFile chunk body is a byte stream produced by a chain of `DatFile_Write`/`DatFile_Read` calls, and the
+on-disk position of a field is the position of its call in that chain -- which is neither the struct's
+declaration order nor the memory offset order. The port's write and read orders are symmetric, so a field
+reorder that keeps every size round-trips through the port's own tests and is invisible: the file the port
+writes is self-consistent and no longer matches what the original writes. The pre-existing `test_save.c`
+round-trip checks had exactly this blind spot, and the first draft of the new checks ran straight into it --
+seventeen research checks failed with messages like "record byte 0 (0x3F620): got 10, want 2" because they
+were written in the struct's field order while 0x3F5E0..0x3F6B4 runs +9, +0x1F, +4, +0x14, +0, +0xA, +8,
++0x1E, +0x21, +0x19, +15, +6, +0x20, +2.
+
+The fix is to pin the file, not the struct: about 150 new `FileByteAt` checks in `tests/test_save.c`, each on
+the byte position the original's own call produces. Those are what the mutations now break, and they break
+several at a time -- 41 checks fail when the soldiers count is written 4 bytes wide instead of 2, 42 when the
+second 2-byte count read in `Save_ReadSoldiers` is dropped, 19 when `Save_WriteStrateg` moves `nType` to the
+front of the record.
+
+### What the instructions said, once the byte positions were derived from them
+
+Widths the original chose per field, all now checks rather than comments: the four team-units counts are 1, 1,
+4, 4 bytes (`DatFile_Write` called at 0x43CAC for Xcom, 0x43D5C for aliens, 0x43DDC for the dead-soldier list,
+0x43E5C for the hidden list), the flobjs count is 4 on the write side (0x42F74) but 1 or 4 on both read sides depending on
+`Map+0x118` (`MOV R2,#1` at 0x431C4 with `MOVNE R2,#4` at 0x431E0, and the same pair at 0x43274/0x43280), the
+ship count is one byte of a 4-byte global (0x3F704), the soldier count is the 2 bytes at `MOV R2,#2` 0x42374 /
+`BL` 0x4237C, and the mission count in `SaveGame` is 1 (0x44AA0) although the value is a dword.
+
+`Map_nObjectCount` is re-loaded every iteration. In `Save_ReadObjBefore` the count is `LDRH` at 0x3F108 and
+then loaded again at 0x3F134 inside the loop -- and again in the writer at 0x3F178 and 0x3F1A4. The bound is
+live memory, not a register saved at entry, and `Save_AssignRosterIndices` does the same twice (0x42ECC..0x42EF4
+for soldiers with a signed `BLT`, 0x42F14..0x42F3C for items with an unsigned `BCC`).
+
+Two version gates are signed or strict, and both are checked with a value that only the correct form accepts:
+`Save_ReadProduct` selects the new 0x1900/0x1900/0xC80 sizes against the old 0x1200/0x1200/0x900/0x480 through
+`LDRSB R3,[R0,#0x64]` at 0x40644 with `CMP R3,#3` + `BGE` at 0x40650/0x40654 -- the byte is signed, so a save
+carrying 0xFF takes the old branch -- and `Save_ReadBases` gates the 8-versus-4 read at 0x403A4 and the
+`bUnk158848` read at 0x403E0 on version >= 3. `Save_ReadStrateg` gates `nTargetX`/`nTargetY` at 0x41554 on the
+build's own `0x18655C`, not on the version byte the file carries (that one is read into a scratch at 0x40F78 and
+discarded), which is why an old save gets 105-byte records against the writer's 113.
+
+Free-then-read and find-then-free are different in the two loaders: `Save_ReadBases` frees the records the game
+still holds at 0x402D0..0x40310 using the count from before the read, while `Save_ReadShips` calls FindChunk at
+0x4087C first and only then frees at 0x40888..0x408C8. `Save_AllocFlobjs` frees nothing at all.
+
+Positions that carry no value of their own but do carry the whole chunk: the smap site record is walked with
+stride 0x2E6 = 742 while only 740 bytes are emitted (+0x206, +0x202, +1, +0x2E4, +2 for 0x200, +0x205, +0x204,
++0, +0x2D0 for 0x14, +0x208 for 0xC8 -- the bytes at +0x207 and +0x2E5 are never on disk), so site 199 lands at
+20 + 199 * 740 and the 5+8+8 tails follow at 20 + 200 * 740; `Save_ReadRmp` reads the level block LAST
+(0x43F7C) after the 0x4B0 of names (0x43F68); `Save_ReadSoldiers` re-finds the soldiers chunk at 0x417BC and
+reads its 2-byte count a second time at 0x417D4, which is what keeps every body record aligned.
+
+### Rules the Part learned the hard way
+
+Two cases came back with no teeth from the first sweep, and both were the same mistake in a new shape.
+`Save_ReadSmapSite`'s field order (0x40E3C, 0x40E54, 0x40E64, 0x40E74, 0x40E84, 0x40E9C, 0x40EAC, 0x40EBC,
+0x40ECC, 0x40EDC) had five byte-position pins on the written file but no check on what the reader puts those
+bytes into, so swapping `bFlag1` and `bHasLoot` on the read side failed nothing: the fixture carried 0xBB and
+0x11 at those two positions and no assertion looked at the fields after a read. Five read-side checks closed
+it. `SaveSlot_FormatList` pads a day with a leading "0" only while the day is strictly below 10, and the
+fixture's days were 15 and 1, so turning the gate into `< 11` failed nothing either; two slots at 27092520 s
+(day 10 of month 11 at 13:42) and 27006120 s (day 9) now pin the boundary itself, and the mutation produces
+"010.11.1999 13:42". A pin on a byte is not yet a pin on the field that byte is read into.
+
+A cite has to be earned by the checks it sits on -- Part 121's rule, and it fired again. A comment in
+`tests/test_save.c` that only contrasted `Save_ReadSmap` with `Smap_ZoomIn @ 0x81e44` gave that `strat` row a
+cite for free; the text now names it as `(0x81e44, pinned in tests/test_strateg.c)` and the row went back to
+uncited, which is why `strat` is 90 rather than 89.
+
+One IDB claim was wrong. The note on `Save_WriteStrateg @ 0x3fbb4` said `nType` "is written twelfth in the
+record". Counting the 33 per-item writes along the BL chain 0x3FE88..0x401D0 puts it 21st, at record byte 67,
+and the test cite says that now.
+
+### Measured
+
+Gates ran all six with `CHECK EXIT=0` (`build/check127.log`): Release 65/65 and Debug 65/65, coverage
+972/1103 functions and 596888/598792 bytes unchanged, `check: OK -- 135 artifact rows, 131 uncited functions,
+0 of them real gaps`, 20,988 checks (+169), 93 frame pictures and 9 e2e pictures unchanged.
+
+Teeth: 35 cases in `docs/parity/mutations_part127.py`, one per row. The first sweep had 33 cases failing 2 to
+42 checks and 2 inert; after the seven new checks the whole sweep was re-run and all 35 fail, 2 to 42 checks
+each, 240 failing checks in total, 0 skipped, every file back to its exact bytes and `grep -rn "MUTATION" src
+tests` empty. IDB comments written and read back at 0x3f0e8 (933), 0x3f158 (667), 0x3fa28 (929), 0x3fbb4 (688,
+the corrected ordinal), 0x3f558 (890), 0x406e8 (833), 0x40204 (809), 0x41600 (698), 0x416bc (940), 0x42ea0 (906)
+and 0x44958 (652) -- six of them had no note at all and two were stubs of 24 and 47 characters -- `idb_save`
+reported ok. Reach stayed 965/968 with residue 0 and the address-to-port-function map stayed at 604/968.

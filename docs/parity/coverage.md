@@ -169,3 +169,18 @@ stores strlen+1, so the longest value that reads back is 254 characters -- the p
 bytes are accepted was wrong, and the new test failed before the comment was corrected. Measured after Part 126:
 **555** cited, **410** not (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `save` 26 left;
 `app-shell` closed -- its three process entry points stay cited-but-unreached, exercised only by `tools/e2e.sh`).
+
+Part 127 closed the 35 `save` rows and produced the rule that the whole save family needed: a DatFile chunk is a
+byte stream, so a field's position is the position of its `DatFile_Write`/`DatFile_Read` call, not its place in the
+struct. The port's write and read orders are symmetric, which makes a same-size reorder round-trip invisibly -- the
+file stays self-consistent and simply stops matching what the original writes. About 150 `FileByteAt` checks in
+`tests/test_save.c` now pin the byte the original's own call emits (research records at +9, +0x1F, +4, +0x14, +0,
++0xA, +8, +0x1E, +0x21, +0x19, +15, +6, +0x20, +2 over a 0x22 stride; smap sites written 740 of their 742-byte
+stride, so site 199 lands at 20 + 199 * 740; the rmp level block last at 0x43F7C; the soldiers count read twice,
+0x416D4 and 0x417D4). Teeth: 35 cases, one per row; the first sweep left 2 with no teeth and both were the same
+mistake -- a pin on a byte that is not a pin on the field that byte is read into (`Save_ReadSmapSite`'s five
+one-byte flags), and a pad gate whose boundary was never exercised (`nDay < 10` with fixture days 15 and 1). Seven
+new checks later the re-run fails 2 to 42 checks in all 35 cases. Measured after Part 127: **581** cited, **387**
+not (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `app-shell` 3 left; `save` closed). One cite
+was removed on purpose: a comment that only contrasted `Save_ReadSmap` with `Smap_ZoomIn @ 0x81e44` handed that
+`strat` row a cite it had not earned, and the ledger now counts it uncited again.

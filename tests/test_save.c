@@ -116,6 +116,21 @@ static void FillSoldier(Soldier *pUnit)
     pUnit->bInTact = 1;
 }
 
+/* Save_ReadSoldiers @ 0x416bc (3220 bytes) is three parts in one function.
+ * 1. "stactflg" is OPTIONAL: FindChunk at 0x416D0 then DatFile_ChunkPresent at 0x416D8, and the ANDS at
+ *    0x416E8 is what the BEQ at 0x41704 tests -- the LDRH/MOV between them leave the flags alone. The
+ *    present arm (0x41708..0x4175C) reads ONE byte per soldier and stores it as (byte == 1) at
+ *    Soldier+0x40E (MOV R0,#1 at 0x41730, MOVNE R0,R8 at 0x41740, STRB at 0x41744), so only a stored 1
+ *    means in-mission. The absent arm (0x41770..0x417B0) fills every soldier from LOBYTE(Map+0x00), the
+ *    tactical flag. Both arms are followed in TestSoldierTacticalArms.
+ * 2. Then "soldiers" is re-found at 0x417BC -- FindChunk rewinds to the chunk start -- and its 2-byte
+ *    count is read a SECOND time (0x417D4) into the same global the first read used. A reader that
+ *    skips that second 2-byte read starts every body two bytes early.
+ * 3. The body: 92 reads per soldier, in the order the checks below follow -- including a 3-byte read
+ *    whose value is dropped (0x419E0 leaves Soldier+0x10 alone), the 0xFF filler arm at 0x41AD8, the
+ *    forced 0x7FFF backpack slots at 0x42B00..0x42B18 and the link fields resolved through the roster
+ *    this same read has just filled (0x42B58, 0x42B9C, 0x42BEC, 0x42C14, and the spotted list at
+ *    0x42214, which TestSoldiersCellLink follows). */
 static void TestSoldierRoundTrip(void)
 {
     static DatFile dat;
@@ -290,9 +305,35 @@ static i32 FileSizeOf(const wchar_t *pwPath)
     return cb;
 }
 
-/* The gamestate chunk is the clearest case of the original's save/load asymmetry:
- * what is written is the tactical flag, what is read back goes into a DIFFERENT
- * slot-state byte. The port keeps both cells explicit. */
+/* One byte of a written container. A total size says how much was written; this says
+ * WHERE it landed, which is what pins a field order rather than a field count. */
+static i32 FileByteAt(const wchar_t *pwPath, i32 nOff)
+{
+    HANDLE hFile = CreateFileW(pwPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    u8    b      = 0;
+    DWORD cbRead = 0;
+    i32   nGot   = -1;
+
+    if (hFile != INVALID_HANDLE_VALUE) {
+        if (SetFilePointer(hFile, nOff, NULL, FILE_BEGIN) != INVALID_SET_FILE_POINTER &&
+            ReadFile(hFile, &b, 1, &cbRead, NULL) && cbRead == 1) {
+            nGot = (i32)b;
+        }
+        (void)CloseHandle(hFile);
+    }
+    return nGot;
+}
+
+/* Save_WriteGameState @ 0x44928 (48 bytes): BeginChunk("gamestate") at 0x44934, then POP {LR} at
+ * 0x44944 and the TAIL `B DatFile_Write` at 0x44948 with pBuf = Map_bTactFlag and nSize 1
+ * (MOV R2,#1 at 0x4493C). BeginChunk's answer is dropped: the write is issued whatever it said.
+ * The port aborts on a refused BeginChunk instead, which is the only difference between the two.
+ *
+ * Save_ReadGameState @ 0x44958 (48 bytes): FindChunk("gamestate") at 0x44964 and the tail
+ * `B DatFile_Read` at 0x44978 with pBuf = unk_15821C (bGameState) and nSize 1 (0x4496C). It does
+ * NOT read back into Map_bTactFlag, the cell the write used. That asymmetry is the whole content
+ * of this chunk and the checks below name both ends of it. */
 static void TestGameStateChunk(void)
 {
     static DatFile dat;
@@ -305,8 +346,14 @@ static void TestGameStateChunk(void)
 
     /* 4 + 2*21 = 46 header bytes, then the chunk's one data byte. */
     CheckEqI32(FileSizeOf(L"test_save3.tmp"), 46 + 1, "  file is header + one byte");
+    CheckEqI32(FileByteAt(L"test_save3.tmp", 46), 1,
+               "  the tactical flag byte lands at file offset 46");
+    CheckEqI32(FileByteAt(L"test_save3.tmp", 47), -1, "  nothing is written after it");
 
     Check(OpenRead("test_save3.tmp", &dat), "  reopened");
+    Check(DatFile_FindChunk(&dat, "gamestate"),
+          "  the tag both original functions name (0x4492C, 0x4495C) finds the chunk");
+    Check(!DatFile_FindChunk(&dat, "gamestat"), "  a truncated tag finds nothing");
     Check(Save_ReadGameState(&dat, &bSlotState), "  read the gamestate byte");
     CheckEqI32(bSlotState, 1, "  the byte landed in the slot byte, not the flag");
     DatFile_Close(&dat);
@@ -317,6 +364,18 @@ static void TestGameStateChunk(void)
     remove("test_save3.tmp");
 }
 
+/* Save_ReadObjBefore @ 0x3f0e8 (112 bytes): FindChunk(pszTag) at 0x3F0F4 with pszTag = "objbefore"
+ * (0x3F0EC), then for each of Map_nObjectCount objects (LDRH at 0x3F108, unsigned `CMP #0 / BLS`
+ * at 0x3F10C/0x3F110) one DatFile_Read of nSize 2 (0x3F11C) into `*(Map + 0x108)[i] + 0xCA`
+ * (`LDR R3,[R4,#0x108]` at 0x3F118, `ADD R1,R3,#0xCA` at 0x3F124, BL 0x3F128). The object pointer
+ * table is walked with `ADD R4,R4,#4` at 0x3F13C, and Map_nObjectCount is re-read EVERY iteration
+ * (0x3F134), so a count that changed during a read would change the loop bound mid-loop. FindChunk's
+ * answer is not tested either: with no such chunk the two-byte reads simply fail.
+ *
+ * Save_WriteObjBefore @ 0x3f158 (112 bytes): the same body with BeginChunk at 0x3F164 and the write at
+ * 0x3F198; the count is re-read at 0x3F1A4 the same way. The port passes the count and the pointer
+ * array as arguments instead of reaching both through the Map block -- the one shape difference,
+ * and it is why the port can also refuse a NULL element where the original dereferences it. */
 static void TestObjBeforeChunk(void)
 {
     static DatFile dat;
@@ -338,6 +397,11 @@ static void TestObjBeforeChunk(void)
     /* Only the u16 at 0xCA is serialised: 3 objects -> 6 data bytes. */
     CheckEqI32(FileSizeOf(L"test_save4.tmp"), 46 + 6,
                "  file is header + one u16 per object");
+    /* The stride and the byte order, at the offsets 0x3f194's `ADD R1,R3,#0xCA` lands them on. */
+    CheckEqI32(FileByteAt(L"test_save4.tmp", 46), 100 & 0xFF, "  object 0's low byte is first");
+    CheckEqI32(FileByteAt(L"test_save4.tmp", 47), (100 >> 8) & 0xFF, "  object 0's high byte second");
+    CheckEqI32(FileByteAt(L"test_save4.tmp", 48), 101 & 0xFF, "  object 1 starts at 48, not 47");
+    CheckEqI32(FileByteAt(L"test_save4.tmp", 52), -1, "  six bytes exactly: no field past 0xCA");
 
     for (i32 i = 0; i < 3; ++i) {
         aObjs[i].uRecovScore = 0;
@@ -359,10 +423,42 @@ static void TestObjBeforeChunk(void)
     apObjs[1] = NULL;
     Check(!Save_WriteObjBefore(&dat, apObjs, 3), "  NULL element refused");
     DatFile_Close(&dat);
+
+    /* The count guard runs AFTER BeginChunk (0x3F164 before 0x3F17C), so a zero count still opens
+     * the chunk and writes nothing. The tag is the shared `pszTag` global at 0x3F0EC/0x3F15C. */
+    Check(OpenWrite("test_save5b.tmp", &dat, 2), "  a third container opened");
+    Check(Save_WriteObjBefore(&dat, apObjs, 0), "  a zero count is accepted");
+    DatFile_Close(&dat);
+    CheckEqI32(FileSizeOf(L"test_save5b.tmp"), 46, "  and the chunk carries no data byte");
+
+    /* The deviation this Part records: neither original function tests FindChunk's answer, and
+     * DatFile_Read answers a refusal with a non-zero value (Part 125), so with no such chunk the
+     * original leaves the fields untouched and still answers "success". The port refuses. */
+    apObjs[1] = &aObjs[1]; /* undo the NULL-element fixture, so the refusal below is about the chunk */
+    Check(OpenRead("test_save5b.tmp", &dat), "  reopened");
+    Check(DatFile_FindChunk(&dat, "objbefore"), "  the tag both functions name (0x3F0EC, 0x3F15C)");
+    Check(!Save_ReadObjBefore(&dat, apObjs, 3), "  the port refuses where the original does not");
+    CheckEqI32(apObjs[0]->uRecovScore, 100, "  and the fields are left as they were");
+    DatFile_Close(&dat);
     remove("test_save4.tmp");
     remove("test_save5.tmp");
+    remove("test_save5b.tmp");
 }
 
+/* Save_ReadTime @ 0x41600 (188 bytes): FindChunk("time") at 0x4160C, then eight reads of the GameTime
+ * block that starts at 0x159608, in the original's order and with these sizes:
+ *   4  nGameTotalSec      (R1 = the global, 0x41610; BL 0x41620)
+ *   1  nGameTotalSec + 4  (`ADD R1,R4,#4` at 0x4162C -- the pause byte is INSIDE the same dword cell
+ *                          pair, not a separate global; BL 0x41630)
+ *   4  nTimeLastTickDaySec  (0x41634, BL 0x41640)
+ *   4  nTimeLastTickHourSec (0x41644, BL 0x41650)
+ *   4  nTimeLastTickMinSec  (0x41654, BL 0x41660)
+ *   4  nTimeUnk15963C       (0x41664, BL 0x41670)
+ *   4  nTimeMonthEpochSec   (0x41674, BL 0x41680)
+ *   2  nAlienPoolAddend     (0x41684, POP {R4,LR} at 0x41690, tail `B DatFile_Read` at 0x41694)
+ * That is 27 bytes. The order is not the slot order and not the address order, so the offsets below
+ * are the check: a swapped pair of same-size reads round-trips and still puts the wrong value in the
+ * wrong file position. */
 static void TestTimeChunk(void)
 {
     static DatFile dat;
@@ -387,6 +483,16 @@ static void TestTimeChunk(void)
     /* 4 + 1 + 4*5 + 2 = 27 data bytes. */
     CheckEqI32(FileSizeOf(L"test_save6.tmp"), 46 + 27,
                "  file is header + 27 time bytes");
+    /* The same eight values, at the eight positions 0x41600 reads them back in. */
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 46), 0x44, "  slot 105's dword starts at 46");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 50), 0x55, "  the pause byte is the 5th byte, at 50");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 51), 0x99, "  slot 103 follows the pause byte at 51");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 55), 0xDD, "  slot 102 at 55");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 59), 0x04, "  slot 101 at 59");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 63), 0x08, "  slot 114 at 63");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 67), 0x0C, "  slot 115 at 67");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 71), 0x0E, "  the trailing word at 71 (tail read)");
+    CheckEqI32(FileByteAt(L"test_save6.tmp", 73), -1, "  and 73 bytes is the whole chunk");
 
     memset(&aRead, 0, sizeof(aRead));
     Check(OpenRead("test_save6.tmp", &dat), "  reopened");
@@ -406,6 +512,25 @@ static void TestTimeChunk(void)
     remove("test_save6.tmp");
 }
 
+/* Save_WriteResearch @ 0x3f558 (388 bytes) and Save_ReadResearch @ 0x406e8 (388 bytes) are mirror
+ * images: BeginChunk("research") at 0x3F564 / FindChunk("research") at 0x406F4, four block calls of
+ * 0x900, 0x900, 0x90, 0x90 (auResearchCol 0x3F57C, auManufCol, abResearchZero 0x3F5B0,
+ * byte_160BBC 0x3F5C8), then a 144-iteration loop -- MOV R5,#0x90 at 0x3F5D4, `SUB R5,R5,#1` at
+ * 0x3F6B8, `ADD R4,R4,#0x22` at 0x3F6BC (34 bytes per topic), `CMP R5,#0` + `BHI loc_3F5D8` at
+ * 0x3F6C0/0x3F6C4, an UNSIGNED test -- over fourteen calls in a fixed scrambled order. The record
+ * base is `ADD R4,R4,#4` at 0x3F5D0 / 0x40760, i.e. aResearchTopics + 4: the four bytes in front of
+ * the first topic are not serialised by either half. With R4 at that base, the IDB's own operand
+ * forms give the byte offset of each call:
+ *   0x3F5E0 +9 (1)   0x3F5F0 +0x1F=31 (1)  0x3F600 +4 (2)   0x3F610 +0x14=20 (5)
+ *   0x3F620 +0 (2)   0x3F630 +0xA=10 (5)   0x3F640 +8 (1)   0x3F650 +0x1E=30 (1)
+ *   0x3F660 +0x21=33 (1) 0x3F670 +0x19=25 (5) 0x3F680 +0xF=15 (5) 0x3F690 +6 (2)
+ *   0x3F6A0 +0x20=32 (1) 0x3F6B0 +2 (2), the last BL at 0x3F6B4
+ * All 34 bytes of a record are covered exactly once, in an order that is neither the offset order nor
+ * any struct order. The chunk is 4896 + 144*34 = 9792 bytes, and neither half tests a failed call:
+ * the answer the function gives is whatever the last DatFile_Write / DatFile_Read left in R0, while
+ * the port aborts on the first failure -- the deviation class Part 125 recorded for DatFile_Write.
+ * The pins below are offsets, because a swap of two same-size fields inside that scrambled order
+ * round-trips through the port and still lands on the wrong byte of the file. */
 static void TestResearchChunk(void)
 {
     static DatFile dat;
@@ -431,6 +556,28 @@ static void TestResearchChunk(void)
         written.aTopics[i].abUnlock[3] = (u8)(i + 8);
     }
 
+    /* The four blocks, each with a marker at both ends, and topic 0 with a distinct value per field
+     * so the fourteen scrambled offsets can be read straight out of the file. */
+    written.abHeadA[0] = 0xA1; written.abHeadA[2303] = 0xA2;
+    written.abHeadB[0] = 0xB1; written.abHeadB[2303] = 0xB2;
+    written.abHeadC[0] = 0xC1; written.abHeadC[143] = 0xC2;
+    written.abHeadD[0] = 0xD1; written.abHeadD[143] = 0xD2;
+    memset(&written.aTopics[0], 0, sizeof(written.aTopics[0]));
+    written.aTopics[0].wUnk0      = 0x0102;
+    written.aTopics[0].wUnk2      = 0x0304;
+    written.aTopics[0].wNameId    = 0x0506;
+    written.aTopics[0].wProgress  = 0x0708;
+    written.aTopics[0].bAvailable = 0x09;
+    written.aTopics[0].bComplete  = 0x0A;
+    written.aTopics[0].abUnk10[0] = 0x0B;
+    written.aTopics[0].abUnlock[0] = 0x0C;
+    written.aTopics[0].abUnk20[0] = 0x0D;
+    written.aTopics[0].abUnk25[0] = 0x0E;
+    written.aTopics[0].bUnk30     = 0x0F;
+    written.aTopics[0].bUnk31     = 0x10;
+    written.aTopics[0].bUnk32     = 0x11;
+    written.aTopics[0].bUnk33     = 0x12;
+
     Check(OpenWrite("test_save7.tmp", &dat, 2), "  container opened");
     Check(Save_WriteResearch(&dat, &written), "  research written");
     DatFile_Close(&dat);
@@ -439,14 +586,49 @@ static void TestResearchChunk(void)
     CheckEqI32(FileSizeOf(L"test_save7.tmp"), 46 + 9792,
                "  file is header + the research chunk");
 
+    /* Where the four blocks land, and the record base the loop starts from (46 + 4896). */
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46), 0xA1, "  block A starts the chunk at 46");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 2304), 0xB1, "  block B 2304 bytes later");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4608), 0xC1, "  block C at 46 + 4608");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4752), 0xD1, "  block D at 46 + 4752");
+    /* The chunk is a stream, so the file order IS the call order: position k of a record holds the
+     * k-th call of 0x3f558. Every position below is one of the fourteen calls, in that order. */
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 0),  0x0A, "  call 1, +9 (0x3F5E0)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 1),  0x10, "  call 2, +31 (0x3F5F0)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 2),  0x06, "  call 3, +4 low (0x3F600)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 4),  0x0D, "  call 4, +20 (0x3F610)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 8),  0x00, "  call 4 ends at position 8");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 9),  0x02, "  call 5, +0 low (0x3F620)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 10), 0x01, "  call 5, +0 high");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 11), 0x0B, "  call 6, +10 (0x3F630)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 16), 0x09, "  call 7, +8 (0x3F640)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 17), 0x0F, "  call 8, +30 (0x3F650)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 18), 0x12, "  call 9, +33 (0x3F660)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 19), 0x0E, "  call 10, +25 (0x3F670)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 24), 0x0C, "  call 11, +15 (0x3F680)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 29), 0x08, "  call 12, +6 low (0x3F690)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 30), 0x07, "  call 12, +6 high");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 31), 0x11, "  call 13, +32 (0x3F6A0)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 32), 0x04, "  call 14, +2 low (0x3F6B0)");
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 33), 0x03, "  call 14, +2 high");
+    /* Position 34 is the next record's first byte: topic 1's bComplete, (1 ^ 0x5A). */
+    CheckEqI32(FileByteAt(L"test_save7.tmp", 46 + 4896 + 34), 0x5B,
+               "  the next record starts 34 bytes later (ADD R4,R4,#0x22 at 0x3F6BC)");
+
     memset(&read, 0, sizeof(read));
     Check(OpenRead("test_save7.tmp", &dat), "  reopened");
     Check(Save_ReadResearch(&dat, &read), "  research read");
-    CheckEqI32(read.aTopics[0].wUnk0, 0x100, "  topic 0 wUnk0 round-trips");
-    CheckEqI32(read.aTopics[0].wUnk2, 0x200, "  topic 0 wUnk2 round-trips");
-    CheckEqI32(read.aTopics[0].wNameId, 0x300, "  topic 0 wNameId round-trips");
-    CheckEqI32(read.aTopics[0].wProgress, 0x400, "  topic 0 wProgress round-trips");
-    CheckEqI32(read.aTopics[0].bComplete, 0x5A, "  topic 0 bComplete round-trips");
+    CheckEqI32(read.abHeadA[2303], 0xA2, "  block A is read back as 2304 bytes");
+    CheckEqI32(read.abHeadB[2303], 0xB2, "  block B as 2304 bytes");
+    CheckEqI32(read.abHeadC[143], 0xC2, "  block C as 144 bytes");
+    CheckEqI32(read.abHeadD[143], 0xD2, "  block D as 144 bytes");
+    CheckEqI32(read.aTopics[0].wUnk0, 0x0102, "  topic 0 wUnk0 round-trips");
+    CheckEqI32(read.aTopics[0].wUnk2, 0x0304, "  topic 0 wUnk2 round-trips");
+    CheckEqI32(read.aTopics[0].wNameId, 0x0506, "  topic 0 wNameId round-trips");
+    CheckEqI32(read.aTopics[0].wProgress, 0x0708, "  topic 0 wProgress round-trips");
+    CheckEqI32(read.aTopics[0].bAvailable, 0x09, "  topic 0 bAvailable round-trips");
+    CheckEqI32(read.aTopics[0].bComplete, 0x0A, "  topic 0 bComplete round-trips");
+    CheckEqI32(read.aTopics[0].abUnlock[0], 0x0C, "  topic 0's unlock block round-trips");
     CheckEqI32(read.aTopics[143].wUnk0, 0x100 + 143, "  last topic wUnk0 round-trips");
     CheckEqI32(read.aTopics[143].bUnk33, (143 + 4) & 0xFF, "  last topic bUnk33 round-trips");
     CheckEqI32(read.aTopics[100].abUnlock[3], (100 + 8) & 0xFF, "  an unlock byte round-trips");
@@ -457,6 +639,24 @@ static void TestResearchChunk(void)
     remove("test_save7.tmp");
 }
 
+/* Save_WriteSmap @ 0x3fa28 (396 bytes): BeginChunk("smap") at 0x3FA34, five dwords off g_smapCamera
+ * (R4 = the viewport, 0x3FA38; the base at 0x3FA44, then +4, +8, +0x24, +0x28), then a 200-iteration
+ * site loop -- MOV R5,#0xC8 at 0x3FA90, `ADD R4,R4,R3` at 0x3FB58 with R3 = 0x2E6 = 742, `SUB R5,R5,#1`
+ * at 0x3FB54 and `CMP R5,#0` + `BHI loc_3FA94` at 0x3FB5C/0x3FB60 -- over ten calls per site, in this
+ * order and at these record offsets:
+ *   0x3FAA4 +0x206 (1)   0x3FABC +0x202 (2)   0x3FACC +1 (1)   0x3FADC +0x2E4 (1)   0x3FAEC +2 (0x200)
+ *   0x3FB04 +0x205 (1)   0x3FB14 +0x204 (1)   0x3FB24 +0 (1)   0x3FB34 +0x2D0 (0x14)  0x3FB44 +0x208 (0xC8)
+ * The stride is 742 bytes in memory and 740 on disk: the two gap bytes at +0x207 and +0x2E5 are never
+ * written, which is why the chunk is 20 + 200*740 + 5 + 8 + 8 = 148041 bytes.
+ *
+ * Save_ReadSmap @ 0x40c4c (768 bytes) is NOT the mirror. FindChunk("smap") at 0x40C58, the same five
+ * dwords, and then a gate on the byte at unk_15821C (the gamestate byte the gamestate chunk loads) with
+ * `BNE loc_40E00` at 0x40C9C: when it is zero, a switch on the mode just read -- CMP #0/BEQ at
+ * 0x40CA4/0x40CA8, CMP #1/BEQ at 0x40CAC/0x40CB0, CMP #2/BNE at 0x40CB4/0x40CB8 -- restores that zoom
+ * level's world pair and takes nMapW/nMapH from that level's grid PadImage; a mode outside 0..2 restores
+ * nothing. There is no scroll rescale and no vertical clamp here, unlike Smap_ZoomIn (0x81e44, pinned
+ * in tests/test_strateg.c). Then the
+ * 200 sites, and three tails of 5, 8, 8 bytes. */
 static void TestSmapChunk(void)
 {
     static DatFile dat;
@@ -497,6 +697,31 @@ static void TestSmapChunk(void)
     CheckEqI32(FileSizeOf(L"test_save8.tmp"), 46 + 148041,
                "  file is header + the smap chunk");
 
+    /* The chunk's own geometry, in the order the calls happen. Site 0 starts at 46 + 20. */
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46), 0x11, "  header dword 0 (0x3FA44)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 8), 0x33, "  header dword 2, +8 (0x3FA64)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 19), 0x55, "  header dword 4, +0x28 (0x3FA84)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20), 0xCC, "  site 0 call 1, +0x206 (0x3FAA4)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 21), 0x34, "  call 2, +0x202 low (0x3FABC)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 23), 0xBB, "  call 3, +1 (0x3FACC)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 24), 0x11, "  call 4, +0x2E4 (0x3FADC)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 25), 0x07, "  call 5, auItemQty[0] (0x3FAEC)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 515), 0x09, "  call 5 ends: auItemQty[255]");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 517), 0x22, "  call 6, +0x205 (0x3FB04)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 518), 0x33, "  call 7, +0x204 (0x3FB14)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 519), 0xAA, "  call 8, +0 (0x3FB24)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 520), 0x05, "  call 9, +0x2D0 (0x3FB34)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 538), 0x06, "  call 9 ends: anCraftIds[9]");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 540), 0x03, "  call 10, +0x208 (0x3FB44)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 738), 0x04, "  call 10 ends: anSoldierIds[99]");
+    /* 740 serialised bytes per site, though the stride is 742: site 199's +0 byte. */
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 199 * 740 + 519), 0x77,
+               "  site 199 lands at 20 + 199 * 740 (stride 742, 740 written)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 200 * 740), 0xDE, "  the 5-byte tail (0x3FB68)");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 200 * 740 + 12), 0xAD, "  the first 8-byte tail");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 20 + 200 * 740 + 20), 0xBE, "  the last 8-byte tail");
+    CheckEqI32(FileByteAt(L"test_save8.tmp", 46 + 148041), -1, "  and the chunk ends there");
+
     memset(&read, 0, sizeof(read));
     Check(OpenRead("test_save8.tmp", &dat), "  reopened");
     Check(Save_ReadSmap(&dat, &read, NULL, NULL, NULL, false), "  smap read");
@@ -504,6 +729,15 @@ static void TestSmapChunk(void)
     CheckEqI32((i32)read.nCamScrollY, 0x33333333, "  header dword 2 round-trips");
     CheckEqI32(read.aSites[0].bUnk518, 0xCC, "  site 0 bUnk518 round-trips");
     CheckEqI32(read.aSites[0].uRecoveredSoldiers, 0x1234, "  site 0 recovered soldiers");
+    /* The per-site reads are 0x40E3C (+0x206), 0x40E54 (+0x202), 0x40E64 (+1), 0x40E74 (+0x2E4),
+     * 0x40E84 (+2, 0x200), 0x40E9C (+0x205), 0x40EAC (+0x204), 0x40EBC (+0), 0x40ECC (+0x2D0),
+     * 0x40EDC (+0x208). Every one-byte field here holds a different value, so a reader that pairs
+     * a stream position with the wrong field cannot pass these five. */
+    CheckEqI32(read.aSites[0].bFlag1, 0xBB, "  bFlag1 is the 3rd call (record +1)");
+    CheckEqI32(read.aSites[0].bHasLoot, 0x11, "  bHasLoot is the 4th call (record +0x2E4)");
+    CheckEqI32(read.aSites[0].bRecoveredCraftCount, 0x22, "  craft count is the 6th call (+0x205)");
+    CheckEqI32(read.aSites[0].bRecoveredSoldierAssign, 0x33, "  soldier assign is the 7th (+0x204)");
+    CheckEqI32(read.aSites[0].bFlag0, 0xAA, "  bFlag0 is the 8th call (record +0)");
     CheckEqI32(read.aSites[0].auItemQty[255], 9, "  item qty tail round-trips");
     CheckEqI32(read.aSites[0].anSoldierIds[99], 4, "  soldier id tail round-trips");
     CheckEqI32(read.aSites[199].bFlag0, 0x77, "  last site round-trips");
@@ -611,6 +845,21 @@ static void TestAssignRosterIndices(void)
     Check(Save_AssignRosterIndices(true, NULL, 0, apItems, 4), "  soldiers NULL is fine");
 }
 
+/* Save_WriteProduct @ 0x3f4f4 (100 bytes): BeginChunk("product") at 0x3F500 -- its answer is dropped --
+ * then three writes off one base, R4 = unk_159E98: 0x1900 at R4+4 (anManufAccum, 0x3F514), 0x1900 at
+ * R4+0x1904 (aManufProductB, 0x3F52C) and 0xC80 at R4+0x3204 (auManufCommitted), the last one after
+ * POP {R4,LR} at 0x3F544 as a tail `B DatFile_Write` at 0x3F548. Total 16000 bytes; the region the
+ * read side uses at R4+0x3E84 is never written by this function.
+ *
+ * Save_ReadProduct @ 0x4062c (188 bytes): FindChunk("product") at 0x40638, then the gate
+ * `LDRSB R3, [R0,#0x64]` at 0x40644 -- a SIGNED load of the byte at 0x18655C, the same save-format
+ * version byte Save_ReadStrategVersion reads -- with `CMP R3,#3` + `BGE loc_406AC` at
+ * 0x40650/0x40654. Version >= 3 reads 0x1900, 0x1900 at the same two bases, then 0xC80 at R4+0x3204
+ * (0x406AC..0x406D0). Version < 3 reads 0x1200, 0x1200, 0x900 and then 0x480 at R4+0x3E84 -- it jumps
+ * (0x40698) into the shared tail block at 0x406D4 that the new branch falls through, so both versions
+ * end in one read whose size and offset differ only by the two immediates at 0x40690/0x40694 against
+ * 0x406CC/0x406D0. The OFFSETS are the same in both branches, which is why an old save leaves the
+ * entries past the shrunk size untouched instead of shifting the later arrays. */
 static void TestProductChunk(void)
 {
     static DatFile dat;
@@ -684,11 +933,39 @@ static void TestProductChunk(void)
     CheckEqI32(aRead[16000], 0x41, "the old tail lands at block +16000");
     CheckEqI32(aRead[16000 + 1151], 0x42, "and runs 1152 bytes");
 
+    /* The gate is a SIGNED compare on a byte (0x40644 LDRSB, 0x40650/0x40654 CMP #3 / BGE), so a
+     * version stored as 0xFF is -1 and takes the small branch. An unsigned gate -- the shape a C
+     * cast makes easy -- takes the large one and asks for 6400-byte reads this file cannot serve. */
+    memset(aRead, 0xEE, sizeof(aRead));
+    Check(OpenRead("test_prod2.tmp", &dat), "  old container reopened for the signed gate");
+    Check(Save_ReadProduct(&dat, -1, aRead), "  version -1 takes the version < 3 branch");
+    DatFile_Close(&dat);
+    CheckEqI32(aRead[0], 0x11, "  ...with a 4608-byte first read, not 6400");
+    CheckEqI32(aRead[4608], 0xEE, "  ...so the gap the 6400-byte read would fill stays empty");
+    CheckEqI32(aRead[16000], 0x41, "  ...and the 1152-byte tail is read");
+
     Check(!Save_WriteProduct(NULL, aBlock), "  NULL dat refused");
     Check(!Save_WriteProduct(&dat, NULL), "  NULL block refused");
     Check(!Save_ReadProduct(&dat, 3, NULL), "  a NULL read block is refused");
 }
 
+/* Save_WriteBases @ 0x3f1fc (760 bytes): BeginChunk("bases"); 288 bytes at 0x159768 (the facility
+ * grid), 1152 at 0x1598DC, the base-count byte at 0x159D80, two more singletons, a dword at 0x159D90,
+ * 8 bytes at 0x159DBC, a dword at 0x1598D8, one byte at 0x158848, then the 17 per-base flag bytes
+ * (BaseRecFlag.bFlag20, stride 28 from 0x186E48), nine bytes at 0x18655D, then eight facility records
+ * of nine writes = 61 bytes each: abName (0x14), bType, nUnkBuildState (4), abUnk6 (0x14), nFacType
+ * (4), nUnk48 (4), uUnk2 (2), uUnk4 (2), nUnkDemolishState (4) -- gap_1 and gap_46 of the 64-byte
+ * in-memory record are never written. Per base, gated on the SIGNED count byte at 0x159D80 being > 0:
+ * bSlot, bUnk4, nUnk0, nUnk8, nUnk12, bUnk17, bUnk16 (16 bytes), then one u16 per object at
+ * 42 + 2*LOOP INDEX -- the loop index, not bSlot.
+ *
+ * Save_ReadBases @ 0x402c0 (876 bytes): frees the old BaseRec pointers FIRST, with the count held
+ * BEFORE the chunk is read (0x402D0..0x40310) -- so a load with no chunk still empties the array --
+ * then FindChunk("bases") with its answer untested, then the mirror with two gates on the signed
+ * version byte at 0x18655C: the 0x159DBC block is 8 bytes when version >= 3 and 4 otherwise (0x403A4),
+ * and the 0x158848 byte is read only when version >= 3 (0x403E0). An old read therefore lands five
+ * bytes early for everything from the 17 flag bytes on. Per base: new(0x14) + BaseRec_ctor @ 0x55650,
+ * store, then the seven fields overwrite the ctor's values. */
 static void TestBasesChunk(void)
 {
     DatFile dat;
@@ -836,6 +1113,20 @@ static void TestBasesChunk(void)
     Check(!Save_ReadBases(NULL, 3, &got, apRead, 0, 0, apObj, 2), "NULL read dat refused");
 }
 
+/* Save_WriteShips @ 0x3f6dc (844 bytes): BeginChunk("ships"); one byte of craft count; then per craft
+ * 33 writes = 61 bytes in this order: nFuel (2), bHomeBase, nSlotIdx (4), bCraftType, bWeaponL,
+ * uRangeRemain (2), bHangarX, bHangarY, anCargoQty (0x10), bNeedsSupply, bCanDogfight, uUnk4 (2),
+ * uFuelMax (2), uRangeMax (2), bCrewSlots, the byte at +0, bAtBase, bWeaponsHot, bAmmo27, bAmmo30,
+ * bAmmo29, bAmmo25, bAmmo26, bRefueling, bWeaponR, bId, uFuelCap (2), uUnk14 (2), uRangeRate (2),
+ * bIntercepting, nStrategIdx (4), bContactMsg. Then one u16 per object at 58 + 2*ship index -- 58 is
+ * 0x3A, the object record's own item-quantity table, which is why the two functions meet there.
+ *
+ * Save_ReadShips @ 0x4086c (992 bytes): FindChunk FIRST at 0x4087C and only then the free of the old
+ * craft array with the count held before the read (0x40888..0x408C8) -- the opposite order from
+ * Save_ReadBases @ 0x402c0, which frees before it looks for the chunk. One byte of count, then per
+ * ship new(0x44) + Ship_ctor(type 0, loop index, 0, skip 0) + store + the 33 reads, which overwrite
+ * the ctor's values. And at 0x40C24, after the load: if the bCraftType just read is 0, the ship's
+ * uRangeMax is set to 10000 and the value that was just read from the file is thrown away. */
 static void TestShipsChunk(void)
 {
     DatFile dat;
@@ -905,6 +1196,28 @@ static void TestShipsChunk(void)
     /* 1 count byte + 2 * (61 field bytes + 2*2 object bytes). */
     CheckEqI32(FileSizeOf(L"test_ships.tmp"), 46 + 1 + 2 * 65,
                "the chunk is 1 byte plus 65 per ship");
+
+    /* Ship 0's 61 bytes, at the positions the 33 writes above put them. */
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 46), 2, "  the count byte (0x3F704), one byte wide");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 47), 100, "  nFuel is the first field, 2 bytes (0x3F740)");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 49), 1, "  bHomeBase next");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 54), 0, "  bCraftType after the 4-byte slot index");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 56), 0xC8, "  uRangeRemain 200 at 56");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 58), 3, "  bHangarX at 58, not bHangarY");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 59), 4, "  bHangarY at 59");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 60), 11, "  anCargoQty runs 16 bytes from 60");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 72), 14, "  ...anCargoQty[3], a dword, at 72");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 82), 0xD2, "  uRangeMax 1234 at 82");
+    /* The five ammo bytes are written 27, 30, 29, 25, 26 -- not in name order. */
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 88), 27, "  bAmmo27 first of the five");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 89), 30, "  bAmmo30 second");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 90), 29, "  bAmmo29 third");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 91), 25, "  bAmmo25 fourth");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 92), 26, "  bAmmo26 fifth");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 96), 0xF4, "  uFuelCap 500 at 96");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 103), 0x2C, "  nStrategIdx 300 at 103");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 107), 0, "  bContactMsg is the last field byte");
+    CheckEqI32(FileByteAt(L"test_ships.tmp", 108), 0xF4, "  then the object u16 at record +58 (0x3A)");
 
     memset(apRead, 0, sizeof(apRead));
     Check(OpenRead("test_ships.tmp", &dat), "  reopened for read");
@@ -981,6 +1294,16 @@ static void TestShipsChunk(void)
     Check(!Save_ReadShips(&dat, apRead, NULL, &env), "NULL count refused");
 }
 
+/* Save_AllocFlobjs @ 0x431ac (172 bytes): FindChunk("flobjs") at 0x431BC, then the width gate
+ * `LDR R3,[R4,#0x118]` + `CMP R3,#0` at 0x431C0/0x431CC with `MOV R2,#1` preset at 0x431C4 and
+ * `MOVNE R2,#4` at 0x431E0 -- four bytes only when Map+0x118 is non-zero -- and the read at 0x431E4
+ * into Map_nTactItemCount. A one-byte read into that four-byte global leaves the top three bytes,
+ * which is why the checks below feed it a non-zero high half. Then new(0x18) at 0x43210 and
+ * TactItem_ctor at 0x4321C per item, stored by `STR R0,[R5]` at 0x43234 (the stored value is the
+ * ctor's return, which is the same pointer because the ctor returns its argument), with the count
+ * re-read at 0x43244 each iteration. It frees NOTHING first -- unlike Save_ReadBases @ 0x402c0 and
+ * Save_ReadShips @ 0x4086c, which free the old array before re-filling it. The port bounds the
+ * allocation by the caller's array size; the original has no bound on the count it just read. */
 static void TestAllocFlobjs(void)
 {
     DatFile dat;
@@ -1051,6 +1374,22 @@ static void TestAllocFlobjs(void)
     Check(!Save_AllocFlobjs(&dat, 1, NULL, apItems), "NULL count refused");
 }
 
+/* Save_WriteFlobjs @ 0x42f48 (388 bytes): BeginChunk("flobjs") at 0x42F58; the count is written FOUR
+ * bytes wide always (`ADD R1,R5,R3` for Map_nTactItemCount, BL 0x42F74) whatever the Map+0x118 gate
+ * says -- only the readers are width-gated. Then 17 bytes per item, in this order:
+ *   0x42FF4 object index (4), found by a linear search of the object table for pItem->pObj
+ *         (0x42FB0..0x42FE4); a MISS leaves the index equal to nObjectCount and that out-of-range
+ *         value is what gets written -- the port refuses instead, which is the deviation the last
+ *         check below records.
+ *   0x4300C nIndex (2)   0x43020 +6 (1)   0x43034 +7 (1)   0x43048 +8 (1)
+ *   0x43070 next item's pool index, or 0x7FFF when pNext is NULL (STREQ/STRNE at 0x4306C/0x43068)
+ *   0x43098 linked soldier's nSaveId, or 0x7FFF (0x43090/0x43094)
+ *
+ * Save_ReadFlobjs @ 0x43258 (384 bytes): FindChunk at 0x4326C, the same width gate as
+ * Save_AllocFlobjs (`LDR R3,[R4,#0x118]` 0x43270, `MOV R2,#1` 0x43274, read at 0x43294), so a load
+ * reads the count TWICE -- once through Save_AllocFlobjs, once here. Per item: 4 bytes of object
+ * index at 0x432D4 stored with no bound check, 2 at 0x43300, three singletons, then the two link
+ * dwords, 0x7FFF becoming NULL and any other value indexing apTactItems / apSoldiers unbounded. */
 static void TestFlobjsChunk(void)
 {
     DatFile dat;
@@ -1100,6 +1439,22 @@ static void TestFlobjsChunk(void)
     CheckEqI32(FileSizeOf(L"test_flobjs3.tmp"), 46 + 4 + 3 * 17,
                "17 bytes per item");
 
+    /* The 17-byte stream, in the order the calls above make them. */
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 46), 3, "  the count is 4 wide on write (0x42F74)");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 54), 7, "  item 0 nIndex (0x4300C)");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 56), 30, "  item 0 +6 (0x43020)");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 57), 0, "  item 0 +7 (0x43034)");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 58), 2, "  item 0 +8 (0x43048)");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 59), 1, "  item 0's next pool index (0x43070)");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 63), 0, "  item 0's soldier nSaveId (0x43098)");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 67), 1, "  item 1's object index lands at 67");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 80), 0xFF, "  item 1's NULL soldier is 0x7FFF, low byte");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 81), 0x7F, "  ...0x7FFF little-endian: FF 7F 00 00");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 84), 0, "  item 2 lands at 84: 17 bytes each");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 93), 0xFF, "  item 2's NULL next");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 97), 1, "  item 2's soldier id");
+    CheckEqI32(FileByteAt(L"test_flobjs3.tmp", 46 + 4 + 3 * 17), -1, "  and the chunk ends there");
+
     memset(aItem, 0xEE, sizeof(aItem));
     Check(OpenRead("test_flobjs3.tmp", &dat), "  reopened");
     {
@@ -1120,6 +1475,21 @@ static void TestFlobjsChunk(void)
     Check(aItem[0].pLinkedSoldier == &aSol[0], "the soldier link is nSaveId");
     Check(aItem[1].pLinkedSoldier == NULL, "and 0x7FFF becomes a NULL soldier");
     Check(aItem[2].pLinkedSoldier == &aSol[1], "the second soldier resolves by its own id");
+
+    /* The width gate at 0x43270/0x43294 is not cosmetic: the count is only a stream prefix, so a
+     * 1-byte read shifts every field by three bytes. Read with the wide flag the same file gives
+     * nIndex 7 above; read with the narrow flag it gives 0. */
+    memset(aItem, 0xEE, sizeof(aItem));
+    Check(OpenRead("test_flobjs3.tmp", &dat), "  reopened with the narrow flag");
+    {
+        i32 nCount = 0;
+        Check(!Save_ReadFlobjs(&dat, 0, &nCount, apItem, apObj, 2, apSol),
+              "  a 1-byte count makes the last item's field run past the chunk (52 > 51)");
+        CheckEqI32(nCount, 3, "the low byte still carries 3");
+    }
+    DatFile_Close(&dat);
+    CheckEqI32(aItem[0].nIndex, 0, "  one byte consumed: nIndex lands on the count's own zero bytes");
+    CheckEqI32(aItem[0].nAmmo, 0, "  and so does everything after it");
 
     aItem[1].pObj = NULL; /* an object the table does not hold */
     Check(!Save_WriteFlobjs(&dat, apItemC, 3, apObjC, 2), "an unfound object is refused");
@@ -1144,6 +1514,23 @@ static MapCell *MapTestLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
     return &g_aMapCells[nLayer][nY][nX];
 }
 
+/* Save_WriteMap @ 0x438e0 (932 bytes): BeginChunk("map"); nMapDimX and nMapDimY one byte each; then
+ * 43 bytes per cell over 10*nMapDimY rows, 10*nMapDimX columns and 4 layers, the cell reached as
+ * `ADD R3, layerCounter, rowCounter` / `MUL R2, R3, #0xF0` / `LDR R4, [base, #0x15338]` -- apCells is
+ * a fixed 240-row array of 60 pointers, 14400 bytes per layer, layer counter 0, 60, 120 or 180. Per
+ * cell: 4 bytes at cell+0x10, then bFlags29 bits 0..4 as five separate bytes, nFlags32 & 7,
+ * (nFlags32 >> 3) & 0xF, bFlags36 & 1, nFlags40 & 7, (nFlags40 >> 3) & 0xF, bFlags44 & 1, then
+ * pUnit ? nSaveId : 0x7FFF, pItemList ? nRefId : 0x7FFF, bUnk56, bFlags57[0] bit 2, bit 3, bFlags57[1],
+ * and the four sprite records as nGlobalIdx or 0x7FFF, 4 bytes each.
+ *
+ * Save_ReadMap @ 0x433d8 (1288 bytes): the same walk, reading 4 bytes into cell+0x10 and then
+ * CLEARING nUnk20, bUnk24 and gap_25 and writing nX, nY, nZ from the loop counters -- coordinates are
+ * derived from the walk, never stored in the file. It restores bFlags29 bits 0..4 with five stores
+ * whose last mask is 0x8F, which also clears bits 5 and 6; bit 5 is the shot-trace flag, so every load
+ * wipes it. nFlags32 and nFlags40 keep only 7 bits each -- bits 7 and up retain whatever the cell had
+ * in memory. bFlags44 is written as `bFlags44 & 0xFC ^ value`, so bit 1 is lost, and bFlags57[0]
+ * receives only bits 2 and 3. 0x7FFF means a NULL pUnit, pItemList or sprite; any other value indexes
+ * apSoldiers, the item array at Map+36110 words, or Font_GetSprByIndex(&font @ 0x158268, id). */
 static void TestMapChunk(void)
 {
     DatFile dat;
@@ -1206,6 +1593,25 @@ static void TestMapChunk(void)
     Check(Save_WriteMap(&dat, &geom, MapTestLookup, NULL), "  chunk written");
     DatFile_Close(&dat);
     /* 2 dimension bytes + 400 cells * 43 bytes. */
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43), 0x11,
+               "  cell (2,3,4) starts at 48 + 234*43 with its 4-byte face block (0x43998)");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 4), 1,
+               "  bFlags29 bit 0 as its own byte, at +4 (0x439B0)");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 5), 0, "  bit 1 of 0x35 is clear");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 6), 1, "  bit 2 at +6");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 8), 1, "  bit 4 at +8, not bit 5");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 9), 1, "  nFlags32 & 7 at +9 (0x43A4C)");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 10), 5,
+               "  (nFlags32 >> 3) & 0xF at +10 (0x43A6C)");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 12), 2, "  nFlags40 & 7 at +12");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 13), 0xE, "  (nFlags40 >> 3) at +13");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 15), 1, "  the pUnit id at +15");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 23), 0x7F, "  bUnk56 at +23 (0x43B3C)");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 24), 1, "  bFlags57[0] bit 2 at +24");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 26), 0x2A, "  bFlags57[1] at +26");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 27), 1, "  floor sprite at +27");
+    CheckEqI32(FileByteAt(L"test_mapchunk.tmp", 48 + 234 * 43 + 41), 0,
+               "  ceil sprite last, and its index is 0 (0x43BA0..0x43C1C)");
     CheckEqI32(FileSizeOf(L"test_mapchunk.tmp"), 46 + 2 + 400 * 43,
                "43 bytes per cell");
 
@@ -1320,6 +1726,22 @@ static void TestMapChunk(void)
     DatFile_Close(&dat);
 }
 
+/* Save_WriteTeamUnits @ 0x43c84 (604 bytes) writes FOUR chunks in one call, each with its own
+ * BeginChunk: "teamunits" at 0x43C94, "aliens" at 0x43D3C, "diedsolds" at 0x43DBC, "hiddensold" at
+ * 0x43E3C. Their counts are not even the same width -- nXcomUnitCount is one byte (nSize 1 at
+ * 0x43C9C, write at 0x43CAC), nEnemyUnitCount one byte (0x43D54/0x43D5C), nCivilianUnitCount four
+ * (0x43DD4/0x43DDC) and nEnemyReserveCount four (0x43E54/0x43E5C). In "teamunits" the SELECTED unit
+ * comes before the roster: `LDR R0,[R4,#Map_pSelUnit]` at 0x43CB8, `MOV R7,#0x7FFF` at 0x43CBC,
+ * `LDRNE R3,[R0,#0x3BC]` (the soldier's nSaveId) at 0x43CC8 with `STREQ R7` at 0x43CDC, then the
+ * four-byte write at 0x43CE0. Every id slot is gated on (index < count && slot != NULL), so a slot
+ * past the count is written 0x7FFF even when the array holds a pointer. Payloads 125, 121, 244, 124.
+ *
+ * Save_ReadTeamUnits @ 0x44020 (552 bytes) reads all four back (FindChunk "teamunits" at 0x44028,
+ * "aliens" 0x440E0, "diedsolds" 0x4414C, "hiddensold" 0x441B8). The counts it reads are then IGNORED:
+ * the loops always consume the full 30 / 30 / 60 / 30 dwords, which is what drops a stale pointer
+ * past the count. 0x7FFF becomes NULL; any other id indexes apSoldiers with no bound check in the
+ * original. The reserve roster lives in unk_138DF0, the 30 dwords that start exactly where the Map
+ * block ends (0x1139B8 + 152632). */
 static void TestTeamUnitsChunk(void)
 {
     DatFile dat;
@@ -1373,6 +1795,19 @@ static void TestTeamUnitsChunk(void)
     /* 1+4+120, 1+120, 4+240, 4+120. */
     CheckEqI32(FileSizeOf(L"test_teamunits.tmp"), 109 + 125 + 121 + 244 + 124,
                "the four payloads");
+
+    /* The four chunks back to back after the 109-byte header (4 + 5*21), at the widths above. */
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 109), 3, "  teamunits' count is ONE byte (0x43CAC)");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 110), 2, "  the selection id comes next (0x43CE0)");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 114), 0, "  the roster starts after it, at 114");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 122), 2, "  roster slot 2");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 126), 0xFF, "  slot 3 is 0x7FFF: past the count");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 127), 0x7F, "  0x7FFF little-endian, FF 7F 00 00");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 234), 2, "  aliens' count byte at 234 (0x43D5C)");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 235), 4, "  the first enemy id follows it");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 355), 4, "  diedsolds' count is a DWORD (0x43DDC)");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 599), 1, "  hiddensold's count is a DWORD (0x43E5C)");
+    CheckEqI32(FileByteAt(L"test_teamunits.tmp", 603), 5, "  the reserve roster's single id");
 
     memset(apXcom, 0xEE, sizeof(apXcom));
     Check(OpenRead("test_teamunits.tmp", &dat), "  reopened");
@@ -1612,6 +2047,14 @@ static bool WriteRmpChunk(DatFile *pDat, i32 nCount)
     return DatFile_Write(pDat, aLevel, sizeof(aLevel));
 }
 
+/* Save_ReadRmp @ 0x43ee0 (320 bytes): FindChunk("rmp"), then SEVEN reads in an order that is not the
+ * order the values are used in -- FindChunk at 0x43EF4, 4 bytes of count (0x43F04), four blocks of 0xF0
+ * (0x43F18, 0x43F2C, 0x43F3C, 0x43F50: tile X, tile Y, size X, size Y), the 0x4B0 block of 20-byte
+ * module names (0x43F68), and LAST another 0xF0 block (0x43F7C), which is the level array. Then, only
+ * when the count is positive, one Map_LoadRmp per module (the BL at 0x43FE8), the name pointer advanced
+ * by 20 each turn. There is no writer for this chunk in
+ * the beta: the other caller is Tact_InitMission @ 0x3c550. The original bounds nothing here -- 60 is
+ * the size of its own scratch arrays, and a larger count is a deviation the port refuses. */
 static void TestReadRmp(void)
 {
     DatFile dat;
@@ -1626,6 +2069,13 @@ static void TestReadRmp(void)
     DatFile_Close(&dat);
     /* 4 + 5*240 + 1200. */
     CheckEqI32(FileSizeOf(L"test_rmp.tmp"), 46 + 4 + 5 * 240 + 1200, "the chunk payload");
+
+    /* The seven reads, at the positions they land on: the level block is LAST, after the names. */
+    CheckEqI32(FileByteAt(L"test_rmp.tmp", 50), 1, "  tile X starts at 50 (0x43F18)");
+    CheckEqI32(FileByteAt(L"test_rmp.tmp", 770), 0xE8, "  size Y's 1000 starts at 770 (0x43F50)");
+    CheckEqI32(FileByteAt(L"test_rmp.tmp", 1010), 'm', "  the names block at 1010 (0x43F68)");
+    CheckEqI32(FileByteAt(L"test_rmp.tmp", 2210), 7, "  the level block at 2210, read LAST (0x43F7C)");
+    CheckEqI32(FileByteAt(L"test_rmp.tmp", 46 + 4 + 4 * 240 + 1200), 7, "  same place, computed");
 
     g_nRmpCalls = 0;
     Check(OpenRead("test_rmp.tmp", &dat), "  reopened");
@@ -1754,6 +2204,17 @@ static void TestSlotList(void)
     CheckEqStr(apLines[3], "01.01.1999 00:00", "slot 3 has no marker");
     CheckEqI32(bGameState, 0, "and the read cleared the flag");
 
+    /* The pad's own boundary. 27524520 s is day 15 of month 11, so 5 and 6 days earlier are
+     * day 10 and day 9 of the same month at the same 13:42. The original pads with a "0" only
+     * while the value is strictly below 10, so day 10 stands alone and day 9 becomes 09. */
+    Check(WriteSaveFile("sav4.sav", 27092520, 0, false, 0), "  slot 4 written (day 10)");
+    Check(WriteSaveFile("sav5.sav", 27006120, 0, false, 0), "  slot 5 written (day 9)");
+    bGameState = 0;
+    memset(apLines, 0, sizeof(apLines));
+    SaveSlot_FormatList(&ctx);
+    CheckEqStr(apLines[4], "10.11.1999 13:42", "day 10 is not padded (the gate is < 10)");
+    CheckEqStr(apLines[5], "09.11.1999 13:42", "day 9 is padded to 09");
+
     /* Lines are 40 bytes apart. */
     CheckEqI32((i32)(sizeof(apLines[1]) - sizeof(apLines[0])), 0, "the stride is uniform");
     CheckEqI32((i32)sizeof(apLines[0]), PUFO_SAVE_SLOT_LINE_SIZE, "40 bytes per line");
@@ -1762,6 +2223,8 @@ static void TestSlotList(void)
     remove("sav1.sav");
     remove("sav2.sav");
     remove("sav3.sav");
+    remove("sav4.sav");
+    remove("sav5.sav");
 }
 
 static void FillStrategItem(StrategItem *p, i32 nBase)
@@ -1865,6 +2328,21 @@ static void CheckStrategItemV2(const StrategItem *pGot, const StrategItem *pWant
     Check(pGot->dFracX == pWant->dFracX && pGot->dFracY == pWant->dFracY, pszWhat);
 }
 
+/* Save_WriteStrateg @ 0x3fbb4 (1616 bytes): BeginChunk("strateg"), 38 header writes totalling 134
+ * bytes in an order that is not address order (the twelve fund fields go 3, 4, 0, 2, 1 and not 0..4),
+ * then 33 field writes per item = 113 bytes. The item count and the loop bound is 0x186530, which is
+ * NOT the PtrArray count at 0x186534 (the list's own count, items at 0x186538), and 0x1865A8 and
+ * 0x186594 are used as pointers. In the block 0x186568..0x1865BC, 22 dwords, only 21 are written --
+ * 0x18657C is never written. Inside a record, nType at +0 is the 21st of the 33 writes (record byte 67
+ * of the stream), not the first -- counted from the BL chain 0x3FE88..0x401D0.
+ *
+ * Save_ReadStrateg @ 0x40f4c (1664 bytes): FindChunk("strateg") and then PtrArray_DeleteAll before
+ * anything is read, so a failed load still empties the list. The version byte in the file is read into
+ * a scratch and DISCARDED; the gate at 0x41554 tests the build's own byte at 0x18655C instead, so an
+ * old save is decoded with the current build's record shape -- nTargetX and nTargetY are read only when
+ * that byte is above 2, which makes an old record 105 bytes rather than 113 and shifts every later
+ * item. The count at 0x186530 is overwritten only when the read succeeds, so a stale count with no
+ * chunk re-allocates that many uninitialised items. */
 static void TestStrategChunk(void)
 {
     DatFile dat;
@@ -1919,6 +2397,21 @@ static void TestStrategChunk(void)
 
     /* 134 header bytes plus 113 per item. */
     CheckEqI32(FileSizeOf(L"test_strateg.tmp"), 46 + 134 + 2 * 113, "the chunk payload");
+
+    /* Item 0's record starts at 46 + 134 = 180 and is 113 bytes of stream in the CALL order, not the
+     * struct order. nType (record byte 0) is the 21st write, landing at position 67. */
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 180), 1001 & 0xFF, "  write 1 is bActive, not nType");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 181), 1006 & 0xFF, "  write 2, nSiteId at 181");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 185), 1008 & 0xFF, "  write 3, bRandA at 185");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 186), 1014 & 0xFF, "  write 4, nTimer at 186");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 194), 1017 & 0xFF, "  write 6, bVisible at 194");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 200), 1002 & 0xFF, "  write 9, bCraftClass at 200");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 201), 1004 & 0xFF, "  write 10, nX at 201");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 247), 1000 & 0xFF, "  write 21, nType (record +0) at 247");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 249), 1026 & 0xFF, "  write 23, uTravelMin at 249");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 285), 0x44, "  write 32, nTargetX at 285 (0x11223344)");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 289), 1033 & 0xFF, "  write 33, nTargetY at 289");
+    CheckEqI32(FileByteAt(L"test_strateg.tmp", 293), 7, "  item 1 starts at 293: 113 bytes each (its bActive is 7)");
 
     /* A current-format load. */
     memset(&got, 0, sizeof(got));

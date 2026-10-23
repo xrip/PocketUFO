@@ -5781,6 +5781,24 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   so 0xC352/0xC353 run for every speed including an out-of-range one, while 0xC350/0xC351 belong only to 0..4),
   the unsigned compare that makes a negative speed take the out-of-range path, and that the six timer copies differ
   only in their branch words (+0x1C/+0x38 for Start, +0x14/+0x28 for Kill).
+  Progress (Part 127): `save` (35) closed -- 581 rows now carry a test cite, **387** do not. The Part's method
+  rule: a DatFile chunk payload is a byte stream, so a field's on-disk position is the position of its
+  `DatFile_Write`/`DatFile_Read` call, not its place in the struct -- and because the port writes and reads in the
+  same order, a same-size reorder round-trips through the port's own tests while the file stops matching the
+  original's. About 150 `FileByteAt` pins exist for that reason (research's 14 writes per 0x22-stride record at
+  +9, +0x1F, +4, +0x14, +0, +0xA, +8, +0x1E, +0x21, +0x19, +15, +6, +0x20, +2; the smap site emitting 740 of its
+  0x2E6 stride, so site 199 lands at 20 + 199 * 740; the rmp level block read LAST at 0x43F7C; the soldiers count
+  read twice, 0x416D4 and 0x417D4). Two cases came back toothless from the first sweep and were the same mistake
+  in two shapes: a pin on a byte that is not a pin on the field that byte is read into (`Save_ReadSmapSite`'s ten
+  per-site reads at 0x40E3C..0x40EDC had file pins but no read-side field checks), and a gate boundary no fixture
+  reaches (`nDay < 10` was only ever exercised at day 15 and day 1; slots at day 10 and day 9 of month 11 now pin
+  it, and the `< 11` mutation prints "010.11.1999 13:42"). Also measured: the count widths 1/1/4/4 at
+  0x43CAC/0x43D5C/0x43DDC/0x43E5C, the flobjs 1-or-4 gate at 0x431C4+0x431E0 and 0x43274, the 2-byte soldier
+  count at 0x42374, the loop bounds re-loaded from memory every iteration (0x3F134, 0x3F1A4, 0x42EEC, 0x42F34) and
+  their signed `BLT` against unsigned `BCC`, the signed `LDRSB` version gate at 0x40644 (a save carrying 0xFF takes
+  the old-size branch), free-before-read in `Save_ReadBases` (0x402D0) against find-then-free in `Save_ReadShips`
+  (0x4087C), and that `Save_WriteStrateg` writes `nType` 21st of 33 -- record byte 67 -- so the IDB note claiming
+  "twelfth" was corrected.
 
 ### CLAUDE.md's verification contract, mapped to evidence
 
@@ -5942,3 +5960,17 @@ its real 256-byte item and a 444-character note; `idb_save` written | teeth: 30 
 recorded offset (see the Part 126 progress block); row 120b got another instance (the first gate run,
 `build/check126.log`, was Debug 64/65 with the same test green serially and in the clean re-run) | row 121a stays
 open with 410 rows left.
+
+`<this commit>` + Part 127 | Release 65/65 and Debug 65/65 with `check: ALL SIX GATES RAN`, `CHECK EXIT=0`
+(`build/check127.log`) | 20,988 checks (+169) | coverage 972/1103 functions (88.1%), 596888/598792 bytes (99.7%)
+-- unchanged | reach unchanged at 965/968, residue 0; cites at a row's own address 555 -> **581**, without one
+410 -> **387** (`save` closed; `strat` stayed at 90 because a cite my own comment had earned for nothing was
+removed) | `src/` untouched: the Part is checks and evidence, ~150 byte-position pins plus five smap read-side
+field checks and the day-pad boundary slots in `tests/test_save.c` | 93 frame pictures and 9 e2e pictures
+unchanged | IDB comments written and read back at 0x3f0e8 (933), 0x3f158 (667, replacing a 24-character stub),
+0x3f558 (890), 0x3fa28 (929, replacing a 47-character stub), 0x3fbb4 (688, the "twelfth" claim corrected to 21st
+of 33), 0x40204 (809), 0x406e8 (833), 0x41600 (698), 0x416bc (940, replacing a 126-character stub), 0x42ea0 (906)
+and 0x44958 (652); `idb_save` written | teeth: 35 cases in `docs/parity/mutations_part127.py`, one per row; the
+first sweep had 33 failing 2 to 42 checks and 2 inert, and after the seven new checks the re-run has all 35
+failing 2 to 42 checks (240 failing checks in total), 0 skipped, every file back to its exact bytes,
+`grep -rn "MUTATION" src tests` empty | row 121a stays open with 387 rows left.
