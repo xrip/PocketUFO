@@ -24412,3 +24412,61 @@ Gates: 66/66 tests, 21526 checks, `frames: unchanged (93 reference pictures)`, `
 against the committed references (9 pictures)`, `check: ALL SIX GATES RAN`, `build/check141.log`.
 
 Measured after Part 141: **875** cited, **93** not (`tact` 93).
+
+### Part 142 -- the tact click table pressed on a live mission (32 `tact` rows)
+
+The `tact` rows left in the ledger sit in one place: `g_aTactBankClicks[PUFO_PBANK_WIDGET_COUNT]`
+(pufo_world.c:7678), the table `World_TactInitUiControlsThunk` hands to `Tact_InitUiControls` as
+`ctx.apfnClick`. The Part 54..61 block already pressed a dozen of its slots; this Part presses the rest, in the
+same block, on the same live mission, and cites each slot's original. Slots covered: 2 and 7 (the layer pair),
+100 (the decrement sibling), 43 (mode 11), 32/33/34 (the fire-mode trio), 36/37/42 (the try-fire trio), 44..52
+(the nine sub-mode pads), 71..74 (the option pads), 94/95 (the deploy pair), 96 (screen 7) and 31 (the flagged
+command opener). Five rows that were already pressed and checked -- 0, 18, 59, 70, 99 -- needed only the
+`name @ 0x...` form in their check message.
+
+Every press is followed by the cells it moved and every cell is put back: `nMapActionMode`, `nBurstShots`,
+`pSelWeapon`, the selected soldier's `uTu`, the deploy byte, the pen-slot-8 low byte, the three option bytes,
+the three cost cells the presses read, and (by the block's own tail) the cursor byte, `nUiScreen`, the action
+latch, the pad bank, the scroll/show bytes and the status stack. Frames say so: `frames: unchanged (93 reference
+pictures)`.
+
+Two IDB facts this Part settled. (1) `MapCursor_SetFlags @ 0x26f78` is *only* `pMap->nLayerScratch = nFlags`,
+and `Map_nLayerCount @ 0x128AF0` is Map+0x15138 -- the same cell. So the pair 0x164f0/0x16530 and the byte
+handlers 0x19670/0x196ac end on one byte and differ only in whether the store goes through that callee; the
+teeth therefore sit on each callee separately (`Ui_LayerUp`'s local, `Ui_LayerDown`'s local, `Ui_IncLayer`'s
+gate, `Ui_DecLayer`'s gate). (2) The action-cost table is 12 dwords at Map+0x4E4C (base `0x118804`, filled by
+`Ui_FillActionCosts @ 0x26104`, with the offered flags at Map+0x4E7C). `Tact_TryFireMode4/5/10` compare
+`Map_pSelUnit->uTu` with the mode's dword (unk_118814 = +4*4, unk_118818 = +4*5, unk_11882C = +4*10) and the
+comparison is `>=` -- the boundary is now a check. `Map_SetSubModeN_Play11` charges the *low halfword* of the
+same dword: 0x18418's disasm builds the address with `MOV R2,#0x4E00` + `ORR R2,#0x4C` and `ADD R3,R0,R1,LSL#2`,
+then `LDRH [R3,R2]`. The decompiler's `(u16 *)&Map_bTactFlag + 2*mode + 10022` is that same cell (10022 words =
+0x4E4C), so the port's `anActionCost` mirror is the right table for both.
+
+The option pads: `Map_ToggleFlag128A90 @ 0x193a0` (TURN) and `Map_ToggleFlag128A91 @ 0x1941c` (MENU) are
+mutually exclusive -- turning one on clears the other byte *and its pad* in the same branch, and neither
+off-branch reaches sideways; `Map_ToggleFlag128A8F @ 0x19348` (RUN) touches only its own pair. The port models
+all of it (`Ui_ToggleOption`), and the presses now pin it: TURN on with MENU standing takes MENU and
+unk_AD01A down, MENU on with TURN standing does the mirror, and RUN leaves both.
+
+One deviation found, recorded, not fixed (it needs the user's sign-off): the too-little-TU refusal of
+`Tact_TryFireMode4 @ 0x179e4`, `Tact_TryFireMode5 @ 0x17b1c` and `Tact_TryFireMode10 @ 0x17a80` pushes text
+record 1 (`aTextRec1_OutOfTime @ 0xB399D`, `StatusMsg_Push` call at 0x17A54), while the port's `Ui_TryFireMode`
+pushes `PUFO_TXT_OUT_OF_AMMO` = record 6 -- the file's own `PUFO_TXT_OUT_OF_TU` (record 1) is what the header
+doc describes. The widget-37 press pins which record actually lands in the live status stack, and its message
+says the original pushes record 1. `bugs.tsv` carries the row.
+
+Teeth: 32 cases, 75 failing checks, 0 inert, 0 build failures, 32/32 files restored byte-exact
+(`docs/parity/mutations_part142.py`, build/crops/mut142.log). Four toggle cases first SKIPped because the five
+wrapper lines differ in the spacing after `(void)`; re-anchored on the call token
+`World_TactToggleCall(TACT_TOGGLE_x);` all four ran, and each then failed 3 checks. Each row's mutation is its own: the nine sub-mode pads and the try-fire trio and the
+fire trio are mutated through the wrapper's constant, `Ui_LayerUp`/`Ui_LayerDown`/`Ui_IncLayer`/`Ui_DecLayer`/
+`Ui_SetMode11`/`Ui_OpenCommandScreenFlagged`/`Ui_Samples16_14_ClearScreen` through their own bodies, the toggles
+through the id each wrapper passes, the deploy pair and the screen-7 opener through the callee each wrapper
+names.
+
+Gates: tests: 66/66 passing, 21564 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures), `check: ALL SIX GATES RAN`,
+`build/check142.log`. IDB: 27 function comments written and read back exact (0x164f0, 0x16530, 0x16684, 0x179c0,
+0x179e4, 0x17a80, 0x17b1c, 0x18418..0x18714, 0x18e9c, 0x19250, 0x192d4, 0x19348, 0x193a0, 0x1941c, 0x194f8,
+0x19528, 0x19568, 0x19670, 0x196ac), the IDB saved.
+
+Measured after Part 142: **907** cited, **61** not (`tact` 61).

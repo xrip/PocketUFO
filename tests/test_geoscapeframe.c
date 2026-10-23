@@ -3232,9 +3232,10 @@ int main(void)
                 CLICK(59);
                 Check(g_world.nUiScreen == 0 && g_nSamples >= nSampleMark + 2
                           && g_aFrameSamples[nSampleMark] == 16 && g_aFrameSamples[nSampleMark + 1] == 14,
-                      "widget 59 plays 16, 14 and clears screen 7 back to 0 through the staging sync");
+                      "widget 59 is Map_PlaySamples16_14_ClearUiScreen @ 0x18e9c: plays 16, 14 and clears screen 7 "
+                      "back to 0 through the staging sync");
 
-                /* 70: the scroll toggle with its SHOW coupling (Map_ToggleFlag128A8D 0x19250). */
+                /* 70: the scroll toggle with its SHOW coupling (Map_ToggleFlag128A8D @ 0x19250). */
                 g_options.bScrollByPen = 0;
                 g_options.bShowBorder = 1;
                 CLICK(70);
@@ -3242,23 +3243,25 @@ int main(void)
                 CLICK(70);
                 Check(g_options.bScrollByPen == 0 && g_options.bShowBorder == 0
                           && g_world.sTactMenuPads.abPen[0] == 0 && g_world.sTactMenuPads.abPen[1] == 0,
-                      "turning SCROLL off clears SHOW, and both the option bytes and the MenuPads flag pads write back");
+                      "Map_ToggleFlag128A8D @ 0x19250: turning SCROLL off clears SHOW, and both the option bytes "
+                      "and the MenuPads flag pads write back");
 
-                /* 99: the layer byte steps through the staging sync, with no MapCursor_SetFlags call (0x19670). */
+                /* 99: the layer byte steps through the staging sync, with no MapCursor_SetFlags call. */
                 g_world.tactEnv.cursor.nFlags = 2;
                 nSampleMark = g_nSamples;
                 CLICK(99);
                 Check(g_world.tactEnv.cursor.nFlags == 3 && g_aFrameSamples[nSampleMark] == 17,
-                      "widget 99 plays 17 and steps the cursor layer 2 -> 3");
+                      "widget 99 is Map_IncByte128AF0_Play11 @ 0x19670: plays 17 and steps the cursor layer 2 -> 3");
 
-                /* 0: the roster cycle (Tact_CycleNextUnit 0x16684): select, focus, latch clear. */
+                /* 0: the roster cycle (Tact_CycleNextUnit @ 0x16684): select, focus, latch clear. */
                 pMapX->pSelUnit = pMapX->apXcomUnits[0];
                 pMapX->bActionLatch = 4;
                 nSampleMark = g_nSamples;
                 CLICK(0);
                 Check(pMapX->pSelUnit == pMapX->apXcomUnits[1] && pMapX->bActionLatch == 0
                           && g_aFrameSamples[nSampleMark] == 17,
-                      "widget 0 advances the selection 0 -> 1 (Tact_SelectUnit writes the live slot), clears Map+0x02 and plays 17");
+                      "widget 0 is Tact_CycleNextUnit @ 0x16684: advances the selection 0 -> 1 (Tact_SelectUnit "
+                      "writes the live slot), clears Map+0x02 and plays 17");
 
                 /* 9: focus recentres on the selected unit's cell (MapView_FocusSelected 0x16710). */
                 g_world.tactEnv.focus.nCamScrollX = 12345;
@@ -3355,7 +3358,8 @@ int main(void)
                     Check(g_aFrameSamples[nSampleMark] == 17
                               && pMapX->pSelWeapon == &aHandItem
                               && g_world.nUiScreen == 11 && g_world.nMapActionMode == nModeSave,
-                          "widget 18 stores the hand item as Map.pSelWeapon (0x17060) but the psi gate (sort 24, +0x1A6) keeps screen 11");
+                          "widget 18 is Tact_OpenRightHandMenu @ 0x17148: stores the hand item as Map.pSelWeapon "
+                          "(0x17060) but the psi gate (sort 24, +0x1A6) keeps screen 11");
 
                     aHandObj.uSortKey = 1;      /* gate 1 unlocked; category 3 arms mode 3 (0x170D0 scan) */
                     aHandObj.nCategory = 3;
@@ -4241,6 +4245,298 @@ int main(void)
                     g_world.nMapSpawnTileY = nTileY0;
                     g_world.nMapUnk138E6C = n6C0;
                     g_world.nMapUnk138E70 = n70C0;
+                }
+
+                /* ---- Part 142: the click-table slots Part 54..61 left unpressed -------------------
+                 * The layer pair (2, 7), the layer-byte sibling (100), the fire-mode trio (32/33/34),
+                 * the try-fire trio (36/37/42), mode 11 (43), the nine sub-mode pads (44..52), the four
+                 * option pads (71..74), the deploy pair (94/95), the screen-7 opener (96) and the
+                 * flagged command opener (31). The status stack is emptied here and the tail restores
+                 * it. The cost cells the presses read are the shell's anActionCost mirror, pinned here
+                 * so the try-fire and sub-mode asserts are exact, and put back at the end. */
+                {
+                    static TactItem    aPressItem;
+                    static ObjectRecFull aPressObj;
+                    static const char *const apszSubRow[9] = {
+                        "Map_SetSubMode0_Play11 @ 0x18418", "Map_SetSubMode1_Play11 @ 0x18478",
+                        "Map_SetSubMode2_Play11 @ 0x184d4", "Map_SetSubMode3_Play11 @ 0x18534",
+                        "Map_SetSubMode4_Play11 @ 0x18594", "Map_SetSubMode5_Play11 @ 0x185f4",
+                        "Map_SetSubMode6_Play11 @ 0x18654", "Map_SetSubMode7_Play11 @ 0x186b4",
+                        "Map_SetSubMode8_Play11 @ 0x18714",
+                    };
+                    Soldier  *pSelU    = pMapX->pSelUnit;
+                    TactItem *pWepSave = pMapX->pSelWeapon;
+                    i32 nModeSave   = g_world.nMapActionMode;
+                    i32 nBurstSave  = pMapX->nBurstShots;
+                    u16 uTuSave     = pSelU->uTu;
+                    u8  bDepSave    = g_world.sTactInput.bDeployPanelOpen;
+                    u8  bSlot8Save  = g_world.sTactInput.bUiSlot8Byte0;
+                    u8  bRunSave    = g_options.bRunByDblClick;
+                    u8  bTurnSave   = g_options.bTurnByPen;
+                    u8  bMenuSave   = g_options.bMenuByPen;
+                    i32 nCost4Save  = g_world.sTactUi.anActionCost[4];
+                    i32 nCost5Save  = g_world.sTactUi.anActionCost[5];
+                    i32 nCost10Save = g_world.sTactUi.anActionCost[10];
+                    const char *pRecs142 = (const char *)g_world.pAssets->pTextRecs;
+                    char aszSubMsg[220];
+                    i32 nMark;
+
+                    memset(&aPressItem, 0, sizeof(aPressItem));
+                    memset(&aPressObj, 0, sizeof(aPressObj));
+                    aPressItem.pObj  = &aPressObj;
+                    aPressItem.nAmmo = 5;
+                    pMapX->pSelWeapon    = &aPressItem;
+                    pMapX->status.nCount = 0;
+                    g_world.sTactUi.anActionCost[4]  = 30;
+                    g_world.sTactUi.anActionCost[5]  = 30;
+                    g_world.sTactUi.anActionCost[10] = 30;
+
+                    /* 2 / 7: the layer pair. MapCursor_SetFlags @ 0x26f78 is only the store of the byte,
+                     * so the pair and the byte sibling below end on the same cell (Map+0x15138, the
+                     * IDB's Map_nLayerCount @ 0x128AF0); what differs is that the pair runs it through
+                     * the hook and the sibling writes the mirror and lets the staging sync carry it. */
+                    g_world.tactEnv.cursor.nFlags = 2;
+                    nMark = g_nSamples;
+                    CLICK(2);
+                    Check(g_world.tactEnv.cursor.nFlags == 3 && g_aFrameSamples[nMark] == 17,
+                          "widget 2 is MapView_LayerUp @ 0x16530: sample 17, then the layer byte 2 -> 3");
+                    g_world.tactEnv.cursor.nFlags = 4;
+                    CLICK(2);
+                    Check(g_world.tactEnv.cursor.nFlags == 4,
+                          "MapView_LayerUp @ 0x16530 holds at 4 -- the original's gate is `nLayerCount < 4`");
+                    g_world.tactEnv.cursor.nFlags = 2;
+                    nMark = g_nSamples;
+                    CLICK(7);
+                    Check(g_world.tactEnv.cursor.nFlags == 1 && g_aFrameSamples[nMark] == 17,
+                          "widget 7 is MapView_LayerDown @ 0x164f0: sample 17, then the layer byte 2 -> 1");
+                    CLICK(7);
+                    Check(g_world.tactEnv.cursor.nFlags == 1,
+                          "MapView_LayerDown @ 0x164f0 holds at 1 -- the original's gate is `nLayerCount > 1`");
+
+                    /* 100: the byte sibling of the pair. */
+                    g_world.tactEnv.cursor.nFlags = 3;
+                    nMark = g_nSamples;
+                    CLICK(100);
+                    Check(g_world.tactEnv.cursor.nFlags == 2 && g_aFrameSamples[nMark] == 17,
+                          "widget 100 is Map_DecByte128AF0_Play11 @ 0x196ac: sample 17 and 3 -> 2");
+                    g_world.tactEnv.cursor.nFlags = 1;
+                    CLICK(100);
+                    Check(g_world.tactEnv.cursor.nFlags == 1,
+                          "Map_DecByte128AF0_Play11 @ 0x196ac holds at 1 (the gate is `nLayerCount > 1`)");
+
+                    /* 43: mode 11, the one handler that only sets the mode. */
+                    g_world.nMapActionMode = 3;
+                    nMark = g_nSamples;
+                    CLICK(43);
+                    Check(g_world.nMapActionMode == 11 && g_aFrameSamples[nMark] == 17,
+                          "widget 43 is Map_PlaySample17_SetMode11 @ 0x179c0: sample 17 and Map_nActionMode 11");
+
+                    /* 32/33/34: the fire-mode trio. Same gate in all three -- an empty weapon is refused
+                     * unless its object has bAmmoCap 255 -- and the separate shots byte (Map+0x28) takes
+                     * 3 for AUTO and 1 for SNAP and AIMED. */
+                    g_world.nMapActionMode = 3;
+                    pMapX->nBurstShots = 9;
+                    nMark = g_nSamples;
+                    CLICK(32);
+                    Check(g_aFrameSamples[nMark] == 17 && g_world.nMapActionMode == PUFO_ACTION_MODE_AUTO
+                              && pMapX->nBurstShots == 3,
+                          "widget 32 is Tact_SetFireModeAuto @ 0x17868: sample 17, action mode 0, shots 3");
+                    CLICK(33);
+                    Check(g_world.nMapActionMode == PUFO_ACTION_MODE_SNAP && pMapX->nBurstShots == 1,
+                          "Tact_SetFireModeSnap @ 0x177fc: action mode 1, shots 1");
+                    CLICK(34);
+                    Check(g_world.nMapActionMode == PUFO_ACTION_MODE_AIMED && pMapX->nBurstShots == 1,
+                          "Tact_SetFireModeAimed @ 0x17790: action mode 2, shots 1");
+
+                    aPressItem.nAmmo = 0;
+                    g_world.nMapActionMode = 3;
+                    pMapX->nBurstShots = 9;
+                    pMapX->status.nCount = 0;
+                    nMark = g_nSamples;
+                    CLICK(34);
+                    Check(g_aFrameSamples[nMark] == 17 && g_world.nMapActionMode == 3 && pMapX->nBurstShots == 9
+                              && pMapX->status.nCount == 1
+                              && strcmp(pMapX->status.aszMsg[0], pRecs142 + 6 * PUFO_TEXT_REC_STRIDE) == 0,
+                          "Tact_SetFireModeAimed @ 0x17790 refuses an empty weapon with bAmmoCap != 255: the sample "
+                          "still plays, mode and shots stay, and record 6 is pushed (aTextRec6_OutOfAmmo @ 0xB3D9E)");
+                    aPressObj.bAmmoCap = 255;
+                    CLICK(33);
+                    Check(g_world.nMapActionMode == PUFO_ACTION_MODE_SNAP && pMapX->nBurstShots == 1
+                              && pMapX->status.nCount == 1,
+                          "an empty weapon whose object has bAmmoCap 255 is the exception the gate opens for: "
+                          "Tact_SetFireModeSnap @ 0x177fc accepts it and pushes nothing");
+                    aPressObj.bAmmoCap = 0;
+                    aPressItem.nAmmo = 5;
+
+                    /* 36/37/42: the try-fire trio. nActionMode takes the mode BEFORE the TU test and the
+                     * failure path overwrites it with 12; the cost is the mode's own cell of the filled
+                     * cost table (the originals read unk_118814 / unk_118818 / unk_11882C, Map+0x4E4C +
+                     * 4*mode), which the shell mirrors in anActionCost. */
+                    g_world.nUiScreen = 7;
+                    pMapX->bActionLatch = 0;
+                    pMapX->status.nCount = 0;
+                    pSelU->uTu = 40;
+                    nMark = g_nSamples;
+                    CLICK(36);
+                    Check(g_aFrameSamples[nMark] == 17 && g_world.nMapActionMode == 4
+                              && pMapX->bActionLatch == PUFO_ACTION_LATCH_FIRE && pMapX->nBurstShots == 0
+                              && g_world.nUiScreen == 0 && pMapX->status.nCount == 0,
+                          "widget 36 is Tact_TryFireMode4 @ 0x179e4: 40 TU against the 30 cost takes mode 4, "
+                          "latch 4, shots 0, closes screen 7 and pushes nothing");
+                    pSelU->uTu = 30;
+                    CLICK(37);
+                    Check(g_world.nMapActionMode == 5 && pMapX->bActionLatch == PUFO_ACTION_LATCH_FIRE
+                              && pMapX->status.nCount == 0,
+                          "Tact_TryFireMode5 @ 0x17b1c takes the boundary -- the original compares `uTu >= cost`");
+                    pSelU->uTu = 20;
+                    pMapX->status.nCount = 0;
+                    nMark = g_nSamples;
+                    CLICK(37);
+                    Check(g_aFrameSamples[nMark] == 17 && g_world.nMapActionMode == PUFO_ACTION_MODE_NONE
+                              && pMapX->bActionLatch == PUFO_ACTION_LATCH_NONE && pMapX->nBurstShots == 0
+                              && g_world.nUiScreen == 0 && pMapX->status.nCount == 1,
+                          "Tact_TryFireMode5 @ 0x17b1c refuses 20 against 30: mode 12, latch 0, shots 0, screen 0, "
+                          "and a message pushed. DEVIATION, recorded: the original pushes text record 1 "
+                          "(aTextRec1_OutOfTime @ 0xB399D through StatusMsg_Push @ 0x2DDA4), the port pushes record 6");
+                    pSelU->uTu = 40;
+                    g_world.nUiScreen = 7;
+                    pMapX->status.nCount = 0;
+                    nMark = g_nSamples;
+                    CLICK(42);
+                    Check(g_aFrameSamples[nMark] == 17 && g_world.nMapActionMode == 10
+                              && pMapX->bActionLatch == PUFO_ACTION_LATCH_FIRE && g_world.nUiScreen == 0
+                              && pMapX->status.nCount == 0,
+                          "widget 42 is Tact_TryFireMode10 @ 0x17a80: mode 10, latch 4, screen closed, no message");
+
+                    /* 44..52: the nine sub-mode pads. The nine originals are identical except the constant
+                     * each one writes into pSelWeapon->bUnk7; all three writes land on the live cells (the
+                     * fixture item and the selected soldier) and the TU charge uses the CURRENT action
+                     * mode's cost (mode 4 here, 30). */
+                    g_world.nMapActionMode = 4;
+                    for (i32 nSub = 0; nSub <= 8; ++nSub) {
+                        aPressItem.bUnk8 = 0;
+                        aPressItem.bUnk7 = 0xEE;
+                        pSelU->uTu = 100;
+                        nMark = g_nSamples;
+                        CLICK(44 + nSub);
+                        snprintf(aszSubMsg, sizeof(aszSubMsg),
+                                 "pad %d is %s: sample 17, bUnk8 = 1, bUnk7 = %d, and 30 TU off the unit",
+                                 44 + nSub, apszSubRow[nSub], nSub);
+                        Check(g_aFrameSamples[nMark] == 17 && aPressItem.bUnk8 == 1
+                                  && aPressItem.bUnk7 == (u8)nSub && pSelU->uTu == 70, aszSubMsg);
+                    }
+
+                    /* 71..74: the four option pads. SHOW is the one that recomputes -- it can only be on
+                     * while SCROLL is on -- and each pad byte mirrors its option byte. */
+                    g_options.bScrollByPen = 1;
+                    g_options.bShowBorder = 0;
+                    nMark = g_nSamples;
+                    CLICK(71);
+                    Check(g_options.bShowBorder == 1 && g_world.sTactMenuPads.abPen[1] == 1
+                              && g_aFrameSamples[nMark] == 17,
+                          "widget 71 is Map_ToggleFlag128A8E @ 0x192d4: SHOW comes on while SCROLL is on");
+                    CLICK(71);
+                    Check(g_options.bShowBorder == 0 && g_world.sTactMenuPads.abPen[1] == 0,
+                          "Map_ToggleFlag128A8E @ 0x192d4 recomputes rather than flipping: the second press puts SHOW back down");
+                    g_options.bShowBorder = 1;
+                    g_options.bScrollByPen = 0;
+                    CLICK(71);
+                    Check(g_options.bShowBorder == 0 && g_world.sTactMenuPads.abPen[1] == 0,
+                          "Map_ToggleFlag128A8E @ 0x192d4 cannot keep SHOW on once SCROLL is off");
+
+                    /* RUN touches only its own pair; TURN and MENU are mutually exclusive -- turning one on
+                     * clears the other option byte and its pad, and neither off-branch reaches sideways. */
+                    g_options.bRunByDblClick = 0;
+                    g_options.bTurnByPen = 1;
+                    g_options.bMenuByPen = 1;
+                    g_world.sTactMenuPads.abPen[3] = 1;
+                    g_world.sTactMenuPads.abPen[4] = 1;
+                    nMark = g_nSamples;
+                    CLICK(72);
+                    Check(g_options.bRunByDblClick == 1 && g_world.sTactMenuPads.abPen[2] == 1
+                              && g_options.bTurnByPen == 1 && g_options.bMenuByPen == 1
+                              && g_world.sTactMenuPads.abPen[3] == 1 && g_world.sTactMenuPads.abPen[4] == 1
+                              && g_aFrameSamples[nMark] == 17,
+                          "widget 72 is Map_ToggleFlag128A8F @ 0x19348: RUN comes on with its pad (unk_ACFDA) and "
+                          "leaves TURN and MENU and their pads standing");
+                    CLICK(72);
+                    Check(g_options.bRunByDblClick == 0 && g_world.sTactMenuPads.abPen[2] == 0
+                              && g_options.bTurnByPen == 1 && g_options.bMenuByPen == 1,
+                          "Map_ToggleFlag128A8F @ 0x19348 flips RUN back down and still touches nothing else");
+
+                    g_options.bTurnByPen = 0;
+                    g_options.bMenuByPen = 1;
+                    g_world.sTactMenuPads.abPen[4] = 1;
+                    nMark = g_nSamples;
+                    CLICK(73);
+                    Check(g_options.bTurnByPen == 1 && g_world.sTactMenuPads.abPen[3] == 1
+                              && g_options.bMenuByPen == 0 && g_world.sTactMenuPads.abPen[4] == 0
+                              && g_aFrameSamples[nMark] == 17,
+                          "widget 73 is Map_ToggleFlag128A90 @ 0x193a0: TURN on lights unk_ACFFA and the original's "
+                          "own branch clears Map_bMenuByPen @ 0x128A91 with its pad unk_AD01A");
+                    CLICK(73);
+                    Check(g_options.bTurnByPen == 0 && g_world.sTactMenuPads.abPen[3] == 0
+                              && g_options.bMenuByPen == 0 && g_world.sTactMenuPads.abPen[4] == 0,
+                          "Map_ToggleFlag128A90 @ 0x193a0 takes only its own pair down on the way out");
+
+                    g_options.bTurnByPen = 1;
+                    g_world.sTactMenuPads.abPen[3] = 1;
+                    g_options.bMenuByPen = 0;
+                    g_world.sTactMenuPads.abPen[4] = 0;
+                    nMark = g_nSamples;
+                    CLICK(74);
+                    Check(g_options.bMenuByPen == 1 && g_world.sTactMenuPads.abPen[4] == 1
+                              && g_options.bTurnByPen == 0 && g_world.sTactMenuPads.abPen[3] == 0
+                              && g_aFrameSamples[nMark] == 17,
+                          "widget 74 is Map_ToggleFlag128A91 @ 0x1941c: MENU on lights unk_AD01A and clears "
+                          "Map_bTurnByPen @ 0x128A90 with its pad unk_ACFFA -- the mirror of 0x193a0");
+                    CLICK(74);
+                    Check(g_options.bMenuByPen == 0 && g_world.sTactMenuPads.abPen[4] == 0
+                              && g_options.bTurnByPen == 0 && g_world.sTactMenuPads.abPen[3] == 0,
+                          "Map_ToggleFlag128A91 @ 0x1941c takes only its own pair down on the way out");
+
+                    /* 94/95/96 and 31: the deploy pair, the screen-7 opener and the flagged command
+                     * opener -- all three are sample-and-write handlers with no gate. */
+                    g_world.sTactInput.bDeployPanelOpen = 0;
+                    g_world.nUiScreen = 7;
+                    nMark = g_nSamples;
+                    CLICK(94);
+                    Check(g_world.sTactInput.bDeployPanelOpen == 1 && g_world.nUiScreen == 0
+                              && g_aFrameSamples[nMark] == 16 && g_aFrameSamples[nMark + 1] == 7,
+                          "widget 94 is Map_PlaySamples16_7_SetDeployFlag @ 0x19528: 16 then 7, the deploy byte "
+                          "goes up and screen 7 closes");
+                    nMark = g_nSamples;
+                    CLICK(95);
+                    Check(g_world.sTactInput.bDeployPanelOpen == 0 && g_aFrameSamples[nMark] == 16
+                              && g_aFrameSamples[nMark + 1] == 7,
+                          "widget 95 is Map_PlaySamples16_7_ClearDeployFlag @ 0x19568: the same pair, the flag down");
+                    g_world.nUiScreen = 0;
+                    nMark = g_nSamples;
+                    CLICK(96);
+                    Check(g_world.nUiScreen == 7 && g_aFrameSamples[nMark] == 16
+                              && g_aFrameSamples[nMark + 1] == 14,
+                          "widget 96 is Map_UiScreen7_PlaySamples16_14 @ 0x194f8: the screen first, then 16 and 14");
+                    g_world.nUiScreen = 0;
+                    g_world.sTactInput.bUiSlot8Byte0 = 0;
+                    nMark = g_nSamples;
+                    CLICK(31);
+                    Check(g_world.nUiScreen == 4 && g_world.sTactInput.bUiSlot8Byte0 == 1
+                              && g_aFrameSamples[nMark] == 16,
+                          "widget 31 is Tact_OpenCommandScreenFlagged @ 0x198c4: sample 16, the pen-slot-8 low "
+                          "byte (unk_113A38) set, screen 4");
+
+                    pMapX->pSelWeapon = pWepSave;
+                    g_world.nMapActionMode = nModeSave;
+                    pMapX->nBurstShots = nBurstSave;
+                    pSelU->uTu = uTuSave;
+                    g_world.sTactInput.bDeployPanelOpen = bDepSave;
+                    g_world.sTactInput.bUiSlot8Byte0 = bSlot8Save;
+                    g_options.bRunByDblClick = bRunSave;
+                    g_options.bTurnByPen = bTurnSave;
+                    g_options.bMenuByPen = bMenuSave;
+                    g_world.sTactUi.anActionCost[4] = nCost4Save;
+                    g_world.sTactUi.anActionCost[5] = nCost5Save;
+                    g_world.sTactUi.anActionCost[10] = nCost10Save;
                 }
 
                 /* Restore everything the dispatch moved. */
