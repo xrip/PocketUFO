@@ -2864,19 +2864,19 @@ i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
     }
 
     if (pEnv->pPanelA != NULL) {
-        UiPanel_DrawText(pEnv->pPanelA); /* 0x98264 */
+        UiPanel_DrawText(pEnv->pPanelA, pEnv->pColor); /* 0x98264 */
     }
     if (pEnv->pPanelE != NULL) {
-        UiPanel_DrawText(pEnv->pPanelE); /* 0x98270 */
+        UiPanel_DrawText(pEnv->pPanelE, pEnv->pColor); /* 0x98270 */
     }
     if (pEnv->pPanelC != NULL) {
-        UiPanel_DrawText(pEnv->pPanelC); /* 0x98278 */
+        UiPanel_DrawText(pEnv->pPanelC, pEnv->pColor); /* 0x98278 */
     }
     if (pEnv->pPanelB != NULL) {
-        UiPanel_DrawText(pEnv->pPanelB); /* 0x98280 */
+        UiPanel_DrawText(pEnv->pPanelB, pEnv->pColor); /* 0x98280 */
     }
     if (pEnv->pPanelD != NULL) {
-        UiPanel_DrawText(pEnv->pPanelD); /* 0x9828C */
+        UiPanel_DrawText(pEnv->pPanelD, pEnv->pColor); /* 0x9828C */
     }
 
     /* 0x98290..0x98340: the row under the map cursor, named at (10, 282). */
@@ -4834,16 +4834,16 @@ void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv)
 
     if (pEnv->pbPanelsBuilt != NULL && *pEnv->pbPanelsBuilt != 0) {
         if (pEnv->pPanelA != NULL) {
-            UiPanel_DrawText(pEnv->pPanelA); /* 0x6FB84 */
+            UiPanel_DrawText(pEnv->pPanelA, pEnv->pColor); /* 0x6FB84 */
         }
         if (pEnv->pPanelB != NULL) {
-            UiPanel_DrawText(pEnv->pPanelB); /* 0x6FB90 */
+            UiPanel_DrawText(pEnv->pPanelB, pEnv->pColor); /* 0x6FB90 */
         }
         if (pEnv->pPanelC != NULL) {
-            UiPanel_DrawText(pEnv->pPanelC); /* 0x6FB9C */
+            UiPanel_DrawText(pEnv->pPanelC, pEnv->pColor); /* 0x6FB9C */
         }
         if (pEnv->pPanelD != NULL) {
-            UiPanel_DrawText(pEnv->pPanelD); /* 0x6FBA8 */
+            UiPanel_DrawText(pEnv->pPanelD, pEnv->pColor); /* 0x6FBA8 */
         }
 
         (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0); /* 0x6FBCC */
@@ -5543,13 +5543,13 @@ void FundingScreen_Draw(const FundingDrawEnv *pEnv)
 
     /* 0x5B48C..0x5B4A4: names, bars, arrows. */
     if (pEnv->pPanelNames != NULL) {
-        UiPanel_DrawText(pEnv->pPanelNames);
+        UiPanel_DrawText(pEnv->pPanelNames, pEnv->pColor);
     }
     if (pEnv->pPanelBars != NULL) {
-        UiPanel_DrawText(pEnv->pPanelBars);
+        UiPanel_DrawText(pEnv->pPanelBars, pEnv->pColor);
     }
     if (pEnv->pPanelArrows != NULL) {
-        UiPanel_DrawText(pEnv->pPanelArrows);
+        UiPanel_DrawText(pEnv->pPanelArrows, pEnv->pColor);
     }
 
     /* 0x5B4B4..0x5B52C: "Итого: " + the total + "$". The total is whatever the toggle built; this
@@ -7880,10 +7880,10 @@ i32 SoldierScreen_Draw(const SoldierDrawEnv *pEnv)
         PadImage_Blit(pEnv->pPad);                           /* 0x652D4 */
     }
     if (pEnv->pPanelNames != NULL) {
-        UiPanel_DrawText(pEnv->pPanelNames);                 /* 0x652E0 */
+        UiPanel_DrawText(pEnv->pPanelNames, pEnv->pColor);                 /* 0x652E0 */
     }
     if (pEnv->pPanelCraft != NULL) {
-        UiPanel_DrawText(pEnv->pPanelCraft);                 /* 0x652EC */
+        UiPanel_DrawText(pEnv->pPanelCraft, pEnv->pColor);                 /* 0x652EC */
     }
 
     SoftSurf_BlitRectProxy(0, 69, 23, 97, 1,
@@ -8000,8 +8000,8 @@ i32 SoldierScreen_DrawEquipPanels(const SolEquipPanelEnv *pEnv)
     SoftSurf_BlitRectProxy(0, PUFO_SOLPAN_FRAME_X + 2, PUFO_SOLPAN_FRAME_Y + 2, PUFO_SOLPAN_FRAME_W - 4,
                            PUFO_SOLPAN_ROW_H * nHeightRows + 25, 0, 0x6E, 0x77);      /* 0x63100 */
 
-    UiPanel_DrawText(pEnv->pPanelEquip);  /* 0x63108 */
-    UiPanel_DrawText(pEnv->pPanelStores); /* 0x63118 */
+    UiPanel_DrawText(pEnv->pPanelEquip, pEnv->pColor);  /* 0x63108 */
+    UiPanel_DrawText(pEnv->pPanelStores, pEnv->pColor); /* 0x63118 */
     return nRows; /* the original hands back UiPanelMsg_Draw's return value, which its caller drops */
 }
 
@@ -8650,7 +8650,7 @@ i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv)
         }
         (void)Ui_AnimExpandBlit(pEnv->pAnim, 0, 228, 236, 85, 4, 0x46, 0x4B, 0xC8, 0); /* 0x59FE0 */
         if (pEnv->pPanel != NULL) {
-            UiPanel_DrawText(pEnv->pPanel);                                          /* 0x59FEC */
+            UiPanel_DrawText(pEnv->pPanel, pEnv->pColor);                                          /* 0x59FEC */
         }
         (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);             /* 0x5A00C */
         BaseUi_CopyLabel(szLabel, PUFO_BUILD_LABEL_MAX, pEnv->pszTitleList);
@@ -10523,13 +10523,13 @@ void ResearchScreen_Draw(const ResearchDrawEnv *pEnv)
     }
 
     if (pEnv->pPanelTopic != NULL) {
-        UiPanel_DrawText(pEnv->pPanelTopic); /* 0x73BFC */
+        UiPanel_DrawText(pEnv->pPanelTopic, pEnv->pColor); /* 0x73BFC */
     }
     if (pEnv->pPanelQty != NULL) {
-        UiPanel_DrawText(pEnv->pPanelQty); /* 0x73C08 */
+        UiPanel_DrawText(pEnv->pPanelQty, pEnv->pColor); /* 0x73C08 */
     }
     if (pEnv->pPanelProgress != NULL) {
-        UiPanel_DrawText(pEnv->pPanelProgress); /* 0x73C14 */
+        UiPanel_DrawText(pEnv->pPanelProgress, pEnv->pColor); /* 0x73C14 */
     }
 
     (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0); /* 0x73C34 */
@@ -10790,19 +10790,19 @@ void BuySellScreen_Draw(const BuySellDrawEnv *pEnv)
 
     /* 0x78314..0x7833C / 0x788AC..0x788D4: the five panels, in the order A, E, C, B, D. */
     if (pEnv->pPanelA != NULL) {
-        UiPanel_DrawText(pEnv->pPanelA);
+        UiPanel_DrawText(pEnv->pPanelA, pEnv->pColor);
     }
     if (pEnv->pPanelE != NULL) {
-        UiPanel_DrawText(pEnv->pPanelE);
+        UiPanel_DrawText(pEnv->pPanelE, pEnv->pColor);
     }
     if (pEnv->pPanelC != NULL) {
-        UiPanel_DrawText(pEnv->pPanelC);
+        UiPanel_DrawText(pEnv->pPanelC, pEnv->pColor);
     }
     if (pEnv->pPanelB != NULL) {
-        UiPanel_DrawText(pEnv->pPanelB);
+        UiPanel_DrawText(pEnv->pPanelB, pEnv->pColor);
     }
     if (pEnv->pPanelD != NULL) {
-        UiPanel_DrawText(pEnv->pPanelD);
+        UiPanel_DrawText(pEnv->pPanelD, pEnv->pColor);
     }
 
     /* The band is 16 * min(nLineCount, nStyle) of panel B, the decrement column. */
@@ -12765,7 +12765,7 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv)
 
     for (i32 i = 0; i < 4; ++i) {                       /* 0x72600..0x72624 */
         if (pEnv->apPanels[i] != NULL) {
-            UiPanel_DrawText(pEnv->apPanels[i]);
+            UiPanel_DrawText(pEnv->apPanels[i], pEnv->pColor);
         }
     }
     (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit,
@@ -12901,7 +12901,7 @@ void BaseInfoScreen_Draw(const BaseInfoDrawEnv *pEnv)
 
     for (i = 0; i < 3; ++i) {                            /* 0x57218..0x57230 */
         if (pEnv->pppPanel != NULL && pEnv->pppPanel[i] != NULL) {
-            UiPanel_DrawText(pEnv->pppPanel[i]);
+            UiPanel_DrawText(pEnv->pppPanel[i], pEnv->pColor);
         }
     }
 
@@ -13238,7 +13238,7 @@ void BaseAtScreen_Draw(const BaseAtDrawEnv *pEnv)
     }
 
     if (pPanel != NULL) {
-        UiPanel_DrawText(pPanel);                                                  /* 0x587CC */
+        UiPanel_DrawText(pPanel, pEnv->pColor);                                                  /* 0x587CC */
     }
     if (pPanel == NULL || nLimit != pPanel->nLineCount) {                          /* 0x587D8 */
         return;
@@ -13437,7 +13437,7 @@ static const char *UdbTopicName(const UiBaseInfoDrawEnv *pEnv)
 static void Udb_FinishEntry(UiBaseInfoDrawEnv *pEnv)
 {
     if (pEnv->pTextPanel != NULL) {
-        UiPanel_DrawText(pEnv->pTextPanel);                                        /* 0x9D438 */
+        UiPanel_DrawText(pEnv->pTextPanel, pEnv->pColor);                                        /* 0x9D438 */
     }
     (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit,
                                   pEnv->pfnCtlBlitEx, pEnv->pCtlUser);             /* 0x9DD50 */
@@ -13950,7 +13950,7 @@ void Ui_DrawBaseInfo(UiBaseInfoDrawEnv *pEnv)
     }
     if (*pEnv->pbUfopaediaOpen == 0) {                                            /* 0x9B7DC -> loc_9DDB0 */
         if (pEnv->pSelPanel != NULL) {
-            UiPanel_DrawText(pEnv->pSelPanel);                                    /* 0x9DDB8 */
+            UiPanel_DrawText(pEnv->pSelPanel, pEnv->pColor);                                    /* 0x9DDB8 */
         }
         return;
     }
@@ -13960,7 +13960,7 @@ void Ui_DrawBaseInfo(UiBaseInfoDrawEnv *pEnv)
                                        ? pEnv->apCatPanels[nCat] : NULL;
         if (pCatPanel != NULL && pCatPanel->nLineCount != 0) {                   /* 0x9DD90..0x9DDA0 */
             if (pEnv->pSelPanel != NULL) {
-                UiPanel_DrawText(pEnv->pSelPanel);                                /* 0x9DDB8 */
+                UiPanel_DrawText(pEnv->pSelPanel, pEnv->pColor);                                /* 0x9DDB8 */
             }
         }
         return;

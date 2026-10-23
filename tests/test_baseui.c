@@ -6568,6 +6568,7 @@ static SoldierDrawEnv g_solEnv;
 static i32 g_nSolScreenId;
 static u8 g_bSolOpen;
 static i32 g_nSolCursor;
+static GfxColorEnv g_solColor;
 static i32 g_nSolTextCalls;
 static i32 g_nSolTextCursor;
 
@@ -6612,6 +6613,7 @@ static void SolReset(void)
     g_solEnv.pPad = &g_solPad;
     g_solEnv.pPanelNames = &g_solPanelNames;
     g_solEnv.pPanelCraft = &g_solPanelCraft;
+    g_solEnv.pColor = &g_solColor;
     g_solEnv.pfnTextInput = SolTextInputThunk;
 }
 
@@ -6960,6 +6962,7 @@ static void SdFixture(void)
     g_sdEnv.EquipPanels.pPanelEquip = &g_sdPanelEquip;
     g_sdEnv.EquipPanels.pPanelStores = &g_sdPanelStores;
     g_sdEnv.EquipPanels.pTextRecs = g_aSdText;
+    g_sdEnv.EquipPanels.pColor = &g_sdColor;
 }
 
 static void SdCheckLine(UiPanel *pPanel, i32 nRow, const char *pszWant, const char *pszWhat)
@@ -11193,7 +11196,11 @@ static void TestManufDrawFrame(void)
 
     /* Four hand-built panels. nLineCount 4 with nStyle 3 makes the band 16 * 3 = 48, which is the
      * min() the original applies. Their rows sit at (200, 210) so nothing they draw lands on a
-     * separator column or a label row. */
+     * separator column or a label row. The two colour groups are ManufScreen_BuildPanels' own
+     * (0x6EB58 and 0x6EB7C); the shipped rect is 5 with view 230 for A and D and 155/30, 185/30 for
+     * B and C, and the shipped bRowRules is UiPanel_ctor's 1 -- the rule blits of 0x3E9BC / 0x3EB30
+     * are pinned in TestPanelMsgDrawPasses and in econ_manuf_alloc instead, because a probe panel at
+     * (200, 210) with a 230-wide rule would cross the columns this test measures. */
     for (i = 0; i < 4; ++i) {
         if (!UiPanel_ctor(&g_aFramePanel[i], 4)) {
             printf("  FAIL a frame panel could not be constructed\n");
@@ -11206,6 +11213,10 @@ static void TestManufDrawFrame(void)
         g_aFramePanel[i].nPosX = 200;
         g_aFramePanel[i].nPosY = 210;
         g_aFramePanel[i].nUnk7076 = 0;
+        g_aFramePanel[i].bRowRules = 0;
+        UiPanel_SetBytes0to2(&g_aFramePanel[i], 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes3to5(&g_aFramePanel[i], 0x32, 0x32, 0xFA);
+        UiPanel_SetBytes6to11(&g_aFramePanel[i], 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
         (void)UiPanel_SetLineText(&g_aFramePanel[i], 0, "ROW0");
         (void)UiPanel_SetLineText(&g_aFramePanel[i], 1, "ROW1");
         (void)UiPanel_SetLineText(&g_aFramePanel[i], 2, "ROW2");
@@ -13656,21 +13667,20 @@ static void TestFundingPanels(void)
     Asset_CloseArchives();
 }
 
-/* The reference frame for FundingScreen_Draw: the three TEXTS strings at the positions and colours
- * the original uses, plus the names panel's five strings at the geometry its own fields carry
- * (x 10, y 70 + 16 * row -- UiPanel_DrawText @ 0x3f1ac), plus the bars and arrows panels' numbers:
- * both panels carry bAuxNumbers = 1 (0x5AE40 / 0x5AF2C), so UiPanelMsg_Draw @ 0x3EBA8 takes the
- * numeric branch (0x3EC08..0x3EC90) -- bars draw plain itoa(anLineAux) at x 100 (nUnk7076 left),
- * arrows draw the "+" variant at x 170, both at y 70 + 16 * row. The toggle zeroed a bar's aux
- * when the bar was not positive and cleared the same row's arrow with it (0x5B0EC..0x5B11C), so
- * the reference mirrors that. Rails are not reproduced: the compared band excludes the two
- * rail columns (x 5, 234) and the two rail rows (y 5, 315). */
+/* The reference frame for FundingScreen_Draw: the three TEXTS strings at the positions and colours the
+ * original uses, plus the three panels drawn through UiPanel_DrawText in the arm's own order. Drawing the
+ * panels instead of hand-painting their rows is what makes the reference complete: UiPanelMsg_Draw @ 0x3e94c
+ * adds the names panel's rule blits (bRowRules is the ctor's 1 -- 0x5AD14 stores the 0x64,0x96,0x64 triple,
+ * the rect is 5 wide 230 at 0x5ACDC / 0x5AD04) and packs the panel's own style pair (0x5AD4C) for every
+ * row, so the names, the bar numbers and the arrow numbers all draw in 0xC8,0xB4,0xF0 over 0x14,0x14,0x14
+ * and not in the arm's colour. Bars and arrows carry bAuxNumbers 1 (0x5AE40 / 0x5AF2C) and bRowRules 0, so
+ * their rows are itoa of the aux the toggle and the draw left in them, with no rules of their own.
+ * Rails are not reproduced: the compared band excludes the two rail columns (x 5, 234) and the two rail
+ * rows (y 5, 315). */
 static void FundRefSimple(i32 nTotal)
 {
     const char *pszTitle = g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_TITLE;
     char szTotal[64];
-    char szNum[16];
-    i32 i;
 
     memset(g_frameRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
     g_pMainSurface = &g_frameRef;
@@ -13678,23 +13688,17 @@ static void FundRefSimple(i32 nTotal)
     (void)Gfx_PackRgb565Pair(&g_frameColor, 210, 190, 250, 20, 20, 20); /* 0x5B414 */
     Text_DrawString(120 - Text_MeasureWidth(pszTitle) / 2, 20, pszTitle); /* 0x5B440 */
     Text_DrawString(10, 50, g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_COLUMNS); /* 0x5B480 */
-    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
-        Text_DrawString(10, 70 + 16 * i,
-                        g_aFrameText + PUFO_TEXT_REC_STRIDE * g_anFundingSlotText[i]);
-    }
-    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
-        const i32 nBar = (g_anFundBarUi[i] <= 0) ? 0 : g_anFundBarUi[i];
-        const i32 nArrow = (nBar <= 0) ? 0 : g_anFundLevelUi[i];
 
-        (void)snprintf(szNum, sizeof(szNum), "%d", nBar);
-        Text_DrawString(100, 70 + 16 * i, szNum); /* bars panel aux, x 100 */
-        if (nArrow > 0) {
-            (void)snprintf(szNum, sizeof(szNum), "+%d", nArrow);
-        } else {
-            (void)snprintf(szNum, sizeof(szNum), "%d", nArrow);
-        }
-        Text_DrawString(170, 70 + 16 * i, szNum); /* arrows panel, 0x3EC34 vs 0x3EC8C */
+    if (g_pFundPanelNames != NULL) {
+        UiPanel_DrawText(g_pFundPanelNames, &g_frameColor);
     }
+    if (g_pFundPanelBars != NULL) {
+        UiPanel_DrawText(g_pFundPanelBars, &g_frameColor);
+    }
+    if (g_pFundPanelArrows != NULL) {
+        UiPanel_DrawText(g_pFundPanelArrows, &g_frameColor);
+    }
+
     (void)snprintf(szTotal, sizeof(szTotal), "T1151%d$", (int)nTotal); /* 0x5B4E0..0x5B4F8 */
     (void)Gfx_PackRgb565Pair(&g_frameColor, 200, 180, 240, 20, 20, 20); /* 0x5B518 */
     Text_DrawString(10, 160, szTotal); /* 0x5B52C */
@@ -17198,6 +17202,7 @@ static void TestBaseInfoDraw(void)
 {
     const u16 *pPix;
     u16 uCapGlyph;
+    u16 uFootGlyph;   /* 0x5729C's pair: the two centred foot strings and the overlay's row names follow it */
 
     printf("the base info screen's frame\n");
 
@@ -17214,10 +17219,16 @@ static void TestBaseInfoDraw(void)
     g_pMainSurface = &g_biSurf;
     pPix = (const u16 *)g_biSurf.pPixels;
 
-    /* The draw packs its colour pair at 0x5729C, AFTER the base name is drawn at 0x57284, so the
-     * name is drawn in whatever the palette already held -- here the same pair, packed on entry. */
-    uCapGlyph = (u16)Gfx_PackRgb565Pair(&g_biColor, 68, 244, 252, 4, 70, 75);
-    Check(uCapGlyph != 0, "the caption colour pair packs to a non-zero glyph colour (0x2d82c)");
+    /* The draw packs its colour pair at 0x5729C, AFTER the base name is drawn at 0x57284, and the three
+     * panels draw before that at 0x57218..0x57230. UiPanelMsg_Draw packs each panel's own style pair for
+     * every row it walks (0x3EAB8), so the palette the caption finds is the panels' pair -- BaseInfoPanelCommon
+     * stores 0xF0,0xF0,0xF0 over 0x14,0x14,0x14 -- and not the pair the draw itself packs a few
+     * instructions later. That pair is what the two bottom centred strings use. */
+    uCapGlyph = (u16)Gfx_PackRgb565Pair(&g_biColor, (i8)0xF0, (i8)0xF0, (i8)0xF0,
+                                        (i8)0x14, (i8)0x14, (i8)0x14);
+    uFootGlyph = (u16)Gfx_PackRgb565Pair(&g_biColor, 68, 244, 252, 4, 70, 75); /* 0x5729C */
+    Check(uCapGlyph != 0 && uFootGlyph != 0 && uCapGlyph != uFootGlyph,
+          "the panels' pair and 0x5729C's pair are two different glyph colours (0x2d82c)");
 
     /* ---- the gate ---- */
     BiDrawFixture();
@@ -17280,28 +17291,28 @@ static void TestBaseInfoDraw(void)
     PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_BASE, "");
     BiClear(pPix);
     BaseInfoScreen_Draw(&g_biDrawEnv);
-    CheckEqI32(BiInkColour(pPix, 20, 300, 100, 315, uCapGlyph), 0, "with all three records empty no caption is drawn");
+    CheckEqI32(BiInkColour(pPix, 20, 300, 100, 315, uFootGlyph), 0, "with all three records empty no caption is drawn");
     PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_SELECT, "Select");
     BiClear(pPix);
     BaseInfoScreen_Draw(&g_biDrawEnv);
-    Check(BiInkColour(pPix, 20, 300, 100, 315, uCapGlyph) > 0, "TEXTS[1112] reaches the (60, 300) band");
-    CheckEqI32(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph), 0, "  and nothing lands at (180, 300) yet");
+    Check(BiInkColour(pPix, 20, 300, 100, 315, uFootGlyph) > 0, "TEXTS[1112] reaches the (60, 300) band");
+    CheckEqI32(BiInkColour(pPix, 140, 300, 220, 315, uFootGlyph), 0, "  and nothing lands at (180, 300) yet");
     PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_SELECT, "");
     PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_MONTHLY, "Monthly");
     BiClear(pPix);
     BaseInfoScreen_Draw(&g_biDrawEnv);
-    Check(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph) > 0,
+    Check(BiInkColour(pPix, 140, 300, 220, 315, uFootGlyph) > 0,
           "in panel mode the toggle label is TEXTS[1113] at (180, 300)");
     PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_MONTHLY, "");
     PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_BASE, "Base");
     BiClear(pPix);
     BaseInfoScreen_Draw(&g_biDrawEnv);
-    CheckEqI32(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph), 0,
+    CheckEqI32(BiInkColour(pPix, 140, 300, 220, 315, uFootGlyph), 0,
                "TEXTS[1114] is NOT used while the mode flag is set");
     g_bBiMode = 0;
     BiClear(pPix);
     BaseInfoScreen_Draw(&g_biDrawEnv);
-    Check(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph) > 0,
+    Check(BiInkColour(pPix, 140, 300, 220, 315, uFootGlyph) > 0,
           "with the flag clear it is TEXTS[1114] at (180, 300)");
     PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_BASE, "");
 
@@ -17318,9 +17329,9 @@ static void TestBaseInfoDraw(void)
               "the site record's name is the caption centred at (120, 13)");
     }
 
-    /* ---- the three panels really reach the surface. Only the name column's rows 0, 5, 12 and 16
-     * carry a meta colour; every other row keeps the zeroed meta and draws in black, which a
-     * cleared surface cannot show, so the probe uses a meta row. ---- */
+    /* ---- the three panels really reach the surface. Every row draws in the column's own style pair
+     * (0x3EAB8, BaseInfoPanelCommon's F0/14); the name column's rows 0, 5, 12 and 16 carry a meta pair
+     * that replaces it for that row (0x3EB7C). ---- */
     BiDrawFixture();
     /* The build writes the caption records into the name column, so this probe has to empty the column
      * first: rows 0 and 1 both reach the y 40..60 band. */
@@ -17362,8 +17373,8 @@ static void TestBaseInfoDraw(void)
     CheckEqI32(BiInkColour(pPix, 0, 55, 205, 55, XfPix(0x46, 0xA0, 0xB3)), 0,
                "a third row would start at 56, and there is none");
     {
-        const i32 nRow0 = BiInkColour(pPix, 60, 7, 160, 17, uCapGlyph);
-        const i32 nRow1 = BiInkColour(pPix, 60, 35, 160, 45, uCapGlyph);
+        const i32 nRow0 = BiInkColour(pPix, 60, 7, 160, 17, uFootGlyph);
+        const i32 nRow1 = BiInkColour(pPix, 60, 35, 160, 45, uFootGlyph);
         PutStr(g_aBiSiteRecs[0].abName, "");
         PutStr(g_aBiSiteRecs[1].abName, "");
         BiClear(pPix);
@@ -17371,8 +17382,8 @@ static void TestBaseInfoDraw(void)
         SoftSurf_BlitRectProxy(0, 239, 300, 1, 1, 0xFF, 0xFF, 0xFF);
         BaseInfoScreen_Draw(&g_biDrawEnv);
         Check(nRow0 > 0 && nRow1 > 0
-                  && BiInkColour(pPix, 60, 7, 160, 17, uCapGlyph) == 0
-                  && BiInkColour(pPix, 60, 35, 160, 45, uCapGlyph) == 0,
+                  && BiInkColour(pPix, 60, 7, 160, 17, uFootGlyph) == 0
+                  && BiInkColour(pPix, 60, 35, 160, 45, uFootGlyph) == 0,
               "each base row carries its own name centred at (110, 28*i+7)");
     }
 
@@ -18459,6 +18470,13 @@ static void PlFixture(void)
     g_plEnv.pDetail = NULL; /* the delegation itself is checked with a live detail env below */
 }
 
+/* PlaneCraftPanelStyle @ 0x7cd44 is the shipped style of the hangar's two panels: nStyle 8, nFont 16,
+ * nPosY 110, nRectX 5, nRectY 110, the 0xB4 rule triple, bSelLineHighlight 1 and bColorKey 0x96 for
+ * both, and the F0/14 style pair for panel A ONLY (0x7CDFC) -- the status column has no SetBytes6to11,
+ * so its own rows pack a zero pair. The fixture keeps its own nPosX/nPosY/nStyle (a probe layout that
+ * keeps the two panels out of each other's columns) and bRowRules 0: the shipped 1 (UiPanel_ctor) paints
+ * a rule at nPosY - 1 and one under each drawn row across nRectX .. nRectX + nViewW - 1, and those blits
+ * are pinned in TestPanelMsgDrawPasses and in econ_hangar_stores. */
 static void PlBuildPanels(void)
 {
     (void)UiPanel_ctor(&g_plCraftPanel, 3);
@@ -18467,6 +18485,12 @@ static void PlBuildPanels(void)
     g_plCraftPanel.nStyle = 3;
     g_plCraftPanel.nFont = 16;
     g_plCraftPanel.nUnk7076 = 0;
+    g_plCraftPanel.nRectX = 5;
+    g_plCraftPanel.nRectY = 110;
+    g_plCraftPanel.bRowRules = 0;
+    g_plCraftPanel.bColorKey = 0x96;
+    UiPanel_SetBytes0to2(&g_plCraftPanel, 0xB4, 0xB4, 0xB4);
+    UiPanel_SetBytes6to11(&g_plCraftPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
     for (i32 r = 0; r < 3; ++r) {
         (void)UiPanel_SetLineText(&g_plCraftPanel, r, "Row");
     }
@@ -18477,6 +18501,11 @@ static void PlBuildPanels(void)
     g_plStatusPanel.nStyle = 5;
     g_plStatusPanel.nFont = 16;
     g_plStatusPanel.nUnk7076 = 0;
+    g_plStatusPanel.nRectX = 5;
+    g_plStatusPanel.nRectY = 110;
+    g_plStatusPanel.bRowRules = 0;
+    g_plStatusPanel.bColorKey = 0x96;
+    UiPanel_SetBytes0to2(&g_plStatusPanel, 0xB4, 0xB4, 0xB4);
     for (i32 r = 0; r < 5; ++r) {
         (void)UiPanel_SetLineText(&g_plStatusPanel, r, "Row");
     }
@@ -18512,7 +18541,12 @@ static void TestPlaneScreenDraw(void)
     /* The three glyph colours the test counts. Gfx_PackRgb565Pair @ 0x2d82c writes the (r2,g2,b2)
      * half into palette slot 2 entry 27 and Text_DrawString @ 0x2d7bc forces the glyph base to 2, so
      * each packed pair is exactly the colour its following strings draw in. */
-    uPanelGlyph = (u16)Gfx_PackRgb565Pair(&g_plColor, 0, 0, 0, 200, 30, 200); /* the panels' colour */
+    /* The craft panel's own style pair: the builder stores it at 0x7CDFC and UiPanelMsg_Draw repacks it
+     * for every row it walks (0x3EAB8), so the panel's rows are in this colour and not in whatever the
+     * arm packed before the call. The status column has no SetBytes6to11, so its rows pack a zero pair
+     * and draw in black -- 0x7CE30..0x7CE60 runs without the 0x7CDFC call. */
+    uPanelGlyph = (u16)Gfx_PackRgb565Pair(&g_plColor, (i8)0xF0, (i8)0xF0, (i8)0xF0,
+                                          (i8)0x14, (i8)0x14, (i8)0x14);
     uArmGlyph = (u16)Gfx_PackRgb565Pair(&g_plColor, 250, 250, 250, 20, 25, 20);
     uCapGlyph = (u16)Gfx_PackRgb565Pair(&g_plColor, 250, 250, 250, 10, 10, 25);
     Check(uPanelGlyph != uArmGlyph && uArmGlyph != uCapGlyph && uPanelGlyph != uCapGlyph,
@@ -19080,10 +19114,25 @@ static void CdBuildStorePanels(void)
 }
 
 /* The fixture re-runs this after every CdFixture, because CdFixture zeroes the env and the panels carry
- * the flags the draw writes. */
+ * the flags the draw writes. The fields are BasePlaneScreen_BuildControls @ 0x7b014's own table
+ * (PlaneStorePanelStyle @ 0x7B218-side writes, cited at pufo_plane.c:1367): all five share nStyle 14,
+ * nFont 16, nPosY 70, nRectY 70, the 0xB4 rule triple and the F0/14 style pair; the two count columns
+ * (avail, taken) clear bSelLineHighlight and set bAuxNumbers with nUnk7076 2; the two 15-wide quantity
+ * columns (selRow, commit) add bytes 3..5 = 32,32,FA and the nRepeatDelay 5 auto-repeat; every panel
+ * that keeps bSelLineHighlight also gets bColorKey 0x96.
+ *
+ * bRowRules is forced to 0 here. The shipped panels keep UiPanel_ctor's 1, so they paint a 1 px rule at
+ * nPosY - 1 and one under every drawn row, across nRectX .. nRectX + nViewW - 1 (UiPanelMsg_Draw 0x3E9BC
+ * and 0x3EB30) -- and at y 69 those rules span 5..234, the whole row the separators start on, in the
+ * same 0xB4 colour. The rules are pinned where they can be separated from the separators: mutation-proved
+ * in TestPanelMsgDrawPasses and as a picture in econ_buy_craft_queued. */
 static void CdResetStorePanels(void)
 {
-    static const i32 anX[5] = { 10, 164, 170, 186, 232 };
+    static const i32 anX[5]        = { 10, 164, 170, 186, 232 };
+    static const i32 anRectX[5]    = { 5, 130, 166, 182, 190 };
+    static const i32 anViewW[5]    = { 125, 50, 15, 15, 45 };
+    static const u8  abRightAlign[5] = { 0, 1, 0, 0, 1 };
+    static const u8  abRowExtras[5]  = { 0, 0, 1, 1, 0 };
     UiPanel *const ap[5] = { &g_cdSlotPanel, &g_cdAvailPanel, &g_cdSelRowPanel,
                              &g_cdCommitPanel, &g_cdTakenPanel };
 
@@ -19092,9 +19141,21 @@ static void CdResetStorePanels(void)
         ap[i]->nPosY = 70;
         ap[i]->nStyle = 14;
         ap[i]->nFont = 16;
-        ap[i]->nUnk7076 = 0;
-        ap[i]->bSelLineHighlight = 1;
+        ap[i]->nRectX = anRectX[i];
+        ap[i]->nRectY = 70;
+        ap[i]->nViewW = anViewW[i];
+        ap[i]->nUnk7076 = abRightAlign[i] ? 2 : 0;
+        ap[i]->bAuxNumbers = abRightAlign[i];
+        ap[i]->bSelLineHighlight = abRightAlign[i] ? 0 : 1;
+        ap[i]->bColorKey = abRightAlign[i] ? 0xFF : 0x96;
+        ap[i]->bRowRules = 0;
+        ap[i]->nRepeatDelay = abRowExtras[i] ? 5 : 0;
         ap[i]->bRepeatArmed = 0;
+        UiPanel_SetBytes0to2(ap[i], 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(ap[i], 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        if (abRowExtras[i] != 0) {
+            UiPanel_SetBytes3to5(ap[i], 0x32, 0x32, 0xFA);
+        }
         for (i32 r = 0; r < 4; ++r) {
             ap[i]->anLineAux[r] = 0;
         }
@@ -19128,12 +19189,12 @@ static void CdPaintStoresRef(i32 nBand, bool bPreview, const char *pszBottom, i3
     CdDrawCentered(210, 54, "SHIP");
     CdDrawCentered(147, 54, "BASE");
 
-    UiPanel_DrawText(&g_cdSlotPanel);
+    UiPanel_DrawText(&g_cdSlotPanel, &g_cdColor);
     for (i32 i = 0; i < 4; ++i) {
         static const i32 anX[4] = { 130, 166, 181, 196 };
         UiPanel *const ap[4] = { &g_cdAvailPanel, &g_cdSelRowPanel, &g_cdCommitPanel, &g_cdTakenPanel };
         SoftSurf_BlitRectProxy(0, anX[i], 69, 1, nBand + 2, 0xB4, 0xB4, 0xB4);
-        UiPanel_DrawText(ap[i]);
+        UiPanel_DrawText(ap[i], &g_cdColor);
     }
 
     if (bPreview) {

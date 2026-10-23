@@ -571,9 +571,10 @@ static void TestSwapLines(void)
  * panel half does not consume panel state, since the original calls this every frame. */
 static void TestCydoniaHandler(void)
 {
-    SoftSurf  surf;
-    PadImage  pad;
-    UiPanel   panel;
+    SoftSurf    surf;
+    PadImage    pad;
+    UiPanel     panel;
+    GfxColorEnv color = { NULL, 0 }; /* the pack's gamma/fade owner; NULL gamma is the value 0 */
     static u8 aGlyph[4 + 8];   /* a 4x2 glyph: two u16 header fields then the pixels */
     u16      *pPix;
 
@@ -603,7 +604,7 @@ static void TestCydoniaHandler(void)
     panel.nPosX = 100;
     panel.nPosY = 200;
 
-    Cydonia_BlitThenDrawPanel(&pad, &panel);
+    Cydonia_BlitThenDrawPanel(&pad, &panel, &color);
 
     pPix = (u16 *)surf.pPixels;
     Check(pPix[60 * 240 + 40] != 0, "  the pad half drew at the pad origin");
@@ -612,6 +613,201 @@ static void TestCydoniaHandler(void)
     CheckEqI32((i32)panel.nUnk3028, 0, "  and left the scroll position alone");
 
     g_pMainSurface = NULL;
+}
+
+/* UiPanelMsg_Draw @ 0x3e94c, the drawing steps the function owns.
+ *
+ * The fixture is a panel built the way a builder builds one: the ctor's own defaults kept
+ * (bRowRules 1, bSelLineHighlight 1), a rect and view narrower than the screen, both colour
+ * triples set, a meta pair on the LAST visible row, and one more line past the visible window.
+ * That last detail is what makes the loop's packing observable: the original packs the style
+ * pair at 0x3EAB8 for every row from nUnk3028 to nLineCount and only skips the DRAWING past
+ * nStyle (0x3ED18), so the pair left in palette slot 2 after the call is the non-visible row's.
+ *
+ * The two blit colours are written out here rather than read from the render module, the way
+ * SolPix/SdPix do it elsewhere: a changed blit argument then shows up as a wrong expectation. The two
+ * colour *pairs* come from Gfx_PackRgb565Pair itself, because its own rounding is what the original
+ * leaves in the palette. */
+static u16 PanelRulePix(u32 nIdx, u32 nMid, u32 nLow) /* Blit_PackedColor @ 0xa42xx */
+{
+    return (u16)(((nIdx >> 3) << 11) + 32u * (nMid >> 2) + (nLow >> 3));
+}
+
+/* SoftSurf_BlitSrcRect_Inner @ 0xa4450 blends each 5-6-5 field of the destination with the packed
+ * colour at nKey and 255 - nKey. Over a zeroed pixel that leaves only the colour's own fields,
+ * each scaled by nKey/256 -- an opaque key still loses the low bit of every field. */
+static u16 PanelBlendPix(u32 nIdx, u32 nMid, u32 nLow, u32 nKey)
+{
+    const u32 nColor = ((nIdx >> 3) << 11) + 32u * (nMid >> 2) + (nLow >> 3);
+    const u32 nLow2  = ((nColor & 0x1Fu) * nKey) >> 8;          /* the destination is 0 everywhere here,
+                                                                  * so its (255 - nKey) half contributes 0 */
+    const u32 nMid2  = (((nColor & 0x7E0u) >> 5) * nKey) >> 8;
+    const u32 nTop2  = (((nColor & 0xF800u) >> 11) * nKey) >> 8;
+
+    return (u16)(nLow2 + 32u * nMid2 + (nTop2 << 11));
+}
+
+static i32 PanelCountPix(const u16 *pPix, i32 x0, i32 x1, i32 y0, i32 y1, u16 uWant)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * 240 + x] == uWant) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
+static void TestPanelMsgDrawPasses(void)
+{
+    SoftSurf    surf;
+    UiPanel     panel;
+    GfxColorEnv color;
+    i32         nGamma = 3;               /* the packer's divisor 0.1*g + 0.7 is then exactly 1.0 */
+    const u16  *pPix;
+    u16         uRule, uFill;
+    u32         uStylePair, uMetaPair;
+
+    printf("UiPanelMsg_Draw @ 0x3e94c, the two head blits and the per-row colour pair\n");
+
+    SoftSurf_ctor(&surf);
+    (void)SoftSurf_AllocPixels(&surf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &surf;
+    g_blitState.nPixelMode = 2;
+    pPix = (const u16 *)surf.pPixels;
+
+    color.pnGamma   = &nGamma;
+    color.nFadeCount = 0;
+
+    /* Expected values, computed before the draw so they cannot read the state the draw leaves. */
+    uRule     = PanelRulePix(0xB4u, 0xB4u, 0xB4u);                       /* aStyleRgb[0..2] */
+    uFill     = PanelBlendPix((u32)(i8)0x32, (u32)(i8)0x32, (u32)(i8)0xFA, 0xFFu); /* aStyleRgb[3..5], key 0xFF */
+    uStylePair = Gfx_PackRgb565Pair(&color, (i8)0xF0, (i8)0xF0, (i8)0xF0, 0x14, 0x14, 0x14);
+    uMetaPair  = Gfx_PackRgb565Pair(&color, 0, (i8)0xC8, 0, 0, 0x20, (i8)0xC8);
+    Check(uRule != 0 && uFill != 0, "  the two blit colours are non-zero");
+    Check(uStylePair != 0 && uMetaPair != 0 && uStylePair != uMetaPair,
+          "  the style pair and the meta pair pack to different values");
+
+    memset(&panel, 0, sizeof(panel));
+    (void)UiPanel_ctor(&panel, 4);
+    panel.nPosX  = 20;
+    panel.nPosY  = 40;
+    panel.nRectX = 10;
+    panel.nRectY = 40;
+    panel.nViewW = 100;
+    panel.nViewH = 64;
+    panel.nFont  = 16;
+    panel.nStyle = 3;
+    panel.bColorKey = 0xFF;                          /* opaque fill, so the band is exactly its own colour */
+    UiPanel_SetBytes0to2(&panel, 0xB4, 0xB4, 0xB4);
+    UiPanel_SetBytes3to5(&panel, 0x32, 0x32, 0xFA);
+    UiPanel_SetBytes6to11(&panel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+    for (i32 r = 0; r < 4; ++r) {
+        char szRow[8];
+
+        (void)snprintf(szRow, sizeof(szRow), "%c%c%c", 'A' + r, 'B' + r, 'C' + r);
+        (void)UiPanel_SetLineText(&panel, r, szRow);
+    }
+    UiPanel_SetLineMeta(&panel, 2, 0, 0xC8, 0, 0, 0x20, 0xC8);
+    panel.bHoverActive = 1;
+    panel.nHoverRow    = 1;
+
+    /* Pass P - the geometry. Rows 1 and 2 carry no text here, so the band is pure fill and every
+     * rule row is whole. The rule the loop paints under visible row 0 lands on the band's first
+     * row: a whole rule there is what makes the head-blit order visible. */
+    (void)UiPanel_SetLineText(&panel, 1, "");
+    (void)UiPanel_SetLineText(&panel, 2, "");
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    UiPanel_DrawText(&panel, &color);
+
+    CheckEqI32(PanelCountPix(pPix, 10, 109, 39, 39, uRule), 100,
+               "  bRowRules paints the top rule at nPosY - 1 across nViewW (0x3E9BC)");
+    Check(pPix[39 * 240 + 9] != uRule && pPix[39 * 240 + 110] != uRule,
+          "  and it spans nRectX .. nRectX + nViewW - 1");
+    CheckEqI32(PanelCountPix(pPix, 11, 108, 57, 71, uFill), 98 * 15,
+               "  the hovered row's fill is (nViewW - 2) x nFont at nHoverRow * nFont + nPosY (0x3EA44)");
+    Check(pPix[55 * 240 + 60] != uFill && pPix[72 * 240 + 60] != uFill,
+          "  and stops at nFont rows of its own");
+    Check(pPix[60 * 240 + 10] != uFill && pPix[60 * 240 + 109] != uFill,
+          "  with the fill 2 px narrower than the rule, starting at nRectX + 1");
+    CheckEqI32(PanelCountPix(pPix, 11, 108, 56, 56, uRule), 98,
+               "  the row rule paints over the band's first row: the fill runs before the loop");
+    Check(PanelCountPix(pPix, 10, 109, 56, 56, uRule) == 100 && PanelCountPix(pPix, 10, 109, 72, 72, uRule) == 100
+              && PanelCountPix(pPix, 10, 109, 88, 88, uRule) == 100,
+          "  every visible row gets its rule under it, at (nVisible + 1) * nFont + nPosY (0x3EB30)");
+    CheckEqI32(PanelCountPix(pPix, 10, 109, 104, 104, uRule), 0,
+               "  and the row past nStyle draws no rule (0x3ED18 skips the drawing only)");
+
+    /* Pass Q - the colour packs. This test does not load the font sprites, so the packs are read where
+     * the original writes them rather than as glyph ink: Gfx_PackRgb565Pair @ 0x2d82c stores the first
+     * triple in palette slot 2 entry 33 and the second in entry 27, and that pair is what the next text
+     * anywhere takes. Row 2 carries a meta pair; row 3 sits past nStyle.
+     *
+     * The two draws together separate the two claims. With row 3 present the last pack is row 3's style
+     * pair, so the meta pack is provably not the loop's last act, and the style pack is provably not
+     * skipped for a row that draws nothing. With row 3 gone row 2 is the last row, and the value left
+     * behind is row 2's meta pair -- the meta pack runs, and it replaces the style pair for that row. */
+    (void)UiPanel_SetLineText(&panel, 1, "BBB");
+    (void)UiPanel_SetLineText(&panel, 2, "CCC");
+    panel.nHoverRow = 2;
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND] = 0;
+    UiPanel_DrawText(&panel, &color);
+
+    CheckEqI32(PanelCountPix(pPix, 90, 108, 73, 87, uFill), 19 * 15,
+               "  the hovered band is intact where the loop's rules do not reach it");
+    CheckEqI32((i32)g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND], (i32)uStylePair,
+               "  the loop packs the style pair for every row to nLineCount: the row past nStyle leaves it (0x3EAB8 packs, 0x3ED18 skips the drawing only)");
+    Check(g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND] != uMetaPair,
+          "  so it is not row 2's meta pair");
+
+    panel.nLineCount = 3;   /* row 2 becomes the last row, and it is the meta row */
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    UiPanel_DrawText(&panel, &color);
+    CheckEqI32((i32)g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND], (i32)uMetaPair,
+               "  and a row with a meta pair packs it over the style pair, for that row (0x3EB7C)");
+    panel.nLineCount = 4;
+
+    panel.bColorKey = 0;    /* 255 - nKey is the destination's half: the pixel is left as it is */
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    UiPanel_DrawText(&panel, &color);
+    CheckEqI32(PanelCountPix(pPix, 0, 239, 0, 319, uFill), 0,
+               "  bColorKey 0 leaves the hovered row's pixels alone (0x3EA40 LDRB bColorKey)");
+    panel.bColorKey = 0xFF;
+
+    /* The gates, one flag at a time: each conjunct of the fill's condition is tested on its own, so a
+     * port that drops either one fails. */
+    panel.bRowRules        = 0;
+    panel.bSelLineHighlight = 1;
+    panel.bHoverActive      = 1;
+    panel.nHoverRow         = 1;
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    UiPanel_DrawText(&panel, &color);
+    CheckEqI32(PanelCountPix(pPix, 0, 239, 0, 319, uRule), 0,
+               "  bRowRules 0 skips the top rule and the per-row rules (0x3E974 / 0x3EB0C)");
+    Check(PanelCountPix(pPix, 0, 239, 0, 319, uFill) > 0,
+          "  and leaves the hovered row's fill alone");
+
+    panel.bRowRules         = 1;
+    panel.bSelLineHighlight = 0;
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    UiPanel_DrawText(&panel, &color);
+    Check(PanelCountPix(pPix, 0, 239, 0, 319, uRule) > 0, "  bRowRules 1 paints the rules again");
+    CheckEqI32(PanelCountPix(pPix, 0, 239, 0, 319, uFill), 0,
+               "  bSelLineHighlight 0 skips the fill even with the pointer inside (0x3E9E4)");
+
+    panel.bSelLineHighlight = 1;
+    panel.bHoverActive      = 0;
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    UiPanel_DrawText(&panel, &color);
+    CheckEqI32(PanelCountPix(pPix, 0, 239, 0, 319, uFill), 0,
+               "  bHoverActive 0 skips it with the highlight flag set (the flag TrackHold owns)");
+
+    g_pMainSurface = NULL;
+    SoftSurf_dtor(&surf);
 }
 
 /* Ui_AnimExpandBlit @ 0x95bf0 and Ui_AnimExpandBlit_IfEnabled @ 0x663c4. The state machine is the
@@ -723,6 +919,7 @@ int main(void)
     TestLineList();
     TestSwapLines();
     TestCydoniaHandler();
+    TestPanelMsgDrawPasses();
     TestAnimExpandBlit();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);

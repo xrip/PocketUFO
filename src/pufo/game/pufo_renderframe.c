@@ -118,7 +118,7 @@ i32 Render_Frame(const RenderFrameEnv *pEnv)
                                             pEnv->pBlitUser);
             break;
         case 0x14: case 0x15: /* 0x223dc */
-            Cydonia_BlitThenDrawPanel(pEnv->pCydoniaPad, pEnv->pCydoniaPanel);
+            Cydonia_BlitThenDrawPanel(pEnv->pCydoniaPad, pEnv->pCydoniaPanel, pEnv->pColor);
             break;
         default:
             break;

@@ -117,3 +117,49 @@ explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the
 ## Open items
 
 1. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
+
+## Part 157 review: the 29 references that moved, read against 0x3e94c (2026-10-23)
+
+Method. Each changed reference was diffed against HEAD -- the changed-pixel mask, the old->new colour pairs and the
+changed row bands -- converted to a [current | changed-only] sheet in build/crops/view157/s_<name>.png, and the sheet
+was looked at. The 29 pictures give 23 distinct (mask, pairs) signatures; the twins share both, so each signature was
+reviewed once and its twins listed: (econ_buy_craft_queued, econ_hangar_cap_full, transfer_staged, transfer_committed),
+(econ_manuf_alloc, econ_manuf_done), (geoscape_research, geoscape_research_apply), (tact_briefing_urban,
+tact_mission_from_descent).
+
+Every change is one of the two UiPanelMsg_Draw steps or the colour consequence of its packs. Nothing else appeared.
+
+1. The rule blits 0x3E9BC (nPosY - 1) and 0x3EB30 ((nVisible + 1) * nFont + nPosY). Their colour is the panel's
+   aStyleRgb[0..2]: grey 0xB4 where the builder writes the triple (buy/sell 0x77218, the plane store panels,
+   ufopaedia 0x9A9BC and 0x9AE98, the hangar panels), and index 0 -- black -- where it does not. The five tact panels
+   get only SetBytes6to11 (pufo_tactinit.c layout table): panels 0, 1 and 4 clear bRowRules, panels 2 and 3 set it, so
+   tact_hud_promotion shows black rules at y 54, 71, 87 (nPosY 55, nFont 16) and tact_briefing* shows none at all.
+2. Panel rows, and any arm text drawn after a panel, now take the panel's own style pair: the pack at 0x3EAB8 writes
+   palette slot 2 entries 33/27 and Text_DrawString @ 0x2d798 reads them. Seen in geoscape_hangar's caption,
+   geoscape_options_base's title and column headers, geoscape_research's column captions, ufopaedia_entry's body,
+   tact_briefing's paragraph, the BaseInfo caption (0x57284, which follows the three panels at 0x57218..0x57230).
+3. No hovered-row fill appears in any of the 29. In every one of these states bHoverActive is clear at the dump, and
+   the fill's gate at 0x3E9E4 keeps it off.
+
+Row periodicity is what makes each rule reviewable without judgement calls: econ_buysell_* / econ_research_* /
+geoscape_research_* change rows 69, 86, 102, 118, 134, 150 (nPosY 70, nFont 16) with the glyph bands between them;
+ufopaedia_index changes 49, 74, 98, 122, 146, 170, 194, 218 (the selector panel's nPosY 50 with nFont 24, 0x9A93C);
+geoscape_multi_box 103, 120, 136 (the status panel, nFont 16); geoscape_hangar 109, 126, 142, 158 (nPosY 110);
+tact_hud_promotion 54, 71, 87. In econ_buy_craft_queued the rules at 69 and 86 are absent because the destination
+overlay's erase rects (0x98738 and 0x9877C, height 28 * nBaseCount + 4 = 88) cover y 0..87 -- the first rule that
+survives there is 102, and 102 is exactly what the picture changed at.
+
+The box (item 2 of this ledger), measured again after the change: x 61..178, y 94..110, a 1 px frame in 0x009DAC
+around a 0x00555A interior, byte-identical to HEAD in all four pictures that show it. It is not a UiPanelMsg_Draw
+fill: a fill is (nViewW - 2) x nFont at nRectX + 1, and no panel of this screen produces 118 x 17 (A 123 x 16, B and C
+13 x 16, D 228 x 16, E 43 x 16). Panel E's fill would land at x 191..234, y 70..85 -- that region is byte-identical to
+HEAD, so no fill was painted there either. Item 2 stays open with the same next check: which blit draws this frame, and
+why transfer_open shows a caption inside the same frame while the queued states do not.
+
+Pre-existing, measured, not Part 157: the manuf and research overlays paint their own rows over the panel rows behind
+them (econ_manuf_alloc, geoscape_research_allocated -- both show the overlap in HEAD as well). New open item 157a: read
+the two overlay arms in the IDB and check whether they blit an opaque pad before their text, which the port would then
+be missing.
+
+Test behind the change: TestPanelMsgDrawPasses in tests/test_panel.c (20 checks), and 13 mutations of
+src/pufo/ui/pufo_panel.c that each broke the checks they had to break -- the full table is in game-core.md, Part 157.

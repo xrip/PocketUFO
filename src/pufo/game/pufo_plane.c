@@ -1696,10 +1696,10 @@ i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv)
 
     if (pEnv->pbPanelsBuilt != NULL && *pEnv->pbPanelsBuilt != 0) {
         if (pEnv->pCraftPanel != NULL) {
-            UiPanel_DrawText(pEnv->pCraftPanel); /* 0x7D3B4 */
+            UiPanel_DrawText(pEnv->pCraftPanel, pEnv->pColor); /* 0x7D3B4 */
         }
         if (pEnv->pStatusPanel != NULL) {
-            UiPanel_DrawText(pEnv->pStatusPanel); /* 0x7D3C4 */
+            UiPanel_DrawText(pEnv->pStatusPanel, pEnv->pColor); /* 0x7D3C4 */
         }
 
         if (PlaneDrawPreviewArmed(pEnv)) {
@@ -1859,10 +1859,10 @@ i32 BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *pEnv)
         /* 0x7BCF8..0x7BD44: the crew pair, the name at y 30, and a return. Both the stores panel set
          * and the craft read-out are skipped. */
         if (pEnv->pCrewPanel != NULL) {
-            UiPanel_DrawText(pEnv->pCrewPanel); /* 0x7BD00 */
+            UiPanel_DrawText(pEnv->pCrewPanel, pEnv->pColor); /* 0x7BD00 */
         }
         if (pEnv->pCrewStatusPanel != NULL) {
-            UiPanel_DrawText(pEnv->pCrewStatusPanel); /* 0x7BD0C */
+            UiPanel_DrawText(pEnv->pCrewStatusPanel, pEnv->pColor); /* 0x7BD0C */
         }
         (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 200, 200, 10, 25, 10); /* 0x7BD34 */
         PlaneDetailDrawCentered(120, 30, szName);
@@ -1897,7 +1897,7 @@ i32 BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *pEnv)
         }
 
         if (pEnv->pSlotPanel != NULL) {
-            UiPanel_DrawText(pEnv->pSlotPanel); /* 0x7BE78 */
+            UiPanel_DrawText(pEnv->pSlotPanel, pEnv->pColor); /* 0x7BE78 */
         }
 
         /* 0x7BE7C..0x7BEAC: the band is 16 * min(nLineCount, nStyle) of the SELECT-ROW panel. */
@@ -1911,19 +1911,19 @@ i32 BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *pEnv)
 
         PlaneDetailSeparator(PUFO_PLANE_SEP_X_FIRST, nSepH); /* 0x7BEC8 */
         if (pEnv->pAvailPanel != NULL) {
-            UiPanel_DrawText(pEnv->pAvailPanel); /* 0x7BED4 */
+            UiPanel_DrawText(pEnv->pAvailPanel, pEnv->pColor); /* 0x7BED4 */
         }
         PlaneDetailSeparator(PUFO_PLANE_SEP_X_SECOND, nSepH); /* 0x7BEF8 */
         if (pEnv->pSelRowPanel != NULL) {
-            UiPanel_DrawText(pEnv->pSelRowPanel); /* 0x7BF00 */
+            UiPanel_DrawText(pEnv->pSelRowPanel, pEnv->pColor); /* 0x7BF00 */
         }
         PlaneDetailSeparator(PUFO_PLANE_SEP_X_THIRD, nSepH); /* 0x7BF24 */
         if (pEnv->pCommitPanel != NULL) {
-            UiPanel_DrawText(pEnv->pCommitPanel); /* 0x7BF2C */
+            UiPanel_DrawText(pEnv->pCommitPanel, pEnv->pColor); /* 0x7BF2C */
         }
         PlaneDetailSeparator(PUFO_PLANE_SEP_X_FOURTH, nSepH); /* 0x7BF50 */
         if (pEnv->pTakenPanel != NULL) {
-            UiPanel_DrawText(pEnv->pTakenPanel); /* 0x7BF5C */
+            UiPanel_DrawText(pEnv->pTakenPanel, pEnv->pColor); /* 0x7BF5C */
         }
 
         /* 0x7BF60..0x7BF90: bBaseFacPreviewOk, not the bBaseFacPreviewActive the read-out uses. */

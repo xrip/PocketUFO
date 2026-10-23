@@ -9421,6 +9421,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->solDraw.pPad         = pW->pSolPad;                      /* unk_1598D4, the "soldier" pad */
     pF->solDraw.pPanelNames  = pW->pSolPanelNames;               /* 0x15975C */
     pF->solDraw.pPanelCraft  = pW->pSolPanelCraft;               /* 0x159DEC */
+    pF->solDraw.pColor       = pColor;                           /* the pair 0x652E0 / 0x652EC pack */
     pF->solDraw.pfnTextInput = NULL;                             /* the case-5 readout: SoldierScreen_DrawDetail
                                                                   * @ 0x632cc needs the keyboard controls and the
                                                                   * pad block that screen owns, which the shell

@@ -180,18 +180,25 @@ void UiPanel_ScrollPrev(UiPanel *pPanel);
  * (empty) line. */
 i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszText);
 
-/* UiPanelMsg_Draw @ 0x3e94c, text portion.
+/* UiPanelMsg_Draw @ 0x3e94c, the whole function.
  *
- * Renders the visible rows into the main surface. Each row is drawn at
+ * Two head blits first: the top rule when `bRowRules` is set (0x3E9BC), and the hovered row's
+ * fill when `bSelLineHighlight` and `bHoverActive` are both set (0x3EA44) -- the fill comes
+ * before the text, so a highlighted row draws its string on top of it.
+ *
+ * Then the row loop, over every row from `nUnk3028` to `nLineCount`, packing
+ * `aStyleRgb[6..11]` through Gfx_PackRgb565Pair on every iteration (0x3EAB8) and the row's own
+ * `aLineMeta` pair when its first triple is non-zero (0x3EB7C). Only rows with
+ * `row - nUnk3028 < nStyle` are drawn; each drawn row also gets its rule under it (0x3EB30) when
+ * `bRowRules` is set. Text colour is not an argument: Gfx_PackRgb565Pair writes palette slot 2
+ * entries 33/27 and Text_DrawString forces the glyph base to 2, so the pair packed last is the
+ * colour the glyphs get. `pColor` is the port's owner of that packer's gamma and fade cells.
+ *
+ * Each visible row is drawn at
  *     y = (row - nUnk3028) * nFont + (nFont - 16) / 2 + nPosY
  * with the text centred, right-aligned or left-aligned according to nUnk7076
- * (1 = centre, 2 = right, 0 = left), and the x origin is nPosX minus that offset.
- *
- * The original also blits a background strip and a source rect before the rows,
- * via SoftSurf_BlitRectProxy and SoftSurf_BlitSrcRect (both ported in pufo_render.c).
- * The panel engine does not call them -- it renders the rows only. That is the part
- * the panel engine itself owns. */
-void UiPanel_DrawText(UiPanel *pPanel);
+ * (1 = centre, 2 = right, 0 = left), and the x origin is nPosX minus that offset. */
+void UiPanel_DrawText(UiPanel *pPanel, const GfxColorEnv *pColor);
 
 /* UiScrollList_ClickRow @ 0x3eee0.
  *
@@ -229,7 +236,7 @@ bool UiPanel_SwapLines(UiPanel *pPanel, i32 nIdxA, i32 nIdxB);
  * - and the port passes them. It lives here rather than in its own module because it is two calls
  * and nothing else; the Cydonia briefing screens reach it from the Geoscape_Draw arms wired in
  * pufo_world.c. */
-void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel);
+void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel, const GfxColorEnv *pColor);
 
 /* ------------------------------------------------- the animated panel frame
  *

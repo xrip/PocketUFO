@@ -4099,6 +4099,7 @@ typedef struct SoldierDrawEnv {
     PadImage *pPad;         /* *(ctx + 364) = 0x1598D4, the "soldier" pad */
     UiPanel  *pPanelNames;  /* pSolPanelNames @ 0x15975C */
     UiPanel  *pPanelCraft;  /* pSolPanelCraft @ 0x159DEC */
+    const GfxColorEnv *pColor; /* the pair both panels' UiPanelMsg_Draw (0x652E0, 0x652EC) packs */
     i32 (*pfnTextInput)(i32 nCursor, void *pUser); /* the SoldierScreen_DrawDetail (0x632cc) seam */
     void *pTextInputUser;
 } SoldierDrawEnv;
@@ -4156,6 +4157,7 @@ typedef struct SolEquipPanelEnv {
     UiPanel *pPanelEquip;            /* pSolPanelEquip @ 0x159DF0 */
     UiPanel *pPanelStores;           /* pSolPanelStores @ 0x159758 */
     const char *pTextRecs;           /* TEXTS.DAT records, PUFO_TEXT_REC_STRIDE apart */
+    const GfxColorEnv *pColor;       /* the pair the two UiPanelMsg_Draw calls pack (0x63108, 0x63118) */
 } SolEquipPanelEnv;
 
 i32 SoldierScreen_DrawEquipPanels(const SolEquipPanelEnv *pEnv);

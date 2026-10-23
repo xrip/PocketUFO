@@ -592,3 +592,15 @@ fixtures now call Smap_ClampScrollY and a FixtureViewIsLegal check pins the wind
 call). Four references re-recorded. IDB: 0x187054's comment credited 0x836A0 to the wrong function (it is inside
 Smap_HitTestStrategSelect); Smap_ClampScrollY's comment now carries the coverage consequence. Open 156a: the other
 15 band pictures, the empty box in econ_buy_craft_queued / econ_hangar_cap_full, ufopaedia_index, the e2e menu bands.
+
+coverage (Part 157): UiPanelMsg_Draw @ 0x3e94c is ported whole -- top rule 0x3E9BC, hovered-row fill 0x3EA44 before
+all text, the style pair packed for every row to nLineCount at 0x3EAB8, the per-row rule 0x3EB30, the row's meta pack
+0x3EB7C -- with the ARM's LDRB/LDRSB operand split kept apart. 29 references moved and were reviewed one by one
+(23 distinct change signatures); every change is a rule blit, the panel's own style pair, or the pair leaking to the
+next text drawn anywhere. TestPanelMsgDrawPasses (tests/test_panel.c, 20 checks) is mutation-proved with 13
+single-step mutations of src/pufo/ui/pufo_panel.c. The empty box in econ_buy_craft_queued / econ_hangar_cap_full /
+transfer_staged / transfer_committed is measured unchanged by this Part and is NOT a panel fill (118 x 17 frame with a
+0x00555A interior; no panel of that screen yields (nViewW - 2) x nFont = 118 x 17, and panel E's fill region is
+byte-identical to HEAD) -- item 2 of docs/parity/frames-audit.md stays open. New open item 157a: the manuf/research
+overlay overlap (econ_manuf_alloc, geoscape_research_allocated), measured as pre-existing -- check whether the overlay
+arms blit an opaque pad before their text.

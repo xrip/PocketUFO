@@ -3957,10 +3957,10 @@ void Geoscape_DrawScreen(const GeoscapeScreenDrawEnv *pEnv)
             || pEnv->pPanelRight == NULL) {
             return;
         }
-        UiPanel_DrawText(pEnv->pPanelShips);                             /* 0x6C3C8, 0x159E18 */
-        UiPanel_DrawText(pEnv->pPanelMidA);                              /* 0x6C3D4, 0x159E78 */
-        UiPanel_DrawText(pEnv->pPanelMidB);                              /* 0x6C3E0, 0x159E7C */
-        UiPanel_DrawText(pEnv->pPanelRight);                             /* 0x6C3EC, 0x159E1C */
+        UiPanel_DrawText(pEnv->pPanelShips, pEnv->pColor);                             /* 0x6C3C8, 0x159E18 */
+        UiPanel_DrawText(pEnv->pPanelMidA, pEnv->pColor);                              /* 0x6C3D4, 0x159E78 */
+        UiPanel_DrawText(pEnv->pPanelMidB, pEnv->pColor);                              /* 0x6C3E0, 0x159E7C */
+        UiPanel_DrawText(pEnv->pPanelRight, pEnv->pColor);                             /* 0x6C3EC, 0x159E1C */
 
         DrawScreen_CopyTextRec(szText, sizeof(szText),
                                pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OPT_COLUMNS);
@@ -6557,7 +6557,7 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
         (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, pPanel->nPosY - 6,   /* 0x8E62C: panel[0x1B88] - 6 */
                                 0xD0, pPanel->nFont * pPanel->nLineCount + 6, /* 0x8E628: panel[0x1B9C] * panel[0xBDC] */
                                 0, 0x28, 0x32, 0xB4, 0);               /* 0x8E5E4..0x8E608 */
-        UiPanel_DrawText(pEnv->pStatusPanel);                          /* 0x8E654 */
+        UiPanel_DrawText(pEnv->pStatusPanel, pEnv->pColor);                          /* 0x8E654 */
     }
     StatusPanel_DrawActionFail(pEnv, psz);                             /* 0x8E658 */
     /* The chain re-reads line 0's flag at every test, so these are independent tests and not a

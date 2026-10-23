@@ -308,7 +308,30 @@ i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszTe
     return nCommitted;
 }
 
-/* UiPanelMsg_Draw @ 0x3e94c, the row text pass.
+/* UiPanelMsg_Draw @ 0x3e94c, the whole function: two head blits, then the row loop.
+ *
+ * Head blits, both before any text is drawn:
+ *   bRowRules (panel+0x1BA0) -- 0x3E9BC SoftSurf_BlitRectProxy(nRectX, nPosY - 1, nViewW, 1,
+ *     aStyleRgb[0], aStyleRgb[1], aStyleRgb[2]): the rule above the first row.
+ *   bSelLineHighlight (panel+0x1BA1) AND bHoverActive (panel+0xBD0) -- 0x3EA44
+ *     SoftSurf_BlitSrcRect(nRectX + 1, nHoverRow * nFont + nPosY, nViewW - 2, nFont,
+ *     aStyleRgb[3], aStyleRgb[4], aStyleRgb[5], bColorKey): the hovered row's fill. It is
+ *     painted BEFORE the text pass, so a highlighted row keeps its string on top of the fill.
+ *
+ * Row loop. It walks every row from nUnk3028 to nLineCount and packs
+ * Gfx_PackRgb565Pair(aStyleRgb[6..8], aStyleRgb[9..11]) at 0x3EAB8 on EVERY iteration -- rows
+ * past the visible window pack too (0x3ED18 only skips their drawing). The pack writes palette
+ * slot 2 entries 33/27, so the pair left by the panel's LAST line is the pair whatever text is
+ * drawn next anywhere picks up. Inside the drawn-row branch, in this order:
+ *   bRowRules -- 0x3EB30 SoftSurf_BlitRectProxy(nRectX, (nVisible + 1) * nFont + nPosY, nViewW,
+ *     1, aStyleRgb[0], aStyleRgb[1], aStyleRgb[2]): the rule under this row.
+ *   aLineMeta[row][0..2] not all zero -- 0x3EB7C Gfx_PackRgb565Pair(aLineMeta[row][0..2],
+ *     aLineMeta[row][3..5]): the row's own colour pair, replacing the style pair for this row.
+ *
+ * The load widths are not uniform and the port keeps them apart: the two proxy calls take the
+ * rule triple through LDRB (unsigned), while the BlitSrcRect colour operands (0x3EA20..0x3EA34)
+ * and both pack arguments (0x3EA6C..0x3EA94, 0x3EB58..0x3EB78) are LDRSB, so the original hands
+ * those callees sign-extended bytes. The key byte at panel+0x1BB0 is an LDRB.
  *
  * Two ways to pick the string, from the branch at 0x3EBA8:
  *   bAuxNumbers != 0 (0x3EC08..0x3EC90): the line is a number. apLines is never read;
@@ -321,26 +344,50 @@ i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszTe
  *     y = (row - nUnk3028) * nFont + (nFont - 16) / 2 + nPosY
  * and the x origin is nPosX adjusted by the measured width of whichever string was
  * picked, according to nUnk7076: 1 -> centre (half the width), 2 -> right (full
- * width), 0 -> left.
- *
- * The original also packs two colour triples per row through Gfx_PackRgb565Pair
- * and writes them to a palette LUT; that LUT feeds the blit (SoftSurf_BlitRectProxy /
- * SoftSurf_BlitSrcRect, ported in pufo_render.c), and the colour step is still omitted
- * here -- the deviation this function records -- so only the string is drawn. */
-void UiPanel_DrawText(UiPanel *pPanel)
+ * width), 0 -> left. */
+void UiPanel_DrawText(UiPanel *pPanel, const GfxColorEnv *pColor)
 {
     i32 row;
+
+    if (pPanel->bRowRules != 0) {
+        SoftSurf_BlitRectProxy(0, pPanel->nRectX, pPanel->nPosY - 1, pPanel->nViewW, 1,
+                               pPanel->aStyleRgb[0], pPanel->aStyleRgb[1],
+                               pPanel->aStyleRgb[2]);                                 /* 0x3E9BC */
+    }
+    if (pPanel->bSelLineHighlight != 0 && pPanel->bHoverActive != 0) {
+        SoftSurf_BlitSrcRect(pPanel->nRectX + 1,
+                             pPanel->nHoverRow * pPanel->nFont + pPanel->nPosY,
+                             pPanel->nViewW - 2, pPanel->nFont,
+                             (u32)(i8)pPanel->aStyleRgb[3], (i8)pPanel->aStyleRgb[4],
+                             (i8)pPanel->aStyleRgb[5], pPanel->bColorKey);            /* 0x3EA44 */
+    }
 
     for (row = pPanel->nUnk3028; row < pPanel->nLineCount; ++row) {
         char        szNum[16];
         const char *psz;
+        const u8   *pMeta;
         i32         nVisible = row - pPanel->nUnk3028;
         i32         nWidth;
         i32         x;
         i32         y;
 
+        (void)Gfx_PackRgb565Pair(pColor,
+                                 (i8)pPanel->aStyleRgb[6], (i8)pPanel->aStyleRgb[7],
+                                 (i8)pPanel->aStyleRgb[8], (i8)pPanel->aStyleRgb[9],
+                                 (i8)pPanel->aStyleRgb[10], (i8)pPanel->aStyleRgb[11]); /* 0x3EAB8 */
         if (nVisible >= pPanel->nStyle) {
-            break;
+            continue; /* 0x3ED18: the row is packed, not drawn */
+        }
+        if (pPanel->bRowRules != 0) {
+            SoftSurf_BlitRectProxy(0, pPanel->nRectX,
+                                   (nVisible + 1) * pPanel->nFont + pPanel->nPosY, pPanel->nViewW, 1,
+                                   pPanel->aStyleRgb[0], pPanel->aStyleRgb[1],
+                                   pPanel->aStyleRgb[2]);                             /* 0x3EB30 */
+        }
+        pMeta = &pPanel->aLineMeta[PUFO_PANEL_META_BYTES * row]; /* aLineMeta @ 0x10, stride 6 */
+        if (pMeta[PUFO_PANEL_META_RGB1] != 0 || pMeta[1] != 0 || pMeta[2] != 0) {
+            (void)Gfx_PackRgb565Pair(pColor, (i8)pMeta[0], (i8)pMeta[1], (i8)pMeta[2],
+                                     (i8)pMeta[3], (i8)pMeta[4], (i8)pMeta[5]);       /* 0x3EB7C */
         }
         if (pPanel->bAuxNumbers != 0) {
             const i32 nAux = pPanel->anLineAux[row]; /* anLineAux @ 0x13B4, 0x3EC30 / 0x3EC8C */
@@ -503,10 +550,10 @@ bool UiPanel_SwapLines(UiPanel *pPanel, i32 nIdxA, i32 nIdxB)
 }
 
 /* Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0. */
-void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel)
+void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel, const GfxColorEnv *pColor)
 {
     PadImage_Blit(pPad);
-    UiPanel_DrawText(pPanel);
+    UiPanel_DrawText(pPanel, pColor);
 }
 
 /* --- Ui_AnimExpandBlit @ 0x95bf0 --- */

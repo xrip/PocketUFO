@@ -25199,3 +25199,82 @@ IDB upkeep: the repeatable comment at 0x187054 credited the store at 0x836A0 to 
 `STR R0,[R11]` inside Smap_HitTestStrategSelect (0x82BE8..0x837F8) and the clamp function starts at 0x837F8 --
 the attribution now says Smap_HitTestStrategSelect. Smap_ClampScrollY's own comment now records the consequence
 above (one map copy per non-2 id, hence the unpainted band) and the measured window [-40, 124]. Both read back.
+
+Part 157 - UiPanelMsg_Draw @ 0x3e94c finished in the port (src/pufo/ui/pufo_panel.c, UiPanel_DrawText)
+--------------------------------------------------------------------------------
+
+The port's panel text pass now paints all five steps the ARM has, in the ARM's order. Step / site / call / gate:
+
+  1 top rule    0x3E9BC  SoftSurf_BlitRectProxy(0, nRectX, nPosY - 1, nViewW, 1, aStyleRgb[0..2])   bRowRules @ +0x1BA0
+  2 hover fill  0x3EA44  SoftSurf_BlitSrcRect(nRectX + 1, nHoverRow * nFont + nPosY, nViewW - 2, nFont,
+                        aStyleRgb[3..5], bColorKey)   bSelLineHighlight @ +0x1BA1 AND bHoverActive @ 0xBD0, gate 0x3E9E4;
+                        painted before every text call in the function
+  3 style pack  0x3EAB8  Gfx_PackRgb565Pair(aStyleRgb[6..8], aStyleRgb[9..11])   every row nUnk3028..nLineCount -- the
+                        test at 0x3EACC skips only the DRAWING, so a row past nStyle is packed and not drawn
+  4 row rule    0x3EB30  SoftSurf_BlitRectProxy(0, nRectX, (nVisible + 1) * nFont + nPosY, nViewW, 1, aStyleRgb[0..2])
+                        drawn row with bRowRules
+  5 meta pack   0x3EB7C  Gfx_PackRgb565Pair(aLineMeta[n][0..2], aLineMeta[n][3..5])   when the first triple is
+                        non-zero; it replaces the style pair for that row's text
+
+The operand widths are not uniform and the port keeps them apart, because the ARM does. The two proxies load the rule
+triple with LDRB (unsigned); the BlitSrcRect colour operands (0x3EA18..0x3EA30) and BOTH pack calls (0x3EA6C..0x3EA94,
+0x3EB58..0x3EB78) load with LDRSB, so 0xF0 reaches the callee as -16, and the packer's own shifts (MOV R0, R7, ASR #3 /
+ASR #2) turn -16 into -2 -- a signed -16 packs to a negative dword, which is what the original leaves in the palette.
+The key byte at panel+0x1BB0 is LDRB. The port passes (i8) for the signed operands and the raw u8 for the rule triple.
+
+Two consequences, both visible in the references:
+- UiPanel_ctor (0x3e730) leaves nRectX 0, nRectY 0, nViewW 240, nViewH 320, bRowRules 1, bSelLineHighlight 1, nFont 17,
+  nStyle 1, bColorKey 0xFF and aStyleRgb all zero. A builder that never writes the rect or the rule triple paints
+  FULL-WIDTH rules, in index 0 (black) when the triple is missing as well. Shipped cases: the geoscape status panel
+  (builder 0x86AC0..0x86C30 writes neither rect nor view nor bRowRules -- its rules are the 0xA,0x50,0x5A triple), and
+  the two tact panels that keep bRowRules 1 in the layout table at 0x1568E0 / 0x1568DC with no SetBytes0to2 anywhere in
+  the tact init (their rules are black, and tact_hud_promotion shows them at y 54, 71, 87).
+- Text colour is not an argument in this subsystem. The packs write palette slot 2 entry 33 (first triple) and entry 27
+  (second triple, the returned value), and Text_DrawString @ 0x2d798 forces the glyph base to 2. So the pair left behind
+  by the LAST row UiPanelMsg_Draw packs -- including a row past nStyle, which is packed but never drawn -- is the colour
+  whatever text is drawn next anywhere takes. Measured in the port: the base-info caption at 0x57284 follows the three
+  panel draws at 0x57218..0x57230 and comes out in the panels' F0/14 pair, not in the pair the same function packs at
+  0x5729C for its two foot strings; the same arm therefore needs two expected colours.
+
+Test: TestPanelMsgDrawPasses in tests/test_panel.c, 20 checks on a fixture built the way a builder builds one --
+ctor(4), nRectX 10 / nViewW 100, nFont 16, nStyle 3, four lines, a meta pair on the last visible row, hover row 1 then
+2, key 0xFF then 0. The two blit colours are predicted by local helpers that mirror Blit_PackedColor and
+SoftSurf_BlitSrcRect_Inner (the SolPix/SdPix convention: a changed blit argument shows up as a wrong expectation); the
+colour packs are read where the original writes them, at g_aPalette[2][27], because test_panel does not load the font
+sprites, so the packs are measured at the palette rather than as glyph ink.
+
+Teeth -- 13 mutations of src/pufo/ui/pufo_panel.c, run one at a time (build + test_panel), each restored from the saved
+copy and verified byte-for-byte against it, no marker left in src or tests:
+  drop-top-rule            -> "bRowRules paints the top rule at nPosY - 1 across nViewW (0x3E9BC)": got 0, want 100
+  drop-row-rule            -> "the row rule paints over the band's first row" 0/98 and "every visible row gets its rule"
+  drop-hover-fill          -> the fill extent 0/1470, the intact band 0/285, and "leaves the hovered row's fill alone"
+  fill-width-not-minus-2   -> "the fill 2 px narrower than the rule, starting at nRectX + 1"
+  fill-starts-at-rectx     -> fill extent 1455/1470, band 270/285, and the x-span check
+  loop-stops-at-nstyle     -> "the loop packs the style pair for every row to nLineCount": got 249 (the meta pair), want 4258
+  drop-meta-pack           -> "a row with a meta pair packs it over the style pair": got 4258, want 249
+  fill-key-hardcoded       -> "bColorKey 0 leaves the hovered row's pixels alone": got 1470, want 0
+  fill-ignores-hover-flag  -> "bHoverActive 0 skips it with the highlight flag set": got 1470, want 0
+  fill-ignores-highlight   -> "bSelLineHighlight 0 skips the fill even with the pointer inside": got 1470, want 0
+  rule-colour-from-fill-triple (top)  -> the top rule colour check 0/100
+  row-rule-colour-from-fill-triple    -> the per-row rule checks
+  fill-moved-after-the-loop           -> "the row rule paints over the band's first row: the fill runs before the loop"
+
+Fixtures that had to become shipped-faithful for the same reason (their text was invisible because the panels packed a
+zero pair): the Manuf frame panels (now the 0xB4 triple and the F0/14 pair, cites 0x6EB58 / 0x6EB7C), the hangar
+craft/status panels (PlaneCraftPanelStyle 0x7CD44: the 0xB4 triple and bColorKey 0x96 for both, the F0/14 pair for the
+craft panel only, which is what 0x7CDFC does -- the status column keeps its zero pair and draws in black), the five
+plane store panels (PlaneStorePanelStyle's table: rect, view, the two triples, bColorKey 0x96, bAuxNumbers and
+nUnk7076 2 for the two count columns, bytes 3..5 and nRepeatDelay 5 for the two quantity columns), and the geoscape
+status-panel arm fixture (0x44,0xF4,0xFC over 4,0x46,0x4B from pufo_geoiinit.c:456). Those probe fixtures keep
+bRowRules 0 and say so in place: the shipped 1 would paint a full-width rule across the columns the checks measure, and
+the rules are pinned where they can be told apart from separators -- TestPanelMsgDrawPasses and the pictures.
+FundRefSimple now draws the three funding panels through UiPanel_DrawText instead of hand-painting their rows, so the
+reference carries the names panel's rule blits (bRowRules 1, the 0x64,0x96,0x64 triple at 0x5AD14, rect 5 wide 230 at
+0x5ACDC / 0x5AD04) and the style pair all three panels pack at 0x5AD4C.
+
+References: 29 re-recorded, reviewed one by one against 0x3e94c (docs/parity/frames-audit.md, Part 157 review). Gates:
+cmake --build clean with /W4 /WX; test_panel 92 checks, test_baseui and test_geoscape green; tools/check.sh six-gate
+sentinel; docs/parity/coverage.py --check green. IDB: UiPanelMsg_Draw's function comment now lists the five steps, the
+LDRB/LDRSB split and the slot-2 consequence, with item comments at 0x3E9BC, 0x3EA44, 0x3EAB8, 0x3EB30 and 0x3EB7C;
+UiPanel_ctor's comment records its defaults and who has to overwrite them. All read back (the function comment is 937
+characters, under the 1024 store limit).

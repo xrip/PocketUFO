@@ -9296,7 +9296,7 @@ static void PnCheckRow(i32 nY, i32 x0, i32 x1, i32 nCentreX, u16 uWantInk, bool 
     if (x1 - x0 + 1 > 60) { /* a whole-width band: the anchor is the cluster's own centre */
         Check(PnAbs((d.nMinX + d.nMaxX) / 2 - nCentreX) <= 3, "the row is centred on its anchor");
     }
-    CheckEqI32(d.uInk, (i32)uWantInk, "the row is drawn in the colour the arm packed for it");
+    CheckEqI32(d.uInk, (i32)uWantInk, "the row is drawn in the expected colour");
 }
 
 /* The ink a glyph gets after one colour pack, so the two candidate colours are measurable. */
@@ -9855,6 +9855,13 @@ static void TestStatusPanelDefault(void)
     g_pnPanel.nPosY      = 100;
     g_pnPanel.apLines[0] = (u8 *)g_szPnPanelLine;
     g_szPnPanelLine[0]   = 0;
+    /* The shipped style pair, the builder's own bytes (pufo_geoiinit.c:456, stores 0x86B00..0x86B40).
+     * UiPanelMsg_Draw packs this pair for every row it walks (0x3EAB8), so a row the panel draws is in
+     * the panel's colours, not in whatever the arm packed before the call. The rule and highlight flags
+     * stay cleared in this fixture: it measures the arm's frame edges and the row's y, and the shipped
+     * panel's full-width rules (bRowRules and bSelLineHighlight are the ctor's 1s) are pinned as blits
+     * in test_panel and as a picture in geoscape_multi_box. */
+    UiPanel_SetBytes6to11(&g_pnPanel, 0x44, 0xF4, 0xFC, 4, 0x46, 0x4B);
     memset(g_aPnBase, 0, sizeof(g_aPnBase));
     PnRun();
     const PnDiff dFrame = PnDiffRect(0, 0, BD_SURF_W - 1, PN_TAIL_INK_Y - 1);
@@ -12598,6 +12605,7 @@ static void TestGeoscapeSoldierArms(void)
     g_solEnv.pbOpen         = &g_bSolOpen;           /* 0x159DE0 */
     g_solEnv.pnCursor       = &g_nSolCursor;         /* nSoldierCursor @ 0x159E08 */
     g_solEnv.pPad           = &g_solPad;             /* 0x652D4's pad, the same word the arm blits */
+    g_solEnv.pColor         = &g_solColor;           /* the pair 0x652E0 / 0x652EC pack */
     g_solEnv.pfnTextInput   = SolHookTextInput;
     g_nSolCursor = 7;
 

@@ -6567,3 +6567,31 @@ tact_mission_urban / debrief_banner / tact_hud_promotion / tact_hud_inventory, t
 empty rectangle, ufopaedia_index, and the 4 e2e menu/slot bands), plus the audit's 28 tact DumpFrame sites still without
 their draw call identified. Still open: 155a, 154a, PLAN 122a's tail, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a,
 the 4 half-written bugs.tsv rows.
+
+Done (Part 157, UiPanelMsg_Draw closed): src/pufo/ui/pufo_panel.c now paints the whole of UiPanelMsg_Draw @ 0x3e94c --
+the top rule (0x3E9BC), the hovered row's fill (0x3EA44, gated at 0x3E9E4 on bSelLineHighlight && bHoverActive) painted
+BEFORE any text, the style pair packed for every row from nUnk3028 to nLineCount (0x3EAB8, the 0x3EACC test skips only
+the drawing), the rule under each drawn row (0x3EB30) and the row's own meta pack when its first triple is non-zero
+(0x3EB7C). The ARM's operand widths are kept apart: the proxies take the rule triple as unsigned bytes, the
+BlitSrcRect colour operands and both pack calls take sign-extended bytes (0xF0 arrives as -16), the key byte is
+unsigned. Two shipped consequences, both now visible in the pictures: UiPanel_ctor's defaults (nRectX 0, nViewW 240,
+bRowRules 1, aStyleRgb zero) make any builder that never writes the rect or the rule triple paint full-width rules --
+black where the triple is missing, which is exactly the two tact panels that keep bRowRules 1; and because the packs
+write palette slot 2 entries 33/27 while Text_DrawString forces glyph base 2, the pair left by the LAST packed row --
+including a row past nStyle -- colours whatever text is drawn next anywhere (measured: the base-info caption at 0x57284
+takes the panels' pair, not the pack at 0x5729C, so that arm needs two expected colours). TestPanelMsgDrawPasses in
+tests/test_panel.c (20 checks: the rule spans and rows, the fill extent/x-span/key, rule-over-fill order, style vs meta
+pair read at g_aPalette[2][27], the three fill gates) with 13 single-step mutations of the port function, each
+restoring byte-identically -- drop-top-rule 0/100, drop-row-rule 0/98, drop-hover-fill 0/1470, loop-stops-at-nstyle
+4258 -> 249, drop-meta-pack 249 -> 4258, hardcoded key 1470 -> 0, each dropped gate 1470 -> 0, moved-after-the-loop
+98 -> 0. Fixtures made shipped-faithful (Manuf 0x6EB58/0x6EB7C, the hangar panels' PlaneCraftPanelStyle with the F0/14
+pair on the craft panel only per 0x7CDFC, the five store panels' PlaneStorePanelStyle table, the geoscape status
+panel's 0x44,0xF4,0xFC / 4,0x46,0x4B) and FundRefSimple now draws the funding panels through UiPanel_DrawText so its
+reference carries the names panel's rules and the shared style pair; the probe fixtures say in place that they hold
+bRowRules 0 and why. 29 references re-recorded after a per-picture review against 0x3e94c (23 distinct change
+signatures, docs/parity/frames-audit.md). IDB: UiPanelMsg_Draw's function comment (937 chars, read back) plus item
+comments at 0x3E9BC / 0x3EA44 / 0x3EAB8 / 0x3EB30 / 0x3EB7C, and UiPanel_ctor's defaults with the consequence. The box
+in econ_buy_craft_queued and its three twins is measured unchanged by this Part and is not a panel fill -- frames-audit
+item 2 stays open with its next check. New open item 157a: the manuf/research overlay overlap, measured pre-existing --
+read the overlay arms for a pad blit before their text. Still open: 156a, 155a, 154a, PLAN 122a's tail, 117a, 118a,
+118b, 118c, 119b's 4994 half, 121a, the 4 half-written bugs.tsv rows.

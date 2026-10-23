@@ -762,8 +762,8 @@ i32 TactHud_DrawConfirmDialog(UiControl *pPad, const PadImage *pBackdrop,
     Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
     Text_DrawString(170, 30, szRight);
 
-    UiPanel_DrawText(pPanelA);
-    UiPanel_DrawText(pPanelB);
+    UiPanel_DrawText(pPanelA, pColor);
+    UiPanel_DrawText(pPanelB, pColor);
 
     return 1;
 }
@@ -796,8 +796,8 @@ i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
     nWidth = Text_MeasureWidth(pState->szBanner);
     Text_DrawString(120 - nWidth / 2, 10, pState->szBanner);
 
-    UiPanel_DrawText(pPanelA);
-    UiPanel_DrawText(pPanelB);
+    UiPanel_DrawText(pPanelA, pColor);
+    UiPanel_DrawText(pPanelB, pColor);
 
     Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
     Text_DrawString(10, 260, szFooter);
