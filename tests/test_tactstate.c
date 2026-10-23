@@ -48,10 +48,10 @@ static void TestCtor(void)
     /* Poison, then construct: the ctor must clear length and both flags. */
     memset(&g_state, 0xFF, sizeof(g_state));
     TactState_ctor(&g_state);
-    CheckEqI32(g_state.nQueueLen, 0, "  queue length 0");
+    CheckEqI32(g_state.nQueueLen, 0, "  TactState_ctor @ 0x4f2d4 clears the queue length");
     CheckEqI32(g_state.bQueueActive, 0, "  not active");
     CheckEqI32(g_state.bUnk70103, 0, "  scratch flag 0");
-    CheckEqI32(g_state.nQueueCursor, 0, "  cursor 0");
+    CheckEqI32(g_state.nQueueCursor, 0, "  cursor 0 -- this one is the port's whole-block memset, not an original store");
 }
 
 static void TestSimpleEnqueues(void)
@@ -65,7 +65,7 @@ static void TestSimpleEnqueues(void)
 
     TactState_EnqueueTurn(&g_state, &unit, 3);
     CheckEqI32(g_state.nQueueLen, 1, "  turn appended");
-    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_TURN, "  cmd is TURN (0)");
+    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_TURN, "  TactState_EnqueueTurn @ 0x49b84 writes cmd 0");
     Check(g_state.aQueue[0].pUnit == &unit, "  unit stored");
     CheckEqI32(g_state.aQueue[0].nFacing, 3, "  facing stored");
 
@@ -73,15 +73,15 @@ static void TestSimpleEnqueues(void)
     CheckEqI32(g_state.nQueueLen, 2, "  step appended");
     CheckEqI32(g_state.aQueue[1].nCmd, TACTCMD_STEP, "  cmd is STEP (1)");
     CheckEqI32(g_state.aQueue[1].nFacing, 5, "  step facing");
-    CheckEqI32(g_state.aQueue[1].nDelta, 42, "  step delta");
+    CheckEqI32(g_state.aQueue[1].nDelta, 42, "  TactState_EnqueueStep @ 0x49d5c stores the delta word");
 
     TactState_EnqueueRecover(&g_state, &unit);
     TactState_EnqueueClearAim(&g_state, &unit);
     TactState_EnqueueEndMark(&g_state);
     CheckEqI32(g_state.nQueueLen, 5, "  five entries total");
-    CheckEqI32(g_state.aQueue[2].nCmd, TACTCMD_RECOVER, "  recover cmd (11)");
-    CheckEqI32(g_state.aQueue[3].nCmd, TACTCMD_CLEAR_AIM, "  clear-aim cmd (10)");
-    CheckEqI32(g_state.aQueue[4].nCmd, TACTCMD_END_MARK, "  end-mark cmd (12)");
+    CheckEqI32(g_state.aQueue[2].nCmd, TACTCMD_RECOVER, "  TactState_EnqueueRecover @ 0x4a37c queues cmd 11");
+    CheckEqI32(g_state.aQueue[3].nCmd, TACTCMD_CLEAR_AIM, "  TactState_EnqueueClearAim @ 0x4a758 queues cmd 10");
+    CheckEqI32(g_state.aQueue[4].nCmd, TACTCMD_END_MARK, "  TactState_EnqueueEndMark @ 0x4f300 queues cmd 12 with no unit");
 
     /* Commands must not smear between entries. */
     {
@@ -141,7 +141,7 @@ static void TestThrowAndAction18(void)
     unit.uTu = 4;
     Check(!TactState_EnqueueThrow(&g_state, &unit, &item, 3, 4, 1, 5, 0,
                                   CountFace, &nFaced),
-          "  throw refused without TU");
+          "  TactState_EnqueueThrow @ 0x4b2f4 refuses when uTu < nTuCost (the original pushes record 1 there)");
     CheckEqI32(g_state.nQueueLen, 0, "  no entry written");
     CheckEqI32(nFaced, 0, "  unit not faced on refusal");
 
@@ -288,7 +288,8 @@ static void TestEnqueueIfApSpent(void)
     unit.uTuSpent = 50;
     Unit_EnqueueIfApSpent(&g_state, &unit, 3);
     CheckEqI32(g_state.nQueueLen, 1, "  TU >= HP: flash queued");
-    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_DEATH_FLASH, "  it is a death flash");
+    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_DEATH_FLASH,
+               "  Unit_EnqueueIfApSpent @ 0x4a3d4 flashes when uTuSpent reaches uHp (the gate is >=)");
     CheckEqI32(g_state.bQueueActive, 1, "  queue kicked automatically");
     CheckEqI32(g_state.nQueueCursor, 0, "  cursor reset by the kick");
 

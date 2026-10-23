@@ -24510,3 +24510,55 @@ Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictu
 0x548d0, 0x54a90, 0x54b14, 0x54b58; longest 703 chars, under the 1024 cap), the IDB saved.
 
 Measured after Part 143: **914** cited, **54** not (`tact` 54).
+
+### Part 144 -- the tactstate enqueue family closed (8 `tact` rows)
+
+Eight `tact` rows were uncited while `tests/test_tactstate.c` already called and checked all eight:
+`TactState_EnqueueTurn @ 0x49b84`, `TactState_EnqueueStep @ 0x49d5c`, `TactState_EnqueueRecover @ 0x4a37c`,
+`TactState_EnqueueClearAim @ 0x4a758`, `TactState_EnqueueEndMark @ 0x4f300`, `Unit_EnqueueIfApSpent @ 0x4a3d4`,
+`TactState_ctor @ 0x4f2d4`, `TactState_EnqueueThrow @ 0x4b2f4`. Only the `name @ 0x...` cite was missing from the
+check messages.
+
+`TactState_ctor @ 0x4f2d4` turned out to be the interesting one, and the answer needed a measurement rather than a
+reading. The original clears THREE fields (nQueueLen, bQueueActive, bUnk70103); its only code caller is
+`Tact_InitMission @ 0x3c550`, which does `v1 = operator new(0x111E8); pMapTactical = TactState_ctor(v1)` -- fresh,
+uninitialized memory, so the rest of the 0x111E8 block (the 1250-entry queue array, the cursor) starts as garbage in
+the original. The port's `TactState_ctor` does something different: a whole-block `memset` AND the three clears. Three
+cases settled how those two relate: with the memset removed only the cursor check fails (`got -1` where the poison
+left 0xFF), which proves the three explicit clears carry their own weight; with the three clears removed and the
+memset kept nothing fails, which proves the memset covers those three; with both gone, four checks fail. So the port's
+memset is a wider clear, not a lost behaviour -- nothing the original defined is dropped, because the original defined
+nothing there. The `cursor 0` check's message now says plainly that it pins the port's memset and not an original
+store.
+
+`TactState_EnqueueThrow @ 0x4b2f4` re-read: the TU gate runs FIRST -- `uTu < nTuCost` returns
+`StatusMsg_Push @ 0x2dda4(Map_bTactFlag, aTextRec1_OutOfTime @ 0xB399D = record 1, bForce 0)` and writes nothing to
+the queue; otherwise `Unit_FaceToward @ 0x49bf0` runs BEFORE the entry is built, then the 8-field cmd-17 entry is
+appended. No capacity check in the original. The port returns false and leaves the push to the caller: both call
+sites do push `PUFO_TXT_OUT_OF_TU`, and that macro is 1 -- the same record the original pushes -- so the caption is
+faithful. What has no original is the capacity guard: the original's appends are unconditional, and the port bounds
+`nQueueLen` in five paths (`TactState_EnqueueThrow`, `TactState_EnqueueFireBurst` with the wider
+`nQueueLen + 2*nShots + 1 > PUFO_TACT_QUEUE_MAX`, `TactState_EnqueueAction18`, `TactQueue_AppendOpen`,
+`Map_QueueDoorAction`), while the five simple enqueues keep the unconditional write. That guard was described in the
+IDB as a "recorded deviation" but had no `bugs.tsv` row; the row is added here. `Unit_EnqueueIfApSpent @ 0x4a3d4` is
+now pinned at its boundary: the gate that fires is `uTuSpent >= uHp`, flag 0x20 suppresses everything, and a large
+unit with HP left leaves the queue inactive because `TactState_KickQueue @ 0x4f334` is a no-op on an empty queue.
+
+A ledger defect found while adding that row, reported not fixed: four `bugs.tsv` rows (0x39F24 Tact_DeployTeamAndHwps,
+0x39F24 Init_LookupCellFlat, 0x27CB0 Unit_CanStepTo, 0x9EFF4 DatFile_Open) carry only 4 fields instead of 8 -- they
+have no evidence, port_location, reproduced or qol column. Any tool that reads those columns reads them wrong.
+376 rows in the file, 4 short.
+
+Teeth: 10 cases, 30 FAIL lines, 0 SKIP, 0 build failures, 10/10
+restored byte-exact, MUTATION-left values {'0'} (`docs/parity/mutations_part144.py`, counted log
+build/crops/mut144final.log). One case is inert on purpose: the "three clears dropped, memset kept" case measures that
+the memset covers them, and its name says so. The first attempt of this batch SKIPped 5 cases because its multi-line
+anchors were built with `\n` against a CRLF-only file (memory source-eol-mutation-anchors), and 2 more attempts hit
+`BUILD FAILED` because the mutation removed the only use of a parameter (C4100 under `/W4 /WX`); those superseded
+records are in build/crops/mut144.log (12 records) and the counted log holds the 10 final ones
+(`build/crops/filter144.py`).
+
+Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures), `check: ALL SIX GATES RAN`,
+`CHECK EXIT=0`, build/check144.log. IDB: 8 function comments written and read back exact (longest 724 chars), IDB saved.
+
+Measured after Part 144: **922** cited, **46** not (`tact` 46).

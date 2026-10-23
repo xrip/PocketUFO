@@ -494,3 +494,6 @@ Measured after Part 142: **907** cited, **61** not (`tact` 61).
 coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 7 MapCell function comments written and read back exact (0x5487c, 0x548a0, 0x548c0, 0x548d0, 0x54a90, 0x54b14, 0x54b58), the IDB saved. No new bugs.tsv row: the only defect found is a wrong comment in the port (MapCell_ListRemove's tail case), not a behaviour gap.
 
 Measured after Part 143: **914** cited, **54** not (`tact` 54).
+coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 8 tactstate function comments written and read back exact (0x49b84, 0x49d5c, 0x4a37c, 0x4a758, 0x4f300, 0x4a3d4, 0x4f2d4, 0x4b2f4), IDB saved. Bugs ledger: +1 deviation row (the port's queue-capacity guard in TactState_EnqueueThrow and its sibling, which the original does not have).
+
+Measured after Part 144: **922** cited, **46** not (`tact` 46).

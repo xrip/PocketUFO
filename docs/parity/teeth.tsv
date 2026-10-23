@@ -750,24 +750,24 @@
 0x4978c	Unit_UpdateAnimPose	292	tact	yes	no	yes	Spawn_UpdatePose	yes
 0x498b0	Unit_ResetBattleState	348	tact	yes	yes	yes	Tact_SelectTeamUnits|Unit_ArmorForType	yes
 0x49a0c	Unit_PlaceOnMap	376	tact	yes	yes	yes		yes
-0x49b84	TactState_EnqueueTurn	108	tact	yes	no	yes		yes
+0x49b84	TactState_EnqueueTurn	108	tact	yes	yes	yes		yes
 0x49bf0	Unit_FaceToward	364	tact	yes	no	yes	World_TactFaceTowardThunk|World_TactLookClickThunk|TactState_EnqueueFireBurst|Unit_FacingToward	yes
-0x49d5c	TactState_EnqueueStep	128	tact	yes	no	yes		yes
+0x49d5c	TactState_EnqueueStep	128	tact	yes	yes	yes		yes
 0x49ddc	TactState_EnqueueVertStep	132	tact	yes	yes	yes	Unit_PathToCell	yes
 0x49e60	TactState_EnqueueStandFromKneel	88	tact	yes	no	yes		no
 0x49eb8	Unit_bIsOperative	20	tact	yes	no	yes		yes
 0x49ecc	Unit_bIsLarge	36	tact	yes	yes	yes	Rmp_Init	yes
 0x49ef0	Unit_RecalcInventoryStat	940	tact	yes	no	yes		yes
 0x4a29c	TactState_EnqueueDeathFlash	224	tact	yes	yes	yes		yes
-0x4a37c	TactState_EnqueueRecover	88	tact	yes	no	yes		yes
-0x4a3d4	Unit_EnqueueIfApSpent	112	tact	yes	no	yes		yes
+0x4a37c	TactState_EnqueueRecover	88	tact	yes	yes	yes		yes
+0x4a3d4	Unit_EnqueueIfApSpent	112	tact	yes	yes	yes		yes
 0x4a444	Tact_UpdateUnitControl	788	tact	yes	yes	yes	block	yes
-0x4a758	TactState_EnqueueClearAim	88	tact	yes	no	yes		yes
+0x4a758	TactState_EnqueueClearAim	88	tact	yes	yes	yes		yes
 0x4a7b0	Unit_ApplyFallDamage	1000	tact	yes	yes	yes	Fall_Div|Fall_FootprintCell	yes
 0x4ab98	EnemyAi_EnqueueRandomTurn	48	tact	yes	no	yes		yes
 0x4abc8	EnemyAi_TryFireOrWander	1208	tact	yes	yes	yes	EnemyAi_PickOneHanded	yes
 0x4b080	TactState_EnqueueFireBurst	628	tact	yes	yes	yes	World_TactRequestFireThunk	yes
-0x4b2f4	TactState_EnqueueThrow	300	tact	yes	no	yes		yes
+0x4b2f4	TactState_EnqueueThrow	300	tact	yes	yes	yes		yes
 0x4b420	Tact_EnqueueActionOrStatus205	216	tact	yes	no	yes	ClickArmMelee|TactState_EnqueueAction18	yes
 0x4b4f8	Unit_DropAllItemsToCell	428	tact	yes	yes	yes		yes
 0x4b6a4	TactItem_bTryReloadClip	128	tact	yes	no	yes	TactItem_TryReloadClip	yes
@@ -783,8 +783,8 @@
 0x4dcf4	Unit_bFacingAngleDuel	1376	tact	yes	yes	yes		yes
 0x4e254	Unit_bArmorTuWarn	476	tact	yes	yes	yes	World_TactTickActiveUnit|Map_ArmorSlot|Map_ArmorTuWarnCb|Unit_ArmorTuOf	yes
 0x4e430	Tact_KillUnit	3748	tact	yes	yes	yes	World_InitTactical|World_UnitNameRecord|Tact_SpawnAliens	yes
-0x4f2d4	TactState_ctor	44	tact	yes	no	yes		yes
-0x4f300	TactState_EnqueueEndMark	52	tact	yes	no	yes		yes
+0x4f2d4	TactState_ctor	44	tact	yes	yes	yes		yes
+0x4f300	TactState_EnqueueEndMark	52	tact	yes	yes	yes		yes
 0x4f334	TactState_KickQueue	52	tact	yes	yes	yes	World_TactRequestFireThunk	yes
 0x4f368	Tact_RefreshTeamVisibility	136	tact	yes	yes	yes		yes
 0x4f3f0	Tact_ProcessMoveAction	5868	tact	yes	yes	yes	Tact_MuzzleOffset|Map_CellCentreX|MoveCell	yes
