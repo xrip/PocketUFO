@@ -5839,6 +5839,31 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   walks those spans in reverse, so its first action is widget 129; and `UiScrollList_ClickRow @ 0x3eee0` stores the
   row at panel+0xC (0x3EF38) before its seven gates (0x3EF44..0x3EFCC) and only ever reads the cursor at 0xBD4.
 
+  Progress (Part 130): `strat-ui` menu/options buttons (40) closed -- 701 rows now carry a test cite, **267** do
+  not. Nothing here needed a port change: the Part read forty functions at instruction level and the port already
+  matched all of them, while two claims recorded about them were wrong. `MenuBtn_SetSfxVol1..5 @ 0x19bb4..` end
+  with `Sound_Play(16,4)` -- 0x19C00 is 0xE3A00010 = `MOV R0,#0x10`, 0x19C04 POP {LR}, 0x19C08 B Sound_Play --
+  and not with 17, which is what the IDB note and `pufo_menu.c:91` said; the family that really ends with 17 is
+  `OptionsScreen_SetSfxVol0..5 @ 0x6bc1c..` (0x6BC60 = `MOV R0,#0x11`). `MenuBtn_ResizeWindow @ 0x19930` was
+  recorded as 'NOT ported yet' although it is: 24 bytes, `Sound_Play(16,4)` at 0x1993C then `B
+  App_ResizeMainWindow @ 0x9ecb8`, ported as `Menu_ResizeWindow` (Part 61) over `App_ResizeMainWindow`
+  (app/pufo_app.c:2087, Part 36) and wired by `World_ResizeWindowSeamThunk` (app/pufo_world.c:7290) as widget
+  58's handler. `Menu_ToggleForceNoDrag @ 0x19d94` (15 insns, 80 B) reads Map_bForceNoDrag @ 0x128a9c through
+  the Map_bTactFlag base (the flag itself is never read), and its pad store at 0x19DD4 is unconditional with the
+  value the taken arm left in R1 -- `MOVNE R1,#1` at 0x19DB8 on the clear arm, `MOVEQ R1,#0` at 0x19DCC on the
+  set arm -- so bCtl88ForceNoDrag is always the inverse of the new flag. Families measured member by member:
+  speed 19 insns + 2 pool words = 84 B, music 18 + 3 = 84, sfx 21 + 3 = 96, the five confirm bodies 7 + 1 = 32 B
+  and byte-identical (the tail call hands the bank pointer itself to Input_OnConfirm @ 0x15f3c), save/load 17 + 3
+  = 80, load 11 + 2 = 52, each copy differing only in `MOV R1,#imm`. Six shapes went to `docs/parity/bugs.tsv`
+  (364 -> 370) as stated deviations: the confirm five with no guard (0x196E8); the speed, music and sfx bodies
+  with no bounds test, so the port's `ValidStep` is extra -- proved by a mutation, since dropping it from
+  `Menu_SetSpeed` changed no check because `GameSpeed_Set` bounds the level (0x18ECC, 0x19A10, 0x19BB4);
+  ToggleForceNoDrag's unconditional pad write (0x19D94); and `MenuCtl8..14` having no 'no callee' arm, so the
+  port's NULL-pfnLoadGame path is invented (0x1A0BC). One check was too weak to pin what it claimed: 'the mode is
+  3 while the load runs' read the variable only after the call, so moving the mode store after LoadGame passed
+  every check; `SmLoadGame` now gets the caller's mode cell through pUser and the seven checks read it inside the
+  callee (220 -> 227 checks), which is what pins 0x1a0bc.
+
 ### CLAUDE.md's verification contract, mapped to evidence
 
 | Criterion | Evidence, measured in build/crops/check110d.log (EXIT=0) and the audits |
@@ -6055,3 +6080,22 @@ cases in `docs/parity/mutations_part129.py`, one per row -- 169 failing checks, 
 to its exact bytes, `grep -rn "MUTATION" src tests` empty; three first drafts were inert or mis-anchored and were
 re-cut (CtorAll onto the flag clear at 0x114C8, InsertLine onto the count byte at 0x5A32C, GetLineColor onto the
 slot read) | row 121a stays open with 307 rows left.
+
+`<this commit>` + Part 130 | Release 65/65 and Debug 65/65 with `check: ALL SIX GATES RAN`, `CHECK EXIT=0`
+(`build/check130.log`) | 21,233 checks (+43) | coverage 972/1103 functions (88.1%), 596888/598792 bytes (99.7%)
+-- unchanged | reach unchanged at 965/968, residue 0; cites at a row's own address 661 -> **701**, without one
+307 -> **267** (`strat-ui` 121 -> 81; `tact` 93, `strat` 90, `app-shell` 3 left) | no port behaviour changed --
+the forty reads confirmed the port, two recorded claims were corrected (`Sound_Play(17)` -> 16 for the sfx family
+in `pufo_menu.c:91` and in the IDB note at 0x19bb4; the 'not ported yet' note at 0x19930 replaced by the wiring
+that exists), and six original shapes went to `docs/parity/bugs.tsv` (364 -> 370 rows) as stated deviations; new
+checks in `tests/test_menu.c` (speed/music/sfx/resize/ForceNoDrag cites) and `tests/test_menubtn.c` (confirm-body
+shape, the seven save slots, the seven load slots, and the mode read inside the load hook, 220 -> 227 checks) |
+93 frame pictures and 9 e2e pictures unchanged | IDB comments written and read back on 38 addresses, longest 990
+at 0x19d94 -- 0x18ecc (984), 0x18f20/0x18f74/0x18fc8/0x1901c (447 each), 0x196e8 (939), 0x19884/0x198a4/0x19910/
+0x1a014 (498 each), 0x19930 (750), 0x19a64/0x19ab8/0x19b0c/0x19b60 (585 each), 0x19bb4 (784),
+0x19c14/0x19c74/0x19cd4/0x19d34 (544 each), 0x19d94 (990), 0x19e34..0x19fc4 (684 each), 0x1a034 (524), 0x1a064
+(413), 0x1a080 (409), 0x1a09c (472), 0x1a0bc (815), 0x1a0f0..0x1a1f4 (529-530) -- none at the 1024 cap, two stale
+claims replaced, `idb_save` written | teeth: 40 cases in `docs/parity/mutations_part130.py`, one per row -- 247
+failing checks, 0 skipped, 0 inert, every file back to its exact bytes, `grep -rn "MUTATION" src tests` empty;
+nine first drafts were re-cut (six broke the build through C4100 at /WX, three were inert) | row 121a stays open
+with 267 rows left.

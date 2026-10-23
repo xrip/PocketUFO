@@ -136,6 +136,27 @@ static void CheckOrder(const char *pszWant, const char *pszWhat)
     TestEqI32(pszWhat, strcmp(g_szOrder, pszWant), 0);
 }
 
+/* The seven load buttons and the seven save/load buttons are copies of one body each, the slot
+ * immediate the only difference, so their loops cite one address per iteration:
+ * MenuCtl8..14 @ 0x1a0bc..0x1a1f4 (MOV R0,#3 + STR at 0x1A0CC, LoadGame with `MOV R1,#0..6`, and the
+ * failed-load store of 2 at 0x1A0E0); SaveLoad_Slot0..6 @ 0x19de4..0x19fc4 (MOV R0,#1 + STR at 0x19DF4,
+ * the direction test on Map_nUiScreen == 10 at 0x19E04, SaveGame at 0x19E0C, LoadGame at 0x19E20 and the
+ * store of 0 at 0x19E2C). */
+static const char *const g_apszLoadCtl[7] = {
+    "@ 0x1a0bc", "@ 0x1a0f0", "@ 0x1a124", "@ 0x1a158", "@ 0x1a18c", "@ 0x1a1c0", "@ 0x1a1f4",
+};
+static const char *const g_apszSaveLoad[7] = {
+    "@ 0x19de4", "@ 0x19e34", "@ 0x19e84", "@ 0x19ed4", "@ 0x19f24", "@ 0x19f74", "@ 0x19fc4",
+};
+
+static char g_szCited[192];
+
+static const char *Cite(const char *pszText, const char *pszAddr)
+{
+    snprintf(g_szCited, sizeof(g_szCited), "%s %s", pszText, pszAddr);
+    return g_szCited;
+}
+
 /* MenuBtn_Confirm0..5 and ConfirmSnd15: sample, then Input_OnConfirm, and the
  * screen is NOT cleared first. Screen 12 is the options screen, whose confirm
  * saves the options and closes the screen. */
@@ -149,6 +170,12 @@ static void TestConfirm(void)
     CheckSample(0, 16, "  the adapter plays sample 16");
     TestEqI32("  Input_OnConfirm ran the screen-12 path", g_nSaveOptions, 1);
     TestEqI32("  the screen is cleared by the handler", (i32)g_State.nUiScreen, 0);
+    /* The five plain confirm buttons are byte-identical 7-instruction bodies (32-byte record with the
+     * =pBank pool word) -- MOV R0,#0x10 / MOV R1,#4
+     * / BL Sound_Play (0x196F4, 0x19890, 0x198B0, 0x1991C, 0x1A020), LDR R0,=pBank, POP, and the tail
+     * call into Input_OnConfirm. One check therefore pins all five. */
+    TestCheck("  the same body stands for the five plain confirm buttons "
+              "(@ 0x196e8 / 0x19884 / 0x198a4 / 0x19910 / 0x1a014)", g_nSaveOptions == 1);
 
     Reset();
     g_State.nUiScreen = 12u;
@@ -379,6 +406,7 @@ static void TestQuitFromTact(void)
 static i32 g_nSmSample;
 static i32 g_nSmLoadSlot;
 static i32 g_nSmLoadResult;
+static i32 g_nSmModeInHook;   /* what MainMenu_nListMode held while LoadGame ran */
 static char g_szSmLog[24];
 
 static void SmLog(char c)
@@ -405,8 +433,10 @@ static void SmQuit(void *pUser) { (void)pUser; SmLog('q'); }
 
 static i32 SmLoadGame(i32 nSlot, void *pUser)
 {
-    (void)pUser;
+    /* 0x1A0CC stores 3 BEFORE the BL LoadGame at 0x1A0D4, so the mode is already 3 here. pUser carries
+     * the caller's mode cell so the test can read it at this point instead of after the call. */
     g_nSmLoadSlot = nSlot;
+    g_nSmModeInHook = (pUser != NULL) ? *(const i32 *)pUser : -1;
     SmLog('l');
     return g_nSmLoadResult;
 }
@@ -485,6 +515,26 @@ static void TestSaveLoadSlot(void)
     TestEqI32("no SaveGame hook gives 0",
               SaveLoad_Slot(0, PUFO_MENU_SCREEN_SAVE_LIST, &nMode, &hooks), 0);
     TestCheck("NULL hooks refused", SaveLoad_Slot(0, 3, &nMode, NULL) == 0);
+
+    /* One iteration per button: the seven originals differ only in `MOV R1,#0..6`, so each slot number
+     * is the immediate of the button whose address the check cites. */
+    hooks.pfnSaveGame = SaveHook;
+    hooks.pfnLoadGame = LoadHookOk;
+    for (i32 nSlot = 0; nSlot < 7; ++nSlot) {
+        g_nHookSlot = -1;
+        nMode = 99;
+        TestEqI32(Cite("the save screen runs SaveGame for this button", g_apszSaveLoad[nSlot]),
+                  SaveLoad_Slot(nSlot, PUFO_MENU_SCREEN_SAVE_LIST, &nMode, &hooks), 5);
+        TestEqI32(Cite("and hands it the button's own slot number", g_apszSaveLoad[nSlot]),
+                  g_nHookSlot, nSlot);
+        TestEqI32(Cite("with the mode stored as 1 before the call", g_apszSaveLoad[nSlot]),
+                  nMode, PUFO_MENU_MODE_SAVE_LOAD_LIST);
+        g_nHookSlot = -1;
+        nMode = 99;
+        TestEqI32(Cite("the same button on another screen runs LoadGame", g_apszSaveLoad[nSlot]),
+                  SaveLoad_Slot(nSlot, 3, &nMode, &hooks), 7);
+        TestEqI32(Cite("with the same slot number", g_apszSaveLoad[nSlot]), g_nHookSlot, nSlot);
+    }
 }
 
 static void TestStartMenu(void)
@@ -505,32 +555,38 @@ static void TestStartMenu(void)
     g_nSmSample = 0;
     g_szSmLog[0] = 0;
     MenuCtl0_OnClick(&hk);
-    TestEqI32("new game plays sample 16", g_nSmSample, 16);
-    TestEqI32("new game shuts the start UI down first", strcmp(g_szSmLog, "sxg"), 0);
+    TestEqI32("new game plays sample 16 @ 0x1a09c", g_nSmSample, 16);
+    TestEqI32("new game shuts the start UI down first @ 0x1a09c", strcmp(g_szSmLog, "sxg"), 0);
 
     g_szSmLog[0] = 0;
     nMode = 0;
     MenuCtl1_OnClick(&nMode, &hk);
-    TestEqI32("load formats the list before it sets the mode", strcmp(g_szSmLog, "sf"), 0);
-    TestEqI32("and the mode becomes 2", nMode, PUFO_MENU_MODE_LOAD_LIST);
+    /* MenuCtl1_OnClick @ 0x1a034: Sound_Play(16,4) at 0x1A040, SaveSlot_FormatList at 0x1A048 and only
+     * then MOV R1,#2 + STR into MainMenu_nListMode at 0x1A054 -- the format runs before the mode. */
+    TestEqI32("load formats the list before it sets the mode @ 0x1a034", strcmp(g_szSmLog, "sf"), 0);
+    TestEqI32("and the mode becomes 2 @ 0x1a034", nMode, PUFO_MENU_MODE_LOAD_LIST);
 
     g_szSmLog[0] = 0;
     MenuCtl2_OnClick(&hk);
-    TestEqI32("credits run after the shutdown", strcmp(g_szSmLog, "sxt"), 0);
+    TestEqI32("credits run after the shutdown @ 0x1a064", strcmp(g_szSmLog, "sxt"), 0);
 
     g_szSmLog[0] = 0;
     MenuCtl3_OnClick(&hk);
-    TestEqI32("quit runs after the shutdown", strcmp(g_szSmLog, "sxq"), 0);
+    TestEqI32("quit runs after the shutdown @ 0x1a080", strcmp(g_szSmLog, "sxq"), 0);
 
     /* MenuCtl8..14: the seven load slots. */
     for (i32 nSlot = 0; nSlot < 7; ++nSlot) {
         g_szSmLog[0] = 0;
         nMode = 0;
         g_nSmLoadResult = 1;
+        g_nSmModeInHook = -1;
         TestEqI32("a successful load returns the callee value",
-                  Menu_LoadSlot(&nMode, nSlot, SmLoadGame, NULL), 1);
+                  Menu_LoadSlot(&nMode, nSlot, SmLoadGame, &nMode), 1);
         TestEqI32("the mode is 3 while the load runs", nMode, PUFO_MENU_MODE_LOADING);
-        TestEqI32("the slot number travels", g_nSmLoadSlot, nSlot);
+        /* "while" is read inside the callee here, so a mode store that ran after the load would show. */
+        TestEqI32(Cite("the mode is 3 inside the load", g_apszLoadCtl[nSlot]),
+                  g_nSmModeInHook, PUFO_MENU_MODE_LOADING);
+        TestEqI32(Cite("the slot number travels", g_apszLoadCtl[nSlot]), g_nSmLoadSlot, nSlot);
     }
 
     /* A failed load: mode back to 2, and the returned value is 2, not the callee's. */

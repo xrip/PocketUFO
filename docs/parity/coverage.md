@@ -234,3 +234,28 @@ empty; three first drafts were inert or mis-anchored and were re-cut (CtorAll no
 RAN` with exit 0, 65/65 tests, 21190 checks, 93 frame references and 9 e2e pictures unchanged. Measured
 after Part 129: **661** cited, **307** not (`strat-ui` 121, `tact` 93, `strat` 90, `app-shell` 3 left; `ui-
 core` closed).
+
+Part 130 closes 40 `strat-ui` rows: `MenuBtn_SetSpeed0..4` (0x18ecc/0x18f20/0x18f74/0x18fc8/0x1901c),
+`Options_SetMusicVol1..5` (0x19a10..0x19b60), `MenuBtn_SetSfxVol1..5` (0x19bb4..0x19d34),
+`MenuBtn_ResizeWindow` (0x19930), `Menu_ToggleForceNoDrag` (0x19d94), the five plain confirm widgets
+(0x196e8/0x19884/0x198a4/0x19910/0x1a014), `SaveLoad_Slot0..6` (0x19de4..0x19fc4), `MenuCtl0..3`
+(0x1a09c/0x1a034/0x1a064/0x1a080) and `MenuCtl8..14` (0x1a0bc..0x1a1f4). Every family was diffed member by
+member at instruction level: speed 19 insns + 2 pool words, music 18 + 3, sfx 21 + 3, confirm 7 + 1,
+save/load 17 + 3, load 11 + 2, with the copies differing only in `MOV R1,#imm`. No port behaviour changed.
+Two recorded claims were wrong and are fixed: the sfx family ends with Sound_Play(16,4) (0x19C00 is `MOV
+R0,#0x10`), not 17 -- the 17 belongs to OptionsScreen_SetSfxVol0..5 at 0x6bc1c.. (0x6BC60 is `MOV R0,#0x11`)
+-- and 0x19930 was recorded in the IDB as not ported although Menu_ResizeWindow over App_ResizeMainWindow is
+wired through World_ResizeWindowSeamThunk (app/pufo_world.c:7290, widget 58). `Menu_ToggleForceNoDrag`
+publishes the pad with the value its taken arm left in R1 (1 on the clear arm via 0x19DB8, 0 on the set arm
+via 0x19DCC), an unconditional store at 0x19DD4. Six deviations went to `docs/parity/bugs.tsv` (364 -> 370
+rows): the confirm five have no guard and hand the bank itself to Input_OnConfirm; the speed, music and sfx
+bodies have no bounds test so the port's ValidStep is extra (dropping it from Menu_SetSpeed changed no check
+-- GameSpeed_Set bounds the level); ToggleForceNoDrag always writes the pad; MenuCtl8..14 have no 'no
+callee' arm. Teeth: 40 cases in `docs/parity/mutations_part130.py`, one per row -- 247 failing checks, 0
+skipped, 0 inert, every file back to its exact bytes and `grep -rn "MUTATION" src tests` empty; nine first
+drafts were re-cut (six broke the build through the unreferenced-parameter warning at /WX, three were inert,
+one of them because the old 'mode is 3 while the load runs' check read the mode only after the call, which
+is why tests/test_menubtn.c now reads it inside the load hook, 220 -> 227 checks). Gates: `check: ALL SIX
+GATES RAN` with exit 0, 65/65 tests, 21233 checks, 93 frame references and 9 e2e pictures unchanged.
+Measured after Part 130: **701** cited, **267** not (`tact` 93, `strat` 90, `strat-ui` 81, `app-shell` 3
+left).

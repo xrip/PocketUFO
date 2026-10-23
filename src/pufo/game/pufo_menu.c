@@ -88,7 +88,9 @@ bool Menu_SetMusicVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
 /* MenuBtn_SetSfxVol1 @ 0x19bb4, Vol2 @ 0x19c14, Vol3 @ 0x19c74, Vol4 @ 0x19cd4, Vol5 @ 0x19d34.
  * Verified 2026-10-22: five copies of one 21-instruction body (96 bytes each), the level the only
  * difference -- store 1..5 into
- * Map_nSoundVolume, one-hot the pad at level-1, `Sound_ApplySfxVolume`, then `Sound_Play(17)` last. */
+ * Map_nSoundVolume, one-hot the pad at level-1, `Sound_ApplySfxVolume`, then `Sound_Play(16)` last
+ * (0x19C00 `MOV R0,#0x10`, 0x19C04 POP {LR}, 0x19C08 B Sound_Play -- 16 here, NOT the speed group's 17;
+ * the options-screen family at 0x6bc1c.. is the one that ends with 17, see pufo_baseui.c). */
 bool Menu_SetSfxVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
                        const MenuHooks *pHooks)
 {

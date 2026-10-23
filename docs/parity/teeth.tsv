@@ -354,11 +354,11 @@
 0x188e4	Options_SyncUiFromMap_GotoScreen12	352	strat-ui	yes	yes	yes	World_TactPushOptionPads|World_ClickOpenOptions|void|Menu_SyncOptionPads	yes
 0x18e04	Menu_CancelQuitDialog	20	strat-ui	yes	yes	yes	World_QuitYesThunk|World_QuitNoThunk|Menu_OpenQuitDialog	yes
 0x18e2c	Menu_ConfirmQuitDialog	112	strat-ui	yes	yes	yes	World_QuitYesThunk|void|Menu_OpenQuitDialog	yes
-0x18ecc	MenuBtn_SetSpeed0	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
-0x18f20	MenuBtn_SetSpeed1	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
-0x18f74	MenuBtn_SetSpeed2	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
-0x18fc8	MenuBtn_SetSpeed3	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
-0x1901c	MenuBtn_SetSpeed4	84	strat-ui	yes	no	yes	Menu_SetSpeed	yes
+0x18ecc	MenuBtn_SetSpeed0	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
+0x18f20	MenuBtn_SetSpeed1	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
+0x18f74	MenuBtn_SetSpeed2	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
+0x18fc8	MenuBtn_SetSpeed3	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
+0x1901c	MenuBtn_SetSpeed4	84	strat-ui	yes	yes	yes	Menu_SetSpeed	yes
 0x19070	MenuBtn_SetGamma0	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
 0x190d0	MenuBtn_SetGamma1	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
 0x19130	MenuBtn_SetGamma2	96	strat-ui	yes	yes	yes	MenuBtn_SetGamma	yes
@@ -370,42 +370,42 @@
 0x195e0	MenuBtn_SecondaryDismiss	56	strat-ui	yes	yes	yes	void	yes
 0x19618	MenuBtn_ActionBack1	56	strat-ui	yes	yes	yes	void|MenuBtn_ActionBack	yes
 0x19650	MenuBtn_Confirm0	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x196e8	MenuBtn_Confirm1	32	strat-ui	yes	no	yes	void|MenuBtn_Confirm	yes
-0x19884	MenuBtn_Confirm2	32	strat-ui	yes	no	yes	void|MenuBtn_Confirm	yes
-0x198a4	MenuBtn_Confirm3	32	strat-ui	yes	no	yes	void|MenuBtn_Confirm	yes
+0x196e8	MenuBtn_Confirm1	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
+0x19884	MenuBtn_Confirm2	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
+0x198a4	MenuBtn_Confirm3	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
 0x198f0	MenuBtn_ConfirmSnd15	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
-0x19910	MenuBtn_Confirm4	32	strat-ui	yes	no	yes	void|MenuBtn_Confirm	yes
-0x19930	MenuBtn_ResizeWindow	24	strat-ui	yes	no	yes	App_ResizeMainWindow|App_HookNewGame|World_ResizeWindowSeamThunk|void|Menu_ResizeWindow	yes
-0x19a10	Options_SetMusicVol1	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
-0x19a64	Options_SetMusicVol2	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
-0x19ab8	Options_SetMusicVol3	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
-0x19b0c	Options_SetMusicVol4	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
-0x19b60	Options_SetMusicVol5	84	strat-ui	yes	no	yes	Menu_SetMusicVolume	yes
-0x19bb4	MenuBtn_SetSfxVol1	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
-0x19c14	MenuBtn_SetSfxVol2	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
-0x19c74	MenuBtn_SetSfxVol3	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
-0x19cd4	MenuBtn_SetSfxVol4	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
-0x19d34	MenuBtn_SetSfxVol5	96	strat-ui	yes	no	yes	Menu_SetSfxVolume	yes
-0x19d94	Menu_ToggleForceNoDrag	80	strat-ui	yes	no	yes	World_TactLiveOptions|void	yes
-0x19de4	SaveLoad_Slot0	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
-0x19e34	SaveLoad_Slot1	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
-0x19e84	SaveLoad_Slot2	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
-0x19ed4	SaveLoad_Slot3	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
-0x19f24	SaveLoad_Slot4	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
-0x19f74	SaveLoad_Slot5	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
-0x19fc4	SaveLoad_Slot6	80	strat-ui	yes	no	yes	SaveLoad_Slot	yes
-0x1a014	MenuBtn_Confirm5	32	strat-ui	yes	no	yes	void|MenuBtn_Confirm	yes
-0x1a034	MenuCtl1_OnClick	48	strat-ui	yes	no	yes		yes
-0x1a064	MenuCtl2_OnClick	28	strat-ui	yes	no	yes		yes
-0x1a080	MenuCtl3_OnClick	28	strat-ui	yes	no	yes		yes
-0x1a09c	MenuCtl0_OnClick	32	strat-ui	yes	no	yes		yes
-0x1a0bc	MenuCtl8_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
-0x1a0f0	MenuCtl9_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
-0x1a124	MenuCtl10_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
-0x1a158	MenuCtl11_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
-0x1a18c	MenuCtl12_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
-0x1a1c0	MenuCtl13_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
-0x1a1f4	MenuCtl14_OnClick	52	strat-ui	yes	no	yes	Menu_LoadSlot	yes
+0x19910	MenuBtn_Confirm4	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
+0x19930	MenuBtn_ResizeWindow	24	strat-ui	yes	yes	yes	App_ResizeMainWindow|App_HookNewGame|World_ResizeWindowSeamThunk|void|Menu_ResizeWindow	yes
+0x19a10	Options_SetMusicVol1	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
+0x19a64	Options_SetMusicVol2	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
+0x19ab8	Options_SetMusicVol3	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
+0x19b0c	Options_SetMusicVol4	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
+0x19b60	Options_SetMusicVol5	84	strat-ui	yes	yes	yes	Menu_SetMusicVolume	yes
+0x19bb4	MenuBtn_SetSfxVol1	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
+0x19c14	MenuBtn_SetSfxVol2	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
+0x19c74	MenuBtn_SetSfxVol3	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
+0x19cd4	MenuBtn_SetSfxVol4	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
+0x19d34	MenuBtn_SetSfxVol5	96	strat-ui	yes	yes	yes	Menu_SetSfxVolume	yes
+0x19d94	Menu_ToggleForceNoDrag	80	strat-ui	yes	yes	yes	World_TactLiveOptions|void	yes
+0x19de4	SaveLoad_Slot0	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
+0x19e34	SaveLoad_Slot1	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
+0x19e84	SaveLoad_Slot2	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
+0x19ed4	SaveLoad_Slot3	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
+0x19f24	SaveLoad_Slot4	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
+0x19f74	SaveLoad_Slot5	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
+0x19fc4	SaveLoad_Slot6	80	strat-ui	yes	yes	yes	SaveLoad_Slot	yes
+0x1a014	MenuBtn_Confirm5	32	strat-ui	yes	yes	yes	void|MenuBtn_Confirm	yes
+0x1a034	MenuCtl1_OnClick	48	strat-ui	yes	yes	yes		yes
+0x1a064	MenuCtl2_OnClick	28	strat-ui	yes	yes	yes		yes
+0x1a080	MenuCtl3_OnClick	28	strat-ui	yes	yes	yes		yes
+0x1a09c	MenuCtl0_OnClick	32	strat-ui	yes	yes	yes		yes
+0x1a0bc	MenuCtl8_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
+0x1a0f0	MenuCtl9_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
+0x1a124	MenuCtl10_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
+0x1a158	MenuCtl11_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
+0x1a18c	MenuCtl12_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
+0x1a1c0	MenuCtl13_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
+0x1a1f4	MenuCtl14_OnClick	52	strat-ui	yes	yes	yes	Menu_LoadSlot	yes
 0x1a24c	MenuBtn_Cancel0	32	strat-ui	yes	yes	yes	void|MenuBtn_Cancel	yes
 0x1a26c	MenuBtn_Cancel1	32	strat-ui	yes	yes	yes	void|MenuBtn_Cancel	yes
 0x217e0	Menu_DrawLabeledPads	296	strat-ui	yes	yes	yes	Menu_LabelRecordIndex	yes

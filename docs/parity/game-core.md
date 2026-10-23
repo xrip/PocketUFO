@@ -23521,3 +23521,99 @@ references and 9 e2e pictures unchanged. The IDB now carries a function comment 
 addresses (longest 1008 at 0x5a294, all read back under the 1024 cap) and `idb_save` reported ok. Row 121a
 after this Part: 968 behaviour rows, 661 carrying a test cite, 307 not (strat-ui 121, tact 93, strat 90,
 app-shell 3); reach 965/968.
+
+## Part 130 - the 40 `strat-ui` menu rows close: what the speed, music, sfx, confirm, save/load and start
+buttons actually do  Forty `strat-ui` rows read at instruction level, each given a cite earned by the checks
+it sits on: the speed buttons `MenuBtn_SetSpeed0..4 @ 0x18ecc/0x18f20/0x18f74/0x18fc8/0x1901c`, the music
+buttons `Options_SetMusicVol1..5 @ 0x19a10/0x19a64/0x19ab8/0x19b0c/0x19b60`, the sfx buttons
+`MenuBtn_SetSfxVol1..5 @ 0x19bb4/0x19c14/0x19c74/0x19cd4/0x19d34`, `MenuBtn_ResizeWindow @ 0x19930`,
+`Menu_ToggleForceNoDrag @ 0x19d94`, the five plain confirm widgets
+`0x196e8/0x19884/0x198a4/0x19910/0x1a014`, the seven save/load buttons `SaveLoad_Slot0..6 @
+0x19de4..0x19fc4`, the four start-menu buttons `MenuCtl0..3 @ 0x1a09c/0x1a034/0x1a064/0x1a080` and the seven
+load buttons `MenuCtl8..14 @ 0x1a0bc..0x1a1f4`. No port behaviour changed: the port matched the instructions
+in all forty cases. Two claims that were recorded about these functions were wrong, and they are corrected
+below.
+
+### Every family is one body copied, and the copies differ in three immediates at most  A
+position-by-position diff of each family's members (not a visual comparison) gives the exact member table.
+Speed: 19 instructions plus 2 pool words = 84 bytes per member, differing only in the pad clear, the pad
+light and the level -- for `SetSpeed4 @ 0x1901c` that is 0x19030 `MOV R1,#0`, 0x19050 `MOV R1,#1` (its STRB
+lights unk_ACEDA) and 0x19058 `MOV R1,#4`, with the level reaching `GameSpeed_Set @ 0x260c0` as R1 through
+the tail call at 0x19064. Music: 18 instructions plus 3 pool words = 84 bytes; Vol5 stores 5 at 0x19B68,
+clears unk_AD09A at 0x19B7C and lights unk_AD11A at 0x19BA0. Sfx: 21 instructions plus 3 pool words = 96
+bytes. Confirm: 7 instructions plus the =pBank pool word = 32 bytes, and all five are byte-identical.
+Save/load: 17 instructions plus 3 pool words = 80 bytes, differing only in `MOV R1,#0..6`. Load: 11
+instructions plus 2 pool words = 52 bytes, differing only in `MOV R1,#0..6`. The stored volume is 1..5 and
+the lit pad is that value minus one in both option groups, so the pad index is 0-based while the button
+names are 1..5.
+
+### The sample comes first, and the sfx family's sample is 16, not 17  Every speed body opens with `MOV
+R1,#4` / `MOV R0,#0x11` / `BL Sound_Play` (0x18ED0..0x18ED8) and every sfx body closes with `MOV R0,#0x10` /
+`POP {LR}` / `B Sound_Play` (0x19C00..0x19C08) -- the sfx group applies the volume first (`BL
+Sound_ApplySfxVolume` at 0x19BCC) and samples last, and its sample id is 16. Both the IDB family note and
+the port's own comment said 17; the word at 0x19C00 is 0xE3A00010 = `MOV R0,#0x10`, while the family that
+really does end with 17 is `OptionsScreen_SetSfxVol0..5 @ 0x6bc1c..`, where 0x6BC60 is 0xE3A00011. The port
+code was already correct (`PUFO_MENU_SAMPLE_POST` is 16), so the fix is to the claim:
+`src/pufo/game/pufo_menu.c:91` and the IDB comment at 0x19bb4. The music group plays nothing at all --
+`Sound_Play` appears nowhere in its 18 instructions, which is the whole difference between the two option
+groups.
+
+### `MenuBtn_ResizeWindow @ 0x19930` was recorded as not ported; it is  24 bytes, 6 instructions: `0x19934
+MOV R1,#4` / `0x19938 MOV R0,#0x10` / `0x1993C BL Sound_Play(16,4)`, then `0x19940 POP {LR}` and `0x19944 B
+App_ResizeMainWindow @ 0x9ecb8`. It reads no bank and no widget field, and the sample happens before the
+resize. The IDB note on it said 'NOT ported yet' and that the shell does not build its caller; both are
+wrong. `Menu_ResizeWindow` (game/pufo_menu.c, Part 61) sits over `App_ResizeMainWindow`
+(app/pufo_app.c:2087, Part 36), which reproduces the original's SetWindowPos exactly -- hWndMain @ 0x188D54,
+HWND_BOTTOM, 0, 0, nScreenW @ 0x188D40, nScreenH @ 0x188D50, SWP_HIDEWINDOW 0x80 -- and the wiring is
+`World_ResizeWindowSeamThunk` (app/pufo_world.c:7290) as widget 58's handler. The comment at 0x19930 now
+says so.
+
+### ForceNoDrag writes the pad on both arms, with the value the arm left in R1  `Menu_ToggleForceNoDrag @
+0x19d94` is 15 instructions, 80 bytes. `LDR R0,=Map_bTactFlag` at 0x19D94 is only the addressing base for
+the 0x150e4 delta: Map_bTactFlag is never read here, the byte read is Map_bForceNoDrag @ 0x128a9c (0x19DA0
+LDRB R1) and the only test is 0x19DA4 `ANDS R3,R1,#0xFF`. The clear arm stores 0 through
+0x19DA8/0x19DAC/0x19DB4 but then 0x19DB8 `MOVNE R1,#1` leaves 1 in R1; the set arm stores 1 through
+0x19DBC/0x19DC0/0x19DC8 and then 0x19DCC `MOVEQ R1,#0` leaves 0. The single pad store at 0x19DD4 -- `STRB
+R1,[R0,#(bCtl88ForceNoDrag - 0xAC6D0)]` after `LDR R0,=pBank` -- is unconditional and publishes whichever
+value the taken arm produced, i.e. the inverse of the new flag: 1 when the flag was on and got cleared, 0
+when it was off and got set. The port writes `*pPad = bWasOn ? 1 : 0`, which is the same arithmetic.
+
+### The mode store runs before the callee, and the test now reads the mode inside the callee  `MenuCtl8..14`
+store 3 into MainMenu_nListMode @ 0x157188 at 0x1A0CC (and 0x1A100..0x1A204 for the other six) before `BL
+LoadGame @ 0x44bbc` at 0x1A0D4, and on a zero low byte (0x1A0D8 `ANDS R3,R0,#0xFF`) the `MOVEQ R0,#2` /
+STREQ pair at 0x1A0DC/0x1A0E0 restores mode 2 and returns 2 instead of the callee's value. The check that
+says 'the mode is 3 while the load runs' only read the variable after the call, so a store moved after the
+load passed every check -- the first-draft mutation for 0x1a0bc was inert and that is how the weakness was
+found. `SmLoadGame` now receives the caller's mode cell through pUser and records what it holds at the
+moment LoadGame runs (`g_nSmModeInHook`), and the seven new checks cite that reading, so the order is
+pinned. `SaveLoad_Slot0..6` is the same shape with different constants: mode 1 stored at 0x19DF4
+(0x19E44..0x19FD4) before the direction test, the direction taken from the CURRENT screen (`LDRH
+Map_nUiScreen @ 0x1139f2`, `CMP #0xA`, `BNE`), the save arm returning SaveGame's value whole with the mode
+left at 1, and the load arm testing only the low byte and restoring 0 -- 0, not 2 -- through MOVEQ/STREQ.
+
+### Six deviations, none of them reachable in the shipped run  New `bugs.tsv` rows (364 -> 370): the confirm
+five have no guard at all and hand the bank pointer itself to `Input_OnConfirm` while the port splits it
+into (state, hooks) and can return early (0x196E8); the speed, music and sfx bodies contain no bounds test
+anywhere, so the port's `ValidStep` refusal is port-side (0x18ECC, 0x19A10, 0x19BB4) -- and dropping that
+guard from `Menu_SetSpeed` changed no check at all, because `GameSpeed_Set` bounds the level itself, which
+is what really pins 'step 5 refused'; `Menu_ToggleForceNoDrag` writes the pad unconditionally where the port
+writes it only when the pointer exists (0x19D94); and `MenuCtl8..14` have no 'no callee' arm at all, so the
+port's NULL-pfnLoadGame path is an invented arm (0x1A0BC). Each row names the arm that would have to be
+reached, and none is reached by the run behind 93 frame pictures and 9 e2e pictures.
+
+### Proof for this Part  40 mutation cases, one per row (`docs/parity/mutations_part130.py`): 247 failing
+checks, 0 skipped, 0 inert, every source file restored byte-exact (`restored exactly: True` x40, `grep -rn
+MUTATION src tests` empty). Nine of the first drafts were rejected by the sweep and re-cut: six failed to
+build because removing a call left a formal parameter unreferenced under `/W4 /WX` (C4100), so those cases
+now change a value instead of deleting a call (`Sound_Play` id 17 -> 15, the music apply aimed at the sfx
+hook, `nSample + 1`, `Btn_PlayInput(NULL, nSample)`, the slot +1), and three were inert -- dropping
+`ValidStep` (measured above), passing NULL hooks to `Input_OnConfirm` (which crashes the test process
+instead of failing a check, so it is not a proof; the re-cut passes a hooks struct with every field zero,
+which is what the original's bank-with-no-hooks reading would mean), and the mode-store reorder the old test
+could not see. One test change came out of that: `tests/test_menubtn.c` reads the mode inside the load hook,
+220 -> 227 checks. `tools/check.sh` reports `check: ALL SIX GATES RAN` with exit 0: 65/65 release and 65/65
+debug tests, 21233 checks, 93 frame references and 9 e2e pictures unchanged. The IDB carries a function
+comment on all 40 addresses (38 written this Part, longest 990 at 0x19d94, all read back under the 1024
+cap), the two stale claims were replaced, and `idb_save` reported ok. Row 121a after this Part: 968
+behaviour rows, 701 carrying a test cite, 267 not (tact 93, strat 90, strat-ui 81, app-shell 3); reach
+965/968.

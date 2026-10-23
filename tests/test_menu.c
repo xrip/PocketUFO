@@ -142,6 +142,31 @@ static i32 PadLit(const u8 *pPads)
     return -1;
 }
 
+/* Each level of a group is its own original function with the level baked into the immediates, so the
+ * loops below run one step per button and each step cites the address of the button it is running.
+ * Speed: five copies of one 19-instruction body (Sound_Play(17) at 0x18ED8, the one-hot pad stores at
+ * 0x18EE4..0x19054, GameSpeed_Set through the tail call at 0x18F14 with the index in R1). Music: 1..5
+ * written to Map_nMusicVolume at 0x19A24..0x19B74, Sound_ApplyMusicVolume, and no Sound_Play at all. Sfx:
+ * 1..5 written to Map_nSoundVolume at 0x19BC8..0x19D48, apply, then Sound_Play(16) as the tail call at
+ * 0x19C08. */
+static const char *const g_apszSpeedBtn[PUFO_MENU_STEPS] = {
+    "@ 0x18ecc", "@ 0x18f20", "@ 0x18f74", "@ 0x18fc8", "@ 0x1901c",
+};
+static const char *const g_apszMusicBtn[PUFO_MENU_STEPS] = {
+    "@ 0x19a10", "@ 0x19a64", "@ 0x19ab8", "@ 0x19b0c", "@ 0x19b60",
+};
+static const char *const g_apszSfxBtn[PUFO_MENU_STEPS] = {
+    "@ 0x19bb4", "@ 0x19c14", "@ 0x19c74", "@ 0x19cd4", "@ 0x19d34",
+};
+
+static char g_szCited[192];
+
+static const char *Cite(const char *pszText, const char *pszAddr)
+{
+    snprintf(g_szCited, sizeof(g_szCited), "%s %s", pszText, pszAddr);
+    return g_szCited;
+}
+
 static void TestSpeed(void)
 {
     PufoOptions opt;
@@ -158,9 +183,10 @@ static void TestSpeed(void)
         TraceReset();
 
         Check(Menu_SetSpeed(&opt, &clock, &pads, step, &g_hooks), "  speed applied");
-        CheckEqI32(clock.nSpeed, (u32)step, "  clock speed stored");
+        CheckEqI32(clock.nSpeed, (u32)step, Cite("  clock speed stored", g_apszSpeedBtn[step]));
         CheckEqI32(PadSum(pads.abSpeed), 1, "  speed pads are one-hot");
-        CheckEqI32(PadLit(pads.abSpeed), step, "  the right speed pad is lit");
+        CheckEqI32(PadLit(pads.abSpeed), step, Cite("  the right speed pad is lit",
+                                                    g_apszSpeedBtn[step]));
         Check(TraceAt(0, "sample17"), "  sample 17 plays first");
         CheckEqI32(PadSum(pads.abGamma), 0, "  gamma pads untouched");
         CheckEqI32(PadSum(pads.abMusic), 0, "  music pads untouched");
@@ -211,8 +237,10 @@ static void TestMusicVolume(void)
         TraceReset();
 
         Check(Menu_SetMusicVolume(&opt, &pads, step, &g_hooks), "  volume applied");
-        CheckEqI32(opt.nMusicVolume, step + 1, "  music volume stored as 1..5");
-        CheckEqI32(PadLit(pads.abMusic), step, "  the right music pad is lit");
+        CheckEqI32(opt.nMusicVolume, step + 1, Cite("  music volume stored as 1..5",
+                                                    g_apszMusicBtn[step]));
+        CheckEqI32(PadLit(pads.abMusic), step, Cite("  the right music pad is lit",
+                                                    g_apszMusicBtn[step]));
         Check(g_trace.bAppliedMusic, "  the volume was applied");
         CheckEqI32(g_trace.nEvents, 1, "  exactly one event happened");
         Check(TraceAt(0, "applyMusic"), "  and it was the volume apply, not a sample");
@@ -243,8 +271,9 @@ static void TestSfxVolume(void)
         TraceReset();
 
         Check(Menu_SetSfxVolume(&opt, &pads, step, &g_hooks), "  volume applied");
-        CheckEqI32(opt.nSoundVolume, step + 1, "  sound volume stored as 1..5");
-        CheckEqI32(PadLit(pads.abSfx), step, "  the right sfx pad is lit");
+        CheckEqI32(opt.nSoundVolume, step + 1, Cite("  sound volume stored as 1..5",
+                                                    g_apszSfxBtn[step]));
+        CheckEqI32(PadLit(pads.abSfx), step, Cite("  the right sfx pad is lit", g_apszSfxBtn[step]));
         CheckEqI32(g_trace.nEvents, 2, "  two events happened");
         Check(TraceAt(0, "applySfx"), "  the volume apply comes FIRST");
         Check(TraceAt(1, "sample16"), "  sample 16 comes LAST");
@@ -290,8 +319,10 @@ static void TestButtons(void)
 
     TraceReset();
     Menu_ResizeWindow(&g_hooks, H_ResizeWindow);
-    Check(g_trace.bResize, "  ResizeWindow resized");
-    Check(TraceAt(0, "sample16"), "  ResizeWindow plays sample 16");
+    Check(g_trace.bResize, "  ResizeWindow resized @ 0x19930");
+    /* MenuBtn_ResizeWindow @ 0x19930 is 6 instructions: MOV R0,#0x10 / MOV R1,#4 / BL Sound_Play at
+     * 0x1993C, then the tail call at 0x19944 -- no bank read, no argument of its own. */
+    Check(TraceAt(0, "sample16"), "  ResizeWindow plays sample 16 @ 0x19930");
 
     /* A NULL callback must not crash. */
     TraceReset();
@@ -341,12 +372,16 @@ static void TestMuteToggles(void)
     {
         u8 nPad = 9;
         opt.bForceNoDrag = 0;
-        Check(Menu_ToggleForceNoDrag(&opt, &nPad), "  forcenodrag turns on");
-        CheckEqI32(opt.bForceNoDrag, 1, "  flag set");
-        CheckEqI32(nPad, 0, "  pad is 0 when turning ON");
-        Check(!Menu_ToggleForceNoDrag(&opt, &nPad), "  forcenodrag turns off");
-        CheckEqI32(opt.bForceNoDrag, 0, "  flag cleared");
-        CheckEqI32(nPad, 1, "  pad is 1 when turning OFF");
+        /* Menu_ToggleForceNoDrag @ 0x19d94: LDRB of the flag (0x19DA0), ANDS #0xFF (0x19DA4), the clear
+         * arm STRBNE at 0x19DB4 and the set arm STRBEQ at 0x19DC8, and then ONE unconditional pad store
+         * at 0x19DD4 whose value the arm left in R1 -- 1 on the clear arm, 0 on the set arm, so the pad
+         * is the inverse of the new flag. No sample, no apply hook, and the pad is not one-hot. */
+        Check(Menu_ToggleForceNoDrag(&opt, &nPad), "  forcenodrag turns on @ 0x19d94");
+        CheckEqI32(opt.bForceNoDrag, 1, "  flag set @ 0x19d94");
+        CheckEqI32(nPad, 0, "  pad is 0 when turning ON @ 0x19d94");
+        Check(!Menu_ToggleForceNoDrag(&opt, &nPad), "  forcenodrag turns off @ 0x19d94");
+        CheckEqI32(opt.bForceNoDrag, 0, "  flag cleared @ 0x19d94");
+        CheckEqI32(nPad, 1, "  pad is 1 when turning OFF @ 0x19d94");
         Check(!Menu_ToggleForceNoDrag(NULL, NULL), "  NULL options refused");
     }
 }
