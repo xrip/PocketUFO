@@ -88,4 +88,32 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
 5. `tact_hud_*` and `tact_briefing*` / `debrief_banner` -- thin bands at rows 1..16 and 311..319: compare against the
    tact HUD draw arms' pad rects before judging.
 6. `tact_hud_minimap` rows 16..63 -- a 48-row hole in a live-looking frame, the biggest remaining one.
-7. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
+## Part 157 spec (approved by the user on 2026-10-23): finish `UiPanelMsg_Draw` in the port
+
+Read from the IDB (`UiPanelMsg_Draw @ 0x3e94c`, 1016 B). Layout facts confirmed there: `apLines[row]` = panel + 4*row +
+0xBE4, `anLineAux[row]` = panel + 4*row + 0x13B4, `aLineMeta[row][0..5]` = panel + 6*row + 0x10 (stride 6, two RGB
+triples). The function does four things the port's `UiPanel_DrawText` (src/pufo/ui/pufo_panel.c:330) does not:
+
+1. `if (bRowRules)` -- `SoftSurf_BlitRectProxy(nRectX, nPosY - 1, nViewW, 1, aStyleRgb[0], aStyleRgb[1], aStyleRgb[2])`:
+   the top rule, before anything else.
+2. `if (bSelLineHighlight && bHoverActive)` -- `SoftSurf_BlitSrcRect(nRectX + 1, nHoverRow * nFont + nPosY, nViewW - 2,
+   nFont, aStyleRgb[3], aStyleRgb[4], aStyleRgb[5], key bColorKey)`: the hovered-row fill, drawn BEFORE the text so the
+   text lands on top of it.
+3. Per row of the loop (the loop runs from `nUnk3028` to `nLineCount`; only rows with `row - nUnk3028 < nStyle` draw):
+   `Gfx_PackRgb565Pair(aStyleRgb[6], aStyleRgb[7], aStyleRgb[8], aStyleRgb[9], aStyleRgb[10], aStyleRgb[11])` first, on
+   every iteration.
+4. Inside the drawn-row branch: `if (bRowRules)` -- `SoftSurf_BlitRectProxy(nRectX, (visible+1) * nFont + nPosY, nViewW,
+   1, aStyleRgb[0..2])`: the rule under that row; then `if (aLineMeta[row][0] || [1] || [2])` --
+   `Gfx_PackRgb565Pair(aLineMeta[row][0..2], aLineMeta[row][3..5])`: the row's own colour pair, which is what the text is
+   then drawn with.
+
+Only after those comes `Text_MeasureWidth` (by `nUnk7076`: 1 -> half width, 2 -> full width) and `Text_DrawString(nPosX -
+measured, (visible) * nFont + (nFont - 16) / 2 + nPosY, psz)`.
+
+Done check for Part 157: (a) `/W4 /WX` clean; (b) a frame check that fails when the hovered-row fill or a row rule is
+dropped -- mutation-proved, not asserted; (c) the reference pictures that move are looked at one by one and each change
+explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the six-gate sentinel.
+
+## Open items
+
+1. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
