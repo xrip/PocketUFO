@@ -265,3 +265,16 @@ numbers at x 195 through 0x73F24..0x74068. The topic panel puts its rows at nPos
 118, 134 -- rows 3 and 4 land exactly on the "Ученых доступно" and "Свободн. мест в лаборатории" labels, which is what
 geoscape_research_allocated shows. Same shape on the manuf screen with its own panel band. Recorded as shipped layout,
 not a port omission.
+
+## Part 158: ufopaedia_index closed -- the four identical rows are four text records (2026-10-23)
+
+The index picture shows the selector panel's nine rows: four carry "не исп." and five are blank, over the dashed frame
+with the close and the two arrow controls. That is the shipped content, already pinned at 0x9AF2C..0x9B0BC and
+re-checked here against the loaded table: the ARM labels the nine selector rows with the nine sources
+0x105EE6..0x10654E, 205 apart, i.e. records 1646..1654; lang.dat TEXTS.DAT loads 1650 records, and records 1646, 1647,
+1648 and 1649 are each the same string "не исп." -- "не исп.", the label for a ufopaedia
+category that has no entries in the shipped data. Records 1650..1654 fall past the loaded range, so those five rows copy
+the zero slack and draw nothing. Four identical rows and five blank ones is therefore what the original paints, not a
+list the port failed to build. The category panels are built separately (pass 1 0x9AB04..0x9AF14 counts the shown
+entries, pass 2 0x9B0C4..0x9B4FC writes the names into packed rows), and the entry screens ufopaedia_entry /
+ufopaedia_entry_next carry the names.

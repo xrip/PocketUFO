@@ -591,7 +591,11 @@ shipped 800x400 earth100 with the 84-tall strip at nOriginY 236. Two reference f
 fixtures now call Smap_ClampScrollY and a FixtureViewIsLegal check pins the window (teeth: 2 FAILs without the
 call). Four references re-recorded. IDB: 0x187054's comment credited 0x836A0 to the wrong function (it is inside
 Smap_HitTestStrategSelect); Smap_ClampScrollY's comment now carries the coverage consequence. Open 156a: the other
-15 band pictures, the empty box in econ_buy_craft_queued / econ_hangar_cap_full, ufopaedia_index, the e2e menu bands.
+15 band pictures and the 4 e2e menu bands. Closed by Part 158: the empty box in econ_buy_craft_queued /
+econ_hangar_cap_full (a stale surface -- those two dumps had no frame draw behind them), 157a's manuf/research
+overlay overlap (neither ARM function erases the overlay area: 11 blits in ManufScreen_DrawFrame @ 0x6F9A4,
+10 in ResearchScreen_Draw @ 0x73A34, no fill in Ui_AnimExpandBlit's eight bands), and ufopaedia_index's four
+identical selector rows (TEXTS 1646..1649 are the same "не исп." label; rows from record 1650 draw nothing).
 
 coverage (Part 157): UiPanelMsg_Draw @ 0x3e94c is ported whole -- top rule 0x3E9BC, hovered-row fill 0x3EA44 before
 all text, the style pair packed for every row to nLineCount at 0x3EAB8, the per-row rule 0x3EB30, the row's meta pack
