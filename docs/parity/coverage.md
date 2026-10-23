@@ -259,3 +259,35 @@ is why tests/test_menubtn.c now reads it inside the load hook, 220 -> 227 checks
 GATES RAN` with exit 0, 65/65 tests, 21233 checks, 93 frame references and 9 e2e pictures unchanged.
 Measured after Part 130: **701** cited, **267** not (`tact` 93, `strat` 90, `strat-ui` 81, `app-shell` 3
 left).
+
+Part 131 closes 29 `strat-ui` rows on the options screen: `OptionsScreen_SetMusicVol1..5`
+(0x6ba70/0x6babc/0x6bb18/0x6bb74/0x6bbd0), `OptionsScreen_SetSfxVol0..5` (0x6bc1c..0x6be10),
+`OptionsScreen_ClearMusicButtons` 0x6b994, `ClearSfxButtons` 0x6b9d4, `OptionsScreen_PanelPrev` 0x6d01c,
+`PanelNext` 0x6d064, `OpenWithSound` 0x6dd04, `SaveGame_Slot1..6_CloseUI` (0x6afcc..0x6b148),
+`LoadGame_Slot1..6_InitOptions` (0x6b1fc..0x6b404) and `Ufopaedia_CacheSelRow` 0x99fd0. One port behaviour
+changed, and it was a parity bug: all six sfx handlers end with sample 17 played TWICE - 0x6BC5C/0x6BC60
+`MOV R1,#4`/`MOV R0,#0x11`, 0x6BC64 `BL Sound_Play`, then the same pair again at 0x6BC68/0x6BC6C, POP at
+0x6BC70 and the tail `B Sound_Play` at 0x6BC74 (0x6BC5C..0x6BC74 is E3A01004 E3A00011 EB00C915 E3A01004
+E3A00011 E8BD4000 EA00C911 in every member) - while the port played it once and the IDB note at 0x6bc1c
+described one tail call. `OptionsScreen_SetSfxVol` now plays twice and `tests/test_baseui.c` counts it: 0
+plays at step 0 (Sound_Play @ 0x9E10C tests Map_bSoundOff first) and 2 at every other step; the music family
+has no Sound_Play at all. A second finding was in the test: the store at 0x6B1C4 (`gOptionsScratch+4`) and
+the byte OptionsScreen_Init branches on at 0x6BE84 are one byte, so a load click forces the teardown branch,
+but `TestSaveLoadSlots` wired the slot env to a separate cell, which made the check non-causal and a
+first-draft mutation inert; the fixture now uses the one cell (as app/pufo_world.c:1728/:9084 do) and that
+mutation fails 17 checks, with 14 cites added (test_baseui runs 4317 checks). Records re-measured member by
+member: sfx 100 B = 23 insns (2 two-word MOVs) + 2 pool; music 92/76/92/92/92/76 = 20/17/20/20/20/17 insns +
+2 pool; save 76 = 15 + 4; load 104 = 21 + 5; clears 64 = 15 + 1; panels 72 = 14 + 4; opener 32 = 8 insns;
+cache 68 = 14 + 3 - the wide 2-word MOV immediates are why 4*insn count is not the byte size. Eight shapes
+went to `docs/parity/bugs.tsv` (351 -> 359 data rows): `Options_ClampStep` is invented and measured inert
+when removed; the clears and the panel pair dereference every slot unguarded where the port guards them;
+save/load have no guard at all so the port's NULL arms are invented, and load forces the teardown;
+CacheSelRow returns R0 (an address on one path, a flag byte on the other) where the port returns a bool and
+has no direct call site (it is installed as a click handler at 0x9A958); OpenWithSound drops its first
+argument. Teeth: 29 cases in `docs/parity/mutations_part131.py`, one per row - 236 failing checks, 0
+skipped, 0 inert, all files restored byte-exact, MUTATION grep empty. Gates: `check: ALL SIX GATES RAN`,
+`CHECK EXIT=0`, 65/65 tests both configurations, 21372 checks, 93 frame references and 9 e2e pictures
+unchanged; coverage unchanged at 972/1103 functions and 596888/598792 bytes. IDB comments on 32 addresses
+(the 29 rows plus heads 0x6ba14/0x6bc1c/0x6af80/0x6b194), longest 971, all read back exact, two stale claims
+replaced, `idb_save` ok. Measured after Part 131: **730** cited, **238** not (`tact` 93, `strat` 90,
+`strat-ui` 52, `app-shell` 3 left).

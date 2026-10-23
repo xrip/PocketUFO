@@ -165,12 +165,12 @@ static void TestUfopaediaCache(void)
 
     CheckEqI32(Ufopaedia_CacheSelRow(&bFlag, &nCached, 4) ? 1 : 0, 1,
                "the first call caches and raises the flag");
-    CheckEqI32(nCached, 4, "the row that was current is the row that gets stored");
-    CheckEqI32(bFlag, 1, "and the flag is raised");
+    CheckEqI32(nCached, 4, "the row that was current is the row that gets stored @ 0x99fd0");
+    CheckEqI32(bFlag, 1, "and the flag is raised @ 0x99fd0");
 
     /* Once the flag is up the function does nothing at all - the cache is never refreshed. */
     CheckEqI32(Ufopaedia_CacheSelRow(&bFlag, &nCached, 9) ? 1 : 0, 0,
-               "a second call caches nothing");
+               "a second call caches nothing @ 0x99fd0");
     CheckEqI32(nCached, 4, "so the first row is what the rest of the ufopaedia code still sees");
 
     bFlag = 0;
@@ -194,28 +194,30 @@ static void TestOptionsPanelPaging(void)
         apPanels[i] = &aPanels[i];
     }
 
-    /* One press moves all four cursors. They are not per-panel controls. */
+    /* One press moves all four cursors. They are not per-panel controls: each original is 14
+     * instructions that load the four panel pointers (anLineAux[117], [141], [142], [118]) and run one
+     * scroll step on each, the fourth through a tail call after the POP (0x6D050 / 0x6D098). */
     OptionsScreen_PanelPrev(apPanels);
     for (int i = 0; i < 4; ++i) {
-        CheckEqI32(aPanels[i].nUnk3028, 2, "prev steps every one of the four cursors");
+        CheckEqI32(aPanels[i].nUnk3028, 2, "prev steps every one of the four cursors @ 0x6d01c");
     }
 
     OptionsScreen_PanelNext(apPanels);
     OptionsScreen_PanelNext(apPanels);
     for (int i = 0; i < 4; ++i) {
-        CheckEqI32(aPanels[i].nUnk3028, 4, "next steps them all back");
+        CheckEqI32(aPanels[i].nUnk3028, 4, "next steps them all back @ 0x6d064");
     }
 
     /* The next step is bounded by lineCount - style = 15, the prev step by zero. */
     for (int i = 0; i < 40; ++i) {
         OptionsScreen_PanelNext(apPanels);
     }
-    CheckEqI32(aPanels[0].nUnk3028, 15, "next stops at lineCount - style");
+    CheckEqI32(aPanels[0].nUnk3028, 15, "next stops at lineCount - style @ 0x6d064");
 
     for (int i = 0; i < 40; ++i) {
         OptionsScreen_PanelPrev(apPanels);
     }
-    CheckEqI32(aPanels[0].nUnk3028, 0, "prev stops at zero");
+    CheckEqI32(aPanels[0].nUnk3028, 0, "prev stops at zero @ 0x6d01c");
 }
 
 static void TestFundingHelpers(void)
@@ -3710,17 +3712,17 @@ static void TestOptionsRadioClear(void)
     }
 
     pRet = OptionsScreen_ClearMusicButtons(apCtl);
-    Check(pRet == &aPool[5], "the return value is the sixth widget pointer");
+    Check(pRet == &aPool[5], "the return value is the sixth widget pointer @ 0x6b994");
     for (i32 i = 0; i < 6; ++i) {
-        CheckEqI32(aPool[i].nState, 0, "every nState byte is cleared");
+        CheckEqI32(aPool[i].nState, 0, "every nState byte is cleared @ 0x6b994");
     }
 
     for (i32 i = 0; i < 6; ++i) {
         aPool[i].nState = 3;
     }
     pRet = OptionsScreen_ClearSfxButtons(apCtl);
-    Check(pRet == &aPool[5], "the sfx group returns its sixth pointer too");
-    CheckEqI32(aPool[0].nState, 0, "the sfx group is cleared as well");
+    Check(pRet == &aPool[5], "the sfx group returns its sixth pointer too @ 0x6b9d4");
+    CheckEqI32(aPool[0].nState, 0, "the sfx group is cleared as well @ 0x6b9d4");
 
     for (i32 i = 0; i < 6; ++i) {
         apCtl[i] = NULL;
@@ -3786,15 +3788,15 @@ static void TestOptionsSoundWrappers(void)
     g_nOptMode = -1;
     g_nOptInitCalls = 0;
     OptionsScreen_OpenWithSound(999, -1, &hk);
-    CheckEqI32(g_nOptSample, 7, "open plays sample 7");
-    CheckEqI32(g_nOptSampleArg, 4, "with the same second argument");
-    CheckEqI32(g_nOptMode, -1, "the mode reaches OptionsScreen_Open");
-    CheckEqI32(g_nOptInitCalls, 1, "the open runs once");
+    CheckEqI32(g_nOptSample, 7, "open plays sample 7 @ 0x6dd04");
+    CheckEqI32(g_nOptSampleArg, 4, "with the same second argument @ 0x6dd04");
+    CheckEqI32(g_nOptMode, -1, "the mode reaches OptionsScreen_Open @ 0x6dd04");
+    CheckEqI32(g_nOptInitCalls, 1, "the open runs once @ 0x6dd04");
 
     /* 0x6DD08 keeps R1 and never reads R0, so the first argument cannot matter. */
     g_nOptMode = -1;
     OptionsScreen_OpenWithSound(0, 5, &hk);
-    CheckEqI32(g_nOptMode, 5, "the first argument is dropped");
+    CheckEqI32(g_nOptMode, 5, "the first argument is dropped @ 0x6dd04");
 
     OptionsScreen_RebuildWithSound(NULL);
     OptionsScreen_OpenWithSound(0, 0, NULL);
@@ -6322,6 +6324,12 @@ static OptionsTabEnv g_optTab;
 static OptionsInitEnv g_optInit;
 
 static i32 g_nSetupCalls;
+static char g_szOptCited[256];
+static const char *OptCite(const char *pszText, const char *pszAddr)
+{
+    snprintf(g_szOptCited, sizeof(g_szOptCited), "%s %s", pszText, pszAddr);
+    return g_szOptCited;
+}
 static char g_szRowPad0[16];
 static char g_szRowPad1[16];
 static char g_szVolPad0[16];
@@ -6384,16 +6392,20 @@ static void OptLoad5(void) { g_nSlotFired = 205; }
 static void OptLoad6(void) { g_nSlotFired = 206; }
 static void OptFormatSlots(void *pUser) { (void)pUser; g_nSlotFired = 7; }
 
-/* The level the sfx applier hands the backend is observable through this seam. */
+/* The level the sfx applier hands the backend is observable through this seam, and so is the sample
+ * count: Fake_Init succeeds so Sound_InitAndLoadSamples opens the seam without the retry sleeps, and
+ * Fake_PlaySound counts what Sound_Play hands the backend. */
 static i32 g_nSfxLevel;
 static i32 g_nSfxLevelCalls;
+static i32 g_nOptPlayCalls;
 
-static bool Fake_Init(u32 nMix, i32 nCh, u32 nFlags) { (void)nMix; (void)nCh; (void)nFlags; return false; }
+static bool Fake_Init(u32 nMix, i32 nCh, u32 nFlags) { (void)nMix; (void)nCh; (void)nFlags; return true; }
 static void Fake_SetWindow(void *h) { (void)h; }
-static void *Fake_SampleLoad(const void *p, u32 cb, u32 m) { (void)p; (void)cb; (void)m; return NULL; }
+static char g_fakeSampleHandle;
+static void *Fake_SampleLoad(const void *p, u32 cb, u32 m) { (void)p; (void)cb; (void)m; return &g_fakeSampleHandle; }
 static void Fake_SampleSetMode(void *p, u32 m) { (void)p; (void)m; }
 static void Fake_SampleFree(void *p) { (void)p; }
-static i32 Fake_PlaySound(void *p) { (void)p; return 0; }
+static i32 Fake_PlaySound(void *p) { (void)p; g_nOptPlayCalls += 1; return 0; }
 static void Fake_SetSfxVolume(i32 n) { g_nSfxLevel = n; g_nSfxLevelCalls += 1; }
 static void Fake_SetSfxPaused(i32 nChannel, i32 bPaused) { (void)nChannel; (void)bPaused; }
 static void *Fake_MusicLoad(const void *p, u32 cb, u32 m) { (void)p; (void)cb; (void)m; return NULL; }
@@ -7268,6 +7280,67 @@ static void TestOptionsAudioTab(void)
     (void)OptionsScreen_SetSfxVol5(&g_optVol);
     CheckEqI32(g_nSfxLevel, 255, "step 5 applies 255");
     CheckEqI32(g_nSfxLevelCalls, 3, "one applier call per handler");
+
+    /* Twelve radio handlers, twelve original bodies, each hard-coding its own step and its own widget,
+     * so every iteration cites the handler it drives. The sample is the point: each sfx member plays
+     * Sound_Play(17,4) TWICE -- a BL at 0x6BC64 and a tail `B Sound_Play` at 0x6BC74 with the
+     * immediates reloaded at 0x6BC68/0x6BC6C -- while step 0 plays nothing because Sound_Play @ 0x9E10C
+     * tests Map_bSoundOff first. The music group plays nothing at all (no Sound_Play in 18 instructions). */
+    static const char *const apszMusic[6] = { "@ 0x6ba14", "@ 0x6ba70", "@ 0x6babc", "@ 0x6bb18",
+                                              "@ 0x6bb74", "@ 0x6bbd0" };
+    static const char *const apszSfx[6] = { "@ 0x6bc1c", "@ 0x6bc80", "@ 0x6bce4", "@ 0x6bd48",
+                                            "@ 0x6bdac", "@ 0x6be10" };
+    static i32 (*const apfnMusic[6])(OptionsVolumeEnv *) = { OptionsScreen_SetMusicVol0,
+                                                             OptionsScreen_SetMusicVol1,
+                                                             OptionsScreen_SetMusicVol2,
+                                                             OptionsScreen_SetMusicVol3,
+                                                             OptionsScreen_SetMusicVol4,
+                                                             OptionsScreen_SetMusicVol5 };
+    static i32 (*const apfnSfx[6])(OptionsVolumeEnv *) = { OptionsScreen_SetSfxVol0,
+                                                           OptionsScreen_SetSfxVol1,
+                                                           OptionsScreen_SetSfxVol2,
+                                                           OptionsScreen_SetSfxVol3,
+                                                           OptionsScreen_SetSfxVol4,
+                                                           OptionsScreen_SetSfxVol5 };
+
+    Check(Sound_InitAndLoadSamples("tact"), "the audio seam opens");
+    Check(Sound_GetSampleCount() > 17, "sample 17 is loaded, so Sound_Play reaches the backend");
+    Sound_SetMuteBytes(&g_bSfxOff, &g_bMusicOff); /* Sound_Play @ 0x9E10C reads the live soundoff cell */
+    for (i32 nStep = 0; nStep < 6; ++nStep) {
+        g_nOptPlayCalls = 0;
+        (void)apfnSfx[nStep](&g_optVol);
+        CheckEqI32(g_nSfxVol, nStep, OptCite("the sfx handler stores its own step", apszSfx[nStep]));
+        CheckEqI32(g_bSfxOff, (nStep == 0) ? 1 : 0, OptCite("  step 0 is the mute step", apszSfx[nStep]));
+        CheckEqI32(g_aOptSfx[nStep].nState, 2, OptCite("  and lights its own button", apszSfx[nStep]));
+        nBad = 0;
+        for (i32 i = 0; i < 6; ++i) {
+            if (i != nStep && g_aOptSfx[i].nState != 0) {
+                nBad += 1;
+            }
+        }
+        CheckEqI32(nBad, 0, OptCite("  the group clear left only that one lit", apszSfx[nStep]));
+        CheckEqI32(g_nOptPlayCalls, (nStep == 0) ? 0 : 2,
+                   OptCite("  muted plays nothing, a step plays 17 twice (0x6BC64, 0x6BC74)",
+                           apszSfx[nStep]));
+    }
+    for (i32 nStep = 0; nStep < 6; ++nStep) {
+        g_nOptPlayCalls = 0;
+        (void)apfnMusic[nStep](&g_optVol);
+        CheckEqI32(g_nMusicVol, nStep, OptCite("the music handler stores its own step", apszMusic[nStep]));
+        CheckEqI32(g_bMusicOff, (nStep == 0) ? 1 : 0, OptCite("  step 0 mutes music", apszMusic[nStep]));
+        CheckEqI32(g_aOptMusic[nStep].nState, 2, OptCite("  and lights its own button", apszMusic[nStep]));
+        nBad = 0;
+        for (i32 i = 0; i < 6; ++i) {
+            if (i != nStep && g_aOptMusic[i].nState != 0) {
+                nBad += 1;
+            }
+        }
+        CheckEqI32(nBad, 0, OptCite("  the group clear left only that one lit", apszMusic[nStep]));
+        CheckEqI32(g_nOptPlayCalls, 0, OptCite("  and the music group plays no sample at all",
+                                               apszMusic[nStep]));
+    }
+    Sound_SetMuteBytes(NULL, NULL);
+    Sound_Shutdown();
     Sound_SetBackend(NULL);
 
     g_nSlotFired = -1;
@@ -7359,7 +7432,6 @@ static void TestSaveLoadSlots(void)
     static LoadGameHooks loadHooks;
     static SaveSlotEnv env;
     static i32 nGeoscapeScreen;
-    static u8 bControlsExist;
     static i8 nTab;
 
     printf("SaveGame_SlotN_CloseUI @ 0x6af80 and LoadGame_SlotN_InitOptions @ 0x6b194\n");
@@ -7379,14 +7451,17 @@ static void TestSaveLoadSlots(void)
     env.pLoadEnv = &loadEnv;
     env.pnListMode = &g_nSlotListMode;
     env.pbTab = &nTab;
-    env.pbControlsExist = &bControlsExist;
+    /* In the original the slot handler's store at 0x6B1C4 and the byte OptionsScreen_Init branches on at
+     * 0x6BE84 are the SAME byte: LDR R0,=(gOptionsScratch+4) / STRB at 0x6B1C0..0x6B1C4 against the flag
+     * test that opens the function. A second cell here would make the teardown check read something the
+     * store did not cause -- which is how a first-draft mutation of 0x6b2cc came out inert. */
+    env.pbControlsExist = &g_bOptBuilt; /* gOptionsScratch[4], the cell g_optInit.pbControlsExist holds */
     env.pnGeoscapeScreen = &nGeoscapeScreen;
     env.pOptionsInit = &g_optInit; /* the options fixture the previous test built */
     SlotCloseProbe(&env, &nGeoscapeScreen);
 
     /* The save handler. The render hook is the only place the transient mode 4 is visible. */
     g_nSlotListMode = 0;
-    bControlsExist = 0;
     nGeoscapeScreen = 16;
     nTab = 9;
     g_nSlotRenderCalls = 0;
@@ -7405,9 +7480,9 @@ static void TestSaveLoadSlots(void)
     CheckEqI32(nGeoscapeScreen, 0, "  and case 16 of the dispatcher sets the screen id to 0 (0x8BD5C)");
     CheckEqI32(g_nCloseFail, 0, "  and its head cleared the action-fail dword (0x8B96C)");
 
-    /* The load handler: the flag it sets makes OptionsScreen_Init take its teardown branch. */
+    /* The load handler: the byte it raises at 0x6B1C4 is what makes OptionsScreen_Init take its teardown
+     * branch -- the store runs first, so the flag test at 0x6BE84 always sees 1 here. */
     g_nSlotListMode = 0;
-    bControlsExist = 0;
     nGeoscapeScreen = 7;
     nTab = 9;
     g_bOptBuilt = 1;
@@ -7423,6 +7498,66 @@ static void TestSaveLoadSlots(void)
     CheckEqI32(g_nSlotListMode, 1, "the failed load puts the list mode back to 1 (0x6B1E0)");
     CheckEqI32(g_bOptBuilt, 0, "OptionsScreen_Init ran and took its teardown branch (0x6B1C4, 0x6B1C8)");
     CheckEqI32(g_nSetupCalls, 0, "  which positions nothing");
+
+    /* The seven save handlers and the seven load handlers are copies that differ only in the slot
+     * immediate -- `MOV R1,#1..#6` at 0x6B024, 0x6B070, 0x6B0BC, 0x6B108, 0x6B154 for the saves
+     * (SaveGame_Slot1..6_CloseUI @ 0x6afcc..0x6b148) and at 0x6B29C, 0x6B304, 0x6B36C, 0x6B3D4,
+     * 0x6B43C for the loads (LoadGame_Slot1..6_InitOptions @ 0x6b1fc..0x6b404). Each slot number is
+     * therefore checked through the handler that hard-codes it. */
+    static const char *const apszSave[7] = { "@ 0x6af80", "@ 0x6afcc", "@ 0x6b018", "@ 0x6b064",
+                                             "@ 0x6b0b0", "@ 0x6b0fc", "@ 0x6b148" };
+    static const char *const apszLoad[7] = { "@ 0x6b194", "@ 0x6b1fc", "@ 0x6b264", "@ 0x6b2cc",
+                                             "@ 0x6b334", "@ 0x6b39c", "@ 0x6b404" };
+    static void (*const apfnSave[7])(SaveSlotEnv *) = { SaveGame_Slot0_CloseUI, SaveGame_Slot1_CloseUI,
+                                                        SaveGame_Slot2_CloseUI, SaveGame_Slot3_CloseUI,
+                                                        SaveGame_Slot4_CloseUI, SaveGame_Slot5_CloseUI,
+                                                        SaveGame_Slot6_CloseUI };
+    static i32 (*const apfnLoad[7])(SaveSlotEnv *) = { LoadGame_Slot0_InitOptions,
+                                                       LoadGame_Slot1_InitOptions,
+                                                       LoadGame_Slot2_InitOptions,
+                                                       LoadGame_Slot3_InitOptions,
+                                                       LoadGame_Slot4_InitOptions,
+                                                       LoadGame_Slot5_InitOptions,
+                                                       LoadGame_Slot6_InitOptions };
+
+    for (i32 nSlot = 0; nSlot < 7; ++nSlot) {
+        g_nSlotListMode = 0;
+        g_nSlotRenderCalls = 0;
+        g_nSlotCloseCalls = 0;
+        g_nSlotListModeAtRender = -1;
+        g_nSlotListModeAtClose = -1;
+        in.nSlot = -1;
+        nTab = 9;
+        nGeoscapeScreen = 16; /* the dispatcher case the probe hook answers to (0x8BD58) */
+        DatFile_ctor(&dat);
+        apfnSave[nSlot](&env);
+        DatFile_Close(&dat);
+        CheckEqI32(in.nSlot, nSlot, OptCite("the save handler hands SaveGame its own slot", apszSave[nSlot]));
+        CheckEqI32(g_nSlotListModeAtRender, 4, OptCite("  mode 4 while the file is written", apszSave[nSlot]));
+        CheckEqI32(nTab, 0, OptCite("  the tab byte cleared after it", apszSave[nSlot]));
+        CheckEqI32(g_nSlotListModeAtClose, 1, OptCite("  mode 1 before the close tail call", apszSave[nSlot]));
+        CheckEqI32(g_nSlotCloseCalls, 1, OptCite("  and exactly one Geoscape_CloseUI", apszSave[nSlot]));
+    }
+
+    for (i32 nSlot = 0; nSlot < 7; ++nSlot) {
+        g_nSlotListMode = 0;
+        loadEnv.nSlot = -1;
+        nTab = 9;
+        g_bOptBuilt = 1; /* the shared controls byte, raised here and cleared by the teardown */
+        g_nSetupCalls = 0;
+        nGeoscapeScreen = 7;
+        DatFile_ctor(&dat);
+        CheckEqI32(apfnLoad[nSlot](&env), 1,
+                   OptCite("a missing slot is the failure path, which returns 1", apszLoad[nSlot]));
+        DatFile_Close(&dat);
+        CheckEqI32(loadEnv.nSlot, nSlot, OptCite("the load handler hands LoadGame its own slot",
+                                                  apszLoad[nSlot]));
+        CheckEqI32(g_nSlotListMode, 1, OptCite("  and mode 3 goes back to 1 on that failure",
+                                                apszLoad[nSlot]));
+        CheckEqI32(nGeoscapeScreen, 0, OptCite("  the screen id is cleared first", apszLoad[nSlot]));
+        CheckEqI32(g_bOptBuilt, 0, OptCite("  the byte it raises drives the teardown", apszLoad[nSlot]));
+        CheckEqI32(g_nSetupCalls, 0, OptCite("  and that branch positions nothing", apszLoad[nSlot]));
+    }
 
     CheckEqI32(LoadGame_Slot_InitOptions(NULL, 0), 0, "a null slot env loads nothing");
     SaveGame_Slot0_CloseUI(NULL);

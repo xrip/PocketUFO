@@ -23617,3 +23617,80 @@ comment on all 40 addresses (38 written this Part, longest 990 at 0x19d94, all r
 cap), the two stale claims were replaced, and `idb_save` reported ok. Row 121a after this Part: 968
 behaviour rows, 701 carrying a test cite, 267 not (tact 93, strat 90, strat-ui 81, app-shell 3); reach
 965/968.
+
+## Part 131 - the 29 options-screen rows close: a doubled sample the port was missing, and a byte that was
+cut in two  Twenty-nine `strat-ui` rows read at instruction level and given cites: the five music radio
+handlers `OptionsScreen_SetMusicVol1..5 @ 0x6ba70/0x6babc/0x6bb18/0x6bb74/0x6bbd0`, the six sfx handlers
+`OptionsScreen_SetSfxVol0..5 @ 0x6bc1c/0x6bc80/0x6bce4/0x6bd48/0x6bdac/0x6be10`, the two group clears
+`0x6b994` and `0x6b9d4`, the panel pair `OptionsScreen_PanelPrev @ 0x6d01c` and `PanelNext @ 0x6d064`, the
+opener `OptionsScreen_OpenWithSound @ 0x6dd04`, the six save handlers `0x6afcc..0x6b148`, the six load
+handlers `0x6b1fc..0x6b404` and `Ufopaedia_CacheSelRow @ 0x99fd0`. Unlike Part 130, this batch needed a port
+change: the sfx handlers played the sample once where the original plays it twice.
+
+### The sfx options handlers play sample 17 TWICE, and the port played it once  Every one of the six
+100-byte members ends the same way: `MOV R1,#4` / `MOV R0,#0x11` / `BL Sound_Play` at 0x6BC5C, 0x6BC60 and
+0x6BC64, then `MOV R1,#4` / `MOV R0,#0x11` again at 0x6BC68 and 0x6BC6C, `POP {LR}` at 0x6BC70 and the tail
+`B Sound_Play` at 0x6BC74 - the bytes 0x6BC5C..0x6BC74 read E3A01004 E3A00011 EB00C915 E3A01004 E3A00011
+E8BD4000 EA00C911 in all six. The port's `OptionsScreen_SetSfxVol` called `Sound_Play(17)` once, so the
+second play was missing from the recreation, and the IDB note at 0x6bc1c described it as a single tail call.
+Both now say twice. The plays are gated, not unconditional: `Sound_Play @ 0x9e0c0` tests `Map_bSoundOff` at
+0x9E10C before it reaches FSOUND, so a muted step plays nothing while any other step plays 17 twice - which
+is what `tests/test_baseui.c` now counts ('muted plays nothing, a step plays 17 twice', 0 at step 0 and 2 at
+steps 1..5, with the mute byte wired to the live cell through `Sound_SetMuteBytes`). The music family, by
+contrast, has no `Sound_Play` at all: it ends `POP` then `B Sound_ApplyMusicVolume @ 0x9e454`.
+
+### `byte_159E88[4]` is one byte, and the test had it as two  The load handler stores 1 into
+`gOptionsScratch+4` at 0x6B1C0..0x6B1C4 (`MOV R1,#1` / `LDR R0,=(gOptionsScratch+4)` / `STRB R1,[R0]`) and
+then calls `OptionsScreen_Init` at 0x6B1C8. `OptionsScreen_Init @ 0x6be84` branches on that same byte
+(0x6BE84 is the `BNE` after its flag test), so the load click FORCES the teardown branch: the options
+controls are freed on every load click, even when the screen was never built, and 0x6C0FC clears the flag.
+The port has two separate fields (`SaveSlotEnv.pbControlsExist` and `OptionsInitEnv.pbControlsExist`) and
+wires both to `abOptionsScratch[4]` in the real build (`app/pufo_world.c:1728` and `:9084`) - faithful. The
+test fixture did not: `TestSaveLoadSlots` pointed the slot env at its own `bControlsExist` cell while the
+options fixture used `g_bOptBuilt`, so the 'teardown branch' check read a cell the store never touched and
+proved nothing. That is how it surfaced: the first-draft mutation of 0x6b2cc (`*pEnv->pbControlsExist = 1`
+-> `= 0`) changed no check at all. Wiring the slot env to the same cell the init env holds makes the same
+mutation fail 17 checks, and the loop now carries two cites per slot ('the byte it raises drives the
+teardown', 'and that branch positions nothing'), 14 new checks; `tests/test_baseui.c` runs 4317 checks.
+
+### Family records, with the 2-word MOV accounting  Re-measured member by member at instruction level. The
+sfx six: 100 bytes each = 23 disassembled instructions + 2 pool words, and 2 of the 23 are 2-word MOV
+immediates (the `MOV R12,#(Map_nSoundVolume-0x1139B8)` pair at +0x14..+0x18 and the `Map_bSoundOff` one at
++0x30..+0x34), which is why 4*count is not the byte size - a trap that produced wrong sizes twice now.
+Members differ only in `MOV R1,#N` at +0x0C, in `LDR R3,[R1,#(aOptionsSfxBtn+4N-0x159E20)]` at +0x24, and in
+the mute byte (#1 at step 0, #0 at 1..5). The music six: 92/76/92/92/92/76 bytes = 20/17/20/20/20/17
+instructions (3/2/3/3/3/2 of them 2-word MOVs) + 2 pool words each; the 92-byte forms reload
+`Map_nMusicVolume` and compute the button pointer with `ADD R3,R0,R1,LSL#2` (0x6BA3C..0x6BA48) while the
+76-byte forms fold it into the immediate (0x6BA94 for Vol1 with +4, 0x6BBF4 for Vol5 with +0x14) - same
+effect, pure codegen. Save: 76 bytes = 15 instructions + 4 pool words, differing only in `MOV R1,#0..6` at
++0x0C, with mode 4 stored at +0x10 before `BL SaveGame` at +0x18, the tab byte cleared at +0x24, mode 1 at
++0x2C and the close tail at +0x38. Load: 104 bytes = 21 instructions + 5 pool words, differing only in the
+slot immediate at +0x38, and its only test is `ANDS R3,R0,#0xFF` at +0x44 with `MOVEQ`/`STREQ` at +0x48 and
++0x4C. The two clears: 64 bytes = 15 instructions + 1 pool word, six LDR/STRB pairs and a RET that returns
+the sixth widget pointer (0x6B9C4 music, 0x6BA04 sfx). The panel pair: 72 bytes = 14 instructions + 4 pool
+words over slots 0x159E18, 0x159E78, 0x159E7C and 0x159E1C with the fourth step as the tail call (0x6D050,
+0x6D094). Opener: 32 bytes = 8 instructions. Cache: 68 bytes = 14 instructions + 3 pool words.
+
+### Eight shapes went to `docs/parity/bugs.tsv` (351 -> 359 data rows)  `Options_ClampStep` is the port's
+invention, measured rather than assumed: replacing it with the raw step in the music handler changed no
+check in any suite, because the widget table only ever supplies 0..5 - the same finding as Part 130's
+`ValidStep` (rows 0x6BC1C, 0x6BA14). The group clears and the panel pair dereference every slot with no
+test, where the port guards each (0x6B994, 0x6D01C). The save and load families have no guard at all - the
+port's `pEnv == NULL` and four-field NULL arms are invented, and in the load family the byte store at +0x30
+forces OptionsScreen_Init's teardown even when nothing was built (0x6AF80, 0x6B194). `Ufopaedia_CacheSelRow`
+returns whatever R0 ends as - the address of `g_nUfopaediaCategory` on the caching path, the flag byte on
+the early exit - and the port returns a bool; it has no direct call site at all, because Ufopaedia_Open
+installs it as the selector panel's click handler at 0x9A958 (0x99FD0). `OptionsScreen_OpenWithSound` drops
+its first argument outright: 0x6DD08 keeps R1 and the tail call passes that as the mode (0x6DD04).
+
+### Teeth, gates, ledger  29 cases in `docs/parity/mutations_part131.py`, one per row: 236 failing checks, 0
+skipped, 0 inert, every file back to its exact bytes, `grep -rn "MUTATION" src tests` empty. The one
+first-draft inert case was 0x6b2cc and the reason was the split byte described above - the fix was in the
+test, not in the case. `tools/check.sh` reports `check: ALL SIX GATES RAN` with `CHECK EXIT=0`
+(`build/check131.log`): 65/65 release and 65/65 debug tests, 21372 checks (+139), coverage unchanged at 972
+of 1103 functions (88.1%) and 596888/598792 bytes (99.7%), 93 frame references and 9 e2e pictures unchanged.
+The IDB carries a comment on 32 addresses (29 rows plus the four family heads 0x6ba14, 0x6bc1c, 0x6af80,
+0x6b194), longest 971 at 0x6b194 and 903 at 0x6ba14, all read back exact under the 1024 cap, with the stale
+single-play claim at 0x6bc1c and the return-value claim at 0x99fd0 replaced, and `idb_save` reported ok
+twice. Ledger after this Part: 968 behaviour rows, 730 carrying a test cite at their own address (+29), 238
+not (`tact` 93, `strat` 90, `strat-ui` 52, `app-shell` 3); reach 965/968.

@@ -5864,6 +5864,35 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   every check; `SmLoadGame` now gets the caller's mode cell through pUser and the seven checks read it inside the
   callee (220 -> 227 checks), which is what pins 0x1a0bc.
 
+  Progress (Part 131): the options-screen batch (29 `strat-ui` rows) closed -- 730 rows now carry a test cite,
+  **238** do not. This batch needed a port change. All six `OptionsScreen_SetSfxVol0..5 @ 0x6bc1c..` end with
+  sample 17 played TWICE: `MOV R1,#4` / `MOV R0,#0x11` / `BL Sound_Play` at 0x6BC5C, 0x6BC60, 0x6BC64, then
+  `MOV R1,#4` / `MOV R0,#0x11` again at 0x6BC68 and 0x6BC6C, `POP {LR}` at 0x6BC70 and the tail `B Sound_Play`
+  at 0x6BC74 -- 0x6BC5C..0x6BC74 is E3A01004 E3A00011 EB00C915 E3A01004 E3A00011 E8BD4000 EA00C911 in every
+  member. The port played 17 once and the IDB note at 0x6bc1c described one tail call; both now say twice, and
+  `tests/test_baseui.c` counts the plays (0 at step 0 because `Sound_Play @ 0x9e0c0` tests Map_bSoundOff at
+  0x9E10C first, 2 at every other step). The music family plays nothing: it ends `POP` then
+  `B Sound_ApplyMusicVolume @ 0x9e454`. The second finding was in the test, not the port: `LoadGame_SlotN`
+  stores 1 into `gOptionsScratch+4` at 0x6B1C0..0x6B1C4 and `OptionsScreen_Init @ 0x6be84` branches on that same
+  byte, so every load click forces the teardown branch (and 0x6C0FC clears the byte) -- but `TestSaveLoadSlots`
+  pointed `SaveSlotEnv.pbControlsExist` at its own cell while `OptionsInitEnv` held `g_bOptBuilt`, so the
+  teardown check read something the store never caused and the first-draft mutation of 0x6b2cc was inert. One
+  cell now, as `app/pufo_world.c:1728` and `:9084` do for the real build, and that same mutation fails 17
+  checks; the loop gained two cites per slot (14 checks, test_baseui at 4317). Records re-measured member by
+  member with the wide-immediate accounting, because 4*insn count is not the byte size here: sfx 100 B = 23
+  insns (2 two-word MOVs) + 2 pool; music 92/76/92/92/92/76 = 20/17/20/20/20/17 insns (3/2/3/3/3/2 wide) + 2
+  pool -- the 92-byte forms compute the button pointer from the stored volume (`ADD R3,R0,R1,LSL#2`,
+  0x6BA3C..0x6BA48) and the 76-byte forms fold it into the immediate (0x6BA94 with +4, 0x6BBF4 with +0x14);
+  save 76 = 15 + 4 with mode 4 at +0x10 before `BL SaveGame` at +0x18; load 104 = 21 + 5 with its only test at
+  +0x44 (`ANDS R3,R0,#0xFF`); clears 64 = 15 + 1 with a RET returning the sixth widget pointer (0x6B9C4,
+  0x6BA04); panels 72 = 14 + 4 with the fourth step as the tail call; opener 32 = 8; cache 68 = 14 + 3. Eight
+  shapes went to `docs/parity/bugs.tsv` (351 -> 359 data rows): `Options_ClampStep` invented and MEASURED inert
+  when removed (0x6BC1C, 0x6BA14); unguarded slot dereferences in the clears and the panel pair (0x6B994,
+  0x6D01C); no guards at all in save/load, so the port's NULL arms are invented and load forces the teardown
+  (0x6AF80, 0x6B194); CacheSelRow returning R0 -- an address on the caching path, the flag byte on the early
+  exit -- where the port returns a bool, with no direct call site because Ufopaedia_Open installs it as the
+  selector panel's click handler at 0x9A958 (0x99FD0); and OpenWithSound dropping its first argument (0x6DD04).
+
 ### CLAUDE.md's verification contract, mapped to evidence
 
 | Criterion | Evidence, measured in build/crops/check110d.log (EXIT=0) and the audits |
@@ -6099,3 +6128,23 @@ claims replaced, `idb_save` written | teeth: 40 cases in `docs/parity/mutations_
 failing checks, 0 skipped, 0 inert, every file back to its exact bytes, `grep -rn "MUTATION" src tests` empty;
 nine first drafts were re-cut (six broke the build through C4100 at /WX, three were inert) | row 121a stays open
 with 267 rows left.
+
+`<this commit>` + Part 131 | Release 65/65 and Debug 65/65 with `check: ALL SIX GATES RAN`, `CHECK EXIT=0`
+(`build/check131.log`) | 21,372 checks (+139) | coverage 972/1103 functions (88.1%), 596888/598792 bytes (99.7%)
+-- unchanged | reach unchanged at 965/968, residue 0; cites at a row's own address 701 -> **730**, without one
+267 -> **238** (`strat-ui` 81 -> 52; `tact` 93, `strat` 90, `app-shell` 3 left) | one port behaviour CHANGED to
+match the original (`OptionsScreen_SetSfxVol` now plays `Sound_Play(17)` twice -- BL at 0x6BC64 and tail B at
+0x6BC74, the byte run E3A01004 E3A00011 EB00C915 E3A01004 E3A00011 E8BD4000 EA00C911 at 0x6BC5C..0x6BC74 in all
+six members; `pufo_baseui.c` and `pufo_baseui.h` notes rewritten), and the test fixture for the slot handlers
+now holds one controls byte instead of two, which is what makes 0x6b1c4 -> 0x6be84 causal and gave 14 new checks
+(test_baseui at 4317); eight original shapes went to `docs/parity/bugs.tsv` (351 -> 359 data rows) | 93 frame
+pictures and 9 e2e pictures unchanged | IDB comments written and read back on 32 addresses -- 0x6ba14 (903),
+0x6ba70/0x6babc/0x6bb18/0x6bb74/0x6bbd0 (522-523), 0x6bc1c (895), 0x6bc80/0x6bce4/0x6bd48 (490),
+0x6bdac/0x6be10 (491), 0x6b994 (588), 0x6b9d4 (405), 0x6d01c (660), 0x6d064 (416), 0x6dd04 (434), 0x6af80 (745),
+0x6afcc..0x6b148 (469 each), 0x6b194 (971), 0x6b1fc..0x6b404 (552 each), 0x99fd0 (788, then 961 after the
+return-value claim was corrected) -- none at the 1024 cap, two stale claims replaced, `idb_save` written twice |
+teeth: 29 cases in `docs/parity/mutations_part131.py`, one per row -- 236 failing checks, 0 skipped, 0 inert,
+every file back to its exact bytes, `grep -rn "MUTATION" src tests` empty; the one inert first draft (0x6b2cc)
+was fixed by repairing the test's split byte rather than by re-cutting the case, and one ad-hoc mutation
+(measured, not committed as a row case) showed removing `Options_ClampStep` changes no check | row 121a stays
+open with 238 rows left.

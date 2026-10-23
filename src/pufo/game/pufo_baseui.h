@@ -4585,11 +4585,14 @@ char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const
  * Each clears its group (OptionsScreen_ClearMusicButtons / OptionsScreen_ClearSfxButtons), selects
  * its own button with nState = 2, writes the volume global, and mutes only at step 0: Map_bMusicOff /
  * Map_bSoundOff become 1 for step 0 and 0 for steps 1..5. Music ends with Sound_ApplyMusicVolume;
- * sfx calls Sound_ApplySfxVolume and then tail-calls Sound_Play(17) so the player hears the new
- * level. Four music handlers (0, 2, 3, 4) store the volume before clearing the group and reach their
- * button through the 0x159E44 + 4*n array; the other two (1, 5) clear first and name the pointer
- * directly. The order is not observable — the group clear only zeroes nState and the selected button
- * is written after it — so the port uses one body for all six.
+ * sfx calls Sound_ApplySfxVolume and then plays Sound_Play(17,4) TWICE -- a real BL at 0x6BC64 and a
+ * tail `B Sound_Play` at 0x6BC74 after the POP, with the same two immediates loaded again at
+ * 0x6BC68/0x6BC6C (verified on the bytes: 0x6BC5C..0x6BC74 is E3A01004 E3A00011 EB00C915 E3A01004
+ * E3A00011 E8BD4000 EA00C911 in all six members). Two clicks' worth of sound per click is the
+ * original's, not an artefact of reading it twice. Four music handlers (0, 2, 3, 4) store the volume
+ * before clearing the group and reach their button through the 0x159E44 + 4*n array; the other two
+ * (1, 5) clear first and name the pointer directly. The order is not observable — the group clear only
+ * zeroes nState and the selected button is written after it — so the port uses one body for all six.
  *
  * The level the appliers get is the original's own arithmetic, which Sound_ApplyMusicVolume @ 0x9E470
  * / 0x9E488 reads back out of the globals: 4 * (muted ? 0 : 12 * step + 4) - 1, muted yielding -1.

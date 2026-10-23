@@ -8972,9 +8972,12 @@ i32 OptionsScreen_SetMusicVol(OptionsVolumeEnv *pEnv, i32 nStep)
 
 /* OptionsScreen_SetSfxVol0 @ 0x6bc1c, Vol1 @ 0x6bc80, Vol2 @ 0x6bce4, Vol3 @ 0x6bd48, Vol4 @ 0x6bdac,
  * Vol5 @ 0x6be10 -- six entry points, one effect, all 100 bytes and 21 instructions (verified
- * 2026-10-22): clear the sfx buttons, store N into Map_nSoundVolume, select the radio for the clamped
- * step, store (N == 0) into the sfx-off byte, apply the volume, then `Sound_Play(17)` so the player
- * hears the new level. */
+ * 2026-10-22, tail re-read 2026-10-23): clear the sfx buttons, store N into Map_nSoundVolume, select
+ * the radio for the clamped step, store (N == 0) into the sfx-off byte, apply the volume, then play
+ * `Sound_Play(17,4)` TWICE -- 0x6BC5C/0x6BC60 load #4/#0x11 and 0x6BC64 BL Sound_Play, then
+ * 0x6BC68/0x6BC6C load them again, 0x6BC70 POP {LR} and 0x6BC74 `B Sound_Play`. Two samples per click
+ * is the original's shape; the earlier note here said one. (The start-menu family at 0x19bb4 plays
+ * 16 exactly once, as a tail call only.) */
 i32 OptionsScreen_SetSfxVol(OptionsVolumeEnv *pEnv, i32 nStep)
 {
     if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pnSfxVol == NULL || pEnv->pbSfxOff == NULL) {
@@ -8987,7 +8990,8 @@ i32 OptionsScreen_SetSfxVol(OptionsVolumeEnv *pEnv, i32 nStep)
     *pEnv->pbSfxOff = (nStep == 0) ? 1 : 0;                               /* 0x6BC54 / 0x6BCB8 */
     Sound_ApplySfxVolume(Options_MapLevel(*pEnv->pnSfxVol, *pEnv->pbSfxOff),
                          *pEnv->pbSfxOff);                                /* 0x6BC58 */
-    Sound_Play(17);                                                       /* 0x6BC64: hear the new level */
+    Sound_Play(17);                          /* 0x6BC5C MOV R1,#4 / 0x6BC60 MOV R0,#0x11 / 0x6BC64 BL */
+    Sound_Play(17);                          /* 0x6BC68 / 0x6BC6C load them again, 0x6BC70 POP, 0x6BC74 B -- the tail plays it too */
     return 0;
 }
 
