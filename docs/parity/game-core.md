@@ -23341,3 +23341,94 @@ tests` empty. IDB comments written and read back at 0x3f0e8 (933), 0x3f158 (667)
 the corrected ordinal), 0x3f558 (890), 0x406e8 (833), 0x40204 (809), 0x41600 (698), 0x416bc (940), 0x42ea0 (906)
 and 0x44958 (652) -- six of them had no note at all and two were stubs of 24 and 47 characters -- `idb_save`
 reported ok. Reach stayed 965/968 with residue 0 and the address-to-port-function map stayed at 604/968.
+
+## Part 128 - the 30 `render` rows close, and three of them turn out to be the port's code being wrong, not the checks being missing
+
+### The three arms the port had wrong, straight from the instructions  `SoftSurf_BlitIndexed_Inner @
+0xa306c` handles a 24bpp target with three sub-writes and one advance: 0xA33A0 is `ADD R7,R7,#2`, so three
+bytes are written and the pointer moves on by two. Consecutive pixels overlap by one byte, and the byte the
+last pixel of a row writes is past the nominal 3 * nWidth. The port stepped by three.
+`tests/test_render.c:TestTwentyFourBppIndexed` now pins the overlap with one palette entry, 0x00A1B2C3,
+whose three little-endian bytes are C3 B2 A1: three glyphs pixels write C3 B2 C3 B2 C3 B2 A1 into bytes 0..6
+of a buffer pre-filled with 0xEE, and byte 7 is still 0xEE -- with a stride of 3, byte 6 would have been
+0xEE and byte 2 would have been the second pixel's first byte.  `SoftSurf_BlitIndexedKeyed_Inner @ 0xa3638`
+is the keyed twin, and it has no 24bpp arm at all. Its mode > 2 branch computes the row pointer and then
+falls to the bare `POP {R0-R12,PC}` at 0xA3960: no pixel loop, no key compare, nothing drawn. The port ran
+its key loop there and drew pixels. A 24bpp keyed blit in the original is a call that does nothing, whatever
+the key is.  `SoftSurf_Blit_Inner @ 0xa47d0` is the alpha blend. Six field terms go into one accumulator --
+three taken off one operand (`AND #0x1F` at 0xA4908, `AND #0x7E0` at 0xA4914, `AND #0xF800` at 0xA4928) and
+three off the other (0xA493C, 0xA4948, 0xA495C), each one `MUL` then `MOV ...,LSR#8` and then added back
+shifted (`ADD R6,R6,R4,LSL#5` at 0xA4924, `ADD R6,R6,R4,LSL#11` at 0xA4938) -- and the accumulator is stored
+once, by `STRH R6,[R7]` at 0xA4970. There is no clamp on any field. An out-of-range alpha therefore carries
+from one 5- or 6-bit field into the next. Measured against the port: alpha 511 over a zero destination gives
+0xFFE1 (the green term of 511 is 15, which is 6 bits, so bit 11 carries into blue); a per-field clamp, which
+is what a reasonable rewrite would add, gives 0x0001. The clamp is gone and the test pins 0xFFE1.
+
+### Two addresses the ledger had mapped onto the wrong function  `Render_BlitSoft_HiRes @ 0x9fa90` and
+`Blit_CopyRows_HiRes @ 0xa3bb8` were listed in the address map as the 1:1 copy, because the LoRes pair
+`0x9fa7c` / `0xa3a14` was read as "the row copy" and nothing else looked at the tail. All four wrappers are
+the same shape -- `PUSH {LR}; ADD R0,R0,#0x18; BL Blit_LoadSurface; POP {LR}; B <copy>` -- a tail call, so
+the whole difference is the copy body. The HiRes body counts blitState.nWidth x nHeight (the target's
+logical size, published by `Blit_SetTargetParams @ 0xa39ac`) while the destination advances 2 * nDstPitchX
+per column (`ADD R8,R8,R0,LSL#1` at 0xA3C50) and restarts at rowStart + 2 * nDstPitchY (`ADD R8,R2,R1,LSL#1`
+at 0xA3C5C): every source value is written four times, a 2x2 upscale. Its mode > 2 arm is the same 3-bytes-
+advance-2 shape one level up, and it reads the SAME source byte three times -- 0xA3D44, 0xA3D60 and 0xA3D7C
+all take [R9], and R9 only advances at 0xA3D98. `tests/test_render.c:TestHiResUpscale` covers all three
+arms: an 8bpp 2x2 source into a 4x4 target, a 16bpp 4x4 device pattern doubled, and a 3-byte-mode cascade
+whose expected bytes are AB AB AB AB AB 00 AB 00 AB 00.  `SoftSurf_BlitRect @ 0x9ebb0` truncates the three
+colour operands with LDRB (0x9EBB8, 0x9EBCC, 0x9EBDC) and keeps the two sizes as dwords -- nRectH is spilled
+at 0x9EBBC and nRectW is `MOV R3,R2` at 0x9EBC0. The port passed all five through unchanged.
+`SoftSurf_BlitRectEx @ 0x9fc30` feeds them to `Blit_SetRectAndColor @ 0xa3f5c` (0x9FC58) and then tails into
+`Blit_CopyToXY @ 0xa42e4` (`POP` at 0x9FC68, `B` at 0x9FC6C), whose packed colour is ((idx >> 3) << 11) + 32
+* (mid >> 2) + (low >> 3) with plain adds, so an oversized operand carries into the neighbouring field: idx
+0xF8 with mid 0x3F and low 0x1C gives 0xF9E3, and swapping mid and low gives 0xF8E7. The truncation is in
+the port now and both numbers are pinned.
+
+### A do-while is not the same function as a loop with one seed  `Blit_CopyRows @ 0xa3a14` is a do-while in
+both counters, and the column counter is re-seeded inside the row loop: 0xA3A88 is `MOV R7,R5`, between the
+row start and the pixel loop, not before it. `SUBS` of a zero count gives 0xFFFFFFFF, so a zero width or a
+zero height runs away in the original too -- the shape is reproduced and is not testable, and the comment
+says so rather than claiming a behaviour the instructions do not have.  Converting the port to that shape
+found a real port bug, not a test bug. The first conversion seeded the column counter once for all rows: the
+first row consumed the width, every later row started from what was left, and `test_render` segfaulted.
+Bisection against HEAD was clean, and the probe `MUTPROBE endrow cols=0` said it plainly. Both
+`Blit_CopyRows` and the new `Blit_CopyRows_HiRes` seed per row now. The rule for later Parts: when the ARM
+re-loads a loop counter from a register inside the outer loop, a port that hoists that load out of the loop
+is a different function, and the difference shows up only on the second row.
+
+### Two deviations recorded instead of fixed  `Palette_Load @ 0x3e47c` tests neither reader result. 0x3E49C
+is `BL AssetReader_Find`, 0x3E4A0 is `MOV R2,#0x300` and 0x3E4AC is `BL AssetReader_Read`, and 0x3E4B0
+starts the conversion -- R0 is never read in between. `AssetReader_Read` refuses on its own (the bFound test
+at 0x9F8DC/0x9F8E8, the bound test at 0x9F8F8/0x9F900, both landing on the epilogue at 0x9F950 with no seek,
+no read, no advance), so the 768-byte stack buffer keeps whatever it held and the original converts and
+stores 256 entries of it. The port returns early and stores nothing. The same function's slot math is `AND
+R11,R4,#0xFF` at 0x3E568, `ADD R11,R0,R11,LSL#8` at 0x3E56C and `STR R1,[R2,R11,LSL#2]` at 0x3E570 -- 256
+slots of 256 entries over the 0x1472D0 base -- against the port's 64 slots and a `& 63`. Neither half is
+reachable in the app: the largest slot any call site passes is 31 (0x1F at 0x381A4) and main.dat holds every
+.pal the run asks for, so no picture moves; `TestPaletteDispatch` pins what is reachable, the format order
+(555 first at 0x3E4C4..0x3E4CC, then 565 at 0x3E500, then 888 at 0x3E53C, a member with both bits going 555)
+and the slots the load does not touch.  `SoftSurf_BlitGlyph_Inner @ 0xa41d4` has two pen bounds the port
+does not have. penY < 0 with a non-zero index jumps back to 0xA424C having advanced nothing (0xA42A4 `CMP
+R5,#0`, 0xA42A8 `BLT`): the record is read again and again and nothing moves, a spin. penY >= nSurf1 ends
+the glyph -- 0xA42BC `CMP R5,R7`, 0xA42C0 `BGE` to the `POP {R0-R12,PC}` at 0xA42DC -- so the rest of the
+record is never consumed. The port skips-and-advances on penY < 0 and keeps consuming past nSurf1, drawing
+nothing out of bounds in either case. Only a hand-made record reaches either arm: byte 0 carries the start Y
+and 0xFE (0xA425C, penY +1 at 0xA4260) is the only penY change, so penY < 0 needs a negative start byte.
+`tests/test_font.c` records the drawn output as identical for the records the font loader's own shape
+allows. Both rows are in `docs/parity/bugs.tsv` with their addresses and the reason they are not worth
+changing.
+
+### Teeth, gates and the IDB  30 mutation cases in `docs/parity/mutations_part128.py`, one per row, each
+attacking the one thing that row's checks pin: which surface a wrapper loads, which argument lands in which
+slot, which field an accessor reads, which operand a setter publishes, which field of a packed colour a
+kernel writes. The first sweep had 29 failing (1 to 130 checks each) and 1 inert -- `ctor-0x9f96c-third-
+field`, whose test asserted that two fields other than the two the ctor writes survived the ctor, so
+clearing one of them was invisible. Two accessor checks later (nWidth 0x5A5A5A5A and nHeight 0x5A5A5A5A
+survive `SoftSurf_ctor @ 0x9f96c`) that case fails 2 checks, and the re-run has all 30 failing, 245 failing
+checks in total, 0 skipped, every file restored to its exact bytes and `grep -rn "MUTATION" src tests`
+empty. `tools/check.sh` ran the six gates green: Release 65/65, Debug 65/65, 21,099 checks, coverage
+unchanged at 972/1103 functions and 596888/598792 bytes, 135 artifact rows with 0 real gaps, PARITY.md
+regenerated at 2213 lines. `tools/frames.sh` reports 93 reference pictures unchanged and the e2e flow's 9
+pictures unchanged -- the fixed arms are real and they are off the shipped path. IDB comments are read back
+on all 32 render addresses, longest 1018 at 0xa3bb8 and 1009 at 0xa41d4, both rewritten shorter after
+hitting the 1024 cap; `idb_save` reported ok. Reach stayed 965/968 with residue 0.

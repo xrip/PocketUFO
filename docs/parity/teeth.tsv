@@ -63,53 +63,53 @@
 0x2d82c	Gfx_PackRgb565Pair	1148	render	yes	yes	yes	Text_DrawString	yes
 0x2dce4	SoftSurf_BlitRectProxy	60	render	yes	yes	yes		yes
 0x36818	Render_Frame_DecRef	24	render	yes	yes	yes	World_TickBannerFade	yes
-0x3e47c	Palette_Load	288	render	yes	no	yes		yes
-0x9e558	SoftSurf_Blit	56	render	yes	no	yes		no
-0x9e590	SoftSurf_BlitFlip	56	render	yes	no	yes		no
+0x3e47c	Palette_Load	288	render	yes	yes	yes		yes
+0x9e558	SoftSurf_Blit	56	render	yes	yes	yes		yes
+0x9e590	SoftSurf_BlitFlip	56	render	yes	yes	yes		yes
 0x9e5c8	SoftSurf_DrawBorderAndBlur	220	render	yes	yes	yes		yes
-0x9e9f4	SoftSurf_BlitIndexed	64	render	yes	no	yes		no
-0x9ea34	SoftSurf_BlitIndexedKeyed	72	render	yes	no	yes	PadImage_BlitEx	yes
+0x9e9f4	SoftSurf_BlitIndexed	64	render	yes	yes	yes		yes
+0x9ea34	SoftSurf_BlitIndexedKeyed	72	render	yes	yes	yes	PadImage_BlitEx	yes
 0x9ea7c	GX_PresentFrame	308	render	yes	yes	yes	App_PresentHook|App_PresentLoadedSurface	no
-0x9ebb0	SoftSurf_BlitRect	72	render	yes	no	yes		yes
-0x9ebf8	SoftSurf_BlitSrcRect	80	render	yes	no	yes	Geoscape_DrawRadarArm|SoftSurf_BlitRect	yes
-0x9f96c	SoftSurf_ctor	16	render	yes	no	yes		yes
-0x9f97c	SoftSurf_dtor	24	render	yes	no	yes		yes
-0x9f994	SoftSurf_GetWidth	8	render	yes	no	yes		yes
-0x9f99c	SoftSurf_GetHeight	8	render	yes	no	yes		yes
+0x9ebb0	SoftSurf_BlitRect	72	render	yes	yes	yes		yes
+0x9ebf8	SoftSurf_BlitSrcRect	80	render	yes	yes	yes	Geoscape_DrawRadarArm|SoftSurf_BlitRect	yes
+0x9f96c	SoftSurf_ctor	16	render	yes	yes	yes		yes
+0x9f97c	SoftSurf_dtor	24	render	yes	yes	yes		yes
+0x9f994	SoftSurf_GetWidth	8	render	yes	yes	yes		yes
+0x9f99c	SoftSurf_GetHeight	8	render	yes	yes	yes		yes
 0x9f9a4	SoftSurf_AllocPixels	216	render	yes	yes	yes		yes
-0x9fa7c	Render_BlitSoft_LoRes	20	render	yes	no	yes	Render_BlitSurface	yes
-0x9fa90	Render_BlitSoft_HiRes	20	render	yes	no	yes	Render_BlitSurface	yes
+0x9fa7c	Render_BlitSoft_LoRes	20	render	yes	yes	yes	Render_BlitSurface	yes
+0x9fa90	Render_BlitSoft_HiRes	20	render	yes	yes	yes	Blit_PutHiRes16|Render_BlitSurface	yes
 0x9faa4	Render_SetTarget	56	render	yes	yes	yes	App_PresentLoadedSurface	yes
-0x9fadc	SoftSurf_BlitIndexedEx	48	render	yes	no	yes		yes
-0x9fb0c	SoftSurf_BlitIndexedKeyedEx	56	render	yes	no	yes		yes
-0x9fb44	SoftSurf_BlitEx	60	render	yes	no	yes	SoftSurf_Blit	no
-0x9fb80	SoftSurf_BlitFlipEx	60	render	yes	no	yes		no
-0x9fbbc	SoftSurf_FillRectEx	68	render	yes	no	yes		yes
-0x9fc00	SoftSurf_BlitGlyph	48	render	yes	no	yes	Font_DrawGlyph	yes
-0x9fc30	SoftSurf_BlitRectEx	64	render	yes	no	yes		yes
-0x9fc70	SoftSurf_BlitSrcRectEx	68	render	yes	no	yes	SoftSurf_BlitRectEx	yes
-0x9fcb4	SoftSurf_GetPixels	8	render	yes	no	yes		yes
+0x9fadc	SoftSurf_BlitIndexedEx	48	render	yes	yes	yes		yes
+0x9fb0c	SoftSurf_BlitIndexedKeyedEx	56	render	yes	yes	yes		yes
+0x9fb44	SoftSurf_BlitEx	60	render	yes	yes	yes	SoftSurf_Blit	yes
+0x9fb80	SoftSurf_BlitFlipEx	60	render	yes	yes	yes		no
+0x9fbbc	SoftSurf_FillRectEx	68	render	yes	yes	yes		yes
+0x9fc00	SoftSurf_BlitGlyph	48	render	yes	yes	yes	Font_DrawGlyph	yes
+0x9fc30	SoftSurf_BlitRectEx	64	render	yes	yes	yes		yes
+0x9fc70	SoftSurf_BlitSrcRectEx	68	render	yes	yes	yes	SoftSurf_BlitRectEx	yes
+0x9fcb4	SoftSurf_GetPixels	8	render	yes	yes	yes		yes
 0x9fcbc	SoftSurf_GetAlloc	8	render	yes	yes	yes		yes
 0xa2000	SoftSurf_BlurPixels	116	render	yes	yes	yes		yes
 0xa306c	SoftSurf_BlitIndexed_Inner	860	render	yes	yes	yes	Blit_Indexed	no
 0xa33c8	SoftSurf_BlitRawGlyph	604	render	yes	yes	yes		yes
-0xa3624	Blit_SetColorKey	20	render	yes	no	yes		yes
-0xa3638	SoftSurf_BlitIndexedKeyed_Inner	812	render	yes	no	yes	Blit_Indexed	no
-0xa3964	Blit_LoadSurface	72	render	yes	no	yes		yes
+0xa3624	Blit_SetColorKey	20	render	yes	yes	yes		yes
+0xa3638	SoftSurf_BlitIndexedKeyed_Inner	812	render	yes	yes	yes	Blit_Indexed	no
+0xa3964	Blit_LoadSurface	72	render	yes	yes	yes		yes
 0xa39ac	Blit_SetTargetParams	104	render	yes	yes	yes	App_PresentLoadedSurface	no
 0xa3a14	Blit_CopyRows	420	render	yes	yes	yes		yes
-0xa3bb8	Blit_CopyRows_HiRes	512	render	yes	no	yes	Render_BlitSurface	yes
+0xa3bb8	Blit_CopyRows_HiRes	512	render	yes	yes	yes	Blit_PutHiRes16|Blit_CopyRows	yes
 0xa3db8	SoftSurf_BlitCopyRaw	420	render	yes	yes	yes	Blit_CopyRows	yes
-0xa3f5c	Blit_SetRectAndColor	56	render	yes	no	yes		yes
+0xa3f5c	Blit_SetRectAndColor	56	render	yes	yes	yes		yes
 0xa3f94	SoftSurf_FillRect_Inner	576	render	yes	yes	yes		yes
 0xa41d4	SoftSurf_BlitGlyph_Inner	268	render	yes	yes	yes	App_PresentLoadedSurface|Font_BlitGlyph|Font_DrawGlyph	yes
-0xa42e4	Blit_CopyToXY	364	render	yes	yes	yes		no
+0xa42e4	Blit_CopyToXY	364	render	yes	yes	yes		yes
 0xa4450	SoftSurf_BlitSrcRect_Inner	480	render	yes	yes	yes		no
 0xa4630	SoftSurf_SamplePixel	364	render	yes	yes	yes		yes
 0xa479c	BlitState_Get	20	render	yes	yes	yes		yes
-0xa47b0	BlitParams_Set	32	render	yes	no	yes		no
-0xa47d0	SoftSurf_Blit_Inner	464	render	yes	no	yes	Blit_Blend	no
-0xa49a0	SoftSurf_BlitFlip_Inner	500	render	yes	no	yes	Blit_FlipBlend	no
+0xa47b0	BlitParams_Set	32	render	yes	yes	yes		no
+0xa47d0	SoftSurf_Blit_Inner	464	render	yes	yes	yes	Blit_Blend	no
+0xa49a0	SoftSurf_BlitFlip_Inner	500	render	yes	yes	yes	Blit_FlipBlend	no
 0x3f0e8	Save_ReadObjBefore	112	save	yes	yes	yes	Save_WriteObjBefore	yes
 0x3f158	Save_WriteObjBefore	112	save	yes	yes	yes		yes
 0x3f1c8	Save_ReadStrategVer	52	save	yes	yes	yes	Save_ReadStrategVersion	yes

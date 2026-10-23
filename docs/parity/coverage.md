@@ -184,3 +184,28 @@ new checks later the re-run fails 2 to 42 checks in all 35 cases. Measured after
 not (`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `render` 30, `app-shell` 3 left; `save` closed). One cite
 was removed on purpose: a comment that only contrasted `Save_ReadSmap` with `Smap_ZoomIn @ 0x81e44` handed that
 `strat` row a cite it had not earned, and the ledger now counts it uncited again.
+
+Part 128 closed the 30 `render` rows, and three of them were wrong in the port's code rather than missing checks:
+`Blit_Indexed`'s 24bpp arm writes three bytes and advances two columns (0xA33A0 `ADD R7,R7,#2`), so the last byte
+of a column is rewritten by the next one and the port had a clean 3-byte step; the keyed inner
+`SoftSurf_BlitIndexedKeyed_Inner @ 0xa3638` reaches the mode > 2 arm, computes the row pointer and leaves through
+the bare POP at 0xA3960, so a 24bpp keyed blit draws nothing at all, and the port drew pixels;
+`SoftSurf_Blit_Inner @ 0xa47d0` sums six field terms into one accumulator with no clamp anywhere, so an
+out-of-range alpha carries into the neighbouring field (511 over a zero destination gives 0xFFE1) where a clamped
+rewrite gives 0x0001. All three were fixed in `src/pufo/render/pufo_render.c`, and the 93 frame pictures plus the
+9 e2e pictures stayed byte-identical -- that is the measurement showing none of the three arms is on a shipped
+path. Two addresses the ledger had mapped onto the 1:1 copy got their own faithful port: `Blit_CopyRows_HiRes
+@ 0xa3bb8` (the 2x2 upscale, whose mode > 2 arm writes the SAME source byte three times at 0xA3D44/0xA3D60/0xA3D7C
+and advances once at 0xA3D98) and `Render_BlitSurface_HiRes @ 0x9fa90`. `Blit_CopyRows @ 0xa3a14` is now the
+original's do-while with the column counter re-seeded inside the row loop (`MOV R7,R5` at 0xA3A88); that shape
+caught a real port bug, because a counter seeded once for all rows ran the test off the end of the surface. Two
+rows went to `docs/parity/bugs.tsv` as stated deviations instead of fixes: `Palette_Load @ 0x3e47c` tests neither
+reader result (0x3E49C..0x3E4B0 has no branch) and so stores 256 entries of whatever the stack held when the .pal
+is missing, and its slot math is `& 0xFF` over 256-entry slots (0x3E568/0x3E56C/0x3E570) against the port's 64;
+and `SoftSurf_BlitGlyph_Inner @ 0xa41d4`, whose penY < 0 arm spins without advancing (0xA42A4/0xA42A8) and whose
+penY >= nSurf1 arm ends the glyph (0xA42BC to the POP at 0xA42DC). Teeth: 30 cases in
+`docs/parity/mutations_part128.py`, one per row; the first sweep had 29 failing 1 to 130 checks and 1 inert -- the
+`SoftSurf_ctor @ 0x9f96c` case, whose test only asserted that two other fields survived the ctor -- and after two
+new accessor checks all 30 fail, 1 to 130 checks each, 245 failing checks in total, 0 skipped, every file back to
+its exact bytes and `grep -rn "MUTATION" src tests` empty. Measured after Part 128: **611** cited, **357** not
+(`strat-ui` 121, `tact` 93, `strat` 90, `ui-core` 50, `app-shell` 3 left; `render` closed).

@@ -139,12 +139,15 @@ void SoftSurf_BlitRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
 void SoftSurf_BlitSrcRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
                           i32 nColorMid, i32 nColorLow, i32 nKey);
 
-/* Full-surface row copy to the render target. */
+/* Full-surface row copy to the render target: 1:1 (Blit_CopyRows @ 0xa3a14) or 2x2 upscale
+ * (Blit_CopyRows_HiRes @ 0xa3bb8). */
 void Blit_CopyRows(void);
+void Blit_CopyRows_HiRes(void);
 
 /* Blit the whole logical surface to the render target
  * (Render_BlitSoft_LoRes @ 0x9fa7c / HiRes @ 0x9fa90). */
 void Render_BlitSurface(const SoftSurf *pSurf);
+void Render_BlitSurface_HiRes(const SoftSurf *pSurf);
 
 /* --- glyph blits --- */
 /* pGlyph points at a {u16 w, u16 h, u8 idx[]} record. The non-Ex forms draw

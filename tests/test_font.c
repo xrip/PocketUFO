@@ -237,6 +237,65 @@ static void TestBlitIntoSurface(void)
     g_pMainSurface = NULL;
 }
 
+/* SoftSurf_BlitGlyph @ 0x9fc00 is the pair Font_DrawGlyph performs inline: Blit_LoadSurface on
+ * g_pMainSurface, then SoftSurf_BlitGlyph_Inner @ 0xa41d4. The pair matters because the blitter
+ * works entirely through the global blit state, so a surface loaded by an earlier call must not
+ * survive into this one - the stride, the surface bounds and the pixel base all come from the state. */
+static void TestBlitGlyphPair(void)
+{
+    SoftSurf surf;
+    SoftSurf stale;
+    u16     *pPix;
+    u16     *pStale;
+    static u8 *apSpr[1];
+    u8        aGlyph[8];
+    i32       i;
+
+    printf("SoftSurf_BlitGlyph pair inside Font_DrawGlyph\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 8, 8, PIXMODE_16BPP);
+    SoftSurf_ctor(&stale);
+    SoftSurf_AllocPixels(&stale, 4, 4, PIXMODE_16BPP);
+    pPix   = (u16 *)SoftSurf_GetPixels(&surf);
+    pStale = (u16 *)SoftSurf_GetPixels(&stale);
+    for (i = 0; i < 64; ++i) {
+        pPix[i] = 0;
+    }
+    for (i = 0; i < 16; ++i) {
+        pStale[i] = 0xDEAD;
+    }
+
+    /* startY 0, startX 0, three pixels, then the 0xFF end - the same record TestBlitIntoSurface uses. */
+    aGlyph[0] = 0; aGlyph[1] = 0;
+    aGlyph[2] = 5; aGlyph[3] = 6; aGlyph[4] = 7;
+    aGlyph[5] = 0xFF;
+    aGlyph[6] = 0; aGlyph[7] = 0;
+    apSpr[0] = aGlyph;
+    g_fontSys.apSprIndex     = apSpr;
+    g_fontSys.nSprIndexCount = 1;
+    g_nGlyphPalSlotBase      = 0;
+
+    g_pMainSurface = &surf;
+    Blit_LoadSurface(&stale);                     /* the state holds the wrong surface on purpose */
+    Render_SetTarget(8, 8, 2, 2, 16, NULL);
+    for (i = 0; i < 256; ++i) {
+        g_aPalette[0][i] = (u32)(0x2000 + i);
+    }
+
+    Font_DrawGlyph(1, 1, 0, 0);
+    CheckEqU32(pPix[1 * 8 + 1], 0x2005, "  Font_DrawGlyph loads g_pMainSurface @ 0x9fc00 before it blits");
+    CheckEqU32(pPix[1 * 8 + 2], 0x2006, "  ... on the main surface's stride of 8, not the stale 4");
+    CheckEqU32(pStale[0], 0xDEAD, "  ... the surface that was loaded before is not drawn on");
+    CheckEqI32(g_blitState.nSurf0, 8, "  ... the state really was reloaded (nSurf0 is now the main width)");
+
+    g_fontSys.apSprIndex     = NULL;
+    g_fontSys.nSprIndexCount = 0;
+    g_pMainSurface = NULL;
+    SoftSurf_dtor(&surf);
+    SoftSurf_dtor(&stale);
+}
+
 static void TestMetrics(void)
 {
     printf("FONTSIZE.DAT advance table\n");
@@ -628,6 +687,7 @@ int main(void)
     TestSprHeader();
     TestGlyphDecode();
     TestBlitIntoSurface();
+    TestBlitGlyphPair();
     TestMetrics();
     TestPatchCraftSprites();
     TestFlagSprBases();

@@ -76,6 +76,91 @@ static void TestAlloc(void)
     SoftSurf_dtor(&surf);
 }
 
+/* The SoftSurf object rows. SoftSurf_ctor @ 0x9f96c is three instructions: MOV R1,#0 then two
+ * stores, [R0,#0x10] at 0x9F970 and [R0,#0x14] at 0x9F974 -- the two pointers and nothing else,
+ * so every other field of the 40-byte record survives a ctor. The accessors are single loads at
+ * fixed offsets: SoftSurf_GetWidth @ 0x9f994 is `LDR R0,[R0]` (+0x00), SoftSurf_GetHeight @ 0x9f99c
+ * is `LDR R0,[R0,#4]` (+0x04), SoftSurf_GetPixels @ 0x9fcb4 is `LDR R0,[R0,#0x14]` (+0x14). The
+ * record ALSO holds a blit descriptor at +0x18..+0x24, which is what the blitters read, so each
+ * accessor is tested against a descriptor holding a different value. */
+static void TestSoftSurfObject(void)
+{
+    SoftSurf surf;
+    u8      *pPixels;
+
+    printf("SoftSurf ctor and accessors\n");
+
+    memset(&surf, 0x5A, sizeof(surf));    /* garbage everywhere, no live pointer anywhere */
+    SoftSurf_ctor(&surf);
+    Check(surf.pAlloc == NULL, "  ctor clears pAlloc (+0x10, STR at 0x9F970)");
+    Check(surf.pPixels == NULL, "  ctor clears pPixels (+0x14, STR at 0x9F974)");
+    CheckEqI32(surf.nBytesPP, 0x5A5A5A5A, "  ctor reaches no third field (only two STR)");
+    CheckEqI32(surf.nWidth, 0x5A5A5A5A, "  ... not the header width at +0x00 either");
+    CheckEqI32(surf.nHeight, 0x5A5A5A5A, "  ... not the header height at +0x04");
+    CheckEqI32(surf.nBlitW, 0x5A5A5A5A, "  the +0x18 descriptor survives it");
+
+    SoftSurf_AllocPixels(&surf, 3, 2, PIXMODE_16BPP);
+    pPixels = surf.pPixels;
+    surf.nBlitW = 11;                          /* the descriptor's width, a different field */
+    CheckEqI32(SoftSurf_GetWidth(&surf), 3, "  GetWidth reads +0x00 (0x9F994), not +0x18");
+    surf.nHeight = 5;
+    surf.nBlitH  = 7;
+    CheckEqI32(SoftSurf_GetHeight(&surf), 5, "  GetHeight reads +0x04 (0x9F99C), not +0x1C");
+    surf.pBlitSrc = (u8 *)&surf + 8;           /* a third pointer, deliberately different */
+    Check(SoftSurf_GetPixels(&surf) == pPixels, "  GetPixels reads +0x14 (0x9FCB4)");
+    Check(SoftSurf_GetPixels(&surf) != surf.pBlitSrc, "  ... and not the blit source at +0x24");
+
+    /* SoftSurf_dtor @ 0x9f97c: `LDR R3,[R0,#0x14]` at 0x9F980, `CMP R3,#0` at 0x9F984, and both
+     * the pointer load (0x9F988) and the delete (0x9F98C) are BLNE -- the free is gated on the
+     * pixel pointer, not on the allocation pointer, and the original clears neither field, so
+     * running it twice would delete the same block twice. The port nulls both (stated deviation),
+     * which is what a second dtor pins here: it must be a no-op, not a second free. */
+    SoftSurf_dtor(&surf);
+    Check(surf.pPixels == NULL && surf.pAlloc == NULL,
+          "  dtor nulls both (deviation: 0x9f97c leaves them dangling)");
+    SoftSurf_dtor(&surf);
+    Check(surf.pPixels == NULL && surf.pAlloc == NULL, "  a second dtor changes nothing");
+
+    /* The gate in the other direction is not observable from C: "frees nothing when pPixels is 0"
+     * cannot be told apart from "calls free(NULL)" without a heap checker. It is recorded on the
+     * IDB note for 0x9f97c instead of claimed as a check. */
+    SoftSurf_ctor(&surf);
+    SoftSurf_dtor(&surf);
+    Check(surf.pPixels == NULL, "  dtor after a bare ctor leaves the pair clear");
+}
+
+/* Blit_LoadSurface @ 0xa3964: four LDR/STR pairs, 0xA3970..0xA39A4, that copy the surface's
+ * +0x18 descriptor into the first four fields of the global blit state -- nSurf0 from +0x18,
+ * nSurf1 from +0x1C, nSurf2 from +0x20 and pSrc from +0x24. It writes nothing else: the target
+ * half of the state (+0x10..+0x24, published by Render_SetTarget) is left alone, and the copy
+ * comes from the DESCRIPTOR, not from the surface's own header fields. */
+static void TestBlitStateLoading(void)
+{
+    SoftSurf surf;
+    static u8 aScratch[16];
+
+    printf("Blit_LoadSurface (0xa3964)\n");
+
+    memset(&surf, 0, sizeof(surf));
+    surf.nBlitW = 31; surf.nBlitH = 17; surf.nBlitMode = 2; surf.pBlitSrc = aScratch;
+    /* A header that disagrees with the descriptor: a loader reading the wrong half shows up. */
+    surf.nWidth = 1; surf.nHeight = 1; surf.pPixels = aScratch + 8;
+
+    g_blitState.nSurf0 = -1; g_blitState.nSurf1 = -1; g_blitState.nSurf2 = -1;
+    g_blitState.pSrc = NULL;
+    g_blitState.nWidth = 100; g_blitState.nHeight = 200; g_blitState.pDst = aScratch;
+
+    Blit_LoadSurface(&surf);
+    CheckEqI32(g_blitState.nSurf0, 31, "  nSurf0 <- +0x18 (STR at 0xA3974)");
+    CheckEqI32(g_blitState.nSurf1, 17, "  nSurf1 <- +0x1C (0xA3984)");
+    CheckEqI32(g_blitState.nSurf2, 2,  "  nSurf2 <- +0x20 (0xA3994)");
+    Check(g_blitState.pSrc == aScratch, "  pSrc <- +0x24 (0xA39A4)");
+    Check(g_blitState.pSrc != surf.pPixels, "  the descriptor is copied, not the header pixel base");
+    CheckEqI32(g_blitState.nWidth, 100, "  0xa3964 writes four fields only: width untouched");
+    CheckEqI32(g_blitState.nHeight, 200, "  height untouched");
+    Check(g_blitState.pDst == aScratch, "  pDst untouched");
+}
+
 /* Palette conversion from the real CLASS.PAL (768 bytes, RGB triples). */
 static void TestPalette(void)
 {
@@ -878,6 +963,397 @@ static void TestPaletteRamp(void)
     g_ffFormat = ffSave;
 }
 
+/* The bound (non-Ex) forms: SoftSurf_Blit @ 0x9e558, SoftSurf_BlitFlip @ 0x9e590,
+ * SoftSurf_BlitIndexed @ 0x9e9f4, SoftSurf_BlitIndexedKeyed @ 0x9ea34, SoftSurf_BlitRect @ 0x9ebb0,
+ * SoftSurf_BlitSrcRect @ 0x9ebf8. Each one is PUSH {LR}, a few argument shuffles, LDR
+ * g_pMainSurface + LDR [R0], BL the Ex form, ADD SP, POP {PC} - so a bound form is pinned by two
+ * things: the surface it loads, and what each argument becomes on the way through. Two of them
+ * change the arguments. SoftSurf_BlitRect loads nColorLow, nColorMid and nIdx with LDRB
+ * (0x9EBB8, 0x9EBCC, 0x9EBDC), truncating all three to bytes while the two sizes stay dwords
+ * (MOV R3 at 0x9EBC0, STR R3 at 0x9EBBC); SoftSurf_BlitSrcRect @ 0x9ebf8 loads every operand with
+ * LDR and instead moves srcX (0x9EC24) into blitColorMid and srcY (0x9EC14) into blitColorLow. */
+static void TestBoundWrappers(void)
+{
+    SoftSurf surf;
+    SoftSurf other;
+    u16     *pPix;
+    u16     *pOther;
+    u16      aTarget[8];
+    u8       aGlyph[8];
+    static u32 aPal[16];
+    static u8  aMask[8];
+    i32        i;
+
+    printf("Bound wrappers draw on g_pMainSurface\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 8, 4, PIXMODE_16BPP);
+    SoftSurf_ctor(&other);
+    SoftSurf_AllocPixels(&other, 8, 4, PIXMODE_16BPP);
+    pPix   = (u16 *)SoftSurf_GetPixels(&surf);
+    pOther = (u16 *)SoftSurf_GetPixels(&other);
+    g_pMainSurface = &surf;
+
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    g_aPalette[3][7]    = 0x1111;
+    g_aPalette[3][8]    = 0x1112;
+    g_aPalette[3][0x11] = 0x3333;
+    g_aPalette[4][7]    = 0x2222;
+    g_aPalette[4][8]    = 0x2223;
+    g_aPalette[5][7]    = 0xFFFF;
+    g_aPalette[5][9]    = 0x001F; /* entry 5[8] stays 0: one glyph column with no colour */
+    g_aPalette[6][5]    = 0x1234;
+    g_aPalette[7][7]    = 0x1111; /* a slot numbered like the raw pointer below, and not the one used */
+
+    aGlyph[0] = 2; aGlyph[1] = 0; aGlyph[2] = 1; aGlyph[3] = 0; /* u16 w = 2, u16 h = 1 */
+    aGlyph[4] = 7; aGlyph[5] = 8; aGlyph[6] = 0; aGlyph[7] = 0;
+
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0xEEEE;
+        pOther[i] = 0xEEEE;
+    }
+
+    /* SoftSurf_BlitIndexedEx @ 0x9fadc loads the surface it is given; the bound form @ 0x9e9f4
+     * loads g_pMainSurface, and its palette pointer is 0x1472D0 + nPal*0x400 (LDR =0x1472D0 at
+     * 0x9E9FC, ADD R3,R2,R3,LSL#10 at 0x9EA04): a slot is 256 entries, not 256 bytes. */
+    SoftSurf_BlitIndexedEx(&other, 0, 0, aGlyph, 3);
+    CheckEqU32(pOther[0], 0x1111, "  SoftSurf_BlitIndexedEx @ 0x9fadc draws on the surface it was given");
+    CheckEqU32(pOther[1], 0x1112, "  ... one glyph byte per palette entry, in order");
+
+    SoftSurf_BlitIndexed(0, 0, aGlyph, 3);
+    CheckEqU32(pPix[0], 0x1111, "  SoftSurf_BlitIndexed @ 0x9e9f4 draws on g_pMainSurface");
+    CheckEqU32(pOther[2], 0xEEEE, "  ... not on the surface the last Ex call loaded");
+    SoftSurf_BlitIndexed(3, 0, aGlyph, 4);
+    CheckEqU32(pPix[3], 0x2222, "  slot 4 sits 256 entries from slot 3 (ADD ...,LSL#10 at 0x9EA04)");
+    CheckEqU32(pPix[4], 0x2223, "  ... and the slot keeps its own entry order");
+
+    /* SoftSurf_BlitIndexedKeyed @ 0x9ea34 takes five arguments; the key is published through
+     * blitColorKey by Blit_SetColorKey @ 0xa3624 and the inner compares it against every glyph
+     * byte, so a match leaves the pixel alone. */
+    aGlyph[5] = 0xFF;
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0xEEEE;
+    }
+    SoftSurf_BlitIndexedKeyed(0, 0, aGlyph, 3, 0xFF);
+    CheckEqU32(pPix[0], 0x1111, "  SoftSurf_BlitIndexedKeyed @ 0x9ea34 -> @ 0x9fb0c draws the index that is not the key");
+    CheckEqU32(pPix[1], 0xEEEE, "  ... @ 0x9fb0c publishes the key through blitColorKey, so a match is skipped");
+    CheckEqI32(Blit_SetColorKey(0x11), 0x11, "  Blit_SetColorKey @ 0xa3624 returns the key it stored");
+    aGlyph[4] = 0x11;
+    aGlyph[5] = 7;
+    SoftSurf_BlitIndexedKeyed(0, 0, aGlyph, 3, 7);
+    CheckEqU32(pPix[0], 0x3333, "  index 0x11 is drawn when the key is 7, so 0xa3624 really stored the new one");
+    CheckEqU32(pPix[1], 0xEEEE, "  ... and index 7 is the one skipped");
+    aGlyph[4] = 7;
+    aGlyph[5] = 8;
+
+    /* SoftSurf_Blit @ 0x9e558 forwards its fifth argument to SoftSurf_BlitEx @ 0x9fb44, which
+     * publishes it as the SOURCE weight through BlitParams_Set @ 0xa47b0 (dword_A3040) - the
+     * destination weight is 255 - alpha. If the pair were swapped the alpha cases below all move. */
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0;
+    }
+    SoftSurf_Blit(0, 0, aGlyph, 5, 255);
+    CheckEqU32(pPix[0], 0xF7DE, "  SoftSurf_Blit @ 0x9e558 alpha 255 is opaque and still loses one per field");
+    CheckEqU32(pPix[1], 0, "  ... the fifth argument is a weight, not a colour: entry 5[8] is 0");
+
+    /* SoftSurf_Blit_Inner @ 0xa47d0 has no per-field clamp. 0xA4908..0xA496C builds the blue, green
+     * and red terms of the destination (weight 255-alpha) and then of the source (weight alpha),
+     * each MUL'd field product taken with LSR#8, all six added into R6, and 0xA4970 stores R6 as one
+     * halfword. Inside alpha 0..255 the two weights sum to 255, so no term can overflow its field;
+     * outside it the carry is what the original writes. */
+    aGlyph[4] = 8;
+    aGlyph[5] = 8;
+    pPix[0] = 0x001F;
+    pPix[1] = 0x001F;
+    SoftSurf_Blit(0, 0, aGlyph, 5, 511);
+    CheckEqU32(pPix[0], 0xFFE1, "  alpha 511, dst blue 31: 31*(255-511) = 0xFFFFE100, LSR#8, truncated by STRH");
+    CheckEqU32(pPix[1], 0xFFE1, "  ... a per-field 0x1F clamp would leave 1 here instead of 0xFFE1");
+    pPix[0] = 0x001F;
+    pPix[1] = 0x001F;
+    SoftSurf_Blit(0, 0, aGlyph, 5, 0);
+    CheckEqU32(pPix[0], 0x001E, "  alpha 0 still scales the destination: (31*255)>>8 = 30, not a copy");
+    aGlyph[4] = 9;
+    aGlyph[5] = 9;
+    pPix[0] = 0x001F;
+    pPix[1] = 0x001F;
+    SoftSurf_Blit(0, 0, aGlyph, 5, 128);
+    CheckEqU32(pPix[0], 0x001E, "  alpha 128 between two equal blues: (31*127)>>8 + (31*128)>>8 = 15 + 15");
+    aGlyph[4] = 7;
+    aGlyph[5] = 8;
+
+    /* SoftSurf_BlitFlip @ 0x9e590 -> SoftSurf_BlitFlipEx @ 0x9fb80 forwards the palette and mask
+     * POINTERS unchanged (no aPalette[256*slot] conversion), and SoftSurf_BlitFlip_Inner @ 0xa49a0
+     * weights the destination with 256-mask and starts the mask at maskBase + (pIdx - glyphBase),
+     * so clipping the glyph shifts the mask with it. aPal is a local table; slot 7 of g_aPalette
+     * holds a different value and is not what this reads. */
+    for (i = 0; i < 16; ++i) {
+        aPal[i] = 0;
+    }
+    aPal[7] = 0x001F;
+    aPal[8] = 0x001F;
+    aMask[0] = 0; aMask[1] = 0; aMask[2] = 0; aMask[3] = 0;
+    aMask[4] = 0x00; aMask[5] = 0xFF; aMask[6] = 0; aMask[7] = 0;
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0x001F;
+    }
+    SoftSurf_BlitFlip(0, 0, aGlyph, aPal, aMask);
+    CheckEqU32(pPix[0], 0x001F, "  mask 0 leaves the pixel exactly: the weight is 256-mask, not 255-mask @ 0xa49a0");
+    CheckEqU32(pPix[1], 0x001E, "  mask 255 takes the raw table's value: (31*255)>>8 = 30, not slot 7's 0x11");
+    pPix[0] = 0x001F;
+    SoftSurf_BlitFlip(-1, 0, aGlyph, aPal, aMask);
+    CheckEqU32(pPix[0], 0x001E, "  a clipped glyph uses mask[5]: the mask pointer is offset by the clip distance");
+
+    /* The rectangle pair. Blit_CopyToXY @ 0xa42e4 gates on the TARGET pixel mode and
+     * SoftSurf_BlitSrcRect_Inner @ 0xa4450 on the SURFACE mode; both build the colour as
+     * ((idx >> 3) << 11) + 32 * (mid >> 2) + (low >> 3) with plain additions, so an operand too big
+     * for its field carries into the neighbour instead of being masked. */
+    Render_SetTarget(8, 4, 2, 2, 16, (u8 *)aTarget);
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0;
+    }
+    SoftSurf_BlitRect(0, 0, 2, 1, 0x1FF, 0x1FF, 0x1FF);
+    CheckEqU32(pPix[0], 0xFFFF, "  SoftSurf_BlitRect @ 0x9ebb0 truncates idx/mid/low to bytes: 0xFF,0xFF,0xFF -> 0xFFFF");
+    CheckEqU32(pPix[1], 0xFFFF, "  ... the untruncated 0x1FF operands would have given 0x081F");
+    CheckEqU32(pPix[2], 0, "  ... the size argument stays a dword and only 2 columns are filled");
+
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0;
+    }
+    SoftSurf_BlitSrcRect(0, 0, 1, 1, 0, 0x7C, 0xF8, 255);
+    CheckEqU32(pPix[0], 0x03DE, "  SoftSurf_BlitSrcRect @ 0x9ebf8 maps srcX onto the middle operand (LDR 0x9EC24)");
+    CheckEqU32(pPix[1], 0, "  ... and srcY onto the low one (LDR 0x9EC14): swapping them gives 0x07AE");
+
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0;
+    }
+    SoftSurf_BlitSrcRect(0, 0, 1, 1, 0, 0x3FF, 0xF8, 200);
+    CheckEqU32(pPix[0], 0x1638, "  ... no truncation here: 0x3FF>>2 = 255 and 32*255 carries a bit into the top field");
+
+    /* Blit_SetRectAndColor @ 0xa3f5c is the only source of the rectangle size and of the two colour
+     * operands, because Blit_CopyToXY takes nothing but x, y and the index. */
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0;
+    }
+    Blit_SetRectAndColor(3, 2, 0x3F, 0x1C);
+    Blit_CopyToXY(0, 0, 0xF8);
+    CheckEqU32(pPix[0], 0xF9E3, "  Blit_SetRectAndColor @ 0xa3f5c supplies both operands: (0xF8>>3)<<11 + 32*(0x3F>>2) + (0x1C>>3)");
+    CheckEqU32(pPix[2], 0xF9E3, "  ... and the width: 3 columns");
+    CheckEqU32(pPix[3], 0, "  ... the 4th column is outside the published width");
+    CheckEqU32(pPix[8 + 2], 0xF9E3, "  ... 2 rows deep");
+    CheckEqU32(pPix[8 + 3], 0, "  ... row 1 clipped at the same width");
+
+    /* SoftSurf_FillRectEx @ 0x9fbbc loads the surface, publishes the rectangle with both colour
+     * operands zero, and hands the index to SoftSurf_FillRect_Inner @ 0xa3f94, which for a 16bpp
+     * surface reads pPal[nIdx] before clipping - a flat palette entry, not a packed colour, and the
+     * entry is read even when the rectangle is clipped away. */
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0;
+    }
+    SoftSurf_FillRectEx(&surf, 0, 0, 2, 2, 6, 5);
+    CheckEqU32(pPix[0], 0x1234, "  SoftSurf_FillRectEx @ 0x9fbbc fills with the palette entry, not a packed colour");
+    CheckEqU32(pPix[1], 0x1234, "  ... the size is the one it publishes (2x2), not the 3x2 above");
+    CheckEqU32(pPix[2], 0, "  ... and stops at that width");
+    CheckEqU32(pPix[8 + 1], 0x1234, "  ... two rows deep");
+
+    /* The two rectangle Ex forms @ 0x9fc30 and @ 0x9fc70 are the load + publish + fill/blend trio;
+     * a bound form adds nothing but which surface gets loaded, so each Ex is checked on a surface
+     * that is NOT g_pMainSurface. */
+    for (i = 0; i < 32; ++i) {
+        pPix[i] = 0;
+        pOther[i] = 0;
+    }
+    SoftSurf_BlitRectEx(&other, 0, 0, 1, 1, 0xF8, 0x3F, 0x07);
+    CheckEqU32(pOther[0], 0xF9E0, "  SoftSurf_BlitRectEx @ 0x9fc30 loads the surface it is given and fills it");
+    CheckEqU32(pPix[0], 0, "  ... the main surface stays untouched");
+    SoftSurf_BlitSrcRectEx(&other, 0, 0, 1, 1, 0, 0x7C, 0xF8, 255);
+    CheckEqU32(pOther[0], 0x03DE, "  SoftSurf_BlitSrcRectEx @ 0x9fc70 publishes the operands and blends on that surface");
+    CheckEqU32(pPix[0], 0, "  ... again not on g_pMainSurface");
+
+    g_pMainSurface = NULL;
+    SoftSurf_dtor(&surf);
+    SoftSurf_dtor(&other);
+}
+
+/* The 24bpp arm of the two indexed inners. SoftSurf_BlitIndexed_Inner @ 0xa306c writes the three
+ * palette bytes at [R7], [R7+1], [R7+2] (0xA338C..0xA339C) and then advances the destination by
+ * only TWO at 0xA33A0 (`ADD R7,R7,#2`) while advancing the index by one at 0xA33A4, so consecutive
+ * pixels overlap by one byte. SoftSurf_BlitIndexedKeyed_Inner @ 0xa3638 has no such arm: its
+ * mode > 2 tail computes the row pointer (LDR blitState.pSrc at 0xA393C, MUL blitState.nSurf0 at
+ * 0xA3954, ADD at 0xA3958/0xA395C) and leaves through the bare POP at 0xA3960 - no pixel loop, no
+ * store, and blitColorKey is never read, so a 24bpp keyed blit draws nothing at all. */
+static void TestTwentyFourBppIndexed(void)
+{
+    SoftSurf surf;
+    u8      *pPix;
+    u8       aGlyph[8];
+
+    printf("24bpp indexed blit\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 4, 1, PIXMODE_24BPP);
+    pPix = SoftSurf_GetPixels(&surf);
+
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    g_aPalette[2][1] = 0x00A1B2C3; /* the three bytes written are C3, B2, A1 (little-endian) */
+
+    aGlyph[0] = 3; aGlyph[1] = 0; aGlyph[2] = 1; aGlyph[3] = 0;
+    aGlyph[4] = 1; aGlyph[5] = 1; aGlyph[6] = 1; aGlyph[7] = 0;
+
+    memset(pPix, 0xEE, 12);
+    SoftSurf_BlitIndexedEx(&surf, 0, 0, aGlyph, 2);
+    CheckEqU32(pPix[0], 0xC3, "  3 bytes of the entry written at +0 @ 0xa306c");
+    CheckEqU32(pPix[1], 0xB2, "  ... second byte");
+    CheckEqU32(pPix[2], 0xC3, "  third pixel starts 2 bytes on (ADD R7,R7,#2 at 0xA33A0): it rewrites byte 2");
+    CheckEqU32(pPix[3], 0xB2, "  ... overlapping the previous pixel by one byte");
+    CheckEqU32(pPix[5], 0xB2, "  ... third pixel's second byte");
+    CheckEqU32(pPix[6], 0xA1, "  ... and its third byte, which a stride of 3 would have left as 0xEE");
+    CheckEqU32(pPix[7], 0xEE, "  nothing past 3 pixels * 2 bytes + 1");
+
+    memset(pPix, 0xEE, 12);
+    SoftSurf_BlitIndexedKeyedEx(&surf, 0, 0, aGlyph, 2, 0);
+    Check(pPix[0] == 0xEE && pPix[1] == 0xEE && pPix[2] == 0xEE && pPix[3] == 0xEE,
+          "  a 24bpp keyed blit draws nothing @ 0xa3638 (0xA3960 POP, no pixel loop)");
+    Check(pPix[6] == 0xEE && pPix[11] == 0xEE, "  ... with any key: the mode > 2 arm never compares against it");
+
+    SoftSurf_dtor(&surf);
+}
+
+/* Blit_CopyRows_HiRes @ 0xa3bb8, reached only through Render_BlitSoft_HiRes @ 0x9fa90, and the
+ * LoRes pair Render_BlitSoft_LoRes @ 0x9fa7c / Blit_CopyRows @ 0xa3a14. All four wrappers are
+ * PUSH {LR}; ADD R0,R0,#0x18; BL Blit_LoadSurface; POP {LR}; B <copy> - a tail call, so the only
+ * difference is the copy body. The upscale comes from the strides: the loops count
+ * blitState.nWidth x nHeight (the target's logical size) while the destination advances
+ * 2 * nDstPitchX per column (ADD R8,R8,R0,LSL#1 at 0xA3C50) and restarts at rowStart +
+ * 2 * nDstPitchY (ADD R8,R2,R1,LSL#1 at 0xA3C5C), writing each source value four times. */
+static void TestHiResUpscale(void)
+{
+    SoftSurf s8, s16, s3;
+    static u8 aDst8[16];
+    static u8 aDst16[32];
+    static u8 aDst3[32];
+    u16      *p16;
+
+    printf("Blit_CopyRows_HiRes (2x2 upscale)\n");
+
+    /* 8bpp source arm: four source bytes, a 2x2 logical target, stride 1 and row pitch 4. */
+    SoftSurf_ctor(&s8);
+    SoftSurf_AllocPixels(&s8, 4, 1, PIXMODE_8BPP);
+    memcpy(SoftSurf_GetPixels(&s8), "\xA1\xB2\xC3\xD4", 4);
+
+    Render_SetTarget(2, 2, 0, 1, 4, aDst8);
+    g_blitState.nSurf0 = 4; /* the surface is 4x1: the counts must come from the target, not from here */
+    g_blitState.nSurf1 = 1;
+    memset(aDst8, 0, sizeof(aDst8));
+    Render_BlitSurface(&s8);
+    CheckEqU32(aDst8[0], 0xA1, "  Render_BlitSurface @ 0x9fa7c copies 1:1 at the target's strides");
+    CheckEqU32(aDst8[1], 0xB2, "  ... one byte per logical column");
+    CheckEqU32(aDst8[4], 0xC3, "  ... row 1 lands at nDstPitchY");
+    CheckEqU32(aDst8[5], 0xD4, "  ... four logical pixels in all");
+    CheckEqU32(aDst8[2], 0, "  ... and nothing beyond the logical width");
+
+    memset(aDst8, 0, sizeof(aDst8));
+    Render_BlitSurface_HiRes(&s8);
+    CheckEqU32(aDst8[0], 0xA1, "  Render_BlitSoft_HiRes @ 0x9fa90 writes the 2x2 block @ 0xa3bb8");
+    CheckEqU32(aDst8[1], 0xA1, "  ... the second device column (LDRB then four STRB, 0xA3C34..0xA3C48)");
+    CheckEqU32(aDst8[4], 0xA1, "  ... and the device row below it");
+    CheckEqU32(aDst8[5], 0xA1, "  ... four times the same source byte");
+    CheckEqU32(aDst8[2], 0xB2, "  the next source byte lands 2 * nDstPitchX on (ADD R8,R8,R0,LSL#1 at 0xA3C50)");
+    CheckEqU32(aDst8[8], 0xC3, "  the next source row starts 2 * nDstPitchY on (ADD R8,R2,R1,LSL#1 at 0xA3C5C)");
+    CheckEqU32(aDst8[15], 0xD4, "  ... so a 2x2 logical surface fills a 4x4 device");
+
+    /* 16bpp arm: LDRH then four STRH (0xA3CBC..0xA3CD4), two source bytes per logical pixel. */
+    SoftSurf_ctor(&s16);
+    SoftSurf_AllocPixels(&s16, 2, 2, PIXMODE_16BPP);
+    p16 = (u16 *)SoftSurf_GetPixels(&s16);
+    p16[0] = 0x1111;
+    p16[1] = 0x2222;
+    p16[2] = 0x3333;
+    p16[3] = 0x4444;
+    Render_SetTarget(2, 2, 2, 2, 8, aDst16);
+    memset(aDst16, 0, sizeof(aDst16));
+    Render_BlitSurface_HiRes(&s16);
+    p16 = (u16 *)aDst16;
+    CheckEqU32(p16[0], 0x1111, "  16bpp arm keeps the halfword value (LDRH/STRH, 0xA3CBC/0xA3CC0)");
+    CheckEqU32(p16[1], 0x1111, "  ... twice across");
+    CheckEqU32(p16[2], 0x2222, "  ... and the next source halfword follows at 2 * nDstPitchX");
+    CheckEqU32(p16[4], 0x1111, "  ... twice down as well");
+    CheckEqU32(p16[10], 0x4444, "  ... last source pixel fills the last 2x2 block");
+    Check(p16[0] == 0x1111 && p16[1] == 0x1111 && p16[2] == 0x2222 && p16[3] == 0x2222
+          && p16[4] == 0x1111 && p16[5] == 0x1111 && p16[6] == 0x2222 && p16[7] == 0x2222
+          && p16[8] == 0x3333 && p16[9] == 0x3333 && p16[10] == 0x4444 && p16[11] == 0x4444
+          && p16[12] == 0x3333 && p16[13] == 0x3333 && p16[14] == 0x4444 && p16[15] == 0x4444,
+          "  the whole 4x4 device pattern is the source pattern doubled in both directions");
+
+    /* The mode > 2 arm reads ONE source byte three times - the LDRB at 0xA3D44, 0xA3D60 and 0xA3D7C
+     * all address an un-advanced [R9], and R9 only moves by 3 at 0xA3D98 - so three destination
+     * columns take one value while two source bytes are skipped. Each sub-write is a byte store at
+     * [p] (0xA3D48) and halfword stores at [p+nDstPitchX], [p+nDstPitchY], [p+nDstPitchX+nDstPitchY],
+     * which overlap each other as k runs 0, 1, 2. */
+    SoftSurf_ctor(&s3);
+    SoftSurf_AllocPixels(&s3, 1, 1, PIXMODE_24BPP);
+    memcpy(SoftSurf_GetPixels(&s3), "\xAB\xCD\xEF", 3);
+    Render_SetTarget(1, 1, 3, 2, 4, aDst3);
+    memset(aDst3, 0, sizeof(aDst3));
+    Render_BlitSurface_HiRes(&s3);
+    CheckEqU32(aDst3[0], 0xAB, "  the byte store at [p] (0xA3D48)");
+    CheckEqU32(aDst3[1], 0xAB, "  k = 1's byte store, from the SAME source byte");
+    CheckEqU32(aDst3[2], 0xAB, "  k = 1's halfword store was 0x00AB, then k = 2's byte store rewrote it");
+    CheckEqU32(aDst3[3], 0xAB, "  ... and k = 2's halfword store rewrote this one too");
+    CheckEqU32(aDst3[4], 0xAB, "  ... the pattern carries: byte 4 is 0xAB at the end");
+    CheckEqU32(aDst3[5], 0, "  ... while byte 5 ends as the high byte of a 0x00AB halfword");
+    CheckEqU32(aDst3[6], 0xAB, "  ... 6 is a byte store again");
+    CheckEqU32(aDst3[7], 0, "  ... 7 is a high byte");
+    CheckEqU32(aDst3[8], 0xAB, "  ... 8 likewise");
+    CheckEqU32(aDst3[9], 0, "  ... 9 is a high byte");
+    CheckEqU32(aDst3[10], 0, "  nothing past the 2x2 block at the last k");
+    Check(aDst3[1] == 0xAB && aDst3[2] == 0xAB, "  no source byte other than 0xAB was ever read (CD and EF are skipped)");
+
+    SoftSurf_dtor(&s8);
+    SoftSurf_dtor(&s16);
+    SoftSurf_dtor(&s3);
+}
+
+/* Palette_Load @ 0x3e47c: one Find (0x3E49C), one Read of a fixed 0x300 bytes (`MOV R2,#0x300` at
+ * 0x3E4AC), a conversion loop over 256 entries selected by the format bits in gxDisp.ffFormat
+ * (LDR once at 0x3E4C0), and a store at 0x1472D0 + 4*(i + (slot & 0xFF)*256) (AND #0xFF at 0x3E568,
+ * the index and slot combined at 0x3E578..0x3E580). Neither the Find nor the Read result is tested
+ * in the original, so a miss or a short member leaves the slot holding whatever the stack held -
+ * the port returns early instead, a deviation recorded in docs/parity/bugs.tsv. */
+static void TestPaletteDispatch(void)
+{
+    u32 nFmtSave = g_ffFormat;
+
+    printf("Palette_Load format dispatch and slot stride\n");
+
+    /* Both bits set: the 0x40 (555) branch is the one the original tests first, so the 555 form
+     * wins over the 565 form. CLASS.PAL entry 0 is rgb(4,8,7): 555 gives ((4>>3)<<10)|((8>>3)<<5)
+     * |(7>>3) = 0x0020 while 565 gives ((4>>3)<<11)|((8>>2)<<5)|(7>>3) = 0x0040. */
+    memset(g_aPalette, 0xAA, sizeof(g_aPalette));
+    g_ffFormat = PUFO_FF_555 | PUFO_FF_565;
+    Palette_Load("class.pal", 20);
+    CheckEqU32(g_aPalette[20][0], 0x0020, "  555 is tested before 565 @ 0x3e47c: 555 gives (8>>3)<<5 = 0x20, 565 would give 0x40");
+    CheckEqU32(g_aPalette[20][255], 0x7FFF, "  ... the 256th entry comes from file bytes 765..767 (MOV R2,#0x300 at 0x3E4AC)");
+
+    /* No format bit set: the store is skipped for every entry, so the slot keeps what it had. */
+    memset(g_aPalette, 0xAA, sizeof(g_aPalette));
+    g_ffFormat = 0;
+    Palette_Load("class.pal", 20);
+    CheckEqU32(g_aPalette[20][0], 0xAAAAAAAAu, "  no format bit leaves every entry untouched (the store is inside the dispatch)");
+    CheckEqU32(g_aPalette[20][255], 0xAAAAAAAAu, "  ... at both ends of the 256-entry loop");
+
+    /* Slot stride: a slot is 256 entries (1024 bytes), so loading slot 20 must not touch slot 19
+     * or 21 - the store address is 0x1472D0 + 4*(i + slot*256). */
+    memset(g_aPalette, 0xAA, sizeof(g_aPalette));
+    g_ffFormat = PUFO_FF_888;
+    Palette_Load("class.pal", 20);
+    CheckEqU32(g_aPalette[20][0], 0x00070804u, "  888 stores r | g<<8 | b<<16 (0x3E52C tail, shared with 565)");
+    CheckEqU32(g_aPalette[19][255], 0xAAAAAAAAu, "  slot 19 is 256 entries below and is untouched");
+    CheckEqU32(g_aPalette[21][0], 0xAAAAAAAAu, "  slot 21 is 256 entries above and is untouched");
+    CheckEqU32(g_aPalette[20][255], 0x00FFFFFFu, "  ... the loop covers exactly 256 entries");
+
+    g_ffFormat = nFmtSave;
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -890,6 +1366,8 @@ int main(void)
     }
 
     TestAlloc();
+    TestSoftSurfObject();
+    TestBlitStateLoading();
     TestPalette();
     TestBlitIndexed();
     TestBlitKeyed();
@@ -903,6 +1381,10 @@ int main(void)
     TestPackRgb565Pair();
     TestPaletteLut();
     TestPaletteRamp();
+    TestBoundWrappers();
+    TestTwentyFourBppIndexed();
+    TestHiResUpscale();
+    TestPaletteDispatch();
 
     Asset_CloseArchives();
 

@@ -207,57 +207,170 @@ i32 Blit_SetColorKey(i32 nKey)
  * the duplicate is recorded in docs/parity/bugs.tsv rather than copied. */
 void Blit_CopyRows(void)
 {
-    i32 nWidth  = g_blitState.nWidth;
-    i32 nHeight = g_blitState.nHeight;
     i32 nPitchX = g_blitState.nDstPitchX;
     i32 nPitchY = g_blitState.nDstPitchY;
-    i32 y;
+
+    /* Both counters are read once each (0xA3A58..0xA3A6C), but the column counter is RE-SEEDED
+     * from the saved width at the top of every row: MOV R7,R5 at 0xA3A88 is inside the row loop
+     * that the BNE at 0xA3AB0 jumps back to. Both loops are do-while -- SUBS/BNE at
+     * 0xA3AA0/0xA3AA4 for the columns and 0xA3AAC/0xA3AB0 for the rows, entered straight after the
+     * seeding -- so a zero or negative count decrements to 0xFFFFFFFF and keeps going: both loops
+     * run away, exactly as SUBS/BNE does on ARM. That is not testable from C (the process dies
+     * first), so the shape is reproduced rather than checked, and the count is unsigned so the C
+     * decrement wraps like SUBS instead of overflowing. The earlier for-loop form silently copied
+     * nothing for a zero count, which is the difference the do-while removes. */
+    u32 nWidth = (u32)g_blitState.nWidth;
+    u32 nRows  = (u32)g_blitState.nHeight;
+    u32 nCols;
 
     if (g_blitState.nPixelMode == 0) {
         u8       *pDst = g_blitState.pDst;
         const u8 *pSrc = g_blitState.pSrc;
 
-        for (y = 0; y < nHeight; ++y) {
+        do {
             u8 *pRow = pDst;
-            i32 x;
 
-            for (x = 0; x < nWidth; ++x) {
+            nCols = nWidth;
+            do {
                 *pDst = *pSrc++;
                 pDst += nPitchX;
-            }
+            } while (--nCols != 0);
+
             pDst = pRow + nPitchY;
-        }
+        } while (--nRows != 0);
     } else if (g_blitState.nPixelMode == 1 || g_blitState.nPixelMode == 2) {
-        u16       *pDst = (u16 *)g_blitState.pDst;
-        const u16 *pSrc = (const u16 *)g_blitState.pSrc;
+        u8       *pDst = g_blitState.pDst;
+        const u8 *pSrc = g_blitState.pSrc;
 
-        for (y = 0; y < nHeight; ++y) {
-            u16 *pRow = pDst;
-            i32  x;
+        do {
+            u8 *pRow = pDst;
 
-            for (x = 0; x < nWidth; ++x) {
-                *pDst = *pSrc++;
-                pDst = (u16 *)((u8 *)pDst + nPitchX);
-            }
-            pDst = (u16 *)((u8 *)pRow + nPitchY);
-        }
+            nCols = nWidth;
+            do {
+                pDst[0] = pSrc[0];
+                pDst[1] = pSrc[1];
+                pSrc += 2;
+                pDst += nPitchX;
+            } while (--nCols != 0);
+
+            pDst = pRow + nPitchY;
+        } while (--nRows != 0);
     } else {
         u8       *pDst = g_blitState.pDst;
         const u8 *pSrc = g_blitState.pSrc;
 
-        for (y = 0; y < nHeight; ++y) {
+        do {
             u8 *pRow = pDst;
-            i32 x;
 
-            for (x = 0; x < nWidth; ++x) {
+            nCols = nWidth;
+            do {
                 pDst[0] = pSrc[0];
                 pDst[1] = pSrc[1];
                 pDst[2] = pSrc[2];
                 pSrc += 3;
                 pDst += nPitchX;
-            }
+            } while (--nCols != 0);
+
             pDst = pRow + nPitchY;
-        }
+        } while (--nRows != 0);
+    }
+}
+
+/* Blit_CopyRows_HiRes @ 0xa3bb8: the 2x2 upscale variant, reached only through
+ * Render_BlitSoft_HiRes @ 0x9fa90. Both loops count blitState.nWidth x nHeight, which is the
+ * render target's logical size (Blit_SetTargetParams), not the loaded surface's nSurf0/nSurf1; the
+ * upscale comes from the strides, not from the counts. The destination is written four times per
+ * source value, at pDst,
+ * pDst + nDstPitchX, pDst + nDstPitchY and pDst + nDstPitchX + nDstPitchY; the column advance is
+ * 2 * nDstPitchX (0xA3C50 `ADD R8,R8,R0,LSL#1`) and the row restarts at rowStart + 2 * nDstPitchY
+ * (0xA3C5C `ADD R8,R2,R1,LSL#1`). The arms differ in width and in one detail each:
+ *   0   -> LDRB then four STRB, one source byte consumed (0xA3C34..0xA3C4C)
+ *   1,2 -> LDRH then four STRH, two source bytes consumed (0xA3CBC..0xA3CD4)
+ *   >2  -> three sub-writes against the SAME source byte: the LDRB at 0xA3D44, 0xA3D60 and 0xA3D7C
+ *          all read an un-advanced [R9] and R9 only moves by 3 at 0xA3D98, so three destination
+ *          columns take one value while two source bytes are skipped; the first store of each
+ *          sub-write is a byte store (0xA3D48) and the other three are halfword stores.
+ * Halfword stores are done byte-wise here because the mode > 2 arm puts them on odd addresses. */
+static void Blit_PutHiRes16(u8 *p, u16 nVal)
+{
+    p[0] = (u8)nVal;
+    p[1] = (u8)(nVal >> 8);
+}
+
+void Blit_CopyRows_HiRes(void)
+{
+    i32 nPitchX = g_blitState.nDstPitchX;
+    i32 nPitchY = g_blitState.nDstPitchY;
+    u32 nWidth  = (u32)g_blitState.nWidth;
+    u32 nRows   = (u32)g_blitState.nHeight;
+    u32 nCols;
+
+    if (g_blitState.nPixelMode == 0) {
+        u8       *pDst = g_blitState.pDst;
+        const u8 *pSrc = g_blitState.pSrc;
+
+        do {
+            u8 *pRow = pDst;
+
+            nCols = nWidth; /* MOV R7,R5 at 0xA3C2C is inside the row loop, as in Blit_CopyRows */
+            do {
+                u8 nVal = *pSrc++;
+
+                pDst[0] = nVal;
+                pDst[nPitchX] = nVal;
+                pDst[nPitchY] = nVal;
+                pDst[nPitchX + nPitchY] = nVal;
+                pDst += 2 * nPitchX;
+            } while (--nCols != 0);
+
+            pDst = pRow + 2 * nPitchY;
+        } while (--nRows != 0);
+    } else if (g_blitState.nPixelMode == 1 || g_blitState.nPixelMode == 2) {
+        u8       *pDst = g_blitState.pDst;
+        const u8 *pSrc = g_blitState.pSrc;
+
+        do {
+            u8 *pRow = pDst;
+
+            nCols = nWidth;
+            do {
+                u16 nVal = (u16)(pSrc[0] | ((u16)pSrc[1] << 8));
+
+                Blit_PutHiRes16(pDst, nVal);
+                Blit_PutHiRes16(pDst + nPitchX, nVal);
+                Blit_PutHiRes16(pDst + nPitchY, nVal);
+                Blit_PutHiRes16(pDst + nPitchX + nPitchY, nVal);
+                pSrc += 2;
+                pDst += 2 * nPitchX;
+            } while (--nCols != 0);
+
+            pDst = pRow + 2 * nPitchY;
+        } while (--nRows != 0);
+    } else {
+        u8       *pDst = g_blitState.pDst;
+        const u8 *pSrc = g_blitState.pSrc;
+
+        do {
+            u8 *pRow = pDst;
+
+            nCols = nWidth;
+            do {
+                i32 k;
+
+                for (k = 0; k < 3; ++k) {
+                    u8 *p = pDst + k;
+
+                    p[0] = pSrc[0];
+                    Blit_PutHiRes16(p + nPitchX, pSrc[0]);
+                    Blit_PutHiRes16(p + nPitchY, pSrc[0]);
+                    Blit_PutHiRes16(p + nPitchX + nPitchY, pSrc[0]);
+                }
+                pSrc += 3;
+                pDst += 2 * nPitchX;
+            } while (--nCols != 0);
+
+            pDst = pRow + 2 * nPitchY;
+        } while (--nRows != 0);
     }
 }
 
@@ -397,7 +510,12 @@ void SoftSurf_BlitSrcRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32
 void SoftSurf_BlitRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
                        i32 nColorMid, i32 nColorLow)
 {
-    SoftSurf_BlitRectEx(g_pMainSurface, x, y, nRectW, nRectH, nIdx, nColorMid, nColorLow);
+    /* 0x9EBB8, 0x9EBCC and 0x9EBDC load nColorLow, nColorMid and nIdx with LDRB and store them
+     * back as dwords, so the bound form truncates the three colour operands to 8 bits while the
+     * two rectangle sizes are moved as full dwords (MOV R3 at 0x9EBC0, STR R3 at 0x9EBBC).
+     * SoftSurf_BlitSrcRect @ 0x9ebf8 is the opposite: every operand there is an LDR. */
+    SoftSurf_BlitRectEx(g_pMainSurface, x, y, nRectW, nRectH, nIdx & 0xFFu,
+                        nColorMid & 0xFF, nColorLow & 0xFF);
 }
 
 void SoftSurf_BlitSrcRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
@@ -625,16 +743,22 @@ void SoftSurf_BlitRectProxy(i32 nIgnored, i32 x, i32 y, i32 nRectW, i32 nRectH,
     SoftSurf_BlitRect(x, y, nRectW, nRectH, (u32)nIdx, (i32)nColorMid, (i32)nColorLow);
 }
 
-/* Render_BlitSoft_LoRes @ 0x9fa7c / HiRes @ 0x9fa90.
- *
- * The HiRes variant (Blit_CopyRows_HiRes @ 0xa3bb8) writes each source pixel as
- * a 2x2 block, which is how the original filled a 480x640 panel from the
- * 240x320 surface. The Win64 target presents the logical surface at integer
- * scale instead, so the 1:1 row copy is the correct path here. */
+/* Render_BlitSoft_LoRes @ 0x9fa7c / HiRes @ 0x9fa90. Both are PUSH {LR}; ADD R0,R0,#0x18;
+ * BL Blit_LoadSurface; POP {LR}; B <copy> -- the tail jump is a tail call into the row copy,
+ * so neither wrapper touches any other state. The HiRes variant is the 2x2 upscale the original
+ * used to fill a 480x640 panel from the 240x320 logical surface; the Win64 target presents the
+ * logical surface at integer scale, so the app keeps the LoRes path and HiRes exists for parity
+ * with a check of its own in tests/test_render.c. */
 void Render_BlitSurface(const SoftSurf *pSurf)
 {
     Blit_LoadSurface(pSurf);
     Blit_CopyRows();
+}
+
+void Render_BlitSurface_HiRes(const SoftSurf *pSurf)
+{
+    Blit_LoadSurface(pSurf);
+    Blit_CopyRows_HiRes();
 }
 
 /* Shared clipping preamble of the glyph blitters. Returns the shifted index
@@ -701,7 +825,8 @@ static const u8 *Blit_ClipGlyph(i32 *px, i32 *py, const u8 *pIdx,
  * the surface pixel mode:
  *   0   -> 1 byte per pixel, index written directly
  *   1,2 -> u16 palette entry
- *   >2  -> 3 bytes per pixel, palette RGB triple, stride 3
+ *   >2  -> 3 bytes per pixel, palette RGB triple, but the destination advances only 2 (0xA33A0),
+ *          so consecutive pixels overlap by one byte; the keyed inner has no arm here at all
  * The 24bpp row base is pSrc + 3*nSurf0*y + 3*x and the row advance is
  * 3*nSurf0, confirmed from the disassembly at 0xa33xx. */
 static void Blit_Indexed(i32 x, i32 y, const u8 *pGlyph, const u32 *pPal,
@@ -718,6 +843,14 @@ static void Blit_Indexed(i32 x, i32 y, const u8 *pGlyph, const u32 *pPal,
     }
     pIdx = Blit_ClipGlyph(&x, &y, pGlyph + 4, nGlyphW, nGlyphH, &clip);
     if (pIdx == NULL) {
+        return;
+    }
+    if (bKeyed && g_blitState.nSurf2 > 2) {
+        /* 0xA393C..0xA3960: the keyed inner reaches the mode > 2 arm, computes the row pointer
+         * (LDR pSrc, MUL nSurf0, ADD) and then leaves through the bare POP at 0xA3960. There is no
+         * pixel loop there, no store and no read of blitColorKey, so a 24bpp keyed blit draws
+         * nothing at all. The non-keyed inner (0xa306c) has a real 3-byte arm; the two are not the
+         * same function and are kept apart here. */
         return;
     }
 
@@ -759,7 +892,7 @@ static void Blit_Indexed(i32 x, i32 y, const u8 *pGlyph, const u32 *pPal,
                     pDst[1] = pEntry[1];
                     pDst[2] = pEntry[2];
                 }
-                pDst += 3;
+                pDst += 2; /* 0xA33A0 ADD R7,R7,#2: three bytes are written, two columns advanced */
             }
         }
         pIdx += clip.nPadX;
@@ -767,8 +900,8 @@ static void Blit_Indexed(i32 x, i32 y, const u8 *pGlyph, const u32 *pPal,
 }
 
 /* SoftSurf_Blit_Inner @ 0xa47d0: constant-alpha blend, only defined for a 16bpp
- * surface (nSurf2 == 2). Source weight is dword_A3040; each 5-6-5 channel is
- * blended separately then repacked. Dest uses (255 - alpha). */
+ * surface (nSurf2 == 2). Source weight is dword_A3040; the six 5-6-5 field terms
+ * are summed into one accumulator and stored as one halfword. Dest uses (255 - alpha). */
 static void Blit_Blend(i32 x, i32 y, const u8 *pGlyph, const u32 *pPal)
 {
     u16       nGlyphW = (u16)pGlyph[0] | ((u16)pGlyph[1] << 8);
@@ -797,14 +930,21 @@ static void Blit_Blend(i32 x, i32 y, const u8 *pGlyph, const u32 *pPal)
         for (x2 = 0; x2 < clip.nW; ++x2) {
             u32 nSrc = pPal[*pIdx++];
             u32 nDst = *pDst;
-            u32 nR = (((((nDst & 0xF800u) >> 11) * nInv) >> 8)
-                      + ((((nSrc & 0xF800u) >> 11) * nAlpha) >> 8)) & 0x1Fu;
-            u32 nG = (((((nDst & 0x07E0u) >> 5) * nInv) >> 8)
-                      + ((((nSrc & 0x07E0u) >> 5) * nAlpha) >> 8)) & 0x3Fu;
-            u32 nB = ((((nDst & 0x001Fu) * nInv) >> 8)
-                      + (((nSrc & 0x001Fu) * nAlpha) >> 8)) & 0x1Fu;
 
-            *pDst = (u16)((nR << 11) | (nG << 5) | nB);
+            /* 0xA4908..0xA4970, in order: dst B (x nInv) >>8, dst G >>8 <<5, dst R >>8 <<11,
+             * src B (x nAlpha) LSR#8, src G <<5, src R <<11, all into one accumulator, then STRH.
+             * There is no per-field clamp: the sum is truncated by the halfword store. Inside
+             * alpha 0..255 the two weights sum to 255 and no term overflows its field, so the
+             * earlier clamped form agreed bit-for-bit; outside that range the carry is what the
+             * original writes and a clamp is a deviation. */
+            u32 nAcc = ((nDst & 0x001Fu) * nInv) >> 8;
+            nAcc += ((((nDst & 0x07E0u) >> 5) * nInv) >> 8) << 5;
+            nAcc += ((((nDst & 0xF800u) >> 11) * nInv) >> 8) << 11;
+            nAcc += ((nSrc & 0x001Fu) * nAlpha) >> 8;
+            nAcc += ((((nSrc & 0x07E0u) >> 5) * nAlpha) >> 8) << 5;
+            nAcc += ((((nSrc & 0xF800u) >> 11) * nAlpha) >> 8) << 11;
+
+            *pDst = (u16)nAcc;
             ++pDst;
         }
         pIdx += clip.nPadX;

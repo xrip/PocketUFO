@@ -5800,6 +5800,23 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   (0x4087C), and that `Save_WriteStrateg` writes `nType` 21st of 33 -- record byte 67 -- so the IDB note claiming
   "twelfth" was corrected.
 
+  Progress (Part 128): `render` (30) closed -- 611 rows now carry a test cite, **357** do not. Three of the 30
+  were not a missing check but wrong code in the port: `Blit_Indexed`'s 24bpp arm writes three bytes and advances
+  two columns (0xA33A0 `ADD R7,R7,#2`); `SoftSurf_BlitIndexedKeyed_Inner @ 0xa3638` reaches the mode > 2 arm,
+  computes the row pointer and leaves through the bare POP at 0xA3960, so a 24bpp keyed blit draws nothing at all;
+  `SoftSurf_Blit_Inner @ 0xa47d0` has no per-field clamp anywhere, so an out-of-range alpha carries into the
+  neighbouring field (511 over a zero destination gives 0xFFE1 where a clamped rewrite gives 0x0001). 93 frame
+  pictures and 9 e2e pictures stayed byte-identical after those three fixes, which is the measurement that says no
+  shipped flow reaches them. `Blit_CopyRows_HiRes @ 0xa3bb8` and `Render_BlitSurface_HiRes @ 0x9fa90` got real
+  ports -- the ledger had both mapped onto the 1:1 copy. The method rule: a do-while whose counter is re-seeded
+  inside the outer loop is not the same function as one seeded once -- `MOV R7,R5` at 0xA3A88 is inside the row
+  loop -- and the port's single seed ran off the end of the surface (the segfault was the port's bug, not the
+  test's). Two rows went to `docs/parity/bugs.tsv` as stated deviations instead of fixes: `Palette_Load
+  @ 0x3e47c` tests neither reader result (0x3E49C..0x3E4B0 has no branch) so a missing .pal stores 256 entries of
+  what the stack held, with `(slot & 0xFF) * 256` slot math (0x3E568/0x3E56C/0x3E570) against the port's 64 slots;
+  and `SoftSurf_BlitGlyph_Inner @ 0xa41d4`, whose penY < 0 arm spins without advancing (0xA42A4/0xA42A8) and whose
+  penY >= nSurf1 arm ends the glyph (0xA42BC to the POP at 0xA42DC).
+
 ### CLAUDE.md's verification contract, mapped to evidence
 
 | Criterion | Evidence, measured in build/crops/check110d.log (EXIT=0) and the audits |
@@ -5974,3 +5991,22 @@ and 0x44958 (652); `idb_save` written | teeth: 35 cases in `docs/parity/mutation
 first sweep had 33 failing 2 to 42 checks and 2 inert, and after the seven new checks the re-run has all 35
 failing 2 to 42 checks (240 failing checks in total), 0 skipped, every file back to its exact bytes,
 `grep -rn "MUTATION" src tests` empty | row 121a stays open with 387 rows left.
+
+`<this commit>` + Part 128 | Release 65/65 and Debug 65/65 with `check: ALL SIX GATES RAN`, `CHECK EXIT=0`
+(`build/check128.log`) | 21,099 checks (+111) | coverage 972/1103 functions (88.1%), 596888/598792 bytes (99.7%)
+-- unchanged | reach unchanged at 965/968, residue 0; cites at a row's own address 581 -> **611**, without one
+387 -> **357** (`render` closed) | `src/pufo/render/pufo_render.c` and `.h`: three deviation fixes (the
+3-bytes/2-columns 24bpp step, the keyed mode > 2 arm drawing nothing, the blend's absent clamp), two new ports
+(`Blit_CopyRows_HiRes @ 0xa3bb8`, `Render_BlitSurface_HiRes @ 0x9fa90`), `Blit_CopyRows` as the original do-while
+with the column counter re-seeded per row, and `SoftSurf_BlitRect`'s three byte truncations; `tests/test_render.c`
+(+3 new test functions) and `tests/test_font.c` (`TestBlitGlyphPair`) carry the checks | 93 frame pictures and 9
+e2e pictures unchanged | IDB comments read back on all 32 render addresses -- 0x3e47c (913), 0x9e558 (559),
+0x9e590 (569), 0x9e9f4 (671), 0x9ea34 (623), 0x9ebb0 (668), 0x9ebf8 (580), 0x9f96c (504), 0x9f97c (815),
+0x9f994 (331), 0x9f99c (189), 0x9fa7c (387), 0x9fa90 (982), 0x9fadc (572), 0x9fb0c (565), 0x9fb44 (552),
+0x9fb80 (649), 0x9fbbc (684), 0x9fc00 (563), 0x9fc30 (681), 0x9fc70 (707), 0x9fcb4 (279), 0xa3624 (595),
+0xa3638 (854), 0xa3964 (860), 0xa3a14 (984), 0xa3bb8 (1018), 0xa3f5c (586), 0xa41d4 (1009), 0xa47b0 (490),
+0xa47d0 (971), 0xa49a0 (799) -- none at the 1024 cap after 0xa3bb8 and 0xa41d4 were rewritten shorter; `idb_save`
+written | teeth: 30 cases in `docs/parity/mutations_part128.py`, one per row; the first sweep had 29 failing 1 to
+130 checks and 1 inert (`0x9f96c`: the test pinned two fields, not the two the ctor writes), and after two new
+accessor checks the re-run has all 30 failing, 245 failing checks in total, 0 skipped, every file back to its exact
+bytes, `grep -rn "MUTATION" src tests` empty | row 121a stays open with 357 rows left.
