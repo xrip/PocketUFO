@@ -1362,7 +1362,7 @@ int main(void)
         ClearSurface();
         g_nBlits = 0;
         Geoscape_DrawStatusPanel(&pF->panel);
-        nAboard = Craft_CountSoldiersAboard(g_world.apSoldiers, (i32)g_world.nSoldierCount, 0);
+        nAboard = Craft_CountSoldiersAboard(g_world.apSoldiers, (i32)g_world.nSoldierCount, 0); /* @ 0x6649c */
         Check(pCtlB->pfnClick == ((nAboard == 0) ? pF->panel.pfnResolveInterceptUI
                                                   : pF->panel.pfnBeginCraftSelect),
               "the launch control carries Smap_BeginCraftSelect (0x91578), and 0x915F8..0x91604's four LDREQ / "

@@ -667,7 +667,7 @@ static void TestLoadStores(void)
     static ObjectRecFull *g_apObj[53];
     CraftStoreLoadEnv env;
 
-    printf("Craft_LoadStoresFromBase\n");
+    printf("Craft_LoadStoresFromBase @ 0x693ec\n");
 
     memset(g_aShip, 0, sizeof(g_aShip));
     memset(g_aBase, 0, sizeof(g_aBase));

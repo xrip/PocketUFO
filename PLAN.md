@@ -6326,3 +6326,19 @@ open with 238 rows left.
   Teeth: 27 cases, 121 failing checks, 0 inert, 27/27 restored. Gates: 66/66 tests, 21509 checks, 93 frames and 9
   e2e pictures unchanged. Next: `tact` 93 and `strat` 62 remain; PLAN rows 117a, 118a, 118b, 118c, 119a, 119b's 4994
   half, 120b and 121a stay open.
+Progress (Part 138): 23 `strat` rows close -- 836 cited / 132 uncited (`tact` 93, `strat` 39). The
+  rows were ported and called already; the gap was that no test named their addresses, so this is citation work
+  plus the checks they needed. Two test defects found while giving the rows teeth: TestZoomButtons read
+  `g_aSampleLog[2]` for the zoom-out sample when the call order makes slot 2 the third zoom-IN sample (the
+  zoom-out sample was never checked -- fixed to slot 3, which is what let the 0x84ab8 mutation fail 2 checks),
+  and TestStrategListAlloc called `StrategList_ctor` on fields that were already zero (the fixture now dirties
+  `nCount`/`apItems` and a new check pins `apItems == NULL`). Two rows are inert by construction, with the
+  reason measured: `StrategList_Clear @ 0x838ac` duplicates itself because `PtrArray_DeleteAll @ 0x3e434`
+  already ends with `PtrArray_Clear` at 0x3E478 (dropping either call leaves nCount 0; only the per-item delete
+  differs, and that is a leak -- tools/asan.sh, not a unit check), and dropping `StrategList_ctor`'s item store
+  aborts the run (returncode 127) in `PtrArray_Insert`'s `free()` before a check prints. A mutation that breaks
+  the build is not a failing check either: the first `RegisterAtexit` case dropped the only reference to its
+  static thunk and /W4 /WX failed with C4505. Teeth: 21 cases with teeth, 111 failing checks (build/crops/
+  mut138.log, mut138c.log), 0 build failures in the final set, all restored byte-exact. Gates: 66/66 tests,
+  21513 checks, 93 frames and 9 e2e pictures unchanged. Next: `tact` 93 and `strat` 39 remain; PLAN rows 117a,
+  118a, 118b, 118c, 119a, 119b's 4994 half, 120b and 121a stay open.

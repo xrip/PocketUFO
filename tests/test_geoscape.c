@@ -1237,7 +1237,7 @@ static void TestDismissSelected(void)
     StrategItem *pEntry;
     void **apSlots;
 
-    printf("Smap_DismissSelected\n");
+    printf("Smap_DismissSelected @ 0x84428\n");
 
     memset(&lines, 0, sizeof(lines));
     memset(&time, 0, sizeof(time));
@@ -2772,7 +2772,9 @@ static void TestSpeedButtons(void)
         apCtl[i] = &ctl[i];
     }
 
-    printf("\nGameTime_Set5Sec..SetSpeedIdx5 @ 0x84f00..0x85158\n");
+    printf("\nGameTime_Unpause @ 0x5d6c0, GameTime_Set1Min @ 0x84f64, GameTime_Set5Min @ 0x84fc8, "
+           "GameTime_SetSpeedIdx3 @ 0x8502c, GameTime_SetSpeedIdx4 @ 0x85094, GameTime_SetSpeedIdx5 @ 0x850fc "
+           "(the block @ 0x84f00..0x85158)\n");
 
     GameTime_Set5Sec(&world, apCtl);
     CheckEqI32(world.nTickSeconds, 5, "Set5Sec stores 5 seconds");

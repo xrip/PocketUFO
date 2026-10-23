@@ -476,3 +476,6 @@ coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 
 
 Measured after Part 137: **813** cited, **155** not (`tact` 93, `strat` 62).
 
+coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21513 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 0x83890 (523), 0x821a0 (412), 0x838ac (380+133); `idb_save` ok.
+
+Measured after Part 138: **836** cited, **132** not (`tact` 93, `strat` 39).

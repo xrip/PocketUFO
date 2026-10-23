@@ -24241,3 +24241,58 @@ None), so the port-side sentence lives at 0x68278 instead.
 Gates: coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21509 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures), `check: ALL SIX GATES RAN`, `build/check137.log`.
 
 Measured after Part 137: **813** cited, **155** not (`tact` 93, `strat` 62).
+
+### Part 138 -- the geoscape clock, the Smap view and the strateg list (23 `strat` rows)
+
+Rows closed: `GameTime_Unpause @ 0x5d6c0`; the five speed picks `GameTime_Set1Min @ 0x84f64`,
+`GameTime_Set5Min @ 0x84fc8`, `GameTime_SetSpeedIdx3 @ 0x8502c`, `GameTime_SetSpeedIdx4 @ 0x85094`,
+`GameTime_SetSpeedIdx5 @ 0x850fc`; `Smap_ZoomOut @ 0x81c08`, `Smap_ZoomIn @ 0x81e44`,
+`Smap_ScrollBy @ 0x820d0`, `Smap_ClampScrollY @ 0x837f8`, `Smap_OnZoomOut @ 0x84ab8`,
+`Smap_OnZoomIn @ 0x84ad8`, `Smap_DismissSelected @ 0x84428`, `Smap_GetTileAtMode @ 0x821c4`;
+`Tilemap_GetAt @ 0x8217c`, `Tilemap_GetAtAlt @ 0x821a0`; `StrategList_ctor @ 0x83890`,
+`StrategList_RegisterAtexit @ 0x838a0`, `StrategList_Clear @ 0x838ac`; `StrategItem_AllocAdd @ 0x415cc`,
+`StrategItem_ctor @ 0x82bd4`; `Craft_CountSoldiersAboard @ 0x6649c`, `Craft_LoadStoresFromBase @ 0x693ec`.
+All 23 were already ported and already called by a test -- the gap was that no test named the address, so
+this Part is citation work plus the checks the citations needed.
+
+IDB verification of the batch, read straight from the decompilation: each speed handler is
+`Sound_Play(17)`, then `nGeoscapeTickSeconds = 60 / 300 / 1380 / 2460 / 3600`, then six `nState` stores over
+`apGeoscapeSpeedCtl @ 0x186500` with its own control lit (0x84F70..0x84FBC, 0x85108..0x85158) -- the port's
+`g_aGeoscapeSpeedSec = { 5, 60, 300, 1380, 2460, 3600 }` and `GameTime_SetSpeedIdx` are the same six stores.
+`0x5d6c0` is one store to `bGameClockPaused @ 0x15961C`. `0x84428` runs in this order: colour slot 0 of line 0
+-> `Ship_RetargetTravel` -> remove line 0 -> unpause only if the count read after the removal is 0 -> clear
+`bMapSelectionFlag @ 0x159E84`. `0x821a0` is `unk_186C18->pData + uWidth * y + x`, the same expression as
+`Tilemap_GetAt @ 0x8217c` over the other PadImage global. `0x821c4`'s switch covers modes 0, 1 and 2 only and
+falls through to an uninitialised stack byte otherwise. `0x838ac` is `PtrArray_DeleteAll` (0x838bc) then
+`j_PtrArray_Clear` (0x838c8) over `strategList @ 0x186534`. IDB notes written at 0x83890 (523), 0x821a0 (412)
+and 0x838ac (380 function + 133 item), each read back exact; `idb_save` ok.
+
+Two checks and two test corrections. New: the `Smap_GetOverlayAtMode @ 0x821c4` block in TestSmapView (mode 0
+reads the first overlay pad at `x - origin`, mode 1 swaps to the second, mode 3 is refused). Corrections, both
+found while giving the rows teeth: TestZoomButtons read `g_aSampleLog[2]` under the message "the zoom-out click
+is the same sample", but the call order is In, In, In-refused, Out -- slot 2 is the third zoom-IN sample, so the
+zoom-out sample was never checked at all and slot 3 is the one that means what the message says; and
+TestStrategListAlloc called `StrategList_ctor` on a field set that was already zero, so a missing store could
+not show -- the fixture now dirties `nCount` and `apItems` first and a new check pins `apItems == NULL`.
+Checks: 21509 -> 21513.
+
+Teeth: `docs/parity/mutations_part138.py` first run (build/crops/mut138.log) wrote 23 records -- 2 SKIP
+(`pTime->bPaused = 0;` also occurs in `GameTime_Reset`, and `StrategList_RegisterAtexit` lives in
+pufo_baseui.c, not in pufo_strateg.c), 3 inert, 18 with teeth, 98 failing checks. The corrected rerun
+(`docs/parity/mutations_part138b.py`, build/crops/mut138c.log) adds `GameTime_Unpause` 9, `Smap_OnZoomOut` 2
+and `StrategList_RegisterAtexit` 2. Total for the Part: 21 cases with teeth, 111 failing checks, every file
+restored byte-exact, `grep -rn MUTATION src tests` empty. Two method points. (1) A mutation that breaks the
+build is not a failing check: the first `RegisterAtexit` case wrote `return -1;`, which dropped the only
+reference to the static thunk and /W4 /WX failed with C4505 -- the build-safe version keeps the call and
+changes only the returned value. (2) Two rows are inert BY CONSTRUCTION, and the reason is measured, not
+assumed: `StrategList_Clear`'s two halves are redundant in the original because `PtrArray_DeleteAll @ 0x3e434`
+already ends with `PtrArray_Clear` at 0x3E478, so dropping either call leaves `nCount` 0 (the only difference
+is the per-item delete at 0x3E458, a leak that tools/asan.sh sees and no unit check does); and dropping
+`StrategList_ctor`'s item store aborts the run (returncode 127) inside `PtrArray_Insert`'s `free()` before any
+check prints, because every `StrategList_ctor` call site in the suite depends on `apItems` being cleared --
+load-bearing, but not expressible as one clean check failure.
+
+Gates: 66/66 tests, 21513 checks, `frames: unchanged (93 reference pictures)`, `e2e pictures: unchanged against
+the committed references (9 pictures)`, `check: ALL SIX GATES RAN`, `build/check138.log`.
+
+Measured after Part 138: **836** cited, **132** not (`tact` 93, `strat` 39).

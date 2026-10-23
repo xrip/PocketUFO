@@ -3849,7 +3849,7 @@ static void TestAtexitRegistration(void)
      * stack frame. A local here is a use-after-scope crash (0xc0000374 under ctest). */
     static PtrArray list;
 
-    printf("StrategList_RegisterAtexit\n");
+    printf("StrategList_RegisterAtexit @ 0x838a0\n");
 
     StrategList_ctor(&list);
     Check(StrategItem_AllocAdd(&list, 3), "the list holds an item");

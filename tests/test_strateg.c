@@ -857,7 +857,8 @@ static void TestSmapView(void)
     PadImage grid;
     u8 aGrid[6];
 
-    printf("SmapView @ 0x1863E8\n");
+    printf("SmapView @ 0x1863E8 -- Smap_ScrollBy @ 0x820d0 (Smap_ClampScrollY @ 0x837f8 inside it), "
+           "Tilemap_GetAt @ 0x8217c, Tilemap_GetAtAlt @ 0x821a0, Smap_GetTileAtMode @ 0x821c4\n");
 
     memset(&view, 0, sizeof(view));
     view.nMapW = 8;
@@ -926,6 +927,31 @@ static void TestSmapView(void)
     grid.pData = aGrid;
     CheckEqI32(Tilemap_GetAt(&grid, 2, 1), 6, "tile grid lookup is pData + uWidth*y + x");
     CheckEqI32(Tilemap_GetAt(&grid, 1, 0), 2, "first row");
+
+    /* Smap_GetTileAtMode @ 0x821c4 reads the OVERLAY pad the current mode selects, with the x origin
+     * folded in first -- a different pad per zoom level, not the terrain layer above. */
+    {
+        static PadImage aOverlay[3];
+        const PadImage *apOverlay[3] = { &aOverlay[0], &aOverlay[1], &aOverlay[2] };
+
+        memset(aOverlay, 0, sizeof(aOverlay));
+        aOverlay[0].uWidth = 4;
+        aOverlay[0].pData = aTiles; /* mode 0 sees the tile bytes */
+        aOverlay[1].uWidth = 3;
+        aOverlay[1].pData = aGrid;  /* mode 1 sees the 1..6 grid */
+        memset(&view, 0, sizeof(view));
+        view.nMapW = 8;
+        view.nMapH = 4;
+        view.nMode = 0;
+        CheckEqI32(Smap_GetOverlayAtMode(&view, apOverlay, 2, 5, 0), 3,
+                   "mode 0 reads the first overlay pad at x - origin");
+        view.nMode = 1;
+        CheckEqI32(Smap_GetOverlayAtMode(&view, apOverlay, 2, 5, 0), 4,
+                   "mode 1 swaps to the second pad, the same grid lookup");
+        view.nMode = 3;
+        CheckEqI32(Smap_GetOverlayAtMode(&view, apOverlay, 2, 5, 0), 0,
+                   "a mode outside 0..2 is refused (the record reads an uninitialised byte)");
+    }
 }
 
 static void TestSmapZoom(void)
@@ -935,7 +961,7 @@ static void TestSmapZoom(void)
     SmapWorldSize world;
     static PadImage aGrid[3];
 
-    printf("Smap_ZoomIn / Smap_ZoomOut\n");
+    printf("Smap_ZoomIn @ 0x81e44 / Smap_ZoomOut @ 0x81c08\n");
 
     aGrid[0].uWidth = 800; aGrid[0].uHeight = 400;
     aGrid[1].uWidth = 600; aGrid[1].uHeight = 300;
@@ -1001,7 +1027,7 @@ static void TestZoomButtons(void)
     SmapWorldSize world;
     static PadImage aGrid[3];
 
-    printf("Smap_OnZoomIn / Smap_OnZoomOut\n");
+    printf("Smap_OnZoomIn @ 0x84ad8 / Smap_OnZoomOut @ 0x84ab8\n");
 
     aGrid[0].uWidth = 800; aGrid[0].uHeight = 400;
     aGrid[1].uWidth = 600; aGrid[1].uHeight = 300;
@@ -1038,7 +1064,7 @@ static void TestZoomButtons(void)
 
     Check(Smap_OnZoomOut(&view, aSets, &world, RecordSample, NULL),
           "the zoom-out button reports the step it took");
-    CheckEqI32(g_aSampleLog[2], 17, "the zoom-out click is the same sample");
+    CheckEqI32(g_aSampleLog[3], 17, "the zoom-out click is the same sample");
     CheckEqI32(view.nMode, 1, "zoom out moves back one level");
 
     view.nMode = 0;
@@ -1051,10 +1077,15 @@ static void TestStrategListAlloc(void)
 {
     PtrArray list;
 
-    printf("StrategItem_AllocAdd\n");
+    printf("StrategItem_AllocAdd @ 0x415cc (StrategItem_ctor @ 0x82bd4 inside it), "
+           "StrategList_ctor @ 0x83890, StrategList_Clear @ 0x838ac\n");
 
+    /* Both stores 0x83890 makes are pinned: the fields start dirty, so a missing store shows up. */
+    list.nCount = 7;
+    list.apItems = (void **)&list;
     StrategList_ctor(&list);
     CheckEqI32(list.nCount, 0, "StrategList_ctor leaves an empty list");
+    Check(list.apItems == NULL, "StrategList_ctor clears the item pointer too");
 
     Check(StrategItem_AllocAdd(&list, 7), "the first item allocates");
     Check(StrategItem_AllocAdd(&list, 9), "the second item allocates");

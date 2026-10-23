@@ -146,7 +146,7 @@
 0x44bbc	LoadGame	3400	save	yes	yes	yes	App_HookLoadGame|App_ScriptDump|World_LoadSlot|Menu_LoadSlot|SaveLoad_Slot	yes
 0x45904	SaveSlot_FormatList	796	save	yes	yes	yes	App_HookNewGame|App_HookFormatSlots|App_HookLoadGame|App_InitStartupUi|World_TactFormatSlotListThunk|World_WireOptions|OptionsScreen_SetMusicVol0	yes
 0x32c88	BaseRec_Create	76	strat	yes	no	yes		no
-0x415cc	StrategItem_AllocAdd	52	strat	yes	no	yes		yes
+0x415cc	StrategItem_AllocAdd	52	strat	yes	yes	yes		yes
 0x45c20	Ship_ctor	620	strat	yes	no	yes	Ship_Ctor	yes
 0x45f04	Ship_TickRefuelAtBase	124	strat	yes	no	yes		yes
 0x45f80	Ship_TickRangeRecover	72	strat	yes	yes	yes		yes
@@ -179,7 +179,7 @@
 0x5d3bc	Geoscape_TickBases	296	strat	yes	yes	yes	World_StartNewHook	yes
 0x5d4e4	Geoscape_TickShips	456	strat	yes	yes	yes		yes
 0x5d6ac	GameTime_Pause	20	strat	yes	yes	yes	World_GeoHitTestStrategSelect|Smap_SelectMapTarget|Geoscape_OnRadarListClick|OptionsScreen_OnConfirm|ScreenOpen_DropLine0AndPause|GameTime_Unpause|Geoscape_TickShips|StatusPanel_DrawInterceptPause|Strateg_CalcDetect|Ship_ClearExpiredIntercepts|MissionLanding	yes
-0x5d6c0	GameTime_Unpause	20	strat	yes	no	yes		yes
+0x5d6c0	GameTime_Unpause	20	strat	yes	yes	yes		yes
 0x5d6d4	RadarScreen_BlitOverlay	16	strat	yes	yes	yes		yes
 0x5d6e4	RadarScreen_DrawRangeBar	564	strat	yes	yes	yes		yes
 0x5d918	RadarScreen_DrawFuelGauge	524	strat	yes	yes	yes	Clock_SetPad	yes
@@ -229,7 +229,7 @@
 0x662bc	Base_HasResearchSlotFree	132	strat	yes	yes	yes		yes
 0x66340	Base_HasWorkshopSlotFree	132	strat	yes	yes	yes	Base_HasResearchSlotFree	yes
 0x6641c	Base_CraftWeaponItemId	128	strat	yes	yes	yes		yes
-0x6649c	Craft_CountSoldiersAboard	84	strat	yes	no	yes		yes
+0x6649c	Craft_CountSoldiersAboard	84	strat	yes	yes	yes		yes
 0x664f0	Craft_CountWeaponSlotsCarried	92	strat	yes	yes	yes		yes
 0x666cc	Ship_FormatDisplayName	424	strat	yes	yes	yes		yes
 0x66874	Base_RemoveAllShips	116	strat	yes	yes	yes		yes
@@ -249,7 +249,7 @@
 0x682c8	Base_CountBuiltFacilities	124	strat	yes	yes	yes		yes
 0x68344	Base_TransferTacticalLoot	3048	strat	yes	no	yes	FacTypeCell	yes
 0x68f2c	Base_DistributeRecoveredItems	1216	strat	yes	yes	yes		yes
-0x693ec	Craft_LoadStoresFromBase	1612	strat	yes	no	yes	LoadUnits	yes
+0x693ec	Craft_LoadStoresFromBase	1612	strat	yes	yes	yes	LoadUnits	yes
 0x69a38	Base_StripAllCraftCargo	1476	strat	yes	no	yes		yes
 0x69ffc	Ship_FindIndexById	96	strat	yes	yes	yes		yes
 0x6a05c	StrategList_FindIdxForShip	132	strat	yes	yes	yes		yes
@@ -286,42 +286,42 @@
 0x81948	StrategList_UpdateDetect	224	strat	yes	yes	yes		yes
 0x81a2c	StrategList_CountActive	112	strat	yes	yes	yes	CountActiveCraft	yes
 0x81a9c	StrategList_RollCraftStats	364	strat	yes	yes	yes		yes
-0x81c08	Smap_ZoomOut	572	strat	yes	no	yes	StrategList_AddItem|Smap_ApplyZoomSet	yes
-0x81e44	Smap_ZoomIn	652	strat	yes	no	yes	Save_ReadSmap|Smap_ApplyZoomSet|Smap_ClampScrollY	yes
-0x820d0	Smap_ScrollBy	172	strat	yes	no	yes	App_HoverOnRegion|Smap_ClampScrollY	yes
-0x8217c	Tilemap_GetAt	36	strat	yes	no	yes	World_FillMissionCtx	yes
-0x821a0	Tilemap_GetAtAlt	36	strat	yes	no	yes	Tilemap_GetAt	yes
-0x821c4	Smap_GetTileAtMode	128	strat	yes	no	yes	Smap_GetOverlayAtMode	yes
+0x81c08	Smap_ZoomOut	572	strat	yes	yes	yes	StrategList_AddItem|Smap_ApplyZoomSet	yes
+0x81e44	Smap_ZoomIn	652	strat	yes	yes	yes	Save_ReadSmap|Smap_ApplyZoomSet|Smap_ClampScrollY	yes
+0x820d0	Smap_ScrollBy	172	strat	yes	yes	yes	App_HoverOnRegion|Smap_ClampScrollY	yes
+0x8217c	Tilemap_GetAt	36	strat	yes	yes	yes	World_FillMissionCtx	yes
+0x821a0	Tilemap_GetAtAlt	36	strat	yes	yes	yes	Tilemap_GetAt	yes
+0x821c4	Smap_GetTileAtMode	128	strat	yes	yes	yes	Smap_GetOverlayAtMode	yes
 0x82244	Smap_GetTileAtScreen	128	strat	yes	yes	yes	App_HoverOnRegion|SmapHit_CellAt	yes
 0x822c4	Smap_DrawStrategIcons	1060	strat	yes	yes	yes		yes
 0x826e8	StrategList_AddItem	968	strat	yes	no	yes	StrategItem_ctor	yes
 0x82ab0	StrategList_RemoveAt	252	strat	yes	yes	yes		yes
-0x82bd4	StrategItem_ctor	20	strat	yes	no	yes	StrategItem_AllocAdd	yes
+0x82bd4	StrategItem_ctor	20	strat	yes	yes	yes	StrategItem_AllocAdd	yes
 0x82be8	Smap_HitTestStrategSelect	3088	strat	yes	yes	yes	World_GeoHitTestStrategSelect|SmapHit_CellAt|Ptr_StrategHit|Base_FindIndexByTypeByte	yes
-0x837f8	Smap_ClampScrollY	120	strat	yes	no	yes		no
-0x83890	StrategList_ctor	16	strat	yes	no	yes		yes
-0x838a0	StrategList_RegisterAtexit	12	strat	yes	no	yes		yes
-0x838ac	StrategList_Clear	36	strat	yes	no	yes		yes
+0x837f8	Smap_ClampScrollY	120	strat	yes	yes	yes		no
+0x83890	StrategList_ctor	16	strat	yes	yes	yes		yes
+0x838a0	StrategList_RegisterAtexit	12	strat	yes	yes	yes		yes
+0x838ac	StrategList_Clear	36	strat	yes	yes	yes		yes
 0x838d0	Geoscape_CloseUI_ThunkA	12	strat	yes	no	yes	App_Run|World_CloseGeoscapeThunk|World_WireGeoscapeFrame|FundingScreen_CloseThunk	yes
 0x838dc	Smap_BeginCraftSelect	2424	strat	yes	yes	yes	World_BeginCraftSelectThunk|World_WireMissionSeams|StatusPanel_DrawDescentPanel	yes
 0x84254	Smap_CancelTarget	152	strat	yes	yes	yes	World_SmapCancelTargetThunk|World_WireOptions	yes
 0x842ec	Smap_ConfirmCraftTarget	316	strat	yes	yes	yes	World_SmapConfirmCraftTargetThunk	yes
-0x84428	Smap_DismissSelected	92	strat	yes	no	yes	World_SmapDismissSelectedThunk	yes
+0x84428	Smap_DismissSelected	92	strat	yes	yes	yes	World_SmapDismissSelectedThunk	yes
 0x84484	Smap_SelectMapTarget	340	strat	yes	yes	yes	World_SmapSelectMapTargetThunk	yes
 0x845d8	Smap_ConfirmSelected	92	strat	yes	yes	yes	World_SmapConfirmSelectedThunk	yes
 0x84634	Smap_BeginCraftSelectBtn	20	strat	yes	yes	yes		yes
 0x84648	Smap_ClearSelection	64	strat	yes	yes	yes	World_SmapSetWaypointThunk|World_SmapClearSelectionThunk|StatusPanel_DrawAlienBasePanel	yes
 0x84688	Smap_OnPointerUp	732	strat	yes	yes	yes	World_SmapPointerUpThunk|StatusPanel_DrawAlienBasePanel	yes
 0x84964	Smap_ResolveInterceptUI	340	strat	yes	yes	yes	World_SmapResolveInterceptThunk	yes
-0x84ab8	Smap_OnZoomOut	32	strat	yes	no	yes		yes
-0x84ad8	Smap_OnZoomIn	32	strat	yes	no	yes	Smap_OnZoomOut	yes
+0x84ab8	Smap_OnZoomOut	32	strat	yes	yes	yes		yes
+0x84ad8	Smap_OnZoomIn	32	strat	yes	yes	yes	Smap_OnZoomOut	yes
 0x84e20	Base_EnterBuildMode	124	strat	yes	yes	yes	World_EnterBuildModeThunk|World_FillInitUiEnv	yes
 0x84f00	GameTime_Set5Sec	100	strat	yes	yes	yes		yes
-0x84f64	GameTime_Set1Min	100	strat	yes	no	yes		yes
-0x84fc8	GameTime_Set5Min	100	strat	yes	no	yes		yes
-0x8502c	GameTime_SetSpeedIdx3	104	strat	yes	no	yes		yes
-0x85094	GameTime_SetSpeedIdx4	104	strat	yes	no	yes		yes
-0x850fc	GameTime_SetSpeedIdx5	104	strat	yes	no	yes		yes
+0x84f64	GameTime_Set1Min	100	strat	yes	yes	yes		yes
+0x84fc8	GameTime_Set5Min	100	strat	yes	yes	yes		yes
+0x8502c	GameTime_SetSpeedIdx3	104	strat	yes	yes	yes		yes
+0x85094	GameTime_SetSpeedIdx4	104	strat	yes	yes	yes		yes
+0x850fc	GameTime_SetSpeedIdx5	104	strat	yes	yes	yes		yes
 0x85194	Geoscape_PrepScreenOpen	292	strat	yes	yes	yes	World_PrepScreenOpenThunk|World_WireOptions|ScreenOpen_DropLine0AndPause	yes
 0x852b8	Geoscape_PrepScreenOpenSfx	300	strat	yes	yes	yes	World_PrepScreenOpenThunk|World_WireOptions	yes
 0x853e4	Smap_ConfirmSelectedAlt	92	strat	yes	yes	yes	World_SmapConfirmSelectedThunk	yes
