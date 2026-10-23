@@ -791,16 +791,16 @@
 0x50adc	Tact_ProcessFireAction	8192	tact	yes	yes	yes	Fire_EndPhase	yes
 0x52adc	Tact_ProcessFallAction	5716	tact	yes	yes	yes	Fall_Div|Fall_PowerProduct	yes
 0x54130	Tact_TickActiveUnit	1868	tact	yes	yes	yes	App_ScriptDump|World_TactRenderFrame|World_GameTickOnce|Fire_EndPhase|Tick_SampleCell	yes
-0x5487c	MapCell_HasOccupant	36	tact	yes	no	yes		yes
-0x548a0	MapCell_SetBFlags57_3	24	tact	yes	no	yes		yes
+0x5487c	MapCell_HasOccupant	36	tact	yes	yes	yes		yes
+0x548a0	MapCell_SetBFlags57_3	24	tact	yes	yes	yes		yes
 0x548b8	MapCell_SetOccupant	8	tact	yes	yes	yes	World_ClearUnitLinks	yes
-0x548c0	MapCell_SetBFlags29_4	16	tact	yes	no	yes		yes
-0x548d0	MapCell_SetTileSprites	116	tact	yes	no	yes		yes
+0x548c0	MapCell_SetBFlags29_4	16	tact	yes	yes	yes		yes
+0x548d0	MapCell_SetTileSprites	116	tact	yes	yes	yes		yes
 0x54944	MapCell_Init	132	tact	yes	yes	yes		yes
 0x549c8	MapCell_TestFlag	200	tact	yes	yes	yes		yes
-0x54a90	MapCell_Reset	132	tact	yes	no	yes		yes
-0x54b14	MapCell_ListInsertByPri	68	tact	yes	no	yes		yes
-0x54b58	MapCell_ListRemove	76	tact	yes	no	yes	MapCell_TickProximityItems	yes
+0x54a90	MapCell_Reset	132	tact	yes	yes	yes		yes
+0x54b14	MapCell_ListInsertByPri	68	tact	yes	yes	yes		yes
+0x54b58	MapCell_ListRemove	76	tact	yes	yes	yes	MapCell_TickProximityItems	yes
 0x54ba4	Map_LoadMa1	152	tact	yes	no	yes	MapTemplate_Load	yes
 0x54cf4	Map_ApplyTemplateToCells	772	tact	yes	yes	yes	Font_GetFlagSprBase|Map_CellIndex|MapTemplate_ApplyToCells	yes
 0x54ff8	TactBuf11408_ctor	32	tact	yes	yes	yes	Rmp_Load	yes

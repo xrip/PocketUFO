@@ -117,7 +117,7 @@ static void TestReset(void)
     CheckEqI32(cell.bFlags44, 0xFE, "  bFlags44 bit0 cleared");
     /* bFlags57[0] is masked with 0xF3 only. The ~0x20 in MapCell_Reset applies
      * to bFlags29, not to this field. 0xFF & 0xF3 == 0xF3. */
-    CheckEqI32(cell.bFlags57[0], 0xF3, "  bFlags57[0] masked to 0xF3 (0x20 mask is for bFlags29)");
+    CheckEqI32(cell.bFlags57[0], 0xF3, "  MapCell_Reset @ 0x54a90 masks bFlags57[0] to 0xF3 (the 0x20 mask is for bFlags29)");
     CheckEqI32(cell.bFlags57[1], 0, "  bFlags57[1] cleared");
     /* 0xFF & 0xAF == 0xAF, then & ~0x20 == 0x8F */
     CheckEqI32(cell.bFlags29, 0x8F, "  bFlags29 masked to 0x8F");
@@ -162,7 +162,7 @@ static void TestTileSprites(void)
     /* NULL arguments must leave the existing sprite in place, not clear it. */
     printf("MapCell_SetTileSprites with NULLs keeps sprites\n");
     MapCell_SetTileSprites(&cell, NULL, NULL, NULL, NULL);
-    Check(cell.pFloorSpr == &aFloor, "  floor kept");
+    Check(cell.pFloorSpr == &aFloor, "  MapCell_SetTileSprites @ 0x548d0 keeps the floor sprite for a NULL argument");
     Check(cell.pCeilSpr == &aCeil, "  ceiling kept");
 }
 
@@ -201,12 +201,12 @@ static void TestFlags(void)
     printf("MapCell_SetBFlags57_3 / SetBFlags29_4\n");
     cell.bFlags57[0] = 0;
     MapCell_SetBFlags57_3(&cell, true);
-    CheckEqI32(cell.bFlags57[0], 8, "  bit3 set");
+    CheckEqI32(cell.bFlags57[0], 8, "  MapCell_SetBFlags57_3 @ 0x548a0 sets bit3 (& 0xF7 | 8*bSet)");
     MapCell_SetBFlags57_3(&cell, false);
     CheckEqI32(cell.bFlags57[0], 0, "  bit3 cleared");
     cell.bFlags29 = 0;
     MapCell_SetBFlags29_4(&cell);
-    CheckEqI32(cell.bFlags29, 0x10, "  bit4 set");
+    CheckEqI32(cell.bFlags29, 0x10, "  MapCell_SetBFlags29_4 @ 0x548c0 sets bit4");
 }
 
 static void TestOccupant(void)
@@ -230,7 +230,7 @@ static void TestOccupant(void)
     Check(MapCell_HasOccupant(&cell), "  status 2 occupies");
     aDeadSoldier[PUFO_SOLDIER_BSTATUS_OFF] = 3;
     cell.pUnit = (Soldier *)aDeadSoldier;
-    Check(!MapCell_HasOccupant(&cell), "  status 3 does not occupy");
+    Check(!MapCell_HasOccupant(&cell), "  MapCell_HasOccupant @ 0x5487c: status 3 does not occupy (the test is bStatus < 3)");
     /* A byte at offset 0 must NOT be read as the status. */
     memset(aFakeSoldier, 0, sizeof(aFakeSoldier));
     aFakeSoldier[0] = 9; /* garbage where the old, wrong code read */
@@ -262,7 +262,7 @@ static void TestItemList(void)
     Check(cell.pItemList == &aItems[0], "  first insert becomes head");
 
     MapCell_ListInsertByPri(&cell, &aItems[1]); /* pri 1; head 5 >= 1 -> spliced after head */
-    Check(cell.pItemList == &aItems[0], "  lower priority spliced after head, head unchanged");
+    Check(cell.pItemList == &aItems[0], "  MapCell_ListInsertByPri @ 0x54b14 splices after the head when head priority >= new");
     Check(aItems[0].pNext == &aItems[1], "  head now points at the new node");
 
     MapCell_ListInsertByPri(&cell, &aItems[2]); /* pri 9; head 5 < 9 -> new head */
@@ -271,9 +271,24 @@ static void TestItemList(void)
 
     printf("MapCell_ListRemove\n");
     MapCell_ListRemove(&cell, &aItems[2]);
-    Check(cell.pItemList == &aItems[0], "  removing head advances the list");
+    Check(cell.pItemList == &aItems[0], "  MapCell_ListRemove @ 0x54b58 removing the head advances the list");
     MapCell_ListRemove(&cell, &aItems[0]);
     Check(cell.pItemList == &aItems[1], "  removing new head advances again");
+
+    /* The walk branch, which the two head cases never reach. The original stops when the
+     * successor is the node or when the successor is NULL, and the relink writes the node's
+     * own successor -- so removing the tail clears the link instead of leaving it dangling. */
+    aItems[0].pNext = &aItems[1];
+    aItems[1].pNext = &aItems[2];
+    aItems[2].pNext = NULL;
+    cell.pItemList  = &aItems[0];
+    MapCell_ListRemove(&cell, &aItems[1]);
+    Check(cell.pItemList == &aItems[0] && aItems[0].pNext == &aItems[2],
+          "  the walk relinks a middle node and leaves the head in place");
+    MapCell_ListRemove(&cell, &aItems[2]);
+    Check(cell.pItemList == &aItems[0] && aItems[0].pNext == NULL, "  removing the tail clears the link");
+    MapCell_ListRemove(&cell, &aItems[1]);
+    Check(cell.pItemList == &aItems[0] && aItems[0].pNext == NULL, "  a node that is not in the list changes nothing");
 }
 
 /* TactItem_ctor @ 0x3e718 clears exactly FOUR fields and leaves the rest alone.

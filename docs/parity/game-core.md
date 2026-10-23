@@ -24470,3 +24470,43 @@ Gates: tests: 66/66 passing, 21564 checks, frames: unchanged (93 reference pictu
 0x19528, 0x19568, 0x19670, 0x196ac), the IDB saved.
 
 Measured after Part 142: **907** cited, **61** not (`tact` 61).
+
+### Part 143 -- the MapCell cluster closed (7 `tact` rows)
+
+Seven `tact` rows sat uncited although `tests/test_mapcell.c` already called all seven functions and checked them:
+`MapCell_HasOccupant @ 0x5487c`, `MapCell_SetBFlags57_3 @ 0x548a0`, `MapCell_SetBFlags29_4 @ 0x548c0`,
+`MapCell_SetTileSprites @ 0x548d0`, `MapCell_Reset @ 0x54a90`, `MapCell_ListInsertByPri @ 0x54b14`,
+`MapCell_ListRemove @ 0x54b58`. Each check message now carries its `name @ 0x...` cite on one line, which is what
+the ledger reads (memory cite-form-paren-and-wrap).
+
+The list pair got real new coverage. `MapCell_ListRemove` was only ever tested through its head branch; the walk
+branch was never reached. The tests now build a 0->1->2 list and remove the middle node, then the tail, then a node
+that is not in the list at all. The original (IDB decompile of 0x54b58) walks a trailing pointer until the SUCCESSOR
+is the node or the successor is NULL, and relinks only when that successor is non-NULL, writing `pNode->pNext` -- so
+removing the tail CLEARS the predecessor's link. The port's own comment at `src/pufo/game/pufo_mapcell.c:202-204`
+says the tail case "leaves the previous node's link dangling rather than clearing it", which the IDB contradicts; the
+CODE is right (it clears), only the comment is wrong. It is reported, not edited: a `src/` change needs sign-off.
+`MapCell_ListInsertByPri @ 0x54b14` is confirmed a two-position splice, not a sorted insert: `head->pObj->bListPri >=
+node->pObj->bListPri` splices the node directly after the head and overwrites the head's old successor without
+walking the list.
+
+`MapCell_SetTileSprites @ 0x548d0` re-read in full: every sprite store is guarded by a non-NULL argument (a NULL
+keeps the stored sprite), plus pUnit, bPathDir, nPathCost, `nFlags32 &= ~0x7F`, `nFlags40 &= ~0x7F`, `bFlags36 &= ~1`,
+`bFlags44 &= ~1`, `bFlags29 &= ~0x20`. `MapCell_Reset @ 0x54a90` clears pItemList and pUnit, masks `bFlags57[0]` with
+0xF3 (bit2 survives -- the 0x20 mask belongs to bFlags29, which is masked 0xAF and then ~0x20), zeroes bFlags57[1],
+bUnk56, abFaceDamage[0..3] (the port's `u8 abFaceDamage[4]` memset matches the four byte stores exactly), bPathDir and
+nPathCost, and masks nFlags32/nFlags40 with ~7 and bFlags44/bFlags36 with ~1. `MapCell_HasOccupant @ 0x5487c` is
+`pUnit != 0 && pUnit->bStatus < 3` with the status byte at Soldier+0x17.
+
+Teeth: 8 cases, 23 failing FAIL lines, 0 inert, 0 SKIP, 0 build failures,
+8/8 files restored byte-exact, MUTATION-left values {'0'}
+(`docs/parity/mutations_part143.py`, build/crops/mut143.log). Each row has its own mutation in
+`src/pufo/game/pufo_mapcell.c`: `< 3u` -> `< 4u`, `8 * bSet` -> `4 * bSet`, `| 0x10` -> `| 0x20`, the floor NULL guard
+dropped, `& 0xF3` -> `& 0xF7`, `>=` -> `<=` in the insert, and two for the remove (the head store, and the walk
+condition). The walk mutation fails all three new list checks.
+
+Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures), `check: ALL SIX GATES RAN`,
+`CHECK EXIT=0`, build/check143.log. IDB: 7 function comments written and read back exact (0x5487c, 0x548a0, 0x548c0,
+0x548d0, 0x54a90, 0x54b14, 0x54b58; longest 703 chars, under the 1024 cap), the IDB saved.
+
+Measured after Part 143: **914** cited, **54** not (`tact` 54).

@@ -491,3 +491,6 @@ Measured after Part 141: **875** cited, **93** not (`tact` 93).
 coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), 66/66 tests passing, check: OK -- 135 artifact rows, 131 uncited functions, 0 of them real gaps, 21564 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 27 function comments written and read back exact (the tact click-table handlers this Part pressed). Bugs ledger: +1 deviation row (Tact_TryFireMode4/5/10 push record 6 where the original pushes record 1).
 
 Measured after Part 142: **907** cited, **61** not (`tact` 61).
+coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 7 MapCell function comments written and read back exact (0x5487c, 0x548a0, 0x548c0, 0x548d0, 0x54a90, 0x54b14, 0x54b58), the IDB saved. No new bugs.tsv row: the only defect found is a wrong comment in the port (MapCell_ListRemove's tail case), not a behaviour gap.
+
+Measured after Part 143: **914** cited, **54** not (`tact` 54).
