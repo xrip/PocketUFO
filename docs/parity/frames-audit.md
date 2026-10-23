@@ -15,7 +15,7 @@ The corrected sweep over 103 pictures (93 `tests/ref/*.ppm` + 10 live `build/e2e
 | --- | --- | --- |
 | geoscape_ufo_enroute | 1..41 | FIXED in Part 156 (fixture scroll outside the 0x837f8 window) |
 | geoscape_terror_site | 156..235 | FIXED in Part 156 (same cause) |
-| geoscape_descent_panel | 1..59, 156..235 | arm isolation: the frame runs `ClearSurface` + `Geoscape_DrawStatusPanel` only (test_geoscapeframe.c ~1362..1375) -- no map, no strip. Open: is a panel-only frame a useful reference? |
+| geoscape_descent_panel | 1..59, 156..235 | CLOSED as a fixture property, not a game property: the frame runs `ClearSurface` + `Geoscape_DrawStatusPanel` only (test_geoscapeframe.c ~1362..1375), so the 140 all-black rows are the harness clearing the surface. It is kept as an arm-isolation diagnostic and must never be read as shipped output; the live sibling `geoscape_descent_offer` paints the same screen with the map under it (0 all-black rows) |
 | tact_hud_minimap | 0, 16..63, 317..319 | CLOSED in Part 158: the arm fills 240x320 with index 0 itself (0x1ED54), and the cell field is 4*(cell - scroll) -- measured x 12..239, y 64..303, i.e. scroll (-3, -16) inside the clamp window [-30..570] x [-40..560] for a 60x60 map |
 | tact_mission_urban | 1..16 | CLOSED in Part 159: the iso arm's overlay chain is a CMP chain on Map_nUiScreen (3,5,7,0xA,0xB,0xC,0xF) and this frame is screen 0, so only MapView_DrawIsoLayer runs; the tile's screen position is camera-free (0x1B1AC nDrawX = 32*tileX-16, 0x1B1C4 nDrawY = 8*(tileY-3*layer-4), culled at 0x1B1DC when nDrawY+40 <= 0), and the measured top edge is one tile diamond starting at the grid node x = 32*6-16 = 176, y = 16 -- rows 0..16 are outside the map's edge, painted by the layer-0 blank-glyph branch (0x21ED8 gate, the Font_DrawGlyph at 0x21EF4 / 0x21F8C) |
 | tact_briefing, tact_briefing_urban, tact_mission_from_descent | 0..7, 311..319 | CLOSED in Part 158: the arm is two calls -- PadImage_Blit of the cydonia pad at (0,0) then UiPanelMsg_Draw (0x1A7A0) -- and the indexed blit writes every pixel including index 0 (0xA3278 `*v24++ = *(pPal + 4*index)`, no skip), so the bands are the pad's own index-0 rows |
@@ -120,7 +120,7 @@ explained against 0x3e94c before re-referencing; (d) `tools/check.sh` prints the
 1. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
 2. CLOSED: open questions 5 and 6. Every tact band the sweep table lists is now explained -- the minimap hole (Part 158), the briefing trio, `debrief_banner`, `tact_hud_inventory`, `tact_hud_markers` (Part 159) and `tact_mission_urban` (Part 159 cont.).
 3. Open question 1 keeps one half open: the selector's four identical rows are closed (the Part 158 ufopaedia section), but what the pad blitted at 0x9B600 holds in that state is not yet read.
-4. The per-picture pass has not yet reached the rest of the corpus: the 10 `tests/ref/e2e/` pictures were reviewed only where a Part changed them, and the research / manuf / radar / psi / base-info / ufopaedia-entry / save-slot / tact families still need one picture-by-picture read each.
+4. CLOSED for the pass itself (Part 159 cont. 2): all 103 references were looked at -- the 93 `tests/ref/*.ppm` in eight labelled montages and the 10 `tests/ref/e2e/*.png` in a ninth -- with a structural screen and a palette-provenance measure behind every one. No layering artifact, no half-painted panel, no unexplained empty area found. What stays open in this file is item 1 (the 28 tact `DumpFrame` sites with no recorded draw call) and the second half of item 3 (what the pad blitted at 0x9B600 holds in the ufopaedia state).
 5. CLOSED in Part 159: all four read against their arm. `debrief_banner` = ENDMISS.PAD's index-0 rows 0..41 plus the banner text; `tact_hud_inventory` = INVV.PAD's 139..159 / 199 with the burden labels over 139..152; `tact_hud_markers` = MSCANV.PAD's all-index-254 last row (SCANNER.PAL[254] = (0,0,0)); `tact_mission_urban` = the iso layer's own edge (camera-free tile geometry, no overlay arm on screen 0). `tact_hud_promotion`'s 54 / 71 / 87 were already panel rules from the Part 157 review.
 
 ## Part 157 review: the 29 references that moved, read against 0x3e94c (2026-10-23)
@@ -505,3 +505,51 @@ north of the map's edge, which is what the original's own fallback paints there.
 
 IDB: line comment at 0x1B1C4 with the camera-free geometry and that consequence (731 chars, read back identical),
 `idb_save` ok. The tact family now has no unexplained band; the corpus families in Open item 4 are the remaining work.
+
+## Part 159 (cont. 2): every reference picture looked at, 93 .ppm + 10 e2e .png (2026-10-23)
+
+Method, three layers, all reproducible:
+
+  * `build/crops/montage159.py` -> `build/crops/view159/sheet01..08.png`: all 93 `tests/ref/*.ppm` in 4x3 labelled
+    montages, and `sheet09_e2e.png` for the 10 `tests/ref/e2e/*.png`. Every picture was looked at.
+  * `build/crops/lit159.py`: per picture -- lit fraction, count of all-black rows, count of rows under 5% lit, the four
+    dominant colours. This is the screen for "an empty place nobody explained".
+  * `build/crops/pal158b.py`: per picture, the shipped `.PAL` member whose 565-packed, gamma-LUT colours explain the most
+    pixels (the table is in the first Part 159 section).
+
+Structural result: no reference is half-painted. The pictures with all-black rows are exactly the ones already
+adjudicated -- `geoscape_descent_panel` 140 (the isolation fixture, now closed as such), `tact_hud_minimap` 52,
+`tact_hud_promotion` 24, `tact_briefing` / `tact_briefing_urban` / `tact_mission_from_descent` / `tact_mission_urban` 17,
+`debrief_banner` 32, `transfer_*` 10. Everything else in the corpus has 0 all-black rows; `ufopaedia_index` has none
+either (79.3% lit, and its dark look is its own pad's near-black greens (0,4,0) x15665 and (0,8,0) x10104). The geoscape
+frames are fully painted -- `geoscape_options_volume`, `geoscape_multi_box` and `geoscape_target_panel` contain zero
+pure-black pixels, and `geoscape_research_rows` has 932 scattered black pixels inside its panel text (bbox x 11..234,
+y 16..66), i.e. gaps between glyphs, not a band.
+
+Three readings at montage scale were wrong and are retracted, each disproved by measurement:
+
+  * "a dark rectangle at the top-left of the geoscape family" -- there is none: those frames have 0..932 pure-black
+    pixels and the dark area is the map's own ocean colours (`build/crops/geoblack159.py`).
+  * "the boot-menu title is drawn twice" -- `tests/ref/e2e/10_menu_at_boot` and `11_slot_list` have no self-similarity at
+    any large shift (best 57.8% at shift 2 px, which is just smooth gradient); what looked doubled is the same title art
+    appearing in two adjacent montage cells.
+  * "the main menu's list shows two numeric lines" -- at 2x (`view159/zoom_mainmenu_full.png`) the four items read
+    "Старт новой игры", "Загрузка игры", "Об авторских", "Выход", drawn directly over the splash photo with no panel
+    behind them. Nothing in lang.dat contains those digit strings, which is consistent: they are not there.
+
+The tactical modal trio (`tact_deploy_confirm`, `tact_quit_confirm`, `tact_modal_statusline`) was looked at at 3x
+(`view159/zoom_tact_*.png`) because its body looked see-through and its text empty. All three follow the IDB:
+`UiModal_DrawDialog @ 0x264A0` starts with `SoftSurf_BlitSrcRect(x, y, w, h, 0xFF, 255, 255, key 128)` over the whole
+dialog rect -- a 128/256 blend of the map under it, which is what the translucency is -- then paints only the 2-px frame
+edges at key 200 (0x26564 top, 0x26588 left, 0x265B0 bottom), the height rule is `13*nLines + 10`, `+35` when either
+button label exists (0x264E8), centred. The Latin "YES"/"NO" are the original's own literals at 0xA62E8 / 0xA62EC. The
+empty body at the first frame is the original's diagonal reveal (the 0x26E14 note: line i starts at character i, count =
+cursor - line - 1) with a fresh cursor, not a missing text draw. IDB: line comment at 0x26538.
+
+Family notes from the pass (no defect found in any of them): the crashdisk family is 100% lit with its own teal pad
+art dominant (0,85,90); the buysell/hangar/hold family is fully painted with the hangar's empty middle strip already
+closed as the `bCanDogfight` gate; the research and manuf families, the newbase family, the options/save-slot family and
+the ufopaedia family each show their pad plus their panels with no orphan rect; the tact play family shows the iso map
+with the modal text over it (the diagonal reveal again) and the "Hidden Movement" banner where the status-banner arm
+runs; the e2e chain (mainmenu -> newgame -> base placed -> base screen -> geoscape -> after save -> menu at boot ->
+slot list -> after load -> tact unit panel) reads as one continuous flow with no frame out of place.

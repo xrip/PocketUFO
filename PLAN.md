@@ -6681,3 +6681,19 @@ tile-diamond edge whose origin is the grid node nDrawX = 32*6-16 = 176, nDrawY =
 0x1b1c4 (731 chars, read back identical), idb_save ok. Open items 2 and 5 closed; the tact family has no unexplained
 band left, and what remains in the frame audit is Open item 4 (the research / manuf / radar / psi / base-info /
 ufopaedia-entry / save-slot / e2e families) plus the 0x9b600 pad content of Open item 3.
+Reviewed (Part 159 cont. 2, the whole reference corpus): all 103 pictures looked at -- 93 tests/ref/*.ppm in eight
+labelled montages (build/crops/montage159.py -> build/crops/view159/sheet01..08.png) and the 10 tests/ref/e2e/*.png in
+sheet09_e2e.png -- behind a structural screen (lit159.py: lit%, all-black rows, rows under 5% lit, dominant colours) and
+the palette-provenance table from the first Part 159 section. No layering artifact, no half-painted panel, no
+unexplained empty area. The pictures with all-black rows are only the already-adjudicated ones (geoscape_descent_panel
+140 = the arm-isolation fixture's ClearSurface, now closed as a fixture property with geoscape_descent_offer as its live
+sibling at 0 black rows; tact_hud_minimap 52; tact_hud_promotion 24; the briefing trio and tact_mission_urban 17;
+debrief_banner 32; transfer_* 10). Geoscape frames are fully painted (options_volume / multi_box / target_panel have
+zero pure-black pixels; research_rows has 932 scattered black px inside its panel text). Three montage-scale misreadings
+were retracted by measurement: no dark rectangle in the geoscape family, no doubled boot-menu title (best self-similarity
+57.8% at a 2-px shift), and the main menu's "numeric lines" are the four Russian items drawn over the splash photo. The
+tact modal trio's see-through body and empty text are shipped: UiModal_DrawDialog @ 0x264a0 blends the surface under the
+whole dialog rect (0x26538, key 128) and paints only 2-px frame edges at key 200; YES/NO are the literals at 0xa62e8 /
+0xa62ec; the empty text is the diagonal reveal at 0x26e14 with a fresh cursor. IDB: line comment at 0x26538. Still open
+in the frame audit: item 1 (28 tact DumpFrame sites without a recorded draw call) and the second half of item 3 (the pad
+blitted at 0x9b600 in the ufopaedia state).
