@@ -11338,7 +11338,11 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                            "107.f and the byte at site+0x206 (0x75D5C) -- the pair inbound transfers sum with 0x205 (0x67F78)");
                 CheckEqI32((i32)g_world.apSites[g_world.nSiteCount].bRecoveredCraftCount, 0,
                            "107.f while the recovery count stays clear, so the delivery never runs the re-park pass (0x990A8)");
-                DumpFrame("econ_buy_craft_queued");
+                ClearSurface();
+                (void)DrawFrame(); /* this dump needs its own frame: the last draw was the transfer picker's, and
+                                    * the presses since only re-blitted control pads over it (UiControl_HitTest
+                                    * 0x1A42C on a hit, 0x1A530's path on a miss that releases a held control) */
+                DumpFrame("econ_buy_craft_queued"); /* the buy screen, with the queue column holding the one order */
 
                 /* The same row, pressed a second time. ValidateCapacity calls Base_CountInboundTransfers
                  * with nSiteIdx = nSiteCount (0x75C58), so the WORKING site counts: its 0x205+0x206 pair is
@@ -11363,7 +11367,11 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                "107.f the queue column keeps the one order it accepted (0x75D84)");
                     CheckEqI32((i32)g_world.apSites[g_world.nSiteCount].auItemQty[nCraftSlot], 1,
                                "107.f and the working site holds exactly one craft (0x75DB8)");
-                    DumpFrame("econ_hangar_cap_full");
+                    ClearSurface();
+                    (void)DrawFrame();
+                    DumpFrame("econ_hangar_cap_full"); /* the refusal on screen: dwActionFail 1 with reason 2 takes the
+                                                        * buy/sell shortfall panel -- the expand blit and the TEXTS line
+                                                        * at (120, 158) inside 0x789C0..0x78C24, then the return */
                 }
 
                 {

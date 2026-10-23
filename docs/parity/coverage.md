@@ -604,3 +604,13 @@ transfer_staged / transfer_committed is measured unchanged by this Part and is N
 byte-identical to HEAD) -- item 2 of docs/parity/frames-audit.md stays open. New open item 157a: the manuf/research
 overlay overlap (econ_manuf_alloc, geoscape_research_allocated), measured as pre-existing -- check whether the overlay
 arms blit an opaque pad before their text.
+
+coverage (Part 158): the framed empty box in econ_buy_craft_queued / econ_hangar_cap_full was measured as a stale
+surface, not a missing blit -- those two dumps had no frame draw behind them (101 dumps and 611 frame draws counted
+with temporary probes in DumpFrame and in World_DrawGeoscapeFrame / World_TactFrame, restored and md5-verified). The
+415 px the two pictures lacked against the transfer trio is the picker's confirm caption (packed at 0x98904, drawn as
+TEXTS[1267] at 0x98968), which a later press re-blits away through UiControl_HitTest. Both dumps now draw their own
+frame; the re-recorded pictures show the buy screen and the shortfall panel, the latter traced band by band to
+0x95E18..0x95F80 with the text at 0x789C0..0x78C24 in the 0x789B4 pair. Four further byte-identical dump pairs are
+faithful for recorded IDB reasons (0x9877C's erase band, TactHud_DrawModalPanel's mode-1 gate over records 1103/1102,
+the research panels' press-only rebuild with the 0x73D64 detail gate, and the base view at 0x8C094).

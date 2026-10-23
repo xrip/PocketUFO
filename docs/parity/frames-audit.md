@@ -190,3 +190,56 @@ UiPanel_DrawText packed nothing at all -- the deviation this Part closes.
 No rule and no fill appear here, as they should not: BaseInfoPanelCommon clears bRowRules and bSelLineHighlight, and no
 changed band is a full-width single row (the widest changed row is 118 px). The "Азия-1" caption at 16..25 changed with
 the pair the panels leave behind, the 0x57284-after-0x57230 order recorded in game-core.md.
+
+## Part 158: the framed empty box is a stale surface, not a missing blit (2026-10-23)
+
+Item 2 of this ledger is closed, and it was never a draw defect.
+
+Method. The dump helper only writes the surface -- it does not draw. So each `DumpFrame` was instrumented to print a
+surface hash, and the two frame entry points (`World_DrawGeoscapeFrame`, `World_TactFrame`) to print a counter. Both
+probes were temporary, restored from saved copies, and verified: md5 of src/pufo/app/pufo_world.c and
+tests/test_geoscapeframe.c equal their saved copies, `grep -rn MUTATION src tests` empty. One run of
+test_geoscapeframe, 101 dumps, 611 frame draws.
+
+Result. Exactly two dumps had no frame draw since the previous dump: econ_buy_craft_queued and econ_hangar_cap_full.
+Their pictures were the transfer picker's frame, painted before the buy screen even opened. The one region where they
+differ from the transfer trio is rows 97..106, x 61..178 -- 415 px -- which is the picker's confirm caption: the ARM
+packs it at 0x98904 (0x44,0xF4,0xFC / 4,0x46,0x4B) and draws TEXTS[1267] at 0x98968, `y = 28 * nBaseCount + 10` with
+nBaseCount read signed at block+0x618 (0x98944), x = 120 - w/2 (0x98954..0x98960). A press after that frame re-blits
+the confirm pad through UiControl_HitTest (0x1A42C on a hit, the miss path that releases a held control), and the pad
+is bare where the caption was. Nothing re-drew the frame, so the bare pad is what those two references recorded. The
+framed area is the control pad (118 x 17 at x 61, y 93), not a panel fill: no panel of that screen gives
+(nViewW - 2) x nFont = 118 x 17, and the fill region of panel E (x 191..234, y 70..85) is byte-identical to HEAD.
+
+Fix, in the fixture: the two dumps now ClearSurface + DrawFrame first, like every other dump in this file. The two
+references were re-recorded and reviewed.
+
+econ_buy_craft_queued is now the buy screen: the funds line "1446930 $" and the total "500000 $" (the fixture's own
+printed pair), the item list with the queue column holding the single 1 on the craft row (the 0x75D84 pair), the "<"
+">" columns, the close control and the OK pad. econ_hangar_cap_full is now the refusal: the shortfall panel with
+"Нет свободного ангара" -- the expand frame at 20,130 with Ui_AnimExpandBlit's own rects (0x95E18 outer 20,130,204,6 /
+0x95E6C inner 22,132,200,2 / 0x95EA0 + 0x95ECC at y 200 and 202 / the side bands 0x95F00..0x95F80), measured as outer
+rows 130..131 and 204..205 x 20..223 and inner rows 132..133 and 202..203 x 22..221; the centred line at (120, 158)
+inside 0x789C0..0x78C24 drawn in the 0x789B4 pair (220,80,80 / 50,30,30), measured as ink columns 51..188 (centred on
+120) and glyph rows 163..170. The box interior is not filled by the ARM -- Ui_AnimExpandBlit draws eight band rects
+and no fill -- so the item rows showing through it is shipped behaviour, not a hole.
+
+The other four byte-identical dumps this sweep found are all faithful, each with an IDB reason:
+
+  transfer_staged / transfer_committed = transfer_open -- the staged digit and the commit's row changes all sit on
+  panel rows 70..85, under the overlay's black erase band (0x9877C, y 0..87). Recorded in the fixture already.
+  tact_hud_load_slots = tact_hud_save_slots -- TactHud_DrawModalPanel draws its record only when the modal mode is
+  exactly 1 (`nModalMode != 1` returns before UiModal_DrawDialog), and Menu_OpenSaveSlots (0x188A4) and
+  Menu_OpenLoadSlots (0x18864) both leave the list mode at 0. Records 1103 and 1102 are never drawn, so the two
+  screens are the same eight pads and the same seven labels.
+  econ_research_done = econ_research_running -- the finish (0x743A4..0x74798: bUnlocked 1 at 0x7440C, the allocation
+  columns cleared at 0x7442C..0x74444, the line appended with sound at 0x74554) changes no drawn value: the topic,
+  quantity and progress panels are rebuilt only by RebuildTopicList on a press, and the detail block is skipped by
+  the 0x73D64 gate (no row selected), which is why neither frame carries the "Ученых доступно" labels at 0x73DE8..
+  0x73E64 or the three numbers at 0x73F24..0x74068. The completion is real in state and invisible on this screen
+  until the next press -- recorded, not fixed.
+  econ_craft_loaded = econ_craft_spawned -- both frames are screen 1 (the base view the hangar closes to, 0x8C094),
+  and the base view draws none of the cargo and shelf columns the load round moved (0x78E34 / 0x78E4C).
+
+IDB: 0x98968's item comment now carries both the Text_DrawString glyph-base note and the caption-vs-pad-blit note
+(690 characters, read back through the listing), and the IDB was saved.

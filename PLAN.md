@@ -6595,3 +6595,29 @@ in econ_buy_craft_queued and its three twins is measured unchanged by this Part 
 item 2 stays open with its next check. New open item 157a: the manuf/research overlay overlap, measured pre-existing --
 read the overlay arms for a pad blit before their text. Still open: 156a, 155a, 154a, PLAN 122a's tail, 117a, 118a,
 118b, 118c, 119b's 4994 half, 121a, the 4 half-written bugs.tsv rows.
+
+Done (Part 158, the framed empty box closed as a stale surface): the audit item 2 of docs/parity/frames-audit.md is
+settled -- it was never a draw defect. Instrumenting every DumpFrame (surface hash) and both frame entry points
+(World_DrawGeoscapeFrame, World_TactFrame; probes restored from saved copies, md5-verified, no markers left) over one
+test_geoscapeframe run gave 101 dumps and 611 frame draws, and exactly two dumps had no frame behind them:
+econ_buy_craft_queued and econ_hangar_cap_full. Their pictures were the transfer picker's frame: the only region where
+they differ from the transfer trio is the 415 px at rows 97..106, x 61..178, which is the picker's confirm caption --
+packed at 0x98904 (0x44,0xF4,0xFC / 4,0x46,0x4B) and drawn as TEXTS[1267] at 0x98968 with y = 28 * nBaseCount + 10
+(nBaseCount read signed at block+0x618, 0x98944) and x = 120 - w/2 -- and a later press re-blits the bare confirm pad
+over it through UiControl_HitTest (0x1A42C, and the miss path that releases a held control). The framed area is that
+control pad (118 x 17 at 61,93), not a panel fill. The fixture now draws its own frame for both dumps; the two
+references were re-recorded and reviewed: econ_buy_craft_queued is the buy screen (funds 1446930, total 500000, the
+queue column's single 1 on the craft row, the arrow columns, the close and OK pads) and econ_hangar_cap_full is the
+refusal with the shortfall panel -- the expand frame's eight band rects measured against 0x95E18 (outer 20,130,204,6),
+0x95E6C (inner 22,132,200,2), 0x95EA0/0x95ECC (y 200/202) and 0x95F00..0x95F80, and the centred "Нет свободного
+ангара" line at (120,158) inside 0x789C0..0x78C24 in the 0x789B4 pair, with no fill in the box because the ARM fills
+none. The sweep's four other byte-identical dumps are faithful with IDB reasons recorded in frames-audit.md: the
+transfer trio (the 0x9877C erase band over rows 70..85), tact_hud_load_slots = tact_hud_save_slots (TactHud_DrawModalPanel
+draws its record only at modal mode 1 and both openers leave the mode at 0, so records 1103/1102 are never drawn),
+econ_research_done = econ_research_running (the 0x743A4..0x74798 finish changes no drawn value -- the three panels
+rebuild only on a press and the 0x73D64 gate skips the detail block), and econ_craft_loaded = econ_craft_spawned (both
+are the base view the hangar closes to, 0x8C094, which draws no cargo or shelf column). IDB: 0x98968's comment now
+carries the caption-vs-pad-blit note next to the glyph-base note, read back and saved. Still open: 156a's remaining
+band pictures, 157a (the manuf/research overlay overlap), 155a, 154a, PLAN 122a's tail, 117a, 118a, 118b, 118c,
+119b's 4994 half, 121a, the 4 half-written bugs.tsv rows, and the 28 tact DumpFrame sites still without a recorded
+draw call.
