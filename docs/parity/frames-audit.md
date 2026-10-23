@@ -394,9 +394,13 @@ x span, rows fully black). This is the state of these four:
     top edge against 200.
   * `tact_mission_urban` -- rows 0..16 black, ink from row 17 (a 4-to-10-px wide cluster at x 168..177, i.e. a control
     pad), rows 239..319 fully covered, 83..94 and 104..192 fully covered. This is the iso group, so the map content comes
-    from `MapView_DrawIsoLayer @ 0x22414`. Next check: the iso origin for this camera -- 17 empty rows at the top is the
-    same class as the Part 156 geoscape finding, where the fixture had moved the scroll outside the clamp the original
-    enforces, and the tact clamp has already been pinned here (max `40*(nMapDim-3)/4` / `40*(nMapDim-4)/4`, min -30 / -40).
+    from `MapView_DrawIsoLayer @ 0x22414`. The Part 156 hypothesis (a fixture scroll outside an enforced clamp) is
+    ruled out for this one: the iso arm has no clamp at all -- it computes `Map_IsoOffsetA/B(dim, nCamScrollX,
+    nCamScrollY)` and walks tiles `0..nTileCountY/X` with no bound check on the camera pair, and searching the whole
+    binary for the clamp constant -30 (`MOV R2,#0xFFFFFFE2`) finds it only in `MapView_DrawMinimap` at 0x1EE0C (the
+    screen-2 arm) and twice in `Tact_CheckBattleEnd` (0x354AC, 0x3562C, unrelated). So the 17 empty top rows are the iso
+    offset pair's own result. Next check: the map ink's bounding box against `4*` the offset this state's camera pair
+    produces.
   * `debrief_banner` -- rows 0..12, 25..42 and 44 black; ink from row 13 (a narrow cluster at x 99..120 -- the centred
     banner text `Text_DrawString(120 - w/2, 10, ...)` from `TactHud_DrawStatusBanner @ 0x1E920`), a wide partial band
     45..289, and full coverage only at 290..291 and 297..300. Next check: the banner backdrop pad's rect and index-0 rows
