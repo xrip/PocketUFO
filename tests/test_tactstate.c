@@ -477,7 +477,7 @@ static void TestGameTickStep(void)
     printf("GameTick_Step decay while active\n");
     g_state.bPhaseActive = 1;
     Check(!GameTick_Step(&g_state, &cells, TickGrid_Lookup, &grid), "  tick 1 does not end the phase");
-    CheckEqI32((i32)grid.aCells[0][0][0].nFlags32, 0x70, "  field decremented once");
+    CheckEqI32((i32)grid.aCells[0][0][0].nFlags32, 0x70, "  GameTick_Step @ 0x27324 decays the cell field once per tick");
     CheckEqI32(g_state.nPhaseCounter, 1, "  phase counter incremented");
 
     /* A cell whose field is already zero is skipped, so it cannot wrap to 0xF. */

@@ -24562,3 +24562,44 @@ Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictu
 `CHECK EXIT=0`, build/check144.log. IDB: 8 function comments written and read back exact (longest 724 chars), IDB saved.
 
 Measured after Part 144: **922** cited, **46** not (`tact` 46).
+
+### Part 145 -- the nine test-named tact rows closed (9 `tact` rows)
+
+Nine `tact` rows were uncited although a test already called and checked each one: `GameSpeed_Set @ 0x260c0`,
+`Map_IsoOffsetA @ 0x26f88`, `Map_IsoOffsetB @ 0x26fa8`, `GameTick_Step @ 0x27324`, `Map_TraceVoxelOccupancy @ 0x3242c`,
+`Tact_SpawnAliens @ 0x3a2ac`, `Soldier_Generate @ 0x49410`, `Unit_bIsOperative @ 0x49eb8`,
+`Tact_ProcessActionPhase @ 0x4d950`. The ledger's "first test that names it" was `test_geoscapeframe.c` for all nine,
+but there the names sit in comments (one with the `@` wrapped over a line end, which is why the row read as uncited --
+memory cite-form-paren-and-wrap). Each cite was put in the test that actually asserts the behaviour:
+`test_tactctl.c` (GameSpeed_Set, Tact_SpawnAliens), `test_mapcell.c` (both iso offsets), `test_tactstate.c`
+(GameTick_Step), `test_los.c` (Map_TraceVoxelOccupancy), `test_unit.c` (Unit_bIsOperative, Soldier_Generate),
+`test_turn.c` (Tact_ProcessActionPhase).
+
+Four IDB facts settled. (1) `GameSpeed_Set @ 0x260c0` stores the speed at ctx+86268 and, for `nSpeed <= 4`, returns
+`StartTimers_BySpeed @ 0x9e904`, whose last statement is `return SetTimer(0xC353, 50)` -- a timer id, non-zero on
+success, so the value is truthiness rather than a count; the port models it as a bool. (2) The two iso offsets read the
+map dimensions out of the Map block itself: `5 * (u8)(nMapBase + 86299)` = Map+0x1513B (width) and
+`5 * (u8)(nMapBase + 86300)` = Map+0x1513C (height), and `Map_IsoOffsetB` ends in `- 1` while `Map_IsoOffsetA` does
+not -- the pair is not symmetric. (3) `Soldier_Generate @ 0x49410` was re-read in full and every band matches the port
+statement for statement (`auStat[0] = RandU16(0xA) + 50` through `auStat[7] = RandU16(0x64) + 1`, `uHp = auStat[1]`,
+`abReady252[0..4] = 1`, the base copy offset by one at the tail, the 25-dword clear at `auUnk962`, `pLinked1040 = 0`),
+and it carries a name-collision retry: a loop over `nSoldierCount` re-draws the name while it matches another
+soldier's. (4) `Unit_bIsOperative @ 0x49eb8` is `bStatus (Soldier+0x17) == 0` -- the same byte the cell-occupant test
+in 0x5487c reads, with a different comparison.
+
+Teeth: 9 cases, 39 FAIL lines, 0 inert, 0 SKIP, 0 build failures,
+9/9 restored byte-exact, MUTATION-left values {'0'} (`docs/parity/mutations_part145.py`,
+build/crops/mut145.log). Multi-line anchors are joined with each target file's own newline because
+`pufo_mapcell.c` is LF-only while `pufo_tactstate.c` and `pufo_turn.c` are CRLF-only. The biggest single mutation was
+the `GameTick_Step` skip gate, which fails seven checks at once (the decay, the no-wrap case, the high-bit case and
+all four layer sweeps). Two rows are cited on a check that their mutation leaves standing while other checks fail --
+`Tact_SpawnAliens` (the count check passes, four stat checks fail) and `Map_TraceVoxelOccupancy` (the clear-cell check
+passes, four mask checks fail); the row has teeth either way.
+
+IDB: 9 function comments written and read back exact. One hit the comment cap -- `Soldier_Generate` came back at
+exactly 1024 characters with the tail cut, so it was shortened to 956 and re-verified (memory ida-comment-1024-cap).
+
+Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures), `check: ALL SIX GATES RAN`,
+`CHECK EXIT=0`, build/check145.log.
+
+Measured after Part 145: **931** cited, **37** not (`tact` 37).

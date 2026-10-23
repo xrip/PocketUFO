@@ -353,9 +353,9 @@ static void TestIsometric(void)
 {
     printf("Isometric helpers\n");
     /* Map_IsoOffsetA: a - 5*dimX + b */
-    CheckEqI32(Map_IsoOffsetA(4, 10, 2), 10 - 20 + 2, "  IsoOffsetA");
+    CheckEqI32(Map_IsoOffsetA(4, 10, 2), 10 - 20 + 2, "  Map_IsoOffsetA @ 0x26f88 is a - 5*dimX + b");
     /* Map_IsoOffsetB: 5*dimY - a + b - 1 (note the -1) */
-    CheckEqI32(Map_IsoOffsetB(3, 10, 2), 15 - 10 + 2 - 1, "  IsoOffsetB");
+    CheckEqI32(Map_IsoOffsetB(3, 10, 2), 15 - 10 + 2 - 1, "  Map_IsoOffsetB @ 0x26fa8 is 5*dimY - a + b - 1");
     /* Map_CenterOffsetX: 5*dimX - (a+b+1)/2 + a */
     CheckEqI32(Map_CenterOffsetX(4, 10, 4), 20 - 7 + 10, "  CenterOffsetX");
     /* Map_CenterOffsetY takes no dimension; (a+b+1)/2 */

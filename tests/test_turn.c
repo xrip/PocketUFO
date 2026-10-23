@@ -221,7 +221,7 @@ static void TestPhaseMachine(void)
     Check(rec.pLastFired == &unit, "  fired at the scan unit");
     CheckEqI32(rec.nCursorSetCalls, 1, "  cursor parked during the fire");
     CheckEqI32(rec.nLastCursorX, -2, "  cursor parked off-map");
-    CheckEqI32(ctx.nPhase, 2, "  advanced to phase 2");
+    CheckEqI32(ctx.nPhase, 2, "  Tact_ProcessActionPhase @ 0x4d950 runs phase 1 and advances to 2");
     CheckEqI32(ctx.nOppFireCount, 0, "  count decremented");
 
     printf("Tact_ProcessActionPhase (phase 2 restores, moves to 3, AND ticks)\n");

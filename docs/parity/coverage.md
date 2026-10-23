@@ -497,3 +497,6 @@ Measured after Part 143: **914** cited, **54** not (`tact` 54).
 coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 8 tactstate function comments written and read back exact (0x49b84, 0x49d5c, 0x4a37c, 0x4a758, 0x4f300, 0x4a3d4, 0x4f2d4, 0x4b2f4), IDB saved. Bugs ledger: +1 deviation row (the port's queue-capacity guard in TactState_EnqueueThrow and its sibling, which the original does not have).
 
 Measured after Part 144: **922** cited, **46** not (`tact` 46).
+coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 9 function comments written and read back exact (0x260c0, 0x26f88, 0x26fa8, 0x27324, 0x3242c, 0x3a2ac, 0x49410, 0x49eb8, 0x4d950), IDB saved. No new bugs.tsv row this Part.
+
+Measured after Part 145: **931** cited, **37** not (`tact` 37).

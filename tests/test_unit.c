@@ -80,7 +80,7 @@ static void TestPredicates(void)
     printf("Unit_bIsOperative / Unit_bIsLarge\n");
     Unit_ctor(&unit);
     unit.bStatus = UNIT_STATUS_OPERATIVE;
-    Check(Unit_bIsOperative(&unit), "  status 0 is operative");
+    Check(Unit_bIsOperative(&unit), "  Unit_bIsOperative @ 0x49eb8 is true only for status 0");
     unit.bStatus = UNIT_STATUS_1;
     Check(!Unit_bIsOperative(&unit), "  status 1 is not operative");
 
@@ -411,7 +411,7 @@ static void TestGenerate(void)
     Check(unit.szName[0] != '\0', "  name generated");
 
     /* The stat ranges are inclusive; assert each landed in its documented band. */
-    Check(unit.auStat[0] >= 50 && unit.auStat[0] <= 59, "  auStat[0] in 50..59");
+    Check(unit.auStat[0] >= 50 && unit.auStat[0] <= 59, "  Soldier_Generate @ 0x49410 rolls auStat[0] in 50..59");
     Check(unit.auStat[9] >= 40 && unit.auStat[9] <= 69, "  auStat[9] in 40..69");
     Check(unit.auStat[1] >= 40 && unit.auStat[1] <= 59, "  auStat[1] in 40..59");
     Check(unit.auStat[2] >= 10 && unit.auStat[2] <= 59, "  auStat[2] in 10..59");

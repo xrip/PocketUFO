@@ -98,7 +98,7 @@ static void TestSpeed(void)
     for (u32 nSpeed = PUFO_SPEED_MIN; nSpeed <= PUFO_SPEED_MAX; ++nSpeed) {
         g_nKill = 0;
         g_nStart = 0;
-        Check(GameSpeed_Set(&clock, nSpeed), "  speed in range restarts timers");
+        Check(GameSpeed_Set(&clock, nSpeed), "  GameSpeed_Set @ 0x260c0 in range kills and restarts the timers");
         CheckEqI32(clock.nSpeed, (i32)nSpeed, "  speed stored");
         CheckEqI32(g_nKill, 1, "  timers killed once");
         CheckEqI32(g_nStart, 1, "  timers started once");
@@ -1497,7 +1497,7 @@ static void TestSpawnAliensTerrainBranch(void)
 
     CheckEqI32(s_nEnemyCount, 22, "  20 + 2 enemies from table row 12");
     CheckEqI32(s_nReserve, 0, "  no hidden soldiers outside the XCom base mission");
-    CheckEqI32(nSpawned, 22, "  returns the enemy count");
+    CheckEqI32(nSpawned, 22, "  Tact_SpawnAliens @ 0x3a2ac returns the count it stored");
 
     /* Set index 4 -> composition row 4 = 3,3,0,1,1. Group 1 = trunc(20 * 0.8) = 16,
      * group 2 = (20-16)/2 = 2, group 3 = 20-2-16 = 2. */

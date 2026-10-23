@@ -144,7 +144,7 @@ static void TestVoxelGeometry(void)
     /* A clear cell reports no hit. */
     CheckEqI32(Map_TraceVoxelOccupancy(&grid.tables, LosGrid_Lookup, &grid,
                                        0, 0, 0, NULL, NULL),
-               LOS_HIT_NONE, "  empty cell is clear");
+               LOS_HIT_NONE, "  Map_TraceVoxelOccupancy @ 0x3242c reports no hit for a clear cell");
 
     /* Floor sprite whose mask row sets bit 15 (x = 0), so voxel x=0 blocks but
      * x=1 does not. Row index = y%16 + 16 * rowTable[z%12]. */
