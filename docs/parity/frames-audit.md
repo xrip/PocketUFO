@@ -51,13 +51,27 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
    the thing the user saw is one rectangle, x 64..177, y 94..110 (114 x 17), a bright frame (0xAC009D) around a filled
    interior 0x5A0055, different from the panel field around it (0x5A0028/0x5A002C), with zero text-coloured pixels inside.
    Its IDB origin is the buy/sell tail arm: 0x93EB4..0x93F04 is gated on the root block's byte 0x18652D
-   (`LDRB R3,[R7,#0x35]`, R7 = 0x1864F8 from Render_Frame at 0x2232C) and, while set, feeds `nSmapCursorX/nSmapCursorX`
+   (`LDRB R3,[R7,#0x35]`, R7 = 0x1864F8 from Render_Frame at 0x2232C) and, while set, feeds `nSmapCursorX/nSmapCursorY`
    read SIGNED into `UiScrollList_TrackHold` for pBuySellPanelB (0x161A00) AND pBuySellPanelC -- the same cursor position
    for both lists. TrackHold stores `row = (nY - [panel+0x1B88]) / [panel+0x1B9C]`, sets the hold byte 0xBD0 while the
    cursor is inside the panel's box, clears it otherwise. So the box is a hover/hold highlight, not a panel.
    Unresolved: whether the row the cursor maps to is the row the fixture pressed (a fixture-state artifact) or a wrong
    row index in the port -- the highlight sits above the craft list, where the pressed row is not. Next check: the draw
    site that turns byte 0xBD0 into this rect (which panel's geometry, drawn before or after the row text).
+
+   Measured further (a temporary probe in the fixture at the dump moment, since removed): panel A x 10 y 70 font 16
+   lines 37 scroll 0; panel B x 180; panel C x 196 -- all three y 70, font 16, 37 lines; the map cursor at that dump is
+   (200, 78) and the pressed craft row is 0. The box's x span 64..177 covers none of A/B/C, so the rect is panel E's
+   (panel E not yet measured) or comes from another draw entirely.
+   Read the rect's own code: `UiPanelMsg_Draw @ 0x3e94c`, block 0x3E9C0. Its blit is gated on panel+0x1BA1
+   (bSelLineHighlight) AND panel+0xBD0 (bHoverActive), with x = [panel+0x1B8C]+1 and
+   y = [panel+0x1B90] + (panel+0xC, the hover row) * [panel+0x1B9C]. That block is at the HEAD of the function and the
+   text pass (Text_MeasureWidth / Text_DrawString) follows it -- in the original a highlighted row keeps its text ON TOP
+   of the fill. Our box has no text inside: either the opposite order, or a hover row whose line is empty.
+   The port's `UiPanel_DrawText` (src/pufo/ui/pufo_panel.c:330) is text-only, and `BuySellScreen_Draw` calls it for
+   A, E, C, B, D (0x78314..0x7833C). So the open point is now exact: (i) whether the buy/sell panel draws in the IDB are
+   the whole `UiPanelMsg_Draw` (with the head blit) or its text tail, and (ii) panel E's hover-box fields
+   [0x1B8C]/[0x1B90]/[0x1B9C] and its hover row (panel+0xC) at that dump.
 3. `econ_hangar_combat` -- does the original's hangar arm put controls in the bottom strip in this state?
 4. `tact_hud_*` and `tact_briefing*` / `debrief_banner` -- thin bands at rows 1..16 and 311..319: compare against the
    tact HUD draw arms' pad rects before judging.
