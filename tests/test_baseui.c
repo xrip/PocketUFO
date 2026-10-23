@@ -5217,7 +5217,7 @@ static void TestRadarListClick(void)
 
     RADAR_BEGIN(1, 0, 42, 50000);
     (void)Geoscape_OnRadarListClick(&env);
-    CheckEqI32(nShipSel, 1, "  Ship_FindIndexByStrategType found craft 1 (bId 42)");
+    CheckEqI32(nShipSel, 1, "  Ship_FindIndexByStrategType @ 0x5a92c found craft 1 (bId 42)");
     CheckEqI32(nStratIdx, 1, "  0x159E74 mirrors the ship index");
     CheckEqI32(lines.nLineCount, 3, "  the append grew the list");
     CheckEqI32(lines.abLineFlags[2], 11, "  the appended line carries flag 11");

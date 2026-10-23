@@ -469,7 +469,7 @@ static void TestBaseGridLookup(void)
     static u8 aGrid[8];
     static ObjectRecFull obj;
 
-    printf("Base_FindIndexByTypeByte / BaseRec_AddItemQty\n");
+    printf("Base_FindIndexByTypeByte @ 0x6ac30, BaseRec_AddItemQty @ 0x556e4\n");
 
     for (i32 i = 0; i < 3; ++i) {
         memset(&aBases[i], 0, sizeof(aBases[i]));
@@ -2892,7 +2892,7 @@ static void TestCreateNamedEntry(void)
     CheckEqI32(bBaseCount, 1, "the base count is raised");
     CheckEqI32(siteId, 501, "and the next site id");
 
-    Check(apBases[0] != NULL, "BaseRec_Create stored a record at slot 0");
+    Check(apBases[0] != NULL, "BaseRec_Create @ 0x32c88 stored a record at slot 0");
     CheckEqI32(apBases[0]->bRegionId, 0x82, "bRegionId = the region");
     CheckEqI32(apBases[0]->nUnk8, -6000, "nUnk8 = x");
     CheckEqI32(apBases[0]->nUnk12, -6000, "nUnk12 = y");

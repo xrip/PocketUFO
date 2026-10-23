@@ -77,7 +77,7 @@ static void TestRangeRecover(void)
 
 static void TestRefuel(void)
 {
-    printf("Ship_TickRefuelAtBase\n");
+    printf("Ship_TickRefuelAtBase @ 0x45f04\n");
     Ship s;
     memset(&s, 0, sizeof(s));
     s.bAtBase = 1;
@@ -1112,7 +1112,8 @@ static void TestInterceptRetarget(void)
     i32 nAssignedCount;
     u8 once;
 
-    printf("Ship_RetargetTravel / ClearInterceptByStrategIdx / ClearWaypointIntercept\n");
+    printf("Ship_RetargetTravel / Ship_ClearInterceptByStrategIdx @ 0x5a5b8,\n"
+           "Ship_ClearWaypointIntercept @ 0x5a830\n");
 
     for (int i = 0; i < 2; ++i) {
         apShip[i] = (Ship *)calloc(1, sizeof(Ship));
@@ -1211,6 +1212,17 @@ static void TestInterceptRetarget(void)
      * it just reports the ship count. */
     CheckEqI32(Ship_ClearInterceptByStrategIdx(&env, 0), 2,
                "with no craft intercepting it reports the ship count and changes nothing");
+
+    /* The arm the emptied fixture cannot reach: a craft that IS chasing the index being cleared.
+     * The selection is bHomeBase < 0xFE && bIntercepting && nStrategIdx == index (0x5A614). */
+    apShip[0]->bIntercepting = 1;
+    apShip[0]->nStrategIdx = 0;
+    apShip[1]->bIntercepting = 1;
+    apShip[1]->nStrategIdx = 1;
+    CheckEqI32(Ship_ClearInterceptByStrategIdx(&env, 0), 2,
+               "the craft on index 0 is retargeted and the ship count is still reported");
+    CheckEqI32(apShip[0]->bIntercepting, 0, "the matching craft's intercept flag is cleared");
+    CheckEqI32(apShip[1]->bIntercepting, 1, "and the craft on the other index is left alone");
 
     for (int i = 0; i < 2; ++i) {
         free(apShip[i]);

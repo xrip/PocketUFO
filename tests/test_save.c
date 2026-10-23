@@ -1137,7 +1137,7 @@ static void TestShipsChunk(void)
     ObjectRecFull *apObj[2];
     ShipCtorEnv env;
 
-    printf("Save_WriteShips / Save_ReadShips / Ship_Ctor\n");
+    printf("Save_WriteShips / Save_ReadShips / Ship_Ctor @ 0x45c20\n");
 
     for (i32 o = 0; o < 2; ++o) {
         memset(&aObj[o], 0, sizeof(aObj[o]));

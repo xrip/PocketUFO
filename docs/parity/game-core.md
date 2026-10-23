@@ -24347,3 +24347,41 @@ Gates: 66/66 tests, 21523 checks, `frames: unchanged (93 reference pictures)`, `
 against the committed references (9 pictures)`, `check: ALL SIX GATES RAN`, `build/check139.log`.
 
 Measured after Part 139: **856** cited, **112** not (`tact` 93, `strat` 19).
+
+### Part 140 -- the ship family and the base-record leaves (10 `strat` rows)
+
+Rows closed: `BaseRec_Create @ 0x32c88`, `Ship_ctor @ 0x45c20`, `Ship_TickRefuelAtBase @ 0x45f04`,
+`BaseRec_AddItemQty @ 0x556e4`, `Ship_ClearInterceptByStrategIdx @ 0x5a5b8`,
+`Ship_ClearWaypointIntercept @ 0x5a830`, `Ship_FindIndexByStrategType @ 0x5a92c`,
+`StrategEntry_InitTravel @ 0x7f60c`, `Ship_ClearExpiredIntercepts @ 0x8128c`,
+`StrategList_AddItem @ 0x826e8`. As in Part 139 all ten were ported, called and checked already; the tests
+wrote the address as `(0x5a830)` or wrapped it across a comment line (`Ship_ClearExpiredIntercepts @` at the
+end of one line and `* 0x8128c` at the start of the next), which the cite rule cannot read.
+
+Three rows needed more than formatting, and each one says something about the test rather than the port.
+(1) `Ship_ClearInterceptByStrategIdx` was called by exactly one fixture, and that fixture had nothing
+intercepting anything -- the whole working arm never executed, so both a selection-gate mutation and dropping
+the count refresh at 0x5A62C measured 0 failing checks. `tests/test_ship.c` now arms one craft on the index
+being cleared and leaves another on a different index: the gate (0x5A614) fails 3 checks, and the same
+fixture pins that a non-matching craft is left alone. (2) `Ship_ClearWaypointIntercept` writes the intercept
+clear twice in the ORIGINAL -- 0x5A88C inside the type-5 waypoint arm and 0x5A8B8 unconditionally at the end
+-- so dropping either is inert by construction, in the original as in the port; its distinguishing store is
+the proximity timer parked at 0xFFFF (0x5A8B0) instead of restarted at 0, and mutating that fails 3 checks.
+(3) `BaseRec_Create`: nothing asserts the site byte the ctor receives (a +1 there measured 0), but two
+checks assert which object slot the ctor zeroes, so the slot argument is the mutation with teeth (3 checks).
+
+Teeth: 10 cases, 35 failing checks -- 5 cases / 19 checks (build/crops/mut140.log), 3 / 13
+(build/crops/mut140b.log), 1 / 3 (build/crops/mut140c.py). Inert attempts measured and explained: 3 (above).
+Anchor SKIPs: 2, both from guessing the source text (`+= nDelta` where the port writes a cast, `);` where it
+writes `) {`). 0 build failures, every file restored byte-exact, `grep -rn MUTATION src tests` empty.
+
+IDB: the note at 0x5a830 was extended with the two-clear duplication (456 chars, read back exact) and
+`idb_save` reported ok; the other nine already carry notes -- 0x32c88 (291), 0x45c20 (331 + 322),
+0x45f04 (180), 0x556e4 (275), 0x5a92c (474), 0x7f60c (1024), 0x8128c (84), 0x826e8 (575 + 1024). `bugs.tsv`
+gains the 0x5a830 duplicate row.
+
+Gates: 66/66 tests, 21526 checks, `frames: unchanged (93 reference pictures)`,
+`e2e pictures: unchanged against the committed references (9 pictures)`, `check: ALL SIX GATES RAN`,
+`build/check140.log`.
+
+Measured after Part 140: **866** cited, **102** not (`tact` 93, `strat` 9).

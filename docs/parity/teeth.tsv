@@ -145,21 +145,21 @@
 0x44988	SaveGame	564	save	yes	yes	yes	App_HookSaveGame|World_SaveSlot|SaveLoad_Slot	yes
 0x44bbc	LoadGame	3400	save	yes	yes	yes	App_HookLoadGame|App_ScriptDump|World_LoadSlot|Menu_LoadSlot|SaveLoad_Slot	yes
 0x45904	SaveSlot_FormatList	796	save	yes	yes	yes	App_HookNewGame|App_HookFormatSlots|App_HookLoadGame|App_InitStartupUi|World_TactFormatSlotListThunk|World_WireOptions|OptionsScreen_SetMusicVol0	yes
-0x32c88	BaseRec_Create	76	strat	yes	no	yes		no
+0x32c88	BaseRec_Create	76	strat	yes	yes	yes		no
 0x415cc	StrategItem_AllocAdd	52	strat	yes	yes	yes		yes
-0x45c20	Ship_ctor	620	strat	yes	no	yes	Ship_Ctor	yes
-0x45f04	Ship_TickRefuelAtBase	124	strat	yes	no	yes		yes
+0x45c20	Ship_ctor	620	strat	yes	yes	yes	Ship_Ctor	yes
+0x45f04	Ship_TickRefuelAtBase	124	strat	yes	yes	yes		yes
 0x45f80	Ship_TickRangeRecover	72	strat	yes	yes	yes		yes
 0x45fc8	Ship_TickRangeRecoverConsume	236	strat	yes	yes	yes		yes
 0x55650	BaseRec_ctor	148	strat	yes	yes	yes	BaseRec_Ctor	yes
-0x556e4	BaseRec_AddItemQty	56	strat	yes	no	yes		yes
+0x556e4	BaseRec_AddItemQty	56	strat	yes	yes	yes		yes
 0x5571c	BaseRec_SubItemQty	56	strat	yes	yes	yes	SoldierScreen_EquipSelected|BasePlane_UnloadWeaponStores|Ship_TickRangeRecoverConsume	yes
 0x5a484	Ship_RetargetTravel	308	strat	yes	yes	yes		yes
-0x5a5b8	Ship_ClearInterceptByStrategIdx	148	strat	yes	no	yes		yes
+0x5a5b8	Ship_ClearInterceptByStrategIdx	148	strat	yes	yes	yes		yes
 0x5a64c	Ship_LaunchIntercept	484	strat	yes	yes	yes		yes
-0x5a830	Ship_ClearWaypointIntercept	160	strat	yes	no	yes		yes
+0x5a830	Ship_ClearWaypointIntercept	160	strat	yes	yes	yes		yes
 0x5a8d0	Base_FindIndexBySiteId	92	strat	yes	yes	yes	World_HookFindBaseBySiteId|Base_FindIndexByTypeByte	yes
-0x5a92c	Ship_FindIndexByStrategType	136	strat	yes	no	yes	Ship_FindIndexById|Smap_ClearSelection	yes
+0x5a92c	Ship_FindIndexByStrategType	136	strat	yes	yes	yes	Ship_FindIndexById|Smap_ClearSelection	yes
 0x5a9b4	StrategList_FindByShipId	172	strat	yes	yes	yes	StrategList_FindIdxForShip	yes
 0x5aa60	Funding_ScoreToBarLevel	212	strat	yes	yes	yes		yes
 0x5ab34	Funding_DeltaToArrow	164	strat	yes	yes	yes		yes
@@ -277,11 +277,11 @@
 0x7e3b4	StrategList_AddAlienSiteIfValid	108	strat	yes	yes	yes		yes
 0x7e420	StrategList_MaybeSpawnCraft_Process	124	strat	yes	yes	yes	World_HookProcessEvents	yes
 0x7e49c	Geoscape_SpawnMissionSite	4464	strat	yes	yes	yes	World_FillMissionCtx	yes
-0x7f60c	StrategEntry_InitTravel	1420	strat	yes	no	yes		yes
+0x7f60c	StrategEntry_InitTravel	1420	strat	yes	yes	yes		yes
 0x7fb98	Strateg_ConfirmInterceptTarget	280	strat	yes	yes	yes		yes
 0x7fcb0	StrategList_ProcessEvents	4904	strat	yes	yes	yes	World_ProcessEvents	yes
 0x80fd8	StrategList_UpdateMotion	692	strat	yes	yes	yes		yes
-0x8128c	Ship_ClearExpiredIntercepts	236	strat	yes	no	yes		yes
+0x8128c	Ship_ClearExpiredIntercepts	236	strat	yes	yes	yes		yes
 0x81378	Strateg_CalcDetect	1488	strat	yes	yes	yes		yes
 0x81948	StrategList_UpdateDetect	224	strat	yes	yes	yes		yes
 0x81a2c	StrategList_CountActive	112	strat	yes	yes	yes	CountActiveCraft	yes
@@ -294,7 +294,7 @@
 0x821c4	Smap_GetTileAtMode	128	strat	yes	yes	yes	Smap_GetOverlayAtMode	yes
 0x82244	Smap_GetTileAtScreen	128	strat	yes	yes	yes	App_HoverOnRegion|SmapHit_CellAt	yes
 0x822c4	Smap_DrawStrategIcons	1060	strat	yes	yes	yes		yes
-0x826e8	StrategList_AddItem	968	strat	yes	no	yes	StrategItem_ctor	yes
+0x826e8	StrategList_AddItem	968	strat	yes	yes	yes	StrategItem_ctor	yes
 0x82ab0	StrategList_RemoveAt	252	strat	yes	yes	yes		yes
 0x82bd4	StrategItem_ctor	20	strat	yes	yes	yes	StrategItem_AllocAdd	yes
 0x82be8	Smap_HitTestStrategSelect	3088	strat	yes	yes	yes	World_GeoHitTestStrategSelect|SmapHit_CellAt|Ptr_StrategHit|Base_FindIndexByTypeByte	yes

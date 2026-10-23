@@ -1,6 +1,6 @@
-/* test_strateg.c - StrategList_UpdateMotion @ 0x80fd8, StrategList_UpdateDetect
- * @ 0x81948, Strateg_CalcDetect @ 0x81378, Ship_ClearExpiredIntercepts @
- * 0x8128c, CountActive @ 0x81a2c, FindByShipId @ 0x5a9b4.
+/* test_strateg.c - StrategList_UpdateMotion @ 0x80fd8, StrategList_UpdateDetect @ 0x81948,
+ * Strateg_CalcDetect @ 0x81378, Ship_ClearExpiredIntercepts @ 0x8128c, CountActive @ 0x81a2c,
+ * FindByShipId @ 0x5a9b4.
  *
  * The pinned oddities: the proximity distance is sqrt(dx^2 + dy^2 + thresh)
  * with the threshold INSIDE the root; the wrapped base distance is
@@ -153,7 +153,7 @@ static void TestFindIdxForShip(void)
 
 static void TestAddItem(void)
 {
-    printf("StrategList_AddItem\n");
+    printf("StrategList_AddItem @ 0x826e8\n");
     PtrArray list;
     i32 seed = 0;
     StrategItem *p;
@@ -349,7 +349,7 @@ static void TestRollCraftStats(void)
 
 static void TestAddAlienSiteAndTravel(void)
 {
-    printf("StrategList_AddAlienSiteIfValid @ 0x7e3b4, StrategEntry_InitTravel\n");
+    printf("StrategList_AddAlienSiteIfValid @ 0x7e3b4, StrategEntry_InitTravel @ 0x7f60c\n");
     PtrArray list;
     StrategItem item;
     StrategItem *p;
@@ -800,7 +800,7 @@ static void TestCalcDetect(void)
 
 static void TestUpdateDetectAndIntercepts(void)
 {
-    printf("UpdateDetect / ClearExpiredIntercepts\n");
+    printf("StrategList_UpdateDetect @ 0x81948, Ship_ClearExpiredIntercepts @ 0x8128c\n");
     StrategList list;
     GeoscapeWorld world;
     StrategHooks hooks = { Hook_Msg, Hook_FindBase, 0 };

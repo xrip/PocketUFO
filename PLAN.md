@@ -6356,3 +6356,17 @@ Progress (Part 139): 20 `strat` rows close -- 856 cited / 112 uncited (`tact` 93
   0x557BC row; the other finding was in a test). No IDB note (the census found a comment at all 20 addresses).
   Gates: 66/66 tests, 21523 checks, 93 frames and 9 e2e pictures unchanged. Next: `tact` 93 and `strat` 19
   remain; PLAN rows 117a, 118a, 118b, 118c, 119a, 119b's 4994 half, 120b and 121a stay open.
+Progress (Part 140): 10 `strat` rows close -- 866 cited / 102 uncited (`tact` 93, `strat` 9). Same shape as
+  Part 139 (the addresses were written as `(0x5a830)` or wrapped across a comment line), plus three rows where
+  the check could not see the row. `Ship_ClearInterceptByStrategIdx` had one fixture and that fixture had
+  nothing intercepting, so its whole working arm was untested -- both the selection gate (0x5A614) and the
+  count refresh (0x5A62C) measured 0 failing checks; a fixture that arms one craft on the cleared index and
+  leaves another on a different index makes the gate fail 3. `Ship_ClearWaypointIntercept` clears the intercept
+  flag twice in the original (0x5A88C and 0x5A8B8), so either drop is inert by construction -- recorded in the
+  IDB note and a `bugs.tsv` duplicate row -- and its teeth come from the timer park at 0x5A8B0. Nothing
+  asserts the site byte `BaseRec_Ctor` receives, but the roster slot it zeroes is asserted, so that is the
+  mutation with teeth. Teeth: 10 cases, 35 failing checks, 3 inert attempts explained, 2 anchor SKIPs, 0 build
+  failures (mut140.log, mut140b.log, mut140c.py). Gates: 66/66 tests, 21526 checks, 93 frames and 9 e2e
+  pictures unchanged. Next: `tact` 93 and `strat` 9 remain (`Base_DemolishFacility`, `Base_TransferTacticalLoot`,
+  `Base_StripAllCraftCargo`, the `BasePlane_*` trio, `Geoscape_TickHourly`, `Geoscape_UiFocusPrev/Next`); PLAN
+  rows 117a, 118a, 118b, 118c, 119a, 119b's 4994 half, 120b and 121a stay open.
