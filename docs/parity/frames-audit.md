@@ -47,9 +47,17 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
    (`BlitSrcRect 0,0,240,320 idx 0x64`) belongs to the DIRTY arm, so the map showing through in the index frame matches
    the arm order. Unresolved: what the pad blitted at 0x9B600 actually contains in this state (PadImage_ctor in
    `Ui_InitBaseInfo @ 0x9ddc8`, freed at 0x9B564..0x9B584), and why the selector shows four identical rows.
-2. `econ_buy_craft_queued` / `econ_hangar_cap_full` -- rows 88..120 are a filled panel (0x5A002C..0x620834), and a bright
-   magenta frame box sits over the panel header row with no text in it. Needs the BuySell panel's own row/highlight arm
-   (`BuySellScreen_Draw @ 0x93DEC`, the scroll list) and the stored cursor row the fixture left behind.
+2. `econ_buy_craft_queued` / `econ_hangar_cap_full` / `transfer_open` / `transfer_staged` / `transfer_committed` -- measured:
+   the thing the user saw is one rectangle, x 64..177, y 94..110 (114 x 17), a bright frame (0xAC009D) around a filled
+   interior 0x5A0055, different from the panel field around it (0x5A0028/0x5A002C), with zero text-coloured pixels inside.
+   Its IDB origin is the buy/sell tail arm: 0x93EB4..0x93F04 is gated on the root block's byte 0x18652D
+   (`LDRB R3,[R7,#0x35]`, R7 = 0x1864F8 from Render_Frame at 0x2232C) and, while set, feeds `nSmapCursorX/nSmapCursorX`
+   read SIGNED into `UiScrollList_TrackHold` for pBuySellPanelB (0x161A00) AND pBuySellPanelC -- the same cursor position
+   for both lists. TrackHold stores `row = (nY - [panel+0x1B88]) / [panel+0x1B9C]`, sets the hold byte 0xBD0 while the
+   cursor is inside the panel's box, clears it otherwise. So the box is a hover/hold highlight, not a panel.
+   Unresolved: whether the row the cursor maps to is the row the fixture pressed (a fixture-state artifact) or a wrong
+   row index in the port -- the highlight sits above the craft list, where the pressed row is not. Next check: the draw
+   site that turns byte 0xBD0 into this rect (which panel's geometry, drawn before or after the row text).
 3. `econ_hangar_combat` -- does the original's hangar arm put controls in the bottom strip in this state?
 4. `tact_hud_*` and `tact_briefing*` / `debrief_banner` -- thin bands at rows 1..16 and 311..319: compare against the
    tact HUD draw arms' pad rects before judging.
