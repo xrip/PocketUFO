@@ -124,6 +124,36 @@ static u8             g_nMapPhase;  /* nMapPhase @ 0x1139EF (Map + 0x37): the ar
                                      * byte the original's 0xC352 handler wraps (PocketUFO_WndProc 0xA0988) */
 static UiControlHitCtx g_hit;
 
+/* Centre the view on a cell the way the fixtures want it (the cell at 160,120), then apply the clamp
+ * the engine itself applies. Smap_ClampScrollY @ 0x837f8 bounds scrollY to
+ * [-(nMapH/2-160), stripPad->uHeight-(nMapH/2-160)+nMapH-320] for every screen id but 2, and for
+ * those ids Geoscape_BlitMapView paints the map pad at ONE y (the two vertical wrap copies belong to
+ * the id-2 arm at 0x8C418..0x8C524). A scroll outside that window leaves a band of surface no legal
+ * camera can produce: on the shipped 800x400 map with the 84-tall strip the window is [-40, 124], and
+ * a fixture pair outside it painted 41 rows black at the top (geoscape_ufo_enroute) or 80 rows between
+ * the map's bottom edge and the strip (geoscape_terror_site). Returns true when the centred pair was
+ * already inside the window, i.e. when the cell really does sit at 160,120. */
+static bool FixtureCenterOnCell(i32 nCellX, i32 nCellY)
+{
+    const i32 nWantY = nCellY - g_world.view.nMapH / 2 + 40;
+
+    g_world.view.nScrollX = nCellX - g_world.view.nMapW / 2 - 40;
+    g_world.view.nScrollY = nWantY;
+    Smap_ClampScrollY(&g_world.view, (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight); /* 0x83830/0x8385C */
+    return g_world.view.nScrollY == nWantY;
+}
+
+/* The window itself, stated as a testable invariant rather than as a property of the helper: it is what
+ * keeps the map pad covering the screen for every screen id but 2 (0x83830/0x8385C). */
+static bool FixtureViewIsLegal(void)
+{
+    const i32 nHalfH = g_world.view.nMapH / 2 - 160;
+    const i32 nStripH = (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight;
+
+    return g_world.view.nScrollY >= -nHalfH
+        && g_world.view.nScrollY <= nStripH - nHalfH + g_world.view.nMapH - 320;
+}
+
 /* The original's empty facility cell is NOT a zero cell. Game_StartNew's own stamp (0x9485C..0x948EC) clears
  * the three tile layers and the whole buildDays lane but writes the 0xFF sentinel into the facType lane of all
  * eight base blocks (0x94908: MOV R11,#0xFF with STRB R11,[R0,#0x48] at 0x9491C). Every reader keys on that
@@ -11388,8 +11418,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                 Check(pEntry != NULL && pEntry->nType == 1,
                                       "107.f the entry the spawn added stands at the base's cell (0x2CBC8)");
                                 if (pEntry != NULL) {
-                                    g_world.view.nScrollX = pEntry->nX - g_world.view.nMapW / 2 - 40;
-                                    g_world.view.nScrollY = pEntry->nY - g_world.view.nMapH / 2 + 40;
+                                    (void)FixtureCenterOnCell(pEntry->nX, pEntry->nY);
                                 }
                             }
                         }
@@ -12705,11 +12734,13 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             PressCtl(g_world.ui.apRootCtl[7]); /* root control 7 = GameTime_SetSpeedIdx5 (0x85124 chain) */
             CheckEqI32(g_world.geo.world.nTickSeconds, 3600,
                        "the fastest speed button is pressed live (0x84F00..0x85158, Part 100.2)");
-            g_world.view.nScrollX = pUfo->nX - g_world.view.nMapW / 2 - 40;
-            g_world.view.nScrollY = pUfo->nY - g_world.view.nMapH / 2 + 40;
+            const bool bSpawnCentred = FixtureCenterOnCell(pUfo->nX, pUfo->nY);
             Check(ScreenForCell(&g_world.view, pUfo->nX, pUfo->nY, &nPx, &nPy)
-                      && nPx == 160 && nPy == 120,
-                  "the spawn cell sits dead centre of the map view after the fixture's scroll pair");
+                      && FixtureViewIsLegal()
+                      && (bSpawnCentred ? (nPx == 160 && nPy == 120)
+                                        : (nPy >= 0 && nPy < PUFO_SURF_H - (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight)),
+                  "the spawn cell stands in a camera the engine can hold: dead centre when the cell sits inside "
+                  "the 0x837f8 window, otherwise held at the clamp edge and still above the strip (0x83830/0x8385C)");
             nOldX = pUfo->nX;
             nOldY = pUfo->nY;
             while (nPulses < 40 && pUfo->nX == nOldX && pUfo->nY == nOldY) {
@@ -12728,8 +12759,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             pUfo->bVisible = 1; /* fixture: the byte the proximity store 0x811c8 writes, proven live in section 16 */
             Check(ScreenForCell(&g_world.view, pUfo->nX, pUfo->nY, &nPx, &nPy),
                   "the flown-to cell stands on the map view");
-            g_world.view.nScrollX = pUfo->nX - g_world.view.nMapW / 2 - 40;
-            g_world.view.nScrollY = pUfo->nY - g_world.view.nMapH / 2 + 40;
+            (void)FixtureCenterOnCell(pUfo->nX, pUfo->nY);
             (void)ScreenForCell(&g_world.view, pUfo->nX, pUfo->nY, &nPx, &nPy);
             {
                 i32 nX0 = nPx, nY0 = nPy, nDiff = 0;
@@ -12771,8 +12801,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     (const StrategItem *)PtrArray_Get(&g_world.strategList, nBaseIdx);
                 if (pBase != NULL && ScreenForCell(&g_world.view, pBase->nX, pBase->nY, &nPx, &nPy)) {
                     i32 nX0 = nPx, nY0 = nPy, nDiff = 0;
-                    g_world.view.nScrollX = pBase->nX - g_world.view.nMapW / 2 - 40;
-                    g_world.view.nScrollY = pBase->nY - g_world.view.nMapH / 2 + 40;
+                    (void)FixtureCenterOnCell(pBase->nX, pBase->nY);
                     (void)ScreenForCell(&g_world.view, pBase->nX, pBase->nY, &nPx, &nPy);
                     nX0 = nPx; nY0 = nPy;
                     if (nX0 + 16 > PUFO_SURF_W) { nX0 = PUFO_SURF_W - 16; }
@@ -12895,13 +12924,22 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                 /* The site's own map cell, clear of the UFO: centre, press, and read the row the
                  * press arm builds (TEXTS[1145] + itoa(nSiteId) -- 0x82E6C/0x8301C; the 1146 overwrite
                  * at 0x82FE4 is the type-3 disc row 100.4 pinned). */
-                g_world.view.nScrollX = pSite->nX - g_world.view.nMapW / 2 - 40;
-                g_world.view.nScrollY = pSite->nY - g_world.view.nMapH / 2 + 40;
+                const bool bSiteCentred = FixtureCenterOnCell(pSite->nX, pSite->nY);
                 Check(ScreenForCell(&g_world.view, pSite->nX, pSite->nY, &nPx, &nPy)
-                          && nPx == 160 && nPy == 120,
-                      "the site cell sits dead centre of the map view");
+                          && FixtureViewIsLegal()
+                          && (bSiteCentred ? (nPx == 160 && nPy == 120)
+                                           : (nPy >= 0 && nPy < PUFO_SURF_H - (i32)g_world.ui.apPad[GEOUI_PAD_186BBC]->uHeight)),
+                      "the site cell sits in a camera the engine can hold: dead centre inside the 0x837f8 window, "
+                      "otherwise clamped to its edge and still above the strip (0x83830/0x8385C)");
                 {
-                    i32 nX0 = 152, nY0 = 112, nDiff = 0, nPhaseTry = 0;
+                    /* The 16x16 window sits 8 px up-left of the cell's own pixel -- the same window the
+                     * dead-centre case used (152,112 = 160-8,120-8) -- so it follows the cell wherever the
+                     * clamp leaves it. */
+                    i32 nX0 = nPx - 8, nY0 = nPy - 8, nDiff = 0, nPhaseTry = 0;
+                    if (nX0 < 0) { nX0 = 0; }
+                    if (nY0 < 0) { nY0 = 0; }
+                    if (nX0 + 16 > PUFO_SURF_W) { nX0 = PUFO_SURF_W - 16; }
+                    if (nY0 + 16 > PUFO_SURF_H) { nY0 = PUFO_SURF_H - 16; }
                     /* The row index is nBase + animPhase + 6, and some sprite frames of an animated
                      * row are blanks; the probe tries the phases and keeps the first that paints. */
                     for (nPhaseTry = 0; nPhaseTry < 4 && nDiff == 0; ++nPhaseTry) {

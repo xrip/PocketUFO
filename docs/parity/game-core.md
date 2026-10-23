@@ -25150,3 +25150,52 @@ measurement is the card's own control rectangles, taken from `geoframe`'s zoom/s
 No `src/` file changed in this Part, so the six-gate run recorded for Part 154 still describes the tree
 (build/check154c.log: release 66/66, 21578 checks, coverage check OK, 93 frames, 10 e2e pictures, ALL SIX GATES RAN,
 Debug ctest exit 0).
+
+
+## Part 156 - two geoscape pictures painted bands no legal camera can produce, and the fixture that wrote them
+
+### The sweep, and a measurement bug worth recording
+
+Every test picture (93 in tests/ref, 10 live e2e) was re-read with a pure-python PPM reader and asked one
+question per row: are all 240 pixels index 0? The first sweep answered "no picture has a black band", which
+was false: the test compared a bytes slice with a tuple, and `b'\x00\x00\x00' == (0,0,0)` is never true. The
+same bug made a black row count as "lit". The corrected sweep lists 21 pictures with a full-width black band:
+15 in tests/ref plus 00_mainmenu / 10_menu_at_boot / 11_slot_list / 13_tact_unit_panel in the e2e set.
+Only two of them are geoscape frames whose band is a hole in the map, and those two are fixed here.
+
+### Why a geoscape band is impossible in the original
+
+Geoscape_BlitMapView (0x8C2B0..0x8C690, ported at src/pufo/game/pufo_geoscape.c:2246) wraps the X axis for
+every screen id and the Y axis only for id 2: 0x8C3F0's `BNE` sends every other id past the Y wrap, and the
+second map copy at 0x8C4E4 sits inside the `LDR R0,[R9] / CMP R0,#2` arm. For every other id the map pad is
+blitted at ONE origin, `-(nScrollY + (nMapH/2 - 160))` (0x8C4AC..0x8C4B8). So the vertical coverage of the
+240x320 screen rests entirely on the clamp Smap_ClampScrollY @ 0x837f8 (lower 0x83830, upper 0x8385C), which
+Smap_ScrollBy (0x82124) and Smap_ZoomIn (0x82080) apply and Smap_OnPointerUp inlines at 0x84848/0x84870.
+With the shipped earth100 pad at 800x400 and the strip pad 84 tall (its nOriginY is 236, test_geoiinit.c:223)
+that window is nScrollY in [-40, 124]: the map then covers every row down to at least 236 and the strip covers
+236..319. No legal camera leaves a band.
+
+### What the fixtures did instead
+
+Five fixture sites wrote the view by hand: `nScrollX = nX - nMapW/2 - 40; nScrollY = nY - nMapH/2 + 40`, which
+puts the cell at screen (160,120) instead of the engine's (120,160) and bypasses the clamp. Two of them landed
+outside the window -- the rolled UFO spawned at cell 457,74 (nScrollY = -86, below the -40 floor: 41 black rows
+at the top, geoscape_ufo_enroute) and the terror site at 587,370 (nScrollY = 210, above the 124 ceiling: the
+map's bottom edge moved to row 155 and 80 rows stayed unpainted between it and the strip, geoscape_terror_site).
+The pictures were therefore reference frames of states the original cannot hold.
+
+Fix, test-side only: `FixtureCenterOnCell` writes the same centring and then calls the engine's own
+`Smap_ClampScrollY(&g_world.view, apPad[GEOUI_PAD_186BBC]->uHeight)`, and `FixtureViewIsLegal` states the
+window as an invariant the checks read. The terror-site glyph probe hard-coded its 16x16 window at 152,112 --
+the dead-centre cell minus 8 -- and now takes `nPx - 8, nPy - 8`, so it follows the cell wherever the clamp
+leaves it. Teeth: deleting the clamp call gives `FAIL the spawn cell stands in a camera the engine can hold`
+and `FAIL the site cell sits in a camera the engine can hold`; restored, 2240 checks pass (build/mut156_*.log).
+
+Four references moved and are now the committed ones: the two geoscape pictures (bands gone, looked at as PNGs
+-- the terror site now shows the panel, the map and the strip in one frame) plus options_load_tab and
+options_save_tab, which draw later in the same run and inherited the corrected camera.
+
+IDB upkeep: the repeatable comment at 0x187054 credited the store at 0x836A0 to `Smap_ClampScrollY`; 0x836A0 is
+`STR R0,[R11]` inside Smap_HitTestStrategSelect (0x82BE8..0x837F8) and the clamp function starts at 0x837F8 --
+the attribution now says Smap_HitTestStrategSelect. Smap_ClampScrollY's own comment now records the consequence
+above (one map copy per non-2 id, hence the unpainted band) and the measured window [-40, 124]. Both read back.

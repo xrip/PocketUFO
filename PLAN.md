@@ -6547,3 +6547,23 @@ world every player craft is parked at -6000/-6000 with bAtBase set, so the first
 to press -- which means the game's own way of getting a craft onto the map (the radar/intercept screen: RadarScreen_SetActive
 @ 0x61464 writes the pause latch on entry and clears it on exit, Geoscape_OnRadarListClick stores at 0x85510/0x856EC/0x85764,
 Smap_ConfirmSelectedAlt @ 0x853e4 is its unpause-and-clear tail) has to be measured before the order can be walked.
+
+Done (Part 156, screenshot audit -- first fixed pair): a corrected sweep of all 103 test pictures (the first pass was
+wrong: it compared a bytes slice with a tuple, so every black row counted as painted) lists 21 with a full-width black
+band. Two are geoscape frames with a genuine hole: geoscape_ufo_enroute rows 1..41 and geoscape_terror_site rows
+156..235. Pinned in the IDB why that is impossible in the original -- Geoscape_BlitMapView blits the map pad at ONE
+originY for every screen id but 2 (0x8C3F0 BNE past the Y wrap; the second copy at 0x8C4E4 is inside the CMP R0,#2
+arm), so coverage is the clamp Smap_ClampScrollY @ 0x837f8's window [-40, 124] (800x400 earth100, 84-tall strip whose
+nOriginY is 236). The fixtures wrote `nScrollY = nY - nMapH/2 + 40` at five sites and two landed outside it (spawn cell
+457,74 -> -86; terror site 587,370 -> 210), so the pictures encoded cameras the engine cannot hold. Tests now centre
+through the engine's own Smap_ClampScrollY and assert the window (FixtureViewIsLegal); the terror-site glyph probe no
+longer hard-codes 152,112. Teeth: dropping the clamp call -> 2 FAILs; restored -> 2240 checks, test_geoscapeframe green.
+Four references re-recorded (the two geoscape pictures plus options_load_tab / options_save_tab, which inherit the
+camera) and looked at as PNGs. IDB: 0x187054's comment credited the 0x836A0 store to Smap_ClampScrollY -- 0x836A0 is
+`STR R0,[R11]` inside Smap_HitTestStrategSelect (the clamp is at 0x837F8); Smap_ClampScrollY's comment now records the
+one-copy coverage rule and the window. New open item 156a: judge the remaining 15 banded pictures against the IDB draw
+arms (tact_hud_minimap 16..63, geoscape_descent_panel's isolation bands, the thin 1..16-row bands on tact_briefing /
+tact_mission_urban / debrief_banner / tact_hud_promotion / tact_hud_inventory, the transfer_*/econ_* 85..87 band and its
+empty rectangle, ufopaedia_index, and the 4 e2e menu/slot bands), plus the audit's 28 tact DumpFrame sites still without
+their draw call identified. Still open: 155a, 154a, PLAN 122a's tail, 117a, 118a, 118b, 118c, 119b's 4994 half, 121a,
+the 4 half-written bugs.tsv rows.

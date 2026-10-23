@@ -582,3 +582,13 @@ flag 16, 6 base assault/screen 20) is what the day-gated roll selects. Corrected
 IS Smap_OnPointerUp @ 0x84688 (0x8EC74) -- the port already wires World_SmapPointerUpThunk. Measured negative: a map press at
 the recentred (120,160) does not select or launch (status flag 0, list unchanged), so 122a's next step is the card flow whose
 ОК is Smap_CancelTarget's Ship_LaunchIntercept at 0x8427c.
+coverage (Part 156): audited all 103 test pictures for unfilled rows. Geoscape coverage is pinned in the IDB:
+Geoscape_BlitMapView wraps X for every screen id but Y and the second map copy only for id 2 (0x8C3F0 BNE,
+0x8C4E4 inside the CMP #2 arm), so for every other id the map is one blit at -(scrollY + nMapH/2 - 160) and the
+clamp Smap_ClampScrollY @ 0x837f8 (0x83830/0x8385C) is what keeps the screen covered -- window [-40, 124] on the
+shipped 800x400 earth100 with the 84-tall strip at nOriginY 236. Two reference frames (geoscape_ufo_enroute rows
+1..41, geoscape_terror_site rows 156..235) came from fixtures writing scrollY by hand outside that window; the
+fixtures now call Smap_ClampScrollY and a FixtureViewIsLegal check pins the window (teeth: 2 FAILs without the
+call). Four references re-recorded. IDB: 0x187054's comment credited 0x836A0 to the wrong function (it is inside
+Smap_HitTestStrategSelect); Smap_ClampScrollY's comment now carries the coverage consequence. Open 156a: the other
+15 band pictures, the empty box in econ_buy_craft_queued / econ_hangar_cap_full, ufopaedia_index, the e2e menu bands.
