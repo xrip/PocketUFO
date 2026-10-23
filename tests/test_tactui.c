@@ -1157,8 +1157,8 @@ static void TestItemQueries(void)
 
     /* The negative ids are outside the modelled space; both must default, not
      * crash. Action ids are unsigned in use, so these only guard the API. */
-    CheckEqI32(TactItem_GetHandSlot(-1), 0, "  negative id -> right (default)");
-    CheckEqI32(TactItem_GetEquipDelta(-1), 0, "  negative id -> 0 (default)");
+    CheckEqI32(TactItem_GetHandSlot(-1), 0, "  TactItem_GetHandSlot @ 0x3e620 maps a negative id to the right hand");
+    CheckEqI32(TactItem_GetEquipDelta(-1), 0, "  TactItem_GetEquipDelta @ 0x3e69c maps a negative id to 0");
 
     /* Exhaustive agreement check: for every id in a wide range, the two functions
      * must return one of their declared values, never something else. This catches a

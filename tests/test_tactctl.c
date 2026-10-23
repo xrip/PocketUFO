@@ -59,7 +59,7 @@ static void TestCursor(void)
 
     cursor.nX = 0;
     cursor.nY = 0;
-    Check(MapCursor_IsValid(&cursor, &map), "  origin valid");
+    Check(MapCursor_IsValid(&cursor, &map), "  MapCursor_IsValid @ 0x275fc accepts the origin");
 
     cursor.nX = 39;
     cursor.nY = 29;

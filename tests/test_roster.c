@@ -594,7 +594,7 @@ static void TestSoldierSearches(void)
                "  finds the first small live unit of rank 2");
     /* Starting at the large one: it is skipped, and the dead one after it too. */
     CheckEqI32(Soldier_FindNextSmallByType(apUnits, 5, 2, 3), -1,
-               "  skips the large unit and the dead one");
+               "Soldier_FindNextSmallByType @ 0x47164 skips the large unit and the dead one");
     CheckEqI32(Soldier_FindNextSmallByType(apUnits, 5, 2, 1), 1,
                "  nStart on a match returns it");
     CheckEqI32(Soldier_FindNextSmallByType(apUnits, 5, 9, 0), -1,
@@ -608,7 +608,7 @@ static void TestSoldierSearches(void)
 
     CheckEqI32(Soldier_CountSmallByType(apUnits, 5, 2), 1,
                "  only one rank-2 small live unit counts");
-    CheckEqI32(Soldier_CountSmallByType(apUnits, 5, 1), 2, "  two rank-1 units");
+    CheckEqI32(Soldier_CountSmallByType(apUnits, 5, 1), 2, "  Soldier_CountSmallByType @ 0x471f8 counts two rank-1 units");
     CheckEqI32(Soldier_CountSmallByType(apUnits, 5, 9), 0, "  no rank-9 units");
 
     /* A large unit alone must not count even with the right rank and full HP. */
@@ -662,7 +662,7 @@ static void TestPickBestScore(void)
     aUnits[3].uKills = 0;  aUnits[3].uMissions = 0;  /* 0  */
 
     CheckEqI32(Soldier_PickBestScoreAmong(apUnits, anIdx, &nBest, &nBestIdx), 30,
-               "best score is 5*(kills + 2*missions)");
+               "Soldier_PickBestScoreAmong @ 0x46fe0 scores 5*(kills + 2*missions)");
     CheckEqI32(nBestIdx, 1, "winning slot index reported");
 
     /* A single nonzero slot wins. */

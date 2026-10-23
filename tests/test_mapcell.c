@@ -334,7 +334,7 @@ static void TestGeometry(void)
 
     Check(!Map_IsValidCell(&map, -1, 0, 0), "  negative X rejected");
     Check(!Map_IsValidCell(&map, 0, -1, 0), "  negative Y rejected");
-    Check(Map_IsValidCell(&map, 0, 0, 0), "  origin valid");
+    Check(Map_IsValidCell(&map, 0, 0, 0), "  Map_IsValidCell @ 0x2bc9c accepts the origin");
     Check(Map_IsValidCell(&map, 39, 29, 3), "  last cell valid");
     Check(!Map_IsValidCell(&map, 40, 0, 0), "  X == 10*dimX rejected");
     Check(!Map_IsValidCell(&map, 0, 30, 0), "  Y == 10*dimY rejected");

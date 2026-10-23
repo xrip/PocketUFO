@@ -621,7 +621,7 @@ static void TestExtraSpr(void)
 
     s.multiOrAnim.anim.uExtraSprBase = 2;
     s.multiOrAnim.anim.uFacingResetH = 1; /* index = anMc1Base[2] + 1 = 2 */
-    Check(Unit_GetExtraSpr(&s) == apIndex[2], "extra spr: base + facing index");
+    Check(Unit_GetExtraSpr(&s) == apIndex[2], "Unit_GetExtraSpr @ 0x2e59c is base + the facing index");
 
     /* Only the low byte of uFacingResetH is added; 0x0100 -> 0 -> NULL. */
     s.multiOrAnim.anim.uFacingResetH = 0x0100;
@@ -739,7 +739,7 @@ static void TestCanStepExitDir(void)
     /* nDir 0 steps (0,-1,0), so the probe base is (5,5,1). With no wall sprite
      * the direction is clear. */
     Check(Unit_CanStepExitDir(&origin, 0, &geom, GridLookup, s_aGrid),
-          "clear when the probe cell has no wall");
+          "Unit_CanStepExitDir @ 0x36d68 is clear when the probe cell has no wall");
 
     /* A wall-B sprite whose byte 0x2F is set blocks the step. bTransparent 0 and
      * bBlocksMove 0 make the blank/blocking test pass. */
@@ -839,7 +839,7 @@ static void TestSpotCellOccupant(void)
     ctx.pnTrajFront1036 = &nFlag1036;
 
     /* No occupant. */
-    Check(!Unit_SpotCellOccupant(&viewer, &cell, &ctx), "empty cell returns false");
+    Check(!Unit_SpotCellOccupant(&viewer, &cell, &ctx), "Unit_SpotCellOccupant @ 0x48138 returns false for an empty cell");
 
     /* Same-side occupant: reported but not queued. */
     cell.pUnit = &occ;
@@ -948,7 +948,7 @@ static void TestScanVisibleUnits(void)
     rosters.nEnemy = 2;
 
     CheckEqI32(Unit_ScanVisibleUnits(&viewer, NULL, ScanLookup, NULL, &ctx, &rosters,
-                                     &pScratch), 0, "scan returns 0");
+                                     &pScratch), 0, "Unit_ScanVisibleUnits @ 0x4834c returns 0");
     /* The scan clears the flag on entry; Unit_SpotCellOccupant sets it again when
      * it queues a spotted unit, so the value that survives is 1. */
     CheckEqI32(nFlag1036, 1, "cleared on entry, then set again by the spot");
@@ -987,7 +987,7 @@ static void TestRecalcInventory(void)
     hooks.pfnAmmoWeight = AmmoWeight;
 
     /* Empty inventory: just the base burden of 1. */
-    CheckEqI32(Unit_RecalcInventoryStat(&unit, &hooks), 1, "empty inventory burden 1");
+    CheckEqI32(Unit_RecalcInventoryStat(&unit, &hooks), 1, "Unit_RecalcInventoryStat @ 0x49ef0 puts an empty inventory at 1");
 
     /* One hand item of weight 5, no ammo. */
     unit.pHandL = &handL;

@@ -6616,7 +6616,7 @@ static void TestRadarUpdate(void)
     CheckEqI32(g_nUpdSampleId, 7, "UiLineList_AppendWithSound plays sample 7");
     Check(strcmp(g_szUpdName, szRef) == 0,
           "the craft's display name lands in the 0x186488 caption scratch");
-    CheckEqI32((i32)g_bUpdShipCount, 1, "Ship_RemoveWithCargo drops the craft (0x613A0)");
+    CheckEqI32((i32)g_bUpdShipCount, 1, "Ship_RemoveWithCargo @ 0x36830 drops the craft (store at 0x613A0)");
     CheckEqI32(g_apUpdCraft[0]->bId, 7, "the survivor keeps its id");
     CheckEqI32(g_apUpdCraft[0]->nSlotIdx, 0, "and its hangar slot is renumbered (0x36B80)");
     CheckEqI32((i32)g_nUpdSoldierCount, 0, "the soldier assigned to the removed craft is deleted");

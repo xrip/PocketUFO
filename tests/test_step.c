@@ -190,7 +190,7 @@ static void TestNoAnchor(World *pW)
     printf("Map_ProbeStepOccupants (no anchor needed)\n");
     World_Setup(pW, &ctx, 0, false, 2);
 
-    Check(Map_ProbeStepOccupants(&ctx), "  step accepted");
+    Check(Map_ProbeStepOccupants(&ctx), "  Map_ProbeStepOccupants @ 0x2778c accepts the step");
     CheckEqI32(pW->probe.bReanchored, 0, "  re-anchor flag stays clear");
     Check(pW->probe.pDstCell == &pW->aCells[1][2][3], "  candidate cell unchanged");
     CheckEqI32(pW->probe.nDstLayer, 1, "  candidate layer unchanged");

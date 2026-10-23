@@ -500,3 +500,6 @@ Measured after Part 144: **922** cited, **46** not (`tact` 46).
 coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 9 function comments written and read back exact (0x260c0, 0x26f88, 0x26fa8, 0x27324, 0x3242c, 0x3a2ac, 0x49410, 0x49eb8, 0x4d950), IDB saved. No new bugs.tsv row this Part.
 
 Measured after Part 145: **931** cited, **37** not (`tact` 37).
+coverage: 972/1103 functions (88.1%), 596888/598792 bytes (99.7%), tests: 66/66 passing, check: OK, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures). IDB: 15 function comments appended (pin lines only, no existing analysis overwritten) and read back, IDB saved. No new bugs.tsv row.
+
+Measured after Part 146: **946** cited, **22** not (`tact` 22).

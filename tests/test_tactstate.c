@@ -774,7 +774,7 @@ static void TestQueueDoorAction(void)
     cellA.pWallSprB = &wallB;
     aGrid[1][5][5].pWallSprB = &wallB;
     wallB.gap_2f[0] = 1;
-    Check(Map_QueueDoorAction(&state, &cellA, &cellB, 0, &ctx), "door queued");
+    Check(Map_QueueDoorAction(&state, &cellA, &cellB, 0, &ctx), "Map_QueueDoorAction @ 0x2bd00 queues the door action");
     CheckEqI32(state.nQueueLen, 2, "open + door entries");
     CheckEqI32(state.aQueue[0].nCmd, TACTCMD_OPEN, "first entry is open (2)");
     CheckEqI32(state.aQueue[1].nCmd, TACTCMD_DOOR, "second entry is door (3)");

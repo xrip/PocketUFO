@@ -24603,3 +24603,36 @@ Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictu
 `CHECK EXIT=0`, build/check145.log.
 
 Measured after Part 145: **931** cited, **37** not (`tact` 37).
+
+### Part 146 -- the fifteen already-checked tact rows closed (15 `tact` rows)
+
+Fifteen `tact` rows were uncited even though some test already held a `Check` line naming the port function:
+`MapCursor_IsValid @ 0x275fc`, `Map_ProbeStepOccupants @ 0x2778c`, `Map_IsValidCell @ 0x2bc9c`,
+`Map_QueueDoorAction @ 0x2bd00`, `Unit_GetExtraSpr @ 0x2e59c`, `Ship_RemoveWithCargo @ 0x36830`,
+`Unit_CanStepExitDir @ 0x36d68`, `TactItem_GetHandSlot @ 0x3e620`, `TactItem_GetEquipDelta @ 0x3e69c`,
+`Soldier_PickBestScoreAmong @ 0x46fe0`, `Soldier_FindNextSmallByType @ 0x47164`,
+`Soldier_CountSmallByType @ 0x471f8`, `Unit_SpotCellOccupant @ 0x48138`, `Unit_ScanVisibleUnits @ 0x4834c`,
+`Unit_RecalcInventoryStat @ 0x49ef0`. Each existing check message got the `name @ 0x…` cite on its own line -- in
+test_tactctl.c, test_step.c, test_mapcell.c, test_tactstate.c, test_geoscape.c, test_tactui.c, test_roster.c and
+test_unit.c. No check was added and no `src/` line changed.
+
+Teeth: 15 cases, 89 FAIL lines, 0 inert, 0 SKIP, 0 build failures,
+15/15 restored byte-exact, MUTATION-left values {'0'} (`docs/parity/mutations_part146.py`,
+build/crops/mut146.log). Being exact about what failed: in 5 of the 15 cases the mutation breaks the
+cited check itself (`Map_QueueDoorAction`, `Soldier_PickBestScoreAmong`, `Soldier_FindNextSmallByType`,
+`Soldier_CountSmallByType`, `Unit_RecalcInventoryStat`); in the other 10 it breaks a different
+check of the same function in the same test (for `Map_IsValidCell` it is the negative-X rejection, for
+`Map_ProbeStepOccupants` the missing-floor refusal, for `Unit_GetExtraSpr` the low-byte and out-of-range cases, for
+`Unit_SpotCellOccupant` the same-side queueing, for `Unit_ScanVisibleUnits` the four queue checks, and so on). The
+row has teeth either way -- the mutation makes a check about that function fail -- but the cited line is not always
+the one that notices. The widest single mutation was `Soldier_CountSmallByType` (18 FAIL lines, because the roster
+helpers share `Soldier_MatchesSmall`) and `Soldier_PickBestScoreAmong` (11).
+
+IDB: 15 function comments updated by APPENDING the pin line only, after reading each existing comment -- nothing was
+overwritten, and each write was skipped when the comment already named a test or when the append would cross 1000
+characters (none needed skipping). Read back: all 15 now name their test, longest 480 characters. IDB saved.
+
+Gates: tests: 66/66 passing, 21567 checks, frames: unchanged (93 reference pictures), e2e pictures: unchanged against the committed references (9 pictures), `check: ALL SIX GATES RAN`,
+`CHECK EXIT=0`, build/check146.log.
+
+Measured after Part 146: **946** cited, **22** not (`tact` 22).
