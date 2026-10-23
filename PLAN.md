@@ -5702,15 +5702,25 @@ layout, and its first divergence is a value feeding an RNG bound (100 in the 409
   blocker has to be re-checked and the row either closed or restated with the real blocker. 5038 names seven
   RNG start globals whose readers this IDB does not establish; a fresh census either finds the readers or
   records that it does not. Part 119.
-- [ ] **121a. The mutation pass over the 475 reached-but-uncited rows.** Reach is closed (119c, 120a); assertion
-  coverage is not. `docs/parity/teeth.tsv` separates the two: 490 of the 965 reached rows carry a test cite at
-  their own original address, **475 run under a test with no cite attributed to them** -- `strat-ui` 121, `tact` 93,
-  `strat` 90, `ui-core` 50, `render` 30, `save` 26, `app-shell` 19. Method, in the order that costs least: take the
+- [ ] **133a. Two values the suite never reads: the defence burn and the site clear's extent.** Measured in Part
+  133. `*pnBudget -= nDamage` (`src/pufo/game/pufo_baseui.c:BaseAt_EmitDefencePair`, ARM 0x57CE0..0x57CE4) can be
+  changed by +1 with **0 failing checks**: every `TestBaseAtUpdate` fixture rolls a miss, so the hit arm never runs
+  and no check reads the remaining budget -- and the hit arm is where the burn lives. Likewise shortening the
+  teardown's `memset(pSite->auItemQty, ...)` by two bytes (ARM 0x76C08..0x76C28, the 256 x `STRH [R3],#2` loop over
+  site+2..0x201) gives **0 failing checks**: no check reads slot 255. Fix: drive `BaseAtScreen_Update` with a seed
+  and a defence count that force at least one HIT and assert the budget after each pair (the burn is fixed per pair:
+  500 at 0x57CE0, 600 at 0x57E8C, 900 at 0x5803C, 1500 at 0x581EC), and prefill `auItemQty[255]` before a teardown
+  and assert it goes to zero. Until then state the two values as unpinned, not as proved. Part 134.
+- [ ] **121a. The mutation pass over the 186 reached-but-uncited rows.** Reach is closed (119c, 120a); assertion
+  coverage is not. `docs/parity/teeth.tsv` separates the two: 782 of the 968 behaviour rows carry a test cite at
+  their own original address, **186 run under a test with no cite attributed to them** -- `tact` 93, `strat` 90,
+  `app-shell` 3 (`util`, `titles`, `audio`, `boot-assets`, `tact-ui`, `save`, `render`, `ui-core` and `strat-ui`
+  closed by Parts 121..133). Method, in the order that costs least: take the
   rows subsystem by subsystem, smallest first (`util` 5, `titles` 6, `audio` 4, `boot-assets` 3, `tact-ui` 12); for
   each, read the original in the IDB and name the one value or store the run of its port already produces; either
   add the check and cite the address next to it, or record in the row's note why no observable value depends on it
   (a fold, a dead branch, a formatting-only read); then prove the new check with one mutation per check and restore
-  it. Deliverable per Part: a shrinking 475 count printed by `teeth_ledger.py` and the mutation lines in
+  it. Deliverable per Part: a shrinking 186 count printed by `teeth_ledger.py` and the mutation lines in
   `docs/parity/game-core.md`. Do not shrink the count by widening a cite without a check -- that is the failure
   mode Part 120 would have fallen into. Part 121.
   Progress (Part 121): `util` is closed -- 5 rows, 470 left. Three things the pass learned, all now part of the
@@ -6181,3 +6191,39 @@ open with 238 rows left.
   972/1103 functions and 596888/598792 bytes, 135 artifact rows, 131 uncited functions, 0 real gaps, 93 frame
   pictures and 9 e2e pictures unchanged. IDB: 28 comments written and read back exact (longest 999, at 0x557bc),
   `idb_save` ok. Row 121a stays open with 210 rows left.
+  Progress (Part 133): the last 24 `strat-ui` rows closed -- 782 of 968 behaviour rows now carry a cite at their own
+  address, 186 do not (`tact` 93, `strat` 90, `app-shell` 3). `strat-ui` is closed (250/250). No port behaviour
+  changed; the gap was citations, and every row got both a cite and a mutation that fails a check naming it.
+
+  Two claims about these records were wrong and are `docs/parity/bugs.tsv` rows (365 -> 367 data rows, kind
+  `naming`). (1) `*pnBudget -= nDamage; /* 0x57CE4 */` reads as a per-class burn; the record burns a fixed
+  immediate per pair -- 500 (`SUB #0x1F4`, 0x57CE0), 600 (`#0x258`, 0x57E8C), 900 (`#0x384`, 0x5803C) and 1500
+  (`MOV #0x5D0` / `ORR #0xC` at 0x581E0, `SUB R3,R2,R3` at 0x581EC) -- and only the gravity pair burns a variable
+  (`SUB R3,R3,R1` at 0x58390); the port's four `PUFO_BASEAT_DAMAGE_*` constants are those four numbers, so behaviour
+  was already right. (2) The teardown clear cited as `memset(auItemQty, ...); /* 0x76C18 */` -- 0x76C18 is
+  `ADD R3,R0,#2`, the loop start; the stores are 256 x `STRH [R3],#2` at 0x76C20 over site+2..0x201, which is
+  exactly where `SmapSite.auItemQty[256]` sits (0x002), and the bytes after it follow the ARM order (bFlag0 0x000,
+  bFlag1 0x001, uRecoveredSoldiers 0x202, 0x204, 0x205, then the 100-entry run from 0x208).
+
+  Two mutation anchors printed `fail lines: 0` and that is a coverage fact, not a runner problem: no check anywhere
+  reads the burned defence budget (every `TestBaseAtUpdate` fixture rolls a miss) and no check reads the last slot of
+  the site's quantity clear. Row 133a opened for it. The teeth came from one level in: the days-byte gate at
+  0x57968 and the site's flag byte at 0x76C30.
+
+  Records re-measured item by item with the identity `4*items + pool_bytes == size` asserted for all 24 (items that
+  occupy two words counted separately): 37 of them at 0x96b30, 34 at 0x76de0, 25 at 0x57808. `0x76d88` vs `0x96ad8`
+  compared word by word: 0 of 22 words differ -- genuinely byte-identical, and the port's single switch for both is
+  correct.
+
+  Cites: 174 new (`test_baseui.c` 251 -> 418, `test_plane.c` 28 -> 35), check count unchanged at 21450 -- the
+  assertions existed, they did not name their record. 14 of the new cites were placed on the exact checks the
+  mutations break, after an audit found 7 rows whose failing line cited a site inside the record (0x712E0, 0x72134,
+  0x72BAC) rather than the row. Teeth: 25 cases in `docs/parity/mutations_part133.py` (one per row plus both flags
+  of 0x96b30) -- 45 failing checks, 0 skipped, 0 inert, 0 build failures, 25/25 files back to their exact bytes,
+  `grep -rn "MUTATION" src tests` empty, log `build/crops/teeth133.log`. 34 of the 45 failing checks name the row
+  address and every row has at least one that does. Gates: `build/check133.log` -- `check: ALL SIX GATES RAN`,
+  `CHECK EXIT=0`, 65/65 in both configurations, 21450 checks, coverage unchanged at 972/1103 functions and 596888/
+  598792 bytes, 135 artifact rows, 131 uncited functions, 0 real gaps, 93 frames and 9 e2e pictures unchanged. IDB:
+  16 head comments (12 new) read back exact, longest 1018 at 0x96b30; 0x6e9e8, 0x57808, 0x96288 and 0x79748 had been
+  sitting at the 1024-character comment limit mid-sentence, so each head now stops at a complete sentence and the
+  detail moved to 0x6EA7C, 0x57914, 0x9628C and 0x7974C; `idb_save` ok. Row 121a stays open with 186 rows left.

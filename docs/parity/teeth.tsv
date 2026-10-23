@@ -411,14 +411,14 @@
 0x217e0	Menu_DrawLabeledPads	296	strat-ui	yes	yes	yes	Menu_LabelRecordIndex	yes
 0x55754	BaseInfoScreen_TogglePanelMode	104	strat-ui	yes	yes	yes	World_BaseInfoToggleThunk|World_WireGeoscapeFrame	yes
 0x557bc	BaseInfoScreen_CloseThunk	12	strat-ui	yes	yes	yes	World_CloseGeoscapeThunk|World_WireGeoscapeFrame	yes
-0x557c8	BaseInfoScreen_OnOk	44	strat-ui	yes	no	yes	World_BaseInfoOkThunk|World_WireGeoscapeFrame|PsiScreen_OnOk	yes
+0x557c8	BaseInfoScreen_OnOk	44	strat-ui	yes	yes	yes	World_BaseInfoOkThunk|World_WireGeoscapeFrame|PsiScreen_OnOk	yes
 0x557f4	BaseInfoScreen_BuildPanels	6084	strat-ui	yes	yes	yes	World_BaseInfoBuildThunk	yes
 0x56fb8	BaseInfoScreen_Draw	1744	strat-ui	yes	yes	yes	BaseInfo_Text	yes
 0x57688	BaseInfoScreen_Init	312	strat-ui	yes	yes	yes	World_BaseInfoInitThunk	yes
 0x577c0	BaseAtScreen_CloseThunk	72	strat-ui	yes	yes	yes		yes
-0x57808	BaseAtScreen_Update	3872	strat-ui	yes	no	yes		yes
-0x58728	BaseAtScreen_Draw	420	strat-ui	yes	no	yes		yes
-0x588cc	BaseAtScreen_Open	68	strat-ui	yes	no	yes		yes
+0x57808	BaseAtScreen_Update	3872	strat-ui	yes	yes	yes		yes
+0x58728	BaseAtScreen_Draw	420	strat-ui	yes	yes	yes		yes
+0x588cc	BaseAtScreen_Open	68	strat-ui	yes	yes	yes		yes
 0x58910	BaseFacScreen_TryBuySelected	176	strat-ui	yes	yes	yes	World_FacBuyThunk	yes
 0x589c0	BaseFacScreen_CloseThunkA	12	strat-ui	yes	yes	yes	World_CloseGeoscapeThunk|World_StartNewHook	no
 0x589cc	BaseFacScreen_PanelPrev	16	strat-ui	yes	yes	yes	World_FacPanelPrevThunk|World_StartNewHook	yes
@@ -431,7 +431,7 @@
 0x614cc	ManufScreen_Open	48	strat-ui	yes	yes	yes	World_ManufInitThunk|World_ManufOpenThunk|World_StartNewHook|World_WireOptions	yes
 0x614fc	TransferScreen_Open	48	strat-ui	yes	yes	yes	World_RefreshTransferEnvs|World_TransferInitThunk|World_StartNewHook|World_WireOptions|Ui_InitTransfer	yes
 0x6152c	NewBaseScreen_TryConfirm	132	strat-ui	yes	yes	yes	App_HoverOnRegion|World_MapClick|World_ConfirmClick|World_StartNewHook	yes
-0x615b0	NewBaseScreen_CloseThunk	32	strat-ui	yes	yes	yes	World_CloseGeoscapeThunk|World_NewBaseCloseThunk	yes
+0x615b0	NewBaseScreen_CloseThunk	32	strat-ui	yes	yes	yes	World_CloseGeoscapeThunk|World_NewBaseCloseThunk|BaseInfoScreen_CloseThunk	yes
 0x615d0	NewBaseScreen_Open	172	strat-ui	yes	yes	yes	World_NewBaseOpenThunk|World_StartNewHook	yes
 0x6167c	BaseInfoScreen_Open	48	strat-ui	yes	yes	yes	World_BaseInfoOpenThunk|World_StartNewHook|Geoscape_DrawBaseInfoArm	yes
 0x616ac	ResearchScreen_Open	232	strat-ui	yes	yes	yes	World_HookRebuildResearchTopics|World_ResearchOpenThunk|World_StartNewHook|World_WireOptions	yes
@@ -497,7 +497,7 @@
 0x6d064	OptionsScreen_PanelNext	72	strat-ui	yes	yes	yes	World_OptionsPanelNext|OptionsScreen_PanelPrev|Options_SaveAudioSettings	yes
 0x6d0ac	OptionsScreen_Open	3160	strat-ui	yes	yes	yes	World_NewGame	yes
 0x6dd04	OptionsScreen_OpenWithSound	32	strat-ui	yes	yes	yes	World_OptionsInitRun	yes
-0x6dd24	ManufScreen_SyncSelection	40	strat-ui	yes	no	yes	World_ManufSyncSelThunk|World_WireGeoscapeFrame|BuySellScreen_SyncSelection	yes
+0x6dd24	ManufScreen_SyncSelection	40	strat-ui	yes	yes	yes	World_ManufSyncSelThunk|World_WireGeoscapeFrame|BuySellScreen_SyncSelection	yes
 0x6dd4c	ManufScreen_PanelPrev	72	strat-ui	yes	yes	yes	World_ManufPanelPrevThunk|ScrollOnePanel	yes
 0x6dd94	ManufScreen_PanelNext	72	strat-ui	yes	yes	yes	ManufScreen_PanelPrev	yes
 0x6dddc	ManufScreen_IncSelectedQty	228	strat-ui	yes	yes	yes	World_ManufIncEngineersThunk|ManufScreen_IncEngineers	yes
@@ -510,24 +510,24 @@
 0x6e3e0	ManufScreen_Draw	1332	strat-ui	yes	yes	yes	World_ManufDrawClickThunk|World_WireGeoscapeFrame	yes
 0x6e914	ManufScreen_SelectListed	120	strat-ui	yes	yes	yes	World_ManufSelectThunk|World_WireGeoscapeFrame	yes
 0x6e98c	ManufScreen_ConfirmAndClose	92	strat-ui	yes	yes	yes	World_ManufConfirmThunk|World_WireGeoscapeFrame	yes
-0x6e9e8	ManufScreen_BuildPanels	2404	strat-ui	yes	no	yes	World_ManufBuildPanelsThunk	yes
+0x6e9e8	ManufScreen_BuildPanels	2404	strat-ui	yes	yes	yes	World_ManufBuildPanelsThunk	yes
 0x6f34c	ManufScreen_CommitProduction	1408	strat-ui	yes	yes	yes	World_HookRefreshBaseTabs	yes
 0x6f8cc	ManufScreen_ClearProductSlot	216	strat-ui	yes	yes	yes		yes
 0x6f9a4	ManufScreen_DrawFrame	5400	strat-ui	yes	yes	yes	ManufUi_Text	yes
 0x70ebc	ManufScreen_RefreshBaseTabs	500	strat-ui	yes	yes	yes	World_HookRefreshBaseTabs	yes
-0x710b0	ManufScreen_Init	488	strat-ui	yes	no	yes	World_ManufInitThunk	yes
-0x71298	PsiScreen_SelectListed	848	strat-ui	yes	no	yes		yes
+0x710b0	ManufScreen_Init	488	strat-ui	yes	yes	yes	World_ManufInitThunk	yes
+0x71298	PsiScreen_SelectListed	848	strat-ui	yes	yes	yes		yes
 0x715e8	PsiScreen_PanelPrev	96	strat-ui	yes	yes	yes		yes
 0x71648	PsiScreen_PanelNext	96	strat-ui	yes	yes	yes	ManufScreen_PanelPrev	yes
-0x716a8	PsiScreen_OnOk	44	strat-ui	yes	no	yes		yes
-0x716d4	PsiScreen_BuildPanels	2940	strat-ui	yes	no	yes		yes
-0x72250	PsiScreen_ApplyAssignments	328	strat-ui	yes	no	yes		yes
+0x716a8	PsiScreen_OnOk	44	strat-ui	yes	yes	yes		yes
+0x716d4	PsiScreen_BuildPanels	2940	strat-ui	yes	yes	yes		yes
+0x72250	PsiScreen_ApplyAssignments	328	strat-ui	yes	yes	yes		yes
 0x72398	PsiScreen_Draw	1960	strat-ui	yes	yes	yes		yes
-0x72b40	PsiScreen_Init	332	strat-ui	yes	no	yes		yes
+0x72b40	PsiScreen_Init	332	strat-ui	yes	yes	yes		yes
 0x72c8c	Research_TopicNeedsItem	136	strat-ui	yes	yes	yes		yes
 0x72d14	ResearchScreen_UpdateProgress	284	strat-ui	yes	yes	yes	World_ResearchAllocAllThunk	yes
-0x72e30	ResearchScreen_PanelPrev	56	strat-ui	yes	yes	yes	World_ResearchPanelPrevThunk	yes
-0x72e68	ResearchScreen_PanelNext	56	strat-ui	yes	yes	yes	World_ResearchPanelPrevThunk|ResearchScreen_PanelPrev	yes
+0x72e30	ResearchScreen_PanelPrev	56	strat-ui	yes	yes	yes	World_ResearchPanelPrevThunk|ManufScreen_PanelPrev	yes
+0x72e68	ResearchScreen_PanelNext	56	strat-ui	yes	yes	yes	World_ResearchPanelPrevThunk|ManufScreen_PanelPrev|ResearchScreen_PanelPrev	yes
 0x72ea0	ResearchScreen_IncSelectedQty	208	strat-ui	yes	yes	yes	World_ResearchIncQtyThunk	yes
 0x72f70	ResearchScreen_DecSelectedQty	140	strat-ui	yes	yes	yes	World_ResearchIncQtyThunk	yes
 0x72ffc	ResearchScreen_CloseThunk	12	strat-ui	yes	yes	yes	World_CloseGeoscapeThunk|World_ResearchCloseThunk	no
@@ -542,22 +542,22 @@
 0x74bf8	BuySellScreen_CommitTransaction	1176	strat-ui	yes	yes	yes	World_BuySellCommitThunk	yes
 0x75090	BuySellScreen_ConfirmSiteAndClose	196	strat-ui	yes	yes	yes	World_BuySellConfirmBuyThunk	yes
 0x75154	BuySellScreen_CloseThunk	12	strat-ui	yes	yes	yes	World_CloseGeoscapeThunk|World_BuySellCloseThunk|World_WireGeoscapeFrame	no
-0x75160	BuySellScreen_FillBuyPanel	772	strat-ui	yes	no	yes	World_BuySellRefreshRowEditEnv|World_WireGeoscapeFrame|BuySellRepeatLimit	yes
+0x75160	BuySellScreen_FillBuyPanel	772	strat-ui	yes	yes	yes	World_BuySellRefreshRowEditEnv|World_WireGeoscapeFrame|BuySellRepeatLimit	yes
 0x75464	BuySellScreen_FillSellPanel	1044	strat-ui	yes	yes	yes	World_BuySellRefreshRowEditEnv|World_WireGeoscapeFrame|BuySellRepeatLimit	yes
-0x75878	BuySellScreen_UpdatePrices	784	strat-ui	yes	no	yes	World_BuySellRefreshCapacityEnv|World_WireGeoscapeFrame	yes
+0x75878	BuySellScreen_UpdatePrices	784	strat-ui	yes	yes	yes	World_BuySellRefreshCapacityEnv|World_WireGeoscapeFrame	yes
 0x75b88	BuySellScreen_ValidateCapacity	1280	strat-ui	yes	yes	yes	World_BuySellRefreshCapacityEnv|World_WireGeoscapeFrame	yes
 0x76088	BuySellScreen_PanelPrev	88	strat-ui	yes	yes	yes	World_BuySellPanelPrevThunk|World_WireGeoscapeFrame|ManufScreen_PanelPrev	yes
 0x760e0	BuySellScreen_PanelNext	88	strat-ui	yes	yes	yes	World_BuySellPanelPrevThunk|World_WireGeoscapeFrame|BuySellScreen_PanelPrev|ManufScreen_PanelPrev	yes
-0x76138	BuySellScreen_SyncSelection	40	strat-ui	yes	no	yes	World_BuySellSyncSelThunk|World_WireGeoscapeFrame	yes
-0x76160	BuySellScreen_BuildControls	3112	strat-ui	yes	no	yes	World_BuySellBuildControlsThunk	yes
+0x76138	BuySellScreen_SyncSelection	40	strat-ui	yes	yes	yes	World_BuySellSyncSelThunk|World_WireGeoscapeFrame	yes
+0x76160	BuySellScreen_BuildControls	3112	strat-ui	yes	yes	yes	World_BuySellBuildControlsThunk	yes
 0x76d88	BuySell_RoleToItemId	88	strat-ui	yes	yes	yes		yes
-0x76de0	BuySellScreen_BuildPanels	4236	strat-ui	yes	no	yes	World_BuySellBuildPanelsThunk	yes
+0x76de0	BuySellScreen_BuildPanels	4236	strat-ui	yes	yes	yes	World_BuySellBuildPanelsThunk	yes
 0x77e6c	BuySellScreen_Draw	3524	strat-ui	yes	yes	yes		yes
 0x78c30	BuySellScreen_Init	352	strat-ui	yes	yes	yes	World_RefreshBuySellBuildEnvs	yes
 0x78d90	BuySellScreen_ApplyQtyChanges	232	strat-ui	yes	yes	yes	World_PlaneApplyQtyThunk|World_WireGeoscapeFrame	yes
-0x79748	BasePlaneScreen_ApplyWeaponSwap	728	strat-ui	yes	no	yes	World_PlaneApplySwapThunk|PlaneSwapSide	yes
-0x79a20	BuySellScreen_ListPanelPrev	40	strat-ui	yes	yes	yes	World_PlaneListPrevThunk|World_WireGeoscapeFrame	yes
-0x79a48	BuySellScreen_ListPanelNext	40	strat-ui	yes	yes	yes	World_PlaneListPrevThunk|World_WireGeoscapeFrame|BuySellScreen_ListPanelPrev	yes
+0x79748	BasePlaneScreen_ApplyWeaponSwap	728	strat-ui	yes	yes	yes	World_PlaneApplySwapThunk|PlaneSwapSide	yes
+0x79a20	BuySellScreen_ListPanelPrev	40	strat-ui	yes	yes	yes	World_PlaneListPrevThunk|World_WireGeoscapeFrame|ManufScreen_PanelPrev	yes
+0x79a48	BuySellScreen_ListPanelNext	40	strat-ui	yes	yes	yes	World_PlaneListPrevThunk|World_WireGeoscapeFrame|BuySellScreen_ListPanelPrev|ManufScreen_PanelPrev	yes
 0x79a70	BuySellScreen_DetailPanelPrev	88	strat-ui	yes	yes	yes	World_PlaneStorePrevThunk|World_WireGeoscapeFrame|ManufScreen_PanelPrev	yes
 0x79ac8	BuySellScreen_DetailPanelNext	88	strat-ui	yes	yes	yes	World_PlaneStorePrevThunk|World_WireGeoscapeFrame|ManufScreen_PanelPrev	yes
 0x79b20	BasePlaneScreen_SelectWeapon25	68	strat-ui	yes	yes	yes	World_PlaneSelectWeapon25Thunk|World_WireGeoscapeFrame|BasePlaneScreen_SelectWeapon	yes
@@ -581,14 +581,14 @@
 0x7d374	BasePlaneScreen_Draw	1648	strat-ui	yes	yes	yes	PlaneRecText	yes
 0x7d9e4	BasePlaneScreen_Init	1072	strat-ui	yes	yes	yes	World_PlaneInitThunk	yes
 0x7de14	BasePlaneScreen_AddInterceptMission	168	strat-ui	yes	yes	yes	World_MissionAddIntercept|Geoscape_TickHourly|StatusPanel_DrawCityLineIdx	yes
-0x9602c	Transfer_MoveOneItem	604	strat-ui	yes	no	yes	World_TransferMoveThunk|World_WireGeoscapeFrame	yes
-0x96288	TransferScreen_ValidateCapacity	1372	strat-ui	yes	no	yes	World_TransferMoveThunk|World_WireGeoscapeFrame	yes
+0x9602c	Transfer_MoveOneItem	604	strat-ui	yes	yes	yes	World_TransferMoveThunk|World_WireGeoscapeFrame	yes
+0x96288	TransferScreen_ValidateCapacity	1372	strat-ui	yes	yes	yes	World_TransferMoveThunk|World_WireGeoscapeFrame	yes
 0x967e4	Transfer_ScrollPrevAll	88	strat-ui	yes	yes	yes	World_WireGeoscapeFrame|BuySellScreen_PanelPrev|ManufScreen_PanelPrev	yes
 0x9683c	Transfer_ScrollNextAll	88	strat-ui	yes	yes	yes	World_WireGeoscapeFrame|BuySellScreen_PanelPrev|ManufScreen_PanelPrev	yes
-0x9690c	Transfer_ResetSite	420	strat-ui	yes	no	yes	World_TransferResetThunk|World_WireGeoscapeFrame	yes
-0x96ab0	Transfer_CacheSelIndex	40	strat-ui	yes	no	yes	World_TransferSyncSelThunk|World_WireGeoscapeFrame|BuySellScreen_SyncSelection	yes
-0x96ad8	Transfer_RoleToIconId	88	strat-ui	yes	no	yes	BuySell_RoleToItemId	yes
-0x96b30	TransferScreen_BuildPanels	3956	strat-ui	yes	no	yes	World_TransferBuildThunk	yes
+0x9690c	Transfer_ResetSite	420	strat-ui	yes	yes	yes	World_TransferResetThunk|World_WireGeoscapeFrame	yes
+0x96ab0	Transfer_CacheSelIndex	40	strat-ui	yes	yes	yes	World_TransferSyncSelThunk|World_WireGeoscapeFrame|BuySellScreen_SyncSelection	yes
+0x96ad8	Transfer_RoleToIconId	88	strat-ui	yes	yes	yes	BuySell_RoleToItemId	yes
+0x96b30	TransferScreen_BuildPanels	3956	strat-ui	yes	yes	yes	World_TransferBuildThunk	yes
 0x97aa4	TransferScreen_CommitTransfer	1280	strat-ui	yes	yes	yes	World_TransferCommitThunk|World_WireGeoscapeFrame	yes
 0x97fa4	TransferScreen_Draw	2988	strat-ui	yes	yes	yes		yes
 0x996e4	Transfer_WriteErrorDump	2196	strat-ui	yes	yes	yes		yes

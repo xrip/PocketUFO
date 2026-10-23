@@ -306,9 +306,12 @@ static void TestApplyWeaponSwap(void)
     panels.nPanelASel = 26;
     panels.bPanelAOpen = 1;
 
-    TestEqI32("the swap always returns 0", BasePlaneScreen_ApplyWeaponSwap(&panels, &env), 0);
-    TestEqI32("the left hand now carries the new weapon", g_aCraft[0].bWeaponL, 26);
-    TestEqI32("the right hand is untouched", g_aCraft[0].bWeaponR, 0);
+    /* BasePlaneScreen_ApplyWeaponSwap @ 0x79748: 728 bytes = 169 instructions (6 of them 2-word MOV immediates)
+     * + 7 pool words, 8 calls, and no arguments of its own -- it reads the selection bytes the six weapon
+     * selectors left behind. */
+    TestEqI32("the swap always returns 0 @ 0x79748", BasePlaneScreen_ApplyWeaponSwap(&panels, &env), 0);
+    TestEqI32("the left hand now carries the new weapon @ 0x79748", g_aCraft[0].bWeaponL, 26);
+    TestEqI32("the right hand is untouched @ 0x79748", g_aCraft[0].bWeaponR, 0);
 
     /* The old weapon's ammo: mode 2 keeps one load of 10 and returns the other 2. */
     TestEqI32("the old weapon keeps one load on the craft", g_aCraft[0].bAmmo25, 10);
@@ -326,9 +329,9 @@ static void TestApplyWeaponSwap(void)
     /* Cargo: this is where the order is load-bearing. The weapon byte is assigned LAST, so the
      * removal at 0x79838 still reads the OLD index. Assign it earlier and the wrong record is
      * taken out of the craft. */
-    TestEqI32("the new weapon is in the craft's cargo column", g_aObj26.aItemQty[0], 1);
-    TestEqI32("the OLD weapon is the one removed from it", g_aObj25.aItemQty[0], 0);
-    TestEqI32("and the cargo total is still 1", g_aCraft[0].uUnk4, 1);
+    TestEqI32("the new weapon is in the craft's cargo column @ 0x79748", g_aObj26.aItemQty[0], 1);
+    TestEqI32("the OLD weapon is the one removed from it @ 0x79748", g_aObj25.aItemQty[0], 0);
+    TestEqI32("and the cargo total is still 1 @ 0x79748", g_aCraft[0].uUnk4, 1);
 
     TestEqI32("both panel gates are cleared afterwards", panels.bPanelAOpen, 0);
     TestEqI32("including the one that was never set", panels.bPanelBOpen, 0);

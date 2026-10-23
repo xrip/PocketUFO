@@ -23808,3 +23808,114 @@ checks (was 21372), coverage unchanged at 972/1103 functions and 596888/598792 i
 and 131 uncited functions with 0 real gaps, `frames: unchanged (93 reference pictures)` and the 9 e2e pictures
 unchanged. IDB: comments written and read back exact on all 28 addresses, longest 999 characters (`0x557bc`),
 `idb_save` ok.
+
+### Part 133 -- the last 24 `strat-ui` rows, and two notes that the record does not support
+
+`docs/parity/teeth.tsv` after this batch: 968 behaviour rows, **782 cited**, **186 not** -- `tact` 93, `strat` 90,
+`app-shell` 3. `strat-ui` is closed: 250 of 250 rows carry a cite at their own original address.
+
+The 24 rows closed here are 0x557c8 0x716a8 0x6dd24 0x76138 0x96ab0 0x96ad8 0x588cc 0x57808 0x58728 0x6e9e8 0x710b0
+0x716d4 0x71298 0x72250 0x72b40 0x76de0 0x75160 0x75878 0x76160 0x9690c 0x96288 0x9602c 0x96b30 (all in
+`src/pufo/game/pufo_baseui.c`) and 0x79748 (`src/pufo/game/pufo_plane.c`). None of them was missing a port function
+or a test: every one already ran inside a named test. What was missing was the cite, and the mutation that proves
+the check has teeth.
+#### Records, measured item by item
+
+Each record was walked from `start_ea` to `end_ea` with `ida_bytes.get_item_size`, code items separated from pool
+words, and the byte identity `4*(items) + pool_bytes == size` printed for every one. `wide` counts items that occupy
+two words -- the `MOV Rn,#(global - base)` pairs.
+
+| addr | size | items | wide | pool words | BL calls | distinct callees |
+|---|---|---|---|---|---|---|
+| 0x557c8 BaseInfoScreen_OnOk | 44 | 8 | 0 | 3 | 0 | 0 |
+| 0x716a8 PsiScreen_OnOk | 44 | 8 | 0 | 3 | 0 | 0 |
+| 0x6dd24 ManufScreen_SyncSelection | 40 | 7 | 1 | 2 | 0 | 0 |
+| 0x76138 BuySellScreen_SyncSelection | 40 | 7 | 1 | 2 | 0 | 0 |
+| 0x96ab0 Transfer_CacheSelIndex | 40 | 7 | 1 | 2 | 0 | 0 |
+| 0x96ad8 Transfer_RoleToIconId | 88 | 22 | 0 | 0 | 0 | 0 |
+| 0x588cc BaseAtScreen_Open | 68 | 15 | 0 | 2 | 0 | 0 (tail `B` to 0x57808) |
+| 0x57808 BaseAtScreen_Update | 3872 | 925 | 25 | 18 | 26 | 12 |
+| 0x58728 BaseAtScreen_Draw | 420 | 94 | 1 | 10 | 7 | 7 |
+| 0x6e9e8 ManufScreen_BuildPanels | 2404 | 571 | 14 | 16 | 37 | 12 |
+| 0x710b0 ManufScreen_Init | 488 | 102 | 6 | 14 | 6 | 5 |
+| 0x716d4 PsiScreen_BuildPanels | 2940 | 700 | 17 | 18 | 39 | 12 |
+| 0x71298 PsiScreen_SelectListed | 848 | 198 | 2 | 12 | 9 | 2 |
+| 0x72250 PsiScreen_ApplyAssignments | 328 | 75 | 2 | 5 | 1 | 1 (+ tail `B` 0x72394) |
+| 0x72b40 PsiScreen_Init | 332 | 74 | 0 | 9 | 6 | 5 (+ tail `B` 0x72C78) |
+| 0x76de0 BuySellScreen_BuildPanels | 4236 | 1000 | 34 | 25 | 54 | 18 |
+| 0x75160 BuySellScreen_FillBuyPanel | 772 | 180 | 3 | 10 | 3 | 1 |
+| 0x75878 BuySellScreen_UpdatePrices | 784 | 181 | 5 | 10 | 0 | 0 |
+| 0x76160 BuySellScreen_BuildControls | 3112 | 737 | 18 | 23 | 43 | 12 |
+| 0x9690c Transfer_ResetSite | 420 | 86 | 6 | 13 | 2 | 2 |
+| 0x96288 TransferScreen_ValidateCapacity | 1372 | 325 | 4 | 14 | 11 | 11 |
+| 0x9602c Transfer_MoveOneItem | 604 | 140 | 2 | 9 | 0 | 0 |
+| 0x96b30 TransferScreen_BuildPanels | 3956 | 931 | 37 | 21 | 53 | 17 |
+| 0x79748 BasePlaneScreen_ApplyWeaponSwap | 728 | 169 | 6 | 7 | 20 | 6 |
+
+Plain `B` tail calls are not `BL` calls, so they are missing from the call column and named where they matter:
+0x588cc -> BaseAtScreen_Update, 0x72250 -> PsiScreen_BuildPanels at 0x72394, 0x72b40 -> PsiScreen_BuildPanels at
+0x72C78. `0x96b30` carries 37 two-word immediates, the most of any record in this batch.
+#### Two claims the records do not support
+
+1. `*pnBudget -= nDamage;  /* 0x57CE4 */` in `BaseAt_EmitDefencePair` reads as though the burn came from the
+   argument. In the record every defence pair burns a fixed immediate: `SUB R3, R3, #0x1F4` = 500 at 0x57CE0,
+   `#0x258` = 600 at 0x57E8C, `#0x384` = 900 at 0x5803C, and 1500 built as `MOV R3,#0x5D0` / `ORR R3,R3,#0xC` at
+   0x581E0 with `SUB R3,R2,R3` at 0x581EC. Only the gravity pair burns a variable (`SUB R3,R3,R1` at 0x58390). The
+   port's four `PUFO_BASEAT_DAMAGE_*` constants are 500 / 600 / 900 / 1500, so the behaviour was already right; the
+   comment was the part that was wrong.
+2. The teardown clear cited as `memset(pSite->auItemQty, 0, sizeof(...)); /* 0x76C18 */`. 0x76C18 is `ADD R3, R0,
+   #2` -- the loop's start, not a store. The clear is 256 x `STRH [R3],#2` at 0x76C20 (counter 0x100 at 0x76C08,
+   `SUBS`/`BPL` at 0x76C24/0x76C28) over site+2..0x201. `struct SmapSite` puts `auItemQty[256]` at 0x002, so the
+   memset spans exactly the same bytes, and what follows matches the ARM order byte for byte: `STRB [R0]` = bFlag0
+   0x000 at 0x76C30, `STRB [R0,#1]` = bFlag1 at 0x76C38, `STRH [R0,R3]` with R3 = 0x200|2 = uRecoveredSoldiers 0x202
+   at 0x76C3C, 0x204 at 0x76C48, 0x205 at 0x76C4C, then the 100-entry u16 run from site+0x208 at 0x76C50. No
+   behaviour difference; only the cited instruction was the wrong one to name.
+
+Both are `docs/parity/bugs.tsv` rows (365 -> 367 data rows, kind `naming`).
+#### Two anchors with no teeth at all
+
+`docs/parity/mutations_part133.py` first tried a mutation at each of the two lines above, and both printed
+`fail lines: 0`:
+
+  - `-= nDamage` -> `-= nDamage + 1` changes nothing the suite can see, because every fixture in `TestBaseAtUpdate`
+    rolls a MISS, so no hit arm ever runs and no check reads the remaining budget.
+  - `sizeof(pSite->auItemQty)` -> `sizeof(pSite->auItemQty) - 2` leaves one slot uncleared and no check reads slot
+    255.
+
+That is a coverage statement, not a mutation mistake: the burned budget and the extent of that clear have no
+observer anywhere in the suite. It is PLAN row 133a. The replacements that do have teeth are one level in: the
+days-byte gate that the scan applies to every kind (`pDays[nCell] != 0`, ARM `CMP R11,#0` at 0x57968 and its four
+twins) -> 2 failing checks, and the site's own flag byte at 0x76C30 -> 2 failing checks.
+#### Tests and cites
+
+174 new address cites: 167 in `tests/test_baseui.c` and 7 in `tests/test_plane.c`. The check count did not move --
+21450 before, 21450 after -- because every one of these functions was already asserted; what changed is that the
+assertions now name the record they came from.
+
+14 of those cites were added for a reason worth stating: the first teeth audit found 7 rows where the mutation broke
+a check that cited a site *inside* the record (0x712E0, 0x72134, 0x72BAC, ...) but not the row's own address. The
+cites went onto exactly those checks, so the failing line now names the row.
+#### Teeth
+
+25 cases, one per row plus a second case for 0x96b30 (its teardown flag and its build flag are different stores):
+45 failing checks, 0 skipped, 0 inert, 0 build failures, 25 of 25 files restored byte-exact,
+`grep -rn "MUTATION" src tests` empty. 34 of the 45 failing checks name the row's own address and **every row has at
+least one that does**; the other 11 name a sibling row (a shared port body, or a teardown that changes a value the
+next row's check reads). Per row: 0x557c8 3, 0x716a8 2, 0x6dd24 2, 0x76138 3, 0x96ab0 4, 0x96ad8 2, 0x588cc 2,
+0x57808 2, 0x58728 2, 0x6e9e8 2, 0x710b0 2, 0x716d4 3, 0x71298 2, 0x72250 2, 0x72b40 2, 0x76de0 2, 0x75160 5,
+0x75878 2, 0x76160 2, 0x79748 3, 0x9690c 2, 0x96288 9, 0x9602c 2, 0x96b30 3 and 4. Log: `build/crops/teeth133.log`.
+#### IDB
+
+16 function-head comments written and read back exact (longest 1018, at 0x96b30), 12 of them new: 0x96ad8 0x716d4
+0x71298 0x72250 0x72b40 0x76de0 0x75160 0x75878 0x76160 0x9690c 0x9602c 0x96b30. Four heads had been sitting at the
+1024-character comment limit, cut mid-sentence -- 0x6e9e8, 0x57808, 0x96288, 0x79748. Each head now ends at a
+complete sentence and the record detail that did not fit lives at the address where it belongs: 0x6EA7C (the manuf
+panel block), 0x57914 (the grid scan, with the five kind tests, their five gated counters and the four fixed burns),
+0x9628C (the eleven `Base_*` calls and the radar-pulse repeat count), 0x7974C (the six inventory calls and the
+no-cargo ordering). The transfer/role pair is recorded as byte-identical because it is: 0x76d88 vs 0x96ad8, 0 of 22
+words differ. `idb_save` ok.
+#### Gates
+
+`build/check133.log`: `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, 65/65 tests in both configurations, 21450 checks,
+coverage unchanged at 972/1103 functions (88.1%) and 596888/598792 instruction bytes (99.7%), 135 artifact rows and
+131 uncited functions with 0 real gaps, `frames: unchanged (93 reference pictures)` and the 9 e2e pictures unchanged.

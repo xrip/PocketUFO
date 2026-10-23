@@ -314,21 +314,28 @@ static void TestSelectionCaches(void)
     memset(&s, 0, sizeof(s));
     nAux147 = -1;
 
+    /* The three selection caches are 40 bytes = 7 instructions (one of them the 2-word `MOV R3,#0xBD8`) + 2 pool
+     * words, no stack frame and no call: read the panel pointer out of the first pool global, load the dword at
+     * panel+0xBD8, store it into the second pool global, RET. Compared word by word: 0x76138 and 0x96ab0 share all
+     * 10 words; 0x6dd24 differs in exactly 2 (its panel is pManufPanelD @ 0x15EE38 and its destination is
+     * unk_159E90, i.e. gUiRootPanel.anLineAux[147], while the other two read pBuySellPanelA @ 0x161A1C and write
+     * nPanelRowCursor @ 0x186BE8). The port hands the panel+0xBD8 value in as an argument, which is the one place
+     * the shape differs. */
     CheckEqI32(BuySellScreen_SyncSelection(&s, 7), 7,
-               "BuySellScreen_SyncSelection returns the +0xBD8 value");
-    CheckEqI32(s.nCache186BE8, 7, "and stores it in dword_186BE8");
+               OptCite("BuySellScreen_SyncSelection returns the +0xBD8 value", "@ 0x76138"));
+    CheckEqI32(s.nCache186BE8, 7, OptCite("and stores it in dword_186BE8 @ 0x186BE8", "@ 0x76138"));
 
-    /* 0x96ab0 is byte for byte 0x76138, so it lands in the same global. */
-    CheckEqI32(Transfer_CacheSelIndex(&s, 3), 3, "Transfer_CacheSelIndex returns it");
-    CheckEqI32(s.nCache186BE8, 3, "the transfer screen overwrites the same cache");
+    /* 0x96ab0 is byte for byte 0x76138 (0 of 10 words differ), so it lands in the same global. */
+    CheckEqI32(Transfer_CacheSelIndex(&s, 3), 3, OptCite("Transfer_CacheSelIndex returns it", "@ 0x96ab0"));
+    CheckEqI32(s.nCache186BE8, 3, OptCite("the transfer screen overwrites the same cache", "@ 0x96ab0"));
 
     CheckEqI32(ManufScreen_SyncSelection(&nAux147, 11), 11,
-               "ManufScreen_SyncSelection returns the +0xBD8 value");
-    CheckEqI32(nAux147, 11, "and writes gUiRootPanel.anLineAux[147]");
-    CheckEqI32(s.nCache186BE8, 3, "it leaves the other cache alone");
+               OptCite("ManufScreen_SyncSelection returns the +0xBD8 value", "@ 0x6dd24"));
+    CheckEqI32(nAux147, 11, OptCite("and writes gUiRootPanel.anLineAux[147] @ 0x159E90", "@ 0x6dd24"));
+    CheckEqI32(s.nCache186BE8, 3, OptCite("it leaves the other cache alone", "@ 0x6dd24"));
 
     CheckEqI32(ManufScreen_SyncSelection(NULL, 5), 5,
-               "a missing destination still returns");
+               OptCite("a missing destination still returns", "@ 0x6dd24"));
 }
 
 static void TestBaseInfoOk(void)
@@ -341,26 +348,31 @@ static void TestBaseInfoOk(void)
     st.bPsiPending = 0;
     st.nCurrentBase = 9;
 
-    CheckEqI32(BaseInfoScreen_OnOk(&st), 2, "OK returns the pending base index");
-    CheckEqI32(st.bPsiPending, 1, "OK arms the psi screen");
-    CheckEqI32(st.nCurrentBase, 2, "and makes it the base the screens act on");
+    /* BaseInfoScreen_OnOk @ 0x557c8: 44 bytes = 8 instructions + 3 pool words, no stack frame and no call --
+     * `STRB #1` into byte_1870F8, then `LDRSB R0,[byte_1870F4]` and `STRB R0,[byte_158834]`, then RET with R0
+     * holding the SIGNED byte it just read. PsiScreen_OnOk @ 0x716a8 is byte-identical to it (compared word by
+     * word: 0 of 11 words differ), so the port keeps one body (BaseInfoScreen_OnOk) for both. */
+    CheckEqI32(BaseInfoScreen_OnOk(&st), 2, OptCite("OK returns the pending base index", "@ 0x557c8"));
+    CheckEqI32(st.bPsiPending, 1, OptCite("OK arms the psi screen (0x557D0 STRB into byte_1870F8)", "@ 0x557c8"));
+    CheckEqI32(st.nCurrentBase, 2, OptCite("and makes it the base the screens act on (0x557E0 STRB)",
+                                           "@ 0x557c8"));
 
     /* 0x557DC uses LDRSB, so a negative index is not widened to a positive one. */
     st.nPendingBase = -1;
     st.bPsiPending = 0;
     st.nCurrentBase = 4;
-    CheckEqI32(BaseInfoScreen_OnOk(&st), -1, "a negative index stays negative");
-    CheckEqI32(st.nCurrentBase, -1, "and is copied as a signed byte");
+    CheckEqI32(BaseInfoScreen_OnOk(&st), -1, OptCite("a negative index stays negative @ 0x557DC", "@ 0x557c8"));
+    CheckEqI32(st.nCurrentBase, -1, OptCite("and is copied as a signed byte", "@ 0x557c8"));
 
-    CheckEqI32(BaseInfoScreen_OnOk(NULL), 0, "NULL is tolerated");
+    CheckEqI32(BaseInfoScreen_OnOk(NULL), 0, OptCite("NULL is tolerated (the original has no guard)",
+                                                     "@ 0x557c8"));
 
-    /* 0x716a8 is the same eight instructions as 0x557c8. */
     st.nPendingBase = 5;
     st.bPsiPending = 0;
     st.nCurrentBase = 1;
-    CheckEqI32(PsiScreen_OnOk(&st), 5, "PsiScreen_OnOk behaves identically");
-    CheckEqI32(st.bPsiPending, 1, "it arms the psi screen");
-    CheckEqI32(st.nCurrentBase, 5, "and moves the same base index");
+    CheckEqI32(PsiScreen_OnOk(&st), 5, OptCite("PsiScreen_OnOk behaves identically", "@ 0x716a8"));
+    CheckEqI32(st.bPsiPending, 1, OptCite("it arms the psi screen", "@ 0x716a8"));
+    CheckEqI32(st.nCurrentBase, 5, OptCite("and moves the same base index", "@ 0x716a8"));
 }
 
 static UiPanel g_aBuySellPanels[2];
@@ -780,7 +792,7 @@ static void TestBuySellBuildPanels(void)
     CheckEqI32(pA->nLineCount, 8, "the row total is eight");
     CheckEqI32(pE->nLineCount, 8, "every panel gets the same total");
     CheckEqI32(pA->nStyle, 13, "all five show thirteen rows");
-    CheckEqI32(pA->nViewW, 125, "the name column is 125 wide");
+    CheckEqI32(pA->nViewW, 125, "the name column is 125 wide @ 0x76de0");
     CheckEqI32(pE->nViewW, 45, "the quantity column 45");
     CheckEqI32(pB->nPosX, 164, "the decrement column sits at 164");
     CheckEqI32(pC->nPosX, 180, "the increment column at 180");
@@ -814,12 +826,15 @@ static void TestBuySellBuildPanels(void)
             ++nOk;
         }
     }
-    CheckEqI32(nOk, 8, "every row gets its < and > columns and a zero pending quantity");
+    /* BuySellScreen_BuildPanels @ 0x76de0: 4236 bytes = 1000 instructions (34 of them 2-word MOV immediates) +
+     * 25 pool words, 27 calls -- the five columns, built or released on the built byte. */
+    CheckEqI32(nOk, 8, OptCite("every row gets its < and > columns and a zero pending quantity", "@ 0x76de0"));
 
-    CheckEqI32(pB->anLineAux[1], 1, "a soldier row's decrement column holds the apSoldiers index");
-    CheckEqI32(pB->anLineAux[2], 0, "the other soldier was index zero");
-    CheckEqI32(pC->anLineAux[1], 102, "and its increment column holds the roster id");
-    CheckEqI32(pC->anLineAux[0], 7, "a craft row holds the craft id instead");
+    CheckEqI32(pB->anLineAux[1], 1,
+               OptCite("a soldier row's decrement column holds the apSoldiers index", "@ 0x76de0"));
+    CheckEqI32(pB->anLineAux[2], 0, OptCite("the other soldier was index zero", "@ 0x76de0"));
+    CheckEqI32(pC->anLineAux[1], 102, OptCite("and its increment column holds the roster id", "@ 0x76de0"));
+    CheckEqI32(pC->anLineAux[0], 7, OptCite("a craft row holds the craft id instead", "@ 0x76de0"));
     CheckEqI32(pC->anLineAux[3], 0, "an object row leaves it zero");
 
     CheckEqI32(nFunds, 5000, "the build branch does not touch the funds");
@@ -1081,10 +1096,12 @@ static void TestBuySellRowEditors(void)
     CheckEqI32(pE.anLineAux[5], 250, "and the row shows that one unit's price");
 
     /* The "<" column. */
+    /* BuySellScreen_FillBuyPanel @ 0x75160: 772 bytes = 180 instructions (3 two-word MOVs) + 10 pool words, 5
+     * calls. It walks the "<" column's cursor and rewrites the row pair it points at. */
     pB.nUnk3032 = 0;
     BuySellScreen_FillBuyPanel(&env);
-    CheckEqI32(pE.anLineAux[0], 0, "the decrement column clears the soldier mark");
-    CheckEqI32(pD.anLineAux[0], 1, "and hands the soldier back to the count column");
+    CheckEqI32(pE.anLineAux[0], 0, OptCite("the decrement column clears the soldier mark", "@ 0x75160"));
+    CheckEqI32(pD.anLineAux[0], 1, OptCite("and hands the soldier back to the count column", "@ 0x75160"));
     Check(UiPanel_GetLineMeta(&pE, 0, 1, &r, &g, &b) && r == PUFO_BUYSELL_META_BUY_A
               && g == PUFO_BUYSELL_META_BUY_A && b == PUFO_BUYSELL_META_BUY_A,
           "the row goes back to the neutral triple");
@@ -1333,7 +1350,7 @@ static void TestBuySellCapacityGate(void)
     nFunds = 50;
     nTotal = 195300;
     CheckEqI32(BuySellScreen_UpdatePrices(&env), PUFO_BUYSELL_SHORTFALL_NONE,
-               "the count column is the only guard on the sell side");
+               OptCite("the count column is the only guard on the sell side", "@ 0x75878"));
     CheckEqI32(pD.anLineAux[3], 0, "three units back off a count of three");
     CheckEqI32(aSites[1].auItemQty[10], 0, "the working site empties");
     CheckEqI32(nFunds, 350, "and the money comes back");
@@ -1359,7 +1376,7 @@ static void TestBuySellCapacityGate(void)
     BuySellScreen_UpdatePrices(&env);
     CheckEqI32(pD.anLineAux[1], 2, "a crew row returns after one unit, whatever the count held");
     CheckEqI32(aSites[1].auItemQty[112], 0, "one engineer back to the base");
-    CheckEqI32(nFunds, 130350, "with 50000 refunded");
+    CheckEqI32(nFunds, 130350, "with 50000 refunded @ 0x75878");
 
     nRowCursor = 4;
     pD.anLineAux[4] = 1;
@@ -1702,10 +1719,12 @@ static void TestBuySellBuildControls(void)
             ++nOk;
         }
     }
-    CheckEqI32(nOk, 0,
-               "no row for a slot outside the range, an unpriced slot, or a slot with a non-zero +0xBA");
+    /* BuySellScreen_BuildControls @ 0x76160: 3112 bytes = 737 instructions (18 two-word MOVs) + 23 pool words,
+     * 23 calls -- the head of it releases what a built screen held, then the row scan builds the columns. */
+    CheckEqI32(nOk, 0, OptCite("no row for a slot outside the range, an unpriced slot, or a slot with a non-zero "
+                               "+0xBA", "@ 0x76160"));
 
-    CheckEqI32(nFunds, 1000, "the build branch does not touch the funds");
+    CheckEqI32(nFunds, 1000, OptCite("the build branch does not touch the funds", "@ 0x76160"));
 
     /* Teardown. */
     nFunds = 100;
@@ -1716,7 +1735,7 @@ static void TestBuySellBuildControls(void)
     CheckEqI32(bBuilt, 0, "the second call takes the teardown branch");
     Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL && pE == NULL,
           "the five panel slots are cleared");
-    CheckEqI32(aSites[1].bFlag0, 0, "the working site is reset whole");
+    CheckEqI32(aSites[1].bFlag0, 0, "the working site is reset whole @ 0x76160");
     CheckEqI32(aSites[1].bFlag1, 0, "including the type byte the build branch wrote");
     CheckEqI32(aSites[1].auItemQty[10], 0, "the item quantities");
     CheckEqI32(aSites[1].uRecoveredSoldiers, 0, "and the recovery count");
@@ -1893,9 +1912,11 @@ static void TestTransferInitAndReset(void)
     renv.pPanelE = &pE;
 
     bTransferOk = 0;
+    /* Transfer_ResetSite @ 0x9690c: 420 bytes = 86 instructions (6 two-word MOVs) + 13 pool words, 3 calls. */
     pSite = Transfer_ResetSite(&renv);
-    Check(pSite == &aSites[1], "the reset works on the working site aSmapSites[nSiteCount]");
-    CheckEqI32(bTransferOk, 1, "the possible-transfer flag is set first and stays set when the gate passes");
+    Check(pSite == &aSites[1], OptCite("the reset works on the working site aSmapSites[nSiteCount]", "@ 0x9690c"));
+    CheckEqI32(bTransferOk, 1,
+               OptCite("the possible-transfer flag is set first and stays set when the gate passes", "@ 0x9690c"));
     CheckEqI32(nShortfall, 0, "a passing gate leaves the shortfall flag alone");
     CheckEqI32(nResidue, -999, "and the reason code alone");
     CheckEqI32(pD.anLineAux[0], 12, "the pending quantity folds into the count column");
@@ -2081,12 +2102,14 @@ static void TestTransferBuildAndMove(void)
 
     TransferScreen_BuildPanels(&benv);
 
-    CheckEqI32(bBuilt, 1, "the build branch sets the transfer built flag");
-    CheckEqI32(aSites[1].bUnk518, 0, "the working site is cleared on the build branch too");
-    CheckEqI32(aSites[1].bHasLoot, 0, "including the loot flag");
-    CheckEqI32(aSites[1].bFlag0, 8, "but not the two site flags");
+    /* TransferScreen_BuildPanels @ 0x96b30: 3956 bytes = 931 instructions (37 two-word MOVs) + 21 pool words,
+     * 25 calls -- the five columns, and the site bytes the build branch clears. */
+    CheckEqI32(bBuilt, 1, OptCite("the build branch sets the transfer built flag", "@ 0x96b30"));
+    CheckEqI32(aSites[1].bUnk518, 0, OptCite("the working site is cleared on the build branch too", "@ 0x96b30"));
+    CheckEqI32(aSites[1].bHasLoot, 0, OptCite("including the loot flag", "@ 0x96b30"));
+    CheckEqI32(aSites[1].bFlag0, 8, OptCite("but not the two site flags", "@ 0x96b30"));
     Check(pA != NULL && pB != NULL && pC != NULL && pD != NULL && pE != NULL,
-          "all five panels are built");
+          OptCite("all five panels are built", "@ 0x96b30"));
     if (pA == NULL || pB == NULL || pC == NULL || pD == NULL || pE == NULL) {
         return;
     }
@@ -2205,10 +2228,14 @@ static void TestTransferBuildAndMove(void)
     pD->anLineAux[1] = 1;
     aSites[1].bRecoveredSoldierAssign = 2;
     nTimer = 250;
+    /* Transfer_MoveOneItem @ 0x9602c: 604 bytes = 140 instructions (2 two-word MOVs) + 9 pool words. The timer
+     * quotient it computes gates the repeat loop, and the soldier row is outside that loop. */
     Transfer_MoveOneItem(&menv);
-    CheckEqI32(pE->anLineAux[1], 0, "the soldier row is handled once, outside the repeat loop");
-    CheckEqI32(pD->anLineAux[1], 2, "one soldier added to the count");
-    CheckEqI32(aSites[1].bRecoveredSoldierAssign, 1, "and the site's pending soldier byte down by one");
+    CheckEqI32(pE->anLineAux[1], 0,
+               OptCite("the soldier row is handled once, outside the repeat loop", "@ 0x9602c"));
+    CheckEqI32(pD->anLineAux[1], 2, OptCite("one soldier added to the count", "@ 0x9602c"));
+    CheckEqI32(aSites[1].bRecoveredSoldierAssign, 1,
+               OptCite("and the site's pending soldier byte down by one", "@ 0x9602c"));
 
     nTimer = -15; /* -15 / 10 = -1, and 0x9608C branches out on a negative quotient */
     pB->nUnk3032 = 4; nRowCursor = 4;
@@ -2334,10 +2361,12 @@ static void TestTransferCapacityGate(void)
     aObj[112].auPerBaseVal[0] = 50; /* 51 occupied against a cap of 50 */
     nShortfall = 0;
     nResidue = -999;
+    /* TransferScreen_ValidateCapacity @ 0x96288: 1372 bytes = 325 instructions (4 two-word MOVs) + 14 pool words,
+     * 15 calls -- the same three-reason gate the buy/sell side runs, over the increment column's pending rows. */
     CheckEqI32(TransferScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_LIVING,
-               "a full living-quarters gate reports reason 0");
-    CheckEqI32(nShortfall, 1, "and writes the shortfall flag unconditionally");
-    CheckEqI32(nResidue, 0, "with the living-quarters reason code");
+               OptCite("a full living-quarters gate reports reason 0", "@ 0x96288"));
+    CheckEqI32(nShortfall, 1, OptCite("and writes the shortfall flag unconditionally", "@ 0x96288"));
+    CheckEqI32(nResidue, 0, OptCite("with the living-quarters reason code", "@ 0x96288"));
     CheckEqI32(pD.anLineAux[0], 3, "nothing moves when the gate fails");
     CheckEqI32(aSites[1].bRecoveredSoldierAssign, 0, "including the site's pending soldier byte");
 
@@ -2347,7 +2376,7 @@ static void TestTransferCapacityGate(void)
     pE.anLineAux[0] = 0;
     nShortfall = 0;
     CheckEqI32(TransferScreen_ValidateCapacity(&env), 25,
-               "a soldier row runs once and returns the timer quotient");
+               "a soldier row runs once and returns the timer quotient @ 0x96288");
     CheckEqI32(pE.anLineAux[0], 1, "panel E is assigned 1, not incremented");
     CheckEqI32(pD.anLineAux[0], 2, "one soldier moved to the count column");
     CheckEqI32(aSites[1].bRecoveredSoldierAssign, 1, "and the site's pending soldier byte up by one");
@@ -2358,7 +2387,7 @@ static void TestTransferCapacityGate(void)
     pD.anLineAux[1] = 3;
     pE.anLineAux[1] = 0;
     aSites[1].auItemQty[112] = 2; /* 10 available at the selected base */
-    CheckEqI32(TransferScreen_ValidateCapacity(&env), 25, "a crew row also runs once, not 26 times");
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), 25, "a crew row also runs once, not 26 times @ 0x96288");
     CheckEqI32(aSites[1].auItemQty[112], 3, "one engineer queued onto the site");
     CheckEqI32(pD.anLineAux[1], 2, "the count column down by one");
     CheckEqI32(pE.anLineAux[1], 1, "the pending column up by one");
@@ -2389,7 +2418,7 @@ static void TestTransferCapacityGate(void)
     aShip[0].bHomeBase = 1; /* homed elsewhere, so the hangar has room */
     nShortfall = 0;
     CheckEqI32(TransferScreen_ValidateCapacity(&env), 25,
-               "a craft row moves one unit however long the timer is");
+               "a craft row moves one unit however long the timer is @ 0x96288");
     CheckEqI32(pE.anLineAux[3], 1, "panel E assigned 1");
     CheckEqI32(pD.anLineAux[3], 2, "the count column up by one");
     CheckEqI32(aSites[1].bRecoveredCraftCount, 1, "and the site's pending craft byte up by one");
@@ -2430,10 +2459,10 @@ static void TestTransferCapacityGate(void)
     pE.anLineAux[2] = 0;
     aSites[1].auItemQty[10] = 0;
     nShortfall = 0;
-    CheckEqI32(TransferScreen_ValidateCapacity(&env), 2, "an item row runs timer/10 + 1 passes");
-    CheckEqI32(aSites[1].auItemQty[10], 3, "three units queued onto the site");
-    CheckEqI32(pD.anLineAux[2], 2, "the count column down by three");
-    CheckEqI32(pE.anLineAux[2], 3, "the pending column up by three");
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), 2, "an item row runs timer/10 + 1 passes @ 0x96288");
+    CheckEqI32(aSites[1].auItemQty[10], 3, "three units queued onto the site @ 0x96288");
+    CheckEqI32(pD.anLineAux[2], 2, "the count column down by three @ 0x96288");
+    CheckEqI32(pE.anLineAux[2], 3, "the pending column up by three @ 0x96288");
     CheckEqI32(nShortfall, 0, "and no shortfall recorded");
 
     aObj[10].auPerBaseVal[0] = 0; /* the base does not actually have the item */
@@ -2464,7 +2493,7 @@ static void TestTransferCapacityGate(void)
     pE.anLineAux[2] = 0;
     aSites[1].auItemQty[10] = 3;
     CheckEqI32(TransferScreen_ValidateCapacity(&env), -1,
-               "a negative timer quotient makes the gate do nothing");
+               "a negative timer quotient makes the gate do nothing @ 0x96288");
     CheckEqI32(aSites[1].auItemQty[10], 3, "including the site quantity");
     nTimer = 25;
 
@@ -3436,16 +3465,21 @@ static void TestBaseStripDrawer(void)
 
 static void TestRoleToItemId(void)
 {
-    printf("BuySell_RoleToItemId @ 0x76d88\n");
-    CheckEqI32(BuySell_RoleToItemId(0), 117, "role 0");
-    CheckEqI32(BuySell_RoleToItemId(1), 120, "role 1");
-    CheckEqI32(BuySell_RoleToItemId(2), 121, "role 2");
-    CheckEqI32(BuySell_RoleToItemId(3), 118, "role 3");
-    CheckEqI32(BuySell_RoleToItemId(4), 119, "role 4, the fall-through");
-    CheckEqI32(BuySell_RoleToItemId(5), 0xFF, "anything else is 255");
+    /* BuySell_RoleToItemId @ 0x76d88 and Transfer_RoleToIconId @ 0x96ad8 are 88 bytes = 22 instructions with no
+     * pool word at all, and compared word by word they share all 22: `MOV R3,R0,LSL#24` + `MOVS R0,R3,ASR#24`
+     * sign-extend the low byte first, so the range test is on a signed value, then five compares with the values
+     * reached in reverse order (0 -> 0x75, 1 -> 0x78, 2 -> 0x79, 3 -> 0x76, 4 -> 0x77) and `MOVNE R0,#0xFF` for
+     * anything else. The port keeps one body for both. */
+    printf("BuySell_RoleToItemId @ 0x76d88, Transfer_RoleToIconId @ 0x96ad8\n");
+    CheckEqI32(BuySell_RoleToItemId(0), 117, OptCite("role 0", "@ 0x96ad8"));
+    CheckEqI32(BuySell_RoleToItemId(1), 120, OptCite("role 1", "@ 0x96ad8"));
+    CheckEqI32(BuySell_RoleToItemId(2), 121, OptCite("role 2", "@ 0x96ad8"));
+    CheckEqI32(BuySell_RoleToItemId(3), 118, OptCite("role 3", "@ 0x96ad8"));
+    CheckEqI32(BuySell_RoleToItemId(4), 119, OptCite("role 4, the fall-through", "@ 0x96ad8"));
+    CheckEqI32(BuySell_RoleToItemId(5), 0xFF, OptCite("anything else is 255 (0x96B00 MOVNE)", "@ 0x96ad8"));
     CheckEqI32(BuySell_RoleToItemId(-1), 0xFF,
-               "and so is a negative role: 0x76D88 widens the byte as a signed char");
-    CheckEqI32(BuySell_RoleToItemId(256), 117, "only the low byte counts");
+               OptCite("and so is a negative role: 0x96AD8 widens the byte as a signed char", "@ 0x96ad8"));
+    CheckEqI32(BuySell_RoleToItemId(256), 117, OptCite("only the low byte counts", "@ 0x96ad8"));
 }
 
 static void TestAlienRaceId(void)
@@ -3906,28 +3940,35 @@ static void TestAtAndHangarOpeners(void)
     g_nAtClickCalls = 0;
     g_nAtMode = -1;
 
+    /* BaseAtScreen_Open @ 0x588cc: 68 bytes = 15 instructions + 2 pool words. It reads the control out of
+     * pGeoscapeCtlConfirm @ 0x186BA4, centres it (`LDRH uWidth` + `LSR #1` + `RSB R1,R1,#0x78` -> x = 120 -
+     * (uWidth >> 1), stored as u16), stores y as `0x120 | 2` = 290, installs the click handler at +0x0C (the
+     * original installs BaseAtScreen_CloseThunk @ 0x577c0 there; the port installs the hook's click, the shell's
+     * stand-in for it), drops its FIRST argument (0x588D0 MOV R0,R1) and tail-calls BaseAtScreen_Update @ 0x57808
+     * with the mode. No sample, no screen id. */
     ah.pfnClick = AtClick;
     ah.pfnUpdate = AtUpdate;
     BaseAtScreen_Open(&ctl, 3, &ah);
 
     g_nAtX = ctl.x;
     g_nAtY = ctl.y;
-    CheckEqI32(g_nAtX, 100, "x centres the control on 120: 120 - (40 >> 1)");
-    CheckEqI32(g_nAtY, 290, "y is 290, built as 0x120|2");
-    CheckEqI32(g_nAtMode, 3, "the mode reaches the update");
-    Check(ctl.pfnClick == AtClick, "the click handler is installed at +0x0C");
+    CheckEqI32(g_nAtX, 100, OptCite("x centres the control on 120: 120 - (40 >> 1)", "@ 0x588cc"));
+    CheckEqI32(g_nAtY, 290, OptCite("y is 290, built as 0x120|2 (0x588E8 MOV / 0x588F0 ORR)", "@ 0x588cc"));
+    CheckEqI32(g_nAtMode, 3, OptCite("the mode reaches the update (0x58904 tail call)", "@ 0x588cc"));
+    Check(ctl.pfnClick == AtClick, OptCite("the click handler is installed at +0x0C (0x58900)", "@ 0x588cc"));
 
     ctl.pfnClick();
-    CheckEqI32(g_nAtClickCalls, 1, "and it is the control's own handler");
+    CheckEqI32(g_nAtClickCalls, 1, OptCite("and it is the control's own handler", "@ 0x588cc"));
 
     ctl.uWidth = 41;
     BaseAtScreen_Open(&ctl, 0, &ah);
-    CheckEqI32(ctl.x, 100, "an odd width still drops to the same centre");
+    CheckEqI32(ctl.x, 100, OptCite("an odd width still drops to the same centre (LSR #1, not /2 rounding)",
+                                   "@ 0x588cc"));
 
     BaseAtScreen_Open(NULL, 1, &ah);
-    CheckEqI32(g_nAtMode, 1, "a NULL control still runs the update");
+    CheckEqI32(g_nAtMode, 1, OptCite("a NULL control still runs the update", "@ 0x588cc"));
     BaseAtScreen_Open(&ctl, 2, NULL);
-    Check(ctl.pfnClick == AtClick, "NULL hooks change nothing and call nothing");
+    Check(ctl.pfnClick == AtClick, OptCite("NULL hooks change nothing and call nothing", "@ 0x588cc"));
 
     /* BasePlaneScreen_Open @ 0x617F4: id 6 written BEFORE the Init. */
     memset(&st, 0, sizeof(st));
@@ -10345,21 +10386,25 @@ static void TestManufInit(void)
     Check(pPad != NULL && pPad->pData != NULL, "manuf.pad really loads out of main.dat");
     Check(pPad != NULL && pPad->uWidth == 240 && pPad->uHeight == 320,
           "manuf.pad is the 240 x 320 member (76804 bytes with its 4-byte header)");
-    Check(pPad != NULL && pPad->nMode == 7, "loaded in mode 7, the MOV R2,#7 at 0x710DC");
+    Check(pPad != NULL && pPad->nMode == 7,
+          OptCite("loaded in mode 7, the MOV R2,#7 at 0x710DC", "@ 0x710b0"));
 
     /* Step 3: the six slots. */
     for (i = 0; i < 6; ++i) {
         Check(aRoot[i + 1] == (void *)&g_aManufInitCtl[i],
-              "the six controls land in the root array's slots 1..6");
+              OptCite("the six controls land in the root array's slots 1..6", "@ 0x710b0"));
     }
 
-    /* Step 4: the handlers, in slot order. */
-    Check(g_aManufInitCtl[0].pfnClick == ManufStubPanelPrev, "slot 1 scrolls the panels back");
-    Check(g_aManufInitCtl[1].pfnClick == ManufStubPanelNext, "slot 2 scrolls them forward");
-    Check(g_aManufInitCtl[2].pfnClick == ManufStubIncQty, "slot 3 is the quantity +");
-    Check(g_aManufInitCtl[3].pfnClick == ManufStubDecQty, "slot 4 is the quantity -");
-    Check(g_aManufInitCtl[4].pfnClick == ManufStubIncUnits, "slot 5 is the units +");
-    Check(g_aManufInitCtl[5].pfnClick == ManufStubDecUnits, "slot 6 is the units -");
+    /* Step 4: the handlers, in slot order. ManufScreen_Init @ 0x710b0 is 488 bytes = 102 instructions (6 of them
+     * 2-word MOV immediates) + 14 pool words, and the order below is the order 0x71184..0x711EC stores them. */
+    Check(g_aManufInitCtl[0].pfnClick == ManufStubPanelPrev,
+          OptCite("slot 1 scrolls the panels back", "@ 0x710b0"));
+    Check(g_aManufInitCtl[1].pfnClick == ManufStubPanelNext,
+          OptCite("slot 2 scrolls them forward", "@ 0x710b0"));
+    Check(g_aManufInitCtl[2].pfnClick == ManufStubIncQty, OptCite("slot 3 is the quantity +", "@ 0x710b0"));
+    Check(g_aManufInitCtl[3].pfnClick == ManufStubDecQty, OptCite("slot 4 is the quantity -", "@ 0x710b0"));
+    Check(g_aManufInitCtl[4].pfnClick == ManufStubIncUnits, OptCite("slot 5 is the units +", "@ 0x710b0"));
+    Check(g_aManufInitCtl[5].pfnClick == ManufStubDecUnits, OptCite("slot 6 is the units -", "@ 0x710b0"));
 
     /* Step 6: the positions come straight out of g_aManufCtlDesc, both bases being zero. */
     CheckEqI32(g_aManufInitCtl[0].x, 0xCD, "the tab scroll pair sits at x 0xCD");
@@ -10400,12 +10445,12 @@ static void TestManufInit(void)
     CheckEqI32(nEmpty, 6, "the empty third pad name gets no pad");
 
     /* Step 2 and step 5: the three controls that already exist as globals. */
-    CheckEqI32(g_manufClose.x, 224, "the close control lands at 224, 1");
-    CheckEqI32(g_manufClose.y, 1, "as 16-bit stores");
-    Check(g_manufClose.pfnClick == ManufStubClose, "with the close thunk");
-    CheckEqI32(g_manufDraw.x, 40, "the draw control at 40, 0x126");
-    CheckEqI32(g_manufDraw.y, 0x126, "bottom left of the screen");
-    Check(g_manufDraw.pfnClick == ManufStubDraw, "with the screen drawer as its handler");
+    CheckEqI32(g_manufClose.x, 224, OptCite("the close control lands at 224, 1 (0x71104/0x71110)", "@ 0x710b0"));
+    CheckEqI32(g_manufClose.y, 1, OptCite("as 16-bit stores", "@ 0x710b0"));
+    Check(g_manufClose.pfnClick == ManufStubClose, OptCite("with the close thunk", "@ 0x710b0"));
+    CheckEqI32(g_manufDraw.x, 40, OptCite("the draw control at 40, 0x126 (0x711F0)", "@ 0x710b0"));
+    CheckEqI32(g_manufDraw.y, 0x126, OptCite("bottom left of the screen", "@ 0x710b0"));
+    Check(g_manufDraw.pfnClick == ManufStubDraw, OptCite("with the screen drawer as its handler", "@ 0x710b0"));
     CheckEqI32(g_manufConfirm.x, 130, "the confirm control at 130, 0x126");
     CheckEqI32(g_manufConfirm.y, 0x126, "to its right");
     Check(g_manufConfirm.pfnClick == ManufStubConfirm, "with confirm-and-close");
@@ -10423,9 +10468,10 @@ static void TestManufInit(void)
     env.ppRoot = NULL;
     ManufScreen_Init(&env);
     env.ppRoot = aRoot;
-    Check(aRoot[0] == NULL, "a missing root array makes it do nothing at all");
-    CheckEqI32(g_nManufStub[9], 1, "including the panel build");
-    Check(g_aManufInitCtl[0].pfnClick == ManufStubPanelPrev, "and no handler is rewired");
+    Check(aRoot[0] == NULL, OptCite("a missing root array makes it do nothing at all", "@ 0x710b0"));
+    CheckEqI32(g_nManufStub[9], 1, OptCite("including the panel build (0x71268 tail call)", "@ 0x710b0"));
+    Check(g_aManufInitCtl[0].pfnClick == ManufStubPanelPrev,
+          OptCite("and no handler is rewired", "@ 0x710b0"));
 
     Asset_CloseArchives();
 }
@@ -10593,18 +10639,22 @@ static void TestManufBuildPanels(void)
                 ++nOk;
             }
         }
-        CheckEqI32(nOk, 5, "every row: name cut to 17, allocated work, percent, asked-for/units, "
-                           "A aux the slot id and C aux the topic index");
-        CheckEqI32(pB->anLineAux[0], 0, "B and D get no aux from this function");
-        CheckEqI32(pD->anLineAux[2], 0, "not even on a row that has values");
+        CheckEqI32(nOk, 5, OptCite("every row: name cut to 17, allocated work, percent, asked-for/units, "
+                                   "A aux the slot id and C aux the topic index", "@ 0x6e9e8"));
+        CheckEqI32(pB->anLineAux[0], 0, OptCite("B and D get no aux from this function", "@ 0x6e9e8"));
+        CheckEqI32(pD->anLineAux[2], 0, OptCite("not even on a row that has values", "@ 0x6e9e8"));
     }
 
-    /* The teardown. */
+    /* The teardown. ManufScreen_BuildPanels @ 0x6e9e8 is 2404 bytes = 571 instructions (14 of them 2-word MOV
+     * immediates) + 16 pool words, and the branch selector is the built byte the Init's tail call sets. Its
+     * release order is A, C, B, D -- not slot order -- and nothing is stored back, so the original leaves all
+     * four globals dangling. */
     aRoot[0] = calloc(1, sizeof(PadImage));
     ManufScreen_BuildPanels(&env);
-    CheckEqI32(bBuilt, 0, "the second call takes the teardown branch and clears the flag");
-    Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL, "the four panel slots are cleared");
-    Check(aRoot[0] == NULL, "and the screen pad is freed");
+    CheckEqI32(bBuilt, 0, OptCite("the second call takes the teardown branch and clears the flag", "@ 0x6e9e8"));
+    Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL,
+          OptCite("the four panel slots are cleared", "@ 0x6e9e8"));
+    Check(aRoot[0] == NULL, OptCite("and the screen pad is freed", "@ 0x6e9e8"));
 
     /* A third call builds again, with nothing queued: zero rows. */
     bTopicCount = 1;
@@ -15649,7 +15699,7 @@ static void TestPsiScreen(void)
     Check(g_psiEnv.pScreenPad != NULL && g_psiEnv.pScreenPad->nOriginX == 0 &&
           g_psiEnv.pScreenPad->nOriginY == 0, "and zeroes its origin (0x72B88, 0x72B90)");
     CheckEqI32(g_psiOkCtl.x, 1, "the OK control goes to x 1 (0x72B9C)");
-    CheckEqI32(g_psiOkCtl.y, 300, "and y 300 (0x72BAC)");
+    CheckEqI32(g_psiOkCtl.y, 300, "and y 300 (0x72BAC) @ 0x72b40");
     Check(g_psiOkCtl.pfnClick == PsiSeamOk, "with PsiScreen_OnOk installed (0x72BB4)");
     CheckEqI32(g_psiApplyCtl.x, 120, "the Apply control goes to x 120 (0x72BC4)");
     CheckEqI32(g_psiApplyCtl.y, 300, "and y 300 (0x72BD0)");
@@ -15754,8 +15804,9 @@ static void TestPsiScreen(void)
     PsiRoster(aKind6, 6);
     PsiSetPsi(2, 1, 1, 90, 80);            /* already at or above psi energy */
     PsiScreen_BuildPanels(&g_psiEnv);
-    Check(strcmp(PsiRow(PSI_DELTA, 0, 1), "+1") == 0, "at or above auStat[7] the delta is the literal +1");
-    CheckEqI32(PsiAux(PSI_DELTA, 0, 1), 1, "with aux 1 (0x71FCC)");
+    Check(strcmp(PsiRow(PSI_DELTA, 0, 1), "+1") == 0,
+          OptCite("at or above auStat[7] the delta is the literal +1", "@ 0x716d4"));
+    CheckEqI32(PsiAux(PSI_DELTA, 0, 1), 1, OptCite("with aux 1 (0x71FCC)", "@ 0x716d4"));
     Check(strcmp(PsiRow(PSI_STAT, 0, 1), "90\\80") == 0, "the stat column still shows both values");
     /* The two stat columns are gated on bPsiActive alone, not on the assignment: a psi-capable
      * soldier shows their numbers even while their box is clear. Only a soldier with no psi powers
@@ -15780,23 +15831,33 @@ static void TestPsiScreen(void)
     PsiSetPsi(4, 0, 1, 40, 80);
     PsiSetPsi(1, 1, 0, 40, 80);            /* assigned, but bPsiActive starts clear */
     PsiScreen_BuildPanels(&g_psiEnv);
-    CheckEqI32(g_aPsiSol[2].nPsiTrainDays, 24, "assigned, psi-capable, below energy: 30% of 80 days (0x72090)");
-    CheckEqI32(g_aPsiSol[0].nPsiTrainDays, 1, "assigned and already at or above energy: still one day (0x7209C)");
-    CheckEqI32(g_aPsiSol[4].nPsiTrainDays, 0, "psi-capable but unassigned: no training (0x720A4)");
+    /* PsiScreen_BuildPanels @ 0x716d4: 2940 bytes = 700 instructions (17 of them 2-word MOV immediates) + 18 pool
+     * words, 21 calls -- the four columns (name, stat, delta, checkbox) per selected base, and the countdown it
+     * writes into the soldier record is one of its own outputs. */
+    CheckEqI32(g_aPsiSol[2].nPsiTrainDays, 24,
+               OptCite("assigned, psi-capable, below energy: 30% of 80 days (0x72090)", "@ 0x716d4"));
+    CheckEqI32(g_aPsiSol[0].nPsiTrainDays, 1,
+               OptCite("assigned and already at or above energy: still one day (0x7209C)", "@ 0x716d4"));
+    CheckEqI32(g_aPsiSol[4].nPsiTrainDays, 0,
+               OptCite("psi-capable but unassigned: no training (0x720A4)", "@ 0x716d4"));
     CheckEqI32(g_aPsiSol[1].nPsiTrainDays, 24,
-               "assigning a soldier marks them psi-capable at 0x71D00 first, so they train too");
+               OptCite("assigning a soldier marks them psi-capable at 0x71D00 first, so they train too",
+                       "@ 0x716d4"));
 
     /* 8. Teardown is the same function on the same flag. Re-init first: the previous case's panels
      * are live but the pad and the two controls were already released by an earlier teardown. */
     PsiFixture(3, 6);
     PsiRoster(aKind6, 6);
+    /* PsiScreen_Init @ 0x72b40: 332 bytes = 74 instructions (no two-word MOV) + 9 pool words, 8 calls. Its order is
+     * the pad, the two scroll controls, then the tail call that builds the panels -- the checks below run in that
+     * order on purpose. */
     PsiScreen_Init(&g_psiEnv);
-    Check(g_psiEnv.pScreenPad != NULL, "Init allocates a screen pad");
+    Check(g_psiEnv.pScreenPad != NULL, OptCite("Init allocates a screen pad", "@ 0x72b40"));
     Check(g_psiEnv.apScrollCtl[0] != NULL && g_psiEnv.apScrollCtl[1] != NULL,
-          "and the two scroll controls, before the tail call builds");
-    CheckEqI32(g_bPsiBuilt, 1, "the build arm leaves the flag set");
+          OptCite("and the two scroll controls, before the tail call builds", "@ 0x72b40"));
+    CheckEqI32(g_bPsiBuilt, 1, OptCite("the build arm leaves the flag set", "@ 0x72b40"));
     PsiScreen_BuildPanels(&g_psiEnv);
-    CheckEqI32(g_bPsiBuilt, 0, "the second call clears byte_15EEF0 (0x72134)");
+    CheckEqI32(g_bPsiBuilt, 0, "the second call clears byte_15EEF0 (0x72134) @ 0x716d4");
     CheckEqI32(g_nPsiScreen, 0, "and puts the geoscape screen id back to 0 (0x7212C)");
     Check(g_psiEnv.pScreenPad == NULL, "the screen pad is released (0x72148)");
     nBad = 0;
@@ -15817,7 +15878,7 @@ static void TestPsiScreen(void)
     PsiScreen_BuildPanels(&g_psiEnv);
     PsiPanel(PSI_NAME, 0)->nUnk3032 = 1;
     Check(PsiScreen_SelectListed(&g_psiEnv), "assigning the selected row succeeds when the lab has room");
-    CheckEqI32(g_nPsiScratch, 1, "byte_15EE84[68] takes the row the four meta calls use (0x712E0)");
+    CheckEqI32(g_nPsiScratch, 1, "byte_15EE84[68] takes the row the four meta calls use (0x712E0) @ 0x71298");
     CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 1, "the checkbox aux flips to 1 (0x71420)");
     Check(strcmp(PsiRow(PSI_CHECK, 0, 1), "ASSIGNED") == 0,
           "and the box row is labelled with TEXTS[1186] at the same time (0x71480)");
@@ -15853,9 +15914,12 @@ static void TestPsiScreen(void)
         PsiSetAux(PSI_CHECK, 0, i, 2);     /* assigned-looking, but not 1 */
     }
     PsiPanel(PSI_NAME, 0)->nUnk3032 = 10;
+    /* PsiScreen_SelectListed @ 0x71298: 848 bytes = 198 instructions (2 two-word MOVs) + 12 pool words. It walks
+     * the listed rows of the selected base and flips the checkbox column's aux between 0 and 1. */
     Check(PsiScreen_SelectListed(&g_psiEnv),
-          "the counter compares against 1 exactly, so aux values of 2 are not counted (0x71314)");
-    CheckEqI32(PsiAux(PSI_CHECK, 0, 10), 1, "and the row is assigned");
+          OptCite("the counter compares against 1 exactly, so aux values of 2 are not counted (0x71314)",
+                  "@ 0x71298"));
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 10), 1, OptCite("and the row is assigned", "@ 0x71298"));
 
     /* 11. The selected base is byte_1870F4, read SIGNED. */
     PsiFixture(3, 6);
@@ -15864,11 +15928,12 @@ static void TestPsiScreen(void)
     PsiScreen_BuildPanels(&g_psiEnv);
     g_nPsiBaseIdx = 1;
     PsiPanel(PSI_NAME, 1)->nUnk3032 = 0;
-    Check(PsiScreen_SelectListed(&g_psiEnv), "the handler works on the base byte_1870F4 selects");
-    CheckEqI32(PsiAux(PSI_CHECK, 1, 0), 1, "base 1's row flips");
-    CheckEqI32(PsiAux(PSI_CHECK, 0, 0), 0, "and base 0's does not");
+    Check(PsiScreen_SelectListed(&g_psiEnv),
+          OptCite("the handler works on the base byte_1870F4 selects", "@ 0x71298"));
+    CheckEqI32(PsiAux(PSI_CHECK, 1, 0), 1, OptCite("base 1's row flips", "@ 0x71298"));
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 0), 0, OptCite("and base 0's does not", "@ 0x71298"));
     g_nPsiBaseIdx = -1;
-    Check(!PsiScreen_SelectListed(&g_psiEnv), "a negative base index is refused");
+    Check(!PsiScreen_SelectListed(&g_psiEnv), OptCite("a negative base index is refused", "@ 0x71298"));
 
     /* 12. ApplyAssignments writes the checkbox column back into the soldier. */
     PsiFixture(2, 3);
@@ -15881,11 +15946,16 @@ static void TestPsiScreen(void)
     PsiSetAux(PSI_DELTA, 0, 0, 15);        /* the delta aux is what feeds the countdown */
     PsiSetAux(PSI_DELTA, 0, 1, 7);
     PsiScreen_ApplyAssignments(&g_psiEnv);
-    CheckEqI32(g_aPsiSol[0].bPsiAssigned, 1, "an aux of 1 sets Soldier.bPsiAssigned (0x722E8)");
-    CheckEqI32(g_aPsiSol[0].nPsiTrainDays, 15, "and copies the delta column's aux into nPsiTrainDays (0x7230C)");
-    CheckEqI32(g_aPsiSol[2].bPsiAssigned, 0, "any other value clears it (0x7234C)");
-    CheckEqI32(g_aPsiSol[2].nPsiTrainDays, 0, "and clears the countdown too (0x72330)");
-    CheckEqI32(g_aPsiSol[1].bPsiAssigned, 0, "base 1's soldier is untouched by base 0's rows");
+    /* PsiScreen_ApplyAssignments @ 0x72250: 328 bytes = 75 instructions (2 two-word MOVs) + 5 pool words. It reads
+     * the checkbox and delta columns back into the soldier records and ends by calling BuildPanels @ 0x72394. */
+    CheckEqI32(g_aPsiSol[0].bPsiAssigned, 1,
+               OptCite("an aux of 1 sets Soldier.bPsiAssigned (0x722E8)", "@ 0x72250"));
+    CheckEqI32(g_aPsiSol[0].nPsiTrainDays, 15,
+               OptCite("and copies the delta column's aux into nPsiTrainDays (0x7230C)", "@ 0x72250"));
+    CheckEqI32(g_aPsiSol[2].bPsiAssigned, 0, OptCite("any other value clears it (0x7234C)", "@ 0x72250"));
+    CheckEqI32(g_aPsiSol[2].nPsiTrainDays, 0, OptCite("and clears the countdown too (0x72330)", "@ 0x72250"));
+    CheckEqI32(g_aPsiSol[1].bPsiAssigned, 0,
+               OptCite("base 1's soldier is untouched by base 0's rows", "@ 0x72250"));
 
     /* The delta aux is read with LDRSB, so a negative value lands as 255. */
     PsiFixture(1, 1);
@@ -15906,14 +15976,18 @@ static void TestPsiScreen(void)
     PsiScreen_BuildPanels(&g_psiEnv);
     PsiSetAux(PSI_CHECK, 0, 0, 1);         /* one soldier assigned, twelve rows */
     PsiScreen_ApplyAssignments(&g_psiEnv);
-    CheckEqI32(PsiNeed(0, 0, 0), 1, "twelve rows give a budget of 12/10+1 = 2, so the first cell is needed");
-    CheckEqI32(PsiNeed(0, 1, 0), 1, "and the second one is too -- the assigned count of 1 would not reach it");
-    CheckEqI32(PsiNeed(0, 2, 0), 0, "while the third is cleared, which pins the budget at exactly 2");
+    CheckEqI32(PsiNeed(0, 0, 0), 1,
+               OptCite("twelve rows give a budget of 12/10+1 = 2, so the first cell is needed", "@ 0x72250"));
+    CheckEqI32(PsiNeed(0, 1, 0), 1,
+               OptCite("and the second one is too -- the assigned count of 1 would not reach it", "@ 0x72250"));
+    CheckEqI32(PsiNeed(0, 2, 0), 0,
+               OptCite("while the third is cleared, which pins the budget at exactly 2", "@ 0x72250"));
 
     /* 14. ApplyAssignments ends in BuildPanels, and the flag is still set, so that call releases. */
-    CheckEqI32(g_bPsiBuilt, 0, "ApplyAssignments closes the screen through the toggle (0x72394)");
-    Check(g_psiEnv.apNamePanel[0] == NULL, "the panels are gone afterwards");
-    CheckEqI32(g_nPsiScreen, 0, "and the geoscape screen id is cleared with them");
+    CheckEqI32(g_bPsiBuilt, 0, OptCite("ApplyAssignments closes the screen through the toggle (0x72394)",
+                                       "@ 0x72250"));
+    Check(g_psiEnv.apNamePanel[0] == NULL, OptCite("the panels are gone afterwards", "@ 0x72250"));
+    CheckEqI32(g_nPsiScreen, 0, OptCite("and the geoscape screen id is cleared with them", "@ 0x72250"));
 }
 
 /* -------------------------------------------------------------------------- *
@@ -17685,9 +17759,13 @@ static void TestBaseAtUpdate(void)
     g_abBaGrid[0] = 7; /* the days byte of the first missile cell */
     g_bBaClass = 0;
     srand(nSeedHits);
+    /* BaseAtScreen_Update @ 0x57808: 3872 bytes = 925 instructions (25 of them 2-word MOV immediates) + 18 pool
+     * words, 32 calls. The checks below pin the parts a reader can actually re-derive from the record: the
+     * facility-type scan over the eight grid blocks, the days layer read from the same base block, the release arm
+     * that frees the panel and the pad, and the bound on the base index. */
     BaseAtScreen_Update(0, &g_baUpd);
-    CheckEqI32(g_nBaLimit, 5, "a cell still under construction is not a defence");
-    CheckLine(0, "MV", "  only the finished one fires");
+    CheckEqI32(g_nBaLimit, 5, OptCite("a cell still under construction is not a defence", "@ 0x57808"));
+    CheckLine(0, "MV", OptCite("  only the finished one fires", "@ 0x57808"));
 
     BaEnv();
     BaGrid(1, 0, 0, 0, 0);
@@ -17707,7 +17785,7 @@ static void TestBaseAtUpdate(void)
     g_bBaClass = 0;
     srand(nSeedHits);
     BaseAtScreen_Update(1, &g_baUpd);
-    CheckEqI32(g_nBaLimit, 5, "the scan follows the base index into the second grid block");
+    CheckEqI32(g_nBaLimit, 5, OptCite("the scan follows the base index into the second grid block", "@ 0x57808"));
     BaEnv();
     BaGrid(1, 0, 0, 0, 0);
     g_bBaClass = 0;
@@ -17725,7 +17803,8 @@ static void TestBaseAtUpdate(void)
     g_bBaClass = 0;
     srand(nSeedHits);
     BaseAtScreen_Update(1, &g_baUpd);
-    CheckEqI32(g_nBaLimit, 3, "the days layer is read from the same base block as the type layer");
+    CheckEqI32(g_nBaLimit, 3, OptCite("the days layer is read from the same base block as the type layer",
+                                      "@ 0x57808"));
 
     /* And the eight-block bound is real: a ninth block would sit at 480 + 144*8. */
     BaEnv();
@@ -17735,19 +17814,20 @@ static void TestBaseAtUpdate(void)
     g_bBaClass = 0;
     srand(nSeedHits);
     BaseAtScreen_Update(8, &g_baUpd);
-    CheckEqI32(g_nBaLimit, 3, "a base index past the eight grid blocks is refused");
-    Check(g_pBaPanel != NULL, "  the panel is still built, only the scan is skipped");
+    CheckEqI32(g_nBaLimit, 3, OptCite("a base index past the eight grid blocks is refused", "@ 0x57808"));
+    Check(g_pBaPanel != NULL, OptCite("  the panel is still built, only the scan is skipped", "@ 0x57808"));
 
     /* ---- the release arm ---- */
     BaRun(0, 1, 0, 0, 0, 0, nSeedMiss);
     Check(g_pBaPanel != NULL && g_pBaPad != NULL, "the build arm left both objects live");
     g_bBaSpawn = 0;
     BaseAtScreen_Update(0, &g_baUpd);
-    CheckEqI32(g_bBaActive, 0, "the second call takes the release arm instead");
-    Check(g_pBaPanel == NULL, "  the panel is freed and the slot nulled");
-    Check(g_pBaPad == NULL, "  and so is the pad");
-    CheckEqI32(g_bBaSpawn, 1, "and the one-shot replacement flag is armed for the strateg pass");
-    CheckEqI32(g_nBaLimit, 5, "the row limit is left as it was");
+    CheckEqI32(g_bBaActive, 0, OptCite("the second call takes the release arm instead", "@ 0x57808"));
+    Check(g_pBaPanel == NULL, OptCite("  the panel is freed and the slot nulled", "@ 0x57808"));
+    Check(g_pBaPad == NULL, OptCite("  and so is the pad", "@ 0x57808"));
+    CheckEqI32(g_bBaSpawn, 1, OptCite("and the one-shot replacement flag is armed for the strateg pass",
+                                      "@ 0x57808"));
+    CheckEqI32(g_nBaLimit, 5, OptCite("the row limit is left as it was", "@ 0x57808"));
 
     /* ---- guards ---- */
     BaEnv();
@@ -17764,9 +17844,10 @@ static void TestBaseAtUpdate(void)
     BaGrid(1, 0, 0, 0, 0);
     srand(nSeedHits);
     BaseAtScreen_Update(-1, &g_baUpd);
-    CheckEqI32(g_nBaLimit, 3, "a negative base index is bounded instead of reading before the grid");
+    CheckEqI32(g_nBaLimit, 3, OptCite("a negative base index is bounded instead of reading before the grid",
+                                      "@ 0x57808"));
     BaseAtScreen_Update(8, &g_baUpd);
-    CheckEqI32(g_bBaActive, 0, "and the release arm runs on the same call");
+    CheckEqI32(g_bBaActive, 0, OptCite("and the release arm runs on the same call", "@ 0x57808"));
 }
 
 static void BaDrawEnv(void)
@@ -17829,15 +17910,19 @@ static void TestBaseAtDraw(void)
     /* ---- the gate ---- */
     BiClear(pPix);
     g_bBaActive = 0;
+    /* BaseAtScreen_Draw @ 0x58728: 420 bytes = 94 instructions (one 2-word MOV) + 10 pool words, 7 calls. What the
+     * checks below pin is the gate on the update's active byte, the per-row reveal pacing through the row's aux
+     * value, the scroll gate at nStyle, and the confirm control that only appears once every row is shown. */
     BaseAtScreen_Draw(&g_baDraw);
-    CheckEqI32(BiInkAny(pPix, 0, 0, 239, 319), 0, "a screen the update released draws nothing");
+    CheckEqI32(BiInkAny(pPix, 0, 0, 239, 319), 0,
+               OptCite("a screen the update released draws nothing", "@ 0x58728"));
     g_bBaActive = 1;
 
     /* ---- the reveal pacing ---- */
     BiClear(pPix);
     BaseAtScreen_Draw(&g_baDraw);
-    CheckEqI32(g_nBaCooldown, 235, "the first row's aux 20 parks the cooldown at 255-20");
-    CheckEqI32(g_pBaPanel->nLineCount, 1, "and one row becomes visible");
+    CheckEqI32(g_nBaCooldown, 235, OptCite("the first row's aux 20 parks the cooldown at 255-20", "@ 0x58728"));
+    CheckEqI32(g_pBaPanel->nLineCount, 1, OptCite("and one row becomes visible", "@ 0x58728"));
     Check(BiInkAny(pPix, 10, 12, 60, 24) > 0, "row 0's FIRE line reaches the surface");
     CheckEqI32(BiInkAny(pPix, 10, 28, 60, 40), 0, "  row 1 is still hidden");
 
@@ -17885,12 +17970,12 @@ static void TestBaseAtDraw(void)
     g_pBaPanel->nLineCount = 14;
     g_nBaCooldown = PUFO_RADAR_COOLDOWN_READY;
     BaseAtScreen_Draw(&g_baDraw);
-    CheckEqI32(g_pBaPanel->nLineCount, 15, "the 15th row is shown");
-    CheckEqI32(g_pBaPanel->nUnk3028, 0, "  and 15 is not past nStyle, so nothing scrolls");
+    CheckEqI32(g_pBaPanel->nLineCount, 15, OptCite("the 15th row is shown", "@ 0x58728"));
+    CheckEqI32(g_pBaPanel->nUnk3028, 0, OptCite("  and 15 is not past nStyle, so nothing scrolls", "@ 0x58728"));
     g_nBaCooldown = PUFO_RADAR_COOLDOWN_READY;
     BaseAtScreen_Draw(&g_baDraw);
-    CheckEqI32(g_pBaPanel->nLineCount, 16, "the 16th row passes nStyle");
-    CheckEqI32(g_pBaPanel->nUnk3028, 1, "  and the panel scrolls one row");
+    CheckEqI32(g_pBaPanel->nLineCount, 16, OptCite("the 16th row passes nStyle", "@ 0x58728"));
+    CheckEqI32(g_pBaPanel->nUnk3028, 1, OptCite("  and the panel scrolls one row", "@ 0x58728"));
 
     /* ---- the confirm control ---- */
     BaRun(0, 1, 0, 0, 0, 2, nSeed);
@@ -17908,10 +17993,10 @@ static void TestBaseAtDraw(void)
     g_pBaPanel->nLineCount = g_nBaLimit;
     BiClear(pPix);
     BaseAtScreen_Draw(&g_baDraw);
-    CheckEqI32(g_bBaConfirm, 1, "once every row is shown the confirm byte is set");
-    CheckEqI32(g_baConfirmCtl.x, 100, "the control is centred on 120 - (40 >> 1)");
-    CheckEqI32(g_baConfirmCtl.y, 290, "  at y 290");
-    CheckEqI32(g_nBaBlitCalls, 1, "its pad is blitted once");
+    CheckEqI32(g_bBaConfirm, 1, OptCite("once every row is shown the confirm byte is set", "@ 0x58728"));
+    CheckEqI32(g_baConfirmCtl.x, 100, OptCite("the control is centred on 120 - (40 >> 1)", "@ 0x58728"));
+    CheckEqI32(g_baConfirmCtl.y, 290, OptCite("  at y 290", "@ 0x58728"));
+    CheckEqI32(g_nBaBlitCalls, 1, OptCite("its pad is blitted once", "@ 0x58728"));
     Check(BiInkColour(pPix, 100, 292, 140, 306, uBaGlyph) > 0,
           "and the OK caption is drawn in the packed pair's glyph colour");
     Check(BiInkAny(pPix, 100, 292, 140, 306) > 0, "  which is real ink, not a palette accident");

@@ -328,3 +328,40 @@ unchanged at 972/1103 functions (88.1%) and 596888/598792 bytes (99.7%), 135 art
 (longest 999), `idb_save` ok.
 
 Measured after Part 132: **758** cited, **210** not (`tact` 93, `strat` 90, `strat-ui` 24, `app-shell` 3 left).
+
+## Part 133 -- the last 24 strat-ui rows closed, 186 left
+
+All 24 remaining `strat-ui` rows now carry a cite at their own address (`strat-ui` 250/250). Cite totals from
+`docs/parity/teeth_ledger.py`: 968 behaviour rows, 782 cited, 186 not -- `tact` 93, `strat` 90, `app-shell` 3.
+
+No port behaviour changed. Every record was re-measured item by item (code items vs pool words, `4*items + pool ==
+size` asserted): 44 = 8+3 (0x557c8, 0x716a8), 40 = 7(1 wide)+2 (0x6dd24, 0x76138, 0x96ab0), 88 = 22+0 (0x96ad8),
+68 = 15+2 (0x588cc), 3872 = 925(25)+18 (0x57808), 420 = 94(1)+10 (0x58728), 2404 = 571(14)+16 (0x6e9e8), 488 =
+102(6)+14 (0x710b0), 2940 = 700(17)+18 (0x716d4), 848 = 198(2)+12 (0x71298), 328 = 75(2)+5 (0x72250), 332 = 74+9
+(0x72b40), 4236 = 1000(34)+25 (0x76de0), 772 = 180(3)+10 (0x75160), 784 = 181(5)+10 (0x75878), 3112 = 737(18)+23
+(0x76160), 420 = 86(6)+13 (0x9690c), 1372 = 325(4)+14 (0x96288), 604 = 140(2)+9 (0x9602c), 3956 = 931(37)+21
+(0x96b30), 728 = 169(6)+7 (0x79748). `0x76d88` vs `0x96ad8`: 0 of 22 words differ, byte-identical.
+
+Two port claims corrected against the record (bugs.tsv 365 -> 367, kind `naming`): the defence burn is a fixed
+immediate per pair (500 at 0x57CE0, 600 at 0x57E8C, 900 at 0x5803C, 1500 as 0x5D0|0xC at 0x581E0 with the subtract
+at 0x581EC; only the gravity pair burns a variable at 0x58390) rather than the value the `/* 0x57CE4 */` comment
+implies; and 0x76C18 is the setup `ADD R3,R0,#2` of the teardown's 256 x `STRH [R3],#2` clear at 0x76C20, which
+spans exactly `SmapSite.auItemQty` at 0x002..0x201. Two anchors had no teeth at all -- the burn (no fixture rolls a
+hit) and the extent of that clear (no check reads the last slot) -- recorded as PLAN row 133a.
+
+Tests: 174 new address cites (167 in `test_baseui.c`, 7 in `test_plane.c`), check count unchanged at 21450. 14 of
+them went onto the specific checks the mutations break, so each failing line names its own row.
+
+Teeth: 25 cases in `docs/parity/mutations_part133.py` -- 45 failing checks, 0 skipped, 0 inert, 0 build failures,
+every file back to its exact bytes. 34 of the 45 failing checks name the row address and every row has at least one
+that does. Log `build/crops/teeth133.log`.
+
+IDB: 16 head comments (12 new) and 4 inner notes at 0x6EA7C / 0x57914 / 0x9628C / 0x7974C, all read back exact
+(longest 1018); four heads that had been cut off at the 1024-character comment limit now end at a complete sentence.
+`idb_save` ok.
+
+Gates: `build/check133.log` -- `check: ALL SIX GATES RAN`, `CHECK EXIT=0`, 65/65 both configurations, 21450 checks,
+coverage unchanged at 972/1103 functions and 596888/598792 bytes, 135 artifact rows, 131 uncited functions, 0 real
+gaps, 93 frames and 9 e2e pictures unchanged.
+
+Measured after Part 133: **782** cited, **186** not (`tact` 93, `strat` 90, `app-shell` 3 left).
