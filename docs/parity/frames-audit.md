@@ -72,8 +72,20 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
    A, E, C, B, D (0x78314..0x7833C). So the open point is now exact: (i) whether the buy/sell panel draws in the IDB are
    the whole `UiPanelMsg_Draw` (with the head blit) or its text tail, and (ii) panel E's hover-box fields
    [0x1B8C]/[0x1B90]/[0x1B9C] and its hover row (panel+0xC) at that dump.
-3. `econ_hangar_combat` -- does the original's hangar arm put controls in the bottom strip in this state?
-4. `tact_hud_*` and `tact_briefing*` / `debrief_banner` -- thin bands at rows 1..16 and 311..319: compare against the
+3. A live deviation behind the "flat / empty panel rows" look, now pinned from both sides. The IDB: `BuySellScreen_Draw`
+   calls **`UiPanelMsg_Draw`** for all five panels at 0x78314..0x7833C (E, C, B, D explicit, plus the one at the top of the
+   block) -- the whole function, whose head block 0x3E9C0 blits the hovered-row rect and whose row loop
+   (0x3EBA8..0x3EC90) packs two RGB565 triples per row through `Gfx_PackRgb565Pair` into a palette LUT that feeds
+   `SoftSurf_BlitRectProxy` / `SoftSurf_BlitSrcRect`. The port's copy of the same function is
+   `UiPanel_DrawText` (src/pufo/ui/pufo_panel.c:311..372) and its own comment says the colour step "is still omitted
+   here -- the deviation this function records -- so only the string is drawn". So in every frame whose panels go through
+   this path the original paints a per-row band and a hovered-row highlight, and the port paints text only. That is the
+   strongest explanation for the empty/flat panel areas in the econ, transfer and tact HUD frames, and it is an
+   unclosed deviation, not a picture to re-reference. Consequence for the box: the 114 x 17 rect in
+   `econ_buy_craft_queued` cannot be the panel highlight, because the port never blits one -- it has to be attributed to
+   another blit before that frame is judged.
+4. `econ_hangar_combat` -- does the original's hangar arm put controls in the bottom strip in this state?
+5. `tact_hud_*` and `tact_briefing*` / `debrief_banner` -- thin bands at rows 1..16 and 311..319: compare against the
    tact HUD draw arms' pad rects before judging.
-5. `tact_hud_minimap` rows 16..63 -- a 48-row hole in a live-looking frame, the biggest remaining one.
-6. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
+6. `tact_hud_minimap` rows 16..63 -- a 48-row hole in a live-looking frame, the biggest remaining one.
+7. The 28 tact `DumpFrame` sites still have no recorded draw call, so their classification is not trustworthy yet.
