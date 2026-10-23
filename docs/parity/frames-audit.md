@@ -17,12 +17,12 @@ The corrected sweep over 103 pictures (93 `tests/ref/*.ppm` + 10 live `build/e2e
 | geoscape_terror_site | 156..235 | FIXED in Part 156 (same cause) |
 | geoscape_descent_panel | 1..59, 156..235 | arm isolation: the frame runs `ClearSurface` + `Geoscape_DrawStatusPanel` only (test_geoscapeframe.c ~1362..1375) -- no map, no strip. Open: is a panel-only frame a useful reference? |
 | tact_hud_minimap | 0, 16..63, 317..319 | CLOSED in Part 158: the arm fills 240x320 with index 0 itself (0x1ED54), and the cell field is 4*(cell - scroll) -- measured x 12..239, y 64..303, i.e. scroll (-3, -16) inside the clamp window [-30..570] x [-40..560] for a 60x60 map |
-| tact_mission_urban | 1..16 | open |
+| tact_mission_urban | 1..16 | open -- the only band left, and the only one whose content is not one pad: the iso layer draws through Map_nGlyphPalBase = 34 plus other slots, so it needs a rect-by-rect read (Part 159) |
 | tact_briefing, tact_briefing_urban, tact_mission_from_descent | 0..7, 311..319 | CLOSED in Part 158: the arm is two calls -- PadImage_Blit of the cydonia pad at (0,0) then UiPanelMsg_Draw (0x1A7A0) -- and the indexed blit writes every pixel including index 0 (0xA3278 `*v24++ = *(pPal + 4*index)`, no skip), so the bands are the pad's own index-0 rows |
-| debrief_banner | 1..12, 25..42, 44 | open |
+| debrief_banner | 1..12, 25..42, 44 | CLOSED in Part 159: ENDMISS.PAD's all-index-0 rows are 0..41 and the arm's centred banner text paints the only lit rows in that range (13..24); rows 42/44 are pad rows whose indices carry black endmiss entries -- rows 12,13,24,25,41,42,43,44,45 checked pixel by pixel against pad index + slot 11 |
 | tact_hud_promotion | 1..12, 25..32 | open |
-| tact_hud_inventory, 13_tact_unit_panel | 153..159, 199 | open -- same region in a fixture frame and a live e2e frame |
-| tact_hud_markers | 319 | open (1 row) |
+| tact_hud_inventory, 13_tact_unit_panel | 153..159, 199 | CLOSED in Part 159 for the .ppm: INVV.PAD's all-index-0 rows are 139..159 and 199, and pad rows 139..152 are overdrawn by the burden label at (113,140) and the number at (185,140); invv's mode 1 = menu.pal in slot 1, and 95.0% of the frame's pixels are menu.pal colours |
+| tact_hud_markers | 319 | CLOSED in Part 159: MSCANV.PAD has no all-index-0 row, and its last row is entirely index 254, which SCANNER.PAL[254] = (0,0,0) renders black (mscanv's mode 16 = scanner.pal); 99.7% of the frame is scanner.pal colours |
 | econ_buy_craft_queued, econ_hangar_cap_full, transfer_open, transfer_staged, transfer_committed | 1..2, 29..30, 57..58, 85..87 | CLOSED in Part 158: the four runs are the gaps between the transfer picker's 26-tall base boxes, drawn at step 28 (0x987D8 `3, nY+3, 205, 26`, then 0x9880C and 0x9883C), under the erase rect 0x98738 whose height is `28 * n + 4` = 88 rows with n = 3. Re-measured on the current references: the transfer trio keeps exactly those runs (0..2, 29..30, 57..58, 85..87) and the two econ pictures have none at all after their frames were re-recorded |
 | 00_mainmenu, 10_menu_at_boot, 11_slot_list | 1..2, 264..268, 313..319 | open |
 
@@ -87,9 +87,8 @@ Nothing else in the corpus has an unfilled row, and no picture has a black gap i
    another blit before that frame is judged.
    CLOSED: Part 157 put all five steps of 0x3e94c into `UiPanel_DrawText` (committed 67ee0d9, mutation-proved), and Part 158 showed the 114 x 17 rect is the transfer picker's control pad on a stale surface, not a panel fill -- the two pictures now draw their own frame and show the buy screen and the shortfall panel.
 4. `econ_hangar_combat` -- CLOSED, see the last section of this file. Short answer: no. The arm's bottom-strip block 0x93298..0x9337C (TEXTS 97 "Экипаж" at y 201, TEXTS 98 "Оборуд." at y 241, both centred on x 53, plus the control pair at block+0x38 and block+0x3C) is gated on `Ship.bCanDogfight @ +0x21` -- 0x93298 `LDRB [R3,#0x21]`, 0x932AC `BEQ loc_93380` -- and the craft on this screen is a type-3 Interceptor, whose byte is 0 by 0x45E28.
-5. `tact_hud_*` and `tact_briefing*` / `debrief_banner` -- thin bands at rows 1..16 and 311..319: compare against the
-   tact HUD draw arms' pad rects before judging.
-6. `tact_hud_minimap` rows 16..63 -- a 48-row hole in a live-looking frame, the biggest remaining one.
+5. CLOSED in Part 159, with the pad rects and the pad palettes measured: the bands on `tact_briefing*`, `debrief_banner`, `tact_hud_inventory` and `tact_hud_markers` are the backdrop pads' own index-0 rows (or, for MSCANV.PAD's last row, its index-254 row whose palette entry is black). `tact_mission_urban` 1..16 is the one that is not a pad band.
+6. CLOSED in Part 158: `MapView_DrawMinimap @ 0x1ED4C` fills the whole 240x320 with index 0 itself before drawing any cell.
 ## Part 157 spec (approved by the user on 2026-10-23): finish `UiPanelMsg_Draw` in the port
 
 Read from the IDB (`UiPanelMsg_Draw @ 0x3e94c`, 1016 B). Layout facts confirmed there: `apLines[row]` = panel + 4*row +
@@ -407,3 +406,70 @@ x span, rows fully black). This is the state of these four:
     against 0..12 / 25..42 / 44, plus the two panel draws' rows against the 45..289 band.
 
 None of these four is claimed fixed. The measurements above are what the next pass starts from.
+
+## Part 159: the slot-33 census, and every remaining tact band closed by its own pad and palette (2026-10-23)
+
+**The open slot-33 question was a gap in the record, not in the port.** Part 158 left unresolved which palette holds
+slot 33, the mode the Cydonia briefing pad is loaded with (`Tact_InitMission`, `MOV R1, #0x21` at 0x3D2D4). Census over
+every `Palette_Load @ 0x3E47C` call site: 51 code sites, each passing a literal value in R1, no computed slot anywhere,
+slots 0..34. Slot 33 has exactly one writer -- `Geoscape_InitUI 0x860BC..0x860C4`, `LDR R0, =aCydoniaPal "cydonia.pal";
+MOV R1, #0x21; BL Palette_Load`. The port's own table has the same pair (`src/pufo/ui/pufo_geoiinit.c:138`
+`{ "cydonia.pal", 33 }`), so nothing was out of parity; the census is now recorded in the IDB as a function comment on
+`PadImage_Blit @ 0x110DC` (the mode-is-the-slot rule plus the whole census, 1033 chars, read back identical) and a line
+comment at 0x860BC. `idb_save` ok.
+
+**The claim "the briefing colours match no .PAL entry" was a measurement error, and it is retracted.** That test
+compared the picture against the raw `.PAL` triples. The shipped order is: load the palettes, then
+`Tact_BuildPaletteLuts @ 0x3734C`, which rewrites all 57 slots in place -- every channel divided by
+`0.1 * Map_nGamma + 0.7` and clamped per channel -- and only then draw. Compared the right way (565 pack from the
+branch at 0x3E4C0, then the LUT at gamma 0, then the dump's own expansion `(v>>11)&0x1F)*255/31` etc.), the match is
+exact for the pad content. The same arithmetic explains the black bands directly: `CYDONIA.PAL[0] = (5,2,4)` packs to 0
+(5>>3 = 0, 2>>2 = 0, 4>>3 = 0), and LUT(0) = 0, so CYDONIA.PAD's index-0 rows render exactly black rather than dark red.
+
+**Colour coverage of the whole frame, palette = the pad's own mode slot** (`build/crops/pal158b.py`, `pal158c.py`; the
+leftovers are always the arm's own text colours, not pad pixels):
+
+| picture | palette that explains it | px of 76800 | leftover |
+|---|---|---|---|
+| `tact_briefing` | cydonia.pal, slot 33 | 76714 (99.9%) | 1 colour, 86 px = (238,234,246), the panel line |
+| `tact_briefing_urban` | cydonia.pal, slot 33 | 73174 (95.3%) | 1 colour, 3626 px = the same panel text |
+| `tact_mission_from_descent` | cydonia.pal, slot 33 | 73174 (95.3%) | the same one colour |
+| `tact_hud_inventory` | menu.pal, slot 1 (invv mode 1) | 72946 (95.0%) | 53 colours, 3854 px = item-strip glyphs and labels |
+| `tact_hud_markers` | scanner.pal, slot 16 (mscanv mode 16) | 76575 (99.7%) | 10 colours, 225 px = marker and text colours |
+| `debrief_banner` | endmiss.pal, slot 11 (endmiss mode 11) | 73381 (95.5%) | 8 colours, 3419 px = banner and control text |
+| `tact_mission_urban` | tactical.pal, slot 34 | 56579 (73.7%) | 80 colours -- expected for the iso map, which is not one pad |
+
+Gamma 0 gives the best match for every one of them, which is what `Map_nGamma`'s default produces, and no other
+palette in main.dat comes close for these pictures.
+
+**Row-by-row pad art** (`build/crops/padzero158.py`, `build/crops/row158.py`). Each backdrop pad's all-index-0 rows
+equal its picture's black rows:
+
+  * `CYDONIA.PAD` 240x320: 0..7 and 311..319 -- identical to `tact_briefing`, `tact_briefing_urban` and
+    `tact_mission_from_descent`, no more and no less.
+  * `ENDMISS.PAD`: 0..41. `debrief_banner`'s black rows are 0..12, 25..42 and 44, all inside that run plus the two
+    rows where the pad's own indices carry black entries (row 42 = 204 index-0 px with 8 px each of index 255 and 189
+    and 5 of 254; row 44 = 197 index-0 px with 30 of index 126). The lit rows 13..24 in the middle of the band are the
+    arm's centred banner text (`TactHud_DrawStatusBanner @ 0x1E920`, `Text_DrawString(120 - w/2, 10, ...)`) and the
+    only colour there is (0,125,0).
+  * `INVV.PAD`: 139..159 and 199; the picture's black rows are 153..159 and 199 because pad rows 139..152 are
+    overdrawn by the burden label at (113,140) and the burden number at (185,140).
+  * `MSCANV.PAD`: no all-index-0 row at all; rows 317 and 318 are entirely index 253 = (0,16,0) and row 319 is
+    entirely index 254 = (0,0,0), which is exactly the picture's one black row.
+
+Rows 12, 13, 24, 25, 41, 42, 43, 44, 45 of `debrief_banner` and rows 317, 318, 319 of `tact_hud_markers` were compared
+as `pad index -> slot palette colour` against the picture's own pixels and agree row for row, including the rows that
+are not pure index 0.
+
+Closed as shipped by this Part: `tact_hud_markers`, `tact_hud_inventory` (the .ppm; `tests/ref/e2e/13_tact_unit_panel`
+shares the same arm but is a PNG and was not re-measured here), `debrief_banner`, and the briefing trio with data proof
+instead of only the index-0 mechanism.
+
+Still open, and now the only band left in the tact family: `tact_mission_urban` rows 1..16. Useful facts fixed while
+getting here, one of them a correction: `MapView_EnterLookMode @ 0x163D4`'s `-30 / -40` pair feeds
+`Map_nMinimapScrollX/Y @ 0x118864/0x118868`, NOT the iso origin -- so the clamp window Part 158 pinned belongs to the
+minimap arm only. The iso origin is `Map_IsoOffsetA @ 0x26F88` = `camX - 5*dimX + camY` and `Map_IsoOffsetB @ 0x26FA8`
+= `5*dimY - camX + camY - 1` (dimX/dimY read as bytes at Map+86299 / Map+86300), and `MapView_SetCamOffset @ 0x276F0`
+is what writes the camera pair `unk_1183F8/0x1183F9`: `n = a2 + 2*(a3 + 8)`, `byte0 = n / 32`,
+`byte1 = (a2/2 - a3 <= 0 ? 8 : -8 + (a2/2 - a3)) / -16`. The next pass starts from those two formulas and this
+fixture's camera values.

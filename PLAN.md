@@ -6651,3 +6651,20 @@ cydonia pad plus UiPanelMsg_Draw -- and SoftSurf_BlitIndexed_Inner at 0xA3264..0
 (*v24++ = *(pPal + 4*index), no key skip), so the bands are the pad's own index-0 rows. Still to match blit by blit:
 debrief_banner (0..12, 25..42, 44), tact_mission_urban (0..16), tact_hud_inventory (153..159, 199), tact_hud_markers
 (319), and the non-tact families listed in frames-audit.md's Open items.
+Measured (Part 159, the tact bands and the palette slots): every Palette_Load @ 0x3E47C call site was enumerated --
+51 code sites, all passing a literal slot in R1, slots 0..34, no computed slot. Slot 33, the mode the Cydonia briefing
+pad is loaded with, has one writer: Geoscape_InitUI 0x860BC..0x860C4 = cydonia.pal; the port's table has the same pair
+(pufo_geoiinit.c:138), so the open question was a missing census, not a parity break. Recorded in the IDB: a function
+comment on PadImage_Blit @ 0x110DC with the mode-is-the-slot rule and the whole census, a line comment at 0x860BC,
+idb_save ok. The Part 158 claim that the briefing colours match no .PAL entry is retracted: the comparison skipped
+Tact_BuildPaletteLuts @ 0x3734C, which rewrites all 57 slots in place (channel / (0.1*Map_nGamma + 0.7), clamped per
+channel) before any draw. Compared through 565 pack + that LUT at gamma 0 + the dump's expansion, each tact frame's
+colour content is its own pad's palette: tact_briefing 99.9% cydonia.pal, tact_briefing_urban and
+tact_mission_from_descent 95.3%, tact_hud_inventory 95.0% menu.pal, tact_hud_markers 99.7% scanner.pal,
+debrief_banner 95.5% endmiss.pal, and the leftovers are the arms' own text colours. Pad art checked as index runs:
+CYDONIA.PAD 0..7 and 311..319 = the briefing pictures exactly; ENDMISS.PAD 0..41 covers debrief_banner's 0..12,
+25..42, 44 (13..24 lit by the centred banner text); INVV.PAD 139..159 and 199 with 139..152 overdrawn by the burden
+label; MSCANV.PAD has no zero row -- its last row is index 254 = (0,0,0). Closed: tact_hud_markers,
+tact_hud_inventory, debrief_banner, the briefing trio. Only tact_mission_urban 1..16 is left, and the correction that
+matters for it: MapView_EnterLookMode @ 0x163D4's -30/-40 pair feeds Map_nMinimapScrollX/Y, not the iso origin; the
+iso origin is Map_IsoOffsetA @ 0x26F88 (camX - 5*dimX + camY) and Map_IsoOffsetB @ 0x26FA8 (5*dimY - camX + camY - 1).
