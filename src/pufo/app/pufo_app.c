@@ -1566,7 +1566,11 @@ static void App_DumpFramePpm(LPCWSTR pwszPath)
  *
  *   dump <path>   render one frame, write it as a PPM, print the step
  *   click x y     press+release at logical 240x320 coordinates
- *   tick n        n anim ticks (0xC352) plus n pulses (0xC353) and n anim-progress ticks (0xC354)
+ *   tick n        n anim ticks (0xC352) plus n pulses (0xC353) and n anim-progress ticks (0xC354),
+ *                 each step followed by a paint, as WndProc's timers and WM_PAINT interleave
+ *   fasttick n    the same three timer bodies with the paint dropped -- SHELL SCAFFOLDING for running
+ *                 geoscape clock time in seconds instead of minutes; it cannot open or advance a panel,
+ *                 so every press still goes through `tick` or `click` with a real frame
  *   gametick n    n firings of 0xC350 through Timer_TickBySpeed, the same dispatch the
  *                 WM_TIMER switch runs at 0xA08B0/0xA08C0 -- the mission clock, which walks
  *                 the tactical queue (Tact_TickActiveUnit @ 0x54130) and the phases
@@ -1754,6 +1758,23 @@ static void App_ScriptTicks(i32 nCount)
     }
 }
 
+/* SHELL SCAFFOLDING, not original behaviour, and a recorded deviation: the same three timer bodies with
+ * the paint dropped, so a many-day geoscape sweep costs seconds instead of minutes. Nothing in the three
+ * bodies reads a picture; the paint is what starts and advances the panel animations (Ui_AnimExpandBlit
+ * @ 0x95bf0 and the progress byte 0x187058), so a step that skips it cannot open or advance a panel --
+ * which is why this is only used to run clock time, and any press sequence still runs through App_ScriptTicks
+ * or App_PointerLogical with a real frame. Proven a pure accelerator: 60000 fast steps reproduce the painted
+ * 60000-step sweep exactly -- the same clock reached, the same contact detected at 357300 s, the same
+ * `[0] flag 10 slots 4` line (PLAN 122a, Part 154). */
+static void App_ScriptFastTicks(i32 nCount)
+{
+    for (i32 i = 0; i < nCount; ++i) {
+        App_TickPulse();
+        App_TickAnimProgress();
+        App_TickAnim();
+    }
+}
+
 /* n firings of 0xC350 exactly as PocketUFO_WndProc dispatches them (pufo_app.c's own
  * WM_TIMER arm at the `wParam != 50000` gate 0xA08B0): the speed decides how many
  * GameTick_OnTimer calls one firing runs (Timer_TickBySpeed 0xA08C0..0xA0934), and each
@@ -1896,6 +1917,8 @@ static void App_RunDebugScript(LPCWSTR pwszPath)
             printf("pocketufo: step click %s %s\n", azArg[1], azArg[2]);
         } else if (strcmp(azArg[0], "tick") == 0 && nArgs > 1) {
             App_ScriptTicks((i32)atoi(azArg[1]));
+        } else if (strcmp(azArg[0], "fasttick") == 0 && nArgs > 1) {
+            App_ScriptFastTicks((i32)atoi(azArg[1]));
         } else if (strcmp(azArg[0], "gametick") == 0 && nArgs > 1) {
             App_ScriptGameTick((i32)atoi(azArg[1]));
             printf("pocketufo: step gametick %s\n", azArg[1]);

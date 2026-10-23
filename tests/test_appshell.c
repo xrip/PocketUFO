@@ -166,6 +166,13 @@ static void TestPumpAcceleratorFirst(void)
     aTable[0].fVirt = FVIRTKEY;
     aTable[0].key   = VK_F5;
     aTable[0].cmd   = 1;
+    /* DIAGNOSTIC (Part 154): an entry that names no modifier matches only when Ctrl, Shift and Alt are UP in
+     * the async keyboard state, and a PostMessageW'd WM_KEYDOWN does not set that state. The build/check run
+     * failed these two checks once while six re-runs passed, so the machine's modifier state is printed here
+     * to see whether it is what the check really depends on. */
+    printf("  [diag] async modifier state: ctrl 0x%X shift 0x%X menu 0x%X caps 0x%X\n",
+           (unsigned)GetKeyState(VK_CONTROL), (unsigned)GetKeyState(VK_SHIFT),
+           (unsigned)GetKeyState(VK_MENU), (unsigned)GetKeyState(VK_CAPITAL));
     hAccel = CreateAcceleratorTableW(aTable, 1);
     Check(hAccel != NULL, "  CreateAcceleratorTableW gave the pump a real table to translate with");
 

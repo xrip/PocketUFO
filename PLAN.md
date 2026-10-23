@@ -6487,3 +6487,24 @@ scroll and map size that Smap_HitTestStrategSelect's math at 0x82C84/0x82CAC nee
 launch control (0x91578, 0x9180C) runs Smap_BeginCraftSelect with the tier from bCraftClass 2 and the terrain from the
 tile under the contact. Still open: PLAN 122a (the rest of that chain), 117a, 118a, 118b, 118c, 119b's 4994 half, 121a,
 the 4 half-written bugs.tsv rows.
+
+Done (Part 154): `--script fasttick n` (the user approved it before it was written) -- App_ScriptFastTicks runs 0xC352/
+0xC353/0xC354 with the paint dropped, proven a pure accelerator against the painted 60000-pulse sweep (40 identical
+clock readings 9000..357300, identical item counts, the same contact: item 4 class 2 at 337/93, `detected 1`,
+`[0] flag 10 slots 4 0 0 0`). New measured rule: the contact announcement pauses the geoscape clock (0x818FC
+GameTime_Pause) and nothing advances until the player answers the line -- `StatusPanel_DrawSelectedContact @ 0x8E708`
+installs Smap_SelectTarget on 0x186BA4 centred at y 136 and Smap_ClearSelection on 0x186BB4 at y 160, and the flag-10
+press arm (0x87AEC) hit-tests exactly those two; `click 120 136` consumed the line and 20000 further steps carried the
+clock 357300 -> 477300 s. 122a's remaining cost is now numeric: flag 23 has one producer (0x7fb98) with one caller
+(0x7fcb0, the event engine), it needs a target-type item plus the armed pair and soldiers aboard, and the scenario's
+class gate is the day counter nAlienPoolAddend @ 0x1472C8 (clamped to class 2 while < 15 at 0x81B7C, month row from
+0x159648) -- 15+ game-days = ~220000 pulse steps = minutes with fasttick, then one press on the descent panel's launch
+control (drawn centred at y 102 by 0x914A4..0x91688, handler World_BeginCraftSelectThunk) reaches Smap_BeginCraftSelect's
+flag-23 arm and Tact_InitMission. Next Part: a sweep that answers each contact, then that press, then `tact` printing the
+enemy roster. Recorded instead of smoothed: two intermittent gate checks -- test_appshell's accelerator pair failed once
+in Release (18 later runs clean; the async-modifier explanation unproven, so the test now prints a `[diag]` modifier
+line) and test_geoscapeframe's flight-round strateg check failed once in Debug (every re-run green, exit 0);
+tools/check.sh reports the Debug ctest exit without treating it as fatal (documented at lines 48..53). Gates: clean
+build, release 66/66, 21578 checks, coverage check OK, 93 frames, 10 e2e pictures unchanged, CHECK EXIT=0
+(build/check154b.log). New open item 154a: those two intermittent checks. Still open: PLAN 122a (the rest of that
+chain), 117a, 118a, 118b, 118c, 119b's 4994 half, 121a, the 4 half-written bugs.tsv rows.

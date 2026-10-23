@@ -25011,3 +25011,66 @@ line). Every remaining step is pen-driven and every command already exists:
 No `src/` change is needed to try that chain; the open risk is the pen coordinates, which the next Part measures
 step by step. This Part changed no `src/` file, so the six-gate run recorded for Part 152 (build/check152.log,
 66/66 tests, 21578 checks, 93 frames, 10 e2e pictures) still describes the tree.
+
+
+## Part 154 - `fasttick` (approved), and the fact that the contact message stops the geoscape clock
+
+### The accelerator: `--script fasttick n`, and the proof that it changes nothing but cost
+
+`App_ScriptFastTicks` runs the same three timer bodies as `App_ScriptTicks` (0xC352 anim, 0xC353 pulse,
+0xC354 anim progress) with the paint dropped. Nothing in those bodies reads a picture; the paint is what starts
+and advances panel animation (`Ui_AnimExpandBlit @ 0x95bf0`, the progress byte 0x187058), so a step that skips it
+cannot open or advance a panel -- the command exists only to run clock time, and every press in every flow still
+goes through `tick` or `click` with a real frame. The user approved this command before it was written.
+
+Proven a pure accelerator against the painted run (the 60000-pulse sweep of Part 153, printed every 1500 steps,
+against 40 `fasttick 1500` blocks): the 40 clock readings are identical (9000, 18000, 27000 ... 357300 s), the
+item-count readings are identical, and the contact comes out the same -- item 4, class 2, at 337/93, `disp 1`,
+`detected 1`, and the line `[0] flag 10 slots 4 0 0 0`. (build/crops/flow154eq.txt -> run154eq.log against
+build/measure122a/sweep.log.)
+
+### The pause is a game rule, not a harness limit
+
+The long sweep stalled at exactly 357300 s while asking for 600000 steps, and the reason is the original's own:
+`Strateg_CalcDetect`'s reveal arm calls `GameTime_Pause @ 0x5d6ac` at 0x818FC, so the geoscape clock stops the
+moment a contact is announced and does not move until the player answers that line. Answering it is a press on
+the panel the flag-10 draw arm builds: `StatusPanel_DrawSelectedContact @ 0x8E708` installs `pfnSelectTarget`
+(`Smap_SelectTarget`) on the shared confirm control 0x186BA4 at y 136 (0x88) and `pfnClearSelection` on 0x186BB4
+at y 160 (0xA0), both centred on x 120 (0x8EC84..0x8ECF4, `StatusPanel_CentredCtlX`), and the press arm for flag
+10 (0x87AEC) hit-tests exactly those two. Measured: `click 120 136` consumed the flag-10 line (`lines: 0 of 200`)
+and 20000 further steps then carried the clock from 357300 to 477300 s (build/crops/flow154c.txt -> run154c.log).
+That is the shape the 122a automation needs: a multi-day sweep must answer every contact it produces.
+
+### What 122a still needs, with the numbers
+
+The mission-kind line `flag 23` has one producer in the image -- `Strateg_ConfirmInterceptTarget @ 0x7fb98` -- and
+that has one caller, `StrategList_ProcessEvents @ 0x7fcb0`: the event engine, not a UI press. It needs the armed
+pair (`nInterceptShipIdx @ 0x15967C`, `nInterceptStrategIdx @ 0x159680`), the chased item's `nTimer > 0` and
+`Craft_CountSoldiersAboard != 0`, and it needs a target-type item to process. Over 4 game-days the scenario made
+none: item types seen were only 0 (the base) and 1 (crafts), `site -1` on every travelling item, 0 flag-23 lines.
+The scenario's own scalars are day counters: `nAlienPoolAddend @ 0x1472C8` (the port's other name for it is
+`pnDaysSinceStart`) rises once a day at 0x5D3C8 and `StrategList_RollCraftStats @ 0x81B7C` clamps the craft class
+to 2 while it is `< 15`, with `nMonthCounter @ 0x159648` (raised monthly at 0x5D170) selecting the weight row.
+So the class 3..7 missions with their sites need 15+ game-days = about 220000 pulse steps -- minutes with
+`fasttick`, not an hour. The tail is already pinned in the frame test (section 13 dumps `tact_mission_from_descent`):
+the flag-23 line draws the descent panel (`StatusPanel_DrawDescentPanel @ 0x914A4..0x91688`) with the launch control
+centred at y 102 and the cancel control at y 125, and the port already installs `World_BeginCraftSelectThunk` as
+that control's handler, so one press there runs `Smap_BeginCraftSelect @ 0x838dc`'s flag-23 arm and `Tact_InitMission`.
+
+### Two intermittent gate checks, recorded rather than smoothed over
+
+- Release stage: in the first Part 154 gate run, `test_appshell`'s two accelerator checks failed -- the posted
+  `VK_F5` reached the window as `WM_KEYDOWN 0x74` instead of being consumed into `WM_COMMAND` with low half 1.
+  Eighteen later runs of the same binary were clean, and no test injects key events, so the leading explanation
+  (an accelerator entry that names no modifier matches only when Ctrl/Shift/Alt are up in the ASYNC keyboard
+  state, which a posted message does not set) is not proven. `test_appshell` now prints that state as a
+  `[diag]` line so the next occurrence is evidence instead of a shrug; all 12 runs so far print
+  `ctrl 0x0 shift 0x0 menu 0x1` and pass.
+- Debug stage: the same run failed `test_geoscapeframe`'s "the flight round's strateg entries round-trip through
+  the chunk (no fewer than before)" and every re-run passed, Debug included (exit 0). `tools/check.sh` deliberately
+  does not treat the Debug ctest exit as fatal (documented at lines 48..53), so a Debug-only flake is reported and
+  not hidden -- the printed `debug ctest exit 8` is the report.
+
+Gates: clean build, release 66/66 tests, 21578 checks, `check: OK -- 135 artifact rows, 131 uncited functions,
+0 of them real gaps`, `frames: unchanged (93 reference pictures)`, `e2e pictures: unchanged (10)`,
+`check: ALL SIX GATES RAN`, build/check154b.log.

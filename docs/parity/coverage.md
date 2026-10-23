@@ -566,3 +566,10 @@ coverage (Part 153): PLAN 122a's first link measured live, no src change. A plac
 (0x9461C, 0x4582C), not a radar flag. docs/parity/measure_122a_sweep.sh: 60000 pulse steps = 5955 game-minutes gave
 one detected contact (line `flag 10 slots 4`, 0x818F4's contact message) at 18.4 tiles from the base; 15000 pulses
 (1500 min) gave none. The chain from a visible contact to a mission is pen-driven and every command exists already.
+coverage (Part 154): `--script fasttick n` added (user-approved) -- the three timer bodies without the paint,
+proven a pure accelerator (identical 40 clock readings, identical item counts, same contact at 357300 s). New
+measured fact for PLAN 122a: the contact message pauses the geoscape clock (GameTime_Pause at 0x818FC) and only a
+press on the flag-10 panel answers it -- confirm at (120,136) = Smap_SelectTarget, clear at (120,160) =
+Smap_ClearSelection -- measured resuming the clock from 357300 to 477300 s. The class 3..7 mission sites the event
+engine needs are gated by day counters (nAlienPoolAddend, clamped while < 15 at 0x81B7C), so 122a needs ~15
+game-days ~ 220000 pulse steps: minutes with fasttick.
