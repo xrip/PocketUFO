@@ -6816,8 +6816,10 @@ wiring to all five made the thunk read a function pointer as Map* -- the crash. 
 pCallbackUser and pShellUser; teeth proven (2 test_tactstate checks fail and the frame test faults again when the
 five sites are reverted). Staged a Grenade (slot 17) through the shop (0x7AFD8) onto the craft (0x78E4C/0x78E34); the
 deploy cell now holds 4 items and the ground strip 3 entries. Measured the stranding: aDeployCellOffsets @ 0xA66B8
-carries layer byte 1, the deploy cell 54/29/1 has no floor sprite, a general pass in the mission's own ticks drops
-all eight soldiers to the floored layer 0 below, and nothing can climb back (Unit_CanStepTo dir 8 0x2889c..0x28920,
+carries layer byte 1, the deploy cell 54/29/1 has no floor sprite, and after the mission's ticks all eight soldiers
+stand on the floored layer 0 below (measured, printed cell by cell; the arm that moved them is NOT identified -- the
+port's fall phase is post-shot fall DAMAGE, 0x52adc's Unit_PlaceOnMap calls at 0x53268/0x53840 belong to the
+kill/panic path, not to a descent), and nothing can climb back (Unit_CanStepTo dir 8 0x2889c..0x28920,
 TactHud_ClimbUp @ 0x1674c; ClimbDown @ 0x16af0 skips the pair test). The enemy brought no device either: 8 brackets
 held 48 targeting-alien reads and 0 command-17 entries -- LABEL_24 @ 0x4cda4 and the type gate 0x4cc84/0x4cc98
 (byte +0xA0 > 3 goes to 0x4D66C, EnemyAi_TryFireOrWander) stand before the throw arm 0x4d7c4..0x4d854. Tested the one
@@ -6829,8 +6831,12 @@ references re-recorded (four geoscape/options from the RNG shift -- spawn 492,31
 and four tact ones from the Grenade in the strip plus real friendly-fire wounds). IDB: comments at 0x2f408, 0x2fa9c,
 0x4cc98 (569/872/531 chars, read back), 0x1674c/0x16af0 function comments extended, idb_save ok. Gates: 66/66 tests,
 coverage 972/1103, check: OK.
-Open (the goal 2026-10-24, equipment really working): the throw chain needs a mission whose cargo cell is one the
-squad stands on -- either the resolve tail above answering, or a launch whose deploy cell has a floor sprite. Then
-163b arm + throw + blast, 164 armour and stun (uStunOrArmor @ Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254, auStat[8] *
+Open (the goal 2026-10-24, equipment really working -- NOT met: no picture yet shows a grenade worn, armed, thrown
+or damaging anything, and no armour absorption has been measured). 164 first answers which arm of the mission's tick
+processing moves the squad off the floorless deploy cell, because that decides whether the only reachable window for
+the cargo is the pre-tick one (squad on the cargo cell, full time units -- where a throw is NOT payable: 55 - 6 hand
+- 11 arm - 19 - 19 = exactly the whole budget, and Part 161's transfers already took 35), or whether a launch whose
+deploy cell has a floor sprite is needed. Then 165 arm + throw + blast (aliens on this field hold 93..107 HP, so the
+Grenade's 80 power wounds without killing and the roster counts stay stable), 166 armour and stun (uStunOrArmor @ Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254, auStat[8] *
 uStunOrArmor at 0x31a64), 165 mind control (Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at 0x4cd20 and
 cmd 18 mode 13 at 0x4d7bc).
