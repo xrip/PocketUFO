@@ -25393,3 +25393,112 @@ gains its column (tact_inventory_loose, 124 px), and the resolve-record fix make
 the squad sprites carry wound pixels (tact_mission_urban 26 px at x120..138 y134..138, tact_inventory_armed and
 tact_inventory_held 87 px each). One reference (`econ_hangar_grenade.png`) was an orphan on disk that no test
 dumps any more; it is removed.
+## Part 164 - the Grenade leaves the hand and lands on the cell the drop walk names
+
+The pen carries an item onto a hand and off it again through two different callees, and only the second one knows
+about the floor. The press on the ground row hits the Grenade (the hit-test store at 0x11B2C names the row) and the
+release anchored inside the right-hand rect {122,61,161,119} stores the item into Soldier.pHandR (region 5, the store
+at 0x12ED4): the soldier holds it, the ground strip loses its column and the hand slot gains it. Pressing the hand
+slot again empties it through Inv_ClearHitSlot's hand case (0x12124/0x1213C); releasing on the map drops it, and the
+drop walk at 0x13470..0x13490 does not name the unit's own cell -- it names the floored cell below it, measured from
+the unit's floorless 54/29/1 down to 54/29/0 with a floor sprite. 0x123C8 charges 6 for the hand and 5 for the ground
+(tu 18 -> 7) and 0x134B4 inserts the node into that cell's item list, so the deploy cell keeps only the last rifle
+copy: the pack and the Grenade both left it through the same walk.
+
+Two questions the throw needed are answered here. The Grenade now lies on a cell whose pFloorSpr is set, which is
+what the fall action's throw case searches for (its <=3-layer walk at 0x53CDC..0x53FA8) when it inserts a thrown
+item; and the throw is payable, because the EndEnemyTurn tail (0x4C73C..0x4C82C) refills the thrower to 55 TU, which
+covers 6 for the hand, 11 for arming and 19 for the throw with 19 to spare. References: tact_mission_grenade_worn
+(the Grenade in the hand, the soldier's sprite unchanged at this Part) and tact_mission_grenade_landed (it lying on
+the cell below the soldier). The orphan tact_mission_cargo_stranded.png, which no test dumps any more, is removed.
+
+## Part 165 - the armed throw runs end to end and takes an alien off the field
+
+Three port faults stood between the arming pad and an explosion, and the run names all three.
+(a) TactInputState keeps its own copies of Map_anActionCost (Map+0x4E4C) and Map_anActionEnabled (Map+0x4E7C) and
+nothing mirrored them, so Tact_HandleMapClick's throw enqueue at 0x153B0 priced the entry at 0 TU and handed it
+scatter argument 0 -- Unit_RollChance against 0 can only fail. World_TactInputSyncIn now copies the twelve pairs; at
+the click the run reads mode 11, cost 19, argument 33 (the thrower's auStat[5]).
+(b) The throw tail resolved the landing a second time and the cmd 0x11 flight walked the shared aim block, which the
+throw had not published: the block still held the previous shot's origin 680/392/8 and target 872/472/8 with dBound
+208, and the Grenade came down 12 cells off the aim. One landing call remains and the arc is published into the
+block the flight reads.
+(c) MoveActionCtx.pInvHooks was never wired, so the tail's Unit_RecalcInventoryStat @ 0x49ef0 returned at its NULL
+guard and uInvBurden never followed the hand.
+
+Measured chain. Mode 3 (cost 11, widget 42's neighbour) arms the device -- +7 fuse 0, +8 1 -- and 0x26204 reading
+bWeaponUnk8 takes mode 3 out of the row table afterwards. Widget 43 writes mode 11 (Map_PlaySample17_SetMode11 @
+0x179c0, store 0x179D8); the pad release converts mode 11 into latch 1 through 0x14F2C..0x14FB8, closes the pad at
+0x15028..0x1505C and leaves Map_nActionMode standing (it is shared scratch: the enemy AI writes 7 at 0x4d3dc, 1 at
+0x4d3fc, 4/5 at 0x4d6c8). The latch-1 press is case 1 at 0x153B0, whose callee TactState_EnqueueThrow @ 0x4b2f4 puts
+one command-17 entry in the queue carrying Map.pSelWeapon at entry+0x34 -- the item the hand menu published at
+0x17060 -- and the mode-11 price. Ticks 7 and 8 charged 1 each for two queued map steps; tick 10 charged 19
+(0x50834..0x50840) and emptied the right hand (0x50864 test, 0x50868 store), and the same tail's recalc took the
+Grenade off the burden. The scatter triple Unit_RollChance wrote at Map+0x15058 against argument 33 came out 0/0/0
+voxels (doubled at 0x508A8/0x508B8), so the re-solved arc kept the aimed cell, and on tick 14 the item stands on
+54/28/0. The countdown then ran past zero: 0x4B770 decrements the byte and the compare is signed, so 0 becomes 255
+and the device is spent; sort key 17 takes the default arm 0x4B8C0..0x4B8FC, which removes the node before
+Combat_ResolveShot. The blast ran on the Grenade's own record at that cell (fire power 80, fire type 2, the splash
+arm at 0x2e7d8): three squad members inside the box lost HP (47 -> 7, 41 -> 23, 57 -> 47), none outside it changed,
+and the alien that had stood on the landing cell (id 18, hp 39, armour 0, 0/0 cells from the blast cell) was off the
+field when the bracket ended -- 22 aliens before, 21 after.
+
+163.1a's open question came with its numbers too: a mode-7 burst aimed at a wall cell charged the magazine 18 -> 17
+and stored reason 1 at 49/31/0, and the flight left with dTravelSave 920.00 against dBound 87.97, Map.bFireHitResult
+1 and dTravel 930.00 -- 0x51c74 leaves the resolve as soon as that byte is set, so the drop pass at 0x2fa9c was
+never reached. That question stays open (bugs.tsv) now only as a question about that arm: the throw chain itself no
+longer depends on it. Four references move for this Part and Part 164: tact_mission_grenade_worn,
+tact_mission_grenade_landed, tact_mission_grenade_blast, tact_mission_cargo_fallen.
+
+## Part 166 - Unit_UpdateAnimPose reads the soldier's own hands, which is what draws held equipment
+
+The user's complaint was that no picture ever showed a soldier carrying anything. The cause was a seam the port had
+invented: Unit_UpdateAnimPose @ 0x4978c takes one argument and loads the hands off the soldier itself (0x49824
+pHandL @ Soldier+0x104, 0x49854 pHandR @ +0x108, then pObj->bListPri at +0xA4 and pObj->uSortKey at +0xC8). The port
+instead took an AnimHandInfo pair built by the caller, and 19 of its 20 call sites passed NULL, NULL -- the +10 at
+0x49884 and the +5 at 0x498a4 therefore never ran except at the one site that filled the pair, the spawn tail at
+0x3AF7C. AnimHandInfo and the Spawn_UpdatePose wrapper are gone; the function now reads the soldier's hands, and the
+20 call sites collapsed to one argument each.
+
+Why that is a drawing fault, not a cosmetic one. The pose is what MapView_DrawUnit indexes with: the body glyph row
+is aPoseFrameTable[pose + aUnitTypePoseBase[type]][kind] (the pose loads at 0x1cf9c, the 5*base+33 exception at
+0x1cfb0), and the weapon overlay is behind a gate at 0x1d2e8..0x1d2f4 that refuses every pose outside 5..0x11. An
+empty-handed soldier stops at a base pose 0..4 (0x4989c returns before any add), so it draws no held object at all;
+a soldier holding a weapon lands at 6..14 and draws both the weapon row and the object through the hand-ob column
+(nHandobBase + aItemQty[51] + facing, 0x1d3d0).
+
+Call-site census against the IDB. 0x4978c has 17 code call sites: 0x13c5c (Inv_HandlePointer tail), 0x3af7c
+(Tact_SpawnAliens, right after 0x3af44 puts the composition item in the left hand), 0x4af08 (EnemyAi_Wander, after
+0x4ae94/0x4aecc insert both hands into the floor cell and clear both), 0x4e664 (Tact_KillUnit), 0x4f908/0x4fb7c/
+0x4fdb4/0x4ffc0/0x50558/0x505d0/0x5086c (Tact_ProcessMoveAction arms), 0x50e90 (Tact_ProcessFireAction tick-4 stand/
+kneel arm) and 0x52e58/0x53728/0x5379c/0x53814/0x53864 (Tact_ProcessFallAction arms). Three of them serve two arms
+at once: 0x4fdb4 clears the walk flag for case 2 and case 7 jumps into it at 0x4fdac; 0x5379c is reached from both
+the spotted test and the pState byte at 0x111E0 (the pair the port names TactState.gap_70112); 0x50e90 is the shared
+tail of the stand-up and the kneel branch. So
+the port's 20 sites are not 20 original calls, and none of them is an extra call -- checked site by site against the
+switch jumptable at 0x4f438 and the arms listed above.
+
+Measured, on the mission's own soldier (tests/test_geoscapeframe.c, Part 161's field). Empty-handed the soldier keeps
+pose 1. After the pen wore the rifle (ObjectRec sort 4, bListPri 1) the pose is 11, which is 1 + 10 -- 0x4983c reads
+bListPri 1 and 0x49884 does the add. With every other byte of the mission untouched and only Soldier.nAnimPose put
+back to 1, the tactical picture changes by 48 px inside the box (122,116)..(135,129): that is the soldier's own
+sprite, and it is the +10 drawing it. Against the same frame with nothing worn the equipped battlefield now moves
+103 px above y 224 with the change box reaching y 116; before this Part the same comparison moved 55 px and its box
+started at y 155 -- the cursor stamp only, which is exactly what the Part 161 print used to assert as "the eight
+soldiers are pixel-identical". That sentence is gone.
+
+Teeth. Making Unit_UpdateAnimPose ignore the hands fails three checks in test_unit (the left-hand weapon cases), the
+pose arithmetic check and the picture check in test_geoscapeframe, and drops the equipped-vs-bare map change from 103
+px back to 55 px with the box moving from y 116 to y 155. Deleting the overlay gate at 0x1d2e8 in the port fails the
+two new test_isodraw checks, which compare the same held object at pose 1 (the overlay stays out and the drawn index
+is the body's own 8, identical to an empty-handed unit) with the same object at pose 6 (the overlay runs and writes
+its own index).
+
+Thirteen tactical pictures differ from the pre-fix build. Six committed references move against HEAD -- tact_play_aim,
+tact_play_enemyturn, tact_play_moved, tact_play_resumed, tact_play_shot, tact_play_shot_mid -- each inside a unit-
+sprite-sized box (14x14 to 31x27). tact_mission_bare is back to HEAD's picture: HEAD was already correct there
+because 0x3af7c was the one site that carried the hands, and the picture shows the spawn-equipped alien with its
+weapon. Reported, not changed here: the port names the flag 0x10 PUFO_UNITFLAG_KNEEL while the kneel flag is 0x01 --
+TactHud_ToggleKneel @ 0x16570 flips bit 0 at 0x16600/0x16638 and adjusts nAnimPose by hand, and Unit_UpdateAnimPose
+gives pose 0 to bit 0 and 2/4 to bit 0x10. The behaviour matches the ARM; only the name misleads.
+

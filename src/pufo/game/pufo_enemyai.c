@@ -249,7 +249,7 @@ static void EnemyAi_Wander(Soldier *pUnit, const EnemyAiActCtx *pCtx)
             (void)MapCell_ListInsertByPri(pDrop, pUnit->pHandR);
             pUnit->pHandR = NULL;
         }
-        Unit_UpdateAnimPose(pUnit, NULL, NULL);
+        Unit_UpdateAnimPose(pUnit);
     }
 
     for (;;) {

@@ -5487,6 +5487,12 @@ static void World_TactTickActiveUnit(void *pUser)
      * table lives in the shell's assets, so the move FSM can only make the lookup with it wired in. */
     move.apObjectTable = (pW->pAssets != NULL) ? (const ObjectRecFull **)pW->pAssets->apObjects : NULL;
     move.nObjectCount  = (pW->pAssets != NULL) ? (i32)pW->pAssets->nObjectCount : 0;
+    /* The throw tail runs Unit_RecalcInventoryStat (the BL at 0x4F9F4-side tail of case 17,
+     * 0x508A0) right after it clears the hand that held the thrown weapon. The recalc's four hooks
+     * -- item weight, two-handed, ammo cap, ammo weight -- read the shell's object tables, so an
+     * unwired ctx makes Unit_RecalcInventoryStat return at its NULL guard without touching
+     * uInvBurden: a thrown device stayed counted on the burden (Part 165). */
+    move.pInvHooks = &pW->tactInvHooks;
     /* 0x15138 has one live owner, the TactCursor the launch owns. The cast re-views the same
      * byte as the signed scratch the processors expect. */
     move.pnLayerScratch = (i8 *)&pW->tactEnv.cursor.nFlags;
@@ -5905,6 +5911,18 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
     pS->nActionLatch     = pMap->bActionLatch;
     pS->nActionMode      = pW->nMapActionMode;      /* unk_113A04 @ Map+0x4C, the same cell the walker
                                                      * reads; TactInput_CanScroll gates on it */
+    /* The two per-mode tables, read straight off the Map block by the pointer arms: the throw
+     * enqueue at 0x153B0 takes anActionCost[mode] (4*(mode+0x1393)) and anActionEnabled[mode]
+     * (4*(mode+0x139F)), the fire latch-2 arm takes the same two cells at 0x1535C, the melee arm
+     * takes the cost at 0x1524C, and the pad-release affordability test reads the cost at 0x14FE4.
+     * sTactUi owns the live cells -- Ui_FillActionCosts @ 0x263F0 writes both per mode -- and every
+     * input arm only reads them, so there is no SyncOut flush entry, exactly as for the map dims.
+     * Without this mirror the click arms read a zeroed copy: the queued throw charged 0 TU and
+     * carried scatter argument 0, so the miss roll always failed (Part 165). */
+    for (i = 0; i < PUFO_ACTION_MODE_COUNT; ++i) {
+        pS->anActionCost[i]    = pW->sTactUi.anActionCost[i];    /* Map_anActionCost @ 0x118804 */
+        pS->anActionEnabled[i] = pW->sTactUi.anActionEnabled[i];  /* Map_anActionEnabled @ 0x118834 */
+    }
     pS->nLayerScratch    = pW->tactEnv.cursor.nFlags;
     pS->nCursorX         = pW->tactEnv.cursor.nX;
     pS->nCursorY         = pW->tactEnv.cursor.nY;

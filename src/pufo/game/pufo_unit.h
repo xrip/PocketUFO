@@ -369,23 +369,18 @@ Mc1Rec *Rec_GetExtraSpr(u16 nBaseIdx, u8 nFacingByte);
  * The original's unused first context argument is dropped. */
 Mc1Rec *Unit_GetExtraSpr(const Soldier *pUnit);
 
-/* The two object fields Unit_UpdateAnimPose reads from each hand. TactItem.pObj
- * is the minimal ObjectRec, so the caller supplies them. */
-typedef struct AnimHandInfo {
-    bool bPresent;
-    u8   bListPri;   /* pObj->bListPri @ 0xA4 */
-    u16  uSortKey;   /* pObj->uSortKey @ 0xC8 */
-} AnimHandInfo;
-
 /* Unit_UpdateAnimPose @ 0x4978c.
  *
- * Derives nAnimPose from bFlags and the two hands. Flag 0x20 (dead) forces pose
- * 18 and masks bFlags to 0xE0. Flag 4 (aiming) gives 15/16/17 by kneel(1)/climb
- * (0x10). Otherwise the walk/kneel/climb flags give a base pose 0..4 and a held
- * weapon of category bListPri 1 or sort key 22/24 raises it by 10, any other
- * hand-held item raises it by 5, and no item leaves the base pose. */
-void Unit_UpdateAnimPose(Soldier *pUnit, const AnimHandInfo *pHandL,
-                         const AnimHandInfo *pHandR);
+ * Derives nAnimPose from bFlags and the two hands the soldier already holds:
+ * 0x49824/0x49854 load pUnit->pHandL / pUnit->pHandR and read each hand's
+ * pObj->bListPri / pObj->uSortKey, so the caller supplies nothing. Flag 0x20
+ * (dead) forces pose 18 and masks bFlags to 0xE0. Flag 4 (aiming) gives
+ * 15/16/17 by kneel(1)/climb (0x10). Otherwise the walk/kneel/climb flags give
+ * a base pose 0..4 and a hand holding an object of list priority 1 or sort key
+ * 22/24 raises it by 10, any other held object raises it by 5, and both hands
+ * empty leave the base pose. The +5/+10 shift is what makes hand-held equipment
+ * visible: the iso/unit draw picks its glyph rows from nAnimPose. */
+void Unit_UpdateAnimPose(Soldier *pUnit);
 
 /* Unit_CanStepExitDir @ 0x36d68.
  *

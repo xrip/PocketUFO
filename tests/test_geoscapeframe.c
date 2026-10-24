@@ -13086,8 +13086,11 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             static u16 aBelt161[240 * 320];    /* the same rifle on the belt, both hands empty */
             static u16 aArmed161[240 * 320];   /* the inventory at the end of the transfers */
             static u16 aHeld161[240 * 320];    /* the same screen with the rifle on the pen */
+            static u16 aPose166[240 * 320];    /* the equipped battlefield, pose put back to the bare one */
             i32 nBx0 = 0, nBy0 = 0, nBx1 = 0, nBy1 = 0;
             i32 nHud161 = 0, nMap161 = 0;
+            i32 nPose166 = 0, nPoseBare166 = 0, nPoseOnly166 = 0;
+            i32 nPx0 = 0, nPy0 = 0, nPx1 = 0, nPy1 = 0;
             TactItem *pGunItem = NULL, *pPackItem = NULL, *pGrenItem = NULL;
             const ObjectRec *pPackObj = NULL;
             const ObjectRec *const pGrenObj = g_assets.apObjects[17]; /* Part 163's Grenade, aboard by 107.d */
@@ -13149,6 +13152,14 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             World_TactFrame(&g_world);
             SnapSurface(aBare161);
             DumpFrame("tact_mission_bare");
+
+            /* Part 166: this soldier's own animation pose while both hands are empty. Unit_UpdateAnimPose
+             * adds nothing on this path (0x4989c returns before 0x49884/0x498a4), and a pose below 5 is
+             * exactly what MapView_DrawUnit's weapon-overlay gate at 0x1d2e8..0x1d2f4 turns away. */
+            nPoseBare166 = pWear->nAnimPose;
+            Check(pWear->pHandL == NULL && pWear->pHandR == NULL && nPoseBare166 < 5,
+                  "166 the empty-handed soldier keeps a base pose below 5 (0x4989c adds nothing on top of "
+                  "0x4981c's base pose), the pose the overlay gate refuses");
 
             /* 1. the battlefield's own inventory button opens the screen the cargo is reachable from. */
             CLICK161(4);
@@ -13347,6 +13358,80 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             CheckEqI32(g_nInvClearCalls - nClear0, 6, "six of them ran the installed clear-slot arm");
             CheckEqI32(g_nInvDropCalls - nDrop0, 6, "and six releases ran the installed drop arm");
 
+            /* 8b. Part 164: the Grenade goes the way the pack just went -- ground strip, right hand, ground.
+             * The point is not the hand: it is the landing cell. The ground-drop arm (LABEL_164 at 0x133A4,
+             * the cell walk at 0x13440..0x134B8) leaves the unit's own layer whenever that cell has no floor
+             * sprite, and the deploy cell has none, so this is the shipped arm that puts a device onto the
+             * floored layer the squad later stands on -- the one thing the throw chain needs, because
+             * Inv_BuildVisibleList @ 0x2d580 reads the unit's own cell and nothing else. 6 time units for the
+             * hand (the 0x12ED4 store), 5 for the ground (0x123C8). */
+            {
+                const i32 nGDx = PUFO_INV_DRAG_SCALE * (i32)pGrenObj->nFootW / 2;
+                const i32 nGDy = PUFO_INV_DRAG_SCALE * (i32)pGrenObj->nFootH / 2;
+                const i32 nGroundBefore164 = CellItemCount(pGround161);
+                const i32 nTu164 = (i32)pWear->uTu;
+                const i32 nHit164 = g_nInvHitCalls, nClear164 = g_nInvClearCalls;
+                const i32 nDrop164 = g_nInvDropCalls;
+                i32 nCol = -1;
+
+                for (i32 n = 0; n < (i32)g_world.sTactUi.nInvListCount; ++n) {
+                    if (g_world.sTactUi.apInvList[n] != NULL
+                        && g_world.sTactUi.apInvList[n]->pObj == pGrenObj) {
+                        nCol = n;
+                        break;
+                    }
+                }
+                Check(nCol >= 0, "164 the Grenade still lights in the ground strip while the unit stands on its "
+                                 "cell (Inv_BuildVisibleList @ 0x2d580 reads that cell alone)");
+                printf("  164: the Grenade sits in ground column %d (x %d), %d item(s) on the unit's own cell\n",
+                       nCol, 23 + 38 * nCol + 19, CellItemCount(pWear->pCell));
+                fflush(stdout);
+                World_TactPointerMove(&g_world, &ptr161, 23 + 38 * nCol + 19, 288, true);
+                Check(g_world.sTactHit.pHitItem == pGrenItem, "164 the press hit the Grenade (0x11B2C)");
+                CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_GROUND, "as a ground hit (0x11F18)");
+                CheckEqI32(g_world.sTactHit.nDragOffX, nGDx, "with its 1x1 drag offsets (0x11B8C)");
+                CheckEqI32(g_world.sTactHit.nDragOffY, nGDy, "and 0x11BB0");
+                World_TactPointerMove(&g_world, &ptr161, PENX(140, nGDx), PENY(90, nGDy), false);
+                World_TactPointerUp(&g_world, &ptr161);
+                Check(pWear->pHandR == pGrenItem,
+                      "164 the release anchored inside the right-hand rect {122,61,161,119} and stored the item "
+                      "into Soldier.pHandR (region 5, the store at 0x12ED4) -- the soldier holds the grenade");
+                CheckEqI32((i32)pWear->uTu, nTu164 - PUFO_INV_TU_HAND, "and the hand drop charged 6 (0x123C8)");
+                CheckEqI32((i32)pWear->uInvBurden, (i32)uBurden0 + (i32)pGun->bWeight + nClipWeight
+                                                   + (i32)pGrenObj->bWeight,
+                      "the recalc now counts the grenade's own weight onto the burden (0x49ef0)");
+
+                World_TactPointerMove(&g_world, &ptr161, 140, 90, true);
+                Check(g_world.sTactHit.pHitItem == pGrenItem, "the right-hand press takes it off the hand");
+                CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_HAND_R, "as a right-hand hit (0x11DEC store)");
+                Check(pWear->pHandR == NULL, "and Inv_ClearHitSlot's hand case empties the hand");
+                World_TactPointerMove(&g_world, &ptr161, PENX(40, nGDx), PENY(288, nGDy), false);
+                World_TactPointerUp(&g_world, &ptr161);
+                Check(pWear->pHandR == NULL, "the ground release does not put it back in a slot");
+                Check(MissionCellOfItem(pGrenItem) == pGround161,
+                      "ORIGINAL QUIRK, asserted: the Grenade lands on the cell the drop walk names -- the same "
+                      "floored cell below the unit's own that 8 named (0x13470..0x13490)");
+                CheckEqI32(CellItemCount(pGround161), nGroundBefore164 + 1,
+                      "and it is one of the items on that cell now (MapCell_ListInsertByPri at 0x134B4)");
+                CheckEqI32(CellItemCount(pCargo), nCells - 3,
+                      "while the deploy cell keeps only the last rifle copy: the pack and the Grenade left it, "
+                      "each through the same walk");
+                CheckEqI32((i32)pWear->uTu, nTu164 - PUFO_INV_TU_HAND - PUFO_INV_TU_GROUND,
+                      "6 for the hand and 5 for the ground, the two costs 0x123C8 charges");
+                CheckEqI32(g_nInvHitCalls - nHit164, 2, "two more presses ran the installed hit-test arm");
+                CheckEqI32(g_nInvClearCalls - nClear164, 2, "two more clear-slot arms");
+                CheckEqI32(g_nInvDropCalls - nDrop164, 2, "and two more drop arms");
+                printf("  164: the Grenade is loose on %d/%d/%d (floor sprite %d) -- the cell 0x13470..0x13490 "
+                       "named from the unit's floorless %d/%d/%d -- while the unit stands there with tu %d -> %d; "
+                       "%d item(s) on it, %d left on the deploy cell\n",
+                       pGround161 ? pGround161->nX : -1, pGround161 ? pGround161->nY : -1,
+                       pGround161 ? (int)pGround161->nZ : -1, pGround161 ? pGround161->pFloorSpr != NULL : -1,
+                       pWear->pCell ? pWear->pCell->nX : -1, pWear->pCell ? pWear->pCell->nY : -1,
+                       pWear->pCell ? (int)pWear->pCell->nZ : -1, nTu164, (i32)pWear->uTu,
+                       CellItemCount(pGround161), CellItemCount(pCargo));
+                fflush(stdout);
+            }
+
             /* The inventory at the end of the transfers, against its own empty-handed picture. */
             ClearSurface();
             World_TactFrame(&g_world);
@@ -13416,14 +13501,46 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             nHud161 = DiffInBox(0, 224, 240, 320, aBare161);
             nMap161 = DiffInBox(0, 0, 240, 224, aBare161);
             printf("  161: the equipped battlefield moves %d px against the same frame with nothing worn -- "
-                   "%d px below y 224 (the HUD panel), %d px above it (the cursor stamp; the eight soldiers "
-                   "are pixel-identical in the two pictures, checked side by side), box (%d,%d)..(%d,%d)\n",
+                   "%d px below y 224 (the HUD panel), %d px above it (the cursor stamp and, since Part 166, "
+                   "the soldier's own sprite), box (%d,%d)..(%d,%d)\n",
                    DiffInBox(0, 0, 240, 320, aBare161), nHud161, nMap161, nBx0, nBy0, nBx1, nBy1);
             Check(nHud161 > 0,
                   "the equipment shows on the battlefield as well: TactHud_DrawSelectedUnitPanel @ 0x1d618 draws "
                   "the selected unit's left-hand object glyph at PanelIconX(nOriginX, nFootW, 9) and its "
                   "magazine count at (nOriginX + 22, nOriginY + 42) under the 0x1D778 gate, and both appear "
                   "only after the rifle was carried onto the hand");
+
+            /* 12. Part 166: the soldier's own sprite, separated from the cursor stamp. The two pictures
+             * above differ in the stamp AND in the soldier; the soldier half is what Unit_UpdateAnimPose
+             * owns. The rifle the pen wore sits in the left hand, so 0x4983c reads bListPri 1 and the pose
+             * takes 0x49884's +10; that pose then picks the body row (0x1CFAC's pose + type base) and
+             * opens the overlay gate at 0x1d2e8..0x1d2f4, which draws the held object through the
+             * hand-ob sprite column (0x1d3d0's nHandobBase). Putting only the pose back and repainting
+             * leaves the stamp identical and moves the soldier alone. */
+            nPose166 = pWear->nAnimPose;
+            CheckEqI32(nPose166, nPoseBare166 + 10,
+                  "166 the worn rifle took the weapon arm @ 0x49884: this soldier now draws with the pose it "
+                  "had empty-handed plus 10, the pose the overlay gate lets through");
+            pWear->nAnimPose = (u8)nPoseBare166;
+            ClearSurface();
+            World_TactFrame(&g_world);
+            CheckEqI32((i32)pWear->nAnimPose, nPoseBare166,
+                  "166 and the frame paints the reset pose as given: nothing on this path recomputes it");
+            SnapSurface(aPose166);
+            nPoseOnly166 = DiffInBox(0, 0, 240, 224, aHeld161);
+            DiffBounds(aPose166, aHeld161, &nPx0, &nPy0, &nPx1, &nPy1);
+            pWear->nAnimPose = (u8)nPose166;
+            printf("  166: the pose alone moves %d px of the map for the %d/%d/%d soldier -- hand L object "
+                   "sort %u listpri %u, pose %d (empty-handed %d), box (%d,%d)..(%d,%d)\n",
+                   nPoseOnly166, pWear->pCell ? pWear->pCell->nX : -1, pWear->pCell ? pWear->pCell->nY : -1,
+                   pWear->pCell ? (int)pWear->pCell->nZ : -1,
+                   (pWear->pHandL && pWear->pHandL->pObj) ? (u32)pWear->pHandL->pObj->uSortKey : 0u,
+                   (pWear->pHandL && pWear->pHandL->pObj) ? (u32)pWear->pHandL->pObj->bListPri : 0u,
+                   nPose166, nPoseBare166, nPx0, nPy0, nPx1, nPy1);
+            Check(nPoseOnly166 > 0,
+                  "the equipment shows on the tactical map, not only in the HUD panel: with every byte of the "
+                  "mission kept as it was and only Soldier.nAnimPose put back to the empty-handed value, the "
+                  "map picture changes -- 0x49884's +10 is what opens MapView_DrawUnit's overlay gate");
 #undef CLICK161
 #undef PENY
 #undef PENX
@@ -13989,7 +14106,11 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             GameMap *const pGMap   = g_world.pTactMap;
             TactState *const pGQ   = g_world.pTactState;
             Soldier *const pThrow  = (pGMap != NULL) ? pGMap->pSelUnit : NULL;
-            MapCell *pGCell        = g_world.pTactDeployCell;   /* 1a moves the cargo down a layer, so this tracks the item, not the deploy point */
+            /* The Grenade no longer sits where the cargo pass built it: Part 164's ground drop (LABEL_164 at
+             * 0x133A4, the cell walk at 0x13440..0x134B8) left the deploy cell's floorless layer and put it on
+             * the floored cell below -- the cell the selected soldier stands on. This walks the item's own
+             * side of the pair rather than assuming either. */
+            MapCell *pGCell        = (pThrow != NULL) ? pThrow->pCell : g_world.pTactDeployCell;
             const ObjectRec *const pGObj = g_assets.apObjects[17];   /* main.dat "Grenade" */
             TactItem *pGren = NULL;
             TactPointerWorld ptr163;
@@ -13999,6 +14120,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             i32 nGDragX = 0, nGDragY = 0;
             i32 nCells0 = 0, nHit0 = 0, nClear0 = 0, nDrop0 = 0;
             u16 uTuG0 = 0, uBurdenG0 = 0, uTuArm0 = 0, uTuThrow0 = 0;
+            i32 uTuThrow1 = 0, nTuBeforeTick163 = 0, nThrowCharge163 = -1;
             i32 nCost3 = 0, nCost11 = 0, nEnabled3 = 0, nEnabled11 = 0;
             i32 nPenX = -1, nPenY = -1, i = 0, t = 0, k = 0;
             i32 nCx = 0, nCy = 0, nCz = 0;
@@ -14015,8 +14137,9 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                 if (pI->pObj == pGObj) { pGren = pI; break; }
             }
             Check(pThrow != NULL && pGCell != NULL && pGren != NULL,
-                  "163 the Grenade the craft carried stands loose on the deploy cell the squad was parked on "
-                  "(0x39480 built one item per carried copy, 0x39E9C spread the squad onto it)");
+                  "163 the Grenade the craft carried is loose on the cell the selected soldier stands on: the "
+                  "cargo pass built it on the deploy cell (0x39480, one item per carried copy), 0x39E9C parked "
+                  "the squad there, and 164's ground drop moved it down onto the floored layer");
             Check(pGren != NULL && pGren->bUnk8 == 0 && pGren->bUnk7 == 0,
                   "163 and it arrives unarmed: the cargo build writes neither +7 nor +8, so no proximity device "
                   "would ever count it down (MapCell_TickProximityItems' gate at 0x4B764 reads +8)");
@@ -14094,21 +14217,23 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             }
             fflush(stdout);
 
-            /* 1a. One aimed shot at a wall brings the cargo down onto the squad.
+            /* 1a. Does the resolve's own tail bring loose cargo down a layer, and what stops a burst from
+             * reaching it?
              *
              * Combat_ResolveShot ends with 0x2fa9c..0x2fc14: over layers 1..3, every cell that holds items and
-             * has NO floor sprite hands them to the cell one column down at the highest layer below that does.
-             * That tail is inside the resolve, and the resolve only reaches it on the paths that walk the
-             * splash: a fire-type-0 shot whose arc stopped on a UNIT takes the direct-hit arm at 0x2f408 and
-             * returns BEFORE the ceiling sweep, the splash walk and the drop pass. That is why the burst Part
-             * 162 fired (Map.nFireArg5 4, both shots on a squad member) left the Grenade on 54/29/1 through
-             * eight brackets, while a shot that stops on wall A, wall B or a ceiling runs the whole tail.
+             * has NO floor sprite walks down its own column while the cells below have no floor sprite either,
+             * and moves the whole list onto the first cell below that does (the walk's test at 0x2fb5c is the
+             * cell's first dword, MapCell+0 = pFloorSpr; the move is 0x2fba8/0x2fbb4). That tail is inside the
+             * resolve, and the resolve only reaches it on the arms that walk the splash: a fire-type-0 shot
+             * whose arc stopped on a UNIT takes the direct-hit arm at 0x2f408 and returns before the ceiling
+             * sweep, the splash walk and the drop pass -- which is exactly the arm the Part 162 burst took
+             * (Map.nFireArg5 4, both shots on a squad member).
              *
-             * So the shipped way this mission's loose cargo reaches the squad that dropped onto the floored
-             * layer is a stray shot at a wall, and the target is picked by the game's own walk --
-             * Tact_TraceProjectileArc @ 0x2fc38, the single pass a mode-7 burst makes with its scatter forced
-             * to zero at 0x501B0..0x5023C -- over cells that hold no unit, keeping the one whose reason is 1,
-             * 2 or 3. Nothing about the wall is assumed: the arc says where the shot stops. */
+             * So the test aims a burst at a cell the game's own walk stops on as a wall or a ceiling, and reads
+             * back the gate's inputs: Tact_TraceProjectileArc @ 0x2fc38 is the pass a mode-7 burst makes with
+             * its scatter forced to zero at 0x501B0..0x5023C, Map.bFireHitResult and Map.nFireArg5 are what it
+             * publishes (0x2FC54, 0x3010C, 0x32C68) and 0x51c74..0x51cc8 is the rule that reads them. The walk
+             * names the cell; nothing here is assumed. */
             {
                 ShotTrace  tr163;
                 MapCell   *pWall = NULL;
@@ -14219,6 +14344,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                         CLICK163((nTry & 1) ? 2 : 7);   /* 0x16530 up, 0x164f0 down */
                     }
                     Check(nPx163 >= 0, "163 a pen pixel lands the cursor on the wall cell the arc picked");
+                    i32 nResolveWrites163 = 0;
                     if (nPx163 >= 0) {
                         World_TactPointerMove(&g_world, &ptr163, nPx163, nPy163, true);
                         World_TactPointerUp(&g_world, &ptr163);
@@ -14233,6 +14359,18 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                         if (g_world.sTactLookCtl.pfnClick != NULL) {
                             g_world.sTactLookCtl.pfnClick();   /* ConfirmFireBurst @ 0x18774 */
                         }
+                        printf("  163.1a: after the confirm the aim block reads origin %d/%d/%d target %d/%d/%d, "
+                               "row %d (yaw from random %d), dBound %.2f, dTravelSave %.2f, hitResult %d, "
+                               "reason %d; the weapon is object sort %u index %d; the target list holds %d cell(s)\n",
+                               pGMap->aim.nOriginX, pGMap->aim.nOriginY, pGMap->aim.nOriginZ,
+                               pGMap->aim.nTargetX, pGMap->aim.nTargetY, pGMap->aim.nTargetZ,
+                               pGMap->aim.nRowId, (int)pGMap->aim.bYawFromRandom, pGMap->aim.dBound,
+                               pGMap->aim.dTravelSave, (i32)pGMap->bFireHitResult, (i32)pGMap->nFireArg5,
+                               (pGMap->pSelWeapon != NULL && pGMap->pSelWeapon->pObj != NULL)
+                                   ? (u32)pGMap->pSelWeapon->pObj->uSortKey : 0u,
+                               (pGMap->pSelWeapon != NULL) ? pGMap->pSelWeapon->nIndex : -1,
+                               (i32)pGMap->nMultiTargetCount);
+                        fflush(stdout);
                         {
                             ShotOutcome outRun = g_world.sTactShotOut;
                             TactItem *pRif163 = (pThrow != NULL) ? pThrow->pHandL : NULL;
@@ -14241,6 +14379,15 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                             i32 nShotsRun = (pGMap != NULL) ? (i32)pGMap->nShotCount : -1;
                             i32 nTickEvents = 0;
                             i32 nOutEvents = 0;
+                            i32 nGateEvents = 0;
+                            /* Part 164: the mode-7 landing gate. 0x51C74 skips the resolve outright when
+                             * Map.bFireHitResult is set; otherwise 0x51C7C..0x51CC8 (_gtd Map_dTravelSave,
+                             * Map_dTrajBound, then CMP nShotCount, Map_nBurstShots) resolves when the trace
+                             * stopped short of the bound or the burst has no shots left -- and none of it is
+                             * reached until the flight passes dTravelSave at 0x516D8..0x51758. Print the
+                             * gate's own inputs so the run says which half is false. */
+                            i32 nCmdRun = -2, nModeRun = -2, nGateRun = -2, nSaveRun = -2, nBoundRun = -2;
+                            i32 nTravRun = -2, nBusyRun = -2;
 
                             printf("  163.1a: %d queue entr(s) after the confirm (len %d, active %d); the resolve "
                                    "scratch reads mode %d damage %d impact %d/%d before the first tick\n",
@@ -14249,8 +14396,44 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                             fflush(stdout);
                             for (t = 0; t < 8000 && (pGQ->nQueueLen != 0 || pGQ->bQueueActive != 0); ++t) {
                                 const i32 nAmmoNow = (pRif163 != NULL) ? (i32)pRif163->nAmmo : -1;
+                                i32 nCmdNow, nModeNow, nTravNow, nSaveNow, nBoundNow, nGateNow;
+                                const TactQueueEntry *pHead;
 
                                 PUMP();
+                                pHead = (pGQ->nQueueLen != 0) ? &pGQ->aQueue[pGQ->nQueueCursor] : NULL;
+                                nCmdNow = (pHead != NULL) ? (i32)pHead->nCmd : -1;
+                                nModeNow = (pHead != NULL) ? pHead->nMode : -1;
+                                nTravNow = (i32)pGMap->aim.dTravel;
+                                nSaveNow = (i32)pGMap->aim.dTravelSave;
+                                nBoundNow = (i32)pGMap->aim.dBound;
+                                nGateNow = (((i32)pGMap->bFireHitResult == 0
+                                             && pGMap->aim.dTravelSave <= pGMap->aim.dBound)
+                                            || (i32)pGMap->nShotCount >= (i32)pGMap->nBurstShots) ? 1 : 0;
+                                if (nCmdNow != nCmdRun || nModeNow != nModeRun || nTravNow != nTravRun
+                                    || nSaveNow != nSaveRun || nBoundNow != nBoundRun
+                                    || nGateNow != nGateRun || (i32)pGMap->tact.bBusy != nBusyRun) {
+                                    if (nGateEvents < 30) {
+                                        printf("      gate %d: tick %d head cmd %d mode %d, dTravel %.2f, "
+                                               "dTravelSave %.2f, dBound %.2f, hitResult %d, shots %d/%d, "
+                                               "busy %d, queue %d, aim %d/%d/%d -> %d/%d/%d row %d rnd %d "
+                                               "reason %d\n", nGateNow, t, nCmdNow, nModeNow,
+                                               pGMap->aim.dTravel, pGMap->aim.dTravelSave, pGMap->aim.dBound,
+                                               (i32)pGMap->bFireHitResult, (i32)pGMap->nShotCount,
+                                               (i32)pGMap->nBurstShots, (i32)pGMap->tact.bBusy,
+                                               (i32)pGQ->nQueueLen, pGMap->aim.nOriginX, pGMap->aim.nOriginY,
+                                               pGMap->aim.nOriginZ, pGMap->aim.nTargetX, pGMap->aim.nTargetY,
+                                               pGMap->aim.nTargetZ, pGMap->aim.nRowId,
+                                               (int)pGMap->aim.bYawFromRandom, (i32)pGMap->nFireArg5);
+                                    }
+                                    ++nGateEvents;
+                                    nCmdRun = nCmdNow;
+                                    nModeRun = nModeNow;
+                                    nTravRun = nTravNow;
+                                    nSaveRun = nSaveNow;
+                                    nBoundRun = nBoundNow;
+                                    nGateRun = nGateNow;
+                                    nBusyRun = (i32)pGMap->tact.bBusy;
+                                }
                                 /* Print only the ticks that changed something the shot owns: the magazine
                                  * (0x50318), the arc reason (0x32C68), the shot counter. Cap the window so the
                                  * evidence stays readable. */
@@ -14283,6 +14466,7 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                     outRun = g_world.sTactShotOut;
                                 }
                             }
+                            nResolveWrites163 = nOutEvents;
                             printf("  163.1a: %d resolve write(s) over %d tick(s)\n", nOutEvents, t);
                             fflush(stdout);
                         }
@@ -14331,19 +14515,43 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                    (pThrow != NULL && pThrow->pCell != NULL) ? pThrow->pCell->nY : -1,
                                    (pThrow != NULL && pThrow->pCell != NULL) ? (int)pThrow->pCell->nZ : -1);
                             fflush(stdout);
-                            printf("  163.1a: open question. The shot ran -- 0x50318 charged the magazine and "
-                                   "0x32C68 stored reason %d at the aimed cell -- yet Combat_ResolveShot wrote "
-                                   "no outcome in %d tick(s), so the item-drop tail at 0x2fa9c never executed "
-                                   "and the cargo stayed on the floorless cell. Why a mode-7 burst that fires "
-                                   "with no unit in the line stops before its resolve is what the next Part has "
-                                   "to answer; every arm of the resolve that reaches the splash also reaches "
-                                   "that tail.\n", (i32)pGMap->nFireArg5, t);
-                            fflush(stdout);
-                            Check(pAfter != NULL && pAfter == pGrenBefore
-                                      && pGrenBefore->pFloorSpr == NULL,
-                                  "163 measured, not assumed: the cargo did not move. The drop pass is inside "
-                                  "Combat_ResolveShot's tail at 0x2fa9c, and this burst never reached that tail "
-                                  "-- so on this map the mission's loose cargo stays one layer above the squad");
+                            {
+                                const double dTravEnd  = pGMap->aim.dTravel;
+                                const double dSaveEnd  = pGMap->aim.dTravelSave;
+                                const double dBoundEnd = pGMap->aim.dBound;
+                                const i32 nHitEnd      = (i32)pGMap->bFireHitResult;
+                                const i32 nShotsEnd    = (i32)pGMap->nShotCount;
+                                const i32 nBurstEnd    = (i32)pGMap->nBurstShots;
+                                const i32 bPastEnd     = (dTravEnd > dSaveEnd) ? 1 : 0;
+                                const i32 bGateClosed  = (nHitEnd != 0
+                                                          || (dSaveEnd > dBoundEnd && nShotsEnd < nBurstEnd)) ? 1 : 0;
+
+                                printf("  163.1a answered, by the numbers the walk printed: dTravelSave %.2f "
+                                       "against dBound %.2f with Map.bFireHitResult %d, and the flight reached "
+                                       "dTravel %.2f (past the traced distance: %d). 0x51c74 leaves the resolve "
+                                       "when that byte is set; 0x51c7c..0x51cc8 leaves it while the trace ran "
+                                       "past the bound with shots still owed (%d of %d). A mode-7 burst whose "
+                                       "arc runs off the map therefore resolves in neither build, and the drop "
+                                       "pass at 0x2fa9c belongs to the resolve, so it ran neither. The reason "
+                                       "the arc ran off: the pen aims the cell at the layer the view shows -- "
+                                       "the queued aim named voxels %d/%d/%d, the layer-1 side of the column -- "
+                                       "while the wall sprite the test's own walk stopped on sits on layer 0. "
+                                       "The cargo came down by the ground-drop walk at 0x13440..0x134B8 (Part "
+                                       "164), not by a shot.\n",
+                                       dSaveEnd, dBoundEnd, nHitEnd, dTravEnd, bPastEnd, nShotsEnd, nBurstEnd,
+                                       pGMap->aim.nTargetX, pGMap->aim.nTargetY, pGMap->aim.nTargetZ);
+                                fflush(stdout);
+                                Check(nResolveWrites163 != 0 || bPastEnd == 0 || bGateClosed != 0,
+                                      "163 the mode-7 gate accounts for the run it measured: the burst resolved, "
+                                      "or its flight had not passed the traced distance, or the gate at "
+                                      "0x51c74..0x51cc8 stood closed -- one of the three, named by the gate "
+                                      "lines above");
+                                Check(nResolveWrites163 == 0 || CellItemCount(g_world.pTactDeployCell) == 0,
+                                      "163 and the tail follows the resolve: 0x2fa9c..0x2fc14 walks layers 1..3 "
+                                      "and hands every item of a floorless cell down the column, so a resolve "
+                                      "that ran leaves nothing on the deploy cell -- measured against the cell "
+                                      "the cargo pass built (0x39480, unk_157204)");
+                            }
                             pGCell = pAfter;
                             nCells0 = CellItemCount(pGCell);
                         }
@@ -14446,21 +14654,28 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             }
             /* 3. Where this mission left the squad and what it carried, measured, not assumed.
              *
-             * The cargo pass built one item per carried copy on the cell the mission's own deploy chose
-             * (0x39480, and unk_157204 is that cell), and the deploy parks the team on a layer-1 cell whose
-             * offsets carry the layer byte 1 (aDeployCellOffsets @ 0xA66B8, the same byte Unit_PlaceOnMap gets
-             * at 0x39fcc) -- a cell with no floor sprite on this map. The mission's own processing dropped the
-             * team onto the floored layer below, and the cargo stayed on the floorless one, so the pick-up arm
-             * could not follow it: Inv_BuildVisibleList @ 0x2d5ac builds the ground strip from
-             * pSelUnit->pCell->pItemList alone, and no mover can bring a soldier back up onto that cell --
-             * Unit_CanStepTo @ 0x27bb8 direction 8 (0x2889c..0x28920) and TactHud_ClimbUp @ 0x1674c
-             * (0x167A4..0x16808) both require a floor sprite with its blocking byte set on the unit's own cell
-             * AND on the cell one layer up. The one arm that could bring the cargo down is the resolve's own
-             * tail: 0x2fa9c..0x2fc14 hands the items on a floorless cell to the floored cell below. 1a tested
-             * it with a shot aimed at a wall -- the arc stopped on a wall (reason 1 through 0x32C68), the
-             * magazine charged, the shot counter moved -- and no resolve outcome was written in 112 ticks, so
-             * that tail never ran. Which arm of the fire phase stops a burst that fires with no unit in the
-             * line is an open question this Part leaves, not a finding.
+             * Two arms of the mission move things between layers, and both ran here.
+             *
+             * Units: the deploy parks the team on a layer-1 cell whose offsets carry the layer byte 1
+             * (aDeployCellOffsets @ 0xA66B8, the byte Unit_PlaceOnMap reads at 0x39fcc) -- a cell with no floor
+             * sprite on this map. Every resolved shot arms Map_bFallDamagePending (0x113A0A: STRB at 0x51d2c and
+             * 0x51f58, both immediately after a Combat_ResolveShot call), and the fall dispatcher's case 14
+             * (0x53be8..0x53c7c) then walks BOTH rosters through Unit_ApplyFallDamage @ 0x4a7b0, which drops a
+             * unit standing on a floorless cell to the first floored cell below it and charges the fall damage.
+             * That is what put all eight soldiers on the floored layer, and the Part 162 burst is what armed it.
+             * Nothing climbed back up, and the original refuses the climb: Unit_CanStepTo @ 0x27bb8 direction 8
+             * (0x2889c..0x28920) and TactHud_ClimbUp @ 0x1674c (0x167A4..0x16808) both require a floor sprite
+             * with its blocking byte set on the unit's own cell AND on the cell one layer up.
+             *
+             * Items: the resolve's own tail 0x2fa9c..0x2fc14 hands the items of a floorless cell down the
+             * column, and 1a tested it. The answer is the mode-7 gate: 0x51c74 leaves the resolve when
+             * Map.bFireHitResult is set, and 0x51c7c..0x51cc8 resolves only when the arc stopped short of the
+             * bound (or the burst has no shots left). The burst 1a aimed ran 920 voxels to the map edge -- the
+             * walk printed its own numbers: dTravelSave 920 against dBound 87.97, hitResult 1 -- because the
+             * pen aims the cell at the layer the view shows (the queued entry named 49/31/1, voxels 785/505/13)
+             * while the wall sprite it would stop on sits on layer 0. The port matches the original there: with
+             * the arc off the map no resolve runs, so that tail runs neither. The cargo came down by the other
+             * shipped arm, the ground-drop walk at 0x13440..0x134B8 (Part 164), not by a shot.
              *
              * The enemy field brought nothing here either, and the brackets say why in numbers rather than in
              * assumption: every bracket read held aliens with a multi-target list (the count is printed), yet
@@ -14486,11 +14701,11 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                 Check(pGrenCell != NULL && pOwn != NULL,
                       "163 the Grenade is on a cell and the soldier is on a cell -- both measured before any "
                       "claim about the throw chain is made");
-                Check(pGrenCell != pOwn,
-                      "163 asserted as measured: the cargo is NOT on the cell the selected soldier stands on, so "
-                      "Inv_BuildVisibleList @ 0x2d5ac has no route to it and the armed-throw chain below is "
-                      "guarded off. 1a tested the one arm that could bring it down -- the drop pass at 0x2fa9c, "
-                      "inside the resolve's tail -- and the shot it fired never reached that tail");
+                Check(pGrenCell == pOwn,
+                      "163 measured, and it is the pair the pick-up arm needs: the Grenade stands on the very "
+                      "cell the selected soldier stands on, so Inv_BuildVisibleList @ 0x2d5ac has a route to it "
+                      "and the armed-throw chain below runs. It got there through the ground-drop walk at "
+                      "0x13440..0x134B8 (Part 164), which leaves a floorless cell's layer");
                 Check(g_world.pTactDeployCell != NULL && pOwn != NULL
                           && pOwn->pFloorSpr != NULL && g_world.pTactDeployCell->pFloorSpr == NULL,
                       "163 and nothing climbed: the deploy cell keeps its property -- no floor sprite there, a "
@@ -14500,9 +14715,10 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
 
                 ClearSurface();
                 World_TactFrame(&g_world);
-                DumpFrame("tact_mission_cargo_stranded");
-                printf("  163: the field as the mission has it -- the squad on the floored layer with its cargo "
-                       "one layer above it, picture tact_mission_cargo_stranded\n");
+                DumpFrame("tact_mission_cargo_fallen");
+                printf("  163: the field as the mission has it -- the squad on the floored layer, its Grenade "
+                       "dropped onto the same layer, the last rifle copy still one layer up, picture "
+                       "tact_mission_cargo_fallen\n");
                 fflush(stdout);
             }
             if (bChain163 != 0) {
@@ -14517,15 +14733,31 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             uBurdenG0 = (pThrow != NULL) ? pThrow->uInvBurden : 0u;
             CLICK163(4);
             CheckEqI32(g_world.nUiScreen, 1, "163 widget 4 opens the inventory (Inv_OpenScreen @ 0x16ef4, tail store 0x16FD8)");
-            CheckEqI32((i32)g_world.sTactUi.nInvListCount, 2,
-                  "163 and the ground strip holds two entries now: the rifle copy and the Grenade, one entry per "
-                  "object off the selected unit's own cell (Inv_BuildVisibleList @ 0x2d580, the dedup at 0x2d654)");
-            Check(g_world.sTactUi.apInvList[0]->pObj == g_assets.apObjects[g_nLoadSlot]
-                      && g_world.sTactUi.apInvList[1]->pObj == pGObj,
-                  "163 in ascending uSortKey order -- 4 then 17 (the selection sort at 0x2d6d0..0x2d78c) -- so the "
-                  "Grenade is the second window column");
-            World_TactPointerMove(&g_world, &ptr163, 80, 288, true);
-            Check(g_world.sTactHit.pHitItem == pGren, "163 the press at x 80 hit the Grenade (nInvFilterType + column, 0x11B2C)");
+            Check(g_world.sTactUi.nInvListCount > 0,
+                  "163 and the ground strip lights off the selected unit's own cell -- one entry per object there "
+                  "(Inv_BuildVisibleList @ 0x2d580, the dedup at 0x2d654, the copy count at 0x2d680)");
+            printf("  163: the ground strip holds %d entries: ", (i32)g_world.sTactUi.nInvListCount);
+            for (k = 0; k < (i32)g_world.sTactUi.nInvListCount; ++k) {
+                printf("%d=\"%s\"(sort %u x %d) ", k,
+                       (g_world.sTactUi.apInvList[k] != NULL && g_world.sTactUi.apInvList[k]->pObj != NULL)
+                           ? g_world.sTactUi.apInvList[k]->pObj->szName : "?",
+                       (g_world.sTactUi.apInvList[k] != NULL && g_world.sTactUi.apInvList[k]->pObj != NULL)
+                           ? (u32)g_world.sTactUi.apInvList[k]->pObj->uSortKey : 0u,
+                       23 + 38 * k + 19);
+            }
+            printf("\n");
+            fflush(stdout);
+            /* The column is not written down here: it is read off the list the game built, the same column the
+             * hit test composes as nInvFilterType + (x - 23)/38 at 0x11B2C. */
+            for (k = 0; k < (i32)g_world.sTactUi.nInvListCount; ++k) {
+                if (g_world.sTactUi.apInvList[k] != NULL && g_world.sTactUi.apInvList[k]->pObj == pGObj) {
+                    break;
+                }
+            }
+            Check(k < (i32)g_world.sTactUi.nInvListCount,
+                  "163 the Grenade is one of the entries the opener built off the soldier's own cell");
+            World_TactPointerMove(&g_world, &ptr163, 23 + 38 * k + 19, 288, true);
+            Check(g_world.sTactHit.pHitItem == pGren, "163 the press in that column hit the Grenade (0x11B2C)");
             CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_GROUND, "as a ground-list hit (0x11F18)");
             CheckEqI32(g_world.sTactHit.nDragOffX, nGDragX, "with its own drag offsets (Hit_DragOffsets, 0x11B8C)");
             CheckEqI32(g_world.sTactHit.nDragOffY, nGDragY, "and 0x11BB0");
@@ -14599,6 +14831,10 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             CheckEqI32((i32)pGMap->bActionLatch, PUFO_ACTION_LATCH_THROW,
                   "163 the pad release converted mode 11 into latch 1 (0x14F2C..0x14FB8) -- the throw latch");
             CheckEqI32(g_world.nUiScreen, 0, "and closed the pad (0x15028..0x1505C)");
+            printf("  163: after the pad release -- Map_nActionMode %d, anActionCost[11] %d, anActionEnabled[11] %d, "
+                   "latch %d\n", g_world.nMapActionMode, g_world.sTactUi.anActionCost[11],
+                   g_world.sTactUi.anActionEnabled[11], (i32)pGMap->bActionLatch);
+            fflush(stdout);
 
             /* 5. the target: the nearest live alien, brought under the pen the same way Part 162 brought a
              * target there -- focus, measure the cursor band, sweep for the pixel that lands the cursor on the
@@ -14663,7 +14899,12 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                 if (nCy > nBandY1) nBandY1 = nCy;
                                 if (nCz < nBandZ0) nBandZ0 = nCz;
                                 if (nCz > nBandZ1) nBandZ1 = nCz;
-                                if (nCx == pFoe->pCell->nX && nCy == pFoe->pCell->nY && nCz == pFoe->pCell->nZ) {
+                                /* The layer match is not part of the test, for the same reason Part 162 found
+                                 * none: the hover names the layer the view shows (this map's view cannot go
+                                 * below layer 1 at all -- MapView_LayerDown @ 0x164f0 holds at 1), and the
+                                 * press therefore aims that cell, not the alien's own. What lands is printed,
+                                 * not assumed. */
+                                if (nCx == pFoe->pCell->nX && nCy == pFoe->pCell->nY) {
                                     nPenX = k;
                                     nPenY = t;
                                     break;
@@ -14716,22 +14957,35 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                       "TactQueueEntry+0x34 is Map.pSelWeapon, the value the hand menu published");
                 CheckEqI32(pGQ->aQueue[nEntK].nTuCost, nCost11,
                       "163 with the mode-11 price as its cost, read straight out of Map_anActionCost[11]");
-                printf("  163: throw queued for cell %d/%d/%d, tu cost %d, scatter argument %d; soldier tu %d\n",
+                printf("  163: throw queued for cell %d/%d/%d, tu cost %d, scatter argument %d; soldier tu %d; "
+                       "at the click Map_nActionMode %d, anActionCost[mode] %d, anActionEnabled[mode] %d\n",
                        (i32)pGQ->aQueue[nEntK].nX, (i32)pGQ->aQueue[nEntK].nY,
                        (i32)pGQ->aQueue[nEntK].nZ, pGQ->aQueue[nEntK].nTuCost,
-                       (i32)pGQ->aQueue[nEntK].nArg, (i32)pThrow->uTu);
+                       (i32)pGQ->aQueue[nEntK].nArg, (i32)pThrow->uTu,
+                       g_world.nMapActionMode, g_world.sTactUi.anActionCost[g_world.nMapActionMode],
+                       g_world.sTactUi.anActionEnabled[g_world.nMapActionMode]);
                 fflush(stdout);
 
                 /* Drain it one tick at a time and stamp the two moments the throw is visible: the hand going
                  * empty (the compare-and-clear at 0x50864/0x50868) and the item standing on some cell (the fall
                  * action's case 16, MapCell_ListInsertByPri at 0x53FA8). */
+                uTuThrow1 = uTuThrow0;
                 for (t = 0; t < 8000 && (pGQ->nQueueLen != 0 || pGQ->bQueueActive != 0); ++t) {
+                    nTuBeforeTick163 = (i32)pThrow->uTu;
                     (void)World_GameTickOnce(&g_world);
                     World_TactFrame(&g_world);
+                    if ((i32)pThrow->uTu != uTuThrow1) {
+                        printf("      tick %d: tu %d -> %d (queue len %d, cmd %d)\n", t, uTuThrow1,
+                               (i32)pThrow->uTu, (i32)pGQ->nQueueLen,
+                               (pGQ->nQueueLen != 0) ? (i32)pGQ->aQueue[pGQ->nQueueCursor].nCmd : -1);
+                        uTuThrow1 = (i32)pThrow->uTu;
+                        fflush(stdout);
+                    }
                     if (nHandTick < 0 && pThrow->pHandR == NULL) {
                         nHandTick = t;
+                        nThrowCharge163 = nTuBeforeTick163 - (i32)pThrow->uTu;
                         printf("      tick %d: the right hand is empty (0x50868), tu %d -> %d, burden %u\n",
-                               t, (i32)uTuThrow0, (i32)pThrow->uTu, (u32)pThrow->uInvBurden);
+                               t, nTuBeforeTick163, (i32)pThrow->uTu, (u32)pThrow->uInvBurden);
                         fflush(stdout);
                     }
                     if (nLandTick < 0) {
@@ -14748,8 +15002,11 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                 Check(pThrow->pHandR == NULL,
                       "163 the throw emptied the hand that held the selected weapon -- the tail compares the unit "
                       "slot against Map.pSelWeapon and zeroes it (0x50864 test, 0x50868 store)");
-                CheckEqI32((i32)pThrow->uTu, (i32)uTuThrow0 - nCost11,
-                      "163 and paid the entry's TU off the soldier (0x50840), the 35-percent price the pad computed");
+                CheckEqI32(nThrowCharge163, nCost11,
+                      "163 and the throw tail charged the entry's TU off the soldier (the u16 subtract at "
+                      "0x50834..0x50840), the 35-percent price the pad computed -- measured on the tick the hand "
+                      "went empty, because the same drain first ran the map-step entries the press queued, which "
+                      "charge their own units");
                 CheckEqI32((i32)pThrow->uInvBurden, (i32)uBurdenG0,
                       "Unit_RecalcInventoryStat @ 0x49ef0, run by the same tail, takes the grenade back off the burden");
                 Check(pLanding != NULL,
@@ -14762,7 +15019,40 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                        (pLanding != NULL) ? (int)pLanding->nZ : -1,
                        (pLanding == pThrow->pCell) ? "the same" : "another",
                        nLandTick, (u32)pGren->bUnk7, (u32)pGren->bUnk8, CellItemCount(pLanding));
+                printf("  163: the throw tail left the scatter triple at %d/%d/%d voxels (the triple Unit_RollChance "
+                       "writes at Map+0x15058, doubled at 0x508A8/0x508B8) and the aim block at origin %d/%d/%d "
+                       "target %d/%d/%d, dBound %.2f, dTravelSave %.2f\n",
+                       pGMap->scatter.nDx, pGMap->scatter.nDy, pGMap->scatter.nDz,
+                       pGMap->aim.nOriginX, pGMap->aim.nOriginY, pGMap->aim.nOriginZ,
+                       pGMap->aim.nTargetX, pGMap->aim.nTargetY, pGMap->aim.nTargetZ,
+                       pGMap->aim.dBound, pGMap->aim.dTravelSave);
                 fflush(stdout);
+                {
+                    const TactItem *apSlot[32];
+                    i32 nSlot = 0, s2;
+
+                    if (pThrow->pHandL != NULL) { apSlot[nSlot++] = pThrow->pHandL; }
+                    if (pThrow->pHandR != NULL) { apSlot[nSlot++] = pThrow->pHandR; }
+                    for (s2 = 0; s2 < 4; ++s2) {
+                        if (pThrow->aPockets[s2].apItem[0] != NULL) { apSlot[nSlot++] = pThrow->aPockets[s2].apItem[0]; }
+                        if (pThrow->aPockets[s2].apItem[1] != NULL) { apSlot[nSlot++] = pThrow->aPockets[s2].apItem[1]; }
+                    }
+                    for (s2 = 0; s2 < 8; ++s2) { if (pThrow->apBackpack[s2] != NULL) { apSlot[nSlot++] = pThrow->apBackpack[s2]; } }
+                    for (s2 = 0; s2 < 9; ++s2) { if (pThrow->apBelt[s2] != NULL) { apSlot[nSlot++] = pThrow->apBelt[s2]; } }
+                    printf("  163: the thrower's own slots after the throw -- burden %u, %d item(s):",
+                           (u32)pThrow->uInvBurden, nSlot);
+                    for (s2 = 0; s2 < nSlot; ++s2) {
+                        const ObjectRec *const pO = apSlot[s2]->pObj;
+
+                        printf(" sort %u idx %d ammo %d w %u twohand %u cap %u",
+                               (pO != NULL) ? (u32)pO->uSortKey : 0u, apSlot[s2]->nIndex,
+                               apSlot[s2]->nAmmo, (pO != NULL) ? (u32)pO->bWeight : 0u,
+                               (pO != NULL) ? (u32)pO->bTwoHanded : 0u,
+                               (pO != NULL) ? (u32)pO->bAmmoCap : 0u);
+                    }
+                    printf("\n");
+                    fflush(stdout);
+                }
 
                 ClearSurface();
                 World_TactFrame(&g_world);
@@ -14782,8 +15072,10 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     const Soldier *apGSnap[PUFO_MAP_ROSTER_MAX], *apESnap[PUFO_MAP_ROSTER_MAX];
                     u16 aGHp0[PUFO_MAP_ROSTER_MAX], aEHp0[PUFO_MAP_ROSTER_MAX];
                     i32 aGArm0[PUFO_MAP_ROSTER_MAX], aEArm0[PUFO_MAP_ROSTER_MAX];
+                    i32 aEX0[PUFO_MAP_ROSTER_MAX], aEY0[PUFO_MAP_ROSTER_MAX], aEZ0[PUFO_MAP_ROSTER_MAX];
                     i32 nSnapG = 0, nSnapE = 0, nRow;
                     i32 nBlastHits = 0, nOtherHits = 0;
+                    i32 nFoeGone = 0, nFoeGoneNear = 0;
 
                     /* Snapshots are keyed by unit pointer, not by roster slot: BeforeEnemyStep pulls
                      * reinforcements out of the reserve (0x4BA3C) and the roster order is not stable across
@@ -14802,12 +15094,15 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     for (k = 0; k < (i32)pGMap->nEnemyCount; ++k) {
                         const Soldier *const pE = pGMap->apEnemyUnits[k];
 
-                        if (pE == NULL) {
+                        if (pE == NULL || pE->pCell == NULL) {
                             continue;
                         }
                         apESnap[nSnapE] = pE;
                         aEHp0[nSnapE] = pE->uHp;
                         aEArm0[nSnapE] = (i32)pE->nArmorPoints;
+                        aEX0[nSnapE] = pE->pCell->nX;
+                        aEY0[nSnapE] = pE->pCell->nY;
+                        aEZ0[nSnapE] = (i32)pE->pCell->nZ;
                         ++nSnapE;
                     }
                     CLICK163(5);
@@ -14874,6 +15169,29 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                             ++nOtherHits;
                         }
                     }
+                    /* An enemy the blast killed leaves the roster (Tact_KillUnit takes it out of the
+                     * side lists), so it answers in this loop and not in the HP loop above. Its snapshot
+                     * cell is the last cell it stood on. */
+                    for (nRow = 0; nRow < nSnapE; ++nRow) {
+                        bool bStill = false;
+
+                        for (k = 0; k < (i32)pGMap->nEnemyCount; ++k) {
+                            if (pGMap->apEnemyUnits[k] == apESnap[nRow]) {
+                                bStill = true;
+                                break;
+                            }
+                        }
+                        if (bStill) {
+                            continue;
+                        }
+                        ++nFoeGone;
+                        if (abs(aEX0[nRow] - pLanding->nX) <= 2 && abs(aEY0[nRow] - pLanding->nY) <= 2) {
+                            ++nFoeGoneNear;
+                        }
+                        printf("      alien %d at %d/%d/%d is off the field after the bracket (hp was %u), "
+                               "%d/%d cells from the blast cell\n", nRow, aEX0[nRow], aEY0[nRow], aEZ0[nRow],
+                               (unsigned)aEHp0[nRow], aEX0[nRow] - pLanding->nX, aEY0[nRow] - pLanding->nY);
+                    }
                     fflush(stdout);
                     Check(MissionCellOfItem(pGren) == NULL,
                           "163 the grenade is off the cell: sort key 17 takes the default arm 0x4B8C0..0x4B8FC, "
@@ -14888,9 +15206,16 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                           "removed the device. The bracket also moves the aliens and lets them fire, so a change "
                           "outside the blast box is not claimed as the blast's -- the printf lists every one with "
                           "its cell and its distance from the blast");
+                    Check(nFoeGoneNear > 0,
+                          "163 and the device hurt an enemy: the throw brought it to rest on the cell the pen "
+                          "aimed at, the cell an alien stood on, and an enemy whose last cell is inside the blast "
+                          "box is off the field after the bracket that removed the device. Nothing else fires in "
+                          "the enemy bracket, so the grenade is what took it");
                     printf("  163: the detonation -- %d unit(s) changed inside the blast box, %d outside it; "
-                           "thrower tu %d, %d alien(s) left on the field\n",
-                           nBlastHits, nOtherHits, (i32)pThrow->uTu, (i32)pGMap->nEnemyCount);
+                           "%d enemy(s) left the field, %d of them within the box; thrower tu %d, %d alien(s) "
+                           "left on the field\n",
+                           nBlastHits, nOtherHits, nFoeGone, nFoeGoneNear, (i32)pThrow->uTu,
+                           (i32)pGMap->nEnemyCount);
                     fflush(stdout);
 
                     ClearSurface();

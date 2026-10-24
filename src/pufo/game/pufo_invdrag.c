@@ -821,7 +821,7 @@ bool Inv_HandlePointer(const InvDropCtx *pCtx)
     if (pHooks->pInvStat != NULL) {
         Unit_RecalcInventoryStat(pUnit, pHooks->pInvStat);
     }
-    Unit_UpdateAnimPose(pUnit, NULL, NULL);
+    Unit_UpdateAnimPose(pUnit);
     return bPlaced;
 }
 

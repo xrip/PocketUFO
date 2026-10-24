@@ -1841,6 +1841,8 @@ static void TestUnitPoseTable(void)
 
 static void TestUnitWeaponPass(void)
 {
+    i32 nBody166;
+
     printf("MapView_DrawUnit: the weapon overlay\n");
 
     UnitFixture_Reset();
@@ -1914,6 +1916,42 @@ static void TestUnitWeaponPass(void)
     MapView_DrawUnit(&g_uiso, &g_ugate);
     CheckEqI32(g_uiso.bTwoHandWeapon, 0, "with the flag clear, step 4 is the last step");
     CheckEqI32(g_uiso.nAnimParam, 9 + 3, "the index is aItemQty[51] plus the unwrapped facing");
+
+    /* The pose gate at 0x1d2e8..0x1d2f4 (`nPose < 5 || nPose >= 0x12` skips the overlay). This is the
+     * seam that decides whether hand-held equipment shows on the map at all: Unit_UpdateAnimPose leaves
+     * an empty-handed unit at its base pose 0..4 (the 0x4989c early return adds nothing) and gives any
+     * hand-held object 5..14 (0x498a4 / 0x49884), so the +5/+10 arm is what opens the gate. */
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handL.pObj = &g_objMisc;
+    g_objMisc.bListPri = 0;                    /* not a weapon: the two-hand group stays off */
+    g_objMisc.uSortKey = 7;
+    g_objMisc.aItemQty[51] = 0;
+    g_unit.pHandL = &g_handL;
+    g_unit.nAnimPose = 1;                      /* 0x4981c: idle base pose */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    nBody166 = g_uiso.nAnimParam;
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.nAnimPose = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nAnimParam, nBody166,
+               "a pose below 5 leaves the overlay out: the held object draws exactly what an "
+               "empty-handed unit draws, so nothing about the equipment is visible");
+    Check(nBody166 != 0, "the two cases stay distinguishable: the body's own index is not the overlay's 0");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handL.pObj = &g_objMisc;
+    g_objMisc.bListPri = 0;
+    g_objMisc.uSortKey = 7;
+    g_objMisc.aItemQty[51] = 0;
+    g_unit.pHandL = &g_handL;
+    g_unit.nAnimPose = 6;                      /* 1 + 5, what 0x498a4 gives a non-weapon hand */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nAnimParam, 0 + 0,
+               "the same hand at the pose 0x498a4 produces runs the overlay and writes the object's own index");
 
     UnitFixture_Reset();
     g_aUnitGrid[0][0].bFlags44 = 1;

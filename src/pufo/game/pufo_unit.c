@@ -748,13 +748,12 @@ bool Unit_ApplyControlRecovery(Soldier *pUnit)
 }
 
 /* Unit_UpdateAnimPose @ 0x4978c. */
-void Unit_UpdateAnimPose(Soldier *pUnit, const AnimHandInfo *pHandL,
-                         const AnimHandInfo *pHandR)
+void Unit_UpdateAnimPose(Soldier *pUnit)
 {
     /* A hand counts as a weapon (poses +10) when its object has list priority 1
      * or sort key 22/24; any other held item gives +5. */
-    bool bHasHandL;
-    bool bHasHandR;
+    TactItem *pHandL;
+    TactItem *pHandR;
 
     if ((pUnit->bFlags & 0x20) != 0) {
         pUnit->bFlags &= 0xE0u;
@@ -786,22 +785,28 @@ void Unit_UpdateAnimPose(Soldier *pUnit, const AnimHandInfo *pHandL,
         pUnit->nAnimPose = 3;
     }
 
-    bHasHandL = pHandL != NULL && pHandL->bPresent;
-    bHasHandR = pHandR != NULL && pHandR->bPresent;
-    if (bHasHandL && (pHandL->bListPri == 1 || pHandL->uSortKey == 22
-                      || pHandL->uSortKey == 24)) {
-        pUnit->nAnimPose += 10;
+    pHandL = pUnit->pHandL;                       /* 0x49824 */
+    if (pHandL != NULL) {                         /* 0x4982c */
+        if (pHandL->pObj->bListPri == 1) {        /* 0x4983c */
+            pUnit->nAnimPose += 10;               /* 0x49884 */
+            return;
+        }
+        if (pHandL->pObj->uSortKey == 22 || pHandL->pObj->uSortKey == 24) { /* 0x49840/0x49850 */
+            pUnit->nAnimPose += 10;
+            return;
+        }
+    }
+    pHandR = pUnit->pHandR;                       /* 0x49854 */
+    if (pHandR != NULL) {                         /* 0x4985c */
+        if (pHandR->pObj->bListPri == 1 || pHandR->pObj->uSortKey == 22
+            || pHandR->pObj->uSortKey == 24) {    /* 0x49880 */
+            pUnit->nAnimPose += 10;
+            return;
+        }
+    } else if (pHandL == NULL) {                  /* 0x4989c: both hands empty */
         return;
     }
-    if (bHasHandR && (pHandR->bListPri == 1 || pHandR->uSortKey == 22
-                      || pHandR->uSortKey == 24)) {
-        pUnit->nAnimPose += 10;
-        return;
-    }
-    if (!bHasHandL && !bHasHandR) {
-        return;
-    }
-    pUnit->nAnimPose += 5;
+    pUnit->nAnimPose += 5;                        /* 0x498a4 */
 }
 
 /* Unit_CanStepExitDir @ 0x36d68. The 8 x 4 (dx, dy, kind) wall-probe triples,
@@ -1845,7 +1850,7 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
     pUnit->bFlags |= 0x20u;
     /* bFlags bit 5 is set, so this takes the early return that pins the pose to 18
      * and masks the other animation bits off. */
-    Unit_UpdateAnimPose(pUnit, NULL, NULL);
+    Unit_UpdateAnimPose(pUnit);
     {
         /* 0x4e66c/0x4e674: the death arm runs the same removal, and the morale sweep that follows
          * re-reads the two byte cells the removal just decremented (LDRB nEnemyUnitCount at 0x4e6a4,

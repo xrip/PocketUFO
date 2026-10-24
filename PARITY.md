@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 66 |
-| Test checks run | 21727 |
+| Test checks run | 21800 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -354,7 +354,7 @@ is the module that answers to it.
 | `0x498b0` | `Unit_ResetBattleState` | 348 | `src/pufo/game/pufo_tactend.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x4ca18` | `Tact_BeginEnemyTurn` | 348 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x4b2f4` | `TactState_EnqueueThrow` | 300 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
-| `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_unit.c` (+1) |
+| `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_ballist.h` (+2) |
 | `0x33148` | `Tact_RemoveUnitFromSideLists` | 284 | `src/pufo/game/pufo_roster.h`, `src/pufo/game/pufo_unit.h` |
 | `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactui.h` |
@@ -1281,11 +1281,11 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3243 |
-| `test_geoscapeframe` | PASS | 2363 |
+| `test_geoscapeframe` | PASS | 2432 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 378 |
 | `test_invdrag` | PASS | 370 |
-| `test_isodraw` | PASS | 308 |
+| `test_isodraw` | PASS | 311 |
 | `test_los` | PASS | 36 |
 | `test_mainmenu` | PASS | 25 |
 | `test_mapcell` | PASS | 115 |
@@ -1324,7 +1324,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_titles` | PASS | 167 |
 | `test_turn` | PASS | 176 |
 | `test_uibank` | PASS | 409 |
-| `test_unit` | PASS | 298 |
+| `test_unit` | PASS | 299 |
 | `test_vis` | PASS | 81 |
 | `test_vistry` | PASS | 42 |
 
@@ -1347,7 +1347,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 896 citations.
+parity report. Total: 897 citations.
 
 ### Offsets below the image base (46)
 
@@ -1356,7 +1356,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x000c`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b8c`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`, `0x4ebc`
 
-### At or above the image base (850)
+### At or above the image base (851)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1907,6 +1907,7 @@ against the IDB when the final report is assembled.
 - `0x22928`
 - `0x254b0`
 - `0x254bc`
+- `0x263f0`
 - `0x26f38`
 - `0x26f40`
 - `0x27354`

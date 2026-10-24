@@ -6831,12 +6831,49 @@ references re-recorded (four geoscape/options from the RNG shift -- spawn 492,31
 and four tact ones from the Grenade in the strip plus real friendly-fire wounds). IDB: comments at 0x2f408, 0x2fa9c,
 0x4cc98 (569/872/531 chars, read back), 0x1674c/0x16af0 function comments extended, idb_save ok. Gates: 66/66 tests,
 coverage 972/1103, check: OK.
-Open (the goal 2026-10-24, equipment really working -- NOT met: no picture yet shows a grenade worn, armed, thrown
-or damaging anything, and no armour absorption has been measured). 164 first answers which arm of the mission's tick
-processing moves the squad off the floorless deploy cell, because that decides whether the only reachable window for
-the cargo is the pre-tick one (squad on the cargo cell, full time units -- where a throw is NOT payable: 55 - 6 hand
-- 11 arm - 19 - 19 = exactly the whole budget, and Part 161's transfers already took 35), or whether a launch whose
-deploy cell has a floor sprite is needed. Then 165 arm + throw + blast (aliens on this field hold 93..107 HP, so the
-Grenade's 80 power wounds without killing and the roster counts stay stable), 166 armour and stun (uStunOrArmor @ Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254, auStat[8] *
-uStunOrArmor at 0x31a64), 165 mind control (Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at 0x4cd20 and
-cmd 18 mode 13 at 0x4d7bc).
+Part 164 (measured). The Grenade leaves the hand onto the cell the drop walk names: the release inside the right-hand
+rect stores it into pHandR (0x12ED4) and the map release runs 0x13470..0x13490, which names the FLOORED cell below the
+unit rather than the unit's own -- measured 54/29/1 (floor 0) down to 54/29/0 (floor sprite 1), 6 + 5 TU from 0x123C8
+(tu 18 -> 7), 0x134B4 into the cell list. This answers the payability question the descent left open: the EndEnemyTurn
+tail 0x4C73C..0x4C82C refills the thrower to 55, which covers 6 + 11 + 19 with 19 to spare. References
+tact_mission_grenade_worn, tact_mission_grenade_landed; the orphan tact_mission_cargo_stranded.* (no test dumps it)
+is removed.
+
+Part 165 (measured). Three port faults stood between the arming pad and an explosion, all fixed. (a) TactInputState's
+copies of Map_anActionCost (0x4E4C) and Map_anActionEnabled (0x4E7C) were never mirrored in World_TactInputSyncIn, so
+the enqueue at 0x153B0 priced the throw at 0 TU with scatter argument 0; measured at the click now: mode 11, 19, 33
+(auStat[5]). (b) The throw tail resolved the landing twice while the cmd 0x11 flight walked the shared aim block the
+throw had not published -- the Grenade came down 12 cells off the aim; one landing call remains and the arc is
+published into the block. (c) MoveActionCtx.pInvHooks was unwired, so the tail's Unit_RecalcInventoryStat @ 0x49ef0
+returned at its NULL guard and uInvBurden never followed the hand (5 after the Grenade left). Chain: mode 3 costs 11
+and sets +7 fuse 0 / +8 1, 0x26204 then takes mode 3 out of the row table; widget 43 writes mode 11 (0x179D8), the
+release converts it to latch 1 (0x14F2C..0x14FB8) and closes the pad (0x15028..0x1505C) without clearing
+Map_nActionMode; case 1 at 0x153B0 -> TactState_EnqueueThrow @ 0x4b2f4 queues one cmd-17 entry carrying pSelWeapon;
+tick 10 charges 19 (0x50834..0x50840) and empties the right hand (0x50864/0x50868); the scatter triple came out
+0/0/0 against argument 33 so the arc kept the aimed cell and the item stood on 54/28/0 by tick 14; 0x4B770 ran the
+fuse 0 -> 255, 0x4B8C0..0x4B8FC removed the node before Combat_ResolveShot, and the splash (power 80, type 2,
+0x2e7d8) hurt three squad members inside the box (47->7, 41->23, 57->47) and took alien 18 (hp 39) off the field --
+22 aliens before, 21 after. IDB: 0x14fd8 corrected (the enabled bank is 0x4E7C, not 0x4EBC), 0x153B0, 0x1505C,
+0x50834, 0x50960 commented, idb_save ok.
+
+Part 166 (measured). The reason no picture ever showed a soldier carrying anything: Unit_UpdateAnimPose @ 0x4978c
+takes one argument and loads the hands off the soldier (0x49824 +0x104, 0x49854 +0x108, through pObj->bListPri/uSortKey),
+but the port took a caller-built AnimHandInfo pair and 19 of its 20 call sites passed NULL, NULL -- only the spawn tail
+at 0x3AF7C ever re-posed for held gear. AnimHandInfo and Spawn_UpdatePose are deleted and the sites take one argument.
+It is a drawing fault: MapView_DrawUnit indexes its body row by pose (0x1cf9c) and gates the weapon overlay on pose
+5..0x11 (0x1d2e8..0x1d2f4), so an un-re-posed soldier draws no held object. Census: 17 call sites in the IDB, three of
+them shared by two arms (0x4fdb4 case 2/case 7 via 0x4fdac, 0x5379c two conditions, 0x50e90 two branches), so the
+port's 20 sites hold no extra call. Measured: the soldier draws at pose 1 empty-handed and at pose 11 with the worn
+rifle (bListPri 1 -> 0x49884); putting only the pose back moves 48 px of the map inside (122,116)..(135,129); the
+equipped-vs-bare map change went 55 -> 103 px with its box reaching y 116 instead of y 155. Thirteen tactical pictures
+differ, six committed references move against HEAD (tact_play_aim, _enemyturn, _moved, _resumed, _shot, _shot_mid) and
+tact_mission_bare comes back to HEAD's picture. Teeth: reverting the hand loads fails three test_unit checks plus the
+two new geoscapeframe ones; deleting the gate fails the two new test_isodraw checks. IDB: 0x4978c (869 chars, the
+census and the two consumers), 0x1cf9c, 0x1d2e8, 0x3af7c, 0x4fdb4, 0x5379c, 0x50e90, 0x4aecc.
+
+Open (the goal 2026-10-24, equipment really working -- PARTLY met). The Grenade is now worn, armed, thrown, counted
+down and detonated on a live mission and it took an alien off the field, and Part 166 made hand-held equipment show on
+the tactical map. Not measured yet: armour absorption and stun (uStunOrArmor @ Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254,
+auStat[8] * uStunOrArmor at 0x31a64) and mind control (Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at
+0x4cd20, cmd 18 mode 13 at 0x4d7bc). 167 = armour and stun, 168 = mind control. Reported, not changed (bugs.tsv): the
+port names the flag 0x10 PUFO_UNITFLAG_KNEEL while the kneel flag is 0x01 (0x16600/0x16638); behaviour matches the ARM.

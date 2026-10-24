@@ -764,7 +764,7 @@ static void MoveStep(TactState *pState, const MoveActionCtx *pCtx,
     }
     pState->nStepFrameDiv = (pState->nStepHeightDst - pState->nStepHeightSrc) / 8;
 
-    Unit_UpdateAnimPose(pUnit, NULL, NULL);
+    Unit_UpdateAnimPose(pUnit);
 
     /* 0x4F918..0x4F944: the footstep is skipped only when something is already
      * playing AND nothing is tracked AND the phase is not active. */
@@ -828,7 +828,7 @@ static void MoveVert(TactState *pState, const MoveActionCtx *pCtx,
     } else if (nFacing == 1) {
         pCell = pUnit->pCell;
         pUnit->bFlags |= 0x10u;
-        Unit_UpdateAnimPose(pUnit, NULL, NULL);
+        Unit_UpdateAnimPose(pUnit);
         if (*pCtx->pnLayerScratch - 1 < (i32)pUnit->pCell->nZ + 1) {
             *pCtx->pnLayerScratch = (i8)(pUnit->pCell->nZ + 2);
         }
@@ -940,7 +940,7 @@ static void MoveFire(TactState *pState, const MoveActionCtx *pCtx,
     Map_ClearShotTraceFlags(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom);
 
     pUnit->bFlags |= 4u;
-    Unit_UpdateAnimPose(pUnit, NULL, NULL);
+    Unit_UpdateAnimPose(pUnit);
 
     /* 0x4FFC0..0x50100: the muzzle origin. A special weapon that has already
      * fired shoots from the recorded shot cell instead of from the unit. */
@@ -1033,6 +1033,43 @@ static void MoveFire(TactState *pState, const MoveActionCtx *pCtx,
 }
 
 /* cmd 0x11, throw an item. 0x50630..0x50984. */
+/* 0x3111c..0x31a14: Tact_SimulateThrowArc writes the SHARED aim block, not a private record --
+ * nLosX0/Y0/Z0 (0x14004..0x1400C), nLosX1/Y1/Z1 (0x14010..0x14018), dTravel = 0.0 (0x14020),
+ * dAngleYaw (0x14028), dAnglePitch (0x14030), nTrajBound (0x14080), the arc denominator (0x14078),
+ * and it stamps sample slot 0 with the ORIGIN triple (0x311A4, 0x311D4, 0x31200). The fire action's
+ * throw-flight arm (0x51F9C..0x5285C, case 0x11) walks exactly those cells: it advances Map.dTravel,
+ * rebuilds the sample from nLosX0/Y0/Z0 + dTravel * (cos yaw, sin yaw) and the pitch/denominator, and
+ * ends the flight when dTravel passes dTravelSave. The port solves the arc into its own ThrowArc, so
+ * the publish is a seam here: without it the flight flies the PREVIOUS action's arc. Measured in Part
+ * 165: a one-cell throw landed 12 cells away, on the sample line of the last alien's shot. */
+static void ThrowPublishAim(const MoveActionCtx *pCtx, const ThrowArc *pArc)
+{
+    AimState *pAim = pCtx->pAim;
+
+    if (pAim == NULL || pArc == NULL) {
+        return;
+    }
+    pAim->nOriginX = pArc->nOriginX;
+    pAim->nOriginY = pArc->nOriginY;
+    pAim->nOriginZ = pArc->nOriginZ;
+    pAim->nTargetX = pArc->nTargetX;
+    pAim->nTargetY = pArc->nTargetY;
+    pAim->nTargetZ = pArc->nTargetZ;
+    pAim->dBound   = pArc->dBound;
+    pAim->dYaw     = pArc->dYaw;
+    pAim->dPitch   = pArc->dPitch;
+    pAim->dTravel  = 0.0;
+    if (pAim->padMtX != NULL) {
+        *pAim->padMtX = (double)pArc->nOriginX;
+    }
+    if (pAim->padMtY != NULL) {
+        *pAim->padMtY = (double)pArc->nOriginY;
+    }
+    if (pAim->padMtZ != NULL) {
+        *pAim->padMtZ = (double)pArc->nOriginZ;
+    }
+}
+
 static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
                       TactQueueEntry *pEntry, Soldier *pUnit)
 {
@@ -1095,41 +1132,35 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
     pUnit->uTu = (u16)(pUnit->uTu - pEntry->nTuCost);
     if (pUnit->pHandL == *pCtx->ppSelWeapon) { pUnit->pHandL = NULL; }
     else                                      { pUnit->pHandR = NULL; }
-    Unit_UpdateAnimPose(pUnit, NULL, NULL);
+    Unit_UpdateAnimPose(pUnit);
     Unit_RecalcInventoryStat(pUnit, pCtx->pInvHooks);
 
-    /* The miss is resolved once, doubled, and resolved again from the same
-     * origin; the second landing is where the item actually goes. */
+    /* 0x323B8..0x323D8: the walk's own tail stores the distance it took into Map.nTravelSave
+     * @ 0x14038, the cell Tact_ProcessFireAction's throw-flight arm (case 0x11) compares its own
+     * counter against. This is the only writer on the throw path -- the tail arc call at 0x50960
+     * writes Map.dTravel, never the saved distance. The landing block is published here as well:
+     * Unit_RollChance reads the bound straight off the Map block (0x14080) and at this point the
+     * original's block holds the arc the landing call solved, for the UNSCATTERED target. */
+    ThrowPublishAim(pCtx, pCtx->pThrowArc);
+    pCtx->pAim->dTravelSave = pCtx->pThrowLanding->dTravel;
+
+    /* 0x5088C..0x508B8: the miss is rolled against the entry's argument -- anActionEnabled[mode],
+     * which Ui_FillActionCosts fills with auStat[5] for a throw (0x26388) -- and only the x and y
+     * displacements are doubled (0x508A8, 0x508B8). Map+0x15060 goes to the arc un-doubled (0x50928). */
     Unit_RollChance(pCtx->pAim->dBound, pEntry->nArg, pCtx->pScatter);
     pCtx->pScatter->nDx *= 2;
     pCtx->pScatter->nDy *= 2;
 
-    Tact_ResolveThrowLanding(pCtx->pThrowArc, pCtx->pThrowLanding, pCtx->pTables,
-                             &pCtx->geom, pCtx->pfnLookup, pCtx->pUser, pUnit,
-                             *pCtx->ppThrowTarget, pCtx->pThrowBudget,
-                             pCtx->geom.nDimX,
-                             nX0, nY0, nZ0,
-                             nX1 + pCtx->pScatter->nDx,
-                             nY1 + pCtx->pScatter->nDy, nZ1);
-    /* The doubled-scatter call is the one whose dTravel survives (0x323BC below); it stores the
-     * same item again -- the pushed entry+0x34 value at 0x508E0 -- and leaves its walk's byte
-     * in 0x1406D, which the tail arc raises back to 1 in a moment. Same rule: a call the range
-     * test rejects (0x31CD4) writes neither cell. */
-    if (!pCtx->pThrowLanding->bRejected) {
-        *pCtx->ppArrowItem    = (TactItem *)pEntry->pWeapon;
-        *pCtx->pbThrowPending = (u8)(pCtx->pThrowLanding->bHitStop ? 1 : 0);
-    }
-
-    /* 0x323BC: the landing's walked distance goes to Map+0x14038, where
-     * Tact_ProcessFireAction cmd 0x11 compares its own flight counter against it.
-     * The first landing call writes the same slot; this is the write that survives. */
-    pCtx->pAim->dTravelSave = pCtx->pThrowLanding->dTravel;
-
+    /* 0x50960: the tail arc call. The throw is resolved ONCE (0x507F8); this call only re-solves
+     * the arc for the scattered target, and what it writes is the block the flight then walks.
+     * A part of this chain earlier ran a SECOND Tact_ResolveThrowLanding here, which the original
+     * has no arm for; it overwrote the saved distance and moved the landing (Part 165). */
     Tact_SimulateThrowArc(pCtx->pThrowArc, &pCtx->geom, pCtx->pfnLookup,
                           pCtx->pUser, nX0, nY0, nZ0,
                           nX1 + pCtx->pScatter->nDx,
                           nY1 + pCtx->pScatter->nDy,
                           nZ1 + pCtx->pScatter->nDz);
+    ThrowPublishAim(pCtx, pCtx->pThrowArc);
 
     /* 0x319FC / 0x31A0C, the arc tail's two Map stores. This is the call whose values survive
      * the throw: the item is the Map.pSelWeapon loaded at 0x5090C for the call at 0x50960, and
@@ -1159,7 +1190,7 @@ void Tact_ProcessMoveAction(TactState *pState, const MoveActionCtx *pCtx)
     case 1:  MoveStep(pState, pCtx, pEntry, pUnit, nDelta); break;
     case 2:
         pUnit->bFlags &= (u8)~0x02;
-        Unit_UpdateAnimPose(pUnit, NULL, NULL);
+        Unit_UpdateAnimPose(pUnit);
         break;
     case 3:
         if (pUnit->uTu < 4) { MoveAbortNoTime(pState, pCtx); break; }
@@ -1181,18 +1212,18 @@ void Tact_ProcessMoveAction(TactState *pState, const MoveActionCtx *pCtx)
         }
         pUnit->uTu = (u16)(pUnit->uTu - 2);
         pUnit->bFlags &= (u8)~0x01;
-        Unit_UpdateAnimPose(pUnit, NULL, NULL);
+        Unit_UpdateAnimPose(pUnit);
         break;
     case 8:
         pState->nPhaseTick = 0;
         *pCtx->pnAnimPhase = 0;
         pUnit->bFlags |= 0x20u;
-        Unit_UpdateAnimPose(pUnit, NULL, NULL);
+        Unit_UpdateAnimPose(pUnit);
         pUnit->bFlags &= (u8)~0x20;
         break;
     case 0xA:
         pUnit->bFlags &= (u8)~0x04;
-        Unit_UpdateAnimPose(pUnit, NULL, NULL);
+        Unit_UpdateAnimPose(pUnit);
         *pCtx->pnLayerScratch = (i8)*pCtx->pnMaxLayerClamp;
         break;
     case 0xB: MoveRecover(pCtx, pUnit); break;
@@ -1534,7 +1565,7 @@ static void Fall_PanicVictim(TactState *pState, const FallActionCtx *pCtx,
                             pCtx->bLightEnabled, pCtx->pLightmap);
         UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
         pVictim->bFlags &= (u8)~0x01u;
-        Unit_UpdateAnimPose(pVictim, NULL, NULL);
+        Unit_UpdateAnimPose(pVictim);
         Fall_PushControlMessage(pCtx, pVictim);
     } else {
         pVictim->bStatus = 0;
@@ -1936,7 +1967,7 @@ static void FallStepTail(TactState *pState, const FallActionCtx *pCtx, Soldier *
                                   pCtx->pnXcomCount, pCtx->pfnTryOpportunityFire,
                                   pCtx->pShellUser)) {
         pActor->bFlags &= (u8)~0x02u;
-        Unit_UpdateAnimPose(pActor, NULL, NULL);
+        Unit_UpdateAnimPose(pActor);
         Fall_TeamVisibility(pCtx, pState);
         pCtx->pTactCtx->nPhase = 1;
         return;
@@ -1947,13 +1978,13 @@ static void FallStepTail(TactState *pState, const FallActionCtx *pCtx, Soldier *
     if (*pCtx->pbEnemySpotted != 0 && pState->bAiActionActive == 0) {
         Fall_Push(pCtx, PUFO_TXTREC_SPOTTED);
         pActor->bFlags &= (u8)~0x02u;
-        Unit_UpdateAnimPose(pActor, NULL, NULL);
+        Unit_UpdateAnimPose(pActor);
         Fall_TeamVisibility(pCtx, pState);
         return;
     }
     if (pState->gap_70112[0] != 0) {
         pActor->bFlags &= (u8)~0x02u;
-        Unit_UpdateAnimPose(pActor, NULL, NULL);
+        Unit_UpdateAnimPose(pActor);
         Fall_TeamVisibility(pCtx, pState);
         return;
     }
@@ -2021,7 +2052,7 @@ void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx)
         pActor->nDrawOffY = 0;
         if (pActor->pCell->pFloorSpr != NULL) {
             pActor->bFlags &= (u8)~0x10u;
-            Unit_UpdateAnimPose(pActor, NULL, NULL);
+            Unit_UpdateAnimPose(pActor);
         }
         Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
                             pCtx->bLightEnabled, pCtx->pLightmap);
@@ -2055,7 +2086,7 @@ void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx)
         Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
                             pCtx->bLightEnabled, pCtx->pLightmap);
         (*pCtx->pSelectCtx->ppSelUnit)->bFlags &= (u8)~0x02u;
-        Unit_UpdateAnimPose(*pCtx->pSelectCtx->ppSelUnit, NULL, NULL);
+        Unit_UpdateAnimPose(*pCtx->pSelectCtx->ppSelUnit);
         break;
 
     case 0xE:
@@ -2355,10 +2386,10 @@ void Tact_ProcessFireAction(TactState *pState, const FireActionCtx *pCtx)
             const bool bHasFloor = (pScratch != NULL && pScratch->pFloorSpr != NULL);
             if (bKneeling && bHasFloor) {
                 pUnit->bFlags &= (u8)~PUFO_UNITFLAG_KNEEL;
-                Unit_UpdateAnimPose(pUnit, NULL, NULL);
+                Unit_UpdateAnimPose(pUnit);
             } else if (!bKneeling && !bHasFloor) {
                 pUnit->bFlags |= PUFO_UNITFLAG_KNEEL;
-                Unit_UpdateAnimPose(pUnit, NULL, NULL);
+                Unit_UpdateAnimPose(pUnit);
             }
         }
         if (nTick > PUFO_STEP_FRAME_MAX) {

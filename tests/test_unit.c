@@ -635,77 +635,92 @@ static void TestExtraSpr(void)
     g_fontSys.nMc1IndexCount = 0;
 }
 
+/* The hands Unit_UpdateAnimPose reads are the soldier's own pHandL/pHandR
+ * (0x49824/0x49854), so the fixture is a real TactItem pair over real ObjectRecs
+ * -- the same shape a held rifle or grenade has on the field. */
 static void TestAnimPose(void)
 {
     Soldier s;
-    AnimHandInfo handL;
-    AnimHandInfo handR;
+    ObjectRec objRifle;    /* the item in the left hand */
+    ObjectRec objOther;    /* the item in the right hand */
+    TactItem handL;
+    TactItem handR;
 
     Unit_ctor(&s);
+    memset(&objRifle, 0, sizeof(objRifle));
+    memset(&objOther, 0, sizeof(objOther));
     memset(&handL, 0, sizeof(handL));
     memset(&handR, 0, sizeof(handR));
+    handL.pObj = &objRifle;
+    handR.pObj = &objOther;
 
     /* Dead (flag 0x20): pose 18, flags masked to 0xE0. */
     s.bFlags = 0x3F;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 18, "dead pose forces 18 (Unit_UpdateAnimPose @ 0x4978c)");
     CheckEqI32(s.bFlags, 0x20, "dead masks bFlags to 0xE0");
 
     /* Aiming poses. */
     s.bFlags = 0x04;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 16, "aiming default pose 16");
     s.bFlags = 0x05;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 15, "aiming + kneel pose 15");
     s.bFlags = 0x14;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 17, "aiming + climb pose 17");
 
-    /* Base poses with no hands. */
+    /* Base poses with empty hands. */
     s.bFlags = 0x01;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 0, "kneel base pose 0");
     s.bFlags = 0x02;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 3, "walk base pose 3");
     s.bFlags = 0x10;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 2, "climb base pose 2");
     s.bFlags = 0x12;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 4, "climb + walk base pose 4");
     s.bFlags = 0x00;
-    Unit_UpdateAnimPose(&s, NULL, NULL);
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 1, "idle base pose 1");
 
     /* A weapon in either hand adds 10. */
     s.bFlags = 0x00;
-    handL.bPresent = true;
-    handL.uSortKey = 22;
-    Unit_UpdateAnimPose(&s, &handL, NULL);
-    CheckEqI32(s.nAnimPose, 11, "left weapon adds 10");
-    handL.uSortKey = 0;
-    handL.bListPri = 1;
-    Unit_UpdateAnimPose(&s, &handL, NULL);
+    objRifle.uSortKey = 22;
+    s.pHandL = &handL;
+    Unit_UpdateAnimPose(&s);
+    CheckEqI32(s.nAnimPose, 11, "left-hand rifle (sort 22) adds 10");
+
+    objRifle.uSortKey = 0;
+    objRifle.bListPri = 1;
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 11, "list priority 1 also counts as a weapon");
 
-    memset(&handL, 0, sizeof(handL));
-    handR.bPresent = true;
-    handR.uSortKey = 24;
-    Unit_UpdateAnimPose(&s, NULL, &handR);
-    CheckEqI32(s.nAnimPose, 11, "right weapon adds 10");
+    s.pHandL = NULL;
+    s.pHandR = &handR;
+    objOther.uSortKey = 24;
+    Unit_UpdateAnimPose(&s);
+    CheckEqI32(s.nAnimPose, 11, "right-hand weapon (sort 24) adds 10");
 
     /* Any other held item adds 5. */
-    handR.uSortKey = 7;
-    handR.bListPri = 0;
-    Unit_UpdateAnimPose(&s, NULL, &handR);
-    CheckEqI32(s.nAnimPose, 6, "other item adds 5");
+    objOther.uSortKey = 7;
+    objOther.bListPri = 0;
+    Unit_UpdateAnimPose(&s);
+    CheckEqI32(s.nAnimPose, 6, "other held item adds 5");
+
+    /* Two non-weapon hands still add 5 (0x498a4 is reached once, not twice). */
+    s.pHandL = &handL;
+    objRifle.bListPri = 0;
+    Unit_UpdateAnimPose(&s);
+    CheckEqI32(s.nAnimPose, 6, "two non-weapon hands add 5, not 10");
 
     /* A left-hand weapon wins over a right-hand non-weapon. */
-    handL.bPresent = true;
-    handL.bListPri = 1;
-    Unit_UpdateAnimPose(&s, &handL, &handR);
+    objRifle.bListPri = 1;
+    Unit_UpdateAnimPose(&s);
     CheckEqI32(s.nAnimPose, 11, "left weapon checked first");
 }
 

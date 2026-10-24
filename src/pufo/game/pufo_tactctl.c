@@ -1144,31 +1144,6 @@ static void Spawn_CopyUnitName(Soldier *pUnit, const char *panUnitName)
     } while (nByte != 0);
 }
 
-/* Unit_UpdateAnimPose @ 0x4978c needs the two hands' object fields, which TactItem.pObj carries on
- * the full record. Rebuilt from the unit's own hands after each item is handed out. */
-static void Spawn_UpdatePose(Soldier *pUnit)
-{
-    AnimHandInfo handL = { false, 0, 0 };
-    AnimHandInfo handR = { false, 0, 0 };
-
-    if (pUnit->pHandL != NULL) {
-        handL.bPresent = true;
-        if (pUnit->pHandL->pObj != NULL) {
-            handL.bListPri = pUnit->pHandL->pObj->bListPri;
-            handL.uSortKey = pUnit->pHandL->pObj->uSortKey;
-        }
-    }
-    if (pUnit->pHandR != NULL) {
-        handR.bPresent = true;
-        if (pUnit->pHandR->pObj != NULL) {
-            handR.bListPri = pUnit->pHandR->pObj->bListPri;
-            handR.uSortKey = pUnit->pHandR->pObj->uSortKey;
-        }
-    }
-
-    Unit_UpdateAnimPose(pUnit, &handL, &handR);
-}
-
 i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv)
 {
     if (pEnv == NULL || pEnv->create.apSoldiers == NULL || pEnv->create.pnSoldierCount == NULL ||
@@ -1494,7 +1469,7 @@ i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv)
                     }
                 }
 
-                Spawn_UpdatePose(pUnit);                                 /* 0x3AF7C */
+                Unit_UpdateAnimPose(pUnit);                              /* 0x3AF7C */
             }
 
             nCounter -= 2;
