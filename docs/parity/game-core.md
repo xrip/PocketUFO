@@ -25309,3 +25309,87 @@ alone). The snapshot gate unk_1139B9 is asserted as the original has it: the mis
 empty hand, a later confirm with the rifle worn re-records nothing, and the gear still travels through the save's
 27 slot ids at 0x429DC. References new: tact_inventory_loose, tact_inventory_armed, tact_inventory_held,
 tact_mission_bare; tact_mission_urban now shows the equipped squad.
+
+
+## Part 162 - the rifle the pen wore is the weapon the mission shoots with
+
+The hand menu publishes what the resolve then prices: Tact_OpenRightHandMenu @ 0x17148 stores the carried item
+into Map.pSelWeapon (the same store the left-hand body makes at 0x17060), and Combat_ResolveShot @ 0x2f12c reads
+the fire type at 0x2F150, the readiness selector at 0x2F44C and the power at 0x2F4A4 off apObjects[pSelWeapon->nIndex]
+-- the item's OWN index (TactItem+4), not the record the TactItem points at. On the mission's cargo those differ:
+the rifle copy's record is "Винтовка" (uFirePower 0, ammo cap 0, sort 4, 1x3, clip 38) while the index 38 the
+cargo pass wrote into the item names the magazine "Патр. к винтовке" (uFirePower 30, cap 20, sort 38). The port had
+published TactItem.pObj into the fire weapon slot, which priced every clip-fed shot at ZERO power; that row is in
+bugs.tsv and the fix publishes apObjectTable[pSel->nIndex].
+
+The burst then runs end to end on the live mission: BeginMultiTarget @ 0x18380 arms latch 3 (0x18410) after the
+ammo test at 0x183B8 and writes mode 7 (0x18398); the pen press reaches case 3 (0x152E4), which appends the cell to
+Map.apMultiTargets at 0x15344 with no duplicate test; ConfirmFireBurst @ 0x18774 publishes Map_nBurstShots from the
+target count (0x187C0) and TactState_EnqueueFireBurst @ 0x4b080 puts that many command-14 entries in the queue
+(0x4B144, 0x4B178). Draining one tick at a time: 0x50318 charged the magazine 20 -> 19 -> 18 on ticks 4 and 16, and
+0x2F4A4/0x2F51C took 21 HP and then 20 HP off Xcom soldier 1 (59 -> 38 -> 18) on ticks 5 and 17, the shots the same
+burst queued. Only Map.pSelUnit is skipped by the voxel test (0x324A4), so the friendly soldier standing in the line
+is what takes the shot -- the original's own friendly fire, and what the traced arc (Tact_TraceProjectileArc
+@ 0x2fc38, scatter forced to zero for mode 7 at 0x501B0..0x5023C) predicted cell for cell. All 22 arcs from the
+deploy cell stop on the courtyard wall sprites or on a squad member: no alien on this field is in the burst's reach.
+
+New references `tact_mission_aim` (the aim latch up over the target) and `tact_mission_shot` (the battlefield after
+the burst), each looked at against the draw arm it comes from.
+
+## Part 163 - the fall context's two users, and where the mission's cargo actually is
+
+A crash in the frame test resolved to a wiring fault, not a logic fault: Tact_ProcessFallAction @ 0x52adc reaches
+five seams that belong to two owners. 0x53318 and 0x53bd4 call the battle-end check, 0x53148 pushes the panicked
+unit's name, and Unit_bScanOpportunityFire's callback 0x47c38 -> Unit_SelectBestFireMode @ 0x478e4 stores the chosen
+item into Map.pSelWeapon @ 0x113A00 -- all three want the mission's own state. Map_PushStatusCb and
+Map_UpdateVisibilityCb want the MoveActionWiring. The port handed all five FallActionCtx.pCallbackUser, so the
+opportunity-fire thunk read a function pointer as Map* and stored through a bogus &Map.pSelWeapon. The context now
+carries pCallbackUser and pShellUser. Teeth: reverting the five call sites fails exactly the two new
+test_tactstate identity checks and reproduces the fault (exit 139) in the frame test.
+
+A Grenade (main.dat slot 17, "Граната", sort 17, category 3, uFirePower 80, fire type 2, weight 1, foot 1/1, topic
+gate 22) was staged through the shop row (0x7AFD8, one unit per press) and loaded onto the same craft (0x78E4C onto
+aItemQty[Ship.nSlotIdx], 0x78E34 clearing the shelf), so the cargo pass put it on the field: 0x39480 builds one item
+per carried copy and the weapon copies carry their magazine's cap, which is why the deploy cell now holds four
+items and the ground strip three entries (sort keys 4, 17, 36 in the order the selection sort at 0x2d6d0..0x2d78c
+leaves them).
+
+What the mission does with them is measured, not assumed. The deploy parks the team on layer-1 cells:
+aDeployCellOffsets @ 0xA66B8 carries the layer byte in every record (14/12/26 records, all layer 1) and 0x39fcc
+hands it to Unit_PlaceOnMap; on this urban map layer 1 has floor sprites on 374 of 3600 cells and the deploy cell
+54/29/1 is not one of them. After the first enemy bracket all eight soldiers stand on the floored layer 0 directly
+below (54/29/0 .. 55/32/0, printed one by one) while the cargo stays at 54/29/1. Nothing climbed back up, and the
+original refuses the climb: Unit_CanStepTo @ 0x27bb8 direction 8 (0x2889c..0x28920) and TactHud_ClimbUp @ 0x1674c
+(0x167A4..0x16808) both require a floor sprite with its blocking byte set on the unit's own cell AND on the cell one
+layer up, while TactHud_ClimbDown @ 0x16af0 skips the pair test when the unit's own cell has no floor. The pick-up
+arm reads one cell only (Inv_BuildVisibleList @ 0x2d5ac off pSelUnit->pCell), so the armed-throw chain is guarded
+off on this mission and `tact_mission_cargo_stranded` records the field as the mission has it.
+
+The field brought no device either, in numbers: eight brackets held 48 alien-reads with a multi-target list and
+queued zero command-17 entries. The enemy throw arm (0x4d7c4..0x4d854) sits behind LABEL_24 (0x4cda4), which sends a
+unit with nMultiTarget == 0 to EnemyAi_FallbackMove; the arm itself wants rand() == 0, a cell distance of 10 or less
+to the chosen multi-target, apBelt[0] in object category 3 and nUnitType above 3. Every alien inside 14 cells of the
+thrower had multi 0 -- the ones with a target list stood outside it, behind the wall the Part 162.3 line tests
+measured -- and 0x4cc84/0x4cc98 sends a unit whose byte +0xA0 is above 3 (unless its byte +0xC reaches 0x14) to
+0x4D66C, which is Tact_SelectUnit plus EnemyAi_TryFireOrWander, before the target-list arm is reached.
+
+The one arm that could have brought the cargo down is the resolve's own tail: 0x2fa9c..0x2fc14 hands every item on a
+floorless cell to the floored cell below, and it is inside Combat_ResolveShot, which a direct unit hit leaves early
+at 0x2f408 -- that is why the Part 162 burst, two shots on a squad member, left the Grenade in place through eight
+brackets. So the test aimed a burst at a cell the game's own arc walk picked (49/31/0, reason 1, wall A, the walk
+stopping on the aimed cell) and drained it: 0x50318 charged the magazine 18 -> 17, 0x32C68 stored reason 1 at
+49/31/0, the shot counter moved 2 -> 3 -- and Combat_ResolveShot wrote no outcome in 112 ticks, so the drop pass
+never ran and the cargo stayed put. Why a mode-7 burst that fires with no unit in the line stops before its resolve
+is an open question this Part leaves (bugs.tsv), and the armed throw chain is therefore still unproven, as are
+armour absorption, mind control and stun.
+
+Eight reference pictures moved, each looked at against the arm that draws it. Four geoscape/options references
+(`geoscape_terror_site`, `geoscape_ufo_enroute`, `options_load_tab`, `options_save_tab`) differ over the whole map
+area because the mission and shop work above them consumed draws from the one RNG stream, so section 100.6 rolled a
+different craft (spawn 492,31 -> 142,59, dSpeed 30 -> 40, uTravelMin 684 -> 512) and a different terror site
+(249,98 in 12 dice tries -> 539,32 in 3), and the camera centres on those cells inside the 0x837f8 window the test
+asserts. Four tact references moved for two named reasons: the mission now carries the Grenade, so the ground strip
+gains its column (tact_inventory_loose, 124 px), and the resolve-record fix makes the friendly-fire hits real, so
+the squad sprites carry wound pixels (tact_mission_urban 26 px at x120..138 y134..138, tact_inventory_armed and
+tact_inventory_held 87 px each). One reference (`econ_hangar_grenade.png`) was an orphan on disk that no test
+dumps any more; it is removed.

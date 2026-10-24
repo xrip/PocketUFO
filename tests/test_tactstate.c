@@ -884,6 +884,14 @@ static i32     g_nKillBattleEndCalls;
 static i32     g_nLastStatusRec;
 static Soldier *g_pVisLastUnit;
 static char     g_szForced[256];
+/* The fall ctx hands two different users to its seams (FallActionCtx.pCallbackUser and
+ * FallActionCtx.pShellUser -- see the header note). Each hook records what it was handed, so a
+ * call site that passes the wrong one is a failed check instead of a silent wrong base pointer. */
+static void   *g_pUserStatus;
+static void   *g_pUserForced;
+static void   *g_pUserBattleEnd;
+static i32     g_nWiringProbe;   /* the sentinel wired into pCallbackUser */
+static i32     g_nShellProbe;    /* the sentinel wired into pShellUser */
 
 static MapCell *FallLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 {
@@ -906,23 +914,23 @@ static void FallHookVisibility(Soldier *pUnit, void *pUser)
 
 static void FallHookStatus(i32 nRec, void *pUser)
 {
-    (void)pUser;
     ++g_nStatusCalls;
     g_nLastStatusRec = nRec;
+    g_pUserStatus = pUser;
 }
 
 static void FallHookForced(const char *pszMsg, void *pUser)
 {
-    (void)pUser;
     ++g_nForcedCalls;
     snprintf(g_szForced, sizeof(g_szForced), "%s", pszMsg);
+    g_pUserForced = pUser;
 }
 
 static void FallHookBattleEnd(u8 bAbort, void *pUser)
 {
     (void)bAbort;
-    (void)pUser;
     ++g_nBattleEndCalls;
+    g_pUserBattleEnd = pUser;
 }
 
 static void FallHookKillBattleEnd(void *pUser)
@@ -990,6 +998,9 @@ static void FallSetup(void)
     g_nKillBattleEndCalls = 0;
     g_nLastStatusRec = -1;
     g_pVisLastUnit = NULL;
+    g_pUserStatus = NULL;
+    g_pUserForced = NULL;
+    g_pUserBattleEnd = NULL;
     g_szForced[0] = 0;
 
     memset(&g_FallWeaponObj, 0, sizeof(g_FallWeaponObj));
@@ -1091,6 +1102,8 @@ static void FallSetup(void)
     g_FallCtx.pfnCheckBattleEnd = FallHookBattleEnd;
     g_FallCtx.pfnPushStatus = FallHookStatus;
     g_FallCtx.pfnPushForcedText = FallHookForced;
+    g_FallCtx.pCallbackUser = &g_nWiringProbe;   /* the MoveActionWiring's stand-in: pfnPushStatus */
+    g_FallCtx.pShellUser    = &g_nShellProbe;    /* the mission owner's stand-in: the other three seams */
     g_FallCtx.pszAlienControlSuffix = " under alien control";
 
     g_FallLists.apXcom = g_apFallXcom;
@@ -1419,6 +1432,9 @@ static void TestFallActionMoveTail(void)
     FallQueueEntry(1, pActor, NULL);
     Tact_ProcessFallAction(&g_state, &g_FallCtx);
     CheckEqI32(g_nStatusCalls, 1, "  the spotted message pushed once");
+    Check(g_pUserStatus == (void *)&g_nWiringProbe,
+          "  and pfnPushStatus is handed FallActionCtx.pCallbackUser: Map_PushStatusCb wants the "
+          "MoveActionWiring, not the mission owner");
     CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_SPOTTED, "  and it is TEXTS[3]");
     CheckEqI32(g_state.aQueue[0].nCmd, 1, "  the current entry keeps its own cmd");
     CheckEqI32(g_state.aQueue[1].nCmd, TACTCMD_END_MARK, "  team pass appends 12 at cursor + 1");
@@ -1565,6 +1581,9 @@ static void TestFallActionSmallCases(void)
     FallQueueEntry(0xE, &g_aFallUnits[0], NULL);
     Tact_ProcessFallAction(&g_state, &g_FallCtx);
     CheckEqI32(g_nBattleEndCalls, 1, "  Tact_CheckBattleEnd called once with abort 0");
+    Check(g_pUserBattleEnd == (void *)&g_nShellProbe,
+          "  and pfnCheckBattleEnd is handed FallActionCtx.pShellUser: the battle-end arm (0x53318, "
+          "0x53bd4) reaches the mission's own state, while pfnPushStatus above wants the wiring");
     CheckEqI32(g_state.nQueueCursor, 1, "  and the cursor advances");
 
     /* 0x10 clears the phase-active flag. */
@@ -1882,6 +1901,8 @@ static void TestFallActionPanic(void)
     CheckEqI32(pVictim->bStatus, 1, "  the enemy arm sets bStatus");
     CheckEqI32((pVictim->bFlags & 0x01), 0, "  and clears bFlags bit 0");
     CheckEqI32(g_nForcedCalls, 1, "  one forced message");
+    Check(g_pUserForced == (void *)&g_nShellProbe,
+          "  and the forced-text seam (0x53148's name plus the alien-control record) is handed pShellUser too");
     Check(strcmp(g_szForced, "Reyes under alien control") == 0,
           "  the message is the name plus the alien-control suffix");
     CheckEqI32(g_nBattleEndCalls, 1, "  LABEL_66 still runs");

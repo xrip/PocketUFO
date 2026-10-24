@@ -6798,3 +6798,39 @@ Unit_bArmorTuWarn @ 0x4e254, the ballist product auStat[8] * uStunOrArmor at 0x3
 (Tact_UpdateUnitControl @ 0x4a444, and the forward control transition is still unidentified). 166 -- the gear
 carried into the NEXT mission, live: the 27 slot ids through a save and the auUnk962/abUnk1012 re-dress branch
 (0x3BE60 -> Equip_SlotPass 0x3BE8C).
+
+Part 162 (measured). The worn rifle really shoots: the hand menu publishes it into Map.pSelWeapon (0x17060),
+BeginMultiTarget @ 0x18380 arms latch 3 / mode 7, ConfirmFireBurst @ 0x18774 -> TactState_EnqueueFireBurst @ 0x4b080
+queued 2 command-14 entries, 0x50318 charged the carried magazine 20 -> 18, and 0x2F4A4/0x2F51C took 21 HP then 20 HP
+off Xcom soldier 1 (59 -> 38 -> 18) on ticks 5 and 17 -- friendly fire, because only Map.pSelUnit is skipped by the
+voxel test (0x324A4); all 22 arcs from the deploy cell stop on the courtyard walls or on a squad member, so no alien
+on this field is in reach. Found and fixed on the way: the resolve prices the shot off apObjects[pSelWeapon->nIndex]
+(0x2F150/0x2F44C/0x2F4A4) -- the magazine "Патр. к винтовке" (power 30, cap 20), not the Rifle record the TactItem
+points at (power 0) -- and the port had published pObj, so every clip-fed shot priced at zero (bugs.tsv). New
+references tact_mission_aim, tact_mission_shot.
+
+Part 163 (measured). Fixed a real port fault: Tact_ProcessFallAction @ 0x52adc reaches five seams of two owners
+(0x53318, 0x53bd4 battle end; 0x53148 forced text; 0x47c38 -> 0x478e4 opportunity fire storing into Map.pSelWeapon
+@ 0x113A00 want the mission; Map_PushStatusCb / Map_UpdateVisibilityCb want the MoveActionWiring). Handing the
+wiring to all five made the thunk read a function pointer as Map* -- the crash. FallActionCtx now carries
+pCallbackUser and pShellUser; teeth proven (2 test_tactstate checks fail and the frame test faults again when the
+five sites are reverted). Staged a Grenade (slot 17) through the shop (0x7AFD8) onto the craft (0x78E4C/0x78E34); the
+deploy cell now holds 4 items and the ground strip 3 entries. Measured the stranding: aDeployCellOffsets @ 0xA66B8
+carries layer byte 1, the deploy cell 54/29/1 has no floor sprite, a general pass in the mission's own ticks drops
+all eight soldiers to the floored layer 0 below, and nothing can climb back (Unit_CanStepTo dir 8 0x2889c..0x28920,
+TactHud_ClimbUp @ 0x1674c; ClimbDown @ 0x16af0 skips the pair test). The enemy brought no device either: 8 brackets
+held 48 targeting-alien reads and 0 command-17 entries -- LABEL_24 @ 0x4cda4 and the type gate 0x4cc84/0x4cc98
+(byte +0xA0 > 3 goes to 0x4D66C, EnemyAi_TryFireOrWander) stand before the throw arm 0x4d7c4..0x4d854. Tested the one
+arm that could bring the cargo down: 0x2fa9c..0x2fc14, the resolve's item-drop tail, skipped by the unit-hit return
+at 0x2f408 -- a wall-aimed burst charged the magazine (18 -> 17) and wrote reason 1 at 49/31/0, yet the resolve
+wrote no outcome in 112 ticks. OPEN (bugs.tsv): why a mode-7 burst that fires with no unit in the line stops before
+its resolve. The armed throw chain is guarded off until then; references: tact_mission_cargo_stranded new, eight
+references re-recorded (four geoscape/options from the RNG shift -- spawn 492,31 vs 142,59, site 539,32 vs 249,98 --
+and four tact ones from the Grenade in the strip plus real friendly-fire wounds). IDB: comments at 0x2f408, 0x2fa9c,
+0x4cc98 (569/872/531 chars, read back), 0x1674c/0x16af0 function comments extended, idb_save ok. Gates: 66/66 tests,
+coverage 972/1103, check: OK.
+Open (the goal 2026-10-24, equipment really working): the throw chain needs a mission whose cargo cell is one the
+squad stands on -- either the resolve tail above answering, or a launch whose deploy cell has a floor sprite. Then
+163b arm + throw + blast, 164 armour and stun (uStunOrArmor @ Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254, auStat[8] *
+uStunOrArmor at 0x31a64), 165 mind control (Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at 0x4cd20 and
+cmd 18 mode 13 at 0x4d7bc).

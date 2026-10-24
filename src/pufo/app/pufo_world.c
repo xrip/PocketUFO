@@ -5481,6 +5481,12 @@ static void World_TactTickActiveUnit(void *pUser)
      * the shot setup found the alien's target cell empty, and a traced shot stopped at nothing. */
     move.pfnLookup      = World_TactLookupCell;
     move.pUser          = pW;
+    /* 0x2FC64..0x2FC74 resolves the record a shot is fired with as apObjects[pSelWeapon->nIndex] -- the
+     * loaded magazine, not the weapon: main.dat Rifle (slot 4) carries uFirePower 0 and Rifle clip (slot 38)
+     * carries 30, and the cargo pass stores that magazine id into the item's nIndex (0x3948C..0x39504). The
+     * table lives in the shell's assets, so the move FSM can only make the lookup with it wired in. */
+    move.apObjectTable = (pW->pAssets != NULL) ? (const ObjectRecFull **)pW->pAssets->apObjects : NULL;
+    move.nObjectCount  = (pW->pAssets != NULL) ? (i32)pW->pAssets->nObjectCount : 0;
     /* 0x15138 has one live owner, the TactCursor the launch owns. The cast re-views the same
      * byte as the signed scratch the processors expect. */
     move.pnLayerScratch = (i8 *)&pW->tactEnv.cursor.nFlags;
@@ -5624,6 +5630,12 @@ static void World_TactTickActiveUnit(void *pUser)
     fall.pszAlienControlSuffix = (const char *)pW->pAssets->pTextRecs
                                  + PUFO_TEXT_REC_STRIDE * PUFO_TXTREC_ALIEN_CONTROL;
     fall.pCallbackUser      = &pW->sTactMoveWiring;
+    /* The battle-end check, the forced text and the opportunity-fire offer reach the mission's own
+     * state, not the wiring: 0x53318/0x53bd4 call the shell's mission-end entry, 0x53148 pushes the
+     * panicked unit's name, and 0x47c38 -> 0x478e4 stores the chosen item into Map.pSelWeapon
+     * @ 0x113A00. Handing those three the wiring made the thunk read a function pointer as Map* and
+     * store through it. */
+    fall.pShellUser         = pW;
 
     memset(&tick, 0, sizeof(tick));
     tick.pTactCtx      = &pMap->tact;

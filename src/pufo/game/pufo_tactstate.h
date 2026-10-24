@@ -376,8 +376,21 @@ typedef struct MoveActionCtx {
     /* Map.pFireArg6 @ 0x14050. The original writes it inside the arc walk
      * (Tact_TraceProjectileArc @ 0x2FC74 stores apObjects[pSelWeapon->nIndex]) and
      * Tact_ProcessFireAction reads it back for the resolve (0x51CDC, 0x51F04), so the
-     * shot must publish the record it was fired with before the flight runs. */
+     * shot must publish the record it was fired with before the flight runs.
+     *
+     * The index it resolves is the ITEM's TactItem.nIndex @ +4, not the item's own
+     * object record. The cargo build (0x3948C..0x39504) sets a weapon item's nIndex to
+     * apObjects[anAmmoTypeId[k]] -- the loaded magazine -- and an ammo item's to its own
+     * index, and the reload arms write it again (0x15D38, 0x15E3C). That is where a
+     * clip-fed weapon's damage lives: in main.dat Rifle (slot 4) carries uFirePower 0 and
+     * Rifle clip (slot 38) carries 30, while a self-powered weapon like Laser rifle (slot 5,
+     * bAmmoCap 255) names ITSELF as its ammo type, so one index resolves both cases.
+     * Combat_ResolveShot then reads uFirePower (0xB6), bFireType (0xAF) and bReadySel (0xC4)
+     * off that record (0x2F150, 0x2F44C, 0x2F4A4), and the shot sound comes from the same
+     * one (0x2F2D8, 0x2F3C0). */
     const ObjectRecFull **ppFireWeaponSlot;
+    const ObjectRecFull **apObjectTable;  /* the assets' apObjects, for that one lookup */
+    i32                  nObjectCount;    /* its bound; 0 when the caller wires nothing */
     Soldier     **ppThrowTarget;  /* 0x150F0 unk_128AA8 */
     i32         *pnUnk1405C;      /* 0x1405C unk_127A14 */
     bool         bAnimBusy;       /* unk_157180 -> +0xF8, the walk-sound gate */
@@ -621,7 +634,17 @@ typedef struct FallActionCtx {
     void (*pfnPushStatus)(i32 nTextRecIndex, void *pUser);
     void (*pfnPushForcedText)(const char *pszMsg, void *pUser);
     const char *pszAlienControlSuffix;    /* unk_B640E */
-    void  *pCallbackUser;
+    /* Two users, because the five seams here reach two different owners. pCallbackUser is what
+     * Map_PushStatusCb and Map_UpdateVisibilityCb want: the MoveActionWiring. pShellUser is what the
+     * three seams that need the mission's own state want: the battle-end check, the forced text and
+     * the opportunity-fire offer. The original needs no user at all -- Unit_bTryOpportunityFire
+     * @ 0x47c38 calls Unit_SelectBestFireMode @ 0x478e4, which stores the chosen item into the global
+     * Map.pSelWeapon @ 0x113A00, and the port carries that slot's address through the seam. Handing
+     * the wiring to a seam that reads a PufoWorldState writes through a function pointer instead of
+     * that slot (Part 163's fault). */
+    void  *pCallbackUser;      /* the MoveActionWiring: pfnPushStatus, pfnUpdateVisibility */
+    void  *pShellUser;         /* the mission's owner: pfnCheckBattleEnd, pfnPushForcedText,
+                                * pfnTryOpportunityFire */
 } FallActionCtx;
 
 void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx);

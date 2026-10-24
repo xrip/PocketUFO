@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 66 |
-| Test checks run | 21688 |
+| Test checks run | 21727 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -307,7 +307,7 @@ is the module that answers to it.
 | `0x47280` | `Soldier_PromoteByTypeScores` | 1096 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x2778c` | `Map_ProbeStepOccupants` | 1068 | `src/pufo/game/pufo_step.h` |
 | `0x2c2a8` | `Unit_PathToCell` | 1052 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+7) |
-| `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_turn.h` (+2) |
+| `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactstate.h` (+3) |
 | `0x4a7b0` | `Unit_ApplyFallDamage` | 1000 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x25ab4` | `Map_PatchCraftSprites` | 952 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+2) |
 | `0x55060` | `Map_LoadRmp` | 952 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
@@ -316,7 +316,7 @@ is the module that answers to it.
 | `0x18a68` | `Map_BuildDeployConfirmYesNo` | 924 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_tactctl.c` (+1) |
 | `0x49410` | `Soldier_Generate` | 892 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x36830` | `Ship_RemoveWithCargo` | 860 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
-| `0x478e4` | `Unit_SelectBestFireMode` | 852 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+1) |
+| `0x478e4` | `Unit_SelectBestFireMode` | 852 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_combat.c` (+2) |
 | `0x2c7f4` | `Map_RefreshCellMeta` | 800 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_invdrag.c` (+4) |
 | `0x4a444` | `Tact_UpdateUnitControl` | 788 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x27014` | `MapCursor_SetPos` | 784 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+6) |
@@ -1281,7 +1281,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3243 |
-| `test_geoscapeframe` | PASS | 2327 |
+| `test_geoscapeframe` | PASS | 2363 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 378 |
 | `test_invdrag` | PASS | 370 |
@@ -1315,7 +1315,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactend` | PASS | 402 |
 | `test_tacthud` | PASS | 277 |
 | `test_tactinit` | PASS | 105 |
-| `test_tactstate` | PASS | 599 |
+| `test_tactstate` | PASS | 602 |
 | `test_tactui` | PASS | 520 |
 | `test_template` | PASS | 66 |
 | `test_terrain` | PASS | 59 |

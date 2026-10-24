@@ -971,17 +971,31 @@ static void MoveFire(TactState *pState, const MoveActionCtx *pCtx,
     }
 
     /* 0x2FC74, the first thing the original's arc walk does: Map.pFireArg6 (0x14050)
-     * takes apObjects[pSelWeapon->nIndex], the object record of the weapon that is
-     * selected. Tact_ProcessFireAction reads that slot back twice at the resolve
-     * (0x51CDC, 0x51F04) and passes it on as Combat_ResolveShot's weapon argument, and
-     * 0x2F24C stores it there a second time. The port's TactItem.pObj IS that record --
-     * every loader stamps pItem->pObj = apObjects[nIndex] (0x432F0 in the save reader)
-     * -- so the selected item gives the same pointer. With nothing published here the
-     * slot stays NULL, Combat_ResolveShot's first read of it at 0x2f2c0 dereferences a
-     * null pointer, and no shot ever resolves at all. */
+     * takes apObjects[pSelWeapon->nIndex] -- the item's OWN index at TactItem+4, not the
+     * record its pObj points at. The cargo build sets a weapon item's nIndex to the loaded
+     * magazine's slot (0x3948C..0x39504: nAmmo comes from apObjects[anAmmoTypeId[k]]->bAmmoCap
+     * "and its nIndex (+4) is that ammo type id"), an ammo item's to its own slot, and the
+     * reload arms rewrite it (0x15D38, 0x15E3C). That is where a clip-fed weapon's damage
+     * lives: main.dat Rifle (slot 4) carries uFirePower 0 and Rifle clip (slot 38) carries
+     * 30, while a self-powered weapon names its own slot as its ammo type (Laser rifle,
+     * slot 5, bAmmoCap 255, anAmmoTypeId[0] = 5), so the one lookup serves both.
+     * Combat_ResolveShot reads the fire type at 0x2F150, the readiness selector at 0x2F44C
+     * and the power at 0x2F4A4 off this record, and takes the shot sound from it (0x2F2D8,
+     * 0x2F3C0) -- publishing pObj instead resolves every clip-fed shot as ZERO damage.
+     * Tact_ProcessFireAction reads the slot back twice at the resolve (0x51CDC, 0x51F04) and
+     * 0x2F24C stores it there a second time. With nothing published here the slot stays NULL,
+     * Combat_ResolveShot's first read of it at 0x2f2c0 dereferences a null pointer, and no
+     * shot ever resolves at all. The original dereferences the index unconditionally; the port
+     * falls back to the item's own record when no table was wired or the index is out of
+     * range, and says so. */
     const TactItem *pSel = (pCtx->ppSelWeapon != NULL) ? *pCtx->ppSelWeapon : NULL;
     if (pCtx->ppFireWeaponSlot != NULL && pSel != NULL) {
-        *pCtx->ppFireWeaponSlot = (const ObjectRecFull *)pSel->pObj;
+        const ObjectRecFull *pShotObj = (const ObjectRecFull *)pSel->pObj;
+
+        if (pCtx->apObjectTable != NULL && (i32)pSel->nIndex < pCtx->nObjectCount) {
+            pShotObj = pCtx->apObjectTable[pSel->nIndex];
+        }
+        *pCtx->ppFireWeaponSlot = pShotObj;
     }
 
     Tact_TraceProjectileArc(pCtx->pAim, pCtx->pTables, &pCtx->geom,
@@ -1497,7 +1511,7 @@ static void Fall_PushControlMessage(const FallActionCtx *pCtx, Soldier *pVictim)
     }
     szMsg[n + nSuffix] = 0;
     if (pCtx->pfnPushForcedText != NULL) {
-        pCtx->pfnPushForcedText(szMsg, pCtx->pCallbackUser);
+        pCtx->pfnPushForcedText(szMsg, pCtx->pShellUser);
     }
 }
 
@@ -1533,7 +1547,7 @@ static void Fall_PanicVictim(TactState *pState, const FallActionCtx *pCtx,
     pVictim->pLinked1040 = pActor;
     Fall_RefreshXcom(pCtx);
     if (pCtx->pfnCheckBattleEnd != NULL) {
-        pCtx->pfnCheckBattleEnd(0, pCtx->pCallbackUser);
+        pCtx->pfnCheckBattleEnd(0, pCtx->pShellUser);
     }
     (void)pState;
 }
@@ -1626,7 +1640,7 @@ static void Fall_AlienMelee(TactState *pState, const FallActionCtx *pCtx,
             }
         }
         if (pCtx->pfnCheckBattleEnd != NULL) {
-            pCtx->pfnCheckBattleEnd(0, pCtx->pCallbackUser);
+            pCtx->pfnCheckBattleEnd(0, pCtx->pShellUser);
         }
         return;
     }
@@ -1920,7 +1934,7 @@ static void FallStepTail(TactState *pState, const FallActionCtx *pCtx, Soldier *
     if (Unit_bScanOpportunityFire(pCtx->pTactCtx, pActor, pCtx->apEnemyUnits,
                                   pCtx->pnEnemyCount, pCtx->apXcomUnits,
                                   pCtx->pnXcomCount, pCtx->pfnTryOpportunityFire,
-                                  pCtx->pCallbackUser)) {
+                                  pCtx->pShellUser)) {
         pActor->bFlags &= (u8)~0x02u;
         Unit_UpdateAnimPose(pActor, NULL, NULL);
         Fall_TeamVisibility(pCtx, pState);
@@ -2047,7 +2061,7 @@ void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx)
     case 0xE:
         Fall_RefreshXcom(pCtx);
         if (pCtx->pfnCheckBattleEnd != NULL) {
-            pCtx->pfnCheckBattleEnd(0, pCtx->pCallbackUser);
+            pCtx->pfnCheckBattleEnd(0, pCtx->pShellUser);
         }
         break;
 
