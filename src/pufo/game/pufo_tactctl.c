@@ -1578,7 +1578,14 @@ void Tact_SetupCraftCargo(TactCargoEnv *pEnv)
     i32 nY = 0;
     i32 nLayer = 0;
     if (pEnv->nMapLayers != 0) {
-        const u8 *pRec = pEnv->pDeployOffsets + PUFO_DEPLOY_RECORD_SIZE * (i32)pEnv->nMapLayers;
+        /* 0x38F38..0x38F48: `MOV R3,#0x68; MUL R3,R0,R3; ADD R0,R3,R0` puts R0 on
+         * aDeployCellOffsets + 104*nMapLayers, and the three record bytes are then read at [R0,#-0x68],
+         * [R0,#-0x67], [R0,#-0x66] -- i.e. base 104*(nMapLayers-1), record 0 of the group this layer
+         * count selects. The same group the deploy sweep walks (pufo_tactinit.c:194) and the same anchor
+         * Tact_SelectTeamUnits builds (pufo_tactctl.c:592), so the cargo lands on the squad's OWN first
+         * deploy cell, not on one record past the group. */
+        const u8 *pRec = pEnv->pDeployOffsets
+                       + PUFO_DEPLOY_RECORD_SIZE * ((i32)pEnv->nMapLayers - 1);
         nX     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapX + (i32)pRec[0];
         nY     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapY + (i32)pRec[1];
         nLayer = (i32)pRec[2];

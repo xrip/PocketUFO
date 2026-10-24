@@ -1193,6 +1193,18 @@ void World_TactSelectNextUnit(void);                        /* Tact_SelectNextUn
 void World_TactSelectPrevUnit(void);                        /* Tact_SelectPrevUnit @ 0x17260 */
 void World_TactInvScrollUp(void);                           /* Inv_ScrollUp @ 0x173e4, 0x11774 */
 void World_TactInvScrollDown(void);                         /* Inv_ScrollDown @ 0x173a8 */
+
+/* The inventory screen's three item-transfer arms, the BL sites 0x146F0/0x146FC and 0x1511C (press and
+ * tap-to-place) and 0x1511C (the drag's release). Input_OnPointer/Input_OnPointerUp call them directly in
+ * the original; the port has them as TactInputHooks seams, and the shell installs them here -- without an
+ * install the screen-1 arm reaches NULL hooks and no item can ever be picked up or worn in a live mission.
+ * They read the drag state the world already owns (sTactHit, sTactUi's ground list, sTactDrop's hooks) and
+ * take Map.pSelUnit from the live Map, exactly as 0x11C80/0x12290 do. Inv_HandlePointer reads the pen
+ * position from the caller's bank (+0x1044/+0x1048, UiBank.nPointerX/Y), which is where Input_OnPointer
+ * stored it at 0x13CB4/0x13CCC. */
+bool World_TactInvHitTest(i32 nX, i32 nY);                  /* Ui_HitTestTactItem @ 0x11ac0 */
+void World_TactInvClearHitSlot(void);                       /* Inv_ClearHitSlot @ 0x11f40 */
+bool World_TactInvDropPointer(const UiWidgetBank *pBank);   /* Inv_HandlePointer @ 0x12260 */
 void World_TactSetCursorPos(i32 nX, i32 nY);                /* MapCursor_SetPos @ 0x27014 */
 void World_TactPushTextRecord(i32 nRecIndex);               /* StatusMsg_Push @ 0x2dda4, record nRecIndex */
 void World_TactEscapeToGeoscape(void);                      /* Tact_Shutdown(0) + Geoscape_InitUI(1), 0x162BC/0x162C8 */

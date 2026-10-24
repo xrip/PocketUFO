@@ -25278,3 +25278,34 @@ sentinel; docs/parity/coverage.py --check green. IDB: UiPanelMsg_Draw's function
 LDRB/LDRSB split and the slot-2 consequence, with item comments at 0x3E9BC, 0x3EA44, 0x3EAB8, 0x3EB30 and 0x3EB7C;
 UiPanel_ctor's comment records its defaults and who has to overwrite them. All read back (the function comment is 937
 characters, under the 1024 store limit).
+
+Part 161 - the live inventory transfer, proved through the pen. The three callees of the inventory screen were in
+the port but not installed as seams: Input_OnPointer's screen-1 press calls Ui_HitTestTactItem @ 0x11ac0 at
+0x146F0, Inv_ClearHitSlot @ 0x11f40 at 0x146FC and sets byte_1139F4 at 0x146D0; Input_OnPointerUp's screen-1 arm
+calls Inv_HandlePointer @ 0x12260 at 0x1511C and clears the byte at 0x15120. World_TactInvHitTest,
+World_TactInvClearHitSlot and World_TactInvDropPointer (src/pufo/app/pufo_world.c) are now those seams, installed
+in the app's hook table and in the frame test's own table, so the press, the hover and the release in a live
+mission run the original's arms. The hover does nothing but store the pen position at 0x13C98 and hit-test the 13
+panel controls -- the item hit test is behind the `if (!bDown) return` at 0x146E4 -- and in drag mode the release
+skips the controls entirely (PointerUpScreen1's gate at 0x15110) before it runs the drop.
+
+Six transfers run on the live 107.d mission, with the anchor arithmetic 0x122A8/0x122C0 inverted to pick every pen
+coordinate: the rifle off the deploy cell into the left hand (6 time units, burden 1 -> 5 = 1 + the object's 3 +
+its loaded magazine's 1, 403 px painted into the left-hand slot at (14,63)); the hand onto the belt (8 units, the
+1x3 footprint covering belt slots 0/3/6 with the sentinel at 0x1325C, the hand slot returning to pixel-identical
+with the empty-handed screen); back from a SENTINEL slot onto the hand (pressing rect 19, index 3, resolves
+through the meta mirror at 0x11E9C to the anchor slot's item and the clear walks all three slots at 0x121F0); the
+1x1 object from the strip into pocket 0 (4 units); pocket 0 into belt column 1; and the belt back onto the
+ground, which is where the walk at 0x13470 put it a layer below the unit. Cell counts, time units, burden, the
+held byte and the sentinel slots are each asserted at every step, and the counters prove six presses ran the
+hit-test arm, six the clear arm and six the drop arm. The free arm of 0x123C8 is asserted too: taking an item out
+of a slot and dropping it back into the same region charges nothing.
+
+Two original rules this Part fixes in the port, both in bugs.tsv: the deploy-offset group is nMapLayers - 1
+(0x38F38..0x38F48) and Map_nCraftMapX/Y are read live at 0x38F58/0x38F78, after Map_BuildMissionTerrain re-rolled
+the craft tile. With both corrected the cargo stands at 54/29/1, the cell the deploy commit parks the selected
+unit on, which is the only cell the ground list can show (Inv_BuildVisibleList @ 0x2d580 reads pSelUnit->pCell
+alone). The snapshot gate unk_1139B9 is asserted as the original has it: the mission's first confirm records an
+empty hand, a later confirm with the rifle worn re-records nothing, and the gear still travels through the save's
+27 slot ids at 0x429DC. References new: tact_inventory_loose, tact_inventory_armed, tact_inventory_held,
+tact_mission_bare; tact_mission_urban now shows the equipped squad.

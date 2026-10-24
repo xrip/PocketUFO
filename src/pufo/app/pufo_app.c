@@ -326,6 +326,9 @@ static void App_HookTactSelectNextUnit(void *pUser);     /* Tact_SelectNextUnit 
 static void App_HookTactSelectPrevUnit(void *pUser);     /* Tact_SelectPrevUnit @ 0x17260 */
 static void App_HookTactInvScrollUp(void *pUser);        /* Inv_ScrollUp @ 0x173e4 */
 static void App_HookTactInvScrollDown(void *pUser);      /* Inv_ScrollDown @ 0x173a8 */
+static bool App_HookTactInvHitTest(i32 nX, i32 nY, void *pUser);   /* Ui_HitTestTactItem @ 0x11ac0 */
+static void App_HookTactInvClearHitSlot(void *pUser);    /* Inv_ClearHitSlot @ 0x11f40 */
+static void App_HookTactInvHandlePointer(UiWidgetBank *pBank, void *pUser); /* Inv_HandlePointer @ 0x12260 */
 static void App_HookTactOnConfirm(u16 nUiScreen, void *pUser);   /* the 0x15660 / 0x163C8 arms' callee */
 static void App_HookTactSetCursorPos(i32 nX, i32 nY, void *pUser); /* MapCursor_SetPos @ 0x27014 */
 static void App_HookTactPushTextRecord(i32 nRecIndex, void *pUser); /* StatusMsg_Push @ 0x2dda4 */
@@ -662,6 +665,11 @@ static void App_InitStartupUi(void)
     g_tactHooks.pfnSelectPrevUnit    = App_HookTactSelectPrevUnit;
     g_tactHooks.pfnInvScrollUp       = App_HookTactInvScrollUp;
     g_tactHooks.pfnInvScrollDown     = App_HookTactInvScrollDown;
+    /* The screen-1 item transfer (Part 161): press/tap hit-tests the ground list or a slot, the clear
+     * empties what was hit, and the release (or the tap-to-place second tap) runs the drop. */
+    g_tactHooks.pfnHitTestTactItem   = App_HookTactInvHitTest;
+    g_tactHooks.pfnInvClearHitSlot   = App_HookTactInvClearHitSlot;
+    g_tactHooks.pfnInvHandlePointer  = App_HookTactInvHandlePointer;
     g_tactHooks.pfnOnConfirm         = App_HookTactOnConfirm;
     g_tactHooks.pfnSetCursorPos      = App_HookTactSetCursorPos;
     g_tactHooks.pfnPushTextRecord    = App_HookTactPushTextRecord;
@@ -865,6 +873,32 @@ static void App_HookTactInvScrollDown(void *pUser)
 {
     (void)pUser;
     World_TactInvScrollDown();
+}
+
+/* The inventory screen's item-transfer arms. In the original these three are plain calls from
+ * Input_OnPointer (0x146F0 press/tap, 0x146FC and 0x146A8 clear-the-slot) and Input_OnPointerUp
+ * (0x1511C, the drag's release); the port routes them through TactInputHooks, so an uninstalled seam
+ * means the screen-1 arm calls nothing and no item can be picked up, worn or moved in a live mission.
+ * The mission's own drag state is the world's (World_TactInv* in pufo_world.c); without a live mission
+ * they answer the original's no-mission state (false / nothing). */
+static bool App_HookTactInvHitTest(i32 nX, i32 nY, void *pUser)
+{
+    (void)pUser;
+    return World_TactInvHitTest(nX, nY);
+}
+
+static void App_HookTactInvClearHitSlot(void *pUser)
+{
+    (void)pUser;
+    World_TactInvClearHitSlot();
+}
+
+static void App_HookTactInvHandlePointer(UiWidgetBank *pBank, void *pUser)
+{
+    (void)pUser;
+    /* Inv_HandlePointer's own return is the constant 1 (0x12260); its internal success flag is what the
+     * port returns, and the original discards it here -- the held flag clears either way (0x146B4/0x15120). */
+    (void)World_TactInvDropPointer(pBank);
 }
 
 /* The original's callee is Input_OnConfirm with a3 = Map_nUiScreen (the BL at 0x15660); the port keeps

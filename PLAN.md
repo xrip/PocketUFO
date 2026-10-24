@@ -6765,3 +6765,36 @@ pair is status-stack text (Tact_SelectUnit @ 0x2c6c4 -> Unit_FormatDisplayName m
 @ 0x2dda4 appends while count < 3 (0x2ddd4) with no comparison, TTL 90 at 0x2de68. IDB: comments at 0x18cb8/0x18d08/
 0x18d78/0x22540/0x26df4/0x26e14 (372/266/290/416/358/667 chars, read back), idb_save ok. Gates: 66/66 tests, coverage
 972/1103 unchanged, check: OK.
+Measured (Part 161, the live inventory transfer): the three inventory arms were written but never installed --
+Input_OnPointer's screen-1 press runs Ui_HitTestTactItem @ 0x11ac0 (0x146F0), Inv_ClearHitSlot @ 0x11f40 (0x146FC)
+and sets byte_1139F4 (0x146D0), and Input_OnPointerUp's screen-1 arm runs Inv_HandlePointer @ 0x12260 (0x1511C) and
+clears it (0x15120); the port's pen dispatch handed all three a NULL seam, so nothing in a live mission could be
+picked up, worn or moved. World_TactInvHitTest / World_TactInvClearHitSlot / World_TactInvDropPointer are the seams
+now, installed in pufo_app.c and in the frame test's own hook table. Six transfers run on the live 107.d mission
+with every pen coordinate derived from the anchor formula 0x122A8/0x122C0 inverted: ground -> left hand (6 TU,
+burden 1 -> 5, the 403 px the item strip paints at (14,63)), hand -> belt (8 TU, 1x3 footprint over slots 0/3/6,
+the hand slot pixel-identical to the empty screen again), a SENTINEL belt slot -> hand (the 0x11E9C meta mirror and
+the 0x121F0 footprint clear), strip -> pocket 0 (4 TU), pocket 0 -> belt column 1, belt -> ground -- and the ground
+drop lands a LAYER BELOW the unit because cell 54/29/1 has no floor sprite and the walk at 0x13470..0x13490 steps
+down (its exit test never tests layer 0's floor); the item then leaves the ground strip, because 0x2d580 reads only
+pSelUnit->pCell. The 0x123C8 free arm is asserted: out of a slot and back into the same region costs nothing. The
+snapshot gate unk_1139B9 is asserted as an original quirk -- the mission's first confirm records an empty hand and a
+later confirm with the rifle worn writes nothing into auUnk962/abUnk1012, because the only setter is 0x3C674,
+0x444C0 clears it and 0x2FA68 only reads it; the gear travels onward through the save's 27 slot ids (0x429DC).
+Measured trap: a DiffInBox read against a surface painted before the state changed gave a fake 403 px for the belt
+state -- identical to the worn state's number. Every comparison now repaints first, and the belt state moves 0 px in
+the hand rect, which is what makes the worn 403 px mean the weapon icon rather than the panel art. New references
+tact_inventory_loose / tact_inventory_armed / tact_inventory_held / tact_mission_bare; tact_mission_urban moved (it
+now shows the equipped squad: 566 px in the HUD band from TactHud_DrawSelectedUnitPanel @ 0x1d618, 55 px at the
+cursor stamp, the eight soldier sprites identical). pufo_tacthud.h's inventory doc corrected to 0x1F5D4/0x1F5E8 and
+0x1FB30. IDB: comments at 0x38F38/0x38F58/0x15A58/0x1F5D4/0x1FB30/0x13470 (374/390/399/267/303/390 chars, read
+back), idb_save ok. Two bugs.tsv rows for the cargo anchor. Gates: 66/66 tests, coverage 972/1103 unchanged,
+check: OK.
+Open (the goal 2026-10-24, equipment really working): 162 -- fire with the worn weapon in the live mission (the
+carried item's nAmmo falls and an alien loses HP through Unit_ApplyCellDamage @ 0x2e5d0). 163 -- carry and throw a
+category-3 object (TactState_EnqueueThrow @ 0x4b2f4, Tact_SimulateThrowArc @ 0x3102c, Map_ScanBlastFootprint @
+0x32cd4, Combat_SplashDamageCells @ 0x2e7d8). 164 -- armour and stun (uStunOrArmor @ Soldier+0x8, auStat[9],
+Unit_bArmorTuWarn @ 0x4e254, the ballist product auStat[8] * uStunOrArmor at 0x31a64). 165 -- mind control
+(Tact_UpdateUnitControl @ 0x4a444, and the forward control transition is still unidentified). 166 -- the gear
+carried into the NEXT mission, live: the 27 slot ids through a save and the auUnk962/abUnk1012 re-dress branch
+(0x3BE60 -> Equip_SlotPass 0x3BE8C).

@@ -7550,6 +7550,73 @@ void World_TactSelectPrevUnit(void) { World_TactRosterCall(Roster_SelectPrev); }
 void World_TactInvScrollUp(void)    { World_ClickInvScrollUp(); }
 void World_TactInvScrollDown(void)  { World_ClickInvScrollDown(); }
 
+/* The three item-transfer arms of the inventory screen, over the drag state the world owns. The
+ * original makes these three calls directly (0x146F0/0x146FC in Input_OnPointer's screen-1 arm,
+ * 0x1511C in Input_OnPointerUp's); the port has them as TactInputHooks seams and the shell installs
+ * them (pufo_app.c), so this is the arm the pen reaches in a live mission.
+ *
+ * Every field they read is the original's own: Map.pSelUnit is read live at 0x11C80 (the hit test) and
+ * at 0x12298 (the drop), so it is taken from the live Map here rather than from a staged copy; the
+ * ground list is sTactUi's, which the opener at 0x16EF4 built and Inv_ClearHitSlot @ 0x11FBC rebuilds;
+ * the pen position is the bank's +0x1044/+0x1048, which Input_OnPointer wrote at 0x13CB4/0x13CCC and
+ * which Tact_EquipTeamFromCraft @ 0x3BF38 also parks a rect origin into. */
+static InvHitTestCtx World_TactInvHitCtx(PufoWorldState *pW)
+{
+    InvHitTestCtx ctx;
+
+    ctx.pHit      = &pW->sTactHit;                        /* unk_1139F8.. unk_1183F0 */
+    ctx.pUi       = &pW->sTactUi;                         /* the ground list and its filter */
+    ctx.pSelUnit  = pW->pTactMap->pSelUnit;               /* Map_pSelUnit @ 0x128CEC */
+    ctx.pSentinel = &pW->sMapSentinel138EA0;             /* unk_138EA0 @ Map+0x254E8 */
+    return ctx;
+}
+
+bool World_TactInvHitTest(i32 nX, i32 nY)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    InvHitTestCtx ctx;
+
+    if (pW == NULL) {
+        return false;
+    }
+    ctx = World_TactInvHitCtx(pW);
+    return Ui_HitTestTactItem(&ctx, nX, nY);
+}
+
+void World_TactInvClearHitSlot(void)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+    InvHitTestCtx ctx;
+
+    if (pW == NULL) {
+        return;
+    }
+    ctx = World_TactInvHitCtx(pW);
+    Inv_ClearHitSlot(&ctx);
+}
+
+bool World_TactInvDropPointer(const UiWidgetBank *pBank)
+{
+    PufoWorldState *pW = World_TactLiveMission();
+
+    if (pW == NULL || pBank == NULL) {
+        return false;
+    }
+    bool bPlaced;
+
+    pW->sTactDrop.pSelUnit = pW->pTactMap->pSelUnit;   /* the live read at 0x12298 */
+    pW->sTactDrop.nPtrX    = pBank->nPointerX;         /* pBank+0x1044, read at 0x122A8 */
+    pW->sTactDrop.nPtrY    = pBank->nPointerY;         /* pBank+0x1048, read at 0x122C0 */
+    /* The time-unit gate reads the action latch through pUi (Drop_Charge at 0x12...: latch set means no
+     * charge), and the pen dispatch does not stage sTactUi the way an installed handler does
+     * (World_TactUiSyncIn:5828). One Map cell, two copies: stage it in and flush it back here so the drop
+     * sees the live byte, as every other arm of the inventory screen does. */
+    pW->sTactUi.bActionLatch     = pW->pTactMap->bActionLatch;   /* Map_bActionLatch @ Map+0x02 */
+    bPlaced = Inv_HandlePointer(&pW->sTactDrop);
+    pW->pTactMap->bActionLatch   = pW->sTactUi.bActionLatch;
+    return bPlaced;
+}
+
 /* MapCursor_SetPos @ 0x27014, the cursor re-placement Input_OnConfirm's armed multi-target arm runs
  * after the selection is committed (0x15618) and Input_OnPointerUp runs after a status-line release. */
 void World_TactSetCursorPos(i32 nX, i32 nY)

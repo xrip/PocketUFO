@@ -526,8 +526,10 @@ void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor)
  * then the burden bar, then the unit header, then the item strip, then the unit portrait, then the hit
  * item's name and the drag ghost.
  *
- * The hit highlight is a nine-case switch on nInvHitRegion, drawn only when the panel is open AND
- * anActionPhaseSave0[108] is set. Every case uses colour key 0x78:
+ * The hit highlight is a nine-case switch on nInvHitRegion, drawn only while an item is held (the
+ * byte_1139F4 test at 0x1F5D4) AND the forcenodrag option is set (Map_bForceNoDrag, tested at 0x1F5E8): the
+ * tap-to-place mode is the one that needs the target shown, and with the shipped "drag" setting the highlight
+ * is never up. Every case uses colour key 0x78:
  *
  *   0  ground column:  x 38*sub0 + 22,            y 263,             37 x 52
  *   1  pocket 0 col:   x 19*sub0 + 23,            y 23,              19*nFootW - 1 x 19
@@ -550,8 +552,12 @@ void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor)
  * The hit item line appends " (" + nAmmo + ")" only when bTwoHanded is 0 or 1, nCategory is neither 3
  * nor 5, and bAmmoCap is not 255.
  *
- * The drag ghost is drawn only when anActionPhaseSave0[108] is CLEAR - the opposite of the highlight
- * gate - at the drag offset plus the cursor pixel pair.
+ * The hit item line and the drag ghost share one gate, the byte_1139F4 test at 0x1FB30 right after the
+ * portrait blit: they are drawn while an item is held and not otherwise. The ghost sits at the drag offsets
+ * plus the bank cursor pair (0xAD714/0xAD718), so mid-drag the screen carries the item's name and its icon at
+ * the pen, and a released item leaves nothing behind -- measured in tests/test_geoscapeframe.c (Part 161): the
+ * held picture moves 1869 px against the released one, the released picture moves 0 px when the hit item is
+ * cleared.
  *
  * Deviation: the original builds both text lines in scratch at Map+0xAC and returns whatever the last
  * call left in R0. The port uses local buffers and returns void. */

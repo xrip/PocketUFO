@@ -705,9 +705,13 @@ typedef struct TactCargoEnv {
     const u8         *pDeployOffsets;  /* aDeployCellOffsets @ 0xA66B8, 104-byte records */
     u8   nMissionType;                 /* Map_nMissionType @ Map+0x1511A */
     u8   nCraftIndex;                  /* Map_nCraftIndex @ Map+0x15113, the launching craft */
-    u8   nMapLayers;                   /* Map_nMapLayers @ Map+0x15114, the record index */
-    u8   nCraftMapX;                   /* Map_nCraftMapX @ Map+0x15139, in tiles */
-    u8   nCraftMapY;                   /* Map_nCraftMapY @ Map+0x1513A, in tiles */
+    u8   nMapLayers;                   /* Map_nMapLayers @ Map+0x15114: 104*(nMapLayers-1) is the group
+                                        * base the record comes from, and 0 takes cell (0,0,0) */
+    u8   nCraftMapX;                   /* Map_nCraftMapX @ Map+0x15139, in tiles. The original loads it
+                                        * live at 0x38F78; Map_BuildMissionTerrain re-rolls it
+                                        * (pufo_terrain.c:502), so the caller re-reads it before the call
+                                        * (pufo_tactinit.c, Init_NewMission). */
+    u8   nCraftMapY;                   /* Map_nCraftMapY @ Map+0x1513A, in tiles, read live at 0x38F58 */
     i8   nBaseIndex;                   /* 0x158848, loaded with LDRSB */
 } TactCargoEnv;
 

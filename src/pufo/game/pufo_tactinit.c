@@ -571,6 +571,13 @@ static void Init_NewMission(TactInitEnv *pEnv)
 
     (void)Tact_SelectTeamUnits(&pEnv->teamSelect);
     (void)Tact_SpawnAliens(&pEnv->spawnAliens);
+    /* The cargo pass reads its anchor cells LIVE (0x38F34 Map_nMapLayers, 0x38F58 Map_nCraftMapY,
+     * 0x38F78 Map_nCraftMapX), and Map_BuildMissionTerrain has re-rolled the craft tile since the env
+     * fill: pufo_terrain.c:502 writes through pPlaneTileX, which is pEnv->pnCraftMapX. The values
+     * Init_FillCalleeEnvs copied are the pre-build ones, so re-read the three the pass touches. */
+    pEnv->cargo.nMapLayers   = pEnv->pMap->nMapLayers;
+    pEnv->cargo.nCraftMapX   = *pEnv->pnCraftMapX;
+    pEnv->cargo.nCraftMapY   = *pEnv->pnCraftMapY;
     Tact_SetupCraftCargo(&pEnv->cargo);
     pEnv->equip.pItemListCell = *pEnv->ppDeployCell;
     Tact_EquipTeamFromCraft(&pEnv->equip);

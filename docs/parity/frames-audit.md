@@ -756,3 +756,57 @@ IDB: line comments at 0x18CB8 (itoa into record 1069 and the record identities o
 first frame is empty) and 0x26E14 (the diagonal index bug), read back at 372 / 266 / 290 / 416 / 358 / 667 characters.
 `idb_save` ok. Two new references (`tact_modal_text`, `tact_frame_iso_fadeoff`); no existing picture moved. Gates re-run:
 66/66 tests, coverage 972/1103 functions unchanged, `check: OK`.
+
+## Part 161 - the live inventory transfer, and the pictures it made
+
+Two reasons no reference picture ever showed a soldier carrying something, both fixed here. (1) The pen arms were
+never installed. Input_OnPointer's screen-1 press runs Ui_HitTestTactItem @ 0x11ac0 (BL at 0x146F0), then
+Inv_ClearHitSlot @ 0x11f40 (0x146FC), then sets the held byte_1139F4 (0x146D0); Input_OnPointerUp's screen-1 arm
+runs Inv_HandlePointer @ 0x12260 (0x1511C) and clears that byte (0x15120). The port had all three callees written
+and installed no seam for them in the pen dispatch, so on the inventory screen every press and every release
+reached a NULL hook. (2) The cargo anchor: Tact_SetupCraftCargo @ 0x38f00 read the deploy-offset group
+`nMapLayers` instead of `nMapLayers - 1` (0x38F38..0x38F48: 104 * nMapLayers, then [R0,#-0x68], [R0,#-0x67],
+[R0,#-0x66]) and a craft tile copied before Map_BuildMissionTerrain re-rolled it, so the loose cargo was built
+far from the squad. Both are in bugs.tsv.
+
+Pictures looked at one by one, against the draw arm each one comes from:
+
+- `tact_inventory_loose` (new) - the inventory at the mission's start: the portrait, every slot group empty, the
+  burden line "Вес: 0" (the bar shows uInvBurden - 1), and the ground strip with the rifle in column 0 and its
+  copy count "2" (Inv_BuildVisibleList keeps one entry per object at 0x2d654 and counts the copies at 0x2d680)
+  and the 1x1 object in column 1 with count "1".
+- `tact_inventory_armed` (new) - after the transfers: the rifle icon in the left-hand slot at (14,63), which is
+  TactHud_DrawItemStrip @ 0x2cdac's left-hand arm `HandSlot + 19*(2 - nFootW)/2 + 5` and
+  `EquipDelta + 17*(3 - nFootH)/2 + 63` for a 1x3 object; the burden line reads "Вес: 4"; the strip is down to
+  one column because only the second rifle copy is left on the cell.
+- `tact_inventory_held` (new) - the same screen with the rifle on the pen: the item line "Винтовка (20)" and the
+  item's icon at the drag offsets plus the bank cursor pair. 1869 px against the armed picture. 0x1FB30 gates
+  both on byte_1139F4 alone; the hit highlight needs the held byte AND Map_bForceNoDrag (0x1F5D4, 0x1F5E8) and is
+  never up with the shipped drag setting.
+- `tact_mission_bare` (new) against `tact_mission_urban` (its committed reference moved, and that is the point:
+  it now shows an equipped squad) - the same battlefield before and after the transfers, 621 px. 566 of them are
+  below y 224: TactHud_DrawSelectedUnitPanel @ 0x1d618 draws the selected unit's left-hand object glyph at
+  PanelIconX(nOriginX, nFootW, 9) and its magazine count at (nOriginX + 22, nOriginY + 42) under the 0x1D778 gate,
+  and the TU digits moved with the charges. 55 px are above y 224, at the cursor stamp the inventory re-ran
+  (0x16FB0/0x16FBC). The eight soldier sprites are pixel-identical - checked as 5x crops side by side.
+
+Measurement trap found on the way, recorded because it made a number look meaningful: the first belt-state print
+said "403 px moved in the hand rect", the same number the worn state gave, because DiffInBox was read against the
+surface painted *before* the transfer. With a repaint the belt state moves 0 px in that rect, and it is that 0
+that makes the worn state's 403 px mean the weapon's own icon rather than the panel art around it. Every frame
+comparison in the block paints first now.
+
+Original quirks measured rather than ported away: a ground drop leaves the unit's own layer whenever that cell's
+floor sprite is zero (the walk at 0x13470..0x13490 steps down, and its exit test drops to layer 0 without testing
+that layer's floor), and the item then leaves the ground strip because Inv_BuildVisibleList @ 0x2d580 reads only
+pSelUnit->pCell -- in this mission the unit stands on 54/29/1 with no floor sprite and the dropped item landed on
+54/29/0. And the loadout snapshot at 0x15A60..0x15C4C runs only while unk_1139B9 (Map+0x01) is up: its only
+setter is Tact_InitMission @ 0x3C674, it is cleared at 0x15C68 and at 0x444C0 (Save_ReadTGameData), and
+Combat_ResolveShot @ 0x2FA68 only reads it -- so gear put on mid-mission is never re-declared into
+Soldier.auUnk962/abUnk1012, and what carries it onward is the save's 27 slot ids (0x429DC).
+
+IDB: line comments at 0x38F38 (374), 0x38F58 (390), 0x15A58 (399), 0x1F5D4 (267), 0x1FB30 (303) and 0x13470 (390)
+characters, each read back; `idb_save` ok. `pufo_tacthud.h`'s inventory-screen doc was corrected in the same
+pass: it claimed the highlight gate was "the panel is open AND anActionPhaseSave0[108]" and the ghost gate the
+opposite, while 0x1F5D4/0x1F5E8 and 0x1FB30 gate them on the held byte (and, for the highlight, on forcenodrag
+too). The code already matched the binary; the text did not.

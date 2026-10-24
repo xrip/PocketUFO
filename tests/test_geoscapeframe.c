@@ -191,6 +191,11 @@ static i32            g_nBankSamples;
 static i32            g_nLoadSlot;   /* 107.d: the object the hangar loaded onto the launching craft's cargo
                                       * column; 100.5 reads it back to check the squad was armed off it */
 static i32            g_nLoadWant;
+/* Part 161: the three item-transfer arms of the inventory screen, counted so a check can tell "the pen
+ * reached the arm" from "something else moved the item". */
+static i32            g_nInvHitCalls;    /* Ui_HitTestTactItem @ 0x11ac0 */
+static i32            g_nInvClearCalls;  /* Inv_ClearHitSlot @ 0x11f40 */
+static i32            g_nInvDropCalls;   /* Inv_HandlePointer @ 0x12260 */
 static i32            g_nSlotFormatCalls;  /* Menu_OpenSlotList's injected SaveSlot_FormatList */
 
 /* Fixture for MainMenu_pSlotCtx @ 0x156938: seven 40-byte slot labels. This test's SaveSlot_FormatList
@@ -249,6 +254,27 @@ static void Rec_TactSelNext(void *pUser)       { (void)pUser; ++g_seams.nSelNext
 static void Rec_TactSelPrev(void *pUser)       { (void)pUser; ++g_seams.nSelPrev;      World_TactSelectPrevUnit(); }
 static void Rec_TactScrollUp(void *pUser)      { (void)pUser; ++g_seams.nScrollUp;     World_TactInvScrollUp(); }
 static void Rec_TactScrollDown(void *pUser)    { (void)pUser; ++g_seams.nScrollDown;   World_TactInvScrollDown(); }
+/* Part 161: the same three seams the shell installs (pufo_app.c). The test's stand-in bank and the
+ * world's own drag state are in this process, so the wrappers are the mission's arms verbatim -- only
+ * the call is counted. */
+static bool Rec_TactInvHitTest(i32 nX, i32 nY, void *pUser)
+{
+    (void)pUser;
+    ++g_nInvHitCalls;
+    return World_TactInvHitTest(nX, nY);
+}
+static void Rec_TactInvClearHitSlot(void *pUser)
+{
+    (void)pUser;
+    ++g_nInvClearCalls;
+    World_TactInvClearHitSlot();
+}
+static void Rec_TactInvHandlePointer(UiWidgetBank *pBank, void *pUser)
+{
+    (void)pUser;
+    ++g_nInvDropCalls;
+    (void)World_TactInvDropPointer(pBank);
+}
 static void Rec_TactOnConfirm(u16 nScreen, void *pUser)
 {
     (void)nScreen;
@@ -871,6 +897,69 @@ static i32 PaintFurnitureFrame(const char *pszName)
     return nArm - nBase;
 }
 
+/* Items standing on a cell, walked the way MapCell_ListRemove walks them. Part 161 counts this after every
+ * pen transfer, so a drop that quietly moved nothing cannot pass. */
+static i32 CellItemCount(const MapCell *pCell)
+{
+    i32 n = 0;
+
+    for (const TactItem *pItem = (pCell != NULL) ? pCell->pItemList : NULL; pItem != NULL; pItem = pItem->pNext) {
+        ++n;
+    }
+    return n;
+}
+
+/* Copy the current surface into a 240-wide snapshot buffer -- the stride InkInBox and DiffInBox read. */
+static void SnapSurface(u16 *pBuf)
+{
+    for (i32 y = 0; y < 320; ++y) {
+        for (i32 x = 0; x < 240; ++x) {
+            pBuf[(size_t)y * 240u + (size_t)x] = (u16)SurfPix(x, y);
+        }
+    }
+}
+
+/* The box that actually changed between two surface snapshots, in surface coordinates. A DiffInBox count says
+ * something moved; this says where, which is what a draw claim has to be checked against. Part 161 uses it to
+ * tell an item icon apart from the panel art around it. */
+static void DiffBounds(const u16 *pA, const u16 *pB, i32 *pnX0, i32 *pnY0, i32 *pnX1, i32 *pnY1)
+{
+    i32 nCount = 0;
+
+    *pnX0 = 240; *pnY0 = 320; *pnX1 = -1; *pnY1 = -1;
+    for (i32 y = 0; y < 320; ++y) {
+        for (i32 x = 0; x < 240; ++x) {
+            if (pA[(size_t)y * 240u + (size_t)x] == pB[(size_t)y * 240u + (size_t)x]) {
+                continue;
+            }
+            ++nCount;
+            if (x < *pnX0) { *pnX0 = x; }
+            if (x > *pnX1) { *pnX1 = x; }
+            if (y < *pnY0) { *pnY0 = y; }
+            if (y > *pnY1) { *pnY1 = y; }
+        }
+    }
+    if (nCount == 0) {
+        *pnX0 = *pnY0 = *pnX1 = *pnY1 = 0;
+    }
+}
+
+/* The cell an item is standing on, found by scanning the mission's own cell table. Part 161 needs it where a
+ * drop picks its own landing cell (the walk at 0x13470..0x13490), so the test must not assume which one. */
+static MapCell *MissionCellOfItem(const TactItem *pItem)
+{
+    for (i32 i = 0; i < PUFO_TERRAIN_CELLS_PER_LAYER * PUFO_MAP_LAYERS; ++i) {
+        const MapCell *const pCell = g_world.apTactCells[i];
+
+        for (const TactItem *pI = (pCell != NULL) ? pCell->pItemList : NULL; pI != NULL; pI = pI->pNext) {
+            if (pI == pItem) {
+                return (MapCell *)pCell;
+            }
+        }
+    }
+    return NULL;
+}
+
 int main(void)
 {
     const char *const apsz[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -933,6 +1022,9 @@ int main(void)
     g_tactInHooks.pfnSelectPrevUnit    = Rec_TactSelPrev;
     g_tactInHooks.pfnInvScrollUp       = Rec_TactScrollUp;
     g_tactInHooks.pfnInvScrollDown     = Rec_TactScrollDown;
+    g_tactInHooks.pfnHitTestTactItem   = Rec_TactInvHitTest;      /* 0x146F0 / 0x146C4 */
+    g_tactInHooks.pfnInvClearHitSlot   = Rec_TactInvClearHitSlot; /* 0x146FC / 0x146A8 */
+    g_tactInHooks.pfnInvHandlePointer  = Rec_TactInvHandlePointer; /* 0x146B0 / 0x1511C */
     g_tactInHooks.pfnOnConfirm         = Rec_TactOnConfirm;
     g_tactInHooks.pfnSetCursorPos      = Rec_TactSetCursorPos;
     g_tactInHooks.pfnPushTextRecord    = Rec_TactPushText;
@@ -12512,6 +12604,96 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
         Check(World_MissionCancelEnd(&g_world), "the mission's cancel arm takes the 0x14/0x15 case (0x16294)");
         CheckEqI32(g_world.nUiScreen, 1, "and restores the screen slot 11 saved (1): the briefing closes onto the inventory the init left open");
 
+        /* 107.d's cargo, read where the mission runs: the seed pass copied the launching craft's column into
+         * every object's uRecovScore (0x39018), the split reserved one magazine score per rifle copy
+         * (0x392EC..0x39344) and the build pass put one TactItem per carried copy on the deploy cell
+         * (0x39414..0x39570). What the equip pass then does depends on Soldier+0x3C1, so this section reads the
+         * branch the live squad really takes; the recruit branch (0x3C2D8 taking copies into hands) is gated on
+         * fresh soldiers in tests/test_tactinit.c. It runs here, on the inventory screen the init left open,
+         * before the pen Part 161 moves any of it: every number below is what the mission starts with. */
+        {
+            const ObjectRecFull *const pRifle = g_assets.apObjects[g_nLoadSlot];
+            const i32 nClipId = (i32)pRifle->anAmmoTypeId[0];
+            const ObjectRecFull *const pClip  = g_assets.apObjects[nClipId];
+            const GameMap *const pField = g_world.pTactMap;
+            i32 nPool = 0, nLoaded = 0, nClipItems = 0, nHanded = 0, nOnCell = 0, nVeteran = 0;
+
+            for (i32 i = 0; i < g_world.nTactItemCount; ++i) {
+                const TactItem *const pItem = g_world.apTactItems[i];
+
+                if (pItem == NULL) {
+                    continue;
+                }
+                if (pItem->pObj == pRifle) {
+                    ++nPool;
+                    if ((i32)pItem->nAmmo == (i32)pClip->bAmmoCap && (i32)pItem->nIndex == nClipId) {
+                        ++nLoaded;
+                    }
+                } else if (pItem->pObj == pClip) {
+                    ++nClipItems;
+                }
+            }
+            for (i32 i = 0; i < (i32)pField->nXcomCount; ++i) {
+                const Soldier *const pUnit = pField->apXcomUnits[i];
+
+                if (pUnit == NULL) {
+                    continue;
+                }
+                nVeteran += (pUnit->bUnk961 != 0) ? 1 : 0;
+                if (pUnit->pHandL != NULL && pUnit->pHandL->pObj == pRifle) {
+                    ++nHanded;
+                }
+            }
+            for (const TactItem *pItem = (g_world.pTactDeployCell != NULL)
+                                             ? g_world.pTactDeployCell->pItemList : NULL;
+                 pItem != NULL; pItem = pItem->pNext) {
+                if (pItem->pObj == pRifle) {
+                    ++nOnCell;
+                }
+            }
+            CheckEqI32(nPool, g_nLoadWant,
+                       "107.d's carried rifles built one item each in the mission's item pool (0x39018 seed, "
+                       "0x39414..0x39570)");
+            CheckEqI32(nLoaded, g_nLoadWant,
+                       "107.d's clip rode along, so the split reserved one clip score per copy (0x392EC..0x39344) "
+                       "and each copy takes the weapon arm (0x394EC) carrying the clip's cap (0x394E0) -- that "
+                       "non-zero magazine is what the equip hand gate needs (0x3C26C); a rifle carried without "
+                       "its magazine builds nAmmo 0 at 0x39530 and equips nobody");
+            CheckEqI32(nClipItems, 0,
+                       "and no separate clip item stands in the pool: the build count is score minus the "
+                       "reservation (0x39400), so both clips were spent as magazines");
+            /* The squad this craft launches was equipped by an earlier mission of this run (the byte was proven
+             * set before the launch, 0x3C510), so 0x3BE60 takes the re-dress branch for every one of them: the
+             * declared loadout columns (auUnk962 / abUnk1012) are what the slot passes read, and the craft's
+             * cargo stays where the build pass put it -- loose at the drop cell, to be picked up in the mission.
+             * A never-equipped squad takes the copies into its hands instead; that half is gated with fresh
+             * recruits in tests/test_tactinit.c (TestCargoArmsTheSquad, TestCargoWeaponNeedsItsClip). */
+            CheckEqI32(nVeteran, (i32)pField->nXcomCount,
+                       "the fielded squad is all veterans of this run's earlier missions (+0x3C1 set, 0x3BE60)");
+            CheckEqI32(nHanded, 0,
+                       "ORIGINAL RULE, asserted live: the equip pass does not dress a veteran from loose cargo "
+                       "(0x3BE60 -> Equip_SlotPass 0x3BE8C, 0x3C2D8 never runs)");
+            CheckEqI32(nOnCell, g_nLoadWant,
+                       "and the loaded rifles the hangar put on the craft are standing loose on the deploy cell "
+                       "at the start of the mission (0x39480)");
+            printf("  cargo in the mission: %d of %d XCOM hold object %d, %d in the pool (%d loaded with clip %d "
+                   "x %d), %d loose on the deploy cell\n",
+                   nHanded, (i32)pField->nXcomCount, g_nLoadSlot, nPool, nLoaded, nClipId,
+                   (i32)pClip->bAmmoCap, nOnCell);
+            printf("  161 pre-transfer: selected unit cell %d/%d/%d, cargo cell %d/%d/%d, tu %u, burden %u, "
+                   "hand %d/%d\n",
+                   (pField->pSelUnit != NULL && pField->pSelUnit->pCell != NULL) ? pField->pSelUnit->pCell->nX : -1,
+                   (pField->pSelUnit != NULL && pField->pSelUnit->pCell != NULL) ? pField->pSelUnit->pCell->nY : -1,
+                   (pField->pSelUnit != NULL && pField->pSelUnit->pCell != NULL) ? pField->pSelUnit->pCell->nZ : -1,
+                   (g_world.pTactDeployCell != NULL) ? g_world.pTactDeployCell->nX : -1,
+                   (g_world.pTactDeployCell != NULL) ? g_world.pTactDeployCell->nY : -1,
+                   (g_world.pTactDeployCell != NULL) ? g_world.pTactDeployCell->nZ : -1,
+                   (pField->pSelUnit != NULL) ? (u32)pField->pSelUnit->uTu : 0u,
+                   (pField->pSelUnit != NULL) ? (u32)pField->pSelUnit->uInvBurden : 0u,
+                   (pField->pSelUnit != NULL) ? (pField->pSelUnit->pHandL != NULL) : 0,
+                   (pField->pSelUnit != NULL) ? (pField->pSelUnit->pHandR != NULL) : 0);
+        }
+
         /* The shipped build then closes that inventory with its own confirm arm:
          * MenuBtn_Confirm(16) -> Input_OnConfirm's screen-1 arm (0x160FC plays 16, 0x16104 calls),
          * whose Inv_CloseAndCommit @ 0x15a48 snapshots the loadouts, clears the Map+0x01 commit flag
@@ -12602,81 +12784,381 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
             }
         }
 
-        /* 107.d's cargo, read where the mission runs: the seed pass copied the launching craft's column into
-         * every object's uRecovScore (0x39018), the split reserved one magazine score per rifle copy
-         * (0x392EC..0x39344) and the build pass put one TactItem per carried copy on the deploy cell
-         * (0x39414..0x39570). What the equip pass then does depends on Soldier+0x3C1, so this section reads the
-         * branch the live squad really takes; the recruit branch (0x3C2D8 taking copies into hands) is gated on
-         * fresh soldiers in tests/test_tactinit.c. */
+        /* ---------------- Part 161: the pen carries the cargo off the deploy cell, wears it, takes it off,
+         * and moves it between the soldier's own slots -- inside a live mission.
+         *
+         * The arms are Input_OnPointer's screen-1 press -- Ui_HitTestTactItem @ 0x11ac0 at the BL site 0x146F0,
+         * Inv_ClearHitSlot @ 0x11f40 at 0x146FC, the held byte_1139F4 set at 0x146D0 -- and Input_OnPointerUp's
+         * screen-1 release -- Inv_HandlePointer @ 0x12260 at 0x1511C, that byte cleared at 0x15120. The port had
+         * all three callees written but installed no seam for them in the pen dispatch, so on the inventory
+         * screen every press and every release reached a NULL hook: no item in a live mission could be picked
+         * up, worn or moved, which is why no picture in tests/ref ever showed a soldier carrying anything. The
+         * cargo anchor is the other half of the same complaint and both are in bugs.tsv: Tact_SetupCraftCargo @
+         * 0x38f00 takes the deploy-offset group nMapLayers - 1 (0x38F34..0x38F48) and reads the craft tile LIVE
+         * (0x38F58, 0x38F78) -- the tile Map_BuildMissionTerrain re-rolled after the callee env was filled -- so
+         * the loose cargo lands on the squad's own first deploy cell and the deploy commit parks the selected
+         * unit on top of it.
+         *
+         * Nothing here picks a pen position freely. A press stores the drag offsets -20*foot/2 (Hit_DragOffsets,
+         * 0x11B8C/0x11BB0); a release anchors the drop at dragOff + the pen the bank stored at 0x13C98 + 10
+         * (0x122A8/0x122C0) and takes the first hit rect that box falls in. Every coordinate below is that
+         * formula run backwards from the rect the item has to land in.
+         *
+         * The order is the shipped one. Tact_InitMission leaves the inventory open at 0x3D0B8, but Map_pSelUnit
+         * is not on the cargo cell yet (measured this run: 14/19 against the cargo at 54/29/1), so the list that
+         * opener built is empty; the commit's Tact_DeployTeamAndHwps @ 0x39980 is what moves the squad onto its
+         * own cargo, and from the battlefield the player reaches it through bank widget 4 (Inv_OpenScreen @
+         * 0x16ef4), which lights the "All" filter (0xFF at 0x4A26) and rebuilds the list off the selected
+         * unit's cell (Inv_BuildVisibleList @ 0x2d580). */
         {
-            const ObjectRecFull *const pRifle = g_assets.apObjects[g_nLoadSlot];
-            const i32 nClipId = (i32)pRifle->anAmmoTypeId[0];
-            const ObjectRecFull *const pClip  = g_assets.apObjects[nClipId];
-            const GameMap *const pField = g_world.pTactMap;
-            i32 nPool = 0, nLoaded = 0, nClipItems = 0, nHanded = 0, nOnCell = 0, nVeteran = 0;
+#define PENX(nAnc, nDrag) ((i32)(nAnc) - (i32)(nDrag) - 10)   /* 0x122A8 run backwards */
+#define PENY(nAnc, nDrag) ((i32)(nAnc) - (i32)(nDrag) - 10)   /* 0x122C0 run backwards */
+#define CLICK161(i) do { if (g_bank.aCtl[(i)].pfnClick != NULL) { g_bank.aCtl[(i)].pfnClick(); } } while (0)
+            GameMap *const pXMap  = g_world.pTactMap;
+            Soldier *const pWear  = pXMap->pSelUnit;
+            MapCell *const pCargo = g_world.pTactDeployCell;   /* unk_157204, where the cargo pass built */
+            const ObjectRec *const pGun = g_assets.apObjects[g_nLoadSlot];
+            const i32 nClipId     = (i32)pGun->anAmmoTypeId[0];
+            const i32 nGunWeight  = (i32)pGun->bWeight;
+            const i32 nClipWeight = (i32)g_assets.apObjects[nClipId]->bWeight;
+            const i32 nGunDragX   = PUFO_INV_DRAG_SCALE * (i32)pGun->nFootW / 2;   /* 0x11B8C */
+            const i32 nGunDragY   = PUFO_INV_DRAG_SCALE * (i32)pGun->nFootH / 2;   /* 0x11BB0 */
+            TactPointerWorld ptr161;
+            static u16 aBare161[240 * 320];    /* the battlefield with nothing worn */
+            static u16 aLoose161[240 * 320];   /* the inventory with empty hands */
+            static u16 aWorn161[240 * 320];    /* the inventory with the rifle in the left hand */
+            static u16 aBelt161[240 * 320];    /* the same rifle on the belt, both hands empty */
+            static u16 aArmed161[240 * 320];   /* the inventory at the end of the transfers */
+            static u16 aHeld161[240 * 320];    /* the same screen with the rifle on the pen */
+            i32 nBx0 = 0, nBy0 = 0, nBx1 = 0, nBy1 = 0;
+            i32 nHud161 = 0, nMap161 = 0;
+            TactItem *pGunItem = NULL, *pPackItem = NULL;
+            const ObjectRec *pPackObj = NULL;
+            MapCell *pGround161 = NULL;
+            i32 nGroundBefore = 0;
+            i32 nPackDragX = 0, nPackDragY = 0, nPackWeight = 0;
+            i32 nCells = CellItemCount(pCargo);
+            i32 nHit0 = g_nInvHitCalls, nClear0 = g_nInvClearCalls, nDrop0 = g_nInvDropCalls;
+            u16 uTu0 = 0, uBurden0 = 0, uTuHeld0 = 0;
 
-            for (i32 i = 0; i < g_world.nTactItemCount; ++i) {
-                const TactItem *const pItem = g_world.apTactItems[i];
+            memset(&ptr161, 0, sizeof(ptr161));
+            ptr161.pBank = &g_bank;
+            ptr161.hit   = g_hit;
 
-                if (pItem == NULL) {
-                    continue;
+            for (const TactItem *pI = (pCargo != NULL) ? pCargo->pItemList : NULL; pI != NULL; pI = pI->pNext) {
+                if (pI->pObj == pGun) {
+                    if (pGunItem == NULL) { pGunItem = (TactItem *)pI; }
+                } else if (pPackItem == NULL) {
+                    pPackItem = (TactItem *)pI;
+                    pPackObj = pI->pObj;
                 }
-                if (pItem->pObj == pRifle) {
-                    ++nPool;
-                    if ((i32)pItem->nAmmo == (i32)pClip->bAmmoCap && (i32)pItem->nIndex == nClipId) {
-                        ++nLoaded;
+            }
+            if (pPackObj != NULL) {
+                nPackDragX = PUFO_INV_DRAG_SCALE * (i32)pPackObj->nFootW / 2;
+                nPackDragY = PUFO_INV_DRAG_SCALE * (i32)pPackObj->nFootH / 2;
+                nPackWeight = (i32)pPackObj->bWeight;
+            }
+            Check(pWear != NULL && pCargo != NULL && pWear->pCell == pCargo,
+                  "the deploy commit parks the selected unit on the cell its own craft's cargo stands on "
+                  "(unk_157204, the cell 0x38F34..0x38FCC builds; 0x39E9C's spread puts the squad on it)");
+            Check(pGunItem != NULL && pPackItem != NULL,
+                  "and that cell holds both cargo objects the build pass left there loose (0x39480)");
+            CheckEqI32((i32)pWear->auUnk962[8], 0,
+                  "the mission's first confirm found the left hand empty and stored 0 there (0x15C3C)");
+            uTu0 = pWear->uTu;
+            uBurden0 = pWear->uInvBurden;
+            printf("  161: cargo cell %d/%d/%d holds %d items; object %d (foot %u/%u, weight %u, sort %u, "
+                   "clip %d weight %u) and object sort %u (foot %u/%u, weight %u); the unit on it has tu %u, "
+                   "burden %u, empty hands\n",
+                   pCargo->nX, pCargo->nY, pCargo->nZ, nCells, g_nLoadSlot, (u32)pGun->nFootW, (u32)pGun->nFootH,
+                   (u32)pGun->bWeight, (u32)pGun->uSortKey, nClipId, (u32)nClipWeight,
+                   (pPackObj != NULL) ? (u32)pPackObj->uSortKey : 0u,
+                   (pPackObj != NULL) ? (u32)pPackObj->nFootW : 0u,
+                   (pPackObj != NULL) ? (u32)pPackObj->nFootH : 0u,
+                   (pPackObj != NULL) ? (u32)pPackObj->bWeight : 0u, (u32)uTu0, (u32)uBurden0);
+
+            /* The battlefield with nothing worn, kept as a reference of its own so the equipped one can be
+             * compared with it pixel by pixel. */
+            ClearSurface();
+            World_TactFrame(&g_world);
+            SnapSurface(aBare161);
+            DumpFrame("tact_mission_bare");
+
+            /* 1. the battlefield's own inventory button opens the screen the cargo is reachable from. */
+            CLICK161(4);
+            CheckEqI32(g_world.nUiScreen, 1, "bank widget 4 runs Inv_OpenScreen @ 0x16ef4, whose tail writes Map_nUiScreen 1 (0x16FD8)");
+            CheckEqI32((i32)g_world.sTactUi.nInvListSel, 0xFF, "the opener sets the category filter to all (0xFF at 0x4A26)");
+            CheckEqI32((i32)g_world.sTactUi.nInvFilterType, 0, "and the ground list's row to 0 (0x1A22)");
+            CheckEqI32((i32)g_world.sTactUi.nInvListCount, 2,
+                  "Inv_BuildVisibleList @ 0x2d580 reads only the selected unit's cell and keeps one entry per "
+                  "object: three items, two entries (the dedup at 0x2d654, the copy counted at 0x2d680)");
+            CheckEqI32((i32)g_world.sTactUi.anInvCount[0], 2, "and the rifle entry carries both copies");
+            Check(g_world.sTactUi.apInvList[0]->pObj == pGun && g_world.sTactUi.apInvList[1]->pObj == pPackObj,
+                  "the entries come out ascending by ObjectRec.uSortKey, so the rifle's window column is the "
+                  "left one (the selection sort at 0x2d6d0..0x2d78c)");
+            ClearSurface();
+            World_TactFrame(&g_world);
+            SnapSurface(aLoose161);
+            printf("  161: the empty-handed inventory lights %d px in the left-hand rect 3,61..42,119\n",
+                   InkInBox(3, 61, 42, 119, NULL));
+            DumpFrame("tact_inventory_loose");
+
+            /* 2. press the rifle in the ground strip. The window is x 23..173, y 264..313 and the column is
+             * (x - 23)/38 (0x11AF0..0x11B68); column 0 is the rifle entry. */
+            World_TactPointerMove(&g_world, &ptr161, 40, 288, true);   /* WM_LBUTTONDOWN */
+            CheckEqI32(g_nInvHitCalls, nHit0 + 1, "the press ran the installed Ui_HitTestTactItem seam (BL at 0x146F0)");
+            Check(g_world.sTactHit.pHitItem == pGunItem, "and it hit the first rifle copy on the cell");
+            CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_GROUND, "as a ground-list hit (0x11F18 store)");
+            CheckEqI32(g_world.sTactHit.nDragOffX, nGunDragX, "the press stored -20*footW/2 (0x11B8C)");
+            CheckEqI32(g_world.sTactHit.nDragOffY, nGunDragY, "and -20*footH/2 (0x11BB0)");
+            CheckEqI32(g_world.sTactInput.bInvDragActive, 1, "byte_1139F4 is up: the item is held (0x146D0)");
+            CheckEqI32(g_nInvClearCalls, nClear0 + 1, "and the press ran the installed Inv_ClearHitSlot seam (BL at 0x146FC)");
+            CheckEqI32(CellItemCount(pCargo), nCells - 1, "its ground case took the rifle off the cell (MapCell_ListRemove at 0x11FB4) and rebuilt the list (0x11FBC)");
+
+            /* 3. hover so the drop anchor lands in the left-hand rect {3,61,42,119} and release. The release
+             * is what places the item: Drop_InSlot case 4 (0x12340 switch) charges 6 and stores at 0x12B7C. */
+            World_TactPointerMove(&g_world, &ptr161, PENX(20, nGunDragX), PENY(90, nGunDragY), false);  /* WM_MOUSEMOVE */
+            World_TactPointerUp(&g_world, &ptr161);                     /* WM_LBUTTONUP */
+            CheckEqI32(g_nInvDropCalls, nDrop0 + 1, "the release ran the installed Inv_HandlePointer seam (BL at 0x1511C)");
+            Check(pWear->pHandL == pGunItem, "and the left hand now holds the rifle (0x12B7C)");
+            Check(pWear->pHandR == NULL, "the right hand stays empty (no 0x12ED4 store)");
+            CheckEqI32((i32)pWear->uTu, (i32)uTu0 - PUFO_INV_TU_HAND,
+                  "the hand drop charged 6 time units -- the source was the ground, the target the hand, so "
+                  "neither 0x123C8 exemption applies");
+            CheckEqI32((i32)pWear->uInvBurden, (i32)uBurden0 + nGunWeight + nClipWeight,
+                  "Unit_RecalcInventoryStat @ 0x49ef0, which the drop tail runs at 0x13C40, now counts the "
+                  "weapon's weight plus its loaded magazine's");
+            CheckEqI32(g_world.sTactInput.bInvDragActive, 0, "and the release clears the held byte (0x15120)");
+            ClearSurface();
+            World_TactFrame(&g_world);
+            SnapSurface(aWorn161);
+            DiffBounds(aLoose161, aWorn161, &nBx0, &nBy0, &nBx1, &nBy1);
+            printf("  161: worn in the left hand -- %d px moved inside the left-hand rect 3,61..42,119; the "
+                   "whole-screen change box is (%d,%d)..(%d,%d); hit region %d; tu %d -> %d, burden %d -> %d\n",
+                   DiffInBox(3, 61, 42, 119, aLoose161), nBx0, nBy0, nBx1, nBy1, g_world.sTactHit.nHitRegion,
+                   (i32)uTu0, (i32)pWear->uTu, (i32)uBurden0, (i32)pWear->uInvBurden);
+            Check(DiffInBox(14, 63, 33, 80, aLoose161) > 0,
+                  "the worn rifle is drawn where TactHud_DrawItemStrip @ 0x2cdac puts the left-hand item: "
+                  "x = HandSlot + 19*(2 - nFootW)/2 + 5 = 14, y = EquipDelta + 17*(3 - nFootH)/2 + 63 for a 1x3 "
+                  "object, and that box is empty in the same screen with an empty hand");
+
+            /* 4. take it off the hand and onto the belt. The rifle is 1x3 and the belt case (0x12340 case 7)
+             * takes a footprint of up to 3 rows from row 0, so the drop covers belt slots 0, 3 and 6 (0x1325C).
+             * Belt rect 16 is {170,22,189,41}: the anchor (178,30) needs the pen at (178,50). */
+            World_TactPointerMove(&g_world, &ptr161, 20, 90, true);
+            Check(g_world.sTactHit.pHitItem == pGunItem, "the press hit the item the hand holds (0x11DB4 read)");
+            CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_HAND_L, "as a left-hand hit (0x11DEC store)");
+            Check(pWear->pHandL == NULL, "and Inv_ClearHitSlot's hand case empties the hand (0x12124)");
+            World_TactPointerMove(&g_world, &ptr161, PENX(178, nGunDragX), PENY(30, nGunDragY), false);
+            World_TactPointerUp(&g_world, &ptr161);
+            Check(pWear->apBelt[0] == pGunItem, "the belt's first slot holds it now (Drop_MarkBelt, LABEL_161 at 0x1325C)");
+            Check(pWear->apBelt[3] != NULL && pWear->apBelt[3] != pGunItem
+                      && pWear->apBelt[6] != NULL && pWear->apBelt[6] != pGunItem,
+                  "and the two slots its 1x3 footprint covers hold the sentinel, not the item (0x1325C's first loop)");
+            Check(pWear->pHandL == NULL, "the hand is still empty: the rifle is off the soldier's hands now");
+            CheckEqI32((i32)pWear->uTu, (i32)uTu0 - PUFO_INV_TU_HAND - PUFO_INV_TU_BELT,
+                  "a belt drop charges 8, the dearest of the seven costs (Drop_Charge, 0x123C8)");
+            CheckEqI32((i32)pWear->uInvBurden, (i32)uBurden0 + nGunWeight + nClipWeight,
+                  "and the burden is unchanged by the move: Unit_RecalcInventoryStat @ 0x49ef0 counts belt slots "
+                  "exactly as it counts the hand");
+            ClearSurface();
+            World_TactFrame(&g_world);
+            SnapSurface(aBelt161);
+            DiffBounds(aLoose161, aBelt161, &nBx0, &nBy0, &nBx1, &nBy1);
+            printf("  161: on the belt, hands empty -- %d px moved inside the left-hand rect; the whole-screen "
+                   "change box is (%d,%d)..(%d,%d); hit region %d\n", DiffInBox(3, 61, 42, 119, aLoose161),
+                   nBx0, nBy0, nBx1, nBy1, g_world.sTactHit.nHitRegion);
+            CheckEqI32(DiffInBox(3, 61, 42, 119, aLoose161), 0,
+                  "with the rifle on the belt and both hands empty, the left-hand slot is pixel-identical to the "
+                  "empty-handed picture -- so the pixels that moved there while it was worn are the weapon's own "
+                  "icon and not the panel art around it");
+            DiffBounds(aWorn161, aBelt161, &nBx0, &nBy0, &nBx1, &nBy1);
+            printf("  161: belt against worn -- the change box is (%d,%d)..(%d,%d); tu %d, burden %d\n",
+                   nBx0, nBy0, nBx1, nBy1, (i32)pWear->uTu, (i32)pWear->uInvBurden);
+
+            /* 5. put it back on the hand -- pressing the SENTINEL slot, belt rect 19 {170,41,189,60}, i.e. the
+             * slot index 0 + 3*1 = 3 that carries no item: the hit test resolves it through the meta mirror
+             * (0x11E9C..0x11EC0) to the anchor slot's item, and the clear walks the whole 1x3 footprint. */
+            World_TactPointerMove(&g_world, &ptr161, 178, 50, true);
+            Check(g_world.sTactHit.pHitItem == pGunItem,
+                  "the sentinel slot hands back the anchor's item (0x11E78 read, the mirror at 0x11E9C)");
+            CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_BELT, "as a belt hit (0x11EAC store)");
+            CheckEqI32(g_world.sTactHit.nHitSub0, 0, "with the anchor column the meta bytes carry (Soldier+0x190)");
+            CheckEqI32(g_world.sTactHit.nHitSub1, 0, "and the anchor row (Soldier+0x199)");
+            Check(pWear->apBelt[0] == NULL && pWear->apBelt[3] == NULL && pWear->apBelt[6] == NULL,
+                  "and Inv_ClearHitSlot's belt case empties all three slots of the footprint (0x121F0 walk)");
+            World_TactPointerMove(&g_world, &ptr161, PENX(20, nGunDragX), PENY(90, nGunDragY), false);
+            World_TactPointerUp(&g_world, &ptr161);
+            Check(pWear->pHandL == pGunItem, "so the same rifle is worn in the left hand again (0x12B7C)");
+            CheckEqI32((i32)pWear->uTu, (i32)uTu0 - 2 * PUFO_INV_TU_HAND - PUFO_INV_TU_BELT,
+                  "and the wear charges 6 on top of the belt's 8: 20 time units to take it off and put it back on");
+            CheckEqI32((i32)pWear->uInvBurden, (i32)uBurden0 + nGunWeight + nClipWeight,
+                  "the burden is the same as it was in the belt -- only the slot moved");
+
+            /* 6. the other cargo object, ground -> pocket 0. Its rect is the table's first record,
+             * {22,22,41,41} region 0 slot 0 (0xA8DD8), and the pocket case charges 4 (the region < 2 arm at
+             * 0x123C8). The rifle copy is still loose on the cell, so it keeps column 0 and this one is
+             * column 1. */
+            World_TactPointerMove(&g_world, &ptr161, 80, 288, true);
+            Check(g_world.sTactHit.pHitItem == pPackItem, "column 1 of the ground list is the other cargo object (nInvFilterType + column, 0x11B2C)");
+            CheckEqI32(g_world.sTactHit.nDragOffX, nPackDragX, "with its own footprint's drag offsets (0x11B8C)");
+            CheckEqI32(g_world.sTactHit.nDragOffY, nPackDragY, "a 1x1 object, so -10 and -10");
+            CheckEqI32(CellItemCount(pCargo), nCells - 2, "and only the second rifle copy stays loose on the cell");
+            World_TactPointerMove(&g_world, &ptr161, PENX(30, nPackDragX), PENY(30, nPackDragY), false);
+            World_TactPointerUp(&g_world, &ptr161);
+            Check(pWear->aPockets[0].apItem[0] == pPackItem, "pocket 0 slot 0 holds it (Drop_MarkPocket, LABEL_161 at 0x1330C)");
+            CheckEqI32((i32)pWear->uTu, (i32)uTu0 - 2 * PUFO_INV_TU_HAND - PUFO_INV_TU_BELT - PUFO_INV_TU_POCKET_A,
+                  "and a pocket drop charges 4");
+            CheckEqI32((i32)pWear->uInvBurden, (i32)uBurden0 + nGunWeight + nClipWeight + nPackWeight,
+                  "the recalc counts pocket items too -- and this object is two-handed, so its own magazine is "
+                  "not added a second time (0x49ef0's arms)");
+
+            /* 7. pocket -> belt: a move between the soldier's own slots, into the next belt column (rect 17 is
+             * {189,22,208,41}, the slot index 1 + 3*0 = 1, free because the rifle's footprint left it). */
+            World_TactPointerMove(&g_world, &ptr161, 30, 30, true);
+            Check(g_world.sTactHit.pHitItem == pPackItem, "pressing the pocket takes the item out of it (0x11C80 read)");
+            CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_POCKET0, "as a pocket-region hit (region + 1 at 0x11D8C)");
+            Check(pWear->aPockets[0].apItem[0] == NULL, "and the pocket case clears the slot (the 0x11FE0 walk)");
+            World_TactPointerMove(&g_world, &ptr161, PENX(198, nPackDragX), PENY(30, nPackDragY), false);
+            World_TactPointerUp(&g_world, &ptr161);
+            Check(pWear->apBelt[1] == pPackItem, "the belt's second column holds it now");
+            Check(pWear->aPockets[0].apItem[0] == NULL, "and the pocket it came from is empty");
+            CheckEqI32((i32)pWear->uTu, (i32)uTu0 - 2 * PUFO_INV_TU_HAND - 2 * PUFO_INV_TU_BELT
+                                    - PUFO_INV_TU_POCKET_A,
+                  "8 units for the belt drop");
+            CheckEqI32((i32)pWear->uInvBurden, (i32)uBurden0 + nGunWeight + nClipWeight + nPackWeight,
+                  "with the burden unchanged across a pocket-to-belt move");
+
+            /* 8. and back onto the ground: the fall-through at LABEL_164 (0x133A4) charges 5 and runs the cell
+             * walk at 0x13440..0x134B8, which leaves the unit's own layer whenever that cell's first dword --
+             * its floor sprite -- is zero. The landing cell is therefore not assumed here: it is computed the
+             * way the original computes it and then read back off the table. */
+            {
+                MapCell *const pFrom = pWear->pCell;
+                i32 nZ = (pFrom != NULL) ? (i32)pFrom->nZ : 0;
+
+                while (nZ > 0) {
+                    MapCell *const pProbe = FrameCellAt((pFrom != NULL) ? pFrom->nX : 0,
+                                                        (pFrom != NULL) ? pFrom->nY : 0, nZ);
+
+                    if (pProbe == NULL || pProbe->pFloorSpr != NULL) {
+                        break;
                     }
-                } else if (pItem->pObj == pClip) {
-                    ++nClipItems;
+                    --nZ;
                 }
-            }
-            for (i32 i = 0; i < (i32)pField->nXcomCount; ++i) {
-                const Soldier *const pUnit = pField->apXcomUnits[i];
+                pGround161 = FrameCellAt((pFrom != NULL) ? pFrom->nX : 0, (pFrom != NULL) ? pFrom->nY : 0, nZ);
+                nGroundBefore = CellItemCount(pGround161);
 
-                if (pUnit == NULL) {
-                    continue;
-                }
-                nVeteran += (pUnit->bUnk961 != 0) ? 1 : 0;
-                if (pUnit->pHandL != NULL && pUnit->pHandL->pObj == pRifle) {
-                    ++nHanded;
-                }
+                World_TactPointerMove(&g_world, &ptr161, 198, 30, true);
+                Check(g_world.sTactHit.pHitItem == pPackItem, "the belt press takes it off the belt");
+                CheckEqI32(g_world.sTactHit.nHitRegion, INV_REGION_BELT, "as a belt hit again");
+                World_TactPointerMove(&g_world, &ptr161, PENX(40, nPackDragX), PENY(288, nPackDragY), false);
+                World_TactPointerUp(&g_world, &ptr161);
+                Check(pWear->apBelt[1] == NULL, "the belt slot is empty");
+                Check(pGround161 != NULL && CellItemCount(pGround161) == nGroundBefore + 1,
+                      "and the item stands on the cell the walk names: one more item there than before the "
+                      "release (MapCell_ListInsertByPri at 0x134B4, then the list rebuild at 0x134AC)");
+                Check(MissionCellOfItem(pPackItem) == pGround161,
+                      "ORIGINAL QUIRK, asserted: the ground drop lands on the cell 0x13470..0x13490 picks -- the "
+                      "unit's own cell only when its floor sprite is set, otherwise the lowest layer below it -- "
+                      "and Inv_BuildVisibleList @ 0x2d580 reads the unit's cell alone, so an item dropped off a "
+                      "floor-less cell leaves the ground strip until the unit changes layer");
+                printf("  161: dropped on the ground -- the unit stands on layer %d with floor %d, the item "
+                       "landed on layer %d (%s the unit's own cell), %d item(s) left loose where it stands\n",
+                       (pFrom != NULL) ? (i32)pFrom->nZ : -1, (pFrom != NULL) ? (pFrom->pFloorSpr != NULL) : 0,
+                       (pGround161 != NULL) ? pGround161->nZ : -1,
+                       (pGround161 == pCargo) ? "inside" : "a layer below",
+                       CellItemCount(pGround161));
             }
-            for (const TactItem *pItem = (g_world.pTactDeployCell != NULL)
-                                             ? g_world.pTactDeployCell->pItemList : NULL;
-                 pItem != NULL; pItem = pItem->pNext) {
-                if (pItem->pObj == pRifle) {
-                    ++nOnCell;
-                }
-            }
-            CheckEqI32(nPool, g_nLoadWant,
-                       "107.d's carried rifles built one item each in the mission's item pool (0x39018 seed, "
-                       "0x39414..0x39570)");
-            CheckEqI32(nLoaded, g_nLoadWant,
-                       "107.d's clip rode along, so the split reserved one clip score per copy (0x392EC..0x39344) "
-                       "and each copy takes the weapon arm (0x394EC) carrying the clip's cap (0x394E0) -- that "
-                       "non-zero magazine is what the equip hand gate needs (0x3C26C); a rifle carried without "
-                       "its magazine builds nAmmo 0 at 0x39530 and equips nobody");
-            CheckEqI32(nClipItems, 0,
-                       "and no separate clip item stands in the pool: the build count is score minus the "
-                       "reservation (0x39400), so both clips were spent as magazines");
-            /* The squad this craft launches was equipped by an earlier mission of this run (the byte was proven
-             * set before the launch, 0x3C510), so 0x3BE60 takes the re-dress branch for every one of them: the
-             * declared loadout columns (auUnk962 / abUnk1012) are what the slot passes read, and the craft's
-             * cargo stays where the build pass put it -- loose at the drop cell, to be picked up in the mission.
-             * A never-equipped squad takes the copies into its hands instead; that half is gated with fresh
-             * recruits in tests/test_tactinit.c (TestCargoArmsTheSquad, TestCargoWeaponNeedsItsClip). */
-            CheckEqI32(nVeteran, (i32)pField->nXcomCount,
-                       "the fielded squad is all veterans of this run's earlier missions (+0x3C1 set, 0x3BE60)");
-            CheckEqI32(nHanded, 0,
-                       "ORIGINAL RULE, asserted live: the equip pass does not dress a veteran from loose cargo "
-                       "(0x3BE60 -> Equip_SlotPass 0x3BE8C, 0x3C2D8 never runs)");
-            CheckEqI32(nOnCell, g_nLoadWant,
-                       "and the loaded rifles the hangar put on the craft are standing loose on the deploy cell "
-                       "at the start of the mission (0x39480)");
-            printf("  cargo in the mission: %d of %d XCOM hold object %d, %d in the pool (%d loaded with clip %d "
-                   "x %d), %d loose on the deploy cell\n",
-                   nHanded, (i32)pField->nXcomCount, g_nLoadSlot, nPool, nLoaded, nClipId,
-                   (i32)pClip->bAmmoCap, nOnCell);
+            CheckEqI32((i32)pWear->uTu, (i32)uTu0 - 2 * PUFO_INV_TU_HAND - 2 * PUFO_INV_TU_BELT
+                                    - PUFO_INV_TU_POCKET_A - PUFO_INV_TU_GROUND,
+                  "the ground drop charges 5 (Drop_Charge, 0x123C8)");
+            CheckEqI32((i32)pWear->uInvBurden, (i32)uBurden0 + nGunWeight + nClipWeight,
+                  "and the burden drops with it: 5 points, the rifle and its magazine only");
+            CheckEqI32(g_nInvHitCalls - nHit0, 6, "six presses ran the installed hit-test arm");
+            CheckEqI32(g_nInvClearCalls - nClear0, 6, "six of them ran the installed clear-slot arm");
+            CheckEqI32(g_nInvDropCalls - nDrop0, 6, "and six releases ran the installed drop arm");
+
+            /* The inventory at the end of the transfers, against its own empty-handed picture. */
+            ClearSurface();
+            World_TactFrame(&g_world);
+            SnapSurface(aArmed161);
+            printf("  161: worn and carried -- %d px lit and %d px moved in the left-hand rect, %d px moved over "
+                   "the whole screen; tu %d, burden %d\n", InkInBox(3, 61, 42, 119, NULL),
+                   DiffInBox(3, 61, 42, 119, aLoose161), DiffInBox(0, 0, 240, 320, aLoose161),
+                   (i32)pWear->uTu, (i32)pWear->uInvBurden);
+            Check(DiffInBox(3, 61, 42, 119, aLoose161) > 0 && DiffInBox(14, 63, 33, 80, aLoose161) > 0,
+                  "the inventory as the mission goes on still carries the rifle in the left-hand slot the item "
+                  "strip draws at (14,63), where the same screen with an empty hand paints nothing");
+            Check(DiffInBox(0, 0, 240, 320, aLoose161) > 0,
+                  "and the whole screen differs from the empty-handed one: the burden line's number "
+                  "(uInvBurden - 1 shown, colour from 4 * uInvBurden / auStat[8]) and the strip's own counts "
+                  "follow the gear");
+            DumpFrame("tact_inventory_armed");
+
+            /* 9. what the held byte -- and only it -- puts on the screen. 0x1F5D4 gates the hit highlight on
+             * byte_1139F4 AND Map_bForceNoDrag, and this run reads the registry default, so the highlight is
+             * off; 0x1FB30 gates the drag ghost and the hit item's name line on byte_1139F4 alone. Press the
+             * hand slot so the rifle hangs from the pen, paint, then release it back into the slot the press
+             * came from -- the second test at 0x123C8 makes that drop free. */
+            uTuHeld0 = pWear->uTu;
+            World_TactPointerMove(&g_world, &ptr161, 20, 90, true);
+            CheckEqI32(g_world.sTactInput.bInvDragActive, 1, "the press put the held byte up (0x146D0)");
+            Check(pWear->pHandL == NULL, "and it took the rifle off the hand");
+            ClearSurface();
+            World_TactFrame(&g_world);
+            SnapSurface(aHeld161);
+            DiffBounds(aArmed161, aHeld161, &nBx0, &nBy0, &nBx1, &nBy1);
+            printf("  161: the rifle on the pen -- %d px changed, box (%d,%d)..(%d,%d); held %d, forcenodrag %d, "
+                   "hit region %d, cursor %d/%d, drag %d/%d\n", DiffInBox(0, 0, 240, 320, aArmed161),
+                   nBx0, nBy0, nBx1, nBy1, (i32)g_world.sTactInput.bInvDragActive,
+                   (i32)g_world.sTactInput.bForceNoDrag, g_world.sTactHit.nHitRegion, g_bank.nPointerX,
+                   g_bank.nPointerY, g_world.sTactHit.nDragOffX, g_world.sTactHit.nDragOffY);
+            Check(DiffInBox(0, 0, 240, 320, aArmed161) > 0,
+                  "while an item is held the inventory paints it: the hit item's name line and its icon at the "
+                  "drag offsets plus the bank cursor pair (the byte_1139F4 gate at 0x1FB30), and the empty hand "
+                  "it just left");
+            DumpFrame("tact_inventory_held");
+            World_TactPointerMove(&g_world, &ptr161, PENX(20, nGunDragX), PENY(90, nGunDragY), false);
+            World_TactPointerUp(&g_world, &ptr161);
+            Check(pWear->pHandL == pGunItem, "and the release puts it back in the hand (0x12B7C)");
+            CheckEqI32((i32)pWear->uTu, (i32)uTuHeld0,
+                  "a drop into the region the press came from charges nothing (0x123C8's second test): taking an "
+                  "item out of a slot and putting it back is free");
+            CheckEqI32(g_world.sTactInput.bInvDragActive, 0, "and the held byte is down again (0x15120)");
+
+            /* 10. close it the shipped way. The commit flag went down at the mission's first confirm (0x15C68)
+             * and nothing raises it again inside a mission -- 0x3C674 (Tact_InitMission) is the only setter and
+             * 0x444C0 (Save_ReadTGameData) also clears it -- so a mid-mission equip is NOT re-declared. */
+            CLICK161(98);
+            CheckEqI32(g_world.nUiScreen, 0, "Input_OnConfirm's screen-1 arm (0x160FC, 0x16104) closes the inventory and its callee tail clears the screen (0x15F34)");
+            CheckEqI32((i32)pWear->auUnk962[8], 0,
+                  "ORIGINAL QUIRK, asserted live: the loadout snapshot runs only while Map+0x01 is up (the gate "
+                  "at 0x15A60, cleared at 0x15C68, set only at 0x3C674), so the rifle this pen put in the hand "
+                  "is not written into auUnk962[8]");
+            CheckEqI32((i32)pWear->abUnk1012[8], 0, "and not into abUnk1012[8] either: the gear lives in the soldier's slots, which is what the save's 27 slot ids carry (0x429DC)");
+
+            /* 11. the same battlefield frame as before, with the gear on. aHeld161's inventory contents are no
+             * longer needed; it now holds the equipped frame, so the change against the bare one can be
+             * located, not just counted. */
+            ClearSurface();
+            World_TactFrame(&g_world);
+            SnapSurface(aHeld161);
+            DiffBounds(aBare161, aHeld161, &nBx0, &nBy0, &nBx1, &nBy1);
+            nHud161 = DiffInBox(0, 224, 240, 320, aBare161);
+            nMap161 = DiffInBox(0, 0, 240, 224, aBare161);
+            printf("  161: the equipped battlefield moves %d px against the same frame with nothing worn -- "
+                   "%d px below y 224 (the HUD panel), %d px above it (the cursor stamp; the eight soldiers "
+                   "are pixel-identical in the two pictures, checked side by side), box (%d,%d)..(%d,%d)\n",
+                   DiffInBox(0, 0, 240, 320, aBare161), nHud161, nMap161, nBx0, nBy0, nBx1, nBy1);
+            Check(nHud161 > 0,
+                  "the equipment shows on the battlefield as well: TactHud_DrawSelectedUnitPanel @ 0x1d618 draws "
+                  "the selected unit's left-hand object glyph at PanelIconX(nOriginX, nFootW, 9) and its "
+                  "magazine count at (nOriginX + 22, nOriginY + 42) under the 0x1D778 gate, and both appear "
+                  "only after the rifle was carried onto the hand");
+#undef CLICK161
+#undef PENY
+#undef PENX
         }
 
         /* The battlefield picture: the frame the live mission paints. */

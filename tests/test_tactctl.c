@@ -1743,9 +1743,16 @@ static void CargoFixture_Reset(void)
     s_apCargoShip[0] = &s_aCargoShip[0];
     s_apCargoShip[1] = &s_aCargoShip[1];
 
-    /* Layer 1's deploy record: x offset 3, y offset 5, layer 2. */
-    s_aCargoOffsets[104 * 1 + 0] = 3;
-    s_aCargoOffsets[104 * 1 + 1] = 5;
+    /* The record the cargo pass reads for nMapLayers 1 is record 0 of GROUP 0: 0x38F3C multiplies the
+     * layer count by 0x68 and the three bytes then come from [R0,#-0x68/-0x67/-0x66], which is
+     * 104*(nMapLayers-1). x offset 3, y offset 5, layer 2. */
+    s_aCargoOffsets[104 * 0 + 0] = 3;
+    s_aCargoOffsets[104 * 0 + 1] = 5;
+    s_aCargoOffsets[104 * 0 + 2] = 2;
+    /* The next group carries a different record on purpose: a pass that selected group nMapLayers
+     * instead of nMapLayers-1 lands at x 207 / y 308 and every cell check below fails. */
+    s_aCargoOffsets[104 * 1 + 0] = 7;
+    s_aCargoOffsets[104 * 1 + 1] = 8;
     s_aCargoOffsets[104 * 1 + 2] = 2;
 }
 
