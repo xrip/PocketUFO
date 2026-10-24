@@ -6871,9 +6871,49 @@ tact_mission_bare comes back to HEAD's picture. Teeth: reverting the hand loads 
 two new geoscapeframe ones; deleting the gate fails the two new test_isodraw checks. IDB: 0x4978c (869 chars, the
 census and the two consumers), 0x1cf9c, 0x1d2e8, 0x3af7c, 0x4fdb4, 0x5379c, 0x50e90, 0x4aecc.
 
-Open (the goal 2026-10-24, equipment really working -- PARTLY met). The Grenade is now worn, armed, thrown, counted
-down and detonated on a live mission and it took an alien off the field, and Part 166 made hand-held equipment show on
-the tactical map. Not measured yet: armour absorption and stun (uStunOrArmor @ Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254,
-auStat[8] * uStunOrArmor at 0x31a64) and mind control (Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at
-0x4cd20, cmd 18 mode 13 at 0x4d7bc). 167 = armour and stun, 168 = mind control. Reported, not changed (bugs.tsv): the
-port names the flag 0x10 PUFO_UNITFLAG_KNEEL while the kneel flag is 0x01 (0x16600/0x16638); behaviour matches the ARM.
+Part 167 (measured). The armour half of the goal. The equip screen was unreachable:
+SoldierScreen_DrawEquipPanels @ 0x62d78 has one code caller, the block 0x6468C in
+SoldierScreen_DrawDetail @ 0x632cc, and that view's only code caller is the direct BL at 0x652B0 in
+case 5 (0x652A4) of SoldierScreen_Draw @ 0x65290 -- the port routed it through a pfnTextInput seam
+wired NULL, so screen 5 drew nothing and pSolPanelEquip never had rows. With the seam wired: the
+panel lists 2 rows for one stocked armour object ("None" plus the suit, aux 0 and 2,
+0x62DC0..0x63058), the aux-2 row writes Soldier.nUnitType (0x61AE0) and takes the suit out of the
+base stock (1 -> 0), the empty stock drops the armour row (the row test at 0x62E8C is > 0) and
+leaves 1, the card repaints 3759 px, and the "None" row hands the suit back
+(0x61B30/0x61B60/0x61B74) with the card byte-identical to its pre-wear picture (0 px over the whole
+240x320 dump). Shipped data: slots 122/123/124 are Personal armour / Power suit / Fly suit, base 0
+stocks none of them and all eight roster soldiers are type 0. Unit_ResetBattleState @ 0x498b0 -- the
+only writer in the IDB that ever gives nArmorPoints (0x499d0 clear, 0x499f8 100 for type 2, 0x499ec
+150 for type 3) -- gained its whole missing tail (0x499c0 kneel, 0x499c4 and the type <= 8 clear at
+0x49a04, 0x499c8, 0x499cc, the grant, 0x499d4, 0x499d8, 0x49a00): the launch census now shows unit 0
+at armour 100, hp 47/47, stun 54/54 and the other seven at armour 0. First real absorption, on the
+live grenade mission: the armoured soldier reads "hp 47 -> 47, armour 100 -> 62" while squad 1 (41
+-> 23) and squad 2 (57 -> 47) lose hit points, i.e. "1 unit(s) spent armour (1 took it whole, 0
+spilled), 2 unarmoured lost hit points" -- Combat_ResolveShot's absorb block 0x2f4cc..0x2f4fc with
+the spill arm 0x2f4f4/0x2f4f8. 27 references move and all of them are explained: the inventory
+screen's soldier figure, Map+0x199C[8*nUnitType+4*bFemale+nLook] at 0x1f58c (3547 px, five
+pictures), the map sprite xcom_0 -> xcom_2 through Tact_MapTypeToGlyphIdx @ 0x46664 (nType + 5,
+groups 5..8), and the HP readout's middle slot 7 -> 47 (38 px, tact_mission_grenade_blast); three
+new references soldier_detail_plain, soldier_detail_armsuit and soldier_detail_unequipped, the last
+identical to the first. Teeth: Unit_ArmorForType 100 -> 0 fails 3 checks in test_unit, 2 in
+test_combat and 4 in test_geoscapeframe and flips the mission census to "hp 47 -> 7, armour 0 -> 0,
+kneel 2"; the unequip store 0x61B74 forced to 1 fails 2 checks (the unequipped-card diff goes 0 ->
+600 px). IDB: 0x498b0, 0x4e614, 0x46664 and 0x65290 commented, 0x1f58c rewritten inside the
+1024-byte cap, idb_save ok.
+
+Open (the goal 2026-10-24, equipment really working -- PARTLY met). Armour works end to end now: the
+suit is stocked, worn, drawn as the soldier's own figure on the inventory screen and on the map,
+granted as 100 armour points at deploy, spent by a live grenade blast, and taken back off through
+the "None" row. The Grenade is worn, armed, thrown, counted down and detonated (Parts 164/165) and
+hand-held equipment draws on the tactical map (Part 166). Not measured yet: stun -- uStunOrArmor @
+Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254, and the two products at 0x31a60 and 0x31a6c ([R1+0xA5
+byte] * [R1+0xB4] and [R1+0xB2] * uStunOrArmor, feeding _rt_sdiv at 0x31a70) inside
+Tact_ResolveThrowLanding @ 0x31a18; the step-spend and its gate still need their own site census
+(0x536A0..0x536BC is inside Tact_ProcessFallAction @ 0x52adc, not the move action). And mind
+control: Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at 0x4cd20 and cmd 18 mode 13 at
+0x4d7bc, both inside Tact_EnemyAiTick @ 0x4cbe0. 168 = stun, 169 = mind control. Reported, not
+changed (four bugs.tsv rows plus the older KNEEL-flag naming row): Unit_ResetBattleState's item-slot
+clears, its apBackpack[5]/[6] seeds at 0x49974/0x49978 and its Unit_RecalcInventoryStat call at
+0x49980; Tact_KillUnit @ 0x4e430's 0x4E614 transform reset and 0x4E624 bHumanoidInv clear; the
+detail view's three name-entry arms (0x63138/0x6318c/0x63208), whose keyboard draws (pufo_baseui.c
+8253..8302) but cannot be used.

@@ -63,6 +63,9 @@ typedef struct GeoscapeFrameState {
      * SoldierScreen_SelectListed @ 0x64a9c puts it (0x64AA8 writes 5). Both arms end in the same
      * SoldierScreen_Draw @ 0x65290. */
     SoldierDrawEnv           solDraw;     /* 0x65290, the draw both soldier arms call */
+    SoldierDetailEnv         solDetail;   /* 0x632cc: the readout SoldierScreen_Draw calls directly at
+                                           * 0x652B0 while the screen id is 5 -- the armour name, the
+                                           * stat bars and the transfer panels the equip row lives in */
     GeoscapeSoldierArmEnv    solArm;      /* the caption colours, the close control, the transfer gate */
     GeoscapeScreenArmEnv     solPanelCtl; /* apSoldierPanelCtl @ 0x1598B0/B4, the two page buttons, case 4 */
     GeoscapeScreenArmEnv     solFindCtl;  /* apSoldierFindCtl @ 0x1598B8..C0, the three find buttons, case 5 */
@@ -621,6 +624,14 @@ typedef struct PufoWorldState {
     PadImage *pSolPad;                  /* unk_1598D4 */
     i32       nSoldierCursor;           /* nSoldierCursor @ 0x159E08 */
     u8        bTransferFlag;            /* bTransferFlag @ 0x159E10, cleared by EquipSelected */
+    u8        bSoldierNameEditActive;   /* byte_186B88: the name editor's armed byte. Geoscape_OnPointer's
+                                         * 0x881F0 arm sets it on a press inside the name band, and
+                                         * SoldierScreen_DrawDetail's keyboard arm reads it at 0x64694. */
+    u8        nSoldierNameEditChar;     /* unk_159DE8: the character the keyboard grid highlights (0x64A40) */
+    i32       nSoldierCursorCopy;       /* unk_159760: SoldierScreen_DrawDetail stores its cursor here (0x632F4)
+                                         * and SoldierScreen_CopyNameToEdit / AppendNameGlyph / Backspace read it */
+    PadImage *apSoldierClassPads[3];    /* the cs0/cs1/cs2 pointer view (0x186C30 / 0x186C34 / 0x186C38) the
+                                         * detail card's class insignia pair blits (0x634E4..0x63618) */
     HangarPlaceEnv hangarEnv;           /* the placement test's env */
     BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
     BaseFacToggleEnv facToggleEnv;      /* the build dialog's open/close switch */

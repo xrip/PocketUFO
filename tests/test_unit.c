@@ -141,6 +141,36 @@ static void TestResetBattleState(void)
     CheckEqI32(Unit_ArmorForType(3), 150, "  type 3 gets 150");
     CheckEqI32(Unit_ArmorForType(9), 0, "  type 9 has no bonus armour");
 
+    /* The grant as the deploy applies it, plus the scalars 0x499c0..0x49a04 clears. */
+    printf("Unit_ResetBattleState's grant and its battle scalars\n");
+    Unit_ctor(&unit);
+    unit.bKneelOrPrimed = 7;
+    unit.nSpottedCount  = 5;
+    unit.bUnk1037       = 1;
+    unit.pLinked1040    = (void *)auStat;
+    unit.bHumanoidInv   = 1;
+    Unit_ResetBattleState(&unit, 0, 1, auStat, PUFO_UNIT_STAT_COUNT);
+    CheckEqI32(unit.nArmorPoints, 0,
+               "  unit type 1 (the equip panel's \"Personal armour\", apObjects[122]) is granted none: the switch has no arm for it");
+    CheckEqI32(unit.bKneelOrPrimed, 0, "  the kneel the last mission's damage left is cleared (0x499c0)");
+    CheckEqI32(unit.nSpottedCount, 0, "  the spotting counter is cleared (0x499c8)");
+    CheckEqI32(unit.bUnk1037, 0, "  unk_1037 is cleared (0x499d8)");
+    Check(unit.pLinked1040 == NULL, "  the 1040 link is cleared (0x49a00)");
+    CheckEqI32(unit.bHumanoidInv, 0, "  bHumanoidInv: 1 at 0x499c4, cleared for every type <= 8 at 0x49a04");
+
+    Unit_ResetBattleState(&unit, 0, 2, auStat, PUFO_UNIT_STAT_COUNT);
+    CheckEqI32(unit.nArmorPoints, 100, "  unit type 2 is granted 100 (0x499f8)");
+    unit.nArmorPoints = 12;                    /* one mission spent most of it */
+    Unit_ResetBattleState(&unit, 0, 2, auStat, PUFO_UNIT_STAT_COUNT);
+    CheckEqI32(unit.nArmorPoints, 100,
+               "  the next mission's reset grants it back whole: armour is a per-mission grant, not a saved value");
+
+    Unit_ResetBattleState(&unit, 0, 3, auStat, PUFO_UNIT_STAT_COUNT);
+    CheckEqI32(unit.nArmorPoints, 150, "  unit type 3 is granted 150 (0x499ec)");
+    Unit_ResetBattleState(&unit, 0, 9, auStat, PUFO_UNIT_STAT_COUNT);
+    CheckEqI32(unit.nArmorPoints, 0, "  an alien type is granted none");
+    CheckEqI32(unit.bHumanoidInv, 1, "  and a type above 8 keeps bHumanoidInv set (0x49a04's test)");
+
     /* A short stat array must not be over-read. */
     printf("Unit_ResetBattleState with a short stat array\n");
     Unit_ctor(&unit);

@@ -6721,7 +6721,7 @@ static void TestSoldierScreenDraw(void)
 static SoftSurf g_sdSurf;
 static Soldier g_aSdSol[2];
 static Soldier *g_apSdSol[2];
-static u16 g_nSdSolCount;
+static i32 g_nSdSolCount;  /* SoldierDetailEnv.pnSoldierCount points at the shell's i32 cell (unk_115350) */
 static Ship g_aSdShip[3];
 static Ship *g_apSdShip[3];
 static ObjectRecFull g_aSdObj[125];

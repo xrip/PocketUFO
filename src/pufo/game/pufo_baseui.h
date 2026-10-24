@@ -4306,7 +4306,9 @@ typedef enum SoldierDetailText {
 
 typedef struct SoldierDetailEnv {
     Soldier *const *apSoldiers;   /* apSoldiers @ Map + 0x1198 */
-    const u16 *pnSoldierCount;    /* nSoldierCount @ 0x115350 */
+    const i32 *pnSoldierCount;    /* nSoldierCount @ 0x115350: the original reads the global as a u16;
+                                   * the shell keeps one i32 for it (as in SoldierEquipEnv), and every
+                                   * read here is a loop bound, so the two are the same count */
     Ship *const *apCraft;         /* Map + 0x10AC */
     i32 nCraftCount;              /* Map_nCraftCount @ 0x114B4C, the bound the original never applies */
     const char *pTextRecs;        /* TEXTS.DAT records, PUFO_TEXT_REC_STRIDE apart */

@@ -338,7 +338,24 @@ i32 Unit_ArmorForType(u16 nUnitType)
  * Field order copied from the decompilation. Note two things that look wrong and
  * are not: the TU/HP/stun values are pulled from auStat with auStat[9] feeding
  * uStunOrArmor, and the humanoid flag is first set to 1 and then cleared for
- * every type <= 8 -- so it ends up set only for types 9 and above. */
+ * every type <= 8 -- so it ends up set only for types 9 and above.
+ *
+ * This is the only writer of Soldier.nArmorPoints that ever gives armour: 0 at 0x499d0,
+ * 100 for unit type 2 (0x499f8) and 150 for unit type 3 (0x499ec). Armour is therefore a
+ * per-mission grant, not an item property -- a soldier who spent armour in one mission gets
+ * it back full at the start of the next, and unit type 1 (the equip panel's row 1, the
+ * "Personal armour" object apObjects[122]) gets none at all: the switch has no arm for it.
+ *
+ * Two form differences from the original, both recorded:
+ *   - 0x498b0 takes (pUnit, bFacing) only and reads the unit's OWN nUnitType (0x4998c) and its OWN
+ *     auStat. The port takes them as arguments; every caller (pufo_tactctl.c:642, :798, :1355,
+ *     pufo_tactstate.c:1633) passes the unit's own fields, so the write at the top is the same value
+ *     the original reads.
+ *   - the original clears the item slots (pHandL/pHandR 0x498F4/0x498F8, the pocket pairs
+ *     0x498E4..0x49918, the belt triples 0x49920..0x49940, the backpack quads 0x49944..0x4996C),
+ *     seeds apBackpack[5]/[6] to &unk_138EA0 (0x49974/0x49978) and calls Unit_RecalcInventoryStat
+ *     @ 0x49ef0 (0x49980). None of that is ported here: the deploy callers recalc after placement
+ *     (pufo_tactctl.c:655) and the slot clear is the open inventory deviation in bugs.tsv. */
 void Unit_ResetBattleState(Soldier *pUnit, u8 bFacing, u16 nUnitType,
                            const u16 *auStat, i32 nStatCount)
 {
@@ -364,9 +381,19 @@ void Unit_ResetBattleState(Soldier *pUnit, u8 bFacing, u16 nUnitType,
         pUnit->uStunOrArmor = auStat[9];
     }
 
-    /* bHumanoidInv is set to 1 and then cleared for types <= 8, which leaves it
-     * set only for types 9+. Reproduced literally. */
-    pUnit->bUnk148 = 0;
+    pUnit->bKneelOrPrimed = 0;      /* 0x499c0: the kneel the last mission's damage left is not carried in */
+    pUnit->bHumanoidInv   = 1;      /* 0x499c4, cleared for types <= 8 at the tail */
+    pUnit->nSpottedCount  = 0;      /* 0x499c8 */
+    pUnit->nArmorPoints   = Unit_ArmorForType(nUnitType);  /* 0x499d0 clear, 0x499f8 100, 0x499ec 150 */
+    pUnit->bUnk148        = 0;      /* 0x499d4 */
+    pUnit->bUnk1037       = 0;      /* 0x499d8 */
+    pUnit->pLinked1040    = NULL;   /* 0x49a00 */
+
+    /* The tail of 0x49a04: the 1 stored at 0x499c4 is cleared for every type <= 8, which leaves
+     * bHumanoidInv set only for types 9 and above. */
+    if (nUnitType <= 8) {
+        pUnit->bHumanoidInv = 0;
+    }
 }
 
 /* Unit_FacingToward @ 0x49bf0.

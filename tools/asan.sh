@@ -38,7 +38,7 @@ if [ ! -f "tests/$TEST.c" ]; then
 fi
 
 n=0
-for f in $(find src/pufo -name '*.c' ! -name pufo_app.c | sort); do
+for f in $(find src/pufo -name '*.c' ! -name pufo_app.c ! -name pufo_main.c | sort); do
     "$CC" $FLAGS -c "$f" -o "$OBJ/$(echo "$f" | tr '/' '_' | tr '.' '_').obj" 2>> "$OUT/compile.log"
     n=$((n+1))
 done

@@ -23,7 +23,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Behaviour-bearing functions cited | 972 / 972 (100.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 66 |
-| Test checks run | 21800 |
+| Test checks run | 21847 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1270,7 +1270,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_clock` | PASS | 44 |
 | `test_closeui` | PASS | 302 |
 | `test_cmdpads` | PASS | 42 |
-| `test_combat` | PASS | 146 |
+| `test_combat` | PASS | 154 |
 | `test_constants` | PASS | 360 |
 | `test_control` | PASS | 259 |
 | `test_cursordir` | PASS | 25 |
@@ -1281,7 +1281,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 69 |
 | `test_geopointer` | PASS | 480 |
 | `test_geoscape` | PASS | 3243 |
-| `test_geoscapeframe` | PASS | 2432 |
+| `test_geoscapeframe` | PASS | 2460 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 378 |
 | `test_invdrag` | PASS | 370 |
@@ -1324,7 +1324,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_titles` | PASS | 167 |
 | `test_turn` | PASS | 176 |
 | `test_uibank` | PASS | 409 |
-| `test_unit` | PASS | 299 |
+| `test_unit` | PASS | 310 |
 | `test_vis` | PASS | 81 |
 | `test_vistry` | PASS | 42 |
 

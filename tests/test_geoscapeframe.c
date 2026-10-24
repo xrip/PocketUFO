@@ -30,6 +30,7 @@
 #include "game/pufo_boot.h"
 #include "game/pufo_clock.h"
 #include "game/pufo_font.h"
+#include "game/pufo_geoscape.h" /* BaseRec_AddItemQty @ 0x556e4, the stock delta the equip row makes (Part 167) */
 #include "game/pufo_mapcell.h" /* MapCell_SetOccupant, the pair Unit_PlaceOnMap writes */
 #include "game/pufo_options.h"
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission (Part 100.4) */
@@ -2295,6 +2296,168 @@ int main(void)
         Check(false, "the soldier screen's two list panels exist");
     }
 
+    /* --- Part 167 probe (census only, no state change): the armour group in the shipped data, the
+     * base's stock of it, and what every roster soldier wears. SoldierScreen_EquipSelected @ 0x619cc
+     * writes Soldier.nUnitType from the equip panel's row (0/1/2/3 -> apObjects[121+row]), and
+     * Unit_ResetBattleState @ 0x498b0 turns unit type 2 into 100 armour points and type 3 into 150
+     * (0x499d0 clears, 0x499ec, 0x499f8), so the census has to name both sides. */
+    {
+        for (i32 nSlot = 121; nSlot <= 124; ++nSlot) {
+            const ObjectRecFull *pO = (nSlot < (i32)g_assets.nObjectCount) ? g_assets.apObjects[nSlot] : NULL;
+            printf("  167 slot %d: \"%s\" base0 %d wt %u price %u cat %u sort %u work %u\n", nSlot,
+                   (pO != NULL) ? pO->szName : "?",
+                   (pO != NULL) ? (i32)pO->auPerBaseVal[0] : -1,
+                   (pO != NULL) ? (u32)pO->bWeight : 0u,
+                   (pO != NULL) ? pO->uPrice : 0u,
+                   (pO != NULL) ? (u32)pO->nCategory : 0u,
+                   (pO != NULL) ? (u32)pO->uSortKey : 0u,
+                   (pO != NULL) ? (u32)pO->uManufWorkPerUnit : 0u);
+        }
+        printf("  167 equip panel %s, selected line %d, base %d, %d soldiers\n",
+               (g_world.pSolPanelEquip != NULL) ? "exists" : "MISSING",
+               (g_world.pSolPanelEquip != NULL) ? g_world.pSolPanelEquip->nUnk3032 : -1,
+               (i32)g_world.nSelectedBase, g_world.nSoldierCount);
+        for (i32 nSol = 0; nSol < g_world.nSoldierCount; ++nSol) {
+            const Soldier *pS = g_world.apSoldiers[nSol];
+            if (pS == NULL) continue;
+            printf("  167 roster %d \"%s\": type %u female %d look %d kind %u craft %u stam %u armor %d\n",
+                   nSol, pS->szName, (u32)pS->nUnitType, pS->bFemale, pS->nLook,
+                   (u32)pS->nKind, (u32)pS->bUnk183, (unsigned)pS->auStat[9], pS->nArmorPoints);
+        }
+    }
+
+    /* --- Part 167: the soldier screen really wears armour, and the base loses the item it wears ---
+     * SoldierScreen_DrawEquipPanels @ 0x62dc0 builds the equip list from the base's stock of
+     * apObjects[122], [123], [124] (the row's aux byte is the unit type 1/2/3), and
+     * SoldierScreen_EquipSelected @ 0x619cc reads that aux and writes it into Soldier.nUnitType while
+     * BaseRec_AddItemQty takes one item out of the base (0x61A80 / 0x61B04) or puts it back (0x61B60).
+     * The shipped start stocks none of the three, so the run first gives base 0 one Power suit through
+     * the same call a manufacture commit or a purchase makes. The two pictures are the pair: the card
+     * with no armour and the card naming the armour at (188,38) (0x636F8), with the stock row gone from
+     * the panel because the item left the base. */
+    {
+        BaseRec       *pBase   = g_world.apBases[0];
+        ObjectRecFull *pSuit   = g_assets.apObjects[123];   /* "Power suit": unit type 2, 100 armour points */
+        Soldier       *pSol    = g_world.apSoldiers[0];
+        const i32      nTotal0 = pBase->nStoresTotal;
+        const u32      uSample0 = g_nSamples;
+        const i32      nTransfer0 = (i32)g_world.bTransferFlag;   /* restored at the block's end */
+        static u16 aPlain[240 * 320];   /* the house snapshot size: SnapSurface writes all 320 rows */
+
+        Check(pBase != NULL && pSuit != NULL && pSol != NULL && g_world.pSolPanelEquip != NULL,
+              "167 the base, the Power suit record, soldier 0 and the equip panel all exist");
+
+        printf("  167 soldier 0 unworn: type %u, auStat[6..9] %u/%u/%u/%u, burden %u, hp stat %u, tu stat %u\n",
+               (u32)pSol->nUnitType, (unsigned)pSol->auStat[6], (unsigned)pSol->auStat[7],
+               (unsigned)pSol->auStat[8], (unsigned)pSol->auStat[9], (unsigned)pSol->uInvBurden,
+               (unsigned)pSol->auStat[1], (unsigned)pSol->auStat[0]);
+
+        BaseRec_AddItemQty(pBase, pSuit, 1);
+        CheckEqI32((i32)pSuit->auPerBaseVal[0], 1, "167 the base now holds one Power suit");
+        CheckEqI32(pBase->nStoresTotal, nTotal0 + 1, "and the store total moved with it (BaseRec_AddItemQty @ 0x556e4)");
+
+        /* The transfer mode is what makes screen 5 the read-out rather than the list: the case-5 arm's
+         * order gate at 0x92F18 and the transfer-panel gate inside the readout at 0x64678 both read
+         * bTransferFlag @ 0x159E10. The game arms it with the third find button (Ui_SetTransferFlag @
+         * 0x619a8), which is the control the harness used above. */
+        g_world.nav.apFind[2]->pfnClick();
+        CheckEqI32((i32)g_world.bTransferFlag, 1, "167 the transfer button arms the read-out's panel half (0x619C0)");
+
+        g_world.pSolPanelNames->nUnk3032 = 0;
+        g_world.solEnv.pfnSelectThunk();          /* SoldierScreen_SelectListed @ 0x64a9c */
+        CheckEqI32(g_world.nSoldierCursor, 0, "167 the row click puts the cursor on soldier 0 (0x64AD0)");
+        CheckEqI32(g_world.screen.nGeoscapeScreen, 5, "and the screen id becomes 5 (0x64AA8), the detail card's gate");
+
+        ClearSurface();
+        (void)DrawFrame();
+        printf("  167 probe: cursorCopy %d, nameEdit %u, transfer %u, equipThunk %s, selected base %d, cursor %d, craft0 atBase %d, soldier craft %u; "
+               "stock base0 %d/%d/%d, base1 %d/%d/%d; panel rows %d aux %d/%d/%d/%d\n",
+               g_world.nSoldierCursorCopy, (u32)g_world.bSoldierNameEditActive, (i32)g_world.bTransferFlag,
+               (g_world.solEnv.pfnEquipThunk != NULL) ? "wired" : "NULL",
+               (i32)g_world.nSelectedBase, g_world.nSoldierCursor,
+               (g_world.apCraft[0] != NULL) ? g_world.apCraft[0]->bAtBase : -1,
+               (u32)pSol->bUnk183,
+               (i32)g_assets.apObjects[122]->auPerBaseVal[0], (i32)g_assets.apObjects[123]->auPerBaseVal[0],
+               (i32)g_assets.apObjects[124]->auPerBaseVal[0],
+               (i32)g_assets.apObjects[122]->auPerBaseVal[1], (i32)g_assets.apObjects[123]->auPerBaseVal[1],
+               (i32)g_assets.apObjects[124]->auPerBaseVal[1],
+               g_world.pSolPanelEquip->nLineCount,
+               g_world.pSolPanelEquip->anLineAux[0], g_world.pSolPanelEquip->anLineAux[1],
+               g_world.pSolPanelEquip->anLineAux[2], g_world.pSolPanelEquip->anLineAux[3]);
+        CheckEqI32(g_world.pSolPanelEquip->nLineCount, 2,
+                   "167 the equip panel lists two rows for one stocked armour object: \"None\" plus the suit (0x62DC0..0x63058)");
+        Check(InkInBox(0, 0, 240, 224, NULL) > 0, "167 the plain detail card paints something");
+        SnapSurface(aPlain);
+        DumpFrame("soldier_detail_plain");
+
+        g_world.pSolPanelEquip->nUnk3032 = 1;     /* the line whose aux is 2 */
+        g_world.solEnv.pfnEquipThunk();           /* SoldierScreen_EquipSelected @ 0x619cc */
+        CheckEqI32(pSol->nUnitType, 2,
+                   "167 the equip row's aux 2 lands in Soldier.nUnitType (0x61AE0), the byte Unit_ResetBattleState reads for 100 armour points");
+        CheckEqI32((i32)pSuit->auPerBaseVal[0], 0, "and one suit leaves the base stock (0x61B04)");
+        CheckEqI32(pBase->nStoresTotal, nTotal0, "the store total is back where it started: the base gave one, the soldier took it");
+        CheckEqI32((i32)g_world.bTransferFlag, 0, "the equip clears bTransferFlag (0x61B78)");
+        CheckEqI32((i32)g_nSamples, (i32)uSample0 + 1, "and plays sample 17 first (0x619D8)");
+
+        /* The equip clears bTransferFlag @ 0x61B78, and the transfer gate at 0x64678 is what re-runs
+         * SoldierScreen_DrawEquipPanels @ 0x62d78 -- until the mode is armed again the panel keeps the
+         * rows it already has. Re-arming is the game's own path: the same find button. */
+        g_world.nav.apFind[2]->pfnClick();
+        ClearSurface();
+        (void)DrawFrame();
+        CheckEqI32(g_world.pSolPanelEquip->nLineCount, 1,
+                   "167 with the stock at zero the panel loses the armour row: only the \"None\" line is left (the row test at 0x62E8C is > 0)");
+        Check(DiffInBox(0, 0, 240, 224, aPlain) > 0,
+              "167 the card changes: the armour name at (188,38) and the stock column both move");
+        DumpFrame("soldier_detail_armsuit");
+        printf("  167 equipped: soldier 0 type %u, suit stock %d, stores total %d, panel rows %d, card pixels moved %d\n",
+               (u32)pSol->nUnitType, (i32)pSuit->auPerBaseVal[0], pBase->nStoresTotal,
+               g_world.pSolPanelEquip->nLineCount, DiffInBox(0, 0, 240, 224, aPlain));
+
+        /* Taking it off is the same handler on the row whose aux is 0: 0x61B30's arm returns
+         * apObjects[121 + nUnitType] to the base with BaseRec_AddItemQty (0x61B60) and zeroes
+         * nUnitType (0x61B74). Re-arming the transfer first is what rebuilds the panel so the
+         * "None" row is the row the handler reads. */
+        g_world.nav.apFind[2]->pfnClick();
+        g_world.pSolPanelEquip->nUnk3032 = 0;
+        g_world.solEnv.pfnEquipThunk();
+        CheckEqI32(pSol->nUnitType, 0,
+                   "167 the \"None\" row takes the suit off the soldier (0x61B30, 0x61B74)");
+        CheckEqI32((i32)pSuit->auPerBaseVal[0], 1, "and the base holds it again (0x61B60)");
+        CheckEqI32(pBase->nStoresTotal, nTotal0 + 1, "with the store total back on the suit");
+
+        g_world.nav.apFind[2]->pfnClick();      /* re-arm again for the rebuild this draw needs */
+        ClearSurface();
+        (void)DrawFrame();
+        CheckEqI32(g_world.pSolPanelEquip->nLineCount, 2,
+                   "167 and the panel lists the suit again once the base has it");
+        CheckEqI32(DiffInBox(0, 0, 240, 224, aPlain), 0,
+                   "167 the card is back on the picture it painted before the suit was worn");
+        DumpFrame("soldier_detail_unequipped");
+
+        /* Back on for the rest of the run: the two missions that follow field this soldier, so their
+         * pictures and their damage arithmetic are the armoured ones, and the deploy census below
+         * measures Unit_ResetBattleState's grant on a real launch rather than on a hand-written cell.
+         * The shipped start stocks no armour at all (the census printed the zero rows), so this suit is
+         * the run's own purchase -- the same BaseRec_AddItemQty a manufacture commit makes. */
+        g_world.nav.apFind[2]->pfnClick();
+        g_world.pSolPanelEquip->nUnk3032 = 1;
+        g_world.solEnv.pfnEquipThunk();
+        CheckEqI32(pSol->nUnitType, 2, "167 and the suit is worn again for the missions that follow");
+        CheckEqI32((i32)pSuit->auPerBaseVal[0], 0, "with the base holding none of it again");
+
+        /* The derived stat block is what the tactical status panel draws, so the block has to say
+         * whether wearing the suit moves any of it. Unit_RecalcInventoryStat @ 0x49ef0 writes only
+         * uInvBurden (pufo_unit.c:1057), and auStat[6] is the psi skill the training arm raises, so
+         * nothing here should move. */
+        printf("  167 soldier 0 worn: type %u, auStat[6..9] %u/%u/%u/%u, burden %u, hp stat %u, tu stat %u\n",
+               (u32)pSol->nUnitType, (unsigned)pSol->auStat[6], (unsigned)pSol->auStat[7],
+               (unsigned)pSol->auStat[8], (unsigned)pSol->auStat[9], (unsigned)pSol->uInvBurden,
+               (unsigned)pSol->auStat[1], (unsigned)pSol->auStat[0]);
+
+        g_world.bTransferFlag = (u8)nTransfer0;   /* leave the flag on the state the block found */
+    }
+
     /* 12h. The hangar (screen 6), reached the way the game reaches it: nav control slot 3. The screen is
      * the object block at 0x161A48 with three panel sets behind it -- the craft pair Init's tail call
      * builds, the crew pair the third main control builds, the five store columns the fourth one builds --
@@ -3329,6 +3492,47 @@ int main(void)
             Check(g_world.bTactLive == 1 && g_world.pTactMap != NULL
                       && g_world.pTactMap->nMissionType == 3,
                   "the 0x83AC4 hand-over ran the mission bring-up and the frame's own header says assault (3)");
+            /* --- Part 167: the launch's armour grant, read off the units it fielded.
+             * Tact_SelectTeamUnits @ 0x397f8 runs Unit_ResetBattleState @ 0x498b0 on every accepted
+             * soldier (0x3984C), passing the soldier's OWN type and the soldier's OWN auStat, and
+             * 0x499d0 / 0x499f8 / 0x499ec grant 0 / 100 / 150 for unit types 0 / 2 / 3. The soldier
+             * screen above put a Power suit on soldier 0, so this field has to carry one unit at 100
+             * armour and every other unit at 0 -- the roster wears nothing else (the census printed
+             * eight type-0 rows). */
+            {
+                const GameMap *pLM   = g_world.pTactMap;
+                i32            nArm  = 0;
+                i32            nBare = 0;
+
+                printf("  167 the launch fields %d Xcom unit(s):\n", (i32)pLM->nXcomCount);
+                for (i32 k = 0; k < (i32)pLM->nXcomCount; ++k) {
+                    const Soldier *pU = pLM->apXcomUnits[k];
+
+                    if (pU == NULL) {
+                        continue;
+                    }
+                    printf("    unit %d \"%s\": type %u, armour %d, hp %u of %u, stun %u of %u, "
+                           "auStat[6..9] %u/%u/%u/%u, burden %u, psi %u\n", k, pU->szName,
+                           (u32)pU->nUnitType, pU->nArmorPoints, (unsigned)pU->uHp, (unsigned)pU->auStat[1],
+                           (unsigned)pU->uStunOrArmor, (unsigned)pU->auStat[9],
+                           (unsigned)pU->auStat[6], (unsigned)pU->auStat[7], (unsigned)pU->auStat[8],
+                           (unsigned)pU->auStat[9], (unsigned)pU->uInvBurden, (u32)pU->bPsiActive);
+                    if (pU->nUnitType == 2) {
+                        if (pU->nArmorPoints == 100) {
+                            ++nArm;
+                        }
+                    } else if (pU->nArmorPoints == 0) {
+                        ++nBare;
+                    }
+                }
+                Check(nArm >= 1,
+                      "167 the unit wearing the Power suit (type 2) deploys with 100 armour points: 0x3984C's own call, 0x499f8");
+                Check(nArm + nBare == (i32)pLM->nXcomCount && nBare >= 1,
+                      "167 and every other fielded unit is granted none (0x499d0): the shipped roster wears no armour");
+                Check(pLM->apXcomUnits[0] != NULL && pLM->apXcomUnits[0]->uHp == pLM->apXcomUnits[0]->auStat[1]
+                          && pLM->apXcomUnits[0]->uStunOrArmor == pLM->apXcomUnits[0]->auStat[9],
+                      "167 the same call refills the battle scalars from the unit's own stat block (uTu 0x49994, uStunOrArmor 0x499a8, uHp 0x499b4)");
+            }
             Check(g_world.sMapSentinel138EA0.pObj == g_world.pAssets->apObjects[0]
                       && g_world.sMapSentinel138EA0.nRefId == 0x7D00,
                   "the 0x3CB40 sentinel seed: dword 0 takes apObjects[0] and the dword at ILP32 +0x14 takes 0x7D00");
@@ -15076,6 +15280,9 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     i32 nSnapG = 0, nSnapE = 0, nRow;
                     i32 nBlastHits = 0, nOtherHits = 0;
                     i32 nFoeGone = 0, nFoeGoneNear = 0;
+                    /* Part 167: the same census split by whether the unit had armour, so the blast's
+                     * absorb-then-spill order is a measured claim and not a print. */
+                    i32 nArmSpent = 0, nArmAbsorbed = 0, nArmSpilled = 0, nBareWounded = 0;
 
                     /* Snapshots are keyed by unit pointer, not by roster slot: BeforeEnemyStep pulls
                      * reinforcements out of the reserve (0x4BA3C) and the roster order is not stable across
@@ -15111,6 +15318,26 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                     }
                     printf("  163: the second bracket ran %d ticks; the grenade is on %s now (fuse %u)\n", t,
                            (MissionCellOfItem(pGren) != NULL) ? "a cell" : "no cell", (u32)pGren->bUnk7);
+                    {
+                        const Soldier *pS167 = pGMap->pSelUnit;
+
+                        printf("  167 the selected unit at this point: %s, type %u, psi %u, auStat[6..9] %u/%u/%u/%u, hp %u, armour %d, "
+                               "tu %u, stun %u, morale %u, kneel %u, dmg total %d\n",
+                               (pS167 != NULL) ? pS167->szName : "(none)",
+                               (pS167 != NULL) ? (u32)pS167->nUnitType : 0u,
+                               (pS167 != NULL) ? (u32)pS167->bPsiActive : 0u,
+                               (pS167 != NULL) ? (unsigned)pS167->auStat[6] : 0u,
+                               (pS167 != NULL) ? (unsigned)pS167->auStat[7] : 0u,
+                               (pS167 != NULL) ? (unsigned)pS167->auStat[8] : 0u,
+                               (pS167 != NULL) ? (unsigned)pS167->auStat[9] : 0u,
+                               (pS167 != NULL) ? (unsigned)pS167->uHp : 0u,
+                               (pS167 != NULL) ? pS167->nArmorPoints : 0,
+                               (pS167 != NULL) ? (unsigned)pS167->uTu : 0u,
+                               (pS167 != NULL) ? (unsigned)pS167->uStunOrArmor : 0u,
+                               (pS167 != NULL) ? (u32)pS167->bMorale : 0u,
+                               (pS167 != NULL) ? (u32)pS167->bKneelOrPrimed : 0u,
+                               (pS167 != NULL) ? pS167->nUnk436 : 0);
+                    }
                     fflush(stdout);
 
                     for (k = 0; k < (i32)pGMap->nXcomCount; ++k) {
@@ -15134,6 +15361,17 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                                "blast cell\n", k, pA->pCell->nX, pA->pCell->nY, (int)pA->pCell->nZ,
                                (unsigned)aGHp0[nRow], (unsigned)pA->uHp, aGArm0[nRow], (i32)pA->nArmorPoints,
                                pA->pCell->nX - pLanding->nX, pA->pCell->nY - pLanding->nY);
+                        if (aGArm0[nRow] > 0 && (i32)pA->nArmorPoints < aGArm0[nRow]) {
+                            ++nArmSpent;
+                            if (pA->uHp == aGHp0[nRow]) {
+                                ++nArmAbsorbed;      /* the armour took the whole hit */
+                            } else {
+                                ++nArmSpilled;       /* hit points moved too: the spill arm ran */
+                            }
+                        }
+                        if (aGArm0[nRow] == 0 && pA->uHp < aGHp0[nRow]) {
+                            ++nBareWounded;          /* nothing to absorb it with */
+                        }
                         if (abs(pA->pCell->nX - pLanding->nX) <= 2 && abs(pA->pCell->nY - pLanding->nY) <= 2) {
                             ++nBlastHits;
                         } else {
@@ -15211,11 +15449,22 @@ CheckEqI32(PaintFurnitureFrame("tact_hud_actions"), nVisible,
                           "aimed at, the cell an alien stood on, and an enemy whose last cell is inside the blast "
                           "box is off the field after the bracket that removed the device. Nothing else fires in "
                           "the enemy bracket, so the grenade is what took it");
+                    /* Part 167: the armoured member of that same blast. Combat_ResolveShot @ 0x2f12c
+                     * spends armour first: the load at 0x2F4CC, the `> 0` test at 0x2F4E4, the subtraction
+                     * stored back at 0x2F4EC/0x2F4F0, and only then the spill -- the leftover turns
+                     * positive through 0x2F4F4's RSBMI while the armour is stored to zero at 0x2F4F8. */
+                    Check(nArmSpent > 0,
+                          "167 and the device spent armour off the squad member wearing the Power suit, through the absorb block 0x2f4cc..0x2f4fc");
+                    Check(nArmAbsorbed > 0 && nArmSpilled == 0,
+                          "167 the armoured unit kept every hit point it had: the spill only reaches uHp when the armour subtraction goes negative (0x2f4f4, 0x2f4f8), and here it did not");
+                    Check(nBareWounded > 0,
+                          "167 while squad members in the same box with no armour lost hit points straight (0x2f504..0x2f51c)");
                     printf("  163: the detonation -- %d unit(s) changed inside the blast box, %d outside it; "
                            "%d enemy(s) left the field, %d of them within the box; thrower tu %d, %d alien(s) "
-                           "left on the field\n",
+                           "left on the field; armour: %d unit(s) spent armour (%d took it whole, %d spilled), "
+                           "%d unarmoured lost hit points\n",
                            nBlastHits, nOtherHits, nFoeGone, nFoeGoneNear, (i32)pThrow->uTu,
-                           (i32)pGMap->nEnemyCount);
+                           (i32)pGMap->nEnemyCount, nArmSpent, nArmAbsorbed, nArmSpilled, nBareWounded);
                     fflush(stdout);
 
                     ClearSurface();

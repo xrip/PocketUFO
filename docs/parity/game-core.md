@@ -25502,3 +25502,114 @@ weapon. Reported, not changed here: the port names the flag 0x10 PUFO_UNITFLAG_K
 TactHud_ToggleKneel @ 0x16570 flips bit 0 at 0x16600/0x16638 and adjusts nAnimPose by hand, and Unit_UpdateAnimPose
 gives pose 0 to bit 0 and 2/4 to bit 0x10. The behaviour matches the ARM; only the name misleads.
 
+## Part 167 - armour is worn, granted at deploy, and absorbs a grenade
+The second half of the goal was armour, and the reason no soldier ever wore it is a wiring
+fault. SoldierScreen_DrawEquipPanels @ 0x62d78 is the only writer of pSolPanelEquip's rows, its
+single code caller is the block 0x6468C inside SoldierScreen_DrawDetail @ 0x632cc, and that view
+has exactly one code caller: the direct BL at 0x652B0 in case 5 (0x652A4) of SoldierScreen_Draw
+@ 0x65290. The port routed the detail view through a pfnTextInput seam and wired it NULL, so
+screen 5 drew nothing at all -- no card, no equip rows, nothing to click. The seam is wired now,
+and with it the arms read as the IDB has them: the row's aux value comes from the unit's own
+type at 0x61A44, aux 1/2/3 write nUnitType at 0x61AF0 / 0x61AE0 / 0x61A6C and move
+apObjects[122..124] (old != 0 through BaseRec_SubItemQty at 0x61A80 and then AddItemQty at
+0x61AC4, old == 0 through 0x61B04), aux 0 (0x61B30) hands apObjects[121+old] back to the base at
+0x61B60 and zeroes nUnitType at 0x61B74, and the tail clears bTransferFlag at 0x61B78. The
+transfer panels only re-run while bTransferFlag @ 0x159E10 is set (gate 0x64678), so every
+redraw in the test is preceded by the game's own find button (Ui_SetTransferFlag @ 0x619a8).
+What main.dat actually ships, measured at the test's own census: slot 121 is the craft (price
+20000000, work 55712), 122 Personal armour (90000, 1584), 123 Power suit (310000, 1968), 124 Fly
+suit (550000, 2784); base 0 holds none of the three armour objects and all eight roster soldiers
+have nUnitType 0. The shipped game is an unequipped roster, so the test stocks one Power suit to
+make the arms run.
+Measured on soldier 0. The find button arms the panel half (0x619C0) and the row click puts the
+cursor on soldier 0 (0x64AD0). DrawEquipPanels builds its rows from the base stock of
+apObjects[122..124] with the unit's type in the aux column (0x62DC0..0x63058), so one stocked
+object gives 2 rows -- TEXTS[93] "None" plus the suit, aux 0 and 2. The equip row writes type 2
+and takes the suit out of the stock (1 -> 0, the stores census total 46 -> 45 -> 46); with the
+stock empty the panel drops the armour row (the row test at 0x62E8C is > 0) and lists 1; the
+detail card repaints 3759 px. The "None" row then undoes it: type 0 (0x61B30, 0x61B74), the base
+holds the suit again (0x61B60), the panel lists 2 rows, and the card comes back byte-identical
+to the picture it painted before the suit was worn (0 px). auStat[6..9] 24/52/71/54 and
+uInvBurden 0 read the same worn and unworn -- Unit_RecalcInventoryStat @ 0x49ef0 writes
+uInvBurden only, so armour changes the type and the armour grant, not ME/ST/HP/WT.
+Unit_ResetBattleState @ 0x498b0 -- the deploy reset, called from Tact_SelectTeamUnits at
+0x3984C, Tact_DeployTeamAndHwps at 0x39B70, Tact_SpawnAliens at 0x3AA50, Tact_KillUnit's
+chryssalid arm at 0x4E614 and Tact_ProcessFallAction at 0x53250 -- is the only writer in the
+whole IDB that ever gives Soldier.nArmorPoints: 0x499d0 clears it, 0x499f8 stores 100 for type
+2, 0x499ec stores 150 for type 3, and no arm grants anything for type 1 or type 0. The port had
+the item-slot clears but none of the tail: bKneelOrPrimed 0x499c0, bHumanoidInv 0x499c4 with the
+type <= 8 clear at 0x49a04, nSpottedCount 0x499c8, nMultiTarget 0x499cc, nArmorPoints, bUnk148
+0x499d4, bUnk1037 0x499d8, pLinked1040 0x49a00. All of them are ported now. Launch census: 8
+Xcom fields, unit 0 (the soldier who wore the suit, type 2) fields with armour 100, hp 47 of 47
+and stun 54 of 54, the other seven with armour 0, and the same call refills uTu 0x49994,
+uStunOrArmor 0x499a8 and uHp 0x499b4 from the unit's own auStat. Being the only granting writer,
+it makes armour a per-mission value: a reset hands 100 back even after that unit went into a
+mission at 12.
+The live grenade the mission already runs gave the first real absorption. Squad 0 at 54/29/0
+went through the blast as "hp 47 -> 47, armour 100 -> 62", while squad 1 at 54/30/0 went "41 ->
+23" and squad 2 at 55/30/0 went "57 -> 47" with no armour; the detonation census prints "1
+unit(s) spent armour (1 took it whole, 0 spilled), 2 unarmoured lost hit points". That is
+Combat_ResolveShot's absorb block -- armour load 0x2f4cc, subtract 0x2f4ec, store 0x2f4f0 -- and
+only the RSBMI spill 0x2f4f4 together with the armour-zeroing store 0x2f4f8 lets the remainder
+reach uHp at 0x2f504..0x2f51c. The armoured unit never reached that arm and stayed standing
+(kneel 0, against kneel 2 when the grant is removed). test_combat's new TestGrantAbsorbChain
+pins both arms with fixed values: a type-2 unit granted 100 takes the whole hit and keeps uHp,
+its armour ends lighter but not over-spent, and no spill is recorded because 0x2f4f8's arm
+stores HP only while 0x2e730's running total belongs to the other arm; the same unit with armour
+3 loses the suit and the spill runs its hit points to zero.
+Twenty-seven reference pictures move against HEAD and every changed pixel belongs to the
+soldier's own figure or to its HP readout. Group 1 is the tactical inventory screen's soldier
+figure -- 3547 px in box (50,67)..(112,148), the identical count in tact_hud_inventory,
+tact_inventory_armed, tact_inventory_held, tact_inventory_loose and tact_mission_grenade_worn,
+because the figure is one opaque blit: TactHud_DrawInventoryScreen @ 0x1f58c blits
+Map+0x199C[8*nUnitType + 4*bFemale + nLook] (pufo_tacthud.c:1388), so wearing the suit changes
+which portrait pad stands in the middle of the screen (6 -> 22 for this soldier: female, look
+2). Group 2 is the deployed soldier's map sprite: tact_mission_bare 217 px (121,110)..(135,139),
+tact_mission_urban 199 in the same box, tact_play_start 245 and tact_play_deployed 254 at
+(121,134)..(135,159), tact_mission_cargo_fallen 202 (120,134)..(134,163),
+tact_mission_grenade_landed 207 (57,54)..(71,83). Tact_MapTypeToGlyphIdx @ 0x46664 maps nType <=
+3 to nType + 5, so type 0 draws the xcom_0 set (group 5) and type 2 draws xcom_2 (group 7) --
+groups 5..8 being the four shipped XCOM sets in Map_abSpriteSet @ 0x15116 order -- and
+MapView_DrawUnit indexes the body row by pose.
+Group 3 is the same figure while the mission works on it: tact_play_aim 367 (68,62)..(91,89),
+tact_play_moved 358 (68,78)..(91,105), tact_play_shot 272 (73,62)..(87,91), tact_play_shot_mid
+218 (73,62)..(85,92), tact_play_resumed 278 and tact_play_enemyturn 271 at (105,142)..(119,171),
+tact_mission_shot 78 clipped at (0,6)..(7,31), tact_view_centred 112 and tact_hud_fire_modes 107
+at (105,118)..(118,130), tact_hud_sub_modes 50, tact_hud_menu, tact_hud_load_slots and
+tact_hud_save_slots 28 each at (105,126)..(118,128), tact_hud_options 18 (108,118)..(114,128),
+tact_hud_actions 12 in the single row (106,124)..(117,124). It is the same sprite set at another
+camera and pose; the 12-pixel one is the armour sprite's shoulder row against the jumpsuit's.
+Group 4 is the only change in the HUD band: 38 px at (169,285)..(176,295) in
+tact_mission_grenade_blast, the HP readout TactHud_BlitDecimal draws at nOrigin+160/+60
+(pufo_tacthud.c:1140) as three slots padded with pad slot 10 -- HP 7 was [blank][blank][7] and
+the armoured unit's 47 puts a 4 in the middle slot. Three new references come from the detail
+card itself: soldier_detail_plain, soldier_detail_armsuit and soldier_detail_unequipped, the
+last byte-identical to the first.
+Teeth. Unit_ArmorForType 100 -> 0 fails 3 checks in test_unit (the type-2 grant, the 0x499f8
+arm, the re-grant), 2 in test_combat (fielding with 100, "the suit took the whole hit") and 4 in
+test_geoscapeframe: the deploy census, the census shape (nArm + nBare == 8 -- the armoured unit
+falls out of both counters), the absorb check and the kept-HP check; the live mission census
+flips to "hp 47 -> 7, armour 0 -> 0, kneel 2, dmg total 38" and to "0 unit(s) spent armour (0
+took it whole, 0 spilled), 3 unarmoured lost hit points". The unequip store 0x61B74 forced to 1
+fails exactly 2 checks: the type-0 check after the "None" row, and the unequipped-card
+comparison, 600 px against 0. The gate at 0x64678 was found by the test itself: the equip clears
+bTransferFlag at 0x61B78, so a redraw that does not re-arm it through the find button shows 1
+row instead of 2.
+Reported, not changed (bugs.tsv rows). Unit_ResetBattleState's item-slot clears, its
+apBackpack[5]/[6] seeds at 0x49974/0x49978 and its Unit_RecalcInventoryStat call at 0x49980 are
+still unported, and its two form differences stay: the original reads the unit's own type at
+0x4998c and its own auStat, while every port caller (pufo_tactctl.c:642, :798, :1355,
+pufo_tactstate.c:1633) passes the unit's own fields as arguments. Tact_KillUnit's 0x4E614
+transform arm and its 0x4E624 bHumanoidInv clear are unported. The detail view's name-entry arms
+(SoldierScreen_CopyNameToEdit 0x6318c, SoldierScreen_AppendNameGlyph 0x63208,
+Map_BackspaceSelectedName 0x63138, all keyed by the cursor copy the view stores at 0x632f4) are
+not ported -- the keyboard itself draws (pufo_baseui.c 8253..8302: the 0x646E0 expand, the
+0x646F4/0x64700 pads, the dark space key at 0x647F0, the 16 x 13 grid counting up from character
+32 at 0x649a4) -- and no check types a name. The view keeps the original's own fault at 0x63a30:
+the craft-type switch has no arm for craft type 3 or 4 and the 140-byte value buffer stays
+uninitialised there. IDB: 0x498b0 carries the store map and the note that it is the only writer
+that ever gives nArmorPoints, 0x4e614 the unported transform arm, 0x46664 the type-to-group
+identity and the portrait index, 0x65290 the 0x652B0 direct BL and the closed NULL seam, 0x1f58c
+rewritten inside the 1024-byte cap with the portrait-pad index and the 3547-px measurement;
+idb_save ok.
+

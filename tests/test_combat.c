@@ -242,6 +242,47 @@ static void TestClass50(void)
     CheckEqI32("threshold is strict", g_unit.uTuSpent, 0);
 }
 
+/* Part 167: the two ends of the armour subsystem have to meet. Unit_ResetBattleState @ 0x498b0 is the
+ * only writer that ever gives Soldier.nArmorPoints (0 at 0x499d0, 100 at 0x499f8, 150 at 0x499ec) and
+ * the damage arms are the only readers, so the value the deploy grants is run straight through the
+ * absorb arm here rather than hand-written into the unit. */
+static void TestGrantAbsorbChain(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("the deploy's grant feeds the absorb arm\n");
+    Reset();
+    g_c.pSelUnit = NULL;                   /* the selected unit is exempt in normal mode: keep it out */
+    pCell->pUnit = &g_unit;
+    g_unit.auStat[0] = 50;
+    g_unit.auStat[1] = 40;
+    g_unit.auStat[9] = 54;
+    Unit_ResetBattleState(&g_unit, 0, 2, g_unit.auStat, PUFO_UNIT_STAT_COUNT);
+    CheckEqI32("a type-2 unit fields with 100 armour (0x499f8)", g_unit.nArmorPoints, 100);
+    CheckEqI32("and its hit points come from auStat[1] (0x499b4)", g_unit.uHp, 40);
+
+    SetHit(3, 100);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    /* The hit is 100 - rand(25), so 75..100: it always fits inside 100 armour and always bites. */
+    Check("the suit took the whole hit: uHp untouched", g_unit.uHp == 40);
+    Check("the armour is lighter but the suit is not over-spent",
+          g_unit.nArmorPoints >= 0 && g_unit.nArmorPoints < 100);
+    CheckEqI32("nothing spilled onto the unit", g_unit.nUnk436, 0);
+
+    printf("and the next hit spills once the suit is thin\n");
+    g_unit.gap_433 = 0;                    /* the flag 0x2E790 sets per shot: a new shot clears it */
+    g_unit.nArmorPoints = 3;
+    SetHit(3, 100);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    /* The spill is 72..97, more than the 40 hit points left, so 0x2E714's `nDmg > uHp` arm zeroes them. */
+    CheckEqI32("the suit is gone", g_unit.nArmorPoints, 0);
+    CheckEqI32("the spill ran through the hit points", g_unit.uHp, 0);
+    CheckEqI32("and the zeroing arm records no spill (0x2e714 stores HP only; 0x2e730's running total belongs to the other arm)",
+               g_unit.nUnk436, 0);
+}
+
 static void TestOccupantDamage(void)
 {
     MapCell *pCell = Impact();
@@ -1061,6 +1102,7 @@ int main(void)
     TestClass15();
     TestClass50();
     TestOccupantDamage();
+    TestGrantAbsorbChain();
     TestCellDamage();
     TestThrowMode();
     TestSelectFireMode();

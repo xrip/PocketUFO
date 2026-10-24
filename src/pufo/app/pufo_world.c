@@ -162,6 +162,21 @@ static void World_SoldierSelectThunk(void)
     (void)SoldierScreen_SelectListed(&env);
 }
 
+/* SoldierScreen_DrawDetail @ 0x632cc. The original reaches it with a direct BL at 0x652B0 inside
+ * SoldierScreen_Draw, passing nSoldierCursor and nothing else; the port keeps the call behind the
+ * SoldierDrawEnv seam because the env the readout needs (soldiers, craft, text records, the class pads,
+ * the anim root, the keyboard's two controls) belongs to the frame wiring, not to the soldier screen's
+ * own env. */
+static i32 World_SoldierDetailThunk(i32 nCursor, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW == NULL) {
+        return 0;
+    }
+    return SoldierScreen_DrawDetail(&pW->frame.solDetail, nCursor);
+}
+
 /* SoldierScreen_EquipSelected @ 0x619cc, panel A's equip-row click. */
 static void World_SoldierEquipThunk(void)
 {
@@ -9518,10 +9533,37 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pF->solDraw.pPanelNames  = pW->pSolPanelNames;               /* 0x15975C */
     pF->solDraw.pPanelCraft  = pW->pSolPanelCraft;               /* 0x159DEC */
     pF->solDraw.pColor       = pColor;                           /* the pair 0x652E0 / 0x652EC pack */
-    pF->solDraw.pfnTextInput = NULL;                             /* the case-5 readout: SoldierScreen_DrawDetail
-                                                                  * @ 0x632cc needs the keyboard controls and the
-                                                                  * pad block that screen owns, which the shell
-                                                                  * does not build, so 0x652A4 returns 0 */
+    pF->solDraw.pfnTextInput = World_SoldierDetailThunk;          /* the case-5 readout: 0x652A4 gates on the
+                                                                  * screen id 5 and 0x652B0 is a direct
+                                                                  * BL SoldierScreen_DrawDetail (0x632cc) with
+                                                                  * nSoldierCursor as its only argument */
+    pF->solDraw.pTextInputUser = pW;
+
+    /* The readout's own env. Everything in it is a cell the shell already owns; the three bytes the name
+     * editor owns are the shell's (byte_186B88, unk_159DE8, unk_159760), and the keyboard's two controls
+     * are the geoscape pair at 0x186BA8 / 0x186B9C that Geoscape_OnPointer's screen-5 arm already
+     * hit-tests. The pTextRecs / apClassPads / control-blit fields are filled where the frame's other
+     * asset-backed fields are filled, below. */
+    pF->solDetail.apSoldiers      = pW->apSoldiers;                   /* Map + 0x1198 */
+    pF->solDetail.pnSoldierCount  = &pW->nSoldierCount;               /* unk_115350 */
+    pF->solDetail.apCraft         = pW->apCraft;                      /* Map + 0x10AC */
+    pF->solDetail.nCraftCount     = (i32)pW->bCraftCount;             /* Map + 0x1194 */
+    pF->solDetail.apClassPads     = pW->apSoldierClassPads;           /* 0x186C30 + 4 * c */
+    pF->solDetail.pColor          = pColor;
+    pF->solDetail.pAnim           = &pF->anim;                        /* the 0x1864F8 anim root */
+    pF->solDetail.pCtlBackspace   = pUi->apCtl[GEOUI_CTL_186BA8];     /* unk_186BA8 */
+    pF->solDetail.pCtlAccept      = pUi->apCtl[GEOUI_CTL_186B9C];     /* unk_186B9C */
+    pF->solDetail.pbPreviewOk     = &pW->bRoot35;                     /* 0x1864F8 + 0x35 */
+    pF->solDetail.pbNameEditActive = &pW->bSoldierNameEditActive;     /* byte_186B88 */
+    pF->solDetail.pnNameEditChar  = &pW->nSoldierNameEditChar;        /* unk_159DE8 */
+    pF->solDetail.pnCursorCopy    = &pW->nSoldierCursorCopy;          /* unk_159760 */
+    pF->solDetail.pbTransferFlag  = &pW->bTransferFlag;               /* 0x159E10 */
+    pF->solDetail.aszRankNames    = (const u8 *)g_textTables.pE;      /* aszTextE @ 0xB2200 */
+    pF->solDetail.EquipPanels.pColor = pColor;                        /* the pair 0x63108 / 0x63118 pack,
+                                                                       * and the two panels' colour call */
+    pF->solDetail.EquipPanels.pnSelectedBaseIdx = &pW->nSelectedBase; /* 0x159D81 */
+    pF->solDetail.EquipPanels.pPanelEquip  = pW->pSolPanelEquip;      /* 0x159DF0 */
+    pF->solDetail.EquipPanels.pPanelStores = pW->pSolPanelStores;     /* 0x159758 */
 
     pF->solArm.pColor         = pColor;
     pF->solArm.pCloseCtl      = pUi->apCtl[GEOUI_CTL_186B00];    /* moved to (224,1) at 0x92DB0/0x92DC8 */
@@ -9690,12 +9732,21 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
         pF->facDialog.pfnCtlBlit      = pHit->pfnBlit;
         pF->facDialog.pfnCtlBlitEx    = pHit->pfnBlitEx;
         pF->facDialog.pCtlUser        = pHit->pUser;
+        pF->solDetail.pfnCtlBlit      = pHit->pfnBlit;   /* the keyboard's two pads, 0x646F4 / 0x64700 */
+        pF->solDetail.pfnCtlBlitEx    = pHit->pfnBlitEx;
+        pF->solDetail.pCtlUser        = pHit->pUser;
     }
     if (pAssets != NULL) {
         pF->panel.pTextRecs = pszText;
         pF->hover.pTextRecs = pszText;
         pF->placement.pTextRecs = pszText; /* the ten captions, 0x92070..0x92290 */
         pF->solArm.pTextRecs    = pszText; /* the soldier captions, 0x92E40..0x92EB8 */
+        pF->solDetail.pTextRecs = pszText; /* the readout's captions and the equip rows' names (0x62E8C) */
+        pF->solDetail.EquipPanels.pTextRecs = pszText;
+        pF->solDetail.EquipPanels.apObjects = pAssets->apObjects;  /* Map + 0x108 */
+        for (i = 0; i < 3; ++i) {
+            pW->apSoldierClassPads[i] = &pAssets->aPadCs[i];       /* cs0 / cs1 / cs2 (0x186C30 + 4 * i) */
+        }
 
         /* The build dialog's eight labels are absolute TEXTS addresses in the original; the record each
          * one is was read off the IDB name at that address (aTextRec156 = 0xB38D0 + 205*156 = 0xBB5BC, ...). */
@@ -9791,6 +9842,9 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->pbSolScreenOpen = &pW->bSolScreenOpen;         /* 0x159DE0 */
     pPtr->pSolPanelNames = pW->pSolPanelNames;           /* 0x15975C */
     pPtr->pSolPanelEquip = pW->pSolPanelEquip;           /* 0x159DF0 */
+    pPtr->pbNameEditActive = &pW->bSoldierNameEditActive; /* byte_186B88: PointerSoldierNames reads it at
+                                                           * 0x88128 with no null test and arms it at 0x881F0,
+                                                           * so the arm needs the real byte */
     pPtr->apSolPanelCtl  = pW->nav.apPanel;              /* apSoldierPanelCtl @ 0x1598B0 */
     pPtr->apSolFindCtl   = pW->nav.apFind;               /* apSoldierFindCtl @ 0x1598B8 */
     pPtr->pbUiAnimStarted = &pW->bUiAnimStarted;         /* 0x187080 */
@@ -11087,6 +11141,10 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->solDraw.pPanelNames = pW->pSolPanelNames;
     pF->solDraw.pPanelCraft = pW->pSolPanelCraft;
     pF->solArm.pPad         = pW->pSolPad;                  /* the same 0x1598D4, read a second time at 0x92F14 */
+    pF->solDetail.EquipPanels.pPanelEquip  = pW->pSolPanelEquip;   /* 0x159DF0 / 0x159758, re-read by
+                                                                     * SoldierScreen_DrawEquipPanels at
+                                                                     * 0x62D90 / 0x62DA0 on every call */
+    pF->solDetail.EquipPanels.pPanelStores = pW->pSolPanelStores;
     pF->facDialog.pPanel    = pW->pFacPanel;
     pF->facDialog.nPanelSel = pW->nPanelSel;                /* 0x158868, by value in both callers */
 
