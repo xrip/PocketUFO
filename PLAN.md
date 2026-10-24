@@ -6735,3 +6735,33 @@ position the pad could occupy (build/crops/entry159.py, scored on 705 pad pixels
 120 - 155/2, the centre-pad block the port has as Udb_CentrePadBlit (src/pufo/game/pufo_baseui.c:13464, nOriginX = 0x78 -
 uWidth/2); 93.PAD at 240 wide centres on x 0, which is why ufopaedia_entry_next already matched at 93.2%. 54.PAD has no
 index-0 pixel, which is why ufopaedia_entry has no all-black row. IDB: comment at 0x9a5a4 (454 chars, read back), idb_save ok.
+
+Closed (Part 160): the deploy confirm dialog's composed text never reached the records it paints. The old deviation note in
+src/pufo/game/pufo_tactctl.c claimed "same text, one string instead of two slots" -- wrong: UiModal_Begin @ 0x18dd8 draws
+records 1069..1073 and the shell's aszDeployMsg1/2 were nothing the modal read. IDB: 0x18cb8/0x18ccc/0x18ce8/0x18cfc build
+record 1069 (= unk_E90D9 = aTextRecs + 205*1069) from records 28 and 29 (= unk_B4F3C = +205*28, unk_B5009 = +205*29);
+0x18d08 copies record 30 (= unk_B50D6 = +205*30) into 1070 (store src + 213200 = 205*1040); 0x18d38..0x18d6c build 1071
+(= unk_E9273); 0x18d78 copies record 1068 (= unk_E900C) into 1073 (src + 0x401 = 205*5); 1072 is shipped and untouched.
+aTextRecs @ 0xb38d0 pinned by UiModal_DrawDialog's own pointer build (MUL 0xCD, LDR R1,=0xb38d0 at 0x26d6c..0x26d88).
+lang.dat TEXTS.DAT: size 330002 at offset 256, 1650 records at 200 bytes; 1068 = "  Прервать миссию?", 1069/1070/1071/1073
+= "<reserved text line>", 1072 = "вне Зоны Выхода.", 28 = " солдат и ", 29 = " танков", 30 = "в Зоне Выхода,". Port: the
+hook returns a writable record, DeployConfirmCtx lost aszMsg1/2/nMsgCap, PufoWorldState lost the 512-byte scratch pair;
+snprintf stands for itoa+strcat+strcat+strcat and Deploy_SlotCopy for the two byte loops (bounded at 200 where the
+original has none). Teeth: test_tactctl's nine-record table checks 1069/1070/1071/1072/1073, test_geoscapeframe widget 56
+compares the five slots against fragments read before the click. New reference tact_modal_text (cursor written 11 -> 12:
+397 body pixels, bands 104/77/85/66/65, the 0x26e14 diagonal drop visible).
+Also measured, no defect: the empty body on the first painted frame is the shipped reveal (cursor cleared by UiModal_Begin,
+advanced at 0x26d3c, count cursor - line - 1 at 0x26df4, BLE skips <= 0) -- tact_deploy_confirm has 0 body pixels, the
+cursor-12 frame has 397. Menu_ConfirmQuitDialog @ 0x18e2c composes nothing: records 24..27 are shipped. The tact_frame_iso
+/ tact_play_* "layer swap" is the enemy-step pad: Render_Frame draws the iso layer at 0x22414, one HUD arm
+(0x22460..0x224D0), the modal (0x224dc), then the pad (0x22504..0x225b8) over map and panel, then StatusMsg_DrawStack
+(0x225bc). It is a blend -- dword_113A40 >= 10 skips it (0x22540), 0 -> alpha 0xff, 1..9 -> (10-v)*24 (0x2258c), the
+SoftSurf_Blit weight per SoftSurf_BlitEx @ 0x9fb5c. New reference tact_frame_iso_fadeoff (counter parked at 10, a stop at
+0x1e894): 56794/57600 map-area samples differ from tact_frame_iso and the factor is 0.83 against the expected 0.812 for
+counter 8; dark map area 52.2% in tact_play_enemyturn vs 1.5%/1.3% in tact_play_start/shot. The flat map in tact_frame_iso
+is the fixture's camera poke 37/11 (isoOffA 18, isoOffB 3 -> dims 6x6) against a 9x47 walk. The "Новичок: Джейн Кузнецова"
+pair is status-stack text (Tact_SelectUnit @ 0x2c6c4 -> Unit_FormatDisplayName mode 0 at 0x2c700; rank from aszTextE @
+0xb2200 = records 192..197, "Новичок" = record 192; names from records 230..317) and it repeats because StatusMsg_Push
+@ 0x2dda4 appends while count < 3 (0x2ddd4) with no comparison, TTL 90 at 0x2de68. IDB: comments at 0x18cb8/0x18d08/
+0x18d78/0x22540/0x26df4/0x26e14 (372/266/290/416/358/667 chars, read back), idb_save ok. Gates: 66/66 tests, coverage
+972/1103 unchanged, check: OK.

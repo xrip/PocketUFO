@@ -487,6 +487,25 @@ static i32 DiffInBox(i32 x0, i32 y0, i32 x1, i32 y1, const u16 *pRef)
     return n;
 }
 
+/* Pixels in a modal dialog's text band that carry the dialog's own TEXT colour. UiModal_DrawDialog
+ * packs the body colour as (155-25d, 255-25d, 0) at 0x26E9C and (0, 200, 0) at 0x26E64 -- blue nibble
+ * clear, green nibble high. Everything else it paints in the same band has blue set (the 0xFF body
+ * fill at 0x26538 and the two 0xFF bars at 0x26630/0x26684, colours 255/255/255) or green clear (the
+ * frame edges at 0x26564..0x265D4, colours 255/0/0), so this counts body characters only. The band is
+ * the text column: UiModal_DrawDialog draws at x = nX + 7 with the 170-wide dialog at nX = 35. */
+static i32 ModalTextInk(i32 y0, i32 y1)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y < y1; ++y) {
+        for (i32 x = 42; x < 205; ++x) {
+            const i32 v = SurfPix(x, y);
+            if ((v & 0x1F) == 0 && ((v >> 5) & 0x3F) >= 50 && (v >> 11) <= 20) { ++n; }
+        }
+    }
+    return n;
+}
+
 /* A control press through the pen: UiControl_HitTest measures the box only on the press, x .. x + uWidth - 1
  * and y .. y + uHeight - 1 (0x1A42C), and the release never consults it -- it fires whatever the press armed
  * (0x1A540). So the box centre is the coordinate to send, not a hand-picked offset. */
@@ -3428,7 +3447,7 @@ int main(void)
                 {
                     static Soldier aDepX[2], aDepC[2];
                     static MapCell aDepCell[2];
-                    static char aszWant1[256], aszWant2[256];
+                    static char aszWant1[256], aszWant2[256], aszWant3[256], aszWant4[256], aszWant5[256];
                     const char *pRecs = (const char *)g_world.pAssets->pTextRecs;
                     UiModalState modalSave = g_world.sModal;
                     u8 bTypeSave = g_world.apCraft[g_world.nMapCraftIndex]->bCraftType;
@@ -3461,14 +3480,22 @@ int main(void)
                     pMapX->apCivilians[0] = &aDepC[0];
                     pMapX->apCivilians[1] = &aDepC[1];
 
-                    snprintf(aszWant1, sizeof(aszWant1), "%d%s%d%s%s", 1,
+                    /* What the four writes must produce (0x18CB8..0x18D94). The fragments are read out
+                     * of the loaded records BEFORE the click, so the expectation cannot follow the
+                     * write it is checking. Slot 1072 is the shipped "вне Зоны Выхода." the handler
+                     * must leave alone. */
+                    snprintf(aszWant1, sizeof(aszWant1), "%d%s%d%s", 1,
                              pRecs + PUFO_TXTREC_DEPLOY_IN * PUFO_TEXT_REC_STRIDE, 1,
-                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE,
+                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE);
+                    snprintf(aszWant2, sizeof(aszWant2), "%d%s%d%s", 0,
+                             pRecs + PUFO_TXTREC_DEPLOY_IN * PUFO_TEXT_REC_STRIDE, 1,
+                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE);
+                    snprintf(aszWant3, sizeof(aszWant3), "%s",
                              pRecs + PUFO_TXTREC_DEPLOY_TAIL * PUFO_TEXT_REC_STRIDE);
-                    snprintf(aszWant2, sizeof(aszWant2), "%d%s%d%s%s", 0,
-                             pRecs + PUFO_TXTREC_DEPLOY_IN * PUFO_TEXT_REC_STRIDE, 1,
-                             pRecs + PUFO_TXTREC_DEPLOY_JOIN * PUFO_TEXT_REC_STRIDE,
+                    snprintf(aszWant4, sizeof(aszWant4), "%s",
                              pRecs + PUFO_TXTREC_DEPLOY_TAIL2 * PUFO_TEXT_REC_STRIDE);
+                    snprintf(aszWant5, sizeof(aszWant5), "%s",
+                             pRecs + PUFO_TXTREC_DEPLOY_MSG2_LINE2 * PUFO_TEXT_REC_STRIDE);
 
                     nSampleMark = g_nSamples;
                     CLICK(56);
@@ -3481,9 +3508,15 @@ int main(void)
                               && strcmp((const char *)g_world.sModal.p17, "NO") == 0
                               && g_world.sModal.pfn16 != NULL && g_world.sModal.pfn18 != NULL
                               && g_world.nUiScreen == 9
-                              && strcmp(g_world.aszDeployMsg1, aszWant1) == 0
-                              && strcmp(g_world.aszDeployMsg2, aszWant2) == 0,
-                          "widget 56 counts 1 small in / 1 big in / 0 small out / 1 big out (the zero-uHp civilian skipped, 0x18C24), formats both messages from records 28/29/30 and 28/29/1068, plays 16, opens the YES/NO modal bank at 170/1069 five rows and writes screen 9 (0x18DE0)");
+                              && strcmp(pRecs + PUFO_TXTREC_DEPLOY_MSG1 * PUFO_TEXT_REC_STRIDE, aszWant1) == 0
+                              && strcmp(pRecs + PUFO_TXTREC_DEPLOY_MSG1_LINE2 * PUFO_TEXT_REC_STRIDE,
+                                        aszWant3) == 0
+                              && strcmp(pRecs + PUFO_TXTREC_DEPLOY_MSG2 * PUFO_TEXT_REC_STRIDE, aszWant2) == 0
+                              && strcmp(pRecs + PUFO_TXTREC_DEPLOY_MSG2_LINE2 * PUFO_TEXT_REC_STRIDE,
+                                        aszWant5) == 0
+                              && strcmp(pRecs + PUFO_TXTREC_DEPLOY_QUESTION * PUFO_TEXT_REC_STRIDE,
+                                        aszWant4) == 0,
+                          "widget 56 counts 1 small in / 1 big in / 0 small out / 1 big out (the zero-uHp civilian skipped, 0x18C24), composes TEXTS slots 1069/1071 and copies records 30 and 1068 into 1070/1073 (0x18CB8..0x18D94), leaves 1072 alone, plays 16, opens the YES/NO modal bank at 170/1069 five rows and writes screen 9 (0x18DE0)");
 
                     g_world.sModal.pfn18();  /* the stored NO callback: Map_ClearUiScreen @ 0x18a54 */
                     Check(g_world.nUiScreen == 0, "the stored NO callback writes Map_nUiScreen = 0 (0x18a54)");
@@ -3650,6 +3683,32 @@ int main(void)
                               && g_world.sTactInput.nSlot22Y == 185 && g_world.sTactInput.nSlot23H == 2,
                           "105.a the 170-wide five-row dialog fills its own status-line cells");
                     DumpFrame("tact_deploy_confirm");
+
+                    /* Part 160: why that picture carries no body text. UiModal_Begin clears the
+                     * typewriter cursor (pufo_modal.c:14, anActionPhaseSave0[112] @ 0x128AA0),
+                     * UiModal_DrawDialog advances it BEFORE the text pass (0x26D3C), and while the
+                     * progressive flag stands a line draws `cursor - line - 1` characters (0x26DF4).
+                     * After one painted frame the cursor is 1, so each of the dialog's five records
+                     * draws zero characters -- the empty body the picture shows. The shell's own arms
+                     * write this same cell when they want the text at once (src/pufo/game/
+                     * pufo_mainmenu.c:99, src/pufo/game/pufo_tacthud.c:609), so writing it is the
+                     * shipped way to reach the frame below. */
+                    CheckEqI32(g_world.sModal.nActionPhaseSave112, 1,
+                               "105.a the deploy dialog's first painted frame leaves the cursor at 1");
+                    CheckEqI32(ModalTextInk(113, 178), 0,
+                               "105.a and draws no body characters: cursor - line - 1 is 0 for every line");
+                    g_world.sModal.nActionPhaseSave112 = 11;
+                    World_TactFrame(&g_world);
+                    CheckEqI32(g_world.sModal.nActionPhaseSave112, 12,
+                               "105.a the next painted frame advances the cursor to 12 (0x26D3C)");
+                    Check(ModalTextInk(113, 178) > 200,
+                          "105.a with the cursor allowed the dialog body is painted, not empty");
+                    for (i32 nRow = 0; nRow < 5; ++nRow) {
+                        const i32 nBandY = 113 + 13 * nRow;
+                        Check(ModalTextInk(nBandY, nBandY + 13) > 0,
+                              "105.a every one of the five records draws characters");
+                    }
+                    DumpFrame("tact_modal_text");
                     World_TactPointerMove(&g_world, &ptr, g_world.sTactInput.nSlot21X + 25,
                                           g_world.sTactInput.nSlot22Y + 8, true);
                     Check(g_world.sModal.nField48 == 2, "105.a the deploy dialog's right column writes 2");
@@ -4942,6 +5001,22 @@ int main(void)
                 CheckEqI32(g_world.sTactIso.nTileY, 47, "the outer loop at Map+0x35");
                 Check(g_nBlits > 0, "the frame furniture blits through the shell's pad hook (the HUD panel's 19 controls, the look pad)");
                 DumpFrame("tact_frame_iso");   /* the picture this seam paints: iso layer + furniture */
+
+                /* Part 160: the same frame with the fade counter at its stop value. The enemy-step pad
+                 * is a BLEND, not a mask: Render_Frame reads dword_113A40 (apUiSlotsA[10], Map+0x88) at
+                 * 0x22540, `CMP #0xA / BGE loc_225F4` skips it entirely at 10 or above, value 0 blits
+                 * pPadEnemyStep with alpha 0xFF (0x22560..0x22588) and values 1..9 blit it with alpha
+                 * (10 - value) * 24 (0x2258C..0x225B8: `RSB R3,R0,#0xA; MOV R2,#0x18; MUL`). The alpha is
+                 * the fifth SoftSurf_Blit argument, which SoftSurf_BlitEx @ 0x9fb44 uses as the blend
+                 * weight. TactHud_TickCursorDir leaves 10 alone (the 0-or-10 test at 0x1E894), so parking
+                 * it here is the state a settled tact frame runs on, and the picture below is the iso
+                 * layer's own output with no wash over it -- the layers, audited one by one. */
+                g_world.nMapUiSlot10 = 10;
+                ClearSurface();
+                World_TactFrame(&g_world);
+                CheckEqI32(g_world.nMapUiSlot10, 10,
+                           "the cursor tick leaves the fade counter at 10 (0x1E894: 0 and 10 are the stops)");
+                DumpFrame("tact_frame_iso_fadeoff");
 
                 /* Part 86: the mission's route nodes, read off the frame's own state. The one room this base
                  * has contributed eight nodes, and every one of them carries record byte 20 == 1, which is

@@ -302,11 +302,23 @@ bool Tact_ScanVictoryTiles(bool bSpawnAlt, u8 nMissionType, i32 nSpawnTileX,
  * record 30 ("в Зоне выхода,") into slot 1070 (the store offset is 213200 = 205 * 1040) and record
  * 1068 ("  Прервать миссию?", IDA's unk_E900C) into slot 1073 (offset 0x401 = 205 * 5). An address
  * inside the loaded TEXTS block needs no write xref to have content -- TEXTS.DAT is the writer --
- * which is why reading 0xE900C as "empty because nothing writes it" was wrong. */
+ * which is why reading 0xE900C as "empty because nothing writes it" was wrong.
+ *
+ * UiModal_Begin @ 0x18DD8 gets nRec 1069 with nLines 5, and UiModal_DrawDialog reads record
+ * `aTextRecs + 205 * (nRec + nLine)` (MUL by 0xCD and `LDR R1, =0xB38D0` at 0x26D6C..0x26D88), so the
+ * five dialog lines are, in order: the inside counts (1069), "в Зоне выхода," (1070), the outside
+ * counts (1071), the shipped "вне Зоны Выхода." (1072, which this handler leaves alone -- it is the
+ * outside message's own tail), and "  Прервать миссию?" (1073). Every line the dialog paints is one
+ * of these slots: a message kept outside the TEXTS block is a message the dialog never shows. */
 #define PUFO_TXTREC_DEPLOY_IN    28
 #define PUFO_TXTREC_DEPLOY_JOIN  29
-#define PUFO_TXTREC_DEPLOY_TAIL  30  /* the first message's line 2 (slot 1070) */
-#define PUFO_TXTREC_DEPLOY_TAIL2 1068 /* the second message's line 2 (slot 1073), unk_E900C */
+#define PUFO_TXTREC_DEPLOY_TAIL  30  /* copied into slot 1070 (0x18D08..0x18D24) */
+#define PUFO_TXTREC_DEPLOY_TAIL2 1068 /* copied into slot 1073 (0x18D78..0x18D94), unk_E900C */
+#define PUFO_TXTREC_DEPLOY_MSG1       1069 /* unk_E90D9: the inside counts */
+#define PUFO_TXTREC_DEPLOY_MSG1_LINE2 1070
+#define PUFO_TXTREC_DEPLOY_MSG2       1071 /* unk_E9273: the outside counts */
+#define PUFO_TXTREC_DEPLOY_MSG2_LINE2 1072 /* shipped "вне Зоны Выхода." */
+#define PUFO_TXTREC_DEPLOY_QUESTION   1073 /* the copied question, line 5 */
 
 typedef struct DeployCounts {
     i32 nSmallIn;
@@ -334,17 +346,17 @@ typedef struct DeployConfirmHooks {
      * Map_ClearUiScreen @ 0x18a54, ported as Ui_ClearScreen. */
     void (*pfnModal)(i32 nX, i32 nY, i32 nCount, const char *szYes, const char *szNo,
                      void *pUser);
-    /* aTextRecs @ 0xB38D0, 205-byte records. NULL is read as an empty fragment. */
-    const char *(*pfnTextRecord)(i32 nRecord, void *pUser);
+    /* aTextRecs @ 0xB38D0, 205-byte records -- one pointer used for reading and for writing, exactly
+     * as the original uses its one buffer. The handler reads 28/29/30/1068 and writes 1069/1070/1071/
+     * 1073 through it. NULL means the record is absent: a read of it is an empty fragment, a write to
+     * it is skipped. */
+    char *(*pfnTextRecord)(i32 nRecord, void *pUser);
     void *pUser;
 } DeployConfirmHooks;
 
 typedef struct DeployConfirmCtx {
     DeployCountCtx     Count;
     TactUiState       *pUi;      /* nUiScreen @ 0x3A is set to 9 */
-    char              *aszMsg1;  /* unk_E90D9 */
-    char              *aszMsg2;  /* unk_E9273 */
-    i32                nMsgCap;
     const DeployConfirmHooks *pHooks;
 } DeployConfirmCtx;
 

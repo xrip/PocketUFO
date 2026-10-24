@@ -593,7 +593,16 @@ static Soldier *g_apDepUnit[8];
 static Soldier *g_apDepCiv[2];
 static i32      g_nDepSample;
 static i32      g_nDepModalX, g_nDepModalY, g_nDepModalN;
-static char     g_szMsg1[128], g_szMsg2[128];
+
+/* The handler's whole text world is aTextRecs @ 0xB38D0: it reads records 28/29/30/1068 and writes
+ * 1069/1070/1071/1073 (0x18CB8..0x18D94), and record 1072 is the outside message's shipped tail that
+ * it must NOT touch. This is a table of exactly those nine records. */
+static const i32 s_aDepRecord[9] = { PUFO_TXTREC_DEPLOY_IN,     PUFO_TXTREC_DEPLOY_JOIN,
+                                     PUFO_TXTREC_DEPLOY_TAIL,   PUFO_TXTREC_DEPLOY_TAIL2,
+                                     PUFO_TXTREC_DEPLOY_MSG1,   PUFO_TXTREC_DEPLOY_MSG1_LINE2,
+                                     PUFO_TXTREC_DEPLOY_MSG2,   PUFO_TXTREC_DEPLOY_MSG2_LINE2,
+                                     PUFO_TXTREC_DEPLOY_QUESTION };
+static char      g_aDepText[9][64];
 
 static void Dep_Play(i32 nSample, void *pUser)
 {
@@ -610,12 +619,17 @@ static void Dep_Modal(i32 nX, i32 nY, i32 nCount, const char *szYes, const char 
     g_nDepModalN = nCount;
 }
 
-static const char *Dep_Text(i32 nRecord, void *pUser)
+/* Read and write through one pointer, the way the original's single buffer is used. An unlisted
+ * record answers NULL, which the ported handler reads as an empty fragment and never writes. */
+static char *Dep_Text(i32 nRecord, void *pUser)
 {
     (void)pUser;
-    if (nRecord == PUFO_TXTREC_DEPLOY_IN)   { return " in"; }
-    if (nRecord == PUFO_TXTREC_DEPLOY_JOIN) { return " out"; }
-    return "";
+    for (i32 i = 0; i < 9; ++i) {
+        if (s_aDepRecord[i] == nRecord) {
+            return g_aDepText[i];
+        }
+    }
+    return NULL;
 }
 
 static const DeployConfirmHooks g_DepHooks = {Dep_Play, Dep_Modal, Dep_Text, NULL};
@@ -688,16 +702,19 @@ static void TestDeployUnits(void)
     ui.nUiScreen = 0;
     g_nDepSample = 0;
     g_nDepModalN = 0;
-    g_szMsg1[0] = 0;
-    g_szMsg2[0] = 0;
+    for (i32 i = 0; i < 9; ++i) {
+        snprintf(g_aDepText[i], sizeof g_aDepText[i], "%s", "<reserved text line>");
+    }
+    snprintf(g_aDepText[0], sizeof g_aDepText[0], "%s", " in");               /* record 28  */
+    snprintf(g_aDepText[1], sizeof g_aDepText[1], "%s", " out");              /* record 29  */
+    snprintf(g_aDepText[2], sizeof g_aDepText[2], "%s", " in exit zone,");    /* record 30  */
+    snprintf(g_aDepText[3], sizeof g_aDepText[3], "%s", "  Abort the mission?"); /* record 1068 */
+    snprintf(g_aDepText[7], sizeof g_aDepText[7], "%s", "outside exit zone.");   /* record 1072 */
     {
         DeployConfirmCtx dc;
         memset(&dc, 0, sizeof(dc));
         dc.Count = c;
         dc.pUi = &ui;
-        dc.aszMsg1 = g_szMsg1;
-        dc.aszMsg2 = g_szMsg2;
-        dc.nMsgCap = 128;
         dc.pHooks = &g_DepHooks;
         CheckEqI32(Map_BuildDeployConfirmYesNo(&dc), 9, "  the handler returns 9");
     }
@@ -706,8 +723,18 @@ static void TestDeployUnits(void)
     CheckEqI32(g_nDepModalY, 1069, "  with y 1069");
     CheckEqI32(g_nDepModalN, 5, "  and five buttons");
     CheckEqI32((i32)ui.nUiScreen, 9, "  nUiScreen becomes 9");
-    Check(strcmp(g_szMsg1, "3 in1 out") == 0, "  message 1 is in-count, text 28, big-in, text 29");
-    Check(strcmp(g_szMsg2, "1 in1 out") == 0, "  message 2 uses the outside counts");
+    /* The five slots UiModal_Begin then draws. Each check fails if the composition lands anywhere
+     * else, which is what the shipped placeholders in the reference picture used to show. */
+    Check(strcmp(g_aDepText[4], "3 in1 out") == 0,
+          "  slot 1069 holds the inside counts: itoa + record 28 + itoa + record 29 (0x18CB8..0x18CFC)");
+    Check(strcmp(g_aDepText[5], " in exit zone,") == 0,
+          "  slot 1070 holds the record-30 copy (0x18D08..0x18D24, store at src + 213200 = 205 * 1040)");
+    Check(strcmp(g_aDepText[6], "1 in1 out") == 0,
+          "  slot 1071 holds the outside counts (0x18D38..0x18D6C)");
+    Check(strcmp(g_aDepText[7], "outside exit zone.") == 0,
+          "  slot 1072 keeps its own text: the handler writes four slots, not five");
+    Check(strcmp(g_aDepText[8], "  Abort the mission?") == 0,
+          "  slot 1073 holds the record-1068 copy (0x18D78..0x18D94, store at src + 0x401 = 205 * 5)");
 }
 
 /* A lookup that records every coordinate MapCursor_SetPos asks for, so the park at (-2,-2) is

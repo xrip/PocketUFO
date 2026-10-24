@@ -425,43 +425,73 @@ void Tact_CountDeployUnits(const DeployCountCtx *pCtx, DeployCounts *pOut)
     }
 }
 
+/* aTextRecs @ 0xB38D0 slot nRecord, writable. */
+static char *Deploy_Slot(const DeployConfirmHooks *pHooks, i32 nRecord)
+{
+    return (pHooks->pfnTextRecord != NULL) ? pHooks->pfnTextRecord(nRecord, pHooks->pUser) : NULL;
+}
+
 static const char *Deploy_Text(const DeployConfirmHooks *pHooks, i32 nRecord)
 {
-    const char *sz = (pHooks->pfnTextRecord != NULL)
-        ? pHooks->pfnTextRecord(nRecord, pHooks->pUser) : NULL;
+    const char *sz = Deploy_Slot(pHooks, nRecord);
 
     return (sz != NULL) ? sz : "";
+}
+
+/* 0x18D08..0x18D24 and 0x18D78..0x18D94: byte-at-a-time copy loops that take the NUL with them and
+ * stop on it (`while (v26 != 0)`). Bounded here at one record's 200 bytes; the original has no bound
+ * and would run on into the next record, unreachable with the shipped 14- and 18-byte sources. */
+static void Deploy_SlotCopy(char *pDst, const char *pSrc)
+{
+    if (pDst == NULL || pSrc == NULL) {
+        return;
+    }
+    for (i32 i = 0; i < PUFO_TEXT_REC_SIZE_DISK; ++i) {
+        pDst[i] = pSrc[i];
+        if (pSrc[i] == 0) {
+            break;
+        }
+    }
 }
 
 i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx)
 {
     DeployCounts Counts;
+    char        *szSlot;
 
     if (pCtx == NULL || pCtx->pHooks == NULL) {
         return 9;
     }
     Tact_CountDeployUnits(&pCtx->Count, &Counts);
 
-    /* 0x18CB8..0x18D94: the two messages, each two lines. The original writes the first line into
-     * TEXTS slot 1069 and copies its second line (record 30, "в Зоне выхода,") into slot 1070 -- the
-     * copy is `LDRSB/STRB [Rsrc,#213200]`, 213200 = 205 * 1040, i.e. exactly 1040 records further. The
-     * second message's first line goes to slot 1071 and its second line, copied from record 1068
-     * ("  Прервать миссию?") with the constant 0x401 = 205 * 5, lands in slot 1073. Both message slots
-     * are records the shipped TEXTS.DAT marks "<reserved text line>", so the dialog's scratch lives in
-     * the text block itself. The port keeps one buffer per message and folds each pair into it
-     * (deviation: same text, one string instead of two slots). */
-    if (pCtx->aszMsg1 != NULL && pCtx->nMsgCap > 0) {
-        snprintf(pCtx->aszMsg1, (size_t)pCtx->nMsgCap, "%d%s%d%s%s",
-                 (int)Counts.nSmallIn, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
-                 (int)Counts.nBigIn, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN),
-                 Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_TAIL));
+    /* 0x18CB8..0x18D94, the four writes that fill the five lines UiModal_Begin then draws:
+     *   0x18CB8 itoa(nSmallIn) into slot 1069, 0x18CCC strcat rec 28, 0x18CE8 strcat itoa(nBigIn),
+     *   0x18CFC strcat rec 29;
+     *   0x18D08..0x18D24 copy rec 30 into slot 1070 (store at src + 213200 = src + 205 * 1040);
+     *   0x18D38/0x18D44/0x18D54/0x18D6C the same four writes for the outside counts into slot 1071;
+     *   0x18D78..0x18D94 copy rec 1068 into slot 1073 (store at src + 0x401 = src + 205 * 5).
+     * Slot 1072 keeps its shipped text and is the outside message's own tail. itoa+strcat+strcat+
+     * strcat is the same string as this snprintf: itoa terminates the buffer and every strcat starts
+     * at that terminator, so a shorter recomposition cannot leave a stale tail. Writes are bounded at
+     * the record's 200 disk bytes, where the original has no bound (the composed line is 19 bytes or
+     * less with the shipped records 28/29). */
+    szSlot = Deploy_Slot(pCtx->pHooks, PUFO_TXTREC_DEPLOY_MSG1);
+    if (szSlot != NULL) {
+        snprintf(szSlot, PUFO_TEXT_REC_SIZE_DISK, "%d%s%d%s", (int)Counts.nSmallIn,
+                 Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
+                 (int)Counts.nBigIn, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN));
     }
-    if (pCtx->aszMsg2 != NULL && pCtx->nMsgCap > 0) {
-        snprintf(pCtx->aszMsg2, (size_t)pCtx->nMsgCap, "%d%s%d%s%s",
-                 (int)Counts.nSmallOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
-                 (int)Counts.nBigOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN),
-                 Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_TAIL2));
+    Deploy_SlotCopy(Deploy_Slot(pCtx->pHooks, PUFO_TXTREC_DEPLOY_MSG1_LINE2),
+                    Deploy_Slot(pCtx->pHooks, PUFO_TXTREC_DEPLOY_TAIL));
+
+    szSlot = Deploy_Slot(pCtx->pHooks, PUFO_TXTREC_DEPLOY_MSG2);
+    if (szSlot != NULL) {
+        snprintf(szSlot, PUFO_TEXT_REC_SIZE_DISK, "%d%s%d%s", (int)Counts.nSmallOut,
+                 Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
+                 (int)Counts.nBigOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN));
     }
+    Deploy_SlotCopy(Deploy_Slot(pCtx->pHooks, PUFO_TXTREC_DEPLOY_QUESTION),
+                    Deploy_Slot(pCtx->pHooks, PUFO_TXTREC_DEPLOY_TAIL2));
 
     if (pCtx->pHooks->pfnPlaySample != NULL) {
         pCtx->pHooks->pfnPlaySample(16, pCtx->pHooks->pUser);

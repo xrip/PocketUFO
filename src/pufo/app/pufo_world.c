@@ -7149,21 +7149,23 @@ void World_InvCloseAndCommit(PufoWorldState *pW)
 /* ------------------------------------------------- deploy confirm (Part 58)
  *
  * Widget 56 -> Map_BuildDeployConfirmYesNo @ 0x18a68, ported in pufo_tactctl.c. The shell owns the
- * two message buffers the original keeps in the scratch pair unk_E90D9 / unk_E9273, the text-record
- * reader for hook pfnTextRecord, and the modal bank the opener fills. UiModal_Begin stores the two
+ * text-record pointer for hook pfnTextRecord -- the same aTextRecs @ 0xB38D0 the original reads 28/29/
+ * 30/1068 from and writes 1069/1070/1071/1073 to (unk_E90D9 = +205*1069, unk_E9273 = +205*1071) -- and
+ * the modal bank the opener fills. UiModal_Begin stores the two
  * button callbacks into sModal slots 16/18 (Part 51): the original stores j_Tact_CheckBattleEnd
  * @ 0x18a44 -- Tact_CheckBattleEnd(map, 1), which World_MissionEndCheck runs on the live frame --
  * and Map_ClearUiScreen @ 0x18a54, a direct Map_nUiScreen = 0 write. Running the stored callbacks
  * is the tact pointer dispatch, still the recorded separate issue. */
 
-static const char *World_TactTextRecordThunk(i32 nRecord, void *pUser)
+/* The one TEXTS record, read and written through the same pointer, as the original's single buffer. */
+static char *World_TactTextRecordThunk(i32 nRecord, void *pUser)
 {
-    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+    PufoWorldState *pW = (PufoWorldState *)pUser;
 
     if (pW->pAssets == NULL || pW->pAssets->pTextRecs == NULL) {
         return NULL;                               /* Deploy_Text reads NULL as an empty fragment */
     }
-    return (const char *)pW->pAssets->pTextRecs + (size_t)nRecord * PUFO_TEXT_REC_STRIDE;
+    return (char *)pW->pAssets->pTextRecs + (size_t)nRecord * PUFO_TEXT_REC_STRIDE;
 }
 
 static void World_DeployYesThunk(void)
@@ -7221,9 +7223,6 @@ static void World_ClickDeployConfirm(void)
     c.Count.apCiv      = pW->pTactMap->apCivilians;
     c.Count.nCivCount  = pW->pTactMap->nCivilianCount;
     c.pUi     = &pW->sTactUi;
-    c.aszMsg1 = pW->aszDeployMsg1;
-    c.aszMsg2 = pW->aszDeployMsg2;
-    c.nMsgCap = (i32)sizeof pW->aszDeployMsg1;
     c.pHooks  = &h;
 
     World_TactUiSyncIn(pW);

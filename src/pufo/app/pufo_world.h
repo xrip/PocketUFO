@@ -601,9 +601,8 @@ typedef struct PufoWorldState {
     ProximityCtx    sTactProx;          /* handed to MapCell_TickProximityItems (0x4b724) by the step ctx */
     i32             nStepXcomCount;     /* i32 views of the byte counts 0x128AD7/0x128ADC: EnemyStepCtx */
     i32             nStepEnemyCount;    /* reads them through i32*, the map owns them as bytes; step thunks sync */
-    char            aszDeployMsg1[256]; /* unk_E90D9, the deploy confirm "in" message, formatted by the
-                                         * widget-56 opener (Map_BuildDeployConfirmYesNo 0x18a68, Part 58) */
-    char            aszDeployMsg2[256]; /* unk_E9273, the matching "out" message */
+    /* No deploy-confirm message buffers here: unk_E90D9 / unk_E9273 are TEXTS records 1069 / 1071 of
+     * aTextRecs @ 0xB38D0, and the widget-56 opener composes them in place (Part 160). */
     CamOffset       sTactCamOffset;     /* Map+0x4A40/0x4A41: the pointer drag's camera scratch
                                          * (Part 60). Read by the iso layer (IsoViewportGuide's
                                          * frame and the walker's focus) since Part 63. */

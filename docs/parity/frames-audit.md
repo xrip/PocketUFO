@@ -674,3 +674,85 @@ row body at index 0 with 0x57/0x5E and the frame strips at index 1 with 0x9F/0xA
 dialog's pad rows) and at 0x9A5A4 (the per-entry pad's centre blit: x = 0x78 - uWidth/2, 54.PAD measured at (43,0),
 54.PAD has no index-0 pixel), read back at 408 / 358 / 348 / 454 characters. `idb_save` ok. No `src/` or test change, so
 no gate re-run.
+
+## Part 160 -- the five tact_* complaints, and one real defect found by looking
+
+Asked about `tact_deploy_confirm` (no dialog text), `tact_frame_iso` (layers), the "Новичок" line on every tact picture,
+`tact_play_*` (layers) and `tact_modal` (no dialog text). One real defect came out of it; the rest are the original's own
+behaviour, now measured instead of read off a thumbnail.
+
+**The defect: the deploy dialog never wrote the TEXTS records it draws.** `Map_BuildDeployConfirmYesNo @ 0x18a68` composes
+its five lines before opening the dialog: itoa + `strcat` + itoa + `strcat` into record 1069 (0x18CB8, 0x18CCC, 0x18CE8,
+0x18CFC), a byte copy of record 30 into record 1070 (0x18D08..0x18D24, store at `src + 213200` = 205 * 1040), the same
+four writes for the outside counts into record 1071 (0x18D38..0x18D6C), and a copy of record 1068 into record 1073
+(0x18D78..0x18D94, store at `src + 0x401` = 205 * 5). Every one of those addresses is the loaded text block: unk_E90D9 =
+aTextRecs + 205*1069, unk_E9273 = +205*1071, unk_B4F3C = +205*28, unk_B5009 = +205*29, unk_B50D6 = +205*30, unk_E900C =
++205*1068 -- and aTextRecs @ 0xB38D0 is fixed by `UiModal_DrawDialog` itself, which builds the record pointer with
+`MOV R3,#0xCD; MUL; LDR R1,=0xB38D0` at 0x26D6C..0x26D88 and draws record `nRec + nLine`. So the scratch the dialog
+writes IS the table it later paints. The port kept 1069/1071 as two 256-byte shell buffers (`aszDeployMsg1/2`) instead,
+which the modal never reads: the dialog painted the shipped placeholders. Measured on the picture before the fix -- the
+five lines read `<reserved t`, `reserved t`, `eserved t`, `Зоны Вы`, `erved t`, i.e. records 1069..1073 with the line
+shift of 0x26E14 applied, exactly what `TEXTS.DAT` holds at those indices.
+
+**lang.dat, pinned.** Directory: u32 count 12, 21-byte entries; `TEXTS.DAT` size 330002 at offset 256, so the loader's
+`(size - 2) / 200` gives 1650 records at a 200-byte stride, no remainder. Record 1068 = "  Прервать миссию?", records
+1069/1070/1071/1073 = "<reserved text line>", record 1072 = "вне Зоны Выхода.", record 28 = " солдат и ", record 29 =
+" танков", record 30 = "в Зоне Выхода,". The dialog's five lines are therefore one sentence -- "<n> солдат и <m> танков
+в Зоне Выхода, <k> солдат и <l> танков вне Зоны Выхода.  Прервать миссию?" -- split over five records, and record 1072
+is the outside message's own tail, already in the table, which the handler must NOT rewrite.
+
+**Fix.** `DeployConfirmHooks.pfnTextRecord` is `char *(*)` now -- one record pointer for reading and writing, as the
+original's one buffer is used -- `DeployConfirmCtx` lost `aszMsg1/aszMsg2/nMsgCap`, and `PufoWorldState` lost the
+512-byte scratch pair. `Map_BuildDeployConfirmYesNo` composes 1069 and 1071 with snprintf (itoa+strcat+strcat+strcat is
+the same string: itoa terminates the buffer and each strcat starts at that terminator, so a shorter recomposition leaves
+no stale tail) and does the two copies with `Deploy_SlotCopy`, bounded at the record's 200 disk bytes where the original
+has no bound (the composed line is 19 bytes or less with the shipped 28/29). Teeth: `tests/test_tactctl.c` now keeps a
+nine-record table and checks all five slots, including that 1072 keeps its own text; the widget-56 block of
+`tests/test_geoscapeframe.c` compares the five slots against fragments read out of the records BEFORE the click, so the
+expectation cannot follow the write it checks.
+
+**Why the first painted frame has no body text -- both dialogs.** `UiModal_Begin @ 0x26430` clears the typewriter cursor
+(anActionPhaseSave0[112] @ 0x128AA0), `UiModal_DrawDialog` advances it BEFORE the text pass (0x26D3C), and while the
+progressive flag stands a line draws `cursor - line - 1` characters (0x26DF4) with a `BLE` skipping every non-positive
+count. After one painted frame the cursor is 1, so all five lines draw zero characters. Measured with the new
+`ModalTextInk` helper (the body colour band: blue nibble clear, green nibble high -- x 42..204, y 113..177 for the
+170-wide dialog at nX = 35): `tact_deploy_confirm` has 0 body pixels in all five 13-row bands; the next frame, with the
+cursor written 11 the way the shell's own arms write 40, leaves 12 and paints 397 body pixels, bands 104 / 77 / 85 / 66 /
+65, and every band is non-zero. That picture is the new reference `tact_modal_text`, and it reads "1 солдат и", "Зоне
+выхо", "солдат и", "Зоны Вы", "ервать" -- the ORIGINAL BUG at 0x26E14, whose character index is `i + line`, dropping
+line N's first N characters. `tact_modal_statusline` (the quit dialog, second frame) shows exactly one character for the
+same reason. `Menu_ConfirmQuitDialog @ 0x18e2c` composes nothing: it opens records 24..27, which are shipped --
+"Нажмите \"ДА\" для / выхода из игры или / нажмите \"NET\" / для отмены".
+
+**`tact_frame_iso` and `tact_play_*` are not layer swaps.** `Render_Frame`'s order is the port's order:
+`MapView_DrawIsoLayer` at 0x22414, then the screen's one HUD arm (0x22460..0x224D0), then the modal arm (0x224DC), then
+the fade block, then `StatusMsg_DrawStack` at 0x225BC, then `Titles_DrawBackdrop` 0x225DC and `MainMenu_Draw` 0x225E4.
+The pad is therefore deliberately painted over the map AND over the panel. It is also a blend, not a mask: the fade block
+reads dword_113A40 (apUiSlotsA[10], Map+0x88) and `CMP #0xA / BGE loc_225F4` (0x22540) skips pPadEnemyStep entirely at 10
+or above; value 0 blits it with the fifth `SoftSurf_Blit` argument = 0xFF (0x22560..0x22588); values 1..9 use
+(10 - value) * 24 (0x2258C: `RSB R3,R0,#0xA; MOV R2,#0x18; MUL`), and that argument is the blend weight (SoftSurf_BlitEx
+@ 0x9FB5C). Measured against a new reference, `tact_frame_iso_fadeoff`: the same fixture with the counter parked at 10,
+which `TactHud_TickCursorDir @ 0x1e888` treats as a stop (the 0-or-10 test at 0x1E894). 56794 of 57600 map-area samples
+differ between the two pictures, and the difference is the alpha: (148,80,32) -> (123,64,24), a factor 0.83 against the
+expected (255 - 48) / 255 = 0.812 for the counter 8 this fixture reaches (the busy arm's countdown 9 written at 0x1A7C8,
+then slot 9's step -1 applied by the tick at 0x22360). Dark fraction of the map area (r,g,b all under 90, every second
+sample): tact_play_enemyturn 52.2%, tact_play_start 1.5%, tact_play_shot 1.3% -- the pad is present only in the enemy-turn
+state. The flat look of `tact_frame_iso` is the fixture's own camera poke (37,11): its checks give isoOffA 18 and isoOffB
+3, which pin 5*nMapDimX = 5*nMapDimY = 30 (dims 6x6) while the walk runs 9 x 47 (Map+0x34/0x35, produced by
+`Map_InitFacingScratch` at 0x26F48/0x26F70), so the window lands on a uniform floor region. The iso layer with walls,
+stairs and occupants is what tact_play_* show.
+
+**The "Новичок" lines are the shipped strings, twice because the stack has no dedup.** At 6x the two lines read
+"Новичок: Джейн Кузнецова". They are status-stack records (100-byte records at x 5, pitch 12) pushed by `Tact_SelectUnit
+@ 0x2c6c4` with `Unit_FormatDisplayName(pUnit, 0)` (0x2C700), mode 0 of the first family = "rank: name" (pufo_unit.h:810).
+The rank comes from aszTextE @ 0xB2200, whose source is 0xBD290 = aTextRecs + 205*192 with 6 slots of 20 bytes -- "Новичок"
+is shipped text record 192; the names come from aszTextD (records 230..317). The duplicate is the original's own
+behaviour: `StatusMsg_Push @ 0x2dda4` appends while the count is under 3 (0x2DDD4) with no comparison against what is
+already in the stack, each entry getting TTL 90 at 0x2DE68, so selecting a unit twice puts the same string in twice.
+
+IDB: line comments at 0x18CB8 (itoa into record 1069 and the record identities of unk_E90D9 / unk_B4F3C / unk_B5009),
+0x18D08 (record 30 -> 1070, the 213200 = 205*1040 store), 0x18D78 (record 1068 -> 1073, and that 1072 is not written),
+0x22540 (the >= 10 skip, the 0xFF and (10-v)*24 alphas, the blend-weight meaning), 0x26DF4 (the count formula and why the
+first frame is empty) and 0x26E14 (the diagonal index bug), read back at 372 / 266 / 290 / 416 / 358 / 667 characters.
+`idb_save` ok. Two new references (`tact_modal_text`, `tact_frame_iso_fadeoff`); no existing picture moved. Gates re-run:
+66/66 tests, coverage 972/1103 functions unchanged, `check: OK`.
