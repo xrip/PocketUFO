@@ -36,6 +36,15 @@ Requirements: 64-bit Windows 10/11 and the *Visual C++ 2015–2022 Redistributab
 `gx.dll`) are **not** needed — audio runs on WinMM + libopenmpt, and the GAPI
 display layer is recreated natively.
 
+### Landscape (QoL)
+
+`pocketufo.exe --landscape` runs the game on a 320x240 screen: the 240x320
+surface is rotated 90° at presentation, the centered UI stays centered, and the
+mouse maps back through the rotation. Resize the window to any integer multiple
+for crisp pixel scaling. This is a shell QoL mode (the original had the same
+display modes on-device — see `docs/parity/landscape-qol-2026-11-04.md`), not a
+change to the game itself.
+
 ## Build from source
 
 Toolchain (as verified): CMake ≥ 3.25, Visual Studio 2022 BuildTools with the

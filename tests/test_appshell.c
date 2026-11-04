@@ -22,6 +22,7 @@
  */
 #include "app/pufo_app.h"
 #include "app/pufo_world.h"
+#include "platform/pufo_gx.h"
 #include "game/pufo_tactctl.h"
 #include "game/pufo_terrain.h"
 #include "game/pufo_timer.h"
@@ -612,6 +613,38 @@ cleanup:
     free(pTactMap);
 }
 
+/* QoL --landscape (2026-11-04): the pointer mapping Gx_PointerToLogical.
+ * 90 CW rotation of the 240x320 surface into the 320x240 face:
+ * face(wx,wy) = logical(wy, 319-wx). Pinned so the corners cannot drift. */
+static void TestLandscapePointerMapping(void)
+{
+    i32 nX, nY;
+
+    Gx_PointerToLogical(0, PUFO_SURF_H, 17, 205, &nX, &nY);
+    CheckEqI32(nX, 17, "  landscape off: the face point is the logical point");
+    CheckEqI32(nY, 205, "  landscape off: y too");
+
+    Gx_PointerToLogical(1, PUFO_SURF_H, 0, 0, &nX, &nY);
+    CheckEqI32(nX, 0, "   rotated face (0,0) is logical top-left column");
+    CheckEqI32(nY, 319, "  rotated face (0,0) is logical bottom row (portrait top -> face right)");
+
+    Gx_PointerToLogical(1, PUFO_SURF_H, 319, 0, &nX, &nY);
+    CheckEqI32(nX, 0, "   rotated face (319,0) is logical (0,0)");
+    CheckEqI32(nY, 0, "   the face top-right is the surface top-left");
+
+    Gx_PointerToLogical(1, PUFO_SURF_H, 0, 239, &nX, &nY);
+    CheckEqI32(nX, 239, "  rotated face (0,239) is logical (239,319)");
+    CheckEqI32(nY, 319, "  the face bottom-left is the surface bottom-left column");
+
+    Gx_PointerToLogical(1, PUFO_SURF_H, 319, 239, &nX, &nY);
+    CheckEqI32(nX, 239, "  rotated face (319,239) is logical (239,0)");
+    CheckEqI32(nY, 0, "   all four corners map to corners");
+
+    Gx_PointerToLogical(1, PUFO_SURF_H, 159, 119, &nX, &nY);
+    CheckEqI32(nX, 119, "  the face center maps to the surface center: the UI stays centered");
+    CheckEqI32(nY, 160, "  x.5/y.5 rounding keeps the center on a live pixel");
+}
+
 int main(void)
 {
     DrainQueue();
@@ -621,6 +654,7 @@ int main(void)
     TestCommandOneClosesTheWindow();
     TestDestroyArm();
     TestAppKeyHookRoutes();
+    TestLandscapePointerMapping();
 
     if (g_nFailures > 0) {
         printf("test_appshell: %d check(s) FAILED\n", g_nFailures);

@@ -1272,6 +1272,10 @@ static void App_GameTickOnce(void *pUser)
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 static void App_PresentLoadedSurface(void);
 
+/* QoL `--landscape` shell mode; set by App_FindLandscapeFlag, read by the
+ * window size, Gx_Open and App_MapPointer. See docs/parity/landscape-qol-2026-11-04.md. */
+static bool g_bLandscapeFlag;
+
 /* Client pixels to the 240x320 logical surface, inverting Gx_Present's integer-scale letterbox.
  *
  * ADAPTATION, and the older comment here was wrong: the record does NOT feed the raw client point
@@ -1285,30 +1289,36 @@ static void App_PresentLoadedSurface(void);
  * WM_LBUTTONDOWN stores the pressed byte unk_AD710 (pBank+0x1040) at 0xA0804..0xA080C. The Win64 shell has
  * one display geometry -- a letterboxed 240x320 surface, the record's mode 0, its identity row -- so this
  * is the inverse of the shell's own letterbox rather than the mode table. Recorded as a deviation in
- * docs/parity/bugs.tsv; modes 1..3 have no Win64 path that selects them. */
+ * docs/parity/bugs.tsv; modes 1..3 have no Win64 path that selects them. The QoL `--landscape` shell
+ * mode (2026-11-04) adds a rotated letterbox of the SAME surface -- 320x240 face, pointer un-rotated
+ * through Gx_PointerToLogical -- it is not the original's mode table, whose mode 1 row is a (y,x)
+ * transpose for the rotated device's raw touch axes. */
 static void App_MapPointer(LPARAM lParam, i32 *pnX, i32 *pnY)
 {
-    RECT  rc;
-    int   nWinW, nWinH, nScale, nOX, nOY;
+    RECT rc;
+    int  nFaceW, nFaceH, nWinW, nWinH, nScale, nOX, nOY, nSx, nSy;
 
     if (!GetClientRect(g_hWndMain, &rc)) {
         *pnX = 0;
         *pnY = 0;
         return;
     }
+    nFaceW = g_bLandscapeFlag ? PUFO_SURF_H : PUFO_SURF_W;
+    nFaceH = g_bLandscapeFlag ? PUFO_SURF_W : PUFO_SURF_H;
     nWinW = rc.right - rc.left;
     nWinH = rc.bottom - rc.top;
-    nScale = nWinW / 240;
-    if (nWinH / 320 < nScale) {
-        nScale = nWinH / 320;
+    nScale = nWinW / nFaceW;
+    if (nWinH / nFaceH < nScale) {
+        nScale = nWinH / nFaceH;
     }
     if (nScale < 1) {
         nScale = 1;
     }
-    nOX = (nWinW - 240 * nScale) / 2;
-    nOY = (nWinH - 320 * nScale) / 2;
-    *pnX = ((i32)(short)LOWORD(lParam) - nOX) / nScale;
-    *pnY = ((i32)(short)HIWORD(lParam) - nOY) / nScale;
+    nOX = (nWinW - nFaceW * nScale) / 2;
+    nOY = (nWinH - nFaceH * nScale) / 2;
+    nSx = ((i32)(short)LOWORD(lParam) - nOX) / nScale;
+    nSy = ((i32)(short)HIWORD(lParam) - nOY) / nScale;
+    Gx_PointerToLogical(g_bLandscapeFlag ? 1 : 0, PUFO_SURF_H, nSx, nSy, pnX, pnY);
 }
 
 /* Input_OnPointer @ 0x13c6c for the shell, in logical 240x320 coordinates. On screen 17 this
@@ -1670,6 +1680,19 @@ static void App_FindNewGameFlag(LPCWSTR pwszCmd)
     static const WCHAR awcFlag[] = L"--new-game";
 
     g_bNewGameFlag = (pwszCmd != NULL && wcsstr(pwszCmd, awcFlag) != NULL);
+}
+
+/* `--landscape` on the command line: QoL shell mode, present the 240x320
+ * surface rotated 90 CW in a 320x240 window and map the pointer back. Not
+ * part of the original; see docs/parity/landscape-qol-2026-11-04.md. The
+ * original's own mode table (0xA0768..0xA080C, DisplayMode @ 0x187F48) has
+ * the same idea -- its mode 1 swaps (y,x) -- and the Win64 shell had no path
+ * selecting it, a gap recorded in docs/parity/bugs.tsv. */
+static void App_FindLandscapeFlag(LPCWSTR pwszCmd)
+{
+    static const WCHAR awcFlag[] = L"--landscape";
+
+    g_bLandscapeFlag = (pwszCmd != NULL && wcsstr(pwszCmd, awcFlag) != NULL);
 }
 
 /* `--load-slot <n>` on the command line: run the load path (LoadGame @ 0x44bbc) once before the
@@ -16860,7 +16883,11 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
      * width/height are the window size, so the frame has to be added first; without this the
      * 240x320 surface is cropped by the title bar and borders. */
     {
-        RECT rc = { 0, 0, PUFO_SURF_W, PUFO_SURF_H };
+        /* QoL --landscape: the window client becomes the 320x240 rotated face;
+         * the logical surface stays 240x320 (see pufo_gx.h). */
+        RECT rc = { 0, 0,
+                    (LONG)(g_bLandscapeFlag ? PUFO_SURF_H : PUFO_SURF_W),
+                    (LONG)(g_bLandscapeFlag ? PUFO_SURF_W : PUFO_SURF_H) };
         DWORD dwStyle = WS_OVERLAPPEDWINDOW;
         DWORD dwExStyle = 0;
 
@@ -16900,7 +16927,7 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
     Sound_SetMuteBytes(&g_options.bSoundOff, &g_options.bMusicOff);
     Sound_SetLoopByte(&g_options.bMusicLoop); /* port-side options cell (2026-11-04) */
 
-    if (!Gx_Open(&g_gx, hWnd, PUFO_SURF_W, PUFO_SURF_H)) {
+    if (!Gx_Open(&g_gx, hWnd, PUFO_SURF_W, PUFO_SURF_H, g_bLandscapeFlag ? 1 : 0)) {
         printf("pocketufo: display surface failed to open\n");
         fflush(stdout);
         DestroyWindow(hWnd);
@@ -17245,6 +17272,7 @@ int App_Run(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     App_FindClickFlag(lpCmdLine);
     App_FindNewGameFlag(lpCmdLine);
     App_FindLoadSlotFlag(lpCmdLine);
+    App_FindLandscapeFlag(lpCmdLine);
 
     if (!App_InitInstance(hInstance, nCmdShow, pszDumpPath != NULL || pszScript != NULL)) {
         return 0;
