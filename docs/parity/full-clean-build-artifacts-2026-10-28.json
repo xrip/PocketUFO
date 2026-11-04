@@ -1,0 +1,971 @@
+{
+  "date": "2026-10-28",
+  "verification": "full clean compile only; no game/test/decoder/device execution",
+  "sourceFiles": 434,
+  "sourceFingerprint": "C6F6A0C1AC2B3A1BA9B8788A6A38ADCEBD3FCF61323BC179BBD3D6610882F894",
+  "expectedExecutableTargets": 68,
+  "testTargets": 67,
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --clean-first --parallel 2",
+      "exitCode": 0,
+      "diagnostics": [],
+      "log": {
+        "path": ".workers/luna-mission-init-audit/debug-full-clean-compile.log",
+        "sha256": "1FF5238540244CBE0689B0E1B6D0C3FF7AB36BEE9CE48671F05057B9DDE68CA3"
+      },
+      "linkedExecutableCount": 68,
+      "executables": [
+        {
+          "target": "pocketufo",
+          "path": "build/src/pufo/Debug/pocketufo.exe",
+          "bytes": 1519616,
+          "sha256": "2D5ACCCE25C0657EFD6C6DFFBE220C622820B9CECCC4A5CD9109370472ACD06E"
+        },
+        {
+          "target": "test_data",
+          "path": "build/tests/Debug/test_data.exe",
+          "bytes": 35328,
+          "sha256": "1BBC4787D20DB7171251A85D55D4BCCC5F14CF6A766627F098EF82FF530F8A53"
+        },
+        {
+          "target": "test_ptrarray",
+          "path": "build/tests/Debug/test_ptrarray.exe",
+          "bytes": 24064,
+          "sha256": "2443ECC750FE574C0D9D3100C04DD958A5D4C256EE6C4CC187FE1D494BDFE60C"
+        },
+        {
+          "target": "test_rand",
+          "path": "build/tests/Debug/test_rand.exe",
+          "bytes": 23040,
+          "sha256": "5F9E2B6ED824321C953E68BDF27DE8BF116263C62506F8BBC78D0633CD9AB4A3"
+        },
+        {
+          "target": "test_texts_lang",
+          "path": "build/tests/Debug/test_texts_lang.exe",
+          "bytes": 82944,
+          "sha256": "1BE15EACBD115BAEE9B55F801812F07C64593093BD7AE03CDEC86F0B822B26B2"
+        },
+        {
+          "target": "test_render",
+          "path": "build/tests/Debug/test_render.exe",
+          "bytes": 68096,
+          "sha256": "14E7A7A0233B6F91B89139EAC97756D5D4D2D42891E781B344F915C2597B645D"
+        },
+        {
+          "target": "test_audio",
+          "path": "build/tests/Debug/test_audio.exe",
+          "bytes": 47616,
+          "sha256": "3B2B991CBC5CBF2BC2B017B3E6CE9E07D0DDBEA82DAF248FA820D5A999D8F7ED"
+        },
+        {
+          "target": "test_mapcell",
+          "path": "build/tests/Debug/test_mapcell.exe",
+          "bytes": 33280,
+          "sha256": "DC33DF00AB5D9FB090502D822ED9496D6A260ABCBCBE4417A340AA16F7C570F7"
+        },
+        {
+          "target": "test_font",
+          "path": "build/tests/Debug/test_font.exe",
+          "bytes": 255488,
+          "sha256": "FA63DDA8700285067C217210D6325FACCD80AD0B77229B89A2F18FAE75D9958B"
+        },
+        {
+          "target": "test_unit",
+          "path": "build/tests/Debug/test_unit.exe",
+          "bytes": 280576,
+          "sha256": "C3AE4C7FE716D8526F85990EE7E921CB35ED50246BFEBB84341C975D109DA29D"
+        },
+        {
+          "target": "test_moveaction",
+          "path": "build/tests/Debug/test_moveaction.exe",
+          "bytes": 232960,
+          "sha256": "92749A53F05EAFACAEDBDC48E39F30E674689E7F1CD150E3CA121700844B941B"
+        },
+        {
+          "target": "test_mapctx",
+          "path": "build/tests/Debug/test_mapctx.exe",
+          "bytes": 243200,
+          "sha256": "F19682B13052D3F9DB6226FE4984EF8E70101BD5881142520FEBCD32318A2219"
+        },
+        {
+          "target": "test_tacthud",
+          "path": "build/tests/Debug/test_tacthud.exe",
+          "bytes": 296448,
+          "sha256": "AC51356506A39066FAE76A4785D6B493655C2661560F64076F5998A9F4963DD9"
+        },
+        {
+          "target": "test_titles",
+          "path": "build/tests/Debug/test_titles.exe",
+          "bytes": 271872,
+          "sha256": "0E90F5F389037BBCC445BEA4E3F6774137F91CACFA056B0E5ACB3842C7FA7155"
+        },
+        {
+          "target": "test_renderframe",
+          "path": "build/tests/Debug/test_renderframe.exe",
+          "bytes": 309248,
+          "sha256": "A8B1EA8F569E0A4649F187ADEC334365254B462A4365B47F1F39E17407B061F7"
+        },
+        {
+          "target": "test_mainmenu",
+          "path": "build/tests/Debug/test_mainmenu.exe",
+          "bytes": 245248,
+          "sha256": "D8D2E2F401748FC832D9631E766FC34D4118BAD2A999D5DB047F79ABEB16C59A"
+        },
+        {
+          "target": "test_cmdpads",
+          "path": "build/tests/Debug/test_cmdpads.exe",
+          "bytes": 289792,
+          "sha256": "F9F5873ED32B9CA9EE120688A58FBE8788A9C5972D4D469A76C6AE3AD48F4962"
+        },
+        {
+          "target": "test_tactstate",
+          "path": "build/tests/Debug/test_tactstate.exe",
+          "bytes": 301056,
+          "sha256": "731CAA21CA6C497D7BD5DF4568F901B94451C06E694C761ABEB7F43F414E6EBF"
+        },
+        {
+          "target": "test_path",
+          "path": "build/tests/Debug/test_path.exe",
+          "bytes": 239616,
+          "sha256": "1C65D801CA68AD78BE2FA31CB6FDF923F6B30E427B281B02557594C35100DBBC"
+        },
+        {
+          "target": "test_step",
+          "path": "build/tests/Debug/test_step.exe",
+          "bytes": 253952,
+          "sha256": "F399B10F6AA042511E96B2A2085C6B050645BD038BB2235A6F59A3032D6ACDE3"
+        },
+        {
+          "target": "test_geopointer",
+          "path": "build/tests/Debug/test_geopointer.exe",
+          "bytes": 763392,
+          "sha256": "43C94BB8126EB5A264B05F267C6CB3A4D5180994977943451C9EE61AC120B941"
+        },
+        {
+          "target": "test_smaphit",
+          "path": "build/tests/Debug/test_smaphit.exe",
+          "bytes": 711680,
+          "sha256": "E7CEB9F39829153988DAA453A9F024D6A4604B23E8BCFF432E5EB70E3B5DD052"
+        },
+        {
+          "target": "test_closeui",
+          "path": "build/tests/Debug/test_closeui.exe",
+          "bytes": 729088,
+          "sha256": "AC5E35B6D176645389CFED07837C0476AF6C7B68D306D3B2B80E2F825DD8BB97"
+        },
+        {
+          "target": "test_los",
+          "path": "build/tests/Debug/test_los.exe",
+          "bytes": 234496,
+          "sha256": "C372F1709F8F795CD06ABBAE4326F465FC6515F08EF81561D70ADB9D36901DE6"
+        },
+        {
+          "target": "test_boot",
+          "path": "build/tests/Debug/test_boot.exe",
+          "bytes": 60928,
+          "sha256": "DFDEAD461B95B03B1964764B9543DE9E77CEDAFA503CB1D71986930AAE08EAFF"
+        },
+        {
+          "target": "test_template",
+          "path": "build/tests/Debug/test_template.exe",
+          "bytes": 35328,
+          "sha256": "0AA0A9C6A68B82DA6CA48AF45A69EAB4A4C87A5026F2D27FF46906DE75FA9C9E"
+        },
+        {
+          "target": "test_terrain",
+          "path": "build/tests/Debug/test_terrain.exe",
+          "bytes": 250880,
+          "sha256": "A2699A000F29373DEC615AD2C6759D7F51814DA3923013E558F90E3DC2637796"
+        },
+        {
+          "target": "test_rmp",
+          "path": "build/tests/Debug/test_rmp.exe",
+          "bytes": 235008,
+          "sha256": "AC7A2F6F5F8E8BFBF3D606AA360FA54EADB638C06B03A18DBD7D194EA507C0A5"
+        },
+        {
+          "target": "test_tactctl",
+          "path": "build/tests/Debug/test_tactctl.exe",
+          "bytes": 265728,
+          "sha256": "183788FBDF98E11C5F15F83A992B2C7851F9F2BA6B993E21C138D8BD475945FB"
+        },
+        {
+          "target": "test_panel",
+          "path": "build/tests/Debug/test_panel.exe",
+          "bytes": 76288,
+          "sha256": "64FAA72407DD86B4317D1F7496A50A5C7194B4A3580B23F19C57F175DBC44FBA"
+        },
+        {
+          "target": "test_turn",
+          "path": "build/tests/Debug/test_turn.exe",
+          "bytes": 255488,
+          "sha256": "29F555D82124ECEDB61A7743E769D3B9D040EE4BF6C7999BAA6F4A0B3A087BAE"
+        },
+        {
+          "target": "test_save",
+          "path": "build/tests/Debug/test_save.exe",
+          "bytes": 795648,
+          "sha256": "1E9030CDB2D686C9A53C0F824F668966DFBF96726FE7168775A97AC5139F7E01"
+        },
+        {
+          "target": "test_save_world",
+          "path": "build/tests/Debug/test_save_world.exe",
+          "bytes": 1102848,
+          "sha256": "B895738180F8E1C7247D1380FBADE0A1700ED5473E41B69F636C9327B8B1DDB8"
+        },
+        {
+          "target": "test_roster",
+          "path": "build/tests/Debug/test_roster.exe",
+          "bytes": 243200,
+          "sha256": "2E2F06C1DDACF0656136E95D1D91C6D47D12FD82FB85CD83E226CEC138459F39"
+        },
+        {
+          "target": "test_tactui",
+          "path": "build/tests/Debug/test_tactui.exe",
+          "bytes": 259072,
+          "sha256": "4AFBB2BA48356905468BD5CBEF31FC04BC758E246623DD7F3BD26C01BCD19373"
+        },
+        {
+          "target": "test_timer",
+          "path": "build/tests/Debug/test_timer.exe",
+          "bytes": 239104,
+          "sha256": "0F7BC1FD548BECF1CD21E080657EA50C6DD80EAF042ECD9EC23A4C3401FA01D3"
+        },
+        {
+          "target": "test_tactend",
+          "path": "build/tests/Debug/test_tactend.exe",
+          "bytes": 757248,
+          "sha256": "69513A66EEB313F40A460E2416FF527385BC3DF225317803496C752376A03541"
+        },
+        {
+          "target": "test_menu",
+          "path": "build/tests/Debug/test_menu.exe",
+          "bytes": 240640,
+          "sha256": "35541B2D99378EF38F54EF7FFFCAF8B77E9AEE5BEE079601453F74F77AE669AA"
+        },
+        {
+          "target": "test_statusmsg",
+          "path": "build/tests/Debug/test_statusmsg.exe",
+          "bytes": 28672,
+          "sha256": "36A8F3E31C31BF2C608C2ADA5D02465AB2475BEEEB9A99B4025AAE8F3F6E4868"
+        },
+        {
+          "target": "test_control",
+          "path": "build/tests/Debug/test_control.exe",
+          "bytes": 53248,
+          "sha256": "71E6C98D98C7103DB0FD7B17C60E280AB19F3BD292146800341E95B16455B4BC"
+        },
+        {
+          "target": "test_uibank",
+          "path": "build/tests/Debug/test_uibank.exe",
+          "bytes": 63488,
+          "sha256": "ACAC791B86311C1163081AB095DDD0DB871504954917363A1C165078B651CE98"
+        },
+        {
+          "target": "test_constants",
+          "path": "build/tests/Debug/test_constants.exe",
+          "bytes": 38400,
+          "sha256": "D991A0820A8A413867713D3881D00ECEA4BC4ECE46216E8409CCE8C96FE0108F"
+        },
+        {
+          "target": "test_enemyai",
+          "path": "build/tests/Debug/test_enemyai.exe",
+          "bytes": 254464,
+          "sha256": "D964D1A646072EDDC4DBD56088AD68EE9266BEF4A18B9D00F82DE1FF1AAE60ED"
+        },
+        {
+          "target": "test_soldiername",
+          "path": "build/tests/Debug/test_soldiername.exe",
+          "bytes": 228352,
+          "sha256": "F6F8B40FAA98F0792DF736A6113927B970614444370DDF52D2EF120D8ED97142"
+        },
+        {
+          "target": "test_input",
+          "path": "build/tests/Debug/test_input.exe",
+          "bytes": 308736,
+          "sha256": "C1A98FF98126790D56A738CE09F2C6283ADFCF1A00DC5A7F1BC1CA278205EC2D"
+        },
+        {
+          "target": "test_cursordir",
+          "path": "build/tests/Debug/test_cursordir.exe",
+          "bytes": 21504,
+          "sha256": "1D02665170AC6DDC87789BC08B0172DD26E8AE29C724DF11C1329E8EA094F9E5"
+        },
+        {
+          "target": "test_modal",
+          "path": "build/tests/Debug/test_modal.exe",
+          "bytes": 257024,
+          "sha256": "C93918D8ED9665E0E0A272EC7C8E813D6FA2A0163EFE739DCBA36C7AA4B3AC01"
+        },
+        {
+          "target": "test_menubtn",
+          "path": "build/tests/Debug/test_menubtn.exe",
+          "bytes": 268288,
+          "sha256": "A4425E875AD157CC3C2400F6327FDC1E9A6EF122A1692D038439C400E007CE72"
+        },
+        {
+          "target": "test_isodraw",
+          "path": "build/tests/Debug/test_isodraw.exe",
+          "bytes": 323584,
+          "sha256": "CB1013F3B0EDE552A94692CDC74E457829AEAEA47C392E95F48699D16F65204B"
+        },
+        {
+          "target": "test_baseui",
+          "path": "build/tests/Debug/test_baseui.exe",
+          "bytes": 1233920,
+          "sha256": "EB892074F850F69B744EF211C35E6EBB93FE4379B42ABB386A6A9144E18790FA"
+        },
+        {
+          "target": "test_plane",
+          "path": "build/tests/Debug/test_plane.exe",
+          "bytes": 743424,
+          "sha256": "06C200B2D9D96CB1BC35E6F9D0AFB9EC0418A2E715773FE8180513A5EDA2781A"
+        },
+        {
+          "target": "test_clock",
+          "path": "build/tests/Debug/test_clock.exe",
+          "bytes": 22528,
+          "sha256": "010C4B0CF14DD38DC068940A6D3404E2A15BBF335E16C8ED75A886A49B8FB9B7"
+        },
+        {
+          "target": "test_ship",
+          "path": "build/tests/Debug/test_ship.exe",
+          "bytes": 731136,
+          "sha256": "EED0F56D498E27515212A75AB71486CABED510FA455E62F34978B5DAA0489415"
+        },
+        {
+          "target": "test_strateg",
+          "path": "build/tests/Debug/test_strateg.exe",
+          "bytes": 751104,
+          "sha256": "8242FBF76D22F7ED4927F1A8A7FB53C63419C9EFF773F15983EE4EAB5C1E2322"
+        },
+        {
+          "target": "test_geouimanage",
+          "path": "build/tests/Debug/test_geouimanage.exe",
+          "bytes": 244736,
+          "sha256": "4D014DEA003E1233E7D4E223BAFAA9B5E4CA2274C81DA90451D584516E8E8718"
+        },
+        {
+          "target": "test_geoiinit",
+          "path": "build/tests/Debug/test_geoiinit.exe",
+          "bytes": 718336,
+          "sha256": "F6BBED867C5365A29B8043F418B4E5FACFC1C40F1256590765153CED215AA182"
+        },
+        {
+          "target": "test_geoscapeframe",
+          "path": "build/tests/Debug/test_geoscapeframe.exe",
+          "bytes": 1856000,
+          "sha256": "75CED48BF90B8E44067077A34C9CB618515E8A38295C113BE3DB5F5B92F04661"
+        },
+        {
+          "target": "test_startnew",
+          "path": "build/tests/Debug/test_startnew.exe",
+          "bytes": 723456,
+          "sha256": "4ECF30595EF3B58E7B6ADC7E8B75EA4A9444770B268CDE7203ED1A55A20E97AF"
+        },
+        {
+          "target": "test_geoscape",
+          "path": "build/tests/Debug/test_geoscape.exe",
+          "bytes": 1063424,
+          "sha256": "4E8AF5F583C33CAF6ECA3DB92958B56247C7B15CB0F8B170A90947954D295665"
+        },
+        {
+          "target": "test_tactinit",
+          "path": "build/tests/Debug/test_tactinit.exe",
+          "bytes": 756736,
+          "sha256": "F6D2CE2F3DB41EAB7B77688CD9BC0EA0D96ACD001C1CB8BE888F634CF34A2B89"
+        },
+        {
+          "target": "test_ballist",
+          "path": "build/tests/Debug/test_ballist.exe",
+          "bytes": 241152,
+          "sha256": "124AEF7D4996858400924AB499B2DA64F312907A328C64AE89C10383C2895B72"
+        },
+        {
+          "target": "test_combat",
+          "path": "build/tests/Debug/test_combat.exe",
+          "bytes": 249856,
+          "sha256": "3F3634229CD3C953FA61C128C277DF1A7A78897DC5512B633A7491E613D76F44"
+        },
+        {
+          "target": "test_vistry",
+          "path": "build/tests/Debug/test_vistry.exe",
+          "bytes": 32256,
+          "sha256": "1A809F29582585CE130CD6D7A9DFDE00C5B9EFCC943DE310423ECABBA3001A44"
+        },
+        {
+          "target": "test_fov",
+          "path": "build/tests/Debug/test_fov.exe",
+          "bytes": 34304,
+          "sha256": "EAF09CE672DF855CDA6DB6CB116C7F9E5D3BF1E1E56777EB0A4514DB97E923A2"
+        },
+        {
+          "target": "test_vis",
+          "path": "build/tests/Debug/test_vis.exe",
+          "bytes": 243200,
+          "sha256": "C6FF5E69FFDC026E48A29D2352BD83CEF3060F5C567868EDC04948E93DDBC117"
+        },
+        {
+          "target": "test_blast",
+          "path": "build/tests/Debug/test_blast.exe",
+          "bytes": 32256,
+          "sha256": "0BAE3832F78ACBD485B0E7AB7AC83A848FF788F2C2935003A54C1B16C70A34E5"
+        },
+        {
+          "target": "test_invdrag",
+          "path": "build/tests/Debug/test_invdrag.exe",
+          "bytes": 279040,
+          "sha256": "751EDB59CA8A47AE6D854E65C39F8670955E6D7870A79B23EFB5A19A5E243E41"
+        },
+        {
+          "target": "test_appshell",
+          "path": "build/tests/Debug/test_appshell.exe",
+          "bytes": 1532928,
+          "sha256": "04770731C7F90A482BB2C286E7ABAB7849BE79667D0BDC7E965A4B58051088C3"
+        }
+      ],
+      "runtimeDLLs": [
+        {
+          "path": "build/src/pufo/Debug/libopenmpt.dll",
+          "bytes": 1709568,
+          "sha256": "9FA3131204F44A3B157F22F9F0AE11C5CCCB5BEFA37E91A2476567AA0F4B0D94"
+        },
+        {
+          "path": "build/src/pufo/Debug/openmpt-mpg123.dll",
+          "bytes": 281600,
+          "sha256": "F15EDD24576D88FA08A153C4A7F9D9D7956449E4FC67758D660AD35D9E1696DF"
+        },
+        {
+          "path": "build/src/pufo/Debug/openmpt-ogg.dll",
+          "bytes": 31744,
+          "sha256": "BBEEA26588404A00AE964F1C4ACEB6D6474E5885F8337491A4C69E29E8516EB6"
+        },
+        {
+          "path": "build/src/pufo/Debug/openmpt-vorbis.dll",
+          "bytes": 765440,
+          "sha256": "7393D017E2930D57C12C016DE21C6FA658F862481758BA394823F6AC5E013DF2"
+        },
+        {
+          "path": "build/src/pufo/Debug/openmpt-zlib.dll",
+          "bytes": 90112,
+          "sha256": "966D96E9AAF5CBD9E1B600435AF1180A3A643ACE17A0E782A5BECF378B25445B"
+        },
+        {
+          "path": "build/tests/Debug/libopenmpt.dll",
+          "bytes": 1709568,
+          "sha256": "9FA3131204F44A3B157F22F9F0AE11C5CCCB5BEFA37E91A2476567AA0F4B0D94"
+        },
+        {
+          "path": "build/tests/Debug/openmpt-mpg123.dll",
+          "bytes": 281600,
+          "sha256": "F15EDD24576D88FA08A153C4A7F9D9D7956449E4FC67758D660AD35D9E1696DF"
+        },
+        {
+          "path": "build/tests/Debug/openmpt-ogg.dll",
+          "bytes": 31744,
+          "sha256": "BBEEA26588404A00AE964F1C4ACEB6D6474E5885F8337491A4C69E29E8516EB6"
+        },
+        {
+          "path": "build/tests/Debug/openmpt-vorbis.dll",
+          "bytes": 765440,
+          "sha256": "7393D017E2930D57C12C016DE21C6FA658F862481758BA394823F6AC5E013DF2"
+        },
+        {
+          "path": "build/tests/Debug/openmpt-zlib.dll",
+          "bytes": 90112,
+          "sha256": "966D96E9AAF5CBD9E1B600435AF1180A3A643ACE17A0E782A5BECF378B25445B"
+        }
+      ],
+      "gamePdb": {
+        "path": "build/src/pufo/Debug/pocketufo.pdb",
+        "sha256": "03C1CA5D584D32BCD75AE18EB13947E15E1164A4AD17834DCE476C81669DAD58"
+      },
+      "runtimeTestsRun": false
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --clean-first --parallel 2",
+      "exitCode": 0,
+      "diagnostics": [],
+      "log": {
+        "path": ".workers/luna-mission-init-audit/release-full-clean-compile.log",
+        "sha256": "952A093BFEAE8FE826A0275585CB5B37AA62010983EF30154E7569E453305456"
+      },
+      "linkedExecutableCount": 68,
+      "executables": [
+        {
+          "target": "pocketufo",
+          "path": "build/src/pufo/Release/pocketufo.exe",
+          "bytes": 1238016,
+          "sha256": "1E998CBBA4E05C8AE536B01BFDDA327E069F4FD6F0E3097ADB29B179E6A93DB3"
+        },
+        {
+          "target": "test_data",
+          "path": "build/tests/Release/test_data.exe",
+          "bytes": 31232,
+          "sha256": "6D3E1DD8321079D15210626CDE66CCBBC67B8B3E672FA3A2F94D860319516506"
+        },
+        {
+          "target": "test_ptrarray",
+          "path": "build/tests/Release/test_ptrarray.exe",
+          "bytes": 16896,
+          "sha256": "84345A0184D84D8DFD21A99ECB997B3AEBDC66974620512A5D68AA87126349AB"
+        },
+        {
+          "target": "test_rand",
+          "path": "build/tests/Release/test_rand.exe",
+          "bytes": 15360,
+          "sha256": "04D24FD5437231C8520F251DF40224A113E5875ECB1AF709AC07AC7F19B95BB6"
+        },
+        {
+          "target": "test_texts_lang",
+          "path": "build/tests/Release/test_texts_lang.exe",
+          "bytes": 73728,
+          "sha256": "455684ECBE1AB697A27C573F8C29E57D387083068EFDC180767EE5701500D272"
+        },
+        {
+          "target": "test_render",
+          "path": "build/tests/Release/test_render.exe",
+          "bytes": 77824,
+          "sha256": "C482BE7A110F3B57CD0CB95628E2B691DD22C95D23DE4731760202CDCED466BD"
+        },
+        {
+          "target": "test_audio",
+          "path": "build/tests/Release/test_audio.exe",
+          "bytes": 41984,
+          "sha256": "D90D3BB068A4CE82783489A80E886EC73A397E7CF4AE24FEBE23B9E6E97AC12B"
+        },
+        {
+          "target": "test_mapcell",
+          "path": "build/tests/Release/test_mapcell.exe",
+          "bytes": 27136,
+          "sha256": "32CCEAD6D48FD868B7230542C5A4DF38C48D3F642B3A10A4F4C585C474C98CF1"
+        },
+        {
+          "target": "test_font",
+          "path": "build/tests/Release/test_font.exe",
+          "bytes": 50176,
+          "sha256": "69FD29F2023164939452B27B5BB4A6CC29C567D98866EFAFD6B347B536261139"
+        },
+        {
+          "target": "test_unit",
+          "path": "build/tests/Release/test_unit.exe",
+          "bytes": 145408,
+          "sha256": "974D8B72B18D4248A9654C59734863BAA3415857ECB1D16208494A7BB19504A5"
+        },
+        {
+          "target": "test_moveaction",
+          "path": "build/tests/Release/test_moveaction.exe",
+          "bytes": 45056,
+          "sha256": "93A681FA862BA9D062A73D969027C60798C81770D7596636BA5559641A653658"
+        },
+        {
+          "target": "test_mapctx",
+          "path": "build/tests/Release/test_mapctx.exe",
+          "bytes": 61952,
+          "sha256": "09D3D7D3F9ADC13ABFE5F0E771E143311436EC2B22F0D428E16BA3A567528E82"
+        },
+        {
+          "target": "test_tacthud",
+          "path": "build/tests/Release/test_tacthud.exe",
+          "bytes": 108544,
+          "sha256": "D1354B8C8ECD9EFC7DA6229CF35AF07CCCE6C72A51BCD24B75B1C472ED68F6DC"
+        },
+        {
+          "target": "test_titles",
+          "path": "build/tests/Release/test_titles.exe",
+          "bytes": 68608,
+          "sha256": "BFB04EF0081819E947F0F36A2314EF502137E75FE6ADF560899472FB2BC3BB6D"
+        },
+        {
+          "target": "test_renderframe",
+          "path": "build/tests/Release/test_renderframe.exe",
+          "bytes": 79872,
+          "sha256": "C4ED1D626F2746A9E256C9F73EA4FC81CDBB2255689FAF89611260B212672EAC"
+        },
+        {
+          "target": "test_mainmenu",
+          "path": "build/tests/Release/test_mainmenu.exe",
+          "bytes": 31232,
+          "sha256": "5AE930FE5BFAB7521B431A4DB4BC16FFC6E624B0C3CA6BB957AD3812581DD8EE"
+        },
+        {
+          "target": "test_cmdpads",
+          "path": "build/tests/Release/test_cmdpads.exe",
+          "bytes": 36352,
+          "sha256": "B18C8AFDD13581F1AC00EA5E9722AB2F6B6F7AF78282976F70C801D5ABE25D69"
+        },
+        {
+          "target": "test_tactstate",
+          "path": "build/tests/Release/test_tactstate.exe",
+          "bytes": 206336,
+          "sha256": "8743D6D7786A6C4457A14E9F9AA2749ED2C1074035425B0A2337144FFA20FA0A"
+        },
+        {
+          "target": "test_path",
+          "path": "build/tests/Release/test_path.exe",
+          "bytes": 42496,
+          "sha256": "432B55FC13700FFCE60D93A431F674964929483D99E9A23B491D4FCC7DBC88C2"
+        },
+        {
+          "target": "test_step",
+          "path": "build/tests/Release/test_step.exe",
+          "bytes": 40960,
+          "sha256": "47336EC073C6960CBB80FA3D2C1DA0BB504907DA9C8055894C2E7144F32AC2F3"
+        },
+        {
+          "target": "test_geopointer",
+          "path": "build/tests/Release/test_geopointer.exe",
+          "bytes": 119808,
+          "sha256": "1841EF8743E4D809C344F82EA67D504BFEC6B53C850797376504F8DB99DE0FAB"
+        },
+        {
+          "target": "test_smaphit",
+          "path": "build/tests/Release/test_smaphit.exe",
+          "bytes": 60928,
+          "sha256": "14F68C474C458A1BBC01906B9A29C850E8176E1603BD8526CFEA4A9D7C0AFA01"
+        },
+        {
+          "target": "test_closeui",
+          "path": "build/tests/Release/test_closeui.exe",
+          "bytes": 141312,
+          "sha256": "9771C5B3EAD5362409E83F065C02325E7BA88E75B363E23022BC266CD8F99ED1"
+        },
+        {
+          "target": "test_los",
+          "path": "build/tests/Release/test_los.exe",
+          "bytes": 32256,
+          "sha256": "0C1F566C4F073E2E972EF2E5AD59A732B79DAFCBB8CF218304B15E6BDABF3FA9"
+        },
+        {
+          "target": "test_boot",
+          "path": "build/tests/Release/test_boot.exe",
+          "bytes": 38912,
+          "sha256": "9720813D074150954C6FBD7CD3AF6500DC27082BD7DAD5C8CE475C97C8D00AAD"
+        },
+        {
+          "target": "test_template",
+          "path": "build/tests/Release/test_template.exe",
+          "bytes": 25600,
+          "sha256": "1475C77AB27864F5677A5F2E01B08006F725FCE57BF12B0A0E9110020ED2FE7E"
+        },
+        {
+          "target": "test_terrain",
+          "path": "build/tests/Release/test_terrain.exe",
+          "bytes": 58368,
+          "sha256": "882992986F3328B8C8FA8A428429C67BAF8615CA7B63125BA893D1E8367F26DD"
+        },
+        {
+          "target": "test_rmp",
+          "path": "build/tests/Release/test_rmp.exe",
+          "bytes": 37376,
+          "sha256": "29FFE79807906C603EEE35B03B731209611593372A489117EEBE4CCCC257B6CA"
+        },
+        {
+          "target": "test_tactctl",
+          "path": "build/tests/Release/test_tactctl.exe",
+          "bytes": 112640,
+          "sha256": "E49FB66AB409EF7AD1DE2D94424E8CB7D35907A7077D43B0389E91B6F474F8CD"
+        },
+        {
+          "target": "test_panel",
+          "path": "build/tests/Release/test_panel.exe",
+          "bytes": 77312,
+          "sha256": "45874003F4DD3102063F1B900B5AB637E73EE78A9852EC5D14F7C3E1725CBFA4"
+        },
+        {
+          "target": "test_turn",
+          "path": "build/tests/Release/test_turn.exe",
+          "bytes": 71168,
+          "sha256": "A4E2BC5038762AB02FD17AABCD4BD8FC6AF6AF49D3F428838E9C43322A7324D0"
+        },
+        {
+          "target": "test_save",
+          "path": "build/tests/Release/test_save.exe",
+          "bytes": 265728,
+          "sha256": "E62542B9688996038783A1811255E103DAE3243F240FD131DF9D83F4A10CBDF1"
+        },
+        {
+          "target": "test_save_world",
+          "path": "build/tests/Release/test_save_world.exe",
+          "bytes": 701952,
+          "sha256": "F77E9E0A600BE086AE41F79A5AEF6B5AB9A4656BF358B6731415C86ABF4CE2DC"
+        },
+        {
+          "target": "test_roster",
+          "path": "build/tests/Release/test_roster.exe",
+          "bytes": 46592,
+          "sha256": "A03EF4E59AE592256C90C5368386D801B24F27200C3DE1FB8627B4283F19337E"
+        },
+        {
+          "target": "test_tactui",
+          "path": "build/tests/Release/test_tactui.exe",
+          "bytes": 81920,
+          "sha256": "4C0585C41B1EE4DBEE192C33D54F5DEC2A6CD487AED0D5F6FE90E903EC04CF8F"
+        },
+        {
+          "target": "test_timer",
+          "path": "build/tests/Release/test_timer.exe",
+          "bytes": 38912,
+          "sha256": "F11FEFB076DBB587036838AF415B0F609B7873C4A99E549F3F341703AE389894"
+        },
+        {
+          "target": "test_tactend",
+          "path": "build/tests/Release/test_tactend.exe",
+          "bytes": 144896,
+          "sha256": "6FE8D19BBA2D084EDE9781361B73FE37965FF615530143CA68F0ABD018983045"
+        },
+        {
+          "target": "test_menu",
+          "path": "build/tests/Release/test_menu.exe",
+          "bytes": 31744,
+          "sha256": "4F7750F64606E52BE4AAFCBCC3BFD50A89ADE12F4DA1C4F635CDD3BF6DC291C4"
+        },
+        {
+          "target": "test_statusmsg",
+          "path": "build/tests/Release/test_statusmsg.exe",
+          "bytes": 23040,
+          "sha256": "9B0A1621F96D1D312159B88CDCAAACADB100125A2A83EEB5BEBAC32CBFF8EB30"
+        },
+        {
+          "target": "test_control",
+          "path": "build/tests/Release/test_control.exe",
+          "bytes": 41984,
+          "sha256": "14FC70154C19B6B5C9CEE6922F58E57651D231DB74DD404916CAEC8483737420"
+        },
+        {
+          "target": "test_uibank",
+          "path": "build/tests/Release/test_uibank.exe",
+          "bytes": 53248,
+          "sha256": "AEADA266EFF71C469F2AB7374AAFB7EE2D24BE0EB56BB8C87245516D3A012AD1"
+        },
+        {
+          "target": "test_constants",
+          "path": "build/tests/Release/test_constants.exe",
+          "bytes": 36352,
+          "sha256": "224DD19474ED7E56EDD68849E19E13ADE80B3DA05EFD6507B63A23134C0AB3F9"
+        },
+        {
+          "target": "test_enemyai",
+          "path": "build/tests/Release/test_enemyai.exe",
+          "bytes": 71168,
+          "sha256": "7BBADBE9635A79D1368E928D80E7D761FA07DF551FCB9160556C035E1582DAA1"
+        },
+        {
+          "target": "test_soldiername",
+          "path": "build/tests/Release/test_soldiername.exe",
+          "bytes": 20480,
+          "sha256": "6F7B3B989197662A796331ADE2C5707221E82F8AC83F9E2F8A9E66ABBFD6891F"
+        },
+        {
+          "target": "test_input",
+          "path": "build/tests/Release/test_input.exe",
+          "bytes": 160768,
+          "sha256": "824CE60373CA533F24A117DC86776F5A446945A0D2B2B1B5071A066CC4BC1064"
+        },
+        {
+          "target": "test_cursordir",
+          "path": "build/tests/Release/test_cursordir.exe",
+          "bytes": 13824,
+          "sha256": "B210150F0A2BEF9570ECCB25AE5D224FA5F158A45D4F13DCCB2D9CEFB82503A9"
+        },
+        {
+          "target": "test_modal",
+          "path": "build/tests/Release/test_modal.exe",
+          "bytes": 36352,
+          "sha256": "51883EBB97A7AE67AEEEC1982D39D13ED531BC2BD96068C059D948DA46DFEF12"
+        },
+        {
+          "target": "test_menubtn",
+          "path": "build/tests/Release/test_menubtn.exe",
+          "bytes": 54272,
+          "sha256": "2EE4DAE260E2A3924EFB4721A48A8EC9638B753C1004F873F7FD4C2632B83982"
+        },
+        {
+          "target": "test_isodraw",
+          "path": "build/tests/Release/test_isodraw.exe",
+          "bytes": 116736,
+          "sha256": "4F5992B7DFD9AD6325F53749897F2916C47D8BA1ECCC0BB9ABC579BC19446B39"
+        },
+        {
+          "target": "test_baseui",
+          "path": "build/tests/Release/test_baseui.exe",
+          "bytes": 1929728,
+          "sha256": "431B5D97888FE42902BDC018365A1F7F1A44736BC16E71F21DC27161587BC910"
+        },
+        {
+          "target": "test_plane",
+          "path": "build/tests/Release/test_plane.exe",
+          "bytes": 137728,
+          "sha256": "B8B5DC981E94E757FF6548AC9862A2CA4AFE8BD2D2735C3077B21EC6FAC1FB7E"
+        },
+        {
+          "target": "test_clock",
+          "path": "build/tests/Release/test_clock.exe",
+          "bytes": 16896,
+          "sha256": "BB6E97C4A5120FEA46260773A0F373897B67D6029DAB1A15B5082BD4C8EF0D50"
+        },
+        {
+          "target": "test_ship",
+          "path": "build/tests/Release/test_ship.exe",
+          "bytes": 104448,
+          "sha256": "A45E89FF101A0C5C9538DE20322D89A116214AF265C6C7B2C8F0CC30EB7D1823"
+        },
+        {
+          "target": "test_strateg",
+          "path": "build/tests/Release/test_strateg.exe",
+          "bytes": 149504,
+          "sha256": "74EC7B5ADE55AE43D9AE09724ED036DDD28996948B666C3F50300330E893835C"
+        },
+        {
+          "target": "test_geouimanage",
+          "path": "build/tests/Release/test_geouimanage.exe",
+          "bytes": 26624,
+          "sha256": "31DFF3A0F6C95818E15F075BA661C7A3031745A42C27C57A0977258A706FED78"
+        },
+        {
+          "target": "test_geoiinit",
+          "path": "build/tests/Release/test_geoiinit.exe",
+          "bytes": 75776,
+          "sha256": "D2362D2E14985CBFE3E2B4AE8581205A8F405917515FEFC9D3A5F75EA05A0B0C"
+        },
+        {
+          "target": "test_geoscapeframe",
+          "path": "build/tests/Release/test_geoscapeframe.exe",
+          "bytes": 1725952,
+          "sha256": "598FAFA789B69F8E5BFF186B8D4E33F050469497AF0D66DB7FF2B5B0AD15C815"
+        },
+        {
+          "target": "test_startnew",
+          "path": "build/tests/Release/test_startnew.exe",
+          "bytes": 84992,
+          "sha256": "9E9F69F69CE9A5351A7CCE466501B26F1CA24A137FC311B63703070BF0604560"
+        },
+        {
+          "target": "test_geoscape",
+          "path": "build/tests/Release/test_geoscape.exe",
+          "bytes": 1259520,
+          "sha256": "A9DF274F92AD9C8182455A305BC4F0A5E9FAC9B63C2EB6F2C328B03131BA3B66"
+        },
+        {
+          "target": "test_tactinit",
+          "path": "build/tests/Release/test_tactinit.exe",
+          "bytes": 151040,
+          "sha256": "BB13C3E07B89981BEF3ABD3D2D2EA49237F92A60D209044CB20B36B3037BD558"
+        },
+        {
+          "target": "test_ballist",
+          "path": "build/tests/Release/test_ballist.exe",
+          "bytes": 51712,
+          "sha256": "2B7ED6A6DB93B1392610ED961FC7EC947466C0377C9DBEA36CCFD2A17682CDE3"
+        },
+        {
+          "target": "test_combat",
+          "path": "build/tests/Release/test_combat.exe",
+          "bytes": 69120,
+          "sha256": "06DAD053563651E09836EBF6856986446DC1AA9E9EF2E71DF0CF36B02874112F"
+        },
+        {
+          "target": "test_vistry",
+          "path": "build/tests/Release/test_vistry.exe",
+          "bytes": 22528,
+          "sha256": "725BC137DD5F05A0B7132855B1EB7260A81D327D9D17505DC0678B680A5C788E"
+        },
+        {
+          "target": "test_fov",
+          "path": "build/tests/Release/test_fov.exe",
+          "bytes": 23552,
+          "sha256": "DE4961C1FE89360A140D4792DAEB3E7C29E2349551565D69C6ED16F8FC18DA3D"
+        },
+        {
+          "target": "test_vis",
+          "path": "build/tests/Release/test_vis.exe",
+          "bytes": 78336,
+          "sha256": "7CA46DB9E6C6C942677D4BD58E33BDD1554517F2C09A276F996BFC45E0E6526D"
+        },
+        {
+          "target": "test_blast",
+          "path": "build/tests/Release/test_blast.exe",
+          "bytes": 20992,
+          "sha256": "999765F1D2DBC40D0A2DE54FB5D49CD817BA9327B2993B133E061C492B7F2BFE"
+        },
+        {
+          "target": "test_invdrag",
+          "path": "build/tests/Release/test_invdrag.exe",
+          "bytes": 101888,
+          "sha256": "A50C862183FEC6EFD0885B576718F2215D6036204CE372FE71BC681085396DD2"
+        },
+        {
+          "target": "test_appshell",
+          "path": "build/tests/Release/test_appshell.exe",
+          "bytes": 905216,
+          "sha256": "2F7331DF87ADE160950698E52A5D18141B361C48B1B7B5C8A175DEECFF88FD5B"
+        }
+      ],
+      "runtimeDLLs": [
+        {
+          "path": "build/src/pufo/Release/libopenmpt.dll",
+          "bytes": 1709568,
+          "sha256": "9FA3131204F44A3B157F22F9F0AE11C5CCCB5BEFA37E91A2476567AA0F4B0D94"
+        },
+        {
+          "path": "build/src/pufo/Release/openmpt-mpg123.dll",
+          "bytes": 281600,
+          "sha256": "F15EDD24576D88FA08A153C4A7F9D9D7956449E4FC67758D660AD35D9E1696DF"
+        },
+        {
+          "path": "build/src/pufo/Release/openmpt-ogg.dll",
+          "bytes": 31744,
+          "sha256": "BBEEA26588404A00AE964F1C4ACEB6D6474E5885F8337491A4C69E29E8516EB6"
+        },
+        {
+          "path": "build/src/pufo/Release/openmpt-vorbis.dll",
+          "bytes": 765440,
+          "sha256": "7393D017E2930D57C12C016DE21C6FA658F862481758BA394823F6AC5E013DF2"
+        },
+        {
+          "path": "build/src/pufo/Release/openmpt-zlib.dll",
+          "bytes": 90112,
+          "sha256": "966D96E9AAF5CBD9E1B600435AF1180A3A643ACE17A0E782A5BECF378B25445B"
+        },
+        {
+          "path": "build/tests/Release/libopenmpt.dll",
+          "bytes": 1709568,
+          "sha256": "9FA3131204F44A3B157F22F9F0AE11C5CCCB5BEFA37E91A2476567AA0F4B0D94"
+        },
+        {
+          "path": "build/tests/Release/openmpt-mpg123.dll",
+          "bytes": 281600,
+          "sha256": "F15EDD24576D88FA08A153C4A7F9D9D7956449E4FC67758D660AD35D9E1696DF"
+        },
+        {
+          "path": "build/tests/Release/openmpt-ogg.dll",
+          "bytes": 31744,
+          "sha256": "BBEEA26588404A00AE964F1C4ACEB6D6474E5885F8337491A4C69E29E8516EB6"
+        },
+        {
+          "path": "build/tests/Release/openmpt-vorbis.dll",
+          "bytes": 765440,
+          "sha256": "7393D017E2930D57C12C016DE21C6FA658F862481758BA394823F6AC5E013DF2"
+        },
+        {
+          "path": "build/tests/Release/openmpt-zlib.dll",
+          "bytes": 90112,
+          "sha256": "966D96E9AAF5CBD9E1B600435AF1180A3A643ACE17A0E782A5BECF378B25445B"
+        }
+      ],
+      "gamePdb": null,
+      "runtimeTestsRun": false
+    }
+  },
+  "data": {
+    "main.dat": {
+      "bytes": 10198036,
+      "sha256": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A"
+    },
+    "lang.dat": {
+      "bytes": 457910,
+      "sha256": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+    }
+  }
+}

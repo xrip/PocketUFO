@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-29",
+  "status": "completed_static_review",
+  "baseline_source_fingerprint": "5482B3E589286F0AA8A7B6A04914845CB1009B287F393FA1C9302E58BFFB974E",
+  "evidence_rule": "Raw ARM instructions and data flow; IDA comments and prior test claims are not proof.",
+  "runtime_executed": false,
+  "batches": [
+    {
+      "id": "save-base-product-research",
+      "owner": "/root/fire_burst_reset_impl",
+      "addresses": [
+        "0x3F1FC",
+        "0x402C0",
+        "0x3F4F4",
+        "0x4062C",
+        "0x3F558",
+        "0x406E8"
+      ],
+      "report": ".workers/luna-body-save-base-product-research/RESULT.md",
+      "status": "completed_static_review",
+      "finding": "Pre-v3 BASES live-state join repaired and peer-reviewed; structural v2 World_LoadSlot regression compiles but remains unrun."
+    },
+    {
+      "id": "uibank",
+      "owner": "/root/mission_return_connection_audit",
+      "addresses": [
+        "0x11158",
+        "0x1117C",
+        "0x11320",
+        "0x16E04",
+        "0x16E40",
+        "0x16E7C",
+        "0x16EB8"
+      ],
+      "report": ".workers/luna-body-uibank/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "mapcell",
+      "owner": "/root/research_manufacture_connection",
+      "addresses": [
+        "0x49A0C",
+        "0x5487C",
+        "0x548A0",
+        "0x548B8",
+        "0x548C0",
+        "0x548D0",
+        "0x54944",
+        "0x549C8",
+        "0x54A90",
+        "0x54B14",
+        "0x54B58"
+      ],
+      "report": ".workers/luna-body-mapcell/RESULT.md",
+      "status": "completed_static_review"
+    }
+  ],
+  "compiled_candidate": "docs/parity/base-load-join-build-artifacts-2026-10-29.json"
+}

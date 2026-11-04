@@ -91,13 +91,18 @@ and is not reproduced.
 | Deviation | Reason |
 |---|---|
 | `DatFile`/`AssetReader` in-memory byte offsets differ from the IDB | pointers and `HANDLE` are 8 bytes on Win64 vs 4 on ILP32. These structs are never written to disk or shared with the original binary, so only named fields matter. The on-disk `DatDirEntry` stride is kept exact and static-asserted |
-| `malloc`/`free` instead of `operator new`/`delete` | the original is C++ with a global operator new/delete pair (`??2@YAPAXI@Z` / `??3@YAXPAX@Z` @ `0xa1168`/`0xa115c`) that just forwards to the CRT heap. `malloc` is the same allocator with less ceremony |
-| `pufo_strcpy`/`pufo_strncpy`/`pufo_strupr` instead of `strcpy`/`strncpy`/`_strupr` | identical behaviour; the MSVC CRT marks the originals deprecated and `/WX` rejects them. Written as small ASCII helpers rather than disabling `/WX` project-wide |
-| `DatFile_Exists` closes its find handle on the directory path | the original returns early without `FindClose` (`DatFile_Exists` @ `0x9f1bc`), leaking a handle per call. Not reproduced |
-| `MultiByteToWideChar` instead of `mbstowcs` | same ANSI→UTF-16 conversion; `mbstowcs` is locale-dependent and deprecated under `/WX` |
-| No save files exercised against real data | no `.sav` exists in the repo or the distribution CAB. The save path is verified by a write/close/reopen/read round trip with asserted on-disk bytes instead. Tagged as residual uncertainty |
+| `malloc`/`free` instead of `operator new`/`delete` | the original allocation/deallocation entries forward to external COREDLL imports. Their allocation-failure contract is unproven; successful allocations are adapted to caller-owned Win64 storage with explicit failure guards |
+| `pufo_strcpy`/`pufo_strncpy`/`pufo_strupr` instead of `strcpy`/`strncpy`/`_strupr` | valid-sized ASCII tag behavior is retained. The port also bounds selected copies; arbitrary overlong strings and locale-sensitive non-ASCII folding are outside this equivalence claim |
+| `DatFile_Exists` closes its find handle on the read-only path | raw `0x9F208` tests mask1 (`FILE_ATTRIBUTE_READONLY`), not the directory bit. A read-only match returns0 without `FindClose` in the original; the port preserves that answer and releases the find handle |
+| Guarded Open failure and partial-resource cleanup | the port checks selected conversion/open/read/allocation failures. Cleanup releases owned resources even before `nMode` is published; original unchecked failure behavior is not a successful-file contract |
+| `MultiByteToWideChar` instead of `mbstowcs` | the port uses explicit CP_ACP conversion. ASCII paths align; exact non-ASCII/locale equivalence remains unproven |
+| No original-save interoperability run | the user confirmed no original save sample is available. Port-generated roundtrips do not establish original-save runtime compatibility |
 
 ## Checks run
+
+The historical checks below predate the 2026-10-29 body-audit corrections to
+attributes, sharing and partial-open cleanup. Changed assertions remain unrun;
+their new compile evidence is recorded separately in the completion audit.
 
 | Check | Result |
 |---|---|

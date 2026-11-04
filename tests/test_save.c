@@ -1223,8 +1223,13 @@ static void TestShipsChunk(void)
     Check(OpenRead("test_ships.tmp", &dat), "  reopened for read");
     {
         i32 nCount = 0; /* the caller held no ships before the load */
+        env.nShipCount = 0; /* production World_FillCtorEnv leaves this zero before the read */
         Check(Save_ReadShips(&dat, apRead, &nCount, &env), "  read");
         CheckEqI32(nCount, 2, "the count comes back out of the reader");
+        CheckEqI32(env.nShipCount, 2,
+                   "  the ctor sees the saved total, as Map_nCraftCount does before Ship_ctor");
+        CheckEqI32(env.abTypeCounters[0], 2,
+                   "  the two type-0 ctor calls still advance the live type counter");
     }
     DatFile_Close(&dat);
 
@@ -1232,6 +1237,7 @@ static void TestShipsChunk(void)
     if (apRead[0] != NULL && apRead[1] != NULL) {
         CheckEqI32(apRead[0]->nFuel, 100, "nFuel round-trips");
         CheckEqI32(apRead[0]->nSlotIdx, 0, "nSlotIdx round-trips");
+        CheckEqI32(apRead[1]->nSlotIdx, 1, "the second file slot index round-trips");
         CheckEqI32(apRead[1]->anCargoQty[3], 15, "the cargo counts round-trip");
         CheckEqI32(apRead[1]->bType, 8, "bType IS saved in this chunk");
         CheckEqI32(apRead[1]->uRangeMax, 1235, "a non-zero craft type keeps its range max");
@@ -1242,12 +1248,15 @@ static void TestShipsChunk(void)
                    "craft type 0 has uRangeMax forced to 10000 after the load");
     }
 
-    /* The writer's column is the loop index, so ships 0 and 1 wrote aItemQty[0..1].
-     * Ship_Ctor is handed the count (2), so it zeroes aItemQty[2] of every object. */
-    CheckEqI32(aObj[0].aItemQty[0], 500, "ship 0 wrote object column 0");
-    CheckEqI32(aObj[1].aItemQty[1], 501, "ship 1 wrote object column 1");
-    CheckEqI32(aObj[0].aItemQty[2], 0, "the ctor zeroed aItemQty[2] of object 0");
-    CheckEqI32(aObj[1].aItemQty[2], 0, "the ctor zeroed aItemQty[2] of object 1");
+    /* The writer's columns follow array indices. With a stale ctor count of zero,
+     * the second constructor would clear column 0 after ship 0's saved column was
+     * read. The original clears the first unused column, 2, on every constructor. */
+    CheckEqI32(aObj[0].aItemQty[0], 500, "ship 0 wrote object 0 column 0");
+    CheckEqI32(aObj[1].aItemQty[0], 500, "ship 0 wrote object 1 column 0");
+    CheckEqI32(aObj[0].aItemQty[1], 501, "ship 1 wrote object 0 column 1");
+    CheckEqI32(aObj[1].aItemQty[1], 501, "ship 1 wrote object 1 column 1");
+    CheckEqI32(aObj[0].aItemQty[2], 0, "the ctor cleared unused column 2 of object 0");
+    CheckEqI32(aObj[1].aItemQty[2], 0, "the ctor cleared unused column 2 of object 1");
     CheckEqI32(aObj[0].aItemQty[3], 503, "column 3 was left alone");
     CheckEqI32(aObj[0].auPerBaseVal[0], 1000, "the ships chunk never touches auPerBaseVal");
 
@@ -2814,12 +2823,123 @@ static int  g_nLoadTactShut;
 static int  g_nLoadFreeAll;
 static int  g_nLoadTactInit;
 
+typedef struct LoadMissionCtxProbe {
+    const PadImage *pInitResult;
+    const PadImage *pAfterInit;
+    SpawnMissionCtx *pSeenCtx;
+    i32 nSequence;
+    i32 nInitMode;
+    i32 nInitOrder;
+    i32 nRefreshOrder;
+    const u16 *pnLoadedDayWord;
+    u8 *pLegacyProductBlock;
+    u32 *pLegacyProductA;
+    i32 *pLegacyProductB;
+    u16 *pLegacyProductC;
+    u16 *pLegacyManuf;
+    SaveResearchState *pLegacyResearch;
+    i32 nLegacyProductJoinCount;
+    i32 anLegacyProductJoinVersion[2];
+    i32 nLegacyResearchJoinCount;
+    u32 nLegacyScratchSuffixA;
+    i32 nLegacyScratchSuffixB;
+    u16 nLegacyScratchSuffixC;
+} LoadMissionCtxProbe;
+
+typedef struct LoadChunkJoinProbe {
+    const u8 *pProductBlock;
+    const SaveResearchState *pResearch;
+    i32 nOrder;
+} LoadChunkJoinProbe;
+
 static void LoadRenderProbe(void *pUser) { (void)pUser; g_nLoadRenders++; }
 static void LoadShutdownProbe(void *pUser) { (void)pUser; g_nLoadShutdowns++; }
 static void LoadInitUiProbe(i32 nMode, void *pUser) { (void)nMode; (void)pUser; g_nLoadInitUi++; }
+static void LoadInitUiMissionProbe(i32 nMode, void *pUser)
+{
+    LoadMissionCtxProbe *pProbe = (LoadMissionCtxProbe *)pUser;
+    pProbe->nInitMode = nMode;
+    pProbe->pAfterInit = pProbe->pInitResult;
+    pProbe->nInitOrder = ++pProbe->nSequence;
+    g_nLoadInitUi++;
+}
+static void LoadRefreshMissionCtxProbe(SpawnMissionCtx *pMissionCtx, void *pUser)
+{
+    LoadMissionCtxProbe *pProbe = (LoadMissionCtxProbe *)pUser;
+    pProbe->pSeenCtx = pMissionCtx;
+    pProbe->nRefreshOrder = ++pProbe->nSequence;
+    CheckEqI32(*pProbe->pnLoadedDayWord, 42,
+               "    the live day/spawn word is restored before legacy mission migration");
+    pMissionCtx->pTilemap = pProbe->pAfterInit;
+}
+static void LoadLegacyProductJoinProbe(i32 nSaveFmtVer, void *pUser)
+{
+    LoadMissionCtxProbe *pProbe = (LoadMissionCtxProbe *)pUser;
+    if (pProbe->pLegacyProductBlock == NULL || pProbe->pLegacyProductA == NULL
+        || pProbe->pLegacyProductB == NULL || pProbe->pLegacyProductC == NULL) {
+        return;
+    }
+
+    const i32 nWideBytes = (nSaveFmtVer >= 3) ? 6400 : 4608;
+    const i32 nWordBytes = (nSaveFmtVer >= 3) ? 3200 : 2304;
+    if (pProbe->nLegacyProductJoinCount < 2) {
+        pProbe->anLegacyProductJoinVersion[pProbe->nLegacyProductJoinCount] = nSaveFmtVer;
+    }
+    ++pProbe->nLegacyProductJoinCount;
+    if (nSaveFmtVer < 3) {
+        memcpy(&pProbe->nLegacyScratchSuffixA,
+               pProbe->pLegacyProductBlock + 1207 * 4, sizeof(pProbe->nLegacyScratchSuffixA));
+        memcpy(&pProbe->nLegacyScratchSuffixB,
+               pProbe->pLegacyProductBlock + 6400 + 1207 * 4, sizeof(pProbe->nLegacyScratchSuffixB));
+        memcpy(&pProbe->nLegacyScratchSuffixC,
+               pProbe->pLegacyProductBlock + 12800 + 1207 * 2, sizeof(pProbe->nLegacyScratchSuffixC));
+    }
+    memcpy(pProbe->pLegacyProductA, pProbe->pLegacyProductBlock, (size_t)nWideBytes);
+    memcpy(pProbe->pLegacyProductB, pProbe->pLegacyProductBlock + 6400, (size_t)nWideBytes);
+    memcpy(pProbe->pLegacyProductC, pProbe->pLegacyProductBlock + 12800, (size_t)nWordBytes);
+}
+
+static void LoadLegacyResearchJoinProbe(void *pUser)
+{
+    LoadMissionCtxProbe *pProbe = (LoadMissionCtxProbe *)pUser;
+    if (pProbe->pLegacyResearch == NULL || pProbe->pLegacyManuf == NULL) {
+        return;
+    }
+    ++pProbe->nLegacyResearchJoinCount;
+    memcpy(pProbe->pLegacyManuf, pProbe->pLegacyResearch->abHeadB, 0x900);
+}
 static void LoadTactShutProbe(void *pUser) { (void)pUser; g_nLoadTactShut++; }
 static void LoadFreeAllProbe(void *pUser) { (void)pUser; g_nLoadFreeAll++; }
 static bool LoadTactInitProbe(i32 nMode, void *pUser) { (void)nMode; (void)pUser; g_nLoadTactInit++; return true; }
+
+static void LoadJoinProductProbe(i32 nSaveFmtVer, void *pUser)
+{
+    const LoadChunkJoinProbe *pProbe = (const LoadChunkJoinProbe *)pUser;
+    CheckEqI32(nSaveFmtVer, 3, "  product join gets the loaded version");
+    CheckEqI32(pProbe->nOrder, 0, "  product joins before research");
+    Check(pProbe->pProductBlock[0] == 0xA1 && pProbe->pProductBlock[6400] == 0xB2
+              && pProbe->pProductBlock[12800] == 0xC3,
+          "  product join sees all three freshly read column starts");
+    CheckEqI32(pProbe->pProductBlock[16000], 0xEE,
+               "  product join leaves the non-written legacy tail alone");
+    ((LoadChunkJoinProbe *)pUser)->nOrder = 1;
+}
+
+static void LoadJoinResearchProbe(void *pUser)
+{
+    const LoadChunkJoinProbe *pProbe = (const LoadChunkJoinProbe *)pUser;
+    CheckEqI32(pProbe->nOrder, 1, "  research joins after product");
+    Check(pProbe->pResearch->abHeadA[0] == 0xD1
+              && pProbe->pResearch->abHeadB[0] == 0xD2
+              && pProbe->pResearch->abHeadC[0] == 0xD3
+              && pProbe->pResearch->abHeadD[0] == 0xD4,
+          "  research join sees all four freshly read headers");
+    Check(pProbe->pResearch->aTopics[0].wUnk0 == 0x1234
+              && pProbe->pResearch->aTopics[0].wProgress == 0x5678
+              && pProbe->pResearch->aTopics[0].bComplete == 1,
+          "  research join sees the freshly read topic record");
+    ((LoadChunkJoinProbe *)pUser)->nOrder = 2;
+}
 
 static void TestLoadGame(void)
 {
@@ -2855,6 +2975,8 @@ static void TestLoadGame(void)
     static i32 nSeed;
     static LoadGameHooks hooks;
     static LoadGameEnv env;
+    static LoadChunkJoinProbe joinProbe;
+    static u16 nLiveDayWord;
     static i32 nListMode;
     static i32 nSoldierCount;
     static u32 nTactVerOut;
@@ -2886,6 +3008,18 @@ static void TestLoadGame(void)
     strateg.pnUnk1865A8 = &nPtrA; /* Save_WriteStrateg hands these to DatFile_Write as addresses */
     strateg.pnUnk186594 = &nPtrB;
     timeRec.nSlot105 = 31536000u; /* one year, for the decode check */
+    timeRec.nWord1472C8 = 42;
+    nLiveDayWord = 0xDEAD;
+    aProduct[0] = 0xA1;
+    aProduct[6400] = 0xB2;
+    aProduct[12800] = 0xC3;
+    research.abHeadA[0] = 0xD1;
+    research.abHeadB[0] = 0xD2;
+    research.abHeadC[0] = 0xD3;
+    research.abHeadD[0] = 0xD4;
+    research.aTopics[0].wUnk0 = 0x1234;
+    research.aTopics[0].wProgress = 0x5678;
+    research.aTopics[0].bComplete = 1;
 
     /* The ship must be heap-allocated: Save_ReadShips frees the slots it is handed. */
     memset(&aShip, 0, sizeof(aShip));
@@ -2970,6 +3104,8 @@ static void TestLoadGame(void)
     DatFile_Close(&dat);
 
     /* Fresh state for the load: the readers re-read everything the writer wrote. */
+    memset(aProduct, 0xEE, sizeof(aProduct));
+    memset(&research, 0xEE, sizeof(research));
     memset(aGrid, 0, sizeof(aGrid));
     memset(aSiteState, 0, sizeof(aSiteState));
     memset(aRadarPct, 0, sizeof(aRadarPct));
@@ -3026,7 +3162,12 @@ static void TestLoadGame(void)
     hooks.pfnTactShutdown = LoadTactShutProbe;
     hooks.pfnGeoscapeUiFreeAll = LoadFreeAllProbe;
     hooks.pfnTactInitMission = LoadTactInitProbe;
-    hooks.pUser = NULL;
+    hooks.pfnJoinProductState = LoadJoinProductProbe;
+    hooks.pfnJoinResearchState = LoadJoinResearchProbe;
+    joinProbe.pProductBlock = aProduct;
+    joinProbe.pResearch = &research;
+    joinProbe.nOrder = 0;
+    hooks.pUser = &joinProbe;
 
     memset(&env, 0, sizeof(env));
     env.pszAppDir = "";
@@ -3067,6 +3208,7 @@ static void TestLoadGame(void)
     env.puShotObjectWords = aShotWords;
     env.pTimeRec = &timeRec;
     env.pTime = &clock;
+    env.pnAlienPoolAddend = &nLiveDayWord;
     env.pSpawnCtx = NULL;
     env.pMissionCtx = NULL;
     env.pbSpawnOnceFlag = NULL;
@@ -3080,10 +3222,12 @@ static void TestLoadGame(void)
     DatFile_ctor(&dat);
     CheckEqI32(LoadGame(&dat, &bad), 0, "LoadGame(missing slot) == 0");
     CheckEqI32(g_nLoadRenders, 0, "  and no frame was rendered for it");
+    CheckEqI32(joinProbe.nOrder, 0, "  a missing slot does not run chunk joins");
     DatFile_Close(&dat);
 
     DatFile_ctor(&dat);
     CheckEqI32(LoadGame(&dat, &env), 1, "LoadGame(sav7) == 1");
+    CheckEqI32(joinProbe.nOrder, 2, "  both chunk joins ran before load derivation");
     CheckEqI32(g_nLoadRenders, 1, "  one frame rendered first");
     CheckEqI32(g_nLoadInitUi, 0, "  screen 3 is not the start menu: no InitUI");
     /* 0x44D4C..0x44D84: bGeoscapeUi && !bGameState is the one teardown combination that
@@ -3122,6 +3266,7 @@ static void TestLoadGame(void)
     CheckEqI32(bAssaultFlag, 0, "  bCraftSelectAssaultFlag cleared");
     CheckEqI32((i32)timeRec.nSlot105, 31536000, "  the time chunk round-trips nSlot105");
     CheckEqI32(clock.nTotalSec, 31536000, "  and lands on the live clock");
+    CheckEqI32(nLiveDayWord, 42, "  the trailing time word lands on its live owner");
     CheckEqI32(clock.nYear, 2000, "  GameTime_Decode ran on the loaded clock (1999 + 1 year)");
     Check(aShotWords[29] == 0 && aShotWords[101] == 0, "  the shot object's words 29 and 101 zeroed");
     Check(aShotWords[30] == 0xEEEE, "  word 30 is past the nCraftCount-1 stores and stays");
@@ -3190,17 +3335,20 @@ static void TestLoadGameOldVersionMissionSeam(void)
     static u8 aSiteState[8];
     static i32 aRadarPct[8];
     static u16 aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* 3200 bytes, auManufCol */
-    static u16 aResearchCols[144];
+    static u16 aResearchCols[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];
     static u8 uResearchEntries;
     static u16 aShotWords[128];
     static Ship aShip;
     static Ship *apShips[1];
-    static BaseRec aBase;
-    static BaseRec *apBases[1];
+    static BaseRec aBase[PUFO_FAC_BASE_COUNT];
+    static BaseRec *apBases[PUFO_FAC_BASE_COUNT];
     static ObjectRecFull aObj[5];
     static ObjectRecFull *apObj[5];
     static Soldier aSol[1];
     static Soldier *apSol[1];
+    static u32 aLiveProductA[1600];
+    static i32 aLiveProductB[1600];
+    static u16 aLiveProductC[1600];
     static SaveBasesState bases;
     static SaveResearchState research;
     static SaveSmapState smap;
@@ -3216,6 +3364,8 @@ static void TestLoadGameOldVersionMissionSeam(void)
     static MissionSiteRec aSites[2];
     static StrategSpawnCtx spawnCtx;
     static SpawnMissionCtx missionCtx;
+    static LoadMissionCtxProbe missionProbe;
+    static u16 nLiveDayWord;
     static LoadGameHooks hooks;
     static LoadGameEnv env;
     static SaveGameInput in;
@@ -3271,24 +3421,23 @@ static void TestLoadGameOldVersionMissionSeam(void)
     memset(&hooks, 0, sizeof(hooks));
     hooks.pfnRenderFrame = LoadRenderProbe;
     hooks.pfnStartUiShutdown = LoadShutdownProbe;
-    hooks.pfnGeoscapeInitUi = LoadInitUiProbe;
+    hooks.pfnGeoscapeInitUi = LoadInitUiMissionProbe;
     hooks.pfnTactShutdown = LoadTactShutProbe;
     hooks.pfnGeoscapeUiFreeAll = LoadFreeAllProbe;
     hooks.pfnTactInitMission = LoadTactInitProbe;
-    hooks.pUser = NULL;
+    hooks.pUser = &missionProbe;
+    hooks.pfnRefreshMissionCtx = LoadRefreshMissionCtxProbe;
+    hooks.pfnJoinProductState = LoadLegacyProductJoinProbe;
+    hooks.pfnJoinResearchState = LoadLegacyResearchJoinProbe;
+    memset(&missionProbe, 0, sizeof(missionProbe));
+    missionProbe.pInitResult = &tiles;
+    missionProbe.pnLoadedDayWord = &nLiveDayWord;
 
     memset(&aShip, 0, sizeof(aShip));
     aShip.bId = 9;
     aShip.bCraftType = 2;
     aShip.bHomeBase = 0;
     aShip.bIntercepting = 0;   /* nothing claims the type-5 item, so the purge is free to drop it */
-
-    memset(&aBase, 0, sizeof(aBase));
-    aBase.bUnk4 = 4;
-    aBase.bSlot = 0;
-    aBase.nUnk8 = 120;         /* the home base's coordinates, which a created item gets */
-    aBase.nUnk12 = 80;
-    apBases[0] = &aBase;
 
     memset(aObj, 0, sizeof(aObj));
     for (int i = 0; i < 5; ++i) {
@@ -3299,6 +3448,7 @@ static void TestLoadGameOldVersionMissionSeam(void)
     for (int nRun = 0; nRun < 2; ++nRun) {
         char szSlot[16];
         StrategItem *pItem;
+        const i32 nFixtureBaseCount = (nRun == 1) ? 7 : 1;
 
         printf("  run %d: %s\n", nRun, (nRun == 0) ? "the purge" : "the teleport and the mission start");
 
@@ -3311,12 +3461,43 @@ static void TestLoadGameOldVersionMissionSeam(void)
         memset(&timeRec, 0, sizeof(timeRec));
         memset(&strateg, 0, sizeof(strateg));
         memset(aProduct, 0, sizeof(aProduct));
-        bases.bBaseCount = 1;
+        memset(aBase, 0, sizeof(aBase));
+        for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+            aBase[b].bUnk4 = 4;
+            aBase[b].bSlot = (u8)b;
+            aBase[b].nUnk8 = 120; /* the home base's coordinates, which a created item gets */
+            aBase[b].nUnk12 = 80;
+            apBases[b] = (b < nFixtureBaseCount) ? &aBase[b] : NULL;
+        }
+        bases.bBaseCount = (i8)nFixtureBaseCount;
         strateg.bSaveVersion = 2;      /* the byte every version-<3 gate reads (0x18655C) */
         strateg.nStrategCount = 1;
         strateg.pnUnk1865A8 = &nPtrA;
         strateg.pnUnk186594 = &nPtrB;
         timeRec.nSlot105 = 31536000u;  /* one year, and the value the mission's epoch must carry */
+        timeRec.nWord1472C8 = 42;
+        nLiveDayWord = 0xDEAD;
+
+        if (nRun == 1) {
+            const i32 nTopic = 7;
+            const i32 nMappedItem = 130;
+            const i32 nMapBase6Topic7 = 144 * 6 + nTopic;
+            const u32 nA = 0xA1B2C3D4u;
+            const u32 nB = 0x10203040u;
+            const u16 nC = 0x5263u;
+            const u16 nD = 0x0A0Bu;
+
+            /* SaveGame's writer emits the current 16,000-byte product payload. Arrange its first
+             * 12,672 bytes so the v2 reader sees A, B, C and the facility-to-item map at its old
+             * sequential read sizes. */
+            memcpy(aProduct + nTopic * 4, &nA, sizeof(nA));
+            memcpy(aProduct + 4608 + nTopic * 4, &nB, sizeof(nB));
+            memcpy(aProduct + 9216 + nTopic * 2, &nC, sizeof(nC));
+            aProduct[11520 + nTopic] = (u8)nMappedItem;
+            aProduct[11520 + nMapBase6Topic7] = (u8)nMappedItem;
+            memcpy(research.abHeadB + nTopic * 2, &nD, sizeof(nD));
+            missionCtx.nBaseCount = nFixtureBaseCount;
+        }
 
         apShips[0] = (Ship *)malloc(sizeof(Ship));
         Check(apShips[0] != NULL, "    test ship allocated");
@@ -3393,6 +3574,43 @@ static void TestLoadGameOldVersionMissionSeam(void)
         memset(&view, 0, sizeof(view));
         memset(&clock, 0, sizeof(clock));
         memset(&shipEnv, 0, sizeof(shipEnv));
+        if (nRun == 1) {
+            aGrid[480] = 3;                /* base 0 workshop */
+            aGrid[480 + 144 * 6] = 3;      /* base 6 workshop */
+            uResearchEntries = PUFO_RESEARCH_TOPIC_COUNT;
+            aManuf[1207] = 0x0C0D;         /* unsaved auManufCol suffix: base 6, topic 7 */
+
+            memset(aLiveProductA, 0, sizeof(aLiveProductA));
+            memset(aLiveProductB, 0, sizeof(aLiveProductB));
+            memset(aLiveProductC, 0, sizeof(aLiveProductC));
+            aLiveProductA[1207] = 0xAABBCCDDu; /* current live suffix must seed the old-reader scratch */
+            aLiveProductB[1207] = 0x11223344;
+            aLiveProductC[1207] = 0x7788;
+            memcpy(aProduct, aLiveProductA, 6400);
+            memcpy(aProduct + 6400, aLiveProductB, 6400);
+            memcpy(aProduct + 12800, aLiveProductC, 3200);
+
+            missionProbe.pLegacyProductBlock = aProduct;
+            missionProbe.pLegacyProductA = aLiveProductA;
+            missionProbe.pLegacyProductB = aLiveProductB;
+            missionProbe.pLegacyProductC = aLiveProductC;
+            missionProbe.pLegacyManuf = aManuf;
+            missionProbe.pLegacyResearch = &research;
+            missionProbe.nLegacyProductJoinCount = 0;
+            missionProbe.anLegacyProductJoinVersion[0] = -1;
+            missionProbe.anLegacyProductJoinVersion[1] = -1;
+            missionProbe.nLegacyResearchJoinCount = 0;
+        } else {
+            uResearchEntries = 0;
+            missionProbe.pLegacyProductBlock = NULL;
+            missionProbe.pLegacyProductA = NULL;
+            missionProbe.pLegacyProductB = NULL;
+            missionProbe.pLegacyProductC = NULL;
+            missionProbe.pLegacyManuf = NULL;
+            missionProbe.pLegacyResearch = NULL;
+            missionProbe.nLegacyProductJoinCount = 0;
+            missionProbe.nLegacyResearchJoinCount = 0;
+        }
         memset(&bases, 0, sizeof(bases));
         bases.bBaseCount = 0;
         memset(&strateg, 0, sizeof(strateg));
@@ -3414,11 +3632,13 @@ static void TestLoadGameOldVersionMissionSeam(void)
         bMissionCount = 99;
         bAssaultFlag = 0;
         bSpawnOnce = 0;                /* 0x162028: 0 skips the refill RemoveAt would run */
-        nUiScreen = 3;
+        nUiScreen = (nRun == 1) ? 17 : 3;
         nListMode = 0;
         nSoldierCount = 0;
         nSeed = 5;
-        uResearchEntries = 0;
+        if (nRun != 1) {
+            uResearchEntries = 0;
+        }
 
         memset(&env, 0, sizeof(env));
         env.pszAppDir = "";
@@ -3459,10 +3679,23 @@ static void TestLoadGameOldVersionMissionSeam(void)
         env.puShotObjectWords = (u16 *)aShotWords;
         env.pTimeRec = &timeRec;
         env.pTime = &clock;
+        env.pnAlienPoolAddend = &nLiveDayWord;
         env.pSpawnCtx = &spawnCtx;
         env.pMissionCtx = &missionCtx;
         env.pbSpawnOnceFlag = &bSpawnOnce;
         env.pHooks = &hooks;
+
+        missionProbe.nSequence = 0;
+        missionProbe.nInitMode = -1;
+        missionProbe.nInitOrder = 0;
+        missionProbe.nRefreshOrder = 0;
+        missionProbe.pSeenCtx = NULL;
+        missionProbe.pAfterInit = (nRun == 0) ? &tiles : NULL;
+        missionCtx.pTilemap = (nRun == 0) ? &tiles : NULL;
+        if (nRun == 1) {
+            Check(missionCtx.pTilemap == NULL,
+                  "    fresh version-2 fixture starts with no UI tilemap");
+        }
 
         g_nOldSpawnCalls = 0;
         g_nOldEventCalls = 0;
@@ -3478,6 +3711,46 @@ static void TestLoadGameOldVersionMissionSeam(void)
         DatFile_ctor(&dat);
         CheckEqI32(LoadGame(&dat, &env), 1, "    LoadGame == 1");
         DatFile_Close(&dat);
+
+        if (nRun == 1) {
+            Check(missionProbe.nInitOrder > 0 &&
+                      missionProbe.nRefreshOrder > missionProbe.nInitOrder,
+                  "    mission context refresh runs after InitUI returns");
+            CheckEqI32(missionProbe.nInitMode, 1, "    LoadGame calls InitUI in rebuild mode");
+            Check(missionProbe.pSeenCtx == &missionCtx && missionCtx.pTilemap == &tiles,
+                  "    refresh installs the tilemap InitUI published before legacy migration");
+            CheckEqI32(missionProbe.nLegacyResearchJoinCount, 1,
+                       "    research headers publish before the old product migration");
+            CheckEqI32(missionProbe.nLegacyProductJoinCount, 2,
+                       "    old product data joins before and after migration");
+            CheckEqI32(missionProbe.anLegacyProductJoinVersion[0], 2,
+                       "    the first product join keeps the short v2 read extent");
+            CheckEqI32(missionProbe.anLegacyProductJoinVersion[1], 3,
+                       "    the second product join publishes the converted v3 extent");
+            Check(missionProbe.nLegacyScratchSuffixA == 0xAABBCCDDu
+                      && missionProbe.nLegacyScratchSuffixB == 0x11223344
+                      && missionProbe.nLegacyScratchSuffixC == 0x7788,
+                  "    preloaded live suffix values survive the short reader into migration scratch");
+
+            Check(aLiveProductA[130] == 0xA1B2C3D4u
+                      && aLiveProductB[130] == 0x10203040
+                      && aLiveProductC[130] == 0x5263,
+                  "    v2 topic 7 maps its A/B/C values to item 130 on base 0");
+            Check(aLiveProductA[1330] == 0xAABBCCDDu
+                      && aLiveProductB[1330] == 0x11223344
+                      && aLiveProductC[1330] == 0x7788,
+                  "    base 6 topic 7 uses the preloaded suffix and maps to item 130");
+            Check(aLiveProductA[7] == 0 && aLiveProductB[7] == 0 && aLiveProductC[7] == 0
+                      && aLiveProductA[1207] == 0 && aLiveProductB[1207] == 0
+                      && aLiveProductC[1207] == 0,
+                  "    source topic columns are cleared after the facility-to-item remap");
+            Check(aManuf[130] == 0x0A0B && aManuf[1330] == 0x0C0D
+                      && Base_CountActiveManuf(aManuf, PUFO_RESEARCH_TOPIC_COUNT) == 0x0A0B
+                      && Base_CountActiveManuf(aManuf + 1200, PUFO_RESEARCH_TOPIC_COUNT) == 0x0C0D,
+                  "    the remapped manufacturing column feeds the later needed-flag counts");
+            Check(aGrid[444] == 1 && aGrid[444 + 144 * 6] == 1,
+                  "    load marks workshops from the converted base-0 and base-6 allocations");
+        }
 
         if (nRun == 0) {
             /* 0x44E8C: the purge dropped the unclaimed type-5 item. The one item left is the craft
@@ -3537,7 +3810,9 @@ oldNext:
             free(list.apItems[i]);
         }
         free(apShips[0]);   /* allocated by Save_ReadShips */
-        free(apBases[0]);   /* allocated by Save_ReadBases */
+        for (i32 b = 0; b < nFixtureBaseCount; ++b) {
+            free(apBases[b]); /* allocated by Save_ReadBases */
+        }
         (void)DeleteFileA(szSlot);
     }
 }

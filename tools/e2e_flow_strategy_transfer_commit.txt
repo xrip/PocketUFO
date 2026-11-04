@@ -1,0 +1,43 @@
+# Commit one live item from base 0 to base 1 through the transfer screen.
+load 1
+state transfer_commit_loaded
+click 180 266
+tick 2
+click 220 15
+tick 2
+strategystate transfer_source_selected
+click 180 274
+tick 20
+strategystate transfer_open
+dump strategy_transfer_open.ppm
+press 220 43
+tick 1
+release
+tick 1
+strategystate transfer_destination_selected
+dump strategy_transfer_destination.ppm
+@TRANSFER_SCROLL_CLICKS@
+strategystate transfer_scrolled
+dump strategy_transfer_scrolled.ppm
+
+# The runner substitutes the measured row y from its read-only screen-10 trace.
+# The > column adds one item to the pending transfer.
+click 191 @TRANSFER_ROW_Y@
+tick 1
+strategystate transfer_item_queued
+dump strategy_transfer_item_queued.ppm
+click @TRANSFER_COMMIT_X@ @TRANSFER_COMMIT_Y@
+tick 2
+strategystate transfer_committed
+dump strategy_transfer_committed.ppm
+
+# Close screen 10, then screen 1, through their live close widgets before saving.
+click 231 8
+tick 2
+strategystate transfer_returned_to_base_strip
+click 201 11
+tick 2
+strategystate transfer_before_save
+grid 1
+save 0
+state transfer_saved

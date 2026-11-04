@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Recreation coverage: which original functions are cited as evidence by the port.
+"""Source-citation inventory: which original functions are named by the port.
 
 The port's rule is that every recreated behaviour must name the original function
 it answers to, in a header comment of the form "@ 0xADDR". This script scans the
@@ -11,9 +11,9 @@ Usage (from the repo root):
     python docs/parity/coverage.py --list     # also list covered names
     python docs/parity/coverage.py --gaps     # list uncovered functions per subsystem
 
-This is a citation-based measure, not a proof of correctness: it answers "is this
-original function accounted for?" not "is the port right?". Correctness evidence
-lives in the per-subsystem parity notes and the tests.
+These are inventory counts, not proof of raw behavior parity, reachable runtime paths,
+or assertion coverage. A direct-call or test-name entry in the teeth ledger is call-graph
+inventory, not proof that an assertion checks the function. See coverage-metrics.md.
 """
 import argparse
 import os
@@ -32,7 +32,7 @@ INVENTORY = os.path.join("docs", "idb", "inventory-grouped.tsv")
 ARTIFACTS = os.path.join("docs", "idb", "image-artifacts.tsv")
 
 ARTIFACT_CLASSES = ("import-thunk", "code-thunk", "empty-stub", "init-term-entry",
-                    "crt-runtime", "debug-print-stub", "decode-artifact")
+                    "crt-runtime", "debug-print-stub", "decode-artifact", "arm-context-restore")
 
 
 def load_inventory():
@@ -107,34 +107,40 @@ def main():
     art = load_artifacts()
 
     gaps = set(by_addr) - hit
-    art_gaps = sorted(a for a in gaps if a in art)
-    real_gaps = sorted(a for a in gaps if a not in art)
-    cited_art = sorted(a for a in art if a in hit)
-    art_bytes = sum(by_addr[a][1] for a in art_gaps)
-    behaviour_total = len(by_addr) - len(art_gaps)
-    behaviour_cited = len(hit) - len(cited_art)
+    artifact_addrs = {a for a in art if a in by_addr}
+    behaviour_addrs = set(by_addr) - artifact_addrs
+    art_gaps = sorted(a for a in gaps if a in artifact_addrs)
+    real_gaps = sorted(a for a in gaps if a not in artifact_addrs)
+    cited_art = sorted(a for a in artifact_addrs if a in hit)
+    artifact_bytes = sum(by_addr[a][1] for a in artifact_addrs)
+    uncited_artifact_bytes = sum(by_addr[a][1] for a in art_gaps)
+    behaviour_total = len(behaviour_addrs)
+    behaviour_cited = len(hit & behaviour_addrs)
 
     total_bytes = sum(v[1] for v in by_addr.values())
     hit_bytes = sum(by_addr[a][1] for a in hit)
 
-    print("functions cited: %d / %d (%.1f%%)" % (len(hit), len(by_addr),
-                                                 100.0 * len(hit) / len(by_addr)))
-    print("bytes cited:     %d / %d (%.1f%%)" % (hit_bytes, total_bytes,
-                                                 100.0 * hit_bytes / total_bytes))
-    print("no-behaviour artifacts uncited: %d functions / %d bytes (%s)"
-          % (len(art_gaps), art_bytes, ARTIFACTS))
-    print("behaviour-bearing functions: %d total, %d cited, %d uncited"
+    print("source-cited inventory functions: %d / %d (%.1f%%)" % (len(hit), len(by_addr),
+                                                                  100.0 * len(hit) / len(by_addr)))
+    print("source-cited inventory bytes:     %d / %d (%.1f%%)" % (hit_bytes, total_bytes,
+                                                                  100.0 * hit_bytes / total_bytes))
+    print("no-behaviour artifacts, all rows (citation-independent): %d functions / %d bytes (%s)"
+          % (len(artifact_addrs), artifact_bytes, ARTIFACTS))
+    print("uncited no-behaviour artifacts: %d functions / %d bytes"
+          % (len(art_gaps), uncited_artifact_bytes))
+    print("behaviour-bearing inventory entries: %d total, %d source-cited, %d uncited"
           % (behaviour_total, behaviour_cited, len(real_gaps)))
+    print("citation and direct-call counts are inventory metadata, not parity, reachability, or assertion coverage")
     print()
-    print("%-12s %8s %9s %9s %7s" % ("subsystem", "cited", "behaviour", "artifacts", "pct"))
-    counts = Counter(by_addr[a][2] for a in hit)
+    print("%-12s %14s %10s %10s %12s" % ("subsystem", "behaviour cited", "behaviour", "artifacts", "citation %"))
+    behaviour_counts = Counter(by_addr[a][2] for a in (hit & behaviour_addrs))
     totals = Counter(v[2] for v in by_addr.values())
-    art_counts = Counter(by_addr[a][2] for a in art_gaps)
+    art_counts = Counter(by_addr[a][2] for a in artifact_addrs)
     for sub, tot in sorted(totals.items(), key=lambda kv: -kv[1]):
-        n = counts.get(sub, 0)
+        n = behaviour_counts.get(sub, 0)
         na = art_counts.get(sub, 0)
         beh = tot - na
-        print("%-12s %8d %9d %9d %6s"
+        print("%-12s %14d %10d %10d %11s"
               % (sub, n, beh, na, "%.0f%%" % (100.0 * n / beh) if beh else "-"))
 
     if unknown:
@@ -146,21 +152,21 @@ def main():
 
     if args.list:
         print()
-        print("covered functions:")
+        print("source-cited inventory functions:")
         for a in sorted(hit, key=lambda x: by_addr[x][2]):
             name, _sz, sub = by_addr[a]
             print("  %-12s %-8s %s" % (sub, a, name))
 
     if args.gaps:
         print()
-        print("uncited functions that carry game behaviour:")
+        print("uncited behavior-bearing inventory entries:")
         if not real_gaps:
             print("  (none)")
         for a in real_gaps:
             name, sz, sub = by_addr[a]
             print("  %-12s %-8s %7d  %s" % (sub, a, sz, name))
         print()
-        print("uncited functions that carry no behaviour, by class:")
+        print("uncited no-behavior artifacts, by class:")
         for cls in ARTIFACT_CLASSES:
             members = [a for a in art_gaps if art[a][0] == cls]
             if not members:
@@ -192,13 +198,15 @@ def main():
                 bad.append("uncited function %s (%s) is neither an artifact nor ported"
                            % (a, by_addr[a][0]))
         for a in cited_art:
-            print("note: %s (%s) is listed as no-behaviour but the port cites it"
+            print("note: %s (%s) is cited in source but remains a no-behavior artifact; "
+                  "the citation stays in inventory counts and is excluded from behavior counts"
                   % (a, by_addr[a][0]))
         for b in bad:
             print("CHECK FAIL:", b)
         if bad:
             return 1
-        print("check: OK -- %d artifact rows, %d uncited functions, %d of them real gaps"
+        print("inventory consistency check: OK -- %d artifact rows, %d uncited inventory entries, "
+              "%d uncited behavior-bearing entries"
               % (len(art), len(gaps), len(real_gaps)))
     return 0
 

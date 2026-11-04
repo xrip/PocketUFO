@@ -1,0 +1,385 @@
+{
+  "date": "2026-10-28",
+  "binary": "pufobeta.exe",
+  "time_reader": [
+    [
+      "0x41600",
+      "10402de9",
+      "PUSH            {R4,LR}"
+    ],
+    [
+      "0x41604",
+      "ac109fe5",
+      "LDR             R1, =aTime"
+    ],
+    [
+      "0x41608",
+      "88009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x4160c",
+      "e67701eb",
+      "BL              DatFile_FindChunk"
+    ],
+    [
+      "0x41610",
+      "9c409fe5",
+      "LDR             R4, =nGameTotalSec"
+    ],
+    [
+      "0x41614",
+      "0420a0e3",
+      "MOV             R2, #4"
+    ],
+    [
+      "0x41618",
+      "78009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x4161c",
+      "0410a0e1",
+      "MOV             R1, R4"
+    ],
+    [
+      "0x41620",
+      "1c7801eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x41624",
+      "6c009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x41628",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x4162c",
+      "041084e2",
+      "ADD             R1, R4, #4"
+    ],
+    [
+      "0x41630",
+      "187801eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x41634",
+      "74109fe5",
+      "LDR             R1, =nTimeLastTickDaySec"
+    ],
+    [
+      "0x41638",
+      "0420a0e3",
+      "MOV             R2, #4"
+    ],
+    [
+      "0x4163c",
+      "54009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x41640",
+      "147801eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x41644",
+      "60109fe5",
+      "LDR             R1, =nTimeLastTickHourSec"
+    ],
+    [
+      "0x41648",
+      "0420a0e3",
+      "MOV             R2, #4"
+    ],
+    [
+      "0x4164c",
+      "44009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x41650",
+      "107801eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x41654",
+      "4c109fe5",
+      "LDR             R1, =nTimeLastTickMinSec"
+    ],
+    [
+      "0x41658",
+      "0420a0e3",
+      "MOV             R2, #4"
+    ],
+    [
+      "0x4165c",
+      "34009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x41660",
+      "0c7801eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x41664",
+      "38109fe5",
+      "LDR             R1, =nTimeUnk15963C"
+    ],
+    [
+      "0x41668",
+      "0420a0e3",
+      "MOV             R2, #4"
+    ],
+    [
+      "0x4166c",
+      "24009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x41670",
+      "087801eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x41674",
+      "24109fe5",
+      "LDR             R1, =nTimeMonthEpochSec"
+    ],
+    [
+      "0x41678",
+      "0420a0e3",
+      "MOV             R2, #4"
+    ],
+    [
+      "0x4167c",
+      "14009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x41680",
+      "047801eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x41684",
+      "10109fe5",
+      "LDR             R1, =nAlienPoolAddend"
+    ],
+    [
+      "0x41688",
+      "0220a0e3",
+      "MOV             R2, #2"
+    ],
+    [
+      "0x4168c",
+      "04009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x41690",
+      "1040bde8",
+      "POP             {R4,LR}"
+    ],
+    [
+      "0x41694",
+      "ff7701ea",
+      "B               DatFile_Read"
+    ],
+    [
+      "0x41698",
+      "20821500",
+      "DCD unk_158220"
+    ],
+    [
+      "0x4169c",
+      "c8721400",
+      "DCD nAlienPoolAddend"
+    ],
+    [
+      "0x416a0",
+      "40961500",
+      "DCD nTimeMonthEpochSec"
+    ],
+    [
+      "0x416a4",
+      "3c961500",
+      "DCD nTimeUnk15963C"
+    ],
+    [
+      "0x416a8",
+      "08961500",
+      "DCD nTimeLastTickMinSec"
+    ],
+    [
+      "0x416ac",
+      "0c961500",
+      "DCD nTimeLastTickHourSec"
+    ],
+    [
+      "0x416b0",
+      "10961500",
+      "DCD nTimeLastTickDaySec"
+    ],
+    [
+      "0x416b4",
+      "18961500",
+      "DCD nGameTotalSec"
+    ],
+    [
+      "0x416b8",
+      "d4af0a00",
+      "DCD aTime"
+    ]
+  ],
+  "call_order": {
+    "refs": [
+      "0x44da0",
+      "0x189b68"
+    ],
+    "calls": [
+      [
+        "0x44d94",
+        "b4eeffeb",
+        "BL              Save_ReadShips"
+      ],
+      [
+        "0x44d98",
+        "abefffeb",
+        "BL              Save_ReadSmap"
+      ],
+      [
+        "0x44d9c",
+        "6af0ffeb",
+        "BL              Save_ReadStrateg"
+      ],
+      [
+        "0x44da0",
+        "16f2ffeb",
+        "BL              Save_ReadTime"
+      ],
+      [
+        "0x44da4",
+        "0000d4e5",
+        "LDRB            R0, [R4]"
+      ],
+      [
+        "0x44da8",
+        "ff3010e2",
+        "ANDS            R3, R0, #0xFF"
+      ],
+      [
+        "0x44dac",
+        "0200001a",
+        "BNE             loc_44DBC"
+      ],
+      [
+        "0x44db0",
+        "0700a0e1",
+        "MOV             R0, R7"
+      ],
+      [
+        "0x44db4",
+        "40f2ffeb",
+        "BL              Save_ReadSoldiers"
+      ],
+      [
+        "0x189b5c",
+        "02a00140",
+        "DCD 0x4001A002"
+      ],
+      [
+        "0x189b60",
+        "cc150400",
+        "DCD StrategItem_AllocAdd"
+      ],
+      [
+        "0x189b64",
+        "010d0040",
+        "DCD 0x40000D01"
+      ],
+      [
+        "0x189b68",
+        "00160400",
+        "DCD Save_ReadTime"
+      ],
+      [
+        "0x189b6c",
+        "012f0040",
+        "DCD 0x40002F01"
+      ],
+      [
+        "0x189b70",
+        "bc160400",
+        "DCD Save_ReadSoldiers"
+      ],
+      [
+        "0x189b74",
+        "02250340",
+        "DCD 0x40032502"
+      ],
+      [
+        "0x189b78",
+        "50230400",
+        "DCD Save_WriteSoldiers"
+      ],
+      [
+        "0x189b7c",
+        "02d40240",
+        "DCD 0x4002D402"
+      ]
+    ]
+  },
+  "mission_init_order": [
+    [
+      "0x44e14",
+      "95cba0e3d4c08ce3",
+      "MOV             R12, #(byte_138E8C - 0x1139B8)"
+    ],
+    [
+      "0x44e1c",
+      "0c00c5e7",
+      "STRB            R0, [R5,R12]"
+    ],
+    [
+      "0x44e20",
+      "0100a0e3",
+      "MOV             R0, #1"
+    ],
+    [
+      "0x44e24",
+      "c9ddffeb",
+      "BL              Tact_InitMission"
+    ],
+    [
+      "0x44e28",
+      "00011fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x44e2c",
+      "d06801eb",
+      "BL              DatFile_Close"
+    ],
+    [
+      "0x44e30",
+      "c4059fe5",
+      "LDR             R0, =nGameTotalSec"
+    ],
+    [
+      "0x44e34",
+      "666000eb",
+      "BL              GameTime_Decode"
+    ]
+  ],
+  "idb_before": {
+    "ea": "0x41684",
+    "comment": "pBuf"
+  }
+}

@@ -244,12 +244,12 @@ static void TestTrace(void)
 
     /* An empty grid: a short horizontal ray reaches its target. */
     Check(Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
-                       0, 0, 0, 8, 0, 0, NULL, NULL),
+                       0, 0, 0, 8, 0, 0, NULL, NULL, NULL, NULL),
           "  clear horizontal ray reaches the target");
 
     /* Same start and end: the bound is 0, so the first iteration reaches it. */
     Check(Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
-                       4, 4, 4, 4, 4, 4, NULL, NULL),
+                       4, 4, 4, 4, 4, 4, NULL, NULL, NULL, NULL),
           "  zero-length ray returns true");
 
     /* Wall it off: put a blocking floor in the path around x = 4. */
@@ -261,7 +261,7 @@ static void TestTrace(void)
         grid.aLoft[0] = 0x0800u; /* bit 11 -> x = 4 */
         grid.aCells[0][0][0].pFloorSpr = pFloor;
         Check(!Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
-                            0, 0, 0, 8, 0, 0, NULL, NULL),
+                            0, 0, 0, 8, 0, 0, NULL, NULL, NULL, NULL),
               "  ray blocked by the floor voxel");
         grid.aCells[0][0][0].pFloorSpr = NULL;
     }
@@ -274,9 +274,9 @@ static void TestTrace(void)
         bool bBothInRange = true;
 
         (void)Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
-                           0, 0, 0, 0, 0, 5, &nYaw1, NULL);
+                           0, 0, 0, 0, 0, 5, NULL, NULL, &nYaw1, NULL);
         (void)Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
-                           0, 0, 0, 0, 0, 5, &nYaw2, NULL);
+                           0, 0, 0, 0, 0, 5, NULL, NULL, &nYaw2, NULL);
         /* Game_RandU16(0x3E) returns 0..61. */
         if (nYaw1 > 61 || nYaw2 > 61) {
             bBothInRange = false;
@@ -297,9 +297,68 @@ static void TestTrace(void)
             }
         }
         (void)Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
-                           0, 0, 0, 30, 0, 0, NULL, &nCost);
+                           0, 0, 0, 30, 0, 0, NULL, NULL, NULL, &nCost);
         Check(nCost >= 0, "  cost is reported");
     }
+}
+
+static void TestTraceUnitEndpointExclusions(void)
+{
+    LosGrid grid;
+    Soldier viewer;
+    Soldier target;
+    Soldier third;
+    MapCell *pStart;
+    MapCell *pMiddle;
+    MapCell *pEnd;
+
+    printf("Map_TraceLos unit endpoint exclusions\n");
+    LosGrid_Init(&grid);
+    memset(&viewer, 0, sizeof(viewer));
+    memset(&target, 0, sizeof(target));
+    memset(&third, 0, sizeof(third));
+
+    viewer.nUnitType = 0;
+    viewer.bFacing = 0;
+    target.nUnitType = 0;
+    target.bFacing = 0;
+    third.nUnitType = 0;
+    third.bFacing = 0;
+    pStart  = &grid.aCells[0][0][0];
+    pMiddle = &grid.aCells[0][0][1];
+    pEnd    = &grid.aCells[0][0][2];
+    pStart->pUnit = &viewer;
+    pMiddle->pUnit = NULL;
+    pEnd->pUnit = &target;
+    viewer.pCell = pStart;
+    target.pCell = pEnd;
+
+    /* Type 0, facing 0, flags 0 uses unit row 0. The ray's y/z sub-row is 136;
+     * all x bits make both endpoint occupants intersect the ray. */
+    grid.aUnit[136] = 0xFFFFu;
+    Check(Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
+                       8, 8, 8, 40, 8, 8, &viewer, &target, NULL, NULL),
+          "  excluding the live viewer and target leaves a clear occupied-endpoint ray");
+    Check(!Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
+                        8, 8, 8, 40, 8, 8, &viewer, NULL, NULL, NULL),
+          "  an occupied target endpoint blocks when it is not excluded");
+    Check(!Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
+                        8, 8, 8, 40, 8, 8, NULL, &target, NULL, NULL),
+          "  an occupied viewer endpoint blocks when it is not excluded");
+
+    pMiddle->pUnit = &third;
+    third.pCell = pMiddle;
+    Check(!Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
+                        8, 8, 8, 40, 8, 8, &viewer, &target, NULL, NULL),
+          "  a third live unit still blocks between excluded endpoints");
+    pMiddle->pUnit = NULL;
+    third.pCell = NULL;
+
+    pMiddle->pFloorSpr = MakeSprite(&grid, 1, 0, 0, 0, 0);
+    grid.aLoft[24] = 0xFFFFu; /* ySub=8, sprite row 1: every x bit blocks */
+    Check(!Map_TraceLos(&grid.tables, LosGrid_Lookup, &grid,
+                        8, 8, 8, 40, 8, 8, &viewer, &target, NULL, NULL),
+          "  terrain still blocks between excluded endpoints");
 }
 
 /* Exercise the real mask tables when the assets are available. */
@@ -390,6 +449,7 @@ int main(void)
     TestVoxelGeometry();
     TestOccupant();
     TestTrace();
+    TestTraceUnitEndpointExclusions();
     TestRealTables();
     TestLoftLoader();
 

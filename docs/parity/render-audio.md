@@ -3,13 +3,65 @@
 Task: recreate rendering (software surface, blitter, palette) and audio.
 Tests: `tests/test_render.c`, `tests/test_audio.c`.
 
+## Current audio status (2026-10-25)
+
+- The Win64 backend decodes the shipped Impulse Tracker songs with the
+  OpenMPT C API and mixes music with up to 32 SFX voices into a 22000 Hz mono
+  WinMM stream, matching the original `FSOUND_Init(22000, 32, 0)` rate. Mono PCM
+  SFX retain their WAV source rates and are linearly resampled into the mix.
+  FMOD's exact interpolation, channel allocation, panning, and stereo output are
+  not established or reproduced here.
+- The fresh Release [device run](../../.workers/luna-verifier/phase3-audio-device-detail.log)
+  exits successfully and records a 22000 Hz WinMM open, nonzero `BACK0.IT` PCM
+  completing through waveOut, and the sample reaching its final output buffer.
+  The focused9 run also passes the source-duration and startup checks. These
+  are audio checks; the full current Release/Debug port gates remain open.
+- The device gate waits up to eight seconds for nonzero `BACK0.IT` PCM to be
+  mixed, submitted, and completed through waveOut. It then checks TACT2 through
+  the same output path and checks that waveOut opened at 22000 Hz. A separate
+  rate test checks that four 11025 Hz source frames consume four output frames
+  at 11025 Hz and eight output frames at 22000 Hz. These checks prove PCM reached
+  completed WinMM buffers; they do not prove that speakers produced audible sound.
+- Part 168 (2026-11-04, user-reported on real hardware): the sound played about
+  twice as slow as it should, with crackle. The mixer math was not at fault; the
+  output queue was 2 x 256 frames (11.6 ms per buffer) and the mixer thread woke
+  later than a buffer drained, so the Windows audio engine starved. Measured on
+  this host before the fix: 50 buffer completions/s against the nominal 86/s, and
+  the 1190 ms TACT2 sample finished in 2080 ms. The queue is now 8 x 512 frames
+  (~186 ms); measured after: 172 completions in 4009 ms (42.9/s against a nominal
+  43/s) and TACT2 at 1389 ms. The device gate now asserts both: completions/s in
+  32..55 and TACT2 wall time within 2/3..3/2 of its WAV header duration. Queue
+  depth is Win64 adaptation; FMOD3's internal buffering is a fmodce.dll detail.
+- Part 168 continued (same day, user-directed): the crackle persisted, so the
+  resampler was removed. The device opens at the shipped WAVs' native
+  **11025 Hz** (all 35 measured 11025 Hz / 8-bit / mono), voices read source
+  frames 1:1, OpenMPT renders music at 11025, and the loader refuses WAVs at a
+  non-native rate. The queue is 8 x 256 frames (~186 ms); measured 172
+  completions in 4000 ms (43/s nominal) and TACT2 at 1389 ms. The music
+  **loop setting** (user-requested, ON by default) rides the original
+  `FMUSIC_SetLooping` slot @ `0x9E1F8`: the original only ever passes 1, at
+  load. With the setting OFF, a finished track hands over to the next
+  (`Sound_MusicProgress`, frame tick; port-side backend query
+  `pfnMusicFinished`, which FMOD 3 never needed). The row sits in the
+  options screen's volume tab; the byte is persisted in the savegame, in a
+  port-side `1_24gset` chunk (1 byte, written after every original chunk,
+  read as optional -- absent means loop on), not the registry.
+- OpenMPT is pinned in `cmake/PufoOpenMPT.cmake` to version
+  `0.8.9+release.dev.windows.vs2022`, SHA-256
+  `A23E375E576E3A6997FFEEB6CF34488E9020E2A5D8226856B02628B6A87C5E8E`.
+  The official package is BSD-3-Clause licensed; CMake copies the decoder,
+  helper DLLs, and license notices beside native executables.
+- `FMUSIC_OptimizeChannels(16, 10)` has no direct OpenMPT equivalent and remains
+  a no-op. The music test without a device checks decoding only; the device gate
+  checks the real mixer and output queue.
+
 ## Files created and the functions they answer to
 
 | Created | Original evidence |
 |---|---|
 | `render/pufo_render.{h,c}` | `SoftSurf_ctor` @ `0x9f96c`, `dtor` @ `0x9f97c`, `AllocPixels` @ `0x9f9a4`, `GetWidth` @ `0x9f994`, `GetHeight` @ `0x9f99c`, `GetPixels` @ `0x9fcb4`, `Render_SetTarget` @ `0x9faa4`, `Render_BlitSoft_LoRes` @ `0x9fa7c`, `HiRes` @ `0x9fa90`, `Render_Frame` @ `0x22310`, `Blit_LoadSurface` @ `0xa3964`, `Blit_SetTargetParams` @ `0xa39ac`, `Blit_CopyRows` @ `0xa3a14`, `Blit_CopyRows_HiRes` @ `0xa3bb8`, `BlitParams_Set` @ `0xa47b0`, `Blit_SetSrcRect` @ `0xa3f5c`, `Store_dword_A3028` @ `0xa3624`, `SoftSurf_Blit_Inner` @ `0xa47d0`, `BlitFlip_Inner` @ `0xa49a0`, `BlitIndexed_Inner` @ `0xa306c`, `BlitIndexedKeyed_Inner` @ `0xa3638`, `FillRect_Inner` @ `0xa3f94`, `BlitIndexed` @ `0x9e9f4`, `BlitIndexedKeyed` @ `0x9ea34`, `Blit` @ `0x9e558`, `BlitFlip` @ `0x9e590`, `BlitSrcRect` @ `0x9ebf8`, `BlitRect` @ `0x9ebb0`, `BlitCopyRaw` @ `0xa3db8`, `PadImage_ctor` @ `0x11000`, `Load` @ `0x11020`, `Blit` @ `0x110dc`, `Palette_Load` @ `0x3e47c` |
 | `audio/pufo_audio.{h,c}` | `Sound_Play` @ `0x9e0c0`, `Sound_LoadAndPlayMusic` @ `0x9e130`, `Sound_InitAndLoadSamples` @ `0x9e268`, `Sound_Shutdown` @ `0x9e3d4`, `Sound_ApplyMusicVolume` @ `0x9e454`, `Sound_ApplySfxVolume` @ `0x9e4dc` |
-| `audio/pufo_audio_winmm.{h,c}` (Part 108) | the `PufoAudioBackend` slots the six functions above fill: `FSOUND_Init` @ `0x9E27C`, `FSOUND_SetHWND` @ `0x9E2C0`, `FSOUND_Sample_Load` @ `0x9E38C`, `FSOUND_Sample_SetMode` @ `0x9E398`, `FSOUND_Sample_Free` @ `0x9E3F4`, `FSOUND_PlaySound` @ `0x9E118`, `FSOUND_SetSFXMasterVolume` @ `0x9E518`, `FSOUND_SetPaused` @ `0x9E548`, `FMUSIC_LoadSongEx` @ `0x9E1E8`, `FMUSIC_SetLooping` @ `0x9E1F8`, `FMUSIC_OptimizeChannels` @ `0x9E208`, `FMUSIC_PlaySong` @ `0x9E210`, `FMUSIC_SetMasterVolume` @ `0x9E498`, `FMUSIC_SetPaused` @ `0x9E230`/`0x9E4C8`, `FMUSIC_FreeSong` @ `0x9E420`, `FSOUND_Close` @ `0x9E424` (unconditional, even with no module) |
+| `audio/pufo_audio_winmm.{h,c}` (Part 108) | the `PufoAudioBackend` slots the six functions above fill: `FSOUND_Init` @ `0x9E2A8`, `FSOUND_SetHWND` @ `0x9E2C0`, `FSOUND_Sample_Load` @ `0x9E38C`, `FSOUND_Sample_SetMode` @ `0x9E398`, `FSOUND_Sample_Free` @ `0x9E3F4`, `FSOUND_PlaySound` @ `0x9E118`, `FSOUND_SetSFXMasterVolume` @ `0x9E518`, `FSOUND_SetPaused` @ `0x9E548`, `FMUSIC_LoadSongEx` @ `0x9E1E8`, `FMUSIC_SetLooping` @ `0x9E1F8`, `FMUSIC_OptimizeChannels` @ `0x9E208`, `FMUSIC_PlaySong` @ `0x9E210`, `FMUSIC_SetMasterVolume` @ `0x9E498`, `FMUSIC_SetPaused` @ `0x9E230`/`0x9E4C8`, `FMUSIC_FreeSong` @ `0x9E420`, `FSOUND_Close` @ `0x9E424` (unconditional, even with no module) |
 | `game/pufo_options.{h,c}` | `Options_SaveToRegistry` @ `0x114d8` (all twelve keys), volume mapping from `Sound_Apply*Volume` |
 | `platform/pufo_reg.{h,c}` | `Reg_SetString` @ `0x9ed0c`, `Reg_GetString` @ `0x9edbc` |
 | `util/pufo_str.{h,c}` | `_strupr` @ `0xa60e4` + the CRT copies, factored out of `dat`/`asset`/`render` |
@@ -108,7 +160,7 @@ Palette ground truth was extracted independently from `main.dat`:
 |---|---|---|
 | Samples load as `"tact" + n + ".wav"`, stopping at the first gap | `Sound_InitAndLoadSamples` @ `0x9e268`; prefix `"tact"` confirmed at the `GameUI_InitStartup` call site @ `0x38d38` | 35 samples, matching main.dat `TACT0..TACT34.WAV` with no gaps |
 | Sample load mode `0xA000`, then `SetMode(1)` | `FSOUND_Sample_Load`/`SetMode` call args | both asserted |
-| Music loads as `"back" + n + ".it"`, mode `0x8000` | `Sound_LoadAndPlayMusic` @ `0x9e130` | mode `0x8000`, loop on, optimize 16 channels, played |
+| Music loads as `"back" + n + ".it"`, mode `0x8000` | `Sound_LoadAndPlayMusic` @ `0x9e130` | Fake-backend test checks the call order and arguments; a separate real-backend test decodes all five shipped IT modules |
 | Music volume step → level `4*(12*step+4)-1` | `Sound_ApplyMusicVolume` @ `0x9e454` | steps 0,3,5 → 15,159,255 |
 | Muted volume is `-1`, not 0 | same function: `v = muted ? 0 : 12*step+4` then `4*v-1` | muted → `-1` |
 | SFX volume also sends the unpause-all sentinel `-3` | `Sound_ApplySfxVolume` @ `0x9e4dc` | `-3` observed |
@@ -122,10 +174,14 @@ Palette ground truth was extracted independently from `main.dat`:
 
 | Deviation | Reason |
 |---|---|
-| FMOD is behind `PufoAudioBackend`; the shipped backend is winmm `waveOut` (`audio/pufo_audio_winmm.c`), the no-op stub stays the fallback | `fmodce.dll` is an ARM/WinCE FMOD 3 build and cannot be linked on Win64 (CLAUDE.md boundary). `Winmm_Init` answers the seam where `FSOUND_Init` was: it fails exactly as a missing DLL would, and `Sound_InitAndLoadSamples` sets `g_bSoundInitReady` either way (`0x9E2D4`), so the game's control flow is unchanged whichever backend is installed |
-| The device opens at 11025 Hz mono, not FMOD's 22000 mix rate | measured across all 35 shipped samples: every `TACT*.WAV` in main.dat is PCM / 1 channel / 11025 Hz / 8-bit. FMOD resampled internally; winmm does not, and playing them at the mix rate would sound an octave up. 8-bit PCM (unsigned, centred at 128) is widened to signed 16-bit at load without changing its level |
-| `.it` music is load / flag / mute state only, nothing audible | no MOD playback on Win64. `Winmm_MusicLoad` checks the `IMPT` magic so a non-module image fails the load the way `FMUSIC_LoadSongEx` would, and the non-NULL handle is what `g_bMusicLoaded` (`0x9E244`) and `Sound_HasMusic` answer from |
-| One waveOut queue slot per sample | `FSOUND_PlaySound` returned a channel handle and every caller in the image ignores it; winmm writes one prepared header per sample, so a sample that is still sounding is not overlapped (no channel multiplexing) |
+| FMOD is behind `PufoAudioBackend`; the native backend is winmm `waveOut`, with the no-op stub still available for control-flow tests | `fmodce.dll` is an ARM/WinCE FMOD 3 build and cannot be linked on Win64 (CLAUDE.md boundary). `Winmm_Init` reports a missing or unavailable waveOut device as init failure; `Sound_InitAndLoadSamples` still sets `g_bSoundInitReady` either way (`0x9E2D4`), matching the original game-side control flow |
+| The WinMM stream is mono and its SFX resampler uses linear interpolation | The raw `FSOUND_Init` call requests 22000 Hz, 32 channels, flags 0. WAV source rates are retained and converted by a per-voice fractional phase step; OpenMPT renders at the requested output rate. The original FMOD interpolation curve, stereo mixing, and channel policy remain unknown |
+| `.it` music is decoded and mixed by OpenMPT | The shipped `BACK0.IT..BACK4.IT` begin with `IMPM`; the previous `IMPT` check and dummy handle were wrong. `TestShippedMusicDecode` loads each file through the backend and checks nonzero decoded PCM. The device gate additionally checks that nonzero music PCM was mixed, submitted, and completed through waveOut; neither test proves acoustic audibility |
+| OpenMPT is a pinned third-party decoder | `cmake/PufoOpenMPT.cmake` pins the official 0.8.9+release.dev.windows.vs2022 Win64 binary package by SHA-256. It provides `inc/libopenmpt/libopenmpt.h`, `lib/amd64/libopenmpt.lib`, `bin/amd64/libopenmpt.dll`, and helper DLLs `openmpt-mpg123`, `openmpt-vorbis`, `openmpt-zlib`, `openmpt-ogg`. The package and helper-library license notices are copied beside native executables; the decoder is BSD-3-Clause licensed |
+| SFX use 32 software voices | `FSOUND_Init` receives a maximum of 32 channels. The backend mixes 32 overlapping SFX voices and music into one output stream; exact FMOD voice allocation, channel controls, panning, and mixing are not claimed |
+| WinMM output queue is 8 buffers x 256 frames (~186 ms) | FMOD3's internal buffering is a fmodce.dll detail and is not reproduced. The first port shape (2 x 256 frames, 11.6 ms per buffer) starved the Windows audio engine on a Win11 host: audible crackle with the stream stretched ~1.75x, measured 50 completions/s against a nominal 86 (Part 168). Queue depth is the adaptation knob |
+| The device runs at the WAVs' native 11025 Hz, not FSOUND_Init's 22000 mixrate, and the loader refuses non-native rates | User-directed 2026-11-04: no resampler. All 35 shipped `TACT*.WAV` measure 11025 Hz / 8-bit / mono, so SFX play 1:1 and OpenMPT renders music at 11025. FMOD opened its device at the mixrate and resampled internally; that interpolation and its artifacts are gone, replaced by native playback (Part 168) |
+| Music loop setting: a row in the options volume tab, saved in the savegame | Port-side feature (user request), not in the original. It drives the original `FMUSIC_SetLooping` slot @ `0x9E1F8` (the original only passes 1, at load). OFF means "when the track ends, play the next" -- the end signal is the port-side backend query `pfnMusicFinished` (OpenMPT repeat count 0 runs the module out). The byte persists in the port-side save chunk `1_24gset` (1 byte, appended after the original chunks, reader treats absence as loop-on), per the user's instruction; no registry key (Part 168) |
 | `FSOUND_SetHWND` has no counterpart | `Winmm_SetWindow` is a documented no-op: `waveOutOpen` takes no window argument |
 | `Sound_Shutdown` frees only non-NULL sample handles | the original's loop (0x9E3F0..0x9E408) calls `FSOUND_Sample_Free` on every slot including a NULL one; the port skips NULL. Stricter than the original in the same family as the `Sound_Play` index guard below |
 | `Render_BlitSurface` always uses the 1:1 row copy; `Blit_CopyRows_HiRes` is not ported | HiRes wrote each source pixel as a 2x2 block to fill a 480x640 panel. The Win64 target presents the 240x320 surface at integer scale instead, so the HiRes path has no equivalent target |
@@ -152,8 +208,8 @@ Palette ground truth was extracted independently from `main.dat`:
 |---|---|
 | `cmake --build build --config Release` | 0 errors, 0 warnings (`/W4 /WX`) |
 | `build/tests/Release/test_render.exe` | **PASS, 0 failures** (43 checks) |
-| `build/tests/Release/test_audio.exe` | **PASS, 0 failures** (72 checks, Part 108: the live mute-byte pair and the winmm device gate) |
-| `sh tools/audiocheck.sh` | `audiocheck: TACT2 played through winmm and the device reported it done` — the device gate opens `WAVE_MAPPER` at 11025 Hz mono, loads all 35 shipped `TACT*.WAV` and waits on the completion event; a host with no wave device prints `device gate skipped` and stays green |
+| Latest parent run: `build/tests/Release/test_audio.exe` | **PASS, 0 failures** (2026-11-04, Part 168: queue, native 11025 Hz, loop setting); five shipped `.it` modules decoded; the loader accepts a 11025 Hz image and refuses a 22050 Hz one; the loop-off byte makes the load set looping 1 (0x9E1F8) then 0, a finished track hands over to the next while a playing track and a looping setting do not; the device gate observed nonzero `BACK0.IT` PCM, 172 completions in 4000 ms (43/s nominal at 11025 Hz / 256-frame buffers), and TACT2 completing in 1389 ms against its 1190 ms header duration. `test_geoscapeframe`: the volume tab draws the loop row and its press toggles the setting (3 checks). Full `ctest`: 67/67 |
+| `sh tools/audiocheck.sh` | Not run separately. It requires both the music-buffer and TACT2 completion checks. Passing those checks proves PCM passed through the WinMM queue, not that speakers made audible sound; a host with no wave device skips the device gate |
 | `build/tests/Release/test_data.exe` | **PASS, 0 failures** (data layer still green) |
 | `build/src/pufo/Release/pocketufo.exe` | links |
 

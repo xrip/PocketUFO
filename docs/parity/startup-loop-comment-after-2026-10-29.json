@@ -1,0 +1,5 @@
+{
+  "ea": "0x38D88",
+  "comment": "Pad free loop. R3 = 0xE34 is rebuilt by MOV/ORR at 0x38D98..0x38D9C inside the inner loop; the inner step is ADD R4,R4,#4 (four BYTES) and the outer step is ADD R7,R7,#0x20 (one UiControl). So each of 15 groups frees three ADJACENT dwords at pBank + 32*i + 0xE34. 0xE34 = 32*113 + 0x14, which is widget 113 pPad0, so the three dwords are pPad0/pPad1/pPad2 of one widget and the outer step moves to the next widget: widgets 113..127. Hex-Rays renders this as v2[113].pPad0 with v2 = v2 + 4, which wrongly reads as three pointers four widgets apart.",
+  "saved": true
+}

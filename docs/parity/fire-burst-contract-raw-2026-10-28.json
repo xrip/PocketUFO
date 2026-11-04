@@ -1,0 +1,1502 @@
+{
+  "date": "2026-10-28",
+  "binary": "pufobeta.exe",
+  "scope": "Fire enqueue entry clears, successful shot-count reset, caller stack argument and reaction-fire bank loads",
+  "entry": [
+    [
+      "0x4b080",
+      "0dc0a0e1",
+      "MOV             R12, SP"
+    ],
+    [
+      "0x4b084",
+      "0a002de9",
+      "PUSH            {R1,R3}"
+    ],
+    [
+      "0x4b088",
+      "f05f2de9",
+      "PUSH            {R4-R12,LR}"
+    ],
+    [
+      "0x4b08c",
+      "0050a0e1",
+      "MOV             R5, R0"
+    ],
+    [
+      "0x4b090",
+      "60809fe5",
+      "LDR             R8, =Map_bTactFlag"
+    ],
+    [
+      "0x4b094",
+      "0000a0e3",
+      "MOV             R0, #0"
+    ],
+    [
+      "0x4b098",
+      "54409fe5",
+      "LDR             R4, =pMapTactical"
+    ],
+    [
+      "0x4b09c",
+      "15caa0e3f0c08ce3",
+      "MOV             R12, #(pThrowTargetUnit - 0x1139B8)"
+    ],
+    [
+      "0x4b0a4",
+      "0c0088e7",
+      "STR             R0, [R8,R12]"
+    ],
+    [
+      "0x4b0a8",
+      "0390a0e1",
+      "MOV             R9, R3"
+    ],
+    [
+      "0x4b0ac",
+      "000094e5",
+      "LDR             R0, [R4]"
+    ],
+    [
+      "0x4b0b0",
+      "0030a0e3",
+      "MOV             R3, #0"
+    ],
+    [
+      "0x4b0b4",
+      "0260a0e1",
+      "MOV             R6, R2"
+    ],
+    [
+      "0x4b0b8",
+      "38209de5",
+      "LDR             R2, [SP,#nTuCost]"
+    ],
+    [
+      "0x4b0bc",
+      "0c30c0e5",
+      "STRB            R3, [R0,#0xC]"
+    ],
+    [
+      "0x4b0c0",
+      "01a0a0e1",
+      "MOV             R10, R1"
+    ],
+    [
+      "0x4b0c4",
+      "b630d5e1",
+      "LDRH            R3, [R5,#6]"
+    ],
+    [
+      "0x4b0c8",
+      "28a08de5",
+      "STR             R10, [SP,#var_s28]"
+    ],
+    [
+      "0x4b0cc",
+      "2c908de5",
+      "STR             R9, [SP,#varg_r3]"
+    ],
+    [
+      "0x4b0d0",
+      "020053e1",
+      "CMP             R3, R2"
+    ],
+    [
+      "0x4b0d4",
+      "080000aa",
+      "BGE             loc_4B0FC"
+    ],
+    [
+      "0x4b0d8",
+      "10009fe5",
+      "LDR             R0, =0xB38D0"
+    ],
+    [
+      "0x4b0dc",
+      "0020a0e3",
+      "MOV             R2, #0"
+    ],
+    [
+      "0x4b0e0",
+      "cd1080e2",
+      "ADD             R1, R0, #0xCD"
+    ],
+    [
+      "0x4b0e4",
+      "0800a0e1",
+      "MOV             R0, R8"
+    ],
+    [
+      "0x4b0e8",
+      "2d8bffeb",
+      "BL              StatusMsg_Push"
+    ],
+    [
+      "0x4b0ec",
+      "7f0000ea",
+      "B               locret_4B2F0"
+    ],
+    [
+      "0x4b0f0",
+      "d0380b00",
+      "DCD 0xB38D0"
+    ],
+    [
+      "0x4b0f4",
+      "98711500",
+      "DCD pMapTactical"
+    ],
+    [
+      "0x4b0f8",
+      "b8391100",
+      "DCD Map_bTactFlag"
+    ],
+    [
+      "0x4b0fc",
+      "30209de5",
+      "LDR             R2, [SP,#nY]"
+    ],
+    [
+      "0x4b100",
+      "0910a0e1",
+      "MOV             R1, R9"
+    ],
+    [
+      "0x4b104",
+      "0500a0e1",
+      "MOV             R0, R5"
+    ],
+    [
+      "0x4b108",
+      "b8faffeb",
+      "BL              Unit_FaceToward"
+    ],
+    [
+      "0x4b10c",
+      "070056e3",
+      "CMP             R6, #7"
+    ],
+    [
+      "0x4b110",
+      "0b00000a",
+      "BEQ             loc_4B144"
+    ],
+    [
+      "0x4b114",
+      "00309ae5",
+      "LDR             R3, [R10]"
+    ],
+    [
+      "0x4b118",
+      "000056e3",
+      "CMP             R6, #0"
+    ],
+    [
+      "0x4b11c",
+      "0370a0e3",
+      "MOV             R7, #3"
+    ],
+    [
+      "0x4b120",
+      "ae30d3e5",
+      "LDRB            R3, [R3,#0xAE]"
+    ],
+    [
+      "0x4b124",
+      "0170a013",
+      "MOVNE           R7, #1"
+    ],
+    [
+      "0x4b128",
+      "ff0053e3",
+      "CMP             R3, #0xFF"
+    ],
+    [
+      "0x4b12c",
+      "0500000a",
+      "BEQ             loc_4B148"
+    ],
+    [
+      "0x4b130",
+      "0600dae5",
+      "LDRB            R0, [R10,#6]"
+    ],
+    [
+      "0x4b134",
+      "070050e1",
+      "CMP             R0, R7"
+    ],
+    [
+      "0x4b138",
+      "020000aa",
+      "BGE             loc_4B148"
+    ],
+    [
+      "0x4b13c",
+      "0070a0e1",
+      "MOV             R7, R0"
+    ]
+  ],
+  "tail": [
+    [
+      "0x4b2b0",
+      "02208be0",
+      "ADD             R2, R11, R2"
+    ],
+    [
+      "0x4b2b4",
+      "18e0c2e5",
+      "STRB            LR, [R2,#0x18]"
+    ],
+    [
+      "0x4b2b8",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b2bc",
+      "b0e092e1",
+      "LDRH            LR, [R2,R0]"
+    ],
+    [
+      "0x4b2c0",
+      "9e010be0",
+      "MUL             R11, LR, R1"
+    ],
+    [
+      "0x4b2c4",
+      "02208be0",
+      "ADD             R2, R11, R2"
+    ],
+    [
+      "0x4b2c8",
+      "1c5082e5",
+      "STR             R5, [R2,#0x1C]"
+    ],
+    [
+      "0x4b2cc",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b2d0",
+      "b0e0b2e1",
+      "LDRH            LR, [R2,R0]!"
+    ],
+    [
+      "0x4b2d4",
+      "01e08ee2",
+      "ADD             LR, LR, #1"
+    ],
+    [
+      "0x4b2d8",
+      "b0e0c2e1",
+      "STRH            LR, [R2]"
+    ],
+    [
+      "0x4b2dc",
+      "9fffffba",
+      "BLT             loc_4B160"
+    ],
+    [
+      "0x4b2e0",
+      "0500a0e1",
+      "MOV             R0, R5"
+    ],
+    [
+      "0x4b2e4",
+      "1bfdffeb",
+      "BL              TactState_EnqueueClearAim"
+    ],
+    [
+      "0x4b2e8",
+      "0000a0e3",
+      "MOV             R0, #0"
+    ],
+    [
+      "0x4b2ec",
+      "2c0088e5",
+      "STR             R0, [R8,#(nShotCount - 0x1139B8)]"
+    ],
+    [
+      "0x4b2f0",
+      "f0af9de8",
+      "LDM             SP, {R4-R11,SP,PC}"
+    ],
+    [
+      "0x4b2f4",
+      "f04d2de9",
+      "PUSH            {R4-R8,R10,R11,LR}"
+    ],
+    [
+      "0x4b2f8",
+      "0040a0e1",
+      "MOV             R4, R0"
+    ],
+    [
+      "0x4b2fc",
+      "24809de5",
+      "LDR             R8, [SP,#nTuCost]"
+    ],
+    [
+      "0x4b300",
+      "0360a0e1",
+      "MOV             R6, R3"
+    ],
+    [
+      "0x4b304",
+      "b630d4e1",
+      "LDRH            R3, [R4,#6]"
+    ],
+    [
+      "0x4b308",
+      "0170a0e1",
+      "MOV             R7, R1"
+    ],
+    [
+      "0x4b30c",
+      "0250a0e1",
+      "MOV             R5, R2"
+    ],
+    [
+      "0x4b310",
+      "080053e1",
+      "CMP             R3, R8"
+    ],
+    [
+      "0x4b314",
+      "070000aa",
+      "BGE             loc_4B338"
+    ],
+    [
+      "0x4b318",
+      "14009fe5",
+      "LDR             R0, =0xB38D0"
+    ],
+    [
+      "0x4b31c",
+      "0020a0e3",
+      "MOV             R2, #0"
+    ]
+  ],
+  "ammo_consumer": [
+    [
+      "0x502ec",
+      "0620d0e5",
+      "LDRB            R2, [R0,#6]"
+    ],
+    [
+      "0x502f0",
+      "000052e3",
+      "CMP             R2, #0"
+    ],
+    [
+      "0x502f4",
+      "0900009a",
+      "BLS             loc_50320"
+    ],
+    [
+      "0x502f8",
+      "b81cd1e1",
+      "LDRH            R1, [R1,#0xC8]"
+    ],
+    [
+      "0x502fc",
+      "0d0051e3",
+      "CMP             R1, #0xD"
+    ],
+    [
+      "0x50300",
+      "0100000a",
+      "BEQ             loc_5030C"
+    ],
+    [
+      "0x50304",
+      "230051e3",
+      "CMP             R1, #0x23 "
+    ],
+    [
+      "0x50308",
+      "0200001a",
+      "BNE             loc_50318"
+    ],
+    [
+      "0x5030c",
+      "2c3095e5",
+      "LDR             R3, [R5,#(nShotCount - 0x1139B8)]"
+    ],
+    [
+      "0x50310",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x50314",
+      "0100001a",
+      "BNE             loc_50320"
+    ],
+    [
+      "0x50318",
+      "ff3082e2",
+      "ADD             R3, R2, #0xFF"
+    ],
+    [
+      "0x5031c",
+      "0630c0e5",
+      "STRB            R3, [R0,#6]"
+    ],
+    [
+      "0x50320",
+      "2c3095e5",
+      "LDR             R3, [R5,#(nShotCount - 0x1139B8)]"
+    ],
+    [
+      "0x50324",
+      "010083e2",
+      "ADD             R0, R3, #1"
+    ],
+    [
+      "0x50328",
+      "2c0085e5",
+      "STR             R0, [R5,#(nShotCount - 0x1139B8)]"
+    ]
+  ],
+  "selector_bank_store": [
+    [
+      "0x47be8",
+      "003093e5",
+      "LDR             R3, [R3]"
+    ],
+    [
+      "0x47bec",
+      "0fe0a0e1",
+      "MOV             LR, PC"
+    ],
+    [
+      "0x47bf0",
+      "03f0a0e1",
+      "MOV             PC, R3"
+    ],
+    [
+      "0x47bf4",
+      "4e3ca0e37c3083e3",
+      "MOV             R3, #(Map_anActionEnabled - 0x1139B8)"
+    ],
+    [
+      "0x47bfc",
+      "033087e0",
+      "ADD             R3, R7, R3"
+    ],
+    [
+      "0x47c00",
+      "040183e7",
+      "STR             R0, [R3,R4,LSL#2]"
+    ],
+    [
+      "0x47c04",
+      "4e3ca0e34c3083e3",
+      "MOV             R3, #(Map_anActionCost - 0x1139B8)"
+    ],
+    [
+      "0x47c0c",
+      "4c0097e5",
+      "LDR             R0, [R7,#(Map_nActionMode - 0x1139B8)]"
+    ],
+    [
+      "0x47c10",
+      "033087e0",
+      "ADD             R3, R7, R3"
+    ]
+  ],
+  "queue_entries": [
+    [
+      "0x4b160",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b164",
+      "070056e3",
+      "CMP             R6, #7"
+    ],
+    [
+      "0x4b168",
+      "b0e092e1",
+      "LDRH            LR, [R2,R0]"
+    ],
+    [
+      "0x4b16c",
+      "9e010be0",
+      "MUL             R11, LR, R1"
+    ],
+    [
+      "0x4b170",
+      "0ee0a0e3",
+      "MOV             LR, #0xE"
+    ],
+    [
+      "0x4b174",
+      "02208be0",
+      "ADD             R2, R11, R2"
+    ],
+    [
+      "0x4b178",
+      "18e0c2e5",
+      "STRB            LR, [R2,#0x18]"
+    ],
+    [
+      "0x4b17c",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b180",
+      "b0e092e1",
+      "LDRH            LR, [R2,R0]"
+    ],
+    [
+      "0x4b184",
+      "9e010be0",
+      "MUL             R11, LR, R1"
+    ],
+    [
+      "0x4b188",
+      "02208be0",
+      "ADD             R2, R11, R2"
+    ],
+    [
+      "0x4b18c",
+      "1c5082e5",
+      "STR             R5, [R2,#0x1C]"
+    ],
+    [
+      "0x4b190",
+      "1200001a",
+      "BNE             loc_4B1E0"
+    ],
+    [
+      "0x4b194",
+      "00e094e5",
+      "LDR             LR, [R4]"
+    ],
+    [
+      "0x4b198",
+      "032188e0",
+      "ADD             R2, R8, R3,LSL#2"
+    ],
+    [
+      "0x4b19c",
+      "08b092e5",
+      "LDR             R11, [R2,#8]"
+    ],
+    [
+      "0x4b1a0",
+      "b0a09ee1",
+      "LDRH            R10, [LR,R0]"
+    ],
+    [
+      "0x4b1a4",
+      "1ab0dbe5",
+      "LDRB            R11, [R11,#0x1A]"
+    ],
+    [
+      "0x4b1a8",
+      "9a0109e0",
+      "MUL             R9, R10, R1"
+    ],
+    [
+      "0x4b1ac",
+      "0ee089e0",
+      "ADD             LR, R9, LR"
+    ],
+    [
+      "0x4b1b0",
+      "21b0cee5",
+      "STRB            R11, [LR,#0x21]"
+    ],
+    [
+      "0x4b1b4",
+      "00e094e5",
+      "LDR             LR, [R4]"
+    ],
+    [
+      "0x4b1b8",
+      "08b092e5",
+      "LDR             R11, [R2,#8]"
+    ],
+    [
+      "0x4b1bc",
+      "b0a09ee1",
+      "LDRH            R10, [LR,R0]"
+    ],
+    [
+      "0x4b1c0",
+      "1bb0dbe5",
+      "LDRB            R11, [R11,#0x1B]"
+    ],
+    [
+      "0x4b1c4",
+      "9a0109e0",
+      "MUL             R9, R10, R1"
+    ],
+    [
+      "0x4b1c8",
+      "0ee089e0",
+      "ADD             LR, R9, LR"
+    ],
+    [
+      "0x4b1cc",
+      "2c909de5",
+      "LDR             R9, [SP,#varg_r3]"
+    ],
+    [
+      "0x4b1d0",
+      "22b0cee5",
+      "STRB            R11, [LR,#0x22]"
+    ],
+    [
+      "0x4b1d4",
+      "08e092e5",
+      "LDR             LR, [R2,#8]"
+    ],
+    [
+      "0x4b1d8",
+      "1ce0dee5",
+      "LDRB            LR, [LR,#0x1C]"
+    ],
+    [
+      "0x4b1dc",
+      "0b0000ea",
+      "B               loc_4B210"
+    ],
+    [
+      "0x4b1e0",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b1e4",
+      "30e09de5",
+      "LDR             LR, [SP,#nY]"
+    ],
+    [
+      "0x4b1e8",
+      "b0b092e1",
+      "LDRH            R11, [R2,R0]"
+    ],
+    [
+      "0x4b1ec",
+      "9b010ae0",
+      "MUL             R10, R11, R1"
+    ],
+    [
+      "0x4b1f0",
+      "02208ae0",
+      "ADD             R2, R10, R2"
+    ],
+    [
+      "0x4b1f4",
+      "2190c2e5",
+      "STRB            R9, [R2,#0x21]"
+    ],
+    [
+      "0x4b1f8",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b1fc",
+      "b0b092e1",
+      "LDRH            R11, [R2,R0]"
+    ],
+    [
+      "0x4b200",
+      "9b010ae0",
+      "MUL             R10, R11, R1"
+    ],
+    [
+      "0x4b204",
+      "02208ae0",
+      "ADD             R2, R10, R2"
+    ],
+    [
+      "0x4b208",
+      "22e0c2e5",
+      "STRB            LR, [R2,#0x22]"
+    ],
+    [
+      "0x4b20c",
+      "34e09de5",
+      "LDR             LR, [SP,#nZ]"
+    ],
+    [
+      "0x4b210",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b214",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x4b218",
+      "013083e2",
+      "ADD             R3, R3, #1"
+    ],
+    [
+      "0x4b21c",
+      "b0b092e1",
+      "LDRH            R11, [R2,R0]"
+    ],
+    [
+      "0x4b220",
+      "9b010ae0",
+      "MUL             R10, R11, R1"
+    ],
+    [
+      "0x4b224",
+      "02208ae0",
+      "ADD             R2, R10, R2"
+    ],
+    [
+      "0x4b228",
+      "30e0c2e5",
+      "STRB            LR, [R2,#0x30]"
+    ],
+    [
+      "0x4b22c",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b230",
+      "b0e092e1",
+      "LDRH            LR, [R2,R0]"
+    ],
+    [
+      "0x4b234",
+      "9e010be0",
+      "MUL             R11, LR, R1"
+    ],
+    [
+      "0x4b238",
+      "28e09de5",
+      "LDR             LR, [SP,#var_s28]"
+    ],
+    [
+      "0x4b23c",
+      "02208be0",
+      "ADD             R2, R11, R2"
+    ],
+    [
+      "0x4b240",
+      "34e082e5",
+      "STR             LR, [R2,#0x34]"
+    ],
+    [
+      "0x4b244",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b248",
+      "b0e092e1",
+      "LDRH            LR, [R2,R0]"
+    ],
+    [
+      "0x4b24c",
+      "01e08ee2",
+      "ADD             LR, LR, #1"
+    ],
+    [
+      "0x4b250",
+      "9e010be0",
+      "MUL             R11, LR, R1"
+    ],
+    [
+      "0x4b254",
+      "3ce09de5",
+      "LDR             LR, [SP,#nArg]"
+    ],
+    [
+      "0x4b258",
+      "02e08be7",
+      "STR             LR, [R11,R2]"
+    ],
+    [
+      "0x4b25c",
+      "00e0a0e3",
+      "MOV             LR, #0"
+    ],
+    [
+      "0x4b260",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b264",
+      "38e09d05",
+      "LDREQ           LR, [SP,#nTuCost]"
+    ],
+    [
+      "0x4b268",
+      "070053e1",
+      "CMP             R3, R7"
+    ],
+    [
+      "0x4b26c",
+      "b0b092e1",
+      "LDRH            R11, [R2,R0]"
+    ],
+    [
+      "0x4b270",
+      "9b010ae0",
+      "MUL             R10, R11, R1"
+    ],
+    [
+      "0x4b274",
+      "02208ae0",
+      "ADD             R2, R10, R2"
+    ],
+    [
+      "0x4b278",
+      "3ce082e5",
+      "STR             LR, [R2,#0x3C]"
+    ],
+    [
+      "0x4b27c",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b280",
+      "b0e092e1",
+      "LDRH            LR, [R2,R0]"
+    ],
+    [
+      "0x4b284",
+      "9e010be0",
+      "MUL             R11, LR, R1"
+    ],
+    [
+      "0x4b288",
+      "02208be0",
+      "ADD             R2, R11, R2"
+    ],
+    [
+      "0x4b28c",
+      "406082e5",
+      "STR             R6, [R2,#0x40]"
+    ],
+    [
+      "0x4b290",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b294",
+      "b0e0b2e1",
+      "LDRH            LR, [R2,R0]!"
+    ],
+    [
+      "0x4b298",
+      "01e08ee2",
+      "ADD             LR, LR, #1"
+    ],
+    [
+      "0x4b29c",
+      "b0e0c2e1",
+      "STRH            LR, [R2]"
+    ],
+    [
+      "0x4b2a0",
+      "002094e5",
+      "LDR             R2, [R4]"
+    ],
+    [
+      "0x4b2a4",
+      "b0e092e1",
+      "LDRH            LR, [R2,R0]"
+    ],
+    [
+      "0x4b2a8",
+      "9e010be0",
+      "MUL             R11, LR, R1"
+    ],
+    [
+      "0x4b2ac",
+      "0fe0a0e3",
+      "MOV             LR, #0xF"
+    ]
+  ],
+  "callers": {
+    "sites": [
+      "0x1539c",
+      "0x18844",
+      "0x4ae08",
+      "0x4d910",
+      "0x4daec",
+      "0x4dcc0"
+    ],
+    "raw": [
+      [
+        "0x15374",
+        "4e3ca0e34c3083e3",
+        "MOV             R3, #0x4E4C"
+      ],
+      [
+        "0x1537c",
+        "033091e7",
+        "LDR             R3, [R1,R3]"
+      ],
+      [
+        "0x15380",
+        "481094e5",
+        "LDR             R1, [R4,#(pSelWeapon - 0x1139B8)]"
+      ],
+      [
+        "0x15384",
+        "08308de5",
+        "STR             R3, [SP,#0x14+nTuCost]"
+      ],
+      [
+        "0x15388",
+        "1c30d5e5",
+        "LDRB            R3, [R5,#0x1C]"
+      ],
+      [
+        "0x1538c",
+        "04308de5",
+        "STR             R3, [SP,#0x14+nZ]"
+      ],
+      [
+        "0x15390",
+        "1b30d5e5",
+        "LDRB            R3, [R5,#0x1B]"
+      ],
+      [
+        "0x15394",
+        "00308de5",
+        "STR             R3, [SP,#0x14+bFlag]"
+      ],
+      [
+        "0x15398",
+        "1a30d5e5",
+        "LDRB            R3, [R5,#0x1A]"
+      ],
+      [
+        "0x1539c",
+        "37d700eb",
+        "BL              TactState_EnqueueFireBurst"
+      ],
+      [
+        "0x1881c",
+        "08308de5",
+        "STR             R3, [SP,#0x10+nTuCost]"
+      ],
+      [
+        "0x18820",
+        "1c30d1e5",
+        "LDRB            R3, [R1,#0x1C]"
+      ],
+      [
+        "0x18824",
+        "04308de5",
+        "STR             R3, [SP,#0x10+nZ]"
+      ],
+      [
+        "0x18828",
+        "1b30d1e5",
+        "LDRB            R3, [R1,#0x1B]"
+      ],
+      [
+        "0x1882c",
+        "00308de5",
+        "STR             R3, [SP,#0x10+nY]"
+      ],
+      [
+        "0x18830",
+        "1a30d1e5",
+        "LDRB            R3, [R1,#0x1A]"
+      ],
+      [
+        "0x18834",
+        "481090e5",
+        "LDR             R1, [R0,#(pSelWeapon - 0x1139B8)]"
+      ],
+      [
+        "0x18838",
+        "15caa0e3cdcf8ce3",
+        "MOV             R12, #(Map_pSelUnit - 0x1139B8)"
+      ],
+      [
+        "0x18840",
+        "0c0090e7",
+        "LDR             R0, [R0,R12]"
+      ],
+      [
+        "0x18844",
+        "0dca00eb",
+        "BL              TactState_EnqueueFireBurst"
+      ],
+      [
+        "0x4ade0",
+        "0ce08de5",
+        "STR             LR, [SP,#0xD8+nArg]"
+      ],
+      [
+        "0x4ade4",
+        "4eeca0e34ce08ee3",
+        "MOV             LR, #0x4E4C"
+      ],
+      [
+        "0x4adec",
+        "0e0090e7",
+        "LDR             R0, [R0,LR]"
+      ],
+      [
+        "0x4adf0",
+        "08008de5",
+        "STR             R0, [SP,#0xD8+nTuCost]"
+      ],
+      [
+        "0x4adf4",
+        "15caa0e370c08ce3",
+        "MOV             R12, #(Map_nAiFireLayer - 0x1139B8)"
+      ],
+      [
+        "0x4adfc",
+        "0c0094e7",
+        "LDR             R0, [R4,R12]"
+      ],
+      [
+        "0x4ae00",
+        "04008de5",
+        "STR             R0, [SP,#0xD8+nZ]"
+      ],
+      [
+        "0x4ae04",
+        "0500a0e1",
+        "MOV             R0, R5"
+      ],
+      [
+        "0x4ae08",
+        "9c0000eb",
+        "BL              TactState_EnqueueFireBurst"
+      ],
+      [
+        "0x4d8e8",
+        "03f0a0e1",
+        "MOV             PC, R3"
+      ],
+      [
+        "0x4d8ec",
+        "1c30d5e5",
+        "LDRB            R3, [R5,#0x1C]"
+      ],
+      [
+        "0x4d8f0",
+        "0620a0e1",
+        "MOV             R2, R6"
+      ],
+      [
+        "0x4d8f4",
+        "08008de5",
+        "STR             R0, [SP,#0x28+nTuCost]"
+      ],
+      [
+        "0x4d8f8",
+        "0710a0e1",
+        "MOV             R1, R7"
+      ],
+      [
+        "0x4d8fc",
+        "04308de5",
+        "STR             R3, [SP,#0x28+nZ]"
+      ],
+      [
+        "0x4d900",
+        "0400a0e1",
+        "MOV             R0, R4"
+      ],
+      [
+        "0x4d904",
+        "1b30d5e5",
+        "LDRB            R3, [R5,#0x1B]"
+      ],
+      [
+        "0x4d908",
+        "00308de5",
+        "STR             R3, [SP,#0x28+bFlag]"
+      ],
+      [
+        "0x4d90c",
+        "1a30d5e5",
+        "LDRB            R3, [R5,#0x1A]"
+      ],
+      [
+        "0x4d910",
+        "daf5ffeb",
+        "BL              TactState_EnqueueFireBurst"
+      ],
+      [
+        "0x4dac4",
+        "033090e7",
+        "LDR             R3, [R0,R3]"
+      ],
+      [
+        "0x4dac8",
+        "00708de5",
+        "STR             R7, [SP,#0x10+nY]"
+      ],
+      [
+        "0x4dacc",
+        "0c308de5",
+        "STR             R3, [SP,#0x10+nArg]"
+      ],
+      [
+        "0x4dad0",
+        "4e3ca0e34c3083e3",
+        "MOV             R3, #0x4E4C"
+      ],
+      [
+        "0x4dad8",
+        "033090e7",
+        "LDR             R3, [R0,R3]"
+      ],
+      [
+        "0x4dadc",
+        "f40094e5",
+        "LDR             R0, [R4,#0xF4]"
+      ],
+      [
+        "0x4dae0",
+        "08308de5",
+        "STR             R3, [SP,#0x10+nTuCost]"
+      ],
+      [
+        "0x4dae4",
+        "0630a0e1",
+        "MOV             R3, R6"
+      ],
+      [
+        "0x4dae8",
+        "000194e7",
+        "LDR             R0, [R4,R0,LSL#2]"
+      ],
+      [
+        "0x4daec",
+        "63f5ffeb",
+        "BL              TactState_EnqueueFireBurst"
+      ],
+      [
+        "0x4dc98",
+        "033090e7",
+        "LDR             R3, [R0,R3]"
+      ],
+      [
+        "0x4dc9c",
+        "00708de5",
+        "STR             R7, [SP,#0x10+nY]"
+      ],
+      [
+        "0x4dca0",
+        "0c308de5",
+        "STR             R3, [SP,#0x10+nArg]"
+      ],
+      [
+        "0x4dca4",
+        "4e3ca0e34c3083e3",
+        "MOV             R3, #0x4E4C"
+      ],
+      [
+        "0x4dcac",
+        "033090e7",
+        "LDR             R3, [R0,R3]"
+      ],
+      [
+        "0x4dcb0",
+        "f40094e5",
+        "LDR             R0, [R4,#0xF4]"
+      ],
+      [
+        "0x4dcb4",
+        "08308de5",
+        "STR             R3, [SP,#0x10+nTuCost]"
+      ],
+      [
+        "0x4dcb8",
+        "0630a0e1",
+        "MOV             R3, R6"
+      ],
+      [
+        "0x4dcbc",
+        "000194e7",
+        "LDR             R0, [R4,R0,LSL#2]"
+      ],
+      [
+        "0x4dcc0",
+        "eef4ffeb",
+        "BL              TactState_EnqueueFireBurst"
+      ]
+    ]
+  },
+  "reaction_load": {
+    "functions": [
+      "0x4d950",
+      "0x4d950"
+    ],
+    "raw": [
+      [
+        "0x4da80",
+        "f43094e5",
+        "LDR             R3, [R4,#0xF4]"
+      ],
+      [
+        "0x4da84",
+        "1a60d0e5",
+        "LDRB            R6, [R0,#0x1A]"
+      ],
+      [
+        "0x4da88",
+        "1b70d0e5",
+        "LDRB            R7, [R0,#0x1B]"
+      ],
+      [
+        "0x4da8c",
+        "1c80d0e5",
+        "LDRB            R8, [R0,#0x1C]"
+      ],
+      [
+        "0x4da90",
+        "0500a0e1",
+        "MOV             R0, R5"
+      ],
+      [
+        "0x4da94",
+        "031194e7",
+        "LDR             R1, [R4,R3,LSL#2]"
+      ],
+      [
+        "0x4da98",
+        "097bffeb",
+        "BL              Tact_SelectUnit"
+      ],
+      [
+        "0x4da9c",
+        "0120e0e3",
+        "MOV             R2, #0xFFFFFFFE"
+      ],
+      [
+        "0x4daa0",
+        "0110e0e3",
+        "MOV             R1, #0xFFFFFFFE"
+      ],
+      [
+        "0x4daa4",
+        "0500a0e1",
+        "MOV             R0, R5"
+      ],
+      [
+        "0x4daa8",
+        "5965ffeb",
+        "BL              MapCursor_SetPos"
+      ],
+      [
+        "0x4daac",
+        "4c2095e5",
+        "LDR             R2, [R5,#(Map_nActionMode - 0x1139B8)]"
+      ],
+      [
+        "0x4dab0",
+        "4e3ca0e37c3083e3",
+        "MOV             R3, #0x4E7C"
+      ],
+      [
+        "0x4dab8",
+        "481095e5",
+        "LDR             R1, [R5,#(pSelWeapon - 0x1139B8)]"
+      ],
+      [
+        "0x4dabc",
+        "020185e0",
+        "ADD             R0, R5, R2,LSL#2"
+      ],
+      [
+        "0x4dac0",
+        "04808de5",
+        "STR             R8, [SP,#0x10+nZ]"
+      ],
+      [
+        "0x4dac4",
+        "033090e7",
+        "LDR             R3, [R0,R3]"
+      ],
+      [
+        "0x4dc54",
+        "9a7affeb",
+        "BL              Tact_SelectUnit"
+      ],
+      [
+        "0x4dc58",
+        "90109fe5",
+        "LDR             R1, =pTactCtx272"
+      ],
+      [
+        "0x4dc5c",
+        "0120e0e3",
+        "MOV             R2, #0xFFFFFFFE"
+      ],
+      [
+        "0x4dc60",
+        "15caa0e3cdcf8ce3",
+        "MOV             R12, #(Map_pSelUnit - 0x1139B8)"
+      ],
+      [
+        "0x4dc68",
+        "0c0095e7",
+        "LDR             R0, [R5,R12]"
+      ],
+      [
+        "0x4dc6c",
+        "001091e5",
+        "LDR             R1, [R1]"
+      ],
+      [
+        "0x4dc70",
+        "080181e5",
+        "STR             R0, [R1,#0x108]"
+      ],
+      [
+        "0x4dc74",
+        "0110e0e3",
+        "MOV             R1, #0xFFFFFFFE"
+      ],
+      [
+        "0x4dc78",
+        "0500a0e1",
+        "MOV             R0, R5"
+      ],
+      [
+        "0x4dc7c",
+        "e464ffeb",
+        "BL              MapCursor_SetPos"
+      ],
+      [
+        "0x4dc80",
+        "4c2095e5",
+        "LDR             R2, [R5,#(Map_nActionMode - 0x1139B8)]"
+      ],
+      [
+        "0x4dc84",
+        "4e3ca0e37c3083e3",
+        "MOV             R3, #0x4E7C"
+      ],
+      [
+        "0x4dc8c",
+        "481095e5",
+        "LDR             R1, [R5,#(pSelWeapon - 0x1139B8)]"
+      ],
+      [
+        "0x4dc90",
+        "020185e0",
+        "ADD             R0, R5, R2,LSL#2"
+      ],
+      [
+        "0x4dc94",
+        "04808de5",
+        "STR             R8, [SP,#0x10+nZ]"
+      ],
+      [
+        "0x4dc98",
+        "033090e7",
+        "LDR             R3, [R0,R3]"
+      ]
+    ]
+  },
+  "reaction_base": [
+    [
+      "0x4d950",
+      "f0432de9",
+      "PUSH            {R4-R9,LR}"
+    ],
+    [
+      "0x4d954",
+      "10d04de2",
+      "SUB             SP, SP, #0x10"
+    ],
+    [
+      "0x4d958",
+      "0040a0e1",
+      "MOV             R4, R0"
+    ],
+    [
+      "0x4d95c",
+      "f830d4e5",
+      "LDRB            R3, [R4,#0xF8]"
+    ],
+    [
+      "0x4d960",
+      "fc0094e5",
+      "LDR             R0, [R4,#0xFC]"
+    ],
+    [
+      "0x4d964",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x4d968",
+      "6f00001a",
+      "BNE             loc_4DB2C"
+    ],
+    [
+      "0x4d96c",
+      "010050e3",
+      "CMP             R0, #1"
+    ],
+    [
+      "0x4d970",
+      "1500000a",
+      "BEQ             loc_4D9CC"
+    ],
+    [
+      "0x4d974",
+      "020050e3",
+      "CMP             R0, #2"
+    ],
+    [
+      "0x4d978",
+      "da00001a",
+      "BNE             loc_4DCE8"
+    ],
+    [
+      "0x4d97c",
+      "44509fe5",
+      "LDR             R5, =Map_bTactFlag"
+    ],
+    [
+      "0x4d980",
+      "0100a0e3",
+      "MOV             R0, #1"
+    ],
+    [
+      "0x4d984",
+      "3800c5e5",
+      "STRB            R0, [R5,#(Map_bPlayerInputEnabled - 0x1139B8)]"
+    ],
+    [
+      "0x4d988",
+      "0500a0e1",
+      "MOV             R0, R5"
+    ],
+    [
+      "0x4d98c",
+      "15caa0e37cc08ce3",
+      "MOV             R12, #(dword_128A34 - 0x1139B8)"
+    ]
+  ]
+}

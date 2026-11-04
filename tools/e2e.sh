@@ -1,7 +1,7 @@
 #!/bin/sh
 # The whole-path gate: run the real executable through the menu -> new game -> placement -> geoscape ->
 # save -> load flow, take a picture at every step, check each picture, and compare them against the
-# committed references in tests/ref/e2e.
+# read-only reference images in tests/ref/e2e; missing or changed images fail as unapproved.
 #
 # Two runs because the load is entered the way the original enters it: a fresh process at the main menu,
 # row 1, a slot row. The save the first run wrote is the file the second one loads, so the pair also
@@ -18,7 +18,9 @@ dir=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$dir/.." && pwd)
 out=$root/build/e2e
 refs=$root/tests/ref/e2e
-exe=$root/build/src/pufo/Release/pocketufo.exe
+source_exe=$root/build/src/pufo/Release/pocketufo.exe
+source_dir=$(dirname "$source_exe")
+app=$out/app
 
 if ! cmake --build "$root/build" --config Release --target pocketufo > /tmp/pufo_e2e_build.log 2>&1; then
     echo "BUILD FAILED (see /tmp/pufo_e2e_build.log)"
@@ -26,14 +28,31 @@ if ! cmake --build "$root/build" --config Release --target pocketufo > /tmp/pufo
     exit 1
 fi
 
-# The slot files are szAppDir-relative -- the exe's own directory, which is where App_BuildAssetPaths
-# points szAppDir @ 0x1883b0 -- so that is where they are cleared, and the one the new-game flow wrote
-# is what the load flow reads.
-rm -f "$out"/*.ppm "$out"/*.png "$out"/sav*.sav "$out"/flow_*.log "$(dirname "$exe")"/sav*.sav
-mkdir -p "$out" "$refs"
+# Save slots and data lookup use the private exe directory, not the source exe directory.
+# The flow saves live only in the private app directory.
+# PPM dump paths are relative to the process working directory, so they stay in $out.
+rm -f "$out"/*.ppm "$out"/*.png "$out"/flow_*.log "$out"/*.rgb
+mkdir -p "$out" "$app"
+cp "$source_exe" "$app/pocketufo.exe"
+cp "$root/main.dat" "$app/main.dat"
+cp "$root/lang.dat" "$app/lang.dat"
+for dll in libopenmpt.dll openmpt-mpg123.dll openmpt-vorbis.dll openmpt-zlib.dll openmpt-ogg.dll; do
+    if [ ! -f "$source_dir/$dll" ]; then
+        echo "RUNTIME DLL MISSING: $source_dir/$dll"
+        exit 1
+    fi
+    cp "$source_dir/$dll" "$app/$dll"
+done
+if [ ! -d "$source_dir/libopenmpt-licenses" ]; then
+    echo "LICENSE DIRECTORY MISSING: $source_dir/libopenmpt-licenses"
+    exit 1
+fi
+mkdir -p "$app/libopenmpt-licenses"
+cp -R "$source_dir/libopenmpt-licenses/." "$app/libopenmpt-licenses/"
+rm -f "$app"/sav*.sav
 
 for flow in e2e_flow_new.txt e2e_flow_load.txt e2e_flow_quit.txt e2e_flow_tact.txt; do
-    if ! (cd "$out" && "$exe" --script "$(cygpath -w "$dir/$flow")") > "$out/flow_$flow.log" 2>&1; then
+    if ! (cd "$out" && "$app/pocketufo.exe" --script "$(cygpath -w "$dir/$flow")") > "$out/flow_$flow.log" 2>&1; then
         echo "RUN FAILED for $flow"
         cat "$out/flow_$flow.log"
         exit 1
@@ -57,14 +76,16 @@ echo "startup picks: mission type 6, Map+0x1511E 0 (InitInstance 0xA0228 / 0xA01
 # Chain assertion (Part 148, PLAN 120b): the load flow's world is the save the new-game process wrote, and
 # the file it reads is the one the previous flow wrote -- the slot files are cleared at the top of this
 # script and only these two flows touch them. So the cells the save carries must come out identical in the
-# second process: the base count, the placed base's own coordinates, the soldier count, the funds, the
-# mission type and Map+0x1511E. The cells deliberately NOT compared are the per-process UI state -- list
+# second process: the base count, the placed base's own coordinates, the soldier count and the funds.
+# The cells deliberately NOT compared are the per-process UI state -- list
 # mode, globe sweep, animation progress, pending region -- which the save does not carry through to the
 # loaded moment, and the base coordinates are compared only because both processes have the base placed by
 # then (an unplaced base reads -6000/-6000, which is the placement screen's state, not the save's).
+# Mission type and Map+0x1511E belong to the tactical-only TGameData chunk. Their identical startup
+# values in these two processes do not prove persistence, so they are excluded from this tuple.
 save_tuple() {
     grep 'pocketufo: state after' "$1" | tail -1 |
-        sed -E 's/.*bases ([0-9]+), base 0 at (-?[0-9]+)\/(-?[0-9]+), soldiers (-?[0-9]+), funds (-?[0-9]+).*mission type (-?[0-9]+), map 0x1511E (-?[0-9]+)/\1 \2\/\3 \4 \5 \6 \7/'
+        sed -E 's/.*bases ([0-9]+), base 0 at (-?[0-9]+)\/(-?[0-9]+), soldiers (-?[0-9]+), funds (-?[0-9]+).*/\1 \2\/\3 \4 \5/'
 }
 t_new=$(save_tuple "$out/flow_e2e_flow_new.txt.log")
 t_load=$(save_tuple "$out/flow_e2e_flow_load.txt.log")
@@ -74,7 +95,7 @@ if [ -z "$t_new" ] || [ "$t_new" != "$t_load" ]; then
     echo "  read  (process 2): $t_load"
     exit 1
 fi
-echo "save->load across processes: bases/base-0/soldiers/funds/mission/map identical ($t_new -> $t_load)"
+echo "save->load across processes: bases/base-0/soldiers/funds identical ($t_new -> $t_load)"
 
 # Quit seam on a loaded world (Part 148, PLAN 120b): the load flow now runs App_QuitFromTact @ 0x18e18 over
 # the world a save produced, not over a new game. The list the load built must be live before the seam
@@ -107,6 +128,10 @@ echo "quit-YES on a loaded world: $n_first live items -> 0, mirror 0x186530 unch
 # decision tree, which a scripted run does not walk), so the queue stays empty -- stated in
 # tools/e2e_flow_tact.txt and in PLAN, not hidden by a weaker assertion.
 tlog=$out/flow_e2e_flow_tact.txt.log
+if ! LC_ALL=C grep -Eq '^pocketufo: equiparmor: base .* type 2, suit stock 0,' "$tlog"; then
+    echo "ARMOUR EQUIP FAILED: the scripted soldier did not wear the stocked Power suit"
+    exit 1
+fi
 if ! grep -q 'step launch (0x83ABC then 0x83AC4): 1' "$tlog"; then
     echo "STATE FAILED: the launch tail did not bring the mission up (0x83AC4 must hand back 1)"
     grep -m2 'step launch' "$tlog" || true
@@ -128,21 +153,26 @@ if [ "$t_last" != "pocketufo: tact: no live mission" ]; then
 fi
 echo "live mission in the exe: 0x83AC4 returned 1, $n_xcom deployed soldiers, tactical ticks live; quit-YES closed the live mission"
 
-mv "$(dirname "$exe")"/sav*.sav "$out"/ 2>/dev/null || true
-
 # Gate scaffolding: a --script run does NOTHING and still exits 0 while another pocketufo.exe owns the
 # POCKET_UFO window -- App_InitInstance's single-instance check (the original's FindWindowW @ 0x9FD64)
 # returns false and WinMain returns 0 before the script is read. Measured: one leftover hidden window from
 # a killed run made six later runs write no pictures at all. Count the pictures against the flow files
 # before believing the run.
-want=$(grep -h '^[[:space:]]*dump ' "$dir"/e2e_flow_new.txt "$dir"/e2e_flow_load.txt "$dir"/e2e_flow_tact.txt | wc -l)
+dump_files=$(grep -h '^[[:space:]]*dump ' "$dir"/e2e_flow_new.txt "$dir"/e2e_flow_load.txt "$dir"/e2e_flow_tact.txt | awk '{ print $2 }')
+want=$(printf '%s\n' "$dump_files" | sed '/^$/d' | wc -l)
 got=$(ls "$out"/*.ppm 2>/dev/null | wc -l)
-if [ "$got" -lt "$want" ]; then
-    echo "RUN FAILED: $got pictures, the flows ask for $want"
+if [ "$got" -ne "$want" ]; then
+    echo "RUN FAILED: $got pictures, the flows ask for exactly $want"
     echo "(a pocketufo.exe that is still running holds the single-instance window; close it -- e.g."
     echo " taskkill //F //IM pocketufo.exe -- and re-run)"
     exit 1
 fi
+for name in $dump_files; do
+    if [ ! -s "$out/$name" ]; then
+        echo "PICTURE MISSING (unapproved): $name"
+        exit 1
+    fi
+done
 
 for ppm in "$out"/*.ppm; do
     if ! ffmpeg -y -loglevel error -i "$ppm" "${ppm%.ppm}.png"; then
@@ -153,13 +183,27 @@ done
 
 python3 -I "$dir/e2e_report.py" "$out"
 
+rm -f "$out"/current.rgb "$out"/reference.rgb
 for png in "$out"/*.png; do
-    cp "$png" "$refs/$(basename "$png")"
+    name=$(basename "$png")
+    ref=$refs/$name
+    if [ ! -f "$ref" ]; then
+        echo "REFERENCE MISSING (unapproved): $name"
+        exit 1
+    fi
+    if ! ffmpeg -y -loglevel error -i "$png" -f rawvideo -pix_fmt rgb24 "$out/current.rgb"; then
+        echo "IMAGE DECODE FAILED: generated $name"
+        exit 1
+    fi
+    if ! ffmpeg -y -loglevel error -i "$ref" -f rawvideo -pix_fmt rgb24 "$out/reference.rgb"; then
+        echo "REFERENCE DECODE FAILED: $name"
+        exit 1
+    fi
+    if ! cmp -s "$out/current.rgb" "$out/reference.rgb"; then
+        echo "IMAGE CHANGED (unapproved): $name"
+        exit 1
+    fi
+    echo "e2e reference: unchanged $name"
 done
-
-if git -C "$root" status --porcelain -- tests/ref/e2e | grep -q .; then
-    echo "e2e pictures: CHANGED or NEW -- $(git -C "$root" status --porcelain -- tests/ref/e2e | tr '\n' ' ')"
-    echo "(a new reference is expected when a step first gets its picture; commit the pictures you have looked at)"
-    exit 1
-fi
-echo "e2e pictures: unchanged against the committed references ($(ls "$refs"/*.png | wc -l) pictures)"
+rm -f "$out"/current.rgb "$out"/reference.rgb
+echo "e2e pictures: unchanged against read-only references"

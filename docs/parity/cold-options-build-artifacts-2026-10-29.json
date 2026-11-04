@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-cold-load-options-peer/debug-cold-options-full-compile-v2-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "98DCF4E3E1604148A8E5C8ADB4A5557543CC67C5FC96E020B511650FA1047A93",
+        "build/tests/Debug/test_save_world.exe": "BB1BEC653652C21F2870AF1B8A8302C92181F4E6D9691E8CC0F76449CD974162",
+        "build/tests/Debug/test_appshell.exe": "4C5C3EFD581C815C68E829A96BAE727C346696DC453FB5FD5D3EC5D2EF43B587",
+        "build/tests/Debug/test_save.exe": "2CD6B1C012324F0DCAF2848835308266B0F866169A1801521C4994F015842837",
+        "build/tests/Debug/test_geoscapeframe.exe": "73B781AD23AD9E6A0250C040C23C7C2FAE5719ED40889F6859300EFB4BBE4437"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-cold-load-options-peer/release-cold-options-full-compile-v2-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "0057E0FFAF9749B8063A0DB502CC12F9E0A83F7E44212BDF792AD83BAE4586AB",
+        "build/tests/Release/test_save_world.exe": "6E97D30C2C5221805446CDB17E192EA520447B4D9F690A5BA5A4494D50D95073",
+        "build/tests/Release/test_appshell.exe": "B5BFB6A00A02716FD8F452291FD5AD8E94149BA0D5EA23EFF9D0153934B6193B",
+        "build/tests/Release/test_save.exe": "D163A52A802F263D04B433595D93345C10805046FA46CD7B8B23D85F34A925BF",
+        "build/tests/Release/test_geoscapeframe.exe": "AAE94D3E4B8945619474FD60272B3DDA0AEFC23B754CBABDFBEE8D9ADF25C970"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "source_fingerprint_before_build": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF",
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Shared geoscape Options hook initialization covers cold World_LoadSlot without NewGame; fresh-consumer pointer/Save-Load-tab regression compiles; App slot-list live clock/state binding and prior repairs included.",
+  "prior_failed_compile": {
+    "log": ".workers/luna-cold-load-options-peer/debug-cold-options-full-compile-20261029.log",
+    "source_fingerprint": "A448054E93408C0FD2ED8192638001E2CCD05C906E66845D075DB4D2681A492F",
+    "reason": "New test compared unsigned byte pointer to signed byte pointer; corrected explicit byte-view cast before successful v2 builds."
+  }
+}

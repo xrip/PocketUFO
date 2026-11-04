@@ -1,0 +1,15 @@
+# Load completed research in a fresh process and open the live Research screen.
+load 1
+state final_load
+strategystate research_completed
+campaign cargo research_completed
+strategystate research_final_map
+campaign cargo final_load
+
+click 202 267
+tick 20
+strategystate research_final_base_strip
+click 180 238
+tick 20
+strategystate research_final_open
+lines

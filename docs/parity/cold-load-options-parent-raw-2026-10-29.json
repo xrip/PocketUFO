@@ -1,0 +1,122 @@
+[
+  {
+    "address": "0x84e9c",
+    "bytes": "00402de90410a0e31100a0e3846400eb14009fe51210a0e3001080e504009fe50040bde80ea0ffea209e1500c46b1800",
+    "rows": [
+      [
+        "0x84e9c",
+        "00402de9",
+        "PUSH",
+        "{LR} |  | "
+      ],
+      [
+        "0x84ea0",
+        "0410a0e3",
+        "MOV",
+        "R1 | #4 | "
+      ],
+      [
+        "0x84ea4",
+        "1100a0e3",
+        "MOV",
+        "R0 | #0x11 | "
+      ],
+      [
+        "0x84ea8",
+        "846400eb",
+        "BL",
+        "Sound_Play |  | "
+      ],
+      [
+        "0x84eac",
+        "14009fe5",
+        "LDR",
+        "R0 | =nGeoscapeScreen | "
+      ],
+      [
+        "0x84eb0",
+        "1210a0e3",
+        "MOV",
+        "R1 | #0x12 | "
+      ],
+      [
+        "0x84eb4",
+        "001080e5",
+        "STR",
+        "R1 | [R0] | "
+      ],
+      [
+        "0x84eb8",
+        "04009fe5",
+        "LDR",
+        "R0 | =aOptionsListCtl | "
+      ],
+      [
+        "0x84ebc",
+        "0040bde8",
+        "POP",
+        "{LR} |  | "
+      ],
+      [
+        "0x84ec0",
+        "0ea0ffea",
+        "B",
+        "OptionsScreen_RebuildWithSound |  | "
+      ],
+      [
+        "0x84ec4",
+        "209e1500",
+        "",
+        "aOptionsListCtl | aOptionsListCtl | aOptionsListCtl"
+      ],
+      [
+        "0x84ec8",
+        "c46b1800",
+        "",
+        "nGeoscapeScreen | nGeoscapeScreen | nGeoscapeScreen"
+      ]
+    ]
+  },
+  {
+    "address": "0x6cf00",
+    "bytes": "00402de90410a0e30700a0e36bc400eb0040bde8d6fbffea",
+    "rows": [
+      [
+        "0x6cf00",
+        "00402de9",
+        "PUSH",
+        "{LR} |  | "
+      ],
+      [
+        "0x6cf04",
+        "0410a0e3",
+        "MOV",
+        "R1 | #4 | "
+      ],
+      [
+        "0x6cf08",
+        "0700a0e3",
+        "MOV",
+        "R0 | #7 | "
+      ],
+      [
+        "0x6cf0c",
+        "6bc400eb",
+        "BL",
+        "Sound_Play |  | "
+      ],
+      [
+        "0x6cf10",
+        "0040bde8",
+        "POP",
+        "{LR} |  | "
+      ],
+      [
+        "0x6cf14",
+        "d6fbffea",
+        "B",
+        "OptionsScreen_Init |  | "
+      ]
+    ]
+  }
+]

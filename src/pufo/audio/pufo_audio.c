@@ -22,6 +22,9 @@ static bool             s_bAudioReady;   /* byte_187F24 */
 static bool             s_bMusicLoaded;  /* byte_187F28 */
 static void            *s_pMusicMod;     /* pMusicMod */
 static bool             s_bSfxToggle;    /* byte_187318 */
+static bool             s_bMusicLooping = true; /* port-side loop setting, on by default */
+static const u8        *s_pbMusicLoop;   /* the options cell, when the app hands it over */
+static i32              s_nMusicTrack;   /* the last track Sound_LoadAndPlayMusic loaded */
 static bool             s_bSfxMuted;     /* fallback mirror of pCtxBase +99 (soundoff) */
 static const u8        *s_pbSoundOff;    /* pCtxBase +99 when the app hands it over */
 static const u8        *s_pbMusicOff;    /* Map_bMusicOff @ 0x128A92, ditto */
@@ -68,6 +71,7 @@ static void Stub_MusicOptimize(void *pMod, i32 nMaxChannels, i32 nMinVolume)
 static void Stub_MusicPlay(void *pMod) { (void)pMod; }
 static void Stub_MusicVolume(void *pMod, i32 nVolume) { (void)pMod; (void)nVolume; }
 static void Stub_MusicFree(void *pMod) { (void)pMod; }
+static bool Stub_MusicFinished(const void *pMod) { (void)pMod; return false; }
 
 static const PufoAudioBackend s_stubBackend = {
     Stub_Init,
@@ -85,7 +89,8 @@ static const PufoAudioBackend s_stubBackend = {
     Stub_MusicVolume,
     Stub_MusicMod2,   /* set paused */
     Stub_MusicFree,
-    Stub_Void         /* close */
+    Stub_Void,        /* close */
+    Stub_MusicFinished
 };
 
 static const PufoAudioBackend *s_pBackend = &s_stubBackend;
@@ -104,6 +109,14 @@ void Sound_SetMuteBytes(const u8 *pbSoundOff, const u8 *pbMusicOff)
 {
     s_pbSoundOff = pbSoundOff;
     s_pbMusicOff = pbMusicOff;
+}
+
+/* The options screen's live loop byte (port-side, 2026-11-04). While one is
+ * installed, Sound_IsMusicLooping reads it live; the saved game restores it. */
+void Sound_SetLoopByte(const u8 *pbMusicLoop)
+{
+    s_pbMusicLoop = pbMusicLoop;
+    s_bMusicLooping = (pbMusicLoop == NULL) ? true : (*pbMusicLoop != 0u);
 }
 
 /* The soundoff read Sound_Play makes before it plays: the live options cell when
@@ -284,7 +297,15 @@ void Sound_LoadAndPlayMusic(i32 nTrack)
     /* FMUSIC_LoadSongEx(data, 0, length, mode 0x8000 (=FSOUND_LOADMEMORY)). */
     s_pMusicMod = s_pBackend->pfnMusicLoad(pData, cb, 0x8000u);
     if (s_pMusicMod != NULL) {
+        s_nMusicTrack = nTrack;
+        /* 0x9E1F8: the original loads every track looping. The port then applies
+         * the user's loop setting; with it off, Sound_MusicProgress plays the
+         * next track when this one runs out. */
+        s_bMusicLooping = (s_pbMusicLoop == NULL) ? true : (*s_pbMusicLoop != 0u);
         s_pBackend->pfnMusicSetLooping(s_pMusicMod, 1);
+        if (!s_bMusicLooping) {
+            s_pBackend->pfnMusicSetLooping(s_pMusicMod, 0);
+        }
         s_pBackend->pfnMusicOptimize(s_pMusicMod, 16, 10);
         s_pBackend->pfnMusicPlay(s_pMusicMod);
         /* 0x9E228/0x9E230: the load pauses the module straight away when the
@@ -333,5 +354,39 @@ void Sound_SetPaused(bool bPaused)
     s_pBackend->pfnSetSfxPaused(PUFO_FSOUND_ALL, bPaused ? 1 : 0);
     if (s_bMusicLoaded && s_pMusicMod != NULL) {
         s_pBackend->pfnMusicSetPaused(s_pMusicMod, bPaused ? 1 : 0);
+    }
+}
+
+/* Port-side addition (2026-11-04, user-requested, not in the original): turn
+ * music looping off and back on for the track that is loaded. The backend slot
+ * is the original's FMUSIC_SetLooping @ 0x9E1F8; the original only ever passes
+ * 1, at load. Every track starts looping again when it is loaded. */
+void Sound_SetMusicLooping(bool bLoop)
+{
+    s_bMusicLooping = bLoop;
+    if (s_pbMusicLoop != NULL) {
+        *(u8 *)s_pbMusicLoop = bLoop ? 1u : 0u;
+    }
+    if (s_bMusicLoaded && s_pMusicMod != NULL) {
+        s_pBackend->pfnMusicSetLooping(s_pMusicMod, bLoop ? 1 : 0);
+    }
+}
+
+bool Sound_IsMusicLooping(void)
+{
+    return (s_pbMusicLoop == NULL) ? s_bMusicLooping : (*s_pbMusicLoop != 0u);
+}
+
+/* Call from the frame tick. With the loop setting OFF, a module that has
+ * played out hands over to the next track (0..4 wrap). With it ON, FMOD's
+ * original behaviour, the module loops and this never fires. */
+void Sound_MusicProgress(void)
+{
+    if (!s_bMusicLoaded || s_pMusicMod == NULL || Sound_IsMusicLooping()) {
+        return;
+    }
+    if (s_pBackend->pfnMusicFinished != NULL
+        && s_pBackend->pfnMusicFinished(s_pMusicMod)) {
+        Sound_LoadAndPlayMusic((s_nMusicTrack + 1) % PUFO_MUSIC_TRACK_COUNT);
     }
 }

@@ -1,0 +1,21 @@
+{
+  "saved": true,
+  "after": [
+    {
+      "ea": "0x4f138",
+      "comment": "Raw selector: R4 is Map base 0x1139B8; LDR R3,[R4,#0x14C] at 0x4F128 passes apObjects[17] for own-cell damage. Neighbor calls instead load +0x108 (slot 0)."
+    },
+    {
+      "ea": "0x4f170",
+      "comment": "Raw selector: LDR R3,[R4,#0x108] at 0x4F144 passes Map.apObjects[0] for this neighbor; R4 remains Map base. Not slot 17 (+0x14C)."
+    },
+    {
+      "ea": "0x4f1a8",
+      "comment": "Raw selector: LDR R3,[R4,#0x108] at 0x4F17C passes Map.apObjects[0] for this neighbor; no slot copy/store occurs in this call block."
+    },
+    {
+      "ea": "0x4f1e0",
+      "comment": "Raw selector: LDR R3,[R4,#0x108] at 0x4F1B4 passes Map.apObjects[0] for this third neighbor; own-cell damage uses slot 17."
+    }
+  ]
+}

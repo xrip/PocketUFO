@@ -1,0 +1,1022 @@
+[
+  {
+    "address": 659804,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659812,
+    "slot": 680284,
+    "import": [
+      "COREDLL",
+      "__imp_??3@YAXPAX@Z",
+      1094
+    ]
+  },
+  {
+    "address": 659816,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659824,
+    "slot": 680276,
+    "import": [
+      "COREDLL",
+      "__imp_??2@YAPAXI@Z",
+      1095
+    ]
+  },
+  {
+    "address": 659828,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659836,
+    "slot": 680112,
+    "import": [
+      "COREDLL",
+      "__imp_strcat",
+      1063
+    ]
+  },
+  {
+    "address": 659840,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659848,
+    "slot": 679952,
+    "import": [
+      "COREDLL",
+      "__imp_sqrt",
+      1060
+    ]
+  },
+  {
+    "address": 659852,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659860,
+    "slot": 679964,
+    "import": [
+      "COREDLL",
+      "__imp_strcmp",
+      1065
+    ]
+  },
+  {
+    "address": 659864,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659872,
+    "slot": 679968,
+    "import": [
+      "COREDLL",
+      "__imp_cos",
+      1004
+    ]
+  },
+  {
+    "address": 659876,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659884,
+    "slot": 679984,
+    "import": [
+      "COREDLL",
+      "__imp_sin",
+      1058
+    ]
+  },
+  {
+    "address": 659888,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659896,
+    "slot": 680004,
+    "import": [
+      "COREDLL",
+      "__imp_atoi",
+      993
+    ]
+  },
+  {
+    "address": 659900,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659908,
+    "slot": 680008,
+    "import": [
+      "COREDLL",
+      "__imp_memset",
+      1047
+    ]
+  },
+  {
+    "address": 659912,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659920,
+    "slot": 680024,
+    "import": [
+      "COREDLL",
+      "__imp_strlen",
+      1068
+    ]
+  },
+  {
+    "address": 659924,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659932,
+    "slot": 680032,
+    "import": [
+      "COREDLL",
+      "__imp_memmove",
+      1046
+    ]
+  },
+  {
+    "address": 659936,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659944,
+    "slot": 680044,
+    "import": [
+      "COREDLL",
+      "__imp_atan2",
+      992
+    ]
+  },
+  {
+    "address": 659948,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659956,
+    "slot": 680048,
+    "import": [
+      "COREDLL",
+      "__imp_tan",
+      1075
+    ]
+  },
+  {
+    "address": 659960,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659968,
+    "slot": 680064,
+    "import": [
+      "COREDLL",
+      "__imp_ReadFile",
+      170
+    ]
+  },
+  {
+    "address": 659972,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659980,
+    "slot": 680068,
+    "import": [
+      "COREDLL",
+      "__imp_SetFilePointer",
+      173
+    ]
+  },
+  {
+    "address": 659984,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 659992,
+    "slot": 680072,
+    "import": [
+      "COREDLL",
+      "__imp_CreateFileW",
+      168
+    ]
+  },
+  {
+    "address": 659996,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660004,
+    "slot": 680080,
+    "import": [
+      "COREDLL",
+      "__imp_memcpy",
+      1044
+    ]
+  },
+  {
+    "address": 660008,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660016,
+    "slot": 680084,
+    "import": [
+      "COREDLL",
+      "__imp_CloseHandle",
+      553
+    ]
+  },
+  {
+    "address": 660020,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660028,
+    "slot": 680088,
+    "import": [
+      "COREDLL",
+      "__imp_rand",
+      1053
+    ]
+  },
+  {
+    "address": 660032,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660040,
+    "slot": 680096,
+    "import": [
+      "COREDLL",
+      "__imp_fclose",
+      1118
+    ]
+  },
+  {
+    "address": 660044,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660052,
+    "slot": 680100,
+    "import": [
+      "COREDLL",
+      "__imp_fwrite",
+      1121
+    ]
+  },
+  {
+    "address": 660056,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660064,
+    "slot": 680104,
+    "import": [
+      "COREDLL",
+      "__imp_fopen",
+      1113
+    ]
+  },
+  {
+    "address": 660068,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660076,
+    "slot": 680108,
+    "import": [
+      "COREDLL",
+      "__imp_Sleep",
+      496
+    ]
+  },
+  {
+    "address": 660080,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660088,
+    "slot": 680280,
+    "import": [
+      "COREDLL",
+      "__imp_KillTimer",
+      876
+    ]
+  },
+  {
+    "address": 660092,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660100,
+    "slot": 680116,
+    "import": [
+      "COREDLL",
+      "__imp_SetTimer",
+      875
+    ]
+  },
+  {
+    "address": 660104,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660112,
+    "slot": 680120,
+    "import": [
+      "COREDLL",
+      "__imp_itoa",
+      1025
+    ]
+  },
+  {
+    "address": 660116,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660124,
+    "slot": 680124,
+    "import": [
+      "COREDLL",
+      "__imp_SetWindowPos",
+      247
+    ]
+  },
+  {
+    "address": 660128,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660136,
+    "slot": 680128,
+    "import": [
+      "COREDLL",
+      "__imp_RegCloseKey",
+      455
+    ]
+  },
+  {
+    "address": 660140,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660148,
+    "slot": 680132,
+    "import": [
+      "COREDLL",
+      "__imp_RegSetValueExW",
+      464
+    ]
+  },
+  {
+    "address": 660152,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660160,
+    "slot": 680136,
+    "import": [
+      "COREDLL",
+      "__imp_mbstowcs",
+      76
+    ]
+  },
+  {
+    "address": 660164,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660172,
+    "slot": 680140,
+    "import": [
+      "COREDLL",
+      "__imp_RegCreateKeyExW",
+      456
+    ]
+  },
+  {
+    "address": 660176,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660184,
+    "slot": 680144,
+    "import": [
+      "COREDLL",
+      "__imp_RegQueryValueExW",
+      463
+    ]
+  },
+  {
+    "address": 660188,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660196,
+    "slot": 680148,
+    "import": [
+      "COREDLL",
+      "__imp_WriteFile",
+      171
+    ]
+  },
+  {
+    "address": 660200,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660208,
+    "slot": 680152,
+    "import": [
+      "COREDLL",
+      "__imp_FindClose",
+      180
+    ]
+  },
+  {
+    "address": 660212,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660220,
+    "slot": 680156,
+    "import": [
+      "COREDLL",
+      "__imp_FindFirstFileW",
+      167
+    ]
+  },
+  {
+    "address": 660224,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660232,
+    "slot": 680160,
+    "import": [
+      "COREDLL",
+      "__imp_GetFileSize",
+      172
+    ]
+  },
+  {
+    "address": 660236,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660244,
+    "slot": 680164,
+    "import": [
+      "COREDLL",
+      "__imp_strupr",
+      1416
+    ]
+  },
+  {
+    "address": 660248,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660256,
+    "slot": 680168,
+    "import": [
+      "COREDLL",
+      "__imp_GetMessageW",
+      861
+    ]
+  },
+  {
+    "address": 660260,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660268,
+    "slot": 680172,
+    "import": [
+      "COREDLL",
+      "__imp_DispatchMessageW",
+      859
+    ]
+  },
+  {
+    "address": 660272,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660280,
+    "slot": 680176,
+    "import": [
+      "COREDLL",
+      "__imp_TranslateMessage",
+      870
+    ]
+  },
+  {
+    "address": 660284,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660292,
+    "slot": 680180,
+    "import": [
+      "COREDLL",
+      "__imp_TranslateAcceleratorW",
+      838
+    ]
+  },
+  {
+    "address": 660296,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660304,
+    "slot": 680184,
+    "import": [
+      "COREDLL",
+      "__imp_LoadAcceleratorsW",
+      94
+    ]
+  },
+  {
+    "address": 660308,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660316,
+    "slot": 680188,
+    "import": [
+      "COREDLL",
+      "__imp_wcstombs",
+      75
+    ]
+  },
+  {
+    "address": 660320,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660328,
+    "slot": 680192,
+    "import": [
+      "COREDLL",
+      "__imp_GetModuleFileNameW",
+      537
+    ]
+  },
+  {
+    "address": 660332,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660340,
+    "slot": 680196,
+    "import": [
+      "COREDLL",
+      "__imp_srand",
+      1061
+    ]
+  },
+  {
+    "address": 660344,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660352,
+    "slot": 680200,
+    "import": [
+      "COREDLL",
+      "__imp_GetSystemTime",
+      25
+    ]
+  },
+  {
+    "address": 660356,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660364,
+    "slot": 680204,
+    "import": [
+      "COREDLL",
+      "__imp_ReleaseDC",
+      263
+    ]
+  },
+  {
+    "address": 660368,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660376,
+    "slot": 680208,
+    "import": [
+      "COREDLL",
+      "__imp_ExtEscape",
+      1182
+    ]
+  },
+  {
+    "address": 660380,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660388,
+    "slot": 680212,
+    "import": [
+      "COREDLL",
+      "__imp_GetDC",
+      262
+    ]
+  },
+  {
+    "address": 660392,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660400,
+    "slot": 680216,
+    "import": [
+      "COREDLL",
+      "__imp_UpdateWindow",
+      267
+    ]
+  },
+  {
+    "address": 660404,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660412,
+    "slot": 680220,
+    "import": [
+      "COREDLL",
+      "__imp_ShowWindow",
+      266
+    ]
+  },
+  {
+    "address": 660416,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660424,
+    "slot": 680224,
+    "import": [
+      "COREDLL",
+      "__imp_CreateWindowExW",
+      246
+    ]
+  },
+  {
+    "address": 660428,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660436,
+    "slot": 680228,
+    "import": [
+      "COREDLL",
+      "__imp_GetSystemMetrics",
+      885
+    ]
+  },
+  {
+    "address": 660440,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660448,
+    "slot": 680232,
+    "import": [
+      "COREDLL",
+      "__imp_RegisterClassW",
+      95
+    ]
+  },
+  {
+    "address": 660452,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660460,
+    "slot": 680236,
+    "import": [
+      "COREDLL",
+      "__imp_GetStockObject",
+      919
+    ]
+  },
+  {
+    "address": 660464,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660472,
+    "slot": 680240,
+    "import": [
+      "COREDLL",
+      "__imp_LoadIconW",
+      728
+    ]
+  },
+  {
+    "address": 660476,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660484,
+    "slot": 680244,
+    "import": [
+      "COREDLL",
+      "__imp_SetForegroundWindow",
+      702
+    ]
+  },
+  {
+    "address": 660488,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660496,
+    "slot": 680248,
+    "import": [
+      "COREDLL",
+      "__imp_FindWindowW",
+      286
+    ]
+  },
+  {
+    "address": 660500,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660508,
+    "slot": 680252,
+    "import": [
+      "COREDLL",
+      "__imp_PostQuitMessage",
+      866
+    ]
+  },
+  {
+    "address": 660512,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660520,
+    "slot": 680256,
+    "import": [
+      "COREDLL",
+      "__imp_SendMessageW",
+      868
+    ]
+  },
+  {
+    "address": 660524,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660532,
+    "slot": 680260,
+    "import": [
+      "COREDLL",
+      "__imp_DefWindowProcW",
+      264
+    ]
+  },
+  {
+    "address": 660536,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660544,
+    "slot": 680264,
+    "import": [
+      "COREDLL",
+      "__imp_EndPaint",
+      261
+    ]
+  },
+  {
+    "address": 660548,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660556,
+    "slot": 680268,
+    "import": [
+      "COREDLL",
+      "__imp_GetClientRect",
+      249
+    ]
+  },
+  {
+    "address": 660560,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660568,
+    "slot": 680272,
+    "import": [
+      "COREDLL",
+      "__imp_BeginPaint",
+      260
+    ]
+  },
+  {
+    "address": 660572,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660580,
+    "slot": 679936,
+    "import": [
+      "AYGSHELL",
+      "__imp_SHHandleWMSettingChange",
+      83
+    ]
+  },
+  {
+    "address": 660584,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660592,
+    "slot": 679940,
+    "import": [
+      "AYGSHELL",
+      "__imp_SHHandleWMActivate",
+      84
+    ]
+  },
+  {
+    "address": 660596,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660604,
+    "slot": 680332,
+    "import": [
+      "fmodce",
+      "FSOUND_PlaySound",
+      0
+    ]
+  },
+  {
+    "address": 660608,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660616,
+    "slot": 680336,
+    "import": [
+      "fmodce",
+      "FMUSIC_SetPaused",
+      0
+    ]
+  },
+  {
+    "address": 660620,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660628,
+    "slot": 680340,
+    "import": [
+      "fmodce",
+      "FMUSIC_PlaySong",
+      0
+    ]
+  },
+  {
+    "address": 660632,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660640,
+    "slot": 680344,
+    "import": [
+      "fmodce",
+      "FMUSIC_OptimizeChannels",
+      0
+    ]
+  },
+  {
+    "address": 660644,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660652,
+    "slot": 680348,
+    "import": [
+      "fmodce",
+      "FMUSIC_SetLooping",
+      0
+    ]
+  },
+  {
+    "address": 660656,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660664,
+    "slot": 680352,
+    "import": [
+      "fmodce",
+      "FMUSIC_LoadSongEx",
+      0
+    ]
+  },
+  {
+    "address": 660668,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660676,
+    "slot": 680356,
+    "import": [
+      "fmodce",
+      "FSOUND_Sample_SetMode",
+      0
+    ]
+  },
+  {
+    "address": 660680,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660688,
+    "slot": 680360,
+    "import": [
+      "fmodce",
+      "FSOUND_Sample_Load",
+      0
+    ]
+  },
+  {
+    "address": 660692,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660700,
+    "slot": 680364,
+    "import": [
+      "fmodce",
+      "FSOUND_SetHWND",
+      0
+    ]
+  },
+  {
+    "address": 660704,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660712,
+    "slot": 680328,
+    "import": [
+      "fmodce",
+      "FSOUND_Init",
+      0
+    ]
+  },
+  {
+    "address": 660716,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660724,
+    "slot": 680324,
+    "import": [
+      "fmodce",
+      "FSOUND_Close",
+      0
+    ]
+  },
+  {
+    "address": 660728,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660736,
+    "slot": 680320,
+    "import": [
+      "fmodce",
+      "FMUSIC_FreeSong",
+      0
+    ]
+  },
+  {
+    "address": 660740,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660748,
+    "slot": 680316,
+    "import": [
+      "fmodce",
+      "FSOUND_Sample_Free",
+      0
+    ]
+  },
+  {
+    "address": 660752,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660760,
+    "slot": 680312,
+    "import": [
+      "fmodce",
+      "FMUSIC_SetMasterVolume",
+      0
+    ]
+  },
+  {
+    "address": 660764,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660772,
+    "slot": 680308,
+    "import": [
+      "fmodce",
+      "FSOUND_SetPaused",
+      0
+    ]
+  },
+  {
+    "address": 660776,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 660784,
+    "slot": 680304,
+    "import": [
+      "fmodce",
+      "FSOUND_SetSFXMasterVolume",
+      0
+    ]
+  },
+  {
+    "address": 661320,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 661328,
+    "slot": 680292,
+    "import": [
+      "COREDLL",
+      "__imp_LocalReAlloc",
+      34
+    ]
+  },
+  {
+    "address": 661332,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 661340,
+    "slot": 680288,
+    "import": [
+      "COREDLL",
+      "__imp_LocalAlloc",
+      33
+    ]
+  },
+  {
+    "address": 661344,
+    "load_word": 3852451840,
+    "tail_word": 3852267520,
+    "literal": 661352,
+    "slot": 680296,
+    "import": [
+      "COREDLL",
+      "__imp_LocalSize",
+      35
+    ]
+  }
+]

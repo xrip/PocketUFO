@@ -1,0 +1,17 @@
+[
+  {
+    "address": "0x1a83c",
+    "type": "int __fastcall(void *pRenderContext)",
+    "comment": "\n2026-10-29 raw review: the sole argument is Render_Frame caller context, not g_pTitlesState. R0 is saved in R4 at0x1A844 and context+0x100 is the loop cursor. g_pTitlesState is loaded independently at0x1A848/0x1A858. At0x1A870 the first RNG draw is Y, saved in R11; the second draw at0x1A87C is X (R1 at0x1A888). All Render_Frame code callers pass szEmptyString+8; the previous second unused argument was a decompiler artifact."
+  },
+  {
+    "address": "0x468cc",
+    "type": "int __fastcall(void *pTitles)",
+    "comment": "\n2026-10-29 raw review: header bytes are stored at0x46984/0x4698C even for a two-byte zero-particle member; BLE0x46990 skips only the loop. At0x46AAC R0 becomes old scene index+1;0x46AB8 may wrap the stored index to0 without changing R0. The return is2 on the1->0 wrap."
+  },
+  {
+    "address": "0x46acc",
+    "type": "signed int __fastcall(_DWORD *pTitles)",
+    "comment": null
+  }
+]

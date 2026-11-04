@@ -1,9 +1,8 @@
 /* pufo_clock.h - the geoscape game clock.
  *
  * Evidence: GameTime_Decode @ 0x5cfd4, GameTime_Reset @ 0x5c56c,
- * Geoscape_AdvanceTime @ 0x5ce40. The original keeps the whole block inside
- * the big global at 0x158890: it is gUiRootPanel.apLines[101..115], which is
- * 0x158890 + 0xBE4 + 4 * 101 = 0x159608. So nTotalSec is 0x159618 (IDA's nGameTimeSec),
+ * Geoscape_AdvanceTime @ 0x5ce40. This is the clock storage view at 0x159608;
+ * it does not claim a surrounding UI-panel layout. nTotalSec is 0x159618,
  * bPaused is 0x15961C, and the decoded fields are 0x159620 nGameYear, 0x159624 nGameMonth,
  * 0x159628 nGameDay, 0x15962C nGameWeekday, 0x159630 nGameHour, 0x159634 nGameMinute and
  * 0x159638 nGameSecond.
@@ -68,13 +67,16 @@ typedef struct GeoscapeClockHooks {
  *
  * Faithful quirks of the original:
  * - the minute loop is skipped while bPaused, the hour and day loops are not;
- * - a negative delta updates nothing but is still divided (ARM truncates
- *   toward zero, same as C99);
+ * - production supplies a positive interval plus one; raw elapsed-tick division
+ *   is unsigned, so negative manual deltas are not a parity claim for this API;
  * - the monthly funding screen opens when the decoded month differs from the
  *   month read at entry, i.e. the tick chain itself changed it;
  * - nMonthEpochSec is re-stamped whenever (total - stamp) / 5 != 0. */
 void Geoscape_AdvanceTime(GameTime *pTime, i32 nDeltaSec,
                           const GeoscapeClockHooks *pHooks);
+
+/* GameTime_Pause @ 0x5d6ac: sets the strategic pause byte at 0x15961C. */
+void GameTime_Pause(GameTime *pTime);
 
 /* GameTime_Unpause @ 0x5d6c0. One write: it clears the pause byte, the same
  * apLines[106] byte GameTime_Pause @ 0x5d6ac sets. There is no counter and no other

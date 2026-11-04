@@ -1,0 +1,160 @@
+{
+  "cluster_id": "audio-wrappers",
+  "date": "2026-10-29",
+  "source_fingerprint": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01",
+  "members": [
+    {
+      "address": "0x9e0c0",
+      "size": 112,
+      "source_bindings": [
+        {
+          "path": "src/pufo/audio/pufo_audio.c",
+          "function": "Sound_Play"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "input_domain": "Valid sample index within loaded range; caller discards return.",
+      "contract": "Ready gate; toggle and one RNG draw with bound200 before mute gate; play selected sample slot when unmuted.",
+      "boundary_evidence": [
+        "audio-wrapper-raw-2026-10-29.json full raw body and code xrefs",
+        "audio-init-caller-raw-2026-10-29.json startup caller windows; source caller search"
+      ],
+      "deviations": [
+        "Port bounds index by loaded count; original has no index check."
+      ],
+      "open_questions": [
+        "196 raw code xrefs; all return-forwarding UI paths are not traced."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x9e130",
+      "size": 312,
+      "source_bindings": [
+        {
+          "path": "src/pufo/audio/pufo_audio.c",
+          "function": "Sound_LoadAndPlayMusic"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "input_domain": "Present valid asset and successful allocation; supported backend module.",
+      "contract": "Build back<track>.it; load memory with mode0x8000; loop1/optimize16,10/play; pause when music-off; free source buffer; set loaded byte.",
+      "boundary_evidence": [
+        "audio-wrapper-raw-2026-10-29.json full raw body and code xrefs",
+        "audio-init-caller-raw-2026-10-29.json startup caller windows; source caller search"
+      ],
+      "deviations": [
+        "Port checks missing asset/read/allocation/module failures. Backend replaces FMODCE with openmpt/WinMM."
+      ],
+      "open_questions": [
+        "External FMODCE optimize/playback equivalence and output remain unverified; all five next calls enter no-argument volume application, which overwrites R0."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x9e268",
+      "size": 364,
+      "source_bindings": [
+        {
+          "path": "src/pufo/audio/pufo_audio.c",
+          "function": "Sound_InitAndLoadSamples"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "input_domain": "Valid prefix and sequential assets within202 slots; callers discard return.",
+      "contract": "22000Hz,32 channels,flags0; up to11 attempts and10 sleeps100ms; SetHWND; ready=1 even on failure; contiguous prefix<n>.wav load mode0xA000/setmode1 until missing.",
+      "boundary_evidence": [
+        "audio-wrapper-raw-2026-10-29.json full raw body and code xrefs",
+        "audio-init-caller-raw-2026-10-29.json startup caller windows; source caller search"
+      ],
+      "deviations": [
+        "Port bounds slots and validates allocation/reads. SetWindow(NULL) replaces original HWND handoff to external FMODCE; WinMM uses its own device setup. C returns ready state; original exits on missing asset result."
+      ],
+      "open_questions": [
+        "Five raw init callers checked to discard R0; actual backend initialization and playback were not run."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x9e3d4",
+      "size": 128,
+      "source_bindings": [
+        {
+          "path": "src/pufo/audio/pufo_audio.c",
+          "function": "Sound_Shutdown"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "input_domain": "Owned sample/module handles; caller discards return.",
+      "contract": "Free count sample handles; free module if loaded; close backend; clear ready and loaded bytes.",
+      "boundary_evidence": [
+        "audio-wrapper-raw-2026-10-29.json full raw body and code xrefs",
+        "audio-init-caller-raw-2026-10-29.json startup caller windows; source caller search"
+      ],
+      "deviations": [
+        "Port skips NULL frees, clears pointers and resets sample count; original retains stale pointer/count cells until next init."
+      ],
+      "open_questions": [
+        "Native lifetime/device acceptance is unrun."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x9e454",
+      "size": 136,
+      "source_bindings": [
+        {
+          "path": "src/pufo/audio/pufo_audio.c",
+          "function": "Sound_ApplyMusicVolume"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "input_domain": "Option step0..5; callers provide computed level/mute to C wrapper and discard return.",
+      "contract": "Read global music options; level=(muted?0:12*step+4)*4-1; set volume then pause/unpause when loaded.",
+      "boundary_evidence": [
+        "audio-wrapper-raw-2026-10-29.json full raw body and code xrefs",
+        "audio-init-caller-raw-2026-10-29.json startup caller windows; source caller search"
+      ],
+      "deviations": [
+        "Option arithmetic lives in Options_MusicLevel/Options_MapLevel callers; port guards NULL module; openmpt backend replaces FMODCE."
+      ],
+      "open_questions": [
+        "All options callback result-forwarding paths are not traced; exact backend response to-1/output is not proven against FMODCE."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x9e4dc",
+      "size": 124,
+      "source_bindings": [
+        {
+          "path": "src/pufo/audio/pufo_audio.c",
+          "function": "Sound_ApplySfxVolume"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "input_domain": "Option step0..5; callers provide computed level/mute to C wrapper and discard return.",
+      "contract": "Same level arithmetic for sound; set master volume then pause all channel-3 when ready.",
+      "boundary_evidence": [
+        "audio-wrapper-raw-2026-10-29.json full raw body and code xrefs",
+        "audio-init-caller-raw-2026-10-29.json startup caller windows; source caller search"
+      ],
+      "deviations": [
+        "Option arithmetic lives in Options_SfxLevel/Options_MapLevel callers; WinMM backend replaces FMODCE."
+      ],
+      "open_questions": [
+        "All options callback result-forwarding paths are not traced; backend sample/output parity remains open."
+      ],
+      "idb_proposals": []
+    }
+  ],
+  "tests_executed": false,
+  "runtime_executed": false,
+  "scope": "Wrapper valid-data behavior and source bindings; no full external backend or native audio parity claim."
+}

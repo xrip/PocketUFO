@@ -5,8 +5,8 @@
  * ground truth out of main.dat, not port-internal expectations.
  *
  * The starting state the original leaves behind: one base ("new" at -6000,-6000), ten
- * placed facilities, four starter items in the base stock, a type-0 craft with twenty
- * cargo adds, two type-3 craft with the starter crew and weapons 25/26, eight soldiers,
+ * placed facilities, six base-stock grants, a type-0 craft with twenty
+ * cargo adds, two type-3 craft with object slots 25/26 and weapons 25/26, eight soldiers,
  * funds 4147000, and the spawn pass run through the strateg hooks.
  */
 #include "game/pufo_boot.h"
@@ -49,6 +49,38 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
 }
 
 static BootAssets g_assets;
+
+/* Independent expected data from the raw Game_StartNew BL arguments. These are Map.apObjects
+ * indices and quantities, not the production startup tables or tactical OBJ_* names. */
+typedef struct RawStartGrant {
+    i32 nObjectSlot;
+    i32 nQuantity;
+} RawStartGrant;
+
+static const RawStartGrant g_aRawExpectedBase0[] = {
+    {  27,  1 }, {  52, 20 }, {  53, 15 }, {  54, 10 }, { 112, 10 }, { 113, 10 },
+};
+
+static const RawStartGrant g_aRawExpectedCraft0[] = {
+    {  1,  3 }, {  4,  6 }, {  7,  2 }, {  8,  2 }, { 10,  1 },
+    { 14,  4 }, { 15,  4 }, { 16,  4 }, { 17,  4 }, { 36,  4 },
+    { 38, 10 }, { 40,  2 }, { 41,  2 }, { 42,  2 }, { 43,  2 },
+    { 44,  2 }, { 45,  2 }, { 46,  2 }, { 47,  1 }, { 48,  1 },
+};
+
+static const RawStartGrant g_aRawExpectedFighter[] = {
+    { 25, 1 }, { 26, 1 },
+};
+
+static i32 RawExpectedQty(const RawStartGrant *aGrants, i32 nGrantCount, i32 nObjectSlot)
+{
+    for (i32 i = 0; i < nGrantCount; ++i) {
+        if (aGrants[i].nObjectSlot == nObjectSlot) {
+            return aGrants[i].nQuantity;
+        }
+    }
+    return 0;
+}
 
 /* The state Game_StartNew writes through its environment. */
 static Soldier  *apSoldiers[16];
@@ -467,21 +499,33 @@ static void TestStartNew(void)
     if (apBases[0] != NULL) {
         CheckEqI32(apBases[0]->nUnk8, -6000, "base x");
         CheckEqI32(apBases[0]->nUnk12, -6000, "base y");
-        CheckEqI32(apBases[0]->nStoresTotal, 46, "base stock total (1+20+15+10)");
+        CheckEqI32(apBases[0]->nStoresTotal, 66, "base stock total from six raw grants");
     }
     Check(strcmp(aSiteRecs[0].abName, "new") == 0, "the base site record is named \"new\"");
 
-    /* The four starter items land in the base's per-object column. */
-    CheckEqI32(g_assets.apObjects[OBJ_HEAVY_CANNON_AP_CLIP]->auPerBaseVal[0], 1,
-               "base stock: Heavy cannon [AP] clip (slot 43)");
-    CheckEqI32(g_assets.apObjects[OBJ_SILACOID_CORPSE]->auPerBaseVal[0], 20,
-               "base stock: Silacoid corpse (slot 68)");
-    CheckEqI32(g_assets.apObjects[OBJ_SECTOPOD_REMAINS]->auPerBaseVal[0], 15,
-               "base stock: Sectopod remains (slot 69)");
-    CheckEqI32(g_assets.apObjects[OBJ_OPERATIVE_CORPSE]->auPerBaseVal[0], 10,
-               "base stock: operative corpse (slot 70)");
-    CheckEqI32(g_assets.apObjects[OBJ_ELERIUM_115]->auPerBaseVal[0], 0,
-               "Base_GrantStarterItems(bGrant 0) added nothing");
+    /* The raw BL argument table: 0x94EFC, 0x94F14, 0x94F2C, 0x94F44,
+     * 0x95188, and 0x951A0. Check every object slot and every base owner column. */
+    {
+        bool bAll = true;
+        for (i = 0; i < (i32)g_assets.nObjectCount; ++i) {
+            ObjectRecFull *pObj = g_assets.apObjects[i];
+            if (pObj->auPerBaseVal[0] !=
+                (u16)RawExpectedQty(g_aRawExpectedBase0,
+                                    (i32)(sizeof(g_aRawExpectedBase0) /
+                                          sizeof(g_aRawExpectedBase0[0])), i)) {
+                bAll = false;
+            }
+            for (c = 1; c < PUFO_FAC_BASE_COUNT; ++c) {
+                if (pObj->auPerBaseVal[c] != 0) {
+                    bAll = false;
+                }
+            }
+        }
+        Check(bAll, "Base0 has exactly the six raw object-slot grants; other stock slots and base columns are zero");
+    }
+    CheckEqI32(g_assets.apObjects[4]->auPerBaseVal[0], 0, "no starting rifle stock");
+    CheckEqI32(g_assets.apObjects[17]->auPerBaseVal[0], 0, "no starting grenade stock");
+    CheckEqI32(g_assets.apObjects[38]->auPerBaseVal[0], 0, "no starting rifle-clip stock");
 
     /* The 17 facility records, named from the shipped text records. */
     /* The names are copied from the text records the table order selects. Which language
@@ -597,18 +641,25 @@ static void TestStartNew(void)
         CheckEqI32(apCraft[2]->bAmmo26, 3, "craft 2 ammo 26");
     }
 
-    /* The cargo columns: slot 0 is the Skyranger, 1 and 2 the interceptors. */
-    CheckEqI32(g_assets.apObjects[OBJ_CYBERDISK]->aItemQty[0], 10, "Skyranger cargo: Cyberdisk x10 (slot 99)");
-    CheckEqI32(g_assets.apObjects[OBJ_ALIEN_SURGERY]->aItemQty[0], 1, "Skyranger cargo: Alien surgery x1 (slot 108)");
-    CheckEqI32(g_assets.apObjects[OBJ_CELATID_CORPSE]->aItemQty[0], 3, "Skyranger cargo: Celatid corpse x3 (slot 67)");
-    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_ENGINEER]->aItemQty[1], 1, "interceptor 1 cargo: Floater engineer (88)");
-    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_NAVIGATOR]->aItemQty[2], 1, "interceptor 2 cargo: Floater navigator (89)");
-    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_ENGINEER]->aItemQty[2], 1, "interceptor 2 cargo: Floater engineer (88)");
-    CheckEqI32(g_assets.apObjects[OBJ_HEAVY_CANNON_AP_CLIP]->aItemQty[0], 0, "the base stock item is not craft cargo");
+    /* Independent raw cargo expectations: twenty slots for craft0, then 25/26 once
+     * for each interceptor. Compare all three actual owner columns over every object
+     * slot, so stale alien cargo or missing standard kit cannot hide in an unlisted row. */
     {
         bool bAll = true;
         for (i = 0; i < (i32)g_assets.nObjectCount; ++i) {
             ObjectRecFull *pObj = g_assets.apObjects[i];
+            const i32 nWantCraft0 = RawExpectedQty(
+                g_aRawExpectedCraft0,
+                (i32)(sizeof(g_aRawExpectedCraft0) / sizeof(g_aRawExpectedCraft0[0])), i);
+            const i32 nWantFighter = RawExpectedQty(
+                g_aRawExpectedFighter,
+                (i32)(sizeof(g_aRawExpectedFighter) / sizeof(g_aRawExpectedFighter[0])), i);
+
+            if (pObj->aItemQty[0] != nWantCraft0 ||
+                pObj->aItemQty[1] != nWantFighter ||
+                pObj->aItemQty[2] != nWantFighter) {
+                bAll = false;
+            }
             for (c = 3; c < 50; ++c) {
                 if (pObj->aItemQty[c] != 0) {
                     bAll = false;
@@ -618,8 +669,27 @@ static void TestStartNew(void)
                 bAll = false; /* StartNew clears [0..49] only */
             }
         }
-        Check(bAll, "aItemQty[3..49] cleared for every object, [50]/[51] kept");
+        Check(bAll, "all craft owner columns match raw grants; no stray cargo; [3..49] zero and [50]/[51] kept");
     }
+    CheckEqI32(g_assets.apObjects[4]->aItemQty[0], 6, "Skyranger raw cargo: Rifle slot 4 x6");
+    CheckEqI32(g_assets.apObjects[17]->aItemQty[0], 4, "Skyranger raw cargo: Grenade slot 17 x4");
+    CheckEqI32(g_assets.apObjects[38]->aItemQty[0], 10, "Skyranger raw cargo: Rifle clip slot 38 x10");
+    CheckEqI32(g_assets.apObjects[25]->aItemQty[1], 1, "interceptor 1 raw cargo: slot 25 x1");
+    CheckEqI32(g_assets.apObjects[26]->aItemQty[1], 1, "interceptor 1 raw cargo: slot 26 x1");
+    CheckEqI32(g_assets.apObjects[25]->aItemQty[2], 1, "interceptor 2 raw cargo: slot 25 x1");
+    CheckEqI32(g_assets.apObjects[26]->aItemQty[2], 1, "interceptor 2 raw cargo: slot 26 x1");
+    CheckEqI32(g_assets.apObjects[67]->aItemQty[0], 0, "no stray Celatid corpse cargo");
+    CheckEqI32(g_assets.apObjects[99]->aItemQty[0], 0, "no stray Cyberdisk cargo");
+    CheckEqI32(g_assets.apObjects[108]->aItemQty[0], 0, "no stray Alien surgery cargo");
+    CheckEqI32(g_assets.apObjects[4]->bCargoSize, 3, "OBJECTS.DAT Rifle slot 4 cargo size");
+    CheckEqI32(g_assets.apObjects[17]->bCargoSize, 1, "OBJECTS.DAT Grenade slot 17 cargo size");
+    CheckEqI32(g_assets.apObjects[38]->bCargoSize, 1, "OBJECTS.DAT Rifle clip slot 38 cargo size");
+    Check(strcmp(g_assets.apObjects[4]->szName, "Rifle ") == 0,
+          "Map.apObjects slot 4 keeps the raw main.dat name including its trailing blank");
+    Check(strcmp(g_assets.apObjects[17]->szName, "Grenade") == 0,
+          "Map.apObjects slot 17 is the main.dat Grenade record");
+    Check(strcmp(g_assets.apObjects[38]->szName, "Rifle clip") == 0,
+          "Map.apObjects slot 38 is the main.dat Rifle clip record");
 
     /* The columns. */
     {

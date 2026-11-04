@@ -1,0 +1,27 @@
+# Start Personal Armour research through its live row and quantity controls.
+load 2
+state research94_loaded
+click 180 266
+tick 2
+click 220 15
+tick 2
+click 180 238
+tick 20
+strategystate research94_open
+click 15 @RESEARCH94_ROW_Y@
+__RESEARCH94_SCIENTISTS__
+click 200 176
+tick 2
+strategystate research94_started
+dump strategy_manufacture_research94_started.ppm
+click 231 8
+tick 2
+click 201 11
+tick 2
+click 60 308
+__RESEARCH94_CLOCK__
+tick 2
+strategystate research94_complete
+lines
+save 3
+state research94_saved

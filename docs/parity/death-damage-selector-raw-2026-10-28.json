@@ -1,0 +1,317 @@
+{
+  "before": [
+    {
+      "ea": "0x4f138",
+      "comment": null
+    },
+    {
+      "ea": "0x4f170",
+      "comment": null
+    },
+    {
+      "ea": "0x4f1a8",
+      "comment": null
+    },
+    {
+      "ea": "0x4f1e0",
+      "comment": null
+    }
+  ],
+  "raw": [
+    [
+      "0x4e4f8",
+      "160053e3",
+      "CMP             R3, #0x16"
+    ],
+    [
+      "0x4e4fc",
+      "5400001a",
+      "BNE             loc_4E654"
+    ],
+    [
+      "0x4e500",
+      "44419fe5",
+      "LDR             R4, =Map_bTactFlag"
+    ],
+    [
+      "0x4e504",
+      "0510a0e1",
+      "MOV             R1, R5"
+    ],
+    [
+      "0x4e664",
+      "48ecffeb",
+      "BL              Unit_UpdateAnimPose"
+    ],
+    [
+      "0x4e668",
+      "0510a0e1",
+      "MOV             R1, R5"
+    ],
+    [
+      "0x4e66c",
+      "28401fe5",
+      "LDR             R4, =Map_bTactFlag"
+    ],
+    [
+      "0x4e670",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x4f118",
+      "1b20d0e5",
+      "LDRB            R2, [R0,#0x1B]"
+    ],
+    [
+      "0x4f11c",
+      "1a10d0e5",
+      "LDRB            R1, [R0,#0x1A]"
+    ],
+    [
+      "0x4f120",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x4f124",
+      "0080ffeb",
+      "BL              Combat_ResolveShot"
+    ],
+    [
+      "0x4f128",
+      "4c3194e5",
+      "LDR             R3, [R4,#(Map_apObjects17 - 0x1139B8)]"
+    ],
+    [
+      "0x4f12c",
+      "ff20a0e3",
+      "MOV             R2, #0xFF"
+    ],
+    [
+      "0x4f130",
+      "101095e5",
+      "LDR             R1, [R5,#0x10]"
+    ],
+    [
+      "0x4f134",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x4f138",
+      "247dffeb",
+      "BL              Unit_ApplyCellDamage"
+    ],
+    [
+      "0x4f13c",
+      "100095e5",
+      "LDR             R0, [R5,#0x10]"
+    ],
+    [
+      "0x4f140",
+      "ff20a0e3",
+      "MOV             R2, #0xFF"
+    ],
+    [
+      "0x4f144",
+      "083194e5",
+      "LDR             R3, [R4,#(unk_113AC0 - 0x1139B8)]"
+    ],
+    [
+      "0x4f148",
+      "1c10d0e5",
+      "LDRB            R1, [R0,#0x1C]"
+    ],
+    [
+      "0x4f14c",
+      "91070ee0",
+      "MUL             LR, R1, R7"
+    ],
+    [
+      "0x4f150",
+      "1b10d0e5",
+      "LDRB            R1, [R0,#0x1B]"
+    ],
+    [
+      "0x4f154",
+      "01108ee0",
+      "ADD             R1, LR, R1"
+    ],
+    [
+      "0x4f158",
+      "91070ee0",
+      "MUL             LR, R1, R7"
+    ],
+    [
+      "0x4f15c",
+      "1a10d0e5",
+      "LDRB            R1, [R0,#0x1A]"
+    ],
+    [
+      "0x4f160",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x4f164",
+      "01108ee0",
+      "ADD             R1, LR, R1"
+    ],
+    [
+      "0x4f168",
+      "011184e0",
+      "ADD             R1, R4, R1,LSL#2"
+    ],
+    [
+      "0x4f16c",
+      "0a1091e7",
+      "LDR             R1, [R1,R10]"
+    ],
+    [
+      "0x4f170",
+      "167dffeb",
+      "BL              Unit_ApplyCellDamage"
+    ],
+    [
+      "0x4f174",
+      "100095e5",
+      "LDR             R0, [R5,#0x10]"
+    ],
+    [
+      "0x4f178",
+      "ff20a0e3",
+      "MOV             R2, #0xFF"
+    ],
+    [
+      "0x4f17c",
+      "083194e5",
+      "LDR             R3, [R4,#(unk_113AC0 - 0x1139B8)]"
+    ],
+    [
+      "0x4f180",
+      "1c10d0e5",
+      "LDRB            R1, [R0,#0x1C]"
+    ],
+    [
+      "0x4f184",
+      "91070ee0",
+      "MUL             LR, R1, R7"
+    ],
+    [
+      "0x4f188",
+      "1b10d0e5",
+      "LDRB            R1, [R0,#0x1B]"
+    ],
+    [
+      "0x4f18c",
+      "01108ee0",
+      "ADD             R1, LR, R1"
+    ],
+    [
+      "0x4f190",
+      "91070ee0",
+      "MUL             LR, R1, R7"
+    ],
+    [
+      "0x4f194",
+      "1a10d0e5",
+      "LDRB            R1, [R0,#0x1A]"
+    ],
+    [
+      "0x4f198",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x4f19c",
+      "01108ee0",
+      "ADD             R1, LR, R1"
+    ],
+    [
+      "0x4f1a0",
+      "011184e0",
+      "ADD             R1, R4, R1,LSL#2"
+    ],
+    [
+      "0x4f1a4",
+      "0b1091e7",
+      "LDR             R1, [R1,R11]"
+    ],
+    [
+      "0x4f1a8",
+      "087dffeb",
+      "BL              Unit_ApplyCellDamage"
+    ],
+    [
+      "0x4f1ac",
+      "100095e5",
+      "LDR             R0, [R5,#0x10]"
+    ],
+    [
+      "0x4f1b0",
+      "ff20a0e3",
+      "MOV             R2, #0xFF"
+    ],
+    [
+      "0x4f1b4",
+      "083194e5",
+      "LDR             R3, [R4,#(unk_113AC0 - 0x1139B8)]"
+    ],
+    [
+      "0x4f1b8",
+      "1c10d0e5",
+      "LDRB            R1, [R0,#0x1C]"
+    ],
+    [
+      "0x4f1bc",
+      "91070ee0",
+      "MUL             LR, R1, R7"
+    ],
+    [
+      "0x4f1c0",
+      "1b10d0e5",
+      "LDRB            R1, [R0,#0x1B]"
+    ],
+    [
+      "0x4f1c4",
+      "01108ee0",
+      "ADD             R1, LR, R1"
+    ],
+    [
+      "0x4f1c8",
+      "91070ee0",
+      "MUL             LR, R1, R7"
+    ],
+    [
+      "0x4f1cc",
+      "1a10d0e5",
+      "LDRB            R1, [R0,#0x1A]"
+    ],
+    [
+      "0x4f1d0",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x4f1d4",
+      "01108ee0",
+      "ADD             R1, LR, R1"
+    ],
+    [
+      "0x4f1d8",
+      "011184e0",
+      "ADD             R1, R4, R1,LSL#2"
+    ],
+    [
+      "0x4f1dc",
+      "091091e7",
+      "LDR             R1, [R1,R9]"
+    ],
+    [
+      "0x4f1e0",
+      "fa7cffeb",
+      "BL              Unit_ApplyCellDamage"
+    ]
+  ]
+}

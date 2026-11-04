@@ -1,0 +1,19 @@
+{
+  "address": "0xa42e0",
+  "end": "0xa42e4",
+  "name": "nullsub_10",
+  "segment": "screen_w",
+  "bytes": "ff9fbde8",
+  "listing": [
+    "0xa42e0 POP             {R0-R12,PC}"
+  ],
+  "refs": [],
+  "preceding": [
+    "0xa42c8 LDR             R12, [R12]",
+    "0xa42cc STRH            R12, [R8]",
+    "0xa42d0 ADD             R4, R4, #1",
+    "0xa42d4 ADD             R8, R8, #2",
+    "0xa42d8 B               loc_A424C",
+    "0xa42dc POP             {R0-R12,PC}"
+  ]
+}

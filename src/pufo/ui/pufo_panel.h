@@ -83,10 +83,8 @@ typedef struct UiPanel {
     i32  nLineCount;
     i32  nStyle;    /* visible row count */
     u8  *apLines[PUFO_PANEL_LINES];
-    /* Slots 105 and 106 alias nGameTimeSec and bGeoscapeFlag_15961C in the
-     * original. That aliasing is NOT modelled: the port writes the clock through
-     * GameClock (see pufo_tactctl.h) so the two identities stay separate. The
-     * slots exist here only to preserve the array geometry. */
+    /* Clock storage has a separate GameTime view at 0x159608 (pufo_clock.h).
+     * This host panel array is not used to address those globals. */
     i32  anLineAux[PUFO_PANEL_LINES];
     i32  nPosX;         /* text origin */
     i32  nPosY;
@@ -171,13 +169,11 @@ void UiPanel_ScrollPrev(UiPanel *pPanel);
 
 /* UiPanel_WrapText @ 0x37144.
  *
- * Greedy word wrap of pszText into the line buffers from nLineStart, breaking on
- * spaces and measuring with Text_MeasureWidth. Returns the number of lines
- * produced, and sets nLineCount = nLineStart + that count.
- *
- * Reproduced including the trailing space the original appends to its working
- * copy: that means an input whose last word exactly fits can emit one extra
- * (empty) line. */
+ * Scans space delimiters, measures candidates with Text_MeasureWidth, and accepts
+ * width equal to nMaxW. The original appends one final space to flush the last
+ * word; a separator before an overflowing word stays on the line being committed.
+ * The port uses a virtual delimiter and bounded line writes. Returns the number
+ * of lines produced, and sets nLineCount = nLineStart + that count. */
 i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszText);
 
 /* UiPanelMsg_Draw @ 0x3e94c, the whole function.

@@ -1,0 +1,1905 @@
+{
+  "date": "2026-10-29",
+  "scope": "Static body review index, not a runtime or whole-game parity pass. Input domains/deviations/open questions remain in each linked RESULT.json.",
+  "inventory_total": 1103,
+  "source_baseline": "29E81C15767D68B1CE8C9140D3DE6445751270CA7607B1876EC8BEF53F045D82",
+  "current_source": "814370840079BDEA4547A8E550FC1BDD915266C08E3D66B47F1061D1A151D980",
+  "columns": [
+    "address",
+    "cluster",
+    "raw_body_complete",
+    "baseline_status",
+    "current_status"
+  ],
+  "clusters": {
+    "titles-endings": {
+      "result": "docs/parity/titles-ending-review-2026-10-29.json",
+      "result_sha256": "bef6d9099b1d1748617a69d25a6eb3ed7e9ff3ffa0ea717215342486c5aa5824",
+      "raw": "docs/parity/titles-ending-raw-2026-10-29.json",
+      "raw_sha256": "454f56bb84e27b514d6edbd97a0fa12017b1ca5a672fd1c289974100987d289e",
+      "audit_input_source": "DA8B77783701CC930D08C4A0E175FD563F577E648D987B84088A59D43A02DC29",
+      "current_override": "13 bodies reviewed with explicit ownership/unused-return adaptations. Scene boundary and App credits-release repairs built; focused3/3 Debug+Release and credits-to-new-game runtime pass."
+    },
+    "fall-action": {
+      "result": ".workers/luna-body-fall-action/RESULT.json",
+      "result_sha256": "2c348db0bf804d51958525276aed68aebab0b35c3e1f8add61c358c845479159",
+      "raw_sha256": "35d2f924c600dc6c2b656fce0d03b5f3f2a99a8e7af2228895848098fe47b61d",
+      "current_override": "Roster count refresh included in compiled6401F9FA; prepared two-call regression unrun and natural World/GameTick/EnemyAI acceptance open."
+    },
+    "tactical-battle-end-0x34FBC": {
+      "result": ".workers/luna-body-battle-end/RESULT.json",
+      "result_sha256": "f4d4b33bdd0f4445d1aa00fe2da2901f7d06bf36ac40a14c8f1bfb2d3631a6fb",
+      "raw_sha256": "34a79b6ff7424fcca17b72a3db8d56cc145dd417130e342a7b3b9f367a1e5976",
+      "audit_input_source": "A4C1CB58C831202F6236BB8B5951680B54C57D74871D2DC5AB4038C42202F180"
+    },
+    "research-core": {
+      "result": ".workers/luna-body-research-core/RESULT.json",
+      "result_sha256": "3f17fee057d65c306b46aee31db8e4263e8602d03a515725ffbdab769fc0560a",
+      "raw_sha256": "4c2d7e63fa9dfaa8825e4d0e353d29e001a700d0407c2436de99fb5f18056b24",
+      "audit_input_source": "A4C1CB58C831202F6236BB8B5951680B54C57D74871D2DC5AB4038C42202F180"
+    },
+    "text-glyph-frontends-2026-10-29": {
+      "result": ".workers/luna-body-text-glyph-frontends/RESULT.json",
+      "result_sha256": "6bc54734e7a894dc252ea78492c0b870a87fc6fe7a814df3400bdb822cfc7efc",
+      "raw_sha256": "cfa65b1493274757f02b2a57fcf8b71795bb60fed83254a7c265cdf98f07c020",
+      "current_override": "Signed advance reads at 0x2D798/0x2DCA8 repaired in compiled source 6401F9FA; other report limits, including exhaustive draw-return consumers, remain open."
+    },
+    "ptrarray": {
+      "result": ".workers/luna-body-ptrarray/RESULT.json",
+      "result_sha256": "875e61f09807c4e5039235a3fdbcbc8f8a4d5796e98206c158d0204776e3adce",
+      "raw_sha256": "d5eb9b57aa76651247d897900c609491a870a66eefbe6764a0cfae668df8b79e"
+    },
+    "padimage": {
+      "result": ".workers/luna-body-padimage/RESULT.json",
+      "result_sha256": "e890ee01c56857aadaee79ce9a54ce7335927fc5d6575c9528e3b77595396a5c",
+      "raw_sha256": "4a3958d292bbc956af6117c8521172b6cc131452e3dfa180787c9c486601fb7c"
+    },
+    "uipanel": {
+      "result": ".workers/luna-body-uipanel/RESULT.json",
+      "result_sha256": "ce723e58a0d840f3c563c0bb0dcdb5435f85a0758aa7e3ad221d7c0e095f155d",
+      "raw_sha256": "5f9c54d8eb0d3e15dc35988dc86e96d23e52e14cf8d1753c325830f206f2f22e"
+    },
+    "datfile": {
+      "result": ".workers/luna-body-datfile/RESULT.json",
+      "result_sha256": "24454ae109f5a6152a855462fa7c94fd047f9223335702a5730648f73e6ff40d",
+      "raw_sha256": "a97a247f4d61922415c5b766dd350d9bf1fcdf2079adf58124e77e5bd7621365"
+    },
+    "basegrid": {
+      "result": ".workers/luna-body-basegrid/RESULT.json",
+      "result_sha256": "31338a88306ace0ecbbcffb6ef3799c4b68997e510f5d099711f6e90104264b5",
+      "raw_sha256": "72bbc44329eb9bcb30543f06f8982b35d7cf81f662f7a48b32abfdc853a5e7b3",
+      "audit_input_source": "89148A74D769BFC9CD1A90AD1FBF9F64357E2189C0EE2669378DB5A32D89A19C",
+      "source_fix_in_batch": true
+    },
+    "assetreader": {
+      "result": ".workers/luna-body-assetreader/RESULT.json",
+      "result_sha256": "4315913c53834f7c5a34e1519fa407373987acc50d1f8abcd81f776ad6d6ced2",
+      "raw_sha256": "c72f0c806c10444caa4e8217e2b86411735d5517673ee561f254f41d0ddc28a2",
+      "audit_input_source": "89148A74D769BFC9CD1A90AD1FBF9F64357E2189C0EE2669378DB5A32D89A19C",
+      "source_fix_in_batch": false
+    },
+    "softsurf": {
+      "result": ".workers/luna-body-softsurf/RESULT.json",
+      "result_sha256": "e2e567a2a2f9b8cd92df47efc0d6d5ed218f8e9a4b5763607d5ba840c081321c",
+      "raw_sha256": "286179ba37918963ae62ff3c0ec8e91b161cf7a1234f68eaf16e962de0b28a8f",
+      "audit_input_source": "89148A74D769BFC9CD1A90AD1FBF9F64357E2189C0EE2669378DB5A32D89A19C",
+      "source_fix_in_batch": false
+    },
+    "panel-scroll": {
+      "result": ".workers/luna-body-panel-scroll/RESULT.json",
+      "result_sha256": "f34ecf3870145c386269afcf01588db378ddd788e723ba82db943fe968c1efec",
+      "raw_sha256": "68c324c8866542db7db95ad91336bc3421e176eb9270230ba519cfe5d1e0c8a4",
+      "audit_input_source": "89148A74D769BFC9CD1A90AD1FBF9F64357E2189C0EE2669378DB5A32D89A19C",
+      "source_fix_in_batch": false
+    },
+    "uicontrol": {
+      "result": ".workers/luna-body-uicontrol/RESULT.json",
+      "result_sha256": "7bba662a02d91e846d80297ecaa8bc2cb673270797e9612c40255f5d8d498217",
+      "raw_sha256": "46a63e594f0682be31a358788a3d583f59dbec60b1afc51233e82308135b617b",
+      "audit_input_source": "46101B1F493BE42FDE863E2D7933948642C5AA683F970EE75DD892389577AC2F"
+    },
+    "blitstate": {
+      "result": ".workers/luna-body-blitstate/RESULT.json",
+      "result_sha256": "f781a3d2f2a7464e018ef60b0b26a3f340cf095ec0580720ebfafed9da601aa3",
+      "raw_sha256": "a5610c94bbdc15cdaeee4c4bb386e7f43fc57986f02853e638b351618fa41416",
+      "audit_input_source": "46101B1F493BE42FDE863E2D7933948642C5AA683F970EE75DD892389577AC2F"
+    },
+    "save-time-strateg": {
+      "result": ".workers/luna-body-save-time-strateg/RESULT.json",
+      "result_sha256": "2668498b5b257bce19f24b87f872495ab19c064364f36828698b6dd7c7752ad7",
+      "raw_sha256": "9e987be3c65d231237f45097f4a098cdf0ebbf86256b9108a1e26e79bed40040",
+      "audit_input_source": "46101B1F493BE42FDE863E2D7933948642C5AA683F970EE75DD892389577AC2F"
+    },
+    "unit-basics": {
+      "result": ".workers/luna-body-unit-basics/RESULT.json",
+      "result_sha256": "24155cdd5707f95d06f2f790cfb48109d0a52f5ec53ec4e315a9345b02932cda",
+      "raw_sha256": "deccc9944a4eba38bed6b15d9cefabce3a1274e1075877f09684a8823fb9e746",
+      "audit_input_source": "46101B1F493BE42FDE863E2D7933948642C5AA683F970EE75DD892389577AC2F"
+    },
+    "save-base-product-research": {
+      "result": ".workers/luna-body-save-base-product-research/RESULT.json",
+      "result_sha256": "ad76cf280b4b3ee9443eed833792646c2141864ec97f347b326ed58cac0b4c7c",
+      "raw_sha256": "ff60e1c1b86f5cd90e19f94980d28ca4c78a3cc055134272437e999a55433775",
+      "audit_input_source": "5482B3E589286F0AA8A7B6A04914845CB1009B287F393FA1C9302E58BFFB974E"
+    },
+    "uibank-construction-free-and-radio-2026-10-29": {
+      "result": ".workers/luna-body-uibank/RESULT.json",
+      "result_sha256": "89905326fcab7d6abe52457aefb744a3b0293ff436c3fdef01c5e482669fc312",
+      "raw_sha256": "03d82c9250d9da5a703c226fe552af87a7f168ef87b88154834e328f3d997d91",
+      "audit_input_source": "5482B3E589286F0AA8A7B6A04914845CB1009B287F393FA1C9302E58BFFB974E"
+    },
+    "mapcell-unit-ownership-2026-10-29": {
+      "result": ".workers/luna-body-mapcell/RESULT.json",
+      "result_sha256": "f170c176463a27c24f950ef5219351b1d3e22c530eddc3c688e1c956e7a4dd1c",
+      "raw_sha256": "9f53e722716847a250915d340d27c1eeddcdad3b3025361d7fef57e9b395fdc2",
+      "audit_input_source": "5482B3E589286F0AA8A7B6A04914845CB1009B287F393FA1C9302E58BFFB974E"
+    },
+    "audio-wrappers": {
+      "result": "docs/parity/audio-wrapper-result-2026-10-29.json",
+      "raw": "docs/parity/audio-wrapper-raw-2026-10-29.json",
+      "result_sha256": "d2726f1d49289c9b71f39d2f13313eae410a8d525112e8c37e8141e64b987a1a",
+      "raw_sha256": "9fc08c86119ecda50bee788acbcb6403110a97b0bb97cc7f1fff825c94362a5d",
+      "audit_input_source": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01"
+    },
+    "save-ships-smap": {
+      "result": ".workers/luna-body-save-ships-smap/RESULT.json",
+      "result_sha256": "9f792de60f2a4e4c343582e0c57c67abb098b3d1b47b967a0bdc250e13e99b90",
+      "raw_sha256": "f8a33e313d65bbf9cdebb64a60df3f1e2470ea57554329297f5875aa04f3cc2c",
+      "audit_input_source": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01"
+    },
+    "save-tactical-state": {
+      "result": "docs/parity/tactical-state-save-result-2026-10-29.json",
+      "raw": "docs/parity/tactical-state-save-raw-2026-10-29.json",
+      "result_sha256": "e9c52eb0831528bac81beda8e6222099d514d1d30aee3cda5e8a6c5080263d2f",
+      "raw_sha256": "8bb31c78b161f3bb66538b6a32bbe51138fc9eb680007c636ef6e17d52282db1",
+      "audit_input_source": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01",
+      "source_fix_in_batch": true
+    },
+    "save-flobjs-map": {
+      "result": ".workers/luna-body-save-flobjs-map/RESULT.json",
+      "result_sha256": "69889f9f6cb7bbe62fa30f254387df3781bb35d2c1c03a0b47b0b6463662728d",
+      "raw_sha256": "da77a5a06ce3dee5f7c8bfce171ce4c91bdd340fee3560046bf77526cb16501e",
+      "audit_input_source": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01"
+    },
+    "save_soldiers_and_team_units": {
+      "result": ".workers/luna-body-save-soldiers-team/RESULT.json",
+      "result_sha256": "19bdd28d384cd0ddd41fdbf7571e68112b12dbbae7a0148339abeba5111fb601",
+      "raw_sha256": "0064002164b47eaa3c027e29ad1a322dff0b3a40f3619450141f1daafc119b8d",
+      "audit_input_source": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01"
+    },
+    "save-drivers": {
+      "result": ".workers/luna-body-save-drivers/RESULT.json",
+      "result_sha256": "0736ba8258036855f500f145d886729a41c450950d24e14d570bc74b123bca8d",
+      "raw_sha256": "08c1863358d4c64bcc056c5ccc5e71b3e0ac5b557b3dc7dc21be076611a0860c",
+      "audit_input_source": "5D6E298072269AC3C10C222404DD4B650BB19BF5485BB9D8C98544B5F0D43018"
+    },
+    "geoscape-clock": {
+      "result": ".workers/luna-body-geoscape-clock/RESULT.json",
+      "result_sha256": "4e53a98a802558fbb8a08493118ad620ccd03ab0474e346605a5f1c692879fb5",
+      "raw_sha256": "7bc53d7fddb90b1ae074f5080d3f744f5723de1307d3efd514a6fbd34594245f",
+      "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF"
+    },
+    "game-tick-active-unit-2026-10-29": {
+      "result": ".workers/luna-body-tactical-clock/RESULT.json",
+      "result_sha256": "30a0a1521ad11f96fcc4f259ade3db61aa6cf981c50aa8c9d8939726a90fe8e5",
+      "raw_sha256": "b9661655671b0c818120396d7a921daba8738ecdb02bbdddbf5d1b5c5f9ae4ff",
+      "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF"
+    },
+    "Tact_ProcessFireAction-0x50adc": {
+      "result": ".workers/luna-body-fire-action/RESULT.json",
+      "result_sha256": "f489fb19924322dc460de4b9d6bded73cae614897934fe98dac89179d5df6060",
+      "raw_sha256": "6bcb2c49645294fe4777e1d99f53ad572909e2ba7d5dc728abd7429fcfd7fa39",
+      "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF"
+    },
+    "native-app-wndproc-full-body-2026-10-29": {
+      "result": ".workers/luna-body-native-app/RESULT.json",
+      "result_sha256": "a8f6ecdf7053f76d46603bf3bf376ec17447dc30f0f415195f124cd8311ca261",
+      "raw_sha256": "6ce2c812208a76d24976b904776a969dfb94272fc3f41d4e5c31756ddcdc36c4",
+      "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF"
+    },
+    "SoftSurf-blit-frontends-0x9e558": {
+      "result": ".workers/luna-body-blit-frontends/RESULT.json",
+      "result_sha256": "d7328253bc3bb4f8e7f83c2f3197cde1171625400276c0e30d9cea758ac6104f",
+      "raw_sha256": "a609adf80659936489337bcf24a8aba8038b5f7381c3ac1417feae77d95506b9",
+      "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF"
+    },
+    "blit-copy-loops-2026-10-29": {
+      "result": ".workers/luna-body-copy-loops/RESULT.json",
+      "result_sha256": "ef8aae59a55734f613c08f72c261859f2f61348a6d728dc913549697b7b33a73",
+      "raw_sha256": "970e52c1b19fa0519e10b1121ae0738f0c4e38235c38a096156fb4ffbabe783f",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "softsurf-rect-fill-blend-sample-2026-10-29": {
+      "result": ".workers/luna-body-rect-sample-loops/RESULT.json",
+      "result_sha256": "dd00e3ad1587a559e15990c949c7a057135f6b373344d0600ffa8fc050426851",
+      "raw_sha256": "3729b3e2d57034e5f8e1fab9a47e06131dfb81817b186fd25689881020488db7",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "Indexed-glyph-raster-loops-0xa306c": {
+      "result": ".workers/luna-body-indexed-glyph-loops/RESULT.json",
+      "result_sha256": "651b0f460d62727fdf2f3bc2c50c1be99cf2589941a163aa1514169438797bed",
+      "raw_sha256": "a6b2b18ecf2dde06907e01f23db36e861faa2d2df73a597a8df41cb2d5bbea4d",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "SoftSurf-blend-flip-inners-0xa47d0": {
+      "result": ".workers/luna-body-blend-flip-loops/RESULT.json",
+      "result_sha256": "4d3d450310ae6bab65eb8b4eaa99e3cc3c31b767f1a6149075d9ec6bca7e13f4",
+      "raw_sha256": "c91080e4f7831d69618ba97ae89b3de0e92c7c03733f87217f2b6a62fd304c0d",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "frame-present": {
+      "result": "docs/parity/frame-present-result-2026-10-29.json",
+      "raw": "docs/parity/frame-present-raw-2026-10-29.json",
+      "result_sha256": "cbf37d89c1e60e0bf7c92b5458f89da998a40efadd7888fa64041f16d6681c6f",
+      "raw_sha256": "58463b1fdda554ee63385bbbcfbad60c4d0d46141e60ab79e55d8abdd87b4dd6",
+      "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF",
+      "source_fix_in_batch": true
+    },
+    "render-colors": {
+      "result": ".workers/luna-body-render-colors/RESULT.json",
+      "result_sha256": "854f95dee35659c21a2849ba74ac7fef7b54f1c59f4f61ff8365537a5ef931ab",
+      "raw_sha256": "d2f77cc278edb965233a99818519706e7b8604bf71f0ebc8be6b6a358ae49881",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "clock-dispatch-pulse": {
+      "result": ".workers/luna-geoscape-repeat-join/RESULT.json",
+      "result_sha256": "730cd25ecce455e81cc4e10d986930b512269ae167f0f4776475479e6a22af22",
+      "raw_sha256": "9d5328c74500bbcba1c805d09e1fff3b9f7e0a53c0b859c482707e46a02168f5",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "Combat-ResolveShot-0x2f12c": {
+      "result": ".workers/luna-body-shot-resolver/RESULT.json",
+      "result_sha256": "bf13007b40eefe274002731e5ff3d0f3051ac097dbd042010a064b19a09c452b",
+      "raw_sha256": "f470a2ef0eb22965da599bcfb962bd390ea20b6a1e6df2f9fbd32064d7c9fb18",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "tactical-move-action": {
+      "result": ".workers/luna-body-move-action/RESULT.json",
+      "result_sha256": "2126a5a01e7f847225a48a83426da52a2237367905ed9864704acdd4edbd2ef1",
+      "raw_sha256": "42cc5edf201e5d84c891ffadf012cb18659d432231ab6b4e50163066c4453eda",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "ui-modal-lifecycle-and-layout-2026-10-29": {
+      "result": ".workers/luna-body-modal/RESULT.json",
+      "result_sha256": "b8d51258e0ec8415684a26ad4d7f417a5fe4dfc7b35acc8eb0b6525517aee06b",
+      "raw_sha256": "574ebc39d3b3087df569a3c0faf0eba1a765e9df547633ab1e0e5366ac013a96",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    },
+    "Startup-menu-full-pair-0x1dbb8": {
+      "result": ".workers/luna-body-startup-menu/RESULT.json",
+      "result_sha256": "8f22966f48f055fb914be40e8766a454a94db7f27a864625802493e4df8b97b7",
+      "raw_sha256": "3d363a9a3e5006aa767397518cdfb22b93cd12bce52e79e4ea678d0b8a984314",
+      "audit_input_source": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6"
+    }
+  },
+  "members": [
+    ["0x1a83c","titles-endings",true,"adapted","adapted"],
+    ["0x1e630","titles-endings",true,"adapted","adapted"],
+    ["0x380d8","titles-endings",true,"adapted","adapted"],
+    ["0x3826c","titles-endings",true,"adapted","adapted"],
+    ["0x388b0","titles-endings",true,"adapted","adapted"],
+    ["0x389f8","titles-endings",true,"adapted","adapted"],
+    ["0x466dc","titles-endings",true,"adapted","adapted"],
+    ["0x46738","titles-endings",true,"adapted","adapted"],
+    ["0x468cc","titles-endings",true,"header-only scale and wrapped-return mismatch","corrected/adapted"],
+    ["0x46acc","titles-endings",true,"adapted","adapted"],
+    ["0x46dbc","titles-endings",true,"equivalent","equivalent"],
+    ["0x46e88","titles-endings",true,"adapted","adapted"],
+    ["0x46fa4","titles-endings",true,"adapted","adapted"],
+    ["0x52adc", "fall-action", true, "confirmed roster-count mismatch", "adapted; roster-count repair compiled, full tick acceptance open"],
+    ["0x34fbc", "tactical-battle-end-0x34FBC", true, "equivalent", "equivalent"],
+    ["0x18a44", "tactical-battle-end-0x34FBC", true, "adapted", "adapted"],
+    ["0x72c8c", "research-core", true, "equivalent", "equivalent"],
+    ["0x73240", "research-core", true, "equivalent", "equivalent"],
+    ["0x74914", "research-core", true, "equivalent", "equivalent"],
+    ["0x72ea0", "research-core", true, "equivalent", "equivalent"],
+    ["0x72f70", "research-core", true, "equivalent", "equivalent"],
+    ["0x73008", "research-core", true, "equivalent", "equivalent"],
+    ["0x74270", "research-core", true, "adapted", "adapted"],
+    ["0x749a8", "research-core", true, "equivalent", "equivalent"],
+    ["0x2d798", "text-glyph-frontends-2026-10-29", true, "adapted", "adapted; signed advance repaired, return-use boundary open"],
+    ["0x2dca8", "text-glyph-frontends-2026-10-29", true, "adapted", "signed advance repaired; API adaptation retained"],
+    ["0x4661c", "text-glyph-frontends-2026-10-29", true, "adapted", "adapted"],
+    ["0x46630", "text-glyph-frontends-2026-10-29", true, "adapted", "adapted"],
+    ["0x9ec48", "text-glyph-frontends-2026-10-29", true, "adapted", "adapted"],
+    [
+      "0x3e434",
+      "ptrarray",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x82bac",
+      "ptrarray",
+      true,
+      "unproven",
+      "unproven"
+    ],
+    [
+      "0xa0f80",
+      "ptrarray",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa0f90",
+      "ptrarray",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa0f94",
+      "ptrarray",
+      true,
+      "unproven",
+      "unproven"
+    ],
+    [
+      "0xa1044",
+      "ptrarray",
+      true,
+      "unproven",
+      "unproven"
+    ],
+    [
+      "0xa1054",
+      "ptrarray",
+      true,
+      "unproven",
+      "unproven"
+    ],
+    [
+      "0xa1120",
+      "ptrarray",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa1130",
+      "ptrarray",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa1154",
+      "ptrarray",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x11000",
+      "padimage",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x1100c",
+      "padimage",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x11020",
+      "padimage",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x110dc",
+      "padimage",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x11110",
+      "padimage",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x36c58",
+      "padimage",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3e730",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3e8c8",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3e914",
+      "uipanel",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x3e93c",
+      "uipanel",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x3f05c",
+      "uipanel",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x3f06c",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5a294",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5a334",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5a33c",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5a394",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5a3dc",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5a450",
+      "uipanel",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3f0d0",
+      "datfile",
+      true,
+      "unproven",
+      "unproven"
+    ],
+    [
+      "0x9eecc",
+      "datfile",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9eef4",
+      "datfile",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9ef38",
+      "datfile",
+      true,
+      "mismatch",
+      "adapted"
+    ],
+    [
+      "0x9f174",
+      "datfile",
+      true,
+      "equivalent",
+      "adapted"
+    ],
+    [
+      "0x9f1bc",
+      "datfile",
+      true,
+      "mismatch",
+      "adapted"
+    ],
+    [
+      "0x9f234",
+      "datfile",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9f348",
+      "datfile",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f4b4",
+      "datfile",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f5ac",
+      "datfile",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9f698",
+      "datfile",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f7a8",
+      "datfile",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x5a8d0",
+      "basegrid",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x6ac30",
+      "basegrid",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x6ac90",
+      "basegrid",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x6acc0",
+      "basegrid",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x6acec",
+      "basegrid",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f7d8",
+      "assetreader",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f7e4",
+      "assetreader",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f8d0",
+      "assetreader",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f95c",
+      "assetreader",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9f964",
+      "assetreader",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x83874",
+      "assetreader",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f96c",
+      "softsurf",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9f97c",
+      "softsurf",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9f994",
+      "softsurf",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9f99c",
+      "softsurf",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9f9a4",
+      "softsurf",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fcb4",
+      "softsurf",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fcbc",
+      "softsurf",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9faa4",
+      "softsurf",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fa7c",
+      "softsurf",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fa90",
+      "softsurf",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x37144",
+      "panel-scroll",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3ed44",
+      "panel-scroll",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x99f78",
+      "panel-scroll",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x99f88",
+      "panel-scroll",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x99f98",
+      "panel-scroll",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x99fb4",
+      "panel-scroll",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1a28c",
+      "uicontrol",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1a2c8",
+      "uicontrol",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1a340",
+      "uicontrol",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1a3d8",
+      "uicontrol",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1a5c0",
+      "uicontrol",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1a604",
+      "uicontrol",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1a75c",
+      "uicontrol",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa3624",
+      "blitstate",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa3964",
+      "blitstate",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa39ac",
+      "blitstate",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa3f5c",
+      "blitstate",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa479c",
+      "blitstate",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa47b0",
+      "blitstate",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3f1c8",
+      "save-time-strateg",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3fbb4",
+      "save-time-strateg",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x40f4c",
+      "save-time-strateg",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x40204",
+      "save-time-strateg",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x41600",
+      "save-time-strateg",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x498b0",
+      "unit-basics",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x49eb8",
+      "unit-basics",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x49ecc",
+      "unit-basics",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x4dcf4",
+      "unit-basics",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3f1fc",
+      "save-base-product-research",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x402c0",
+      "save-base-product-research",
+      true,
+      "mismatch",
+      "adapted"
+    ],
+    [
+      "0x3f4f4",
+      "save-base-product-research",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x4062c",
+      "save-base-product-research",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3f558",
+      "save-base-product-research",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x406e8",
+      "save-base-product-research",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x11158",
+      "uibank-construction-free-and-radio-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1117c",
+      "uibank-construction-free-and-radio-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x11320",
+      "uibank-construction-free-and-radio-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x16e04",
+      "uibank-construction-free-and-radio-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x16e40",
+      "uibank-construction-free-and-radio-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x16e7c",
+      "uibank-construction-free-and-radio-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x16eb8",
+      "uibank-construction-free-and-radio-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x49a0c",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5487c",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x548a0",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x548b8",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x548c0",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x548d0",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x54944",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x549c8",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x54a90",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x54b14",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x54b58",
+      "mapcell-unit-ownership-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e0c0",
+      "audio-wrappers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e130",
+      "audio-wrappers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e268",
+      "audio-wrappers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e3d4",
+      "audio-wrappers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e454",
+      "audio-wrappers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e4dc",
+      "audio-wrappers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3f6dc",
+      "save-ships-smap",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x4086c",
+      "save-ships-smap",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3fa28",
+      "save-ships-smap",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x40c4c",
+      "save-ships-smap",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3f0e8",
+      "save-tactical-state",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x3f158",
+      "save-tactical-state",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x44248",
+      "save-tactical-state",
+      true,
+      "mismatch",
+      "adapted"
+    ],
+    [
+      "0x446a8",
+      "save-tactical-state",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x44928",
+      "save-tactical-state",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x44958",
+      "save-tactical-state",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x42f48",
+      "save-flobjs-map",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x431ac",
+      "save-flobjs-map",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x43258",
+      "save-flobjs-map",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x433d8",
+      "save-flobjs-map",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x438e0",
+      "save-flobjs-map",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x43ee0",
+      "save-flobjs-map",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x42ea0",
+      "save-flobjs-map",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x416bc",
+      "save_soldiers_and_team_units",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x42350",
+      "save_soldiers_and_team_units",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x43c84",
+      "save_soldiers_and_team_units",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x44020",
+      "save_soldiers_and_team_units",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x44988",
+      "save-drivers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x44bbc",
+      "save-drivers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x45904",
+      "save-drivers",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5c56c",
+      "geoscape-clock",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5cfd4",
+      "geoscape-clock",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5d1bc",
+      "geoscape-clock",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5d3bc",
+      "geoscape-clock",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5d4e4",
+      "geoscape-clock",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5d6ac",
+      "geoscape-clock",
+      true,
+      "mismatch",
+      "adapted"
+    ],
+    [
+      "0x5d6c0",
+      "geoscape-clock",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x27324",
+      "game-tick-active-unit-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x54130",
+      "game-tick-active-unit-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x50adc",
+      "Tact_ProcessFireAction-0x50adc",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fcc4",
+      "native-app-wndproc-full-body-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa03ec",
+      "native-app-wndproc-full-body-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e558",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e590",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e9f4",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9ea34",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9ebb0",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9ebf8",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9fadc",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fb0c",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fb44",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fb80",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fbbc",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fc00",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9fc30",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0x9fc70",
+      "SoftSurf-blit-frontends-0x9e558",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa3a14",
+      "blit-copy-loops-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa3bb8",
+      "blit-copy-loops-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa3db8",
+      "blit-copy-loops-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa42e4",
+      "blit-copy-loops-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa3f94",
+      "softsurf-rect-fill-blend-sample-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa4450",
+      "softsurf-rect-fill-blend-sample-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa4630",
+      "softsurf-rect-fill-blend-sample-2026-10-29",
+      true,
+      "equivalent",
+      "equivalent"
+    ],
+    [
+      "0xa306c",
+      "Indexed-glyph-raster-loops-0xa306c",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa3638",
+      "Indexed-glyph-raster-loops-0xa306c",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa33c8",
+      "Indexed-glyph-raster-loops-0xa306c",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa41d4",
+      "Indexed-glyph-raster-loops-0xa306c",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa47d0",
+      "SoftSurf-blend-flip-inners-0xa47d0",
+      true,
+      "equivalent for valid 16bpp glyph inputs",
+      "equivalent for valid 16bpp glyph inputs"
+    ],
+    [
+      "0xa49a0",
+      "SoftSurf-blend-flip-inners-0xa47d0",
+      true,
+      "equivalent for valid 16bpp glyph and byte-mask inputs",
+      "equivalent for valid 16bpp glyph and byte-mask inputs"
+    ],
+    [
+      "0x22310",
+      "frame-present",
+      true,
+      "mismatch",
+      "adapted"
+    ],
+    [
+      "0x36818",
+      "frame-present",
+      true,
+      "mismatch",
+      "adapted"
+    ],
+    [
+      "0x27788",
+      "frame-present",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9ea7c",
+      "frame-present",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x2d82c",
+      "render-colors",
+      true,
+      "unproven",
+      "unproven"
+    ],
+    [
+      "0x3e47c",
+      "render-colors",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x2dce4",
+      "render-colors",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x9e5c8",
+      "render-colors",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0xa2000",
+      "render-colors",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x5ce40",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x36630",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x84f00",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x84f64",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x84fc8",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x8502c",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x85094",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x850fc",
+      "clock-dispatch-pulse",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x2f12c",
+      "Combat-ResolveShot-0x2f12c",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x4f3f0",
+      "tactical-move-action",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x26430",
+      "ui-modal-lifecycle-and-layout-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x2648c",
+      "ui-modal-lifecycle-and-layout-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x12254",
+      "ui-modal-lifecycle-and-layout-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x264a0",
+      "ui-modal-lifecycle-and-layout-2026-10-29",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x1dbb8",
+      "Startup-menu-full-pair-0x1dbb8",
+      true,
+      "adapted",
+      "adapted"
+    ],
+    [
+      "0x38a28",
+      "Startup-menu-full-pair-0x1dbb8",
+      true,
+      "adapted",
+      "adapted"
+    ]
+  ],
+  "parent_changes": [
+    "DatFile Exists/Open/Close/dtor repaired; explicit failure/lifetime adaptations retained.",
+    "13 IDB prototypes and UiLineListView applied; PtrArray layout and global158890 unchanged.",
+    "20 apparent instruction gaps are macro tails; no code definitions changed.",
+    "Distinct full-i32 SiteId and byte-key searches; World and diagnostic callers corrected.",
+    "Three surface/track-hold owner parameters typed; branch-label dependency claims corrected.",
+    "App keyed-control callback corrected from255 to0; no private-App pixel fixture available.",
+    "Pre-v3 BASES live join now preserves unread hangar tail/home; structural v2 World_LoadSlot regression compiles, remains unrun.",
+    "False startup-cleanup NULL-store and loop-placement IDB comments corrected with raw guards, backup/readback/save; safe port nulling retained.",
+    "Tactical-load reset now reaches live input drag/repeat/edge and shot/fire owners; peer-reviewed connected World regression compiles, remains unrun.",
+    "App slot-list formatter now reaches initialized World time/game-state owners; original restore-only-total-seconds side effects retained; peer-reviewed and compiled.",
+    "Geoscape Options hooks moved to shared new-game/cold-load context setup; separate fresh-consumer pointer/tab regression peer-reviewed and compiled, assertions unrun.",
+    "Frame/banner snapshots now follow the live fade decrement; standalone adapters refresh post-write views; separate-storage regressions compile, unrun.",
+    "GameTime_Pause moved to the actual GameTime owner; GameClock speed model and tests corrected; checked production pause call uses helper.",
+    "Startup loading frame now supplies a modal/layout view; forced40 cursor is shared with renderer and wraps1/progressive0, with output publication.",
+    "World geoscape pulse now supplies all11 raw repeat screen groups and preserves natural0->1 phase until repeat dispatch/reset.",
+    "World modal layout is seeded from prior live outputs, retaining one-button X1; World frame/pointer regression compiles and remains unrun."
+  ],
+  "open_boundaries": [
+    "External ARM operator-new failure contract.",
+    "Negative PtrArray Remove indexes outside safe input domain.",
+    "Global158890 unresolved type reference109; left untouched.",
+    "GXEndDraw platform result through StatusMsg_Push action/UI callbacks remains separately untraced; it is not a consumer of the Blit_LoadSurface descriptor value.",
+    "Exact Win64 math identity at facing thresholds is unverified.",
+    "Normal6x6 population and the reviewed large-unit move/spawn/craft bounds exclude full-table overflow for shipped assets; raw placement remains unchecked for malformed/custom input. Native acceptance unrun; see .workers/luna-large-unit-anchor-bounds/RESULT.md.",
+    "MapCell Reset/Init retains some prior flag bits; exact allocator-residue parity is unproven.",
+    "Audio wrappers: equivalence domain excludes untraced callback return consumers; original FMODCE versus WinMM/openmpt output and device behavior remain unverified.",
+    "Smap invalid saved modes retain prior layer in raw but select set0 in the port renderer; normal UI saves use only modes0..2.",
+    "Render color audit: live modal/fade mismatch confirmed; raw count9 yields0x0183 versus stale C0x0B06 before nonopaque overlay. New source binds pnFadeCount to World live owner in NewGame/LoadSlot; tests/build pending. Native output acceptance remains open."
+  ],
+  "tests_executed": true,
+  "runtime_executed": true,
+  "validation_scope": "Current titles/input/AppShell checks pass3/3 in Debug and Release; current credits/menu/new-game runtime passes. Prior D615 full67/67 and other image-scoped playable flows are linked in the completion plan. Individual clusters retain their own static domains; no all-body runtime or whole-port pass is claimed.",
+  "connection_audits": {
+    "live-color-fade-owner": {
+      "result": ".workers/luna-color-fade-owner/RESULT.md",
+      "result_sha256": "d4c8e03c70e62f35b2d5bf222976569fd60c0e2abe9cbba79985849da85d9444",
+      "evidence": ".workers/luna-color-fade-owner/evidence.json",
+      "evidence_sha256": "33130d7b08f66ba72eb2c0311cd2485381cbff37102b315ee28c09471f7c5acc",
+      "status": "Reachable raw/source color mismatch confirmed; parent live-pointer fix and focused tests await compilation. Runtime unrun.",
+      "adds_body_count": false
+    },
+    "map-population": {
+      "result": ".workers/luna-map-population-connection/RESULT.md",
+      "raw": ".workers/luna-map-population-connection/raw.json",
+      "result_sha256": "dff6592efa98e02069bfd38a79bbd0f23bf808ffb257fd6bbfa69acec336e7a8",
+      "raw_sha256": "95b1bac5f6eb81eb430ce897170818255003dcd420eae3e6d317ef952b788bb9",
+      "status": "bounded_static_review",
+      "adds_body_count": false
+    },
+    "tactical-controls": {
+      "result": ".workers/tactical-controls-connection/RESULT.md",
+      "raw": ".workers/tactical-controls-connection/raw.json",
+      "bindings": ".workers/tactical-controls-connection/bindings.json",
+      "result_sha256": "00c6c343af7c12ace2bc0d44ace4357c79f4863ccee6b099e17074708401d32a",
+      "raw_sha256": "6c46f5447c4dac6f26f45896ec421f2a6e8e34bf72947c501aaf0becc0aeddac",
+      "bindings_sha256": "abb53b40f6eb56648a93024b0564cc8f5c04d5217a863b1234f728d1f17bb307",
+      "status": "115 raw callback stores match source indices and World bank/dispatch owners; leaf/runtime parity excluded",
+      "adds_body_count": false
+    },
+    "large-unit-anchor-bounds": {
+      "result": ".workers/luna-large-unit-anchor-bounds/RESULT.md",
+      "evidence": ".workers/luna-large-unit-anchor-bounds/raw.json",
+      "result_sha256": "4737fbe411b944a771cda30f59f2293fe1616004aff731b162060a56caeb569b",
+      "evidence_sha256": "6737c894f61453b7d8e0b43ca98f46f057f9fb4e6d89955dd4267f58f2930641",
+      "status": "bounded_static_review; native acceptance unrun",
+      "adds_body_count": false
+    },
+    "cold-load-contexts": {
+      "result": ".workers/luna-cold-load-contexts/RESULT.md",
+      "evidence": ".workers/luna-cold-load-contexts/evidence.json",
+      "result_sha256": "614795d073b9c533ed76ac5b9153af27971c67cbf97374e670ff1601158616e3",
+      "evidence_sha256": "f5ae9a9dbd1e3da97f2932ae73eb8c6fa61843372accffc0c67789bfadc61b22",
+      "status": "bounded_static_review; native acceptance unrun",
+      "adds_body_count": false
+    },
+    "strategic-controls": {
+      "result": ".workers/luna-strategic-controls-connection/RESULT.md",
+      "evidence": ".workers/luna-strategic-controls-connection/raw.json",
+      "result_sha256": "b828bd219eafaeecc5bb5d7a8b5636d359490dfc4e8de6139b0859403a61147e",
+      "evidence_sha256": "2b591a8b03bc3a1b803c39f7579fed8e60b76ff6f58ed14725a7627145549d84",
+      "status": "bounded_static_review; native acceptance unrun",
+      "adds_body_count": false,
+      "bindings": ".workers/luna-strategic-controls-connection/bindings.json",
+      "bindings_sha256": "b72c861660e301aa9638f4effdac449bbe2a3e0ac9147655f4c8c78aeca45bf4"
+    },
+    "startup-loading-modal": {
+      "result": ".workers/luna-start-menu-modal-connection/RESULT.md",
+      "result_sha256": "e0d2981ce35b7c627da4d66256402c51a8946cba57bea39f5d9afed1eb876c35",
+      "status": "raw/source repair peer-reviewed; compile evidence in latest manifest; runtime unrun",
+      "adds_body_count": false,
+      "raw": ".workers/luna-start-menu-modal-connection/raw.json",
+      "raw_sha256": "6c27570329b4f02146c0c1bf4255dae5719bb68153cb50ec4e5bee4da10573d5",
+      "post_fix": ".workers/luna-start-menu-modal-connection/POST_FIX.md",
+      "post_fix_sha256": "217367e2508f54cb0a9592b6b8d85af064a137e74132cc3f95cf1cb82a7b33a8"
+    },
+    "frame-fade-peer": {
+      "result": ".workers/luna-frame-fade-peer/RESULT.md",
+      "result_sha256": "5dc84c0c9ff6255339acd8e4110d0ad60dd943c995d77e4976bd1dbd5a604613",
+      "status": "raw/source repair peer-reviewed; compile evidence in latest manifest; runtime unrun",
+      "adds_body_count": false,
+      "post_fix": ".workers/luna-frame-fade-peer/POST_FIX.md",
+      "post_fix_sha256": "7c986cde9683832d8fc77dc134eeeedc20540148ab05fcc5a7458dcad7e711fd"
+    },
+    "shot-resolver-data-domain": {
+      "result": ".workers/luna-shot-resolver-data-domain/RESULT.md",
+      "result_sha256": "041488d5267b7e279e4e306aa26293c8517a8e0cf755e0aa234f29399ef617bb",
+      "status": "static evidence; related source/regressions compiled; runtime unrun",
+      "adds_body_count": false,
+      "evidence": ".workers/luna-shot-resolver-data-domain/evidence.json",
+      "evidence_sha256": "dc241e71b13df3edf4a9b659c5bbf38390022b78d51ce601eea4cc3de28b7777"
+    },
+    "geoscape-repeat-peer": {
+      "result": ".workers/luna-geoscape-repeat-peer/RESULT.md",
+      "result_sha256": "346c6cd13147fde1c910b857a9c1456b925c2b6fc6fbda6d1fc342c270da40a6",
+      "status": "static evidence; related source/regressions compiled; runtime unrun",
+      "adds_body_count": false
+    },
+    "modal-layout-join": {
+      "result": ".workers/luna-modal-layout-join/RESULT.md",
+      "result_sha256": "45117b4d3859209f6a501c8cf3dc4bb7983325c64a28b44de2d7eb8b379939af",
+      "status": "static evidence; related source/regressions compiled; runtime unrun",
+      "adds_body_count": false
+    }
+  },
+  "current_source_scope": "Final native name/title/load proof is name-title-native-2026-10-29.json, with four further body records stored separately from this supplementary index. Current Release passed 67/67 suites; affected App/startup/input/title checks passed 4/4 in Debug and Release. Other clusters retain their recorded baseline/source scopes. Whole-port acceptance is recorded in ../COMPLETION_AUDIT.md; this capture index is not a remaining-work counter.",
+  "pending_source_changes": [],
+  "current_bindings": {
+    "0x5d6ac": {
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_clock.c",
+          "function": "GameTime_Pause"
+        },
+        {
+          "path": "src/pufo/game/pufo_geoscape.c",
+          "function": "Geoscape_TickShips"
+        }
+      ],
+      "evidence": "docs/parity/frame-fade-clock-review-2026-10-29.md",
+      "baseline_binding": "test-only GameClock helper in pufo_tactctl.c was removed and corrected"
+    }
+  },
+  "artifact_corrections": [
+    {
+      "artifact": ".workers/luna-body-shot-resolver/RESULT.json",
+      "correction": "The sound table has148 halfwords, not180; shipped maxsortkey124. Direct fireType0 rows all use ready selectors0/2/3.",
+      "evidence": ".workers/luna-shot-resolver-data-domain/RESULT.md"
+    }
+  ]
+}

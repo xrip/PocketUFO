@@ -137,8 +137,6 @@ typedef struct GameMap {
     /* --- combat scratch: Map.gap_TrajRest @ 0x4EBC --- */
     u32 aHitWindow[PUFO_SPLASH_DWORDS];      /* 0x4EBC, the 41 x 41 hit window (26896 bytes) */
     u32 aHitWindowSave[PUFO_SPLASH_DWORDS];  /* gap_TrajRest + 26896, the snapshot copy */
-    i32  nKillCount;      /* gap_TrajRest + 4 * 49940: the Tact_KillUnit kill counter (KillCtx.pnKillCount) */
-
     /* --- fire scratch --- */
     i32 nFireArg5;                /* 0x1404C nFireArg5, the LOS outcome code */
     const ObjectRecFull *pFireArg6; /* 0x14050 nFireArg6, the weapon record the shot resolves with */
@@ -209,7 +207,8 @@ typedef struct MoveActionWiring {
      * sTactUi.abRadio[0..2] before every move-action wiring. */
     u8           abRadioOpt[3];
     VisCtx       visCtx;         /* for Unit_UpdateVisibility @ 0x48580 */
-    StatusHooks  statusHooks;    /* for StatusMsg_Push @ 0x2dda4 */
+    StatusHooks  statusHooks;    /* standalone fallback for StatusMsg_Push @ 0x2dda4 */
+    const StatusHooks *pStatusHooks; /* optional caller-owned override; NULL uses local hooks */
 } MoveActionWiring;
 
 /* Unit_bArmorTuWarn @ 0x4e254 with the hands read off the unit: pHandL @ 0x104

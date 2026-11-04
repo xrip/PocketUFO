@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-start-menu-modal-connection/debug-loading-modal-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "B46991AC1032CFEE6F8D2C1F47E6AB9FCE937691CDDC59E3A237803BC3E9907E",
+        "build/tests/Debug/test_mainmenu.exe": "6A097DCD4896D5E915E12E9937338EACADB440AC534E3F3D042FD4C6B10042E4",
+        "build/tests/Debug/test_renderframe.exe": "D0C19674F3A4DC7EDC5D229476691A5E53441A0243EEED2C817990B9EFBCB235",
+        "build/tests/Debug/test_tactctl.exe": "738BDFF2E5A983590202F56B64DD7292FEC3BFDF598FBD3061C73CE9E1E26E2A",
+        "build/tests/Debug/test_appshell.exe": "1FC7B155EC17068F367FB0AD5D7A6F6C566C936208ED1CAD3B407F44C39EE05E"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-start-menu-modal-connection/release-loading-modal-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "9483CB49C7BD4D4649A2606D0A1BC73588438501E2EE299996735AF841C28429",
+        "build/tests/Release/test_mainmenu.exe": "5137C8150B4BFB84582336B387AE1BD47DEB2451C6290F9CB732171220D2F6E8",
+        "build/tests/Release/test_renderframe.exe": "83A78B0237ACCE9573F57359995E19163326E5062137F8B0DC8D96A23EDA5BF0",
+        "build/tests/Release/test_tactctl.exe": "82810F7D759A83A6D1C774653C23F955EE424AAA2DB90F5411A1AB3BF026248B",
+        "build/tests/Release/test_appshell.exe": "C59E8943146535EBE8FB8EDF1899BC11658858D37FAD0AAD2E9344DCDFA73720"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "source_fingerprint_before_build": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6",
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Startup mode3 loading panel receives live modal/layout view; cursor40->1/progressive0 and output layout synchronized. Prior frame-fade and GameTime pause/model fixes included."
+}

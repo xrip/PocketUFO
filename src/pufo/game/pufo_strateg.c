@@ -65,7 +65,7 @@ void StrategList_UpdateMotion(StrategList *pList, GeoscapeWorld *pWorld)
             continue;
 
         u8 bNearDetect = 0;
-        for (i32 nShip = 0; nShip < pWorld->nShipCount; ++nShip) {
+        for (i32 nShip = 0; nShip < GeoscapeWorld_GetShipCount(pWorld); ++nShip) {
             Ship *pShip = pWorld->apCraft[nShip];
             if (pShip->bAtBase != 0)
                 continue;
@@ -157,10 +157,10 @@ bool Strateg_CalcDetect(StrategItem *pUfo, i32 nIndex, i32 nForcePct,
         bool bHyper = false;
 
         switch (nState) {
-        case 1:  dRadius = 24.0; break;
-        case 2:  dRadius = 31.0; break;
-        case 11: dRadius = 24.0; bHyper = true; break;
-        case 12: dRadius = 31.0; bHyper = true; break;
+        case 1:  dRadius = 50.0; break; /* R2 low=0, R3 high=0x40490000 (0x81850..0x8185C) */
+        case 2:  dRadius = 65.0; break; /* R2 low=0, R3 high=0x40504000 (0x81760..0x81764) */
+        case 11: dRadius = 50.0; bHyper = true; break; /* R2 low=0, R3 high=0x40490000 (0x81680..0x8168C) */
+        case 12: dRadius = 65.0; bHyper = true; break; /* R2 low=0, R3 high=0x40504000 (0x8155C..0x81560) */
         default: continue;
         }
 
@@ -214,7 +214,7 @@ void StrategList_UpdateDetect(StrategList *pList, GeoscapeWorld *pWorld,
 void Ship_ClearExpiredIntercepts(GeoscapeWorld *pWorld, StrategList *pList,
                                  const StrategHooks *pHooks)
 {
-    for (i32 nShip = 0; nShip < pWorld->nShipCount; ++nShip) {
+    for (i32 nShip = 0; nShip < GeoscapeWorld_GetShipCount(pWorld); ++nShip) {
         Ship *pShip = pWorld->apCraft[nShip];
         if (pShip->bIntercepting == 0)
             continue;
@@ -499,7 +499,7 @@ i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 
             bool bFound = false;
 
             if (pWorld != NULL) {
-                for (nShip = 0; nShip < (i32)pWorld->nShipCount; ++nShip) { /* 0x7F6C4 */
+                for (nShip = 0; nShip < GeoscapeWorld_GetShipCount(pWorld); ++nShip) { /* 0x7F6C4 */
                     if (pWorld->apCraft[nShip] != NULL
                         && pWorld->apCraft[nShip]->bId == pEntry->nDisplayId) {
                         bFound = true;
@@ -607,7 +607,7 @@ i32 StrategList_RemoveAt(PtrArray *pList, const GeoscapeWorld *pWorld, i32 nInde
 
     /* 0x82AC4: re-point every intercept that sits after the hole being made. */
     if (pWorld != NULL) {
-        for (nShip = 0; nShip < (i32)pWorld->nShipCount; ++nShip) {
+        for (nShip = 0; nShip < GeoscapeWorld_GetShipCount(pWorld); ++nShip) {
             Ship *pShip = pWorld->apCraft[nShip];
             if (pShip != NULL && pShip->bIntercepting != 0 && pShip->nStrategIdx > nIndex) {
                 pShip->nStrategIdx -= 1; /* 0x82AFC */
@@ -660,7 +660,7 @@ i32 StrategList_PurgeType5(PtrArray *pList, const GeoscapeWorld *pWorld,
             bKeep = 0; /* 0x6ABA0 */
             if (pWorld != NULL) {
                 i32 nShip;
-                for (nShip = 0; nShip < (i32)pWorld->nShipCount; ++nShip) {
+                for (nShip = 0; nShip < GeoscapeWorld_GetShipCount(pWorld); ++nShip) {
                     const Ship *pShip = pWorld->apCraft[nShip];
                     if (pShip != NULL && pShip->bIntercepting != 0
                         && pShip->nStrategIdx == i) {
@@ -871,7 +871,7 @@ i32 StrategList_FindIdxForShip(const StrategList *pList,
     if (pList == NULL || pWorld == NULL || pList->nCount <= 0) {
         return -1; /* 0x6A078 */
     }
-    if (nShipIdx < 0 || nShipIdx >= (i32)pWorld->nShipCount
+    if (nShipIdx < 0 || nShipIdx >= GeoscapeWorld_GetShipCount(pWorld)
         || pWorld->apCraft == NULL || pWorld->apCraft[nShipIdx] == NULL) {
         return -1; /* deviation: the original faults here */
     }
@@ -984,7 +984,7 @@ static Ship *WorldCraft(const GeoscapeWorld *pWorld, i32 nIdx)
     if (pWorld == NULL || pWorld->apCraft == NULL) {
         return NULL;
     }
-    if (nIdx < 0 || nIdx >= (i32)pWorld->nShipCount) {
+    if (nIdx < 0 || nIdx >= GeoscapeWorld_GetShipCount(pWorld)) {
         return NULL;
     }
     return pWorld->apCraft[nIdx];
@@ -1116,7 +1116,7 @@ static StrategItemStep StrategProcessItem(const StrategEventsEnv *pEnv, i32 nIte
                 return kItemNext;                                         /* 0x7FD28 */
             }
             *pnShipIdx = 0;                                               /* 0x7FD34 */
-            for (nShipLoop = 0; nShipLoop < (i32)pEnv->pWorld->nShipCount; ++nShipLoop) {
+            for (nShipLoop = 0; nShipLoop < GeoscapeWorld_GetShipCount(pEnv->pWorld); ++nShipLoop) {
                 const Ship *pShip = WorldCraft(pEnv->pWorld, nShipLoop);
                 if (pShip != NULL && pShip->bIntercepting != 0 && pShip->nStrategIdx == nItem) {
                     /* 0x7FD88: 0xFF in slot 0 and the ship index in slot 1. Smap_ResolveInterceptUI
@@ -1155,7 +1155,7 @@ static StrategItemStep StrategProcessItem(const StrategEventsEnv *pEnv, i32 nIte
 
         nShipLoop = 0;                                                    /* 0x7FE38 */
         *pnShipIdx = 0;
-        while (nShipLoop < (i32)pEnv->pWorld->nShipCount) {
+        while (nShipLoop < GeoscapeWorld_GetShipCount(pEnv->pWorld)) {
             const Ship *pShip = WorldCraft(pEnv->pWorld, nShipLoop);
             if (pShip != NULL && (i32)pShip->bId == pItem->nDisplayId) {  /* 0x7FE58 */
                 break;
@@ -1332,7 +1332,7 @@ travelled:
             if (pEnv->pbSpawnOnce != NULL) {
                 *pEnv->pbSpawnOnce = 1;                                  /* 0x8057C */
             }
-            while (nCraft < (i32)pEnv->pWorld->nShipCount) {             /* the count is re-read at 0x805CC */
+            while (nCraft < GeoscapeWorld_GetShipCount(pEnv->pWorld)) {  /* the count is re-read at 0x805CC */
                 Ship *pShip = WorldCraft(pEnv->pWorld, nCraft);
                 if (pShip != NULL && pShip->bIntercepting != 0 && pShip->nStrategIdx == nItem) {
                     if (pEnv->pnMsgShipIdx != NULL) {
@@ -1464,6 +1464,11 @@ static const struct {
     { 0, 0,   50 }, { 1, 0,  200 }, { 1, 1,  250 }, { 2, 0,  500 },
     { 2, 1,  500 }, { 3, 0, 1200 }, { 3, 1, 2200 }, { 4, 0, 3000 }
 };
+
+static i32 SmapCraftSelectSoldierCount(const SmapCraftSelectEnv *pEnv)
+{
+    return (pEnv->pnSoldierCountLive != NULL) ? *pEnv->pnSoldierCountLive : pEnv->nSoldierCount;
+}
 
 static void StrategPlaySample(i32 nSample, void *pUser)
 {
@@ -1651,7 +1656,7 @@ mode_gate:
         Smap_InitCraftSelectState(pEnv->abFacilityGrid, pEnv->abTileTypes, nBaseIdx); /* 0x84124 */
         *pEnv->pbSelectedBaseIdx = (u8)nBaseIdx; /* 0x84130 */
 
-        if (Base_CountSoldiersAssigned(pEnv->apSoldiers, pEnv->nSoldierCount,
+        if (Base_CountSoldiersAssigned(pEnv->apSoldiers, SmapCraftSelectSoldierCount(pEnv),
                                        pEnv->apCraft, nCraftCount, nBaseIdx) != 0) {
             goto tail; /* 0x8413C: soldiers available -> launch */
         }
@@ -1667,7 +1672,8 @@ mode_gate:
                 *pEnv->pnFunding -= 400;
             }
         }
-        *pEnv->pnFunding -= 30 * Base_CalcOccupiedSpace(pEnv->apSoldiers, pEnv->nSoldierCount,
+        *pEnv->pnFunding -= 30 * Base_CalcOccupiedSpace(pEnv->apSoldiers,
+                                                        SmapCraftSelectSoldierCount(pEnv),
                                                         pEnv->apObjects, pEnv->nObjectCount,
                                                         nBaseIdx); /* 0x841DC */
 
@@ -1733,7 +1739,7 @@ i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *
 {
     const StrategItem *pItem;
 
-    if (pWorld == NULL || pList == NULL || pWorld->nShipCount <= 0) {
+    if (pWorld == NULL || pList == NULL || GeoscapeWorld_GetShipCount(pWorld) <= 0) {
         return -1; /* 0x5A94C */
     }
     if (nStrategIdx < 0 || nStrategIdx >= pList->nCount || pList->apItems == NULL ||
@@ -1742,7 +1748,7 @@ i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *
     }
     pItem = pList->apItems[nStrategIdx];
 
-    for (i32 i = 0; i < (i32)pWorld->nShipCount; ++i) {
+    for (i32 i = 0; i < GeoscapeWorld_GetShipCount(pWorld); ++i) {
         if (pWorld->apCraft != NULL && pWorld->apCraft[i] != NULL &&
             pItem->nDisplayId == pWorld->apCraft[i]->bId) {
             return i; /* 0x5A9A0 */
@@ -1766,6 +1772,17 @@ static void MissionRollTravel(StrategItem *pUfo, const SpawnMissionCtx *pCtx, i3
     i32 nY = (i32)Game_RandU16(0x168) + 20;
     i32 nX = (i32)Game_RandU16(0x2F8) + 20;
 
+    StrategEntry_InitTravel(pUfo, pUfo->nX, pUfo->nY, nX, nY, 0, 0, pUfo->bVisible, bC, 0,
+                            pCtx->pWorld, pCtx->nGameTotalSec);
+}
+
+static void MissionRollTravelXFirst(StrategItem *pUfo, const SpawnMissionCtx *pCtx, i32 bC)
+{
+    i32 nX = (i32)Game_RandU16(0x2F8) + 20;
+    i32 nY = (i32)Game_RandU16(0x168) + 20;
+
+    pUfo->nTargetX = nX;
+    pUfo->nTargetY = nY;
     StrategEntry_InitTravel(pUfo, pUfo->nX, pUfo->nY, nX, nY, 0, 0, pUfo->bVisible, bC, 0,
                             pCtx->pWorld, pCtx->nGameTotalSec);
 }
@@ -1895,9 +1912,7 @@ static void MissionPhaseGates(StrategItem *pUfo, const SpawnMissionCtx *pCtx, u8
     }
 }
 
-/* Subtype 6 wants a base with NO free cell of facility kind 10. It picks a base, and if that one
- * has a free cell it tries again, up to 20 times. On the twentieth attempt it gives up on bases
- * entirely and travels to a random point instead. */
+/* The raw caller stores candidate 21, then falls back before its cell query. */
 static bool MissionPickBaseTarget(StrategItem *pUfo, const SpawnMissionCtx *pCtx)
 {
     i32 nAttempt = 0;
@@ -1918,12 +1933,12 @@ static bool MissionPickBaseTarget(StrategItem *pUfo, const SpawnMissionCtx *pCtx
         pUfo->nTargetX = pBase->nUnk8;
         pUfo->nTargetY = pBase->nUnk12;
 
+        ++nAttempt;
+        if (nAttempt > 20) {
+            return false;
+        }
         if (Base_FindFacilityCell(pCtx->abFacilityGrid, nBase, 10) == 0) {
             return true;
-        }
-        ++nAttempt;
-        if (nAttempt == 20) {
-            return false;
         }
     }
 }
@@ -2031,7 +2046,7 @@ i32 Geoscape_SpawnMissionSite(StrategItem *pUfo, i32 nMissionSub, const SpawnMis
             if (MissionPickBaseTarget(pUfo, pCtx)) {
                 MissionTravelToTarget(pUfo, pCtx, 6);
             } else {
-                MissionRollTravel(pUfo, pCtx, 0);
+                MissionRollTravelXFirst(pUfo, pCtx, 0);
                 return pUfo->nPhase; /* the give-up path returns before the gates */
             }
         }
@@ -2043,7 +2058,7 @@ i32 Geoscape_SpawnMissionSite(StrategItem *pUfo, i32 nMissionSub, const SpawnMis
             if (MissionPickActiveSiteTarget(pUfo, pCtx)) {
                 MissionTravelToTarget(pUfo, pCtx, 7);
             } else {
-                MissionRollTravel(pUfo, pCtx, 0);
+                MissionRollTravelXFirst(pUfo, pCtx, 0);
             }
         }
         MissionPhaseGates(pUfo, pCtx, bSub);
@@ -2111,7 +2126,7 @@ bool Smap_CraftRangeExhausted(const SmapCraftRangeEnv *pEnv, i32 nShipIdx)
         pEnv->pWorld->apCraft == NULL) {
         return false;
     }
-    if (nShipIdx < 0 || nShipIdx >= (i32)pEnv->pWorld->nShipCount ||
+    if (nShipIdx < 0 || nShipIdx >= GeoscapeWorld_GetShipCount(pEnv->pWorld) ||
         pEnv->pWorld->apCraft[nShipIdx] == NULL) {
         return false; /* deviation: 0x7E0AC indexes apCraft with the caller's index, unchecked */
     }

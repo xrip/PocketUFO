@@ -175,6 +175,12 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
         /* Sample of the position before this step. */
         tr.nOrigX = (i32)(dX / (double)PUFO_VOX_PER_CELL_X);
         tr.nOrigY = (i32)(dY / (double)PUFO_VOX_PER_CELL_Y);
+        if (pAim->pnShotOriginX != NULL) {
+            *pAim->pnShotOriginX = tr.nOrigX; /* 0x2FCAC: Map_nFireOrigX, each sample */
+        }
+        if (pAim->pnShotOriginY != NULL) {
+            *pAim->pnShotOriginY = tr.nOrigY; /* 0x2FCC0: Map_nFireOrigY, each sample */
+        }
 
         dX = pAim->dTravel * cos(pAim->dPitch) * cos(pAim->dYaw) + (double)nX0;
         dY = pAim->dTravel * cos(pAim->dPitch) * sin(pAim->dYaw) + (double)nY0;

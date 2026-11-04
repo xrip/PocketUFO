@@ -500,18 +500,23 @@ static const i32 g_aStartFacCells[][3] = {
     { FAC_HANGAR,            0, 4 }, { FAC_HANGAR,          4, 4 },
 };
 
-/* The Skyranger's cargo: object slot, quantity (0x94E60..0x94A5C). */
+/* The starter grant tables use Map.apObjects slot indices and quantities. */
+/* Base0 stock, raw calls 0x94EFC, 0x94F14, 0x94F2C, 0x94F44, 0x95188, 0x951A0. */
+static const i16 g_aStartBaseStock[][2] = {
+    {  27,  1 }, {  52, 20 }, {  53, 15 }, {  54, 10 }, { 112, 10 }, { 113, 10 },
+};
+
+/* The Skyranger cargo, Map.apObjects slot and quantity (raw BLs 0x94FA8..0x95170). */
 static const i16 g_aType0Cargo[][2] = {
-    { OBJ_CELATID_CORPSE,       3 }, { OBJ_OPERATIVE_CORPSE,     6 },   /* 67, 70 */
-    { OBJ_OPERATIVE_CORPSE_B,   2 }, { OBJ_MALE_CORPSE,          2 },   /* 72, 73 */
-    { OBJ_TANK_WRECKAGE,        1 }, { OBJ_SECTOID_NAVIGATOR,    4 },   /* 75, 79 */
-    { OBJ_SECTOID_LEADER,       4 }, { OBJ_SECTOID_COMMANDER,    4 },   /* 80, 81 */
-    { OBJ_SNAKEMAN_SOLDIER,     4 }, { OBJ_ETHEREAL_ENGINEER,    4 },   /* 82, 96 */
-    { OBJ_CYBERDISK,           10 }, { OBJ_CHRYSSALID,           2 },   /* 99, 100 */
-    { OBJ_RIPER,                2 }, { OBJ_SILACOID,             2 },   /* 101, 102 */
-    { OBJ_CELACID,              2 }, { OBJ_SECTOPOD,             2 },   /* 103, 104 */
-    { OBJ_ELERIUM_115,          2 }, { OBJ_ALIEN_ALLOYS,         2 },   /* 105, 106 */
-    { OBJ_UFO_POWER_SOURCE,     2 }, { OBJ_ALIEN_SURGERY,        1 },   /* 107, 108 */
+    {   1,  3 }, {   4,  6 }, {   7,  2 }, {   8,  2 }, {  10,  1 },
+    {  14,  4 }, {  15,  4 }, {  16,  4 }, {  17,  4 }, {  36,  4 },
+    {  38, 10 }, {  40,  2 }, {  41,  2 }, {  42,  2 }, {  43,  2 },
+    {  44,  2 }, {  45,  2 }, {  46,  2 }, {  47,  1 }, {  48,  1 },
+};
+
+/* Interceptor cargo, raw calls 0x951F4/0x9520C and 0x952A8/0x952C0. */
+static const i16 g_aType3Cargo[][2] = {
+    { 25, 1 }, { 26, 1 },
 };
 
 /* The byte table at 0xABED0, read as byte_ABED0[2 * nUnitType]: four u16 entries
@@ -654,11 +659,11 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
                                         g_aStartFacCells[i][1], (i8)g_aStartFacCells[i][2], 1);
     }
 
-    /* 0x94E34..0x94E58: four starter items at base 0. */
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_HEAVY_CANNON_AP_CLIP], 1);  /* 43 */
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_SILACOID_CORPSE], 20);      /* 68 */
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_SECTOPOD_REMAINS], 15);     /* 69 */
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_OPERATIVE_CORPSE], 10);     /* 70 */
+    /* 0x94EFC..0x94F44: the first four raw Map.apObjects stock grants. */
+    for (i = 0; i < 4; ++i) {
+        BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[g_aStartBaseStock[i][0]],
+                           g_aStartBaseStock[i][1]);
+    }
 
     /* 0x94E5C..0x94E60: the counters the rosters start from. */
     *pEnv->pnSelectedBaseIdx = 0;
@@ -666,7 +671,7 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     *pEnv->pnSoldierCount = 0;
     *pEnv->pbCraftCount = 0;
 
-    /* 0x94E60..0x94A5C: the Skyranger and its cargo. */
+    /* 0x94F7C..0x95170: the Skyranger and its twenty raw cargo grants. */
     (void)Ship_SpawnAtSlot(pEnv->pShipEnv, CRAFT_TYPE_SKYRANGER, 0);
     Ship *pCraft = pEnv->apCraft[0];
     pCraft->uRangeRemain = pCraft->uRangeMax; /* 0x94E8C */
@@ -675,13 +680,21 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
                                 g_aType0Cargo[i][1]);
     }
 
+    /* 0x95188 and 0x951A0: the final two base-stock grants, after the Skyranger cargo. */
+    for (i = 4; i < (i32)(sizeof(g_aStartBaseStock) / sizeof(g_aStartBaseStock[0])); ++i) {
+        BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[g_aStartBaseStock[i][0]],
+                           g_aStartBaseStock[i][1]);
+    }
+
     /* 0x94A5C..0x94B0C: the first interceptor. */
     (void)Ship_SpawnAtSlot(pEnv->pShipEnv, CRAFT_TYPE_INTERCEPTOR, 0);
     pCraft = pEnv->apCraft[1];
     pCraft->uRangeRemain = pCraft->uRangeMax; /* +8 = +10 */
     pCraft->nFuel = (i16)pCraft->uFuelMax;    /* +24 = +22 */
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_ENGINEER], 1);   /* 88 */
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);  /* 89 */
+    for (i = 0; i < (i32)(sizeof(g_aType3Cargo) / sizeof(g_aType3Cargo[0])); ++i) {
+        (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[g_aType3Cargo[i][0]],
+                                g_aType3Cargo[i][1]);
+    }
     pCraft->bWeaponL = 25;
     pCraft->bWeaponR = 26;
     pCraft->bAmmo25 = 10; /* +61 */
@@ -692,8 +705,10 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     pCraft = pEnv->apCraft[2];
     pCraft->uRangeRemain = pCraft->uRangeMax;
     pCraft->nFuel = (i16)pCraft->uFuelMax;
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_ENGINEER], 1);   /* 88 */
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);  /* 89 */
+    for (i = 0; i < (i32)(sizeof(g_aType3Cargo) / sizeof(g_aType3Cargo[0])); ++i) {
+        (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[g_aType3Cargo[i][0]],
+                                g_aType3Cargo[i][1]);
+    }
     pCraft->bWeaponL = 25;
     pCraft->bWeaponR = 26;
     pCraft->bAmmo26 = 3;

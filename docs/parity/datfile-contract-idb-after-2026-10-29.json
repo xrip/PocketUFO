@@ -1,0 +1,21 @@
+{
+  "after": [
+    {
+      "ea": "0x9f208",
+      "comment": "Raw ANDS mask1 tests WIN32_FIND_DATAW.dwFileAttributes FILE_ATTRIBUTE_READONLY, not DIRECTORY(0x10). Read-only matches return0; non-read-only directories can return1. The original read-only path skips FindClose."
+    },
+    {
+      "ea": "0x9efb4",
+      "comment": "Raw numeric mode3: GENERIC_WRITE(0x40000000), FILE_SHARE_WRITE(2), OPEN_EXISTING(3). It then joins the header/directory ReadFile path at0x9EFB8 without checking read results. Do not reinterpret this as read-write access or as new-directory creation."
+    },
+    {
+      "ea": "0x9f088",
+      "comment": "Raw numeric mode2: GENERIC_WRITE(0x40000000), FILE_SHARE_WRITE(2), CREATE_ALWAYS(2), followed by a fresh zeroed directory and header writes."
+    },
+    {
+      "ea": "0x9f128",
+      "comment": "Raw numeric mode1: GENERIC_READ(0x80000000), FILE_SHARE_READ(1), OPEN_EXISTING(3), then existing-header/directory reads."
+    }
+  ],
+  "saved": true
+}

@@ -6,7 +6,12 @@
 #include "asset/pufo_asset.h"
 #include "game/pufo_boot.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_los.h"
+#include "game/pufo_vistry.h"
+#include "game/pufo_ballist.h"
 #include "game/pufo_combat.h"   /* UnitRosters */
+#include "game/pufo_turn.h"     /* TactCtx272 */
+#include "game/pufo_statusmsg.h" /* StatusStack */
 #include "game/pufo_font.h"
 #include "util/pufo_rand.h"
 #include "util/pufo_str.h"   /* pufo_strcpy: strcpy is deprecated under /WX */
@@ -84,7 +89,7 @@ static void TestPredicates(void)
     unit.bStatus = UNIT_STATUS_1;
     Check(!Unit_bIsOperative(&unit), "  status 1 is not operative");
 
-    /* byte_A7B80 decoded from the IDB: types 4..8,11,13 are large. */
+    /* Footprint assertions use the original 24-row type table at 0xA7B80. */
     unit.nUnitType = 0;
     Check(!Unit_bIsLarge(&unit), "  type 0 is small");
     unit.nUnitType = 4;
@@ -108,8 +113,13 @@ static void TestPredicates(void)
 static void TestResetBattleState(void)
 {
     Soldier unit;
+    TactItem staleItem = {0};
     u16     auStat[PUFO_UNIT_STAT_COUNT];
+    u16     auLoadoutObjects[sizeof(unit.auUnk962) / sizeof(unit.auUnk962[0])];
+    u8      abLoadoutItems[sizeof(unit.abUnk1012) / sizeof(unit.abUnk1012[0])];
     i32     i;
+    i32     j;
+    i32     bLoadoutPreserved = 1;
 
     printf("Unit_ResetBattleState\n");
     Unit_ctor(&unit);
@@ -118,6 +128,29 @@ static void TestResetBattleState(void)
     }
     unit.bFlags = 0xFF;
     unit.bFacing = 9;
+    unit.pHandL = &staleItem;
+    unit.pHandR = &staleItem;
+    for (i = 0; i < 4; ++i) {
+        for (j = 0; j < 2; ++j) {
+            unit.aPockets[i].apItem[j] = &staleItem;
+        }
+    }
+    for (i = 0; i < 8; ++i) {
+        unit.apBackpack[i] = &staleItem;
+    }
+    for (i = 0; i < 9; ++i) {
+        unit.apBelt[i] = &staleItem;
+    }
+    unit.bUnk961 = 1;
+    for (i = 0; i < (i32)(sizeof(unit.auUnk962) / sizeof(unit.auUnk962[0])); ++i) {
+        unit.auUnk962[i] = (u16)(0x100 + i);
+        auLoadoutObjects[i] = unit.auUnk962[i];
+    }
+    for (i = 0; i < (i32)(sizeof(unit.abUnk1012) / sizeof(unit.abUnk1012[0])); ++i) {
+        unit.abUnk1012[i] = (u8)(i + 1);
+        abLoadoutItems[i] = unit.abUnk1012[i];
+    }
+    unit.uInvBurden = 90;
     Unit_ResetBattleState(&unit, 3, 0, auStat, PUFO_UNIT_STAT_COUNT);
 
     CheckEqI32(unit.bFacing, 3, "  bFacing from the argument (Unit_ctor @ 0x476c8)");
@@ -134,6 +167,43 @@ static void TestResetBattleState(void)
     CheckEqI32(unit.uHp, 101, "  uHp from auStat[1]");
     CheckEqI32(unit.uStunOrArmor, 109, "  uStunOrArmor from auStat[9]");
     CheckEqI32(unit.nUnitType, 0, "  unit type stored");
+    Check(unit.pHandL == NULL && unit.pHandR == NULL, "  both stale hand items cleared (0x498f4/0x498f8)");
+    for (i = 0; i < 4; ++i) {
+        for (j = 0; j < 2; ++j) {
+            if (unit.aPockets[i].apItem[j] != NULL) {
+                bLoadoutPreserved = 0;
+            }
+        }
+    }
+    Check(bLoadoutPreserved != 0, "  all eight stale pocket items cleared (0x498e4..0x49918)");
+    bLoadoutPreserved = 1;
+    for (i = 0; i < 8; ++i) {
+        TactItem *pExpected = (i == 5 || i == 6) ? &g_itemSlotEmpty : NULL;
+        if (unit.apBackpack[i] != pExpected) {
+            bLoadoutPreserved = 0;
+        }
+    }
+    Check(bLoadoutPreserved != 0, "  backpack cleared with empty sentinels at slots 5/6 (0x49944..0x49978)");
+    bLoadoutPreserved = 1;
+    for (i = 0; i < 9; ++i) {
+        if (unit.apBelt[i] != NULL) {
+            bLoadoutPreserved = 0;
+        }
+    }
+    Check(bLoadoutPreserved != 0, "  all nine stale belt items cleared (0x49920..0x49940)");
+    CheckEqI32(unit.uInvBurden, 1, "  empty inventory has the base burden after reset (0x49980)");
+    CheckEqI32(unit.bUnk961, 1, "  slot-loadout flag survives reset for the re-dress pass (0x3be60)");
+    for (i = 0; i < (i32)(sizeof(unit.auUnk962) / sizeof(unit.auUnk962[0])); ++i) {
+        if (unit.auUnk962[i] != auLoadoutObjects[i]) {
+            bLoadoutPreserved = 0;
+        }
+    }
+    for (i = 0; i < (i32)(sizeof(unit.abUnk1012) / sizeof(unit.abUnk1012[0])); ++i) {
+        if (unit.abUnk1012[i] != abLoadoutItems[i]) {
+            bLoadoutPreserved = 0;
+        }
+    }
+    Check(bLoadoutPreserved != 0, "  saved object and ammo slot preferences survive reset for Equip_SlotPass");
 
     printf("Unit_ArmorForType\n");
     CheckEqI32(Unit_ArmorForType(0), 0, "  type 0 has no bonus armour");
@@ -289,6 +359,92 @@ static void TestGrid_Init(TestGrid *pGrid)
     pGrid->bInitialised = true;
 }
 
+#define FOOTPRINT_GRID_DIM 60
+#define FOOTPRINT_LOOKUP_LOG 8
+
+typedef struct FootprintLookupRecord {
+    i32 nX;
+    i32 nY;
+    i32 nLayer;
+    MapCell *pCell;
+} FootprintLookupRecord;
+
+typedef struct FootprintGrid {
+    MapCell aCells[PUFO_MAP_LAYERS][FOOTPRINT_GRID_DIM][FOOTPRINT_GRID_DIM];
+    MapCell invalidCell;
+    u16 aLookupCount[PUFO_MAP_LAYERS][FOOTPRINT_GRID_DIM][FOOTPRINT_GRID_DIM];
+    FootprintLookupRecord aLookupLog[FOOTPRINT_LOOKUP_LOG];
+    i32 nLookupCount;
+    i32 nInvalidLookupCount;
+} FootprintGrid;
+
+static FootprintGrid g_FootprintGrid;
+
+static MapCell *FootprintLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    FootprintGrid *pGrid = (FootprintGrid *)pUser;
+    MapCell *pCell;
+
+    if (nX < 0 || nX >= FOOTPRINT_GRID_DIM
+        || nY < 0 || nY >= FOOTPRINT_GRID_DIM
+        || nLayer < 0 || nLayer >= PUFO_MAP_LAYERS) {
+        ++pGrid->nInvalidLookupCount;
+        pCell = &pGrid->invalidCell;
+    } else {
+        pCell = &pGrid->aCells[nLayer][nY][nX];
+        ++pGrid->aLookupCount[nLayer][nY][nX];
+    }
+
+    pGrid->aLookupLog[pGrid->nLookupCount % FOOTPRINT_LOOKUP_LOG] =
+        (FootprintLookupRecord){ nX, nY, nLayer, pCell };
+    ++pGrid->nLookupCount;
+    return pCell;
+}
+
+static void FootprintGrid_Init(FootprintGrid *pGrid)
+{
+    memset(pGrid, 0, sizeof(*pGrid));
+    for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+        for (i32 nY = 0; nY < FOOTPRINT_GRID_DIM; ++nY) {
+            for (i32 nX = 0; nX < FOOTPRINT_GRID_DIM; ++nX) {
+                MapCell_Init(&pGrid->aCells[nLayer][nY][nX], nX, nY, nLayer);
+            }
+        }
+    }
+    MapCell_Init(&pGrid->invalidCell, 0, 0, 0);
+}
+
+static void FootprintFillObjectTable(ObjectRecFull *paObjects,
+                                     ObjectRecFull **apObjects, i32 nCount)
+{
+    for (i32 n = 0; n < nCount; ++n) {
+        apObjects[n] = &paObjects[n];
+    }
+}
+
+static void FootprintEmptyFov(void *pUser, u32 *paWindow,
+                             i32 nColBase, i32 nRowBase,
+                             i32 nOriginX, i32 nOriginY, i32 nLayer,
+                             i32 nRange, i32 nCostMode, u16 nWeaponSortKey)
+{
+    i32 *pnCalls = (i32 *)pUser;
+    (void)paWindow;
+    (void)nColBase;
+    (void)nRowBase;
+    (void)nOriginX;
+    (void)nOriginY;
+    (void)nLayer;
+    (void)nRange;
+    (void)nCostMode;
+    (void)nWeaponSortKey;
+    ++*pnCalls;
+}
+
+static void FootprintNoAreaFire(void *pUser)
+{
+    (void)pUser;
+}
+
 static void TestPlacement(void)
 {
     TestGrid grid;
@@ -346,6 +502,265 @@ static void TestPlacement(void)
     unit.nUnitType = 0;
     Unit_PlaceOnMap(&unit, -5, -5, 0, Test_Lookup, &grid);
     Check(unit.pCell == NULL, "  rejected placement leaves the unit unplaced");
+}
+
+static void TestLargeFootprintEdgeLifecycle(void)
+{
+    FootprintGrid *pGrid = &g_FootprintGrid;
+    Soldier unit;
+    Soldier *apXcom[1] = { NULL };
+    Soldier *apEnemy[1];
+    Soldier *apCiv[1] = { NULL };
+    Soldier *pSelUnit = NULL;
+    UnitRosters rosters;
+    MapGeom geom = { 6, 6 };
+    CombatCtx combat;
+    KillCtx kill;
+    KillHooks hooks;
+    ObjectRecFull aObjects[149] = { 0 };
+    ObjectRecFull *apObjects[149];
+    TactItem aTactItems[4] = { 0 };
+    TactItem *apTactItems[4] = {
+        &aTactItems[0], &aTactItems[1], &aTactItems[2], &aTactItems[3]
+    };
+    Mc1Rec floorSpr = { 0 };
+    u8 nXcomCount = 0;
+    u8 nEnemyCount = 1;
+    i32 nCivilianCount = 0;
+    u32 uKillCredit = 0;
+    i32 nTactItemCount = 0;
+    u8 bTickHold = 1;
+    u8 bFrameScratch = 0;
+
+    printf("Large-unit footprint at the fixed 60-cell row edge\n");
+    FootprintGrid_Init(pGrid);
+    Unit_ctor(&unit);
+    unit.nUnitType = 21;
+    unit.uHp = 0;
+    pGrid->aCells[0][59][35].pFloorSpr = &floorSpr;
+    pGrid->aCells[0][59][36].pFloorSpr = &floorSpr;
+    pGrid->aCells[1][0][35].pFloorSpr = &floorSpr;
+    pGrid->aCells[1][0][36].pFloorSpr = &floorSpr;
+
+    Unit_PlaceOnMap(&unit, 35, 59, 0, FootprintLookup, pGrid);
+    Check(unit.pCell == &pGrid->aCells[0][59][35], "  edge anchor stays at (35,59,0)");
+    Check(pGrid->aCells[0][59][35].pUnit == &unit, "  edge anchor is occupied");
+    Check(pGrid->aCells[0][59][36].pUnit == &unit, "  flat +1 is (36,59,0)");
+    Check(pGrid->aCells[1][0][35].pUnit == &unit, "  flat +60 is (35,0,1)");
+    Check(pGrid->aCells[1][0][36].pUnit == &unit, "  flat +61 is (36,0,1)");
+
+    Unit_PlaceOnMap(&unit, 37, 59, 0, FootprintLookup, pGrid);
+    Check(pGrid->aCells[0][59][35].pUnit == NULL
+          && pGrid->aCells[0][59][36].pUnit == NULL
+          && pGrid->aCells[1][0][35].pUnit == NULL
+          && pGrid->aCells[1][0][36].pUnit == NULL,
+          "  moving clears all four old flat-index cells");
+    Check(pGrid->aCells[0][59][37].pUnit == &unit
+          && pGrid->aCells[0][59][38].pUnit == &unit
+          && pGrid->aCells[1][0][37].pUnit == &unit
+          && pGrid->aCells[1][0][38].pUnit == &unit,
+          "  moving sets all four cells at the new edge anchor");
+
+    Unit_PlaceOnMap(&unit, 35, 59, 0, FootprintLookup, pGrid);
+    Check(pGrid->aCells[0][59][37].pUnit == NULL
+          && pGrid->aCells[0][59][38].pUnit == NULL
+          && pGrid->aCells[1][0][37].pUnit == NULL
+          && pGrid->aCells[1][0][38].pUnit == NULL,
+          "  moving back releases the other edge footprint");
+
+    FootprintFillObjectTable(aObjects, apObjects, 149);
+    apEnemy[0] = &unit;
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.apXcom = apXcom;
+    rosters.apEnemy = apEnemy;
+    rosters.nEnemy = 1;
+    rosters.apCiv = apCiv;
+
+    memset(&combat, 0, sizeof(combat));
+    combat.pfnLookup = FootprintLookup;
+    combat.pUser = pGrid;
+    combat.pGeom = &geom;
+
+    memset(&kill, 0, sizeof(kill));
+    kill.pCombat = &combat;
+    kill.pRosters = &rosters;
+    kill.pnXcomCount = &nXcomCount;
+    kill.pnEnemyCount = &nEnemyCount;
+    kill.pnCivilianCount = &nCivilianCount;
+    kill.apTactItems = apTactItems;
+    kill.pnTactItem = &nTactItemCount;
+    kill.apObjects = apObjects;
+    kill.ppSelUnit = &pSelUnit;
+    kill.pnKillCredit = &uKillCredit;
+    kill.pbTickHold = &bTickHold;
+    kill.pbFrameScratch = &bFrameScratch;
+    memset(&hooks, 0, sizeof(hooks));
+
+    Tact_KillUnit(&kill, &hooks, &unit);
+    Check(pGrid->aCells[0][59][35].pUnit == NULL
+          && pGrid->aCells[0][59][36].pUnit == NULL
+          && pGrid->aCells[1][0][35].pUnit == NULL
+          && pGrid->aCells[1][0][36].pUnit == NULL,
+          "  death clears the anchor and all three canonical neighbours");
+    CheckEqI32(pGrid->aLookupCount[0][59][36], 5,
+               "  +1 X covers both placements, move-away, and both death clears");
+    CheckEqI32(pGrid->aLookupCount[1][0][35], 5,
+               "  +1 Y covers both placements, move-away, and both death clears across the edge");
+    CheckEqI32(pGrid->aLookupCount[1][0][36], 5,
+               "  +1 XY covers both placements, move-away, and both death clears across the edge");
+    CheckEqI32(nTactItemCount, 4, "  edge death still creates all four corpse items");
+    Check(aTactItems[0].pObj == &aObjects[69]
+          && aTactItems[1].pObj == &aObjects[137]
+          && aTactItems[2].pObj == &aObjects[138]
+          && aTactItems[3].pObj == &aObjects[139],
+          "  edge death keeps the Sectopod corpse object slots");
+    CheckEqI32(pGrid->nInvalidLookupCount, 0,
+               "  footprint paths make no out-of-axis lookup");
+    Check(pGrid->invalidCell.pUnit == NULL,
+          "  invalid-lookup guard cell stays untouched");
+}
+
+static void TestType18BlastAtLargeFootprintEdge(void)
+{
+    FootprintGrid *pGrid = &g_FootprintGrid;
+    Soldier unit;
+    Soldier neighbor;
+    Soldier *apXcom[1] = { NULL };
+    Soldier *apEnemy[1];
+    Soldier *apCiv[1] = { NULL };
+    Soldier *pSelUnit = NULL;
+    UnitRosters rosters;
+    MapGeom geom = { 6, 6 };
+    CombatCtx combat;
+    KillCtx kill;
+    KillHooks hooks;
+    ShotHooks shotHooks;
+    ObjectRecFull aObjects[149] = { 0 };
+    ObjectRecFull *apObjects[149];
+    TactItem aTactItems[4] = { 0 };
+    TactItem neighborItem = { 0 };
+    TactItem *apTactItems[4] = {
+        &aTactItems[0], &aTactItems[1], &aTactItems[2], &aTactItems[3]
+    };
+    Mc1Rec floorSpr = { 0 };
+    u8 nXcomCount = 0;
+    u8 nEnemyCount = 1;
+    i32 nCivilianCount = 0;
+    u32 uKillCredit = 0;
+    i32 nTactItemCount = 0;
+    i32 nFovCalls = 0;
+    u8 bTickHold = 0;
+    u8 bFrameScratch = 0;
+    bool bSeedFound = false;
+
+    printf("Type-18 blast uses canonical large-unit edge neighbours\n");
+    FootprintGrid_Init(pGrid);
+    Unit_ctor(&unit);
+    unit.nUnitType = 18;
+    unit.uHp = 0;
+    Unit_ctor(&neighbor);
+    neighbor.nUnitType = 2;
+    neighbor.uHp = 180;
+    neighbor.bUnk248 = 100;
+    neighbor.abReady252[0] = 0;
+    neighbor.abReady252[2] = 100;
+    pGrid->aCells[0][59][35].pFloorSpr = &floorSpr;
+    pGrid->aCells[0][59][36].pFloorSpr = &floorSpr;
+    pGrid->aCells[1][0][35].pFloorSpr = &floorSpr;
+    pGrid->aCells[1][0][36].pFloorSpr = &floorSpr;
+    Unit_PlaceOnMap(&unit, 35, 59, 0, FootprintLookup, pGrid);
+
+    for (unsigned nSeed = 0; nSeed < 10000; ++nSeed) {
+        srand(nSeed);
+        if (Game_RandU16(10) != 0) {
+            srand(nSeed);
+            bSeedFound = true;
+            break;
+        }
+    }
+    Check(bSeedFound, "  a nonzero original blast roll is available");
+    if (!bSeedFound) {
+        return;
+    }
+
+    FootprintFillObjectTable(aObjects, apObjects, 149);
+    aObjects[0].bFireType = 1;
+    aObjects[17].bFireType = 2;
+    /* With power 255, object 0's readiness makes damage >=193; object 17's
+     * readiness and the 100 resistance byte keep it <=155. */
+    /* Keep the large unit's footprint intact; the blast reads linked Soldiers
+     * from each cell's item list. */
+    neighborItem.pObj = &aObjects[0];
+    neighborItem.pLinkedSoldier = &neighbor;
+    MapCell_ListInsertByPri(&pGrid->aCells[0][59][36], &neighborItem);
+    apEnemy[0] = &unit;
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.apXcom = apXcom;
+    rosters.apEnemy = apEnemy;
+    rosters.nEnemy = 1;
+    rosters.apCiv = apCiv;
+
+    memset(&combat, 0, sizeof(combat));
+    combat.pfnLookup = FootprintLookup;
+    combat.pUser = pGrid;
+    combat.pGeom = &geom;
+
+    memset(&kill, 0, sizeof(kill));
+    kill.pCombat = &combat;
+    kill.pRosters = &rosters;
+    kill.pnXcomCount = &nXcomCount;
+    kill.pnEnemyCount = &nEnemyCount;
+    kill.pnCivilianCount = &nCivilianCount;
+    kill.apTactItems = apTactItems;
+    kill.pnTactItem = &nTactItemCount;
+    kill.apObjects = apObjects;
+    kill.ppSelUnit = &pSelUnit;
+    kill.pnKillCredit = &uKillCredit;
+    kill.pbTickHold = &bTickHold;
+    kill.pbFrameScratch = &bFrameScratch;
+
+    memset(&shotHooks, 0, sizeof(shotHooks));
+    /* Keep FOV math outside this check; the cleared window still runs through
+     * Combat_ResolveShot before the kill's explicit four-cell damage pass. */
+    shotHooks.pfnComputeFov = FootprintEmptyFov;
+    shotHooks.pfnAreaFire = FootprintNoAreaFire;
+    shotHooks.pUser = &nFovCalls;
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pShotHooks = &shotHooks;
+
+    Tact_KillUnit(&kill, &hooks, &unit);
+
+    CheckEqI32(nFovCalls, 1, "  the type-18 kill calls the shot resolver's FOV hook");
+    CheckEqI32(neighbor.uHp, 0,
+               "  neighbor blast uses object 0 readiness instead of object 17");
+    Check(pGrid->aCells[0][59][36].pItemList == NULL,
+          "  lethal neighbor damage removes its cell item");
+    Check(pGrid->aCells[0][59][35].pItemList == NULL,
+          "  the blast cell-damage pass removes its unlinked corpse items");
+    CheckEqI32(nTactItemCount, 4, "  all four corpse records remain in the item table");
+    Check(pGrid->nLookupCount >= 3, "  the blast records its final three cell lookups");
+    if (pGrid->nLookupCount >= 3) {
+        const i32 nFirst = (pGrid->nLookupCount - 3) % FOOTPRINT_LOOKUP_LOG;
+        const FootprintLookupRecord *pFirst = &pGrid->aLookupLog[nFirst];
+        const FootprintLookupRecord *pSecond =
+            &pGrid->aLookupLog[(nFirst + 1) % FOOTPRINT_LOOKUP_LOG];
+        const FootprintLookupRecord *pThird =
+            &pGrid->aLookupLog[(nFirst + 2) % FOOTPRINT_LOOKUP_LOG];
+
+        Check(pFirst->nX == 36 && pFirst->nY == 59 && pFirst->nLayer == 0
+              && pFirst->pCell == &pGrid->aCells[0][59][36],
+              "  blast +1 X resolves the expected cell");
+        Check(pSecond->nX == 35 && pSecond->nY == 0 && pSecond->nLayer == 1
+              && pSecond->pCell == &pGrid->aCells[1][0][35],
+              "  blast +60 resolves across the fixed row stride");
+        Check(pThird->nX == 36 && pThird->nY == 0 && pThird->nLayer == 1
+              && pThird->pCell == &pGrid->aCells[1][0][36],
+              "  blast +61 resolves across the fixed row stride");
+    }
+    CheckEqI32(pGrid->nInvalidLookupCount, 0,
+               "  the blast makes no out-of-axis neighbour lookup");
+    Check(pGrid->invalidCell.pUnit == NULL,
+          "  the invalid-lookup guard cell stays untouched");
 }
 
 static void TestRemove(void)
@@ -939,6 +1354,9 @@ static u8 AmmoWeight(i32 nIndex, void *pUser) { (void)pUser; return (u8)nIndex; 
 
 #define SCAN_GRID 40
 static MapCell g_aScanCells[4][SCAN_GRID][SCAN_GRID];
+static u16 g_aScanLoftemps[1792];
+static u16 g_aScanUnitLoft[21504];
+static LosTables g_sScanLosTables;
 
 static MapCell *ScanLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 {
@@ -976,10 +1394,20 @@ static void TestScanVisibleUnits(void)
 
     printf("Unit_ScanVisibleUnits\n");
     memset(g_aScanCells, 0, sizeof(g_aScanCells));
+    memset(g_aScanLoftemps, 0, sizeof(g_aScanLoftemps));
+    memset(g_aScanUnitLoft, 0, sizeof(g_aScanUnitLoft));
+    g_sScanLosTables.pLoftemps = g_aScanLoftemps;
+    g_sScanLosTables.nLoftemps = (u32)(sizeof(g_aScanLoftemps) / sizeof(g_aScanLoftemps[0]));
+    g_sScanLosTables.pUnitloft = g_aScanUnitLoft;
+    g_sScanLosTables.nUnitloft = (u32)(sizeof(g_aScanUnitLoft) / sizeof(g_aScanUnitLoft[0]));
+    /* The ray runs at ySub=8,zSub=8 through a type-0/facing-0 unit row. Setting
+     * every x bit makes both occupied endpoints block unless the scanner passes
+     * its live viewer and candidate to Map_TraceLos. */
+    g_aScanUnitLoft[136] = 0xFFFFu;
     PlaceScanUnit(&viewer, 10, 0, 0);
     PlaceScanUnit(&enemy, 12, 1, 0);
-    PlaceScanUnit(&ally, 11, 0, 0);
-    PlaceScanUnit(&allySpecial, 13, 0, 16);
+    PlaceScanUnit(&ally, 14, 0, 0);
+    PlaceScanUnit(&allySpecial, 9, 0, 16);
     PlaceScanUnit(&distant, 30, 1, 0);
 
     memset(&ctx, 0, sizeof(ctx));
@@ -992,7 +1420,7 @@ static void TestScanVisibleUnits(void)
     rosters.apEnemy = apEnemy;
     rosters.nEnemy = 2;
 
-    CheckEqI32(Unit_ScanVisibleUnits(&viewer, NULL, ScanLookup, NULL, &ctx, &rosters,
+    CheckEqI32(Unit_ScanVisibleUnits(&viewer, &g_sScanLosTables, ScanLookup, NULL, &ctx, &rosters,
                                      &pScratch), 0, "Unit_ScanVisibleUnits @ 0x4834c returns 0");
     /* The scan clears the flag on entry; Unit_SpotCellOccupant sets it again when
      * it queues a spotted unit, so the value that survives is 1. */
@@ -1002,6 +1430,8 @@ static void TestScanVisibleUnits(void)
     Check(viewer.multiOrAnim.apMultiTargets[0] == &enemy, "the enemy pointer is stored");
     Check(ctx.pSelUnit == pSelOuter, "pSelUnit is restored");
     Check(pScratch == NULL, "the scratch target slot is cleared");
+    Check(viewer.pCell->pUnit == &viewer, "the viewer remains on its cell during LOS");
+    Check(enemy.pCell->pUnit == &enemy, "the spotted target remains on its cell during LOS");
 
     /* The same-side unit of type 16 is reached but not queued, and the ally is
      * skipped outright. Replace the enemy with the far one: 20 cells away, past
@@ -1010,8 +1440,268 @@ static void TestScanVisibleUnits(void)
     memset(&viewer, 0, sizeof(viewer));
     viewer.bStatus = 0;
     viewer.pCell = &g_aScanCells[0][10][10];
-    Unit_ScanVisibleUnits(&viewer, NULL, ScanLookup, NULL, &ctx, &rosters, &pScratch);
+    Unit_ScanVisibleUnits(&viewer, &g_sScanLosTables, ScanLookup, NULL, &ctx, &rosters, &pScratch);
     CheckEqI32(viewer.nMultiTarget, 0, "a unit 20 cells away is never traced");
+}
+
+static MapCell *VisibilityLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nX < 0 || nY < 0 || nLayer < 0
+        || nX >= SCAN_GRID || nY >= SCAN_GRID || nLayer >= 4) {
+        return NULL;
+    }
+    return &g_aScanCells[nLayer][nY][nX];
+}
+
+static bool UpdateVisibilityFacing2Case(i32 nDx, i32 nDy)
+{
+    Soldier viewer;
+    Soldier enemy;
+    Soldier *apXcom[1] = { &viewer };
+    Soldier *apEnemy[1] = { &enemy };
+    Soldier *pScratch = NULL;
+    UnitRosters rosters;
+    SpotCtx spot;
+    VisCtx ctx;
+    MapGeom geom = { 4, 4 };
+    VisRay aRays[PUFO_VIS_RAY_COUNT] = { 0 };
+    MapCell *pViewerCell;
+    MapCell *pEnemyCell;
+    i32 nTrajFront1036 = 0;
+
+    memset(g_aScanCells, 0, sizeof(g_aScanCells));
+    memset(g_aScanLoftemps, 0, sizeof(g_aScanLoftemps));
+    memset(g_aScanUnitLoft, 0, sizeof(g_aScanUnitLoft));
+    g_sScanLosTables.pLoftemps = g_aScanLoftemps;
+    g_sScanLosTables.nLoftemps = (u32)(sizeof(g_aScanLoftemps) / sizeof(g_aScanLoftemps[0]));
+    g_sScanLosTables.pUnitloft = g_aScanUnitLoft;
+    g_sScanLosTables.nUnitloft = (u32)(sizeof(g_aScanUnitLoft) / sizeof(g_aScanUnitLoft[0]));
+
+    memset(&viewer, 0, sizeof(viewer));
+    memset(&enemy, 0, sizeof(enemy));
+    memset(&rosters, 0, sizeof(rosters));
+    memset(&spot, 0, sizeof(spot));
+    memset(&ctx, 0, sizeof(ctx));
+    pViewerCell = &g_aScanCells[0][10][10];
+    pEnemyCell = &g_aScanCells[0][10 + nDy][10 + nDx];
+    pViewerCell->nX = 10;
+    pViewerCell->nY = 10;
+    pViewerCell->pUnit = &viewer;
+    viewer.pCell = pViewerCell;
+    viewer.bStatus = 0;
+    viewer.bFacing = 2;
+    viewer.nUnitType = 0;
+    pEnemyCell->nX = (u8)(10 + nDx);
+    pEnemyCell->nY = (u8)(10 + nDy);
+    pEnemyCell->pUnit = &enemy;
+    enemy.pCell = pEnemyCell;
+    enemy.bStatus = 1;
+    enemy.nUnitType = 0;
+
+    rosters.apXcom = apXcom;
+    rosters.nXcom = 1;
+    rosters.apEnemy = apEnemy;
+    rosters.nEnemy = 1;
+    spot.pnTrajFront1036 = &nTrajFront1036;
+    ctx.pSpot = &spot;
+    ctx.pTables = &g_sScanLosTables;
+    ctx.pfnLookup = VisibilityLookup;
+    ctx.pGeom = &geom;
+    ctx.apRays = aRays;
+    ctx.pRosters = &rosters;
+    ctx.ppScratchUnit = &pScratch;
+
+    /* Empty rays isolate the roster-facing gate. Any accepted target still takes
+     * the real Map_TraceLos path between these occupied cells. */
+    (void)Unit_UpdateVisibility(&viewer, &ctx);
+    return (pEnemyCell->bFlags29 & 0x10u) != 0;
+}
+
+static void TestUpdateVisibilityFacing2(void)
+{
+    printf("Unit_UpdateVisibility facing 2\n");
+    Check(UpdateVisibilityFacing2Case(2, 0),
+          "facing 2 sees a clear enemy directly ahead");
+    Check(UpdateVisibilityFacing2Case(2, 1),
+          "facing 2 sees a clear enemy near the zero-angle edge");
+    Check(UpdateVisibilityFacing2Case(2, -1),
+          "facing 2 sees a clear enemy in the near-wrap sector");
+    Check(!UpdateVisibilityFacing2Case(-2, 0),
+          "facing 2 does not see a clear enemy behind it");
+    Check(!UpdateVisibilityFacing2Case(0, 2),
+          "facing 2 does not see a clear enemy at the side");
+    Check(!UpdateVisibilityFacing2Case(1, 1),
+          "facing 2 excludes the diagonal just beyond the lower bound");
+    Check(!UpdateVisibilityFacing2Case(1, -1),
+          "facing 2 excludes the near-wrap diagonal just below the upper bound");
+}
+
+static bool OpportunityFireGateAllows(i32 nSortKey, void *pUser)
+{
+    (void)pUser;
+    return nSortKey == 4;
+}
+
+static void TestOpportunityFireFacing2(void)
+{
+    static const struct {
+        const char *pszName;
+        i32 nTargetX;
+        i32 nTargetY;
+        bool bExpectedFire;
+        bool bExpectedDuel;
+    } aCases[] = {
+        { "front",              22, 20, true,  true  },
+        { "back",               10, 20, false, false },
+        { "near-wrap",          30, 19, true,  true  },
+        { "just beyond lower edge", 22, 22, false, false },
+        { "just inside upper edge", 22, 18, false, false }
+    };
+    static const u16 aDrawBounds[] = { 100, 100, 20, 20, 100 };
+    u16 aDuelDraws[sizeof(aDrawBounds) / sizeof(aDrawBounds[0])];
+    i32 i;
+
+    printf("Unit_bTryOpportunityFire facing 2\n");
+    srand(89);
+    for (i = 0; i < (i32)(sizeof(aDrawBounds) / sizeof(aDrawBounds[0])); ++i) {
+        aDuelDraws[i] = Game_RandU16(aDrawBounds[i]);
+    }
+    CheckEqI32(aDuelDraws[0], 1, "  seed 89 duel draw A is stable");
+    CheckEqI32(aDuelDraws[1], 42, "  seed 89 duel draw B is stable");
+    CheckEqI32(aDuelDraws[2], 3, "  seed 89 duel luck A is stable");
+    CheckEqI32(aDuelDraws[3], 8, "  seed 89 duel luck B is stable");
+
+    for (i = 0; i < (i32)(sizeof(aCases) / sizeof(aCases[0])); ++i) {
+        Soldier target;
+        Soldier shooter;
+        Soldier *apXcom[1] = { &target };
+        Soldier *apEnemy[1] = { &shooter };
+        Soldier *pScratch = NULL;
+        UnitRosters rosters;
+        SpotCtx spot;
+        VisCtx ctx;
+        MapGeom geom = { 4, 4 };
+        VisRay aRays[PUFO_VIS_RAY_COUNT] = { 0 };
+        LosTables tables;
+        AimState aim;
+        TactCtx272 tact;
+        ObjectRecFull weaponRec;
+        TactItem weapon;
+        TactItem *pSelWeapon = NULL;
+        ActionCostTable costs;
+        FireGate gate = { OpportunityFireGateAllows, NULL };
+        MapCell *pTargetCell;
+        MapCell *pShooterCell;
+        i32 nMode = -1;
+        i32 nTrajFront1036 = 0;
+        u8 bFireStatus1 = 1;
+        bool bGotFire;
+
+        printf("  %s\n", aCases[i].pszName);
+        memset(g_aScanCells, 0, sizeof(g_aScanCells));
+        memset(g_aScanLoftemps, 0, sizeof(g_aScanLoftemps));
+        memset(g_aScanUnitLoft, 0, sizeof(g_aScanUnitLoft));
+        tables.pLoftemps = g_aScanLoftemps;
+        tables.nLoftemps = (u32)(sizeof(g_aScanLoftemps) / sizeof(g_aScanLoftemps[0]));
+        tables.pUnitloft = g_aScanUnitLoft;
+        tables.nUnitloft = (u32)(sizeof(g_aScanUnitLoft) / sizeof(g_aScanUnitLoft[0]));
+
+        memset(&target, 0, sizeof(target));
+        memset(&shooter, 0, sizeof(shooter));
+        memset(&rosters, 0, sizeof(rosters));
+        memset(&spot, 0, sizeof(spot));
+        memset(&ctx, 0, sizeof(ctx));
+        memset(&aim, 0, sizeof(aim));
+        memset(&tact, 0, sizeof(tact));
+        memset(&weaponRec, 0, sizeof(weaponRec));
+        memset(&weapon, 0, sizeof(weapon));
+        memset(&costs, 0, sizeof(costs));
+
+        pTargetCell = &g_aScanCells[0][aCases[i].nTargetY][aCases[i].nTargetX];
+        pShooterCell = &g_aScanCells[0][20][20];
+        pTargetCell->nX = (u8)aCases[i].nTargetX;
+        pTargetCell->nY = (u8)aCases[i].nTargetY;
+        pTargetCell->pUnit = &target;
+        pShooterCell->nX = 20;
+        pShooterCell->nY = 20;
+        pShooterCell->pUnit = &shooter;
+
+        target.pCell = pTargetCell;
+        target.bStatus = 0;
+        target.bFacing = 4;
+        target.nUnitType = 0;
+        target.auStat[3] = 0;
+
+        shooter.pCell = pShooterCell;
+        shooter.bStatus = 1;
+        shooter.bFacing = 2;
+        shooter.nUnitType = 9;
+        shooter.auStat[0] = 100;
+        shooter.auStat[3] = 100;
+        shooter.auStat[4] = 100;
+        shooter.uTu = 100;
+        shooter.pHandL = &weapon;
+
+        weaponRec.bAmmoCap = 0;
+        weaponRec.abArmorTu[0] = 10;
+        weaponRec.abCostPct[0] = 50;
+        weaponRec.uSortKey = 4;
+        weapon.pObj = &weaponRec;
+        weapon.nAmmo = 3;
+
+        rosters.apXcom = apXcom;
+        rosters.nXcom = 1;
+        rosters.apEnemy = apEnemy;
+        rosters.nEnemy = 1;
+
+        spot.bBusy = true;
+        spot.pSelUnit = &target;
+        spot.pnTrajFront1036 = &nTrajFront1036;
+        ctx.pSpot = &spot;
+        ctx.pTables = &tables;
+        ctx.pfnLookup = VisibilityLookup;
+        ctx.pGeom = &geom;
+        ctx.apRays = aRays;
+        ctx.pRosters = &rosters;
+        ctx.ppScratchUnit = &pScratch;
+        ctx.pAim = &aim;
+        ctx.pTactCtx = &tact;
+        ctx.pbFireStatus1 = &bFireStatus1;
+
+        /* Re-seed each path. Accepted bearings reach the real duel and use its
+         * four draws; rejected bearings must stop before any draw, even when a
+         * later duel or visibility gate would also return false. */
+        srand(89);
+        bGotFire = Unit_bTryOpportunityFire(&target, &shooter, &gate, &pSelWeapon,
+                                             &nMode, &costs, &ctx);
+        Check(bGotFire == aCases[i].bExpectedFire,
+              "  exported function returns the facing-2 result");
+        CheckEqI32(tact.nOppFireCount, aCases[i].bExpectedFire ? 1 : 0,
+                   "  only an accepted shot enters the opportunity queue");
+        Check(pScratch == NULL, "  scratch unit is cleared");
+        Check(spot.pSelUnit == &target, "  the outer selected unit is restored");
+        Check(pTargetCell->pUnit == &target && pShooterCell->pUnit == &shooter,
+              "  both live units remain on their occupied cells");
+        if (aCases[i].bExpectedFire) {
+            Check(tact.apOppFire[0] == &shooter, "  the reactor enters the queue");
+            Check(shooter.nMultiTarget == 1
+                  && shooter.multiOrAnim.apMultiTargets[0] == &target,
+                  "  the real visibility scan records the target");
+            Check(pSelWeapon == &weapon && nMode == 0,
+                  "  the real fire-mode gate selects the loaded weapon");
+            CheckEqI32(costs.nTuCost[0], 10, "  the selected mode spends 10 TU");
+            CheckEqI32(costs.nAccuracy[0], 50, "  the selected mode keeps its accuracy");
+            CheckEqI32(bFireStatus1, 0, "  a queued shot clears fire status");
+        } else {
+            CheckEqI32(shooter.nMultiTarget, 0, "  the rejected back target is not scanned");
+            Check(pSelWeapon == NULL && nMode == -1,
+                  "  the facing gate rejects before fire-mode selection");
+        }
+        CheckEqI32(Game_RandU16(100),
+                   aDuelDraws[aCases[i].bExpectedDuel ? 4 : 0],
+                   "  facing gate preserves the expected duel draw position");
+    }
 }
 
 static void TestRecalcInventory(void)
@@ -1707,6 +2397,419 @@ static void TestTextTables(const u8 *pBlob, u32 nRecords)
     (void)nRecords;
 }
 
+static void TestCountKillBattleEnd(void *pUser)
+{
+    ++*(i32 *)pUser;
+}
+
+typedef struct TestKillHoldHook {
+    u8  *pbTickHold;
+    i32  nCalls;
+} TestKillHoldHook;
+
+static void TestSetLiveKillTickHold(void *pUser)
+{
+    TestKillHoldHook *pHook = (TestKillHoldHook *)pUser;
+
+    ++pHook->nCalls;
+    *pHook->pbTickHold = 1;
+}
+
+static void TestKillReadsLiveTickHold(void)
+{
+    TestGrid grid;
+    Soldier unit;
+    Soldier *apXcom[1] = { NULL };
+    Soldier *apEnemy[1];
+    Soldier *apCiv[1] = { NULL };
+    Soldier *pSelUnit = NULL;
+    UnitRosters rosters;
+    MapGeom geom = { 1, 1 };
+    CombatCtx combat;
+    KillCtx kill;
+    KillHooks hooks;
+    StatusStack status;
+    StatusHooks statusHooks;
+    VisCtx vis;
+    TestKillHoldHook battleEnd;
+    u8 bTickHold = 0;
+    u8 bFrameScratch = 0;
+    u8 nXcomCount = 0;
+    u8 nEnemyCount = 1;
+    i32 nCivilianCount = 0;
+    u32 uKillCredit = 0;
+    MapCell *pCell;
+    MapCell *pSweepProbe;
+
+    printf("Tact_KillUnit re-reads live tick hold after battle end\n");
+    TestGrid_Init(&grid);
+    Unit_ctor(&unit);
+    unit.nUnitType = 0;
+    unit.uHp = 0;
+    memcpy(unit.szName, "Worker", 7);
+    pCell = &grid.aCells[0][5][5];
+    pSweepProbe = &grid.aCells[0][4][4];
+    pSweepProbe->bFlags44 = 1;
+    unit.pCell = pCell;
+    MapCell_SetOccupant(pCell, &unit);
+    apEnemy[0] = &unit;
+
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.apXcom = apXcom;
+    rosters.apEnemy = apEnemy;
+    rosters.nEnemy = 1;
+    rosters.apCiv = apCiv;
+
+    memset(&combat, 0, sizeof(combat));
+    combat.pfnLookup = Test_Lookup;
+    combat.pUser = &grid;
+    combat.pGeom = &geom;
+
+    memset(&status, 0, sizeof(status));
+    memset(&statusHooks, 0, sizeof(statusHooks));
+    memset(&vis, 0, sizeof(vis));
+    memset(&kill, 0, sizeof(kill));
+    kill.pCombat = &combat;
+    kill.pRosters = &rosters;
+    kill.pnXcomCount = &nXcomCount;
+    kill.pnEnemyCount = &nEnemyCount;
+    kill.pnCivilianCount = &nCivilianCount;
+    kill.ppSelUnit = &pSelUnit;
+    kill.pnKillCredit = &uKillCredit;
+    kill.pbTickHold = &bTickHold;
+    kill.pbFrameScratch = &bFrameScratch;
+    kill.bUiSlotArmed = true;
+    kill.pStatus = &status;
+    kill.pStatusHooks = &statusHooks;
+    kill.pVisCtx = &vis;
+    kill.pszMsgDeadMaleSmall = " died";
+
+    battleEnd.pbTickHold = &bTickHold;
+    battleEnd.nCalls = 0;
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnCheckBattleEnd = TestSetLiveKillTickHold;
+    hooks.pUser = &battleEnd;
+
+    Tact_KillUnit(&kill, &hooks, &unit);
+
+    CheckEqI32(battleEnd.nCalls, 1, "  battle-end callback runs once");
+    CheckEqI32(bTickHold, 1, "  callback sets the live tick-hold byte");
+    CheckEqI32(status.nCount, 0, "  the post-callback death message is skipped");
+    CheckEqI32(pSweepProbe->bFlags44 & 1u, 1,
+               "  the post-callback spotted-flag sweep is skipped");
+}
+
+static void TestKillSyncsMapCivilianCount(void)
+{
+    TestGrid grid;
+    Soldier unit;
+    Soldier *apXcom[1] = { NULL };
+    Soldier *apEnemy[1];
+    Soldier *apCiv[1] = { NULL };
+    Soldier *pSelUnit = NULL;
+    UnitRosters rosters;
+    MapGeom geom = { 1, 1 };
+    CombatCtx combat;
+    KillCtx kill;
+    KillHooks hooks;
+    u8 nXcomCount = 0;
+    u8 nEnemyCount = 1;
+    i32 nCivilianCount = 0;
+    u32 uKillCredit = 0;
+    i32 nBattleEndCalls = 0;
+    u8 bTickHold = 0;
+    u8 bFrameScratch = 0;
+    MapCell *pCell;
+
+    /* Player result: a killed alien leaves the enemy count and its corpse stays
+     * on the civilian side. This direct kill fixture catches a copied-roster count
+     * that was never written to Map; the floorless cell isolates that count, so it
+     * does not test the corpse item or the live spawn callback. */
+    printf("Tact_KillUnit Map civilian count\n");
+    TestGrid_Init(&grid);
+    Unit_ctor(&unit);
+    unit.nUnitType = 9;
+    unit.uHp = 0;
+    pCell = &grid.aCells[0][5][5];
+    unit.pCell = pCell;
+    MapCell_SetOccupant(pCell, &unit);
+    apEnemy[0] = &unit;
+
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.apXcom = apXcom;
+    rosters.apEnemy = apEnemy;
+    rosters.nEnemy = 1;
+    rosters.apCiv = apCiv;
+
+    memset(&combat, 0, sizeof(combat));
+    combat.pfnLookup = Test_Lookup;
+    combat.pUser = &grid;
+    combat.pGeom = &geom;
+
+    memset(&kill, 0, sizeof(kill));
+    kill.pCombat = &combat;
+    kill.pRosters = &rosters;
+    kill.pnXcomCount = &nXcomCount;
+    kill.pnEnemyCount = &nEnemyCount;
+    kill.pnCivilianCount = &nCivilianCount;
+    kill.ppSelUnit = &pSelUnit;
+    kill.pnKillCredit = &uKillCredit;
+    kill.pbTickHold = &bTickHold;
+    kill.pbFrameScratch = &bFrameScratch;
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnCheckBattleEnd = TestCountKillBattleEnd;
+    hooks.pUser = &nBattleEndCalls;
+
+    Tact_KillUnit(&kill, &hooks, &unit);
+
+    CheckEqI32(nEnemyCount, 0, "  the live Map enemy count drops");
+    CheckEqI32(rosters.nEnemy, 0, "  the copied enemy count follows removal");
+    CheckEqI32(nCivilianCount, 1, "  Map counts the appended corpse");
+    Check(rosters.nCiv == 1 && apCiv[0] == &unit,
+          "  the corpse stays on the civilian side");
+    Check((unit.bFlags & 0x20u) != 0 && pCell->pUnit == NULL,
+          "  the unit is dead and no longer occupies its cell");
+    CheckEqI32(unit.bUnk1037, 1, "  clear live gates let the post-callback kill tail run");
+    CheckEqI32((i32)uKillCredit, 1, "  a zero-HP alien increments the queue kill-credit dword");
+    CheckEqI32(nBattleEndCalls, 1, "  the kill requests a battle-end check");
+}
+
+static void TestKillLargeCorpseObjectSlots(void)
+{
+    static const u8 anUnitType[3] = { 18, 20, 21 };
+    static const u16 aanExpectedObjSlot[3][4] = {
+        { 99, 134, 135, 136 },
+        { 66, 131, 132, 133 },
+        { 69, 137, 138, 139 }
+    };
+    static const char *const apszUnitName[3] = { "Cyberdisk", "Reaper", "Sectopod" };
+
+    printf("Tact_KillUnit large corpse object slots\n");
+    for (i32 nCase = 0; nCase < 3; ++nCase) {
+        TestGrid grid;
+        Soldier unit;
+        Soldier *apXcom[1] = { NULL };
+        Soldier *apEnemy[1];
+        Soldier *apCiv[1] = { NULL };
+        Soldier *pSelUnit = NULL;
+        UnitRosters rosters;
+        MapGeom geom = { 1, 1 };
+        CombatCtx combat;
+        KillCtx kill;
+        KillHooks hooks;
+        ObjectRecFull aObjects[149] = { 0 };
+        ObjectRecFull *apObjects[149];
+        TactItem aTactItems[4] = { 0 };
+        TactItem *apTactItems[4] = {
+            &aTactItems[0], &aTactItems[1], &aTactItems[2], &aTactItems[3]
+        };
+        Mc1Rec floorSpr = { 0 };
+        u8 nXcomCount = 0;
+        u8 nEnemyCount = 1;
+        i32 nCivilianCount = 0;
+        u32 uKillCredit = 0;
+        i32 nTactItemCount = 0;
+        u8 bTickHold = 0;
+        u8 bFrameScratch = 0;
+        MapCell *pCell;
+        const i32 aOffset[4][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } };
+        bool bSeedFound = nCase != 0;
+
+        TestGrid_Init(&grid);
+        for (i32 i = 0; i < 149; ++i) {
+            apObjects[i] = &aObjects[i];
+        }
+
+        /* Type 18 has an unrelated blast on a nonzero roll. Find a CRT seed
+         * whose first game roll is zero, then reset to that same seed. */
+        if (nCase == 0) {
+            for (unsigned nSeed = 0; nSeed < 10000; ++nSeed) {
+                srand(nSeed);
+                if (Game_RandU16(10) == 0) {
+                    srand(nSeed);
+                    bSeedFound = true;
+                    break;
+                }
+            }
+        }
+        Check(bSeedFound, "  the Cyberdisk test can skip its separate blast");
+        if (!bSeedFound) {
+            continue;
+        }
+
+        Unit_ctor(&unit);
+        unit.nUnitType = anUnitType[nCase];
+        unit.uHp = 0;
+        pCell = &grid.aCells[0][5][5];
+        unit.pCell = pCell;
+        MapCell_SetOccupant(pCell, &unit);
+        for (i32 q = 0; q < 4; ++q) {
+            MapCell *pPartCell = Test_Lookup(pCell->nX + aOffset[q][0],
+                                             pCell->nY + aOffset[q][1],
+                                             pCell->nZ, &grid);
+            pPartCell->pFloorSpr = &floorSpr;
+        }
+        apEnemy[0] = &unit;
+
+        memset(&rosters, 0, sizeof(rosters));
+        rosters.apXcom = apXcom;
+        rosters.apEnemy = apEnemy;
+        rosters.nEnemy = 1;
+        rosters.apCiv = apCiv;
+
+        memset(&combat, 0, sizeof(combat));
+        combat.pfnLookup = Test_Lookup;
+        combat.pUser = &grid;
+        combat.pGeom = &geom;
+
+        memset(&kill, 0, sizeof(kill));
+        kill.pCombat = &combat;
+        kill.pRosters = &rosters;
+        kill.pnXcomCount = &nXcomCount;
+        kill.pnEnemyCount = &nEnemyCount;
+        kill.pnCivilianCount = &nCivilianCount;
+        kill.apTactItems = apTactItems;
+        kill.pnTactItem = &nTactItemCount;
+        kill.apObjects = apObjects;
+        kill.ppSelUnit = &pSelUnit;
+        kill.pnKillCredit = &uKillCredit;
+        kill.pbTickHold = &bTickHold;
+        kill.pbFrameScratch = &bFrameScratch;
+
+        memset(&hooks, 0, sizeof(hooks));
+        Tact_KillUnit(&kill, &hooks, &unit);
+
+        CheckEqI32(nTactItemCount, 4, "  a large unit makes four corpse items");
+        for (i32 q = 0; q < 4; ++q) {
+            char szCheck[128];
+
+            (void)snprintf(szCheck, sizeof(szCheck),
+                           "  %s corpse item %d uses OBJECTS.DAT slot %u",
+                           apszUnitName[nCase], q, (unsigned)aanExpectedObjSlot[nCase][q]);
+            Check(aTactItems[q].pObj == &aObjects[aanExpectedObjSlot[nCase][q]], szCheck);
+            Check(aTactItems[q].pObj != &aObjects[0],
+                  "  no corpse item falls back to service object slot 0");
+        }
+    }
+}
+
+static void TestKillType22TransformReset(void)
+{
+    TestGrid grid;
+    Soldier unit;
+    Soldier *apXcom[1] = { NULL };
+    Soldier *apEnemy[1];
+    Soldier *apCiv[1] = { NULL };
+    Soldier *pSelUnit = NULL;
+    UnitRosters rosters;
+    MapGeom geom = { 1, 1 };
+    CombatCtx combat;
+    KillCtx kill;
+    KillHooks hooks;
+    TactItem staleItem = {0};
+    u8 nXcomCount = 0;
+    u8 nEnemyCount = 1;
+    i32 nCivilianCount = 0;
+    u32 uKillCredit = 0;
+    MapCell *pCell;
+    i32 i;
+    bool bOtherSlotsCleared = true;
+    u8 bTickHold = 1;
+    u8 bFrameScratch = 0;
+
+    printf("Tact_KillUnit chryssalid transform resets and re-places\n");
+    TestGrid_Init(&grid);
+    Unit_ctor(&unit);
+    unit.nUnitType = 22;
+    unit.uHp = 0;
+    unit.bFacing = 6;
+    unit.uTuSpent = 17;
+    unit.bKneelOrPrimed = 1;
+    unit.bHumanoidInv = 0;
+    unit.bPsiActive = 1;
+    unit.uInvBurden = 90;
+    unit.pHandL = &staleItem;
+    unit.pHandR = &staleItem;
+    for (i = 0; i < 4; ++i) {
+        unit.aPockets[i].apItem[0] = &staleItem;
+        unit.aPockets[i].apItem[1] = &staleItem;
+    }
+    for (i = 0; i < 8; ++i) {
+        unit.apBackpack[i] = &staleItem;
+    }
+    for (i = 0; i < 9; ++i) {
+        unit.apBelt[i] = &staleItem;
+    }
+    pCell = &grid.aCells[0][5][5];
+    unit.pCell = pCell;
+    MapCell_SetOccupant(pCell, &unit);
+    apEnemy[0] = &unit;
+
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.apXcom = apXcom;
+    rosters.apEnemy = apEnemy;
+    rosters.nEnemy = 1;
+    rosters.apCiv = apCiv;
+
+    memset(&combat, 0, sizeof(combat));
+    combat.pfnLookup = Test_Lookup;
+    combat.pUser = &grid;
+    combat.pGeom = &geom;
+
+    memset(&kill, 0, sizeof(kill));
+    kill.pCombat = &combat;
+    kill.pRosters = &rosters;
+    kill.pnXcomCount = &nXcomCount;
+    kill.pnEnemyCount = &nEnemyCount;
+    kill.pnCivilianCount = &nCivilianCount;
+    kill.ppSelUnit = &pSelUnit;
+    kill.pnKillCredit = &uKillCredit;
+    kill.pszTransformName = "transformed";
+    kill.pbTickHold = &bTickHold;
+    kill.pbFrameScratch = &bFrameScratch;
+    memset(&hooks, 0, sizeof(hooks));
+
+    Tact_KillUnit(&kill, &hooks, &unit);
+
+    CheckEqI32(unit.nUnitType, 14, "  type 22 becomes type 14");
+    CheckEqI32(unit.bStatus, 1, "  the transformed unit keeps status 1");
+    CheckEqI32(unit.bFacing, 6, "  reset keeps the saved facing");
+    CheckEqI32(unit.uTu, unit.auStat[0], "  reset restores TU from the new type's stats");
+    CheckEqI32(unit.uHp, unit.auStat[1], "  reset restores HP from the new type's stats");
+    CheckEqI32(unit.uStunOrArmor, unit.auStat[9], "  reset restores stun/armour from stat 9");
+    CheckEqI32(unit.uTuSpent, 0, "  reset clears spent TU");
+    CheckEqI32(unit.bKneelOrPrimed, 0, "  reset clears kneel/primed state");
+    CheckEqI32(unit.bHumanoidInv, 1, "  type 14 keeps the reset's humanoid-inventory flag at 0x1A2");
+    CheckEqI32(unit.bPsiActive, 0, "  the transform clears psi at byte 0x1A6");
+    CheckEqI32(unit.uInvBurden, 1, "  reset leaves the empty-inventory base burden");
+    Check(unit.pHandL == NULL && unit.pHandR == NULL,
+          "  reset clears both hands");
+    Check(unit.apBackpack[5] == &g_itemSlotEmpty && unit.apBackpack[6] == &g_itemSlotEmpty,
+          "  reset seeds the two empty-backpack sentinels");
+    for (i = 0; i < 4; ++i) {
+        if (unit.aPockets[i].apItem[0] != NULL || unit.aPockets[i].apItem[1] != NULL) {
+            bOtherSlotsCleared = false;
+        }
+    }
+    for (i = 0; i < 8; ++i) {
+        if (i != 5 && i != 6 && unit.apBackpack[i] != NULL) {
+            bOtherSlotsCleared = false;
+        }
+    }
+    for (i = 0; i < 9; ++i) {
+        if (unit.apBelt[i] != NULL) {
+            bOtherSlotsCleared = false;
+        }
+    }
+    Check(bOtherSlotsCleared, "  reset clears pockets, belt, and non-sentinel backpack slots");
+    Check(unit.pCell == pCell && pCell->pUnit == &unit,
+          "  the saved cell is restored after reset cleared pCell");
+    Check(rosters.nEnemy == 0 && nEnemyCount == 0 && nCivilianCount == 0,
+          "  the transformed unit leaves the enemy list and is not a corpse");
+    CheckEqI32((i32)uKillCredit, 1, "  the zero-HP type 22 adds queue credit before it transforms");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1762,6 +2865,7 @@ int main(void)
     TestResetBattleState();
     TestFacing();
     TestPlacement();
+    TestLargeFootprintEdgeLifecycle();
     TestRemove();
     TestRemoveById();
     TestRemoveAllSoldiers();
@@ -1772,8 +2876,13 @@ int main(void)
     TestAnimPose();
     TestCanStepExitDir();
     TestArmorTuWarn();
+    TestKillReadsLiveTickHold();
+    TestKillSyncsMapCivilianCount();
+    TestKillType22TransformReset();
     TestSpotCellOccupant();
     TestScanVisibleUnits();
+    TestUpdateVisibilityFacing2();
+    TestOpportunityFireFacing2();
     TestRecalcInventory();
     TestFacingAngleDuel();
     TestDropItems();
@@ -1781,6 +2890,8 @@ int main(void)
     TestFormatDisplayName();
     TestClassifySoldier();
     TestCreateSoldier();
+    TestKillLargeCorpseObjectSlots();
+    TestType18BlastAtLargeFootprintEdge();
 
     TextTables_Free();
     Asset_CloseArchives();

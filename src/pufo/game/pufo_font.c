@@ -653,7 +653,7 @@ i32 Text_MeasureWidth(const char *psz)
     i32 nWidth = 0;
 
     for (; *psz != '\0'; ++psz) {
-        nWidth += g_fontMetrics.aAdvance[(u8)*psz];
+        nWidth += (i8)g_fontMetrics.aAdvance[(u8)*psz]; /* Raw 0x2DCC8 uses LDRSB. */
     }
     return nWidth;
 }
@@ -674,7 +674,7 @@ void Text_DrawString(i32 x, i32 y, const char *psz)
         u8 ch = (u8)*psz;
 
         Font_DrawGlyph(x, y, (u16)(g_fontSys.nGlyphBase + ch), 0);
-        x += g_fontMetrics.aAdvance[ch];
+        x += (i8)g_fontMetrics.aAdvance[ch]; /* Raw 0x2D804 uses LDRSB. */
     }
     g_nGlyphPalSlotBase = nSavedBase;    /* 0x2d818 */
 }

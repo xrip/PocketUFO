@@ -1,0 +1,13 @@
+{
+  "input": "pufobeta.exe",
+  "sha256": "4332B3373FDFF386003C9B097C05A616F9E7BB4E085DDCB19474A97A3A36B8E1",
+  "resource_rva": "0x17b000",
+  "resource_size": 3960,
+  "resource_types": [
+    "CEUX",
+    3,
+    14
+  ],
+  "accelerator_type9_present": false,
+  "execution": false
+}

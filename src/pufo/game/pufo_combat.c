@@ -726,8 +726,7 @@ static void Combat_DropCellItems(const CombatCtx *pCtx)
  * when the cell's bFlags44 bit 0 is set, and records that it moved the view. */
 static void Proximity_SetOrigin(ProximityCtx *pCtx, MapCell *pCell)
 {
-    pCtx->pCombat->nShotOriginX = pCell->nX;
-    pCtx->pCombat->nShotOriginY = pCell->nY;
+    CombatCtx_SetShotOrigin(pCtx->pCombat, pCell->nX, pCell->nY);
 }
 
 static void Proximity_FocusIfFlagged(ProximityCtx *pCtx, MapCell *pCell)
@@ -876,8 +875,7 @@ void Combat_DetonateNearbyItems(ProximityCtx *pCtx, const MapCell *pSrcCell)
                             continue;
                         }
 
-                        pCtx->pCombat->nShotOriginX = pCell->nX;   /* 0x330C0 */
-                        pCtx->pCombat->nShotOriginY = pCell->nY;   /* 0x330D0 */
+                        CombatCtx_SetShotOrigin(pCtx->pCombat, pCell->nX, pCell->nY); /* 0x330C0 / 0x330D0 */
                         Combat_ResolveShot(pCtx->pCombat, pCtx->pShotHooks, pCtx->pRosters,
                                            pCell->nX, pCell->nY, pCell->nZ, 0, pObj,
                                            NULL, NULL, NULL);
@@ -899,17 +897,17 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
                         i32 nLayer, i32 nSlot, const ObjectRecFull *pWeapon,
                         u32 *apHits, u32 *apHitsSave, ShotOutcome *pOut)
 {
-    /* The original reaches the 41 x 41 x 4 window and the outcome through Map globals,
-     * so it always has both. The port lifted them into parameters, and two callers -
-     * the type-18 death explosion at 0x2f12c's caller in pufo_unit.c and the proximity
-     * detonation - pass NULL for both, which writes through a null window. A shared
-     * scratch pair reproduces the original's single window for callers that do not
-     * inspect the result. */
+    /* Original calls share the Map windows. Explicit buffers take precedence;
+     * Map-owned contexts supply them when proximity/death calls pass NULL.
+     * Standalone contexts retain scratch storage for the working window/outcome. */
     static u32        s_aScratchHits[PUFO_SPLASH_DWORDS];
     static ShotOutcome s_scratchOut;
 
     if (apHits == NULL) {
-        apHits = s_aScratchHits;
+        apHits = (pCtx->paHitWindow != NULL) ? pCtx->paHitWindow : s_aScratchHits;
+    }
+    if (apHitsSave == NULL) {
+        apHitsSave = pCtx->paHitWindowSave;
     }
     if (pOut == NULL) {
         pOut = &s_scratchOut;
@@ -919,6 +917,9 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
 
     /* 0x2f254: the splash walk reads the firing weapon back out of the map. */
     pCtx->pCtxWeapon = (ObjectRecFull *)pWeapon;
+    if (pCtx->ppCtxWeapon != NULL) {
+        *pCtx->ppCtxWeapon = pWeapon;
+    }
 
     /* 0x2f258..0x2f284: clear the whole 41 x 41 x 4 window. */
     for (size_t i = 0; i < PUFO_SPLASH_DWORDS; ++i) {
@@ -928,6 +929,8 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
     SplashMode eMode = (SplashMode)pWeapon->bFireType;
     i32 nImpactX = nTgtX;
     i32 nImpactY = nTgtY;
+    const i32 nShotOriginX = CombatCtx_GetShotOriginX(pCtx);
+    const i32 nShotOriginY = CombatCtx_GetShotOriginY(pCtx);
     i32 nFovCalls = 0;
     pOut->nDamage = -1;
 
@@ -936,12 +939,12 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
          * field-of-view refresh and go straight to the splash walk. */
         if (pWeapon->bFireType == 1 || pWeapon->bFireType == 2) {
             Sound_Play(Combat_ShotSound(pWeapon));
-            nImpactX = pCtx->nShotOriginX;
-            nImpactY = pCtx->nShotOriginY;
+            nImpactX = nShotOriginX;
+            nImpactY = nShotOriginY;
             /* 0x2f324: area fire refreshes the field from the shot's own origin
              * cells, centred (a2 = a3 = 0), range budget = ObjectRec+0xB6, a8 = 2. */
             pHooks->pfnComputeFov(pHooks->pUser, apHits, 0, 0,
-                                  nImpactX, nImpactY, nLayer,
+                                  nShotOriginX, nShotOriginY, nLayer,
                                   (i32)pWeapon->uFirePower, 2, pWeapon->uSortKey);
             nFovCalls++;
         }
@@ -951,7 +954,7 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
          * splash walk and the ceiling sweep read. a2 = a3 = 0, origin = the shot
          * origin cells, nRange = ObjectRec+0xB6, a8 = 1 (the 8.0 per-step arm). */
         pHooks->pfnComputeFov(pHooks->pUser, apHits, 0, 0,
-                              pCtx->nShotOriginX, pCtx->nShotOriginY, nLayer,
+                              nShotOriginX, nShotOriginY, nLayer,
                               (i32)pWeapon->uFirePower, 1, pWeapon->uSortKey);
         nFovCalls++;
         /* 0x2f3dc: the impact record, at the centre of the window, in the slot

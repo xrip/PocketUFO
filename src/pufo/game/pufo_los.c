@@ -297,6 +297,7 @@ static MapCell *Los_CellFromFlat(MapCellLookup pfnLookup, void *pUser, i32 nFlat
 bool Map_TraceLos(const LosTables *pTables, MapCellLookup pfnLookup, void *pUser,
                   i32 nX0, i32 nY0, i32 nZ0,
                   i32 nX1, i32 nY1, i32 nZ1,
+                  const Soldier *pUnitSelExclude, const Soldier *pUnitExtraExclude,
                   u8 *pOutYawRandom, i32 *pOutCost)
 {
     double dYaw;
@@ -374,7 +375,7 @@ bool Map_TraceLos(const LosTables *pTables, MapCellLookup pfnLookup, void *pUser
         }
         if (Map_TraceVoxelOccupancy(pTables, pfnLookup, pUser,
                                     (u32)nFx, (u32)nFy, (u32)nFz,
-                                    NULL, NULL) != LOS_HIT_NONE) {
+                                    pUnitSelExclude, pUnitExtraExclude) != LOS_HIT_NONE) {
             break;
         }
 

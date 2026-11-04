@@ -37,8 +37,8 @@ static PufoFont   s_Font;
 static u8         s_bTactFlag;
 static TactItem  *s_apTactItems[8];
 static i32        s_nTactItemCount;
-static void      *s_apStrategCopy[4];
-static u16        s_nStrategCopy;
+static Soldier   *s_apStrategCopy[8];
+static i32        s_nStrategCopy;
 static void      *s_apBaseCopy[4];
 static i8         s_nBaseCount;
 static void      *s_apCraftCopy[4];
@@ -185,7 +185,8 @@ static void Fixture_Free(void)
         free(s_apCells[i]);
         s_apCells[i] = NULL;
     }
-    /* The rosters compact as units are removed, so only the first nCount slots are live. */
+    /* This fixture owns the side-list Soldiers unless a shutdown test has already removed
+     * them from the global pool and zeroed the side counts for map teardown. */
     for (i = 0; i < s_nCivilian; ++i) {
         free(s_apCivilian[i]);
     }
@@ -456,7 +457,7 @@ static void TestKeepSomePath(void)
     }
     s_nStrategCopy = 2;
     for (i = 0; i < 2; ++i) {
-        s_apStrategCopy[i] = malloc(16);
+        s_apStrategCopy[i] = (Soldier *)malloc(16);
     }
     s_nBaseCount = 1;
     s_apBaseCopy[0] = malloc(16);
@@ -494,13 +495,14 @@ static void TestKeepSomePath(void)
     Fixture_Free();
 }
 
-/* The walk runs against a shrinking list while the index keeps advancing, so it skips
- * entries. Three enemies means one survivor. */
+/* The side lists select units, while Soldier_RemoveById frees them from the world soldier pool.
+ * The original leaves side-list counts intact because Tact_Shutdown discards the Map immediately. */
 static void TestUnitRemoval(void)
 {
     TactShutdownEnv env;
+    i32 i;
 
-    printf("Tact_Shutdown - which tactical units go\n");
+    printf("Tact_Shutdown - remove tactical units from the global soldier pool\n");
     Fixture_Reset();
     s_nEnemy = 3;
     s_apEnemy[0] = NewUnit(10, 5, 0);
@@ -516,24 +518,39 @@ static void TestUnitRemoval(void)
     s_apXcom[1] = NewUnit(21, 2, 1);  /* type 2, in zone -> kept */
     s_apXcom[2] = NewUnit(22, 9, 0);  /* not in zone -> removed */
 
+    s_apStrategCopy[0] = s_apCivilian[0];
+    s_apStrategCopy[1] = s_apCivilian[1];
+    s_apStrategCopy[2] = s_apEnemy[0];
+    s_apStrategCopy[3] = s_apEnemy[1];
+    s_apStrategCopy[4] = s_apEnemy[2];
+    s_apStrategCopy[5] = s_apXcom[0];
+    s_apStrategCopy[6] = s_apXcom[1];
+    s_apStrategCopy[7] = s_apXcom[2];
+    s_nStrategCopy = 8;
+
     PtrArray_Add(&s_StrategList, malloc(16));
     PtrArray_Add(&s_StrategList, malloc(16));
 
     env = Env_Build();
     Tact_Shutdown(&env, 0);
 
-    TestEqI32("three enemies leave one survivor (the shrinking-list walk)", s_nEnemy, 1);
-    TestEqI32("the surviving enemy is the original index 1",
-              s_apEnemy[0] != NULL ? s_apEnemy[0]->nUnk440 : -1, 11);
-    TestEqI32("one civilian removed", s_nCivilian, 1);
-    TestEqI32("the surviving civilian is the one in zone",
-              s_apCivilian[0] != NULL ? s_apCivilian[0]->nUnk440 : -1, 1);
-    TestEqI32("two XCom removed", s_nXcom, 1);
-    TestEqI32("the surviving XCom is the type-2 one in zone",
-              s_apXcom[0] != NULL ? s_apXcom[0]->nUnk440 : -1, 21);
+    TestEqI32("the world soldier pool keeps the in-zone civilian and type-2 XCOM", s_nStrategCopy, 2);
+    TestEqI32("the first global survivor is the civilian in zone", s_apStrategCopy[0]->nUnk440, 1);
+    TestEqI32("the second global survivor is the type-2 XCOM in zone", s_apStrategCopy[1]->nUnk440, 21);
+    TestEqI32("the Map civilian side count is left for Map teardown", s_nCivilian, 2);
+    TestEqI32("the Map enemy side count is left for Map teardown", s_nEnemy, 3);
+    TestEqI32("the Map XCOM side count is left for Map teardown", s_nXcom, 3);
     TestEqI32("the strateg list is NOT emptied on the full path",
               PtrArray_GetCount(&s_StrategList), 2);
 
+    for (i = 0; i < s_nStrategCopy; ++i) {
+        free(s_apStrategCopy[i]);
+        s_apStrategCopy[i] = NULL;
+    }
+    s_nStrategCopy = 0;
+    s_nCivilian = 0;
+    s_nEnemy = 0;
+    s_nXcom = 0;
     Fixture_Free();
 }
 
@@ -551,7 +568,7 @@ static void TestMissionOutcomeRemoval(void)
     GeoscapeWorld world;
     ShipRemovalEnv shipEnv;
 
-    printf("Tact_Shutdown - the outcome removal uses the craft's strateg index\n");
+    printf("Tact_ShutdownOutcome - the outcome removal uses the craft's strateg index\n");
     Fixture_Reset();
     s_bAltPath = 0;
     s_bMissionMode = 0;   /* 0x3DF18/0x3DF20/0x3DF28: mode 0 takes the leaving-craft branch */
@@ -584,13 +601,15 @@ static void TestMissionOutcomeRemoval(void)
 
     env = Env_Build();
     env.pShipEnv = &shipEnv;
-    Tact_Shutdown(&env, 0);                /* 0 also commits the outcome */
+    s_bTactFlag = 1;
+    Tact_ShutdownOutcome(&env);            /* the shell owns the separate storage teardown */
 
     TestEqI32("one strateg entry survives", PtrArray_GetCount(&s_StrategList), 1);
     TestEqI32("the survivor is the entry the craft was NOT chasing, so the removed index is "
               "Ship.nStrategIdx @ +0x38 and not the 0x159E74 craft index",
               ((StrategItem *)PtrArray_Get(&s_StrategList, 0))->nDisplayId, 200);
     TestEqI32("bSpawnReplacementOnce is armed by 0x3DF48", s_bSpawnOnce, 1);
+    TestEqI32("the outcome-only helper leaves tactical storage active", s_bTactFlag, 1);
 
     free(pCraft0);
     free(pCraft1);

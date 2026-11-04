@@ -19,6 +19,29 @@ cmake --build build --config Release
 
 Output: `build/src/pufo/Release/pocketufo.exe`
 
+## Audio runtime
+
+CMake fetches the pinned libopenmpt 0.8.9 Win64 package on first configure and
+checks its SHA-256. The URL and hash are in
+[`cmake/PufoOpenMPT.cmake`](../cmake/PufoOpenMPT.cmake). Later builds use the
+download cache under `build/_deps`.
+
+The game remains C23. Its WinMM backend uses libopenmpt's C API to decode the
+original `BACK*.IT` files and mixes at the original 22000 Hz rate. WAV SFX keep
+their source rate and are resampled into the mono output; the original WinCE
+FMOD DLL is not linked.
+
+The build copies these runtime files and `libopenmpt-licenses` beside each
+executable: `libopenmpt.dll`, `openmpt-mpg123.dll`, `openmpt-vorbis.dll`,
+`openmpt-zlib.dll`, and `openmpt-ogg.dll`. Keep them together when copying a build.
+The decoder also uses the VS 2022 C++ runtime, present on the verified build host.
+
+`test_audio` checks every shipped song, source-rate conversion, and, when a wave
+device exists, the 22000 Hz device format plus completed nonzero music and SFX
+buffers. See
+[`docs/parity/render-audio.md`](parity/render-audio.md) for output differences and
+the limits of this check.
+
 ## Verified properties
 
 - `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF` — `__STDC_VERSION__ == 202311`.
@@ -51,7 +74,8 @@ src/pufo/asset/
 src/pufo/render/
   pufo_render.{h,c}            software surface, blitters, palette   [render]
 src/pufo/audio/
-  pufo_audio.{h,c}             FMOD-backed sound behind a seam       [audio]
+  pufo_audio.{h,c}             original sound-call behavior          [audio]
+  pufo_audio_winmm.{h,c}       WinMM mixer + OpenMPT music decoder   [audio]
 src/pufo/ui/
   pufo_panel.{h,c}             UiPanel                               [ui-core]
   pufo_control.{h,c}           controls, list boxes, buttons         [ui-core]

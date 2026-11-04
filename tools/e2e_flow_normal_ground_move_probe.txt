@@ -1,0 +1,19 @@
+# Fresh New Game through the natural air encounter, tactical deploy, then one bounded move probe.
+state before_menu_click
+click 120 124
+pick
+state after_new_game_pick
+geoframe
+strategystate before_normal_air
+normalair
+state after_normal_air_boundary
+normalaircombat
+state after_normal_air_combat
+normalairground
+state after_normal_ground_deploy
+
+# Capture the selected unit, queue, and frame before one real candidate tap pair.
+campaign state move_probe_before
+tact
+dump normal_ground_move_probe_before.ppm
+campaign moveprobe

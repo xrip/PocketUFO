@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-28",
+  "source_files": 434,
+  "source_fingerprint": "4CAC728B78753BDDC0CDD8E7C7A1E2E385987B754C6DE0778780D70306D2D574",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-lifecycle-width-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "47B9C89C8662A8428DA53C9F362D2F5EC934115E07B548998F3EBB87E903AC93",
+        "build/tests/Debug/test_save.exe": "FE92AF64A5225071DDEB9373D31A9EDB1EC42272CE846E3FE5E343386DF5E5A4",
+        "build/tests/Debug/test_geoscapeframe.exe": "030CBE389396726CD469C96E49A1743BBEF7F7E714AD4D66F1F6A2F6C7B7CFF1"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-lifecycle-width-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "A245060514BD5A2A7613BAFC105E8D2BE57C42AB79FC5D23D11337AB1762BB31",
+        "build/tests/Release/test_save.exe": "66A8E3C06C7EAC6EFEA291ED7C074EBB042CBE12B7A33199A0453290538820F5",
+        "build/tests/Release/test_geoscapeframe.exe": "22E35450C613CC4C3E40F9B9B77E11E740AD626A4E73F2984C3DD67749FF4D37"
+      }
+    }
+  },
+  "runtime_executed": false,
+  "tests_executed": false,
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "New Game shortcut startup cleanup, shared loaded TACTVER count-width binding, false pointer-base/write-only comments corrected, and zero-TACTVER World regression",
+  "idb_notes": [
+    {
+      "address": "0x1A0AC",
+      "comment": "Raw ARM checked2026-10-28: New Game menu action plays confirm at0x1A0A8, calls StartUi_Shutdown here, then enters Geoscape_InitUI at0x1A0B8. StartUi_Shutdown calls Sound_Shutdown0x38D80 and KillTimers_B0x38D84 before later geoscape sample/track setup. Port's CLI/script New Game shortcuts previously called App_HookNewGame directly while startup UI was live, omitting this edge. They now reuse MenuCtl0_OnClick while g_bStartupUi is true, and retain direct hook when already closed. Native audio/device behavior remains unverified. Original trace/old note: docs/parity/startup-newgame-lifecycle-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x44C94",
+      "comment": "Raw ARM checked2026-10-28: R7 preserves LoadGame incoming R0 at0x44BC8; this STR stores the zero-initialized/two-byte TACTVER value to slot-context+0x118. Direct load caller0x19E00 uses literal0x156938, also passed by Tact_InitMission at0x3D220/0x3D228/0x3D230. AllocFlobjs0x431C0 and ReadFlobjs0x43270 both read incoming context+0x118; ReadTGameData saves its context inR6 at0x4424C and forwards it at0x444AC. Thus field0x156A50 is a live count-width selector: zero=1byte, nonzero=4bytes. Earlier claims of write-only residue or Map+0x118 at0x113AD0 were false pointer-base interpretations. Port World body-reader flag now follows loaded nTactVerOut, matching allocation. Raw/old note in docs/parity/flobjs-count-selector-raw-2026-10-28.json and flobjs-count-selector-idb-before-2026-10-28.json; runtime pending.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    }
+  ]
+}

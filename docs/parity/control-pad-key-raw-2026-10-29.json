@@ -1,0 +1,64 @@
+{
+  "before": [
+    {
+      "ea": "0x1a3c0",
+      "comment": null
+    },
+    {
+      "ea": "0x1a3c8",
+      "comment": null
+    }
+  ],
+  "raw": [
+    {
+      "ea": "0x1a3b0",
+      "bytes": "003081e5",
+      "asm": "STR             R3, [R1]"
+    },
+    {
+      "ea": "0x1a3b4",
+      "bytes": "1130d0e5",
+      "asm": "LDRB            R3, [R0,#0x11]"
+    },
+    {
+      "ea": "0x1a3b8",
+      "bytes": "140092e5",
+      "asm": "LDR             R0, [R2,#0x14]"
+    },
+    {
+      "ea": "0x1a3bc",
+      "bytes": "000053e3",
+      "asm": "CMP             R3, #0"
+    },
+    {
+      "ea": "0x1a3c0",
+      "bytes": "0200000a",
+      "asm": "BEQ             loc_1A3D0"
+    },
+    {
+      "ea": "0x1a3c4",
+      "bytes": "0010a0e3",
+      "asm": "MOV             R1, #0"
+    },
+    {
+      "ea": "0x1a3c8",
+      "bytes": "50dbffeb",
+      "asm": "BL              PadImage_BlitEx"
+    },
+    {
+      "ea": "0x1a3cc",
+      "bytes": "000000ea",
+      "asm": "B               locret_1A3D4"
+    },
+    {
+      "ea": "0x1a3d0",
+      "bytes": "41dbffeb",
+      "asm": "BL              PadImage_Blit"
+    },
+    {
+      "ea": "0x1a3d4",
+      "bytes": "0080bde8",
+      "asm": "POP             {PC}"
+    }
+  ]
+}

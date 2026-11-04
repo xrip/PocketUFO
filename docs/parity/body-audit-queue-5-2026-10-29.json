@@ -1,0 +1,134 @@
+{
+  "date": "2026-10-29",
+  "status": "completed_static_reviews_and_compiled_repairs",
+  "baseline_source_fingerprint": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01",
+  "runtime_executed": false,
+  "batches": [
+    {
+      "id": "save-ships-smap",
+      "owner": "/root/fire_burst_reset_impl",
+      "addresses": [
+        "0x3F6DC",
+        "0x4086C",
+        "0x3FA28",
+        "0x40C4C"
+      ],
+      "report": ".workers/luna-body-save-ships-smap/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "save-soldiers-team",
+      "owner": "/root/soldier_item_wire_links",
+      "addresses": [
+        "0x416BC",
+        "0x42350",
+        "0x43C84",
+        "0x44020"
+      ],
+      "report": ".workers/luna-body-save-soldiers-team/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "map-population-connection",
+      "owner": "/root/research_manufacture_connection",
+      "seed_addresses": [
+        "0x22E10",
+        "0x54BA4",
+        "0x49A0C"
+      ],
+      "scope": "Actual terrain/load cell-table population versus valid large-unit footprint neighbors; connection audit, not yet an added body count.",
+      "report": ".workers/luna-map-population-connection/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "tactical-controls-connection",
+      "owner": "/root/mission_return_connection_audit",
+      "seed_addresses": [
+        "0x3B498"
+      ],
+      "scope": "Original tactical control registrations versus actual World callbacks, owner context and dispatch; no added body count until reviewed.",
+      "report": ".workers/tactical-controls-connection/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "save-flobjs-map",
+      "owner": "/root/fire_burst_reset_impl",
+      "addresses": [
+        "0x42EA0",
+        "0x42F48",
+        "0x431AC",
+        "0x43258",
+        "0x433D8",
+        "0x438E0",
+        "0x43EE0"
+      ],
+      "scope": "Tactical map, floor items, roster ordinals and route-record save/load restoration.",
+      "report": ".workers/luna-body-save-flobjs-map/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "save-tactical-state",
+      "owner": "/root",
+      "addresses": [
+        "0x3F0E8",
+        "0x3F158",
+        "0x44248",
+        "0x446A8",
+        "0x44928",
+        "0x44958"
+      ],
+      "report": "docs/parity/tactical-load-reset-review-2026-10-29.md",
+      "status": "completed_static_review_and_compiled_repair"
+    },
+    {
+      "id": "tactical-load-reset-regression",
+      "owner": "/root/tactical_load_reset_regression",
+      "report": ".workers/luna-tactical-load-reset-peer/RESULT.md",
+      "status": "peer_reviewed_and_compiled_assertions_unrun"
+    },
+    {
+      "id": "large-unit-anchor-bounds",
+      "owner": "/root/research_manufacture_connection",
+      "scope": "Producer bounds for valid large-unit anchors at final cell-table edge.",
+      "report": ".workers/luna-large-unit-anchor-bounds/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "save-drivers",
+      "owner": "/root/fire_burst_reset_impl",
+      "addresses": [
+        "0x44988",
+        "0x44BBC",
+        "0x45904"
+      ],
+      "report": ".workers/luna-body-save-drivers/RESULT.md",
+      "baseline_source_fingerprint": "5D6E298072269AC3C10C222404DD4B650BB19BF5485BB9D8C98544B5F0D43018",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "strategic-controls-connection",
+      "owner": "/root/soldier_item_wire_links",
+      "report": ".workers/luna-strategic-controls-connection/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "cold-load-contexts",
+      "owner": "/root/fire_burst_reset_impl",
+      "report": ".workers/luna-cold-load-contexts/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "cold-load-options-regression",
+      "owner": "/root/tactical_load_reset_regression",
+      "report": ".workers/luna-cold-load-options-peer/RESULT.md",
+      "status": "peer_reviewed_and_compiled_assertions_unrun"
+    },
+    {
+      "id": "slot-list-owner-peer",
+      "owner": "/root/mission_return_connection_audit",
+      "report": ".workers/luna-slot-list-owner-peer/RESULT.md",
+      "status": "completed_read_only_peer_review"
+    }
+  ],
+  "compiled_candidate": "docs/parity/cold-options-build-artifacts-2026-10-29.json"
+}

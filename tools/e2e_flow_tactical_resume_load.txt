@@ -1,0 +1,25 @@
+# Process 2: start at the original menu in a fresh process. Load the private slot through the real
+# seven-slot menu; do not start a new game or use a campaign helper to reconstruct the mission.
+
+state resume_fresh_menu
+click 120 146
+tick 20
+click 120 74
+tick 20
+state resume_after_menu_load
+campaign state resume_after_load
+tact
+campaign home-observe resume_after_load
+campaign cargo resume_after_load
+campaign tact-resume-owners resume_after_load
+
+# The loaded mission must accept new player input, then take a real enemy turn and return through
+# the game's abort/debrief/geoscape path. These are live campaign actions, not forced end flags.
+campaign move
+tact
+campaign fire
+tact
+campaign enemyturn
+tact
+campaign abort
+state resume_after_geoscape_return

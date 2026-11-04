@@ -1,0 +1,12 @@
+# Load the completed Research save, capture the map, then open Base 1.
+load 1
+state manufacture_map_loaded
+strategystate manufacture_map_loaded
+campaign cargo manufacture_map_loaded
+lines
+
+click 202 267
+tick 20
+strategystate manufacture_base_strip
+campaign cargo manufacture_base_strip
+lines

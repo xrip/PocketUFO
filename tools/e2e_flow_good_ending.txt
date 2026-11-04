@@ -1,0 +1,18 @@
+# App fixture for the real victory-tile scan: use the live launched frame's layer-1 2x2 map cells.
+# mindgoodcheck sets the raw type/alternate-spawn gates, then calls World_MissionEndCheck(0).
+
+newgame
+tick 20
+pick
+close
+close
+tick 20
+launch
+mindgoodcheck
+tick 160
+mindendstate
+dump 22_good_ending.ppm
+
+# Release the screen-18 ending through the normal app pointer dispatcher.
+click 100 100
+mindendstate

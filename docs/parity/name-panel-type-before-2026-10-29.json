@@ -1,0 +1,193 @@
+{
+  "type": "UiPanel",
+  "size": 7092,
+  "members": [
+    {
+      "name": "aStyleRgb",
+      "offset_bits": 0,
+      "size_bits": 96,
+      "type": "unsigned __int8[12]"
+    },
+    {
+      "name": "nHoverRow",
+      "offset_bits": 96,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "aLineMeta",
+      "offset_bits": 128,
+      "size_bits": 24000,
+      "type": "unsigned __int8[3000]"
+    },
+    {
+      "name": "nHoldCount",
+      "offset_bits": 24128,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "pfnClick",
+      "offset_bits": 24160,
+      "size_bits": 32,
+      "type": "void (*)()"
+    },
+    {
+      "name": "bHoverActive",
+      "offset_bits": 24192,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_3025",
+      "offset_bits": 24200,
+      "size_bits": 24,
+      "type": "char[3]"
+    },
+    {
+      "name": "nUnk3028",
+      "offset_bits": 24224,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nUnk3032",
+      "offset_bits": 24256,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nLineCount",
+      "offset_bits": 24288,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nStyle",
+      "offset_bits": 24320,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "apLines",
+      "offset_bits": 24352,
+      "size_bits": 16000,
+      "type": "UiControl *[500]"
+    },
+    {
+      "name": "anLineAux",
+      "offset_bits": 40352,
+      "size_bits": 16000,
+      "type": "int[500]"
+    },
+    {
+      "name": "nPosX",
+      "offset_bits": 56352,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nPosY",
+      "offset_bits": 56384,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nRectX",
+      "offset_bits": 56416,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nRectY",
+      "offset_bits": 56448,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nViewW",
+      "offset_bits": 56480,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nViewH",
+      "offset_bits": 56512,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nFont",
+      "offset_bits": 56544,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "bRowRules",
+      "offset_bits": 56576,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bSelLineHighlight",
+      "offset_bits": 56584,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bAuxNumbers",
+      "offset_bits": 56592,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_7075",
+      "offset_bits": 56600,
+      "size_bits": 8,
+      "type": "char"
+    },
+    {
+      "name": "nUnk7076",
+      "offset_bits": 56608,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "bRepeatArmed",
+      "offset_bits": 56640,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_7081",
+      "offset_bits": 56648,
+      "size_bits": 24,
+      "type": "char[3]"
+    },
+    {
+      "name": "nRepeatDelay",
+      "offset_bits": 56672,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "bColorKey",
+      "offset_bits": 56704,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bAuxPlusSign",
+      "offset_bits": 56712,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_7090",
+      "offset_bits": 56720,
+      "size_bits": 16,
+      "type": "char[2]"
+    }
+  ],
+  "copy_name_type": "UiControl *()"
+}

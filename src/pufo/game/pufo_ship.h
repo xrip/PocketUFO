@@ -225,7 +225,7 @@ Ship *InvSel_SubItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta);
  * Finally Ship.nSlotIdx @ 0x1C is renumbered 0..count-1 for every remaining craft, which is
  * the same value Ship_ctor assigns at creation.
  *
- * The hangar flag is cleared at 0x158CD8 + 6*(24*Ship.bHomeBase + Ship.bHangarY + 12) +
+ * The hangar flag is cleared at 0x1598DC + 6*(24*Ship.bHomeBase + Ship.bHangarY + 12) +
  * Ship.bHangarX (0x368CC..0x368D8). The three bytes are the home base and the two hangar
  * grid coordinates, and the stride is six.
  *
@@ -240,7 +240,7 @@ typedef struct ShipRemovalEnv {
     Ship **apCraft;
     u8 *pnShipCount;              /* Map + 0x1194, unsigned byte */
     struct Soldier **apSoldiers;
-    u16 *pnSoldierCount;          /* Map + 0x1998, unsigned 16-bit */
+    i32 *pnSoldierCount;          /* world-owned count; original Map+0x1998 is u16 */
     ObjectRecFull **apObjects;
     u16 nObjectCount;             /* Map + 0x10A8, unsigned 16-bit */
     PtrArray *pStrategList;       /* 0x1864F8 + 0x3C. The port keeps the list in the PtrArray
@@ -250,7 +250,7 @@ typedef struct ShipRemovalEnv {
     const struct GeoscapeWorld *pWorld;
     u8 *pnSpawnOnceFlag;          /* 0x162028, the replacement-spawn gate */
     const struct StrategSpawnCtx *pSpawnCtx;
-    u8 *abHangarFlag;             /* the six-byte-per-cell table at 0x158CD8 */
+    u8 *abHangarFlag;             /* abFacilityGrid + 0x174 = 0x1598DC */
     i32 nHangarFlagCap;
     BaseRec *const *apBases;      /* Map + 0x1174, needed to retarget a craft to its home base */
     i32 *pnGameTotalSec;          /* the clock total, which StrategEntry_InitTravel needs */
@@ -549,14 +549,11 @@ void Base_DistributeRecoveredItems(const BaseRecoverDistributeEnv *pEnv);
  * The gate at 0x683DC clears Ship.bWeaponsHot as it tests it, so a craft is processed once per
  * landing and a cold craft is skipped entirely.
  *
- * Two things the original does that are easy to mistake for a transcription error. Both are
- * reproduced here and both are named in the .c file.
+ * Raw marker branches use Ship.bHomeBase; craft type selects the marker value.
+ * The stores update restores the outer base index from the stack. Earlier
+ * comments describing craft-type/twice-ship-index quirks were incorrect.
  *
- *   - The hangar marker byte is written into the facility block numbered by Ship.bCraftType, not
- *     by Ship.bHomeBase. The three grid READS use bHomeBase; the one WRITE uses bCraftType.
- *   - The Base_UpdateStoresNeeded call passes (i8)(2 * ship index) as its base index.
- *
- * bAnnounceAmmoShortage is the original's second argument. An ammo shortage always raises the UI
+ * bSuppressAmmoShortage is the original's second argument. An ammo shortage always raises the UI
  * refresh flag, but only announces itself when that argument is zero, so the same transfer can run
  * silently. A stores shortage always announces itself. */
 typedef struct TacticalLootEnv {
@@ -564,9 +561,10 @@ typedef struct TacticalLootEnv {
     BaseRec **apBases;
     struct ObjectRecFull **apObjects;
     Soldier **apSoldiers;
-    u16 *pnSoldierCount;
+    i32 *pnSoldierCount;          /* same world-owned count as ShipRemovalEnv */
     u8 *abFacilityGrid;
-    u8 *pbUiRefreshFlag; /* unk_1870C8, set by either report */
+    u32 *pdwUiRefreshFlag; /* 0x1870C8: both shortage branches store a full word */
+    const i32 *pnInterceptShipIdx; /* low byte of bRadarScreenActive+4 @ 0x15967C */
     i32 nBaseCount;
     i32 nShipCount;
     i32 nObjectCount;
@@ -576,7 +574,7 @@ typedef struct TacticalLootEnv {
     void *pUser;
 } TacticalLootEnv;
 
-void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoShortage);
+void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bSuppressAmmoShortage);
 
 /* ------------------------------------------------- spawning a craft and finding its hangar cell
  *

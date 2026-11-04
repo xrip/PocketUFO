@@ -1,0 +1,221 @@
+{
+  "functions": [
+    {
+      "ea": "0x5a8d0",
+      "type": "int __fastcall(int unused, int nSiteId)",
+      "raw": [
+        {
+          "ea": "0x5a8d0",
+          "bytes": "00482de9",
+          "asm": "PUSH            {R11,LR}"
+        },
+        {
+          "ea": "0x5a8d4",
+          "bytes": "4c209fe5",
+          "asm": "LDR             R2, =abFacilityGrid"
+        },
+        {
+          "ea": "0x5a8d8",
+          "bytes": "0000a0e3",
+          "asm": "MOV             R0, #0"
+        },
+        {
+          "ea": "0x5a8dc",
+          "bytes": "61cea0e308c08ce3",
+          "asm": "MOV             R12, #0x618"
+        },
+        {
+          "ea": "0x5a8e4",
+          "bytes": "dc2092e1",
+          "asm": "LDRSB           R2, [R2,R12]"
+        },
+        {
+          "ea": "0x5a8e8",
+          "bytes": "000052e3",
+          "asm": "CMP             R2, #0"
+        },
+        {
+          "ea": "0x5a8ec",
+          "bytes": "0a0000da",
+          "asm": "BLE             loc_5A91C"
+        },
+        {
+          "ea": "0x5a8f0",
+          "bytes": "2c309fe5",
+          "asm": "LDR             R3, =Map_bTactFlag"
+        },
+        {
+          "ea": "0x5a8f4",
+          "bytes": "45bda0e334b08be3",
+          "asm": "MOV             R11, #0x1174"
+        },
+        {
+          "ea": "0x5a8fc",
+          "bytes": "0bb093e7",
+          "asm": "LDR             R11, [R3,R11]"
+        },
+        {
+          "ea": "0x5a900",
+          "bytes": "d4b0dbe1",
+          "asm": "LDRSB           R11, [R11,#4]"
+        },
+        {
+          "ea": "0x5a904",
+          "bytes": "0b0051e1",
+          "asm": "CMP             R1, R11"
+        },
+        {
+          "ea": "0x5a908",
+          "bytes": "0400000a",
+          "asm": "BEQ             locret_5A920"
+        },
+        {
+          "ea": "0x5a90c",
+          "bytes": "010080e2",
+          "asm": "ADD             R0, R0, #1"
+        },
+        {
+          "ea": "0x5a910",
+          "bytes": "043083e2",
+          "asm": "ADD             R3, R3, #4"
+        },
+        {
+          "ea": "0x5a914",
+          "bytes": "020050e1",
+          "asm": "CMP             R0, R2"
+        },
+        {
+          "ea": "0x5a918",
+          "bytes": "f5ffffba",
+          "asm": "BLT             loc_5A8F4"
+        },
+        {
+          "ea": "0x5a91c",
+          "bytes": "0000e0e3",
+          "asm": "MOV             R0, #0xFFFFFFFF"
+        },
+        {
+          "ea": "0x5a920",
+          "bytes": "0088bde8",
+          "asm": "POP             {R11,PC}"
+        }
+      ]
+    },
+    {
+      "ea": "0x6ac30",
+      "type": "int __fastcall(void *unused, unsigned __int8 nType)",
+      "raw": [
+        {
+          "ea": "0x6ac30",
+          "bytes": "54209fe5",
+          "asm": "LDR             R2, =abFacilityGrid"
+        },
+        {
+          "ea": "0x6ac34",
+          "bytes": "0000e0e3",
+          "asm": "MOV             R0, #0xFFFFFFFF"
+        },
+        {
+          "ea": "0x6ac38",
+          "bytes": "0030a0e3",
+          "asm": "MOV             R3, #0"
+        },
+        {
+          "ea": "0x6ac3c",
+          "bytes": "61cea0e308c08ce3",
+          "asm": "MOV             R12, #0x618"
+        },
+        {
+          "ea": "0x6ac44",
+          "bytes": "dc2092e1",
+          "asm": "LDRSB           R2, [R2,R12]"
+        },
+        {
+          "ea": "0x6ac48",
+          "bytes": "022ca0e1",
+          "asm": "MOV             R2, R2,LSL#24"
+        },
+        {
+          "ea": "0x6ac4c",
+          "bytes": "422cb0e1",
+          "asm": "MOVS            R2, R2,ASR#24"
+        },
+        {
+          "ea": "0x6ac50",
+          "bytes": "0b00000a",
+          "asm": "BEQ             locret_6AC84"
+        },
+        {
+          "ea": "0x6ac54",
+          "bytes": "2c009fe5",
+          "asm": "LDR             R0, =Map_bTactFlag"
+        },
+        {
+          "ea": "0x6ac58",
+          "bytes": "ff1001e2",
+          "asm": "AND             R1, R1, #0xFF"
+        },
+        {
+          "ea": "0x6ac5c",
+          "bytes": "452da0e3342082e3",
+          "asm": "MOV             R2, #0x1174"
+        },
+        {
+          "ea": "0x6ac64",
+          "bytes": "022090e7",
+          "asm": "LDR             R2, [R0,R2]"
+        },
+        {
+          "ea": "0x6ac68",
+          "bytes": "d420d2e1",
+          "asm": "LDRSB           R2, [R2,#4]"
+        },
+        {
+          "ea": "0x6ac6c",
+          "bytes": "010052e1",
+          "asm": "CMP             R2, R1"
+        },
+        {
+          "ea": "0x6ac70",
+          "bytes": "01308312",
+          "asm": "ADDNE           R3, R3, #1"
+        },
+        {
+          "ea": "0x6ac74",
+          "bytes": "04008012",
+          "asm": "ADDNE           R0, R0, #4"
+        },
+        {
+          "ea": "0x6ac78",
+          "bytes": "f7ffff1a",
+          "asm": "BNE             loc_6AC5C"
+        },
+        {
+          "ea": "0x6ac7c",
+          "bytes": "033ca0e1",
+          "asm": "MOV             R3, R3,LSL#24"
+        },
+        {
+          "ea": "0x6ac80",
+          "bytes": "430ca0e1",
+          "asm": "MOV             R0, R3,ASR#24"
+        },
+        {
+          "ea": "0x6ac84",
+          "bytes": "0ef0a0e1",
+          "asm": "RET"
+        }
+      ]
+    }
+  ],
+  "comments_before": [
+    {
+      "ea": "0x5a900",
+      "comment": "LDRSB again, compared against an unmasked i32 nSiteId. Same signed field as 0x6AC68."
+    },
+    {
+      "ea": "0x6ac58",
+      "comment": null
+    }
+  ]
+}

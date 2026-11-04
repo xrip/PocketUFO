@@ -210,96 +210,85 @@ void UiPanel_ScrollPrev(UiPanel *pPanel)
 
 /* UiPanel_WrapText @ 0x37144.
  *
- * Greedy word wrap: words are accumulated while the measured width fits nMaxW,
- * then the accumulated line is committed and a new one starts.
- *
- * Confidence note. The decompiled loop for this function is a tangled index dance
- * (it copies spans into a candidate buffer using `v33[++v7 - v9] = 0` and resets
- * by writing a NUL at a computed position) and the reconstructed control flow did
- * not survive cross-checking: a literal transcription emitted a line containing
- * only the trailing space. Rather than guess at the original's exact index
- * arithmetic, this implements the behaviour that is observable at the call sites:
- * each produced line measures no wider than nMaxW, and words are not split.
- *
- * The one quirk that IS certain from the source structure is the trailing space
- * appended to the working copy. It is documented here rather than relied on, and
- * the port does not reproduce it, so a caller may get one line fewer than the
- * original in the exact-fit case. Recorded as an open deviation. */
+ * The raw loop appends one space to a working copy, then measures at each space.
+ * Equality fits (`BLE` at 0x37244). When the next word does not fit, the prior
+ * delimiter stays on the line being committed. Use a virtual final space instead
+ * of copying the whole input, and keep the existing 50-byte / 500-line bounds. */
 i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszText)
 {
-    char   szLine[PUFO_PANEL_LINE_BYTES];
-    size_t nLineLen = 0;
-    i32    nCommitted = 0;
-    const char *p = pszText;
+    char        szLine[PUFO_PANEL_LINE_BYTES];
+    const size_t nLineCopyMax = sizeof(szLine) - 1u;
+    const size_t nTextLen = strlen(pszText);
+    size_t      nTextLineStart = 0;
+    size_t      nLastSpace = 0;
+    size_t      nScan = 0;
+    i32         nCommitted = 0;
 
-    szLine[0] = '\0';
+    while (nScan <= nTextLen) {
+        size_t nCandidateLen;
+        size_t nCopy;
 
-    while (*p != '\0') {
-        const char *pWord = p;
-        size_t      nWord;
-        char        szCandidate[PUFO_PANEL_LINE_BYTES];
-
-        /* Skip runs of spaces between words. */
-        while (*pWord == ' ') {
-            ++pWord;
+        /* nTextLen is the raw loop's appended space; do not write a sentinel
+         * into the caller's string. */
+        if (nScan < nTextLen && pszText[nScan] != ' ') {
+            ++nScan;
+            continue;
         }
-        if (*pWord == '\0') {
-            break;
-        }
-        nWord = 0;
-        while (pWord[nWord] != '\0' && pWord[nWord] != ' ') {
-            ++nWord;
-        }
-
-        /* Build the candidate line: current line + one space + this word. */
-        if (nLineLen == 0) {
-            /* First word on the line: no separator. */
-            size_t nCopy = (nWord < sizeof(szCandidate) - 1u)
-                         ? nWord : sizeof(szCandidate) - 1u;
-
-            memcpy(szCandidate, pWord, nCopy);
-            szCandidate[nCopy] = '\0';
-        } else {
-            size_t nNeed = nLineLen + 1u + nWord;
-
-            if (nNeed >= sizeof(szCandidate)) {
-                nNeed = sizeof(szCandidate) - 1u;
-            }
-            memcpy(szCandidate, szLine, nLineLen);
-            szCandidate[nLineLen] = ' ';
-            {
-                size_t nRoom = nNeed - nLineLen - 1u;
-                size_t nCopy = (nWord < nRoom) ? nWord : nRoom;
-
-                memcpy(szCandidate + nLineLen + 1u, pWord, nCopy);
-                szCandidate[nLineLen + 1u + nCopy] = '\0';
-            }
+        if (nLastSpace >= nScan) {
+            nLastSpace = nScan;
+            ++nScan;
+            continue;
         }
 
-        if (nLineLen != 0 && Text_MeasureWidth(szCandidate) > (i32)nMaxW) {
-            /* The word does not fit: commit the current line and start a new one
-             * with this word. */
-            if (nLineStart + nCommitted < PUFO_PANEL_LINES) {
-                (void)UiPanel_SetLineRaw(pPanel, nLineStart + nCommitted, szLine);
+        nCandidateLen = nScan - nTextLineStart;
+        nCopy = (nCandidateLen < nLineCopyMax) ? nCandidateLen : nLineCopyMax;
+        if (nCopy != 0) {
+            memcpy(szLine, pszText + nTextLineStart, nCopy);
+        }
+        szLine[nCopy] = '\0';
+
+        if (Text_MeasureWidth(szLine) <= (i32)nMaxW) {
+            nLastSpace = nScan;
+            ++nScan;
+            continue;
+        }
+
+        if (nLastSpace > nTextLineStart) {
+            /* The raw overflow arm commits through the previous delimiter. */
+            nCandidateLen = nLastSpace + 1u - nTextLineStart;
+            nCopy = (nCandidateLen < nLineCopyMax) ? nCandidateLen : nLineCopyMax;
+            memcpy(szLine, pszText + nTextLineStart, nCopy);
+            szLine[nCopy] = '\0';
+            if ((size_t)nLineStart + (size_t)nCommitted < PUFO_PANEL_LINES) {
+                (void)UiPanel_SetLineRaw(pPanel, (i32)nLineStart + nCommitted, szLine);
             }
             nCommitted += 1;
-            nLineLen = 0;
-            szLine[0] = '\0';
-            continue; /* retry the same word on the fresh line */
+            nTextLineStart = nLastSpace + 1u;
+            nLastSpace = nTextLineStart;
+            nScan = nTextLineStart + 1u; /* the raw scan skips this first byte */
+        } else {
+            /* Keep the safe port behavior for a first word wider than nMaxW. */
+            if (nCandidateLen != 0) {
+                if ((size_t)nLineStart + (size_t)nCommitted < PUFO_PANEL_LINES) {
+                    (void)UiPanel_SetLineRaw(pPanel, (i32)nLineStart + nCommitted, szLine);
+                }
+                nCommitted += 1;
+            }
+            nTextLineStart = nScan + 1u;
+            nLastSpace = nTextLineStart;
+            nScan = nTextLineStart + 1u;
         }
-
-        /* Accept the candidate as the new current line. */
-        pufo_strncpy(szLine, szCandidate, sizeof(szLine));
-        nLineLen = strlen(szLine);
-        p = pWord + nWord;
     }
 
-    /* Commit the final line, if any text was placed. Must use the raw writer:
-     * nLineCount is only updated below, so a gated write would be refused whenever
-     * an earlier call left nLineCount smaller than this wrap's line count. */
-    if (nLineLen != 0) {
-        if (nLineStart + nCommitted < PUFO_PANEL_LINES) {
-            (void)UiPanel_SetLineRaw(pPanel, nLineStart + nCommitted, szLine);
+    /* The virtual delimiter flushes the last candidate, including source spaces. */
+    if (nTextLineStart < nTextLen) {
+        size_t nLineLen = nTextLen - nTextLineStart;
+        size_t nCopy = (nLineLen < nLineCopyMax) ? nLineLen : nLineCopyMax;
+
+        memcpy(szLine, pszText + nTextLineStart, nCopy);
+        szLine[nCopy] = '\0';
+        if ((size_t)nLineStart + (size_t)nCommitted < PUFO_PANEL_LINES) {
+            (void)UiPanel_SetLineRaw(pPanel, (i32)nLineStart + nCommitted, szLine);
         }
         nCommitted += 1;
     }

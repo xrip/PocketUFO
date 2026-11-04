@@ -6,14 +6,14 @@
 # GameTick_OnTimer's gate 2 at 0x27508 tests before it takes the tactical branch) and then
 # Tact_InitMission mode 0 at 0x83AC4. The scripted run has no descent panel to press and no craft-select
 # line: the mission's tier, terrain-variant and sprite-set cells are computed by the decision tree the
-# shell skips, so the mission that comes up here has its roster empty. What it does have is real: the
+# shell skips, so the mission that comes up here has its enemy roster empty. What it does have is real: the
 # bring-up runs 0x3c550 over the live world, the eight deployed soldiers are the world's own soldiers, the
 # tactical HUD draws from lang.dat, the pen reaches Input_OnPointer's tactical arm, and the quit seam runs
 # over a live mission instead of standing in for one.
 #
 # MEASURED, stated rather than smoothed over: `queue: len 0` and no enemy lines after 5 tactical ticks --
-# with no roster the turn system has nothing to schedule. A mission with enemies needs the select tree's
-# inputs (a detected mission site and a chosen craft line), which is a separate PLAN item.
+# this script does not assert a move, a shot, or an enemy action. A mission with enemies needs the select
+# tree's inputs (a detected mission site and a chosen craft line), which is a separate PLAN item.
 
 newgame
 tick 20
@@ -21,6 +21,16 @@ pick
 close
 close
 tick 20
+
+# Part 168: the soldier the mission will field wears a Power suit before the launch. The stocking is shell
+# scaffolding (main.dat owns no armour at any base); the equip walk is the game's own -- nav slot 2 opens the
+# soldier screen (SoldierScreen_Toggle 0x64af0), find button 3 arms the transfer panels (Ui_SetTransferFlag
+# 0x619a8, gate 0x64678), the names panel's row click runs SoldierScreen_SelectListed 0x64a9c and the armour
+# row runs SoldierScreen_EquipSelected 0x619cc, which stores nUnitType 2 (0x61AE0) and takes the suit off the
+# base shelf (0x61B04). 14_ is the detail card with the armour name in it; 13_ below is the same soldier's
+# tactical unit panel, now drawn from the armour art.
+equiparmor
+dump  14_soldier_power_suit.ppm
 launch
 gametick 5
 tact

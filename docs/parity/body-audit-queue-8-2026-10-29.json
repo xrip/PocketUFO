@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-29",
+  "status": "completed_static_reviews_and_compiled_repairs",
+  "baseline_source_fingerprint": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6",
+  "runtime_executed": false,
+  "batches": [
+    {
+      "id": "clock-dispatch-pulse",
+      "owner": "/root/fire_burst_reset_impl",
+      "addresses": [
+        "0x5CE40",
+        "0x36630",
+        "0x84F00",
+        "0x84F64",
+        "0x84FC8",
+        "0x8502C",
+        "0x85094",
+        "0x850FC"
+      ],
+      "report": ".workers/luna-geoscape-repeat-join/RESULT.md",
+      "status": "completed_static_review_or_compiled_repair_assertions_unrun"
+    },
+    {
+      "id": "shot-resolver",
+      "owner": "/root/soldier_item_wire_links",
+      "addresses": [
+        "0x2F12C"
+      ],
+      "report": ".workers/luna-body-shot-resolver/RESULT.md",
+      "status": "completed_static_review_or_compiled_repair_assertions_unrun"
+    },
+    {
+      "id": "move-action",
+      "owner": "/root/research_manufacture_connection",
+      "addresses": [
+        "0x4F3F0"
+      ],
+      "report": ".workers/luna-body-move-action/RESULT.md",
+      "status": "completed_static_review_or_compiled_repair_assertions_unrun"
+    },
+    {
+      "id": "modal",
+      "owner": "/root/mission_return_connection_audit",
+      "addresses": [
+        "0x26430",
+        "0x2648C",
+        "0x12254",
+        "0x264A0"
+      ],
+      "report": ".workers/luna-body-modal/RESULT.md",
+      "status": "completed_static_review_or_compiled_repair_assertions_unrun"
+    },
+    {
+      "id": "startup-menu",
+      "owner": "/root/tactical_load_reset_regression",
+      "addresses": [
+        "0x1DBB8",
+        "0x38A28"
+      ],
+      "report": ".workers/luna-body-startup-menu/RESULT.md",
+      "status": "completed_static_review_or_compiled_repair_assertions_unrun"
+    }
+  ],
+  "compiled_candidate": "docs/parity/ui-repeat-modal-build-artifacts-2026-10-29.json"
+}

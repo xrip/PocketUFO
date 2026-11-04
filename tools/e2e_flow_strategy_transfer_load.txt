@@ -1,0 +1,85 @@
+# Fresh-process proof of the committed transfer before any clock step.
+load 0
+state transfer_after_load
+strategystate transfer_after_load
+grid 1
+dump strategy_transfer_after_load.ppm
+
+# One-day controls are followed by a normal pointer-up at the map status area. This
+# acknowledges an arrival card if the timer opens one; when there is no card it is a
+# harmless map tap at a site-free location in this fixture.
+click 60 308
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 1
+click 29 186
+tick 2
+strategystate transfer_after_clock_source
+lines
+
+# Select the destination through the normal base strip after the transfer arrives.
+click 180 266
+tick 2
+click 220 43
+tick 2
+click 201 11
+tick 2
+strategystate transfer_arrived_base1
+grid 1
+dump strategy_transfer_arrived.ppm

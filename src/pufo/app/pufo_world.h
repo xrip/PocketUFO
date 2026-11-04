@@ -114,6 +114,9 @@ typedef struct GeoscapeFrameState {
     UiBaseInfoDrawEnv        ufopaediaDraw; /* 0x9b5f4, the callee's env */
     GeoscapeUfopaediaArmEnv  ufopaediaGates; /* the three gate bytes @ 0x18730C / 0x187310 / 0x1871FC */
     GeoscapeScreenArmEnv     ufopaediaCtl;   /* the six controls the arm blits (0x1872E8..0x1872FC) */
+    /* Case 17, PSI training (0x94288): the selected base's four panels and the two scroll controls. */
+    PsiScreenDrawEnv         psiDraw;
+    GeoscapeScreenArmEnv     psiCtl;
     BaseFacStatusEnv       fac;       /* the panel head's BuildStatusMsg env, 0x8C82C */
     UiAnimBlitEnv          anim;      /* the 0x1864F8 anim root: 0x187080, 0x187058, 0x186566 */
     GeoscapeFrameGlobals   g;
@@ -145,6 +148,55 @@ typedef struct OptionsOwners {
     GeoscapeScreenDrawEnv draw;           /* case 18's own env, the call at 0x942F8 */
 } OptionsOwners;
 
+typedef struct FundingManualOwner {
+    UiPanel          *pPanelNames;  /* pFundPanelNames @ 0x1595E4 */
+    UiPanel          *pPanelBars;   /* pFundPanelBars @ 0x1595E0 */
+    UiPanel          *pPanelArrows; /* pFundPanelArrows @ 0x1595E8 */
+    FundingToggleEnv  toggle;       /* screen 15's panel create/free env */
+    FundingOpenEnv    open;         /* screen 15's close control env */
+} FundingManualOwner;
+
+/* One in-memory owner for the interception radar session. Its env records are rebound after InitUI
+ * and map-frame setup; the already-owned world cells below remain the only owners of shared state. */
+typedef struct WorldRadarState {
+    RadarUiState      ui;
+    RadarSessionEnv   session;
+    RadarUpdateEnv    update;
+    RadarPaletteEnv   palette;
+    RadarRangeBarEnv  rangeBar;
+    RadarFuelEnv      fuel;
+    RadarArmamentEnv  armament;
+    RadarOverlayEnv   overlay;
+    RadarDetectEnv    detect;
+    RadarHitRollEnv   hitRoll;
+    RadarCursorEnv    cursor;
+    RadarBackdropEnv  backdrop;
+
+    u8  bCraftOutOfFuel; /* bRadarCraftOutOfFuel @ 0x1596DC */
+    u8  bBlinkPhase;     /* bRadarBlinkPhase @ 0x159730 */
+    u8  bFlip;           /* bRadarFlip @ 0x159718 */
+    u8  bTraceLost;      /* bRadarTraceLost @ 0x159714 */
+    u8  bInterceptDone;  /* bRadarInterceptDone @ 0x159650; distinct from PufoWorldState.bInterceptDone */
+    u8  bEngageL;        /* bRadarEngageL @ 0x159728 */
+    u8  bEngageR;        /* bRadarEngageR @ 0x15972C */
+    u8  bLastShotHit;    /* bRadarLastShotHit @ 0x159720 */
+    i32 nScanOffset;     /* nRadarScanOffset @ 0x159724 */
+    i32 nTargetHp;       /* nInterceptTargetHp @ 0x159698 */
+    i32 nTargetHpMax;    /* nInterceptTargetHpMax @ 0x159658 */
+    i32 nCraftLevel;     /* nRadarCraftLevel @ 0x1596E0 */
+    i32 nRangeLimit;     /* nRadarRangeLimit @ 0x159668 */
+    i32 nRangeTarget;    /* nRadarRangeTarget @ 0x15965C */
+    i32 nRangeCur;       /* nRadarRangeCur @ 0x15966C */
+    i32 nAmmoL;          /* nRadarAmmoL @ 0x159654 */
+    i32 nAmmoR;          /* nRadarAmmoR @ 0x159664 */
+    i32 nCursorX;        /* nRadarCursorX @ 0x1596D4 */
+    i32 nCursorY;        /* nRadarCursorY @ 0x1596D8 */
+    i32 nBoundL;         /* nRadarBoundL @ 0x1596E8 */
+    i32 nBoundR;         /* nRadarBoundR @ 0x1596EC */
+    i32 nShotYL;         /* nRadarShotYL @ 0x1596F8 */
+    i32 nShotYR;         /* nRadarShotYR @ 0x1596F4 */
+} WorldRadarState;
+
 typedef struct PufoWorldState {
     /* Rosters. */
     Soldier *apSoldiers[PUFO_SOLDIER_CAPACITY]; /* Map + 0x1198 */
@@ -163,15 +215,14 @@ typedef struct PufoWorldState {
     u16     nAlienPoolAddend;                   /* 0x1472c8 */
     GeoscapeEconomy economy;                    /* 0x186568..0x1865BC */
     i32     anFundTable[16];                    /* the 0x14B4C8 zero buffer */
-    /* The funding block outside the 0x1864F8 root, which the monthly report needs and nothing else
-     * in the shell held: the five per-country upkeep baselines FundingScreen_Init writes (0x1595F0..
-     * 0x159600), the display total (0x159604, zeroed by FundingScreen_Toggle at 0x5AC0C), the screen's
-     * open byte (0x1595EC, which FundingScreen_Init does NOT set) and the funding pad (0x1595DC, the
-     * pad FundingScreen_Init allocates and Geoscape_CloseUI case 19 frees). */
+    /* Shared original funding globals outside the 0x1864F8 root. Screen 15's manual panel and screen
+     * 19's monthly report use the same pFundPad slot, but allocate separate pad instances. The manual
+     * owner holds its three panels and toggle/open envs; screen 19 does not use those panels. */
     i32     anFundBaseline[PUFO_FUND_ROW_COUNT];
     i32     nFundDisplayTotal;
     u8      bFundScreenOpen;
     PadImage *pFundPad;
+    FundingManualOwner fundingManual;
     u8      bPlacementPending;                  /* 0x1870AC */
     /* 0x186530 (the geoscape block's +0x38 strateg count dword) lives in saveStrateg.nStrategCount:
      * the original keeps one cell there, written by Game_StartNew (0x94680) and by Save_ReadStrateg
@@ -191,6 +242,7 @@ typedef struct PufoWorldState {
     u8      bTactFlag;                          /* Map.bTactFlag @ 0x1139B8 */
     u8      bGameState;                         /* unk_15821C */
     u16     nUiScreen;                          /* Map_nUiScreen */
+    i32     nMapTitlesScroll;                    /* unk_138E88: ending-screen scroll */
     i32     nListMode;                          /* MainMenu_nListMode @ 0x157188 */
     u8      bMissionCount;                      /* byte_138E8C */
     u8      bCraftSelectAssaultFlag;            /* 0x1870A8 */
@@ -227,6 +279,7 @@ typedef struct PufoWorldState {
                                                  * Geoscape_InitUI, the value 144), no LDR/LDRH/STR/
                                                  * STRH ever touches 0x160C4C. */
     ResearchTopicLive aTopics[PUFO_RESEARCH_TOPIC_COUNT]; /* aResearchTopics @ 0x15EF08 */
+    u8  abResearchRangeTail[4]; /* bytes at 0x160228..0x16022B, the tail range for topic 143 */
 
     /* Sites and the strateg list. */
     SmapSite *apSites;                          /* 0x162030, PUFO_SMAP_SITE_COUNT records */
@@ -401,6 +454,9 @@ typedef struct PufoWorldState {
      * Docs/parity/game-core.md Unit 108 records the storage decisions and the deviations. */
     bool          bTactLive;            /* not an original cell: the shell's own "the mission is up"
                                          * flag, set by World_InitTactical, cleared by World_FreeTactical */
+    u32           nGameTickDispatchDepth; /* nested GameTick_OnTimer calls; delays tactical free to outer return */
+    bool          bTactFreePending;     /* World_EndHookShutdown requested cleanup during a timer dispatch */
+    bool          bTactReinitPending;   /* mode-0 init requested during a deferred tactical shutdown */
     PufoFont     *pFont;                /* fontSys @ 0x158268: World_NewGame's font, kept for the tact
                                          * env, the alien sprite loader and the terrain sprite hook */
     const PufoOptions *pOptions;        /* the shell's option block: its volume steps feed the tact tail's
@@ -447,11 +503,6 @@ typedef struct PufoWorldState {
          * World_FreeTactical mirrors that release. */
     u8            abTactLightmap[PUFO_TACTINIT_LIGHTMAP_LEN]; /* unk_156AB8 */
     TactWeaponSel sTactWeaponSel;       /* unk_10DB90: apObjects[1], the constant 10, anAmmoTypeId[0] */
-    TactItem      sMapSentinel138EA0;   /* unk_138EA0 @ Map+0x254E8: 0x18 bytes, the same size as this
-                                         * record. Tact_InitMission stores an apObjects entry at +0 (its
-                                         * pObj) and 0x7D00 at +0x14 (the IDB's unk_138EB4 @ Map+0x254FC);
-                                         * Unit_ResetBattleState parks its address in two backpack slots,
-                                         * and InvDropCtx.pSentinel points at it */
     TactItem      sTactItem156A88;      /* TactItem_156A88 @ 0x156A88: pObj = apObjects[PUFO_SHOT_OBJ_VARIANT3] */
     TactItem      sTactItem156910;      /* TactItem_156910 @ 0x156910: pObj = apObjects[PUFO_SHOT_OBJ_VARIANT2] */
     TactItem      sTactItem156A58;      /* TactItem_156A58 @ 0x156A58: pObj = apObjects[141] */
@@ -464,7 +515,6 @@ typedef struct PufoWorldState {
     TactItem     *apTactItems[2048];    /* Map.apTactItems @ Map+0x23438: the block up to Map+0x25438
                                          * is 2048 pointer slots in the original */
     i32           nTactItemCount;       /* Map_nTactItemCount @ Map+0x1513C */
-    i32           nMapFlobjsWide;       /* the dword at Map+0x118, Save_AllocFlobjs's count-width flag */
     Soldier      *apTactHidden[30];     /* apHiddenSoldiers @ Map+0x25438 (0x25438..0x254B0 = 30 slots) */
     i32           nMapEnemyReserveCount;/* Map_nEnemyReserveCount @ Map+0x15144, the Xcom-base alien park */
     u8            bMapEnemyTurnActive;  /* Map_bEnemyTurnActive @ 0x113A13 = Map+0x5B: set by GameTick_Step 0x27364 when the slot-8 byte is set,
@@ -679,6 +729,12 @@ typedef struct PufoWorldState {
     ScreenInitHooks   baseInfoOpenHooks;       /* BaseInfoScreen_Open @ 0x6167c, nav slot 1's handler */
     GeoscapeBaseInfoArmEnv baseInfoArm;
     GeoscapeScreenArmEnv   baseInfoCtl;
+    /* PSI screen 17 owns its per-base panels, pad and scroll controls through psiEnv. It shares
+     * nBaseInfoWorkBase / nShownBaseIdx and bBaseInfoOverlayOpen with the other base screens. */
+    u8                bPsiPanelOpen;           /* byte_15EEF0 */
+    u8                bPsiRowSelected;         /* byte_15EE84[0] */
+    i32               nPsiScratchRow;          /* byte_15EE84 + 68 */
+    PsiScreenEnv      psiEnv;
     /* The hangar (screen 6, opened by nav control slot 3). BasePlaneScreen_Init @ 0x7d9e4 allocates the
      * object block and tail-calls BasePlaneScreen_BuildPanels @ 0x7cc8c; the crew pair comes from
      * BasePlaneScreen_BuildListPanels @ 0x7a3f4 and the stores-transfer set from
@@ -916,6 +972,7 @@ typedef struct PufoWorldState {
      * indexes, the three globe-sweep counters the hover panel advances, the anim progress byte,
      * and the two scratch lines the status panel writes. */
     u8        bRadarScreenActive;       /* bRadarScreenActive @ 0x159678 */
+    WorldRadarState radar;              /* the persistent interception session owner */
     u8        nFinishedTopic;           /* nResearchFinishedTopic @ 0x15EEF8 */
     i32       nShownTopic;              /* nResearchTopicShown @ 0x160C60 */
     i32       nGlobeScanX;              /* nGlobeScanX @ 0x159E00 */
@@ -997,6 +1054,8 @@ typedef struct WorldHooks {
      * the startup-screen owner supplies it, because the menu controls, the font and the option block
      * are its objects (Part 102). The quit page's Да reaches it through the world's own thunk. */
     i32 (*pfnInitStartupUi)(void *pUser);
+    /* EndScreen_Init @ 0x388b0: owns the screen and ending assets in the shell. */
+    void (*pfnEndScreenInit)(u8 bGoodEnd, void *pUser);
     /* szAppDir @ 0x1883b0, the save-file directory the caller owns. The options save/load rows hand it
      * to World_SaveSlot / World_LoadSlot, the same string App_HookSaveGame uses (Part 102). */
     const char *pszSaveDir;
@@ -1063,6 +1122,12 @@ void World_FillMissionCtx(PufoWorldState *pW, SpawnMissionCtx *pCtx);
  * on the new-game path, before LoadGame on the load path, because LoadGame renders through the
  * frame). Idempotent: it rewrites the envs from the current state. */
 void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks);
+/* Refresh radar env bindings after InitUI/map-frame inputs exist. Does not clear live session cells. */
+void World_WireRadarSession(PufoWorldState *pW);
+/* Close and release radar pads before frame, UI or roster records are freed/rebuilt. */
+void World_FreeRadarSession(PufoWorldState *pW);
+/* Wire the manual screen-15 owner and its live draw-panel pointers. Call after UI setup and on refresh. */
+void World_WireManualFunding(PufoWorldState *pW);
 
 /* The geoscape clock, wired by World_WireGeoscapeFrame from the same state: GeoscapeState.geo's
  * pointers into this struct, the eleven GeoscapeHooks callees, and the four GeoscapeClockHooks
@@ -1236,6 +1301,7 @@ void World_GeoscapeFocusScroll(PufoWorldState *pW, bool bPrev); /* Geoscape_UiFo
  * caller keeps its own frame path. */
 bool World_bTactFrameLive(const PufoWorldState *pW);
 void World_TactFrame(PufoWorldState *pW);
+void World_TickLookControl(PufoWorldState *pW);
 
 /* The WM_TIMER 0xC352 arm at 0xA0990..0xA09AC: with Map_nBannerFadeTicks positive AND Map_nUiScreen
  * 13 it runs Render_Frame_DecRef @ 0x36818 -- decrement the counter, then draw the whole frame, which

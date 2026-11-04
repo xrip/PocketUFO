@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-28",
+  "source_files": 434,
+  "source_fingerprint": "A9D6A39C6A2468D34F6CED1F29FEA7B6F1F7A57EF43170A1D558F220FB648DA2",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-return-research-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "C3ED27D31C918746838CD862692456391543E957B1E155B15D3C5038F5800882",
+        "build/tests/Debug/test_strateg.exe": "2B316DBB9719083A3A0AC355CB1BF2E951139E3A46B97038535586D559962512",
+        "build/tests/Debug/test_geoscapeframe.exe": "4339F54E860EEB1068EFE33210F57052C7132A886995F7F9D7B0C46C73E7F524"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-return-research-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "1481BE9EA2774BE6217DFF5DA6BC593C82E0D45A7185E83489659498CE42DA21",
+        "build/tests/Release/test_strateg.exe": "E6146935988F45C06ABAAB6BA0543B781AB6B24D33A9539095F15C21BAA4FF38",
+        "build/tests/Release/test_geoscapeframe.exe": "A609C50C8E3D28F339CE50BF3C8893BB15A3C9D82C38B0F91C45179EF8E41CD3"
+      }
+    }
+  },
+  "runtime_executed": false,
+  "tests_executed": false,
+  "fingerprint_algorithm": "SHA256 of sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "change_scope": "Return-order/arrival/loot and exact research-product fixture strengthening; no production behavior change in this pass",
+  "idb_notes": [
+    {
+      "address": "0x162C8",
+      "comment": "Raw ARM checked2026-10-28: debrief-close path calls Tact_Shutdown(0) at0x162C0 then Geoscape_InitUI(1) here. Checked normal-victory shutdown removes target at0x3DF70. RemoveAt0x82AF4..0x82AFC decrements only targets greater than removed index; equal target/intercept byte survives this function. A separate flag27 status/UI order calls Ship_RetargetTravel at0x849AC after flag test0x8498C. No port-only missing home-leg call was found in the checked debrief-close chain; do not add automatic return based on a fixture that omitted the player order. Native whole-flow acceptance remains open. Evidence docs/parity/return-order-scheduling-raw-2026-10-28.json and .workers/luna-mission-return-audit/RETURN_SCHEDULING.md.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x6EF70",
+      "comment": "Raw ARM checked2026-10-28: manufacture row construction stores the item ID to Panel A at0x6EF64 and the topic-loop ID (R8) to Panel C here. Topic IDs start1 at0x6EE70 and advance at0x6F24C; the unlocked byte gate is0x6EA30..0x6EA38. A research->manufacture regression must match BOTH item and completed topic rather than silently select row0. Source fixture corrected accordingly; compiled checks do not prove runtime or app elapsed-time dispatch. Raw trace docs/parity/research-manufacture-handoff-raw-2026-10-28.json; old note backed up in research-topic-row-idb-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    }
+  ]
+}

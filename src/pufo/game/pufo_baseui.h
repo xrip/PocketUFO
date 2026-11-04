@@ -394,6 +394,8 @@ void Geoscape_UiFocusNext(GeoscapeFocusEnv *pEnv);
                                       * 0x77904's 205 * (byte)[2] index and the same role
                                       * BuySell_RoleToItemId maps to object slots 117..121 */
 
+/* Staff allocation pointers are full per-base tables (manufacturing200,
+ * research144 words per base), not pre-offset rows. */
 typedef struct BuySellBuildEnv {
     u8  *pbPanelsBuilt;             /* bBuySellPanelsBuilt @ 0x161A28 */
     UiControl *apCtl[4];            /* g_aBuySellCtl @ 0x161A0C, 0x161A10, 0x161A14, 0x161A18 */
@@ -534,6 +536,7 @@ void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv);
 #define PUFO_BUYSELL_META_SELL_B  10 /* and (10,10,50) */
 #define PUFO_BUYSELL_META_SELL_BLUE 50
 
+/* Staff allocation pointers are full per-base tables, as in BuySellBuildEnv. */
 typedef struct BuySellRowEditEnv {
     i32 *pnRadarPulseTimer;         /* nRadarPulseTimer @ 0xAC224, the repeat bound */
     UiPanel *pPanelA;               /* pBuySellPanelA @ 0x161A1C */
@@ -981,6 +984,7 @@ SmapSite *Transfer_ResetSite(TransferResetEnv *pEnv);
 #define PUFO_TRANSFER_ROW_CRAFT_FIRST 117 /* 0x960E4: the craft-row test is aux > 116 && aux < 122 */
 #define PUFO_TRANSFER_ROW_CRAFT_LAST  121
 
+/* Staff allocation pointers are full per-base tables, as in BuySellBuildEnv. */
 typedef struct TransferBuildEnv {
     u8  *pbPanelsBuilt;               /* unk_1870EC */
     PadImage **ppPad;                 /* 0x1870D8, the pad Ui_InitTransfer allocated */
@@ -1196,10 +1200,9 @@ SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv);
  *
  * Returns 0 where the original returns fclose's value; no caller reads it.
  *
- * Deviation: the original's site-id lookup is Base_FindIndexBySiteId @ 0x5a8d0, which compares the
- * sign-extended byte against the LDRSB field, so a site id of 0x80 or more matches a base whose
- * bUnk4 is the same negative byte. The port's shared Base_FindIndexByTypeByte takes a u8, so that
- * one case answers -1 here; base ids are 0..25 in the shipped data, so it is unreachable in play. */
+ * The original calls Base_FindIndexBySiteId @ 0x5a8d0 with the site byte sign-extended at 0x99AC8,
+ * then compares its result with bBaseIdx at 0x99AD4. This is the full signed SiteId search, not the
+ * byte-masked Base_FindIndexByTypeByte search. The port now sign-extends the same byte before lookup. */
 typedef struct TransferDumpEnv {
     const char *pszAppDir;           /* szAppDir @ 0x1883B0 */
     const i32 *pnSiteCount;          /* nSmapSiteCount @ 0x186410 */
@@ -1678,7 +1681,13 @@ typedef struct GeoscapeCloseEnv {
     void (*pfnBaseAtOpen)(void *pUser);           /* BaseAtScreen_Open (0x588cc) */
     void (*pfnFreeGeoscapeUi)(i32 bFreeWorld, void *pUser); /* GeoscapeUi_FreeAll (0x86d20), ui/ */
     const EndScreenInitEnv *pEndScreen;           /* EndScreen_Init @ 0x388b0 */
+    void (*pfnInitEndScreen)(u8 bGoodEnd, void *pUser);
     void *pUser;
+
+    /* The world counts can change after the close env is wired. A NULL pointer keeps standalone
+     * callers on the scalar fixture values above. */
+    const i32 *pnSoldierCountLive;
+    const i32 *pnSiteCountLive;
 } GeoscapeCloseEnv;
 
 void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv);
@@ -2130,7 +2139,7 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv);
  *
  *   1. 0x6F3D0: a zero allocation is skipped outright.
  *   2. 0x6F408..0x6F494 funds gate: blocked when (double)nFunds - (double)anObjectPriceInit[product]
- *      * 1.4 < 0.0, the 1.4 being the double 0x3FE6666666666666 assembled at 0x6F440/0x6F448.
+ *      * 0.7 < 0.0, the 0.7 being the double 0x3FE6666666666666 assembled at 0x6F440/0x6F448.
  *      Blocked: shortfall dword, message 35.
  *   3. 0x6F4D0..0x6F564 stores gate, SKIPPED for products 119..121: Base_CalcStorageUsed plus
  *      Base_CountItemQtyAcrossBases with the SITE COUNT as the second argument (not the -1 gate
@@ -2150,8 +2159,9 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv);
  *      is the type), then Ship_SpawnAtSlot with Ship_ProductSlotToType(product) as the type, homed
  *      at the base being processed. Every other product takes BaseRec_AddItemQty(apBases[base],
  *      apObjects[product], 1). Then apProductC is bumped by one with u16 truncation (0x6F6B8), the
- *      four components are subtracted from those four stocks, and nFunds is cut by price * 1.4
- *      through _dtoi (0x6F70C..0x6F788).
+ *      four components are subtracted from those four stocks, and nFunds is converted with
+ *      _dtoi((double)nFunds - (double)price * 0.7) (0x6F70C..0x6F788). The conversion applies to
+ *      the remaining balance, not the fee alone.
  *   7. 0x6F798 completion, reached whether or not this tick produced: when nUnits == apProductB the
  *      slot is cleared, the shortfall dword is raised and message 34 is posted. This one does NOT
  *      return -- the loop continues.
@@ -2472,8 +2482,9 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv);
  * pair and then the teal one, with none of the detail drawn. Otherwise: the product's own name centred
  * at (120 - w/2, 45); `uManufWorkPerUnit` + TEXTS[1349] " инженер-часов для производства" at (10, 69);
  * TEXTS[1174] "одной единицы" at (10, 83); and the price line at (10, 97) --
- * `dtoi((double)anObjectPriceInit[product] * 0.7)` then "$". The 0.7 is the double the ARM loads at
- * 0x6FFBC/0x6FFC4 (0x3FE66666_66666666), and it is HALF the 1.4 ManufScreen_CommitProduction charges.
+ * `dtoi((double)anObjectPriceInit[product] * 0.7)` then "$". The 0.7 double is the same raw constant
+ * used by ManufScreen_CommitProduction at 0x6F440/0x6F448. The display converts the fee itself;
+ * commit converts the remaining funds after subtraction.
  *
  * Components (0x7002C..0x7073C). Four cases, one row each, and a case with a zero component draws
  * nothing and does not advance the row counter. The headers TEXTS[1176] "Необх." and TEXTS[1177]
@@ -2542,7 +2553,7 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv);
 #define PUFO_MANUF_TEXT_COMP_ALLOY   505 /* "Сплав пришельцев" */
 #define PUFO_MANUF_TEXT_COMP_POWER   497 /* "Энергоблоки НЛО" */
 #define PUFO_MANUF_TEXT_COMP_NAV     498 /* "Навигация НЛО" */
-#define PUFO_MANUF_PRICE_FACTOR 0.7    /* 0x6FFBC/0x6FFC4: 0x3FE66666_66666666 */
+#define PUFO_MANUF_PRICE_FACTOR 0.7    /* 0x3FE66666_66666666 at display 0x6FFBC/0x6FFC4 and commit 0x6F440/0x6F448 */
 
 typedef struct ManufFrameEnv {
     const GfxColorEnv *pColor;          /* pGX @ 0x1139B8, the colour-pair owner */
@@ -3034,10 +3045,12 @@ bool Ufopaedia_CacheSelRow(u8 *pbFlag, i32 *pnCachedRow, i32 nPanelSelectedRow);
  *
  * Evidence: SoldierScreen_FindNextAtBase @ 0x6192c, SoldierScreen_FindPrevAtBase @ 0x618c4.
  *
- * The soldier screen keeps its selected soldier in the dword cursor at 0x159E08 (read by
+ * The soldier screen keeps its roster row in the dword cursor at 0x159E08 (read by
  * SoldierScreen_Draw @ 0x65290, EquipSelected @ 0x619cc, SelectListed @ 0x64a9c and CopyNameToEdit
- * (0x6318c, not ported)). These two handlers move it to the next / previous soldier that
- * belongs to the base the screen is showing.
+ * (0x6318c, ported below)). The name-edit handlers resolve the current detail soldier through the
+ * separate unk_159760 cursor; CopyNameToEdit also uses this roster cursor to choose its output row.
+ * These two handlers move the roster cursor to the next / previous soldier that belongs to the base
+ * the screen is showing.
  *
  * FindNext (ARM 0x61930..0x619A4): nIdx = cursor + 1; if nIdx >= the u16 soldier count
  * (unk_115350, LDRH at 0x61940) it returns nIdx with the cursor UNCHANGED. Otherwise it walks
@@ -4331,6 +4344,22 @@ typedef struct SoldierDetailEnv {
 
 i32 SoldierScreen_DrawDetail(const SoldierDetailEnv *pEnv, i32 nCursor);
 
+/* Soldier name keyboard input @ 0x63138 / 0x6318c / 0x63208. The original resolves the soldier
+ * through unk_159760, then resolves the roster row separately through nSoldierCursor. The caller
+ * supplies those same live values for the Win64 input path. pfnMeasureWidth is required and is
+ * Text_MeasureWidth in the game; tests may supply a deterministic width. */
+typedef struct SoldierNameEditEnv {
+    Soldier *pSoldier;             /* apSoldiers[nSoldierDetailCursor] via unk_159760 @ 0x159760 */
+    char *pszEditLine;             /* pSolPanelNames->apLines[nSoldierCursor] @ 0x159E08 */
+    u8 *pbNameEditActive;          /* bNameEditActive @ 0x186B88 */
+    u8 *pnNameEditChar;            /* low byte of nNameEditChar @ 0x159DE8 */
+    i32 (*pfnMeasureWidth)(const char *psz);
+} SoldierNameEditEnv;
+
+void Map_BackspaceSelectedName(const SoldierNameEditEnv *pEnv);
+void SoldierScreen_CopyNameToEdit(const SoldierNameEditEnv *pEnv);
+void SoldierScreen_AppendNameGlyph(const SoldierNameEditEnv *pEnv, i32 nX, i32 nY);
+
 /* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 (3396 B) : the placement preview and its commit
  *
  * The selected facility is `pBaseFacPanel->anLineAux[nBaseFacPanelSel]` (0x58E20) and its grid type
@@ -5358,6 +5387,7 @@ typedef struct ResearchRebuildEnv {
     i32 *pnShownTopic;                 /* nResearchTopicShown @ 0x160C60 */
     void (*pfnPlaySample)(i32 nSample, void *pUser); /* UiLineList_AppendWithSound's seam */
     void *pUser;
+    const u8 *pFinalTopicRange;       /* optional 0x160228 range bytes for topic 143 */
 } ResearchRebuildEnv;
 
 i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv);
@@ -6211,7 +6241,7 @@ typedef struct PsiScreenDrawEnv {
     const u8 *pbPanelOpen;                 /* g_bPsiPanelOpen @ 0x15EEF0, the gate */
     PadImage *pScreenPad;                  /* g_pPsiScreenPad @ 0x15EE78 */
     UiPanel *apPanels[4];                  /* the four columns of nBaseIdx, in PsiScreenEnv order */
-    i8 nBaseIdx;                           /* a2: abFacilityGrid + 0x619, the base whose rows show */
+    i8 nBaseIdx;                           /* a2: byte_1870F4, LDRSB at Geoscape_Draw 0x94290 */
     i8 nWorkBaseIdx;                       /* byte_158834, the base the geoscape screens work on */
     i8 *pnPsiBaseIdx;                      /* byte_1870F4, written when a base is adopted */
     u8 *pbOverlayOpen;                     /* byte_1870F8, cleared when a base is adopted */

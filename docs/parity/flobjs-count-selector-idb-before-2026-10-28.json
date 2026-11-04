@@ -1,0 +1,4 @@
+{
+  "ea": "0x44C94",
+  "comment": "STR R3,[R7,#0x118]: tactver VALUE into slot-context+0x118 = MainMenu_pSlotCtx+0x118 (0x156A50). Write-only residue — no reader exists. NOT apObjects[4] (apObjects is Map+0x108).\nRAW VERIFIED 2026-10-27: 44C74 MOV R3,#0; if chunk present,44C80 MOV R2,#2,44C88 zeros stack dword,44C8C reads2 bytes,44C90 reloads dword. E5873118 here stores TACTVER at incoming slot context+118. Target writer44A14..44A28 writes2-byte value1. This gate must reach Save_AllocFlobjs; unrelated Map+118 does not own it."
+}

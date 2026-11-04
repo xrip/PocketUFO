@@ -1,0 +1,123 @@
+{
+  "idb_before": {
+    "ea": "0x162C8",
+    "comment": "Mission-end rebuild: UiScreen_OnCancel arms 13/19 run Tact_Shutdown(0) then Geoscape_InitUI mode 1. Mode 1 skips the new-game branch (gate 0x868EC) and rebuilds the controls/pads/font the launch's GeoscapeUi_FreeAll(0) freed at 0x83ABC. Map_nUiScreen STAYS 13 here -- only the 8/9 and 0x14/0x15 arms write it."
+  },
+  "raw": [
+    [
+      "0x162bc",
+      "0000a0e3",
+      "MOV             R0, #0"
+    ],
+    [
+      "0x162c0",
+      "a89c00eb",
+      "BL              Tact_Shutdown"
+    ],
+    [
+      "0x162c4",
+      "0100a0e3",
+      "MOV             R0, #1"
+    ],
+    [
+      "0x162c8",
+      "49bd01eb",
+      "BL              Geoscape_InitUI"
+    ],
+    [
+      "0x162cc",
+      "050000ea",
+      "B               locret_162E8"
+    ],
+    [
+      "0x82ae8",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x82aec",
+      "0600000a",
+      "BEQ             loc_82B0C"
+    ],
+    [
+      "0x82af0",
+      "383090e5",
+      "LDR             R3, [R0,#0x38]"
+    ],
+    [
+      "0x82af4",
+      "010053e1",
+      "CMP             R3, R1"
+    ],
+    [
+      "0x82af8",
+      "013043c2",
+      "SUBGT           R3, R3, #1"
+    ],
+    [
+      "0x82afc",
+      "383080c5",
+      "STRGT           R3, [R0,#0x38]"
+    ],
+    [
+      "0x82b00",
+      "46cda0c314c08cc3",
+      "MOVGT           R12, #(Map_nCraftCount - 0x1139B8)"
+    ],
+    [
+      "0x84988",
+      "6956ffeb",
+      "BL              UiPanel_GetLineFlag"
+    ],
+    [
+      "0x8498c",
+      "1b0050e3",
+      "CMP             R0, #0x1B"
+    ],
+    [
+      "0x84990",
+      "0600001a",
+      "BNE             loc_849B0"
+    ],
+    [
+      "0x84994",
+      "0020a0e3",
+      "MOV             R2, #0"
+    ],
+    [
+      "0x84998",
+      "0010a0e3",
+      "MOV             R1, #0"
+    ],
+    [
+      "0x8499c",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x849a0",
+      "6556ffeb",
+      "BL              UiPanel_GetLineColor"
+    ],
+    [
+      "0x849a4",
+      "0010a0e1",
+      "MOV             R1, R0"
+    ],
+    [
+      "0x849a8",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x849ac",
+      "b456ffeb",
+      "BL              Ship_RetargetTravel"
+    ],
+    [
+      "0x849b0",
+      "0010a0e3",
+      "MOV             R1, #0"
+    ]
+  ]
+}

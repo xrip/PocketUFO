@@ -79,7 +79,7 @@ static void OnCursorFlags(u8 nFlags, void *pUser)
 }
 
 static const TactUiHooks g_hooks = {
-    OnPlay, NULL, OnStatus, OnCursorFlags, NULL
+    OnPlay, NULL, OnStatus, OnCursorFlags, NULL, NULL, NULL
 };
 
 static void LogReset(void)

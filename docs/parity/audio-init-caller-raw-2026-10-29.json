@@ -1,0 +1,472 @@
+{
+  "0x381f0": [
+    {
+      "ea": "0x381f0",
+      "bytes": "044084e2",
+      "mnemonic": "ADD",
+      "operands": [
+        "R4",
+        "R4",
+        "#4"
+      ]
+    },
+    {
+      "ea": "0x381f4",
+      "bytes": "000056e3",
+      "mnemonic": "CMP",
+      "operands": [
+        "R6",
+        "#0",
+        ""
+      ]
+    },
+    {
+      "ea": "0x381f8",
+      "bytes": "edffff8a",
+      "mnemonic": "BHI",
+      "operands": [
+        "loc_381B4",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x381fc",
+      "bytes": "38009fe5",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "=pszPrefix",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38200",
+      "bytes": "189801eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_InitAndLoadSamples",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38204",
+      "bytes": "0300a0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "#3",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38208",
+      "bytes": "c89701eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_LoadAndPlayMusic",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3820c",
+      "bytes": "909801eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplyMusicVolume",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38210",
+      "bytes": "b19801eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplySfxVolume",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38214",
+      "bytes": "1c009fe5",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "=g_pTitlesSurface",
+        ""
+      ]
+    }
+  ],
+  "0x38918": [
+    {
+      "ea": "0x38918",
+      "bytes": "d83600eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Font_BuildIndex",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3891c",
+      "bytes": "30009fe5",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "=aZ",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38920",
+      "bytes": "509601eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_InitAndLoadSamples",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38924",
+      "bytes": "000055e3",
+      "mnemonic": "CMP",
+      "operands": [
+        "R5",
+        "#0",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38928",
+      "bytes": "1510a0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R1",
+        "#0x15",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3892c",
+      "bytes": "0f00000a",
+      "mnemonic": "BEQ",
+      "operands": [
+        "loc_38970",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38930",
+      "bytes": "18009fe5",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "=aGoodendPal",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38934",
+      "bytes": "d01600eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Palette_Load",
+        "",
+        ""
+      ]
+    }
+  ],
+  "0x38d40": [
+    {
+      "ea": "0x38d40",
+      "bytes": "ba13c0e1",
+      "mnemonic": "STRH",
+      "operands": [
+        "R1",
+        "[R0,#(Map_nUiScreen - 0x1139B8)]",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d44",
+      "bytes": "1c009fe5",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "=pszPrefix",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d48",
+      "bytes": "469501eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_InitAndLoadSamples",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d4c",
+      "bytes": "0000a0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "#0",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d50",
+      "bytes": "f69401eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_LoadAndPlayMusic",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d54",
+      "bytes": "be9501eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplyMusicVolume",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d58",
+      "bytes": "df9501eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplySfxVolume",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d5c",
+      "bytes": "6c9601eb",
+      "mnemonic": "BL",
+      "operands": [
+        "StartTimers_B",
+        "",
+        ""
+      ]
+    }
+  ],
+  "0x3d258": [
+    {
+      "ea": "0x3d258",
+      "bytes": "0c1094e7",
+      "mnemonic": "LDR",
+      "operands": [
+        "R1",
+        "[R4,R12]",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d25c",
+      "bytes": "0400a0e1",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "R4",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d260",
+      "bytes": "96a3ffeb",
+      "mnemonic": "BL",
+      "operands": [
+        "GameSpeed_Set",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d264",
+      "bytes": "0100a0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "#1",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d268",
+      "bytes": "6800c4e5",
+      "mnemonic": "STRB",
+      "operands": [
+        "R0",
+        "[R4,#(Map_bSweepArmed - 0x1139B8)]",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d26c",
+      "bytes": "54009fe5",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "=pszPrefix",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d270",
+      "bytes": "fc8301eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_InitAndLoadSamples",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d274",
+      "bytes": "0100a0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "#1",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d278",
+      "bytes": "ac8301eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_LoadAndPlayMusic",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d27c",
+      "bytes": "748401eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplyMusicVolume",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d280",
+      "bytes": "958401eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplySfxVolume",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x3d284",
+      "bytes": "15caa0e352cf8ce3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R12",
+        "#(Map_bSpawnAlt - 0x1139B8)",
+        ""
+      ]
+    }
+  ],
+  "0x86ce8": [
+    {
+      "ea": "0x86ce8",
+      "bytes": "0440cae5",
+      "mnemonic": "STRB",
+      "operands": [
+        "R4",
+        "[R10,#(bGameClockPaused - 0x159618)]",
+        ""
+      ]
+    },
+    {
+      "ea": "0x86cec",
+      "bytes": "6400c1e5",
+      "mnemonic": "STRB",
+      "operands": [
+        "R0",
+        "[R1,#0x64]",
+        ""
+      ]
+    },
+    {
+      "ea": "0x86cf0",
+      "bytes": "18009fe5",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "=pszPrefix",
+        ""
+      ]
+    },
+    {
+      "ea": "0x86cf4",
+      "bytes": "5b5d00eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_InitAndLoadSamples",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x86cf8",
+      "bytes": "0200a0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "#2",
+        ""
+      ]
+    },
+    {
+      "ea": "0x86cfc",
+      "bytes": "0b5d00eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_LoadAndPlayMusic",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x86d00",
+      "bytes": "d35d00eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplyMusicVolume",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x86d04",
+      "bytes": "f45d00eb",
+      "mnemonic": "BL",
+      "operands": [
+        "Sound_ApplySfxVolume",
+        "",
+        ""
+      ]
+    }
+  ]
+}

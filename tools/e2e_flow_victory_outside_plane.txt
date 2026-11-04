@@ -1,0 +1,45 @@
+# New Game and contact setup for the natural outside-plane victory flow.
+click 120 124
+tick 20
+pick
+close
+close
+tick 20
+state victory_setup
+
+strategystate victory_before_gear
+campaign gear
+campaign cargo victory_staged_craft
+campaign contact
+campaign trace victory_contact
+tick 20
+campaign trace victory_contact_pulses
+lines
+campaign state victory_contact_arrival
+
+# Launch and deploy through the native campaign and tactical controls.
+campaign launch
+campaign state victory_launch
+tact
+campaign deploy
+tact
+campaign state victory_deployed
+campaign cargo victory_active_mission
+dump victory_outside_before.ppm
+
+# Move a loaded Rifle owner outside the live plane rectangle, then use Snap fire.
+# The same 12-turn and 160-action limits include this preparation move.
+campaign natural-fight-outside-plane 12
+campaign state victory_debrief
+campaign cargo victory_debrief
+tact
+dump victory_outside_debrief.ppm
+
+# Close only the natural win, inspect recovered goods, and save slot 0.
+campaign close-debrief
+campaign state victory_returned
+campaign cargo victory_returned
+strategystate victory_returned
+save 0
+state victory_saved
+dump victory_outside_returned.ppm

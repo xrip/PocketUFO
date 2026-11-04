@@ -1,0 +1,37 @@
+# Fresh raw New Game -> Laser technology (topic 47) through live Research UI.
+# The checker fills the visible row and enabled control centers from a probe.
+
+click 120 124
+tick 20
+pick
+tick 10
+state new_game
+strategystate new_game
+campaign cargo new_game
+
+click 60 252
+tick 20
+strategystate research_base_info
+click 231 8
+tick 2
+strategystate research_base_strip
+click 180 238
+tick 20
+strategystate research_open
+
+click @TOPIC47_ROW_X@ @TOPIC47_ROW_Y@
+__TOPIC47_SCIENTIST_CLICKS__
+click @TOPIC47_START_X@ @TOPIC47_START_Y@
+tick 2
+strategystate research_started
+
+# StartSelected clears the selected-row latch. Close the live Research and
+# Base screens, then save the ongoing project before any work time passes.
+click 231 8
+tick 2
+strategystate research_closed
+click 201 11
+tick 2
+strategystate research_on_map
+save 0
+state research_saved

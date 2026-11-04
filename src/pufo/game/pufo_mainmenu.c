@@ -97,8 +97,15 @@ void MainMenu_Draw(const MainMenuEnv *pEnv)
             UiModalLayout layout;
 
             *pEnv->pnActionPhaseSave112 = 40;
+            if (pEnv->pModalAnim != NULL) {
+                pEnv->pModalAnim->nCursor = *pEnv->pnActionPhaseSave112;
+            }
             (void)UiModal_DrawDialog(pEnv->pModalAnim, pEnv->pTextRecs, 150,
-                                     PUFO_MAINMENU_REC_MODAL, 1, NULL, NULL, &layout);
+                                     PUFO_MAINMENU_REC_MODAL, 1, NULL, NULL,
+                                     pEnv->pModalLayout != NULL ? pEnv->pModalLayout : &layout);
+            if (pEnv->pModalAnim != NULL) {
+                *pEnv->pnActionPhaseSave112 = pEnv->pModalAnim->nCursor;
+            }
         }
     }
 

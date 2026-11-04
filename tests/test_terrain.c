@@ -172,6 +172,8 @@ static void EnvFreeCells(void)
 /* ------------------------------------------------------------------ hooks */
 
 static int          g_nTactSpriteLoads;
+static u16          g_nLoadedCraftBase;
+static bool         g_bReplaceCraftBase;
 static int          g_nShots;
 static const ObjectRec *g_apShotObjs[64];
 static i32          g_aShotTgtX[64];
@@ -180,6 +182,9 @@ static void Hook_LoadTactSprites(void *pUser)
 {
     (void)pUser;
     g_nTactSpriteLoads += 1;
+    if (g_bReplaceCraftBase) {
+        g_font.anFlagSprBase[3] = g_nLoadedCraftBase;
+    }
 }
 
 static void Hook_ResolveShot(i32 nTgtX, i32 nTgtY, i32 nTgtZ, i32 nSlot,
@@ -199,6 +204,8 @@ static void Hook_ResolveShot(i32 nTgtX, i32 nTgtY, i32 nTgtZ, i32 nSlot,
 static void HookFixture_Reset(void)
 {
     g_nTactSpriteLoads = 0;
+    g_nLoadedCraftBase = 0;
+    g_bReplaceCraftBase = false;
     g_nShots = 0;
     memset(g_apShotObjs, 0, sizeof(g_apShotObjs));
 }
@@ -267,6 +274,7 @@ static void TestNormalPathAllocatesTheGrid(void)
     printf("Map_BuildMissionTerrain: cell allocation (normal path)\n");
     EnvFixture_Reset();
     HookFixture_Reset();
+    g_font.anFlagSprBase[3] = 0;
     PrimeCraftSprites();
     srand(1);
 
@@ -286,6 +294,66 @@ static void TestNormalPathAllocatesTheGrid(void)
     srand(1);
     Map_BuildMissionTerrain(&g_env);
     CheckCraftPatchRan(false, "Map_PatchCraftSprites does not run for a three-layer map");
+    EnvFreeCells();
+}
+
+static void TestCraftPatchUsesLoadedSpriteBase(void)
+{
+    printf("Map_BuildMissionTerrain: craft patch after sprite loading\n");
+    EnvFixture_Reset();
+    HookFixture_Reset();
+    g_nLoadedCraftBase = 32;
+    g_bReplaceCraftBase = true;
+    g_env.nCraftSprBase = 0;
+    for (int i = 74; i < 78; ++i) {
+        g_aSprPool[i].uUnk20 = 0xABCD;
+    }
+    srand(1);
+    Map_BuildMissionTerrain(&g_env);
+
+    for (int i = 74; i < 78; ++i) {
+        Check(g_aSprPool[i].uUnk20 == 0,
+              "craft patch clears flags in the newly loaded sprite group");
+    }
+    const i32 nX = 10 * g_planeY + 2;
+    const i32 nY = 10 * g_planeX + 7;
+    MapCell *pCell = Cell(PUFO_MAP_CELL_DIM * (PUFO_MAP_CELL_DIM + nX) + nY);
+    Check(pCell != NULL && pCell->pWallSprA == &g_aSprPool[74],
+          "craft wall stamp uses the newly loaded sprite group");
+    EnvFreeCells();
+}
+
+static void TestPlaneTemplateUsesMapLayerSelector(void)
+{
+    static const struct { i32 nX; i32 nY; } aDeployCells[8] = {
+        { 4, 9 }, { 5, 9 }, { 4, 10 }, { 5, 10 },
+        { 4, 11 }, { 5, 11 }, { 4, 12 }, { 5, 12 }
+    };
+    bool bAllHaveFloor = true;
+
+    printf("Map_BuildMissionTerrain: plane template follows map-layer count\n");
+    EnvFixture_Reset();
+    HookFixture_Reset();
+    g_nMapLayers = 1;
+    g_nMissionType = 2; /* forest terrain; the plane table still uses map layers */
+    g_nVariant = 0;
+    g_font.anFlagSprBase[3] = 0;
+    srand(17);
+
+    Map_BuildMissionTerrain(&g_env);
+
+    for (int i = 0; i < 8; ++i) {
+        i32 nX = PUFO_CELLS_PER_TILE * (i32)g_planeX + aDeployCells[i].nX;
+        i32 nY = PUFO_CELLS_PER_TILE * (i32)g_planeY + aDeployCells[i].nY;
+        MapCell *pCell = Cell(PUFO_TERRAIN_CELLS_PER_LAYER
+                              + PUFO_MAP_CELL_DIM * nY + nX);
+
+        if (pCell == NULL || pCell->pFloorSpr != Spr(2)) {
+            bAllHaveFloor = false;
+        }
+    }
+    Check(bAllHaveFloor,
+          "map layers 1 and mission type 2 load PLANE.MA1 floors at all eight layer-1 deploy cells");
     EnvFreeCells();
 }
 
@@ -649,6 +717,8 @@ int main(void)
     FontFixture_Reset();
 
     TestNormalPathAllocatesTheGrid();
+    TestCraftPatchUsesLoadedSpriteBase();
+    TestPlaneTemplateUsesMapLayerSelector();
     TestSmallerMapLeavesTheRestUntouched();
     TestTierAndShots();
     TestXcomBaseStamping();

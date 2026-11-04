@@ -1,0 +1,21 @@
+{
+  "saved": true,
+  "after": [
+    {
+      "ea": "0x669d0",
+      "comment": "Raw copies through NUL at site+0x1A, stride64, with no 20-byte bound; next dword stores begin +0x30. Shipped region prefix max16 plus signed-byte ordinal can use21 text bytes+NUL through +0x2F. Wire save remains20 bytes."
+    },
+    {
+      "ea": "0x6a470",
+      "comment": "int\nRaw LDRSB selects signed region ordinal; decimal formatting includes -128 after wrap. Shipped build-region prefix max16 gives longest label21 bytes before NUL; this live view includes two bytes skipped by save."
+    },
+    {
+      "ea": "0x3f31c",
+      "comment": "Raw save transfers exactly20 name bytes from site+0x1A. Runtime name may continue into +0x2E/+0x2F; these two bytes are not written to this wire field."
+    },
+    {
+      "ea": "0x40440",
+      "comment": "Raw load transfers exactly20 name bytes to site+0x1A. It does not restore runtime name tail bytes +0x2E/+0x2F."
+    }
+  ]
+}

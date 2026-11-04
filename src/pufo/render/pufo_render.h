@@ -80,9 +80,9 @@ typedef struct SoftSurf {
 
 void  SoftSurf_ctor(SoftSurf *pSurf);
 void  SoftSurf_dtor(SoftSurf *pSurf);
-/* Allocates W*H*bytesPP + 4. Returns pPixels, or NULL on failure. A pixel mode
- * outside 0..3 leaves nBytesPP at 0, exactly as the original does (which then
- * allocates a 4-byte buffer). */
+/* Allocates W*H*bytesPP + 4. Returns pPixels, or NULL on failure. The port
+ * chooses zero bytesPP for modes outside 0..3; the original reuses the prior
+ * nBytesPP value. This invalid-mode adaptation is separate from the live 0/2 calls. */
 void *SoftSurf_AllocPixels(SoftSurf *pSurf, i32 nWidth, i32 nHeight, i32 nPixelMode);
 i32   SoftSurf_GetWidth(const SoftSurf *pSurf);
 i32   SoftSurf_GetHeight(const SoftSurf *pSurf);
@@ -185,7 +185,7 @@ typedef struct GfxColorEnv {
      * cell of its own. NULL says the caller never stated one, and 0 is then the value -- what a fresh
      * Map block holds. */
     const i32 *pnGamma;
-    i32 nFadeCount;   /* Map.apUiSlotsA[1], the fade counter */
+    const i32 *pnFadeCount; /* Live Map+0x64; NULL is zero before World setup. */
 } GfxColorEnv;
 
 u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
@@ -265,7 +265,8 @@ void Tact_BuildPaletteLuts(void);
  * from tactical.pal, then run the gamma pass (the tail call at 0x37A98). */
 void Tact_LoadPalettes(void);
 
-/* Pad image (PadImage, 20 bytes). pData is a glyph record. */
+/* Original PadImage is 20 bytes; offsets below are ARM32. Native Win64
+ * pointers widen the host layout. pData is a glyph record. */
 typedef struct PadImage {
     i32  nOriginX; /* 0x00 */
     i32  nOriginY; /* 0x04 */

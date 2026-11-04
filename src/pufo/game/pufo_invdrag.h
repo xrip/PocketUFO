@@ -137,9 +137,10 @@ bool Ui_HitTestTactItem(const InvHitTestCtx *pCtx, i32 nX, i32 nY);
  *
  * ## Time units
  *
- * The charge happens only when the action latch (Map+0x0002) is clear AND the
- * item did not already come from the region it is dropped into, so moving an item
- * inside its own region is free. Cost by target: pocket 0/1 = 4, pocket 2/3 = 5,
+ * The charge is skipped when Map+1 (unk_1139B9) is set or the item came from the
+ * region it is dropped into, so moving an item inside its own region is free. The
+ * action latch at Map+2 is separate and does not waive inventory TU. Cost by target:
+ * pocket 0/1 = 4, pocket 2/3 = 5,
  * hand = 6, backpack = 7, belt = 8, ground strip = 5, ammo split = 6. A short
  * balance raises the modal at 160,31 and the drop falls through to the tail.
  *
@@ -206,7 +207,8 @@ typedef struct InvDropHooks {
 
 typedef struct InvDropCtx {
     InvHitState       *pHit;    /* the state the hit test left behind */
-    TactUiState       *pUi;     /* bActionLatch @ 0x0002, the visible list */
+    TactUiState       *pUi;     /* Map+2 action latch and the visible list */
+    const u8          *pbInvNoTuCharge; /* Map+1 (unk_1139B9); NULL means clear */
     Soldier           *pSelUnit;
     TactItem          *pSentinel; /* unk_138EA0 @ Map+0x254E8 */
     i32                nPtrX;   /* pBank+0x1044 */

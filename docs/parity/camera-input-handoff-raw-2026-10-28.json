@@ -1,0 +1,223 @@
+{
+  "idb_before": {
+    "ea": "0x2C780",
+    "comment": null
+  },
+  "raw": [
+    [
+      "0x2c778",
+      "dcebffeb",
+      "BL              MapView_SetCamOffset"
+    ],
+    [
+      "0x2c77c",
+      "4a3ca0e3",
+      "MOV             R3, #0x4A00"
+    ],
+    [
+      "0x2c780",
+      "1a20d5e5",
+      "LDRB            R2, [R5,#0x1A]"
+    ],
+    [
+      "0x2c784",
+      "403083e3",
+      "ORR             R3, R3, #0x40 "
+    ],
+    [
+      "0x2c788",
+      "d33094e1",
+      "LDRSB           R3, [R4,R3]"
+    ],
+    [
+      "0x2c78c",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x2c790",
+      "026063e0",
+      "RSB             R6, R3, R2"
+    ],
+    [
+      "0x2c794",
+      "1b20d5e5",
+      "LDRB            R2, [R5,#0x1B]"
+    ],
+    [
+      "0x2c798",
+      "4a3ca0e3413083e3",
+      "MOV             R3, #0x4A41"
+    ],
+    [
+      "0x2c7bc",
+      "030084e7",
+      "STR             R0, [R4,R3]"
+    ],
+    [
+      "0x2c7c0",
+      "0720a0e1",
+      "MOV             R2, R7"
+    ],
+    [
+      "0x2c7c4",
+      "0610a0e1",
+      "MOV             R1, R6"
+    ],
+    [
+      "0x2c7c8",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x2c7cc",
+      "0aeaffeb",
+      "BL              Map_CenterOffsetY"
+    ],
+    [
+      "0x2c7d0",
+      "153aa0e34d3f83e3",
+      "MOV             R3, #0x15134"
+    ],
+    [
+      "0x2c7d8",
+      "030084e7",
+      "STR             R0, [R4,R3]"
+    ],
+    [
+      "0x2c7dc",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x2c7e0",
+      "1c30d5e5",
+      "LDRB            R3, [R5,#0x1C]"
+    ],
+    [
+      "0x2c7e4",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x2c7e8",
+      "011083e2",
+      "ADD             R1, R3, #1"
+    ],
+    [
+      "0x2c7ec",
+      "f040bde8",
+      "POP             {R4-R7,LR}"
+    ],
+    [
+      "0x2c7f0",
+      "e0e9ffea",
+      "B               MapCursor_SetFlags"
+    ],
+    [
+      "0x2c7f4",
+      "0dc0a0e1",
+      "MOV             R12, SP"
+    ],
+    [
+      "0x2c7f8",
+      "01002de9",
+      "PUSH            {R0}"
+    ],
+    [
+      "0x3d230",
+      "88041fe5",
+      "LDR             R0, =MainMenu_pSlotCtx"
+    ],
+    [
+      "0x3d234",
+      "031c00eb",
+      "BL              Save_ReadTGameData"
+    ],
+    [
+      "0x3d238",
+      "90041fe5",
+      "LDR             R0, =MainMenu_pSlotCtx"
+    ],
+    [
+      "0x3d23c",
+      "271b00eb",
+      "BL              Save_ReadRmp"
+    ],
+    [
+      "0x3d240",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x3d244",
+      "1aa2ffeb",
+      "BL              Map_PatchCraftSprites"
+    ],
+    [
+      "0x3d248",
+      "3065ffeb",
+      "BL              MapView_FocusSelected"
+    ],
+    [
+      "0x3d24c",
+      "ac8501eb",
+      "BL              StartTimers_BySpeed"
+    ],
+    [
+      "0x14470",
+      "15caa0e313ce8ce3",
+      "MOV             R12, #(Map_nCamScrollX - 0x1139B8)"
+    ],
+    [
+      "0x14478",
+      "0c1094e7",
+      "LDR             R1, [R4,R12]"
+    ],
+    [
+      "0x1447c",
+      "c94a00eb",
+      "BL              Map_IsoOffsetB"
+    ],
+    [
+      "0x14480",
+      "15caa0e34dcf8ce3",
+      "MOV             R12, #(Map_nCamScrollY - 0x1139B8)"
+    ],
+    [
+      "0x21e54",
+      "0c1095e7",
+      "LDR             R1, [R5,R12]"
+    ],
+    [
+      "0x21e58",
+      "4a1400eb",
+      "BL              Map_IsoOffsetA"
+    ],
+    [
+      "0x21e5c",
+      "1c0084e5",
+      "STR             R0, [R4,#0x1C]"
+    ],
+    [
+      "0x21e60",
+      "0500a0e1",
+      "MOV             R0, R5"
+    ],
+    [
+      "0x21e64",
+      "15caa0e34dcf8ce3",
+      "MOV             R12, #(Map_nCamScrollY - 0x1139B8)"
+    ],
+    [
+      "0x21e6c",
+      "0c2095e7",
+      "LDR             R2, [R5,R12]"
+    ],
+    [
+      "0x21e70",
+      "15caa0e313ce8ce3",
+      "MOV             R12, #(Map_nCamScrollX - 0x1139B8)"
+    ]
+  ]
+}

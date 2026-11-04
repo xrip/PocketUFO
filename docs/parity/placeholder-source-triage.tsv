@@ -1,0 +1,38 @@
+# Lexical source triage only. This does not prove all call graphs or runtime equivalence.
+path	line	function	pattern	classification	remaining_proof
+src/pufo/app/pufo_app.c	957	App_HookNoop	empty/constant	cursor callback maps raw return-only0x22B50	caller-return compatibility not closed
+src/pufo/app/pufo_app.c	1877	App_ScriptNativeTactInfo	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	1916	App_ScriptGrid	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	1956	App_ScriptGeoFrame	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	1984	App_ScriptStrateg	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	2007	App_ScriptStrategyControl	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	2246	App_ScriptCampaignTraceRoster	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	2367	App_ScriptLines	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	5421	App_ScriptCampaignCargo	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	12331	App_ScriptCampaignDefeatSnapshot	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	12394	App_ScriptCampaignNaturalDefeatTerminal	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	15163	App_ScriptCampaignResumeError	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_app.c	16480	App_ScriptEndingState	logging-only-calls	diagnostic dump helper; no function-pointer use found in source scan	normal/debug-path reachability is not proved by naming or this scan
+src/pufo/app/pufo_world.c	67	World_NoopClick	empty/constant	default for10 nav+13 root entries, all replaced by real source assignments	replacement handlers themselves still require parity
+src/pufo/audio/pufo_audio.c	32	Stub_Init	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	40	Stub_Void	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	41	Stub_SetWindow	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	42	Stub_SampleLoad	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	49	Stub_SampleSetMode	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	50	Stub_SampleFree	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	51	Stub_PlaySound	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	52	Stub_SetSfxVolume	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	53	Stub_SetSfxPaused	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	54	Stub_MusicLoad	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	61	Stub_MusicMod2	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	62	Stub_MusicOptimize	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	68	Stub_MusicPlay	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	69	Stub_MusicVolume	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio.c	70	Stub_MusicFree	empty/constant	silent audio fallback backend; native App installs WinMM first	not a substitute for native device/decoder proof
+src/pufo/audio/pufo_audio_winmm.c	225	Winmm_SetWindow	empty/constant	WinMM replacement interface no-op	caller/API/runtime equivalence pending
+src/pufo/audio/pufo_audio_winmm.c	310	Winmm_SampleSetMode	empty/constant	WinMM replacement interface no-op	caller/API/runtime equivalence pending
+src/pufo/audio/pufo_audio_winmm.c	437	Winmm_MusicOptimize	empty/constant	WinMM replacement interface no-op	caller/API/runtime equivalence pending
+src/pufo/platform/pufo_aygshell.c	19	Sh_HandleWmActivate	empty/constant	intentional WinCE shell adapter	caller/API/runtime equivalence pending
+src/pufo/platform/pufo_aygshell.c	30	Sh_HandleWmSettingChange	empty/constant	intentional WinCE shell adapter	caller/API/runtime equivalence pending
+src/pufo/platform/pufo_gx.c	124	Gx_Suspend	empty/constant	software DIB suspend/resume adapter	caller/API/runtime equivalence pending
+src/pufo/platform/pufo_gx.c	129	Gx_Resume	empty/constant	software DIB suspend/resume adapter	caller/API/runtime equivalence pending

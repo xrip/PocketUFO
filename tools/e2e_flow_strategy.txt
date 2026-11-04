@@ -1,0 +1,95 @@
+# Normal strategy work from a fresh game. Run with tools/e2e_strategy.sh.
+# All state changes use the ordinary screen controls, timer, or save hook.
+
+dump strategy_mainmenu.ppm
+click 120 124
+tick 20
+pick
+tick 10
+strategystate newgame
+dump strategy_newgame.ppm
+
+# Buy one engineer and one scientist in the normal shop. The live shop sorts its
+# first rows as craft 117/118, soldier 1000, engineer 112, scientist 113.
+click 60 252
+tick 20
+strategystate base_info
+click 231 8
+strategystate base_strip_staff
+click 180 292
+tick 20
+strategystate shop_staff_open
+click 25 126
+click 196 126
+click 25 142
+click 196 142
+strategystate shop_staff_queued
+dump strategy_staff_queued.ppm
+click 120 306
+tick 2
+strategystate staff_pending
+
+# Close to the map, set the real one-hour speed control, and let the clock deliver
+# the shipment. The following OK click releases the real arrival card.
+click 201 11
+strategystate staff_pending_map
+click 60 308
+tick 25
+tick 2
+strategystate staff_arrived
+lines
+click 29 186
+tick 2
+lines
+strategystate staff_ready
+dump strategy_staff_ready.ppm
+
+# Restore five-second time through the normal speed control, then start the first
+# research topic with the delivered scientist through row, +1 and Start clicks.
+click 20 265
+click 180 265
+click 60 252
+tick 20
+strategystate research_base_info
+click 231 8
+strategystate research_base_strip
+click 180 238
+tick 20
+strategystate research_open
+dump strategy_research_open.ppm
+click 15 78
+click 15 171
+click 200 176
+tick 2
+strategystate research_running
+dump strategy_research_running.ppm
+
+# Close the research and base screens with their live top-right control.
+click 231 8
+tick 2
+strategystate research_after_close
+click 201 11
+tick 2
+strategystate research_on_map
+
+# Buy one rifle from the live shop and leave its real 24-hour site pending for the
+# fresh-process save/load check.
+click 180 265
+click 60 252
+tick 20
+strategystate shop_base_info
+click 231 8
+strategystate shop_base_strip
+click 180 292
+tick 20
+strategystate shop_rifle_open
+click 25 190
+click 196 190
+strategystate rifle_queued
+click 120 306
+tick 2
+click 201 11
+strategystate before_save
+dump strategy_before_save.ppm
+save 0
+state after_save

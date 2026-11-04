@@ -1,0 +1,459 @@
+{
+  "scope": "Raw queue credit increment, reset, low-halfword consume and caller setup",
+  "instructions": [
+    {
+      "ea": "0x4e430",
+      "bytes": "f04f2de9",
+      "asm": "PUSH            {R4-R11,LR}"
+    },
+    {
+      "ea": "0x4e434",
+      "bytes": "d0d04de2",
+      "asm": "SUB             SP, SP, #0xD0"
+    },
+    {
+      "ea": "0x4e438",
+      "bytes": "0150a0e1",
+      "asm": "MOV             R5, R1"
+    },
+    {
+      "ea": "0x4e43c",
+      "bytes": "0430d5e5",
+      "asm": "LDRB            R3, [R5,#4]"
+    },
+    {
+      "ea": "0x4e440",
+      "bytes": "0080a0e1",
+      "asm": "MOV             R8, R0"
+    },
+    {
+      "ea": "0x4e444",
+      "bytes": "203013e2",
+      "asm": "ANDS            R3, R3, #0x20 "
+    },
+    {
+      "ea": "0x4e448",
+      "bytes": "9d03001a",
+      "asm": "BNE             loc_4F2C4"
+    },
+    {
+      "ea": "0x4e44c",
+      "bytes": "0000a0e3",
+      "asm": "MOV             R0, #0"
+    },
+    {
+      "ea": "0x4e450",
+      "bytes": "b80285e5",
+      "asm": "STR             R0, [R5,#0x2B8]"
+    },
+    {
+      "ea": "0x4e454",
+      "bytes": "1a00c5e5",
+      "asm": "STRB            R0, [R5,#0x1A]"
+    },
+    {
+      "ea": "0x4e458",
+      "bytes": "a000d5e5",
+      "asm": "LDRB            R0, [R5,#0xA0]"
+    },
+    {
+      "ea": "0x4e45c",
+      "bytes": "080050e3",
+      "asm": "CMP             R0, #8"
+    },
+    {
+      "ea": "0x4e460",
+      "bytes": "0b00009a",
+      "asm": "BLS             loc_4E494"
+    },
+    {
+      "ea": "0x4e464",
+      "bytes": "100050e3",
+      "asm": "CMP             R0, #0x10"
+    },
+    {
+      "ea": "0x4e468",
+      "bytes": "0900000a",
+      "asm": "BEQ             loc_4E494"
+    },
+    {
+      "ea": "0x4e46c",
+      "bytes": "110050e3",
+      "asm": "CMP             R0, #0x11"
+    },
+    {
+      "ea": "0x4e470",
+      "bytes": "0700000a",
+      "asm": "BEQ             loc_4E494"
+    },
+    {
+      "ea": "0x4e474",
+      "bytes": "ba30d5e1",
+      "asm": "LDRH            R3, [R5,#0xA]"
+    },
+    {
+      "ea": "0x4e478",
+      "bytes": "000053e3",
+      "asm": "CMP             R3, #0"
+    },
+    {
+      "ea": "0x4e47c",
+      "bytes": "113aa0931d3e8393",
+      "asm": "MOVLS           R3, #0x111D0"
+    },
+    {
+      "ea": "0x4e484",
+      "bytes": "0800a091",
+      "asm": "MOVLS           R0, R8"
+    },
+    {
+      "ea": "0x4e488",
+      "bytes": "0330b097",
+      "asm": "LDRLS           R3, [R0,R3]!"
+    },
+    {
+      "ea": "0x4e48c",
+      "bytes": "01308392",
+      "asm": "ADDLS           R3, R3, #1"
+    },
+    {
+      "ea": "0x4e490",
+      "bytes": "00308095",
+      "asm": "STRLS           R3, [R0]"
+    },
+    {
+      "ea": "0x4e494",
+      "bytes": "a000d5e5",
+      "asm": "LDRB            R0, [R5,#0xA0]"
+    },
+    {
+      "ea": "0x4e498",
+      "bytes": "030050e3",
+      "asm": "CMP             R0, #3"
+    },
+    {
+      "ea": "0x4e49c",
+      "bytes": "0500002a",
+      "asm": "BCS             loc_4E4B8"
+    },
+    {
+      "ea": "0x4e4a0",
+      "bytes": "9c3095e5",
+      "asm": "LDR             R3, [R5,#0x9C]"
+    },
+    {
+      "ea": "0x541c0",
+      "bytes": "000053e3",
+      "asm": "CMP             R3, #0"
+    },
+    {
+      "ea": "0x541c4",
+      "bytes": "ee00001a",
+      "asm": "BNE             loc_54584"
+    },
+    {
+      "ea": "0x541c8",
+      "bytes": "103097e5",
+      "asm": "LDR             R3, [R7,#0x10]"
+    },
+    {
+      "ea": "0x541cc",
+      "bytes": "000053e3",
+      "asm": "CMP             R3, #0"
+    },
+    {
+      "ea": "0x541d0",
+      "bytes": "113aa0031d3e8303",
+      "asm": "MOVEQ           R3, #0x111D0"
+    },
+    {
+      "ea": "0x541d8",
+      "bytes": "0020a003",
+      "asm": "MOVEQ           R2, #0"
+    },
+    {
+      "ea": "0x541dc",
+      "bytes": "03208707",
+      "asm": "STREQ           R2, [R7,R3]"
+    },
+    {
+      "ea": "0x541e0",
+      "bytes": "000098e5",
+      "asm": "LDR             R0, [R8]"
+    },
+    {
+      "ea": "0x541e4",
+      "bytes": "f830d0e5",
+      "asm": "LDRB            R3, [R0,#TactCtx272.bBusy]"
+    },
+    {
+      "ea": "0x54758",
+      "bytes": "0fe0a0e1",
+      "asm": "MOV             LR, PC"
+    },
+    {
+      "ea": "0x5475c",
+      "bytes": "03f0a0e1",
+      "asm": "MOV             PC, R3"
+    },
+    {
+      "ea": "0x54760",
+      "bytes": "0130b0e1",
+      "asm": "MOVS            R3, R1"
+    },
+    {
+      "ea": "0x54764",
+      "bytes": "42ffff1a",
+      "asm": "BNE             loc_54474"
+    },
+    {
+      "ea": "0x54768",
+      "bytes": "0610a0e1",
+      "asm": "MOV             R1, R6"
+    },
+    {
+      "ea": "0x5476c",
+      "bytes": "35ffffea",
+      "asm": "B               loc_54448"
+    },
+    {
+      "ea": "0x54770",
+      "bytes": "113aa0e3",
+      "asm": "MOV             R3, #0x11000"
+    },
+    {
+      "ea": "0x54774",
+      "bytes": "30009de5",
+      "asm": "LDR             R0, [SP,#8+var_s28]"
+    },
+    {
+      "ea": "0x54778",
+      "bytes": "1d3e83e3",
+      "asm": "ORR             R3, R3, #0x1D0"
+    },
+    {
+      "ea": "0x5477c",
+      "bytes": "ba2fd5e1",
+      "asm": "LDRH            R2, [R5,#0xFA]"
+    },
+    {
+      "ea": "0x54780",
+      "bytes": "b330b0e1",
+      "asm": "LDRH            R3, [R0,R3]!"
+    },
+    {
+      "ea": "0x54784",
+      "bytes": "033082e0",
+      "asm": "ADD             R3, R2, R3"
+    },
+    {
+      "ea": "0x54788",
+      "bytes": "ba3fc5e1",
+      "asm": "STRH            R3, [R5,#0xFA]"
+    },
+    {
+      "ea": "0x5478c",
+      "bytes": "0030a0e3",
+      "asm": "MOV             R3, #0"
+    },
+    {
+      "ea": "0x54790",
+      "bytes": "003080e5",
+      "asm": "STR             R3, [R0]"
+    },
+    {
+      "ea": "0x54794",
+      "bytes": "30709de5",
+      "asm": "LDR             R7, [SP,#8+var_s28]"
+    }
+  ],
+  "callers": {
+    "types": [
+      {
+        "ea": "0x4e430",
+        "type": "int __fastcall(Map *pMap, Soldier *pUnit)"
+      },
+      {
+        "ea": "0x54130",
+        "type": "void __fastcall(struct TactState *pState)"
+      }
+    ],
+    "callers": [
+      {
+        "call": "0x3b054",
+        "raw": [
+          {
+            "ea": "0x3b040",
+            "bytes": "0331b0e7",
+            "asm": "LDR             R3, [R0,R3,LSL#2]!"
+          },
+          {
+            "ea": "0x3b044",
+            "bytes": "0020a0e3",
+            "asm": "MOV             R2, #0"
+          },
+          {
+            "ea": "0x3b048",
+            "bytes": "ba20c3e1",
+            "asm": "STRH            R2, [R3,#0xA]"
+          },
+          {
+            "ea": "0x3b04c",
+            "bytes": "001090e5",
+            "asm": "LDR             R1, [R0]"
+          },
+          {
+            "ea": "0x3b050",
+            "bytes": "000095e5",
+            "asm": "LDR             R0, [R5]"
+          },
+          {
+            "ea": "0x3b054",
+            "bytes": "f54c00eb",
+            "asm": "BL              Tact_KillUnit"
+          }
+        ]
+      },
+      {
+        "call": "0x4ab10",
+        "raw": [
+          {
+            "ea": "0x4aafc",
+            "bytes": "ba20c311",
+            "asm": "STRHNE          R2, [R3,#0xA]"
+          },
+          {
+            "ea": "0x4ab00",
+            "bytes": "300096e5",
+            "asm": "LDR             R0, [R6,#0x30]"
+          },
+          {
+            "ea": "0x4ab04",
+            "bytes": "ebfcffeb",
+            "asm": "BL              Unit_bIsOperative"
+          },
+          {
+            "ea": "0x4ab08",
+            "bytes": "301096e5",
+            "asm": "LDR             R1, [R6,#0x30]"
+          },
+          {
+            "ea": "0x4ab0c",
+            "bytes": "000098e5",
+            "asm": "LDR             R0, [R8]"
+          },
+          {
+            "ea": "0x4ab10",
+            "bytes": "460e00eb",
+            "asm": "BL              Tact_KillUnit"
+          }
+        ]
+      },
+      {
+        "call": "0x4ab40",
+        "raw": [
+          {
+            "ea": "0x4ab2c",
+            "bytes": "0410a0e1",
+            "asm": "MOV             R1, R4"
+          },
+          {
+            "ea": "0x4ab30",
+            "bytes": "ff3010e2",
+            "asm": "ANDS            R3, R0, #0xFF"
+          },
+          {
+            "ea": "0x4ab34",
+            "bytes": "0030a013",
+            "asm": "MOVNE           R3, #0"
+          },
+          {
+            "ea": "0x4ab38",
+            "bytes": "ba30c411",
+            "asm": "STRHNE          R3, [R4,#0xA]"
+          },
+          {
+            "ea": "0x4ab3c",
+            "bytes": "000098e5",
+            "asm": "LDR             R0, [R8]"
+          },
+          {
+            "ea": "0x4ab40",
+            "bytes": "3a0e00eb",
+            "asm": "BL              Tact_KillUnit"
+          }
+        ]
+      },
+      {
+        "call": "0x5330c",
+        "raw": [
+          {
+            "ea": "0x532f8",
+            "bytes": "b43185e5",
+            "asm": "STR             R3, [R5,#0x1B4]"
+          },
+          {
+            "ea": "0x532fc",
+            "bytes": "030000ea",
+            "asm": "B               loc_53310"
+          },
+          {
+            "ea": "0x53300",
+            "bytes": "0510a0e1",
+            "asm": "MOV             R1, R5"
+          },
+          {
+            "ea": "0x53304",
+            "bytes": "bab0c5e1",
+            "asm": "STRH            R11, [R5,#0xA]"
+          },
+          {
+            "ea": "0x53308",
+            "bytes": "0a00a0e1",
+            "asm": "MOV             R0, R10"
+          },
+          {
+            "ea": "0x5330c",
+            "bytes": "47ecffeb",
+            "asm": "BL              Tact_KillUnit"
+          }
+        ]
+      },
+      {
+        "call": "0x53cb8",
+        "raw": [
+          {
+            "ea": "0x53ca4",
+            "bytes": "0400a0e1",
+            "asm": "MOV             R0, R4"
+          },
+          {
+            "ea": "0x53ca8",
+            "bytes": "a93bffeb",
+            "asm": "BL              UnitList_ForEachRefresh"
+          },
+          {
+            "ea": "0x53cac",
+            "bytes": "090100ea",
+            "asm": "B               def_52B24"
+          },
+          {
+            "ea": "0x53cb0",
+            "bytes": "0910a0e1",
+            "asm": "MOV             R1, R9"
+          },
+          {
+            "ea": "0x53cb4",
+            "bytes": "0a00a0e1",
+            "asm": "MOV             R0, R10"
+          },
+          {
+            "ea": "0x53cb8",
+            "bytes": "dce9ffeb",
+            "asm": "BL              Tact_KillUnit"
+          }
+        ]
+      }
+    ]
+  }
+}

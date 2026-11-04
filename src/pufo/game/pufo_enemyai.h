@@ -159,6 +159,8 @@ typedef struct EnemyAiActCtx {
     MapCell *(*pfnLookupCell)(i32 nX, i32 nY, i32 nLayer, void *pUser);
 
     TactState     *pState;          /* pMapTactical @ 0x157198 */
+    i32           *pnShotCount;     /* Map+0x2C */
+    Soldier      **ppThrowTarget;   /* Map+0x150F0 */
     const MapGeom *pGeom;
     TactItem     **ppSelWeapon;     /* Map.pSelWeapon @ Map+0x48 (0x113A00) */
     i32           *pnActionMode;    /* Map.nActionMode @ Map+0x4C (0x113A04) */
@@ -305,6 +307,8 @@ typedef struct EnemyAiTickCtx {
 
     MapGeom          geom;             /* nMapDimX @ 0x1511B, nMapDimY @ 0x1511C */
     TactState       *pQueue;           /* pMapTactical @ 0x157198 */
+    i32             *pnShotCount;      /* Map+0x2C */
+    Soldier        **ppThrowTarget;    /* Map+0x150F0 */
     TactSelectCtx   *pSelect;          /* Tact_SelectUnit @ 0x2c6c4 */
     const TurnHooks *pTurnHooks;       /* handed to Tact_EndEnemyTurn @ 0x4cb74 */
     Soldier        **apEnemyUnits;     /* Map_apEnemyUnits @ 0x128B84 */

@@ -3,6 +3,7 @@
  * Tact_TraceProjectileArc @ 0x2fc38, Tact_SimulateThrowArc @ 0x3102c,
  * Unit_RollChance @ 0x25e6c. */
 #include "game/pufo_ballist.h"
+#include "game/pufo_combat.h"
 #include "game/pufo_los.h"
 #include "game/pufo_mapcell.h"
 #include "game/pufo_unit.h"
@@ -20,6 +21,84 @@ static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
 static inline void CheckNear(const char *pWhat, double dGot, double dWant)
 {
     TestNear(pWhat, dGot, dWant);
+}
+
+static MapCell *CellLookup(i32 nX, i32 nY, i32 nLayer, void *pUser);
+
+typedef struct BallistFovProbe {
+    i32 nOriginX;
+    i32 nOriginY;
+    i32 nCalls;
+} BallistFovProbe;
+
+static void BallistRecordFov(void *pUser, u32 *paWindow,
+                             i32 nColBase, i32 nRowBase,
+                             i32 nOriginX, i32 nOriginY, i32 nLayer,
+                             i32 nRange, i32 nCostMode, u16 nWeaponSortKey)
+{
+    BallistFovProbe *pProbe = (BallistFovProbe *)pUser;
+    (void)paWindow;
+    (void)nColBase;
+    (void)nRowBase;
+    (void)nLayer;
+    (void)nRange;
+    (void)nCostMode;
+    (void)nWeaponSortKey;
+    pProbe->nOriginX = nOriginX;
+    pProbe->nOriginY = nOriginY;
+    ++pProbe->nCalls;
+}
+
+static void BallistNoAreaFire(void *pUser)
+{
+    (void)pUser;
+}
+
+static void TestArcOriginOwnerToFov(const MapGeom *pGeom,
+                                    const LosTables *pTables)
+{
+    AimState expectedAim = {0};
+    AimState liveAim = {0};
+    ShotTrace expectedTrace;
+    i32 nMapOriginX = -31;
+    i32 nMapOriginY = -32;
+    BallistFovProbe fov = {0};
+    ShotHooks hooks = { BallistRecordFov, BallistNoAreaFire, &fov };
+    CombatCtx combat = {0};
+    UnitRosters rosters = {0};
+    ObjectRecFull weapon = {0};
+    u32 aHits[PUFO_SPLASH_DWORDS] = {0};
+    ShotOutcome outcome = {0};
+
+    (void)Tact_TraceProjectileArc(&expectedAim, pTables, pGeom, CellLookup,
+                                  NULL, NULL, NULL,
+                                  100, 100, 0, 116, 116, 0, 0, &expectedTrace);
+    liveAim.pnShotOriginX = &nMapOriginX;
+    liveAim.pnShotOriginY = &nMapOriginY;
+    (void)Tact_TraceProjectileArc(&liveAim, pTables, pGeom, CellLookup,
+                                  NULL, NULL, NULL,
+                                  100, 100, 0, 116, 116, 0, 0, NULL);
+
+    Check("the arc advances from its launch cell",
+          expectedTrace.nOrigX != expectedAim.nOriginX / PUFO_VOX_PER_CELL_X
+          && expectedTrace.nOrigY != expectedAim.nOriginY / PUFO_VOX_PER_CELL_Y);
+    Check("a NULL-output arc still stores its last sample in the live Map origin",
+          nMapOriginX == expectedTrace.nOrigX
+          && nMapOriginY == expectedTrace.nOrigY);
+
+    combat.pfnLookup = CellLookup;
+    combat.pGeom = pGeom;
+    combat.nShotOriginX = -41;
+    combat.nShotOriginY = -42;
+    combat.pnShotOriginX = &nMapOriginX;
+    combat.pnShotOriginY = &nMapOriginY;
+    weapon.bFireType = 1;
+    weapon.uFirePower = 1;
+    Combat_ResolveShot(&combat, &hooks, &rosters,
+                       1, 1, 0, 0, &weapon, aHits, NULL, &outcome);
+    Check("the next resolver FOV reads the origin left by the NULL-output arc",
+          fov.nCalls == 1 && fov.nOriginX == expectedTrace.nOrigX
+          && fov.nOriginY == expectedTrace.nOrigY);
 }
 
 /* True when nGot is what _dtoi(trig(k) * dMag) gives for some whole radian
@@ -252,6 +331,9 @@ int main(void)
         aim.padMtY = NULL;
         aim.padMtZ = NULL;
     }
+
+    printf("projectile arc owner to shot FOV\n");
+    TestArcOriginOwnerToFov(&geom, &empty);
 
     printf("throw solver\n");
     Tact_SimulateThrowArc(&arc, &geom, NULL, NULL, 0, 0, 0, 32, 0, 0);

@@ -31,10 +31,7 @@ void UiControl_FreePads(UiControl *pCtl)
     for (i32 i = 0; i < PUFO_CONTROL_PADS; ++i) {
         if (pCtl->apPads[i] != NULL) {
             PadImage_FreeData(pCtl->apPads[i]);
-            /* The original operator-deletes the PadImage next. The port cannot free
-             * it here because the PadImage may be caller-owned; the caller releases
-             * the struct. FreeData releases the pixel data, which is the part that
-             * lives inside the pad. */
+            free(pCtl->apPads[i]); /* raw 0x1A2F0 / 0x1A314 / 0x1A338 */
             pCtl->apPads[i] = NULL;
         }
     }
@@ -219,8 +216,9 @@ void UiControl_SetPosMode(UiControl *pCtl, i16 x, i16 y, u8 nMode)
 /* UiControl_LoadPads @ 0x1a604. Free whatever the three pad slots hold, null them, then load
  * each non-empty descriptor name into a fresh PadImage in mode 1 (the mode is fixed at 1 here,
  * not the control's mode). Deviation: the original runs PadImage_Load on the allocation even
- * when operator new returned null; the port skips the load when the pad is NULL. The original
- * returns the third strcmp's value; no caller uses it, so the port returns void. */
+ * when operator new returned null; the port skips the load when the pad is NULL. Raw R0 is zero
+ * when the third name is empty, and otherwise is the third PadImage_Load result. Setup discards
+ * that result, so the port returns void. */
 void UiControl_LoadPads(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2)
 {
     const char *const apsz[3] = { psz0, psz1, psz2 };
@@ -267,13 +265,13 @@ void UiControl_Setup(UiControl *pCtl, i16 xBase, i16 yBase, const UiControlDesc 
 }
 
 void EmptyBtn_OnClick(void (*pfnPlaySample)(i32 nSample, void *pUser),
-                      void (*pfnClearDrawMode)(void *pUser), void *pUser)
+                      void (*pfnClearListMode)(void *pUser), void *pUser)
 {
     if (pfnPlaySample != NULL) {
         pfnPlaySample(PUFO_CONTROL_SAMPLE_CLICK, pUser);
     }
-    if (pfnClearDrawMode != NULL) {
-        pfnClearDrawMode(pUser);
+    if (pfnClearListMode != NULL) {
+        pfnClearListMode(pUser);
     }
 }
 

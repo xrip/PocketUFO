@@ -1,0 +1,152 @@
+# Load the proven two-base checkpoint, build Stores through both normal screens,
+# then let the one-hour clock finish construction and recover the pending loot.
+load 1
+state second_base_loaded
+strategystate second_base_loaded
+click 180 266
+tick 2
+click 220 43
+tick 2
+click 60 309
+tick 20
+strategystate stores_list_open
+click 18 285
+tick 2
+click 15 306
+tick 2
+strategystate stores_selected
+dump strategy_transfer_stores_selected.ppm
+press 106 68
+tick 1
+release
+tick 2
+press 106 68
+tick 1
+release
+tick 2
+strategystate stores_placed
+grid 1
+dump strategy_transfer_stores_placed.ppm
+click 231 236
+tick 2
+strategystate stores_first_close
+click 231 236
+tick 2
+strategystate stores_closed_to_screen1
+# Add a real Stores cell to base 0 so recovered loot and later production have capacity.
+click 220 15
+tick 2
+click 60 309
+tick 20
+strategystate base0_stores_list_open
+click 18 285
+tick 2
+click 15 306
+tick 2
+strategystate base0_stores_selected
+press 42 100
+tick 1
+release
+tick 2
+press 42 100
+tick 1
+release
+tick 2
+strategystate base0_stores_placed
+grid 0
+dump strategy_transfer_base0_stores_placed.ppm
+click 231 236
+tick 2
+strategystate base0_stores_first_close
+click 231 236
+tick 2
+strategystate base0_stores_closed_to_screen1
+click 201 11
+tick 2
+strategystate construction_map
+click 60 308
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 120 169
+tick 2
+strategystate transfer_contact_cancelled
+lines
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 2
+lines
+click 29 186
+strategystate transfer_store_completion_acknowledged
+lines
+click 180 266
+tick 2
+click 220 15
+tick 2
+strategystate victory_materials_at_base0
+grid 0
+click 220 43
+tick 2
+strategystate transfer_setup_base1_selected
+click 201 11
+tick 2
+strategystate transfer_setup_ready
+grid 1
+dump strategy_transfer_setup_ready.ppm
+save 1
+state transfer_setup_saved

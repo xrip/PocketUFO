@@ -744,7 +744,7 @@ static void TestViewportGuide(void)
     g.bActionReady = 0;
     pPix[15 * 240 + 15] = 0;
     MapView_DrawViewportGuide(&g);
-    CheckEqI32((i32)pPix[15 * 240 + 15], 0, "no action phase suppresses the guide");
+    CheckEqI32((i32)pPix[15 * 240 + 15], 0, "showborder off suppresses the guide");
     g.bActionReady = 1;
 
     g.bPlayerInputEnabled = 0;
@@ -815,12 +815,11 @@ static void TestViewportGuide(void)
 
 static void TestIsoConstants(void)
 {
-    printf("iso projection constants @ 0x37098 / 0x370e8\n");
-
-    Math_StoreSqrtConst();
-    Math_StoreAtan2Const();
+    printf("iso projection constants at process start (CRT stores 0x37098 / 0x370e8)\n");
 
     /* Asserted as derived facts rather than restatements of the calls. */
+    Check(g_dblIsoScale != 0.0 && g_dblIsoAngle != 0.0,
+          "both CRT-stored projection values are present before any draw test");
     Check(fabs(g_dblIsoScale - 1.1180339887498949) < 1e-12, "scale is sqrt(320)/16, which is sqrt(5)/2");
     Check(fabs(tan(g_dblIsoAngle) - 2.0) < 1e-12,
           "the angle's tangent is 2, matching the 32 by 16 iso tile");
@@ -839,9 +838,6 @@ static void TestHeightGlyph(void)
     memset(&iso, 0, sizeof(iso));
     memset(&gate, 0, sizeof(gate));
     memset(&bases, 0, sizeof(bases));
-
-    Math_StoreSqrtConst();
-    Math_StoreAtan2Const();
 
     /* The glyph is drawn with palette 1, and InstallProbeFont inks slot 0. Swap that: ink slot 1 and
      * clear slot 0, so ink can only appear if palette 1 really was the one passed through. */
@@ -1005,9 +1001,6 @@ static void ArrowFixture_Reset(void)
 static void TestFacingArrow(void)
 {
     printf("MapView_DrawUnitFacingArrow @ 0x1b7bc\n");
-
-    Math_StoreSqrtConst();
-    Math_StoreAtan2Const();
 
     /* --- the gate all three branches share --- */
     ArrowFixture_Reset();
@@ -1337,9 +1330,6 @@ static void LayerFixture_Reset(void)
 static void TestIsoLayer(void)
 {
     printf("MapView_DrawIsoLayer @ 0x21e2c\n");
-
-    Math_StoreSqrtConst();
-    Math_StoreAtan2Const();
 
     /* --- the iso offsets and the loop end state --- */
     LayerFixture_Reset();
@@ -2285,6 +2275,7 @@ int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
+    TestIsoConstants(); /* verify CRT initialization before installing fixtures or drawing */
     InstallProbeFont();
 
     TestWallPals();
@@ -2295,7 +2286,6 @@ int main(void)
     TestSelectMarkers();
     TestHpGlyphs();
     TestViewportGuide();
-    TestIsoConstants();
     TestHeightGlyph();
     TestFacingArrow();
     TestIsoLayer();

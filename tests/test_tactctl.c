@@ -5,6 +5,7 @@
  * onto named Map fields. The test asserts the resolved behaviour, not the alias.
  */
 #include "game/pufo_tactctl.h"
+#include "game/pufo_clock.h"
 #include "game/pufo_tactui.h"
 #include "game/pufo_unit.h"
 #include "game/pufo_ship.h"   /* Ship.bAtBase for the mode 1 rule */
@@ -124,13 +125,21 @@ static void TestSpeed(void)
 
 static void TestPause(void)
 {
-    GameClock clock;
+    GameTime clock;
+    i32 nDayBefore;
 
     printf("GameTime_Pause\n");
     memset(&clock, 0, sizeof(clock));
+    clock.nTotalSec = 27524520;
+    clock.nLastTickHourSec = 27522000;
+    (void)GameTime_Decode(&clock);
+    nDayBefore = clock.nDay;
     Check(!clock.bPaused, "  not paused initially");
     GameTime_Pause(&clock);
     Check(clock.bPaused, "  paused after the call");
+    CheckEqI32(clock.nTotalSec, 27524520, "  strategic pause preserves total seconds");
+    CheckEqI32(clock.nLastTickHourSec, 27522000, "  strategic pause preserves the hourly stamp");
+    CheckEqI32(clock.nDay, nDayBefore, "  strategic pause preserves the decoded date");
 }
 
 /* MapView_SetCamOffset @ 0x276f0.
@@ -264,8 +273,8 @@ static void TestFacingScratch(void)
     CheckEqI32(scratch.bStoredFacing, 7, "  facing stored with no count cells");
 }
 
-/* Tact_ScanVictoryTiles @ 0x33264. Both gates must hold, and the 2x2 probe stops at
- * the first cell with no items. */
+/* Tact_ScanVictoryTiles @ 0x33264. Both raw gates must hold, and the injected probe stops at
+ * the first true result. The production world probe maps that result to a NULL ceiling sprite. */
 typedef struct VictoryProbe {
     i32  nCalls;
     i32  anX[4];
@@ -871,25 +880,26 @@ static void TestSelectUnit(void)
 
 static Ship    s_aTeamShip[2];
 static Ship   *s_apTeamShip[2];
-static Soldier s_aTeamUnit[4];
-static Soldier *s_apTeamUnit[4];
+static Soldier s_aTeamUnit[5];
+static Soldier *s_apTeamUnit[5];
 static Soldier *s_aTeamXcom[30];
 static u8      s_aTeamDeploy[104 * 3];
 static u8      g_nTeamCount;
 
-/* Four soldiers, ordered so that each mode stops at a different place.
+/* Five soldiers, ordered for the mode-1 base checks and the craft-mode interleave.
  *
  *   0: base 1, aboard craft 0
  *   1: base 1, aboard nothing (255)
  *   2: base 1, aboard craft 1
  *   3: base 255, aboard nothing
+ *   4: base 1, aboard craft 0
  *
  * nUnk436 and uInvBurden are sentinels: nUnk436 is cleared for every soldier the walk REACHES, and
- * uInvBurden is rewritten to 1 only for soldiers that made it into the roster. Together they separate
- * "visited then rejected" from "never visited". */
+ * uInvBurden is rewritten to 1 only for soldiers that made it into the roster. For modes 0/2/3,
+ * soldier 2 is changed to craft 0 so the walk sees accepted/rejected/accepted/rejected. */
 static void TeamFixtureReset(void)
 {
-    for (i32 i = 0; i < 4; ++i) {
+    for (i32 i = 0; i < 5; ++i) {
         memset(&s_aTeamUnit[i], 0, sizeof(s_aTeamUnit[i]));
         s_aTeamUnit[i].nUnitType  = 0;   /* not large, so placement stays single-cell */
         s_aTeamUnit[i].nUnk436    = 0x7A;
@@ -908,6 +918,7 @@ static void TeamFixtureReset(void)
     s_aTeamUnit[1].nKind = 1;   s_aTeamUnit[1].bUnk183 = 255;
     s_aTeamUnit[2].nKind = 1;   s_aTeamUnit[2].bUnk183 = 1;
     s_aTeamUnit[3].nKind = 255; s_aTeamUnit[3].bUnk183 = 255;
+    s_aTeamUnit[4].nKind = 1;   s_aTeamUnit[4].bUnk183 = 0;
 
     memset(s_aTeamXcom, 0, sizeof(s_aTeamXcom));
     memset(s_aTeamDeploy, 0, sizeof(s_aTeamDeploy));
@@ -932,7 +943,7 @@ static void TeamFixtureReset(void)
 
 static i32 TeamRunCase(TactTeamSelectEnv *pEnv)
 {
-    for (i32 i = 0; i < 4; ++i) {
+    for (i32 i = 0; i < 5; ++i) {
         s_aTeamUnit[i].nUnk436    = 0x7A;
         s_aTeamUnit[i].uInvBurden = 99;
         s_aTeamUnit[i].bStatus    = 5;
@@ -946,13 +957,21 @@ static i32 TeamRunCase(TactTeamSelectEnv *pEnv)
     return Tact_SelectTeamUnits(pEnv);
 }
 
+static u8 Spawn_HookWeight(TactItem *pItem, void *pUser);
+static u8 Spawn_HookTwoHanded(TactItem *pItem, void *pUser);
+static u8 Spawn_HookAmmoCap(TactItem *pItem, void *pUser);
+static u8 Spawn_HookAmmoWeight(i32 nIndex, void *pUser);
+
 static void TestSelectTeamUnits(void)
 {
     TactCursor    cursor;
     MapCursorPos  pos;
     StatusStack   stack;
     StatusHooks   hooks = { Sel_NotBusy, Sel_NoRepaint, Sel_NoRender, NULL };
-    InvStatHooks  inv = { NULL, NULL, NULL, NULL, NULL };
+    /* This fixture has no object table. Use valid zero-weight hooks for the empty-slot markers
+     * Unit_ResetBattleState seeds into backpack slots 5 and 6. */
+    InvStatHooks  inv = { Spawn_HookWeight, Spawn_HookTwoHanded, Spawn_HookAmmoCap,
+                          Spawn_HookAmmoWeight, NULL };
     TactSelectCtx selCtx;
     TactTeamSelectEnv env;
     Soldier      *pSel = NULL;
@@ -1017,7 +1036,7 @@ static void TestSelectTeamUnits(void)
           "  a zero layer count skips the table and anchors at (0, 0, 0)");
 
     /* Mode 1 is the base-deploy rule: nKind must equal the selected base, and the soldier's craft must
-     * either be absent (255) or sitting at a base. Soldier 3 has the wrong base, so the walk stops there. */
+     * either be absent (255) or sitting at a base. Soldier 3 has the wrong base and is skipped. */
     env.bMissionMode = 1;
     env.nMapLayers = 2;
     CheckEqI32(TeamRunCase(&env), 3, "  mode 1 takes the three soldiers of the selected base");
@@ -1025,31 +1044,77 @@ static void TestSelectTeamUnits(void)
           s_aTeamXcom[2] == &s_aTeamUnit[2] && s_aTeamXcom[3] == NULL,
           "  in roster order, with nothing past them");
     CheckEqI32(s_aTeamUnit[3].nUnk436, 0,
-               "  the rejected soldier is still visited first: 0x1B4 is cleared before any test");
+               "  the rejected soldier is visited: 0x1B4 is cleared before its test");
 
-    /* Craft 1 is not at base, so soldier 2 is reached, cleared, and then rejected. */
+    /* Craft 1 is not at base, so soldier 2 is reached and rejected; soldier 3 is still visited. */
     s_aTeamShip[1].bAtBase = 0;
     CheckEqI32(TeamRunCase(&env), 2, "  a soldier aboard a craft that is not at base is rejected");
     CheckEqI32(s_aTeamUnit[2].nUnk436, 0,
                "  he is still visited, so his 0x1B4 field is cleared");
-    CheckEqI32(s_aTeamUnit[3].nUnk436, 0x7A, "  and the walk still stops at him");
+    CheckEqI32(s_aTeamUnit[3].nUnk436, 0, "  and the later wrong-base soldier is visited too");
     s_aTeamShip[1].bAtBase = 1;
 
-    /* Modes 0, 2 and 3 all compare bUnk183 against the launch craft. */
+    /* Base-defense mode also skips rejected soldiers. Put a wrong-base soldier,
+     * an out-craft soldier, and an away-craft soldier before two eligible rows. */
+    TeamFixtureReset();
+    env.nSoldierCount = 5;
+    env.bMissionMode = 1;
+    env.nSelectedBase = 1;
+    s_aTeamUnit[0].nKind = 2; s_aTeamUnit[0].bUnk183 = 255;
+    s_aTeamUnit[1].nKind = 1; s_aTeamUnit[1].bUnk183 = 254;
+    s_aTeamUnit[2].nKind = 1; s_aTeamUnit[2].bUnk183 = 1;
+    s_aTeamUnit[3].nKind = 1; s_aTeamUnit[3].bUnk183 = 255;
+    s_aTeamUnit[4].nKind = 1; s_aTeamUnit[4].bUnk183 = 0;
+    s_aTeamShip[1].bAtBase = 0;
+    CheckEqI32(TeamRunCase(&env), 2,
+               "  mode 1 skips wrong-base, out-craft and away-craft soldiers, then takes eligible crew");
+    Check(s_aTeamXcom[0] == &s_aTeamUnit[3] && s_aTeamXcom[1] == &s_aTeamUnit[4] &&
+          s_aTeamXcom[2] == NULL, "  mode 1 keeps later eligible soldiers in roster order");
+    CheckEqI32(s_aTeamUnit[0].nUnk436, 0, "  mode 1 visits the wrong-base soldier");
+    CheckEqI32(s_aTeamUnit[1].nUnk436, 0, "  mode 1 visits the out-craft soldier");
+    CheckEqI32(s_aTeamUnit[2].nUnk436, 0, "  mode 1 visits the away-craft soldier");
+    CheckEqI32(s_aTeamUnit[4].uInvBurden, 1, "  mode 1 processes the later craft-at-base soldier");
+    env.nSoldierCount = 4;
+    TeamFixtureReset();
+
+    /* Modes 0, 2 and 3 all compare bUnk183 against the launch craft. A rejected
+     * soldier between two matches must not hide the later assigned soldier. */
+    s_aTeamUnit[2].bUnk183 = 0;
     env.bMissionMode = 0;
     env.nCraftIndex = 0;
-    CheckEqI32(TeamRunCase(&env), 1, "  mode 0 takes only soldiers aboard craft 0");
+    CheckEqI32(TeamRunCase(&env), 2, "  mode 0 skips an unassigned soldier and takes later craft-0 crew");
+    Check(s_aTeamXcom[0] == &s_aTeamUnit[0] && s_aTeamXcom[1] == &s_aTeamUnit[2] &&
+          s_aTeamXcom[2] == NULL, "  mode 0 keeps accepted soldiers in roster order");
+    CheckEqI32(s_aTeamUnit[1].nUnk436, 0, "  mode 0 visits and rejects the interleaved unassigned soldier");
+    CheckEqI32(s_aTeamUnit[2].uInvBurden, 1, "  mode 0 processes the later assigned soldier");
+    CheckEqI32(s_aTeamUnit[3].nUnk436, 0, "  mode 0 continues past the second rejection");
+
     env.bMissionMode = 3;
-    CheckEqI32(TeamRunCase(&env), 1, "  mode 3 uses the same rule");
+    CheckEqI32(TeamRunCase(&env), 2, "  mode 3 also skips rejection and keeps later craft-0 crew");
+    Check(s_aTeamXcom[0] == &s_aTeamUnit[0] && s_aTeamXcom[1] == &s_aTeamUnit[2] &&
+          s_aTeamXcom[2] == NULL, "  mode 3 keeps accepted soldiers in roster order");
+
     env.bMissionMode = 2;
-    env.nCraftIndex = 255;
+    env.nCraftIndex = 0;
     pSel = NULL;
-    CheckEqI32(TeamRunCase(&env), 0, "  mode 2 with craft 255 takes nobody");
+    CheckEqI32(TeamRunCase(&env), 2, "  mode 2 also takes later craft-0 crew after a rejected soldier");
+    Check(s_aTeamXcom[0] == &s_aTeamUnit[0] && s_aTeamXcom[1] == &s_aTeamUnit[2] &&
+          s_aTeamXcom[2] == NULL, "  mode 2 keeps accepted soldiers in roster order");
+    CheckEqI32(s_aTeamUnit[1].nUnk436, 0, "  mode 2 visits the rejected soldier");
+    CheckEqI32(s_aTeamUnit[2].uInvBurden, 1, "  mode 2 processes the later assigned soldier");
+    CheckEqI32(s_aTeamUnit[3].nUnk436, 0, "  mode 2 continues through the later rejection");
+
+    env.nCraftIndex = 255;
+    CheckEqI32(TeamRunCase(&env), 2, "  mode 2 can also select both unassigned soldiers");
+    Check(s_aTeamXcom[0] == &s_aTeamUnit[1] && s_aTeamXcom[1] == &s_aTeamUnit[3] &&
+          s_aTeamXcom[2] == NULL, "  mode 2 continues after an assigned-craft mismatch");
+    Check(pSel == &s_aTeamUnit[1], "  the first accepted craft-255 soldier is selected");
+    s_aTeamUnit[2].bUnk183 = 1;
+    env.nCraftIndex = 2;
+    pSel = NULL;
+    CheckEqI32(TeamRunCase(&env), 0, "  mode 2 with no matching craft selects nobody");
     Check(pSel == NULL, "  an empty roster selects no unit");
-    CheckEqI32(s_aTeamUnit[1].uInvBurden, 99, "  and recalculates nobody");
-    Check(s_aTeamUnit[1].nUnk436 == 0x7A && s_aTeamUnit[2].nUnk436 == 0x7A &&
-          s_aTeamUnit[3].nUnk436 == 0x7A,
-          "  rejection at the first soldier leaves every later soldier completely untouched");
+    CheckEqI32(s_aTeamUnit[3].nUnk436, 0, "  the selector visits later soldiers after each rejection");
     env.nCraftIndex = 0;
 
     /* Anything above 3 accepts without looking at the soldier. */
@@ -1074,7 +1139,8 @@ static void TestSelectTeamUnits(void)
     CheckEqI32(s_aTeamUnit[0].uHp, 78, "  HP from stat 1");
     CheckEqI32(s_aTeamUnit[0].uStunOrArmor, 12, "  stun or armour from stat 9");
     CheckEqI32(s_aTeamUnit[0].uInvBurden, 1, "  inventory stats recalculated");
-    CheckEqI32(s_aTeamUnit[3].uInvBurden, 99, "  the unprocessed soldier is not recalculated");
+    CheckEqI32(s_aTeamUnit[3].nUnk436, 0, "  the later rejected soldier is still visited");
+    CheckEqI32(s_aTeamUnit[3].uInvBurden, 99, "  a rejected soldier is not inventory-recalculated");
 
     /* The first roster entry is selected, which moves the cursor onto the cell it was placed on. */
     Check(pSel == &s_aTeamUnit[0], "  the first roster entry is selected through Tact_SelectUnit");

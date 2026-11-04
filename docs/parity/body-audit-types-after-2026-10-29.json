@@ -1,0 +1,109 @@
+{
+  "view": {
+    "name": "UiLineListView",
+    "ordinal": 210,
+    "size": 3404,
+    "accessed_lower_bound": 3401,
+    "members": [
+      {
+        "name": "abLineFlags",
+        "offset": 0,
+        "bytes": 200,
+        "type": "unsigned __int8[200]"
+      },
+      {
+        "name": "anColor",
+        "offset": 200,
+        "bytes": 3200,
+        "type": "unsigned __int32[200][4]"
+      },
+      {
+        "name": "nLineCount",
+        "offset": 3400,
+        "bytes": 1,
+        "type": "unsigned __int8"
+      },
+      {
+        "name": "gap_D49",
+        "offset": 3401,
+        "bytes": 3,
+        "type": "unsigned __int8[3]"
+      }
+    ]
+  },
+  "functions_after": [
+    {
+      "ea": "0xa0f80",
+      "type": "void *__fastcall(PtrArray *pArr)",
+      "decompiled": true
+    },
+    {
+      "ea": "0xa0f94",
+      "type": "void __fastcall(PtrArray *pArr, int nIndex, void *pItem)",
+      "decompiled": true
+    },
+    {
+      "ea": "0xa1054",
+      "type": "void __fastcall(PtrArray *pArr, int nIndex, int nCount)",
+      "decompiled": true
+    },
+    {
+      "ea": "0xa1120",
+      "type": "void __fastcall(PtrArray *pArr)",
+      "decompiled": true
+    },
+    {
+      "ea": "0xa1130",
+      "type": "StrategItem *__fastcall(const PtrArray *pArr, int i)",
+      "decompiled": true
+    },
+    {
+      "ea": "0xa1154",
+      "type": "int __fastcall(const PtrArray *pArr)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x3e434",
+      "type": "void __fastcall(PtrArray *pArr)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x5a294",
+      "type": "int __fastcall(UiLineListView *pLines, unsigned __int8, char, unsigned __int8, unsigned __int8, unsigned __int8, unsigned __int8)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x5a334",
+      "type": "char __fastcall(const UiLineListView *pLines, int nLine)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x5a33c",
+      "type": "int __fastcall(const UiLineListView *pLines, int nLine, int nSlot)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x5a394",
+      "type": "int __fastcall(UiLineListView *pLines, char, unsigned __int8, unsigned __int8, unsigned __int8, unsigned __int8)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x5a3dc",
+      "type": "int __fastcall(UiLineListView *pLines, int)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x5a450",
+      "type": "int __fastcall(UiLineListView *pLines, unsigned __int8, char, unsigned __int8, unsigned __int8, unsigned __int8, unsigned __int8)",
+      "decompiled": true
+    }
+  ],
+  "ptrarray_layout_unchanged": true,
+  "visual_named_type_size": 7092,
+  "global_158890": {
+    "type": "#109",
+    "size": "BADSIZE",
+    "untouched": true
+  },
+  "saved": true
+}

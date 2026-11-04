@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-29",
+  "status": "completed_static_reviews_and_compiled_repairs",
+  "baseline_source_fingerprint": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF",
+  "runtime_executed": false,
+  "batches": [
+    {
+      "id": "geoscape-clock",
+      "owner": "/root/fire_burst_reset_impl",
+      "addresses": [
+        "0x5C56C",
+        "0x5CFD4",
+        "0x5D1BC",
+        "0x5D3BC",
+        "0x5D4E4",
+        "0x5D6AC",
+        "0x5D6C0"
+      ],
+      "report": ".workers/luna-body-geoscape-clock/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "fire-action",
+      "owner": "/root/soldier_item_wire_links",
+      "addresses": [
+        "0x50ADC"
+      ],
+      "report": ".workers/luna-body-fire-action/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "tactical-clock",
+      "owner": "/root/research_manufacture_connection",
+      "addresses": [
+        "0x27324",
+        "0x54130"
+      ],
+      "report": ".workers/luna-body-tactical-clock/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "native-app",
+      "owner": "/root/mission_return_connection_audit",
+      "addresses": [
+        "0x9FCC4",
+        "0xA03EC"
+      ],
+      "report": ".workers/luna-body-native-app/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "frame-present",
+      "owner": "/root",
+      "addresses": [
+        "0x22310",
+        "0x36818",
+        "0x27788",
+        "0x9EA7C"
+      ],
+      "report": "docs/parity/frame-fade-clock-review-2026-10-29.md",
+      "status": "compiled_repair_assertions_unrun"
+    },
+    {
+      "id": "blit-frontends",
+      "owner": "/root/tactical_load_reset_regression",
+      "report": ".workers/luna-body-blit-frontends/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "startup-loading-modal",
+      "owner": "/root/mission_return_connection_audit",
+      "report": "docs/parity/loading-modal-review-2026-10-29.md",
+      "status": "compiled_repair_assertions_unrun"
+    }
+  ],
+  "compiled_candidate": "docs/parity/loading-modal-build-artifacts-2026-10-29.json"
+}

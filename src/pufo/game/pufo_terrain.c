@@ -91,7 +91,7 @@ const char g_aUfoModuleName[15][9] = {
     /* 14          */ {   0,   0,   0,   0,   0,   0,   0,   0,   0 }
 };
 
-/* g_aPlaneName @ 0xA6668: 3 names of 9 bytes, indexed nMissionType - 1. */
+/* g_aPlaneName @ 0xA6668: 3 names of 9 bytes, indexed Map_nMapLayers - 1. */
 const char g_aPlaneName[3][9] = {
     /*  0 plane    */ { 112, 108,  97, 110, 101,   0,   0,   0,   0 },
     /*  1 lightnin */ { 108, 105, 103, 104, 116, 110, 105, 110,   0 },
@@ -260,12 +260,12 @@ static const char *Terrain_UfoName(u8 nVariant, i32 nTier)
     return g_aUfoModuleName[nSlot];
 }
 
-static const char *Terrain_PlaneName(u8 nMissionType)
+static const char *Terrain_PlaneName(u8 nMapLayers)
 {
-    i32 nSlot = (i32)nMissionType - 1;
+    i32 nSlot = (i32)nMapLayers - 1;
 
     if (nSlot < 0 || nSlot >= (i32)(sizeof(g_aPlaneName) / sizeof(g_aPlaneName[0]))) {
-        return ""; /* deviation: mission type 0 makes the original index aPlane[-1] */
+        return ""; /* deviation: zero map layers makes the original index aPlane[-1] */
     }
     return g_aPlaneName[nSlot];
 }
@@ -497,7 +497,7 @@ static void Terrain_BuildNormal(MapTerrainEnv *pEnv, u8 *paGrid)
 
     /* The craft pad, loaded with nFlag 3 -- the same font base Map_PatchCraftSprites uses for the
      * craft sprites. Placement retries until the footprint lands on free grid cells. */
-    MapTemplate_Load(&tplPlane, Terrain_PlaneName(nType), 3);
+    MapTemplate_Load(&tplPlane, Terrain_PlaneName(*pEnv->pnMapLayers), 3);
     for (;;) {
         *pEnv->pPlaneTileX = (u8)Game_RandU16(
             (u16)(nDimX - Terrain_Tiles(MapTemplate_GetHeaderByte1(&tplPlane))));
@@ -944,6 +944,7 @@ void Map_BuildMissionTerrain(MapTerrainEnv *pEnv)
 
     Terrain_ClearCellFlags(pEnv);
 
+    pEnv->nCraftSprBase = Font_GetFlagSprBase(pEnv->pFont, 3);
     {
         CraftSpritePatchEnv craft = {
             pEnv->nCraftSprBase, pEnv->apCells, *pEnv->pnMapLayers,

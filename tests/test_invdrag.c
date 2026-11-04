@@ -46,6 +46,7 @@ static ObjectRec    g_ObjWide;   /* 2 x 2 footprint */
 static ObjectRec    g_ObjTall;   /* 1 x 3 footprint */
 static ObjectRec    g_aGroundObj[4];
 static MapCell      g_Cell;
+static u8           g_bInvNoTuCharge;
 
 static void Reset(void)
 {
@@ -462,6 +463,7 @@ static void ResetDrop(void)
     g_nModal = 0;
     g_nFreed = 0;
     g_nWeightCalls = 0;
+    g_bInvNoTuCharge = 0;
 
     for (i32 z = 0; z < 4; ++z) {
         for (i32 y = 0; y < 6; ++y) {
@@ -526,6 +528,7 @@ static InvDropCtx DropCtx(TactItem *pItem, i32 nRegion, i32 nSub0, i32 nSub1,
     memset(&c, 0, sizeof(c));
     c.pHit = &g_Hit;
     c.pUi = &g_Ui;
+    c.pbInvNoTuCharge = &g_bInvNoTuCharge;
     c.pSelUnit = &g_Unit;
     c.pSentinel = &g_Sentinel;
     c.nPtrX = 0;
@@ -610,7 +613,7 @@ static void SetupClip(TactItem **ppHand)
  * One 6,668-byte function. The anchor is Map_nInvDragOffX/Y + (pBank + 0x1044, pBank + 0x1048) + 10, the hit
  * test walks aInvHitRects and the first hit wins, and the charge is per region: pocket 0/1 cost 4 TU,
  * pocket 2/3 cost 5, hand 6, backpack 7, belt 8, the ground strip 5, an ammo split 6. The charge is skipped
- * when the Map + 2 latch is set or the hit region is the region the item already occupies. The refusal modals
+  * when Map+1 is set or the hit region is the region the item already occupies. Map+2 is separate. The refusal modals
  * are fixed triples: (160, 31, 1) for not enough time, (160, 45, 1) for a weapon already loaded, and
  * (200, 43, 2) when a priority weapon fills the other hand. The four drop tests below are the checks for this
  * address: which slot the item lands in, what the object's cargo column and the craft's total became, and
@@ -675,12 +678,21 @@ static void TestDropPocket(void)
     CheckEqI32(g_aModalX[0], 160, "  the time modal is at 160,31");
     CheckEqI32(g_aModalY[0], 31, "  with one button");
 
-    /* The latch makes every drop free, and a drop inside the source region too. */
+    /* Map+1 waives the cost. Map+2 is a separate action latch. */
     ResetDrop();
-    g_Ui.bActionLatch = 4;
+    g_bInvNoTuCharge = 1;
+    g_Unit.uTu = 0;
+    g_Ui.bActionLatch = 0;
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 30);
-    Check(Inv_HandlePointer(&c), "  a set latch still places the item");
-    CheckEqI32(g_Unit.uTu, 20, "  but charges nothing");
+    Check(Inv_HandlePointer(&c), "  Map+1 set and Map+2 clear still places the item");
+    CheckEqI32(g_Unit.uTu, 0, "  Map+1 skips the pocket TU check and debit");
+    CheckEqI32(g_nModal, 0, "  no low-TU modal is raised");
+
+    ResetDrop();
+    g_Ui.bActionLatch = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 30);
+    Check(Inv_HandlePointer(&c), "  Map+2 set does not block the pocket drop");
+    CheckEqI32(g_Unit.uTu, 20 - 4, "  Map+2 does not waive the Map+1-cleared charge");
 
     ResetDrop();
     c = DropCtx(&g_Item1x1, INV_REGION_POCKET0, 1, 0, 50, 30);
@@ -789,17 +801,28 @@ static void TestDropHands(void)
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
     Check(!Inv_HandlePointer(&c), "  a one-handed item cannot stack on a held item");
 
-    /* The clip load charges even without the region exemption, but the latch skips
-     * it entirely. */
+    /* Map+1 skips the clip charge. Map+2 does not. */
     ResetDrop();
     SetupItems();
     SetupClip(&g_Unit.pHandR);
     g_Item1x1.nAmmo = 2;
+    g_Unit.uTu = 0;
+    g_bInvNoTuCharge = 1;
+    g_Ui.bActionLatch = 0;
+    c = DropCtx(&g_Item1x1, INV_REGION_HAND_R, 0, 0, 130, 90);
+    Check(Inv_HandlePointer(&c), "  Map+1 lets a clip load proceed at zero TU");
+    CheckEqI32(g_Unit.uTu, 0, "  Map+1 skips both the TU check and debit");
+    CheckEqI32(g_Weapon.nAmmo, 2, "  the right-hand weapon took the clip");
+
+    ResetDrop();
+    SetupItems();
+    SetupClip(&g_Unit.pHandR);
+    g_Item1x1.nAmmo = 2;
+    g_Unit.uTu = PUFO_INV_TU_HAND;
     g_Ui.bActionLatch = 1;
     c = DropCtx(&g_Item1x1, INV_REGION_HAND_R, 0, 0, 130, 90);
-    Check(Inv_HandlePointer(&c), "  the latch exempts the clip load too");
-    CheckEqI32(g_Unit.uTu, 20, "  nothing was charged");
-    CheckEqI32(g_Weapon.nAmmo, 2, "  the right-hand weapon took the clip");
+    Check(Inv_HandlePointer(&c), "  Map+2 does not block a clip load with enough TU");
+    CheckEqI32(g_Unit.uTu, 0, "  the Map+1-cleared clip path still charges 6");
 }
 
 static void TestDropGrid(void)
@@ -947,14 +970,59 @@ static void TestDropSplit(void)
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
     Check(!Inv_HandlePointer(&c), "  a full left hand blocks the split");
 
-    /* The split tests uTu even when the latch is set. */
+    /* The split checks its TU minimum before its Map+1-gated debit. */
     ResetDrop();
+    SetupItems();
     g_Item1x1.nAmmo = 5;
+    g_Item1x1.nIndex = 6;
+    g_aObjById[6].nFootW = 1;
+    g_aObjById[6].nFootH = 1;
     g_Unit.uTu = 5;
     g_Ui.bActionLatch = 1;
     c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
-    Check(!Inv_HandlePointer(&c), "  the split still needs 6 time units with the latch set");
+    Check(!Inv_HandlePointer(&c), "  the split still needs 6 time units with only Map+2 set");
     CheckEqI32(g_aModalY[0], 31, "  and raises the time modal");
+
+    /* Map+1 does not skip the minimum check. */
+    ResetDrop();
+    SetupItems();
+    g_Item1x1.nAmmo = 5;
+    g_Item1x1.nIndex = 6;
+    g_aObjById[6].nFootW = 1;
+    g_aObjById[6].nFootH = 1;
+    g_Unit.uTu = 5;
+    g_bInvNoTuCharge = 1;
+    g_Ui.bActionLatch = 0;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(!Inv_HandlePointer(&c), "  Map+1 still needs 6 time units for the split");
+    CheckEqI32(g_aModalY[0], 31, "  Map+1 does not suppress the low-TU modal");
+
+    /* With enough TU, Map+1 skips only the debit. */
+    ResetDrop();
+    SetupItems();
+    g_Item1x1.nAmmo = 5;
+    g_Item1x1.nIndex = 6;
+    g_aObjById[6].nFootW = 1;
+    g_aObjById[6].nFootH = 1;
+    g_Unit.uTu = PUFO_INV_TU_SPLIT;
+    g_bInvNoTuCharge = 1;
+    g_Ui.bActionLatch = 0;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(Inv_HandlePointer(&c), "  Map+1 allows a funded split");
+    CheckEqI32(g_Unit.uTu, PUFO_INV_TU_SPLIT, "  the split takes no TU under Map+1");
+    CheckEqI32(g_nModal, 0, "  no low-TU modal is raised");
+
+    ResetDrop();
+    SetupItems();
+    g_Item1x1.nAmmo = 5;
+    g_Item1x1.nIndex = 6;
+    g_aObjById[6].nFootW = 1;
+    g_aObjById[6].nFootH = 1;
+    g_Unit.uTu = PUFO_INV_TU_SPLIT;
+    g_Ui.bActionLatch = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(Inv_HandlePointer(&c), "  Map+2 does not waive a funded split");
+    CheckEqI32(g_Unit.uTu, 0, "  the split charges 6 when Map+1 is clear");
 }
 
 static void TestDropRestore(void)
@@ -1089,6 +1157,8 @@ static TactEquipCtx EquipCtx(void)
     memset(&s_EquipDrop, 0, sizeof(s_EquipDrop));
     s_EquipDrop.pHit = &g_Hit;
     s_EquipDrop.pUi = &g_Ui;
+    g_bInvNoTuCharge = 1; /* Tact_InitMission runs the equipment pass with Map+1 set. */
+    s_EquipDrop.pbInvNoTuCharge = &g_bInvNoTuCharge;
     s_EquipDrop.pSelUnit = &g_Unit;
     s_EquipDrop.pSentinel = &g_Sentinel;
     s_EquipDrop.pHooks = &s_h;
@@ -1184,6 +1254,7 @@ static void TestEquipThirdPickup(void)
     Check(g_Unit.apBackpack[0] == &s_aEquipItem[18], "the third pickup stores rect 10 and lands in backpack slot 0,0");
     Check(!EquipListHas(&s_aEquipItem[18]), "and the item left the loose list");
     Check(g_Unit.apBelt[0] == NULL, "nothing goes to the belt, whose rects start at 16");
+    CheckEqI32(g_Unit.uTu, 20, "the init equipment drop is free while Map+1 is set");
 
     /* ORIGINAL BUG, reproduced: at 0x3C4C8 this pickup stores the unit, the item and the pointer, but
      * unlike the two slot passes and the ammo pickup it never zeroes nInvDragOffX/Y. It inherits the

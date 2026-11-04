@@ -1,0 +1,64 @@
+{
+  "sites": [
+    {
+      "ea": "0x93058",
+      "bytes": "b81cfeeb",
+      "asm": "BL              UiControl_BlitActivePad",
+      "op0_type": 7,
+      "op0_addr": "0x1a340"
+    },
+    {
+      "ea": "0x9305c",
+      "bytes": "150500ea",
+      "asm": "B               def_8C1B0",
+      "op0_type": 7,
+      "op0_addr": "0x944b8"
+    },
+    {
+      "ea": "0x8c1b0",
+      "bytes": "00f18f90",
+      "asm": "ADDLS           PC, PC, R0,LSL#2",
+      "op0_type": 1,
+      "op0_addr": "0x0"
+    }
+  ],
+  "label_ea": "0x944b8",
+  "target_raw": [
+    {
+      "ea": "0x944b8",
+      "asm": "LDR             R6, =MainMenu_nListMode"
+    },
+    {
+      "ea": "0x944bc",
+      "asm": "MOV             R5, #0"
+    },
+    {
+      "ea": "0x944c0",
+      "asm": "LDR             R0, [R6]"
+    },
+    {
+      "ea": "0x944c4",
+      "asm": "CMP             R0, #4"
+    },
+    {
+      "ea": "0x944c8",
+      "asm": "BNE             loc_94500"
+    },
+    {
+      "ea": "0x944cc",
+      "asm": "MOV             R0, #0x28 "
+    },
+    {
+      "ea": "0x944d0",
+      "asm": "STR             R5, [SP,#0x1C0+g2]"
+    },
+    {
+      "ea": "0x944d4",
+      "asm": "MOV             R2, #0x440"
+    },
+    {
+      "ea": "0x944d8",
+      "asm": "MOV             R12, #(anActionPhaseSave0_112 - 0x1139B8)"
+    }
+  ]
+}

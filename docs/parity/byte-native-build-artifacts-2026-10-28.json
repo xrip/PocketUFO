@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-28",
+  "source_files": 434,
+  "source_fingerprint": "913FF4FA2B6202CE93AEE6B9CFA84581CEF9AEB105BDE2E7D8C909DA2599B9F1",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-byte-native-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "8D4D564A972FE0E92B33608E19896841C58B38758431C16A9A9151FB9168FA81",
+        "build/tests/Debug/test_tactstate.exe": "F0202B170CE31941190D25E367641F3829681CDD12E4BDC3C465019ECAA25875",
+        "build/tests/Debug/test_geoscapeframe.exe": "0AF858DEE86C13E6145EDB0B871476E8AE91540266BD7D07C239B41E4DF6D532"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-byte-native-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "CEC046829E26D919047858414F11BF78E5475AB95853D40F1EE08FCEEE06B760",
+        "build/tests/Release/test_tactstate.exe": "D80BFC9D97207C3A48715FB7D1E6190DBBBF09249871671422E472B0B2892619",
+        "build/tests/Release/test_geoscapeframe.exe": "80163558C2EE5C06381AB8D824986F4FD950A98FF655FBB0BE4E189C1817FA4E"
+      }
+    }
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Unsigned-byte fire-cancel model/test correction and distinct status draw-owner comments; native input/clock/status audits; no observed runtime gameplay result",
+  "idb_type": {
+    "name": "TactState",
+    "size_before": 70120,
+    "size_after": 70120,
+    "field": {
+      "offset": "0x0C",
+      "name": "bSkipFireShots",
+      "bytes": 1
+    },
+    "opaque_gap": "0x0D..0x0F",
+    "unrelated_members_unchanged": true,
+    "readback_and_application_check": [
+      [
+        "0x4f3f0",
+        1
+      ],
+      [
+        "0x50adc",
+        1
+      ],
+      [
+        "0x4b080",
+        1
+      ]
+    ],
+    "saved_with_backup": true
+  },
+  "idb_notes": {
+    "0x4b080": "Raw contract corrected2026-10-28: entry clears Map throw-target+0x150F0 at0x4B0A4 and TactState BYTE+0x0C at0x4B0BC before TU gate0x4B0D0. This byte is now typed bSkipFireShots; it is not a signed step delta or a logical four-byte field. Move LDRB0x4FDD0 tests nonzero, fire STRB0x51D28 sets1. Queue-entry nDelta supplies the separate -1 comparison0x4F8DC. Success-only Map shot-count reset0x4B2EC still follows clear-aim0x4B2E4. Port owner bindings unchanged; field/test widened-word interpretation corrected. Raw/type backups docs/parity/tact-fire-flag-type-2026-10-28.md; runtime open.",
+    "0x4b0bc": "STRB zero to global TactState+0x0C before TU comparison0x4B0D0. Proven unsigned byte bSkipFireShots (consumer LDRB0x4FDD0, producer STRB1 at0x51D28). Adjacent0x0D..0x0F are opaque gap, not an owned upper word. Existing UDT extent70120 and cursor+0x10 preserved; all unrelated members unchanged. No signed delta is read here. Source uses u8 and direct0; no runtime executed.",
+    "0x4fdd0": "LDRB from first TactState argument+0x0C; nonzero or unit flag0x20 skips fire command. Shared type now unsigned __int8 bSkipFireShots. This is not queue-entry signed nDelta used at0x4F8DC (loaded into R10 at0x4F428). Type/base/width proof and before/after backups docs/parity/tact-fire-flag-type-2026-10-28.md.",
+    "0x51d28": "STRB1 to the TactState first argument (saved/reloaded into R7)+0x0C on mode7 termination path after resolve/hit/travel/burst checks. Byte flag bSkipFireShots stops later fire commands; common fire enqueue clears it before TU gate. No word-sized or signed delta access in this reviewed path. Runtime unverified.",
+    "0x1afc4": "Raw owner audit2026-10-28: incoming draw context base0x10DA40 is saved inR4; Map base is separateR5=0x1139B8. PenY writes at1B000/1B048/1B054 use R4+0x2C=0x10DA6C, NOT Map shot counter0x1139E4. Loop index uses drawctx+0x100; Map+0x100 is distinct invv pad. Map+0xFC is dpanelv pad with originY callback. Text Y is explicit R2 at1B0A0/2D7A0; caller return overwritten and checked later draw paths reset scratch before read. Port local Y/loop and live pad-origin callback match this bounded flow. False Map ownership comments corrected; native visible frames unverified. Report .workers/luna-status-context/RESULT.md."
+  }
+}

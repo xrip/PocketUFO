@@ -1,0 +1,23 @@
+# Prepare a live tactical mission for tools/window_smoke.ps1 -Tactical.
+# The script ends before End Turn. The native window pump and OS messages run next.
+
+# Startup menu click, base selection, and the existing campaign staging actions.
+click 120 124
+tick 20
+pick
+close
+close
+tick 20
+campaign gear
+campaign state cargo
+campaign contact
+campaign trace before_arrival
+tick 20
+campaign trace after_arrival_pulses
+lines
+campaign state contact_arrival
+campaign launch
+campaign state launch1
+tact
+campaign deploy
+nativeinfo

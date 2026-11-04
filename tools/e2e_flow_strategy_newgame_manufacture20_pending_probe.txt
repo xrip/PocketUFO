@@ -1,0 +1,6 @@
+# Fresh-process load of the saved one-unit Motion Scanner order.
+load 2
+state manufacture_pending_loaded
+strategystate manufacture_pending_loaded
+campaign cargo manufacture_pending_loaded
+lines

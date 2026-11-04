@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-28",
+  "source_files": 434,
+  "source_fingerprint": "6C55B47856BD886617425CDB4D7252FC10CDA3B225624032E7F5556298E3C9F8",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-load-time-owner-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "C3ED27D31C918746838CD862692456391543E957B1E155B15D3C5038F5800882",
+        "build/tests/Debug/test_save.exe": "242137A4AAF26B509D60571558E5FA2B43A48666372664B1DB8DD755BB6E3B6C"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-load-time-owner-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "1481BE9EA2774BE6217DFF5DA6BC593C82E0D45A7185E83489659498CE42DA21",
+        "build/tests/Release/test_save.exe": "6FC93B0547FB4D4C53BDDC206F3ADD78F628407AA95B4E4F8D225FDFC264A218"
+      }
+    }
+  },
+  "runtime_executed": false,
+  "tests_executed": false,
+  "idb_note": {
+    "address": "0x41684",
+    "comment": "Raw ARM checked2026-10-28: final time-chunk read loads R1 from literal0x4169C=0x1472C8, sets R2=2 at0x41688, then tail-calls DatFile_Read at0x41694. LoadGame calls this reader0x44DA0 before mission initialization0x44E24 and legacy migration. This is a live global write, separate from clock block0x159608..0x159640. Port Save_ReadTime retained nWord1472C8 in a wire record but LoadGame copied only clock fields, leaving World.nAlienPoolAddend stale. LoadGameEnv now binds this u16 owner and publishes it immediately with the time fields. Regression uses saved42/live0xDEAD and checks before legacy migration; tests compiled, not executed. Raw and old note: docs/parity/load-time-live-word-raw-2026-10-28.json.",
+    "readback_equal": true,
+    "saved_with_backup": true
+  },
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt"
+}

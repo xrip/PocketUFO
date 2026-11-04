@@ -1,0 +1,187 @@
+{
+  "ea": "0x38D7C",
+  "function_regular": null,
+  "instruction_regular": "StartUi_Shutdown: tears down the start screen. 0x38D80 sound shutdown, 0x38D84 kill timers, then 15 groups (MOV R8,#0xF at 0x38D8C) of 3 pads (MOV R5,#3 at 0x38D94): MOV R3,#0xE34 loaded ONCE outside both loops and never modified, inner step ADD R4,#4 (bytes), outer ADD R7,#0x20 (one UiControl), and 0xE34 = 32*113 + 0x14 is widget 113's pPad0 -- so the loop frees the three adjacent pad dwords of bank widgets 113..127 and nothing else, each via PadImage_FreeData (0x38DB8) + operator delete (0x38DC0) with the slot stored NULL. Then the font at 0x38DE8, the standalone control unk_1571B4 at 0x38DF8..0x38E08, the blocks at 0x38E14/0x38E20, Map.nUiScreen = 22 at 0x38E2C. tests/test_menubtn.c cites it and keeps the sentinels just outside the range on the HEAP, so a wrong range reads as the port's own NULL store instead of undefined behaviour.",
+  "raw": [
+    {
+      "ea": "0x38d90",
+      "bytes": "0740a0e1",
+      "mnemonic": "MOV",
+      "operands": [
+        "R4",
+        "R7",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d94",
+      "bytes": "0350a0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R5",
+        "#3",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d98",
+      "bytes": "e33ea0e3",
+      "mnemonic": "MOV",
+      "operands": [
+        "R3",
+        "#0xE34",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38d9c",
+      "bytes": "043083e3",
+      "mnemonic": "",
+      "operands": [
+        ".rdata",
+        ".rdata",
+        ".rdata"
+      ]
+    },
+    {
+      "ea": "0x38da0",
+      "bytes": "030094e7",
+      "mnemonic": "LDR",
+      "operands": [
+        "R0",
+        "[R4,R3]",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38da4",
+      "bytes": "000050e3",
+      "mnemonic": "CMP",
+      "operands": [
+        "R0",
+        "#0",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38da8",
+      "bytes": "0500000a",
+      "mnemonic": "BEQ",
+      "operands": [
+        "loc_38DC4",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38dac",
+      "bytes": "0060b0e1",
+      "mnemonic": "MOVS",
+      "operands": [
+        "R6",
+        "R0",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38db0",
+      "bytes": "0300000a",
+      "mnemonic": "BEQ",
+      "operands": [
+        "loc_38DC4",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38db4",
+      "bytes": "0600a0e1",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "R6",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38db8",
+      "bytes": "9360ffeb",
+      "mnemonic": "BL",
+      "operands": [
+        "PadImage_FreeData",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38dbc",
+      "bytes": "0600a0e1",
+      "mnemonic": "MOV",
+      "operands": [
+        "R0",
+        "R6",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38dc0",
+      "bytes": "e5a001eb",
+      "mnemonic": "BL",
+      "operands": [
+        "__3_YAXPAX_Z",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38dc4",
+      "bytes": "015045e2",
+      "mnemonic": "SUB",
+      "operands": [
+        "R5",
+        "R5",
+        "#1"
+      ]
+    },
+    {
+      "ea": "0x38dc8",
+      "bytes": "044084e2",
+      "mnemonic": "ADD",
+      "operands": [
+        "R4",
+        "R4",
+        "#4"
+      ]
+    },
+    {
+      "ea": "0x38dcc",
+      "bytes": "000055e3",
+      "mnemonic": "CMP",
+      "operands": [
+        "R5",
+        "#0",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38dd0",
+      "bytes": "f0ffff8a",
+      "mnemonic": "BHI",
+      "operands": [
+        "loc_38D98",
+        "",
+        ""
+      ]
+    },
+    {
+      "ea": "0x38dd4",
+      "bytes": "018048e2",
+      "mnemonic": "SUB",
+      "operands": [
+        "R8",
+        "R8",
+        "#1"
+      ]
+    }
+  ]
+}

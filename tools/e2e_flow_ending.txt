@@ -1,0 +1,25 @@
+# App ending fixture: a real new game and placed base, then a live tactical frame.
+# `mindendcheck` changes the existing frame to the tested failed last-base defense state and calls
+# World_MissionEndCheck(1). It does not call App_HookEndScreenInit directly.
+
+newgame
+tick 20
+pick
+close
+close
+tick 20
+launch
+mindendcheck
+tick 160
+mindendstate
+dump 20_ending.ppm
+
+# This release goes through the app's pointer dispatcher and Input_OnPointerUp screen-18 arm.
+click 100 100
+state ending_release
+
+# A second real menu click checks that GameUI_InitStartup left its new-game row live.
+click 120 124
+tick 20
+state ending_new_game
+dump 21_newgame.ppm

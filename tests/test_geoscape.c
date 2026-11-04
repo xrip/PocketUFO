@@ -107,6 +107,24 @@ static void Hook_ProcessEvents(u8 bSpawn, void *pUser)
     Order('P');
 }
 
+typedef struct LiveShipCountHook {
+    u8 *pbShipCount;
+    u8 bShipCount;
+    Ship **ppShipSlot;
+    Ship *pShip;
+} LiveShipCountHook;
+
+static void Hook_SetLiveShipCount(u8 bSpawn, void *pUser)
+{
+    LiveShipCountHook *pHook = (LiveShipCountHook *)pUser;
+    (void)bSpawn;
+    if (pHook->ppShipSlot != NULL) {
+        *pHook->ppShipSlot = pHook->pShip;
+    }
+    *pHook->pbShipCount = pHook->bShipCount;
+    ++g_nProcess;
+}
+
 static void Hook_Msg(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser)
 {
     (void)nArg4; (void)pUser;
@@ -169,6 +187,7 @@ static void Setup(GeoscapeState *pState, GeoscapeHooks *pHooks)
     GameTime_Reset(&pState->time);
     pState->world.apCraft = g_apShips;
     pState->world.nShipCount = 1;
+    pState->world.pbShipCount = NULL;
     pState->world.apSiteState = g_aSiteState;
     pState->world.apRadarPct = g_aRadarPct;
     pState->world.nTickSeconds = 60;
@@ -193,6 +212,7 @@ static void Setup(GeoscapeState *pState, GeoscapeHooks *pHooks)
     pState->apBases = g_apBases;
     pState->pSupplyItem = &g_aObj105;
     pState->nBaseCount = 2;
+    pState->pbBaseCount = NULL;
     pState->apEmptyFacilityCells = g_aRadarPct; /* 0x162008, the same array */
     pState->apSoldiers = g_apSoldiers;
     pState->pnSoldierCount = &g_nSoldierCount;   /* 0x115350 */
@@ -385,6 +405,98 @@ static void TestTickBases(void)
     CheckEqI32(g_nDays, 200, "day counter caps at 200");
 }
 
+static void TestLiveClockCounts(void)
+{
+    GeoscapeState st;
+    GeoscapeHooks hooks;
+    u8 bLiveShipCount = 2;
+    u8 bLiveBaseCount = 1;
+
+    printf("Geoscape live clock counts\n");
+
+    /* The live craft count changes after the clock state was wired. */
+    Setup(&st, &hooks);
+    st.world.nShipCount = 1;
+    st.world.pbShipCount = &bLiveShipCount;
+    for (i32 i = 0; i < 2; ++i) {
+        g_aShips[i].bAtBase = 1;
+        g_aShips[i].uRangeMax = 1000;
+        g_aShips[i].uRangeRate = 5;
+        g_aShips[i].uRangeRemain = 10;
+    }
+    Geoscape_TickShips(&st, &hooks);
+    CheckEqI32(g_aShips[0].uRangeRemain, 15,
+               "the live count still includes the first craft");
+    CheckEqI32(g_aShips[1].uRangeRemain, 15,
+               "the live count includes a craft added after state wiring");
+
+    /* ProcessEvents adds a craft between TickShips' two raw count reads. */
+    Setup(&st, &hooks);
+    {
+        LiveShipCountHook hook = { &bLiveShipCount, 2, &g_apShips[1], &g_aShips[1] };
+        bLiveShipCount = 1;
+        st.world.nShipCount = 1;
+        st.world.pbShipCount = &bLiveShipCount;
+        hooks.pfnProcessEvents = Hook_SetLiveShipCount;
+        hooks.pUser = &hook;
+
+        g_apShips[1] = NULL;
+        g_aShips[0].bAtBase = 1;
+        g_aShips[1].bAtBase = 0;
+        g_aShips[1].bId = 9;
+        g_aShips[1].bCraftType = 3;
+        g_aShips[1].bHomeBase = 0;
+        g_aShips[1].uFuelCap = 3000;
+        g_aShips[1].uRangeRemain = 10;
+        g_aShips[1].uRangeMax = 1000;
+        g_aShips[1].uRangeRate = 5;
+        g_aBases[0].nUnk8 = 0;
+        g_aBases[0].nUnk12 = 0;
+        g_List.nCount = 1;
+        g_aItems[0].nType = 1;
+        g_aItems[0].bActive = 0;
+        g_aItems[0].nDisplayId = 9;
+        g_aItems[0].nX = 300;
+        g_aItems[0].nY = 0;
+
+        Geoscape_TickShips(&st, &hooks);
+        CheckEqI32(bLiveShipCount, 2,
+                   "the event hook publishes the newly delivered craft");
+        CheckEqI32(g_aShips[1].bContactMsg, 1,
+                   "the second live-count read reaches the new craft after events");
+        CheckEqI32(g_nMsgId, 15,
+                   "the newly live out-of-range craft posts its contact message");
+        CheckEqI32(g_nMsgArg3, 1,
+                   "the contact names the new craft's live roster index");
+    }
+
+    /* Both hourly and daily passes read the live signed-byte base count. */
+    Setup(&st, &hooks);
+    st.nBaseCount = 2;
+    st.pbBaseCount = &bLiveBaseCount;
+    bLiveBaseCount = 1;
+    g_List.nCount = 2;
+    g_aItems[0].nType = 1;
+    g_aItems[0].bActive = 1;
+    g_aItems[1].nType = 1;
+    g_aItems[1].bActive = 1;
+    Geoscape_TickHourly(&st, &hooks);
+    CheckEqI32(g_nEmptyCells, 1,
+               "hourly empty-cell refresh uses the live base count");
+    CheckEqI32(g_aRadarPct[1], 0,
+               "hourly refresh does not visit the stale second base");
+
+    Setup(&st, &hooks);
+    st.nBaseCount = 2;
+    st.pbBaseCount = &bLiveBaseCount;
+    bLiveBaseCount = 1;
+    Geoscape_TickBases(&st, &hooks);
+    CheckEqI32(g_nClearRow, 1,
+               "daily facility-row update uses the live base count");
+    CheckEqI32(g_aSiteState[1], 0,
+               "daily update does not visit the stale second base");
+}
+
 static void TestAdvance(void)
 {
     printf("Geoscape_Advance wiring\n");
@@ -469,7 +581,7 @@ static void TestBaseGridLookup(void)
     static u8 aGrid[8];
     static ObjectRecFull obj;
 
-    printf("Base_FindIndexByTypeByte @ 0x6ac30, BaseRec_AddItemQty @ 0x556e4\n");
+    printf("Base_FindIndexByTypeByte @ 0x6ac30, Base_FindIndexBySiteId @ 0x5a8d0, BaseRec_AddItemQty @ 0x556e4\n");
 
     for (i32 i = 0; i < 3; ++i) {
         memset(&aBases[i], 0, sizeof(aBases[i]));
@@ -507,8 +619,7 @@ static void TestBaseGridLookup(void)
     CheckEqI32(BaseGrid_SubTypeByte(apBases, 3, aGrid, 5, 5), -1,
                "no match is refused, where the original reads and writes abGrid[-1]");
 
-    /* Both originals load the field SIGNED (LDRSB at 0x6AC68 and 0x5A900) while 0x6AC58 masks the
-     * argument to a byte, so a field of 0x80 or more matches nothing in 0..255. */
+    /* TypeByte masks its key to u8, while SiteId compares its full i32 key with the signed field. */
     aBases[0].bUnk4 = 0x80;
     CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, 0x80), -1,
                "a field of 0x80 is read as -128 and never matches the byte 0x80");
@@ -516,6 +627,36 @@ static void TestBaseGridLookup(void)
     CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, 0x7F), 0,
                "0x7F is the top of the signed range and does match");
     aBases[0].bUnk4 = 7;
+
+    printf("Base_FindIndexBySiteId @ 0x5a8d0 -- signed field, full i32 key\n");
+    aBases[0].bUnk4 = 0;
+    aBases[1].bUnk4 = 0x80;
+    aBases[2].bUnk4 = 0xFF;
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 3, 0), 0, "a normal SiteId key finds base 0");
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 3, -128), 1,
+               "a sign-extended 0x80 key finds the base with byte 0x80");
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 3, -1), 2,
+               "a sign-extended 0xFF key finds the base with byte 0xFF");
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 3, 0x80), -1,
+               "positive 128 does not equal the signed field -128");
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 3, 255), -1,
+               "positive 255 does not equal the signed field -1");
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 3, 256), -1,
+               "SiteId 256 is not narrowed to base key 0");
+    CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, (u8)256), 0,
+               "the separate byte-key API intentionally normalizes 256 to 0");
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 3, 42), -1, "a missing SiteId key is bounded");
+    CheckEqI32(Base_FindIndexBySiteId(apBases, 0, -128), -1, "an empty SiteId search returns -1");
+    CheckEqI32(Base_FindIndexBySiteId(NULL, 3, -128), -1, "a null SiteId base list returns -1");
+
+    aGrid[0] = 0x5A;
+    CheckEqI32(BaseGrid_GetTypeByte(apBases, 3, aGrid, 0x80), 0,
+               "the byte-key getter keeps its safe no-match result");
+    CheckEqI32(BaseGrid_SetTypeByte(apBases, 3, aGrid, 0x80, 9), -1,
+               "the byte-key setter keeps its safe no-match result");
+    CheckEqI32(BaseGrid_SubTypeByte(apBases, 3, aGrid, 0x80, 1), -1,
+               "the byte-key subtract keeps its safe no-match result");
+    CheckEqI32(aGrid[0], 0x5A, "safe no-match wrappers leave the already-offset slice alone");
 
     memset(&obj, 0, sizeof(obj));
     aBases[1].bSlot = 2;
@@ -1253,7 +1394,7 @@ static void TestDismissSelected(void)
     static i32 g_anAssigned[1];
     static i32 nSeed, nTotalSec, nAssignedCount;
     static u8 nShipCount, once;
-    static u16 nSoldierCount;
+    static i32 nSoldierCount;
     ShipRemovalEnv env;
     StrategItem *pEntry;
     void **apSlots;
@@ -1371,7 +1512,7 @@ static void TestResolveInterceptUI(void)
     static StrategItem *pEnt[2];
     static i32 nSeed, nTotalSec, nAssignedCount;
     static u8 nShipCount, once;
-    static u16 nSoldierCount;
+    static i32 nSoldierCount;
     static u8 bSelected, bDone, b8C, b90, b98, bArmed;
     ShipRemovalEnv env;
     SmapResolveInterceptEnv renv;
@@ -1586,7 +1727,7 @@ static void TestSmapPointerUp(void)
     static i32 nSeed, nTotalSec, nAssignedCount;
     static i32 nCrossX, nCrossY, nCooldown, nSelShip;
     static u8 nShipCount, once, bPending, bSelected;
-    static u16 nSoldierCount;
+    static i32 nSoldierCount;
     ShipRemovalEnv env;
     SmapPointerUpEnv upEnv;
     void **apSlots;
@@ -1924,7 +2065,8 @@ static void TestBeginCraftSelect(void)
     static u16 g_aManuf[200], g_aProdC[200], g_aResearch[144];
     static i32 g_aProdB[200];
     static u8  g_nResearchEntries;
-    static u16 g_nObjectCount, g_nSoldierCount;
+    static u16 g_nObjectCount;
+    static i32 g_nSoldierCount;
     static i32 g_nSeed, g_nTotalSec, g_nAssignedCount;
     static u8 g_abHangar[64];
     static i32 g_anAssigned[1];
@@ -2134,6 +2276,7 @@ static void TestBeginCraftSelect(void)
         env.abTileTypes = g_abTiles;                                                               \
         env.apSoldiers = g_apSol;                                                                  \
         env.nSoldierCount = 0;                                                                     \
+        env.pnSoldierCountLive = NULL;                                                             \
         env.apObjects = g_apObj;                                                                   \
         env.nObjectCount = 0;                                                                      \
         env.pView = &g_View;                                                                       \
@@ -2385,7 +2528,7 @@ static u8 g_abDemoGrid[1524];
 static BaseSiteRec g_aSiteRec[3];
 static ObjectRecFull g_aDemoObj[1];
 static ObjectRecFull *g_apDemoObj[1];
-static SmapSite g_aDemoSite[2];
+static SmapSite g_aDemoSite[3];
 static u8 g_abDemoHangar[256];
 
 static void TestDemolishBase(void)
@@ -2406,7 +2549,8 @@ static void TestDemolishBase(void)
     BaseDemolishEnv env;
     u8 nShipCount = 2;
     u8 nBaseCount = 3;
-    u16 nSoldierCount = 3;
+    i32 nSiteCount = 2;
+    i32 nSoldierCount = 3;
     u16 nObjectCount = 1;
     u8 nResearchEntries = 1;
     u8 once = 0;
@@ -2465,6 +2609,7 @@ static void TestDemolishBase(void)
 
     g_aDemoSite[0].bFlag1 = 11;
     g_aDemoSite[1].bFlag1 = 12;
+    g_aDemoSite[2].bFlag1 = 11; /* appended after the demolition env is wired */
 
     memset(g_abDemoGrid, 255, sizeof(g_abDemoGrid));
     memset(g_abDemoGrid, 0, 36 * 8);
@@ -2473,6 +2618,7 @@ static void TestDemolishBase(void)
     g_abDemoGrid[36 * 1] = 5; /* buildDays cell (0,0) of base 1 */
     g_abDemoGrid[36 * 2] = 9;
 
+    g_apManufCol[0] = 77;
     g_apManufCol[200 * 1] = 111;
     g_apManufCol[200 * 2] = 222;
     g_apManufCol[200 * 3] = 333;
@@ -2528,9 +2674,11 @@ static void TestDemolishBase(void)
     env.apResearchCols = g_apResearch;
     env.pnResearchEntries = &nResearchEntries;
     env.apSites = g_aDemoSite;
-    env.nSiteCount = 2;
+    env.nSiteCount = 2; /* snapshot before a site is appended */
+    env.pnSiteCountLive = &nSiteCount;
     env.pbBaseCount = &nBaseCount;
     env.pShipEnv = &shipEnv;
+    nSiteCount = 3;
 
     CheckEqI32(Base_DemolishFacility(&env, 11), 2, "it returns the new base count");
 
@@ -2550,6 +2698,8 @@ static void TestDemolishBase(void)
 
     CheckEqI32(g_aDemoSite[0].bFlag0, 255, "the site owned by this base is marked unassigned");
     CheckEqI32(g_aDemoSite[1].bFlag0, 0, "and the other site is left alone");
+    CheckEqI32(g_aDemoSite[2].bFlag0, 255,
+               "the live site-count owner includes a matching site appended after env wiring");
 
     CheckEqI32(g_abDemoGrid[480 + 144 * 1], 0xA2, "the facility block moves down one base");
     CheckEqI32(g_abDemoGrid[36 * 1], 9, "and the build days move with it");
@@ -2562,9 +2712,13 @@ static void TestDemolishBase(void)
     Check(g_apProductA[200 * 2] == 22222222u, "and its source column is not zeroed by the shift");
     CheckEqI32(g_apResearch[144 * 1], 66, "the research column shifts left");
 
-    CheckEqI32(g_apManufCol[200 * 1], 111,
-               "but the manufacturing column does NOT: it starts one base later");
-    CheckEqI32(g_apManufCol[200 * 2], 333, "so base 2 takes base 3's value and base 1 keeps its own");
+    CheckEqI32(g_apManufCol[0], 77, "manufacturing before the removed base is unchanged");
+    CheckEqI32(g_apManufCol[200 * 1], 222,
+               "the manufacturing row shifts into the removed base slot (raw 0x67070/0x67078)");
+    CheckEqI32(g_apManufCol[200 * 2], 222,
+               "the discarded last active row is not overwritten from beyond the base count");
+    CheckEqI32(g_apManufCol[200 * 3], 333,
+               "the sentinel after the active bases is unchanged");
 
     CheckEqI32(g_aSiteRec[1].nFacType, 12, "the facility records compact too");
     CheckEqI32(apBase[1]->nStoresTotal, 1002, "the BaseRec records are moved through the pointers");
@@ -2572,7 +2726,10 @@ static void TestDemolishBase(void)
     CheckEqI32(apBase[2] == NULL ? 1 : 0, 1, "the last apBases slot is freed and cleared");
 
     /* A type no base has: the search lands on the count, the compaction guard fails, and the
-     * function still drops the count and deletes the last base. */
+     * function still drops the count and deletes the last base. Use the scalar fallback for this
+     * standalone fixture. */
+    env.pnSiteCountLive = NULL;
+    env.nSiteCount = nSiteCount;
     CheckEqI32(Base_DemolishFacility(&env, 99), 1,
                "a type no base has still removes the LAST base - the original has no found test");
     CheckEqI32(g_aSiteRec[0].nFacType, 10, "and nothing was compacted, so base 0 is untouched");
@@ -2927,21 +3084,136 @@ static void TestCreateNamedEntry(void)
     Check(prodU16[200] == 0xAAAA && manufCol[200] == 0xAAAA && (u32)prodReq[200] == 0xAAAAAAAAu
           && prodU32[200] == 0xAAAAAAAAu, "the next base keeps its entry in all four columns");
 
-    /* A 30-character name: the original would run past the 20-byte field; the port truncates
-     * at 19 + NUL and the record's own fields stay clean. The column pointers move with the base,
-     * as the original's +800 / +400 per-base advance does. */
+    /* A long direct string is outside the shipped name formats. The live view holds 21 bytes plus
+     * NUL in the two bytes skipped by the save wire; the record's next fields stay clean. */
     env.pProductU32Col = prodU32 + 200;
     env.pProductReqCol = prodReq + 200;
     env.pProductU16Col = prodU16 + 200;
     env.pManufCol = manufCol + 200;
     (void)Base_CreateNamedEntry(&env, 100, 200, 0, "012345678901234567890123456789");
     CheckEqI32(bBaseCount, 2, "second base created");
-    Check(strcmp(sites[1].abName, "0123456789012345678") == 0, "the long name is truncated to 19");
+    Check(strcmp(sites[1].abName, "012345678901234567890") == 0,
+          "the direct name is bounded to the 21-byte live view");
     CheckEqI32(sites[1].nUnk48, 0, "and nothing spilled into the fields below");
     CheckEqI32(sites[1].bType, 0x80, "region 0 (Game_StartNew) gives bType 0 - 0x80 as a byte");
     CheckEqI32(apBases[1]->bUnk16, 0xFF, "and region 0 has no counter, so bUnk16 is 0 - 1");
     Check(prodU16[202] == 0 && manufCol[202] == 0 && prodReq[202] == 0 && prodU32[202] == 0u,
           "the re-offset pointers clear the second base's own four columns");
+}
+
+static void TestGeneratedBaseLabelCapacity(void)
+{
+    static BaseRec *apBases[PUFO_BASE_FAC_COUNT];
+    static BaseSiteRec aSiteRecs[PUFO_BASE_FAC_COUNT];
+    static PtrArray strategList;
+    static u8 aTexts[PUFO_TEXT_REC_STRIDE * (PUFO_REGION_NAME_REC_BASE + 0x81)];
+    static u8 abFacilityGrid[1524];
+    static u8 abHangarBytes[PUFO_BASE_FAC_COUNT];
+    static u8 abBaseFacRecords[PUFO_BASE_FLAG_COUNT * 28];
+    static SaveBasesState savedBases;
+    static const u8 abNorthAmerica[16] = {
+        0xD1, 0xE5, 0xE2, 0xE5, 0xF0, 0xED, 0xE0, 0xFF,
+        0x20, 0xC0, 0xEC, 0xE5, 0xF0, 0xE8, 0xEA, 0xE0
+    };
+    static const char szSuffix100[] = "-100";
+    static const char szSuffixNeg128[] = "--128";
+    BaseCreateEnv createEnv;
+    SaveBasesLive live;
+    u8 abExpected100[21];
+    u8 abExpectedNeg128[22];
+    i8 abRegionBuildCount[PUFO_REGION_BUILD_COUNT];
+    i8 nBaseCount = 0;
+    i8 nSelectedBase = 0;
+    i8 nCraftHomeBase = 0;
+    i32 nSeed = 17;
+    i32 nNextSiteId = 700;
+    i32 nFunds = 0;
+    i32 nSoldierHireCount = 0;
+    char szLabel[64];
+    const size_t nTextOff = (size_t)PUFO_TEXT_REC_STRIDE
+                          * (PUFO_REGION_NAME_REC_BASE + PUFO_REGION_NORTH_AMERICA);
+
+    memset(apBases, 0, sizeof(apBases));
+    memset(aSiteRecs, 0, sizeof(aSiteRecs));
+    memset(aTexts, 0, sizeof(aTexts));
+    memset(abRegionBuildCount, 0, sizeof(abRegionBuildCount));
+    memset(abFacilityGrid, 0, sizeof(abFacilityGrid));
+    memset(abHangarBytes, 0, sizeof(abHangarBytes));
+    memset(abBaseFacRecords, 0, sizeof(abBaseFacRecords));
+    memset(&savedBases, 0, sizeof(savedBases));
+    memset(&createEnv, 0, sizeof(createEnv));
+    memset(&live, 0, sizeof(live));
+    memcpy(aTexts + nTextOff, abNorthAmerica, sizeof(abNorthAmerica));
+    memcpy(abExpected100, abNorthAmerica, sizeof(abNorthAmerica));
+    memcpy(abExpected100 + sizeof(abNorthAmerica), szSuffix100, sizeof(szSuffix100));
+    memcpy(abExpectedNeg128, abNorthAmerica, sizeof(abNorthAmerica));
+    memcpy(abExpectedNeg128 + sizeof(abNorthAmerica), szSuffixNeg128, sizeof(szSuffixNeg128));
+    PtrArray_ctor(&strategList);
+
+    createEnv.apBases = apBases;
+    createEnv.nObjectCount = 0;
+    createEnv.pbBaseCount = &nBaseCount;
+    createEnv.pStrategList = &strategList;
+    createEnv.pnSeed = &nSeed;
+    createEnv.nZoomMode = 0;
+    createEnv.pnNextSiteId = &nNextSiteId;
+    createEnv.apSiteRecs = aSiteRecs;
+    createEnv.paRegionBuildCount = (const u8 *)abRegionBuildCount;
+
+    printf("BaseFac_FormatCostLabel -> Base_CreateNamedEntry byte limits\n");
+
+    abRegionBuildCount[0] = 100;
+    memset(szLabel, 0, sizeof(szLabel));
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts,
+                                  PUFO_REGION_NORTH_AMERICA, abRegionBuildCount);
+    CheckEqI32(abRegionBuildCount[0], 101, "the signed region byte advances after ordinal 100");
+    CheckEqI32((i32)strlen(szLabel), 20, "the 16-byte region plus -100 is 20 name bytes");
+    (void)Base_CreateNamedEntry(&createEnv, 100, 200, PUFO_REGION_NORTH_AMERICA, szLabel);
+    Check(memcmp(aSiteRecs[0].abName, abExpected100, sizeof(abExpected100)) == 0,
+          "the real create path keeps all 20 bytes and the NUL in the skipped gap");
+    CheckEqI32((i32)strlen(aSiteRecs[0].abName), 20, "the display string reads all 20 name bytes");
+    CheckEqI32(aSiteRecs[0].nUnk48, 0, "the NUL in gap byte 0 does not touch nUnk48 at +0x30");
+    CheckEqI32(aSiteRecs[0].nDemolishState, 0, "the demolish field stays intact");
+    CheckEqI32(aSiteRecs[0].nBuildState, 0, "the build field stays intact");
+    CheckEqI32(aSiteRecs[0].nFacType, 700, "the site id field stays intact");
+
+    abRegionBuildCount[0] = -128;
+    memset(szLabel, 0, sizeof(szLabel));
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts,
+                                  PUFO_REGION_NORTH_AMERICA, abRegionBuildCount);
+    CheckEqI32(abRegionBuildCount[0], -127, "the signed byte increments from -128");
+    CheckEqI32((i32)strlen(szLabel), 21, "the signed -128 label has 21 name bytes");
+    (void)Base_CreateNamedEntry(&createEnv, 101, 201, PUFO_REGION_NORTH_AMERICA, szLabel);
+    Check(memcmp(aSiteRecs[1].abName, abExpectedNeg128, sizeof(abExpectedNeg128)) == 0,
+          "the real create path keeps all 21 bytes and the NUL in both skipped bytes");
+    CheckEqI32((i32)strlen(aSiteRecs[1].abName), 21, "the display string reads all 21 name bytes");
+    CheckEqI32(aSiteRecs[1].nUnk48, 0, "the NUL in gap byte 1 does not touch nUnk48");
+    CheckEqI32(aSiteRecs[1].nFacType, 701, "the next site id field stays intact");
+    CheckEqI32((i32)nBaseCount, 2, "both generated labels created real base entries");
+
+    live.abFacilityGrid = abFacilityGrid;
+    live.pnBaseCount = &nBaseCount;
+    live.pnSelectedBase = &nSelectedBase;
+    live.abHangarBytes = abHangarBytes;
+    live.pnFunds = &nFunds;
+    live.pnSoldierHireCount = &nSoldierHireCount;
+    live.pnCraftHomeBase = &nCraftHomeBase;
+    live.abBaseFacRecords = abBaseFacRecords;
+    live.aRegionBuildCount = (u8 *)abRegionBuildCount;
+    live.abSiteRecords = (u8 *)aSiteRecs;
+    Save_BasesLiveToRecord(&live, &savedBases);
+    Check(memcmp(savedBases.aFac[0].szName, abExpected100,
+                 sizeof(savedBases.aFac[0].szName)) == 0,
+          "the save record keeps the original 20-byte prefix for ordinal 100");
+    Check(memcmp(savedBases.aFac[1].szName, abExpectedNeg128,
+                 sizeof(savedBases.aFac[1].szName)) == 0,
+          "the unchanged save record writes only its original 20 name bytes");
+
+    for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
+        free(apBases[nBase]);
+        apBases[nBase] = NULL;
+    }
+    PtrArray_DeleteAll(&strategList);
 }
 
 static void TestBudgetHelpers(void)
@@ -3709,17 +3981,42 @@ static void TestBaseStripHit(void)
     CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 225), 3, "y above 28 * base count misses");
     CheckEqI32(bTap, 1, "a miss leaves the tap flag alone");
 
-    /* Each of the three screens forces the x argument to 10, which is below 211. */
+    /* With a gate set, 0x6723C's CMP R1,#10 feeds the BLT at 0x671E8,
+     * bypassing the normal x>=211 check. The input x is not changed. */
     STRIP_RESET(); bPsi = 1;
-    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3,
-               "the psi screen open disables the strip (0x6723C / 0x671E8)");
-    CheckEqI32(bTap, 1, "  and a disabled strip does not clear the tap flag");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 0,
+               "psi screen gate leaves the base-strip hit active (0x6723C CMP, no x write)");
+    CheckEqI32(bTap, 0, "a hit clears the geoscape tap flag with the psi gate set");
     STRIP_RESET(); bTransfer = 1;
-    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3, "so does the transfer screen (unk_1870EC)");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 0,
+               "transfer screen gate leaves the base-strip hit active");
     STRIP_RESET(); bBaseInfo = 1;
-    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3, "so does the base-info screen (unk_15883C)");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 0,
+               "base-info screen gate leaves the base-strip hit active");
     STRIP_RESET(); bPsi = 0x80;
-    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3, "the gate is non-zero, not equal-to-one");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 0,
+               "a non-zero psi gate also leaves the hit active");
+
+    /* Two base rows: the second drawn cell is y=31..56. While transfer panels are
+     * built, its hit returns base 1 and is not pinned to the current base 0. */
+    STRIP_RESET(); bCount = 2; bSelected = 0; bTransfer = 1;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 10, 31), 1,
+               "the transfer gate uses 10 as the lower x bound");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 9, 31), 0,
+               "x below the gated bound still returns the current base");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 211, 31), 1,
+               "transfer screen selects base 1 at the second cell's top-left");
+    CheckEqI32(bTap, 0, "the second-base hit clears the tap flag");
+    bTap = 1;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 237, 56), 1,
+               "transfer screen selects base 1 at the second cell's bottom-right");
+    bTap = 1;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 29), 0,
+               "y before the second cell returns the current base");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 30), 1,
+               "y=30 already divides to base 1 in the raw hit test");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 57), 0,
+               "y after the second cell returns the current base");
 
     /* The drawer steps 28 pixels per base; the hit test divides by 30. From the third cell down the
      * first row of a cell reports the previous base. */
@@ -6036,7 +6333,7 @@ static char             g_szUpdName[108];
 static UiLineList       g_updMsgList;
 static u8               g_bUpdSpawnOnce;
 static u8               g_bUpdShipCount;
-static u16              g_nUpdSoldierCount;
+static i32              g_nUpdSoldierCount;
 static Soldier         *g_apUpdSoldiers[8];
 static Ship            *g_apUpdCraft[2];
 static StrategItem     *g_apUpdItems[8];
@@ -6251,7 +6548,7 @@ static void UpdFixture(i32 nStrategIdx)
     g_updAnim.nFrameStyle = 1;
 
     g_updColor.pnGamma = &g_nUpdGamma; /* neutral gamma: the LUT divisor is 1.0 */
-    g_updColor.nFadeCount = 0;
+    g_updColor.pnFadeCount = NULL;
 
     g_updPal.pnRangeCur = &g_nRadarRangeCur;
     g_updPal.pnRangeTarget = &g_nRadarRangeTarget;
@@ -7398,7 +7695,7 @@ static void DsFixture(void)
     g_dsSelFlag  = 0;
     g_dsOptOpen  = 0;
     g_dsColor.pnGamma = &g_nGammaOne;
-    g_dsColor.nFadeCount   = 0;
+    g_dsColor.pnFadeCount  = NULL;
 
     memset(&g_dsEnv, 0, sizeof(g_dsEnv));
     g_dsEnv.pView           = &g_dsView;
@@ -8021,13 +8318,18 @@ static void TestPulseUpdate(void)
     Geoscape_PulseUpdate(&g_pvEnv);
     CheckEqI32(g_pvTime.nTotalSec, 0, "the pause byte at 0x15961C gates the clock (0x95618)");
 
-    /* --- the phase gate: the switch fires only when the phase arrives as exactly 1 --- */
+    /* --- the phase gate: zero first advances to one; the next pulse runs the switch --- */
     PvFixture(18);
     g_pvPhase = 0;
     Geoscape_PulseUpdate(&g_pvEnv);
     CheckEqI32(g_nPulseClicks, 0, "phase 0 increments to 1, which is not above 1, so no switch (0x95654)");
-    CheckEqI32(g_pvPhase, 0, "and the phase is reset either way (LABEL_88, 0x95B78)");
+    CheckEqI32(g_pvPhase, 1, "the raw BLE at 0x95654 skips the reset and keeps phase 1 for the next pulse");
 
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_nPulseClicks, 5, "phase 1 increments to 2 on the next pulse and runs the screen switch");
+    CheckEqI32(g_pvPhase, 0, "the switch path resets phase at 0x95B78");
+
+    /* This direct phase-1 case isolates the switch body; the real 0->1->2 sequence is above. */
     PvFixture(18);
     g_pvPhase = 1;
     Geoscape_PulseUpdate(&g_pvEnv);
@@ -8290,7 +8592,7 @@ static void GhFixture(i32 nTile)
     g_ghAnim.nFrameStyle = 0;
 
     g_ghColor.pnGamma = &g_nGammaOne;
-    g_ghColor.nFadeCount   = 0;
+    g_ghColor.pnFadeCount  = NULL;
 
     memset(&g_ghEnv, 0, sizeof(g_ghEnv));
     g_ghEnv.pStripPad          = &g_ghStripPad;
@@ -9538,7 +9840,7 @@ static void PnFixture(u8 nFlag, u32 nSlot0, u32 nSlot1, u32 nSlot2)
     g_pnAnim.pnProgress  = &g_nPnAnimProgress;
     g_pnAnim.nFrameStyle = 0;
     g_pnColor.pnGamma = &g_nGammaOne;
-    g_pnColor.nFadeCount   = 0;
+    g_pnColor.pnFadeCount  = NULL;
 
     memset(&g_pnEnv, 0, sizeof(g_pnEnv));
     g_pnEnv.pFac             = &g_pnFac;
@@ -14738,6 +15040,7 @@ int main(void)
     TestTickShips();
     TestTickHourly();
     TestTickBases();
+    TestLiveClockCounts();
     TestAdvance();
     TestPanelFlagsAndQty();
     TestBaseGridLookup();
@@ -14766,6 +15069,7 @@ int main(void)
     TestFacilityPlaceAndGrant();
     TestSpeedButtons();
     TestCreateNamedEntry();
+    TestGeneratedBaseLabelCapacity();
     TestBudgetHelpers();
     TestHangarPlacement();
     TestFacCostLabel();

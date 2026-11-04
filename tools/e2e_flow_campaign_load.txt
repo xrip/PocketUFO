@@ -1,0 +1,27 @@
+# Fresh process against the same private app folder. Slot 0 must come from the
+# completed campaign process, and the second launch uses the loaded world state.
+
+load 0
+tick 20
+state after_load
+campaign state after_load
+campaign trace after_load
+campaign navcycle
+campaign trace after_navcycle
+dump campaign_after_load.ppm
+
+# The first abort removed its type-4 contact. Build the same real contact again,
+# let the strategic event post the line, then launch through the selected-craft UI.
+campaign contact
+campaign trace after_contact
+tick 20
+campaign trace after_contact_pulses
+lines
+campaign launch
+campaign state launch2
+campaign trace before_deploy2
+campaign deploy
+tact
+tick 2
+campaign state deploy2
+dump campaign_second_deploy.ppm

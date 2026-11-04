@@ -1,0 +1,104 @@
+{
+  "raw": [
+    {
+      "ea": "0x4efc0",
+      "bytes": "0010a0e3",
+      "asm": "MOV             R1, #0"
+    },
+    {
+      "ea": "0x4efc4",
+      "bytes": "0400a0e1",
+      "asm": "MOV             R0, R4"
+    },
+    {
+      "ea": "0x4efc8",
+      "bytes": "fb97ffeb",
+      "asm": "BL              Tact_CheckBattleEnd"
+    },
+    {
+      "ea": "0x4efcc",
+      "bytes": "5a00d4e5",
+      "asm": "LDRB            R0, [R4,#(Map_bTickHold - 0x1139B8)]"
+    },
+    {
+      "ea": "0x4efd0",
+      "bytes": "ff3010e2",
+      "asm": "ANDS            R3, R0, #0xFF"
+    },
+    {
+      "ea": "0x4efd4",
+      "bytes": "ba00001a",
+      "asm": "BNE             loc_4F2C4"
+    },
+    {
+      "ea": "0x4efd8",
+      "bytes": "95cba0e3bcc08ce3",
+      "asm": "MOV             R12, #(Map_bFrameScratch - 0x1139B8)"
+    },
+    {
+      "ea": "0x4efe0",
+      "bytes": "0c00d4e7",
+      "asm": "LDRB            R0, [R4,R12]"
+    },
+    {
+      "ea": "0x4efe4",
+      "bytes": "ff3010e2",
+      "asm": "ANDS            R3, R0, #0xFF"
+    },
+    {
+      "ea": "0x54478",
+      "bytes": "0130d7e5",
+      "asm": "LDRB            R3, [R7,#1]"
+    },
+    {
+      "ea": "0x5447c",
+      "bytes": "000053e3",
+      "asm": "CMP             R3, #0"
+    },
+    {
+      "ea": "0x54480",
+      "bytes": "e300000a",
+      "asm": "BEQ             loc_54814"
+    },
+    {
+      "ea": "0x54484",
+      "bytes": "0700a0e1",
+      "asm": "MOV             R0, R7"
+    },
+    {
+      "ea": "0x54488",
+      "bytes": "93f9ffeb",
+      "asm": "BL              Tact_ProcessFallAction"
+    },
+    {
+      "ea": "0x5448c",
+      "bytes": "5a30d4e5",
+      "asm": "LDRB            R3, [R4,#(Map_bTickHold - 0x1139B8)]"
+    },
+    {
+      "ea": "0x54490",
+      "bytes": "ff3013e2",
+      "asm": "ANDS            R3, R3, #0xFF"
+    },
+    {
+      "ea": "0x54494",
+      "bytes": "f300001a",
+      "asm": "BNE             loc_54868"
+    },
+    {
+      "ea": "0x54498",
+      "bytes": "95cba0e3bcc08ce3",
+      "asm": "MOV             R12, #(Map_bFrameScratch - 0x1139B8)"
+    }
+  ],
+  "comments_before": [
+    {
+      "ea": "0x4efcc",
+      "comment": "RAW VERIFIED 2026-10-26: this LDRB re-reads Map+5A AFTER battle-end callback4EFC8;4EFD0 tests and4EFD4 returns whenholdnonzero. Lastbase loss setslivehold1 at35078/3518C. NativeKillCtx value snapshots missedthischange, thenStatusMsg_Push usedfreedGameMap.status. FixedwithrequiredliveWorldflagpointers; do not replacewithsnapshot/nullguard."
+    },
+    {
+      "ea": "0x54494",
+      "comment": null
+    }
+  ]
+}

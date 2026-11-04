@@ -118,7 +118,16 @@ typedef struct GeoscapeWorld {
                           * GameTime_Pause @ 0x5d6ac writes. Contact messages
                           * pause the game, so the pause byte has to be shared
                           * state, not a per-module flag. */
+    const u8 *pbShipCount; /* live Map + 0x1194 byte; nShipCount is the standalone fixture fallback */
 } GeoscapeWorld;
+
+static inline i32 GeoscapeWorld_GetShipCount(const GeoscapeWorld *pWorld)
+{
+    if (pWorld == NULL) {
+        return 0;
+    }
+    return (pWorld->pbShipCount != NULL) ? (i32)*pWorld->pbShipCount : (i32)pWorld->nShipCount;
+}
 
 /* Hooks the contact updates need from the UI / clock layer. */
 typedef struct StrategHooks {
@@ -127,9 +136,8 @@ typedef struct StrategHooks {
      * a contact in the original is written directly through pWorld->pTime, not
      * through this hook: 10, 13 and 15 pause, 43 (low supply) does not. */
     void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
-    /* Base_FindIndexBySiteId @ 0x5a8d0 is a second copy of Base_FindIndexByTypeByte @ 0x6ac30;
-     * the port keeps one implementation. The hook stays for the radar-path callers, which are
-     * ported but not wired into the shell. */
+    /* Base_FindIndexBySiteId @ 0x5a8d0 is the bounded search for a full signed SiteId key.
+     * Base_FindIndexByTypeByte @ 0x6ac30 masks its key to u8 and has a different raw miss path. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } StrategHooks;
@@ -801,6 +809,9 @@ typedef struct SmapCraftSelectEnv {
     i32  (*pfnInitMission)(i32 nMode, void *pUser);         /* Tact_InitMission @ 0x3c550 */
     void (*pfnInitEndScreen)(u8 bGoodEnd, void *pUser);     /* EndScreen_Init @ 0x388b0 */
     void *pHookUser;
+
+    /* Optional live roster owner; NULL preserves the by-value count in small fixtures. */
+    const i32 *pnSoldierCountLive;
 } SmapCraftSelectEnv;
 
 /* Smap_BeginCraftSelect @ 0x838dc. Returns Tact_InitMission's value on the launch paths, the

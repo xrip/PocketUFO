@@ -1,0 +1,349 @@
+{
+  "before": [
+    {
+      "ea": "0x989c4",
+      "comment": null
+    },
+    {
+      "ea": "0x989d0",
+      "comment": "ORIGINAL BUG (bugs.tsv): this compare can never be true-to-branch here. TransferScreen_Draw returns at 0x98224 unless bTransferPanelsBuilt @ 0x1870EC is set, and Base_HitTestFacilityStrip @ 0x671B0 disables the strip on that same byte -- forcing a miss that returns nSelectedBaseIdx, the value in var_6C (stored at 0x984D8 from the second argument, which Geoscape_Draw loads from abFacilityGrid + 0x619 at 0x93EA8). So the NE at 0x989D4 never fires, byte_1870F8 is never cleared here, and the store at 0x98994 pins the transfer destination byte_1870F4 to the source base on every overlay frame."
+    }
+  ],
+  "raw": [
+    {
+      "ea": "0x671bc",
+      "bytes": "ff3013e2",
+      "asm": "ANDS            R3, R3, #0xFF"
+    },
+    {
+      "ea": "0x671c0",
+      "bytes": "1d00001a",
+      "asm": "BNE             loc_6723C"
+    },
+    {
+      "ea": "0x671c4",
+      "bytes": "68309fe5",
+      "asm": "LDR             R3, =bBaseInfoPanelsBuilt"
+    },
+    {
+      "ea": "0x671c8",
+      "bytes": "0030d3e5",
+      "asm": "LDRB            R3, [R3]"
+    },
+    {
+      "ea": "0x671cc",
+      "bytes": "ff3013e2",
+      "asm": "ANDS            R3, R3, #0xFF"
+    },
+    {
+      "ea": "0x671d0",
+      "bytes": "1900001a",
+      "asm": "BNE             loc_6723C"
+    },
+    {
+      "ea": "0x671d4",
+      "bytes": "54309fe5",
+      "asm": "LDR             R3, =g_bPsiPanelOpen"
+    },
+    {
+      "ea": "0x671d8",
+      "bytes": "0030d3e5",
+      "asm": "LDRB            R3, [R3]"
+    },
+    {
+      "ea": "0x671dc",
+      "bytes": "ff3013e2",
+      "asm": "ANDS            R3, R3, #0xFF"
+    },
+    {
+      "ea": "0x671e0",
+      "bytes": "1500001a",
+      "asm": "BNE             loc_6723C"
+    },
+    {
+      "ea": "0x671e4",
+      "bytes": "d30051e3",
+      "asm": "CMP             R1, #0xD3"
+    },
+    {
+      "ea": "0x671e8",
+      "bytes": "0b0000ba",
+      "asm": "BLT             loc_6721C"
+    },
+    {
+      "ea": "0x671ec",
+      "bytes": "ed0051e3",
+      "asm": "CMP             R1, #0xED"
+    },
+    {
+      "ea": "0x671f0",
+      "bytes": "090000ca",
+      "asm": "BGT             loc_6721C"
+    },
+    {
+      "ea": "0x671f4",
+      "bytes": "030052e3",
+      "asm": "CMP             R2, #3"
+    },
+    {
+      "ea": "0x671f8",
+      "bytes": "070000ba",
+      "asm": "BLT             loc_6721C"
+    },
+    {
+      "ea": "0x671fc",
+      "bytes": "28109fe5",
+      "asm": "LDR             R1, =abFacilityGrid"
+    },
+    {
+      "ea": "0x67200",
+      "bytes": "61cea0e308c08ce3",
+      "asm": "MOV             R12, #0x618"
+    },
+    {
+      "ea": "0x67208",
+      "bytes": "dc3091e1",
+      "asm": "LDRSB           R3, [R1,R12]"
+    },
+    {
+      "ea": "0x6720c",
+      "bytes": "1c10a0e3",
+      "asm": "MOV             R1, #0x1C"
+    },
+    {
+      "ea": "0x67210",
+      "bytes": "930101e0",
+      "asm": "MUL             R1, R3, R1"
+    },
+    {
+      "ea": "0x67214",
+      "bytes": "010052e1",
+      "asm": "CMP             R2, R1"
+    },
+    {
+      "ea": "0x67218",
+      "bytes": "090000da",
+      "asm": "BLE             loc_67244"
+    },
+    {
+      "ea": "0x6721c",
+      "bytes": "613ea0e3093083e3",
+      "asm": "MOV             R3, #0x619"
+    },
+    {
+      "ea": "0x67224",
+      "bytes": "d30090e1",
+      "asm": "LDRSB           R0, [R0,R3]"
+    },
+    {
+      "ea": "0x67228",
+      "bytes": "0080bde8",
+      "asm": "POP             {PC}"
+    },
+    {
+      "ea": "0x6722c",
+      "bytes": "68971500",
+      "asm": "DCD abFacilityGrid"
+    },
+    {
+      "ea": "0x67230",
+      "bytes": "f0ee1500",
+      "asm": "DCD g_bPsiPanelOpen"
+    },
+    {
+      "ea": "0x67234",
+      "bytes": "3c881500",
+      "asm": "DCD bBaseInfoPanelsBuilt"
+    },
+    {
+      "ea": "0x67238",
+      "bytes": "ec701800",
+      "asm": "DCD bTransferPanelsBuilt"
+    },
+    {
+      "ea": "0x6723c",
+      "bytes": "0a0051e3",
+      "asm": "CMP             R1, #0xA"
+    },
+    {
+      "ea": "0x67240",
+      "bytes": "e8ffffea",
+      "asm": "B               loc_671E8"
+    },
+    {
+      "ea": "0x67244",
+      "bytes": "2c009fe5",
+      "asm": "LDR             R0, =bBasePlaceActive"
+    },
+    {
+      "ea": "0x67248",
+      "bytes": "0010a0e3",
+      "asm": "MOV             R1, #0"
+    },
+    {
+      "ea": "0x6724c",
+      "bytes": "20309fe5",
+      "asm": "LDR             R3, =_rt_sdiv"
+    },
+    {
+      "ea": "0x67250",
+      "bytes": "0010c0e5",
+      "asm": "STRB            R1, [R0]"
+    },
+    {
+      "ea": "0x67254",
+      "bytes": "1e00a0e3",
+      "asm": "MOV             R0, #0x1E"
+    },
+    {
+      "ea": "0x67258",
+      "bytes": "003093e5",
+      "asm": "LDR             R3, [R3]"
+    },
+    {
+      "ea": "0x6725c",
+      "bytes": "0210a0e1",
+      "asm": "MOV             R1, R2"
+    },
+    {
+      "ea": "0x98970",
+      "bytes": "34719fe5",
+      "asm": "LDR             R7, =nSmapCursorX"
+    },
+    {
+      "ea": "0x98974",
+      "bytes": "f020d0e1",
+      "asm": "LDRSH           R2, [R0]"
+    },
+    {
+      "ea": "0x98978",
+      "bytes": "0600a0e1",
+      "asm": "MOV             R0, R6"
+    },
+    {
+      "ea": "0x9897c",
+      "bytes": "f010d7e1",
+      "asm": "LDRSH           R1, [R7]"
+    },
+    {
+      "ea": "0x98980",
+      "bytes": "0a3affeb",
+      "asm": "BL              Base_HitTestFacilityStrip"
+    },
+    {
+      "ea": "0x98984",
+      "bytes": "1c919fe5",
+      "asm": "LDR             R9, =byte_1870F4"
+    },
+    {
+      "ea": "0x98988",
+      "bytes": "458da0e3",
+      "asm": "MOV             R8, #0x1140"
+    },
+    {
+      "ea": "0x9898c",
+      "bytes": "003ca0e1",
+      "asm": "MOV             R3, R0,LSL#24"
+    },
+    {
+      "ea": "0x98990",
+      "bytes": "0ca19fe5",
+      "asm": "LDR             R10, =g_smapCamera"
+    },
+    {
+      "ea": "0x98994",
+      "bytes": "0000c9e5",
+      "asm": "STRB            R0, [R9]"
+    },
+    {
+      "ea": "0x98998",
+      "bytes": "430ca0e1",
+      "asm": "MOV             R0, R3,ASR#24"
+    },
+    {
+      "ea": "0x9899c",
+      "bytes": "003184e0",
+      "asm": "ADD             R3, R4, R0,LSL#2"
+    },
+    {
+      "ea": "0x989a0",
+      "bytes": "28109ae5",
+      "asm": "LDR             R1, [R10,#(nSmapSiteCount - 0x1863E8)]"
+    },
+    {
+      "ea": "0x989a4",
+      "bytes": "348088e3",
+      "asm": "ORR             R8, R8, #0x34 "
+    },
+    {
+      "ea": "0x989a8",
+      "bytes": "f0b09fe5",
+      "asm": "LDR             R11, =0x162030"
+    },
+    {
+      "ea": "0x989ac",
+      "bytes": "b96fa0e3",
+      "asm": "MOV             R6, #0x2E4"
+    },
+    {
+      "ea": "0x989b0",
+      "bytes": "083093e7",
+      "asm": "LDR             R3, [R3,R8]"
+    },
+    {
+      "ea": "0x989b4",
+      "bytes": "026086e3",
+      "asm": "ORR             R6, R6, #2"
+    },
+    {
+      "ea": "0x989b8",
+      "bytes": "910602e0",
+      "asm": "MUL             R2, R1, R6"
+    },
+    {
+      "ea": "0x989bc",
+      "bytes": "d430d3e1",
+      "asm": "LDRSB           R3, [R3,#4]"
+    },
+    {
+      "ea": "0x989c0",
+      "bytes": "0b2082e0",
+      "asm": "ADD             R2, R2, R11"
+    },
+    {
+      "ea": "0x989c4",
+      "bytes": "0130c2e5",
+      "asm": "STRB            R3, [R2,#1]"
+    },
+    {
+      "ea": "0x989c8",
+      "bytes": "c820a0e3",
+      "asm": "MOV             R2, #0xC8"
+    },
+    {
+      "ea": "0x989cc",
+      "bytes": "10309de5",
+      "asm": "LDR             R3, [SP,#0x7C+var_6C]"
+    },
+    {
+      "ea": "0x989d0",
+      "bytes": "030050e1",
+      "asm": "CMP             R0, R3"
+    },
+    {
+      "ea": "0x989d4",
+      "bytes": "84161f15",
+      "asm": "LDRNE           R1, =byte_1870F8"
+    },
+    {
+      "ea": "0x989d8",
+      "bytes": "0000a013",
+      "asm": "MOVNE           R0, #0"
+    },
+    {
+      "ea": "0x989dc",
+      "bytes": "c830a0e3",
+      "asm": "MOV             R3, #0xC8"
+    }
+  ]
+}

@@ -320,13 +320,19 @@ static void Drop_Modal(const InvDropCtx *pCtx, i32 nX, i32 nY, i32 nCount)
     }
 }
 
-/* The charge rule at 0x123C8 and its seven copies: free when the action latch is
- * set, or when the item goes back into the region it came from. */
+/* The raw drop sites read Map+1 (unk_1139B9), not the Map+2 action latch. */
+static bool Drop_TuChargeWaived(const InvDropCtx *pCtx)
+{
+    return pCtx->pbInvNoTuCharge != NULL && *pCtx->pbInvNoTuCharge != 0;
+}
+
+/* The charge rule at 0x123C8 and its seven copies: free when Map+1 is set, or
+ * when the item goes back into the region it came from. */
 static bool Drop_Charge(const InvDropCtx *pCtx, i32 nCost, i32 nOwnRegion)
 {
     Soldier *pUnit = pCtx->pSelUnit;
 
-    if (pCtx->pUi->bActionLatch != 0 || pCtx->pHit->nHitRegion == nOwnRegion) {
+    if (Drop_TuChargeWaived(pCtx) || pCtx->pHit->nHitRegion == nOwnRegion) {
         return true;
     }
     if ((i32)pUnit->uTu < nCost) {
@@ -337,13 +343,13 @@ static bool Drop_Charge(const InvDropCtx *pCtx, i32 nCost, i32 nOwnRegion)
     return true;
 }
 
-/* The clip load has no region exemption (0x12970, 0x12C94): the latch alone skips
- * the charge. */
+/* The clip load has no region exemption (0x12970, 0x12C94): Map+1 alone skips the
+ * charge. */
 static bool Drop_ChargeClip(const InvDropCtx *pCtx, i32 nCost)
 {
     Soldier *pUnit = pCtx->pSelUnit;
 
-    if (pCtx->pUi->bActionLatch != 0) {
+    if (Drop_TuChargeWaived(pCtx)) {
         return true;
     }
     if ((i32)pUnit->uTu < nCost) {
@@ -776,7 +782,7 @@ bool Inv_HandlePointer(const InvDropCtx *pCtx)
 
     /* 0x1353C: the ammo split. A single-item weapon with a clip in hand, dropped on
      * the hand panel while both hands are empty, becomes the right hand and its clip
-     * a new item in the left hand. This one tests uTu even when the latch is set. */
+     * a new item in the left hand. Its TU minimum check runs before Map+1 skips the debit. */
     if (!bPlaced && nX >= PUFO_INV_DROP_GROUND_X0 && nX <= PUFO_INV_DROP_GROUND_X1 &&
         nY >= PUFO_INV_DROP_GROUND_Y0 && nY <= PUFO_INV_DROP_GROUND_Y1 &&
         pItem->pObj != NULL && pItem->pObj->bTwoHanded == 0 &&
@@ -789,7 +795,7 @@ bool Inv_HandlePointer(const InvDropCtx *pCtx)
             TactItem *pNew = (pHooks->pfnAllocItem != NULL)
                 ? pHooks->pfnAllocItem(pHooks->pUser) : NULL;
 
-            if (pCtx->pUi->bActionLatch == 0) {
+            if (!Drop_TuChargeWaived(pCtx)) {
                 pUnit->uTu = (u16)(pUnit->uTu - PUFO_INV_TU_SPLIT);
             }
             if (nIdx >= 0 && nIdx < PUFO_INV_ITEM_POOL_MAX) {

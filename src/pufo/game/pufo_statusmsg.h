@@ -3,14 +3,18 @@
  * Evidence: StatusMsg_Push @ 0x2dda4, StatusMsg_Shift @ 0x2dd20,
  *           StatusMsg_DrawStack @ 0x1afc4.
  *
- * ## Layout (resolved against the `Map` type)
+ * ## Owners checked from raw bases
  *
  *     nStatusMsgCount  @ 0x0054  (i32)
  *     anStatusMsgTTL   @ 0x1408C (i32[10] declared, used as [count])
  *     aszStatusMsg     @ 0x140B4 (1500 bytes = 15 records of 100)
- *     nStatusDrawY     @ 0x002C  (i32)
- *     pHudPad          @ 0x00FC
- *     pInvPad          @ 0x0100, reused as the draw loop's index!
+ *     pHudPad          @ Map+0x00FC (dpanelv)
+ *     pInvPad          @ Map+0x0100 (invv)
+ *     status pen Y    @ draw context+0x002C (0x10DA6C)
+ *     loop index      @ draw context+0x0100
+ *
+ * The draw context is 0x10DA40; Map is 0x1139B8. Its pen Y does not alias
+ * Map+0x2C shot count, and its loop index does not overwrite Map's invv pad.
  *
  * `aszStatusMsg` is exactly 1500 bytes = **15 messages of 100 bytes**, and that
  * is where the `>= 15` guard in `StatusMsg_Push` comes from.
@@ -45,8 +49,9 @@
  * `StatusMsg_DrawStack` walks the stack newest-first. The decompilation's source
  * pointer expression `&nFireArg6 + 100 * (count - i)` resolves through
  * `0x14050 + 100*k`, and `aszStatusMsg[0]` is at `0x140B4 = 0x14050 + 100`, so the
- * first record drawn is `aszStatusMsg[count - 1]`. The original reuses `pInvPad`
- * as the loop counter, which is why that field appears in a draw function.
+ * first record drawn is `aszStatusMsg[count - 1]`. The original loop counter
+ * belongs to the separate draw context; an old Map-based type confused it
+ * with `pInvPad` at the same relative offset in a different object.
  */
 #ifndef PUFO_STATUSMSG_H
 #define PUFO_STATUSMSG_H

@@ -312,7 +312,7 @@ void StartUi_Shutdown(const StartUiShutdownEnv *pEnv)
                 if (pPad != NULL) {
                     PadImage_FreeData(pPad);             /* 0x38DB8 */
                     free(pPad);                          /* 0x38DC0, operator delete */
-                    pCtl->apPads[k] = NULL;
+                    pCtl->apPads[k] = NULL; /* Safety adaptation: raw leaves this slot stale. */
                 }
             }
         }

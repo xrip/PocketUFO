@@ -1,0 +1,34 @@
+# Fresh raw New Game -> topic 14 through the live Research list.
+click 120 124
+tick 20
+pick
+tick 10
+state new_game
+strategystate new_game
+campaign cargo new_game
+
+click 60 252
+tick 20
+strategystate research_base_info
+click 231 8
+tick 2
+strategystate research_base_strip
+click 180 238
+tick 20
+strategystate research_open
+
+click @TOPIC14_ROW_X@ @TOPIC14_ROW_Y@
+__TOPIC14_SCIENTIST_CLICKS__
+click @TOPIC14_START_X@ @TOPIC14_START_Y@
+tick 2
+strategystate research_started
+
+click 231 8
+tick 2
+click 201 11
+tick 2
+strategystate research_on_map
+campaign cargo research_started
+lines
+save 0
+state research_saved

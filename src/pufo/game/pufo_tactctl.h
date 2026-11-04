@@ -1,7 +1,7 @@
 /* pufo_tactctl.h - tactical cursor, game speed, and clock control.
  *
  * Evidence: MapCursor_SetFlags @ 0x26f78, MapCursor_IsValid @ 0x275fc,
- *           GameSpeed_Set @ 0x260c0, GameTime_Pause @ 0x5d6ac.
+ *           GameSpeed_Set @ 0x260c0.
  *
  * ## Cursor field aliasing
  *
@@ -48,13 +48,9 @@ bool MapCursor_IsValid(const TactCursor *pCursor, const MapGeom *pMap);
  * were restarted. */
 typedef struct GameClock {
     u32  nSpeed;    /* pCtx + 21567 = 0x150fc = nGameSpeed */
-    bool bPaused;   /* gUiRootPanel.apLines[106] -> nUnk3032 */
 } GameClock;
 
 bool GameSpeed_Set(GameClock *pClock, u32 nSpeed);
-
-/* GameTime_Pause @ 0x5d6ac. */
-void GameTime_Pause(GameClock *pClock);
 
 /* The original's timers. GameSpeed_Set kills and restarts them; the port's
  * backend is injected so the speed logic is testable without a window. */
@@ -254,22 +250,23 @@ bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nF
 
 /* Tact_ScanVictoryTiles @ 0x33264.
  *
- * A victory condition for the alien-base mission type. The gate at 0x3328C is
- * `Map_bSpawnAlt != 0 && Map_nMissionType == MissionType_AlienBase`; the scan then walks a 2x2
- * block of cell slots starting at the mission spawn tile, `Map_nSpawnTileY * 300 +
- * Map_nSpawnTileX * 5` dwords into the cell array (0x332C0), two slots per tile-row (0x332E4) and
- * 30 slots per row step (0x332F8), and reports victory as soon as one of those cells has an empty
- * occupied-object list (`+12 == 0` at 0x332E0).
+ * The raw ARM gates on alternate spawn and mission type 4. It then scans four layer-1 cell pointers.
+ * Terrain setup writes apCells from Map+0x15338 with 4-byte slots, 60 per row, and 0x3840 bytes per
+ * layer. The scan's Map+0x193F0 base is slot 4142 = layer 1, row 9, column 2. The 0x28 multiplier
+ * advances ten cell slots per spawn-tile step; the loop adds 4 bytes per column and 0xF0 per row.
+ * Thus the four cells are (2+10*spawnX+dx, 9+10*spawnY+dy) for dx/dy in 0..1.
  *
- * The scan is addressing-heavy; the port takes an injected 2x2 probe so the predicate can be
- * tested without the grid. `pfnCellHasNoItems(nSpawnTileX + dx, nSpawnTileY + dy)` must return
- * true when that cell has no object at its list head. The four probes run in the original's
- * order: (0,0), (1,0), then (0,1), (1,1) -- columns within a row, then the next row.
+ * Each slot yields a MapCell pointer, then the raw `LDR [cell,#0x0C]` checks its fourth sprite
+ * pointer. MapCell_SetTileSprites @ 0x548d0 stores pCeilSpr there; it is separate from the item-list
+ * head, which raw MapCell_ListInsertByPri @ 0x54b14 accesses at +0x34. The port keeps the legacy
+ * callback name `pfnCellHasNoItems`, but it must return true when the probed cell's pCeilSpr is NULL.
+ * The callback receives spawnX+dx and spawnY+dy; the world maps those offsets to the four cell slots.
+ * The scan returns true at the first NULL ceiling pointer.
  *
- * The parameters were first named bCraftTileA0NonZero / nCraftTileX / nCraftTileY, which read as
- * though the scan started at the deployed craft. The IDB names on the three addresses it actually
- * reads -- Map_bSpawnAlt @ 0x128B00, Map_nSpawnTileX @ 0x128B04, Map_nSpawnTileY @ 0x128B08 -- say
- * otherwise, so the names follow the addresses. */
+ * The parameters were first named bCraftTileA0NonZero / nCraftTileX / nCraftTileY. The raw ARM loads
+ * Map_bSpawnAlt, Map_nMissionType, Map_nSpawnTileX, and Map_nSpawnTileY, so these names follow the
+ * values the function reads. */
+/* pfnCellHasNoItems is a legacy callback name; the raw probe tests pCeilSpr == NULL. */
 bool Tact_ScanVictoryTiles(bool bSpawnAlt, u8 nMissionType, i32 nSpawnTileX,
                            i32 nSpawnTileY,
                            bool (*pfnCellHasNoItems)(i32 nX, i32 nY, void *pUser),
@@ -439,9 +436,10 @@ void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit);
  * byte of 0x80 or more becomes a negative int and then matches no nKind, which an unsigned compare would
  * not do. In practice base indices are small, so the quirk is latent.
  *
- * The behaviour most likely to be ported wrong: a rejected soldier ENDS the walk rather than being skipped.
- * The rejection branch jumps straight to the count read, so one unsuitable soldier leaves every later
- * soldier unprocessed.
+ * The craft-mode rejection branch at 0x39840 and the mode-1 rejection branches at 0x398C4/0x398D0 (plus the
+ * zero-at-base fall-through after 0x398F0) reach the loop-advance block at 0x398F8; the count test at 0x39918
+ * then continues the walk. An unsuitable soldier is skipped, and later eligible soldiers are still checked
+ * in every mode.
  *
  * Accepted soldiers get Unit_ResetBattleState with facing 0, bStatus = 0, Unit_PlaceOnMap at the anchor, and
  * a slot in apXcomUnits @ 0x15154. If the roster is not empty the first entry is selected through

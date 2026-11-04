@@ -9,9 +9,13 @@
  */
 #include "game/pufo_strateg.h"
 #include "game/pufo_geoscape.h" /* PUFO_FAC_BASE_COUNT, the base array the range gate bounds by */
+#include "game/pufo_baseui.h"  /* flag-27 Smap_ResolveInterceptUI */
 #include "game/pufo_unit.h"     /* Soldier, the crew Craft_CountSoldiersAboard counts */
+#include "game/pufo_ship.h"     /* real arrival -> loot handoff */
 #include "ui/pufo_linelist.h"   /* UiLineList, the message list the event pass posts to */
 #include "ui/pufo_panel.h"      /* UiPanel, the status panel it captions */
+#include "ui/pufo_control.h"    /* the six speed controls GameTime_Set5Sec updates */
+#include "util/pufo_rand.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,6 +94,7 @@ static void SetupWorld(GeoscapeWorld *pWorld, StrategList *pList, i32 nItems,
 
     pWorld->apCraft = g_apShips;
     pWorld->nShipCount = (u8)nShips;
+    pWorld->pbShipCount = NULL;
     pWorld->apSiteState = g_aSiteState;
     pWorld->apRadarPct = g_aRadarPct;
     pWorld->nTickSeconds = 60;
@@ -739,7 +744,7 @@ static void TestCalcDetect(void)
     g_aSiteState[0] = 1;
     g_aRadarPct[0] = 100;
     Check(Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
-          "state 1 within 24 with 100% radar detects");
+          "state 1 within wrapped distance 20 and radius 50 detects");
     CheckEqI32(g_nMsgId, 10, "radar contact posts message 10");
     CheckEqI32(g_nMsgArg3, 1, "message carries the ufo index");
     CheckEqI32(g_Time.bPaused, 1, "radar contact pauses the clock");
@@ -753,25 +758,64 @@ static void TestCalcDetect(void)
     CheckEqI32(g_nMsgCount, 0, "blocked detection posts nothing");
     g_aItems[1].nTimer = 0;
 
-    /* Outside the 24 radius: dx 40. */
-    g_aItems[1].nX = 50; /* dx = 40 */
-    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
-          "state 1 outside 24 does not detect");
-    g_aItems[1].nX = 790;
+    /* Force the geometric result without consuming an RNG draw or posting another contact. */
+    g_aItems[1].bVisible = 1;
+    g_aItems[1].nX = 760; /* base x=10: wrapped dx is exactly 50 */
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 1 includes the wrapped 50-tile boundary");
+    g_aItems[1].nX = 759; /* wrapped dx is 51 */
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 1 excludes wrapped distance 51");
 
-    /* State 2 reaches 31: dx 30 is inside. */
+    /* Keep the prior in-range state-2 call, including its RNG draw for later test order. */
     g_aSiteState[0] = 2;
+    g_aItems[1].bVisible = 0;
     g_aItems[1].nX = 40; /* dx = 30 */
     Check(Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
-          "state 2 within 31 detects");
-    g_aItems[1].nX = 790;
+          "state 2 detects a UFO within radius 65");
 
-    /* State 11 hyper-detects within 24. */
+    /* State 2 uses the 65-tile boundary without another RNG draw. */
+    g_aItems[1].bVisible = 1;
+    g_aItems[1].nX = 75; /* base x=10, dx=65 */
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 2 includes distance 65");
+    g_aItems[1].nX = 76; /* dx=66 */
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 2 excludes distance 66");
+
+    /* Keep the prior in-range state-11 call, including its RNG draw for later test order. */
     g_aSiteState[0] = 11;
+    g_aItems[1].bVisible = 0;
+    g_aItems[1].nX = 790; /* wrapped dx = 20 */
     g_aItems[1].bHyperDetect = 0;
     Check(Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
-          "state 11 detects");
+          "state 11 detects a UFO within radius 50");
     CheckEqI32(g_aItems[1].bHyperDetect, 1, "state 11 sets hyper flag");
+
+    /* Hyper states use the same ranges and set their extra marker only inside them. */
+    g_aItems[1].bVisible = 1;
+    g_aItems[1].nX = 760;
+    g_aItems[1].bHyperDetect = 0;
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 11 includes the wrapped 50-tile boundary");
+    CheckEqI32(g_aItems[1].bHyperDetect, 1, "state 11 sets hyper at the boundary");
+    g_aItems[1].nX = 759;
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 11 excludes wrapped distance 51");
+    CheckEqI32(g_aItems[1].bHyperDetect, 0, "state 11 does not set hyper outside range");
+
+    g_aSiteState[0] = 12;
+    g_aItems[1].nX = 75;
+    g_aItems[1].bHyperDetect = 0;
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 12 includes distance 65");
+    CheckEqI32(g_aItems[1].bHyperDetect, 1, "state 12 sets hyper flag");
+    g_aItems[1].nX = 76;
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "state 12 excludes distance 66");
+    CheckEqI32(g_aItems[1].bHyperDetect, 0, "state 12 does not set hyper outside range");
+    g_aItems[1].nX = 790;
+    g_aItems[1].bVisible = 0;
 
     /* Unknown state does nothing. */
     g_aSiteState[0] = 5;
@@ -1306,6 +1350,8 @@ static void TestSpawnMissionSite(void)
         memset(&ufo, 0, sizeof(ufo));
         ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
         ufo.nMissionSub = 7; ufo.nPhase = 4; ufo.nX = 10; ufo.nY = 10;
+        /* Isolate this two-candidate choice from the preceding base-retry RNG stream. */
+        srand(6001u);
         Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
         CheckEqI32(ufo.nTargetX, 777, "subtype 7 targets an active type-0 item");
         CheckEqI32(ufo.nTargetY, 321, "and takes its coordinates");
@@ -1338,6 +1384,240 @@ static void TestSpawnMissionSite(void)
     PtrArray_DeleteAll(&g_List);
 }
 
+
+static bool FindMissionBaseRetrySeed(u32 *pnSeed, i32 *pnCommittedBase,
+                                    i32 *pnTargetX, i32 *pnTargetY)
+{
+    u32 nSeed;
+
+    for (nSeed = 1; nSeed < 10000u; ++nSeed) {
+        bool abSeen[PUFO_FAC_BASE_COUNT] = { false };
+        i32 i;
+        u16 nPick;
+        i32 nRawX, nRawY, nOldX, nOldY;
+
+        srand((unsigned)nSeed);
+        for (i = 0; i < 20; ++i) {
+            nPick = Game_RandU16((u16)PUFO_FAC_BASE_COUNT);
+            if (nPick < PUFO_FAC_BASE_COUNT) {
+                abSeen[nPick] = true;
+            }
+        }
+        nPick = Game_RandU16((u16)PUFO_FAC_BASE_COUNT);
+        if (nPick < PUFO_FAC_BASE_COUNT && !abSeen[nPick]) {
+            srand((unsigned)nSeed);
+            for (i = 0; i < 21; ++i) {
+                (void)Game_RandU16((u16)PUFO_FAC_BASE_COUNT);
+            }
+            nRawX = (i32)Game_RandU16(0x2F8) + 20;
+            nRawY = (i32)Game_RandU16(0x168) + 20;
+
+            srand((unsigned)nSeed);
+            for (i = 0; i < 20; ++i) {
+                (void)Game_RandU16((u16)PUFO_FAC_BASE_COUNT);
+            }
+            nOldY = (i32)Game_RandU16(0x168) + 20;
+            nOldX = (i32)Game_RandU16(0x2F8) + 20;
+            if ((nRawX != nOldX || nRawY != nOldY) &&
+                (nRawX != 100 + 10 * (i32)nPick || nRawY != 50 + 10 * (i32)nPick)) {
+                *pnSeed = nSeed;
+                *pnCommittedBase = (i32)nPick;
+                *pnTargetX = nRawX;
+                *pnTargetY = nRawY;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool FindXFirstTravelSeed(i32 nRawPrefixDraws, u16 nRawPrefixBound,
+                                 i32 nOldPrefixDraws, u16 nOldPrefixBound,
+                                 u32 *pnSeed, i32 *pnX, i32 *pnY)
+{
+    u32 nSeed;
+
+    for (nSeed = 1; nSeed < 10000u; ++nSeed) {
+        i32 i;
+        i32 nRawX, nRawY, nOldX, nOldY;
+
+        srand((unsigned)nSeed);
+        for (i = 0; i < nRawPrefixDraws; ++i) {
+            (void)Game_RandU16(nRawPrefixBound);
+        }
+        nRawX = (i32)Game_RandU16(0x2F8) + 20;
+        nRawY = (i32)Game_RandU16(0x168) + 20;
+
+        srand((unsigned)nSeed);
+        for (i = 0; i < nOldPrefixDraws; ++i) {
+            (void)Game_RandU16(nOldPrefixBound);
+        }
+        nOldY = (i32)Game_RandU16(0x168) + 20;
+        nOldX = (i32)Game_RandU16(0x2F8) + 20;
+        if (nRawX != nOldX || nRawY != nOldY) {
+            *pnSeed = nSeed;
+            *pnX = nRawX;
+            *pnY = nRawY;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void TestMissionTravelRawFallbacks(void)
+{
+    static PadImage map;
+    static u8 aTiles[400];
+    static SmapView view;
+    static PtrArray list;
+    static i32 nStrategSeed;
+    static BaseRec aBases[PUFO_FAC_BASE_COUNT];
+    static BaseRec *apBases[PUFO_FAC_BASE_COUNT];
+    static MissionSiteRec aSites[PUFO_MISSION_SITE_COUNT];
+    static u8 abFacilityGrid[480 + 144 * PUFO_FAC_BASE_COUNT];
+    static GameTime time;
+    static GeoscapeWorld world;
+    static SpawnMissionCtx ctx;
+    StrategItem ufo;
+    u32 nSeed = 0;
+    i32 nCommittedBase = -1;
+    i32 nWantX = -1;
+    i32 nWantY = -1;
+    i32 i;
+
+    printf("Mission travel raw fallback paths\n");
+
+    memset(aTiles, 1, sizeof(aTiles));
+    memset(&map, 0, sizeof(map));
+    map.uWidth = 20;
+    map.pData = aTiles;
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 800;
+    view.nMapH = 400;
+    memset(&time, 0, sizeof(time));
+    memset(&world, 0, sizeof(world));
+    world.pTime = &time;
+    world.nTickSeconds = 60;
+    PtrArray_ctor(&list);
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pList = &list;
+    ctx.pnSeed = &nStrategSeed;
+    ctx.pView = &view;
+    ctx.pTilemap = &map;
+    ctx.apBases = apBases;
+    ctx.apSites = aSites;
+    ctx.nSiteCount = PUFO_MISSION_SITE_COUNT;
+    ctx.abFacilityGrid = abFacilityGrid;
+    ctx.pWorld = &world;
+
+    for (i = 0; i < PUFO_FAC_BASE_COUNT; ++i) {
+        apBases[i] = &aBases[i];
+        aBases[i].nUnk8 = 100 + 10 * i;
+        aBases[i].nUnk12 = 50 + 10 * i;
+    }
+
+    /* The first 20 base picks have a matching kind-10 cell with status zero;
+     * pick 21 names the only base without one. Raw commits it, then falls back
+     * before checking that base. This stays within the 8-base array. */
+    Check(FindMissionBaseRetrySeed(&nSeed, &nCommittedBase, &nWantX, &nWantY),
+          "find a seed whose 21st untested base is unique and whose fallback stream differs");
+    if (nCommittedBase >= 0 && nCommittedBase < PUFO_FAC_BASE_COUNT) {
+        memset(abFacilityGrid, 0, sizeof(abFacilityGrid));
+        for (i = 0; i < PUFO_FAC_BASE_COUNT; ++i) {
+            abFacilityGrid[480 + 144 * i] = 10;
+        }
+        abFacilityGrid[480 + 144 * nCommittedBase] = 0;
+
+        memset(&ufo, 0, sizeof(ufo));
+        ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+        ufo.nMissionSub = 6; ufo.nPhase = 4; ufo.nTargetIdx = -1;
+        ufo.nX = 10; ufo.nY = 12;
+        ctx.nBaseCount = PUFO_FAC_BASE_COUNT;
+        srand((unsigned)nSeed);
+        Geoscape_SpawnMissionSite(&ufo, -1, &ctx);
+        CheckEqI32(ufo.nTargetIdx, nCommittedBase,
+                   "candidate 21 is committed before the raw fallback branch");
+        CheckEqI32(ufo.nTargetX, nWantX,
+                   "fallback X replaces candidate 21 after its cell check is skipped");
+        CheckEqI32(ufo.nTargetY, nWantY,
+                   "fallback Y replaces candidate 21 after its cell check is skipped");
+        CheckEqI32(ufo.nDestX, nWantX, "candidate 21's fallback X is the travel endpoint");
+        CheckEqI32(ufo.nDestY, nWantY, "candidate 21's fallback Y is the travel endpoint");
+        CheckEqI32(ufo.nStartX, 10, "the fallback keeps the current start X");
+        CheckEqI32(ufo.nStartY, 12, "the fallback keeps the current start Y");
+        CheckEqI32(ufo.nX, 10, "the fallback does not copy start X into current X");
+        CheckEqI32(ufo.nY, 12, "the fallback does not copy start Y into current Y");
+        CheckEqI32(ufo.nMissionSub, 0, "the fallback passes subtype byte 0");
+        CheckEqI32(ufo.nPhase, 4, "the base give-up returns before the phase gates");
+        CheckEqI32(ufo.nTimer, 0, "the base give-up keeps the zero timer");
+        CheckEqI32(ufo.bRace, 0, "the base give-up leaves race unchanged");
+        CheckEqI32(ufo.nDisplayId, 0, "the base give-up leaves display id unchanged");
+    }
+
+    /* One base always returns nonzero. The raw fallback consumes 21 bound-1 picks,
+     * then draws X before Y and stores both target fields before travel init. */
+    memset(abFacilityGrid, 0, sizeof(abFacilityGrid));
+    abFacilityGrid[480] = 10;
+    Check(FindXFirstTravelSeed(21, 1, 20, 1, &nSeed, &nWantX, &nWantY),
+          "find a base fallback seed whose X/Y result differs from Y/X");
+    if (nWantX >= 20 && nWantX < 20 + 0x2F8 && nWantY >= 20 && nWantY < 20 + 0x168) {
+        memset(&ufo, 0, sizeof(ufo));
+        ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+        ufo.nMissionSub = 6; ufo.nPhase = 4; ufo.nTargetIdx = -1;
+        ufo.nX = 10; ufo.nY = 12; ufo.nHp = 73; ufo.bRace = 9;
+        ctx.nBaseCount = 1;
+        srand((unsigned)nSeed);
+        Geoscape_SpawnMissionSite(&ufo, -1, &ctx);
+        CheckEqI32(ufo.nTargetX, nWantX, "subtype 6 fallback saves the raw X draw");
+        CheckEqI32(ufo.nTargetY, nWantY, "subtype 6 fallback saves the next Y draw");
+        CheckEqI32(ufo.nDestX, nWantX, "subtype 6 fallback uses X as the travel endpoint");
+        CheckEqI32(ufo.nDestY, nWantY, "subtype 6 fallback uses Y as the travel endpoint");
+        CheckEqI32(ufo.nStartX, 10, "subtype 6 fallback keeps the current start X");
+        CheckEqI32(ufo.nStartY, 12, "subtype 6 fallback keeps the current start Y");
+        CheckEqI32(ufo.nX, 10, "subtype 6 fallback does not copy start X into current X");
+        CheckEqI32(ufo.nY, 12, "subtype 6 fallback does not copy start Y into current Y");
+        CheckEqI32(ufo.nMissionSub, 0, "raw fallback passes subtype byte 0");
+        CheckEqI32(ufo.nPhase, 4, "subtype 6 give-up returns before the phase gates");
+        CheckEqI32(ufo.nTimer, 0, "subtype 6 fallback keeps the zero timer");
+        CheckEqI32(ufo.nTargetIdx, 0, "subtype 6 fallback keeps the last base index");
+        CheckEqI32(ufo.bFlagA, 0, "subtype 6 fallback keeps the zero flag argument");
+        CheckEqI32(ufo.nHp, 73, "subtype 6 fallback leaves HP unchanged");
+        CheckEqI32(ufo.bRace, 9, "subtype 6 fallback leaves race unchanged");
+        CheckEqI32(ufo.bVisible, 1, "subtype 6 fallback preserves visibility");
+    }
+
+    /* With no active type-0 sites, subtype 7 takes the other X-first path without prefix draws. */
+    Check(FindXFirstTravelSeed(0, 1, 0, 1, &nSeed, &nWantX, &nWantY),
+          "find a no-site fallback seed whose X/Y result differs from Y/X");
+    if (nWantX >= 20 && nWantX < 20 + 0x2F8 && nWantY >= 20 && nWantY < 20 + 0x168) {
+        memset(&ufo, 0, sizeof(ufo));
+        ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+        ufo.nMissionSub = 7; ufo.nPhase = 4; ufo.nTargetIdx = -1;
+        ufo.nX = 10; ufo.nY = 12; ufo.nHp = 81; ufo.bRace = 11;
+        srand((unsigned)nSeed);
+        Geoscape_SpawnMissionSite(&ufo, -1, &ctx);
+        CheckEqI32(ufo.nTargetX, nWantX, "subtype 7 no-site fallback saves the raw X draw");
+        CheckEqI32(ufo.nTargetY, nWantY, "subtype 7 no-site fallback saves the next Y draw");
+        CheckEqI32(ufo.nDestX, nWantX, "subtype 7 no-site fallback uses X as the travel endpoint");
+        CheckEqI32(ufo.nDestY, nWantY, "subtype 7 no-site fallback uses Y as the travel endpoint");
+        CheckEqI32(ufo.nStartX, 10, "subtype 7 fallback keeps the current start X");
+        CheckEqI32(ufo.nStartY, 12, "subtype 7 fallback keeps the current start Y");
+        CheckEqI32(ufo.nX, 10, "subtype 7 fallback does not copy start X into current X");
+        CheckEqI32(ufo.nY, 12, "subtype 7 fallback does not copy start Y into current Y");
+        CheckEqI32(ufo.nMissionSub, 0, "raw fallback passes subtype byte 0");
+        CheckEqI32(ufo.nPhase, 3, "subtype 7 runs the shared phase decrement");
+        CheckEqI32(ufo.nTimer, 0, "subtype 7 fallback keeps the zero timer");
+        CheckEqI32(ufo.nTargetIdx, -1, "no-site fallback leaves target index unchanged");
+        CheckEqI32(ufo.bFlagA, 0, "subtype 7 fallback keeps the zero flag argument");
+        CheckEqI32(ufo.nHp, 81, "subtype 7 fallback leaves HP unchanged");
+        CheckEqI32(ufo.bRace, 11, "subtype 7 fallback leaves race unchanged");
+        CheckEqI32(ufo.bVisible, 1, "subtype 7 fallback preserves visibility");
+    }
+
+    PtrArray_DeleteAll(&list);
+    Game_SeedRngFixed();
+}
 
 static void TestFindByStrategIdx(void)
 {
@@ -1702,6 +1982,275 @@ static StrategItem *EvAdd(i32 nType)
 static void EvFree(void)
 {
     PtrArray_DeleteAll(&g_EvList);
+}
+
+static i32 RunSmapBaseAssaultCountCase(i32 nSnapshotCount, i32 nCountAfterWire,
+                                      bool bUseLiveCount, i32 *pnRet)
+{
+    u8 abGrid[PUFO_GRID_SIZE] = {0};
+    u8 abTileTypes[36] = {0};
+    u8 bMissionMode = 1;
+    u8 bUnk1511E = 0, bSpawnAlt = 0, bUnk15115 = 0;
+    u8 bMissionType = 0, bTerrainVariant = 0, bMapLayers = 0, bCraftIndex = 0;
+    u8 bTickHold = 0, bBattleEnded = 0, bHomeBase = 0, bBaseRace = 0;
+    u8 bAssault = 0, bFlag187084 = 0, bGeoscapeFlag = 0;
+    u8 nBaseCount = 1, bSelectedBase = 0, nCraftCount = 0;
+    u8 abSpriteSet[4] = {0};
+    i32 nTierRaw = 0, nFunding = 100000, nLiveSoldierCount = 0;
+    i32 nSelectedShip = -1, nMsgShip = -1, nSelectedStrateg = -1;
+    SmapCraftSelectEnv env = {0};
+
+    EvReset();
+    memset(g_aBases, 0, sizeof(g_aBases));
+    g_apBases[0] = &g_aBases[0];
+    g_aSol[0].nKind = 0;        /* counted as occupied base space */
+    g_aSol[0].bUnk183 = 254;    /* away in a craft, so not available for base assault */
+
+    env.apCraft = g_apEvShip;
+    env.pnCraftCount = &nCraftCount;
+    env.pbMissionMode = &bMissionMode;
+    env.pbUnk1511E = &bUnk1511E;
+    env.pnMissionType = &bMissionType;
+    env.abSpriteSet = abSpriteSet;
+    env.pbSpawnAlt = &bSpawnAlt;
+    env.pbUnk15115 = &bUnk15115;
+    env.pnTerrainVariant = &bTerrainVariant;
+    env.pnMapLayers = &bMapLayers;
+    env.pnTierRaw = &nTierRaw;
+    env.pnCraftIndex = &bCraftIndex;
+    env.pbTickHold = &bTickHold;
+    env.pbBattleEnded = &bBattleEnded;
+    env.apBases = g_apBases;
+    env.pbHomeBase = (i8 *)&bHomeBase;
+    env.pbBaseRace = (i8 *)&bBaseRace;
+    env.pStrategList = &g_EvList;
+    env.pLines = &g_Lines;
+    env.pTime = &g_EvTime;
+    env.pnSelectedShipIdx = &nSelectedShip;
+    env.pnMsgShipIdx = &nMsgShip;
+    env.pnSelectedStrategIdx = &nSelectedStrateg;
+    env.pbAssaultFlag = &bAssault;
+    env.pbSelectionFlag = &g_bSelFlag;
+    env.pbFlag187084 = &bFlag187084;
+    env.pbGeoscapeFlag = &bGeoscapeFlag;
+    env.pnRadarPulseTimer = &g_nPulse;
+    env.pnFunding = &nFunding;
+    env.pbBaseCount = &nBaseCount;
+    env.pbSelectedBaseIdx = &bSelectedBase;
+    env.abFacilityGrid = abGrid;
+    env.abTileTypes = abTileTypes;
+    env.apSoldiers = g_apSol;
+    env.nSoldierCount = nSnapshotCount;
+    env.pnSoldierCountLive = bUseLiveCount ? &nLiveSoldierCount : NULL;
+    env.nObjectCount = 0;
+    env.pView = &g_EvView;
+    env.pShipEnv = NULL;
+    env.pbSpawnOnceFlag = &g_bOnce;
+    env.pSpawnCtx = &g_EvCtx;
+    env.pDemolishEnv = NULL;
+    env.pfnFreeGeoscapeUi = NULL;
+    env.pfnInitMission = NULL;
+    env.pfnInitEndScreen = NULL;
+    env.pHookUser = NULL;
+
+    if (bUseLiveCount) {
+        nLiveSoldierCount = nCountAfterWire; /* mutate the owner after the env has been filled */
+    }
+    *pnRet = Smap_BeginCraftSelect(&env);
+    return nFunding;
+}
+
+static void TestSmapCraftSelectLiveSoldierCount(void)
+{
+    i32 nRetLive = -1, nRetFallback = -1;
+    const i32 nFundingLive = RunSmapBaseAssaultCountCase(0, 1, true, &nRetLive);
+    const i32 nFundingFallback = RunSmapBaseAssaultCountCase(1, 1, false, &nRetFallback);
+
+    printf("Smap_BeginCraftSelect live soldier count\n");
+    CheckEqI32(nRetLive, 1, "the live-count case leaves one base after the assault setup");
+    CheckEqI32(nFundingLive, 99170, "the live soldier owner adds 30 to the base-assault cost");
+    CheckEqI32(nRetFallback, 1, "a NULL live pointer uses the fixture count fallback");
+    CheckEqI32(nFundingFallback, nFundingLive, "the fallback matches the live count when values agree");
+}
+
+static void RecordArrivalLootNotice(i32 nFlag, i32 nBase, i32 nObject, i32 nUnused,
+                                     void *pUser)
+{
+    i32 *anNotice = (i32 *)pUser;
+    (void)nUnused;
+    anNotice[0] += 1;
+    anNotice[1] = nFlag;
+    anNotice[2] = nBase;
+    anNotice[3] = nObject;
+}
+
+/* Send the craft home through the real flag-27 handler, then let its scheduled
+ * leg reach the production event and loot functions. World callback construction
+ * is outside this game-layer fixture. */
+static void TestArrivalDeliversLootOnce(void)
+{
+    static ObjectRecFull objects[59];
+    ObjectRecFull *apObjects[59];
+    BaseRec bases[3] = {0};
+    BaseRec *apBases[3] = { &bases[0], &bases[1], &bases[2] };
+    u8 grid[1524];
+    u32 dwRefresh = 0x12340000u;
+    i32 anNotice[4] = {0};
+    i32 nSoldierCount = 2;
+    u8 bInterceptDone = 1;
+    UiControl aSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT] = {0};
+    UiControl *apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT];
+    ShipCtorEnv shipCtor = {0};
+    ShipRemovalEnv shipEnv = {0};
+    SmapResolveInterceptEnv resolveEnv = {0};
+    TacticalLootEnv loot = {0};
+    Ship *pShip;
+    StrategItem *pOwn;
+    StrategItem *pMissionTarget;
+
+    printf("flag-27 home order lands and delivers cargo once\n");
+    EvReset();
+    g_EvWorld.nShipCount = 1;
+    memset(objects, 0, sizeof(objects));
+    memset(grid, 255, sizeof(grid));
+    memset(grid, 0, 36 * 8);
+    for (i32 i = 0; i < 59; ++i) {
+        apObjects[i] = &objects[i];
+    }
+    for (i32 i = 0; i < 3; ++i) {
+        bases[i].bSlot = (u8)i;
+        memset(grid + 444 + 144 * i, 0, 36);
+    }
+    grid[480 + 144 * 2] = 11;
+    objects[56].auPerBaseVal[2] = 7;
+    bases[2].nUnk8 = 100;
+    bases[2].nUnk12 = 100;
+
+    shipCtor.nShipCount = 0;
+    shipCtor.apObjects = apObjects;
+    shipCtor.nObjectCount = 59;
+    pShip = &g_aEvShip[0];
+    Check(Ship_Ctor(pShip, 1, 10, 2, 0, &shipCtor) == pShip,
+          "the returning interceptor has valid type-1 fuel data");
+    CheckEqI32(pShip->uFuelCap, 3100, "the type-1 constructor supplies the return speed input");
+    pShip->bAtBase = 0;
+    pShip->bWeaponsHot = 1;
+    pShip->bIntercepting = 1;
+    pShip->bContactMsg = 1;
+    pShip->bWeaponL = 25;
+    pShip->bWeaponR = -1;
+    pShip->anCargoQty[0] = 9;
+
+    pOwn = EvAdd(1); /* own marker index 0; ship array index is also 0 */
+    pOwn->bActive = 0;
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = pShip->bId;
+    pOwn->nX = 300;
+    pOwn->nY = 200;
+    pMissionTarget = EvAdd(4); /* mission target index 1, home base index 2 */
+    pMissionTarget->bActive = 1;
+    pMissionTarget->bVisible = 1;
+    pMissionTarget->nDisplayId = 77;
+    pMissionTarget->nX = 400;
+    pMissionTarget->nY = 200;
+    pShip->nStrategIdx = 1;
+
+    loot.apCraft = g_apEvShip;
+    loot.apBases = apBases;
+    loot.apObjects = apObjects;
+    loot.abFacilityGrid = grid;
+    loot.pdwUiRefreshFlag = &dwRefresh;
+    loot.nBaseCount = 3;
+    loot.nShipCount = 1;
+    loot.nObjectCount = 59;
+    loot.pfnAppendLine = RecordArrivalLootNotice;
+    loot.pUser = anNotice;
+    g_EvEnv.pLootEnv = &loot;
+
+    shipEnv.apCraft = g_apEvShip;
+    shipEnv.pnShipCount = &g_EvWorld.nShipCount;
+    shipEnv.apSoldiers = g_apSol;
+    shipEnv.pnSoldierCount = &nSoldierCount;
+    shipEnv.apObjects = apObjects;
+    shipEnv.nObjectCount = 59;
+    shipEnv.pStrategList = &g_EvList;
+    shipEnv.pWorld = &g_EvWorld;
+    shipEnv.pnSpawnOnceFlag = &g_bOnce;
+    shipEnv.pSpawnCtx = &g_EvCtx;
+    shipEnv.apBases = apBases;
+    shipEnv.pnGameTotalSec = &g_EvTime.nTotalSec;
+
+    for (i32 i = 0; i < PUFO_GEOSCAPE_SPEED_COUNT; ++i) {
+        apSpeedCtl[i] = &aSpeedCtl[i];
+    }
+    resolveEnv.pLines = &g_Lines;
+    resolveEnv.pbInterceptDone = &bInterceptDone;
+    resolveEnv.pbSelectionFlag = &g_bSelFlag;
+    resolveEnv.pWorld = &g_EvWorld;
+    resolveEnv.apSpeedCtl = apSpeedCtl;
+    resolveEnv.pShipEnv = &shipEnv;
+    resolveEnv.pTime = &g_EvTime;
+
+    g_EvTime.nTotalSec = 600;
+    g_EvTime.bPaused = 1;
+    g_bSelFlag = 1;
+    /* Model the checked shutdown's target removal before the player order.
+     * This local fixture leaves replacement spawning disabled (g_bOnce=0);
+     * it does not simulate battle victory or the full shutdown/rebuild. */
+    (void)StrategList_RemoveAt(&g_EvList, &g_EvWorld, 1, &g_bOnce, &g_EvCtx);
+    CheckEqI32(g_EvList.nCount, 1, "mission target removal leaves the own marker");
+    CheckEqI32(pShip->bIntercepting, 1, "target removal retains the surviving intercept byte");
+    CheckEqI32(pShip->nStrategIdx, 1, "an equal target index survives compaction");
+    UiLineList_Insert(&g_Lines, 0, 27, 0u, 0u, 0u, 0u);
+    Smap_ResolveInterceptUI(&resolveEnv);
+
+    CheckEqI32(g_EvList.nCount, 1, "the home order preserves the surviving own marker");
+    CheckEqI32(pShip->bIntercepting, 0, "the return order clears the intercept state");
+    CheckEqI32(pShip->bAtBase, 0, "the return order starts a leg without teleporting home");
+    CheckEqI32(pShip->bWeaponsHot, 1, "the loot-pending flag stays hot during the home leg");
+    CheckEqI32(pOwn->nTimer, 0, "the return order restarts the marker timer");
+    CheckEqI32(pOwn->nStartX, 300, "the home leg starts at the own marker X");
+    CheckEqI32(pOwn->nStartY, 200, "the home leg starts at the own marker Y");
+    CheckEqI32(pOwn->nDestX, 100, "the home leg uses the home base X");
+    CheckEqI32(pOwn->nDestY, 100, "the home leg uses the home base Y");
+    CheckEqI32(pOwn->nMissionSub, 1, "the travel initializer arms the landing leg");
+    Check(pOwn->uTravelMin > 0, "the type-1 craft's fuel data produces a real duration");
+    CheckEqI32(pOwn->nTravelEpochSec, g_EvTime.nTotalSec,
+               "the home leg records the live clock as its epoch");
+    CheckEqI32(g_Lines.nLineCount, 0, "the return message is removed after retargeting");
+    CheckEqI32(g_EvTime.bPaused, 0, "the empty message list resumes the geoscape clock");
+    CheckEqI32(aSpeedCtl[0].nState, 1, "the return handler selects the five-second speed control");
+
+    const i32 nHomeLegSeconds = (i32)pOwn->uTravelMin * 60;
+    Check(nHomeLegSeconds > 0, "the scheduled home-leg duration is positive");
+    g_EvTime.nTotalSec = pOwn->nTravelEpochSec + nHomeLegSeconds - 60;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pShip->bAtBase, 0, "the craft stays away one minute before its computed arrival");
+    g_EvTime.nTotalSec += 60;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pShip->bAtBase, 1, "the computed travel duration lands the returning craft");
+    CheckEqI32(pShip->bWeaponsHot, 0, "loot consumes the pending-delivery flag");
+    CheckEqI32(pShip->anCargoQty[0], 0, "delivered cargo leaves the craft");
+    CheckEqI32(objects[56].auPerBaseVal[2], 16, "home stock receives 9 units on top of 7");
+    CheckEqI32(objects[56].auPerBaseVal[0], 0, "craft index does not select base stock");
+    CheckEqI32(grid[444 + 144 * 2 + 7], 34, "type 1 is parked at home base 2");
+    CheckEqI32(anNotice[0], 1, "arrival's zero argument announces the ammo shortage");
+    CheckEqI32(anNotice[1], 40, "ammo shortage posts message 40");
+    CheckEqI32(anNotice[2], 2, "the warning names home base 2");
+    CheckEqI32(anNotice[3], 52, "the warning names the empty cannon-ammo record");
+    CheckEqI32(dwRefresh, 1, "the shortage replaces the full UI refresh word with 1");
+
+    g_EvTime.nTotalSec += 60;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(objects[56].auPerBaseVal[2], 16, "a later event pass does not credit cargo twice");
+    CheckEqI32(anNotice[0], 1, "a later event pass does not repeat the shortage message");
+    pShip->anCargoQty[0] = 5;
+    Base_TransferTacticalLoot(&loot, false);
+    CheckEqI32(pShip->anCargoQty[0], 5, "a cold craft's newly carried stores are left aboard");
+    CheckEqI32(objects[56].auPerBaseVal[2], 16, "the cleared pending flag blocks a direct second transfer");
+    CheckEqI32(anNotice[0], 1, "a cold craft does not repeat the ammo warning");
+    g_EvEnv.pLootEnv = NULL;
+    EvFree();
 }
 
 static void TestProcessEvents(void)
@@ -2224,9 +2773,12 @@ int main(void)
     TestMaybeSpawnCraft();
     TestRemoveAtAndPurge();
     TestSpawnMissionSite();
+    TestMissionTravelRawFallbacks();
     TestDistWrapped();
     TestCraftRangeGate();
+    TestSmapCraftSelectLiveSoldierCount();
     TestProcessEvents();
+    TestArrivalDeliversLootOnce();
     TestConfirmIntercept();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;

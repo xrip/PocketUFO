@@ -1,0 +1,687 @@
+[
+  {
+    "ea": "0x63138",
+    "bytes": "30402de9",
+    "asm": "PUSH            {R4,R5,LR}"
+  },
+  {
+    "ea": "0x6313c",
+    "bytes": "44109fe5",
+    "asm": "LDR             R1, =nSoldierDetailCursor"
+  },
+  {
+    "ea": "0x63140",
+    "bytes": "462da0e3",
+    "asm": "MOV             R2, #0x1180"
+  },
+  {
+    "ea": "0x63144",
+    "bytes": "38009fe5",
+    "asm": "LDR             R0, =Map_bTactFlag"
+  },
+  {
+    "ea": "0x63148",
+    "bytes": "182082e3",
+    "asm": "ORR             R2, R2, #0x18"
+  },
+  {
+    "ea": "0x6314c",
+    "bytes": "001091e5",
+    "asm": "LDR             R1, [R1]"
+  },
+  {
+    "ea": "0x63150",
+    "bytes": "013180e0",
+    "asm": "ADD             R3, R0, R1,LSL#2"
+  },
+  {
+    "ea": "0x63154",
+    "bytes": "024093e7",
+    "asm": "LDR             R4, [R3,R2]"
+  },
+  {
+    "ea": "0x63158",
+    "bytes": "ba5084e2",
+    "asm": "ADD             R5, R4, #0xBA"
+  },
+  {
+    "ea": "0x6315c",
+    "bytes": "0500a0e1",
+    "asm": "MOV             R0, R5"
+  },
+  {
+    "ea": "0x63160",
+    "bytes": "18f800eb",
+    "asm": "BL              strlen"
+  },
+  {
+    "ea": "0x63164",
+    "bytes": "000050e3",
+    "asm": "CMP             R0, #0"
+  },
+  {
+    "ea": "0x63168",
+    "bytes": "0400009a",
+    "asm": "BLS             locret_63180"
+  },
+  {
+    "ea": "0x6316c",
+    "bytes": "0500a0e1",
+    "asm": "MOV             R0, R5"
+  },
+  {
+    "ea": "0x63170",
+    "bytes": "14f800eb",
+    "asm": "BL              strlen"
+  },
+  {
+    "ea": "0x63174",
+    "bytes": "0020a0e3",
+    "asm": "MOV             R2, #0"
+  },
+  {
+    "ea": "0x63178",
+    "bytes": "003084e0",
+    "asm": "ADD             R3, R4, R0"
+  },
+  {
+    "ea": "0x6317c",
+    "bytes": "b920c3e5",
+    "asm": "STRB            R2, [R3,#0xB9]"
+  },
+  {
+    "ea": "0x63180",
+    "bytes": "3080bde8",
+    "asm": "POP             {R4,R5,PC}"
+  },
+  {
+    "ea": "0x63184",
+    "bytes": "b8391100",
+    "asm": "DCD Map_bTactFlag"
+  },
+  {
+    "ea": "0x63188",
+    "bytes": "60971500",
+    "asm": "DCD nSoldierDetailCursor"
+  },
+  {
+    "ea": "0x6318c",
+    "bytes": "70009fe5",
+    "asm": "LDR             R0, =bNameEditActive"
+  },
+  {
+    "ea": "0x63190",
+    "bytes": "0010a0e3",
+    "asm": "MOV             R1, #0"
+  },
+  {
+    "ea": "0x63194",
+    "bytes": "462da0e3",
+    "asm": "MOV             R2, #0x1180"
+  },
+  {
+    "ea": "0x63198",
+    "bytes": "0010c0e5",
+    "asm": "STRB            R1, [R0]"
+  },
+  {
+    "ea": "0x6319c",
+    "bytes": "182082e3",
+    "asm": "ORR             R2, R2, #0x18"
+  },
+  {
+    "ea": "0x631a0",
+    "bytes": "58109fe5",
+    "asm": "LDR             R1, =nSoldierDetailCursor"
+  },
+  {
+    "ea": "0x631a4",
+    "bytes": "50009fe5",
+    "asm": "LDR             R0, =Map_bTactFlag"
+  },
+  {
+    "ea": "0x631a8",
+    "bytes": "001091e5",
+    "asm": "LDR             R1, [R1]"
+  },
+  {
+    "ea": "0x631ac",
+    "bytes": "013180e0",
+    "asm": "ADD             R3, R0, R1,LSL#2"
+  },
+  {
+    "ea": "0x631b0",
+    "bytes": "40109fe5",
+    "asm": "LDR             R1, =nSoldierCursor"
+  },
+  {
+    "ea": "0x631b4",
+    "bytes": "020093e7",
+    "asm": "LDR             R0, [R3,R2]"
+  },
+  {
+    "ea": "0x631b8",
+    "bytes": "001091e5",
+    "asm": "LDR             R1, [R1]"
+  },
+  {
+    "ea": "0x631bc",
+    "bytes": "ba2080e2",
+    "asm": "ADD             R2, R0, #0xBA"
+  },
+  {
+    "ea": "0x631c0",
+    "bytes": "2c009fe5",
+    "asm": "LDR             R0, =pSolPanelNames"
+  },
+  {
+    "ea": "0x631c4",
+    "bytes": "000090e5",
+    "asm": "LDR             R0, [R0]"
+  },
+  {
+    "ea": "0x631c8",
+    "bytes": "013180e0",
+    "asm": "ADD             R3, R0, R1,LSL#2"
+  },
+  {
+    "ea": "0x631cc",
+    "bytes": "be1ea0e3041081e3",
+    "asm": "MOV             R1, #0xBE4"
+  },
+  {
+    "ea": "0x631d4",
+    "bytes": "010093e7",
+    "asm": "LDR             R0, [R3,R1]"
+  },
+  {
+    "ea": "0x631d8",
+    "bytes": "d010d2e1",
+    "asm": "LDRSB           R1, [R2]"
+  },
+  {
+    "ea": "0x631dc",
+    "bytes": "012082e2",
+    "asm": "ADD             R2, R2, #1"
+  },
+  {
+    "ea": "0x631e0",
+    "bytes": "0010c0e5",
+    "asm": "STRB            R1, [R0]"
+  },
+  {
+    "ea": "0x631e4",
+    "bytes": "0130b0e1",
+    "asm": "MOVS            R3, R1"
+  },
+  {
+    "ea": "0x631e8",
+    "bytes": "010080e2",
+    "asm": "ADD             R0, R0, #1"
+  },
+  {
+    "ea": "0x631ec",
+    "bytes": "f9ffff1a",
+    "asm": "BNE             loc_631D8"
+  },
+  {
+    "ea": "0x631f0",
+    "bytes": "0ef0a0e1",
+    "asm": "RET"
+  },
+  {
+    "ea": "0x631f4",
+    "bytes": "5c971500",
+    "asm": "DCD pSolPanelNames"
+  },
+  {
+    "ea": "0x631f8",
+    "bytes": "089e1500",
+    "asm": "DCD nSoldierCursor"
+  },
+  {
+    "ea": "0x631fc",
+    "bytes": "b8391100",
+    "asm": "DCD Map_bTactFlag"
+  },
+  {
+    "ea": "0x63200",
+    "bytes": "60971500",
+    "asm": "DCD nSoldierDetailCursor"
+  },
+  {
+    "ea": "0x63204",
+    "bytes": "886b1800",
+    "asm": "DCD bNameEditActive"
+  },
+  {
+    "ea": "0x63208",
+    "bytes": "f0492de9",
+    "asm": "PUSH            {R4-R8,R11,LR}"
+  },
+  {
+    "ea": "0x6320c",
+    "bytes": "b4809fe5",
+    "asm": "LDR             R8, =nSoldierDetailCursor"
+  },
+  {
+    "ea": "0x63210",
+    "bytes": "0040a0e1",
+    "asm": "MOV             R4, R0"
+  },
+  {
+    "ea": "0x63214",
+    "bytes": "a8509fe5",
+    "asm": "LDR             R5, =Map_bTactFlag"
+  },
+  {
+    "ea": "0x63218",
+    "bytes": "466da0e3",
+    "asm": "MOV             R6, #0x1180"
+  },
+  {
+    "ea": "0x6321c",
+    "bytes": "000098e5",
+    "asm": "LDR             R0, [R8]"
+  },
+  {
+    "ea": "0x63220",
+    "bytes": "186086e3",
+    "asm": "ORR             R6, R6, #0x18"
+  },
+  {
+    "ea": "0x63224",
+    "bytes": "0170a0e1",
+    "asm": "MOV             R7, R1"
+  },
+  {
+    "ea": "0x63228",
+    "bytes": "003185e0",
+    "asm": "ADD             R3, R5, R0,LSL#2"
+  },
+  {
+    "ea": "0x6322c",
+    "bytes": "063093e7",
+    "asm": "LDR             R3, [R3,R6]"
+  },
+  {
+    "ea": "0x63230",
+    "bytes": "ba0083e2",
+    "asm": "ADD             R0, R3, #0xBA"
+  },
+  {
+    "ea": "0x63234",
+    "bytes": "e3f700eb",
+    "asm": "BL              strlen"
+  },
+  {
+    "ea": "0x63238",
+    "bytes": "280050e3",
+    "asm": "CMP             R0, #0x28 "
+  },
+  {
+    "ea": "0x6323c",
+    "bytes": "1d00002a",
+    "asm": "BCS             locret_632B8"
+  },
+  {
+    "ea": "0x63240",
+    "bytes": "78309fe5",
+    "asm": "LDR             R3, =_rt_sdiv"
+  },
+  {
+    "ea": "0x63244",
+    "bytes": "501047e2",
+    "asm": "SUB             R1, R7, #0x50 "
+  },
+  {
+    "ea": "0x63248",
+    "bytes": "0d00a0e3",
+    "asm": "MOV             R0, #0xD"
+  },
+  {
+    "ea": "0x6324c",
+    "bytes": "003093e5",
+    "asm": "LDR             R3, [R3]"
+  },
+  {
+    "ea": "0x63250",
+    "bytes": "0fe0a0e1",
+    "asm": "MOV             LR, PC"
+  },
+  {
+    "ea": "0x63254",
+    "bytes": "03f0a0e1",
+    "asm": "MOV             PC, R3"
+  },
+  {
+    "ea": "0x63258",
+    "bytes": "ff3000e2",
+    "asm": "AND             R3, R0, #0xFF"
+  },
+  {
+    "ea": "0x6325c",
+    "bytes": "02b083e2",
+    "asm": "ADD             R11, R3, #2"
+  },
+  {
+    "ea": "0x63260",
+    "bytes": "58309fe5",
+    "asm": "LDR             R3, =_rt_sdiv"
+  },
+  {
+    "ea": "0x63264",
+    "bytes": "0c1044e2",
+    "asm": "SUB             R1, R4, #0xC"
+  },
+  {
+    "ea": "0x63268",
+    "bytes": "003093e5",
+    "asm": "LDR             R3, [R3]"
+  },
+  {
+    "ea": "0x6326c",
+    "bytes": "0e00a0e3",
+    "asm": "MOV             R0, #0xE"
+  },
+  {
+    "ea": "0x63270",
+    "bytes": "0fe0a0e1",
+    "asm": "MOV             LR, PC"
+  },
+  {
+    "ea": "0x63274",
+    "bytes": "03f0a0e1",
+    "asm": "MOV             PC, R3"
+  },
+  {
+    "ea": "0x63278",
+    "bytes": "3c409fe5",
+    "asm": "LDR             R4, =nNameEditChar"
+  },
+  {
+    "ea": "0x6327c",
+    "bytes": "ff3000e2",
+    "asm": "AND             R3, R0, #0xFF"
+  },
+  {
+    "ea": "0x63280",
+    "bytes": "0b0283e0",
+    "asm": "ADD             R0, R3, R11,LSL#4"
+  },
+  {
+    "ea": "0x63284",
+    "bytes": "0000c4e5",
+    "asm": "STRB            R0, [R4]"
+  },
+  {
+    "ea": "0x63288",
+    "bytes": "0000a0e3",
+    "asm": "MOV             R0, #0"
+  },
+  {
+    "ea": "0x6328c",
+    "bytes": "0100c4e5",
+    "asm": "STRB            R0, [R4,#(unk_159DE9 - 0x159DE8)]"
+  },
+  {
+    "ea": "0x63290",
+    "bytes": "0410a0e1",
+    "asm": "MOV             R1, R4"
+  },
+  {
+    "ea": "0x63294",
+    "bytes": "0500a0e1",
+    "asm": "MOV             R0, R5"
+  },
+  {
+    "ea": "0x63298",
+    "bytes": "822affeb",
+    "asm": "BL              Text_MeasureWidth"
+  },
+  {
+    "ea": "0x6329c",
+    "bytes": "0030b0e1",
+    "asm": "MOVS            R3, R0"
+  },
+  {
+    "ea": "0x632a0",
+    "bytes": "00009815",
+    "asm": "LDRNE           R0, [R8]"
+  },
+  {
+    "ea": "0x632a4",
+    "bytes": "0410a011",
+    "asm": "MOVNE           R1, R4"
+  },
+  {
+    "ea": "0x632a8",
+    "bytes": "00318510",
+    "asm": "ADDNE           R3, R5, R0,LSL#2"
+  },
+  {
+    "ea": "0x632ac",
+    "bytes": "06309317",
+    "asm": "LDRNE           R3, [R3,R6]"
+  },
+  {
+    "ea": "0x632b0",
+    "bytes": "ba008312",
+    "asm": "ADDNE           R0, R3, #0xBA"
+  },
+  {
+    "ea": "0x632b4",
+    "bytes": "aef7001b",
+    "asm": "BLNE            strcat"
+  },
+  {
+    "ea": "0x632b8",
+    "bytes": "f089bde8",
+    "asm": "POP             {R4-R8,R11,PC}"
+  },
+  {
+    "ea": "0x632bc",
+    "bytes": "e89d1500",
+    "asm": "DCD nNameEditChar"
+  },
+  {
+    "ea": "0x632c0",
+    "bytes": "0c600a00",
+    "asm": "DCD _rt_sdiv"
+  },
+  {
+    "ea": "0x632c4",
+    "bytes": "b8391100",
+    "asm": "DCD Map_bTactFlag"
+  },
+  {
+    "ea": "0x632c8",
+    "bytes": "60971500",
+    "asm": "DCD nSoldierDetailCursor"
+  },
+  {
+    "ea": "0x88120",
+    "bytes": "0000d1e5",
+    "asm": "LDRB            R0, [R1]"
+  },
+  {
+    "ea": "0x88124",
+    "bytes": "ff3010e2",
+    "asm": "ANDS            R3, R0, #0xFF"
+  },
+  {
+    "ea": "0x88128",
+    "bytes": "2200000a",
+    "asm": "BEQ             loc_881B8"
+  },
+  {
+    "ea": "0x8812c",
+    "bytes": "3030dde5",
+    "asm": "LDRB            R3, [SP,#8+varg_r3]"
+  },
+  {
+    "ea": "0x88130",
+    "bytes": "ff3013e2",
+    "asm": "ANDS            R3, R3, #0xFF"
+  },
+  {
+    "ea": "0x88134",
+    "bytes": "0b00000a",
+    "asm": "BEQ             loc_88168"
+  },
+  {
+    "ea": "0x88138",
+    "bytes": "0838a0e1",
+    "asm": "MOV             R3, R8,LSL#16"
+  },
+  {
+    "ea": "0x8813c",
+    "bytes": "4318a0e1",
+    "asm": "MOV             R1, R3,ASR#16"
+  },
+  {
+    "ea": "0x88140",
+    "bytes": "500051e3",
+    "asm": "CMP             R1, #0x50 "
+  },
+  {
+    "ea": "0x88144",
+    "bytes": "070000da",
+    "asm": "BLE             loc_88168"
+  },
+  {
+    "ea": "0x88148",
+    "bytes": "123ea0e3023083e3",
+    "asm": "MOV             R3, #0x122"
+  },
+  {
+    "ea": "0x88150",
+    "bytes": "030051e1",
+    "asm": "CMP             R1, R3"
+  },
+  {
+    "ea": "0x88154",
+    "bytes": "0130a0b3",
+    "asm": "MOVLT           R3, #1"
+  },
+  {
+    "ea": "0x88158",
+    "bytes": "3530c5b5",
+    "asm": "STRBLT          R3, [R5,#0x35]"
+  },
+  {
+    "ea": "0x8815c",
+    "bytes": "0938a0b1",
+    "asm": "MOVLT           R3, R9,LSL#16"
+  },
+  {
+    "ea": "0x88160",
+    "bytes": "4308a0b1",
+    "asm": "MOVLT           R0, R3,ASR#16"
+  },
+  {
+    "ea": "0x88164",
+    "bytes": "276cffbb",
+    "asm": "BLLT            SoldierScreen_AppendNameGlyph"
+  },
+  {
+    "ea": "0x88238",
+    "bytes": "b230c2e1",
+    "asm": "STRH            R3, [R2,#2]"
+  },
+  {
+    "ea": "0x8823c",
+    "bytes": "000090e5",
+    "asm": "LDR             R0, [R0]"
+  },
+  {
+    "ea": "0x88240",
+    "bytes": "68309fe5",
+    "asm": "LDR             R3, =Map_BackspaceSelectedName"
+  },
+  {
+    "ea": "0x88244",
+    "bytes": "0c3080e5",
+    "asm": "STR             R3, [R0,#0xC]"
+  },
+  {
+    "ea": "0x88248",
+    "bytes": "5c309fe5",
+    "asm": "LDR             R3, =SoldierScreen_CopyNameToEdit"
+  },
+  {
+    "ea": "0x8824c",
+    "bytes": "000091e5",
+    "asm": "LDR             R0, [R1]"
+  },
+  {
+    "ea": "0x88250",
+    "bytes": "0c3080e5",
+    "asm": "STR             R3, [R0,#0xC]"
+  },
+  {
+    "ea": "0x8a000",
+    "bytes": "0d00000a",
+    "asm": "BEQ             loc_8A03C"
+  },
+  {
+    "ea": "0x8a004",
+    "bytes": "80051fe5",
+    "asm": "LDR             R0, =pCtlNameEditBackspace"
+  },
+  {
+    "ea": "0x8a008",
+    "bytes": "3540c9e5",
+    "asm": "STRB            R4, [R9,#0x35]"
+  },
+  {
+    "ea": "0x8a00c",
+    "bytes": "000090e5",
+    "asm": "LDR             R0, [R0]"
+  },
+  {
+    "ea": "0x8a010",
+    "bytes": "0040cde5",
+    "asm": "STRB            R4, [SP,#4+bForceClick]"
+  },
+  {
+    "ea": "0x8a014",
+    "bytes": "ef40feeb",
+    "asm": "BL              UiControl_HitTest"
+  },
+  {
+    "ea": "0x8a018",
+    "bytes": "98051fe5",
+    "asm": "LDR             R0, =pCtlNameEditAccept"
+  },
+  {
+    "ea": "0x8a01c",
+    "bytes": "0030a0e3",
+    "asm": "MOV             R3, #0"
+  },
+  {
+    "ea": "0x8a020",
+    "bytes": "0020a0e3",
+    "asm": "MOV             R2, #0"
+  },
+  {
+    "ea": "0x8a024",
+    "bytes": "0040cde5",
+    "asm": "STRB            R4, [SP,#4+bForceClick]"
+  },
+  {
+    "ea": "0x8a028",
+    "bytes": "000090e5",
+    "asm": "LDR             R0, [R0]"
+  },
+  {
+    "ea": "0x8a02c",
+    "bytes": "0010a0e3",
+    "asm": "MOV             R1, #0"
+  },
+  {
+    "ea": "0x8a030",
+    "bytes": "e840feeb",
+    "asm": "BL              UiControl_HitTest"
+  }
+]

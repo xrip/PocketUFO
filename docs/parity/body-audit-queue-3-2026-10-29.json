@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-29",
+  "audit_input_source": "46101B1F493BE42FDE863E2D7933948642C5AA683F970EE75DD892389577AC2F",
+  "scope": "Read-only candidates for raw/source body comparison; membership is not a parity result.",
+  "batches": [
+    {
+      "id": "uicontrol",
+      "owner": "mission_return_connection_audit",
+      "members": [
+        "0x1a28c",
+        "0x1a2c8",
+        "0x1a340",
+        "0x1a3d8",
+        "0x1a5c0",
+        "0x1a604",
+        "0x1a75c"
+      ],
+      "depth": 1,
+      "max_nodes": 24,
+      "output": ".workers/luna-body-uicontrol/RESULT.json"
+    },
+    {
+      "id": "blitstate",
+      "owner": "soldier_item_wire_links",
+      "members": [
+        "0xa3624",
+        "0xa3964",
+        "0xa39ac",
+        "0xa3f5c",
+        "0xa479c",
+        "0xa47b0"
+      ],
+      "depth": 1,
+      "max_nodes": 24,
+      "output": ".workers/luna-body-blitstate/RESULT.json"
+    },
+    {
+      "id": "save_time_strateg",
+      "owner": "fire_burst_reset_impl",
+      "members": [
+        "0x3f1c8",
+        "0x3fbb4",
+        "0x40f4c",
+        "0x40204",
+        "0x41600"
+      ],
+      "depth": 1,
+      "max_nodes": 32,
+      "output": ".workers/luna-body-save-time-strateg/RESULT.json"
+    },
+    {
+      "id": "unit_basics",
+      "owner": "research_manufacture_connection",
+      "members": [
+        "0x498b0",
+        "0x49eb8",
+        "0x49ecc",
+        "0x4dcf4"
+      ],
+      "depth": 1,
+      "max_nodes": 32,
+      "output": ".workers/luna-body-unit-basics/RESULT.json"
+    }
+  ],
+  "tests_executed": false,
+  "runtime_executed": false
+}

@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "A4C1CB58C831202F6236BB8B5951680B54C57D74871D2DC5AB4038C42202F180",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-modal-layout-join/debug-ui-joins-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "889DC5F94C85DD6C81842DDBA285369BAD2A5CCF765EAC589074719F2EAC3024",
+        "build/tests/Debug/test_geoscape.exe": "807CE2D54FB1CD3FD0695A506999A13EEEEFA83E428A9042396D3264B4CA8701",
+        "build/tests/Debug/test_geoscapeframe.exe": "43F86F0137DD4034B3286FC651288BA2FB75090295C25485C802B546F55D5E4B",
+        "build/tests/Debug/test_save_world.exe": "7B0E27603FD04C9F5BE66F30BD13F53022631C17F3B1A881B99424039485BA5E",
+        "build/tests/Debug/test_renderframe.exe": "D830CC1E7E3C9386A18467951B75783A4E31204685F1962587F709CCB95D598E"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-modal-layout-join/release-ui-joins-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "D6397AC84F1B516C87563807906C746EBF3AAC74522192266709976F28C43B71",
+        "build/tests/Release/test_geoscape.exe": "161E3B2C86AC6B302DD82370AAAC10DA21305F50DBA42DAEA8A914108425D81D",
+        "build/tests/Release/test_geoscapeframe.exe": "3C717590C6E23AE287B5B27BDBA029C4CAE35A65FDC6F7D57B4DD0DDB0AA6964",
+        "build/tests/Release/test_save_world.exe": "BA929E6C1506F139D7827D7A02A519CAC631E0FF2E1B9628A771C3DB33F954A6",
+        "build/tests/Release/test_renderframe.exe": "9416AB9A8CF1E03EE03BF4D575E27D79DF2064E0F185463D1DB853064B473556"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "source_fingerprint_before_build": "A4C1CB58C831202F6236BB8B5951680B54C57D74871D2DC5AB4038C42202F180",
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "All11 geoscape repeat screens/live gates, natural0->1->2 repeat phase carry, and preserved modal layout outputs; World pointer-hold and two-to-one-button regressions compile, unrun."
+}

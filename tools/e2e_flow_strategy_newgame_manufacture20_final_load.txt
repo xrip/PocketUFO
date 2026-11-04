@@ -1,0 +1,6 @@
+# Fresh-process proof that the completed product and paid cost were saved.
+load 3
+state manufacture_final_load
+strategystate manufacture_final_load
+campaign cargo manufacture_final_load
+lines

@@ -68,7 +68,13 @@ next pass starts from the resolution rather than from the ambiguity.
 | `ScrollNext` clamps at `nLineCount - nStyle` | `IncDwordIfInRange_AtPlus0xBD4` @ `0x3f00c` | 20 scrolls stop at 7 with 10 lines / style 3 |
 | `ScrollPrev` clamps at 0 | `DecDwordIfPos_AtPlus0xBD4` @ `0x3f040` | asserted |
 | A style larger than the line count keeps the cursor at 0 | the limit goes negative | asserted |
-| Wrap produces lines no wider than the limit, splitting on spaces | `UiPanel_WrapText` @ `0x37144` | all produced lines non-empty; short text is one line; empty input gives zero lines; a start line offsets the writes |
+| Wrap accepts width equal to `nMaxW` and preserves literal spaces, including a wrapped line's delimiter | `UiPanel_WrapText` @ `0x37144` | exact-width `short` stays one line; repeated spaces remain; two trailing spaces at the exact width preserve the whitespace row; empty input and nonzero start line are checked |
+
+## Current raw-backed status (2026-10-25)
+
+The earlier `UiPanel_DrawText` deviation was historical. Raw ARM for `UiPanelMsg_Draw` calls `SoftSurf_BlitRectProxy` at `0x3E9BC`, `SoftSurf_BlitSrcRect` at `0x3EA44`, and the per-row `SoftSurf_BlitRectProxy` at `0x3EB30`. The current source has those calls, and `TestPanelMsgDrawPasses` checks their geometry and gates.
+
+Raw ARM for `UiPanel_WrapText` calls `strcat` with the one-space literal at `0x37190`; the literal bytes at `0xAADB8` are `20 00`. Its width comparison at `0x37244` branches on less-than-or-equal, so ordinary exact-width text stays on one line. The old claim that an exact fit alone may add a line was wrong. The port now scans a virtual final delimiter and keeps source separators, with bounded line writes.
 
 ## Bugs found and fixed during this task
 
@@ -86,28 +92,21 @@ wrap path. Symptom was "wrapped 8 lines, last one blank, `theta` missing".
 | `UiPanel_ctor` clamps `nLineCount` to the 500-line capacity | the original trusts its caller and would walk past `apLines`; the clamp turns an overflow into a shorter panel |
 | Line text writes are truncated to 49 bytes | the original `strcpy`s into a 50-byte buffer, so an over-long string overflows into the next line pointer |
 | The `apLines[105]`/`[106]` clock aliasing is not modelled | on ILP32 those slots *are* `nGameTimeSec` and `bGeoscapeFlag_15961C`; on Win64 the entries widen so the alias cannot hold. The clock lives in `GameClock` (see `pufo_tactctl.h`) instead, keeping the two identities separate |
-| `UiPanel_DrawText` renders text rows only | the original first blits a background strip and source rect via `SoftSurf_BlitRectProxy` / `SoftSurf_BlitSrcRect`, whose entry points are not ported yet. The row placement and alignment logic (the part the panel owns) is complete |
-| `WrapText` does not reproduce the trailing space appended to the working copy | the decompiled index arithmetic for that loop did not survive cross-checking (a literal transcription emitted a line containing only the space). The observable contract — lines no wider than the limit, words not split — is implemented and tested instead. **This is an open deviation**: in the exact-fit case the original may emit one more line than the port |
 
-## Checks run
+## Historical checks
 
-| Check | Result |
-|---|---|
-| `cmake --build build --config Release` | 0 errors, 0 warnings (`/W4 /WX`) |
-| `build/tests/Release/test_panel.exe` | **PASS, 0 failures** |
-| full suite | 14/14 suites **PASS** |
+The earlier Release run dated 2026-10-25 passed `test_panel` as test 29 of 66 and recorded 66/66 CTest passes ([log](../.workers/luna-parent/phase2-verified-release-ctest.log#L58)). That run predates the separator-preserving change above. This update did not build or run the new regression.
 
 ## Not yet recreated, with reason
 
 | Function | Size | Why not yet |
 |---|---|---|
-| `Ui_DrawBaseInfo` @ `0x9b5f4` | 10,196 | base screen drawing; needs the ported `UiPanel` draw plus the base data model |
+| `Ui_DrawBaseInfo` @ `0x9b5f4` | 10,196 | base screen drawing; needs the base data model |
 | `Ui_TextInputDialog` @ `0x632cc` | 6,096 | modal text entry; needs keyboard input routing, which is `tact-ui` |
-| `UiModal_DrawDialog` @ `0x264a0` | 2,676 | modal frame; needs the background/source-rect blits noted above |
 | `Transfer_WriteErrorDump` @ `0x996e4` | 2,196 | only reachable from the strategy screens |
 | the `UiPanel_InsertLine` family | — | **blocked by the struct conflict above** |
 
-## UiControl button widget (done)
+## UiControl button widget (source implemented; current runtime pending)
 
 Files: `src/pufo/ui/pufo_control.{h,c}`. Evidence: `UiControl_ctor` @ 0x1a28c,
 `UiControl_FreePads` @ 0x1a2c8, `UiControl_BlitActivePad` @ 0x1a340,
@@ -152,7 +151,7 @@ the control's current size. `nState` is reset to 0.
 | 1 | `UiControl_FreePads` NULLs each pad pointer as it frees | The original leaves them dangling, so a second call double-frees; a double free is undefined rather than defined behaviour |
 | 2 | An unknown `nMode` draws nothing instead of falling through the switch | The original's switch has cases 0..2 only; an unknown value is not a modelled state |
 | 3 | `UiControl_Setup`'s pad loading is injected | It reads the asset archives; injection lets the positioning be tested without assets |
-| 4 | `EmptyBtn_OnClick`'s draw-mode store is injected | That global belongs to the renderer |
+| 4 | `EmptyBtn_OnClick`'s menu list-mode store is injected | Raw0x1A240 clears0x157188. The App callback now clears its existing state mirrors; the old no-op and renderer attribution were wrong. [Current repair/runtime limits](startup-list-back-2026-10-28.md). |
 
 ### Modal dialogue state (done)
 

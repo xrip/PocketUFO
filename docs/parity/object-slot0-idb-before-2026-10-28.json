@@ -1,0 +1,14 @@
+[
+  {
+    "ea": "0x113ac0",
+    "name": "unk_113AC0",
+    "type": "#129 *[256]",
+    "comment": null
+  },
+  {
+    "ea": "0x113b04",
+    "name": "Map_apObjects17",
+    "type": null,
+    "comment": null
+  }
+]

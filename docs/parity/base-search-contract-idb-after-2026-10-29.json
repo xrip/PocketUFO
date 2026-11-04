@@ -1,0 +1,13 @@
+{
+  "after": [
+    {
+      "ea": "0x5a900",
+      "comment": "LDRSB again, compared against an unmasked i32 nSiteId. Same signed field as 0x6AC68.\nRaw bounded SiteId search: LDRSB reads BaseRec+4 as signed; comparison uses full unmasked R1. Negative keys can match bytes80..FF. Signed base count bounds the loop and a miss returns-1. Do not narrow this interface to the separate TypeByte contract."
+    },
+    {
+      "ea": "0x6ac58",
+      "comment": "Raw TypeByte search masks R1 with0xFF before comparing the signed BaseRec+4 field. Keys80..FF cannot match that signed field. The raw nonempty search has no loop bound; the port safe-bound adaptation is separate from the bounded full-i32 SiteId search at5A8D0."
+    }
+  ],
+  "saved": true
+}

@@ -157,6 +157,8 @@ static void EnemyAi_EnqueueBurst(Soldier *pUnit, TactItem *pWeapon, i32 nMode,
     spec.nArg          = pCtx->anActionEnabled[nMode];
     spec.uAmmoInWeapon = pWeapon->nAmmo;
     spec.bAmmoCap      = pWeapon->pObj->bAmmoCap;
+    spec.pnShotCount   = pCtx->pnShotCount;
+    spec.ppThrowTarget = pCtx->ppThrowTarget;
 
     /* This is the one enqueue in the panic AI that can actually be refused: the site passes
      * Map_anActionCost[Map_nActionMode] straight to the callee with no gate of its own (0x4AE08),
@@ -671,6 +673,8 @@ static AiActPath EnemyAi_ThrowOrFire(Soldier *pUnit, TactCtx272 *pTact, const En
     spec.bAmmoCap          = pWeapon->pObj->bAmmoCap;
     spec.apMultiTargets    = pCtx->apMultiTargets;
     spec.nMultiTargetCount = *pCtx->pnMultiTargetCount;
+    spec.pnShotCount       = pCtx->pnShotCount;
+    spec.ppThrowTarget     = pCtx->ppThrowTarget;
 
     /* 0x4D910: no push here, because this call can never be refused. The gate at 0x4d448..0x4d458
      * let us through only when uTu >= cost*(2/3) + 8.0, and the cost handed to the callee is

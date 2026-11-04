@@ -1,0 +1,46 @@
+# Start from raw New Game, place the base through its normal pen path, then buy
+# one real Engineer and one Rifle from the live Buy screen. No fixture writes.
+
+dump strategy_purchase_staff_mainmenu.ppm
+click 120 124
+tick 20
+pick
+tick 10
+state new_game
+strategystate new_game
+campaign cargo new_game
+dump strategy_purchase_staff_new_game.ppm
+
+# Base screen -> Buy screen through the normal map and nav controls.
+click 60 252
+tick 20
+strategystate base_info
+click 231 8
+tick 2
+strategystate base_strip
+click 180 292
+tick 20
+strategystate shop_open
+dump strategy_purchase_staff_shop.ppm
+
+# Shop row 3 is the live Engineer row (object 112). One quantity click pays
+# its raw $50,000 cost and queues one real staff site item.
+click 25 126
+click 196 126
+strategystate engineer_paid
+
+# Shop row 7 is the live Rifle row (object 4). One quantity click pays its raw
+# $3,000 cost and queues one real inventory site item.
+click 25 190
+click 196 190
+strategystate rifle_paid
+
+# Confirm through the real screen control, return to the map, and save the
+# pending order before any time passes.
+click 120 306
+tick 2
+click 201 11
+tick 2
+strategystate purchase_pending
+save 0
+state pending_save

@@ -1,7 +1,7 @@
 /* pufo_tactctl.c - tactical cursor, game speed, and clock control.
  *
  * Evidence: MapCursor_SetFlags @ 0x26f78, MapCursor_IsValid @ 0x275fc,
- *           GameSpeed_Set @ 0x260c0, GameTime_Pause @ 0x5d6ac.
+ *           GameSpeed_Set @ 0x260c0.
  */
 #include "game/pufo_tactctl.h"
 #include "game/pufo_rmp.h"   /* Rmp_PickSpawnForUnit, RmpData */
@@ -76,18 +76,6 @@ bool GameSpeed_Set(GameClock *pClock, u32 nSpeed)
         return true;
     }
     return false;
-}
-
-/* GameTime_Pause @ 0x5d6ac.
- *
- * The original writes LOBYTE(gUiRootPanel.apLines[106]) = 1. apLines is the
- * panel's 500-entry line-pointer array, and slots 105/106 are reused as a clock
- * value and a pause flag rather than as line pointers -- SaveSlot_FormatList
- * (0x45904) reads slot 105 the same way as a packed timestamp. Modelling that as
- * a named field on the clock keeps the aliasing out of the port. */
-void GameTime_Pause(GameClock *pClock)
-{
-    pClock->bPaused = true;
 }
 
 /* ----------------------------------------------------------------- view maths */
@@ -606,10 +594,9 @@ i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv)
 
         switch (pEnv->bMissionMode) {
         case 1: {
-            /* ORIGINAL BUG (0x398B0), reproduced: the selected base byte is loaded with LDRSB and then
-             * compared against Soldier.nKind, an unsigned byte. A base byte of 0x80 or more sign-extends
-             * to a negative int and matches no nKind at all, so the team comes out empty. Base indices are
-             * small in practice, which is why this has never been seen. */
+            /* ORIGINAL BUG (0x398B8), reproduced: LDRSB reads the selected base byte, while LDRB at
+             * 0x398BC reads Soldier+0xB6 unsigned. Values >=0x80 cannot match. Valid base indices are
+             * 0..7, so normal selection does not reach this signedness mismatch. */
             const u8 bCraft = pUnit->bUnk183;
             bAccept = ((i32)pUnit->nKind == (i32)pEnv->nSelectedBase) &&
                       bCraft != 254u &&
@@ -629,9 +616,9 @@ i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv)
         }
 
         if (!bAccept) {
-            /* ORIGINAL BEHAVIOUR, reproduced: rejection ends the walk rather than skipping the soldier,
-             * so one unsuitable soldier leaves every later soldier unprocessed. */
-            break;
+            /* 0x39840 (craft mismatch), 0x398C4/0x398D0 (base mismatch/out craft), and the
+             * zero-at-base fall-through after 0x398F0 all reach the loop advance at loc_398F8. */
+            continue;
         }
 
         /* 0x3984C: the original calls Unit_ResetBattleState with (pUnit, 0) only -- the function reads

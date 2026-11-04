@@ -1086,8 +1086,8 @@ bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState, SmapView *pView,
     if (!DatFile_Read(pDat, &pState->nCamParam0, 4)  /* 0x40C78: viewport nMode */
         || !DatFile_Read(pDat, &pState->nCamScrollX, 4) /* 0x40C90 */
         || !DatFile_Read(pDat, &pState->nCamScrollY, 4) /* 0x40CA8 */
-        || !DatFile_Read(pDat, &pState->nParam3, 4)     /* 0x40D94 */
-        || !DatFile_Read(pDat, &pState->nParam4, 4)) {  /* 0x40DAC */
+        || !DatFile_Read(pDat, &pState->nParam3, 4)     /* 0x40E08 / 0x40E0C */
+        || !DatFile_Read(pDat, &pState->nParam4, 4)) {  /* 0x40E18 / 0x40E1C */
         return false;
     }
 
@@ -1426,7 +1426,8 @@ void Save_BasesLiveToRecord(const SaveBasesLive *pLive, SaveBasesState *pState)
     }
 }
 
-void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *pLive)
+void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *pLive,
+                            i32 nSaveFmtVer)
 {
     if (pLive == NULL || pState == NULL) {
         return;
@@ -1436,10 +1437,15 @@ void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *p
     memcpy(pLive->abFacilityGrid + 372, pState->abBlock1152, sizeof(pState->abBlock1152));    /* 0x4033C */
     *pLive->pnBaseCount = (i8)pState->bBaseCount;                       /* 0x40354 */
     *pLive->pnSelectedBase = (i8)pState->bUnk159D81;                    /* 0x4036C */
-    memcpy(pLive->abHangarBytes, pState->abUnk159DBC, sizeof(pState->abUnk159DBC)); /* 0x403C4 */
+    /* Save_ReadBases writes only the first four bytes of 0x159DBC before version 3.
+     * The raw reader leaves the other four live bytes alone, so the record join must too. */
+    memcpy(pLive->abHangarBytes, pState->abUnk159DBC,
+           (nSaveFmtVer >= 3) ? sizeof(pState->abUnk159DBC) : 4u); /* 0x403C4 */
     memcpy(pLive->pnFunds, pState->abUnk1598D8, sizeof(pState->abUnk1598D8));       /* 0x403D4 */
     memcpy(pLive->pnSoldierHireCount, pState->abUnk159D90, 4);                      /* 0x4039C, the dword's 4 bytes */
-    *pLive->pnCraftHomeBase = (i8)pState->bUnk158848;                   /* 0x403F0 */
+    if (nSaveFmtVer >= 3) {
+        *pLive->pnCraftHomeBase = (i8)pState->bUnk158848;                  /* 0x403F0 */
+    }
     for (i32 i = 0; i < PUFO_BASE_FLAG_COUNT; ++i) {
         pLive->abBaseFacRecords[i * 28 + 0x14] = pState->abFlag20[i];   /* 0x40408, v3 += 0x1C */
     }
@@ -1549,6 +1555,11 @@ bool Save_ReadShips(DatFile *pDat, Ship **apShips, i32 *pnShipCount, ShipCtorEnv
         return false;
     }
     *pnShipCount = (i32)bCount;
+    /* The original has just read bCount into Map_nCraftCount (0x408E0), then
+     * Ship_ctor reads that same total at 0x45C94 and clears aItemQty[bCount]
+     * before the per-craft columns are restored. Keep the ctor context in sync;
+     * a stale zero clears column 0 on every craft and erases earlier cargo. */
+    pEnv->nShipCount = (i32)bCount;
 
     for (i32 s = 0; s < (i32)bCount; ++s) {
         Ship *pNew = (Ship *)malloc(sizeof(Ship));
@@ -1625,7 +1636,7 @@ bool Save_AllocFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
         return false;
     }
 
-    if (nWideCountFlag != 0) { /* 0x431E0: 4 when Map+0x118 is non-zero, else 1 */
+    if (nWideCountFlag != 0) { /* 0x431E0: 4 when slot-context+0x118 is non-zero, else 1 */
         if (!DatFile_Read(pDat, pnTactItemCount, 4)) {
             return false;
         }
@@ -2797,6 +2808,14 @@ bool SaveGame(DatFile *pDat, const SaveGameInput *pIn)
         }
     }
 
+    /* Port-side chunk (2026-11-04, user-directed): the music loop byte, appended
+     * after every original chunk so the original order is untouched. Original
+     * readers look up their own tags, so the extra chunk is inert for them. */
+    if (bOk && pIn->pbMusicLoop != NULL) {
+        bOk = DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_124GSET);
+        if (bOk) { bOk = W(pDat, pIn->pbMusicLoop, 1); }
+    }
+
     DatFile_Close(pDat);   /* 0x44B88: closed even after a failed write */
     return bOk;
 }
@@ -2951,6 +2970,7 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     i32    nCraftCount;
     i32    nBaseCount;
     i32    nSiteCount;
+    SmapWorldSize *pWorldSize;
     bool   bOk = true;
 
     if (pDat == NULL || pHooks == NULL) {
@@ -2973,8 +2993,8 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     /* 0x44C64..0x44C94: tactver. The 2 bytes are read into a zero-initialised dword and the
      * VALUE is stored at slot-context + 0x118 — R7 is &MainMenu_pSlotCtx @ 0x156938 (every
      * caller passes it), so the dword lands right after the 7x40-byte line buffer at 0x156A50.
-     * Nothing in the binary reads that dword (the only 0x118 access on this base is the store),
-     * so it is write-only residue; the port hands the value out through pnTactVerOut. */
+     * Save_AllocFlobjs and Save_ReadFlobjs both read this same context+0x118
+     * to select their count width. The port publishes it through pnTactVerOut. */
     (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_TACTVER);
     {
         u32 nTactVer = 0;
@@ -3011,6 +3031,15 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
         if (pHooks->pfnTactShutdown != NULL) { pHooks->pfnTactShutdown(pHooks->pUser); }
     }
 
+    /* The original reader loads nBaseCount from its live global after the teardown above. The
+     * shell carries a pre-load count snapshot because Save_ReadBases frees the old records before
+     * reading the chunk. A mode-1 loss can demolish the selected base during Tact_Shutdown, so
+     * refresh that snapshot from the live owner. Standalone format callers have no live owner and
+     * keep the count they supplied. */
+    if (pEnv->pBasesLive != NULL && pEnv->pBasesLive->pnBaseCount != NULL) {
+        pEnv->nOldBaseCount = (i32)*pEnv->pBasesLive->pnBaseCount;
+    }
+
     /* 0x44D84..0x44DB8: the version byte comes from the strateg chunk BEFORE any chunk body
      * is read, because it sizes the other readers. */
     if (!Save_ReadStrategVersion(pDat, &pEnv->pStrateg->bSaveVersion)) { bOk = false; }
@@ -3021,22 +3050,40 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     /* The original's Save_ReadBases writes its globals as it reads them, so everything downstream of this
      * chunk sees the loaded values -- the per-base Base_ClearFacilityGridRow classification at
      * 0x44E38..0x44E7C reads the grid itself. The port's reader fills the record, so the join runs here. */
-    Save_BasesRecordToLive(pEnv->pBases, pEnv->pBasesLive);
+    Save_BasesRecordToLive(pEnv->pBases, pEnv->pBasesLive, nVer);
     if (!Save_ReadProduct(pDat, nVer, pEnv->pProductBlock)) { bOk = false; }
+    if (pHooks->pfnJoinProductState != NULL) {
+        pHooks->pfnJoinProductState(nVer, pHooks->pUser);
+    }
     if (!Save_ReadResearch(pDat, pEnv->pResearch)) { bOk = false; }
+    if (pHooks->pfnJoinResearchState != NULL) {
+        pHooks->pfnJoinResearchState(pHooks->pUser);
+    }
 
     nCraftCount = (i32)*pEnv->pbCraftCount; /* in/out: the count held before the read frees the old array */
     if (!Save_ReadShips(pDat, pEnv->apCraft, &nCraftCount, pEnv->pShipEnv)) { bOk = false; }
     *pEnv->pbCraftCount = (u8)nCraftCount;
 
+    pWorldSize = NULL;
+    if (pEnv->ppLiveWorldSize != NULL) {
+        pWorldSize = *pEnv->ppLiveWorldSize; /* UI teardown above may have freed or rebuilt it */
+    }
+    if (pWorldSize == NULL) {
+        pWorldSize = pEnv->pWorldSize; /* no live UI owner: use the caller's scratch pair */
+    }
     if (!Save_ReadSmap(pDat, pEnv->pSmap, pEnv->pView, pEnv->paZoomSets,
-                       pEnv->pWorldSize, *pEnv->pbGameState != 0)) { bOk = false; }
-    /* 0x40D94/0x40DAC: the smap chunk also restores the strateg seed counter (0x18640C) and the
-     * site count (0x186410, held behind a pointer in the original). The port keeps both in the
-     * wire record; hand the seed to the caller's counter and take the count for the budget passes. */
+                       pWorldSize, *pEnv->pbGameState != 0)) { bOk = false; }
+    /* The smap chunk restores 0x18640C and 0x186410 before Strateg_Read. The port stores these in
+     * the wire record, so publish them to the live world before any following reader uses them. */
     *pEnv->pnSeed = pEnv->pSmap->nParam3;
     nSiteCount = pEnv->pSmap->nParam4;
+    if (pHooks->pfnJoinSmapState != NULL) {
+        pHooks->pfnJoinSmapState(pHooks->pUser);
+    }
     if (!Save_ReadStrateg(pDat, pEnv->pStrateg, pEnv->pStrategList)) { bOk = false; }
+    if (pHooks->pfnJoinStrategState != NULL) {
+        pHooks->pfnJoinStrategState(pHooks->pUser);
+    }
     if (!Save_ReadTime(pDat, pEnv->pTimeRec)) { bOk = false; }
     /* The original reads the time chunk straight into the live clock block (apLines[101..115]);
      * the port reads it into the wire record and copies it over, leaving nUnkC (apLines[104],
@@ -3048,6 +3095,10 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     pEnv->pTime->bPaused = pEnv->pTimeRec->nSlot106;
     pEnv->pTime->nUnk34 = (i32)pEnv->pTimeRec->nSlot114;
     pEnv->pTime->nMonthEpochSec = (i32)pEnv->pTimeRec->nSlot115;
+    if (pEnv->pnAlienPoolAddend != NULL) {
+        /* 0x41684..0x41694 reads directly into 0x1472C8 before mission init. */
+        *pEnv->pnAlienPoolAddend = pEnv->pTimeRec->nWord1472C8;
+    }
     if (*pEnv->pbGameState == 0) { /* 0x44DAC: soldiers only for a non-tactical save */
         /* No resolvers on this path -- and none needed. A geoscape-state save flags no soldier into a
          * mission (Save_bSoldierInTact reads the live rosters, and on the geoscape there are none), so
@@ -3059,8 +3110,16 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
             SoldierRecordEnv arms;
 
             memset(&arms, 0, sizeof(arms));
-            if (!Save_ReadSoldiers(pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
-                                   pEnv->nSoldierCapacity, &arms, *pEnv->pbTactFlag)) { bOk = false; }
+            /* Original Save_ReadSoldiers calls Soldiers_Reload at 0x416C4 before it
+             * reads the stactflg and Soldier bodies. The port keeps the body reader
+             * separate for format tests, so this production wrapper restores the reload. */
+            if (!Soldiers_Reload(pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
+                                 pEnv->nSoldierCapacity)) {
+                bOk = false;
+            } else if (!Save_ReadSoldiers(pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
+                                          pEnv->nSoldierCapacity, &arms, *pEnv->pbTactFlag)) {
+                bOk = false;
+            }
         }
     }
 
@@ -3075,6 +3134,18 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
         }
         if (pHooks->pfnTactInitMission != NULL) {
             (void)pHooks->pfnTactInitMission(1, pHooks->pUser);
+        }
+    }
+
+    /* Port-side chunk (2026-11-04, user-directed): the music loop byte. Written
+     * last by SaveGame and read here. An absent chunk -- any original save, any
+     * older port save -- leaves the default: loop on. */
+    if (pEnv->pbMusicLoop != NULL) {
+        (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_124GSET);
+        if (DatFile_ChunkPresent(pDat)) {
+            if (!DatFile_Read(pDat, pEnv->pbMusicLoop, 1)) { bOk = false; }
+        } else {
+            *pEnv->pbMusicLoop = 1;
         }
     }
 
@@ -3093,6 +3164,9 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     /* 0x44E8C..0x44F64: an old save purges unclaimed type-5 items, then teleports any active
      * craft item that is off the map to (150, 250) and gives it a mission site. */
     if (nVer < 3) {
+        if (pHooks->pfnRefreshMissionCtx != NULL && pEnv->pMissionCtx != NULL) {
+            pHooks->pfnRefreshMissionCtx(pEnv->pMissionCtx, pHooks->pUser);
+        }
         (void)StrategList_PurgeType5(pEnv->pStrategList, pEnv->pWorld,
                                      pEnv->pbSpawnOnceFlag, pEnv->pSpawnCtx);
         for (i32 i = 0; i < pEnv->pStrateg->nStrategCount; ++i) {
@@ -3235,6 +3309,13 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
                 pD[nItem + nBaseOff] = ((const u16 *)aScratchD)[nBaseOff + col]; /* 0x45714, STRH */
             }
         }
+    }
+
+    /* 0x45590..0x45734 rewrites the complete current-format A/B/C arrays after a short old read.
+     * The original performs that rewrite directly in its globals; publish it before the derived
+     * facility flags at 0x458AC/0x458B8 consume the live product-side state. */
+    if (nVer < 3 && pHooks->pfnJoinProductState != NULL) {
+        pHooks->pfnJoinProductState(3, pHooks->pUser);
     }
 
     /* 0x45740..0x45794: the shot object is apObjects[0] (the load at 0x45750 reads

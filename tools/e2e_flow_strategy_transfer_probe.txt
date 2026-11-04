@@ -1,0 +1,22 @@
+# Inspect the real transfer rows from a fresh load of the completed two-base setup.
+load 1
+state transfer_probe_loaded
+click 180 266
+tick 2
+click 220 15
+tick 2
+strategystate transfer_source_selected
+click 180 274
+tick 20
+strategystate transfer_open
+dump strategy_transfer_probe_open.ppm
+press 220 43
+tick 1
+release
+tick 1
+strategystate transfer_destination_selected
+dump strategy_transfer_probe_destination.ppm
+@TRANSFER_SCROLL_CLICKS@
+strategystate transfer_scrolled
+dump strategy_transfer_probe_scrolled.ppm
+strategystate transfer_probe

@@ -1,0 +1,276 @@
+{
+  "types": [
+    {
+      "name": "PtrArray",
+      "found": true,
+      "size": 8,
+      "members": [
+        {
+          "name": "nCount",
+          "offset": 0,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "apItems",
+          "offset": 32,
+          "size": 32,
+          "type": "StrategItem **"
+        }
+      ]
+    },
+    {
+      "name": "UiLineList",
+      "found": false,
+      "size": null,
+      "members": []
+    },
+    {
+      "name": "UiPanel",
+      "found": true,
+      "size": 7092,
+      "members": [
+        {
+          "name": "aStyleRgb",
+          "offset": 0,
+          "size": 96,
+          "type": "unsigned __int8[12]"
+        },
+        {
+          "name": "nHoverRow",
+          "offset": 96,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "aLineMeta",
+          "offset": 128,
+          "size": 24000,
+          "type": "unsigned __int8[3000]"
+        },
+        {
+          "name": "nHoldCount",
+          "offset": 24128,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "pfnClick",
+          "offset": 24160,
+          "size": 32,
+          "type": "void (*)()"
+        },
+        {
+          "name": "bHoverActive",
+          "offset": 24192,
+          "size": 8,
+          "type": "unsigned __int8"
+        },
+        {
+          "name": "gap_3025",
+          "offset": 24200,
+          "size": 24,
+          "type": "char[3]"
+        },
+        {
+          "name": "nUnk3028",
+          "offset": 24224,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nUnk3032",
+          "offset": 24256,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nLineCount",
+          "offset": 24288,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nStyle",
+          "offset": 24320,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "apLines",
+          "offset": 24352,
+          "size": 16000,
+          "type": "UiControl *[500]"
+        },
+        {
+          "name": "anLineAux",
+          "offset": 40352,
+          "size": 16000,
+          "type": "int[500]"
+        },
+        {
+          "name": "nPosX",
+          "offset": 56352,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nPosY",
+          "offset": 56384,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nRectX",
+          "offset": 56416,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nRectY",
+          "offset": 56448,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nViewW",
+          "offset": 56480,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nViewH",
+          "offset": 56512,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "nFont",
+          "offset": 56544,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "bRowRules",
+          "offset": 56576,
+          "size": 8,
+          "type": "unsigned __int8"
+        },
+        {
+          "name": "bSelLineHighlight",
+          "offset": 56584,
+          "size": 8,
+          "type": "unsigned __int8"
+        },
+        {
+          "name": "bAuxNumbers",
+          "offset": 56592,
+          "size": 8,
+          "type": "unsigned __int8"
+        },
+        {
+          "name": "gap_7075",
+          "offset": 56600,
+          "size": 8,
+          "type": "char"
+        },
+        {
+          "name": "nUnk7076",
+          "offset": 56608,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "bRepeatArmed",
+          "offset": 56640,
+          "size": 8,
+          "type": "unsigned __int8"
+        },
+        {
+          "name": "gap_7081",
+          "offset": 56648,
+          "size": 24,
+          "type": "char[3]"
+        },
+        {
+          "name": "nRepeatDelay",
+          "offset": 56672,
+          "size": 32,
+          "type": "int"
+        },
+        {
+          "name": "bColorKey",
+          "offset": 56704,
+          "size": 8,
+          "type": "unsigned __int8"
+        },
+        {
+          "name": "bAuxPlusSign",
+          "offset": 56712,
+          "size": 8,
+          "type": "unsigned __int8"
+        },
+        {
+          "name": "gap_7090",
+          "offset": 56720,
+          "size": 16,
+          "type": "char[2]"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "ea": "0xa0f80",
+      "type": "void *__fastcall(void *self)"
+    },
+    {
+      "ea": "0xa0f94",
+      "type": "void __fastcall(void *self, int nIndex, int pItem)"
+    },
+    {
+      "ea": "0xa1054",
+      "type": "void __fastcall(void *self, int nIndex, int nCount)"
+    },
+    {
+      "ea": "0xa1120",
+      "type": "void __fastcall(void *self)"
+    },
+    {
+      "ea": "0xa1130",
+      "type": "StrategItem *__fastcall(PtrArray *pArr, int i)"
+    },
+    {
+      "ea": "0xa1154",
+      "type": "int __fastcall(void *self)"
+    },
+    {
+      "ea": "0x3e434",
+      "type": "int __fastcall(PtrArray *pArr)"
+    },
+    {
+      "ea": "0x5a294",
+      "type": "int __fastcall(int result, unsigned __int8, char, unsigned __int8, unsigned __int8, unsigned __int8, unsigned __int8)"
+    },
+    {
+      "ea": "0x5a334",
+      "type": "char __fastcall(void *pPanel, int nLine)"
+    },
+    {
+      "ea": "0x5a33c",
+      "type": "int __fastcall(void *pPanel, int nLine, int nSlot)"
+    },
+    {
+      "ea": "0x5a394",
+      "type": "int __fastcall(int, char, unsigned __int8, unsigned __int8, unsigned __int8, unsigned __int8)"
+    },
+    {
+      "ea": "0x5a3dc",
+      "type": "int __fastcall(int result, int)"
+    },
+    {
+      "ea": "0x5a450",
+      "type": "int __fastcall(int result, unsigned __int8, char, unsigned __int8, unsigned __int8, unsigned __int8, unsigned __int8)"
+    }
+  ]
+}

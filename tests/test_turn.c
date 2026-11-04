@@ -108,6 +108,71 @@ static void Rec_Visibility(Soldier *pUnit, void *pUser)
     ((Rec *)pUser)->nVisibilityCalls += 1;
 }
 
+typedef struct BeginTurnProbe {
+    TactCtx272 *pCtx;
+    Soldier **apEnemy;
+    i32 *pnLiveEnemyCount;
+    Soldier **apReinforcements;
+    i32 nReinforcements;
+    char aOrder[8];
+    i32 nOrder;
+    bool bBeforeSawInitialPhase;
+    bool bBeforeSawEmptyRoster;
+    bool bInputSawEnemyPhase;
+    bool bInputSawNewFlags;
+    bool bInputDisabled;
+} BeginTurnProbe;
+
+static void BeginTurn_Record(BeginTurnProbe *pProbe, char chEvent)
+{
+    if (pProbe->nOrder < (i32)sizeof(pProbe->aOrder)) {
+        pProbe->aOrder[pProbe->nOrder] = chEvent;
+    }
+    pProbe->nOrder += 1;
+}
+
+static void BeginTurn_SetInput(bool bEnabled, void *pUser)
+{
+    BeginTurnProbe *pProbe = (BeginTurnProbe *)pUser;
+    i32 i;
+
+    pProbe->bInputSawEnemyPhase = pProbe->pCtx->nPhase == PUFO_PHASE_ENEMY_AI;
+    pProbe->bInputSawNewFlags = true;
+    for (i = 0; i < pProbe->nReinforcements; ++i) {
+        Soldier *pUnit = pProbe->apReinforcements[i];
+        if (pUnit->bAiDone == 0 || pUnit->nSpottedCount == 0) {
+            pProbe->bInputSawNewFlags = false;
+        }
+    }
+    pProbe->bInputDisabled = !bEnabled;
+    BeginTurn_Record(pProbe, 'I');
+}
+
+static void BeginTurn_AiTick(TactCtx272 *pCtx, void *pUser)
+{
+    (void)pCtx;
+    BeginTurn_Record((BeginTurnProbe *)pUser, 'A');
+}
+
+static void BeginTurn_Frame(void *pUser)
+{
+    BeginTurn_Record((BeginTurnProbe *)pUser, 'F');
+}
+
+static void BeginTurn_Before(TactCtx272 *pCtx, void *pUser)
+{
+    BeginTurnProbe *pProbe = (BeginTurnProbe *)pUser;
+    i32 i;
+
+    pProbe->bBeforeSawInitialPhase = pCtx->nPhase == 0;
+    pProbe->bBeforeSawEmptyRoster = *pProbe->pnLiveEnemyCount == 0;
+    BeginTurn_Record(pProbe, 'B');
+    for (i = 0; i < pProbe->nReinforcements; ++i) {
+        pProbe->apEnemy[*pProbe->pnLiveEnemyCount] = pProbe->apReinforcements[i];
+        *pProbe->pnLiveEnemyCount += 1;
+    }
+}
+
 /* Builds a hook set bound to `pRec`. pUser MUST be non-NULL: every recording
  * hook dereferences it. */
 static TurnHooks MakeHooks(Rec *pRec)
@@ -376,6 +441,8 @@ static void TestBeginEndTurn(void)
     Soldier       *apCiv[1];
     Soldier       *apXcom[2];
     u8             bActive;
+    i32            nLiveEnemyCount = 2;
+    i32            nLiveXcomCount = 2;
     i32            i;
 
     printf("Tact_BeginEnemyTurn\n");
@@ -402,11 +469,16 @@ static void TestBeginEndTurn(void)
     lists.apCivilian = apCiv;
     lists.nCivilian = 1;
     lists.apXcom = apXcom;
-    lists.nXcom = 2;
+#if defined(PUFO_TURN_HAS_LIVE_XCOM_COUNT)
+    lists.pnXcomCount = &nLiveXcomCount;
+#else
+    lists.nXcom = nLiveXcomCount;
+#endif
 
     ctx.pCameraUnit = &aXcom[0];
     bActive = 7;
-    Tact_BeginEnemyTurn(&ctx, &hooks, &lists, &aXcom[1], &bActive, NULL, NULL);
+    Tact_BeginEnemyTurn(&ctx, &hooks, &lists, &nLiveEnemyCount, &aXcom[1], &bActive,
+                        NULL, NULL);
     Check(ctx.pCameraUnit == NULL, "  camera unit cleared");
     CheckEqI32(bActive, 1, "  enemy-turn byte set (0x4CA30)");
     CheckEqI32(ctx.bBusy, 1, "  marked busy");
@@ -452,6 +524,58 @@ static void TestBeginEndTurn(void)
     hooks = MakeHooks(&rec);
     Tact_EndEnemyTurn(&ctx, &hooks, &aXcom[0], &bActive, NULL);
     Check(rec.pLastSelected == &aXcom[0], "  fell back to the first XCom unit");
+}
+
+static void TestBeginTurnLiveEnemyCount(void)
+{
+    TurnHooks hooks = { 0 };
+    TactCtx272 ctx = { 0 };
+    TurnUnitLists lists = { 0 };
+    BeginTurnProbe probe = { 0 };
+    Soldier aEnemies[2] = { 0 };
+    Soldier *apEnemies[2] = { NULL, NULL };
+    Soldier *apReinforcements[2] = { &aEnemies[0], &aEnemies[1] };
+    i32 nLiveEnemyCount = 0;
+    i32 nLiveXcomCount = 0;
+    u8 bActive = 0;
+    i32 i;
+
+    printf("Tact_BeginEnemyTurn resets post-hook live enemies\n");
+    for (i = 0; i < 2; ++i) {
+        aEnemies[i].bAiDone = 1;
+        aEnemies[i].nSpottedCount = 7;
+    }
+    probe.pCtx = &ctx;
+    probe.apEnemy = apEnemies;
+    probe.pnLiveEnemyCount = &nLiveEnemyCount;
+    probe.apReinforcements = apReinforcements;
+    probe.nReinforcements = 2;
+    hooks.pfnSetPlayerInput = BeginTurn_SetInput;
+    hooks.pfnEnemyAiTick = BeginTurn_AiTick;
+    hooks.pUser = &probe;
+    lists.apEnemy = apEnemies;
+    lists.nEnemy = 0;
+#if defined(PUFO_TURN_HAS_LIVE_XCOM_COUNT)
+    lists.pnXcomCount = &nLiveXcomCount;
+#else
+    lists.nXcom = nLiveXcomCount;
+#endif
+
+    Tact_BeginEnemyTurn(&ctx, &hooks, &lists, &nLiveEnemyCount, NULL, &bActive,
+                        BeginTurn_Frame, BeginTurn_Before);
+
+    Check(probe.bBeforeSawInitialPhase && probe.bBeforeSawEmptyRoster,
+          "  BeforeEnemyStep sees phase 0 and the zero-enemy starting count");
+    Check(lists.nEnemy == 0 && nLiveEnemyCount == 2,
+          "  the pre-hook snapshot stays zero while the hook appends two live enemies");
+    Check(aEnemies[0].bAiDone == 0 && aEnemies[0].nSpottedCount == 0
+              && aEnemies[1].bAiDone == 0 && aEnemies[1].nSpottedCount == 0,
+          "  the same call clears AI and spotting state for every appended enemy");
+    Check(probe.nOrder == 4 && memcmp(probe.aOrder, "FBIA", 4) == 0,
+          "  frame, before-step, input-disable, then AI-tick order is preserved");
+    Check(probe.bInputSawEnemyPhase && probe.bInputSawNewFlags && probe.bInputDisabled,
+          "  input sees phase 3 and the new flags before the reset");
+    CheckEqI32(bActive, 1, "  enemy-turn flag is set");
 }
 
 static void RecordTry(Soldier *pTarget, Soldier *pShooter, void *pUser)
@@ -582,6 +706,16 @@ static char          g_aTextRecs[64 * PUFO_TEXT_REC_STRIDE];
 static char          g_aRankNames[9][PUFO_RANK_NAME_STRIDE];
 static EnemyAiActCtx g_ActCtx;
 static EnemyStepCtx  g_Step;
+static Soldier      *g_pPublishExpected;
+static i32           g_nPublishCalls;
+static i32           g_nPublishXcom;
+static i32           g_nPublishEnemy;
+static bool          g_bPublishXcomTail;
+static bool          g_bPublishEnemyTail;
+static i32           g_anPublishXcom[16];
+static i32           g_anPublishEnemy[16];
+static Soldier       *g_apPublishXcomTail[16];
+static Soldier       *g_apPublishEnemyTail[16];
 static Mc1Rec        g_aSpr[8];
 static TactItem      g_aItem[4];
 static Soldier       g_Occupant;
@@ -848,6 +982,22 @@ static void EtReset(const u32 *pScript, i32 nLen)
     g_nActOverflow = 0;
 }
 
+static void Et_PublishRosterCounts(i32 nXcom, i32 nEnemy, void *pUser)
+{
+    (void)pUser;
+    if (g_nPublishCalls >= 0 && g_nPublishCalls < (i32)(sizeof(g_anPublishXcom) / sizeof(g_anPublishXcom[0]))) {
+        g_anPublishXcom[g_nPublishCalls] = nXcom;
+        g_anPublishEnemy[g_nPublishCalls] = nEnemy;
+        g_apPublishXcomTail[g_nPublishCalls] = (nXcom > 0) ? g_apXcom[nXcom - 1] : NULL;
+        g_apPublishEnemyTail[g_nPublishCalls] = (nEnemy > 0) ? g_apEnemy[nEnemy - 1] : NULL;
+    }
+    ++g_nPublishCalls;
+    g_nPublishXcom = nXcom;
+    g_nPublishEnemy = nEnemy;
+    g_bPublishXcomTail = nXcom > 0 && g_apXcom[nXcom - 1] == g_pPublishExpected;
+    g_bPublishEnemyTail = nEnemy > 0 && g_apEnemy[nEnemy - 1] == g_pPublishExpected;
+}
+
 static void TestUpdateControlGuard(void)
 {
     EtReset(NULL, 0);
@@ -984,9 +1134,15 @@ static void TestUpdateControlSideTransfer(void)
     g_apEnemy[0] = NULL;
     g_pSelUnit = &g_aUnits[0];
     g_nEnemy = 0;
+    g_pPublishExpected = &g_aUnits[0];
+    g_nPublishCalls = 0;
+    g_Step.pfnPublishRosterCounts = Et_PublishRosterCounts;
 
     Tact_UpdateUnitControl(&g_aUnits[0], &g_Step);
 
+    Check(g_nPublishCalls == 1 && g_nPublishXcom == 0 && g_nPublishEnemy == 1
+              && g_bPublishEnemyTail,
+          "the roster publisher sees final XCom/enemy counts and the appended enemy unit before later work");
     CheckEqI32(g_nEnemy, 1, "the unit is appended to the enemy roster");
     Check(g_apEnemy[0] == &g_aUnits[0], "in the slot the count points at");
     CheckEqI32(g_nXcom, 0, "and it was removed from the XCom roster");
@@ -1020,8 +1176,14 @@ static void TestUpdateControlSideTransfer(void)
     g_nEnemy = 1;
     g_apEnemy[0] = &g_aUnits[0];
     g_nXcom = 0;
+    g_pPublishExpected = &g_aUnits[0];
+    g_nPublishCalls = 0;
+    g_Step.pfnPublishRosterCounts = Et_PublishRosterCounts;
 
     Tact_UpdateUnitControl(&g_aUnits[0], &g_Step);
+    Check(g_nPublishCalls == 1 && g_nPublishXcom == 1 && g_nPublishEnemy == 0
+              && g_bPublishXcomTail,
+          "the roster publisher sees final counts and the recovered XCom unit in its new slot");
     CheckEqI32(g_nXcom, 1, "the unit is appended to the XCom roster");
     Check(g_apXcom[0] == &g_aUnits[0], "in the slot the count points at");
     CheckEqI32(g_nEnemy, 0, "and it left the enemy roster");
@@ -1029,6 +1191,102 @@ static void TestUpdateControlSideTransfer(void)
     CheckEqI32(g_Stack.nCount, 1, "and the return message is pushed");
     Check(strcmp(g_Stack.aszMsg[0], "Unit0 released-f") == 0,
           "using the female record 53");
+}
+
+typedef struct BeginTurnControlReturnProbe {
+    EnemyStepCtx *pStep;
+    i32 nInputCalls;
+    bool bPlayerInput;
+} BeginTurnControlReturnProbe;
+
+static void BeginTurn_ControlReturnInput(bool bEnabled, void *pUser)
+{
+    BeginTurnControlReturnProbe *pProbe = (BeginTurnControlReturnProbe *)pUser;
+
+    ++pProbe->nInputCalls;
+    pProbe->bPlayerInput = bEnabled;
+}
+
+static void BeginTurn_ControlReturnBefore(TactCtx272 *pTact, void *pUser)
+{
+    BeginTurnControlReturnProbe *pProbe = (BeginTurnControlReturnProbe *)pUser;
+
+    BeforeEnemyStep(pTact, pProbe->pStep);
+}
+
+static void TestBeginTurnLiveXcomCountAfterControlReturn(void)
+{
+    TactCtx272 ctx = { 0 };
+    TurnHooks hooks = { 0 };
+    TurnUnitLists lists = { 0 };
+    BeginTurnControlReturnProbe probe = { 0 };
+    Soldier *pOldXcom = &g_aUnits[1];
+    Soldier *pReturned = &g_aUnits[0];
+    u8 bEnemyTurnActive = 0;
+
+    printf("Tact_BeginEnemyTurn resets a controlled human returned by BeforeEnemyStep\n");
+    EtReset(NULL, 0);
+
+    g_nXcom = 1;
+    g_nEnemy = 1;
+    g_nCiv = 0;
+    g_apXcom[0] = pOldXcom;
+    g_apEnemy[0] = pReturned;
+    g_pSelUnit = pOldXcom;
+
+    pOldXcom->nUnitType = 0;
+    pOldXcom->uHp = 50;
+    pOldXcom->bStatus = 0;
+    pOldXcom->bAiDone = 1;
+    pOldXcom->nSpottedCount = 5;
+    pOldXcom->pCell = Cell(3, 2, 1);
+
+    pReturned->nUnitType = 2;
+    pReturned->bStatus = 1;
+    pReturned->bFlags = 0;
+    pReturned->bControlRecovered = 0;
+    pReturned->uHp = 50;
+    pReturned->uTu = 20;
+    pReturned->uTuSpent = 0;
+    pReturned->bMorale = 50;
+    pReturned->bAiDone = 1;
+    pReturned->nSpottedCount = 7;
+    pReturned->pCell = Cell(2, 2, 1);
+
+    g_pPublishExpected = pReturned;
+    g_nPublishCalls = 0;
+    g_Step.pfnPublishRosterCounts = Et_PublishRosterCounts;
+    probe.pStep = &g_Step;
+    hooks.pfnSetPlayerInput = BeginTurn_ControlReturnInput;
+    hooks.pUser = &probe;
+    lists.apEnemy = g_apEnemy;
+    lists.nEnemy = g_nEnemy;
+    lists.apCivilian = g_apCiv;
+    lists.nCivilian = g_nCiv;
+    lists.apXcom = g_apXcom;
+#if defined(PUFO_TURN_HAS_LIVE_XCOM_COUNT)
+    lists.pnXcomCount = &g_nXcom;
+#else
+    lists.nXcom = g_nXcom;
+#endif
+
+    Tact_BeginEnemyTurn(&ctx, &hooks, &lists, &g_nEnemy, pOldXcom,
+                        &bEnemyTurnActive, NULL, BeginTurn_ControlReturnBefore);
+
+    Check(g_nPublishCalls == 1 && g_nPublishXcom == 2 && g_nPublishEnemy == 0
+              && g_bPublishXcomTail,
+          "  BeforeEnemyStep returns the human to the live XCOM list");
+    Check(g_apXcom[1] == pReturned && pReturned->bStatus == 0,
+          "  the returned unit is the newly appended XCOM member");
+    Check(pOldXcom->bAiDone == 0 && pOldXcom->nSpottedCount == 0
+              && pReturned->bAiDone == 0 && pReturned->nSpottedCount == 0,
+          "  Begin resets AI and spotting state for both old and returned XCOM members");
+    Check(g_nXcom == 2,
+          "  the count seen by the post-hook reset is live");
+    Check(probe.nInputCalls == 1 && !probe.bPlayerInput
+              && ctx.bBusy != 0 && ctx.nPhase == PUFO_PHASE_ENEMY_AI
+              && bEnemyTurnActive == 1,
+          "  the turn still disables input after the pre-step callback");
 }
 
 static void TestBeforeEnemyStepBasics(void)
@@ -1087,9 +1345,17 @@ static void TestBeforeEnemyStepReserveSpawn(void)
     g_apHidden[0] = &g_aUnits[4];
     g_apHidden[1] = &g_aUnits[5];
     g_apHidden[2] = &g_aUnits[6];   /* past nReserveCount, so it must never be picked */
+    g_nPublishCalls = 0;
+    g_Step.pfnPublishRosterCounts = Et_PublishRosterCounts;
 
     BeforeEnemyStep(&g_Tact, &g_Step);
 
+    Check(g_nPublishCalls == 2
+              && g_anPublishXcom[0] == 1 && g_anPublishEnemy[0] == 2
+              && g_apPublishEnemyTail[0] == &g_aUnits[4]
+              && g_anPublishXcom[1] == 1 && g_anPublishEnemy[1] == 3
+              && g_apPublishEnemyTail[1] == &g_aUnits[5],
+          "each reserve append publishes the Map-side counts after its unit is installed");
     CheckEqI32(g_nEnemy, 3, "the clamped count put both reserves on the enemy roster");
     Check(g_apEnemy[1] == &g_aUnits[4] && g_apEnemy[2] == &g_aUnits[5],
           "in the order the picks drew them");
@@ -1416,6 +1682,7 @@ int main(void)
     TestOppFireWalk();
     TestPlayerOppFire();
     TestBeginEndTurn();
+    TestBeginTurnLiveEnemyCount();
     TestRefreshVisibility();
     TestScanOpportunityFire();
 
@@ -1423,6 +1690,7 @@ int main(void)
     TestUpdateControlTuSpent();
     TestUpdateControlRecover();
     TestUpdateControlSideTransfer();
+    TestBeginTurnLiveXcomCountAfterControlReturn();
     TestBeforeEnemyStepBasics();
     TestBeforeEnemyStepReserveSpawn();
     TestBeforeEnemyStepBurnRun();

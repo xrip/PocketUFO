@@ -1,0 +1,547 @@
+{
+  "date": "2026-10-28",
+  "scope": "Shared slot context +0x118 count-width selector; no original save execution",
+  "context_trace": [
+    [
+      "0x44bbc",
+      "f04f2de9",
+      "PUSH            {R4-R11,LR}"
+    ],
+    [
+      "0x44bc0",
+      "80c19fe5",
+      "LDR             R12, =0x4C80"
+    ],
+    [
+      "0x44bc4",
+      "0cd04de0",
+      "SUB             SP, SP, R12"
+    ],
+    [
+      "0x44bc8",
+      "0070a0e1",
+      "MOV             R7, R0"
+    ],
+    [
+      "0x44bcc",
+      "70019fe5",
+      "LDR             R0, =(dword_1883AC+4)"
+    ],
+    [
+      "0x44bd0",
+      "20308de2",
+      "ADD             R3, SP, #0x4C80+pszPath"
+    ],
+    [
+      "0x44bd4",
+      "0140a0e1",
+      "MOV             R4, R1"
+    ],
+    [
+      "0x44bd8",
+      "002043e0",
+      "SUB             R2, R3, R0"
+    ],
+    [
+      "0x44bdc",
+      "d010d0e1",
+      "LDRSB           R1, [R0]"
+    ],
+    [
+      "0x44be0",
+      "0010c2e7",
+      "STRB            R1, [R2,R0]"
+    ],
+    [
+      "0x44c64",
+      "506a01eb",
+      "BL              DatFile_FindChunk"
+    ],
+    [
+      "0x44c68",
+      "c0009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x44c6c",
+      "cd6a01eb",
+      "BL              DatFile_ChunkPresent"
+    ],
+    [
+      "0x44c70",
+      "ff3010e2",
+      "ANDS            R3, R0, #0xFF"
+    ],
+    [
+      "0x44c74",
+      "0030a0e3",
+      "MOV             R3, #0"
+    ],
+    [
+      "0x44c78",
+      "0500000a",
+      "BEQ             loc_44C94"
+    ],
+    [
+      "0x44c7c",
+      "ac009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x44c80",
+      "0220a0e3",
+      "MOV             R2, #2"
+    ],
+    [
+      "0x44c84",
+      "10108de2",
+      "ADD             R1, SP, #0x4C80+pBuf"
+    ],
+    [
+      "0x44c88",
+      "10308de5",
+      "STR             R3, [SP,#0x4C80+pBuf]"
+    ],
+    [
+      "0x44c8c",
+      "816a01eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x44c90",
+      "10309de5",
+      "LDR             R3, [SP,#0x4C80+pBuf]"
+    ],
+    [
+      "0x44c94",
+      "183187e5",
+      "STR             R3, [R7,#0x118]"
+    ],
+    [
+      "0x3d208",
+      "0c308de5",
+      "STR             R3, [SP,#0x36C+var_360]"
+    ],
+    [
+      "0x3d20c",
+      "ff3001e2",
+      "AND             R3, R1, #0xFF"
+    ],
+    [
+      "0x3d210",
+      "930a02e0",
+      "MUL             R2, R3, R10"
+    ],
+    [
+      "0x3d214",
+      "020059e1",
+      "CMP             R9, R2"
+    ],
+    [
+      "0x3d218",
+      "d2ffffba",
+      "BLT             loc_3D168"
+    ],
+    [
+      "0x3d21c",
+      "d2faffeb",
+      "BL              Tact_LoadLoftData"
+    ],
+    [
+      "0x3d220",
+      "78041fe5",
+      "LDR             R0, =MainMenu_pSlotCtx"
+    ],
+    [
+      "0x3d224",
+      "e01700eb",
+      "BL              Save_AllocFlobjs"
+    ],
+    [
+      "0x3d228",
+      "80041fe5",
+      "LDR             R0, =MainMenu_pSlotCtx"
+    ],
+    [
+      "0x3d22c",
+      "221100eb",
+      "BL              Save_ReadSoldiers"
+    ],
+    [
+      "0x3d230",
+      "88041fe5",
+      "LDR             R0, =MainMenu_pSlotCtx"
+    ],
+    [
+      "0x3d234",
+      "031c00eb",
+      "BL              Save_ReadTGameData"
+    ],
+    [
+      "0x444a0",
+      "0500a0e1",
+      "MOV             R0, R5"
+    ],
+    [
+      "0x444a4",
+      "f50700eb",
+      "BL              Font_BuildIndex"
+    ],
+    [
+      "0x444a8",
+      "dcfeffeb",
+      "BL              Save_ReadTeamUnits"
+    ],
+    [
+      "0x444ac",
+      "0600a0e1",
+      "MOV             R0, R6"
+    ],
+    [
+      "0x444b0",
+      "68fbffeb",
+      "BL              Save_ReadFlobjs"
+    ],
+    [
+      "0x444b4",
+      "c7fbffeb",
+      "BL              Save_ReadMap"
+    ],
+    [
+      "0x431b0",
+      "0040a0e1",
+      "MOV             R4, R0"
+    ],
+    [
+      "0x431b4",
+      "70109fe5",
+      "LDR             R1, =aFlobjs"
+    ],
+    [
+      "0x431b8",
+      "64009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x431bc",
+      "fa7001eb",
+      "BL              DatFile_FindChunk"
+    ],
+    [
+      "0x431c0",
+      "183194e5",
+      "LDR             R3, [R4,#0x118]"
+    ],
+    [
+      "0x431c4",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x431c8",
+      "58609fe5",
+      "LDR             R6, =Map_bTactFlag"
+    ],
+    [
+      "0x431cc",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x431d0",
+      "4c009fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x431d4",
+      "153aa0e34f3f83e3",
+      "MOV             R3, #(Map_nTactItemCount - 0x1139B8)"
+    ],
+    [
+      "0x431dc",
+      "031086e0",
+      "ADD             R1, R6, R3"
+    ],
+    [
+      "0x431e0",
+      "0420a013",
+      "MOVNE           R2, #4"
+    ],
+    [
+      "0x431e4",
+      "2b7101eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x43260",
+      "0040a0e1",
+      "MOV             R4, R0"
+    ],
+    [
+      "0x43264",
+      "68119fe5",
+      "LDR             R1, =aFlobjs"
+    ],
+    [
+      "0x43268",
+      "5c019fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x4326c",
+      "ce7001eb",
+      "BL              DatFile_FindChunk"
+    ],
+    [
+      "0x43270",
+      "183194e5",
+      "LDR             R3, [R4,#0x118]"
+    ],
+    [
+      "0x43274",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x43278",
+      "50519fe5",
+      "LDR             R5, =Map_bTactFlag"
+    ],
+    [
+      "0x4327c",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x43280",
+      "44019fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x43284",
+      "153aa0e34f3f83e3",
+      "MOV             R3, #(Map_nTactItemCount - 0x1139B8)"
+    ],
+    [
+      "0x4328c",
+      "031085e0",
+      "ADD             R1, R5, R3"
+    ],
+    [
+      "0x43290",
+      "0420a013",
+      "MOVNE           R2, #4"
+    ],
+    [
+      "0x43294",
+      "ff7001eb",
+      "BL              DatFile_Read"
+    ]
+  ],
+  "additional": {
+    "code_load_callers": [
+      "0x19e20",
+      "0x19e70",
+      "0x19ec0",
+      "0x19f10",
+      "0x19f60",
+      "0x19fb0",
+      "0x1a000",
+      "0x1a0d4",
+      "0x1a108",
+      "0x1a13c",
+      "0x1a170",
+      "0x1a1a4",
+      "0x1a1d8",
+      "0x1a20c",
+      "0x6b1d4",
+      "0x6b23c",
+      "0x6b2a4",
+      "0x6b30c",
+      "0x6b374",
+      "0x6b3dc",
+      "0x6b444"
+    ],
+    "literal_values": [
+      [
+        "0x3d220",
+        "0x3cdb0",
+        "0x156938"
+      ],
+      [
+        "0x3d228",
+        "0x3cdb0",
+        "0x156938"
+      ],
+      [
+        "0x3d230",
+        "0x3cdb0",
+        "0x156938"
+      ]
+    ],
+    "raw": [
+      [
+        "0x44248",
+        "f0472de9",
+        "PUSH            {R4-R10,LR}"
+      ],
+      [
+        "0x4424c",
+        "0060a0e1",
+        "MOV             R6, R0"
+      ],
+      [
+        "0x44250",
+        "0c149fe5",
+        "LDR             R1, =aTgamedata"
+      ],
+      [
+        "0x44254",
+        "c0039fe5",
+        "LDR             R0, =unk_158220"
+      ],
+      [
+        "0x44258",
+        "d36c01eb",
+        "BL              DatFile_FindChunk"
+      ],
+      [
+        "0x4425c",
+        "153aa0e3",
+        "MOV             R3, #0x15000"
+      ],
+      [
+        "0x44260",
+        "f8439fe5",
+        "LDR             R4, =Map_bTactFlag"
+      ],
+      [
+        "0x44264",
+        "113e83e3",
+        "ORR             R3, R3, #0x110"
+      ],
+      [
+        "0x44268",
+        "ac039fe5",
+        "LDR             R0, =unk_158220"
+      ],
+      [
+        "0x4426c",
+        "0120a0e3",
+        "MOV             R2, #1"
+      ],
+      [
+        "0x44270",
+        "031084e0",
+        "ADD             R1, R4, R3"
+      ],
+      [
+        "0x19e08",
+        "0400001a",
+        "BNE             loc_19E20"
+      ],
+      [
+        "0x19e0c",
+        "ddaa00eb",
+        "BL              SaveGame"
+      ],
+      [
+        "0x19e10",
+        "060000ea",
+        "B               locret_19E30"
+      ],
+      [
+        "0x19e14",
+        "38691500",
+        "DCD MainMenu_pSlotCtx"
+      ],
+      [
+        "0x19e18",
+        "b8391100",
+        "DCD Map_bTactFlag"
+      ],
+      [
+        "0x19e1c",
+        "88711500",
+        "DCD MainMenu_nListMode"
+      ],
+      [
+        "0x19e20",
+        "65ab00eb",
+        "BL              LoadGame"
+      ]
+    ]
+  },
+  "load_caller": [
+    [
+      "0x19dd8",
+      "0ef0a0e1",
+      "RET"
+    ],
+    [
+      "0x19ddc",
+      "d0c60a00",
+      "DCD pBank"
+    ],
+    [
+      "0x19de0",
+      "b8391100",
+      "DCD Map_bTactFlag"
+    ],
+    [
+      "0x19de4",
+      "10402de9",
+      "PUSH            {R4,LR}"
+    ],
+    [
+      "0x19de8",
+      "2c409fe5",
+      "LDR             R4, =MainMenu_nListMode"
+    ],
+    [
+      "0x19dec",
+      "0100a0e3",
+      "MOV             R0, #1"
+    ],
+    [
+      "0x19df0",
+      "0010a0e3",
+      "MOV             R1, #0"
+    ],
+    [
+      "0x19df4",
+      "000084e5",
+      "STR             R0, [R4]"
+    ],
+    [
+      "0x19df8",
+      "18009fe5",
+      "LDR             R0, =Map_bTactFlag"
+    ],
+    [
+      "0x19dfc",
+      "ba33d0e1",
+      "LDRH            R3, [R0,#(Map_nUiScreen - 0x1139B8)]"
+    ],
+    [
+      "0x19e00",
+      "0c009fe5",
+      "LDR             R0, =MainMenu_pSlotCtx"
+    ],
+    [
+      "0x19e04",
+      "0a0053e3",
+      "CMP             R3, #0xA"
+    ],
+    [
+      "0x19e08",
+      "0400001a",
+      "BNE             loc_19E20"
+    ],
+    [
+      "0x19e0c",
+      "ddaa00eb",
+      "BL              SaveGame"
+    ]
+  ]
+}

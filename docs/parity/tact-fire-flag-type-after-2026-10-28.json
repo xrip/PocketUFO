@@ -1,0 +1,260 @@
+{
+  "size": 70120,
+  "members": [
+    {
+      "name": "bFlag0",
+      "offset_bits": 0,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bFlag1",
+      "offset_bits": 8,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_2",
+      "offset_bits": 16,
+      "size_bits": 16,
+      "type": "char[2]"
+    },
+    {
+      "name": "nStepFrameDiv",
+      "offset_bits": 32,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "pStepFromCell",
+      "offset_bits": 64,
+      "size_bits": 32,
+      "type": "MapCell *"
+    },
+    {
+      "name": "bSkipFireShots",
+      "offset_bits": 96,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_0D",
+      "offset_bits": 104,
+      "size_bits": 24,
+      "type": "unsigned __int8[3]"
+    },
+    {
+      "name": "nQueueCursor",
+      "offset_bits": 128,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_20",
+      "offset_bits": 160,
+      "size_bits": 32,
+      "type": "char[4]"
+    },
+    {
+      "name": "aQueue",
+      "offset_bits": 192,
+      "size_bits": 560000,
+      "type": "TactQueueEntry[1250]"
+    },
+    {
+      "name": "nUnk70024",
+      "offset_bits": 560192,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nPhaseCounter",
+      "offset_bits": 560224,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70032",
+      "offset_bits": 560256,
+      "size_bits": 96,
+      "type": "char[12]"
+    },
+    {
+      "name": "nStepDrawOffX",
+      "offset_bits": 560352,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nStepDrawOffY",
+      "offset_bits": 560384,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nStepCellScratch",
+      "offset_bits": 560416,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70056",
+      "offset_bits": 560448,
+      "size_bits": 64,
+      "type": "char[8]"
+    },
+    {
+      "name": "nStepHeightSrc",
+      "offset_bits": 560512,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nStepHeightDst",
+      "offset_bits": 560544,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70072",
+      "offset_bits": 560576,
+      "size_bits": 32,
+      "type": "char[4]"
+    },
+    {
+      "name": "nTraceX",
+      "offset_bits": 560608,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nTraceY",
+      "offset_bits": 560640,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nTraceZ",
+      "offset_bits": 560672,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "pAiActionUnit",
+      "offset_bits": 560704,
+      "size_bits": 32,
+      "type": "Soldier *"
+    },
+    {
+      "name": "gap_7008C",
+      "offset_bits": 560736,
+      "size_bits": 32,
+      "type": "char[4]"
+    },
+    {
+      "name": "uKillCredit",
+      "offset_bits": 560768,
+      "size_bits": 16,
+      "type": "unsigned __int16"
+    },
+    {
+      "name": "gap_700D2",
+      "offset_bits": 560784,
+      "size_bits": 16,
+      "type": "char[2]"
+    },
+    {
+      "name": "nQueueLen",
+      "offset_bits": 560800,
+      "size_bits": 16,
+      "type": "unsigned __int16"
+    },
+    {
+      "name": "bQueueActive",
+      "offset_bits": 560816,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bUnk70103",
+      "offset_bits": 560824,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "nPhaseTick",
+      "offset_bits": 560832,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "nPhaseMax",
+      "offset_bits": 560864,
+      "size_bits": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70112",
+      "offset_bits": 560896,
+      "size_bits": 16,
+      "type": "unsigned __int8[2]"
+    },
+    {
+      "name": "bAiActionActive",
+      "offset_bits": 560912,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bUnk70115",
+      "offset_bits": 560920,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bUnk70116",
+      "offset_bits": 560928,
+      "size_bits": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_70117",
+      "offset_bits": 560936,
+      "size_bits": 24,
+      "type": "unsigned __int8[3]"
+    }
+  ],
+  "owners": [
+    [
+      "0x157198",
+      "struct TactState *"
+    ],
+    [
+      "0x4f3f0",
+      "int __fastcall(struct TactState *pState)"
+    ],
+    [
+      "0x50adc",
+      "int __fastcall(struct TactState *pState)"
+    ],
+    [
+      "0x4f2d4",
+      "TactState *__fastcall(TactState *pState)"
+    ]
+  ],
+  "application_check": [
+    [
+      "0x4f3f0",
+      1
+    ],
+    [
+      "0x50adc",
+      1
+    ],
+    [
+      "0x4b080",
+      1
+    ]
+  ],
+  "saved_with_backup": true
+}

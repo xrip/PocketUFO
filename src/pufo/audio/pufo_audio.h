@@ -6,9 +6,9 @@
  *
  * The original links fmodce.dll (FMOD 3 for WinCE, ARM). That DLL cannot be
  * re-linked on Win64, so this module keeps the game-side logic exact and puts
- * the FMOD calls behind PufoAudioBackend. The Win64 backend is a no-op stub that
- * reports "not initialised" the same way the original does when FSOUND_Init
- * fails, so the game's control flow is unchanged.
+ * the FMOD calls behind PufoAudioBackend. The app installs the WinMM mixer and
+ * OpenMPT music decoder. The default no-op backend remains for control-flow
+ * tests and reports the same init failure as a missing output device.
  *
  * Behaviour that is part of the game logic, not the backend, and is therefore
  * reproduced here rather than delegated:
@@ -76,6 +76,11 @@ typedef struct PufoAudioBackend {
     void (*pfnMusicFree)(void *pMod);
     /* FSOUND_Close() */
     void (*pfnClose)(void);
+    /* Port-side slot (2026-11-04, user-requested): true once a played module has
+     * run out of frames -- the end-of-track signal the "loop off, play next"
+     * setting needs. FMOD 3 had no such query (looping songs never end, and the
+     * original only ever loops). */
+    bool (*pfnMusicFinished)(const void *pMod);
 } PufoAudioBackend;
 
 /* Install the backend. Pass NULL to fall back to the built-in no-op stub.
@@ -125,6 +130,18 @@ void Sound_ApplySfxVolume(i32 nLevel, u8 bMuted);
  * audio-ready test, unlike Sound_ApplySfxVolume -- and then FMUSIC_SetPaused(module, 1/0) only when byte_187F28 says
  * a module is loaded (0xA0538 / 0xA0624). The module is the one this module owns, s_pMusicMod. */
 void Sound_SetPaused(bool bPaused);
+
+/* Port-side addition (2026-11-04, user-requested): the music loop setting,
+ * ON by default, driven by the options screen. It rides the original's
+ * FMUSIC_SetLooping slot @ 0x9E1F8 (the original only ever passes 1, at load).
+ * With the setting OFF, Sound_MusicProgress (frame tick) plays the next track
+ * when the current one runs out. The byte is persisted in the savegame's
+ * port-side `1_24gset` chunk, not the registry. */
+#define PUFO_MUSIC_TRACK_COUNT 5
+void Sound_SetLoopByte(const u8 *pbMusicLoop);
+void Sound_SetMusicLooping(bool bLoop);
+bool Sound_IsMusicLooping(void);
+void Sound_MusicProgress(void);
 
 /* State, mirroring byte_187F24 (audio ready) and byte_187F28 (music playing). */
 bool Sound_IsInitialised(void);

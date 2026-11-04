@@ -1,0 +1,17 @@
+[
+  {
+    "address": "0x1a83c",
+    "type": "int __fastcall(int pTitles, int unused)",
+    "comment": null
+  },
+  {
+    "address": "0x468cc",
+    "type": "int __fastcall(void *pTitles)",
+    "comment": null
+  },
+  {
+    "address": "0x46acc",
+    "type": "signed int __fastcall(_DWORD *pTitles)",
+    "comment": null
+  }
+]

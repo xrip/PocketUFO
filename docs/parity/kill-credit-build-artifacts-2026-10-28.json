@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-28",
+  "source_files": 434,
+  "source_fingerprint": "EE97FD4A430AB40E033AEA4ACA2C51B8764D178427635A706B8823E627C6604A",
+  "source_fingerprint_before_build": "EE97FD4A430AB40E033AEA4ACA2C51B8764D178427635A706B8823E627C6604A",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-kill-credit-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "53409F6AEE556B141BF5473303A835E8DE74236E750949C73780028AB051FA50",
+        "build/tests/Debug/test_unit.exe": "713F644C8CAB920B879AED8BD607C329E78185124F4119A5F9CF0D4B6ADF7BC5",
+        "build/tests/Debug/test_vis.exe": "3CFB8D30095E62C96264A810903B01C7C9A7835F430FA87AEED5843A69D480ED",
+        "build/tests/Debug/test_tactstate.exe": "766ED15FBFBE196CB4F161E8F60CBC81BC0446CA6660D50A7FF6D0284BDFC80E",
+        "build/tests/Debug/test_geoscapeframe.exe": "8E5531813DEB23C8F58C9B529FE9A9867081893969E0FB7A34740CE9349EAC9F"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-kill-credit-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "513C4BE86F2A4A11A146D986CA04E8ECA0E003659D1067EDE669A061EE376DB0",
+        "build/tests/Release/test_unit.exe": "88000B7DB9357935AC39DBE0C3B06F18504B83C716379CC151CA079BBFA4DE97",
+        "build/tests/Release/test_vis.exe": "1C8289D3E4037C7E13FDEFAE6AF223401B389A32C94A46FD07AC98A620342330",
+        "build/tests/Release/test_tactstate.exe": "1AB21AEDCDD9C0D755DD729C4E644A50FE13602BB3AD8C12C3367B94D1BD67F8",
+        "build/tests/Release/test_geoscapeframe.exe": "D1C996E3DDCFE5699F406DC91E8F20913B1198DD09D89EB857B444A97094A34F"
+      }
+    }
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Live queued kill-credit owner repair and u32 field; connected nonterminal death-flash-to-shooter fixture; prior death selector/name width fixes included; terminal original tick-hold quirk preserved"
+}

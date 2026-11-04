@@ -1,0 +1,22 @@
+[
+  {
+    "ea": "0x4b080",
+    "comment": "Raw ARM checked2026-10-28: before TU gate0x4B0D0, clear globalMap+0x150F0 (throw-target pointer) at0x4B0A4 and only LOW BYTE of globalTactState+0x0C at0x4B0BC. Successful tail queues clear-aim0x4B2E4 then clears Map+0x2C shot count0x4B2EC. Port previously omitted these as caller/renderer scratch; no production caller performed the shot reset. FireBurstSpec now carries live shot-count/throw-target owners through all5 port enqueue paths; nStepZDelta upper24bits preserved. Standalone null owners are adapter-only; runtime pending. Evidence docs/parity/fire-burst-contract-raw-2026-10-28.json."
+  },
+  {
+    "ea": "0x4b0bc",
+    "comment": null
+  },
+  {
+    "ea": "0x4fdd0",
+    "comment": null
+  },
+  {
+    "ea": "0x51d28",
+    "comment": null
+  },
+  {
+    "ea": "0x1afc4",
+    "comment": "SHELL WIRING (Part 63): both tactical call sites are wired -- MapView_DrawIsoLayer's tail at 0x22190 and Render_Frame's fade tail at 0x225D4 -- over GameMap.status, with the four conditions and the colour pair/Text_DrawString calls injected as StatusDrawHooks by World_TactFrame."
+  }
+]

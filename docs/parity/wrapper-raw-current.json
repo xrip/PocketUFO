@@ -1,0 +1,3048 @@
+{
+  "scope": "Raw IDA instruction capture for 135 artifact claims; names and disassembly symbols are navigation only. Bytes are evidence. Shape capture does not prove adapter parity.",
+  "captured": "2026-10-28",
+  "functions": [
+    {
+      "address": "0x11148",
+      "artifact_claim": "init-term-entry",
+      "instructions": [
+        {
+          "address": "0x11148",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0x1114c",
+          "bytes": "010000eb",
+          "mnemonic": "BL",
+          "text": "BL              j_UiBank_CtorAll"
+        },
+        {
+          "address": "0x11150",
+          "bytes": "0040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {LR}"
+        },
+        {
+          "address": "0x11154",
+          "bytes": "020000ea",
+          "mnemonic": "B",
+          "text": "B               Bank_RegisterAtexit"
+        }
+      ]
+    },
+    {
+      "address": "0x11158",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x11158",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =pBank"
+        },
+        {
+          "address": "0x1115c",
+          "bytes": "6f0000ea",
+          "mnemonic": "B",
+          "text": "B               UiBank_CtorAll"
+        }
+      ]
+    },
+    {
+      "address": "0x163d0",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x163d0",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x18a44",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x18a44",
+          "bytes": "04009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =Map_bTactFlag"
+        },
+        {
+          "address": "0x18a48",
+          "bytes": "0110a0e3",
+          "mnemonic": "MOV",
+          "text": "MOV             R1, #1"
+        },
+        {
+          "address": "0x18a4c",
+          "bytes": "5a7100ea",
+          "mnemonic": "B",
+          "text": "B               Tact_CheckBattleEnd"
+        }
+      ]
+    },
+    {
+      "address": "0x22604",
+      "artifact_claim": "init-term-entry",
+      "instructions": [
+        {
+          "address": "0x22604",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0x22608",
+          "bytes": "010000eb",
+          "mnemonic": "BL",
+          "text": "BL              j_Map_InitAndLoadRegistry"
+        },
+        {
+          "address": "0x2260c",
+          "bytes": "0040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {LR}"
+        },
+        {
+          "address": "0x22610",
+          "bytes": "020000ea",
+          "mnemonic": "B",
+          "text": "B               Map_RegisterAtexit"
+        }
+      ]
+    },
+    {
+      "address": "0x22614",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x22614",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =Map_bTactFlag"
+        },
+        {
+          "address": "0x22618",
+          "bytes": "0a0000ea",
+          "mnemonic": "B",
+          "text": "B               Map_InitAndLoadRegistry"
+        }
+      ]
+    },
+    {
+      "address": "0x22620",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x22620",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =Map_Atexit_nullsub2"
+        },
+        {
+          "address": "0x22624",
+          "bytes": "f9fb01ea",
+          "mnemonic": "B",
+          "text": "B               atexit"
+        }
+      ]
+    },
+    {
+      "address": "0x2262c",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x2262c",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =Map_bTactFlag"
+        },
+        {
+          "address": "0x22630",
+          "bytes": "450100ea",
+          "mnemonic": "B",
+          "text": "B               nullsub_2"
+        }
+      ]
+    },
+    {
+      "address": "0x22638",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x22638",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               j_TactItem_ctor_pItem"
+        }
+      ]
+    },
+    {
+      "address": "0x2263c",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x2263c",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =unk_10DB90"
+        },
+        {
+          "address": "0x22640",
+          "bytes": "347000ea",
+          "mnemonic": "B",
+          "text": "B               TactItem_ctor"
+        }
+      ]
+    },
+    {
+      "address": "0x22b4c",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x22b4c",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x22b50",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x22b50",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x37074",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37074",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               j_TactItem_ctor_138EA0"
+        }
+      ]
+    },
+    {
+      "address": "0x37078",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37078",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =unk_138EA0"
+        },
+        {
+          "address": "0x3707c",
+          "bytes": "a51d00ea",
+          "mnemonic": "B",
+          "text": "B               TactItem_ctor"
+        }
+      ]
+    },
+    {
+      "address": "0x37084",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37084",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               j_TactItem_ctor_156A88"
+        }
+      ]
+    },
+    {
+      "address": "0x37088",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37088",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =TactItem_156A88"
+        },
+        {
+          "address": "0x3708c",
+          "bytes": "a11d00ea",
+          "mnemonic": "B",
+          "text": "B               TactItem_ctor"
+        }
+      ]
+    },
+    {
+      "address": "0x37094",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37094",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               Math_StoreSqrtConst"
+        }
+      ]
+    },
+    {
+      "address": "0x370e4",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x370e4",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               Math_StoreAtan2Const"
+        }
+      ]
+    },
+    {
+      "address": "0x37120",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37120",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               j_TactItem_ctor_156910"
+        }
+      ]
+    },
+    {
+      "address": "0x37124",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37124",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =TactItem_156910"
+        },
+        {
+          "address": "0x37128",
+          "bytes": "7a1d00ea",
+          "mnemonic": "B",
+          "text": "B               TactItem_ctor"
+        }
+      ]
+    },
+    {
+      "address": "0x37130",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37130",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               j_TactItem_ctor_156A58"
+        }
+      ]
+    },
+    {
+      "address": "0x37134",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x37134",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =TactItem_156A58"
+        },
+        {
+          "address": "0x37138",
+          "bytes": "761d00ea",
+          "mnemonic": "B",
+          "text": "B               TactItem_ctor"
+        }
+      ]
+    },
+    {
+      "address": "0x37140",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x37140",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x3f0b4",
+      "artifact_claim": "init-term-entry",
+      "instructions": [
+        {
+          "address": "0x3f0b4",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0x3f0b8",
+          "bytes": "010000eb",
+          "mnemonic": "BL",
+          "text": "BL              j_DatFile_ctor"
+        },
+        {
+          "address": "0x3f0bc",
+          "bytes": "0040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {LR}"
+        },
+        {
+          "address": "0x3f0c0",
+          "bytes": "020000ea",
+          "mnemonic": "B",
+          "text": "B               DatFile_RegisterAtexit"
+        }
+      ]
+    },
+    {
+      "address": "0x3f0c4",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x3f0c4",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =unk_158220"
+        },
+        {
+          "address": "0x3f0c8",
+          "bytes": "7f7f01ea",
+          "mnemonic": "B",
+          "text": "B               DatFile_ctor"
+        }
+      ]
+    },
+    {
+      "address": "0x3f0dc",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x3f0dc",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =unk_158220"
+        },
+        {
+          "address": "0x3f0e0",
+          "bytes": "837f01ea",
+          "mnemonic": "B",
+          "text": "B               DatFile_dtor"
+        }
+      ]
+    },
+    {
+      "address": "0x460b4",
+      "artifact_claim": "init-term-entry",
+      "instructions": [
+        {
+          "address": "0x460b4",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0x460b8",
+          "bytes": "010000eb",
+          "mnemonic": "BL",
+          "text": "BL              j_Font_Init_ReturnArg"
+        },
+        {
+          "address": "0x460bc",
+          "bytes": "0040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {LR}"
+        },
+        {
+          "address": "0x460c0",
+          "bytes": "020000ea",
+          "mnemonic": "B",
+          "text": "B               Font_RegisterAtexit"
+        }
+      ]
+    },
+    {
+      "address": "0x460c4",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x460c4",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =0x158268"
+        },
+        {
+          "address": "0x460c8",
+          "bytes": "180000ea",
+          "mnemonic": "B",
+          "text": "B               Font_Init_ReturnArg"
+        }
+      ]
+    },
+    {
+      "address": "0x46728",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x46728",
+          "bytes": "04009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =g_pTitlesSurface"
+        },
+        {
+          "address": "0x4672c",
+          "bytes": "000090e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R0]"
+        },
+        {
+          "address": "0x46730",
+          "bytes": "a45f01ea",
+          "mnemonic": "B",
+          "text": "B               SoftSurf_DrawBorderAndBlur"
+        }
+      ]
+    },
+    {
+      "address": "0x61498",
+      "artifact_claim": "init-term-entry",
+      "instructions": [
+        {
+          "address": "0x61498",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0x6149c",
+          "bytes": "010000eb",
+          "mnemonic": "BL",
+          "text": "BL              BaseGrid_Atexit_nullsub5"
+        },
+        {
+          "address": "0x614a0",
+          "bytes": "0040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {LR}"
+        },
+        {
+          "address": "0x614a4",
+          "bytes": "020000ea",
+          "mnemonic": "B",
+          "text": "B               BaseGrid_RegisterAtexit"
+        }
+      ]
+    },
+    {
+      "address": "0x614a8",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x614a8",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =abFacilityGrid"
+        },
+        {
+          "address": "0x614ac",
+          "bytes": "b60100ea",
+          "mnemonic": "B",
+          "text": "B               nullsub_5"
+        }
+      ]
+    },
+    {
+      "address": "0x614b4",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x614b4",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =BaseGrid_Atexit_nullsub6"
+        },
+        {
+          "address": "0x614b8",
+          "bytes": "540001ea",
+          "mnemonic": "B",
+          "text": "B               atexit"
+        }
+      ]
+    },
+    {
+      "address": "0x614c0",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x614c0",
+          "bytes": "00009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =abFacilityGrid"
+        },
+        {
+          "address": "0x614c4",
+          "bytes": "b10100ea",
+          "mnemonic": "B",
+          "text": "B               nullsub_6"
+        }
+      ]
+    },
+    {
+      "address": "0x61b8c",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x61b8c",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x61b90",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x61b90",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x81a28",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x81a28",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x83870",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x83870",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               AssetReader_ClearGlobal"
+        }
+      ]
+    },
+    {
+      "address": "0x83880",
+      "artifact_claim": "init-term-entry",
+      "instructions": [
+        {
+          "address": "0x83880",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0x83884",
+          "bytes": "010000eb",
+          "mnemonic": "BL",
+          "text": "BL              StrategList_ctor"
+        },
+        {
+          "address": "0x83888",
+          "bytes": "0040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {LR}"
+        },
+        {
+          "address": "0x8388c",
+          "bytes": "030000ea",
+          "mnemonic": "B",
+          "text": "B               StrategList_RegisterAtexit"
+        }
+      ]
+    },
+    {
+      "address": "0x8b948",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0x8b948",
+          "bytes": "0ef0a0e1",
+          "mnemonic": "RET",
+          "text": "RET"
+        }
+      ]
+    },
+    {
+      "address": "0x9e0b0",
+      "artifact_claim": "debug-print-stub",
+      "instructions": [
+        {
+          "address": "0x9e0b0",
+          "bytes": "0dc0a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R12, SP"
+        },
+        {
+          "address": "0x9e0b4",
+          "bytes": "0f002de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {R0-R3}"
+        },
+        {
+          "address": "0x9e0b8",
+          "bytes": "00502de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {R12,LR}"
+        },
+        {
+          "address": "0x9e0bc",
+          "bytes": "00a09de8",
+          "mnemonic": "LDM",
+          "text": "LDM             SP, {SP,PC}"
+        }
+      ]
+    },
+    {
+      "address": "0x9e9f0",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0x9e9f0",
+          "bytes": "240a00ea",
+          "mnemonic": "B",
+          "text": "B               itoa"
+        }
+      ]
+    },
+    {
+      "address": "0xa0f90",
+      "artifact_claim": "code-thunk",
+      "instructions": [
+        {
+          "address": "0xa0f90",
+          "bytes": "620000ea",
+          "mnemonic": "B",
+          "text": "B               PtrArray_Clear"
+        }
+      ]
+    },
+    {
+      "address": "0xa115c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa115c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp___3_YAXPAX_Z"
+        },
+        {
+          "address": "0xa1160",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1168",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1168",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp___2_YAPAXI_Z"
+        },
+        {
+          "address": "0xa116c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1174",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1174",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_strcat"
+        },
+        {
+          "address": "0xa1178",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1180",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1180",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_sqrt"
+        },
+        {
+          "address": "0xa1184",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa118c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa118c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_strcmp"
+        },
+        {
+          "address": "0xa1190",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1198",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1198",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_cos"
+        },
+        {
+          "address": "0xa119c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11a4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11a4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_sin"
+        },
+        {
+          "address": "0xa11a8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11b0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11b0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_atoi"
+        },
+        {
+          "address": "0xa11b4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11bc",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11bc",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_memset"
+        },
+        {
+          "address": "0xa11c0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11c8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11c8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_strlen"
+        },
+        {
+          "address": "0xa11cc",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11d4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11d4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_memmove"
+        },
+        {
+          "address": "0xa11d8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11e0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11e0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_atan2"
+        },
+        {
+          "address": "0xa11e4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11ec",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11ec",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_tan"
+        },
+        {
+          "address": "0xa11f0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa11f8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa11f8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_ReadFile"
+        },
+        {
+          "address": "0xa11fc",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1204",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1204",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_SetFilePointer"
+        },
+        {
+          "address": "0xa1208",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1210",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1210",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_CreateFileW"
+        },
+        {
+          "address": "0xa1214",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa121c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa121c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_memcpy"
+        },
+        {
+          "address": "0xa1220",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1228",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1228",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_CloseHandle"
+        },
+        {
+          "address": "0xa122c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1234",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1234",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_rand"
+        },
+        {
+          "address": "0xa1238",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1240",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1240",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_fclose"
+        },
+        {
+          "address": "0xa1244",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa124c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa124c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_fwrite"
+        },
+        {
+          "address": "0xa1250",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1258",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1258",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_fopen"
+        },
+        {
+          "address": "0xa125c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1264",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1264",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_Sleep"
+        },
+        {
+          "address": "0xa1268",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1270",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1270",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_KillTimer"
+        },
+        {
+          "address": "0xa1274",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa127c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa127c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_SetTimer"
+        },
+        {
+          "address": "0xa1280",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1288",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1288",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_itoa"
+        },
+        {
+          "address": "0xa128c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1294",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1294",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_SetWindowPos"
+        },
+        {
+          "address": "0xa1298",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12a0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12a0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_RegCloseKey"
+        },
+        {
+          "address": "0xa12a4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12ac",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12ac",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_RegSetValueExW"
+        },
+        {
+          "address": "0xa12b0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12b8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12b8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_mbstowcs"
+        },
+        {
+          "address": "0xa12bc",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12c4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12c4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_RegCreateKeyExW"
+        },
+        {
+          "address": "0xa12c8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12d0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12d0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_RegQueryValueExW"
+        },
+        {
+          "address": "0xa12d4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12dc",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12dc",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_WriteFile"
+        },
+        {
+          "address": "0xa12e0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12e8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12e8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FindClose"
+        },
+        {
+          "address": "0xa12ec",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa12f4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa12f4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FindFirstFileW"
+        },
+        {
+          "address": "0xa12f8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1300",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1300",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetFileSize"
+        },
+        {
+          "address": "0xa1304",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa130c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa130c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_strupr"
+        },
+        {
+          "address": "0xa1310",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1318",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1318",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetMessageW"
+        },
+        {
+          "address": "0xa131c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1324",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1324",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_DispatchMessageW"
+        },
+        {
+          "address": "0xa1328",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1330",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1330",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_TranslateMessage"
+        },
+        {
+          "address": "0xa1334",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa133c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa133c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_TranslateAcceleratorW"
+        },
+        {
+          "address": "0xa1340",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1348",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1348",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_LoadAcceleratorsW"
+        },
+        {
+          "address": "0xa134c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1354",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1354",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_wcstombs"
+        },
+        {
+          "address": "0xa1358",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1360",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1360",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetModuleFileNameW"
+        },
+        {
+          "address": "0xa1364",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa136c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa136c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_srand"
+        },
+        {
+          "address": "0xa1370",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1378",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1378",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetSystemTime"
+        },
+        {
+          "address": "0xa137c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1384",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1384",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_ReleaseDC"
+        },
+        {
+          "address": "0xa1388",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1390",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1390",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_ExtEscape"
+        },
+        {
+          "address": "0xa1394",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa139c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa139c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetDC"
+        },
+        {
+          "address": "0xa13a0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13a8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13a8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_UpdateWindow"
+        },
+        {
+          "address": "0xa13ac",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13b4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13b4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_ShowWindow"
+        },
+        {
+          "address": "0xa13b8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13c0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13c0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_CreateWindowExW"
+        },
+        {
+          "address": "0xa13c4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13cc",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13cc",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetSystemMetrics"
+        },
+        {
+          "address": "0xa13d0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13d8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13d8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_RegisterClassW"
+        },
+        {
+          "address": "0xa13dc",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13e4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13e4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetStockObject"
+        },
+        {
+          "address": "0xa13e8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13f0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13f0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_LoadIconW"
+        },
+        {
+          "address": "0xa13f4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa13fc",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa13fc",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_SetForegroundWindow"
+        },
+        {
+          "address": "0xa1400",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1408",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1408",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FindWindowW"
+        },
+        {
+          "address": "0xa140c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1414",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1414",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_PostQuitMessage"
+        },
+        {
+          "address": "0xa1418",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1420",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1420",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_SendMessageW"
+        },
+        {
+          "address": "0xa1424",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa142c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa142c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_DefWindowProcW"
+        },
+        {
+          "address": "0xa1430",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1438",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1438",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_EndPaint"
+        },
+        {
+          "address": "0xa143c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1444",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1444",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_GetClientRect"
+        },
+        {
+          "address": "0xa1448",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1450",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1450",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_BeginPaint"
+        },
+        {
+          "address": "0xa1454",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa145c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa145c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_SHHandleWMSettingChange"
+        },
+        {
+          "address": "0xa1460",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1468",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1468",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_SHHandleWMActivate"
+        },
+        {
+          "address": "0xa146c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1474",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1474",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_PlaySound"
+        },
+        {
+          "address": "0xa1478",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1480",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1480",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FMUSIC_SetPaused"
+        },
+        {
+          "address": "0xa1484",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa148c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa148c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FMUSIC_PlaySong"
+        },
+        {
+          "address": "0xa1490",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1498",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1498",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FMUSIC_OptimizeChannels"
+        },
+        {
+          "address": "0xa149c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14a4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14a4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FMUSIC_SetLooping"
+        },
+        {
+          "address": "0xa14a8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14b0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14b0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FMUSIC_LoadSongEx"
+        },
+        {
+          "address": "0xa14b4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14bc",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14bc",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_Sample_SetMode"
+        },
+        {
+          "address": "0xa14c0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14c8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14c8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_Sample_Load"
+        },
+        {
+          "address": "0xa14cc",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14d4",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14d4",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_SetHWND"
+        },
+        {
+          "address": "0xa14d8",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14e0",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14e0",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_Init"
+        },
+        {
+          "address": "0xa14e4",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14ec",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14ec",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_Close"
+        },
+        {
+          "address": "0xa14f0",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa14f8",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa14f8",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FMUSIC_FreeSong"
+        },
+        {
+          "address": "0xa14fc",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1504",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1504",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_Sample_Free"
+        },
+        {
+          "address": "0xa1508",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1510",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1510",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FMUSIC_SetMasterVolume"
+        },
+        {
+          "address": "0xa1514",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa151c",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa151c",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_SetPaused"
+        },
+        {
+          "address": "0xa1520",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1528",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1528",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_FSOUND_SetSFXMasterVolume"
+        },
+        {
+          "address": "0xa152c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1534",
+      "artifact_claim": "crt-runtime",
+      "instructions": [
+        {
+          "address": "0xa1534",
+          "bytes": "f0402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {R4-R7,LR}"
+        },
+        {
+          "address": "0xa1538",
+          "bytes": "0040a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R4, R0"
+        },
+        {
+          "address": "0xa153c",
+          "bytes": "0150a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R5, R1"
+        },
+        {
+          "address": "0xa1540",
+          "bytes": "0260a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R6, R2"
+        },
+        {
+          "address": "0xa1544",
+          "bytes": "0370a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R7, R3"
+        },
+        {
+          "address": "0xa1548",
+          "bytes": "360000eb",
+          "mnemonic": "BL",
+          "text": "BL              _cinit"
+        },
+        {
+          "address": "0xa154c",
+          "bytes": "0730a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R3, R7"
+        },
+        {
+          "address": "0xa1550",
+          "bytes": "0620a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R2, R6"
+        },
+        {
+          "address": "0xa1554",
+          "bytes": "0510a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R1, R5"
+        },
+        {
+          "address": "0xa1558",
+          "bytes": "0400a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R0, R4"
+        },
+        {
+          "address": "0xa155c",
+          "bytes": "d8f9ffeb",
+          "mnemonic": "BL",
+          "text": "BL              WinMain"
+        },
+        {
+          "address": "0xa1560",
+          "bytes": "f040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {R4-R7,LR}"
+        },
+        {
+          "address": "0xa1564",
+          "bytes": "470000ea",
+          "mnemonic": "B",
+          "text": "B               Crt_Exit"
+        }
+      ]
+    },
+    {
+      "address": "0xa1568",
+      "artifact_claim": "crt-runtime",
+      "instructions": [
+        {
+          "address": "0xa1568",
+          "bytes": "70402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {R4-R6,LR}"
+        },
+        {
+          "address": "0xa156c",
+          "bytes": "44409fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R4, =dword_188D6C"
+        },
+        {
+          "address": "0xa1570",
+          "bytes": "0060a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R6, R0"
+        },
+        {
+          "address": "0xa1574",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R4]"
+        },
+        {
+          "address": "0xa1578",
+          "bytes": "780000eb",
+          "mnemonic": "BL",
+          "text": "BL              LocalSize"
+        },
+        {
+          "address": "0xa157c",
+          "bytes": "30509fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R5, =unk_188D68"
+        },
+        {
+          "address": "0xa1580",
+          "bytes": "0030a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R3, R0"
+        },
+        {
+          "address": "0xa1584",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R4]"
+        },
+        {
+          "address": "0xa1588",
+          "bytes": "001095e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, [R5]"
+        },
+        {
+          "address": "0xa158c",
+          "bytes": "002041e0",
+          "mnemonic": "SUB",
+          "text": "SUB             R2, R1, R0"
+        },
+        {
+          "address": "0xa1590",
+          "bytes": "042082e2",
+          "mnemonic": "ADD",
+          "text": "ADD             R2, R2, #4"
+        },
+        {
+          "address": "0xa1594",
+          "bytes": "020053e1",
+          "mnemonic": "CMP",
+          "text": "CMP             R3, R2"
+        },
+        {
+          "address": "0xa1598",
+          "bytes": "1600002a",
+          "mnemonic": "BCS",
+          "text": "BCS             loc_A15F8"
+        },
+        {
+          "address": "0xa159c",
+          "bytes": "000050e3",
+          "mnemonic": "CMP",
+          "text": "CMP             R0, #0"
+        },
+        {
+          "address": "0xa15a0",
+          "bytes": "0500001a",
+          "mnemonic": "BNE",
+          "text": "BNE             loc_A15BC"
+        },
+        {
+          "address": "0xa15a4",
+          "bytes": "1010a0e3",
+          "mnemonic": "MOV",
+          "text": "MOV             R1, #0x10"
+        },
+        {
+          "address": "0xa15a8",
+          "bytes": "0000a0e3",
+          "mnemonic": "MOV",
+          "text": "MOV             R0, #0"
+        },
+        {
+          "address": "0xa15ac",
+          "bytes": "680000eb",
+          "mnemonic": "BL",
+          "text": "BL              LocalAlloc"
+        },
+        {
+          "address": "0xa15b0",
+          "bytes": "060000ea",
+          "mnemonic": "B",
+          "text": "B               loc_A15D0"
+        },
+        {
+          "address": "0xa15bc",
+          "bytes": "670000eb",
+          "mnemonic": "BL",
+          "text": "BL              LocalSize"
+        },
+        {
+          "address": "0xa15c0",
+          "bytes": "0220a0e3",
+          "mnemonic": "MOV",
+          "text": "MOV             R2, #2"
+        },
+        {
+          "address": "0xa15c4",
+          "bytes": "101080e2",
+          "mnemonic": "ADD",
+          "text": "ADD             R1, R0, #0x10"
+        },
+        {
+          "address": "0xa15c8",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R4]"
+        },
+        {
+          "address": "0xa15cc",
+          "bytes": "5d0000eb",
+          "mnemonic": "BL",
+          "text": "BL              LocalReAlloc"
+        },
+        {
+          "address": "0xa15d0",
+          "bytes": "000050e3",
+          "mnemonic": "CMP",
+          "text": "CMP             R0, #0"
+        },
+        {
+          "address": "0xa15d4",
+          "bytes": "0000a003",
+          "mnemonic": "MOVEQ",
+          "text": "MOVEQ           R0, #0"
+        },
+        {
+          "address": "0xa15d8",
+          "bytes": "0b00000a",
+          "mnemonic": "BEQ",
+          "text": "BEQ             locret_A160C"
+        },
+        {
+          "address": "0xa15dc",
+          "bytes": "001095e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, [R5]"
+        },
+        {
+          "address": "0xa15e0",
+          "bytes": "002094e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R2, [R4]"
+        },
+        {
+          "address": "0xa15e4",
+          "bytes": "000084e5",
+          "mnemonic": "STR",
+          "text": "STR             R0, [R4]"
+        },
+        {
+          "address": "0xa15e8",
+          "bytes": "023041e0",
+          "mnemonic": "SUB",
+          "text": "SUB             R3, R1, R2"
+        },
+        {
+          "address": "0xa15ec",
+          "bytes": "4331a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R3, R3,ASR#2"
+        },
+        {
+          "address": "0xa15f0",
+          "bytes": "031180e0",
+          "mnemonic": "ADD",
+          "text": "ADD             R1, R0, R3,LSL#2"
+        },
+        {
+          "address": "0xa15f4",
+          "bytes": "001085e5",
+          "mnemonic": "STR",
+          "text": "STR             R1, [R5]"
+        },
+        {
+          "address": "0xa15f8",
+          "bytes": "006081e5",
+          "mnemonic": "STR",
+          "text": "STR             R6, [R1]"
+        },
+        {
+          "address": "0xa15fc",
+          "bytes": "000095e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R5]"
+        },
+        {
+          "address": "0xa1600",
+          "bytes": "040080e2",
+          "mnemonic": "ADD",
+          "text": "ADD             R0, R0, #4"
+        },
+        {
+          "address": "0xa1604",
+          "bytes": "000085e5",
+          "mnemonic": "STR",
+          "text": "STR             R0, [R5]"
+        },
+        {
+          "address": "0xa1608",
+          "bytes": "0600a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R0, R6"
+        },
+        {
+          "address": "0xa160c",
+          "bytes": "7080bde8",
+          "mnemonic": "POP",
+          "text": "POP             {R4-R6,PC}"
+        }
+      ]
+    },
+    {
+      "address": "0xa1610",
+      "artifact_claim": "crt-runtime",
+      "instructions": [
+        {
+          "address": "0xa1610",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0xa1614",
+          "bytes": "d3ffffeb",
+          "mnemonic": "BL",
+          "text": "BL              _onexit"
+        },
+        {
+          "address": "0xa1618",
+          "bytes": "0030b0e1",
+          "mnemonic": "MOVS",
+          "text": "MOVS            R3, R0"
+        },
+        {
+          "address": "0xa161c",
+          "bytes": "0000a0e3",
+          "mnemonic": "MOV",
+          "text": "MOV             R0, #0"
+        },
+        {
+          "address": "0xa1620",
+          "bytes": "0000e003",
+          "mnemonic": "MOVEQ",
+          "text": "MOVEQ           R0, #0xFFFFFFFF"
+        },
+        {
+          "address": "0xa1624",
+          "bytes": "0080bde8",
+          "mnemonic": "POP",
+          "text": "POP             {PC}"
+        }
+      ]
+    },
+    {
+      "address": "0xa1628",
+      "artifact_claim": "crt-runtime",
+      "instructions": [
+        {
+          "address": "0xa1628",
+          "bytes": "00402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {LR}"
+        },
+        {
+          "address": "0xa162c",
+          "bytes": "20109fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, =unk_A6224"
+        },
+        {
+          "address": "0xa1630",
+          "bytes": "18009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =dword_A6220"
+        },
+        {
+          "address": "0xa1634",
+          "bytes": "070000eb",
+          "mnemonic": "BL",
+          "text": "BL              Crt_CallFnTable"
+        },
+        {
+          "address": "0xa1638",
+          "bytes": "0c109fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, =unk_A621C"
+        },
+        {
+          "address": "0xa163c",
+          "bytes": "04009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =dword_A61E0"
+        },
+        {
+          "address": "0xa1640",
+          "bytes": "0040bde8",
+          "mnemonic": "POP",
+          "text": "POP             {LR}"
+        },
+        {
+          "address": "0xa1644",
+          "bytes": "030000ea",
+          "mnemonic": "B",
+          "text": "B               Crt_CallFnTable"
+        }
+      ]
+    },
+    {
+      "address": "0xa1658",
+      "artifact_claim": "crt-runtime",
+      "instructions": [
+        {
+          "address": "0xa1658",
+          "bytes": "30402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {R4,R5,LR}"
+        },
+        {
+          "address": "0xa165c",
+          "bytes": "0040a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R4, R0"
+        },
+        {
+          "address": "0xa1660",
+          "bytes": "0150a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R5, R1"
+        },
+        {
+          "address": "0xa1664",
+          "bytes": "040000ea",
+          "mnemonic": "B",
+          "text": "B               loc_A167C"
+        },
+        {
+          "address": "0xa1668",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R4]"
+        },
+        {
+          "address": "0xa166c",
+          "bytes": "000050e3",
+          "mnemonic": "CMP",
+          "text": "CMP             R0, #0"
+        },
+        {
+          "address": "0xa1670",
+          "bytes": "0fe0a011",
+          "mnemonic": "MOVNE",
+          "text": "MOVNE           LR, PC"
+        },
+        {
+          "address": "0xa1674",
+          "bytes": "00f0a011",
+          "mnemonic": "MOVNE",
+          "text": "MOVNE           PC, R0"
+        },
+        {
+          "address": "0xa1678",
+          "bytes": "044084e2",
+          "mnemonic": "ADD",
+          "text": "ADD             R4, R4, #4"
+        },
+        {
+          "address": "0xa167c",
+          "bytes": "050054e1",
+          "mnemonic": "CMP",
+          "text": "CMP             R4, R5"
+        },
+        {
+          "address": "0xa1680",
+          "bytes": "f8ffff3a",
+          "mnemonic": "BCC",
+          "text": "BCC             loc_A1668"
+        },
+        {
+          "address": "0xa1684",
+          "bytes": "3080bde8",
+          "mnemonic": "POP",
+          "text": "POP             {R4,R5,PC}"
+        }
+      ]
+    },
+    {
+      "address": "0xa1688",
+      "artifact_claim": "crt-runtime",
+      "instructions": [
+        {
+          "address": "0xa1688",
+          "bytes": "0020a0e3",
+          "mnemonic": "MOV",
+          "text": "MOV             R2, #0"
+        },
+        {
+          "address": "0xa168c",
+          "bytes": "0010a0e3",
+          "mnemonic": "MOV",
+          "text": "MOV             R1, #0"
+        },
+        {
+          "address": "0xa1690",
+          "bytes": "ffffffea",
+          "mnemonic": "B",
+          "text": "B               Crt_DoExit"
+        }
+      ]
+    },
+    {
+      "address": "0xa1694",
+      "artifact_claim": "crt-runtime",
+      "instructions": [
+        {
+          "address": "0xa1694",
+          "bytes": "f0402de9",
+          "mnemonic": "PUSH",
+          "text": "PUSH            {R4-R7,LR}"
+        },
+        {
+          "address": "0xa1698",
+          "bytes": "0070a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R7, R0"
+        },
+        {
+          "address": "0xa169c",
+          "bytes": "34009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =unk_188D64"
+        },
+        {
+          "address": "0xa16a0",
+          "bytes": "0260a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             R6, R2"
+        },
+        {
+          "address": "0xa16a4",
+          "bytes": "0060c0e5",
+          "mnemonic": "STRB",
+          "text": "STRB            R6, [R0]"
+        },
+        {
+          "address": "0xa16a8",
+          "bytes": "000051e3",
+          "mnemonic": "CMP",
+          "text": "CMP             R1, #0"
+        },
+        {
+          "address": "0xa16ac",
+          "bytes": "1600001a",
+          "mnemonic": "BNE",
+          "text": "BNE             loc_A170C"
+        },
+        {
+          "address": "0xa16b0",
+          "bytes": "1c509fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R5, =dword_188D6C"
+        },
+        {
+          "address": "0xa16b4",
+          "bytes": "000095e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R5]"
+        },
+        {
+          "address": "0xa16b8",
+          "bytes": "000050e3",
+          "mnemonic": "CMP",
+          "text": "CMP             R0, #0"
+        },
+        {
+          "address": "0xa16bc",
+          "bytes": "0f00000a",
+          "mnemonic": "BEQ",
+          "text": "BEQ             loc_A1700"
+        },
+        {
+          "address": "0xa16c0",
+          "bytes": "08109fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, =unk_188D68"
+        },
+        {
+          "address": "0xa16c4",
+          "bytes": "001091e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, [R1]"
+        },
+        {
+          "address": "0xa16c8",
+          "bytes": "044041e2",
+          "mnemonic": "SUB",
+          "text": "SUB             R4, R1, #4"
+        },
+        {
+          "address": "0xa16cc",
+          "bytes": "090000ea",
+          "mnemonic": "B",
+          "text": "B               loc_A16F8"
+        },
+        {
+          "address": "0xa16dc",
+          "bytes": "001094e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, [R4]"
+        },
+        {
+          "address": "0xa16e0",
+          "bytes": "000051e3",
+          "mnemonic": "CMP",
+          "text": "CMP             R1, #0"
+        },
+        {
+          "address": "0xa16e4",
+          "bytes": "0200000a",
+          "mnemonic": "BEQ",
+          "text": "BEQ             loc_A16F4"
+        },
+        {
+          "address": "0xa16e8",
+          "bytes": "0fe0a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             LR, PC"
+        },
+        {
+          "address": "0xa16ec",
+          "bytes": "01f0a0e1",
+          "mnemonic": "MOV",
+          "text": "MOV             PC, R1"
+        },
+        {
+          "address": "0xa16f0",
+          "bytes": "000095e5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, [R5]"
+        },
+        {
+          "address": "0xa16f4",
+          "bytes": "044044e2",
+          "mnemonic": "SUB",
+          "text": "SUB             R4, R4, #4"
+        },
+        {
+          "address": "0xa16f8",
+          "bytes": "000054e1",
+          "mnemonic": "CMP",
+          "text": "CMP             R4, R0"
+        },
+        {
+          "address": "0xa16fc",
+          "bytes": "f6ffff2a",
+          "mnemonic": "BCS",
+          "text": "BCS             loc_A16DC"
+        },
+        {
+          "address": "0xa1700",
+          "bytes": "3c109fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, =unk_A622C"
+        },
+        {
+          "address": "0xa1704",
+          "bytes": "34009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =dword_A6228"
+        },
+        {
+          "address": "0xa1708",
+          "bytes": "d2ffffeb",
+          "mnemonic": "BL",
+          "text": "BL              Crt_CallFnTable"
+        },
+        {
+          "address": "0xa170c",
+          "bytes": "28109fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R1, =unk_A6234"
+        },
+        {
+          "address": "0xa1710",
+          "bytes": "20009fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R0, =dword_A6230"
+        },
+        {
+          "address": "0xa1714",
+          "bytes": "cfffffeb",
+          "mnemonic": "BL",
+          "text": "BL              Crt_CallFnTable"
+        },
+        {
+          "address": "0xa1718",
+          "bytes": "000056e3",
+          "mnemonic": "CMP",
+          "text": "CMP             R6, #0"
+        },
+        {
+          "address": "0xa171c",
+          "bytes": "0710a001",
+          "mnemonic": "MOVEQ",
+          "text": "MOVEQ           R1, R7"
+        },
+        {
+          "address": "0xa1720",
+          "bytes": "0c309f05",
+          "mnemonic": "LDREQ",
+          "text": "LDREQ           R3, =0xF000F7F8"
+        },
+        {
+          "address": "0xa1724",
+          "bytes": "4200a003",
+          "mnemonic": "MOVEQ",
+          "text": "MOVEQ           R0, #0x42 "
+        },
+        {
+          "address": "0xa1728",
+          "bytes": "0fe0a001",
+          "mnemonic": "MOVEQ",
+          "text": "MOVEQ           LR, PC"
+        },
+        {
+          "address": "0xa172c",
+          "bytes": "03f0a001",
+          "mnemonic": "MOVEQ",
+          "text": "MOVEQ           PC, R3"
+        },
+        {
+          "address": "0xa1730",
+          "bytes": "f080bde8",
+          "mnemonic": "POP",
+          "text": "POP             {R4-R7,PC}"
+        }
+      ]
+    },
+    {
+      "address": "0xa1748",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1748",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_LocalReAlloc"
+        },
+        {
+          "address": "0xa174c",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1754",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1754",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_LocalAlloc"
+        },
+        {
+          "address": "0xa1758",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa1760",
+      "artifact_claim": "import-thunk",
+      "instructions": [
+        {
+          "address": "0xa1760",
+          "bytes": "00c09fe5",
+          "mnemonic": "LDR",
+          "text": "LDR             R12, =__imp_LocalSize"
+        },
+        {
+          "address": "0xa1764",
+          "bytes": "00f09ce5",
+          "mnemonic": "LDR",
+          "text": "LDR             PC, [R12]"
+        }
+      ]
+    },
+    {
+      "address": "0xa42e0",
+      "artifact_claim": "empty-stub",
+      "instructions": [
+        {
+          "address": "0xa42e0",
+          "bytes": "ff9fbde8",
+          "mnemonic": "POP",
+          "text": "POP             {R0-R12,PC}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-29",
+  "source_fingerprint": "89148A74D769BFC9CD1A90AD1FBF9F64357E2189C0EE2669378DB5A32D89A19C",
+  "scope": "Read-only candidate clusters. Addresses/names are navigation; workers must verify current ranges, shared state and all claimed behavior against raw ARM. No parity completion inferred from queue membership.",
+  "bounds": {
+    "depth": 1,
+    "max_nodes": 24
+  },
+  "batches": [
+    {
+      "id": "basegrid",
+      "owner": "mission_return_connection_audit",
+      "members": [
+        "0x5a8d0",
+        "0x6ac30",
+        "0x6ac90",
+        "0x6acc0",
+        "0x6acec"
+      ],
+      "rule": "BaseRec+4 key search and reservation byte views",
+      "output": ".workers/luna-body-basegrid/RESULT.json"
+    },
+    {
+      "id": "assetreader",
+      "owner": "fire_burst_reset_impl",
+      "members": [
+        "0x9f7d8",
+        "0x9f7e4",
+        "0x9f8d0",
+        "0x9f95c",
+        "0x9f964",
+        "0x83874"
+      ],
+      "rule": "Archive reader state, lookup and reads",
+      "output": ".workers/luna-body-assetreader/RESULT.json"
+    },
+    {
+      "id": "softsurf",
+      "owner": "soldier_item_wire_links",
+      "members": [
+        "0x9f96c",
+        "0x9f97c",
+        "0x9f994",
+        "0x9f99c",
+        "0x9f9a4",
+        "0x9fcb4",
+        "0x9fcbc",
+        "0x9faa4",
+        "0x9fa7c",
+        "0x9fa90"
+      ],
+      "rule": "Surface allocation/header/pixels and render target bindings",
+      "output": ".workers/luna-body-softsurf/RESULT.json"
+    },
+    {
+      "id": "panel_scroll",
+      "owner": "research_manufacture_connection",
+      "members": [
+        "0x37144",
+        "0x99f78",
+        "0x99f88",
+        "0x99f98",
+        "0x99fb4",
+        "0x3ed44"
+      ],
+      "rule": "Candidate panel text/scroll state; split owners where raw evidence requires",
+      "output": ".workers/luna-body-panel-scroll/RESULT.json"
+    }
+  ],
+  "runtime_executed": false
+}

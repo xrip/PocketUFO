@@ -1,0 +1,293 @@
+{
+  "date": "2026-10-28",
+  "scope": "Hourly call order, completion write, manufacture row gate and topic/item row IDs; not full subsystem parity",
+  "raw": [
+    [
+      "0x5d2fc",
+      "13ee00eb",
+      "BL              Smap_GrantSiteRecovery"
+    ],
+    [
+      "0x5d300",
+      "a4009fe5",
+      "LDR             R0, =unk_159E98"
+    ],
+    [
+      "0x5d304",
+      "ec4e00eb",
+      "BL              ManufScreen_RefreshBaseTabs"
+    ],
+    [
+      "0x5d308",
+      "98009fe5",
+      "LDR             R0, =aResearchTopics"
+    ],
+    [
+      "0x5d30c",
+      "805d00eb",
+      "BL              ResearchScreen_AccumulateAllocated"
+    ],
+    [
+      "0x74400",
+      "a8109fe5",
+      "LDR             R1, =nResearchFinishedTopic"
+    ],
+    [
+      "0x74404",
+      "034085e0",
+      "ADD             R4, R5, R3"
+    ],
+    [
+      "0x74408",
+      "133ca0e3",
+      "MOV             R3, #0x1300"
+    ],
+    [
+      "0x7440c",
+      "09b0c4e5",
+      "STRB            R11, [R4,#9]"
+    ],
+    [
+      "0x74410",
+      "243083e3",
+      "ORR             R3, R3, #0x24 "
+    ],
+    [
+      "0x74414",
+      "0070c1e5",
+      "STRB            R7, [R1]"
+    ],
+    [
+      "0x6ea28",
+      "222080e2",
+      "ADD             R2, R0, #0x22 "
+    ],
+    [
+      "0x6ea2c",
+      "01e041e2",
+      "SUB             LR, R1, #1"
+    ],
+    [
+      "0x6ea30",
+      "0d30d2e5",
+      "LDRB            R3, [R2,#0xD]"
+    ],
+    [
+      "0x6ea34",
+      "010053e3",
+      "CMP             R3, #1"
+    ],
+    [
+      "0x6ea38",
+      "0b00001a",
+      "BNE             loc_6EA6C"
+    ],
+    [
+      "0x6ea3c",
+      "0000a0e3",
+      "MOV             R0, #0"
+    ],
+    [
+      "0x6ef58",
+      "0070d7e5",
+      "LDRB            R7, [R7]"
+    ],
+    [
+      "0x6ef5c",
+      "001091e5",
+      "LDR             R1, [R1]"
+    ],
+    [
+      "0x6ef60",
+      "030086e0",
+      "ADD             R0, R6, R3"
+    ],
+    [
+      "0x6ef64",
+      "017080e7",
+      "STR             R7, [R0,R1]"
+    ],
+    [
+      "0x6ef68",
+      "f8111fe5",
+      "LDR             R1, =pManufPanelC"
+    ],
+    [
+      "0x6ef6c",
+      "001091e5",
+      "LDR             R1, [R1]"
+    ],
+    [
+      "0x6ef70",
+      "018080e7",
+      "STR             R8, [R0,R1]"
+    ],
+    [
+      "0x6ef74",
+      "68009fe5",
+      "LDR             R0, =abFacilityGrid"
+    ],
+    [
+      "0x7103c",
+      "400c55e1",
+      "CMP             R5, R0,ASR#24"
+    ],
+    [
+      "0x71040",
+      "b5ffffba",
+      "BLT             loc_70F1C"
+    ],
+    [
+      "0x71044",
+      "08009fe5",
+      "LDR             R0, =unk_159E98"
+    ],
+    [
+      "0x71048",
+      "bff8ffeb",
+      "BL              ManufScreen_CommitProduction"
+    ],
+    [
+      "0x7104c",
+      "18d08de2",
+      "ADD             SP, SP, #0x18"
+    ]
+  ],
+  "capacity_adjacent": [
+    [
+      "0x6f4b0",
+      "0430cde5",
+      "STRB            R3, [SP,#0x2C+var_28]"
+    ],
+    [
+      "0x6f4b4",
+      "2310a0e3",
+      "MOV             R1, #0x23 "
+    ],
+    [
+      "0x6f4b8",
+      "9c019fe5",
+      "LDR             R0, =0x158890"
+    ],
+    [
+      "0x6f4bc",
+      "0230a0e1",
+      "MOV             R3, R2"
+    ],
+    [
+      "0x6f4c0",
+      "b3abffeb",
+      "BL              UiPanel_AppendLineWithSound"
+    ],
+    [
+      "0x6f4c4",
+      "0180a0e3",
+      "MOV             R8, #1"
+    ],
+    [
+      "0x6f4c8",
+      "ff3018e2",
+      "ANDS            R3, R8, #0xFF"
+    ],
+    [
+      "0x6f4cc",
+      "2600001a",
+      "BNE             loc_6F56C"
+    ],
+    [
+      "0x6f4d0",
+      "770057e3",
+      "CMP             R7, #0x77 "
+    ],
+    [
+      "0x6f4d4",
+      "010000ba",
+      "BLT             loc_6F4E0"
+    ],
+    [
+      "0x6f4d8",
+      "790057e3",
+      "CMP             R7, #0x79 "
+    ],
+    [
+      "0x6f4dc",
+      "220000da",
+      "BLE             loc_6F56C"
+    ],
+    [
+      "0x6f4e0",
+      "0a3ca0e1",
+      "MOV             R3, R10,LSL#24"
+    ],
+    [
+      "0x6f4e4",
+      "434ca0e1",
+      "MOV             R4, R3,ASR#24"
+    ],
+    [
+      "0x6f4e8",
+      "0410a0e1",
+      "MOV             R1, R4"
+    ],
+    [
+      "0x6f4ec",
+      "0900a0e1",
+      "MOV             R0, R9"
+    ],
+    [
+      "0x6f4f0",
+      "19d8ffeb",
+      "BL              Base_CalcStorageUsed"
+    ],
+    [
+      "0x6f4f4",
+      "0130a0e3",
+      "MOV             R3, #1"
+    ],
+    [
+      "0x6f4f8",
+      "00b0a0e1",
+      "MOV             R11, R0"
+    ],
+    [
+      "0x6f4fc",
+      "60019fe5",
+      "LDR             R0, =g_smapCamera"
+    ],
+    [
+      "0x6f500",
+      "0420a0e1",
+      "MOV             R2, R4"
+    ],
+    [
+      "0x6f504",
+      "281090e5",
+      "LDR             R1, [R0,#(nSmapSiteCount - 0x1863E8)]"
+    ],
+    [
+      "0x6f508",
+      "0900a0e1",
+      "MOV             R0, R9"
+    ],
+    [
+      "0x6f50c",
+      "15e2ffeb",
+      "BL              Base_CountItemQtyAcrossBases"
+    ],
+    [
+      "0x6f510",
+      "0410a0e1",
+      "MOV             R1, R4"
+    ],
+    [
+      "0x6f514",
+      "00a0a0e1",
+      "MOV             R10, R0"
+    ],
+    [
+      "0x6f518",
+      "0900a0e1",
+      "MOV             R0, R9"
+    ]
+  ]
+}

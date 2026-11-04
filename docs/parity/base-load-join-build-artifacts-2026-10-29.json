@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-body-save-base-product-research/debug-base-join-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "E89934FE58528CFAA582A2C2500FAA1B415CCCE79CEEEC9D78F1E37C18DA415B",
+        "build/tests/Debug/test_geoscapeframe.exe": "09A6834494E3547F44A0D7F6FF00D912B996E70B8E649D93A935859D417B3401",
+        "build/tests/Debug/test_save.exe": "2CD6B1C012324F0DCAF2848835308266B0F866169A1801521C4994F015842837",
+        "build/tests/Debug/test_menubtn.exe": "9EDE7C53DBAA8397FD43DD08B11897B56545607B1EE1705C00051EF21B2703E5"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-body-save-base-product-research/release-base-join-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "EE0A68D7480FFF35C6DD9B7B457FCCAE97EC37859FDA0472B867E727A600B9F4",
+        "build/tests/Release/test_geoscapeframe.exe": "8FAFFE99064757614A297951133951D6D688E156BCB8F9000EBD46F226424E02",
+        "build/tests/Release/test_save.exe": "D163A52A802F263D04B433595D93345C10805046FA46CD7B8B23D85F34A925BF",
+        "build/tests/Release/test_menubtn.exe": "B95A9A6397C0E017ED8E9C4FB73125CD64D60EF489445284147D9C41CDA9956B"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "source_fingerprint_before_build": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01",
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Pre-v3 BASES live join preserves original-untouched hangar tail and craft-home byte; structural v2 World_LoadSlot regression; startup cleanup safety adaptation comment."
+}

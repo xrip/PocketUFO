@@ -507,7 +507,7 @@ static void TestStatPanelLabels(void)
     PlanePutRec(143, "CCCCCCCC");   /* eight, cut to five at 0x79F78 */
 
     g_planeColor.pnGamma = &g_nPlaneGamma;
-    g_planeColor.nFadeCount = 0;
+    g_planeColor.pnFadeCount = NULL;
 
     memset(&p, 0, sizeof(p));
     BasePlaneScreen_DrawStatLabel(&p, 0, g_aPlaneText, &g_planeColor, 3);

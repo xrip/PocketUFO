@@ -25,8 +25,8 @@
 0x37078	j_TactItem_ctor_138EA0	12	code-thunk	B -> TactItem_ctor @ 0x3e718
 0x37084	j_j_TactItem_ctor_156A88	4	code-thunk	B -> j_TactItem_ctor_156A88 @ 0x37088
 0x37088	j_TactItem_ctor_156A88	12	code-thunk	B -> TactItem_ctor @ 0x3e718
-0x37094	j_Math_StoreSqrtConst	4	code-thunk	B -> Math_StoreSqrtConst @ 0x37098
-0x370e4	j_Math_StoreAtan2Const	4	code-thunk	B -> Math_StoreAtan2Const @ 0x370e8
+0x37094	j_Math_StoreSqrtConst	4	code-thunk	Raw B -> 0x37098; CRT table entry 0xA61F8 invokes it before WinMain. Body is ported as Math_StoreSqrtConst; native .CRT$XCU initialization now calls it. Startup link is required, not no-op behavior. See .workers/luna-strategy/artifact-review.tsv.
+0x370e4	j_Math_StoreAtan2Const	4	code-thunk	Raw B -> 0x370E8; CRT table entry 0xA61FC invokes it before WinMain. Body is ported as Math_StoreAtan2Const; native .CRT$XCU initialization now calls it after the sqrt store. See .workers/luna-strategy/artifact-review.tsv.
 0x37120	j_j_TactItem_ctor_156910	4	code-thunk	B -> j_TactItem_ctor_156910 @ 0x37124
 0x37124	j_TactItem_ctor_156910	12	code-thunk	B -> TactItem_ctor @ 0x3e718
 0x37130	j_j_TactItem_ctor_156A58	4	code-thunk	B -> j_TactItem_ctor_156A58 @ 0x37134
@@ -143,4 +143,4 @@
 0xa1748	LocalReAlloc	12	import-thunk	LDR R12, =__imp_LocalReAlloc; LDR PC, [R12] -> __imp_LocalReAlloc
 0xa1754	LocalAlloc	12	import-thunk	LDR R12, =__imp_LocalAlloc; LDR PC, [R12] -> __imp_LocalAlloc
 0xa1760	LocalSize	12	import-thunk	LDR R12, =__imp_LocalSize; LDR PC, [R12] -> __imp_LocalSize
-0xa42e0	nullsub_10	4	decode-artifact	POP {R0-R12,PC} word in the screen_w data segment, 0 xrefs
+0xa42e0	nullsub_10	4	arm-context-restore	FF 9F BD E8 restores R0-R12 and PC from the stack with SP writeback. Same instruction at0xA42DC; no IDA xrefs or VA/RVA literals found. Native compiler ABI restoration serves the translated code; no independently callable restore routine or absolute indirect-unreachability claim. See docs/parity/arm-context-restore-2026-10-29.md.

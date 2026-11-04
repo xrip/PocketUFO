@@ -182,7 +182,8 @@ void Tact_ProcessActionPhase(TactCtx272 *pCtx, const TurnHooks *pHooks,
 }
 
 void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
-                         const TurnUnitLists *pLists, Soldier *pSelUnit, u8 *pbEnemyTurnActive,
+                         const TurnUnitLists *pLists, const i32 *pnLiveEnemyCount,
+                         Soldier *pSelUnit, u8 *pbEnemyTurnActive,
                          void (*pfnFrameStart)(void *pUser),
                          void (*pfnBeforeEnemyStep)(TactCtx272 *pCtx, void *pUser))
 {
@@ -208,7 +209,7 @@ void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
     /* Clear per-unit AI and spotting state, in the original's order: enemy,
      * then civilian, then XCom. */
     if (pLists != NULL) {
-        for (i = 0; i < pLists->nEnemy && pLists->apEnemy != NULL; ++i) {
+        for (i = 0; i < *pnLiveEnemyCount && pLists->apEnemy != NULL; ++i) {
             if (pLists->apEnemy[i] != NULL) {
                 pLists->apEnemy[i]->bAiDone = 0;
                 pLists->apEnemy[i]->nSpottedCount = 0;
@@ -220,7 +221,8 @@ void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
                 pLists->apCivilian[i]->nSpottedCount = 0;
             }
         }
-        for (i = 0; i < pLists->nXcom && pLists->apXcom != NULL; ++i) {
+        for (i = 0; pLists->pnXcomCount != NULL && i < *pLists->pnXcomCount
+                    && pLists->apXcom != NULL; ++i) {
             if (pLists->apXcom[i] != NULL) {
                 pLists->apXcom[i]->bAiDone = 0;
                 pLists->apXcom[i]->nSpottedCount = 0;
@@ -434,6 +436,13 @@ static void Turn_SyncSideCounts(const EnemyStepCtx *pCtx, const SideLists *pList
     *pCtx->pnEnemy = pLists->nEnemy;
 }
 
+static void Turn_PublishSideCounts(const EnemyStepCtx *pCtx)
+{
+    if (pCtx->pfnPublishRosterCounts != NULL) {
+        pCtx->pfnPublishRosterCounts(*pCtx->pnXcom, *pCtx->pnEnemy, pCtx->pUser);
+    }
+}
+
 void Tact_UpdateUnitControl(Soldier *pUnit, const EnemyStepCtx *pCtx)
 {
     SideLists lists = { pCtx->apXcom, *pCtx->pnXcom, pCtx->apEnemy, *pCtx->pnEnemy };
@@ -477,6 +486,7 @@ void Tact_UpdateUnitControl(Soldier *pUnit, const EnemyStepCtx *pCtx)
          * is already full is written past its end. The XCom side at 0x4A6A4 is the same. */
         pCtx->apEnemy[*pCtx->pnEnemy] = pUnit;
         *pCtx->pnEnemy = (i32)((u8)(*pCtx->pnEnemy + 1));
+        Turn_PublishSideCounts(pCtx);
         if (*pCtx->ppSelUnit == pUnit) {
             Tact_SelectUnit(pCtx->pSelect, pCtx->apXcom[0]);
         }
@@ -492,6 +502,7 @@ void Tact_UpdateUnitControl(Soldier *pUnit, const EnemyStepCtx *pCtx)
         pUnit->uTu = 0;
         pCtx->apXcom[*pCtx->pnXcom] = pUnit;
         *pCtx->pnXcom = (i32)((u8)(*pCtx->pnXcom + 1));
+        Turn_PublishSideCounts(pCtx);
         Turn_PushUnitNameMsg(pUnit, PUFO_TEXT_REC_RELEASED_M, PUFO_TEXT_REC_RELEASED_F,
                              false, pCtx);
         pUnit->pLinked1040 = NULL;
@@ -811,6 +822,7 @@ void BeforeEnemyStep(TactCtx272 *pTact, const EnemyStepCtx *pCtx)
             pCtx->apEnemy[*pCtx->pnEnemy] = pUnit;
             *pCtx->pnReserveCount = nReserve - 1;
             *pCtx->pnEnemy = (i32)((u8)(*pCtx->pnEnemy + 1));
+            Turn_PublishSideCounts(pCtx);
             (void)Rmp_PickSpawnForUnit(pCtx->pRmp, pUnit, pCtx->pfnLookup, pCtx->pUser, true);
             --nWant;
         }

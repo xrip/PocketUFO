@@ -1,0 +1,165 @@
+{
+  "application": [
+    {
+      "ea": "0x4e430",
+      "type": "int __fastcall(TactState *pState, Soldier *pUnit)",
+      "credit_field_references": 1
+    },
+    {
+      "ea": "0x54130",
+      "type": "void __fastcall(struct TactState *pState)",
+      "credit_field_references": 3
+    }
+  ],
+  "branched_caller_tails": [
+    {
+      "ea": "0x3afec",
+      "asm": "MOV             R12, #(nEnemyUnitCount - 0x1139B8)"
+    },
+    {
+      "ea": "0x3aff4",
+      "asm": "LDRB            R2, [R4,R12]"
+    },
+    {
+      "ea": "0x3aff8",
+      "asm": "MOV             R0, #0"
+    },
+    {
+      "ea": "0x3affc",
+      "asm": "MOV             R1, R4"
+    },
+    {
+      "ea": "0x3b000",
+      "asm": "CMP             R0, R2"
+    },
+    {
+      "ea": "0x3b004",
+      "asm": "BGE             loc_3B060"
+    },
+    {
+      "ea": "0x3b008",
+      "asm": "MOV             R3, #0x151CC"
+    },
+    {
+      "ea": "0x3b010",
+      "asm": "MOV             LR, #0x1B0"
+    },
+    {
+      "ea": "0x3b014",
+      "asm": "LDR             R3, [R1,R3]"
+    },
+    {
+      "ea": "0x3b018",
+      "asm": "ORR             LR, LR, #3"
+    },
+    {
+      "ea": "0x3b01c",
+      "asm": "LDRB            R3, [R3,LR]"
+    },
+    {
+      "ea": "0x3b020",
+      "asm": "CMP             R3, #0"
+    },
+    {
+      "ea": "0x3b024",
+      "asm": "ADDEQ           R0, R0, #1"
+    },
+    {
+      "ea": "0x3b028",
+      "asm": "ADDEQ           R1, R1, #4"
+    },
+    {
+      "ea": "0x3b02c",
+      "asm": "BEQ             loc_3B000"
+    },
+    {
+      "ea": "0x3b030",
+      "asm": "MOV             R3, #0x5473"
+    },
+    {
+      "ea": "0x3b038",
+      "asm": "ADD             R3, R0, R3"
+    },
+    {
+      "ea": "0x3b03c",
+      "asm": "MOV             R0, R4"
+    },
+    {
+      "ea": "0x4aa3c",
+      "asm": "CMP             R7, #0"
+    },
+    {
+      "ea": "0x4aa40",
+      "asm": "BEQ             loc_4AA88"
+    },
+    {
+      "ea": "0x4aa44",
+      "asm": "CMP             R7, #1"
+    },
+    {
+      "ea": "0x4aa48",
+      "asm": "BEQ             loc_4AA80"
+    },
+    {
+      "ea": "0x4aa4c",
+      "asm": "CMP             R7, #2"
+    },
+    {
+      "ea": "0x4aa50",
+      "asm": "BEQ             loc_4AA78"
+    },
+    {
+      "ea": "0x4aa54",
+      "asm": "CMP             R7, #3"
+    },
+    {
+      "ea": "0x540d8",
+      "asm": "LDRB            R3, [R4,#(Map_bTickHold - 0x1139B8)]"
+    },
+    {
+      "ea": "0x540dc",
+      "asm": "ANDS            R3, R3, #0xFF"
+    },
+    {
+      "ea": "0x540e0",
+      "asm": "BNE             loc_54124"
+    },
+    {
+      "ea": "0x540e4",
+      "asm": "MOV             R3, #0x11000"
+    },
+    {
+      "ea": "0x540e8",
+      "asm": "LDR             R0, [R10,#0x10]"
+    },
+    {
+      "ea": "0x540ec",
+      "asm": "ORR             R3, R3, #0x1D4"
+    },
+    {
+      "ea": "0x540f0",
+      "asm": "STRB            R11, [R10]"
+    },
+    {
+      "ea": "0x540f4",
+      "asm": "MOV             R5, R10"
+    },
+    {
+      "ea": "0x540f8",
+      "asm": "LDRH            R3, [R5,R3]!"
+    },
+    {
+      "ea": "0x540fc",
+      "asm": "ADD             R0, R0, #1"
+    },
+    {
+      "ea": "0x54100",
+      "asm": "STR             R0, [R10,#0x10]"
+    },
+    {
+      "ea": "0x54104",
+      "asm": "CMP             R0, R3"
+    }
+  ],
+  "scope": "First argument owner corrected; exact existing int return remains an unproved hypothesis."
+}

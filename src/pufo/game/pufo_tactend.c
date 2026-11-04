@@ -96,48 +96,45 @@ static void Shutdown_FreeRoster(void **apEntries, i32 nCount)
     }
 }
 
-/* 0x3DD0C .. 0x3DE10. Civilians go when Soldier.bInZone is zero, enemies all go with no
- * test at all, XCOM go when nUnitType is in 4..8 or bInZone is zero. The bound is
- * re-read after every removal because Soldier_RemoveById shrinks the roster while the
- * index keeps advancing -- the walk therefore skips entries, and that is reproduced. */
+static void Shutdown_RemoveWorldSoldier(const TactShutdownEnv *pEnv, const Soldier *pUnit)
+{
+    if (pEnv->apStrategCraftCopy != NULL && pEnv->pnStrategCraftCopy != NULL) {
+        *pEnv->pnStrategCraftCopy = Soldier_RemoveById(pEnv->apStrategCraftCopy,
+                                                        *pEnv->pnStrategCraftCopy,
+                                                        pUnit->nUnk440);
+    }
+}
+
+/* 0x3DD0C .. 0x3DE10. The side lists select the units, but the original
+ * Soldier_RemoveById ignores its first argument and frees from Map.apSoldiers. The side-list
+ * counts are re-read and the index advances; neither side list shrinks here because Tact_Shutdown
+ * frees the Map storage later. Civilians outside the zone are removed, all enemies are removed,
+ * and XCOM units of type 4..8 or outside the zone are removed. */
 static void Shutdown_RemoveUnits(const TactShutdownEnv *pEnv)
 {
-    i32 nBound;
     i32 i;
 
-    nBound = *pEnv->pnCivilianCount;
-    i = 0;
-    while (i < nBound) {                                   /* 0x3DD10 */
+    for (i = 0; i < *pEnv->pnCivilianCount; ++i) {          /* 0x3DD10 */
         Soldier *pUnit = (Soldier *)pEnv->apCivilianUnits[i];
 
         if (pUnit->bInZone == 0) {                         /* 0x3DD28 */
-            *pEnv->pnCivilianCount =
-                Soldier_RemoveById(pEnv->apCivilianUnits, *pEnv->pnCivilianCount,
-                                   pUnit->nUnk440);       /* 0x3DD34 */
-            nBound = *pEnv->pnCivilianCount;              /* 0x3DD40 */
+            Shutdown_RemoveWorldSoldier(pEnv, pUnit);      /* 0x3DD34 */
         }
-        ++i;
     }
 
-    for (i = 0; i < *pEnv->pnEnemyCount; ++i) {            /* 0x3DD6C, bound re-read */
+    for (i = 0; i < *pEnv->pnEnemyCount; ++i) {             /* 0x3DD6C, bound re-read */
         Soldier *pUnit = (Soldier *)pEnv->apEnemyUnits[i];
 
-        *pEnv->pnEnemyCount =
-            (u8)Soldier_RemoveById(pEnv->apEnemyUnits, *pEnv->pnEnemyCount, pUnit->nUnk440);
+        Shutdown_RemoveWorldSoldier(pEnv, pUnit);
     }
 
-    nBound = *pEnv->pnXcomCount;
-    i = 0;
-    while (i < nBound) {                                   /* 0x3DDC8 */
+    for (i = 0; i < *pEnv->pnXcomCount; ++i) {              /* 0x3DDC8 */
         Soldier *pUnit = (Soldier *)pEnv->apXcomUnits[i];
         u8 nType = pUnit->nUnitType;
 
         if ((nType > 3 && nType <= 8) || pUnit->bInZone == 0) {
-            *pEnv->pnXcomCount =
-                (u8)Soldier_RemoveById(pEnv->apXcomUnits, *pEnv->pnXcomCount, pUnit->nUnk440);
-            nBound = *pEnv->pnXcomCount;
+            Shutdown_RemoveWorldSoldier(pEnv, pUnit);
         }
-        ++i;
     }
 }
 
@@ -199,6 +196,16 @@ static void Shutdown_MissionOutcome(const TactShutdownEnv *pEnv)
 
         Base_DemolishFacility(pEnv->pDemolishEnv, pBase->bUnk4); /* 0x3E058 */
     }
+}
+
+void Tact_ShutdownOutcome(const TactShutdownEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    Shutdown_RemoveUnits(pEnv);
+    Shutdown_MissionOutcome(pEnv);
 }
 
 /* 0x3E328 .. 0x3E3CC. Bounds are 10 * nMapDimY rows by 10 * nMapDimX columns, four
@@ -283,7 +290,7 @@ void Tact_Shutdown(const TactShutdownEnv *pEnv, u8 bKeepSome)
     if (bKeepSome != 0) {
         free(*pEnv->appBlock187050);                                 /* 0x3E06C, no test */
         *pEnv->appBlock187050 = NULL;
-        Shutdown_FreeRoster(pEnv->apStrategCraftCopy, (i32)*pEnv->pnStrategCraftCopy);
+        Shutdown_FreeRoster((void **)pEnv->apStrategCraftCopy, *pEnv->pnStrategCraftCopy);
         if (*pEnv->pnBaseCount > 0) {
             Shutdown_FreeRoster(pEnv->apBaseCopy, (i32)*pEnv->pnBaseCount);
         }
@@ -292,8 +299,7 @@ void Tact_Shutdown(const TactShutdownEnv *pEnv, u8 bKeepSome)
         }
         PtrArray_DeleteAll(pEnv->pStrategList);                      /* 0x3E154 */
     } else {
-        Shutdown_RemoveUnits(pEnv);
-        Shutdown_MissionOutcome(pEnv);
+        Tact_ShutdownOutcome(pEnv);
     }
 
     Shutdown_FreePadArray(pEnv->appSpriteSet, PUFO_SHUTDOWN_SPRITE_SET); /* 0x3E158 */

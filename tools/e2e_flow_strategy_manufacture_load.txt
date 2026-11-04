@@ -1,0 +1,14 @@
+# Fresh-load the committed order before time advances, then run enough real hourly
+# pulses to produce one Personal Armour.
+load 0
+# Restore the saved live one-hour control before comparing the full order tuple; this click advances no time.
+click 60 308
+state manufacture_after_load
+strategystate manufacture_after_load
+dump strategy_manufacture_after_load.ppm
+__MANUF_WORK_CLOCK__
+strategystate manufacture_after_work
+lines
+dump strategy_manufacture_after_work.ppm
+save 4
+state manufacture_output_saved

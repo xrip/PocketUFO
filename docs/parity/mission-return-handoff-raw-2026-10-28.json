@@ -1,0 +1,1575 @@
+{
+  "binary": "pufobeta.exe",
+  "date": "2026-10-28",
+  "notice_entry_callers": [
+    [
+      "0x68344",
+      "0dc0a0e1",
+      "MOV             R12, SP"
+    ],
+    [
+      "0x68348",
+      "02002de9",
+      "PUSH            {R1}"
+    ],
+    [
+      "0x6834c",
+      "f05f2de9",
+      "PUSH            {R4-R12,LR}"
+    ],
+    [
+      "0x68350",
+      "14d04de2",
+      "SUB             SP, SP, #0x14"
+    ],
+    [
+      "0x68354",
+      "6c019fe5",
+      "LDR             R0, =abFacilityGrid"
+    ],
+    [
+      "0x68358",
+      "00a0a0e3",
+      "MOV             R10, #0"
+    ],
+    [
+      "0x6835c",
+      "3c10cde5",
+      "STRB            R1, [SP,#0x14+var_s28]"
+    ],
+    [
+      "0x68360",
+      "61cea0e308c08ce3",
+      "MOV             R12, #0x618"
+    ],
+    [
+      "0x68368",
+      "dc3090e1",
+      "LDRSB           R3, [R0,R12]"
+    ],
+    [
+      "0x6836c",
+      "08a0cde5",
+      "STRB            R10, [SP,#0x14+var_C]"
+    ],
+    [
+      "0x68370",
+      "0aa0cde5",
+      "STRB            R10, [SP,#0x14+var_A]"
+    ],
+    [
+      "0x68374",
+      "09a0cde5",
+      "STRB            R10, [SP,#0x14+var_B]"
+    ],
+    [
+      "0x68378",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x6837c",
+      "10a08de5",
+      "STR             R10, [SP,#0x14+var_4]"
+    ],
+    [
+      "0x68380",
+      "e70200da",
+      "BLE             loc_68F24"
+    ],
+    [
+      "0x68384",
+      "40419fe5",
+      "LDR             R4, =Map_bTactFlag"
+    ],
+    [
+      "0x68388",
+      "46cda0e314c08ce3",
+      "MOV             R12, #(Map_nCraftCount - 0x1139B8)"
+    ],
+    [
+      "0x68390",
+      "0c30d4e7",
+      "LDRB            R3, [R4,R12]"
+    ],
+    [
+      "0x68394",
+      "0ca08de5",
+      "STR             R10, [SP,#0x14+var_8]"
+    ],
+    [
+      "0x68398",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x6839c",
+      "d702009a",
+      "BLS             loc_68F00"
+    ],
+    [
+      "0x683a0",
+      "423ea0e3",
+      "MOV             R3, #0x420"
+    ],
+    [
+      "0x683a4",
+      "0c209de5",
+      "LDR             R2, [SP,#0x14+var_8]"
+    ],
+    [
+      "0x683a8",
+      "0b3083e3",
+      "ORR             R3, R3, #0xB"
+    ],
+    [
+      "0x683ac",
+      "033082e0",
+      "ADD             R3, R2, R3"
+    ],
+    [
+      "0x683b0",
+      "10209de5",
+      "LDR             R2, [SP,#0x14+var_4]"
+    ],
+    [
+      "0x683b4",
+      "0450a0e1",
+      "MOV             R5, R4"
+    ],
+    [
+      "0x683b8",
+      "0301b5e7",
+      "LDR             R0, [R5,R3,LSL#2]!"
+    ],
+    [
+      "0x683bc",
+      "0330d0e5",
+      "LDRB            R3, [R0,#Ship.bHomeBase]"
+    ],
+    [
+      "0x3dff4",
+      "15caa0e3d4c08ce3",
+      "MOV             R12, #(Map_bMissionVictory - 0x1139B8)"
+    ],
+    [
+      "0x3dffc",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3e000",
+      "ff3013e2",
+      "ANDS            R3, R3, #0xFF"
+    ],
+    [
+      "0x3e004",
+      "0110a013",
+      "MOVNE           R1, #1"
+    ],
+    [
+      "0x3e008",
+      "0400a011",
+      "MOVNE           R0, R4"
+    ],
+    [
+      "0x3e00c",
+      "cca8001b",
+      "BLNE            Base_TransferTacticalLoot"
+    ],
+    [
+      "0x80e3c",
+      "423ea0e3",
+      "MOV             R3, #0x420"
+    ],
+    [
+      "0x80e40",
+      "08209de5",
+      "LDR             R2, [SP,#0xE4+var_DC]"
+    ],
+    [
+      "0x80e44",
+      "0b3083e3",
+      "ORR             R3, R3, #0xB"
+    ],
+    [
+      "0x80e48",
+      "58009fe5",
+      "LDR             R0, =Map_bTactFlag"
+    ],
+    [
+      "0x80e4c",
+      "033082e0",
+      "ADD             R3, R2, R3"
+    ],
+    [
+      "0x80e50",
+      "0331b0e7",
+      "LDR             R3, [R0,R3,LSL#2]!"
+    ],
+    [
+      "0x80e54",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x80e58",
+      "0010a0e3",
+      "MOV             R1, #0"
+    ],
+    [
+      "0x80e5c",
+      "0620c3e5",
+      "STRB            R2, [R3,#Ship.bAtBase]"
+    ],
+    [
+      "0x80e60",
+      "003090e5",
+      "LDR             R3, [R0]"
+    ],
+    [
+      "0x80e64",
+      "0000a0e3",
+      "MOV             R0, #0"
+    ],
+    [
+      "0x80e68",
+      "3c00c3e5",
+      "STRB            R0, [R3,#Ship.bContactMsg]"
+    ],
+    [
+      "0x80e6c",
+      "3900c4e5",
+      "STRB            R0, [R4,#0x39]"
+    ],
+    [
+      "0x80e70",
+      "3800c4e5",
+      "STRB            R0, [R4,#StrategItem.bVisible]"
+    ],
+    [
+      "0x80e74",
+      "28009fe5",
+      "LDR             R0, =abFacilityGrid"
+    ],
+    [
+      "0x80e78",
+      "319dffeb",
+      "BL              Base_TransferTacticalLoot"
+    ],
+    [
+      "0x80e7c",
+      "14309de5",
+      "LDR             R3, [SP,#0xE4+var_D0]"
+    ]
+  ],
+  "notice_branch": [
+    [
+      "0x68e90",
+      "001095e5",
+      "LDR             R1, [R5]"
+    ],
+    [
+      "0x68e94",
+      "3d20c1e5",
+      "STRB            R2, [R1,#0x3D]"
+    ],
+    [
+      "0x68e98",
+      "d81194e5",
+      "LDR             R1, [R4,#(Map_apObjects52 - 0x1139B8)]"
+    ],
+    [
+      "0x68e9c",
+      "000096e5",
+      "LDR             R0, [R6]"
+    ],
+    [
+      "0x68ea0",
+      "1db2ffeb",
+      "BL              BaseRec_SubItemQty"
+    ],
+    [
+      "0x68ea4",
+      "0930dde5",
+      "LDRB            R3, [SP,#0x14+var_B]"
+    ],
+    [
+      "0x68ea8",
+      "ff3013e2",
+      "ANDS            R3, R3, #0xFF"
+    ],
+    [
+      "0x68eac",
+      "0b00000a",
+      "BEQ             loc_68EE0"
+    ],
+    [
+      "0x68eb0",
+      "3c30dde5",
+      "LDRB            R3, [SP,#0x14+var_s28]"
+    ],
+    [
+      "0x68eb4",
+      "0100a0e3",
+      "MOV             R0, #1"
+    ],
+    [
+      "0x68eb8",
+      "2c141fe5",
+      "LDR             R1, =dwActionFail"
+    ],
+    [
+      "0x68ebc",
+      "ff3013e2",
+      "ANDS            R3, R3, #0xFF"
+    ],
+    [
+      "0x68ec0",
+      "000081e5",
+      "STR             R0, [R1]"
+    ],
+    [
+      "0x68ec4",
+      "0920a001",
+      "MOVEQ           R2, R9"
+    ],
+    [
+      "0x68ec8",
+      "0830dd05",
+      "LDRBEQ          R3, [SP,#0x14+var_C]"
+    ],
+    [
+      "0x68ecc",
+      "2810a003",
+      "MOVEQ           R1, #0x28 "
+    ],
+    [
+      "0x68ed0",
+      "40041f05",
+      "LDREQ           R0, =0x158890"
+    ],
+    [
+      "0x68ed4",
+      "04a0cd05",
+      "STRBEQ          R10, [SP,#0x14+var_10]"
+    ],
+    [
+      "0x68ed8",
+      "00a0cd05",
+      "STRBEQ          R10, [SP,#0x14+var_14]"
+    ],
+    [
+      "0x68edc",
+      "2cc5ff0b",
+      "BLEQ            UiPanel_AppendLineWithSound"
+    ],
+    [
+      "0x68ee0",
+      "0c309de5",
+      "LDR             R3, [SP,#0x14+var_8]"
+    ],
+    [
+      "0x68ee4",
+      "010083e2",
+      "ADD             R0, R3, #1"
+    ],
+    [
+      "0x68ee8",
+      "46cda0e314c08ce3",
+      "MOV             R12, #(Map_nCraftCount - 0x1139B8)"
+    ],
+    [
+      "0x68ef0",
+      "0c30d4e7",
+      "LDRB            R3, [R4,R12]"
+    ],
+    [
+      "0x68ef4",
+      "0c008de5",
+      "STR             R0, [SP,#0x14+var_8]"
+    ],
+    [
+      "0x68ef8",
+      "030050e1",
+      "CMP             R0, R3"
+    ],
+    [
+      "0x68efc",
+      "27fdffba",
+      "BLT             loc_683A0"
+    ],
+    [
+      "0x68f00",
+      "10309de5",
+      "LDR             R3, [SP,#0x14+var_4]"
+    ],
+    [
+      "0x68f04",
+      "441a1fe5",
+      "LDR             R1, =abFacilityGrid"
+    ],
+    [
+      "0x68f08",
+      "010083e2",
+      "ADD             R0, R3, #1"
+    ],
+    [
+      "0x68f0c",
+      "61cea0e308c08ce3",
+      "MOV             R12, #0x618"
+    ],
+    [
+      "0x68f14",
+      "dc3091e1",
+      "LDRSB           R3, [R1,R12]"
+    ],
+    [
+      "0x68f18",
+      "10008de5",
+      "STR             R0, [SP,#0x14+var_4]"
+    ],
+    [
+      "0x68f1c",
+      "030050e1",
+      "CMP             R0, R3"
+    ]
+  ],
+  "shutdown_unit_removal": [
+    [
+      "0x3dd00",
+      "0c009ae7",
+      "LDR             R0, [R10,R12]"
+    ],
+    [
+      "0x3dd04",
+      "0050a0e3",
+      "MOV             R5, #0"
+    ],
+    [
+      "0x3dd08",
+      "000050e3",
+      "CMP             R0, #0"
+    ],
+    [
+      "0x3dd0c",
+      "100000da",
+      "BLE             loc_3DD54"
+    ],
+    [
+      "0x3dd10",
+      "0a40a0e1",
+      "MOV             R4, R10"
+    ],
+    [
+      "0x3dd14",
+      "153aa0e3913f83e3",
+      "MOV             R3, #0x15244"
+    ],
+    [
+      "0x3dd1c",
+      "031094e7",
+      "LDR             R1, [R4,R3]"
+    ],
+    [
+      "0x3dd20",
+      "c033d1e5",
+      "LDRB            R3, [R1,#0x3C0]"
+    ],
+    [
+      "0x3dd24",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x3dd28",
+      "0500001a",
+      "BNE             loc_3DD44"
+    ],
+    [
+      "0x3dd2c",
+      "b81191e5",
+      "LDR             R1, [R1,#0x1B8]"
+    ],
+    [
+      "0x3dd30",
+      "0a00a0e1",
+      "MOV             R0, R10"
+    ],
+    [
+      "0x3dd34",
+      "94e3ffeb",
+      "BL              Soldier_RemoveById"
+    ],
+    [
+      "0x3dd38",
+      "15caa0e312ce8ce3",
+      "MOV             R12, #(nCivilianUnitCount - 0x1139B8)"
+    ],
+    [
+      "0x3dd40",
+      "0c009ae7",
+      "LDR             R0, [R10,R12]"
+    ],
+    [
+      "0x3dd44",
+      "015085e2",
+      "ADD             R5, R5, #1"
+    ],
+    [
+      "0x3dd48",
+      "044084e2",
+      "ADD             R4, R4, #4"
+    ],
+    [
+      "0x3dd4c",
+      "000055e1",
+      "CMP             R5, R0"
+    ],
+    [
+      "0x3dd50",
+      "efffffba",
+      "BLT             loc_3DD14"
+    ],
+    [
+      "0x3dd54",
+      "15caa0e349cf8ce3",
+      "MOV             R12, #(nEnemyUnitCount - 0x1139B8)"
+    ],
+    [
+      "0x3dd5c",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3dd60",
+      "0040a0e3",
+      "MOV             R4, #0"
+    ],
+    [
+      "0x3dd64",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x3dd68",
+      "0d00009a",
+      "BLS             loc_3DDA4"
+    ],
+    [
+      "0x3dd6c",
+      "0a50a0e1",
+      "MOV             R5, R10"
+    ],
+    [
+      "0x3dd70",
+      "153aa0e3733f83e3",
+      "MOV             R3, #0x151CC"
+    ],
+    [
+      "0x3dd78",
+      "033095e7",
+      "LDR             R3, [R5,R3]"
+    ],
+    [
+      "0x3dd7c",
+      "0a00a0e1",
+      "MOV             R0, R10"
+    ],
+    [
+      "0x3dd80",
+      "b81193e5",
+      "LDR             R1, [R3,#0x1B8]"
+    ],
+    [
+      "0x3dd84",
+      "80e3ffeb",
+      "BL              Soldier_RemoveById"
+    ],
+    [
+      "0x3dd88",
+      "15caa0e349cf8ce3",
+      "MOV             R12, #(nEnemyUnitCount - 0x1139B8)"
+    ],
+    [
+      "0x3dd90",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3dd94",
+      "014084e2",
+      "ADD             R4, R4, #1"
+    ],
+    [
+      "0x3dd98",
+      "045085e2",
+      "ADD             R5, R5, #4"
+    ],
+    [
+      "0x3dd9c",
+      "030054e1",
+      "CMP             R4, R3"
+    ],
+    [
+      "0x3dda0",
+      "f2ffffba",
+      "BLT             loc_3DD70"
+    ],
+    [
+      "0x3dda4",
+      "2cc19fe5",
+      "LDR             R12, =(nXcomUnitCount - 0x1139B8)"
+    ],
+    [
+      "0x3dda8",
+      "0c10dae7",
+      "LDRB            R1, [R10,R12]"
+    ],
+    [
+      "0x3ddac",
+      "0050a0e3",
+      "MOV             R5, #0"
+    ],
+    [
+      "0x3ddb0",
+      "ff3001e2",
+      "AND             R3, R1, #0xFF"
+    ],
+    [
+      "0x3ddb4",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x3ddb8",
+      "1500009a",
+      "BLS             loc_3DE14"
+    ],
+    [
+      "0x3ddbc",
+      "0a40a0e1",
+      "MOV             R4, R10"
+    ],
+    [
+      "0x3ddc0",
+      "153aa0e3553f83e3",
+      "MOV             R3, #0x15154"
+    ],
+    [
+      "0x3ddc8",
+      "030094e7",
+      "LDR             R0, [R4,R3]"
+    ],
+    [
+      "0x3ddcc",
+      "a020d0e5",
+      "LDRB            R2, [R0,#0xA0]"
+    ],
+    [
+      "0x3ddd0",
+      "030052e3",
+      "CMP             R2, #3"
+    ],
+    [
+      "0x3ddd4",
+      "0100009a",
+      "BLS             loc_3DDE0"
+    ],
+    [
+      "0x3ddd8",
+      "080052e3",
+      "CMP             R2, #8"
+    ],
+    [
+      "0x3dddc",
+      "0200009a",
+      "BLS             loc_3DDEC"
+    ],
+    [
+      "0x3dde0",
+      "c033d0e5",
+      "LDRB            R3, [R0,#0x3C0]"
+    ],
+    [
+      "0x3dde4",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x3dde8",
+      "0400001a",
+      "BNE             loc_3DE00"
+    ],
+    [
+      "0x3ddec",
+      "b81190e5",
+      "LDR             R1, [R0,#0x1B8]"
+    ],
+    [
+      "0x3ddf0",
+      "0a00a0e1",
+      "MOV             R0, R10"
+    ],
+    [
+      "0x3ddf4",
+      "64e3ffeb",
+      "BL              Soldier_RemoveById"
+    ],
+    [
+      "0x3ddf8",
+      "d8c09fe5",
+      "LDR             R12, =(nXcomUnitCount - 0x1139B8)"
+    ],
+    [
+      "0x3ddfc",
+      "0c10dae7",
+      "LDRB            R1, [R10,R12]"
+    ],
+    [
+      "0x3de00",
+      "015085e2",
+      "ADD             R5, R5, #1"
+    ],
+    [
+      "0x3de04",
+      "ff3001e2",
+      "AND             R3, R1, #0xFF"
+    ],
+    [
+      "0x3de08",
+      "044084e2",
+      "ADD             R4, R4, #4"
+    ],
+    [
+      "0x3de0c",
+      "030055e1",
+      "CMP             R5, R3"
+    ],
+    [
+      "0x3de10",
+      "eaffffba",
+      "BLT             loc_3DDC0"
+    ],
+    [
+      "0x3de14",
+      "1acca0e321c08ce3",
+      "MOV             R12, #(Map_bAltOutcomePath - 0x1139B8)"
+    ],
+    [
+      "0x3de1c",
+      "0c00dae7",
+      "LDRB            R0, [R10,R12]"
+    ],
+    [
+      "0x3de20",
+      "ff3010e2",
+      "ANDS            R3, R0, #0xFF"
+    ],
+    [
+      "0x3de24",
+      "3900000a",
+      "BEQ             loc_3DF10"
+    ],
+    [
+      "0x3de28",
+      "a0c09fe5",
+      "LDR             R12, =(Map_bMissionMode - 0x1139B8)"
+    ],
+    [
+      "0x3de2c",
+      "0c00dae7",
+      "LDRB            R0, [R10,R12]"
+    ],
+    [
+      "0x3de30",
+      "ff3000e2",
+      "AND             R3, R0, #0xFF"
+    ],
+    [
+      "0x3de34",
+      "010053e3",
+      "CMP             R3, #1"
+    ],
+    [
+      "0x3de38",
+      "0b00001a",
+      "BNE             loc_3DE6C"
+    ],
+    [
+      "0x3de3c",
+      "90009fe5",
+      "LDR             R0, =abFacilityGrid"
+    ],
+    [
+      "0x3de40",
+      "452da0e3342082e3",
+      "MOV             R2, #0x1174"
+    ]
+  ],
+  "shutdown_normal_outcome": [
+    [
+      "0x3df10",
+      "48c01fe5",
+      "LDR             R12, =(Map_bMissionMode - 0x1139B8)"
+    ],
+    [
+      "0x3df14",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3df18",
+      "ff0013e2",
+      "ANDS            R0, R3, #0xFF"
+    ],
+    [
+      "0x3df1c",
+      "0300000a",
+      "BEQ             loc_3DF30"
+    ],
+    [
+      "0x3df20",
+      "030050e3",
+      "CMP             R0, #3"
+    ],
+    [
+      "0x3df24",
+      "0100000a",
+      "BEQ             loc_3DF30"
+    ],
+    [
+      "0x3df28",
+      "020050e3",
+      "CMP             R0, #2"
+    ],
+    [
+      "0x3df2c",
+      "2b00001a",
+      "BNE             loc_3DFE0"
+    ],
+    [
+      "0x3df30",
+      "15caa0e3d4c08ce3",
+      "MOV             R12, #(Map_bMissionVictory - 0x1139B8)"
+    ],
+    [
+      "0x3df38",
+      "0c00dae7",
+      "LDRB            R0, [R10,R12]"
+    ],
+    [
+      "0x3df3c",
+      "0110a0e3",
+      "MOV             R1, #1"
+    ],
+    [
+      "0x3df40",
+      "ff3010e2",
+      "ANDS            R3, R0, #0xFF"
+    ],
+    [
+      "0x3df44",
+      "2c009fe5",
+      "LDR             R0, =bSpawnReplacementOnce"
+    ],
+    [
+      "0x3df48",
+      "0010c0e5",
+      "STRB            R1, [R0]"
+    ],
+    [
+      "0x3df4c",
+      "0a00000a",
+      "BEQ             loc_3DF7C"
+    ],
+    [
+      "0x3df50",
+      "8c001fe5",
+      "LDR             R0, =0x159E74"
+    ],
+    [
+      "0x3df54",
+      "422da0e32c2082e3",
+      "MOV             R2, #0x10AC"
+    ],
+    [
+      "0x3df5c",
+      "000090e5",
+      "LDR             R0, [R0]"
+    ],
+    [
+      "0x3df60",
+      "00318ae0",
+      "ADD             R3, R10, R0,LSL#2"
+    ],
+    [
+      "0x3df64",
+      "a8001fe5",
+      "LDR             R0, =g_smapCamera"
+    ],
+    [
+      "0x3df68",
+      "023093e7",
+      "LDR             R3, [R3,R2]"
+    ],
+    [
+      "0x3df6c",
+      "381093e5",
+      "LDR             R1, [R3,#0x38]"
+    ],
+    [
+      "0x3df70",
+      "ce1201eb",
+      "BL              StrategList_RemoveAt"
+    ],
+    [
+      "0x3df74",
+      "190000ea",
+      "B               loc_3DFE0"
+    ],
+    [
+      "0x3df78",
+      "28201600",
+      "DCD bSpawnReplacementOnce"
+    ],
+    [
+      "0x3df7c",
+      "b8501fe5",
+      "LDR             R5, =0x159E74"
+    ],
+    [
+      "0x3df80",
+      "424da0e32c4084e3",
+      "MOV             R4, #0x10AC"
+    ],
+    [
+      "0x3df88",
+      "000095e5",
+      "LDR             R0, [R5]"
+    ],
+    [
+      "0x3df8c",
+      "00318ae0",
+      "ADD             R3, R10, R0,LSL#2"
+    ],
+    [
+      "0x3df90",
+      "d0001fe5",
+      "LDR             R0, =sGeoscapeScreenBlock"
+    ],
+    [
+      "0x3df94",
+      "043093e7",
+      "LDR             R3, [R3,R4]"
+    ],
+    [
+      "0x3df98",
+      "3c0080e2",
+      "ADD             R0, R0, #0x3C "
+    ],
+    [
+      "0x3df9c",
+      "381093e5",
+      "LDR             R1, [R3,#0x38]"
+    ],
+    [
+      "0x3dfa0",
+      "628c01eb",
+      "BL              PtrArray_Get"
+    ],
+    [
+      "0x3dfa4",
+      "d030d0e1",
+      "LDRSB           R3, [R0]"
+    ],
+    [
+      "0x3dfa8",
+      "040053e3",
+      "CMP             R3, #4"
+    ],
+    [
+      "0x3dfac",
+      "00009505",
+      "LDREQ           R0, [R5]"
+    ],
+    [
+      "0x3dfb0",
+      "00318a00",
+      "ADDEQ           R3, R10, R0,LSL#2"
+    ],
+    [
+      "0x3dfb4",
+      "f8001f05",
+      "LDREQ           R0, =g_smapCamera"
+    ],
+    [
+      "0x3dfb8",
+      "04309307",
+      "LDREQ           R3, [R3,R4]"
+    ],
+    [
+      "0x3dfbc",
+      "38109305",
+      "LDREQ           R1, [R3,#0x38]"
+    ],
+    [
+      "0x3dfc0",
+      "ba12010b",
+      "BLEQ            StrategList_RemoveAt"
+    ],
+    [
+      "0x3dfc4",
+      "94c09fe5",
+      "LDR             R12, =(Map_nCraftIndex - 0x1139B8)"
+    ],
+    [
+      "0x3dfc8",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3dfcc",
+      "0a00a0e1",
+      "MOV             R0, R10"
+    ],
+    [
+      "0x3dfd0",
+      "03318ae0",
+      "ADD             R3, R10, R3,LSL#2"
+    ],
+    [
+      "0x3dfd4",
+      "043093e7",
+      "LDR             R3, [R3,R4]"
+    ],
+    [
+      "0x3dfd8",
+      "0110d3e5",
+      "LDRB            R1, [R3,#1]"
+    ],
+    [
+      "0x3dfdc",
+      "13e2ffeb",
+      "BL              Ship_RemoveWithCargo"
+    ],
+    [
+      "0x3dfe0",
+      "18c11fe5",
+      "LDR             R12, =(Map_bMissionMode - 0x1139B8)"
+    ],
+    [
+      "0x3dfe4",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3dfe8",
+      "1c411fe5",
+      "LDR             R4, =abFacilityGrid"
+    ],
+    [
+      "0x3dfec",
+      "010053e3",
+      "CMP             R3, #1"
+    ],
+    [
+      "0x3dff0",
+      "0600001a",
+      "BNE             loc_3E010"
+    ],
+    [
+      "0x3dff4",
+      "15caa0e3d4c08ce3",
+      "MOV             R12, #(Map_bMissionVictory - 0x1139B8)"
+    ],
+    [
+      "0x3dffc",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3e000",
+      "ff3013e2",
+      "ANDS            R3, R3, #0xFF"
+    ],
+    [
+      "0x3e004",
+      "0110a013",
+      "MOVNE           R1, #1"
+    ],
+    [
+      "0x3e008",
+      "0400a011",
+      "MOVNE           R0, R4"
+    ],
+    [
+      "0x3e00c",
+      "cca8001b",
+      "BLNE            Base_TransferTacticalLoot"
+    ],
+    [
+      "0x3e010",
+      "48c11fe5",
+      "LDR             R12, =(Map_bMissionMode - 0x1139B8)"
+    ],
+    [
+      "0x3e014",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3e018",
+      "010053e3",
+      "CMP             R3, #1"
+    ],
+    [
+      "0x3e01c",
+      "4d00001a",
+      "BNE             loc_3E158"
+    ],
+    [
+      "0x3e020",
+      "15caa0e3d4c08ce3",
+      "MOV             R12, #(Map_bMissionVictory - 0x1139B8)"
+    ],
+    [
+      "0x3e028",
+      "0c30dae7",
+      "LDRB            R3, [R10,R12]"
+    ],
+    [
+      "0x3e02c",
+      "ff3013e2",
+      "ANDS            R3, R3, #0xFF"
+    ],
+    [
+      "0x3e030",
+      "4800001a",
+      "BNE             loc_3E158"
+    ],
+    [
+      "0x3e034",
+      "61cea0e309c08ce3",
+      "MOV             R12, #(nSelectedBaseIdx - 0x159768)"
+    ],
+    [
+      "0x3e03c",
+      "dc3094e1",
+      "LDRSB           R3, [R4,R12]"
+    ],
+    [
+      "0x3e040",
+      "452da0e3342082e3",
+      "MOV             R2, #0x1174"
+    ],
+    [
+      "0x3e048",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x3e04c",
+      "03318ae0",
+      "ADD             R3, R10, R3,LSL#2"
+    ],
+    [
+      "0x3e050",
+      "023093e7",
+      "LDR             R3, [R3,R2]"
+    ],
+    [
+      "0x3e054",
+      "d410d3e1",
+      "LDRSB           R1, [R3,#4]"
+    ],
+    [
+      "0x3e058",
+      "c4a200eb",
+      "BL              Base_DemolishFacility"
+    ],
+    [
+      "0x3e05c",
+      "3d0000ea",
+      "B               loc_3E158"
+    ]
+  ],
+  "load_normalization": [
+    [
+      "0x45034",
+      "3c0088e2",
+      "ADD             R0, R8, #0x3C "
+    ],
+    [
+      "0x45038",
+      "3c7001eb",
+      "BL              PtrArray_Get"
+    ],
+    [
+      "0x4503c",
+      "043090e5",
+      "LDR             R3, [R0,#4]"
+    ],
+    [
+      "0x45040",
+      "c32fb0e1",
+      "MOVS            R2, R3,ASR#31"
+    ],
+    [
+      "0x45044",
+      "023023e0",
+      "EOR             R3, R3, R2"
+    ],
+    [
+      "0x45048",
+      "033062e0",
+      "RSB             R3, R2, R3"
+    ],
+    [
+      "0x4504c",
+      "0b0053e1",
+      "CMP             R3, R11"
+    ],
+    [
+      "0x45050",
+      "080000ca",
+      "BGT             loc_45078"
+    ],
+    [
+      "0x45054",
+      "0410a0e1",
+      "MOV             R1, R4"
+    ],
+    [
+      "0x45058",
+      "3c0088e2",
+      "ADD             R0, R8, #0x3C "
+    ],
+    [
+      "0x4505c",
+      "337001eb",
+      "BL              PtrArray_Get"
+    ],
+    [
+      "0x45060",
+      "083090e5",
+      "LDR             R3, [R0,#8]"
+    ],
+    [
+      "0x45064",
+      "c32fb0e1",
+      "MOVS            R2, R3,ASR#31"
+    ],
+    [
+      "0x45068",
+      "023023e0",
+      "EOR             R3, R3, R2"
+    ],
+    [
+      "0x4506c",
+      "033062e0",
+      "RSB             R3, R2, R3"
+    ],
+    [
+      "0x45070",
+      "0b0053e1",
+      "CMP             R3, R11"
+    ],
+    [
+      "0x45074",
+      "050000da",
+      "BLE             loc_45090"
+    ],
+    [
+      "0x45078",
+      "003095e5",
+      "LDR             R3, [R5]"
+    ],
+    [
+      "0x4507c",
+      "0020a0e3",
+      "MOV             R2, #0"
+    ],
+    [
+      "0x45080",
+      "3420c3e5",
+      "STRB            R2, [R3,#0x34]"
+    ],
+    [
+      "0x45084",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x45088",
+      "003095e5",
+      "LDR             R3, [R5]"
+    ],
+    [
+      "0x4508c",
+      "0620c3e5",
+      "STRB            R2, [R3,#6]"
+    ],
+    [
+      "0x45090",
+      "003095e5",
+      "LDR             R3, [R5]"
+    ],
+    [
+      "0x45094",
+      "0630d3e5",
+      "LDRB            R3, [R3,#6]"
+    ],
+    [
+      "0x45098",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x4509c",
+      "0b00000a",
+      "BEQ             loc_450D0"
+    ],
+    [
+      "0x450a0",
+      "80531fe5",
+      "LDR             R5, =sGeoscapeScreenBlock"
+    ],
+    [
+      "0x450a4",
+      "0410a0e1",
+      "MOV             R1, R4"
+    ],
+    [
+      "0x450a8",
+      "3c0085e2",
+      "ADD             R0, R5, #0x3C "
+    ],
+    [
+      "0x450ac",
+      "1f7001eb",
+      "BL              PtrArray_Get"
+    ],
+    [
+      "0x450b0",
+      "3830d0e5",
+      "LDRB            R3, [R0,#0x38]"
+    ],
+    [
+      "0x450b4",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x450b8",
+      "0400000a",
+      "BEQ             loc_450D0"
+    ],
+    [
+      "0x450bc",
+      "0410a0e1",
+      "MOV             R1, R4"
+    ],
+    [
+      "0x450c0",
+      "3c0085e2",
+      "ADD             R0, R5, #0x3C "
+    ],
+    [
+      "0x450c4",
+      "197001eb",
+      "BL              PtrArray_Get"
+    ],
+    [
+      "0x450c8",
+      "0030a0e3",
+      "MOV             R3, #0"
+    ],
+    [
+      "0x450cc",
+      "3830c0e5",
+      "STRB            R3, [R0,#0x38]"
+    ],
+    [
+      "0x450d0",
+      "46cda0e314c08ce3",
+      "MOV             R12, #(Map_nCraftCount - 0x1139B8)"
+    ]
+  ],
+  "save_flags": [
+    [
+      "0x3f86c",
+      "053094e7",
+      "LDR             R3, [R4,R5]"
+    ],
+    [
+      "0x3f870",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x3f874",
+      "a0019fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x3f878",
+      "061083e2",
+      "ADD             R1, R3, #Ship.bAtBase"
+    ],
+    [
+      "0x3f87c",
+      "0c7f01eb",
+      "BL              DatFile_Write"
+    ],
+    [
+      "0x3f880",
+      "053094e7",
+      "LDR             R3, [R4,R5]"
+    ],
+    [
+      "0x3f884",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x3f888",
+      "8c019fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x3f88c",
+      "341083e2",
+      "ADD             R1, R3, #Ship.bWeaponsHot"
+    ],
+    [
+      "0x3f890",
+      "077f01eb",
+      "BL              DatFile_Write"
+    ],
+    [
+      "0x3f894",
+      "053094e7",
+      "LDR             R3, [R4,R5]"
+    ],
+    [
+      "0x3f898",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x3f89c",
+      "78019fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x40a80",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x40a84",
+      "003094e5",
+      "LDR             R3, [R4]"
+    ],
+    [
+      "0x40a88",
+      "60011fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x40a8c",
+      "061083e2",
+      "ADD             R1, R3, #Ship.bAtBase"
+    ],
+    [
+      "0x40a90",
+      "007b01eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x40a94",
+      "003094e5",
+      "LDR             R3, [R4]"
+    ],
+    [
+      "0x40a98",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x40a9c",
+      "74011fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x40aa0",
+      "341083e2",
+      "ADD             R1, R3, #Ship.bWeaponsHot"
+    ],
+    [
+      "0x40aa4",
+      "fb7a01eb",
+      "BL              DatFile_Read"
+    ],
+    [
+      "0x40aa8",
+      "003094e5",
+      "LDR             R3, [R4]"
+    ],
+    [
+      "0x40aac",
+      "0120a0e3",
+      "MOV             R2, #1"
+    ],
+    [
+      "0x40ab0",
+      "88011fe5",
+      "LDR             R0, =unk_158220"
+    ],
+    [
+      "0x45014",
+      "014043e2",
+      "SUB             R4, R3, #1"
+    ],
+    [
+      "0x45018",
+      "065087e0",
+      "ADD             R5, R7, R6"
+    ],
+    [
+      "0x4501c",
+      "003095e5",
+      "LDR             R3, [R5]"
+    ],
+    [
+      "0x45020",
+      "3430d3e5",
+      "LDRB            R3, [R3,#0x34]"
+    ],
+    [
+      "0x45024",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x45028",
+      "1800000a",
+      "BEQ             loc_45090"
+    ],
+    [
+      "0x4502c",
+      "0c831fe5",
+      "LDR             R8, =sGeoscapeScreenBlock"
+    ],
+    [
+      "0x45030",
+      "0410a0e1",
+      "MOV             R1, R4"
+    ]
+  ],
+  "idb_before": {
+    "ea": "0x68EDC",
+    "comment": null
+  }
+}

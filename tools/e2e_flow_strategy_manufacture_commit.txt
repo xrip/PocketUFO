@@ -1,0 +1,33 @@
+# Start one real manufacture order using a measured compatible product row.
+load 3
+state manufacture_commit_loaded
+click 180 266
+tick 2
+click 220 15
+tick 2
+click 180 256
+tick 20
+strategystate manuf_open
+click 20 @MANUF_ROW_Y@
+tick 2
+strategystate manuf_selected
+__MANUF_ENGINEER_CLICKS__
+click @MANUF_UNIT_X@ @MANUF_UNIT_Y@
+tick 2
+strategystate manuf_allocated
+dump strategy_manufacture_allocated.ppm
+# The first close refreshes a selected product; the next closes screen 9.
+click 231 8
+tick 2
+strategystate manuf_refreshed
+click 231 8
+tick 2
+click 201 11
+tick 2
+strategystate manuf_before_hour
+click 60 308
+tick 1
+strategystate manuf_after_hour
+lines
+save 0
+state manufacture_saved

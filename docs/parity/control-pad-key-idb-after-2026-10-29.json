@@ -1,0 +1,5 @@
+{
+  "ea": "0x1a3c8",
+  "comment": "Raw keyed-control draw passes R1=0 at0x1A3C4 before PadImage_BlitEx. The UiControl callback contract is transparency index0, not255. Tactical decimal pads have their own key0 route; generic direct Ex calls may use other keys.",
+  "saved": true
+}

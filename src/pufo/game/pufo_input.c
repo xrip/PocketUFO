@@ -1213,11 +1213,11 @@ static void PointerUpScreen1(TactInputState *pState, const TactInputHooks *pHook
 static void PointerUpScreen3(TactInputState *pState, const TactInputHooks *pHooks,
                              TactPointerWorld *pWorld)
 {
-    i32 nMode = pState->nActionMode;
-
     /* 0x14F2C: twelve action buttons, and the sweep stops at the first release that
      * actually fires. */
     PointerUpRelease(pWorld->pBank, &pWorld->hit, 32, 12, true);
+    /* 0x14F64 reads the mode after the clicked handler may have changed it. */
+    const i32 nMode = pState->nActionMode;
 
     if (nMode >= 0) {
         if (nMode <= 2) {
@@ -1580,6 +1580,8 @@ static void ClickArmFire(const MapClickCtx *pCtx, MapCell *pCell, i32 nMode)
      * Map block the original's callee reaches directly. */
     spec.apMultiTargets    = pState->apMultiTargets;
     spec.nMultiTargetCount = pState->nMultiTargetCount;
+    spec.pnShotCount       = pCtx->pnShotCount;
+    spec.ppThrowTarget     = pCtx->ppThrowTarget;
 
     if (!TactState_EnqueueFireBurst(pCtx->pWorld->pQueue, &spec, Click_FaceToward,
                                     pCtx->pWorld->pQueue)) {

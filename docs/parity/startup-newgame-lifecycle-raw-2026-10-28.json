@@ -1,0 +1,78 @@
+{
+  "idb_before": {
+    "ea": "0x1A0AC",
+    "comment": null
+  },
+  "raw": [
+    [
+      "0x1a0a0",
+      "0410a0e3",
+      "MOV             R1, #4"
+    ],
+    [
+      "0x1a0a4",
+      "1000a0e3",
+      "MOV             R0, #0x10"
+    ],
+    [
+      "0x1a0a8",
+      "041002eb",
+      "BL              Sound_Play"
+    ],
+    [
+      "0x1a0ac",
+      "327b00eb",
+      "BL              StartUi_Shutdown"
+    ],
+    [
+      "0x1a0b0",
+      "0000a0e3",
+      "MOV             R0, #0"
+    ],
+    [
+      "0x1a0b4",
+      "0040bde8",
+      "POP             {LR}"
+    ],
+    [
+      "0x1a0b8",
+      "cdad01ea",
+      "B               Geoscape_InitUI"
+    ],
+    [
+      "0x38d78",
+      "b4711500",
+      "DCD MainMenu_pStartCtl"
+    ],
+    [
+      "0x38d7c",
+      "f0412de9",
+      "PUSH            {R4-R8,LR}"
+    ],
+    [
+      "0x38d80",
+      "939501eb",
+      "BL              Sound_Shutdown"
+    ],
+    [
+      "0x38d84",
+      "729601eb",
+      "BL              KillTimers_B"
+    ],
+    [
+      "0x38d88",
+      "b8709fe5",
+      "LDR             R7, =pBank"
+    ],
+    [
+      "0x38d8c",
+      "0f80a0e3",
+      "MOV             R8, #0xF"
+    ],
+    [
+      "0x38d90",
+      "0740a0e1",
+      "MOV             R4, R7"
+    ]
+  ]
+}

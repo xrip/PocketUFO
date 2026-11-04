@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "E5A20827D71BCFEBAB1D1D8EBF7200478B7637D6BFE8BC898E4BB4A118FD1C41",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-frame-fade-peer/debug-frame-clock-full-compile-v2-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "E349A87C49F551B99F52DDCC23F375F46733F0F490BCF4D3EFD45EC0342E6720",
+        "build/tests/Debug/test_renderframe.exe": "5B84F264D770FCCAC9ACE9E243730D83BD61AF908B129880451249061B095755",
+        "build/tests/Debug/test_tactctl.exe": "216B5E6948F451B162E0DFA461F691BE0A54063C006372DEA3B8E228447F1841",
+        "build/tests/Debug/test_tactinit.exe": "DB08F15D4BE4BF61462AAE586C5E1281B96A1F0EF6F9C1FE267EFD11BAFC0EDE",
+        "build/tests/Debug/test_geoscapeframe.exe": "C43E0DCA9A11B42C4ED302FB3D864F453D09646B9E25F778A9FD54C710E454CB"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-frame-fade-peer/release-frame-clock-full-compile-v2-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "A946B3A927948C3028C8F7C5D123B65B342BFCF21F8FF615068896A4B821F5D6",
+        "build/tests/Release/test_renderframe.exe": "5F17AA5CEF97836E30A5AC88B5C1A12FFB3A2AD733BF3A2EBB48C0361D25F205",
+        "build/tests/Release/test_tactctl.exe": "DE6A34129FA64A62E537E97A410F858F101116DD66FD3BF38FA204A98DEA8B17",
+        "build/tests/Release/test_tactinit.exe": "684930389734A6D38FF04E2B65550F180F943DFF2AF685453FCAD2447E4FBB47",
+        "build/tests/Release/test_geoscapeframe.exe": "56DF153D84C3D694F4D5528AE0A5ED8895A940684AB583DC773A9A889C7F0700"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "source_fingerprint_before_build": "E5A20827D71BCFEBAB1D1D8EBF7200478B7637D6BFE8BC898E4BB4A118FD1C41",
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "World banner fade decrements before frame/banner snapshots; generic frame refreshes counter/banner and post-cursor fade views; GameTime_Pause uses actual strategic GameTime and checked production call; tests compiled, unrun.",
+  "prior_failed_compile": {
+    "log": ".workers/luna-frame-fade-peer/debug-frame-clock-full-compile-20261029.log",
+    "source_fingerprint": "006B402B9A22B23FC0EFC01CBCD7D5730C00CD1A35B45DB1CECCDBCAD983DEF1",
+    "reason": "One tactical-init fixture still seeded the removed, unused GameClock.bPaused field; obsolete seed removed before successful v2 builds."
+  }
+}

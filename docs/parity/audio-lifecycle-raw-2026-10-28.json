@@ -1,0 +1,1568 @@
+{
+  "scope": "Static audio load/shutdown call-chain review; no runtime or device execution",
+  "calls": [
+    {
+      "ea": "0x9e130",
+      "name": "Sound_LoadAndPlayMusic",
+      "end": "0x9e268",
+      "calls": [
+        {
+          "ea": "0x9e140",
+          "bytes": "a40500eb",
+          "asm": "BL              AssetReader_Clear"
+        },
+        {
+          "ea": "0x9e170",
+          "bytes": "1e0200eb",
+          "asm": "BL              j_itoa"
+        },
+        {
+          "ea": "0x9e17c",
+          "bytes": "fc0b00eb",
+          "asm": "BL              strcat"
+        },
+        {
+          "ea": "0x9e188",
+          "bytes": "f90b00eb",
+          "asm": "BL              strcat"
+        },
+        {
+          "ea": "0x9e194",
+          "bytes": "920500eb",
+          "asm": "BL              AssetReader_Find"
+        },
+        {
+          "ea": "0x9e19c",
+          "bytes": "f00500eb",
+          "asm": "BL              AssetReader_Size"
+        },
+        {
+          "ea": "0x9e1a0",
+          "bytes": "f00b00eb",
+          "asm": "BL              __2_YAPAXI_Z"
+        },
+        {
+          "ea": "0x9e1b0",
+          "bytes": "eb0500eb",
+          "asm": "BL              AssetReader_Size"
+        },
+        {
+          "ea": "0x9e1c0",
+          "bytes": "c20500eb",
+          "asm": "BL              AssetReader_Read"
+        },
+        {
+          "ea": "0x9e1c8",
+          "bytes": "e50500eb",
+          "asm": "BL              AssetReader_Size"
+        },
+        {
+          "ea": "0x9e1e8",
+          "bytes": "b00c00eb",
+          "asm": "BL              FMUSIC_LoadSongEx"
+        },
+        {
+          "ea": "0x9e1f8",
+          "bytes": "a90c00eb",
+          "asm": "BL              FMUSIC_SetLooping"
+        },
+        {
+          "ea": "0x9e208",
+          "bytes": "a20c00eb",
+          "asm": "BL              FMUSIC_OptimizeChannels"
+        },
+        {
+          "ea": "0x9e210",
+          "bytes": "9d0c00eb",
+          "asm": "BL              FMUSIC_PlaySong"
+        },
+        {
+          "ea": "0x9e230",
+          "bytes": "920c001b",
+          "asm": "BLNE            FMUSIC_SetPaused"
+        },
+        {
+          "ea": "0x9e238",
+          "bytes": "c70b00eb",
+          "asm": "BL              __3_YAXPAX_Z"
+        }
+      ],
+      "xrefs": [
+        {
+          "ea": "0x38208",
+          "caller": "Titles_Init"
+        },
+        {
+          "ea": "0x38988",
+          "caller": "EndScreen_Init"
+        },
+        {
+          "ea": "0x38d50",
+          "caller": "GameUI_InitStartup"
+        },
+        {
+          "ea": "0x3d278",
+          "caller": "Tact_InitMission"
+        },
+        {
+          "ea": "0x86cfc",
+          "caller": "Geoscape_InitUI"
+        }
+      ]
+    },
+    {
+      "ea": "0x9e268",
+      "name": "Sound_InitAndLoadSamples",
+      "end": "0x9e3d4",
+      "calls": [
+        {
+          "ea": "0x9e278",
+          "bytes": "560500eb",
+          "asm": "BL              AssetReader_Clear"
+        },
+        {
+          "ea": "0x9e290",
+          "bytes": "f30b00eb",
+          "asm": "BL              Sleep"
+        },
+        {
+          "ea": "0x9e2a8",
+          "bytes": "8c0c00eb",
+          "asm": "BL              FSOUND_Init"
+        },
+        {
+          "ea": "0x9e2c0",
+          "bytes": "830c00eb",
+          "asm": "BL              FSOUND_SetHWND"
+        },
+        {
+          "ea": "0x9e310",
+          "bytes": "b60100eb",
+          "asm": "BL              j_itoa"
+        },
+        {
+          "ea": "0x9e31c",
+          "bytes": "940b00eb",
+          "asm": "BL              strcat"
+        },
+        {
+          "ea": "0x9e328",
+          "bytes": "910b00eb",
+          "asm": "BL              strcat"
+        },
+        {
+          "ea": "0x9e334",
+          "bytes": "2a0500eb",
+          "asm": "BL              AssetReader_Find"
+        },
+        {
+          "ea": "0x9e33c",
+          "bytes": "860500eb",
+          "asm": "BL              AssetReader_Found"
+        },
+        {
+          "ea": "0x9e34c",
+          "bytes": "840500eb",
+          "asm": "BL              AssetReader_Size"
+        },
+        {
+          "ea": "0x9e350",
+          "bytes": "840b00eb",
+          "asm": "BL              __2_YAPAXI_Z"
+        },
+        {
+          "ea": "0x9e35c",
+          "bytes": "800500eb",
+          "asm": "BL              AssetReader_Size"
+        },
+        {
+          "ea": "0x9e36c",
+          "bytes": "570500eb",
+          "asm": "BL              AssetReader_Read"
+        },
+        {
+          "ea": "0x9e374",
+          "bytes": "7a0500eb",
+          "asm": "BL              AssetReader_Size"
+        },
+        {
+          "ea": "0x9e38c",
+          "bytes": "4d0c00eb",
+          "asm": "BL              FSOUND_Sample_Load"
+        },
+        {
+          "ea": "0x9e398",
+          "bytes": "470c00eb",
+          "asm": "BL              FSOUND_Sample_SetMode"
+        },
+        {
+          "ea": "0x9e3a0",
+          "bytes": "6d0b00eb",
+          "asm": "BL              __3_YAXPAX_Z"
+        }
+      ],
+      "xrefs": [
+        {
+          "ea": "0x38200",
+          "caller": "Titles_Init"
+        },
+        {
+          "ea": "0x38920",
+          "caller": "EndScreen_Init"
+        },
+        {
+          "ea": "0x38d48",
+          "caller": "GameUI_InitStartup"
+        },
+        {
+          "ea": "0x3d270",
+          "caller": "Tact_InitMission"
+        },
+        {
+          "ea": "0x86cf4",
+          "caller": "Geoscape_InitUI"
+        }
+      ]
+    },
+    {
+      "ea": "0x9e0c0",
+      "name": "Sound_Play",
+      "end": "0x9e130",
+      "calls": [
+        {
+          "ea": "0x9e0f4",
+          "bytes": "2881feeb",
+          "asm": "BL              Game_RandU16"
+        },
+        {
+          "ea": "0x9e118",
+          "bytes": "d50c000b",
+          "asm": "BLEQ            FSOUND_PlaySound"
+        }
+      ],
+      "xrefs": [
+        {
+          "ea": "0x11964",
+          "caller": "Input_OnUp"
+        },
+        {
+          "ea": "0x11a64",
+          "caller": "Input_OnDown"
+        },
+        {
+          "ea": "0x129f0",
+          "caller": "Inv_HandlePointer"
+        },
+        {
+          "ea": "0x12d08",
+          "caller": "Inv_HandlePointer"
+        },
+        {
+          "ea": "0x13c3c",
+          "caller": "Inv_HandlePointer"
+        },
+        {
+          "ea": "0x14164",
+          "caller": "Input_OnPointer"
+        },
+        {
+          "ea": "0x15320",
+          "caller": "Tact_HandleMapClick"
+        },
+        {
+          "ea": "0x160c0",
+          "caller": "Input_OnConfirm"
+        },
+        {
+          "ea": "0x160fc",
+          "caller": "Input_OnConfirm"
+        },
+        {
+          "ea": "0x161c4",
+          "caller": "Input_OnConfirm"
+        },
+        {
+          "ea": "0x161dc",
+          "caller": "Input_OnConfirm"
+        },
+        {
+          "ea": "0x163a4",
+          "caller": "Input_OnMenuEscape"
+        },
+        {
+          "ea": "0x163e0",
+          "caller": "MapView_EnterLookMode"
+        },
+        {
+          "ea": "0x164a0",
+          "caller": "MenuBtn_EndTurn"
+        },
+        {
+          "ea": "0x164cc",
+          "caller": "Map_UiScreen7_PlaySample0E"
+        },
+        {
+          "ea": "0x164e8",
+          "caller": "Map_UiScreen0F_PlaySample0F"
+        },
+        {
+          "ea": "0x164fc",
+          "caller": "MapView_LayerDown"
+        },
+        {
+          "ea": "0x1653c",
+          "caller": "MapView_LayerUp"
+        },
+        {
+          "ea": "0x1657c",
+          "caller": "TactHud_ToggleKneel"
+        },
+        {
+          "ea": "0x16690",
+          "caller": "Tact_CycleNextUnit"
+        },
+        {
+          "ea": "0x16728",
+          "caller": "MapView_FocusSelected"
+        },
+        {
+          "ea": "0x1676c",
+          "caller": "TactHud_ClimbUp"
+        },
+        {
+          "ea": "0x16afc",
+          "caller": "TactHud_ClimbDown"
+        },
+        {
+          "ea": "0x16e10",
+          "caller": "UiBank_SelectRadio0_Play11"
+        },
+        {
+          "ea": "0x16e4c",
+          "caller": "UiBank_SelectRadio1_Play11"
+        },
+        {
+          "ea": "0x16e88",
+          "caller": "UiBank_SelectRadio2_Play11"
+        },
+        {
+          "ea": "0x16ec4",
+          "caller": "UiBank_SelectRadio3_Play11"
+        },
+        {
+          "ea": "0x16f0c",
+          "caller": "Inv_OpenScreen"
+        },
+        {
+          "ea": "0x17008",
+          "caller": "Tact_OpenCommandScreen"
+        },
+        {
+          "ea": "0x1703c",
+          "caller": "Tact_OpenLeftHandMenu"
+        },
+        {
+          "ea": "0x17154",
+          "caller": "Tact_OpenRightHandMenu"
+        },
+        {
+          "ea": "0x1726c",
+          "caller": "Tact_SelectPrevUnit"
+        },
+        {
+          "ea": "0x17310",
+          "caller": "Tact_SelectNextUnit"
+        },
+        {
+          "ea": "0x1741c",
+          "caller": "Inv_SetFilterAll"
+        },
+        {
+          "ea": "0x1749c",
+          "caller": "Inv_SetFilter0"
+        },
+        {
+          "ea": "0x1751c",
+          "caller": "Inv_SetFilter3"
+        },
+        {
+          "ea": "0x1759c",
+          "caller": "Inv_SetFilter4"
+        },
+        {
+          "ea": "0x1761c",
+          "caller": "Inv_SetFilter1"
+        },
+        {
+          "ea": "0x1769c",
+          "caller": "Inv_SetFilter2"
+        },
+        {
+          "ea": "0x1771c",
+          "caller": "Inv_SetFilter5"
+        },
+        {
+          "ea": "0x1779c",
+          "caller": "Tact_SetFireModeAimed"
+        },
+        {
+          "ea": "0x17808",
+          "caller": "Tact_SetFireModeSnap"
+        },
+        {
+          "ea": "0x17874",
+          "caller": "Tact_SetFireModeAuto"
+        },
+        {
+          "ea": "0x178e0",
+          "caller": "TactAction_ConfirmUseItem"
+        },
+        {
+          "ea": "0x179cc",
+          "caller": "Map_PlaySample17_SetMode11"
+        },
+        {
+          "ea": "0x179f0",
+          "caller": "Tact_TryFireMode4"
+        },
+        {
+          "ea": "0x17a8c",
+          "caller": "Tact_TryFireMode10"
+        },
+        {
+          "ea": "0x17b28",
+          "caller": "Tact_TryFireMode5"
+        },
+        {
+          "ea": "0x17bc8",
+          "caller": "TactAction_ConfirmMeleeMode6"
+        },
+        {
+          "ea": "0x17d64",
+          "caller": "TactHud_UseSpecialItem20"
+        },
+        {
+          "ea": "0x18270",
+          "caller": "TactAction_ConfirmSpecial9"
+        },
+        {
+          "ea": "0x1838c",
+          "caller": "Tact_BeginMultiTarget"
+        },
+        {
+          "ea": "0x18424",
+          "caller": "Map_SetSubMode0_Play11"
+        },
+        {
+          "ea": "0x18484",
+          "caller": "Map_SetSubMode1_Play11"
+        },
+        {
+          "ea": "0x184e0",
+          "caller": "Map_SetSubMode2_Play11"
+        },
+        {
+          "ea": "0x18540",
+          "caller": "Map_SetSubMode3_Play11"
+        },
+        {
+          "ea": "0x185a0",
+          "caller": "Map_SetSubMode4_Play11"
+        },
+        {
+          "ea": "0x18600",
+          "caller": "Map_SetSubMode5_Play11"
+        },
+        {
+          "ea": "0x18660",
+          "caller": "Map_SetSubMode6_Play11"
+        },
+        {
+          "ea": "0x186c0",
+          "caller": "Map_SetSubMode7_Play11"
+        },
+        {
+          "ea": "0x18720",
+          "caller": "Map_SetSubMode8_Play11"
+        },
+        {
+          "ea": "0x18784",
+          "caller": "TactAction_ConfirmFireBurst"
+        },
+        {
+          "ea": "0x18878",
+          "caller": "Menu_OpenLoadSlots"
+        },
+        {
+          "ea": "0x188b8",
+          "caller": "Menu_OpenSaveSlots"
+        },
+        {
+          "ea": "0x188f0",
+          "caller": "Options_SyncUiFromMap_GotoScreen12"
+        },
+        {
+          "ea": "0x18da0",
+          "caller": "Map_BuildDeployConfirmYesNo"
+        },
+        {
+          "ea": "0x18e3c",
+          "caller": "Menu_ConfirmQuitDialog"
+        },
+        {
+          "ea": "0x18ea8",
+          "caller": "Map_PlaySamples16_14_ClearUiScreen"
+        },
+        {
+          "ea": "0x18eb4",
+          "caller": "Map_PlaySamples16_14_ClearUiScreen"
+        },
+        {
+          "ea": "0x18ed8",
+          "caller": "MenuBtn_SetSpeed0"
+        },
+        {
+          "ea": "0x18f2c",
+          "caller": "MenuBtn_SetSpeed1"
+        },
+        {
+          "ea": "0x18f80",
+          "caller": "MenuBtn_SetSpeed2"
+        },
+        {
+          "ea": "0x18fd4",
+          "caller": "MenuBtn_SetSpeed3"
+        },
+        {
+          "ea": "0x19028",
+          "caller": "MenuBtn_SetSpeed4"
+        },
+        {
+          "ea": "0x1907c",
+          "caller": "MenuBtn_SetGamma0"
+        },
+        {
+          "ea": "0x190dc",
+          "caller": "MenuBtn_SetGamma1"
+        },
+        {
+          "ea": "0x1913c",
+          "caller": "MenuBtn_SetGamma2"
+        },
+        {
+          "ea": "0x1919c",
+          "caller": "MenuBtn_SetGamma3"
+        },
+        {
+          "ea": "0x191fc",
+          "caller": "MenuBtn_SetGamma4"
+        },
+        {
+          "ea": "0x1925c",
+          "caller": "Map_ToggleFlag128A8D_Play11"
+        },
+        {
+          "ea": "0x192e0",
+          "caller": "Map_ToggleFlag128A8E_Play11"
+        },
+        {
+          "ea": "0x19354",
+          "caller": "Map_ToggleFlag128A8F_Play11"
+        },
+        {
+          "ea": "0x193ac",
+          "caller": "Map_ToggleFlag128A90_Play11"
+        },
+        {
+          "ea": "0x19428",
+          "caller": "Map_ToggleFlag128A91_Play11"
+        },
+        {
+          "ea": "0x194a4",
+          "caller": "MenuBtn_Secondary"
+        },
+        {
+          "ea": "0x194d4",
+          "caller": "MenuBtn_ConfirmClear"
+        },
+        {
+          "ea": "0x19510",
+          "caller": "Map_UiScreen7_PlaySamples16_14"
+        },
+        {
+          "ea": "0x19520",
+          "caller": "Map_UiScreen7_PlaySamples16_14"
+        },
+        {
+          "ea": "0x19534",
+          "caller": "Map_PlaySamples16_7_SetDeployFlag"
+        },
+        {
+          "ea": "0x19540",
+          "caller": "Map_PlaySamples16_7_SetDeployFlag"
+        },
+        {
+          "ea": "0x19574",
+          "caller": "Map_PlaySamples16_7_ClearDeployFlag"
+        },
+        {
+          "ea": "0x19580",
+          "caller": "Map_PlaySamples16_7_ClearDeployFlag"
+        },
+        {
+          "ea": "0x195b4",
+          "caller": "MenuBtn_ActionBack0"
+        },
+        {
+          "ea": "0x195ec",
+          "caller": "MenuBtn_SecondaryDismiss"
+        },
+        {
+          "ea": "0x19624",
+          "caller": "MenuBtn_ActionBack1"
+        },
+        {
+          "ea": "0x1965c",
+          "caller": "MenuBtn_Confirm0"
+        },
+        {
+          "ea": "0x1967c",
+          "caller": "Map_IncByte128AF0_Play11"
+        },
+        {
+          "ea": "0x196b8",
+          "caller": "Map_DecByte128AF0_Play11"
+        },
+        {
+          "ea": "0x196f4",
+          "caller": "MenuBtn_Confirm1"
+        },
+        {
+          "ea": "0x19714",
+          "caller": "Tact_SelectPrevUnitFiltered"
+        },
+        {
+          "ea": "0x197c4",
+          "caller": "Tact_SelectNextUnitFiltered"
+        },
+        {
+          "ea": "0x19890",
+          "caller": "MenuBtn_Confirm2"
+        },
+        {
+          "ea": "0x198b0",
+          "caller": "MenuBtn_Confirm3"
+        },
+        {
+          "ea": "0x198d0",
+          "caller": "Tact_OpenCommandScreenFlagged"
+        },
+        {
+          "ea": "0x198fc",
+          "caller": "MenuBtn_ConfirmSnd15"
+        },
+        {
+          "ea": "0x1991c",
+          "caller": "MenuBtn_Confirm4"
+        },
+        {
+          "ea": "0x1993c",
+          "caller": "MenuBtn_ResizeWindow"
+        },
+        {
+          "ea": "0x19c08",
+          "caller": "MenuBtn_SetSfxVol1"
+        },
+        {
+          "ea": "0x19c68",
+          "caller": "MenuBtn_SetSfxVol2"
+        },
+        {
+          "ea": "0x19cc8",
+          "caller": "MenuBtn_SetSfxVol3"
+        },
+        {
+          "ea": "0x19d28",
+          "caller": "MenuBtn_SetSfxVol4"
+        },
+        {
+          "ea": "0x19d88",
+          "caller": "MenuBtn_SetSfxVol5"
+        },
+        {
+          "ea": "0x1a020",
+          "caller": "MenuBtn_Confirm5"
+        },
+        {
+          "ea": "0x1a040",
+          "caller": "MenuCtl1_OnClick"
+        },
+        {
+          "ea": "0x1a070",
+          "caller": "MenuCtl2_OnClick"
+        },
+        {
+          "ea": "0x1a08c",
+          "caller": "MenuCtl3_OnClick"
+        },
+        {
+          "ea": "0x1a0a8",
+          "caller": "MenuCtl0_OnClick"
+        },
+        {
+          "ea": "0x1a234",
+          "caller": "EmptyBtn_OnClick"
+        },
+        {
+          "ea": "0x1a258",
+          "caller": "MenuBtn_Cancel0"
+        },
+        {
+          "ea": "0x1a278",
+          "caller": "MenuBtn_Cancel1"
+        },
+        {
+          "ea": "0x2f2d8",
+          "caller": "Combat_ResolveShot"
+        },
+        {
+          "ea": "0x2f354",
+          "caller": "Combat_ResolveShot"
+        },
+        {
+          "ea": "0x2f3c0",
+          "caller": "Combat_ResolveShot"
+        },
+        {
+          "ea": "0x2f66c",
+          "caller": "Combat_ResolveShot"
+        },
+        {
+          "ea": "0x367f8",
+          "caller": "UiPulse_OnTimer"
+        },
+        {
+          "ea": "0x4e4d4",
+          "caller": "Tact_KillUnit"
+        },
+        {
+          "ea": "0x4f9fc",
+          "caller": "Tact_ProcessMoveAction"
+        },
+        {
+          "ea": "0x5400c",
+          "caller": "Tact_ProcessFallAction"
+        },
+        {
+          "ea": "0x5a3d0",
+          "caller": "UiPanel_AppendLineWithSound"
+        },
+        {
+          "ea": "0x5f4ac",
+          "caller": "RadarScreen_Init"
+        },
+        {
+          "ea": "0x614d8",
+          "caller": "ManufScreen_Open"
+        },
+        {
+          "ea": "0x61508",
+          "caller": "TransferScreen_Open"
+        },
+        {
+          "ea": "0x61538",
+          "caller": "NewBaseScreen_TryConfirm"
+        },
+        {
+          "ea": "0x615bc",
+          "caller": "NewBaseScreen_CloseThunk"
+        },
+        {
+          "ea": "0x615dc",
+          "caller": "NewBaseScreen_Open"
+        },
+        {
+          "ea": "0x61688",
+          "caller": "BaseInfoScreen_Open"
+        },
+        {
+          "ea": "0x616b8",
+          "caller": "ResearchScreen_Open"
+        },
+        {
+          "ea": "0x617a0",
+          "caller": "BuySellScreen_OpenBuy"
+        },
+        {
+          "ea": "0x617d0",
+          "caller": "BuySellScreen_OpenSell"
+        },
+        {
+          "ea": "0x61800",
+          "caller": "BasePlaneScreen_Open"
+        },
+        {
+          "ea": "0x61850",
+          "caller": "BaseFacScreen_Open"
+        },
+        {
+          "ea": "0x619b4",
+          "caller": "Ui_SetTransferFlag"
+        },
+        {
+          "ea": "0x619d8",
+          "caller": "SoldierScreen_EquipSelected"
+        },
+        {
+          "ea": "0x64b00",
+          "caller": "SoldierScreen_Toggle"
+        },
+        {
+          "ea": "0x6bc64",
+          "caller": "OptionsScreen_SetSfxVol0"
+        },
+        {
+          "ea": "0x6bc74",
+          "caller": "OptionsScreen_SetSfxVol0"
+        },
+        {
+          "ea": "0x6bcc8",
+          "caller": "OptionsScreen_SetSfxVol1"
+        },
+        {
+          "ea": "0x6bcd8",
+          "caller": "OptionsScreen_SetSfxVol1"
+        },
+        {
+          "ea": "0x6bd2c",
+          "caller": "OptionsScreen_SetSfxVol2"
+        },
+        {
+          "ea": "0x6bd3c",
+          "caller": "OptionsScreen_SetSfxVol2"
+        },
+        {
+          "ea": "0x6bd90",
+          "caller": "OptionsScreen_SetSfxVol3"
+        },
+        {
+          "ea": "0x6bda0",
+          "caller": "OptionsScreen_SetSfxVol3"
+        },
+        {
+          "ea": "0x6bdf4",
+          "caller": "OptionsScreen_SetSfxVol4"
+        },
+        {
+          "ea": "0x6be04",
+          "caller": "OptionsScreen_SetSfxVol4"
+        },
+        {
+          "ea": "0x6be58",
+          "caller": "OptionsScreen_SetSfxVol5"
+        },
+        {
+          "ea": "0x6be68",
+          "caller": "OptionsScreen_SetSfxVol5"
+        },
+        {
+          "ea": "0x6cf0c",
+          "caller": "OptionsScreen_RebuildWithSound"
+        },
+        {
+          "ea": "0x6cf84",
+          "caller": "OptionsScreen_OnConfirm"
+        },
+        {
+          "ea": "0x6dd14",
+          "caller": "OptionsScreen_OpenWithSound"
+        },
+        {
+          "ea": "0x6e430",
+          "caller": "ManufScreen_Draw"
+        },
+        {
+          "ea": "0x6e920",
+          "caller": "ManufScreen_SelectListed"
+        },
+        {
+          "ea": "0x73258",
+          "caller": "ResearchScreen_StartSelected"
+        },
+        {
+          "ea": "0x73334",
+          "caller": "PlaySample7_SetFlags_Cache0xBD8"
+        },
+        {
+          "ea": "0x83378",
+          "caller": "Smap_HitTestStrategSelect"
+        },
+        {
+          "ea": "0x84ac4",
+          "caller": "Smap_OnZoomOut"
+        },
+        {
+          "ea": "0x84ae4",
+          "caller": "Smap_OnZoomIn"
+        },
+        {
+          "ea": "0x84b04",
+          "caller": "Ui_OpenBaseInfo"
+        },
+        {
+          "ea": "0x84e2c",
+          "caller": "Base_EnterBuildMode"
+        },
+        {
+          "ea": "0x84ea8",
+          "caller": "Ui_OpenScreen18"
+        },
+        {
+          "ea": "0x84ed8",
+          "caller": "Ui_CloseScreen18"
+        },
+        {
+          "ea": "0x84f0c",
+          "caller": "GameTime_Set5Sec"
+        },
+        {
+          "ea": "0x84f70",
+          "caller": "GameTime_Set1Min"
+        },
+        {
+          "ea": "0x84fd4",
+          "caller": "GameTime_Set5Min"
+        },
+        {
+          "ea": "0x85038",
+          "caller": "GameTime_SetSpeedIdx3"
+        },
+        {
+          "ea": "0x850a0",
+          "caller": "GameTime_SetSpeedIdx4"
+        },
+        {
+          "ea": "0x85108",
+          "caller": "GameTime_SetSpeedIdx5"
+        },
+        {
+          "ea": "0x85170",
+          "caller": "Ui_OpenFunding"
+        },
+        {
+          "ea": "0x852d0",
+          "caller": "Geoscape_PrepScreenOpenSfx"
+        },
+        {
+          "ea": "0x87b5c",
+          "caller": "Geoscape_OnPointer"
+        },
+        {
+          "ea": "0x8949c",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x895f4",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x8976c",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x897f0",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89870",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x898e8",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89960",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x899a0",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x899f8",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89aac",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89b04",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89bc0",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89c18",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89c70",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89cb0",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x89d30",
+          "caller": "Geoscape_OnPointerUp"
+        },
+        {
+          "ea": "0x8b95c",
+          "caller": "Geoscape_CloseUI"
+        }
+      ]
+    }
+  ],
+  "instructions": [
+    {
+      "ea": "0x381e8",
+      "bytes": "016046e2",
+      "asm": "SUB             R6, R6, #1"
+    },
+    {
+      "ea": "0x381ec",
+      "bytes": "145085e2",
+      "asm": "ADD             R5, R5, #0x14"
+    },
+    {
+      "ea": "0x381f0",
+      "bytes": "044084e2",
+      "asm": "ADD             R4, R4, #4"
+    },
+    {
+      "ea": "0x381f4",
+      "bytes": "000056e3",
+      "asm": "CMP             R6, #0"
+    },
+    {
+      "ea": "0x381f8",
+      "bytes": "edffff8a",
+      "asm": "BHI             loc_381B4"
+    },
+    {
+      "ea": "0x381fc",
+      "bytes": "38009fe5",
+      "asm": "LDR             R0, =pszPrefix"
+    },
+    {
+      "ea": "0x38200",
+      "bytes": "189801eb",
+      "asm": "BL              Sound_InitAndLoadSamples"
+    },
+    {
+      "ea": "0x38204",
+      "bytes": "0300a0e3",
+      "asm": "MOV             R0, #3"
+    },
+    {
+      "ea": "0x38208",
+      "bytes": "c89701eb",
+      "asm": "BL              Sound_LoadAndPlayMusic"
+    },
+    {
+      "ea": "0x3820c",
+      "bytes": "909801eb",
+      "asm": "BL              Sound_ApplyMusicVolume"
+    },
+    {
+      "ea": "0x38908",
+      "bytes": "b802c4e1",
+      "asm": "STRH            R0, [R4,#(fontSys_nGlyphBase - 0x158268)]"
+    },
+    {
+      "ea": "0x3890c",
+      "bytes": "0400a0e1",
+      "asm": "MOV             R0, R4"
+    },
+    {
+      "ea": "0x38910",
+      "bytes": "303600eb",
+      "asm": "BL              Font_LoadSpr"
+    },
+    {
+      "ea": "0x38914",
+      "bytes": "0400a0e1",
+      "asm": "MOV             R0, R4"
+    },
+    {
+      "ea": "0x38918",
+      "bytes": "d83600eb",
+      "asm": "BL              Font_BuildIndex"
+    },
+    {
+      "ea": "0x3891c",
+      "bytes": "30009fe5",
+      "asm": "LDR             R0, =aZ"
+    },
+    {
+      "ea": "0x38920",
+      "bytes": "509601eb",
+      "asm": "BL              Sound_InitAndLoadSamples"
+    },
+    {
+      "ea": "0x38924",
+      "bytes": "000055e3",
+      "asm": "CMP             R5, #0"
+    },
+    {
+      "ea": "0x38978",
+      "bytes": "70109fe5",
+      "asm": "LDR             R1, =aBadendPad"
+    },
+    {
+      "ea": "0x3897c",
+      "bytes": "00008de2",
+      "asm": "ADD             R0, SP, #0x20+pRdr"
+    },
+    {
+      "ea": "0x38980",
+      "bytes": "979b01eb",
+      "asm": "BL              AssetReader_Find"
+    },
+    {
+      "ea": "0x38984",
+      "bytes": "0300a0e3",
+      "asm": "MOV             R0, #3"
+    },
+    {
+      "ea": "0x38988",
+      "bytes": "e89501eb",
+      "asm": "BL              Sound_LoadAndPlayMusic"
+    },
+    {
+      "ea": "0x3898c",
+      "bytes": "b09601eb",
+      "asm": "BL              Sound_ApplyMusicVolume"
+    },
+    {
+      "ea": "0x38d30",
+      "bytes": "0c3080e5",
+      "asm": "STR             R3, [R0,#0xC]"
+    },
+    {
+      "ea": "0x38d34",
+      "bytes": "34009fe5",
+      "asm": "LDR             R0, =MainMenu_nListMode"
+    },
+    {
+      "ea": "0x38d38",
+      "bytes": "007080e5",
+      "asm": "STR             R7, [R0]"
+    },
+    {
+      "ea": "0x38d3c",
+      "bytes": "28009fe5",
+      "asm": "LDR             R0, =Map_bTactFlag"
+    },
+    {
+      "ea": "0x38d40",
+      "bytes": "ba13c0e1",
+      "asm": "STRH            R1, [R0,#(Map_nUiScreen - 0x1139B8)]"
+    },
+    {
+      "ea": "0x38d44",
+      "bytes": "1c009fe5",
+      "asm": "LDR             R0, =pszPrefix"
+    },
+    {
+      "ea": "0x38d48",
+      "bytes": "469501eb",
+      "asm": "BL              Sound_InitAndLoadSamples"
+    },
+    {
+      "ea": "0x38d4c",
+      "bytes": "0000a0e3",
+      "asm": "MOV             R0, #0"
+    },
+    {
+      "ea": "0x38d50",
+      "bytes": "f69401eb",
+      "asm": "BL              Sound_LoadAndPlayMusic"
+    },
+    {
+      "ea": "0x38d54",
+      "bytes": "be9501eb",
+      "asm": "BL              Sound_ApplyMusicVolume"
+    },
+    {
+      "ea": "0x3d258",
+      "bytes": "0c1094e7",
+      "asm": "LDR             R1, [R4,R12]"
+    },
+    {
+      "ea": "0x3d25c",
+      "bytes": "0400a0e1",
+      "asm": "MOV             R0, R4"
+    },
+    {
+      "ea": "0x3d260",
+      "bytes": "96a3ffeb",
+      "asm": "BL              GameSpeed_Set"
+    },
+    {
+      "ea": "0x3d264",
+      "bytes": "0100a0e3",
+      "asm": "MOV             R0, #1"
+    },
+    {
+      "ea": "0x3d268",
+      "bytes": "6800c4e5",
+      "asm": "STRB            R0, [R4,#(Map_bSweepArmed - 0x1139B8)]"
+    },
+    {
+      "ea": "0x3d26c",
+      "bytes": "54009fe5",
+      "asm": "LDR             R0, =pszPrefix"
+    },
+    {
+      "ea": "0x3d270",
+      "bytes": "fc8301eb",
+      "asm": "BL              Sound_InitAndLoadSamples"
+    },
+    {
+      "ea": "0x3d274",
+      "bytes": "0100a0e3",
+      "asm": "MOV             R0, #1"
+    },
+    {
+      "ea": "0x3d278",
+      "bytes": "ac8301eb",
+      "asm": "BL              Sound_LoadAndPlayMusic"
+    },
+    {
+      "ea": "0x3d27c",
+      "bytes": "748401eb",
+      "asm": "BL              Sound_ApplyMusicVolume"
+    },
+    {
+      "ea": "0x86cdc",
+      "bytes": "d7ffffba",
+      "asm": "BLT             loc_86C40"
+    },
+    {
+      "ea": "0x86ce0",
+      "bytes": "f8111fe5",
+      "asm": "LDR             R1, =sGeoscapeScreenBlock"
+    },
+    {
+      "ea": "0x86ce4",
+      "bytes": "0300a0e3",
+      "asm": "MOV             R0, #3"
+    },
+    {
+      "ea": "0x86ce8",
+      "bytes": "0440cae5",
+      "asm": "STRB            R4, [R10,#(bGameClockPaused - 0x159618)]"
+    },
+    {
+      "ea": "0x86cec",
+      "bytes": "6400c1e5",
+      "asm": "STRB            R0, [R1,#0x64]"
+    },
+    {
+      "ea": "0x86cf0",
+      "bytes": "18009fe5",
+      "asm": "LDR             R0, =pszPrefix"
+    },
+    {
+      "ea": "0x86cf4",
+      "bytes": "5b5d00eb",
+      "asm": "BL              Sound_InitAndLoadSamples"
+    },
+    {
+      "ea": "0x86cf8",
+      "bytes": "0200a0e3",
+      "asm": "MOV             R0, #2"
+    },
+    {
+      "ea": "0x86cfc",
+      "bytes": "0b5d00eb",
+      "asm": "BL              Sound_LoadAndPlayMusic"
+    },
+    {
+      "ea": "0x86d00",
+      "bytes": "d35d00eb",
+      "asm": "BL              Sound_ApplyMusicVolume"
+    },
+    {
+      "ea": "0x9e3d4",
+      "bytes": "70402de9",
+      "asm": "PUSH            {R4-R6,LR}"
+    },
+    {
+      "ea": "0x9e3d8",
+      "bytes": "70609fe5",
+      "asm": "LDR             R6, =g_nSoundSampleCount"
+    },
+    {
+      "ea": "0x9e3dc",
+      "bytes": "000096e5",
+      "asm": "LDR             R0, [R6]"
+    },
+    {
+      "ea": "0x9e3e0",
+      "bytes": "000050e3",
+      "asm": "CMP             R0, #0"
+    },
+    {
+      "ea": "0x9e3e4",
+      "bytes": "080000da",
+      "asm": "BLE             loc_9E40C"
+    },
+    {
+      "ea": "0x9e3e8",
+      "bytes": "5c509fe5",
+      "asm": "LDR             R5, =0x187428"
+    },
+    {
+      "ea": "0x9e3ec",
+      "bytes": "0040a0e3",
+      "asm": "MOV             R4, #0"
+    },
+    {
+      "ea": "0x9e3f0",
+      "bytes": "000095e5",
+      "asm": "LDR             R0, [R5]"
+    },
+    {
+      "ea": "0x9e3f4",
+      "bytes": "420c00eb",
+      "asm": "BL              FSOUND_Sample_Free"
+    },
+    {
+      "ea": "0x9e3f8",
+      "bytes": "000096e5",
+      "asm": "LDR             R0, [R6]"
+    },
+    {
+      "ea": "0x9e3fc",
+      "bytes": "014084e2",
+      "asm": "ADD             R4, R4, #1"
+    },
+    {
+      "ea": "0x9e400",
+      "bytes": "045085e2",
+      "asm": "ADD             R5, R5, #4"
+    },
+    {
+      "ea": "0x9e404",
+      "bytes": "000054e1",
+      "asm": "CMP             R4, R0"
+    },
+    {
+      "ea": "0x9e408",
+      "bytes": "f8ffffba",
+      "asm": "BLT             loc_9E3F0"
+    },
+    {
+      "ea": "0x9e40c",
+      "bytes": "34409fe5",
+      "asm": "LDR             R4, =g_bMusicLoaded"
+    },
+    {
+      "ea": "0x9e410",
+      "bytes": "0000d4e5",
+      "asm": "LDRB            R0, [R4]"
+    },
+    {
+      "ea": "0x9e414",
+      "bytes": "ff3010e2",
+      "asm": "ANDS            R3, R0, #0xFF"
+    },
+    {
+      "ea": "0x9e418",
+      "bytes": "24009f15",
+      "asm": "LDRNE           R0, =g_hfmMusicModule"
+    },
+    {
+      "ea": "0x9e41c",
+      "bytes": "00009015",
+      "asm": "LDRNE           R0, [R0]"
+    },
+    {
+      "ea": "0x9e420",
+      "bytes": "340c001b",
+      "asm": "BLNE            FMUSIC_FreeSong"
+    },
+    {
+      "ea": "0x9e424",
+      "bytes": "300c00eb",
+      "asm": "BL              FSOUND_Close"
+    },
+    {
+      "ea": "0x9e428",
+      "bytes": "10009fe5",
+      "asm": "LDR             R0, =g_bSoundInitReady"
+    },
+    {
+      "ea": "0x9e42c",
+      "bytes": "0010a0e3",
+      "asm": "MOV             R1, #0"
+    },
+    {
+      "ea": "0x9e430",
+      "bytes": "0010c0e5",
+      "asm": "STRB            R1, [R0]"
+    },
+    {
+      "ea": "0x9e434",
+      "bytes": "0000a0e3",
+      "asm": "MOV             R0, #0"
+    },
+    {
+      "ea": "0x9e438",
+      "bytes": "0000c4e5",
+      "asm": "STRB            R0, [R4]"
+    },
+    {
+      "ea": "0x9e43c",
+      "bytes": "7080bde8",
+      "asm": "POP             {R4-R6,PC}"
+    },
+    {
+      "ea": "0x9e440",
+      "bytes": "247f1800",
+      "asm": "DCD g_bSoundInitReady"
+    },
+    {
+      "ea": "0x9e444",
+      "bytes": "20731800",
+      "asm": "DCD g_hfmMusicModule"
+    },
+    {
+      "ea": "0x9e448",
+      "bytes": "287f1800",
+      "asm": "DCD g_bMusicLoaded"
+    },
+    {
+      "ea": "0x9e44c",
+      "bytes": "28741800",
+      "asm": "DCD 0x187428"
+    },
+    {
+      "ea": "0x9e450",
+      "bytes": "24731800",
+      "asm": "DCD g_nSoundSampleCount"
+    },
+    {
+      "ea": "0x38924",
+      "bytes": "000055e3",
+      "asm": "CMP             R5, #0"
+    },
+    {
+      "ea": "0x38928",
+      "bytes": "1510a0e3",
+      "asm": "MOV             R1, #0x15"
+    },
+    {
+      "ea": "0x3892c",
+      "bytes": "0f00000a",
+      "asm": "BEQ             loc_38970"
+    },
+    {
+      "ea": "0x38930",
+      "bytes": "18009fe5",
+      "asm": "LDR             R0, =aGoodendPal"
+    },
+    {
+      "ea": "0x38934",
+      "bytes": "d01600eb",
+      "asm": "BL              Palette_Load"
+    },
+    {
+      "ea": "0x38938",
+      "bytes": "0c109fe5",
+      "asm": "LDR             R1, =aGoodendPad"
+    },
+    {
+      "ea": "0x3893c",
+      "bytes": "00008de2",
+      "asm": "ADD             R0, SP, #0x20+pRdr"
+    },
+    {
+      "ea": "0x38940",
+      "bytes": "a79b01eb",
+      "asm": "BL              AssetReader_Find"
+    },
+    {
+      "ea": "0x38944",
+      "bytes": "0400a0e3",
+      "asm": "MOV             R0, #4"
+    },
+    {
+      "ea": "0x38948",
+      "bytes": "0e0000ea",
+      "asm": "B               loc_38988"
+    },
+    {
+      "ea": "0x3894c",
+      "bytes": "90ae0a00",
+      "asm": "DCD aGoodendPad"
+    },
+    {
+      "ea": "0x38950",
+      "bytes": "9cae0a00",
+      "asm": "DCD aGoodendPal"
+    },
+    {
+      "ea": "0x38954",
+      "bytes": "a8ae0a00",
+      "asm": "DCD aZ"
+    },
+    {
+      "ea": "0x38958",
+      "bytes": "8cad0a00",
+      "asm": "DCD aFont"
+    },
+    {
+      "ea": "0x3895c",
+      "bytes": "d8350b00",
+      "asm": "DCD aTitlesRowRecs"
+    },
+    {
+      "ea": "0x38960",
+      "bytes": "80640a00",
+      "asm": "DCD aBadEndRowRecs"
+    },
+    {
+      "ea": "0x38964",
+      "bytes": "58640a00",
+      "asm": "DCD aGoodEndRowRecs"
+    },
+    {
+      "ea": "0x38968",
+      "bytes": "94711500",
+      "asm": "DCD nTitlesMaxRows"
+    },
+    {
+      "ea": "0x3896c",
+      "bytes": "68821500",
+      "asm": "DCD 0x158268"
+    },
+    {
+      "ea": "0x38970",
+      "bytes": "7c009fe5",
+      "asm": "LDR             R0, =aBadendPal"
+    },
+    {
+      "ea": "0x38974",
+      "bytes": "c01600eb",
+      "asm": "BL              Palette_Load"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "ea": "0x42e40",
+    "head": "0x42e40",
+    "item_size": 8,
+    "tail": false,
+    "data": false,
+    "code": true,
+    "bytes": "463da0e3",
+    "decode_size": 8,
+    "mnemonic": "MOV",
+    "operands": [
+      "R3",
+      "#0x1198",
+      ""
+    ]
+  },
+  {
+    "ea": "0x42e44",
+    "head": "0x42e40",
+    "item_size": 4,
+    "tail": true,
+    "data": false,
+    "code": false,
+    "bytes": "183083e3",
+    "decode_size": 4,
+    "mnemonic": "",
+    "operands": [
+      "0x18",
+      "0x18",
+      "0x18"
+    ]
+  },
+  {
+    "ea": "0x42e48",
+    "head": "0x42e48",
+    "item_size": 4,
+    "tail": false,
+    "data": false,
+    "code": true,
+    "bytes": "033094e7",
+    "decode_size": 4,
+    "mnemonic": "LDR",
+    "operands": [
+      "R3",
+      "[R4,R3]",
+      ""
+    ]
+  },
+  {
+    "ea": "0x42e8c",
+    "head": "0x42e8c",
+    "item_size": 4,
+    "tail": false,
+    "data": false,
+    "code": true,
+    "bytes": "ebffffba",
+    "decode_size": 4,
+    "mnemonic": "BLT",
+    "operands": [
+      "loc_42E40",
+      "",
+      ""
+    ]
+  }
+]

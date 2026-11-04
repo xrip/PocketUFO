@@ -1,0 +1,14 @@
+# Fresh-load the staff/material state and read the live topic-85 row.
+load 1
+# Restore the saved live one-hour control before comparing the full strategy tuple; this click advances no time.
+click 60 308
+state research85_probe_loaded
+strategystate research85_probe_loaded
+click 180 266
+tick 2
+click 220 15
+tick 2
+click 180 238
+tick 20
+strategystate research85_probe
+dump strategy_manufacture_research85_probe.ppm

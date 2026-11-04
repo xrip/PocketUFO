@@ -40,6 +40,29 @@ static UnitRosters g_Rosters;
 static MoveActionWiring g_Wiring;
 static MoveActionCtx g_Ctx;
 
+static void RunCmd(u8 nCmd, i32 nTuCost);
+
+typedef struct StatusRenderProbe {
+    bool bBusy;
+    bool bArmed;
+    i32 nRenderCalls;
+} StatusRenderProbe;
+
+static bool MapctxStatusIsBusy(void *pUser)
+{
+    return ((StatusRenderProbe *)pUser)->bBusy;
+}
+
+static bool MapctxStatusShouldRender(void *pUser)
+{
+    return ((StatusRenderProbe *)pUser)->bArmed;
+}
+
+static void MapctxStatusRender(void *pUser)
+{
+    ++((StatusRenderProbe *)pUser)->nRenderCalls;
+}
+
 static void FillText(void)
 {
     memset(g_aText, 0, sizeof(g_aText));
@@ -228,6 +251,43 @@ static void TestStatusPush(void)
     Check("missing text blob pushes an empty record",
           g_Map.status.nCount == 3 && g_Map.status.aszMsg[2][0] == '\0');
     g_Wiring.pTextRecs = g_aText;
+}
+
+/* --- status owner supplied by a live World -------------------------------- */
+
+static void TestExternalStatusOwner(void)
+{
+    StatusRenderProbe probe = { false, true, 0 };
+    StatusHooks statusHooks = {
+        MapctxStatusIsBusy,
+        MapctxStatusShouldRender,
+        MapctxStatusRender,
+        &probe
+    };
+    const StatusHooks *pPreviousStatusHooks;
+
+    printf("MoveActionWiring external StatusHooks owner\n");
+    Reset();
+    pPreviousStatusHooks = g_Wiring.pStatusHooks;
+    g_Wiring.pStatusHooks = &statusHooks;
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+
+    g_aUnits[0].bStatus = 0;
+    g_aUnits[0].uTu = 0;
+    g_aUnits[0].pCell = At(2, 2, 0);
+    RunCmd(3, 4);
+
+    Check("move-action wiring keeps the external World status-hook owner",
+          g_Wiring.pStatusHooks == &statusHooks);
+    Check("a live move-action TU warning reaches the external render hook",
+          g_Map.status.nCount == 1 && probe.nRenderCalls == 1);
+    Check("the action still aborts after publishing its warning",
+          g_State.aQueue[0].nCmd == 13 && g_State.aQueue[1].nCmd == TACTCMD_END_MARK);
+
+    /* The wiring is static, but this override and its probe are stack-owned. Restore the prior
+     * owner before either local leaves scope so the next test uses the embedded fallback. */
+    g_Wiring.pStatusHooks = pPreviousStatusHooks;
 }
 
 /* --- the real armour-TU warning --------------------------------------------- */
@@ -810,6 +870,7 @@ int main(void)
     TestGrid();
     TestWiring();
     TestStatusPush();
+    TestExternalStatusOwner();
     TestArmorWarn();
     TestVisibility();
     TestFsmOnMap();

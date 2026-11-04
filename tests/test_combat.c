@@ -30,6 +30,8 @@ static ObjectRecFull g_ctx;
 static Mc1Rec g_spr;
 static u32 g_aHits[PUFO_SPLASH_DWORDS];
 static CombatCtx g_c;
+static i32 g_nSharedShotOriginX;
+static i32 g_nSharedShotOriginY;
 
 /* The impact cell is the centre of the window, so row = col = 20. */
 #define IMPACT_X 30
@@ -75,6 +77,11 @@ static void Reset(void)
     g_c.pState = &g_state;
     g_c.pSelUnit = NULL;
     g_c.pCtxWeapon = &g_ctx;
+    g_c.pnShotOriginX = NULL;
+    g_c.pnShotOriginY = NULL;
+    g_c.ppCtxWeapon = NULL;
+    g_c.paHitWindow = NULL;
+    g_c.paHitWindowSave = NULL;
 
     /* A plain weapon class: neither 50 nor 15. */
     g_ctx.uSortKey = 7;
@@ -578,6 +585,7 @@ static void ResolveSetup(void)
 {
     Reset();
     g_nFov = 0;
+    g_pFovWindow = NULL;
     g_nArea = 0;
     memset(&g_ceil, 0, sizeof(g_ceil));
     memset(&g_floor, 0, sizeof(g_floor));
@@ -611,8 +619,12 @@ static void TestResolveShot(void)
     g_aRoster[0].gap_433 = 0x7F;
     g_unit.uHp = 100;
     g_shot.uFirePower = 40;
+    const ObjectRecFull *pWeaponOwner = &g_ctx;
+    g_c.ppCtxWeapon = &pWeaponOwner;
+    g_c.paHitWindow = g_aHits;
+    g_c.paHitWindowSave = g_aSave;
     Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
-                       4, &g_shot, g_aHits, NULL, &g_out);
+                       4, &g_shot, NULL, NULL, &g_out);
     Check("the roster hit flag is cleared before the shot", g_aRoster[0].gap_433 == 0);
     Check("damage is fire power less a random cut of up to half",
           g_out.nDamage >= 20 && g_out.nDamage <= 40);
@@ -633,8 +645,10 @@ static void TestResolveShot(void)
           g_nFovRange == 40 && g_nFovCostMode == 1 && g_nFovSortKey == 7
               && g_pFovWindow == g_aHits);
     CheckEqI32("a direct hit reports no area fire", g_nArea, 0);
-    Check("the weapon is published into the map fire context",
+    Check("the local weapon cache is updated",
           g_c.pCtxWeapon == &g_shot);
+    Check("the persistent weapon owner receives the current shot object",
+          pWeaponOwner == &g_shot);
 
     printf("armour soaks the hit first\n");
     ResolveSetup();
@@ -728,8 +742,10 @@ static void TestResolveShot(void)
     g_shot.uFirePower = 30;
     /* Slot 3 is the ceiling: the impact record lands in hit dword 3, which is
      * exactly the half the ceiling-break sweep reads. */
+    g_c.paHitWindow = g_aHits;
+    g_c.paHitWindowSave = g_aSave;
     Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
-                       3, &g_shot, g_aHits, g_aSave, &g_out);
+                       3, &g_shot, NULL, NULL, &g_out);
     CheckEqI32("a broken ceiling promotes the walk to throw mode", g_out.eMode,
                SPLASH_MODE_THROW);
     /* 0x2f3a4 (normal) + 0x2f6e8 (one per broken ceiling). The ceiling call is the
@@ -994,8 +1010,62 @@ static void TestDetonateNearbyItems(void)
     Check("and the walk restarted for the second", !ListHas(ProxCell(0, 0, 0), &s_aDev[1]));
 }
 
+static void TestShotOriginOwnerPersists(void)
+{
+    CombatCtx next;
+
+    printf("area-fire origin persists through its Map owner\n");
+    ProxFixture();
+    g_nSharedShotOriginX = -1;
+    g_nSharedShotOriginY = -1;
+    g_c.nShotOriginX = -1;
+    g_c.nShotOriginY = -1;
+    g_c.pnShotOriginX = &g_nSharedShotOriginX;
+    g_c.pnShotOriginY = &g_nSharedShotOriginY;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+
+    /* A real proximity detonation writes Map_nFireOrigX/Y before its shot resolve. The second
+     * resolve below uses a newly built CombatCtx, like the next world action does. */
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+    CheckEqI32("the proximity writer updates the shared X cell", g_nSharedShotOriginX, PROX_X);
+    CheckEqI32("the proximity writer updates the shared Y cell", g_nSharedShotOriginY, PROX_Y);
+    CheckEqI32("the writer also keeps its scalar fallback current", g_c.nShotOriginX, PROX_X);
+
+    memset(&next, 0, sizeof(next));
+    next.pfnLookup = CellLookup;
+    next.pGeom = &g_geom;
+    next.pState = &g_state;
+    next.pCtxWeapon = &g_ctx;
+    next.nShotOriginX = -81; /* distinct fallback values prove the live owner takes precedence */
+    next.nShotOriginY = -82;
+    next.pnShotOriginX = &g_nSharedShotOriginX;
+    next.pnShotOriginY = &g_nSharedShotOriginY;
+    g_nFov = 0;
+    memset(g_aHits, 0, sizeof(g_aHits));
+    Combat_ResolveShot(&next, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       0, &g_shot, g_aHits, NULL, &g_out);
+
+    CheckEqI32("a fresh context's FOV reads the origin last written by the detonation",
+               g_nFovOrigX, PROX_X);
+    CheckEqI32("the shared Y origin reaches the next FOV call", g_nFovOrigY, PROX_Y);
+    Check("the live origin owner overrides a fresh context's stale scalar fallback",
+          g_nFovOrigX != next.nShotOriginX && g_nFovOrigY != next.nShotOriginY);
+
+    /* Legacy standalone fixtures leave the owner pointers NULL and keep using the scalar cells.
+     * TestResolveShot pins that path at IMPACT_X/IMPACT_Y. */
+    ResolveSetup();
+    Check("the standalone setup has no shared origin owner",
+          g_c.pnShotOriginX == NULL && g_c.pnShotOriginY == NULL);
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       0, &g_shot, g_aHits, NULL, &g_out);
+    Check("scalar-only fixtures still supply the FOV origin",
+          g_nFovOrigX == IMPACT_X && g_nFovOrigY == IMPACT_Y);
+}
+
 static void TestTickProximityItems(void)
 {
+    const ObjectRecFull *pWeaponOwner = &g_ctx;
     printf("MapCell_TickProximityItems @ 0x4b724\n");
 
     /* The countdown runs whether or not the device goes off. */
@@ -1011,6 +1081,9 @@ static void TestTickProximityItems(void)
 
     /* Sort key 15 detonates and is removed. */
     ProxFixture();
+    g_c.ppCtxWeapon = &pWeaponOwner;
+    g_c.paHitWindow = g_aHits;
+    g_c.paHitWindowSave = g_aSave;
     s_aDev[0].pObj = &s_objDet;
     s_aDev[0].bUnk7 = 1;
     ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
@@ -1020,6 +1093,10 @@ static void TestTickProximityItems(void)
     CheckEqI32("key 15 records the origin x", g_c.nShotOriginX, PROX_X);
     CheckEqI32("key 15 records the origin y", g_c.nShotOriginY, PROX_Y);
     Check("key 15 is removed from the cell", !ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+    Check("timed detonation publishes its explosive to the persistent weapon owner",
+          pWeaponOwner == &s_objDet);
+    Check("timed detonation refreshes the bound hit window",
+          g_pFovWindow == g_aHits);
 
     /* Sort key 14 is removed without detonating, and rewrites the animated-tile flags. */
     ProxFixture();
@@ -1108,6 +1185,7 @@ int main(void)
     TestSelectFireMode();
     TestResolveShot();
     TestDetonateNearbyItems();
+    TestShotOriginOwnerPersists();
     TestTickProximityItems();
 
     return TestSummary("test_combat");

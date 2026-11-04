@@ -322,6 +322,33 @@ typedef struct MapGeom {
  * Declared once here; the path and unit modules alias it. */
 typedef MapCell *(*MapCellLookup)(i32 nX, i32 nY, i32 nLayer, void *pUser);
 
+/* Canonicalize a large-unit neighbour after the original fixed 60-cell flat
+ * index arithmetic. This is only for the three footprint offsets; ordinary
+ * coordinates still go through the caller's strict axis-bounded lookup.
+ *
+ * The original table has four 60x60 layers. At a row edge, y+1 therefore
+ * selects the first row of the next layer. A flat index outside that backing
+ * extent has no canonical cell. This recovers the address arithmetic; it does
+ * not establish that the original runtime populated each selected slot. */
+static inline bool MapCell_LargeFootprintCoords(i32 nX, i32 nY, i32 nLayer,
+                                                i32 nOffsetX, i32 nOffsetY,
+                                                i32 *pnCellX, i32 *pnCellY,
+                                                i32 *pnCellLayer)
+{
+    const int64_t nFlatIndex =
+        (((int64_t)nLayer * 60 + nY + nOffsetY) * 60) + nX + nOffsetX;
+    const int64_t nCellCount = (int64_t)PUFO_MAP_LAYERS * 60 * 60;
+
+    if (nFlatIndex < 0 || nFlatIndex >= nCellCount) {
+        return false;
+    }
+
+    *pnCellX = (i32)(nFlatIndex % 60);
+    *pnCellY = (i32)((nFlatIndex / 60) % 60);
+    *pnCellLayer = (i32)(nFlatIndex / (60 * 60));
+    return true;
+}
+
 /* Map_IsValidCell @ 0x2bc9c. Bounds are half-open on the cell grid. */
 bool Map_IsValidCell(const MapGeom *pMap, i32 nX, i32 nY, i32 nLayer);
 

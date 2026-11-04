@@ -1,0 +1,6675 @@
+{
+  "date": "2026-10-29",
+  "target": "pufobeta.exe.i64",
+  "scope": "Six audio wrapper bodies; component query once; only explicit members, depth1 external-call boundaries, no graph expansion.",
+  "source_of_truth": "Raw ARM bytes and decoded operands. Existing names/comments/types are navigation only.",
+  "source_fingerprint": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01",
+  "members": [
+    {
+      "address": "0x9e0c0",
+      "end": "0x9e130",
+      "bytes": "10402de90040a0e15c009fe50000d0e5ff3010e21000000a48009fe50010a0e30030d0e5000053e30110a0930010c0e5c800a0e32881feeb24009fe515caa0e3dbc08ce30c00d0e7ff3010e20c009f05041190070000e003d50c000b1080bde828741800b839110018731800247f1800",
+      "rows": [
+        {
+          "ea": "0x9e0c0",
+          "bytes": "10402de9",
+          "mnemonic": "PUSH",
+          "operands": [
+            "{R4,LR}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0c4",
+          "bytes": "0040a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R4",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0c8",
+          "bytes": "5c009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=g_bSoundInitReady",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647468,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0cc",
+          "bytes": "0000d0e5",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0d0",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e0d4",
+          "bytes": "1000000a",
+          "mnemonic": "BEQ",
+          "operands": [
+            "locret_9E11C",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            647452,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0d8",
+          "bytes": "48009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=g_bSfxToggle",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647464,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0dc",
+          "bytes": "0010a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0e0",
+          "bytes": "0030d0e5",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R3",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0e4",
+          "bytes": "000053e3",
+          "mnemonic": "CMP",
+          "operands": [
+            "R3",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0e8",
+          "bytes": "0110a093",
+          "mnemonic": "MOVLS",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0ec",
+          "bytes": "0010c0e5",
+          "mnemonic": "STRB",
+          "operands": [
+            "R1",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0f0",
+          "bytes": "c800a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0xC8",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            200,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0f4",
+          "bytes": "2881feeb",
+          "mnemonic": "BL",
+          "operands": [
+            "Game_RandU16",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            255388,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0f8",
+          "bytes": "24009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=Map_bTactFlag",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647460,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e0fc",
+          "bytes": "15caa0e3dbc08ce3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R12",
+            "#(Map_bSoundOff - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86235,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e104",
+          "bytes": "0c00d0e7",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R0,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e108",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e10c",
+          "bytes": "0c009f05",
+          "mnemonic": "LDREQ",
+          "operands": [
+            "R0",
+            "=0x187428",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647456,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e110",
+          "bytes": "04119007",
+          "mnemonic": "LDREQ",
+          "operands": [
+            "R1",
+            "[R0,R4,LSL#2]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e114",
+          "bytes": "0000e003",
+          "mnemonic": "MOVEQ",
+          "operands": [
+            "R0",
+            "#0xFFFFFFFF",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            18446744073709552000,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e118",
+          "bytes": "d50c000b",
+          "mnemonic": "BLEQ",
+          "operands": [
+            "FSOUND_PlaySound",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660596,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e11c",
+          "bytes": "1080bde8",
+          "mnemonic": "POP",
+          "operands": [
+            "{R4,PC}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e120",
+          "bytes": "28741800",
+          "mnemonic": "",
+          "operands": [
+            "0x187428",
+            "0x187428",
+            "0x187428"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e124",
+          "bytes": "b8391100",
+          "mnemonic": "",
+          "operands": [
+            "Map_bTactFlag",
+            "Map_bTactFlag",
+            "Map_bTactFlag"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e128",
+          "bytes": "18731800",
+          "mnemonic": "",
+          "operands": [
+            "g_bSfxToggle",
+            "g_bSfxToggle",
+            "g_bSfxToggle"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e12c",
+          "bytes": "247f1800",
+          "mnemonic": "",
+          "operands": [
+            "g_bSoundInitReady",
+            "g_bSoundInitReady",
+            "g_bSoundInitReady"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            30
+          ]
+        }
+      ]
+    },
+    {
+      "address": "0x9e130",
+      "end": "0x9e268",
+      "bytes": "30402de994d04de20040a0e108008de2a40500eb18019fe528308de2002043e0d010d0e10010c2e70130b0e1010080e2faffff1a0a20a0e360108de20400a0e11e0200eb0010a0e128008de2fc0b00ebd8109fe528008de2f90b00eb28108de208008de2920500eb08008de2f00500ebf00b00ebb0409fe5000084e508008de2eb0500eb001094e50020a0e108008de2c20500eb08008de2e50500eb0239a0e30020a0e10000a0e304008de50010a0e300008de5000094e5b00c00eb64509fe50110a0e3000085e5a90c00eb0a20a0e3000095e51010a0e3a20c00eb000095e59d0c00eb38009fe515caa0e3dac08ce30c00d0e7ff3010e2000095150110a013920c001b000094e5c70b00eb0c009fe50110a0e30010c0e594d08de23080bde8287f1800b839110020731800487718006cc60a0070c60a00",
+      "rows": [
+        {
+          "ea": "0x9e130",
+          "bytes": "30402de9",
+          "mnemonic": "PUSH",
+          "operands": [
+            "{R4,R5,LR}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e134",
+          "bytes": "94d04de2",
+          "mnemonic": "SUB",
+          "operands": [
+            "SP",
+            "SP",
+            "#0x94"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            148
+          ]
+        },
+        {
+          "ea": "0x9e138",
+          "bytes": "0040a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R4",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e13c",
+          "bytes": "08008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e140",
+          "bytes": "a40500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Clear",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653272,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e144",
+          "bytes": "18019fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=aBack",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647780,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e148",
+          "bytes": "28308de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R3",
+            "SP",
+            "#0x94+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            40
+          ]
+        },
+        {
+          "ea": "0x9e14c",
+          "bytes": "002043e0",
+          "mnemonic": "SUB",
+          "operands": [
+            "R2",
+            "R3",
+            "R0"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e150",
+          "bytes": "d010d0e1",
+          "mnemonic": "LDRSB",
+          "operands": [
+            "R1",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e154",
+          "bytes": "0010c2e7",
+          "mnemonic": "STRB",
+          "operands": [
+            "R1",
+            "[R2,R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e158",
+          "bytes": "0130b0e1",
+          "mnemonic": "MOVS",
+          "operands": [
+            "R3",
+            "R1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e15c",
+          "bytes": "010080e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "R0",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e160",
+          "bytes": "faffff1a",
+          "mnemonic": "BNE",
+          "operands": [
+            "loc_9E150",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            647504,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e164",
+          "bytes": "0a20a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "#0xA",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            10,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e168",
+          "bytes": "60108de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R1",
+            "SP",
+            "#0x94+var_34"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            96
+          ]
+        },
+        {
+          "ea": "0x9e16c",
+          "bytes": "0400a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "R4",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e170",
+          "bytes": "1e0200eb",
+          "mnemonic": "BL",
+          "operands": [
+            "j_itoa",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            649712,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e174",
+          "bytes": "0010a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e178",
+          "bytes": "28008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            40
+          ]
+        },
+        {
+          "ea": "0x9e17c",
+          "bytes": "fc0b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "strcat",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659828,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e180",
+          "bytes": "d8109fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R1",
+            "=aIt",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647776,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e184",
+          "bytes": "28008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            40
+          ]
+        },
+        {
+          "ea": "0x9e188",
+          "bytes": "f90b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "strcat",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659828,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e18c",
+          "bytes": "28108de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R1",
+            "SP",
+            "#0x94+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            40
+          ]
+        },
+        {
+          "ea": "0x9e190",
+          "bytes": "08008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e194",
+          "bytes": "920500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Find",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653284,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e198",
+          "bytes": "08008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e19c",
+          "bytes": "f00500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Size",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653668,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1a0",
+          "bytes": "f00b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "__2_YAPAXI_Z",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659816,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1a4",
+          "bytes": "b0409fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R4",
+            "=0x187748",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647772,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1a8",
+          "bytes": "000084e5",
+          "mnemonic": "STR",
+          "operands": [
+            "R0",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1ac",
+          "bytes": "08008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e1b0",
+          "bytes": "eb0500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Size",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653668,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1b4",
+          "bytes": "001094e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R1",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1b8",
+          "bytes": "0020a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1bc",
+          "bytes": "08008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e1c0",
+          "bytes": "c20500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Read",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653520,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1c4",
+          "bytes": "08008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x94+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e1c8",
+          "bytes": "e50500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Size",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653668,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1cc",
+          "bytes": "0239a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R3",
+            "#0x8000",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            32768,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1d0",
+          "bytes": "0020a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1d4",
+          "bytes": "0000a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1d8",
+          "bytes": "04008de5",
+          "mnemonic": "STR",
+          "operands": [
+            "R0",
+            "[SP,#0x94+samplelistnum]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            4,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1dc",
+          "bytes": "0010a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1e0",
+          "bytes": "00008de5",
+          "mnemonic": "STR",
+          "operands": [
+            "R0",
+            "[SP,#0x94+samplelist]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1e4",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1e8",
+          "bytes": "b00c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FMUSIC_LoadSongEx",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660656,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1ec",
+          "bytes": "64509fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R5",
+            "=g_hfmMusicModule",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647768,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1f0",
+          "bytes": "0110a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1f4",
+          "bytes": "000085e5",
+          "mnemonic": "STR",
+          "operands": [
+            "R0",
+            "[R5]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1f8",
+          "bytes": "a90c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FMUSIC_SetLooping",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660644,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e1fc",
+          "bytes": "0a20a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "#0xA",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            10,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e200",
+          "bytes": "000095e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R5]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e204",
+          "bytes": "1010a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#0x10",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            16,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e208",
+          "bytes": "a20c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FMUSIC_OptimizeChannels",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660632,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e20c",
+          "bytes": "000095e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R5]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e210",
+          "bytes": "9d0c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FMUSIC_PlaySong",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660620,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e214",
+          "bytes": "38009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=Map_bTactFlag",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647764,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e218",
+          "bytes": "15caa0e3dac08ce3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R12",
+            "#(Map_bMusicOff - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86234,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e220",
+          "bytes": "0c00d0e7",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R0,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e224",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e228",
+          "bytes": "00009515",
+          "mnemonic": "LDRNE",
+          "operands": [
+            "R0",
+            "[R5]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e22c",
+          "bytes": "0110a013",
+          "mnemonic": "MOVNE",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e230",
+          "bytes": "920c001b",
+          "mnemonic": "BLNE",
+          "operands": [
+            "FMUSIC_SetPaused",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660608,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e234",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e238",
+          "bytes": "c70b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "__3_YAXPAX_Z",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659804,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e23c",
+          "bytes": "0c009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=g_bMusicLoaded",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            647760,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e240",
+          "bytes": "0110a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e244",
+          "bytes": "0010c0e5",
+          "mnemonic": "STRB",
+          "operands": [
+            "R1",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e248",
+          "bytes": "94d08de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "SP",
+            "SP",
+            "#0x94"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            148
+          ]
+        },
+        {
+          "ea": "0x9e24c",
+          "bytes": "3080bde8",
+          "mnemonic": "POP",
+          "operands": [
+            "{R4,R5,PC}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e250",
+          "bytes": "287f1800",
+          "mnemonic": "",
+          "operands": [
+            "g_bMusicLoaded",
+            "g_bMusicLoaded",
+            "g_bMusicLoaded"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            30
+          ]
+        },
+        {
+          "ea": "0x9e254",
+          "bytes": "b8391100",
+          "mnemonic": "",
+          "operands": [
+            "Map_bTactFlag",
+            "Map_bTactFlag",
+            "Map_bTactFlag"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e258",
+          "bytes": "20731800",
+          "mnemonic": "",
+          "operands": [
+            "g_hfmMusicModule",
+            "g_hfmMusicModule",
+            "g_hfmMusicModule"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "ea": "0x9e25c",
+          "bytes": "48771800",
+          "mnemonic": "",
+          "operands": [
+            "0x187748",
+            "0x187748",
+            "0x187748"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            14
+          ]
+        },
+        {
+          "ea": "0x9e260",
+          "bytes": "6cc60a00",
+          "mnemonic": "",
+          "operands": [
+            "aIt",
+            "aIt",
+            "aIt"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            12
+          ]
+        },
+        {
+          "ea": "0x9e264",
+          "bytes": "70c60a00",
+          "mnemonic": "",
+          "operands": [
+            "aBack",
+            "aBack",
+            "aBack"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "address": "0x9e268",
+      "end": "0x9e3d4",
+      "bytes": "f0412de990d04de20080a0e104008de2560500eb0040a0e3040000ea0a0054e30a0000aa6400a0e3f30b00eb014084e2550ca0e30020a0e32010a0e3f00080e38c0c00eb003ca0e1433cb0e1f2ffff0a08019fe5000090e5830c00ebf8009fe50110a0e3ec509fe50070a0e30010c0e50000a0e3d8609fe524308de2000085e50800a0e1082043e0d010d0e10010c2e70130b0e1010080e2faffff1a0a20a0e35c108de20700a0e1b60100eb0010a0e124008de2940b00eb90109fe524008de2910b00eb24108de204008de22a0500eb04008de2860500ebff3010e22000000a04008de2840500eb840b00eb0040a0e104008de2800500eb0410a0e10020a0e104008de2570500eb04008de27a0500eb0030a0e300008de50a2aa0e30410a0e10100e0e34d0c00eb0110a0e3000086e5470c00eb0400a0e16d0b00eb000095e5017087e2046086e2010080e2c9ffffea78c60a002874180024731800247f1800548d180090d08de2f081bde8",
+      "rows": [
+        {
+          "ea": "0x9e268",
+          "bytes": "f0412de9",
+          "mnemonic": "PUSH",
+          "operands": [
+            "{R4-R8,LR}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e26c",
+          "bytes": "90d04de2",
+          "mnemonic": "SUB",
+          "operands": [
+            "SP",
+            "SP",
+            "#0x90"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            144
+          ]
+        },
+        {
+          "ea": "0x9e270",
+          "bytes": "0080a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R8",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e274",
+          "bytes": "04008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e278",
+          "bytes": "560500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Clear",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653272,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e27c",
+          "bytes": "0040a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R4",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e280",
+          "bytes": "040000ea",
+          "mnemonic": "B",
+          "operands": [
+            "loc_9E298",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            647832,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e284",
+          "bytes": "0a0054e3",
+          "mnemonic": "CMP",
+          "operands": [
+            "R4",
+            "#0xA",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            10,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e288",
+          "bytes": "0a0000aa",
+          "mnemonic": "BGE",
+          "operands": [
+            "loc_9E2B8",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            647864,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e28c",
+          "bytes": "6400a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0x64",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            100,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e290",
+          "bytes": "f30b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "Sleep",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660068,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e294",
+          "bytes": "014084e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R4",
+            "R4",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e298",
+          "bytes": "550ca0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0x5500",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            21760,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e29c",
+          "bytes": "0020a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2a0",
+          "bytes": "2010a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#0x20",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            32,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2a4",
+          "bytes": "f00080e3",
+          "mnemonic": "ORR",
+          "operands": [
+            "R0",
+            "R0",
+            "#0xF0"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            240
+          ]
+        },
+        {
+          "ea": "0x9e2a8",
+          "bytes": "8c0c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_Init",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660704,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2ac",
+          "bytes": "003ca0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R3",
+            "R0,LSL#24",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            24,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2b0",
+          "bytes": "433cb0e1",
+          "mnemonic": "MOVS",
+          "operands": [
+            "R3",
+            "R3,ASR#24",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            24,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2b4",
+          "bytes": "f2ffff0a",
+          "mnemonic": "BEQ",
+          "operands": [
+            "loc_9E284",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            647812,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2b8",
+          "bytes": "08019fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=hWndMain",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648136,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2bc",
+          "bytes": "000090e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2c0",
+          "bytes": "830c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_SetHWND",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660692,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2c4",
+          "bytes": "f8009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=g_bSoundInitReady",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648132,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2c8",
+          "bytes": "0110a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2cc",
+          "bytes": "ec509fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R5",
+            "=g_nSoundSampleCount",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648128,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2d0",
+          "bytes": "0070a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R7",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2d4",
+          "bytes": "0010c0e5",
+          "mnemonic": "STRB",
+          "operands": [
+            "R1",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2d8",
+          "bytes": "0000a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2dc",
+          "bytes": "d8609fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R6",
+            "=0x187428",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648124,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2e0",
+          "bytes": "24308de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R3",
+            "SP",
+            "#0x90+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            36
+          ]
+        },
+        {
+          "ea": "0x9e2e4",
+          "bytes": "000085e5",
+          "mnemonic": "STR",
+          "operands": [
+            "R0",
+            "[R5]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2e8",
+          "bytes": "0800a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "R8",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2ec",
+          "bytes": "082043e0",
+          "mnemonic": "SUB",
+          "operands": [
+            "R2",
+            "R3",
+            "R8"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2f0",
+          "bytes": "d010d0e1",
+          "mnemonic": "LDRSB",
+          "operands": [
+            "R1",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2f4",
+          "bytes": "0010c2e7",
+          "mnemonic": "STRB",
+          "operands": [
+            "R1",
+            "[R2,R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2f8",
+          "bytes": "0130b0e1",
+          "mnemonic": "MOVS",
+          "operands": [
+            "R3",
+            "R1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e2fc",
+          "bytes": "010080e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "R0",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e300",
+          "bytes": "faffff1a",
+          "mnemonic": "BNE",
+          "operands": [
+            "loc_9E2F0",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            647920,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e304",
+          "bytes": "0a20a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "#0xA",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            10,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e308",
+          "bytes": "5c108de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R1",
+            "SP",
+            "#0x90+var_34"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            92
+          ]
+        },
+        {
+          "ea": "0x9e30c",
+          "bytes": "0700a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "R7",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e310",
+          "bytes": "b60100eb",
+          "mnemonic": "BL",
+          "operands": [
+            "j_itoa",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            649712,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e314",
+          "bytes": "0010a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e318",
+          "bytes": "24008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            36
+          ]
+        },
+        {
+          "ea": "0x9e31c",
+          "bytes": "940b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "strcat",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659828,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e320",
+          "bytes": "90109fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R1",
+            "=aWav",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648120,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e324",
+          "bytes": "24008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            36
+          ]
+        },
+        {
+          "ea": "0x9e328",
+          "bytes": "910b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "strcat",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659828,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e32c",
+          "bytes": "24108de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R1",
+            "SP",
+            "#0x90+pszName"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            36
+          ]
+        },
+        {
+          "ea": "0x9e330",
+          "bytes": "04008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e334",
+          "bytes": "2a0500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Find",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653284,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e338",
+          "bytes": "04008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e33c",
+          "bytes": "860500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Found",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653660,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e340",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e344",
+          "bytes": "2000000a",
+          "mnemonic": "BEQ",
+          "operands": [
+            "loc_9E3CC",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            648140,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e348",
+          "bytes": "04008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e34c",
+          "bytes": "840500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Size",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653668,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e350",
+          "bytes": "840b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "__2_YAPAXI_Z",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659816,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e354",
+          "bytes": "0040a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R4",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e358",
+          "bytes": "04008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e35c",
+          "bytes": "800500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Size",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653668,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e360",
+          "bytes": "0410a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "R4",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e364",
+          "bytes": "0020a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e368",
+          "bytes": "04008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e36c",
+          "bytes": "570500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Read",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653520,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e370",
+          "bytes": "04008de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "SP",
+            "#0x90+pRdr"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e374",
+          "bytes": "7a0500eb",
+          "mnemonic": "BL",
+          "operands": [
+            "AssetReader_Size",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            653668,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e378",
+          "bytes": "0030a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R3",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e37c",
+          "bytes": "00008de5",
+          "mnemonic": "STR",
+          "operands": [
+            "R0",
+            "[SP,#0x90+length]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e380",
+          "bytes": "0a2aa0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R2",
+            "#0xA000",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            40960,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e384",
+          "bytes": "0410a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "R4",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e388",
+          "bytes": "0100e0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0xFFFFFFFE",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            18446744073709552000,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e38c",
+          "bytes": "4d0c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_Sample_Load",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660680,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e390",
+          "bytes": "0110a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e394",
+          "bytes": "000086e5",
+          "mnemonic": "STR",
+          "operands": [
+            "R0",
+            "[R6]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e398",
+          "bytes": "470c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_Sample_SetMode",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660668,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e39c",
+          "bytes": "0400a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "R4",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3a0",
+          "bytes": "6d0b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "__3_YAXPAX_Z",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            659804,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3a4",
+          "bytes": "000095e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R5]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3a8",
+          "bytes": "017087e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R7",
+            "R7",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e3ac",
+          "bytes": "046086e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R6",
+            "R6",
+            "#4"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e3b0",
+          "bytes": "010080e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R0",
+            "R0",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e3b4",
+          "bytes": "c9ffffea",
+          "mnemonic": "B",
+          "operands": [
+            "loc_9E2E0",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            647904,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3b8",
+          "bytes": "78c60a00",
+          "mnemonic": "",
+          "operands": [
+            "aWav",
+            "aWav",
+            "aWav"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3bc",
+          "bytes": "28741800",
+          "mnemonic": "",
+          "operands": [
+            "0x187428",
+            "0x187428",
+            "0x187428"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e3c0",
+          "bytes": "24731800",
+          "mnemonic": "",
+          "operands": [
+            "g_nSoundSampleCount",
+            "g_nSoundSampleCount",
+            "g_nSoundSampleCount"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "ea": "0x9e3c4",
+          "bytes": "247f1800",
+          "mnemonic": "",
+          "operands": [
+            "g_bSoundInitReady",
+            "g_bSoundInitReady",
+            "g_bSoundInitReady"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            30
+          ]
+        },
+        {
+          "ea": "0x9e3c8",
+          "bytes": "548d1800",
+          "mnemonic": "",
+          "operands": [
+            "hWndMain",
+            "hWndMain",
+            "hWndMain"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3cc",
+          "bytes": "90d08de2",
+          "mnemonic": "ADD",
+          "operands": [
+            "SP",
+            "SP",
+            "#0x90"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            144
+          ]
+        },
+        {
+          "ea": "0x9e3d0",
+          "bytes": "f081bde8",
+          "mnemonic": "POP",
+          "operands": [
+            "{R4-R8,PC}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "address": "0x9e3d4",
+      "end": "0x9e454",
+      "bytes": "70402de970609fe5000096e5000050e3080000da5c509fe50040a0e3000095e5420c00eb000096e5014084e2045085e2000054e1f8ffffba34409fe50000d4e5ff3010e224009f1500009015340c001b300c00eb10009fe50010a0e30010c0e50000a0e30000c4e57080bde8247f180020731800287f18002874180024731800",
+      "rows": [
+        {
+          "ea": "0x9e3d4",
+          "bytes": "70402de9",
+          "mnemonic": "PUSH",
+          "operands": [
+            "{R4-R6,LR}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3d8",
+          "bytes": "70609fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R6",
+            "=g_nSoundSampleCount",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648272,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3dc",
+          "bytes": "000096e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R6]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3e0",
+          "bytes": "000050e3",
+          "mnemonic": "CMP",
+          "operands": [
+            "R0",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3e4",
+          "bytes": "080000da",
+          "mnemonic": "BLE",
+          "operands": [
+            "loc_9E40C",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            648204,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3e8",
+          "bytes": "5c509fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R5",
+            "=0x187428",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648268,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3ec",
+          "bytes": "0040a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R4",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3f0",
+          "bytes": "000095e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R5]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3f4",
+          "bytes": "420c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_Sample_Free",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660740,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3f8",
+          "bytes": "000096e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R6]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e3fc",
+          "bytes": "014084e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R4",
+            "R4",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e400",
+          "bytes": "045085e2",
+          "mnemonic": "ADD",
+          "operands": [
+            "R5",
+            "R5",
+            "#4"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e404",
+          "bytes": "000054e1",
+          "mnemonic": "CMP",
+          "operands": [
+            "R4",
+            "R0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e408",
+          "bytes": "f8ffffba",
+          "mnemonic": "BLT",
+          "operands": [
+            "loc_9E3F0",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            648176,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e40c",
+          "bytes": "34409fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R4",
+            "=g_bMusicLoaded",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648264,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e410",
+          "bytes": "0000d4e5",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e414",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e418",
+          "bytes": "24009f15",
+          "mnemonic": "LDRNE",
+          "operands": [
+            "R0",
+            "=g_hfmMusicModule",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648260,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e41c",
+          "bytes": "00009015",
+          "mnemonic": "LDRNE",
+          "operands": [
+            "R0",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e420",
+          "bytes": "340c001b",
+          "mnemonic": "BLNE",
+          "operands": [
+            "FMUSIC_FreeSong",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660728,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e424",
+          "bytes": "300c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_Close",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660716,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e428",
+          "bytes": "10009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=g_bSoundInitReady",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648256,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e42c",
+          "bytes": "0010a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e430",
+          "bytes": "0010c0e5",
+          "mnemonic": "STRB",
+          "operands": [
+            "R1",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e434",
+          "bytes": "0000a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e438",
+          "bytes": "0000c4e5",
+          "mnemonic": "STRB",
+          "operands": [
+            "R0",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e43c",
+          "bytes": "7080bde8",
+          "mnemonic": "POP",
+          "operands": [
+            "{R4-R6,PC}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e440",
+          "bytes": "247f1800",
+          "mnemonic": "",
+          "operands": [
+            "g_bSoundInitReady",
+            "g_bSoundInitReady",
+            "g_bSoundInitReady"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            30
+          ]
+        },
+        {
+          "ea": "0x9e444",
+          "bytes": "20731800",
+          "mnemonic": "",
+          "operands": [
+            "g_hfmMusicModule",
+            "g_hfmMusicModule",
+            "g_hfmMusicModule"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "ea": "0x9e448",
+          "bytes": "287f1800",
+          "mnemonic": "",
+          "operands": [
+            "g_bMusicLoaded",
+            "g_bMusicLoaded",
+            "g_bMusicLoaded"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            30
+          ]
+        },
+        {
+          "ea": "0x9e44c",
+          "bytes": "28741800",
+          "mnemonic": "",
+          "operands": [
+            "0x187428",
+            "0x187428",
+            "0x187428"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "ea": "0x9e450",
+          "bytes": "24731800",
+          "mnemonic": "",
+          "operands": [
+            "g_nSoundSampleCount",
+            "g_nSoundSampleCount",
+            "g_nSoundSampleCount"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "address": "0x9e454",
+      "end": "0x9e4dc",
+      "bytes": "30402de978509fe570409fe515caa0e3dac08ce30c00d5e7ff3010e20000a01315caa003e0c08c030c0095070c30a00390030100040081020031a0e1000094e5011043e21c0c00eb2c009fe50000d0e5ff3010e20700000a15caa0e3dac08ce30c00d5e70110a0e3ff3010e2000094e50010a003ec0b00eb3080bde8287f180020731800b8391100",
+      "rows": [
+        {
+          "ea": "0x9e454",
+          "bytes": "30402de9",
+          "mnemonic": "PUSH",
+          "operands": [
+            "{R4,R5,LR}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e458",
+          "bytes": "78509fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R5",
+            "=Map_bTactFlag",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648408,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e45c",
+          "bytes": "70409fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R4",
+            "=g_hfmMusicModule",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648404,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e460",
+          "bytes": "15caa0e3dac08ce3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R12",
+            "#(Map_bMusicOff - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86234,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e468",
+          "bytes": "0c00d5e7",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R5,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e46c",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e470",
+          "bytes": "0000a013",
+          "mnemonic": "MOVNE",
+          "operands": [
+            "R0",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e474",
+          "bytes": "15caa003e0c08c03",
+          "mnemonic": "MOVEQ",
+          "operands": [
+            "R12",
+            "#(Map_nMusicVolume - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86240,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e47c",
+          "bytes": "0c009507",
+          "mnemonic": "LDREQ",
+          "operands": [
+            "R0",
+            "[R5,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e480",
+          "bytes": "0c30a003",
+          "mnemonic": "MOVEQ",
+          "operands": [
+            "R3",
+            "#0xC",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            12,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e484",
+          "bytes": "90030100",
+          "mnemonic": "MULEQ",
+          "operands": [
+            "R1",
+            "R0",
+            "R3"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e488",
+          "bytes": "04008102",
+          "mnemonic": "ADDEQ",
+          "operands": [
+            "R0",
+            "R1",
+            "#4"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e48c",
+          "bytes": "0031a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R3",
+            "R0,LSL#2",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            2,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e490",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e494",
+          "bytes": "011043e2",
+          "mnemonic": "SUB",
+          "operands": [
+            "R1",
+            "R3",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e498",
+          "bytes": "1c0c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FMUSIC_SetMasterVolume",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660752,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e49c",
+          "bytes": "2c009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=g_bMusicLoaded",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648400,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4a0",
+          "bytes": "0000d0e5",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4a4",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e4a8",
+          "bytes": "0700000a",
+          "mnemonic": "BEQ",
+          "operands": [
+            "locret_9E4CC",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            648396,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4ac",
+          "bytes": "15caa0e3dac08ce3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R12",
+            "#(Map_bMusicOff - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86234,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4b4",
+          "bytes": "0c00d5e7",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R5,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4b8",
+          "bytes": "0110a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4bc",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e4c0",
+          "bytes": "000094e5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "[R4]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4c4",
+          "bytes": "0010a003",
+          "mnemonic": "MOVEQ",
+          "operands": [
+            "R1",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4c8",
+          "bytes": "ec0b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FMUSIC_SetPaused",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660608,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4cc",
+          "bytes": "3080bde8",
+          "mnemonic": "POP",
+          "operands": [
+            "{R4,R5,PC}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4d0",
+          "bytes": "287f1800",
+          "mnemonic": "",
+          "operands": [
+            "g_bMusicLoaded",
+            "g_bMusicLoaded",
+            "g_bMusicLoaded"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            30
+          ]
+        },
+        {
+          "ea": "0x9e4d4",
+          "bytes": "20731800",
+          "mnemonic": "",
+          "operands": [
+            "g_hfmMusicModule",
+            "g_hfmMusicModule",
+            "g_hfmMusicModule"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "ea": "0x9e4d8",
+          "bytes": "b8391100",
+          "mnemonic": "",
+          "operands": [
+            "Map_bTactFlag",
+            "Map_bTactFlag",
+            "Map_bTactFlag"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "address": "0x9e4dc",
+      "end": "0x9e558",
+      "bytes": "10402de96c409fe515caa0e3dbc08ce30c00d4e7ff3010e20000a01315caa003dcc08c030c0094070c30a00390030100040081020031a0e1010043e2020c00eb2c009fe50000d0e5ff3010e20700000a15caa0e3dbc08ce30c00d4e70110a0e3ff3010e20200e0e30010a003f30b00eb1080bde8247f1800b8391100",
+      "rows": [
+        {
+          "ea": "0x9e4dc",
+          "bytes": "10402de9",
+          "mnemonic": "PUSH",
+          "operands": [
+            "{R4,LR}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4e0",
+          "bytes": "6c409fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R4",
+            "=Map_bTactFlag",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648532,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4e4",
+          "bytes": "15caa0e3dbc08ce3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R12",
+            "#(Map_bSoundOff - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86235,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4ec",
+          "bytes": "0c00d4e7",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R4,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4f0",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e4f4",
+          "bytes": "0000a013",
+          "mnemonic": "MOVNE",
+          "operands": [
+            "R0",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e4f8",
+          "bytes": "15caa003dcc08c03",
+          "mnemonic": "MOVEQ",
+          "operands": [
+            "R12",
+            "#(Map_nSoundVolume - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86236,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e500",
+          "bytes": "0c009407",
+          "mnemonic": "LDREQ",
+          "operands": [
+            "R0",
+            "[R4,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e504",
+          "bytes": "0c30a003",
+          "mnemonic": "MOVEQ",
+          "operands": [
+            "R3",
+            "#0xC",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            12,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e508",
+          "bytes": "90030100",
+          "mnemonic": "MULEQ",
+          "operands": [
+            "R1",
+            "R0",
+            "R3"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e50c",
+          "bytes": "04008102",
+          "mnemonic": "ADDEQ",
+          "operands": [
+            "R0",
+            "R1",
+            "#4"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "ea": "0x9e510",
+          "bytes": "0031a0e1",
+          "mnemonic": "MOV",
+          "operands": [
+            "R3",
+            "R0,LSL#2",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            2,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e514",
+          "bytes": "010043e2",
+          "mnemonic": "SUB",
+          "operands": [
+            "R0",
+            "R3",
+            "#1"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "ea": "0x9e518",
+          "bytes": "020c00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_SetSFXMasterVolume",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660776,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e51c",
+          "bytes": "2c009fe5",
+          "mnemonic": "LDR",
+          "operands": [
+            "R0",
+            "=g_bSoundInitReady",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            648528,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e520",
+          "bytes": "0000d0e5",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R0]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e524",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e528",
+          "bytes": "0700000a",
+          "mnemonic": "BEQ",
+          "operands": [
+            "locret_9E54C",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            648524,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e52c",
+          "bytes": "15caa0e3dbc08ce3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R12",
+            "#(Map_bSoundOff - 0x1139B8)",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            86235,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e534",
+          "bytes": "0c00d4e7",
+          "mnemonic": "LDRB",
+          "operands": [
+            "R0",
+            "[R4,R12]",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e538",
+          "bytes": "0110a0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R1",
+            "#1",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e53c",
+          "bytes": "ff3010e2",
+          "mnemonic": "ANDS",
+          "operands": [
+            "R3",
+            "R0",
+            "#0xFF"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            255
+          ]
+        },
+        {
+          "ea": "0x9e540",
+          "bytes": "0200e0e3",
+          "mnemonic": "MOV",
+          "operands": [
+            "R0",
+            "#0xFFFFFFFD",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            18446744073709552000,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e544",
+          "bytes": "0010a003",
+          "mnemonic": "MOVEQ",
+          "operands": [
+            "R1",
+            "#0",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e548",
+          "bytes": "f30b00eb",
+          "mnemonic": "BL",
+          "operands": [
+            "FSOUND_SetPaused",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            660764,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e54c",
+          "bytes": "1080bde8",
+          "mnemonic": "POP",
+          "operands": [
+            "{R4,PC}",
+            "",
+            ""
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "ea": "0x9e550",
+          "bytes": "247f1800",
+          "mnemonic": "",
+          "operands": [
+            "g_bSoundInitReady",
+            "g_bSoundInitReady",
+            "g_bSoundInitReady"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            30
+          ]
+        },
+        {
+          "ea": "0x9e554",
+          "bytes": "b8391100",
+          "mnemonic": "",
+          "operands": [
+            "Map_bTactFlag",
+            "Map_bTactFlag",
+            "Map_bTactFlag"
+          ],
+          "decoded_values": [
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    }
+  ],
+  "code_xrefs": {
+    "0x9e0c0": [
+      {
+        "ea": "0x11964",
+        "function": "0x118b0",
+        "next": [
+          "B",
+          "locret_119AC",
+          ""
+        ]
+      },
+      {
+        "ea": "0x11a64",
+        "function": "0x119b0",
+        "next": [
+          "B",
+          "locret_11ABC",
+          ""
+        ]
+      },
+      {
+        "ea": "0x129f0",
+        "function": "0x12260",
+        "next": [
+          "MOV",
+          "R12",
+          "#(Map_pSelUnit - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x12d08",
+        "function": "0x12260",
+        "next": [
+          "MOV",
+          "R12",
+          "#(Map_pSelUnit - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x13c3c",
+        "function": "0x12260",
+        "next": [
+          "MOV",
+          "R12",
+          "#(Map_pSelUnit - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x14164",
+        "function": "0x13c6c",
+        "next": [
+          "B",
+          "def_13F44",
+          ""
+        ]
+      },
+      {
+        "ea": "0x15320",
+        "function": "0x1512c",
+        "next": [
+          "LDR",
+          "R0",
+          "[R4,#(unk_1139BC - 0x1139B8)]"
+        ]
+      },
+      {
+        "ea": "0x160c0",
+        "function": "0x15f3c",
+        "next": [
+          "MOV",
+          "R12",
+          "#(bDeployPanelOpen - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x160fc",
+        "function": "0x15f3c",
+        "next": [
+          "MOV",
+          "R0",
+          "R5"
+        ]
+      },
+      {
+        "ea": "0x161c4",
+        "function": "0x15f3c",
+        "next": [
+          "B",
+          "def_15FC0",
+          ""
+        ]
+      },
+      {
+        "ea": "0x161dc",
+        "function": "0x15f3c",
+        "next": [
+          "B",
+          "loc_161F4",
+          ""
+        ]
+      },
+      {
+        "ea": "0x163a4",
+        "function": "0x162ec",
+        "next": [
+          "B",
+          "def_16340",
+          ""
+        ]
+      },
+      {
+        "ea": "0x163e0",
+        "function": "0x163d4",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x164a0",
+        "function": "0x16494",
+        "next": [
+          "LDR",
+          "R0",
+          "=pTactCtx272"
+        ]
+      },
+      {
+        "ea": "0x164cc",
+        "function": "0x164b8",
+        "next": [
+          "",
+          "Map_bTactFlag",
+          "Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x164e8",
+        "function": "0x164d4",
+        "next": [
+          "",
+          "Map_bTactFlag",
+          "Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x164fc",
+        "function": "0x164f0",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x1653c",
+        "function": "0x16530",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x1657c",
+        "function": "0x16570",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x16690",
+        "function": "0x16684",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x16728",
+        "function": "0x16710",
+        "next": [
+          "MOV",
+          "R12",
+          "#(Map_pSelUnit - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x1676c",
+        "function": "0x1674c",
+        "next": [
+          "MOV",
+          "R12",
+          "#(Map_pSelUnit - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x16afc",
+        "function": "0x16af0",
+        "next": [
+          "LDR",
+          "R6",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x16e10",
+        "function": "0x16e04",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x16e4c",
+        "function": "0x16e40",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x16e88",
+        "function": "0x16e7c",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x16ec4",
+        "function": "0x16eb8",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x16f0c",
+        "function": "0x16ef4",
+        "next": [
+          "LDR",
+          "R12",
+          "=(nXcomUnitCount - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x17008",
+        "function": "0x16ffc",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x1703c",
+        "function": "0x17030",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17154",
+        "function": "0x17148",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x1726c",
+        "function": "0x17260",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17310",
+        "function": "0x17304",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x1741c",
+        "function": "0x17410",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1749c",
+        "function": "0x17490",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1751c",
+        "function": "0x17510",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1759c",
+        "function": "0x17590",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1761c",
+        "function": "0x17610",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1769c",
+        "function": "0x17690",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1771c",
+        "function": "0x17710",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1779c",
+        "function": "0x17790",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17808",
+        "function": "0x177fc",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17874",
+        "function": "0x17868",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x178e0",
+        "function": "0x178d4",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x179cc",
+        "function": "0x179c0",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x179f0",
+        "function": "0x179e4",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17a8c",
+        "function": "0x17a80",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17b28",
+        "function": "0x17b1c",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17bc8",
+        "function": "0x17bb8",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x17d64",
+        "function": "0x17d54",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18270",
+        "function": "0x18260",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x1838c",
+        "function": "0x18380",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18424",
+        "function": "0x18418",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18484",
+        "function": "0x18478",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x184e0",
+        "function": "0x184d4",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18540",
+        "function": "0x18534",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x185a0",
+        "function": "0x18594",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18600",
+        "function": "0x185f4",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18660",
+        "function": "0x18654",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x186c0",
+        "function": "0x186b4",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18720",
+        "function": "0x18714",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18784",
+        "function": "0x18774",
+        "next": [
+          "LDR",
+          "R4",
+          "=pMapTactical"
+        ]
+      },
+      {
+        "ea": "0x18878",
+        "function": "0x18864",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x188b8",
+        "function": "0x188a4",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x188f0",
+        "function": "0x188e4",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x18da0",
+        "function": "0x18a68",
+        "next": [
+          "LDR",
+          "R3",
+          "=Map_ClearUiScreen"
+        ]
+      },
+      {
+        "ea": "0x18e3c",
+        "function": "0x18e2c",
+        "next": [
+          "LDR",
+          "R3",
+          "=Menu_CancelQuitDialog"
+        ]
+      },
+      {
+        "ea": "0x18ea8",
+        "function": "0x18e9c",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x18eb4",
+        "function": "0x18e9c",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x18ed8",
+        "function": "0x18ecc",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x18f2c",
+        "function": "0x18f20",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x18f80",
+        "function": "0x18f74",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x18fd4",
+        "function": "0x18fc8",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x19028",
+        "function": "0x1901c",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1907c",
+        "function": "0x19070",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x190dc",
+        "function": "0x190d0",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1913c",
+        "function": "0x19130",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1919c",
+        "function": "0x19190",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x191fc",
+        "function": "0x191f0",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1925c",
+        "function": "0x19250",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x192e0",
+        "function": "0x192d4",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x19354",
+        "function": "0x19348",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x193ac",
+        "function": "0x193a0",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x19428",
+        "function": "0x1941c",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x194a4",
+        "function": "0x19498",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x194d4",
+        "function": "0x194c8",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x19510",
+        "function": "0x194f8",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x19520",
+        "function": "0x194f8",
+        "next": [
+          "",
+          "Map_bTactFlag",
+          "Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x19534",
+        "function": "0x19528",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x19540",
+        "function": "0x19528",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x19574",
+        "function": "0x19568",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x19580",
+        "function": "0x19568",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x195b4",
+        "function": "0x195a8",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x195ec",
+        "function": "0x195e0",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x19624",
+        "function": "0x19618",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x1965c",
+        "function": "0x19650",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1967c",
+        "function": "0x19670",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x196b8",
+        "function": "0x196ac",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x196f4",
+        "function": "0x196e8",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x19714",
+        "function": "0x19708",
+        "next": [
+          "LDR",
+          "R4",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x197c4",
+        "function": "0x197b8",
+        "next": [
+          "LDR",
+          "R5",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x19890",
+        "function": "0x19884",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x198b0",
+        "function": "0x198a4",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x198d0",
+        "function": "0x198c4",
+        "next": [
+          "LDR",
+          "R0",
+          "=Map_bTactFlag"
+        ]
+      },
+      {
+        "ea": "0x198fc",
+        "function": "0x198f0",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1991c",
+        "function": "0x19910",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1993c",
+        "function": "0x19930",
+        "next": [
+          "POP",
+          "{LR}",
+          ""
+        ]
+      },
+      {
+        "ea": "0x19c08",
+        "function": "0x19bb4",
+        "next": [
+          "",
+          "pBank",
+          "pBank"
+        ]
+      },
+      {
+        "ea": "0x19c68",
+        "function": "0x19c14",
+        "next": [
+          "",
+          "pBank",
+          "pBank"
+        ]
+      },
+      {
+        "ea": "0x19cc8",
+        "function": "0x19c74",
+        "next": [
+          "",
+          "pBank",
+          "pBank"
+        ]
+      },
+      {
+        "ea": "0x19d28",
+        "function": "0x19cd4",
+        "next": [
+          "",
+          "pBank",
+          "pBank"
+        ]
+      },
+      {
+        "ea": "0x19d88",
+        "function": "0x19d34",
+        "next": [
+          "",
+          "pBank",
+          "pBank"
+        ]
+      },
+      {
+        "ea": "0x1a020",
+        "function": "0x1a014",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1a040",
+        "function": "0x1a034",
+        "next": [
+          "LDR",
+          "R0",
+          "=MainMenu_pSlotCtx"
+        ]
+      },
+      {
+        "ea": "0x1a070",
+        "function": "0x1a064",
+        "next": [
+          "BL",
+          "StartUi_Shutdown",
+          ""
+        ]
+      },
+      {
+        "ea": "0x1a08c",
+        "function": "0x1a080",
+        "next": [
+          "BL",
+          "StartUi_Shutdown",
+          ""
+        ]
+      },
+      {
+        "ea": "0x1a0a8",
+        "function": "0x1a09c",
+        "next": [
+          "BL",
+          "StartUi_Shutdown",
+          ""
+        ]
+      },
+      {
+        "ea": "0x1a234",
+        "function": "0x1a228",
+        "next": [
+          "LDR",
+          "R0",
+          "=MainMenu_nListMode"
+        ]
+      },
+      {
+        "ea": "0x1a258",
+        "function": "0x1a24c",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x1a278",
+        "function": "0x1a26c",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBank"
+        ]
+      },
+      {
+        "ea": "0x2f2d8",
+        "function": "0x2f12c",
+        "next": [
+          "MOV",
+          "R3",
+          "#0x14000"
+        ]
+      },
+      {
+        "ea": "0x2f354",
+        "function": "0x2f12c",
+        "next": [
+          "MOV",
+          "R3",
+          "#0x14000"
+        ]
+      },
+      {
+        "ea": "0x2f3c0",
+        "function": "0x2f12c",
+        "next": [
+          "MOV",
+          "R3",
+          "#0x20C0"
+        ]
+      },
+      {
+        "ea": "0x2f66c",
+        "function": "0x2f12c",
+        "next": [
+          "MOV",
+          "R3",
+          "#2"
+        ]
+      },
+      {
+        "ea": "0x367f8",
+        "function": "0x36630",
+        "next": [
+          "B",
+          "loc_36810",
+          ""
+        ]
+      },
+      {
+        "ea": "0x4e4d4",
+        "function": "0x4e430",
+        "next": [
+          "LDRB",
+          "R3",
+          "[R5,#0xA0]"
+        ]
+      },
+      {
+        "ea": "0x4f9fc",
+        "function": "0x4f3f0",
+        "next": [
+          "B",
+          "def_4F438",
+          ""
+        ]
+      },
+      {
+        "ea": "0x5400c",
+        "function": "0x52adc",
+        "next": [
+          "LDR",
+          "R1",
+          "[R4,#(pSelWeapon - 0x1139B8)]"
+        ]
+      },
+      {
+        "ea": "0x5a3d0",
+        "function": "0x5a394",
+        "next": [
+          "ADD",
+          "SP",
+          "SP"
+        ]
+      },
+      {
+        "ea": "0x5f4ac",
+        "function": "0x5f490",
+        "next": [
+          "MOV",
+          "R0",
+          "#1"
+        ]
+      },
+      {
+        "ea": "0x614d8",
+        "function": "0x614cc",
+        "next": [
+          "LDR",
+          "R0",
+          "=unk_159E98"
+        ]
+      },
+      {
+        "ea": "0x61508",
+        "function": "0x614fc",
+        "next": [
+          "LDR",
+          "R0",
+          "=0x1870D8"
+        ]
+      },
+      {
+        "ea": "0x61538",
+        "function": "0x6152c",
+        "next": [
+          "LDR",
+          "R0",
+          "=bPlacementPending"
+        ]
+      },
+      {
+        "ea": "0x615bc",
+        "function": "0x615b0",
+        "next": [
+          "LDR",
+          "R0",
+          "=sGeoscapeScreenBlock"
+        ]
+      },
+      {
+        "ea": "0x615dc",
+        "function": "0x615d0",
+        "next": [
+          "LDR",
+          "R0",
+          "=abFacilityGrid"
+        ]
+      },
+      {
+        "ea": "0x61688",
+        "function": "0x6167c",
+        "next": [
+          "LDR",
+          "R0",
+          "=pBaseInfoPad"
+        ]
+      },
+      {
+        "ea": "0x616b8",
+        "function": "0x616ac",
+        "next": [
+          "LDR",
+          "R0",
+          "=szEmptyString"
+        ]
+      },
+      {
+        "ea": "0x617a0",
+        "function": "0x61794",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeScreen"
+        ]
+      },
+      {
+        "ea": "0x617d0",
+        "function": "0x617c4",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeScreen"
+        ]
+      },
+      {
+        "ea": "0x61800",
+        "function": "0x617f4",
+        "next": [
+          "LDR",
+          "R0",
+          "=g_pUiCloseCtl"
+        ]
+      },
+      {
+        "ea": "0x61850",
+        "function": "0x61844",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeScreen"
+        ]
+      },
+      {
+        "ea": "0x619b4",
+        "function": "0x619a8",
+        "next": [
+          "LDR",
+          "R0",
+          "=bTransferFlag"
+        ]
+      },
+      {
+        "ea": "0x619d8",
+        "function": "0x619cc",
+        "next": [
+          "LDR",
+          "R7",
+          "=nSoldierCursor"
+        ]
+      },
+      {
+        "ea": "0x64b00",
+        "function": "0x64af0",
+        "next": [
+          "LDR",
+          "R0",
+          "=bSoldierScreenOpen"
+        ]
+      },
+      {
+        "ea": "0x6bc64",
+        "function": "0x6bc1c",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bc74",
+        "function": "0x6bc1c",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bcc8",
+        "function": "0x6bc80",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bcd8",
+        "function": "0x6bc80",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bd2c",
+        "function": "0x6bce4",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bd3c",
+        "function": "0x6bce4",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bd90",
+        "function": "0x6bd48",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bda0",
+        "function": "0x6bd48",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bdf4",
+        "function": "0x6bdac",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6be04",
+        "function": "0x6bdac",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6be58",
+        "function": "0x6be10",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6be68",
+        "function": "0x6be10",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6cf0c",
+        "function": "0x6cf00",
+        "next": [
+          "POP",
+          "{LR}",
+          ""
+        ]
+      },
+      {
+        "ea": "0x6cf84",
+        "function": "0x6cf18",
+        "next": [
+          "MOV",
+          "R0",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x6dd14",
+        "function": "0x6dd04",
+        "next": [
+          "MOV",
+          "R0",
+          "R4"
+        ]
+      },
+      {
+        "ea": "0x6e430",
+        "function": "0x6e3e0",
+        "next": [
+          "LDR",
+          "R8",
+          "=abFacilityGrid"
+        ]
+      },
+      {
+        "ea": "0x6e920",
+        "function": "0x6e914",
+        "next": [
+          "LDR",
+          "R0",
+          "=pManufProductPanel"
+        ]
+      },
+      {
+        "ea": "0x73258",
+        "function": "0x73240",
+        "next": [
+          "LDR",
+          "R0",
+          "=pResearchTopicPanel"
+        ]
+      },
+      {
+        "ea": "0x73334",
+        "function": "0x73328",
+        "next": [
+          "LDR",
+          "R0",
+          "=bUiRowSelected"
+        ]
+      },
+      {
+        "ea": "0x83378",
+        "function": "0x82be8",
+        "next": [
+          "B",
+          "loc_836DC",
+          ""
+        ]
+      },
+      {
+        "ea": "0x84ac4",
+        "function": "0x84ab8",
+        "next": [
+          "LDR",
+          "R0",
+          "=g_smapCamera"
+        ]
+      },
+      {
+        "ea": "0x84ae4",
+        "function": "0x84ad8",
+        "next": [
+          "LDR",
+          "R0",
+          "=g_smapCamera"
+        ]
+      },
+      {
+        "ea": "0x84b04",
+        "function": "0x84af8",
+        "next": [
+          "LDR",
+          "R0",
+          "=szEmptyString"
+        ]
+      },
+      {
+        "ea": "0x84e2c",
+        "function": "0x84e20",
+        "next": [
+          "LDR",
+          "R4",
+          "=abFacilityGrid"
+        ]
+      },
+      {
+        "ea": "0x84ea8",
+        "function": "0x84e9c",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeScreen"
+        ]
+      },
+      {
+        "ea": "0x84ed8",
+        "function": "0x84ecc",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeScreen"
+        ]
+      },
+      {
+        "ea": "0x84f0c",
+        "function": "0x84f00",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeTickSeconds"
+        ]
+      },
+      {
+        "ea": "0x84f70",
+        "function": "0x84f64",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeTickSeconds"
+        ]
+      },
+      {
+        "ea": "0x84fd4",
+        "function": "0x84fc8",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeTickSeconds"
+        ]
+      },
+      {
+        "ea": "0x85038",
+        "function": "0x8502c",
+        "next": [
+          "MOV",
+          "R1",
+          "#0x560"
+        ]
+      },
+      {
+        "ea": "0x850a0",
+        "function": "0x85094",
+        "next": [
+          "MOV",
+          "R1",
+          "#0x990"
+        ]
+      },
+      {
+        "ea": "0x85108",
+        "function": "0x850fc",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeTickSeconds"
+        ]
+      },
+      {
+        "ea": "0x85170",
+        "function": "0x85164",
+        "next": [
+          "LDR",
+          "R0",
+          "=nGeoscapeScreen"
+        ]
+      },
+      {
+        "ea": "0x852d0",
+        "function": "0x852b8",
+        "next": [
+          "LDR",
+          "R0",
+          "=szEmptyString"
+        ]
+      },
+      {
+        "ea": "0x87b5c",
+        "function": "0x872d0",
+        "next": [
+          "MOV",
+          "R3",
+          "R8,LSL#16"
+        ]
+      },
+      {
+        "ea": "0x8949c",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pLines"
+        ]
+      },
+      {
+        "ea": "0x895f4",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R2",
+          "[R8]"
+        ]
+      },
+      {
+        "ea": "0x8976c",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pGeoscapeCtlA"
+        ]
+      },
+      {
+        "ea": "0x897f0",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=bMapSelectionFlag"
+        ]
+      },
+      {
+        "ea": "0x89870",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=bMapSelectionFlag"
+        ]
+      },
+      {
+        "ea": "0x898e8",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=bMapSelectionFlag"
+        ]
+      },
+      {
+        "ea": "0x89960",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pGeoscapeCtlA"
+        ]
+      },
+      {
+        "ea": "0x899a0",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pGeoscapeCtlA"
+        ]
+      },
+      {
+        "ea": "0x899f8",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pCtlNameEditBackspace"
+        ]
+      },
+      {
+        "ea": "0x89aac",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pGeoscapeCtlA"
+        ]
+      },
+      {
+        "ea": "0x89b04",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R5",
+          "=dword_186B08"
+        ]
+      },
+      {
+        "ea": "0x89bc0",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "[R5]"
+        ]
+      },
+      {
+        "ea": "0x89c18",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "[R5]"
+        ]
+      },
+      {
+        "ea": "0x89c70",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pGeoscapeCtlB"
+        ]
+      },
+      {
+        "ea": "0x89cb0",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pGeoscapeCtlB"
+        ]
+      },
+      {
+        "ea": "0x89d30",
+        "function": "0x89450",
+        "next": [
+          "LDR",
+          "R0",
+          "=pGeoscapeCtlA"
+        ]
+      },
+      {
+        "ea": "0x8b95c",
+        "function": "0x8b94c",
+        "next": [
+          "LDR",
+          "R0",
+          "=dwActionFail"
+        ]
+      }
+    ],
+    "0x9e130": [
+      {
+        "ea": "0x38208",
+        "function": "0x380d8",
+        "next": [
+          "BL",
+          "Sound_ApplyMusicVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x38988",
+        "function": "0x388b0",
+        "next": [
+          "BL",
+          "Sound_ApplyMusicVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x38d50",
+        "function": "0x38a28",
+        "next": [
+          "BL",
+          "Sound_ApplyMusicVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x3d278",
+        "function": "0x3c550",
+        "next": [
+          "BL",
+          "Sound_ApplyMusicVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x86cfc",
+        "function": "0x857f4",
+        "next": [
+          "BL",
+          "Sound_ApplyMusicVolume",
+          ""
+        ]
+      }
+    ],
+    "0x9e268": [
+      {
+        "ea": "0x38200",
+        "function": "0x380d8",
+        "next": [
+          "MOV",
+          "R0",
+          "#3"
+        ]
+      },
+      {
+        "ea": "0x38920",
+        "function": "0x388b0",
+        "next": [
+          "CMP",
+          "R5",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x38d48",
+        "function": "0x38a28",
+        "next": [
+          "MOV",
+          "R0",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x3d270",
+        "function": "0x3c550",
+        "next": [
+          "MOV",
+          "R0",
+          "#1"
+        ]
+      },
+      {
+        "ea": "0x86cf4",
+        "function": "0x857f4",
+        "next": [
+          "MOV",
+          "R0",
+          "#2"
+        ]
+      }
+    ],
+    "0x9e3d4": [
+      {
+        "ea": "0x38270",
+        "function": "0x3826c",
+        "next": [
+          "BL",
+          "KillTimers_C",
+          ""
+        ]
+      },
+      {
+        "ea": "0x389fc",
+        "function": "0x389f8",
+        "next": [
+          "BL",
+          "KillTimers_A",
+          ""
+        ]
+      },
+      {
+        "ea": "0x38d80",
+        "function": "0x38d7c",
+        "next": [
+          "BL",
+          "KillTimers_B",
+          ""
+        ]
+      },
+      {
+        "ea": "0x3d570",
+        "function": "0x3d568",
+        "next": [
+          "BL",
+          "KillTimers_BySpeed",
+          ""
+        ]
+      },
+      {
+        "ea": "0x87244",
+        "function": "0x86d20",
+        "next": [
+          "",
+          "pStatusPanel",
+          "pStatusPanel"
+        ]
+      }
+    ],
+    "0x9e454": [
+      {
+        "ea": "0x19974",
+        "function": "0x19948",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x19994",
+        "function": "0x19948",
+        "next": [
+          "MOV",
+          "R1",
+          "#1"
+        ]
+      },
+      {
+        "ea": "0x19a28",
+        "function": "0x19a10",
+        "next": [
+          "MOV",
+          "R1",
+          "#1"
+        ]
+      },
+      {
+        "ea": "0x19a7c",
+        "function": "0x19a64",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x19ad0",
+        "function": "0x19ab8",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x19b24",
+        "function": "0x19b0c",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x19b78",
+        "function": "0x19b60",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x3820c",
+        "function": "0x380d8",
+        "next": [
+          "BL",
+          "Sound_ApplySfxVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x3898c",
+        "function": "0x388b0",
+        "next": [
+          "BL",
+          "Sound_ApplySfxVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x38d54",
+        "function": "0x38a28",
+        "next": [
+          "BL",
+          "Sound_ApplySfxVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x3d27c",
+        "function": "0x3c550",
+        "next": [
+          "BL",
+          "Sound_ApplySfxVolume",
+          ""
+        ]
+      },
+      {
+        "ea": "0x6ba64",
+        "function": "0x6ba14",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bab0",
+        "function": "0x6ba70",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bb0c",
+        "function": "0x6babc",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bb68",
+        "function": "0x6bb18",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bbc4",
+        "function": "0x6bb74",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x6bc10",
+        "function": "0x6bbd0",
+        "next": [
+          "",
+          "aOptionsListCtl",
+          "aOptionsListCtl"
+        ]
+      },
+      {
+        "ea": "0x86d00",
+        "function": "0x857f4",
+        "next": [
+          "BL",
+          "Sound_ApplySfxVolume",
+          ""
+        ]
+      }
+    ],
+    "0x9e4dc": [
+      {
+        "ea": "0x199d8",
+        "function": "0x199ac",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x199f8",
+        "function": "0x199ac",
+        "next": [
+          "MOV",
+          "R1",
+          "#1"
+        ]
+      },
+      {
+        "ea": "0x19bcc",
+        "function": "0x19bb4",
+        "next": [
+          "MOV",
+          "R1",
+          "#1"
+        ]
+      },
+      {
+        "ea": "0x19c2c",
+        "function": "0x19c14",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x19c8c",
+        "function": "0x19c74",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x19cec",
+        "function": "0x19cd4",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x19d4c",
+        "function": "0x19d34",
+        "next": [
+          "MOV",
+          "R1",
+          "#0"
+        ]
+      },
+      {
+        "ea": "0x38210",
+        "function": "0x380d8",
+        "next": [
+          "LDR",
+          "R0",
+          "=g_pTitlesSurface"
+        ]
+      },
+      {
+        "ea": "0x38990",
+        "function": "0x388b0",
+        "next": [
+          "ADD",
+          "R0",
+          "SP"
+        ]
+      },
+      {
+        "ea": "0x38d58",
+        "function": "0x38a28",
+        "next": [
+          "BL",
+          "StartTimers_B",
+          ""
+        ]
+      },
+      {
+        "ea": "0x3d280",
+        "function": "0x3c550",
+        "next": [
+          "MOV",
+          "R12",
+          "#(Map_bSpawnAlt - 0x1139B8)"
+        ]
+      },
+      {
+        "ea": "0x6bc58",
+        "function": "0x6bc1c",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bcbc",
+        "function": "0x6bc80",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bd20",
+        "function": "0x6bce4",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bd84",
+        "function": "0x6bd48",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6bde8",
+        "function": "0x6bdac",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x6be4c",
+        "function": "0x6be10",
+        "next": [
+          "MOV",
+          "R1",
+          "#4"
+        ]
+      },
+      {
+        "ea": "0x86d04",
+        "function": "0x857f4",
+        "next": [
+          "ADD",
+          "SP",
+          "SP"
+        ]
+      }
+    ]
+  },
+  "component": {
+    "functions": [
+      {
+        "addr": "0x9e0c0",
+        "name": "Sound_Play",
+        "prototype": "int __fastcall(int nSample)",
+        "size": 112,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 3,
+        "complexity": 2
+      },
+      {
+        "addr": "0x9e268",
+        "name": "Sound_InitAndLoadSamples",
+        "prototype": "BOOL __fastcall(char *pszPrefix)",
+        "size": 364,
+        "callees": [],
+        "strings": [
+          ".wav"
+        ],
+        "basic_blocks": 10,
+        "complexity": 5
+      },
+      {
+        "addr": "0x9e130",
+        "name": "Sound_LoadAndPlayMusic",
+        "prototype": "char *__fastcall(int nTrack)",
+        "size": 312,
+        "callees": [],
+        "strings": [
+          "back",
+          ".it"
+        ],
+        "basic_blocks": 3,
+        "complexity": 2
+      },
+      {
+        "addr": "0x9e3d4",
+        "name": "Sound_Shutdown",
+        "prototype": "int()",
+        "size": 128,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 4,
+        "complexity": 3
+      },
+      {
+        "addr": "0x9e454",
+        "name": "Sound_ApplyMusicVolume",
+        "prototype": "int()",
+        "size": 136,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 3,
+        "complexity": 2
+      },
+      {
+        "addr": "0x9e4dc",
+        "name": "Sound_ApplySfxVolume",
+        "prototype": "void()",
+        "size": 124,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 3,
+        "complexity": 2
+      }
+    ],
+    "internal_call_graph": {
+      "nodes": [
+        "0x9e0c0",
+        "0x9e268",
+        "0x9e130",
+        "0x9e3d4",
+        "0x9e454",
+        "0x9e4dc"
+      ],
+      "edges": []
+    },
+    "shared_globals": [],
+    "interface_functions": [],
+    "internal_only": [
+      "0x9e0c0",
+      "0x9e268",
+      "0x9e130",
+      "0x9e3d4",
+      "0x9e454",
+      "0x9e4dc"
+    ],
+    "string_usage": {}
+  },
+  "exclusions": [
+    "FMODCE implementation is external and not audited.",
+    "WinMM mixer/openmpt playback has not been executed or compared to FMODCE output.",
+    "All callback return-forwarding paths are not fully traced."
+  ],
+  "runtime_executed": false
+}

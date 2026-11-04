@@ -1,0 +1,97 @@
+{
+  "row_counter": [
+    [
+      "0x7b790",
+      "0830c0e7",
+      "STRB            R3, [R0,R8]"
+    ],
+    [
+      "0x7b794",
+      "6e3da0e3",
+      "MOV             R3, #0x1B80"
+    ],
+    [
+      "0x7b798",
+      "000095e5",
+      "LDR             R0, [R5]"
+    ],
+    [
+      "0x7b79c",
+      "223083e3",
+      "ORR             R3, R3, #0x22 "
+    ],
+    [
+      "0x7b7a0",
+      "0320c0e7",
+      "STRB            R2, [R0,R3]"
+    ],
+    [
+      "0x7b7a4",
+      "6e3da0e3",
+      "MOV             R3, #0x1B80"
+    ],
+    [
+      "0x7b7a8",
+      "000095e5",
+      "LDR             R0, [R5]"
+    ],
+    [
+      "0x7b7ac",
+      "243083e3",
+      "ORR             R3, R3, #0x24 "
+    ],
+    [
+      "0x7b7b0",
+      "0220a0e3",
+      "MOV             R2, #2"
+    ],
+    [
+      "0x7b7b4",
+      "032080e7",
+      "STR             R2, [R0,R3]"
+    ],
+    [
+      "0x7b7b8",
+      "f8061fe5",
+      "LDR             R0, =(apCraft-0x10AC)"
+    ],
+    [
+      "0x7b7bc",
+      "42cda0e328c08ce3",
+      "MOV             R12, #(Map_nObjectCount - 0x1139B8)"
+    ],
+    [
+      "0x7b7c4",
+      "bc0090e1",
+      "LDRH            R0, [R0,R12]"
+    ],
+    [
+      "0x7b7c8",
+      "0038a0e1",
+      "MOV             R3, R0,LSL#16"
+    ],
+    [
+      "0x7b7cc",
+      "2338a0e1",
+      "MOV             R3, R3,LSR#16"
+    ]
+  ],
+  "row_id_counter_init": [
+    [
+      "0x7b2d4",
+      "6e9da0e3149089e3",
+      "MOV             R9, #0x1B94"
+    ],
+    [
+      "0x7b78c",
+      "0190a0e3",
+      "MOV             R9, #1"
+    ]
+  ],
+  "idb": {
+    "address": "0x67D68",
+    "comment": "Raw ARM checked 2026-10-28: 0x67EE0..0x67EF8 gate address = 0x162030 + 2*(0x173*requestedSite + objectIndex) + 2. For requestedSite=-1: 0x161D4C+2*objectIndex, halfwords in carry-count words159..229 based at0x161AD0 (filtered IDs1..69,105..111,122..124,140). PE .data raw tail ends0xAC800; this region is loader zero-fill, not stored zero bytes. Raw0x7B184..0x7B1A4 admits screen row IDs1..24/31..51 only; row IDs feed increment0x7AFD0..0x7AFD8 and decrement0x7AA34..0x7AA3C. The256-word clear0x7B038..0x7B058 writes zero. Other carry refs are readers. Thus the -1 gate stays zero in normal screen flows; the port's zero result and loot's used-storage-only term match. Other negative indices and corrupt state not proved. Evidence docs/parity/incoming-capacity-gate-2026-10-28.md; previous note backed up in raw JSON.",
+    "readback_equal": true,
+    "saved_with_backup": true
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-28",
+  "source_files": 434,
+  "source_fingerprint": "4EA843BE616B3B96138FFCD2C8655993FFC77BF4E6AD723B92C888BE792ED135",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-death-name-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "EFF6F23A8194EC63F3C742491E5A8B6177CF0DBC8C4E49E233820F87BB325CB2",
+        "build/tests/Debug/test_unit.exe": "46ED9B5E1B9A043B411632C40168C4B5BA47B476CF2E889B78499F77174BAC4C",
+        "build/tests/Debug/test_geoscape.exe": "A2A06E2A71B37F9EFF593EE9659A310BCECBD1FF445A1E84CEC7B03359E65103"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-death-name-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "18E5685B947B979B55B8D325341B5004D150EEF84CCC48F9D64331BA84C31021",
+        "build/tests/Release/test_unit.exe": "D46B87D27DA9EC0FD67DC95358CC0BDD79DDEFE42746D636C427B407F469BE75",
+        "build/tests/Release/test_geoscape.exe": "1E27FB2F3C6F89531BF0609C70B7E84879C70A079D451C4FDB848DE26949A52F"
+      }
+    }
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Type-18 neighbor damage selector; generated base-name runtime capacity with unchanged 20-byte save wire; prior byte/native fixes included; no runtime acceptance"
+}

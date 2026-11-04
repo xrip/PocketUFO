@@ -103,6 +103,14 @@ void Geoscape_AdvanceTime(GameTime *pTime, i32 nDeltaSec,
         pHooks->pfnOpenMonthly(pHooks->pUser);
 }
 
+void GameTime_Pause(GameTime *pTime)
+{
+    if (pTime == NULL) {
+        return;
+    }
+    pTime->bPaused = 1; /* 0x5D6B4: STRB at nGameTotalSec + 4. */
+}
+
 void GameTime_Unpause(GameTime *pTime)
 {
     if (pTime == NULL) {

@@ -102,7 +102,9 @@ add_library(pufo_audio STATIC
 target_include_directories(pufo_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # winmm is the Win64 stand-in for fmodce.dll (the original's FMOD 3 import). It is
 # a system library; no original DLL is linked (CLAUDE.md constraint).
-target_link_libraries(pufo_audio PUBLIC pufo_options pufo_dat pufo_util winmm)
+include(${CMAKE_SOURCE_DIR}/cmake/PufoOpenMPT.cmake)
+target_link_libraries(pufo_audio PUBLIC pufo_options pufo_dat pufo_util winmm
+    PRIVATE pufo_openmpt)
 
 # The shell's geoscape bring-up. It is a library, not exe code, because its frame wiring is state a
 # test must drive: tests/test_geoscapeframe.c runs World_NewGame, Geoscape_Draw and the geoscape
@@ -202,7 +204,7 @@ add_test(NAME test_render
 # Audio game-side logic (naming, sample scan, option gating) with a fake
 # backend, so it needs no sound hardware.
 add_executable(test_audio ${CMAKE_SOURCE_DIR}/tests/test_audio.c)
-target_link_libraries(test_audio PRIVATE pufo_options pufo_audio pufo_game pufo_dat)
+target_link_libraries(test_audio PRIVATE pufo_options pufo_audio pufo_game pufo_dat pufo_openmpt)
 set_target_properties(test_audio PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
@@ -496,6 +498,17 @@ set_target_properties(test_save PROPERTIES
 )
 add_test(NAME test_save
     COMMAND test_save
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# World_LoadSlot's TACTVER-to-FLOBJS allocation wiring and a raw 257-item chunk.
+add_executable(test_save_world ${CMAKE_SOURCE_DIR}/tests/test_save_world.c)
+target_link_libraries(test_save_world PRIVATE pufo_world)
+set_target_properties(test_save_world PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_save_world
+    COMMAND test_save_world
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
@@ -902,3 +915,35 @@ add_test(NAME test_appshell
     COMMAND test_appshell
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
+
+# All native tests share one output directory. One staging target owns its
+# runtime copies, while each executable depends on it for standalone builds.
+function(pufo_add_openmpt_runtime_stage stage_target output_target)
+    add_custom_target(${stage_target}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${output_target}>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${PUFO_OPENMPT_RUNTIME_FILES} "$<TARGET_FILE_DIR:${output_target}>"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${pufo_openmpt_package_SOURCE_DIR}/Licenses"
+            "$<TARGET_FILE_DIR:${output_target}>/libopenmpt-licenses"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${pufo_openmpt_package_SOURCE_DIR}/LICENSE.txt"
+            "$<TARGET_FILE_DIR:${output_target}>/libopenmpt-licenses/LICENSE.txt"
+        VERBATIM
+    )
+endfunction()
+
+pufo_add_openmpt_runtime_stage(pufo_stage_openmpt_app_runtime pocketufo)
+pufo_add_openmpt_runtime_stage(pufo_stage_openmpt_test_runtime test_data)
+
+get_property(pufo_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(pufo_target IN LISTS pufo_targets)
+    get_target_property(pufo_target_type ${pufo_target} TYPE)
+    if(pufo_target_type STREQUAL "EXECUTABLE")
+        if(pufo_target STREQUAL "pocketufo")
+            add_dependencies(${pufo_target} pufo_stage_openmpt_app_runtime)
+        else()
+            add_dependencies(${pufo_target} pufo_stage_openmpt_test_runtime)
+        endif()
+    endif()
+endforeach()

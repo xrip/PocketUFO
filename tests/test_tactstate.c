@@ -5,6 +5,7 @@
  * asserted explicitly.
  */
 #include "game/pufo_tactstate.h"
+#include "game/pufo_ballist.h"  /* Tact_ChargeShotAmmo */
 #include "game/pufo_turn.h"    /* TactCtx272 */
 #include "game/pufo_combat.h"  /* CombatCtx, ProximityCtx, UnitRosters */
 #include "util/pufo_rand.h"   /* Game_RandU16 */
@@ -15,6 +16,50 @@
 
 static int g_nFailures;
 static TactState g_state;
+
+#define FOOTPRINT_MOVE_DIM 60
+
+typedef struct FootprintMoveGrid {
+    MapCell aCells[PUFO_MAP_LAYERS][FOOTPRINT_MOVE_DIM][FOOTPRINT_MOVE_DIM];
+    MapCell invalidCell;
+    i32 nInvalidLookupCount;
+} FootprintMoveGrid;
+
+static FootprintMoveGrid g_FootprintMoveGrid;
+
+static MapCell *FootprintMoveLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    FootprintMoveGrid *pGrid = (FootprintMoveGrid *)pUser;
+
+    if (nX < 0 || nX >= FOOTPRINT_MOVE_DIM
+        || nY < 0 || nY >= FOOTPRINT_MOVE_DIM
+        || nLayer < 0 || nLayer >= PUFO_MAP_LAYERS) {
+        ++pGrid->nInvalidLookupCount;
+        return &pGrid->invalidCell;
+    }
+    return &pGrid->aCells[nLayer][nY][nX];
+}
+
+static void FootprintMoveGrid_Init(FootprintMoveGrid *pGrid)
+{
+    memset(pGrid, 0, sizeof(*pGrid));
+    for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+        for (i32 nY = 0; nY < FOOTPRINT_MOVE_DIM; ++nY) {
+            for (i32 nX = 0; nX < FOOTPRINT_MOVE_DIM; ++nX) {
+                MapCell_Init(&pGrid->aCells[nLayer][nY][nX], nX, nY, nLayer);
+            }
+        }
+    }
+    MapCell_Init(&pGrid->invalidCell, 0, 0, 0);
+}
+
+static bool FootprintMoveArmorWarn(const Soldier *pUnit, i32 nTuCost, void *pUser)
+{
+    (void)pUnit;
+    (void)nTuCost;
+    (void)pUser;
+    return false;
+}
 
 static void Check(bool bCond, const char *pszWhat)
 {
@@ -585,10 +630,24 @@ static void FireFaceToward(Soldier *pUnit, i32 nX, i32 nY, void *pUser)
     g_nFaceY = nY;
 }
 
+static void DrainBurstAmmo(TactState *pState, i32 *pnShotCount)
+{
+    for (i32 i = 0; i < (i32)pState->nQueueLen; ++i) {
+        TactQueueEntry *pEntry = &pState->aQueue[i];
+
+        if (pEntry->nCmd == TACTCMD_FIRE_SHOT) {
+            Tact_ChargeShotAmmo((TactItem *)pEntry->pWeapon, pnShotCount);
+        }
+    }
+    pState->nQueueLen = 0;
+}
+
 static void TestFireBurst(void)
 {
     Soldier      unit;
     FireBurstSpec spec;
+    i32          nShotCount = 7;
+    Soldier     *pThrowTarget = NULL;
 
     printf("TactState_EnqueueFireBurst\n");
 
@@ -603,15 +662,26 @@ static void TestFireBurst(void)
     spec.nTuCost = 50;
     spec.uAmmoInWeapon = 10;
     spec.bAmmoCap = 10;
+    spec.pnShotCount = &nShotCount;
+    spec.ppThrowTarget = &pThrowTarget;
+    pThrowTarget = &unit;
+    g_state.bSkipFireShots = 1;
     g_nFaceCalls = 0;
     Check(!TactState_EnqueueFireBurst(&g_state, &spec, FireFaceToward, NULL),
           "  too little TU is refused");
     CheckEqI32(g_state.nQueueLen, 0, "  nothing queued");
     CheckEqI32(g_nFaceCalls, 0, "  the unit is not faced on failure");
+    Check(pThrowTarget == NULL, "  refused burst clears throw target before TU test");
+    CheckEqI32(g_state.bSkipFireShots, 0,
+               "  refused burst clears the fire-skip flag");
+    CheckEqI32(nShotCount, 7, "  refused burst keeps shot count");
 
     /* Exactly enough TU: accepted. One shot means two entries plus clear-aim. */
     Reset();
     unit.uTu = 50;
+    nShotCount = 7;
+    pThrowTarget = &unit;
+    g_state.bSkipFireShots = 1;
     g_nFaceCalls = 0;
     Check(TactState_EnqueueFireBurst(&g_state, &spec, FireFaceToward, NULL),
           "  exactly enough TU is accepted");
@@ -622,6 +692,13 @@ static void TestFireBurst(void)
     CheckEqI32(g_state.aQueue[2].nCmd, TACTCMD_CLEAR_AIM, "  entry 2 clears aim");
     CheckEqI32(g_state.aQueue[0].nTuCost, 50, "  the first shot carries the TU cost");
     CheckEqI32(g_state.aQueue[1].nTuCost, 0, "  the mark entry carries no cost");
+    CheckEqI32(g_state.aQueue[0].nMode, 1, "  nonzero mode is stored on the shot");
+    Check(pThrowTarget == NULL, "  accepted burst clears throw target");
+    CheckEqI32(g_state.bSkipFireShots, 0,
+               "  accepted burst clears the fire-skip flag");
+    CheckEqI32(nShotCount, 0, "  accepted burst resets shot count after clear-aim");
+    spec.pnShotCount = NULL;
+    spec.ppThrowTarget = NULL;
 
     /* Mode 0 fires three shots, so 3*2 + 1 = 7 entries, and only the FIRST shot is
      * charged TU. */
@@ -636,6 +713,9 @@ static void TestFireBurst(void)
     CheckEqI32(g_state.aQueue[0].nTuCost, 20, "  shot 0 charged");
     CheckEqI32(g_state.aQueue[2].nTuCost, 0, "  shot 1 NOT charged");
     CheckEqI32(g_state.aQueue[4].nTuCost, 0, "  shot 2 NOT charged");
+    CheckEqI32(g_state.aQueue[0].nMode, 0, "  mode 0 stored on shot 0");
+    CheckEqI32(g_state.aQueue[2].nMode, 0, "  mode 0 stored on shot 1");
+    CheckEqI32(g_state.aQueue[4].nMode, 0, "  mode 0 stored on shot 2");
 
     /* Mode 0 with only 2 rounds loaded caps at 2 shots. */
     Reset();
@@ -676,6 +756,9 @@ static void TestFireBurst(void)
         CheckEqI32(g_state.aQueue[2].nX, 11, "  shot 1 x from target 1");
         CheckEqI32(g_state.aQueue[4].nX, 12, "  shot 2 x from target 2");
         CheckEqI32(g_state.aQueue[4].nZ, 3, "  shot 2 z from target 2");
+        CheckEqI32(g_state.aQueue[0].nMode, 7, "  mode 7 stored on shot 0");
+        CheckEqI32(g_state.aQueue[2].nMode, 7, "  mode 7 stored on shot 1");
+        CheckEqI32(g_state.aQueue[4].nMode, 7, "  mode 7 stored on shot 2");
     }
 
     /* A non-mode-7 burst takes its coordinates from the single target argument. */
@@ -694,6 +777,7 @@ static void TestFireBurst(void)
     CheckEqI32(g_state.aQueue[0].nX, 33, "  single-target x used");
     CheckEqI32(g_state.aQueue[0].nY, 44, "  single-target y used");
     CheckEqI32(g_state.aQueue[0].nZ, 2, "  single-target z used");
+    CheckEqI32(g_state.aQueue[0].nMode, 1, "  single-target mode stored");
     CheckEqI32(g_nFaceX, 33, "  faced toward x");
     CheckEqI32(g_nFaceY, 44, "  faced toward y");
 
@@ -707,7 +791,7 @@ static void TestFireBurst(void)
     Check(g_state.aQueue[0].pWeapon == (void *)(uintptr_t)0x1234,
           "  weapon pointer stored on the shot");
     CheckEqI32(g_state.aQueue[0].nArgDword, 77, "  fire argument stored");
-    CheckEqI32(g_state.aQueue[0].nMode, 0, "  nMode field is the caller's to fill");
+    CheckEqI32(g_state.aQueue[0].nMode, 1, "  nMode is stored on the shot");
 
     /* Zero rounds with a real capacity: the cap drives the shot count to 0, so only
      * the clear-aim entry is queued. Worth pinning because it is easy to assume a
@@ -727,6 +811,55 @@ static void TestFireBurst(void)
     spec.pUnit = NULL;
     Check(!TactState_EnqueueFireBurst(&g_state, &spec, FireFaceToward, NULL),
           "  NULL unit refused");
+}
+
+static void TestSpecialWeaponBurstAmmoResets(void)
+{
+    static const u16 auSpecialSortKeys[] = { 13, 35 };
+
+    printf("TactState_EnqueueFireBurst special ammo reset\n");
+    for (i32 k = 0; k < 2; ++k) {
+        Soldier unit;
+        ObjectRec object;
+        TactItem weapon;
+        FireBurstSpec spec;
+        Soldier *pThrowTarget;
+        i32 nShotCount = 9;
+
+        Reset();
+        memset(&unit, 0, sizeof(unit));
+        memset(&object, 0, sizeof(object));
+        memset(&weapon, 0, sizeof(weapon));
+        memset(&spec, 0, sizeof(spec));
+        unit.uTu = 100;
+        object.uSortKey = auSpecialSortKeys[k];
+        object.bAmmoCap = 10;
+        weapon.pObj = &object;
+        weapon.nAmmo = 10;
+        pThrowTarget = &unit;
+        spec.pUnit = &unit;
+        spec.pWeapon = &weapon;
+        spec.nMode = 0;
+        spec.uAmmoInWeapon = weapon.nAmmo;
+        spec.bAmmoCap = object.bAmmoCap;
+        spec.pnShotCount = &nShotCount;
+        spec.ppThrowTarget = &pThrowTarget;
+
+        Check(TactState_EnqueueFireBurst(&g_state, &spec, FireFaceToward, NULL),
+              "  first special burst queues");
+        CheckEqI32(nShotCount, 0, "  first enqueue clears shot count");
+        DrainBurstAmmo(&g_state, &nShotCount);
+        CheckEqI32(weapon.nAmmo, 9, "  first burst charges one round");
+        CheckEqI32(nShotCount, 3, "  draining first burst leaves shot count nonzero");
+
+        spec.uAmmoInWeapon = weapon.nAmmo;
+        pThrowTarget = &unit;
+        Check(TactState_EnqueueFireBurst(&g_state, &spec, FireFaceToward, NULL),
+              "  second special burst queues without a manual count reset");
+        CheckEqI32(nShotCount, 0, "  second enqueue clears the prior burst count");
+        DrainBurstAmmo(&g_state, &nShotCount);
+        CheckEqI32(weapon.nAmmo, 8, "  second burst charges one round");
+    }
 }
 
 static MapCell *DoorGridLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
@@ -835,6 +968,7 @@ static u8       g_bEnemySpotted;
 static u8       g_bFallPending;
 static u8       g_bThrowPending;
 static u8       g_bTickHold;
+static u8       g_bFrameScratch;
 static u16      g_nUiScreen;
 static TactItem *g_pSelWeapon;
 static Soldier  *g_pThrowTarget;
@@ -861,7 +995,6 @@ static ObjectRecFull *g_apFallObjTable[132];
 static TactItem       g_aFallItemTable[8];
 static TactItem      *g_apFallItemTable[8];
 static i32            g_nFallItemCnt;
-static i32            g_nFallKillCount;
 /* A model of the unit NAME table 0xB1140 (byte_AD720 + 0x3A20): 40-byte records indexed by
  * unit type, filled in Fall_Init. The transform arms point at the record of the unit's NEW
  * type -- record 14 in the kill arm (0x4e508 LDR R0,=(byte_AD720+0x3A20), then 0x4e518
@@ -939,8 +1072,8 @@ static void FallHookKillBattleEnd(void *pUser)
     ++g_nKillBattleEndCalls;
 }
 
-/* SideLists keeps its counts by value, so the fixture has to copy the byte counts
- * into it before each call, the way the game's single shared block does. */
+/* Seed the by-value list view for a fresh fixture. Repeated fall calls share this
+ * object, so tests must not refresh it between transfers. */
 static void FallSyncLists(void)
 {
     g_FallLists.nXcom  = (i32)g_nFallXcom;
@@ -979,6 +1112,7 @@ static void FallSetup(void)
     g_bFallPending = 0;
     g_bThrowPending = 0;
     g_bTickHold = 0;
+    g_bFrameScratch = 0;
     g_nUiScreen = 0;
     g_pThrowTarget = &g_aFallUnits[2];   /* a non-NULL sentinel */
     g_pLookCommit = NULL;
@@ -1019,7 +1153,6 @@ static void FallSetup(void)
         g_apFallItemTable[n] = &g_aFallItemTable[n];
     }
     g_nFallItemCnt = 0;
-    g_nFallKillCount = 0;
     memset(&g_FallCombat, 0, sizeof(g_FallCombat));
     g_FallCombat.pfnLookup = FallLookup;
     g_FallCombat.pGeom = &g_FallGeom;
@@ -1029,7 +1162,9 @@ static void FallSetup(void)
     g_FallKillCtx.pnTactItem = &g_nFallItemCnt;
     g_FallKillCtx.apObjects = g_apFallObjTable;
     g_FallKillCtx.ppSelUnit = &g_pFallSelUnit;
-    g_FallKillCtx.pnKillCount = &g_nFallKillCount;
+    g_FallKillCtx.pnKillCredit = &g_state.uKillCredit;
+    g_FallKillCtx.pbTickHold = &g_bTickHold;
+    g_FallKillCtx.pbFrameScratch = &g_bFrameScratch;
     memcpy(g_aFallNameTable + 40 * 14, "Chryssalid", 11);     /* record 14: the kill arm (0x4e518) */
     memcpy(g_aFallNameTable + 40 * 22, "ChryssalidHost", 15); /* record 22: the fall arm (0x53148) */
     g_FallKillCtx.pszTransformName = g_aFallNameTable + 40 * 14;
@@ -1273,7 +1408,7 @@ static void TestFallDamageSweep(void)
     Check((pSmall->bFlags & 0x20) != 0, "  and kills it");
     CheckEqI32(pSmall->bStatus, 4, "  the kill turns it into a corpse (bStatus 4)");
     Check(pBig->pCell == &g_aFallCells[2][1][1], "  the large unit is untouched");
-    CheckEqI32(g_nFallKillCount, 0, "  a human death does not raise the alien kill count");
+    CheckEqI32((i32)g_state.uKillCredit, 0, "  a human death does not add queue kill credit");
 
     /* A large unit landing on a small one kills the occupant outright; the small
      * occupant's HP is not pre-zeroed because only a large occupant is. */
@@ -1906,6 +2041,57 @@ static void TestFallActionPanic(void)
     Check(strcmp(g_szForced, "Reyes under alien control") == 0,
           "  the message is the name plus the alien-control suffix");
     CheckEqI32(g_nBattleEndCalls, 1, "  LABEL_66 still runs");
+}
+
+static void TestFallActionRosterCountRefresh(void)
+{
+    Soldier *pActor   = &g_aFallUnits[0];
+    Soldier *pVictim1 = &g_aFallUnits[1];
+    Soldier *pVictim2 = &g_aFallUnits[2];
+
+    printf("Tact_ProcessFallAction repeated panic roster counts\n");
+    FallSetup();
+
+    pActor->auStat[6] = 30;
+    pActor->auStat[7] = 30;   /* power 900: both PSI hits skip the random roll */
+    pVictim1->auStat[6] = 10;
+    pVictim1->auStat[7] = 10;
+    pVictim1->auStat[2] = 600;
+    pVictim1->auStat[0] = 55;
+    pVictim1->bMorale = 40;
+    pVictim1->pCell = &g_aFallCells[2][2][2];
+    pVictim2->auStat[6] = 10;
+    pVictim2->auStat[7] = 10;
+    pVictim2->auStat[2] = 600;
+    pVictim2->auStat[0] = 55;
+    pVictim2->bMorale = 40;
+    pVictim2->pCell = &g_aFallCells[2][2][3];
+    g_FallTactCtx.bBusy = 1;  /* each panic transfers Xcom -> enemy */
+
+    g_apFallXcom[0] = pVictim1;
+    g_apFallXcom[1] = pVictim2;
+    g_nFallXcom = 2;
+    FallSyncLists();          /* seed once, as World builds FallActionCtx */
+
+    FallQueueEntry(0x12, pActor, pVictim1);
+    g_state.aQueue[0].nMode = 5;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nFallXcom, 1, "  first victim leaves Xcom");
+    CheckEqI32(g_nFallEnemy, 1, "  first victim joins the enemy list");
+    Check(g_apFallEnemy[0] == pVictim1, "  first victim occupies enemy slot 0");
+    CheckEqI32(g_FallLists.nEnemy, 0,
+               "  the one tick's count copy is unchanged by the live append");
+
+    /* Reuse the same FallActionCtx and SideLists. FallQueueEntry changes only the
+     * current queue entry; no fixture sync runs between these two calls. */
+    FallQueueEntry(0x12, pActor, pVictim2);
+    g_state.aQueue[0].nMode = 5;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+
+    CheckEqI32(g_nFallXcom, 0, "  second victim leaves Xcom");
+    CheckEqI32(g_nFallEnemy, 2, "  both live enemy counts are kept");
+    Check(g_apFallEnemy[0] == pVictim1, "  first victim remains in enemy slot 0");
+    Check(g_apFallEnemy[1] == pVictim2, "  second victim is appended in enemy slot 1");
 }
 
 static void TestFallActionMedikit(void)
@@ -2819,7 +3005,7 @@ static void TestFireShotFlight(void)
     CheckEqI32(g_bFireStatus9, 1, "fire status 9 is set while nothing is in flight");
     CheckEqI32(g_nFireTickProgress, 0, "the fall-damage progress restarts");
     Check(g_state.bFlag1 == 1, "the phase ends");
-    CheckEqI32(g_state.nStepZDelta, 0, "a non-mode-7 shot leaves the z delta alone");
+    CheckEqI32(g_state.bSkipFireShots, 0, "a non-mode-7 shot leaves the fire-skip flag clear");
 
     /* Mode 7 with the bound reached: resolve, arm the z delta, clear the samples. */
     FireSetup();
@@ -2838,8 +3024,7 @@ static void TestFireShotFlight(void)
     FireSeedSamples(100.0, 100.0, 0.0);
     g_aFireCells[0][1][1].bFlags29 = PUFO_CELLFLAG_SHOT_TRACE;
     Tact_ProcessFireAction(&g_state, &g_FireCtx);
-    CheckEqI32(g_state.nStepZDelta & 0xFF, 1,
-               "mode 7 sets the low byte of the step z delta");
+    CheckEqI32(g_state.bSkipFireShots, 1, "mode 7 sets the fire-skip flag");
     CheckEqI32(g_bFallPending, 1, "fall damage is armed");
     Check((g_aFireCells[0][1][1].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) == 0,
           "the resolve cleared the trace flag the case had just stamped");
@@ -3422,7 +3607,7 @@ static void TestTickKillCredit(void)
     printf("Tact_TickActiveUnit, crediting the kill to the shooter\n");
 
     /* The first already-executed entry that is a shot by an operative unit of type
-     * 8 or below collects the accumulated kill count. */
+     * 8 or below collects the low word of the dword kill-credit accumulator. */
     TickSetup();
     TickCompletedTail();
     g_state.aQueue[0].nCmd  = TACTCMD_FIRE_SHOT;
@@ -3430,7 +3615,7 @@ static void TestTickKillCredit(void)
     g_aFallUnits[0].nUnitType = 0;
     g_aFallUnits[0].bStatus   = 0;      /* operative */
     g_aFallUnits[0].uKills    = 5;
-    g_state.uKillCredit       = 3;
+    g_state.uKillCredit       = 0x10003u;
     Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the emptied queue stops the walker");
     CheckEqI32(g_aFallUnits[0].uKills, 8, "the shooter collects the credit");
     CheckEqI32(g_state.uKillCredit, 0, "  and the accumulator is cleared");
@@ -3658,6 +3843,324 @@ static void TestTickHoldReturns(void)
     CheckEqI32(g_nPhaseCalls, 1, "  and so did the phase machine");
 }
 
+static void TestLargeMoveChecksWrappedQuadrant(void)
+{
+    FootprintMoveGrid *pGrid = &g_FootprintMoveGrid;
+    Soldier mover;
+    Soldier witness;
+    Soldier *apXcom[1] = { NULL };
+    u8 nXcomCount = 0;
+    i8 nLayerScratch = 0;
+    i32 nAnimPhase = 0;
+    MoveActionCtx ctx;
+    TactState state;
+    MapCell *pSource;
+    MapCell *pObstacle;
+
+    printf("Large-unit movement checks the wrapped 2x2 footprint cell\n");
+    FootprintMoveGrid_Init(pGrid);
+    Unit_ctor(&mover);
+    Unit_ctor(&witness);
+    mover.nUnitType = 4;
+    mover.bFacing = 4;
+    mover.uTu = 20;
+    mover.uStunOrArmor = 50;
+    mover.auStat[8] = 10;
+    mover.pCell = &pGrid->aCells[0][58][35];
+    pGrid->aCells[0][58][35].pUnit = &mover;
+    pGrid->aCells[0][58][36].pUnit = &mover;
+    pGrid->aCells[0][59][35].pUnit = &mover;
+    pGrid->aCells[0][59][36].pUnit = &mover;
+
+    pObstacle = &pGrid->aCells[1][0][36];
+    witness.bStatus = 1;
+    witness.pCell = pObstacle;
+    pObstacle->pUnit = &witness;
+    pSource = mover.pCell;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.geom.nDimX = 6;
+    ctx.geom.nDimY = 6;
+    ctx.pfnLookup = FootprintMoveLookup;
+    ctx.pUser = pGrid;
+    ctx.pnLayerScratch = &nLayerScratch;
+    ctx.pnAnimPhase = &nAnimPhase;
+    ctx.apXcomUnits = apXcom;
+    ctx.pnXcomCount = &nXcomCount;
+    ctx.pfnArmorTuWarn = FootprintMoveArmorWarn;
+
+    TactState_ctor(&state);
+    state.aQueue[0].nCmd = TACTCMD_STEP;
+    state.aQueue[0].pUnit = &mover;
+    state.aQueue[0].nFacing = 4;
+    state.aQueue[0].nDelta = 0;
+
+    Tact_ProcessMoveAction(&state, &ctx);
+
+    Check(state.aQueue[0].nCmd == 13,
+          "the step aborts when the wrapped quadrant is occupied");
+    Check(state.aQueue[1].nCmd == TACTCMD_END_MARK,
+          "the real move-abort path appends its end mark");
+    Check(mover.pCell == pSource
+          && pGrid->aCells[0][58][35].pUnit == &mover
+          && pGrid->aCells[0][58][36].pUnit == &mover
+          && pGrid->aCells[0][59][35].pUnit == &mover
+          && pGrid->aCells[0][59][36].pUnit == &mover,
+          "the blocked move leaves the current four-cell footprint intact");
+    Check(pObstacle->pUnit == &witness,
+          "the wrapped layer-1 obstacle remains in its own cell");
+    CheckEqI32(pGrid->nInvalidLookupCount, 0,
+               "the footprint check keeps every neighbour inside the flat table");
+    Check(pGrid->invalidCell.pUnit == NULL,
+          "the invalid-lookup guard cell is untouched");
+}
+
+static void MoveThrowNoStatus(i32 nTextRec, void *pUser)
+{
+    (void)nTextRec;
+    (void)pUser;
+}
+
+static void MoveThrowNoVisibility(Soldier *pUnit, void *pUser)
+{
+    (void)pUnit;
+    (void)pUser;
+}
+
+static u8 MoveThrowObjWeight(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    return (pItem != NULL && pItem->pObj != NULL) ? pItem->pObj->bWeight : 0;
+}
+
+static u8 MoveThrowZeroItemField(TactItem *pItem, void *pUser)
+{
+    (void)pItem;
+    (void)pUser;
+    return 0;
+}
+
+static u8 MoveThrowZeroAmmoWeight(i32 nIndex, void *pUser)
+{
+    (void)nIndex;
+    (void)pUser;
+    return 0;
+}
+
+static void TestMoveThrowUsesScatteredLandingWalk(void)
+{
+    FootprintMoveGrid *pGrid = &g_FootprintMoveGrid;
+    const MapGeom geom = {3, 3};
+    const LosTables tables = {0};
+    const i32 nStartX = 15;
+    const i32 nStartY = 15;
+    const i32 nTargetCellX = 27;
+    const i32 nTargetCellY = 15;
+    Soldier unit;
+    Soldier *apXcom[1];
+    TactItem weapon;
+    ObjectRecFull object;
+    TactItem *pSelWeapon;
+    Soldier *pThrowTarget = NULL;
+    AimState aim;
+    ScatterOffset scatter;
+    ThrowArc firstArc;
+    ThrowLanding firstLanding;
+    ThrowArc secondArc;
+    ThrowLanding secondLanding;
+    ThrowArc finalArc;
+    ThrowArc actionArc;
+    ThrowLanding actionLanding;
+    ThrowBudget budget;
+    InvStatHooks invHooks;
+    MoveActionCtx ctx;
+    TactState state;
+    i32 nOriginX, nOriginY, nOriginZ, nTargetX, nTargetY, nTargetZ;
+    i32 nSeed = 0;
+    u8 bThrowPending = 0;
+    u8 bFireStatus1 = 1;
+    u8 bActionLatch = 1;
+    u8 nXcomCount = 1;
+    i8 nLayerScratch = 0;
+    i32 nMaxLayerClamp = 0;
+    i32 nAnimPhase = 0;
+    i32 nShotCount = 0;
+    i32 nUnk1405C = 0;
+    TactItem *pArrowItem = NULL;
+    MapCell *pSource;
+    u8 bSourceFlags;
+
+    printf("Tact_ProcessMoveAction throw uses the post-scatter landing walk\n");
+    FootprintMoveGrid_Init(pGrid);
+    Unit_ctor(&unit);
+    memset(&weapon, 0, sizeof(weapon));
+    memset(&object, 0, sizeof(object));
+    memset(&aim, 0, sizeof(aim));
+    memset(&scatter, 0, sizeof(scatter));
+    memset(&firstArc, 0, sizeof(firstArc));
+    memset(&firstLanding, 0, sizeof(firstLanding));
+    memset(&secondArc, 0, sizeof(secondArc));
+    memset(&secondLanding, 0, sizeof(secondLanding));
+    memset(&finalArc, 0, sizeof(finalArc));
+    memset(&actionArc, 0, sizeof(actionArc));
+    memset(&actionLanding, 0, sizeof(actionLanding));
+    memset(&budget, 0, sizeof(budget));
+    memset(&ctx, 0, sizeof(ctx));
+
+    unit.nUnitType = 0;
+    unit.uTu = 10;
+    unit.auStat[PUFO_STAT_STRENGTH] = 100;
+    unit.auStat[PUFO_STAT_STAMINA] = 50;
+    unit.uStunOrArmor = 60;
+    unit.pCell = &pGrid->aCells[0][nStartY][nStartX];
+    unit.pHandR = &weapon;
+    unit.pCell->pUnit = &unit;
+    object.bWeight = 2;
+    weapon.pObj = &object;
+    pSelWeapon = &weapon;
+    apXcom[0] = &unit;
+    pSource = unit.pCell;
+    bSourceFlags = pSource->bFlags29;
+
+    nOriginX = Map_CellCentreX(pSource);
+    nOriginY = Map_CellCentreY(pSource);
+    nOriginZ = 12 * (i32)pSource->nZ + Map_CeilingLift(pSource) + 6;
+    nTargetX = 16 * nTargetCellX + 8;
+    nTargetY = 16 * nTargetCellY + 8;
+    nTargetZ = 12 * 0;
+    budget.nStatStrength = unit.auStat[PUFO_STAT_STRENGTH];
+    budget.nStatStamina = unit.auStat[PUFO_STAT_STAMINA];
+    budget.nStunOrArmor = unit.uStunOrArmor;
+    budget.nWeight = object.bWeight;
+
+    Check(Tact_ResolveThrowLanding(&firstArc, &firstLanding, &tables, &geom,
+                                   FootprintMoveLookup, pGrid, &unit, NULL, &budget,
+                                   (u8)geom.nDimX, nOriginX, nOriginY, nOriginZ,
+                                   nTargetX, nTargetY, nTargetZ) == 1
+              && !firstLanding.bRejected,
+          "the unscattered throw is a valid first landing walk");
+    pSource->bFlags29 = bSourceFlags;
+
+    /* Find a seed that makes the scattered landing walk observably distinct. Both
+     * resolver endpoints remain more than three voxels from the thrower, so these
+     * reference calls consume no extra close-target jitter draws. */
+    for (i32 nTrySeed = 1; nTrySeed <= 256 && nSeed == 0; ++nTrySeed) {
+        ScatterOffset candidate = {0};
+        i32 nScatterX, nScatterY;
+
+        memset(&secondArc, 0, sizeof(secondArc));
+        memset(&secondLanding, 0, sizeof(secondLanding));
+        memset(&finalArc, 0, sizeof(finalArc));
+        srand((unsigned)nTrySeed);
+        (void)Unit_RollChance(firstArc.dBound, 0, &candidate);
+        candidate.nDx *= 2;
+        candidate.nDy *= 2;
+        nScatterX = nTargetX + candidate.nDx;
+        nScatterY = nTargetY + candidate.nDy;
+        if ((candidate.nDx == 0 && candidate.nDy == 0)
+            || !Map_IsValidCell(&geom, nScatterX / 16, nScatterY / 16, 0)
+            || (abs(nScatterX - nOriginX) < 3 && abs(nScatterY - nOriginY) < 3)) {
+            continue;
+        }
+
+        (void)Tact_ResolveThrowLanding(&secondArc, &secondLanding, &tables, &geom,
+                                       FootprintMoveLookup, pGrid, &unit, NULL, &budget,
+                                       (u8)geom.nDimX, nOriginX, nOriginY, nOriginZ,
+                                       nScatterX, nScatterY, nTargetZ);
+        pSource->bFlags29 = bSourceFlags;
+        if (secondLanding.bRejected || secondLanding.dTravel == firstLanding.dTravel) {
+            continue;
+        }
+
+        Tact_SimulateThrowArc(&finalArc, &geom, FootprintMoveLookup, pGrid,
+                              nOriginX, nOriginY, nOriginZ,
+                              nScatterX, nScatterY, nTargetZ + candidate.nDz);
+        pSource->bFlags29 = bSourceFlags;
+        scatter = candidate;
+        nSeed = nTrySeed;
+    }
+
+    Check(nSeed != 0,
+          "a deterministic scatter gives a distinct, in-range second landing distance");
+    if (nSeed == 0) {
+        return;
+    }
+    Check(!secondLanding.bRejected && secondLanding.dTravel != firstLanding.dTravel,
+          "the reference second walk differs from the first walk");
+
+    memset(&invHooks, 0, sizeof(invHooks));
+    invHooks.pfnObjWeight = MoveThrowObjWeight;
+    invHooks.pfnObjTwoHanded = MoveThrowZeroItemField;
+    invHooks.pfnObjAmmoCap = MoveThrowZeroItemField;
+    invHooks.pfnAmmoWeight = MoveThrowZeroAmmoWeight;
+    ctx.geom = geom;
+    ctx.pfnLookup = FootprintMoveLookup;
+    ctx.pUser = pGrid;
+    ctx.pnLayerScratch = &nLayerScratch;
+    ctx.pnMaxLayerClamp = &nMaxLayerClamp;
+    ctx.pnAnimPhase = &nAnimPhase;
+    ctx.pnShotCount = &nShotCount;
+    ctx.pnUnk1405C = &nUnk1405C;
+    ctx.pbActionLatch = &bActionLatch;
+    ctx.pbFireStatus1 = &bFireStatus1;
+    ctx.ppSelWeapon = &pSelWeapon;
+    ctx.ppThrowTarget = &pThrowTarget;
+    ctx.apXcomUnits = apXcom;
+    ctx.pnXcomCount = &nXcomCount;
+    ctx.pAim = &aim;
+    ctx.pTables = &tables;
+    ctx.pScatter = &scatter;
+    ctx.pThrowArc = &actionArc;
+    ctx.pThrowLanding = &actionLanding;
+    ctx.pThrowBudget = &budget;
+    ctx.pInvHooks = &invHooks;
+    ctx.ppArrowItem = &pArrowItem;
+    ctx.pbThrowPending = &bThrowPending;
+    ctx.pTraceExcludeSel = &unit;
+    ctx.pTraceExcludeExtra = NULL;
+    ctx.pfnArmorTuWarn = FootprintMoveArmorWarn;
+    ctx.pfnPushStatus = MoveThrowNoStatus;
+    ctx.pfnUpdateVisibility = MoveThrowNoVisibility;
+    ctx.pCallbackUser = pGrid;
+
+    TactState_ctor(&state);
+    state.aQueue[0].nCmd = TACTCMD_THROW;
+    state.aQueue[0].pUnit = &unit;
+    state.aQueue[0].pWeapon = &weapon;
+    state.aQueue[0].nX = nTargetCellX;
+    state.aQueue[0].nY = nTargetCellY;
+    state.aQueue[0].nZ = 0;
+    state.aQueue[0].nTuCost = 3;
+    state.aQueue[0].nArg = 0;
+    srand((unsigned)nSeed);
+    Tact_ProcessMoveAction(&state, &ctx);
+
+    Check(state.aQueue[0].nCmd == TACTCMD_THROW,
+          "the valid first walk keeps the queued throw active");
+    CheckEqI32(unit.uTu, 7, "the real throw spends its queued TU cost");
+    Check(unit.pHandR == NULL && pArrowItem == &weapon && bThrowPending == 1,
+          "the successful throw clears its hand and publishes the live item");
+    Check(bActionLatch == 0,
+          "the successful throw clears the action latch");
+    Check(scatter.nDx != 0 || scatter.nDy != 0,
+          "the action uses a nonzero XY scatter");
+    Check(aim.nTargetX == finalArc.nTargetX
+              && aim.nTargetY == finalArc.nTargetY
+              && aim.nTargetZ == finalArc.nTargetZ,
+          "the final aim block follows the fully scattered target");
+    Check(!actionLanding.bRejected
+              && actionLanding.bLanded == secondLanding.bLanded
+              && actionLanding.dTravel == secondLanding.dTravel
+              && aim.dTravelSave == secondLanding.dTravel
+              && aim.dTravelSave != firstLanding.dTravel,
+          "the action saves the second walk distance, not the first one");
+    Check(budget.nStatStrength == unit.auStat[PUFO_STAT_STRENGTH]
+              && budget.nStatStamina == unit.auStat[PUFO_STAT_STAMINA]
+              && budget.nStunOrArmor == unit.uStunOrArmor
+              && budget.nWeight == object.bWeight,
+          "the action builds its budget from the live unit and thrown object");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -3673,6 +4176,7 @@ int main(void)
     TestGameTickStep();
     TestGameTickStepBytes();
     TestFireBurst();
+    TestSpecialWeaponBurstAmmoResets();
     TestThrowAndAction18();
     TestQueueDoorAction();
     TestFallDamageRefusals();
@@ -3687,6 +4191,7 @@ int main(void)
     TestFallActionLookDevice();
     TestFallActionPsiGate();
     TestFallActionPanic();
+    TestFallActionRosterCountRefresh();
     TestFallActionMedikit();
     TestFallActionMelee();
 
@@ -3709,6 +4214,8 @@ int main(void)
     TestTickSelectEpilogue();
     TestTickReRun();
     TestTickHoldReturns();
+    TestLargeMoveChecksWrappedQuadrant();
+    TestMoveThrowUsesScatteredLandingWalk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

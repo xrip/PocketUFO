@@ -1,0 +1,1407 @@
+{
+  "date": "2026-10-28",
+  "binary": "pufobeta.exe",
+  "scope": "Negative-site cargo gate, carry-count writers, and screen row provenance; no runtime execution",
+  "before_comment": "Base_CountItemQtyAcrossBases. Cargo volume, not item count: ObjectRecFull.bCargoSize (0xC6) * site.auItemQty[v] over filtered object indices (the always-true v6>Map clause leaves v<70 || 104<v<112 || 121<v<125 || v==140; object 0 is never counted). Block 1 (a2 != -1): site a2's own columns. Block 2 (a4): for every site i != a2 with bFlag1 == apBases[a3]->bUnk4, contribution site[i].auItemQty[v] GATED on site[a2].auItemQty[v] != 0 (0x67EE0: gate reads 0x173*a2+v, contribution reads the scanned site). With a2 = -1 the gate reads aSmapSites[-1] = 0x161D46, the buy/sell screen scratch (zero in the image) -> contributes 0 at load time. Budget term of Base_UpdateStoresNeeded. Ported as Base_CountItemQtyAcrossBases in src/pufo/game/pufo_geoscape.c.",
+  "gate": [
+    [
+      "0x67ed0",
+      "7d0053e3",
+      "CMP             R3, #0x7D "
+    ],
+    [
+      "0x67ed4",
+      "010000ba",
+      "BLT             loc_67EE0"
+    ],
+    [
+      "0x67ed8",
+      "8c0053e3",
+      "CMP             R3, #0x8C"
+    ],
+    [
+      "0x67edc",
+      "1600001a",
+      "BNE             loc_67F3C"
+    ],
+    [
+      "0x67ee0",
+      "172ea0e3032082e3",
+      "MOV             R2, #0x173"
+    ],
+    [
+      "0x67ee8",
+      "0100a0e1",
+      "MOV             R0, R1"
+    ],
+    [
+      "0x67eec",
+      "900202e0",
+      "MUL             R2, R0, R2"
+    ],
+    [
+      "0x67ef0",
+      "032082e0",
+      "ADD             R2, R2, R3"
+    ],
+    [
+      "0x67ef4",
+      "82208ae0",
+      "ADD             R2, R10, R2,LSL#1"
+    ],
+    [
+      "0x67ef8",
+      "b220d2e1",
+      "LDRH            R2, [R2,#2]"
+    ],
+    [
+      "0x67efc",
+      "000052e3",
+      "CMP             R2, #0"
+    ],
+    [
+      "0x67f00",
+      "0c00009a",
+      "BLS             loc_67F38"
+    ],
+    [
+      "0x7b7d0",
+      "010053e3",
+      "CMP             R3, #1"
+    ],
+    [
+      "0x7b7d4",
+      "5100009a",
+      "BLS             loc_7B920"
+    ],
+    [
+      "0x7b7d8",
+      "18171fe5",
+      "LDR             R1, =(apCraft-0x10AC)"
+    ],
+    [
+      "0x7b7dc",
+      "be8ea0e3",
+      "MOV             R8, #0xBE0"
+    ],
+    [
+      "0x7b7e0",
+      "0040a0e3",
+      "MOV             R4, #0"
+    ],
+    [
+      "0x7b7e4",
+      "041081e2",
+      "ADD             R1, R1, #4"
+    ],
+    [
+      "0x7b7e8",
+      "84a08de2",
+      "ADD             R10, SP, #0x874+var_7F0"
+    ],
+    [
+      "0x7b7ec",
+      "0c108de5",
+      "STR             R1, [SP,#0x874+nLineCount]"
+    ],
+    [
+      "0x7b7f0",
+      "048088e3",
+      "ORR             R8, R8, #4"
+    ],
+    [
+      "0x7b7f4",
+      "00b09ae5",
+      "LDR             R11, [R10]"
+    ],
+    [
+      "0x7b7f8",
+      "00005be3",
+      "CMP             R11, #0"
+    ],
+    [
+      "0x7b7fc",
+      "0200001a",
+      "BNE             loc_7B80C"
+    ],
+    [
+      "0x7b800",
+      "04309ae5",
+      "LDR             R3, [R10,#4]"
+    ],
+    [
+      "0x7b804",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x7b888",
+      "001097e5",
+      "LDR             R1, [R7]"
+    ],
+    [
+      "0x7b88c",
+      "013084e0",
+      "ADD             R3, R4, R1"
+    ],
+    [
+      "0x7b890",
+      "081093e7",
+      "LDR             R1, [R3,R8]"
+    ],
+    [
+      "0x7b894",
+      "d030d2e1",
+      "LDRSB           R3, [R2]"
+    ],
+    [
+      "0x7b898",
+      "012082e2",
+      "ADD             R2, R2, #1"
+    ],
+    [
+      "0x7b89c",
+      "0030c1e5",
+      "STRB            R3, [R1]"
+    ],
+    [
+      "0x7b8a0",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x7b8a4",
+      "011081e2",
+      "ADD             R1, R1, #1"
+    ],
+    [
+      "0x7b8a8",
+      "f9ffff1a",
+      "BNE             loc_7B894"
+    ],
+    [
+      "0x7b8ac",
+      "002096e5",
+      "LDR             R2, [R6]"
+    ]
+  ],
+  "carry_write_ranges": [
+    [
+      "0x78d90",
+      "PUSH            {R4-R11,LR}",
+      "f04f2de9"
+    ],
+    [
+      "0x78d94",
+      "LDR             R4, =Map_bTactFlag",
+      "94409fe5"
+    ],
+    [
+      "0x78d98",
+      "MOV             R11, #0",
+      "00b0a0e3"
+    ],
+    [
+      "0x78d9c",
+      "MOV             R12, #(Map_nObjectCount - 0x1139B8)",
+      "42cda0e328c08ce3"
+    ],
+    [
+      "0x78da4",
+      "LDRH            R3, [R4,R12]",
+      "bc3094e1"
+    ],
+    [
+      "0x78da8",
+      "CMP             R3, #0",
+      "000053e3"
+    ],
+    [
+      "0x78dac",
+      "BLS             loc_78E68",
+      "2d00009a"
+    ],
+    [
+      "0x78db0",
+      "MOV             R6, #0x1140",
+      "456da0e3"
+    ],
+    [
+      "0x78db4",
+      "LDR             R9, =nSelectedCraftIdx",
+      "70909fe5"
+    ],
+    [
+      "0x78db8",
+      "MOV             R5, #0x1080",
+      "425da0e3"
+    ],
+    [
+      "0x78dbc",
+      "LDR             R10, =abFacilityGrid",
+      "64a09fe5"
+    ],
+    [
+      "0x78dc0",
+      "ORR             R6, R6, #0x34 ",
+      "346086e3"
+    ],
+    [
+      "0x78dc4",
+      "ORR             R5, R5, #0x2C ",
+      "2c5085e3"
+    ],
+    [
+      "0x78dc8",
+      "LDR             R1, =anSlotCarryCount",
+      "54109fe5"
+    ],
+    [
+      "0x78dcc",
+      "MOV             R0, R11,LSL#2",
+      "0b01a0e1"
+    ],
+    [
+      "0x78dd0",
+      "MOV             R12, #(nSelectedBaseIdx - 0x159768)",
+      "61cea0e309c08ce3"
+    ],
+    [
+      "0x78dd8",
+      "LDRSB           R3, [R10,R12]",
+      "dc309ae1"
+    ],
+    [
+      "0x78ddc",
+      "ADD             R7, R0, R4",
+      "047080e0"
+    ],
+    [
+      "0x78de0",
+      "ADD             R8, R0, R1",
+      "018080e0"
+    ],
+    [
+      "0x78de4",
+      "LDR             R1, [R7,#0x108]",
+      "081197e5"
+    ],
+    [
+      "0x78de8",
+      "LDR             R2, [R8]",
+      "002098e5"
+    ],
+    [
+      "0x78dec",
+      "ADD             R3, R4, R3,LSL#2",
+      "033184e0"
+    ],
+    [
+      "0x78df0",
+      "LDR             R0, [R3,R6]",
+      "060093e7"
+    ],
+    [
+      "0x78df4",
+      "CMP             R2, #0",
+      "000052e3"
+    ],
+    [
+      "0x78df8",
+      "BPL             loc_78E34",
+      "0d00005a"
+    ],
+    [
+      "0x78dfc",
+      "RSB             R2, R2, #0",
+      "002062e2"
+    ],
+    [
+      "0x78e00",
+      "BL              BaseRec_AddItemQty",
+      "3772ffeb"
+    ],
+    [
+      "0x78e04",
+      "LDR             R3, [R8]",
+      "003098e5"
+    ],
+    [
+      "0x78e08",
+      "LDR             R0, [R9]",
+      "000099e5"
+    ],
+    [
+      "0x78e0c",
+      "RSB             R2, R3, #0",
+      "002063e2"
+    ],
+    [
+      "0x78e10",
+      "LDR             R1, [R7,#0x108]",
+      "081197e5"
+    ],
+    [
+      "0x78e14",
+      "ADD             R3, R4, R0,LSL#2",
+      "003184e0"
+    ],
+    [
+      "0x78e18",
+      "LDR             R0, [R3,R5]",
+      "050093e7"
+    ],
+    [
+      "0x78e1c",
+      "BL              InvSel_SubItemQty",
+      "2934ffeb"
+    ],
+    [
+      "0x78e20",
+      "B               loc_78E50",
+      "0a0000ea"
+    ],
+    [
+      "0x78e24",
+      "DCD anSlotCarryCount",
+      "d01a1600"
+    ],
+    [
+      "0x78e28",
+      "DCD abFacilityGrid",
+      "68971500"
+    ],
+    [
+      "0x78e2c",
+      "DCD nSelectedCraftIdx",
+      "c41a1600"
+    ],
+    [
+      "0x78e30",
+      "DCD Map_bTactFlag",
+      "b8391100"
+    ],
+    [
+      "0x78e34",
+      "BL              BaseRec_SubItemQty",
+      "3872ffeb"
+    ],
+    [
+      "0x78e38",
+      "LDR             R0, [R9]",
+      "000099e5"
+    ],
+    [
+      "0x78e3c",
+      "LDR             R2, [R8]",
+      "002098e5"
+    ],
+    [
+      "0x78e40",
+      "ADD             R3, R4, R0,LSL#2",
+      "003184e0"
+    ],
+    [
+      "0x78e44",
+      "LDR             R1, [R7,#0x108]",
+      "081197e5"
+    ],
+    [
+      "0x78e48",
+      "LDR             R0, [R3,R5]",
+      "050093e7"
+    ],
+    [
+      "0x78e4c",
+      "BL              InvSel_AddItemQty",
+      "0e34ffeb"
+    ],
+    [
+      "0x78e50",
+      "MOV             R12, #(Map_nObjectCount - 0x1139B8)",
+      "42cda0e328c08ce3"
+    ],
+    [
+      "0x78e58",
+      "LDRH            R3, [R4,R12]",
+      "bc3094e1"
+    ],
+    [
+      "0x78e5c",
+      "ADD             R11, R11, #1",
+      "01b08be2"
+    ],
+    [
+      "0x78e60",
+      "CMP             R11, R3",
+      "03005be1"
+    ],
+    [
+      "0x78e64",
+      "BLT             loc_78DC8",
+      "d7ffffba"
+    ],
+    [
+      "0x78e68",
+      "LDR             R0, =sGeoscapeScreenBlock",
+      "04009fe5"
+    ],
+    [
+      "0x78e6c",
+      "POP             {R4-R11,LR}",
+      "f04fbde8"
+    ],
+    [
+      "0x78e70",
+      "B               Geoscape_CloseUI",
+      "b54a00ea"
+    ],
+    [
+      "0x78e74",
+      "DCD sGeoscapeScreenBlock",
+      "f8641800"
+    ],
+    [
+      "0x78e78",
+      "PUSH            {R4,R10,R11,LR}",
+      "104c2de9"
+    ],
+    [
+      "0x78e7c",
+      "LDR             R2, =Map_bTactFlag",
+      "48209fe5"
+    ],
+    [
+      "0x78e80",
+      "MOV             R0, #0",
+      "0000a0e3"
+    ],
+    [
+      "0x78e84",
+      "MOV             R1, #0",
+      "0010a0e3"
+    ],
+    [
+      "0x78e88",
+      "MOV             R12, #(Map_nObjectCount - 0x1139B8)",
+      "42cda0e328c08ce3"
+    ],
+    [
+      "0x78e90",
+      "LDRH            R3, [R2,R12]",
+      "bc3092e1"
+    ],
+    [
+      "0x78e94",
+      "CMP             R3, #0",
+      "000053e3"
+    ],
+    [
+      "0x78e98",
+      "BLE             locret_78EC4",
+      "090000da"
+    ],
+    [
+      "0x78e9c",
+      "LDR             R4, =anSlotCarryCount",
+      "24409fe5"
+    ],
+    [
+      "0x78ea0",
+      "ADD             R11, R2, R1,LSL#2",
+      "01b182e0"
+    ],
+    [
+      "0x78ea4",
+      "LDR             R10, [R4,R1,LSL#2]",
+      "01a194e7"
+    ],
+    [
+      "0x78ea8",
+      "LDR             R11, [R11,#0x108]",
+      "08b19be5"
+    ],
+    [
+      "0x78eac",
+      "ADD             R1, R1, #1",
+      "011081e2"
+    ],
+    [
+      "0x78eb0",
+      "CMP             R1, R3",
+      "030051e1"
+    ],
+    [
+      "0x78eb4",
+      "LDRB            R11, [R11,#0xC6]",
+      "c6b0dbe5"
+    ],
+    [
+      "0x78eb8",
+      "MUL             R10, R11, R10",
+      "9b0a0ae0"
+    ],
+    [
+      "0x78ebc",
+      "ADD             R0, R10, R0",
+      "00008ae0"
+    ],
+    [
+      "0x78ec0",
+      "BLT             loc_78EA0",
+      "f6ffffba"
+    ],
+    [
+      "0x78ec4",
+      "POP             {R4,R10,R11,PC}",
+      "108cbde8"
+    ],
+    [
+      "0x78ec8",
+      "DCD anSlotCarryCount",
+      "d01a1600"
+    ],
+    [
+      "0x78ecc",
+      "DCD Map_bTactFlag",
+      "b8391100"
+    ],
+    [
+      "0x78ed0",
+      "PUSH            {R4-R11,LR}",
+      "f04f2de9"
+    ],
+    [
+      "0x78ed4",
+      "LDR             R0, =bStatPanelAOpen",
+      "fc019fe5"
+    ],
+    [
+      "0x78ed8",
+      "MOV             R5, #0x1080",
+      "425da0e3"
+    ],
+    [
+      "0x78edc",
+      "LDR             R4, =Map_bTactFlag",
+      "00429fe5"
+    ],
+    [
+      "0x7aa18",
+      "LDR             LR, =pPlaneAvailPanel",
+      "d0e09fe5"
+    ],
+    [
+      "0x7aa1c",
+      "LDR             LR, [LR]",
+      "00e09ee5"
+    ],
+    [
+      "0x7aa20",
+      "ADD             R1, R1, LR",
+      "0e1081e0"
+    ],
+    [
+      "0x7aa24",
+      "LDR             R1, [R1,R0]",
+      "001091e7"
+    ],
+    [
+      "0x7aa28",
+      "LDR             R0, =anSlotCarryCount",
+      "bc009fe5"
+    ],
+    [
+      "0x7aa2c",
+      "ADD             R1, R1, #1",
+      "011081e2"
+    ],
+    [
+      "0x7aa30",
+      "STR             R1, [LR,R3,LSL#2]",
+      "03118ee7"
+    ],
+    [
+      "0x7aa34",
+      "LDR             R3, [R0,R2,LSL#2]!",
+      "0231b0e7"
+    ],
+    [
+      "0x7aa38",
+      "SUB             R3, R3, #1",
+      "013043e2"
+    ],
+    [
+      "0x7aa3c",
+      "STR             R3, [R0]",
+      "003080e5"
+    ],
+    [
+      "0x7afb0",
+      "STR             R3, [R1,R0,LSL#2]",
+      "003181e7"
+    ],
+    [
+      "0x7afb4",
+      "LDR             R1, =pPlaneAvailPanel",
+      "18121fe5"
+    ],
+    [
+      "0x7afb8",
+      "LDR             R1, [R1]",
+      "001091e5"
+    ],
+    [
+      "0x7afbc",
+      "ADD             R3, R2, R1",
+      "013082e0"
+    ],
+    [
+      "0x7afc0",
+      "LDR             R3, [R3,R8]",
+      "083093e7"
+    ],
+    [
+      "0x7afc4",
+      "SUB             R3, R3, #1",
+      "013043e2"
+    ],
+    [
+      "0x7afc8",
+      "STR             R3, [R1,R0,LSL#2]",
+      "003181e7"
+    ],
+    [
+      "0x7afcc",
+      "LDR             R0, =anSlotCarryCount",
+      "10009fe5"
+    ],
+    [
+      "0x7afd0",
+      "LDR             R3, [R0,R9,LSL#2]!",
+      "0931b0e7"
+    ],
+    [
+      "0x7afd4",
+      "ADD             R3, R3, #1",
+      "013083e2"
+    ],
+    [
+      "0x7afd8",
+      "STR             R3, [R0]",
+      "003080e5"
+    ],
+    [
+      "0x7afdc",
+      "ADD             SP, SP, #8",
+      "08d08de2"
+    ],
+    [
+      "0x7afe0",
+      "POP             {R4-R11,PC}",
+      "f08fbde8"
+    ],
+    [
+      "0x7afe4",
+      "DCD anSlotCarryCount",
+      "d01a1600"
+    ],
+    [
+      "0x7afe8",
+      "DCD pPlaneTakenPanel",
+      "f41e1600"
+    ],
+    [
+      "0x7afec",
+      "LDR             R0, =pPlaneSlotPanel",
+      "1c009fe5"
+    ],
+    [
+      "0x7aff0",
+      "MOV             R3, #0xBD8",
+      "bd3ea0e3083083e3"
+    ],
+    [
+      "0x7aff8",
+      "LDR             R1, =nPanelRowCursor",
+      "0c109fe5"
+    ],
+    [
+      "0x7affc",
+      "LDR             R0, [R0]",
+      "000090e5"
+    ],
+    [
+      "0x7b000",
+      "LDR             R0, [R0,R3]",
+      "030090e7"
+    ],
+    [
+      "0x7b004",
+      "STR             R0, [R1]",
+      "000081e5"
+    ],
+    [
+      "0x7b008",
+      "RET",
+      "0ef0a0e1"
+    ],
+    [
+      "0x7b00c",
+      "DCD nPanelRowCursor",
+      "e86b1800"
+    ],
+    [
+      "0x7b010",
+      "DCD pPlaneSlotPanel",
+      "c81a1600"
+    ],
+    [
+      "0x7b014",
+      "PUSH            {R4-R11,LR}",
+      "f04f2de9"
+    ],
+    [
+      "0x7b018",
+      "LDR             R12, =0x874",
+      "2cc09fe5"
+    ],
+    [
+      "0x7b01c",
+      "SUB             SP, SP, R12",
+      "0cd04de0"
+    ],
+    [
+      "0x7b020",
+      "LDR             R7, =bPlaneStoresCommitted",
+      "20709fe5"
+    ],
+    [
+      "0x7b024",
+      "MOV             R10, #0",
+      "00a0a0e3"
+    ],
+    [
+      "0x7b028",
+      "STR             R10, [SP,#0x874+nLineCount]",
+      "0ca08de5"
+    ],
+    [
+      "0x7b02c",
+      "LDRB            R0, [R7]",
+      "0000d7e5"
+    ],
+    [
+      "0x7b030",
+      "ANDS            R3, R0, #0xFF",
+      "ff3010e2"
+    ],
+    [
+      "0x7b034",
+      "BNE             loc_7BA10",
+      "7502001a"
+    ],
+    [
+      "0x7b038",
+      "LDR             R0, =anSlotCarryCount",
+      "04009fe5"
+    ],
+    [
+      "0x7b03c",
+      "MOV             R3, #0x100",
+      "013ca0e3"
+    ],
+    [
+      "0x7b040",
+      "B               loc_7B054",
+      "030000ea"
+    ],
+    [
+      "0x7b044",
+      "DCD anSlotCarryCount",
+      "d01a1600"
+    ],
+    [
+      "0x7b048",
+      "DCD bPlaneStoresCommitted",
+      "281f1600"
+    ],
+    [
+      "0x7b04c",
+      "DCD 0x874",
+      "74080000"
+    ],
+    [
+      "0x7b050",
+      "STR             R10, [R0],#4",
+      "04a080e4"
+    ],
+    [
+      "0x7b054",
+      "SUBS            R3, R3, #1",
+      "013053e2"
+    ],
+    [
+      "0x7b058",
+      "BPL             loc_7B050",
+      "fcffff5a"
+    ],
+    [
+      "0x7b05c",
+      "LDR             R2, =nSelectedCraftIdx",
+      "6c209fe5"
+    ],
+    [
+      "0x7c9e8",
+      "PUSH            {R4-R11,LR}",
+      "f04f2de9"
+    ],
+    [
+      "0x7c9ec",
+      "SUB             SP, SP, #4",
+      "04d04de2"
+    ],
+    [
+      "0x7c9f0",
+      "LDR             R0, =bPlaneStoresCommitted",
+      "b0009fe5"
+    ],
+    [
+      "0x7c9f4",
+      "LDRB            R0, [R0]",
+      "0000d0e5"
+    ],
+    [
+      "0x7c9f8",
+      "ANDS            R3, R0, #0xFF",
+      "ff3010e2"
+    ],
+    [
+      "0x7c9fc",
+      "BEQ             loc_7CBA4",
+      "6800000a"
+    ],
+    [
+      "0x7ca00",
+      "MOV             R3, #0x1F",
+      "1f30a0e3"
+    ],
+    [
+      "0x7ca04",
+      "LDR             R8, =nSelectedCraftIdx",
+      "98809fe5"
+    ],
+    [
+      "0x7ca08",
+      "MOV             R6, #0x1140",
+      "456da0e3"
+    ],
+    [
+      "0x7ca0c",
+      "LDR             R9, =anSlotCarryCount",
+      "8c909fe5"
+    ],
+    [
+      "0x7ca10",
+      "MOV             R5, #0x1080",
+      "425da0e3"
+    ],
+    [
+      "0x7ca14",
+      "LDR             R10, =abFacilityGrid",
+      "80a09fe5"
+    ],
+    [
+      "0x7ca18",
+      "LDR             R4, =Map_bTactFlag",
+      "78409fe5"
+    ],
+    [
+      "0x7ca1c",
+      "ORR             R6, R6, #0x34 ",
+      "346086e3"
+    ],
+    [
+      "0x7ca20",
+      "STR             R3, [SP,#4+var_4]",
+      "00308de5"
+    ],
+    [
+      "0x7ca24",
+      "ORR             R5, R5, #0x2C ",
+      "2c5085e3"
+    ],
+    [
+      "0x7ca28",
+      "MOV             R11, #0x1E",
+      "1eb0a0e3"
+    ],
+    [
+      "0x7ca2c",
+      "LDR             R0, [SP,#4+var_4]",
+      "00009de5"
+    ],
+    [
+      "0x7ca30",
+      "CMP             R0, #0x1F",
+      "1f0050e3"
+    ],
+    [
+      "0x7ca34",
+      "BEQ             loc_7CB48",
+      "4300000a"
+    ],
+    [
+      "0x7ca38",
+      "CMP             R0, #0x20 ",
+      "200050e3"
+    ],
+    [
+      "0x7ca3c",
+      "BEQ             loc_7CB00",
+      "2f00000a"
+    ],
+    [
+      "0x7ca40",
+      "CMP             R0, #0x22 ",
+      "220050e3"
+    ],
+    [
+      "0x7ca44",
+      "BEQ             loc_7CAAC",
+      "1800000a"
+    ],
+    [
+      "0x7ca48",
+      "CMP             R0, #0x23 ",
+      "230050e3"
+    ],
+    [
+      "0x7ca4c",
+      "BNE             loc_7CB90",
+      "4f00001a"
+    ],
+    [
+      "0x7ca50",
+      "MOV             R7, R9",
+      "0970a0e1"
+    ],
+    [
+      "0x7ca54",
+      "LDR             R1, [R4,#(dword_113BA8 - 0x1139B8)]",
+      "f01194e5"
+    ],
+    [
+      "0x7ca58",
+      "LDR             R3, [R7,#(anSlotCarryCount+0x8C - 0x161AD0)]!",
+      "8c30b7e5"
+    ],
+    [
+      "0x7ca5c",
+      "MOV             R2, R3,LSL#3",
+      "8321a0e1"
+    ],
+    [
+      "0x7ca90",
+      "STR             R3, [R0,#0x30]",
+      "303080e5"
+    ],
+    [
+      "0x7ca94",
+      "B               loc_7CB90",
+      "3d0000ea"
+    ],
+    [
+      "0x7ca98",
+      "DCD Map_bTactFlag",
+      "b8391100"
+    ],
+    [
+      "0x7ca9c",
+      "DCD abFacilityGrid",
+      "68971500"
+    ],
+    [
+      "0x7caa0",
+      "DCD anSlotCarryCount",
+      "d01a1600"
+    ],
+    [
+      "0x7caa4",
+      "DCD nSelectedCraftIdx",
+      "c41a1600"
+    ],
+    [
+      "0x7caa8",
+      "DCD bPlaneStoresCommitted",
+      "281f1600"
+    ],
+    [
+      "0x7caac",
+      "MOV             R7, R9",
+      "0970a0e1"
+    ],
+    [
+      "0x7cab0",
+      "LDR             R1, [R4,#(Map_apObjects105 - 0x1139B8)]",
+      "ac1294e5"
+    ],
+    [
+      "0x7cab4",
+      "LDR             R3, [R7,#(anSlotCarryCount+0x88 - 0x161AD0)]!",
+      "8830b7e5"
+    ]
+  ],
+  "row_binding": [
+    [
+      "0x7b180",
+      "00a081e5",
+      "STR             R10, [R1]"
+    ],
+    [
+      "0x7b184",
+      "04005ee1",
+      "CMP             LR, R4"
+    ],
+    [
+      "0x7b188",
+      "04a081e5",
+      "STR             R10, [R1,#4]"
+    ],
+    [
+      "0x7b18c",
+      "010000da",
+      "BLE             loc_7B198"
+    ],
+    [
+      "0x7b190",
+      "190053e3",
+      "CMP             R3, #0x19"
+    ],
+    [
+      "0x7b194",
+      "030000ba",
+      "BLT             loc_7B1A8"
+    ],
+    [
+      "0x7b198",
+      "1e0053e3",
+      "CMP             R3, #0x1E"
+    ],
+    [
+      "0x7b19c",
+      "1a0000da",
+      "BLE             loc_7B20C"
+    ],
+    [
+      "0x7b1a0",
+      "340053e3",
+      "CMP             R3, #0x34 "
+    ],
+    [
+      "0x7b1a4",
+      "180000aa",
+      "BGE             loc_7B20C"
+    ],
+    [
+      "0x7b8ac",
+      "002096e5",
+      "LDR             R2, [R6]"
+    ],
+    [
+      "0x7b8b0",
+      "4c119fe5",
+      "LDR             R1, =aRowQtyInc"
+    ],
+    [
+      "0x7b8b4",
+      "023084e0",
+      "ADD             R3, R4, R2"
+    ],
+    [
+      "0x7b8b8",
+      "082093e7",
+      "LDR             R2, [R3,R8]"
+    ],
+    [
+      "0x7b8bc",
+      "d030d1e1",
+      "LDRSB           R3, [R1]"
+    ],
+    [
+      "0x7b8c0",
+      "011081e2",
+      "ADD             R1, R1, #1"
+    ],
+    [
+      "0x7b8c4",
+      "0030c2e5",
+      "STRB            R3, [R2]"
+    ],
+    [
+      "0x7b8c8",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x7b8cc",
+      "012082e2",
+      "ADD             R2, R2, #1"
+    ],
+    [
+      "0x7b8d0",
+      "f9ffff1a",
+      "BNE             loc_7B8BC"
+    ],
+    [
+      "0x7b8d4",
+      "60141fe5",
+      "LDR             R1, =pPlaneAvailPanel"
+    ],
+    [
+      "0x7b8d8",
+      "044084e2",
+      "ADD             R4, R4, #4"
+    ],
+    [
+      "0x7b8dc",
+      "04309ae5",
+      "LDR             R3, [R10,#4]"
+    ],
+    [
+      "0x7b8e0",
+      "001091e5",
+      "LDR             R1, [R1]"
+    ],
+    [
+      "0x7b8e4",
+      "01b080e7",
+      "STR             R11, [R0,R1]"
+    ],
+    [
+      "0x7b8e8",
+      "001095e5",
+      "LDR             R1, [R5]"
+    ],
+    [
+      "0x7b8ec",
+      "013080e7",
+      "STR             R3, [R0,R1]"
+    ],
+    [
+      "0x7b8f0",
+      "30081fe5",
+      "LDR             R0, =(apCraft-0x10AC)"
+    ],
+    [
+      "0x7b8f4",
+      "0c109de5",
+      "LDR             R1, [SP,#0x874+nLineCount]"
+    ],
+    [
+      "0x7b8f8",
+      "42cda0e328c08ce3",
+      "MOV             R12, #(Map_nObjectCount - 0x1139B8)"
+    ],
+    [
+      "0x7b900",
+      "bc0090e1",
+      "LDRH            R0, [R0,R12]"
+    ],
+    [
+      "0x7b904",
+      "019089e2",
+      "ADD             R9, R9, #1"
+    ],
+    [
+      "0x7b908",
+      "041081e2",
+      "ADD             R1, R1, #4"
+    ],
+    [
+      "0x7b90c",
+      "0038a0e1",
+      "MOV             R3, R0,LSL#16"
+    ],
+    [
+      "0x7b910",
+      "0c108de5",
+      "STR             R1, [SP,#0x874+nLineCount]"
+    ],
+    [
+      "0x7b914",
+      "08a08ae2",
+      "ADD             R10, R10, #8"
+    ],
+    [
+      "0x7b918",
+      "230859e1",
+      "CMP             R9, R3,LSR#16"
+    ],
+    [
+      "0x7b91c",
+      "b4ffffba",
+      "BLT             loc_7B7F4"
+    ],
+    [
+      "0x7b920",
+      "0038a0e1",
+      "MOV             R3, R0,LSL#16"
+    ],
+    [
+      "0x7b924",
+      "2338a0e1",
+      "MOV             R3, R3,LSR#16"
+    ],
+    [
+      "0x7b928",
+      "0070a0e3",
+      "MOV             R7, #0"
+    ],
+    [
+      "0x7b92c",
+      "01b0a0e3",
+      "MOV             R11, #1"
+    ]
+  ],
+  "references": {
+    "input": "E:\\pocketufo\\pufobeta.exe",
+    "refs": [
+      [
+        "0x161ad0",
+        "0x78dc8",
+        "0x78d90",
+        "LDR             R1, =anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x78e24",
+        "0x78d90",
+        "DCD anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x78e9c",
+        "0x78e78",
+        "LDR             R4, =anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x78ec8",
+        "0x78e78",
+        "DCD anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7aa28",
+        "0x7a9b4",
+        "LDR             R0, =anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7aaec",
+        "0x7a9b4",
+        "DCD anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7afcc",
+        "0x7ac38",
+        "LDR             R0, =anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7afe4",
+        "0x7ac38",
+        "DCD anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7b038",
+        "0x7b014",
+        "LDR             R0, =anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7b044",
+        "0x7b014",
+        "DCD anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7ca0c",
+        "0x7c9e8",
+        "LDR             R9, =anSlotCarryCount"
+      ],
+      [
+        "0x161ad0",
+        "0x7caa0",
+        "0x7c9e8",
+        "DCD anSlotCarryCount"
+      ],
+      [
+        "0x161b4c",
+        "0x7cb50",
+        "0x7c9e8",
+        "LDR             R3, [R7,#(anSlotCarryCount+0x7C - 0x161AD0)]!"
+      ],
+      [
+        "0x161b4c",
+        "0x7cb7c",
+        "0x7c9e8",
+        "LDR             R3, [R7]"
+      ],
+      [
+        "0x161b50",
+        "0x7cb08",
+        "0x7c9e8",
+        "LDR             R3, [R7,#(anSlotCarryCount+0x80 - 0x161AD0)]!"
+      ],
+      [
+        "0x161b50",
+        "0x7cb34",
+        "0x7c9e8",
+        "LDR             R3, [R7]"
+      ],
+      [
+        "0x161b58",
+        "0x7cab4",
+        "0x7c9e8",
+        "LDR             R3, [R7,#(anSlotCarryCount+0x88 - 0x161AD0)]!"
+      ],
+      [
+        "0x161b58",
+        "0x7cae8",
+        "0x7c9e8",
+        "LDR             R3, [R7]"
+      ],
+      [
+        "0x161b5c",
+        "0x7ca58",
+        "0x7c9e8",
+        "LDR             R3, [R7,#(anSlotCarryCount+0x8C - 0x161AD0)]!"
+      ],
+      [
+        "0x161b5c",
+        "0x7ca84",
+        "0x7c9e8",
+        "LDR             R3, [R7]"
+      ]
+    ],
+    "segment": [
+      "0xa61e0",
+      "0x189000",
+      3
+    ]
+  },
+  "pe": {
+    "image_base": "0x10000",
+    "section": ".data",
+    "virtual_start": "0xa6000",
+    "virtual_size": 929136,
+    "raw_size": 26624,
+    "raw_pointer": 602112,
+    "gate_offset": 769356,
+    "zero_filled_tail": true
+  }
+}

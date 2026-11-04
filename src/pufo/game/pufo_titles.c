@@ -274,7 +274,7 @@ i32 Titles_LoadScene(TitlesAnimation *pEnv)
      * to a huge count and is only saved by the signed test that follows. The port states the guard. */
     nPairs = (pData != NULL && cb >= 2u) ? (i32)((cb - 2u) / 2u) : 0;
 
-    if (nPairs > 0) {
+    if (pData != NULL && cb >= 2u) {
         pEnv->nSceneScaleX = (i32)pData[0];
         pEnv->nSceneScaleY = (i32)pData[1];
 
@@ -297,18 +297,18 @@ i32 Titles_LoadScene(TitlesAnimation *pEnv)
     free(pData);
 
     pEnv->nFrame = 0;
-    pEnv->nSceneIndex += 1;
+    const i32 nNextScene = pEnv->nSceneIndex + 1;
+    pEnv->nSceneIndex = nNextScene;
     if (pEnv->nSceneIndex >= 2) {
         pEnv->nSceneIndex = 0;
     }
-    return pEnv->nSceneIndex;
+    return nNextScene; /* 0x46AAC..0x46AB8: R0 keeps the increment before the stored wrap. */
 }
 
 /* Titles_DrawAnimatedFrame @ 0x1a83c.
  *
- * Deviation: the original drives both draw loops through a scratch cursor at pTitles+0x100 and returns
- * whatever Titles_DrawCreditLines leaves in R0. The port uses local counters and returns the frame
- * number. */
+ * Deviation: the original drives both draw loops through the Render_Frame caller's context+0x100,
+ * separate from g_pTitlesState. The port uses local counters and returns its credit helper result. */
 i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv)
 {
     SoftSurf *pSurf = pEnv->pTitlesSurface;
@@ -316,8 +316,10 @@ i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv)
     for (i32 i = 0; i < pEnv->nParticleCount; ++i) {
         const TitlesParticle *p = &pEnv->aParticles[i];
 
-        /* Each particle jitters by 0..4 in both axes every frame. */
-        SoftSurf_FillRectEx(pSurf, p->nX + (i32)Game_RandU16(5), p->nY + (i32)Game_RandU16(5),
+        /* 0x1A870 draws Y first; 0x1A87C draws X. C argument evaluation order cannot express this. */
+        const i32 nJitterY = (i32)Game_RandU16(5);
+        const i32 nJitterX = (i32)Game_RandU16(5);
+        SoftSurf_FillRectEx(pSurf, p->nX + nJitterX, p->nY + nJitterY,
                             1, 1, PUFO_TITLES_FILL_PAL_SLOT, 255);
     }
 
@@ -364,8 +366,8 @@ void Titles_ctor(TitlesAnimation *pEnv)
         TitlesStar *p = &pEnv->aStars[i];
         p->nBaseX     = (i32)Game_RandU16(0xF0u);          /* 0x46F1C */
         p->nY         = (i32)Game_RandU16(0x140u) - 320;   /* 0x46F3C: -320..-1, above the top edge */
-        p->nSpeed     = (i32)Game_RandU16(3u) + 1;         /* 0x46F5C: 1..4 */
-        p->nAmplitude = (i32)Game_RandU16(0x64u) + 1;      /* 0x46F78: 1..101 */
+        p->nSpeed     = (i32)Game_RandU16(3u) + 1;         /* 0x46F5C: 1..3 */
+        p->nAmplitude = (i32)Game_RandU16(0x64u) + 1;      /* 0x46F78: 1..100 */
     }
     Titles_UpdateStars(pEnv); /* 0x46F94 */
 }

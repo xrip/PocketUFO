@@ -88,6 +88,9 @@
 /* Written after the soldier array. */
 #define PUFO_SAVE_TAG_STACTFLG  "stactflg"
 #define PUFO_SAVE_TAG_124SCB    "1_24scb"
+/* Port-side chunk (2026-11-04, user-directed; not in the original): 1 byte, the
+ * music loop setting. Written after every original chunk, read as optional. */
+#define PUFO_SAVE_TAG_124GSET   "1_24gset"
 
 /* `tactver` is written as a u16 whose value is 1, and `gamestate` as one byte.
  * Note Save_ReadGameState @ 0x44958 reads that byte into a DIFFERENT cell than
@@ -512,10 +515,11 @@ bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
 /* The two joins between SaveBasesState and the live cells, run by the drivers at the point where the
  * original reaches the globals: Save_BasesLiveToRecord just before Save_WriteBases (the writer's own
  * reads, 0x3F21C..0x3F3A4), Save_BasesRecordToLive just after Save_ReadBases (the reader's own writes,
- * 0x4032C..0x404C0). Both do nothing when pLive is NULL -- that is how the format test drives the chunk
- * with a record of its own and no live world. */
+ * 0x4032C..0x404C0). The reader join takes the saved version because versions < 3 leave the upper four
+ * hangar bytes and the craft-home byte alone. Both joins do nothing when pLive is NULL. */
 void Save_BasesLiveToRecord(const SaveBasesLive *pLive, SaveBasesState *pState);
-void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *pLive);
+void Save_BasesRecordToLive(const SaveBasesState *pState, const SaveBasesLive *pLive,
+                            i32 nSaveFmtVer);
 
 /* ---- ships chunk ----
  *
@@ -551,10 +555,10 @@ bool Save_ReadShips(DatFile *pDat, Ship **apShips, i32 *pnShipCount, ShipCtorEnv
  * allocate that many TactItem records (new(0x18) + TactItem_ctor @ 0x3e718) into the
  * caller's array. Unlike the bases and ships readers this one frees NOTHING first.
  *
- * The count read is 1 byte wide or 4 bytes wide, decided by the dword at Map+0x118
- * (0x113AD0): 4 when it is non-zero, 1 when it is zero. Its only two writers in the
- * IDB are Game_StartNew (0x94554) and Base_StripAllCraftCargo (0x69a38); its meaning is
- * NOT established, so the port takes it as an explicit argument rather than guessing.
+ * The count read is 1 byte wide or 4 bytes wide, selected by slot-context+0x118
+ * (0x156A50), where LoadGame stores TACTVER at 0x44C94. Both allocation and
+ * body reading use this same selector (0x431C0 / 0x43270): nonzero means 4 bytes,
+ * zero means 1 byte. The port takes that loaded selector as an explicit argument.
  *
  * With the 1-byte width the original writes one byte into a 4-byte global, so the upper
  * three bytes of the count keep whatever they had. That is reproduced: the port stores
@@ -892,8 +896,8 @@ void SaveSlot_FormatList(SaveSlotFormatCtx *pCtx);
  * carries them as pointer fields for the same reason.
  *
  * The block 0x186568 .. 0x1865BC is 22 dwords and 21 of them are written, in a scattered
- * column-by-column order. 0x18657C is never touched, so it is the one header dword a save
- * does not carry.
+ * column-by-column order. 0x18657C is omitted from the Strateg header; it remains the active
+ * monthly funding multiplier used by FundingScreen_Init and Funding_AddRegionBonus.
  *
  * The item fields are written in an order that is neither address order nor size order, and
  * the entry at +0 is written TWELVE fields into the record rather than first. The port keeps
@@ -1033,6 +1037,8 @@ typedef struct SaveGameInput {
 
     void (*pfnRenderFrame)(void *pUser);   /* Render_Frame (0x22310), NOT ported */
     void  *pRenderUser;
+
+    const u8 *pbMusicLoop;  /* port-side (2026-11-04): the `1_24gset` byte; NULL skips the chunk */
 } SaveGameInput;
 
 bool SaveGame(DatFile *pDat, const SaveGameInput *pIn);
@@ -1083,7 +1089,7 @@ typedef struct TactResetState {
 
 /* The flobjs chunk's read side, bundled the same way FlobjsState bundles the write side. */
 typedef struct FlobjsReadState {
-    i32                  nWideCountFlag; /* Map+0x118: the count is 4 bytes wide when non-zero */
+    i32                  nWideCountFlag; /* slot-context+0x118: 4-byte count when non-zero */
     i32                 *pnTactItemCount;
     TactItem *const     *apTactItems;
     ObjectRecFull *const *apObjects;
@@ -1143,9 +1149,9 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
  *      store the VALUE at slot-context + 0x118 (`STR R3,[R7,#0x118]`, 0x44C94). R7 is the
  *      first argument, which every caller passes as &MainMenu_pSlotCtx @ 0x156938 — the
  *      7x40-byte save/load line buffer — so the dword lands right after the lines at
- *      0x156A50. No code ever reads it (the only 0x118 access on that base is this store),
- *      so it is write-only residue; the port hands the value to the caller through
- *      pnTactVerOut. It is NOT the object table: apObjects is Map+0x108, a different block.
+ *      0x156A50. Both flobjs allocation and body read consume this same context
+ *      dword to select the count width. The port carries it through pnTactVerOut.
+ *      It is separate from the object table at Map+0x108.
  *   4. Save_ReadGameState — this is what fills bGameState (0x15821C), "the save was made
  *      inside a mission", and every gate below reads it after this point;
  *   5. when the current screen is 17 (the start menu): StartUi_Shutdown, Geoscape_InitUI(1),
@@ -1201,7 +1207,9 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
  * (apObjects[0], the shot object, the craft slots) are guarded. The three budget helpers
  * Base_CountOutboundTransferSpace @ 0x68044, Base_CountItemQtyAcrossBases @ 0x67d68 and
  * Base_CountPsiSoldiers @ 0x65a08 are ported in pufo_geoscape.c and called directly; only
- * the four UI teardown/init calls whose envs belong to the caller remain hooks. */
+ * the four UI teardown/init calls whose envs belong to the caller remain hooks. The shell also joins
+ * Product, Research, Smap and Strateg records to live world owners at their reader boundaries, before
+ * the load-derived facility flags and legacy mission migration. */
 typedef struct LoadGameHooks {
     void (*pfnRenderFrame)(void *pUser);               /* Render_Frame (0x22310), caller's frame env */
     void (*pfnStartUiShutdown)(void *pUser);           /* StartUi_Shutdown (0x38d7c), caller's shutdown env */
@@ -1210,6 +1218,11 @@ typedef struct LoadGameHooks {
     void (*pfnGeoscapeUiFreeAll)(void *pUser);         /* GeoscapeUi_FreeAll(0) (0x86d20), caller's env */
     bool (*pfnTactInitMission)(i32 nMode, void *pUser);/* Tact_InitMission(1) (0x3c550), caller's env */
     void *pUser;
+    void (*pfnRefreshMissionCtx)(SpawnMissionCtx *pMissionCtx, void *pUser); /* optional live-world refresh */
+    void (*pfnJoinSmapState)(void *pUser);    /* publish smap sites/count before strateg reads */
+    void (*pfnJoinStrategState)(void *pUser); /* publish strateg globals after the strateg read */
+    void (*pfnJoinProductState)(i32 nSaveFmtVer, void *pUser); /* publish the bytes read from product */
+    void (*pfnJoinResearchState)(void *pUser); /* publish research tables before load-derived flags */
 } LoadGameHooks;
 
 typedef struct LoadGameEnv {
@@ -1240,6 +1253,7 @@ typedef struct LoadGameEnv {
     SmapView         *pView;
     const SmapZoomSet *paZoomSets;     /* the three zoom levels Save_ReadSmap restores */
     SmapWorldSize    *pWorldSize;
+    SmapWorldSize   **ppLiveWorldSize; /* optional 0x186BC0 pointer, re-read after UI teardown */
     StrategSaveState *pStrateg;
     PtrArray         *pStrategList;    /* the list at 0x186534 */
     i32              *pnSeed;          /* 0x18640C, the per-item seed counter */
@@ -1247,7 +1261,7 @@ typedef struct LoadGameEnv {
     i32              nSoldierCapacity;
     ObjectRecFull *const *apObjects;     /* the object table Map+0x108, for the per-base/per-ship u16 columns */
     i32              nObjectCount;
-    u32             *pnTactVerOut;       /* the tactver value, original slot: MainMenu_pSlotCtx+0x118 (write-only) */
+    u32             *pnTactVerOut;       /* slot-context+0x118: TACTVER count-width selector */
     GeoscapeWorld    *pWorld;          /* apCraft / nShipCount / apSiteState / apRadarPct / pTime */
     u8              *abFacilityGrid;   /* the 1524-byte grid */
     const u16       *apResearchCols;   /* 0x16022C, 144 u16 per base */
@@ -1262,9 +1276,11 @@ typedef struct LoadGameEnv {
     u16             *puShotObjectWords;/* the word array of the shot object = apObjects[0] */
     SaveTimeRecord  *pTimeRec;         /* the time chunk's wire record */
     GameTime        *pTime;            /* 0x159618, the live clock the record is copied into */
+    u16             *pnAlienPoolAddend;/* 0x1472C8, the time chunk's live trailing word */
     const StrategSpawnCtx  *pSpawnCtx; /* StrategList_PurgeType5 */
-    const SpawnMissionCtx  *pMissionCtx; /* Geoscape_SpawnMissionSite */
+    SpawnMissionCtx  *pMissionCtx;       /* refreshed after InitUI, before the version-<3 mission migration */
     u8              *pbSpawnOnceFlag;  /* PurgeType5's spawn-once gate */
+    u8              *pbMusicLoop;      /* port-side: the `1_24gset` byte; absent chunk -> 1 */
     const LoadGameHooks *pHooks;
 } LoadGameEnv;
 

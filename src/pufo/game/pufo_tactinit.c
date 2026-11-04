@@ -561,10 +561,22 @@ static const MapCell *Init_SelCell(const TactInitEnv *pEnv)
     return (pEnv->pMap->pSelUnit != NULL) ? pEnv->pMap->pSelUnit->pCell : NULL;
 }
 
+/* Terrain generation and save loading can replace these mission values. */
+static void Init_RefreshCraftPlacement(TactInitEnv *pEnv)
+{
+    pEnv->teamSelect.nMapLayers = pEnv->pMap->nMapLayers;
+    pEnv->teamSelect.nCraftMapX = *pEnv->pnCraftMapX;
+    pEnv->teamSelect.nCraftMapY = *pEnv->pnCraftMapY;
+    pEnv->deploy.nMapLayers = (i32)pEnv->pMap->nMapLayers;
+    pEnv->deploy.nCraftMapX = *pEnv->pnCraftMapX;
+    pEnv->deploy.nCraftMapY = *pEnv->pnCraftMapY;
+}
+
 /* 0x3CBB8..0x3D128: the new-mission path. */
 static void Init_NewMission(TactInitEnv *pEnv)
 {
     Map_BuildMissionTerrain(&pEnv->terrain);
+    Init_RefreshCraftPlacement(pEnv);
     Init_DeployCellFlags(pEnv);
     (void)Tact_LoadLoftData(pEnv->pLoft);
     pEnv->vis.pTables = pEnv->pLoft;
@@ -623,7 +635,7 @@ static void Init_NewMission(TactInitEnv *pEnv)
 }
 
 /* 0x3D138..0x3D24C: the save-load path. The grid is allocated here rather than built. */
-static void Init_LoadMission(TactInitEnv *pEnv)
+static bool Init_LoadMission(TactInitEnv *pEnv)
 {
     /* The grid is sized from the dims the save carries, so the chunk's two header bytes are read
      * before the allocation. Save_ReadMap re-finds the chunk, so nothing here consumes the stream. */
@@ -643,7 +655,7 @@ static void Init_LoadMission(TactInitEnv *pEnv)
      * the original overruns its own table rather than stopping. */
     if (PUFO_CELLS_PER_TILE * nDimX > PUFO_MAP_CELL_DIM
         || PUFO_CELLS_PER_TILE * nDimY > PUFO_MAP_CELL_DIM) {
-        return;
+        return true; /* preserve the old empty-grid success path for an invalid-dimension save */
     }
 
     /* 0x3D168..0x3D1C0, the original's own loops: R7 (col) resets to 0 on every row, the table slot is
@@ -687,6 +699,12 @@ static void Init_LoadMission(TactInitEnv *pEnv)
         arms.apTactItems    = pEnv->apTactItems;
         arms.nTactItemCount = *pEnv->pnTactItemCount;
         arms.pEmptyItem     = (TactItem *)pEnv->pUnk138EA0;
+        /* Original Save_ReadSoldiers starts with Soldiers_Reload @ 0x416C4. Keep the
+         * body-only reader usable by fixtures, and restore that allocation step here. */
+        if (!Soldiers_Reload(pEnv->pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
+                             pEnv->nSoldierCapacity)) {
+            return false;
+        }
         (void)Save_ReadSoldiers(pEnv->pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
                                 pEnv->nSoldierCapacity, &arms, *pEnv->pbTactFlag);
     }
@@ -695,7 +713,8 @@ static void Init_LoadMission(TactInitEnv *pEnv)
                              pEnv->pSaveReset, pEnv->pSaveHooks);
     (void)Save_ReadRmp(pEnv->pDat, pEnv->pRmp, pEnv->pfnLoadRmp, pEnv->pRmpUser);
 
-    pEnv->craftPatch.nCraftSprBase = pEnv->terrain.nCraftSprBase;
+    Init_RefreshCraftPlacement(pEnv);
+    pEnv->craftPatch.nCraftSprBase = Font_GetFlagSprBase(pEnv->pFont, 3);
     pEnv->craftPatch.apCells      = pEnv->apCells;
     pEnv->craftPatch.nMapLayers   = (i32)pEnv->pMap->nMapLayers;
     pEnv->craftPatch.nCraftMapX   = (i32)*pEnv->pnCraftMapX;
@@ -704,6 +723,7 @@ static void Init_LoadMission(TactInitEnv *pEnv)
 
     MapView_FocusSelected(&pEnv->focus, Init_SelCell(pEnv), *pEnv->pbSweepArmed,
                           &pEnv->cursor);
+    return true;
 }
 
 bool Tact_InitMission(TactInitEnv *pEnv, i32 nMode)
@@ -812,8 +832,8 @@ bool Tact_InitMission(TactInitEnv *pEnv, i32 nMode)
 
     if (nMode == 0) {
         Init_NewMission(pEnv);
-    } else {
-        Init_LoadMission(pEnv);
+    } else if (!Init_LoadMission(pEnv)) {
+        return false;
     }
 
     /* 0x3D24C..0x3D560: the shared tail. */

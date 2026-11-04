@@ -138,11 +138,14 @@ LosHit Map_TraceVoxelOccupancy(const LosTables *pTables,
  * skipped for values 0 and 4, which is the original's rule for cells that do not
  * count toward blocking.
  *
- * pResult is optional; when non-NULL it receives the accumulated cost.
+ * pUnitSelExclude and pUnitExtraExclude are omitted from occupant-voxel hits.
+ * The original callers supply the active viewer and target in these slots; callers
+ * without live unit endpoints pass NULL. pOutYawRandom and pOutCost are optional.
  */
 bool Map_TraceLos(const LosTables *pTables, MapCellLookup pfnLookup, void *pUser,
                   i32 nX0, i32 nY0, i32 nZ0,
                   i32 nX1, i32 nY1, i32 nZ1,
+                  const Soldier *pUnitSelExclude, const Soldier *pUnitExtraExclude,
                   u8 *pOutYawRandom, i32 *pOutCost);
 
 #endif /* PUFO_LOS_H */

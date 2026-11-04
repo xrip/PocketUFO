@@ -1,0 +1,1714 @@
+{
+  "date": "2026-10-29",
+  "target": "pufobeta.exe.i64",
+  "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF",
+  "scope": "Render_Frame, Render_Frame_DecRef, GX_Present thunk and GX_PresentFrame; exact4 members, one component scan; leaf draw/pixel routines excluded.",
+  "component": {
+    "functions": [
+      {
+        "addr": "0x22310",
+        "name": "Render_Frame",
+        "prototype": "int __fastcall(IsoDrawCtx *pIso)",
+        "size": 756,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 66,
+        "complexity": 49
+      },
+      {
+        "addr": "0x36818",
+        "name": "Render_Frame_DecRef",
+        "prototype": "void __fastcall(int pMapCtx)",
+        "size": 24,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 2,
+        "complexity": 1
+      },
+      {
+        "addr": "0x9ea7c",
+        "name": "GX_PresentFrame",
+        "prototype": "int __fastcall()",
+        "size": 308,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 14,
+        "complexity": 6
+      },
+      {
+        "addr": "0x27788",
+        "name": "GX_Present",
+        "prototype": "int __fastcall(void *pCtx)",
+        "size": 4,
+        "callees": [],
+        "strings": [],
+        "basic_blocks": 2,
+        "complexity": 1
+      }
+    ],
+    "internal_call_graph": {
+      "nodes": [
+        "0x22310",
+        "0x36818",
+        "0x9ea7c",
+        "0x27788"
+      ],
+      "edges": []
+    },
+    "shared_globals": [],
+    "interface_functions": [],
+    "internal_only": [
+      "0x22310",
+      "0x36818",
+      "0x9ea7c",
+      "0x27788"
+    ],
+    "string_usage": {}
+  },
+  "members": [
+    {
+      "address": "0x22310",
+      "end": "0x22604",
+      "bytes": "30402de910d04de21c409fe50050a0e14400d4e5ff3010e20400000a04009fe592a701ebb00000eaf8641800b8391100ba03d4e1100050e3a700000a110050e3a300000a120050e39f00000a0500a0e148f1ffeb2200a0e34acca0e33cc08ce30c0084e7ba03d4e1150050e300f18f90530000ea1c0000ea460000ea480000ea190000ea490000ea170000ea4a0000ea150000ea140000ea130000ea120000ea110000ea100000ea090000ea440000ea0d0000ea420000ea410000ea400000ea060000ea000000eaffffffeaefe0ffeb3b0000ea0500a0e14cf1ffeb380000ea0500a0e1dbf1ffeb350000ea95cba0e3b0c08ce30c00d4e7ff3010e23000000a0500a0e184feffebba03d4e1030050e31d00000a050050e31800000a070050e31300000a0a0050e30e00000a0b0050e30900000a0c0050e30400000a0f0050e31f00001a0500a0e1f4fbffeb1c0000ea0500a0e1a3faffeb190000ea0500a0e1cdfdffeb160000ea0500a0e11afeffeb130000ea0500a0e1d4fcffeb100000ea0500a0e17bfcffeb0d0000ea0500a0e118fdffeb0a0000ea0500a0e136f4ffeb070000ea0500a0e123f2ffeb040000ea0500a0e1f0f5ffeb010000ea0500a0e1e0f9ffebac00d4e5ff3010e20800000aa40094e5983094e504008de59c0094e5942094e500008de50400a0e1901094e5e60f00eb640094e5000050e30b0000da0000a0e31430a0e308008de50c308de5f020a0e304008de5053da0e300008de50010a0e30000a0e3aef101eb2c0000ea880094e50a0050e3290000aa34109fe5000050e30c00001a24009fe5ff30a0e300308de5000090e51030d0e50c2090e50000a0e3033581e00010a0e3f5ef01eb0d0000eaa06a1500d07214000a3060e214001fe51820a0e3000090e5930202e01030d0e500208de50c2090e5033581e00010a0e30000a0e3e6ef01eb95cba0e3b0c08ce30c00d4e7ff3010e20800000a0500a0e17ae2ffeb050000ea13f0ffeb030000ea73edffeb010000ea0500a0e191e0ffeb0400a0e1621400eb10d08de23080bde8",
+      "rows": [
+        [
+          "0x22310",
+          "30402de9",
+          "PUSH",
+          "{R4,R5,LR} |  | "
+        ],
+        [
+          "0x22314",
+          "10d04de2",
+          "SUB",
+          "SP | SP | #0x10"
+        ],
+        [
+          "0x22318",
+          "1c409fe5",
+          "LDR",
+          "R4 | =Map_bTactFlag | "
+        ],
+        [
+          "0x2231c",
+          "0050a0e1",
+          "MOV",
+          "R5 | R0 | "
+        ],
+        [
+          "0x22320",
+          "4400d4e5",
+          "LDRB",
+          "R0 | [R4,#(Map_bGeoscapeUi - 0x1139B8)] | "
+        ],
+        [
+          "0x22324",
+          "ff3010e2",
+          "ANDS",
+          "R3 | R0 | #0xFF"
+        ],
+        [
+          "0x22328",
+          "0400000a",
+          "BEQ",
+          "loc_22340 |  | "
+        ],
+        [
+          "0x2232c",
+          "04009fe5",
+          "LDR",
+          "R0 | =sGeoscapeScreenBlock | "
+        ],
+        [
+          "0x22330",
+          "92a701eb",
+          "BL",
+          "Geoscape_Draw |  | "
+        ],
+        [
+          "0x22334",
+          "b00000ea",
+          "B",
+          "loc_225FC |  | "
+        ],
+        [
+          "0x22338",
+          "f8641800",
+          "",
+          "sGeoscapeScreenBlock | sGeoscapeScreenBlock | sGeoscapeScreenBlock"
+        ],
+        [
+          "0x2233c",
+          "b8391100",
+          "",
+          "Map_bTactFlag | Map_bTactFlag | Map_bTactFlag"
+        ],
+        [
+          "0x22340",
+          "ba03d4e1",
+          "LDRH",
+          "R0 | [R4,#(Map_nUiScreen - 0x1139B8)] | "
+        ],
+        [
+          "0x22344",
+          "100050e3",
+          "CMP",
+          "R0 | #0x10 | "
+        ],
+        [
+          "0x22348",
+          "a700000a",
+          "BEQ",
+          "loc_225EC |  | "
+        ],
+        [
+          "0x2234c",
+          "110050e3",
+          "CMP",
+          "R0 | #0x11 | "
+        ],
+        [
+          "0x22350",
+          "a300000a",
+          "BEQ",
+          "loc_225E4 |  | "
+        ],
+        [
+          "0x22354",
+          "120050e3",
+          "CMP",
+          "R0 | #0x12 | "
+        ],
+        [
+          "0x22358",
+          "9f00000a",
+          "BEQ",
+          "loc_225DC |  | "
+        ],
+        [
+          "0x2235c",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x22360",
+          "48f1ffeb",
+          "BL",
+          "TactHud_TickCursorDir |  | "
+        ],
+        [
+          "0x22364",
+          "2200a0e3",
+          "MOV",
+          "R0 | #0x22 | "
+        ],
+        [
+          "0x22368",
+          "4acca0e33cc08ce3",
+          "MOV",
+          "R12 | #(Map_nGlyphPalBase - 0x1139B8) | "
+        ],
+        [
+          "0x22370",
+          "0c0084e7",
+          "STR",
+          "R0 | [R4,R12] | "
+        ],
+        [
+          "0x22374",
+          "ba03d4e1",
+          "LDRH",
+          "R0 | [R4,#(Map_nUiScreen - 0x1139B8)] | "
+        ],
+        [
+          "0x22378",
+          "150050e3",
+          "CMP",
+          "R0 | #0x15 | "
+        ],
+        [
+          "0x2237c",
+          "00f18f90",
+          "ADDLS",
+          "PC | PC | R0,LSL#2"
+        ],
+        [
+          "0x22380",
+          "530000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x22384",
+          "1c0000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x22388",
+          "460000ea",
+          "B",
+          "loc_224A8 |  | "
+        ],
+        [
+          "0x2238c",
+          "480000ea",
+          "B",
+          "loc_224B4 |  | "
+        ],
+        [
+          "0x22390",
+          "190000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x22394",
+          "490000ea",
+          "B",
+          "loc_224C0 |  | "
+        ],
+        [
+          "0x22398",
+          "170000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x2239c",
+          "4a0000ea",
+          "B",
+          "loc_224CC |  | "
+        ],
+        [
+          "0x223a0",
+          "150000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x223a4",
+          "140000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x223a8",
+          "130000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x223ac",
+          "120000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x223b0",
+          "110000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x223b4",
+          "100000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x223b8",
+          "090000ea",
+          "B",
+          "loc_223E4 |  | "
+        ],
+        [
+          "0x223bc",
+          "440000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x223c0",
+          "0d0000ea",
+          "B",
+          "loc_223FC |  | "
+        ],
+        [
+          "0x223c4",
+          "420000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x223c8",
+          "410000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x223cc",
+          "400000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x223d0",
+          "060000ea",
+          "B",
+          "loc_223F0 |  | "
+        ],
+        [
+          "0x223d4",
+          "000000ea",
+          "B",
+          "loc_223DC |  | "
+        ],
+        [
+          "0x223d8",
+          "ffffffea",
+          "B",
+          "loc_223DC |  | "
+        ],
+        [
+          "0x223dc",
+          "efe0ffeb",
+          "BL",
+          "Cydonia_Blit_Then_UiPanelMsg_Draw |  | "
+        ],
+        [
+          "0x223e0",
+          "3b0000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x223e4",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x223e8",
+          "4cf1ffeb",
+          "BL",
+          "TactHud_DrawStatusBanner |  | "
+        ],
+        [
+          "0x223ec",
+          "380000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x223f0",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x223f4",
+          "dbf1ffeb",
+          "BL",
+          "TactHud_DrawConfirmDialog |  | "
+        ],
+        [
+          "0x223f8",
+          "350000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x223fc",
+          "95cba0e3b0c08ce3",
+          "MOV",
+          "R12 | #(Map_bDrawIsoLayer - 0x1139B8) | "
+        ],
+        [
+          "0x22404",
+          "0c00d4e7",
+          "LDRB",
+          "R0 | [R4,R12] | "
+        ],
+        [
+          "0x22408",
+          "ff3010e2",
+          "ANDS",
+          "R3 | R0 | #0xFF"
+        ],
+        [
+          "0x2240c",
+          "3000000a",
+          "BEQ",
+          "def_2237C |  | "
+        ],
+        [
+          "0x22410",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x22414",
+          "84feffeb",
+          "BL",
+          "MapView_DrawIsoLayer |  | "
+        ],
+        [
+          "0x22418",
+          "ba03d4e1",
+          "LDRH",
+          "R0 | [R4,#(Map_nUiScreen - 0x1139B8)] | "
+        ],
+        [
+          "0x2241c",
+          "030050e3",
+          "CMP",
+          "R0 | #3 | "
+        ],
+        [
+          "0x22420",
+          "1d00000a",
+          "BEQ",
+          "loc_2249C |  | "
+        ],
+        [
+          "0x22424",
+          "050050e3",
+          "CMP",
+          "R0 | #5 | "
+        ],
+        [
+          "0x22428",
+          "1800000a",
+          "BEQ",
+          "loc_22490 |  | "
+        ],
+        [
+          "0x2242c",
+          "070050e3",
+          "CMP",
+          "R0 | #7 | "
+        ],
+        [
+          "0x22430",
+          "1300000a",
+          "BEQ",
+          "loc_22484 |  | "
+        ],
+        [
+          "0x22434",
+          "0a0050e3",
+          "CMP",
+          "R0 | #0xA | "
+        ],
+        [
+          "0x22438",
+          "0e00000a",
+          "BEQ",
+          "loc_22478 |  | "
+        ],
+        [
+          "0x2243c",
+          "0b0050e3",
+          "CMP",
+          "R0 | #0xB | "
+        ],
+        [
+          "0x22440",
+          "0900000a",
+          "BEQ",
+          "loc_2246C |  | "
+        ],
+        [
+          "0x22444",
+          "0c0050e3",
+          "CMP",
+          "R0 | #0xC | "
+        ],
+        [
+          "0x22448",
+          "0400000a",
+          "BEQ",
+          "loc_22460 |  | "
+        ],
+        [
+          "0x2244c",
+          "0f0050e3",
+          "CMP",
+          "R0 | #0xF | "
+        ],
+        [
+          "0x22450",
+          "1f00001a",
+          "BNE",
+          "def_2237C |  | "
+        ],
+        [
+          "0x22454",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x22458",
+          "f4fbffeb",
+          "BL",
+          "TactHud_DrawActionButtons |  | "
+        ],
+        [
+          "0x2245c",
+          "1c0000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x22460",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x22464",
+          "a3faffeb",
+          "BL",
+          "TactHud_DrawTopBar |  | "
+        ],
+        [
+          "0x22468",
+          "190000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x2246c",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x22470",
+          "cdfdffeb",
+          "BL",
+          "TactHud_DrawModalLeft |  | "
+        ],
+        [
+          "0x22474",
+          "160000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x22478",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x2247c",
+          "1afeffeb",
+          "BL",
+          "TactHud_DrawModalRight |  | "
+        ],
+        [
+          "0x22480",
+          "130000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x22484",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x22488",
+          "d4fcffeb",
+          "BL",
+          "Menu_DrawLabeledPads |  | "
+        ],
+        [
+          "0x2248c",
+          "100000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x22490",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x22494",
+          "7bfcffeb",
+          "BL",
+          "TactHud_CopyStatusText |  | "
+        ],
+        [
+          "0x22498",
+          "0d0000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x2249c",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x224a0",
+          "18fdffeb",
+          "BL",
+          "TactHud_DrawUnitRoster |  | "
+        ],
+        [
+          "0x224a4",
+          "0a0000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x224a8",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x224ac",
+          "36f4ffeb",
+          "BL",
+          "TactHud_DrawInventoryScreen |  | "
+        ],
+        [
+          "0x224b0",
+          "070000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x224b4",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x224b8",
+          "23f2ffeb",
+          "BL",
+          "MapView_DrawMinimap |  | "
+        ],
+        [
+          "0x224bc",
+          "040000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x224c0",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x224c4",
+          "f0f5ffeb",
+          "BL",
+          "Tact_DrawCommandPads |  | "
+        ],
+        [
+          "0x224c8",
+          "010000ea",
+          "B",
+          "def_2237C |  | "
+        ],
+        [
+          "0x224cc",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x224d0",
+          "e0f9ffeb",
+          "BL",
+          "TactHud_DrawUnitMarkers |  | "
+        ],
+        [
+          "0x224d4",
+          "ac00d4e5",
+          "LDRB",
+          "R0 | [R4,#(Modal_bOpen - 0x1139B8)] | "
+        ],
+        [
+          "0x224d8",
+          "ff3010e2",
+          "ANDS",
+          "R3 | R0 | #0xFF"
+        ],
+        [
+          "0x224dc",
+          "0800000a",
+          "BEQ",
+          "loc_22504 |  | "
+        ],
+        [
+          "0x224e0",
+          "a40094e5",
+          "LDR",
+          "R0 | [R4,#(Modal_szBtn2 - 0x1139B8)] | "
+        ],
+        [
+          "0x224e4",
+          "983094e5",
+          "LDR",
+          "R3 | [R4,#(Modal_nTextLines - 0x1139B8)] | "
+        ],
+        [
+          "0x224e8",
+          "04008de5",
+          "STR",
+          "R0 | [SP,#0x10+psz2] | "
+        ],
+        [
+          "0x224ec",
+          "9c0094e5",
+          "LDR",
+          "R0 | [R4,#(Modal_szBtn1 - 0x1139B8)] | "
+        ],
+        [
+          "0x224f0",
+          "942094e5",
+          "LDR",
+          "R2 | [R4,#(Modal_nTextRecIndex - 0x1139B8)] | "
+        ],
+        [
+          "0x224f4",
+          "00008de5",
+          "STR",
+          "R0 | [SP,#0x10+psz] | "
+        ],
+        [
+          "0x224f8",
+          "0400a0e1",
+          "MOV",
+          "R0 | R4 | "
+        ],
+        [
+          "0x224fc",
+          "901094e5",
+          "LDR",
+          "R1 | [R4,#(Modal_nDialogWidth - 0x1139B8)] | "
+        ],
+        [
+          "0x22500",
+          "e60f00eb",
+          "BL",
+          "UiModal_DrawDialog |  | "
+        ],
+        [
+          "0x22504",
+          "640094e5",
+          "LDR",
+          "R0 | [R4,#(Map_nBannerFadeTicks - 0x1139B8)] | "
+        ],
+        [
+          "0x22508",
+          "000050e3",
+          "CMP",
+          "R0 | #0 | "
+        ],
+        [
+          "0x2250c",
+          "0b0000da",
+          "BLE",
+          "loc_22540 |  | "
+        ],
+        [
+          "0x22510",
+          "0000a0e3",
+          "MOV",
+          "R0 | #0 | "
+        ],
+        [
+          "0x22514",
+          "1430a0e3",
+          "MOV",
+          "R3 | #0x14 | "
+        ],
+        [
+          "0x22518",
+          "08008de5",
+          "STR",
+          "R0 | [SP,#0x10+srcY] | "
+        ],
+        [
+          "0x2251c",
+          "0c308de5",
+          "STR",
+          "R3 | [SP,#0x10+nKey] | "
+        ],
+        [
+          "0x22520",
+          "f020a0e3",
+          "MOV",
+          "R2 | #0xF0 | "
+        ],
+        [
+          "0x22524",
+          "04008de5",
+          "STR",
+          "R0 | [SP,#0x10+psz2] | "
+        ],
+        [
+          "0x22528",
+          "053da0e3",
+          "MOV",
+          "R3 | #0x140 | "
+        ],
+        [
+          "0x2252c",
+          "00008de5",
+          "STR",
+          "R0 | [SP,#0x10+psz] | "
+        ],
+        [
+          "0x22530",
+          "0010a0e3",
+          "MOV",
+          "R1 | #0 | "
+        ],
+        [
+          "0x22534",
+          "0000a0e3",
+          "MOV",
+          "R0 | #0 | "
+        ],
+        [
+          "0x22538",
+          "aef101eb",
+          "BL",
+          "SoftSurf_BlitSrcRect |  | "
+        ],
+        [
+          "0x2253c",
+          "2c0000ea",
+          "B",
+          "loc_225F4 |  | "
+        ],
+        [
+          "0x22540",
+          "880094e5",
+          "LDR",
+          "R0 | [R4,#(dword_113A40 - 0x1139B8)] | "
+        ],
+        [
+          "0x22544",
+          "0a0050e3",
+          "CMP",
+          "R0 | #0xA | "
+        ],
+        [
+          "0x22548",
+          "290000aa",
+          "BGE",
+          "loc_225F4 |  | "
+        ],
+        [
+          "0x2254c",
+          "34109fe5",
+          "LDR",
+          "R1 | =0x1472D0 | "
+        ],
+        [
+          "0x22550",
+          "000050e3",
+          "CMP",
+          "R0 | #0 | "
+        ],
+        [
+          "0x22554",
+          "0c00001a",
+          "BNE",
+          "loc_2258C |  | "
+        ],
+        [
+          "0x22558",
+          "24009fe5",
+          "LDR",
+          "R0 | =pPadEnemyStep | "
+        ],
+        [
+          "0x2255c",
+          "ff30a0e3",
+          "MOV",
+          "R3 | #0xFF | "
+        ],
+        [
+          "0x22560",
+          "00308de5",
+          "STR",
+          "R3 | [SP,#0x10+psz] | "
+        ],
+        [
+          "0x22564",
+          "000090e5",
+          "LDR",
+          "R0 | [R0] | "
+        ],
+        [
+          "0x22568",
+          "1030d0e5",
+          "LDRB",
+          "R3 | [R0,#0x10] | "
+        ],
+        [
+          "0x2256c",
+          "0c2090e5",
+          "LDR",
+          "R2 | [R0,#0xC] | "
+        ],
+        [
+          "0x22570",
+          "0000a0e3",
+          "MOV",
+          "R0 | #0 | "
+        ],
+        [
+          "0x22574",
+          "033581e0",
+          "ADD",
+          "R3 | R1 | R3,LSL#10"
+        ],
+        [
+          "0x22578",
+          "0010a0e3",
+          "MOV",
+          "R1 | #0 | "
+        ],
+        [
+          "0x2257c",
+          "f5ef01eb",
+          "BL",
+          "SoftSurf_Blit |  | "
+        ],
+        [
+          "0x22580",
+          "0d0000ea",
+          "B",
+          "loc_225BC |  | "
+        ],
+        [
+          "0x22584",
+          "a06a1500",
+          "",
+          "pPadEnemyStep | pPadEnemyStep | pPadEnemyStep"
+        ],
+        [
+          "0x22588",
+          "d0721400",
+          "",
+          "0x1472D0 | 0x1472D0 | 0x1472D0"
+        ],
+        [
+          "0x2258c",
+          "0a3060e2",
+          "RSB",
+          "R3 | R0 | #0xA"
+        ],
+        [
+          "0x22590",
+          "14001fe5",
+          "LDR",
+          "R0 | =pPadEnemyStep | "
+        ],
+        [
+          "0x22594",
+          "1820a0e3",
+          "MOV",
+          "R2 | #0x18 | "
+        ],
+        [
+          "0x22598",
+          "000090e5",
+          "LDR",
+          "R0 | [R0] | "
+        ],
+        [
+          "0x2259c",
+          "930202e0",
+          "MUL",
+          "R2 | R3 | R2"
+        ],
+        [
+          "0x225a0",
+          "1030d0e5",
+          "LDRB",
+          "R3 | [R0,#0x10] | "
+        ],
+        [
+          "0x225a4",
+          "00208de5",
+          "STR",
+          "R2 | [SP,#0x10+psz] | "
+        ],
+        [
+          "0x225a8",
+          "0c2090e5",
+          "LDR",
+          "R2 | [R0,#0xC] | "
+        ],
+        [
+          "0x225ac",
+          "033581e0",
+          "ADD",
+          "R3 | R1 | R3,LSL#10"
+        ],
+        [
+          "0x225b0",
+          "0010a0e3",
+          "MOV",
+          "R1 | #0 | "
+        ],
+        [
+          "0x225b4",
+          "0000a0e3",
+          "MOV",
+          "R0 | #0 | "
+        ],
+        [
+          "0x225b8",
+          "e6ef01eb",
+          "BL",
+          "SoftSurf_Blit |  | "
+        ],
+        [
+          "0x225bc",
+          "95cba0e3b0c08ce3",
+          "MOV",
+          "R12 | #(Map_bDrawIsoLayer - 0x1139B8) | "
+        ],
+        [
+          "0x225c4",
+          "0c00d4e7",
+          "LDRB",
+          "R0 | [R4,R12] | "
+        ],
+        [
+          "0x225c8",
+          "ff3010e2",
+          "ANDS",
+          "R3 | R0 | #0xFF"
+        ],
+        [
+          "0x225cc",
+          "0800000a",
+          "BEQ",
+          "loc_225F4 |  | "
+        ],
+        [
+          "0x225d0",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x225d4",
+          "7ae2ffeb",
+          "BL",
+          "StatusMsg_DrawStack |  | "
+        ],
+        [
+          "0x225d8",
+          "050000ea",
+          "B",
+          "loc_225F4 |  | "
+        ],
+        [
+          "0x225dc",
+          "13f0ffeb",
+          "BL",
+          "Titles_DrawBackdrop |  | "
+        ],
+        [
+          "0x225e0",
+          "030000ea",
+          "B",
+          "loc_225F4 |  | "
+        ],
+        [
+          "0x225e4",
+          "73edffeb",
+          "BL",
+          "MainMenu_Draw |  | "
+        ],
+        [
+          "0x225e8",
+          "010000ea",
+          "B",
+          "loc_225F4 |  | "
+        ],
+        [
+          "0x225ec",
+          "0500a0e1",
+          "MOV",
+          "R0 | R5 | "
+        ],
+        [
+          "0x225f0",
+          "91e0ffeb",
+          "BL",
+          "Titles_DrawAnimatedFrame |  | "
+        ],
+        [
+          "0x225f4",
+          "0400a0e1",
+          "MOV",
+          "R0 | R4 | "
+        ],
+        [
+          "0x225f8",
+          "621400eb",
+          "BL",
+          "GX_Present |  | "
+        ],
+        [
+          "0x225fc",
+          "10d08de2",
+          "ADD",
+          "SP | SP | #0x10"
+        ],
+        [
+          "0x22600",
+          "3080bde8",
+          "POP",
+          "{R4,R5,PC} |  | "
+        ]
+      ]
+    },
+    {
+      "address": "0x36818",
+      "end": "0x36830",
+      "bytes": "643090e5013043e2643080e500009fe5b8aeffea40da1000",
+      "rows": [
+        [
+          "0x36818",
+          "643090e5",
+          "LDR",
+          "R3 | [R0,#0x64] | "
+        ],
+        [
+          "0x3681c",
+          "013043e2",
+          "SUB",
+          "R3 | R3 | #1"
+        ],
+        [
+          "0x36820",
+          "643080e5",
+          "STR",
+          "R3 | [R0,#0x64] | "
+        ],
+        [
+          "0x36824",
+          "00009fe5",
+          "LDR",
+          "R0 | =(szEmptyString+8) | "
+        ],
+        [
+          "0x36828",
+          "b8aeffea",
+          "B",
+          "Render_Frame |  | "
+        ],
+        [
+          "0x3682c",
+          "40da1000",
+          "",
+          "(szEmptyString+8) | (szEmptyString+8) | (szEmptyString+8)"
+        ]
+      ]
+    },
+    {
+      "address": "0x27788",
+      "end": "0x2778c",
+      "bytes": "bbdc01ea",
+      "rows": [
+        [
+          "0x27788",
+          "bbdc01ea",
+          "B",
+          "GX_PresentFrame |  | "
+        ]
+      ]
+    },
+    {
+      "address": "0x9ea7c",
+      "end": "0x9ebb0",
+      "bytes": "70402de90cd04de284009fe57c409fe50000d0e5ff3010e26c309f0504009415003093050fe0a00103f0a00154609fe54c509fe5001096e5000085e5000051e31f00000a010051e31500000a020051e31000000a030051e31d00001a0c1094e5773fa0e3033083e30120a0e1081094e5920303e0000083e0000085e5003062e2150000ea448d1800487f1800d0610a00188d18004c7f1800083094e50c1094e50d0000ea14109fe5ef30a0e30c2091e5081091e502e0a0e19e0303e0ecffffea988318000c101fe5083091e50c1091e5010000ea08309de508109de504008de50220a0e300108de5f000a0e3051da0e3cc0300eb000096e5010050e30c009fe5000090e5020000dac10300eb010000ea7c6a1500b90300eb10309fe5003093e50fe0a0e103f0a0e10cd08de27080bde8d4610a00",
+      "rows": [
+        [
+          "0x9ea7c",
+          "70402de9",
+          "PUSH",
+          "{R4-R6,LR} |  | "
+        ],
+        [
+          "0x9ea80",
+          "0cd04de2",
+          "SUB",
+          "SP | SP | #0xC"
+        ],
+        [
+          "0x9ea84",
+          "84009fe5",
+          "LDR",
+          "R0 | =0x187F4C | "
+        ],
+        [
+          "0x9ea88",
+          "7c409fe5",
+          "LDR",
+          "R4 | =0x188D18 | "
+        ],
+        [
+          "0x9ea8c",
+          "0000d0e5",
+          "LDRB",
+          "R0 | [R0] | "
+        ],
+        [
+          "0x9ea90",
+          "ff3010e2",
+          "ANDS",
+          "R3 | R0 | #0xFF"
+        ],
+        [
+          "0x9ea94",
+          "6c309f05",
+          "LDREQ",
+          "R3 | =_GXBeginDraw__YAPAXXZ | "
+        ],
+        [
+          "0x9ea98",
+          "04009415",
+          "LDRNE",
+          "R0 | [R4,#(unk_188D1C - 0x188D18)] | "
+        ],
+        [
+          "0x9ea9c",
+          "00309305",
+          "LDREQ",
+          "R3 | [R3] | "
+        ],
+        [
+          "0x9eaa0",
+          "0fe0a001",
+          "MOVEQ",
+          "LR | PC | "
+        ],
+        [
+          "0x9eaa4",
+          "03f0a001",
+          "MOVEQ",
+          "PC | R3 | "
+        ],
+        [
+          "0x9eaa8",
+          "54609fe5",
+          "LDR",
+          "R6 | =0x187F48 | "
+        ],
+        [
+          "0x9eaac",
+          "4c509fe5",
+          "LDR",
+          "R5 | =pGxFrame | "
+        ],
+        [
+          "0x9eab0",
+          "001096e5",
+          "LDR",
+          "R1 | [R6] | "
+        ],
+        [
+          "0x9eab4",
+          "000085e5",
+          "STR",
+          "R0 | [R5] | "
+        ],
+        [
+          "0x9eab8",
+          "000051e3",
+          "CMP",
+          "R1 | #0 | "
+        ],
+        [
+          "0x9eabc",
+          "1f00000a",
+          "BEQ",
+          "loc_9EB40 |  | "
+        ],
+        [
+          "0x9eac0",
+          "010051e3",
+          "CMP",
+          "R1 | #1 | "
+        ],
+        [
+          "0x9eac4",
+          "1500000a",
+          "BEQ",
+          "loc_9EB20 |  | "
+        ],
+        [
+          "0x9eac8",
+          "020051e3",
+          "CMP",
+          "R1 | #2 | "
+        ],
+        [
+          "0x9eacc",
+          "1000000a",
+          "BEQ",
+          "loc_9EB14 |  | "
+        ],
+        [
+          "0x9ead0",
+          "030051e3",
+          "CMP",
+          "R1 | #3 | "
+        ],
+        [
+          "0x9ead4",
+          "1d00001a",
+          "BNE",
+          "loc_9EB50 |  | "
+        ],
+        [
+          "0x9ead8",
+          "0c1094e5",
+          "LDR",
+          "R1 | [R4,#(unk_188D24 - 0x188D18)] | "
+        ],
+        [
+          "0x9eadc",
+          "773fa0e3033083e3",
+          "MOV",
+          "R3 | #0x1DF | "
+        ],
+        [
+          "0x9eae4",
+          "0120a0e1",
+          "MOV",
+          "R2 | R1 | "
+        ],
+        [
+          "0x9eae8",
+          "081094e5",
+          "LDR",
+          "R1 | [R4,#(unk_188D20 - 0x188D18)] | "
+        ],
+        [
+          "0x9eaec",
+          "920303e0",
+          "MUL",
+          "R3 | R2 | R3"
+        ],
+        [
+          "0x9eaf0",
+          "000083e0",
+          "ADD",
+          "R0 | R3 | R0"
+        ],
+        [
+          "0x9eaf4",
+          "000085e5",
+          "STR",
+          "R0 | [R5] | "
+        ],
+        [
+          "0x9eaf8",
+          "003062e2",
+          "RSB",
+          "R3 | R2 | #0"
+        ],
+        [
+          "0x9eafc",
+          "150000ea",
+          "B",
+          "loc_9EB58 |  | "
+        ],
+        [
+          "0x9eb00",
+          "448d1800",
+          "",
+          "pGxFrame | pGxFrame | pGxFrame"
+        ],
+        [
+          "0x9eb04",
+          "487f1800",
+          "",
+          "0x187F48 | 0x187F48 | 0x187F48"
+        ],
+        [
+          "0x9eb08",
+          "d0610a00",
+          "",
+          "_GXBeginDraw__YAPAXXZ | _GXBeginDraw__YAPAXXZ | _GXBeginDraw__YAPAXXZ"
+        ],
+        [
+          "0x9eb0c",
+          "188d1800",
+          "",
+          "0x188D18 | 0x188D18 | 0x188D18"
+        ],
+        [
+          "0x9eb10",
+          "4c7f1800",
+          "",
+          "0x187F4C | 0x187F4C | 0x187F4C"
+        ],
+        [
+          "0x9eb14",
+          "083094e5",
+          "LDR",
+          "R3 | [R4,#(unk_188D20 - 0x188D18)] | "
+        ],
+        [
+          "0x9eb18",
+          "0c1094e5",
+          "LDR",
+          "R1 | [R4,#(unk_188D24 - 0x188D18)] | "
+        ],
+        [
+          "0x9eb1c",
+          "0d0000ea",
+          "B",
+          "loc_9EB58 |  | "
+        ],
+        [
+          "0x9eb20",
+          "14109fe5",
+          "LDR",
+          "R1 | =0x188398 | "
+        ],
+        [
+          "0x9eb24",
+          "ef30a0e3",
+          "MOV",
+          "R3 | #0xEF | "
+        ],
+        [
+          "0x9eb28",
+          "0c2091e5",
+          "LDR",
+          "R2 | [R1,#(unk_1883A4 - 0x188398)] | "
+        ],
+        [
+          "0x9eb2c",
+          "081091e5",
+          "LDR",
+          "R1 | [R1,#(unk_1883A0 - 0x188398)] | "
+        ],
+        [
+          "0x9eb30",
+          "02e0a0e1",
+          "MOV",
+          "LR | R2 | "
+        ],
+        [
+          "0x9eb34",
+          "9e0303e0",
+          "MUL",
+          "R3 | LR | R3"
+        ],
+        [
+          "0x9eb38",
+          "ecffffea",
+          "B",
+          "loc_9EAF0 |  | "
+        ],
+        [
+          "0x9eb3c",
+          "98831800",
+          "",
+          "0x188398 | 0x188398 | 0x188398"
+        ],
+        [
+          "0x9eb40",
+          "0c101fe5",
+          "LDR",
+          "R1 | =0x188398 | "
+        ],
+        [
+          "0x9eb44",
+          "083091e5",
+          "LDR",
+          "R3 | [R1,#(unk_1883A0 - 0x188398)] | "
+        ],
+        [
+          "0x9eb48",
+          "0c1091e5",
+          "LDR",
+          "R1 | [R1,#(unk_1883A4 - 0x188398)] | "
+        ],
+        [
+          "0x9eb4c",
+          "010000ea",
+          "B",
+          "loc_9EB58 |  | "
+        ],
+        [
+          "0x9eb50",
+          "08309de5",
+          "LDR",
+          "R3 | [SP,#0xC+nPitchX] | "
+        ],
+        [
+          "0x9eb54",
+          "08109de5",
+          "LDR",
+          "R1 | [SP,#0xC+nPitchX] | "
+        ],
+        [
+          "0x9eb58",
+          "04008de5",
+          "STR",
+          "R0 | [SP,#0xC+pBits] | "
+        ],
+        [
+          "0x9eb5c",
+          "0220a0e3",
+          "MOV",
+          "R2 | #2 | "
+        ],
+        [
+          "0x9eb60",
+          "00108de5",
+          "STR",
+          "R1 | [SP,#0xC+nPitchY] | "
+        ],
+        [
+          "0x9eb64",
+          "f000a0e3",
+          "MOV",
+          "R0 | #0xF0 | "
+        ],
+        [
+          "0x9eb68",
+          "051da0e3",
+          "MOV",
+          "R1 | #0x140 | "
+        ],
+        [
+          "0x9eb6c",
+          "cc0300eb",
+          "BL",
+          "Render_SetTarget |  | "
+        ],
+        [
+          "0x9eb70",
+          "000096e5",
+          "LDR",
+          "R0 | [R6] | "
+        ],
+        [
+          "0x9eb74",
+          "010050e3",
+          "CMP",
+          "R0 | #1 | "
+        ],
+        [
+          "0x9eb78",
+          "0c009fe5",
+          "LDR",
+          "R0 | =g_pMainSurface | "
+        ],
+        [
+          "0x9eb7c",
+          "000090e5",
+          "LDR",
+          "R0 | [R0] | "
+        ],
+        [
+          "0x9eb80",
+          "020000da",
+          "BLE",
+          "loc_9EB90 |  | "
+        ],
+        [
+          "0x9eb84",
+          "c10300eb",
+          "BL",
+          "Render_BlitSoft_HiRes |  | "
+        ],
+        [
+          "0x9eb88",
+          "010000ea",
+          "B",
+          "loc_9EB94 |  | "
+        ],
+        [
+          "0x9eb8c",
+          "7c6a1500",
+          "",
+          "g_pMainSurface | g_pMainSurface | g_pMainSurface"
+        ],
+        [
+          "0x9eb90",
+          "b90300eb",
+          "BL",
+          "Render_BlitSoft_LoRes |  | "
+        ],
+        [
+          "0x9eb94",
+          "10309fe5",
+          "LDR",
+          "R3 | =_GXEndDraw__YAHXZ | "
+        ],
+        [
+          "0x9eb98",
+          "003093e5",
+          "LDR",
+          "R3 | [R3] | "
+        ],
+        [
+          "0x9eb9c",
+          "0fe0a0e1",
+          "MOV",
+          "LR | PC | "
+        ],
+        [
+          "0x9eba0",
+          "03f0a0e1",
+          "MOV",
+          "PC | R3 | "
+        ],
+        [
+          "0x9eba4",
+          "0cd08de2",
+          "ADD",
+          "SP | SP | #0xC"
+        ],
+        [
+          "0x9eba8",
+          "7080bde8",
+          "POP",
+          "{R4-R6,PC} |  | "
+        ],
+        [
+          "0x9ebac",
+          "d4610a00",
+          "",
+          "_GXEndDraw__YAHXZ | _GXEndDraw__YAHXZ | _GXEndDraw__YAHXZ"
+        ]
+      ]
+    }
+  ],
+  "tests_executed": false,
+  "runtime_executed": false
+}

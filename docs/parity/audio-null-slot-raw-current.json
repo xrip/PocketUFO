@@ -1,0 +1,82 @@
+{
+  "archiveIdentities": [
+    {
+      "path": "lang.dat",
+      "entries": 12,
+      "sha256": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+    },
+    {
+      "path": "main.dat",
+      "entries": 891,
+      "sha256": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A"
+    }
+  ],
+  "sampleLoadTail": [
+    [
+      648076,
+      "4d0c00eb",
+      "BL              FSOUND_Sample_Load"
+    ],
+    [
+      648080,
+      "0110a0e3",
+      "MOV             R1, #1"
+    ],
+    [
+      648084,
+      "000086e5",
+      "STR             R0, [R6]"
+    ],
+    [
+      648088,
+      "470c00eb",
+      "BL              FSOUND_Sample_SetMode"
+    ],
+    [
+      648092,
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      648096,
+      "6d0b00eb",
+      "BL              __3_YAXPAX_Z"
+    ],
+    [
+      648100,
+      "000095e5",
+      "LDR             R0, [R5]"
+    ],
+    [
+      648104,
+      "017087e2",
+      "ADD             R7, R7, #1"
+    ],
+    [
+      648108,
+      "046086e2",
+      "ADD             R6, R6, #4"
+    ],
+    [
+      648112,
+      "010080e2",
+      "ADD             R0, R0, #1"
+    ],
+    [
+      648116,
+      "c9ffffea",
+      "B               loc_9E2E0"
+    ],
+    [
+      648140,
+      "90d08de2",
+      "ADD             SP, SP, #0x90"
+    ],
+    [
+      648144,
+      "f081bde8",
+      "POP             {R4-R8,PC}"
+    ]
+  ],
+  "scope": "Raw client continuation after backend load, plus shipped archive identities; no native runtime execution."
+}

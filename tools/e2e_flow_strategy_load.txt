@@ -1,0 +1,18 @@
+# Fresh-process check for tools/e2e_flow_strategy.txt's private slot 0.
+load 0
+state after_load
+strategystate after_load
+dump strategy_after_load.ppm
+
+# Resume time through the real speed widget and GameTick timer path. This should
+# deliver the saved shop order and advance the still-open research job.
+click 60 308
+tick 25
+tick 2
+strategystate after_advance
+lines
+click 29 186
+tick 2
+lines
+strategystate after_delivery
+dump strategy_after_delivery.ppm

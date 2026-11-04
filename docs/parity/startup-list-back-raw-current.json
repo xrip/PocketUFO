@@ -1,0 +1,52 @@
+{
+  "instructions": [
+    [
+      107048,
+      "00402de9",
+      "PUSH            {LR}"
+    ],
+    [
+      107052,
+      "0410a0e3",
+      "MOV             R1, #4"
+    ],
+    [
+      107056,
+      "1000a0e3",
+      "MOV             R0, #0x10"
+    ],
+    [
+      107060,
+      "a10f02eb",
+      "BL              Sound_Play"
+    ],
+    [
+      107064,
+      "08009fe5",
+      "LDR             R0, =MainMenu_nListMode"
+    ],
+    [
+      107068,
+      "0010a0e3",
+      "MOV             R1, #0"
+    ],
+    [
+      107072,
+      "001080e5",
+      "STR             R1, [R0]"
+    ],
+    [
+      107076,
+      "0080bde8",
+      "POP             {PC}"
+    ]
+  ],
+  "literal_address": 107080,
+  "literal_value": 1405320,
+  "comment_before": {
+    "address": 107072,
+    "bytes": "001080e5",
+    "nonrepeatable": null,
+    "repeatable": null
+  }
+}

@@ -1,0 +1,122 @@
+[
+  [
+    "0x5d650",
+    "0f10a0e3",
+    "MOV",
+    "R1 | #0xF | "
+  ],
+  [
+    "0x5d654",
+    "004089e5",
+    "STR",
+    "R4 | [R9] | "
+  ],
+  [
+    "0x5d658",
+    "004088e5",
+    "STR",
+    "R4 | [R8] | "
+  ],
+  [
+    "0x5d65c",
+    "4cf3ffeb",
+    "BL",
+    "UiPanel_AppendLineWithSound |  | "
+  ],
+  [
+    "0x5d660",
+    "0a00a0e1",
+    "MOV",
+    "R0 | R10 | "
+  ],
+  [
+    "0x5d664",
+    "100000eb",
+    "BL",
+    "GameTime_Pause |  | "
+  ],
+  [
+    "0x5d668",
+    "46cda0e314c08ce3",
+    "MOV",
+    "R12 | #(Map_nCraftCount - 0x1139B8) | "
+  ],
+  [
+    "0x5d670",
+    "0c30d6e7",
+    "LDRB",
+    "R3 | [R6,R12] | "
+  ],
+  [
+    "0x5d674",
+    "014084e2",
+    "ADD",
+    "R4 | R4 | #1"
+  ],
+  [
+    "0x5d678",
+    "047087e2",
+    "ADD",
+    "R7 | R7 | #4"
+  ],
+  [
+    "0x5d6ac",
+    "08009fe5",
+    "LDR",
+    "R0 | =nGameTotalSec | "
+  ],
+  [
+    "0x5d6b0",
+    "0110a0e3",
+    "MOV",
+    "R1 | #1 | "
+  ],
+  [
+    "0x5d6b4",
+    "0410c0e5",
+    "STRB",
+    "R1 | [R0,#(bGameClockPaused - 0x159618)] | "
+  ],
+  [
+    "0x5d6b8",
+    "0ef0a0e1",
+    "RET",
+    " |  | "
+  ],
+  [
+    "0x5d6bc",
+    "18961500",
+    "",
+    "nGameTotalSec | nGameTotalSec | nGameTotalSec"
+  ],
+  [
+    "0x5d6c0",
+    "08009fe5",
+    "LDR",
+    "R0 | =nGameTotalSec | "
+  ],
+  [
+    "0x5d6c4",
+    "0010a0e3",
+    "MOV",
+    "R1 | #0 | "
+  ],
+  [
+    "0x5d6c8",
+    "0410c0e5",
+    "STRB",
+    "R1 | [R0,#(bGameClockPaused - 0x159618)] | "
+  ],
+  [
+    "0x5d6cc",
+    "0ef0a0e1",
+    "RET",
+    " |  | "
+  ],
+  [
+    "0x5d6d0",
+    "18961500",
+    "",
+    "nGameTotalSec | nGameTotalSec | nGameTotalSec"
+  ]
+]

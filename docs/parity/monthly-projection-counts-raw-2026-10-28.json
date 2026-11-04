@@ -1,0 +1,173 @@
+{
+  "idb_before": {
+    "ea": "0x94350",
+    "comment": null
+  },
+  "raw": [
+    [
+      "0x9433c",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x94340",
+      "0c0000da",
+      "BLE             loc_94378"
+    ],
+    [
+      "0x94344",
+      "003ca0e1",
+      "MOV             R3, R0,LSL#24"
+    ],
+    [
+      "0x94348",
+      "431ca0e1",
+      "MOV             R1, R3,ASR#24"
+    ],
+    [
+      "0x9434c",
+      "0500a0e1",
+      "MOV             R0, R5"
+    ],
+    [
+      "0x94350",
+      "b657ffeb",
+      "BL              Base_CalcMonthlyUpkeep"
+    ],
+    [
+      "0x94354",
+      "61cea0e308c08ce3",
+      "MOV             R12, #0x618"
+    ],
+    [
+      "0x6a238",
+      "0140a0e1",
+      "MOV             R4, R1"
+    ],
+    [
+      "0x6a23c",
+      "0060a0e3",
+      "MOV             R6, #0"
+    ],
+    [
+      "0x6a240",
+      "46cda0e314c08ce3",
+      "MOV             R12, #(Map_nCraftCount - 0x1139B8)"
+    ],
+    [
+      "0x6a248",
+      "0c10d0e7",
+      "LDRB            R1, [R0,R12]"
+    ],
+    [
+      "0x6a24c",
+      "000051e3",
+      "CMP             R1, #0"
+    ],
+    [
+      "0x6a250",
+      "240000da",
+      "BLE             loc_6A2E8"
+    ],
+    [
+      "0x6a254",
+      "043ca0e1",
+      "MOV             R3, R4,LSL#24"
+    ],
+    [
+      "0x661d8",
+      "00482de9",
+      "PUSH            {R11,LR}"
+    ],
+    [
+      "0x661dc",
+      "48209fe5",
+      "LDR             R2, =Map_bTactFlag"
+    ],
+    [
+      "0x661e0",
+      "0000a0e3",
+      "MOV             R0, #0"
+    ],
+    [
+      "0x661e4",
+      "66cda0e318c08ce3",
+      "MOV             R12, #(nSoldierCount - 0x1139B8)"
+    ],
+    [
+      "0x661ec",
+      "bc3092e1",
+      "LDRH            R3, [R2,R12]"
+    ],
+    [
+      "0x661f0",
+      "000053e3",
+      "CMP             R3, #0"
+    ],
+    [
+      "0x6a330",
+      "9b0301e0",
+      "MUL             R1, R11, R3"
+    ],
+    [
+      "0x6a334",
+      "012082e0",
+      "ADD             R2, R2, R1"
+    ],
+    [
+      "0x6a338",
+      "bc109fe5",
+      "LDR             R1, =g_smapCamera"
+    ],
+    [
+      "0x6a33c",
+      "060082e0",
+      "ADD             R0, R2, R6"
+    ],
+    [
+      "0x6a340",
+      "282091e5",
+      "LDR             R2, [R1,#(nSmapSiteCount - 0x1863E8)]"
+    ],
+    [
+      "0x6a344",
+      "000052e3",
+      "CMP             R2, #0"
+    ],
+    [
+      "0x8bb78",
+      "053ca0e1",
+      "MOV             R3, R5,LSL#24"
+    ],
+    [
+      "0x8bb7c",
+      "431ca0e1",
+      "MOV             R1, R3,ASR#24"
+    ],
+    [
+      "0x8bb80",
+      "0400a0e1",
+      "MOV             R0, R4"
+    ],
+    [
+      "0x8bb84",
+      "a979ffeb",
+      "BL              Base_CalcMonthlyUpkeep"
+    ],
+    [
+      "0x8bb88",
+      "61cea0e308c08ce3",
+      "MOV             R12, #0x618"
+    ],
+    [
+      "0x8bb90",
+      "dc2094e1",
+      "LDRSB           R2, [R4,R12]"
+    ],
+    [
+      "0x8bb94",
+      "015085e2",
+      "ADD             R5, R5, #1"
+    ]
+  ]
+}

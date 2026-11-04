@@ -344,7 +344,7 @@ i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId)
     /* 0x36948..0x369BC: delete the crew. A removal shifts the list, so the walk does not
      * advance; only a soldier that stays moves the cursor on. */
     if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
-        u16 nSoldiers = *pEnv->pnSoldierCount;
+        i32 nSoldiers = *pEnv->pnSoldierCount;
         i32 i = 0;
         while (i < (i32)nSoldiers) {
             if (pEnv->apSoldiers[i]->bUnk183 == (u8)nIdx) {
@@ -374,7 +374,7 @@ i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId)
     /* 0x36A88..0x36AE4: every remaining soldier's ship index above the gap moves down one.
      * 254 and 255 are the "not assigned" sentinels and are left alone. */
     if (pEnv->apSoldiers != NULL) {
-        u16 nSoldiers = *pEnv->pnSoldierCount;
+        i32 nSoldiers = *pEnv->pnSoldierCount;
         for (i32 i = 0; i < (i32)nSoldiers; ++i) {
             u8 b = pEnv->apSoldiers[i]->bUnk183;
             if (b != 255 && b != 254 && (i32)b > nIdx) {
@@ -1185,7 +1185,7 @@ static bool RefuelOneMount(Ship *pShip, BaseRec *pBase, ObjectRecFull *const *ap
     return true;
 }
 
-void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoShortage)
+void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bSuppressAmmoShortage)
 {
     if (pEnv == NULL || pEnv->apCraft == NULL || pEnv->apBases == NULL ||
         pEnv->apObjects == NULL || pEnv->abFacilityGrid == NULL) {
@@ -1230,11 +1230,9 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
                     pShip->bHangarX = (u8)(nCol + 1); /* 0x68468 */
                     pShip->bHangarY = (u8)(nRow + 1); /* 0x68478 */
 
-                    /* ORIGINAL BUG (0x6858C), reproduced: the marker goes into the facility block
-                     * numbered by the CRAFT TYPE, not the home base. A type 1 craft landing at base
-                     * 3 writes into base 1's grid. */
+                    /* All five raw marker branches reload Ship+3 (home base). */
                     if (pShip->bCraftType <= 4) {
-                        *Layer2Cell(pEnv->abFacilityGrid, (i32)pShip->bCraftType, nRow + 1, nCol + 1)
+                        *Layer2Cell(pEnv->abFacilityGrid, nHome, nRow + 1, nCol + 1)
                             = (u8)(33 + pShip->bCraftType); /* 0x684D0..0x68594 */
                         bParked = true;
                         break;
@@ -1245,7 +1243,7 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
             /* 2. Credit the crew. 0x685E4. A soldier aboard this craft who has no credit yet takes
              * 40 percent of the mission value and is marked away in a craft. */
             if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
-                for (i32 k = 0; k < (i32)*pEnv->pnSoldierCount; ++k) {
+                for (i32 k = 0; k < *pEnv->pnSoldierCount; ++k) {
                     Soldier *pSol = pEnv->apSoldiers[k];
                     if (pSol == NULL) {
                         continue;
@@ -1330,17 +1328,16 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
 
             if (bStoresShort) {
                 if (pEnv->pfnAppendLine != NULL) {
-                    /* Six arguments: a3 = R2, a4 = R3, a5 = [SP+0], a6 = [SP+4]. 0x68914 loads a3
-                     * from the radar-screen scratch byte at 0x15967C (the same block
-                     * RadarScreen_Init/Update and Strateg_ConfirmInterceptTarget read for their own
-                     * messages), 0x68918 loads a4 with the ship index, 0x68910 stores the reported
-                     * object at [SP+0] and R10 -- 0 -- at [SP+4]. The port has no model of the
-                     * radar block yet, so a3 is passed as 0, which is what that byte holds in the
-                     * shipped image; recorded as a deviation rather than invented. */
-                    pEnv->pfnAppendLine(39, 0, nShip, nReportObj, pEnv->pUser); /* 0x68924 */
+                    /* 0x68914 reads the low byte at 0x15967C for C0. Keep the live owner:
+                     * the event pass can write it at 0x807B8 and continue before this call. */
+                    const i32 nInterceptShipIdx = (pEnv->pnInterceptShipIdx != NULL)
+                                                      ? (i32)(u8)*pEnv->pnInterceptShipIdx
+                                                      : 0;
+                    pEnv->pfnAppendLine(39, nInterceptShipIdx, nShip, nReportObj,
+                                        pEnv->pUser); /* 0x68924 */
                 }
-                if (pEnv->pbUiRefreshFlag != NULL) {
-                    *pEnv->pbUiRefreshFlag = 1; /* 0x68930 */
+                if (pEnv->pdwUiRefreshFlag != NULL) {
+                    *pEnv->pdwUiRefreshFlag = 1; /* 0x68930: STR, not STRB */
                 }
             }
 
@@ -1362,16 +1359,13 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
                 pShip->anCargoQty[j] = aCraftCredit[j] * nQty;
             }
 
-            /* ORIGINAL BUG, reproduced: 0x689E4 sign-extends R8, and R8 was last written at 0x68654
-             * as 2 * ship index. The base index this call receives is therefore twice the ship
-             * index, not the base being processed. Hex-Rays renders it as (char)nBaseIdx.
-             *
-             * DEVIATION: the original computes the needed total inside Base_UpdateStoresNeeded from
-             * Base_CalcStorageUsed (0x6555c) and Base_CountItemQtyAcrossBases (0x67d68). Only the
-             * first is ported, so the pass this call performs is weaker than the original's. */
-            Base_UpdateStoresNeeded(pEnv->abFacilityGrid, (i8)(2 * nShip),
+            /* 0x689E0 restores the outer base index before this call.
+             * The original incoming-cargo term uses site index -1 and is zero:
+             * its gate aliases untouched carry-count words, not a live site.
+             * See docs/parity/incoming-capacity-gate-2026-10-28.md. */
+            Base_UpdateStoresNeeded(pEnv->abFacilityGrid, (i8)nBase,
                                     Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount,
-                                                         (i8)(2 * nShip)));
+                                                         (i8)nBase));
 
             /* 8. Re-draw both mounts' ammo. 0x6A00: two mounts of the same weapon share one
              * demand of 2 units, two different weapons each demand 1. */
@@ -1384,10 +1378,10 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
                                         pShip->bWeaponR, nMounts, nBase, &nReportObj) || bAmmoShort;
 
             if (bAmmoShort) {
-                if (pEnv->pbUiRefreshFlag != NULL) {
-                    *pEnv->pbUiRefreshFlag = 1; /* 0x68EC0 */
+                if (pEnv->pdwUiRefreshFlag != NULL) {
+                    *pEnv->pdwUiRefreshFlag = 1; /* 0x68EC0: STR, not STRB */
                 }
-                if (bAnnounceAmmoShortage && pEnv->pfnAppendLine != NULL) {
+                if (!bSuppressAmmoShortage && pEnv->pfnAppendLine != NULL) {
                     pEnv->pfnAppendLine(40, nBase, nReportObj, 0, pEnv->pUser); /* 0x68EDC */
                 }
             }

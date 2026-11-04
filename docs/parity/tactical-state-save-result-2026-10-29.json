@@ -1,0 +1,171 @@
+{
+  "cluster_id": "save-tactical-state",
+  "date": "2026-10-29",
+  "audit_input_source": "A0E921A3F7F6CE7C0C7342F9A804DD8370167948411391607CA6AA93DBF5AA01",
+  "members": [
+    {
+      "address": "0x3f0e8",
+      "size": 112,
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_save.c",
+          "function": "Save_ReadObjBefore"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "adapted",
+      "contract": "Find OBJBEFORE, loop unsigned halfword object count and read2 bytes into each object+0xCA.",
+      "input_domain": "Valid complete chunk and object table; count0..65535.",
+      "deviations": [
+        "Port validates pointers and read/chunk status; count is an i32 parameter within original u16 domain."
+      ],
+      "boundary_evidence": [
+        "tactical-state-save-raw-2026-10-29.json full member bytes and instruction rows",
+        "World_SaveSlot stages live owners; World_InitTactical installs apply-state/roster/reset hooks before mission initialization."
+      ],
+      "open_questions": [
+        "No original save sample or runtime interoperability proof is available."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x3f158",
+      "size": 112,
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_save.c",
+          "function": "Save_WriteObjBefore"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "adapted",
+      "contract": "Begin OBJBEFORE, loop unsigned halfword object count and write2 bytes from each object+0xCA.",
+      "input_domain": "Valid object table; count0..65535.",
+      "deviations": [
+        "Port validates pointers and write status."
+      ],
+      "boundary_evidence": [
+        "tactical-state-save-raw-2026-10-29.json full member bytes and instruction rows",
+        "World_SaveSlot stages live owners; World_InitTactical installs apply-state/roster/reset hooks before mission initialization."
+      ],
+      "open_questions": [
+        "No original save sample or runtime interoperability proof is available."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x44248",
+      "size": 1120,
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_save.c",
+          "function": "Save_ReadTGameData"
+        },
+        {
+          "path": "src/pufo/app/pufo_world.c",
+          "function": "World_TactApplyResetThunk"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "mismatch",
+      "contract": "Read43-byte tactical header; apply before font calls; load sprite sets excluding23; read rosters/items/map; reset input/action state; read two V124 dwords or use Rand(40)+10 and Rand(20).",
+      "input_domain": "Valid complete tactical chunks; sprite set0..9 or23; valid low-byte craft tile values; correct TACTVER selector supplied.",
+      "deviations": [
+        "Port stages raw globals through hooks and guards bad reads/pointers. Missing live drag/repeat/edge reset writes were repaired and peer-reviewed; both full builds compile cleanly."
+      ],
+      "boundary_evidence": [
+        "tactical-state-save-raw-2026-10-29.json full member bytes and instruction rows",
+        "World_SaveSlot stages live owners; World_InitTactical installs apply-state/roster/reset hooks before mission initialization."
+      ],
+      "open_questions": [
+        "Connected World_LoadSlot regression and both full configurations compile cleanly; assertions and native load/input flows remain unrun.",
+        "Child roster/item/map readers are separately assigned to active workers.",
+        "Upper-byte equivalence of one-byte craft-tile reads is limited to normal byte-range source values; corrupt/high-bit inputs are not proven."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x446a8",
+      "size": 640,
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_save.c",
+          "function": "Save_WriteTGameData"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "adapted",
+      "contract": "Write43-byte tactical header with exact field widths, then teamunits/aliens/diedsolds/hiddensold, FLOBJS, MAP, V124 two dwords.",
+      "input_domain": "Live tactical World owners and valid rosters/map/items.",
+      "deviations": [
+        "Port uses explicit input records and propagates failures; original discards child return statuses."
+      ],
+      "boundary_evidence": [
+        "tactical-state-save-raw-2026-10-29.json full member bytes and instruction rows",
+        "World_SaveSlot stages live owners; World_InitTactical installs apply-state/roster/reset hooks before mission initialization."
+      ],
+      "open_questions": [
+        "No original save sample or runtime interoperability proof is available."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x44928",
+      "size": 48,
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_save.c",
+          "function": "Save_WriteGameState"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "adapted",
+      "contract": "Begin GAMESTATE and write one byte from Map tactical flag.",
+      "input_domain": "Valid DatFile write context.",
+      "deviations": [
+        "Port takes tactical flag as explicit parameter and reports errors."
+      ],
+      "boundary_evidence": [
+        "tactical-state-save-raw-2026-10-29.json full member bytes and instruction rows",
+        "World_SaveSlot stages live owners; World_InitTactical installs apply-state/roster/reset hooks before mission initialization."
+      ],
+      "open_questions": [
+        "No original save sample or runtime interoperability proof is available."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x44958",
+      "size": 48,
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_save.c",
+          "function": "Save_ReadGameState"
+        }
+      ],
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "adapted",
+      "contract": "Find GAMESTATE and read one byte to separate global0x15821C, not the tactical flag.",
+      "input_domain": "Valid complete chunk and game-state output cell.",
+      "deviations": [
+        "Port takes separate output pointer and reports errors."
+      ],
+      "boundary_evidence": [
+        "tactical-state-save-raw-2026-10-29.json full member bytes and instruction rows",
+        "World_SaveSlot stages live owners; World_InitTactical installs apply-state/roster/reset hooks before mission initialization."
+      ],
+      "open_questions": [
+        "No original save sample or runtime interoperability proof is available."
+      ],
+      "idb_proposals": []
+    }
+  ],
+  "tests_executed": false,
+  "runtime_executed": false
+}

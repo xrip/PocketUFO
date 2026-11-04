@@ -91,7 +91,8 @@
 
 /* The original's half-turn constant is 1.57075, not the exact pi/2. */
 #define PUFO_AIM_HALF_PI     1.57075
-/* Throw ballistics constant, 0x3FB28F5C... as encoded at 0x3102c. */
+/* Raw ARM loads gravity 9.18 as 0x40225C28F5C28F5C at 0x314C4/0x314CC.
+ * The independent range check loads 1/(2*g), 0x3FABE2FF713854C7. */
 #define PUFO_THROW_GRAVITY   9.18
 /* Random yaw spread for a vertical shot: Game_RandU16(0x3E) * 0.1. */
 #define PUFO_AIM_YAW_RAND_MAX 0x3E
@@ -150,6 +151,10 @@ typedef struct AimState {
      * values in ShotTrace only, which is how a test drives the trace. */
     u8  *pbFireHitResult;
     i32 *pnFireArg5;
+    /* Optional live Map owners for the per-sample writes at Map+0x14054/0x14058.
+     * Standalone probes leave these null and read the final sample from ShotTrace. */
+    i32 *pnShotOriginX;
+    i32 *pnShotOriginY;
 } AimState;
 
 /* Angle setup shared by Tact_ComputeAimVector and Map_TraceLos.
@@ -172,7 +177,7 @@ void Tact_ComputeAimVector(AimState *pAim, const MapGeom *pGeom,
 /* Result of Tact_TraceProjectileArc @ 0x2fc38. The fields map to the Map block
  * names in the header comment. */
 typedef struct ShotTrace {
-    i32    nOrigX;        /* 0x14054, first sample tile */
+    i32    nOrigX;        /* 0x14054, last pre-step sample cell when returned */
     i32    nOrigY;        /* 0x14058 */
     i32    nTgtX;         /* 0x14040, tile where the arc stopped */
     i32    nTgtY;         /* 0x14044 */

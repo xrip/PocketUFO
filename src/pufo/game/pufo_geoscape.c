@@ -61,7 +61,7 @@ void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks)
      * owns the clock, so it hands the pointer to the contact layer. */
     pWorld->pTime = &pState->time;
 
-    for (i32 i = 0; i < pWorld->nShipCount; ++i)
+    for (i32 i = 0; i < GeoscapeWorld_GetShipCount(pWorld); ++i)
         Ship_TickRangeRecover(pWorld->apCraft[i]);
 
     StrategHooks  detectHooks = { pHooks->pfnContactMsg,
@@ -87,7 +87,7 @@ void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks)
         /* 0x5D5E4..0x5D680. The original's home-base filter is dead code: 0xFF falls through the
          * 0xFE test and 0xFE takes the BNE, so every craft away from base reaches the range gate. */
         SmapCraftRangeEnv rangeEnv = { pWorld, pState->apBases, &list };
-        for (i32 i = 0; i < pWorld->nShipCount; ++i) {
+        for (i32 i = 0; i < GeoscapeWorld_GetShipCount(pWorld); ++i) {
             Ship *pShip = pWorld->apCraft[i];
             if (pShip->bAtBase == 0
                 && Smap_CraftRangeExhausted(&rangeEnv, i)
@@ -96,7 +96,7 @@ void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks)
                 *pState->pnSelectedShipIdx = i; /* nSelectedShipIdx @ 0x187054 */
                 pState->nSelectedShipAux = i;
                 pHooks->pfnContactMsg(15, i, 0, pHooks->pUser);
-                pState->time.bPaused = 1; /* GameTime_Pause @ 0x5d6ac, 0x5d664 */
+                GameTime_Pause(&pState->time); /* raw call at 0x5D664 */
             }
         }
     }
@@ -139,7 +139,7 @@ void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
         pState->apBases, pState->pSupplyItem, pState->pnLowSupplyFlag,
         Supply_LowMsg, &supplyUser
     };
-    for (i32 i = 0; i < pWorld->nShipCount; ++i) {
+    for (i32 i = 0; i < GeoscapeWorld_GetShipCount(pWorld); ++i) {
         Ship_TickRefuelAtBase(pWorld->apCraft[i]);
         Ship_TickRangeRecoverConsume(pWorld->apCraft[i], &supply);
     }
@@ -158,7 +158,7 @@ void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks)
             pHooks->pfnProcessEvents(1, pHooks->pUser);
     }
 
-    for (i32 b = 0; b < pState->nBaseCount; ++b)
+    for (i32 b = 0; b < GeoscapeState_GetBaseCount(pState); ++b)
         pState->apEmptyFacilityCells[b] =
             pHooks->pfnCountEmptyFacilityCells(b, pHooks->pUser);
 }
@@ -170,7 +170,7 @@ void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks)
 
     pHooks->pfnTickFacilityConstruction(pHooks->pUser);
 
-    for (i32 b = 0; b < pState->nBaseCount; ++b)
+    for (i32 b = 0; b < GeoscapeState_GetBaseCount(pState); ++b)
         pState->world.apSiteState[b] =
             (u8)pHooks->pfnClearFacilityGridRow(b, pHooks->pUser);
 
@@ -268,24 +268,32 @@ bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags)
     return true;
 }
 
-i32 Base_FindIndexByTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 nType)
+static i32 Base_FindIndexBySignedSiteKey(BaseRec *const *apBases, i32 nBaseCount, i32 nKey)
 {
     if (apBases == NULL || nBaseCount <= 0) {
-        return -1; /* 0x6ac50: an empty base list answers -1 without searching */
+        return -1;
     }
     for (i32 i = 0; i < nBaseCount; ++i) {
         if (apBases[i] == NULL) {
             continue;
         }
-        /* 0x6AC68 loads the field with LDRSB and 0x6AC58 masks the argument with `AND R1,R1,#0xFF`,
-         * so the original compares a SIGNED field against an unsigned byte: a field of 0x80 or more
-         * never matches any argument in 0..255. The port compared both as u8, which matched them. */
-        if ((i32)(i8)apBases[i]->bUnk4 == (i32)nType) {
+        if ((i32)(i8)apBases[i]->bUnk4 == nKey) {
             return i;
         }
     }
-    /* The original has no bound here and keeps walking until something matches. */
     return -1;
+}
+
+i32 Base_FindIndexByTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 nType)
+{
+    /* The ARM masks its argument to a byte at 0x6AC58 before the signed field compare. */
+    return Base_FindIndexBySignedSiteKey(apBases, nBaseCount, (i32)nType);
+}
+
+i32 Base_FindIndexBySiteId(BaseRec *const *apBases, i32 nBaseCount, i32 nSiteId)
+{
+    /* The ARM SiteId search passes its full, unmasked R1 value to the signed field compare. */
+    return Base_FindIndexBySignedSiteKey(apBases, nBaseCount, nSiteId);
 }
 
 i32 BaseGrid_GetTypeByte(BaseRec *const *apBases, i32 nBaseCount, const u8 *abGrid,
@@ -831,11 +839,8 @@ i32 Base_CalcStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 
 
 /* ---- Base_DemolishFacility @ 0x66b70 ------------------------------------------- */
 
-/* Shift one per-base column left by one base, over the bases above the one being removed.
- * nEntries is the original's loop count, which is Map.nObjectCount for the object-shaped columns
- * and the shared byte at 0x160C4C for the research column. The columns themselves are 200 entries
- * wide, so when nObjectCount is larger the original runs on into the next column; that is what
- * this reproduces. */
+/* Destination indices are [nFirstBase,nLastBase); each takes the following row.
+ * Manufacturing uses the original object-count bound and 200-word stride. */
 static void ShiftColumnU16(u16 *apCol, i32 nFirstBase, i32 nLastBase, i32 nEntries, i32 nStride)
 {
     for (i32 nBase = nFirstBase; nBase < nLastBase; ++nBase) {
@@ -843,6 +848,11 @@ static void ShiftColumnU16(u16 *apCol, i32 nFirstBase, i32 nLastBase, i32 nEntri
             apCol[nStride * nBase + k] = apCol[nStride * (nBase + 1) + k];
         }
     }
+}
+
+static i32 BaseDemolishSiteCount(const BaseDemolishEnv *pEnv)
+{
+    return (pEnv->pnSiteCountLive != NULL) ? *pEnv->pnSiteCountLive : pEnv->nSiteCount;
 }
 
 i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
@@ -853,6 +863,7 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
     }
 
     i32 nCount = (i32)(i8)*pEnv->pbBaseCount; /* 0x66B90, the signed byte at 0x159D80 */
+    const i32 nSiteCount = BaseDemolishSiteCount(pEnv);
 
     /* 1. Which base, by facility type. 0x66BA4. A miss leaves the index on the count. */
     i32 nBase = 0;
@@ -882,13 +893,12 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
      * re-tests the slot the removal moved into, which is what makes the cascade work. */
     if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
         i32 nSoldier = 0;
-        while (nSoldier < (i32)*pEnv->pnSoldierCount) {
+        while (nSoldier < *pEnv->pnSoldierCount) {
             Soldier *pSol = pEnv->apSoldiers[nSoldier];
             if (pSol != NULL && pSol->nKind == nBase && pSol->bUnk183 > 0xFD) {
                 nSoldier = 0; /* the original re-tests the same slot after a removal */
                 *pEnv->pnSoldierCount =
-                    (u16)Soldier_RemoveById(pEnv->apSoldiers, (i32)*pEnv->pnSoldierCount,
-                                            pSol->nUnk440);
+                    Soldier_RemoveById(pEnv->apSoldiers, *pEnv->pnSoldierCount, pSol->nUnk440);
             } else {
                 ++nSoldier;
             }
@@ -911,7 +921,7 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
 
     /* 5. Mark this base's map sites unassigned. 0x66D70. bFlag0 = -1 is the not-assigned marker. */
     if (pEnv->apSites != NULL) {
-        for (i32 nSite = 0; nSite < pEnv->nSiteCount; ++nSite) {
+        for (i32 nSite = 0; nSite < nSiteCount; ++nSite) {
             if ((i8)pEnv->apSites[nSite].bFlag1 == (i8)nFacType) {
                 pEnv->apSites[nSite].bFlag0 = 0xFF;
             }
@@ -930,7 +940,7 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
 
     /* 7. Renumber the base every soldier is stationed at. 0x66E20. */
     if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
-        for (i32 nSoldier = 0; nSoldier < (i32)*pEnv->pnSoldierCount; ++nSoldier) {
+        for (i32 nSoldier = 0; nSoldier < *pEnv->pnSoldierCount; ++nSoldier) {
             Soldier *pSol = pEnv->apSoldiers[nSoldier];
             if (pSol != NULL && pSol->nKind > nBase) {
                 pSol->nKind = pSol->nKind - 1;
@@ -1005,12 +1015,10 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
             memmove(&pEnv->apSiteRecs[nDst], &pEnv->apSiteRecs[nSrc], sizeof(BaseSiteRec));
         }
 
-        /* ORIGINAL BUG (0x67048), reproduced: the manufacturing engineers column is shifted one
-         * base LATER than every other array. Its fixed offset 17156 lands on 0x15E19C with the loop
-         * index itself, while product C at 12404 and product B at 5604 land one column earlier. So
-         * column nBase keeps its value and column nBase+1 is overwritten from nBase+2. */
+        /* Raw 0x67070/0x67078 copies source row s to s-1, starting at
+         * s=removed+1. The discarded final row is not read as another source. */
         if (pEnv->apManufCols != NULL) {
-            ShiftColumnU16(pEnv->apManufCols, nBase + 1, nCount, nObjectCount,
+            ShiftColumnU16(pEnv->apManufCols, nBase, nCount - 1, nObjectCount,
                            PUFO_BASE_COLUMN_ENTRIES);
         }
     }
@@ -1342,10 +1350,11 @@ static bool ItemQtyObjIndexInFilter(i32 nObj)
  * same column (0x67EE0: the gate reads [0x173*nSiteIdx + v]*2+2, the contribution reads the
  * scanned site).
  *
- * Deviation: the needed-pass callers pass nSiteIdx = -1, and the original then gates on
- * aSmapSites[-1] — 742 bytes below the array, which is the buy/sell screen scratch (zero in the
- * image, written only by screens). The port treats a negative index as a zero gate, which is the
- * same value at every load-time call site. */
+ * Needed-pass callers use nSiteIdx = -1. The raw gate address is 0x161D4C + 2*v,
+ * inside carry-count words 159..229 at 0x161AD0. This PE zero-fill region stays zero:
+ * the screen clears all 256 words, and its only nonzero writers use admitted row IDs
+ * 1..24 or 31..51. Thus the port uses a zero gate without reading outside aSites.
+ * Evidence: docs/parity/incoming-capacity-gate-2026-10-28.md. */
 i32 Base_CountItemQtyAcrossBases(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
                                  BaseRec *const *apBases, i32 nBaseIndex,
                                  ObjectRecFull *const *apObjects, i32 nObjectCount,
@@ -1570,9 +1579,10 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nRegionId
 
     pSite = &pEnv->apSiteRecs[nBaseCount];
 
-    /* ORIGINAL BUG (0x669D0): the name is copied byte by byte to its NUL with no bound into a
-     * 20-byte field; the overflow tail lands in the four dwords below (which the next stores
-     * then overwrite) and past the end of the record. The port bounds the copy. */
+    /* The ARM copies byte by byte through NUL at 0x669D0. Its production names are "new" or
+     * TEXTS[905 + region] + '-' + a signed byte count. Shipped buildable region text is at most
+     * 16 bytes and the count at most four, so 21 name bytes plus NUL fit this 22-byte live view.
+     * The last two bytes are skipped by the unchanged 20-byte save field. */
     {
         i32 n = 0;
         while (n < (i32)sizeof(pSite->abName) - 1 && pszName[n] != 0) {
@@ -2060,17 +2070,17 @@ i32 Base_HitTestFacilityStrip(const BaseStripHitEnv *pEnv, i32 nX, i32 nY)
         return 0;
     }
 
-    /* 0x6723C: any of the three screens being open overwrites the x argument with 10 and re-enters
-     * the compare chain at 0x671E8, so the x range test always misses. */
+    /* 0x6723C compares R1 with 10, then branches to 0x671E8, the BLT after the normal
+     * lower-bound compare. A set gate uses 10 as the lower x bound; it does not replace x. */
     const bool bGateOpen = (pEnv->pbGateTransfer != NULL && (*pEnv->pbGateTransfer & 0xFFu) != 0) ||
                            (pEnv->pbGateBaseInfo != NULL && (*pEnv->pbGateBaseInfo & 0xFFu) != 0) ||
                            (pEnv->pbGatePsi != NULL && (*pEnv->pbGatePsi & 0xFFu) != 0);
-    const i32 nTestX = bGateOpen ? 10 : nX;
+    const i32 nMinX = bGateOpen ? 10 : PUFO_BASE_STRIP_X_FIRST;
 
     const i32 nBaseCount = (pEnv->pbBaseCount != NULL) ? (i8)*pEnv->pbBaseCount : 0;   /* 0x67204 */
     const i8 bSelected = (pEnv->pbSelectedBase != NULL) ? (i8)*pEnv->pbSelectedBase : 0; /* 0x67224 */
 
-    if (nTestX < PUFO_BASE_STRIP_X_FIRST || nTestX > PUFO_BASE_STRIP_X_LAST ||
+    if (nX < nMinX || nX > PUFO_BASE_STRIP_X_LAST ||
         nY < PUFO_BASE_STRIP_Y_FIRST || nY > PUFO_BASE_STRIP_PITCH * nBaseCount) {
         return bSelected;
     }
@@ -4057,6 +4067,21 @@ void Geoscape_DrawScreen(const GeoscapeScreenDrawEnv *pEnv)
             Text_DrawString(PUFO_GEOOPT_VOL_X0 + PUFO_GEOOPT_VOL_STEP * i, 111, szText);
             Text_DrawString(PUFO_GEOOPT_VOL_X0 + PUFO_GEOOPT_VOL_STEP * i, 151, szText);
         }
+        /* Port-side (2026-11-04, user request): the music loop setting row at y 170.
+         * The label is built in a LOCAL buffer in cp1251 (the font's encoding) --
+         * not in szText, which the shared tail draws centred under the cancel
+         * control. Not a TEXTS record: the shipped lang.dat is not modified. */
+        if (pEnv->pbMusicLoop != NULL) {
+            char szLoop[32];
+
+            pufo_strncpy(szLoop, "\xC7\xE0\xF6\xE8\xAA\xEB\xE8\xF2\xE8\xF2\xFC: ",
+                         sizeof(szLoop));
+            (void)pufo_strcat(szLoop, (*pEnv->pbMusicLoop != 0u)
+                                          ? "\xC2\xAA\xEB"   /* "Vkl" */
+                                          : "\xC2\xF1\xAA\xEB", /* "Vykl" */
+                                  sizeof(szLoop));
+            DrawScreen_DrawCentered(170, szLoop);
+        }
         DrawScreen_CopyTextRec(szText, sizeof(szText),
                                pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OK);
         break;
@@ -4171,7 +4196,8 @@ void Geoscape_PulseUpdate(const GeoscapePulseEnv *pEnv)
 
     if (pEnv->pnAnimPhase != NULL) {
         if (*pEnv->pnAnimPhase > 1) {
-            /* 0x95644: an already-advanced phase skips the switch entirely. */
+            /* 0x95644: an already-advanced phase skips the switch and resets here. */
+            *pEnv->pnAnimPhase = 0;                                  /* 0x95B78 */
         } else if (++(*pEnv->pnAnimPhase) > 1) {                         /* 0x95654 */
             const GeoscapePulseScreen *pScreen = NULL;
             for (i32 s = 0; s < pEnv->nScreenCount; ++s) {
@@ -4216,8 +4242,8 @@ void Geoscape_PulseUpdate(const GeoscapePulseEnv *pEnv)
             } else if (pScreen != NULL) {
                 Pulse_RunGroups(pEnv, pScreen);
             }
+            *pEnv->pnAnimPhase = 0;                                  /* 0x95B78 */
         }
-        *pEnv->pnAnimPhase = 0;                                          /* LABEL_88 at 0x95B78 */
     }
 
     Pulse_Saturate(pEnv->pnCooldownR);                                   /* 0x95B8C */
@@ -4500,6 +4526,12 @@ static void StatusPanel_DrawFooter(const GeoscapeStatusPanelEnv *pEnv, char *psz
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_OK);
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_LEFT, nFootY, psz);
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_OK_RIGHT);
+    /* Shipped Russian TEXTS[1194] abbreviates "Slow" as "OKмдл".
+     * Use a readable caption for this exact record; keep other languages intact. */
+    if (strcmp(psz, "OK\xEC\xE4\xEB") == 0) {
+        DrawScreen_CopyTextRec(psz, PUFO_TEXT_REC_STRIDE,
+                              "\xCC\xE5\xE4\xEB."); /* "Медл." in CP1251 */
+    }
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_RIGHT, nFootY, psz);
 }
 

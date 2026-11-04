@@ -88,7 +88,37 @@ typedef struct CombatCtx {
     ObjectRecFull *pCtxWeapon; /* Map.nFireArg6 @ Map+0x14050 */
     i32           nShotOriginX; /* Map.nFireOrigX @ Map+0x14054 */
     i32           nShotOriginY; /* Map.nFireOrigY @ Map+0x14058 */
+    /* Optional live owners for Map_nFireOrigX/Y. The scalar cells above remain
+     * the fallback for standalone contexts that do not share a Map block. */
+    i32          *pnShotOriginX;
+    i32          *pnShotOriginY;
+    /* Persistent Map weapon cell written by the resolver, when Map-owned. */
+    const ObjectRecFull **ppCtxWeapon;
+    u32          *paHitWindow;
+    u32          *paHitWindowSave;
 } CombatCtx;
+
+static inline i32 CombatCtx_GetShotOriginX(const CombatCtx *pCtx)
+{
+    return (pCtx->pnShotOriginX != NULL) ? *pCtx->pnShotOriginX : pCtx->nShotOriginX;
+}
+
+static inline i32 CombatCtx_GetShotOriginY(const CombatCtx *pCtx)
+{
+    return (pCtx->pnShotOriginY != NULL) ? *pCtx->pnShotOriginY : pCtx->nShotOriginY;
+}
+
+static inline void CombatCtx_SetShotOrigin(CombatCtx *pCtx, i32 nX, i32 nY)
+{
+    pCtx->nShotOriginX = nX;
+    pCtx->nShotOriginY = nY;
+    if (pCtx->pnShotOriginX != NULL) {
+        *pCtx->pnShotOriginX = nX;
+    }
+    if (pCtx->pnShotOriginY != NULL) {
+        *pCtx->pnShotOriginY = nY;
+    }
+}
 
 /* Hooks for the two things Combat_ResolveShot touches that the port does not
  * model yet.

@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "game/pufo_titles.h"
+#include "util/pufo_rand.h"
 #include "game/pufo_mainmenu.h" /* GameUI_InitStartup / GameUiStartupEnv, the shutdown's tail call */
 #include "game/pufo_font.h"
 #include "game/pufo_options.h"
@@ -290,7 +291,7 @@ static void TestAnimation(void)
      * (target - current) / 15 with the signed divide and a sign fallback, so a gap under 15 still moves
      * exactly one pixel instead of stalling. Then the frame number picks the mode: under 20 the timers
      * run, frame 21 restores the target pair from the home pair and re-arms the timer, 20 and 22..500 do
-     * nothing, 501..679 run the timers again, and 680 or more hands over to Titles_LoadScene @ 0x468cc.
+     * nothing, 501..679 run the timers again, and 681 or more hands over to Titles_LoadScene @ 0x468cc.
      * Timer semantics, read one at a time below: positive counts down by one; zero sets target x to 230,
      * target y to RandU16(100) + 200 and makes the timer -1; a NEGATIVE timer never counts down and only
      * moves the target -- x down by 10 when target y is at least 300, otherwise y up by 10. */
@@ -462,6 +463,35 @@ static void TestAnimation(void)
     }
     Check(TitlesPix(112, 100) == 0 && TitlesPix(100, 112) == 0,
           "and the jitter never reaches past 4");
+
+    /* ARM0x1A870 saves the Y draw;0x1A87C supplies X. Make the two draws distinct
+     * and compare the complete blurred particle image, not just its bounding box. */
+    {
+        static u8 aExpected[PUFO_TITLES_W * PUFO_TITLES_HEIGHT];
+        const TitlesParticle saved = *p;
+        const i32 nSavedStars = env.nStarCount;
+        const i32 nSavedFrame = env.nFrame;
+        srand(1u);
+        const i32 nY = (i32)Game_RandU16(5);
+        const i32 nX = (i32)Game_RandU16(5);
+        Check(nX != nY, "the jitter-order fixture has distinct X and Y draws");
+        ClearTitles();
+        SoftSurf_FillRectEx(env.pTitlesSurface, 100 + nX, 100 + nY, 1, 1, 0, 255);
+        (void)SoftSurf_DrawBorderAndBlur();
+        memcpy(aExpected, SoftSurf_GetPixels(env.pTitlesSurface), sizeof(aExpected));
+        ClearTitles();
+        p->nX = 100;
+        p->nY = 100;
+        env.nStarCount = 0;
+        env.nFrame = 100; /* Frame101 has no extra timer RNG calls. */
+        srand(1u);
+        (void)Titles_DrawAnimatedFrame(&env);
+        Check(memcmp(aExpected, SoftSurf_GetPixels(env.pTitlesSurface), sizeof(aExpected)) == 0,
+              "particle pixels use the original Y-before-X RNG order");
+        *p = saved;
+        env.nStarCount = nSavedStars;
+        env.nFrame = nSavedFrame;
+    }
 
     /* Titles_DrawCreditLines @ 0x46738: the same window rule as Titles_DrawBackdrop @ 0x1e630 and the same
      * "@ means a decimal glyph index" rule, with the glyph palette at slot 31 and the text colour pair
@@ -655,7 +685,7 @@ static int TestLoadScene(void)
     Check(nBad == 0,
           "every particle has target (120, 160), a home pair derived from the file bytes, and a start in range");
 
-    (void)Titles_LoadScene(&env);
+    CheckEqI32("the scene loader returns the incremented index before wrap", Titles_LoadScene(&env), 2);
     CheckEqI32("loading again takes title1.dat and wraps the index back to 0", env.nSceneIndex, 0);
     Check(env.nParticleCount > 0, "and title1.dat has particles too");
 
@@ -706,12 +736,13 @@ static void Fake_MusicVolume(void *pMod, i32 nVolume) { (void)pMod; (void)nVolum
 static void Fake_MusicPaused(void *pMod, i32 bPaused) { (void)pMod; (void)bPaused; }
 static void Fake_MusicFree(void *pMod) { (void)pMod; ++g_nMusicFrees; }
 static void Fake_Close(void) { }
+static bool Fake_MusicFinished(const void *pMod) { (void)pMod; return false; }
 
 static const PufoAudioBackend g_fakeAudio = {
     Fake_Init, Fake_SetWindow, Fake_SampleLoad, Fake_SampleSetMode, Fake_SampleFree,
     Fake_PlaySound, Fake_SetSfxVolume, Fake_SetSfxPaused, Fake_MusicLoad,
     Fake_MusicLoop, Fake_MusicOptimize, Fake_MusicPlay, Fake_MusicVolume,
-    Fake_MusicPaused, Fake_MusicFree, Fake_Close
+    Fake_MusicPaused, Fake_MusicFree, Fake_Close, Fake_MusicFinished
 };
 
 static void TimerRecSet(HWND hWnd, u32 nId, u32 nMs, void *pUser)

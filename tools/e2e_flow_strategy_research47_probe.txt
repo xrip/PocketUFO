@@ -1,0 +1,26 @@
+# Fresh raw New Game and read-only Research screen probe.
+
+click 120 124
+tick 20
+pick
+tick 10
+state new_game
+strategystate new_game
+campaign cargo new_game
+
+click 60 252
+tick 20
+strategystate research_base_info
+click 231 8
+tick 2
+strategystate research_base_strip
+click 180 238
+tick 20
+strategystate research_probe
+
+# Return to the map without changing stock, staff, funds, or time speed.
+click 231 8
+tick 2
+click 201 11
+tick 2
+strategystate research_probe_map

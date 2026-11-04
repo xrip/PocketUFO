@@ -1,0 +1,81 @@
+# Fresh New Game through natural air/ground play, carrier home return, and one hourly pulse.
+# This follows the normal play flow's real controls; no campaign gear/contact is staged.
+
+state before_menu_click
+click 120 124
+pick
+state after_new_game_pick
+geoframe
+strategystate before_normal_air
+normalair
+state after_normal_air_boundary
+normalaircombat
+state after_normal_air_combat
+normalairground
+state after_normal_ground_deploy
+
+# Read-only snapshots around real tactical actions and the live abort/debrief route.
+campaign state play_before
+tact
+dump normal_ground_play_before.ppm
+campaign move
+campaign state play_after_move
+tact
+dump normal_ground_play_after_move.ppm
+campaign fire
+campaign state play_after_fire
+tact
+dump normal_ground_play_after_fire.ppm
+campaign enemyturn
+campaign state play_after_enemyturn
+tact
+dump normal_ground_play_after_enemyturn.ppm
+campaign abort
+state play_after_return
+campaign state play_returned
+campaign cargo play_returned
+lines
+tact
+dump normal_ground_play_returned.ppm
+
+# Select the same carrier by its live own-marker hit transform, then click the live Return control.
+campaign home-observe home_before_order
+dump normal_ground_home_before_order.ppm
+campaign home-order
+campaign home-observe home_ordered
+dump normal_ground_home_ordered.ppm
+
+# One real one-minute C353 pulse at a time; the helper uses its live travel bound and stops at arrival.
+campaign home-wait
+campaign ack-confirm
+campaign home-observe home_arrival
+campaign state home_arrival
+campaign cargo home_arrival
+strategystate home_arrival
+lines
+dump normal_ground_home_arrival.ppm
+
+# Hourly fuel/range owners are a separate bounded stage after the home arrival snapshot.
+# The runner checks the live speed-7 rectangle before accepting this point click.
+campaign home-observe home_before_hour
+strategystate home_hour_before
+click 60 308
+strategystate home_hour_speed
+tick 1
+campaign ack-confirm
+campaign home-observe home_after_hour
+campaign state home_after_hour
+campaign cargo home_after_hour
+strategystate home_after_hour
+lines
+dump normal_ground_home_after_hour.ppm
+
+# Verify a fresh save through the real save/load path in this private app copy.
+save 0
+load 0
+campaign home-observe home_after_load
+campaign state home_after_load
+campaign cargo home_after_load
+strategystate home_after_load
+lines
+dump normal_ground_home_after_load.ppm

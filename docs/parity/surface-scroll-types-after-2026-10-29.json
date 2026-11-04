@@ -1,0 +1,21 @@
+{
+  "after": [
+    {
+      "ea": "0x9fa7c",
+      "type": "void __fastcall(SoftSurf *pSurf)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x9fa90",
+      "type": "void __fastcall(SoftSurf *pSurf)",
+      "decompiled": true
+    },
+    {
+      "ea": "0x3ed44",
+      "type": "int __fastcall(UiPanel *pPanel, int nX, int nY)",
+      "decompiled": true
+    }
+  ],
+  "other_prototypes_unchanged": true,
+  "saved": true
+}

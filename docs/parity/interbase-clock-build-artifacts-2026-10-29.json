@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "29E81C15767D68B1CE8C9140D3DE6445751270CA7607B1876EC8BEF53F045D82",
+  "source_fingerprint_before_build": "29E81C15767D68B1CE8C9140D3DE6445751270CA7607B1876EC8BEF53F045D82",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-interbase-clock-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "8F418F7615467E18EEB13E466F81607898E5E0DC0399888B708B24F7D094CFB2",
+        "build/tests/Debug/test_invdrag.exe": "ADD996118754F76B7BBFD76FF727679CDE029283D5965123B31BBBA506BF6781",
+        "build/tests/Debug/test_geoscapeframe.exe": "B20FD9F14582A8A1BECBBD70F7D9CD2A5931A54320E9441C1504E9281F1A4C8A"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-interbase-clock-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "BF201EA7C9FD4CCBA8D5424EE999D5D0AA0F5EB717CA358DCDADBCE179A973E3",
+        "build/tests/Release/test_invdrag.exe": "665F2AB4A1A9A34EC4B24A2D6CD87E385C0C091B919CD3DA769721CD6AC60D58",
+        "build/tests/Release/test_geoscapeframe.exe": "D399228228D0641B9251451E5D4BCA0B1676781125570426C4B58F33A9ECFFDD"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Normal destination-first same-Soldier transfer from base1 tobase0 after joined hire, held-pointer draw selection, explicit World clock, identity/count/funds/no-duplicate checks; stale picker notes corrected; production code unchanged from prior inventory-TU candidate"
+}

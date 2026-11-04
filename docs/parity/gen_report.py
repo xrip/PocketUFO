@@ -136,6 +136,7 @@ def count_checks(out):
 
 
 def run_tests():
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     # A suite prints the game's own strings, and those are lang.dat bytes in cp1251 -- the frame
     # test prints soldier names straight out of the text tables. text=True with no explicit
     # encoding decodes in the machine's locale, and on Python 3.14 a decode that fails leaves
@@ -154,22 +155,14 @@ def run_tests():
             continue
         path = os.path.join(TESTS_DIR, fn)
         try:
-            p = subprocess.run([path], capture_output=True, timeout=120, **decode)
+            p = subprocess.run([os.path.abspath(path)], capture_output=True,
+                               timeout=120, cwd=repo_root, **decode)
             out = p.stdout
             checks = count_checks(out)
         except Exception as exc:  # noqa: BLE001
             results.append((fn[:-4], False, 0, str(exc)))
             continue
         name = fn[:-4]
-        # Retry from the repo root: some tests need the archives.
-        if p.returncode != 0:
-            try:
-                p = subprocess.run([os.path.abspath(path)], capture_output=True,
-                                   timeout=120, cwd=".", **decode)
-                out = p.stdout
-                checks = count_checks(out)
-            except Exception:  # noqa: BLE001
-                pass
         results.append((name, p.returncode == 0, checks, ""))
     return results
 
@@ -184,13 +177,16 @@ def main():
     covered = {a for a in cites if a in inv}
     unknown = sorted(a for a in cites if a not in inv)
 
-    # The artifact table (docs/idb/image-artifacts.tsv, read out of the IDB instruction
-    # by instruction) says which uncited functions carry no game behaviour at all, so
-    # the gap list can be read as "what is left to do" instead of a raw count.
+    # Artifact classification is independent of source citations. A citation to a
+    # no-behavior artifact remains an inventory citation but never enters the behavior denominator.
     art = load_artifacts()
+    artifact_addrs = {a for a in art if a in inv}
+    behavior_addrs = set(inv) - artifact_addrs
     art_gaps = sorted(a for a in inv if a not in covered and a in art)
     real_gaps = sorted(a for a in inv if a not in covered and a not in art)
-    art_bytes = sum(inv[a][1] for a in art_gaps)
+    artifact_bytes = sum(inv[a][1] for a in artifact_addrs)
+    uncited_artifact_bytes = sum(inv[a][1] for a in art_gaps)
+    behavior_cited = covered & behavior_addrs
 
     by_sub = defaultdict(lambda: {"cov": [], "gap": []})
     for addr, (name, size, sub) in inv.items():
@@ -211,6 +207,8 @@ def main():
     A("")
     A("Source of truth: `pufobeta.exe.i64` (WinCE/ARM32, 1103 functions) via IDA Pro MCP.")
     A("")
+    A("Current playable results and body-review scope: [completion audit](docs/COMPLETION_AUDIT.md) and [subsystem ledger](docs/parity/subsystem-status-2026-10-29.md).")
+    A("")
     A("## How to verify this report")
     A("")
     A("```bash")
@@ -224,28 +222,41 @@ def main():
     A("")
     A("| Measure | Value |")
     A("|---|---|")
-    A("| Functions cited as evidence | %d / %d (%.1f%%) |"
+    A("| Source-cited inventory functions (not parity evidence) | %d / %d (%.1f%%) |"
       % (len(covered), len(inv), 100.0 * len(covered) / len(inv)))
-    A("| Bytes of original code cited | %d / %d (%.1f%%) |"
+    A("| Source-cited inventory bytes (not behavior coverage) | %d / %d (%.1f%%) |"
       % (cov_bytes, total_bytes, 100.0 * cov_bytes / total_bytes))
-    A("| Functions with no game behaviour (`docs/idb/image-artifacts.tsv`) | %d, %d bytes |"
-      % (len(art_gaps), art_bytes))
-    A("| Behaviour-bearing functions cited | %d / %d (%.1f%%) |"
-      % (len(covered), len(inv) - len(art_gaps),
-         100.0 * len(covered) / (len(inv) - len(art_gaps))))
+    A("| No-behavior artifact entries (all; citation-independent) | %d, %d bytes |"
+      % (len(artifact_addrs), artifact_bytes))
+    A("| Behavior-bearing inventory entries with source citations | %d / %d (%.1f%%) |"
+      % (len(behavior_cited), len(behavior_addrs),
+         100.0 * len(behavior_cited) / len(behavior_addrs)))
     A("| Subsystems in the IDB map | %d |" % len(SUBSYSTEMS))
     A("| Test suites | %d |" % len(tests))
     A("| Test checks run | %d |" % sum(c for _n, _ok, c, _e in tests))
     A("")
-    A("A citation means the port names the original function it answers to in a")
-    A("source comment of the form `@ 0xADDR`. It answers \"is this original function")
-    A("accounted for?\", not \"is the port correct?\" — correctness evidence lives in")
-    A("the per-subsystem notes and the tests listed at the end.")
+    A("Source citations and direct-call counts are inventory metadata. They do not")
+    A("establish raw behavior parity, whether a live flow reaches a function, or whether")
+    A("an assertion checks that function. Direct-call and test-name fields in the reach")
+    A("ledger describe its call graph, not assertion coverage. See the")
+    A("[coverage metric definitions](docs/parity/coverage-metrics.md).")
+    A("")
+    A("This report does not measure playable-flow completion; review the available")
+    A("per-subsystem notes and integration audit records for flow evidence.")
+    A("IDA comments are not evidence: original behavior must be checked in disassembly.")
+    A("")
+    A("Current integration audits (2026-10-24):")
+    A("[strategy](docs/parity/strategy-integration-audit-2026-10-24.md),")
+    A("[tactical flow](docs/parity/tactical-integration-audit-2026-10-24.md),")
+    A("[gear and loading](docs/parity/gear-persistence-completion-2026-10-24.md),")
+    A("[soldier input](docs/parity/soldier-name-completion-2026-10-24.md),")
+    A("[control changes](docs/parity/mind-control-completion-2026-10-24.md),")
+    A("[stun and throw state](docs/parity/stun-completion-2026-10-24.md).")
     A("")
 
-    A("## Per-subsystem status")
+    A("## Per-subsystem citation coverage")
     A("")
-    A("| Subsystem | Recreated | Total | Bytes covered | What it is |")
+    A("| Subsystem | Source-cited inventory entries | Total inventory | Bytes cited | What it is |")
     A("|---|---|---|---|---|")
     for sub, desc in SUBSYSTEMS:
         d = by_sub.get(sub)
@@ -258,10 +269,10 @@ def main():
         A("| `%s` | %d | %d | %d / %d | %s |" % (sub, n_cov, n_tot, b_cov, b_tot, desc))
     A("")
 
-    A("## Recreated functions -> source file")
+    A("## Source citations -> source file")
     A("")
-    A("Every original function the port cites, grouped by subsystem. The file column")
-    A("is the module that answers to it.")
+    A("Every original function address named in source, grouped by subsystem. This is")
+    A("citation inventory, not proof of equivalent behavior or runtime reachability.")
     A("")
     for sub, _desc in SUBSYSTEMS:
         d = by_sub.get(sub)
@@ -269,7 +280,7 @@ def main():
             continue
         A("### `%s` (%d functions)" % (sub, len(d["cov"])))
         A("")
-        A("| Address | Original | Size | Recreated in |")
+        A("| Address | Original | Size | Cited in |")
         A("|---|---|---|---|")
         for addr, name, size, files in sorted(d["cov"], key=lambda r: -r[2]):
             shown = ", ".join("`%s`" % f for f in files[:2])
@@ -282,16 +293,18 @@ def main():
     A("")
     A("Every original function not yet cited, with its size and an explanation,")
     A("so there are no unexplained omissions. `docs/idb/image-artifacts.tsv`")
-    A("classifies the ones that carry no game behaviour at all — import thunks")
+    A("classifies entries with no independent game body — import thunks")
     A("(`LDR R12, =__imp_X; LDR PC, [R12]`), jump thunks, empty stubs, the six CRT")
-    A("init-term entries, the image's own C runtime, the compiled-out debug print —")
+    A("init-term entries, the image's C runtime, debug print and ARM ABI fragments —")
     A("read instruction by instruction out of `pufobeta.exe.i64`. The rest are")
     A("attributed to the subsystem whose port work they belong to.")
     A("")
-    A("Uncited now: %d functions, %d bytes. Of those, %d carry no game behaviour."
+    A(("Uncited now: %d inventory entries, %d bytes. Of those, %d are classified as "
+      "platform/runtime or forwarding artifacts (%d bytes).")
       % (len(art_gaps) + len(real_gaps),
-         art_bytes + sum(inv[a][1] for a in real_gaps), len(art_gaps)))
-    A("%d are real port work: %s"
+         uncited_artifact_bytes + sum(inv[a][1] for a in real_gaps), len(art_gaps),
+         uncited_artifact_bytes))
+    A("%d are uncited behavior-bearing inventory entries: %s"
       % (len(real_gaps),
          ", ".join("`%s`" % inv[a][0] for a in real_gaps) if real_gaps else "none"))
     A("")
@@ -314,7 +327,8 @@ def main():
             target = thunk_target(name)
             if addr in art:
                 cls, ev = art[addr]
-                note = ("**no game behaviour** (`%s`): %s" % (cls, ev))
+                label = "ARM ABI adaptation" if cls == "arm-context-restore" else "no independent game body"
+                note = ("**%s** (`%s`): %s" % (label, cls, ev))
             elif name in UI_PANEL_CONFLICT:
                 note = ("belongs to a **second struct** merged under the name "
                         "`UiPanel`; see docs/parity/ui-core.md")
@@ -358,8 +372,9 @@ def main():
 
     A("## Per-subsystem parity notes")
     A("")
-    A("Each note records the original function addresses, the verified behaviour,")
-    A("every deviation with its reason, and the residual uncertainty.")
+    A("Each note records the original addresses checked, the behavior evidence in scope,")
+    A("known deviations, and residual uncertainty. A note does not imply an assertion")
+    A("for every listed function.")
     A("")
     for note in ("scaffold", "data-layer", "render-audio", "game-core", "ui-core"):
         path = os.path.join("docs", "parity", note + ".md")

@@ -29,6 +29,7 @@
  * parameters are asserted as ranges, not values.
  */
 #include "asset/pufo_asset.h"
+#include "dat/pufo_dat.h"
 #include "game/pufo_boot.h"   /* PUFO_TEXT_REC_STRIDE, the record stride the text blob is expanded at */
 #include "game/pufo_combat.h"
 #include "game/pufo_mapctx.h"
@@ -89,7 +90,7 @@ static ObjectRecFull s_aObjects[OBJECT_COUNT];
 static ObjectRec    *s_apObjects[OBJECT_COUNT];
 static TactItem     *s_apTactItems[ITEM_CAP];
 static i32           s_nTactItems;
-static i32           s_nFlobjsWide;
+static u32           s_nFlobjsWide;
 
 static Soldier      *s_apSoldiers[SOLDIER_CAP];
 static i32           s_nSoldierCount;
@@ -342,7 +343,6 @@ static void Fixture_Reset(void)
     s_nUiSlot1 = 0x99; s_nUiSlot9 = 0x99; s_nUiSlot10 = 0x99; s_nUiSlot11 = 0x99;
     s_nUnk254B4 = 0x99; s_nUnk254B8 = 0x99;
     s_Clock.nSpeed = 1;
-    s_Clock.bPaused = false;
     memset(&s_Item156A88, 0x5A, sizeof(s_Item156A88));
     memset(&s_Item156910, 0x5A, sizeof(s_Item156910));
     memset(&s_Item156A58, 0x5A, sizeof(s_Item156A58));
@@ -654,8 +654,8 @@ static void TestDeployCellFlags(void)
     printf("deploy-point sweep\n");
     Fixture_Reset();
     s_Map.nMapLayers = 3;
-    s_nCraftX = 2;
-    s_nCraftY = 1;
+    s_nCraftX = 0xFF;
+    s_nCraftY = 0xFF;
     /* Group 2 (nMapLayers 3) starts at record 52. Give three records offsets. */
     s_aDeployCounts[2] = 3;
     s_aDeployOffsets[52 * PUFO_DEPLOY_RECORD_BYTES + 0] = 1;   /* dx */
@@ -675,6 +675,15 @@ static void TestDeployCellFlags(void)
      * so the sweep's base is whatever the terrain pass left, not the fixture value. */
     const i32 nBaseX = s_nCraftX;
     const i32 nBaseY = s_nCraftY;
+
+    Check(s_Env.teamSelect.nMapLayers == s_Map.nMapLayers &&
+          s_Env.teamSelect.nCraftMapX == nBaseX &&
+          s_Env.teamSelect.nCraftMapY == nBaseY,
+          "crew selection uses the generated craft placement");
+    Check(s_Env.deploy.nMapLayers == s_Map.nMapLayers &&
+          s_Env.deploy.nCraftMapX == nBaseX &&
+          s_Env.deploy.nCraftMapY == nBaseY,
+          "later team deployment uses the generated craft placement");
 
     MapCell *pA = Cell(10 * nBaseX + 1, 10 * nBaseY + 2, 1);
     MapCell *pB = Cell(10 * nBaseX + 5, 10 * nBaseY + 0, 3);
@@ -866,13 +875,48 @@ static void TestBriefingSkipped(void)
 
 static void TestSaveModeClearsFlag(void)
 {
+    static DatFile dat;
+    TeamUnitsState rosters = { 0 };
+    const char *pszPath = "test_tactinit_mode2.tmp";
+
     printf("save-load mode\n");
     Fixture_Reset();
     s_bUnk254D4 = 1;
-    /* nMode 2: the save path without Save_ReadObjBefore. pDat stays NULL, so the save
-     * readers fail and leave the grid allocated but empty -- what is asserted here is
-     * that unk_138E8C is NOT cleared on this path. */
+
+    /* nMode 2 skips Save_ReadObjBefore. Give the mandatory Soldiers_Reload step a valid,
+     * empty roster and its two trailing chunks; other absent save chunks still leave the
+     * grid empty, as before. */
+    remove(pszPath);
+    DatFile_ctor(&dat);
+    /* The reader finds the used chunk count at the first empty directory entry. */
+    bool bOpened = DatFile_Open(&dat, pszPath, PUFO_DAT_CREATE, 4);
+    Check(bOpened, "  empty save container opened for the soldiers pool");
+    if (!bOpened) {
+        remove(pszPath);
+        return;
+    }
+    bool bWrote = Save_WriteSoldiers(&dat, s_apSoldiers, 0, 0, &rosters);
+    Check(bWrote, "  valid zero-soldier chunk and trailing chunks written");
+    DatFile_Close(&dat);
+    if (!bWrote) {
+        remove(pszPath);
+        return;
+    }
+
+    DatFile_ctor(&dat);
+    bOpened = DatFile_Open(&dat, pszPath, PUFO_DAT_READ, 0);
+    Check(bOpened, "  empty save container reopened for load");
+    if (!bOpened) {
+        remove(pszPath);
+        return;
+    }
+
+    s_Env.pDat = &dat;
     RunMission(2);
+    s_Env.pDat = NULL;
+    DatFile_Close(&dat);
+    remove(pszPath);
+
     CheckEqI32(s_bUnk254D4, 1, "unk_138E8C is left alone when nMode is not 0");
     CheckEqI32(s_bDrawIso, 1, "the shared tail still runs");
     CheckEqI32(s_bSweepArmed, 1, "apUiSlotsA[2] still armed");

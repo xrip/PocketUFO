@@ -313,7 +313,7 @@ typedef struct TactInitEnv {
     i32               nSoldierCapacity;
     TactItem        **apTactItems;     /* Map.apTactItems @ Map+0x23438 */
     i32              *pnTactItemCount; /* Map_nTactItemCount @ Map+0x1513C */
-    i32              *pnFlobjsWide;    /* the dword at Map+0x118 that picks Save_AllocFlobjs's count width */
+    u32              *pnFlobjsWide;    /* loaded TACTVER; LoadGame stores it before Tact_InitMission */
     i32               nObjectCount;    /* Map_nObjectCount @ Map+0x10A8 */
     TactSaveState     *pSaveState;
     TeamUnitsState    *pSaveRosters;

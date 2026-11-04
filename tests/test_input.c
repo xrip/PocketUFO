@@ -967,6 +967,26 @@ static void Tr_CtlClick(void) { g_ptr.nCtlClick++; }
 static void Tr_Slot16(void)   { g_ptr.nSlot16++; }
 static void Tr_Slot18(void)   { g_ptr.nSlot18++; }
 
+/* These stand in for the two real screen-3 button effects only. Input_OnPointer
+ * must arm the widget and Input_OnPointerUp must invoke its callback before the
+ * mode-to-latch post-pass reads the resulting mode. */
+static TactInputState *g_pScreen3CallbackState;
+static i32 g_nScreen3Mode7Calls;
+static i32 g_nScreen3Mode11Calls;
+
+static void Ptr_SetScreen3Mode7(void)
+{
+    ++g_nScreen3Mode7Calls;
+    g_pScreen3CallbackState->nActionMode = 7;
+    g_pScreen3CallbackState->nActionLatch = PUFO_ACTION_LATCH_TARGETING;
+}
+
+static void Ptr_SetScreen3Mode11(void)
+{
+    ++g_nScreen3Mode11Calls;
+    g_pScreen3CallbackState->nActionMode = 11;
+}
+
 static MapCell *PtrLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 {
     (void)nX; (void)nY; (void)nLayer; (void)pUser;
@@ -1550,6 +1570,53 @@ static void TestPointerUp(void)
     s.pSelUnit = &g_aUnit[0];
     Input_OnPointerUp(&s, &h, &w);
     CheckEqI32((i32)s.nActionLatch, 1, "  mode 11 latches 1");
+
+    /* A screen-3 click changes the mode inside UiControl_HitTest. The following
+     * latch pass must read that new value, as the raw 0x14F64 block does. */
+    PtrBankReset();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    memset(g_aPtrUnits, 0, sizeof(g_aPtrUnits));
+    s = PtrState(3);
+    s.bPlayerInputOn = 1;
+    s.nActionMode = 12;
+    s.pSelUnit = &g_aPtrUnits[0];
+    s.pSelUnit->uTu = 40;
+    g_pScreen3CallbackState = &s;
+    g_nScreen3Mode7Calls = 0;
+    PtrLive(39, 50, 50, 20, 20);
+    g_bank.aCtl[39].pfnClick = Ptr_SetScreen3Mode7;
+    Input_OnPointer(&s, &h, &w, 55, 55, true);
+    CheckEqI32((i32)g_bank.aCtl[39].nState, 1,
+               "  a real screen-3 press arms widget 39");
+    CheckEqI32(s.nActionMode, 12, "  the press has not called the mode-7 handler yet");
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_nScreen3Mode7Calls, 1,
+               "  the release calls widget 39 through UiControl_HitTest");
+    CheckEqI32(s.nActionMode, 7, "  widget 39 changes Map_nActionMode during release");
+    CheckEqI32((i32)s.nActionLatch, PUFO_ACTION_LATCH_TARGETING,
+               "  the post-release mode read preserves widget 39's target latch");
+    CheckEqI32((i32)s.nUiScreen, 0, "  the fired action pad closes to the map");
+
+    PtrBankReset();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.bPlayerInputOn = 1;
+    s.nActionMode = 12;
+    s.pSelUnit = &g_aPtrUnits[0];
+    s.pSelUnit->uTu = 40;
+    g_pScreen3CallbackState = &s;
+    g_nScreen3Mode11Calls = 0;
+    PtrLive(43, 50, 50, 20, 20);
+    g_bank.aCtl[43].pfnClick = Ptr_SetScreen3Mode11;
+    Input_OnPointer(&s, &h, &w, 55, 55, true);
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_nScreen3Mode11Calls, 1,
+               "  the release calls widget 43 through UiControl_HitTest");
+    CheckEqI32(s.nActionMode, 11, "  widget 43 changes Map_nActionMode during release");
+    CheckEqI32((i32)s.nActionLatch, PUFO_ACTION_LATCH_THROW,
+               "  the post-release mode read arms the throw latch");
+    CheckEqI32((i32)s.nUiScreen, 0, "  the throw action pad closes to the map");
+    g_pScreen3CallbackState = NULL;
 
     PtrBankLiveAll();
     memset(&g_ptr, 0, sizeof(g_ptr));

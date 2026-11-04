@@ -2,7 +2,7 @@
  *
  * The decisions worth pinning are the mode dispatch (4 rows, 7 rows, or none), the row key
  * selection (table value, forced to 255 when the disabled byte is set), the row geometry, the
- * mode 3 side effects (anActionPhaseSave0[112] = 40 and the modal cursor step), and the control
+ * mode 3 side effects (the modal cursor wrap, progressive flag and output layout), and the control
  * blit. Ink is the observable: a row blitted with key 0 leaves the surface alone, and a row
  * blitted with key 255 writes the frame colour exactly. The backdrop blob is drawn into palette
  * slot 20, which this fixture leaves zero, so it never inks. */
@@ -50,6 +50,7 @@ static PadImage  g_ctlPad;
 static u8        g_aCtlPadBlob[5];
 static i32       g_nPhaseSave112;
 static UiModalAnim g_modalAnim;
+static UiModalLayout g_modalLayout;
 static GfxColorEnv g_color;
 static MainMenuEnv g_env;
 static i32       g_nCtlBlits;
@@ -75,10 +76,15 @@ static void Fixture_Reset(void)
     memset(&g_startCtl, 0, sizeof(g_startCtl));
     memset(&g_ctlPad, 0, sizeof(g_ctlPad));
     memset(&g_modalAnim, 0, sizeof(g_modalAnim));
+    memset(&g_modalLayout, 0, sizeof(g_modalLayout));
     memset(&g_color, 0, sizeof(g_color));
     memset(&g_env, 0, sizeof(g_env));
 
     g_nPhaseSave112 = -1;
+    g_modalLayout.nButtonX[0] = 17;
+    g_modalLayout.nButtonX[1] = 23;
+    g_modalLayout.nButtonY = 29;
+    g_modalLayout.nButtonCount = 99;
     g_nCtlBlits = 0;
 
     for (i = 0; i < 7; ++i) {
@@ -116,6 +122,7 @@ static void Fixture_Reset(void)
     g_env.pTextRecs           = g_aTextRecs;
     g_env.pnActionPhaseSave112 = &g_nPhaseSave112;
     g_env.pModalAnim          = &g_modalAnim;
+    g_env.pModalLayout        = &g_modalLayout;
     g_env.pColor              = &g_color;
     g_env.pfnCtlBlit          = CtlHook_BlitPad;
     g_env.pfnCtlBlitEx        = CtlHook_BlitPad;
@@ -137,6 +144,7 @@ int main(void)
     SoftSurf_ctor(&g_surf);
     SoftSurf_AllocPixels(&g_surf, 240, 320, PIXMODE_16BPP);
     g_pMainSurface = &g_surf;
+    Render_SetTarget(240, 320, 2, 2, 480, g_surf.pPixels);
 
     PutRec(PUFO_MAINMENU_REC_MENU0, "new");
     PutRec(PUFO_MAINMENU_REC_MENU0 + 1, "load");
@@ -195,13 +203,43 @@ int main(void)
     CheckEqI32(g_nPhaseSave112, -1, "mode 2 leaves anActionPhaseSave0[112] alone");
     CheckEqI32(g_modalAnim.nCursor, 0, "and never enters the modal");
 
-    /* --- mode 3 adds the modal: the scratch write and the cursor step --- */
-    Fixture_Reset();
-    g_env.nListMode = PUFO_MAINMENU_MODE_LOADING;
-    MainMenu_Draw(&g_env);
-    CheckEqI32(g_nPhaseSave112, 40, "mode 3 writes 40 into anActionPhaseSave0[112]");
-    CheckEqI32(g_modalAnim.nCursor, 1, "the modal cursor steps 0 -> 1");
-    CheckEqI32(g_modalAnim.bProgressive, 1, "and the cursor at zero turns progressive draw on");
+    /* --- mode 3 loads the cursor from phase 40; UiModal_DrawDialog wraps it to 1. --- */
+    {
+        static u8 aTestGlyph[4] = { 0, 0, 27, 0xFF };
+        static u8 *apTestGlyphs[256];
+        PufoFont savedFont = g_fontSys;
+        FontMetrics savedMetrics = g_fontMetrics;
+        const i32 nSavedGlyphPalBase = g_nGlyphPalSlotBase;
+
+        memset(&g_fontSys, 0, sizeof(g_fontSys));
+        memset(&g_fontMetrics, 0, sizeof(g_fontMetrics));
+        for (i32 i = 0; i < 256; ++i) {
+            apTestGlyphs[i] = aTestGlyph;
+            g_fontMetrics.aAdvance[i] = 1;
+        }
+        g_fontSys.apSprIndex = apTestGlyphs;
+        g_fontSys.nSprIndexCount = 256;
+        g_fontSys.nGlyphBase = 0;
+
+        Fixture_Reset();
+        g_env.nListMode = PUFO_MAINMENU_MODE_LOADING;
+        MainMenu_Draw(&g_env);
+        CheckEqI32(g_nPhaseSave112, 1,
+                   "mode 3 stores the modal cursor after its 40-to-1 wrap");
+        CheckEqI32(g_modalAnim.nCursor, 1, "the modal cursor wraps 40 to 1");
+        CheckEqI32(g_modalAnim.bProgressive, 0, "the cursor wrap clears progressive draw");
+        CheckEqI32(g_modalLayout.nButtonCount, 0, "the loading modal has no button layout");
+        CheckEqI32(g_modalLayout.nButtonX[0], 17, "no-button layout leaves button X0 alone");
+        CheckEqI32(g_modalLayout.nButtonX[1], 23, "no-button layout leaves button X1 alone");
+        CheckEqI32(g_modalLayout.nButtonY, 29, "no-button layout leaves button Y alone");
+        Check(InkAt(120, 150) != 0, "the loading modal body draws on the surface");
+        Check(InkAt(52, 151) != InkAt(51, 151),
+              "the loading text draws a glyph at its first text position");
+
+        g_fontSys = savedFont;
+        g_fontMetrics = savedMetrics;
+        g_nGlyphPalSlotBase = nSavedGlyphPalBase;
+    }
 
     /* --- an unknown mode draws no rows at all --- */
     Fixture_Reset();

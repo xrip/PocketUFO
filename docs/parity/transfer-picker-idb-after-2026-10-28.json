@@ -1,0 +1,13 @@
+{
+  "after": [
+    {
+      "ea": "0x989c4",
+      "comment": "Raw writes the chosen destination BaseRec+4 key into the working SmapSite+1 byte. This is the stable base key, not the destination strip-row index; recovery resolves it back to a current base index."
+    },
+    {
+      "ea": "0x989d0",
+      "comment": "Raw compares hit destination row with the source row. A different valid row executes the predicated clear at0x989D4..0x989DC and closes byte1870F8. The old unreachable-branch claim was false: Base_HitTestFacilityStrip takes the transfer-built path to0x6723C (minimum X10), then rejoins ordinary row hit checks; it is not forced to miss. Cursor-at-source fixtures exercise the equal-row case only."
+    }
+  ],
+  "saved": true
+}

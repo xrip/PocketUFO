@@ -1,0 +1,6 @@
+{
+  "type_after": "int __fastcall(TactState *pState, Soldier *pUnit)",
+  "credit_field_application_count": 1,
+  "return_claim": "Existing int retained; all five checked callers ignore R0. Exact return type is not claimed.",
+  "saved": true
+}

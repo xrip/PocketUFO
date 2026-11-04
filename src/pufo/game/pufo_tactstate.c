@@ -293,18 +293,25 @@ bool TactState_EnqueueFireBurst(TactState *pState, const FireBurstSpec *pSpec,
         return false;
     }
 
-    /* Step 1: the TU check happens BEFORE facing, and its comparison is strict, so
+    /* Raw stores at 0x4B0A4 and 0x4B0BC precede the TU branch at 0x4B0D0.
+     * STRB clears the fire-skip byte. */
+    if (pSpec->ppThrowTarget != NULL) {
+        *pSpec->ppThrowTarget = NULL;
+    }
+    pState->bSkipFireShots = 0;
+
+    /* Step 2: the TU check happens BEFORE facing, and its comparison is strict, so
      * uTu == nTuCost is allowed. No queue entry is written on failure. */
     if ((i32)pSpec->pUnit->uTu < pSpec->nTuCost) {
         return false;
     }
 
-    /* Step 2: face the target. */
+    /* Step 3: face the target. */
     if (pfnFaceToward != NULL) {
         pfnFaceToward(pSpec->pUnit, pSpec->nX, pSpec->nY, pUser);
     }
 
-    /* Step 3: the shot count. Mode 7 (multi-target) uses the target list length;
+    /* Step 4: the shot count. Mode 7 (multi-target) uses the target list length;
      * mode 0 (auto) fires three; every other mode fires one. */
     if (pSpec->nMode == 7) {
         nShots = pSpec->nMultiTargetCount;
@@ -329,7 +336,7 @@ bool TactState_EnqueueFireBurst(TactState *pState, const FireBurstSpec *pSpec,
         u8 nY;
         u8 nZ;
 
-        /* Step 4a: the shot entry. */
+        /* Step 5a: the shot entry. */
         pShot = &pState->aQueue[pState->nQueueLen];
         pShot->nCmd  = (u8)TACTCMD_FIRE_SHOT;
         pShot->pUnit = pSpec->pUnit;
@@ -354,17 +361,21 @@ bool TactState_EnqueueFireBurst(TactState *pState, const FireBurstSpec *pSpec,
         pShot->nArgDword = pSpec->nArg;
         /* Only the FIRST shot is charged TU; the rest carry 0. */
         pShot->nTuCost   = (i == 0) ? pSpec->nTuCost : 0;
+        pShot->nMode     = pSpec->nMode;
         pState->nQueueLen += 1;
 
-        /* Step 4b: the mark entry that pairs with it. */
+        /* Step 5b: the mark entry that pairs with it. */
         pShot = &pState->aQueue[pState->nQueueLen];
         pShot->nCmd  = (u8)TACTCMD_FIRE_MARK;
         pShot->pUnit = pSpec->pUnit;
         pState->nQueueLen += 1;
     }
 
-    /* Step 5: clear the aim afterwards. */
+    /* Step 6: clear aim, then reset the original shot-count scratch. */
     TactState_EnqueueClearAim(pState, pSpec->pUnit);
+    if (pSpec->pnShotCount != NULL) {
+        *pSpec->pnShotCount = 0;
+    }
     return true;
 }
 
@@ -614,13 +625,27 @@ bool Map_QueueDoorAction(TactState *pState, MapCell *pCellA, MapCell *pCellB,
  *   - The original's Sound_Play takes a mode in R1, 2 for the sprite-selected
  *     footstep samples and 4 for the fixed ones. The port's Sound_Play keeps the
  *     one-argument shape the rest of the port settled on, so the mode is lost.
- *   - The nStepZDelta test at 0x4F8DC compares against a leftover register
+ *   - The queue nDelta test at 0x4F8DC compares against a leftover register
  *     instead of -1. The port implements the intended nDelta == -1.
  * ========================================================================= */
 
 static MapCell *MoveCell(const MoveActionCtx *pCtx, i32 nX, i32 nY, i32 nZ)
 {
     return pCtx->pfnLookup(nX, nY, nZ, pCtx->pUser);
+}
+
+static MapCell *MoveFootprintCell(const MoveActionCtx *pCtx, i32 nX, i32 nY,
+                                 i32 nZ, i32 nOffsetX, i32 nOffsetY)
+{
+    i32 nCellX;
+    i32 nCellY;
+    i32 nCellLayer;
+
+    if (!MapCell_LargeFootprintCoords(nX, nY, nZ, nOffsetX, nOffsetY,
+                                      &nCellX, &nCellY, &nCellLayer)) {
+        return NULL;
+    }
+    return MoveCell(pCtx, nCellX, nCellY, nCellLayer);
 }
 
 /* LABEL_187: mark the entry aborted, then rebuild team visibility. */
@@ -718,11 +743,12 @@ static void MoveStep(TactState *pState, const MoveActionCtx *pCtx,
     if (pTo == NULL) { MoveAbort(pState, pCtx); return; }
 
     if (Unit_bIsLarge(pUnit)) {
-        /* 0x4F718..0x4F794: a large unit needs the whole 2x2 footprint whose
-         * near corner is the destination, grid deltas +0, +1, +60 and +61. */
-        MapCell *pB = MoveCell(pCtx, pTo->nX + 1, pTo->nY, pTo->nZ);
-        MapCell *pC = MoveCell(pCtx, pTo->nX, pTo->nY + 1, pTo->nZ);
-        MapCell *pD = MoveCell(pCtx, pTo->nX + 1, pTo->nY + 1, pTo->nZ);
+        /* 0x4F718..0x4F794: the original reads flat-grid deltas +1, +60 and
+         * +61. Keep the anchor lookup above axis-bounded, then canonicalize only
+         * these three fixed-stride neighbour indices for the injected lookup. */
+        MapCell *pB = MoveFootprintCell(pCtx, pTo->nX, pTo->nY, pTo->nZ, 1, 0);
+        MapCell *pC = MoveFootprintCell(pCtx, pTo->nX, pTo->nY, pTo->nZ, 0, 1);
+        MapCell *pD = MoveFootprintCell(pCtx, pTo->nX, pTo->nY, pTo->nZ, 1, 1);
         if (MapCell_HasOccupant(pTo) && pTo->pUnit != pUnit) {
             MoveAbort(pState, pCtx); return;
         }
@@ -900,7 +926,7 @@ static void MoveFire(TactState *pState, const MoveActionCtx *pCtx,
 
     *pCtx->pbActionLatch = 0;
 
-    if ((pUnit->bFlags & 0x20) != 0 || (i8)pState->nStepZDelta != 0) {
+    if ((pUnit->bFlags & 0x20) != 0 || pState->bSkipFireShots != 0) {
         /* 0x5035C..0x50530: the shot was cancelled mid-animation. Clear the
          * trace flag off each of the ten multi-target cells and stop. The three
          * arrays are doubles in world units: Z is scaled by 1/3 for the layer
@@ -1135,12 +1161,10 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
     Unit_UpdateAnimPose(pUnit);
     Unit_RecalcInventoryStat(pUnit, pCtx->pInvHooks);
 
-    /* 0x323B8..0x323D8: the walk's own tail stores the distance it took into Map.nTravelSave
-     * @ 0x14038, the cell Tact_ProcessFireAction's throw-flight arm (case 0x11) compares its own
-     * counter against. This is the only writer on the throw path -- the tail arc call at 0x50960
-     * writes Map.dTravel, never the saved distance. The landing block is published here as well:
-     * Unit_RollChance reads the bound straight off the Map block (0x14080) and at this point the
-     * original's block holds the arc the landing call solved, for the UNSCATTERED target. */
+    /* 0x323B8..0x323D8: this first walk stores its distance into Map.nTravelSave @ 0x14038,
+     * which the throw-flight arm compares. The later landing walk at 0x50908 can replace it;
+     * the final arc call at 0x50960 writes Map.dTravel, never the saved distance. The landing
+     * block is published here for Unit_RollChance, which reads its bound at Map+0x14080. */
     ThrowPublishAim(pCtx, pCtx->pThrowArc);
     pCtx->pAim->dTravelSave = pCtx->pThrowLanding->dTravel;
 
@@ -1151,10 +1175,24 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
     pCtx->pScatter->nDx *= 2;
     pCtx->pScatter->nDy *= 2;
 
-    /* 0x50960: the tail arc call. The throw is resolved ONCE (0x507F8); this call only re-solves
-     * the arc for the scattered target, and what it writes is the block the flight then walks.
-     * A part of this chain earlier ran a SECOND Tact_ResolveThrowLanding here, which the original
-     * has no arm for; it overwrote the saved distance and moved the landing (Part 165). */
+    /* 0x50908: after scatter, the original runs the landing walk again with scattered X/Y and
+     * the original Z. Its return is ignored, but a non-rejected walk replaces Map.dTravelSave;
+     * a range rejection returns before that store, so retain the first walk's saved distance. */
+    (void)Tact_ResolveThrowLanding(pCtx->pThrowArc, pCtx->pThrowLanding,
+                                   pCtx->pTables, &pCtx->geom, pCtx->pfnLookup,
+                                   pCtx->pUser, pUnit, *pCtx->ppThrowTarget,
+                                   pCtx->pThrowBudget, (u8)pCtx->geom.nDimX,
+                                   nX0, nY0, nZ0,
+                                   nX1 + pCtx->pScatter->nDx,
+                                   nY1 + pCtx->pScatter->nDy,
+                                   nZ1);
+    if (!pCtx->pThrowLanding->bRejected) {
+        pCtx->pAim->dTravelSave = pCtx->pThrowLanding->dTravel;
+    }
+
+    /* 0x50960: the final arc call adds scatter Z after the second landing walk. It writes the
+     * aim block that the flight then walks; the saved distance from the second walk remains,
+     * unless that walk was range-rejected before its save. */
     Tact_SimulateThrowArc(pCtx->pThrowArc, &pCtx->geom, pCtx->pfnLookup,
                           pCtx->pUser, nX0, nY0, nZ0,
                           nX1 + pCtx->pScatter->nDx,
@@ -1321,6 +1359,21 @@ static void Fall_SyncCounts(const FallActionCtx *pCtx)
     }
     if (pCtx->pnXcomCount != NULL)  { *pCtx->pnXcomCount  = (u8)pCtx->pLists->nXcom; }
     if (pCtx->pnEnemyCount != NULL) { *pCtx->pnEnemyCount = (u8)pCtx->pLists->nEnemy; }
+}
+
+/* The raw removal reads both Map counts at each call. World keeps those two
+ * SideLists counts by value, so refresh that view before a later queued removal. */
+static void Fall_RefreshSideLists(const FallActionCtx *pCtx)
+{
+    if (pCtx->pLists == NULL) {
+        return;
+    }
+    if (pCtx->pnXcomCount != NULL) {
+        pCtx->pLists->nXcom = (i32)*pCtx->pnXcomCount;
+    }
+    if (pCtx->pnEnemyCount != NULL) {
+        pCtx->pLists->nEnemy = (i32)*pCtx->pnEnemyCount;
+    }
 }
 
 /* 0x53960..0x539AC and 0x53AF8..0x53B40: the "I see the enemy" message is pushed
@@ -1552,6 +1605,7 @@ static void Fall_PushControlMessage(const FallActionCtx *pCtx, Soldier *pVictim)
 static void Fall_PanicVictim(TactState *pState, const FallActionCtx *pCtx,
                              Soldier *pActor, Soldier *pVictim)
 {
+    Fall_RefreshSideLists(pCtx);
     SideLists_RemoveUnit(pCtx->pLists, pVictim);
     Fall_SyncCounts(pCtx);
 
@@ -1589,6 +1643,7 @@ static void Fall_PanicVictim(TactState *pState, const FallActionCtx *pCtx,
 static void Fall_ChryssalidTransform(TactState *pState, const FallActionCtx *pCtx,
                                      Soldier *pActor, Soldier *pVictim)
 {
+    Fall_RefreshSideLists(pCtx);
     SideLists_RemoveUnit(pCtx->pLists, pVictim);
     Fall_SyncCounts(pCtx);
 
@@ -2536,8 +2591,8 @@ void Tact_ProcessFireAction(TactState *pState, const FireActionCtx *pCtx)
                 && (pAim->dTravelSave <= pAim->dBound
                     || *pCtx->pnShotCount >= *pCtx->pnBurstShots)) {
                 Fire_ResolveShot(pCtx);
-                /* 0x51D28 writes only the low byte of the dword. */
-                pState->nStepZDelta = (pState->nStepZDelta & ~0xFF) | 1;
+                /* 0x51D28 sets the fire-skip byte. */
+                pState->bSkipFireShots = 1;
                 *pCtx->pbFallDamagePending = 1;
                 Fire_SweepSamples(pCtx, false, true);
             }

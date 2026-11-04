@@ -1,0 +1,37 @@
+# Process 1: use the same real menu, base placement, cargo, contact, launch, and loadout path as
+# e2e_flow_victory.txt. Save only after a real deployment, move, and rifle shot have settled.
+
+click 120 124
+tick 20
+pick
+close
+close
+tick 20
+state resume_setup
+campaign gear
+campaign cargo resume_staged_craft
+campaign contact
+campaign trace resume_contact
+tick 20
+campaign trace resume_contact_pulses
+lines
+campaign state resume_contact_arrival
+campaign launch
+campaign state resume_launch
+tact
+campaign deploy
+tact
+campaign grenade
+campaign state resume_loadout
+campaign cargo resume_active_mission
+campaign move
+tact
+campaign fire
+tact
+campaign state resume_before_save
+tact
+state resume_before_save
+campaign home-observe resume_before_save
+campaign cargo resume_before_save
+campaign tact-resume-owners resume_before_save
+save 0

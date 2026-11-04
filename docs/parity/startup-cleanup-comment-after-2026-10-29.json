@@ -1,0 +1,5 @@
+{
+  "ea": "0x38D7C",
+  "comment": "StartUi_Shutdown: tears down the start screen. 0x38D80 sound shutdown, 0x38D84 kill timers, then 15 groups (MOV R8,#0xF at 0x38D8C) of 3 pads (MOV R5,#3 at 0x38D94): MOV/ORR R3,#0xE34 at 0x38D98..0x38D9C in the inner loop, inner step ADD R4,#4 (bytes), outer ADD R7,#0x20 (one UiControl), and 0xE34 = 32*113 + 0x14 is widget 113's pPad0 -- so the loop frees the three adjacent pad dwords of bank widgets 113..127 and nothing else, each via PadImage_FreeData (0x38DB8) + operator delete (0x38DC0) without clearing the slot: 0x38DC4..0x38DD0 only update counters/pointers and branch. The original leaves dangling pad pointers; the port's NULL store is a deliberate safe cleanup adaptation. Then the font at 0x38DE8, the standalone control unk_1571B4 at 0x38DF8..0x38E08, the blocks at 0x38E14/0x38E20, Map.nUiScreen = 22 at 0x38E2C. tests/test_menubtn.c checks the port cleanup range; its NULL stores are not evidence of an original STR.",
+  "saved": true
+}

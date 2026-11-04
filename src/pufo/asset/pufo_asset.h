@@ -28,9 +28,8 @@
 #define PUFO_ARCHIVE_LANG    0
 #define PUFO_ARCHIVE_MAIN    1
 
-/* The IDB's AssetReader is 32 bytes on the original ILP32 target. As with
- * DatFile, the Win64 in-memory offsets differ because of pointer size; only
- * the named fields are used, so that is harmless. */
+/* AssetReader has no pointers or handles. Its byte/tag fields and four u32
+ * values retain the original 32-byte layout and offsets on Win64. */
 typedef struct AssetReader {
     u8  bFound;        /* 0x00 */
     char szName[PUFO_ASSET_NAME_MAX]; /* 0x01 */

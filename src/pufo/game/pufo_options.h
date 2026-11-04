@@ -50,6 +50,9 @@ typedef struct PufoOptions {
     u8  bForceNoDrag;    /* +108 */
     i32 nGameSpeed;      /* 0x150fc */
     i32 nGamma;          /* 0x15100 */
+    u8  bMusicLoop;      /* port-side (2026-11-04): music loop setting, 1 = loop.
+                          * Not a registry value: persisted in the savegame chunk
+                          * `1_24gset` (see pufo_save.h). */
 } PufoOptions;
 
 void Options_InitDefaults(PufoOptions *pOpt);

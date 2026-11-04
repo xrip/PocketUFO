@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-28",
+  "source_fingerprint": "69C741701ACABC22CE90584EBE85BC67A180B5E078E51510FDBB180F4A489E74",
+  "source_files": 434,
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "log": ".workers/luna-mission-init-audit/debug-arrival-loot-full-compile.log",
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "4AA9957BEC1E94A4BB73DA3221D004280B4303F260D7CFEDB238A5F9C07F1479",
+        "build/tests/Debug/test_ship.exe": "0E1AD75051B44D9531A4F0D587F2110E4933F6595DA5EF2F31B0360E5C1422F1",
+        "build/tests/Debug/test_strateg.exe": "BA57E24EA1E91CB1DB0DF8A036947D6719F1465C781BFD344A16AA67173E8EF8"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "log": ".workers/luna-mission-init-audit/release-arrival-loot-full-compile.log",
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "38FCBE20BEE8FEACEB5096579ABEBDCDD381856342EDCF9254E73049C08ECF54",
+        "build/tests/Release/test_ship.exe": "41A29DBEAD585E44DA1FA7535C7C99520F3C744769D3B9549E822E75FFC7F012",
+        "build/tests/Release/test_strateg.exe": "61211268F900445295B5A7E1119F1066701746602F61A5C2C95F1F06E299FCE0"
+      }
+    }
+  },
+  "test_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 of sorted relative POSIX path + space + lowercase SHA256 + LF for files under src/tests/cmake and root CMakeLists.txt",
+  "idb_notes": [
+    {
+      "address": "0x68EDC",
+      "comment": "Raw ARM 2026-10-28: conditional message40 append is BLEQ. Entry0x6835C stores incoming R1 low byte at SP+0x3C;0x68EB0 reloads it,0x68EBC tests zero,0x68EC0 always sets UI failure/refresh on shortage,0x68EC4..0x68EDC prepares/calls message only if argument==0. Arrival0x80E58 passesR1=0 (announce); base-defense shutdown0x3E004 passesR1=1 (suppress). Port previously inverted the gate; fixed as !bSuppressAmmoShortage. Tests now check both argument values and production event->loot handoff; runtime still pending. Raw and previous comment backed up in docs/parity/mission-return-handoff-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x68930",
+      "comment": "Raw ARM checked 2026-10-28: STR R0,[R1] writes full 32-bit1 to0x1870C8, not a byte flag. Ammo-shortage branch0x68EC0 does the same; its LDR literal at0x68EB8 resolves via0x68A94 to0x1870C8. Port TacticalLootEnv previously exposed u8* and World cast its u32 owner, retaining high bytes. Restored u32* pdwUiRefreshFlag and direct World binding. Regressions seed0x12340000 and require exactly1; compile only, runtime pending. Raw/old comment preserved in docs/parity/loot-shortage-word-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x68914",
+      "comment": "Raw ARM checked2026-10-28: message39 R2 is LDRB [0x159678+4], low byte of craft-index cell0x15967C. 0x7FBC0/0x7FBEC read this cell as craft index for FindIdxForShip0x7FBF4. Event arrival0x807B8 stores current craft index to that cell and continues at0x80894, so a later landing in the same pass can see its new value. Port now binds TacticalLootEnv.pnInterceptShipIdx to World.nInterceptShipIdx and reads low byte when posting, replacing hardcoded0. Source fixture changes0x101->0x202 between calls and expects1->2; runtime pending. Raw evidence and prior note: docs/parity/loot-stores-live-owner-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+# From the natural-victory save, buy real staff and receive the recovered site cargo.
+# The final base-0 material stock is checked before the private slot-1 save.
+load 0
+state manufacture_setup_loaded
+strategystate manufacture_setup_loaded
+click 180 266
+tick 2
+click 220 15
+tick 2
+click 180 292
+tick 20
+strategystate staff_shop_open
+
+# Shop sixteen engineers and sixteen scientists through the live quantity columns.
+click 25 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 196 126
+click 25 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+click 196 142
+strategystate staff_order
+click 120 306
+tick 2
+click 201 11
+tick 2
+strategystate staff_pending
+click 60 308
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 8
+click 29 186
+tick 2
+strategystate staff_arrived
+lines
+save 1
+state staff_setup_saved

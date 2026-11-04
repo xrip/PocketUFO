@@ -722,15 +722,17 @@ static void TestPackRgb565Pair(void)
 {
     GfxColorEnv env;
     u32         nSavedFormat = g_ffFormat;
+    i32         nFadeCount = 0;
     static const i32 nG3 = 3;   /* the gamma cells this fixture states, in place of the global */
     static const i32 nG10 = 10;
+    static const i32 nG2 = 2;
 
     printf("Gfx_PackRgb565Pair\n");
 
     /* gamma 3 gives factor 3 * 0.1 + 0.7 = 1.0, so the channels pass through at their
      * natural 5/6/5 widths: 255 >> 3 is 31, 255 >> 2 is 63. */
     env.pnGamma = &nG3;
-    env.nFadeCount   = 0;
+    env.pnFadeCount = &nFadeCount;
     CheckEqU32(Gfx_PackRgb565Pair(&env, 255, 255, 255, 128, 128, 128), 0x8410,
                "  returns the SECOND packed colour, not the first");
 
@@ -744,13 +746,25 @@ static void TestPackRgb565Pair(void)
     /* A fade divides again, and the inner division is integer: (11 - 5) / 2 + 1 = 4.
      * 31/4 = 7, 63/4 = 15. */
     env.pnGamma = &nG3;
-    env.nFadeCount   = 5;
+    nFadeCount = 5;
     CheckEqU32(Gfx_PackRgb565Pair(&env, 255, 255, 255, 255, 255, 255) & 0xFFFF, 0x39E7,
                "  fade divides a second time by (11 - nFade)/2 + 1");
 
+    /* This is the live Map+0x64 cell. Do not rebuild env between these two values: raw 0x2D968
+     * reads it on each call. At 10 the divisor is 1; after the fade tick decrements it to 9,
+     * the divisor is 2. The modal's fixed second RGB pair is (10,90,50). */
+    g_ffFormat = PUFO_FF_565;
+    env.pnGamma = &nG2;
+    nFadeCount = 10;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 155, 255, 0, 10, 90, 50), 0x0B06,
+               "  live fade 10 has divisor 1");
+    nFadeCount = 9;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 155, 255, 0, 10, 90, 50), 0x0183,
+               "  same live fade cell at 9 changes the modal pair to raw value 0x0183");
+
     /* Clamps are 5 / 6 / 5 bits. */
     env.pnGamma = &nG3;
-    env.nFadeCount   = 0;
+    nFadeCount = 0;
     CheckEqU32(Gfx_PackRgb565Pair(&env, 1000, 1000, 1000, 1000, 1000, 1000) & 0xFFFF, 0xFFFF,
                "  channels clamp to 31 / 63 / 31");
 

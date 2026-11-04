@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-29",
+  "status": "completed_static_review_with_open_boundaries",
+  "baseline_source_fingerprint": "ACDE1B5EFEBFD57C5CA6282D9BD67F3B5BD65BABBD9150EF0E474B082AAF4FA6",
+  "runtime_executed": false,
+  "batches": [
+    {
+      "id": "render-colors",
+      "owner": "/root/fire_burst_reset_impl",
+      "addresses": [
+        "0x2D82C",
+        "0x3E47C",
+        "0x2DCE4",
+        "0x9E5C8",
+        "0xA2000"
+      ],
+      "report": ".workers/luna-body-render-colors/RESULT.md",
+      "status": "completed_body_capture_one_conditional_owner_unproven"
+    },
+    {
+      "id": "indexed-glyph-loops",
+      "owner": "/root/soldier_item_wire_links",
+      "addresses": [
+        "0xA306C",
+        "0xA3638",
+        "0xA33C8",
+        "0xA41D4"
+      ],
+      "report": ".workers/luna-body-indexed-glyph-loops/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "copy-loops",
+      "owner": "/root/research_manufacture_connection",
+      "addresses": [
+        "0xA3A14",
+        "0xA3BB8",
+        "0xA3DB8",
+        "0xA42E4"
+      ],
+      "report": ".workers/luna-body-copy-loops/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "rect-sample-loops",
+      "owner": "/root/mission_return_connection_audit",
+      "addresses": [
+        "0xA3F94",
+        "0xA4450",
+        "0xA4630"
+      ],
+      "report": ".workers/luna-body-rect-sample-loops/RESULT.md",
+      "status": "completed_static_review"
+    },
+    {
+      "id": "blend-flip-loops",
+      "owner": "/root/tactical_load_reset_regression",
+      "addresses": [
+        "0xA47D0",
+        "0xA49A0"
+      ],
+      "report": ".workers/luna-body-blend-flip-loops/RESULT.md",
+      "status": "completed_static_review"
+    }
+  ]
+}

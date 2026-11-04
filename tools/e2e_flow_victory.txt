@@ -1,0 +1,72 @@
+# Natural mission victory and recovery flow. Run with tools/e2e_victory.sh.
+#
+# Setup limits: the normal menu/new-game/placement path is used. `campaign gear`
+# checks the original six-rifle, ten-clip, four-grenade starter kit without
+# changing cargo. `campaign contact` creates the fixed race-0, class-2 strategic
+# contact used by this fixture; its strategic HP is 50. The flow never writes
+# tactical enemy HP/counts, reserves, mission-result flags, or queue records.
+# Its app helpers use actual path, weapon, throw, and End Turn input.
+#
+# The contact and cargo are test setup. Mission creation, deployment, combat,
+# the last kill, debrief, and return use the live app path. The bounded natural
+# fight stops on the game's own win/loss state; it never calls battle-end,
+# shutdown, or recovery code directly.
+
+# Use the actual startup menu and new-game placement controls.
+click 120 124
+tick 20
+pick
+close
+close
+tick 20
+state victory_setup
+
+strategystate victory_before_gear
+campaign gear
+campaign cargo victory_staged_craft
+campaign contact
+campaign trace victory_contact
+tick 20
+campaign trace victory_contact_pulses
+lines
+campaign state victory_contact_arrival
+
+# Wait for the actual arrival offer, launch through the campaign path, and use
+# the live inventory confirm to deploy the carried crew.
+campaign launch
+campaign state victory_launch
+tact
+campaign deploy
+tact
+campaign grenade
+campaign state victory_armed_crew
+campaign cargo victory_active_mission
+
+# Exercise legal movement, rifle fire, an enemy turn, and one grenade throw.
+# The bounded driver then owns the grenade's End Turn and the remaining fight.
+# The grenade is a real carried item; the test does not assume it will damage an enemy.
+campaign move
+tact
+campaign fire
+tact
+campaign enemyturn
+campaign state victory_after_enemy_1
+tact
+campaign throw
+tact
+
+# The driver uses the live enemy roster index as test-only target knowledge;
+# approach still uses the original pathfinder and a real pointer click. It has a
+# 12-turn limit and fails on loss/exhaustion. It must stop on screen 13 with the
+# live mission-victory byte set. It takes the grenade's real End Turn and checks
+# the result before it starts another action.
+campaign natural-fight 12
+campaign state victory_debrief
+campaign cargo victory_debrief
+tact
+
+# Close only a proven natural win, observe actual recovered craft/site counts,
+# then keep slot 0 in this private app for the later strategy continuation.
+campaign close-debrief
+save 0
+state victory_saved

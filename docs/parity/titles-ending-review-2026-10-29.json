@@ -1,0 +1,175 @@
+{
+  "date": "2026-10-29",
+  "scope": "Complete 13-body pseudocode/effect review with raw ARM checks of widths, RNG order, header stores, scene wrap, caller context and input exit. Not a whole-port completion claim.",
+  "binary_sha256": "4332B3373FDFF386003C9B097C05A616F9E7BB4E085DDCB19474A97A3A36B8E1",
+  "raw_body_bytes": 4444,
+  "raw_bytes_match_original_pe": true,
+  "raw_capture": "docs/parity/titles-ending-raw-2026-10-29.json",
+  "data_capture": "docs/parity/titles-data-2026-10-29.json",
+  "source": {
+    "source_files": 434,
+    "source_fingerprint": "DA8B77783701CC930D08C4A0E175FD563F577E648D987B84088A59D43A02DC29",
+    "sha256": {
+      "src/pufo/game/pufo_titles.c": "7F482B0EA6A7300C98E6B123ABD9DECDF2F7AA74C403AC562199276BEAD3FA6F",
+      "src/pufo/game/pufo_titles.h": "542D8A9979BAA7675A40B4B6ACEA270F223CBCAD96106A5903EB47EBD540A0C0",
+      "src/pufo/app/pufo_app.c": "4B4940FF7394643F3EFF25C7C223689C1FDADF21177FE139D4ED8343F75A597D",
+      "tests/test_titles.c": "589CAF7B9A1EF96B97159034F35E7759C672AD931046EA06AFC4DDE6AB5ADDC3",
+      "build/src/pufo/Debug/pocketufo.exe": "80298DFDE647D3731F0B7F9364F4AB4734B8F618CD8FA2DB9A25E402E19ECE86",
+      "build/src/pufo/Release/pocketufo.exe": "84C5C9DB8BD3BA75532BF3569D326E5564DBE10BB7B689FD1C9C144BC285C804",
+      "docs/parity/titles-ending-raw-2026-10-29.json": "454F56BB84E27B514D6EDBD97A0FA12017B1CA5A672FD1C289974100987D289E",
+      "docs/parity/titles-data-2026-10-29.json": "532BB11B76F238CBA483AE0A8EEFA8EEEBA987727ADC0185A582DD77DFBD3DDC",
+      ".workers/port-goal/credits.flow.txt": "6E95B6048B8BCE28A9E7E821BB0EAC62D346DC5E81C1F65B20B2BA0BCEBAA4C6",
+      "tools/e2e_campaign.sh": "27D59284412E1D83E4D2B2B04D53ED5494E8B3F519088A13C7EC9849E32C8C00"
+    },
+    "builds": {
+      "Debug": {
+        "log": ".workers/port-goal/credits-Debug-build.log",
+        "tests_log": ".workers/port-goal/credits-Debug-tests.log",
+        "diagnostics": 0,
+        "test_summary": "100% tests passed, 0 tests failed out of 3"
+      },
+      "Release": {
+        "log": ".workers/port-goal/credits-Release-build.log",
+        "tests_log": ".workers/port-goal/credits-Release-tests.log",
+        "diagnostics": 0,
+        "test_summary": "100% tests passed, 0 tests failed out of 3"
+      }
+    }
+  },
+  "domain": "Original shipped title/font/glyph assets; valid initialized particle/star arrays and scene indices0/1. Uninitialized allocator residue, malformed oversized archives, allocation failures and cross-platform libm bit identity are not equivalence claims.",
+  "functions": [
+    {
+      "address": "0x1a83c",
+      "name": "Titles_DrawAnimatedFrame",
+      "size": 672,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Render context scratch at0x10DB40 replaced by local loop counters; global titles state is separate; Y RNG draw precedes X; particles1x1/stars3x3, frame increment and blur/present/update/credits call order match. Numeric credit-helper return differs from incidental raw R0, unused by Render_Frame."
+    },
+    {
+      "address": "0x1e630",
+      "name": "Titles_DrawBackdrop",
+      "size": 600,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Palette21 backdrop, white/fade thresholds50/135/280, row window and signed centering match; RAM text stride205 and @glyph palette1. Port returns row count; original draw-result R0 is unused by the caller."
+    },
+    {
+      "address": "0x380d8",
+      "name": "Titles_Init",
+      "size": 404,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "44 row records, font base/index, palettes12/31, screen16, scene0, TimerC, five glyph resources, tact samples/music3 and surface clear match; caller-owned static state and allocation guards replace original new/delete ownership."
+    },
+    {
+      "address": "0x3826c",
+      "name": "Titles_Shutdown",
+      "size": 100,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Sound,TimerC,font,five glyphs,state destructor order matches; pointers cleared and static state not freed; original leaves dangling values."
+    },
+    {
+      "address": "0x388b0",
+      "name": "EndScreen_Init",
+      "size": 328,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Good/bad10/16 rows, exact tables, font base, z samples, palette21, goodend/badend pads, music4/3, TimerA,screen18 and scroll0 match; allocation-failure guard is explicit."
+    },
+    {
+      "address": "0x389f8",
+      "name": "EndScreen_Shutdown",
+      "size": 48,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Sound,TimerA,font,backdrop release then startup tail behavior matches; backdrop is nulled. Native ending fixtures pass on preceding tactical-fix image."
+    },
+    {
+      "address": "0x466dc",
+      "name": "Titles_PresentToSoftSurf",
+      "size": 76,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Original titles allocation including its four-byte glyph header is presented at0/0 with palette12. Port uses a palette slot and void result in place of pointer/incidental return."
+    },
+    {
+      "address": "0x46738",
+      "name": "Titles_DrawCreditLines",
+      "size": 404,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "State scroll, row window,205-byte RAM records, @glyph palette31 and signed text/glyph centering match. Port returns max-row count; original caller ignores result."
+    },
+    {
+      "address": "0x468cc",
+      "name": "Titles_LoadScene",
+      "size": 512,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "corrected/adapted",
+      "comparison": "Two-byte scales are stored even with zero particles; X then Y initialization RNG, home coordinates, retained timers, frame reset and0/1 scene cycle match. Return preserves pre-wrap2. Missing/short member and allocation failure remain safe port deviations."
+    },
+    {
+      "address": "0x46acc",
+      "name": "Titles_AnimateParticles",
+      "size": 752,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Signed delta/15 and sign fallback, timer states, home transition at21, timer phases<20 and501..679, scene reload only above680 match. Port returns frame instead of incidental timer/RNG R0 in non-reload branches; sole caller ignores it."
+    },
+    {
+      "address": "0x46dbc",
+      "name": "Titles_UpdateStars",
+      "size": 204,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "equivalent",
+      "comparison": "Y += speed; strict >320 wrap; RNG order X,speed,amplitude; Y0, speed1..3, amplitude1..100 match for valid star arrays."
+    },
+    {
+      "address": "0x46e88",
+      "name": "Titles_ctor",
+      "size": 284,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Scene index0,240x320 mode0 surface,190 stars, X/Y/speed/amplitude RNG order, Y above screen and one UpdateStars call match. C API uses caller-owned state and returns void; original returns allocated self."
+    },
+    {
+      "address": "0x46fa4",
+      "name": "Titles_dtor",
+      "size": 60,
+      "raw_body_complete": true,
+      "port": "src/pufo/game/pufo_titles.c",
+      "status": "adapted",
+      "comparison": "Unconditional screen22 then guarded surface destruction matches; port clears its global surface pointer."
+    }
+  ],
+  "connection_fix": {
+    "original": "Input_OnPointerUp @0x148D0,screen16 branch0x14AE8..0x14AF8",
+    "port": "src/pufo/app/pufo_app.c:App_OnPointerUp",
+    "before": ".workers/port-goal/credits-c78a13bd9ac74a1693f8819c6600d5eb/credits.log",
+    "after": ".workers/port-goal/credits-1cd3076e3d914b2a98c0f34b22b72781/credits.log",
+    "result": "Before: screen16 persisted after release. After: screen17 returned, then normal new game and placed base1 with8 soldiers/funds4147000."
+  },
+  "validation": {
+    "tests_executed": true,
+    "scope": "test_titles,test_input,test_appshell,Debug and Release,3/3 each",
+    "scene_wrap_red": ".workers/port-goal/titles-before-fix.log",
+    "jitters": "Existing Clang output already matched Y-before-X; code now sequences calls explicitly. Exact full blurred particle image assertion passes.",
+    "header_only": "Header-before-loop stores verified statically at0x46984/0x4698C; two-byte fixture not executed.",
+    "runtime": "720 scripted credits ticks,release,new game,base placement; four240x320 pictures with nontrivial colors.",
+    "idb": "One-argument render-context prototype corrected; comments/readback/decompile saved. See titles-ending-idb-before/after-2026-10-29.json."
+  }
+}

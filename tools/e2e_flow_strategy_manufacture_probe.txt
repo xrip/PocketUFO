@@ -1,0 +1,14 @@
+# A fresh load checks the completed research before opening manufacturing.
+load 3
+state research_after_load
+strategystate research_after_load
+
+# Open manufacturing at base 0 and report live rows, controls, and components.
+click 180 266
+tick 2
+click 220 15
+tick 2
+click 180 256
+tick 20
+strategystate manuf_probe
+dump strategy_manufacture_probe.ppm

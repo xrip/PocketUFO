@@ -830,6 +830,10 @@ bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
      * global: 0x187F4 zeroes unk_1139BC only after 0x187C0 has copied it. */
     spec.apMultiTargets    = apMultiTargets;
     spec.nMultiTargetCount = nCount;
+    if (pHooks != NULL) {
+        spec.pnShotCount   = pHooks->pnShotCount;
+        spec.ppThrowTarget = pHooks->ppThrowTarget;
+    }
 
     /* 0x18844 then 0x1884C: the enqueue's refusal is the callee's own work -- 0x4B0D8 returns
      * StatusMsg_Push(aTextRec1_OutOfTime, 0) when the unit cannot pay the mode's cost -- and the kick

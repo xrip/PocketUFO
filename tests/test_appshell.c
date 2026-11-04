@@ -22,9 +22,12 @@
  */
 #include "app/pufo_app.h"
 #include "app/pufo_world.h"
+#include "game/pufo_tactctl.h"
+#include "game/pufo_terrain.h"
 #include "game/pufo_timer.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <windows.h>
@@ -150,6 +153,9 @@ static void TestPumpAcceleratorFirst(void)
     ACCEL  aTable[1];
     HWND   hWnd;
     int    nRet;
+    BYTE   abSavedKeyboard[256];
+    BYTE   abTestKeyboard[256];
+    bool   bKeyboardSaved = false;
 
     printf("WinMain @ 0x9fcc4 -- the pump: TranslateAcceleratorW first, then translate/dispatch, MSG.wParam out\n");
 
@@ -166,15 +172,29 @@ static void TestPumpAcceleratorFirst(void)
     aTable[0].fVirt = FVIRTKEY;
     aTable[0].key   = VK_F5;
     aTable[0].cmd   = 1;
-    /* DIAGNOSTIC (Part 154): an entry that names no modifier matches only when Ctrl, Shift and Alt are UP in
-     * the async keyboard state, and a PostMessageW'd WM_KEYDOWN does not set that state. The build/check run
-     * failed these two checks once while six re-runs passed, so the machine's modifier state is printed here
-     * to see whether it is what the check really depends on. */
-    printf("  [diag] async modifier state: ctrl 0x%X shift 0x%X menu 0x%X caps 0x%X\n",
-           (unsigned)GetKeyState(VK_CONTROL), (unsigned)GetKeyState(VK_SHIFT),
-           (unsigned)GetKeyState(VK_MENU), (unsigned)GetKeyState(VK_CAPITAL));
     hAccel = CreateAcceleratorTableW(aTable, 1);
     Check(hAccel != NULL, "  CreateAcceleratorTableW gave the pump a real table to translate with");
+
+    /* Posted keys do not set modifier state. Give this no-modifier fixture an
+     * explicit thread-local state, then restore it; SetKeyboardState does not
+     * change input to other threads or send keys to the desktop. */
+    if (!GetKeyboardState(abSavedKeyboard)) {
+        Check(false, "  capture the test thread's keyboard state");
+        goto cleanup;
+    }
+    bKeyboardSaved = true;
+    memcpy(abTestKeyboard, abSavedKeyboard, sizeof(abTestKeyboard));
+    abTestKeyboard[VK_CONTROL] = abTestKeyboard[VK_LCONTROL] = abTestKeyboard[VK_RCONTROL] = 0;
+    abTestKeyboard[VK_SHIFT] = abTestKeyboard[VK_LSHIFT] = abTestKeyboard[VK_RSHIFT] = 0;
+    abTestKeyboard[VK_MENU] = abTestKeyboard[VK_LMENU] = abTestKeyboard[VK_RMENU] = 0;
+    if (!SetKeyboardState(abTestKeyboard)) {
+        Check(false, "  set the accelerator fixture's thread-local modifier state");
+        goto cleanup;
+    }
+    Check((GetKeyState(VK_CONTROL) & 0x8000) == 0
+          && (GetKeyState(VK_SHIFT) & 0x8000) == 0
+          && (GetKeyState(VK_MENU) & 0x8000) == 0,
+          "  Ctrl, Shift and Alt are up for the no-modifier accelerator");
 
     g_nRec = 0;
     (void)PostMessageW(hWnd, WM_KEYDOWN, VK_F5, 0); /* matched by the table: the key never reaches the window */
@@ -202,6 +222,11 @@ static void TestPumpAcceleratorFirst(void)
           "  the unmatched key went the other way: TranslateAcceleratorW answered 0 and the pair ran @ 0x9FD14/0x9FD1C");
     CheckEqI32(nRet, 7, "  the pump's return value is the WM_QUIT's own wParam @ 0x9FD44");
 
+cleanup:
+    if (bKeyboardSaved) {
+        Check(SetKeyboardState(abSavedKeyboard) != 0,
+              "  restore the test thread's keyboard state");
+    }
     (void)DestroyAcceleratorTable(hAccel);
     (void)DestroyWindow(hWnd);
     (void)UnregisterClassW(L"PUFO_TEST_PUMP", GetModuleHandleW(NULL));
@@ -374,6 +399,219 @@ static void TestDestroyArm(void)
     (void)UnregisterClassW(L"PUFO_TEST_DESTROY", GetModuleHandleW(NULL));
 }
 
+static void TestAppKeyHookRoutes(void)
+{
+    PufoWorldState *pW = App_WorldState();
+    WorldHooks hooks;
+    GameMap *pTactMap = NULL;
+    TactState *pTactQueue = NULL;
+    MapCell *pViewCell = NULL;
+    MapCell *pViewDecoy = NULL;
+    MapCell *pViewCell2 = NULL;
+    MapCell *pViewDecoy2 = NULL;
+    Soldier selectedUnit, targetUnit;
+    TactInputState pointerState;
+    TactPointerWorld pointerWorld;
+    UiWidgetBank pointerBank;
+    FocusCtx expectedFocus;
+    TactCursor expectedCursor;
+    Soldier *pSelectedBefore;
+    const i32 nViewLayer = 1, nViewX = -10, nViewY = 18;
+    const TactInputHooks *pInputHooks;
+
+    printf("App input hook setup and PocketUFO_WndProc -- real confirm and secondary key routes\n");
+    memset(&hooks, 0, sizeof(hooks));
+    memset(&selectedUnit, 0, sizeof(selectedUnit));
+    memset(&targetUnit, 0, sizeof(targetUnit));
+    memset(&pointerState, 0, sizeof(pointerState));
+    memset(&pointerWorld, 0, sizeof(pointerWorld));
+    memset(&pointerBank, 0, sizeof(pointerBank));
+    pInputHooks = App_InitTactInputHooks();
+    if (!App_InitializeWorld()) {
+        Check(false, "  the App world initializer created the key-flow world");
+        return;
+    }
+    Check(pInputHooks != NULL, "  the App startup hook initializer returned its live input table");
+    hooks.pTactInputHooks = pInputHooks;
+    pW->pFrameHooks = &hooks;
+    World_WireGeoscapeClock(pW, &hooks);
+
+    /* g_bWorldReady is set by App_InitializeWorld, so VK_BACK takes App's normal non-mission key
+     * route. The callback must run the existing screen-1 Geoscape_CloseUI case. */
+    pW->bGeoscapeUi = 1;
+    pW->screen.nGeoscapeScreen = 1;
+    CheckEqI32((i32)PocketUFO_WndProc(NULL, WM_KEYDOWN, VK_BACK, 0), 0,
+               "  public VK_BACK input is consumed by PocketUFO_WndProc");
+    CheckEqI32(pW->screen.nGeoscapeScreen, 0,
+               "  App's confirm bridge ran the live Geoscape_CloseUI screen-1 case");
+
+    pTactMap = (GameMap *)calloc(1, sizeof(*pTactMap));
+    pTactQueue = (TactState *)calloc(1, sizeof(*pTactQueue));
+    if (pTactMap == NULL || pTactQueue == NULL) {
+        Check(false, "  heap-backed tactical fixture owners are available");
+        goto cleanup;
+    }
+
+    pViewCell = (MapCell *)calloc(1, sizeof(*pViewCell));
+    if (pViewCell == NULL) {
+        Check(false, "  the World-owned raw focus target is available");
+        goto cleanup;
+    }
+    pW->apTactCells[3500] = pViewCell;
+    pViewDecoy = (MapCell *)calloc(1, sizeof(*pViewDecoy));
+    if (pViewDecoy == NULL) {
+        Check(false, "  the World-owned direct-index decoy is available");
+        goto cleanup;
+    }
+    pW->apTactCells[4670] = pViewDecoy;
+    pViewCell2 = (MapCell *)calloc(1, sizeof(*pViewCell2));
+    if (pViewCell2 == NULL) {
+        Check(false, "  the World-owned positive-view focus target is available");
+        goto cleanup;
+    }
+    pW->apTactCells[3040] = pViewCell2;
+    pViewDecoy2 = (MapCell *)calloc(1, sizeof(*pViewDecoy2));
+    if (pViewDecoy2 == NULL) {
+        Check(false, "  the World-owned positive direct-index decoy is available");
+        goto cleanup;
+    }
+    pW->apTactCells[4210] = pViewDecoy2;
+
+    pTactMap->geom.nDimX = 6;
+    pTactMap->geom.nDimY = 6;
+    pTactMap->nMapLayers = 1; /* metadata count; the backing cell plane remains four layers */
+    pViewCell->nX = 20;
+    pViewCell->nY = 58;
+    pViewCell->nZ = 0;
+    pViewDecoy->nX = 50;
+    pViewDecoy->nY = 17;
+    pViewDecoy->nZ = 1;
+    pViewCell2->nX = 40;
+    pViewCell2->nY = 50;
+    pViewCell2->nZ = 0;
+    pViewDecoy2->nX = 10;
+    pViewDecoy2->nY = 10;
+    pViewDecoy2->nZ = 1;
+    pW->bGeoscapeUi = 0;
+    pW->bTactFlag = 1;
+    pW->pTactMap = pTactMap;
+    pW->pTactState = pTactQueue;
+    pW->nUiScreen = 2;
+    pW->bMapPlayerInput = 1;
+    pW->tactEnv.focus.nMapTileW = 240;
+    pW->tactEnv.focus.nMapTileH = 320;
+    pW->tactEnv.focus.nDimX = pTactMap->geom.nDimX;
+    pW->tactEnv.focus.nDimY = pTactMap->geom.nDimY;
+    pW->tactEnv.focus.nCamScrollX = 12345;
+    pW->tactEnv.focus.nCamScrollY = 23456;
+    pW->tactEnv.cursor.nFlags = (u8)nViewLayer;
+    pW->sTactInput.anCamWorldX = nViewX;
+    pW->sTactInput.anCamWorldY = nViewY;
+    pTactMap->pSelUnit = &selectedUnit;
+    pSelectedBefore = pTactMap->pSelUnit;
+    expectedFocus = pW->tactEnv.focus;
+    expectedCursor = pW->tactEnv.cursor;
+    MapView_FocusOnCell(&expectedFocus, pViewCell, &expectedCursor);
+    Check(pW->apTactCells[3500] == pViewCell && pW->apTactCells[4670] == pViewDecoy
+          && pViewCell->nX == 20 && pViewCell->nY == 58 && pViewCell->nZ == 0
+          && pViewDecoy->nX == 50 && pViewDecoy->nY == 17 && pViewDecoy->nZ == 1,
+          "  the raw view tuple (1,18,-10) names literal physical slot 3500, not direct slot 4670");
+    Check(expectedFocus.nCamScrollX != pW->tactEnv.focus.nCamScrollX
+          || expectedFocus.nCamScrollY != pW->tactEnv.focus.nCamScrollY,
+          "  the raw focus target produces a camera recenter from the fixture scroll");
+    CheckEqI32((i32)PocketUFO_WndProc(NULL, WM_KEYDOWN, VK_BACK, 0), 0,
+               "  public VK_BACK confirm is consumed after screen-2 look mode");
+    CheckEqI32(pW->nUiScreen, 0, "  look-mode confirm closes screen 2");
+    Check(pW->tactEnv.focus.nCamScrollX == expectedFocus.nCamScrollX
+          && pW->tactEnv.focus.nCamScrollY == expectedFocus.nCamScrollY
+          && pW->tactEnv.cursor.nFlags == expectedCursor.nFlags,
+          "  App focus hook used the raw-address target and MapView_FocusOnCell effects");
+    CheckEqI32((i32)pW->tactEnv.cursor.nFlags, 1,
+               "  signed view focus leaves the cursor on physical target Z plus one");
+    Check(pTactMap->pSelUnit == pSelectedBefore,
+          "  look-mode focus did not change the selected tactical unit");
+
+    /* Raw view tuple (1,10,10) is view index 4210; the same Map base maps it to
+     * physical slot 3040. Direct indexing would select the distinct cell at 4210. */
+    pW->nUiScreen = 2;
+    pW->sTactInput.anCamWorldX = 10;
+    pW->sTactInput.anCamWorldY = 10;
+    pW->tactEnv.focus.nCamScrollX = 12345;
+    pW->tactEnv.focus.nCamScrollY = 23456;
+    pW->tactEnv.cursor.nFlags = (u8)nViewLayer;
+    expectedFocus = pW->tactEnv.focus;
+    expectedCursor = pW->tactEnv.cursor;
+    MapView_FocusOnCell(&expectedFocus, pViewCell2, &expectedCursor);
+    Check(pW->apTactCells[3040] == pViewCell2 && pW->apTactCells[4210] == pViewDecoy2
+          && pViewCell2->nX == 40 && pViewCell2->nY == 50 && pViewCell2->nZ == 0
+          && pViewDecoy2->nX == 10 && pViewDecoy2->nY == 10 && pViewDecoy2->nZ == 1,
+          "  the raw view tuple (1,10,10) names literal physical slot 3040, not direct slot 4210");
+    CheckEqI32((i32)PocketUFO_WndProc(NULL, WM_KEYDOWN, VK_BACK, 0), 0,
+               "  public VK_BACK confirm reaches the positive raw view tuple");
+    CheckEqI32(pW->nUiScreen, 0, "  the second look-mode confirm closes screen 2");
+    Check(pW->tactEnv.focus.nCamScrollX == expectedFocus.nCamScrollX
+          && pW->tactEnv.focus.nCamScrollY == expectedFocus.nCamScrollY
+          && pW->tactEnv.cursor.nFlags == expectedCursor.nFlags,
+          "  positive view coordinates focus the corrected physical table cell");
+    CheckEqI32((i32)pW->tactEnv.cursor.nFlags, 1,
+               "  the corrected target remains on its actual physical layer");
+    Check(pTactMap->pSelUnit == pSelectedBefore,
+          "  positive look-mode focus leaves the selected unit unchanged");
+
+    /* Input_OnPointer's screen-0 HUD row hits x=207..237 and, with no HUD pad, y=283..299. */
+    selectedUnit.nMultiTarget = 1;
+    selectedUnit.multiOrAnim.apMultiTargets[0] = &targetUnit;
+    targetUnit.pCell = pViewCell;
+    pTactMap->pSelUnit = &selectedUnit;
+    pointerState.nUiScreen = 0;
+    pointerState.bTactFlag = 1;
+    pointerState.bPlayerInputOn = 1;
+    pointerState.pSelUnit = &selectedUnit;
+    pointerWorld.pBank = &pointerBank;
+    pointerWorld.pLookCtl = &pW->sTactLookCtl;
+    pW->tactEnv.focus.nCamScrollX = 12345;
+    pW->tactEnv.focus.nCamScrollY = 23456;
+    pW->tactEnv.cursor.nFlags = (u8)nViewLayer;
+    expectedFocus = pW->tactEnv.focus;
+    expectedCursor = pW->tactEnv.cursor;
+    MapView_FocusOnCell(&expectedFocus, pViewCell, &expectedCursor);
+    Input_OnPointer(&pointerState, pInputHooks, &pointerWorld, 220, 290, true);
+    Check(pW->tactEnv.focus.nCamScrollX == expectedFocus.nCamScrollX
+          && pW->tactEnv.focus.nCamScrollY == expectedFocus.nCamScrollY
+          && pW->tactEnv.cursor.nFlags == expectedCursor.nFlags,
+          "  HUD target-row pointer focus ran MapView_FocusOnCell");
+    Check(pTactMap->pSelUnit == &selectedUnit && pointerState.pSelUnit == &selectedUnit,
+          "  HUD target-row focus did not replace the selected unit");
+
+    /* A small live tactical owner lets the same public WM_KEYUP route reach UiScreen_DismissHigh.
+     * The original promotion branch is deliberately used: it writes screen 19 and keeps the mission
+     * owners live, so this fixture never asks World_MissionCancelEnd to tear down stack storage. */
+    pW->bGeoscapeUi = 0;
+    pW->bTactFlag = 1;
+    pW->pTactMap = pTactMap;
+    pW->pTactState = pTactQueue;
+    pW->nUiScreen = 13;
+    pW->bMapPromotionReport = 1;
+    CheckEqI32((i32)PocketUFO_WndProc(NULL, WM_KEYUP, VK_SPACE, 0), 0,
+               "  public VK_SPACE release is consumed by PocketUFO_WndProc");
+    CheckEqI32(pW->nUiScreen, 19,
+               "  screen-13 secondary release ran World_MissionCancelEnd's promotion branch");
+    Check(pW->bTactFlag != 0 && pW->pTactMap == pTactMap && pW->pTactState == pTactQueue,
+          "  the promotion branch preserved the live mission owners");
+
+cleanup:
+    /* App_ShutdownWorld owns the initialized App world and all four installed cells. Detach the
+     * fixture before shutdown, then free the heap map and queue once. */
+    pW->bTactFlag = 0;
+    pW->pTactMap = NULL;
+    pW->pTactState = NULL;
+    pW->pFrameHooks = NULL;
+    pW->bGeoscapeUi = 0;
+    App_ShutdownWorld();
+    free(pTactQueue);
+    free(pTactMap);
+}
+
 int main(void)
 {
     DrainQueue();
@@ -382,6 +620,7 @@ int main(void)
     TestMessageArms();
     TestCommandOneClosesTheWindow();
     TestDestroyArm();
+    TestAppKeyHookRoutes();
 
     if (g_nFailures > 0) {
         printf("test_appshell: %d check(s) FAILED\n", g_nFailures);

@@ -350,6 +350,78 @@ static void TestMetrics(void)
     CheckEqI32(Text_MeasureWidth(""), 0, "  measure empty");
 }
 
+/* The original reads advances with LDRSB. This byte is not in the shipped metrics table, so use a
+ * small live glyph table and a saved copy of the globals to cover signed widths without changing
+ * later font tests. */
+static void TestSignedAdvanceSpacing(void)
+{
+    static u8 aGlyphA[] = { 0, 0, 5, 0xFF };
+    static u8 aGlyphB[] = { 0, 0, 6, 0xFF };
+    FontMetrics savedMetrics = g_fontMetrics;
+    u8 **ppSavedSprIndex = g_fontSys.apSprIndex;
+    u32 nSavedSprIndexCount = g_fontSys.nSprIndexCount;
+    u16 nSavedGlyphBase = g_fontSys.nGlyphBase;
+    i32 nSavedGlyphPalBase = g_nGlyphPalSlotBase;
+    SoftSurf *pSavedMainSurface = g_pMainSurface;
+    BlitState savedBlitState = g_blitState;
+    u32 nSavedPalA = g_aPalette[2][5];
+    u32 nSavedPalB = g_aPalette[2][6];
+    u8 *apGlyphIndex[67] = {0};
+    SoftSurf surf;
+    u16 *pPixels;
+    i32 i;
+
+    printf("Text signed advance and draw spacing\n");
+    SoftSurf_ctor(&surf);
+    if (!SoftSurf_AllocPixels(&surf, 12, 8, PIXMODE_16BPP)) {
+        Check(false, "  signed-advance surface allocates");
+        goto cleanup;
+    }
+    pPixels = (u16 *)SoftSurf_GetPixels(&surf);
+    if (pPixels == NULL) {
+        Check(false, "  signed-advance surface has pixels");
+        goto cleanup;
+    }
+    for (i = 0; i < 12 * 8; ++i) {
+        pPixels[i] = 0;
+    }
+
+    g_fontMetrics.aAdvance[(u8)'A'] = 0xFE; /* signed -2 */
+    g_fontMetrics.aAdvance[(u8)'B'] = 3;
+    CheckEqI32(Text_MeasureWidth("AB"), 1,
+               "  the 0xFE advance is -2, so AB has width 1");
+
+    apGlyphIndex[65] = aGlyphA;
+    apGlyphIndex[66] = aGlyphB;
+    g_fontSys.apSprIndex = apGlyphIndex;
+    g_fontSys.nSprIndexCount = 67;
+    g_fontSys.nGlyphBase = 0;
+    g_pMainSurface = &surf;
+    g_nGlyphPalSlotBase = 0;
+    g_aPalette[2][5] = 0xA005;
+    g_aPalette[2][6] = 0xB006;
+    Render_SetTarget(12, 8, 2, 2, 24, NULL);
+    Text_DrawString(4, 2, "AB");
+    CheckEqU32(pPixels[2 * 12 + 4], 0xA005,
+               "  A draws at the starting X through Text_DrawString");
+    CheckEqU32(pPixels[2 * 12 + 2], 0xB006,
+               "  B draws two pixels left after A's signed advance");
+    CheckEqI32(g_nGlyphPalSlotBase, 0,
+               "  Text_DrawString restores the prior palette base");
+
+cleanup:
+    SoftSurf_dtor(&surf);
+    g_fontMetrics = savedMetrics;
+    g_fontSys.apSprIndex = ppSavedSprIndex;
+    g_fontSys.nSprIndexCount = nSavedSprIndexCount;
+    g_fontSys.nGlyphBase = nSavedGlyphBase;
+    g_nGlyphPalSlotBase = nSavedGlyphPalBase;
+    g_pMainSurface = pSavedMainSurface;
+    g_aPalette[2][5] = nSavedPalA;
+    g_aPalette[2][6] = nSavedPalB;
+    g_blitState = savedBlitState;
+}
+
 /* Map_PatchCraftSprites @ 0x25ab4.
  *
  * The fixture is built so a wrong cell index cannot hide. Twelve distinctive cells sit at the indices the
@@ -852,6 +924,7 @@ int main(void)
     TestBlitIntoSurface();
     TestBlitGlyphPair();
     TestMetrics();
+    TestSignedAdvanceSpacing();
     TestPatchCraftSprites();
     TestFlagSprBases();
     TestLoadTactSprites();

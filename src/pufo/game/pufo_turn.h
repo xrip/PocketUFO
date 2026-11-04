@@ -127,19 +127,25 @@ void Tact_ProcessActionPhase(TactCtx272 *pCtx, const TurnHooks *pHooks,
  * before running the action phase. The two injections exist because both callees need
  * the whole world.
  *
- * `pLists` describes the unit lists to reset. The original resets three lists in
- * this order: enemy, civilian, then XCom. */
+ * `pLists` describes the unit lists to reset. `pnLiveEnemyCount` and
+ * `pLists->pnXcomCount` are required live counts: both can change in
+ * BeforeEnemyStep, and the original reloads each count after that callback and
+ * on every loop pass. The original resets three lists in this order: enemy,
+ * civilian, then XCom. */
+/* The focused RED/GREEN test can also compile against the frozen preimage header. */
+#define PUFO_TURN_HAS_LIVE_XCOM_COUNT 1
 typedef struct TurnUnitLists {
     Soldier **apEnemy;
     i32       nEnemy;
     Soldier **apCivilian;
     i32       nCivilian;
     Soldier **apXcom;
-    i32       nXcom;
+    const i32 *pnXcomCount;
 } TurnUnitLists;
 
 void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
-                         const TurnUnitLists *pLists, Soldier *pSelUnit, u8 *pbEnemyTurnActive,
+                         const TurnUnitLists *pLists, const i32 *pnLiveEnemyCount,
+                         Soldier *pSelUnit, u8 *pbEnemyTurnActive,
                          void (*pfnFrameStart)(void *pUser),
                          void (*pfnBeforeEnemyStep)(TactCtx272 *pCtx, void *pUser));
 
@@ -355,6 +361,9 @@ typedef struct EnemyStepCtx {
     i32      *pnReserveCount;             /* Map_nEnemyReserveCount @ 0x128AFC */
     const u8 *pbMissionType;              /* Map_nMissionType @ 0x128AD2 */
     Soldier **ppSelUnit;                  /* Map_pSelUnit @ 0x128CEC */
+    /* Original roster changes publish Map's byte counts immediately. The shell
+     * can publish its i32 mirrors here before same-pass proximity/visibility use. */
+    void (*pfnPublishRosterCounts)(i32 nXcom, i32 nEnemy, void *pUser);
 } EnemyStepCtx;
 
 /* aTextRecs @ 0xB38D0 record indices, from the byte offsets Tact_UpdateUnitControl loads:

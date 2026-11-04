@@ -1,0 +1,13 @@
+# Fresh New Game through a natural radar fight; no staged contacts or battle state.
+state before_menu_click
+click 120 124
+pick
+state after_new_game_pick
+geoframe
+strategystate before_normal_air
+normalair
+state after_normal_air_boundary
+normalaircombat
+state after_normal_air_combat
+lines
+strateg

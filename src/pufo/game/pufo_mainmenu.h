@@ -68,6 +68,7 @@ typedef struct MainMenuEnv {
     const u8   *pTextRecs;           /* aTextRecs @ 0xB38D0, 205-byte records */
     i32        *pnActionPhaseSave112;/* Map.anActionPhaseSave0[112] @ 0x128AA0, set to 40 by mode 3 */
     UiModalAnim *pModalAnim;         /* the modal renderer's anim state, mode 3 only */
+    UiModalLayout *pModalLayout;     /* optional mode-3 layout output; otherwise local */
     const GfxColorEnv *pColor;
     UiControlBlitFn  pfnCtlBlit;
     UiControlBlitFn  pfnCtlBlitEx;

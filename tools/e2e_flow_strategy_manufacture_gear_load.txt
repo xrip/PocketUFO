@@ -1,0 +1,7 @@
+# Fresh-process proof that the real Soldier Gear change persisted.
+load 5
+state gear_after_load
+strategystate gear_after_load
+campaign trace gear_roster_loaded
+campaign state gear_after_load
+dump strategy_manufacture_gear_after_load.ppm

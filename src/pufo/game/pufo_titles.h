@@ -80,10 +80,10 @@ u8 *SoftSurf_DrawBorderAndBlur(void);
  *   +8      frame counter, incremented once per animated frame
  *   +12     particle count
  *   +20     particle array, stride 28
- *   +256    a scratch loop cursor, reset to 0 at the start of each of the two draw loops
  *   +84020  star array, stride 16
  *   +87220  star count
  *   +87228  the scroll position the credit lines use
+ * The frame loop cursor is at the separate Render_Frame caller context+0x100, not in this block.
  *
  * The particle record is 28 bytes and the ARM reads it as base + 28*i + {20, 24, 28, 32, 36, 40, 44},
  * which is a 28-byte record starting at +20 with fields at +0, +4, +8, +12, +16, +20, +24. Reading the
@@ -135,7 +135,7 @@ typedef struct TitlesAnimation {
 void Titles_PresentToSoftSurf(void);
 
 /* Titles_UpdateStars @ 0x46dbc. Every star advances by its speed; above 320 it is reborn at a random
- * x with speed 1..4 and amplitude 1..101. */
+ * x with speed 1..3 and amplitude 1..100. */
 void Titles_UpdateStars(TitlesAnimation *pEnv);
 
 /* Titles_AnimateParticles @ 0x46acc. Each particle steps towards its target by (target - current) / 15,

@@ -1,0 +1,12 @@
+# Fresh normal data; no staged contact, mission, save, direct new-game, or direct close.
+# pick automates only region hover plus live confirm after the real menu click.
+state before_menu_click
+click 120 124
+pick
+state after_new_game_pick
+geoframe
+strategystate before_normal_air
+normalair
+state after_normal_air_boundary
+lines
+strateg

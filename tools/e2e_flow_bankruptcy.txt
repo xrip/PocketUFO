@@ -1,0 +1,19 @@
+# App fixture for the strategic ending: create a live game and base, then let the app pulse to screen 19.
+# The clock advances with normal funds. The fixture lowers funds only after the real report opens.
+
+newgame
+tick 20
+pick
+close
+close
+mindbankreport
+dump 30_month_report.ppm
+
+# World_CloseGeoscape closes the live report through case 19. That branch frees the UI, then calls the
+# app's end-screen hook when funds remain below -3,000,000 (raw ARM: 0x8BBEC..0x8BBF8).
+close
+tick 160
+mindendstate
+dump 31_bankruptcy_end.ppm
+click 100 100
+mindendstate

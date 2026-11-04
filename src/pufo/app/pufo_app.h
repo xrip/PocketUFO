@@ -29,4 +29,9 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
  * WM_TIMER firing moved. The original has one Map block at 0x1139B8; this is the port's copy of it. */
 PufoWorldState *App_WorldState(void);
 
+/* The same setup steps App_Run uses: initialize its world owner and install the live input hooks. */
+bool App_InitializeWorld(void);
+void App_ShutdownWorld(void);
+const TactInputHooks *App_InitTactInputHooks(void);
+
 #endif /* PUFO_APP_H */

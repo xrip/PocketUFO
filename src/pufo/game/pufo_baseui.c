@@ -13,6 +13,14 @@
 #include "util/pufo_rand.h"     /* Game_RandU16, the unlock roll of ResearchScreen_RebuildTopicList */
 #include "platform/pufo_reg.h"  /* Reg_SetString, the four audio values Options_SaveAudioSettings writes */
 
+static const u16 *StaffColumnForBase(const u16 *paTable, i32 nBase, i32 nStride)
+{
+    if (paTable == NULL || nBase < 0 || nBase >= PUFO_FAC_BASE_COUNT) {
+        return NULL;
+    }
+    return paTable + nStride * nBase;
+}
+
 /* One loaded TEXTS record as a string: aTextRecs @ 0xB38D0 + 205 * nRec. The blob covers the whole
  * 1912-record block the original reserves (PUFO_TEXT_REC_CAPACITY), so a record number past what
  * TEXTS.DAT filled reads as "" exactly as the zero-filled .data does -- no special case is needed for
@@ -724,10 +732,14 @@ void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv)
         }
         if (nAux == PUFO_ROW_ENGINEER || nAux == PUFO_ROW_SCIENTIST) {
             i32 nCrew = (nAux == PUFO_ROW_ENGINEER)
-                            ? Base_GetEngineerCount(BuySellSlotRec(pEnv, nAux), pEnv->apManufCol,
+                            ? Base_GetEngineerCount(BuySellSlotRec(pEnv, nAux),
+                                                    StaffColumnForBase(pEnv->apManufCol,
+                                                        pEnv->nSelectedBaseIdx, PUFO_PRODUCT_ENTRIES_PER_BASE),
                                                     pEnv->nSelectedBaseIdx, pEnv->nCrewEntries)
                             : Base_GetScientistCount(BuySellSlotRec(pEnv, nAux),
-                                                     pEnv->apResearchCol, pEnv->nSelectedBaseIdx,
+                                                     StaffColumnForBase(pEnv->apResearchCol,
+                                                         pEnv->nSelectedBaseIdx, PUFO_RESEARCH_TOPIC_COUNT),
+                                                     pEnv->nSelectedBaseIdx,
                                                      pEnv->nCrewEntries);
             if (BuySellRowDelta(pEnv, nAux) + nCrew > 0) { /* 0x75750 / 0x75700 */
                 BuySellRowDeltaAdd(pEnv, nAux, -1);
@@ -1341,7 +1353,9 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         }
         if (i == PUFO_ROW_ENGINEER) {
             nEngineers = Base_GetEngineerCount(pEnv->apObjects != NULL ? pEnv->apObjects[112] : NULL,
-                                               pEnv->apManufCol, pEnv->nSelectedBaseIdx,
+                                               StaffColumnForBase(pEnv->apManufCol,
+                                                   pEnv->nSelectedBaseIdx, PUFO_PRODUCT_ENTRIES_PER_BASE),
+                                               pEnv->nSelectedBaseIdx,
                                                pEnv->nCrewEntries);
             if (nEngineers <= 0) {
                 continue; /* 0x77050, the goto LABEL_42: this slot gets no row */
@@ -1351,7 +1365,9 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         }
         if (i == PUFO_ROW_SCIENTIST) {
             nScientists = Base_GetScientistCount(pEnv->apObjects != NULL ? pEnv->apObjects[113] : NULL,
-                                                 pEnv->apResearchCol, pEnv->nSelectedBaseIdx,
+                                                 StaffColumnForBase(pEnv->apResearchCol,
+                                                     pEnv->nSelectedBaseIdx, PUFO_RESEARCH_TOPIC_COUNT),
+                                                 pEnv->nSelectedBaseIdx,
                                                  pEnv->nCrewEntries);
             if (nScientists > 0) {
                 abInclude[113] = 1;
@@ -1836,6 +1852,13 @@ void Ui_InitTransfer(TransferInitEnv *pEnv)
     }
 
     for (i = 0; i < 4; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            /* The original allocated a fresh UiControl here and ran its ctor at 0x995CC.
+             * The world owns reusable controls instead, so release any prior screen pads
+             * before the ctor clears the embedded pad pointers. */
+            UiControl_FreePads(pEnv->apCtl[i]);
+            UiControl_ctor(pEnv->apCtl[i]);
+        }
         pEnv->ppRoot[i + 1] = pEnv->apCtl[i]; /* 0x995E4, the original's operator new(0x20) slots */
     }
     if (pEnv->apCtl[0] != NULL) {
@@ -2069,7 +2092,9 @@ void TransferScreen_BuildPanels(TransferBuildEnv *pEnv)
         }
         if (i == PUFO_ROW_ENGINEER) {
             nEngineers = Base_GetEngineerCount(pEnv->apObjects != NULL ? pEnv->apObjects[112] : NULL,
-                                               pEnv->apManufCol, pEnv->nSelectedBaseIdx,
+                                               StaffColumnForBase(pEnv->apManufCol,
+                                                   pEnv->nSelectedBaseIdx, PUFO_PRODUCT_ENTRIES_PER_BASE),
+                                               pEnv->nSelectedBaseIdx,
                                                pEnv->nCrewEntries); /* 0x96D74 */
             if (nEngineers <= 0) {
                 continue;
@@ -2079,7 +2104,9 @@ void TransferScreen_BuildPanels(TransferBuildEnv *pEnv)
         }
         if (i == PUFO_ROW_SCIENTIST) {
             nScientists = Base_GetScientistCount(pEnv->apObjects != NULL ? pEnv->apObjects[113] : NULL,
-                                                 pEnv->apResearchCol, pEnv->nSelectedBaseIdx,
+                                                 StaffColumnForBase(pEnv->apResearchCol,
+                                                     pEnv->nSelectedBaseIdx, PUFO_RESEARCH_TOPIC_COUNT),
+                                                 pEnv->nSelectedBaseIdx,
                                                  pEnv->nCrewEntries); /* 0x96DA0 */
             if (nScientists > 0) {
                 abInclude[113] = 1;
@@ -2599,7 +2626,8 @@ i32 Transfer_WriteErrorDump(const TransferDumpEnv *pEnv)
             snprintf(szNum, sizeof(szNum), "%d", (i32)(i8)pSite->bFlag1);
             DumpText(hFile, szNum);
             if ((i32)pEnv->bBaseIdx ==
-                Base_FindIndexByTypeByte(pEnv->apBases, pEnv->nBaseCount, pSite->bFlag1)) {
+                Base_FindIndexBySiteId(pEnv->apBases, pEnv->nBaseCount,
+                                       (i32)(i8)pSite->bFlag1)) {
                 DumpText(hFile, "(incoming transfer)");                  /* 0x99B14: on the SAME line */
             }
             DumpEol(hFile);
@@ -2978,14 +3006,10 @@ i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
         *pEnv->pbTransferBase = (i8)nTap; /* 0x98994 */
     }
     TransferUi_SiteFlagFromBase(pEnv, nTap); /* 0x989C4 */
-    /* ORIGINAL BUG (0x989D4): the compare at 0x989D0 and the store it guards at 0x989E0 are
-     * unreachable. The draw returns at 0x98224 unless bTransferPanelsBuilt @ 0x1870EC is set, and
-     * Base_HitTestFacilityStrip disables the strip on that same byte -- so the overlay path can only
-     * ever run with the gate open, the gate forces a miss, and a miss returns nSelectedBaseIdx, the
-     * very value compared here. The overlay is therefore never closed by this code, and the store at
-     * 0x98994 pins the destination base byte_1870F4 to the source base on every overlay frame. The
-     * overlay is closed by the geoscape pointer handlers (Geoscape_OnPointer 0x88928,
-     * Geoscape_OnPointerUp 0x8A674) instead. Reproduced, not fixed. */
+    /* The hit-test result can differ from the selected base (0x989D0..0x989E0).
+     * With panels built, the raw helper takes 0x671C0 -> 0x6723C and uses the
+     * alternate lower x bound of 10; it does not force every tap to miss.
+     * The separate shared-row issue is recorded at bugs.tsv 0x96368. */
     if (nTap != (i32)pEnv->nSelectedBaseIdx && pEnv->pbOverlayOpen != NULL) {
         *pEnv->pbOverlayOpen = 0; /* 0x989E0 */
     }
@@ -3118,6 +3142,16 @@ static i32 CloseBaseCount(const GeoscapeCloseEnv *pEnv)
     return (pEnv->pnBaseCount != NULL) ? (i32)*pEnv->pnBaseCount : 0;
 }
 
+static i32 CloseSoldierCount(const GeoscapeCloseEnv *pEnv)
+{
+    return (pEnv->pnSoldierCountLive != NULL) ? *pEnv->pnSoldierCountLive : pEnv->nSoldierCount;
+}
+
+static i32 CloseSiteCount(const GeoscapeCloseEnv *pEnv)
+{
+    return (pEnv->pnSiteCountLive != NULL) ? *pEnv->pnSiteCountLive : pEnv->nSiteCount;
+}
+
 /* Geoscape_CloseUI @ 0x8b94c: the dispatcher every screen close reaches. The header carries the
  * case-by-case evidence; the addresses below are the ARM sites, not Hex-Rays' rendering. */
 void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
@@ -3166,18 +3200,18 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
     i32 nBaseCount = CloseBaseCount(pEnv);
     if (pEnv->abFacilityGrid != NULL) {
         for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
-            const i32 nSpace = Base_CalcOccupiedSpace(pEnv->apSoldiers, pEnv->nSoldierCount,
+            const i32 nSpace = Base_CalcOccupiedSpace(pEnv->apSoldiers, CloseSoldierCount(pEnv),
                                                       pEnv->apObjects, pEnv->nObjectCount, nBase);
             const i32 nStores = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase);
             (void)Base_UpdateLivingQuartersNeeded(pEnv->abFacilityGrid, nBase,
-                nSpace + Base_CountOutboundTransferSpace(pEnv->apSites, pEnv->nSiteCount, -1,
+                nSpace + Base_CountOutboundTransferSpace(pEnv->apSites, CloseSiteCount(pEnv), -1,
                                                          pEnv->apBases, nBase, true)); /* 0x8BA34 */
             (void)Base_UpdateStoresNeeded(pEnv->abFacilityGrid, nBase,
-                nStores + Base_CountItemQtyAcrossBases(pEnv->apSites, pEnv->nSiteCount, -1,
+                nStores + Base_CountItemQtyAcrossBases(pEnv->apSites, CloseSiteCount(pEnv), -1,
                                                        pEnv->apBases, nBase, pEnv->apObjects,
                                                        pEnv->nObjectCount, true));      /* 0x8BA40 */
             (void)Base_UpdatePsiLabNeeded(pEnv->abFacilityGrid, nBase,
-                Base_CountPsiSoldiers(pEnv->apSoldiers, pEnv->nSoldierCount, nBase));  /* 0x8BA4C */
+                Base_CountPsiSoldiers(pEnv->apSoldiers, CloseSoldierCount(pEnv), nBase));  /* 0x8BA4C */
             (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, nBase,
                 Base_CountActiveResearch(pEnv->apResearchCol + PUFO_RESEARCH_TOPIC_COUNT * nBase,
                                          pEnv->nResearchEntries));                      /* 0x8BA58 */
@@ -3335,7 +3369,7 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
         if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 0; }           /* 0x8C150 */
         (void)Base_RemoveAllShips(pEnv->pClearShips, CloseSelectedBase(pEnv)); /* 0x8C160 */
         (void)Base_RemoveAllSoldiers(pEnv->anSoldierIdList, pEnv->apSoldiers,
-                                     pEnv->nSoldierCount);             /* 0x8C174 */
+                                     CloseSoldierCount(pEnv));          /* 0x8C174 */
         return;
     case 15:
         (void)FundingScreen_Open(pEnv->pFundingToggle, pEnv->pFundingOpen); /* 0x8BCB0 */
@@ -3391,8 +3425,8 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
             nUpkeep += Base_CalcMonthlyUpkeep(pEnv->apCraft,
                                               (pEnv->pnCraftCount != NULL)
                                                   ? (i32)*pEnv->pnCraftCount : 0,
-                                              pEnv->apSoldiers, pEnv->nSoldierCount,
-                                              pEnv->apSites, pEnv->nSiteCount, pEnv->apObjects,
+                                              pEnv->apSoldiers, CloseSoldierCount(pEnv),
+                                              pEnv->apSites, CloseSiteCount(pEnv), pEnv->apObjects,
                                               pEnv->abFacilityGrid, nBase); /* 0x8BB84 */
             nBaseCount = CloseBaseCount(pEnv);                         /* 0x8BB90 */
         }
@@ -3404,7 +3438,9 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
                 if (pEnv->pfnFreeGeoscapeUi != NULL) {
                     pEnv->pfnFreeGeoscapeUi(1, pEnv->pUser);           /* 0x8BBF0 */
                 }
-                if (pEnv->pEndScreen != NULL) {
+                if (pEnv->pfnInitEndScreen != NULL) {
+                    pEnv->pfnInitEndScreen(0, pEnv->pUser);             /* 0x8BBF8 */
+                } else if (pEnv->pEndScreen != NULL) {
                     EndScreen_Init(pEnv->pEndScreen, 0);               /* 0x8BBF8 */
                 }
                 if (pEnv->pbTickHold != NULL) { *pEnv->pbTickHold = 1; }    /* 0x8BC04 */
@@ -4184,10 +4220,10 @@ void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv)
                                    : 0;
 
             const u32 dwPrice = (pEnv->pdwPrices != NULL) ? pEnv->pdwPrices[nProduct] : 0u;
-            const double dCost = (double)dwPrice * 1.4; /* 0x6F440/0x6F448: 0x3FE66666_66666666 */
+            const double dCost = (double)dwPrice * PUFO_MANUF_PRICE_FACTOR; /* 0.7 literals: 0x6F440/0x6F448 and 0x6F744/0x6F74C */
             bool bBlocked = false;
 
-            /* 1. funds gate, 0x6F408..0x6F494: _ltd(funds - price * 1.4, 0.0) != 0. */
+            /* 1. funds gate, 0x6F408..0x6F494: _ltd(funds - price * 0.7, 0.0) != 0. */
             if ((double)*pEnv->pnFunds - dCost < 0.0) {
                 *pEnv->pdwShortfall = 1;               /* 0x6F4A8 */
                 UiLineList_AppendWithSound(pEnv->pLines, 35, (u32)nBase, (u32)nBase,
@@ -4274,7 +4310,7 @@ void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv)
                                        (i32)pRec->abManufComponents[j]);
                 }
 
-                /* 0x6F70C..0x6F788: nFunds = dtoi((double)nFunds - (double)price * 1.4). */
+                /* 0x6F70C..0x6F788: dtoi is applied after price * 0.7 is subtracted from funds. */
                 *pEnv->pnFunds = (i32)((double)*pEnv->pnFunds - dCost);
             }
 
@@ -4914,9 +4950,7 @@ void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv)
     pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_ONE_UNIT), sizeof(szLabel));
     Text_DrawString(10, 83, szLabel); /* 0x6FF58: "одной единицы" */
 
-    /* 0x6FF88..0x70014: the price of one unit, at 70 percent of the record's own price. The 0.7 is
-     * the double the ARM builds from 0x66666666 / 0x3FE66666; CommitProduction uses 1.4 for the same
-     * table, so the screen quotes half of what committing costs. */
+    /* 0x6FF88..0x70014: the displayed price uses the raw 0.7 double at 0x6FFBC/0x6FFC4. */
     pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_PRICE), sizeof(szLabel));
     {
         const u32 nPrice = (bSlot && pEnv->pdwPrices != NULL) ? pEnv->pdwPrices[nSlot] : 0u;
@@ -5102,7 +5136,7 @@ void ManufScreen_IncUnits(const ManufUnitsEnv *pEnv)
     }
 
     const i32 nUsed = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase);   /* 0x6E274 */
-    const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount, nBase,
+    const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount, pEnv->nSiteCount,
                                                      pEnv->apBases, nBase,
                                                      pEnv->apObjects, pEnv->nObjectCount, true);
     const i32 nCap = Base_CalcStoresCapacity(pEnv->abFacilityGrid, nBase);                /* 0x6E29C */
@@ -7031,6 +7065,7 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
                          * over the same array on the same field, so the port calls it. */
                         world.apCraft = (Ship *const *)pEnv->apCraft;
                         world.nShipCount = (pEnv->pnCraftCount != NULL) ? *pEnv->pnCraftCount : 0;
+                        world.pbShipCount = pEnv->pnCraftCount;
                         view.apItems = (StrategItem **)pEnv->pStrategList->apItems;
                         view.nCount = pEnv->pStrategList->nCount;
                         view.nNextDisplayId = 0; /* not read by the lookup */
@@ -8086,6 +8121,89 @@ static const SolStatRow g_aSolStatRows[PUFO_SOLDET_STAT_ROWS] = {
     { PUFO_SOLDET_TEXT_PSI_SKL,  PUFO_STAT_PSI_SKILL, 286, 292, 302, 200, 210, 250,
       0x6E, 0x6E, 0x96, 0xC8, 0xD2, 0xFA, true }
 };
+
+/* Name bytes start at Soldier.szName (+0xBA on ARM). Scan the rest of the Soldier object because
+ * the original 40-byte limit lets one glyph's terminating NUL land in the adjacent bRankType byte. */
+static size_t SoldierName_Length(const Soldier *pSoldier)
+{
+    const size_t nNameOffset = offsetof(Soldier, szName);
+    const u8 *pbName = (const u8 *)pSoldier + nNameOffset;
+    const size_t nMax = sizeof(*pSoldier) - nNameOffset;
+    size_t nLen = 0;
+    while (nLen < nMax && pbName[nLen] != 0) {
+        nLen++;
+    }
+    return nLen;
+}
+
+/* Map_BackspaceSelectedName @ 0x63138: remove one byte from the selected soldier name. */
+void Map_BackspaceSelectedName(const SoldierNameEditEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pSoldier == NULL) {
+        return;
+    }
+
+    const size_t nLen = SoldierName_Length(pEnv->pSoldier);
+    if (nLen != 0) {
+        u8 *pbName = (u8 *)pEnv->pSoldier + offsetof(Soldier, szName);
+        pbName[nLen - 1] = 0; /* STRB at 0x6317C */
+    }
+}
+
+/* SoldierScreen_CopyNameToEdit @ 0x6318C: close the editor and copy the soldier name to the
+ * selected roster line. The caller resolves nSoldierDetailCursor and nSoldierCursor. */
+void SoldierScreen_CopyNameToEdit(const SoldierNameEditEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pbNameEditActive != NULL) {
+        *pEnv->pbNameEditActive = 0; /* STRB at 0x63198, before the line copy */
+    }
+    if (pEnv->pSoldier == NULL || pEnv->pszEditLine == NULL) {
+        return;
+    }
+
+    const size_t nNameOffset = offsetof(Soldier, szName);
+    const u8 *pbSrc = (const u8 *)pEnv->pSoldier + nNameOffset;
+    const size_t nMax = sizeof(*pEnv->pSoldier) - nNameOffset;
+    char *pszDst = pEnv->pszEditLine;
+    for (size_t i = 0; i < nMax; ++i) {
+        const char nChar = (char)pbSrc[i];
+        *pszDst++ = nChar;
+        if (nChar == '\0') {
+            break;
+        }
+    } /* LDRSB/STRB loop at 0x631D8..0x631EC */
+}
+
+/* SoldierScreen_AppendNameGlyph @ 0x63208: map the tap to a byte in the 16x16 keyboard and
+ * append it only when the text system has a glyph for it. The original caller has already
+ * gated x/y to the keyboard area. */
+void SoldierScreen_AppendNameGlyph(const SoldierNameEditEnv *pEnv, i32 nX, i32 nY)
+{
+    if (pEnv == NULL || pEnv->pSoldier == NULL || pEnv->pnNameEditChar == NULL
+        || pEnv->pfnMeasureWidth == NULL) {
+        return;
+    }
+
+    const size_t nNameLen = SoldierName_Length(pEnv->pSoldier);
+    if (nNameLen >= sizeof(pEnv->pSoldier->szName)) { /* CMP #0x28 at 0x6323C */
+        return;
+    }
+
+    const i32 nColumn = (nX - PUFO_SOLDET_KB_X0) / PUFO_SOLDET_KB_COL_W;
+    const i32 nRow = (nY - PUFO_SOLDET_KB_Y0) / PUFO_SOLDET_KB_ROW_H;
+    *pEnv->pnNameEditChar = (u8)(nColumn + PUFO_SOLDET_KB_COLS * (nRow + 2)); /* STRB at 0x63284 */
+
+    char szGlyph[2] = { (char)*pEnv->pnNameEditChar, '\0' };
+    const i32 nWidth = pEnv->pfnMeasureWidth(szGlyph);
+    if (nWidth != 0) {
+        u8 *pbName = (u8 *)pEnv->pSoldier + offsetof(Soldier, szName);
+        pbName[nNameLen] = (u8)szGlyph[0];
+        pbName[nNameLen + 1] = 0; /* BLNE strcat at 0x632B4, including the adjacent byte at length 39 */
+    }
+}
 
 i32 SoldierScreen_DrawDetail(const SoldierDetailEnv *pEnv, i32 nCursor)
 {
@@ -10257,17 +10375,17 @@ static void ResearchRebuild_MarkFacFlag(const ResearchRebuildEnv *pEnv, i32 nTop
     pEnv->paFac[nKind].bFlag20 = 1;
 }
 
-/* 0x745AC / 0x74868: the two (lo,hi) pairs live at 0x15EF08 + 34*(nTopic + 1) -- the four head bytes
- * of the record AFTER the one being processed, not of the record itself. For nTopic == 143 that
- * address is 0x160228, the four-byte gap between the 144-record table and auResearchCol @ 0x16022C;
- * nothing in the IDB writes it, so the port reads zeros there, which makes lo == hi and skips the
- * roll for the last topic. */
+/* 0x745AC / 0x74868: the two (lo,hi) pairs are read from the next record's four head bytes. For
+ * nTopic == 143, raw LDRB offsets +0x22..+0x25 resolve to 0x160228..0x16022B, the four-byte gap
+ * between the 144-record table and auResearchCol @ 0x16022C. A live-world caller supplies that tail;
+ * standalone callers with no tail keep the original zero-BSS case through the fallback below. */
 static const u8 g_abTopicRangeZero[4] = { 0, 0, 0, 0 };
 
-static const u8 *ResearchTopic_RangeBytes(const ResearchTopicLive *aTopics, i32 nTopic)
+static const u8 *ResearchTopic_RangeBytes(const ResearchTopicLive *aTopics,
+                                          const u8 *pFinalTopicRange, i32 nTopic)
 {
     if (nTopic + 1 >= PUFO_RESEARCH_TOPIC_COUNT) {
-        return g_abTopicRangeZero;
+        return (pFinalTopicRange != NULL) ? pFinalTopicRange : g_abTopicRangeZero;
     }
     return aTopics[nTopic + 1].abUnk0;
 }
@@ -10360,7 +10478,7 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
                     }
                 }
             }
-            const u8 *const pbRange = ResearchTopic_RangeBytes(aTopics, nTopic);
+            const u8 *const pbRange = ResearchTopic_RangeBytes(aTopics, pEnv->pFinalTopicRange, nTopic);
             const i32 nLo2 = pbRange[2]; /* 0x7486C */
             const i32 nHi2 = pbRange[3]; /* 0x74868 */
             const i32 nTotal = nLo2 + nHi2 + nSum; /* 0x74874 */
@@ -10422,7 +10540,7 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
         }
 
         /* 6. 0x745AC..0x74660: unlock one topic out of the range in the next record's head bytes. */
-        const u8 *const pbRange = ResearchTopic_RangeBytes(aTopics, nTopic);
+        const u8 *const pbRange = ResearchTopic_RangeBytes(aTopics, pEnv->pFinalTopicRange, nTopic);
         const i32 nLo = pbRange[0];
         const i32 nHi = pbRange[1];
         if (nHi == nLo) {

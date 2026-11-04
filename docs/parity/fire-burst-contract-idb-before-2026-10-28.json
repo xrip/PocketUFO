@@ -1,0 +1,18 @@
+[
+  {
+    "ea": "0x4b080",
+    "comment": "Enqueue fire: FaceToward + nAmmo of cmd14(shot)+cmd15 pairs + EnqueueClearAim(cmd10)."
+  },
+  {
+    "ea": "0x4b2ec",
+    "comment": null
+  },
+  {
+    "ea": "0x4daec",
+    "comment": null
+  },
+  {
+    "ea": "0x4dcc0",
+    "comment": null
+  }
+]

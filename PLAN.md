@@ -1,5 +1,10 @@
 # Working plan
 
+Port complete under the original contract, 2026-10-29. Current status and
+evidence: [final acceptance](docs/COMPLETION_AUDIT.md) and
+[completion plan](docs/PORT_COMPLETION_PLAN.md).
+The task notes below are history, not a new queue of release work.
+
 This is the agent's execution plan. Read this at the start of a turn, not the goal
 JSON and not all of `HANDOFF.md`. `HANDOFF.md` holds the detail and the reasoning;
 this file holds only what is next and what is already true.
@@ -6901,6 +6906,29 @@ kneel 2"; the unequip store 0x61B74 forced to 1 fails 2 checks (the unequipped-c
 600 px). IDB: 0x498b0, 0x4e614, 0x46664 and 0x65290 commented, 0x1f58c rewritten inside the
 1024-byte cap, idb_save ok.
 
+Part 168 (measured). The user heard the sound about twice as slow as it should, with crackle.
+The mixer math and the resampler were not the fault (the rate test pins 4 source frames -> 8
+output frames); the output queue was 2 x 256 frames, 11.6 ms per buffer, and the mixer thread
+woke later than a buffer drained, so the Windows audio engine starved. Measured on this host:
+50 completions/s against the nominal 86/s, TACT2 (1190 ms) finished in 2080 ms. The queue is now
+8 x 512 frames (~186 ms); after: 172 completions in 4009 ms (42.9/s against a nominal 43/s) and
+TACT2 at 1389 ms. The device gate in test_audio now has real-time teeth: completions/s in
+32..55 over 4 s and TACT2 play-to-completion wall time within 2/3..3/2 of its WAV header
+duration -- the old WaitDone(4000) passed a 1.75x stretch.
+Part 168 continued (user-directed the same day): the crackle persisted, so the resampler was
+removed. The device opens at the shipped WAVs' native 11025 Hz (measured: all 35 TACT*.WAV are
+11025 Hz / 8-bit / mono), voices read source frames 1:1, OpenMPT renders music at 11025, the
+loader refuses non-native rates, and the queue is 8 x 256 frames. Measured after: 172
+completions in 4000 ms (43/s nominal) and TACT2 at 1389 ms. The music LOOP SETTING
+(user request, ON by default) rides the original FMUSIC_SetLooping slot @ 0x9E1F8 (the original
+passes 1, at load only): a row in the options volume tab, and with it OFF a finished track
+plays the next (Sound_MusicProgress on the frame tick, over the new port-side backend query
+pfnMusicFinished). The byte persists in the savegame in a port-side `1_24gset` chunk (1 byte,
+appended after the original chunks; absent chunk = loop on; not the registry). New teeth:
+loader accepts 11025 and refuses 22050, loop byte 1/0 applied at load, Progress advances the
+track, device rate check now pins 11025. docs/parity/render-audio.md records queue depth,
+native 11025 playback and the loop setting as deviations.
+
 Open (the goal 2026-10-24, equipment really working -- PARTLY met). Armour works end to end now: the
 suit is stocked, worn, drawn as the soldier's own figure on the inventory screen and on the map,
 granted as 100 armour points at deploy, spent by a live grenade blast, and taken back off through
@@ -6910,10 +6938,14 @@ Soldier+0x8, Unit_bArmorTuWarn @ 0x4e254, and the two products at 0x31a60 and 0x
 byte] * [R1+0xB4] and [R1+0xB2] * uStunOrArmor, feeding _rt_sdiv at 0x31a70) inside
 Tact_ResolveThrowLanding @ 0x31a18; the step-spend and its gate still need their own site census
 (0x536A0..0x536BC is inside Tact_ProcessFallAction @ 0x52adc, not the move action). And mind
-control: Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at 0x4cd20 and cmd 18 mode 13 at
-0x4d7bc, both inside Tact_EnemyAiTick @ 0x4cbe0. 168 = stun, 169 = mind control. Reported, not
+control: Tact_UpdateUnitControl @ 0x4a444, the psi gate rand(5)==0 at 0x4cd20 and cmd 18 modes 4/5 at
+0x4d718 inside Tact_EnemyAiTick @ 0x4cbe0. Raw audit on 2026-10-27 confirms that 0x4d7bc is mode-13
+alien melee, not PSI. Connected PSI side-change/restoration proof is still being strengthened.
+168 = stun, 169 = mind control. Reported, not
 changed (four bugs.tsv rows plus the older KNEEL-flag naming row): Unit_ResetBattleState's item-slot
 clears, its apBackpack[5]/[6] seeds at 0x49974/0x49978 and its Unit_RecalcInventoryStat call at
 0x49980; Tact_KillUnit @ 0x4e430's 0x4E614 transform reset and 0x4E624 bHumanoidInv clear; the
-detail view's three name-entry arms (0x63138/0x6318c/0x63208), whose keyboard draws (pufo_baseui.c
-8253..8302) but cannot be used.
+detail view's three name-entry arms (0x63138/0x6318c/0x63208). The old unusable-keyboard claim is
+superseded: the 2026-10-27 raw audit matches current C for normal terminated names, and the World
+pointer fixture near test_geoscapeframe.c:26020 covers append, Backspace and Accept. Native HWND
+input proof remains open. Current evidence and remaining work: docs/COMPLETION_AUDIT.md.

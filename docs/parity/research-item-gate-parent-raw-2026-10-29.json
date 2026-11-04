@@ -1,0 +1,237 @@
+{
+  "address": "0x72c8c",
+  "bytes": "870050e31a00000a8c0050e31800000a360050e3010000da420050e3030000ba750050e3120000da8f0050e3100000aa2230a0e3900303e044009fe5003083e038009fe50e30d3e5033180e028009fe5083193e561cea0e309c08ce3dc2090e10100a0e3823083e0ba32d3e1000053e30000008a0000a0e30ef0a0e168971500b839110008ef1500",
+  "rows": [
+    [
+      "0x72c8c",
+      "870050e3",
+      "CMP",
+      "R0 | #0x87 | ",
+      null
+    ],
+    [
+      "0x72c90",
+      "1a00000a",
+      "BEQ",
+      "loc_72D00 |  | ",
+      "0x72d00"
+    ],
+    [
+      "0x72c94",
+      "8c0050e3",
+      "CMP",
+      "R0 | #0x8C | ",
+      null
+    ],
+    [
+      "0x72c98",
+      "1800000a",
+      "BEQ",
+      "loc_72D00 |  | ",
+      "0x72d00"
+    ],
+    [
+      "0x72c9c",
+      "360050e3",
+      "CMP",
+      "R0 | #0x36 | ",
+      null
+    ],
+    [
+      "0x72ca0",
+      "010000da",
+      "BLE",
+      "loc_72CAC |  | ",
+      "0x72cac"
+    ],
+    [
+      "0x72ca4",
+      "420050e3",
+      "CMP",
+      "R0 | #0x42 | ",
+      null
+    ],
+    [
+      "0x72ca8",
+      "030000ba",
+      "BLT",
+      "loc_72CBC |  | ",
+      "0x72cbc"
+    ],
+    [
+      "0x72cac",
+      "750050e3",
+      "CMP",
+      "R0 | #0x75 | ",
+      null
+    ],
+    [
+      "0x72cb0",
+      "120000da",
+      "BLE",
+      "loc_72D00 |  | ",
+      "0x72d00"
+    ],
+    [
+      "0x72cb4",
+      "8f0050e3",
+      "CMP",
+      "R0 | #0x8F | ",
+      null
+    ],
+    [
+      "0x72cb8",
+      "100000aa",
+      "BGE",
+      "loc_72D00 |  | ",
+      "0x72d00"
+    ],
+    [
+      "0x72cbc",
+      "2230a0e3",
+      "MOV",
+      "R3 | #0x22 | ",
+      null
+    ],
+    [
+      "0x72cc0",
+      "900303e0",
+      "MUL",
+      "R3 | R0 | R3",
+      null
+    ],
+    [
+      "0x72cc4",
+      "44009fe5",
+      "LDR",
+      "R0 | =aResearchTopics | ",
+      null
+    ],
+    [
+      "0x72cc8",
+      "003083e0",
+      "ADD",
+      "R3 | R3 | R0",
+      null
+    ],
+    [
+      "0x72ccc",
+      "38009fe5",
+      "LDR",
+      "R0 | =Map_bTactFlag | ",
+      null
+    ],
+    [
+      "0x72cd0",
+      "0e30d3e5",
+      "LDRB",
+      "R3 | [R3,#0xE] | ",
+      null
+    ],
+    [
+      "0x72cd4",
+      "033180e0",
+      "ADD",
+      "R3 | R0 | R3,LSL#2",
+      null
+    ],
+    [
+      "0x72cd8",
+      "28009fe5",
+      "LDR",
+      "R0 | =abFacilityGrid | ",
+      null
+    ],
+    [
+      "0x72cdc",
+      "083193e5",
+      "LDR",
+      "R3 | [R3,#0x108] | ",
+      null
+    ],
+    [
+      "0x72ce0",
+      "61cea0e309c08ce3",
+      "MOV",
+      "R12 | #(nSelectedBaseIdx - 0x159768) | ",
+      null
+    ],
+    [
+      "0x72ce8",
+      "dc2090e1",
+      "LDRSB",
+      "R2 | [R0,R12] | ",
+      null
+    ],
+    [
+      "0x72cec",
+      "0100a0e3",
+      "MOV",
+      "R0 | #1 | ",
+      null
+    ],
+    [
+      "0x72cf0",
+      "823083e0",
+      "ADD",
+      "R3 | R3 | R2,LSL#1",
+      null
+    ],
+    [
+      "0x72cf4",
+      "ba32d3e1",
+      "LDRH",
+      "R3 | [R3,#0x2A] | ",
+      null
+    ],
+    [
+      "0x72cf8",
+      "000053e3",
+      "CMP",
+      "R3 | #0 | ",
+      null
+    ],
+    [
+      "0x72cfc",
+      "0000008a",
+      "BHI",
+      "locret_72D04 |  | ",
+      "0x72d04"
+    ],
+    [
+      "0x72d00",
+      "0000a0e3",
+      "MOV",
+      "R0 | #0 | ",
+      null
+    ],
+    [
+      "0x72d04",
+      "0ef0a0e1",
+      "RET",
+      " |  | ",
+      null
+    ],
+    [
+      "0x72d08",
+      "68971500",
+      "",
+      "abFacilityGrid | abFacilityGrid | abFacilityGrid",
+      null
+    ],
+    [
+      "0x72d0c",
+      "b8391100",
+      "",
+      "Map_bTactFlag | Map_bTactFlag | Map_bTactFlag",
+      null
+    ],
+    [
+      "0x72d10",
+      "08ef1500",
+      "",
+      "aResearchTopics | aResearchTopics | aResearchTopics",
+      null
+    ]
+  ]
+}

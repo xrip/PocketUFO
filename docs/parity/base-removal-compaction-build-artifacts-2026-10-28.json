@@ -1,0 +1,707 @@
+{
+  "sourceFingerprint": "F2CDD819A70CB152B6BB1ADA21D2CF15324EB949C289CAD4916EFCBA30ABAB12",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exitCode": 0,
+      "runtimeTestsRun": false,
+      "log": {
+        "path": ".workers/luna-mission-init-audit/debug-base-compaction-full-compile.log",
+        "sha256": "BF46ACD6BC897D8DADA677D60FA84F381BB4AE4CFF16F2CD9CD3DAFB765E34C9"
+      },
+      "executables": [
+        {
+          "target": "pocketufo",
+          "path": "build/src/pufo/Debug/pocketufo.exe",
+          "sha256": "A298B08C493BC4CF339A7694F5EC454094EA23BDEE60E8B2DC34F918136962F6"
+        },
+        {
+          "target": "test_data",
+          "path": "build/tests/Debug/test_data.exe",
+          "sha256": "1BBC4787D20DB7171251A85D55D4BCCC5F14CF6A766627F098EF82FF530F8A53"
+        },
+        {
+          "target": "test_ptrarray",
+          "path": "build/tests/Debug/test_ptrarray.exe",
+          "sha256": "2443ECC750FE574C0D9D3100C04DD958A5D4C256EE6C4CC187FE1D494BDFE60C"
+        },
+        {
+          "target": "test_rand",
+          "path": "build/tests/Debug/test_rand.exe",
+          "sha256": "5F9E2B6ED824321C953E68BDF27DE8BF116263C62506F8BBC78D0633CD9AB4A3"
+        },
+        {
+          "target": "test_texts_lang",
+          "path": "build/tests/Debug/test_texts_lang.exe",
+          "sha256": "1BE15EACBD115BAEE9B55F801812F07C64593093BD7AE03CDEC86F0B822B26B2"
+        },
+        {
+          "target": "test_render",
+          "path": "build/tests/Debug/test_render.exe",
+          "sha256": "14E7A7A0233B6F91B89139EAC97756D5D4D2D42891E781B344F915C2597B645D"
+        },
+        {
+          "target": "test_audio",
+          "path": "build/tests/Debug/test_audio.exe",
+          "sha256": "A0BC963439889ABE967F9D343422A5198786D1CA12F723C4BA4EE2C289C7FA43"
+        },
+        {
+          "target": "test_mapcell",
+          "path": "build/tests/Debug/test_mapcell.exe",
+          "sha256": "74C5EF75AA93F47D0133F1D5FA846DFBD88D6BD053529FF48A51AB8B99600716"
+        },
+        {
+          "target": "test_font",
+          "path": "build/tests/Debug/test_font.exe",
+          "sha256": "7ADF2A5DA47610D19131DCB66C34E1A4CF4AD8C6BC1BDCCF20B4A1B0CDB7DE27"
+        },
+        {
+          "target": "test_unit",
+          "path": "build/tests/Debug/test_unit.exe",
+          "sha256": "812267626F8B29A83859D6F4FDB0FF83D3DD27071F21AC5A326E3FCE605A1FAD"
+        },
+        {
+          "target": "test_moveaction",
+          "path": "build/tests/Debug/test_moveaction.exe",
+          "sha256": "C402C66052C52AE8D163FDA5E22A728FCA9C51A102DD26D17C6062893A31B3C0"
+        },
+        {
+          "target": "test_mapctx",
+          "path": "build/tests/Debug/test_mapctx.exe",
+          "sha256": "DE384BFFC7425579F5D95D1F69A671D42F66DF3606ECA6923A815DBE16EA6381"
+        },
+        {
+          "target": "test_tacthud",
+          "path": "build/tests/Debug/test_tacthud.exe",
+          "sha256": "5184B44F6CC5F29162E63F60C144309170A09AB53C81D71262AF41A0C9A1A165"
+        },
+        {
+          "target": "test_titles",
+          "path": "build/tests/Debug/test_titles.exe",
+          "sha256": "388CA643DC5150FC0F4C371FE37AAD04B4F1DABAE4396B93A03FD92CC1BB82FE"
+        },
+        {
+          "target": "test_renderframe",
+          "path": "build/tests/Debug/test_renderframe.exe",
+          "sha256": "786B04920AFEFD3E65F8370F5F7AB9D0A9BE62C1226232EF529DAFD69E4BE1B1"
+        },
+        {
+          "target": "test_mainmenu",
+          "path": "build/tests/Debug/test_mainmenu.exe",
+          "sha256": "FB7066069B21837C8D8298415618DEDD8BF473E115867B1347FDD17BE696474D"
+        },
+        {
+          "target": "test_cmdpads",
+          "path": "build/tests/Debug/test_cmdpads.exe",
+          "sha256": "D19040C1393EC311457EAA521408BB44ED59296542ACDB8E1CF86E98D515E19C"
+        },
+        {
+          "target": "test_tactstate",
+          "path": "build/tests/Debug/test_tactstate.exe",
+          "sha256": "50764AEB322D58F4E6821A1CFC2942605BB02D027B0CCBFA29AEA6EB16F4D4B3"
+        },
+        {
+          "target": "test_path",
+          "path": "build/tests/Debug/test_path.exe",
+          "sha256": "A6043176A20828B5B505DF36F96C2BF94FCE88FE840FDC60F0FECF7ECCC9CFAF"
+        },
+        {
+          "target": "test_step",
+          "path": "build/tests/Debug/test_step.exe",
+          "sha256": "097E5E07182FE8A14F8BADCDC198386DF5B55A07AABFDDECC7C1FA8B6F5A69A8"
+        },
+        {
+          "target": "test_geopointer",
+          "path": "build/tests/Debug/test_geopointer.exe",
+          "sha256": "956E14CC4C3538A9CE566EBDB0E959011DE3125A37D1873A7696FF1DA496AD88"
+        },
+        {
+          "target": "test_smaphit",
+          "path": "build/tests/Debug/test_smaphit.exe",
+          "sha256": "C46642E70FA001BFB5E0D5E85FDF0B7BFEF4939322ABA66E941CC2B3E41DD747"
+        },
+        {
+          "target": "test_closeui",
+          "path": "build/tests/Debug/test_closeui.exe",
+          "sha256": "1DF912E6468D4C2DDC22A499737A2C21479F433BB8F3C5D0ACA5E55D8296BFB6"
+        },
+        {
+          "target": "test_los",
+          "path": "build/tests/Debug/test_los.exe",
+          "sha256": "37960B94732E7306F6E2CAA9633070DC6BF515526A6BFA02DDDDA82EEED480B3"
+        },
+        {
+          "target": "test_boot",
+          "path": "build/tests/Debug/test_boot.exe",
+          "sha256": "17ECD4E83524674D877120971B0CAABD773953D0DEB787D991E78D51DC5E5383"
+        },
+        {
+          "target": "test_template",
+          "path": "build/tests/Debug/test_template.exe",
+          "sha256": "E42D39AE8CA81C054D84349149EDD063BB31A4F1A113AED246F03CA38BE78050"
+        },
+        {
+          "target": "test_terrain",
+          "path": "build/tests/Debug/test_terrain.exe",
+          "sha256": "8650DC226E13971BD399B968537EFBD8FF7F01C438FF2FD6D98E44D901BDB4AC"
+        },
+        {
+          "target": "test_rmp",
+          "path": "build/tests/Debug/test_rmp.exe",
+          "sha256": "C28DCD0033D0FEC093766DCC6F1D917D26734C27E686E884F45FDAB0D94B7487"
+        },
+        {
+          "target": "test_tactctl",
+          "path": "build/tests/Debug/test_tactctl.exe",
+          "sha256": "61B96F59534672C9A9BC1A76AEB1181812427CE45DB7511650069714D8A031DD"
+        },
+        {
+          "target": "test_panel",
+          "path": "build/tests/Debug/test_panel.exe",
+          "sha256": "3E950AFD37D60FCA2BD9C4F310993C990E33575471138B2F64BE75CAD7F29660"
+        },
+        {
+          "target": "test_turn",
+          "path": "build/tests/Debug/test_turn.exe",
+          "sha256": "EC6CC0D37D3D1AFC8E58581E39FBA6497307E7FB87237BF6322360578C73DAC9"
+        },
+        {
+          "target": "test_save",
+          "path": "build/tests/Debug/test_save.exe",
+          "sha256": "02DB5052DEDF83FDE7FFD50BCBE7E89365ED1D338B8A8400D20C4114D2231F31"
+        },
+        {
+          "target": "test_save_world",
+          "path": "build/tests/Debug/test_save_world.exe",
+          "sha256": "90ED84C12E1BBCADA6EB282E6EA44001FAAD7AD08D6D12935FBD087378B339AC"
+        },
+        {
+          "target": "test_roster",
+          "path": "build/tests/Debug/test_roster.exe",
+          "sha256": "83049D948C83472A8FE72091FC56D3480521D59153B4539BEAF901C96163C6F3"
+        },
+        {
+          "target": "test_tactui",
+          "path": "build/tests/Debug/test_tactui.exe",
+          "sha256": "29786CF758462DE851DE8C847B11C1E65BBC543B5092604815E5C559616DB70C"
+        },
+        {
+          "target": "test_timer",
+          "path": "build/tests/Debug/test_timer.exe",
+          "sha256": "D4331B5EBC3FF87729065BD532ED55A469CB42D91CEC4162F6BBFCA6BD4F0598"
+        },
+        {
+          "target": "test_tactend",
+          "path": "build/tests/Debug/test_tactend.exe",
+          "sha256": "5E0296F3ADB9B0826434E3A0463E633A4AF1E42F96CFDE275FC449435FB68816"
+        },
+        {
+          "target": "test_menu",
+          "path": "build/tests/Debug/test_menu.exe",
+          "sha256": "CC1941E1819DEC99DF737A6D6B4378F88BAD8FB01E131B7FB62EEF6ECF58FFFC"
+        },
+        {
+          "target": "test_statusmsg",
+          "path": "build/tests/Debug/test_statusmsg.exe",
+          "sha256": "0B2A919489AF806E1BB24465B8563A8101596DA78DD5877480643A59A90F046E"
+        },
+        {
+          "target": "test_control",
+          "path": "build/tests/Debug/test_control.exe",
+          "sha256": "55B55BA0383831671175A39010DE681DA034C22DFEBED3E8A2410BD7927ACE17"
+        },
+        {
+          "target": "test_uibank",
+          "path": "build/tests/Debug/test_uibank.exe",
+          "sha256": "BCE17E035A7615594A168D7B68DB638E645C676940A336C181BAAD477A33A3E6"
+        },
+        {
+          "target": "test_constants",
+          "path": "build/tests/Debug/test_constants.exe",
+          "sha256": "1235B3938DD70EDDD8F6B11712F0422D144F0680DA9C9D730A44F6FD305F2C63"
+        },
+        {
+          "target": "test_enemyai",
+          "path": "build/tests/Debug/test_enemyai.exe",
+          "sha256": "674386EF4AB26B5F25178ABC84BF308508B8573A3798C606977B581B92F2B1E3"
+        },
+        {
+          "target": "test_soldiername",
+          "path": "build/tests/Debug/test_soldiername.exe",
+          "sha256": "D915DF144DAE815781A539FB892CCCAFF2077A72437F60A5D1B4F87E072B831D"
+        },
+        {
+          "target": "test_input",
+          "path": "build/tests/Debug/test_input.exe",
+          "sha256": "5525B8A09A1B5B9CFF7E2FB10982077C481BD7C2E57BCFA278BB2A6D172A5A77"
+        },
+        {
+          "target": "test_cursordir",
+          "path": "build/tests/Debug/test_cursordir.exe",
+          "sha256": "C1B543442AE6B16241F1261BF1C45DCAF07AD1CF660C627BD487AEFB9C1DF9C5"
+        },
+        {
+          "target": "test_modal",
+          "path": "build/tests/Debug/test_modal.exe",
+          "sha256": "EF74D463D1BD5ABFF50249A3E3417CD41A48228C86AD9A20998AE85A15ABD1A6"
+        },
+        {
+          "target": "test_menubtn",
+          "path": "build/tests/Debug/test_menubtn.exe",
+          "sha256": "C12098ECF5EEEB1675999367256F7D123971E7E07EE432F14916497102C96980"
+        },
+        {
+          "target": "test_isodraw",
+          "path": "build/tests/Debug/test_isodraw.exe",
+          "sha256": "1D87B3DB4A012B5868C37D1E933F8478F1687099E19682729DBBFD821DBE1AEF"
+        },
+        {
+          "target": "test_baseui",
+          "path": "build/tests/Debug/test_baseui.exe",
+          "sha256": "F566C4CD6E39DF8E06FE20C4C084DEE975E442CD601463E7B18EF975A00AE3FE"
+        },
+        {
+          "target": "test_plane",
+          "path": "build/tests/Debug/test_plane.exe",
+          "sha256": "E330ED7F315558A5F66480F1FC8244D54CD326FDA38CE40463BAF40EFE071FB0"
+        },
+        {
+          "target": "test_clock",
+          "path": "build/tests/Debug/test_clock.exe",
+          "sha256": "5575A15B92C63A2F394CEE9DFD8B5C96C09C83E404C194B099059E15D639F171"
+        },
+        {
+          "target": "test_ship",
+          "path": "build/tests/Debug/test_ship.exe",
+          "sha256": "C75C061CE38D046B0C9C046C6F4FD3EBF3A5475A53C47D39FCF091269ED7D1D7"
+        },
+        {
+          "target": "test_strateg",
+          "path": "build/tests/Debug/test_strateg.exe",
+          "sha256": "120BE25359449EC94C89B9E0EA762F44AE5B4046016C08BE445270E8DF39E8C2"
+        },
+        {
+          "target": "test_geouimanage",
+          "path": "build/tests/Debug/test_geouimanage.exe",
+          "sha256": "DFEA83C0DE52F2DAEA6A1D2A55190F1BF89FE82BC02A0FF4F573F3F6DE5B3A0C"
+        },
+        {
+          "target": "test_geoiinit",
+          "path": "build/tests/Debug/test_geoiinit.exe",
+          "sha256": "5584E111A55F0F478B17C990ACCB67BC993ECB580A8D7554B0A83540A3FD9332"
+        },
+        {
+          "target": "test_geoscapeframe",
+          "path": "build/tests/Debug/test_geoscapeframe.exe",
+          "sha256": "D65AA5DB25B0B08360D273FDAB65C24BC873D8CCBB95CD2D1CDAF0D254D0ACDD"
+        },
+        {
+          "target": "test_startnew",
+          "path": "build/tests/Debug/test_startnew.exe",
+          "sha256": "96F705884CE15094810DD6CC329C20C4E815A09435877DCAB0434B204242F7F5"
+        },
+        {
+          "target": "test_geoscape",
+          "path": "build/tests/Debug/test_geoscape.exe",
+          "sha256": "93049576488614F72B1EA7112E793A2AF8928A16307F429568C006321B314D42"
+        },
+        {
+          "target": "test_tactinit",
+          "path": "build/tests/Debug/test_tactinit.exe",
+          "sha256": "072BA9BE849EA1F778C14EF02A5BBCEB2BBEB3F031C26186C86D88B13EDE71BE"
+        },
+        {
+          "target": "test_ballist",
+          "path": "build/tests/Debug/test_ballist.exe",
+          "sha256": "6C2822912C2C11BF7A0E32BF54559293E2445773E722DF1279AA72EF9291BBF1"
+        },
+        {
+          "target": "test_combat",
+          "path": "build/tests/Debug/test_combat.exe",
+          "sha256": "CD2A951FEE3CFB4DE59CC254AEF713552ACAEF81B716969D34E5E40E0CDCAD38"
+        },
+        {
+          "target": "test_vistry",
+          "path": "build/tests/Debug/test_vistry.exe",
+          "sha256": "F7B33DAC7F1B069EA0341D726A51601183C02AF4F7211E55D90B5CAA021156C0"
+        },
+        {
+          "target": "test_fov",
+          "path": "build/tests/Debug/test_fov.exe",
+          "sha256": "FFD2FE95D6E08499D8EE03E2E4E09C9042AB6169AC2031E425ADA7216E82BC21"
+        },
+        {
+          "target": "test_vis",
+          "path": "build/tests/Debug/test_vis.exe",
+          "sha256": "1B2CFE35751C00CF74DD63334389AB87231BF42F969F58C834C53B9049680F51"
+        },
+        {
+          "target": "test_blast",
+          "path": "build/tests/Debug/test_blast.exe",
+          "sha256": "1427C8FF88F09AE7A941D993148F4312F706E2A5F58998C1E9F8C17919AAA675"
+        },
+        {
+          "target": "test_invdrag",
+          "path": "build/tests/Debug/test_invdrag.exe",
+          "sha256": "90037E8152D18B9F3BD9401A954B77673794FBFC6E3903C16B46ECE93657C64B"
+        },
+        {
+          "target": "test_appshell",
+          "path": "build/tests/Debug/test_appshell.exe",
+          "sha256": "85C5DC84D1BB63AA5AD401E2EE4D3EF8F41517AA37FC3F3D0CD75FE831E2E369"
+        }
+      ]
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exitCode": 0,
+      "runtimeTestsRun": false,
+      "log": {
+        "path": ".workers/luna-mission-init-audit/release-base-compaction-full-compile.log",
+        "sha256": "5D754E09D94807A8FE52C38B5427F7D8D2914FDED7C9BF1F00AAF438481C1EEC"
+      },
+      "executables": [
+        {
+          "target": "pocketufo",
+          "path": "build/src/pufo/Release/pocketufo.exe",
+          "sha256": "2DE363B45CFF82F82EE091C69A43FFE9B7B7A77930F4A411D6A8E42F84D8C4A5"
+        },
+        {
+          "target": "test_data",
+          "path": "build/tests/Release/test_data.exe",
+          "sha256": "6D3E1DD8321079D15210626CDE66CCBBC67B8B3E672FA3A2F94D860319516506"
+        },
+        {
+          "target": "test_ptrarray",
+          "path": "build/tests/Release/test_ptrarray.exe",
+          "sha256": "84345A0184D84D8DFD21A99ECB997B3AEBDC66974620512A5D68AA87126349AB"
+        },
+        {
+          "target": "test_rand",
+          "path": "build/tests/Release/test_rand.exe",
+          "sha256": "04D24FD5437231C8520F251DF40224A113E5875ECB1AF709AC07AC7F19B95BB6"
+        },
+        {
+          "target": "test_texts_lang",
+          "path": "build/tests/Release/test_texts_lang.exe",
+          "sha256": "455684ECBE1AB697A27C573F8C29E57D387083068EFDC180767EE5701500D272"
+        },
+        {
+          "target": "test_render",
+          "path": "build/tests/Release/test_render.exe",
+          "sha256": "C482BE7A110F3B57CD0CB95628E2B691DD22C95D23DE4731760202CDCED466BD"
+        },
+        {
+          "target": "test_audio",
+          "path": "build/tests/Release/test_audio.exe",
+          "sha256": "99D7A70F6DD3010B0E5B13E73450E8FCFB576E78C0AB373CD4A5B8A836E3C8AF"
+        },
+        {
+          "target": "test_mapcell",
+          "path": "build/tests/Release/test_mapcell.exe",
+          "sha256": "67D3595DC724EEDC4DF9E49FCA59FDC30B5C85713AEC33D7B7213D1219B584E7"
+        },
+        {
+          "target": "test_font",
+          "path": "build/tests/Release/test_font.exe",
+          "sha256": "393FD2685D3056AE5915E6F2BA82BB5836B3999D619E81B0BA80FD42B8604912"
+        },
+        {
+          "target": "test_unit",
+          "path": "build/tests/Release/test_unit.exe",
+          "sha256": "BFC7C0743466FAF083911FE27A8FB3BCBC4AC3A42170810195A9CE98C035EA17"
+        },
+        {
+          "target": "test_moveaction",
+          "path": "build/tests/Release/test_moveaction.exe",
+          "sha256": "C6FC2E41249D654FE50F201A985CAF0357AF9789E4FB41420FE34E3C7E66E504"
+        },
+        {
+          "target": "test_mapctx",
+          "path": "build/tests/Release/test_mapctx.exe",
+          "sha256": "16FA3735153CD701EE10B12283CD84C7F0827E1B7749B7E8D54C6417D32FE632"
+        },
+        {
+          "target": "test_tacthud",
+          "path": "build/tests/Release/test_tacthud.exe",
+          "sha256": "5A83E3C565F0339CBBEE14F37ED7145197109F43E199B2B9BD9A2548A9B14AC2"
+        },
+        {
+          "target": "test_titles",
+          "path": "build/tests/Release/test_titles.exe",
+          "sha256": "D5C756F0A212CE242BFD28E16DC8DB7E34A9AD6C52CD8751B739AB13F3DE208B"
+        },
+        {
+          "target": "test_renderframe",
+          "path": "build/tests/Release/test_renderframe.exe",
+          "sha256": "6AE91D1DFCDCDBC50C22FDAD170E30A22033BEFFF54AEF491CB6BB7B5496E0F5"
+        },
+        {
+          "target": "test_mainmenu",
+          "path": "build/tests/Release/test_mainmenu.exe",
+          "sha256": "C7B2C646D14658D8E274DB69B31DC2EE0C5CE675516B4723199651AD6D222BC0"
+        },
+        {
+          "target": "test_cmdpads",
+          "path": "build/tests/Release/test_cmdpads.exe",
+          "sha256": "72FA8CD7E00BC0007BBEFE015B91384C4E66C4C6DFA4D5A28FB6AA2633B4288B"
+        },
+        {
+          "target": "test_tactstate",
+          "path": "build/tests/Release/test_tactstate.exe",
+          "sha256": "A5E6ACE83BE2C5D7FACB40D39DC2EC9C88DCC4C95BF3F609215D3AC3A478F256"
+        },
+        {
+          "target": "test_path",
+          "path": "build/tests/Release/test_path.exe",
+          "sha256": "2B0EF4DF987799736162BE3D99CCD937BC8C59F4F838AF9A80D6AF42DFE76855"
+        },
+        {
+          "target": "test_step",
+          "path": "build/tests/Release/test_step.exe",
+          "sha256": "FA8A4D95E5374095DDC5211D9F2B23D239B1B30BB1CB7DA7E22DF37E7536C200"
+        },
+        {
+          "target": "test_geopointer",
+          "path": "build/tests/Release/test_geopointer.exe",
+          "sha256": "926BAA05DD6B8845157E9CD67721F22B0ED01384543C605F1A95CD1CF71828B1"
+        },
+        {
+          "target": "test_smaphit",
+          "path": "build/tests/Release/test_smaphit.exe",
+          "sha256": "A899FB249E4BE37FA5D752AD1F7EF740897F384B133EDBA6A4C848AB9E7A074D"
+        },
+        {
+          "target": "test_closeui",
+          "path": "build/tests/Release/test_closeui.exe",
+          "sha256": "C599C2465A03CB880590CF7AFBD0F0107CD31259414DB11D189E7CE94B1F7318"
+        },
+        {
+          "target": "test_los",
+          "path": "build/tests/Release/test_los.exe",
+          "sha256": "C29E1CF019759DE269032096E8E331CE1EA90CC7E01ECAD3007B4E44AFB0EA61"
+        },
+        {
+          "target": "test_boot",
+          "path": "build/tests/Release/test_boot.exe",
+          "sha256": "3EBAD8CE0B31D796E14A84504478BC52F40C6815AAC92DB0274E1B34A402286E"
+        },
+        {
+          "target": "test_template",
+          "path": "build/tests/Release/test_template.exe",
+          "sha256": "AB10F835300730CA68D8F0DBDE45B8A91C603639FC187422B6A453FDBEAB1332"
+        },
+        {
+          "target": "test_terrain",
+          "path": "build/tests/Release/test_terrain.exe",
+          "sha256": "DB86F08CA67E6F0241616EA0602C102E420A04B0A22D21326D99866E833E708D"
+        },
+        {
+          "target": "test_rmp",
+          "path": "build/tests/Release/test_rmp.exe",
+          "sha256": "1E0BB8A22662B2B49F19FA9C021139B9FA2FB45F826CC1C0E66F133B505658A0"
+        },
+        {
+          "target": "test_tactctl",
+          "path": "build/tests/Release/test_tactctl.exe",
+          "sha256": "89959735F37DE0105B7751C56B26EC44183D81E3AAA3DCA09EC6C3AC7EF9A9F0"
+        },
+        {
+          "target": "test_panel",
+          "path": "build/tests/Release/test_panel.exe",
+          "sha256": "079E5F0DF47D27CA7EB3E3F89F8FAF984104281EE2A255C6E7BEB41C62C4B552"
+        },
+        {
+          "target": "test_turn",
+          "path": "build/tests/Release/test_turn.exe",
+          "sha256": "B5626856B7FE1BA26C7CAB241020C585140D4D7781A97EE610D7FDE1D31B1370"
+        },
+        {
+          "target": "test_save",
+          "path": "build/tests/Release/test_save.exe",
+          "sha256": "F6427290F1896D9E2CD7F644C6485F5C7624DDB63CE4BC9C28161F3B224C9DB5"
+        },
+        {
+          "target": "test_save_world",
+          "path": "build/tests/Release/test_save_world.exe",
+          "sha256": "D6C8EA23A564DD120A9ABA3FDFB5B380D5BE601E7A182DC7B5194C786B786FAD"
+        },
+        {
+          "target": "test_roster",
+          "path": "build/tests/Release/test_roster.exe",
+          "sha256": "0CBE5429925C8682EB77B7E7C40F841353FB267841B3D2E4CF3BFF13C4CFA5B4"
+        },
+        {
+          "target": "test_tactui",
+          "path": "build/tests/Release/test_tactui.exe",
+          "sha256": "9DDE56080F4AE5622C13083577F2A2852E25503A2A17CA7700F3C8E7DB5E78B8"
+        },
+        {
+          "target": "test_timer",
+          "path": "build/tests/Release/test_timer.exe",
+          "sha256": "49590D2D26DCBE8D9024D638D329FB086E09CBF7A593AEE5349EC0F72544EF26"
+        },
+        {
+          "target": "test_tactend",
+          "path": "build/tests/Release/test_tactend.exe",
+          "sha256": "92FCFC77C353453EF86DA654F82B7B0B110E30CC5BF31C19FC89291098D5C9BD"
+        },
+        {
+          "target": "test_menu",
+          "path": "build/tests/Release/test_menu.exe",
+          "sha256": "5D3D283C7A390556FC015BE639C106660DE0F0EC37FDB27786EA299A875E095C"
+        },
+        {
+          "target": "test_statusmsg",
+          "path": "build/tests/Release/test_statusmsg.exe",
+          "sha256": "199FC863FBB67F26F31B2CEFF03B01BABF99E70959B81CA2E46D564CD2FAF09E"
+        },
+        {
+          "target": "test_control",
+          "path": "build/tests/Release/test_control.exe",
+          "sha256": "B1CDB6B4CB8613F7BD131875A6BAF99EF9FC32968A031E14B57ED0B445B4D27A"
+        },
+        {
+          "target": "test_uibank",
+          "path": "build/tests/Release/test_uibank.exe",
+          "sha256": "E46AAABD778A9160686A388B577B816E12F1F0A75201321BED2E3079A0A12782"
+        },
+        {
+          "target": "test_constants",
+          "path": "build/tests/Release/test_constants.exe",
+          "sha256": "505DD083E345A4DF645129523BCE7FB394E750C3D85EB502947876A5357DB5DB"
+        },
+        {
+          "target": "test_enemyai",
+          "path": "build/tests/Release/test_enemyai.exe",
+          "sha256": "1AE4E1345E8C3D296881231C554FF45AAE9C3CB8BAD2DF93F7251434CD0A2A7F"
+        },
+        {
+          "target": "test_soldiername",
+          "path": "build/tests/Release/test_soldiername.exe",
+          "sha256": "FF723512355D7176427417D18A9FADFD0C287F4F9614D83E5A357845F69020EB"
+        },
+        {
+          "target": "test_input",
+          "path": "build/tests/Release/test_input.exe",
+          "sha256": "F0D319FF18C065862A60323C3D99C69205CCE2EBDF02BE0F825500D27E3DD266"
+        },
+        {
+          "target": "test_cursordir",
+          "path": "build/tests/Release/test_cursordir.exe",
+          "sha256": "CFC4BAE28C11ABCEA2E1157F268BFF2D181B2BA5771038E43CD8A0ED1103E9CA"
+        },
+        {
+          "target": "test_modal",
+          "path": "build/tests/Release/test_modal.exe",
+          "sha256": "0A682A7D111A756983E9C9D540D0570558A706E2B17A0E882B88B8D385EF8AB8"
+        },
+        {
+          "target": "test_menubtn",
+          "path": "build/tests/Release/test_menubtn.exe",
+          "sha256": "708FCA4364900311815764C474675F836F8921615111CB8529620E4C5ACECF5F"
+        },
+        {
+          "target": "test_isodraw",
+          "path": "build/tests/Release/test_isodraw.exe",
+          "sha256": "84D756A436ACFD4D08DD09EC97072BDA589BC94526B20DAE0C01E2E171B99063"
+        },
+        {
+          "target": "test_baseui",
+          "path": "build/tests/Release/test_baseui.exe",
+          "sha256": "E45B3C2C670CFE5BDB062167FE0D942AFADB13C7F7C5C69D634B7EB909021716"
+        },
+        {
+          "target": "test_plane",
+          "path": "build/tests/Release/test_plane.exe",
+          "sha256": "F089082A0A2D59F31AEF4EF2B20AE08A8B73BB42A3F55ED2C77DCC8964AB847B"
+        },
+        {
+          "target": "test_clock",
+          "path": "build/tests/Release/test_clock.exe",
+          "sha256": "9D2E5549C7A81C9B5CA54E0857C6AC7005CA24A27F7D2C25782EBFA89EC79CC2"
+        },
+        {
+          "target": "test_ship",
+          "path": "build/tests/Release/test_ship.exe",
+          "sha256": "1B903C9B676829741BFDBA134C8D54A27F440E5C64B4FB49401EE9D99D35C849"
+        },
+        {
+          "target": "test_strateg",
+          "path": "build/tests/Release/test_strateg.exe",
+          "sha256": "48122F02A45768B5C9BC8B360D91526A6B25A8E44E75FEAD2E27F75573D0152D"
+        },
+        {
+          "target": "test_geouimanage",
+          "path": "build/tests/Release/test_geouimanage.exe",
+          "sha256": "1B82268A2BC189461BAFB24154CA3EE0D8710AA658880CD1634E15F92C1A7D76"
+        },
+        {
+          "target": "test_geoiinit",
+          "path": "build/tests/Release/test_geoiinit.exe",
+          "sha256": "E0055FCD9E9F791C7F3D68C49009945D955D612C79EAE4FD093CDA11209C0081"
+        },
+        {
+          "target": "test_geoscapeframe",
+          "path": "build/tests/Release/test_geoscapeframe.exe",
+          "sha256": "7640AFC9E7B18E8645B5C1796E659F12FDC76498E3C593BCFBDD401A7A944E20"
+        },
+        {
+          "target": "test_startnew",
+          "path": "build/tests/Release/test_startnew.exe",
+          "sha256": "807A9E4234C9836C1FF09C2C48B7170788AA63962ADAAC8094365356230C01B6"
+        },
+        {
+          "target": "test_geoscape",
+          "path": "build/tests/Release/test_geoscape.exe",
+          "sha256": "BE40C844D274799F9901F23F59C727F8CB5EC47B442C11E39D4AB1247ED5743A"
+        },
+        {
+          "target": "test_tactinit",
+          "path": "build/tests/Release/test_tactinit.exe",
+          "sha256": "138C80D9F997909555B9F99E38B0E699E30E764BA9DEDF3BAB9CB7E89E6C4E6C"
+        },
+        {
+          "target": "test_ballist",
+          "path": "build/tests/Release/test_ballist.exe",
+          "sha256": "9749D7233F180AD9A7A441E20C244776742A68159802317DC4F0547B1A78363C"
+        },
+        {
+          "target": "test_combat",
+          "path": "build/tests/Release/test_combat.exe",
+          "sha256": "99FA3B5AFFFF10F9C4E5FB9BD0CC8C5AF2B2CE513AFEB88576BE85CA0C519117"
+        },
+        {
+          "target": "test_vistry",
+          "path": "build/tests/Release/test_vistry.exe",
+          "sha256": "8B03236A49B0987EABF1FE359600F77AD0396BC8D75F9581E1E9F7635CA5D32A"
+        },
+        {
+          "target": "test_fov",
+          "path": "build/tests/Release/test_fov.exe",
+          "sha256": "46265C7E0CE2EB0DCF1D52C992720DE35C095F1B60638210D903C1EEB7A0A3C5"
+        },
+        {
+          "target": "test_vis",
+          "path": "build/tests/Release/test_vis.exe",
+          "sha256": "15F740AD73E24F32473ED4D760FF02D4CB2AC9D6E8F5BE54108C0E3D2C3A31F5"
+        },
+        {
+          "target": "test_blast",
+          "path": "build/tests/Release/test_blast.exe",
+          "sha256": "91BE94F9BA8330189FABA2007BE2F95FA847637B86AD676987C742049C3CDBD8"
+        },
+        {
+          "target": "test_invdrag",
+          "path": "build/tests/Release/test_invdrag.exe",
+          "sha256": "213357854C7E8364A7D701C43AB2C901283073B3FF154D4C6B368A98DB84C4D0"
+        },
+        {
+          "target": "test_appshell",
+          "path": "build/tests/Release/test_appshell.exe",
+          "sha256": "4245D51E324917C2DFC4227DB5B0DA5C9C9C3495704666C904ECCFDDA805753F"
+        }
+      ]
+    }
+  }
+}

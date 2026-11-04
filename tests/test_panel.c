@@ -271,6 +271,36 @@ static void TestWrapText(void)
     CheckEqI32(panel.nLineCount, 1, "  nLineCount set to the wrapped count");
     Check(strncmp(UiPanel_GetLineText(&panel, 0), "short", 5) == 0, "  line 0 holds the text");
 
+    /* Raw ARM accepts a width equal to nMaxW (BLE at 0x37244). Its one-space
+     * scratch sentinel also preserves repeated and trailing input separators. */
+    {
+        const i32 nExactWidth = Text_MeasureWidth("short");
+        const i32 nSpaceWidth = Text_MeasureWidth(" ");
+
+        Check(nExactWidth > 0 && nExactWidth <= UINT8_MAX,
+              "  the exact-fit sample width fits nMaxW's byte range");
+        Check(nSpaceWidth > 0, "  the loaded font gives a space a positive advance");
+        if (nExactWidth > 0 && nExactWidth <= UINT8_MAX && nSpaceWidth > 0) {
+            nLines = UiPanel_WrapText(&panel, (u8)nExactWidth, 0, "short");
+            CheckEqI32(nLines, 1, "  a word whose width equals nMaxW stays on one line");
+            Check(strcmp(UiPanel_GetLineText(&panel, 0), "short") == 0,
+                  "  the exact-fit line has no synthetic trailing sentinel");
+
+            nLines = UiPanel_WrapText(&panel, 200, 0, "alpha  beta");
+            CheckEqI32(nLines, 1, "  an in-width line keeps its repeated separator");
+            Check(strcmp(UiPanel_GetLineText(&panel, 0), "alpha  beta") == 0,
+                  "  both source spaces remain in the panel line");
+
+            nLines = UiPanel_WrapText(&panel, (u8)nExactWidth, 0, "short  ");
+            CheckEqI32(nLines, 2,
+                       "  exact-fit text with two trailing spaces keeps the extra whitespace line");
+            Check(strcmp(UiPanel_GetLineText(&panel, 0), "short ") == 0,
+                  "  overflow commits through the prior space delimiter");
+            Check(strcmp(UiPanel_GetLineText(&panel, 1), " ") == 0,
+                  "  the remaining delimiter is the second line");
+        }
+    }
+
     /* Long text wraps over several lines. */
     nLines = UiPanel_WrapText(&panel, 40, 0,
                               "alpha beta gamma delta epsilon zeta eta theta");
@@ -680,7 +710,7 @@ static void TestPanelMsgDrawPasses(void)
     pPix = (const u16 *)surf.pPixels;
 
     color.pnGamma   = &nGamma;
-    color.nFadeCount = 0;
+    color.pnFadeCount = NULL;
 
     /* Expected values, computed before the draw so they cannot read the state the draw leaves. */
     uRule     = PanelRulePix(0xB4u, 0xB4u, 0xB4u);                       /* aStyleRgb[0..2] */

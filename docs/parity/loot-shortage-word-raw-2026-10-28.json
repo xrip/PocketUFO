@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-28",
+  "raw": {
+    "literal_address": "0x68a94",
+    "literal_value": "0x1870c8",
+    "stores_notice": [
+      [
+        "0x68900",
+        "0b00000a",
+        "BEQ             loc_68934"
+      ],
+      [
+        "0x68904",
+        "0830dde5",
+        "LDRB            R3, [SP,#0x14+var_C]"
+      ],
+      [
+        "0x68908",
+        "2710a0e3",
+        "MOV             R1, #0x27 "
+      ],
+      [
+        "0x6890c",
+        "88019fe5",
+        "LDR             R0, =bRadarScreenActive"
+      ],
+      [
+        "0x68910",
+        "0030cde5",
+        "STRB            R3, [SP,#0x14+var_14]"
+      ],
+      [
+        "0x68914",
+        "0420d0e5",
+        "LDRB            R2, [R0,#4]"
+      ],
+      [
+        "0x68918",
+        "0c30dde5",
+        "LDRB            R3, [SP,#0x14+var_8]"
+      ],
+      [
+        "0x6891c",
+        "74019fe5",
+        "LDR             R0, =0x158890"
+      ],
+      [
+        "0x68920",
+        "04a0cde5",
+        "STRB            R10, [SP,#0x14+var_10]"
+      ],
+      [
+        "0x68924",
+        "9ac6ffeb",
+        "BL              UiPanel_AppendLineWithSound"
+      ],
+      [
+        "0x68928",
+        "64119fe5",
+        "LDR             R1, =dwActionFail"
+      ],
+      [
+        "0x6892c",
+        "0100a0e3",
+        "MOV             R0, #1"
+      ],
+      [
+        "0x68930",
+        "000081e5",
+        "STR             R0, [R1]"
+      ],
+      [
+        "0x68934",
+        "843194e5",
+        "LDR             R3, [R4,#(Map_apObjects31 - 0x1139B8)]"
+      ]
+    ]
+  },
+  "idb_before": {
+    "ea": "0x68930",
+    "comment": null
+  },
+  "message_branch_idb_after": {
+    "address": "0x68EDC",
+    "comment": "Raw ARM 2026-10-28: conditional message40 append is BLEQ. Entry0x6835C stores incoming R1 low byte at SP+0x3C;0x68EB0 reloads it,0x68EBC tests zero,0x68EC0 always sets UI failure/refresh on shortage,0x68EC4..0x68EDC prepares/calls message only if argument==0. Arrival0x80E58 passesR1=0 (announce); base-defense shutdown0x3E004 passesR1=1 (suppress). Port previously inverted the gate; fixed as !bSuppressAmmoShortage. Tests now check both argument values and production event->loot handoff; runtime still pending. Raw and previous comment backed up in docs/parity/mission-return-handoff-raw-2026-10-28.json.",
+    "readback_equal": true,
+    "saved_with_backup": true
+  }
+}

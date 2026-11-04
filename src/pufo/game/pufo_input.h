@@ -92,9 +92,8 @@ typedef struct TactInputState {
     i32  nSlot23H;         /* 0xbc unk_113A74: status row height, must be > 0 */
     i32  nSlot24Hit;       /* 0xc0 unk_113A78: 1 left column, 2 right, 0 none */
     u8   bEdgeTestOn;      /* 0x150D5 anPhaseSave0[93]: run the HUD edge tests */
-    u8   bActionReady;     /* 0x150D6 anPhaseSave0[94]: the viewport guide's ready byte
-                            * (IsoViewportGuide.bActionReady). Nothing ported writes it, so the
-                            * guide draws its not-ready frame (recorded gap). */
+    u8   bActionReady;     /* 0x150D6 anPhaseSave0[94]: legacy name for the persisted
+                            * showborder option, also read by the viewport guide. */
     u8   bClickCommits;    /* 0x150D7 anPhaseSave0[95]: a click on the same cell acts */
     u8   bDragScrollA;     /* 0x150D8 anPhaseSave0[96] */
     u8   bDragScrollB;     /* 0x150D9 anPhaseSave0[97] */
@@ -193,7 +192,7 @@ typedef struct TactInputHooks {
     void (*pfnFocusOnCell)(MapCell *pCell, void *pUser);
     /* Geoscape_OnPointerUp (0x89450), on the &unk_1864F8 screen object. */
     void (*pfnGeoscapePointerUp)(void *pUser);
-    /* Titles_Shutdown (0x3826c), NOT ported, then GameUI_InitStartup (0x38a28), screen 16. */
+    /* Titles_Shutdown (0x3826c), then GameUI_InitStartup (0x38a28), screen 16. */
     void (*pfnTitlesToStartup)(void *pUser);
     /* EndScreen_Shutdown (0x389f8), NOT ported, screen 18. */
     void (*pfnEndScreenShutdown)(void *pUser);
@@ -512,6 +511,8 @@ typedef struct MapClickCtx {
     i32                   *pnMeleeCellX;     /* Map_nMeleeCellX @ 0x1279F8 */
     i32                   *pnMeleeCellY;     /* Map_nMeleeCellY @ 0x1279FC */
     i32                   *pnMeleeCellLayer; /* Map_nMeleeCellLayer @ 0x127A00 */
+    i32                   *pnShotCount;      /* Map+0x2C, fire enqueue scratch */
+    Soldier              **ppThrowTarget;    /* Map+0x150F0, fire enqueue scratch */
     /* The move tail. Unit_PathToCell @ 0x2c2a8 is ported in pufo_path.c and matches
      * this signature exactly - its pUser is a PathToCellCtx - so the real function
      * drops in here. It stays a seam because the click path should not have to own a

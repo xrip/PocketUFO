@@ -1,0 +1,17 @@
+{
+  "after": [
+    {
+      "ea": "0x3c674",
+      "comment": "Raw sets Map+1 to1. New-mission auto-equip and the first inventory run with this byte set; the no-XCOM branch clears it at0x3D0D4, while the deployed-team path retains it until Inv_CloseAndCommit. This is distinct from action latch Map+2."
+    },
+    {
+      "ea": "0x133a8",
+      "comment": "Raw ground-drop TU exemption reads Map+1 (encoded displacement1), not action latch Map+2. Initial inventory is free under this flag; ordinary post-commit transfers use the paid path. The split-item branch has a separate unconditional TU precheck; do not generalize this bypass to it."
+    },
+    {
+      "ea": "0x15c68",
+      "comment": "Raw clears Map+1 before deployment/ordinary inventory. This ends the initial-inventory TU exemption; action latch Map+2 is a separate byte. World bindings must preserve that distinction."
+    }
+  ],
+  "saved": true
+}

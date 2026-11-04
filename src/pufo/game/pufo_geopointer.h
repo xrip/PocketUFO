@@ -249,6 +249,9 @@ typedef struct GeoscapePointerEnv {
     UiControl *const *apOptListCtl;  /* aOptionsListCtl @ 0x159E20, PUFO_GEO_OPT_LIST_CTLS */
     UiControl *const *apOptMusicCtl; /* aOptionsMusicBtn @ 0x159E44, PUFO_GEO_OPT_SOUND_CTLS */
     UiControl *const *apOptSfxCtl;   /* aOptionsSfxBtn @ 0x159E5C, PUFO_GEO_OPT_SOUND_CTLS */
+    /* Port-side (2026-11-04, user request): click on the volume tab's music loop
+     * setting row. The caller's thunk over the active world; NULL leaves the row inert. */
+    void (*pfnToggleMusicLoop)(void);
     UiControl *const *apOptPairCtl; /* aOptionsListCtl + 0x1C: the two slots 0x159E3C / 0x159E40, read OUT
                                      * of the array at the call (0x89370: ADD R0,R11,R0,LSL#2 then
                                      * LDR R0,[R0,#0x1C], and the same shape at 0x8AEEC) because

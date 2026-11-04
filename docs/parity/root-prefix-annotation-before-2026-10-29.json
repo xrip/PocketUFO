@@ -1,0 +1,51 @@
+{
+  "set_tinfo_available": true,
+  "items": [
+    {
+      "ea": "0x158890",
+      "name": "pLines",
+      "head": "0x158890",
+      "size": 1,
+      "flags": 49152,
+      "type": "#109",
+      "serialized": [
+        "3d0423816d",
+        null,
+        null
+      ],
+      "comment": null
+    },
+    {
+      "ea": "0x1595d8",
+      "name": "gUiRootPanel_nLineCount",
+      "head": "0x1595d8",
+      "size": 4,
+      "flags": 19456,
+      "type": "unsigned __int8[4]",
+      "serialized": [
+        "1b0522",
+        null,
+        null
+      ],
+      "comment": "gUiRootPanel_nLineCount: 0x158890 + 0xD48, the count byte of the root panel's 3401-byte line list (200 flags + 200*16 record bytes). Read as a byte by the geoscape selection handlers to decide whether any message line is still up."
+    },
+    {
+      "ea": "0x1595dc",
+      "name": "pFundPad",
+      "head": "0x1595dc",
+      "size": 4,
+      "flags": 536888320,
+      "type": "PadImage *",
+      "serialized": [
+        "0a3d0423816a",
+        null,
+        null
+      ],
+      "comment": null
+    }
+  ],
+  "view": {
+    "type": "UiLineListView",
+    "size": 3404
+  }
+}

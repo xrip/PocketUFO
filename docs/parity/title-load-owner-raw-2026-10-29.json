@@ -1,0 +1,59 @@
+{
+  "ranges": [
+    {
+      "name": "Titles_Init_screen16",
+      "start": "0x3816c",
+      "end": "0x38178",
+      "bytes": "dc009fe51010a0e3ba13c0e1",
+      "listing": [
+        "0x3816c LDR             R0, =Map_bTactFlag",
+        "0x38170 MOV             R1, #0x10",
+        "0x38174 STRH            R1, [R0,#(Map_nUiScreen - 0x1139B8)]"
+      ]
+    },
+    {
+      "name": "GameUI_InitStartup_screen17",
+      "start": "0x38d30",
+      "end": "0x38d44",
+      "bytes": "0c3080e534009fe5007080e528009fe5ba13c0e1",
+      "listing": [
+        "0x38d30 STR             R3, [R0,#0xC]",
+        "0x38d34 LDR             R0, =MainMenu_nListMode",
+        "0x38d38 STR             R7, [R0]",
+        "0x38d3c LDR             R0, =Map_bTactFlag",
+        "0x38d40 STRH            R1, [R0,#(Map_nUiScreen - 0x1139B8)]"
+      ]
+    },
+    {
+      "name": "StartUi_Shutdown_screen22",
+      "start": "0x38e20",
+      "end": "0x38e30",
+      "bytes": "cda001eb08009fe51610a0e3ba13c0e1",
+      "listing": [
+        "0x38e20 BL              __3_YAXPAX_Z",
+        "0x38e24 LDR             R0, =Map_bTactFlag",
+        "0x38e28 MOV             R1, #0x16",
+        "0x38e2c STRH            R1, [R0,#(Map_nUiScreen - 0x1139B8)]"
+      ]
+    },
+    {
+      "name": "LoadGame_startup_gate",
+      "start": "0x44c98",
+      "end": "0x44cc0",
+      "bytes": "2effffeb88509fe580409fe5ba33d5e174609fe5110053e30e00001a30d0ffeb0100a0e3cc0201eb",
+      "listing": [
+        "0x44c98 BL              Save_ReadGameState",
+        "0x44c9c LDR             R5, =Map_bTactFlag",
+        "0x44ca0 LDR             R4, =sGeoscapeScreenBlock",
+        "0x44ca4 LDRH            R3, [R5,#(Map_nUiScreen - 0x1139B8)]",
+        "0x44ca8 LDR             R6, =abFacilityGrid",
+        "0x44cac CMP             R3, #0x11",
+        "0x44cb0 BNE             loc_44CF0",
+        "0x44cb4 BL              StartUi_Shutdown",
+        "0x44cb8 MOV             R0, #1",
+        "0x44cbc BL              Geoscape_InitUI"
+      ]
+    }
+  ],
+  "readback_comment": "2026-10-24 RAW ARM load-order check: Tact_Shutdown(0) at 0x44D80 precedes Save_ReadBases 0x44D88, Save_ReadShips 0x44D94, and Save_ReadSoldiers 0x44DB4. Save_ReadBases reads the CURRENT signed base count at 0x402DC from 0x159768+0x618, not a count captured before shutdown. Native LoadGame now refreshes nOldBaseCount through the live owner after teardown. Existing standalone body-reader callers retain their supplied count.\n2026-10-29 shared-screen owner: Titles_Init0x38174, GameUI_InitStartup0x38D40 and StartUi_Shutdown0x38E2C write the same Map_nUiScreen halfword (Map+0x3A). LoadGame0x44CAC..0x44CBC selects startup teardown plus Geoscape_InitUI(1) only for value17. Native App/World screen mirrors must follow every startup/credits transition; a stale22 skips UI rebuild although saved data can still load."
+}

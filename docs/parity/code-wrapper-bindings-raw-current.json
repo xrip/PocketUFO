@@ -1,0 +1,607 @@
+[
+  {
+    "address": 69960,
+    "ops": [
+      {
+        "address": 69960,
+        "word": 3912056832,
+        "mnemonic": "PUSH"
+      },
+      {
+        "address": 69964,
+        "word": 3942645761,
+        "mnemonic": "BL",
+        "target": 69976
+      },
+      {
+        "address": 69968,
+        "word": 3904716800,
+        "mnemonic": "POP"
+      },
+      {
+        "address": 69972,
+        "word": 3925868546,
+        "mnemonic": "B",
+        "target": 69988
+      }
+    ]
+  },
+  {
+    "address": 69976,
+    "ops": [
+      {
+        "address": 69976,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 69984,
+        "value": 706256,
+        "destination_register": 0
+      },
+      {
+        "address": 69980,
+        "word": 3925868655,
+        "mnemonic": "B",
+        "target": 70432
+      }
+    ]
+  },
+  {
+    "address": 100932,
+    "ops": [
+      {
+        "address": 100932,
+        "word": 3852402692,
+        "mnemonic": "LDR",
+        "literal": 100944,
+        "value": 1128888,
+        "destination_register": 0
+      },
+      {
+        "address": 100936,
+        "word": 3818917889,
+        "mnemonic": "MOV"
+      },
+      {
+        "address": 100940,
+        "word": 3925897562,
+        "mnemonic": "B",
+        "target": 217020
+      }
+    ]
+  },
+  {
+    "address": 140804,
+    "ops": [
+      {
+        "address": 140804,
+        "word": 3912056832,
+        "mnemonic": "PUSH"
+      },
+      {
+        "address": 140808,
+        "word": 3942645761,
+        "mnemonic": "BL",
+        "target": 140820
+      },
+      {
+        "address": 140812,
+        "word": 3904716800,
+        "mnemonic": "POP"
+      },
+      {
+        "address": 140816,
+        "word": 3925868546,
+        "mnemonic": "B",
+        "target": 140832
+      }
+    ]
+  },
+  {
+    "address": 140820,
+    "ops": [
+      {
+        "address": 140820,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 140828,
+        "value": 1128888,
+        "destination_register": 0
+      },
+      {
+        "address": 140824,
+        "word": 3925868554,
+        "mnemonic": "B",
+        "target": 140872
+      }
+    ]
+  },
+  {
+    "address": 140832,
+    "ops": [
+      {
+        "address": 140832,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 140840,
+        "value": 140844,
+        "destination_register": 0
+      },
+      {
+        "address": 140836,
+        "word": 3925998585,
+        "mnemonic": "B",
+        "target": 661008
+      }
+    ]
+  },
+  {
+    "address": 140844,
+    "ops": [
+      {
+        "address": 140844,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 140852,
+        "value": 1128888,
+        "destination_register": 0
+      },
+      {
+        "address": 140848,
+        "word": 3925868869,
+        "mnemonic": "B",
+        "target": 142156
+      }
+    ]
+  },
+  {
+    "address": 140856,
+    "ops": [
+      {
+        "address": 140856,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 140860
+      }
+    ]
+  },
+  {
+    "address": 140860,
+    "ops": [
+      {
+        "address": 140860,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 140868,
+        "value": 1104784,
+        "destination_register": 0
+      },
+      {
+        "address": 140864,
+        "word": 3925897268,
+        "mnemonic": "B",
+        "target": 255768
+      }
+    ]
+  },
+  {
+    "address": 225396,
+    "ops": [
+      {
+        "address": 225396,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 225400
+      }
+    ]
+  },
+  {
+    "address": 225400,
+    "ops": [
+      {
+        "address": 225400,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 225408,
+        "value": 1281696,
+        "destination_register": 0
+      },
+      {
+        "address": 225404,
+        "word": 3925876133,
+        "mnemonic": "B",
+        "target": 255768
+      }
+    ]
+  },
+  {
+    "address": 225412,
+    "ops": [
+      {
+        "address": 225412,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 225416
+      }
+    ]
+  },
+  {
+    "address": 225416,
+    "ops": [
+      {
+        "address": 225416,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 225424,
+        "value": 1403528,
+        "destination_register": 0
+      },
+      {
+        "address": 225420,
+        "word": 3925876129,
+        "mnemonic": "B",
+        "target": 255768
+      }
+    ]
+  },
+  {
+    "address": 225428,
+    "ops": [
+      {
+        "address": 225428,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 225432
+      }
+    ]
+  },
+  {
+    "address": 225508,
+    "ops": [
+      {
+        "address": 225508,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 225512
+      }
+    ]
+  },
+  {
+    "address": 225568,
+    "ops": [
+      {
+        "address": 225568,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 225572
+      }
+    ]
+  },
+  {
+    "address": 225572,
+    "ops": [
+      {
+        "address": 225572,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 225580,
+        "value": 1403152,
+        "destination_register": 0
+      },
+      {
+        "address": 225576,
+        "word": 3925876090,
+        "mnemonic": "B",
+        "target": 255768
+      }
+    ]
+  },
+  {
+    "address": 225584,
+    "ops": [
+      {
+        "address": 225584,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 225588
+      }
+    ]
+  },
+  {
+    "address": 225588,
+    "ops": [
+      {
+        "address": 225588,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 225596,
+        "value": 1403480,
+        "destination_register": 0
+      },
+      {
+        "address": 225592,
+        "word": 3925876086,
+        "mnemonic": "B",
+        "target": 255768
+      }
+    ]
+  },
+  {
+    "address": 258228,
+    "ops": [
+      {
+        "address": 258228,
+        "word": 3912056832,
+        "mnemonic": "PUSH"
+      },
+      {
+        "address": 258232,
+        "word": 3942645761,
+        "mnemonic": "BL",
+        "target": 258244
+      },
+      {
+        "address": 258236,
+        "word": 3904716800,
+        "mnemonic": "POP"
+      },
+      {
+        "address": 258240,
+        "word": 3925868546,
+        "mnemonic": "B",
+        "target": 258256
+      }
+    ]
+  },
+  {
+    "address": 258244,
+    "ops": [
+      {
+        "address": 258244,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 258252,
+        "value": 1409568,
+        "destination_register": 0
+      },
+      {
+        "address": 258248,
+        "word": 3925966719,
+        "mnemonic": "B",
+        "target": 650956
+      }
+    ]
+  },
+  {
+    "address": 258268,
+    "ops": [
+      {
+        "address": 258268,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 258276,
+        "value": 1409568,
+        "destination_register": 0
+      },
+      {
+        "address": 258272,
+        "word": 3925966723,
+        "mnemonic": "B",
+        "target": 650996
+      }
+    ]
+  },
+  {
+    "address": 286900,
+    "ops": [
+      {
+        "address": 286900,
+        "word": 3912056832,
+        "mnemonic": "PUSH"
+      },
+      {
+        "address": 286904,
+        "word": 3942645761,
+        "mnemonic": "BL",
+        "target": 286916
+      },
+      {
+        "address": 286908,
+        "word": 3904716800,
+        "mnemonic": "POP"
+      },
+      {
+        "address": 286912,
+        "word": 3925868546,
+        "mnemonic": "B",
+        "target": 286928
+      }
+    ]
+  },
+  {
+    "address": 286916,
+    "ops": [
+      {
+        "address": 286916,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 286924,
+        "value": 1409640,
+        "destination_register": 0
+      },
+      {
+        "address": 286920,
+        "word": 3925868568,
+        "mnemonic": "B",
+        "target": 287024
+      }
+    ]
+  },
+  {
+    "address": 288552,
+    "ops": [
+      {
+        "address": 288552,
+        "word": 3852402692,
+        "mnemonic": "LDR",
+        "literal": 288564,
+        "value": 1411080,
+        "destination_register": 0
+      },
+      {
+        "address": 288556,
+        "word": 3851419648,
+        "mnemonic": "LDR"
+      },
+      {
+        "address": 288560,
+        "word": 3925958564,
+        "mnemonic": "B",
+        "target": 648648
+      }
+    ]
+  },
+  {
+    "address": 398488,
+    "ops": [
+      {
+        "address": 398488,
+        "word": 3912056832,
+        "mnemonic": "PUSH"
+      },
+      {
+        "address": 398492,
+        "word": 3942645761,
+        "mnemonic": "BL",
+        "target": 398504
+      },
+      {
+        "address": 398496,
+        "word": 3904716800,
+        "mnemonic": "POP"
+      },
+      {
+        "address": 398500,
+        "word": 3925868546,
+        "mnemonic": "B",
+        "target": 398516
+      }
+    ]
+  },
+  {
+    "address": 398504,
+    "ops": [
+      {
+        "address": 398504,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 398512,
+        "value": 1415016,
+        "destination_register": 0
+      },
+      {
+        "address": 398508,
+        "word": 3925868982,
+        "mnemonic": "B",
+        "target": 400268
+      }
+    ]
+  },
+  {
+    "address": 398516,
+    "ops": [
+      {
+        "address": 398516,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 398524,
+        "value": 398528,
+        "destination_register": 0
+      },
+      {
+        "address": 398520,
+        "word": 3925934164,
+        "mnemonic": "B",
+        "target": 661008
+      }
+    ]
+  },
+  {
+    "address": 398528,
+    "ops": [
+      {
+        "address": 398528,
+        "word": 3852402688,
+        "mnemonic": "LDR",
+        "literal": 398536,
+        "value": 1415016,
+        "destination_register": 0
+      },
+      {
+        "address": 398532,
+        "word": 3925868977,
+        "mnemonic": "B",
+        "target": 400272
+      }
+    ]
+  },
+  {
+    "address": 538736,
+    "ops": [
+      {
+        "address": 538736,
+        "word": 3942645759,
+        "mnemonic": "B",
+        "target": 538740
+      }
+    ]
+  },
+  {
+    "address": 538752,
+    "ops": [
+      {
+        "address": 538752,
+        "word": 3912056832,
+        "mnemonic": "PUSH"
+      },
+      {
+        "address": 538756,
+        "word": 3942645761,
+        "mnemonic": "BL",
+        "target": 538768
+      },
+      {
+        "address": 538760,
+        "word": 3904716800,
+        "mnemonic": "POP"
+      },
+      {
+        "address": 538764,
+        "word": 3925868547,
+        "mnemonic": "B",
+        "target": 538784
+      }
+    ]
+  },
+  {
+    "address": 649712,
+    "ops": [
+      {
+        "address": 649712,
+        "word": 3925871140,
+        "mnemonic": "B",
+        "target": 660104
+      }
+    ]
+  },
+  {
+    "address": 659344,
+    "ops": [
+      {
+        "address": 659344,
+        "word": 3925868642,
+        "mnemonic": "B",
+        "target": 659744
+      }
+    ]
+  }
+]

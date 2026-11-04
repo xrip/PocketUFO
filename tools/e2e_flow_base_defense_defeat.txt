@@ -1,0 +1,24 @@
+# This file is appended to the frozen base-defense entry flow by its runner.
+# It starts only after the entry flow has confirmed the real type-3 mission.
+
+# Expose live defenders with legal moves, then use real End Turn inputs.
+campaign natural-defeat-exposed 32
+
+# Let the real ending screen draw, then save its frame before the real release.
+tick 160
+mindendstate
+dump base_defense_bad_ending.ppm
+click 100 100
+state base_defense_startup_after_loss
+
+# Start a fresh game by the startup menu and place its first base through input.
+click 120 124
+state base_defense_new_game_started
+tick 20
+pick
+close
+close
+tick 20
+state base_defense_new_game_placed
+strategystate base_defense_new_game_placed
+dump base_defense_next_new_game.ppm

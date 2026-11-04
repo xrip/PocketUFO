@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-28",
+  "source_fingerprint": "2DA99980B6408C58F2216E76552FC928134C48906E4036B1441C651E6B63CC45",
+  "source_files": 434,
+  "fingerprint_algorithm": "SHA256 of sorted relative POSIX path + space + lowercase file SHA256 + LF for files under src/tests/cmake and root CMakeLists.txt",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "log": ".workers/luna-mission-init-audit/debug-incoming-gate-compile.log",
+      "game_sha256": "AD8F767FF83D51ADF4466E8DCA60268FFE092D5AE54F0F8A57A20DF34A7B7F13"
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "log": ".workers/luna-mission-init-audit/release-incoming-gate-compile.log",
+      "game_sha256": "608B19F6C452326A799B14DB4DD274550B03DB202EFD8129666744AE2C062299"
+    }
+  },
+  "runtime_executed": false,
+  "test_executed": false,
+  "change_scope": "Source comments corrected; no production behavior or test expectation change"
+}

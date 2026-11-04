@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "6401F9FAFE9D5986A4BDFE6C694AB3357DE3705A06BBCD2D55C1A173E9302D2D",
+  "source_fingerprint_before_build": "6401F9FAFE9D5986A4BDFE6C694AB3357DE3705A06BBCD2D55C1A173E9302D2D",
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Manufacturing live craft count at units+ callback; signed font advances in measure/draw; fall roster counts refreshed before each removal. Focused regressions compile but are unrun.",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/parent-joins-build-20261029/debug.log",
+      "log_sha256": "50D1A9FB6CC286B172B0587363E07C4A04BCC7F1354C6FC5BFE90330DB4264B2",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "BB170085A376BCCD64F9424FF4DD3F9B83BC5D53A10E750BC5E0A5D1D414D98D",
+        "build/tests/Debug/test_font.exe": "B15E96DD47158ABD3F0ECFE1FBA462D686EFFAAE0F433CDB3C28921F71EB4E26",
+        "build/tests/Debug/test_tactstate.exe": "4C85F3897CCEA5C5D29D9D948B1CBA2471A4AE86440E14CB3CC47ABD718EABBA",
+        "build/tests/Debug/test_geoscapeframe.exe": "FBFE65A7645FBF9AE6EB23AF0C88A3E8EFBEA70905D9153F4164F8CFB433BB46"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/parent-joins-build-20261029/release.log",
+      "log_sha256": "9F70475D3DE3C1F15273F8926BC8ED76557B983F88F57E5BA15385047EEB4067",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "E2A2A7637608E0BE354EC00403BA29B7F01696BC9C78897613523D02E0B05B98",
+        "build/tests/Release/test_font.exe": "54779A88350E5E4AD19D7D84C66FB1B1A1A5738E86E42EE4CB0A69C07EBC8A2F",
+        "build/tests/Release/test_tactstate.exe": "EAA9EB7B5E3825D8CC98AA06FC11EFA100CB2AFAF8491C7E9EBE1AD4EC0D6494",
+        "build/tests/Release/test_geoscapeframe.exe": "BE27B1564F2B4EFC5396E35530D4392CEA7701789B420F7AE562F637E817CF5B"
+      }
+    }
+  },
+  "tests_executed": false,
+  "runtime_executed": false
+}

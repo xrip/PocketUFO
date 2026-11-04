@@ -31,6 +31,20 @@ static bool Dat_ToWide(const char *pszPath, wchar_t *pwOut, size_t cchOut)
     return n > 0;
 }
 
+/* Guarded Open can own resources before nMode is published. */
+static void Dat_ReleaseOwned(DatFile *pDat)
+{
+    if (pDat->hFile != NULL && pDat->hFile != INVALID_HANDLE_VALUE) {
+        CloseHandle(pDat->hFile);
+    }
+    pDat->hFile = NULL;
+    free(pDat->pDir);
+    pDat->pDir = NULL;
+    free(pDat->pWriteBuf);
+    pDat->pWriteBuf = NULL;
+    pDat->nMode = PUFO_DAT_CLOSED;
+}
+
 
 /* DatFile_ctor @ 0x9eecc. Six stores, nothing else: nMode 0 at 0x9EED8, pDir 0 at 0x9EEDC,
  * bChunkOpen 0 at 0x9EEE0, pWriteBuf 0 at 0x9EEE4, nBufCap 150000 at 0x9EEE8, nBufUsed 0 at 0x9EEEC.
@@ -56,13 +70,9 @@ void DatFile_ctor(DatFile *pDat)
 void DatFile_dtor(DatFile *pDat)
 {
     if (pDat->nMode != PUFO_DAT_CLOSED) {
-        CloseHandle(pDat->hFile);
-        free(pDat->pDir);
-        pDat->nMode = PUFO_DAT_CLOSED;
         pDat->bChunkOpen = 0;
     }
-    free(pDat->pWriteBuf);
-    pDat->pWriteBuf = NULL;
+    Dat_ReleaseOwned(pDat);
 }
 
 /* The thunk the registrar installs. In the original it names the global container the save driver
@@ -92,18 +102,15 @@ void DatFile_Close(DatFile *pDat)
 {
     if (pDat->nMode != PUFO_DAT_CLOSED) {
         DatFile_FlushWrite(pDat);
-        CloseHandle(pDat->hFile);
-        free(pDat->pDir);
-        pDat->nMode = PUFO_DAT_CLOSED;
     }
-    free(pDat->pWriteBuf);
-    pDat->pWriteBuf = NULL;
+    Dat_ReleaseOwned(pDat);
 }
 
 /* DatFile_Exists @ 0x9f1bc. mbstowcs at 0x9F1E4, FindFirstFileW at 0x9F1F4, then one exit test at
- * 0x9F20C that answers 0 for INVALID_HANDLE_VALUE *or* for dwFileAttributes bit 1
- * (FILE_ATTRIBUTE_DIRECTORY). FindClose at 0x9F21C runs only on the success path, so the original
- * leaks one find handle per directory; the port closes in that case too, which tests/test_data.c
+ * 0x9F208 that tests dwFileAttributes mask 1 (FILE_ATTRIBUTE_READONLY). A missing path or a read-only
+ * match answers 0; a non-read-only directory answers 1. FindClose at 0x9F21C runs only on the success
+ * path, so the original leaks one find handle per read-only match; the port closes in that case too,
+ * which tests/test_data.c
  * states as the deviation. */
 bool DatFile_Exists(const char *pszPath)
 {
@@ -118,7 +125,7 @@ bool DatFile_Exists(const char *pszPath)
     if (hFind == INVALID_HANDLE_VALUE) {
         return false;
     }
-    if ((ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+    if ((ffd.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0) {
         /* The original returns without closing here; that leaks one handle per
          * call. Not reproduced: the port closes it. */
         FindClose(hFind);
@@ -138,8 +145,12 @@ bool DatFile_Open(DatFile *pDat, const char *pszPath, DatMode nMode, int nEntryC
         return false;
     }
 
-    if (nMode == PUFO_DAT_READ) {
-        pDat->hFile = CreateFileW(wPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+    if (nMode == PUFO_DAT_READ || nMode == PUFO_DAT_REWRITE) {
+        /* Raw mode 3 opens write-only, then follows this directory-read path.
+         * The port's read-failure guard rejects it without rewriting the file. */
+        const DWORD dwAccess = (nMode == PUFO_DAT_READ) ? GENERIC_READ : GENERIC_WRITE;
+        const DWORD dwShare = (nMode == PUFO_DAT_READ) ? FILE_SHARE_READ : FILE_SHARE_WRITE;
+        pDat->hFile = CreateFileW(wPath, dwAccess, dwShare, NULL,
                                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (pDat->hFile == INVALID_HANDLE_VALUE) {
             pDat->hFile = NULL;
@@ -148,10 +159,12 @@ bool DatFile_Open(DatFile *pDat, const char *pszPath, DatMode nMode, int nEntryC
         pDat->nEntryCount = 0;
         SetFilePointer(pDat->hFile, 0, NULL, FILE_BEGIN);
         if (!ReadFile(pDat->hFile, &pDat->nEntryCount, 4, &cbRead, NULL)) {
+            Dat_ReleaseOwned(pDat);
             return false;
         }
         pDat->pDir = malloc((size_t)(PUFO_DAT_ENTRY_SIZE * pDat->nEntryCount));
         if (pDat->pDir == NULL) {
+            Dat_ReleaseOwned(pDat);
             return false;
         }
         (void)ReadFile(pDat->hFile, pDat->pDir,
@@ -165,18 +178,18 @@ bool DatFile_Open(DatFile *pDat, const char *pszPath, DatMode nMode, int nEntryC
                 break;
             }
         }
-    } else if (nMode == PUFO_DAT_CREATE || nMode == PUFO_DAT_REWRITE) {
-        DWORD dwDisposition = (nMode == PUFO_DAT_CREATE) ? CREATE_ALWAYS : OPEN_EXISTING;
+    } else if (nMode == PUFO_DAT_CREATE) {
         DWORD cbWritten = 0;
 
-        pDat->hFile = CreateFileW(wPath, GENERIC_WRITE, FILE_SHARE_READ, NULL,
-                                  dwDisposition, FILE_ATTRIBUTE_NORMAL, NULL);
+        pDat->hFile = CreateFileW(wPath, GENERIC_WRITE, FILE_SHARE_WRITE, NULL,
+                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
         if (pDat->hFile == INVALID_HANDLE_VALUE) {
             pDat->hFile = NULL;
             return false;
         }
         pDat->pDir = malloc((size_t)(PUFO_DAT_ENTRY_SIZE * nEntryCount));
         if (pDat->pDir == NULL) {
+            Dat_ReleaseOwned(pDat);
             return false;
         }
         memset(pDat->pDir, 0, (size_t)(PUFO_DAT_ENTRY_SIZE * nEntryCount));

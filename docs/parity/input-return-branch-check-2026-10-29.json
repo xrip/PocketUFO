@@ -1,0 +1,82 @@
+{
+  "sites": [
+    {
+      "ea": "0x13ce4",
+      "bytes": "79cd01eb",
+      "asm": "BL              Geoscape_OnPointer",
+      "target": "0x872d0"
+    },
+    {
+      "ea": "0x13ce8",
+      "bytes": "f60200ea",
+      "asm": "B               def_13F44",
+      "target": "0x148c8"
+    },
+    {
+      "ea": "0x13f44",
+      "bytes": "00f18f90",
+      "asm": "ADDLS           PC, PC, R0,LSL#2",
+      "target": "0x0"
+    },
+    {
+      "ea": "0x8829c",
+      "bytes": "a8dafeeb",
+      "asm": "BL              UiScrollList_TrackHold",
+      "target": "0x3ed44"
+    },
+    {
+      "ea": "0x882a0",
+      "bytes": "670400ea",
+      "asm": "B               def_8744C",
+      "target": "0x89444"
+    },
+    {
+      "ea": "0x8744c",
+      "bytes": "02f18f90",
+      "asm": "ADDLS           PC, PC, R2,LSL#2",
+      "target": "0x0"
+    }
+  ],
+  "labels": {
+    "def_13F44": "0x148c8",
+    "def_8744C": "0x89444"
+  },
+  "target_raw": [
+    {
+      "ea": "0x148c8",
+      "asm": "ADD             SP, SP, #8"
+    },
+    {
+      "ea": "0x148cc",
+      "asm": "LDM             SP, {R4-R11,SP,PC}"
+    },
+    {
+      "ea": "0x148d0",
+      "asm": "PUSH            {R4-R8,LR}"
+    },
+    {
+      "ea": "0x148d4",
+      "asm": "SUB             SP, SP, #4"
+    },
+    {
+      "ea": "0x148d8",
+      "asm": "LDR             R4, =Map_bTactFlag"
+    },
+    {
+      "ea": "0x148dc",
+      "asm": "MOV             R8, #0"
+    },
+    {
+      "ea": "0x148e0",
+      "asm": "MOV             R6, R0"
+    },
+    {
+      "ea": "0x148e4",
+      "asm": "STRB            R8, [R4,#(Map_aEdgeFlag0 - 0x1139B8)]"
+    },
+    {
+      "ea": "0x148e8",
+      "asm": "MOV             R0, #0xC8"
+    }
+  ]
+}

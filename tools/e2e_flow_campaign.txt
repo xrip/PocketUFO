@@ -1,0 +1,73 @@
+# Real executable campaign cycle. Run from the separate runner:
+#   sh tools/e2e_campaign.sh
+#
+# The world, crew, contact, craft, equipment, mission, actions and save are all the
+# app's own records. The race-0, class-2 damaged contact is placed at its home base
+# so the real intercept update can reach it quickly and the alien spawn table has
+# its type-9 primary. The rifle, clip and grenade are shipped OBJECTS.DAT records
+# moved through the base/craft cargo functions. No combat state is forged.
+
+# Use the real startup menu control, including its UI/audio teardown.
+click 120 124
+tick 20
+pick
+close
+close
+tick 20
+state before_campaign
+
+campaign gear
+campaign state cargo
+campaign contact
+campaign trace after_contact
+tick 20
+campaign trace after_contact_pulses
+lines
+campaign state contact_arrival
+campaign launch
+campaign state launch1
+tact
+campaign deploy
+tact
+tick 2
+dump campaign_after_deploy.ppm
+campaign grenade
+campaign state armed_crew
+tact
+
+# Each command below drives App_PointerLogical/App_OnPointerUp, the WndProc key
+# route or the real WM_TIMER body. The app helper uses the same two-axis pen-band
+# projection as the frame regression, but pans with real window keys. It checks the
+# live path planner before a move click, then stops this script at the first failed
+# campaign action.
+campaign move
+tact
+tick 2
+dump campaign_after_move.ppm
+campaign fire
+tact
+tick 2
+dump campaign_after_fire.ppm
+campaign enemyturn
+campaign state after_enemy1
+tact
+campaign throw
+tact
+tick 2
+dump campaign_after_throw.ppm
+campaign enemyturn grenade
+campaign state after_throw
+tact
+tick 2
+dump campaign_after_detonation.ppm
+
+# Screen-0 widget 14 opens screen 7; widget 56 opens the abort dialog; the live
+# modal YES click calls Tact_CheckBattleEnd(abort=1). Widget 128 dismisses debrief.
+campaign abort
+state after_abort
+campaign state returned
+tick 20
+state before_save
+campaign state before_save
+dump campaign_returned.ppm
+save 0

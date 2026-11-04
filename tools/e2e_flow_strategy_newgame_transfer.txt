@@ -1,0 +1,82 @@
+# Fresh raw New Game -> second base -> one Stores facility under construction.
+# All state changes use normal menu, pen, map, and facility controls.
+
+dump raw_transfer_mainmenu.ppm
+click 120 124
+tick 20
+pick
+tick 10
+state new_game
+strategystate new_game
+campaign cargo new_game
+
+# The first pen confirm leaves the base strip open. Close it through the live
+# control before starting the second-base build path.
+click 201 11
+tick 2
+state new_game_map
+strategystate new_game_map
+
+# Build Base 1 and its Access Lift through the normal globe and placement UI.
+click 180 266
+tick 2
+strategystate build_mode
+click 60 237
+tick 20
+strategystate new_base_region
+pick
+tick 2
+strategystate new_base_access_lift
+dump raw_transfer_new_base_region.ppm
+press 138 68
+tick 1
+release
+tick 2
+strategystate access_lift_preview
+grid 1
+press 138 68
+tick 1
+release
+tick 2
+strategystate second_base_created
+grid 1
+click 201 11
+tick 2
+strategystate second_base_map
+
+# Buy one Stores facility at Base 1 through the normal facility list. The
+# two real pen cycles commit the cell; the original clock must finish it.
+click 180 266
+tick 2
+click 220 43
+tick 2
+click 60 309
+tick 20
+strategystate stores_list_open
+click 18 285
+tick 2
+click 15 306
+tick 2
+strategystate stores_selected
+press 106 68
+tick 1
+release
+tick 2
+press 106 68
+tick 1
+release
+tick 2
+strategystate stores_placed
+grid 1
+
+# Close to the map and save the live pending construction.
+click 231 236
+tick 2
+click 231 236
+tick 2
+click 201 11
+tick 2
+strategystate stores_pending_map
+grid 1
+save 0
+state stores_pending_save

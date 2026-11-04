@@ -307,7 +307,7 @@ static void TestShipRemoveWithCargo(void)
     static i32 nSeed;
     ShipRemovalEnv env;
     u8 nShipCount;
-    u16 nSoldierCount;
+    i32 nSoldierCount;
     i32 nAssignedCount;
     u8 once;
 
@@ -1108,7 +1108,7 @@ static void TestInterceptRetarget(void)
     StrategItem *apItem[3];
     void **apSlots;
     u8 nShipCount;
-    u16 nSoldierCount;
+    i32 nSoldierCount;
     i32 nAssignedCount;
     u8 once;
 
@@ -1253,7 +1253,7 @@ static void TestLaunchIntercept(void)
     static void *apSlots[2];
     ShipRemovalEnv env;
     u8 nShipCount;
-    u16 nSoldierCount;
+    i32 nSoldierCount;
     u8 once;
 
     printf("\nShip_LaunchIntercept @ 0x5a64c\n");
@@ -1375,8 +1375,8 @@ static BaseRec *g_apLootBase[1];
 static Soldier *g_apLootSoldier[2];
 static u8 g_abLootGrid[1524];
 static Soldier g_aLootSoldier[2];
-static u8 g_bLootRefresh;
-static u16 g_nLootSoldiers = 2;
+static u32 g_dwLootRefresh;
+static i32 g_nLootSoldiers = 2;
 
 static int g_nMsgCount;
 static int g_aMsgFlag[8];
@@ -1399,6 +1399,7 @@ static void LootMsg(i32 bFlag, i32 nC0, i32 nC1, i32 nC2, void *pUser)
 static void TestTransferTacticalLoot(void)
 {
     TacticalLootEnv env;
+    i32 nInterceptShipIdx = 0x101; /* LDRB at 0x68914 reports low byte 1. */
 
     printf("Base_TransferTacticalLoot @ 0x68344\n");
 
@@ -1479,22 +1480,24 @@ static void TestTransferTacticalLoot(void)
     env.apSoldiers = g_apLootSoldier;
     env.pnSoldierCount = &g_nLootSoldiers;
     env.abFacilityGrid = g_abLootGrid;
-    env.pbUiRefreshFlag = &g_bLootRefresh;
+    env.pdwUiRefreshFlag = &g_dwLootRefresh;
+    env.pnInterceptShipIdx = &nInterceptShipIdx;
     env.nBaseCount = 1;
     env.nShipCount = 1;
     env.nObjectCount = LOOT_N_OBJECTS;
     env.pfnAppendLine = LootMsg;
     g_nMsgCount = 0;
+    g_dwLootRefresh = 0x12340000u;
 
     Base_TransferTacticalLoot(&env, true);
 
     CheckEqI32(pShip->bWeaponsHot, 0, "the gate clears the hot flag as it tests it");
     CheckEqI32(pShip->bHangarX, 1, "the craft is parked one column in");
     CheckEqI32(pShip->bHangarY, 1, "and one row down");
-    CheckEqI32(g_abLootGrid[444 + 144 * 1 + 6 * 1 + 1], 34,
-               "the marker lands in the block numbered by the CRAFT TYPE, not the home base");
-    CheckEqI32(g_abLootGrid[444 + 6 * 1 + 1], 0,
-               "and base 0's own layer2 is left alone, which is the original's bug");
+    CheckEqI32(g_abLootGrid[444 + 144 * 1 + 6 * 1 + 1], 0,
+               "the block numbered by craft type is not the marker destination");
+    CheckEqI32(g_abLootGrid[444 + 6 * 1 + 1], 34,
+               "the marker belongs to the craft's home base");
 
     CheckEqI32(g_aLootSoldier[0].bUnk247, 40, "an uncredited crew member takes 40 percent");
     CheckEqI32(g_aLootSoldier[0].bUnk183, 254, "and is marked away in a craft");
@@ -1508,9 +1511,10 @@ static void TestTransferTacticalLoot(void)
                "while the craft is credited 50 for slot 34, not 5 - the asymmetry");
     CheckEqI32(pShip->anCargoQty[0], 120, "and 30 for slot 31");
 
-    CheckEqI32(g_bLootRefresh, 1, "the stores shortage raises the UI refresh flag");
+    CheckEqI32(g_dwLootRefresh, 1, "the stores shortage raises the UI refresh flag");
     CheckEqI32(g_nMsgCount, 1, "and only the stores shortage is announced when ammo is plentiful");
     CheckEqI32(g_aMsgFlag[0], 39, "the stores report is message 39");
+    CheckEqI32(g_aMsgC0[0], 1, "the stores report carries the low byte of the live intercept index");
     CheckEqI32(g_aMsgC2[0], 255,
                "named by no object, because the weapon-vs-ammo test names nothing");
 
@@ -1521,15 +1525,17 @@ static void TestTransferTacticalLoot(void)
     pShip->bWeaponsHot = 1;
     pShip->bAmmo25 = 7;
     g_aLootObj[52].auPerBaseVal[0] = 3;
-    g_bLootRefresh = 0;
+    g_dwLootRefresh = 0x12340000u;
     g_nMsgCount = 0;
-    Base_TransferTacticalLoot(&env, true);
+    nInterceptShipIdx = 0x202;
+    Base_TransferTacticalLoot(&env, false);
 
     CheckEqI32(pShip->bAmmo25, 10,
                "a shortfall hands the craft the whole base column, which already includes the 7 it "
                "just gave back");
     CheckEqI32(g_aLootObj[52].auPerBaseVal[0], 0, "and clears the base column");
     CheckEqI32(g_nMsgCount, 2, "the ammo shortage is announced as well");
+    CheckEqI32(g_aMsgC0[0], 2, "the next stores report reads the changed live index byte");
     CheckEqI32(g_aMsgFlag[1], 40, "message 40");
     CheckEqI32(g_aMsgC1[1], 52, "naming the ammo record");
 
@@ -1537,12 +1543,72 @@ static void TestTransferTacticalLoot(void)
     pShip->bWeaponsHot = 1;
     pShip->bAmmo25 = 7;
     g_aLootObj[52].auPerBaseVal[0] = 3;
-    g_bLootRefresh = 0;
+    g_dwLootRefresh = 0x12340000u;
     g_nMsgCount = 0;
-    Base_TransferTacticalLoot(&env, false);
+    Base_TransferTacticalLoot(&env, true);
 
     CheckEqI32(g_nMsgCount, 1, "a non-zero second argument silences the ammo report only");
-    CheckEqI32(g_bLootRefresh, 1, "and the refresh flag is raised either way");
+    CheckEqI32(g_dwLootRefresh, 1, "the refresh word is replaced with 1, clearing its upper bytes");
+}
+
+static void TestLootBaseSelection(void)
+{
+    static ObjectRecFull objects[LOOT_N_OBJECTS];
+    static ObjectRecFull *apObjects[LOOT_N_OBJECTS];
+    static u8 grid[1524];
+    Ship ship = {0};
+    Ship *apShips[1] = { &ship };
+    BaseRec bases[3] = {0};
+    BaseRec *apBases[3] = { &bases[0], &bases[1], &bases[2] };
+    Soldier *apSoldiers[1] = { NULL };
+    i32 nSoldiers = 0;
+    u32 dwRefresh = 0;
+    TacticalLootEnv env = {0};
+
+    printf("loot return: craft index 0, type 1, home base 2\n");
+    memset(objects, 0, sizeof(objects));
+    memset(grid, 255, sizeof(grid));
+    memset(grid, 0, 36 * 8);
+    for (i32 i = 0; i < LOOT_N_OBJECTS; ++i) {
+        apObjects[i] = &objects[i];
+    }
+    for (i32 base = 0; base < 3; ++base) {
+        bases[base].bSlot = (u8)base;
+        memset(grid + 444 + 144 * base, 0, 36);
+        grid[480 + 144 * base + 2] = 6;
+        grid[480 + 144 * base + 3] = 6;
+    }
+    grid[480 + 144 * 2] = 11;
+    ship.bHomeBase = 2;
+    ship.bCraftType = 1;
+    ship.bAtBase = 1;
+    ship.bWeaponsHot = 1;
+    ship.bWeaponL = -1;
+    ship.bWeaponR = -1;
+    objects[1].bCargoSize = 1;
+    objects[1].auPerBaseVal[2] = 301;
+    env.apCraft = apShips;
+    env.apBases = apBases;
+    env.apObjects = apObjects;
+    env.apSoldiers = apSoldiers;
+    env.pnSoldierCount = &nSoldiers;
+    env.abFacilityGrid = grid;
+    env.pdwUiRefreshFlag = &dwRefresh;
+    env.nBaseCount = 3;
+    env.nShipCount = 1;
+    env.nObjectCount = LOOT_N_OBJECTS;
+
+    Base_TransferTacticalLoot(&env, true);
+    CheckEqI32(grid[444 + 144 * 2 + 7], 34,
+               "the landing marker updates home base 2");
+    CheckEqI32(grid[444 + 144 * 1 + 7], 0,
+               "craft type 1 does not select the destination block");
+    CheckEqI32(grid[444 + 144 * 2 + 2], 1,
+               "the first stores-needed flag updates the processed base");
+    CheckEqI32(grid[444 + 144 * 2 + 3], 1,
+               "301 used cargo units require the second stores cell too");
+    CheckEqI32(grid[444 + 2], 0,
+               "twice craft index 0 does not redirect the stores update to base 0");
 }
 
 static void TestSpawnAtSlot(void)
@@ -1819,6 +1885,7 @@ int main(void)
     TestInterceptRetarget();
     TestLaunchIntercept();
     TestTransferTacticalLoot();
+    TestLootBaseSelection();
     TestSpawnAtSlot();
     TestCraftDisplayName();
     TestFindIndexById();

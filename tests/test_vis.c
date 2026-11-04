@@ -150,6 +150,8 @@ static void ArmShooter(Soldier *pU)
     memset(&g_TactCtx, 0, sizeof(g_TactCtx));
     memset(&g_Aim, 0, sizeof(g_Aim));
     g_bFireStatus1 = 7;
+    g_pSelItem = NULL;
+    g_nSelMode = -1;
     g_Gate.pfnWeaponFireable = GateAllowAll;
     g_Gate.pUser = NULL;
 
@@ -213,14 +215,13 @@ static void TestTryOpportunityFire(void)
     RunOpp(pTarget, pShooter, &r);
     Check("an 18-cell target is not offered", g_TactCtx.nOppFireCount == 0);
 
-    /* Facing 2's cone EXCLUDES straight ahead, so a target directly along +X is
-     * never offered. A diagonal target at bearing pi/4 is inside the cone and
-     * inside the fan, so it is spotted and the shooter is enqueued. */
+    /* Facing 2 accepts bearings below 0.785375 or above 5.497625. The direct
+     * +X target is inside the accepted front arc, the ray fan, and line of sight. */
     Reset();
     pShooter = Place(0, 20, 20, 0, 0, 0);
     pShooter->bFacing = 2;
     ArmShooter(pShooter);
-    pTarget = Place(1, 22, 22, 0, 1, 0);
+    pTarget = Place(1, 22, 20, 0, 1, 0);
     pTarget->auStat[3] = 0;
     apEnemy[0] = pTarget;
     r.nEnemy = 1;
@@ -230,6 +231,22 @@ static void TestTryOpportunityFire(void)
     Check("the chosen weapon is the left hand", g_pSelItem == &g_handL);
     Check("Map.bFireStatus0[1] is cleared", g_bFireStatus1 == 0);
     Check("the scratch target slot is cleared", g_pScratch == NULL);
+
+    /* The exact pi/4 diagonal is just above the strict lower edge 0.785375,
+     * so the facing gate rejects it before selecting a weapon or tracing LOS. */
+    Reset();
+    pShooter = Place(0, 20, 20, 0, 0, 0);
+    pShooter->bFacing = 2;
+    ArmShooter(pShooter);
+    pTarget = Place(1, 22, 22, 0, 1, 0);
+    pTarget->auStat[3] = 0;
+    apEnemy[0] = pTarget;
+    r.nEnemy = 1;
+    RunOpp(pTarget, pShooter, &r);
+    Check("the pi/4 target is not enqueued", g_TactCtx.nOppFireCount == 0);
+    Check("the facing gate does not select a weapon",
+          g_pSelItem == NULL && g_nSelMode == -1);
+    Check("the facing gate leaves fire status alone", g_bFireStatus1 == 7);
 
     /* Facing 4 (+Y) rejects a target straight along +X: the angle error truncates
      * to -1, which is more than one facing step. */
@@ -244,25 +261,68 @@ static void TestTryOpportunityFire(void)
     RunOpp(pTarget, pShooter, &r);
     Check("a target two facing steps off is not offered", g_TactCtx.nOppFireCount == 0);
 
-    /* The quirk. The target passes every gate but is not in the shooter's
-     * multi-target list: it sits outside the fan and is not on the enemy roster,
-     * while a decoy on that roster is spotted and makes the list non-empty. The
-     * original still reports success, leaves the scratch slot pointing at the
-     * shooter, does not clear bFireStatus0[1], and enqueues nothing. */
+    /* Roster-decoy path: the +X target passes the fire gates but is not on the
+     * enemy roster. Expensive cells stop the fan short; the roster scan finds a
+     * distinct near-wrap decoy by LOS. The target is off that LOS line, so only
+     * the decoy enters the multi-target list. The visibility scan clears scratch
+     * after its roster trace; the caller's no-match path leaves it clear. */
     Reset();
     pShooter = Place(0, 20, 20, 0, 0, 0);
     pShooter->bFacing = 2;
     ArmShooter(pShooter);
-    pTarget = Place(1, 20, 22, 0, 1, 0);      /* bearing pi/2, outside the fan */
+    pTarget = Place(1, 22, 20, 0, 1, 0);      /* bearing 0; not on the roster */
     pTarget->auStat[3] = 0;
-    pDecoy = Place(2, 22, 20, 0, 1, 0);       /* on the enemy roster, inside it */
+    pDecoy = Place(2, 22, 19, 0, 1, 0);       /* valid near-wrap bearing; separate cell */
+    g_Spot.pSelUnit = pTarget;
     apEnemy[0] = pDecoy;
     r.nEnemy = 1;
+    for (i32 l = 0; l < 4; ++l) {
+        for (i32 y = 0; y < 40; ++y) {
+            for (i32 x = 0; x < 40; ++x) {
+                g_aCells[l][y][x].nFlags32 = 7;
+            }
+        }
+    }
     RunOpp(pTarget, pShooter, &r);
-    Check("the decoy is spotted, so the list is not empty", pShooter->nMultiTarget == 1);
+    Check("the LOS scan finds only the roster decoy",
+          pShooter->nMultiTarget == 1
+          && pShooter->multiOrAnim.apMultiTargets[0] == pDecoy);
+    Check("the roster decoy cell is spotted", Flag29(pDecoy->pCell, 0x10u)
+          && Flag44(pDecoy->pCell));
     Check("nothing is enqueued", g_TactCtx.nOppFireCount == 0);
+    Check("the selected unit is restored", g_Spot.pSelUnit == pTarget);
+    Check("the selected weapon and mode are retained",
+          g_pSelItem == &g_handL && g_nSelMode == 0);
     Check("bFireStatus0[1] is left alone", g_bFireStatus1 == 7);
-    Check("the scratch slot still names the shooter", g_pScratch == pShooter);
+    Check("roster LOS cleanup leaves scratch clear", g_pScratch == NULL);
+
+    /* Fan-only path: the requested +X target passes the fire gates but is not
+     * on a roster. A cost cell stops every direct ray before it reaches that
+     * target; the clear near-wrap ray still spots a separate, non-rostered decoy.
+     * With no roster candidate trace, the caller's shooter scratch value remains. */
+    Reset();
+    pShooter = Place(0, 20, 20, 0, 0, 0);
+    pShooter->bFacing = 2;
+    ArmShooter(pShooter);
+    pTarget = Place(1, 30, 20, 0, 1, 0);      /* bearing 0; beyond the cost barrier */
+    pTarget->auStat[3] = 0;
+    pDecoy = Place(2, 23, 19, 0, 1, 0);       /* valid near-wrap ray; before the barrier */
+    apEnemy[0] = NULL;
+    r.nEnemy = 0;
+    At(25, 20, 0)->nFlags32 = 7;
+    g_Spot.pSelUnit = pTarget;
+    RunOpp(pTarget, pShooter, &r);
+    Check("the ray fan spots only the decoy",
+          pShooter->nMultiTarget == 1
+          && pShooter->multiOrAnim.apMultiTargets[0] == pDecoy);
+    Check("the fan decoy cell is spotted", Flag29(pDecoy->pCell, 0x10u)
+          && Flag44(pDecoy->pCell));
+    Check("the requested target stays unseen", !Flag29(pTarget->pCell, 0x10u));
+    Check("the fan-only path restores selection and weapon",
+          g_Spot.pSelUnit == pTarget && g_pSelItem == &g_handL && g_nSelMode == 0);
+    Check("the requested target is not enqueued", g_TactCtx.nOppFireCount == 0);
+    Check("the fan-only path leaves fire status alone", g_bFireStatus1 == 7);
+    Check("without a roster trace, scratch still names the shooter", g_pScratch == pShooter);
 }
 
 /* --- Tact_KillUnit ---------------------------------------------------------- */
@@ -274,7 +334,7 @@ static ObjectRecFull *g_apKillObj[132];
 static TactItem       g_aKillItem[8];
 static TactItem      *g_apKillItem[8];
 static i32            g_nKillItem;
-static i32            g_nKillCount;
+static u32            g_uKillCredit;
 static i32            g_nBattleEndCalls;
 static Soldier       *g_pSelUnit;
 static Soldier       *g_apKillXcom[4];
@@ -285,6 +345,8 @@ static u8               g_nKillXcomCount;   /* nXcomUnitCount @ 0x1511F */
 static u8               g_nKillEnemyCount;  /* nEnemyUnitCount @ 0x15124 */
 static CombatCtx      g_KillCombat;
 static KillCtx        g_KillCtx;
+static u8             g_bKillTickHold;
+static u8             g_bKillFrameScratch;
 /* A model of the unit NAME table 0xB1140 (40-byte records indexed by unit type). The kill
  * transform arm supplies the record of the unit's NEW type -- the shell points at record 14
  * (0x4e508 LDR R0,=(byte_AD720+0x3A20), 0x4e518 ADD R3,R0,#0x230 = 40 * 14). */
@@ -310,7 +372,7 @@ static void KillSetup(void)
         g_apKillItem[n] = &g_aKillItem[n];
     }
     g_nKillItem = 0;
-    g_nKillCount = 0;
+    g_uKillCredit = 0;
     g_nBattleEndCalls = 0;
 
     /* Every cell has a floor sprite, so a corpse lands where the unit stood. */
@@ -332,12 +394,16 @@ static void KillSetup(void)
     g_KillCombat.nShotOriginY = 0;
 
     memset(&g_KillCtx, 0, sizeof(g_KillCtx));
+    g_bKillTickHold = 0;
+    g_bKillFrameScratch = 0;
     g_KillCtx.pCombat = &g_KillCombat;
     g_KillCtx.apTactItems = g_apKillItem;
     g_KillCtx.pnTactItem = &g_nKillItem;
     g_KillCtx.apObjects = g_apKillObj;
     g_KillCtx.ppSelUnit = &g_pSelUnit;
-    g_KillCtx.pnKillCount = &g_nKillCount;
+    g_KillCtx.pnKillCredit = &g_uKillCredit;
+    g_KillCtx.pbTickHold = &g_bKillTickHold;
+    g_KillCtx.pbFrameScratch = &g_bKillFrameScratch;
     memcpy(g_aKillNameTable + 40 * 14, "Chryssalid", 11);
     g_KillCtx.pszTransformName = g_aKillNameTable + 40 * 14;
     g_KillCtx.pStatus = NULL;
@@ -379,6 +445,7 @@ static void TestKillUnit(void)
     pUnit->bFlags = 0x20;
     Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
     Check("an already dead unit is left alone", g_nKillItem == 0 && pUnit->bStatus == 0);
+    CheckEqI32("an already dead unit does not add queue kill credit", (i32)g_uKillCredit, 0);
     CheckEqI32("no battle-end call either", g_nBattleEndCalls, 0);
 
     /* A plain human-sized kill. */
@@ -422,14 +489,14 @@ static void TestKillUnit(void)
     pUnit = Place(0, 5, 5, 0, 0, 9);
     pUnit->uHp = 0;
     Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
-    CheckEqI32("type 9 at zero HP counts", g_nKillCount, 1);
+    CheckEqI32("type 9 at zero HP increments queue kill credit", (i32)g_uKillCredit, 1);
 
     KillSetup();
     KillRosters();
     pUnit = Place(0, 5, 5, 0, 0, 16);
     pUnit->uHp = 0;
     Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
-    CheckEqI32("type 16 does not count", g_nKillCount, 0);
+    CheckEqI32("type 16 does not add queue kill credit", (i32)g_uKillCredit, 0);
 
     /* Morale shock, and its sign flips with the size of the dead unit. Enemy and
      * Xcom dex are both 10, so the divisor is 30 and 1000 / 30 is 33. */
@@ -744,8 +811,9 @@ int main(void)
         Check("bFlags29 bit 2 opens the wall to the fan", Flag29(At(23, 20, 0), 0x10u));
     }
 
-    /* Enemy multi-target scan: facing 2 accepts only bearings between
-     * 0.785375 and 5.497625, so straight ahead is rejected. */
+    /* Enemy multi-target scan: facing 2 accepts bearings below 0.785375 or
+     * above 5.497625. Expensive cells keep the fan from reaching the direct
+     * front target, leaving the roster scan and its LOS check to find it. */
     {
         UnitRosters r = NoRosters();
         Soldier *pU;
@@ -769,18 +837,31 @@ int main(void)
             }
         }
         Run(pU, &r, 0);
-        Check("facing 2 rejects a bearing of exactly 0", pU->nMultiTarget == 0);
+        Check("facing 2 sees a clear enemy at bearing 0", pU->nMultiTarget == 1);
+        Check("the front enemy cell gets bFlags29 bit 4", Flag29(pE->pCell, 0x10u));
+        Check("the front enemy cell gets bFlags44 bit 0", Flag44(pE->pCell));
 
         Reset();
         pU = Place(0, 20, 20, 0, 0, 0);
         pU->bFacing = 2;
-        pE = Place(1, 20, 22, 0, 1, 0);   /* bearing pi/2, inside the cone */
+        pE = Place(1, 22, 19, 0, 1, 0);   /* bearing atan2(-1, 2), near wrap */
         apEnemy[0] = pE;
         r.nEnemy = 1;
         Run(pU, &r, 0);
-        Check("facing 2 accepts a bearing of pi/2", pU->nMultiTarget == 1);
+        Check("facing 2 sees a clear enemy in the near-wrap arc", pU->nMultiTarget == 1);
         Check("the spotted enemy cell gets bFlags29 bit 4", Flag29(pE->pCell, 0x10u));
         Check("and bFlags44 bit 0", Flag44(pE->pCell));
+
+        Reset();
+        pU = Place(0, 20, 20, 0, 0, 0);
+        pU->bFacing = 2;
+        pE = Place(1, 20, 22, 0, 1, 0);   /* bearing pi/2, outside the accepted arcs */
+        apEnemy[0] = pE;
+        r.nEnemy = 1;
+        Run(pU, &r, 0);
+        Check("facing 2 does not see a clear enemy at the side", pU->nMultiTarget == 0);
+        Check("the side enemy cell is not flagged visible", !Flag29(pE->pCell, 0x10u));
+        Check("the side enemy cell is not marked spotted", !Flag44(pE->pCell));
 
         /* Facing 4 has the ordinary rule: one facing step either side. */
         Reset();

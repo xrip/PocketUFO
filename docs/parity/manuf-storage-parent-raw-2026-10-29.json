@@ -1,0 +1,134 @@
+{
+  "date": "2026-10-29",
+  "scope": "Parent raw verification of manufacturing storage call and live helper loop bound",
+  "baseline_source": "6401F9FAFE9D5986A4BDFE6C694AB3357DE3705A06BBCD2D55C1A173E9302D2D",
+  "facts": [
+    "0x6E27C loads R1 from camera+0x28, whose literal camera base is 0x1863E8: live site count0x186410.",
+    "0x6E26C loads signed selected base into R2; R3=1 at0x6E270.",
+    "BL0x6E284 invokes0x67D68; its scan loop count is loaded at0x67E48.",
+    "Compiled baseline C passed nBase as requested site index and snapshot nSiteCount as loop bound. New source passes site count and refreshes it at World units+ callback."
+  ],
+  "rows": [
+    {
+      "address": "0x6e260",
+      "bytes": "bddcffeb",
+      "instruction": "BL              Base_CalcStorageUsed"
+    },
+    {
+      "address": "0x6e264",
+      "bytes": "61cea0e3",
+      "instruction": "MOV             R12, #(nSelectedBaseIdx - 0x159768)"
+    },
+    {
+      "address": "0x6e268",
+      "bytes": "09c08ce3",
+      "instruction": "MOV             R12, #(nSelectedBaseIdx - 0x159768)"
+    },
+    {
+      "address": "0x6e26c",
+      "bytes": "dc2094e1",
+      "instruction": "LDRSB           R2, [R4,R12]"
+    },
+    {
+      "address": "0x6e270",
+      "bytes": "0130a0e3",
+      "instruction": "MOV             R3, #1"
+    },
+    {
+      "address": "0x6e274",
+      "bytes": "00b0a0e1",
+      "instruction": "MOV             R11, R0"
+    },
+    {
+      "address": "0x6e278",
+      "bytes": "ac009fe5",
+      "instruction": "LDR             R0, =g_smapCamera"
+    },
+    {
+      "address": "0x6e27c",
+      "bytes": "281090e5",
+      "instruction": "LDR             R1, [R0,#(nSmapSiteCount - 0x1863E8)]"
+    },
+    {
+      "address": "0x6e280",
+      "bytes": "0400a0e1",
+      "instruction": "MOV             R0, R4"
+    },
+    {
+      "address": "0x6e284",
+      "bytes": "b7e6ffeb",
+      "instruction": "BL              Base_CountItemQtyAcrossBases"
+    },
+    {
+      "address": "0x6e288",
+      "bytes": "61cea0e3",
+      "instruction": "MOV             R12, #(nSelectedBaseIdx - 0x159768)"
+    },
+    {
+      "address": "0x6e28c",
+      "bytes": "09c08ce3",
+      "instruction": "MOV             R12, #(nSelectedBaseIdx - 0x159768)"
+    },
+    {
+      "address": "0x67e38",
+      "bytes": "ff3013e2",
+      "instruction": "ANDS            R3, R3, #0xFF"
+    },
+    {
+      "address": "0x67e3c",
+      "bytes": "4b00000a",
+      "instruction": "BEQ             loc_67F70"
+    },
+    {
+      "address": "0x67e40",
+      "bytes": "e4209fe5",
+      "instruction": "LDR             R2, =g_smapCamera"
+    },
+    {
+      "address": "0x67e44",
+      "bytes": "0080a0e3",
+      "instruction": "MOV             R8, #0"
+    },
+    {
+      "address": "0x67e48",
+      "bytes": "289092e5",
+      "instruction": "LDR             R9, [R2,#(nSmapSiteCount - 0x1863E8)]"
+    },
+    {
+      "address": "0x67e4c",
+      "bytes": "04208de5",
+      "instruction": "STR             R2, [SP,#8+var_4]"
+    },
+    {
+      "address": "0x67e50",
+      "bytes": "000059e3",
+      "instruction": "CMP             R9, #0"
+    },
+    {
+      "address": "0x67e54",
+      "bytes": "450000da",
+      "instruction": "BLE             loc_67F70"
+    },
+    {
+      "address": "0x67e58",
+      "bytes": "0050a0e3",
+      "instruction": "MOV             R5, #0"
+    },
+    {
+      "address": "0x67e5c",
+      "bytes": "0a70a0e1",
+      "instruction": "MOV             R7, R10"
+    },
+    {
+      "address": "0x67e60",
+      "bytes": "010058e1",
+      "instruction": "CMP             R8, R1"
+    },
+    {
+      "address": "0x6e32c",
+      "bytes": "e8631800",
+      "instruction": "DCD g_smapCamera"
+    }
+  ],
+  "execution": "Static IDB read only; no runtime or IDB mutation"
+}

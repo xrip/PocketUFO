@@ -309,7 +309,7 @@ void TactUnit_DrawHpGlyphs(IsoDrawCtx *pIso, const IsoSpriteBases *pBases);
  * cursor global; the port takes them as arguments so the guide is testable. */
 typedef struct IsoViewportGuide {
     u8  bGameTickHold;       /* Map+0x5A */
-    u8  bActionReady;        /* Map.anActionPhaseSave0[94] @ 0x150D6 */
+    u8  bActionReady;        /* legacy name for the showborder option at Map+0x150D6 */
     u8  bPlayerInputEnabled; /* Map+0x38 */
     u8  bCursorBusy;         /* unk_157180->bBusy */
     u8  bDeployPanelOpen;    /* Map+0x15110 */
@@ -341,8 +341,9 @@ typedef struct IsoViewportGuide {
  * never reads it. */
 void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide);
 
-/* The isometric projection constants. The original computes both once and keeps them in .bss, and
- * every iso glyph placement reads them back out.
+/* The isometric projection constants. The original CRT init table computes both before WinMain and
+ * keeps them in .bss; every iso glyph placement reads the stored values back out. The Win64 port
+ * registers one `.CRT$XCU` initializer for these same store helpers.
  *
  *   g_dblIsoAngle = atan2(32.0, 16.0) - the angle of the 32 by 16 iso tile, so its tangent is 2.
  *   g_dblIsoScale = sqrt(320.0) * 2^-4 = sqrt(320)/16 = sqrt(5)/2.
@@ -351,9 +352,9 @@ void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide);
 extern double g_dblIsoAngle; /* unk_1571F8 */
 extern double g_dblIsoScale; /* unk_156AA8 */
 
-/* Math_StoreSqrtConst @ 0x37098. */void Math_StoreSqrtConst(void);
+/* Original one-time stores, called by the CRT initializer. */
+void Math_StoreSqrtConst(void);
 
-/* Math_StoreAtan2Const @ 0x370e8. */
 void Math_StoreAtan2Const(void);
 
 /* What MapView_DrawUnitHeightGlyph reads out of the Map block.

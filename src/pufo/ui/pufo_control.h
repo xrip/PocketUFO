@@ -216,11 +216,11 @@ void UiControl_Setup(UiControl *pCtl, i16 xBase, i16 yBase, const UiControlDesc 
                                          void *pUser),
                      void *pUser);
 
-/* EmptyBtn_OnClick @ 0x1a228. Plays sample 16 and clears the geoscape draw mode.
- * The draw-mode store is injected because that global belongs to the renderer. */
+/* EmptyBtn_OnClick @ 0x1a228. Plays sample 16 and clears menu list mode at
+ * 0x157188. The callback updates the App's owners of that original global. */
 #define PUFO_CONTROL_SAMPLE_CLICK 16
 
 void EmptyBtn_OnClick(void (*pfnPlaySample)(i32 nSample, void *pUser),
-                      void (*pfnClearDrawMode)(void *pUser), void *pUser);
+                      void (*pfnClearListMode)(void *pUser), void *pUser);
 
 #endif /* PUFO_CONTROL_H */

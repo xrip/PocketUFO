@@ -1,0 +1,202 @@
+[
+  {
+    "ea": "0x3e7e0",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e7dc",
+    "head_size": 8,
+    "head_bytes": "bd3ea0e3043083e3",
+    "head_asm": "MOV             R3, #0xBD4"
+  },
+  {
+    "ea": "0x3e7ec",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e7e8",
+    "head_size": 8,
+    "head_bytes": "bd3ea0e3083083e3",
+    "head_asm": "MOV             R3, #0xBD8"
+  },
+  {
+    "ea": "0x3e7f8",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e7f4",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3213083e3",
+    "head_asm": "MOV             R3, #0x1BA1"
+  },
+  {
+    "ea": "0x3e808",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e804",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3043083e3",
+    "head_asm": "MOV             R3, #0x1B84"
+  },
+  {
+    "ea": "0x3e818",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e814",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3083083e3",
+    "head_asm": "MOV             R3, #0x1B88"
+  },
+  {
+    "ea": "0x3e824",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e820",
+    "head_size": 8,
+    "head_bytes": "6e3da0e30c3083e3",
+    "head_asm": "MOV             R3, #0x1B8C"
+  },
+  {
+    "ea": "0x3e830",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e82c",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3103083e3",
+    "head_asm": "MOV             R3, #0x1B90"
+  },
+  {
+    "ea": "0x3e83c",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e838",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3143083e3",
+    "head_asm": "MOV             R3, #0x1B94"
+  },
+  {
+    "ea": "0x3e84c",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e848",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3183083e3",
+    "head_asm": "MOV             R3, #0x1B98"
+  },
+  {
+    "ea": "0x3e85c",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e858",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3203083e3",
+    "head_asm": "MOV             R3, #0x1BA0"
+  },
+  {
+    "ea": "0x3e868",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e864",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3223083e3",
+    "head_asm": "MOV             R3, #0x1BA2"
+  },
+  {
+    "ea": "0x3e874",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e870",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3313083e3",
+    "head_asm": "MOV             R3, #0x1BB1"
+  },
+  {
+    "ea": "0x3e880",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e87c",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3243083e3",
+    "head_asm": "MOV             R3, #0x1BA4"
+  },
+  {
+    "ea": "0x3e88c",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e888",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3283083e3",
+    "head_asm": "MOV             R3, #0x1BA8"
+  },
+  {
+    "ea": "0x3e898",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e894",
+    "head_size": 8,
+    "head_bytes": "2f3da0e3083083e3",
+    "head_asm": "MOV             R3, #0xBC8"
+  },
+  {
+    "ea": "0x3e8a4",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e8a0",
+    "head_size": 8,
+    "head_bytes": "6e3da0e32c3083e3",
+    "head_asm": "MOV             R3, #0x1BAC"
+  },
+  {
+    "ea": "0x3e8b0",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e8ac",
+    "head_size": 8,
+    "head_bytes": "6e3da0e3303083e3",
+    "head_asm": "MOV             R3, #0x1BB0"
+  },
+  {
+    "ea": "0x3e8f0",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x3e8ec",
+    "head_size": 8,
+    "head_bytes": "be3ea0e3043083e3",
+    "head_asm": "MOV             R3, #0xBE4"
+  },
+  {
+    "ea": "0x5a29c",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x5a298",
+    "head_size": 8,
+    "head_bytes": "355da0e3085085e3",
+    "head_asm": "MOV             R5, #0xD48"
+  },
+  {
+    "ea": "0x5a3e4",
+    "is_code": false,
+    "is_data": false,
+    "is_tail": true,
+    "head": "0x5a3e0",
+    "head_size": 8,
+    "head_bytes": "352da0e3082082e3",
+    "head_asm": "MOV             R2, #0xD48"
+  }
+]

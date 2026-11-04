@@ -29,6 +29,7 @@ void Options_InitDefaults(PufoOptions *pOpt)
     pOpt->bScrollByPen   = 1;
     pOpt->bShowBorder    = 1;
     pOpt->bRunByDblClick = 1;
+    pOpt->bMusicLoop     = 1; /* port-side default: the music loops (user request 2026-11-04) */
     pOpt->bTurnByPen     = 0;
     pOpt->bMenuByPen     = 1;
     pOpt->bMusicOff      = 0;
@@ -137,6 +138,9 @@ void Options_LoadFromRegistry(PufoOptions *pOpt)
     pOpt->bScrollByPen   = Options_LoadFlag("scrollbypen", "1");
     pOpt->bShowBorder    = Options_LoadFlag("showborder", "1");
     pOpt->bTurnByPen     = Options_LoadFlag("turnbypen", "0");
+    /* Port-side (2026-11-04): no registry key for the loop setting, per the user.
+     * Startup takes the default; a loaded save overwrites it from `1_24gset`. */
+    pOpt->bMusicLoop     = def.bMusicLoop;
 }
 
 /* Map_InitAndLoadRegistry @ 0x22648. The scratch half is 0x22664..0x226C8, in the

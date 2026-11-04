@@ -1368,6 +1368,33 @@ static void TestMeleeNeighbourHandoff(void)
     CheckEqI32(g_nRecordPushes, 0, "  a zero-cost command-18 cannot be refused");
 }
 
+static void TestPsiModeFiveHandoff(void)
+{
+    static const u32 aScript[] = { 0, 0, 1 };
+    const TactQueueEntry *pAct;
+
+    printf("A psi handoff rand(2) draw of 1 selects mode 5\n");
+
+    TickReset(aScript, 3);   /* pick, accept roll, then rand(2) selects mode 5 */
+    g_nEnemy = 2;
+    g_aEnemy[1].bPsiActive = 1;
+    g_aEnemy[1].uTu = 20;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    pAct = AiFirstAction18();
+    Check(pAct != NULL, "  a command-18 entry was queued");
+    if (pAct != NULL) {
+        CheckEqI32(pAct->nMode, PUFO_ENEMYAI_MODE_NEIGHBOUR_B,
+                   "  the non-zero mode draw selects mode 5");
+        Check(pAct->pUnit == &g_aEnemy[1], "  the psi neighbour performs the action");
+        Check(pAct->pTarget == &g_Target, "  the action targets the picked unit's target");
+        Check(pAct->pWeapon == &g_ItemMelee, "  the action carries TactItem_156910");
+    }
+    CheckEqI32(g_nActionMode, PUFO_ENEMYAI_MODE_NEIGHBOUR_B,
+               "  Map.nActionMode also records mode 5");
+    CheckEqI32(g_aEnemy[1].uTu, 10, "  the psi neighbour pays half its TU");
+}
+
 static void TestMeleeWalkCommit(void)
 {
     static const u32 aScript[] = { 0, 1, 0 };
@@ -1558,6 +1585,7 @@ int main(void)
     TestThrowRefusalKeepsTheTail();
     TestMultiTargetMode7();
     TestMeleeNeighbourHandoff();
+    TestPsiModeFiveHandoff();
     TestMeleeWalkCommit();
     TestCeilRaisesTheScanLayer();
     TestRmpWalkOrder();

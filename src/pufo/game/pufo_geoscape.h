@@ -118,7 +118,16 @@ typedef struct GeoscapeState {
     Soldier *const *apSoldiers;   /* pCtxBase.apSoldiers */
     const i32 *pnSoldierCount;    /* nSoldierCount @ 0x115350 (u16 semantics): a pointer because a site
                                     * recovery adds soldiers while the clock is running */
+    const u8 *pbBaseCount;        /* live signed-byte count at abFacilityGrid + 0x618; nBaseCount is fallback */
 } GeoscapeState;
+
+static inline i32 GeoscapeState_GetBaseCount(const GeoscapeState *pState)
+{
+    if (pState == NULL) {
+        return 0;
+    }
+    return (pState->pbBaseCount != NULL) ? (i32)(i8)*pState->pbBaseCount : pState->nBaseCount;
+}
 
 typedef struct GeoscapeHooks {
     /* StrategList_MaybeSpawnCraft_Process (0x7e420) (ProcessEvents side). */
@@ -146,10 +155,7 @@ typedef struct GeoscapeHooks {
     i32 (*pfnCountEmptyFacilityCells)(i32 nBaseIdx, void *pUser);
     /* FundingScreen_OpenMonthly @ 0x5d160, ported in pufo_baseui.c behind FundingInitEnv. */
     void (*pfnOpenMonthly)(void *pUser);
-    /* Base_FindIndexBySiteId (0x5a8d0) is a second copy of Base_FindIndexByTypeByte @ 0x6ac30 and
-     * the port keeps one implementation; this hook stays because the detect pass is called from
-     * the radar path -- ported, but not wired into the shell -- where the caller resolves the
-     * base list its own way. */
+    /* The detect path uses the signed, unmasked SiteId search @ 0x5a8d0. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } GeoscapeHooks;
@@ -204,25 +210,17 @@ typedef struct GeoscapePanelFlags {
 bool Geoscape_SetPanelFlagA(i32 nScreenMode, GeoscapePanelFlags *pFlags);
 bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags);
 
-/* Base_FindIndexByTypeByte @ 0x6ac30, and its second copy Base_FindIndexBySiteId @ 0x5a8d0.
- * Linear search over the base array for the first base whose type byte (BaseRec.bUnk4 @ +0x04)
- * equals nType.
- *
- * The two originals are the same search on the same field with the same -1, and they differ only
- * in how carefully they bound the walk: 0x6AC30 returns -1 on an empty list and then loops with
- * NO bound at all, while 0x5A8D0 reads the count through LDRSB from abFacilityGrid+0x618 and
- * bounds its loop by it. One implementation covers both; see docs/parity/renames.tsv.
- *
- * With a base count of zero it returns -1 immediately (0x6ac50). Otherwise the loop has
- * NO bound at all: it walks forward until some entry happens to match, off the end of
- * the array if none does. The port bounds it by nBaseCount and returns -1 (deviation).
- *
- * The comparison is SIGNED on the field side and unsigned on the argument side: 0x6AC68 loads
- * BaseRec.bUnk4 with LDRSB while 0x6AC58 masks the argument with `AND R1, R1, #0xFF`, so a field of
- * 0x80 or more matches nothing in 0..255. Base_FindIndexBySiteId @ 0x5a8d0 loads the same field with
- * LDRSB (0x5A900) and compares it against an unmasked i32. Both originals are reproduced; the port
- * compared the field as u8 until Smap_HitTestStrategSelect @ 0x82be8 made the LDRSB visible. */
+/* Base_FindIndexByTypeByte @ 0x6ac30. The raw code masks nType to an unsigned byte at 0x6AC58,
+ * then compares it with BaseRec.bUnk4 @ +0x04 loaded by LDRSB at 0x6AC68. Thus 0x80..0xFF
+ * cannot match. A zero count returns -1, but a positive-count miss has no loop bound in the raw
+ * body. The port keeps the signed/unsigned comparison and adds a count bound and null-slot guard.
+ */
 i32 Base_FindIndexByTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 nType);
+
+/* Base_FindIndexBySiteId @ 0x5a8d0 is a distinct bounded search. It compares the same LDRSB field
+ * with a full, unmasked i32 nSiteId at 0x5A8FC. A sign-extended key such as -128 can match bUnk4
+ * 0x80; positive 128 cannot. The raw count is signed and its loop stops at nBaseCount. */
+i32 Base_FindIndexBySiteId(BaseRec *const *apBases, i32 nBaseCount, i32 nSiteId);
 
 /* BaseGrid_GetByte0x654 @ 0x6acc0 and BaseGrid_SetByteAtFound @ 0x6ac90. Both resolve a
  * type byte to a base index through Base_FindIndexByTypeByte and then read or write one
@@ -323,19 +321,25 @@ typedef struct BaseSiteRec {
     u16  uUnk2;          /* +0x02 */
     u16  uUnk4;          /* +0x04 */
     u8   abUnk6[20];     /* +0x06 */
-    char abName[20];     /* +0x1a */
-    u8   gap_2E[2];
+    /* The save wire keeps 20 name bytes, then skips two bytes at +0x2e. Valid
+     * shipped region labels can use 21 bytes plus NUL, so the live view spans
+     * both skipped bytes without moving the next field. */
+    char abName[22];     /* +0x1a, including the two wire-skipped bytes */
     i32  nUnk48;         /* +0x30 */
     i32  nDemolishState; /* +0x34 */
     i32  nBuildState;    /* +0x38 */
     i32  nFacType;       /* +0x3c */
 } BaseSiteRec;
 
+_Static_assert(offsetof(BaseSiteRec, abName) == 0x1A, "BaseSiteRec name offset must stay exact");
+_Static_assert(offsetof(BaseSiteRec, nUnk48) == 0x30, "BaseSiteRec field after name must stay exact");
+_Static_assert(offsetof(BaseSiteRec, nDemolishState) == 0x34, "BaseSiteRec demolish field offset must stay exact");
+_Static_assert(offsetof(BaseSiteRec, nBuildState) == 0x38, "BaseSiteRec build field offset must stay exact");
+_Static_assert(offsetof(BaseSiteRec, nFacType) == 0x3C, "BaseSiteRec site id offset must stay exact");
 _Static_assert(sizeof(BaseSiteRec) == 64, "BaseSiteRec must be 64 bytes");
 
-/* Every per-base column in the compaction is 200 entries wide, whether the entries are u16 or
- * u32: 400 bytes for the u16 columns and 800 for the u32 ones, which is what the strides
- * MOV R3,#0x190 and MOV R3,#0x320 at 0x66E4C and 0x66E80 say. */
+/* Product-block columns use 200 entries per base: 400 bytes for u16 and 800
+ * for u32. The separate research column uses 144 u16 entries per base. */
 #define PUFO_BASE_COLUMN_ENTRIES 200
 
 /* Evidence: Base_DemolishFacility @ 0x66b70 (1600 bytes).
@@ -357,7 +361,7 @@ typedef struct BaseDemolishEnv {
     Ship **apCraft;
     u8 *pnShipCount;
     Soldier **apSoldiers;
-    u16 *pnSoldierCount;
+    i32 *pnSoldierCount;          /* world-owned count; original Map+0x1998 is u16 */
     BaseRec **apBases;
     ObjectRecFull **apObjects;
     u16 *pnObjectCount;
@@ -375,6 +379,9 @@ typedef struct BaseDemolishEnv {
     /* Reused whole for Ship_RemoveWithCargo, which is also what supplies the strateg list, the
      * world, the spawn gate and the spawn context this function needs. */
     const ShipRemovalEnv *pShipEnv;
+
+    /* The transfer-site count changes during play; NULL keeps the scalar fixture count above. */
+    const i32 *pnSiteCountLive;
 } BaseDemolishEnv;
 
 i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType);
@@ -441,7 +448,8 @@ i32 Base_CountInboundTransfers(const SmapSite *aSites, i32 nSiteCount, i32 nSite
 /* Base_CountItemQtyAcrossBases @ 0x67d68. Cargo volume (bCargoSize * auItemQty column) over the
  * filtered object indices 1..69, 105..111, 122..124, 140: site nSiteIdx itself, then — gated on
  * site nSiteIdx holding that item — every other site of this base's type. Budget term of
- * Base_UpdateStoresNeeded. A negative nSiteIdx means a zero gate (see the .c deviation note). */
+ * Base_UpdateStoresNeeded. The original -1 gate reads unchanged zero-filled carry-count
+ * words; the port returns the same zero without an out-of-bounds read (see the .c evidence). */
 i32 Base_CountItemQtyAcrossBases(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
                                  BaseRec *const *apBases, i32 nBaseIndex,
                                  ObjectRecFull *const *apObjects, i32 nObjectCount,
@@ -622,6 +630,8 @@ i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries);
  *
  * Deviation: the port reads the total through Base_GetItemQty, which refuses an index outside
  * the eight per-base slots and yields 0 there; the original indexes blindly. */
+/* These column arguments start at the selected base's row. nBaseIndex selects
+ * the object stock cell; it does not offset the supplied allocation row again. */
 i32 Base_GetScientistCount(const ObjectRecFull *pScientistRec, const u16 *apResearchCol,
                            i32 nBaseIndex, i32 nEntries);
 i32 Base_GetEngineerCount(const ObjectRecFull *pEngineerRec, const u16 *apManufCol,
@@ -934,9 +944,9 @@ void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
  *   3. The strateg entry at index nBaseCount gets bRandA = nRegionId - 0x80 (0x669B4; Hex-Rays
  *      renders the SUB as + 0x80, the ARM is `SUB R11, R10, #0x80`).
  *   4. The BaseSiteRec for this base (0x186C40 + 64*nBaseCount): abName = the name copied to its
- *      NUL with no bound (0x669D0 - ORIGINAL BUG, the field is 20 bytes and the overflow tail
- *      lands in the four dwords and past the record), bType = nRegionId - 0x80, nUnk48 /
- *      nDemolishState / nBuildState = 0, nFacType = the site id.
+ *      NUL with no bound (0x669D0). The 20-byte save field is followed by two skipped bytes at
+ *      +0x2e; the live 22-byte view uses them for the longest shipped label and its NUL. bType =
+ *      nRegionId - 0x80; nUnk48 / nDemolishState / nBuildState = 0, nFacType = the site id.
  *   5. The BaseRec: bRegionId = nRegionId, nUnk8 = x, nUnk12 = y, and bUnk16 is the region
  *      counter minus one. The load is `0x1864DD + region` (0x66A64 LDRSB [R3,#-0x1B] off a
  *      0x1864F8 + region base), which for the ten regions 0x80..0x89 is the region counter table
@@ -1234,7 +1244,8 @@ void RadarScreen_CyclePalette(const RadarPaletteEnv *pEnv);
  * bases with a 28-pixel vertical pitch (0x6250C's `v5 += 28`). So the hit test's box is a vertical
  * band, not a horizontal one:
  *
- *     x in [211, 237]   y in [3, 28 * nBaseCount]   hit -> base index = y / 30
+ *     no gate: x in [211, 237]; any gate: x in [10, 237]
+ *     both:    y in [3, 28 * nBaseCount]   hit -> base index = y / 30
  *
  * Both callers pass the geoscape cursor pair, x first: Geoscape_OnPointer (0x87F30, R5 =
  * nSmapCursorX, R8 = nSmapCursorY) stores the result straight into nSelectedBaseIdx (0x87F34), and
@@ -1243,11 +1254,12 @@ void RadarScreen_CyclePalette(const RadarPaletteEnv *pEnv);
  * nSelectedBaseIdx read back out of abFacilityGrid + 0x619 -- so the caller's unconditional store
  * leaves the selection unchanged.
  *
- * Three gate bytes disable the strip entirely. When any of unk_1870EC (the transfer screen),
- * unk_15883C (the base-info screen) or byte_15EEF0 (the psi screen / base-stats panel) is non-zero,
- * the ARM jumps to 0x6723C, overwrites the x argument with 10, and branches back INTO the middle of
- * the compare chain at 0x671E8. 10 < 211, so the range test always misses. The port keeps the
- * forced value rather than short-circuiting, because that is literally what the code does.
+ * Three gate bytes are read: unk_1870EC (transfer panels), unk_15883C (base-info panels) and
+ * byte_15EEF0 (the psi panel). A set byte branches to 0x6723C, whose raw instruction is
+ * `CMP R1,#10` (bytes 0A 00 51 E3), followed by a branch to 0x671E8. That target is the BLT
+ * immediately after the normal `CMP R1,#0xD3`, so the gate supplies 10 as the lower x bound and
+ * skips the 211 check. No instruction writes R1. The upper x and y bounds still apply. In transfer
+ * mode this lets the draw hit-test pick a different base from the strip under the cursor.
  *
  * A hit also clears the low byte of dword_1870B4[2] @ 0x1870BC (0x67250). That byte is the geoscape
  * tap flag: Geoscape_OnPointer sets it to 1 at 0x87ED4 after computing the tap cell coordinates,
@@ -3981,6 +3993,8 @@ typedef struct GeoscapeScreenDrawEnv {
     UiControl      *pCtlA;          /* pGeoscapeCtlA @ 0x186BB4, the cancel / OK control */
     UiControl      *pCtlB;          /* pGeoscapeCtlB @ 0x186BB0, the "Да" control */
     UiControl     **apOptCtl;       /* aOptionsListCtl @ 0x159E20, 21 slots through 0x159E73 */
+    const u8       *pbMusicLoop;    /* port-side (2026-11-04, user request): the music loop
+                                     * setting byte for the volume tab's row; NULL hides the row */
     const char     *pSlotLabels;    /* MainMenu_pSlotCtx @ 0x156938, seven 40-byte labels */
     GfxColorEnv    *pColor;
     /* Geoscape_CloseUI(&0x1864F8), injected because that dispatcher lives in the base-ui module

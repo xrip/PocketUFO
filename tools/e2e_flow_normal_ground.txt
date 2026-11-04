@@ -1,0 +1,15 @@
+# Fresh New Game through a natural type-4 site and crew deployment.
+state before_menu_click
+click 120 124
+pick
+state after_new_game_pick
+geoframe
+strategystate before_normal_air
+normalair
+state after_normal_air_boundary
+normalaircombat
+state after_normal_air_combat
+normalairground
+state after_normal_ground_deploy
+lines
+strateg

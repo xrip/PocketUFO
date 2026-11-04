@@ -30,6 +30,20 @@ void Math_StoreAtan2Const(void)
     g_dblIsoAngle = atan2(32.0, 16.0);
 }
 
+/* Raw _cinit @ 0xA1628 tail-calls the function table [0xA61E0,0xA621C) before WinMain.
+ * Entries 0xA61F8/0xA61FC are 0x37094/0x370E4; each raw B branches to the store at
+ * 0x37098/0x370E8. Use the same Windows CRT section for every executable linking this object. */
+static void __cdecl IsoMath_CrtInit(void)
+{
+    Math_StoreSqrtConst();
+    Math_StoreAtan2Const();
+}
+
+#pragma section(".CRT$XCU", read)
+__attribute__((used))
+__declspec(allocate(".CRT$XCU"))
+static void (__cdecl *const g_pfnIsoMathCrtInit)(void) = IsoMath_CrtInit;
+
 void MapView_DrawCellFloorGlyph(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim)
 {
     Mc1Rec *pFloorSpr;

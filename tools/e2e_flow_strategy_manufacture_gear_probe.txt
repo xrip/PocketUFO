@@ -1,0 +1,10 @@
+# Load the real manufactured item and measure the live Soldier navigation control.
+load 4
+state gear_checkpoint_loaded
+strategystate gear_checkpoint_loaded
+campaign trace gear_roster_before
+campaign state gear_before
+click 180 266
+tick 2
+strategystate gear_nav_ready
+dump strategy_manufacture_gear_nav_probe.ppm

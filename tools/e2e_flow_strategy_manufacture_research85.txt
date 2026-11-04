@@ -1,0 +1,27 @@
+# Start Alien Alloys research through the live topic and quantity controls.
+load 1
+state research85_loaded
+click 180 266
+tick 2
+click 220 15
+tick 2
+click 180 238
+tick 20
+strategystate research85_open
+click 15 @RESEARCH85_ROW_Y@
+__RESEARCH85_SCIENTISTS__
+click 200 176
+tick 2
+strategystate research85_started
+dump strategy_manufacture_research85_started.ppm
+click 231 8
+tick 2
+click 201 11
+tick 2
+click 60 308
+__RESEARCH85_CLOCK__
+tick 2
+strategystate research85_complete
+lines
+save 2
+state research85_saved

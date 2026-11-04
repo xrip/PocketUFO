@@ -351,14 +351,14 @@ i32 Unit_ArmorForType(u16 nUnitType)
  *     auStat. The port takes them as arguments; every caller (pufo_tactctl.c:642, :798, :1355,
  *     pufo_tactstate.c:1633) passes the unit's own fields, so the write at the top is the same value
  *     the original reads.
- *   - the original clears the item slots (pHandL/pHandR 0x498F4/0x498F8, the pocket pairs
- *     0x498E4..0x49918, the belt triples 0x49920..0x49940, the backpack quads 0x49944..0x4996C),
- *     seeds apBackpack[5]/[6] to &unk_138EA0 (0x49974/0x49978) and calls Unit_RecalcInventoryStat
- *     @ 0x49ef0 (0x49980). None of that is ported here: the deploy callers recalc after placement
- *     (pufo_tactctl.c:655) and the slot clear is the open inventory deviation in bugs.tsv. */
+ *   - the original calls Unit_RecalcInventoryStat @ 0x49ef0 (0x49980) after clearing and seeding the
+ *     slots. This reset has no InvStatHooks, so it stores the equivalent base burden of 1 directly:
+ *     the cleared slots are null or the zero-weight g_itemSlotEmpty sentinel. */
 void Unit_ResetBattleState(Soldier *pUnit, u8 bFacing, u16 nUnitType,
                            const u16 *auStat, i32 nStatCount)
 {
+    i32 i;
+
     pUnit->bFacing   = bFacing;
     pUnit->nDrawOffX = 0;
     pUnit->nDrawOffY = 0;
@@ -370,6 +370,23 @@ void Unit_ResetBattleState(Soldier *pUnit, u8 bFacing, u16 nUnitType,
     pUnit->uTuSpent     = 0;
     pUnit->nMultiTarget = 0;
     pUnit->nUnitType    = (u8)nUnitType;
+
+    pUnit->pHandL = NULL; /* 0x498F4 */
+    pUnit->pHandR = NULL; /* 0x498F8 */
+    for (i = 0; i < 4; ++i) {
+        pUnit->aPockets[i].apItem[0] = NULL; /* 0x498E4..0x49918 */
+        pUnit->aPockets[i].apItem[1] = NULL;
+    }
+    for (i = 0; i < 9; ++i) {
+        pUnit->apBelt[i] = NULL; /* 0x49920..0x49940 */
+    }
+    for (i = 0; i < 8; ++i) {
+        pUnit->apBackpack[i] = NULL; /* 0x49944..0x4996C */
+    }
+    pUnit->apBackpack[5] = &g_itemSlotEmpty; /* 0x49974: unk_138EA0 */
+    pUnit->apBackpack[6] = &g_itemSlotEmpty; /* 0x49978 */
+    /* 0x49980's recalc yields only the base burden after these clears. */
+    pUnit->uInvBurden = 1;
 
     if (auStat != NULL && nStatCount > 0) {
         pUnit->uTu = auStat[0];
@@ -439,6 +456,21 @@ u8 Unit_FacingToward(i32 nFromX, i32 nFromY, i32 nToX, i32 nToY)
  * A large unit claims a 2x2 block based at (x, y) and releases the same four on
  * the way out. The cell lookup is injected so this is testable without the full
  * game context. */
+static MapCell *Unit_LookupFootprintCell(UnitCellLookup pfnLookup, void *pUser,
+                                        i32 nX, i32 nY, i32 nLayer,
+                                        i32 nOffsetX, i32 nOffsetY)
+{
+    i32 nCellX;
+    i32 nCellY;
+    i32 nCellLayer;
+
+    if (!MapCell_LargeFootprintCoords(nX, nY, nLayer, nOffsetX, nOffsetY,
+                                      &nCellX, &nCellY, &nCellLayer)) {
+        return NULL;
+    }
+    return pfnLookup(nCellX, nCellY, nCellLayer, pUser);
+}
+
 void Unit_PlaceOnMap(Soldier *pUnit, i32 nX, i32 nY, i32 nLayer,
                      UnitCellLookup pfnLookup, void *pUser)
 {
@@ -448,9 +480,12 @@ void Unit_PlaceOnMap(Soldier *pUnit, i32 nX, i32 nY, i32 nLayer,
         if (Unit_bIsLarge(pUnit)) {
             MapCell *pOld = pUnit->pCell;
 
-            MapCell_SetOccupant(pfnLookup(pOld->nX + 1, pOld->nY, pOld->nZ, pUser), NULL);
-            MapCell_SetOccupant(pfnLookup(pOld->nX, pOld->nY + 1, pOld->nZ, pUser), NULL);
-            MapCell_SetOccupant(pfnLookup(pOld->nX + 1, pOld->nY + 1, pOld->nZ, pUser), NULL);
+            MapCell_SetOccupant(Unit_LookupFootprintCell(pfnLookup, pUser,
+                                  pOld->nX, pOld->nY, pOld->nZ, 1, 0), NULL);
+            MapCell_SetOccupant(Unit_LookupFootprintCell(pfnLookup, pUser,
+                                  pOld->nX, pOld->nY, pOld->nZ, 0, 1), NULL);
+            MapCell_SetOccupant(Unit_LookupFootprintCell(pfnLookup, pUser,
+                                  pOld->nX, pOld->nY, pOld->nZ, 1, 1), NULL);
         }
         MapCell_SetOccupant(pUnit->pCell, NULL);
     }
@@ -464,15 +499,18 @@ void Unit_PlaceOnMap(Soldier *pUnit, i32 nX, i32 nY, i32 nLayer,
     if (Unit_bIsLarge(pUnit)) {
         MapCell *pNeighbour;
 
-        pNeighbour = pfnLookup(nX + 1, nY, nLayer, pUser);
+        pNeighbour = Unit_LookupFootprintCell(pfnLookup, pUser,
+                                               nX, nY, nLayer, 1, 0);
         if (pNeighbour != NULL) {
             MapCell_SetOccupant(pNeighbour, pUnit);
         }
-        pNeighbour = pfnLookup(nX, nY + 1, nLayer, pUser);
+        pNeighbour = Unit_LookupFootprintCell(pfnLookup, pUser,
+                                               nX, nY, nLayer, 0, 1);
         if (pNeighbour != NULL) {
             MapCell_SetOccupant(pNeighbour, pUnit);
         }
-        pNeighbour = pfnLookup(nX + 1, nY + 1, nLayer, pUser);
+        pNeighbour = Unit_LookupFootprintCell(pfnLookup, pUser,
+                                               nX, nY, nLayer, 1, 1);
         if (pNeighbour != NULL) {
             MapCell_SetOccupant(pNeighbour, pUnit);
         }
@@ -1116,8 +1154,9 @@ i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
         }
         /* Deviation for a latent original fault: the Xcom-base reinforcement arm (0x4BAFC..0x4BB3C)
          * adds a hidden soldier to apEnemyUnits BEFORE Map_PickRmpSpawnForUnit @ 0x55418 runs, and
-         * that pick can reject every node (rank-8 aliens need a bFlag20 == 4 node, which no shipped
-         * .rmp record carries), leaving the added unit with no cell. The original dereferences
+         * that pick can reject every node (the rank-8 alien arm needs bFlag20 == 4; shipped XBASE
+         * routes have none, though some UFO/UBASE routes do), leaving the added unit with no cell.
+         * The original dereferences
          * pOther->pCell here with no test and would fault on such a unit; the port skips it. */
         if (pOther == NULL || pOther->pCell == NULL) {
             continue;
@@ -1135,7 +1174,7 @@ i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
                          16 * (i32)pViewCell->nX + 8, 16 * (i32)pViewCell->nY + 8,
                          Unit_LosZ(pViewCell),
                          16 * (i32)pOtherCell->nX + 8, 16 * (i32)pOtherCell->nY + 8,
-                         Unit_LosZ(pOtherCell), NULL, NULL)) {
+                         Unit_LosZ(pOtherCell), pViewer, pOther, NULL, NULL)) {
             Unit_SpotCellOccupant(pViewer, pOtherCell, pSpot);
         }
         *ppScratchUnit = NULL;
@@ -1431,7 +1470,7 @@ i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx)
         dBearing = Unit_CellBearing(pOwn, pEnemyCell);
         dFace = Unit_FacingAngle(pUnit);
         if (pUnit->bFacing == 2) {
-            bInView = dBearing >= PUFO_FACING_STEP && dBearing <= PUFO_VIS_ANGLE_MAX;
+            bInView = dBearing < PUFO_FACING_STEP || dBearing > PUFO_VIS_ANGLE_MAX;
         } else {
             i32 nErr = (i32)(dBearing - dFace);
 
@@ -1449,7 +1488,7 @@ i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx)
             if (Map_TraceLos(pCtx->pTables, pCtx->pfnLookup, pCtx->pUser,
                              16 * nOwnX + 8, 16 * nOwnY + 8, Unit_LosZ(pOwn),
                              16 * pEnemyCell->nX + 8, 16 * pEnemyCell->nY + 8,
-                             Unit_LosZ(pEnemyCell), NULL, NULL)) {
+                             Unit_LosZ(pEnemyCell), pUnit, pEnemy, NULL, NULL)) {
                 Unit_SpotCellOccupant(pUnit, pEnemyCell, pCtx->pSpot);
                 pEnemyCell->bFlags29 |= 0x10u;
                 pEnemyCell->bFlags44 |= 1u;
@@ -1501,7 +1540,7 @@ bool Unit_bTryOpportunityFire(Soldier *pTarget, Soldier *pShooter,
     dBearing = Unit_CellBearing(pShooterCell, pTargetCell);
     dFace = Unit_FacingAngle(pShooter);
     if (pShooter->bFacing == 2) {
-        bInView = dBearing >= PUFO_FACING_STEP && dBearing <= PUFO_VIS_ANGLE_MAX;
+        bInView = dBearing < PUFO_FACING_STEP || dBearing > PUFO_VIS_ANGLE_MAX;
     } else {
         i32 nErr = (i32)(dBearing - dFace);
 
@@ -1634,10 +1673,8 @@ void UnitList_ForEachRefresh(UnitRosters *pRosters, VisCtx *pCtx)
     }
 }
 
-/* SideLists is the same two rosters UnitRosters already carries, seen through the type
- * Tact_RemoveUnitFromSideLists works on. The counts come from the byte cells when the ctx
- * carries them, because that is what the original's helper reads (`LDRB nXcomUnitCount` at
- * 0x33158, `LDRB nEnemyUnitCount` at 0x33198); the roster view is only a copy of them. */
+/* SideLists is the Xcom/enemy view consumed by Tact_RemoveUnitFromSideLists. The civilian
+ * roster is not part of that removal; its Map count changes only when the corpse is appended. */
 static SideLists Kill_SideLists(const KillCtx *pCtx)
 {
     const UnitRosters *pR = pCtx->pRosters;
@@ -1712,12 +1749,19 @@ static const u16 g_aCorpseObjByType[22] = {
     60, 63, 65, 67, 74, 73, 99, 68, 66, 69
 };
 
-/* Types 0..3 and 9..11 have no quadrant corpses. */
-static const u16 g_aCorpseObjQuadrant[48] = {
+/* Four object slots per unit type, copied from the raw table at 0xA7970.
+ * Types 18, 20, and 21 have corpse parts in addition to their primary corpse. */
+static const u16 g_aCorpseObjQuadrant[22 * 4] = {
     0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,
     75, 125, 126, 127,  75, 125, 126, 127,  75, 125, 126, 127,
     76, 128, 129, 130,  76, 128, 129, 130,
-    0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0
+    0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,
+    0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,
+    0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,
+    99, 134, 135, 136,
+    0, 0, 0, 0,
+    66, 131, 132, 133,
+    69, 137, 138, 139
 };
 
 /* The chryssalid transform loads its stats from the 32-byte-per-type template at
@@ -1813,11 +1857,12 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
     pUnit->nSpottedCount = 0;
     pUnit->nMultiTarget  = 0;
 
-    /* A non-human type that reaches zero HP feeds the mission kill counter at
-     * Map.gap_TrajRest + 4 * 49940. Types 16 and 17 are excluded. */
+    /* Raw 0x4E47C..0x4E490 increments TactState+0x111D0 for a zero-HP alien,
+     * except unit types 16 and 17. The queue tail later pays this credit to a
+     * fired operative. */
     if (pUnit->nUnitType > 8 && pUnit->nUnitType != 16 && pUnit->nUnitType != 17
-        && pUnit->uHp == 0 && pCtx->pnKillCount != NULL) {
-        ++*pCtx->pnKillCount;
+        && pUnit->uHp == 0 && pCtx->pnKillCredit != NULL) {
+        ++*pCtx->pnKillCredit;
     }
 
     /* Death sound. Types 0..2 with bFemale set play the fixed sample 22; everything
@@ -1868,8 +1913,16 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
             pUnit->abReady252[n] = (u8)pTpl[9 + n];
         }
 
+        /* The ARM saves pCell and facing before Unit_ResetBattleState clears pCell,
+         * then reloads the saved cell coordinates for Unit_PlaceOnMap. */
+        MapCell *pTransformCell = pUnit->pCell;
+        u8 bFacing = pUnit->bFacing;
+        Unit_ResetBattleState(pUnit, bFacing, pUnit->nUnitType, pUnit->auStat,
+                              PUFO_UNIT_STAT_COUNT);
+        /* The post-reset store at 0x4E624 clears bPsiActive (+0x1A6). The distinct
+         * bHumanoidInv byte (+0x1A2) stays set for transformed type 14. */
         pUnit->bPsiActive = 0;
-        Unit_PlaceOnMap(pUnit, pUnit->pCell->nX, pUnit->pCell->nY, pUnit->pCell->nZ,
+        Unit_PlaceOnMap(pUnit, pTransformCell->nX, pTransformCell->nY, pTransformCell->nZ,
                         pCtx->pCombat->pfnLookup, pCtx->pCombat->pUser);
         return;
     }
@@ -1929,12 +1982,15 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
     pUnit->bStatus = 4;
     MapCell_SetOccupant(pCell, NULL);
     if (Unit_bIsLarge(pUnit)) {
-        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY,
-                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
-        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY + 1,
-                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
-        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY + 1,
-                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        MapCell_SetOccupant(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                              pCtx->pCombat->pUser, pCell->nX, pCell->nY,
+                              pCell->nZ, 1, 0), NULL);
+        MapCell_SetOccupant(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                              pCtx->pCombat->pUser, pCell->nX, pCell->nY,
+                              pCell->nZ, 0, 1), NULL);
+        MapCell_SetOccupant(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                              pCtx->pCombat->pUser, pCell->nX, pCell->nY,
+                              pCell->nZ, 1, 1), NULL);
     }
 
     if (*pCtx->ppSelUnit == pUnit) {
@@ -1943,17 +1999,23 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
 
     /* Corpses live on the civilian roster. */
     pCtx->pRosters->apCiv[pCtx->pRosters->nCiv++] = pUnit;
+    if (pCtx->pnCivilianCount != NULL) {
+        *pCtx->pnCivilianCount = pCtx->pRosters->nCiv; /* 0x4e994 */
+    }
 
     i32 nLandLayer = Kill_DropCorpse(pCtx, pCell, pUnit, 0);
     if (Unit_bIsLarge(pUnit)) {
-        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY,
-                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        MapCell_SetOccupant(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                              pCtx->pCombat->pUser, pCell->nX, pCell->nY,
+                              pCell->nZ, 1, 0), NULL);
         Kill_DropCorpse(pCtx, pCell, pUnit, 1);
-        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY + 1,
-                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        MapCell_SetOccupant(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                              pCtx->pCombat->pUser, pCell->nX, pCell->nY,
+                              pCell->nZ, 0, 1), NULL);
         Kill_DropCorpse(pCtx, pCell, pUnit, 2);
-        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY + 1,
-                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        MapCell_SetOccupant(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                              pCtx->pCombat->pUser, pCell->nX, pCell->nY,
+                              pCell->nZ, 1, 1), NULL);
         Kill_DropCorpse(pCtx, pCell, pUnit, 3);
     }
 
@@ -1988,7 +2050,7 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
         pHooks->pfnCheckBattleEnd(pHooks->pUser);
     }
 
-    if (pCtx->bTickHold || pCtx->bFrameScratch) {
+    if (*pCtx->pbTickHold != 0 || *pCtx->pbFrameScratch != 0) {
         return;
     }
 
@@ -2020,22 +2082,25 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
     /* Type 18 goes up in an explosion that damages its own cell and the three
      * large-unit neighbours. */
     if (pUnit->nUnitType == 18 && Game_RandU16(0xA) != 0) {
-        pCtx->pCombat->nShotOriginX = pUnit->pCell->nX;
-        pCtx->pCombat->nShotOriginY = pUnit->pCell->nY;
+        CombatCtx_SetShotOrigin(pCtx->pCombat, pUnit->pCell->nX, pUnit->pCell->nY);
         Combat_ResolveShot(pCtx->pCombat, pHooks->pShotHooks, pCtx->pRosters,
                            pUnit->pCell->nX, pUnit->pCell->nY, pUnit->pCell->nZ,
                            0, pCtx->apObjects[17], NULL, NULL, NULL);
 
         Unit_ApplyCellDamage(pUnit->pCell, 255, pCtx->apObjects[17]);
-        Unit_ApplyCellDamage(pCtx->pCombat->pfnLookup(pUnit->pCell->nX + 1,
-                             pUnit->pCell->nY, pUnit->pCell->nZ,
-                             pCtx->pCombat->pUser), 255, pCtx->apObjects[17]);
-        Unit_ApplyCellDamage(pCtx->pCombat->pfnLookup(pUnit->pCell->nX,
-                             pUnit->pCell->nY + 1, pUnit->pCell->nZ,
-                             pCtx->pCombat->pUser), 255, pCtx->apObjects[17]);
-        Unit_ApplyCellDamage(pCtx->pCombat->pfnLookup(pUnit->pCell->nX + 1,
-                             pUnit->pCell->nY + 1, pUnit->pCell->nZ,
-                             pCtx->pCombat->pUser), 255, pCtx->apObjects[17]);
+        /* Raw 0x4F144/0x4F17C/0x4F1B4 load Map.apObjects[0] for neighbours. */
+        Unit_ApplyCellDamage(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                             pCtx->pCombat->pUser, pUnit->pCell->nX,
+                             pUnit->pCell->nY, pUnit->pCell->nZ, 1, 0),
+                             255, pCtx->apObjects[0]);
+        Unit_ApplyCellDamage(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                             pCtx->pCombat->pUser, pUnit->pCell->nX,
+                             pUnit->pCell->nY, pUnit->pCell->nZ, 0, 1),
+                             255, pCtx->apObjects[0]);
+        Unit_ApplyCellDamage(Unit_LookupFootprintCell(pCtx->pCombat->pfnLookup,
+                             pCtx->pCombat->pUser, pUnit->pCell->nX,
+                             pUnit->pCell->nY, pUnit->pCell->nZ, 1, 1),
+                             255, pCtx->apObjects[0]);
     }
 
     /* Spotted-flag sweep over a +-8 tile window on every layer, then a full Xcom

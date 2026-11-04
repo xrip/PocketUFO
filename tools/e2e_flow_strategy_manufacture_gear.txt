@@ -1,0 +1,45 @@
+# Equip the real manufactured Personal Armour through the normal Soldier screen.
+load 4
+state gear_checkpoint_loaded
+strategystate gear_checkpoint_loaded
+campaign trace gear_roster_before
+campaign state gear_before
+click 180 266
+tick 2
+strategystate gear_nav_ready
+dump strategy_manufacture_gear_nav_ready.ppm
+click @GEAR_NAV_X@ @GEAR_NAV_Y@
+tick 20
+campaign state gear_soldier_list
+dump strategy_manufacture_gear_soldier_list.ppm
+# The checker fills the first base-0 soldier row whose current type is not already 1.
+click 20 @GEAR_SOLDIER_ROW_Y@
+tick 2
+campaign state gear_soldier_selected
+dump strategy_manufacture_gear_soldier_selected.ppm
+# Find control 2 is at x=70/y=37 and uses the measured emptyb1.pad hit box 68x19.
+click 104 46
+tick 2
+campaign state gear_mode_armed
+dump strategy_manufacture_gear_mode_armed.ppm
+# The live equip panel starts at x=55/y=102; row 1 is Personal Armour (slot 122).
+click 60 129
+tick 2
+campaign state gear_equipped
+strategystate gear_equipped
+dump strategy_manufacture_gear_equipped.ppm
+# Close screen 5, then 4, then the base screen to save from the map.
+click 231 8
+tick 2
+strategystate gear_closed_detail
+click 231 8
+tick 2
+strategystate gear_closed_soldiers
+click 201 11
+tick 2
+strategystate gear_saved
+campaign trace gear_roster_saved
+campaign state gear_saved
+dump strategy_manufacture_gear_saved.ppm
+save 5
+state gear_save_written

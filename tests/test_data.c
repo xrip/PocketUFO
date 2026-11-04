@@ -1,8 +1,8 @@
 /* test_data.c - checks the data layer against the real main.dat / lang.dat.
  *
- * This is the data layer's parity test. The expected values were read out of
- * the shipped archives independently (see docs/parity/data-layer.md), so a
- * mismatch here means the ported reader is wrong, not the expectation.
+ * Archive expectations come from the shipped bytes; file-contract expectations
+ * come from raw ARM (see docs/parity/data-layer.md). A failure needs comparison
+ * with that evidence to distinguish reader, fixture and platform behavior.
  *
  * Exit code 0 = all checks pass, 1 = at least one failure.
  */
@@ -33,6 +33,123 @@ static void CheckEqU32(u32 nGot, u32 nWant, const char *pszWhat)
     } else {
         printf("  FAIL %s: got %u, want %u\n", pszWhat, nGot, nWant);
         g_nFailures += 1;
+    }
+}
+
+static void TestDatFileAccessContract(void)
+{
+    char szTempDir[MAX_PATH];
+    char szPath[MAX_PATH];
+    const DWORD cchTemp = GetTempPathA(MAX_PATH, szTempDir);
+    const DatMode aModes[] = { PUFO_DAT_CREATE, PUFO_DAT_READ };
+    const bool abReaderAllowed[] = { false, true };
+    const bool abWriterAllowed[] = { true, false };
+
+    Check(cchTemp > 0 && cchTemp < MAX_PATH, "file contract: a temporary directory is available");
+    if (cchTemp == 0 || cchTemp >= MAX_PATH) { return; }
+    const UINT nTempFile = GetTempFileNameA(szTempDir, "puf", 0, szPath);
+    Check(nTempFile != 0, "file contract: create an owned temporary file");
+    if (nTempFile == 0) { return; }
+
+    Check(SetFileAttributesA(szPath, FILE_ATTRIBUTE_NORMAL) != 0,
+          "file contract: make the temporary file writable");
+    Check(DatFile_Exists(szPath), "Exists(writable file) is true");
+    Check(SetFileAttributesA(szPath, FILE_ATTRIBUTE_READONLY) != 0,
+          "file contract: set the read-only bit");
+    Check(!DatFile_Exists(szPath), "Exists(read-only file) is false (raw mask 1)");
+    Check(SetFileAttributesA(szPath, FILE_ATTRIBUTE_NORMAL) != 0,
+          "file contract: restore writable attributes");
+
+    for (size_t i = 0; i < sizeof(aModes) / sizeof(aModes[0]); ++i) {
+        DatFile dat;
+        const u8 marker = 0xA5;
+        char szCheck[96];
+        HANDLE hPeer;
+
+        DatFile_ctor(&dat);
+        if (!DatFile_Open(&dat, szPath, aModes[i], 2)) {
+            Check(false, "file contract: open the selected container mode");
+            DatFile_Close(&dat);
+            continue;
+        }
+        if (aModes[i] != PUFO_DAT_READ) {
+            Check(DatFile_BeginChunk(&dat, "FLAGS"), "file contract: start a real chunk");
+            Check(DatFile_Write(&dat, &marker, 1), "file contract: buffer a real payload");
+        }
+
+        hPeer = CreateFileA(szPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        snprintf(szCheck, sizeof(szCheck), "mode %d: peer-reader sharing matches raw R2", (int)aModes[i]);
+        Check((hPeer != INVALID_HANDLE_VALUE) == abReaderAllowed[i], szCheck);
+        if (hPeer != INVALID_HANDLE_VALUE) { CloseHandle(hPeer); }
+
+        hPeer = CreateFileA(szPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        snprintf(szCheck, sizeof(szCheck), "mode %d: peer-writer sharing matches raw R2", (int)aModes[i]);
+        Check((hPeer != INVALID_HANDLE_VALUE) == abWriterAllowed[i], szCheck);
+        if (hPeer != INVALID_HANDLE_VALUE) { CloseHandle(hPeer); }
+        DatFile_Close(&dat);
+    }
+
+    {
+        DatFile rewrite;
+        u8 marker = 0;
+
+        DatFile_ctor(&rewrite);
+        Check(!DatFile_Open(&rewrite, szPath, PUFO_DAT_REWRITE, 31),
+              "mode 3: the guarded directory read rejects the raw write-only access");
+        Check(rewrite.nMode == PUFO_DAT_CLOSED && rewrite.hFile == NULL,
+              "mode 3: failure releases its file handle");
+        DatFile_Close(&rewrite);
+
+        DatFile_ctor(&rewrite);
+        if (DatFile_Open(&rewrite, szPath, PUFO_DAT_READ, 0)) {
+            CheckEqU32((u32)rewrite.nEntryCount, 2,
+                       "mode 3: the existing directory count was not replaced");
+            Check(DatFile_FindChunk(&rewrite, "FLAGS"),
+                  "mode 3: the existing chunk survives the rejected open");
+            Check(DatFile_Read(&rewrite, &marker, 1), "mode 3: the existing payload stays readable");
+            CheckEqU32(marker, 0xA5, "mode 3: the existing payload is unchanged");
+        } else {
+            Check(false, "mode 3: reopen the unchanged file for reading");
+        }
+        DatFile_Close(&rewrite);
+    }
+
+    for (i32 nDtor = 0; nDtor < 2; ++nDtor) {
+        DatFile partial;
+        HANDLE hPartial;
+        bool bDeleted;
+
+        hPartial = CreateFileA(szPath, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        Check(hPartial != INVALID_HANDLE_VALUE, "partial open: obtain an owned file handle");
+        if (hPartial == INVALID_HANDLE_VALUE) { continue; }
+        DatFile_ctor(&partial);
+        partial.hFile = hPartial; /* Open has not published nMode at its early failure exits. */
+        if (nDtor != 0) { DatFile_dtor(&partial); }
+        else { DatFile_Close(&partial); }
+        Check(partial.hFile == NULL && partial.nMode == PUFO_DAT_CLOSED,
+              "partial open: cleanup releases the handle before mode publication");
+        bDeleted = DeleteFileA(szPath) != 0;
+        Check(bDeleted, "partial open: the file can be deleted after cleanup");
+        if (!bDeleted) {
+            if (partial.hFile == hPartial) {
+                CloseHandle(hPartial);
+                partial.hFile = NULL;
+            }
+            (void)DeleteFileA(szPath);
+        }
+    }
+
+    (void)SetFileAttributesA(szPath, FILE_ATTRIBUTE_NORMAL);
+    (void)DeleteFileA(szPath);
+    if (CreateDirectoryA(szPath, NULL)) {
+        (void)SetFileAttributesA(szPath, FILE_ATTRIBUTE_NORMAL);
+        Check(DatFile_Exists(szPath), "Exists(non-read-only directory) is true (raw mask 1)");
+        Check(RemoveDirectoryA(szPath) != 0, "file contract: remove the owned temporary directory");
+    } else {
+        Check(false, "file contract: create an owned directory for the attribute test");
     }
 }
 
@@ -373,16 +490,11 @@ int main(int argc, char **argv)
         Check(fresh.bChunkOpen == 0, "  bChunkOpen cleared (0x9EEE0)");
     }
 
-    /* DatFile_Exists @ 0x9f1bc: mbstowcs at 0x9F1E4, FindFirstFileW at 0x9F1F4, and one exit test at
-     * 0x9F20C that returns 0 both for INVALID_HANDLE_VALUE and for dwFileAttributes bit 1
-     * (FILE_ATTRIBUTE_DIRECTORY). FindClose @ 0x9F21C runs only on the success path, so the original
-     * leaks one find handle for every directory it tests; the port closes in that case too, which is
-     * the stated deviation. The directory half is a separate answer from the missing-file half, so it
-     * gets its own check. */
-    printf("DatFile_Exists\n");
-    Check(DatFile_Exists("lang.dat"), "Exists(lang.dat) is true");
+    /* Raw Exists tests READONLY, while Open uses read sharing in mode 1 and write sharing in 2/3.
+     * Temporary inputs control those attributes without changing the shipped archives. */
+    printf("DatFile attributes, sharing and partial-open ownership\n");
     Check(!DatFile_Exists("no_such_member_xyz.dat"), "Exists(missing) is false");
-    Check(!DatFile_Exists("docs"), "Exists(a directory) is false (0x9F20C attribute test)");
+    TestDatFileAccessContract();
 
     /* DatFile_Write @ 0x9f4b4 buffers in a loop. When nBufUsed reaches nBufCap it appends the buffer at
      * EOF (SetFilePointer FROM_END at 0x9F524, WriteFile at 0x9F53C) and adds those bytes into

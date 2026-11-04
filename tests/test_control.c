@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_DEBUG)
+#include <crtdbg.h>
+#endif
 
 static int g_nFailures;
 
@@ -348,7 +351,7 @@ static void Click_PlaySample(i32 nSample, void *pUser)
     g_nClickLastSample = nSample;
 }
 
-static void Click_ClearDrawMode(void *pUser)
+static void Click_ClearListMode(void *pUser)
 {
     (void)pUser;
     g_nClickCleared += 1;
@@ -369,7 +372,7 @@ static void TestEmptyBtnClick(void)
     /* EmptyBtn_OnClick @ 0x1a228 plays one sample and then clears one dword, in that order:
      * `MOV R0,#0x10` at 0x1A230 with `BL Sound_Play` at 0x1A234, then `LDR R0,=MainMenu_nListMode` at
      * 0x1A238 and `MOV R1,#0` + `STR R1,[R0]` at 0x1A23C/0x1A240. It reaches nothing else. */
-    EmptyBtn_OnClick(Click_PlaySample, Click_ClearDrawMode, NULL);
+    EmptyBtn_OnClick(Click_PlaySample, Click_ClearListMode, NULL);
     CheckEqI32(g_nClickSamples, 1, "  one sample played @ 0x1a228");
     CheckEqI32(g_nClickLastSample, PUFO_CONTROL_SAMPLE_CLICK, "  sample index 16, the 0x10 literal @ 0x1a228");
     CheckEqI32(g_nClickCleared, 1, "  the draw-mode dword was cleared @ 0x1a228");
@@ -574,7 +577,6 @@ static void TestHitTest(void)
 static void TestBankAll(void)
 {
     static UiWidgetBank bank;
-    static PadImage aPad[PUFO_PBANK_WIDGET_COUNT];
     static i32 aSeen[PUFO_PBANK_WIDGET_COUNT];
     bool bAction = true;
     bool bOk;
@@ -619,11 +621,17 @@ static void TestBankAll(void)
     Check(bOk, "  all 130 widgets are 10x10 enabled with no handler");
 
     /* FreeAllPads walks the same groups backwards, so every slot must be visited. */
+    bOk = true;
     for (i32 i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
-        PadImage_ctor(&aPad[i]);
-        aPad[i].pData = NULL;   /* nothing to release; this checks coverage only */
-        bank.aCtl[i].apPads[0] = &aPad[i];
+        PadImage *pPad = (PadImage *)malloc(sizeof(*pPad));
+        if (pPad != NULL) {
+            PadImage_ctor(pPad);
+        } else {
+            bOk = false;
+        }
+        bank.aCtl[i].apPads[0] = pPad;
     }
+    Check(bOk, "  every bank slot has an owned pad for the release sweep");
     UiBank_FreeAllPads(&bank);
     bOk = true;
     for (i32 i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
@@ -642,34 +650,40 @@ static void TestBankAll(void)
 /* UiControl_FreePads @ 0x1a2c8 visits all three pad slots, each with its own NULL test
  * (LDR the slot, CMP #0, skip): 0x1A2D0/0x1A2D4 for pad 0, 0x1A2F4/0x1A2F8 for pad 1, 0x1A318/0x1A31C for
  * pad 2. Each visited pad gets `BL PadImage_FreeData` first (0x1A2E8, 0x1A30C, 0x1A330) and then the pad
- * record itself is
- * operator-deleted. The port releases the pixel data and clears the slot; the record belongs to the
- * caller here, which is the stated deviation. */
+ * record itself is operator-deleted. The port additionally clears the slot. */
 static void TestFreePads(void)
 {
     UiControl  ctl;
     PadImage  *apPlanted[3];
     i32        i;
+#if defined(_DEBUG)
+    _CrtMemState before, after, difference;
+#endif
 
     printf("UiControl_FreePads\n");
     UiControl_ctor(&ctl);
+#if defined(_DEBUG)
+    _CrtMemCheckpoint(&before);
+#endif
     for (i = 0; i < 3; ++i) {
         apPlanted[i] = (PadImage *)malloc(sizeof(PadImage));
+        if (apPlanted[i] == NULL) {
+            Check(false, "  owned pad allocation succeeds");
+            continue;
+        }
         PadImage_ctor(apPlanted[i]);
         apPlanted[i]->pData  = (u8 *)malloc(16);
         apPlanted[i]->uWidth = (u16)(4 + i);
         ctl.apPads[i] = apPlanted[i];
     }
     UiControl_FreePads(&ctl);
-    Check(apPlanted[0]->pData == NULL && apPlanted[1]->pData == NULL && apPlanted[2]->pData == NULL,
-          "  every one of the three slots released its pad data @ 0x1a2c8");
+#if defined(_DEBUG)
+    _CrtMemCheckpoint(&after);
+    Check(_CrtMemDifference(&difference, &before, &after) == 0,
+          "  release returns both pad records and pixel buffers to the heap");
+#endif
     Check(ctl.apPads[0] == NULL && ctl.apPads[1] == NULL && ctl.apPads[2] == NULL,
           "  every one of the three slots is cleared @ 0x1a2c8");
-    Check(apPlanted[0]->uWidth == 4 && apPlanted[2]->uWidth == 6,
-          "  the pad records themselves are untouched @ 0x1a2c8");
-    for (i = 0; i < 3; ++i) {
-        free(apPlanted[i]);
-    }
 
     /* Empty slots are skipped by the three tests, and a NULL control is refused. */
     UiControl_FreePads(NULL);

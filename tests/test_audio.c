@@ -16,7 +16,12 @@
 #include "game/pufo_options.h"
 #include "platform/pufo_reg.h"
 
+#include <windows.h>
+
+#include <libopenmpt/libopenmpt.h>
+
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int g_nFailures;
@@ -47,9 +52,11 @@ typedef struct FakeState {
     i32  nInitCalls;
     bool bInitSucceeds;
     i32  nSampleLoads;
+    bool bNullSample18;
     u32  aSampleModes[512];
     u32  aSampleSetMode[512];
     i32  nPlayCalls;
+    void *pLastPlayedSample;
     i32  nSetSfxVolume;
     i32  nSetSfxPaused;
     i32  nSetSfxPausedChannel;
@@ -64,6 +71,9 @@ typedef struct FakeState {
     i32  nMusicFreeCalls;
     i32  nCloseCalls;
     i32  nSampleFreeCalls;
+    bool bMusicFinished;      /* the port-side pfnMusicFinished answer */
+    i32  nMusicLoopCalls;     /* how many times SetLooping ran, and in what order */
+    i32  aMusicLoopSeq[8];
 } FakeState;
 
 static FakeState g_fake;
@@ -81,15 +91,19 @@ static void Fake_SetWindow(void *hWnd) { (void)hWnd; }
 
 static void *Fake_SampleLoad(const void *pData, u32 cbLength, u32 nMode)
 {
-    /* The buffer is freed right after this call, so only the length and mode
-     * are observable. Both are asserted. */
+    /* Record wrapper arguments without decoding PCM. One fixture injects a
+     * null handle at the shipped empty slot; the input buffer is not retained. */
+    const i32 nIndex = g_fake.nSampleLoads;
     if (g_fake.nSampleLoads < 512) {
         g_fake.aSampleModes[g_fake.nSampleLoads] = nMode;
     }
     g_fake.nSampleLoads += 1;
     (void)pData;
     (void)cbLength;
-    return (void *)0x1; /* a non-NULL fake sample handle */
+    if (g_fake.bNullSample18 && nIndex == 18) {
+        return NULL;
+    }
+    return (void *)(uintptr_t)(nIndex + 1); /* distinct opaque handle per slot */
 }
 
 static void Fake_SampleSetMode(void *pSample, u32 nMode)
@@ -108,7 +122,7 @@ static void Fake_SampleFree(void *pSample)
 
 static i32 Fake_PlaySound(void *pSample)
 {
-    (void)pSample;
+    g_fake.pLastPlayedSample = pSample;
     g_fake.nPlayCalls += 1;
     return 0;
 }
@@ -132,7 +146,17 @@ static void *Fake_MusicLoad(const void *pData, u32 cbLength, u32 nMode)
 static void Fake_MusicSetLooping(void *pMod, i32 bLoop)
 {
     g_fake.nMusicLoopSet = bLoop;
+    if (g_fake.nMusicLoopCalls < 8) {
+        g_fake.aMusicLoopSeq[g_fake.nMusicLoopCalls] = bLoop;
+    }
+    g_fake.nMusicLoopCalls += 1;
     (void)pMod;
+}
+
+static bool Fake_MusicFinished(const void *pMod)
+{
+    (void)pMod;
+    return g_fake.bMusicFinished;
 }
 
 static void Fake_MusicOptimize(void *pMod, i32 nMaxChannels, i32 nMinVolume)
@@ -173,7 +197,7 @@ static const PufoAudioBackend g_fakeBackend = {
     Fake_Init, Fake_SetWindow, Fake_SampleLoad, Fake_SampleSetMode, Fake_SampleFree,
     Fake_PlaySound, Fake_SetSfxVolume, Fake_SetSfxPaused, Fake_MusicLoad,
     Fake_MusicSetLooping, Fake_MusicOptimize, Fake_MusicPlay, Fake_MusicVolume,
-    Fake_MusicPaused, Fake_MusicFree, Fake_Close
+    Fake_MusicPaused, Fake_MusicFree, Fake_Close, Fake_MusicFinished
 };
 
 static void Fake_Reset(void)
@@ -197,8 +221,8 @@ static void TestLoadSamples(void)
     CheckEqI32(g_fake.nInitCalls, 1, "  FSOUND_Init called once on success");
     /* main.dat holds TACT0.WAV .. TACT34.WAV with no gaps, so the scan must
      * stop at the first missing index: 35 samples. */
-    CheckEqI32(Sound_GetSampleCount(), 35, "  loaded 35 samples (tact0..tact34)");
-    CheckEqI32(g_fake.nSampleLoads, 35, "  backend sample loads");
+    CheckEqI32(Sound_GetSampleCount(), 35, "  indexed 35 sample slots (tact0..tact34)");
+    CheckEqI32(g_fake.nSampleLoads, 35, "  backend sample load attempts");
     Check(Sound_IsInitialised(), "  audio ready flag set");
     /* Mode 0xA000 was passed to Sample_Load, then SetMode(1). */
     Check(g_fake.aSampleModes[0] == 0xA000u, "  sample load mode 0xA000");
@@ -214,6 +238,31 @@ static void TestLoadSamples(void)
     CheckEqI32(g_fake.nMusicFreeCalls, 0, "  no song free here: no music was loaded, so 0x9E418 fails");
     CheckEqI32(g_fake.nCloseCalls, 1, "  backend closed");
     Check(!Sound_IsInitialised(), "  ready flag cleared");
+}
+
+static void TestNullSampleSlot(void)
+{
+    printf("sample bank: a null handle at slot 18 must not truncate later slots\n");
+    Fake_Reset();
+    g_fake.bNullSample18 = true;
+    Sound_SetBackend(&g_fakeBackend);
+    Sound_SetMuteBytes(NULL, NULL);
+    Sound_SetSfxMuted(false);
+    Check(Sound_InitAndLoadSamples("tact"), "the wrapper initializes with an empty slot");
+    CheckEqI32(g_fake.nSampleLoads, 35, "all 35 resource slots reach the backend");
+    CheckEqI32(Sound_GetSampleCount(), 35, "the indexed span includes slots after the null handle");
+    Check(g_fake.aSampleSetMode[18] == 1u && g_fake.aSampleSetMode[34] == 1u,
+          "mode setup continues at the empty and final slots");
+
+    Sound_Play(34);
+    Check(g_fake.nPlayCalls == 1 && g_fake.pLastPlayedSample == (void *)(uintptr_t)35,
+          "the final slot reaches its own backend handle");
+    Sound_Play(18);
+    Check(g_fake.nPlayCalls == 2 && g_fake.pLastPlayedSample == NULL,
+          "the empty slot keeps its index and forwards its null handle");
+    Sound_Shutdown();
+    CheckEqI32(g_fake.nSampleFreeCalls, 34, "shutdown frees the 34 non-null handles");
+    CheckEqI32(g_fake.nCloseCalls, 1, "the backend closes once");
 }
 
 static void TestInitRetry(void)
@@ -492,10 +541,215 @@ static void TestMuteBytes(void)
     Sound_SetMuteBytes(NULL, NULL);
 }
 
-/* The device gate. Everything above runs on the fake backend and needs no sound
- * hardware; this is the only section that proves real output, and a machine with no
- * wave device says so and stays green -- the control-flow parity the rest of the
- * file asserts does not depend on a device existing. */
+/* Load and decode each music module from the shipped archive without opening a
+ * sound device. This proves that the real backend accepts the IT data and that
+ * the returned module produces PCM; it does not prove audible device output. */
+static void TestShippedMusicDecode(void)
+{
+    AssetReader rdr;
+    char szName[16];
+    i16 aPcm[PUFO_AUDIO_MIXRATE];
+
+    printf("WinMM music decode (the shipped .it modules)\n");
+    for (i32 track = 0; track < 5; ++track) {
+        void *pData;
+        void *pModule;
+        u32 cb;
+        size_t nTotalFrames = 0u;
+        bool bNonzero = false;
+
+        snprintf(szName, sizeof(szName), "back%d.it", (int)track);
+        AssetReader_Clear(&rdr);
+        if (!AssetReader_Find(&rdr, szName)) {
+            Check(false, szName);
+            continue;
+        }
+        cb = AssetReader_Size(&rdr);
+        pData = malloc(cb);
+        if (pData == NULL || !AssetReader_Read(&rdr, pData, cb)) {
+            free(pData);
+            Check(false, "archive module data can be read");
+            continue;
+        }
+        pModule = g_pufoAudioWinmm.pfnMusicLoad(pData, cb, 0x8000u);
+        free(pData);
+        if (pModule == NULL) {
+            Check(false, szName);
+            continue;
+        }
+
+        /* This handle is the OpenMPT module owned by the WinMM backend. */
+        for (u32 second = 0; second < 10u && !bNonzero; ++second) {
+            size_t nFrames = openmpt_module_read_mono(
+                (openmpt_module *)pModule, PUFO_AUDIO_MIXRATE,
+                sizeof(aPcm) / sizeof(aPcm[0]), aPcm);
+            nTotalFrames += nFrames;
+            for (size_t i = 0; i < nFrames; ++i) {
+                if (aPcm[i] != 0) {
+                    bNonzero = true;
+                    break;
+                }
+            }
+            if (nFrames == 0u) {
+                break;
+            }
+        }
+        Check(nTotalFrames > 0u && bNonzero, szName);
+        g_pufoAudioWinmm.pfnMusicFree(pModule);
+    }
+}
+
+/* A minimal mono PCM WAV image with a chosen fmt rate, for the loader's
+ * native-rate gate. */
+static void BuildWavImage(u8 *p, u32 nRate)
+{
+    memset(p, 0, 46);
+    memcpy(p, "RIFF", 4);
+    p[4] = 38;
+    memcpy(p + 8, "WAVE", 4);
+    memcpy(p + 12, "fmt ", 4);
+    p[16] = 16;
+    p[20] = 1; /* wFormatTag = PCM */
+    p[22] = 1; /* nChannels = 1 */
+    p[24] = (u8)nRate;
+    p[25] = (u8)(nRate >> 8);
+    p[26] = (u8)(nRate >> 16);
+    p[27] = (u8)(nRate >> 24);
+    p[28] = (u8)nRate;  /* nAvgBytesPerSec = rate (8-bit mono) */
+    p[29] = (u8)(nRate >> 8);
+    p[30] = (u8)(nRate >> 16);
+    p[31] = (u8)(nRate >> 24);
+    p[32] = 1;  /* nBlockAlign */
+    p[34] = 8;  /* wBitsPerSample */
+    memcpy(p + 36, "data", 4);
+    p[40] = 2;
+    p[44] = 128; /* one silent 8-bit pair */
+    p[45] = 128;
+}
+
+static void TestNativePlayback(void)
+{
+    static const i16 aSource[4] = { 0, 1000, 2000, 3000 };
+    i16 aOut[16] = { 0 };
+    u8 aWav[46];
+    void *pHandle;
+
+    const u32 nCopied = PufoAudioWinmm_TestCopyNativeFrames(aSource, 4, aOut, 16);
+
+    printf("WinMM native-rate frame path (the resampler is gone)\n");
+    CheckEqI32((i32)nCopied, 4, "  four source frames produce four output frames at the native rate");
+    Check(aOut[0] == 0 && aOut[1] == 1000 && aOut[2] == 2000 && aOut[3] == 3000,
+          "  frames pass through the voice path unmodified");
+
+    BuildWavImage(aWav, 11025u);
+    pHandle = g_pufoAudioWinmm.pfnSampleLoad(aWav, 46, 0xA000u);
+    Check(pHandle != NULL, "  a 11025-Hz mono WAV image loads");
+    g_pufoAudioWinmm.pfnSampleFree(pHandle);
+    BuildWavImage(aWav, 22050u);
+    Check(g_pufoAudioWinmm.pfnSampleLoad(aWav, 46, 0xA000u) == NULL,
+          "  a WAV at a non-native rate is refused, not resampled");
+}
+
+/* The port-side music loop toggle, recorded by the fake backend. */
+static void TestMusicLoopToggle(void)
+{
+    printf("Sound_SetMusicLooping (the port-side loop toggle)\n");
+    Fake_Reset();
+    Sound_SetBackend(&g_fakeBackend);
+    Sound_InitAndLoadSamples("tact");
+    Sound_LoadAndPlayMusic(0);
+    CheckEqI32(g_fake.nMusicLoopSet, 1, "  the load arms looping as 0x9E1F8 does");
+    Check(Sound_IsMusicLooping(), "  the mirror reports looping");
+    Sound_SetMusicLooping(false);
+    CheckEqI32(g_fake.nMusicLoopSet, 0, "  toggle off reaches the backend");
+    Check(!Sound_IsMusicLooping(), "  and the mirror follows");
+    Sound_SetMusicLooping(true);
+    CheckEqI32(g_fake.nMusicLoopSet, 1, "  toggle on reaches the backend");
+
+    /* Port-side loop-off scenario (2026-11-04, user request): the options byte
+     * loads a track unlooped, and the finished signal hands over to the next. */
+    {
+        u8 bLoop = 0;
+
+        g_fake.nMusicLoopCalls = 0;
+        Sound_SetLoopByte(&bLoop);
+        Sound_LoadAndPlayMusic(0);
+        Check(g_fake.nMusicLoopCalls >= 2
+                  && g_fake.aMusicLoopSeq[0] == 1 && g_fake.aMusicLoopSeq[1] == 0,
+              "  the load sets 1 (0x9E1F8) then 0 (the loop-off byte)");
+        Check(!Sound_IsMusicLooping(), "  the live byte reports not looping");
+        g_fake.nMusicLoads = 0;
+        g_fake.nMusicLoopCalls = 0;
+        g_fake.bMusicFinished = true;
+        Sound_MusicProgress();
+        CheckEqI32(g_fake.nMusicLoads, 1, "  the finished track hands over to the next");
+        Check(g_fake.nMusicLoopCalls >= 2
+                  && g_fake.aMusicLoopSeq[0] == 1 && g_fake.aMusicLoopSeq[1] == 0,
+              "  the hand-over load runs the same set-1-then-0 sequence");
+        g_fake.nMusicLoads = 0;
+        g_fake.bMusicFinished = false;
+        Sound_MusicProgress();
+        CheckEqI32(g_fake.nMusicLoads, 0, "  no hand-over while the module is still playing");
+        g_fake.bMusicFinished = true;
+        Sound_SetLoopByte(NULL); /* back to the default: loop on */
+        Sound_MusicProgress();
+        CheckEqI32(g_fake.nMusicLoads, 0, "  no hand-over while the setting is ON");
+    }
+    Sound_Shutdown();
+    Sound_SetBackend(NULL);
+}
+
+/* Duration in ms of a WAV image straight out of main.dat, from its fmt/data
+ * chunks -- the same fields the backend's sample loader reads. */
+static u32 WavImageDurationMs(const u8 *p, u32 cbLength)
+{
+    u32 pos = 12u;
+    u32 nRate = 0u;
+    u32 nBits = 0u;
+    u32 cbData = 0u;
+
+    while (pos + 8u <= cbLength) {
+        const u32 cb = (u32)p[pos + 4] | ((u32)p[pos + 5] << 8)
+                     | ((u32)p[pos + 6] << 16) | ((u32)p[pos + 7] << 24);
+        if (memcmp(p + pos, "fmt ", 4) == 0 && cb >= 16u) {
+            nRate = (u32)p[pos + 12] | ((u32)p[pos + 13] << 8)
+                  | ((u32)p[pos + 14] << 16) | ((u32)p[pos + 15] << 24);
+            nBits = (u32)p[pos + 22] | ((u32)p[pos + 23] << 8);
+        } else if (memcmp(p + pos, "data", 4) == 0) {
+            cbData = cb;
+        }
+        pos += 8u + cb + (cb & 1u);
+    }
+    if (nRate == 0u || nBits == 0u || cbData == 0u) {
+        return 0u;
+    }
+    return (u32)(((unsigned long long)cbData / (nBits / 8u)) * 1000u / nRate);
+}
+
+static u32 TactSampleDurationMs(i32 nIndex)
+{
+    AssetReader rdr;
+    char szName[16];
+    void *pData;
+    u32 cb;
+    u32 nMs = 0u;
+
+    snprintf(szName, sizeof(szName), "TACT%d.WAV", (int)nIndex);
+    AssetReader_Clear(&rdr);
+    if (!AssetReader_Find(&rdr, szName)) {
+        return 0u;
+    }
+    cb = AssetReader_Size(&rdr);
+    pData = malloc(cb);
+    if (pData != NULL && AssetReader_Read(&rdr, pData, cb)) {
+        nMs = WavImageDurationMs((const u8 *)pData, cb);
+    }
+    free(pData);
+    return nMs;
+}
+
+/* The device gate proves that music PCM and an SFX reach completed buffers on the
+ * real waveOut path. It does not prove the user can hear them. */
 static void TestDevice(void)
 {
     u8 bSoundOff = 0; /* the two live cells, as App_InitInstance hands them over */
@@ -510,11 +764,54 @@ static void TestDevice(void)
      * TestFocusPause above leaves that mirror at 1 -- the play would be muted. */
     Sound_SetMuteBytes(&bSoundOff, &bMusicOff);
     Sound_SetBackend(&g_pufoAudioWinmm);
-    Check(Sound_InitAndLoadSamples("tact"), "  waveOutOpen succeeded where FSOUND_Init would have");
+    Check(Sound_InitAndLoadSamples("tact"), "  game-side audio-ready flag is set");
+    CheckEqI32(PufoAudioWinmm_GetOutputRate(), 11025,
+               "  WinMM runs at the shipped WAVs' native 11025 Hz (no resampler)");
     CheckEqI32(Sound_GetSampleCount(), 35, "  the same 35 TACT*.WAV loaded through the real backend");
-    PufoAudioWinmm_DrainDone(8);        /* WOM_OPEN arrives on the same event */
-    Sound_Play(2);                      /* TACT2 */
-    Check(PufoAudioWinmm_WaitDone(4000u), "  waveOutWrite reported WOM_DONE: the sample played");
+    Sound_LoadAndPlayMusic(0);           /* BACK0.IT through the game audio path */
+    Check(PufoAudioWinmm_WaitMusicDone(8000u),
+          "  BACK0.IT produced nonzero PCM in a completed waveOut buffer");
+    {
+        LARGE_INTEGER t0, t1, tFreq;
+        i32 nCompletions = 0;
+        u32 nElapsedMs;
+
+        QueryPerformanceFrequency(&tFreq);
+        QueryPerformanceCounter(&t0);
+        for (;;) {
+            if (PufoAudioWinmm_WaitMusicDone(1000u)) {
+                ++nCompletions;
+            }
+            QueryPerformanceCounter(&t1);
+            nElapsedMs = (u32)((t1.QuadPart - t0.QuadPart) * 1000 / tFreq.QuadPart);
+            if (nElapsedMs >= 4000u) {
+                break;
+            }
+        }
+        printf("  waveOut completions: %d in %u ms (256-frame buffers at 11025 Hz -> ~43/s)\n",
+               nCompletions, nElapsedMs);
+        /* 11025/256 = 43 completions/s; accept 32..55/s. */
+        Check((unsigned)nCompletions * 1000u >= 32u * nElapsedMs
+              && (unsigned)nCompletions * 1000u <= 55u * nElapsedMs,
+              "  the device consumes mix buffers at its nominal rate");
+    }
+    PufoAudioWinmm_DrainDone(8);        /* discard any earlier SFX completion */
+    {
+        const u32 nExpectedMs = TactSampleDurationMs(2);
+        LARGE_INTEGER t0, t1, tFreq;
+        u32 nMeasuredMs;
+
+        Check(nExpectedMs > 0u, "  TACT2.WAV header gives a playable duration");
+        QueryPerformanceFrequency(&tFreq);
+        QueryPerformanceCounter(&t0);
+        Sound_Play(2);                      /* TACT2 */
+        Check(PufoAudioWinmm_WaitDone(8000u), "  the mixed sample reached its final waveOut buffer");
+        QueryPerformanceCounter(&t1);
+        nMeasuredMs = (u32)((t1.QuadPart - t0.QuadPart) * 1000 / tFreq.QuadPart);
+        printf("  TACT2 wall time: source %u ms, measured %u ms\n", nExpectedMs, nMeasuredMs);
+        Check(nMeasuredMs * 3u >= nExpectedMs * 2u && nMeasuredMs * 2u <= nExpectedMs * 3u,
+              "  the SFX reached the device in real time, neither stretched nor cut short");
+    }
     Sound_Shutdown();
     Sound_SetMuteBytes(NULL, NULL);
     Sound_SetBackend(NULL);
@@ -532,6 +829,7 @@ int main(void)
     }
 
     TestLoadSamples();
+    TestNullSampleSlot();
     TestInitRetry();
     TestMusic();
     TestVolumeMapping();
@@ -539,6 +837,9 @@ int main(void)
     TestVolumeApply();
     TestFocusPause();
     TestMuteBytes();
+    TestMusicLoopToggle();
+    TestShippedMusicDecode();
+    TestNativePlayback();
     TestDevice();
 
     Asset_CloseArchives();

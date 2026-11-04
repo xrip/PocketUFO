@@ -1,0 +1,35 @@
+# Create base 1 through the normal map, region picker, and Access Lift placement.
+# One tap seats the pending cell; the second held tap and draw commits it.
+load 0
+state victory_handoff_loaded
+strategystate victory_handoff_loaded
+click 180 266
+tick 2
+strategystate build_mode
+click 60 237
+tick 20
+strategystate new_base_region
+pick
+tick 2
+strategystate new_base_access_lift
+dump strategy_transfer_new_base_region.ppm
+press 138 68
+tick 1
+release
+tick 2
+strategystate access_lift_pending
+grid 1
+dump strategy_transfer_access_lift_pending.ppm
+press 138 68
+tick 1
+release
+tick 2
+strategystate second_base_created
+grid 1
+dump strategy_transfer_second_base.ppm
+# Return to the map and save only after the live base-count and cell change.
+click 201 11
+tick 2
+strategystate second_base_map
+save 1
+state second_base_saved

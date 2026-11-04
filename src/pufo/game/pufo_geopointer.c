@@ -596,6 +596,12 @@ i32 Geoscape_OnPointer(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY, bool bDow
                                           : pEnv->apOptSfxCtl[i - PUFO_GEO_OPT_SOUND_CTLS];
                     (void)Ptr_Hit(pCtl, nX, nY, pEnv->pHit);
                 }
+                /* Port-side (2026-11-04, user request): the music loop setting row
+                 * drawn centred at y 170; this band covers label and state. */
+                if (pEnv->pfnToggleMusicLoop != NULL
+                    && nX >= 60 && nX < 180 && nY >= 164 && nY < 183) {
+                    pEnv->pfnToggleMusicLoop();
+                }
             } else {
                 bTailOnly = true;                                            /* 0x89154 */
             }

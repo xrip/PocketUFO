@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-29",
+  "scope": "Four complete name-edit/title-return bodies and the App shared-screen connection; native OS input/save/load proof.",
+  "source": {
+    "source_files": 434,
+    "source_fingerprint": "814370840079BDEA4547A8E550FC1BDD915266C08E3D66B47F1061D1A151D980",
+    "sha256": {
+      "src/pufo/app/pufo_app.c": "FFE73A976401E883FFB783707350954081498AE3A822A5538A1B4D4BF71E8D91",
+      "src/pufo/game/pufo_baseui.c": "9793FC328D7F5EBDA8A9D89770725CF94BFE2DB0038454B6E7323AA313C39591",
+      "build/src/pufo/Release/pocketufo.exe": "9CAFF8707108660D7C3DA93099998F20223828A130D78A439192AD512FAA6D58",
+      "build/src/pufo/Debug/pocketufo.exe": "119E8CC34E17491F3628C22192DE1FB251438B08EF1CEA606FD01F55B98D614E",
+      "docs/parity/name-title-return-raw-2026-10-29.json": "FA97569710CA1F60293CEFA924250ADD396521B459797E1418DB5F60FE918BDC",
+      ".workers/port-goal/native-name-02806edaa7634671a380194f3f746696/app/pocketufo.exe": "9CAFF8707108660D7C3DA93099998F20223828A130D78A439192AD512FAA6D58",
+      ".workers/port-goal/native-name-02806edaa7634671a380194f3f746696/app/sav0.sav": "90788B57F306722DE05158ECAAC5294DD7593C2C1398B7FECE07408A9AB99A58",
+      ".workers/port-goal/native-name-02806edaa7634671a380194f3f746696/app/sav1.sav": "C4B84252911F64244464416DF2FD026FF8955D65064D8129A79D2C0634F99661",
+      ".workers/port-goal/native-name-02806edaa7634671a380194f3f746696/native-name-runner.ps1": "C649985AAFA868347F55ADD171A3120848263EB13881CEE6DA60647CDD7E2230",
+      ".workers/port-goal/native-name-7035e6b7f65c42b1bb365267a6829510/native-name-runner.ps1": "C649985AAFA868347F55ADD171A3120848263EB13881CEE6DA60647CDD7E2230"
+    },
+    "checks": {
+      "Debug": {
+        "tests": ".workers/port-goal/title-owner-Debug-tests.log",
+        "summary": "100% tests passed, 0 tests failed out of 4",
+        "build": ".workers/port-goal/title-owner-Debug-build.log",
+        "diagnostics": 0
+      },
+      "Release": {
+        "tests": ".workers/port-goal/title-owner-Release-tests.log",
+        "summary": "100% tests passed, 0 tests failed out of 4",
+        "build": ".workers/port-goal/title-owner-Release-build.log",
+        "diagnostics": 0
+      }
+    }
+  },
+  "raw": "docs/parity/name-title-return-raw-2026-10-29.json",
+  "raw_bytes": 452,
+  "original_pe_match": true,
+  "functions": [
+    {
+      "address": "0x63138",
+      "name": "Map_BackspaceSelectedName",
+      "port": "src/pufo/game/pufo_baseui.c",
+      "status": "adapted",
+      "comparison": "Selected detail Soldier; nonempty byte name loses its final byte. Port bounds the length scan to the Soldier and returns void; raw length result is unused by the UI callback."
+    },
+    {
+      "address": "0x6318c",
+      "name": "SoldierScreen_CopyNameToEdit",
+      "port": "src/pufo/game/pufo_baseui.c",
+      "status": "adapted",
+      "comparison": "Clear edit-active before copying byte string including NUL. Source detail cursor and destination roster row stay separate. Port has null/scan guards; raw advanced destination return is unused."
+    },
+    {
+      "address": "0x63208",
+      "name": "SoldierScreen_AppendNameGlyph",
+      "port": "src/pufo/game/pufo_baseui.c",
+      "status": "adapted",
+      "comparison": "Length<40 gate; signed divisions by14/13 with offsets12/80 and16 columns; low-byte character, zero terminator and nonzero glyph-width gate. Original length39 adjacent rank-byte NUL is retained. Native local glyph buffer replaces adjacent global bytes."
+    },
+    {
+      "address": "0x6b46c",
+      "name": "OptionsScreen_ReturnToTitle",
+      "port": "src/pufo/game/pufo_baseui.c",
+      "status": "adapted",
+      "comparison": "Clear tab; close UI; free geoscape mode1; startup, in raw order. Explicit callback context replaces globals; null-hook guards are native adaptations."
+    }
+  ],
+  "native": {
+    "baseline": ".workers/port-goal/native-name-1c7cbc71a770480c928054468da51f51",
+    "failed_roundtrip": ".workers/port-goal/native-name-7035e6b7f65c42b1bb365267a6829510",
+    "passed_roundtrip": ".workers/port-goal/native-name-02806edaa7634671a380194f3f746696",
+    "result": "Native edit/undo/accept, Save0, title return, credits, startup Load0 and Save1 complete. Fresh Load6/0/1 comparison keeps all8 names; only row1 gains one ASCII A. Bootstrap NewGame/placement and initial baseline Save6 are scripted.",
+    "desktop": "PufoTest_8d81dd95a71746a2a46d1b71ef3a7859; input desktop Default before/after; App exits0."
+  },
+  "repairs": {
+    "game": "App_InitStartupUi and App_HookTitles now publish shared Map_nUiScreen to the World owner. Credits shutdown had left World22 while App17, skipping LoadGame's UI rebuild despite successful data load.",
+    "observer": "App_ScriptState now checks base0 pointer after legitimate mode1 world teardown."
+  },
+  "idb": {
+    "type": "UiPanel.apLines corrected from UiControl*[500] to char*[500]; all offsets/member widths and existing7092-byte size preserved.",
+    "owners": [
+      "UiPanel_ctor0x3E730",
+      "UiPanel_FreeLines0x3E8C8",
+      "pSolPanelNames and SoldierScreen_CopyNameToEdit0x6318C"
+    ],
+    "return_type": "CopyNameToEdit returns advanced char*, not UiControl*.",
+    "limits": "Global158890 mixed overlay is not retyped; no whole-layout recovery claim. No debug-string identifiers or new member names.",
+    "records": [
+      "docs/parity/name-panel-type-before-2026-10-29.json",
+      "docs/parity/name-panel-type-after-2026-10-29.json",
+      "docs/parity/title-load-owner-raw-2026-10-29.json"
+    ]
+  },
+  "helpers": {
+    "local": "Two claude-local CLI jobs failed HTTP503; built-in local model route unsupported.",
+    "glm": "Callback helper failed429 usage limit. Parent bounded scan of351 straightforward assignments found no new proved context mismatch; special context fields were checked.",
+    "mimo": ".workers/mimo-options-route-20261029/RESULT.md supplied the successful Options route."
+  },
+  "verification": "Debug/Release full builds clean;4/4 affected suites in both; current Release master regeneration67/67. Native positive/negative runs used the same runner hash; no original ARM execution."
+}

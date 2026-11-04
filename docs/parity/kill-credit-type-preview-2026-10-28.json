@@ -1,0 +1,246 @@
+{
+  "size": 70120,
+  "credit": {
+    "name": "uKillCredit",
+    "offset": 560768,
+    "size": 32,
+    "type": "unsigned __int32"
+  },
+  "unrelated_members_unchanged": true,
+  "members": [
+    {
+      "name": "bFlag0",
+      "offset": 0,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bFlag1",
+      "offset": 8,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_2",
+      "offset": 16,
+      "size": 16,
+      "type": "char[2]"
+    },
+    {
+      "name": "nStepFrameDiv",
+      "offset": 32,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "pStepFromCell",
+      "offset": 64,
+      "size": 32,
+      "type": "MapCell *"
+    },
+    {
+      "name": "bSkipFireShots",
+      "offset": 96,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_0D",
+      "offset": 104,
+      "size": 24,
+      "type": "unsigned __int8[3]"
+    },
+    {
+      "name": "nQueueCursor",
+      "offset": 128,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_20",
+      "offset": 160,
+      "size": 32,
+      "type": "char[4]"
+    },
+    {
+      "name": "aQueue",
+      "offset": 192,
+      "size": 560000,
+      "type": "TactQueueEntry[1250]"
+    },
+    {
+      "name": "nUnk70024",
+      "offset": 560192,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "nPhaseCounter",
+      "offset": 560224,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70032",
+      "offset": 560256,
+      "size": 96,
+      "type": "char[12]"
+    },
+    {
+      "name": "nStepDrawOffX",
+      "offset": 560352,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "nStepDrawOffY",
+      "offset": 560384,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "nStepCellScratch",
+      "offset": 560416,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70056",
+      "offset": 560448,
+      "size": 64,
+      "type": "char[8]"
+    },
+    {
+      "name": "nStepHeightSrc",
+      "offset": 560512,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "nStepHeightDst",
+      "offset": 560544,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70072",
+      "offset": 560576,
+      "size": 32,
+      "type": "char[4]"
+    },
+    {
+      "name": "nTraceX",
+      "offset": 560608,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "nTraceY",
+      "offset": 560640,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "nTraceZ",
+      "offset": 560672,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "pAiActionUnit",
+      "offset": 560704,
+      "size": 32,
+      "type": "Soldier *"
+    },
+    {
+      "name": "gap_7008C",
+      "offset": 560736,
+      "size": 32,
+      "type": "char[4]"
+    },
+    {
+      "name": "uKillCredit",
+      "offset": 560768,
+      "size": 32,
+      "type": "unsigned __int32"
+    },
+    {
+      "name": "nQueueLen",
+      "offset": 560800,
+      "size": 16,
+      "type": "unsigned __int16"
+    },
+    {
+      "name": "bQueueActive",
+      "offset": 560816,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bUnk70103",
+      "offset": 560824,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "nPhaseTick",
+      "offset": 560832,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "nPhaseMax",
+      "offset": 560864,
+      "size": 32,
+      "type": "int"
+    },
+    {
+      "name": "gap_70112",
+      "offset": 560896,
+      "size": 16,
+      "type": "unsigned __int8[2]"
+    },
+    {
+      "name": "bAiActionActive",
+      "offset": 560912,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bUnk70115",
+      "offset": 560920,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "bUnk70116",
+      "offset": 560928,
+      "size": 8,
+      "type": "unsigned __int8"
+    },
+    {
+      "name": "gap_70117",
+      "offset": 560936,
+      "size": 24,
+      "type": "unsigned __int8[3]"
+    }
+  ],
+  "comments_before": [
+    {
+      "ea": "0x4e490",
+      "comment": null
+    },
+    {
+      "ea": "0x541dc",
+      "comment": null
+    },
+    {
+      "ea": "0x54780",
+      "comment": null
+    },
+    {
+      "ea": "0x54790",
+      "comment": null
+    }
+  ]
+}

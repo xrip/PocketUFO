@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "46101B1F493BE42FDE863E2D7933948642C5AA683F970EE75DD892389577AC2F",
+  "source_fingerprint_before_build": "46101B1F493BE42FDE863E2D7933948642C5AA683F970EE75DD892389577AC2F",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-base-search-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "344320F0F1B5DF40F4B5BE3B5FB5B63E0BE88FEAE6CD7BD4565A1CFFE9D1A445",
+        "build/tests/Debug/test_geoscape.exe": "66AB33DAB9E3C092F61B62F80C65B411AE2E3440ACC3600BE64C143E05FE7EA8",
+        "build/tests/Debug/test_geoscapeframe.exe": "8390A30C468A075A256CB3C0B52C337252E3D890B50B78555107541B503D334C"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-base-search-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "8D3017B4604EBF834C83D24844DBA7763E5ABCA6FE49AD7643757B1E63231F05",
+        "build/tests/Release/test_geoscape.exe": "B43C116F7BC5B143030E8A65CAB84733A0D9D9D426AC3A6ED68CEC294B5FFFC1",
+        "build/tests/Release/test_geoscapeframe.exe": "47C643961CE5CCFCEDD8DEA8C360CFC9DD9A806E6845BD5938AF13463FE96D3A"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Separate signed/unmasked SiteId and byte-key base search contracts; World/diagnostic bindings and direct/live-hook regressions; archive/surface layout comments corrected; all prior file/inventory/transfer repairs included"
+}

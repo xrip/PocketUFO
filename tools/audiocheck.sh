@@ -1,8 +1,8 @@
 #!/bin/sh
 # Manual audio evidence: the device gate inside test_audio opens the real waveOut device,
-# loads the 35 shipped TACT*.WAV through the winmm backend, queues TACT2 and waits for
-# WOM_DONE on the completion event. Run this by hand at the machine to hear the sample;
-# the one line it ends with is what a report cites.
+# loads BACK0.IT and the 35 shipped TACT*.WAV files, then waits for a nonzero music mix
+# buffer and the TACT2 final mix buffer to complete. This proves PCM reached waveOut;
+# it does not prove the machine's speakers produced audible sound.
 #
 # A host with no wave device prints the skip line and stays green: the control-flow parity
 # the rest of test_audio asserts never depends on a device existing.
@@ -23,15 +23,16 @@ fi
 rc=0
 out=$("$exe" 2>&1) || rc=$?
 
-echo "$out" | grep -E "^winmm device gate|device gate skipped|WOM_DONE|FAIL:" || true
+echo "$out" | grep -E "^winmm device gate|device gate skipped|BACK0.IT|final waveOut buffer|FAIL:" || true
 
 if [ "$rc" -ne 0 ]; then
     echo "audiocheck: test_audio reported a failure"
     exit 1
 fi
 
-if echo "$out" | grep -q "WOM_DONE"; then
-    echo "audiocheck: TACT2 played through winmm and the device reported it done"
+if echo "$out" | grep -q "BACK0.IT produced nonzero PCM in a completed waveOut buffer" \
+    && echo "$out" | grep -q "final waveOut buffer"; then
+    echo "audiocheck: BACK0.IT and TACT2 PCM reached completed WinMM output buffers"
 elif echo "$out" | grep -q "device gate skipped"; then
     echo "audiocheck: no wave device on this host; control-flow gates green, nothing audible"
 else

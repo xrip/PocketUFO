@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "5BCF789C7B22A0A1F5275E75E0B783F2F2D3F19917675836104312DF2A15337F",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-slot-list-owner-build/debug-slot-owner-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "DE57816226A168FAACF48131715F6ED61B063935077CD6A9F34B0E8A124B360D",
+        "build/tests/Debug/test_appshell.exe": "AB6BAD566B15CC77736CE0BE46225A50E892E1B7CE0D6E6C01A0246074B13945",
+        "build/tests/Debug/test_save.exe": "2CD6B1C012324F0DCAF2848835308266B0F866169A1801521C4994F015842837",
+        "build/tests/Debug/test_geoscapeframe.exe": "5A3EFFADC26D8E64BB02DFBDBD6EF0B8E4201F42AF599200A0949F71CBBD12B0"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-slot-list-owner-build/release-slot-owner-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "06EA7FC8EEB4DAF700377E73A6510FD0F19F878D6A4F9A6B01A01EFEF65BDB85",
+        "build/tests/Release/test_appshell.exe": "7540B2A690BC60A24C1C30827BF3C19BA0E86527553922ABFE9C814C0C7AE3B3",
+        "build/tests/Release/test_save.exe": "D163A52A802F263D04B433595D93345C10805046FA46CD7B8B23D85F34A925BF",
+        "build/tests/Release/test_geoscapeframe.exe": "07B14E99409F0FD0E9A19B9733D367C7E5B8E672EAF197CBDA50F0B7C2B7F2EB"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "source_fingerprint_before_build": "5BCF789C7B22A0A1F5275E75E0B783F2F2D3F19917675836104312DF2A15337F",
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "App slot-list formatter binds live World clock/game-state when ready, retaining startup fallback. Original restore-only-total-seconds side effect retained. Prior tactical-reset repair included."
+}

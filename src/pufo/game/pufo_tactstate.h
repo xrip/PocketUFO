@@ -94,14 +94,14 @@ typedef struct TactState {
     u8             gap_0002[2];      /* 0x0002 */
     i32            nStepFrameDiv;    /* 0x0004 */
     MapCell       *pStepFromCell;    /* 0x0008 */
-    i32            nStepZDelta;      /* 0x000C */
+    u8             bSkipFireShots;   /* raw byte at TactState+0x0C; nonzero skips fire */
     i32            nQueueCursor;     /* 0x0010 */
     u8             gap_0014[4];      /* 0x0014 */
     i32            nUnk70024;        /* 0x11188 */
     i32            nPhaseCounter;    /* 0x1118C, IDA nPhaseCounter */
     u8             gap_70032[8];     /* 0x11190 */
-    i32            nUnk70024Slot4;   /* 0x11198 = nUnk70024[4]: Combat_ResolveShot's area-fire arm
-                                      * clears it at 0x2FA94 */
+    i32            nUnk70024Slot4;   /* 0x11198; the area-fire reset targets nPhaseCounter,
+                                      * not this slot (raw 0x2FA94). */
     i32            nStepDrawOffX;    /* 0x1119C */
     i32            nStepDrawOffY;    /* 0x111A0 */
     MapCell       *pStepCellScratch; /* 0x111A4, the grid slot Tact_ProcessFireAction
@@ -125,9 +125,8 @@ typedef struct TactState {
                                       * uTu through the pointer when the queue finishes. Widened
                                       * from the original's i32 because Win64 pointers are 64-bit. */
     u8             gap_7008C[4];     /* 0x111CC */
-    u16            uKillCredit;      /* 0x111D0, added to the first operative shooter's uKills
-                                      * at 0x54788 and then zeroed as a dword at 0x54790 */
-    u8             gap_700D2[2];     /* 0x111D2 */
+    u32            uKillCredit;      /* 0x111D0, dword accumulator incremented by Tact_KillUnit;
+                                      * its low half is paid to the first operative shooter */
     u16            nQueueLen;        /* 0x111D4 */
     u8             bQueueActive;     /* 0x111D6 */
     u8             bUnk70103;        /* 0x111D7 */
@@ -241,39 +240,43 @@ typedef struct FireBurstSpec {
     i32      nX, nY;
     u8       nZ;
     i32      nTuCost;       /* charged to the FIRST shot only */
-    i32      nArg;          /* pCtxBase.nUnk40 at call time, written to every entry */
+    i32      nArg;          /* caller's per-mode accuracy/parameter value, copied to every entry */
     u16      uAmmoInWeapon; /* pWeapon->nAmmo */
     u8       bAmmoCap;      /* pWeapon->pObj->bAmmoCap; 255 = unlimited */
     /* Mode 7 (multi-target) takes each shot's coordinates from apMultiTargets[i]
      * instead of the single target passed above. */
     MapCell **apMultiTargets;
     i32       nMultiTargetCount;
+    i32      *pnShotCount;   /* optional Map+0x2C owner, reset after clear-aim is queued */
+    Soldier **ppThrowTarget; /* optional Map+0x150F0 owner, cleared before the TU test */
 } FireBurstSpec;
 
 /* TactState_EnqueueFireBurst @ 0x4b080.
  *
  * Verified behaviour:
  *
- *   1. If the unit's `uTu < nTuCost`, push the shared out-of-TU status message and
- *      do nothing else. The comparison is strict, so uTu == nTuCost is allowed.
- *   2. Face the unit toward the target (Unit_FaceToward @ 0x49bf0, injected).
- *   3. Work out the shot count:
+ *   1. After valid state/spec/unit checks, clear optional pThrowTarget and
+ *      bSkipFireShots. These writes precede the TU test, including on refusal.
+ *   2. If the unit's `uTu < nTuCost`, return false without queuing entries. The
+ *      comparison is strict, so uTu == nTuCost is allowed.
+ *   3. Face the unit toward the target (Unit_FaceToward @ 0x49bf0, injected).
+ *   4. Work out the shot count:
  *        mode 7  -> nMultiTargetCount
  *        mode 0  -> 3
  *        else    -> 1
  *      and, except for mode 7, cap it at the weapon's ammo unless the capacity byte
  *      is 255 (unlimited).
- *   4. For each shot, append TWO queue entries: a command 14 (shot) with all the
+ *   5. For each shot, append TWO queue entries: a command 14 (shot) with all the
  *      parameters, then a command 15 with just the unit. nQueueLen therefore grows
  *      by TWO per shot. Only the FIRST shot carries `nTuCost`; the rest get 0.
- *   5. Append a command 10 (clear aim) for the unit.
+ *   6. Append a command 10 (clear aim) for the unit, then reset the optional
+ *      nShotCount owner. NULL scratch owners are allowed for standalone fixtures.
  *
  * Command 14's coordinates come from apMultiTargets[i] in mode 7 and from the single
  * (nX, nY, nZ) argument otherwise.
  *
- * The original also clears three context scratch fields (two inside the big context
- * and one byte of TactState) that belong to the renderer and the shot animator. The
- * port leaves those to the caller and documents them (deviation 1). */
+ * The live world caller supplies the two Map scratch owners. Standalone queue users
+ * may leave either owner NULL. */
 bool TactState_EnqueueFireBurst(TactState *pState, const FireBurstSpec *pSpec,
                                 void (*pfnFaceToward)(Soldier *pUnit, i32 nX, i32 nY,
                                                       void *pUser),

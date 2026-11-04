@@ -679,6 +679,7 @@ u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
                        i32 r2, i32 g2, i32 b2)
 {
     i32    nGamma  = ColorEnvGamma(pEnv);   /* 0x2d860: Map_nGamma, read on every call */
+    const i32 nFadeCount = (pEnv->pnFadeCount != NULL) ? *pEnv->pnFadeCount : 0;
     double dFactor = (double)nGamma * 0.1 + 0.7;
     double dFade   = 0.0;
     i32    nR1, nG1, nB1, nR2, nG2, nB2;
@@ -692,10 +693,10 @@ u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
     nG1 = (i32)((double)(g1 >> 2) / dFactor);
     nB1 = (i32)((double)(b1 >> 3) / dFactor);
 
-    if (pEnv->nFadeCount > 0) {
+    if (nFadeCount > 0) {
         /* The inner division is integer in the original: itod is applied to the result of
          * (11 - nFadeCount) / 2, not to the difference itself. */
-        dFade = (double)((11 - pEnv->nFadeCount) / 2 + 1);
+        dFade = (double)((11 - nFadeCount) / 2 + 1);
         nR1 = (i32)((double)nR1 / dFade);
         nG1 = (i32)((double)nG1 / dFade);
         nB1 = (i32)((double)nB1 / dFade);
@@ -712,7 +713,7 @@ u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
     nG2 = (i32)((double)(g2 >> 2) / dFactor);
     nB2 = (i32)((double)(b2 >> 3) / dFactor);
 
-    if (pEnv->nFadeCount > 0) {
+    if (nFadeCount > 0) {
         nR2 = (i32)((double)nR2 / dFade);
         nG2 = (i32)((double)nG2 / dFade);
         nB2 = (i32)((double)nB2 / dFade);

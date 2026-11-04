@@ -1,0 +1,35 @@
+# Load completed topic 14 and place one real slot-20 order through Manufacture UI.
+load 1
+state manufacture_map_loaded
+strategystate manufacture_map_loaded
+campaign cargo manufacture_map_loaded
+click @SPEED5_X@ @SPEED5_Y@
+click 202 267
+tick 20
+strategystate manufacture_base_strip
+campaign cargo manufacture_base_strip
+click @NAV_MANUF_X@ @NAV_MANUF_Y@
+tick 20
+strategystate manuf_open
+
+click @PRODUCT20_X@ @PRODUCT20_Y@
+tick 2
+strategystate manuf_selected
+__ENGINEER_PLUS_CLICKS__
+click @UNIT_PLUS_X@ @UNIT_PLUS_Y@
+tick 2
+strategystate manuf_allocated
+
+# Close through the ordinary screen controls, then return Base 1 to map.
+click @CLOSE_X@ @CLOSE_Y@
+tick 2
+strategystate manuf_refreshed
+click @CLOSE_X@ @CLOSE_Y@
+tick 2
+click 201 11
+tick 2
+strategystate manufacture_pending
+campaign cargo manufacture_pending
+lines
+save 2
+state manufacture_order_saved

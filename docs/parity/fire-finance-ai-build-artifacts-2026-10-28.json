@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-28",
+  "source_files": 434,
+  "source_fingerprint": "EBB5933118B916F951DEBE7623ABB3274D60393BE181DC33117A61FF202C622E",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-fire-finance-ai-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "6A67376DB47A0EC0C31EAA62EC699DFAD37DDAE185A794F2CE4F1FDE8E893DBB",
+        "build/tests/Debug/test_tactstate.exe": "8DBFA8AEE360D63EE2C4BCB833381486D5EE2C6E1197A736AFAF6EA04B713E73",
+        "build/tests/Debug/test_tactui.exe": "23803A7F3BF25104D2D19D371FA982FA6F8FC7278014332F84511D6DC402F65A",
+        "build/tests/Debug/test_geoscapeframe.exe": "E9554FE9B51942ED0D28D0BBD2790B6DD5EA7E5B2D36481633E6C53300FC4F3F"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-fire-finance-ai-full-compile.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "42D9A47040F1338DED2C39C61E3C9F54071E78FC8F27FC8AA0F6750001ECB8F9",
+        "build/tests/Release/test_tactstate.exe": "D921047E4F293DD5603C9817E4506C64E61AD773B029D3A52015AC072A8C0602",
+        "build/tests/Release/test_tactui.exe": "1A89F81B1CC07538B41E3339C6340787E06D71532EAD1D4C0DF1F6C0DA532C40",
+        "build/tests/Release/test_geoscapeframe.exe": "EE3A6609E0E4B908735B78FD9F1F604CA413286E30F489AAEAD8A06987533C88"
+      }
+    }
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 of sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "Common fire-entry/success resets and all five live bindings; reaction accuracy-bank argument; monthly forecast live counts; ordinary enemy command and regression coverage",
+  "idb_notes": [
+    {
+      "address": "0x4b080",
+      "comment": "Raw ARM checked2026-10-28: before TU gate0x4B0D0, clear globalMap+0x150F0 (throw-target pointer) at0x4B0A4 and only LOW BYTE of globalTactState+0x0C at0x4B0BC. Successful tail queues clear-aim0x4B2E4 then clears Map+0x2C shot count0x4B2EC. Port previously omitted these as caller/renderer scratch; no production caller performed the shot reset. FireBurstSpec now carries live shot-count/throw-target owners through all5 port enqueue paths; nStepZDelta upper24bits preserved. Standalone null owners are adapter-only; runtime pending. Evidence docs/parity/fire-burst-contract-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x4b2ec",
+      "comment": "Success-only shot-count reset after EnqueueClearAim0x4B2E4: MOV0 then STR to globalMap+0x2C. TU refusal branches earlier and does not reach this reset. Field is read at0x5030C before conditional ammo decrement for sort keys13/35 and incremented0x50328; stale progress therefore matters across separate bursts. Port reset restored with live owner binding; repeated-burst enqueue/ammo regression compiled only, not run. Raw evidence docs/parity/fire-burst-contract-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x4daec",
+      "comment": "Raw reaction-fire enqueue: mode from Map+0x4C at0x4DAAC; bank offset0x4E7C at0x4DAB0; baseMap+4*mode0x4DABC; load parameter0x4DAC4; store argument8 at caller SP+0xC at0x4DACC. R3 at call is X, not this parameter. Callee loads stack arg at0x4B254 and writes entry+0x20 at0x4B258 via(idx+1)*56. Thus queued arg uses selected-mode accuracy/parameter bank, NOT Map+0x28 burst count. Port World_TactRequestFireThunk now passes sTactActionCosts.nAccuracy[mode]. Earlier burst-count interpretation was false. Runtime pending; evidence docs/parity/fire-burst-contract-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x4dcc0",
+      "comment": "Second reaction-fire branch repeats mode-indexed bank0x4E7C argument:0x4DC80 mode;0x4DC84 offset;0x4DC90 base+4*mode;0x4DC98 load;0x4DCA0 stackSP+0xC; call here. Same caller-stack parameter contract as0x4DAEC; separate from Map+0x28 burst limit. Port passes selected ActionCostTable.nAccuracy[mode]. Raw evidence docs/parity/fire-burst-contract-raw-2026-10-28.json; runtime pending.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x94350",
+      "comment": "Raw ARM checked2026-10-28: screen19 calls monthly upkeep here. Its path reads live craft count0x6A248, soldier count through0x661EC, and Smap site count0x6A340. Port fundingArm previously froze counts during frame wiring; World_RefreshGeoscapeFrame now republishes all3 before each draw, including after load/roster changes. Actual close-time funds already used live owners and is unchanged. Regression hides/restores valid counted prefixes over real draws and compares production upkeep from adapter vs live counts; rendered balance text/warning threshold and nonzero site delta not proven. Raw/old note docs/parity/monthly-projection-counts-raw-2026-10-28.json; runtime pending.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    },
+    {
+      "address": "0x2C780",
+      "comment": "Raw camera handoff checked2026-10-28: R5 supplies coordinate bytes at+0x1A here, +0x1B at0x2C794 and+0x1C at0x2C7E0. This is the cell-coordinate focus path; a navigation name mentioning Unit is not proof of the argument layout. Scroll writes0x2C7BC/0x2C7D8 and layer set0x2C7F0 feed the same camera/layer cells used by draw and pointer picking. Load publishes camera/cursor and selection before init's focus call0x3D248 after state read0x3D234. Port's live focus/cursor/selected-unit handoff showed no mismatch in this bounded source review. Native coordinates/DPI/input remain unverified. Raw/old note docs/parity/camera-input-handoff-raw-2026-10-28.json.",
+      "readback_equal": true,
+      "saved_with_backup": true
+    }
+  ]
+}

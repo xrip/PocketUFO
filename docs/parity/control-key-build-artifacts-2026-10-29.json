@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-29",
+  "source_files": 434,
+  "source_fingerprint": "5482B3E589286F0AA8A7B6A04914845CB1009B287F393FA1C9302E58BFFB974E",
+  "source_fingerprint_before_build": "5482B3E589286F0AA8A7B6A04914845CB1009B287F393FA1C9302E58BFFB974E",
+  "builds": {
+    "Debug": {
+      "command": "cmake --build build --config Debug --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/debug-control-key-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Debug/pocketufo.exe": "BF154A52867CA0E6FD58D4FFCF6B11DD59366FB0009225FBC774AEC93166224F",
+        "build/tests/Debug/test_control.exe": "D7790880475FBCC4FE0A8FB5FEEBF727C621A6D1A192ABB5F06DD5F65578D9F4",
+        "build/tests/Debug/test_appshell.exe": "0F25C355E52FFE979414D76F22934302159FF1115D516E0DBEDFC78DFD854C82",
+        "build/tests/Debug/test_unit.exe": "B57415E5A73AAAB76EF566EAB66ECC04D24BE36A11096F5A60CCE7F41D93543F"
+      }
+    },
+    "Release": {
+      "command": "cmake --build build --config Release --parallel 2",
+      "exit_code": 0,
+      "compiler_diagnostics": 0,
+      "executables_reported": 68,
+      "log": ".workers/luna-mission-init-audit/release-control-key-full-compile-20261029.log",
+      "sha256": {
+        "build/src/pufo/Release/pocketufo.exe": "03DFECD5E07828EE3FB176FFD5D19C9F00087C5FC4ECBC8A6D0E0606D531FDD8",
+        "build/tests/Release/test_control.exe": "16DCF6AB67101030DD2D684054EFBB1B6D02E21265B6C6DFE3695252F9191512",
+        "build/tests/Release/test_appshell.exe": "848E5BEBC6535482411259C71F79CAC205F5430E516850A432ECD4EB9AA52BB7",
+        "build/tests/Release/test_unit.exe": "F10304E506ABB764D19B22DA30E612F05510546C3B6354206FD78B9378496EE5"
+      }
+    }
+  },
+  "data_sha256": {
+    "main.dat": "B97DE23D47C3F02393FEA968A826413BB3F7054E79661B211B244BCBE9406B7A",
+    "lang.dat": "F0A62DA355CCBB9156ABC2C6ADC18DA0E3FECB975B1C92DB09F8925ECE47DD76"
+  },
+  "tests_executed": false,
+  "runtime_executed": false,
+  "fingerprint_algorithm": "SHA256 over sorted relative POSIX path + space + lowercase file SHA256 + LF for src/tests/cmake files and root CMakeLists.txt",
+  "scope": "App keyed-control callback passes raw transparency key0; generic PadImage Ex keys unchanged; LoadPads return and unit-table comments corrected; prior lookup/file/inventory/transfer repairs included"
+}

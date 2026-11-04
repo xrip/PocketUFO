@@ -1,3 +1,9 @@
+> Current manufacturing correction (2026-10-26): historical claims below that CommitProduction charges price times 1.4 or twice its quoted price are false. Both original gate and debit load binary64 0x3FE6666666666666, which is 0.7. The debit subtracts that double fee from funds, then converts the remaining balance to integer; it does not convert the fee first. The native factor is corrected. See [raw route and fee evidence](../../.workers/luna-strategy/manufacturing-route.md) and [current completion audit](../COMPLETION_AUDIT.md) for verification scope.
+
+> Current transfer correction (2026-10-25): earlier claims below that the base-strip gate overwrites X with 10 and makes the original transfer commit unreachable are false. Raw CMP X,#10 supplies flags to the lower-bound branch; it does not write X. The gated lower bound is 10, the normal lower bound 211, and the upper bound 237. The native hit-test is corrected. Full two-base selection/commit/delivery/persistence is still under verification. See [raw transfer review](../../.workers/luna-strategy/transfer-reachability-review.md) and [current audit](../COMPLETION_AUDIT.md). The old transfer paragraphs are retained as historical analysis, not current parity evidence.
+
+> Current audio status (2026-10-25): historical audio paragraphs below describe the former backend. The current WinMM/OpenMPT backend opens at 22000 Hz, converts source-rate SFX, and mixes music with 32 SFX voices. The fresh [device log](../../.workers/luna-verifier/phase3-audio-device-detail.log) records nonzero music and sample buffers completing. Exact FMOD mixing and audible speaker output are unproved. See [current audio evidence](render-audio.md) and [completion audit](../COMPLETION_AUDIT.md).
+
 # Parity evidence — game core (foundation)
 
 Task: recreate core game: map/world, entities, and game logic.
@@ -7299,9 +7305,11 @@ The mode byte `unk_128AD5` then decides who joins the team:
 Accepted units get `Unit_ResetBattleState(pUnit, 0)`, `bStatus = 0`, `Unit_PlaceOnMap(nX, nY, nLayer)`, and
 are appended to `apXcomUnits` while `nXcomUnitCount` increments.
 
-One behaviour to carry over carefully: **a rejected unit ends the loop rather than being skipped.** The
-rejection branch jumps straight to the count read, so a single unsuitable soldier in the roster truncates
-the rest of the team. That is easy to mistake for a `continue` when reading the control flow.
+Correction (2026-10-25): **a rejected unit is skipped; later roster entries are still checked.**
+Raw BNE at 0x39840 reaches 0x398F8, followed by index/pointer advance at 0x3990C/0x39910
+and BLT back to 0x397F0 at 0x39918. Mode-1 rejection branches also reach 0x398F8.
+The former truncation claim misread the loop-advance target and caused a port bug.
+Interleaved-roster tests and fresh-process redeployment now check this path.
 
 If the count is non-zero the function then calls `Tact_SelectUnit(apXcomUnits[0])` and runs
 `Unit_RecalcInventoryStat` over the roster.
@@ -25599,8 +25607,8 @@ Reported, not changed (bugs.tsv rows). Unit_ResetBattleState's item-slot clears,
 apBackpack[5]/[6] seeds at 0x49974/0x49978 and its Unit_RecalcInventoryStat call at 0x49980 are
 still unported, and its two form differences stay: the original reads the unit's own type at
 0x4998c and its own auStat, while every port caller (pufo_tactctl.c:642, :798, :1355,
-pufo_tactstate.c:1633) passes the unit's own fields as arguments. Tact_KillUnit's 0x4E614
-transform arm and its 0x4E624 bHumanoidInv clear are unported. The detail view's name-entry arms
+pufo_tactstate.c:1633) passes the unit's own fields as arguments. Tact_KillUnit's type-22 transform now calls Unit_ResetBattleState, clears bPsiActive at +0x1A6 (not bHumanoidInv at +0x1A2), and re-places the saved cell.
+TestKillType22TransformReset in tests/test_unit.c checks the reset stats, inventory sentinels, both flags, and same-cell placement. The detail view's name-entry arms
 (SoldierScreen_CopyNameToEdit 0x6318c, SoldierScreen_AppendNameGlyph 0x63208,
 Map_BackspaceSelectedName 0x63138, all keyed by the cursor copy the view stores at 0x632f4) are
 not ported -- the keyboard itself draws (pufo_baseui.c 8253..8302: the 0x646E0 expand, the

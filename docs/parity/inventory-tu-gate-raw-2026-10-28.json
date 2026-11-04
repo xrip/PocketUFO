@@ -1,0 +1,387 @@
+[
+  {
+    "ea": "0x123b8",
+    "bytes": "4acca0e330c08ce3",
+    "asm": "MOV             R12, #(Map_nInvHitRegion - 0x1139B8)"
+  },
+  {
+    "ea": "0x123c0",
+    "bytes": "0c2094e7",
+    "asm": "LDR             R2, [R4,R12]"
+  },
+  {
+    "ea": "0x123c4",
+    "bytes": "010052e3",
+    "asm": "CMP             R2, #1"
+  },
+  {
+    "ea": "0x123c8",
+    "bytes": "1900000a",
+    "asm": "BEQ             loc_12434"
+  },
+  {
+    "ea": "0x123cc",
+    "bytes": "15caa0e3cdcf8ce3",
+    "asm": "MOV             R12, #(Map_pSelUnit - 0x1139B8)"
+  },
+  {
+    "ea": "0x123d4",
+    "bytes": "0c3094e7",
+    "asm": "LDR             R3, [R4,R12]"
+  },
+  {
+    "ea": "0x123d8",
+    "bytes": "b610d3e1",
+    "asm": "LDRH            R1, [R3,#6]"
+  },
+  {
+    "ea": "0x123dc",
+    "bytes": "040051e3",
+    "asm": "CMP             R1, #4"
+  },
+  {
+    "ea": "0x123e0",
+    "bytes": "0d00002a",
+    "asm": "BCS             loc_1241C"
+  },
+  {
+    "ea": "0x123e4",
+    "bytes": "2c309fe5",
+    "asm": "LDR             R3, =UiModal_EndThunk"
+  },
+  {
+    "ea": "0x123e8",
+    "bytes": "1f20a0e3",
+    "asm": "MOV             R2, #0x1F"
+  },
+  {
+    "ea": "0x123ec",
+    "bytes": "20009fe5",
+    "asm": "LDR             R0, =aOk"
+  },
+  {
+    "ea": "0x12964",
+    "bytes": "0c3094e7",
+    "asm": "LDR             R3, [R4,R12]"
+  },
+  {
+    "ea": "0x12968",
+    "bytes": "b630d3e1",
+    "asm": "LDRH            R3, [R3,#6]"
+  },
+  {
+    "ea": "0x1296c",
+    "bytes": "060053e3",
+    "asm": "CMP             R3, #6"
+  },
+  {
+    "ea": "0x12970",
+    "bytes": "0b00002a",
+    "asm": "BCS             loc_129A4"
+  },
+  {
+    "ea": "0x12974",
+    "bytes": "64351fe5",
+    "asm": "LDR             R3, =UiModal_EndThunk"
+  },
+  {
+    "ea": "0x12978",
+    "bytes": "1f20a0e3",
+    "asm": "MOV             R2, #0x1F"
+  },
+  {
+    "ea": "0x1297c",
+    "bytes": "70051fe5",
+    "asm": "LDR             R0, =aOk"
+  },
+  {
+    "ea": "0x12980",
+    "bytes": "a010a0e3",
+    "asm": "MOV             R1, #0xA0"
+  },
+  {
+    "ea": "0x12984",
+    "bytes": "04308de5",
+    "asm": "STR             R3, [SP,#0x10+pfn1]"
+  },
+  {
+    "ea": "0x12988",
+    "bytes": "0130a0e3",
+    "asm": "MOV             R3, #1"
+  },
+  {
+    "ea": "0x1298c",
+    "bytes": "00008de5",
+    "asm": "STR             R0, [SP,#0x10+a5]"
+  },
+  {
+    "ea": "0x12990",
+    "bytes": "0400a0e1",
+    "asm": "MOV             R0, R4"
+  },
+  {
+    "ea": "0x12994",
+    "bytes": "0ca08de5",
+    "asm": "STR             R10, [SP,#0x10+pfn2]"
+  },
+  {
+    "ea": "0x12c88",
+    "bytes": "0c3094e7",
+    "asm": "LDR             R3, [R4,R12]"
+  },
+  {
+    "ea": "0x12c8c",
+    "bytes": "b600d3e1",
+    "asm": "LDRH            R0, [R3,#6]"
+  },
+  {
+    "ea": "0x12c90",
+    "bytes": "060050e3",
+    "asm": "CMP             R0, #6"
+  },
+  {
+    "ea": "0x12c94",
+    "bytes": "0b00002a",
+    "asm": "BCS             loc_12CC8"
+  },
+  {
+    "ea": "0x12c98",
+    "bytes": "88381fe5",
+    "asm": "LDR             R3, =UiModal_EndThunk"
+  },
+  {
+    "ea": "0x12c9c",
+    "bytes": "1f20a0e3",
+    "asm": "MOV             R2, #0x1F"
+  },
+  {
+    "ea": "0x12ca0",
+    "bytes": "94081fe5",
+    "asm": "LDR             R0, =aOk"
+  },
+  {
+    "ea": "0x12ca4",
+    "bytes": "a010a0e3",
+    "asm": "MOV             R1, #0xA0"
+  },
+  {
+    "ea": "0x12ca8",
+    "bytes": "04308de5",
+    "asm": "STR             R3, [SP,#0x10+pfn1]"
+  },
+  {
+    "ea": "0x12cac",
+    "bytes": "0130a0e3",
+    "asm": "MOV             R3, #1"
+  },
+  {
+    "ea": "0x12cb0",
+    "bytes": "00008de5",
+    "asm": "STR             R0, [SP,#0x10+a5]"
+  },
+  {
+    "ea": "0x12cb4",
+    "bytes": "0400a0e1",
+    "asm": "MOV             R0, R4"
+  },
+  {
+    "ea": "0x12cb8",
+    "bytes": "0ca08de5",
+    "asm": "STR             R10, [SP,#0x10+pfn2]"
+  },
+  {
+    "ea": "0x13398",
+    "bytes": "4e3fa0e3013083e3",
+    "asm": "MOV             R3, #0x139"
+  },
+  {
+    "ea": "0x133a0",
+    "bytes": "030056e1",
+    "asm": "CMP             R6, R3"
+  },
+  {
+    "ea": "0x133a4",
+    "bytes": "460000ca",
+    "asm": "BGT             loc_134C4"
+  },
+  {
+    "ea": "0x133a8",
+    "bytes": "0100d4e5",
+    "asm": "LDRB            R0, [R4,#(unk_1139B9 - 0x1139B8)]"
+  },
+  {
+    "ea": "0x133ac",
+    "bytes": "ff3010e2",
+    "asm": "ANDS            R3, R0, #0xFF"
+  },
+  {
+    "ea": "0x133b0",
+    "bytes": "1f00001a",
+    "asm": "BNE             loc_13434"
+  },
+  {
+    "ea": "0x133b4",
+    "bytes": "4acca0e330c08ce3",
+    "asm": "MOV             R12, #(Map_nInvHitRegion - 0x1139B8)"
+  },
+  {
+    "ea": "0x133bc",
+    "bytes": "0c0094e7",
+    "asm": "LDR             R0, [R4,R12]"
+  },
+  {
+    "ea": "0x133c0",
+    "bytes": "000050e3",
+    "asm": "CMP             R0, #0"
+  },
+  {
+    "ea": "0x133c4",
+    "bytes": "1a00000a",
+    "asm": "BEQ             loc_13434"
+  },
+  {
+    "ea": "0x133c8",
+    "bytes": "15caa0e3cdcf8ce3",
+    "asm": "MOV             R12, #(Map_pSelUnit - 0x1139B8)"
+  },
+  {
+    "ea": "0x133d0",
+    "bytes": "0c3094e7",
+    "asm": "LDR             R3, [R4,R12]"
+  },
+  {
+    "ea": "0x133d4",
+    "bytes": "b600d3e1",
+    "asm": "LDRH            R0, [R3,#6]"
+  },
+  {
+    "ea": "0x3c668",
+    "bytes": "753f83e3",
+    "asm": "ORR             R3, R3, #0x1D4"
+  },
+  {
+    "ea": "0x3c66c",
+    "bytes": "5ab0c4e5",
+    "asm": "STRB            R11, [R4,#(Map_bTickHold - 0x1139B8)]"
+  },
+  {
+    "ea": "0x3c670",
+    "bytes": "0a20a0e3",
+    "asm": "MOV             R2, #0xA"
+  },
+  {
+    "ea": "0x3c674",
+    "bytes": "0100c4e5",
+    "asm": "STRB            R0, [R4,#(unk_1139B9 - 0x1139B8)]"
+  },
+  {
+    "ea": "0x3c678",
+    "bytes": "0100a0e3",
+    "asm": "MOV             R0, #1"
+  },
+  {
+    "ea": "0x3c67c",
+    "bytes": "bab3c4e1",
+    "asm": "STRH            R11, [R4,#(Map_nUiScreen - 0x1139B8)]"
+  },
+  {
+    "ea": "0x3d0b0",
+    "bytes": "0400a0e1",
+    "asm": "MOV             R0, R4"
+  },
+  {
+    "ea": "0x3d0b4",
+    "bytes": "82bdffeb",
+    "asm": "BL              Tact_SelectUnit"
+  },
+  {
+    "ea": "0x3d0b8",
+    "bytes": "8d67ffeb",
+    "asm": "BL              Inv_OpenScreen"
+  },
+  {
+    "ea": "0x3d0bc",
+    "bytes": "190000ea",
+    "asm": "B               loc_3D128"
+  },
+  {
+    "ea": "0x3d0c0",
+    "bytes": "1e510100",
+    "asm": "DCD unk_128AD6 - 0x1139B8"
+  },
+  {
+    "ea": "0x3d0c4",
+    "bytes": "0500a0e3",
+    "asm": "MOV             R0, #5"
+  },
+  {
+    "ea": "0x3d0c8",
+    "bytes": "1c008de5",
+    "asm": "STR             R0, [SP,#0x36C+var_350]"
+  },
+  {
+    "ea": "0x3d0cc",
+    "bytes": "18008de5",
+    "asm": "STR             R0, [SP,#0x36C+var_354]"
+  },
+  {
+    "ea": "0x3d0d0",
+    "bytes": "73ffffea",
+    "asm": "B               loc_3CEA4"
+  },
+  {
+    "ea": "0x3d0d4",
+    "bytes": "01b0c4e5",
+    "asm": "STRB            R11, [R4,#(unk_1139B9 - 0x1139B8)]"
+  },
+  {
+    "ea": "0x3d0d8",
+    "bytes": "28f2ffeb",
+    "asm": "BL              Tact_DeployTeamAndHwps"
+  },
+  {
+    "ea": "0x3d0dc",
+    "bytes": "8b65ffeb",
+    "asm": "BL              MapView_FocusSelected"
+  },
+  {
+    "ea": "0x15c58",
+    "bytes": "019089e2",
+    "asm": "ADD             R9, R9, #1"
+  },
+  {
+    "ea": "0x15c5c",
+    "bytes": "048088e2",
+    "asm": "ADD             R8, R8, #4"
+  },
+  {
+    "ea": "0x15c60",
+    "bytes": "030059e1",
+    "asm": "CMP             R9, R3"
+  },
+  {
+    "ea": "0x15c64",
+    "bytes": "89ffffba",
+    "asm": "BLT             loc_15A90"
+  },
+  {
+    "ea": "0x15c68",
+    "bytes": "01b0c4e5",
+    "asm": "STRB            R11, [R4,#(unk_1139B9 - 0x1139B8)]"
+  },
+  {
+    "ea": "0x15c6c",
+    "bytes": "438f00eb",
+    "asm": "BL              Tact_DeployTeamAndHwps"
+  },
+  {
+    "ea": "0x15c70",
+    "bytes": "a60200eb",
+    "asm": "BL              MapView_FocusSelected"
+  },
+  {
+    "ea": "0x15c74",
+    "bytes": "0400a0e1",
+    "asm": "MOV             R0, R4"
+  }
+]

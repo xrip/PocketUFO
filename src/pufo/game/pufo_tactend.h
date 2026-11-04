@@ -112,9 +112,11 @@ typedef struct TactShutdownEnv {
     TactItem **apTactItems;      /* Map+0x23438 */
     i32       *pnTactItemCount;  /* Map_nTactItemCount @ Map+0x1513C */
 
-    /* --- the bKeepSome path: the geoscape rosters stay, their tactical copies go --- */
-    void **apStrategCraftCopy;   /* Map+0x1198, count unk_115350 (u16) */
-    u16   *pnStrategCraftCopy;
+    /* --- the world soldier pool --- */
+    struct Soldier **apStrategCraftCopy; /* Map.apSoldiers @ Map+0x1198, count unk_115350 (u16).
+                                           * Soldier_RemoveById uses this global pool for full shutdown;
+                                           * the keep-some path frees the pool entries after the mission. */
+    i32   *pnStrategCraftCopy;    /* world-owned count; original Map+0x1998 is u16 */
     void **apBaseCopy;           /* Map+0x1174, count is the signed byte at 0x159D80 */
     i8    *pnBaseCount;
     void **apCraftCopy;          /* Map+0x10AC, count Map_nCraftCount */
@@ -156,6 +158,10 @@ typedef struct TactShutdownEnv {
 /* Tact_Shutdown @ 0x3d568. bKeepSome non-zero keeps the world and the units and drops
  * only the tactical UI, the tactical item pool and the tactical map. */
 void Tact_Shutdown(const TactShutdownEnv *pEnv, u8 bKeepSome);
+
+/* The bKeepSome == 0 state commit, without releasing tactical storage. The app shell
+ * uses this when its world owns a different layout for the blocks Tact_Shutdown frees. */
+void Tact_ShutdownOutcome(const TactShutdownEnv *pEnv);
 
 /* ============================================================================== the four tallies
  *
@@ -576,8 +582,8 @@ typedef struct TactBattleEndHooks {
     void (*pfnShutdown)(u8 bKeepSome, void *pUser);
     void (*pfnEndScreenInit)(u8 bGoodEnd, void *pUser);
     void (*pfnInitMission)(i32 nMode, void *pUser);
-    /* Tact_ScanVictoryTiles @ 0x33264 probes a 2x2 block of the cell grid at the mission spawn
-     * tile; the port injects the probe. */
+    /* Tact_ScanVictoryTiles @ 0x33264. Legacy name: each probe passes when its layer-1 cell's
+     * pCeilSpr is NULL, matching the raw LDR at MapCell+0x0C. */
     bool (*pfnCellHasNoItems)(i32 nX, i32 nY, void *pUser);
     void *pUser;
 } TactBattleEndHooks;

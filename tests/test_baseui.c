@@ -673,8 +673,39 @@ static i32 g_nBuySellNext;
 static void BuySellTestPanelPrev(void) { ++g_nBuySellPrev; }
 static void BuySellTestPanelNext(void) { ++g_nBuySellNext; }
 
+static void CheckStaffRows(const UiPanel *pNames, const UiPanel *pCounts,
+                           i32 nEngineers, i32 nScientists)
+{
+    Check(pNames != NULL && pCounts != NULL, "the staff availability panels exist");
+    if (pNames == NULL || pCounts == NULL) {
+        return;
+    }
+    const i32 aExpected[2] = { nEngineers, nScientists };
+    for (i32 staff = 0; staff < 2; ++staff) {
+        i32 row = -1;
+        for (i32 i = 0; i < pNames->nLineCount; ++i) {
+            if (pNames->anLineAux[i] == PUFO_ROW_ENGINEER + staff) {
+                row = i;
+                break;
+            }
+        }
+        if (aExpected[staff] > 0) {
+            Check(row >= 0 && row < pCounts->nLineCount,
+                  "free staff at the selected base have a row");
+            if (row >= 0 && row < pCounts->nLineCount) {
+                CheckEqI32(pCounts->anLineAux[row], aExpected[staff],
+                           "staff availability uses the selected base allocation row");
+            }
+        } else {
+            Check(row == -1, "fully assigned staff at the selected base have no row");
+        }
+    }
+}
+
 static void TestBuySellBuildPanels(void)
 {
+    static u16 aManufRows[2 * PUFO_PRODUCT_ENTRIES_PER_BASE];
+    static u16 aResearchRows[2 * PUFO_RESEARCH_TOPIC_COUNT];
     static ObjectRecFull aObj[149];
     static ObjectRecFull *apObj[149];
     static Soldier aSol[3];
@@ -848,6 +879,28 @@ static void TestBuySellBuildPanels(void)
 
     BuySellScreen_BuildPanels(NULL);
     Check(1, "a missing environment does nothing at all");
+
+    printf("sell panels: base 1 allocations must not come from base 0\n");
+    env.nSelectedBaseIdx = 1;
+    env.nCrewEntries = 2;
+    env.apManufCol = aManufRows;
+    env.apResearchCol = aResearchRows;
+    aObj[PUFO_ROW_ENGINEER].auPerBaseVal[1] = 3;
+    aObj[PUFO_ROW_SCIENTIST].auPerBaseVal[1] = 4;
+    aManufRows[0] = 3;
+    aResearchRows[0] = 4;
+    aManufRows[PUFO_PRODUCT_ENTRIES_PER_BASE] = 1;
+    aResearchRows[PUFO_RESEARCH_TOPIC_COUNT] = 2;
+    BuySellScreen_BuildPanels(&env);
+    CheckStaffRows(pA, pD, 2, 2);
+    BuySellScreen_BuildPanels(&env);
+    aManufRows[0] = 0;
+    aResearchRows[0] = 0;
+    aManufRows[PUFO_PRODUCT_ENTRIES_PER_BASE] = 3;
+    aResearchRows[PUFO_RESEARCH_TOPIC_COUNT] = 4;
+    BuySellScreen_BuildPanels(&env);
+    CheckStaffRows(pA, pD, 0, 0);
+    BuySellScreen_BuildPanels(&env);
 }
 
 /* Geoscape_CloseUI is ported, so "the close ran" is now an observable fact instead of a hook
@@ -864,6 +917,112 @@ static void CloseProbe(GeoscapeCloseEnv *pEnv)
     g_nCloseFail = 1;
     pEnv->pnScreenId = &g_nCloseScreen;
     pEnv->pnActionFail = &g_nCloseFail;
+}
+
+static void TestCloseUsesLiveCounts(void)
+{
+    static u8 abGrid[PUFO_GRID_SIZE];
+    static SmapSite aSites[PUFO_SMAP_SITE_COUNT];
+    static Soldier aSoldier[1];
+    static Soldier *apSoldiers[1];
+    static BaseRec base;
+    static BaseRec *apBases[1];
+    static ObjectRecFull *apObjects[1];
+    static u16 auManufCols[200];
+    static u16 auResearchCols[144];
+    i8 nBaseCount = 1;
+    i8 nSelectedBase = 0;
+    u8 nCraftCount = 0;
+    i32 nLiveSoldierCount = 0;
+    i32 nLiveSiteCount = 0;
+    GeoscapeCloseEnv env;
+
+    printf("Geoscape_CloseUI live counts\n");
+    memset(abGrid, 0, sizeof(abGrid));
+    memset(aSites, 0, sizeof(aSites));
+    memset(&aSoldier[0], 0, sizeof(aSoldier[0]));
+    memset(&base, 0, sizeof(base));
+    apSoldiers[0] = &aSoldier[0];
+    apBases[0] = &base;
+    base.bUnk4 = 0;
+    aSoldier[0].nKind = 0;
+    abGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_TYPE_OFF] = FAC_LIVING_QUARTERS;
+
+    CloseProbe(&env);
+    env.abFacilityGrid = abGrid;
+    env.pnBaseCount = &nBaseCount;
+    env.pnSelectedBaseIdx = &nSelectedBase;
+    env.pnCraftCount = &nCraftCount;
+    env.apSoldiers = apSoldiers;
+    env.nSoldierCount = 0; /* stale fixture copy; the live count changes after env construction */
+    env.pnSoldierCountLive = &nLiveSoldierCount;
+    env.apObjects = apObjects;
+    env.nObjectCount = 1;
+    env.apSites = aSites;
+    env.nSiteCount = 0;
+    env.pnSiteCountLive = &nLiveSiteCount;
+    env.apBases = apBases;
+    env.apManufCol = auManufCols;
+    env.apResearchCol = auResearchCols;
+    env.nResearchEntries = 0;
+    nLiveSoldierCount = 1;
+    Geoscape_CloseUI(&env);
+    CheckEqI32((i32)abGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_LAYER2_OFF], 1,
+               "the close needed pass reads the soldier count after the env was wired");
+    CheckEqI32(g_nCloseFail, 0, "the live-soldier case reaches the close dispatcher");
+
+    /* A recovery/transfer row added after the close env was built must also affect its live
+     * transfer-space scan. Site 1 sends one recovered soldier to base 0. */
+    memset(abGrid, 0, sizeof(abGrid));
+    memset(aSites, 0, sizeof(aSites));
+    abGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_TYPE_OFF] = FAC_LIVING_QUARTERS;
+    aSites[1].bFlag1 = 0;
+    aSites[1].uRecoveredSoldiers = 1;
+    nLiveSoldierCount = 0;
+    nLiveSiteCount = 1;
+    CloseProbe(&env);
+    env.abFacilityGrid = abGrid;
+    env.pnBaseCount = &nBaseCount;
+    env.pnSelectedBaseIdx = &nSelectedBase;
+    env.pnCraftCount = &nCraftCount;
+    env.apSoldiers = apSoldiers;
+    env.nSoldierCount = 0;
+    env.pnSoldierCountLive = &nLiveSoldierCount;
+    env.apObjects = apObjects;
+    env.nObjectCount = 1;
+    env.apSites = aSites;
+    env.nSiteCount = 1; /* the second site is added after this snapshot */
+    env.pnSiteCountLive = &nLiveSiteCount;
+    env.apBases = apBases;
+    env.apManufCol = auManufCols;
+    env.apResearchCol = auResearchCols;
+    env.nResearchEntries = 0;
+    nLiveSiteCount = 2;
+    Geoscape_CloseUI(&env);
+    CheckEqI32((i32)abGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_LAYER2_OFF], 1,
+               "the close needed pass sees a site added after the env was wired");
+    CheckEqI32(g_nCloseFail, 0, "the live-site case reaches the close dispatcher");
+
+    memset(abGrid, 0, sizeof(abGrid));
+    abGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_TYPE_OFF] = FAC_LIVING_QUARTERS;
+    CloseProbe(&env);
+    env.abFacilityGrid = abGrid;
+    env.pnBaseCount = &nBaseCount;
+    env.pnSelectedBaseIdx = &nSelectedBase;
+    env.pnCraftCount = &nCraftCount;
+    env.apSoldiers = apSoldiers;
+    env.nSoldierCount = 0;
+    env.apObjects = apObjects;
+    env.nObjectCount = 1;
+    env.apSites = aSites;
+    env.nSiteCount = 2;
+    env.apBases = apBases;
+    env.apManufCol = auManufCols;
+    env.apResearchCol = auResearchCols;
+    env.nResearchEntries = 0;
+    Geoscape_CloseUI(&env);
+    CheckEqI32((i32)abGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_LAYER2_OFF], 1,
+               "NULL live-count pointers retain the scalar site-count fallback");
 }
 
 static void TestBuySellCommitTransaction(void)
@@ -981,6 +1140,8 @@ static void TestBuySellCommitTransaction(void)
 
 static void TestBuySellRowEditors(void)
 {
+    static u16 aManufRows[2 * PUFO_PRODUCT_ENTRIES_PER_BASE];
+    static u16 aResearchRows[2 * PUFO_RESEARCH_TOPIC_COUNT];
     static ObjectRecFull aObj[149];
     static ObjectRecFull *apObj[149];
     static i32 aDelta[149];
@@ -1178,6 +1339,38 @@ static void TestBuySellRowEditors(void)
     BuySellScreen_FillBuyPanel(&env);
     CheckEqI32(aDelta[10], 1, "a missing panel makes both handlers do nothing");
     env.pPanelD = &pD;
+
+    printf("sell editor: only base 1's assigned staff constrain its sale\n");
+    env.nSelectedBaseIdx = 1;
+    env.nCrewEntries = 2;
+    env.apManufCol = aManufRows;
+    env.apResearchCol = aResearchRows;
+    nTimer = 25;
+    for (i32 staff = 0; staff < 2; ++staff) {
+        const i32 slot = PUFO_ROW_ENGINEER + staff;
+        const i32 row = 4 + staff;
+        const i32 stock = 3 + staff;
+        const i32 stride = staff == 0 ? PUFO_PRODUCT_ENTRIES_PER_BASE : PUFO_RESEARCH_TOPIC_COUNT;
+        u16 *pTable = staff == 0 ? aManufRows : aResearchRows;
+        aObj[slot].auPerBaseVal[1] = (u16)stock;
+        pA.anLineAux[row] = slot;
+        pC.nUnk3032 = row;
+        pD.anLineAux[row] = 2;
+        pE.anLineAux[row] = 0;
+        aDelta[slot] = 0;
+        pTable[0] = (u16)stock;
+        pTable[stride] = (u16)(stock - 2);
+        BuySellScreen_FillSellPanel(&env);
+        CheckEqI32(aDelta[slot], -2, "a held click sells only the two free base 1 staff");
+        CheckEqI32(pD.anLineAux[row], 0, "the available staff count reaches zero without overselling");
+        pTable[0] = 0;
+        pTable[stride] = (u16)stock;
+        aDelta[slot] = 0;
+        pD.anLineAux[row] = stock;
+        pE.anLineAux[row] = 0;
+        BuySellScreen_FillSellPanel(&env);
+        CheckEqI32(aDelta[slot], 0, "base 1 assignments block selling its allocated staff");
+    }
 
     UiPanel_FreeLines(&pA);
     UiPanel_FreeLines(&pB);
@@ -1791,6 +1984,9 @@ static void TransferStubReset(void) { ++g_nTransferReset; }
 static void TransferStubCommit(void) { ++g_nTransferCommit; }
 static void TransferStubClose(void) { ++g_nTransferClose; }
 
+/* World stores these controls in zero-initialized embedded memory. Without the real init constructor,
+ * their rectangles and callbacks exist but bEnabled stays zero, so the pointer hit test drops a player's
+ * scroll click. This exercises Ui_InitTransfer itself; it does not simulate the full world pointer route. */
 static void TestTransferInitAndReset(void)
 {
     static void *aRoot[5];
@@ -1803,6 +1999,7 @@ static void TestTransferInitAndReset(void)
     static UiPanel pA, pD, pE;
     TransferInitEnv ienv;
     TransferResetEnv renv;
+    UiControlHitCtx hitCtx = {0};
     i8 nBaseCount = 3;
     u8 bTransferOk = 0;
     i8 nScratchD0 = 0;
@@ -1844,6 +2041,8 @@ static void TestTransferInitAndReset(void)
     CheckEqI32(bTransferOk, 1, "and the transfer is marked possible");
     for (i = 0; i < 4; ++i) {
         Check(aRoot[i + 1] == (void *)&aCtl[i], "the four controls land in the root array's slots");
+        Check(aCtl[i].bEnabled != 0,
+              "real transfer init enables each zeroed control so a pointer hit can call its handler");
     }
     Check(aCtl[0].pfnClick == BuySellTestPanelPrev, "the first control scrolls the panels back");
     Check(aCtl[1].pfnClick == BuySellTestPanelNext, "the second forward");
@@ -1871,13 +2070,36 @@ static void TestTransferInitAndReset(void)
     CheckEqI32(confirmCtl.x, 100, "the confirm control centres on its 40-pixel width");
     CheckEqI32(confirmCtl.y, 94, "and sits at 28 * 3 bases + 10");
 
+    /* A player press arms the scroll control; the close path frees its pads but keeps the
+     * world-owned control cell for the next screen open. */
+    Check(UiControl_HitTest(&aCtl[1], aCtl[1].x + 1, aCtl[1].y + 1, true, false, &hitCtx),
+          "the initialized next arrow accepts a pointer press");
+    CheckEqI32(aCtl[1].nState, 1, "and the press arms its normal release state");
+    for (i = 0; i < 4; ++i) {
+        UiControl_FreePads(&aCtl[i]); /* the close path's 0x979D4 cleanup */
+    }
+    PadImage_FreeData((PadImage *)aRoot[0]);
     free(aRoot[0]);
     aRoot[0] = NULL;
+
+    Ui_InitTransfer(&ienv);
+    CheckEqI32(g_nTransferBuild, 2, "reopen builds panels again after close cleanup");
+    for (i = 0; i < 4; ++i) {
+        Check(aCtl[i].bEnabled != 0, "reopen reconstructs each retained world control");
+    }
+    CheckEqI32(aCtl[1].nState, 0, "reopen starts with a fresh arrow state");
+    for (i = 0; i < 4; ++i) {
+        UiControl_FreePads(&aCtl[i]);
+    }
+    PadImage_FreeData((PadImage *)aRoot[0]);
+    free(aRoot[0]);
+    aRoot[0] = NULL;
+
     Ui_InitTransfer(NULL);
     ienv.ppRoot = NULL;
     Ui_InitTransfer(&ienv);
     ienv.ppRoot = aRoot;
-    CheckEqI32(g_nTransferBuild, 1, "a missing root array makes it do nothing");
+    CheckEqI32(g_nTransferBuild, 2, "a missing root array makes it do nothing");
 
     /* The reset. */
     for (i = 0; i < 149; ++i) {
@@ -2000,6 +2222,8 @@ static void TransferStubValidate(void) { ++g_nTransferValidate; }
 
 static void TestTransferBuildAndMove(void)
 {
+    static u16 aManufRows[2 * PUFO_PRODUCT_ENTRIES_PER_BASE];
+    static u16 aResearchRows[2 * PUFO_RESEARCH_TOPIC_COUNT];
     static ObjectRecFull aObj[149];
     static ObjectRecFull *apObj[149];
     static Soldier aSol[3];
@@ -2278,6 +2502,28 @@ static void TestTransferBuildAndMove(void)
     benv.pbPanelsBuilt = NULL;
     TransferScreen_BuildPanels(&benv);
     CheckEqI32(bBuilt, 0, "a missing flag pointer makes it do nothing");
+    printf("transfer panels: base 1 allocations must not come from base 0\n");
+    benv.pbPanelsBuilt = &bBuilt;
+    benv.nSelectedBaseIdx = 1;
+    benv.nCrewEntries = 2;
+    benv.apManufCol = aManufRows;
+    benv.apResearchCol = aResearchRows;
+    aObj[PUFO_ROW_ENGINEER].auPerBaseVal[1] = 3;
+    aObj[PUFO_ROW_SCIENTIST].auPerBaseVal[1] = 4;
+    aManufRows[0] = 3;
+    aResearchRows[0] = 4;
+    aManufRows[PUFO_PRODUCT_ENTRIES_PER_BASE] = 1;
+    aResearchRows[PUFO_RESEARCH_TOPIC_COUNT] = 2;
+    TransferScreen_BuildPanels(&benv);
+    CheckStaffRows(pA, pD, 2, 2);
+    TransferScreen_BuildPanels(&benv);
+    aManufRows[0] = 0;
+    aResearchRows[0] = 0;
+    aManufRows[PUFO_PRODUCT_ENTRIES_PER_BASE] = 3;
+    aResearchRows[PUFO_RESEARCH_TOPIC_COUNT] = 4;
+    TransferScreen_BuildPanels(&benv);
+    CheckStaffRows(pA, pD, 0, 0);
+    TransferScreen_BuildPanels(&benv);
 }
 
 static void TestTransferCapacityGate(void)
@@ -3189,7 +3435,7 @@ static void XfReset(void)
 
     memset(&g_xfEnv, 0, sizeof(g_xfEnv));
     g_xfColor.pnGamma = &g_nGammaZero;
-    g_xfColor.nFadeCount = 0;
+    g_xfColor.pnFadeCount = NULL;
     g_xfAnim.pbStarted = &g_bXfStarted;
     g_xfAnim.pnProgress = &g_nXfProgress;
     g_xfAnim.nFrameStyle = 0;
@@ -3329,18 +3575,33 @@ static void TestTransferDraw(void)
     CheckEqI32((i32)pPix[31 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the second base row starts at 28 + 3");
     CheckEqI32(g_bXfTransferBase, 2, "the strip hit-test's answer lands in byte_1870F4 (0x98994)");
     CheckEqI32(g_aXfSites[1].bFlag1, 12, "the working site's bFlag1 takes that base's type byte (0x989C4)");
-    /* ORIGINAL BUG: the gate that makes the hit test miss is bTransferPanelsBuilt @ 0x1870EC, the
-     * same byte this screen sets to draw its panels, so the call at 0x98980 always returns
-     * nSelectedBaseIdx -- the very value 0x989D0 compares against. The close branch never fires
-     * while the transfer screen is up, and byte_1870F4 is pinned to the source base. */
-    CheckEqI32(g_bXfOverlay, 1, "the close branch cannot fire while the panels are built (0x989E0)");
-    CheckEqI32(g_bXfTransferBase, 2, "  and the destination byte is the source base (0x98994)");
+    /* This point lands on the selected row, so this draw leaves the overlay open and latches source 2. */
+    CheckEqI32(g_bXfOverlay, 1, "a hit on the selected row keeps the overlay open (0x989E0)");
+    CheckEqI32(g_bXfTransferBase, 2, "the selected-row hit stores source 2 (0x98994)");
     CheckEqI32(g_nXfCursorX, 0, "both cursor coordinates are zeroed (0x989E8)");
     CheckEqI32(g_nXfCursorY, 0, "  including the y");
     CheckEqI32(g_nXfStripCalls, 1, "the strip is drawn once per call");
 
-    /* The coupling that makes the branch dead: the draw returns at 0x98224 unless the same byte is
-     * set, so the overlay path only ever runs with the strip gate open. */
+    /* Pick base 1 from base 0. The next ordinary draw sees the closed-overlay guard and must
+     * preserve the destination even though the first draw reset the cursor to (0,0). */
+    g_bXfSelected = 0;
+    g_xfEnv.nSelectedBaseIdx = 0;
+    g_bXfOverlay = 1;
+    g_bXfTransferBase = 7;
+    g_nXfCursorX = 220;
+    g_nXfCursorY = 45;
+    g_nXfStripCalls = 0;
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 1, "a two-base pick returns the site count");
+    CheckEqI32(g_bXfTransferBase, 1, "the row at y=45 selects destination base 1");
+    CheckEqI32(g_bXfOverlay, 0, "the different-base hit closes the overlay");
+    CheckEqI32(g_nXfCursorX, 0, "the pick resets the x cursor");
+    CheckEqI32(g_nXfCursorY, 0, "the pick resets the y cursor");
+    CheckEqI32(g_nXfStripCalls, 1, "the picker callback runs on the selecting draw");
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "the next draw takes the closed-overlay arm");
+    CheckEqI32(g_bXfTransferBase, 1, "the destination stays latched after the overlay closes");
+    CheckEqI32(g_nXfStripCalls, 1, "the closed-overlay arm skips another hit-test");
+
+    /* The panel-built byte gates the whole draw; when clear, the overlay picker is untouched. */
     g_bXfBuilt = 0;
     g_bXfOverlay = 1;
     g_bXfTransferBase = 7;
@@ -6549,11 +6810,13 @@ static void Fake_MusicVol(void *p, i32 n) { (void)p; (void)n; }
 static void Fake_MusicPause(void *p, i32 b) { (void)p; (void)b; }
 static void Fake_MusicFree(void *p) { (void)p; }
 static void Fake_Close(void) { }
+static bool Fake_MusicFinished(const void *p) { (void)p; return false; }
 
 static const PufoAudioBackend g_fakeOptBackend = {
     Fake_Init, Fake_SetWindow, Fake_SampleLoad, Fake_SampleSetMode, Fake_SampleFree,
     Fake_PlaySound, Fake_SetSfxVolume, Fake_SetSfxPaused, Fake_MusicLoad, Fake_MusicLoop,
-    Fake_MusicOpt, Fake_MusicPlay, Fake_MusicVol, Fake_MusicPause, Fake_MusicFree, Fake_Close
+    Fake_MusicOpt, Fake_MusicPlay, Fake_MusicVol, Fake_MusicPause, Fake_MusicFree, Fake_Close,
+    Fake_MusicFinished
 };
 
 /* ------------------------------------------------- the soldier screen's frame
@@ -7048,6 +7311,89 @@ static void TestSoldierTransferPanels(void)
     Check(SdInk(45, 75, 214, 157) == 0, "  and draws no frame");
     CheckEqI32(SoldierScreen_DrawEquipPanels(NULL), 0, "a null env does nothing");
     g_sdEnv.EquipPanels.pPanelEquip = &g_sdPanelEquip;
+}
+
+static i32 g_nNameEditMeasureCalls;
+static bool g_bNameEditMeasureTerminated;
+
+static i32 NameEdit_MeasureWidth(const char *psz)
+{
+    g_nNameEditMeasureCalls++;
+    g_bNameEditMeasureTerminated = psz[1] == '\0';
+    return (u8)psz[0] >= PUFO_SOLDET_KB_FIRST ? 8 : 0;
+}
+
+static void TestSoldierNameEdit(void)
+{
+    Soldier soldier;
+    SoldierNameEditEnv env;
+    char szEditLine[PUFO_PANEL_LINE_BYTES];
+    char szNameBefore[48];
+    u8 bNameEditActive;
+    u8 nNameEditChar;
+
+    printf("Soldier name-entry handlers @ 0x63138/0x6318C/0x63208\n");
+
+    memset(&env, 0, sizeof(env));
+    memset(&soldier, 0, sizeof(soldier));
+    memset(szEditLine, 0, sizeof(szEditLine));
+    env.pSoldier = &soldier;
+    env.pszEditLine = szEditLine;
+    env.pbNameEditActive = &bNameEditActive;
+    env.pnNameEditChar = &nNameEditChar;
+    env.pfnMeasureWidth = NameEdit_MeasureWidth;
+
+    PutStr(soldier.szName, "Nova");
+    Map_BackspaceSelectedName(&env);
+    Check(strcmp(soldier.szName, "Nov") == 0, "backspace removes exactly the final name byte (0x6317C)");
+    soldier.szName[0] = '\0';
+    Map_BackspaceSelectedName(&env);
+    Check(soldier.szName[0] == '\0', "backspace leaves an empty name empty (0x63168)");
+
+    PutStr(soldier.szName, "New Recruit");
+    PutStr(szEditLine, "stale row");
+    bNameEditActive = 1;
+    SoldierScreen_CopyNameToEdit(&env);
+    Check(bNameEditActive == 0, "accept clears the name-edit flag before copying (0x63198)");
+    Check(strcmp(szEditLine, "New Recruit") == 0,
+          "accept copies the selected soldier name into the roster row through its NUL byte (0x631D8..0x631EC)");
+
+    PutStr(soldier.szName, "Ada");
+    nNameEditChar = 0xFF;
+    g_nNameEditMeasureCalls = 0;
+    g_bNameEditMeasureTerminated = false;
+    SoldierScreen_AppendNameGlyph(&env, PUFO_SOLDET_KB_X0, PUFO_SOLDET_KB_Y0);
+    Check(nNameEditChar == 32 && g_bNameEditMeasureTerminated,
+          "the first cell stores byte 32 and measures a one-byte string (0x63284..0x63298)");
+    Check(strcmp(soldier.szName, "Ada ") == 0 && g_nNameEditMeasureCalls == 1,
+          "a measured space is appended to the name (0x63298..0x632B4)");
+
+    SoldierScreen_AppendNameGlyph(&env, PUFO_SOLDET_KB_X0 + 2 * PUFO_SOLDET_KB_COL_W,
+                                  PUFO_SOLDET_KB_Y0 + PUFO_SOLDET_KB_ROW_H);
+    Check(nNameEditChar == 50 && strcmp(soldier.szName, "Ada 2") == 0,
+          "row 1 column 2 maps to byte 50 (0x63284)");
+
+    PutStr(szNameBefore, soldier.szName);
+    SoldierScreen_AppendNameGlyph(&env, PUFO_SOLDET_KB_X0,
+                                  PUFO_SOLDET_KB_Y0 + 14 * PUFO_SOLDET_KB_ROW_H);
+    Check(nNameEditChar == 0 && strcmp(soldier.szName, szNameBefore) == 0,
+          "a zero-width NUL cell updates selection but does not append (0x63298..0x632A0)");
+
+    memset(soldier.szName, 'A', 39);
+    soldier.szName[39] = '\0';
+    soldier.bRankType = 0xAA;
+    SoldierScreen_AppendNameGlyph(&env, PUFO_SOLDET_KB_X0 + 2 * PUFO_SOLDET_KB_COL_W,
+                                  PUFO_SOLDET_KB_Y0 + PUFO_SOLDET_KB_ROW_H);
+    Check(soldier.szName[39] == '2' && soldier.bRankType == 0,
+          "length 39 accepts a glyph and its NUL reaches bRankType like the ARM (0x6323C, 0x632B4)");
+
+    memset(soldier.szName, 'A', sizeof(soldier.szName));
+    soldier.bRankType = 0;
+    nNameEditChar = 0xCC;
+    g_nNameEditMeasureCalls = 0;
+    SoldierScreen_AppendNameGlyph(&env, PUFO_SOLDET_KB_X0, PUFO_SOLDET_KB_Y0);
+    Check(nNameEditChar == 0xCC && g_nNameEditMeasureCalls == 0,
+          "length 40 rejects input before changing the selected-byte state (0x6323C)");
 }
 
 static void TestSoldierDetail(void)
@@ -8315,14 +8661,14 @@ static void TestIncUnits(void)
     ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 38, "  and pushes it over");
 
-    /* Base_CountItemQtyAcrossBases adds the site cargo, gated on the site index being the base. */
+    /* 0x6E27C passes the live site count: cargo in the allocated working row is included. */
     UNITS_RESET(0);
     env.nObjectCount = 2; /* the site walk also needs more than one object */
     aGrid[480 + 0] = 6;
     aObjs[0].bCargoSize = 7;
     aObjs[1].bCargoSize = 10;
     env.nSiteCount = 1;
-    aSites[0].auItemQty[1] = 5; /* 10 * 5 = 50 */
+    aSites[1].auItemQty[1] = 5; /* working row at nSiteCount: 10 * 5 = 50 */
     aProdB[0] = 35; /* 245 + 50 = 295 < 300 */
     ManufScreen_IncUnits(&env);
     CheckEqI32(aProdB[0], 36, "the site cargo counts too (0x6E294)");
@@ -8993,7 +9339,7 @@ static ObjectRecFull *g_apObjCancel[1];
 static u8 g_abHangarCancel[64];
 static i32 g_nAssignedCancel[1];
 static u8 g_nShipCountCancel;
-static u16 g_nSoldierCountCancel;
+static i32 g_nSoldierCountCancel;
 static u8 g_onceCancel;
 static i32 g_nTotalSecCancel;
 static i32 g_nSeedCancel;
@@ -9226,7 +9572,7 @@ static void TestConfirmCraftTarget(void)
     static GeoscapeWorld world;
     static i32 nSeed, nPickX, nPickY, nShipIdx, nTotalSec;
     static u8 bSel, bOnce, nShipCount;
-    static u16 nSoldierCount;
+    static i32 nSoldierCount;
     SmapConfirmTargetEnv env;
     StrategItem *pOwn, *pWaypoint, *pNew;
 
@@ -10069,20 +10415,24 @@ static void TestManufCommitProduction(void)
     g_grantShipEnv.pnStrategSeed = &g_nGrantSeed;
     g_grantShipEnv.pnZoomMode = &g_nGrantZoom;
 
-    /* Work that has paid for one unit and none committed yet: one item, one committed unit, and the
-     * price charged at 1.4x (300 * 1.4 = 420). */
+    /* Budget 1000 pays the raw 0.7 fee for price 1000 but not the old 1.4 charge.
+     * The net-balance conversion leaves 300, and the same unit consumes its two Elerium. */
     MC_RESET();
     MFCAP(0) = FAC_GENERAL_STORES;
     MC_WORK(20, 432);
-    g_aMfPrice[20] = 300;
-    g_nMfFunds = 10000;
+    g_aMfPrice[20] = 1000;
+    g_nMfFunds = 1000;
+    g_aMfObj[20].abManufComponents[0] = 2;
+    g_aMfObj[105].auPerBaseVal[0] = 2;
     g_aMfQty[MFIDX(0, 20)] = 432;
     g_aMfA[MFIDX(0, 20)] = 432;
     g_aMfB[MFIDX(0, 20)] = 5;
     ManufScreen_CommitProduction(&g_mfCommit);
     CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 1, "one unit lands in the base's column");
     CheckEqI32((i32)g_aMfC[MFIDX(0, 20)], 1, "one committed unit is recorded");
-    CheckEqI32(g_nMfFunds, 9580, "the price is charged at 1.4 times");
+    CheckEqI32(g_nMfFunds, 300, "the 0.7 fee leaves the exact remaining balance");
+    CheckEqI32((i32)g_aMfObj[105].auPerBaseVal[0], 0,
+               "the produced unit also consumes its two Elerium");
     CheckEqI32((i32)g_mfLines.nLineCount, 0, "nothing is reported");
     CheckEqI32((i32)g_dwMfShortfall, 0, "with no shortfall");
     CheckEqI32((i32)g_aMfQty[MFIDX(0, 20)], 432, "the allocation stays until the target is met");
@@ -11244,7 +11594,7 @@ static void TestManufDrawFrame(void)
     g_frameAnim.nFrameStyle = 0;
 
     g_frameColor.pnGamma = &g_nFrameGamma; /* factor 1.0, so the colour pairs pass through */
-    g_frameColor.nFadeCount = 0;
+    g_frameColor.pnFadeCount = NULL;
 
     bEntryCount = 144;
     nSelBase = 1;
@@ -11700,7 +12050,7 @@ static void TestResearchDraw(void)
     g_frameAnim.nFrameStyle = 0;
 
     g_frameColor.pnGamma = &g_nFrameGamma; /* factor 1.0, so the colour pairs pass through */
-    g_frameColor.nFadeCount = 0;
+    g_frameColor.pnFadeCount = NULL;
 
     bEntryCount = 144;
     nSelBase = 1;
@@ -12127,7 +12477,7 @@ static void TestBuySellDraw(void)
     g_frameAnim.pnProgress = &g_nFrameAnimProgress;
     g_frameAnim.nFrameStyle = 0;
     g_frameColor.pnGamma = &g_nFrameGamma;
-    g_frameColor.nFadeCount = 0;
+    g_frameColor.pnFadeCount = NULL;
 
     bBuilt = 0;
     bCtlBuilt = 0;
@@ -12722,7 +13072,6 @@ static void TestResearchInit(void)
 static u8 g_bResBuilt;
 static void *g_aResBuildRoot[5];
 static UiControl g_aResBuildCtl[4];
-static PadImage g_aResBuildPad[4];
 static UiPanel *g_pResPanelA, *g_pResPanelB, *g_pResPanelC;
 static u16 g_aResColB[144 * 8];
 static char g_aResText[8 * PUFO_TEXT_REC_STRIDE];
@@ -12750,7 +13099,6 @@ static void TestResearchBuildPanels(void)
     g_nResBase = 1;
     memset(g_aResBuildRoot, 0, sizeof(g_aResBuildRoot));
     memset(g_aResBuildCtl, 0, sizeof(g_aResBuildCtl));
-    memset(g_aResBuildPad, 0, sizeof(g_aResBuildPad));
     memset(g_aResColB, 0, sizeof(g_aResColB));
     memset(g_aResText, 0, sizeof(g_aResText));
     memset(g_aResTopicB, 0, sizeof(g_aResTopicB));
@@ -12759,7 +13107,12 @@ static void TestResearchBuildPanels(void)
     for (i = 0; i < 4; ++i) {
         PutStr(g_aResText + PUFO_TEXT_REC_STRIDE * (i + 1), (i == 0) ? "TOPIC1"
                        : (i == 1) ? "TOPIC2" : (i == 2) ? "TOPIC3" : "TOPIC4");
-        g_aResBuildCtl[i].apPads[0] = &g_aResBuildPad[i];
+        PadImage *pPad = (PadImage *)malloc(sizeof(*pPad));
+        Check(pPad != NULL, "the research rebuild fixture owns its control pad");
+        if (pPad != NULL) {
+            PadImage_ctor(pPad);
+        }
+        g_aResBuildCtl[i].apPads[0] = pPad;
     }
 
     /* Topics 1, 3, 4 and 6 are on the list. Topic 1 is one quarter done, topic 4 is double done,
@@ -13778,7 +14131,7 @@ static void TestFundingReport(void)
     g_pMainSurface = &g_frameSurf;
     g_blitState.nPixelMode = 2;
     g_frameColor.pnGamma = &g_nFrameGamma; /* factor 1.0, so the colour pairs pass through */
-    g_frameColor.nFadeCount = 0;
+    g_frameColor.pnFadeCount = NULL;
 
     FundUiFixture(&tenv);
     FundUiText();
@@ -16227,7 +16580,7 @@ static void TestPsiScreenDraw(void)
     pPix = (const u16 *)g_pdSurf.pPixels;
 
     g_pdColor.pnGamma = &g_nGammaZero;
-    g_pdColor.nFadeCount = 0;
+    g_pdColor.pnFadeCount = NULL;
     g_pdAnim.pbStarted = &g_bPdAnimStarted;
     g_pdAnim.pnProgress = &g_nPdProgress;
     g_pdAnim.nFrameStyle = 0;
@@ -17176,7 +17529,7 @@ static void BiDrawFixture(void)
     g_bBiOverlay = 0;
     g_nBiBaseCount = 2;
     g_biColor.pnGamma = &g_nGammaZero;
-    g_biColor.nFadeCount = 0;
+    g_biColor.pnFadeCount = NULL;
 
     memset(&g_biDrawEnv, 0, sizeof(g_biDrawEnv));
     g_biDrawEnv.pColor = &g_biColor;
@@ -18005,7 +18358,7 @@ static void TestBaseAtDraw(void)
     pPix = (const u16 *)g_baSurf.pPixels;
 
     g_baColor.pnGamma = &g_nGammaZero;
-    g_baColor.nFadeCount = 0;
+    g_baColor.pnFadeCount = NULL;
     /* The draw packs this same pair at 0x5884C right before the caption, so pre-packing it gives the
      * glyph colour the caption must be drawn in. */
     uBaGlyph = (u16)Gfx_PackRgb565Pair(&g_baColor, 68, 244, 252, 4, 70, 75);
@@ -18535,7 +18888,7 @@ static void TestPlaneScreenDraw(void)
     pPix = (const u16 *)g_plSurf.pPixels;
 
     g_plColor.pnGamma = &g_nGammaZero;
-    g_plColor.nFadeCount = 0;
+    g_plColor.pnFadeCount = NULL;
     PlBuildPanels();
 
     /* The three glyph colours the test counts. Gfx_PackRgb565Pair @ 0x2d82c writes the (r2,g2,b2)
@@ -19030,7 +19383,7 @@ static void CdFixture(void)
     g_cdAnim.nFrameStyle = 0;
 
     g_cdColor.pnGamma = &g_nGammaZero;
-    g_cdColor.nFadeCount = 0;
+    g_cdColor.pnFadeCount = NULL;
 
     g_cdEnv.pColor = &g_cdColor;
     g_cdEnv.pScreen = &g_cdScreen;
@@ -20402,6 +20755,7 @@ int main(void)
     TestCloseThunks();
     TestTitleReturn();
     TestMoreCloseThunks();
+    TestCloseUsesLiveCounts();
     TestResearchPaging();
     TestOptionsRadioClear();
     TestAtexitRegistration();
@@ -20430,6 +20784,7 @@ int main(void)
     TestSoldierDisplayName();
     TestSoldierScreenDraw();
     TestSoldierTransferPanels();
+    TestSoldierNameEdit();
     TestSoldierDetail();
     TestOptionsAudioTab();
     TestSaveLoadSlots();

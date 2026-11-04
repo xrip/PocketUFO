@@ -1,0 +1,40 @@
+# Fresh New Game through the natural air encounter, tactical deploy, live actions, and return.
+state before_menu_click
+click 120 124
+pick
+state after_new_game_pick
+geoframe
+strategystate before_normal_air
+normalair
+state after_normal_air_boundary
+normalaircombat
+state after_normal_air_combat
+normalairground
+state after_normal_ground_deploy
+
+# Read-only snapshots around the real move, held-rifle input, and End Turn.
+campaign state play_before
+tact
+dump normal_ground_play_before.ppm
+campaign move
+campaign state play_after_move
+tact
+dump normal_ground_play_after_move.ppm
+campaign fire
+campaign state play_after_fire
+tact
+dump normal_ground_play_after_fire.ppm
+campaign enemyturn
+campaign state play_after_enemyturn
+tact
+dump normal_ground_play_after_enemyturn.ppm
+
+# Use the live abort dialog only while the mission is still open. If a natural battle
+# result has already ended play, the app's native debrief path is reported as that result.
+campaign abort
+state play_after_return
+campaign state play_returned
+campaign cargo play_returned
+lines
+tact
+dump normal_ground_play_returned.ppm

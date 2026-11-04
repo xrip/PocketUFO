@@ -490,8 +490,9 @@ i32 Soldier_RemoveById(Soldier **apSoldiers, i32 nCount, i32 nId);
  * owns the storage. */
 i32 Base_RemoveAllSoldiers(const i32 *anIdList, Soldier **apSoldiers, i32 nSoldierCount);
 
-/* Unit_ResetBattleState @ 0x498b0. Derives TU/HP/armour from auStat:
- *   auStat[0] -> uTu, auStat[1] -> uHp, auStat[9] -> uStunOrArmor */
+/* Unit_ResetBattleState @ 0x498b0. Clears the 27 tactical item slots, seeds the two empty backpack
+ * mirrors, and leaves the per-unit loadout template intact for Tact_EquipTeamFromCraft. Derives
+ * TU/HP/armour from auStat: auStat[0] -> uTu, auStat[1] -> uHp, auStat[9] -> uStunOrArmor. */
 void Unit_ResetBattleState(Soldier *pUnit, u8 bFacing, u16 nUnitType,
                            const u16 *auStat, i32 nStatCount);
 
@@ -732,9 +733,12 @@ void UnitList_ForEachRefresh(struct UnitRosters *pRosters, VisCtx *pCtx);
  * name the chryssalid transform copies into Soldier.szName: the kill arm points at
  * record 14 (0x4e508 LDR R0,=0xB1140 then 0x4e518 ADD #0x230), the fall arm at record
  * 22 (0x53148 ADD #0x370). It is NOT Map + 0x230 -- that slot has zero xrefs.
- * pnKillCount is the dword at Map.gap_TrajRest + 4*49940.
- * bTickHold is Map.bGameTickHold (0x5A) and bFrameScratch is byte_138E74, the frame
- * scratch GameTick_OnTimer clears; either one suppresses the death message.
+ * The raw first argument is the live TactState. Its dword at +0x111D0 is the kill-credit
+ * accumulator: Tact_KillUnit increments it for eligible zero-HP alien kills, the queue tail
+ * awards its low half to the first operative shooter, then clears the dword.
+ * pbTickHold is the live Map.bGameTickHold byte (0x5A) and pbFrameScratch is the live
+ * byte_138E74 that GameTick_OnTimer clears; both are read after the battle-end callback,
+ * and either one suppresses the death message and sweep tail. Both pointers are required.
  * bUiSlotArmed is the low byte of Map.apUiSlotsA[2], which arms the spotted-flag
  * sweep and the Xcom visibility refresh.
  *
@@ -758,15 +762,15 @@ typedef struct KillCtx {
                                          * (0x3325C), and Tact_KillUnit's morale loops re-read the
                                          * two bytes after the removal (0x4e6a4, 0x4e700). */
     u8                *pnEnemyCount;    /* nEnemyUnitCount @ 0x15124 */
+    i32               *pnCivilianCount; /* Map+0x15120, updated when Tact_KillUnit appends a corpse */
     TactItem          **apTactItems;    /* Map.apTactItems */
     i32                *pnTactItem;     /* Map.nTactItemCount, in/out */
     ObjectRecFull     **apObjects;      /* Map.apObjects */
     Soldier           **ppSelUnit;      /* Map.pSelUnit */
-    i32                *pnKillCount;    /* Map.gap_TrajRest + 4*49940 */
+    u32                *pnKillCredit;   /* TactState+0x111D0, dword increment/reset; low half paid */
     const char         *pszTransformName;
-    bool                bTickHold;      /* Map+0x0012 unk_113A12: skips the message
-                                         * and the sweep tail (0x4F0AC) */
-    bool                bFrameScratch;  /* Map+0x254BC unk_138E74: same early exit */
+    const u8           *pbTickHold;      /* live Map+0x5A, re-read after battle-end callback */
+    const u8           *pbFrameScratch;  /* live Map+0x254BC, re-read after battle-end callback */
     bool                bUiSlotArmed;   /* Map+0x0020 unk_113A20: arms the spotted-flag
                                          * sweep and the Xcom refresh (0x4F24C) */
     StatusStack        *pStatus;

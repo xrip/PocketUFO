@@ -183,6 +183,9 @@ typedef struct TactUiHooks {
     /* The cursor flag writer (MapCursor_SetFlags @ 0x26f78). */
     void (*pfnSetCursorFlags)(u8 nFlags, void *pUser);
     void *pUser;
+    /* Live Map scratch owners used only by Ui_ConfirmFireBurst's enqueue. */
+    i32 *pnShotCount;
+    Soldier **ppThrowTarget;
 } TactUiHooks;
 
 /* One filter-selection index: 0..5, or PUFO_INV_FILTER_ALL. */
@@ -420,7 +423,9 @@ i32 Ui_ConfirmUseItem(TactUiState *pUi, Soldier *pUnit, TactItem *pWeapon,
  * record 1 and still kicks. Returns true only when the burst was enqueued.
  *
  * `pnMultiTargetCount` is a pointer because the original zeroes the count as part of
- * the same sequence, after using it for nUnk40 and the mark-clearing loop. */
+ * the same sequence, after using it for nUnk40 and the mark-clearing loop. The two
+ * fire-enqueue scratch owners are supplied through TactUiHooks and may be NULL in
+ * standalone fixtures. */
 bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
                          TactItem *pWeapon, MapCell **apMultiTargets,
                          i32 *pnMultiTargetCount, u16 uAmmoInWeapon, u8 bAmmoCap,

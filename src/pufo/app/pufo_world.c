@@ -4,8 +4,8 @@
  * The geoscape screens this shell opens are ported and wired -- Geoscape_Draw, the research,
  * soldier, hangar, facility, manuf, transfer and buy/sell open paths, and the spawn pass's hooks
  * StrategList_ProcessEvents (0x7fcb0) and the mission-spawn leaf all run live: all ten nav slots
- * carry their real handler (see the frame wiring header below). What the shell still cannot wire
- * keeps World_NoopClick handlers: the radar screen's own state (0x159684's control set).
+ * carry their real handler (see the frame wiring header below). Radar state and controls
+ * share a persistent world owner.
  */
 #include "app/pufo_world.h"
 
@@ -67,6 +67,270 @@ static const StrategRollTables g_WorldRoll = {
 static void World_NoopClick(void) { }
 
 static PufoWorldState *g_pActiveWorld; /* UiControl.pfnClick takes no arguments */
+static void World_OpenUfopaediaClick(void);
+static void World_PsiInitThunk(void *pUser);
+static void World_PsiOkClick(void);
+static void World_PsiApplyClick(void);
+static void World_PsiSelectClick(void);
+static void World_PsiScrollPrevClick(void);
+static void World_PsiScrollNextClick(void);
+static void World_TransferDrawIconStripThunk(i32 nBaseIdx, void *pUser);
+
+/* Smap_BeginCraftSelectBtn @ 0x84634: the final-assault control must set
+ * bCraftSelectAssaultFlag before entering the normal craft-selection tree. */
+static void World_FinalAssaultClick(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)Smap_BeginCraftSelectBtn(&g_pActiveWorld->craftEnv);
+    }
+}
+
+static void World_ZoomOutClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    if (pW != NULL) {
+        (void)Smap_OnZoomOut(&pW->view, pW->sets, pW->ui.pWorldSize,
+                             pW->pfnPlaySample, pW->pSoundUser);
+    }
+}
+
+static void World_ZoomInClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    if (pW != NULL) {
+        const PadImage *pStrip = pW->ui.apPad[GEOUI_PAD_186BBC];
+        (void)Smap_OnZoomIn(&pW->view, pW->sets, pW->ui.pWorldSize,
+                            pStrip != NULL ? pStrip->uHeight : 0,
+                            pW->pfnPlaySample, pW->pSoundUser);
+    }
+}
+
+/* The detail view caches the soldier index separately from the roster row. */
+static SoldierNameEditEnv World_NameEditEnv(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    SoldierNameEditEnv env = { 0 };
+
+    if (pW == NULL) {
+        return env;
+    }
+    if (pW->nSoldierCursorCopy >= 0 && pW->nSoldierCursorCopy < pW->nSoldierCount) {
+        env.pSoldier = pW->apSoldiers[pW->nSoldierCursorCopy];
+    }
+    if (pW->pSolPanelNames != NULL && pW->nSoldierCursor >= 0
+        && pW->nSoldierCursor < pW->pSolPanelNames->nLineCount) {
+        env.pszEditLine = (char *)pW->pSolPanelNames->apLines[pW->nSoldierCursor];
+    }
+    env.pbNameEditActive = &pW->bSoldierNameEditActive;
+    env.pnNameEditChar = &pW->nSoldierNameEditChar;
+    env.pfnMeasureWidth = Text_MeasureWidth;
+    return env;
+}
+
+static void World_BackspaceNameClick(void)
+{
+    const SoldierNameEditEnv env = World_NameEditEnv();
+    Map_BackspaceSelectedName(&env);
+}
+
+static void World_AcceptNameClick(void)
+{
+    const SoldierNameEditEnv env = World_NameEditEnv();
+    SoldierScreen_CopyNameToEdit(&env);
+}
+
+static void World_AppendNameGlyph(i32 nX, i32 nY, void *pUser)
+{
+    const SoldierNameEditEnv env = World_NameEditEnv();
+    (void)pUser; /* The pointer env's user belongs to the sound hook. */
+    SoldierScreen_AppendNameGlyph(&env, nX, nY);
+}
+
+/* Refresh the PSI-owned cells used by close, pointer and draw dispatch. Do not clear the live PSI
+ * env: its panel arrays, pad and scroll controls are allocations owned by PsiScreen_BuildPanels. */
+static void World_PsiWireEnv(PufoWorldState *pW)
+{
+    PsiScreenEnv *pEnv = &pW->psiEnv;
+    GeoscapeFrameState *pF = &pW->frame;
+    PsiScreenDrawEnv *pDraw = &pF->psiDraw;
+    GeoscapeScreenArmEnv *pCtl = &pF->psiCtl;
+    const UiControlHitCtx *pHit = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pHit : NULL;
+    const GfxColorEnv *pColor = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pColor : NULL;
+    const i32 nBase = (i32)pW->nBaseInfoWorkBase;
+
+    pEnv->pbBuilt           = &pW->bPsiPanelOpen;                            /* byte_15EEF0 */
+    pEnv->pbRowSel          = &pW->bPsiRowSelected;                          /* byte_15EE84[0] */
+    pEnv->pnScratchRow      = &pW->nPsiScratchRow;                           /* byte_15EE84 + 68 */
+    pEnv->pnBaseIdx         = &pW->nBaseInfoWorkBase;                        /* byte_1870F4 */
+    pEnv->pnBaseCount       = &pW->nBaseCount;                               /* 0x159D80, signed */
+    pEnv->abFacilityGrid    = pW->abFacilityGrid;
+    pEnv->pTextRecs         = (pW->pAssets != NULL)
+        ? (const u8 *)pW->pAssets->pTextRecs : NULL;
+    pEnv->apSoldiers        = pW->apSoldiers;                                /* Map + 0x1198 */
+    pEnv->nSoldierCount     = pW->nSoldierCount;                             /* 0x115350 */
+    pEnv->pnActionFail      = (i32 *)&pW->nShortfall1870C8;                  /* 0x1870C8, dword */
+    pEnv->pnResidue         = &pW->nResidue1870B4;                           /* dword_1870B4[0] */
+    pEnv->pnGeoscapeScreen  = &pW->screen.nGeoscapeScreen;                   /* 0x186BC4 */
+    pEnv->pCtlOk            = pW->ui.apCtl[GEOUI_CTL_186BA4];                /* 0x186BA4 */
+    pEnv->pCtlApply         = pW->ui.apCtl[GEOUI_CTL_186BAC];                /* 0x186BAC */
+    pEnv->pfnOkClick        = World_PsiOkClick;
+    pEnv->pfnApplyClick     = World_PsiApplyClick;
+    pEnv->pfnSelClick       = World_PsiSelectClick;
+    pEnv->pfnScrollPrev     = World_PsiScrollPrevClick;
+    pEnv->pfnScrollNext     = World_PsiScrollNextClick;
+    pEnv->pfnLoadPads       = pW->pfnLoadPads;
+    pEnv->pPadUser          = pW->pLoadPadsUser;
+
+    /* Case 19 writes both shared base bytes before invoking this init thunk. */
+    pW->closeEnv.pnShownBaseIdx = (u8 *)&pW->nShownBaseIdx;                 /* byte_158834, STRB owner */
+    pW->closeEnv.pnPsiBaseIdx = &pW->nBaseInfoWorkBase;                     /* byte_1870F4 */
+    pW->closeEnv.pfnPsiInit = World_PsiInitThunk;                           /* PsiScreen_Init @ 0x72B40 */
+    pW->closeEnv.pUser = pW;
+
+    /* Screen-17 pointer fields. The two base/overlay aliases are also used by base-info and transfer. */
+    pW->ptrEnv.pbTransferRowSel = &pW->bBaseInfoOverlayOpen;                /* byte_1870F8 */
+    pW->ptrEnv.pnTransferBaseIdx = &pW->nBaseInfoWorkBase;                  /* byte_1870F4 */
+    pW->ptrEnv.pbPsiPanelOpen = &pW->bPsiPanelOpen;                         /* byte_15EEF0 */
+    pW->ptrEnv.pbPsiRowSel = &pW->bPsiRowSelected;                          /* byte_15EE84[0] */
+    pW->ptrEnv.apPsiPanel = pEnv->apNamePanel;                              /* one name panel per base */
+    pW->ptrEnv.apPsiCtl = pEnv->apScrollCtl;                                /* prev / next */
+    pW->ptrEnv.stripHit.pbGatePsi = &pW->bPsiPanelOpen;                     /* Base_HitTestFacilityStrip gate */
+
+    /* Geoscape_Draw case 17 passes the signed byte_1870F4 as PsiScreen_Draw's base argument. */
+    pDraw->pColor = pColor;
+    pDraw->pAnim = &pF->anim;
+    pDraw->pbPanelOpen = &pW->bPsiPanelOpen;
+    pDraw->pScreenPad = pEnv->pScreenPad;
+    pDraw->nBaseIdx = pW->nBaseInfoWorkBase;
+    pDraw->nWorkBaseIdx = pW->nShownBaseIdx;
+    pDraw->pnPsiBaseIdx = &pW->nBaseInfoWorkBase;
+    pDraw->pbOverlayOpen = &pW->bBaseInfoOverlayOpen;
+    pDraw->pCtlConfirm = pW->ui.apCtl[GEOUI_CTL_186BA4];
+    pDraw->pCtlApply = pW->ui.apCtl[GEOUI_CTL_186BAC];
+    pDraw->pfnCtlBlit = (pHit != NULL) ? pHit->pfnBlit : NULL;
+    pDraw->pfnCtlBlitEx = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
+    pDraw->pCtlUser = (pHit != NULL) ? pHit->pUser : NULL;
+    pDraw->pTextRecs = (pW->pAssets != NULL)
+        ? (const char *)pW->pAssets->pTextRecs : NULL;
+    pDraw->apSiteRecs = pW->aSiteRecs;
+    pDraw->pnBaseCount = &pW->nBaseCount;
+    pDraw->abFacilityGrid = pW->abFacilityGrid;
+    pDraw->pnActionFail = (const i32 *)&pW->nShortfall1870C8;
+    pDraw->pnResidue = &pW->nResidue1870B4;
+    pDraw->pfnDrawIconStrip = World_TransferDrawIconStripThunk;             /* PSI passes mark -1 */
+    pDraw->pStripUser = pW;
+    for (i32 i = 0; i < 4; ++i) {
+        pDraw->apPanels[i] = NULL;
+    }
+    if (nBase >= 0 && nBase < (i32)pW->nBaseCount && nBase < PUFO_FAC_BASE_COUNT) {
+        pDraw->apPanels[0] = pEnv->apNamePanel[nBase];
+        pDraw->apPanels[1] = pEnv->apStatPanel[nBase];
+        pDraw->apPanels[2] = pEnv->apDeltaPanel[nBase];
+        pDraw->apPanels[3] = pEnv->apCheckPanel[nBase];
+    }
+
+    pCtl->apCtl = pEnv->apScrollCtl;
+    pCtl->pfnCtlBlit = (pHit != NULL) ? pHit->pfnBlit : NULL;
+    pCtl->pfnCtlBlitEx = (pHit != NULL) ? pHit->pfnBlitEx : NULL;
+    pCtl->pCtlBlitUser = (pHit != NULL) ? pHit->pUser : NULL;
+    pF->draw.pPsiDraw = pDraw;
+    pF->draw.pPsiCtl = pCtl;
+}
+
+static void World_PsiInitThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    if (pW == NULL) {
+        return;
+    }
+
+    World_PsiWireEnv(pW);
+    PsiScreen_Init(&pW->psiEnv);
+}
+
+static void World_PsiOkClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    BaseInfoOkState state;
+
+    if (pW == NULL) {
+        return;
+    }
+    state.nPendingBase = pW->nBaseInfoWorkBase;
+    state.bPsiPending = pW->bBaseInfoOverlayOpen;
+    state.nCurrentBase = pW->nShownBaseIdx;
+    (void)PsiScreen_OnOk(&state); /* byte-identical state update to BaseInfoScreen_OnOk @ 0x557C8 */
+    pW->nBaseInfoWorkBase = state.nPendingBase;
+    pW->bBaseInfoOverlayOpen = state.bPsiPending;
+    pW->nShownBaseIdx = state.nCurrentBase;
+}
+
+static void World_PsiApplyClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    if (pW == NULL) {
+        return;
+    }
+    World_PsiWireEnv(pW);
+    PsiScreen_ApplyAssignments(&pW->psiEnv); /* 0x72394 tears down after applying */
+}
+
+/* World destruction frees PSI allocations without applying pending checkbox edits. */
+static void World_FreePsiScreen(PufoWorldState *pW)
+{
+    if (pW == NULL || pW->bPsiPanelOpen == 0) {
+        return;
+    }
+
+    World_PsiWireEnv(pW);
+    PsiScreen_BuildPanels(&pW->psiEnv); /* built flag selects release; this does not commit assignments */
+}
+
+static void World_PsiSelectClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    if (pW == NULL) {
+        return;
+    }
+    World_PsiWireEnv(pW);
+    (void)PsiScreen_SelectListed(&pW->psiEnv);
+}
+
+static bool World_PsiPanelsAtCurrentBase(PufoWorldState *pW, UiPanel *apPanels[4])
+{
+    const i32 nBase = (i32)pW->nBaseInfoWorkBase;
+    if (nBase < 0 || nBase >= (i32)pW->nBaseCount || nBase >= PUFO_FAC_BASE_COUNT) {
+        return false;
+    }
+
+    apPanels[0] = pW->psiEnv.apNamePanel[nBase];
+    apPanels[1] = pW->psiEnv.apStatPanel[nBase];
+    apPanels[2] = pW->psiEnv.apDeltaPanel[nBase];
+    apPanels[3] = pW->psiEnv.apCheckPanel[nBase];
+    return true;
+}
+
+static void World_PsiScroll(bool bPrev)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    UiPanel *apPanels[4];
+
+    if (pW == NULL) {
+        return;
+    }
+    World_PsiWireEnv(pW);
+    if (!World_PsiPanelsAtCurrentBase(pW, apPanels)) {
+        return;
+    }
+    if (bPrev) {
+        PsiScreen_PanelPrev(apPanels);
+    } else {
+        PsiScreen_PanelNext(apPanels);
+    }
+}
+
+static void World_PsiScrollPrevClick(void) { World_PsiScroll(true); }
+static void World_PsiScrollNextClick(void) { World_PsiScroll(false); }
 
 /* Twelve 12-byte close thunks tail-call Geoscape_CloseUI @ 0x8b94c over the root block: BaseInfoScreen
  * @ 0x557bc, BaseFacScreen_CloseThunkA @ 0x589c0, BaseFacScreen_CloseThunk @ 0x59b54, FundingScreen
@@ -80,6 +344,25 @@ static void World_CloseGeoscapeThunk(void)
     if (g_pActiveWorld != NULL) {
         World_CloseGeoscape(g_pActiveWorld);
     }
+}
+
+/* Port-side (2026-11-04, user request): the options volume tab's music loop row.
+ * Flips the options byte (the cell Sound_SetLoopByte watches and `1_24gset`
+ * saves) and hands the live module the new loop flag. */
+static void World_ToggleMusicLoopThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    PufoOptions    *pOpt;
+
+    if (pW == NULL || pW->pFrameHooks == NULL) {
+        return;
+    }
+    pOpt = pW->pFrameHooks->pTactOptions;
+    if (pOpt == NULL) {
+        return;
+    }
+    pOpt->bMusicLoop = (pOpt->bMusicLoop != 0u) ? 0u : 1u;
+    Sound_SetMusicLooping(pOpt->bMusicLoop != 0u);
 }
 
 /* The build dialog's OK (BaseFacScreen_TryBuySelected @ 0x58910), installed by BaseFacScreen_Toggle
@@ -377,6 +660,17 @@ static void World_BaseFacOpenThunk(void)
     }
 }
 
+/* Refresh the by-value counts before the panel builder consumes them. */
+static void World_RefreshBaseInfoBuildEnv(PufoWorldState *pW)
+{
+    pW->baseInfoBuild.nSoldierCount = pW->nSoldierCount;
+    pW->baseInfoBuild.nBaseCount = pW->nBaseCount;
+    pW->baseInfoBuild.nSiteCount = pW->nSiteCount;
+    if (pW->pAssets != NULL) {
+        pW->baseInfoBuild.nObjectCount = (i32)pW->pAssets->nObjectCount;
+    }
+}
+
 /* BaseInfoScreen_Init @ 0x57688, the Init hook of BaseInfoScreen_Open (reached at 0x61690). It allocates
  * the pad and the two controls into the shell's fields; its tail call is BuildPanels (0x5779C). */
 static void World_BaseInfoInitThunk(void *pSlot, void *pUser)
@@ -385,6 +679,7 @@ static void World_BaseInfoInitThunk(void *pSlot, void *pUser)
 
     (void)pSlot; /* the original passes its own slot global; the port takes the env instead */
     if (pW != NULL) {
+        World_RefreshBaseInfoBuildEnv(pW);
         BaseInfoScreen_Init(&pW->baseInfoInit);
     }
 }
@@ -393,6 +688,7 @@ static void World_BaseInfoInitThunk(void *pSlot, void *pUser)
 static void World_BaseInfoBuildThunk(void)
 {
     if (g_pActiveWorld != NULL) {
+        World_RefreshBaseInfoBuildEnv(g_pActiveWorld);
         BaseInfoScreen_BuildPanels(&g_pActiveWorld->baseInfoBuild);
     }
 }
@@ -404,6 +700,7 @@ static void World_BaseInfoBuildHook(void *pUser)
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
     if (pW != NULL) {
+        World_RefreshBaseInfoBuildEnv(pW);
         BaseInfoScreen_BuildPanels(&pW->baseInfoBuild);
     }
 }
@@ -1068,6 +1365,9 @@ static void World_ManufIncUnitsThunk(void)
         return;
     }
     pW->manufUnits.pProductPanel = pW->pManufProductPanel;
+    pW->manufUnits.nCraftCount = (i32)pW->bCraftCount; /* Raw 0x660A4 reads the live count. */
+    pW->manufUnits.nBaseCount = pW->nBaseCount;
+    pW->manufUnits.nSiteCount = pW->nSiteCount; /* Raw 0x6E27C reads the live count. */
     (void)ManufScreen_IncUnits(&pW->manufUnits);
 }
 
@@ -1905,6 +2205,75 @@ static void World_OptionsMenuCloseClick(void)
     }
 }
 
+/* Ui_OpenFunding's pfnFundingOpen slot. The manual screen owns its panels; the close dispatcher
+ * re-enters FundingScreen_Open with these same persistent envs to free them. */
+static void World_FundingOpenThunk(void *pUser)
+{
+    PufoWorldState *pW = (pUser != NULL) ? (PufoWorldState *)pUser : g_pActiveWorld;
+
+    if (pW != NULL) {
+        (void)FundingScreen_Open(&pW->fundingManual.toggle, &pW->fundingManual.open);
+    }
+}
+
+/* Root control 12 (Ui_OpenFunding @ 0x85164), the player-facing manual funding screen. */
+static void World_OpenFundingClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+
+    if (pW != NULL) {
+        World_WireManualFunding(pW);
+        Ui_OpenFunding(&pW->screen, &pW->options.screenHooks);
+    }
+}
+
+/* Keep the manual panel envs on the world because the screen's close path calls back through them.
+ * The pad/open/total cells are shared original globals with the monthly report. Its three-row
+ * extended report does not use the manual screen's panel records. */
+void World_WireManualFunding(PufoWorldState *pW)
+{
+    FundingManualOwner *pManual;
+
+    if (pW == NULL) {
+        return;
+    }
+    pManual = &pW->fundingManual;
+
+    pManual->toggle.pbOpen = &pW->bFundScreenOpen;
+    pManual->toggle.pnTotal = &pW->nFundDisplayTotal;
+    pManual->toggle.ppPad = &pW->pFundPad;
+    pManual->toggle.ppPanelNames = &pManual->pPanelNames;
+    pManual->toggle.ppPanelBars = &pManual->pPanelBars;
+    pManual->toggle.ppPanelArrows = &pManual->pPanelArrows;
+    pManual->toggle.pTextRecs = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL;
+    pManual->toggle.anBar = pW->economy.anFundBar;
+    pManual->toggle.anLevel = pW->economy.aZero44_49;
+
+    pManual->open.pCloseCtl = pW->ui.apCtl[GEOUI_CTL_186B00];
+    pManual->open.pfnCloseClick = World_CloseGeoscapeThunk;
+
+    pW->options.screenHooks.pfnFundingOpen = World_FundingOpenThunk;
+    pW->options.screenHooks.pUser = pW;
+    pW->closeEnv.pFundingToggle = &pManual->toggle;
+    pW->closeEnv.pFundingOpen = &pManual->open;
+
+    /* FundingDrawEnv stores these as by-value pointers. Refresh them after the toggle allocates or
+     * frees the records so the screen-15 draw sees the current owner state. */
+    pW->fundingDraw.pPanelNames = pManual->pPanelNames;
+    pW->fundingDraw.pPanelBars = pManual->pPanelBars;
+    pW->fundingDraw.pPanelArrows = pManual->pPanelArrows;
+}
+
+static void World_FreeManualFunding(PufoWorldState *pW)
+{
+    if (pW->bFundScreenOpen != 0
+        && (pW->fundingManual.pPanelNames != NULL || pW->fundingManual.pPanelBars != NULL
+            || pW->fundingManual.pPanelArrows != NULL)) {
+        World_WireManualFunding(pW);
+        FundingScreen_Toggle(&pW->fundingManual.toggle);
+    }
+}
+
 /* Root controls [2..7] (the six dwords at 0x186500..0x186514, apGeoscapeSpeedCtl): the six speed
  * widgets. Geoscape_InitUI installs GameTime_Set5Sec..GameTime_SetSpeedIdx5 into them (the six STRs
  * at 0x86548..0x86584); each handler plays sample 17, stores its interval (5/60/300/1380/2460/3600)
@@ -2102,6 +2471,27 @@ void World_FillMissionCtx(PufoWorldState *pW, SpawnMissionCtx *pCtx)
     pCtx->hooks.pUser             = pW;
 }
 
+static void World_TactLootAppendLine(i32 nFlag, i32 nC0, i32 nC1, i32 nC2, void *pUser);
+
+/* Build the short-lived loot env used by both tactical shutdown and strategic mission return. */
+static void World_FillTacticalLootEnv(PufoWorldState *pW, TacticalLootEnv *pEnv)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->apCraft          = pW->apCraft;
+    pEnv->apBases          = pW->apBases;
+    pEnv->apObjects        = (pW->pAssets != NULL) ? pW->pAssets->apObjects : NULL;
+    pEnv->apSoldiers       = pW->apSoldiers;
+    pEnv->pnSoldierCount   = &pW->nSoldierCount;
+    pEnv->abFacilityGrid   = pW->abFacilityGrid;
+    pEnv->pdwUiRefreshFlag = &pW->nShortfall1870C8;
+    pEnv->pnInterceptShipIdx = &pW->nInterceptShipIdx;
+    pEnv->nBaseCount       = (i32)pW->nBaseCount;
+    pEnv->nShipCount       = (i32)pW->bCraftCount;
+    pEnv->nObjectCount     = (pW->pAssets != NULL) ? (i32)pW->pAssets->nObjectCount : 0;
+    pEnv->pfnAppendLine    = World_TactLootAppendLine;
+    pEnv->pUser            = pW;
+}
+
 /* 0x81BEC: StrategList_RollCraftStats hands the mission subtype it just rolled straight to the spawner,
  * which starts it -- nPhase 3 for subtype 0, 4 for every other subtype, with the target cleared. */
 static int World_SpawnMission(StrategItem *pUfo, i32 nMissionSub, void *pUser)
@@ -2114,15 +2504,15 @@ static int World_SpawnMission(StrategItem *pUfo, i32 nMissionSub, void *pUser)
 }
 
 /* StrategList_ProcessEvents @ 0x7fcb0, the geoscape event pass StrategList_MaybeSpawnCraft_Process
- * tail-calls. Two sub-envs the shell does not own yet (the radar session and the tactical-loot env)
- * stay NULL, which skips those side effects; the guards are in the ported function. The mission ctx is
- * filled: 0x809B8 is the per-item mission advance (`Geoscape_SpawnMissionSite(pItem, -1, ...)`) that
- * runs once an item's travel time is up. */
+ * tail-calls. Radar session, ship-removal, mission and loot envs use live World owners.
+ * World_WireRadarSession supplies the radar env before the event pass. 0x809B8
+ * is the per-item mission advance (`Geoscape_SpawnMissionSite(pItem, -1, ...)`) when travel time is up. */
 static int World_ProcessEvents(void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
     StrategEventsEnv env;
     SpawnMissionCtx missionCtx;
+    TacticalLootEnv loot;
 
     if (pW == NULL) {
         return 0;
@@ -2145,9 +2535,14 @@ static int World_ProcessEvents(void *pUser)
     env.pTextRecs = (pW->pAssets != NULL) ? (const char *)pW->pAssets->pTextRecs : NULL;
     env.apSoldiers = pW->apSoldiers;
     env.nSoldierCount = pW->nSoldierCount;
+    env.pShipEnv = &pW->shipEnv;
     env.pSpawnCtx = &pW->spawnCtx;
     World_FillMissionCtx(pW, &missionCtx);
     env.pMissionCtx = &missionCtx;
+    World_FillTacticalLootEnv(pW, &loot);
+    env.pLootEnv = &loot;
+    World_WireRadarSession(pW);
+    env.pRadarEnv = &pW->radar.session;
     env.pfnPlaySample = pW->pfnPlaySample;
     env.pSoundUser = pW->pSoundUser;
 
@@ -2219,6 +2614,73 @@ static void World_WireCreateEnv(PufoWorldState *pW)
     pC->pResearchCol   = pW->auResearchCol + PUFO_RESEARCH_TOPIC_COUNT * nBase;
 }
 
+/* Native world contexts are needed after every geoscape InitUI, including a
+ * cold load that never runs the new-game hook. Game_StartNew still owns only
+ * the mode-0 data reset and record creation. */
+static void World_WireGameContexts(PufoWorldState *pW)
+{
+    g_pActiveWorld = pW;
+    World_WireCreateEnv(pW);
+
+    memset(&pW->optionsHooks, 0, sizeof(pW->optionsHooks));
+    pW->optionsHooks.pfnPlaySample = World_OptionsPlaySample;
+    pW->optionsHooks.pfnInit = World_OptionsInitRun;   /* OptionsScreen_Init @ 0x6be74 */
+    pW->optionsHooks.pfnOpen = World_OptionsOpenRun;   /* OptionsScreen_Open @ 0x6d0ac */
+    pW->optionsHooks.pUser = pW;
+
+    memset(&pW->spawnCtx, 0, sizeof(pW->spawnCtx));
+    pW->spawnCtx.pTables = &g_WorldRoll;
+    pW->spawnCtx.pnDifficulty = &pW->nMonthCounter;
+    pW->spawnCtx.pnEarlyGate = &pW->nAlienPoolAddend;
+    pW->spawnCtx.nZoomMode = pW->view.nMode;
+    pW->spawnCtx.pnSeed = &pW->nStrategSeed;
+    pW->spawnCtx.pfnSpawnMission = World_SpawnMission;
+    pW->spawnCtx.pfnProcessEvents = World_ProcessEvents;
+    pW->spawnCtx.pUser = pW;
+
+    for (i32 i = 0; i < PUFO_NAV_CTLS; ++i) {
+        pW->navEnv.apfnNavClick[i] = World_NoopClick;
+    }
+    pW->navEnv.apfnNavClick[0] = World_NewBaseOpenThunk;
+    pW->navEnv.apfnNavClick[1] = World_BaseInfoOpenThunk;
+    pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk;
+    pW->navEnv.apfnNavClick[3] = World_PlaneOpenThunk;
+    pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;
+    pW->navEnv.apfnNavClick[5] = World_ResearchOpenThunk;
+    pW->navEnv.apfnNavClick[6] = World_ManufOpenThunk;
+    pW->navEnv.apfnNavClick[7] = World_TransferOpenThunk;
+    pW->navEnv.apfnNavClick[8] = World_BuySellOpenBuyThunk;
+    pW->navEnv.apfnNavClick[9] = World_BuySellOpenSellThunk;
+    pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk;
+    pW->navEnv.apfnPanelClick[1] = World_SolPanelNextThunk;
+    pW->navEnv.apfnFindClick[0] = World_SolFindNextThunk;
+    pW->navEnv.apfnFindClick[1] = World_SolFindPrevThunk;
+    pW->navEnv.apfnFindClick[2] = World_TransferFlagThunk;
+    pW->navEnv.pfnLoadPads = pW->pfnLoadPads;
+    pW->navEnv.pLoadPadsUser = pW->pLoadPadsUser;
+
+    memset(&pW->hangarEnv, 0, sizeof(pW->hangarEnv));
+    pW->hangarEnv.abFacilityGrid = pW->abFacilityGrid;
+    pW->hangarEnv.abGridBytes = pW->abGridHangarBytes;
+    pW->hangarEnv.apCraft = pW->apCraft;
+    pW->hangarEnv.apBases = pW->apBases;
+
+    memset(&pW->facInitEnv, 0, sizeof(pW->facInitEnv));
+    pW->facInitEnv.pCloseCtl = pW->ui.apCtl[GEOUI_CTL_186B00];
+    pW->facInitEnv.pUpCtl = &pW->ctlFacUp;
+    pW->facInitEnv.pDownCtl = &pW->ctlFacDown;
+    pW->facInitEnv.pnUnk15887C = &pW->nUnk15887C;
+    pW->facInitEnv.pnUnk158880 = &pW->nUnk158880;
+    pW->facInitEnv.pbArmed = &pW->bArmedPlacement;
+    pW->facInitEnv.pfnPanelPrev = World_FacPanelPrevThunk;
+    pW->facInitEnv.pfnPanelNext = World_FacPanelNextThunk;
+    pW->facInitEnv.pfnCloseThunk = World_CloseGeoscapeThunk;
+    pW->facInitEnv.pfnLoadPads = pW->pfnLoadPads;
+    pW->facInitEnv.pPadUser = pW->pLoadPadsUser;
+    pW->facInitEnv.pfnToggle = World_FacToggleThunk;
+    pW->facInitEnv.pToggleUser = pW;
+}
+
 /* The mode-0 hook: Game_StartNew over the same state. */
 static void World_StartNewHook(void *pUser)
 {
@@ -2229,7 +2691,7 @@ static void World_StartNewHook(void *pUser)
     StartNewEnv env;
     i32 i;
 
-    World_WireCreateEnv(pW); /* the create env is on the state now: the overlay commit needs it too */
+    World_WireGameContexts(pW); /* shared contexts are ready before StartNew creates records */
 
     memset(&unitEnv, 0, sizeof(unitEnv));
     unitEnv.apSoldiers = pW->apSoldiers;
@@ -2246,47 +2708,6 @@ static void World_StartNewHook(void *pUser)
     shipEnv.pStrategList = &pW->strategList;
     shipEnv.pnStrategSeed = &pW->nStrategSeed;
     shipEnv.pnZoomMode = &pW->view.nMode;
-
-    /* The original reads the roll's two scalars from globals inside the callee, and the port lifted
-     * them into arguments, so the shell hands pointers to its own live cells: the row index is
-     * nMonthCounter (0x81AB4) and the early gate is nAlienPoolAddend (0x81B7C). Neither is a
-     * difficulty setting -- the clock writes both (FundingScreen_OpenMonthly @ 0x5D170,
-     * Geoscape_TickBases @ 0x5D3BC) -- so a frozen pair would keep the alien class at 2 and every
-     * weight row at 0 for the whole game. */
-    memset(&pW->spawnCtx, 0, sizeof(pW->spawnCtx));
-    pW->spawnCtx.pTables = &g_WorldRoll;
-    pW->spawnCtx.pnDifficulty = &pW->nMonthCounter;
-    pW->spawnCtx.pnEarlyGate = &pW->nAlienPoolAddend;
-    pW->spawnCtx.nZoomMode = pW->view.nMode;
-    pW->spawnCtx.pnSeed = &pW->nStrategSeed;
-    pW->spawnCtx.pfnSpawnMission = World_SpawnMission;
-    pW->spawnCtx.pfnProcessEvents = World_ProcessEvents;
-    pW->spawnCtx.pUser = pW;
-
-    /* The fifteen handlers Geoscape_BuildNavControls installs (0x67B74..0x67D28), one unrolled
-     * `LDR R3,=fn / STR R3,[R0,#0xC]` per slot, in slot order 0..9 (0x67B74, 0x67B80, 0x67B8C, 0x67B98,
-     * 0x67BA4, 0x67BB0, 0x67BBC, 0x67BC8, 0x67BD4, 0x67BE0). All ten nav slots are filled: the shell
-     * can draw every screen each one opens. */
-    for (i = 0; i < PUFO_NAV_CTLS; ++i) {
-        pW->navEnv.apfnNavClick[i] = World_NoopClick;
-    }
-    pW->navEnv.apfnNavClick[0] = World_NewBaseOpenThunk;   /* NewBaseScreen_Open @ 0x615d0, id 2 (0x67B74) */
-    pW->navEnv.apfnNavClick[1] = World_BaseInfoOpenThunk;  /* BaseInfoScreen_Open @ 0x6167c, id 3 (0x67B80) */
-    pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk; /* SoldierScreen_Toggle @ 0x64af0, id 4 (0x67B8C) */
-    pW->navEnv.apfnNavClick[3] = World_PlaneOpenThunk;     /* BasePlaneScreen_Open @ 0x617f4, id 6 (0x67B98) */
-    pW->navEnv.apfnNavClick[4] = World_BaseFacOpenThunk;   /* BaseFacScreen_Open @ 0x61844, id 7 (0x67BA4) */
-    pW->navEnv.apfnNavClick[5] = World_ResearchOpenThunk;  /* ResearchScreen_Open @ 0x616ac, id 8 (0x67BAC) */
-    pW->navEnv.apfnNavClick[6] = World_ManufOpenThunk;       /* ManufScreen_Open @ 0x614cc, id 9 (0x67BBC) */
-    pW->navEnv.apfnNavClick[7] = World_TransferOpenThunk;    /* TransferScreen_Open @ 0x614fc, id 10 (0x67BC4) */
-    pW->navEnv.apfnNavClick[8] = World_BuySellOpenBuyThunk;  /* BuySellScreen_OpenBuy @ 0x61794, id 11 (0x67BD4) */
-    pW->navEnv.apfnNavClick[9] = World_BuySellOpenSellThunk; /* BuySellScreen_OpenSell @ 0x617c4, id 12 (0x67BE0) */
-    pW->navEnv.apfnPanelClick[0] = World_SolPanelPrevThunk; /* SoldierScreen_PanelPrev @ 0x61874 (0x67C84) */
-    pW->navEnv.apfnPanelClick[1] = World_SolPanelNextThunk; /* SoldierScreen_PanelNext @ 0x6189c (0x67C90) */
-    pW->navEnv.apfnFindClick[0] = World_SolFindNextThunk;   /* SoldierScreen_FindNextAtBase @ 0x6192c (0x67D10) */
-    pW->navEnv.apfnFindClick[1] = World_SolFindPrevThunk;   /* SoldierScreen_FindPrevAtBase @ 0x618c4 (0x67D1C) */
-    pW->navEnv.apfnFindClick[2] = World_TransferFlagThunk;  /* Ui_SetTransferFlag @ 0x619a8 (0x67D28) */
-    pW->navEnv.pfnLoadPads = pW->pfnLoadPads;
-    pW->navEnv.pLoadPadsUser = pW->pLoadPadsUser;
 
     memset(&env, 0, sizeof(env));
     env.apObjects = pAssets->apObjects;
@@ -2339,34 +2760,6 @@ static void World_StartNewHook(void *pUser)
     env.pZoomSets = pW->sets;
     env.pWorldOut = pW->ui.pWorldSize; /* the pair InitUI allocated at 0x186BC0 */
     env.pbFlag187080 = &pW->bUiAnimStarted; /* bUiAnimStarted @ 0x187080 */
-    /* The map click's own envs. The rosters and the selected base are refreshed on every click,
-     * so only the pointers are wired here. */
-    memset(&pW->hangarEnv, 0, sizeof(pW->hangarEnv));
-    pW->hangarEnv.abFacilityGrid = pW->abFacilityGrid;
-    pW->hangarEnv.abGridBytes = pW->abGridHangarBytes; /* the 0x159DBC byte table. It used to point at
-                                                        * saveBases.abUnk159DBC, i.e. at the save record; the
-                                                        * save join writes that field from abGridHangarBytes,
-                                                        * so one array now holds the live table */
-    pW->hangarEnv.apCraft = pW->apCraft;
-    pW->hangarEnv.apBases = pW->apBases;
-
-    memset(&pW->facInitEnv, 0, sizeof(pW->facInitEnv));
-    pW->facInitEnv.pCloseCtl = pW->ui.apCtl[GEOUI_CTL_186B00]; /* *g_pUiCloseCtl, not a second instance */
-    pW->facInitEnv.pUpCtl = &pW->ctlFacUp;
-    pW->facInitEnv.pDownCtl = &pW->ctlFacDown;
-    pW->facInitEnv.pnUnk15887C = &pW->nUnk15887C;
-    pW->facInitEnv.pnUnk158880 = &pW->nUnk158880;
-    pW->facInitEnv.pbArmed = &pW->bArmedPlacement;
-    pW->facInitEnv.pfnPanelPrev = World_FacPanelPrevThunk; /* BaseFacScreen_PanelPrev @ 0x589cc */
-    pW->facInitEnv.pfnPanelNext = World_FacPanelNextThunk; /* BaseFacScreen_PanelNext @ 0x589dc */
-    pW->facInitEnv.pfnCloseThunk = World_CloseGeoscapeThunk; /* BaseFacScreen_CloseThunkA @ 0x589c0 (0x5A1C4)
-                                                               * and BaseFacScreen_CloseThunk @ 0x59b54 (0x5A254):
-                                                               * both tail-call Geoscape_CloseUI @ 0x8b94c */
-    pW->facInitEnv.pfnLoadPads = pW->pfnLoadPads;
-    pW->facInitEnv.pPadUser = pW->pLoadPadsUser;
-    pW->facInitEnv.pfnToggle = World_FacToggleThunk; /* BaseFacScreen_Toggle @ 0x589ec */
-    pW->facInitEnv.pToggleUser = pW;
-
     env.pfnTryConfirmClick = World_ConfirmClick; /* NewBaseScreen_TryConfirm @ 0x6152c, installed by 0x95454..0x95464 */
     env.pNav = &pW->nav;
     env.pNavEnv = &pW->navEnv;
@@ -2424,6 +2817,8 @@ static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
     for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
         pEnv->apfnRootClick[i] = World_NoopClick;
     }
+    pEnv->apfnRootClick[0] = World_ZoomOutClick; /* Smap_OnZoomOut @ 0x84ab8 */
+    pEnv->apfnRootClick[1] = World_ZoomInClick;  /* Smap_OnZoomIn @ 0x84ad8 */
     /* Root controls [2..7] (0x186500..0x186514, apGeoscapeSpeedCtl): the six speed handlers, the six
      * STRs at 0x86548..0x86584. Geoscape_InitUI also posts the 5-second default over them at 0x86AB0
      * (GameTime_Set5Sec), which the InitUI body runs itself. */
@@ -2440,11 +2835,12 @@ static void World_FillInitUiEnv(PufoWorldState *pW, GeoscapeInitEnv *pEnv)
     pEnv->apfnRootClick[8] = World_OptionsMenuClick;
     pEnv->apfnRootClick[9] = World_OptionsMenuCloseClick;
     /* Root control [10] (the dword at 0x186520, the handler installed at 0x865AC) is the geoscape's
-     * build-mode widget: Base_EnterBuildMode @ 0x84e20. Slots [11] (0x186524, Ui_OpenBaseInfo) and
-     * [12] (0x186528, Ui_OpenFunding) stay no-ops: the funding screen's Init chain has no shell owner
-     * yet, and the base-info opener reaches the same panels nav slot 1 already serves. Recorded in PLAN. */
+     * build-mode widget: Base_EnterBuildMode @ 0x84e20. Slot [11] opens the Ufopaedia (screen 16),
+     * distinct from nav slot 1's base view (screen 3). Slot [12] opens manual funding. */
     pEnv->apfnRootClick[10] = World_EnterBuildModeThunk;
-    pEnv->pfnCraftSelectClick = World_NoopClick;
+    pEnv->apfnRootClick[11] = World_OpenUfopaediaClick;
+    pEnv->apfnRootClick[12] = World_OpenFundingClick;
+    pEnv->pfnCraftSelectClick = World_FinalAssaultClick;
     pEnv->pfnRadarClick = World_RadarClickThunk; /* Geoscape_OnRadarListClick @ 0x854c4 */
     pEnv->pfnStartNew = World_StartNewHook;
     pEnv->pHookUser = pW;
@@ -2468,6 +2864,9 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
 {
     GeoscapeInitEnv env;
 
+    World_FreeRadarSession(pW);
+    World_FreePsiScreen(pW);
+    World_FreeManualFunding(pW);
     pW->pAssets = pAssets;
     pW->pFont = pFont;       /* fontSys @ 0x158268: the tact env reads it, as does the alien sprite loader */
     pW->pOptions = pOptions; /* its gamma cell is Map+0x15100; its volume steps feed the tact tail */
@@ -2476,6 +2875,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
                                                        * startup speed is the registry value, default 4 */
     pW->nMapGamma = pOptions->nGamma;                 /* Map+0x15100, same model and same copy */
     if (pHooks->pColor != NULL) {
+        pHooks->pColor->pnFadeCount = &pW->nMapUiSlot1;
         pHooks->pColor->pnGamma = &pW->nMapGamma;     /* the colour packs read this same cell: 0x2d860
                                                      * re-reads Map_nGamma on every call in the original */
     }
@@ -2486,17 +2886,12 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     pW->pFrameHooks = pHooks;   /* the mission-end rebuild rewires the frame through this same object */
     g_pActiveWorld = pW;
 
-    memset(&pW->optionsHooks, 0, sizeof(pW->optionsHooks));
-    pW->optionsHooks.pfnPlaySample = World_OptionsPlaySample;
-    pW->optionsHooks.pfnInit = World_OptionsInitRun;   /* OptionsScreen_Init @ 0x6be74, 0x6CF14's tail */
-    pW->optionsHooks.pfnOpen = World_OptionsOpenRun;   /* OptionsScreen_Open @ 0x6d0ac, 0x6DD20's tail */
-    pW->optionsHooks.pUser = pW;                       /* the two runs take the state, not g_pActiveWorld */
-
     World_FillCtorEnv(pW, pAssets);
 
     memset(&pW->geo.world, 0, sizeof(pW->geo.world));
     pW->geo.world.apCraft = pW->apCraft;
     pW->geo.world.nShipCount = pW->bCraftCount;
+    pW->geo.world.pbShipCount = &pW->bCraftCount;
     pW->geo.world.apSiteState = pW->abSiteState;
     pW->geo.world.apRadarPct = pW->abRadarPct;
     pW->geo.world.pTime = &pW->geo.time;
@@ -2518,7 +2913,10 @@ void World_Free(PufoWorldState *pW)
 
     /* A live tactical mission is released first: its item and cell records go, and the soldier
      * records they reference go with GeoscapeUi_FreeAll right below (one owner, as in the original). */
+    World_FreeRadarSession(pW);
     World_FreeTactical(pW);
+    World_FreePsiScreen(pW);
+    World_FreeManualFunding(pW);
 
     memset(&roster, 0, sizeof(roster));
     roster.apSoldiers = pW->apSoldiers;
@@ -2603,9 +3001,15 @@ static void Load_HookInitUi(i32 nMode, void *pUser)
      * does after its own rebuild. */
     World_FillInitUiEnv(pW, &env);
     Geoscape_InitUI(&env, nMode);
+    World_WireGameContexts(pW);
     if (pW->pFrameHooks != NULL) {
         World_WireGeoscapeFrame(pW, pW->pFrameHooks);
     }
+}
+
+static void Load_HookRefreshMissionCtx(SpawnMissionCtx *pCtx, void *pUser)
+{
+    World_FillMissionCtx((PufoWorldState *)pUser, pCtx);
 }
 
 static void Load_HookTactShutdown(void *pUser)
@@ -2627,6 +3031,9 @@ static void Load_HookFreeAll(void *pUser)
     PufoWorldState *pW = (PufoWorldState *)pUser;
     GeoscapeRoster roster;
 
+    World_FreeRadarSession(pW);
+    World_FreePsiScreen(pW);
+    World_FreeManualFunding(pW);
     memset(&roster, 0, sizeof(roster));
     roster.apSoldiers = pW->apSoldiers;
     roster.nSoldierCount = (u16)pW->nSoldierCount;
@@ -2660,6 +3067,238 @@ static void World_WireBasesLive(PufoWorldState *pW, SaveBasesLive *pLive)
     pLive->abSiteRecords     = (u8 *)&pW->aSiteRecs[0];                /* 0x186C40, stride 0x40 */
 }
 
+static void World_CopySmapSiteFields(SmapSite *pDst, const SmapSite *pSrc)
+{
+    pDst->bFlag0 = pSrc->bFlag0;
+    pDst->bFlag1 = pSrc->bFlag1;
+    memcpy(pDst->auItemQty, pSrc->auItemQty, sizeof(pDst->auItemQty));
+    pDst->uRecoveredSoldiers = pSrc->uRecoveredSoldiers;
+    pDst->bRecoveredSoldierAssign = pSrc->bRecoveredSoldierAssign;
+    pDst->bRecoveredCraftCount = pSrc->bRecoveredCraftCount;
+    pDst->bUnk518 = pSrc->bUnk518;
+    memcpy(pDst->anSoldierIds, pSrc->anSoldierIds, sizeof(pDst->anSoldierIds));
+    memcpy(pDst->anCraftIds, pSrc->anCraftIds, sizeof(pDst->anCraftIds));
+    pDst->bHasLoot = pSrc->bHasLoot;
+}
+
+static void World_BindStrategEconomyPointers(PufoWorldState *pW)
+{
+    pW->saveStrateg.pnUnk1865A8 = &pW->economy.aZero44_49[0]; /* 0x1865A8 */
+    pW->saveStrateg.pnUnk186594 = &pW->economy.anFundBar[0];  /* 0x186594 */
+}
+
+static void World_StageSaveRecords(PufoWorldState *pW)
+{
+    StrategSaveState *pStrateg = &pW->saveStrateg;
+
+    pW->saveSmap.nCamParam0 = (u32)pW->view.nMode;       /* 0x1863E8 */
+    pW->saveSmap.nCamScrollX = (u32)pW->view.nScrollX;   /* 0x1863EC */
+    pW->saveSmap.nCamScrollY = (u32)pW->view.nScrollY;   /* 0x1863F0 */
+    pW->saveSmap.nParam3 = (u32)pW->nStrategSeed;        /* 0x18640C */
+    pW->saveSmap.nParam4 = (u32)pW->nSiteCount;          /* 0x186410 */
+    if (pW->apSites != NULL) {
+        for (i32 i = 0; i < PUFO_SMAP_SITE_COUNT; ++i) {
+            World_CopySmapSiteFields(&pW->saveSmap.aSites[i], &pW->apSites[i]);
+        }
+    }
+
+    World_BindStrategEconomyPointers(pW);
+    pStrateg->bSaveVersion = pW->nSaveVersion;           /* 0x18655C */
+    pStrateg->nUnk186558 = pW->nCreateNextSiteId;        /* 0x186558 */
+    pStrateg->nUnk186550 = pW->nNextCraftId;             /* 0x186550 */
+    pStrateg->nUnk186554 = pW->nNextSoldierId;           /* 0x186554 */
+    pStrateg->nStrategCount = PtrArray_GetCount(&pW->strategList); /* 0x186530 */
+    memcpy(pStrateg->abTypeCounters, pW->ctorEnv.abTypeCounters,
+           sizeof(pStrateg->abTypeCounters));            /* 0x18653C..0x186540 */
+    pStrateg->nUnk186544 = pW->nNextDisplayId;            /* 0x186544 */
+    pStrateg->nUnk186548 = pW->nNextSiteId;               /* 0x186548 */
+    pStrateg->nUnk18654C = pW->nMissionId;                /* 0x18654C */
+    pStrateg->nUnkMap6691p4845 = pW->nMonthCounter;       /* 0x159648 */
+
+    pStrateg->nUnk1865BC = pW->economy.aZero44_49[5];     /* 0x1865BC */
+    pStrateg->nUnk1865B4 = pW->economy.aZero44_49[3];     /* 0x1865B4 */
+    pStrateg->nUnk1865A0 = pW->economy.anFundBar[3];     /* 0x1865A0 */
+    pStrateg->nUnk18658C = pW->economy.anFundingBlock[9]; /* 0x18658C */
+    pStrateg->nUnk186574 = pW->economy.anFundingBlock[3]; /* 0x186574 */
+    pStrateg->nUnk1865B8 = pW->economy.aZero44_49[4];     /* 0x1865B8 */
+    pStrateg->nUnk1865A4 = pW->economy.anFundBar[4];     /* 0x1865A4 */
+    pStrateg->nUnk186590 = pW->economy.anFundingBlock[10];/* 0x186590 */
+    pStrateg->nUnk186578 = pW->economy.anFundingBlock[4]; /* 0x186578 */
+    pStrateg->nUnk186580 = pW->economy.anFundingBlock[6]; /* 0x186580 */
+    pStrateg->nUnk186568 = pW->economy.anFundingBlock[0]; /* 0x186568 */
+    pStrateg->nUnk1865B0 = pW->economy.aZero44_49[2];     /* 0x1865B0 */
+    pStrateg->nUnk18659C = pW->economy.anFundBar[2];     /* 0x18659C */
+    pStrateg->nUnk186588 = pW->economy.anFundingBlock[8]; /* 0x186588 */
+    pStrateg->nUnk186570 = pW->economy.anFundingBlock[2]; /* 0x186570 */
+    pStrateg->nUnk1865AC = pW->economy.aZero44_49[1];     /* 0x1865AC */
+    pStrateg->nUnk186598 = pW->economy.anFundBar[1];     /* 0x186598 */
+    pStrateg->nUnk186584 = pW->economy.anFundingBlock[7]; /* 0x186584 */
+    pStrateg->nUnk18656C = pW->economy.anFundingBlock[1]; /* 0x18656C */
+    pStrateg->nUnk186BE4 = pW->nSelectedStrategIdx;       /* 0x186BE4 */
+    pStrateg->nUnkMap6691p6937 = pW->nMsgShipIdx;         /* 0x159E74 */
+    pStrateg->nSelectedShipIdx = pW->nSelectedShipIdx;    /* 0x187054 */
+}
+
+/* The original product chunk reads and writes its columns in the live block, but this shell keeps
+ * that 16,000-byte prefix in a separate wire buffer. Its 1,152-byte legacy tail is read only by
+ * pre-v3 migration and is not one of these live product columns. */
+static void World_StageProductState(PufoWorldState *pW)
+{
+    memcpy(pW->abProductBlock, pW->auProductU32, 6400);             /* 0x159E9C, 1600 dwords */
+    memcpy(pW->abProductBlock + 6400, pW->anProductReq, 6400);      /* 0x15B79C */
+    memcpy(pW->abProductBlock + 12800, pW->auProductU16, 3200);     /* 0x15D09C, 1600 words */
+}
+
+/* Save_WriteResearch starts its 144-record walk at aResearchTopics + 4. Each wire row therefore
+ * carries the next live row's four-byte abUnk0 prefix in bUnk30..33. Row 143 uses the explicit
+ * world-owned bytes at 0x160228. */
+static void World_StageResearchState(PufoWorldState *pW)
+{
+    SaveResearchState *pSave = &pW->saveResearch;
+    const i32 nLast = PUFO_RESEARCH_TOPIC_COUNT - 1;
+
+    memcpy(pSave->abHeadA, pW->auResearchCol, 0x900);              /* 0x16022C */
+    memcpy(pSave->abHeadB, pW->auManufCol, 0x900);                 /* 0x15E19C, exact raw extent */
+    memcpy(pSave->abHeadC, pW->abResearchZero, 0x90);              /* 0x160B2C */
+    memcpy(pSave->abHeadD, pW->abResearchActive, 0x90);            /* 0x160BBC */
+
+    for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        const ResearchTopicLive *pLive = &pW->aTopics[i];
+        ResearchTopic *pWire = &pSave->aTopics[i];
+
+        pWire->wUnk0 = pLive->wGate4;             /* raw record +0 reads live topic +4 */
+        pWire->wUnk2 = pLive->wUnk6;              /* raw record +2 reads live topic +6 */
+        pWire->wNameId = pLive->wTotal;            /* raw record +4 reads live topic +8 */
+        pWire->wProgress = pLive->wProgress;       /* raw record +6 reads live topic +10 */
+        pWire->bAvailable = pLive->bActive;        /* raw record +8 reads live topic +12 */
+        pWire->bComplete = pLive->bUnlocked;       /* raw record +9 reads live topic +13 */
+        memcpy(pWire->abUnk10, pLive->abNeedItems, sizeof(pWire->abUnk10));
+        memcpy(pWire->abUnlock, pLive->abPreTopics, sizeof(pWire->abUnlock));
+        memcpy(pWire->abUnk20, pLive->abItemIds, sizeof(pWire->abUnk20));
+        memcpy(pWire->abUnk25, pLive->abActivateTopics, sizeof(pWire->abUnk25));
+
+        if (i < nLast) {
+            const u8 *pNext = pW->aTopics[i + 1].abUnk0;
+            pWire->bUnk30 = pNext[0];
+            pWire->bUnk31 = pNext[1];
+            pWire->bUnk32 = pNext[2];
+            pWire->bUnk33 = pNext[3];
+        } else {
+            pWire->bUnk30 = pW->abResearchRangeTail[0];
+            pWire->bUnk31 = pW->abResearchRangeTail[1];
+            pWire->bUnk32 = pW->abResearchRangeTail[2];
+            pWire->bUnk33 = pW->abResearchRangeTail[3];
+        }
+    }
+}
+
+static void Load_HookJoinProductState(i32 nSaveFmtVer, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    const i32 nWideBytes = (nSaveFmtVer >= 3) ? 6400 : 4608;
+    const i32 nWordBytes = (nSaveFmtVer >= 3) ? 3200 : 2304;
+
+    memcpy(pW->auProductU32, pW->abProductBlock, (size_t)nWideBytes);           /* 1600 / 1152 entries */
+    memcpy(pW->anProductReq, pW->abProductBlock + 6400, (size_t)nWideBytes);
+    memcpy(pW->auProductU16, pW->abProductBlock + 12800, (size_t)nWordBytes);
+}
+
+static void Load_HookJoinResearchState(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    const SaveResearchState *pSave = &pW->saveResearch;
+
+    memcpy(pW->auResearchCol, pSave->abHeadA, 0x900); /* 144 * 8 words */
+    memcpy(pW->auManufCol, pSave->abHeadB, 0x900);    /* original saves this prefix only */
+    memcpy(pW->abResearchZero, pSave->abHeadC, 0x90);
+    memcpy(pW->abResearchActive, pSave->abHeadD, 0x90);
+
+    for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        const ResearchTopic *pWire = &pSave->aTopics[i];
+        ResearchTopicLive *pLive = &pW->aTopics[i];
+
+        pLive->wGate4 = pWire->wUnk0;
+        pLive->wUnk6 = pWire->wUnk2;
+        pLive->wTotal = pWire->wNameId;
+        pLive->wProgress = pWire->wProgress;
+        pLive->bActive = pWire->bAvailable;
+        pLive->bUnlocked = pWire->bComplete;
+        memcpy(pLive->abNeedItems, pWire->abUnk10, sizeof(pLive->abNeedItems));
+        memcpy(pLive->abPreTopics, pWire->abUnlock, sizeof(pLive->abPreTopics));
+        memcpy(pLive->abItemIds, pWire->abUnk20, sizeof(pLive->abItemIds));
+        memcpy(pLive->abActivateTopics, pWire->abUnk25, sizeof(pLive->abActivateTopics));
+
+        /* The raw reader's bUnk30..33 writes into the next row's +0..3. Row 143's final
+         * four bytes land in the original four-byte gap at 0x160228. */
+        if (i + 1 < PUFO_RESEARCH_TOPIC_COUNT) {
+            u8 *pNext = pW->aTopics[i + 1].abUnk0;
+            pNext[0] = pWire->bUnk30;
+            pNext[1] = pWire->bUnk31;
+            pNext[2] = pWire->bUnk32;
+            pNext[3] = pWire->bUnk33;
+        } else {
+            pW->abResearchRangeTail[0] = pWire->bUnk30;
+            pW->abResearchRangeTail[1] = pWire->bUnk31;
+            pW->abResearchRangeTail[2] = pWire->bUnk32;
+            pW->abResearchRangeTail[3] = pWire->bUnk33;
+        }
+    }
+}
+
+static void Load_HookJoinSmapState(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    pW->nStrategSeed = (i32)pW->saveSmap.nParam3; /* 0x18640C */
+    pW->nSiteCount = (i32)pW->saveSmap.nParam4;   /* 0x186410 */
+    if (pW->apSites != NULL) {
+        for (i32 i = 0; i < PUFO_SMAP_SITE_COUNT; ++i) {
+            World_CopySmapSiteFields(&pW->apSites[i], &pW->saveSmap.aSites[i]);
+        }
+    }
+}
+
+static void Load_HookJoinStrategState(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    const StrategSaveState *pStrateg = &pW->saveStrateg;
+
+    World_BindStrategEconomyPointers(pW);
+    pW->nSaveVersion = pStrateg->bSaveVersion;          /* 0x18655C */
+    pW->nCreateNextSiteId = pStrateg->nUnk186558;       /* 0x186558 */
+    pW->nNextCraftId = pStrateg->nUnk186550;            /* 0x186550 */
+    pW->nNextSoldierId = pStrateg->nUnk186554;          /* 0x186554 */
+    memcpy(pW->abTypeCounters, pStrateg->abTypeCounters, sizeof(pW->abTypeCounters));
+    memcpy(pW->ctorEnv.abTypeCounters, pStrateg->abTypeCounters,
+           sizeof(pW->ctorEnv.abTypeCounters));           /* 0x18653C..0x186540 */
+    pW->nNextDisplayId = pStrateg->nUnk186544;           /* 0x186544 */
+    pW->nNextSiteId = pStrateg->nUnk186548;              /* 0x186548 */
+    pW->nMissionId = pStrateg->nUnk18654C;               /* 0x18654C */
+    pW->nMonthCounter = pStrateg->nUnkMap6691p4845;      /* 0x159648 */
+    pW->nMsgShipIdx = pStrateg->nUnkMap6691p6937;        /* 0x159E74 */
+    pW->nSelectedStrategIdx = pStrateg->nUnk186BE4;      /* 0x186BE4 */
+    pW->nSelectedShipIdx = pStrateg->nSelectedShipIdx;    /* 0x187054 */
+
+    pW->economy.anFundingBlock[0] = pStrateg->nUnk186568;
+    pW->economy.anFundingBlock[1] = pStrateg->nUnk18656C;
+    pW->economy.anFundingBlock[2] = pStrateg->nUnk186570;
+    pW->economy.anFundingBlock[3] = pStrateg->nUnk186574;
+    pW->economy.anFundingBlock[4] = pStrateg->nUnk186578;
+    pW->economy.anFundingBlock[6] = pStrateg->nUnk186580;
+    pW->economy.anFundingBlock[7] = pStrateg->nUnk186584;
+    pW->economy.anFundingBlock[8] = pStrateg->nUnk186588;
+    pW->economy.anFundingBlock[9] = pStrateg->nUnk18658C;
+    pW->economy.anFundingBlock[10] = pStrateg->nUnk186590;
+    pW->economy.anFundBar[1] = pStrateg->nUnk186598;
+    pW->economy.anFundBar[2] = pStrateg->nUnk18659C;
+    pW->economy.anFundBar[3] = pStrateg->nUnk1865A0;
+    pW->economy.anFundBar[4] = pStrateg->nUnk1865A4;
+    pW->economy.aZero44_49[1] = pStrateg->nUnk1865AC;
+    pW->economy.aZero44_49[2] = pStrateg->nUnk1865B0;
+    pW->economy.aZero44_49[3] = pStrateg->nUnk1865B4;
+    pW->economy.aZero44_49[4] = pStrateg->nUnk1865B8;
+    pW->economy.aZero44_49[5] = pStrateg->nUnk1865BC;
+}
 i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
                    PufoFont *pFont, const PufoOptions *pOptions, const WorldHooks *pHooks)
 {
@@ -2677,10 +3316,13 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     pW->gameClock.nSpeed = (u32)pOptions->nGameSpeed; /* the same Map+0x150FC mirror as World_NewGame */
     pW->nMapGamma = pOptions->nGamma;                 /* Map+0x15100 */
     if (pHooks != NULL && pHooks->pColor != NULL) {
+        pHooks->pColor->pnFadeCount = &pW->nMapUiSlot1;
         pHooks->pColor->pnGamma = &pW->nMapGamma;     /* as in World_NewGame: the colour packs read the
                                                      * Map gamma cell, not a copy of it */
     }
 
+    World_StageSaveRecords(pW); /* seed pre-read globals, including the next base site id */
+    World_StageProductState(pW); /* old product reads leave suffix bytes for the migration scratch copy */
     memset(&hooks, 0, sizeof(hooks));
     hooks.pfnRenderFrame = pHooks->pfnRenderFrame;
     hooks.pfnStartUiShutdown = pHooks->pfnStartUiShutdown;
@@ -2688,11 +3330,17 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     hooks.pfnTactShutdown = Load_HookTactShutdown;
     hooks.pfnGeoscapeUiFreeAll = Load_HookFreeAll;
     hooks.pfnTactInitMission = Load_HookTactInitMission;
+    hooks.pfnRefreshMissionCtx = Load_HookRefreshMissionCtx;
+    hooks.pfnJoinSmapState = Load_HookJoinSmapState;
+    hooks.pfnJoinStrategState = Load_HookJoinStrategState;
+    hooks.pfnJoinProductState = Load_HookJoinProductState;
+    hooks.pfnJoinResearchState = Load_HookJoinResearchState;
     hooks.pUser = pW;
 
     /* The live world mirrors the roster the readers rebuild. */
     pW->geo.world.apCraft = pW->apCraft;
     pW->geo.world.nShipCount = pW->bCraftCount;
+    pW->geo.world.pbShipCount = &pW->bCraftCount;
     pW->geo.world.apSiteState = pW->abSiteState;
     pW->geo.world.apRadarPct = pW->abRadarPct;
     pW->geo.world.pTime = &pW->geo.time;
@@ -2743,6 +3391,7 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     env.pView = &pW->view;
     env.paZoomSets = pW->sets;
     env.pWorldSize = &pW->loadWorldSize;
+    env.ppLiveWorldSize = &pW->ui.pWorldSize;
     env.pStrateg = &pW->saveStrateg;
     env.pStrategList = &pW->strategList;
     env.pnSeed = &pW->nStrategSeed;
@@ -2759,6 +3408,7 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     env.puShotObjectWords = (u16 *)pAssets->apObjects[0]; /* 0x45764: the shot object's aItemQty words */
     env.pTimeRec = &pW->saveTime;
     env.pTime = &pW->geo.time;
+    env.pnAlienPoolAddend = &pW->nAlienPoolAddend;
     /* 0x44E8C..0x44F64, the version-<3 tail: StrategList_PurgeType5 drops every type-5 item no craft
      * claims (and StrategList_RemoveAt @ 0x82B50 then refills the craft quota through the spawn seam),
      * and any active craft item off the map is teleported to (150, 250) and given a subtype-0 mission.
@@ -2766,6 +3416,10 @@ i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAss
     env.pSpawnCtx = &pW->spawnCtx;
     env.pMissionCtx = &missionCtx;
     env.pbSpawnOnceFlag = &pW->bSpawnOnce;
+    /* Port-side (2026-11-04): the savegame's music loop byte lands in the
+     * options cell, which the app already hands to Sound_SetLoopByte. */
+    env.pbMusicLoop = (pHooks->pTactOptions != NULL)
+                          ? &pHooks->pTactOptions->bMusicLoop : NULL;
     env.pHooks = &hooks;
 
     /* The mission bring-up runs INSIDE LoadGame, at 0x44E24, before DatFile_Close at 0x44E2C -- so the
@@ -2828,25 +3482,10 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
     in.pResearch = &pW->saveResearch;
     in.apShips = (const Ship *const *)pW->apCraft;
     in.nShipCount = pW->bCraftCount;
+    World_StageSaveRecords(pW); /* join the live viewport, sites, IDs, counters and economy to their wire records */
+    World_StageProductState(pW);
+    World_StageResearchState(pW);
     in.pSmap = &pW->saveSmap;
-    /* Save_WriteStrateg hands two globals straight to DatFile_Write (0x3FD44 writes 0x1865A8 and
-     * 0x3FD54 writes 0x186594), so it refuses when the port's pointer pair is unset. The shell's
-     * copies of those globals are the economy block's first slots: g_nFundArrow0 and g_nFundBar0. */
-    pW->saveStrateg.pnUnk1865A8 = &pW->economy.aZero44_49[0];  /* 0x1865A8 */
-    pW->saveStrateg.pnUnk186594 = &pW->economy.anFundBar[0];   /* 0x186594 */
-    /* nSaveFmtVer @ 0x18655C is one byte in the original and InitUI stamps it 3 (0x85864, the arm at
-     * geoiinit.c's *pbSaveVersion = 3). Save_WriteStrateg writes it (0x3F1EC) and Save_ReadStrategVersion
-     * reads it back, and Save_ReadBases/Save_ReadProduct branch on it -- so the record has to carry the
-     * live byte or the file records version 0 while its bodies are written in the version-3 layout, and
-     * every read after the version gate lands four bytes early. */
-    pW->saveStrateg.bSaveVersion = pW->nSaveVersion;
-    /* Save_WriteStrateg walks the item count the geoscape block keeps at +0x38 (0x186530, the loop
-     * bound at 0x3FE28), not the PtrArray's own count. The original keeps that cell equal to the list
-     * at every change -- StrategList_AddItem re-states PtrArray_GetCount into it at 0x82710 and
-     * StrategList_RemoveAt at 0x82B34 -- so at the moment the writer reads it they are the same
-     * number. The shell's list ops carry the count in the PtrArray alone, so the value is re-stated
-     * here, at the one place the original's reader runs. */
-    pW->saveStrateg.nStrategCount = PtrArray_GetCount(&pW->strategList);
     in.pStrateg = &pW->saveStrateg;
     in.pStrategList = &pW->strategList;
     /* Save_WriteTime @ 0x40210 keeps no record of its own: its eight writes read the clock block
@@ -2873,6 +3512,9 @@ i32 World_SaveSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, const W
     }
     in.pfnRenderFrame = pHooks->pfnRenderFrame;
     in.pRenderUser = pW;
+    /* Port-side (2026-11-04): append the `1_24gset` music loop byte. */
+    in.pbMusicLoop = (pHooks->pTactOptions != NULL)
+                         ? &pHooks->pTactOptions->bMusicLoop : NULL;
 
     pMap = pW->pTactMap;
     if (pW->bTactFlag != 0 && pMap != NULL && pW->pTactState != NULL) {
@@ -2980,9 +3622,7 @@ static i32 World_HookFindBaseBySiteId(i32 nSiteId, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
-    /* Base_FindIndexBySiteId @ 0x5a8d0 is a copy of Base_FindIndexByTypeByte @ 0x6ac30 and the port
-     * keeps the one implementation. */
-    return Base_FindIndexByTypeByte(pW->apBases, (i32)pW->nBaseCount, (u8)nSiteId);
+    return Base_FindIndexBySiteId(pW->apBases, (i32)pW->nBaseCount, nSiteId);
 }
 
 static i32 World_HookCountEmptyFacilityCells(i32 nBaseIdx, void *pUser)
@@ -3003,9 +3643,9 @@ static void World_HookProcessEvents(u8 bSpawn, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
-    /* StrategList_MaybeSpawnCraft_Process @ 0x7e420: the gate is bSpawn == 1 exactly, and the tail is
-     * the event pass World_StartNewHook already wired into the spawn context. The roll pair is read
-     * from the cells here, at the roll, exactly as 0x81AB4 and 0x81B7C read their globals. */
+    /* The original MaybeSpawnCraft tail branches to StrategList_ProcessEvents @ 0x7E490.
+     * Its zoom argument is a live global read, so refresh this copied value at each event pass. */
+    pW->spawnCtx.nZoomMode = pW->view.nMode;
     (void)StrategList_MaybeSpawnCraft_Process(&pW->strategList, pW->spawnCtx.pnSeed,
                                              pW->spawnCtx.nZoomMode, pW->spawnCtx.pTables,
                                              pW->nMonthCounter, (i32)pW->nAlienPoolAddend,
@@ -3138,6 +3778,7 @@ static i32 World_HookRebuildResearchTopics(void *pUser)
     memset(&env, 0, sizeof(env));
     env.aTopics = pW->aTopics;
     env.pbEntryCount = (const u8 *)&pW->nResearchEntries;   /* 0x160C4C, read with LDRB */
+    env.pFinalTopicRange = pW->abResearchRangeTail;
     env.apResearchCols = pW->auResearchCol;
     env.abResearchZero = pW->abResearchZero;
     env.paFac = pW->aFac;
@@ -3227,6 +3868,7 @@ static void World_HookOpenMonthly(void *pUser)
 
     /* FundingScreen_OpenMonthly @ 0x5d160: the month counter first, then the recompute, then screen id
      * 19 so Geoscape_CloseUI's case 19 runs on the way out, then bUiAnimStarted cleared. */
+    pW->fundingInit.nBaseCount = pW->nBaseCount; /* FundingScreen_Init reads live 0x159D80 */
     FundingScreen_OpenMonthly(&pW->fundingInit, &pW->screen.nGeoscapeScreen, &pW->bUiAnimStarted);
 }
 
@@ -3560,9 +4202,20 @@ static void World_TactFillActionCostsThunk(void *pUser);
 static void World_TactEnqueueTurnKickThunk(Soldier *pUnit, u8 nFacing, void *pUser);
 static void World_TactInitUiControlsThunk(void *pUser); /* Tact_InitUiControls (0x3b498), Part 54 */
 static bool World_TactOpenInventoryThunk(void *pUser);   /* TactHud_OpenInventory (0x16ef4), Part 55 */
+static const char *World_UnitNameRecord(i32 nType);
+
+typedef struct WorldTactSpawnKillState {
+    PufoWorldState *pWorld;
+    bool bKillActive;
+} WorldTactSpawnKillState;
+
+static void World_TactSpawnKillUnit(Soldier *pUnit, void *pUser);
+static void World_TactSpawnKillBattleEndThunk(void *pUser);
+static bool World_TactSpawnKillShouldRender(void *pUser);
 static void World_TactAfterEnemyStepThunk(TactCtx272 *pTact, void *pUser); /* AfterEnemyStep (0x4c4a0), Part 56 */
 static u8 World_TactClipAmmoCapThunk(u16 nAmmoTypeId, void *pUser);
 static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser);
+static void World_TactFallVisibilityThunk(Soldier *pUnit, void *pUser);
 static void World_TactEnemyAiPushTextThunk(i32 nRecIndex, void *pUser);
 static u32 World_TactRandU16Thunk(u32 nMax, void *pUser); /* forward: defined with the enemy AI's draw seam */
 
@@ -3604,10 +4257,9 @@ static void World_TactApplySaveStateThunk(const TactSaveState *pSt, void *pUser)
      * reader, and World_InitTactical copies them once it returns. */
 }
 
-/* The tactical reset at 0x444C0..0x445CC, in place and at the original's moment -- before
- * Map_PatchCraftSprites and MapView_FocusSelected run. Four cells have no owner in the port and stay
- * recorded gaps: Map+0x2C (the IDB names it nShotCount), Map+0x3C (byte_1139F4, four bytes),
- * Map+0x58/0x59, and apUiSlotsA[3..7]; nothing ported reads any of them. */
+/* The tactical reset at 0x444C0..0x445CC, before Map_PatchCraftSprites and
+ * MapView_FocusSelected. Input-only drag/repeat cells survive mission allocation,
+ * so their live owners must receive the reset too. */
 static void World_TactApplyResetThunk(const TactResetState *pR, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
@@ -3626,6 +4278,13 @@ static void World_TactApplyResetThunk(const TactResetState *pR, void *pUser)
     pW->nMapUiSlot9           = pR->aUiSlot[9];                          /* Map+0x84 */
     pW->nMapUiSlot10          = pR->aUiSlot[10];                         /* Map+0x88, the value 10 */
     pW->nUiScreen             = pR->nUiScreen;                           /* Map+0x3A */
+    pW->sTactInput.bInvDragActive = pR->bUnk3C;                          /* Map+0x3C */
+    pW->sTactInput.nUiSlot0      = pR->aUiSlot[0];                       /* Map+0x60 */
+    pW->sTactInput.nUiSlot3      = (i32)pR->aUiSlot[3];                  /* Map+0x6C */
+    pW->sTactInput.nUiSlot4      = (i32)pR->aUiSlot[4];                  /* Map+0x70, the value 200 */
+    pW->sTactInput.nUiSlot5      = pR->aUiSlot[5];                       /* Map+0x74..0x77 */
+    pW->sTactInput.nUiSlot7      = (i32)pR->aUiSlot[7];                  /* Map+0x7C */
+    pW->sTactInput.bUiSlot8Byte0  = (u8)pR->aUiSlot[8];                  /* Map+0x80 */
     if (pW->pnMapPhase != NULL) {
         *pW->pnMapPhase = pR->nAnimPhase;                                /* nMapPhase @ 0x1139EF, Map+0x37 */
     }
@@ -3635,7 +4294,9 @@ static void World_TactApplyResetThunk(const TactResetState *pR, void *pUser)
     if (pMap != NULL) {
         pMap->bActionLatch      = pR->abGap01[1];                       /* Map+0x02 */
         pMap->nMultiTargetCount = pR->nMultiTargetCount;                /* Map+0x04 */
+        pMap->nShotCount        = pR->nUnk2C;                           /* Map+0x2C */
         pMap->bFireStatus1      = pR->abFire[1];                        /* Map+0x51 */
+        pMap->bFireStatus9      = pR->abFire[9];                        /* Map+0x59 */
         pMap->status.nCount     = 0;                                    /* Map+0x54..0x57, cleared as one dword */
     }
 }
@@ -3691,10 +4352,164 @@ static i32 World_TactLoadRmpThunk(RmpData *pRmp, const char *pszBase, i32 nTileX
                     (pMap != NULL) ? (i32)pMap->geom.nDimY : 0);
 }
 
+/* The spawn tail calls Tact_KillUnit synchronously, before World_InitTactical returns.
+ * Build its normal kill context here and keep the original synchronous battle-end check. */
+static void World_TactSpawnKillBattleEndThunk(void *pUser)
+{
+    WorldTactSpawnKillState *pState = (WorldTactSpawnKillState *)pUser;
+
+    if (pState != NULL && pState->pWorld != NULL && pState->bKillActive) {
+        (void)World_MissionEndCheck(pState->pWorld, 0);
+    }
+}
+
+static bool World_TactSpawnKillShouldRender(void *pUser)
+{
+    const PufoWorldState *pW = (const PufoWorldState *)pUser;
+
+    return pW->bTactLive && World_TactStatusShouldRender(pUser);
+}
+
+/* Raw Tact_KillUnit @ 0x4F038..0x4F094 selects these aTextRecs records by gender,
+ * HP, and type; the immutable text block is owned by BootAssets. */
+static void World_FillKillMessages(KillCtx *pKill, const PufoWorldState *pW)
+{
+    const char *pText;
+
+    if (pKill == NULL || pW == NULL || pW->pAssets == NULL || pW->pAssets->pTextRecs == NULL) {
+        return;
+    }
+    pText = (const char *)pW->pAssets->pTextRecs;
+    pKill->pszMsgAliveMale      = pText + PUFO_TEXT_REC_STRIDE * 15;
+    pKill->pszMsgAliveFemale    = pText + PUFO_TEXT_REC_STRIDE * 16;
+    pKill->pszMsgDeadMaleSmall  = pText + PUFO_TEXT_REC_STRIDE * 41;
+    pKill->pszMsgDeadFemale     = pText + PUFO_TEXT_REC_STRIDE * 42;
+    pKill->pszMsgDeadMaleBig    = pText + PUFO_TEXT_REC_STRIDE * 1067;
+}
+
+/* Terrain construction calls Combat_ResolveShot at 0x23C54 and 0x23D74,
+ * before team selection and alien spawning. The cells and tactical state
+ * already exist; read the current geometry and shot origin for each call. */
+static void World_TactTerrainShotThunk(i32 nX, i32 nY, i32 nLayer, i32 nSlot,
+                                     const ObjectRec *pWeapon, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    GameMap *pMap = pW->pTactMap;
+    CombatCtx combat = {
+        .pfnLookup = World_TactLookupCell,
+        .pUser = pW,
+        .pGeom = &pMap->geom,
+        .pState = pW->pTactState,
+        .pSelUnit = pMap->pSelUnit,
+        .pCtxWeapon = (ObjectRecFull *)pWeapon,
+        .ppCtxWeapon = &pMap->pFireArg6,
+        .paHitWindow = pMap->aHitWindow,
+        .paHitWindowSave = pMap->aHitWindowSave,
+        .nShotOriginX = pW->nMapShotOrigX,
+        .nShotOriginY = pW->nMapShotOrigY,
+        .pnShotOriginX = &pW->nMapShotOrigX,
+        .pnShotOriginY = &pW->nMapShotOrigY,
+    };
+    const ShotHooks hooks = {
+        .pfnComputeFov = World_ShotComputeFovThunk,
+        .pfnAreaFire = World_TactAreaFireThunk,
+        .pUser = pW,
+    };
+
+    Combat_ResolveShot(&combat, &hooks, &pW->sTactRosters, nX, nY, nLayer,
+                       nSlot, (const ObjectRecFull *)pWeapon,
+                       pMap->aHitWindow, pMap->aHitWindowSave, NULL);
+}
+
+static void World_TactSpawnKillUnit(Soldier *pUnit, void *pUser)
+{
+    WorldTactSpawnKillState *pState = (WorldTactSpawnKillState *)pUser;
+    PufoWorldState *pW;
+    GameMap *pMap;
+    CombatCtx combat;
+    ShotHooks shotHooks;
+    StatusHooks statusHooks;
+    KillCtx kill;
+    KillHooks killHooks;
+
+    if (pState == NULL || pUnit == NULL || pState->pWorld == NULL) {
+        return;
+    }
+    pW = pState->pWorld;
+    pMap = pW->pTactMap;
+    if (pMap == NULL || pW->pTactState == NULL || pW->pAssets == NULL) {
+        return;
+    }
+
+    /* The roster arrays are live in Map; these counts are the view the kill path
+     * uses for its morale and visibility sweeps. */
+    pW->sTactRosters.nXcom  = pMap->nXcomCount;
+    pW->sTactRosters.nEnemy = pMap->nEnemyCount;
+    pW->sTactRosters.nCiv   = pMap->nCivilianCount;
+
+    memset(&combat, 0, sizeof(combat));
+    combat.pfnLookup    = World_TactLookupCell;
+    combat.pUser        = pW;
+    combat.pGeom        = &pMap->geom;
+    combat.pState       = pW->pTactState;
+    combat.pSelUnit     = pMap->pSelUnit;
+    combat.pCtxWeapon   = (ObjectRecFull *)pMap->pFireArg6;
+    combat.ppCtxWeapon  = &pMap->pFireArg6;
+    combat.paHitWindow  = pMap->aHitWindow;
+    combat.paHitWindowSave = pMap->aHitWindowSave;
+    combat.nShotOriginX = pW->nMapShotOrigX;
+    combat.nShotOriginY = pW->nMapShotOrigY;
+    combat.pnShotOriginX = &pW->nMapShotOrigX;
+    combat.pnShotOriginY = &pW->nMapShotOrigY;
+
+    memset(&shotHooks, 0, sizeof(shotHooks));
+    shotHooks.pfnComputeFov = World_ShotComputeFovThunk;
+    shotHooks.pfnAreaFire   = World_TactAreaFireThunk;
+    shotHooks.pUser         = pW;
+
+    memset(&statusHooks, 0, sizeof(statusHooks));
+    statusHooks.pfnIsBusy       = World_TactStatusIsBusy;
+    statusHooks.pfnShouldRender = World_TactSpawnKillShouldRender;
+    statusHooks.pfnRender       = World_TactStatusRender;
+    statusHooks.pUser           = pW;
+
+    memset(&kill, 0, sizeof(kill));
+    kill.pCombat          = &combat;
+    kill.pRosters         = &pW->sTactRosters;
+    kill.pnXcomCount      = &pMap->nXcomCount;
+    kill.pnEnemyCount     = &pMap->nEnemyCount;
+    kill.pnCivilianCount  = &pMap->nCivilianCount;
+    kill.apTactItems      = pW->apTactItems;
+    kill.pnTactItem       = &pW->nTactItemCount;
+    kill.apObjects        = pW->pAssets->apObjects;
+    kill.ppSelUnit        = &pMap->pSelUnit;
+    kill.pnKillCredit     = &pW->pTactState->uKillCredit;
+    kill.pszTransformName = World_UnitNameRecord(14);
+    kill.pbTickHold       = &pW->bMapTickHold;
+    kill.pbFrameScratch   = &pW->bMapFrameScratch;
+    kill.bUiSlotArmed     = pW->bMapSweepArmed != 0;
+    kill.pStatus          = &pMap->status;
+    kill.pStatusHooks     = &statusHooks;
+    kill.pVisCtx          = &pW->tactEnv.vis;
+    World_FillKillMessages(&kill, pW);
+
+    memset(&killHooks, 0, sizeof(killHooks));
+    killHooks.pfnCheckBattleEnd = World_TactSpawnKillBattleEndThunk;
+    killHooks.pShotHooks        = &shotHooks;
+    killHooks.pUser             = pState;
+
+    pState->bKillActive = true;
+    Tact_KillUnit(&kill, &killHooks, pUnit);
+    pState->bKillActive = false;
+
+}
+
 bool World_InitTactical(PufoWorldState *pW, i32 nMode)
 {
     TactInitEnv *pE;
     GameMap *pMap;
+    WorldTactSpawnKillState spawnKill;
+    bool bMissionInitOk;
 
     if (pW->bTactLive) {
         return false;
@@ -3730,6 +4545,8 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     memset(pW->apTactCells, 0, sizeof(pW->apTactCells)); /* Map_BuildMissionTerrain fills every slot */
     memset(&pW->tactEnv, 0, sizeof(pW->tactEnv));
     pE = &pW->tactEnv;
+    spawnKill.pWorld = pW;
+    spawnKill.bKillActive = false;
 
     /* --- the Map-block scalars the original reaches through the context base --- */
     pE->pMap             = pMap;
@@ -3789,7 +4606,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->pFont          = pW->pFont;                   /* fontSys @ 0x158268 */
     pE->apObjects      = pW->pAssets->apObjects;      /* Map.apObjects @ Map+0x108 */
     pE->pWeaponSel     = &pW->sTactWeaponSel;         /* unk_10DB90 */
-    pE->pUnk138EA0     = &pW->sMapSentinel138EA0;     /* Map+0x254E8 */
+    pE->pUnk138EA0     = &g_itemSlotEmpty;            /* unk_138EA0 @ Map+0x254E8 */
     pE->pItem156A88    = &pW->sTactItem156A88;
     pE->pItem156910    = &pW->sTactItem156910;
     pE->pItem156A58    = &pW->sTactItem156A58;
@@ -3807,12 +4624,13 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->nSoldierCapacity = PUFO_SOLDIER_CAPACITY;
     pE->apTactItems    = pW->apTactItems;             /* Map.apTactItems @ Map+0x23438 */
     pE->pnTactItemCount = &pW->nTactItemCount;       /* Map+0x1513C */
-    pE->pnFlobjsWide   = &pW->nMapFlobjsWide;         /* Map+0x118 */
+    pE->pnFlobjsWide   = &pW->nTactVerOut;            /* LoadGame sets TACTVER before Tact_InitMission */
     pW->nMapObjectCountU16 = (u16)pW->pAssets->nObjectCount; /* Map_nObjectCount @ Map+0x10A8 */
     pE->nObjectCount   = (i32)pW->pAssets->nObjectCount;
 
     /* --- callee envs. Init_FillCalleeEnvs fills the mission-dependent fields; these are the
      *     world-dependent fields the original reaches through globals it reads at the call. --- */
+    pE->terrain.pfnResolveShot = World_TactTerrainShotThunk;
     pE->select.panRankLow   = (const char *)g_textTables.pE;  /* aszTextE @ 0xB2200, Xcom ranks */
     pE->select.panRankOther = (const char *)g_textTables.pA;  /* aszTextA @ 0xB2148, alien ranks */
 
@@ -3838,11 +4656,10 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pE->spawnAliens.pfnLookupCell      = World_TactLookupCell;    /* for Rmp_PickSpawnForUnit */
     pE->spawnAliens.pLookupUser        = pW;
     pE->spawnAliens.pInvHooks          = &pW->tactInvHooks;
-    /* Tact_KillUnit (0x4e430) at the spawn tail stays a seam: the kill path needs the whole KillCtx,
-     * which belongs to the combat unit (a recorded deviation -- the original kills its stealth-flagged
-     * aliens, this path leaves them in the reserve). */
-    pE->spawnAliens.pfnKillUnit = NULL;
-    pE->spawnAliens.pKillUser   = NULL;
+    /* The source callback runs before Tact_InitMission returns; its local context
+     * keeps Tact_KillUnit's full side effects and synchronous battle-end check. */
+    pE->spawnAliens.pfnKillUnit = World_TactSpawnKillUnit;
+    pE->spawnAliens.pKillUser   = &spawnKill;
     pE->spawnAliens.nMissionMode    = pW->bMapMissionMode;
     pE->spawnAliens.nMissionType    = pW->nMapMissionType;
     pE->spawnAliens.nTerrainVariant = pW->nMapTerrainVariant;
@@ -3890,7 +4707,8 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     memset(&pW->sTactDropHooks, 0, sizeof(pW->sTactDropHooks));
     pW->sTactDrop.pHit      = &pW->sTactHit;
     pW->sTactDrop.pUi       = &pW->sTactUi;
-    pW->sTactDrop.pSentinel = &pW->sMapSentinel138EA0;  /* unk_138EA0 @ Map+0x254E8 */
+    pW->sTactDrop.pbInvNoTuCharge = &pW->bMapUnk1139B9; /* Map+1, distinct from Map+2 action latch */
+    pW->sTactDrop.pSentinel = &g_itemSlotEmpty;        /* unk_138EA0 @ Map+0x254E8 */
     pW->sTactDrop.pHooks    = &pW->sTactDropHooks;
     pW->sTactDropHooks.pfnPlaySample  = World_TactDropPlaySampleHook;  /* Sound_Play @ 0x9e0c0 */
     pW->sTactDropHooks.pfnFindObject  = World_TactFindObjectHook;
@@ -3969,8 +4787,8 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
                                               ? &pW->pTactState->bPhaseActive : NULL; /* 0x445AC: unk_157198's bUnk70115 */
 
         /* The four roster arrays and the item/soldier pools are the same owners World_SaveSlot wrote
-         * from; the readers fill them in place. Map+0x118 (the flobjs count-width flag) is the shell's
-         * bMapFlobjsWideFlag... which the shell does not own, so the reader takes the wide form. */
+         * from; the readers fill them in place. Both original flobjs count reads use the loaded TACTVER
+         * at MainMenu_pSlotCtx+0x118, so pass that same value to the later read. */
         memset(&pW->sTactSaveRosters, 0, sizeof(pW->sTactSaveRosters));
         pW->sTactSaveRosters.apXcomUnits    = pMap->apXcomUnits;
         pW->sTactSaveRosters.apEnemyUnits   = pMap->apEnemyUnits;
@@ -3979,7 +4797,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
         pW->sTactSaveRosters.pSelUnit       = NULL;
 
         memset(&pW->sTactFlobjs, 0, sizeof(pW->sTactFlobjs));
-        pW->sTactFlobjs.nWideCountFlag   = 1;              /* the 4-byte count form; no port cell owns Map+0x118 */
+        pW->sTactFlobjs.nWideCountFlag   = (i32)pW->nTactVerOut; /* loaded TACTVER: same gate as Save_AllocFlobjs */
         pW->sTactFlobjs.pnTactItemCount  = &pW->nTactItemCount;
         pW->sTactFlobjs.apTactItems      = (TactItem *const *)pW->apTactItems;
         pW->sTactFlobjs.apObjects        = (ObjectRecFull *const *)pW->pAssets->apObjects;
@@ -3995,10 +4813,17 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
         memset(&pW->sTactReset, 0, sizeof(pW->sTactReset));
     }
 
-    if (!Tact_InitMission(pE, nMode)) {
+    bMissionInitOk = Tact_InitMission(pE, nMode);
+    pE->spawnAliens.pfnKillUnit = NULL;
+    pE->spawnAliens.pKillUser   = NULL;
+    if (!bMissionInitOk) {
         World_FreeTactical(pW);
         return false;
     }
+    /* 0x2FD88/0x2FDBC publish the previous projectile sample to the same
+     * Map origin cells used by area fire, even when no ShotTrace is requested. */
+    pMap->aim.pnShotOriginX = &pW->nMapShotOrigX;
+    pMap->aim.pnShotOriginY = &pW->nMapShotOrigY;
     pW->bTactLive = true;
 
     if (nMode == 1) {
@@ -4020,8 +4845,9 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactMoveWiring.pMap          = pMap;
     pW->sTactMoveWiring.pTextRecs     = pW->pAssets->pTextRecs;
     pW->sTactMoveWiring.nTextRecCount = pW->pAssets->nTextRecCount;
-    /* Deviation: the radio option bank (unk_AC81A / 83A / 85A) is registry-loaded state the shell
-     * does not own yet; zero means the default armour slot and no suppressed warning. */
+    pW->sTactMoveWiring.pStatusHooks  = &pW->sTactStatusHooks;
+    /* Movement reads the live sTactUi radio selection when its context is refreshed.
+     * World_TactPushRadioBank keeps the visible controls in step with that owner. */
 
     pW->sTactTurnHooks.pfnSetPlayerInput      = World_TactSetPlayerInput;
     pW->sTactTurnHooks.pfnSetCursor           = World_TactSetCursor;
@@ -4088,6 +4914,8 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactEnemyAi.pfnLookup             = World_TactLookupCell;
     pW->sTactEnemyAi.geom                  = pMap->geom;      /* value copy, refreshed per tick */
     pW->sTactEnemyAi.pQueue                = pW->pTactState;  /* pMapTactical @ 0x157198 */
+    pW->sTactEnemyAi.pnShotCount           = &pMap->nShotCount;
+    pW->sTactEnemyAi.ppThrowTarget         = &pMap->pThrowTarget;
     pW->sTactEnemyAi.pSelect               = &pE->select;     /* Tact_SelectUnit @ 0x2c6c4 */
     pW->sTactEnemyAi.pTurnHooks            = &pW->sTactTurnHooks;
     pW->sTactEnemyAi.apEnemyUnits          = pMap->apEnemyUnits;   /* Map_apEnemyUnits @ Map+0x151CC */
@@ -4125,6 +4953,8 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
     pW->sTactEnemyAiAct.pfnFaceToward      = World_TactFaceTowardThunk;
     pW->sTactEnemyAiAct.pfnLookupCell      = World_TactLookupCell;
     pW->sTactEnemyAiAct.pState             = pW->pTactState;
+    pW->sTactEnemyAiAct.pnShotCount        = &pMap->nShotCount;
+    pW->sTactEnemyAiAct.ppThrowTarget      = &pMap->pThrowTarget;
     pW->sTactEnemyAiAct.pGeom              = &pMap->geom;
     pW->sTactEnemyAiAct.ppSelWeapon        = &pMap->pSelWeapon;
     pW->sTactEnemyAiAct.pnActionMode       = &pW->nMapActionMode;
@@ -4188,11 +5018,17 @@ void World_FreeTactical(PufoWorldState *pW)
 {
     i32 i;
 
+    pW->bTactReinitPending = false;
+
     /* The five panels: the line buffers UiPanel_ctor malloc'd, then the panel records Init malloc'd. */
     for (i = 0; i < PUFO_TACTINIT_PANELS; ++i) {
         UiPanel *pPanel = pW->tactEnv.apPanel[i];
 
         if (pPanel != NULL) {
+            /* The live row count can shrink; raw 0x3D5A0..0x3D5D4 restores
+             * the constructor's allocation count before freeing its buffers. */
+            pPanel->nLineCount = i < PUFO_SHUTDOWN_MSG_PANELS
+                ? PUFO_SHUTDOWN_LINE_COUNT : PUFO_SHUTDOWN_MSG_PANEL_28;
             UiPanel_FreeLines(pPanel);   /* 0x3e8c8 */
             free(pPanel);
             pW->tactEnv.apPanel[i] = NULL;
@@ -4471,6 +5307,20 @@ static void World_TactPushInventoryFilterPads(const PufoWorldState *pW, UiContro
     }
 }
 
+/* Radio bytes share widget 10..13's nState cells. Ui_SelectRadio owns the one-hot
+ * model in sTactUi; push it to the bank for the next frame's pad draw. */
+static void World_TactPushRadioBank(const PufoWorldState *pW)
+{
+    UiWidgetBank *pBank = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pBank : NULL;
+
+    if (pBank == NULL) {
+        return;
+    }
+    for (i32 i = 0; i < 4; ++i) {
+        pBank->aCtl[10 + i].nState = pW->sTactUi.abRadio[i];
+    }
+}
+
 /* Stand-in for MainMenu_pSlotCtx when the caller hands the frame no slot-label block: seven labels
  * that draw as nothing. TactHud_DrawModalPanel reads seven rows of 40 unconditionally, so a short
  * string is not an option here. */
@@ -4529,11 +5379,15 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     if (!World_bTactFrameLive(pW)) {
         return;
     }
+    if (bDecRef) {
+        --pW->nMapUiSlot1; /* Raw 0x36820 precedes all frame/banner state reads. */
+    }
     pMap  = pW->pTactMap;
     pTS   = pW->pTactState;
     pFont = pW->pFont;
     pHooks = pW->pFrameHooks;
     pHit  = (pHooks != NULL) ? pHooks->pHit : NULL;
+    pOpt = World_TactLiveOptions(pW);
     pHudPad = pW->apTactPads[PUFO_UIPAD_HUD];
     nPhase = (pW->pnMapPhase != NULL) ? *pW->pnMapPhase : 0; /* nMapPhase @ 0x1139EF (Map+0x37) */
     bModalOpen = pW->sModal.bOpen;
@@ -4613,7 +5467,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     arrow.pThrownItem     = pMap->pArrowThrownItem;     /* 0x14070: MoveThrow writes it (0x319FC), pSelWeapon */
 
     guide.bGameTickHold       = pW->bMapTickHold;        /* 0x5A */
-    guide.bActionReady        = pW->sTactInput.bActionReady;  /* anPhaseSave0[94] @ 0x150D6 */
+    guide.bActionReady        = (pOpt != NULL) ? pOpt->bShowBorder : 0; /* showborder @ Map+0x150D6 */
     guide.bPlayerInputEnabled = pW->bMapPlayerInput;     /* unk_1139F0 @ 0x38 */
     guide.bCursorBusy         = pMap->tact.bBusy ? 1 : 0;
     guide.bDeployPanelOpen    = pW->sTactInput.bDeployPanelOpen;   /* 0x15110 */
@@ -4682,7 +5536,12 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     modalAnim.nBand        = nPhase;                          /* 0x26648 reads the same cell, mod 4 */
     modalAnim.nSelButton   = pW->sModal.nField48;             /* apUiSlotsA[24] @ Map+0xC0 */
     modalAnim.pColor       = (pHooks != NULL) ? pHooks->pColor : NULL;
-    memset(&modalLayout, 0, sizeof(modalLayout));
+    /* UiModal_DrawDialog writes only the outputs for the buttons it draws. The original Map
+     * slots keep the prior X/Y values when a one-button or no-button modal leaves them unwritten. */
+    modalLayout.nButtonX[0] = pW->sTactInput.nSlot20X;
+    modalLayout.nButtonX[1] = pW->sTactInput.nSlot21X;
+    modalLayout.nButtonY = pW->sTactInput.nSlot22Y;
+    modalLayout.nButtonCount = pW->sTactInput.nSlot23H;
 
     /* --- the debrief status banner (screen 13, TactHud_DrawStatusBanner @ 0x1e920) ---
      * nReadyFlag is anActionPhaseSave0[92] @ 0x150D4, which the IDB names Map_bMissionVictory; the
@@ -4715,7 +5574,6 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
      * 15 = Map_UiScreen0F_PlaySample0F 0x164DC. */
     pBankCtl = (pHooks != NULL && pHooks->pBank != NULL) ? pHooks->pBank->aCtl : NULL;
     pBank    = (pHooks != NULL) ? pHooks->pBank : NULL;      /* the bank itself, for its pointer pair */
-    pOpt     = World_TactLiveOptions(pW);                    /* the option block Map_bForceNoDrag lives in */
 
     /* Screen 3, TactHud_DrawUnitRoster @ 0x21908. The panel gate is Map.pSelWeapon (Map+0x48), which
      * Ui_OpenHandMenu stores at 0x17060 before its own gates run. The twelve rows come from the two
@@ -4784,7 +5642,7 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     inv.Strip.pUi           = &pW->sTactUi;                     /* the ground-item list and its filter */
     inv.Strip.pSelUnit      = pMap->pSelUnit;
     inv.Strip.pEmptyHandPad = pW->apTactPads[PUFO_UIPAD_TWONONE];          /* unk_156A70 "twonone" */
-    inv.Strip.pEmptySlot    = &pW->sMapSentinel138EA0;                     /* unk_138EA0 @ Map+0x254E8 */
+    inv.Strip.pEmptySlot    = &g_itemSlotEmpty;                             /* unk_138EA0 @ Map+0x254E8 */
     inv.Strip.nBigObsBase   = inv.nBigObsBase;
 
     /* Screen 2, MapView_DrawMinimap @ 0x1ed4c: the look-mode overview, the other arm that REPLACES the
@@ -4967,14 +5825,10 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     rf.nFadeIn           = pW->nMapUiSlot10;                    /* dword_113A40 @ 0x88, post-tick */
     rf.pFadePad          = pW->apTactPads[PUFO_UIPAD_ENEMYSTEP]; /* pPadEnemyStep @ 0x156AA0 */
     rf.pStatusStack      = &pMap->status;
-    rf.pnStatusOutY      = &nStatusOutY;  /* Map.nStatusDrawY: the iso tail and the fade tail share it */
+    rf.pnStatusOutY      = &nStatusOutY;  /* draw-context pen Y; separate from Map shot count */
     rf.pStatusHooks      = &statusHooks;
 
-    if (bDecRef) {
-        Render_Frame_DecRef(&pW->nMapUiSlot1, &rf); /* 0x3681C: --Map+0x64 first, then the frame */
-    } else {
-        (void)Render_Frame(&rf);
-    }
+    (void)Render_Frame(&rf);
 
     /* What the frame moved stays in the cells that own it. Only the modal arm writes the layout,
      * so the pen's status-line cells are touched only when the dialog was drawn (0x266D4,
@@ -4993,6 +5847,20 @@ void World_TactFrame(PufoWorldState *pW)
 {
     if (World_bTactFrameLive(pW)) {
         World_TactFrameDraw(pW, false);
+    }
+}
+
+void World_TickLookControl(PufoWorldState *pW)
+{
+    UiControl *pCtl = &pW->sTactLookCtl;
+
+    /* WM_TIMER C352, 0xA0A6C..0xA0ABC: slide the armed confirm pad into view. */
+    if (pW->bTactFlag != 0 && pCtl->bEnabled != 0 && pCtl->x < 0) {
+        i32 nStep = (i32)pCtl->x / -3;
+        if (nStep < 1) {
+            nStep = 1;
+        }
+        pCtl->x = (i16)((i32)pCtl->x + nStep);
     }
 }
 
@@ -5055,18 +5923,19 @@ static void World_TactFocusSelectedThunk(void *pUser)
                           pW->bMapSweepArmed, &pW->tactEnv.cursor);
 }
 
-/* Unit_FaceToward @ 0x49bf0 enqueues a command-0 turn, so the seam carries the queue. */
+/* Unit_FaceToward @ 0x49bf0 enqueues on the live tactical queue. All World callbacks
+ * carry PufoWorldState, including EnemyAiActCtx's shared callback context. */
 static void World_TactFaceTowardThunk(Soldier *pUnit, i32 nX, i32 nY, void *pUser)
 {
-    Unit_FaceToward((TactState *)pUser, pUnit, nX, nY);
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    Unit_FaceToward(pW->pTactState, pUnit, nX, nY);
 }
 
 /* TurnHooks.pfnRequestFire stands for TactState_EnqueueFireBurst @ 0x4b080 plus the KickQueue
  * @ 0x4f334 after it (turn.h). The weapon/mode pick the original does before the enqueue is
- * Unit_SelectBestFireMode @ 0x478e4; the Turn boundary hands it to this hook.
- * Deviation: the burst's per-entry nArg is the per-mode enable the original reads from the
- * second action bank (Map+0x4E7C, Ui_FillActionCosts @ 0x26104); the shell does not own that
- * bank yet, so the mode's TU-cost table stands in with the enable at 0. */
+ * Unit_SelectBestFireMode @ 0x478e4; the Turn boundary hands it to this hook. The original
+ * passes the chosen mode's Map+0x4E7C value as nArg; the selector's port stores it in
+ * sTactActionCosts.nAccuracy. */
 static void World_TactRequestFireThunk(Soldier *pUnit, i32 nX, i32 nY, i32 nZ, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
@@ -5093,15 +5962,15 @@ static void World_TactRequestFireThunk(Soldier *pUnit, i32 nX, i32 nY, i32 nZ, v
     spec.nY            = nY;
     spec.nZ            = (u8)nZ;
     spec.nTuCost       = pW->sTactActionCosts.nTuCost[pW->nMapActionMode];
-    /* FireBurstSpec.nArg is pCtxBase.nUnk40 @ Map+0x28 (0x1139E0, the cell the IDB names
-     * Map_nBurstShots) at call time -- Ui_SetFireMode writes 1/1/3 into it (pufo_tactui.h).
-     * The Part 50 note that this needed the anActionEnabled bank was a misattribution:
-     * anActionEnabled[11] is the THROW's argument (enemyai.h:270), not the burst's. */
-    spec.nArg          = pMap->nBurstShots;
+    /* 0x4DAAC/0x4DCC0 load Map+0x4E7C+4*mode and pass it as nArg. The selector
+     * stores the same per-mode value in nAccuracy; nBurstShots is a separate field. */
+    spec.nArg          = pW->sTactActionCosts.nAccuracy[pW->nMapActionMode];
     spec.uAmmoInWeapon = pItem->nAmmo;
     spec.bAmmoCap      = pItem->pObj->bAmmoCap;
+    spec.pnShotCount   = &pMap->nShotCount;
+    spec.ppThrowTarget = &pMap->pThrowTarget;
     (void)TactState_EnqueueFireBurst(pW->pTactState, &spec, World_TactFaceTowardThunk,
-                                     pW->pTactState);
+                                     pW);
     TactState_KickQueue(pW->pTactState);
 }
 
@@ -5144,10 +6013,8 @@ static void World_TactSpotFocusThunk(MapCell *pCell, void *pUser)
     World_TactFocusCellThunk(pCell, pUser);
 }
 
-/* TickHooks.pfnRenderFrame = Render_Frame @ 0x22310. The walker reaches it from the busy
- * multi-entry move arm at 0x5422C. The shell's tactical paint is still the recorded gap (the
- * iso-draw env belongs to the banner unit), so the repaint goes to the caller's frame hook and
- * is a no-op while the shell draws nothing on a tactical screen. */
+/* Render_Frame @ 0x22310: active tactical screens draw through World_TactFrame;
+ * other screens use the app's frame hook. The walker also calls it at 0x5422C. */
 static void World_TactRenderThunk(void *pUser)
 {
     World_TactRenderFrame((PufoWorldState *)pUser);
@@ -5232,10 +6099,10 @@ static void World_TactAreaFireThunk(void *pUser)
     if (pW->pTactMap == NULL || pW->pTactState == NULL) {
         return;
     }
-    if (pW->pTactMap->bActionLatch == 0) {
+    if (pW->bMapUnk1139B9 == 0) { /* raw 0x2FA68: Map byte +1 */
         pW->pTactState->bPhaseActive = 1;
     }
-    pW->pTactState->nUnk70024Slot4 = 0;
+    pW->pTactState->nPhaseCounter = 0; /* raw 0x2FA94: TactState+0x1118C */
 }
 
 /* Part 51 modal bank seams. World_ModalEndThunk stands for the zero-argument
@@ -5277,6 +6144,10 @@ static void World_TactEnemyAiTickThunk(TactCtx272 *pTact, void *pUser)
     }
     pW->sTactEnemyAi.geom       = pW->pTactMap->geom;
     pW->sTactEnemyAi.pFirstXcom = pW->pTactMap->apXcomUnits[0];
+    pW->sTactEnemyAi.pnShotCount   = &pW->pTactMap->nShotCount;
+    pW->sTactEnemyAi.ppThrowTarget = &pW->pTactMap->pThrowTarget;
+    pW->sTactEnemyAiAct.pnShotCount   = &pW->pTactMap->nShotCount;
+    pW->sTactEnemyAiAct.ppThrowTarget = &pW->pTactMap->pThrowTarget;
     Tact_EnemyAiTick(pTact, &pW->sTactEnemyAi);
 }
 
@@ -5372,6 +6243,22 @@ static void World_TactEnemyAiVisThunk(Soldier *pUnit, void *pUser)
     PufoWorldState *pW = (PufoWorldState *)pUser;
 
     (void)Unit_UpdateVisibility(pUnit, &pW->tactEnv.vis);
+}
+
+/* FallActionCtx shares pCallbackUser with Map_PushStatusCb, so it must stay a
+ * MoveActionWiring. A psi side switch changes GameMap's counts before the immediate
+ * Xcom visibility sweep; refresh the wiring's roster view before each scan. */
+static void World_TactFallVisibilityThunk(Soldier *pUnit, void *pUser)
+{
+    MoveActionWiring *pWiring = (MoveActionWiring *)pUser;
+    UnitRosters rosters = *pWiring->visCtx.pRosters;
+    VisCtx vis = pWiring->visCtx;
+
+    rosters.nXcom  = pWiring->pMap->nXcomCount;
+    rosters.nEnemy = pWiring->pMap->nEnemyCount;
+    rosters.nCiv   = pWiring->pMap->nCivilianCount;
+    vis.pRosters = &rosters;
+    (void)Unit_UpdateVisibility(pUnit, &vis);
 }
 
 /* The TEXTS-record status push (record index, not a string): the same text the move wiring
@@ -5519,26 +6406,33 @@ static void World_TactTickActiveUnit(void *pUser)
     combat.pState        = pQ;
     combat.pSelUnit      = pMap->pSelUnit;
     combat.pCtxWeapon    = (ObjectRecFull *)pMap->pFireArg6; /* 0x14050 nFireArg6 */
+    combat.ppCtxWeapon   = &pMap->pFireArg6;
+    combat.paHitWindow   = pMap->aHitWindow;
+    combat.paHitWindowSave = pMap->aHitWindowSave;
     combat.nShotOriginX  = pW->nMapShotOrigX;                /* 0x14054/0x14058 */
     combat.nShotOriginY  = pW->nMapShotOrigY;
+    combat.pnShotOriginX = &pW->nMapShotOrigX;
+    combat.pnShotOriginY = &pW->nMapShotOrigY;
 
     memset(&kill, 0, sizeof(kill));
     kill.pCombat          = &combat;
     kill.pRosters         = &pW->sTactRosters;
     kill.pnXcomCount      = &pMap->nXcomCount;   /* 0x1511F: the byte the removal decrements (0x3325C) */
     kill.pnEnemyCount     = &pMap->nEnemyCount;  /* 0x15124 */
+    kill.pnCivilianCount  = &pMap->nCivilianCount; /* 0x15120: Map count the corpse append increments */
     kill.apTactItems      = pW->apTactItems;
     kill.pnTactItem       = &pW->nTactItemCount;
     kill.apObjects        = pW->pAssets->apObjects;
     kill.ppSelUnit        = &pMap->pSelUnit;
-    kill.pnKillCount      = &pMap->nKillCount;  /* gap_TrajRest + 4 * 49940 */
+    kill.pnKillCredit     = &pQ->uKillCredit; /* pTactState @ 0x157198, +0x111D0 */
     kill.pszTransformName = World_UnitNameRecord(14); /* 0x4e518: ADD R3,R0,#0x230 = 40 * 14 */
-    kill.bTickHold        = pW->bMapTickHold != 0;
-    kill.bFrameScratch    = pW->bMapFrameScratch != 0;
+    kill.pbTickHold       = &pW->bMapTickHold;
+    kill.pbFrameScratch   = &pW->bMapFrameScratch;
     kill.bUiSlotArmed     = pW->bMapSweepArmed != 0;   /* LOBYTE(apUiSlotsA[2]) @ 0x68 */
     kill.pStatus          = &pMap->status;
     kill.pStatusHooks     = &pW->sTactStatusHooks;
     kill.pVisCtx          = &pW->tactEnv.vis;
+    World_FillKillMessages(&kill, pW);
 
     memset(&killHooks, 0, sizeof(killHooks));
     killHooks.pfnCheckBattleEnd = World_TactKillBattleEndThunk;  /* 0x4EFc8 */
@@ -5633,6 +6527,7 @@ static void World_TactTickActiveUnit(void *pUser)
     fall.pLists             = &sideLists;   /* counts by value: the recorded separate issue */
     fall.pTactCtx           = &pMap->tact;
     fall.pVisCtx            = &pW->tactEnv.vis;
+    fall.pfnUpdateVisibility = World_TactFallVisibilityThunk;
     fall.pKillCtx           = &kill;
     fall.pKillHooks         = &killHooks;
     fall.pProximity         = &prox;
@@ -5682,6 +6577,7 @@ bool World_GameTickOnce(PufoWorldState *pW)
 {
     GameTickCtx ctx;
     GameTickHooks hooks;
+    bool bTickResult;
 
     memset(&ctx, 0, sizeof(ctx));
     memset(&hooks, 0, sizeof(hooks));
@@ -5707,10 +6603,31 @@ bool World_GameTickOnce(PufoWorldState *pW)
      * (skip when bPhaseActive && slot8Byte1) is GameTick_OnTimer's own, applied before this call. */
     hooks.pfnTickActiveUnit    = World_TactTickActiveUnit;
 
-    return GameTick_OnTimer(&ctx,
-                            pW->bTactLive ? &pW->pTactMap->status : NULL,
-                            pW->bTactLive ? pW->pTactState : NULL,
-                            &hooks, World_TactLookupCell, pW);
+    /* A mission-end callback can clear the logical tactical flag while the timer still has
+     * Fall_Action18 visibility and GameTick_OnTimer cleanup to run. Keep its backing until the
+     * outermost timer dispatch has returned. */
+    ++pW->nGameTickDispatchDepth;
+    bTickResult = GameTick_OnTimer(&ctx,
+                                   pW->bTactLive ? &pW->pTactMap->status : NULL,
+                                   pW->bTactLive ? pW->pTactState : NULL,
+                                   &hooks, World_TactLookupCell, pW);
+    --pW->nGameTickDispatchDepth;
+    if (pW->nGameTickDispatchDepth == 0 && pW->bTactFreePending) {
+        const bool bReinit = pW->bTactReinitPending;
+
+        /* The end check mirrors the restart header into the borrowed Map.
+         * New mission creation seeds its replacement from the World mirror. */
+        if (bReinit && pW->pTactMap != NULL) {
+            pW->nMapMapLayers = pW->pTactMap->nMapLayers;
+        }
+        pW->bTactFreePending = false;
+        pW->bTactReinitPending = false;
+        World_FreeTactical(pW);
+        if (bReinit) {
+            (void)World_InitTactical(pW, 0);
+        }
+    }
+    return bTickResult;
 }
 
 /* The three hand-overs a mission launch ends with, and why the shell takes them as seams.
@@ -5719,8 +6636,8 @@ bool World_GameTickOnce(PufoWorldState *pW)
  *   bases, craft and strateg items World_Free releases too -- the original has ONE owner of them
  *   -- and the rest of it frees the font and shuts the audio down. It is the game-over teardown,
  *   not a screen close, so calling it from a mission launch would end the run.
- *   EndScreen_Init @ 0x388b0 (0x84230). It writes unk_157194, unk_B35D8, unk_1571C0 and
- *   unk_138E88, none of which the shell owns, and the shell has no ending flow to hand control to.
+ *   EndScreen_Init @ 0x388b0 (0x84230). The world seam dispatches its title-row, backdrop, scroll,
+ *   font, options, and screen writes through the app's persistent WorldHooks callback.
  *
  * Tact_InitMission @ 0x3c550 (0x83AC4) is no longer on this list: World_InitTactical runs it over the
  * state's tactical block, which is what the 0xC350 blocker in PLAN.md was waiting for.
@@ -5811,8 +6728,16 @@ static void World_OptionsReturnToTitleThunk(void)
 
 static void World_MissionSeamInitEnd(u8 bGoodEnd, void *pUser)
 {
-    (void)bGoodEnd;
-    (void)pUser;
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    const WorldHooks *pHooks;
+
+    if (pW == NULL) {
+        return;
+    }
+    pHooks = pW->pFrameHooks;
+    if (pHooks != NULL && pHooks->pfnEndScreenInit != NULL) {
+        pHooks->pfnEndScreenInit(bGoodEnd, pW);
+    }
 }
 
 /* ==========================================================================
@@ -5892,6 +6817,11 @@ static void World_TactUiSyncOut(PufoWorldState *pW)
     pW->nMapActionMode     = pUi->nActionMode;
     pMap->nBurstShots      = pUi->nUnk40;
     pMap->bActionLatch     = pUi->bActionLatch;
+    /* A control may run inside Input_OnPointerUp. Its continuation reads these
+     * same Map cells after the callback (0x14F64); keep that input view live. */
+    pW->sTactInput.nUiScreen    = pUi->nUiScreen;
+    pW->sTactInput.nActionMode  = pUi->nActionMode;
+    pW->sTactInput.nActionLatch = pUi->bActionLatch;
     pMap->bLookCommitFlag  = pUi->bUnk1508C;
     pW->tactEnv.cursor.nFlags = pUi->nLayerScratch;
     pMap->aim.nTgtX        = pUi->nFireTgtX;
@@ -5900,6 +6830,7 @@ static void World_TactUiSyncOut(PufoWorldState *pW)
     pW->sTactInput.bDeployPanelOpen = pUi->bDeployPanelOpen;
     pW->sTactInput.bUiSlot8Byte0    = pUi->bSlot80Low;
     pW->bMapDrawIsoLayer   = pUi->bDrawIsoLayer;
+    World_TactPushRadioBank(pW);
     pOpt = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pTactOptions : NULL;
     if (pOpt != NULL) {
         pOpt->bScrollByPen   = pUi->bScrollByPen;
@@ -5939,6 +6870,8 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
         pS->anActionEnabled[i] = pW->sTactUi.anActionEnabled[i];  /* Map_anActionEnabled @ 0x118834 */
     }
     pS->nLayerScratch    = pW->tactEnv.cursor.nFlags;
+    /* 0x26F28 writes Map+0x36; 0x143D0 reads it before deciding to halve pen coordinates. */
+    pS->bNoHalfCursor    = pW->tactEnv.facing.bStoredFacing;
     pS->nCursorX         = pW->tactEnv.cursor.nX;
     pS->nCursorY         = pW->tactEnv.cursor.nY;
     pS->nCamScrollX      = pW->tactEnv.focus.nCamScrollX;   /* Map_nCamScrollX @ 0x15130: tactEnv.focus owns it,
@@ -5956,14 +6889,14 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
      * them, Options_SaveToRegistry @ 0x114d8 stores them). The dispatch's staged copy read
      * zero for all of them, so a map press never committed (0x144CC gates on [95], which the
      * default-ON "runbydblclick" sets) and the edge tests / drag-scroll never ran. These are
-     * read-only for the dispatch, like the dims: no SyncOut flush entry. bActionReady[94] is
-     * left at zero -- nothing in the binary's pen path writes it; the viewport-guide gap
-     * stands. */
+     * read-only for the dispatch, like the dims: no SyncOut flush entry. Byte 94 is
+     * the persisted showborder option, loaded at 0x22AB8/0x22AC4 and read by the guide. */
     {
         const PufoOptions *pOpt = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pTactOptions : NULL;
 
         if (pOpt != NULL) {
             pS->bEdgeTestOn   = pOpt->bScrollByPen;   /* 0x128A8D @ 0x150D5: 0x141BC edge tests */
+            pS->bActionReady  = pOpt->bShowBorder;   /* legacy field name; showborder @ 0x150D6 */
             pS->bClickCommits = pOpt->bRunByDblClick; /* 0x128A8F @ 0x150D7: 0x144CC commit gate */
             pS->bDragScrollA  = pOpt->bTurnByPen;     /* 0x128A90 @ 0x150D8: 0x14534 drag-scroll */
             pS->bDragScrollB  = pOpt->bMenuByPen;     /* 0x128A91 @ 0x150D9 */
@@ -5990,6 +6923,7 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
     pS->nUiSlot11        = (u16)pW->nMapUiSlot11;           /* apUiSlotsA[11] low word @ 0x8C */
     pS->bSlot19Active    = (u8)(pW->sModal.bOpen ? 1u : 0u); /* the modal open byte @ Map+0xAC */
     pS->nSlot24Hit       = pW->sModal.nField48;             /* the hover cell @ Map+0xC0 */
+    pS->bCancelTo19      = pW->bMapPromotionReport;         /* Map_bPromotionReport @ Map+0x1A20, 0x162B0 */
     pW->sTactInputPre = *pS;                                /* the diff basis for SyncOut (Part 60) */
 }
 
@@ -6011,6 +6945,11 @@ static void World_TactInputSyncIn(PufoWorldState *pW)
  * layer and the pointer's cell mapping read it). */
 static void World_TactInputSyncOut(PufoWorldState *pW)
 {
+    /* A control callback can finish a mission and free its map before input
+     * returns. Preserve the new scene instead of flushing the old tactical view. */
+    if (pW == NULL || pW->pTactMap == NULL) {
+        return;
+    }
     const TactInputState *pS = &pW->sTactInput;
     const TactInputState *pPre = &pW->sTactInputPre;
     GameMap *pMap = pW->pTactMap;
@@ -6121,6 +7060,8 @@ static TactUiHooks World_TactUiHooksFor(PufoWorldState *pW)
     h.pfnStatusMsg       = World_TactEnemyAiPushTextThunk;       /* StatusMsg_Push @ 0x2dda4 */
     h.pfnSetCursorFlags  = World_TactSetCursorFlagsThunk;
     h.pUser              = pW;
+    h.pnShotCount        = &pW->pTactMap->nShotCount;
+    h.ppThrowTarget      = &pW->pTactMap->pThrowTarget;
     return h;
 }
 
@@ -6376,7 +7317,7 @@ static void World_TactLookClickThunk(void)
     (void)Ui_ConfirmFireBurst(&pW->sTactUi, pW->pTactState, pW->pTactMap->pSelUnit, pWeapon,
                               pW->pTactMap->apMultiTargets, &pW->pTactMap->nMultiTargetCount,
                               (u16)pWeapon->nAmmo, pWeapon->pObj->bAmmoCap,
-                              World_TactFaceTowardThunk, pW->pTactState, &h);
+                              World_TactFaceTowardThunk, pW, &h);
     World_TactUiSyncOut(pW);
 }
 
@@ -6872,8 +7813,8 @@ static void World_ClickOpenInventory(void)
  * ========================================================================== */
 
 /* EnemyStepCtx reads the side counts through i32*; GameMap owns 0x128AD7/0x128ADC as
- * byte cells. The step thunks copy in, let the callee bump the mirrors (the hidden-
- * reserve spawns), and truncate back. */
+ * byte cells. The step thunks copy in, publish each roster append through the callback
+ * below, then keep the final sync-out for any later count writes in the step. */
 static void World_TactStepSyncIn(PufoWorldState *pW)
 {
     pW->nStepXcomCount  = pW->pTactMap->nXcomCount;
@@ -6884,6 +7825,22 @@ static void World_TactStepSyncOut(PufoWorldState *pW)
 {
     pW->pTactMap->nXcomCount  = (u8)pW->nStepXcomCount;
     pW->pTactMap->nEnemyCount = (u8)pW->nStepEnemyCount;
+}
+
+/* The original publishes side counts at each transfer. EnemyStep uses i32 mirrors,
+ * so keep both those Map byte cells and the combat roster view current before the
+ * remaining pre/post-step work can resolve a proximity item or refresh visibility. */
+static void World_TactPublishStepRosterCounts(i32 nXcom, i32 nEnemy, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW == NULL || pW->pTactMap == NULL) {
+        return;
+    }
+    pW->pTactMap->nXcomCount  = (u8)nXcom;
+    pW->pTactMap->nEnemyCount = (u8)nEnemy;
+    pW->sTactRosters.nXcom    = nXcom;
+    pW->sTactRosters.nEnemy   = nEnemy;
 }
 
 /* EnemyStepCtx.pfnTickProximity: MapCell_TickProximityItems @ 0x4b724 over the shell's
@@ -6936,10 +7893,8 @@ static void World_TactFillStepCtx(PufoWorldState *pW)
     c->pStatus              = &pMap->status;
     c->pStatusHooks         = &pW->sTactStatusHooks;
     c->pTextRecs            = (const char *)pW->pAssets->pTextRecs; /* aTextRecs @ 0xB38D0 */
-    /* Deviation: the fire tick's weapon is the Map+0x1B0 slot-42 scratch (Map_apObjects42,
-     * read at 0x4BFF0). The slot has no port owner: zeroed BSS on a new game, and the save
-     * blob leaves it unmodeled, so the port runs with NULL. */
-    c->pFireWeapon          = NULL;
+    /* 0x4BFF0 reads Map + 0x1B0, object slot 42 from the loaded object table. */
+    c->pFireWeapon          = pW->pAssets->apObjects[42];
     c->pActCtx              = &pW->sTactEnemyAiAct;
     c->pRmp                 = &pW->sTactRmp;
     c->apXcom               = pMap->apXcomUnits;
@@ -6952,6 +7907,7 @@ static void World_TactFillStepCtx(PufoWorldState *pW)
     c->pnReserveCount       = &pW->nMapEnemyReserveCount;         /* 0x128AFC */
     c->pbMissionType        = &pMap->nMissionType;                /* 0x128AD2 */
     c->ppSelUnit            = &pMap->pSelUnit;
+    c->pfnPublishRosterCounts = World_TactPublishStepRosterCounts;
 
     /* Combat + proximity ctxs for the proximity seam, mirroring World_TactTickActiveUnit. */
     memset(&pW->sTactCombat, 0, sizeof(pW->sTactCombat));
@@ -6961,8 +7917,13 @@ static void World_TactFillStepCtx(PufoWorldState *pW)
     pW->sTactCombat.pState       = pW->pTactState;
     pW->sTactCombat.pSelUnit     = pMap->pSelUnit;
     pW->sTactCombat.pCtxWeapon   = (ObjectRecFull *)pMap->pFireArg6; /* 0x14050 nFireArg6 */
+    pW->sTactCombat.ppCtxWeapon  = &pMap->pFireArg6;
+    pW->sTactCombat.paHitWindow  = pMap->aHitWindow;
+    pW->sTactCombat.paHitWindowSave = pMap->aHitWindowSave;
     pW->sTactCombat.nShotOriginX = pW->nMapShotOrigX;                /* 0x14054/0x14058 */
     pW->sTactCombat.nShotOriginY = pW->nMapShotOrigY;
+    pW->sTactCombat.pnShotOriginX = &pW->nMapShotOrigX;
+    pW->sTactCombat.pnShotOriginY = &pW->nMapShotOrigY;
 
     memset(&pW->sTactProx, 0, sizeof(pW->sTactProx));
     pW->sTactProx.pCombat         = &pW->sTactCombat;
@@ -7008,16 +7969,18 @@ static void World_ClickEndTurn(void)
         return;
     }
     pMap = pW->pTactMap;
+    pW->nStepXcomCount = pMap->nXcomCount;
+    pW->nStepEnemyCount = pMap->nEnemyCount;
     World_TactBankSampleThunk(17, pW); /* MenuBtn_EndTurn 0x164A0 */
     lists.apEnemy    = pMap->apEnemyUnits;
     lists.nEnemy     = pMap->nEnemyCount;
     lists.apCivilian = pMap->apCivilians;
     lists.nCivilian  = pMap->nCivilianCount;
     lists.apXcom     = pMap->apXcomUnits;
-    lists.nXcom      = pMap->nXcomCount;
-    Tact_BeginEnemyTurn(&pMap->tact, &pW->sTactTurnHooks, &lists, pMap->pSelUnit,
-                        &pW->bMapEnemyTurnActive,
-                        NULL, /* Render_Frame (0x22310) -- the iso renderer seam, a recorded separate issue */
+    lists.pnXcomCount = &pW->nStepXcomCount;
+    Tact_BeginEnemyTurn(&pMap->tact, &pW->sTactTurnHooks, &lists, &pW->nStepEnemyCount,
+                        pMap->pSelUnit, &pW->bMapEnemyTurnActive,
+                        World_TactRenderThunk, /* 0x4CA40: draw before BeforeEnemyStep */
                         World_TactBeforeEnemyStepThunk);
 }
 
@@ -7582,6 +8545,8 @@ void World_TactMapClick(void)
     ctx.pnMeleeCellX      = &pMap->aim.nTgtX;               /* 0x1279F8 */
     ctx.pnMeleeCellY      = &pMap->aim.nTgtY;               /* 0x1279FC */
     ctx.pnMeleeCellLayer  = &pMap->aim.nTgtZ;               /* 0x127A00 */
+    ctx.pnShotCount       = &pMap->nShotCount;
+    ctx.ppThrowTarget     = &pMap->pThrowTarget;
     ctx.pfnPathToCell     = Unit_PathToCell;                /* 0x2c2a8 */
     ctx.pUser             = &pW->sTactPath;
     Tact_HandleMapClick(&ctx);
@@ -7612,7 +8577,7 @@ static InvHitTestCtx World_TactInvHitCtx(PufoWorldState *pW)
     ctx.pHit      = &pW->sTactHit;                        /* unk_1139F8.. unk_1183F0 */
     ctx.pUi       = &pW->sTactUi;                         /* the ground list and its filter */
     ctx.pSelUnit  = pW->pTactMap->pSelUnit;               /* Map_pSelUnit @ 0x128CEC */
-    ctx.pSentinel = &pW->sMapSentinel138EA0;             /* unk_138EA0 @ Map+0x254E8 */
+    ctx.pSentinel = &g_itemSlotEmpty;                    /* unk_138EA0 @ Map+0x254E8 */
     return ctx;
 }
 
@@ -7652,10 +8617,8 @@ bool World_TactInvDropPointer(const UiWidgetBank *pBank)
     pW->sTactDrop.pSelUnit = pW->pTactMap->pSelUnit;   /* the live read at 0x12298 */
     pW->sTactDrop.nPtrX    = pBank->nPointerX;         /* pBank+0x1044, read at 0x122A8 */
     pW->sTactDrop.nPtrY    = pBank->nPointerY;         /* pBank+0x1048, read at 0x122C0 */
-    /* The time-unit gate reads the action latch through pUi (Drop_Charge at 0x12...: latch set means no
-     * charge), and the pen dispatch does not stage sTactUi the way an installed handler does
-     * (World_TactUiSyncIn:5828). One Map cell, two copies: stage it in and flush it back here so the drop
-     * sees the live byte, as every other arm of the inventory screen does. */
+    /* Keep the separate Map+2 action latch in step with the UI context. The TU
+     * waiver is the live Map+1 cell bound in sTactDrop above. */
     pW->sTactUi.bActionLatch     = pW->pTactMap->bActionLatch;   /* Map_bActionLatch @ Map+0x02 */
     bPlaced = Inv_HandlePointer(&pW->sTactDrop);
     pW->pTactMap->bActionLatch   = pW->sTactUi.bActionLatch;
@@ -7918,6 +8881,7 @@ static void World_TactInitUiControlsThunk(void *pUser)
     ctx.pUser       = pW->pLoadPadsUser;
     ctx.pfnLookClick = World_TactLookClickThunk;           /* TactAction_ConfirmFireBurst @ 0x18774 */
     Tact_InitUiControls(pHooks->pBank, &ctx);
+    World_TactPushRadioBank(pW);
 
     /* Input_OnConfirm's armed multi-target commit clears *unk_1571E4+9 -- the look control's
      * bEnabled byte is the scratch pointer's target. */
@@ -7932,11 +8896,18 @@ static void World_TactInitUiControlsThunk(void *pUser)
  * (UiScreen_OnBack case 9, 0x156c8); those call sites belong to the tactical runtime unit, and
  * World_MissionEndCheck is the shell's stand-in until that unit lands. The debrief it writes is
  * pure state -- caption, score, two panels, the pending-fund sum, the site commit -- so the state
- * half is complete here; the banner and debrief DRAWS are the tact-HUD unit's. */
+ * half is complete here; the banner and debrief DRAWS are the tact-HUD unit's. The ending branches
+ * dispatch through WorldHooks.pfnEndScreenInit to the app-owned screen. */
+
+static void World_CommitTactShutdownOutcome(PufoWorldState *pW);
 
 void World_EndHookShutdown(u8 bKeepSome, void *pUser)
 {
     PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW->bTactFreePending) {
+        return;
+    }
 
     /* The shell's stand-in for Tact_Shutdown @ 0x3d568, the same choice Part 47 made for the
      * teardown: Tact_Shutdown frees the ORIGINAL's global blocks, World_FreeTactical releases the
@@ -7945,37 +8916,132 @@ void World_EndHookShutdown(u8 bKeepSome, void *pUser)
      * KillTimers call): the tact flag goes down with the frame. Public since Part 103:
      * App_HookShutdownQuit (the quit dialog's Да seam) runs it with bKeepSome 1,
      * exactly like the original's App_QuitFromTact at 0x18E20. */
+    Sound_Shutdown();    /* Tact_Shutdown @ 0x3D570 */
+    Timer_KillBySpeed(); /* KillTimers_BySpeed @ 0x3D574: ids 0xC350..0xC353 */
     pW->bTactFlag = 0;                                       /* 0x3D588: Map+0x00 */
     PufoFont_Free(pW->pFont);      /* Tact_Shutdown releases the font too (TactShutdownEnv.pFont): the
                                      * tact sprites Tact_InitMission loaded go here, so the rebuild's
                                      * PufoFont_Init starts from the cleared block, like the original's
                                      * Geoscape_InitUI(1) at 0x162C8 after Tact_Shutdown(0). */
-    World_FreeTactical(pW);
+    if (bKeepSome == 0) {
+        World_CommitTactShutdownOutcome(pW);
+    }
+    if (pW->nGameTickDispatchDepth != 0) {
+        /* Fall_Action18 still reads the map, cells, and loft after its kill callback. */
+        pW->bTactFreePending = true;
+    } else {
+        World_FreeTactical(pW);
+    }
 
-    /* bKeepSome does split it. The branch it selects (pufo_tactend.c's `if (bKeepSome != 0)`) frees the
-     * tactical copies of the rosters and ends with LDR R0,=sGeoscapeScreenBlock / ADD R0,#0x3C /
-     * BL PtrArray_DeleteAll at 0x3E14C, 0x3E150, 0x3E154 -- the geoscape block's OWN strateg list at
-     * +0x3C, emptied with its items freed. Those are the arms that end a run: Tact_CheckBattleEnd's
-     * victory arm (0x35014) and its failed-base arm (0x35180), UiScreen_OnBack's quit arm (0x156D4) and
-     * App_QuitFromTact (0x18E20), each followed by EndScreen_Init or App_QuitDisplay. The arms that return
-     * to the geoscape pass 0 -- UiScreen_OnCancel 13/19 at 0x162C0, LoadGame's teardowns at 0x44D10 and
-     * 0x44D80 -- and the bKeepSome == 0 branch runs Shutdown_RemoveUnits with Shutdown_MissionOutcome
-     * (0x3DCF4), which reaches StrategList_RemoveAt only for the craft's own entry (0x3DF6C, 0x3DFBC).
-     * The shell has no copy of the tactical rosters to free, so the branch's one store is the list.
-     * Deviation, recorded: the original leaves the block's +0x38 count mirror (0x186530) at its stale
-     * value here -- only StrategList_AddItem (0x82710) and StrategList_RemoveAt (0x82B34) refresh it -- so a
-     * save made after this arm would write records for items that are gone. World_SaveSlot re-states the
-     * mirror from the list, so the shell writes a clean empty chunk instead. */
+    /* bKeepSome selects two different tails. The non-zero branch frees the tactical roster copies
+     * and ends with PtrArray_DeleteAll over the geoscape block's strateg list (0x3E154); those arms
+     * end a run. The zero branch runs Tact_ShutdownOutcome above before freeing the shell's tactical
+     * storage, so unit removal and the mission's craft/base result reach the live world. The original
+     * leaves the +0x38 count mirror stale after the whole-list clear; World_SaveSlot restates that
+     * mirror from the current list before saving. */
     if (bKeepSome != 0) {
         PtrArray_DeleteAll(&pW->strategList);               /* 0x3E154 */
     }
 }
 
+static void World_TactLootAppendLine(i32 nFlag, i32 nC0, i32 nC1, i32 nC2, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    UiLineList_AppendWithSound(&pW->msgLines, (u8)nFlag, (u32)nC0, (u32)nC1, (u32)nC2, 0u,
+                               pW->pfnPlaySample, pW->pSoundUser);
+}
+
+/* Tact_Shutdown(0) commits unit removal and the mission outcome before it releases its globals.
+ * The shell owns the same state through a different layout, so World_FreeTactical releases that
+ * storage after this outcome-only part of the ported shutdown runs. */
+static void World_CommitTactShutdownOutcome(PufoWorldState *pW)
+{
+    TactShutdownEnv env;
+    TacticalLootEnv loot;
+    GameMap *pMap;
+
+    if (pW == NULL || !pW->bTactLive || pW->pTactMap == NULL || pW->pAssets == NULL) {
+        return;
+    }
+    pMap = pW->pTactMap;
+
+    memset(&env, 0, sizeof(env));
+    env.apStrategCraftCopy     = pW->apSoldiers;
+    env.pnStrategCraftCopy     = &pW->nSoldierCount;
+    env.apCraftCopy            = (void **)pW->apCraft;
+    env.apBaseCopy             = (void **)pW->apBases;
+    env.pStrategList           = &pW->strategList;
+    env.apCivilianUnits        = pMap->apCivilians;
+    env.pnCivilianCount        = &pMap->nCivilianCount;
+    env.apEnemyUnits           = pMap->apEnemyUnits;
+    env.pnEnemyCount           = &pMap->nEnemyCount;
+    env.apXcomUnits            = pMap->apXcomUnits;
+    env.pnXcomCount            = &pMap->nXcomCount;
+    env.pbMissionMode          = &pW->bMapMissionMode;
+    env.pbMissionVictory       = &pW->bMapMissionVictory;
+    env.pbAlternateOutcomePath = &pW->bMapAltOutcomePath;
+    env.pbFacilityType         = (u8 *)&pW->nSelectedBase;   /* unk_159D81 */
+    env.pnMsgShipIdx           = &pW->nMsgShipIdx;          /* 0x159E74, an apCraft index */
+    env.pnCraftIndex           = &pW->nMapCraftIndex;
+    env.pbSpawnOnceFlag        = &pW->bSpawnOnce;
+    env.pDemolishEnv           = &pW->demolishEnv;
+    env.pShipEnv               = &pW->shipEnv;
+
+    /* These side lists share Soldier records with apSoldiers. Clear the cell and item links while
+     * all records are live; the original frees the Map next, while the shell must free the Map's
+     * aliased records from its world roster first. */
+    World_ClearUnitLinks(pMap->apXcomUnits, pMap->nXcomCount);
+    World_ClearUnitLinks(pMap->apEnemyUnits, pMap->nEnemyCount);
+    World_ClearUnitLinks(pMap->apCivilians, pMap->nCivilianCount);
+    World_ClearUnitLinks(pW->apTactHidden, pW->nMapEnemyReserveCount);
+
+    World_FillTacticalLootEnv(pW, &loot);
+    env.pLootEnv           = &loot;
+
+    Tact_ShutdownOutcome(&env);
+
+    /* The original discards these Map side arrays with the Map block. Their pointers can now
+     * include globally freed Soldiers, so keep World_FreeTactical from reading them again. */
+    pMap->nXcomCount = 0;
+    pMap->nEnemyCount = 0;
+    pMap->nCivilianCount = 0;
+    pW->nMapEnemyReserveCount = 0;
+}
+
 static void World_EndHookInitMission(i32 nMode, void *pUser)
 {
-    /* Only the Mars restart tail reaches this (0x36594..0x365F8): shutdown(0), the mission-type
-     * rewrite, then Tact_InitMission in place. The seam mirror returns a value the hook discards. */
+    /* The raw Mars tail (0x36594..0x365F8) requests init(0) after shutdown(0)
+     * and the header rewrite. Keep its old map until the active tick unwinds. */
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (nMode == 0 && pW != NULL && pW->bTactFreePending
+        && pW->nGameTickDispatchDepth != 0) {
+        pW->bTactReinitPending = true;
+        return;
+    }
     (void)World_MissionSeamInitMission(nMode, pUser);
+}
+
+/* The raw 0x33264 scan starts at apCells slot 4142, the layer-1 cell at 2/9. Each tile step adds
+ * ten cells to that origin; the callback's +1 x/y arguments then step one cell at a time. */
+static bool World_TactVictoryProbeNoCeiling(i32 nX, i32 nY, void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    const i32 nTileX = pW != NULL ? pW->nMapSpawnTileX : 0;
+    const i32 nTileY = pW != NULL ? pW->nMapSpawnTileY : 0;
+    const i32 nCellX = 2 + PUFO_CELLS_PER_TILE * nTileX + (nX - nTileX);
+    const i32 nCellY = 9 + PUFO_CELLS_PER_TILE * nTileY + (nY - nTileY);
+    MapCell *pCell;
+
+    if (pW == NULL || pW->pTactMap == NULL) {
+        return false;
+    }
+    if (nX < nTileX || nX > nTileX + 1 || nY < nTileY || nY > nTileY + 1) {
+        return false;
+    }
+    pCell = World_TactLookupCell(nCellX, nCellY, 1, pW);
+    return pCell != NULL && pCell->pCeilSpr == NULL;
 }
 
 bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort)
@@ -7986,14 +9052,27 @@ bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort)
     TactItemTallyEnv  items;
     TactCraftTallyEnv craft;
     GameMap          *pMap;
+    WorldTactSpawnKillState *pSpawnKill;
     u16  nSoldiers;
     i32  nCraftCount;
     u8   nDimX, nDimY, nSpawnX, nSpawnY;
 
-    if (!pW->bTactLive || pW->pTactMap == NULL) {
-        return false;   /* without a mission there is no frame to check */
+    if (pW == NULL || pW->pTactMap == NULL) {
+        return false;
+    }
+    if (!pW->bTactLive) {
+        pSpawnKill = (WorldTactSpawnKillState *)pW->tactEnv.spawnAliens.pKillUser;
+        if (pW->tactEnv.spawnAliens.pfnKillUnit != World_TactSpawnKillUnit
+            || pSpawnKill == NULL || pSpawnKill->pWorld != pW || !pSpawnKill->bKillActive
+            || pW->pTactState == NULL || pW->pAssets == NULL) {
+            return false;   /* only the live spawn-tail kill may check during mission init */
+        }
     }
     pMap = pW->pTactMap;
+
+    /* Shutdown can release this heap Map before the raw restart tail writes
+     * +0x15114. Keep that tail's storage in the persistent World header. */
+    pW->nMapMapLayers = pMap->nMapLayers;
 
     memset(&env, 0, sizeof(env));
     memset(&tiles, 0, sizeof(tiles));
@@ -8123,23 +9202,25 @@ bool World_MissionEndCheck(PufoWorldState *pW, u8 bAbort)
     env.pnFundPending     = &pW->economy.aZero44_49[5];  /* g_nFundPending @ 0x1865BC */
     env.pbMissionMode     = &pW->bMapMissionMode;        /* Map+0x1511D */
     env.pnTerrainVariant  = &pW->nMapTerrainVariant;
-    env.pnMapLayers       = &pMap->nMapLayers;           /* Map+0x15114 */
+    env.pnMapLayers       = &pW->nMapMapLayers;          /* Map+0x15114, survives shutdown */
     env.pbUnk15115        = &pW->bMapUnk15115;           /* Map+0x15115 */
     env.pbFrameScratch    = &pW->bMapFrameScratch;       /* unk_138E74 @ Map+0x254BC */
 
     env.hooks.pfnShutdown      = World_EndHookShutdown;
-    /* EndScreen_Init writes unk_157194, unk_B35D8, unk_1571C0 and unk_138E88, none of which the
-     * shell owns, and there is no ending flow to hand control to -- the same seam deviation the
-     * launch already records (0x84230). It reaches only the victory-tile and cannot-complete arms. */
+    /* The app owns the title globals; this world callback dispatches EndScreen_Init through the
+     * persistent WorldHooks object for these battle-end branches. */
     env.hooks.pfnEndScreenInit = World_MissionSeamInitEnd;
     env.hooks.pfnInitMission   = World_EndHookInitMission; /* the Mars restart tail only */
-    /* Tact_ScanVictoryTiles gates on the alien-base type with the alternate spawn (0x3328C) before
-     * it ever calls the probe, so a base-assault frame never reaches it. NULL is also the callee's
-     * "no" answer. */
-    env.hooks.pfnCellHasNoItems = NULL;
+    /* Tact_ScanVictoryTiles calls this for its four layer-1 probe cells (0x332C4..0x33300). */
+    env.hooks.pfnCellHasNoItems = World_TactVictoryProbeNoCeiling;
     env.hooks.pUser             = pW;
 
     Tact_CheckBattleEnd(&env, bAbort);
+    if (pW->bTactFreePending && pW->pTactMap == pMap) {
+        /* A tick still owns the old Map. Reflect the header rewrite there
+         * before that tick resumes and eventually creates the replacement. */
+        pMap->nMapLayers = pW->nMapMapLayers;
+    }
     return pW->bMapBattleEnded != 0;
 }
 
@@ -8154,6 +9235,7 @@ static void World_MissionShutdownAndRebuildGeoscape(PufoWorldState *pW)
     World_EndHookShutdown(0, pW);
     World_FillInitUiEnv(pW, &env);
     Geoscape_InitUI(&env, 1);
+    World_WireGameContexts(pW);
     if (pW->pFrameHooks != NULL) {
         World_WireGeoscapeFrame(pW, pW->pFrameHooks);    /* the frame envs re-point at the new singletons */
     }
@@ -8561,6 +9643,20 @@ static void World_UfopaediaInitThunk(void *pSlot, void *pUser)
     }
 }
 
+/* Ui_OpenBaseInfo @ 0x84af8, installed on root control 11 by Geoscape_InitUI. */
+static void World_OpenUfopaediaClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    ScreenResetOpenEnv env;
+
+    if (pW == NULL) {
+        return;
+    }
+    World_FillScreenOpenEnv(pW, &env);
+    env.init.pfnInit = World_UfopaediaInitThunk;
+    Ui_OpenBaseInfo(&env);
+}
+
 /* 0x99f88 / 0x99f78: the text-panel scroll pair. The wrappers act on the fixed pointer dword_187200;
  * the port hands the panel explicitly. The guard is the port's NULL discipline -- the original would
  * fault, and a press can only reach here while Ufopaedia_Open has built the panel. */
@@ -8732,6 +9828,7 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pS->apCraft         = pW->apCraft;                     /* Map + 0x10AC */
     pS->pnShipCount     = &pW->bCraftCount;                /* Map + 0x1194 */
     pS->apSoldiers      = pW->apSoldiers;                  /* Map + 0x1198 */
+    pS->pnSoldierCount  = &pW->nSoldierCount;
     pS->apObjects       = (pW->pAssets != NULL) ? pW->pAssets->apObjects : NULL; /* Map + 0x108 */
     pS->nObjectCount    = (pW->pAssets != NULL) ? (u16)pW->pAssets->nObjectCount : 0;
     pS->pStrategList    = &pW->strategList;                /* 0x1864F8 + 0x3C */
@@ -8743,20 +9840,15 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pS->anAssignedShip      = &pW->anAssignedCraftList[1]; /* 0x16146C, the shell's owner since the
                                                             * buy/sell screen went live */
     pS->pnAssignedShipCount = &pW->anAssignedCraftList[0]; /* 0x161468, its count dword */
-    /* Two fields stay NULL, and each is the callee's own guard, not a crash waiting to happen:
-     *   pnSoldierCount -- ShipRemovalEnv wants a u16* to Map+0x1998 while the shell's owner of
-     *     that count is an i32 (pufo_world.h:72, and pufo_save.h notes the original's u16 writes
-     *     hit its LOW half). Pointing a u16* at the i32 would be a strict-aliasing violation, so
-     *     the "soldiers aboard the craft that was removed" pass is skipped until the count has a
-     *     u16 owner. Recorded as a deviation, not hidden.
-     *   abHangarFlag @ 0x158CD8 -- the table's extent is nowhere in the IDB: no cross-reference
-     *     names the address (the writes reach it as a displacement from a register base), so the
-     *     shell does not invent a size for it. */
+    /* 0x368C8 loads 0x159768; 0x368D0 adds 0x174 before the indexed store. */
+    pS->abHangarFlag   = pW->abFacilityGrid + 0x174;
+    pS->nHangarFlagCap = PUFO_GRID_SIZE - 0x174;
 
     memset(pD, 0, sizeof(*pD));
     pD->apCraft           = pW->apCraft;
     pD->pnShipCount       = &pW->bCraftCount;
     pD->apSoldiers        = pW->apSoldiers;
+    pD->pnSoldierCount    = &pW->nSoldierCount;
     pD->apBases           = pW->apBases;
     pD->apObjects         = pS->apObjects;
     pD->abFacilityGrid    = pW->abFacilityGrid;            /* gBaseFacGrid @ 0x159768 */
@@ -8767,6 +9859,7 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pD->pnResearchEntries = &pW->nResearchEntries;         /* 0x160C4C */
     pD->apSites           = pW->apSites;                   /* 0x162030 */
     pD->nSiteCount        = pW->nSiteCount;                /* 0x186410 */
+    pD->pnSiteCountLive   = &pW->nSiteCount;
     pD->pbBaseCount       = (u8 *)&pW->nBaseCount;         /* 0x159D80, read SIGNED */
     pD->pShipEnv          = pS;
     pD->apProductB        = pW->anProductReq;         /* 0x15B79C: the requested-unit column, live
@@ -8811,6 +9904,7 @@ static void World_WireMissionSeams(PufoWorldState *pW)
     pE->abTileTypes         = pW->abMapTileTypes;          /* 0x159D5C, filled at 0x84124 */
     pE->apSoldiers          = pW->apSoldiers;
     pE->nSoldierCount       = pW->nSoldierCount;
+    pE->pnSoldierCountLive  = &pW->nSoldierCount;
     pE->apObjects           = pS->apObjects;
     pE->nObjectCount        = (i32)pS->nObjectCount;
     pE->pView               = &pW->view;                   /* gSmapCam @ 0x1863E8 */
@@ -8853,6 +9947,7 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pG->nSelectedShipAux = -1;
     pG->apBases          = pW->apBases;
     pG->nBaseCount       = (i32)pW->nBaseCount;
+    pG->pbBaseCount      = (const u8 *)&pW->nBaseCount;
     pG->apEmptyFacilityCells = pW->abRadarPct;                  /* 0x162008: the empty-cell counts ARE
                                                                  * the radar percentages, one block */
     pG->apSoldiers       = pW->apSoldiers;
@@ -8910,10 +10005,12 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pnCraftCount     = &pW->bCraftCount;
     pC->apSoldiers       = pW->apSoldiers;
     pC->nSoldierCount    = pW->nSoldierCount;
+    pC->pnSoldierCountLive = &pW->nSoldierCount;
     pC->apObjects        = (pW->pAssets != NULL) ? pW->pAssets->apObjects : NULL; /* Map + 0x108 */
     pC->nObjectCount     = (pW->pAssets != NULL) ? (i32)pW->pAssets->nObjectCount : 0;
     pC->apSites          = pW->apSites;                    /* 0x162030 */
     pC->nSiteCount       = pW->nSiteCount;
+    pC->pnSiteCountLive  = &pW->nSiteCount;
     pC->apBases          = pW->apBases;
     pC->apManufCol       = pW->auManufCol;                 /* 0x15E19C */
     pC->apResearchCol    = pW->auResearchCol;              /* auResearchCol @ 0x16022C */
@@ -9009,11 +10106,8 @@ void World_WireGeoscapeClock(PufoWorldState *pW, const WorldHooks *pHooks)
     pC->pbTickHold       = &pW->bMapTickHold;              /* 0x113A12, set by case 19 at 0x8BC04 */
     pC->pbBattleEnded    = &pW->bMapBattleEnded;           /* 0x113A14, set by case 19 at 0x8BC0C */
     pC->pCraftSelect     = &pW->craftEnv;                  /* 0x8BB24 */
-    /* pfnFreeGeoscapeUi and pEndScreen stay NULL here, and they gate case 19's bankruptcy tail
-     * (0x8BBF0, 0x8BBF8): GeoscapeUi_FreeAll's FreeWorld half releases the rosters World_Free
-     * releases, and EndScreen_Init wants four globals the shell has no owner of plus an ending
-     * flow to hand control to. The Map pair above IS written either way -- the bankruptcy
-     * markers land before the two hooks -- so the state the original records is there. */
+    pC->pfnFreeGeoscapeUi = World_MissionSeamFreeUi;    /* 0x8BBF0, mode 1 */
+    pC->pfnInitEndScreen  = World_MissionSeamInitEnd;   /* 0x8BBF8, bad ending */
     pC->pUser            = pW;
     World_WireMissionSeams(pW);
 }
@@ -9022,41 +10116,123 @@ void World_PulseGeoscape(PufoWorldState *pW)
 {
     GeoscapePulseEnv env;
 
-    /* Screen 7's auto-repeat pair: the two build-dialog scroll controls at 0x158874 / 0x158878, and
-     * only while bBaseFacPlaceArmed @ 0x158888 is CLEAR (0x95770 ANDS / BEQ). Screen 6's two pairs: the
-     * stores-nav pair at the block's +0x64 / +0x68 while bPlaneStoresCommitted is set, and the crew-nav
-     * pair at +0x5C / +0x60 while bPlaneListPanelsBuilt is set -- the original runs them as two passes
-     * over one dword each, which is the same four forced clicks as two consecutive-control groups.
-     * The remaining groups belong to the soldier, research, manufacturing, transfer, buy/sell,
-     * ufopaedia, start and options screens -- see the group table in game/pufo_geoscape.h. */
+    /* Build all eleven raw repeat-screen groups from the live screen owners. Screen 6 is interleaved
+     * by pass in the original; screen 16 re-reads entry-dirty after its first pair, so its two gates
+     * stay in separate groups as well. */
     UiControl *apFacCtl[2] = { &pW->ctlFacUp, &pW->ctlFacDown };
     UiControl *apPlaneStoreCtl[PUFO_PLANE_STORE_NAV] = { pW->planeStorePanels.apNavCtl[0],
                                                          pW->planeStorePanels.apNavCtl[1] };
     UiControl *apPlaneListCtl[PUFO_PLANE_LIST_NAV]   = { pW->planeListPanels.apNav[0],
                                                          pW->planeListPanels.apNav[1] };
+    UiControl *apPlaneRepeatCtl[4];
+    UiControl *apResearchRepeatCtl[2];
+    UiControl *apUfopaediaCleanCtl[2] = { pW->apUfopaediaCtl[4], pW->apUfopaediaCtl[5] };
+    UiControl *apUfopaediaEntryCtl[2] = { pW->apUfopaediaCtl[0], pW->apUfopaediaCtl[1] };
+    u8 bUfopaediaWidePanelClear = (u8)(pW->bUfopaediaWidePanel == 0);
     GeoscapePulseCtlGroup aFacGroups[1];
-    GeoscapePulseCtlGroup aPlaneGroups[PUFO_PLANE_STORE_NAV];
-    GeoscapePulseScreen   aScreens[2];
+    GeoscapePulseCtlGroup aPlaneGroups[4];
+    GeoscapePulseCtlGroup aSoldierGroups[1];
+    GeoscapePulseCtlGroup aResearchGroups[1];
+    GeoscapePulseCtlGroup aManufGroups[1];
+    GeoscapePulseCtlGroup aTransferGroups[1];
+    GeoscapePulseCtlGroup aBuySellGroups[1];
+    GeoscapePulseCtlGroup aUfopaediaGroups[2];
+    GeoscapePulseCtlGroup aPsiGroups[1];
+    GeoscapePulseCtlGroup aOptionsGroups[1];
+    GeoscapePulseScreen   aScreens[11];
 
     aFacGroups[0].apCtl = apFacCtl;
     aFacGroups[0].nCount = 2;
     aFacGroups[0].pbGate = NULL;
     aFacGroups[0].pbNotGate = &pW->bArmedPlacement;
-    aScreens[0].nScreenId = 7;
-    aScreens[0].pGroups = aFacGroups;
-    aScreens[0].nGroupCount = 1;
 
-    aPlaneGroups[0].apCtl = apPlaneStoreCtl;
-    aPlaneGroups[0].nCount = PUFO_PLANE_STORE_NAV;
+    /* Raw screen 6 walks each pass as stores then crew. Use one-control groups so the
+     * gated order stays stores[0], crew[0], stores[1], crew[1]. */
+    apPlaneRepeatCtl[0] = apPlaneStoreCtl[0];
+    apPlaneRepeatCtl[1] = apPlaneListCtl[0];
+    apPlaneRepeatCtl[2] = apPlaneStoreCtl[1];
+    apPlaneRepeatCtl[3] = apPlaneListCtl[1];
+    aPlaneGroups[0].apCtl = &apPlaneRepeatCtl[0];
+    aPlaneGroups[0].nCount = 1;
     aPlaneGroups[0].pbGate = &pW->bPlaneStoresBuilt;   /* 0x161F28 */
     aPlaneGroups[0].pbNotGate = NULL;
-    aPlaneGroups[1].apCtl = apPlaneListCtl;
-    aPlaneGroups[1].nCount = PUFO_PLANE_LIST_NAV;
+    aPlaneGroups[1].apCtl = &apPlaneRepeatCtl[1];
+    aPlaneGroups[1].nCount = 1;
     aPlaneGroups[1].pbGate = &pW->bPlaneListBuilt;     /* 0x161F24 */
     aPlaneGroups[1].pbNotGate = NULL;
-    aScreens[1].nScreenId = 6;
-    aScreens[1].pGroups = aPlaneGroups;
-    aScreens[1].nGroupCount = PUFO_PLANE_STORE_NAV;
+    aPlaneGroups[2].apCtl = &apPlaneRepeatCtl[2];
+    aPlaneGroups[2].nCount = 1;
+    aPlaneGroups[2].pbGate = &pW->bPlaneStoresBuilt;
+    aPlaneGroups[2].pbNotGate = NULL;
+    aPlaneGroups[3].apCtl = &apPlaneRepeatCtl[3];
+    aPlaneGroups[3].nCount = 1;
+    aPlaneGroups[3].pbGate = &pW->bPlaneListBuilt;
+    aPlaneGroups[3].pbNotGate = NULL;
+
+    /* Raw screen 8 selects its quantity pair with a row selected, else its list pair. */
+    if (pW->researchScratch.bFlag160C80 != 0) {
+        apResearchRepeatCtl[0] = pW->apResearchCtl[2];
+        apResearchRepeatCtl[1] = pW->apResearchCtl[3];
+    } else {
+        apResearchRepeatCtl[0] = pW->apResearchCtl[0];
+        apResearchRepeatCtl[1] = pW->apResearchCtl[1];
+    }
+    aResearchGroups[0].apCtl = apResearchRepeatCtl;
+    aResearchGroups[0].nCount = 2;
+    aResearchGroups[0].pbGate = NULL;
+    aResearchGroups[0].pbNotGate = NULL;
+
+    aManufGroups[0].apCtl = pW->apManufCtl;
+    aManufGroups[0].nCount = 6;
+    aManufGroups[0].pbGate = NULL;
+    aManufGroups[0].pbNotGate = NULL;
+
+    aTransferGroups[0].apCtl = pW->apTransferCtl;
+    aTransferGroups[0].nCount = 2;
+    aTransferGroups[0].pbGate = NULL;
+    aTransferGroups[0].pbNotGate = NULL;
+
+    aBuySellGroups[0].apCtl = pW->apBuySellCtl;
+    aBuySellGroups[0].nCount = 2;
+    aBuySellGroups[0].pbGate = NULL;
+    aBuySellGroups[0].pbNotGate = NULL;
+
+    /* The clean category pair runs only while open and not dirty. The second raw branch re-reads
+     * dirty after those two scroll controls and runs the entry pair only when dirty and wide. */
+    aUfopaediaGroups[0].apCtl = apUfopaediaCleanCtl;
+    aUfopaediaGroups[0].nCount = 2;
+    aUfopaediaGroups[0].pbGate = &pW->bUfopaediaOpen;
+    aUfopaediaGroups[0].pbNotGate = &pW->bUfopaediaEntryDirty;
+    aUfopaediaGroups[1].apCtl = apUfopaediaEntryCtl;
+    aUfopaediaGroups[1].nCount = 2;
+    aUfopaediaGroups[1].pbGate = &pW->bUfopaediaEntryDirty;
+    aUfopaediaGroups[1].pbNotGate = &bUfopaediaWidePanelClear;
+
+    aPsiGroups[0].apCtl = pW->psiEnv.apScrollCtl;
+    aPsiGroups[0].nCount = 2;
+    aPsiGroups[0].pbGate = NULL;
+    aPsiGroups[0].pbNotGate = &pW->bBaseInfoOverlayOpen;
+
+    aOptionsGroups[0].apCtl = pW->options.apPairCtl;
+    aOptionsGroups[0].nCount = 2;
+    aOptionsGroups[0].pbGate = &pW->bOptionsScreenOpen;
+    aOptionsGroups[0].pbNotGate = NULL;
+
+    aSoldierGroups[0].apCtl = pW->nav.apPanel;
+    aSoldierGroups[0].nCount = 2;
+    aSoldierGroups[0].pbGate = NULL;
+    aSoldierGroups[0].pbNotGate = NULL;
+    aScreens[0] = (GeoscapePulseScreen){ 4, aSoldierGroups, 1 };
+    aScreens[1] = (GeoscapePulseScreen){ 6, aPlaneGroups, 4 };
+    aScreens[2] = (GeoscapePulseScreen){ 7, aFacGroups, 1 };
+    aScreens[3] = (GeoscapePulseScreen){ 8, aResearchGroups, 1 };
+    aScreens[4] = (GeoscapePulseScreen){ 9, aManufGroups, 1 };
+    aScreens[5] = (GeoscapePulseScreen){ 10, aTransferGroups, 1 };
+    aScreens[6] = (GeoscapePulseScreen){ 11, aBuySellGroups, 1 };
+    aScreens[7] = (GeoscapePulseScreen){ 12, aBuySellGroups, 1 };
+    aScreens[8] = (GeoscapePulseScreen){ 16, aUfopaediaGroups, 2 };
+    aScreens[9] = (GeoscapePulseScreen){ 17, aPsiGroups, 1 };
+    aScreens[10] = (GeoscapePulseScreen){ 18, aOptionsGroups, 1 };
 
     memset(&env, 0, sizeof(env));
     env.pnActionFail  = (i32 *)&pW->nShortfall1870C8;   /* 0x954EC: == 1 stops the whole tick */
@@ -9075,7 +10251,7 @@ void World_PulseGeoscape(PufoWorldState *pW)
     env.pnMsgTimer    = &pW->nRadarMsgTimer;            /* 0xAC220 */
     env.pnPulseTimer  = &pW->nRadarPulseTimer;          /* 0xAC224 */
     env.pScreens      = aScreens;
-    env.nScreenCount  = 2;
+    env.nScreenCount  = 11;
     env.pHitCtx       = pW->pHitCtx;
     if (pW->ui.apPad[GEOUI_PAD_186BBC] != NULL) {
         env.nStripHeight = (i32)pW->ui.apPad[GEOUI_PAD_186BBC]->uHeight; /* Smap_ScrollBy's clamp */
@@ -9311,6 +10487,9 @@ static void World_WireOptions(PufoWorldState *pW, const WorldHooks *pHooks)
     if (pHooks != NULL) {
         pO->draw.pSlotLabels = pHooks->pSlotLabels;       /* MainMenu_pSlotCtx @ 0x156938, 0x6CBFC */
         pO->draw.pColor      = pHooks->pColor;
+        /* Port-side (2026-11-04, user request): the volume tab's loop row. */
+        pO->draw.pbMusicLoop = (pHooks->pTactOptions != NULL)
+                                   ? &pHooks->pTactOptions->bMusicLoop : NULL;
     }
     /* The pad-blit seam comes from pHooks->pHit, not from pW->pHitCtx: World_WireGeoscapeClock stores
      * that one at the END of World_WireGeoscapeFrame, and the other arms here read pHooks->pHit too. */
@@ -9801,6 +10980,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->apOptListCtl        = pW->options.apCtlFlat;  /* aOptionsListCtl @ 0x159E20: [0..6] are the rows */
     pPtr->apOptMusicCtl       = pW->options.ctl.apMusic; /* aOptionsMusicBtn @ 0x159E44 */
     pPtr->apOptSfxCtl         = pW->options.ctl.apSfx;   /* aOptionsSfxBtn @ 0x159E5C */
+    pPtr->pfnToggleMusicLoop  = World_ToggleMusicLoopThunk; /* port-side (2026-11-04): the loop row */
     pPtr->pView          = &pW->view;
     pPtr->pZoomOverlay   = pUi->apPad[GEOUI_PAD_186BBC]; /* 0x87C48 reads its uHeight as the strip */
     pPtr->pnTapCooldown  = &pF->g.nTapCooldown;
@@ -9827,6 +11007,7 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
      * only the confirm control (0x88950); without one it walks these four and the close control
      * (0x889F0), and the release arms mirror that (0x8A6AC). */
     pPtr->apSiteInfoCtl          = pW->apTransferCtl;
+    pPtr->pbBaseAtDone           = &pW->bBaseAtConfirmShown;       /* screen 20: 0x158854 */
     /* Screen 3's own arm (0x88A08..0x88A24): the two controls it hit-tests are `unk_158828 + 4`, which
      * is BaseInfoScreen_Init's control pair -- the field is named for the base-attack screen because that
      * is where the earlier reading first saw the block, but 0x15882C / 0x158830 are the base-info
@@ -9845,6 +11026,9 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     pPtr->pbNameEditActive = &pW->bSoldierNameEditActive; /* byte_186B88: PointerSoldierNames reads it at
                                                            * 0x88128 with no null test and arms it at 0x881F0,
                                                            * so the arm needs the real byte */
+    pPtr->pfnBackspaceName = World_BackspaceNameClick;
+    pPtr->pfnCopyNameToEdit = World_AcceptNameClick;
+    pPtr->pfnAppendNameGlyph = World_AppendNameGlyph;
     pPtr->apSolPanelCtl  = pW->nav.apPanel;              /* apSoldierPanelCtl @ 0x1598B0 */
     pPtr->apSolFindCtl   = pW->nav.apFind;               /* apSoldierFindCtl @ 0x1598B8 */
     pPtr->pbUiAnimStarted = &pW->bUiAnimStarted;         /* 0x187080 */
@@ -11096,6 +12280,11 @@ void World_WireGeoscapeFrame(PufoWorldState *pW, const WorldHooks *pHooks)
     }
 
     World_WireGeoscapeClock(pW, pHooks);
+    World_WireManualFunding(pW);
+    World_PsiWireEnv(pW);
+    World_WireRadarSession(pW);
+    pF->radar.pRadarEnv = &pW->radar.update;
+    pW->ptrEnv.apRadarCtl = pW->radar.ui.apCtl;
 }
 
 /* The per-frame fields: the original keeps the map pad, the layer pad and the tile grid in the three
@@ -11110,6 +12299,236 @@ static const SmapZoomSet *World_CurrentZoomSet(PufoWorldState *pW)
         nMode = 0;
     }
     return &pW->sets[nMode];
+}
+
+static void World_RadarCursorNWThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        RadarScreen_SetCursorNW(&g_pActiveWorld->radar.cursor);
+    }
+}
+
+static void World_RadarCursorNEThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        RadarScreen_SetCursorNE(&g_pActiveWorld->radar.cursor);
+    }
+}
+
+static void World_RadarCursorSWThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        RadarScreen_SetCursorSW(&g_pActiveWorld->radar.cursor);
+    }
+}
+
+static void World_RadarCursorSEThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        RadarScreen_SetCursorSE(&g_pActiveWorld->radar.cursor);
+    }
+}
+
+static void World_RadarBackdropThunk(void)
+{
+    if (g_pActiveWorld != NULL) {
+        (void)RadarScreen_BlitMapBackdrop(&g_pActiveWorld->radar.backdrop);
+    }
+}
+
+void World_WireRadarSession(PufoWorldState *pW)
+{
+    WorldRadarState *pR;
+    const SmapZoomSet *pSet;
+    const UiControlHitCtx *pHit;
+    Ship *pCraft = NULL;
+    StrategItem *pItem = NULL;
+    i32 nShipIdx;
+    i32 nItemIdx;
+    i32 i;
+
+    if (pW == NULL) {
+        return;
+    }
+
+    pR = &pW->radar;
+    pSet = World_CurrentZoomSet(pW);
+    pHit = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pHit : NULL;
+
+    nShipIdx = pW->nInterceptShipIdx;
+    if (nShipIdx >= 0 && nShipIdx < (i32)pW->bCraftCount) {
+        pCraft = pW->apCraft[nShipIdx];
+    }
+    nItemIdx = pW->nInterceptStrategIdx;
+    if (nItemIdx >= 0 && nItemIdx < PtrArray_GetCount(&pW->strategList)) {
+        pItem = (StrategItem *)PtrArray_Get(&pW->strategList, nItemIdx);
+    }
+
+    pR->session = (RadarSessionEnv){
+        .pUi = &pR->ui,
+        .pbActive = &pW->bRadarScreenActive,
+        .pbOutOfFuel = &pR->bCraftOutOfFuel,
+        .pbBlinkPhase = &pR->bBlinkPhase,
+        .pbFlip = &pR->bFlip,
+        .pbTraceLost = &pR->bTraceLost,
+        .pbInterceptDone = &pR->bInterceptDone,
+        .pnScanOffset = &pR->nScanOffset,
+        .pbAnimStarted = &pW->bUiAnimStarted,
+        .pnMsgTimer = &pW->nRadarMsgTimer,
+        .pnTargetHp = &pR->nTargetHp,
+        .pnTargetHpMax = &pR->nTargetHpMax,
+        .pnCraftLevel = &pR->nCraftLevel,
+        .pnRangeLimit = &pR->nRangeLimit,
+        .pnRangeTarget = &pR->nRangeTarget,
+        .pnRangeCur = &pR->nRangeCur,
+        .pnAmmoL = &pR->nAmmoL,
+        .pnAmmoR = &pR->nAmmoR,
+        .pnCursorX = &pR->nCursorX,
+        .pnCursorY = &pR->nCursorY,
+        .pnShipIdx = &pW->nInterceptShipIdx,
+        .pnStrategIdx = &pW->nInterceptStrategIdx,
+        .apCraft = pW->apCraft,
+        .nCraftCount = (i32)pW->bCraftCount,
+        .pStrategList = &pW->strategList,
+        .pTime = &pW->geo.time,
+        .pnFrameStyle = (i8 *)&pW->aRegionBuildCount[9],
+        .apfnClick = { World_RadarCursorNWThunk, World_RadarCursorNEThunk,
+                       World_RadarCursorSWThunk, World_RadarCursorSEThunk,
+                       World_RadarBackdropThunk },
+        .pfnLoadPads = pW->pfnLoadPads,
+        .pLoadPadsUser = pW->pLoadPadsUser,
+    };
+    pR->cursor = (RadarCursorEnv){
+        .pbGate = &pR->bTraceLost,
+        .pnCursorX = &pR->nCursorX,
+        .pnCursorY = &pR->nCursorY,
+        .pnRangeTarget = &pR->nRangeTarget,
+        .pbFlip = &pR->bFlip,
+        .pnMsgTimer = &pW->nRadarMsgTimer,
+        .pszMsg = pW->szLabelScratch,
+        .cchMsg = sizeof(pW->szLabelScratch),
+        .pTextRecs = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL,
+        .pnInterceptA = &pR->nAmmoL,
+        .pnInterceptB = &pR->nAmmoR,
+        .pnLevel = &pR->nCraftLevel,
+        .pnBoundA = &pR->nBoundL,
+        .pnBoundB = &pR->nBoundR,
+    };
+    pR->backdrop = (RadarBackdropEnv){
+        .pView = &pW->view,
+        .pMapPad = pSet->pGrid,
+        .pLayerPad = pSet->pOverlay,
+        .pWorldBits = (const u8 *)pW->ui.pWorldSize,
+        .nOverlayOriginX = pW->frame.g.nOverlayOriginX,
+        .nScreenId = pW->screen.nGeoscapeScreen,
+        .pbBlinkPhase = &pR->bBlinkPhase,
+    };
+    pR->palette = (RadarPaletteEnv){
+        .pnRangeCur = &pR->nRangeCur,
+        .pnRangeTarget = &pR->nRangeTarget,
+        .pbFlip = &pR->bFlip,
+    };
+    pR->rangeBar = (RadarRangeBarEnv){
+        .pInterceptItem = pItem,
+        .pCraft = pCraft,
+        .pnRangeCur = &pR->nRangeCur,
+        .nRangeLimit = pR->nRangeLimit,
+        .nCraftLevel = pR->nCraftLevel,
+        .pnPulseTimer = &pW->nRadarPulseTimer,
+    };
+    pR->fuel.pCraft = pCraft;
+    for (i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+        pR->fuel.apDigitPads[i] = pR->ui.apDigitPad[i];
+    }
+    pR->fuel.pbOutOfFuel = &pR->bCraftOutOfFuel;
+    pR->hitRoll = (RadarHitRollEnv){
+        .pStrategList = &pW->strategList,
+        .pnStrategIdx = &pW->nInterceptStrategIdx,
+        .pnTargetHp = &pR->nTargetHp,
+    };
+    pR->armament = (RadarArmamentEnv){
+        .pnGlyphPalBase = &g_nGlyphPalSlotBase,
+        .pnShipIdx = &pW->nInterceptShipIdx,
+        .apCraft = pW->apCraft,
+        .nCraftCount = (i32)pW->bCraftCount,
+        .pnRangeCur = &pR->nRangeCur,
+        .pnCraftLevel = &pR->nCraftLevel,
+        .pnBoundL = &pR->nBoundL,
+        .pnBoundR = &pR->nBoundR,
+        .pbEngageL = &pR->bEngageL,
+        .pbEngageR = &pR->bEngageR,
+        .pnCooldownL = &pW->nRadarCooldownL,
+        .pnCooldownR = &pW->frame.g.nTapCooldown,
+        .pnShotYL = &pR->nShotYL,
+        .pnShotYR = &pR->nShotYR,
+        .pnAmmoL = &pR->nAmmoL,
+        .pnAmmoR = &pR->nAmmoR,
+    };
+    pR->overlay = (RadarOverlayEnv){
+        .pnShipIdx = &pW->nInterceptShipIdx,
+        .apCraft = pW->apCraft,
+        .nCraftCount = (i32)pW->bCraftCount,
+        .pnRangeCur = &pR->nRangeCur,
+        .pnCraftLevel = &pR->nCraftLevel,
+        .pbFlip = &pR->bFlip,
+        .pbEngageL = &pR->bEngageL,
+        .pbEngageR = &pR->bEngageR,
+        .pnCooldownL = &pW->nRadarCooldownL,
+        .pnCooldownR = &pW->frame.g.nTapCooldown,
+        .pnShotYL = &pR->nShotYL,
+        .pnShotYR = &pR->nShotYR,
+        .pnAmmoL = &pR->nAmmoL,
+        .pnAmmoR = &pR->nAmmoR,
+        .pbLastShotHit = &pR->bLastShotHit,
+        .pHitEnv = &pR->hitRoll,
+    };
+    pR->detect = (RadarDetectEnv){
+        .pStrategList = &pW->strategList,
+        .pnStrategIdx = &pW->nInterceptStrategIdx,
+        .apCraft = pW->apCraft,
+        .nCraftCount = (i32)pW->bCraftCount,
+        .pnShipIdx = &pW->nInterceptShipIdx,
+        .pbTraceLost = &pR->bTraceLost,
+        .pbFlip = &pR->bFlip,
+        .pnRangeTarget = &pR->nRangeTarget,
+        .pnMsgTimer = &pW->nRadarMsgTimer,
+        .pTextRecs = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL,
+        .pszMsg = pW->szLabelScratch,
+        .cchMsg = sizeof(pW->szLabelScratch),
+    };
+    pR->update = (RadarUpdateEnv){
+        .pSession = &pR->session,
+        .pAnim = &pW->frame.anim,
+        .pColor = (pW->pFrameHooks != NULL) ? pW->pFrameHooks->pColor : NULL,
+        .pPalette = &pR->palette,
+        .pRangeBar = &pR->rangeBar,
+        .pFuel = &pR->fuel,
+        .pArmament = &pR->armament,
+        .pOverlay = &pR->overlay,
+        .pDetect = &pR->detect,
+        .pShipEnv = &pW->shipEnv,
+        .pTilemap = pSet->pTiles,
+        .anFundingBlock = pW->economy.anFundingBlock,
+        .pdwShortfall = &pW->nShortfall1870C8,
+        .pszNameBuf = pW->szScratch,
+        .cchNameBuf = sizeof(pW->szScratch),
+        .pMsgList = &pW->msgLines,
+        .pfnPlaySample = pW->pfnPlaySample,
+        .pSoundUser = pW->pSoundUser,
+        .pfnCtlBlit = (pHit != NULL) ? pHit->pfnBlit : NULL,
+        .pfnCtlBlitEx = (pHit != NULL) ? pHit->pfnBlitEx : NULL,
+        .pCtlBlitUser = (pHit != NULL) ? pHit->pUser : NULL,
+    };
+}
+
+void World_FreeRadarSession(PufoWorldState *pW)
+{
+    if (pW == NULL || pW->bRadarScreenActive == 0) {
+        return;
+    }
+
+    World_WireRadarSession(pW);
+    RadarScreen_SetActive(&pW->radar.session, 0);
 }
 
 static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
@@ -11132,6 +12551,8 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
      * block at every call (0x922B0 LDRSB R1,[R5,#(nSelectedBaseIdx-0x159768)]), so the copy follows the
      * selection each frame. The strip's highlight row is NOT refreshed: 0x922B8 makes it -1 for this arm. */
     pF->facNameGrid.nBaseIdx = pW->nSelectedBase;
+    pW->baseInfoDraw.nCraftCount = (i32)pW->bCraftCount;
+    pW->baseInfoDraw.nBaseCount = pW->nBaseCount;
 
     /* The two screens whose objects their own open handler allocates: SoldierScreen_Toggle @ 0x64af0 builds
      * the "soldier" pad (0x1598D4) and the four panels, BaseFacScreen_Toggle @ 0x589ec builds the dialog panel
@@ -11140,6 +12561,10 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->solDraw.pPad        = pW->pSolPad;
     pF->solDraw.pPanelNames = pW->pSolPanelNames;
     pF->solDraw.pPanelCraft = pW->pSolPanelCraft;
+    /* Pointer release re-reads these globals too (0x89FB8 and 0x8A070).
+     * The open handler allocates the panels after the initial env was built. */
+    pW->ptrEnv.pSolPanelNames = pW->pSolPanelNames;
+    pW->ptrEnv.pSolPanelEquip = pW->pSolPanelEquip;
     pF->solArm.pPad         = pW->pSolPad;                  /* the same 0x1598D4, read a second time at 0x92F14 */
     pF->solDetail.EquipPanels.pPanelEquip  = pW->pSolPanelEquip;   /* 0x159DF0 / 0x159758, re-read by
                                                                      * SoldierScreen_DrawEquipPanels at
@@ -11177,6 +12602,10 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
      * against (0x5B8CC). Both follow the clock, so they are re-read every frame. */
     pW->fundingDraw.pPad          = pW->pFundPad;
     pW->fundingDraw.nMonthCounter = pW->nMonthCounter;
+    /* Screen 19's upkeep arm reads the live Map counts on every draw. */
+    pW->fundingArm.nCraftCount    = (i32)pW->bCraftCount;
+    pW->fundingArm.nSoldierCount  = pW->nSoldierCount;
+    pW->fundingArm.nSiteCount     = pW->nSiteCount;
 
     /* Case 18, the options screen. The flat array is the original's one aOptionsListCtl @ 0x159E20: slots
      * 0..6 (the seven menu rows) and 9..20 (the twelve radio buttons) name objects the shell owns, so
@@ -11334,6 +12763,11 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
      * press that runs the close (a confirm may create nothing, but the transfer pass reads the
      * count after the transaction). */
     pW->clearShipsEnv.nBaseCount      = (i32)pW->nBaseCount;
+    World_WireManualFunding(pW);
+    World_PsiWireEnv(pW);
+    World_WireRadarSession(pW);
+    pF->radar.pRadarEnv = &pW->radar.update;
+    pW->ptrEnv.apRadarCtl = pW->radar.ui.apCtl;
 }
 
 i32 World_DrawGeoscapeFrame(PufoWorldState *pW, i32 (*pfnPresent)(void *pUser), void *pUser)
@@ -11354,5 +12788,6 @@ void World_GeoscapePointer(PufoWorldState *pW, i32 nX, i32 nY, bool bDown)
 
 void World_GeoscapePointerUp(PufoWorldState *pW)
 {
+    World_RefreshGeoscapeFrame(pW);
     (void)Geoscape_OnPointerUp(&pW->ptrEnv);
 }

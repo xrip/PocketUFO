@@ -1,0 +1,59 @@
+# Controlled base-defense event-entry proof. This does not test defeat.
+# Run with tools/e2e_base_defense_entry.sh against a private Release app.
+#
+# The only staged event data are the native UFO factory record, fixed class 2,
+# race 0, and origin (150,250). Its HP remains the factory value -1. The helper
+# calls the live World subtype-6 spawn callback, then waits on the real clock,
+# event processing, and draw path until Base At's normal confirm is ready.
+# This flow never edits defenders, their HP, tactical counts, funds, or result
+# flags, and it never calls a mission launch or outcome function directly.
+
+# Use the real startup menu and placement UI for one base with its real crew.
+click 120 124
+tick 20
+pick
+close
+close
+tick 20
+state base_defense_setup
+strategystate base_defense_setup
+grid 0
+# Set the real one-hour game speed through its live control. The helper checks
+# the observer's tickSec value; no clock field is written by the flow.
+click 60 308
+strategystate base_defense_hour_speed
+dump base_defense_new_base.ppm
+
+# Start the production subtype-6 event. The helper returns only after the
+# normal event path has opened screen 20 and shown the mission-follows confirm.
+campaign base-defense-entry
+state base_defense_base_at
+strateg
+lines
+dump base_defense_base_at.ppm
+
+# Use the real Base At pointer confirm. The type-3 inventory starts with its
+# XCOM units active in the roster and the other soldiers in hidden reserve.
+click 120 290
+tick 20
+state base_defense_initial_loadout
+campaign state base_defense_initial_loadout
+tact
+dump base_defense_initial_loadout.ppm
+
+# Use the mapped confirm key through the existing WndProc key dispatcher.
+# Let normal game and window ticks place the real XCOM units on map cells.
+confirm
+gametick 20
+tick 20
+state base_defense_deployed
+campaign state base_defense_deployed
+tact
+dump base_defense_deployed.ppm
+
+# Run the existing input-only enemy turn and capture its natural result.
+campaign enemyturn
+state base_defense_after_first_enemyturn
+campaign state base_defense_after_first_enemyturn
+tact
+dump base_defense_after_first_enemyturn.ppm

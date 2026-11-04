@@ -1,0 +1,141 @@
+{
+  "cluster_id": "frame-present",
+  "date": "2026-10-29",
+  "audit_input_source": "946F139E97811307283A228EA7D153B59364D31903C2240D14090AD35594EFEF",
+  "members": [
+    {
+      "address": "0x22310",
+      "size": 756,
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "mismatch",
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_renderframe.c",
+          "function": "Render_Frame"
+        },
+        {
+          "path": "src/pufo/app/pufo_app.c",
+          "function": "App_DrawFrame"
+        },
+        {
+          "path": "src/pufo/app/pufo_world.c",
+          "function": "World_TactFrameDraw"
+        }
+      ],
+      "contract": "Dispatch geoscape first; otherwise title/menu/end screens or tactical screen table, modal, fade/status, then present.",
+      "input_domain": "Supported live scenes with valid drawing owners; direct adapter uses the cursor tick's post-update slot10.",
+      "deviations": [
+        "Direct C adapter formerly used pre-tick nFadeIn; now uses CursorDirState.nSlot10 after ticking. World already ticked before building its environment."
+      ],
+      "boundary_evidence": [
+        "frame-present-raw-2026-10-29.json complete4body bytes",
+        "cursor-frame-parent-raw-2026-10-29.json supporting cursor update",
+        "luna-frame-fade-peer RESULT/POST_FIX and source World frame publication order"
+      ],
+      "open_questions": [
+        "Draw/pixel leaf internals and native output acceptance are outside this group.",
+        "GAPI/platform return equivalence is limited to checked discarded-result paths; separate StatusMsg result boundary remains open."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x36818",
+      "size": 24,
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "mismatch",
+      "source_bindings": [
+        {
+          "path": "src/pufo/game/pufo_renderframe.c",
+          "function": "Render_Frame_DecRef"
+        },
+        {
+          "path": "src/pufo/app/pufo_world.c",
+          "function": "World_TactFrameDraw"
+        }
+      ],
+      "contract": "Decrement Map+0x64 before Render_Frame and all banner/fade reads.",
+      "input_domain": "Valid frame and counter in native guarded range; caller-discarded return.",
+      "deviations": [
+        "World now decrements before all snapshots; standalone C helper refreshes temporary frame/banner copies from the updated owner. NULL counter guard is a port adaptation."
+      ],
+      "boundary_evidence": [
+        "frame-present-raw-2026-10-29.json complete4body bytes",
+        "cursor-frame-parent-raw-2026-10-29.json supporting cursor update",
+        "luna-frame-fade-peer RESULT/POST_FIX and source World frame publication order"
+      ],
+      "open_questions": [
+        "Draw/pixel leaf internals and native output acceptance are outside this group.",
+        "GAPI/platform return equivalence is limited to checked discarded-result paths; separate StatusMsg result boundary remains open."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x27788",
+      "size": 4,
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "adapted",
+      "source_bindings": [
+        {
+          "path": "src/pufo/app/pufo_app.c",
+          "function": "App_PresentHook"
+        }
+      ],
+      "contract": "Tail branch to GX_PresentFrame; input context is not consumed.",
+      "input_domain": "Canonical main surface; checked callers discard platform result.",
+      "deviations": [
+        "App_PresentHook uses persistent Win64 DIB presentation and returns0 rather than forwarding GAPI status."
+      ],
+      "boundary_evidence": [
+        "frame-present-raw-2026-10-29.json complete4body bytes",
+        "cursor-frame-parent-raw-2026-10-29.json supporting cursor update",
+        "luna-frame-fade-peer RESULT/POST_FIX and source World frame publication order"
+      ],
+      "open_questions": [
+        "Draw/pixel leaf internals and native output acceptance are outside this group.",
+        "GAPI/platform return equivalence is limited to checked discarded-result paths; separate StatusMsg result boundary remains open."
+      ],
+      "idb_proposals": []
+    },
+    {
+      "address": "0x9ea7c",
+      "size": 308,
+      "raw_body_complete": true,
+      "status": "adapted",
+      "baseline_status": "adapted",
+      "source_bindings": [
+        {
+          "path": "src/pufo/app/pufo_app.c",
+          "function": "App_PresentLoadedSurface"
+        },
+        {
+          "path": "src/pufo/app/pufo_app.c",
+          "function": "App_PresentHook"
+        },
+        {
+          "path": "src/pufo/platform/pufo_gx.c",
+          "function": "Gx_Present"
+        }
+      ],
+      "contract": "Acquire direct/GAPI frame, choose display-mode pitches, set240x320 two-byte target, copy main surface low/high resolution, call no-argument GXEndDraw.",
+      "input_domain": "Win64 fixed logical240x320 RGB565 main surface and positive DIB pitch; native display-mode rotations are not selected.",
+      "deviations": [
+        "Win64 persistent DIB plus integer-scale letterboxing replaces GAPI acquisition and mode1..3 physical layouts. Exact native output/status parity remains unverified."
+      ],
+      "boundary_evidence": [
+        "frame-present-raw-2026-10-29.json complete4body bytes",
+        "cursor-frame-parent-raw-2026-10-29.json supporting cursor update",
+        "luna-frame-fade-peer RESULT/POST_FIX and source World frame publication order"
+      ],
+      "open_questions": [
+        "Draw/pixel leaf internals and native output acceptance are outside this group.",
+        "GAPI/platform return equivalence is limited to checked discarded-result paths; separate StatusMsg result boundary remains open."
+      ],
+      "idb_proposals": []
+    }
+  ],
+  "tests_executed": false,
+  "runtime_executed": false
+}

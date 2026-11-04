@@ -1,0 +1,7 @@
+{
+  "ea": "0x113ac0",
+  "name": "Map_apObjects0",
+  "type": "#129 *[256]",
+  "comment": "Raw first object-pointer slot at Map base0x1139B8+0x108. Tact_InitMission loads this pointer at0x3CB28 and stores it into empty-item sentinel0x138EA0 at0x3CB30. Three death-blast neighbor calls also use this slot; own-cell uses slot17 at+0x14C. Existing table capacity/type is retained, not re-proved here.",
+  "saved": true
+}

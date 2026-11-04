@@ -10,6 +10,7 @@
 
 i32 Render_Frame(const RenderFrameEnv *pEnv)
 {
+    i32 nFadeIn;
     if (pEnv->pfnGeoscapeDraw != NULL && pEnv->bGeoscapeMode != 0) {
         /* 0x22328 / 0x22330: the geoscape branch returns Geoscape_Draw's value and never
          * reaches GX_Present -- Geoscape_Draw presents itself. */
@@ -27,10 +28,12 @@ i32 Render_Frame(const RenderFrameEnv *pEnv)
         (void)Titles_DrawBackdrop(pEnv->pTitlesBackdrop);
         break;
     default:
+        nFadeIn = pEnv->nFadeIn;
         /* 0x22360: the cursor-direction tick runs for every tactical screen. */
         if (pEnv->pCursorDir != NULL) {
             TactHud_TickCursorDir(pEnv->pCursorDir, pEnv->bCursorBusy,
                                   pEnv->bCursorTrackUnit, pEnv->bCursorUnk70115);
+            nFadeIn = pEnv->pCursorDir->nSlot10;
         }
         g_nGlyphPalSlotBase = 34; /* 0x22370 */
 
@@ -133,11 +136,11 @@ i32 Render_Frame(const RenderFrameEnv *pEnv)
 
         /* 0x2250c: the fade block. */
         if (pEnv->nFadeCount <= 0) {
-            if (pEnv->nFadeIn < 10) {
+            if (nFadeIn < 10) {
                 if (pEnv->pFadePad != NULL && pEnv->pFadePad->pData != NULL) {
-                    if (pEnv->nFadeIn != 0) {
+                    if (nFadeIn != 0) {
                         SoftSurf_Blit(0, 0, pEnv->pFadePad->pData, pEnv->pFadePad->nMode,
-                                      24 * (10 - pEnv->nFadeIn)); /* 0x225b8 */
+                                      24 * (10 - nFadeIn)); /* 0x225b8 */
                     } else {
                         SoftSurf_Blit(0, 0, pEnv->pFadePad->pData, pEnv->pFadePad->nMode,
                                       255); /* 0x2257c */
@@ -164,8 +167,21 @@ i32 Render_Frame(const RenderFrameEnv *pEnv)
  * See the header for the Map+0x64 offset deviation. */
 void Render_Frame_DecRef(i32 *pnFadeCount, const RenderFrameEnv *pEnv)
 {
+    RenderFrameEnv frame;
+    TactHudBannerState banner;
+
     if (pnFadeCount != NULL) {
         --*pnFadeCount; /* 0x3681C..0x36820: LDR/SUB/STR against Map+0x64 */
     }
-    (void)Render_Frame(pEnv); /* 0x36828: tail jump with R0 = &gIsoDraw */
+    frame = *pEnv;
+    if (pnFadeCount != NULL) {
+        frame.nFadeCount = *pnFadeCount;
+        if (frame.nUiScreen == 0xD && frame.pBannerState != NULL
+                && !(frame.pfnGeoscapeDraw != NULL && frame.bGeoscapeMode != 0)) {
+            banner = *frame.pBannerState;
+            banner.nFadeCount = *pnFadeCount;
+            frame.pBannerState = &banner;
+        }
+    }
+    (void)Render_Frame(&frame); /* Both views see the post-decrement Map+0x64 value. */
 }

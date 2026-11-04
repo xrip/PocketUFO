@@ -1,0 +1,36 @@
+{
+  "types": [
+    {
+      "name": "SoftSurf",
+      "found": true,
+      "size": 40
+    },
+    {
+      "name": "UiPanel",
+      "found": true,
+      "size": 7092
+    }
+  ],
+  "functions": [
+    {
+      "ea": "0x9fa7c",
+      "type": "void __fastcall(int)"
+    },
+    {
+      "ea": "0x9fa90",
+      "type": "void __fastcall(int)"
+    },
+    {
+      "ea": "0x9faa4",
+      "type": "int __fastcall(int nW, int nH, int nBytes, int nPitchX, int nPitchY, void *pBits)"
+    },
+    {
+      "ea": "0x3ed44",
+      "type": "int __fastcall(void *pList, int nX, int nY)"
+    },
+    {
+      "ea": "0x37144",
+      "type": "char *__fastcall(unsigned __int8 nMaxW, unsigned __int8 nLineStart, char *pszText, UiPanel *pPanel)"
+    }
+  ]
+}

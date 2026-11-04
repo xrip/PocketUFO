@@ -120,8 +120,11 @@ static const char *Map_TextRec(const MoveActionWiring *pWiring, i32 nRecord)
 
 static void Map_PushRecord(MoveActionWiring *pWiring, i32 nRecord)
 {
+    const StatusHooks *pHooks = (pWiring->pStatusHooks != NULL)
+                                    ? pWiring->pStatusHooks : &pWiring->statusHooks;
+
     StatusMsg_Push(&pWiring->pMap->status, Map_TextRec(pWiring, nRecord),
-                   false, &pWiring->statusHooks);
+                   false, pHooks);
 }
 
 void Map_PushStatusCb(i32 nTextRecIndex, void *pUser)
@@ -207,6 +210,8 @@ static bool Map_HookIsBusy(void *pUser)
 
 void Map_WireMoveActionCtx(MoveActionCtx *pCtx, MoveActionWiring *pWiring)
 {
+    /* pStatusHooks belongs to the caller: the World installs its live render owner there.
+     * Keep the embedded hooks as a zero-initialized fallback for standalone map callers. */
     pWiring->statusHooks.pfnIsBusy      = Map_HookIsBusy;
     pWiring->statusHooks.pfnShouldRender = NULL;
     pWiring->statusHooks.pfnRender      = NULL;
