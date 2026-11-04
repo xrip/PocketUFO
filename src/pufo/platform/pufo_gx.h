@@ -21,15 +21,11 @@ typedef struct GxSurface {
     u32      cyHeight;
     int      cBPP;
     /* QoL landscape presentation (shell extension, not in the original Win64
-     * shell): the logical 240x320 surface is rotated 90 CW into a 320x240
-     * DIB at present time, so the game UI (laid out centered) keeps its
-     * center on a landscape screen. The surface itself never rotates. */
-    int      bRotate90CW;
-    int      nDibW;    /* DIB/window-face size: 320x240 rotated, 240x320 plain */
-    int      nDibH;
-    u8      *pFace;    /* rotated 90 CW copy of the surface, the DIB bits;
-                        * NULL in plain mode, where the DIB bits ARE pBits */
-    int      bOwnsSurface; /* 1 in rotated mode: pBits is a Gx-owned buffer */
+     * shell): the 240x320 portrait surface is shown UPRIGHT (never rotated)
+     * in a wider screen, fitted to the window height and centered, with the
+     * extra width as side bands. The game UI, laid out centered, stays
+     * centered. The surface and the DIB stay 240x320. */
+    int      bFitHeight;
     /* Win32 side */
     HWND      hWnd;
     HDC       hdcWindow;
@@ -39,17 +35,23 @@ typedef struct GxSurface {
 } GxSurface;
 
 /* Open the display and bind it to hWnd. Returns true on success.
- * bRotate90CW selects the QoL landscape face (see the struct comment). */
-bool Gx_Open(GxSurface *pGx, HWND hWnd, u32 cxWidth, u32 cyHeight, int bRotate90CW);
+ * bFitHeight selects the QoL landscape fit (see the struct comment). */
+bool Gx_Open(GxSurface *pGx, HWND hWnd, u32 cxWidth, u32 cyHeight, int bFitHeight);
 
-/* Pure mapping of a point in the letterboxed face space (0..nDibW-1,
- * 0..nDibH-1 after scale/offset removal) into logical surface coordinates.
- * Plain face: identity. Rotated face (90 CW, top of the portrait on the right
- * edge): lx = sy, ly = cyHeight-1-sx. The pointer table the ORIGINAL used in
- * its mode 1 (0xA07D4) swaps (y,x) -- a transpose, matching the rotated
- * device's raw touch axes; a Win64 mouse is in window space, so the port uses
- * the true rotation inverse. Recorded in docs/parity/landscape-qol-2026-11-04.md. */
-void Gx_PointerToLogical(int bRotate90CW, u32 cyLogical, int nSx, int nSy,
+/* Pure viewport rect for a surface inside a client area; Gx_Present and
+ * App_MapPointer share it so the pointer can never drift from the picture.
+ * bFitHeight 0: integer scale, centered letterbox (the plain shell path).
+ * bFitHeight 1: QoL landscape -- fill the client height, width =
+ * nSurfW*nWinH/nSurfH (240x320 in a 320x240 client -> 180x240 at (70,0)),
+ * centered. */
+void Gx_ViewportRect(int nWinW, int nWinH, int nSurfW, int nSurfH, int bFitHeight,
+                     int *pnX, int *pnY, int *pnW, int *pnH);
+
+/* Pure inverse of Gx_ViewportRect: a client point to logical surface
+ * coordinates, clamped to the surface rect. A side-band point lands on the
+ * nearest edge pixel, where the game's own hit tests reject it. */
+void Gx_PointerToLogical(int nVpX, int nVpY, int nVpW, int nVpH,
+                         int nSurfW, int nSurfH, int nClientX, int nClientY,
                          i32 *pnX, i32 *pnY);
 
 /* Copy the logical surface to the window, letterboxed at integer scale. */

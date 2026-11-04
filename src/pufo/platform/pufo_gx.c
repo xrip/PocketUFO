@@ -10,7 +10,6 @@
  */
 #include "platform/pufo_gx.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 static bool Gx_MakeDib(GxSurface *pGx)
@@ -20,8 +19,8 @@ static bool Gx_MakeDib(GxSurface *pGx)
 
     memset(&hdr, 0, sizeof(hdr));
     hdr.bV4Size          = sizeof(hdr);
-    hdr.bV4Width         = (LONG)pGx->nDibW;
-    hdr.bV4Height        = -(LONG)pGx->nDibH; /* top-down, matches GAPI */
+    hdr.bV4Width         = (LONG)pGx->cxWidth;
+    hdr.bV4Height        = -(LONG)pGx->cyHeight; /* top-down, matches GAPI */
     hdr.bV4Planes        = 1;
     hdr.bV4BitCount      = (WORD)(pGx->cBPP * 8);
     hdr.bV4V4Compression = BI_BITFIELDS;
@@ -39,11 +38,7 @@ static bool Gx_MakeDib(GxSurface *pGx)
     }
 
     pGx->pOldObj = SelectObject(pGx->hdcMem, pGx->hbm);
-    if (pGx->bRotate90CW) {
-        pGx->pFace = (u8 *)pBits; /* the DIB receives the rotated face each present */
-    } else {
-        pGx->pBits = (u8 *)pBits; /* plain: the game renders straight into the DIB */
-    }
+    pGx->pBits   = (u8 *)pBits; /* the game renders straight into the DIB in every mode */
 
     /* The original stores pitch as signed and relies on it being positive for
      * the native 240x320 mode. A top-down DIB gives the same layout. */
@@ -52,7 +47,7 @@ static bool Gx_MakeDib(GxSurface *pGx)
     return true;
 }
 
-bool Gx_Open(GxSurface *pGx, HWND hWnd, u32 cxWidth, u32 cyHeight, int bRotate90CW)
+bool Gx_Open(GxSurface *pGx, HWND hWnd, u32 cxWidth, u32 cyHeight, int bFitHeight)
 {
     if (pGx == NULL || hWnd == NULL || cxWidth == 0 || cyHeight == 0) {
         return false;
@@ -62,13 +57,11 @@ bool Gx_Open(GxSurface *pGx, HWND hWnd, u32 cxWidth, u32 cyHeight, int bRotate90
     }
 
     memset(pGx, 0, sizeof(*pGx));
-    pGx->hWnd        = hWnd;
-    pGx->cxWidth     = cxWidth;
-    pGx->cyHeight    = cyHeight;
-    pGx->cBPP        = PUFO_SURF_BPP;
-    pGx->bRotate90CW = bRotate90CW ? 1 : 0;
-    pGx->nDibW       = (int)(bRotate90CW ? cyHeight : cxWidth);
-    pGx->nDibH       = (int)(bRotate90CW ? cxWidth  : cyHeight);
+    pGx->hWnd       = hWnd;
+    pGx->cxWidth    = cxWidth;
+    pGx->cyHeight   = cyHeight;
+    pGx->cBPP       = PUFO_SURF_BPP;
+    pGx->bFitHeight = bFitHeight ? 1 : 0;
 
     pGx->hdcWindow = GetDC(hWnd);
     if (pGx->hdcWindow == NULL) {
@@ -83,30 +76,54 @@ bool Gx_Open(GxSurface *pGx, HWND hWnd, u32 cxWidth, u32 cyHeight, int bRotate90
         Gx_Close(pGx);
         return false;
     }
-    if (pGx->bRotate90CW) {
-        /* The game keeps rendering the 240x320 surface; the DIB only ever
-         * holds the rotated face, so the surface needs its own buffer. */
-        pGx->pBits = (u8 *)malloc((size_t)cxWidth * (size_t)cyHeight * (size_t)pGx->cBPP);
-        if (pGx->pBits == NULL) {
-            Gx_Close(pGx);
-            return false;
-        }
-        memset(pGx->pBits, 0, (size_t)cxWidth * (size_t)cyHeight * (size_t)pGx->cBPP);
-        pGx->bOwnsSurface = 1;
-    }
     return true;
 }
 
-void Gx_PointerToLogical(int bRotate90CW, u32 cyLogical, int nSx, int nSy,
-                         i32 *pnX, i32 *pnY)
+void Gx_ViewportRect(int nWinW, int nWinH, int nSurfW, int nSurfH, int bFitHeight,
+                     int *pnX, int *pnY, int *pnW, int *pnH)
 {
-    if (bRotate90CW) {
-        *pnX = (i32)nSy;
-        *pnY = (i32)cyLogical - 1 - nSx;
+    int nScale;
+
+    if (bFitHeight) {
+        *pnH = nWinH;
+        *pnW = nSurfW * nWinH / nSurfH;
+        *pnX = (nWinW - *pnW) / 2;
+        *pnY = 0;
         return;
     }
-    *pnX = (i32)nSx;
-    *pnY = (i32)nSy;
+    nScale = nWinW / nSurfW;
+    if (nWinH / nSurfH < nScale) {
+        nScale = nWinH / nSurfH;
+    }
+    if (nScale < 1) {
+        nScale = 1;
+    }
+    *pnW = nSurfW * nScale;
+    *pnH = nSurfH * nScale;
+    *pnX = (nWinW - *pnW) / 2;
+    *pnY = (nWinH - *pnH) / 2;
+}
+
+void Gx_PointerToLogical(int nVpX, int nVpY, int nVpW, int nVpH,
+                         int nSurfW, int nSurfH, int nClientX, int nClientY,
+                         i32 *pnX, i32 *pnY)
+{
+    *pnX = (i32)(nClientX - nVpX) * nSurfW / nVpW;
+    *pnY = (i32)(nClientY - nVpY) * nSurfH / nVpH;
+    /* A QoL side-band click becomes a click on the nearest surface edge:
+     * the game's own hit tests (screen-17 rows are x 50..190) reject edge
+     * points, and the release fires no row. No negative coordinates ever
+     * reach the original's pointer arms. */
+    if (*pnX < 0) {
+        *pnX = 0;
+    } else if (*pnX >= nSurfW) {
+        *pnX = nSurfW - 1;
+    }
+    if (*pnY < 0) {
+        *pnY = 0;
+    } else if (*pnY >= nSurfH) {
+        *pnY = nSurfH - 1;
+    }
 }
 
 bool Gx_Present(GxSurface *pGx)
@@ -114,7 +131,6 @@ bool Gx_Present(GxSurface *pGx)
     RECT rcClient;
     int  nWinW;
     int  nWinH;
-    int  nScale;
     int  nDstW;
     int  nDstH;
     int  nX;
@@ -127,41 +143,19 @@ bool Gx_Present(GxSurface *pGx)
         return false;
     }
 
-    if (pGx->bRotate90CW) {
-        /* 90 CW: dst(wx,wy) = src(lx=wy, ly=cyHeight-1-wx). The portrait top
-         * edge lands on the face's right edge; the centered UI stays centered. */
-        const u16 *pSrc16  = (const u16 *)pGx->pBits;
-        u16       *pDst16  = (u16 *)pGx->pFace;
-        size_t     srcRows = (size_t)pGx->cyHeight;
-        size_t     srcW    = (size_t)pGx->cxWidth;
-
-        for (int wy = 0; wy < pGx->nDibH; ++wy) {
-            u16 *pDstRow = pDst16 + (size_t)wy * (size_t)pGx->nDibW;
-            for (int wx = 0; wx < pGx->nDibW; ++wx) {
-                pDstRow[wx] = pSrc16[(size_t)wy + (srcRows - 1u - (size_t)wx) * srcW];
-            }
-        }
-    }
-
-    /* Integer scale keeps the pixel-art sharp; the original never rescaled at
-     * all, so anything other than 1:1 or an integer multiple would be a lie. */
     nWinW = rcClient.right - rcClient.left;
     nWinH = rcClient.bottom - rcClient.top;
-    nScale = nWinW / pGx->nDibW;
-    if (nWinH / pGx->nDibH < nScale) {
-        nScale = nWinH / pGx->nDibH;
-    }
-    if (nScale < 1) {
-        nScale = 1;
-    }
-    nDstW = pGx->nDibW * nScale;
-    nDstH = pGx->nDibH * nScale;
-    nX = (nWinW - nDstW) / 2;
-    nY = (nWinH - nDstH) / 2;
+    Gx_ViewportRect(nWinW, nWinH, (int)pGx->cxWidth, (int)pGx->cyHeight,
+                    pGx->bFitHeight, &nX, &nY, &nDstW, &nDstH);
+
+    /* The bands around the viewport stay black (the original's framebuffer
+     * had no bands; WndProc answers WM_ERASEBKGND, so nothing else paints
+     * them). */
+    (void)PatBlt(pGx->hdcWindow, 0, 0, nWinW, nWinH, BLACKNESS);
 
     (void)SetStretchBltMode(pGx->hdcWindow, COLORONCOLOR);
     (void)StretchBlt(pGx->hdcWindow, nX, nY, nDstW, nDstH,
-                     pGx->hdcMem, 0, 0, pGx->nDibW, pGx->nDibH,
+                     pGx->hdcMem, 0, 0, (int)pGx->cxWidth, (int)pGx->cyHeight,
                      SRCCOPY);
     return true;
 }
@@ -199,11 +193,6 @@ void Gx_Close(GxSurface *pGx)
         (void)ReleaseDC(pGx->hWnd, pGx->hdcWindow);
         pGx->hdcWindow = NULL;
     }
-    if (pGx->bOwnsSurface) {
-        free(pGx->pBits);
-        pGx->bOwnsSurface = 0;
-    }
     pGx->pBits = NULL;
-    pGx->pFace = NULL;
     pGx->hWnd  = NULL;
 }

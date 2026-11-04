@@ -38,12 +38,13 @@ display layer is recreated natively.
 
 ### Landscape (QoL)
 
-`pocketufo.exe --landscape` runs the game on a 320x240 screen: the 240x320
-surface is rotated 90° at presentation, the centered UI stays centered, and the
-mouse maps back through the rotation. Resize the window to any integer multiple
-for crisp pixel scaling. This is a shell QoL mode (the original had the same
-display modes on-device — see `docs/parity/landscape-qol-2026-11-04.md`), not a
-change to the game itself.
+`pocketufo.exe --landscape` runs the game on a 320x240 screen: the portrait
+240x320 viewport stays upright (never rotated), is scaled to the screen height
+and centered, with the extra width as side bands — the UI stays in the middle
+of the screen and the mouse maps exactly onto the picture. Resize the window
+and the viewport grows with it. This is a shell QoL mode (the original knew
+wider screens on-device — see `docs/parity/landscape-qol-2026-11-04.md`), not
+a change to the game itself.
 
 ## Build from source
 

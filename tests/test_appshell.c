@@ -613,36 +613,46 @@ cleanup:
     free(pTactMap);
 }
 
-/* QoL --landscape (2026-11-04): the pointer mapping Gx_PointerToLogical.
- * 90 CW rotation of the 240x320 surface into the 320x240 face:
- * face(wx,wy) = logical(wy, 319-wx). Pinned so the corners cannot drift. */
+/* QoL --landscape (2026-11-04): the upright fit viewport and its pointer
+ * inverse. The portrait 240x320 surface is fit to the client height and
+ * centered: in a 320x240 client the viewport is 180x240 at (70,0), the side
+ * 70-px bands are outside the game. Pinned so present and pointer, which
+ * share Gx_ViewportRect, cannot drift. */
 static void TestLandscapePointerMapping(void)
 {
-    i32 nX, nY;
+    int  vX, vY, vW, vH;
+    i32  nX, nY;
 
-    Gx_PointerToLogical(0, PUFO_SURF_H, 17, 205, &nX, &nY);
-    CheckEqI32(nX, 17, "  landscape off: the face point is the logical point");
-    CheckEqI32(nY, 205, "  landscape off: y too");
+    Gx_ViewportRect(320, 240, PUFO_SURF_W, PUFO_SURF_H, 1, &vX, &vY, &vW, &vH);
+    CheckEqI32(vW, 180, "  landscape viewport width = 240*240/320 (fits the 240 high screen)");
+    CheckEqI32(vH, 240, "  landscape viewport fills the client height");
+    CheckEqI32(vX, 70,  "  landscape viewport is centered: (320-180)/2 side bands");
+    CheckEqI32(vY, 0,   "  landscape viewport has no vertical band");
 
-    Gx_PointerToLogical(1, PUFO_SURF_H, 0, 0, &nX, &nY);
-    CheckEqI32(nX, 0, "   rotated face (0,0) is logical top-left column");
-    CheckEqI32(nY, 319, "  rotated face (0,0) is logical bottom row (portrait top -> face right)");
+    Gx_PointerToLogical(vX, vY, vW, vH, PUFO_SURF_W, PUFO_SURF_H, 160, 120, &nX, &nY);
+    CheckEqI32(nX, 120, "  the screen center maps to the surface center: the UI stays centered");
+    CheckEqI32(nY, 160, "  and the portrait viewport stays upright: no axis swap");
 
-    Gx_PointerToLogical(1, PUFO_SURF_H, 319, 0, &nX, &nY);
-    CheckEqI32(nX, 0, "   rotated face (319,0) is logical (0,0)");
-    CheckEqI32(nY, 0, "   the face top-right is the surface top-left");
+    Gx_PointerToLogical(vX, vY, vW, vH, PUFO_SURF_W, PUFO_SURF_H, 70, 0, &nX, &nY);
+    CheckEqI32(nX, 0,   "  viewport top-left is logical (0,0)");
+    CheckEqI32(nY, 0,   "  upright: no rotation, no mirror");
 
-    Gx_PointerToLogical(1, PUFO_SURF_H, 0, 239, &nX, &nY);
-    CheckEqI32(nX, 239, "  rotated face (0,239) is logical (239,319)");
-    CheckEqI32(nY, 319, "  the face bottom-left is the surface bottom-left column");
+    Gx_PointerToLogical(vX, vY, vW, vH, PUFO_SURF_W, PUFO_SURF_H, 249, 239, &nX, &nY);
+    CheckEqI32(nX, 238, "  viewport bottom-right maps inside the surface (0.75 scale)");
+    CheckEqI32(nY, 318, "  and near its bottom row");
 
-    Gx_PointerToLogical(1, PUFO_SURF_H, 319, 239, &nX, &nY);
-    CheckEqI32(nX, 239, "  rotated face (319,239) is logical (239,0)");
-    CheckEqI32(nY, 0, "   all four corners map to corners");
+    Gx_PointerToLogical(vX, vY, vW, vH, PUFO_SURF_W, PUFO_SURF_H, 20, 120, &nX, &nY);
+    CheckEqI32(nX, 0,   "  a left-band click clamps to the surface edge x");
+    CheckEqI32(nY, 160, "  and the edge point is off the row x-range (50..190): no row fires");
 
-    Gx_PointerToLogical(1, PUFO_SURF_H, 159, 119, &nX, &nY);
-    CheckEqI32(nX, 119, "  the face center maps to the surface center: the UI stays centered");
-    CheckEqI32(nY, 160, "  x.5/y.5 rounding keeps the center on a live pixel");
+    Gx_ViewportRect(240, 320, PUFO_SURF_W, PUFO_SURF_H, 0, &vX, &vY, &vW, &vH);
+    CheckEqI32(vX, 0,   "  portrait mode: viewport is the whole client at 1x");
+    CheckEqI32(vW, 240, "  portrait mode: width unchanged");
+    CheckEqI32(vH, 320, "  portrait mode: height unchanged");
+
+    Gx_PointerToLogical(0, 0, 240, 320, PUFO_SURF_W, PUFO_SURF_H, 17, 205, &nX, &nY);
+    CheckEqI32(nX, 17,  "  portrait mode: the client point is the logical point");
+    CheckEqI32(nY, 205, "  portrait mode: y too");
 }
 
 int main(void)

@@ -1272,8 +1272,10 @@ static void App_GameTickOnce(void *pUser)
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 static void App_PresentLoadedSurface(void);
 
-/* QoL `--landscape` shell mode; set by App_FindLandscapeFlag, read by the
- * window size, Gx_Open and App_MapPointer. See docs/parity/landscape-qol-2026-11-04.md. */
+/* QoL `--landscape` shell mode: the portrait 240x320 viewport shown UPRIGHT
+ * (no rotation) in a 320x240 screen, fit to height and centered. Set by
+ * App_FindLandscapeFlag; read by the window size, Gx_Open and App_MapPointer.
+ * See docs/parity/landscape-qol-2026-11-04.md. */
 static bool g_bLandscapeFlag;
 
 /* Client pixels to the 240x320 logical surface, inverting Gx_Present's integer-scale letterbox.
@@ -1290,35 +1292,26 @@ static bool g_bLandscapeFlag;
  * one display geometry -- a letterboxed 240x320 surface, the record's mode 0, its identity row -- so this
  * is the inverse of the shell's own letterbox rather than the mode table. Recorded as a deviation in
  * docs/parity/bugs.tsv; modes 1..3 have no Win64 path that selects them. The QoL `--landscape` shell
- * mode (2026-11-04) adds a rotated letterbox of the SAME surface -- 320x240 face, pointer un-rotated
- * through Gx_PointerToLogical -- it is not the original's mode table, whose mode 1 row is a (y,x)
- * transpose for the rotated device's raw touch axes. */
+ * mode (2026-11-04) shows the same portrait surface UPRIGHT in a 320x240 screen, fitted to the window
+ * height and centered; both present and this map share Gx_ViewportRect, so the pointer can never
+ * drift from the picture. */
 static void App_MapPointer(LPARAM lParam, i32 *pnX, i32 *pnY)
 {
     RECT rc;
-    int  nFaceW, nFaceH, nWinW, nWinH, nScale, nOX, nOY, nSx, nSy;
+    int  nWinW, nWinH, nVpX, nVpY, nVpW, nVpH;
 
     if (!GetClientRect(g_hWndMain, &rc)) {
         *pnX = 0;
         *pnY = 0;
         return;
     }
-    nFaceW = g_bLandscapeFlag ? PUFO_SURF_H : PUFO_SURF_W;
-    nFaceH = g_bLandscapeFlag ? PUFO_SURF_W : PUFO_SURF_H;
     nWinW = rc.right - rc.left;
     nWinH = rc.bottom - rc.top;
-    nScale = nWinW / nFaceW;
-    if (nWinH / nFaceH < nScale) {
-        nScale = nWinH / nFaceH;
-    }
-    if (nScale < 1) {
-        nScale = 1;
-    }
-    nOX = (nWinW - nFaceW * nScale) / 2;
-    nOY = (nWinH - nFaceH * nScale) / 2;
-    nSx = ((i32)(short)LOWORD(lParam) - nOX) / nScale;
-    nSy = ((i32)(short)HIWORD(lParam) - nOY) / nScale;
-    Gx_PointerToLogical(g_bLandscapeFlag ? 1 : 0, PUFO_SURF_H, nSx, nSy, pnX, pnY);
+    Gx_ViewportRect(nWinW, nWinH, PUFO_SURF_W, PUFO_SURF_H,
+                    g_bLandscapeFlag ? 1 : 0, &nVpX, &nVpY, &nVpW, &nVpH);
+    Gx_PointerToLogical(nVpX, nVpY, nVpW, nVpH, PUFO_SURF_W, PUFO_SURF_H,
+                        (i32)(short)LOWORD(lParam), (i32)(short)HIWORD(lParam),
+                        pnX, pnY);
 }
 
 /* Input_OnPointer @ 0x13c6c for the shell, in logical 240x320 coordinates. On screen 17 this
@@ -1682,12 +1675,12 @@ static void App_FindNewGameFlag(LPCWSTR pwszCmd)
     g_bNewGameFlag = (pwszCmd != NULL && wcsstr(pwszCmd, awcFlag) != NULL);
 }
 
-/* `--landscape` on the command line: QoL shell mode, present the 240x320
- * surface rotated 90 CW in a 320x240 window and map the pointer back. Not
- * part of the original; see docs/parity/landscape-qol-2026-11-04.md. The
- * original's own mode table (0xA0768..0xA080C, DisplayMode @ 0x187F48) has
- * the same idea -- its mode 1 swaps (y,x) -- and the Win64 shell had no path
- * selecting it, a gap recorded in docs/parity/bugs.tsv. */
+/* `--landscape` on the command line: QoL shell mode, a 320x240 screen that
+ * keeps the portrait viewport upright and centered (fit to height, side
+ * bands). Not part of the original; see docs/parity/landscape-qol-2026-11-04.md.
+ * The original's own mode table (0xA0768..0xA080C, DisplayMode @ 0x187F48)
+ * knows wider screens too, and the Win64 shell had no path selecting them --
+ * a gap recorded in docs/parity/bugs.tsv. */
 static void App_FindLandscapeFlag(LPCWSTR pwszCmd)
 {
     static const WCHAR awcFlag[] = L"--landscape";
@@ -16883,8 +16876,9 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
      * width/height are the window size, so the frame has to be added first; without this the
      * 240x320 surface is cropped by the title bar and borders. */
     {
-        /* QoL --landscape: the window client becomes the 320x240 rotated face;
-         * the logical surface stays 240x320 (see pufo_gx.h). */
+        /* QoL --landscape: the window client becomes the 320x240 screen; the
+         * logical surface stays portrait 240x320, shown upright inside it
+         * (see pufo_gx.h). */
         RECT rc = { 0, 0,
                     (LONG)(g_bLandscapeFlag ? PUFO_SURF_H : PUFO_SURF_W),
                     (LONG)(g_bLandscapeFlag ? PUFO_SURF_W : PUFO_SURF_H) };

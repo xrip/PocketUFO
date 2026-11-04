@@ -1,45 +1,48 @@
-# QoL `--landscape`: 320x240 presentation (branch `landscape`, 2026-11-04)
+# QoL `--landscape`: 320x240 screen, upright portrait viewport (branch `landscape`, 2026-11-04)
 
-Shell QoL mode, NOT original behavior: `pocketufo.exe --landscape` presents the
-240x320 logical surface rotated 90 CW in a 320x240 window client. The logical
-surface, the game core, the frame dumps and every test path are untouched, so
-the parity gate stays exactly as it was. The centered UI stays centered: the
-rotated surface fills the face 1:1 and the pointer center maps to the surface
-center.
+Shell QoL mode, NOT original behavior: `pocketufo.exe --landscape` puts the
+game on a 320x240 screen while the 240x320 portrait viewport stays UPRIGHT (no
+rotation, no mirror), scaled to the window height and centered. In a 320x240
+client the viewport is 180x240 at x=70; the 70-px side bands are painted black.
+The centered game UI stays centered on the screen. Resize the window and the
+viewport grows with the height.
 
-## IDB grounding
-
-The original carries the same idea in its pointer table (0xA0768..0xA080C,
-DisplayMode @ 0x187F48): mode 1 (320x240) swaps (y,x) at 0xA07D4; mode 3
-(640x480) halves and rotates at 0xA077C (`RSB R0,R3,#0xF0` = 240 - y/2). The
-Win64 shell had no path selecting those modes (recorded in docs/parity/bugs.tsv);
-this QoL flag gives its own rotated path, not the mode table.
+The logical surface, the game core, frame dumps and every scripted/test path
+are untouched; the parity gate is unchanged.
 
 ## Mapping (port)
 
-Present: face(wx,wy) = surface(wy, 319-wx) — 90 CW, portrait top edge on the
-face's right edge, the WinCE landscape convention.
-Pointer: logical(lx,ly) = face(wy, 319-wx) inverse, lx = wy, ly = 319 - wx,
-after the same integer-scale letterbox inverse the portrait shell uses
-(Gx_PointerToLogical in pufo_gx.c).
+`Gx_ViewportRect(winW,winH,240,320,fitHeight)`: fill the client height,
+`w = 240*h/320`, centered. Gx_Present and App_MapPointer call the SAME
+function, so the pointer can never drift from the picture.
+`Gx_PointerToLogical` inverts it (x = (cx-vpX)*240/vpW, y = (cy-vpY)*320/vpH)
+and clamps to the surface rect: a side-band click lands on the nearest edge
+pixel, where the game's own screen-17 hit tests (rows are x 50..190, the
+0x13DBC/0x13E04 boxes) reject it and the release fires no row.
 
 ## Deviations from the record
 
-1. The original mode-1 pointer row is a pure (y,x) transpose — it fits the
-   rotated device's raw touch axes. The Win64 mouse is in window space, so the
-   port uses the true rotation inverse (no mirror). The transpose and the
-   rotation differ by a horizontal mirror; the rotation is what a desktop user
-   expects.
-2. The flag itself is shell scaffolding like `--script`/`--new-game`, not a
-   recreated feature; the original selects modes from the device, not a flag.
-3. Gx in rotated mode owns a separate surface buffer (the DIB holds the face);
-   the plain mode keeps the DIB-as-surface layout. No parity surface changes.
+1. The scale 0.75 is not an integer multiple. The original never scaled down
+   (mode 2 halves, mode 3 halves+rotates at 0xA077C); a 240x320 portrait in a
+   320x240 client has no integer fit, so QoL uses COLORONCOLOR downscale.
+2. The black side bands have no original counterpart: a WinCE screen was
+   exactly the surface. WndProc's WM_ERASEBKGND answer (1) stays, and present
+   PatBlts the client black before the blit.
+3. The flag is shell scaffolding like `--script`, not a recreated feature.
+4. The original's own wide-screen modes (pointer table 0xA0768..0xA080C,
+   DisplayMode @ 0x187F48: mode 1 swaps (y,x) @ 0xA07D4, mode 3 halves and
+   rotates @ 0xA077C) are NOT what this mode implements; the QoL mode keeps
+   the portrait axes unswapped. The mode table stays recorded in
+   docs/parity/bugs.tsv as unselected.
 
 ## Evidence
 
-- test_appshell: 10 new checks pin corners, center and portrait identity of
-  Gx_PointerToLogical.
-- Manual window run (2026-11-04): 320x240 client screenshot shows the rotated
-  centered menu; a real mouse click at face (195,120) — logical (120,124), the
-  new-game row — advanced to the placement screen.
+- test_appshell: 13 checks pin the fit rect (180x240 at (70,0) in 320x240),
+  center-to-center mapping, corners, band clamping to the edge, and portrait
+  identity (240x320 at 1x maps to itself).
+- Manual window runs (2026-11-04): 320x240 client shows the upright centered
+  menu with black bands; a real click at client (160,93) = logical (120,124),
+  the new-game row, advanced to the placement screen; a band click at
+  (20,120) = edge (0,160) fires no row (before the clamp it opened a row --
+  found by screenshot, fixed by clamping).
 - Full ctest -C Release: 67/67 passed on this branch.
