@@ -583,6 +583,11 @@ i32 Menu_DrawLabeledPads(UiControl *pPads, const u8 *pTextRecs, const GfxColorEn
     Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
 
     for (nIdx = 0; ; ++nIdx) {
+        /* QoL: the descriptor rows sit at 60 + 23 * i; the drawer rewrites each y
+         * through the centre shift (the whole stack rides at the face centre on the
+         * wide face, identity portrait), like the action-button stack above. */
+        pPads[nIdx].y = (i16)PufoUi_MapCentreY(60 + 23 * nIdx);
+
         (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
 
         CopyTextRecord(pTextRecs, Menu_LabelRecordIndex(nIdx), szLabel);

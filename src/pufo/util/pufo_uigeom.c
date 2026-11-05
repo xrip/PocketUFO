@@ -18,3 +18,10 @@ int PufoUi_MapY(int nY)
 {
     return (nY >= PUFO_UI_BOTTOM_ANCHOR_Y) ? nY + g_nUiOffY : nY;
 }
+
+/* Center-anchored windows (the tact main menu stack): the whole window keeps
+ * its shape and rides at the face centre: the shift is half offY (portrait 0). */
+int PufoUi_MapCentreY(int nY)
+{
+    return nY + g_nUiOffY / 2;
+}

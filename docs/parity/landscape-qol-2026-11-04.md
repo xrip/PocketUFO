@@ -188,3 +188,10 @@ nothing. World_RefreshTactFrame now recomputes the count from the live face
 width ((faceW + 16) / 32 + 1: 240 -> 9 parity, 320 -> 11), so the 11
 32-px columns cover -16..336 and the map fills the window. nViewW 0
 (non-landscape, tests) keeps the parity cell; ctest 67/67, e2e 11/11.
+
+Tact main menu raised (2026-11-05): the seven-row in-battle menu (bank
+widgets 53..59, descriptor y 60 + 23 * i) overlapped the wide HUD because
+the bottom-anchor shim split the stack. The drawer now rewrites each row y
+through PufoUi_MapCentreY = y + offY / 2 (the whole window rides at the face
+centre: rows 20..158 wide, identity portrait), the roster/action-drawer
+pattern. test_tacthud pins 60..198 portrait and 20..158 wide; ctest 67/67.
