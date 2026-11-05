@@ -2544,13 +2544,13 @@ void Geoscape_DrawClockPads(const GeoscapeClockDrawEnv *pEnv)
 
     szText[0] = 0;
 
-    Clock_BlitDigitPair(pEnv, pEnv->pTime->nHour, 90, 100, 260);               /* 0x5C618..0x5C65C */
-    Clock_BlitDigitPair(pEnv, pEnv->pTime->nMinute, 115, 125, 260);            /* 0x5C69C..0x5C6E0 */
-    Clock_BlitDigitPair(pEnv, pEnv->pTime->nSecond, 140, 150, 260);            /* 0x5C720..0x5C764 */
+    Clock_BlitDigitPair(pEnv, pEnv->pTime->nHour, PufoUi_MapX(90), PufoUi_MapX(100), PufoUi_MapY(260));               /* 0x5C618..0x5C65C */
+    Clock_BlitDigitPair(pEnv, pEnv->pTime->nMinute, PufoUi_MapX(115), PufoUi_MapX(125), PufoUi_MapY(260));            /* 0x5C69C..0x5C6E0 */
+    Clock_BlitDigitPair(pEnv, pEnv->pTime->nSecond, PufoUi_MapX(140), PufoUi_MapX(150), PufoUi_MapY(260));            /* 0x5C720..0x5C764 */
 
     Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);                  /* 0x5C790 */
-    Text_DrawString(110, 258, ":");                                             /* 0x5C7A8, asc_AB078 */
-    Text_DrawString(135, 258, ":");                                             /* 0x5C7C0 */
+    Text_DrawString(PufoUi_MapX(110), PufoUi_MapY(258), ":");                                             /* 0x5C7A8, asc_AB078 */
+    Text_DrawString(PufoUi_MapX(135), PufoUi_MapY(258), ":");                                             /* 0x5C7C0 */
 
     if (pEnv->pTime->nWeekday >= 1 && pEnv->pTime->nWeekday <= 7) {             /* 0x5C7D0 */
         Clock_CopyText(szText, pEnv->pTextRecs +
@@ -2561,32 +2561,32 @@ void Geoscape_DrawClockPads(const GeoscapeClockDrawEnv *pEnv)
 
     Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);                 /* 0x5C984 */
     nWidth = Text_MeasureWidth(szText);                                         /* 0x5C998 */
-    Text_DrawString(124 - nWidth / 2, 272, szText);                             /* 0x5C9B0 */
+    Text_DrawString(PufoUi_MapX(124) - nWidth / 2, PufoUi_MapY(272), szText);                             /* 0x5C9B0 */
 
     nDayTens = pEnv->pTime->nDay / 10;                                          /* 0x5C9D4 */
     nDayOnes = pEnv->pTime->nDay % 10;                                          /* 0x5C9E8 */
-    pTensPad = Clock_SetPad(pEnv, nDayTens, 90, 287);                           /* 0x5C9FC / 0x5CA10 */
+    pTensPad = Clock_SetPad(pEnv, nDayTens, PufoUi_MapX(90), PufoUi_MapY(287));                           /* 0x5C9FC / 0x5CA10 */
     if (pTensPad != NULL && nDayTens != 0) {                                    /* 0x5CA00 / 0x5CA14 */
         PadImage_BlitEx(pTensPad, 0);                                           /* 0x5CA18 */
     }
-    pOnesPad = Clock_SetPad(pEnv, nDayOnes, 100, 287);                          /* 0x5CA28 / 0x5CA30 */
+    pOnesPad = Clock_SetPad(pEnv, nDayOnes, PufoUi_MapX(100), PufoUi_MapY(287));                          /* 0x5CA28 / 0x5CA30 */
     if (pOnesPad != NULL) {
         PadImage_BlitEx(pOnesPad, 0);                                           /* 0x5CA38 */
     }
 
     Clock_CopyText(szText, pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_CLOCK_SEP); /* 0x5CA48 */
-    Text_DrawString(110, 287, szText);                                          /* 0x5CA78 */
+    Text_DrawString(PufoUi_MapX(110), PufoUi_MapY(287), szText);                                          /* 0x5CA78 */
 
     if (pEnv->pTime->nMonth >= 1 && pEnv->pTime->nMonth <= 12) {               /* 0x5CA88 */
         Clock_CopyText(szText, pEnv->pTextRecs +
                        PUFO_TEXT_REC_STRIDE * (PUFO_TEXT_MONTH_FIRST + pEnv->pTime->nMonth - 1));
     }
-    Text_DrawString(130, 287, szText);                                          /* 0x5CCFC */
+    Text_DrawString(PufoUi_MapX(130), PufoUi_MapY(287), szText);                                          /* 0x5CCFC */
 
-    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 1000, 105, 304);                /* 0x5CD30 */
-    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 100 % 10, 115, 304);            /* 0x5CD88 */
-    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 10 % 10, 125, 304);             /* 0x5CDDC */
-    Clock_BlitDigit(pEnv, pEnv->pTime->nYear % 10, 135, 304);                  /* 0x5CE14..0x5CE38 */
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 1000, PufoUi_MapX(105), PufoUi_MapY(304));                /* 0x5CD30 */
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 100 % 10, PufoUi_MapX(115), PufoUi_MapY(304));            /* 0x5CD88 */
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 10 % 10, PufoUi_MapX(125), PufoUi_MapY(304));             /* 0x5CDDC */
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear % 10, PufoUi_MapX(135), PufoUi_MapY(304));                  /* 0x5CE14..0x5CE38 */
 }
 
 /* The original indexes aRadarDigitPads with the digit straight out of the division, so a digit
@@ -4476,7 +4476,7 @@ static void StatusPanel_DrawAt(i32 nCentreX, i32 nY, const char *psz)
 {
     const i32 nWidth = Text_MeasureWidth(psz);
 
-    Text_DrawString(nCentreX - nWidth / 2, nY, psz);
+    Text_DrawString(PufoUi_MapX(nCentreX) - nWidth / 2, PufoUi_MapY(nY), psz);
 }
 
 static void StatusPanel_CopyRec(const GeoscapeStatusPanelEnv *pEnv, char *pszDst, i32 nRec)

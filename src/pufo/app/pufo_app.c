@@ -27,6 +27,7 @@
 #include "game/pufo_boot.h"
 #include "game/pufo_clock.h"    /* GameTime, the scratch clock SaveSlot_FormatList uses */
 #include "game/pufo_font.h"     /* PufoFont, the shell owns the fontSys block */
+#include "game/pufo_geoscape.h" /* PUFO_RADAR_HALF_SCREEN_*, the pick pen's hover sampler centre */
 #include "game/pufo_input.h"    /* Input_OnPointer / Input_OnPointerUp, the menu click path */
 #include "game/pufo_ballist.h"   /* Throw_RangeBudget and the live throw range constants */
 #include "game/pufo_los.h"       /* Map_TraceLos, the native sight ray */
@@ -1283,6 +1284,9 @@ static void App_PresentLoadedSurface(void);
  * See docs/parity/landscape-qol-2026-11-04.md. */
 static bool g_bLandscapeFlag;
 
+/* QoL `--nosound`: skip the audio backend install (graphics QA runs). */
+static bool g_bNoSoundFlag;
+
 /* P1 wide view (docs/parity/landscape-qol-2026-11-04.md): geoscape-map and
  * tactical screens take the full 320x240 surface in landscape mode; every
  * other screen keeps the portrait 240x320 surface pillarboxed. The geometry
@@ -1297,8 +1301,15 @@ static void App_UpdateViewGeometry(void)
         g_bWorldReady
         && ((g_world.bGeoscapeUi != 0
              && (g_world.screen.nGeoscapeScreen == 0  /* the map */
-                 || g_world.screen.nGeoscapeScreen == 2)) /* new-base placement: the map + confirm */
-            || World_bTactPointerLive(&g_world));
+                 || g_world.screen.nGeoscapeScreen == 2) /* new-base placement: the map + confirm */
+             /* The radar window and the options window are portrait dialogs that keep the map
+              * screen id, so they must drop the wide view; the other geoscape screens already
+              * switch the id. */
+             && g_world.bRadarScreenActive == 0 && g_world.bOptionsScreenOpen == 0)
+            /* Tact live fills the face, except its portrait dialogs: 1 inventory, 12 options,
+             * 13 promotion report (the arms 0x2237C routes around the iso layer). */
+            || (World_bTactPointerLive(&g_world)
+                && g_world.nUiScreen != 1u && g_world.nUiScreen != 12u && g_world.nUiScreen != 13u));
     int nW, nH, nX, nY;
 
     /* Geometry keys on the shell mode only. Scripted runs stay hidden (no
@@ -1547,8 +1558,8 @@ static u8 App_HoverSampleTile(i32 nMidY, i32 *pnTileX, i32 *pnTileY)
 {
     const SmapView *pView  = &g_world.view;
     const u8       *pTiles = g_world.frame.hover.pTiles;
-    i32 nX = pView->nScrollX + pView->nMapW / 2;
-    i32 nY = pView->nScrollY + pView->nMapH / 2 + nMidY - 160;
+    i32 nX = pView->nScrollX + pView->nMapW / 2 + (PufoUi_MapX(120) - PUFO_RADAR_HALF_SCREEN_X);
+    i32 nY = pView->nScrollY + pView->nMapH / 2 + nMidY - PUFO_RADAR_HALF_SCREEN_Y;
 
     if (nX < 0) { nX += pView->nMapW; }
     if (nY < 0) { nY += pView->nMapH; }
@@ -1746,6 +1757,15 @@ static void App_FindLandscapeFlag(LPCWSTR pwszCmd)
     static const WCHAR awcFlag[] = L"--landscape";
 
     g_bLandscapeFlag = (pwszCmd != NULL && wcsstr(pwszCmd, awcFlag) != NULL);
+}
+
+/* QoL shell flag: `--nosound` skips the audio backend install, so sample and music calls go
+ * nowhere. Used by the graphics QA runs; not part of the original. */
+static void App_FindNoSoundFlag(LPCWSTR pwszCmd)
+{
+    static const WCHAR awcFlag[] = L"--nosound";
+
+    g_bNoSoundFlag = (pwszCmd != NULL && wcsstr(pwszCmd, awcFlag) != NULL);
 }
 
 /* `--load-slot <n>` on the command line: run the load path (LoadGame @ 0x44bbc) once before the
@@ -16980,7 +17000,9 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bScriptedRu
      * read is pCtxBase + 99 and Sound_LoadAndPlayMusic's load-time pause reads
      * Map_bMusicOff (0x9E228/0x9E230). Both installs precede the first
      * Sound_InitAndLoadSamples, which GameUI_InitStartup reaches at 0x38D48. */
-    Sound_SetBackend(&g_pufoAudioWinmm);
+    if (!g_bNoSoundFlag) {
+        Sound_SetBackend(&g_pufoAudioWinmm);
+    }
     Sound_SetMuteBytes(&g_options.bSoundOff, &g_options.bMusicOff);
     Sound_SetLoopByte(&g_options.bMusicLoop); /* port-side options cell (2026-11-04) */
 
@@ -17330,6 +17352,7 @@ int App_Run(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     App_FindNewGameFlag(lpCmdLine);
     App_FindLoadSlotFlag(lpCmdLine);
     App_FindLandscapeFlag(lpCmdLine);
+    App_FindNoSoundFlag(lpCmdLine);
 
     /* QoL: with `--landscape` a scripted run keeps its window hidden (the
      * deterministic scripted pump) while the geometry switch renders WIDE

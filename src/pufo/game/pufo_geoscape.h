@@ -1387,8 +1387,9 @@ void Base_DrawFacilityIconStrip(const BaseStripDrawEnv *pEnv);
  * are the centre of the 240x320 device screen; the QoL wide view keeps the
  * map centered on the live surface, so the pair is the surface's half-extent
  * (portrait: exactly 120/160, parity-exact). */
-#define PUFO_RADAR_HALF_SCREEN_X (g_pMainSurface->nWidth / 2)  /* 0x5EB54: SUB R7, R3, #0x78 */
-#define PUFO_RADAR_HALF_SCREEN_Y (g_pMainSurface->nHeight / 2) /* 0x5EB68: SUB R6, R3, #0xA0 */
+/* The live surface centre; with no surface (unit-test envs) the original's 120/160. */
+#define PUFO_RADAR_HALF_SCREEN_X ((g_pMainSurface != NULL ? (i32)g_pMainSurface->nWidth : PUFO_SURF_W) / 2)  /* 0x5EB54: SUB R7, R3, #0x78 */
+#define PUFO_RADAR_HALF_SCREEN_Y ((g_pMainSurface != NULL ? (i32)g_pMainSurface->nHeight : PUFO_SURF_H) / 2) /* 0x5EB68: SUB R6, R3, #0xA0 */
 #define PUFO_RADAR_SCREEN_NO_WRAP  2 /* 0x5EC14: CMP R0, #2 skips all three layer blits */
 
 typedef struct RadarBackdropEnv {

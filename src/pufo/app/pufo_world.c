@@ -16,6 +16,7 @@
 #include "ui/pufo_linelist.h" /* UiLineList_AppendWithSound, the tick's contact message seam */
 #include "ui/pufo_geoiinit.h"  /* g_anObjectPrice @ 0xAA2C0, the manufacturing screen's price table */
 #include "ui/pufo_panel.h"    /* UiPanel_ctor / SetBytes6to11 / WrapText / FreeLines, the tact init hooks */
+#include "ui/pufo_uigeom.h"   /* QoL wide view shim: the gamemenu strip pad origin per frame */
 #include "game/pufo_plane.h"   /* InterceptMissionCtx, BasePlaneScreen_AddInterceptMission */
 #include "game/pufo_timer.h"   /* GameTickCtx / GameTickHooks / GameTick_OnTimer @ 0x274f0 */
 #include "game/pufo_tactend.h" /* Tact_CheckBattleEnd @ 0x34fbc, the mission-end check the shell runs on the live frame */
@@ -12546,6 +12547,12 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->icon.nMapBitsBase = (pW->pFont != NULL) ? pW->pFont->nMapBitsBase : 0;
     pF->icon.nAnimPhase   = (pW->pnAnimPhase != NULL) ? (u16)*pW->pnAnimPhase : 0;
     pF->hover.pTiles  = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL; /* [0x186B04]->pData */
+    /* QoL wide view: the gamemenu strip pad is blitted by many const sites, so its origin
+     * follows the shim per frame: portrait exact (0,236) as the geoiinit table sets it (0x86888). */
+    if (pW->ui.apPad[GEOUI_PAD_186BBC] != NULL) {
+        pW->ui.apPad[GEOUI_PAD_186BBC]->nOriginX = PufoUi_MapX(0);
+        pW->ui.apPad[GEOUI_PAD_186BBC]->nOriginY = PufoUi_MapY(236);
+    }
     pF->cross.nCrosshairX = pF->g.nCrosshairX;   /* nSmapCrosshairX @ 0x186BC8 */
     pF->cross.nCrosshairY = pF->g.nCrosshairY;   /* nSmapCrosshairY @ 0x186BCC */
     /* BaseFacScreen_DrawNameGrid takes the base index by value, and the original reads it from the grid

@@ -75,3 +75,38 @@ Evidence: ctest -C Release 67/67 on every phase; wide scripted frames
 build/shot/tact_wide.ppm (live mission, launch PASS) and geo_wide.ppm /
 geo_map_wide.ppm (placement + map, crosshair centered).
 
+## Wide UI acceptance fixes (2026-11-05)
+
+User report: in landscape the geoscape speed/base menu and the tactical HUD
+"are not shown and constantly disappear", and hovering made them appear.
+Root causes found, all fixed (screenshot acceptance battery in build/shot:
+acc_geo_map/acc_tact_inventory/acc_tact_deploy):
+
+1. The gamemenu strip pad origin was written once in the wiring function, so
+   the wide face kept the portrait (0,236) origin, clipped below 240; hover
+   redrew it through the control shim, so it "appeared on hover". The origin
+   is now written in World_RefreshGeoscapeFrame per frame (portrait identity).
+2. The tactical HUD pad origin was shimmed from the pad's own live origin
+   every frame, so x grew +40/px per frame and the HUD slid off-screen
+   (geoscape strip origin write moved out of wiring). Fixed: the design
+   origin is saved, the pad is shimmed for the blit, then restored.
+3. Geoscape screen-to-tile math used the hard-coded device centre (120,160)
+   in Smap_GetTileAtScreen, SmapHit_CellAt and the pick pen's sampler; the
+   live centre (PUFO_RADAR_HALF_SCREEN_*) is used now (identity portrait,
+   original constants in no-surface test envs). Smap_ClampScrollY follows the
+   live height. This is what made the scripted pick fail on the wide face.
+4. The geoscape pointer strip-band gate used the raw SURF_H - uHeight; it now
+   goes through the shim (portrait identity: the original gate exactly).
+5. Geometry excludes the portrait dialogs that keep the map/battle screen id:
+   geoscape radar (bRadarScreenActive) and options (bOptionsScreenOpen), tact
+   inventory (screen 1), options (12) and promotion report (13). The radar
+   dialog on a base with no radar facility is a no-op (original gate).
+6. Status panel text (StatusPanel_DrawAt) and the geoscape clock pads now
+   shift through the shim; identity portrait.
+
+Shell flag `--nosound` added (no audio backend install) for graphics QA runs.
+Evidence: ctest -C Release 67/67; e2e pictures 11/11 (only the pre-existing
+stale 00_mainmenu ref); scripted acceptance flows: campaign launch/deploy PASS
+in landscape; new-base pick converges on the wide face; nav clicks open the
+options dialog, which switches the face to portrait.
+

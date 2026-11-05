@@ -1074,6 +1074,7 @@ bool TactHud_DrawSelectedUnitPanel(UiControl *pBank, TactHudPanelEnv *pEnv,
 {
     i32 nOriginY;
     i32 nOriginX;
+    i32 nShiftX;
     i32 nCounter;
     i32 nTu;
     TactItem *pHand;
@@ -1097,11 +1098,15 @@ bool TactHud_DrawSelectedUnitPanel(UiControl *pBank, TactHudPanelEnv *pEnv,
 
     /* QoL wide view: the pad and the icons shift to the centered face; the
      * bank controls above shift through the shim at their own draw/hit. */
-    pEnv->pHudPad->nOriginX = PufoUi_MapX(pEnv->pHudPad->nOriginX);
+    nShiftX = pEnv->pHudPad->nOriginX;
+    pEnv->pHudPad->nOriginX = PufoUi_MapX(nShiftX);
     pEnv->pHudPad->nOriginY = PufoUi_MapY(pEnv->pHudPad->nOriginY);
     PadImage_BlitEx(pEnv->pHudPad, 0);
     nOriginX = pEnv->pHudPad->nOriginX;
     nOriginY = PufoUi_MapY(nOriginY);
+    /* The origin is design space: restore it so the shift is not added to itself. */
+    pEnv->pHudPad->nOriginX = nShiftX;
+    pEnv->pHudPad->nOriginY = nOriginY;
 
     /* The glyph index is uIconId + nBigObsBase - 1. In the pseudocode it reads as aItemQty[0x34],
      * which is index 52 of a 52-entry u16 array at ObjectRec+0x3a - one past the end, landing on

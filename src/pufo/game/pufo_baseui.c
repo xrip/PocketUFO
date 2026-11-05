@@ -7,6 +7,7 @@
 #include "util/pufo_str.h" /* pufo_strcpy/pufo_strcat, the line writes of ResearchScreen_RefreshPanels */
 #include "audio/pufo_audio.h" /* Sound_Play, the screen-open sample of SoldierScreen_Toggle */
 #include "game/pufo_strateg.h" /* StrategList_Clear */
+#include "game/pufo_geoscape.h" /* PUFO_RADAR_HALF_SCREEN_*, the SmapHit_CellAt screen centre */
 #include "game/pufo_font.h"    /* Text_DrawString / Text_MeasureWidth, the dialog's labels */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the craft-name records */
 #include "game/pufo_mainmenu.h" /* PUFO_MAINMENU_MODE_*, the list mode the slot handlers set */
@@ -6894,8 +6895,8 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv)
  * cell, so the port cannot reuse the leaf here. */
 static void SmapHit_CellAt(const SmapView *pView, i32 nX, i32 nY, i32 *pnCellX, i32 *pnCellY)
 {
-    i32 nCellX = pView->nScrollX + pView->nMapW / 2 + nX - 120; /* 0x82C84 */
-    i32 nCellY = pView->nScrollY + pView->nMapH / 2 + nY - 160; /* 0x82CAC */
+    i32 nCellX = pView->nScrollX + pView->nMapW / 2 + nX - PUFO_RADAR_HALF_SCREEN_X; /* 0x82C84 */
+    i32 nCellY = pView->nScrollY + pView->nMapH / 2 + nY - PUFO_RADAR_HALF_SCREEN_Y; /* 0x82CAC */
 
     if (nCellX < 0) {
         nCellX += pView->nMapW; /* 0x82CB4, one wrap only */

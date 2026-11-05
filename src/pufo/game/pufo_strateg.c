@@ -691,15 +691,20 @@ i32 StrategList_PurgeType5(PtrArray *pList, const GeoscapeWorld *pWorld,
  * uses the value the lower clamp produced, not the one it started from. */
 void Smap_ClampScrollY(SmapView *pView, i32 nStripHeight)
 {
-    const i32 nHalfH = pView->nMapH / 2 - 160;
+    const i32 nSurfH = (g_pMainSurface != NULL) ? (i32)g_pMainSurface->nHeight : PUFO_SURF_H;
+    const i32 nHalfH = pView->nMapH / 2 - nSurfH / 2;
+    /* Portrait (original): the map viewport is the screen above the strip, 320 - stripHeight.
+     * QoL wide view: the strip overlays the full-bleed map, so the viewport is the whole
+     * surface. Portrait (and no-surface test envs) keep the original expression exactly. */
+    const i32 nVisibleH = (nSurfH == PUFO_SURF_H) ? PUFO_SURF_H - nStripHeight : nSurfH;
     i32 nY = pView->nScrollY;
 
     if (nY + nHalfH < 0) {
         nY = -nHalfH;
         pView->nScrollY = nY;
     }
-    if (nY + nHalfH > nStripHeight + pView->nMapH - 320) {
-        pView->nScrollY = nStripHeight - nHalfH + pView->nMapH - 320;
+    if (nY + nHalfH > pView->nMapH - nVisibleH) {
+        pView->nScrollY = pView->nMapH - nHalfH - nVisibleH;
     }
 }
 
@@ -732,9 +737,10 @@ u8 Smap_GetTileAtScreen(SmapView *pView, const u8 *pTiles, i32 nX, i32 nY)
         return 0;
     }
 
-    /* 0x8227C / 0x82288: the view centre is screen (120, 160). */
-    nTileX = pView->nScrollX + pView->nMapW / 2 + nX - 120;
-    nTileY = pView->nScrollY + pView->nMapH / 2 + nY - 160;
+    /* 0x8227C / 0x82288: the view centre is the screen centre, (120, 160) on the original
+     * device; the QoL wide view centres on the live surface (PUFO_RADAR_HALF_SCREEN_*). */
+    nTileX = pView->nScrollX + pView->nMapW / 2 + nX - PUFO_RADAR_HALF_SCREEN_X;
+    nTileY = pView->nScrollY + pView->nMapH / 2 + nY - PUFO_RADAR_HALF_SCREEN_Y;
 
     /* 0x8228C / 0x82294: one wrap for a negative coordinate, no wrap for an
      * out-of-range positive one. The map is a cylinder only on the low side. */

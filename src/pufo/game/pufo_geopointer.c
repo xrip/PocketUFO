@@ -4,6 +4,7 @@
  * The addresses in the comments are the original's own.
  */
 #include "game/pufo_geopointer.h"
+#include "ui/pufo_uigeom.h" /* QoL wide view: the strip band follows the shimmed pad */
 
 #include <stddef.h>
 
@@ -167,15 +168,18 @@ static i32 PointerWorld(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY, bool bDo
         bDrag = *pEnv->pbDragActive;
     }
 
-    /* 0x87C48..0x87CE4: the strip height is the current zoom overlay pad's uHeight. */
+    /* 0x87C48..0x87CE4: the strip height is the current zoom overlay pad's uHeight.
+     * QoL wide view: the band top is the shimmed SURF_H - uHeight (identity in portrait,
+     * where this is exactly the original gate). */
     const i32 nStripH = pEnv->pZoomOverlay->uHeight;
-    if (*pEnv->pnTapCooldown < 6 && bDown && nCurY < PUFO_SURF_H - nStripH) {
+    const i32 nBandTop = PufoUi_MapY(PUFO_SURF_H - nStripH);
+    if (*pEnv->pnTapCooldown < 6 && bDown && nCurY < nBandTop) {
         if (Ptr_StrategHit(pEnv, nCurX, nCurY) != 0) {
             (void)Smap_GetTileAtScreen(pEnv->pView, pEnv->pTiles, nCurX, nCurY);
             *pEnv->pnTapCooldown = 255;
             return 255;
         }
-    } else if (!bDown || nCurY >= PUFO_SURF_H - nStripH) {
+    } else if (!bDown || nCurY >= nBandTop) {
         goto DragDone;
     }
 
@@ -221,7 +225,8 @@ static i32 PointerBaseStrip(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY)
     /* 0x87E6C: outside the map area the tap coordinates are left alone and the stored
      * tap flag decides; inside them the tap cell is recomputed and the flag is raised. */
     u8 bTap;
-    if (nY >= 232 || nX >= 192 || nY <= 36) {
+    /* QoL wide view: the panel zones follow the shim (identity in portrait). */
+    if (nY >= PufoUi_MapY(232) || nX >= PufoUi_MapX(192) || nY <= 36) {
         bTap = *pEnv->pbPlaceActive;
     } else {
         *pEnv->pbPlaceFail = 0;                                              /* 0x87EA0 */
