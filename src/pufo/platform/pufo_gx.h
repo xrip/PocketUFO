@@ -57,6 +57,22 @@ void Gx_PointerToLogical(int nVpX, int nVpY, int nVpW, int nVpH,
 /* Copy the logical surface to the window, letterboxed at integer scale. */
 bool Gx_Present(GxSurface *pGx);
 
+/* QoL landscape wide view (see docs/parity/landscape-qol-2026-11-04.md):
+ * rebuild the DIB at new surface dimensions. The window client is NOT touched:
+ * in landscape mode the client is 320x240 and Gx_ViewportRect adapts the face
+ * (wide surface 320x240 -> 1:1, portrait surface 240x320 -> 180x240 centered).
+ * The DC pair survives; only the bitmap is recreated. */
+bool Gx_Resize(GxSurface *pGx, u32 cxWidth, u32 cyHeight);
+
+/* Pure view-geometry choice for one frame.
+ * wide (landscape shell, visible run, geoscape/tactical screen): surface
+ *   320x240, UI drawn at native size centered: UI_OFF_X = (320-240)/2 = 40,
+ *   bottom-anchored UI (portrait y >= 160) shifts UI_OFF_Y = 240-320 = -80.
+ * portrait (every other case, incl. ALL hidden/scripted runs): surface
+ *   240x320, offsets 0 -- exactly today's pillarbox contract. */
+void Gx_ViewGeometry(int bLandscape, int bHidden, int bWideScreen,
+                     int *pnW, int *pnH, int *pnUiX, int *pnUiY);
+
 /* GXSuspend @ 0xa61b4 and GXResume @ 0xa61b8, the display half of PocketUFO_WndProc's focus arms: 0xA04B4..0xA04C0
  * and 0xA051C..0xA0528 release the display on WM_KILLFOCUS, 0xA0578..0xA0584 and 0xA05D4..0xA05E0 take it back on
  * WM_SETFOCUS. GAPI hands the physical framebuffer to another application while the game is not focused; the Win64

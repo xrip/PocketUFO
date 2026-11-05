@@ -160,6 +160,45 @@ bool Gx_Present(GxSurface *pGx)
     return true;
 }
 
+bool Gx_Resize(GxSurface *pGx, u32 cxWidth, u32 cyHeight)
+{
+    if (pGx == NULL || pGx->hWnd == NULL || pGx->hdcMem == NULL
+        || cxWidth == 0 || cyHeight == 0) {
+        return false;
+    }
+    if (cxWidth == pGx->cxWidth && cyHeight == pGx->cyHeight) {
+        return true;
+    }
+    if (pGx->pOldObj != NULL) {
+        (void)SelectObject(pGx->hdcMem, pGx->pOldObj);
+        pGx->pOldObj = NULL;
+    }
+    if (pGx->hbm != NULL) {
+        (void)DeleteObject(pGx->hbm);
+        pGx->hbm = NULL;
+    }
+    pGx->pBits = NULL;
+    pGx->cxWidth  = cxWidth;
+    pGx->cyHeight = cyHeight;
+    return Gx_MakeDib(pGx);
+}
+
+void Gx_ViewGeometry(int bLandscape, int bHidden, int bWideScreen,
+                     int *pnW, int *pnH, int *pnUiX, int *pnUiY)
+{
+    if (bLandscape && !bHidden && bWideScreen) {
+        *pnW   = 320;
+        *pnH   = 240;
+        *pnUiX = (320 - 240) / 2;
+        *pnUiY = 240 - 320;
+        return;
+    }
+    *pnW   = 240;
+    *pnH   = 320;
+    *pnUiX = 0;
+    *pnUiY = 0;
+}
+
 /* See pufo_gx.h: no Win64 counterpart for GAPI's display hand-off. The DIB, the memory DC and the window DC stay
    valid, so a present while unfocused still works and a present after resuming needs no re-acquisition. */
 void Gx_Suspend(GxSurface *pGx)

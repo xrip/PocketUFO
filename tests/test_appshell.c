@@ -655,6 +655,40 @@ static void TestLandscapePointerMapping(void)
     CheckEqI32(nY, 205, "  portrait mode: y too");
 }
 
+/* P1 wide view: the pure geometry switch (Gx_ViewGeometry) and the DIB face it
+ * feeds. Wide = landscape + visible run + geoscape-map/tact screen. */
+static void TestWideViewGeometry(void)
+{
+    int w, h, ux, uy;
+
+    Gx_ViewGeometry(1, 0, 1, &w, &h, &ux, &uy);
+    CheckEqI32(w, 320,  "  wide view: surface 320");
+    CheckEqI32(h, 240,  "  wide view: surface 240");
+    CheckEqI32(ux, 40,  "  wide view: UI centered x-offset (320-240)/2");
+    CheckEqI32(uy, -80, "  wide view: bottom-anchored UI shift 240-320");
+
+    Gx_ViewGeometry(1, 1, 1, &w, &h, &ux, &uy);
+    CheckEqI32(w, 240,  "  hidden scripted run: stays portrait 240x320 (dumps/e2e safe)");
+    CheckEqI32(h, 320,  "  hidden: height 320");
+    CheckEqI32(ux, 0,   "  hidden: no UI offsets");
+    CheckEqI32(uy, 0,   "  hidden: no UI y shift");
+
+    Gx_ViewGeometry(0, 0, 1, &w, &h, &ux, &uy);
+    CheckEqI32(w, 240,  "  portrait mode: never wide");
+    CheckEqI32(h, 320,  "  portrait mode: 320 high");
+
+    Gx_ViewGeometry(1, 0, 0, &w, &h, &ux, &uy);
+    CheckEqI32(w, 240,  "  landscape menu/base screens: portrait surface, pillarboxed");
+    CheckEqI32(h, 320,  "  landscape menu/base screens: 320 high");
+
+    /* The wide surface in a 320x240 client maps 1:1 through the fit rule. */
+    Gx_ViewportRect(320, 240, 320, 240, 1, &w, &h, &ux, &uy);
+    CheckEqI32(w, 0,   "  wide face: viewport x 0");
+    CheckEqI32(h, 0,   "  wide face: viewport y 0");
+    CheckEqI32(ux, 320, "  wide face: 1:1 width");
+    CheckEqI32(uy, 240, "  wide face: 1:1 height");
+}
+
 int main(void)
 {
     DrainQueue();
@@ -665,6 +699,7 @@ int main(void)
     TestDestroyArm();
     TestAppKeyHookRoutes();
     TestLandscapePointerMapping();
+    TestWideViewGeometry();
 
     if (g_nFailures > 0) {
         printf("test_appshell: %d check(s) FAILED\n", g_nFailures);

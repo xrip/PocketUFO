@@ -860,6 +860,8 @@ static i32 App_PresentHook(void *pUser)
  * whatever the ui screen cell says. A live mission on a screen the world's frame builder covers
  * (0, 8, 9) draws through World_TactFrame (Part 63); screen 18 uses Titles_DrawBackdrop with the
  * app-owned ending state, and the other shell screens are the start menu (17) and credits (0x10). */
+static void App_UpdateViewGeometry(void); /* defined with the QoL view state below */
+
 static void App_DrawFrame(void)
 {
     MainMenuEnv    mm;
@@ -867,6 +869,8 @@ static void App_DrawFrame(void)
     TitlesBackdrop endBackdrop;
     UiModalAnim loadingAnim;
     UiModalLayout loadingLayout;
+
+    App_UpdateViewGeometry();
 
     if (g_bWorldReady && g_world.bGeoscapeUi != 0) {
         memset(&rf, 0, sizeof(rf));
@@ -1278,6 +1282,46 @@ static void App_PresentLoadedSurface(void);
  * See docs/parity/landscape-qol-2026-11-04.md. */
 static bool g_bLandscapeFlag;
 
+/* P1 wide view (docs/parity/landscape-qol-2026-11-04.md): geoscape-map and
+ * tactical screens take the full 320x240 surface in landscape mode; every
+ * other screen keeps the portrait 240x320 surface pillarboxed. The geometry
+ * is recomputed at the draw entry; the hidden/scripted runs are ALWAYS
+ * portrait so every dump, e2e reference and test sees exactly 240x320. */
+static bool g_bHiddenRun;
+static int  g_nViewW   = 240; /* surface dims, data-driven everywhere */
+static int  g_nViewH   = 320;
+static int  g_nUiOffX  = 0;   /* native-size UI centered on the wide face */
+static int  g_nUiOffY  = 0;   /* bottom-anchored UI (y >= 160) shifts -80 */
+
+static void App_UpdateViewGeometry(void)
+{
+    const bool bWideScreen =
+        g_bWorldReady
+        && ((g_world.bGeoscapeUi != 0 && g_world.screen.nGeoscapeScreen == 0) /* the map */
+            || World_bTactPointerLive(&g_world));
+    int nW, nH, nX, nY;
+
+    Gx_ViewGeometry(g_bLandscapeFlag ? 1 : 0, g_bHiddenRun ? 1 : 0,
+                    bWideScreen ? 1 : 0, &nW, &nH, &nX, &nY);
+    if (nW == g_nViewW && nH == g_nViewH) {
+        return;
+    }
+    if (g_assets.pSurface == NULL || g_assets.pSurface->pPixels == NULL
+        || g_gx.hWnd == NULL) {
+        return;
+    }
+    if (SoftSurf_AllocPixels(g_assets.pSurface, nW, nH, PIXMODE_16BPP) == NULL) {
+        return; /* keep the old geometry on allocation failure: a QoL fallback */
+    }
+    if (!Gx_Resize(&g_gx, (u32)nW, (u32)nH)) {
+        return;
+    }
+    g_nViewW  = nW;
+    g_nViewH  = nH;
+    g_nUiOffX = nX;
+    g_nUiOffY = nY;
+}
+
 /* Client pixels to the 240x320 logical surface, inverting Gx_Present's integer-scale letterbox.
  *
  * ADAPTATION, and the older comment here was wrong: the record does NOT feed the raw client point
@@ -1307,9 +1351,9 @@ static void App_MapPointer(LPARAM lParam, i32 *pnX, i32 *pnY)
     }
     nWinW = rc.right - rc.left;
     nWinH = rc.bottom - rc.top;
-    Gx_ViewportRect(nWinW, nWinH, PUFO_SURF_W, PUFO_SURF_H,
+    Gx_ViewportRect(nWinW, nWinH, g_nViewW, g_nViewH,
                     g_bLandscapeFlag ? 1 : 0, &nVpX, &nVpY, &nVpW, &nVpH);
-    Gx_PointerToLogical(nVpX, nVpY, nVpW, nVpH, PUFO_SURF_W, PUFO_SURF_H,
+    Gx_PointerToLogical(nVpX, nVpY, nVpW, nVpH, g_nViewW, g_nViewH,
                         (i32)(short)LOWORD(lParam), (i32)(short)HIWORD(lParam),
                         pnX, pnY);
 }
@@ -1619,8 +1663,9 @@ static void App_PresentLoadedSurface(void)
     /* GX_PresentFrame @ 0x9ea7c arms the blit target (Render_SetTarget @ 0x9faa4 ->
      * Blit_SetTargetParams @ 0xa39ac) before blitting the soft surface. The target's pixel
      * mode is what SoftSurf_BlitGlyph_Inner @ 0xa41d4 gates on (blitState+0x20), so without
-     * this call no glyph ever draws. The 240x320/2bpp constants are the original's own. */
-    Render_SetTarget(240, 320, 2, g_gx.cbxPitch, g_gx.cbyPitch, g_gx.pBits);
+     * this call no glyph ever draws. The 2bpp is the original's own; the dimensions follow the
+     * live surface (QoL wide view 320x240 in landscape, 240x320 everywhere else). */
+    Render_SetTarget(g_nViewW, g_nViewH, 2, g_gx.cbxPitch, g_gx.cbyPitch, g_gx.pBits);
     for (y = 0; y < (int)g_gx.cyHeight && y < pSurface->nHeight; ++y) {
         const u8 *pSrc = pSurface->pPixels + (size_t)y * (size_t)pSurface->nWidth * 2u;
         u8       *pDst = g_gx.pBits + (size_t)y * (size_t)g_gx.cbyPitch;
@@ -1817,7 +1862,7 @@ static void App_DumpFramePpm(LPCWSTR pwszPath)
     const SoftSurf *p = g_assets.pSurface;
     HANDLE hFile;
     char   szHeader[64];
-    char   aRow[240 * 3]; /* the logical surface is always 240 wide (SoftSurf_AllocPixels(240,320,2)) */
+    char   aRow[320 * 3]; /* the logical surface: 240 wide in portrait, 320 in the QoL wide view */
     int    nHeader;
     DWORD  cbWritten;
 
@@ -16851,6 +16896,8 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
 {
     WNDCLASSW wc;
     HWND      hWnd;
+
+    g_bHiddenRun = bHidden;
 
     /* Single instance, matching InitInstance @ 0x9fd48. The original raises
      * the existing window; that is safe to keep on Win64. */
