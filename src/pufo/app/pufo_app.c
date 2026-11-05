@@ -1299,17 +1299,22 @@ static void App_UpdateViewGeometry(void)
 {
     const bool bWideScreen =
         g_bWorldReady
+        /* Wide is the plain geoscape map and placement only: the radar/options windows are
+         * portrait dialogs that keep the map screen id; sModal is any modal dialog (the
+         * contact report, tact abort). Other geoscape screens switch the id themselves. */
         && ((g_world.bGeoscapeUi != 0
              && (g_world.screen.nGeoscapeScreen == 0  /* the map */
                  || g_world.screen.nGeoscapeScreen == 2) /* new-base placement: the map + confirm */
-             /* The radar window and the options window are portrait dialogs that keep the map
-              * screen id, so they must drop the wide view; the other geoscape screens already
-              * switch the id. */
-             && g_world.bRadarScreenActive == 0 && g_world.bOptionsScreenOpen == 0)
-            /* Tact live fills the face, except its portrait dialogs: 1 inventory, 12 options,
-             * 13 promotion report (the arms 0x2237C routes around the iso layer). */
+             && g_world.bRadarScreenActive == 0 && g_world.bOptionsScreenOpen == 0
+             && !g_world.sModal.bOpen)
+            /* Tact fills the face on the battlefield (screen 0); the inventory (1), the
+             * minimap window (6), options (12), the promotion report (13), the deploy
+             * panel and any modal dialog keep the portrait face. */
             || (World_bTactPointerLive(&g_world)
-                && g_world.nUiScreen != 1u && g_world.nUiScreen != 12u && g_world.nUiScreen != 13u));
+                && g_world.nUiScreen != 1u && g_world.nUiScreen != 6u
+                && g_world.nUiScreen != 12u && g_world.nUiScreen != 13u
+                && g_world.bMapPromotionReport == 0 && g_world.sTactInput.bDeployPanelOpen == 0
+                && !g_world.sModal.bOpen));
     int nW, nH, nX, nY;
 
     /* Geometry keys on the shell mode only. Scripted runs stay hidden (no
@@ -1995,7 +2000,8 @@ static void App_ScriptState(const char *pszLabel)
      * hover's own animation state). Printed because a picture with no bottom bar is only explainable by them. */
     printf("pocketufo: state %s: start screen %d, list mode %d, geoscape screen %d, geo ui byte %d, tact flag %d, "
            "bases %d, base 0 at %d/%d, soldiers %d, funds %d, status flag %d, pending region %d, "
-           "globe sweep %d/%d, anim prog %d/%d/%d, mission type %d, map 0x1511E %d\n",
+           "globe sweep %d/%d, anim prog %d/%d/%d, mission type %d, map 0x1511E %d, "
+           "modal %d deploy %d radar %d opts %d\n",
            pszLabel, g_nUiScreen, g_nListMode, (int)g_world.screen.nGeoscapeScreen, (int)g_world.bGeoscapeUi,
            (int)g_world.bTactFlag, (int)g_world.nBaseCount,
            (g_world.nBaseCount > 0 && g_world.apBases[0] != NULL) ? g_world.apBases[0]->nUnk8 : 0,
@@ -2004,7 +2010,9 @@ static void App_ScriptState(const char *pszLabel)
            (int)UiLineList_GetFlag(&g_world.msgLines, 0), (int)g_world.bPendingRegionId,
            g_world.nGlobeSweepV, g_world.nGlobeSweepH,
            (int)g_world.cUiAnimProgress, (int)g_world.bUiAnimStarted, (int)g_world.aRegionBuildCount[9],
-           (int)g_world.nMapMissionType, (int)g_world.bMapUnk1511E);
+           (int)g_world.nMapMissionType, (int)g_world.bMapUnk1511E,
+           (int)g_world.sModal.bOpen, (int)g_world.sTactInput.bDeployPanelOpen,
+           (int)g_world.bRadarScreenActive, (int)g_world.bOptionsScreenOpen);
     fflush(stdout);
 }
 

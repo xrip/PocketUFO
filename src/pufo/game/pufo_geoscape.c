@@ -4276,7 +4276,7 @@ static void GlobeHover_DrawReadout(i32 nY)
                  (u32)Game_RandU16(PUFO_GLOBE_READOUT_SPAN) + PUFO_GLOBE_READOUT_BASE);
         (void)pufo_strcat(szText, szNum, sizeof(szText));
     }
-    Text_DrawString(PUFO_GLOBE_READOUT_X, nY, szText);
+    Text_DrawString(PufoUi_MapX(PUFO_GLOBE_READOUT_X), PufoUi_MapY(nY), szText);
 }
 
 i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
@@ -4307,35 +4307,39 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
     if (nKey < PUFO_GLOBE_WASH_KEY_MIN) {
         nKey = 0;                                                        /* 0x672B4 MOVLT */
     }
-    SoftSurf_BlitSrcRect(0, 0, 240, 320, PUFO_GLOBE_WASH_IDX, 255, 255, nKey); /* 0x672D8 */
+    const i32 nSurfW = (g_pMainSurface != NULL) ? (i32)g_pMainSurface->nWidth  : PUFO_SURF_W;
+    const i32 nSurfH = (g_pMainSurface != NULL) ? (i32)g_pMainSurface->nHeight : PUFO_SURF_H;
 
-    /* 2. 0x672DC..0x67450: the crosshair, all in index 0x32 / 0xC8 / 0x32. */
-    SoftSurf_BlitRectProxy(0, 120, 0, 1, nStripTop,
+    SoftSurf_BlitSrcRect(0, 0, nSurfW, nSurfH, PUFO_GLOBE_WASH_IDX, 255, 255, nKey); /* 0x672D8, QoL surface dims */
+
+    /* 2. 0x672DC..0x67450: the crosshair, all in index 0x32 / 0xC8 / 0x32. The QoL shim centers
+     * the 240-wide rule set on the wide face (identity on the portrait face). */
+    SoftSurf_BlitRectProxy(0, PufoUi_MapX(120), 0, 1, PufoUi_MapY(nStripTop),
                            PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
                            PUFO_GLOBE_RULE_LOW);                        /* 0x67314 */
-    SoftSurf_BlitRectProxy(0, 0, nMidY, 240, 1,
+    SoftSurf_BlitRectProxy(0, PufoUi_MapX(0), PufoUi_MapY(nMidY), nSurfW, 1,
                            PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
                            PUFO_GLOBE_RULE_LOW);                        /* 0x67350 */
     for (i = 0; i < PUFO_GLOBE_TICK_COUNT; ++i) {
         const i32 nTick = (i + PUFO_GLOBE_TICK_BASE) * (i + PUFO_GLOBE_TICK_BASE); /* 0x6736C */
 
-        SoftSurf_BlitRectProxy(0, nTick, nMidY - 1, 1, 3,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(nTick), PufoUi_MapY(nMidY - 1), 1, 3,
                                PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
                                PUFO_GLOBE_RULE_LOW);                    /* 0x673A0 */
-        SoftSurf_BlitRectProxy(0, 240 - nTick, nMidY - 1, 1, 3,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(240 - nTick), PufoUi_MapY(nMidY - 1), 1, 3,
                                PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
                                PUFO_GLOBE_RULE_LOW);                    /* 0x673E0 */
-        SoftSurf_BlitRectProxy(0, 119, nTick, 3, 1,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(119), PufoUi_MapY(nTick), 3, 1,
                                PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
                                PUFO_GLOBE_RULE_LOW);                    /* 0x67408 */
-        SoftSurf_BlitRectProxy(0, 119, nStripTop - nTick, 3, 1,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(119), PufoUi_MapY(nStripTop - nTick), 3, 1,
                                PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
                                PUFO_GLOBE_RULE_LOW);                    /* 0x6743C */
     }
 
     /* 3. 0x67450..0x67494: the bottom panel. While it is still expanding the function stops here
      * and the scan animation, the readouts and the labels never run. */
-    if (!Ui_AnimExpandBlit(pEnv->pAnim, 0, nStripTop, PUFO_GLOBE_PANEL_WIDTH,
+    if (!Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0), PufoUi_MapY(nStripTop), PUFO_GLOBE_PANEL_WIDTH,
                            nStripH - PUFO_GLOBE_PANEL_INSET, PUFO_GLOBE_PANEL_IDX,
                            PUFO_GLOBE_PANEL_SRC_X, PUFO_GLOBE_PANEL_SRC_Y,
                            PUFO_GLOBE_PANEL_KEY, 3)) {
@@ -4343,8 +4347,8 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
     }
 
     /* 4. 0x67498..0x67674: the scan animation. */
-    SoftSurf_BlitSrcRect(160, 200, 75, 30, PUFO_GLOBE_WASH_IDX, 255, 255, 100); /* 0x674BC */
-    SoftSurf_BlitSrcRect(  5, 200, 75, 30, PUFO_GLOBE_WASH_IDX, 255, 255, 100); /* 0x674E0 */
+    SoftSurf_BlitSrcRect(PufoUi_MapX(160), PufoUi_MapY(200), 75, 30, PUFO_GLOBE_WASH_IDX, 255, 255, 100); /* 0x674BC */
+    SoftSurf_BlitSrcRect(PufoUi_MapX(5), PufoUi_MapY(200), 75, 30, PUFO_GLOBE_WASH_IDX, 255, 255, 100);   /* 0x674E0 */
     (void)Gfx_PackRgb565Pair(pEnv->pColor, 10, 5 * (51 - nKey), 10, 10, 50, 10); /* 0x67510 */
 
     nScanX  = *pEnv->pnScanX;
@@ -4352,32 +4356,32 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
     nSweepH = *pEnv->pnSweepH;
 
     if (nScanX + PUFO_GLOBE_SCAN_X0 < PUFO_GLOBE_SCAN_SPAN) {           /* 0x6752C */
-        SoftSurf_BlitSrcRect(nScanX + PUFO_GLOBE_SCAN_X0, PUFO_GLOBE_SCAN_Y,
+        SoftSurf_BlitSrcRect(PufoUi_MapX(nScanX + PUFO_GLOBE_SCAN_X0), PufoUi_MapY(PUFO_GLOBE_SCAN_Y),
                              PUFO_GLOBE_SCAN_W, PUFO_GLOBE_SCAN_H, PUFO_GLOBE_SCAN_IDX,
                              PUFO_GLOBE_SCAN_MID, PUFO_GLOBE_SCAN_LOW,
                              PUFO_GLOBE_SCAN_KEY);                       /* 0x67550 */
     }
     if (PUFO_GLOBE_SCAN_SPAN - nScanX > PUFO_GLOBE_SCAN_X0) {           /* 0x67560 */
-        SoftSurf_BlitSrcRect(PUFO_GLOBE_SCAN_SPAN - nScanX, PUFO_GLOBE_SCAN_Y,
+        SoftSurf_BlitSrcRect(PufoUi_MapX(PUFO_GLOBE_SCAN_SPAN - nScanX), PufoUi_MapY(PUFO_GLOBE_SCAN_Y),
                              PUFO_GLOBE_SCAN_W, PUFO_GLOBE_SCAN_H, PUFO_GLOBE_SCAN_IDX,
                              PUFO_GLOBE_SCAN_MID, PUFO_GLOBE_SCAN_LOW,
                              PUFO_GLOBE_SCAN_KEY);                       /* 0x67584 */
     }
     if (nSweepV < PUFO_GLOBE_SWEEP_V_GATE) {                             /* 0x67594 */
-        SoftSurf_BlitRectProxy(0, 2 * (nSweepV + PUFO_GLOBE_SWEEP_V_BASE), PUFO_GLOBE_SWEEP_Y,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(2 * (nSweepV + PUFO_GLOBE_SWEEP_V_BASE)), PufoUi_MapY(PUFO_GLOBE_SWEEP_Y),
                                1, PUFO_GLOBE_SWEEP_V_H, PUFO_GLOBE_SWEEP_IDX,
                                PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x675C0 */
-        SoftSurf_BlitRectProxy(0, PUFO_GLOBE_SWEEP_V_SPAN - 2 * nSweepV, PUFO_GLOBE_SWEEP_Y,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_GLOBE_SWEEP_V_SPAN - 2 * nSweepV), PufoUi_MapY(PUFO_GLOBE_SWEEP_Y),
                                1, PUFO_GLOBE_SWEEP_V_H, PUFO_GLOBE_SWEEP_IDX,
                                PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x675EC */
     }
     if (nSweepH < PUFO_GLOBE_SWEEP_H_GATE) {                             /* 0x67600 */
-        SoftSurf_BlitRectProxy(0, PUFO_GLOBE_SWEEP_X,
-                               2 * (nSweepH + PUFO_GLOBE_SWEEP_H_BASE),
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_GLOBE_SWEEP_X),
+                               PufoUi_MapY(2 * (nSweepH + PUFO_GLOBE_SWEEP_H_BASE)),
                                PUFO_GLOBE_SWEEP_H_W, 1, PUFO_GLOBE_SWEEP_IDX,
                                PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x6762C */
-        SoftSurf_BlitRectProxy(0, PUFO_GLOBE_SWEEP_X,
-                               2 * (PUFO_GLOBE_SWEEP_H_SPAN - nSweepH),
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_GLOBE_SWEEP_X),
+                               PufoUi_MapY(2 * (PUFO_GLOBE_SWEEP_H_SPAN - nSweepH)),
                                PUFO_GLOBE_SWEEP_H_W, 1, PUFO_GLOBE_SWEEP_IDX,
                                PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x67658 */
     }
@@ -4464,7 +4468,7 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
         nLabelY = PUFO_GLOBE_LABEL_Y_BUILD;                              /* 0x67A6C */
     }
 
-    Text_DrawString(120 - nWidth / 2, nLabelY, szText);                 /* 0x67B08, both arms land here */
+    Text_DrawString(PufoUi_MapX(120) - nWidth / 2, PufoUi_MapY(nLabelY), szText); /* 0x67B08, both arms land here */
     return nTile;                                                        /* 0x67B0C, the caller's bPendingRegionId */
 }
 
@@ -4500,7 +4504,7 @@ static void StatusPanel_PackColour(const GeoscapeStatusPanelEnv *pEnv)
 
 static void StatusPanel_Anim(const GeoscapeStatusPanelEnv *pEnv, i32 nY, i32 nH)
 {
-    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 0, nY, PUFO_STATUS_ANIM_W, nH, 1);
+    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, PufoUi_MapX(0), PufoUi_MapY(nY), PUFO_STATUS_ANIM_W, nH, 1);
 }
 
 /* The two bottom controls: x is fixed per control, y per arm, then both are blitted. */
@@ -4569,7 +4573,7 @@ static void StatusPanel_DrawActionFail(const GeoscapeStatusPanelEnv *pEnv, char 
         return;                                                        /* 0x8E68C BNE */
     }
     /* bEnabled is LDRSB of dwActionFail: 1, which the gate above has just proved. */
-    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 0x14, 0x82, 0xC8, StatusPanel_MapHalfW(pEnv),
+    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, PufoUi_MapX(0x14), PufoUi_MapY(0x82), 0xC8, StatusPanel_MapHalfW(pEnv),
                                       (i8)(u8)*pEnv->pnActionFail);    /* 0x8E6A8 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_NO_MONEY);         /* 0x8E6B0 record 406 */
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_FAIL_TEXT, psz);
@@ -4622,9 +4626,9 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
     const i32 nCancelY     = bHyper ? PUFO_STATUS_Y_SEL_CANCEL_HYP : PUFO_STATUS_Y_SEL_CANCEL_STD;
 
     if (bHyper) {
-        (void)Ui_AnimExpandBlit(pEnv->pAnim, 0, 0x32, 0xEC, 0xB4, 0, 0x28, 0x32, 0xB4, 0);
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0), PufoUi_MapY(0x32), 0xEC, 0xB4, 0, 0x28, 0x32, 0xB4, 0);
     } else {                                                          /* 0x8E728 BNE */
-        (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x46, 0xD0, StatusPanel_MapHalfW(pEnv),
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x46), 0xD0, StatusPanel_MapHalfW(pEnv),
                                 0, 0x28, 0x32, 0xB4, 0);
     }
     if (pEntry == NULL) {
@@ -4729,7 +4733,7 @@ static void StatusPanel_DrawBaseLost(const GeoscapeStatusPanelEnv *pEnv, char *p
     if (pEnv->apSiteRecs == NULL || pEnv->pCtlA == NULL || pEnv->pfnResolveInterceptUI == NULL) {
         return;
     }
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F278..0x8F2B0 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_BASE_LABEL);         /* 0x8F2B4 record 1214 */
     (void)pufo_strcat(psz, pEnv->apSiteRecs[(i32)UiLineList_GetColor(pEnv->pLines, 0, 0)].abName,
@@ -4761,7 +4765,7 @@ static void StatusPanel_DrawFuelLow(const GeoscapeStatusPanelEnv *pEnv, char *ps
         || pEnv->pCtlA == NULL || pEnv->pfnDismissSelected == NULL) {
         return;
     }
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F428..0x8F45C */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);         /* 0x8F460 record 1216 */
     StatusPanel_AppendShipName(pEnv, psz, *pEnv->pnSelectedShipIdx);     /* 0x8F484..0x8F49C */
@@ -4781,7 +4785,7 @@ static void StatusPanel_DrawFlyToPoint(const GeoscapeStatusPanelEnv *pEnv, char 
         || pEnv->pfnResolveInterceptUI == NULL) {
         return;
     }
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F5BC..0x8F5F0 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_FLY_TO_POINT);       /* 0x8F5F4 record 1218 */
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_LINE1, psz); /* 0x8F644 y 70 */
@@ -4811,7 +4815,7 @@ static void StatusPanel_DrawPointReached(const GeoscapeStatusPanelEnv *pEnv, cha
         || pEnv->pfnSetWaypoint == NULL) {
         return;
     }
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 0x3C, 0xD0, PUFO_STATUS_ORDER_NH_TALL,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_TALL,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F770..0x8F7A8 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);         /* 0x8F7AC record 1216 */
     StatusPanel_AppendShipName(pEnv, psz, (i32)UiLineList_GetColor(pEnv->pLines, 0, 0)); /* 0x8F7DC */
@@ -4875,7 +4879,7 @@ static void StatusPanel_DrawCraftDetail(const GeoscapeStatusPanelEnv *pEnv, char
     const PadImage *const pStrip = pEnv->pStripPad;                      /* 0x8F9FC..0x8FA2C */
     SoftSurf_BlitSrcRect(pStrip->nOriginX, pStrip->nOriginY, pStrip->uWidth, pStrip->uHeight,
                          0x3C, 0x78, 0x82, 0x96);                        /* 0x8FA30 */
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, 5, 0xD0, PUFO_STATUS_DETAIL_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(5), 0xD0, PUFO_STATUS_DETAIL_NH,
                             0, 0x28, 0x32, 0xB4, 0);                     /* 0x8FA34..0x8FA70 */
 
     *pEnv->pnSelectedShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x8FA80 / 0x8FA90 */
@@ -5013,7 +5017,7 @@ static void StatusPanel_DrawInterceptPause(const GeoscapeStatusPanelEnv *pEnv, c
                                                                         * constants as the 0x0B card */
     SoftSurf_BlitSrcRect(pStrip->nOriginX, pStrip->nOriginY, pStrip->uWidth, pStrip->uHeight,
                          0x3C, 0x78, 0x82, 0x96);
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_PAUSE_ANIM_Y, 0xD0, PUFO_STATUS_PAUSE_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_PAUSE_ANIM_Y), 0xD0, PUFO_STATUS_PAUSE_NH,
                             0, 0x28, 0x32, 0xB4, 0);                   /* 0x90278..0x902B0, box
                                                                         * x 14..225, y 70..195 */
 
@@ -5057,7 +5061,7 @@ static void StatusPanel_DrawCityAttacked(const GeoscapeStatusPanelEnv *pEnv, cha
         return;
     }
 
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_CITY_ANIM_Y, 0xD0, PUFO_STATUS_CITY_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_CITY_ANIM_Y), 0xD0, PUFO_STATUS_CITY_NH,
                             0, 0x28, 0x32, 0xB4, 0);                   /* 0x9050C..0x90538, box
                                                                         * x 14..225, y 70..195 */
 
@@ -5138,7 +5142,7 @@ static void StatusPanel_DrawInterceptList(const GeoscapeStatusPanelEnv *pEnv, ch
                                       pEnv->pCtlBlitUser);
     }
 
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_LIST_ANIM_Y, 0xD0, PUFO_STATUS_LIST_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_LIST_ANIM_Y), 0xD0, PUFO_STATUS_LIST_NH,
                             0, 0x1E, 0x28, 0xFF, 0);                       /* 0x907F8..0x90828, box
                                                                             * x 14..225, y 260..305:
                                                                             * over the clock it drew */
@@ -5204,7 +5208,7 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
      * nMode come from R8 and nKey from R11 (0xB4), all left behind by the flag-0x10 TEST prologue
      * (0x904EC, 0x904F0, 0x904F4), which runs before this arm's test whether or not flag 0x10 was
      * taken; srcY 0x32, srcX 0x28 and nH 0x5A are immediates. Box x 14..225, y 60..155. */
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);
 
     StatusPanel_CopyRec(pEnv, psz, bSelecting ? PUFO_STATUS_TEXT_MISSION_PREFIX
@@ -5348,7 +5352,7 @@ static void StatusPanel_DrawMissionSite(const GeoscapeStatusPanelEnv *pEnv, char
     /* 0x90DB8..0x90DE4 and 0x90F4C..0x90F78 store the same values as the 0x14 arm. The two zeros are
      * `MOV R0,#0` at 0x90DB0 and the key is the literal 0xB4 at 0x90DAC -- both before the 0x90DB4
      * branch -- because R11 is holding 0xBD8 here and cannot carry the key. Box x 14..225, y 60..155. */
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);
 
     const char *const pszRow = StatusPanel_SelectedRowText(pEnv);
@@ -5417,7 +5421,7 @@ static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz
     }
     const bool bSelecting = *pEnv->pbMapSelectionFlag != 0;
 
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x911C4..0x911F0 / 0x912CC..0x912F8 */
 
     /* 0x911F4..0x9122C clears the flag: colour SLOT 0 (UiPanel_GetLineColor at 0x91200) gives the row index
@@ -5500,7 +5504,7 @@ static void StatusPanel_DrawDescentPanel(const GeoscapeStatusPanelEnv *pEnv, cha
         return;
     }
 
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x914A4..0x914DC */
 
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_DESCENT);            /* 0x914E0..0x91500, R6 = TEXTS[1239] */
@@ -5550,7 +5554,7 @@ static void StatusPanel_DrawDescentTarget(const GeoscapeStatusPanelEnv *pEnv, ch
         return;
     }
 
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 0xE, PUFO_STATUS_TARGET_ANIM_Y, 0xD0, PUFO_STATUS_TARGET_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x916A0..0x916D8 */
 
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_DESCENT);            /* 0x916DC..0x916FC, R6 sticky */
@@ -5599,7 +5603,7 @@ static void StatusPanel_DrawAlienBasePanel(const GeoscapeStatusPanelEnv *pEnv, c
         return;
     }
 
-    (void)Ui_AnimExpandBlit(pEnv->pAnim, 2, PUFO_STATUS_TARGET_ANIM_Y, 0xE8, PUFO_STATUS_TARGET_NH,
+    (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(2), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xE8, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x91B34..0x91B70: x 2 (0x91B64),
                                                                           * nW 0xE8 (0x91B6C), nIdx and nMode
                                                                           * zeroed locally at 0x91B48 */

@@ -110,3 +110,38 @@ stale 00_mainmenu ref); scripted acceptance flows: campaign launch/deploy PASS
 in landscape; new-base pick converges on the wide face; nav clicks open the
 options dialog, which switches the face to portrait.
 
+
+## Tactical and report windows on the wide face (2026-11-05)
+
+User pictures: mid-battle with the HUD clipped to bottom tabs, the tact context
+menu, the deploy panel, and the geoscape НЛО contact card all rendered raw
+portrait geometry on the 320x240 face. Root cause: those states are portrait
+design windows (their origins are written at y 228..303), not map views, so the
+geometry gate now keeps them on the portrait face, and the report panels that
+stay on the map face shift through the shim.
+
+1. Gate additions in App_UpdateViewGeometry: tact minimap window (screen 6),
+   bMapPromotionReport, sTactInput.bDeployPanelOpen and sModal.bOpen (both
+   arms). Verified with the user's mid-mission save (sav0.sav, deploy-panel
+   state): scripted dump is 240x320, window run shows the pillarboxed portrait
+   battle view with intact HUD; state probe prints `deploy 1`.
+2. Script `state` probe prints modal/deploy/radar/opts flags.
+3. Geoscape status panel boxes (the report card frames: descent/contact/order/
+   target/detail/pause/city/list/alien-base arms, StatusPanel_Anim,
+   ActionFail): every Ui_AnimExpandBlit box origin shifts MapX/MapY; the card
+   box, title and stacked controls are now centred on the wide face.
+4. Globe hover (new-base placement screen 2, the user's "start geoscape is
+   broken"): the wash covers the live surface dims, the crosshair rules and
+   tick marks center through the shim, and the bottom panel box, scan washes,
+   scan bar and sweep lines shift MapX/MapY. Placement verified in a visible
+   window: full-face globe, centred crosshair, centred panel and readouts.
+5. Geoscape refresh writes the bpanel pad (GEOUI_PAD_187048, design y 228)
+   through the shim per frame, next to the strip pad.
+
+Portrait stays identity (offX 0, offY 0): e2e refs byte-identical.
+Evidence: ctest -C Release 67/67; e2e pictures 11/11 (only the pre-existing
+stale 00_mainmenu ref); QA-desktop window shots: new-game placement full-face,
+ocean confirm refusal centred, user save deploy state pillarboxed portrait.
+Separate pre-existing bug, NOT touched: `close` on a loaded user save
+SEGFAULTs in Geoscape_CloseUI -> GameTime_Set5Sec (NULL speed cell);
+reproduces on portrait at master.

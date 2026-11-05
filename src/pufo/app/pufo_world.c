@@ -12547,11 +12547,16 @@ static void World_RefreshGeoscapeFrame(PufoWorldState *pW)
     pF->icon.nMapBitsBase = (pW->pFont != NULL) ? pW->pFont->nMapBitsBase : 0;
     pF->icon.nAnimPhase   = (pW->pnAnimPhase != NULL) ? (u16)*pW->pnAnimPhase : 0;
     pF->hover.pTiles  = (pSet->pTiles != NULL) ? pSet->pTiles->pData : NULL; /* [0x186B04]->pData */
-    /* QoL wide view: the gamemenu strip pad is blitted by many const sites, so its origin
-     * follows the shim per frame: portrait exact (0,236) as the geoiinit table sets it (0x86888). */
+    /* QoL wide view: the gamemenu strip pad and the bpanel are blitted by many const sites,
+     * so their origins follow the shim per frame: portrait exact (0,236)/(0,228) as the
+     * geoiinit table sets them (0x86888 / 0x868B0). */
     if (pW->ui.apPad[GEOUI_PAD_186BBC] != NULL) {
         pW->ui.apPad[GEOUI_PAD_186BBC]->nOriginX = PufoUi_MapX(0);
         pW->ui.apPad[GEOUI_PAD_186BBC]->nOriginY = PufoUi_MapY(236);
+    }
+    if (pW->ui.apPad[GEOUI_PAD_187048] != NULL) {
+        pW->ui.apPad[GEOUI_PAD_187048]->nOriginX = PufoUi_MapX(0);
+        pW->ui.apPad[GEOUI_PAD_187048]->nOriginY = PufoUi_MapY(228);
     }
     pF->cross.nCrosshairX = pF->g.nCrosshairX;   /* nSmapCrosshairX @ 0x186BC8 */
     pF->cross.nCrosshairY = pF->g.nCrosshairY;   /* nSmapCrosshairY @ 0x186BCC */
