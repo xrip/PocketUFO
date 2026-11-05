@@ -1,5 +1,6 @@
 /* pufo_baseui.c - see pufo_baseui.h for evidence. */
 #include "game/pufo_baseui.h"
+#include "ui/pufo_uigeom.h" /* QoL wide-view shim: identity in portrait */
 #include <stdlib.h>  /* atexit, for StrategList_RegisterAtexit @ 0x838a0 */
 #include <stdio.h>   /* snprintf, the bounded stand-in for the original's j_itoa */
 #include <string.h>  /* memset, the include table BuySellScreen_BuildPanels clears */
@@ -6099,18 +6100,18 @@ void Smap_OnPointerUp(const SmapPointerUpEnv *pEnv)
                 nY = (i32)((double)nY * SMAP_UNSCALE_MODE2);
             }
 
-            i32 nScrollY = nY - nHalfH - 160;                                      /* 0x84830 */
+            i32 nScrollY = nY - nHalfH - PufoUi_MapY(160);                                      /* 0x84830 */
             pEnv->pView->nScrollY = nScrollY;                                      /* 0x8483C */
-            if (nY - 160 < 0) {                 /* 0x8484C RSBMI, on the N flag of the ADDS at 0x84838 */
+            if (nY - PufoUi_MapY(160) < 0) {                 /* 0x8484C RSBMI, on the N flag of the ADDS at 0x84838 */
                 nScrollY = -nHalfH;
                 pEnv->pView->nScrollY = nScrollY;                                  /* 0x84854 */
             }
-            pEnv->pView->nScrollX = nX - nHalfW - 120;                             /* 0x84850 */
+            pEnv->pView->nScrollX = nX - nHalfW - PufoUi_MapX(120);                             /* 0x84850 */
 
             const i32 uHeight = (pEnv->pStripPad != NULL)
                                     ? (i32)pEnv->pStripPad->uHeight : 0;           /* 0x84858 */
-            if (nScrollY + nHalfH > uHeight + pEnv->pView->nMapH - 320) {         /* 0x84870 */
-                nScrollY = uHeight - nHalfH + pEnv->pView->nMapH - 320;           /* 0x8487C */
+            if (nScrollY + nHalfH > uHeight + pEnv->pView->nMapH - PufoUi_MapY(320)) {         /* 0x84870 */
+                nScrollY = uHeight - nHalfH + pEnv->pView->nMapH - PufoUi_MapY(320);           /* 0x8487C */
                 pEnv->pView->nScrollY = nScrollY;                                  /* 0x84884 */
             }
 
@@ -6122,7 +6123,7 @@ void Smap_OnPointerUp(const SmapPointerUpEnv *pEnv)
             if (nCrossY > pEnv->pView->nMapH) {
                 nCrossY -= pEnv->pView->nMapH;                                     /* 0x84894 */
             }
-            i32 nCrossX = 120;              /* 0x84860 / 0x84880: (nHalfW + 120) - nHalfW */
+            i32 nCrossX = PufoUi_MapX(120);              /* 0x84860 / 0x84880: (nHalfW + 120) - nHalfW */
             if (nCrossX > pEnv->pView->nMapW) {
                 nCrossX -= pEnv->pView->nMapW;                                     /* 0x848A0 */
             }

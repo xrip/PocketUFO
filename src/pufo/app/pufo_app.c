@@ -1298,7 +1298,9 @@ static void App_UpdateViewGeometry(void)
 {
     const bool bWideScreen =
         g_bWorldReady
-        && ((g_world.bGeoscapeUi != 0 && g_world.screen.nGeoscapeScreen == 0) /* the map */
+        && ((g_world.bGeoscapeUi != 0
+             && (g_world.screen.nGeoscapeScreen == 0  /* the map */
+                 || g_world.screen.nGeoscapeScreen == 2)) /* new-base placement: the map + confirm */
             || World_bTactPointerLive(&g_world));
     int nW, nH, nX, nY;
 

@@ -1,5 +1,6 @@
 /* pufo_geoscape.c - see pufo_geoscape.h for the evidence map. */
 #include "game/pufo_geoscape.h"
+#include "ui/pufo_uigeom.h" /* QoL wide-view shim: identity in portrait */
 #include <stdio.h>             /* snprintf, the bounded stand-in for the original's j_itoa */
 #include <stdlib.h>            /* malloc/free, RadarScreen_Init's pads and controls */
 #include <stddef.h>            /* size_t, the bounded text copy */
@@ -2129,25 +2130,25 @@ void Base_DrawFacilityIconStrip(const BaseStripDrawEnv *pEnv)
                 const i32 nX = PUFO_STRIP_CELL_X_FIRST + PUFO_STRIP_CELL_PITCH * nCol;
 
                 if (abGrid[nDays + nCell] != 0) { /* 0x6260C: under construction */
-                    SoftSurf_BlitRectProxy(0, nX, nY, 4, 4, 0x96u, 0u, 0u);
-                    SoftSurf_BlitRectProxy(0, nX + 1, nY + 1, 2, 2, 0xFFu, 0u, 0u);
+                    SoftSurf_BlitRectProxy(0, PufoUi_MapX(nX), PufoUi_MapY(nY), 4, 4, 0x96u, 0u, 0u);
+                    SoftSurf_BlitRectProxy(0, PufoUi_MapX(nX + 1), PufoUi_MapY(nY + 1), 2, 2, 0xFFu, 0u, 0u);
                 } else {                          /* 0x62660: finished */
-                    SoftSurf_BlitRectProxy(0, nX, nY, 4, 4, 0u, 0x96u, 0u);
-                    SoftSurf_BlitRectProxy(0, nX + 1, nY + 1, 2, 2, 0u, 0xFFu, 0u);
+                    SoftSurf_BlitRectProxy(0, PufoUi_MapX(nX), PufoUi_MapY(nY), 4, 4, 0u, 0x96u, 0u);
+                    SoftSurf_BlitRectProxy(0, PufoUi_MapX(nX + 1), PufoUi_MapY(nY + 1), 2, 2, 0u, 0xFFu, 0u);
                 }
 
                 if (abGrid[nFac + PUFO_GRID_TILEA_OFF + nCell] == 0) { /* 0x626B8: no tile */
-                    SoftSurf_BlitRectProxy(0, nX, nY, 4, 4, 0x14u, 0x14u, 0x14u);
-                    SoftSurf_BlitRectProxy(0, nX + 1, nY + 1, 2, 2, 0x28u, 0x28u, 0x28u);
+                    SoftSurf_BlitRectProxy(0, PufoUi_MapX(nX), PufoUi_MapY(nY), 4, 4, 0x14u, 0x14u, 0x14u);
+                    SoftSurf_BlitRectProxy(0, PufoUi_MapX(nX + 1), PufoUi_MapY(nY + 1), 2, 2, 0x28u, 0x28u, 0x28u);
                 }
 
                 /* 0x62720: the chevron, inside the per-cell loop, so the original paints it once
                  * per cell of the marked base. */
                 if (nBase == pEnv->nHighlightRow) {
                     for (i32 k = 0; k < PUFO_STRIP_HILITE_STEPS; ++k) {
-                        SoftSurf_BlitRectProxy(0, PUFO_STRIP_CELL_X_FIRST + k, nYBase + 4 + k,
+                        SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_STRIP_CELL_X_FIRST + k), PufoUi_MapY(nYBase + 4 + k),
                                                2, 2, 0xFFu, 0u, 0u);
-                        SoftSurf_BlitRectProxy(0, PUFO_STRIP_CELL_X_FIRST + k, nYBase + 26 - k,
+                        SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_STRIP_CELL_X_FIRST + k), PufoUi_MapY(nYBase + 26 - k),
                                                2, 2, 0xFFu, 0u, 0u);
                     }
                 }
@@ -2344,13 +2345,15 @@ void Geoscape_BlitCrosshair(const GeoscapeCrosshairEnv *pEnv)
     }
 
     if (*pEnv->pbPending != 0 && *pEnv->pnCooldownR < PUFO_SMAP_CROSSHAIR_COOLDOWN) {
-        /* 0x8C6CC..0x8C700: the vertical line, 1 wide and 320 - chrome-pad-height tall. */
+        /* 0x8C6CC..0x8C700: the vertical line, 1 wide and screen-height minus
+         * chrome tall; 0x8C704..0x8C72C: the horizontal line, screen-wide.
+         * QoL: the lengths follow the live surface (portrait: 320/240 exact). */
         SoftSurf_BlitRectProxy(0, pEnv->nCrosshairX + PUFO_SMAP_CROSSHAIR_SHIFT, 0, 1,
-                               320 - (i32)pEnv->pChromePad->uHeight,
+                               g_pMainSurface->nHeight - (i32)pEnv->pChromePad->uHeight,
                                PUFO_SMAP_CROSSHAIR_INDEX, PUFO_SMAP_CROSSHAIR_MID,
                                PUFO_SMAP_CROSSHAIR_INDEX);
-        /* 0x8C704..0x8C72C: the horizontal line, 240 wide and 1 tall. */
-        SoftSurf_BlitRectProxy(0, 0, pEnv->nCrosshairY + PUFO_SMAP_CROSSHAIR_SHIFT, 240, 1,
+        SoftSurf_BlitRectProxy(0, 0, pEnv->nCrosshairY + PUFO_SMAP_CROSSHAIR_SHIFT,
+                               g_pMainSurface->nWidth, 1,
                                PUFO_SMAP_CROSSHAIR_INDEX, PUFO_SMAP_CROSSHAIR_MID,
                                PUFO_SMAP_CROSSHAIR_INDEX);
         return;
@@ -4402,7 +4405,8 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
     /* 6. 0x67858..0x67894: the pending pick and the hovered tile. */
     *pEnv->pnPendingPickX = pEnv->pView->nPickX;                         /* 0x6786C */
     *pEnv->pnPendingPickY = pEnv->pView->nPickY;                         /* 0x67874 */
-    nTile = (i32)Smap_GetTileAtScreen(pEnv->pView, pEnv->pTiles, 120, nMidY); /* 0x67894 */
+    nTile = (i32)Smap_GetTileAtScreen(pEnv->pView, pEnv->pTiles, PufoUi_MapX(120),
+                                   PufoUi_MapY(nMidY)); /* 0x67894 */
     (void)Gfx_PackRgb565Pair(pEnv->pColor, 10, 200, 10, 10, 50, 10);    /* 0x678B8 */
 
     if (nTile == PUFO_REGION_ID_NONE) {
@@ -4421,7 +4425,7 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
                           pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE
                               * (PUFO_GLOBE_TEXT_REGION0 + nTile), sizeof(szText)); /* 0x67914 */
         nWidth = Text_MeasureWidth(szText);                              /* 0x67928 */
-        Text_DrawString(120 - nWidth / 2, PUFO_GLOBE_LABEL_Y_NAME, szText); /* 0x67940 */
+        Text_DrawString(PufoUi_MapX(120) - nWidth / 2, PufoUi_MapY(PUFO_GLOBE_LABEL_Y_NAME), szText); /* 0x67940 */
 
         /* 0x67950..0x679D8: "Base cost: " + the region's price + "$", centred at y=270, and only
          * while the placement-pending byte is clear.
@@ -4440,7 +4444,7 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
             (void)pufo_strcat(szText, "$", sizeof(szText));             /* 0x67998 asc_AB1D8 */
             if (pEnv->pbPlacementPending == NULL || *pEnv->pbPlacementPending == 0) { /* 0x679A8 */
                 nWidth = Text_MeasureWidth(szText);                     /* 0x679BC */
-                Text_DrawString(120 - nWidth / 2, PUFO_GLOBE_LABEL_Y_COST, szText); /* 0x679D8 */
+                Text_DrawString(PufoUi_MapX(120) - nWidth / 2, PufoUi_MapY(PUFO_GLOBE_LABEL_Y_COST), szText); /* 0x679D8 */
             }
         }
 

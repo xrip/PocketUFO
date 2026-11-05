@@ -46,3 +46,32 @@ pixel, where the game's own screen-17 hit tests (rows are x 50..190, the
   (20,120) = edge (0,160) fires no row (before the clamp it opened a row --
   found by screenshot, fixed by clamping).
 - Full ctest -C Release: 67/67 passed on this branch.
+
+## Wide view P1-P3 (2026-11-05): geoscape and tactical fill 320x240
+
+The user's follow-up: the two map windows (geoscape map incl. new-base
+placement, tactical) render the live 320x240 surface; menus, dialogs, base
+screens and every other UI screen keep the pillarboxed portrait surface.
+
+- View geometry (Gx_ViewGeometry): wide = landscape && (geoscape screen 0/2
+  || tact live); surface 320x240, UI_OFF_X=40, UI_OFF_Y=-80 for y>=160.
+  Scripted runs render under the same rule WITHOUT the flag they stay
+  240x320, so every dump, e2e reference and test is untouched.
+- Surface/DIB are reallocated at the switch (SoftSurf_AllocPixels +
+  Gx_Resize); present and pointer are data-driven through Gx_ViewportRect.
+- Tactical: iso column bound 9 -> 11 (Map_InitFacingScratch takes the view
+  width; portrait parity 9 pinned by test_tactctl); HUD pad origins, guide
+  lines, status stack, multi-target bars, fade covers, edge tests and hit
+  bands shift through the shared shim (ui/pufo_uigeom, identity default).
+- Geoscape: the screen-centre pair (PUFO_RADAR_HALF_SCREEN_X/Y) is the live
+  surface half-extent (portrait exactly 120/160), crosshair lines span the
+  surface, base strip / globe labels / new-base centering shimmed.
+- Deviations: wider iso grid and wider map view show more world than the
+  original device view (view geometry is a QoL parameter, saves unaffected);
+  scripted campaign feeds author portrait coordinates and route through the
+  shim (App_ScriptPointerLogical).
+
+Evidence: ctest -C Release 67/67 on every phase; wide scripted frames
+build/shot/tact_wide.ppm (live mission, launch PASS) and geo_wide.ppm /
+geo_map_wide.ppm (placement + map, crosshair centered).
+

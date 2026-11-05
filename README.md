@@ -38,10 +38,16 @@ display layer is recreated natively.
 
 ### Landscape (QoL)
 
-`pocketufo.exe --landscape` runs the game on a 320x240 screen: the portrait
-240x320 viewport stays upright (never rotated), is scaled to the screen height
-and centered, with the extra width as side bands — the UI stays in the middle
-of the screen and the mouse maps exactly onto the picture. Resize the window
+`pocketufo.exe --landscape` runs the game on a 320x240 screen:
+
+- the geoscape map (and base placement) and the tactical battlefield fill the
+  whole 320x240 — more world visible; the HUD, strips and all UI stay
+  native-size and centered;
+- every other screen (start menu, base screens, options, save/load, dialogs)
+  shows the upright portrait viewport scaled to the screen height, centered,
+  with black side bands.
+
+The mouse maps exactly onto the picture in both geometries. Resize the window
 and the viewport grows with it. This is a shell QoL mode (the original knew
 wider screens on-device — see `docs/parity/landscape-qol-2026-11-04.md`), not
 a change to the game itself.
