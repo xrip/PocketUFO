@@ -225,8 +225,7 @@ static i32 PointerBaseStrip(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY)
     /* 0x87E6C: outside the map area the tap coordinates are left alone and the stored
      * tap flag decides; inside them the tap cell is recomputed and the flag is raised. */
     u8 bTap;
-    /* QoL wide view: the panel zones follow the shim (identity in portrait). */
-    if (nY >= PufoUi_MapY(232) || nX >= PufoUi_MapX(192) || nY <= 36) {
+    if (nY >= 232 || nX >= 192 || nY <= 36) {
         bTap = *pEnv->pbPlaceActive;
     } else {
         *pEnv->pbPlaceFail = 0;                                              /* 0x87EA0 */

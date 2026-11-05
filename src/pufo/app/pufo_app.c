@@ -1558,7 +1558,7 @@ static u8 App_HoverSampleTile(i32 nMidY, i32 *pnTileX, i32 *pnTileY)
 {
     const SmapView *pView  = &g_world.view;
     const u8       *pTiles = g_world.frame.hover.pTiles;
-    i32 nX = pView->nScrollX + pView->nMapW / 2 + (PufoUi_MapX(120) - PUFO_RADAR_HALF_SCREEN_X);
+    i32 nX = pView->nScrollX + pView->nMapW / 2;
     i32 nY = pView->nScrollY + pView->nMapH / 2 + nMidY - PUFO_RADAR_HALF_SCREEN_Y;
 
     if (nX < 0) { nX += pView->nMapW; }
