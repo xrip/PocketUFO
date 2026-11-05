@@ -9,6 +9,7 @@
 
 #include "asset/pufo_asset.h"
 #include "dat/pufo_dat.h"
+#include "ui/pufo_uigeom.h"
 #include "util/pufo_str.h"
 
 BlitState    g_blitState;
@@ -1374,4 +1375,32 @@ void PadImage_Blit(const PadImage *pPad)
 void PadImage_BlitEx(const PadImage *pPad, u8 nKey)
 {
     SoftSurf_BlitIndexedKeyed(pPad->nOriginX, pPad->nOriginY, pPad->pData, pPad->nMode, nKey);
+}
+
+/* QoL: blit a fixed-origin pad at its shimmed position (identity portrait).
+ * The pads are game-owned mutable PadImages; the draw envs pass them const. */
+void PadImage_BlitShimmed(const PadImage *pPad)
+{
+    PadImage *const pMut = (PadImage *)pPad;
+    const i32 nOriginX = pMut->nOriginX;
+    const i32 nOriginY = pMut->nOriginY;
+
+    pMut->nOriginX = PufoUi_MapX(nOriginX);
+    pMut->nOriginY = PufoUi_MapY(nOriginY);
+    PadImage_Blit(pMut);
+    pMut->nOriginX = nOriginX;
+    pMut->nOriginY = nOriginY;
+}
+
+void PadImage_BlitExShimmed(const PadImage *pPad, u8 nKey)
+{
+    PadImage *const pMut = (PadImage *)pPad;
+    const i32 nOriginX = pMut->nOriginX;
+    const i32 nOriginY = pMut->nOriginY;
+
+    pMut->nOriginX = PufoUi_MapX(nOriginX);
+    pMut->nOriginY = PufoUi_MapY(nOriginY);
+    PadImage_BlitEx(pMut, nKey);
+    pMut->nOriginX = nOriginX;
+    pMut->nOriginY = nOriginY;
 }

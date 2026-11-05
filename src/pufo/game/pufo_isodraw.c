@@ -918,18 +918,7 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
         } while ((i32)pIso->nLayer < (i32)pEnv->nLayerCount);
     }
 
-    {
-        /* QoL: blit the cursor pad at its shimmed origin (identity portrait). */
-        PadImage *pCur = (PadImage *)pEnv->pMiniCursor;
-        const i32 nCurX = pCur->nOriginX;
-        const i32 nCurY = pCur->nOriginY;
-
-        pCur->nOriginX = PufoUi_MapX(nCurX);
-        pCur->nOriginY = PufoUi_MapY(nCurY);
-        PadImage_BlitEx(pCur, 0x3F);
-        pCur->nOriginX = nCurX;
-        pCur->nOriginY = nCurY;
-    }
+    PadImage_BlitExShimmed(pEnv->pMiniCursor, 0x3F); /* QoL shimmed origin */
 
     /* ORIGINAL BUG (0x1F4DC): the label is copied byte by byte to its NUL with no bound; the source
      * is a 205-byte text record and the context buffer is 80. snprintf bounds the copy. The layer

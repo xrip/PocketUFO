@@ -283,4 +283,8 @@ bool PadImage_Load(PadImage *pPad, const char *pszName, u8 nMode);
 void PadImage_Blit(const PadImage *pPad);
 void PadImage_BlitEx(const PadImage *pPad, u8 nKey);
 
+/* QoL landscape shim: blit at the shimmed origin (identity portrait). */
+void PadImage_BlitShimmed(const PadImage *pPad);
+void PadImage_BlitExShimmed(const PadImage *pPad, u8 nKey);
+
 #endif /* PUFO_RENDER_H */

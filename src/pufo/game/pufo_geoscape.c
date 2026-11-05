@@ -1820,14 +1820,7 @@ char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRe
 void RadarScreen_BlitOverlay(PadImage *pOverlayPad)
 {
     if (pOverlayPad != NULL) {
-        const i32 nOriginX = pOverlayPad->nOriginX; /* QoL: blit at the shimmed origin */
-        const i32 nOriginY = pOverlayPad->nOriginY;
-
-        pOverlayPad->nOriginX = PufoUi_MapX(nOriginX);
-        pOverlayPad->nOriginY = PufoUi_MapY(nOriginY);
-        PadImage_Blit(pOverlayPad); /* 0x5d6e0 */
-        pOverlayPad->nOriginX = nOriginX;
-        pOverlayPad->nOriginY = nOriginY;
+        PadImage_BlitShimmed(pOverlayPad); /* 0x5d6e0, QoL shimmed origin */
     }
 }
 
@@ -3605,16 +3598,7 @@ static void Radar_DrawReadout(const RadarUpdateEnv *pEnv)
     }
 
     for (i32 i = 0; i < PUFO_RADAR_BUTTON_BLIT_COUNT; ++i) { /* 0x611A8: MOV R8, #4 */
-        /* QoL: blit each button pad at its shimmed origin (identity portrait). */
-        PadImage *pPad = pUi->apButtonPad[i];
-        const i32 nPadX = pPad->nOriginX;
-        const i32 nPadY = pPad->nOriginY;
-
-        pPad->nOriginX = PufoUi_MapX(nPadX);
-        pPad->nOriginY = PufoUi_MapY(nPadY);
-        PadImage_BlitEx(pPad, PUFO_RADAR_BUTTON_KEY);
-        pPad->nOriginX = nPadX;
-        pPad->nOriginY = nPadY;
+        PadImage_BlitExShimmed(pUi->apButtonPad[i], PUFO_RADAR_BUTTON_KEY); /* QoL shimmed origin */
     }
 
     Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_DAMAGE_LABEL,

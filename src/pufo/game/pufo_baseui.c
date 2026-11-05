@@ -9064,12 +9064,14 @@ static void Options_SetClick(UiControl *pCtl, void (*pfn)(void))
     }
 }
 
-/* Centre one list row on the 240-pixel field and drop it at nY. */
+/* Centre one list row on the 240-pixel field and drop it at nY. QoL: the row
+ * rides at the face centre (whole-stack shift, identity portrait), computed
+ * from the caller's stable design y so the rewrite is idempotent. */
 static void Options_CentreRow(UiControl *pCtl, i32 nY)
 {
     if (pCtl != NULL) {
         pCtl->x = (i16)(120 - (pCtl->uWidth >> 1)); /* 0x6B718 / 0x6B514 */
-        pCtl->y = (i16)nY;                          /* 0x6B73C / 0x6B538 */
+        pCtl->y = (i16)PufoUi_MapCentreY(nY);       /* 0x6B73C / 0x6B538 */
     }
 }
 

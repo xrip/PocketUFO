@@ -10,7 +10,6 @@
  * (neighbour bases 0x18B7C, 0x18C68, 0x18C6C), 0x1661C/0x16654 (the two status
  * record offsets 0x506DB and 0x5060E). */
 #include "game/pufo_tacthud.h"
-#include "ui/pufo_uigeom.h"
 #include "game/pufo_mapcell.h"
 #include "game/pufo_tactstate.h"
 #include "game/pufo_unit.h"
@@ -918,16 +917,6 @@ static void TestHudDraw(void)
     TestEqI32("Menu_DrawLabeledPads walks seven pads",
               Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL), 7);
     TestEqI32("seven pads blitted", g_nPadBlits, 7);
-    TestEqI32("portrait rows stay at the descriptor 60 + 23 * i", aPad[0].y, 60);
-    TestEqI32("  and the last one at 198", aPad[6].y, 198);
-
-    /* QoL: the wide face rides the whole stack at the centre (y - 40). */
-    PufoUi_SetGeometry(40, -80);
-    g_nPadBlits = 0;
-    (void)Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL);
-    TestEqI32("wide rows shift by half offY", aPad[0].y, 20);
-    TestEqI32("  through the drawer, not per-pad anchoring", aPad[6].y, 158);
-    PufoUi_SetGeometry(0, 0);
 
     memset(&anim, 0, sizeof(anim));
     anim.pColor = &color;

@@ -139,7 +139,7 @@ bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nF
          * cover the 240-wide device view. QoL: nViewW > 0 is the shell's wide
          * view, so (240+16)/32+1 = 9 stays the original, (320+16)/32+1 = 11
          * covers 320. nViewW 0 (portrait/tests) is parity-exact. */
-        *pnTileCountX = (nViewW > 0) ? (u8)((nViewW + 16) / 32 + 1) : 9;
+        *pnTileCountX = (nViewW > 0) ? PUFO_TACT_TILE_COLS(nViewW) : 9;
     }
     /* Keep the original's operation order: multiply, then divide, then add. */
     if (pnTileCountY != NULL) {

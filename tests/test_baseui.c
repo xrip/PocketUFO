@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "game/pufo_baseui.h"
+#include "ui/pufo_uigeom.h"
 #include "game/pufo_plane.h"  /* PlaneDrawEnv, BasePlaneScreen_Draw @ 0x7d374 */
 #include "game/pufo_font.h"  /* PufoFont_Init, g_fontSys: the dump renders real labels */
 #include "asset/pufo_asset.h" /* Asset_OpenArchives */
@@ -7730,6 +7731,19 @@ static void TestOptionsAudioTab(void)
         }
     }
     CheckEqI32(nBad, 0, "those four centre at x = 120 - (uWidth >> 1), y = 90 + 25*i (0x6B718)");
+
+    /* QoL: the wide face rides the row stack at the centre (y - 40), from the
+     * same stable design base, so re-running the layout is idempotent. */
+    PufoUi_SetGeometry(40, -80);
+    (void)OptionsScreen_LayoutButtons(&g_optTab);
+    nBad = 0;
+    for (i32 i = 0; i < 4; ++i) {
+        if (g_aOptList[i].y != 50 + 25 * i) {
+            nBad += 1;
+        }
+    }
+    CheckEqI32(nBad, 0, "the wide layout drops the rows at 50 + 25*i");
+    PufoUi_SetGeometry(0, 0);
     CheckEqI32(g_aOptList[4].y, 229, "the fifth row keeps the descriptor's y — only four move");
     CheckEqI32(g_ctlSave.x, 105, "the save hotspot centres on its OWN 30-wide pad (0x6B75C)");
     CheckEqI32(g_ctlSave.y, 198, "  and sits at y 198 (0x6B784)");

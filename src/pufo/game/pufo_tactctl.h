@@ -242,6 +242,10 @@ typedef struct MapTileSize {
 #define PUFO_TILE_W 240u
 #define PUFO_TILE_H 320u
 
+/* Iso columns for a face width: 32-px tiles with the 16-px edge tile.
+ * 240 gives the original's 9 (0x26F48), 320 gives 11. */
+#define PUFO_TACT_TILE_COLS(nViewW) ((u8)(((nViewW) + 16) / 32 + 1))
+
 /* Returns true when the scratch was updated (the facing changed). pnTileCountX/pnTileCountY are
  * the caller's own Map+0x34/0x35 cells; they may be NULL when the caller has no map live. */
 bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nFacing,
