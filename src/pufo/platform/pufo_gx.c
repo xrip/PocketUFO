@@ -150,8 +150,22 @@ bool Gx_Present(GxSurface *pGx)
 
     /* The bands around the viewport stay black (the original's framebuffer
      * had no bands; WndProc answers WM_ERASEBKGND, so nothing else paints
-     * them). */
-    (void)PatBlt(pGx->hdcWindow, 0, 0, nWinW, nWinH, BLACKNESS);
+     * them). Only the bands are cleared: a whole-window BLACKNESS made every
+     * present show a full black window between the clear and the blit --
+     * visible flicker on scaled windows, measured as fully black captured
+     * frames (2026-11-05). The game rect is painted whole by StretchBlt. */
+    if (nX > 0) {
+        (void)PatBlt(pGx->hdcWindow, 0, 0, nX, nWinH, BLACKNESS);
+    }
+    if (nX + nDstW < nWinW) {
+        (void)PatBlt(pGx->hdcWindow, nX + nDstW, 0, nWinW - (nX + nDstW), nWinH, BLACKNESS);
+    }
+    if (nY > 0) {
+        (void)PatBlt(pGx->hdcWindow, nX, 0, nDstW, nY, BLACKNESS);
+    }
+    if (nY + nDstH < nWinH) {
+        (void)PatBlt(pGx->hdcWindow, nX, nY + nDstH, nDstW, nWinH - (nY + nDstH), BLACKNESS);
+    }
 
     (void)SetStretchBltMode(pGx->hdcWindow, COLORONCOLOR);
     (void)StretchBlt(pGx->hdcWindow, nX, nY, nDstW, nDstH,

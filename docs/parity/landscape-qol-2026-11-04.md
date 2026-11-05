@@ -225,3 +225,12 @@ shifted row (158..176 inside, 157/177 outside), the bottom-anchored
 parity edge (138 inside, 139 outside) and portrait (216/217). QA-desktop
 window shots: hovering the last row highlights it alone, clicking closes
 the menu to the tactical map.
+Black flicker fixed at the present (2026-11-05): Gx_Present cleared the
+whole window with PatBlt(BLACKNESS) before StretchBlt-ing the frame to
+the window DC, so every present exposed a full black window between the
+two calls -- the user's periodic blink. Measured by capturing the window
+DC in a tight loop: 5 of 150 frames at mean luminance 0.0. The clear now
+paints only the bands outside the viewport (and only when they exist);
+the game rect is never cleared. Re-capture: 0 of 150 black frames, mean
+luminance steady at 79.4..79.9; the pillarbox bands stay black on the
+options screen. The flicker-capture tool is build/shot/flicker.ps1.
