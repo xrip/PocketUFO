@@ -179,3 +179,12 @@ anchored, battlefield after closing the panel shows the full 117-row HUD
 centred; the НЛО contact card and the new-base placement stay centred as in
 the section above. Radar window parity is by construction (no radar facility
 in the QA map; identity portrait in the unit tests).
+
+Tactical right-edge void (2026-11-05): the iso column count (Map+0x34) is
+written once at mission init and restored from saves, so a landscape load
+kept 9 columns: the 240-wide view ended at x 272, leaving a 48-pixel void
+where edge glyphs (units, labels, the multi-target bars at 207+40) drew over
+nothing. World_RefreshTactFrame now recomputes the count from the live face
+width ((faceW + 16) / 32 + 1: 240 -> 9 parity, 320 -> 11), so the 11
+32-px columns cover -16..336 and the map fills the window. nViewW 0
+(non-landscape, tests) keeps the parity cell; ctest 67/67, e2e 11/11.

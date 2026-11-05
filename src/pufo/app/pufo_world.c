@@ -5502,7 +5502,11 @@ static void World_TactFrameDraw(PufoWorldState *pW, bool bDecRef)
     layer.nCamScrollX     = pW->tactEnv.focus.nCamScrollX;   /* 0x15130, tactEnv.focus owns it */
     layer.nCamScrollY     = pW->tactEnv.focus.nCamScrollY;   /* 0x15134 */
     layer.nLayerCount     = (i8)pW->tactEnv.cursor.nFlags;   /* 0x15138 */
-    layer.nTileCountX     = pW->sTactInput.nTileShiftX;      /* 0x34 */
+    /* 0x34. QoL wide view: the count is stored once at mission init (and restored from a
+     * save), so recompute the column count from the live face width here: 240 gives the
+     * original 9, 320 gives 11, and nViewW 0 (non-landscape, tests) keeps the parity cell. */
+    layer.nTileCountX     = (pW->nViewW > 0) ? (u8)((pW->nViewW + 16) / 32 + 1)
+                                             : pW->sTactInput.nTileShiftX;
     layer.nTileCountY     = pW->sTactInput.nTileShiftY;      /* 0x35 */
     layer.nMapPhase       = nPhase;                          /* 0x37 */
     layer.pGrid           = &grid;
