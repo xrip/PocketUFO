@@ -198,10 +198,12 @@ i32 UiModal_DrawDialog(UiModalAnim *pAnim, const u8 *pTextRecs, i32 nWidth,
             if (i >= nLen) {
                 continue;
             }
-            /* ORIGINAL BUG (0x26E14), reproduced: the character index is i + nLine, so line N
-             * drops as many leading characters as its own index even though every line is a
-             * different record. With the count formula above the reveal runs diagonally. */
-            szChar[0] = szLine[i + nLine];
+            /* QoL DEVIATION (2026-11-05, user decision): the original indexes
+             * szLine[i + nLine] (0x26E14), so line N drops N leading characters
+             * of its own record -- the leave-mission dialog cuts the digits off
+             * lines 2..5. The port draws the whole line. The glow distance below
+             * keeps the original's i + nLine (cosmetic only). */
+            szChar[0] = szLine[i];
             szChar[1] = 0;
 
             nDist = Abs32(i + nLine - pAnim->nCursor + 2);

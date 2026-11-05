@@ -243,3 +243,16 @@ to the direct bands-only path. Gx_Close frees the buffer. Measured with
 flicker.ps1, 150 window-DC captures each: landscape 640x480 0 black
 (luminance 79.4..79.9), portrait 480x640 (2x, the mode that had the
 worst blink) 0 black (90.4..91.0).
+Modal text diagonal fixed in every mode (2026-11-05, user decision:
+deviate from parity): UiModal_DrawDialog indexes the reveal as
+szLine[i + nLine] (IDB comment at 0x26E14: each line drops as many
+leading characters as its own line number -- "a diagonal reveal, not a
+typewriter"), so the leave-mission dialog cut the digits and word
+beginnings off lines 2..5 ("солдат" without its count, "ервать" for
+"Прервать"). The original shows the same on the phone; the wide face
+just exposed the overflow tails. The port now draws szLine[i] -- full
+lines -- and keeps the original i + nLine only in the cosmetic glow
+distance. The deviation is in portrait as well as wide. QA window shots:
+the dialog reads "7 солдат и 0 танков / в Зоне выхода, / 1 солдат и 0
+танков / вне Зоны Выхода. / Прервать миссию?" with YES/NO below; ctest
+67/67, e2e 11/11.
