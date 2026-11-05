@@ -212,3 +212,16 @@ QA-desktop window shots settled it: clean stack, single-row highlight, the
 PufoUi_MapCentreY shift (test_baseui pins 90+25*i portrait, 50+25*i wide);
 test_tacthud pins the drawer: 60..198 portrait, 20..158 wide, second pass
 no-ops, 90+25*i passes through. ctest 67/67, e2e 11/11.
+The same whack-a-mole class, closed at its root (2026-11-05): «Закрыть
+меню» (row 6) still refused the click, because UiControl_HitTest measured
+the far y edge as MapY(y + uHeight - 1): for the centred row (top 158,
+height 20) the near edge took the top rule (no shift) and the far edge
+took the bottom rule (-80), inverting the box. MapY's 160 split is a
+design-space rule; the far edge now runs from the shifted top, MapY(y) +
+uHeight - 1, exclusive as 0x1A42C. Portrait, top- and bottom-anchored
+design rows compute the identical edge (parity); only a row centred
+across the seam changes, and it becomes hittable. test_control pins the
+shifted row (158..176 inside, 157/177 outside), the bottom-anchored
+parity edge (138 inside, 139 outside) and portrait (216/217). QA-desktop
+window shots: hovering the last row highlights it alone, clicking closes
+the menu to the tactical map.

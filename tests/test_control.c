@@ -5,6 +5,7 @@
  * inert mode 2, and the disabled case.
  */
 #include "ui/pufo_control.h"
+#include "ui/pufo_uigeom.h" /* QoL wide-view shim: identity in portrait */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -483,6 +484,29 @@ static void TestHitTest(void)
     HitControl(&ctl, 0, 0);
     LogReset();
     Check(UiControl_HitTest(&ctl, 20, 30, true, false, &ctx), "  the near corner is inside");
+
+    /* QoL wide face: the box runs from the shifted top. A menu row centred
+     * across the MapY 160 seam (y 158, height 20) keeps one contiguous box --
+     * the old far edge shimmed 177 to 97 and inverted it, so «Закрыть меню»
+     * was unhittable. Bottom-anchored rows keep 0x1A42C's exact edge. */
+    HitControl(&ctl, 0, 0);
+    ctl.x = 27; ctl.y = 158; ctl.uWidth = 183; ctl.uHeight = 20;
+    PufoUi_SetGeometry(40, -80);
+    LogReset();
+    Check(UiControl_HitTest(&ctl, 70, 158, true, false, &ctx), "  wide: the shifted top hits");
+    Check(UiControl_HitTest(&ctl, 70, 176, true, false, &ctx), "  wide: the last box pixel hits");
+    Check(!UiControl_HitTest(&ctl, 70, 177, true, false, &ctx), "  wide: height - 1 is outside");
+    Check(!UiControl_HitTest(&ctl, 70, 157, true, false, &ctx), "  wide: above the top misses");
+    ctl.y = 200; /* bottom-anchored design row: top 120, far edge 139, as 0x1A42C */
+    LogReset();
+    Check(UiControl_HitTest(&ctl, 70, 138, true, false, &ctx), "  wide: bottom-anchored far edge is the parity edge");
+    Check(!UiControl_HitTest(&ctl, 70, 139, true, false, &ctx), "  wide: 139 stays outside");
+    PufoUi_SetGeometry(0, 0);
+    ctl.y = 198; /* portrait: identity, far edge y + h - 1 = 217 is exclusive */
+    LogReset();
+    Check(UiControl_HitTest(&ctl, 30, 216, true, false, &ctx), "  portrait: 216 is the last pixel");
+    Check(!UiControl_HitTest(&ctl, 30, 217, true, false, &ctx), "  portrait: 217 is outside");
+    HitControl(&ctl, 0, 0);
 
     /* Mode 1 press: state += 2 with a redraw. */
     HitControl(&ctl, 1, 0);

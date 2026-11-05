@@ -120,11 +120,15 @@ bool UiControl_HitTest(UiControl *pCtl, i32 x, i32 y, bool bDown, bool bForceCli
      * one pixel short of x + uWidth and y + uHeight. */
     if (bDown) {
         /* The box shifts with the pad through the same shim, so draw and hit
-         * can never disagree. */
+         * can never disagree. The far y edge runs from the shifted top, not
+         * from the shimmed bottom: MapY's 160 split is a design-space rule,
+         * and a QoL row centred across that seam (top 158, bottom 177) must
+         * keep one contiguous box, not an inverted one. Portrait, top- and
+         * bottom-anchored rows give the identical edge as 0x1A42C. */
         bHit = x >= PufoUi_MapX(pCtl->x)
             && y >= PufoUi_MapY(pCtl->y)
             && x < PufoUi_MapX((i32)pCtl->x + (i32)pCtl->uWidth - 1)
-            && y < PufoUi_MapY((i32)pCtl->y + (i32)pCtl->uHeight - 1);
+            && y < PufoUi_MapY((i32)pCtl->y) + (i32)pCtl->uHeight - 1;
     }
 
     if (bDown) {
