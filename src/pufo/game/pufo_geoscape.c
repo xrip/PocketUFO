@@ -4471,6 +4471,18 @@ i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
     Text_DrawString(PufoUi_MapX(120) - nWidth / 2, PufoUi_MapY(nLabelY), szText); /* 0x67B08, both arms land here */
     return nTile;                                                        /* 0x67B0C, the caller's bPendingRegionId */
 }
+/* One card rides the face whole: its shift is the shim value of its own box
+ * top. The list card (box 260) is bottom-anchored and rides at -80; the
+ * top-anchored cards (box 5..130) keep design y. MapY's 160 split must never
+ * cut one card in two -- that split is for bottom-anchored chrome (the nav
+ * strip, the deploy bar). Set at each box blit, read by the helpers below. */
+static i32 g_nStatusCardShiftY;
+
+static void StatusPanel_CardShift(i32 nBoxY)
+{
+    g_nStatusCardShiftY = PufoUi_MapY(nBoxY) - nBoxY;
+}
+
 
 /* --- Geoscape_Draw @ 0x8c180 status panel (0x8C760..0x8E658) ------------------------ */
 
@@ -4480,7 +4492,19 @@ static void StatusPanel_DrawAt(i32 nCentreX, i32 nY, const char *psz)
 {
     const i32 nWidth = Text_MeasureWidth(psz);
 
-    Text_DrawString(PufoUi_MapX(nCentreX) - nWidth / 2, PufoUi_MapY(nY), psz);
+    Text_DrawString(PufoUi_MapX(nCentreX) - nWidth / 2, nY + g_nStatusCardShiftY, psz);
+}
+
+/* Controls blit through UiControl_BlitActivePad, which applies MapY to the
+ * stored y: store the design y directly when it sits above the split, and
+ * the compensated value where it does not (portrait offY 0: always the
+ * design y, so the parity surface is untouched). */
+static i16 StatusPanel_CardCtlY(i32 nDesignY)
+{
+    const i32 nTargetY = nDesignY + g_nStatusCardShiftY;
+
+    return (i16)((nTargetY >= PUFO_UI_BOTTOM_ANCHOR_Y) ? nTargetY - PufoUi_OffY()
+                                                        : nTargetY);
 }
 
 static void StatusPanel_CopyRec(const GeoscapeStatusPanelEnv *pEnv, char *pszDst, i32 nRec)
@@ -4504,7 +4528,8 @@ static void StatusPanel_PackColour(const GeoscapeStatusPanelEnv *pEnv)
 
 static void StatusPanel_Anim(const GeoscapeStatusPanelEnv *pEnv, i32 nY, i32 nH)
 {
-    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, PufoUi_MapX(0), PufoUi_MapY(nY), PUFO_STATUS_ANIM_W, nH, 1);
+    StatusPanel_CardShift(nY);
+    (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, PufoUi_MapX(0), nY + g_nStatusCardShiftY, PUFO_STATUS_ANIM_W, nH, 1);
 }
 
 /* The two bottom controls: x is fixed per control, y per arm, then both are blitted. */
@@ -4514,10 +4539,10 @@ static void StatusPanel_SetControls(const GeoscapeStatusPanelEnv *pEnv, i32 nCtl
     UiControl *const pOpen = pEnv->pCtlOpen;
 
     pSfx->x = (i16)PUFO_STATUS_CTL_X_SFX;                              /* 0x8C9C8 */
-    pSfx->y = (i16)nCtlY;                                              /* 0x8C9D8 */
+    pSfx->y = StatusPanel_CardCtlY(nCtlY);                                              /* 0x8C9D8 */
     pSfx->pfnClick = pEnv->pfnCtlSfx;                                  /* 0x8C9E0 */
     pOpen->x = (i16)PUFO_STATUS_CTL_X_OPEN;                            /* 0x8C9EC */
-    pOpen->y = (i16)nCtlY;                                             /* 0x8C9F8 */
+    pOpen->y = StatusPanel_CardCtlY(nCtlY);                                             /* 0x8C9F8 */
     pOpen->pfnClick = pEnv->pfnCtlOpen;                                /* 0x8CA04 */
     (void)UiControl_BlitActivePad(pSfx, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                /* 0x8CA0C */
@@ -4573,6 +4598,7 @@ static void StatusPanel_DrawActionFail(const GeoscapeStatusPanelEnv *pEnv, char 
         return;                                                        /* 0x8E68C BNE */
     }
     /* bEnabled is LDRSB of dwActionFail: 1, which the gate above has just proved. */
+    StatusPanel_CardShift(0x82);
     (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, PufoUi_MapX(0x14), PufoUi_MapY(0x82), 0xC8, StatusPanel_MapHalfW(pEnv),
                                       (i8)(u8)*pEnv->pnActionFail);    /* 0x8E6A8 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_NO_MONEY);         /* 0x8E6B0 record 406 */
@@ -4601,7 +4627,7 @@ static void StatusPanel_CentredCtlX(UiControl *pCtl)
 static void StatusPanel_BlitSelControl(const GeoscapeStatusPanelEnv *pEnv, UiControl *pCtl, i32 nY)
 {
     StatusPanel_CentredCtlX(pCtl);                                     /* 0x8ECC0 */
-    pCtl->y = (i16)nY;                                                 /* 0x8ECCC / 0x8ECF4 */
+    pCtl->y = StatusPanel_CardCtlY(nY);                                                 /* 0x8ECCC / 0x8ECF4 */
     (void)UiControl_BlitActivePad(pCtl, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                /* 0x8ED04 */
 }
@@ -4626,8 +4652,10 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
     const i32 nCancelY     = bHyper ? PUFO_STATUS_Y_SEL_CANCEL_HYP : PUFO_STATUS_Y_SEL_CANCEL_STD;
 
     if (bHyper) {
+        StatusPanel_CardShift(0x32);
         (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0), PufoUi_MapY(0x32), 0xEC, 0xB4, 0, 0x28, 0x32, 0xB4, 0);
     } else {                                                          /* 0x8E728 BNE */
+        StatusPanel_CardShift(0x46);
         (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x46), 0xD0, StatusPanel_MapHalfW(pEnv),
                                 0, 0x28, 0x32, 0xB4, 0);
     }
@@ -4656,7 +4684,7 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
         StatusPanel_CopyRec(pEnv, szLabel, g_anStatusSizeRec[nKind]);
         (void)pufo_strcat(pEnv->pszRadarMsg, szLabel, PUFO_TEXT_REC_STRIDE); /* 0x8EBB4 */
     }
-    Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_SIZE,
+    Text_DrawString(PufoUi_MapX(PUFO_STATUS_TEXT_X_LEFT_PANEL), PUFO_STATUS_Y_SEL_SIZE + g_nStatusCardShiftY,
                     pEnv->pszRadarMsg);                               /* 0x8EBBC..0x8EBC8, x 40 */
 
     /* The speed line. psz keeps the size number unless nTimer > 0 replaces it with "0", so a
@@ -4669,7 +4697,7 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
     (void)pufo_strcat(pEnv->pszRadarMsg, psz, PUFO_TEXT_REC_STRIDE);                              /* 0x8EC44 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_KNOTS);            /* 0x8EC48 record 1365 */
     (void)pufo_strcat(pEnv->pszRadarMsg, psz, PUFO_TEXT_REC_STRIDE);                              /* 0x8EC54 */
-    Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_SPEED,
+    Text_DrawString(PufoUi_MapX(PUFO_STATUS_TEXT_X_LEFT_PANEL), PUFO_STATUS_Y_SEL_SPEED + g_nStatusCardShiftY,
                     pEnv->pszRadarMsg);                                /* 0x8EC58..0x8EC68, x 40 */
 
     pEnv->pCtlConfirm->pfnClick = pEnv->pfnSelectTarget;              /* 0x8EC84 Smap_OnPointerUp */
@@ -4690,7 +4718,7 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
             StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_TYPE_FIRST + nSelfKind);
             (void)pufo_strcat(pEnv->pszHyper, psz, PUFO_TEXT_REC_STRIDE); /* 0x8EF34 */
         }
-        Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_TYPE, pEnv->pszHyper);
+        Text_DrawString(PufoUi_MapX(PUFO_STATUS_TEXT_X_LEFT_PANEL), PUFO_STATUS_Y_SEL_TYPE + g_nStatusCardShiftY, pEnv->pszHyper);
 
         StatusPanel_CopyRec(pEnv, pEnv->pszHyper, PUFO_STATUS_TEXT_RACE_LABEL); /* 0x8EF4C record 1347 */
         const i32 nRace = (i32)(i8)pEntry->bRace;                     /* 0x8EF90, a CMP chain: race 0
@@ -4702,7 +4730,7 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
             StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_RACE_FIRST + nRace);
             (void)pufo_strcat(pEnv->pszHyper, psz, PUFO_TEXT_REC_STRIDE); /* 0x8F000 */
         }
-        Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_RACE, pEnv->pszHyper);
+        Text_DrawString(PufoUi_MapX(PUFO_STATUS_TEXT_X_LEFT_PANEL), PUFO_STATUS_Y_SEL_RACE + g_nStatusCardShiftY, pEnv->pszHyper);
 
         StatusPanel_CopyRec(pEnv, pEnv->pszHyper, PUFO_STATUS_TEXT_MISSION_LABEL); /* 0x8F018 record 1348 */
         const i32 nMission = (i32)(i8)pEntry->nMissionSub;            /* 0x8F05C LDRSB [R0,#0x39] */
@@ -4710,7 +4738,7 @@ static void StatusPanel_DrawSelectedContact(const GeoscapeStatusPanelEnv *pEnv, 
             StatusPanel_CopyRec(pEnv, psz, g_anStatusMissionRec[nMission]);
             (void)pufo_strcat(pEnv->pszHyper, psz, PUFO_TEXT_REC_STRIDE); /* 0x8F0F4 */
         }
-        Text_DrawString(PUFO_STATUS_TEXT_X_LEFT_PANEL, PUFO_STATUS_Y_SEL_MISSION, pEnv->pszHyper);
+        Text_DrawString(PufoUi_MapX(PUFO_STATUS_TEXT_X_LEFT_PANEL), PUFO_STATUS_Y_SEL_MISSION + g_nStatusCardShiftY, pEnv->pszHyper);
 
         /* The controls come after the lines on this path (0x8F10C..0x8F160). */
         StatusPanel_BlitSelControl(pEnv, pEnv->pCtlConfirm, nCtlYConfirm);
@@ -4733,6 +4761,7 @@ static void StatusPanel_DrawBaseLost(const GeoscapeStatusPanelEnv *pEnv, char *p
     if (pEnv->apSiteRecs == NULL || pEnv->pCtlA == NULL || pEnv->pfnResolveInterceptUI == NULL) {
         return;
     }
+    StatusPanel_CardShift(0x3C);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F278..0x8F2B0 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_BASE_LABEL);         /* 0x8F2B4 record 1214 */
@@ -4765,6 +4794,7 @@ static void StatusPanel_DrawFuelLow(const GeoscapeStatusPanelEnv *pEnv, char *ps
         || pEnv->pCtlA == NULL || pEnv->pfnDismissSelected == NULL) {
         return;
     }
+    StatusPanel_CardShift(0x3C);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F428..0x8F45C */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);         /* 0x8F460 record 1216 */
@@ -4785,6 +4815,7 @@ static void StatusPanel_DrawFlyToPoint(const GeoscapeStatusPanelEnv *pEnv, char 
         || pEnv->pfnResolveInterceptUI == NULL) {
         return;
     }
+    StatusPanel_CardShift(0x3C);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_SHORT,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F5BC..0x8F5F0 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_FLY_TO_POINT);       /* 0x8F5F4 record 1218 */
@@ -4793,8 +4824,8 @@ static void StatusPanel_DrawFlyToPoint(const GeoscapeStatusPanelEnv *pEnv, char 
     pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x8F69C / 0x8F6A0 */
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                /* 0x8F650..0x8F660 */
     StatusPanel_CentredCtlX(pEnv->pCtlB);                                /* 0x8F664..0x8F674 */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_ORDERCTL_Y_TOP;                    /* 0x8F678/0x8F680: 100 */
-    pEnv->pCtlB->y = (i16)PUFO_STATUS_ORDERCTL_Y_BOTTOM;                 /* 0x8F68C: 124, R6 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_ORDERCTL_Y_TOP);                    /* 0x8F678/0x8F680: 100 */
+    pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_ORDERCTL_Y_BOTTOM);                 /* 0x8F68C: 124, R6 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x8F6A8 */
     (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
@@ -4815,6 +4846,7 @@ static void StatusPanel_DrawPointReached(const GeoscapeStatusPanelEnv *pEnv, cha
         || pEnv->pfnSetWaypoint == NULL) {
         return;
     }
+    StatusPanel_CardShift(0x3C);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(0x3C), 0xD0, PUFO_STATUS_ORDER_NH_TALL,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x8F770..0x8F7A8 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_SHIP_LABEL);         /* 0x8F7AC record 1216 */
@@ -4826,8 +4858,8 @@ static void StatusPanel_DrawPointReached(const GeoscapeStatusPanelEnv *pEnv, cha
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_Y_ORDER_0E_LINE3, psz); /* 0x8F8D0 y 102 */
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                /* 0x8F8DC..0x8F8EC */
     StatusPanel_CentredCtlX(pEnv->pCtlConfirm);                          /* 0x8F8F0..0x8F900 */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_ORDERCTL_Y_BOTTOM;                 /* 0x8F90C: 124, R6 */
-    pEnv->pCtlConfirm->y = (i16)PUFO_STATUS_ORDERCTL_Y_0E_CONF;          /* 0x8F914: 150 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_ORDERCTL_Y_BOTTOM);                 /* 0x8F90C: 124, R6 */
+    pEnv->pCtlConfirm->y = StatusPanel_CardCtlY(PUFO_STATUS_ORDERCTL_Y_0E_CONF);          /* 0x8F914: 150 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x8F91C */
     (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
@@ -4879,6 +4911,7 @@ static void StatusPanel_DrawCraftDetail(const GeoscapeStatusPanelEnv *pEnv, char
     const PadImage *const pStrip = pEnv->pStripPad;                      /* 0x8F9FC..0x8FA2C */
     SoftSurf_BlitSrcRect(pStrip->nOriginX, pStrip->nOriginY, pStrip->uWidth, pStrip->uHeight,
                          0x3C, 0x78, 0x82, 0x96);                        /* 0x8FA30 */
+    StatusPanel_CardShift(5);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(5), 0xD0, PUFO_STATUS_DETAIL_NH,
                             0, 0x28, 0x32, 0xB4, 0);                     /* 0x8FA34..0x8FA70 */
 
@@ -4978,7 +5011,7 @@ static void StatusPanel_DrawCraftDetail(const GeoscapeStatusPanelEnv *pEnv, char
                                     PUFO_STATUS_DETAILCTL_Y_PATROL, PUFO_STATUS_DETAILCTL_Y_CANCEL };
     for (i32 i = 0; i < 4; ++i) {
         StatusPanel_CentredCtlX(apCtrls[i]);                              /* 0x9000C..0x90058 */
-        apCtrls[i]->y = anCtrlY[i];                                       /* 0x9005C..0x90088 */
+        apCtrls[i]->y = StatusPanel_CardCtlY(anCtrlY[i]);                                       /* 0x9005C..0x90088 */
         (void)UiControl_BlitActivePad(apCtrls[i], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);                /* 0x9008C..0x900A4 */
     }
@@ -5017,6 +5050,7 @@ static void StatusPanel_DrawInterceptPause(const GeoscapeStatusPanelEnv *pEnv, c
                                                                         * constants as the 0x0B card */
     SoftSurf_BlitSrcRect(pStrip->nOriginX, pStrip->nOriginY, pStrip->uWidth, pStrip->uHeight,
                          0x3C, 0x78, 0x82, 0x96);
+    StatusPanel_CardShift(PUFO_STATUS_PAUSE_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_PAUSE_ANIM_Y), 0xD0, PUFO_STATUS_PAUSE_NH,
                             0, 0x28, 0x32, 0xB4, 0);                   /* 0x90278..0x902B0, box
                                                                         * x 14..225, y 70..195 */
@@ -5044,7 +5078,7 @@ static void StatusPanel_DrawInterceptPause(const GeoscapeStatusPanelEnv *pEnv, c
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_PAUSE_Y_LINE2, psz); /* 0x90410 y 118 */
 
     StatusPanel_CentredCtlX(pEnv->pCtlB);                               /* 0x90440..0x90450 */
-    pEnv->pCtlB->y = (i16)PUFO_STATUS_PAUSECTL_Y;                      /* 0x90454: 155 */
+    pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_PAUSECTL_Y);                      /* 0x90454: 155 */
     (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                 /* 0x90464, BEFORE the handler */
     pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;               /* 0x90468 / 0x9047C */
@@ -5061,6 +5095,7 @@ static void StatusPanel_DrawCityAttacked(const GeoscapeStatusPanelEnv *pEnv, cha
         return;
     }
 
+    StatusPanel_CardShift(PUFO_STATUS_CITY_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_CITY_ANIM_Y), 0xD0, PUFO_STATUS_CITY_NH,
                             0, 0x28, 0x32, 0xB4, 0);                   /* 0x9050C..0x90538, box
                                                                         * x 14..225, y 70..195 */
@@ -5080,13 +5115,13 @@ static void StatusPanel_DrawCityAttacked(const GeoscapeStatusPanelEnv *pEnv, cha
     StatusPanel_DrawAt(PUFO_STATUS_TEXT_X_CENTRE, PUFO_STATUS_CITY_Y_LINE2, psz); /* 0x9060C, y 104 */
 
     StatusPanel_CentredCtlX(pEnv->pCtlConfirm);                        /* 0x90614..0x90624 */
-    pEnv->pCtlConfirm->y = (i16)PUFO_STATUS_CITYCTL_Y_CONFIRM;         /* 0x9062C: 136 */
+    pEnv->pCtlConfirm->y = StatusPanel_CardCtlY(PUFO_STATUS_CITYCTL_Y_CONFIRM);         /* 0x9062C: 136 */
     (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                /* 0x90638, BEFORE the handler */
     pEnv->pCtlConfirm->pfnClick = pEnv->pfnSelectTarget;              /* 0x90640 / 0x90648, Smap_OnPointerUp */
 
     StatusPanel_CentredCtlX(pEnv->pCtlA);                              /* 0x9064C..0x9065C */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_CITYCTL_Y_ACTION;                /* 0x90664: 160 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_CITYCTL_Y_ACTION);                /* 0x90664: 160 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                /* 0x90670, BEFORE the handler */
     pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;              /* 0x90674 / 0x9067C */
@@ -5142,20 +5177,21 @@ static void StatusPanel_DrawInterceptList(const GeoscapeStatusPanelEnv *pEnv, ch
                                       pEnv->pCtlBlitUser);
     }
 
+    StatusPanel_CardShift(PUFO_STATUS_LIST_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_LIST_ANIM_Y), 0xD0, PUFO_STATUS_LIST_NH,
                             0, 0x1E, 0x28, 0xFF, 0);                       /* 0x907F8..0x90828, box
                                                                             * x 14..225, y 260..305:
                                                                             * over the clock it drew */
 
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_CHOOSE_TARGET);        /* 0x9082C, record 1235 */
-    Text_DrawString(PUFO_STATUS_LIST_X_LABEL, PUFO_STATUS_LIST_Y_LINE, psz);
+    Text_DrawString(PufoUi_MapX(PUFO_STATUS_LIST_X_LABEL), PUFO_STATUS_LIST_Y_LINE + g_nStatusCardShiftY, psz);
                                                                            /* 0x90858..0x9086C: no
                                                                             * Text_MeasureWidth here at
                                                                             * all -- x is fixed at 0x28 */
 
     pEnv->pCtlB->x = (i16)PUFO_STATUS_LISTCTL_X;                           /* 0x90874 / 0x9087C: 140,
                                                                             * the un-centred control */
-    pEnv->pCtlB->y = (i16)PUFO_STATUS_LISTCTL_Y;                           /* 0x90888: 274 */
+    pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_LISTCTL_Y);                           /* 0x90888: 274 */
     (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                    /* 0x90894, BEFORE the handler */
     pEnv->pCtlB->pfnClick = pEnv->pfnResolveInterceptUI;                  /* 0x90898 / 0x908A4 */
@@ -5171,7 +5207,7 @@ static void StatusPanel_DrawInterceptList(const GeoscapeStatusPanelEnv *pEnv, ch
                                   pEnv->pCtlBlitUser);                    /* 0x9090C / 0x90910 */
     StatusPanel_CopyRec(pEnv, psz, PUFO_STATUS_TEXT_FINAL_MISSION);        /* 0x90914, record 1236 */
     const i32 nWidth = Text_MeasureWidth(psz);                             /* 0x90948 */
-    Text_DrawString((i32)(pEnv->pCtlConfirm->uWidth >> 1) - (nWidth >> 1) + 1,
+    Text_DrawString(PufoUi_MapX((i32)(pEnv->pCtlConfirm->uWidth >> 1) - (nWidth >> 1) + 1),
                     PUFO_STATUS_FINAL_MISSION_Y, psz);                     /* 0x90964..0x90970: the
                                                                             * control's x is never read,
                                                                             * and y is 1 */
@@ -5208,6 +5244,7 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
      * nMode come from R8 and nKey from R11 (0xB4), all left behind by the flag-0x10 TEST prologue
      * (0x904EC, 0x904F0, 0x904F4), which runs before this arm's test whether or not flag 0x10 was
      * taken; srcY 0x32, srcX 0x28 and nH 0x5A are immediates. Box x 14..225, y 60..155. */
+    StatusPanel_CardShift(PUFO_STATUS_TARGET_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);
 
@@ -5245,7 +5282,7 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
         /* 0x90C4C..0x90C80: *pCtlB centred on 120, y 102, with Smap_CancelTarget installed at 0x90C78
          * BEFORE the 0x90C80 blit -- the order the 0x0B, 0x0D, 0x10 and 0x1B arms have the other way. */
         StatusPanel_CentredCtlX(pEnv->pCtlB);                              /* 0x90C54..0x90C60 */
-        pEnv->pCtlB->y = (i16)PUFO_STATUS_TARGETCTL_Y_CANCEL;             /* 0x90C64 / 0x90C6C */
+        pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_CANCEL);             /* 0x90C64 / 0x90C6C */
         pEnv->pCtlB->pfnClick = pEnv->pfnCancelTarget;                    /* 0x90C74 / 0x90C78 */
         (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);                /* 0x90C80 */
@@ -5255,7 +5292,7 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
                                                                           /* 0x90CD4, y 103 */
 
         StatusPanel_CentredCtlX(pEnv->pCtlA);                             /* 0x90CE0..0x90CEC */
-        pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;                /* 0x90CF0 / 0x90CF8 */
+        pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_OK2);                /* 0x90CF0 / 0x90CF8 */
         pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;              /* 0x90D00 / 0x90D04 */
         (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);                /* 0x90D0C */
@@ -5269,7 +5306,7 @@ static void StatusPanel_DrawTargetPanel(const GeoscapeStatusPanelEnv *pEnv, char
 
     /* 0x90B34..0x90B68: *pCtlA centred, y 115, handler installed at 0x90B60 before the 0x90B68 blit. */
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                  /* 0x90B3C..0x90B48 */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK;                     /* 0x90B4C / 0x90B54 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_OK);                     /* 0x90B4C / 0x90B54 */
     pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                  /* 0x90B5C / 0x90B60 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                    /* 0x90B68 */
@@ -5352,6 +5389,7 @@ static void StatusPanel_DrawMissionSite(const GeoscapeStatusPanelEnv *pEnv, char
     /* 0x90DB8..0x90DE4 and 0x90F4C..0x90F78 store the same values as the 0x14 arm. The two zeros are
      * `MOV R0,#0` at 0x90DB0 and the key is the literal 0xB4 at 0x90DAC -- both before the 0x90DB4
      * branch -- because R11 is holding 0xBD8 here and cannot carry the key. Box x 14..225, y 60..155. */
+    StatusPanel_CardShift(PUFO_STATUS_TARGET_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);
 
@@ -5377,7 +5415,7 @@ static void StatusPanel_DrawMissionSite(const GeoscapeStatusPanelEnv *pEnv, char
 
     if (bSelecting) {
         StatusPanel_CentredCtlX(pEnv->pCtlB);                             /* 0x91088..0x91094 */
-        pEnv->pCtlB->y = (i16)PUFO_STATUS_SITECTL_Y_CANCEL;              /* 0x91098 / 0x910A0: y 105 */
+        pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_SITECTL_Y_CANCEL);              /* 0x91098 / 0x910A0: y 105 */
         pEnv->pCtlB->pfnClick = pEnv->pfnCancelTarget;                   /* 0x910A8 / 0x910AC */
         (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);               /* 0x910B4 */
@@ -5387,7 +5425,7 @@ static void StatusPanel_DrawMissionSite(const GeoscapeStatusPanelEnv *pEnv, char
                                                                          /* 0x91104, y 106 */
 
         StatusPanel_CentredCtlX(pEnv->pCtlA);                             /* 0x91110..0x9111C */
-        pEnv->pCtlA->y = (i16)PUFO_STATUS_SITECTL_Y_OK2;                 /* 0x91120 / 0x91128: y 128 */
+        pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_SITECTL_Y_OK2);                 /* 0x91120 / 0x91128: y 128 */
         pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;             /* 0x91130 / 0x91134 */
         (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);               /* 0x9113C */
@@ -5399,7 +5437,7 @@ static void StatusPanel_DrawMissionSite(const GeoscapeStatusPanelEnv *pEnv, char
     }
 
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x90EE0..0x90EF0 */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_SITECTL_Y_OK;                      /* 0x90EF4 / 0x90EFC: y 115 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_SITECTL_Y_OK);                      /* 0x90EF4 / 0x90EFC: y 115 */
     pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x90F04 / 0x90F08 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x90F10 */
@@ -5421,6 +5459,7 @@ static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz
     }
     const bool bSelecting = *pEnv->pbMapSelectionFlag != 0;
 
+    StatusPanel_CardShift(PUFO_STATUS_TARGET_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x911C4..0x911F0 / 0x912CC..0x912F8 */
 
@@ -5446,7 +5485,7 @@ static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz
 
     if (bSelecting) {
         StatusPanel_CentredCtlX(pEnv->pCtlB);                             /* 0x9137C..0x91388 */
-        pEnv->pCtlB->y = (i16)PUFO_STATUS_TARGETCTL_Y_CANCEL;            /* 0x9138C / 0x91394: y 102 */
+        pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_CANCEL);            /* 0x9138C / 0x91394: y 102 */
         pEnv->pCtlB->pfnClick = pEnv->pfnCancelTarget;                   /* 0x9139C / 0x913A0 */
         (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);               /* 0x913A8 */
@@ -5456,7 +5495,7 @@ static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz
                                                                          /* 0x913F8, y 103 */
 
         StatusPanel_CentredCtlX(pEnv->pCtlA);                             /* 0x91404..0x91410 */
-        pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;               /* 0x91414 / 0x9141C: y 125 */
+        pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_OK2);               /* 0x91414 / 0x9141C: y 125 */
         pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;             /* 0x91424 / 0x91428 */
         (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                       pEnv->pCtlBlitUser);               /* 0x91430 */
@@ -5468,7 +5507,7 @@ static void StatusPanel_DrawTravel(const GeoscapeStatusPanelEnv *pEnv, char *psz
     }
 
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x91260..0x91270 */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK;                     /* 0x91274 / 0x9127C: y 115 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_OK);                     /* 0x91274 / 0x9127C: y 115 */
     pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                  /* 0x91284 / 0x91288 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                    /* 0x91290 */
@@ -5504,6 +5543,7 @@ static void StatusPanel_DrawDescentPanel(const GeoscapeStatusPanelEnv *pEnv, cha
         return;
     }
 
+    StatusPanel_CardShift(PUFO_STATUS_TARGET_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x914A4..0x914DC */
 
@@ -5516,7 +5556,7 @@ static void StatusPanel_DrawDescentPanel(const GeoscapeStatusPanelEnv *pEnv, cha
                                                                          /* 0x91528, 0x91548, y 70 */
 
     StatusPanel_CentredCtlX(pEnv->pCtlB);                                 /* 0x91554..0x91560 */
-    pEnv->pCtlB->y = (i16)PUFO_STATUS_TARGETCTL_Y_CANCEL;                /* 0x9156C: y 102 */
+    pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_CANCEL);                /* 0x9156C: y 102 */
     pEnv->pCtlB->pfnClick = pEnv->pfnBeginCraftSelect;                   /* 0x91578 */
     (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x91580 */
@@ -5528,7 +5568,7 @@ static void StatusPanel_DrawDescentPanel(const GeoscapeStatusPanelEnv *pEnv, cha
     StatusPanel_CraftSelectGate(pEnv);                                   /* 0x915D4..0x91604 */
 
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x9160C..0x91618 */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;                   /* 0x91624: y 125 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_OK2);                   /* 0x91624: y 125 */
     pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x91630 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x91638 */
@@ -5554,6 +5594,7 @@ static void StatusPanel_DrawDescentTarget(const GeoscapeStatusPanelEnv *pEnv, ch
         return;
     }
 
+    StatusPanel_CardShift(PUFO_STATUS_TARGET_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(0xE), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xD0, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x916A0..0x916D8 */
 
@@ -5570,7 +5611,7 @@ static void StatusPanel_DrawDescentTarget(const GeoscapeStatusPanelEnv *pEnv, ch
                                                                          /* 0x91794..0x917DC */
 
     StatusPanel_CentredCtlX(pEnv->pCtlB);                                 /* 0x917E8..0x917F4 */
-    pEnv->pCtlB->y = (i16)PUFO_STATUS_SITECTL_Y_CANCEL;                  /* 0x917F8: y 105 */
+    pEnv->pCtlB->y = StatusPanel_CardCtlY(PUFO_STATUS_SITECTL_Y_CANCEL);                  /* 0x917F8: y 105 */
     pEnv->pCtlB->pfnClick = pEnv->pfnBeginCraftSelect;                   /* 0x9180C */
     (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x91814 */
@@ -5582,7 +5623,7 @@ static void StatusPanel_DrawDescentTarget(const GeoscapeStatusPanelEnv *pEnv, ch
     StatusPanel_CraftSelectGate(pEnv);                                   /* 0x91868..0x91898 */
 
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x918A0..0x918AC */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_SITECTL_Y_OK2;                     /* 0x918B0: y 128 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_SITECTL_Y_OK2);                     /* 0x918B0: y 128 */
     pEnv->pCtlA->pfnClick = pEnv->pfnResolveInterceptUI;                 /* 0x918C4 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x918CC */
@@ -5603,6 +5644,7 @@ static void StatusPanel_DrawAlienBasePanel(const GeoscapeStatusPanelEnv *pEnv, c
         return;
     }
 
+    StatusPanel_CardShift(PUFO_STATUS_TARGET_ANIM_Y);
     (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(2), PufoUi_MapY(PUFO_STATUS_TARGET_ANIM_Y), 0xE8, PUFO_STATUS_TARGET_NH,
                             0, 0x28, 0x32, 0xB4, 0);                      /* 0x91B34..0x91B70: x 2 (0x91B64),
                                                                           * nW 0xE8 (0x91B6C), nIdx and nMode
@@ -5613,7 +5655,7 @@ static void StatusPanel_DrawAlienBasePanel(const GeoscapeStatusPanelEnv *pEnv, c
                                                                          /* 0x91BA4, 0x91BC4, y 70 */
 
     StatusPanel_CentredCtlX(pEnv->pCtlConfirm);                           /* 0x91BD0..0x91BDC */
-    pEnv->pCtlConfirm->y = (i16)PUFO_STATUS_BASECTL_Y_CONFIRM;           /* 0x91BE0: y 100 */
+    pEnv->pCtlConfirm->y = StatusPanel_CardCtlY(PUFO_STATUS_BASECTL_Y_CONFIRM);           /* 0x91BE0: y 100 */
     (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x91BF0 */
 
@@ -5623,7 +5665,7 @@ static void StatusPanel_DrawAlienBasePanel(const GeoscapeStatusPanelEnv *pEnv, c
                                                                           * sits on the control's own row */
 
     StatusPanel_CentredCtlX(pEnv->pCtlA);                                 /* 0x91C50..0x91C5C */
-    pEnv->pCtlA->y = (i16)PUFO_STATUS_TARGETCTL_Y_OK2;                   /* 0x91C60: y 125 */
+    pEnv->pCtlA->y = StatusPanel_CardCtlY(PUFO_STATUS_TARGETCTL_Y_OK2);                   /* 0x91C60: y 125 */
     (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
                                   pEnv->pCtlBlitUser);                   /* 0x91C70 */
 
@@ -6599,6 +6641,7 @@ static void StatusPanel_DrawDefault(const GeoscapeStatusPanelEnv *pEnv, char *ps
                                 0, 0x28, 0x32, 0xB4, 0);               /* 0x8E5E4..0x8E608 */
         UiPanel_DrawText(pEnv->pStatusPanel, pEnv->pColor);                          /* 0x8E654 */
     }
+    g_nStatusCardShiftY = 0;  /* a card sets its own shift at its box blit */
     StatusPanel_DrawActionFail(pEnv, psz);                             /* 0x8E658 */
     /* The chain re-reads line 0's flag at every test, so these are independent tests and not a
      * switch: an arm's body falls straight into the next test at 0x8F404, 0x8F5A4, 0x8F75C. */

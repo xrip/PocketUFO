@@ -14,6 +14,11 @@ int PufoUi_MapX(int nX)
     return nX + g_nUiOffX;
 }
 
+int PufoUi_OffY(void)
+{
+    return g_nUiOffY;
+}
+
 int PufoUi_MapY(int nY)
 {
     return (nY >= PUFO_UI_BOTTOM_ANCHOR_Y) ? nY + g_nUiOffY : nY;

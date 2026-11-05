@@ -22,5 +22,6 @@ void PufoUi_SetGeometry(int nOffX, int nOffY);
 int  PufoUi_MapX(int nX); /* nX + offX */
 int  PufoUi_MapY(int nY); /* nY >= anchor ? nY + offY : nY */
 int  PufoUi_MapCentreY(int nY); /* whole-window centre shift: nY + offY / 2 */
+int  PufoUi_OffY(void); /* the raw y offset, for sites that store a compensated y */
 
 #endif /* PUFO_UIGEOM_H */

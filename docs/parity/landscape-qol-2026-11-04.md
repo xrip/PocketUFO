@@ -256,3 +256,17 @@ distance. The deviation is in portrait as well as wide. QA window shots:
 the dialog reads "7 солдат и 0 танков / в Зоне выхода, / 1 солдат и 0
 танков / вне Зоны Выхода. / Прервать миссию?" with YES/NO below; ctest
 67/67, e2e 11/11.
+Geoscape status cards ride the face whole (2026-11-05): every card arm
+(arrival/list, selected contact = the НЛО-attack card, craft detail, city,
+pause, orders, target, site, alien base, action fail) drew its box at the
+box's own MapY and its footer/controls/labels at each element's own MapY,
+so a top-anchored box (y 5..130) stayed while the footer at y>=160 jumped
+-80: the OK/«Медл.» buttons and «Прервать» labels flew to the middle of
+the screen and the contact card's rows split. One card is one window:
+each arm sets g_nStatusCardShiftY = MapY(boxY) - boxY at its box blit
+(bottom-anchored list card: -80; top-anchored cards: 0), StatusPanel_DrawAt
+and the raw row sites add that shift, and control y goes through
+StatusPanel_CardCtlY, which stores the value MapY lands on (the shared
+BlitActivePad re-applies MapY). Portrait: shift 0, offY 0 -- byte-identical
+parity, ctest 67/67 and e2e 11/11 prove it. PufoUi_OffY() is the new
+accessor.
