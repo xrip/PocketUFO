@@ -198,4 +198,4 @@ face centre (rows 50+25*i wide, identity portrait), computed from the
 stable design base so re-running the layout is idempotent, and the pad hit
 boxes follow the drawn rows (the first drawer-side attempt at 60+23*i
 clobbered the live layout and desynced the last row's hover -- reverted).
-test_baseui pins 90+25*i portrait and 50+25*i wide; ctest 67/67.
+test_baseui pins 90+25*i portrait and 50+25*i wide. The tail rows 4..6 (descriptor 152 + 23 * i) are centre-shifted by the drawer from the same stable base (112..158 wide): one shift rule per writer, so labels, pads and hit boxes agree and every row hovers. test_tacthud pins both. ctest 67/67.

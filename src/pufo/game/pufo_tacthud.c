@@ -568,6 +568,14 @@ i32 Menu_DrawLabeledPads(UiControl *pPads, const u8 *pTextRecs, const GfxColorEn
     Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
 
     for (nIdx = 0; ; ++nIdx) {
+        /* Rows 4..6 keep the descriptor y (the tab layout moves only 0..3);
+         * QoL: centre-shift them from that stable base so the whole 7-row
+         * stack rides the wide face as one window (identity portrait). */
+        if (nIdx >= PUFO_MENU_TAIL_FIRST) {
+            pPads[nIdx].y = (i16)PufoUi_MapCentreY(PUFO_MENU_TAIL_Y0
+                                                   + PUFO_MENU_TAIL_PITCH * (nIdx - PUFO_MENU_TAIL_FIRST));
+        }
+
         (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
 
         CopyTextRecord(pTextRecs, Menu_LabelRecordIndex(nIdx), szLabel);
