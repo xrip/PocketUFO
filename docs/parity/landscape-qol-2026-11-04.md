@@ -234,3 +234,12 @@ paints only the bands outside the viewport (and only when they exist);
 the game rect is never cleared. Re-capture: 0 of 150 black frames, mean
 luminance steady at 79.4..79.9; the pillarbox bands stay black on the
 options screen. The flicker-capture tool is build/shot/flicker.ps1.
+Double-buffered present (2026-11-05, same day): Gx_Present composes the
+bands and the scaled frame in a client-sized CreateCompatibleBitmap (made
+on the window DC, rebuilt when the client size changes) and moves it with
+one BitBlt, so the screen only ever sees whole frames -- no partial
+StretchBlt states on scaled windows. A buffer-creation failure falls back
+to the direct bands-only path. Gx_Close frees the buffer. Measured with
+flicker.ps1, 150 window-DC captures each: landscape 640x480 0 black
+(luminance 79.4..79.9), portrait 480x640 (2x, the mode that had the
+worst blink) 0 black (90.4..91.0).

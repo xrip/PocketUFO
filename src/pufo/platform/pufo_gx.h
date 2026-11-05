@@ -32,6 +32,15 @@ typedef struct GxSurface {
     HBITMAP   hbm;
     HDC       hdcMem;
     void     *pOldObj;
+    /* Double-buffered present (2026-11-05): the frame is composed in a
+     * client-sized offscreen bitmap and moved to the window with one BitBlt,
+     * so the screen never shows a partially painted frame. nBackW/H 0 means
+     * no buffer (the direct path). */
+    HDC       hdcBack;
+    HBITMAP   hbmBack;
+    void     *pOldBack;
+    int       nBackW;
+    int       nBackH;
 } GxSurface;
 
 /* Open the display and bind it to hWnd. Returns true on success.

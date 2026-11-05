@@ -126,6 +126,24 @@ void Gx_PointerToLogical(int nVpX, int nVpY, int nVpW, int nVpH,
     }
 }
 
+static void Gx_FreeBack(GxSurface *pGx)
+{
+    if (pGx->hdcBack != NULL) {
+        if (pGx->pOldBack != NULL) {
+            (void)SelectObject(pGx->hdcBack, pGx->pOldBack);
+            pGx->pOldBack = NULL;
+        }
+        (void)DeleteDC(pGx->hdcBack);
+        pGx->hdcBack = NULL;
+    }
+    if (pGx->hbmBack != NULL) {
+        (void)DeleteObject(pGx->hbmBack);
+        pGx->hbmBack = NULL;
+    }
+    pGx->nBackW = 0;
+    pGx->nBackH = 0;
+}
+
 bool Gx_Present(GxSurface *pGx)
 {
     RECT rcClient;
@@ -135,6 +153,7 @@ bool Gx_Present(GxSurface *pGx)
     int  nDstH;
     int  nX;
     int  nY;
+    HDC  hdcDst;
 
     if (pGx == NULL || pGx->hWnd == NULL || pGx->pBits == NULL) {
         return false;
@@ -148,29 +167,51 @@ bool Gx_Present(GxSurface *pGx)
     Gx_ViewportRect(nWinW, nWinH, (int)pGx->cxWidth, (int)pGx->cyHeight,
                     pGx->bFitHeight, &nX, &nY, &nDstW, &nDstH);
 
-    /* The bands around the viewport stay black (the original's framebuffer
-     * had no bands; WndProc answers WM_ERASEBKGND, so nothing else paints
-     * them). Only the bands are cleared: a whole-window BLACKNESS made every
-     * present show a full black window between the clear and the blit --
-     * visible flicker on scaled windows, measured as fully black captured
-     * frames (2026-11-05). The game rect is painted whole by StretchBlt. */
+    /* The frame is composed in a client-sized offscreen bitmap and moved with
+     * one BitBlt, so the screen only ever sees whole frames. The bands around
+     * the viewport stay black (the original's framebuffer had no bands;
+     * WndProc answers WM_ERASEBKGND, so nothing else paints them). Only the
+     * bands are cleared: a whole-window BLACKNESS made every present show a
+     * full black window between the clear and the blit -- visible flicker on
+     * scaled windows, measured as fully black captured frames (2026-11-05). */
+    if (pGx->nBackW != nWinW || pGx->nBackH != nWinH) {
+        Gx_FreeBack(pGx);
+        pGx->hdcBack = CreateCompatibleDC(pGx->hdcWindow);
+        if (pGx->hdcBack != NULL) {
+            pGx->hbmBack = CreateCompatibleBitmap(pGx->hdcWindow, nWinW, nWinH);
+            if (pGx->hbmBack != NULL) {
+                pGx->pOldBack = SelectObject(pGx->hdcBack, pGx->hbmBack);
+                pGx->nBackW   = nWinW;
+                pGx->nBackH   = nWinH;
+            } else {
+                (void)DeleteDC(pGx->hdcBack);
+                pGx->hdcBack = NULL;
+            }
+        }
+    }
+    hdcDst = (pGx->hdcBack != NULL) ? pGx->hdcBack : pGx->hdcWindow;
+
     if (nX > 0) {
-        (void)PatBlt(pGx->hdcWindow, 0, 0, nX, nWinH, BLACKNESS);
+        (void)PatBlt(hdcDst, 0, 0, nX, nWinH, BLACKNESS);
     }
     if (nX + nDstW < nWinW) {
-        (void)PatBlt(pGx->hdcWindow, nX + nDstW, 0, nWinW - (nX + nDstW), nWinH, BLACKNESS);
+        (void)PatBlt(hdcDst, nX + nDstW, 0, nWinW - (nX + nDstW), nWinH, BLACKNESS);
     }
     if (nY > 0) {
-        (void)PatBlt(pGx->hdcWindow, nX, 0, nDstW, nY, BLACKNESS);
+        (void)PatBlt(hdcDst, nX, 0, nDstW, nY, BLACKNESS);
     }
     if (nY + nDstH < nWinH) {
-        (void)PatBlt(pGx->hdcWindow, nX, nY + nDstH, nDstW, nWinH - (nY + nDstH), BLACKNESS);
+        (void)PatBlt(hdcDst, nX, nY + nDstH, nDstW, nWinH - (nY + nDstH), BLACKNESS);
     }
 
-    (void)SetStretchBltMode(pGx->hdcWindow, COLORONCOLOR);
-    (void)StretchBlt(pGx->hdcWindow, nX, nY, nDstW, nDstH,
+    (void)SetStretchBltMode(hdcDst, COLORONCOLOR);
+    (void)StretchBlt(hdcDst, nX, nY, nDstW, nDstH,
                      pGx->hdcMem, 0, 0, (int)pGx->cxWidth, (int)pGx->cyHeight,
                      SRCCOPY);
+
+    if (hdcDst != pGx->hdcWindow) {
+        (void)BitBlt(pGx->hdcWindow, 0, 0, nWinW, nWinH, hdcDst, 0, 0, SRCCOPY);
+    }
     return true;
 }
 
@@ -230,6 +271,7 @@ void Gx_Close(GxSurface *pGx)
     if (pGx == NULL) {
         return;
     }
+    Gx_FreeBack(pGx);
     if (pGx->hdcMem != NULL) {
         if (pGx->pOldObj != NULL) {
             (void)SelectObject(pGx->hdcMem, pGx->pOldObj);
