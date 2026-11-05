@@ -113,7 +113,7 @@ void MapView_SetCamOffset(const MapGeom *pMap, i32 nA, i32 nB, bool bAdjustForLa
 
 bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nFacing,
                           bool bTactFlag, u8 nLayerScratch,
-                          u8 *pnTileCountX, u8 *pnTileCountY)
+                          u8 *pnTileCountX, u8 *pnTileCountY, int nViewW)
 {
     if (pScratch == NULL) {
         return false;
@@ -135,7 +135,11 @@ bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nF
         pSize->nTileH = PUFO_TILE_H;
     }
     if (pnTileCountX != NULL) {
-        *pnTileCountX = 9;                        /* 0x26F48: STRB R3,[R0,#0x34] */
+        /* 0x26F48: STRB R3,[R0,#0x34]. The original's 9 columns of 32-px tiles
+         * cover the 240-wide device view. QoL: nViewW > 0 is the shell's wide
+         * view, so (240+16)/32+1 = 9 stays the original, (320+16)/32+1 = 11
+         * covers 320. nViewW 0 (portrait/tests) is parity-exact. */
+        *pnTileCountX = (nViewW > 0) ? (u8)((nViewW + 16) / 32 + 1) : 9;
     }
     /* Keep the original's operation order: multiply, then divide, then add. */
     if (pnTileCountY != NULL) {

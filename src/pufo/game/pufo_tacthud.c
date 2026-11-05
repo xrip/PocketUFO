@@ -1,6 +1,7 @@
 /* Tactical HUD action buttons. See pufo_tacthud.h. */
 
 #include "game/pufo_tacthud.h"
+#include "ui/pufo_uigeom.h" /* QoL wide-view shim: identity in portrait */
 
 #include "game/pufo_path.h"
 #include "game/pufo_boot.h"
@@ -1094,8 +1095,13 @@ bool TactHud_DrawSelectedUnitPanel(UiControl *pBank, TactHudPanelEnv *pEnv,
         return false;
     }
 
+    /* QoL wide view: the pad and the icons shift to the centered face; the
+     * bank controls above shift through the shim at their own draw/hit. */
+    pEnv->pHudPad->nOriginX = PufoUi_MapX(pEnv->pHudPad->nOriginX);
+    pEnv->pHudPad->nOriginY = PufoUi_MapY(pEnv->pHudPad->nOriginY);
     PadImage_BlitEx(pEnv->pHudPad, 0);
     nOriginX = pEnv->pHudPad->nOriginX;
+    nOriginY = PufoUi_MapY(nOriginY);
 
     /* The glyph index is uIconId + nBigObsBase - 1. In the pseudocode it reads as aItemQty[0x34],
      * which is index 52 of a 52-entry u16 array at ObjectRec+0x3a - one past the end, landing on

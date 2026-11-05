@@ -267,6 +267,7 @@ typedef struct TactInitEnv {
     /* --- the view scratch Map_InitFacingScratch and MapView_FocusSelected share --- */
     MapFacingScratch facing;     /* 0x36, the stored facing the guard compares against */
     MapTileSize      tileSize;   /* 0x30 / 0x32 */
+    int              nViewW;   /* shell QoL view width; 0 = the device's 240 (parity) */
     u8              *pnTileCountX; /* Map+0x34, the caller's cell: MapView_DrawIsoLayer's column
                                     * bound and the Input_OnLeft/Right clamp margin */
     u8              *pnTileCountY; /* Map+0x35, its row bound and the Input_OnUp/Down margin */

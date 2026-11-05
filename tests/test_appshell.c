@@ -661,23 +661,17 @@ static void TestWideViewGeometry(void)
 {
     int w, h, ux, uy;
 
-    Gx_ViewGeometry(1, 0, 1, &w, &h, &ux, &uy);
+    Gx_ViewGeometry(1, 1, &w, &h, &ux, &uy);
     CheckEqI32(w, 320,  "  wide view: surface 320");
     CheckEqI32(h, 240,  "  wide view: surface 240");
     CheckEqI32(ux, 40,  "  wide view: UI centered x-offset (320-240)/2");
     CheckEqI32(uy, -80, "  wide view: bottom-anchored UI shift 240-320");
 
-    Gx_ViewGeometry(1, 1, 1, &w, &h, &ux, &uy);
-    CheckEqI32(w, 240,  "  hidden scripted run: stays portrait 240x320 (dumps/e2e safe)");
-    CheckEqI32(h, 320,  "  hidden: height 320");
-    CheckEqI32(ux, 0,   "  hidden: no UI offsets");
-    CheckEqI32(uy, 0,   "  hidden: no UI y shift");
-
-    Gx_ViewGeometry(0, 0, 1, &w, &h, &ux, &uy);
+    Gx_ViewGeometry(0, 1, &w, &h, &ux, &uy);
     CheckEqI32(w, 240,  "  portrait mode: never wide");
     CheckEqI32(h, 320,  "  portrait mode: 320 high");
 
-    Gx_ViewGeometry(1, 0, 0, &w, &h, &ux, &uy);
+    Gx_ViewGeometry(1, 0, &w, &h, &ux, &uy);
     CheckEqI32(w, 240,  "  landscape menu/base screens: portrait surface, pillarboxed");
     CheckEqI32(h, 320,  "  landscape menu/base screens: 320 high");
 

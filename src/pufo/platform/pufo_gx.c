@@ -183,10 +183,10 @@ bool Gx_Resize(GxSurface *pGx, u32 cxWidth, u32 cyHeight)
     return Gx_MakeDib(pGx);
 }
 
-void Gx_ViewGeometry(int bLandscape, int bHidden, int bWideScreen,
+void Gx_ViewGeometry(int bLandscape, int bWideScreen,
                      int *pnW, int *pnH, int *pnUiX, int *pnUiY)
 {
-    if (bLandscape && !bHidden && bWideScreen) {
+    if (bLandscape && bWideScreen) {
         *pnW   = 320;
         *pnH   = 240;
         *pnUiX = (320 - 240) / 2;

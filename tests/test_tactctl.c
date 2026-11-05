@@ -225,7 +225,7 @@ static void TestFacingScratch(void)
     nCountX = 0; nCountY = 0;
 
     /* Tactical: a new facing resets the tile size and both scratch bytes. */
-    Check(Map_InitFacingScratch(&scratch, &size, 3, true, 4, &nCountX, &nCountY),
+    Check(Map_InitFacingScratch(&scratch, &size, 3, true, 4, &nCountX, &nCountY, 0),
           "  a new facing updates the scratch");
     CheckEqI32(scratch.bStoredFacing, 3, "  the facing was stored");
     CheckEqI32(size.nTileW, 240, "  tile width reset to 240");
@@ -237,13 +237,13 @@ static void TestFacingScratch(void)
     size.nTileW = 1;
     size.nTileH = 2;
     nCountY = 0xEE;
-    Check(!Map_InitFacingScratch(&scratch, &size, 3, true, 4, &nCountX, &nCountY),
+    Check(!Map_InitFacingScratch(&scratch, &size, 3, true, 4, &nCountX, &nCountY, 0),
           "  the same facing is a no-op");
     CheckEqI32(size.nTileW, 1, "  tile size untouched on the no-op");
     CheckEqI32(nCountY, 0xEE, "  the caller's count cell untouched on the no-op");
 
     /* A DIFFERENT facing updates again. */
-    Check(Map_InitFacingScratch(&scratch, &size, 5, true, 0, &nCountX, &nCountY),
+    Check(Map_InitFacingScratch(&scratch, &size, 5, true, 0, &nCountX, &nCountY, 0),
           "  a different facing updates");
     CheckEqI32(nCountY, 24 * 0 / 16 + 47, "  layer 0 gives 47");
 
@@ -252,7 +252,7 @@ static void TestFacingScratch(void)
     size.nTileW = 77;
     size.nTileH = 88;
     nCountX = 0;
-    Check(Map_InitFacingScratch(&scratch, &size, 2, false, 4, &nCountX, &nCountY),
+    Check(Map_InitFacingScratch(&scratch, &size, 2, false, 4, &nCountX, &nCountY, 0),
           "  non-tactical still stores the facing");
     CheckEqI32(scratch.bStoredFacing, 2, "  facing stored");
     CheckEqI32(size.nTileW, 77, "  tile size NOT reset outside tactical");
@@ -261,16 +261,24 @@ static void TestFacingScratch(void)
 
     /* The 24*x/16 order matters: it is a truncating multiply-then-divide. */
     memset(&scratch, 0, sizeof(scratch));
-    (void)Map_InitFacingScratch(&scratch, &size, 1, true, 3, &nCountX, &nCountY);
+    (void)Map_InitFacingScratch(&scratch, &size, 1, true, 3, &nCountX, &nCountY, 0);
     CheckEqI32(nCountY, 24 * 3 / 16 + 47,
                "  the multiply-then-divide order is preserved");
 
-    Check(!Map_InitFacingScratch(NULL, &size, 0, true, 0, &nCountX, &nCountY), "  NULL scratch -> false");
+    Check(!Map_InitFacingScratch(NULL, &size, 0, true, 0, &nCountX, &nCountY, 0), "  NULL scratch -> false");
     /* A caller with no live map passes NULL cells and still gets the facing stored. */
     memset(&scratch, 0, sizeof(scratch));
-    Check(Map_InitFacingScratch(&scratch, &size, 7, true, 1, NULL, NULL),
+    Check(Map_InitFacingScratch(&scratch, &size, 7, true, 1, NULL, NULL, 0),
           "  NULL count cells are accepted");
     CheckEqI32(scratch.bStoredFacing, 7, "  facing stored with no count cells");
+
+    /* QoL wide view (docs/parity/landscape-qol-2026-11-04.md): the shell's
+     * 320-wide view widens the iso column bound; the row bound is unchanged. */
+    memset(&scratch, 0, sizeof(scratch));
+    nCountX = 0; nCountY = 0;
+    (void)Map_InitFacingScratch(&scratch, &size, 1, true, 3, &nCountX, &nCountY, 320);
+    CheckEqI32(nCountX, 11, "  wide view: (320+16)/32+1 = 11 iso columns");
+    CheckEqI32(nCountY, 24 * 3 / 16 + 47, "  wide view: the row bound is the original's");
 }
 
 /* Tact_ScanVictoryTiles @ 0x33264. Both raw gates must hold, and the injected probe stops at

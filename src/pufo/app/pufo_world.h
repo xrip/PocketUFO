@@ -198,6 +198,11 @@ typedef struct WorldRadarState {
 } WorldRadarState;
 
 typedef struct PufoWorldState {
+    /* Shell QoL wide view (docs/parity/landscape-qol-2026-11-04.md): the
+     * live surface width the iso column bound is derived from. 0 = the
+     * device's 240, i.e. exact parity. */
+    int nViewW;
+
     /* Rosters. */
     Soldier *apSoldiers[PUFO_SOLDIER_CAPACITY]; /* Map + 0x1198 */
     i32      nSoldierCount;                     /* unk_115350 @ Map + 0x1998 (u16 semantics) */

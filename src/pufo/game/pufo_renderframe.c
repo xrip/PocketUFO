@@ -152,7 +152,8 @@ i32 Render_Frame(const RenderFrameEnv *pEnv)
                 }
             }
         } else {
-            SoftSurf_BlitSrcRect(0, 0, 240, 320, 0, 0, 0, 20); /* 0x22538 */
+            SoftSurf_BlitSrcRect(0, 0, g_pMainSurface->nWidth,
+                            g_pMainSurface->nHeight, 0, 0, 0, 20); /* 0x22538, QoL surface dims */
         }
         break;
     }

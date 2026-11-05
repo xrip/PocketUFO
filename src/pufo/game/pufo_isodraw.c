@@ -1,5 +1,6 @@
 /* pufo_isodraw.c - see pufo_isodraw.h for evidence and the field map. */
 #include "game/pufo_isodraw.h"
+#include "ui/pufo_uigeom.h" /* QoL wide-view shim: identity in portrait */
 
 #include "game/pufo_ballist.h" /* Ball_TruncDiv16, the original's voxel-to-cell divide */
 #include "game/pufo_font.h"   /* Font_DrawGlyph_IndexedOffset / Font_DrawGlyph / g_fontSys */
@@ -418,30 +419,30 @@ void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide)
     v3 = v2 / 3;
     v4 = v2 - v3;
 
-    SoftSurf_BlitSrcRect(15, 15, 210, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(15), PufoUi_MapY(15), 210, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
     SoftSurf_BlitSrcRect(15, 15, 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(15, v2 - 15, 211, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(15), PufoUi_MapY(v2 - 15), 211, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
     SoftSurf_BlitSrcRect(225, 15, 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(80, 0, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(0, v3, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(160, 0, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(225, v3, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(225, v4, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(160, v2 - 15, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(80, v2 - 15, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(0, v4, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(0, v2, 240, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(80), PufoUi_MapY(0), 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(v3), 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(160), PufoUi_MapY(0), 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(225), PufoUi_MapY(v3), 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(225), PufoUi_MapY(v4), 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(160), PufoUi_MapY(v2 - 15), 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(80), PufoUi_MapY(v2 - 15), 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(v4), 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(v2), 240, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
 
     /* Priority order is bottom, top, left, right. */
     if ((nFlags & 0xFF000000u) != 0) {
         if ((nFlags & 0xFFu) != 0) {
             SoftSurf_BlitSrcRect(0, v2 - v3, 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
-            SoftSurf_BlitSrcRect(0, v2 - 15, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(v2 - 15), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         } else if ((nFlags & 0xFF00u) != 0) {
             SoftSurf_BlitSrcRect(225, v2 - v3, 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
-            SoftSurf_BlitSrcRect(160, v2 - 15, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(160), PufoUi_MapY(v2 - 15), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         } else {
-            SoftSurf_BlitSrcRect(80, v2 - 15, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(80), PufoUi_MapY(v2 - 15), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         }
         return;
     }
@@ -449,12 +450,12 @@ void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide)
     if ((nFlags & 0xFF0000u) != 0) {
         if ((nFlags & 0xFFu) != 0) {
             SoftSurf_BlitSrcRect(0, 15, 15, v3 - 14, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
-            SoftSurf_BlitSrcRect(0, 0, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(0), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         } else if ((nFlags & 0xFF00u) != 0) {
             SoftSurf_BlitSrcRect(225, 15, 15, v3 - 14, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
-            SoftSurf_BlitSrcRect(160, 0, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(160), PufoUi_MapY(0), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         } else {
-            SoftSurf_BlitSrcRect(80, 0, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(80), PufoUi_MapY(0), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         }
         return;
     }
@@ -719,12 +720,13 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
 
             if (nIdx >= PUFO_ISO_MULTI_TARGET_BARS) break;
 
-            pIso->nTileX = 207;
-            pIso->nTileY = (pEnv->bDeployPanelOpen != 0) ? (300 - 18 * nIdx - 17)
-                                                          : (300 - 18 * nIdx - pEnv->nHudPadHeight);
+            pIso->nTileX = PufoUi_MapX(207);
+            pIso->nTileY = PufoUi_MapY((pEnv->bDeployPanelOpen != 0)
+                                           ? (300 - 18 * nIdx - 17)
+                                           : (300 - 18 * nIdx - pEnv->nHudPadHeight));
 
             /* 0x2211C stores the bar index with STRB, so it is the low byte of 10 * phase + 128. */
-            SoftSurf_BlitRectProxy(0, 207, pIso->nTileY, 30, 16,
+            SoftSurf_BlitRectProxy(0, pIso->nTileX, pIso->nTileY, 30, 16,
                                    (u8)(10 * (i32)pEnv->nMapPhase + 128), 0, 0);
 
             (void)snprintf(pIso->szText, sizeof(pIso->szText), "%d", nIdx + 1);
@@ -760,7 +762,8 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
 
     /* The mission fade-out cover, skipped on the two screens that already own the frame. */
     if (pEnv->nUiScreen != 0 && pEnv->nUiScreen != 13) {
-        SoftSurf_BlitSrcRectEx(g_pMainSurface, 0, 0, 240, 320, 0x37, 55, 140, 128);
+        SoftSurf_BlitSrcRectEx(g_pMainSurface, 0, 0, g_pMainSurface->nWidth,
+                                   g_pMainSurface->nHeight, 0x37, 55, 140, 128);
     }
 }
 
@@ -796,7 +799,8 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
     i32              nScrollX, nScrollY;
     i32              nIdx;
 
-    SoftSurf_BlitRectProxy(0, 0, 0, 240, 320, 0, 0, 0);
+    SoftSurf_BlitRectProxy(0, 0, 0, g_pMainSurface->nWidth, g_pMainSurface->nHeight,
+                               0, 0, 0);
 
     /* The scroll clamp, max first then min, each comparing the value the previous clamp left. The
      * ARM's MOVS / ADDMI #3 / ASR #2 is truncating division, which C's / reproduces; the dimension

@@ -7,6 +7,7 @@ target_include_directories(pufo_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_platform PUBLIC pufo_options user32 gdi32)
 
 add_library(pufo_util STATIC
+    util/pufo_uigeom.c
     util/pufo_ptrarray.c
     util/pufo_rand.c
     util/pufo_str.c

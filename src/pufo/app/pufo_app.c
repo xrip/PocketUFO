@@ -49,6 +49,7 @@
 #include "platform/pufo_aygshell.h"  /* the WM_CREATE / WM_ACTIVATE / WM_SETTINGCHANGE arms */
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"    /* UiControl_LoadPads, the start controls' pad loader */
+#include "ui/pufo_uigeom.h"     /* QoL wide-view shim: the shell sets it on geometry switch */
 #include "ui/pufo_menubtn.h"    /* MenuCtl*_OnClick / Menu_LoadSlot / StartUi_Shutdown */
 #include "util/pufo_rand.h"
 #include "util/pufo_str.h"
@@ -1301,7 +1302,12 @@ static void App_UpdateViewGeometry(void)
             || World_bTactPointerLive(&g_world));
     int nW, nH, nX, nY;
 
-    Gx_ViewGeometry(g_bLandscapeFlag ? 1 : 0, g_bHiddenRun ? 1 : 0,
+    /* Geometry keys on the shell mode only. Scripted runs stay hidden (no
+     * window pump, deterministic clock); with `--landscape` they render and
+     * dump WIDE frames, which is how the wide layouts are checked by script.
+     * The e2e gate never passes the flag, so every dump and reference stays
+     * 240x320. */
+    Gx_ViewGeometry(g_bLandscapeFlag ? 1 : 0,
                     bWideScreen ? 1 : 0, &nW, &nH, &nX, &nY);
     if (nW == g_nViewW && nH == g_nViewH) {
         return;
@@ -1320,6 +1326,9 @@ static void App_UpdateViewGeometry(void)
     g_nViewH  = nH;
     g_nUiOffX = nX;
     g_nUiOffY = nY;
+    /* The shared UI shim (draw + hit in one place) and the iso column bound. */
+    PufoUi_SetGeometry(nX, nY);
+    g_world.nViewW = g_bLandscapeFlag ? nW : 0;
 }
 
 /* Client pixels to the 240x320 logical surface, inverting Gx_Present's integer-scale letterbox.
@@ -1381,6 +1390,15 @@ static void App_PointerLogical(i32 nX, i32 nY, bool bDown)
     g_tactState.bSlot19Active = g_world.sModal.bOpen ? 1u : 0u; /* Modal_bOpen @ Map+0xAC, the live read at 0x13E58 */
     g_pointerWorld.nListMode = g_nListMode;
     Input_OnPointer(&g_tactState, &g_tactHooks, &g_pointerWorld, nX, nY, bDown);
+}
+
+/* SCRIPT coordinate space: the flows are authored in the portrait design
+ * coordinates. The QoL wide view shifts lines and controls to the centered
+ * face, so a scripted feed maps through the shim. The interactive path
+ * (App_OnPointer) is NOT routed here: its pointer arrives in surface coords. */
+static void App_ScriptPointerLogical(i32 nX, i32 nY, bool bDown)
+{
+    App_PointerLogical(PufoUi_MapX(nX), PufoUi_MapY(nY), bDown);
 }
 
 /* WM_MOUSEMOVE (bDown false) and WM_LBUTTONDOWN (bDown true). */
@@ -1585,8 +1603,8 @@ static void App_DragCameraOntoRegion(i32 nMidY)
         if (nDx < -pView->nMapW / 2) { nDx += pView->nMapW; }
         if (nDx >  100) { nDx =  100; } else if (nDx < -100) { nDx = -100; }
         if (nDy >  100) { nDy =  100; } else if (nDy < -100) { nDy = -100; }
-        App_PointerLogical(120, nMidY, true);                          /* the press arm moves nothing */
-        App_PointerLogical(120 - nDx, nMidY - nDy, false);            /* this one scrolls */
+        App_ScriptPointerLogical(120, nMidY, true);                          /* the press arm moves nothing */
+        App_ScriptPointerLogical(120 - nDx, nMidY - nDy, false);            /* this one scrolls */
         App_OnPointerUp();                                            /* 0x896BC */
         App_DrawFrame();
         nTile = App_HoverSampleTile(nMidY, &nTileX, &nTileY);
@@ -1613,7 +1631,7 @@ static void App_NewGamePickThroughPen(void)
     if (!App_HoverOnRegion()) {
         return;
     }
-    App_PointerLogical(pConfirm->x + 2, pConfirm->y + 2, true);
+    App_ScriptPointerLogical(pConfirm->x + 2, pConfirm->y + 2, true);
     App_OnPointerUp();
 }
 
@@ -2538,7 +2556,7 @@ static bool App_ScriptNormalClickControl(UiControl *pCtl)
     if (nX < 0 || nX >= 240 || nY < 0 || nY >= 320) {
         return false;
     }
-    App_PointerLogical(nX, nY, true);
+    App_ScriptPointerLogical(nX, nY, true);
     App_OnPointerUp();
     return true;
 }
@@ -2606,7 +2624,7 @@ static bool App_ScriptNormalClickStrategItem(i32 nItemIdx, const StrategItem *pI
     const i32 nFlagBefore = g_world.msgLines.nLineCount > 0
         ? (i32)g_world.msgLines.abLineFlags[0] : 0;
     const i32 nCooldownBefore = g_world.frame.g.nTapCooldown;
-    App_PointerLogical(nX, nY, true);
+    App_ScriptPointerLogical(nX, nY, true);
     App_OnPointerUp();
     if (pnClickX != NULL) { *pnClickX = nX; }
     if (pnClickY != NULL) { *pnClickY = nY; }
@@ -2913,7 +2931,7 @@ static bool App_ScriptNormalInterceptOrder(void)
                    (int)nCrewCount, (unsigned)pShip->bCrewSlots, (unsigned)pShip->bAtBase,
                    (unsigned)pShip->uRangeRemain, (unsigned)pShip->uRangeMax,
                    (int)pShip->nFuel, (unsigned)pShip->uFuelMax);
-            App_PointerLogical(nX, nY, true);
+            App_ScriptPointerLogical(nX, nY, true);
             App_OnPointerUp();
         }
     }
@@ -3410,7 +3428,7 @@ static bool App_ScriptNormalAirIntercept(void)
                    (unsigned)pShip->uFuelMax,
                    App_ScriptNormalAirHasLoadedWeapon(pShip) ? 1 : 0,
                    (int)nX, (int)nY);
-            App_PointerLogical(nX, nY, true);
+            App_ScriptPointerLogical(nX, nY, true);
             App_OnPointerUp();
         }
     }
@@ -4610,7 +4628,7 @@ static bool App_ScriptCampaignClickBank(i32 nWidget)
            (unsigned)g_world.sTactLookCtl.uWidth, (unsigned)g_world.sTactLookCtl.uHeight,
            (unsigned)g_world.sTactLookCtl.bEnabled, (int)nX, (int)nY);
     fflush(stdout);
-    App_PointerLogical(nX, nY, true);
+    App_ScriptPointerLogical(nX, nY, true);
     bPressed = pCtl->nState;
     printf("pocketufo: campaign pointer trace widget %d after down: app/input state %u/%u "
            "world/input screen %d/%d "
@@ -5169,7 +5187,7 @@ static bool App_ScriptCampaignPanToCell(i32 nTargetX, i32 nTargetY)
     i32 nStartX, nStartY, nCamX0, nCamY0, nCamXDown, nCamYDown, nCamXRight, nCamYRight;
 
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
-    App_PointerLogical(120, 120, false);
+    App_ScriptPointerLogical(120, 120, false);
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     nBaseX = g_world.tactEnv.cursor.nX;
     nBaseY = g_world.tactEnv.cursor.nY;
@@ -5181,14 +5199,14 @@ static bool App_ScriptCampaignPanToCell(i32 nTargetX, i32 nTargetY)
         || !App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     nCamXDown = g_world.tactEnv.focus.nCamScrollX;
     nCamYDown = g_world.tactEnv.focus.nCamScrollY;
-    App_PointerLogical(120, 120, false);
+    App_ScriptPointerLogical(120, 120, false);
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     nDownX = g_world.tactEnv.cursor.nX - nBaseX;
     nDownY = g_world.tactEnv.cursor.nY - nBaseY;
     if (!App_ScriptCampaignKey(PUFO_KEY_UP)
         || !App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
 
-    App_PointerLogical(120, 120, false);
+    App_ScriptPointerLogical(120, 120, false);
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     nBaseX = g_world.tactEnv.cursor.nX;
     nBaseY = g_world.tactEnv.cursor.nY;
@@ -5196,13 +5214,13 @@ static bool App_ScriptCampaignPanToCell(i32 nTargetX, i32 nTargetY)
         || !App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     nCamXRight = g_world.tactEnv.focus.nCamScrollX;
     nCamYRight = g_world.tactEnv.focus.nCamScrollY;
-    App_PointerLogical(120, 120, false);
+    App_ScriptPointerLogical(120, 120, false);
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     nRightX = g_world.tactEnv.cursor.nX - nBaseX;
     nRightY = g_world.tactEnv.cursor.nY - nBaseY;
     if (!App_ScriptCampaignKey(PUFO_KEY_LEFT)
         || !App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
-    App_PointerLogical(120, 120, false);
+    App_ScriptPointerLogical(120, 120, false);
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
 
     nDet = nDownX * nRightY - nDownY * nRightX;
@@ -5236,7 +5254,7 @@ static bool App_ScriptCampaignPanToCell(i32 nTargetX, i32 nTargetY)
         if (!App_ScriptCampaignKey(PUFO_KEY_LEFT)
             || !App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     }
-    App_PointerLogical(120, 120, false);
+    App_ScriptPointerLogical(120, 120, false);
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     printf("pocketufo: campaign pan: start %d/%d scroll %d/%d down %d/%d right %d/%d end %d/%d scroll %d/%d "
            "target %d/%d steps %d/%d vectors %d/%d %d/%d\n",
@@ -5278,7 +5296,7 @@ static bool App_ScriptCampaignFindCellPixel(i32 nCellX, i32 nCellY, i32 nCellZ,
     if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
     for (i32 y = 20; y <= nMapBottom; y += 4) {
         for (i32 x = 24; x <= 216; x += 4) {
-            App_PointerLogical(x, y, false);
+            App_ScriptPointerLogical(x, y, false);
             if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
             if (g_world.tactEnv.cursor.nX == nCellX
                 && g_world.tactEnv.cursor.nY == nCellY
@@ -5958,7 +5976,7 @@ static bool App_ScriptCampaignLaunchContact(void)
                 App_ScriptCampaignTrace("stale-or-wrong-offer");
                 return false;
             }
-            App_PointerLogical(120, 102, true);
+            App_ScriptPointerLogical(120, 102, true);
             App_OnPointerUp();
             (void)App_DrawFrame();
             GameMap *pMap = g_world.pTactMap;
@@ -6024,7 +6042,7 @@ static bool App_ScriptCampaignClickGeoControl(UiControl *pCtl, const char *pszNa
            (unsigned)pCtl->bEnabled, (unsigned)pCtl->nMode, (unsigned)pCtl->nState,
            pCtl->pfnClick != NULL ? 1 : 0);
     fflush(stdout);
-    App_PointerLogical(nX, nY, true);
+    App_ScriptPointerLogical(nX, nY, true);
     printf("pocketufo: campaign control click: %s after down state %u app/world screen %d/%d geo %d pointer screen %d inputGeo %u lineFlag %u\n",
            (pszName != NULL) ? pszName : "requested", (unsigned)pCtl->nState,
            (int)g_nUiScreen, (int)g_world.nUiScreen, (int)g_world.screen.nGeoscapeScreen,
@@ -6706,7 +6724,7 @@ static bool App_ScriptNormalGroundEntry(void)
                    (int)nReadyRow, (int)nX, (int)nY, (int)nCarrierIdx,
                    (unsigned)bCarrierId, (unsigned)pCandidate->bCraftType,
                    (int)pStores->anLineAux[nReadyRow], (int)nExpectedCrew);
-            App_PointerLogical(nX, nY, true);
+            App_ScriptPointerLogical(nX, nY, true);
             App_OnPointerUp();
         }
     }
@@ -7404,7 +7422,7 @@ static bool App_ScriptCampaignPickupGrenade(void)
     nDragY = PUFO_INV_DRAG_SCALE * (i32)pGrenade->pObj->nFootH / 2;
     uTuBefore = pUnit->uTu;
 
-    App_PointerLogical(nSourceX, nSourceY, true);
+    App_ScriptPointerLogical(nSourceX, nSourceY, true);
     if (!App_ScriptCampaignGrenadeRefresh(
             nMapKey, nQueueKey, sGrenade.nActorKey, sGrenade.nItemKey,
             sGrenade.nPoolIndex, sGrenade.nRosterSlot, sGrenade.nIndex, sGrenade.nAmmo,
@@ -7414,7 +7432,7 @@ static bool App_ScriptCampaignPickupGrenade(void)
         fflush(stdout);
         return false;
     }
-    App_PointerLogical(140 - nDragX - 10, 90 - nDragY - 10, false);
+    App_ScriptPointerLogical(140 - nDragX - 10, 90 - nDragY - 10, false);
     if (!App_ScriptCampaignGrenadeRefresh(
             nMapKey, nQueueKey, sGrenade.nActorKey, sGrenade.nItemKey,
             sGrenade.nPoolIndex, sGrenade.nRosterSlot, sGrenade.nIndex, sGrenade.nAmmo,
@@ -7696,7 +7714,7 @@ static bool App_ScriptCampaignPressMoveProbePixel(i32 nX, i32 nY,
                                                    i32 nTargetZ)
 {
     for (i32 i = 0; i < 2; ++i) {
-        App_PointerLogical(nX, nY, true);
+        App_ScriptPointerLogical(nX, nY, true);
         if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) {
             printf("pocketufo: campaign moveprobe event=owner_lost_down%d\n", (int)(i + 1));
             fflush(stdout);
@@ -7796,7 +7814,7 @@ static i32 App_ScriptCampaignCollectNearbyCells(Soldier *pUnit,
             MapCell *pCell;
             bool bSeen = false;
 
-            App_PointerLogical(x, y, false);
+            App_ScriptPointerLogical(x, y, false);
             if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, &pMap, &pQueue)
                 || (pUnit = App_ScriptCampaignFindActiveXcom(pMap, nUnitKey)) == NULL) {
                 return nCount;
@@ -7946,7 +7964,7 @@ static bool App_ScriptCampaignPressCellPixel(i32 nX, i32 nY)
     const uintptr_t nQueueKey = (uintptr_t)(void *)g_world.pTactState;
 
     for (i32 i = 0; i < 2; ++i) {
-        App_PointerLogical(nX, nY, true);
+        App_ScriptPointerLogical(nX, nY, true);
         if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
         App_OnPointerUp();
         if (!App_ScriptCampaignTactOwnersMatch(nMapKey, nQueueKey, NULL, NULL)) { return false; }
@@ -13954,7 +13972,7 @@ static bool App_ScriptCampaignAckConfirm(void)
     }
 
     /* This goes through the same pointer input path as the window; no pfnClick is called here. */
-    App_PointerLogical(nCenterX, nCenterY, true);
+    App_ScriptPointerLogical(nCenterX, nCenterY, true);
     App_OnPointerUp();
     App_DrawFrame();
 
@@ -14044,7 +14062,7 @@ static bool App_ScriptCampaignAckStatus(i32 nExpectedFlag)
     }
 
     /* Use the ordinary pointer route; the installed callback owns line removal and unpause. */
-    App_PointerLogical(nCenterX, nCenterY, true);
+    App_ScriptPointerLogical(nCenterX, nCenterY, true);
     App_OnPointerUp();
     App_DrawFrame();
 
@@ -14166,7 +14184,7 @@ static bool App_ScriptCampaignHomeOrder(void)
            (unsigned)bMarkerSub,
            markerPoint.nX, markerPoint.nY,
            (int)pMarker->nX, (int)pMarker->nY);
-    App_PointerLogical(markerPoint.nX, markerPoint.nY, true);
+    App_ScriptPointerLogical(markerPoint.nX, markerPoint.nY, true);
     App_OnPointerUp();
     App_DrawFrame();
 
@@ -14255,7 +14273,7 @@ static bool App_ScriptCampaignHomeOrder(void)
            (int)pReturnCtl->x, (int)pReturnCtl->y,
            (unsigned)pReturnCtl->uWidth, (unsigned)pReturnCtl->uHeight,
            nReturnX, nReturnY);
-    App_PointerLogical(nReturnX, nReturnY, true);
+    App_ScriptPointerLogical(nReturnX, nReturnY, true);
     App_OnPointerUp();
     App_DrawFrame();
 
@@ -14370,7 +14388,7 @@ static bool App_ScriptCampaignHomeMinuteSpeed(const char *pszStage)
            pszStage != NULL ? pszStage : "requested", (int)g_world.geo.world.nTickSeconds,
            (unsigned long long)nControlKey, (int)pMinute->x, (int)pMinute->y,
            (unsigned)pMinute->uWidth, (unsigned)pMinute->uHeight);
-    App_PointerLogical(nClickX, nClickY, true);
+    App_ScriptPointerLogical(nClickX, nClickY, true);
     App_OnPointerUp();
     App_DrawFrame();
 
@@ -15051,7 +15069,7 @@ static bool App_ScriptCampaignAbort(void)
         (void)App_DrawFrame();
         nModalX = (i32)g_world.sTactInput.nSlot20X + 25;
         nModalY = (i32)g_world.sTactInput.nSlot22Y + 8;
-        App_PointerLogical(nModalX, nModalY, true);
+        App_ScriptPointerLogical(nModalX, nModalY, true);
         App_OnPointerUp();
         (void)App_DrawFrame();
         printf("pocketufo: campaign abort: yes at %d/%d, ended %d screen %d\n",
@@ -16710,11 +16728,11 @@ static void App_RunDebugScript(LPCWSTR pwszPath)
         if (strcmp(azArg[0], "dump") == 0 && nArgs > 1) {
             App_ScriptDump(azArg[1]);
         } else if (strcmp(azArg[0], "click") == 0 && nArgs > 2) {
-            App_PointerLogical((i32)atoi(azArg[1]), (i32)atoi(azArg[2]), true);
+            App_ScriptPointerLogical((i32)atoi(azArg[1]), (i32)atoi(azArg[2]), true);
             App_OnPointerUp();
             printf("pocketufo: step click %s %s\n", azArg[1], azArg[2]);
         } else if (strcmp(azArg[0], "press") == 0 && nArgs > 2) {
-            App_PointerLogical((i32)atoi(azArg[1]), (i32)atoi(azArg[2]), true);
+            App_ScriptPointerLogical((i32)atoi(azArg[1]), (i32)atoi(azArg[2]), true);
             printf("pocketufo: step press %s %s\n", azArg[1], azArg[2]);
         } else if (strcmp(azArg[0], "release") == 0) {
             App_OnPointerUp();
@@ -16892,7 +16910,8 @@ static void App_ClearSurface(u16 colour)
 static u8 g_nStartupMissionType;   /* Map_nMissionType @ 0x128AD2 */
 static u8 g_bStartupMapUnk1511E;   /* unk_128AD6 @ Map+0x1511E */
 
-static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
+static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden,
+                             bool bScripted)
 {
     WNDCLASSW wc;
     HWND      hWnd;
@@ -16984,7 +17003,10 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden)
      * from a fixed clock instead. SHELL SCAFFOLDING: the interactive path keeps the original's clock.
      * Game_SeedStartupPicks is the nine draws after the seed; the record spends them before the asset
      * paths (0xA0250) are built, and so do we. */
-    if (bHidden) {
+    /* The fixed clock keys on SCRIPTED: a `--landscape --script` run renders
+     * wide frames and must stay on the same clock the calibrated flows were
+     * recorded with. */
+    if (bScripted) {
         Game_SeedRngFixed();
     } else {
         Game_SeedRng();
@@ -17315,7 +17337,14 @@ int App_Run(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     App_FindLoadSlotFlag(lpCmdLine);
     App_FindLandscapeFlag(lpCmdLine);
 
-    if (!App_InitInstance(hInstance, nCmdShow, pszDumpPath != NULL || pszScript != NULL)) {
+    /* QoL: with `--landscape` a scripted run keeps its window hidden (the
+     * deterministic scripted pump) while the geometry switch renders WIDE
+     * frames, so the wide layouts are checkable by script dump. Every scripted
+     * run without the flag stays the hidden 240x320 path the e2e gate and
+     * every frame dump rely on. */
+    if (!App_InitInstance(hInstance, nCmdShow,
+                          pszDumpPath != NULL || pszScript != NULL,
+                          pszDumpPath != NULL || pszScript != NULL)) {
         return 0;
     }
 

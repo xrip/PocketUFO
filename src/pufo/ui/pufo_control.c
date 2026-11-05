@@ -7,6 +7,7 @@
 #include <stdlib.h>  /* malloc/free, the pad allocations of UiControl_LoadPads */
 #include <string.h>
 #include "render/pufo_render.h" /* PadImage_ctor / FreeData / Load */
+#include "ui/pufo_uigeom.h"     /* QoL wide-view shim: identity in portrait */
 
 void UiControl_ctor(UiControl *pCtl)
 {
@@ -81,9 +82,10 @@ bool UiControl_BlitActivePad(UiControl *pCtl, UiControlBlitFn pfnBlit,
 
     /* The pad's position always follows its control. The original writes the two
      * dwords through unaligned stores, which is why it looks like a pair of
-     * component writes. */
-    pPad->nOriginX = pCtl->x;
-    pPad->nOriginY = pCtl->y;
+     * component writes. QoL wide view: the shared shim centers native-size UI
+     * on the 320x240 face (identity in portrait, see pufo_uigeom.h). */
+    pPad->nOriginX = PufoUi_MapX(pCtl->x);
+    pPad->nOriginY = PufoUi_MapY(pCtl->y);
 
     if (pCtl->bUnk17 != 0) {
         if (pfnBlitEx != NULL) {
@@ -117,10 +119,12 @@ bool UiControl_HitTest(UiControl *pCtl, i32 x, i32 y, bool bDown, bool bForceCli
     /* 0x1A42C: the box is only measured on a press, and the far edge is exclusive
      * one pixel short of x + uWidth and y + uHeight. */
     if (bDown) {
-        bHit = x >= (i32)pCtl->x
-            && y >= (i32)pCtl->y
-            && x < (i32)pCtl->x + (i32)pCtl->uWidth - 1
-            && y < (i32)pCtl->y + (i32)pCtl->uHeight - 1;
+        /* The box shifts with the pad through the same shim, so draw and hit
+         * can never disagree. */
+        bHit = x >= PufoUi_MapX(pCtl->x)
+            && y >= PufoUi_MapY(pCtl->y)
+            && x < PufoUi_MapX((i32)pCtl->x + (i32)pCtl->uWidth - 1)
+            && y < PufoUi_MapY((i32)pCtl->y + (i32)pCtl->uHeight - 1);
     }
 
     if (bDown) {

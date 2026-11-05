@@ -65,12 +65,13 @@ bool Gx_Present(GxSurface *pGx);
 bool Gx_Resize(GxSurface *pGx, u32 cxWidth, u32 cyHeight);
 
 /* Pure view-geometry choice for one frame.
- * wide (landscape shell, visible run, geoscape/tactical screen): surface
- *   320x240, UI drawn at native size centered: UI_OFF_X = (320-240)/2 = 40,
+ * wide (landscape shell on a geoscape-map/tactical screen): surface 320x240,
+ *   UI drawn at native size centered: UI_OFF_X = (320-240)/2 = 40,
  *   bottom-anchored UI (portrait y >= 160) shifts UI_OFF_Y = 240-320 = -80.
- * portrait (every other case, incl. ALL hidden/scripted runs): surface
- *   240x320, offsets 0 -- exactly today's pillarbox contract. */
-void Gx_ViewGeometry(int bLandscape, int bHidden, int bWideScreen,
+ * portrait (every other case): surface 240x320, offsets 0 -- exactly today's
+ *   pillarbox contract. Scripted runs render under this same rule; the e2e
+ *   gate and every committed dump run WITHOUT --landscape. */
+void Gx_ViewGeometry(int bLandscape, int bWideScreen,
                      int *pnW, int *pnH, int *pnUiX, int *pnUiY);
 
 /* GXSuspend @ 0xa61b4 and GXResume @ 0xa61b8, the display half of PocketUFO_WndProc's focus arms: 0xA04B4..0xA04C0

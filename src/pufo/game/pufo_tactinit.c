@@ -789,7 +789,7 @@ bool Tact_InitMission(TactInitEnv *pEnv, i32 nMode)
      * the tactical flag is the byte the prologue just set. */
     (void)Map_InitFacingScratch(&pEnv->facing, &pEnv->tileSize, 1,
                                 *pEnv->pbTactFlag != 0, (u8)pEnv->pMap->nLayerScratch,
-                                pEnv->pnTileCountX, pEnv->pnTileCountY);
+                                pEnv->pnTileCountX, pEnv->pnTileCountY, pEnv->nViewW);
 
     /* 0x3CB40..0x3CB5C: the three static TactItem records seeded from Map.apObjects.
      * The original stores through the ILP32 byte offsets 0x00 (unk_138EA0) and 0x14

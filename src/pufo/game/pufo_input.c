@@ -1,5 +1,6 @@
 /* pufo_input.c - see pufo_input.h for evidence and the field map. */
 #include "game/pufo_input.h"
+#include "ui/pufo_uigeom.h" /* QoL wide-view shim: identity in portrait */
 #include "game/pufo_mapcell.h"   /* MapCell, TactItem, ObjectRecFull */
 #include "game/pufo_path.h"       /* g_aStepDir */
 #include "game/pufo_tactstate.h"  /* Map_QueueDoorAction, Unit_FaceToward, TactState_KickQueue */
@@ -766,7 +767,8 @@ static void PointerScreen0(TactInputState *pState, const TactInputHooks *pHooks,
             i32 nTop = (pState->bDeployPanelOpen == 0 && pWorld->pHudPad != NULL)
                      ? nRow + 300 - (i32)pWorld->pHudPad->uHeight
                      : nRow + 283;
-            if (nX >= 207 && nY >= nTop && nX <= 237 && nY <= nTop + 16) {
+            if (nX >= PufoUi_MapX(207) && nY >= PufoUi_MapY(nTop) && nX <= PufoUi_MapX(237)
+                && nY <= PufoUi_MapY(nTop + 16)) {
                 Soldier *pTarget = pSel->multiOrAnim.apMultiTargets[i];
                 if (pHooks->pfnFocusOnCell != NULL && pTarget != NULL && pTarget->pCell != NULL) {
                     pHooks->pfnFocusOnCell(pTarget->pCell, pHooks->pUser);
@@ -788,7 +790,7 @@ static void PointerScreen0(TactInputState *pState, const TactInputHooks *pHooks,
     nUpper = nBase - nThird;
 
     if (pState->bPlayerInputOn != 0 && pWorld->pHudPad != NULL &&
-        nY >= pWorld->pHudPad->nOriginY) {
+        nY >= PufoUi_MapY(pWorld->pHudPad->nOriginY)) {
         goto widgets;
     }
     if (pState->bEdgeTestOn == 0) {
@@ -797,59 +799,59 @@ static void PointerScreen0(TactInputState *pState, const TactInputHooks *pHooks,
 
     /* 0x141BC..0x14318: the eleven edge tests, in the order the original chains
      * them. Each either sets flags and goes to the widgets, or falls through. */
-    if (nX < 15 && nY < nUpper && nY > nThird) {
+    if (nX < PufoUi_MapX(15) && nY < PufoUi_MapY(nUpper) && nY > PufoUi_MapY(nThird)) {
         PointerEdge(pState, PUFO_EDGE_LEFT);
         goto widgets;
     }
-    if (nX > 225 && nY < nUpper && nY > nThird) {
+    if (nX > PufoUi_MapX(225) && nY < PufoUi_MapY(nUpper) && nY > PufoUi_MapY(nThird)) {
         PointerEdge(pState, PUFO_EDGE_RIGHT);
         goto widgets;
     }
-    if (nY < 15 && nX < 160 && nX > 80) {
+    if (nY < PufoUi_MapY(15) && nX < PufoUi_MapX(160) && nX > 80) {
         PointerEdge(pState, PUFO_EDGE_TOP);
         goto widgets;
     }
-    if (nY < nBase && nY > nBase - 15 && nX < 160 && nX > 80) {
+    if (nY < PufoUi_MapY(nBase) && nY > PufoUi_MapY(nBase - 15) && nX < PufoUi_MapX(160) && nX > 80) {
         PointerEdge(pState, PUFO_EDGE_RIGHT);
         PointerEdge(pState, PUFO_EDGE_BOTTOM);
         goto widgets;
     }
-    if (nX < 15 && nY < nThird) {
+    if (nX < PufoUi_MapX(15) && nY < PufoUi_MapY(nThird)) {
         PointerEdge(pState, PUFO_EDGE_TOP);
         PointerEdge(pState, PUFO_EDGE_LEFT);
         goto widgets;
     }
-    if (nY < 15 && nX < 80) {
+    if (nY < PufoUi_MapY(15) && nX < PufoUi_MapX(80)) {
         PointerEdge(pState, PUFO_EDGE_TOP);
         PointerEdge(pState, PUFO_EDGE_LEFT);
         goto widgets;
     }
-    if (nX > 225 && nY > nUpper && nY < nBase) {
+    if (nX > PufoUi_MapX(225) && nY > PufoUi_MapY(nUpper) && nY < PufoUi_MapY(nBase)) {
         PointerEdge(pState, PUFO_EDGE_RIGHT);
         PointerEdge(pState, PUFO_EDGE_BOTTOM);
         goto widgets;
     }
-    if (nX > 160 && nY < nBase && nY > nBase - 15) {
+    if (nX > PufoUi_MapX(160) && nY < PufoUi_MapY(nBase) && nY > PufoUi_MapY(nBase - 15)) {
         PointerEdge(pState, PUFO_EDGE_RIGHT);
         PointerEdge(pState, PUFO_EDGE_BOTTOM);
         goto widgets;
     }
-    if (nX > 160 && nY < 15) {
+    if (nX > PufoUi_MapX(160) && nY < PufoUi_MapY(15)) {
         PointerEdge(pState, PUFO_EDGE_TOP);
         PointerEdge(pState, PUFO_EDGE_RIGHT);
         goto widgets;
     }
-    if (nX > 225 && nY < nThird) {
+    if (nX > PufoUi_MapX(225) && nY < PufoUi_MapY(nThird)) {
         PointerEdge(pState, PUFO_EDGE_TOP);
         PointerEdge(pState, PUFO_EDGE_RIGHT);
         goto widgets;
     }
-    if (nX < 15 && nY > nUpper && nY < nBase) {
+    if (nX < PufoUi_MapX(15) && nY > PufoUi_MapY(nUpper) && nY < PufoUi_MapY(nBase)) {
         PointerEdge(pState, PUFO_EDGE_LEFT);
         PointerEdge(pState, PUFO_EDGE_BOTTOM);
         goto widgets;
     }
-    if (nX < 80 && nY < nBase && nY > nBase - 15) {
+    if (nX < PufoUi_MapX(80) && nY < PufoUi_MapY(nBase) && nY > PufoUi_MapY(nBase - 15)) {
         PointerEdge(pState, PUFO_EDGE_LEFT);
         PointerEdge(pState, PUFO_EDGE_BOTTOM);
         goto widgets;

@@ -4587,6 +4587,7 @@ bool World_InitTactical(PufoWorldState *pW, i32 nMode)
                                                        * reader used, which is why a mission that did not poke
                                                        * sTactInput drew an empty map: the iso column bound was 0. */
     pE->pnTileCountY     = &pW->sTactInput.nTileShiftY;   /* Map_nTileCountY @ Map+0x35 (0x26F70) */
+    pE->nViewW           = pW->nViewW;                    /* shell QoL view width, 0 = parity */
     pE->pbDrawIsoLayer   = &pW->bMapDrawIsoLayer;     /* Map+0x254B0 */
     pE->pbLightEnabled   = &pW->bMapLightEnabled;     /* Map+0x254B1 */
     pE->pnUnkMap254B4    = &pW->nMapUnk138E6C;        /* Map+0x254B4 */

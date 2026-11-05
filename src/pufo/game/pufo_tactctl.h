@@ -246,7 +246,7 @@ typedef struct MapTileSize {
  * the caller's own Map+0x34/0x35 cells; they may be NULL when the caller has no map live. */
 bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nFacing,
                           bool bTactFlag, u8 nLayerScratch,
-                          u8 *pnTileCountX, u8 *pnTileCountY);
+                          u8 *pnTileCountX, u8 *pnTileCountY, int nViewW);
 
 /* Tact_ScanVictoryTiles @ 0x33264.
  *

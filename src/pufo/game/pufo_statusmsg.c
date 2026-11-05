@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "util/pufo_str.h"
+#include "ui/pufo_uigeom.h" /* QoL wide-view shim: identity in portrait */
 
 void StatusMsg_Shift(StatusStack *pStack)
 {
@@ -116,7 +117,8 @@ i32 StatusMsg_DrawStack(StatusStack *pStack, i32 *pnOutDrawY,
         i32 y = nDrawY - 12 * i;
 
         if (pHooks->pfnDraw != NULL) {
-            pHooks->pfnDraw(PUFO_STATUS_DRAW_X, y, pStack->aszMsg[nIndex], pHooks->pUser);
+            pHooks->pfnDraw(PufoUi_MapX(PUFO_STATUS_DRAW_X), PufoUi_MapY(y),
+                          pStack->aszMsg[nIndex], pHooks->pUser);
         }
     }
 
