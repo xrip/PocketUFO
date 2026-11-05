@@ -1288,11 +1288,8 @@ static bool g_bLandscapeFlag;
  * other screen keeps the portrait 240x320 surface pillarboxed. The geometry
  * is recomputed at the draw entry; the hidden/scripted runs are ALWAYS
  * portrait so every dump, e2e reference and test sees exactly 240x320. */
-static bool g_bHiddenRun;
 static int  g_nViewW   = 240; /* surface dims, data-driven everywhere */
 static int  g_nViewH   = 320;
-static int  g_nUiOffX  = 0;   /* native-size UI centered on the wide face */
-static int  g_nUiOffY  = 0;   /* bottom-anchored UI (y >= 160) shifts -80 */
 
 static void App_UpdateViewGeometry(void)
 {
@@ -1326,9 +1323,7 @@ static void App_UpdateViewGeometry(void)
     }
     g_nViewW  = nW;
     g_nViewH  = nH;
-    g_nUiOffX = nX;
-    g_nUiOffY = nY;
-    /* The shared UI shim (draw + hit in one place) and the iso column bound. */
+    /* The shim (draw + hit in one place) and the iso column bound. */
     PufoUi_SetGeometry(nX, nY);
     g_world.nViewW = g_bLandscapeFlag ? nW : 0;
 }
@@ -16912,13 +16907,13 @@ static void App_ClearSurface(u16 colour)
 static u8 g_nStartupMissionType;   /* Map_nMissionType @ 0x128AD2 */
 static u8 g_bStartupMapUnk1511E;   /* unk_128AD6 @ Map+0x1511E */
 
-static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden,
-                             bool bScripted)
+/* bScriptedRun: the --script/--dump-frame path. No window is shown (the
+ * scripted pump paints the frames) and the clock is fixed, so the calibrated
+ * flows are deterministic. */
+static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bScriptedRun)
 {
     WNDCLASSW wc;
     HWND      hWnd;
-
-    g_bHiddenRun = bHidden;
 
     /* Single instance, matching InitInstance @ 0x9fd48. The original raises
      * the existing window; that is safe to keep on Win64. */
@@ -16958,7 +16953,7 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden,
          * surface App_DumpFramePpm writes -- and a window that pops up and grabs the foreground on every
          * test run gets in the way of the person using the machine. The interactive path keeps the
          * original's visible window. */
-        if (bHidden) {
+        if (bScriptedRun) {
             dwExStyle |= WS_EX_NOACTIVATE;
         } else {
             dwStyle |= WS_VISIBLE;
@@ -17005,10 +17000,7 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden,
      * from a fixed clock instead. SHELL SCAFFOLDING: the interactive path keeps the original's clock.
      * Game_SeedStartupPicks is the nine draws after the seed; the record spends them before the asset
      * paths (0xA0250) are built, and so do we. */
-    /* The fixed clock keys on SCRIPTED: a `--landscape --script` run renders
-     * wide frames and must stay on the same clock the calibrated flows were
-     * recorded with. */
-    if (bScripted) {
+    if (bScriptedRun) {
         Game_SeedRngFixed();
     } else {
         Game_SeedRng();
@@ -17036,7 +17028,7 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow, bool bHidden,
         fflush(stdout);
     }
 
-    if (!bHidden) {
+    if (!bScriptedRun) {
         ShowWindow(hWnd, nCmdShow);   /* 0x9FE60 */
     }
     UpdateWindow(hWnd);           /* 0x9FE68 */
@@ -17345,7 +17337,6 @@ int App_Run(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * run without the flag stays the hidden 240x320 path the e2e gate and
      * every frame dump rely on. */
     if (!App_InitInstance(hInstance, nCmdShow,
-                          pszDumpPath != NULL || pszScript != NULL,
                           pszDumpPath != NULL || pszScript != NULL)) {
         return 0;
     }

@@ -16,8 +16,8 @@
  * screen edge and shifts with the surface height. */
 #define PUFO_UI_BOTTOM_ANCHOR_Y 160
 
+/* Portrait runs never call it: the statics start at 0, the identity. */
 void PufoUi_SetGeometry(int nOffX, int nOffY);
-void PufoUi_ResetGeometry(void); /* identity: the portrait/parity default */
 
 int  PufoUi_MapX(int nX); /* nX + offX */
 int  PufoUi_MapY(int nY); /* nY >= anchor ? nY + offY : nY */

@@ -9,12 +9,6 @@ void PufoUi_SetGeometry(int nOffX, int nOffY)
     g_nUiOffY = nOffY;
 }
 
-void PufoUi_ResetGeometry(void)
-{
-    g_nUiOffX = 0;
-    g_nUiOffY = 0;
-}
-
 int PufoUi_MapX(int nX)
 {
     return nX + g_nUiOffX;
