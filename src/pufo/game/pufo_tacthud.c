@@ -524,12 +524,27 @@ static void CopyTextRecord(const u8 *pTextRecs, i32 nRec, char *pszOut)
 
 /* The centring rule the HUD label draws share: pad.x + (pad.uWidth - text width) / 2, at
  * pad.y + a fixed vertical offset. The menu uses +3, the modal panels use +2. */
+/* Blit a fixed-origin pad at its shimmed position (identity on the portrait face).
+ * The pads are game-owned mutable PadImages; the draw envs pass them const. */
+static void PadImage_BlitShimmed(const PadImage *pConstPad)
+{
+    PadImage *const pPad = (PadImage *)pConstPad;
+    const i32 nOriginX = pPad->nOriginX;
+    const i32 nOriginY = pPad->nOriginY;
+
+    pPad->nOriginX = PufoUi_MapX(nOriginX);
+    pPad->nOriginY = PufoUi_MapY(nOriginY);
+    PadImage_Blit(pPad);
+    pPad->nOriginX = nOriginX;
+    pPad->nOriginY = nOriginY;
+}
+
 static void DrawLabelOnPad(const UiControl *pPad, const char *psz, i32 nVertOffset)
 {
     i32 nWidth = Text_MeasureWidth(psz);
 
-    Text_DrawString((i32)pPad->x + ((i32)pPad->uWidth - nWidth) / 2,
-                    (i32)pPad->y + nVertOffset, psz);
+    Text_DrawString(PufoUi_MapX((i32)pPad->x + ((i32)pPad->uWidth - nWidth) / 2),
+                    PufoUi_MapY((i32)pPad->y) + nVertOffset, psz);
 }
 
 /* The same centring, but against a fixed width instead of the pad's own. TactHud_CopyStatusText
@@ -539,7 +554,8 @@ static void DrawLabelOnPadFixed(const UiControl *pPad, const char *psz, i32 nFix
 {
     i32 nWidth = Text_MeasureWidth(psz);
 
-    Text_DrawString((i32)pPad->x + (nFixedWidth - nWidth) / 2, (i32)pPad->y + nVertOffset, psz);
+    Text_DrawString(PufoUi_MapX((i32)pPad->x + (nFixedWidth - nWidth) / 2),
+                    PufoUi_MapY((i32)pPad->y) + nVertOffset, psz);
 }
 
 /* Menu_DrawLabeledPads @ 0x217e0.
@@ -627,7 +643,7 @@ i32 TactHud_CopyStatusText(UiControl *pPads, const char *pszStatus, const GfxCol
 
     Gfx_PackRgb565Pair(pColor, 255, 255, 255, 10, 10, 10);
     nWidth = Text_MeasureWidth(pszStatus);
-    Text_DrawString((240 - nWidth) / 2, 100, pszStatus);
+    Text_DrawString(PufoUi_MapX((240 - nWidth) / 2), PufoUi_MapY(100), pszStatus);
 
     Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
 
@@ -746,7 +762,7 @@ i32 TactHud_DrawConfirmDialog(UiControl *pPad, const PadImage *pBackdrop,
 {
     i32 nWidth;
 
-    PadImage_Blit(pBackdrop);
+    PadImage_BlitShimmed(pBackdrop);
 
     (void)UiControl_BlitActivePad(pPad, pfnBlit, pfnBlitEx, pUser);
 
@@ -755,13 +771,13 @@ i32 TactHud_DrawConfirmDialog(UiControl *pPad, const PadImage *pBackdrop,
 
     Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
     nWidth = Text_MeasureWidth(szTitle);
-    Text_DrawString((240 - nWidth) / 2, 10, szTitle);
+    Text_DrawString(PufoUi_MapX((240 - nWidth) / 2), PufoUi_MapY(10), szTitle);
 
     Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
-    Text_DrawString(10, 30, szLeft);
+    Text_DrawString(PufoUi_MapX(10), PufoUi_MapY(30), szLeft);
 
     Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
-    Text_DrawString(170, 30, szRight);
+    Text_DrawString(PufoUi_MapX(170), PufoUi_MapY(30), szRight);
 
     UiPanel_DrawText(pPanelA, pColor);
     UiPanel_DrawText(pPanelB, pColor);
@@ -787,7 +803,7 @@ i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
         return pState->nFadeCount;
     }
 
-    PadImage_Blit(pBackdrop);
+    PadImage_BlitShimmed(pBackdrop);
 
     if (pState->nReadyFlag != 0) {
         Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
@@ -795,20 +811,20 @@ i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
         Gfx_PackRgb565Pair(pColor, 255, 0, 0, 90, 0, 0);
     }
     nWidth = Text_MeasureWidth(pState->szBanner);
-    Text_DrawString(120 - nWidth / 2, 10, pState->szBanner);
+    Text_DrawString(PufoUi_MapX(120) - nWidth / 2, PufoUi_MapY(10), pState->szBanner);
 
     UiPanel_DrawText(pPanelA, pColor);
     UiPanel_DrawText(pPanelB, pColor);
 
     Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
-    Text_DrawString(10, 260, szFooter);
+    Text_DrawString(PufoUi_MapX(10), PufoUi_MapY(260), szFooter);
 
     if (pState->nTimerValue == 45) {
         Gfx_PackRgb565Pair(pColor, 255, 0, 0, 90, 0, 0);
     } else {
         Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
     }
-    Text_DrawString(200, 260, pState->szTimer);
+    Text_DrawString(PufoUi_MapX(200), PufoUi_MapY(260), pState->szTimer);
 
     (void)UiControl_BlitActivePad(pPad, pfnBlit, pfnBlitEx, pUser);
 
@@ -845,7 +861,7 @@ i32 TactHud_DrawUnitRoster(UiControl *pPads, const TactHudRoster *pRoster,
             (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
 
             Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
-            Text_DrawString((i32)pPads[nIdx].x + 5, (i32)pPads[nIdx].y + 3,
+            Text_DrawString(PufoUi_MapX((i32)pPads[nIdx].x + 5), PufoUi_MapY((i32)pPads[nIdx].y) + 3,
                             (const char *)(pRoster->pNameTable + PUFO_HUD_ROSTER_NAME_STRIDE * nIdx));
 
             if (nIdx < 3 || nIdx > 10) {
@@ -853,12 +869,12 @@ i32 TactHud_DrawUnitRoster(UiControl *pPads, const TactHudRoster *pRoster,
                 /* The original sets the same colour twice here; reproduced rather than tidied. */
                 Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
                 Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
-                Text_DrawString((i32)pPads[nIdx].x + 85, (i32)pPads[nIdx].y + 3, szText);
+                Text_DrawString(PufoUi_MapX((i32)pPads[nIdx].x + 85), PufoUi_MapY((i32)pPads[nIdx].y) + 3, szText);
             }
 
             sprintf(szText, "%s%d", pRoster->szNumberPrefixB, pRoster->anModeValue[nIdx]);
             Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
-            Text_DrawString((i32)pPads[nIdx].x + 135, (i32)pPads[nIdx].y + 3, szText);
+            Text_DrawString(PufoUi_MapX((i32)pPads[nIdx].x + 135), PufoUi_MapY((i32)pPads[nIdx].y) + 3, szText);
 
             ++nVisible;
         }
@@ -885,8 +901,8 @@ i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
 {
     i32 i;
 
-    pEnv->pOverlayPad->nOriginX = 0;
-    pEnv->pOverlayPad->nOriginY = 0;
+    pEnv->pOverlayPad->nOriginX = PufoUi_MapX(0);
+    pEnv->pOverlayPad->nOriginY = PufoUi_MapY(0);
     PadImage_Blit(pEnv->pOverlayPad);
 
     for (i = 0; i < nXcomCount; ++i) {
@@ -903,12 +919,12 @@ i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
 
         if (Unit_bIsLarge(pUnit)) {
             pMark = pEnv->pLargeMark;
-            pMark->nOriginX = nX - 2;
-            pMark->nOriginY = nY - 2;
+            pMark->nOriginX = PufoUi_MapX(nX - 2);
+            pMark->nOriginY = PufoUi_MapY(nY - 2);
         } else {
             pMark = pEnv->pSmallMark;
-            pMark->nOriginX = nX - 4;
-            pMark->nOriginY = nY - 4;
+            pMark->nOriginX = PufoUi_MapX(nX - 4);
+            pMark->nOriginY = PufoUi_MapY(nY - 4);
         }
         PadImage_BlitEx(pMark, 0xFFu);
     }
@@ -927,12 +943,12 @@ i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
 
         if (Unit_bIsLarge(pUnit)) {
             pMark = pEnv->pLargeMark;
-            pMark->nOriginX = nX - 8;
-            pMark->nOriginY = nY - 8;
+            pMark->nOriginX = PufoUi_MapX(nX - 8);
+            pMark->nOriginY = PufoUi_MapY(nY - 8);
         } else {
             pMark = pEnv->pSmallMark;
-            pMark->nOriginX = nX - 4;
-            pMark->nOriginY = nY - 4;
+            pMark->nOriginX = PufoUi_MapX(nX - 4);
+            pMark->nOriginY = PufoUi_MapY(nY - 4);
         }
         PadImage_BlitEx(pMark, 0xFFu);
     }
@@ -967,29 +983,29 @@ i32 TactHud_DrawTopBar(UiControl *pPads, const u8 *pTextRecs, const GfxColorEnv 
 
     CopyTextRecord(pTextRecs, 32, szText);
     nWidth = Text_MeasureWidth(szText);
-    Text_DrawString((240 - nWidth) / 2, 0, szText);
+    Text_DrawString(PufoUi_MapX((240 - nWidth) / 2), PufoUi_MapY(0), szText);
 
     /* Record 33 has no colour call of its own; it inherits the pair above. */
     CopyTextRecord(pTextRecs, 33, szText);
     nWidth = Text_MeasureWidth(szText);
-    Text_DrawString((240 - nWidth) / 2, 50, szText);
+    Text_DrawString(PufoUi_MapX((240 - nWidth) / 2), PufoUi_MapY(50), szText);
 
     Gfx_PackRgb565Pair(pColor, 255, 255, 255, 10, 10, 10);
     CopyTextRecord(pTextRecs, 1031, szText);
     nWidth = Text_MeasureWidth(szText);
-    Text_DrawString((240 - nWidth) / 2, 100, szText);
+    Text_DrawString(PufoUi_MapX((240 - nWidth) / 2), PufoUi_MapY(100), szText);
 
     Gfx_PackRgb565Pair(pColor, 255, 255, 255, 10, 10, 10);
     CopyTextRecord(pTextRecs, 1032, szText);
     nWidth = Text_MeasureWidth(szText);
-    Text_DrawString((240 - nWidth) / 2, 150, szText);
+    Text_DrawString(PufoUi_MapX((240 - nWidth) / 2), PufoUi_MapY(150), szText);
 
     /* These six are not measured: x is the constant 40. */
     CopyTextRecord(pTextRecs, 1043, szText);
-    Text_DrawString(40, 200, szText);
+    Text_DrawString(PufoUi_MapX(40), PufoUi_MapY(200), szText);
     for (nIdx = 0; nIdx < 5; ++nIdx) {
         CopyTextRecord(pTextRecs, 391 + nIdx, szText);
-        Text_DrawString(40, 220 + 20 * nIdx, szText);
+        Text_DrawString(PufoUi_MapX(40), PufoUi_MapY(220 + 20 * nIdx), szText);
     }
 
     Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
@@ -1227,7 +1243,7 @@ static void DrawItemIcon(TactHudItemStripEnv *pEnv, const TactItem *pItem,
     i32 nDelta = TactItem_GetEquipDelta((i32)pObj->uSortKey);
     i32 nSlot  = TactItem_GetHandSlot((i32)pObj->uSortKey);
 
-    Font_DrawGlyph(nBaseX + nSlot + nOffW, nBaseY + nDelta + nOffH,
+    Font_DrawGlyph(PufoUi_MapX(nBaseX + nSlot + nOffW), PufoUi_MapY(nBaseY + nDelta + nOffH),
                    (u16)(pObj->uIconId + pEnv->nBigObsBase - 1), 0);
 }
 
@@ -1261,7 +1277,7 @@ void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor)
 
         snprintf(szNum, sizeof(szNum), "%d", (int)pUi->anInvCount[nIdx]);
         nTextW = Text_MeasureWidth(szNum);
-        Text_DrawString(nX - nTextW + 52, 301, szNum);
+        Text_DrawString(PufoUi_MapX(nX - nTextW + 52), PufoUi_MapY(301), szNum);
     }
 
     if (pUnit->pHandR != NULL) {
@@ -1274,14 +1290,14 @@ void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor)
     /* One hand holds a one-handed item and the other is empty: mark the empty one. */
     if (pUnit->pHandL != NULL && pUnit->pHandR == NULL &&
         pUnit->pHandL->pObj->bListPri == 1) {
-        pEnv->pEmptyHandPad->nOriginX = 126;
-        pEnv->pEmptyHandPad->nOriginY = 64;
+        pEnv->pEmptyHandPad->nOriginX = PufoUi_MapX(126);
+        pEnv->pEmptyHandPad->nOriginY = PufoUi_MapY(64);
         PadImage_Blit(pEnv->pEmptyHandPad);
     }
     if (pUnit->pHandR != NULL && pUnit->pHandL == NULL &&
         pUnit->pHandR->pObj->bListPri == 1) {
-        pEnv->pEmptyHandPad->nOriginX = 7;
-        pEnv->pEmptyHandPad->nOriginY = 64;
+        pEnv->pEmptyHandPad->nOriginX = PufoUi_MapX(7);
+        pEnv->pEmptyHandPad->nOriginY = PufoUi_MapY(64);
         PadImage_Blit(pEnv->pEmptyHandPad);
     }
 

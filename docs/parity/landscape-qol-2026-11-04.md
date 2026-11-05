@@ -145,3 +145,37 @@ ocean confirm refusal centred, user save deploy state pillarboxed portrait.
 Separate pre-existing bug, NOT touched: `close` on a loaded user save
 SEGFAULTs in Geoscape_CloseUI -> GameTime_Set5Sec (NULL speed cell);
 reproduces on portrait at master.
+
+## Geoscape and tactical fill the whole window (2026-11-05, supersedes the
+## portrait-face exclusions of the section above)
+
+User requirement: the geoscape and tactical screens occupy the ENTIRE window
+in every state that shows the map. The gate now drops the face to portrait
+only for the menu screens (geoscape options dialog, tact inventory 1, tact
+options 12, promotion report 13). The radar window, deploy panel, hand menu,
+minimap overview (6) and modal dialogs stay on the wide face, centred.
+
+1. Shared modal dialog (UiModal_DrawDialog): the box centres on the live
+   face ((faceH - h) / 2 and MapX of the portrait nX), exact portrait, exact
+   parity formula; the modal layout cells and button hit boxes follow.
+2. UiPanel_DrawText shifts its rect, rules, hover band and rows through the
+   shim (identity portrait): every panel over a wide map lands centred.
+3. TactHud: pad label helpers, status line, confirm dialog (backdrop, title,
+   side labels), status banner, unit roster rows, unit markers + overlay pad,
+   top bar rows and the HUD item strip (icons, counts, empty-hand pad) all
+   shift MapX/MapY; a shared PadImage_BlitShimmed helper blits fixed-origin
+   backdrop pads centred.
+4. Viewport guide: the four edge blits the P2 pass left raw now shift.
+5. Minimap overview (screen 6): glyphs, label and the mini-cursor pad centre
+   in x (the window is top-anchored, y stays).
+6. Geoscape radar window: panel frame blits, rails, signal/cursor bars,
+   labels, wash, button pads and the fuel gauge shift MapX/MapY.
+
+Evidence: ctest -C Release 67/67 (the modal centering keeps the exact
+(259/2 = 148)-style truncation, so the existing modal probes pass untouched); e2e pictures
+11/11 (only the known stale 00_mainmenu ref); scripted wide dumps on the
+user's sav0.sav: deploy-panel state 320x240 with the deploy bar bottom-
+anchored, battlefield after closing the panel shows the full 117-row HUD
+centred; the НЛО contact card and the new-base placement stay centred as in
+the section above. Radar window parity is by construction (no radar facility
+in the QA map; identity portrait in the unit tests).

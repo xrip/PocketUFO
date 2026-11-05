@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "render/pufo_render.h"
+#include "ui/pufo_uigeom.h"
 #include "util/pufo_str.h"
 
 bool UiPanel_ctor(UiPanel *pPanel, i32 nLineCount)
@@ -339,13 +340,13 @@ void UiPanel_DrawText(UiPanel *pPanel, const GfxColorEnv *pColor)
     i32 row;
 
     if (pPanel->bRowRules != 0) {
-        SoftSurf_BlitRectProxy(0, pPanel->nRectX, pPanel->nPosY - 1, pPanel->nViewW, 1,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(pPanel->nRectX), PufoUi_MapY(pPanel->nPosY - 1), pPanel->nViewW, 1,
                                pPanel->aStyleRgb[0], pPanel->aStyleRgb[1],
                                pPanel->aStyleRgb[2]);                                 /* 0x3E9BC */
     }
     if (pPanel->bSelLineHighlight != 0 && pPanel->bHoverActive != 0) {
-        SoftSurf_BlitSrcRect(pPanel->nRectX + 1,
-                             pPanel->nHoverRow * pPanel->nFont + pPanel->nPosY,
+        SoftSurf_BlitSrcRect(PufoUi_MapX(pPanel->nRectX + 1),
+                             PufoUi_MapY(pPanel->nHoverRow * pPanel->nFont + pPanel->nPosY),
                              pPanel->nViewW - 2, pPanel->nFont,
                              (u32)(i8)pPanel->aStyleRgb[3], (i8)pPanel->aStyleRgb[4],
                              (i8)pPanel->aStyleRgb[5], pPanel->bColorKey);            /* 0x3EA44 */
@@ -368,8 +369,8 @@ void UiPanel_DrawText(UiPanel *pPanel, const GfxColorEnv *pColor)
             continue; /* 0x3ED18: the row is packed, not drawn */
         }
         if (pPanel->bRowRules != 0) {
-            SoftSurf_BlitRectProxy(0, pPanel->nRectX,
-                                   (nVisible + 1) * pPanel->nFont + pPanel->nPosY, pPanel->nViewW, 1,
+            SoftSurf_BlitRectProxy(0, PufoUi_MapX(pPanel->nRectX),
+                                   PufoUi_MapY((nVisible + 1) * pPanel->nFont + pPanel->nPosY), pPanel->nViewW, 1,
                                    pPanel->aStyleRgb[0], pPanel->aStyleRgb[1],
                                    pPanel->aStyleRgb[2]);                             /* 0x3EB30 */
         }
@@ -395,13 +396,13 @@ void UiPanel_DrawText(UiPanel *pPanel, const GfxColorEnv *pColor)
         }
         nWidth = Text_MeasureWidth(psz);
         if (pPanel->nUnk7076 == 1) {
-            x = pPanel->nPosX - nWidth / 2;
+            x = PufoUi_MapX(pPanel->nPosX) - nWidth / 2;
         } else if (pPanel->nUnk7076 == 2) {
-            x = pPanel->nPosX - nWidth;
+            x = PufoUi_MapX(pPanel->nPosX) - nWidth;
         } else {
-            x = pPanel->nPosX;
+            x = PufoUi_MapX(pPanel->nPosX);
         }
-        y = nVisible * pPanel->nFont + (pPanel->nFont - 16) / 2 + pPanel->nPosY;
+        y = PufoUi_MapY(nVisible * pPanel->nFont + (pPanel->nFont - 16) / 2 + pPanel->nPosY);
 
         Text_DrawString(x, y, psz);
     }

@@ -1820,7 +1820,14 @@ char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRe
 void RadarScreen_BlitOverlay(PadImage *pOverlayPad)
 {
     if (pOverlayPad != NULL) {
+        const i32 nOriginX = pOverlayPad->nOriginX; /* QoL: blit at the shimmed origin */
+        const i32 nOriginY = pOverlayPad->nOriginY;
+
+        pOverlayPad->nOriginX = PufoUi_MapX(nOriginX);
+        pOverlayPad->nOriginY = PufoUi_MapY(nOriginY);
         PadImage_Blit(pOverlayPad); /* 0x5d6e0 */
+        pOverlayPad->nOriginX = nOriginX;
+        pOverlayPad->nOriginY = nOriginY;
     }
 }
 
@@ -2626,8 +2633,8 @@ i32 RadarScreen_DrawFuelGauge(const RadarFuelEnv *pEnv)
 
     PadImage *pHundreds = RadarDigitPad(pEnv, nHundreds);
     if (pHundreds != NULL) {
-        pHundreds->nOriginX = PUFO_RADAR_FUEL_X_HUNDREDS; /* 0x5DA5C..0x5DA60 */
-        pHundreds->nOriginY = PUFO_RADAR_FUEL_Y;          /* 0x5DA74 */
+        pHundreds->nOriginX = PufoUi_MapX(PUFO_RADAR_FUEL_X_HUNDREDS); /* 0x5DA5C..0x5DA60 */
+        pHundreds->nOriginY = PufoUi_MapY(PUFO_RADAR_FUEL_Y); /* 0x5DA74 */
         if (nHundreds != 0) {                             /* 0x5DA6C */
             PadImage_BlitEx(pHundreds, PUFO_RADAR_PAD_KEY);
         }
@@ -2635,8 +2642,8 @@ i32 RadarScreen_DrawFuelGauge(const RadarFuelEnv *pEnv)
 
     PadImage *pTens = RadarDigitPad(pEnv, nTens);
     if (pTens != NULL) {
-        pTens->nOriginX = PUFO_RADAR_FUEL_X_TENS; /* 0x5DA88..0x5DA90 */
-        pTens->nOriginY = PUFO_RADAR_FUEL_Y;      /* 0x5DA98 */
+        pTens->nOriginX = PufoUi_MapX(PUFO_RADAR_FUEL_X_TENS); /* 0x5DA88..0x5DA90 */
+        pTens->nOriginY = PufoUi_MapY(PUFO_RADAR_FUEL_Y); /* 0x5DA98 */
         /* 0x5DA9C skips the blit when the tens digit is non-zero and 0x5DAA4 skips it when the
          * hundreds digit is not 1, so a zero tens digit is drawn only at 100%. */
         if (nTens != 0 || nHundreds == 1) {
@@ -2646,15 +2653,15 @@ i32 RadarScreen_DrawFuelGauge(const RadarFuelEnv *pEnv)
 
     PadImage *pUnits = RadarDigitPad(pEnv, nUnits);
     if (pUnits != NULL) {
-        pUnits->nOriginX = PUFO_RADAR_FUEL_X_UNITS; /* 0x5DABC..0x5DAC4 */
-        pUnits->nOriginY = PUFO_RADAR_FUEL_Y;       /* 0x5DACC */
+        pUnits->nOriginX = PufoUi_MapX(PUFO_RADAR_FUEL_X_UNITS); /* 0x5DABC..0x5DAC4 */
+        pUnits->nOriginY = PufoUi_MapY(PUFO_RADAR_FUEL_Y); /* 0x5DACC */
         PadImage_BlitEx(pUnits, PUFO_RADAR_PAD_KEY); /* 0x5DAD4, unconditional */
     }
 
     PadImage *pPercent = RadarDigitPad(pEnv, PUFO_RADAR_DIGIT_PADS - 1);
     if (pPercent != NULL) {
-        pPercent->nOriginX = PUFO_RADAR_FUEL_X_PERCENT; /* 0x5DADC..0x5DAE4 */
-        pPercent->nOriginY = PUFO_RADAR_FUEL_Y;         /* 0x5DAEC */
+        pPercent->nOriginX = PufoUi_MapX(PUFO_RADAR_FUEL_X_PERCENT); /* 0x5DADC..0x5DAE4 */
+        pPercent->nOriginY = PufoUi_MapY(PUFO_RADAR_FUEL_Y); /* 0x5DAEC */
         PadImage_BlitEx(pPercent, PUFO_RADAR_PAD_KEY);  /* tail call */
     }
 
@@ -2689,9 +2696,9 @@ bool RadarScreen_DrawRangeBar(const RadarRangeBarEnv *pEnv)
 
     /* 0x5D764..0x5D78C: the bar's height is the range scaled to the 114-pixel pitch. */
     const i32 nBar = (PUFO_RADAR_RANGE_PITCH * nRangeCur) / PUFO_RADAR_RANGE_SCALE;
-    SoftSurf_BlitRectProxy(0, PUFO_RADAR_RANGE_BAR_X, PUFO_RADAR_RANGE_BAR_Y - nBar,
+    SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_RADAR_RANGE_BAR_X), PufoUi_MapY(PUFO_RADAR_RANGE_BAR_Y - nBar),
                            3, nBar - PUFO_RADAR_RANGE_TRIM, 0x28u, 0x64u, 0u);
-    SoftSurf_BlitRectProxy(0, PUFO_RADAR_RANGE_BAR_X + 1, PUFO_RADAR_RANGE_BAR_Y - nBar,
+    SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_RADAR_RANGE_BAR_X + 1), PufoUi_MapY(PUFO_RADAR_RANGE_BAR_Y - nBar),
                            1, nBar - PUFO_RADAR_RANGE_TRIM, 0x50u, 0xDCu, 0u);
 
     /* 0x5D808..0x5D814: the roll is taken when it lands below 70, so 70% of pulses hit the craft. */
@@ -3517,17 +3524,17 @@ static i32 Radar_ContactTile(const RadarUpdateEnv *pEnv, const StrategItem *pIte
  * when the animation has not reached the full rect, which skips the rest of the draw block. */
 static bool Radar_DrawPanelFrame(const RadarUpdateEnv *pEnv, i32 nPanelH)
 {
-    if (!Ui_AnimExpandBlit(pEnv->pAnim, PUFO_RADAR_PANEL_X, PUFO_RADAR_PANEL_Y,
+    if (!Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(PUFO_RADAR_PANEL_X), PufoUi_MapY(PUFO_RADAR_PANEL_Y),
                            PUFO_RADAR_PANEL_W, nPanelH, 0x28, 0x50, 0x14, 0xFF, 4)) {
         return false; /* 0x605F0: the whole draw block is skipped, the tail gates still run */
     }
     for (i32 i = 1; i < 5; ++i) {
         const RadarPanelBlit *const pBlit = &g_aRadarPanelBlit[i];
-        (void)Ui_AnimExpandBlit(pEnv->pAnim, pBlit->x, pBlit->y, pBlit->nW, pBlit->nH,
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, PufoUi_MapX(pBlit->x), PufoUi_MapY(pBlit->y), pBlit->nW, pBlit->nH,
                                 0x28, 0x50, 0x14, 0xFF, pBlit->nMode);
     }
     for (i32 i = 0; i < 5; ++i) {
-        SoftSurf_BlitRectProxy(0, g_aRadarPanelRail[i].x, g_aRadarPanelRail[i].y,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(g_aRadarPanelRail[i].x), PufoUi_MapY(g_aRadarPanelRail[i].y),
                                g_aRadarPanelRail[i].nW, g_aRadarPanelRail[i].nH,
                                PUFO_RADAR_PANEL_RAIL_IDX, PUFO_RADAR_PANEL_RAIL_MID,
                                PUFO_RADAR_PANEL_RAIL_LOW);
@@ -3542,20 +3549,20 @@ static void Radar_DrawSignalBars(const RadarUpdateEnv *pEnv)
     const i32 n = *pS->pnScanOffset;
 
     for (i32 i = 0; i < PUFO_RADAR_BAR_COUNT; ++i) {
-        const i32 x = n + PUFO_RADAR_BAR_X_FIRST + i * PUFO_RADAR_BAR_PITCH;
-        SoftSurf_BlitRectProxy(0, x, PUFO_RADAR_BAR_Y_TOP, PUFO_RADAR_BAR_PITCH,
+        const i32 x = PufoUi_MapX(n + PUFO_RADAR_BAR_X_FIRST + i * PUFO_RADAR_BAR_PITCH);
+        SoftSurf_BlitRectProxy(0, x, PufoUi_MapY(PUFO_RADAR_BAR_Y_TOP), PUFO_RADAR_BAR_PITCH,
                                PUFO_RADAR_BAR_H_TOP, PUFO_RADAR_BAR_IDX,
                                g_anRadarBarMid[i], PUFO_RADAR_BAR_LOW);      /* 0x60CEC..0x60D94 */
-        SoftSurf_BlitRectProxy(0, x, PUFO_RADAR_BAR_Y_MID, PUFO_RADAR_BAR_PITCH,
+        SoftSurf_BlitRectProxy(0, x, PufoUi_MapY(PUFO_RADAR_BAR_Y_MID), PUFO_RADAR_BAR_PITCH,
                                PUFO_RADAR_BAR_H_MID, PUFO_RADAR_BAR_IDX,
                                g_anRadarBarMid[i], PUFO_RADAR_BAR_LOW);      /* 0x60DC0..0x60E60 */
-        SoftSurf_BlitRectProxy(0, 2 * (n + PUFO_RADAR_BAR_X_DOUBLED + i * PUFO_RADAR_BAR_PITCH),
-                               PUFO_RADAR_BAR_Y_BOTTOM, 2 * PUFO_RADAR_BAR_PITCH,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(2 * (n + PUFO_RADAR_BAR_X_DOUBLED + i * PUFO_RADAR_BAR_PITCH)),
+                               PufoUi_MapY(PUFO_RADAR_BAR_Y_BOTTOM), 2 * PUFO_RADAR_BAR_PITCH,
                                PUFO_RADAR_BAR_H_BOTTOM, PUFO_RADAR_BAR_IDX,
                                g_anRadarBarMid[i], PUFO_RADAR_BAR_LOW);      /* 0x60E8C..0x60F3C */
         /* 0x60F64: MOVS / ADDMI / ASR #1 is C division by two, rounding toward zero. */
-        SoftSurf_BlitRectProxy(0, *pS->pnCursorX + n / 2 + PUFO_RADAR_CURSOR_X_FIRST
-                               + i * PUFO_RADAR_CURSOR_PITCH, *pS->pnCursorY + 1,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(*pS->pnCursorX + n / 2 + PUFO_RADAR_CURSOR_X_FIRST
+                               + i * PUFO_RADAR_CURSOR_PITCH), PufoUi_MapY(*pS->pnCursorY + 1),
                                PUFO_RADAR_CURSOR_W, PUFO_RADAR_CURSOR_H, PUFO_RADAR_CURSOR_IDX,
                                g_anRadarCursorMid[i], PUFO_RADAR_BAR_LOW);   /* 0x60F80..0x6107C */
     }
@@ -3580,31 +3587,40 @@ static void Radar_DrawReadout(const RadarUpdateEnv *pEnv)
     Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_DIST_LABEL,
                       szText, sizeof(szText));
     Gfx_PackRgb565Pair(pEnv->pColor, 80, 200, 20, 40, 90, 20); /* 0x610E4 */
-    Text_DrawString(120, 155, szText);                         /* 0x610F8 */
+    Text_DrawString(PufoUi_MapX(120), PufoUi_MapY(155), szText); /* 0x610F8 */
 
     char szNum[52];
     (void)snprintf(szNum, sizeof(szNum), "%d", (int)*pS->pnRangeCur); /* 0x6110C: j_itoa, base 10 */
-    Text_DrawString(180, 155, szNum); /* 0x61120 */
+    Text_DrawString(PufoUi_MapX(180), PufoUi_MapY(155), szNum); /* 0x61120 */
 
     if (*pS->pnMsgTimer < PUFO_RADAR_TIMER_LIMIT) { /* 0x6112C */
-        Text_DrawString(28, 175, pEnv->pDetect->pszMsg);
+        Text_DrawString(PufoUi_MapX(28), PufoUi_MapY(175), pEnv->pDetect->pszMsg);
     }
 
     if (*pS->pbBlinkPhase != 0) { /* 0x61150 */
-        SoftSurf_BlitRectProxy(0, PUFO_RADAR_WASH_X, PUFO_RADAR_WASH_Y, PUFO_RADAR_WASH_W,
+        SoftSurf_BlitRectProxy(0, PufoUi_MapX(PUFO_RADAR_WASH_X), PufoUi_MapY(PUFO_RADAR_WASH_Y), PUFO_RADAR_WASH_W,
                                PUFO_RADAR_WASH_H, PUFO_RADAR_WASH_IDX,
                                PUFO_RADAR_WASH_MID, PUFO_RADAR_WASH_LOW);
         RadarScreen_BlitOverlay(pUi->pOverlayPad); /* 0x611A0 */
     }
 
     for (i32 i = 0; i < PUFO_RADAR_BUTTON_BLIT_COUNT; ++i) { /* 0x611A8: MOV R8, #4 */
-        PadImage_BlitEx(pUi->apButtonPad[i], PUFO_RADAR_BUTTON_KEY);
+        /* QoL: blit each button pad at its shimmed origin (identity portrait). */
+        PadImage *pPad = pUi->apButtonPad[i];
+        const i32 nPadX = pPad->nOriginX;
+        const i32 nPadY = pPad->nOriginY;
+
+        pPad->nOriginX = PufoUi_MapX(nPadX);
+        pPad->nOriginY = PufoUi_MapY(nPadY);
+        PadImage_BlitEx(pPad, PUFO_RADAR_BUTTON_KEY);
+        pPad->nOriginX = nPadX;
+        pPad->nOriginY = nPadY;
     }
 
     Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_DAMAGE_LABEL,
                       szText, sizeof(szText));
     Gfx_PackRgb565Pair(pEnv->pColor, 120, 200, 40, 40, 80, 20); /* 0x61214 */
-    Text_DrawString(117, 59, szText);                           /* 0x61228 */
+    Text_DrawString(PufoUi_MapX(117), PufoUi_MapY(59), szText); /* 0x61228 */
     (void)RadarScreen_DrawFuelGauge(pEnv->pFuel);              /* 0x6122C */
 }
 

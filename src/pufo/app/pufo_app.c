@@ -1299,22 +1299,20 @@ static void App_UpdateViewGeometry(void)
 {
     const bool bWideScreen =
         g_bWorldReady
-        /* Wide is the plain geoscape map and placement only: the radar/options windows are
-         * portrait dialogs that keep the map screen id; sModal is any modal dialog (the
-         * contact report, tact abort). Other geoscape screens switch the id themselves. */
+        /* The geoscape and tact screens fill the whole wide window in every state that
+         * shows the map (radar window, deploy panel, hand menu, minimap window, modal
+         * dialogs all draw over the live map, so the face stays wide and their windows
+         * centre through the shim). Only the menu/popup screens keep the portrait face:
+         * the geoscape options dialog, tact inventory (1), options (12) and the
+         * promotion report (13); the other geoscape screens switch the id themselves. */
         && ((g_world.bGeoscapeUi != 0
              && (g_world.screen.nGeoscapeScreen == 0  /* the map */
                  || g_world.screen.nGeoscapeScreen == 2) /* new-base placement: the map + confirm */
-             && g_world.bRadarScreenActive == 0 && g_world.bOptionsScreenOpen == 0
-             && !g_world.sModal.bOpen)
-            /* Tact fills the face on the battlefield (screen 0); the inventory (1), the
-             * minimap window (6), options (12), the promotion report (13), the deploy
-             * panel and any modal dialog keep the portrait face. */
+             && g_world.bOptionsScreenOpen == 0)
             || (World_bTactPointerLive(&g_world)
-                && g_world.nUiScreen != 1u && g_world.nUiScreen != 6u
-                && g_world.nUiScreen != 12u && g_world.nUiScreen != 13u
-                && g_world.bMapPromotionReport == 0 && g_world.sTactInput.bDeployPanelOpen == 0
-                && !g_world.sModal.bOpen));
+                && g_world.nUiScreen != 1u && g_world.nUiScreen != 12u
+                && g_world.nUiScreen != 13u
+                && g_world.bMapPromotionReport == 0));
     int nW, nH, nX, nY;
 
     /* Geometry keys on the shell mode only. Scripted runs stay hidden (no

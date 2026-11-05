@@ -420,9 +420,9 @@ void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide)
     v4 = v2 - v3;
 
     SoftSurf_BlitSrcRect(PufoUi_MapX(15), PufoUi_MapY(15), 210, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(15, 15, 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(15), PufoUi_MapY(15), 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
     SoftSurf_BlitSrcRect(PufoUi_MapX(15), PufoUi_MapY(v2 - 15), 211, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
-    SoftSurf_BlitSrcRect(225, 15, 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(PufoUi_MapX(225), PufoUi_MapY(15), 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
     SoftSurf_BlitSrcRect(PufoUi_MapX(80), PufoUi_MapY(0), 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
     SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(v3), 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
     SoftSurf_BlitSrcRect(PufoUi_MapX(160), PufoUi_MapY(0), 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
@@ -436,10 +436,10 @@ void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide)
     /* Priority order is bottom, top, left, right. */
     if ((nFlags & 0xFF000000u) != 0) {
         if ((nFlags & 0xFFu) != 0) {
-            SoftSurf_BlitSrcRect(0, v2 - v3, 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(v2 - v3), 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
             SoftSurf_BlitSrcRect(PufoUi_MapX(0), PufoUi_MapY(v2 - 15), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         } else if ((nFlags & 0xFF00u) != 0) {
-            SoftSurf_BlitSrcRect(225, v2 - v3, 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(PufoUi_MapX(225), PufoUi_MapY(v2 - v3), 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
             SoftSurf_BlitSrcRect(PufoUi_MapX(160), PufoUi_MapY(v2 - 15), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
         } else {
             SoftSurf_BlitSrcRect(PufoUi_MapX(80), PufoUi_MapY(v2 - 15), 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
@@ -788,7 +788,8 @@ static void DrawMinimapSpriteGlyph(IsoDrawCtx *pIso, const IsoSpriteBases *pBase
     if (nIdx == 35) {
         return;
     }
-    (void)Font_DrawGlyph(x, y, (u16)((i32)pBases->nScangBase + nIdx), nPal);
+    /* The overview window is top-anchored; the shim only centers x on the wide face. */
+    (void)Font_DrawGlyph(PufoUi_MapX(x), y, (u16)((i32)pBases->nScangBase + nIdx), nPal);
 }
 
 void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
@@ -838,7 +839,7 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
                 nIdx = (i32)pGround->uUnk20 + 35;
                 pIso->nScratch = nIdx;
                 pCell = pGrid->apCells[PUFO_MAP_CELL_DIM * pIso->nTileY + pIso->nTileX];
-                (void)Font_DrawGlyph(4 * (pIso->nTileX - nScrollX), 4 * (pIso->nTileY - nScrollY),
+                (void)Font_DrawGlyph(PufoUi_MapX(4 * (pIso->nTileX - nScrollX)), 4 * (pIso->nTileY - nScrollY),
                                      (u16)((i32)pEnv->pBases->nScangBase + nIdx),
                                      (i32)pCell->bUnk56);
             }
@@ -857,7 +858,7 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
                     if (Map_IsValidCell(&geom, pIso->nTileX, pIso->nTileY, 0)) {
                         const i32 nX = pIso->nTileX;
                         const i32 nY = pIso->nTileY;
-                        const i32 nXs = 4 * (nX - nScrollX);
+                        const i32 nXs = PufoUi_MapX(4 * (nX - nScrollX));
                         const i32 nYs = 4 * (nY - nScrollY);
 
                         pCell = pGrid->apCells[PUFO_MAP_CELL_DIM * (PUFO_MAP_CELL_DIM * nLayer + nY)
@@ -917,7 +918,18 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
         } while ((i32)pIso->nLayer < (i32)pEnv->nLayerCount);
     }
 
-    PadImage_BlitEx(pEnv->pMiniCursor, 0x3F);
+    {
+        /* QoL: blit the cursor pad at its shimmed origin (identity portrait). */
+        PadImage *pCur = (PadImage *)pEnv->pMiniCursor;
+        const i32 nCurX = pCur->nOriginX;
+        const i32 nCurY = pCur->nOriginY;
+
+        pCur->nOriginX = PufoUi_MapX(nCurX);
+        pCur->nOriginY = PufoUi_MapY(nCurY);
+        PadImage_BlitEx(pCur, 0x3F);
+        pCur->nOriginX = nCurX;
+        pCur->nOriginY = nCurY;
+    }
 
     /* ORIGINAL BUG (0x1F4DC): the label is copied byte by byte to its NUL with no bound; the source
      * is a 205-byte text record and the context buffer is 80. snprintf bounds the copy. The layer
@@ -927,7 +939,7 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
     (void)pufo_strcat(pIso->szText, &pIso->szText[50], sizeof(pIso->szText));
 
     (void)Gfx_PackRgb565Pair(pEnv->pColor, 255, 255, 255, 90, 90, 90);
-    Text_DrawString(0, 0, pIso->szText);
+    Text_DrawString(PufoUi_MapX(0), 0, pIso->szText);
 
     pIso->nScratch2 = 0;
     do {

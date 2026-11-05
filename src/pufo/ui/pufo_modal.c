@@ -1,5 +1,6 @@
 /* pufo_modal.c - see pufo_modal.h for evidence. */
 #include "ui/pufo_modal.h"
+#include "ui/pufo_uigeom.h"
 
 #include <string.h>
 
@@ -84,8 +85,10 @@ i32 UiModal_DrawDialog(UiModalAnim *pAnim, const u8 *pTextRecs, i32 nWidth,
     if (pszBtn1 != NULL || pszBtn2 != NULL) {
         nHeight = 13 * nLines + 35;
     }
-    nX = (240 - nWidth) / 2;
-    nY = (320 - nHeight) / 2;
+    /* QoL: the box centres on the live face (the 240x320 design centre on the portrait
+     * face, the 320x240 centre on the wide face, where the map fills the window behind it). */
+    nX = PufoUi_MapX((240 - nWidth) / 2);
+    nY = (((g_pMainSurface != NULL) ? (i32)g_pMainSurface->nHeight : PUFO_SURF_H) - nHeight) / 2;
 
     SoftSurf_BlitSrcRect(nX, nY, nWidth, nHeight, 0xFFu, 255, 255, 128);
     SoftSurf_BlitSrcRect(nX, nY, nWidth, 2, 0, 255, 0, 200);
