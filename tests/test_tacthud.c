@@ -918,15 +918,28 @@ static void TestHudDraw(void)
     TestEqI32("Menu_DrawLabeledPads walks seven pads",
               Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL), 7);
     TestEqI32("seven pads blitted", g_nPadBlits, 7);
-    TestEqI32("the descriptor tail rows stay at 152 + 23 * i portrait", aPad[4].y, 152);
-    TestEqI32("  through the last", aPad[6].y, 198);
-
-    /* QoL: the wide face centre-shifts the tail rows the drawer owns. */
-    PufoUi_SetGeometry(40, -80);
+    aPad[0].y = 60; aPad[1].y = 83; aPad[2].y = 106; aPad[3].y = 129;
     aPad[4].y = 152; aPad[5].y = 175; aPad[6].y = 198;
     (void)Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL);
-    TestEqI32("wide tail rows ride at 112 + 23 * i", aPad[4].y, 112);
+    TestEqI32("the descriptor rows stay at 60 + 23 * i portrait", aPad[0].y, 60);
+    TestEqI32("  through the last", aPad[6].y, 198);
+
+    /* QoL: the wide face centre-shifts the whole stack, one row at its design y
+     * only, so the tab layout's 90 + 25 * i passes through and a shifted row is
+     * never shifted twice. Draw, label and hit box share this one cell. */
+    PufoUi_SetGeometry(40, -80);
+    aPad[0].y = 60; aPad[1].y = 83; aPad[2].y = 106; aPad[3].y = 129;
+    aPad[4].y = 152; aPad[5].y = 175; aPad[6].y = 198;
+    (void)Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL);
+    TestEqI32("wide rows ride at 20 + 23 * i", aPad[0].y, 20);
     TestEqI32("  through the last", aPad[6].y, 158);
+    (void)Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL);
+    TestEqI32("the second pass leaves the stack where it is", aPad[0].y, 20);
+    TestEqI32("  and the last", aPad[6].y, 158);
+    aPad[0].y = 90; aPad[1].y = 115; aPad[2].y = 140; aPad[3].y = 165;
+    (void)Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL);
+    TestEqI32("a tab-layout row 90 passes through", aPad[0].y, 90);
+    TestEqI32("  through 165", aPad[3].y, 165);
     PufoUi_SetGeometry(0, 0);
 
     memset(&anim, 0, sizeof(anim));

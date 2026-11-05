@@ -189,13 +189,26 @@ width ((faceW + 16) / 32 + 1: 240 -> 9 parity, 320 -> 11), so the 11
 32-px columns cover -16..336 and the map fills the window. nViewW 0
 (non-landscape, tests) keeps the parity cell; ctest 67/67, e2e 11/11.
 
-Tact main menu raised (2026-11-05): the seven-row in-battle menu (widgets
-53..59) is laid out by OptionsScreen_LayoutButtons/Options_BindSlotRows at
-90 + 25 * i (and 40 + 22 * i); the bottom-anchor shim split that stack and
-left it on the wide HUD. Options_CentreRow now drops each row at
-PufoUi_MapCentreY(design y) = y + offY / 2: the whole window rides at the
-face centre (rows 50+25*i wide, identity portrait), computed from the
-stable design base so re-running the layout is idempotent, and the pad hit
-boxes follow the drawn rows (the first drawer-side attempt at 60+23*i
-clobbered the live layout and desynced the last row's hover -- reverted).
-test_baseui pins 90+25*i portrait and 50+25*i wide. The tail rows 4..6 (descriptor 152 + 23 * i) are centre-shifted by the drawer from the same stable base (112..158 wide): one shift rule per writer, so labels, pads and hit boxes agree and every row hovers. test_tacthud pins both. ctest 67/67.
+Tact main menu raised (2026-11-05, corrected the same day by live probe):
+the seven-row in-battle menu is bank widgets 53..59. Screen 7 activates the
+aUiDescMenu group (descriptor y 60 + 23 * i) and Input_OnPointer case 7
+hit-tests those same widgets; the tab layout at 90 + 25 * i
+(OptionsScreen_LayoutButtons/Options_CentreRow) belongs to the options
+screen (12, excluded from the wide gate) and never raises the screen-7
+rows. The bottom-anchor shim split the 60..198 stack on the wide face, so
+QoL centres it: Menu_DrawLabeledPads lifts a row from its descriptor y to
+PufoUi_MapCentreY(60 + 23 * i) = 20..158 wide, identity portrait, and only
+while the row sits at that design y -- the shift is idempotent and the tab
+layout's values pass through. Draw, label and hit box share the one cell,
+so each row hovers and clicks alone. Two earlier attempts regressed and
+were measured away: a CentreRow-only lift left rows 4..6 under the
+bottom-anchor split (152 stays, 175 -> 95, 198 -> 118, overlapping
+stacks), and a tail-only drawer shift (112..158) interleaved the tail with
+the untouched tab rows at 60..129, so a cursor over «Выход» pressed the
+hidden row 2 at 106 and its click fired on release -- «Опции» hijacked
+every «Выход» click. A temporary fprintf probe in the case-7 arm and
+QA-desktop window shots settled it: clean stack, single-row highlight, the
+«Выход» confirm dialog on click. Options_CentreRow keeps its
+PufoUi_MapCentreY shift (test_baseui pins 90+25*i portrait, 50+25*i wide);
+test_tacthud pins the drawer: 60..198 portrait, 20..158 wide, second pass
+no-ops, 90+25*i passes through. ctest 67/67, e2e 11/11.

@@ -568,12 +568,13 @@ i32 Menu_DrawLabeledPads(UiControl *pPads, const u8 *pTextRecs, const GfxColorEn
     Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
 
     for (nIdx = 0; ; ++nIdx) {
-        /* Rows 4..6 keep the descriptor y (the tab layout moves only 0..3);
-         * QoL: centre-shift them from that stable base so the whole 7-row
-         * stack rides the wide face as one window (identity portrait). */
-        if (nIdx >= PUFO_MENU_TAIL_FIRST) {
-            pPads[nIdx].y = (i16)PufoUi_MapCentreY(PUFO_MENU_TAIL_Y0
-                                                   + PUFO_MENU_TAIL_PITCH * (nIdx - PUFO_MENU_TAIL_FIRST));
+        /* QoL: centre the whole 7-row stack on the wide face (identity portrait).
+         * Only a row at its descriptor y 60 + 23 * i shifts, so a row the tab
+         * layout has repositioned (90 + 25 * i) passes through, and a shifted
+         * row is never shifted twice. Draw, label and hit box share this cell. */
+        i32 nDesign = PUFO_MENU_ROW_Y0 + PUFO_MENU_ROW_PITCH * nIdx;
+        if (pPads[nIdx].y == nDesign) {
+            pPads[nIdx].y = (i16)PufoUi_MapCentreY(nDesign);
         }
 
         (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);

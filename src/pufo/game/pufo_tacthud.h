@@ -207,11 +207,12 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
  * Those three spans are the same groups Tact_Shutdown (0x3d568, ported at pufo_tactend.c:228) walks (offsets 53/7,
  * 105/8 and 44/9), which is the cross-check that the arithmetic is right. */
 #define PUFO_HUD_MENU_PADS        7
-/* The tab layout (Options_CentreRow) moves rows 0..3; rows 4..6 keep the
- * aUiDescMenu descriptor y 152 + 23 * i, which the drawer centres itself. */
-#define PUFO_MENU_TAIL_FIRST      4
-#define PUFO_MENU_TAIL_Y0       152
-#define PUFO_MENU_TAIL_PITCH     23
+/* QoL wide face: the ESC-menu drawer centres the whole stack on the live face.
+ * The design y of row i is the aUiDescMenu descriptor 60 + 23 * i; the drawer
+ * shifts a row only while it sits at that design y, so the options tab layout
+ * (Options_CentreRow, 90 + 25 * i) passes through untouched. */
+#define PUFO_MENU_ROW_Y0          60
+#define PUFO_MENU_ROW_PITCH       23
 #define PUFO_HUD_MODAL_PADS       8
 #define PUFO_HUD_MODAL_LABELS     7
 #define PUFO_HUD_MODAL_LABEL_STRIDE 40
